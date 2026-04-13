@@ -1,10 +1,10 @@
 # Hamsterball - Function Map
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
-||Total functions: 3,811 (Ghidra analysis)
-||||Documented: 2,877 (75.5%)
-||||User-labeled: 932+
-||||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%)
+|Total functions: 3,781 (Ghidra analysis)
+**Documented:** 2,412 (63.8%)
+**User-labeled:** 932+
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1258,9 +1258,9 @@ Offset | Field | Description
 |---------|------|-------------|
 | 0x433f00 | Level_Cleanup_vtable1 | Level vtable cleanup thunk variant 1 |
 
-|## Session 21 - Scene Rendering, Mesh, Font, Huffman, D3DTexture, Sound, CRT
+## Session 21 - Scene Rendering, Mesh, Font, Huffman, D3DTexture, Sound, CRT
 
-|| Address | Name | Description |
+| Address | Name | Description |
 |---------|------|-------------|
 | 0x0045ec30 | Scene_Render3DObjects | Main 3D object renderer: transforms vertices, frustum culls, submits triangle strips with D3D draw calls |
 | 0x00468600 | Path_ComputeSegmentLengths | Compute segment lengths from point pairs using sqrt(dx²+dy²) |
@@ -1287,9 +1287,9 @@ Offset | Field | Description
 | 0x004b0e6b | CRT_FreeParam2 | Callback wrapper: just frees param_2 (2nd arg), ignores param_1 |
 | 0x004ad716 | Font_DecodeGlyphBits | Decode glyph bitmap from compressed font data based on bit depth (1/2/4/8) |
 
-|## Session 21 (continued) - Level ctors/dtors, more naming
+## Session 21 (continued) - Level ctors/dtors, more naming
 
-|| Address | Name | Description |
+| Address | Name | Description |
 |---------|------|-------------|
 | 0x004383f0 | Glass_Level_scalar_dtor | Glass level scalar deleting destructor |
 | 0x004384a0 | Glass_Level_ctor | Glass level constructor: Stands init, clone level, init timers, lookup Chain1/2 Bridge/Wall hashtables |
@@ -1304,9 +1304,9 @@ Offset | Field | Description
 | 0x0043a150 | Gear_Level_ctor | Gear level constructor: RNG for speed/offset, 400ms time, ScoreDisplay init |
 | 0x00430430 | TourneyRaceEntry_Dtor | TourneyRaceEntry destructor: set vtable, call UIList_Cleanup |
 
-|## Session 21 (continued 2) - Level dtors, UI, String, RaceResults
+## Session 21 (continued 2) - Level dtors, UI, String, RaceResults
 
-|| Address | Name | Description |
+| Address | Name | Description |
 |---------|------|-------------|
 | 0x00446860 | QuitToDesktop_scalar_dtor | QuitToDesktop scalar deleting destructor |
 | 0x00446880 | GameObject2_scalar_dtor | GameObject2 scalar deleting destructor |
@@ -1419,3 +1419,37 @@ Offset | Field | Description
 | 0x46a180 | MusicChannel_FadeUpdate | 1 | Fade BASS volume up/down with BASS_ChannelSetAttributes |
 | 0x46a250 | MusicChannel_Cleanup | 1 | Free all channel buffers, clear AthenaList, Vec3List_Free |
 | 0x46a4b0 | MusicChannel_DeletingDtor | 1 | Scalar deleting destructor for MusicChannel |
+
+## Session 25 - Mesh/Vertex/D3D thunks, Array utilities (63.8%)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0047ead8 | DynArray_Grow | Dynamic array grow: realloc with doubled capacity |
+| 0x0047ebae | FindInSmallIntArray | Search small int array for matching value |
+| 0x00480c4d | MeshBuffer_Allocate | Allocate mesh vertex/index buffer |
+| 0x00489217 | SetFileSecurityW | IAT thunk for SetFileSecurityW |
+| 0x0048a560 | AthenaList_SortMerge | AthenaList merge sort implementation |
+| 0x0048a860 | MeshGroup_dtor | MeshGroup destructor |
+| 0x0048ce30 | TextureCache_RecursiveFree | TextureCache recursive free (tree traversal) |
+| 0x0048eb20 | BuildSDFGrid | Build signed distance field grid |
+| 0x004912e4 | ComputeScanlineZBuffer | Compute scanline Z-buffer for software rendering |
+| 0x00496e13 | Mesh_SetVertexFormat | Set mesh vertex format/declaration |
+| 0x0045b72c | D3DX_Thunk3Param | D3D dispatch thunk through PTR_FUN_004f7204 (3 params) |
+| 0x0047e026 | WideString_MatchSlot | Match ushort value against 3-slot array, return index (0/1/2) |
+| 0x0047e152 | WideArray_Grow | Realloc wchar array with capacity doubling |
+| 0x0047e359 | ShortArray_FindMatch3 | Search short array of size 3 for matching value |
+| 0x0047e5bd | Mesh_BuildAttributeIndices | Build mesh attribute/index remapping tables (vertex→attrib, 0xFFFF sentinel) |
+| 0x0047e725 | Mesh_CollectUniqueAttributes | Collect unique attribute IDs from mesh into dynamic array (doubles capacity) |
+| 0x0047e855 | UshortArray_PushBack | Push ushort element with doubling capacity |
+| 0x0047e914 | Mesh_RemapVertexIndices | Remap vertex/adjacency indices via lookup tables (stride 0xC) |
+| 0x0047ea05 | Mesh_SwapVertices | Swap two mesh vertices + adjacency/attribute/blend data |
+| 0x0047eb76 | MeshData_Init | Init mesh data struct: set 3 params, zero counts at +0x18/+0x2C |
+| 0x0047ec49 | Mesh_SwapVertexData | Swap vertex data between indices using alloca temp buffer (stride from +0x2C) |
+| 0x0047edc2 | MeshSubMesh_Init | Init sub-mesh struct: set 3 params, zero counts at +0x10/+0x20 |
+| 0x0047ee1b | MeshEdge_GetFirstVertex | Get first valid vertex from 4-entry edge list (+0x14 base offset) |
+| 0x0047ef1e | MeshAttribute_FindIndex | Search attribute short array for matching value, return found+index |
+| 0x0047f02a | Mesh_UnlinkVertex | Unlink vertex from doubly-linked adjacency list (0xC stride) |
+| 0x0047f17e | Mesh_LinkVertexToHead | Link vertex to head of hash bucket (stride-6 linked list) |
+| 0x0047f363 | VertexDecl_CopyVertexData | Copy vertex data between declarations: blend weights, position, normal, texcoords |
+| 0x0047f58e | VertexDecl_CreateFromFVF | Create vertex declaration from FVF (Flexible Vertex Format) code |
+| 0x0047e263 | DWord6Array_Grow | Grow DWORD-6-stride array with realloc (init 0x28 bytes, security cookie) |
