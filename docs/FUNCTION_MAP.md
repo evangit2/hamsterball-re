@@ -2,7 +2,7 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,781 (Ghidra analysis)
-**Documented:** 2,418 (64.0%)
+**Documented:** 2,422 (64.1%)
 **User-labeled:** 932+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8% of 3781)
 
@@ -1464,3 +1464,13 @@ Offset | Field | Description
 | 0x0047fe0e | Mesh_FindBestDuplicateVertex | Find best matching duplicate vertex by comparing cross-product magnitudes with epsilon |
 | 0x0047feec | Mesh_ComputeTriCrossProduct | Compute scalar triple product of two 3D triangles for vertex welding comparison |
 | 0x00480501 | Mesh_ValidateAdjacency | Validate mesh adjacency: check face refs, vertex bounds, edge integrity, attribute matching |
+
+## Session 25 (continued 2) - Mesh Pipeline, Rendering, Validation
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00480501 | Mesh_ValidateAdjacency | Validate mesh adjacency: check face refs, vertex bounds, edge integrity, attribute matching |
+| 0x004806da | Mesh_DrawSubsetIndexed | Draw mesh subset by attribute ID using D3D DrawIndexedPrimitive (indexed path) |
+| 0x00480813 | Mesh_WeldVertices16 | 16-bit variant of WeldVertices: build adjacency, weld duplicate verts, split edges |
+| 0x00481101 | Mesh_ValidateAdjacency16 | 16-bit variant of ValidateAdjacency: check 16-bit face/edge/vertex refs |
+| 0x0048130c | Mesh_ValidateAttributes | Check attribute IDs match face ranges in attribute table |
