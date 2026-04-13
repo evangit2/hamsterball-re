@@ -2,7 +2,7 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,811 (Ghidra analysis)
-||Documented: 2,171 (57.0%)
+|Documented: 2,171 (57.0%)
 |User-labeled: 340+
 
 ## Entry Point and Lifecycle
@@ -23,20 +23,20 @@
 | 0x00455380 | Graphics_Initialize | D3D8 init, adapter check, device creation |
 | 0x00455A60 | Graphics_Defaults | Set default render states |
 | 0x00453B50 | Graphics_BeginFrame | Begin frame/render setup |
-|| 0x00455A90 | Graphics_PresentOrEnd | Present frame or end scene |
-|| 0x004542C0 | Graphics_ctor | Graphics constructor (vtable 0x4D88A0, init render context, texture cache, frustum) |
-|| 0x00455360 | Graphics_dtor | Graphics destructor (cleanup + optional free) |
-|| 0x00454550 | Graphics_Cleanup | Release D3D objects, free texture path, clear cache |
-|| 0x00454000 | Graphics_SetTexturePath | Set custom texture prefix path (strdup at +0x7D8) |
-|| 0x00454060 | D3DFMT_ToString | Convert D3DFORMAT enum to debug string |
-|| 0x00454B50 | Graphics_SetViewport | Set viewport dimensions |
-|| 0x00454D30 | Graphics_Reset | Reset device with new params, CreateDevice twice |
-|| 0x00455D60 | Graphics_DrawScreenRect | Draw 2D screen rectangle (x,y,w,h → TLVERTEX triangle strip). 63 xrefs. |
-|| 0x00455110 | Graphics_ApplyMaterialAndDraw | Apply material/render states + draw textured geometry. 17 xrefs. |
-|| 0x00454190 | Graphics_SetRenderMode | Set shading mode, reset vertex shader, re-apply render states |
-|| 0x00455B80 | Graphics_SetStreamBuffers | Set vertex buffer stream sources for rendering |
-|| 0x00457FA0 | RenderContext_Init | Initialize render context struct (0x50 bytes, vtable 0x4D8E68) |
-|| 0x00401160 | Graphics_SetViewportClip | Set viewport clipping bounds from 4x4 matrix |
+| 0x00455A90 | Graphics_PresentOrEnd | Present frame or end scene |
+| 0x004542C0 | Graphics_ctor | Graphics constructor (vtable 0x4D88A0, init render context, texture cache, frustum) |
+| 0x00455360 | Graphics_dtor | Graphics destructor (cleanup + optional free) |
+| 0x00454550 | Graphics_Cleanup | Release D3D objects, free texture path, clear cache |
+| 0x00454000 | Graphics_SetTexturePath | Set custom texture prefix path (strdup at +0x7D8) |
+| 0x00454060 | D3DFMT_ToString | Convert D3DFORMAT enum to debug string |
+| 0x00454B50 | Graphics_SetViewport | Set viewport dimensions |
+| 0x00454D30 | Graphics_Reset | Reset device with new params, CreateDevice twice |
+| 0x00455D60 | Graphics_DrawScreenRect | Draw 2D screen rectangle (x,y,w,h → TLVERTEX triangle strip). 63 xrefs. |
+| 0x00455110 | Graphics_ApplyMaterialAndDraw | Apply material/render states + draw textured geometry. 17 xrefs. |
+| 0x00454190 | Graphics_SetRenderMode | Set shading mode, reset vertex shader, re-apply render states |
+| 0x00455B80 | Graphics_SetStreamBuffers | Set vertex buffer stream sources for rendering |
+| 0x00457FA0 | RenderContext_Init | Initialize render context struct (0x50 bytes, vtable 0x4D8E68) |
+| 0x00401160 | Graphics_SetViewportClip | Set viewport clipping bounds from 4x4 matrix |
 
 ## Audio Subsystem (BASS)
 
