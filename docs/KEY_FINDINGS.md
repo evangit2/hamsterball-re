@@ -462,3 +462,115 @@ Difficulty_GetTimeModifier (0x428ED0) returns multiplier based on +0x23C:
 - For alpha objects: temporarily shifts projection matrix for shadow rendering
 - Each object has material index (+0x83C) and bone array for skeleton rendering
 - Scene_RenderBallShadow: renders ball with depth bias for shadow pass
+
+## 16. SceneObject Rendering Pipeline (Session 14)
+
+### SceneObject_RenderFull (0x470150, 40 xrefs)
+- Full SceneObject render: calls Ball_Render, then iterates strips with material application
+- Two rendering paths based on alpha flag at +0x459:
+  - Alpha-blended (flag==1): per-strip material application, iterates strips via AthenaList
+  - Opaque (flag==0): direct strip dispatch via Graphics_ApplyMaterialAndDraw
+- Uses Graphics_ApplyMaterialAndDraw for mesh rendering
+
+### SceneObject_RenderSingleObj (0x470440, 39 xrefs)
+- Renders a single SceneObject: applies world transform, sets material, calls DrawIndexedPrimitive or strips
+- Similar to SceneObject_RenderFull but for a specific object parameter
+- Handles both alpha and non-alpha materials
+
+### SceneObject_BuildStrips (0x472770, 39 xrefs)
+- Builds triangle strips for SceneObject rendering
+- Iterates mesh nodes, creates strip data entries into the strip list (AthenaList)
+- Interleaves vertex positions for efficient GPU upload
+- Sets alpha flag on this+0xe
+- Result stored at this+8 offset 0x454
+
+### SceneObject_CheckCollision (0x45dfd0, 38 xrefs)
+- Collision test thunk: computes bounding sphere from AABB (field 0x45c-0x470 extents * 0.5)
+- Calculates radius via distance formula, then calls Ball_CheckCollisionPlanes
+- Used per-SceneObject in collision detection
+
+### SceneObject_ComputeCollisionSphere (0x46fbb0, 38 xrefs)
+- Inner function: computes bounding sphere from AABB
+- Computes extents: (min+max) * 0.5 for each axis
+- Calculates radius: sqrt(dx*dx + dy*dy + dz*dz)
+- Caches result at +0x480 to avoid recomputation
+
+### Scene_BeginFrameThenRender (0x46f3b0, 39 xrefs)
+- Begins graphics frame (Graphics_BeginFrame), then invokes render callback
+- Simple wrapper around vtable dispatch at +0x10
+
+## 17. Mesh/Texture System
+
+### MeshWorld_ctor (0x46f3d0, 39 xrefs)
+- MeshWorld constructor: takes scene ptr, strip count, and filename
+- Allocates vertex/index/strip buffers
+- If cached file exists with valid magic (0xBEEF), loads binary strip data
+- Otherwise allocates empty buffers for scene to fill
+
+### Mesh_InitTexture (0x49338e, 32 xrefs)
+- Initializes D3D texture object from DDSURFACEDESC
+- Sets vtable at 0x4DC044, copies surface desc fields (pitch/stride/width/height)
+- If format is D3DFMT_A8R8G8B8 or D3DFMT_X8R8G8B8 (0x29/0x28), loads palette data
+- If has palette ptr, copies 256 RGBA entries; else fills with 1.0
+
+### Mesh_DrawWithTransform (0x493671, 31 xrefs)
+- Draws mesh with temporary transform override
+- Saves current transform state, applies new transform, restores
+
+### Mesh_ClearColorVertices (0x49373d, 30 xrefs)
+- Zeroes out vertices matching the clear color (transparency hack)
+- Iterates vertex buffer, clears vertices that match clear color RGBA
+
+### D3DDevice_SetFPUControl (0x49336b, 29 xrefs)
+- Sets FPU control word from device state
+- Maintains FPU precision for D3D rendering
+
+## 18. AthenaString System
+
+### AthenaString_AssignCStr (0x473500, 75 xrefs)
+- AthenaString assign from C string
+- Frees old buffer at +4, allocates new buffer sized to strlen(param_1)+1
+- Copies string, sets null-flag at +0x18 if param_1 is NULL
+
+### AthenaString_dtor (0x4736b0, 85 xrefs)
+- AthenaString destructor
+- Sets vtable to base dtor vtable (0x4D290C), frees internal buffer at +4
+- Zeros length at +0x14 and capacity at +0x8
+
+### AthenaString_AssignCRLF (0x473a50, 21 xrefs)
+- Assigns CRLF ("\\r\\n") to AthenaString
+
+### AthenaString_SprintfToBuffer (0x4bae43, 71 xrefs)
+- sprintf into char buffer via fake FILE struct
+- Uses same FILE-trick as AthenaString_Sprintf but writes to caller-provided buffer
+
+## 19. Registry Functions
+
+### RegKey_WriteBool (0x473050, 30 xrefs)
+- Write boolean to registry via RegSetValueExA (REG_BINARY)
+
+### RegKey_ReadBool (0x473130, 28 xrefs)
+- Read boolean from registry via RegQueryValueExA
+
+### RegKey_ReadString (0x473170, 23 xrefs)
+- Read string from registry with fallback attempts
+
+## 20. CRT/Compiler Intrinsics (not game code, but documented)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x4ba754 | __ftol2 | 358 | CRT float-to-int64 conversion, compiler intrinsic |
+| 0x4bc7c8 | __errno | 40 | Returns thread-local errno pointer |
+| 0x4bc7d1 | __doserrno | 23 | Returns thread-local DOS errno pointer |
+| 0x4bcda8 | __security_init_cookie | 34 | CRT security cookie initialization |
+| 0x4bac20 | strstr | 22 | String search with SIMD optimization |
+| 0x4bc0d1 | strtok | 50 | Thread-safe string tokenizer |
+| 0x4a458c | longjmp_with_cleanup | 34 | CRT longjmp with optional cleanup callback |
+| 0x4a45aa | seh_filter_invoke | 21 | Invoke SEH exception filter callback |
+| 0x4c02e7 | LeaveCriticalSection_indexed | 23 | LeaveCriticalSection by index |
+
+## 21. Graphics Pipeline
+
+### Graphics_DrawIndexedPrimitive (0x47dfb9, 25 xrefs)
+- D3D DrawIndexedPrimitive wrapper via vtable dispatch at offset 0x2C
+- Called from SceneObject_RenderFull for mesh rendering

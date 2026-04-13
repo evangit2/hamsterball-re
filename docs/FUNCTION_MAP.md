@@ -1,8 +1,8 @@
 # Hamsterball - Function Map
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
-|Total functions: 3,988 (Ghidra analysis)
-|Documented: 1,816 (45.5%)
+|Total functions: 3,811 (Ghidra analysis)
+|Documented: 1,941 (50.9%)
 |User-labeled: 220+
 
 ## Entry Point and Lifecycle
@@ -812,3 +812,31 @@ Offset | Field | Description
 | 0x00425f90 | App_CompleteRace | 7 | Complete race - increment counter, trigger state transitions, clear flag |
 | 0x00426b30 | String_AllocBuffer | 7 | Allocate string buffer with size | 0xF rounding |
 | 0x0042b190 | ConfirmMenu_ctor | 6 | Confirmation menu (BACK/BACK2TOURNAMENT, DONE), vtable 0x4d39d0 |
+| 0x00473500 | AthenaString_AssignCStr | 75 | AthenaString assign from C string (free old, alloc new, copy) |
+| 0x004736b0 | AthenaString_dtor | 85 | AthenaString destructor - frees buffer, sets vtable to base dtor |
+| 0x00473a50 | AthenaString_AssignCRLF | 21 | AthenaString assign CRLF ("\\r\\n") |
+| 0x004bae43 | AthenaString_SprintfToBuffer | 71 | sprintf into char buffer via fake FILE struct |
+| 0x00473050 | RegKey_WriteBool | 30 | Write boolean to registry via RegSetValueExA (REG_BINARY) |
+| 0x00473130 | RegKey_ReadBool | 28 | Read boolean from registry via RegQueryValueExA |
+| 0x00473170 | RegKey_ReadString | 23 | Read string from registry with fallback attempts |
+| 0x00470150 | SceneObject_RenderFull | 40 | Full render with ball+material+strips, alpha-aware material application |
+| 0x00470440 | SceneObject_RenderSingleObj | 39 | Render a single SceneObject with material/strip dispatch |
+| 0x0046fbb0 | SceneObject_ComputeCollisionSphere | 38 | Compute bounding sphere from AABB, call Ball_CheckCollisionPlanes |
+| 0x0045dfd0 | SceneObject_CheckCollision | 38 | Thunk: compute bounding sphere + check collision planes |
+| 0x0049336b | D3DDevice_SetFPUControl | 29 | Set FPU control word from device state |
+| 0x0049338e | Mesh_InitTexture | 32 | Initialize texture object from surface desc (D3D texture init) |
+| 0x00493671 | Mesh_DrawWithTransform | 31 | Draw mesh with temporary transform override |
+| 0x0049373d | Mesh_ClearColorVertices | 30 | Zero out vertices matching the clear color (transparency hack) |
+| 0x0047dfb9 | Graphics_DrawIndexedPrimitive | 25 | D3D DrawIndexedPrimitive wrapper via vtable |
+| 0x004a458c | longjmp_with_cleanup | 34 | CRT longjmp with optional cleanup callback |
+| 0x004a45aa | seh_filter_invoke | 21 | Invoke SEH exception filter callback at offset 0x44 |
+| 0x004c02e7 | LeaveCriticalSection_indexed | 23 | LeaveCriticalSection by index into global array |
+| 0x0046f3b0 | Scene_BeginFrameThenRender | 39 | Begin graphics frame then invoke render callback |
+| 0x0046f3d0 | MeshWorld_ctor | 39 | MeshWorld constructor from filename and strip count |
+| 0x00472770 | SceneObject_BuildStrips | 39 | Builds triangle strips for SceneObject rendering |
+| 0x004ba754 | __ftol2 | 358 | CRT float-to-int64 conversion (compiler intrinsic) |
+| 0x004bc7c8 | __errno | 40 | CRT __errno - returns thread-local errno pointer |
+| 0x004bc7d1 | __doserrno | 23 | CRT __doserrno - returns thread-local DOS errno pointer |
+| 0x004bcda8 | __security_init_cookie | 34 | CRT security cookie initialization |
+| 0x004bac20 | strstr | 22 | CRT strstr - string search with SIMD optimization |
+| 0x004bc0d1 | strtok | 50 | CRT strtok - thread-safe string tokenizer |

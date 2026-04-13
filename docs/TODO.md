@@ -88,6 +88,32 @@
 - [ ] Reconstruct full Scene structure layout (all +0x864 offsets and beyond)
 - [ ] Document collision event dispatch per level
 
+## Milestone 10: Rendering Pipeline Documentation 🔄
+- [x] Document SceneObject_RenderFull (0x470150) - full render with alpha path
+- [x] Document SceneObject_RenderSingleObj (0x470440) - single object render
+- [x] Document SceneObject_BuildStrips (0x472770) - triangle strip builder
+- [x] Document SceneObject_CheckCollision (0x45dfd0) - collision thunk
+- [x] Document SceneObject_ComputeCollisionSphere (0x46fbb0) - bounding sphere
+- [x] Document MeshWorld_ctor (0x46f3d0) - mesh world construction
+- [x] Document Mesh_InitTexture (0x49338e) - D3D texture init
+- [x] Document Mesh_DrawWithTransform (0x493671) - draw with temp transform
+- [x] Document Mesh_ClearColorVertices (0x49373d) - zero matching vertices
+- [x] Document Graphics_DrawIndexedPrimitive (0x47dfb9) - D3D draw wrapper
+- [x] Document Scene_BeginFrameThenRender (0x46f3b0) - frame begin wrapper
+- [ ] Document remaining D3D vtable dispatch functions
+- [ ] Map full D3DDevice vtable (offsets 0x4, 0x8, 0xA8, 0x118, 0x120, 0x14C, 0x2C)
+- [ ] Reconstruct material system (4x4 matrix + color arrays)
+
+## Milestone 11: AthenaString System Documentation ✅
+- [x] Document AthenaString_AssignCStr (0x473500) - C string assign (75 xrefs)
+- [x] Document AthenaString_dtor (0x4736b0) - destructor (85 xrefs)
+- [x] Document AthenaString_AssignCRLF (0x473a50) - CRLF assign (21 xrefs)
+- [x] Document AthenaString_SprintfToBuffer (0x4bae43) - sprintf to buffer (71 xrefs)
+- [x] Document AthenaString_Sprintf (0x4bbdfd) - already known
+- [x] Document AthenaString_Format (0x466c70) - already known
+- [x] Document AthenaString_Assign (0x4737f0) - already known
+- [x] Document AthenaString_Init/CopyCtor/WriteTag - already known
+
 ## New Documentation Created
 - `BALL_PHYSICS_DECOMP.md` - Full ball physics system decompilation
 - `MESHWORLD_OBJECT_TYPES.md` - N:/E: object type reference

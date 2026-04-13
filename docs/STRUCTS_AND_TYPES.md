@@ -402,3 +402,26 @@ struct RNGState {
 // Return: (result >> 6) % range
 // Signed mode: if param_2==1 && Rand(2)==0, negate
 ```
+
+## AthenaString Class (0x473500 family)
+
+```c
+struct AthenaString {
+    char*       buffer;         // +0x00: pointer to char buffer
+    uint32_t    capacity;       // +0x04: allocated size (includes null terminator)
+    uint32_t    length;         // +0x08: string length (not including null)
+    uint32_t    null_flag;      // +0x0C: 1 if string was set to NULL originally
+    // Total: 0x10 bytes
+};
+
+// Key methods:
+// - AthenaString_AssignCStr (0x473500): assigns C string, frees old, allocates new
+// - AthenaString_dtor (0x4736b0): frees buffer, zeros fields, sets vtable to base
+// - AthenaString_AssignCRLF (0x473a50): assigns "\r\n"
+// - AthenaString_SprintfToBuffer (0x4bae43): sprintf into caller buffer
+// - AthenaString_Assign (0x4737f0): full assign with formatting
+// - AthenaString_Format (0x466c70): format string (98 xrefs)
+// - AthenaString_Sprintf (0x4bbdfd): sprintf to internal buffer
+
+// VTable at 0x4D290C (base dtor vtable)
+```
