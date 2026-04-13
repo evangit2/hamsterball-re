@@ -1176,3 +1176,83 @@ Offset | Field | Description
 | 0x8b530 | VertexShader_dtor | 3 | Vertex shader destructor: frees vertex/index buffers, releases DX objects |
 | 0x80c4d | Gfx_ResizeBuffers | 5 | D3D render target resize: recreates vertex/index buffers, validates device |
 | 0x472340 | Font_RenderToTextureComplex | 4 | Complex font rendering to texture with vertex buffers and shaders |
+
+## Session 18 - RumbleBoard/BoardLevel Scalar Destructors
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x425360 | RumbleBoard_CollSlices_scalar_dtor | Scalar deleting destructor for CollSlices board |
+| 0x425380 | RumbleBoard_CollSlices_dtor | Destructor for CollSlices board |
+| 0x4253e0 | RumbleBoard_Expert_Arena_scalar_dtor | Scalar deleting destructor for Expert Arena board |
+| 0x425400 | RumbleBoard9_PopCylinder_scalar_dtor | Scalar deleting destructor for RumbleBoard9 PopCylinder |
+| 0x425420 | BoardLevel14_RaceOfAges_Scene_scalar_dtor | Scalar deleting destructor for RaceOfAges scene |
+| 0x425440 | RumbleBoard_Odd_Arena_scalar_dtor | Scalar deleting destructor for Odd Arena board |
+| 0x425460 | BoardLevel_Glass_scalar_dtor | Scalar deleting destructor for Glass board level |
+| 0x425480 | RumbleBoard_scalar_dtor | Scalar deleting destructor for RumbleBoard |
+| 0x4254c0 | RumbleBoard_Level_scalar_dtor | Scalar deleting destructor for RumbleBoard level |
+
+## Session 18 - CreditsScreen, MusicPlayer, TourneyMenu
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x425920 | CreditsScreen_dtor | CreditsScreen destructor |
+| 0x425ac0 | CreditsScreen_Render | CreditsScreen render/layout |
+| 0x425d80 | CreditsScreen_Layout | CreditsScreen layout calculation |
+| 0x425f70 | CreditsScreen_scalar_dtor | CreditsScreen scalar deleting destructor |
+| 0x426030 | MusicPlayer_ctor | MusicPlayer constructor |
+| 0x4260c0 | MusicPlayer_dtor | MusicPlayer destructor |
+| 0x426130 | MusicPlayer_scalar_dtor | MusicPlayer scalar deleting destructor |
+| 0x426150 | MusicPlayer_Render | MusicPlayer render/update |
+| 0x4264a0 | TourneyMenu_GetRaceName | Get race name string for tournament |
+| 0x4264b0 | TourneyMenu_WriteSave | Write tournament save data |
+| 0x4265a0 | TourneyMenu_LoadSaveAndShow | Load tournament save and display |
+| 0x4266f0 | TourneyMenu_Advance | Advance tournament to next round |
+| 0x426780 | TourneyMenu_CreateBoard | Create board for tournament race |
+| 0x426af0 | TourneyRaceEntry_scalar_dtor | TourneyRaceEntry scalar deleting destructor |
+| 0x431d00 | TourneyRaceEntry_scalar_dtor2 | TourneyRaceEntry alternate scalar deleting destructor |
+| 0x432d20 | TourneyMenu_Render | TourneyMenu render function |
+
+## Session 18 - AthenaString
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x426bae | AthenaString_MoveAssign | AthenaString move assignment operator |
+| 0x426c50 | AthenaString_Reserve | AthenaString buffer reserve/capacity |
+
+## Session 18 - Pendulum/Rotator/CollisionFace
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x434030 | Rotator_PlayCollisionSound | Play collision sound for Rotator |
+| 0x434070 | Rotator_Render | Rotator render function |
+| 0x4362c0 | Pendulum_Cleanup_vtable | Pendulum vtable cleanup thunk |
+| 0x4362d0 | Pendulum_Render | Pendulum render function |
+| 0x436390 | Pendulum_AddIndex | Add index to Pendulum object |
+| 0x436530 | Rotator_Cleanup_vtable | Rotator vtable cleanup thunk |
+| 0x4366f0 | Rotator_ctor | Rotator constructor |
+| 0x4367d0 | Rotator_Cleanup | Rotator cleanup/release |
+| 0x4367e0 | Rotator_StartSound | Rotator start sound playback |
+| 0x436860 | CollisionFace_ctor | CollisionFace constructor |
+| 0x436910 | CollisionFace_dtor_vtable | CollisionFace vtable destructor thunk |
+| 0x436920 | Rotator_ctor_sound | Rotator constructor (sound variant) |
+| 0x436a10 | Rotator_Cleanup_vtable2 | Rotator vtable cleanup thunk variant 2 |
+| 0x436a20 | Pendulum_ctor | Pendulum constructor |
+| 0x436b10 | Pendulum_Cleanup | Pendulum cleanup/release |
+| 0x436b70 | Pendulum_PlayCollisionSound | Play collision sound for Pendulum |
+| 0x436c10 | Rotator_ctor_nosound | Rotator constructor (no sound variant) |
+| 0x436ce0 | Rotator_Cleanup_vtable3 | Rotator vtable cleanup thunk variant 3 |
+| 0x436cf0 | Rotator_TriggerSound | Rotator trigger/start sound |
+| 0x436e40 | Pendulum_scalar_dtor | Pendulum scalar deleting destructor |
+| 0x436e60 | Pendulum_Cleanup_vtable2 | Pendulum vtable cleanup thunk variant 2 |
+| 0x436e70 | Pendulum_ResetAndFire | Reset and fire Pendulum |
+| 0x436fb0 | Rotator_Cleanup_vtable4 | Rotator vtable cleanup thunk variant 4 |
+| 0x436fc0 | Rotator_RemoveAndFree | Remove and free Rotator object |
+| 0x4371a0 | Rotator_Cleanup_vtable5 | Rotator vtable cleanup thunk variant 5 |
+| 0x4371f0 | Rotator_MarkTriggered | Mark Rotator as triggered |
+| 0x4372f0 | Rotator_Cleanup_vtable6 | Rotator vtable cleanup thunk variant 6 |
+
+## Session 18 - Level_Cleanup Variants
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x433f00 | Level_Cleanup_vtable1 | Level vtable cleanup thunk variant 1 |
