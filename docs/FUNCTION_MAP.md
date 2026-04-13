@@ -1118,3 +1118,61 @@ Offset | Field | Description
 | 0x456870 | Mesh_DeletingDtor | 1 | Mesh scalar deleting destructor |
 | 0x479000 | Sound_EnumerateDevices | 1 | Sound device enumeration callback registration |
 | 0x480032 | D3DTexture_ResizeAndValidate | 5 | D3D texture resize and compression format validation |
+
+## Session 17 - SSE2/Math/Texture/AthenaString/Gfx Functions
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x4b22ab | BitStream_ReadBitsSSE2 | 19 | SSE2 bitstream reader: reads N bits from compressed stream, skips 0xFF markers |
+| 0x4a0f3a | Matrix_Inverse4x4_SSE2 | 8 | SSE2 4x4 matrix inverse using cofactor expansion + Newton-Raphson reciprocal |
+| 0x4a6b80 | SSE2_SetFPControlWord | 9 | Sets FPU control word from param, stores to global DAT_00535280 |
+| 0x4aba49 | Mem_Zero | 8 | Optimized memset-to-zero: dword loop + byte tail |
+| 0x4ad576 | Malloc_OrLongjmp | 9 | Safe malloc wrapper, longjmps on failure with "Out of Memory" |
+| 0x4bc360 | StrCat_Fast | 9 | Optimized strcat with dword-aligned null detection (0x7efefeff trick) |
+| 0x4b8564 | BitStream_CopyToOutput | 8 | Bitstream copy-to-buffer with checksum callback and double-buffer |
+| 0x4c183e | Noop2 | 8 | Empty no-op function stub |
+| 0x4c7152 | ReturnZero | 8 | Stub function returning 0 |
+| 0x459d96 | D3DX_ShaderDispatch0 | 3 | D3DX shader dispatch: calls D3DX_DetectShaderProfile then vtable[0x4F7194] |
+| 0x459e34 | D3DX_ShaderDispatch1 | 4 | D3DX shader dispatch via PTR 0x4F71B8 |
+| 0x459ed1 | D3DX_ShaderDispatch2 | 4 | D3DX shader dispatch via PTR 0x4F71CC |
+| 0x467e40 | AthenaList_Ctor | 4 | AthenaList constructor: sets vtable 0x4E998C, calls StdString_Substr |
+| 0x46a0d0 | Audio_StopChannel | 4 | BASS_ChannelStop on channel at this+0x08 |
+| 0x46b840 | SceneObject_EmptyListCtor | 3 | Sets vtable to SceneObject_DeletingDtor(0x4D9368), inits AthenaList |
+| 0x46db10 | App_Shutdown | 4 | App shutdown: destroys window, releases 5 COM objects, CoUninitialize |
+| 0x46dfa0 | NetworkConnection_Ctor | 3 | NetworkConnection init: sets "Not Connected", +0x0C=1.0f |
+| 0x472990 | Gadget_LabelCtor | 4 | UI label widget ctor: Gadget+label, vtable 0x4D9E68, name at +0x878 |
+| 0x69b20 | UIWidget_HitTest | 3 | UI hit-test: checks +0x420 rect or iterates children for point containment |
+| 0x73480 | AthenaString_Reserve | 4 | String reserve: allocates new buffer, copies old string, free old |
+| 0x73600 | AthenaString_Length | 3 | Recalculates string length from buffer, caches at +0x14 |
+| 0x73640 | AthenaString_Find | 4 | strstr wrapper: finds substring, returns offset or -1 |
+| 0x77010 | D3DX_RegistryGetter | 4 | Sets vtable from DirectX registry path struct at 0x4DA65C |
+| 0x75dc0 | CRC32_Compute | 3 | CRC32 using 256-entry lookup table at 0x4F7534 |
+| 0x77670 | Vec3_ClosestPointOnLine | 3 | Projects point onto line segment, clamps t, returns nearest point |
+| 0x77970 | Texture_StreamRead | 3 | Texture streaming read with 1KB chunks and progress callback |
+| 0x77ac0 | Texture_BinarySearch | 4 | Texture binary search for load position optimization |
+| 0x77d60 | Texture_LoadFromStream | 4 | Texture load from stream with D3D validation and retry |
+| 0x78680 | Texture_dtor | 4 | Texture destructor: frees sub-textures, pixel buffers, refcount release |
+| 0x45ace5 | D3DX_ShaderDispatch_4 | 4 | D3DX shader dispatch with 4 params via PTR 0x4F7214 |
+| 0x45ad75 | D3DX_ShaderDispatch_4b | 4 | D3DX shader dispatch with 4 params via PTR 0x4F71F8 |
+| 0x45ae05 | D3DX_ShaderDispatch_2a | 4 | D3DX shader dispatch with 2 params via PTR 0x4F7208 |
+| 0x45aea1 | D3DX_ShaderDispatch_2b | 4 | D3DX shader dispatch with 2 params via PTR 0x4F720C |
+| 0x45af3e | D3DX_ShaderDispatch_2c | 4 | D3DX shader dispatch with 2 params via PTR 0x4F7210 |
+| 0x45afdc | D3DX_ShaderDispatch_3 | 4 | D3DX shader dispatch with 3 params via PTR 0x4F7238 |
+| 0x45b521 | D3DX_ShaderDispatch_noarg | 4 | D3DX shader dispatch with no args via PTR 0x4F71FC |
+| 0x45b7a8 | D3DX_ShaderDispatch_noarg2 | 4 | D3DX shader dispatch via PTR table |
+| 0x45baeb | D3DX_ShaderDispatch_noarg3 | 4 | D3DX shader dispatch via PTR table |
+| 0x45bc10 | D3DX_ShaderDispatch_noarg4 | 4 | D3DX shader dispatch via PTR table |
+| 0x45bf20 | D3DX_ShaderDispatch_noarg5 | 4 | D3DX shader dispatch via PTR table |
+| 0x8a160 | Texture_SetPool | 6 | Sets texture pool on struct (calls init then assigns param) |
+| 0x8a180 | Pool_dtor | 6 | Pool destructor: frees pool list, zeroes 8 dwords |
+| 0x8a560 | Texture_ValidateOrBuild | 5 | Validates texture generation or rebuilds from source data |
+| 0x8a860 | Texture_DestroyBuffers | 5 | Destroys indexed buffer list (frees each entry then array) |
+| 0x8a8d0 | Mesh_Init | 3 | Mesh initializer: zeroes 8 dwords, callocs 0xCA8 byte sub-struct |
+| 0x8a900 | Mesh_dtor | 6 | Mesh destructor: frees vertex/index/shader buffers, zeroes 8 dwords |
+| 0x89df0 | Pool_Free | 4 | Frees two pool lists and zeroes 0x14 dwords |
+| 0x89e20 | Texture_ComputeChecksum | 4 | Iterates byte stream summing values, marks 0x80000000 on non-0xFF terminator |
+| 0x8b1c0 | Pool_Alloc | 6 | Pool allocator: 8-byte aligned alloc with linked-list overflow |
+| 0x8b2a0 | VertexDeclaration_dtor | 3 | Vertex declaration destructor: frees buffer at +0x4C, zeroes 0x18 dwords |
+| 0x8b530 | VertexShader_dtor | 3 | Vertex shader destructor: frees vertex/index buffers, releases DX objects |
+| 0x80c4d | Gfx_ResizeBuffers | 5 | D3D render target resize: recreates vertex/index buffers, validates device |
+| 0x472340 | Font_RenderToTextureComplex | 4 | Complex font rendering to texture with vertex buffers and shaders |
