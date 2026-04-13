@@ -1,8 +1,9 @@
 # Hamsterball - Function Map
 
-Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
-Total functions: 3,958 (Ghidra auto-analysis)
-User-labeled: 80+
+|Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
+|Total functions: 3,797 (Ghidra analysis)
+||Documented: 1,758 (46.3%)
+||User-labeled: 180+
 
 ## Entry Point and Lifecycle
 
@@ -22,7 +23,20 @@ User-labeled: 80+
 | 0x00455380 | Graphics_Initialize | D3D8 init, adapter check, device creation |
 | 0x00455A60 | Graphics_Defaults | Set default render states |
 | 0x00453B50 | Graphics_BeginFrame | Begin frame/render setup |
-| 0x00455A90 | Graphics_PresentOrEnd | Present frame or end scene |
+|| 0x00455A90 | Graphics_PresentOrEnd | Present frame or end scene |
+|| 0x004542C0 | Graphics_ctor | Graphics constructor (vtable 0x4D88A0, init render context, texture cache, frustum) |
+|| 0x00455360 | Graphics_dtor | Graphics destructor (cleanup + optional free) |
+|| 0x00454550 | Graphics_Cleanup | Release D3D objects, free texture path, clear cache |
+|| 0x00454000 | Graphics_SetTexturePath | Set custom texture prefix path (strdup at +0x7D8) |
+|| 0x00454060 | D3DFMT_ToString | Convert D3DFORMAT enum to debug string |
+|| 0x00454B50 | Graphics_SetViewport | Set viewport dimensions |
+|| 0x00454D30 | Graphics_Reset | Reset device with new params, CreateDevice twice |
+|| 0x00455D60 | Graphics_DrawScreenRect | Draw 2D screen rectangle (x,y,w,h → TLVERTEX triangle strip). 63 xrefs. |
+|| 0x00455110 | Graphics_ApplyMaterialAndDraw | Apply material/render states + draw textured geometry. 17 xrefs. |
+|| 0x00454190 | Graphics_SetRenderMode | Set shading mode, reset vertex shader, re-apply render states |
+|| 0x00455B80 | Graphics_SetStreamBuffers | Set vertex buffer stream sources for rendering |
+|| 0x00457FA0 | RenderContext_Init | Initialize render context struct (0x50 bytes, vtable 0x4D8E68) |
+|| 0x00401160 | Graphics_SetViewportClip | Set viewport clipping bounds from 4x4 matrix |
 
 ## Audio Subsystem (BASS)
 
@@ -109,6 +123,37 @@ User-labeled: 80+
 | 0x004476B0 | RegisterDialog_ctor | Register/purchase dialog |
 | 0x0042E6F0 | QuitRaceMenu | Race quit confirmation menu |
 
+## Ball Physics System
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00403100 | Ball_SetTiltedGravity | Set gravity plane to tilted (value 1, normal -1,0,0) |
+| 0x00403150 | Ball_SetFlatGravity | Set gravity plane to flat (value 2, normal 0,0,1) |
+| 0x00403850 | Ball_SetTrajectory | Set ball trajectory direction + force scale |
+| 0x00403750 | Ball_ApplyTrajectory | Apply trajectory force (normalize+scale direction, play sound, frame counter=100) |
+| 0x00403980 | Ball_FindMeshCollision | Wrapper for Mesh_FindClosestCollision |
+| 0x00401DD0 | Ball_CreateTrailParticles | Create trail particles (10 iterations, spawn 0x28 byte objects) |
+| 0x00401920 | Ball_RenderShadow | Render ball shadow (scale by radius*constant, position at ball XYZ) |
+| 0x00402BC0 | AthenaList_SetIndex | Set list iteration index |
+
+## Collision System
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00465EF0 | Collision_TraverseSpatialTree | Recursive octree traversal for collision tests |
+| 0x00453780 | AthenaList_Append | Append item to dynamic AthenaList |
+
+## Level Rendering
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0040B090 | Level_InitScene | Init camera/scene (projection, fog, find CAMERALOCUS) |
+| 0x0040B420 | Level_RenderDynamicObjects | Render moving objects (platforms) using Timer position |
+| 0x0040B570 | Level_RenderObjects | Iterate objects calling vtable+0x0C (render callback) |
+| 0x0040B600 | Level_UpdateAndRender | Full update pass: merge lists, pre-render, shadow, cleanup |
+| 0x0040B9C0 | Level_SetObjectTransform | Set world transform from position data |
+| 0x0040ACA0 | Level_SelectCameraProfile | Select camera profile by level difficulty (4-15) |
+
 ## Level/Collision Loading
 
 | Address | Name | Description |
@@ -162,6 +207,20 @@ User-labeled: 80+
 | Address | Name | Description |
 |---------|------|-------------|
 | 0x00429200 | ESellerate_Init | eSellerate DRM initialization |
+
+## Math Utilities
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00401AA0 | Vec3_NormalizeAndScale | Normalize 3D vector and scale to length param_1. 59 xrefs — most common math utility. |
+| 0x00401D60 | Matrix_TransformVec3 | Transform 3D vector by 4x3 matrix. 15 xrefs. |
+| 0x00402BF0 | Vec3_Copy | Copy 3 floats (12 bytes) with self-check. 18 xrefs. |
+| 0x00453150 | Matrix_Scale4x4 | Set 4x4 matrix row scale values. |
+| 0x00453200 | Matrix_Identity | Set matrix to identity (vtable pointer). |
+| 0x004532E0 | AthenaList_SortedInsert | Insert with insertion-sort (ascending/descending). |
+| 0x00458B50 | Matrix_ScaleTransform | Create 4x4 matrix by scaling source rows. |
+| 0x0040A050 | Color_RandomRGBA | Generate 32-bit color from 4 random bytes. |
+| 0x004580D0 | AABB_ContainsPoint | Test if point inside AABB (6 floats). |
 
 ## Misc/Utility
 
@@ -291,4 +350,205 @@ Offset | Field | Description
 - 80Hz (0x18)
 - 85Hz (0x19)
 - 90Hz (0x1a)
-- 100Hz+ (0x17 fallback)
+|- 100Hz+ (0x17 fallback)|
+
+## Scene System (Core Lifecycle)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00419770 | Scene_dtor | Master scene destructor. Destroys all AthenaList items (dynamic +0x335, sub-objects +0x43B, static +0x22E), frees level clones (+0x22B/+0x22C), resources (+0x21F, +0xE92), clears 8+ AthenaLists, destroys matrix arrays, cleanup |
+| 0x00419C00 | Scene_Update | Main scene tick. Demo timer (buy dialog), unpause check, ball position updates from +0xA75 list, camera tracking from App+0x5DC, screen offset animation (+0xA6E, -10/frame to 0 or -800), update+delete static objects in +0x22E, vmethods +0x4C/0x50/0x54/0x58 (render passes), iterate dynamic objects +0xD8B |
+| 0x0041A2E0 | Scene_Render | Main render dispatch by player count. Mode 0 (1P): render3D/renderObjects/renderOverlay then HUD. Mode 1 (2P): setup camera from player list +0x3A38, same. Mode 2 (3-4P split): per-viewport Graphics_SetViewport, camera per player |
+| 0x00419FA0 | Scene_SetCamera | Camera positioning. Ball pos from +0x758 + scene offset +0x434C. Boundary check +0x3F1C: distance clamp with sqrt+falloff. Object+0x744 noise randomizer. Timer +0x3F2C: snap to ball for N frames. FOV 0.9 from +0x29BC |
+| 0x0040DFA0 | Scene_RenderWithCamera | Two-pass camera render: front face then 180-degree back face. Camera angle +0x43A0, Y offset +0x43A4, X offset +0x43B0, iterator vtable +0x4390 |
+| 0x00418870 | Scene_CreateObject4f | Create object at (x,y,z,w) with BaseObject vtable 0x4CF584, set position via FUN_45D450 |
+| 0x0040C0F0 | Scene_CreateFlags | Scan for FLAG/SMALLFLAG objects, create Flag (0x8C size), append to +0x2160, scale SMALLFLAG by constant |
+| 0x0040C270 | Scene_CreateSigns | Scan for SIGN objects, create Sign (0x10FC size), SIGN-TARPIT gets tar texture, added to +0xCD4 and render lists |
+| 0x0040C430 | Scene_CreateDynamicObjects | Generic object creation loop via vmethod +0x84, append to +0x335 (dynamic) and level lists, also +0x43B sub-objects |
+| 0x00419B70 | Scene_ForEachBall_SetVelocity | Iterate ball list +0x29D4, call Ball_SetVelocity on each |
+
+## SceneObject Class (vtable 0x4D934C, size 0xD4)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0046B4F0 | SceneObject_ctor | Constructor. Sets vtable, initializes 3 matrix transforms (base scale +0x94, rotation +0xA8, world +0xBC), pos=0, visible +0x88=1, zOrder +0x8C=-1, radius +0xCC=sqrt(const), type +0xD0=3 |
+| 0x0046B650 | SceneObject_dtor | Destructor: calls Cleanup then optionally frees |
+| 0x0046B3F0 | SceneObject_Cleanup | Reset vtable, unlink from scene list (+0x710-0x730), reset 3 identity matrices |
+| 0x0046B4D0 | SceneObject_SetVisible | Set visibility flag +0x88, call vmethod +0xC |
+| 0x00453BD0 | Scene_RegisterObject | Assign ID to obj+0x8C, call vmethod +0xC (init), store in scene array +0x710+id*4 |
+
+### SceneObject Structure Layout
+
+| Offset | Type | Field | Description |
+|--------|------|-------|-------------|
+| +0x000 | void* | vtable | Virtual function table pointer (0x4D934C) |
+| +0x004 | int | gfxContext | Graphics context pointer |
+| +0x008-0x01C | int[6] | field_08 | Zeroed at init |
+| +0x088 | char | visible | Visibility flag (1=visible) |
+| +0x08C | int | zOrder | Z-order / object ID (-1 default) |
+| +0x094 | float[5] | baseScaleMatrix | Base scale 4x4 matrix (identity 1.0) |
+| +0x0A8 | float[5] | rotationMatrix | Rotation 4x4 matrix (zero at init) |
+| +0x0BC | float[5] | worldMatrix | World transform 4x4 matrix (zero at init) |
+| +0x0CC | float | radius | Bounding radius = sqrt(global_constant) |
+| +0x0D0 | int | type | Object type (3 default) |
+
+## Level Setup Functions
+
+| Address | Name | Level Path | Special Features |
+|---------|------|------------|-----------------|
+| 0x00416270 | Scene_SetupLevelDark | levels\leveldark | 2-player SceneObjects when !multiplayer, App+0x5DC/+0x67C |
+| 0x0040E190 | Scene_SetupLevel5 | levels\level5 | Simple load (no extras) |
+| 0x0040EA90 | Scene_SetupLevel6 | levels\level6 | LAUNCH01/02/03 + CHROMESHADOW positions, launcher timer +0x10DD=200 |
+| 0x0040F360 | Scene_SetupLevel7 | levels\level7 | Simple load (no extras) |
+| 0x00410830 | Scene_SetupLevel9 | levels\level9 | PILLAR list, MAGNIFYER on hard, CLOUDSCAPE, fog + projection setup |
+| 0x00411F60 | Scene_SetupLevel10 | levels\level10 | 4 bumpers, FUN_436FC0 removal on easy, TarBubble list, multiplayer append |
+| 0x004110D0 | Scene_SetupLevelCascade | levels\levelcascade | 8 bumpers (N:BUMPER%d 0-7) |
+| 0x00411540 | Scene_SetupLevelUp | levels\levelup | Initial ball pos (0,50,0), VAC-IN/VAC-OUT vacuum tubes |
+
+## Reflection Rendering Passes
+
+| Address | Name | Object Count | Offset Base | Float Offset |
+|---------|------|-------------|-------------|-------------|
+| 0x00410670 | Scene_RenderReflectiveObjects | 8 | +0x438C | +0x644C |
+| 0x00411380 | Scene_RenderReflectiveObjects7 | 8 | +0x436C | +0x642C |
+| 0x00412DC0 | Scene_RenderReflectiveObjects4 | 4 | +0x439C | +0x53FC |
+
+## Extended Utility Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00453180 | Vec3_Init | Initialize Vec3 with vtable 0x4CF300, 3 floats, default scale 1.0 |
+| 0x0040A0B0 | Matrix_TransformVec3 | Transform 3D vector by 4x4 matrix: result = M * v |
+| 0x00426E90 | StdString_Assign | MSVC std::string::assign (SSO 0xF threshold, word+byte copy) |
+| 0x0040A040 | NoOp | Empty function (58 xrefs, default/no-op handler) |
+| 0x00409AC0 | BaseObject_Init | Set vtable pointer to 0x4CF584 (54 xrefs) |
+| 0x00409D60 | RepeatCall | Call function pointer N times (34 xrefs) |
+
+## Ball Extended Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0040AF90 | Ball_GetTransform | Read ball transform (+0x6C/+0x70/+0xC0/+0xC4) into output struct |
+| 0x0040AF00 | SceneObject_InitAtPosition | Initialize SceneObject at (x,y) with Vec3 vtable |
+
+## UI and Input (Extended)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00409B90 | UI_DrawTextShadow_Wrapper | Wraps UI_DrawTextShadow with Vec3 default params |
+| 0x00428F10 | Input_CheckKeyCombo | Check key combos. param_1=2: escape. 0-3: iterate 4 input bindings, 50-frame debounce |
+
+## Game State Management (Extended)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x004287C0 | App_StartRace | Restart audio, setup race, play sound, free dialogs, start music (vol 1.0/0.5) |
+| 0x00428ED0 | Difficulty_GetTimeModifier | Time modifier by difficulty: 0=easy, 1=normal, 2=hard, default=0.0 |
+| 0x00413BD0 | SinkPlatform_OnCollision | Match "DN:SINKPLATFORM" name, call sinking behavior, then base handler |
+
+## Level Texture/Scale Assignment
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x004130E0 | Level_AssignTextures | Match object textures by ID against 20-slot table at App+0x2C8 |
+| 0x00411BA0 | Level_AssignTexturesAndScales | Set scale based on max(x,y,z) vs threshold, then match textures |
+
+## Scene Vtable Layout (0x4D0260, 36 entries)
+
+| Slot | Offset | Address | Name | Description |
+|------|--------|---------|------|-------------|
+| 0 | +0x00 | 0x425020 | Scene_DeletingDtor | Destructor + free if flag&1 |
+| 1 | +0x04 | 0x419C00 | Scene_Update | Main tick (9-step: input, bumpers, physics, update, level, objects, cameras, render, HUD) |
+| 2 | +0x08 | 0x41A2E0 | Scene_Render | 1P/2P/split render dispatch |
+| 3 | +0x0C | 0x4692F0 | Scene_HandleInput | Iterate menu items, check input, set current item at +0x864, play sound |
+| 4 | +0x10 | 0x469220 | Scene_ActivateCurrentItem | Call vmethod+0x10 on current menu item (+0x864) |
+| 5 | +0x14 | 0x4130A0 | Scene_vmethod5 | Unknown (arena-specific override) |
+| 6 | +0x18 | 0x469280 | Scene_SelectCurrentItem | Call vmethod+0x0C on current menu item (+0x864) |
+| 7 | +0x1C | 0x409D90 | Scene_NoOp | Empty (no-op stub, 3 bytes) |
+| 8 | +0x20 | 0x40B400 | Level_RenderDynamicObjects | Level dynamic object rendering |
+| 9 | +0x24 | 0x44B840 | NoOp_return | Empty stub (default) |
+| 10 | +0x28 | 0x44B840 | NoOp_return | Empty stub (default) |
+| 11 | +0x2C | 0x4692A0 | Scene_ClearCurrentItem | Set current item ptr (+0x864) to NULL |
+| 12 | +0x30 | 0x4692A0 | Scene_ClearCurrentItem | Same as slot 11 |
+| 13 | +0x34 | 0x44B840 | NoOp_return | Empty stub (default) |
+| 14 | +0x38 | 0x409DA0 | Scene_SetObjectTransform? | Object transform (near Level_Render) |
+| 15 | +0x3C | 0x469430 | Scene_vmethod15 | Unknown |
+| 16 | +0x40 | 0x419740 | Scene_method16 | Near Scene_dtor (helper) |
+| 17 | +0x44 | 0x4692B0 | Scene_SaveAndCleanup | Calls FUN_469AC0 (save + cleanup) |
+| 18 | +0x48 | 0x40B090 | Level_InitScene | Level scene initialization |
+| 19 | +0x4C | 0x41B130 | Scene_vmethod19 | Game logic override |
+| 20 | +0x50 | 0x41B540 | Scene_vmethod20 | Game logic override |
+| 21 | +0x54 | 0x40A040 | NoOp | Empty (58 xrefs) |
+| 22 | +0x58 | 0x41A540 | Scene_vmethod22 | Game logic override |
+| 23 | +0x5C | 0x409DE0 | Scene_vmethod23 | Game logic override |
+| 24 | +0x60 | 0x40B420 | Level_RenderDynamicObjects_2 | Alternate dynamic render |
+| 25 | +0x64 | 0x40B600 | Level_UpdateAndRender | Combined update + render |
+| 26 | +0x68 | 0x40B570 | Level_RenderObjects | Level object rendering |
+| 27 | +0x6C | 0x41B710 | Scene_vmethod27 | Game logic override |
+| 28 | +0x70 | 0x41BFD0 | Scene_vmethod28 | Game logic override |
+| 29 | +0x74 | 0x40C5D0 | Scene_vmethod29 | Game logic override |
+| 30 | +0x78 | 0x44B840 | NoOp_return | Empty stub (default) |
+| 31 | +0x7C | 0x41AC70 | Scene_vmethod31 | Game logic override |
+| 32 | +0x80 | 0x41C5B0 | Scene_vmethod32 | Called by RumbleBoard virtual dispatch |
+| 33 | +0x84 | 0x419750 | Scene_method33 | Near Scene_dtor helper |
+| 34 | +0x88 | 0x44B840 | NoOp_return | Empty stub (default) |
+| 35 | +0x8C | 0x41A9A0 | Scene_vmethod35 | Game logic override |
+
+## SceneObject Vtable Layout (0x4D934C, 10 entries)
+
+| Slot | Offset | Address | Name | Description |
+|------|--------|---------|------|-------------|
+| 0 | +0x00 | 0x46B650 | SceneObject_dtor | Destructor (sets vtable, flags cleanup) |
+| 1 | +0x04 | 0x46B490 | SceneObject_SetPosition | Sets position (this+0x08..0x10) then calls vmethod+0x0C |
+| 2 | +0x08 | 0x46B4B0 | SceneObject_SetScale | Sets scale (this+0x14..0x1C) then calls vmethod+0x0C |
+| 3 | +0x0C | 0x46B670 | SceneObject_Render | Build world matrix from base+rotation+scale transforms, call D3D SetTransform+SetMaterial |
+| 4 | +0x10 | 0x46B4D0 | SceneObject_SetVisible | Toggle visibility flag (+0x88) |
+| 5 | +0x14 | - | (padding) | Non-code sentinel value |
+| 6 | +0x18 | - | (padding) | Non-code sentinel value |
+| 7 | +0x1C | 0x46B9F0 | SceneObject_DeletingDtor | Calls BaseDtor then free if flag&1 |
+| 8 | +0x20 | 0x46B910 | SceneObject_BaseDtor | (function exists but not created) |
+| 9 | +0x24 | 0x46B980 | SceneObject_vmethod9 | (function exists but not created) |
+
+## Rumble/Arena Board Initialization Functions
+
+| Address | Name | Level Path | Special Features |
+|---------|------|------------|-----------------|
+| 0x00413C20 | RumbleBoard_WarmUp_Init | levels\arena-WarmUp | Simple load + clone |
+| 0x00413CE0 | RumbleBoard_Beginner_Init | levels\arena-beginner | 4 bumpers (N:BUMPER%d), Level_ctor + Clone |
+| 0x00414180 | RumbleBoard_Intermediate_Init | levels\arena-intermediate | Simple load + clone |
+| 0x00414240 | RumbleBoard_Dizzy_Init | levels\arena-dizzy | Extra Level3-Swirl loaded, no bumpers |
+| 0x004144B0 | RumbleBoard_Tower_Init | levels\arena-tower | Simple load + clone |
+| 0x00414960 | RumbleBoard_Up_Init | levels\arena-up | Simple load + clone |
+| 0x00414B10 | RumbleBoard_Expert_Init | levels\arena-expert | Simple load + clone |
+| 0x00414CE0 | RumbleBoard_Odd_Init | levels\arena-Odd | Simple load + clone |
+| 0x00414F00 | RumbleBoard_Toob_Init | levels\arena-Toob | 5 bumpers (N:BUMPER%d) |
+| 0x004153A0 | RumbleBoard_Wobbly_Init | levels\arena-Wobbly | Simple load + clone |
+| 0x004158C0 | RumbleBoard_Sky_Init | levels\arena-Sky | PILLAR name scan via __strnicmp, append to +0x11FB |
+| 0x00416080 | RumbleBoard_Master_Init | levels\arena-Master | Simple load + clone |
+| 0x00416F40 | RumbleBoard_Neon_Init | levels\arena-neon | Scale matrix setup for dynamic objects, SceneObject at +0x11F9 |
+| 0x00417DF0 | RumbleBoard_Glass_Init | levels\arena-glass | Simple load + clone |
+| 0x00418540 | RumbleBoard_Impossible_Init | levels\arena-impossible | Simple load + clone |
+
+**Common RumbleBoard pattern:** Level_ctor → Level_Clone → CameraLookAt → vmethod+0x80 (post-init). Simple arenas have just load+clone; complex ones add bumper objects, pillar scans, or SceneObject decorations.
+
+## Board (Tournament) Constructors
+
+| Address | Name | Tournament | Sub-Levels |
+|---------|------|-----------|-----------|
+| 0x00419030 | Board_ctor | (base) | Base tournament board constructor |
+| 0x0041F4B0 | Board_ctor (Toob) | "Rodenthood" | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1, Level8-Blockdawg2 |
+| 0x0041D060 | BoardLevel3_ctor | (tournament) | Tournament level 3 board |
+
+## Key SceneObject Methods
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0046B4F0 | SceneObject_ctor | Constructor (0xD4 bytes, vtable 0x4D934C, init pos/scale/rot matrices) |
+| 0x0046B650 | SceneObject_dtor | Destructor (sets vtable, flags cleanup) |
+| 0x0046B3F0 | SceneObject_Cleanup | Cleanup helper (clears lists, resets state) |
+| 0x0046B4D0 | SceneObject_SetVisible | Toggle visibility at +0x88 |
+| 0x0046B490 | SceneObject_SetPosition | Set position (3 floats at +0x08) + vmethod+0x0C |
+| 0x0046B4B0 | SceneObject_SetScale | Set scale (3 floats at +0x14) + vmethod+0x0C |
+| 0x0046B670 | SceneObject_Render | D3D world matrix build + SetTransform + SetMaterial |
+| 0x0046B860 | SceneObject_BaseDtor | Iterate child AthenaList, call each dtor(1), clear list |
+| 0x0046B9F0 | SceneObject_DeletingDtor | Calls BaseDtor then free if scalar deleting |

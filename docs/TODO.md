@@ -70,6 +70,24 @@
 - [ ] Match specific function signatures
 - [ ] Verify with binary diff
 
+## Milestone 9: Scene System Documentation 🔄
+- [x] Decompile Scene_dtor (0x419770) - master scene destructor
+- [x] Decompile Scene_Update (0x419C00) - main tick function
+- [x] Decompile Scene_Render (0x41A2E0) - 1P/2P/split render
+- [x] Decompile Scene_SetCamera (0x419FA0) - camera positioning
+- [x] Decompile Scene_RenderWithCamera (0x40DFA0) - two-pass render
+- [x] Document SceneObject class (vtable 0x4D934C, 0xD4 bytes)
+- [x] Document 8 level setup functions (leveldark through levelup)
+- [x] Document 3 reflection render passes
+- [x] Document scene object lists (6 lists at known offsets)
+- [x] Document Scene vtable layout (36 entries at 0x4D0260)
+- [x] Document SceneObject vtable layout (10 entries at 0x4D934C)
+- [x] Document all 14 RumbleBoard arena init functions
+- [x] Document Board (Tournament) constructors (Toob/Rodenthood level8)
+- [ ] Document remaining level setup functions (level11-15, if they exist as Scene_Setup)
+- [ ] Reconstruct full Scene structure layout (all +0x864 offsets and beyond)
+- [ ] Document collision event dispatch per level
+
 ## New Documentation Created
 - `BALL_PHYSICS_DECOMP.md` - Full ball physics system decompilation
 - `MESHWORLD_OBJECT_TYPES.md` - N:/E: object type reference

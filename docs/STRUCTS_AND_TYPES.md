@@ -177,4 +177,134 @@ BASS (BASS.dll):
 | 0x4D03D0 | "RACE TIME:" string | CONFIRMED |
 | 0x4D2659 | "DATA\\HS.CFG" path string | CONFIRMED |
 | 0x4D8F9E | "%s.mesh" format string | CONFIRMED |
+
+## SceneObject Structure (vtable 0x4D934C, CONFIRMED from Ghidra decompilation)
+
+```c
+// Size: 0xD4 (212 bytes)
+// Constructor: SceneObject_ctor at 0x46B4F0
+typedef struct {
+    void*    vtable;          // +0x000 - Always 0x4D934C
+    int      gfxContext;      // +0x004 - Graphics context pointer (param_1 of ctor)
+    int      field_08;        // +0x008 - Zeroed
+    int      field_0C;        // +0x00C - Zeroed
+    int      field_10;        // +0x010 - Zeroed
+    int      field_14;        // +0x014 - Zeroed
+    int      field_18;        // +0x018 - Zeroed
+    int      field_1C;        // +0x01C - Zeroed
+    // +0x20 to +0x87: padding / unknown
+    char     visible;         // +0x088 - Visibility flag (1=visible, 0=hidden)
+    int      zOrder;          // +0x08C - Z-order / object ID (-1 = unregistered)
+    float    baseScale[5];   // +0x094 - 4x4 base scale matrix (initialized to identity 1.0,1.0,1.0,1.0)
+    float    rotation[5];    // +0x0A8 - 4x4 rotation matrix (initialized to zero)
+    float    worldMatrix[5]; // +0x0BC - 4x4 world transform matrix (initialized to zero)
+    float    radius;         // +0x0CC - Bounding radius = sqrt(global_constant)
+    int      type;            // +0x0D0 - Object type (3 = default)
+} SceneObject; // Total: 0xD4
+
+// Scene registration:
+// Scene_RegisterObject (0x453BD0): obj->zOrder = id; obj->vtable[3](); scene[0x710 + id*4] = obj;
+```
+
+## Vec3 Structure (vtable 0x4CF300, CONFIRMED)
+
+```c
+// Size: 20 bytes (0x14)
+// Constructor: Vec3_Init at 0x453180
+typedef struct {
+    void*  vtable;    // +0x000 - 0x4CF300
+    float  x;         // +0x004
+    float  y;         // +0x008
+    float  z;         // +0x00C
+    float  w;         // +0x010 - Default 1.0 (0x3F800000)
+} Vec3;
+```
+
+## Scene Object Offsets (CONFIRMED from Scene_dtor and Scene_Update)
+
+```c
+// Scene object (large, ~0xFC8+ bytes based on dtor iteration)
+// Scene_dtor at 0x419770 shows these lists:
+#define SCENE_STATIC_OBJECTS    0x22E   // Static objects (persistent, updated each frame)
+#define SCENE_DYNAMIC_OBJECTS   0x335   // Dynamic objects (moving platforms etc.)
+#define SCENE_SUB_OBJECTS       0x43B   // Sub-objects (linked to dynamic, removable)
+#define SCENE_LEVEL_ORIG        0x22B   // Original Level object pointer
+#define SCENE_LEVEL_CLONE       0x22C   // Cloned Level object pointer
+#define SCENE_RESOURCE1          0x21F   // Resource pointer 1
+#define SCENE_RESOURCE2         0xE92   // Resource pointer 2
+#define SCENE_BALL_LIST         0xA75   // Ball/character list (position updates)
+#define SCENE_EXTRA_LIST        0xC81   // Additional object list
+#define SCENE_RENDER_LIST       0xD8B   // Render update list
+// Scene_Update at 0x419C00:
+#define SCENE_FRAME_COUNTER    0xD88   // Incremented each tick
+#define SCENE_GAME_STATE        0x708   // 3 = racing
+#define SCENE_SCREEN_OFFSET    0xA6E   // Screen offset (decrements 10/frame)
+#define SCENE_DEMO_TIMER_ON    0x10D6  // Demo expiration timer active
+#define SCENE_DEMO_COUNTDOWN   0x10D7  // Demo countdown frames
+#define SCENE_UNPAUSE_FLAG     0x10DA  // Unpause gate
+```
+
+## Key Global Addresses (continued)
+
+| Address (VA) | Description | Confidence |
+|---|---|---|
 | 0x4D8D80 | "Direct3DCreate8" import name | CONFIRMED |
+| 0x4D0260 | Scene vtable (36 virtual method entries) | CONFIRMED |
+| 0x4D934C | SceneObject vtable (10 virtual method entries) | CONFIRMED |
+| 0x4CF300 | Vec3 vtable | CONFIRMED |
+| 0x4D9368 | SceneObject secondary vtable (set by BaseDtor) | CONFIRMED |
+
+### Scene Vtable Constants
+
+```c
+// Scene vtable at 0x4D0260 - slot offsets
+#define SCENE_VT_DELETING_DTOR    0x00  // 0x425020: ~Scene + free
+#define SCENE_VT_UPDATE           0x04  // 0x419C00: Scene_Update
+#define SCENE_VT_RENDER           0x08  // 0x41A2E0: Scene_Render
+#define SCENE_VT_HANDLE_INPUT     0x0C  // 0x4692F0: Menu item input handling
+#define SCENE_VT_ACTIVATE_ITEM    0x10  // 0x469220: Activate current item
+#define SCENE_VT_SELECT_ITEM      0x18  // 0x469280: Select current item
+#define SCENE_VT_CLEAR_ITEM       0x2C  // 0x4692A0: Clear current item ptr
+#define SCENE_VT_SAVE_CLEANUP     0x44  // 0x4692B0: Save and cleanup
+#define SCENE_VT_INIT_SCENE       0x48  // 0x40B090: Level_InitScene
+#define SCENE_VT_NOOP             0x24  // 0x44B840: Default empty stub
+
+// SceneObject vtable at 0x4D934C - slot offsets
+#define SOBJ_VT_DTOR              0x00  // 0x46B650: ~SceneObject
+#define SOBJ_VT_SET_POSITION      0x04  // 0x46B490: Set position + update
+#define SOBJ_VT_SET_SCALE         0x08  // 0x46B4B0: Set scale + update
+#define SOBJ_VT_RENDER            0x0C  // 0x46B670: Build world matrix + D3D
+#define SOBJ_VT_SET_VISIBLE       0x10  // 0x46B4D0: Toggle visibility
+#define SOBJ_VT_DELETING_DTOR     0x1C  // 0x46B9F0: BaseDtor + free
+
+// Scene current item pointer (used by vtable slots 3-6, 11-12)
+#define SCENE_CURRENT_ITEM        0x864  // ptr to current menu/scene item
+```
+
+### Rumble Board Arena Paths
+
+```c
+// 14 arena level paths loaded by RumbleBoard_*_Init functions
+"levels\\arena-WarmUp"       // 0x413C20
+"levels\\arena-beginner"     // 0x413CE0
+"levels\\arena-intermediate" // 0x414180
+"levels\\arena-dizzy"       // 0x414240
+"levels\\arena-tower"        // 0x4144B0
+"levels\\arena-up"          // 0x414960
+"levels\\arena-expert"      // 0x414B10
+"levels\\arena-Odd"         // 0x414CE0
+"levels\\arena-Toob"        // 0x414F00
+"levels\\arena-Wobbly"     // 0x4153A0
+"levels\\arena-Sky"         // 0x4158C0
+"levels\\arena-Master"      // 0x416080
+"levels\\arena-neon"        // 0x416F40
+"levels\\arena-glass"       // 0x417DF0
+"levels\\arena-impossible"  // 0x418540
+
+// Tournament sub-level paths (Board subclasses)
+"Levels\\Level8-Spinny"       // Toob Board "Rodenthood"
+"Levels\\Level8-Saw"         // Toob Board "Rodenthood"
+"Levels\\Level8-Fallout"     // Toob Board "Rodenthood"
+"Levels\\Level8-Blockdawg1"  // Toob Board "Rodenthood"
+"Levels\\Level8-Blockdawg2"  // Toob Board "Rodenthood"
+```

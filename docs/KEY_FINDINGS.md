@@ -260,6 +260,142 @@ The main per-frame physics update:
 
 ---
 
-*Last updated: April 12, 2026*
+*Last updated: April 13, 2026*
 *Project: Hamsterball RE (Raptisoft, 2000s)*
 *Permission: Original developer granted permission for RE*
+
+---
+
+## 9. Scene System (April 13, 2026)
+
+### Scene Architecture
+
+The game uses a virtual-dispatch scene system. Each race level creates a Scene object with a vtable that provides:
+- **dtor** (+0x00): Master cleanup (Scene_dtor at 0x419770)
+- **vmethods +0x4C-0x58**: Update render passes (PreRender, RenderLevel, RenderDynamic, PostRender)
+- **vmethod +0x60/0x64/0x68**: Render3D, RenderObjects, RenderOverlay
+- **vmethod +0x6C/0x70**: RenderMenu, RenderHUD
+- **vmethod +0x7C/0x80**: Per-dynamic-object update, per-scene init
+
+Scene_Update (0x419C00) is the main tick:
+1. Increment frame counter (+0xD88)
+2. Demo timer check (50-frame countdown, shows buy dialog)
+3. Unpause check (Input_CheckKeyCombo mode 2 for ESC)
+4. Ball position sync from +0xA75 list
+5. Camera tracking (ball at App+0x5DC)
+6. Screen offset animation (+0xA6E, -10/frame toward 0 or -800)
+7. Static object update + removal of dead objects (+0x22E list)
+8. Render pass vmethods (+0x4C, +0x50, +0x54, +0x58)
+9. Dynamic object iteration (+0xD8B list)
+
+Scene_Render (0x41A2E0) dispatches by player count:
+- **1P**: Single viewport, all render passes
+- **2P**: Set camera from player list at +0x3A38
+- **3-4P**: Split-screen per viewport, per-camera
+
+### SceneObject Class (0x4D934C)
+
+Common renderable game object (0xD4 bytes):
+- 3 matrix transforms: base scale (+0x94), rotation (+0xA8), world (+0xBC)
+- Visible flag (+0x88), zOrder/object ID (+0x8C)
+- Bounding radius (+0xCC), type (+0xD0)
+- Scene registration via Scene_RegisterObject stores at scene+0x710+id*4
+
+### Level Setup Pattern
+
+All level setups follow: Level_ctor → Level_Clone → Level_InitScene → vmethod +0x80, then level-specific object creation (flags, signs, bumpers, vacuum tubes, etc).
+
+| Level | Address | Special Objects |
+|-------|---------|----------------|
+| leveldark | 0x416270 | 2-player support |
+| level5 | 0x40E190 | (none) |
+| level6 | 0x40EA90 | LAUNCH01/02/03, CHROMESHADOW |
+| level7 | 0x40F360 | (none) |
+| level9 | 0x40830 | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
+| level10 | 0x411F60 | 4 bumpers, TarBubble |
+| levelcascade | 0x4110D0 | 8 bumpers |
+| levelup | 0x411540 | VAC-IN/VAC-OUT vacuum tubes |
+
+### Scene Vtable (0x4D0260, 36 entries)
+
+Key identified slots:
+- [0] Scene_DeletingDtor - destructor + conditional free
+- [1] Scene_Update - main 9-step tick
+- [2] Scene_Render - 1P/2P/split render dispatch
+- [3] Scene_HandleInput - menu item iteration, input check, current item at +0x864
+- [4] Scene_ActivateCurrentItem - call vmethod+0x10 on current item
+- [6] Scene_SelectCurrentItem - call vmethod+0x0C on current item
+- [11/12] Scene_ClearCurrentItem - set current item pointer to NULL
+- [17] Scene_SaveAndCleanup - delegates to FUN_469AC0
+- [18] Level_InitScene
+- [24-26] Level render methods
+- [9,10,13,21,30,34] NoOp_return (0x44B840) - default stubs overridden by subclasses
+
+### SceneObject Vtable (0x4D934C, 10 entries)
+
+- [0] SceneObject_dtor (0x46B650)
+- [1] SceneObject_SetPosition (0x46B490) - sets +0x08,x,y,z + calls vmethod+0x0C
+- [2] SceneObject_SetScale (0x46B4B0) - sets +0x14 scale + calls vmethod+0x0C
+- [3] SceneObject_Render (0x46B670) - build world matrix, D3D SetTransform+SetMaterial
+- [4] SceneObject_SetVisible (0x46B4D0) - toggle +0x88
+- [7] SceneObject_DeletingDtor (0x46B9F0)
+- SceneObject_BaseDtor (0x46B860) iterates child list, calls dtor(1) on each child
+
+### Rumble/Arena Board System
+
+14 arena init functions (RumbleBoard_*_Init) follow this pattern:
+1. Level_ctor(arena_level_path) → store at scene+0x22B
+2. Level_Clone(source) → store at scene+0x22C
+3. CameraLookAt(scene)
+4. Virtual dispatch vmethod+0x80 (post-setup)
+
+Special arena behaviors:
+- Beginner (0x413CE0): 4 bumpers via N:BUMPER%d
+- Toob (0x414F00): 5 bumpers via N:BUMPER%d
+- Dizzy (0x414240): Extra Level3-Swirl loaded
+- Sky (0x4158C0): PILLAR name scanning via __strnicmp
+- Neon (0x416F40): Scale matrix setup for dynamic objects, SceneObject decoration at +0x11F9
+
+### Tournament Board Constructors
+
+Board subclasses (0x419030 base) hold sub-level arrays:
+- Toob Board (0x41F4B0): "Rodenthood" tournament with 5 sub-levels:
+  Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1, Level8-Blockdawg2
+
+### Scene Object Lists (Scene offsets)
+
+| Offset | Description |
+|--------|-------------|
+| +0x22E | Static scene objects (persistent) |
+| +0x335 | Dynamic objects (moving platforms etc) |
+| +0x43B | Sub-objects (linked to dynamic) |
+| +0xA75 | Ball list (per-ball position updates) |
+| +0xC81 | Additional object list |
+| +0xD8B | Render update list |
+
+### Camera System Detail
+
+Scene_SetCamera (0x419FA0) positions camera:
+1. Start from ball position +0x758
+2. Add scene offset (+0x434C)
+3. If boundary check enabled (+0x3F1C): compute distance from center, clamp with distance falloff
+4. If countdown timer active (+0x3F2C): snap camera to ball for initial frames
+5. Noise randomizer at ball+0x744 (jitters position)
+6. Set view/projection matrices
+
+### Difficulty System
+
+Difficulty_GetTimeModifier (0x428ED0) returns multiplier based on +0x23C:
+- Mode 0: Easy (time * _DAT_4CF3F0)
+- Mode 1: Normal (time * 1.0)
+- Mode 2: Hard (time * 2.0)
+- Default: 0.0 (no time?)
+
+---
+
+## 10. Documentation Progress
+
+- **Total functions:** 3,797
+- **Documented:** 1,758 (46.3%)
+- **Session progress:** 44.1% → 46.3% (+41 functions named this session)
+- **Key docs updated:** FUNCTION_MAP.md, KEY_FINDINGS.md
