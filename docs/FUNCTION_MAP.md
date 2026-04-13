@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-|||Documented: 2,837 (74.4%)
-|||User-labeled: 890+
-|||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%)
+||||Documented: 2,865 (75.2%)
+||||User-labeled: 920+
+||||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.2%)
 
 ## Entry Point and Lifecycle
 
@@ -1374,3 +1374,35 @@ Offset | Field | Description
 | 0x0046e910 | KeyboardDevice_ScalarDtor | KeyboardDevice scalar destructor: calls KeyboardDevice_dtor then free |
 | 0x0046ebd0 | InputDevice_PollAndRelease | Poll DInput device, acquire on error, release 4 sub-devices |
 | 0x00471c60 | Vector_FillResize | Fill vector with count DWORDs, update end pointer
+
+## Session 23 — Math, Sound, D3D, Stream, Spatial (74.4→75.2%)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x4637f0 | Vec3_Abs | 2 | Compute absolute value of 3-component vector (fabs each) |
+| 0x45b345 | Matrix_BuildLookAt | 1 | Compute view matrix from eye, target, up vectors (cross products) |
+| 0x45b48d | Matrix_BuildPerspectiveFOV | 1 | Compute perspective projection matrix from FOV, aspect, near, far |
+| 0x45b1f9 | D3D_Thunk4 | 1 | D3D dispatch thunk through PTR_FUN_004f7230 (4 params) |
+| 0x45b227 | D3D_Thunk0 | 1 | D3D dispatch thunk through PTR_FUN_004f722c (0 params) |
+| 0x45b238 | D3D_Thunk5 | 1 | D3D dispatch thunk through PTR_FUN_004f7234 (5 params) |
+| 0x45be69 | D3D_ThunkIndirect | 1 | D3D dispatch thunk through DAT_004f71e4 |
+| 0x457690 | Font_DrawGlyph3D | 1 | Render 3D text — iterate chars, render with Ball_RenderWithMaterial |
+| 0x476270 | D3DX_ErrorHandler_Ctor | 1 | Init D3DX error handler — set vtable 0x4DA194 + store param |
+| 0x466060 | Level_CloneTree | 1 | Recursively clone Level tree — create CollisionLevel for each child |
+| 0x466320 | SoundChannel_Ctor | 1 | Init sound channel vtable 0x4D90E8 with 7 zero fields |
+| 0x466480 | SpatialTree_ComputeOffset | 1 | Compute vector offset with cross-product area for spatial tree |
+| 0x4664f0 | Sound_LoadAndAppend | 1 | Create AthenaList entry, load sound via Sound_LoadOggOrWav |
+| 0x466620 | SoundDevice_ctor | 1 | Sound device constructor — vtable 0x4D911C, 16 channels, DS init |
+| 0x466a10 | SoundDevice_UpdateChannels | 1 | Tick sound channels, play on timer expire, remove expired |
+| 0x466b80 | SoundDevice_Play3DAll | 1 | Iterate all sound channels, call Sound_Play3DAtPosition per entry |
+| 0x466c50 | SoundDevice_DeletingDtor | 1 | Scalar deleting destructor for SoundDevice |
+| 0x466c90 | SoundBuffer_ScalarDtor | 1 | Free buffer at +4, scalar deleting destructor |
+| 0x466cc0 | D3DX_RegistryGetter_Ctor | 1 | Init D3DX registry getter — set vtable 0x4D9128 |
+| 0x468700 | D3DXSkinMesh_Init | 1 | Initialize D3DX skin mesh — two vector resizes |
+| 0x4632f0 | SpatialTree_SetDefaults | 1 | Set spatial tree defaults: scale=0.1, depth=6, min=0.9 |
+| 0x4633b0 | SpatialTree_DeletingDtor | 1 | Scalar deleting destructor — free then delete |
+| 0x463880 | SpatialTree_ForEach | 1 | Iterate tree children calling vtable[0x20] on each |
+| 0x4694a0 | StreamReader_DeletingDtor | 1 | Scalar deleting destructor calling StreamReader_dtor |
+| 0x4694c0 | StreamReader_dtor | 2 | Free 2 buffers at +4/+8, set vtable 0x4D91B8 |
+| 0x4698d0 | FileStream_DeletingDtor | 1 | Close file handle +0x10, free buffer +0x8 |
+| 0x469920 | MeshWorld_ctor_v2 | 1 | MeshWorld constructor v2 — vtable 0x4D91C4 |
