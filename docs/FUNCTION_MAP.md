@@ -2,8 +2,8 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,811 (Ghidra analysis)
-|Documented: 2,060 (54.1%)|
-|User-labeled: 290+|
+||Documented: 2,171 (57.0%)
+|User-labeled: 340+
 
 ## Entry Point and Lifecycle
 
@@ -945,3 +945,125 @@ Offset | Field | Description
 | 0x465ef0 | Collision_TraverseSpatialTree | 3 | Octree traversal for collision faces |
 | 0x492bc4 | D3DX_AssemblyOp8 | 8 | D3DX shader assembly operation |
 | 0x498200 | BitStream_ReadBits | 95 | Read N bits from bitstream |
+
+## New Functions (Session 2026-04-13 Continued)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x4531b0 | Vec3_SetScalar | 6 | Set all 3 components to same value, w=1.0 |
+| 0x4536b0 | AthenaList_InsertAt | 7 | Insert value at index, reallocate array |
+| 0x453e90 | Gfx_TransformY | 7 | Screen Y transform: y * viewMatrix + viewport |
+| 0x453eb0 | Gfx_TransformZ | 7 | Screen Z transform: z * viewMatrix + viewport |
+| 0x453970 | Graphics_SetCullMode2 | 5 | Set D3D cull mode via vtable call |
+| 0x44aca0 | SimpleList_vtbl_Init | 7 | SimpleList vtable pointer init |
+| 0x44b850 | UIListItem_vtbl_Init | 6 | UIListItem vtable pointer init |
+| 0x426d20 | StdString_Erase | 6 | String erase: delete substring at position |
+| 0x426de0 | StdString_Substr | 5 | String substring extraction |
+| 0x426f30 | PlayerProfile_ctor | 5 | Player profile constructor (0x280 bytes) |
+| 0x443a10 | StdString3_Clear | 5 | Clear string, free heap buffer |
+| 0x443f50 | GameObject2_dtor | 5 | GameObject destructor variant |
+| 0x44fda0 | TourneyMenu_ctor | 6 | Tournament menu constructor |
+| 0x458220 | AABB_TriangleIntersect | 6 | AABB vs triangle edge intersection test |
+| 0x458320 | AABB_TriangleTest6Edges | 6 | Full 6-edge AABB-triangle intersection |
+| 0x457f10 | Collision_PointInTriangle | 5 | Barycentric point-in-triangle test |
+| 0x463790 | Vec3_CrossProduct | 7 | Vector cross product: this x param2 -> param1 |
+| 0x46b1a0 | AthenaListObj_ctor | 7 | AthenaList object constructor |
+| 0x4738b0 | StdString_AppendN | 7 | Append N chars from string with strncat |
+| 0x47c840 | Sprite_CalcTexCoords | 8 | Calculate sprite UV coordinates |
+| 0x4602f0 | Scene_CollectByNameFilter | 6 | Collect scene objects by name filter |
+| 0x46ec30 | Ball_GetInputForce | 7 | Get ball input force (keyboard/mouse/joystick) |
+| 0x46f670 | Mesh_SaveAndFree | 5 | Save mesh to file, free buffers |
+| 0x473b10 | AthenaString_AssignFormatted | 6 | Format and assign AthenaString |
+| 0x46a440 | Audio_PlayMusicAtSpeed | 6 | Play music with tempo/speed adjustment |
+| 0x466ac0 | Scene_UpdateChildren | 5 | Traverse scene tree, update children |
+| 0x467750 | Array_CopyDWords | 5 | Copy N dwords from src to dst |
+| 0x429520 | Game_SetInProgress | 5 | Mark game in progress (sets +0x200=1) |
+| 0x440dd0 | Graphics_DrawRectAndReset | 5 | Draw rect, then reset matrix to identity |
+| 0x44be80 | ScoreObject_ctor | 5 | Score display object constructor |
+| 0x44fd40 | SimpleList_dtor | 5 | SimpleList destructor |
+| 0x459610 | Scene_RenderIfVisible | 5 | Render scene object if visible flag set |
+| 0x470650 | Array_FillDWords | 5 | Fill N dwords with same value |
+| 0x472da0 | Transform_ctor | 5 | Transform object constructor |
+| 0x418760 | Scene_CreateObject_Gear | 6 | Create GEAR object in scene |
+| 0x418930 | Gear_AdvanceAlongPath | 6 | Gear path following (8-dir gradient descent) |
+| 0x4730c0 | Registry_ReadFloat | 5 | Read float from Windows registry |
+| 0x473740 | StdString_AppendCharN | 5 | Append N copies of a char |
+| 0x46e0b0 | Input_IsKeyDown | 5 | Check input state (keyboard/mouse/joystick) |
+| 0x456150 | Ray_SetDirection | 3 | Set ray direction, normalize, compute length |
+| 0x456390 | Mesh_Clear | 3 | Clear mesh: free vertex/index buffers |
+| 0x456e80 | Font_WordWrap | 3 | Word-wrap text to fit width |
+| 0x458000 | Collision_InitDefaultAABB | 3 | Initialize default collision AABB bounds |
+| 0x4583f0 | AABB_TriangleIntersect2 | 4 | Double AABB-triangle test wrapper |
+| 0x4581d0 | Vec2_Distance | 3 | 2D distance: sqrt(dx²+dy²) |
+| 0x458190 | Collision_GradientEval_Stub | 4 | Empty stub for collision gradient evaluation |
+| 0x46f340 | MeshBuffer_Cleanup | 3 | Cleanup mesh buffer, free resources |
+| 0x46fd60 | Mesh_AddVertex | 4 | Add vertex to mesh buffer (8 floats) |
+| 0x46c970 | Texture_SetDimensions | 3 | Set texture dimensions and UV scale |
+
+## Menu System (Session 2026-04-13 Batch 4)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x42f810 | TimeTrialMenu_ctor | 3 | "Time Trial Menu" → extends PracticeMenu with race items + lock checks |
+| 0x42fc10 | PartyMenu_ctor | 3 | "Time Trial Menu" ( Party Race! ) → extends PracticeMenu, vtable 0x4D4738 |
+| 0x42fc40 | ArenaMenu_ctor | 3 | Arena menu with 14 arena items (Warm-Up to Impossible), lock icons, vtable 0x4D47B8 |
+| 0x4326d0 | MPMenu_ctor | 3 | Multiplayer menu: Party Race, Rodent Rumble, controller config (1-4P) |
+
+## Scene/Texture/Rendering (Session 2026-04-13 Batch 4)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x44aa40 | Scene_FindTextureByName | 4 | Find texture by case-insensitive name, return ptr+dimensions+width |
+| 0x44ab00 | Scene_FindTextureDimensions | 4 | Find texture and measure text width via Font_MeasureText |
+| 0x44abf0 | Scene_AddTextureToList | 4 | Add texture reference to scene list by name, mark dirty at +0xCBC |
+| 0x443ac0 | SceneObject_RenderScaled | 3 | Render object scaled (ScaleX, SetPosition, vtable calls + Timer) |
+| 0x4410c0 | SceneObject_FreeStrings | 3 | Free 2 string pointers, re-init BaseObject, call SceneObject_dtor |
+| 0x453c50 | Texture_RemoveRef | 3 | Decrement texture refcount, remove from cache and free when 0 |
+| 0x457a50 | Graphics_DisableRenderState | 3 | Thunk → Graphics_SetRenderState (disable mode) |
+
+## Game Flow (Session 2026-04-13 Batch 4)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x428c50 | App_StartPracticeRace | 3 | Start practice/tournament race: calls App_StartRace, sets up PlayerProfile, calls Tournament_AdvanceRace |
+| 0x434580 | Sound_InitChannels | 3 | Allocate sound channels for object, get next sample, play 3D positioned sound, set timer 0x140 |
+| 0x43b6f0 | ScoreObject_SetScore | 3 | Find score by ID, set to 10, or create new score entry with value 10 |
+| 0x44bef0 | Timer_Decrement | 4 | Timer tick: value = end_value - 100, set flag at +0x2A |
+| 0x448620 | ScoreDisplay_DeletingDtor | 3 | ScoreDisplay scalar deleting destructor |
+| 0x4470d0 | ScoreDisplay_dtor | 3 | Clean up ScoreDisplay: free strings, timers, BaseObjects (5), SceneObject_dtor |
+| 0x44acb0 | UIList_Clear | 4 | Empty stub (returns 0), clear/reset UI list |
+
+## Board Level Constructors (Session 2026-04-13 Batch 5)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x41CA40 | BoardLevel1_WarmUp_ctor | 1 | Board constructor for Warm-Up race (Level 1), calls Board_ctor, sets "Board (Warm-Up)", loads BEGINNERRACE data |
+| 0x41CB10 | BoardLevel1_WarmUp_dtor | 1 | Board destructor for Warm-Up race, sets vtable to 0x4D04A8, calls Scene_dtor |
+| 0x41CB20 | BoardLevel2_Intermediate_ctor | 1 | Board constructor for Intermediate race (Level 2), loads Level2-Bridge, creates level clone, TipperVisual_Attach |
+| 0x41CC80 | BoardLevel2_Intermediate_dtor | 1 | Board destructor for Intermediate race |
+| 0x41D450 | BoardLevel3_Dizzy_dtor | 1 | Board destructor for Dizzy race (Level 3), frees Vec3Lists at +0x11E4 and +0x10DE |
+| 0x41E340 | BoardLevel5_Tower_ctor | 1 | Board constructor for Tower race (Level 5), loads 6 levels: Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, plus YellowLink and Chomper meshes |
+| 0x41E640 | BoardLevel5_Tower_dtor | 1 | Board destructor for Tower race, frees Vec3Lists at multiple offsets |
+| 0x41EA40 | BoardLevel8_Expert_ctor | 1 | Board constructor for Expert race (Level 8), loads Level5-Bridge, creates clone, 3x hammyjudge meshes |
+| 0x41EC90 | BoardLevel8_Expert_dtor | 1 | Board destructor for Expert race |
+| 0x41ED80 | BoardLevel9_Odd_ctor | 1 | Board constructor for Odd race (Level 9), sets "Board (Odd)", ODDRACE data |
+| 0x41EE70 | BoardLevel9_Odd_dtor | 1 | Board destructor for Odd race |
+| 0x41F110 | BoardLevel12_Wobbly_ctor | 1 | Board constructor for Wobbly race (Level 12), loads 7 levels: Level7-Wobbly1 through Level7-Wobbly7 |
+| 0x41F3C0 | BoardLevel12_Wobbly_dtor | 1 | Board destructor for Wobbly race |
+| 0x41F720 | BoardLevel_Toob_dtor | 1 | Board destructor for Toob race |
+
+## Collision System (Session 2026-04-13 Batch 5)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x456D80 | CollisionMesh_ctor | 1 | CollisionMesh constructor: initializes triangle list for mesh collision detection, sets up AthenaLists |
+| 0x456120 | CollisionMesh_AddTriangle | 1 | Add triangle to collision mesh: appends to list at +0x430, sets back-pointer at +0x08 |
+| 0x4564C0 | Ball_AdvancePositionOrCollision | 1 | Ball physics: advance position with collision detection. Uses spatial tree for mesh traversal, handles material accumulation, collision response. Core physics function. |
+| 0x463330 | SpatialTree_ctor | 1 | SpatialTree (octree) constructor for collision spatial partitioning |
+| 0x4632E0 | SpatialTree_Free | 1 | Free spatial tree nodes and cleanup |
+
+## CRT/Misc
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x4C5F5A | CRT_amsg_exit | 10 | CRT error message exit (__amsg_exit) |
