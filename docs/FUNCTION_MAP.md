@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,651 (70.1%)
+**Documented:** 2,667 (70.5%)
 **User-labeled:** 932+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5%→69.1%), 27 (69.3%→70.1% of 3781)
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.5% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1696,3 +1696,24 @@ Offset | Field | Description
 | 0x00479a30 | GetOSVersionString | Build OS version string: "Windows NT/9x X.X - Build YYYY" |
 | 0x00479dc0 | BugTracker_SetUserAgent | Set bug tracker user agent string |
 | 0x00479e20 | BugTracker_Dtor | BugTracker destructor: restore exception filter, delete GDI objects, call string dtor |
+
+## Session 28 (cont) — 16 renames — Vec3_Normalize, WebClient, Matrix, COM, DDSURFACEDESC — 70.5% documented
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0048c24c | Vec3_Normalize | Normalize 3D vector in-place (with fast inverse sqrt, handles zero) |
+| 0x0048c316 | Matrix_Multiply4x4_InPlace | 4x4 matrix multiply allowing in-place (out = a*b, temp buf if overlap) |
+| 0x0048c3f9 | Matrix_Multiply4x4 | 4x4 matrix multiply (out = a*b with temp buf for aliasing) |
+| 0x0048c487 | Matrix_InitVTable | Initialize matrix math vtable (7 entries: identity, transpose, inverse, mul, mul2, adjoint, normalize) |
+| 0x0048c560 | WebClient_WndProc | WebClient window proc: handles WM_TIMER and WM_ASYNC message for DNS/connect/send |
+| 0x0048c7d0 | WebClient_Ctor | Construct WebClient object with vtable, 3 AthenaStrings, Winsock init, WebWindow class registration |
+| 0x0048c940 | WebClient_Dtor | Destroy WebClient: release window, deregister Winsock, destroy 3 strings |
+| 0x0048c9c0 | WebClient_FetchURL | Parse URL, build HTTP GET request, create window, DNS resolve, connect and send |
+| 0x0048cc70 | WebClient_DeletingDtor | WebClient deleting dtor (dtor + free if bit 0 set) |
+| 0x0048cc90 | WebClient_RecvBuf_Dtor | Release WebClient receive buffer (free allocated ptr) |
+| 0x0048cd0c | WebClient_RecvBuf_DeletingDtor | Receive buffer deleting dtor |
+| 0x0048cd28 | COM_QueryInterface | COM IUnknown QueryInterface: validate IID, set out pointer, call AddRef |
+| 0x0048cd6f | COM_IUnknown_Init | Initialize COM IUnknown struct (vtable, refcount=1, ptrs=0) |
+| 0x0048ce17 | WebClient_InitResponse | Zero-initialize response fields (7 dwords cleared) |
+| 0x0048ce89 | TextureCache_DeletingDtor | TextureCache deleting dtor: Tree_FreeRecursive then free |
+| 0x0048cea5 | DDSURFACEDESC_ParsePixelFormat | Parse DDSURFACEDESC pixel format (D3DFMT enum), allocate palette, decompress RLE/compressed surfaces |
