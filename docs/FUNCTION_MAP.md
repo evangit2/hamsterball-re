@@ -2,7 +2,7 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,781 (Ghidra analysis)
-**Documented:** 2,412 (63.8%)
+**Documented:** 2,418 (64.0%)
 **User-labeled:** 932+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8% of 3781)
 
@@ -1453,3 +1453,14 @@ Offset | Field | Description
 | 0x0047f363 | VertexDecl_CopyVertexData | Copy vertex data between declarations: blend weights, position, normal, texcoords |
 | 0x0047f58e | VertexDecl_CreateFromFVF | Create vertex declaration from FVF (Flexible Vertex Format) code |
 | 0x0047e263 | DWord6Array_Grow | Grow DWORD-6-stride array with realloc (init 0x28 bytes, security cookie) |
+
+## Session 25 (continued) - Mesh Pipeline Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0047f6c7 | Mesh_RenderSubset | Render mesh subset by attribute ID via D3D DrawIndexedPrimitive (HW or SW vertex processing) |
+| 0x0047f993 | Mesh_WeldVertices | Weld duplicate vertices: build adjacency hash, split edges, remap indices, fill adjacency |
+| 0x0047fdc0 | Mesh_RemoveEdgeFromHash | Remove edge entry from hash bucket linked list (find matching v0/v1/v2, unlink) |
+| 0x0047fe0e | Mesh_FindBestDuplicateVertex | Find best matching duplicate vertex by comparing cross-product magnitudes with epsilon |
+| 0x0047feec | Mesh_ComputeTriCrossProduct | Compute scalar triple product of two 3D triangles for vertex welding comparison |
+| 0x00480501 | Mesh_ValidateAdjacency | Validate mesh adjacency: check face refs, vertex bounds, edge integrity, attribute matching |
