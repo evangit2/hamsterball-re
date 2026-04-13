@@ -2,7 +2,7 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,811 (Ghidra analysis)
-|Documented: 1,941 (50.9%)
+|Documented: 1,962 (51.5%)
 |User-labeled: 220+
 
 ## Entry Point and Lifecycle
@@ -840,3 +840,23 @@ Offset | Field | Description
 | 0x004bcda8 | __security_init_cookie | 34 | CRT security cookie initialization |
 | 0x004bac20 | strstr | 22 | CRT strstr - string search with SIMD optimization |
 | 0x004bc0d1 | strtok | 50 | CRT strtok - thread-safe string tokenizer |
+| 0x00461740 | Level_ctor | 12 | Level constructor: inits base, vtable 0x4D8FB0, 4 AthenaLists, Timer + LevelState 0x10D4 bytes |
+| 0x004694f0 | SceneObject_sub1_ctor | 12 | Simple SceneObject sub-ctor: set vtable 0x4D91BC, null +0x08/+0x10, visible +0x14=true |
+| 0x0049721e | MeshNode_DeletingDtor | 30 | MeshNode deleting destructor: calls base dtor, then frees if param_1 & 1 |
+| 0x00472c20 | AthenaHashTable_ctor | 15 | Athena hash table constructor: set vtable, call internal init, then set final vtable 0x4CF584 |
+| 0x00472ec0 | RegKey_Open | 15 | Open registry key: HKLM first, fall back HKCU, create if needed |
+| 0x0047df9a | Graphics_DrawIndexedPrimitiveUP | 14 | D3D DrawIndexedPrimitiveUP wrapper via vtable dispatch at offset 0x2C |
+| 0x00489710 | AthenaList_IterateNext | 15 | Advance linked list iterator to next node |
+| 0x00489bd0 | AthenaList_Sort_14 | 15 | Sort list elements (comparator index 0xE / 14) |
+| 0x0048a1a0 | AthenaList_FreeAll | 10 | Free all list nodes: Pool_FreeList on head and items |
+| 0x0048cd87 | D3D8_DebugSetMute | 14 | D3D8 DebugSetMute: load d3d8.dll/d3d8d.dll, call DebugSetMute |
+| 0x004c8ff7 | _check_file_access | 14 | Check if file path is accessible (directory vs file), uses GetFileAttributesA |
+| 0x004ab4a0 | __libm_sse2_tan | 14 | SSE2 tan() implementation with range reduction and polynomial approx |
+| 0x004ad5ac | Zlib_FreeIf | 12 | Conditional free: only frees if both params non-null |
+| 0x004ad63c | Zlib_UpdateHash | 14 | Zlib deflate hash update (calls update + insert) |
+| 0x004adf0c | Zlib_FlushWithCRC | 14 | Zlib flush with CRC validation, chunked writes |
+| 0x004b5ae1 | CRT_Noop2 | 14 | Empty function (no-op) |
+| 0x004ba61e | CRT_ThrowStringTooLong | 10 | Throw C++ exception "string too long" |
+| 0x004bacc0 | strchr | 11 | CRT strchr - find char in string with SIMD optimization |
+| 0x004bc350 | strcpy | 12 | CRT strcpy - string copy with SIMD optimization |
+| 0x004a167b | Matrix4x4_Multiply_SSE2 | 12 | 4x4 matrix multiply using SSE2 packed float ops |
