@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-||||Documented: 2,865 (75.2%)
-||||User-labeled: 920+
-||||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.2%)
+||||Documented: 2,877 (75.5%)
+||||User-labeled: 932+
+||||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%)
 
 ## Entry Point and Lifecycle
 
@@ -1406,3 +1406,16 @@ Offset | Field | Description
 | 0x4694c0 | StreamReader_dtor | 2 | Free 2 buffers at +4/+8, set vtable 0x4D91B8 |
 | 0x4698d0 | FileStream_DeletingDtor | 1 | Close file handle +0x10, free buffer +0x8 |
 | 0x469920 | MeshWorld_ctor_v2 | 1 | MeshWorld constructor v2 — vtable 0x4D91C4 |
+
+| 0x4699d0 | MeshWorld_RemoveObject | 1 | Remove object from mesh list, clear current references, call dtor |
+| 0x469a40 | MeshWorld_ClearCurrent | 1 | Clear current item by calling vtable+0x30 |
+| 0x469a80 | MeshWorld_CallNext | 1 | Call vtable+0x24 on next item at +0x424 |
+| 0x469ac0 | MeshWorld_SkipOrAdvance | 1 | Skip current (param_2!=0) or advance to next if matches param_1 |
+| 0x469c30 | MeshWorld_dtor2 | 1 | Clear list, iterate items calling dtor(1), Vec3List_Free |
+| 0x469ec0 | MeshWorld_ActiveUpdate | 1 | Iterate objects, skip inactive (+0xB), set obj ID, call vtable+8 |
+| 0x469f50 | MeshWorld_CallVtable34 | 1 | Iterate objects calling vtable+0x34 |
+| 0x469fc0 | MeshWorld_DeletingDtor2 | 1 | Scalar deleting destructor for MeshWorld variant |
+| 0x469fe0 | MusicChannel_Ctor | 1 | Init vtable 0x4D91D8, AthenaList, volume=1.0, flags=0 |
+| 0x46a180 | MusicChannel_FadeUpdate | 1 | Fade BASS volume up/down with BASS_ChannelSetAttributes |
+| 0x46a250 | MusicChannel_Cleanup | 1 | Free all channel buffers, clear AthenaList, Vec3List_Free |
+| 0x46a4b0 | MusicChannel_DeletingDtor | 1 | Scalar deleting destructor for MusicChannel |
