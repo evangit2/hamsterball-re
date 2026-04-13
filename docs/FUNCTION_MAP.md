@@ -2,8 +2,8 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,811 (Ghidra analysis)
-|Documented: 1,962 (51.5%)
-|User-labeled: 220+
+|Documented: 2,060 (54.1%)|
+|User-labeled: 290+|
 
 ## Entry Point and Lifecycle
 
@@ -214,13 +214,21 @@
 |---------|------|-------------|
 | 0x00401AA0 | Vec3_NormalizeAndScale | Normalize 3D vector and scale to length param_1. 59 xrefs — most common math utility. |
 | 0x00401D60 | Matrix_TransformVec3 | Transform 3D vector by 4x3 matrix. 15 xrefs. |
-| 0x00402BF0 | Vec3_Copy | Copy 3 floats (12 bytes) with self-check. 18 xrefs. |
 | 0x00453150 | Matrix_Scale4x4 | Set 4x4 matrix row scale values. |
 | 0x00453200 | Matrix_Identity | Set matrix to identity (vtable pointer). |
 | 0x004532E0 | AthenaList_SortedInsert | Insert with insertion-sort (ascending/descending). |
 | 0x00458B50 | Matrix_ScaleTransform | Create 4x4 matrix by scaling source rows. |
 | 0x0040A050 | Color_RandomRGBA | Generate 32-bit color from 4 random bytes. |
 | 0x004580D0 | AABB_ContainsPoint | Test if point inside AABB (6 floats). |
+| 0x00401010 | Vec3_Copy | Copy 4 floats (Vec3+padding) from source, preserves vtable |
+| 0x00401040 | Vec3_Init | Init Vec3: set vtable 0x4CF300 + copy 4 floats from source |
+| 0x00401070 | Vec3_dtor | Vec3 deleting destructor: reset to identity, optionally free |
+| 0x004016c0 | Vec3_Scale | Multiply Vec3 by scalar: out = scalar * this |
+| 0x00401890 | Vec3_DivideByScalar | In-place Vec3 division via reciprocal multiply with g_one (1.0f) |
+| 0x004018c0 | Vec3_AddTwo | Add two Vec3s: out = this + rhs |
+| 0x004018f0 | Vec3_AddInPlace | In-place Vec3 addition: this += rhs |
+| 0x00401d20 | Vec3_Distance | Euclidean distance between two 3D points (6 float params) |
+| 0x0040a020 | AthenaList_GetAt | Get element by index with bounds check; returns 0 if OOB |
 
 ## Misc/Utility
 
@@ -860,3 +868,80 @@ Offset | Field | Description
 | 0x004bacc0 | strchr | 11 | CRT strchr - find char in string with SIMD optimization |
 | 0x004bc350 | strcpy | 12 | CRT strcpy - string copy with SIMD optimization |
 | 0x004a167b | Matrix4x4_Multiply_SSE2 | 12 | 4x4 matrix multiply using SSE2 packed float ops |
+| 0x00402a20 | Ball_SetVec3AtOffset | 12 | Set 3 floats at offset 0xca4 in ball (camera/force vector) |
+| 0x00402a50 | GameObject_sub2_dtor | 12 | GameObject deleting destructor variant 2 |
+| 0x00402a70 | Ball_DrawRumbleScoreText | 25 | Draw rumble score text at viewport using Graphics_SetViewport + UI_DrawTextCenteredAbsolute |
+| 0x00405100 | Ball_InitPhysicsDefaults | 14 | Set ball physics defaults: radius=0.5, friction=0.2, max_speed=35.0, gravity=6.0 |
+| 0x00405d90 | GameObject_sub_ctor | 14 | GameObject subclass constructor: vtable 0x4CF494, scale=1.0, visibility flag, +0x80c=0x32 |
+| 0x00405dd0 | GameObject_sub_dtor | 12 | GameObject deleting destructor variant 1 |
+| 0x00405e00 | Ball_Update | 400+ | Main ball physics tick: timer, collision, velocity integration, reflection, sound, camera tilt, spin. Core function! |
+| 0x00408390 | Ball_AI_ChaseNearest | 60 | AI steering: finds nearest opponent ball, applies force toward it, sine wave wandering fallback |
+| 0x00408830 | Ball_FallUpdate | 40 | Ball update when fallen: shrinks ball, handles scale change, trail cleanup |
+| 0x00408d10 | Ball_Split_ctor | 14 | Split ball constructor: vtable 0x4CF560, +0xc60=5, calls scene function |
+| 0x00408d70 | Ball_SplitIntoThree | 50 | Creates 3 split balls with different trajectories, copies collision direction, sets ball IDs 1/2/4 |
+| 0x00409480 | Ball_SplitAndExplode | 70 | Creates 2 split balls + circular RumbleScore explosion pattern (0-360 degrees) |
+| 0x0040a920 | Scene_CreateGameOverMenu | 25 | Creates game-over UI based on game state: single quit, multiplayer quit, or menu mode |
+| 0x0040ae50 | Sprite_DrawCentered | 12 | Sprite draw centered at position: Sprite_DrawRect with center offset |
+| 0x0040b960 | SceneObj_SetBounds | 14 | SceneObject bounds setter: sets +0x14-20, identity matrix if scale != 1.0 |
+| 0x0040d280 | Scene_LoadLevel2 | 15 | Load level 2: "levels\\level2", clone, init scene |
+| 0x0040d390 | Scene_LoadLevel3 | 25 | Load level 3: "levels\\level3", clone, init scene, collect TarBubble objects |
+| 0x0040d6d0 | Scene_LoadLevel4 | 20 | Load level 4: "levels\\level4", clone, init scene, special setup (flag +0x80=1, camera bounds) |
+| 0x00401590 | SceneObj_CallVtable18 | 8 | SceneObject vtable call at offset 0x18 |
+| 0x00401a60 | Vec3_Length | 8 | Vec3 length: sqrt(x*x + y*y + z*z), min 1.0 |
+
+## New Functions (Session 2026-04-13)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x4531b0 | Vec3_SetScalar | 6 | Set all 3 components to same value, w=1.0 |
+| 0x4536b0 | AthenaList_InsertAt | 7 | Insert value at index, reallocate array |
+| 0x453e90 | Gfx_TransformY | 7 | Screen Y transform: y * viewMatrix + viewport |
+| 0x453eb0 | Gfx_TransformZ | 7 | Screen Z transform: z * viewMatrix + viewport |
+| 0x453970 | Graphics_SetCullMode2 | 5 | Set D3D cull mode via vtable call |
+| 0x44aca0 | SimpleList_vtbl_Init | 7 | SimpleList vtable pointer init |
+| 0x44b850 | UIListItem_vtbl_Init | 6 | UIListItem vtable pointer init |
+| 0x426d20 | StdString_Erase | 6 | String erase: delete substring at position |
+| 0x426de0 | StdString_Substr | 5 | String substring extraction |
+| 0x426f30 | PlayerProfile_ctor | 5 | Player profile constructor (0x280 bytes) |
+| 0x443a10 | StdString3_Clear | 5 | Clear string, free heap buffer |
+| 0x443f50 | GameObject2_dtor | 5 | GameObject destructor variant |
+| 0x44fda0 | TourneyMenu_ctor | 6 | Tournament menu constructor |
+| 0x458220 | AABB_TriangleIntersect | 6 | AABB vs triangle edge intersection test |
+| 0x458320 | AABB_TriangleTest6Edges | 6 | Full 6-edge AABB-triangle intersection |
+| 0x457f10 | Collision_PointInTriangle | 5 | Barycentric point-in-triangle test |
+
+## New Functions (Session 2026-04-13 Part 2 - Vec3/Ball/Scene)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00401090 | Scene_SetSoundMode | Set scene audio mode: dispatches vtable[50](0x16, mode), stores at +0x708 |
+| 0x00401100 | Gfx_PackColorRGB | Pack 3 float RGB channels to 24-bit color via __ftol2 + shift/OR |
+| 0x004011c0 | SceneObj_SetScale | Set uniform scale factor on SceneObject, create scale matrix |
+| 0x00401220 | Scene_ZoomIn | Increase scene viewport zoom by g_zoomStep, call SetProjection |
+| 0x00401270 | Scene_ZoomOut | Decrease scene viewport zoom by g_zoomStep, call SetProjection |
+| 0x00401640 | Timer_dtor | Timer deleting destructor: calls Timer_Cleanup, optionally frees |
+| 0x00401660 | Ball_SetName | Set ball display name at +0xC28, copies string, sets type ID=200 |
+| 0x00402030 | Ball_SetTargetPos | Set/interpolate target position with smooth damping threshold |
+| 0x00402150 | Ball_CheckProximity | Check position proximity radius, store integer distance result |
+| 0x00402200 | Ball_StartFall | Mark ball fallen: set flag+0xC4C=1, shrink radius to 13.0, play 3D sound |
+| 0x00402270 | Ball_EndFall | Reset from fallen: clear flag, set radius=26.0, physics=5.0 |
+| 0x00402290 | GameObject_Render | Render game obj: scale, depth layer toggle, Sprite_RenderQuad, copy result |
+| 0x004027f0 | Ball_dtor | Ball deleting destructor: calls Ball_Cleanup, optionally frees |
+| 0x004029c0 | Ball_SetSpeed | Set ball speed, computes velocity = speed * direction unit vec |
+| 0x457b80 | Gfx_SetPositionAndRender | 5 | Set transform + render state + draw |
+| 0x458f10 | Vtable_CallOffset48 | 7 | Generic vtable call at offset 0x48 |
+| 0x473940 | FontFormatString_Parse | 9 | Parse %-formatted string for font rendering |
+| 0x4749b0 | StdString_CompareSubstr | 8 | Compare substring with byte-by-byte comparison |
+| 0x47c830 | StreamReaderVtbl_Init | 8 | StreamReader vtable init |
+| 0x489660 | D3DX_SurfaceClipBlit | 9 | D3DX surface blit with clipping |
+| 0x489da0 | Pool_Reset | 8 | Pool object reset/cleanup |
+| 0x48a820 | D3DX_Uninit | 8 | D3DX library shutdown |
+| 0x42e220 | DifficultyMenu_ctor | 5 | Difficulty selection menu (Pipsqueak/Normal/Frenzied) |
+| 0x42e840 | OptionsMenu_RenderControls | 5 | Render control icons in options |
+| 0x42f550 | OptionsMenu_dtor | 5 | Options menu destructor |
+| 0x4363f0 | Platform_ctor | 5 | Platform object constructor |
+| 0x465260 | Level_LoadCollision | 6 | Load binary .meshcollision file |
+| 0x465d90 | Mesh_FindClosestCollision | 10 | Ray-mesh collision via spatial tree |
+| 0x465ef0 | Collision_TraverseSpatialTree | 3 | Octree traversal for collision faces |
+| 0x492bc4 | D3DX_AssemblyOp8 | 8 | D3DX shader assembly operation |
+| 0x498200 | BitStream_ReadBits | 95 | Read N bits from bitstream |
