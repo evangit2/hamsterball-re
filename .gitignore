@@ -1,0 +1,18 @@
+# Binaries and game files
+original/
+originals/
+*.exe
+*.zip
+*.dll
+
+# Ghidra project data
+analysis/ghidra/
+
+# Build artifacts
+reimpl/build/
+*.o
+*.obj
+
+# IDE
+.vscode/
+.idea/

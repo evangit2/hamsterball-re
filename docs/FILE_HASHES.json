@@ -1,0 +1,2252 @@
+{
+  "Data/HS.CFG": {
+    "md5": "010cdc7e8d1abef20eb107f16650c127",
+    "sha256": "3cc3e674ba8ed5c4c0fcf2fd207a501afa0a74ca6e15b33ef64e164162750311",
+    "size": 1300
+  },
+  "Data/TOURNAMENT.SAV": {
+    "md5": "5a6e298291d82769468477c9b9c3833f",
+    "sha256": "4fb4d94d8df888f92de52518878c709b4646a79640ec42b9de11cfd06b8b82c1",
+    "size": 151
+  },
+  "Fonts/ArialNarrow12Bold/Data0.png": {
+    "md5": "3dd8883bcf666b783b25ad57a76ca4f1",
+    "sha256": "4040ab7efe9c5ec0a014f0a38545c8175de531acb1961fdfcee607caaffb1ade",
+    "size": 8360
+  },
+  "Fonts/ArialNarrow12Bold/font.description": {
+    "md5": "aab1d79214efa02cbc9d8a3ea04d9f96",
+    "sha256": "345ea5a3afd7589b5f6ddc6886d0339cc44c0ba4a2365cd0550b80b781fbe29b",
+    "size": 3143
+  },
+  "Fonts/ShowcardGothic14/Data0.png": {
+    "md5": "33142b0d1def289369f9945e269890db",
+    "sha256": "4b473f7447028101a13e6686a536f2d854ea72e057d9f9a3e3e6c66e136dbf04",
+    "size": 8216
+  },
+  "Fonts/ShowcardGothic14/font.description": {
+    "md5": "af96e62c11b411f94be7279fbc1f7341",
+    "sha256": "61bdc996e4d8812630a0917f5accacd55fca83f535c4100ff794d79cda6a080e",
+    "size": 3671
+  },
+  "Fonts/ShowcardGothic16/Data0.png": {
+    "md5": "c9b570b1ec656ba570ebbbd533083e7c",
+    "sha256": "03530c61f3f839ed0642aa20877977b5be05581a995e7fdd55b2a7f9443f9199",
+    "size": 9525
+  },
+  "Fonts/ShowcardGothic16/font.description": {
+    "md5": "27955692e8b23d11bc0790d3fd93e957",
+    "sha256": "36e5edd4c57174215c80ac922a607f2a6032e1027b7a3bca03ef15df94a100fb",
+    "size": 3671
+  },
+  "Fonts/ShowcardGothic28/Data0.png": {
+    "md5": "13721610209cbd3f2a48a68993950cd1",
+    "sha256": "b4de7d2a787cc037cc0fc83f701e886df17ce0646d7732c4885eef421ed7724e",
+    "size": 11785
+  },
+  "Fonts/ShowcardGothic28/Data1.png": {
+    "md5": "6e31d8218d35030db323b0c4372c1d9e",
+    "sha256": "1c53e447505eda3dc671b2abd3430d22b6ddae30b35610b148ff106c4bf6f0f3",
+    "size": 10728
+  },
+  "Fonts/ShowcardGothic28/font.description": {
+    "md5": "d8d4ee1472179576a18312f1cbb82475",
+    "sha256": "1553f91ca8e7b995b0b2f8996d0226a933cc2c997e7805c3dd1a8786531d8c22",
+    "size": 3671
+  },
+  "Fonts/ShowcardGothic72/Data0.png": {
+    "md5": "66748f20544b3a5dee2e9f56606c9770",
+    "sha256": "be68c9c1fab0b0ddc3398f3c0bb8cdd90a3d223b4814cfcef09c9d4677cd4d40",
+    "size": 10011
+  },
+  "Fonts/ShowcardGothic72/Data1.png": {
+    "md5": "4af375cef783a80520e3ac3526631cce",
+    "sha256": "aad8ee8ba9325b53333f4a43e42826dfa56530499798bc86566008928b667bfb",
+    "size": 849
+  },
+  "Fonts/ShowcardGothic72/font.description": {
+    "md5": "94cf5fba6a26223cd6803bb37cf8f2e6",
+    "sha256": "f72a34ef1af4b47b75ecbb472ed03c868de69079724ea62936eef6f4b7b90f01",
+    "size": 371
+  },
+  "Hamsterball.exe": {
+    "md5": "7d25019366b8d7f55906325bd630d7fe",
+    "sha256": "3379e9041c7ab83abd07da1bcf974529280aeff36b3c52e7a3d3bbb93e2da94d",
+    "size": 1404928
+  },
+  "Jukebox.xml": {
+    "md5": "e6cc5ebd708d24db9c41badf7be77b73",
+    "sha256": "c8875f43b372d8549744128c384d73298b7d4a5307f44652eef066646ef56a49",
+    "size": 3087
+  },
+  "Levels/Arena-Beginner.MESHWORLD": {
+    "md5": "a99b8682c7c2964a8dc0f273d1676d04",
+    "sha256": "64ca0ad73eaceb08823f7caed543009be8600d205ccf8b6583b26c0b32e2c71b",
+    "size": 151700
+  },
+  "Levels/Arena-Dizzy.MESHWORLD": {
+    "md5": "65e3bf7f04c7412d892fbae7121f4dac",
+    "sha256": "305ef1a5fb6e0b525801390b8996ea967b927627e5654572f7a257da28103f5c",
+    "size": 36652
+  },
+  "Levels/Arena-Expert.MESHWORLD": {
+    "md5": "fe942b2a00bb46d00b0ea50a6652732f",
+    "sha256": "bed283aa7b0e4ccd3139bb21056104dc08ab770ab01c652505c274d4323d008e",
+    "size": 41471
+  },
+  "Levels/Arena-Glass.MESHWORLD": {
+    "md5": "1fa9625ad3c16564dafb66f18bb18921",
+    "sha256": "c1e09f74209d843dd82c18957d57e37c23842ab882e0d3a2b06f37dc50688b0a",
+    "size": 101135
+  },
+  "Levels/Arena-Impossible.MESHWORLD": {
+    "md5": "79ae2ef8c2a27b7a76985f3462d308cf",
+    "sha256": "41e12cc796f91fbac3e4a1ddb0701f7a18f0ce5019c73cc64e8ec05ded944539",
+    "size": 32895
+  },
+  "Levels/Arena-Intermediate.MESHWORLD": {
+    "md5": "85ee3c80e9d63eedc1f79632e46e7fc6",
+    "sha256": "dea02d0795a080a29c8e37f9a7fe3859fedc6d5cc4a5b273e6b7f292e0a5d3cd",
+    "size": 20491
+  },
+  "Levels/Arena-Master.MESHWORLD": {
+    "md5": "0f7860f07717c3c885a66d411877a449",
+    "sha256": "8e48450c5ded32e7e010b4fe8ec6a6dfd6ac3ade50280fd00bb9854e0ec4e3d7",
+    "size": 93696
+  },
+  "Levels/Arena-Neon.MESHWORLD": {
+    "md5": "a73573ad79139e6d5d2a8954bb215a6d",
+    "sha256": "23619b54db92d3707d1964687f0756874774181929711c800d41c82514b1048d",
+    "size": 42706
+  },
+  "Levels/Arena-Odd.MESHWORLD": {
+    "md5": "4f252aa56f847d0f9912ad2517dccac1",
+    "sha256": "1cb384963b9762f03134f7048c593a59fed1109567888d50a410b32b3c19bee2",
+    "size": 117899
+  },
+  "Levels/Arena-Sky.MESHWORLD": {
+    "md5": "e67e5f029f5f2da9bc811ef418b3d96c",
+    "sha256": "261af38998cf5e9a16d11d5c9fae5c3646364f28dda21b6887f44fdfc6ee291b",
+    "size": 25742
+  },
+  "Levels/Arena-SpawnPlatform.MESHWORLD": {
+    "md5": "2b6964530f884ff75c2b1a075c9d05ae",
+    "sha256": "350592313f419d174601a6283928703a2a7e67d27d929d5374c50ebbec1ef2a1",
+    "size": 1476
+  },
+  "Levels/Arena-Stands.MESHWORLD": {
+    "md5": "0678dd2614aa493f17de62360de7c2b0",
+    "sha256": "f50e7c5556dfb7c6f7f34ddf49d07246790ec37fb7bf05722c84b52882367d5f",
+    "size": 8786
+  },
+  "Levels/Arena-Toob.MESHWORLD": {
+    "md5": "7a72a67b882675230be7362eff22a724",
+    "sha256": "243a08a23bfa887ff1d3375f49a74f58b1c0351a11f9ec059dbeda49d24ffafc",
+    "size": 297989
+  },
+  "Levels/Arena-Tower.MESHWORLD": {
+    "md5": "d118fb742dad904089a6a44577564efd",
+    "sha256": "9f0e024e1f78f026e03f3169bc94b552392ef031295a0ccc2c0a6998445a085d",
+    "size": 61061
+  },
+  "Levels/Arena-Up.MESHWORLD": {
+    "md5": "fee470fac7cdf805112cc09fea07e90d",
+    "sha256": "c995d03576f5e80fb92be5fad73ad9b0105b2871dbe1265e6a6e5712c3bde2b6",
+    "size": 63519
+  },
+  "Levels/Arena-WarmUp.MESHWORLD": {
+    "md5": "2da8430685fe9827aab1142f20993b8a",
+    "sha256": "9a4e911798597181c6338d4f6f48b833dba49db7a658a16ed38b562b6a05937f",
+    "size": 83254
+  },
+  "Levels/Arena-Wobbly.MESHWORLD": {
+    "md5": "2f33c55e1511f6ba24fdadc295365fb5",
+    "sha256": "11a8dbce13112c0c311cdc53c94daeac62abdba4768bf5efe358c9c168e3b8c8",
+    "size": 3157
+  },
+  "Levels/Level1.MESHWORLD": {
+    "md5": "4788ba685e5381e80e0a11395a92e047",
+    "sha256": "6bad846a7782e85239f79305135812bbab3bb0f6f01e020e0dc629dd3f660823",
+    "size": 332746
+  },
+  "Levels/Level10-2PBridge.MESHWORLD": {
+    "md5": "fe1fc87a5015a0577ed36362eb35e08d",
+    "sha256": "e05ab44a9b35d0c3d5bbafb63380fefa050a3f462a37287632cec8aae9777c70",
+    "size": 1517
+  },
+  "Levels/Level10-Bridge1.MESHWORLD": {
+    "md5": "c1cd682f27fc8ec918189471d6776c01",
+    "sha256": "e7d8ca6aa27b2891f94bdfc628469c3ecf031d50f22a30503074c1de8294c6e5",
+    "size": 5277
+  },
+  "Levels/Level10-Bridge2.MESHWORLD": {
+    "md5": "ae5e31331f7708e83e0c90cc2a710fc9",
+    "sha256": "f52abd67e2a74c7daa809fbf115dd86a5cab3695726adefe2de217d352e728ee",
+    "size": 6368
+  },
+  "Levels/Level10.MESHWORLD": {
+    "md5": "557e376fd68d271657bad7645fd07f45",
+    "sha256": "e53f01dd3c2195d126de8bc6cf2f763693fbc31d52d2999ad591d7e2c3e2517f",
+    "size": 963586
+  },
+  "Levels/Level2-Bridge.MESHWORLD": {
+    "md5": "e045aa6e74d5d52ac06d67b938b904ea",
+    "sha256": "906c30c391a3b2e46697aa39dd2e1e7a8f74a6d4adc6a4d1424b908556457a43",
+    "size": 36687
+  },
+  "Levels/Level2.MESHWORLD": {
+    "md5": "17137052c79b5cbd92b4f33bc508f408",
+    "sha256": "5d8085450956f9708e50698c7ed5ccfae1a75e549b636aadda6f1d57d94880f6",
+    "size": 788217
+  },
+  "Levels/Level3-Gluebie.MESHWORLD": {
+    "md5": "1f0a616eec5202895fdd3a13773a4434",
+    "sha256": "905179813036c67c079c4b90459f37f1052bb17c649811963cd90e72415b694a",
+    "size": 4413
+  },
+  "Levels/Level3-Swirl.MESHWORLD": {
+    "md5": "52b58dd2ecdf0d954455c094649d8ffd",
+    "sha256": "2751985389a629a67950dcfa525db64bc07a609d3f0c71a2a1651a29d8b9f896",
+    "size": 9889
+  },
+  "Levels/Level3-Tipper.MESHWORLD": {
+    "md5": "d1bd3f4423910fe9c36bd381a8457181",
+    "sha256": "4f12ebc4ca5e376d0aeee8da8f6568b40c5e580497de87920bf7f3e75288658b",
+    "size": 2562
+  },
+  "Levels/Level3-WaterWheel.MESHWORLD": {
+    "md5": "0825e6c5a84a843c17988fc9f3095040",
+    "sha256": "9a0fc3189bd5672944eb5bad3afaed5b80c26951e7489a9637519854554583da",
+    "size": 71544
+  },
+  "Levels/Level3.MESHWORLD": {
+    "md5": "9f0a7e4d69735b51e7c2dac27e923dfa",
+    "sha256": "d74bd4297e5a62f97ae91b40d22fb25aa7a7cdc66831bf1f606aa429168dd1b7",
+    "size": 1026112
+  },
+  "Levels/Level4-Catapult.MESHWORLD": {
+    "md5": "0b48a41c6ac01579dabbdacdb83cb8b1",
+    "sha256": "2fdc67dee321afeca4d689cd329a96cc88fe5a23fada9d1f8cf08c101679e21c",
+    "size": 14370
+  },
+  "Levels/Level4-Drawbridge.MESHWORLD": {
+    "md5": "f1988b036a16e33b39d69a624ecee744",
+    "sha256": "fc55647a059d8b8d7202fbc5c4922ace99dabb12b11277af560eea852428b9e6",
+    "size": 4355
+  },
+  "Levels/Level4-Mace.MESHWORLD": {
+    "md5": "199246a6226ba7f7d8a5c06b8fe881b5",
+    "sha256": "b29de551a0b04b05717d01c6350d4bef3aaa95fde7f2da1f557e9face8f4b795",
+    "size": 48831
+  },
+  "Levels/Level4-Trapdoor1.MESHWORLD": {
+    "md5": "283860ff77ae5c6164be201a5fdf8a42",
+    "sha256": "4fa8693c5e4cb92643dc54cb447f0307ef2675b7f3758c0a70ad3e6fac0efd2b",
+    "size": 1869
+  },
+  "Levels/Level4-Trapdoor2.MESHWORLD": {
+    "md5": "b13d5fccb3a65088a7a41b4b91cbc477",
+    "sha256": "818030a501ddce5abee67f863a38db360beda2a8ab731786ada11c657917a23d",
+    "size": 1869
+  },
+  "Levels/Level4-Turret.MESHWORLD": {
+    "md5": "0544efecb46a90cab7d05e1ec8e01f75",
+    "sha256": "1981ce09532fa49f9f23dbfad90b6ea88dce54826be3c33d4dff7c81f289463e",
+    "size": 13433
+  },
+  "Levels/Level4-Windmill.MESHWORLD": {
+    "md5": "eeebab1c7c35d58ae4c009e6111ca5c9",
+    "sha256": "4d76208d1e178b22e45536d2cc3bd4d7d7485bd786db0094f84d98e69b1cdc6f",
+    "size": 17867
+  },
+  "Levels/Level4.MESHWORLD": {
+    "md5": "aaa1aeeb0c74ccf81781aec63fa1e183",
+    "sha256": "3ee609fb5556ef7fb4b129be5614d86fc5b9d78c9688383c44ed61d460d9379c",
+    "size": 852481
+  },
+  "Levels/Level5-Bonk.MESHWORLD": {
+    "md5": "4e051baabf529941207a6d4fd89e26a8",
+    "sha256": "f1b963818b9cc6e7fb9f71e6d76086cb3c8e24ef8a8cbf34e1ace3feeccdcb6e",
+    "size": 34349
+  },
+  "Levels/Level5-Bridge.MESHWORLD": {
+    "md5": "8b3711e4fd1115df47a8c37d7f394330",
+    "sha256": "bf293145474f7ccf157ec86b975f5c5f2750cf439e1bd2fd400fa1b30c310c43",
+    "size": 1424
+  },
+  "Levels/Level5.MESHWORLD": {
+    "md5": "52911775f89a1ba4bf9795a2ed173ee3",
+    "sha256": "291b8ab236e5f462e5ebc9ef0f9a41283e192fbf74a18fe6b0ae02302edf797b",
+    "size": 950125
+  },
+  "Levels/Level6-Lifter.MESHWORLD": {
+    "md5": "84abb6d2691a79876f363535b043981b",
+    "sha256": "aaf8d2a511d1e68b3f9b595795122eabe0d960808bc92caa2af7ce7f3d190406",
+    "size": 8244
+  },
+  "Levels/Level6.MESHWORLD": {
+    "md5": "f1f1ccc87464120d7d30f7662e667175",
+    "sha256": "3c0f0c7cd75c299a0a42d9c97b948e32a0014e5b73c28c1c4f4148467afea624",
+    "size": 729619
+  },
+  "Levels/Level7-Wavy1.MESHWORLD": {
+    "md5": "737ec5bfc402dc3fe6c224a75c3bff6a",
+    "sha256": "ed417789ef3022f05ee9c762f7cbc1c5ce16a55a97eec226d0c9723c384f2fc7",
+    "size": 11830
+  },
+  "Levels/Level7-Wobbly1.MESHWORLD": {
+    "md5": "88bd889825d741a6f20c6cdf7c3208d0",
+    "sha256": "3f57089801b4ed2f652fc6995630e1231fc8640b9fc2bcea866b37eadc02d9de",
+    "size": 3259
+  },
+  "Levels/Level7-Wobbly2.MESHWORLD": {
+    "md5": "014caa00dd0326d726763bb44e7cde52",
+    "sha256": "e42c5f8296c4055d38a29ed2e99dbac5e702502632cd7516c582ee09a0d4420a",
+    "size": 5898
+  },
+  "Levels/Level7-Wobbly3.MESHWORLD": {
+    "md5": "06e9929fe66d9ab72784f168891c278f",
+    "sha256": "28b621694a721a7081a6958027c7b570af121a68f2be1142ab3f9776ae8d28a1",
+    "size": 10797
+  },
+  "Levels/Level7-Wobbly4.MESHWORLD": {
+    "md5": "16561622649e4073e0d03db602b6e3f7",
+    "sha256": "03420c25c90a783426e6d3506c98a517db1cbbeb2c21c996a5b2a8b7e44c1650",
+    "size": 2956
+  },
+  "Levels/Level7-Wobbly5.MESHWORLD": {
+    "md5": "6b223ad01db3f81105d66d81c69022c9",
+    "sha256": "98089d9e8e2be3a123a34a4f14c413086e65211000ce11b149070d31afc800e5",
+    "size": 2956
+  },
+  "Levels/Level7-Wobbly6.MESHWORLD": {
+    "md5": "5ec85cdff5ffacc7de3141a9fe48ac4c",
+    "sha256": "d5d57ff90c18e907e7eed417c21453ca5e01fe190c8cebe30340241e463171cd",
+    "size": 31698
+  },
+  "Levels/Level7-Wobbly7.MESHWORLD": {
+    "md5": "e629878a3724d267ee0e8529e7c8b453",
+    "sha256": "c5331a5bf1716856a8fd7374bd1125763c0d01f43f74aa0611a28179a33f4fe6",
+    "size": 31332
+  },
+  "Levels/Level7-Wobbly8.MESHWORLD": {
+    "md5": "9ac8b5b9ef84fe7462d08aa7c592e537",
+    "sha256": "200f83d971dcad87fe3f6b743c8f7325107e3bd0d5f88eb6e9068808d1b21470",
+    "size": 64880
+  },
+  "Levels/Level7.MESHWORLD": {
+    "md5": "7597f1ede81b3967937e06855b293898",
+    "sha256": "14f1d3974ac3bf369e89b95313e543886f167ecd76164117d681d6773d84f00a",
+    "size": 768534
+  },
+  "Levels/Level8-BlockDawg1.MESHWORLD": {
+    "md5": "296262527e9321782b9d9f34cb3478c9",
+    "sha256": "66c473a1186718ce833e47ccb1ceddf1200d0611c7571c0ac137a59f1c83867f",
+    "size": 2237
+  },
+  "Levels/Level8-BlockDawg2.MESHWORLD": {
+    "md5": "bdab60b22311f75c3cf886fe1eb823e6",
+    "sha256": "5b1b20e27b4d9f2caf43ba83c33be07f9fac8338013a9e373a7ab5e3fcce5a79",
+    "size": 3082
+  },
+  "Levels/Level8-Fallout.MESHWORLD": {
+    "md5": "9689ecf19dc880f20f5242c0273233a3",
+    "sha256": "899fb2c3c6e117cb4a183123f5917cc0fbefb8d0ae87ec8a2c8104131e61a9c1",
+    "size": 4790
+  },
+  "Levels/Level8-Saw.MESHWORLD": {
+    "md5": "981d16e5d3cfb0e1104cea7e9c55312e",
+    "sha256": "59d6e3b3a3208ce22e87f7c6d4c621288a4b10010798c818a1b8c206c5d429f2",
+    "size": 14387
+  },
+  "Levels/Level8-Spinny.MESHWORLD": {
+    "md5": "5870f145f58b73d1e4fa7483f3072447",
+    "sha256": "8e8fff82fa6847f5a9d2162461dca9a138c091fcf304d43d2177b0e9444723c2",
+    "size": 78810
+  },
+  "Levels/Level8.MESHWORLD": {
+    "md5": "6667b06577b20e6e0ecd00ad1110837f",
+    "sha256": "0117769e60938c8bb55ddb6efbf10563a7a537140b675d7a316bac0c8af521e1",
+    "size": 1027479
+  },
+  "Levels/Level9-PopCylinder1.MESHWORLD": {
+    "md5": "8f87bb6b682636c399a3a2d8b7dcd73f",
+    "sha256": "e08dfff8afa49dc4c262be84377e23805ccb6e5d293eb2fe9d4f143af7ebec36",
+    "size": 3829
+  },
+  "Levels/Level9-PopCylinder2.MESHWORLD": {
+    "md5": "913ba3aef64468df9827b7001b77e1e7",
+    "sha256": "1b20de3d4abd5e3063fdc607c1d05ddfd08d40230b1c34215fc0b2122163d56a",
+    "size": 3829
+  },
+  "Levels/Level9-TrapDoor.MESHWORLD": {
+    "md5": "e35bc54566e815075c54b382c73f6a84",
+    "sha256": "c6a86eec1b0bcf0d84b59498a7d7aa84e05b3f6546c68277c72e078130ad8437",
+    "size": 1509
+  },
+  "Levels/Level9.MESHWORLD": {
+    "md5": "0724a751cb6381f7165027b17340e49f",
+    "sha256": "85e2e76e743fd854b291b0bf204ad478f6f0778aa9c3cf6f537482603acddf88",
+    "size": 362791
+  },
+  "Levels/LevelCascade.MESHWORLD": {
+    "md5": "40a39c8cd8ed0815111d25fa2d92f6c0",
+    "sha256": "701de8a8ae913833232a535cbf0bcfec3050d7a6ade28f1e64f28ce138737271",
+    "size": 238816
+  },
+  "Levels/LevelDark-DFloor1.MESHWORLD": {
+    "md5": "2b4385c80eee27f41e405f59e537e522",
+    "sha256": "5860300a1fe5983f37719f5f025205387b9f27d7ecb02ae7d792184ead423599",
+    "size": 1677
+  },
+  "Levels/LevelDark-DFloor2.MESHWORLD": {
+    "md5": "1a1322651a303689a2502fde2ebca161",
+    "sha256": "a67948efeb12da2c363c93d55a86b4917f48cdfb30881e0c3ba840d9569b6223",
+    "size": 1405
+  },
+  "Levels/LevelDark-DFloor3.MESHWORLD": {
+    "md5": "4f8d370b34535ad289368de2331fc1e8",
+    "sha256": "83fbc552d91c8b622b39d450501f36802dc11e7b7f40067e5bf4bfb855d3617e",
+    "size": 12834
+  },
+  "Levels/LevelDark-DFloor4.MESHWORLD": {
+    "md5": "b805a295c302701967480cd9c4eee707",
+    "sha256": "bfb608ef49edd29f137963404e77f81400c7d9b4d8d86fdf5836c45eb129dff7",
+    "size": 55354
+  },
+  "Levels/LevelDark-FlickRing.MESHWORLD": {
+    "md5": "a2ed020299db21d2c99e347b2b92f7c1",
+    "sha256": "81f350cdc13b5fe4912b7c18d4096703226624ba300a816ee9ccd11f7a9609ee",
+    "size": 20108
+  },
+  "Levels/LevelDark-NeonPlatform.MESHWORLD": {
+    "md5": "c9b6288c4d233eb9135cdad7875b6fc4",
+    "sha256": "0c759c488446ff7168706d36b3c8d56e7854cf5e442bc0bebfa302bf2bf42685",
+    "size": 3299
+  },
+  "Levels/LevelDark-Trode.MESHWORLD": {
+    "md5": "82eafdfc87585e5f0ba0b35257360f38",
+    "sha256": "7e86b7f18af8a5608717080c439e0804d6893edf6c03b5f7b8ddd7b28bc842cb",
+    "size": 2229
+  },
+  "Levels/LevelDark.MESHWORLD": {
+    "md5": "21f4956049b0ba3b3d3caea071d1a89b",
+    "sha256": "6ef4b3a2936a1fbe0e28f629416beb8051673f8cfa351ac617de4bdfc0aad34c",
+    "size": 1151231
+  },
+  "Levels/LevelGlass.MESHWORLD": {
+    "md5": "c243cdd3978fb1e7e7536b6538bcc107",
+    "sha256": "aa19f05a3eeb7a4984e26b0bec3c67e845dfca9274276d030713c13da2014a6d",
+    "size": 665674
+  },
+  "Levels/LevelImpossible-BigGear.MESHWORLD": {
+    "md5": "5b71b32dea6d30cc1544bc43ac6b1875",
+    "sha256": "6a5cd106d217a0d5e3fa4e5b5f34aa4e7dc95a3861ffe2eb1c1020f5078dc2df",
+    "size": 20024
+  },
+  "Levels/LevelImpossible-Gear.MESHWORLD": {
+    "md5": "ea03b158f2fe8afb329cf671c2d67062",
+    "sha256": "5f283c2c59c12ef10dad3f8f21f7c460bcbc10924e0490416c19de328500cc55",
+    "size": 19660
+  },
+  "Levels/LevelImpossible-Looper.MESHWORLD": {
+    "md5": "95cb53bdd296edace90bf6c98c591372",
+    "sha256": "6d37181b8cb2d57ef0a7ddfa890f93ce0a74c35bff05a63b0cc60581354dc85c",
+    "size": 19132
+  },
+  "Levels/LevelImpossible-Pendulum.MESHWORLD": {
+    "md5": "6cd3e67e0fee240af4cb0361afe99228",
+    "sha256": "a24d19b8fc28a64a2ea25fd75bd29b07620b6fa7a4a88e26c738c419d64c5687",
+    "size": 6005
+  },
+  "Levels/LevelImpossible-Rotator.MESHWORLD": {
+    "md5": "af3c4ed1527d98bef0463157cf085467",
+    "sha256": "6e8abc77272ec62106bfd7608422b793b297e133c2f97dc7e6f179fff64ee863",
+    "size": 14909
+  },
+  "Levels/LevelImpossible.MESHWORLD": {
+    "md5": "a3f38d5548994fd8b48978c8d5d2d115",
+    "sha256": "0f6514cfedecc2e82f237d3cc66cc40290a355a71e3dd21c2b0c9e85db31f15f",
+    "size": 947232
+  },
+  "Levels/LevelUp-Button.MESHWORLD": {
+    "md5": "dff77e4025c22bc78fc834e7f0ed6b45",
+    "sha256": "6ee9bee68e85e8f4cc23e238927608401af388fb0a290db05caee15caf1dbbd1",
+    "size": 9468
+  },
+  "Levels/LevelUp-Lifter.MESHWORLD": {
+    "md5": "f998a4694a5602d1e97a33f4f06fb79f",
+    "sha256": "b17d6a29a10059f2dd34aa53fc0207a94d8b18ce00f51b4f6998b64379bbf7ca",
+    "size": 8232
+  },
+  "Levels/LevelUp-SpeedCylinder.MESHWORLD": {
+    "md5": "70df6f2d7adcf221c3f082b5d74611da",
+    "sha256": "05575066419709171ffb1bdacd73763410ee5674d8f44fcbd215e545f633c97a",
+    "size": 5962
+  },
+  "Levels/LevelUp.MESHWORLD": {
+    "md5": "cadcdc16399c9ab2ea09a410ffd68fb4",
+    "sha256": "22d4d416d8d7f615ade27e0045525fcddbe84d78126a1f5af1b05f4635cde7e7",
+    "size": 526673
+  },
+  "Levels/MeshDetacher.ms": {
+    "md5": "ec88005f9eb232ea41a4ff9b4df627e0",
+    "sha256": "89099f50d2c495a208c3a8c5901dc8ce57efb6023601cef35bef3b7c7cef69d7",
+    "size": 1068
+  },
+  "Levels/MouseTrap.MESHWORLD": {
+    "md5": "df2629432de83c364977652b8986d369",
+    "sha256": "507d46e3af81a0c1fe2e87ecc4e5d80733ef0674aba8787bf1540d68208461ea",
+    "size": 18093
+  },
+  "Levels/PopupSign.MESHWORLD": {
+    "md5": "0f0f672ff4d8da8ea63f59285c90db70",
+    "sha256": "e275bcc39045324774a1c709e827bf4f51d171ea98465e7000566d702e28b24e",
+    "size": 7618
+  },
+  "Levels/Secret-Unlock.MESHWORLD": {
+    "md5": "1591ca124455caafe22a65cf2ccc1a80",
+    "sha256": "45ef49b8b76945080cb8531e23ed8e548bac8fc6f71e84f77e56cd1d682e73d1",
+    "size": 4272
+  },
+  "Levels/Secret.MESHWORLD": {
+    "md5": "d4c3cd7d6247b489c6462df063168fca",
+    "sha256": "fe6b48bf140aac7abd79c1ec676bd50288b362128c1712e5f70fe9f125997dc0",
+    "size": 1964
+  },
+  "Meshes/8Ball.MESH": {
+    "md5": "5eab82ca5ef656f195d69449e61c968f",
+    "sha256": "379c4042d06062d13357e68bdc8177eb0659d394f1152415215c70ffff31e737",
+    "size": 7675
+  },
+  "Meshes/Bell.MESH": {
+    "md5": "e65044059749cab804e7118fa5fb058e",
+    "sha256": "e1bf4dc341a549e9af0ff85a1afead5d8f1037803f364b152cfcb59cfe411a3c",
+    "size": 9834
+  },
+  "Meshes/Chomper.MESH": {
+    "md5": "3e9e58c57b7447093473b3e67dfaed70",
+    "sha256": "ec3049a3ddc7ceabe5a494c0d1a605dc809d077f9dd704483e122934f182d5b1",
+    "size": 27547
+  },
+  "Meshes/DawgShadow.MESH": {
+    "md5": "71ff2862cc551bf3f97ace022343615f",
+    "sha256": "18a544e3f1169cf25789fa2b567054138a19eec8f33ca798ee72777de634fe98",
+    "size": 264
+  },
+  "Meshes/DawgShoe.MESH": {
+    "md5": "c6586ba44b982df404e327ddb2665ee0",
+    "sha256": "a126b6ebdb86f4cbecc4ad9a73c248f832768ae631fc90190dc1110c323c66b6",
+    "size": 10701
+  },
+  "Meshes/DawgShoe2.MESH": {
+    "md5": "1a5fccfc479e1080e5dcbe59b2edcd3a",
+    "sha256": "fd7f81dc99504dd9579e6096c158c3526a34d4e125665c4e5cb4e35d6fe38b7f",
+    "size": 11097
+  },
+  "Meshes/Dizzy.MESH": {
+    "md5": "3e1a0d7a05938fc79e977ae1ba903b9a",
+    "sha256": "ec83083e2b678fde5bd9506d0fb5cc2486abe7ab8013b31e9b594ee180d1c635",
+    "size": 280
+  },
+  "Meshes/Eye.MESH": {
+    "md5": "0e5f32f780b8667690066b8b5392af78",
+    "sha256": "73df00b421c74e3f0cead8184b1bc0ef680adfcec2fa28394b5916786de4f8d3",
+    "size": 9495
+  },
+  "Meshes/FanBody.MESH": {
+    "md5": "55b8d89cd9e959408fe15054d8643938",
+    "sha256": "984e5528691c71a80f75fa9f2661d06dc65663ca25ea5045dcf08453575b587b",
+    "size": 31584
+  },
+  "Meshes/Fanblades.MESH": {
+    "md5": "20a5d85c629362042d8502533e321443",
+    "sha256": "444f0fc2b82b09d019236a4444879bb097c067dbe4a495c144b8c28b6d815c5f",
+    "size": 3864
+  },
+  "Meshes/FunBall.MESH": {
+    "md5": "2bc3a9a1501c1e58e0ae2eacdfff89ad",
+    "sha256": "976eb47fae58197c1b91e13f975544ae20f10a9392c97b2eae0ddb428e9bce16",
+    "size": 7677
+  },
+  "Meshes/GlassBonus-Smashed.MESH": {
+    "md5": "139040e1c9955a5ebc8ab15ad9203c94",
+    "sha256": "2d5c0a89bbe38d33e94d7fc96f6e0654867f1490d9e888d1d7089849fd676acc",
+    "size": 7162
+  },
+  "Meshes/GlassBonus.MESH": {
+    "md5": "b959fbd64542de706916eac86cdca712",
+    "sha256": "e39b4f992c3d6834731568aa83168b0b4075fe8b79d9ca527ef8f8d59d4bd0f2",
+    "size": 1186
+  },
+  "Meshes/HammyJudge.MESH": {
+    "md5": "1a6cb894ef2babec3b3169d5565581bf",
+    "sha256": "20e721ecd0fdc192c6dc0f2292f93186b515c9c8fe2e93f23a7cc9921431cb31",
+    "size": 33296
+  },
+  "Meshes/Hamster-Trot1.MESH": {
+    "md5": "db4b345644539103b73182eb8b6c8d86",
+    "sha256": "48e5651435ac855e4f68521748d12247c4aeba9a46988a3d9f5bb8ffa1a9f512",
+    "size": 18492
+  },
+  "Meshes/Hamster-Trot2.MESH": {
+    "md5": "4ffdc1b287e88a381798bbd2ecfdc937",
+    "sha256": "a29fcd7bddebbcd4f107dcab25d8e52da946d356a956e435b6c029a5e48a3dcb",
+    "size": 17812
+  },
+  "Meshes/Hamster-Trot3.MESH": {
+    "md5": "636a33791824601dbd27cc3fa35a0567",
+    "sha256": "b3d94cad9c0c4a3759a1ce2d0f72a8132a5d89c3f5e0151234c66c4c5a3f6f3e",
+    "size": 18152
+  },
+  "Meshes/Hamster-Waiting.MESH": {
+    "md5": "a744e21469703b3489a967ad1bb201ce",
+    "sha256": "42ed79e6fba2f70ed5c6c305cc3aec1379113daa2d2290cb975901cf77a98661",
+    "size": 18492
+  },
+  "Meshes/Hamster.MESH": {
+    "md5": "1c8422d92ad9723115bd70e19f8a86b2",
+    "sha256": "ac7e2cb1de3cac2f819670695f3dfbe77667796d184a01fdd54e5494ae7ab2eb",
+    "size": 18288
+  },
+  "Meshes/MagnifyingGlass.MESH": {
+    "md5": "47761779c56f9a52daee830b12a9241a",
+    "sha256": "cddb29e12a10866e77cd1664984ed471ff4d271b53d1d8a77813b088118d8eaf",
+    "size": 34329
+  },
+  "Meshes/Mouse.MESH": {
+    "md5": "b840bb2f3a83c97a65f288418699db15",
+    "sha256": "acf0b8be6afdc3c2093689e418e17af99feb13ad9ec93870628ebf3b002aa096",
+    "size": 33755
+  },
+  "Meshes/MouseTrapShadow.MESH": {
+    "md5": "3cd8562677e6916d825fbb69df3343cc",
+    "sha256": "3350be7fd4cf631ddaf77390874d2e6a71d2743d2645766cece4f4d34fb42e4c",
+    "size": 337
+  },
+  "Meshes/RBGlare.MESH": {
+    "md5": "44de6e6220ca5bf21696c0d9cb13efad",
+    "sha256": "510f3ddb7e518ef513e9eb7e9b83d41e6d870de0c38d48b968de446e419dfb2d",
+    "size": 3645
+  },
+  "Meshes/SawFace.MESH": {
+    "md5": "ed6a16751682019c22382b4831b607e0",
+    "sha256": "8de8953cfbbe85041635b81493bb89b0428427cf32d3ed164df6cd860dfdc3f3",
+    "size": 280
+  },
+  "Meshes/SawFace2.MESH": {
+    "md5": "2793d978c1d5e5882cac989c7f79b2ea",
+    "sha256": "5671715a2839a60e68b47536042cdfdb2e52d06cdcca62469f9cdc156e97ea23",
+    "size": 281
+  },
+  "Meshes/Sawblade.MESH": {
+    "md5": "bc254c41d13d5f46089e6ccf27b02e76",
+    "sha256": "1828f83106d65bdc958ca2f78d68bd62db07a7cdf550933346701ea076793dc7",
+    "size": 6723
+  },
+  "Meshes/SkyPillar.MESH": {
+    "md5": "f7384f20fc45a78a169e82a5c7076b89",
+    "sha256": "464e198796a87708643685391e2c249938412feca52d56515a624657cbc5ebed",
+    "size": 7215
+  },
+  "Meshes/Sphere+Tar.MESH": {
+    "md5": "4e3553e688922c9b4e7c4185b7bdfa38",
+    "sha256": "eb6a6a6cdad29ce00526f1000eacd48538c4ac127e7b5c7617a6e78050b6c8f6",
+    "size": 3555
+  },
+  "Meshes/Sphere.MESH": {
+    "md5": "d3a16f62758fc2fc6c9e036646c16dae",
+    "sha256": "d6e9ab616b4267070129f6c4585e9c851cd9a10e9f8e3f3748504c1a3231f216",
+    "size": 10181
+  },
+  "Meshes/SphereBreak1.MESH": {
+    "md5": "d28e2abf8a5783bede905ea9706a9e81",
+    "sha256": "008ee4d1a161d483f92237f893580e9053a1ef27691dcde23769ed90112023fa",
+    "size": 5137
+  },
+  "Meshes/SphereBreak2.MESH": {
+    "md5": "19c93647f772ef941ca73ad7b0cafeae",
+    "sha256": "54c857fcd42ec1438fc5f83e93671b6917f4b82ca2eff83b7d87bfec6b5bfb2a",
+    "size": 3937
+  },
+  "Meshes/TarBubble.MESH": {
+    "md5": "0ecd7e1d41f9ebb8063e439b24cd809d",
+    "sha256": "5332eb7c4cbe510e73076881a670b01823c72ce8ab7c139731cb65870bf79843",
+    "size": 3713
+  },
+  "Meshes/YellowLink.MESH": {
+    "md5": "fc5f2fe125e94a231b96db26c318ad04",
+    "sha256": "1089f9bafb74c7514b5af3e438143c3516dac6b052f7172983ea39da1e627757",
+    "size": 283
+  },
+  "Music/Music.mo3": {
+    "md5": "ba0b75b5d204b9b2f38266f0e1cda56f",
+    "sha256": "b55ebd0522d04c116123a95d1342f11ab3e0a84defe1fd3be31a650f58393827",
+    "size": 264082
+  },
+  "RaceData.xml": {
+    "md5": "0aa40de6dfe8bce67dc29e9c5984f33f",
+    "sha256": "ee26d3e63b523b03f26d977b980bb920723902910439fad0bb78d910fc43fd2a",
+    "size": 2691
+  },
+  "Sounds/BallBreak.ogg": {
+    "md5": "546bf4f65d3ce84580dbe4440a5974bf",
+    "sha256": "e7503d132f46dc7ed28483a1ec29ba45c77b97bc9ef637b1cb07575727cc3ef3",
+    "size": 14253
+  },
+  "Sounds/BallBreakSmall.ogg": {
+    "md5": "253a6fa5b31783912203f321b4a4d49c",
+    "sha256": "cf834fe8d2bf666d938ec47245af46cb4c752072415c77153fc0597793364c4d",
+    "size": 11074
+  },
+  "Sounds/Bell.ogg": {
+    "md5": "046fef76ea843cce49ee381ae4282d5b",
+    "sha256": "9fad3e24662f64d271ff19dccaed1534dbe92eea72605a4611196c9cfe9a0886",
+    "size": 17388
+  },
+  "Sounds/Billiard.ogg": {
+    "md5": "2007696be82a863db2b61b814049f319",
+    "sha256": "8205337677e76e8ed49d1f9f94f6610289352f40b99b70632d50f22667580e55",
+    "size": 5736
+  },
+  "Sounds/Bing.ogg": {
+    "md5": "3a37f6204076cb4e2ad398e59ceeffd2",
+    "sha256": "e3e1d23c719e82312964e6ca646ab29be727d8280129a266283738410829a735",
+    "size": 6128
+  },
+  "Sounds/BonusPop.ogg": {
+    "md5": "2faca67d859e0fee82a97c0384c1f616",
+    "sha256": "c661975cdb35cd4047963e2d9dcf1343c2735d18e36ba438aa778d4cf13a3c59",
+    "size": 7859
+  },
+  "Sounds/BreakBridge.ogg": {
+    "md5": "cc64328591ca4dc05d17789d4da39b68",
+    "sha256": "8ed828051973f2f46f0d26a4469461a319c9d846af33b953043dfa0bbb42c3a6",
+    "size": 11644
+  },
+  "Sounds/BridgeSlam.ogg": {
+    "md5": "f41e79785dbfbe9fcdacb7df9099391e",
+    "sha256": "d7b383b5d2888664c7f681c7e42484d09c44e701e9c63561fa1340ac306fcfca",
+    "size": 8540
+  },
+  "Sounds/Bumper.ogg": {
+    "md5": "5d87a1560bf171ec77c4dcb29c9c43b6",
+    "sha256": "13036cc26092965b206ec70c38fd1c652039adbf0bef420c10c269b9f2868a5b",
+    "size": 7375
+  },
+  "Sounds/Catapult.ogg": {
+    "md5": "bab0544d771aba6fb24f04f99bf6628f",
+    "sha256": "cf32963a07df1d6e75fa400f395db6ef75497a55468b8dfe1002ca5e2e634154",
+    "size": 13355
+  },
+  "Sounds/Chomp.ogg": {
+    "md5": "a4f81586b8326cafe9132ad574a82b3e",
+    "sha256": "e66aa512dd459c19b21318ea397c7443cd5089b046b4ecb5ecafdf897394ed59",
+    "size": 6531
+  },
+  "Sounds/Clink.ogg": {
+    "md5": "80e2c08bce37663e73cecb1ccfe51b91",
+    "sha256": "1126697e9ae9444282c58ae0ed6d05c44ed24d87717bb7356b71bfd8f2407cf6",
+    "size": 5782
+  },
+  "Sounds/Collide.ogg": {
+    "md5": "50cbb1eb1f84db9cae042d17e80f1f0b",
+    "sha256": "177ceb62b3cf734e801d7f29eb0cb8070f4dad5abb2fba475ebd57b09e7b0296",
+    "size": 4407
+  },
+  "Sounds/Crack.ogg": {
+    "md5": "7211bc1da110a1fd752ea60c39505aed",
+    "sha256": "0f46da740c32dd5ac0c50be140fd91db21e77b7f386ee8a90ec2cb6b8592fe09",
+    "size": 11653
+  },
+  "Sounds/CreakyPlatform.ogg": {
+    "md5": "f1bd066228a3ca709f6805d0fec9b912",
+    "sha256": "8f311106d11c0f231ad87c606066f11b0856b2d610eced2ee5440ad078f65c5f",
+    "size": 18984
+  },
+  "Sounds/Crumble.ogg": {
+    "md5": "5def7f70b8ae43ba8bd9b95b55ea8aad",
+    "sha256": "fac5d629ef7b899cd5e6c5ec5ddc5c4e07cccad535c5153e76dd2e65c7fd99a5",
+    "size": 8695
+  },
+  "Sounds/DawgSmash.ogg": {
+    "md5": "e57a2da2a595163b1f4ec54199a0b3b6",
+    "sha256": "8588732b98eba5257d214f1ba60f4ba20237a8df3c24007c0e9bab08f44d2cb8",
+    "size": 7256
+  },
+  "Sounds/DawgStep1.ogg": {
+    "md5": "e11059820fd7a83f72e02ae586b04f90",
+    "sha256": "f9c2a243c24a71b96a3bb95ff67535d5de0c396005956325c37ca041c1fd58fd",
+    "size": 4395
+  },
+  "Sounds/DawgStep2.ogg": {
+    "md5": "c9c60a04140ff5bb98bd0967a460871c",
+    "sha256": "c7d008b151cb18b5c29825061bda443727eeba1a159e4fe0000d562746a0f09e",
+    "size": 4512
+  },
+  "Sounds/DropIn.ogg": {
+    "md5": "877a29f743fd236d10f2ed7e591e283a",
+    "sha256": "a41f629efd86c807bdbcbe3950cc78daf44aff4da220f5a610f704cc29631fa9",
+    "size": 8902
+  },
+  "Sounds/DropInShort.ogg": {
+    "md5": "c774fcb35dd8f6c4636bcd095ac780cf",
+    "sha256": "0bea187fe9f9665bf51b668ebc8a8676400b0e96b7fb2cdfad33fb79a82d2f2b",
+    "size": 6955
+  },
+  "Sounds/Fwing.ogg": {
+    "md5": "5e4c57b95a90ba90185e803f7610f053",
+    "sha256": "84044f2ca612ae95521fcb98eccc6b28b27f2ee5309329d4992d8c52e59caa0e",
+    "size": 9008
+  },
+  "Sounds/GearClank.ogg": {
+    "md5": "3a0833bd11e78da9cb4f8f3a87439985",
+    "sha256": "5687791f2629b347550777694a31237ba7060f3e5d327db61b4ff32cd3ae54ed",
+    "size": 5941
+  },
+  "Sounds/GlassBonus.ogg": {
+    "md5": "00a06255c39244853f20f4cb06cc0476",
+    "sha256": "0f0bab42e8ffbe377bb07304f721af0391b66a20f9727e55a6fe3e7a3a314f5e",
+    "size": 15910
+  },
+  "Sounds/GlueStuck.ogg": {
+    "md5": "591e10dbdf150104642a63256d836c3c",
+    "sha256": "0e6537fa585071820d382ce48deaf7779b3f55a18eb25155156967d13763a696",
+    "size": 6873
+  },
+  "Sounds/Grow.ogg": {
+    "md5": "d45b1ddc64e96b387dcefcf123131751",
+    "sha256": "e842d9d70bc853821cb73f324b3ec8530c4b31cff5d08ddf0b88af25673fb7d7",
+    "size": 15464
+  },
+  "Sounds/NeonFlicker.ogg": {
+    "md5": "82fa228a6584c32e8d5cef3f55814371",
+    "sha256": "b6eef3109ddcac57897f42498a11c16e547bbe98bfd21b4876ed056fddf29941",
+    "size": 9786
+  },
+  "Sounds/NeonRide.ogg": {
+    "md5": "d16b14e0acf1ed9761580e05f85b79a2",
+    "sha256": "68f40ab89bdc65fa82bc758f72bb26a0568b3036aea7ae3b3e4037dc1417f56f",
+    "size": 8476
+  },
+  "Sounds/PipeBump1.ogg": {
+    "md5": "a4d0fbe73de18638f0d9356dd7b276ea",
+    "sha256": "6d67f05b136a0c12bb8b78ac1790ea74838fbc347ec3583e0e3955ddad02ff81",
+    "size": 7742
+  },
+  "Sounds/PipeBump2.ogg": {
+    "md5": "b29927718954179a5afe2b8791f43dae",
+    "sha256": "0c0c55dcf0465513c2467e91a5f1129cf3bdcbc83b5fadb2a0d1c6b2001fea7e",
+    "size": 9273
+  },
+  "Sounds/PipeBump3.ogg": {
+    "md5": "d56961bba708b1ad7057ec692c7079e8",
+    "sha256": "b6d2e2066f6630622a0b1a244e3682ae6c045752bbc4e98bdf8ad5aa07bef68a",
+    "size": 7086
+  },
+  "Sounds/PlatformTick.ogg": {
+    "md5": "12b4696f94654d0d94cb8e412203d4fe",
+    "sha256": "5a6aea8227532f128b329f16ea1ca3a7232c2ddfb85e623a191473532b453316",
+    "size": 4916
+  },
+  "Sounds/Popout.ogg": {
+    "md5": "f9e44c152b2cd708b71d994604ab4c27",
+    "sha256": "7babb986372dfc327c782524adad68031c1bfc41e1f6f545593a0eb99bdb741d",
+    "size": 5220
+  },
+  "Sounds/Roll.ogg": {
+    "md5": "d7f497be55ca4d092c1fc5c0b9b028c9",
+    "sha256": "53044390711941ae7bad0bb234315b4a0a40602886cb46414b5406641ff63618",
+    "size": 60747
+  },
+  "Sounds/SawCut.ogg": {
+    "md5": "9828ac8cdb9ae3544f3e4ed4fe01b75f",
+    "sha256": "76c9a32b63ef777a5f63a68f16aca3dc86debaf86a5db7267bc89eb2418a9fad",
+    "size": 23441
+  },
+  "Sounds/SawStartup.ogg": {
+    "md5": "c7cfaa268760db35835fb9b34158ff64",
+    "sha256": "c92f18c8567419c5c65ebfd6f4242c8aadd2f81e7b7dc0470ffe8d3e521ea9f6",
+    "size": 38759
+  },
+  "Sounds/Shrink.ogg": {
+    "md5": "36ca5bc8e6bbb7175e630b24337f3f32",
+    "sha256": "c1fa58445a2adc13a52d097011a73be595965d0e8e5bc3e0bd9ace82ddabbb5f",
+    "size": 15489
+  },
+  "Sounds/Snap.ogg": {
+    "md5": "e84aa24dfbbc8561da29f97301d79a98",
+    "sha256": "ea2041f8f56d792ed7bf3a241fafa0066a47860b82833ea42cf109e939d810d6",
+    "size": 5758
+  },
+  "Sounds/SpeedCylinder.ogg": {
+    "md5": "eb8520b2fd966169a97cbf83e1e291df",
+    "sha256": "489958fe0b5befbfffc2c01891e5b548de40e82aaa195d68a1b17e6e09a6ccf8",
+    "size": 34803
+  },
+  "Sounds/Thwomp.ogg": {
+    "md5": "89bdae48532f70f60b5afa5fd290e5f8",
+    "sha256": "30835ec92a07fbc1d38f23b9e17c24a1dec396073aa5bd62ade5d2b50de66f2e",
+    "size": 6000
+  },
+  "Sounds/Trapdoor.ogg": {
+    "md5": "be4db7bfc44d9e4196be3cc219a11dfd",
+    "sha256": "567b5b467aa8c51a13ad1e69ced7f7a02ebd505fa969a7ec4987e55ebbd78314",
+    "size": 12318
+  },
+  "Sounds/Unlock.ogg": {
+    "md5": "71121b7d3ff33a1d7eda3730e62c4f2f",
+    "sha256": "9d56d552f4ec99cf911ebb21b6276d13273b590b5f98a88e8ca2c7bdbfa7ec99",
+    "size": 8025
+  },
+  "Sounds/Vac-o-sux.ogg": {
+    "md5": "cdb7330dacea37ad24c358276b656999",
+    "sha256": "001a22455be586e2480a56edc9e0644ff99cacf939fb35f8aad75daf98d9e588",
+    "size": 29703
+  },
+  "Sounds/WheelCreak.ogg": {
+    "md5": "319a9ba07c5dc9b42344037e166d17d9",
+    "sha256": "a80f31398f275ce1e81c46694248b249677cb88ec8fba5ee04e13df58f36f6d1",
+    "size": 22108
+  },
+  "Sounds/Whistle.ogg": {
+    "md5": "d86c62f590d4c2ed23a76b631a38b9b0",
+    "sha256": "8c4f5ab905e22dedbedd0fd27277e9f1112258736efe60c6d0533dab105cc1e0",
+    "size": 10951
+  },
+  "Sounds/Whoosh.ogg": {
+    "md5": "11bd3d47c438bc4b7fa358276d571f45",
+    "sha256": "ed875a0e13251fdaa291bb8b80824df4840eae5b6e03966b9361d14732091b5f",
+    "size": 7841
+  },
+  "Sounds/Wubba.ogg": {
+    "md5": "e9e45530354c07d146b047734501d417",
+    "sha256": "2a8b69a1c39cb3cd29ab035622cbd30c831bb93997ffc02360efd20966f5fd79",
+    "size": 6361
+  },
+  "Sounds/Zip.ogg": {
+    "md5": "38d73b0b2f9a6fa408e34db690648685",
+    "sha256": "3ab4145e6ad9185c994ec917eaa96db56907f1da55fa2c40ffb456f358091f9d",
+    "size": 13350
+  },
+  "Sounds/Zoopdown.ogg": {
+    "md5": "d26a761cb2e4b732d6186ff99898cdb2",
+    "sha256": "92db978fc808530239cd87497a1220bcbedd40b3b49f48cc70d2e35a38915e0f",
+    "size": 10012
+  },
+  "Sounds/bubble1.ogg": {
+    "md5": "1daa3b0106059b1611ef5abf33a112b3",
+    "sha256": "afd3f4ae6bc3cb1bba80afb6f8d446a0bf8e99402b4a310d046bf956d2ac6566",
+    "size": 5643
+  },
+  "Sounds/bubble2.ogg": {
+    "md5": "158a5970133f4dec99d2fcd1a1b90479",
+    "sha256": "07243a1285c039ca0db75b22a5958ce3e405dce8906a1fb88a1adc85bc8d87db",
+    "size": 5748
+  },
+  "Sounds/buzzbonus.ogg": {
+    "md5": "b26d8decd867e5c81b7b9894e0ee78ae",
+    "sha256": "25ebfe990a050ea233f7e7424e048c3d76c83e1d2d511bd985d0f12b4363816f",
+    "size": 12637
+  },
+  "Sounds/explode.ogg": {
+    "md5": "263c61b3fb91a7ea8e2ff930e1a1190d",
+    "sha256": "e84fc37bfcacf65a2f250b508cae41fbbf22438358ab8d13051a6522058f57e5",
+    "size": 12094
+  },
+  "Sounds/fan-blow.ogg": {
+    "md5": "e34780a71c715630e63f3925590c4287",
+    "sha256": "c22897a320b8e124821d324d4a12851c52e7d51b41a35613f7c3a8c3663e2ca4",
+    "size": 11853
+  },
+  "Sounds/fan-start.ogg": {
+    "md5": "ee63a3b94583d1e7a78b3d4d5b7aa098",
+    "sha256": "ae65a1029f195f392ccc7e3b16f530dac3c6fcc3f8adbb36427b544a62717e70",
+    "size": 34170
+  },
+  "Sounds/lightsoff.ogg": {
+    "md5": "5d14ca5bbbf257d47c04b17110ef9962",
+    "sha256": "7c22ed9c08365c8d31a122d4878fc6b7e6981774b98b0a36621640c6555473e6",
+    "size": 14999
+  },
+  "Sounds/minipop.ogg": {
+    "md5": "87ca75395487b126ed9c2cb5bdb881ea",
+    "sha256": "ee21ec33747f5c33ca0b13cddd5a54ef53fe9030908cb6e5127fed06fe0988a3",
+    "size": 4841
+  },
+  "Sounds/popup.ogg": {
+    "md5": "87a925195b66ffed753293f575b72611",
+    "sha256": "44d9a06ef23231bff981a6109c5228954e6ee571d6bdda0ace146ac049bcc31b",
+    "size": 5235
+  },
+  "Sounds/saw.ogg": {
+    "md5": "b6f278a501633dce54e27c49c79acb81",
+    "sha256": "17c7b0b3e71f5e2cefbe10704d813cad52f4b27fd96311111da8586a711003b4",
+    "size": 17728
+  },
+  "Sounds/sawspeedy.ogg": {
+    "md5": "6ff94facb847bdc016c866bb6dc4bf81",
+    "sha256": "63ce13b3fd5495d8b293d0a06e7e9fc2d742e04796eead27a5eb73122da67316",
+    "size": 10799
+  },
+  "Sounds/sizzle.ogg": {
+    "md5": "cc7b7a09ce534ab096533682329aadbe",
+    "sha256": "c821215ff919aad6451ded19383bd53b53daa59b07e93cf44517c5239b07d661",
+    "size": 13923
+  },
+  "Sounds/ting.ogg": {
+    "md5": "77596cd5cbb638165bc3080085d05cc2",
+    "sha256": "7d59887056e510410d0d58e87b016e98bc495c0c522737dd4a452893cb2641db",
+    "size": 12574
+  },
+  "Sounds/tweet.ogg": {
+    "md5": "c2ea27ec9dd82bb4d637ad9129e53849",
+    "sha256": "8e4ac80d492ee505d27fff3631b9e028db74251387354cab3850334ff6e9597f",
+    "size": 22197
+  },
+  "Textures/8Ball-Mip1.png": {
+    "md5": "3f0e936fde90d57169bb87c1ec0520b5",
+    "sha256": "60823da9395dd53f44d549b6899dcc5d7f0aca73f18eff24308836269bfed68a",
+    "size": 490
+  },
+  "Textures/8Ball.png": {
+    "md5": "477c4dfc35c81f236303894b8b8af04d",
+    "sha256": "bd796ea84677b69978477d3a386ca1521409a73e933af30cb52a7c14051492d2",
+    "size": 750
+  },
+  "Textures/Arrow1-Mirrored.png": {
+    "md5": "7ca679db3e4d5a2883ff578865f9ebe0",
+    "sha256": "7822aecc423c4e70f75648c82311ab399b7081ed2ff459b81aa1ba517185ba11",
+    "size": 12379
+  },
+  "Textures/Arrow1.png": {
+    "md5": "44aad80835eac1b187219ef447018fc5",
+    "sha256": "1df0debbd77af6c9466f64f0bd739577d027e4c36c7b07c6a32a677675e835be",
+    "size": 12783
+  },
+  "Textures/Arrow2-Mip1.png": {
+    "md5": "20f423424ecf164e80b3a8990260a1d6",
+    "sha256": "9f6ed4524838ccd744f2824cfa29b948de48601d64512a378a6d1ef21010d97f",
+    "size": 3785
+  },
+  "Textures/Arrow2-Mip2.png": {
+    "md5": "9d1319571102ecc33b56aa8568138a1f",
+    "sha256": "caa24f27241f551eb9b646b946a1b0b19e3d2e205f8273b3b239fa229db2db53",
+    "size": 1634
+  },
+  "Textures/Arrow2-Mip3.png": {
+    "md5": "5aa4072c4bf9b46769c5e995c68adf91",
+    "sha256": "eaba3cc40f96564d9c8b4c08a77d7fd0ca8c8b1562843e58e764e54f68cae21c",
+    "size": 842
+  },
+  "Textures/Arrow2-Mip4.png": {
+    "md5": "dc1a4673032ef83f690b02c94283dd1c",
+    "sha256": "db6d791c91fb858956f5a7c3a19b0b2b346b48d504872879f56efc37b2777c35",
+    "size": 457
+  },
+  "Textures/Arrow2.png": {
+    "md5": "fe75da407c64c080bafb3ba4d0049030",
+    "sha256": "f201b0fec96785aa93ba99b1afdc86e780902ec35c61b99e5a150731b2b09bbd",
+    "size": 8567
+  },
+  "Textures/Arrow3-Mip1.png": {
+    "md5": "69e9b2931c254333d9eb7598b9216d27",
+    "sha256": "384439b6dc88232b7afa80698a888d2a68fa1a9b78ea309c8db629601b3f4fd0",
+    "size": 2521
+  },
+  "Textures/Arrow3-Mip2.png": {
+    "md5": "43d7ad0bee82d29d96c0e7e3bd76fc8e",
+    "sha256": "33577219fd88c5b32684f511173356dc5b8f8263ecd944c377a4c71504e1053c",
+    "size": 1288
+  },
+  "Textures/Arrow3-Mip3.png": {
+    "md5": "e221e08fbd79f39c8ca1d4e25a9df574",
+    "sha256": "01c6b3af75c374d6fdc78fde2005f20100503481ed90b3c1916bfd8503c292f3",
+    "size": 649
+  },
+  "Textures/Arrow3.png": {
+    "md5": "98d6179c89f55e88763d402d4c76877c",
+    "sha256": "85eca4c8fa59b122ccabec30722b9b486d32799051664a3acf1bffb775d09e78",
+    "size": 5634
+  },
+  "Textures/ArrowCurve1-Mip1.png": {
+    "md5": "2efa463d81891564989ad1a51e2b8436",
+    "sha256": "4feb15524e62e50e6c53556c2dcebb481a99a4b94573eec3a7e798b4a4e6a96f",
+    "size": 3278
+  },
+  "Textures/ArrowCurve1-Mip2.png": {
+    "md5": "d0cc1c42f5aabade8ece03ef74c57f7e",
+    "sha256": "e28368a76fd45fa5ae29b703ff26cf2b4b0b4a92559c2c99ac33dd87bedfaf3d",
+    "size": 1506
+  },
+  "Textures/ArrowCurve1-Mip3.png": {
+    "md5": "5b5cecce3708fdd5314e39406694bbc6",
+    "sha256": "0f2ca6a910258852f6f21043fa1eb2f2e9090f62f8f61975e9f1e9448128319a",
+    "size": 846
+  },
+  "Textures/ArrowCurve1-Mip4.png": {
+    "md5": "ea97408f486fc748d78db9a8a0a36591",
+    "sha256": "176db968f5d639d4ba816ff6c3e48422ed96a8d457b014283d51301706f26e45",
+    "size": 514
+  },
+  "Textures/ArrowCurve1.png": {
+    "md5": "4a8656b0b12c388839fb13388f7fafda",
+    "sha256": "b3a4e2cbeab01f65496e6cf46dd302299b8b4cd560d46fa312fead5d06fa5d91",
+    "size": 5553
+  },
+  "Textures/ArrowCurve2.png": {
+    "md5": "f9a6ef3d72eb3177d4401e0fd8952b81",
+    "sha256": "d23126038b7e1739344b97063bd406d910efcb7c392e1604bae05571a8bfef48",
+    "size": 4677
+  },
+  "Textures/BallBorder.png": {
+    "md5": "fa99cde905bad6444f7f3a21cf8c10b9",
+    "sha256": "70e5219cf817c32394f67a5486a36e1f4229bebfa528437845b144a9064e6313",
+    "size": 1621
+  },
+  "Textures/BallBurner.png": {
+    "md5": "941364d40dadefbb990342940790fbba",
+    "sha256": "741953bac9bb5941c2a81a43cac0089b9efd2a1fd14f9c91fd81e29f2ac80bde",
+    "size": 731
+  },
+  "Textures/BlackChecker.png": {
+    "md5": "1d19bbe5d6ed0c10e5a9a84aa77287da",
+    "sha256": "5b8ce8f02aa9a831a920e40f4fda294372c8d45e80dda4c222472cfe0d2d03ab",
+    "size": 178
+  },
+  "Textures/BlackCheckerFlag.png": {
+    "md5": "95f3788f1390b1b320879b3c91f3cda1",
+    "sha256": "bbd7d4af6cff3dcda3690fc2aa1ea6b34594168d39baa1c627c4cd7934a9e717",
+    "size": 291
+  },
+  "Textures/BlueBlot.png": {
+    "md5": "6c6b5e1242f4b3ebd815e7dd1f9ab136",
+    "sha256": "e797a7ccd1079592e82f4fa202af8ae447dc76cbb5f11d24878daf368a5000c6",
+    "size": 6739
+  },
+  "Textures/BlueBlot2.png": {
+    "md5": "8d3252a2b25019e28476bb1ce8f983a3",
+    "sha256": "9d1a8de25e2ab71f6d0da9bfc6626fe85f7ff4500919c53dace8985bb2699943",
+    "size": 6418
+  },
+  "Textures/BlueChecker.bmp": {
+    "md5": "4158df19f3700e02374ad3d873279608",
+    "sha256": "26e27f15bd9d5f95610899ac405ff58aebacf6f1dcf8daa70d40b4c1e832f3d8",
+    "size": 70
+  },
+  "Textures/BlueCheckerFlag-Mip1.png": {
+    "md5": "d3d7fd9f1c362b4b4781f3eb26b3f42d",
+    "sha256": "354561ee09f847f678f739a43888a51021ba47ca6f9317ba951185b8a61f98f3",
+    "size": 379
+  },
+  "Textures/BlueCheckerFlag-Mip2.png": {
+    "md5": "92e5fbb38b28cdfc3c2699e502f9c849",
+    "sha256": "d20f86c831787ca28d30560d0ea3f4e4a55bf44aed5aa5ba7b7dff04e15d54f6",
+    "size": 353
+  },
+  "Textures/BlueCheckerFlag.png": {
+    "md5": "9d2c70f9e12243ddaad729e6d75e75f5",
+    "sha256": "b7b0d1f42961c315b1c4c48fde024ba8b0b9541c4d20bbbc0c4fa09aba7f2e64",
+    "size": 421
+  },
+  "Textures/BlueCircle.png": {
+    "md5": "2a5c7f73921dea261533d4b0bfb41c6a",
+    "sha256": "d6b2593ad8930ddc7aebd30b9347f43b9c1da994b228dcff89df0966701a8ec2",
+    "size": 3826
+  },
+  "Textures/Bonk.png": {
+    "md5": "2f44af35051cf074f5dc667a4aa143ee",
+    "sha256": "5e8a6b4bcd4c416013674ae2bfb3d88ad77be892755b507c435ccc62ea6269de",
+    "size": 25196
+  },
+  "Textures/BrightGreenChecker.bmp": {
+    "md5": "f8c5815b0ffba82dbf7c992880251ff6",
+    "sha256": "81ae7b79afbe13c441e154f8e42d0a68a1e72e2dca5e6ada377a114b16a3c665",
+    "size": 70
+  },
+  "Textures/BrightGreenCheckerFlag.png": {
+    "md5": "77cc169e1fc1d359e1f3f165e61aee1e",
+    "sha256": "95e9dc36a8896e3a4bfb25646ad509c988b3645574e9abad4ca1c7fb03a95dcf",
+    "size": 376
+  },
+  "Textures/Bronze-Small.png": {
+    "md5": "12fc881aabef22dbbeab869bdaab59ee",
+    "sha256": "2ab91b916b5698ff3496f3a91720bab472c20d4af12b7bdf1d177ec28f15117f",
+    "size": 10684
+  },
+  "Textures/Bullseye.png": {
+    "md5": "e67b5367fd716a4a6cc8aef1068cfb9e",
+    "sha256": "376d6dfaa7786c06de2a10ad9d83719b7ff15f9eb82ceebc1dd69f480c74593c",
+    "size": 6095
+  },
+  "Textures/Burst.png": {
+    "md5": "abf5ad4b803d92bc1e734d1d6d9ccb71",
+    "sha256": "f69eb106c38debd3dc274286b9f69fb1ed8bd2d88be3839ae7ccb3217ea9f163",
+    "size": 4402
+  },
+  "Textures/Chrome-Mip1.png": {
+    "md5": "c928ff64c4162216547e2267a80e4640",
+    "sha256": "03182450b1d5e41031dcf5763ebe5fe4002d607d2718d1f75018c03adb913433",
+    "size": 933
+  },
+  "Textures/Chrome-Mip2.png": {
+    "md5": "2c23897e180976057ccf22175b0dead1",
+    "sha256": "a685b029ab445dd12760055ec1604f5637326f8f9bfff4c8b2712ba2730f2092",
+    "size": 427
+  },
+  "Textures/Chrome.png": {
+    "md5": "5c94d6e9c7887190af8f6e8f8628ba16",
+    "sha256": "738d191f371009c9ff09c9674300c35d004fa025dc85818caef757192cb67523",
+    "size": 4994
+  },
+  "Textures/ChromeShadow.png": {
+    "md5": "d1fcaaeee3c493afb5855710600e8a40",
+    "sha256": "aab73e87339c6f56e1a05b6731f84621eb3215900babd3efa2d69045fca24cd6",
+    "size": 3168
+  },
+  "Textures/Clouds.png": {
+    "md5": "ebeb77ae7d26ed51bd1527e726c2fc0f",
+    "sha256": "3d2b0f32373ca7e976bd4edbe1ba1c8e9128f69d19174e2a5e94cebf314a1ee6",
+    "size": 51269
+  },
+  "Textures/Decal-Start.png": {
+    "md5": "d76781dfd03e897856fe6aa4a1ec475e",
+    "sha256": "ba3709e0dc296acbbfc9d23386ad36f32765538dd8561d544d35cd8e4de037fa",
+    "size": 11095
+  },
+  "Textures/Decal-Warning.png": {
+    "md5": "ac0dec3f4fe0b4f656dcda845d6621f9",
+    "sha256": "0bc140fc1401cf74cd5702659766ae4bc04aa07cd1241ba338f4dd38096a4261",
+    "size": 14667
+  },
+  "Textures/Demo.png": {
+    "md5": "4089537c5a41cb432456db91c04e21da",
+    "sha256": "2621dc808809dc548d4a872f263415ccfe61956edb6438216252e2bd5bf27634",
+    "size": 12783
+  },
+  "Textures/Dizzies.png": {
+    "md5": "984abf9bcbb69ab55546e2db8341d10d",
+    "sha256": "646e9d6acf0a282c259d6507829444e4fbae76c12c9dd0a633309f53c856e1ed",
+    "size": 4314
+  },
+  "Textures/Dust-Mip1.png": {
+    "md5": "06878ab1afa35adda1a80c3ffdcf204f",
+    "sha256": "40b6450283d994cbc09c9fc45626628eafc7ca95bd670aa838269258d61b72bd",
+    "size": 2140
+  },
+  "Textures/Dust-Mip2.png": {
+    "md5": "dce6d6b38e8ef7c3a3eb7ea734714739",
+    "sha256": "f47782065d79725c093c37bc1cbda2542dfc896c65a333fd2c0b848f080e990f",
+    "size": 841
+  },
+  "Textures/Dust.png": {
+    "md5": "e4c2219fb2b90efe0edef0fc8cb62735",
+    "sha256": "0d0f039dcc8cbd791bd57102da97b975c07fb844b256c53c5e94d624dfcebcc2",
+    "size": 5188
+  },
+  "Textures/FiveBonus.png": {
+    "md5": "f0c475f59df0591ca7ad15b67c8805b9",
+    "sha256": "bc1692d72564d4a01fe432ca3b1132eed0f3c1056108775b83966d9bbd09e7d2",
+    "size": 1701
+  },
+  "Textures/FunBall-Mip1.png": {
+    "md5": "8eb720cd6c924abb07e34378ab6a9cbd",
+    "sha256": "fa6ec1db86a71abc21fa63725f1ff98886be4f444905b45dbbb8c1f18965beb5",
+    "size": 407
+  },
+  "Textures/FunBall.png": {
+    "md5": "f4977a8347660c825087a63d68591b43",
+    "sha256": "ba72dff18e564436db10cfecfaac4047bc4e6c12cd6ea8e5adca681f6c6b5f19",
+    "size": 630
+  },
+  "Textures/GearSwirl.png": {
+    "md5": "e1f18dedd7f11f58fd672448ebb2766d",
+    "sha256": "fe488c1cec261cf326a4f5ca05a41a1d2767e9e7d460fa0b121ef5a163da9856",
+    "size": 14991
+  },
+  "Textures/Glare.png": {
+    "md5": "491642671ce08bc5dbd275b4ceee2604",
+    "sha256": "7a6e4f4f5b893067f859d91f829b7b062ccd014891e75ed98cc71e0f59ac36e4",
+    "size": 2232
+  },
+  "Textures/Glass.png": {
+    "md5": "45a90c5fca4b2587ba836860036d92c3",
+    "sha256": "b8b378ece4aaa8fcb46d9674089cf7ad4776294dff5c930dd06367d1267873b1",
+    "size": 5490
+  },
+  "Textures/GlassCheckerFlag.png": {
+    "md5": "e5e07fbbadd471128cf1328bdd24792c",
+    "sha256": "22cf3fe1f0d789600b0d33a78af4b3c9ef08e1943727dd6f8b78294d3d73e722",
+    "size": 309
+  },
+  "Textures/GoText.png": {
+    "md5": "30265dfbb6feec38ec1d4ea2f1e3d4ae",
+    "sha256": "f99771e22b33bce1837ad3081e1d2bc8503135ec1915c41186adfa7df6ddbfba",
+    "size": 28387
+  },
+  "Textures/Gold-SMall.png": {
+    "md5": "6b39cc82f86021760abd9ae736915ba2",
+    "sha256": "0b351e94381d758102a7810e3932b06ee319070da2bf6ed00f1a8608a313a08b",
+    "size": 10675
+  },
+  "Textures/GoldCheckerFlag.png": {
+    "md5": "c587812f49cf5861948e1d15f7cbbe53",
+    "sha256": "e2113038a14237e81f235db32fd586774c5634003d2ed2607c0ee497b580d528",
+    "size": 384
+  },
+  "Textures/GoldenWeasel-Icon.png": {
+    "md5": "e98b5564aa15b68dce80c616366a567d",
+    "sha256": "06ca3f78f6c97ae2d8494c6fdd735e9e5367803da7960d7988043ea0f997596b",
+    "size": 2658
+  },
+  "Textures/GoldenWeasel.png": {
+    "md5": "bf12c220e4cfbc4f32054c2d0c4a6657",
+    "sha256": "005fefea3563189c48b44e6e9df83c2261b684be11243f0097d77d632c524c74",
+    "size": 28782
+  },
+  "Textures/GreenArrowCurve.png": {
+    "md5": "4b0a0f2f9168e497f49d05a2221c02b5",
+    "sha256": "25a3d084a161f9ec49715c5796fda44dc8cb9ad4dba4dd92238f4bc40ab5f982",
+    "size": 7782
+  },
+  "Textures/GreenChecker.bmp": {
+    "md5": "40947f60194d30ea2ab2ae1d53c50c8f",
+    "sha256": "c1f771d931453be3cd0692590ef74f350a89b9309918a0a908c436369cb98543",
+    "size": 70
+  },
+  "Textures/GreenCheckerFlag.png": {
+    "md5": "161efc13d5cc035c499895ace1e5e5e6",
+    "sha256": "d6af368f5936d4513bb0705673b20459af09cd8bd1eb0109059ac5da358e6afc",
+    "size": 379
+  },
+  "Textures/GreyOutlineChecker.png": {
+    "md5": "3d626464184e0de25c2ce9599edaace4",
+    "sha256": "50b782d1da2001e03af734a77269ae5d969e65b5cf99a15092554bdd32f8803d",
+    "size": 135
+  },
+  "Textures/Hammy1.png": {
+    "md5": "e5fcdff0705cf339201874b436d5ea25",
+    "sha256": "920d7fc83bdb9b5b761313a6b0de5f2bab41d0aa65b94293b9579700e282acb9",
+    "size": 36934
+  },
+  "Textures/Hammy2.png": {
+    "md5": "56dc415f13f7e06005a3e6027dba06ef",
+    "sha256": "3e69bb4af2e6f3fbe0acaf27813376fcd2113847107701912b681a8d3720117d",
+    "size": 39127
+  },
+  "Textures/Hammy3.png": {
+    "md5": "b31741e22a457b961276a9ac9eb9f7f4",
+    "sha256": "cca869a79619794f5aa3006144fda430b57cf6ec9bd19c3265a6d08db0d91622",
+    "size": 38711
+  },
+  "Textures/Hamster-Mip1.jpg": {
+    "md5": "8a264efe4c92214d13ee9db2c12698f2",
+    "sha256": "dec4563510477518d7c292382838f450095f9051f0ba523df3b6410a7b5f4770",
+    "size": 1047
+  },
+  "Textures/Hamster-Mip2.jpg": {
+    "md5": "87e2f4bf2a1be0ebd0a18921ad678ec1",
+    "sha256": "7107d36d50853ea95d134ff886e4b57eeeecc26f5d74f5a31dde6b9945f84889",
+    "size": 756
+  },
+  "Textures/Hamster-Mip3.jpg": {
+    "md5": "56c17a38fac9a6efa3426721cd02bdbc",
+    "sha256": "f319d6ec51f3c19fb5c32d8840dd4c19c7ff89bf1f475f42b535cc2a1e6d5406",
+    "size": 689
+  },
+  "Textures/Hamster.jpg": {
+    "md5": "8f5a0587d8f444a2a0771443ab9fabba",
+    "sha256": "d29d20d77305eaa1d99dd59128a5be77133409945a79c13daaa3c590533d9a8e",
+    "size": 1895
+  },
+  "Textures/HamsterBall-Mip1.png": {
+    "md5": "c650042f79847ed11fec507a7f36061d",
+    "sha256": "53f7d76f76e98e89f98cc25fccd466cf073f5fb2d7bb0543d3bb78a4d1349146",
+    "size": 1746
+  },
+  "Textures/HamsterBall-Mip2.png": {
+    "md5": "4717027451a59690875d7ec006304ae5",
+    "sha256": "8e8bc2ded2a69e44cb980f06bc84ade2cf5ed520a4bb23d6ce9e4de7ed7dcbc9",
+    "size": 767
+  },
+  "Textures/HamsterBall-Mip3.png": {
+    "md5": "c537c57cc73b43a9cf2ba99c2254fecd",
+    "sha256": "65ffc48ce0f2613cf23fd2a63d8a829cbfdc61f13da5a4b94e995b0f91a9a1ed",
+    "size": 409
+  },
+  "Textures/HamsterBall.png": {
+    "md5": "c6f9243f9a725d4e2664f78a3ed00c49",
+    "sha256": "bb0b4d45049c505f231e790341244c88061b0a7ee5f82033ca809124336648f1",
+    "size": 4215
+  },
+  "Textures/Loader(Grey).png": {
+    "md5": "ee31d170719332feaad699c92df15c0c",
+    "sha256": "3bce9c03cc2f6dae07f6c7fb9c035a86ff94fe1b4f3444940c83cc551f3879d6",
+    "size": 9976
+  },
+  "Textures/Loader.png": {
+    "md5": "6447a3f3f1d5253a1dc500e791290c08",
+    "sha256": "341dd895030786f5996bcb689a754d0de9c84f4f83d18d0ce9abc182004d86a6",
+    "size": 20005
+  },
+  "Textures/LoaderBkg.png": {
+    "md5": "4c7d1b7de1b32951a940cf7e498b8353",
+    "sha256": "ac691ec86ef4a706b3cc69abe855cd3c3326b98c32c076d9254a1aaecfedad39",
+    "size": 32924
+  },
+  "Textures/LoadingSwirl.png": {
+    "md5": "c307eb2239c8daf7b67afe00f6eb7c88",
+    "sha256": "33ac3d07093c96d1dcc54d126c50ce35eda0e6608f21b8f0a9985839f29f4a6e",
+    "size": 6253
+  },
+  "Textures/Lock.png": {
+    "md5": "9f437bbeef70cc8bf17024f46bf7ca57",
+    "sha256": "50fd36bc42fb63510d26856b0cc682b07d6931812fc2d2ccf3fc17679a7eabed",
+    "size": 729
+  },
+  "Textures/LockTile.png": {
+    "md5": "d7e4aa687d3c8a9247c436448832a634",
+    "sha256": "d8e8a8c82e3984db537c582cf7cd95ddb748295346aa8a11009eb436b230413a",
+    "size": 1390
+  },
+  "Textures/LockTile2.png": {
+    "md5": "0f0309cb65277a055b0ebcedb7f756e1",
+    "sha256": "b0b8904424f089be4eb96e9bf8d5d0368f5124c310a203c88785cb875054011d",
+    "size": 1323
+  },
+  "Textures/Lost.png": {
+    "md5": "c4ec08cf443260afa3036874e5b8799a",
+    "sha256": "acffffaccb315ee0c48cfad618f5932b0dbc205d2e257de10ddecce717e850b7",
+    "size": 13601
+  },
+  "Textures/MiniclipLogo.png": {
+    "md5": "ec3ae0985ddd5a3f5ff3c6af02273140",
+    "sha256": "dfe22687a076647378e363aeba5774400ea5c81095198373b080883775d05a3b",
+    "size": 12265
+  },
+  "Textures/Mirror.png": {
+    "md5": "6d7a5bfc4b97c8ea8602d1e03cbdedb6",
+    "sha256": "2e818e84a0055acf019d867a8713c7e9841209b99d8800427e4976b34f0d0e24",
+    "size": 5486
+  },
+  "Textures/NeonArrow.png": {
+    "md5": "c0ec802cace86ab06d18516ab9dc0eeb",
+    "sha256": "4868df7185ebda3b132a8f9fb80600bd12c279c243b684970235b17140a15272",
+    "size": 2118
+  },
+  "Textures/OddArrow.png": {
+    "md5": "3372e3456b479eaf07dc156434b8329f",
+    "sha256": "6eea685ec19469c8545629d918e5a725c58081609f0f1eeceb56ce9e4c33ce84",
+    "size": 1810
+  },
+  "Textures/OrangeChecker.bmp": {
+    "md5": "e3fb46530142955c06ecc36222bc2ccb",
+    "sha256": "45c155b279db13118029d3ae0cb9fc69260dae5562f08a2fada42ac5f0d3488c",
+    "size": 70
+  },
+  "Textures/OrangeCheckerFlag-Mip1.png": {
+    "md5": "bfbe4850a7fff134ffb47d1c99f30a39",
+    "sha256": "8b7bd1e91234e91e5038d58d4a11eb34c2caabac6906dc3257efd0296c81c01c",
+    "size": 376
+  },
+  "Textures/OrangeCheckerFlag-Mip2.png": {
+    "md5": "caa40b199ae43fb439912bd66139474f",
+    "sha256": "2e8a5cac09e4417d2ef378f2280b8cac78071485d264a9b7918c815dc5a2e032",
+    "size": 340
+  },
+  "Textures/OrangeCheckerFlag-Mip3.png": {
+    "md5": "5bb5fcd026b4c022ce84fc00d2744358",
+    "sha256": "bdb076b2fc6a1340846709ec7241ba6a3f931050ee416b2549387210ebed2dfb",
+    "size": 270
+  },
+  "Textures/OrangeCheckerFlag.png": {
+    "md5": "31a1a3d5dbd39713139e92479422b592",
+    "sha256": "ad5baf42be2aeecc34d426cbefe2a1663ea911aed1f04157fb419e632ed69e00",
+    "size": 392
+  },
+  "Textures/PartyRace.png": {
+    "md5": "5673f6587d82b29b498a0021be5c3240",
+    "sha256": "2914ea234a52a6a9cadd74cceedf982ea70337226028d22a8d774b1a39eaf2d5",
+    "size": 25688
+  },
+  "Textures/PinkChecker.bmp": {
+    "md5": "7ba2cac86d100907c39c17eb70d0b4b4",
+    "sha256": "07130614c6a92727be9bb43771d717b607cb33ead48e4b0e1bdeb74540b08074",
+    "size": 70
+  },
+  "Textures/PoleChecker.png": {
+    "md5": "ec2a10517707a0d0dd735e1321cc0742",
+    "sha256": "1d4c07dfffc6bc7efd840a7e16fd4be14cce0c623231038469f60769800ea2cf",
+    "size": 3110
+  },
+  "Textures/Practice-Cascade.png": {
+    "md5": "5d0cb97f1584f517d8762ed8bc91c5d8",
+    "sha256": "a8864f9bcc88cb0c2fcb5e0e03afb5828f30d289cc23f99936e486e5f58d5880",
+    "size": 2272
+  },
+  "Textures/Practice-Glass.png": {
+    "md5": "04b5f2296a04aa19b745ff2584792fc9",
+    "sha256": "41d307cb9fd19e83dbfe315eb53693561169694c86856be5e3aa39cf1734690b",
+    "size": 1239
+  },
+  "Textures/Practice-Impossible.png": {
+    "md5": "3a195518f709deec48d6571eae6bb8dd",
+    "sha256": "bd83db6aca2acb0c1e0ffa0ef811d5f5c96a68406efbac3df45056ae7182d04c",
+    "size": 1625
+  },
+  "Textures/Practice-Level1.png": {
+    "md5": "51d583799405eb59c39b5dbecec588fe",
+    "sha256": "ddfda7436e37701f94085575928d833e3fb86c6a3a261bfb756999ad3b7d1314",
+    "size": 2822
+  },
+  "Textures/Practice-Level10.png": {
+    "md5": "c0479c9cc489c0de021f5a3df4ef17b6",
+    "sha256": "ee5b9d7d1ffe7723a1a3f8829a2062e111cb9406b81f56a93e4566cfba973fcf",
+    "size": 1741
+  },
+  "Textures/Practice-Level2.png": {
+    "md5": "da0a82f733ac30dbdb2b0841591aba56",
+    "sha256": "ecfac03e221d4d2afc360c716ade8a6122fdda083eef33b81722e93e1df9b8a6",
+    "size": 2836
+  },
+  "Textures/Practice-Level3.png": {
+    "md5": "6b55d080cd84addaf53a988693557bf3",
+    "sha256": "2ee3591b4caa9debc3867a2f36522c101b509773d1bdcd9834a03d1081fd2b74",
+    "size": 2814
+  },
+  "Textures/Practice-Level4.png": {
+    "md5": "25771b02f0b576ab13622b22eb819d4e",
+    "sha256": "2c660e6aaa4c838fedb6cb1e4cb5fee196ffdffaee1e7a8927fdc40daff9c0fc",
+    "size": 2303
+  },
+  "Textures/Practice-Level5.png": {
+    "md5": "609833f1057e3c00be6cbcfce1267a64",
+    "sha256": "1f7f8a43b9cf83f0eaed9c88fba252fe328a3d04e04f8b67f7c7a065d6f94d3e",
+    "size": 1783
+  },
+  "Textures/Practice-Level6.png": {
+    "md5": "f981156ab5b96a501c926b230785c671",
+    "sha256": "4f812001c7f84f86778d047bf1157994f02fb4d6dc77ee73b8e245e7597d6d07",
+    "size": 2475
+  },
+  "Textures/Practice-Level7.png": {
+    "md5": "5d8a63ce82457b8fd5f890955ec59dd6",
+    "sha256": "e835ba56e91bb6f10e20e59518efe61f49603e6bd61b4cc4c939f9764a0fd5b4",
+    "size": 2427
+  },
+  "Textures/Practice-Level8.png": {
+    "md5": "dc193f79114825a31375a35be523ca6d",
+    "sha256": "8296eaa00103ec8fd846d1899919468589f99f6d9e88c9ecc3383e3580723533",
+    "size": 2678
+  },
+  "Textures/Practice-Level9.png": {
+    "md5": "99c0296620e38d9deb102e8c8bfd6322",
+    "sha256": "4cd4556651dc438b0a6191da5bf60516d98ca2ad1a6cbe0be21cbac6b526b916",
+    "size": 2379
+  },
+  "Textures/Practice-Neon.png": {
+    "md5": "dd93d07cbc3e72fa085475d1b71bb297",
+    "sha256": "535df8c0c588c1f088d530d998863e23fa07cfc69f3b1901814139360a2cef3e",
+    "size": 1705
+  },
+  "Textures/Practice-Up.png": {
+    "md5": "8ce0fd9d7e416567a95b594ae286880d",
+    "sha256": "673d024eeb86cfd6fdbf07867591523eb9770f29afc0f211e5ec6e62d6b74b5e",
+    "size": 2097
+  },
+  "Textures/PurpleChecker.bmp": {
+    "md5": "98a5b08161f0575e207ad2dffed39f4b",
+    "sha256": "dbce9869a71d4477dbe33b23f8befd07eada00cff10b03b047ce0009ec76c2c1",
+    "size": 70
+  },
+  "Textures/Ranks/1.jpg": {
+    "md5": "2029c04ee548dde1b03e0c4529eac9c4",
+    "sha256": "89d91f942ec9ae579921d52538c08bf21660e9edddec039bae84fe5c21412287",
+    "size": 18091
+  },
+  "Textures/Ranks/10.jpg": {
+    "md5": "fdd5fca5ead43204f328d72c4c9d49b9",
+    "sha256": "4cc5bc18bd8f2b414df60fe579f9a57f81d782bbffc639da08ec4a171724de1f",
+    "size": 40652
+  },
+  "Textures/Ranks/11.jpg": {
+    "md5": "86ee3d1f895695fa4af010e08084cae5",
+    "sha256": "5922e684a0764954a75d47e84a03a38757f3bbb1af31a3b7432e274031742961",
+    "size": 40448
+  },
+  "Textures/Ranks/12.jpg": {
+    "md5": "869f831c48d9ba3e781e492574323780",
+    "sha256": "9a4372e5e1dfd05fbeaef1f6f82336094bd8df88aa427ff3a4c76d122d729f50",
+    "size": 36292
+  },
+  "Textures/Ranks/13.jpg": {
+    "md5": "7ec3d96d7774970a295cd65b02efb35e",
+    "sha256": "761abf3a2becf5d21e197e547bb7eb9bcd184ab8621b7db07c860666e36a74f0",
+    "size": 37124
+  },
+  "Textures/Ranks/14.jpg": {
+    "md5": "374947b661a0ea2efc7db6fa3364677e",
+    "sha256": "4977cfd93d59ce158c134c9232be93349283843bd7a60dc9e983cc0652545cf1",
+    "size": 36014
+  },
+  "Textures/Ranks/15.jpg": {
+    "md5": "1271fa86c1c19ae5a6fe739e63856778",
+    "sha256": "17bfb04b8e4ebb77f8113436de9730fec38fa93d852c4122d920fd5111f87e1c",
+    "size": 35203
+  },
+  "Textures/Ranks/16.jpg": {
+    "md5": "5627d4bce3475b52ce99a55c8761c5cd",
+    "sha256": "a4ca35ef304ab907331f41494af281e8fcca6533de1702536a1766f872b1d742",
+    "size": 41543
+  },
+  "Textures/Ranks/2.jpg": {
+    "md5": "b12cebd37c23a24120a19e36f7338956",
+    "sha256": "25c6fd107cffa041ad99682d878757ba0cfaef7b4b6b94ee813629f8f43bb71e",
+    "size": 18533
+  },
+  "Textures/Ranks/3.jpg": {
+    "md5": "a24f2c1bf588b64c3b63d9f62b462ad9",
+    "sha256": "6dd5b48d03f4ef02ea558ecedeae8718de53168d92fee3879263177234213955",
+    "size": 24507
+  },
+  "Textures/Ranks/4.jpg": {
+    "md5": "dc77627105e2b82848856c339f47658d",
+    "sha256": "0a62bb4006768b697ebaca7f74c517f86f217d1ac4ecd9c04651049df8a13d26",
+    "size": 34197
+  },
+  "Textures/Ranks/5.jpg": {
+    "md5": "7eaf56a9ed05368e89be6b0d522c308c",
+    "sha256": "995bd3b3d612d0ad024f222e14217c5bd7189e2196d8e03dc41dc681ead77a70",
+    "size": 32902
+  },
+  "Textures/Ranks/6.jpg": {
+    "md5": "72357d00b369d0c1e68c42c14ed3df82",
+    "sha256": "606ed6fdce151a9d64440c8d7f9154c2b73a4d2e81947dd946207f8ac63ea357",
+    "size": 37325
+  },
+  "Textures/Ranks/7.jpg": {
+    "md5": "9d8e3dca4abbc818106c68d8eb9f94b3",
+    "sha256": "5da91de77f891a40977353ad113b81e8458dc295535c107be1523432aedd6b01",
+    "size": 22069
+  },
+  "Textures/Ranks/8.jpg": {
+    "md5": "02411163950d99208bc088c6ffd11eb9",
+    "sha256": "3b0ac2c8129cbfc3dd81e6d70a63165530566d20329837e5eb442e0233df47a0",
+    "size": 18414
+  },
+  "Textures/Ranks/9.jpg": {
+    "md5": "814e2a4a0f069fc6be531e9ade98bf70",
+    "sha256": "556ca14cdce3a38aa4c701df2042064658773e803f6865f417fc21234e509378",
+    "size": 20915
+  },
+  "Textures/Ranks/Weasel.png": {
+    "md5": "b722082d31ce35b3616d925d55dbfaf4",
+    "sha256": "7ab8c18273dba4946b31a4d16745e20a9f09c85333a46e3a511bb7bede44e7a9",
+    "size": 49992
+  },
+  "Textures/RaptisoftLogo.png": {
+    "md5": "d094d38ac0f7e6a51ae2abdc9b04ecf9",
+    "sha256": "8b610c65d061148a2fe789e2153f04162a331a53dd2f204d2cf98b3d3440db74",
+    "size": 11284
+  },
+  "Textures/ReadyText.png": {
+    "md5": "3b51248936518ef6a65d3cfac070fc77",
+    "sha256": "4b7ccd3d25a1420aaed56e5367c6169d631b7280fe50cb4193cc747c505ea2e9",
+    "size": 31199
+  },
+  "Textures/RedChecker.bmp": {
+    "md5": "aa4387f1dbb4cddc6a8c3448e930cc5e",
+    "sha256": "27b0e082bf23c4d4f09608469d5adc9cbaddcd893c365aec819e268a95dc23c3",
+    "size": 70
+  },
+  "Textures/RedCheckerFlag.png": {
+    "md5": "cf64fb3b198f78dbfd2cb89fb9646e17",
+    "sha256": "3dde116b642203f5adfe2c149dc843907f5086be6c719d769e8a5f1504dce944",
+    "size": 452
+  },
+  "Textures/RodentRumble.png": {
+    "md5": "ffba775229d720a9cc464e2c55e87db7",
+    "sha256": "5d7e016c0492e12359178660157f68aa1bf740a9fe283dab480631d079ae3661",
+    "size": 14422
+  },
+  "Textures/SafeCircle.png": {
+    "md5": "1a31bab6f1f4678ae4cd66c73aa9a4c5",
+    "sha256": "dfc83e067561b7c16b4cafde4ab0be5a210abf33fdb53ab0c601a4eff2ce8372",
+    "size": 8616
+  },
+  "Textures/Saw.png": {
+    "md5": "eda04596cffb0a94541ea87d85531cb7",
+    "sha256": "3a25ed3adb990d5980c79c7aab3ffe08b9e8578b00ce938d33db2e9aaf3eb9d9",
+    "size": 21423
+  },
+  "Textures/ScoreBall.png": {
+    "md5": "17a4275aba35145a75f43295cdd9b270",
+    "sha256": "589a3168dea4a35386ce8b0fe453176816c74cdde83340bf2ea4c14f240cabdb",
+    "size": 27074
+  },
+  "Textures/ScrollMore.png": {
+    "md5": "47f6562a31975d43a6f7f1ebd834b50e",
+    "sha256": "94028d609c2890ed5ce12c1f4055ddfac95bf20c2e4d5c38d2b9c3eff8b93e3f",
+    "size": 1094
+  },
+  "Textures/SetText.png": {
+    "md5": "97b7c9fbced6c216bf1065869a6d882e",
+    "sha256": "cf5eeedc50f37362744deec06a14dc5101968280c12d35bf7d903d522215e82c",
+    "size": 26925
+  },
+  "Textures/Shadow-Mip1.png": {
+    "md5": "bc9f846dcfafbf7bffca904e865bd030",
+    "sha256": "b00c154e87d1cd0fca5530f93863e08c79c103f99ec96408bd1e6c941bb81346",
+    "size": 651
+  },
+  "Textures/Shadow-Mip2.png": {
+    "md5": "d954bdba2c269050a6db8a0795b34964",
+    "sha256": "8e897e4075f8b9f407a35be4a8291fc8c104e1f2f18db198946dca94e4a48716",
+    "size": 342
+  },
+  "Textures/Shadow-Mip3.png": {
+    "md5": "316f65ad91af905f79e5520c1420bfb1",
+    "sha256": "adcb196b60d91876afcb1a60648a07240a2b0d824d523200c13f915d26eebd0e",
+    "size": 197
+  },
+  "Textures/Shadow.png": {
+    "md5": "89fda42d21de748c63e57a2767a8af03",
+    "sha256": "fe93798d0fd3b5742443d9e567e3e802b5c5c923ad500b4ae66eaaf6221d1bca",
+    "size": 1329
+  },
+  "Textures/Sign-BewareTheTar-Mip1.png": {
+    "md5": "ef50081e68c6d926938bde0c5c6af81d",
+    "sha256": "ff2cccd843394a8f60c46828ef03563c5128584acd2e5d7eee7e4eb2fc1ff373",
+    "size": 3184
+  },
+  "Textures/Sign-BewareTheTar-Mip2.png": {
+    "md5": "7f0d223ad01778f47df1173b1125e9c5",
+    "sha256": "b67ff3576abfaa98b152b6b58319638b8f51a1259f5e05fb601a041259c3d17c",
+    "size": 1368
+  },
+  "Textures/Sign-BewareTheTar-Mirrored-Mip1.png": {
+    "md5": "298c30ec9732986eb1c2e934892f3fb2",
+    "sha256": "c816d5c5dfc0d2abae23b42b29c4e68c31faaf274aac15c946942fce6d70ce4e",
+    "size": 3184
+  },
+  "Textures/Sign-BewareTheTar-Mirrored-Mip2.png": {
+    "md5": "97f5995689861e672ddd92aa2b31f389",
+    "sha256": "73ee72134754c777e4282c2f473fa95e2674bc7dd60c58ffa33963a8bb10207d",
+    "size": 1382
+  },
+  "Textures/Sign-BewareTheTar-Mirrored.png": {
+    "md5": "f5d7a0fdc3da645cd2f0046efe47a5aa",
+    "sha256": "cac1187815fa4708188a4fd64c619f868b7164e6916f0111067724235eddd268",
+    "size": 7746
+  },
+  "Textures/Sign-BewareTheTar.png": {
+    "md5": "b54a1e97071a494846795ff985ff8b93",
+    "sha256": "ae5859a3d8b243b1ebc736291801972becde7b0323f14e7253d85f25c4427043",
+    "size": 7710
+  },
+  "Textures/Silver-Small.png": {
+    "md5": "d47a4db8534909cba4cd76f78bc47ba9",
+    "sha256": "34b3a35e4e16b235d78a28e880f914046badaecb25115aedf503fd0f30a52fbe",
+    "size": 9630
+  },
+  "Textures/SkyChecker.png": {
+    "md5": "2f2225a64a91837badcd68a8a5f277ef",
+    "sha256": "2c2b21ffc8d8d5fc3c8ab0353c0c4b208839c17ff28e110b82afc4bb5ee0e974",
+    "size": 190
+  },
+  "Textures/SkyCheckerFlag.png": {
+    "md5": "e483c3055ff15d229bf8b134b89f7695",
+    "sha256": "247c32d5e66e51edcf66a27b382dc48c61fd17bd97b0f0d86690de7319674f54",
+    "size": 323
+  },
+  "Textures/SmashGlass.png": {
+    "md5": "6df291b7b6ddf2a3d1f384c26ddc7dac",
+    "sha256": "21f721cffedc3df4baca22a0b9853d46c0d5bbf7427d93b123c8883d1a63bf95",
+    "size": 8421
+  },
+  "Textures/SpeedCylinder.png": {
+    "md5": "9ea02bc1e2d4d878f3ada940ac47f451",
+    "sha256": "2970d9e5a83a2ed3ac2e2a1fc2eea352dd16cf5f5b7b06e93e09a9ae7b6e01df",
+    "size": 3771
+  },
+  "Textures/Star.png": {
+    "md5": "5bc2cb99b6bdb04726bbd5c91229f632",
+    "sha256": "d0562322b7ade897b703d0243c75925ca85b18bc684c50c2b31c9d0bcc799706",
+    "size": 864
+  },
+  "Textures/StumpyArrow.png": {
+    "md5": "ed1917805340cdfebaf195aae1c7f77b",
+    "sha256": "ca49d5f55a9e24a7cafd0bbe8a96857ca9cc33553a666d1f183f19a6eb2a238d",
+    "size": 1716
+  },
+  "Textures/Sweat.png": {
+    "md5": "be8bd2ecc2ca575652d4e46498a4985b",
+    "sha256": "5b8148833c7fb1ccac3665209f60a6fff2357eaebd92d89db6e48dbfd70f16f0",
+    "size": 1779
+  },
+  "Textures/Tar-Mip1.png": {
+    "md5": "436fcc1b3564192ca63260c58abb0f62",
+    "sha256": "8581bd68f24cfe13e32180fa4b03062084d45011d649ab7554e479300cf644a5",
+    "size": 1970
+  },
+  "Textures/Tar-Mip2.png": {
+    "md5": "bdd4ebdef5f4856a2acc43c27bd0837c",
+    "sha256": "9c778e504f4cd8ba0f387f7c2599501459a311c8e20e9a8b3cae3adcc35155df",
+    "size": 734
+  },
+  "Textures/Tar-Mip3.png": {
+    "md5": "969493c7cf438bc6d137e10266da481f",
+    "sha256": "ad16ebd15cb3c387f4866df01f1525a9630e09c6b8061535fb8e24487e997087",
+    "size": 346
+  },
+  "Textures/Tar.png": {
+    "md5": "a6e28b9f932e2e773a58a09cff07babe",
+    "sha256": "a721a51449e40f19100927d2d95483c6935c72bd726cd5f1277d80de3b96cd4e",
+    "size": 5328
+  },
+  "Textures/TarBlot-Mip1.png": {
+    "md5": "2f5050a04d729f80c0901079a2a60b40",
+    "sha256": "9873e27763a0df63e17b5d32f3dab743e3df93fb3e499a55e875de6b96dfd140",
+    "size": 460
+  },
+  "Textures/TarBlot-Mip2.png": {
+    "md5": "aaa061416954084fce8cf7a7dfbebb5a",
+    "sha256": "b66a6e83ff699124baa28b798060edf69598cc1a5686c94970d9e7c1f2f3494d",
+    "size": 282
+  },
+  "Textures/TarBlot-Mip3.png": {
+    "md5": "5e8f77827f304605962539ec90e9c50e",
+    "sha256": "23c12683ee04b216736f6b4468b034d9fbaf0f6abe7d2efd99436e9f7334481e",
+    "size": 247
+  },
+  "Textures/TarBlot-Mip4.png": {
+    "md5": "48ca093e7f7bf586bbd2e2cde553b2e2",
+    "sha256": "4f97360d540177f041efb0d9224dac117559d478eb226dcc0e08a5ad825cbb01",
+    "size": 215
+  },
+  "Textures/TarBlot.png": {
+    "md5": "9a40a4ddd374f43c2e9533c1ccfd2e41",
+    "sha256": "1fab6a1e85dd07f633ffbe76601828de5db7e1681a271bfcaa3c9da714e25cd4",
+    "size": 954
+  },
+  "Textures/TarSplotch-Mip1.png": {
+    "md5": "e7333259027bd913ad82d9387006168f",
+    "sha256": "22c68d599b5382f39c1889f23d568ee127bd0446e6265e6b3a12c660cfde5d4c",
+    "size": 816
+  },
+  "Textures/TarSplotch-Mip2.png": {
+    "md5": "73ebdc9c5a8c932f4b51aef95b9b22a9",
+    "sha256": "c64ea41d13c6db6d0f4abd16d9f2dc772d3a8d672a8578377fee3023ba73a496",
+    "size": 423
+  },
+  "Textures/TarSplotch.png": {
+    "md5": "a4211cfc0f80d5e9d90d17c7ba3dfe0c",
+    "sha256": "56cd88c90512529ecd14013a74dbbae8a745cb620475a9ee540fa4bbb1b8132e",
+    "size": 1570
+  },
+  "Textures/TenBonus.png": {
+    "md5": "82d7cf7b9447bfe32c928ae4e0c5433c",
+    "sha256": "ea86fa4752d0974458cadfcbe872f8beb79c8d0447e0313993046fa7869bf663",
+    "size": 1644
+  },
+  "Textures/TimeTrials.png": {
+    "md5": "1ef7f530da03571dfc6c10790bc36d53",
+    "sha256": "378241cb68d7330e17a7b427de96cbd9f9702a0714d08dc2b8d60a1aea380bbd",
+    "size": 23552
+  },
+  "Textures/TimerBlot.png": {
+    "md5": "9e6fbc307bf96d761313543a9541ac97",
+    "sha256": "416c9faede76fcf613c9d50ad90268faa2d91f51e8de8f6eb186157864c9b9b0",
+    "size": 5308
+  },
+  "Textures/Title1.png": {
+    "md5": "5745ea7b9b55b6bbfa80436440f000b0",
+    "sha256": "c4392eec500ac661ad9710a075635ea62a40a3496ce8318ec873d1b2d8d98b4f",
+    "size": 73947
+  },
+  "Textures/TitleText-Left.png": {
+    "md5": "6664a307d10aadd9ae937a72fb6224ab",
+    "sha256": "27c8b77931194c7c7051a8473e1f5bc2ab05b8cab2720c979c51a13761258bb0",
+    "size": 37978
+  },
+  "Textures/TitleText-Right.png": {
+    "md5": "493af21dc3892385593939a6cfd5ef7a",
+    "sha256": "607edbac11690b8693ba4a42b77b0628359fa57d72b8f9be13f45c6c7017ce01",
+    "size": 32927
+  },
+  "Textures/ToobChecker.png": {
+    "md5": "8996db825a727782965682e6c186df46",
+    "sha256": "a06507716dbafd8c8fe999d341b5dc6cd72e78902e9a09420d359df8d74d2860",
+    "size": 190
+  },
+  "Textures/ToobCheckerFlag.png": {
+    "md5": "6875a1851bc87f43ec3d9b518b8bb13f",
+    "sha256": "a52cf15516d1657388c523fbda830b520639fccbc5425828f16528bc80e26849",
+    "size": 400
+  },
+  "Textures/ToobCurvedArrow.png": {
+    "md5": "6fe0034ba66e0dfba2584ec74e1dccb5",
+    "sha256": "b1bd2c5ff4dc386c75976a5d4b6553af746881f695ae5c77d7d0a213c89b265b",
+    "size": 14358
+  },
+  "Textures/Tournament.png": {
+    "md5": "40d3c59e64190d5edd406037cf7ac7ae",
+    "sha256": "24bcf24281d2841129e98e06124807f720e8fb10917e5044b4805528911c1d0e",
+    "size": 11958
+  },
+  "Textures/Tourney-Beginner.png": {
+    "md5": "356884542878f1fae951cc1b19dade88",
+    "sha256": "30f2000dcadcab2bcebcc5ecca54c4173927710072e52d6a4ea4d8e3fb88b597",
+    "size": 18579
+  },
+  "Textures/Tourney-Cascade.png": {
+    "md5": "4a8ba7c2b979159f48db318d6322ecc0",
+    "sha256": "b53f225b1d274f59dde44bc09fc10c5d5a2b2bbf58cb7e4cc2545ad838215268",
+    "size": 23242
+  },
+  "Textures/Tourney-Expert.png": {
+    "md5": "9cb2dcc958f1a0190c9381068eb3fda0",
+    "sha256": "926659c5d9a2f3344b1ec9c661f82fc6dd1d8d1dd89f7867fe2c89a2ac2a9b20",
+    "size": 21811
+  },
+  "Textures/Tourney-Glass.png": {
+    "md5": "eb42fd291152960595b5811b1f8fb77b",
+    "sha256": "b0deb86faac5dee68a7e04685a95d0dd5a4a5fb62a54d422ed0c92aba6d394d0",
+    "size": 10699
+  },
+  "Textures/Tourney-Impossible.png": {
+    "md5": "5195f6e2c5d33339f304954ab1bb0b4a",
+    "sha256": "ed958b61ab1daeac9410d2b03a7c36ef3130c08cdb2ce1c53c657043aeaabcf6",
+    "size": 14805
+  },
+  "Textures/Tourney-Intermediate.png": {
+    "md5": "e8865176e81fc9049b992e62260331c2",
+    "sha256": "06ebe67c33feb7c7eda917cb7d5841de968918226532565f5146610be48321bb",
+    "size": 21844
+  },
+  "Textures/Tourney-Master.png": {
+    "md5": "e8b1fc96ce65ab6dda1a2fa8ea00f559",
+    "sha256": "547b21e8b75b70cdec90626ac8381f619a75b706bc888f8e9fec8f259d18f623",
+    "size": 14736
+  },
+  "Textures/Tourney-Neon.png": {
+    "md5": "6ef5b9af087ffbdb9c23aacbbca9cc50",
+    "sha256": "29d87bd0f2acbae991f41a33f089f8664326375de78edc14f521e633401fdf2e",
+    "size": 10410
+  },
+  "Textures/Tourney-Odd.png": {
+    "md5": "06ba9a12a1366e96f14fc2d0911a1294",
+    "sha256": "3736e975ecda196277bbd861b8759895dace87c08bbb6500f714c0e761f4559e",
+    "size": 24849
+  },
+  "Textures/Tourney-Sky.png": {
+    "md5": "ab263dbbb3ec16e3745e8c21c260c743",
+    "sha256": "d310bc6cbfc73c6e2a17a8e45bdfed0501e5dd4064e7017fdc3c6310a9065d6e",
+    "size": 23845
+  },
+  "Textures/Tourney-Toob.png": {
+    "md5": "7d7d7a01603f7ade1663c060ccb0b446",
+    "sha256": "bffd064977a7309dc1f20f4e8a3fa9680b6e668e310c26afa82163554274e3cb",
+    "size": 22020
+  },
+  "Textures/Tourney-Up.png": {
+    "md5": "11524e5a303de2fb1bc992777a283fc0",
+    "sha256": "30050a5e2f13e564183e8ba79eb60dcc6cfab9f1a68a22e3132afe151c8c481c",
+    "size": 22612
+  },
+  "Textures/Tourney-Wobbly.png": {
+    "md5": "aeb2f39218ea1112bd3013776ad84572",
+    "sha256": "e8ae11fff20b1337b82067c860d6b0dd4ee16a17e368f0243963878b9402ebe7",
+    "size": 18136
+  },
+  "Textures/TrapBottom.jpg": {
+    "md5": "91eb6d8a104df35348be215e0cd17a62",
+    "sha256": "6538c3e2c79aa09c25a4bb78c9eaf7801bc4b143392e720fb7d2236b5513ee4e",
+    "size": 3447
+  },
+  "Textures/TrapMetal.jpg": {
+    "md5": "23831f39bf7e2b5d3f347973c0916d6b",
+    "sha256": "261062941daa830afb6045ea124c7871b06d953f536f34142ddb706765ffecd8",
+    "size": 1272
+  },
+  "Textures/TrapSide.jpg": {
+    "md5": "09a6713f3808ddf90e8505e64c7e34c5",
+    "sha256": "24057a043bb7b548a55c05818089815a7eb435b164a3786aed2661155718c2f5",
+    "size": 1249
+  },
+  "Textures/TrapSpring.jpg": {
+    "md5": "7b25ab28ca56c1755eb37a4f7c893ae0",
+    "sha256": "13205742158da39a22bb406294fd3614ee54afad55046e16945b3684d2a4d0d5",
+    "size": 1514
+  },
+  "Textures/TrapTop-Mip1.jpg": {
+    "md5": "1eb3d5a45c18ab3b4252ed21648d7d2e",
+    "sha256": "c02f746b740b6e384f8c34c9b072ff57cd827b90253d1939921609d7b2bd4a59",
+    "size": 2302
+  },
+  "Textures/TrapTop-Mip2.jpg": {
+    "md5": "ef7a498ad6dfe390c40cfc49c69deea2",
+    "sha256": "fccdd3b6cf4a0ebcf8e593994a93b7d22c82e2b2ab3cf06abf2088463043c082",
+    "size": 1099
+  },
+  "Textures/TrapTop.jpg": {
+    "md5": "f90cf2c2b2af12b648b1f6c15d19a10d",
+    "sha256": "8a46a4bfbaf0965429ba730f3ac5daa84a45184b0bb6a62a8893ab5bafa4e402",
+    "size": 5918
+  },
+  "Textures/Unlock.png": {
+    "md5": "117b48830f70a1c7fde480d86adaa3e2",
+    "sha256": "a3f9d61d9c5f8a9f16c6ff010024bf4b69c44a3ba96d6c5f745f6f9cd0d1741c",
+    "size": 8493
+  },
+  "Textures/VeryBlueChecker.bmp": {
+    "md5": "362344bf1b6f1b70d95fcd5467e6fbb5",
+    "sha256": "85a9527e081b26c970543c0ba8d1382034daf8a98abf9d070b39b35de500c31e",
+    "size": 12342
+  },
+  "Textures/WeaselBox.png": {
+    "md5": "c1a7cc65a5f07bdb51a34511e77b2baa",
+    "sha256": "cc7ed3d2cf6fe9710d10b374090174c4c09444fbc3d6850aa8f1ff118ef3bcd6",
+    "size": 5578
+  },
+  "Textures/WhiteCheckerFlag.png": {
+    "md5": "c130932afebf9c957964f0e849acd842",
+    "sha256": "2f350415424c43e155dc5cf2d60d9cf00fd15770236719aff6015481bf03d5f2",
+    "size": 347
+  },
+  "Textures/Winner.png": {
+    "md5": "d7fe393c2dd7485024fbd177e66f602d",
+    "sha256": "9d35f1b1bf9d37735c5f7af77f97394d24fea333ede77da4a0c2449459a9d856",
+    "size": 22417
+  },
+  "Textures/YelllowChecker.png": {
+    "md5": "dd6bbc436331824b0e3c7a702c7eb03b",
+    "sha256": "88fd735f9cd2c12b603b8e4372d09a76af9725e6cfe46ca4f0e16434730c74f6",
+    "size": 190
+  },
+  "Textures/YellowArrow.png": {
+    "md5": "dc5003c758c994e8ac896d13c47cccae",
+    "sha256": "58a7e6339f150d0ce0f3266050bd37377dfc27a119737859175fe098aa667584",
+    "size": 9058
+  },
+  "Textures/YellowCheckerFlag-Mip1.png": {
+    "md5": "6ff29f97974cb157c1f7bd71e14f8c0e",
+    "sha256": "87cd9e4cd793c5ce005dc82a4887fbacd3266ac6460ac651c9c7772cca5a676f",
+    "size": 232
+  },
+  "Textures/YellowCheckerFlag-Mip2.png": {
+    "md5": "f70ec268d7bf974fde5478dfe364be19",
+    "sha256": "5894dfa80328d87bb527f7c85043b9abf43ef00e5c316d06ca882ba6806b808c",
+    "size": 216
+  },
+  "Textures/YellowCheckerFlag-Mip3.png": {
+    "md5": "2fa925287a898d3fbcbefb80ac12f806",
+    "sha256": "0249fd2a84c005056656cc0b155b22440a6b4de52232c401aad13d5f6edbf287",
+    "size": 209
+  },
+  "Textures/YellowCheckerFlag.png": {
+    "md5": "d179db1625a14c2443818fb74b1dbc2a",
+    "sha256": "efa9026824e7b579bbafc24767a37ec63c725293cfe45903140f5649e42c73de",
+    "size": 288
+  },
+  "Textures/YellowRing-Mip1.png": {
+    "md5": "a182e4f990a5b20d4391a59d95ac95f7",
+    "sha256": "7ed4df7a8cd7225b38407774a8cb82a0a6888f8d7b92f8242ad80bc0c70f7ccc",
+    "size": 1617
+  },
+  "Textures/YellowRing-Mip2.png": {
+    "md5": "c634d64bf06ed15848d8c148f6e1e677",
+    "sha256": "16793b86b86b9847d6a30035d0deaf04163c371f5103fd3a8d1232e7d7aceee6",
+    "size": 662
+  },
+  "Textures/YellowRing-Mip3.png": {
+    "md5": "b3c2661f623de4ae30172225c9035a5f",
+    "sha256": "1e87184b2208fb3eaeb0e5755d6abe3de66dd07cbfdf27837ae33f19b2c276fe",
+    "size": 301
+  },
+  "Textures/YellowRing.png": {
+    "md5": "b01e2c86d1a33a46a7894b7e1dfb348f",
+    "sha256": "ad27942bb16c8713a3f6aa50a9568a55ab75c4b4d1f6ba1b08a6c912f7bdab3b",
+    "size": 4046
+  },
+  "Textures/ZigZagArrow.png": {
+    "md5": "60e13c0a281c586d24048d64df9d005e",
+    "sha256": "9a81ea9b715c69af683180f932be7e9bb10b7ada6aee7cc074ad05263ab05a65",
+    "size": 22113
+  },
+  "Textures/bluebrick.png": {
+    "md5": "99a7d69ca03d8a1b4c36a90202779f85",
+    "sha256": "a619783ad8b8a9ad15c75c333050140e26a15bd92332835046b2c22bdee01231",
+    "size": 194
+  },
+  "Textures/brightgreenbrick.png": {
+    "md5": "c400e43f3e281bc473d7467a4cc31c77",
+    "sha256": "25d3445230199ea45b1b76cb485f8aecf52dbc164f3c30436e5f5053de1d34b1",
+    "size": 195
+  },
+  "Textures/bronze-icon.png": {
+    "md5": "fdcd549dcb08762ce69d21f389100a9e",
+    "sha256": "8e45e75243f6df769cd10951bfab2b8205df5c84367ec6162868cbf439642482",
+    "size": 2654
+  },
+  "Textures/brownbrick.png": {
+    "md5": "47bcdfb5e86c4c45daa9aa6c1a038a4d",
+    "sha256": "5234c21889050910098cc019f123557b12076e722b9e8413c2152cfd9a714261",
+    "size": 194
+  },
+  "Textures/dawggie.png": {
+    "md5": "a3cbc1b62dcdc5d93963afe98107ddda",
+    "sha256": "7680372bc92a4090921589f29de702f2ca2a7fbc4f96e456a61512a81acb8db7",
+    "size": 2528
+  },
+  "Textures/goal-lit-mirrored.png": {
+    "md5": "4a5d602f21bb0deeff68f08cda4bbffe",
+    "sha256": "c358976f4727907d531e3ca2739eeed49d2f22c74d0f32b0c834ddc2ebda27e2",
+    "size": 6731
+  },
+  "Textures/goal-lit.png": {
+    "md5": "ce424e132c34973f7a9780a57fd61c96",
+    "sha256": "981eb752c91be882f17ef6c75756fa027ada88c7a4cc32dba41ba02f346bc571",
+    "size": 6669
+  },
+  "Textures/goal-mirrored.png": {
+    "md5": "1c666b46d1f80973044e0daf5b831298",
+    "sha256": "b63492d05fcb14b36ad50e47229ace9c01d1998e985a9d5249b83a0f632f97f4",
+    "size": 6574
+  },
+  "Textures/goal-round-lit-mirrored.png": {
+    "md5": "d24aaf3f41f2c036e899f510f126d2d2",
+    "sha256": "78de044ac3a897cc4889c0c2ebdbf28f99c85ea2bad2196a52ecf2ebd4d65ec8",
+    "size": 12813
+  },
+  "Textures/goal-round-lit.png": {
+    "md5": "75ce39dbce2cd3873f185885fc5af4b2",
+    "sha256": "86c7bbe9ffc9635ed8ba0aa27b20b92067100a034bdf9ea8be48f48faf123dea",
+    "size": 12797
+  },
+  "Textures/goal-round-mirrored.png": {
+    "md5": "cce27d30c64f8c4e1204623ff7926641",
+    "sha256": "ff087ed6c25e6379462434e536877da7b07f96a32b9a415e0a663c0f6d2a4db5",
+    "size": 11501
+  },
+  "Textures/goal-round.png": {
+    "md5": "c860e71e0354fcaa78627a74a6f4cc42",
+    "sha256": "d84a3fddca90832eeb237795d47a50595e4fd134c48080b0c2879d9ca48548ab",
+    "size": 11505
+  },
+  "Textures/goal.png": {
+    "md5": "07314d30a1bc022e56ae29bd4bb0b0b5",
+    "sha256": "c31b642306336de2e622163d02c51ba5990f13eb688a7216a127fd06a844bd0c",
+    "size": 6498
+  },
+  "Textures/gold-Icon.png": {
+    "md5": "4daac6026deb6078b8401eec16996968",
+    "sha256": "c3e9f58633f64327aaf14c1941e863118faf3c90886e9b9a9afb7564608f0783",
+    "size": 2705
+  },
+  "Textures/greenbrick.png": {
+    "md5": "f96f0a909f64872a1cff7a2e6fcdb96d",
+    "sha256": "e5290d7cbe637471c55c8e015bfde5eaf438dc16685b8bcd7e313feaf90edacc",
+    "size": 195
+  },
+  "Textures/orangebrick.png": {
+    "md5": "94f40470080036d2118ad28a3b3900b9",
+    "sha256": "f38c32cb0c8b8fa9738a11e4ed205c521e584c5b6356cdb34d06925b91720bd5",
+    "size": 191
+  },
+  "Textures/purplebrick.png": {
+    "md5": "22b1d9b0b6a6da6ea03f637afa75a08f",
+    "sha256": "26c0d609545a7f22fa624b997bc5413109679160555863ec4f27f83abf2f01db",
+    "size": 194
+  },
+  "Textures/redbrick.png": {
+    "md5": "766a37aee5b03c373e495f7ffd596e09",
+    "sha256": "a59370ddfe78c3a06e005ea70b0488fe17147005590c8d984b425c7e370885f7",
+    "size": 192
+  },
+  "Textures/sawblade-mip1.png": {
+    "md5": "d43240651d042e0d9c30d5ad47ef0e72",
+    "sha256": "060074957b83ef87b69ccccaadca62ad2a03efda7b2cf85ec39dd0f398fbc9fe",
+    "size": 5915
+  },
+  "Textures/sawblade-mip2.png": {
+    "md5": "52e9f27254ff8918361bec8556d5fcf8",
+    "sha256": "c56a0352060b8e122c361a032c64663cf1cef1c8a1e7da514d1b5ab2e7bc829a",
+    "size": 1913
+  },
+  "Textures/sawblade.png": {
+    "md5": "5ba4cbc8416fd52597def63d00fddd37",
+    "sha256": "500fe701c7f48f68e9118ffc05ae2431c6c755a4705d48485498d3ef131e36da",
+    "size": 20087
+  },
+  "Textures/sawface.png": {
+    "md5": "9f134ee2faf925b4a13a74a6f4ccb8cb",
+    "sha256": "1060d7e54420ca2beb3c9822755560ebd3fcc526c33f8972231036b799121545",
+    "size": 21240
+  },
+  "Textures/sawface2.png": {
+    "md5": "282cde1722ec32041bba0232ed9f107e",
+    "sha256": "bf2efaa7f081956a70f29839e0c50c125ab31be98854d7fe6b1f2fad4cb20cb8",
+    "size": 33140
+  },
+  "Textures/silver-icon.png": {
+    "md5": "6d7b634032c6b3753a6d20f0ce8f3ea0",
+    "sha256": "2e91859a9a9e70dcc7780af8c06e76ecb593739a313f18c8fa7a72de1f3bee76",
+    "size": 2493
+  },
+  "Textures/title2.png": {
+    "md5": "3e285bb89865502f060b6b108c174f0a",
+    "sha256": "780f0a47750672d6294a57c96ba81e63e30a51ee0fdb1f208d05923ecfdb9304",
+    "size": 52842
+  },
+  "Textures/title3.png": {
+    "md5": "eb2cf82e1f10597cd99be550bf9750ed",
+    "sha256": "ca62f211e5a8ae24d21358549764cb4fd067a85d8bdac9653b0af05275c4221d",
+    "size": 71108
+  },
+  "Textures/title4.png": {
+    "md5": "639adbd85e1e9cef24142e0236ee0c08",
+    "sha256": "c2242be83553ee40e1a63fec0898663e383ee462f3837375aeea4133bf22d095",
+    "size": 59991
+  },
+  "Textures/toobbrick.png": {
+    "md5": "d731df535fda16a065702bf1f037713c",
+    "sha256": "58245a9f899c3c725ee93e42690aa475c13f7fef2b2b165601c1be8510d49f66",
+    "size": 191
+  },
+  "Textures/tourney-Dizzy.png": {
+    "md5": "4371a44b155db5d8b6382da5f44755d4",
+    "sha256": "a45796198cc1bbb0c1d304c942991c095f9950cfe22ed9580ec30cdf6043be43",
+    "size": 23110
+  },
+  "Textures/tourney-tower.png": {
+    "md5": "3480c24347b5213cb3b79c9fb5d7085f",
+    "sha256": "3f70ddc10855bab62059e321f458b57f87c109846df868b6f3711440055896f0",
+    "size": 16910
+  },
+  "Textures/winner2p.png": {
+    "md5": "a3e69a7ecd67be3587d16f7c74ae10a0",
+    "sha256": "e3fd87735b3188fb5a9f459c7f515350f7de069f6ed0afa94834a4f62890de42",
+    "size": 6160
+  },
+  "bass.dll": {
+    "md5": "fd5ec122f4dd201b3c3ef19e3058af81",
+    "sha256": "11075ca0a1a3064bd971a3faa38565952441f90ed198aa624ec2ce0aab7d4b62",
+    "size": 97336
+  },
+  "readme.html": {
+    "md5": "9c8239ac09de017385e44e38f5c6df09",
+    "sha256": "541a9e2712c60044023d437015fe7eb6a67b51be408822bfef350457bf1b91ce",
+    "size": 10829
+  },
+  "unins000.dat": {
+    "md5": "19c02a1cf5ad511eeea25d7afdf5ad83",
+    "sha256": "55455f1cff8c2b5ac27b62df3279e2afc1a85e9123c9229e7924cc41959438b3",
+    "size": 41756
+  },
+  "unins000.exe": {
+    "md5": "aa765b9cb2afb116f955d063bb7a2b36",
+    "sha256": "53da811094504adcfaf6c220bfbc2d65315c7d08fc696429d6de730a90226a4c",
+    "size": 871194
+  }
+}
