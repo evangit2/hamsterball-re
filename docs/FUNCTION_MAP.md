@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-|||Documented: 2,807 (73.7%)
+|||Documented: 2,821 (74.0%)
 |||User-labeled: 890+
-|||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→73.7%)
+|||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74%)
 
 ## Entry Point and Lifecycle
 
@@ -1355,3 +1355,22 @@ Offset | Field | Description
 | 0x00467cf0 | Vector_InsertRange | Insert range into vector: copy [param_2, param_3) into this container, update end ptr |
 | 0x004685e0 | PathGroup_PushPair | PathGroup push pair: Vector_PushBack of 4 then 8 onto two vectors offset by 0x10 |
 | 0x004692d0 | SceneObject_ScalarDtor | SceneObject scalar destructor: calls SceneObject_dtor then free if flag bit 0 set |
+
+## Session 22 (continued) - App Lifecycle, Input, Gfx Lighting
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0046c050 | App_CreateInputDevice | Allocate 0x91c bytes, call FUN_00466620 (input device ctor), store at App+0x178 |
+| 0x0046c0b0 | App_CreateAudioDevice | Allocate 0x424 bytes, call Audio_Init, store at App+0x17c |
+| 0x0046c170 | App_FrameUpdate | Frame update: GetCursorPos, WindowFromPoint, poll input/audio/collision, GameUpdate |
+| 0x0046c200 | App_ResetFrame | Reset frame: Scene_ResetCameraAndFrameCount, then Graphics_Clear |
+| 0x0046c260 | App_TickGameUpdate | Thunk: call FUN_00469a60(App+0x184) - tick game update |
+| 0x0046c290 | App_OnMouseDown | Mouse down handler: SetCapture, set button flags, UIWidget_HitTest, dispatch to widget |
+| 0x0046f100 | Gfx_ApplyLightingState | Set D3D lighting state: specular enable, light enable, material emission, 0x39 state |
+| 0x0046f1e0 | Gfx_ResetLighting | Reset lighting: disable specular, set render state 0x1b=0, material type 0, state 0x39 |
+| 0x0046ca20 | App_ParseGUID | Parse GUID from string: MultiByteToWideChar + CLSIDFromString, store at this+0x44 |
+| 0x0046dc20 | App_ScalarDtor | App scalar destructor: calls App_Shutdown then free if flag bit 0 |
+| 0x0046dc40 | App_Ctor | App constructor: vtable, size 640/480, cursors, CoInitialize, input device 0x848 |
+| 0x0046e910 | KeyboardDevice_ScalarDtor | KeyboardDevice scalar destructor: calls KeyboardDevice_dtor then free |
+| 0x0046ebd0 | InputDevice_PollAndRelease | Poll DInput device, acquire on error, release 4 sub-devices |
+| 0x00471c60 | Vector_FillResize | Fill vector with count DWORDs, update end pointer
