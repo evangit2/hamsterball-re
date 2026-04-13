@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,667 (70.5%)
-**User-labeled:** 932+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.5% of 3781)
+**Documented:** 2,701 (71.4%)
+**User-labeled:** 960+
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1717,3 +1717,14 @@ Offset | Field | Description
 | 0x0048ce17 | WebClient_InitResponse | Zero-initialize response fields (7 dwords cleared) |
 | 0x0048ce89 | TextureCache_DeletingDtor | TextureCache deleting dtor: Tree_FreeRecursive then free |
 | 0x0048cea5 | DDSURFACEDESC_ParsePixelFormat | Parse DDSURFACEDESC pixel format (D3DFMT enum), allocate palette, decompress RLE/compressed surfaces |
+
+## Session 29 — 6 renames — 70.7% documented
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0048e59c | DDTexture_CreateMipChain | DirectDraw texture mipmap chain creation (checks DDSD sig, parses pixel fmt, allocates surface levels, handles DXT compression) |
+| 0x00490400 | DDSurface_CopyRects | DirectDraw surface rectangle copy (validates size match, optionally copies palette, pixel copy via scanline loop) |
+| 0x00490538 | DDSurface_Blt3PointFilter | DirectDraw surface BLT with 3-tap bilinear filter (for 1/2 downscaling) |
+| 0x00490a2f | DDSurface_Blt4PointFilter | DirectDraw surface BLT with 4-tap filter dispatch (dispatches to sub-filters by texture format) |
+| 0x00490e52 | DDSurface_Blt5PointFilter | DirectDraw surface BLT with 5-tap filter (for 1/4 downscaling, bilinear + detail preservation) |
+| 0x004917ca | DDSurface_Blt3PointWBuffer | DirectDraw surface BLT with 3-tap filter + Z buffer (scans Z range, computes span endpoints, bilinear filter) |
