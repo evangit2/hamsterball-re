@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,622 (69.3%)
+**Documented:** 2,651 (70.1%)
 **User-labeled:** 932+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5%→69.1% of 3781)
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5%→69.1%), 27 (69.3%→70.1% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1670,3 +1670,29 @@ Offset | Field | Description
 | 0x00479400 | SceneList_Reset | Reset SceneList (vtable + Vec3List_Free) |
 | 0x00479460 | SceneList_DeletingDtor | Deleting dtor for SceneList (Reset then free if bit 0 set) |
 | 0x004794d0 | SplashScreen_Ctor | Splash screen ctor: brand.png + raptisoftlogo.png sprites, showcardgothic16 font |
+
+## Session 28 — 21 renames — 70.1% documented
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00456cd0 | Ball_InitBattleMode | Initialize ball for battle mode: sets physics params (friction 0.18, bounciness 1.0, radius 400.0), speed |
+| 0x00456f70 | Gadget_AddSpriteSlot | Add sprite slot to gadget (sprite list with texture index + dimensions) |
+| 0x0045b104 | D3DThunk_AcquireThreadFocus | D3D thunk: DetectShaderProfile + acquire thread focus |
+| 0x0045b25f | Matrix_BuildScaleTranslation | Build combined scale+translation matrix (16-float array, scale*1.0, translation, 0s) |
+| 0x0045b74c | Matrix_BuildRotationAxisScaled | Build rotation matrix around axis with scale factor (cos/sin of angle*scale) |
+| 0x0045ba24 | D3DThunk_Present | D3D thunk: DetectShaderProfile + Present dispatch |
+| 0x0045bb6f | D3DThunk_SetClipPlane | D3D thunk: indirect SetClipPlane dispatch |
+| 0x0045bd1d | D3DThunk_DrawIndexedPrimitiveUP | D3D thunk: DetectShaderProfile + DrawIndexedPrimitiveUP (6 params) |
+| 0x0045bd47 | D3DX_SlerpQuad | D3DX spherical lerp for quaternions (4 floats, uses 1-t)*t weighting |
+| 0x0045bd9e | D3DThunk_SetVertexShader | D3D thunk: DetectShaderProfile + SetVertexShader dispatch |
+| 0x0045bdde | D3DX_SquadInterpolate | D3DX squad interpolation between quaternions with blend factor |
+| 0x0045c273 | Matrix_TransformPoint2D | 2D point transform: mat*vec2 (reads mat[0..5], vec2, outputs vec2) |
+| 0x0045c2f3 | Matrix_TransformVector2D | 2D vector transform: mat*vec2 without translation (reads mat[0..5], vec2) |
+| 0x0045c3cf | Matrix_TransformPoint3D | 3D point transform: mat*vec3 with perspective divide (reads mat[0..15]) |
+| 0x0045c7fa | Matrix_BuildFullTransform | Build full transform matrix with scale/translation offsets and optional negation |
+| 0x00479630 | SceneObject_DeletingDtor | SceneObject deleting destructor: release 3 render callbacks then dtor |
+| 0x004796b0 | SceneObject_FadeAlpha | SceneObject fade alpha state machine: states 0-3 cycle through fade timers and callbacks |
+| 0x00479820 | SceneObject_ScalarDtor | SceneObject scalar destructor (free if bit 0 set) |
+| 0x00479a30 | GetOSVersionString | Build OS version string: "Windows NT/9x X.X - Build YYYY" |
+| 0x00479dc0 | BugTracker_SetUserAgent | Set bug tracker user agent string |
+| 0x00479e20 | BugTracker_Dtor | BugTracker destructor: restore exception filter, delete GDI objects, call string dtor |
