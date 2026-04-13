@@ -1,10 +1,9 @@
 # Hamsterball - Function Map
-
-|Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
-|Total functions: 3,781 (Ghidra analysis)
-**Documented:** 2,432 (64.3%)
+**Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
+**Total functions:** 3,781 (Ghidra analysis)
+**Documented:** 2,490 (65.9%)
 **User-labeled:** 932+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8% of 3781)
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→65.9% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1499,3 +1498,66 @@ Offset | Field | Description
 | 0x0047dffd | FindInSmallIntArray32 | Find int value in 3-element int array, return index or (2+not_found) |
 | 0x0047e8f6 | Mesh_RemapVertexAttribute32 | Remap vertex attribute through lookup table (if flag bit 2 set at +0x0C) |
 | 0x0047e96b | Mesh_SwapVertices32 | Swap vertex data between two indices using alloca temp buffer (32-bit stride) |
+
+## Session 25 (continued 6) - Vec/Math, Level, Sound, WaterRipple, App, Input, Vector STL
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0045c17b | Vec2_Normalize | Normalize 2D vector (length-squared check, divide by sqrt) |
+| 0x0045c32f | Vec3_Normalize | Normalize 3D vector (length-squared check, divide by sqrt) |
+| 0x0045c208 | Matrix_TransformVec4x3 | Transform vector by 4x3 matrix (last row implicit [0,0,0,1]) |
+| 0x0045c48e | Gfx_ProjectToViewport | Project 3D coords to viewport UV using render state flags |
+| 0x0045c61b | Gfx_UnprojectToNDC | Unproject screen coords back to normalized device coords via viewport rect |
+| 0x0045c7c1 | D3D_ThunkShaderDispatch4 | D3D thunk dispatch with 4 params |
+| 0x0045caae | Matrix_BuildOuterProductScale | Build 4x4 matrix from outer product of vec scaled and subtracted from identity |
+| 0x00461460 | SceneObject_BaseInit | Base init for scene objects — AthenaList_Init, Vec3_Init, string buffer |
+| 0x00461680 | SceneObject_BaseClear | Clear/reset scene object base — Vec3List_Free, Matrix_Identity, free string |
+| 0x004629c0 | Level_DeletingDtor | Scalar deleting destructor for Level (calls Level_Cleanup, free if flag) |
+| 0x004650e0 | Level_dtor | Level destructor — set vtable 0x4D9068, call Level_Cleanup |
+| 0x00465240 | Level_DeletingDtor2 | Scalar deleting destructor variant 2 for Level |
+| 0x00465860 | Level_LoadMeshes | Create MeshWorld, create MeshBuffers, parse (NOCOLLIDE)/N:/E: prefixes, create CollisionLevels |
+| 0x00466570 | Level_ReadSoundVolume | Read "Sound Volume" float from registry, default 1.0 |
+| 0x004665e0 | Audio_ClampPanValue | Convert float to int pan value, clamp minimum at -2000/-10000 |
+| 0x004668a0 | SoundDevice_dtor | SoundDevice destructor — save volume to registry, free AthenaLists, vec3list |
+| 0x00467b40 | Spline_EvalCubic | Evaluate cubic spline (t^3*a + t^2*b + t*c + d), clamp t to array bounds |
+| 0x00467c30 | Array_CopyDWords3 | Copy dwords from begin to end into destination |
+| 0x00467c80 | Array_CopyDWords4 | Thunk to Array_CopyDWords |
+| 0x00467d60 | MultiBuffer_Free | Free 6 allocated buffers with size/capacity fields at 0x10-byte intervals |
+| 0x00467ea0 | Exception_DeletingDtor | Scalar deleting destructor for std::exception |
+| 0x00467ec0 | Exception_dtor | Exception destructor — free SSO string, call base ~exception |
+| 0x00467f00 | Exception_AssignCStr | Exception constructor from C string — StdString_Assign |
+| 0x00467f40 | Exception_ThrowVectorLength | Throw "vector<T> too long" exception |
+| 0x00467fc0 | Exception_CopyCtor | Exception copy constructor — base copy + StdString_Substr |
+| 0x004680b0 | Vector_InsertN | STL vector::insert — insert N elements at position (realloc/memmove) |
+| 0x00468350 | Vector_Assign | STL vector::assign — copy from another vector, realloc if needed |
+| 0x00468490 | Vector_Resize | STL vector::resize — grow or trim to count |
+| 0x00468570 | Vector_PushBack | STL vector::push_back — append element, realloc via InsertN if needed |
+| 0x00469a60 | UIWidget_CallVtable20 | Call vtable+0x20 on object at +0x424 if non-null |
+| 0x00469aa0 | UIWidget_CallVtable28 | Call vtable+0x28 on object at +0x424 if non-null |
+| 0x00469b20 | UIWidget_HitTest | Find widget under point — check rect bounds, iterate back-to-front |
+| 0x00469be0 | UIWidget_UpdateHover | Update hover — find widget under point, call vtable+0x30 leave / vtable+0x2c enter |
+| 0x0046a0e0 | RegKeyList_AppendStr | Allocate string+value pair, append to AthenaList at +0xC |
+| 0x0046a3c0 | RegKeyList_CopyFromSibling | Iterate sibling list entries, call RegKeyList_AppendStr for each |
+| 0x0046a6e0 | RaptisoftUtil_Ctor | Constructor — FindWindowA("Raptisoft Utility"), set vtable |
+| 0x0046a7f0 | RaptisoftUtil_DeletingDtor | Destructor — Window_Notify "*** END RAPTISOFT SESSION ***" |
+| 0x0046a820 | WaterRipple_dtor | Free vertex buffer, release D3D resource, identity matrix |
+| 0x0046a8a0 | WaterRipple_AllocBuffers | Allocate vertex buffer array, create D3D vertex buffer |
+| 0x0046a930 | WaterRipple_AdvancePhase | Increment wave phase offset at +0x28 |
+| 0x0046a940 | WaterRipple_DeletingDtor | Scalar deleting destructor for WaterRipple |
+| 0x0046a960 | WaterRipple_UpdateVertices | Compute water wave positions (sin/cos), normals, vertex averaging for smooth surface |
+| 0x0046af30 | WaterRipple_Ctor | Constructor — vtable 0x4D9344, 10 segments, wave params, alloc buffers |
+| 0x0046b070 | WaterRipple_Render | Render water ripple — update vertices, test ball intersection, draw with vertex buffer |
+| 0x0046b200 | RenderList_AppendCopy | Allocate new RenderContext and copy data, or append existing to list |
+| 0x0046b360 | RenderList_FreeAndClear | Iterate list calling dtor(1), then AthenaList_Free |
+| 0x0046b3d0 | MeshBuffer_DeletingDtor | Scalar deleting destructor for MeshBuffer |
+| 0x0046bca0 | App_WriteDisplaySettings | Write Fullscreen/ScreenWidth/ScreenHeight to registry |
+| 0x0046bd00 | App_ReadDisplaySettings | Read Fullscreen/ScreenWidth/ScreenHeight from registry |
+| 0x0046bff0 | App_CreateGraphics | Allocate Graphics object (0x7DC), store at App+0x174 |
+| 0x0046c110 | App_CreateInputHandler | Allocate InputHandler (0x438), store at App+0x180 |
+| 0x0046c3c0 | Input_OnMouseUpCapture | Decrement capture count, ReleaseCapture if zero, notify interceptor "MouseUp" |
+| 0x0046c430 | Input_OnMouseUp | ReleaseCapture, notify interceptor or widget with vtable+0x18, clear button flags |
+| 0x0046c760 | Input_OnMouseDown | Hit-test widget, call vtable+0x1c with button param |
+| 0x0046c7c0 | App_SetFullScreen | Toggle fullscreen/windowed, Graphics_Reset, AdjustWindowRect, SetWindowPos |
+| 0x0046c9e0 | App_FrameTick | If not paused, render + update scene |
+| 0x0046cb00 | App_CreateScoreDisplay | Allocate 0x8A4 score display object, add to scene |
+| 0x0046cb70 | App_SetTitleString | Free and replace title string at App+0x1B4 |
