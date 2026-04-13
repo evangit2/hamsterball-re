@@ -1067,3 +1067,54 @@ Offset | Field | Description
 | Address | Name | Xrefs | Description |
 |---------|------|-------|-------------|
 | 0x4C5F5A | CRT_amsg_exit | 10 | CRT error message exit (__amsg_exit) |
+
+## Newly Documented Functions (Session 2026-04-13)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x440390 | Scene_UpdateArenaPhysics | 1 | Arena physics update: wave motion, collision detection, sound triggers |
+| 0x466cf0 | CollisionNode_ctor | 1 | Collision node constructor: sets friction values (0.1), vtable |
+| 0x477020 | CollisionNode_BaseInit | 1 | Collision node base initialization |
+| 0x459aba | Triangle_Interpolate2D | 1 | 2D triangle interpolation (barycentric coords) |
+| 0x453c00 | Graphics_InitShaderProfileThunk | 1 | Shader profile init thunk |
+| 0x441150 | UI_CheckKeyCombo | 2 | UI key combo handler (calls vtable on press) |
+| 0x41f7e0 | Scene_HandleRaceEnd_ClampZoom | 1 | Clamps camera zoom levels after race end |
+| 0x430330 | PauseRumbleMenu_ctor | 2 | Pause Rumble menu constructor (RESUME, OPTIONS, QUIT) |
+| 0x4601a0 | Scene_MarkDirty | 2 | Recursively marks scene objects as dirty (tree traversal) |
+| 0x470680 | MeshWorld_ClearObjectLists | 3 | Clears AthenaLists on marked objects during cleanup |
+| 0x474e70 | Menu_dtor | 1 | Menu destructor: frees 10 Vec3List entries, clears AthenaLists |
+| 0x475000 | Menu_DeletingDtor | 1 | Menu scalar deleting destructor |
+| 0x441190 | OkayDialog_Render | 2 | Okay dialog render: draws gradient bars, "OKAY!" button |
+| 0x4415b0 | UI_SetQuarterViewport | 1 | Sets quarter-screen viewport dimensions (50x50) |
+| 0x446710 | UI_ConfirmYes | 1 | UI confirm handler ("YES" dialog response) |
+| 0x424c10 | RumbleBoard_DeletingDtor | 1 | RumbleBoard scalar deleting destructor |
+| 0x460220 | Scene_ResetObjectSlots | 1 | Resets scene object slots, re-registers objects |
+| 0x453100 | Rect_ContainsPoint | 1 | Point-in-rectangle test (AABB containment) |
+| 0x4415f0 | UI_ResetViewportToQuarter | 1 | Resets viewport to quarter-screen (4x 0x32 values) |
+| 0x442540 | UI_SetPauseRightButtonText | 1 | Sets "PAUSE W/RIGHT BUTTON: %s" text in UIList |
+| 0x4431c0 | UIList_DeletingDtor | 1 | UIList scalar deleting destructor |
+| 0x441660 | UIList_dtor | 1 | UIList destructor: initializes 5 AthenaHashTables, cleanup |
+| 0x4502f0 | RumbleBoard_Menu_dtor | 1 | RumbleBoard menu destructor: vtable, timer, UIList cleanup |
+| 0x445230 | Scene_StartTournament | 1 | Starts tournament mode: creates TourneyMenu, sets music tempo |
+| 0x446730 | Tourney_SaveTournament | 1 | Saves tournament to "DATA\\tournament.sav" |
+| 0x450960 | Tourney_AdvanceRound | 1 | Advances tournament to next round, creates new TourneyMenu |
+| 0x4508f0 | Tourney_SetCurrentLevel | 1 | Sets tournament current level, material color |
+| 0x4610e0 | MeshWorld_CollectTrianglesInAABB | 3 | Recursive AABB triangle collection (collision mesh query) |
+| 0x467730 | Array_Fill | 1 | Simple array fill (memset-like) |
+| 0x468050 | Vector_Init | 1 | Vector/array initializer (allocates dword array) |
+| 0x469090 | SpatialNode_SwapBuffers | 1 | Spatial tree node buffer swap (copy/move semantics) |
+| 0x4707b0 | MeshObject_dtor | 1 | Mesh object destructor: releases textures, frees mesh data |
+| 0x471c00 | MeshObject_DeletingDtor | 1 | MeshObject scalar deleting destructor |
+| 0x475020 | MeshWorld_AddTexture | 2 | Adds texture to mesh world (creates 0x48 byte texture object) |
+| 0x476009 | Bit_ShiftByte | 1 | Bit shift helper for byte values |
+| 0x4471e0 | StdString_Replace | 1 | String replace operation (std::string-like) |
+| 0x448410 | UI_TextEdit_PasteFromClipboard | 2 | Pastes text from Windows clipboard to UI |
+| 0x4492d0 | UIList_AddItem | 1 | Adds item to UIList (creates UIListItem, copies string) |
+| 0x441640 | SceneObject_DeletingDtor | 1 | SceneObject scalar deleting destructor |
+| 0x4722e0 | AthenaVector_Init | 1 | Athena vector/list initializer |
+| 0x473030 | Registry_SetValue | 4 | Windows registry value setter (RegSetValueExA wrapper) |
+| 0x451b90 | TourneyMenu_ctor | 1 | Tournament menu constructor: difficulty, music, scoring thresholds |
+| 0x462380 | SpatialTree_CloneToLevel | 2 | Recursively clones spatial tree to Level object |
+| 0x456870 | Mesh_DeletingDtor | 1 | Mesh scalar deleting destructor |
+| 0x479000 | Sound_EnumerateDevices | 1 | Sound device enumeration callback registration |
+| 0x480032 | D3DTexture_ResizeAndValidate | 5 | D3D texture resize and compression format validation |
