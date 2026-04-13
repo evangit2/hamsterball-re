@@ -489,10 +489,10 @@ Offset | Field | Description
 | 29 | +0x74 | 0x40C5D0 | Scene_vmethod29 | Game logic override |
 | 30 | +0x78 | 0x44B840 | NoOp_return | Empty stub (default) |
 | 31 | +0x7C | 0x41AC70 | Scene_vmethod31 | Game logic override |
-| 32 | +0x80 | 0x41C5B0 | Scene_vmethod32 | Called by RumbleBoard virtual dispatch |
+| 32 | +0x80 | 0x41C5B0 | Scene_SpawnBallsAndObjects | vmethod[32]: spawn balls (GameObject_ctor), scan SAFESPOT, CreateBadBall/MouseTrap/Secret/Flags/Signs/DynamicObjects |
 | 33 | +0x84 | 0x419750 | Scene_method33 | Near Scene_dtor helper |
 | 34 | +0x88 | 0x44B840 | NoOp_return | Empty stub (default) |
-| 35 | +0x8C | 0x41A9A0 | Scene_vmethod35 | Game logic override |
+| 35 | +0x8C | 0x41A9A0 | Scene_ComputeLighting | Find closest light source from array, compute direction/scale, camera-relative vector |
 
 ## SceneObject Vtable Layout (0x4D934C, 10 entries)
 
@@ -552,3 +552,49 @@ Offset | Field | Description
 | 0x0046B670 | SceneObject_Render | D3D world matrix build + SetTransform + SetMaterial |
 | 0x0046B860 | SceneObject_BaseDtor | Iterate child AthenaList, call each dtor(1), clear list |
 | 0x0046B9F0 | SceneObject_DeletingDtor | Calls BaseDtor then free if scalar deleting |
+
+## Tournament and Menu System
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00427080 | Tournament_AdvanceRace | Advance to next race in tournament; 15-case switch creates Board_ctor for each level (1-15), saves score, difficulty time bonus, saves race timestamps |
+| 0x00428060 | App_ShowResults | Create results screen (FUN_426030 ctor), save to App+0x228, dispatch to scene manager |
+| 0x0042EA30 | PracticeMenu_ctor | "Practice Menu" scene, "CHOOSE A PRACTICE RACE!", 14 race items with thumbnail textures (practice-level1.png through practice-impossible.png), lock check via App+0x851-0x865 flags |
+| 0x004366E0 | Scene_SetRaceActive | Sets +0x10EC=1 (race active flag), 62 xrefs |
+
+### Tournament Level Mapping (from Tournament_AdvanceRace switch)
+
+| Case | Level | Board Constructor | Size |
+|------|-------|-------------------|------|
+| 1 | Warm-Up | FUN_41CA40 | 0x436C |
+| 2 | Beginner | FUN_4200E0 | 0x644C |
+| 3 | Intermediate | FUN_41CB20 | 0x438C |
+| 4 | Dizzy | BoardLevel3_ctor | 0x4BE0 |
+| 5 | Tower | FUN_41E340 | 0x5418 |
+| 6 | Up | FUN_420390 | 0x4790 |
+| 7 | Expert | FUN_424440 | 0x4394 |
+| 8 | Odd | FUN_41EA40 | 0x4FD8 |
+| 9 | Neon | FUN_41ED80 | 0x43B0 |
+| 10 | Toob | FUN_41F4B0 | 0x646C |
+| 11 | Wobbly | FUN_41F110 | 0x4388 |
+| 12 | Glass | FUN_424A90 | 0x4390 |
+| 13 | Sky | FUN_41F930 | 0x47F8 |
+| 14 | Master | FUN_4206D0 | 0x6498 |
+| 15 | Impossible | FUN_424C20 | 0x4380 |
+
+### Level Unlock Flags (App+0x851-0x865)
+
+| Offset | Level | Texture |
+|--------|-------|---------|
+| +0x851 | Dizzy | practice-level3.png |
+| +0x852 | Tower | practice-level4.png |
+| +0x853 | Up | practice-up.png |
+| +0x854 | Expert | practice-level5.png |
+| +0x855 | Odd | practice-level6.png |
+| +0x856 | Toob | practice-level7.png |
+| +0x857 | Wobbly | practice-level8.png |
+| +0x858 | Sky | practice-level9.png |
+| +0x859 | Master | practice-level10.png |
+| +0x863 | Neon | practice-neon.png |
+| +0x864 | Glass | practice-glass.png |
+| +0x865 | Impossible | practice-impossible.png |
