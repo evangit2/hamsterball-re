@@ -308,3 +308,97 @@ typedef struct {
 "Levels\\Level8-Blockdawg1"  // Toob Board "Rodenthood"
 "Levels\\Level8-Blockdawg2"  // Toob Board "Rodenthood"
 ```
+
+## UIListItem (0x444 bytes, created by UIListItem_ctor 0x4490A0)
+
+```c
+struct UIListItem {
+    char*       display_text;    // +0x00 (strdup'd)
+    char*       subtext;         // +0x04 (strdup'd, used as key for UIList_SetTextByName)
+    Vec3        position;        // +0x08..0x14 (Vec3 with init) [padding/unused?]
+    AthenaList  children;        // +0x28..0x40 (AthenaList for sub-elements)
+    uint32_t    color_r;         // +0x0C*4 (red component)
+    uint32_t    color_g;         // +0x0D*4 (green component)
+    uint32_t    color_b;         // +0x0E*4 (blue component)
+    uint32_t    color_a;         // +0x0F*4 (alpha component)
+    SceneObject* icon;           // +0x1C*4 (+0x70) — SceneObject for icon row
+    int         linked_obj;      // +0x20*4 (+0x80) — linked scene object
+    int         height;          // +0x24*4 (+0x90) — row height in pixels
+    AthenaList  icon_list;       // +0x2C*4+0x10... (icon list for sub-icons)
+    uint8_t     is_icon_row;     // +0x110 (0x441) — if 1, render as icon instead of text
+    uint8_t     pad;             // +0x441
+};
+```
+
+## SimpleMenu / UIList (vtable 0x4D6A70)
+
+```c
+struct SimpleMenu {          // extends Scene
+    // ... Scene base fields ...
+    char*       name;           // +0x868 ("Simple Menu")
+    App*        app;            // +0x878
+    Font*       normal_font;    // +0x87C
+    Font*       selected_font;  // +0x880
+    int         has_header_icon;// +0x888
+    AthenaList  items;          // +0x88C (list of UIListItem*)
+    int         item_count;     // +0x890
+    // ... index tracking ...
+    int         total_width;    // +0xCB0
+    int         total_height;   // +0xCB4
+    int         needs_layout;   // +0xCBC (flag: 1 = re-layout needed)
+    UIListItem* selected_item;  // +0xCC0
+    int         scroll_pos;     // +0xCCC
+    SceneObject* up_scroller;    // +0xCA4
+    SceneObject* dn_scroller;    // +0xCA8
+    int         can_scroll;     // +0xCD0
+    int         scroll_up_cooldown;  // +0xCD4
+    int         scroll_dn_cooldown;  // +0xCD8
+};
+```
+
+## RumbleBoard (vtable PTR 0x4D1358, extends Board extends Scene)
+
+```c
+struct RumbleBoard {
+    // ... Board/Scene base fields ...
+    int         base_score;     // +0x47AC = 6000
+    uint8_t     is_tie_breaker; // +0x47C5
+    uint8_t     tie_active;     // +0x47CC
+    int         max_rounds;     // +0x47D0 = 0x19 = 25
+    // Timer fields at +0x47C8 (RumbleBoard_InitTimer/CleanupTimer/TickTimer)
+    // Player scores at +0x11ED..+0x11F0 (4 players)
+    int         round_end_timer;// +0x11EB (countdown after round ends)
+    int         game_over_flag; // +0x11F1
+};
+```
+
+## Sprite (vtable 0x4D8F84)
+
+```c
+struct Sprite {
+    VTable*     vtable;         // +0x00 (0x4D8F84)
+    Graphics*   gfx;            // +0x04
+    RenderContext rc;           // +0x08..0x60
+    Texture*    texture;        // +0x50
+    uint8_t     pad;            // +0x54
+    float       width;          // +0xC8 (= texture+0x14)
+    float       height;         // +0xCC (= texture+0x18)
+    uint8_t     visible;        // +0xD0 = 1
+    uint8_t     pad2;           // +0xD1
+    // Color/material fields: +0x60..0xC4
+};
+```
+
+## PRNG State (RNG_Rand uses this as 'this')
+
+```c
+struct RNGState {
+    VTable*     vtable;         // +0x00
+    int         read_ptr;       // +0x04 (wraps at 55)
+    int         write_ptr;      // +0x08 (wraps at 55)
+    uint32_t    buffer[55];     // +0x0C..0xE4 (circular buffer)
+};
+// Algorithm: buf[read] = (buf[read] + buf[write]) & 0x3FFFFFFF
+// Return: (result >> 6) % range
+// Signed mode: if param_2==1 && Rand(2)==0, negate
+```

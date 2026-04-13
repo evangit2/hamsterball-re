@@ -404,7 +404,61 @@ Difficulty_GetTimeModifier (0x428ED0) returns multiplier based on +0x23C:
 
 ## 10. Documentation Progress
 
-- **Total functions:** 3,797
-- **Documented:** 1,758 (46.3%)
-- **Session progress:** 44.1% → 46.3% (+41 functions named this session)
-- **Key docs updated:** FUNCTION_MAP.md, KEY_FINDINGS.md
+- **Total functions:** 3,988
+- **Documented:** 1,816 (45.5%)
+- **Session progress:** 44.1% → 45.5% (+78 functions named across sessions)
+- **Key docs updated:** FUNCTION_MAP.md, KEY_FINDINGS.md, STRUCTS_AND_TYPES.md
+
+---
+
+## 11. PRNG System (RNG_Rand, 0x45DD60)
+
+- 55-entry circular buffer (additive generator, like Mitchell & Moore)
+- Two pointers wrap at index 55 (0x37)
+- Returns `(buf[read_ptr] + buf[write_ptr]) & 0x3FFFFFFF >> 6) % range`
+- Optional signed mode: if param_2=1 and RNG_Rand(2)==0, negate result
+- 193 cross-references — used everywhere for randomization
+
+## 12. Graphics Transform Pipeline
+
+- Direct3D 8 SetTransform wrapper chain:
+  - Gfx_SetPosition (69 xrefs) → D3D world matrix translate
+  - Gfx_RotateY (15 xrefs) → rotation around Y
+  - Gfx_ScaleX/Y/Z (40/35/26 xrefs) → scale individual axes
+  - Matrix44_Zero → clear, then set diagonals to 1.0
+  - Gfx_SetAlphaBlendState → D3DRS_SRCBLEND/DESTBLEND
+  - Gfx_SetCullMode → D3DRS_CULLMODE (none/CW/CCW)
+
+## 13. UI List System (vtable 0x4D6A70)
+
+- Base class for all menu screens in the game
+- SimpleMenu_ctor (0x448F20) sets up "Simple Menu" with item list
+- Items are 0x444-byte structs with: display text, subtext, color, SceneObject icon, height
+- UIList_AddItem (86 xrefs): creates item, copies text, links SceneObject
+- UIList_AddSpacer (29 xrefs): adds empty row with height
+- Rendering: UIList_Render draws items with gradient bar selection, icons, scroll arrows
+- Input: UIList_HandleKeyNav for up/down navigation, UIList_ScrollUpdate for mouse wheel
+- UIList_ActivateCurrentItem: "Back" → sound 650, "Continue" → sound 50, else vtable dispatch
+- UIList_Layout: computes total widths, positions SceneObjects for 2D rendering
+
+## 14. Rumble Board System (vtable PTR 0x4D1358)
+
+- RumbleBoard extends Board (which extends Scene)
+- Base score: 6000 per round
+- 25 rounds per game (offset +0x47D0 = 0x19 = 25)
+- Timer: RumbleBoard_InitTimer / TickTimer / CleanupTimer manage round time
+- RumbleBoard_Render draws timer bar, round number ".%d", and "TIE BREAKER!" text
+- RumbleBoard_Update checks round end: finds max score, handles ties
+- Tie detection: counts how many players share max score; if ≥2, sets tie breaker flag
+- On game over: spawns RumbleScore object (FUN_4CB10), plays "Game Over" music
+- RumbleScore_ctor uses difficulty index [0,1,2] → scale [0.02, 0.03, 0.04]
+- RumbleBoard vtable at PTR_FUN_004d1358
+
+## 15. Scene Rendering Pipeline (0x45E0E0)
+
+- Scene_RenderAllObjects is the main 3D render function
+- Three-phase draw: opaque objects → alpha-blended objects → shadow objects
+- Object flags at offsets: +0x85F (shadow), +0x860 (alpha), +0x862 (deferred), +0x863 (skip)
+- For alpha objects: temporarily shifts projection matrix for shadow rendering
+- Each object has material index (+0x83C) and bone array for skeleton rendering
+- Scene_RenderBallShadow: renders ball with depth bias for shadow pass

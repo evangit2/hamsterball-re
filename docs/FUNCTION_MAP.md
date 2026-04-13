@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
-|Total functions: 3,797 (Ghidra analysis)
-||Documented: 1,758 (46.3%)
-||User-labeled: 180+
+|Total functions: 3,988 (Ghidra analysis)
+|Documented: 1,816 (45.5%)
+|User-labeled: 220+
 
 ## Entry Point and Lifecycle
 
@@ -598,3 +598,95 @@ Offset | Field | Description
 | +0x863 | Neon | practice-neon.png |
 | +0x864 | Glass | practice-glass.png |
 | +0x865 | Impossible | practice-impossible.png |
+
+## RNG / Random System
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x0045dd60 | RNG_Rand | 193 | PRNG with 55-entry circular buffer; returns (buf[read]+buf[write])>>6 % range |
+| 0x0045dd60 | RNG_Rand(signed) | - | When param_2=1 and RNG_Rand(2)==1, returns negative value |
+
+## Graphics Transform Pipeline
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00457b10 | Matrix44_Zero | 12 | Clear 4x4 matrix; zero all 16 entries, set diagonals to 1.0 |
+| 0x00457b50 | Gfx_SetPosition | 69 | Set world position via D3D SetTransform |
+| 0x00457bb0 | Gfx_RotateY | 15 | Rotate around Y axis (negate + look-at construction) |
+| 0x00457c60 | Gfx_ScaleX | 40 | Scale X axis with render-state multiplier |
+| 0x00457c90 | Gfx_ScaleY | 35 | Scale Y axis with render-state multiplier |
+| 0x00457cc0 | Gfx_ScaleZ | 26 | Scale Z axis with render-state multiplier |
+| 0x00457fd0 | Matrix4_Identity | 40 | Set identity vtable + zero (Vec3 base init) |
+| 0x00425fe0 | Gfx_SetAlphaBlendState | 9 | Set D3D alpha blend render states (0xD, 0xE → mode 3) |
+| 0x00427940 | Gfx_SetCullMode | 13 | Set D3D cull mode (none/CW/CCW) based on +0x708 and specular flag |
+
+## Wave / Math System
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00457da0 | Wave_Sin | 38 | sin(time * frequency * 2π/360) |
+| 0x00457dc0 | Wave_Cos | 23 | cos(time * frequency * 2π/360) |
+
+## UI List System (vtable 0x4D6A70)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00448f20 | SimpleMenu_ctor | 15 | "Simple Menu" base ctor with item list, up/down scrollers |
+| 0x004490a0 | UIListItem_ctor | - | Init 0x444-byte item with Vec3 + AthenaList |
+| 0x004497f0 | UIList_AddItem | 86 | Add named item (text, subtext, colors, SceneObject, height) |
+| 0x00449430 | UIList_AddSpacer | 29 | Add empty spacer item with height only |
+| 0x004494d0 | UIList_ScrollUpdate | 17 | Scroll logic + mouse wheel + vtable dispatch |
+| 0x00449b00 | UIList_Cleanup | 27 | Free all items (strings, SceneObjects, Vec3Lists) |
+| 0x00449c20 | UIList_HandleKeyNav | 18 | Handle up/down/pgup/pgdn key navigation |
+| 0x00449d40 | UIList_Render | 18 | Draw all items: gradient bars, text, icons, scroll arrows |
+| 0x0044a570 | UIList_Layout | 18 | Compute text widths, position SceneObjects, set scrollers |
+| 0x0044a8b0 | UIList_SetTextByName | 27 | Find item by subtext, replace display text |
+| 0x00449750 | UIList_ActivateCurrentItem | 18 | Activate selected item: Back→650, Continue→50, else callback |
+| 0x0044ad50 | RumbleScore_ctor | 12 | Init RumbleScore vtable + difficulty scale (0.02/0.03/0.04) |
+
+## Rumble Board System
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x004217b0 | RumbleBoard_ctor | 15 | Init board with "RumbleBoard" string, timer, base score=6000 |
+| 0x00421880 | RumbleBoard_dtor | 24 | Cleanup timer, release SceneObjects, call Scene_dtor |
+| 0x00421910 | RumbleBoard_Render | 16 | Draw timer bar, round info, difficulty status, "TIE BREAKER!" |
+| 0x00421fe0 | RumbleBoard_Update | 16 | Check round end, resolve ties, play "Game Over" music |
+| 0x00458e60 | RumbleBoard_InitTimer | 12 | Initialize round timer |
+| 0x00458e80 | RumbleBoard_CleanupTimer | 32 | Cleanup round timer |
+| 0x00458e90 | RumbleBoard_TickTimer | 12 | Tick round timer countdown |
+
+## Scene / Rendering Pipeline
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x0045e0e0 | Scene_RenderAllObjects | 33 | Main render: Graphics_BeginFrame → sort objects (opaque/alpha/shadow) → draw |
+| 0x00460450 | Scene_RenderBallShadow | 38 | Render ball shadow: Ball_Render + depth bias pass |
+| 0x0045df80 | SceneObject_CallUpdate | 47 | Dispatch +0x434 vtable[1] (Update) |
+| 0x0045df90 | SceneObject_CallRender | 47 | Dispatch +0x434 vtable[2] (Render) |
+| 0x00437130 | Scene_StartCountdown | 11 | Start race countdown (3..2..1..GO with param=400 or 50 frames) |
+
+## Sprite System (vtable 0x4D8F84)
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x0045d0c0 | Sprite_ctor | 30 | Init with texture, RenderContext, material defaults |
+| 0x0045d660 | Sprite_RenderQuad | 15 | Render textured quad using material + draw primitive |
+
+## Dialog System
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00440e70 | OkayDialog_ctor | 12 | "Okay Dialog" with caption text + "OKAY!" button |
+
+## Core Utility Functions
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x004531e0 | Vec3_Init | 13 | Set Vec3 vtable + zero position + w=255.0 |
+| 0x00453250 | Vec3List_Free | 283 | Free Vec3List + member data at +0x103 |
+| 0x004536a0 | AthenaList_GetSize | 60 | Return list count at +4 |
+| 0x00453640 | AthenaList_FindByValue | - | Linear search for value, returns index or -1 |
+| 0x00443990 | AthenaString_Clear | 14 | Free string buffer, reset to 15-char inline capacity |
+| 0x0044b840 | Noop | 280 | Empty stub function (vtable placeholder) |
+| 0x00401480 | GameObject_dtor | 9 | Release timers, free Vec3Lists, cleanup matrices |
