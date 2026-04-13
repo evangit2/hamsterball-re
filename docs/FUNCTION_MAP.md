@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,490 (65.9%)
+**Documented:** 2,553 (67.5%)
 **User-labeled:** 932+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→65.9% of 3781)
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1561,3 +1561,62 @@ Offset | Field | Description
 | 0x0046c9e0 | App_FrameTick | If not paused, render + update scene |
 | 0x0046cb00 | App_CreateScoreDisplay | Allocate 0x8A4 score display object, add to scene |
 | 0x0046cb70 | App_SetTitleString | Free and replace title string at App+0x1B4 |
+
+## Session 25 (cont7) — 44 renames — 67.5% documented
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0046f010 | SceneObject_dtor | Destroys scene object, iterates list calling dtor(1), frees sub-objects |
+| 0x0046f0e0 | SceneObject_DeletingDtor | Deleting dtor for SceneObject |
+| 0x0046f310 | SpriteAnim_Ctor | Initializes sprite animation with vtable 004d9c48 |
+| 0x0046f7c0 | SpriteAnim_SetRange | Sets animation range (prev=current, new=param) |
+| 0x0046f7d0 | SpriteAnim_InitFromCalcTexCoords | Initializes sprite anim from texture coords (8 calls) |
+| 0x0046f8d0 | MeshWorld_BuildVertexBuffer | Builds vertex buffer from mesh object lists, creates D3D VB |
+| 0x0046fb50 | SpriteAnim_DeletingDtor | Deleting dtor for SpriteAnim, frees callback and data |
+| 0x0046fcc0 | MeshWorld_CollectRenderLists | Collects render lists from mesh objects into target list |
+| 0x0046ff50 | SafeCallDtor | Calls vtable[2] (dtor) on object ptr if non-null |
+| 0x0046ff60 | MeshWorld_OptimizeAll | Optimizes all meshes, builds vertex buffers |
+| 0x00471ce0 | Throw_VectorTooLong | Throws "vector<T> too long" exception |
+| 0x00472570 | MeshWorld_BuildFontMeshes | Builds font meshes via Font_RenderToTextureComplex |
+| 0x00472a30 | RumbleBoard_dtor | RumbleBoard destructor, frees sub-object and calls SceneObject_dtor |
+| 0x00472a50 | RumbleBoard_TickDown | Decrements countdown, triggers vtable callbacks at zero |
+| 0x00472a80 | RumbleBoard_RenderThenFree | Calls render (vtable+0x48) then free (vtable+0x40) |
+| 0x00472ad0 | RumbleBoard_DeletingDtor | Deleting dtor for RumbleBoard |
+| 0x00472b20 | HitBox_PointInBounds | AABB point-in-bounds check with float comparisons |
+| 0x00472b80 | D3DTexture_Ctor | Initializes D3D texture object with vtable 004d9ecc |
+| 0x00472c00 | D3DTexture_DeletingDtor | Deleting dtor for D3D texture |
+| 0x00472d80 | BaseObject_DeletingDtor | Deleting dtor for BaseObject |
+| 0x00472e20 | AthenaHashTable_DeletingDtor | Deleting dtor for hash table (calls ctor then frees) |
+| 0x00472ea0 | RegKey_Ctor | Initializes registry key object with vtable 004d9f08 |
+| 0x00472f50 | RegKey_SetSoftwarePath | Builds "SOFTWARE\%s" registry path |
+| 0x00473000 | RegKey_WriteDWORD | Writes DWORD value to registry via RegSetValueExA |
+| 0x00473100 | RegKey_QueryValue | Queries registry value via RegQueryValueExA |
+| 0x00473220 | RegKey_DeletingDtor | Deleting dtor for RegKey, frees path string |
+| 0x00473260 | eSellerate_ExtractDLL | Extracts eSellerateEngine.dll from resources to Windows dir |
+| 0x00473355 | eSellerate_ExtractDLLNull | Calls eSellerate_ExtractDLL with NULL module |
+| 0x0047335d | eSellerate_ReadAffiliateKey | Reads affiliate key from SOFTWARE\eSellerate registry |
+| 0x00473460 | StdString_FreeBuffer | Frees internal buffer, zeroes capacity/size/ptr |
+| 0x00473480 | StdString_Reserve | Reallocates buffer to param_1+1 size |
+| 0x00473580 | StdString_AssignN | strncpy-assigned string with length param |
+| 0x00473600 | StdString_RecalcLen | Recalculates string length if dirty flag set |
+| 0x00473640 | StdString_FindSubstr | strstr wrapper returning index or -1 |
+| 0x004736f0 | AthenaString_AssignCStrFree | Assign C string then free source |
+| 0x00473a70 | AthenaString_AssignCStrFree2 | Variant of assign-CStr-then-free |
+| 0x00473ac0 | AthenaString_AssignFree | Assign string then free source |
+| 0x00473ba0 | AthenaString_Substr | Substring extraction by index/length |
+| 0x00473cd0 | AthenaString_EraseRange | Erase characters in range |
+| 0x00473e20 | AthenaString_EraseSubstr | Find and erase substring |
+| 0x00474000 | AthenaString_Truncate | Truncate string to N characters |
+| 0x004742b0 | MWParser_DumpTags | Dump tags from MW parser to string |
+| 0x004743f0 | MusicChannel_LoadAndAppend | Create MusicChannel, load file, append to list |
+| 0x00474480 | MusicDevice_SetVolume | Set BASS config volume |
+| 0x004744b0 | MusicDevice_ReadVolume | Read "Music Volume" from registry |
+| 0x00474510 | MusicDevice_MuteToggle | Toggle BASS mute on/off |
+| 0x004746a0 | MusicDevice_dtor | Destroy music device, free channels, BASS_Stop/Free |
+| 0x00474780 | MusicDevice_FadeAll | Update fade on all music channels |
+| 0x004747e0 | MusicDevice_DeletingDtor | Deleting dtor for MusicDevice |
+| 0x00474800 | Menu_Ctor | Menu class constructor, inits 8 AthenaLists |
+| 0x00474900 | LoaderGadget_OK | "LoaderGadget::OK" - handles OK button |
+| 0x00474930 | Menu_SetDirty | Sets dirty flag (+0x2d64) |
+| 0x00474940 | Menu_MergeAllLists | Merge all 7 category lists into main list |
+| 0x00474a30 | LoaderGadget_Tick | Load progress tick, updates count/percentage |
