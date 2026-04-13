@@ -1,10 +1,10 @@
 # Hamsterball - Function Map
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
-|Total functions: 3,811 (Ghidra analysis)
-|Documented: 2,719 (71.3%)
-|User-labeled: 890+
-|Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%)
+||Total functions: 3,811 (Ghidra analysis)
+||Documented: 2,753 (72.2%)
+||User-labeled: 890+
+||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72%)
 
 ## Entry Point and Lifecycle
 
@@ -1257,3 +1257,32 @@ Offset | Field | Description
 | Address | Name | Description |
 |---------|------|-------------|
 | 0x433f00 | Level_Cleanup_vtable1 | Level vtable cleanup thunk variant 1 |
+
+|## Session 21 - Scene Rendering, Mesh, Font, Huffman, D3DTexture, Sound, CRT
+
+|| Address | Name | Description |
+|---------|------|-------------|
+| 0x0045ec30 | Scene_Render3DObjects | Main 3D object renderer: transforms vertices, frustum culls, submits triangle strips with D3D draw calls |
+| 0x00468600 | Path_ComputeSegmentLengths | Compute segment lengths from point pairs using sqrt(dx²+dy²) |
+| 0x0045afdc | D3DX_ShaderThunk_Profile1 | Thunk: calls D3DX_DetectShaderProfile(1) then indirect via PTR_FUN_004f7238 |
+| 0x0045b521 | D3DX_ShaderThunk_Profile1b | Thunk: calls D3DX_DetectShaderProfile(1) then indirect via PTR_FUN_004f71fc |
+| 0x0045bf20 | D3DX_ShaderThunk_Profile1c | Thunk: calls D3DX_DetectShaderProfile(1) then indirect via PTR_FUN_004f71e8 |
+| 0x0047c990 | Mesh_Dtor | Mesh destructor: set vtable, free ptrs +0x20/+0x28/+0x30, clear AthenaList, free Vec3Lists |
+| 0x0047d160 | Mesh_FindElement | Search array of 8-float elements (stride 0x424) for matching entry, returns index or -1 |
+| 0x0047d2a0 | Mesh_AddElement | If not found, append 8 floats + 0 at stride 0x424 and increment count |
+| 0x0047d020 | Mesh_ConnectElements | Build adjacency between two mesh elements (param_2, param_3) via edge list |
+| 0x0047d680 | FileHandle_Dtor | File handle destructor: close handle, free buffer |
+| 0x00479be0 | App_GetProductVersion | Uses Version API (GetFileVersionInfoSizeA/A/VerQueryValueA) to extract ProductVersion string |
+| 0x00478780 | BitStream_ReadValue | Read int64 from bitstream array with stride 0x10; can sum all values |
+| 0x004ab9c8 | Math_AlignUp | Round up: ((a-1+b)/b)*b — align value to multiple of second arg |
+| 0x004ab9e0 | Array_CopyElements | Copy param_5 elements of param_6 bytes each from src to dst array-of-pointers |
+| 0x004abfaf | DSound_SetVolume | Set volume on sound object via vtable call (opcode 0x35) |
+| 0x004ad569 | CRT_FreeIfNotNull | Free ptr if non-null, simple null-check wrapper |
+| 0x004b2101 | Huffman_BuildTable | Build canonical Huffman decode table from 16-byte code length table (deflate-style) |
+| 0x004b2a13 | BitStream_FlushAndReset | Flush accumulated bits, zero the history buffer, reset position, set timestamp |
+| 0x004b670c | Sound_DecodeFrame | Decode a sound frame: handles types 4 (stop note), 5 (callback), 6 (sub-decode) |
+| 0x0048300c | D3DTexture_Init | Create D3D texture object with vtable PTR_004db360, init format/flags, register with parent |
+| 0x00483a44 | D3DTexture_InitLocked | Same as Init but with locked vtable PTR_004db3d0 (render target variant) |
+| 0x00486f30 | D3DTexture_NullDtor | Trivial destructor that just sets vtable to PTR_LAB_004db4c8 |
+| 0x004b0e6b | CRT_FreeParam2 | Callback wrapper: just frees param_2 (2nd arg), ignores param_1 |
+| 0x004ad716 | Font_DecodeGlyphBits | Decode glyph bitmap from compressed font data based on bit depth (1/2/4/8) |
