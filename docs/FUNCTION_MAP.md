@@ -2,7 +2,7 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,781 (Ghidra analysis)
-**Documented:** 2,422 (64.1%)
+**Documented:** 2,427 (64.2%)
 **User-labeled:** 932+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8% of 3781)
 
@@ -1474,3 +1474,13 @@ Offset | Field | Description
 | 0x00480813 | Mesh_WeldVertices16 | 16-bit variant of WeldVertices: build adjacency, weld duplicate verts, split edges |
 | 0x00481101 | Mesh_ValidateAdjacency16 | 16-bit variant of ValidateAdjacency: check 16-bit face/edge/vertex refs |
 | 0x0048130c | Mesh_ValidateAttributes | Check attribute IDs match face ranges in attribute table |
+
+## Session 25 (continued 3) - Mesh Copy, Adjacency, Optimize
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00481432 | Mesh_CopyFrom | Copy mesh data from source: indices, adjacency, attributes, vertices, blend data |
+| 0x00481637 | Mesh_CopyFrom16 | 16-bit index variant of Mesh_CopyFrom (ushort adjacency stride 6) |
+| 0x0048183d | Mesh_AdjacencyIteratorNext | Advance adjacency iterator across mesh edges (32-bit), handle boundary/interior |
+| 0x00481900 | Mesh_AdjacencyIteratorNext16 | 16-bit variant of Mesh_AdjacencyIteratorNext |
+| 0x00482010 | Mesh_OptimizeFaces | Optimize mesh face order for vertex cache, compact vertex remapping |
