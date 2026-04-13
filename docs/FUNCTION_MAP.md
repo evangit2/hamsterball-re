@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-||Documented: 2,765 (72.6%)
+||Documented: 2,780 (72.9%)
 ||User-labeled: 890+
-||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.6%)
+||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%)
 
 ## Entry Point and Lifecycle
 
@@ -1303,3 +1303,23 @@ Offset | Field | Description
 | 0x00439b90 | Sawblade_Level_scalar_dtor | Sawblade level scalar deleting destructor |
 | 0x0043a150 | Gear_Level_ctor | Gear level constructor: RNG for speed/offset, 400ms time, ScoreDisplay init |
 | 0x00430430 | TourneyRaceEntry_Dtor | TourneyRaceEntry destructor: set vtable, call UIList_Cleanup |
+
+|## Session 21 (continued 2) - Level dtors, UI, String, RaceResults
+
+|| Address | Name | Description |
+|---------|------|-------------|
+| 0x00446860 | QuitToDesktop_scalar_dtor | QuitToDesktop scalar deleting destructor |
+| 0x00446880 | GameObject2_scalar_dtor | GameObject2 scalar deleting destructor |
+| 0x004468a0 | TourneyContinueDialog_scalar_dtor | TourneyContinueDialog scalar deleting destructor |
+| 0x004469e0 | App_CreateConfirmMenu | Create ConfirmMenu dialog, add to scene |
+| 0x00446a60 | App_CreateHighScoreEntry | Create HighScoreEntry dialog, add to scene |
+| 0x00446ae0 | QuitToDesktop_Execute | Execute quit: set cull mode, start race, show results, show main menu |
+| 0x00447370 | ScoreDisplay_scalar_dtor | ScoreDisplay scalar deleting destructor |
+| 0x00447390 | StdString_Insert | Insert count bytes from ptr at position in std::string (SSO-aware) |
+| 0x00447500 | StdString_TruncateToWidth | Erase chars from end until Font_MeasureText width <= 0x13F (319px) |
+| 0x00447570 | StdString_InsertCStr | Insert C string at position (strlen + call StdString_Insert) |
+| 0x0044af60 | RaceResults_scalar_dtor | RaceResults scalar deleting destructor |
+| 0x0044af80 | RaceResults_Init | RaceResults init: set vtable, Matrix_Identity |
+| 0x0044b8a0 | RaceResults_ctor | RaceResults constructor: init timers, random congratulatory text, score thresholds |
+| 0x0044bfc0 | RaceResults_Render | Render race results: colored rect, shadow text for title/place/time |
+| 0x0044c450 | RaceResults_Reset | Reset: free sub-object, cleanup timer, restore vtable |
