@@ -1,7 +1,7 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,612 (69.1%)
+**Documented:** 2,622 (69.3%)
 **User-labeled:** 932+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5%→69.1% of 3781)
 
@@ -1655,3 +1655,18 @@ Offset | Field | Description
 | 0x00478340 | MeshArchive_LoadFrame | Frame-level load with bitstream, mesh groups, position tracking |
 | 0x00478680 | MeshArchive_dtor | Destructor: free all sub-resources, D3D resources, mesh groups |
 | 0x00478800 | MeshArchive_SeekRead | Seek to position and read mesh data with bitstream |
+
+## Session 26 (cont2) — 10 renames — 69.3% documented
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00478b90 | MeshArchive_GetSubmeshPtr | Get pointer to submesh at index (or first if -1) |
+| 0x00478bd0 | MeshArchive_ReadVertices | Read vertex data from current frame, apply signed-compression decode |
+| 0x00478d60 | MeshArchive_LoadComplete | Full load: reset position, read chunks, build tree, load all, seekread |
+| 0x00478e70 | MeshArchive_ctor | Constructor: init vtable, pool, D3D resources, mesh groups, position tracking |
+| 0x00478f80 | MeshArchive_InitAndLoad | Create archive and fully load mesh data from stream |
+| 0x00479050 | Reg_ReadD3DValue | Read DWORD value from HKLM\/software\\Microsoft\rd3D registry |
+| 0x004793e0 | SceneList_Ctor | Init SceneList with vtable PTR_FUN_004da6b4, empty AthenaList |
+| 0x00479400 | SceneList_Reset | Reset SceneList (vtable + Vec3List_Free) |
+| 0x00479460 | SceneList_DeletingDtor | Deleting dtor for SceneList (Reset then free if bit 0 set) |
+| 0x004794d0 | SplashScreen_Ctor | Splash screen ctor: brand.png + raptisoftlogo.png sprites, showcardgothic16 font |
