@@ -326,9 +326,18 @@ Key identified slots:
 - [4] Scene_ActivateCurrentItem - call vmethod+0x10 on current item
 - [6] Scene_SelectCurrentItem - call vmethod+0x0C on current item
 - [11/12] Scene_ClearCurrentItem - set current item pointer to NULL
+- [14] Scene_DestroyScene - cleanup + save via SaveAndCleanup
+- [15] Scene_NotifyObjects - iterate list, call FUN_4699D0 on each
+- [16] Scene_SetDestroyed - set +0x2C=1 flag
 - [17] Scene_SaveAndCleanup - delegates to FUN_469AC0
 - [18] Level_InitScene
+- [19] Scene_HandleRaceEnd - timer decrement, lap tracking, Game Over, RaceResultPopup ctor
+- [20] Scene_UpdateBallsAndState - ball list iteration, SetCamera, Ball_Update, destroy finished
+- [22] Scene_HandleCountdown - race countdown timer, scene transition on expire
+- [23] Scene_HandleBallFinish - ball finish state machine (start→150f countdown→finish→popup→done)
 - [24-26] Level render methods
+- [27] Scene_RenderScoreHUD - tournament title, countdown bar, "Score", Player 2, timer
+- [28] Scene_RenderTimerHUD - race timer, split screen divider, overlay popups
 - [9,10,13,21,30,34] NoOp_return (0x44B840) - default stubs overridden by subclasses
 
 ### SceneObject Vtable (0x4D934C, 10 entries)

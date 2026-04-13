@@ -471,21 +471,21 @@ Offset | Field | Description
 | 11 | +0x2C | 0x4692A0 | Scene_ClearCurrentItem | Set current item ptr (+0x864) to NULL |
 | 12 | +0x30 | 0x4692A0 | Scene_ClearCurrentItem | Same as slot 11 |
 | 13 | +0x34 | 0x44B840 | NoOp_return | Empty stub (default) |
-| 14 | +0x38 | 0x409DA0 | Scene_SetObjectTransform? | Object transform (near Level_Render) |
-| 15 | +0x3C | 0x469430 | Scene_vmethod15 | Unknown |
-| 16 | +0x40 | 0x419740 | Scene_method16 | Near Scene_dtor (helper) |
+| 14 | +0x38 | 0x409DA0 | Scene_DestroyScene | Calls FUN_4693C0 then SaveAndCleanup |
+| 15 | +0x3C | 0x469430 | Scene_NotifyObjects | Iterate AthenaList, call FUN_4699D0 on each item |
+| 16 | +0x40 | 0x419740 | Scene_SetDestroyed | Set +0x2C=1 destroyed flag |
 | 17 | +0x44 | 0x4692B0 | Scene_SaveAndCleanup | Calls FUN_469AC0 (save + cleanup) |
 | 18 | +0x48 | 0x40B090 | Level_InitScene | Level scene initialization |
-| 19 | +0x4C | 0x41B130 | Scene_vmethod19 | Game logic override |
-| 20 | +0x50 | 0x41B540 | Scene_vmethod20 | Game logic override |
+| 19 | +0x4C | 0x41B130 | Scene_HandleRaceEnd | Race timer decrement, lap 3->4 transition, Game Over, RaceResultPopup |
+| 20 | +0x50 | 0x41B540 | Scene_UpdateBallsAndState | Iterate ball lists, SetCamera, Ball_Update, destroy finished balls |
 | 21 | +0x54 | 0x40A040 | NoOp | Empty (58 xrefs) |
-| 22 | +0x58 | 0x41A540 | Scene_vmethod22 | Game logic override |
-| 23 | +0x5C | 0x409DE0 | Scene_vmethod23 | Game logic override |
+| 22 | +0x58 | 0x41A540 | Scene_HandleCountdown | Countdown timer, check all balls finished, scene transition on expire |
+| 23 | +0x5C | 0x409DE0 | Scene_HandleBallFinish | Ball finish state machine: start→countdown(150f)→finish→result popup→done |
 | 24 | +0x60 | 0x40B420 | Level_RenderDynamicObjects_2 | Alternate dynamic render |
 | 25 | +0x64 | 0x40B600 | Level_UpdateAndRender | Combined update + render |
 | 26 | +0x68 | 0x40B570 | Level_RenderObjects | Level object rendering |
-| 27 | +0x6C | 0x41B710 | Scene_vmethod27 | Game logic override |
-| 28 | +0x70 | 0x41BFD0 | Scene_vmethod28 | Game logic override |
+| 27 | +0x6C | 0x41B710 | Scene_RenderScoreHUD | Draw tournament title, countdown progress bar, "Score" text, Player 2, timer |
+| 28 | +0x70 | 0x41BFD0 | Scene_RenderTimerHUD | Draw race timer, split screen divider, time display, overlay popups |
 | 29 | +0x74 | 0x40C5D0 | Scene_vmethod29 | Game logic override |
 | 30 | +0x78 | 0x44B840 | NoOp_return | Empty stub (default) |
 | 31 | +0x7C | 0x41AC70 | Scene_vmethod31 | Game logic override |
