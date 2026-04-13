@@ -690,3 +690,99 @@ Offset | Field | Description
 | 0x00443990 | AthenaString_Clear | 14 | Free string buffer, reset to 15-char inline capacity |
 | 0x0044b840 | Noop | 280 | Empty stub function (vtable placeholder) |
 | 0x00401480 | GameObject_dtor | 9 | Release timers, free Vec3Lists, cleanup matrices |
+| 0x00453610 | AthenaList_ContainsValue | 10 | Check if value exists in list (returns count>0) |
+| 0x00453820 | AthenaList_MergeSorted | 10 | Merge sorted list param into this list |
+| 0x004598c0 | Float_IsBetween | 10 | Test if param1 minus param2 is between two global bounds |
+| 0x00469510 | AthenaString_Set | 10 | Copy string param into AthenaString (free old, strdup, set length) |
+| 0x0046a140 | MusicPlayer_SetTempoScale | 10 | Set tempo scaling based on music BPM and delta time |
+| 0x00477860 | FileStream_SeekRead | 10 | File stream seek and read data |
+| 0x00460530 | Level_FindObjectByName | 9 | Find level game object by string name (stricmp), returns ptr or 0 |
+| 0x00467d30 | Buffer_Free | 9 | Free buffer: free ptr+4, zero ptr+4/+8/+C |
+| 0x00480032 | CRT startup helper | 5 | C runtime init |
+| 0x00480c4d | CRT helper | 5 | C runtime helper |
+| 0x0048a560 | Math/alloc helper | 5 | Runtime helper |
+
+## Session 2026-04-13 Additions — Ball Physics & Rendering
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x004015b0 | Ball_SetupCollisionRender | 4 | Initialize collision mesh render objects from level collision data |
+| 0x004016f0 | Ball_ApplyForceV2 | 4 | Alternate force application (gravity plane aware, ice/dizzy/tube multipliers) |
+| 0x00402c10 | Ball_RenderWithCollision | 10 | Ball render: check collision planes, render shadow, apply scaling, end frame |
+| 0x00425340 | RumbleBoard_DeletingDtor | 4 | RumbleBoard destructor (calls RumbleBoard_dtor, then free) |
+| 0x004280e0 | App_ShowMainMenu | 4 | Create MainMenu (0xCDC bytes) and store at App+0x224 |
+| 0x004288b0 | App_StartTournamentRace | 4 | Start tournament race: config mirror/mode, create level scene, advance race |
+| 0x0042c7c0 | Graphics_SetScaleAndPosition | 4 | Set identity scale matrix then set position (x,y) on Graphics object |
+| 0x00443e30 | QuitDialog_ctor | 4 | Quit Dialog constructor — "Quit Dialog" with "YES"/"NO" buttons |
+| 0x004468c0 | RumbleBoard_TickTimerWrapper | 4 | Wrapper: calls RumbleBoard_TickTimer at offset +0x110C |
+| 0x00446b80 | RegisterDialog_ValidateSerial | 5 | Validate serial number using XOR cipher with key "54138", write DXCaps to registry |
+
+## Session 2026-04-13 Additions — Register/Security Dialog
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x004475a0 | RegisterDialog_HandleInput | 4 | Handle keyboard input for register dialog (char add, length check) |
+| 0x00447920 | RegisterDialog_Render | 4 | Render "REGISTER HAMSTERBALL!" screen, name/serial fields, buy button |
+| 0x00448890 | RegisterDialog_HandleKey | 4 | Handle key navigation (Tab name/serial, arrows, Enter=validate, Esc=close) |
+| 0x00448a40 | UITimer_dtor | 4 | UI timer destructor (set vtable, cleanup) |
+| 0x00449240 | UIList_AddIconItem | 4 | UI list add item with icon (0x444-byte UIListItem, text+subtext+RGBA+icon+height) |
+
+## Session 2026-04-13 Additions — Sound System
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00459660 | Sound_LoadOggOrWav | 10 | Load sound file: try .ogg first, then .wav fallback |
+| 0x00459310 | Sound_LoadOgg | - | Load OGG Vorbis file, create D3D sound buffer, add to channel list |
+| 0x00458ee0 | Sound_Play3DAtPosition | - | Play 3D positioned sound (get channel, call vtable+0x3C with position) |
+| 0x00459810 | Sound_GetNextChannel | 10 | Get next sound channel from circular buffer (with wrap-around) |
+
+## Documentation Progress
+
+| Session | Total Functions | Documented | % | New Labels |
+|---------|----------------|------------|---|------------|
+| Initial | 3,988 | 1,700 | 42.8% | — |
+| Session 1 | 3,888 | 1,768 | 45.5% | 37 |
+| Session 2026-04-13a | 3,811 | 1,870 | 49.1% | 25+ |
+| Session 2026-04-13b | 3,811 | 1,892 | 49.6% | 27+ |
+
+## Session 2026-04-13b Additions — Core Engine & Scene Systems
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00498200 | BitStream_ReadBits | 95 | Bitstream reader - reads N bits from byte-aligned stream with bit-level positioning |
+| 0x004737f0 | AthenaString_Assign | 52 | String copy/assign operator (copies src into dest buffer) |
+| 0x004792fb | D3DX_DetectShaderProfile | 48 | Detect pixel shader version (1.x/2.x/3.x) based on D3DX runtime |
+| 0x00492bda | Vertex_Transform | 32 | Vertex coordinate transformation between spaces (mode 1/2/3) |
+| 0x00466c70 | AthenaString_Format | 98 | String format wrapper - calls Sprintf with object's internal buffer, returns ptr |
+| 0x004bbdfd | AthenaString_Sprintf | - | In-memory sprintf using FILE struct trick for vsnprintf |
+| 0x00469990 | Scene_AddObject | 77 | Add SceneObject to Scene - checks uniqueness, appends, sets back-ref, vtable notify |
+| 0x0046f390 | Scene_BeginFrame | 39 | Begin scene frame - Graphics_BeginFrame + vtable[6] callback |
+| 0x00460da0 | Scene_RenderFrame | 38 | Full frame render pipeline - iterates scenes/objects, assigns render indices |
+| 0x00461370 | Scene_RenderOpaque | 38 | Opaque render pass - iterates objects calling vtable[0x28], renders mesh entries |
+| 0x00461890 | Scene_LoadMeshWorld | 38 | Load mesh world from stream - creates MeshBuffers with materials/textures/flags |
+| 0x00461f00 | Scene_Subdivide | 38 | Create 3D grid of mesh objects by dividing bounding box, test visibility per cell |
+| 0x00462100 | Scene_SubdivideRandom | 38 | Random grid subdivision using seeded RNG, tests cell visibility |
+| 0x004629e0 | Scene_LoadCached | 37 | Load .cached scene file - materials, meshes, transforms, objects, bounding box |
+| 0x0046a750 | Window_Notify | 37 | Send WM_COPYDATA (0x4A) message to window with formatted string |
+| 0x004605e0 | AthenaHashTable_Lookup | 36 | Hash table case-insensitive string lookup with bucket iteration |
+| 0x004691c0 | SceneObject_dtor | 31 | SceneObject destructor - frees Vec3Lists, restores base vtable |
+| 0x004693c0 | Scene_AddAllObjects | 25 | Batch-add all SceneObjects from internal list |
+| 0x00469600 | MWParser_ReadTag | 24 | XML/SGML tag parser - finds <tag>...</tag> pairs from stream |
+| 0x004695d0 | StreamReader_dtor | 24 | Stream/file reader destructor - close handle, free buffer |
+| 0x004694f0 | Sprite_DrawColoredRect | (was 0x45d450) 23 | Draw colored rectangle with random RGBA vertex colors |
+| 0x00472af0 | AthenaString_Init | 18 | Default string constructor - set vtable, zero fields, flags |
+| 0x00472f30 | RegKey_Close | 18 | Close registry key handle via RegCloseKey |
+| 0x00473670 | AthenaString_CopyCtor | 16 | String copy constructor from source string object |
+| 0x004740d0 | AthenaString_WriteTag | 16 | Build XML tag string: <tag>content</tag> concatenation |
+| 0x00489610 | Pool_FreeList | 16 | Memory pool free list traversal with reference counting |
+| 0x00459b24 | Graphics_InitShaderDispatch | 19 | Shader init dispatch thunk (D3DX detect + indirect jump) |
+| 0x0045a439 | Graphics_SetRenderState | 29 | Render state dispatch thunk (profile detect + indirect jump) |
+| 0x004ab9b8 | DivCeil | 15 | Ceiling division utility: (a-1+b)/b |
+
+## Key Data Items
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x004D2334 | s_BACK | String "BACK" |
+| 0x005341CC | g_renderIndex | Global render index counter |
+| 0x004F7360 | PTR_OBJ_VTABLE | Pointer to object vtable (used by Ball, GameObject, Scene, etc.) |
