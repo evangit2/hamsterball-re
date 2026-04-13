@@ -2,7 +2,7 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 |Total functions: 3,781 (Ghidra analysis)
-**Documented:** 2,427 (64.2%)
+**Documented:** 2,432 (64.3%)
 **User-labeled:** 932+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8% of 3781)
 
@@ -1491,3 +1491,11 @@ Offset | Field | Description
 |---------|------|-------------|
 | 0x00482137 | Mesh_OptimizeVertices | Vertex cache optimization: swap/reorder vertices for cache locality, compact index remap |
 | 0x00482218 | Mesh_SortByAttribute | Sort mesh by attribute ID: build attr table, remap vertices/faces, D3DX ID3DXMesh Optimize style |
+
+## Session 25 (continued 5) - Mesh Helper Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0047dffd | FindInSmallIntArray32 | Find int value in 3-element int array, return index or (2+not_found) |
+| 0x0047e8f6 | Mesh_RemapVertexAttribute32 | Remap vertex attribute through lookup table (if flag bit 2 set at +0x0C) |
+| 0x0047e96b | Mesh_SwapVertices32 | Swap vertex data between two indices using alloca temp buffer (32-bit stride) |
