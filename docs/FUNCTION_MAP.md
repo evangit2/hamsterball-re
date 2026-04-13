@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,553 (67.5%)
+**Documented:** 2,612 (69.1%)
 **User-labeled:** 932+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5% of 3781)
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5%→69.1% of 3781)
 
 ## Entry Point and Lifecycle
 
@@ -1620,3 +1620,38 @@ Offset | Field | Description
 | 0x00474930 | Menu_SetDirty | Sets dirty flag (+0x2d64) |
 | 0x00474940 | Menu_MergeAllLists | Merge all 7 category lists into main list |
 | 0x00474a30 | LoaderGadget_Tick | Load progress tick, updates count/percentage |
+
+## Session 26 — 30 renames — 69.1% documented
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00473e70 | AthenaString_ReplaceAt | Replace substring at position with new string |
+| 0x00473fb0 | AthenaString_ReplaceSubstr | Find substr, erase, insert replacement at same position |
+| 0x00475cec | StrLen | Null-safe strlen (character count) |
+| 0x00475d03 | StrNEq | strncmp-like comparison, returns 1 if equal up to N chars |
+| 0x00475dec | Hash_MixString | Hash mix over string bytes using MixKey |
+| 0x00475e15 | Hash_MixStringUpper | Hash mix with Char_ToUpper on first string |
+| 0x00475e60 | NoiseTable_Init | Seed RNG and fill 0x200-entry noise table at 0x5341f0 |
+| 0x00475e87 | StrLen_Delay8 | strlen with 8-iteration delay loop (anti-analysis?) |
+| 0x00475ed4 | LicenseKey_ComputeHash | Compute license hash from strings then mask + add constant |
+| 0x00475ef9 | LicenseKey_EncryptBlock | 100-element permutation cipher with key expansion |
+| 0x00477010 | CollisionObj_Init | Init collision object with vtable PTR_LAB_004da65c |
+| 0x00477060 | Ray_SphereIntersect | Ray-sphere intersection test, returns hit T or flags |
+| 0x00477120 | Vec3_ProjectOntoRay | Project point onto ray (origin + dir), result = dir*t + origin |
+| 0x004771d0 | Ray_PlaneIntersectT | Ray-plane intersection, returns T or flags |
+| 0x00477240 | Vec3_DotDiff | dot(a,n) - dot(b,n) — difference of dot products |
+| 0x00477280 | Vec3_DotDiffAbs | abs(dot(a,n) - dot(b,n)) — absolute dot difference |
+| 0x004772c0 | Vec3_Reflect | Reflect vector v across plane normal n: result = v - 2*dot(v,n)*n |
+| 0x00477330 | AABB_FromSphere | Compute AABB min/max from sphere center, velocity, radius |
+| 0x004774b0 | Tri_TestPointInside | Test if point is inside triangle using cross product edge tests |
+| 0x00477670 | Segment_ClosestPoint | Find closest point on line segment to a point |
+| 0x004777c0 | Vec3_ProjectOntoPlane | Project vector onto plane: result = v - (dot(v-origin,n))*n |
+| 0x00477830 | MeshArchive_SetPosition | Set position and reset pool via vtable |
+| 0x00477970 | MeshArchive_ReadChunks | Read 0x400-byte chunks from stream |
+| 0x00477ac0 | MeshArchive_BuildTree | Recursive binary search tree for mesh data |
+| 0x00477d60 | MeshArchive_LoadSubmesh | Load submesh with bitstream and D3DX retry loop |
+| 0x00477f10 | MeshArchive_LoadAll | Load all meshes from archive with position tracking |
+| 0x00478320 | MeshArchive_ReleaseBuffers | Release sub-buffers, set state=2 |
+| 0x00478340 | MeshArchive_LoadFrame | Frame-level load with bitstream, mesh groups, position tracking |
+| 0x00478680 | MeshArchive_dtor | Destructor: free all sub-resources, D3D resources, mesh groups |
+| 0x00478800 | MeshArchive_SeekRead | Seek to position and read mesh data with bitstream |
