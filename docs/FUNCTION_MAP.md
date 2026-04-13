@@ -1484,3 +1484,10 @@ Offset | Field | Description
 | 0x0048183d | Mesh_AdjacencyIteratorNext | Advance adjacency iterator across mesh edges (32-bit), handle boundary/interior |
 | 0x00481900 | Mesh_AdjacencyIteratorNext16 | 16-bit variant of Mesh_AdjacencyIteratorNext |
 | 0x00482010 | Mesh_OptimizeFaces | Optimize mesh face order for vertex cache, compact vertex remapping |
+
+## Session 25 (continued 4) - Mesh Optimization Pipeline
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00482137 | Mesh_OptimizeVertices | Vertex cache optimization: swap/reorder vertices for cache locality, compact index remap |
+| 0x00482218 | Mesh_SortByAttribute | Sort mesh by attribute ID: build attr table, remap vertices/faces, D3DX ID3DXMesh Optimize style |
