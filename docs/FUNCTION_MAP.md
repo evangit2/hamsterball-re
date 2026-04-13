@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-||Documented: 2,753 (72.2%)
+||Documented: 2,765 (72.6%)
 ||User-labeled: 890+
-||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72%)
+||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.6%)
 
 ## Entry Point and Lifecycle
 
@@ -1286,3 +1286,20 @@ Offset | Field | Description
 | 0x00486f30 | D3DTexture_NullDtor | Trivial destructor that just sets vtable to PTR_LAB_004db4c8 |
 | 0x004b0e6b | CRT_FreeParam2 | Callback wrapper: just frees param_2 (2nd arg), ignores param_1 |
 | 0x004ad716 | Font_DecodeGlyphBits | Decode glyph bitmap from compressed font data based on bit depth (1/2/4/8) |
+
+|## Session 21 (continued) - Level ctors/dtors, more naming
+
+|| Address | Name | Description |
+|---------|------|-------------|
+| 0x004383f0 | Glass_Level_scalar_dtor | Glass level scalar deleting destructor |
+| 0x004384a0 | Glass_Level_ctor | Glass level constructor: Stands init, clone level, init timers, lookup Chain1/2 Bridge/Wall hashtables |
+| 0x00438730 | Impossible_Level_scalar_dtor | Impossible level scalar deleting destructor |
+| 0x00438830 | Cascade_Level_scalar_dtor | Cascade level scalar deleting destructor |
+| 0x00438b10 | WarmUp_Level_scalar_dtor | WarmUp level scalar deleting destructor |
+| 0x00438f30 | Tower_Level_scalar_dtor | Tower level scalar deleting destructor |
+| 0x004396f0 | Spinner_Level_ctor | Spinner level constructor: Stands init, position/velocity, timer, scale X/Z, clone level, 100 score, 1.0 factor |
+| 0x00439850 | Intermediate_Level_scalar_dtor | Intermediate level scalar deleting destructor |
+| 0x00439870 | Impossible_Level_Update | Impossible level update: countdown timer, gravity, scale/position, sound |
+| 0x00439b90 | Sawblade_Level_scalar_dtor | Sawblade level scalar deleting destructor |
+| 0x0043a150 | Gear_Level_ctor | Gear level constructor: RNG for speed/offset, 400ms time, ScoreDisplay init |
+| 0x00430430 | TourneyRaceEntry_Dtor | TourneyRaceEntry destructor: set vtable, call UIList_Cleanup |
