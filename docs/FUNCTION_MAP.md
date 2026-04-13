@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,707 (71.6%)
-**User-labeled:** 968+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781)
+**Documented:** 2,720 (71.9%)
+**User-labeled:** 975+
+**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781), 29 (70.7%→71.6%)
 
 ## Entry Point and Lifecycle
 
@@ -1728,3 +1728,21 @@ Offset | Field | Description
 | 0x00490a2f | DDSurface_Blt4PointFilter | DirectDraw surface BLT with 4-tap filter dispatch (dispatches to sub-filters by texture format) |
 | 0x00490e52 | DDSurface_Blt5PointFilter | DirectDraw surface BLT with 5-tap filter (for 1/4 downscaling, bilinear + detail preservation) |
 | 0x004917ca | DDSurface_Blt3PointWBuffer | DirectDraw surface BLT with 3-tap filter + Z buffer (scans Z range, computes span endpoints, bilinear filter) |
+
+## Session 30 — Matrix, Vec2, IMDCT, PNG, Font renames (71.6%→71.9%)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0049dd82 | Matrix_BuildFromQuatScaleTranslate | Builds 4x4 matrix from quaternion + scale + translation (7-param SSE2) |
+| 0x0049ef1a | Matrix_BuildFromTanAngles | Builds rotation matrix from tangent of X/Y angles |
+| 0x0049f5f3 | Matrix_BuildFromNormTanAngles | Normalizes angles then builds rotation matrix from tan |
+| 0x004a0860 | Matrix_BuildFromQuaternion3x3 | Builds 3x3 rotation matrix from quaternion with optional determinant |
+| 0x004a1362 | Vec2_NormalizeSSE2 | Normalizes 2D vector using SSE2 reciprocal square root |
+| 0x004a15f0 | Vec2_TransformMatrixPerspDivide | Transforms vec2 by 2x4 matrix with perspective divide |
+| 0x004a304d | Script_ParseComponentList | Bytecode parser: extracts component list with nibble-encoded data |
+| 0x004a503c | Object_SetDirtyFlag | Sets bit 0 in flags word at offset +0x60 |
+| 0x004a8026 | IMDCT_TransformBlock | IMDCT 16-point transform for audio decoder |
+| 0x004a91d0 | Font_RenderChannels | Renders font glyph channels via Huffman decode and callback |
+| 0x004aba27 | Mem_Copy128Blocks | Copies data in 128-byte blocks (param3 << 7 >> 2 dwords) |
+| 0x004ae18e | PNG_ParsePLTE | PNG PLTE (palette) chunk parser with IHDR check and CRC |
+| 0x004b0220 | IMDCT_ForwardTransform | Forward IMDCT/DCT transform with fixed-point cosine tables |
