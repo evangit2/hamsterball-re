@@ -744,6 +744,7 @@ Offset | Field | Description
 | Session 1 | 3,888 | 1,768 | 45.5% | 37 |
 | Session 2026-04-13a | 3,811 | 1,870 | 49.1% | 25+ |
 | Session 2026-04-13b | 3,811 | 1,892 | 49.6% | 27+ |
+| Session 2026-04-13c | 3,811 | 1,908 | 50.1% | 39 |
 
 ## Session 2026-04-13b Additions — Core Engine & Scene Systems
 
@@ -786,3 +787,24 @@ Offset | Field | Description
 | 0x004D2334 | s_BACK | String "BACK" |
 | 0x005341CC | g_renderIndex | Global render index counter |
 | 0x004F7360 | PTR_OBJ_VTABLE | Pointer to object vtable (used by Ball, GameObject, Scene, etc.) |
+
+## Session 2026-04-13c Additions — Scene, Path, Game, Registry
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00467bf0 | Path_GetPosition | 14 | Interpolate X/Z from path splines at time t, Y=0 |
+| 0x004690f0 | Gadget_ctor | 11 | Generic Gadget constructor (vtable 0x4d9170, SceneObject-derived) |
+| 0x00469240 | Gadget_Activate | 9 | Activate gadget callback (vtable[2] with RNG params) |
+| 0x00457de0 | Math_Atan2Angle | 13 | Atan2 angle with quadrant adjust, degrees-per-unit scaling |
+| 0x004561e0 | Material_Init | 11 | Zero-initialize 0x64-byte material/transform array |
+| 0x004562b0 | Material_Copy | 8 | Copy 0x64 bytes (4x4 matrix + extras) |
+| 0x00458020 | AABB_Update | 12 | Expand axis-aligned bounding box by 3D point |
+| 0x00458130 | Math_FastDistance2D | 8 | Approximate integer distance (Bresenham weights 102/246) |
+| 0x0045d300 | Sprite_DrawRect | 12 | Draw rect with position+size, random RGBA, 2-triangle strip |
+| 0x0046b2a0 | MeshBuffer_dtor | 11 | Destroy mesh buffer list items + free Vec3List |
+| 0x00472fd0 | RegKey_WriteDword | 13 | Write DWORD via RegSetValueExA |
+| 0x00473080 | RegKey_ReadDword | 13 | Read DWORD via RegQueryValueExA |
+| 0x00471c20 | MeshNode_ctor | 9 | Load mesh file into scene graph node (vtable 0x4d9c48) |
+| 0x00472c70 | Math_Lerp | 9 | Linear interpolation: a + (b-a)*t |
+| 0x0042c870 | Font_DrawCentered | 8 | Draw text centered at (x,y) position |
+| 0x004351f0 | GameLevel_ctor | 8 | Game level constructor (Stands_ctor, Level_Clone, sound channel) |
