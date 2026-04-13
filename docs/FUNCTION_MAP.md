@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-|||Documented: 2,821 (74.0%)
+|||Documented: 2,837 (74.4%)
 |||User-labeled: 890+
-|||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74%)
+|||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%)
 
 ## Entry Point and Lifecycle
 
