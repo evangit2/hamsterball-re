@@ -4,6 +4,7 @@
 |Total functions: 3,811 (Ghidra analysis)
 |Documented: 2,690 (70.6%)
 |User-labeled: 860+
+|Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%)
 
 ## Entry Point and Lifecycle
 
