@@ -1,12 +1,12 @@
-# Binaries and game files
-original/
-originals/
+# Binaries - executables and DLLs
 *.exe
-*.zip
 *.dll
 
-# Ghidra project data
-analysis/ghidra/
+# Zips/archives
+*.zip
+
+# Ghidra project database files (binary)
+analysis/ghidra/HamsterballProject/
 
 # Build artifacts
 reimpl/build/
