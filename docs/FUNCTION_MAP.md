@@ -2,9 +2,9 @@
 
 |Binary: Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 ||Total functions: 3,811 (Ghidra analysis)
-||Documented: 2,780 (72.9%)
-||User-labeled: 890+
-||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%)
+|||Documented: 2,807 (73.7%)
+|||User-labeled: 890+
+|||Sessions: 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→73.7%)
 
 ## Entry Point and Lifecycle
 
@@ -1323,3 +1323,35 @@ Offset | Field | Description
 | 0x0044b8a0 | RaceResults_ctor | RaceResults constructor: init timers, random congratulatory text, score thresholds |
 | 0x0044bfc0 | RaceResults_Render | Render race results: colored rect, shadow text for title/place/time |
 | 0x0044c450 | RaceResults_Reset | Reset: free sub-object, cleanup timer, restore vtable |
+| 0x0044c7d0 | RaceResults_Update | Update race results: advance timers, check completion, sound/voice |
+| 0x0044ca80 | RaceResultsMenu_scalar_dtor | RaceResultsMenu scalar deleting destructor |
+| 0x0044cb10 | RaceResultsMenu_ctor | RaceResultsMenu constructor: title, subtitle, player entries, timer |
+
+## Session 22 - Path/Sprite/Gfx/Math Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00457370 | FontList_Dtor | FontList destructor: set vtable PTR_004d8e30, iterate/remove textures, clear list, null 0x100 entries, Vec3List_Free |
+| 0x0045cb88 | Matrix_BuildRotationZYX | Build 4x4 rotation matrix from Euler ZYX angles (sin/cos with global factor 0x4d5c84) |
+| 0x0045d8f0 | Ball_RenderWithMaterial | Render ball with material: Ball_Render, Graphics_ApplyMaterialAndDraw, vtable 0x120 call |
+| 0x0045dfe0 | Gfx_SetupAlphaRenderState | Setup alpha render state: cull mode, texture stage 0x152, alpha test 0x16, blend 0x1d/7/0x89, texture 0x1b |
+| 0x0045dcf0 | RNG_SeedSmall | Seed small RNG: 53-entry additive PRNG with state at +0xc (mask 0x3fffffff), 0x35 iterations |
+| 0x0045dde0 | Gfx_SetBlendState | Set D3D blend state: vtable 0xfc calls (0, 0xd, 2) and (0, 0xe, 2), state check at +0x704 |
+| 0x0045d030 | Sprite_Reset | Sprite reset: set vtable PTR_004d8f84, remove texture ref, Matrix_Identity |
+| 0x0045d0a0 | Sprite_ScalarDtor | Sprite scalar destructor: calls Sprite_Reset, then free if flag bit 0 set |
+| 0x0045d1d0 | Sprite_Ctor | Sprite constructor: vtable PTR_004d8f84, RenderContext_Init, sets 3 scale pairs from image dims |
+| 0x0045dab0 | Sprite_DrawRotatedQuad | Draw rotated quad: 5-point star pattern via sin/cos waves around center, 4 RGBA corner colors |
+| 0x00468780 | Path_BuildVertexStrips | Build vertex strips from path array: interleaved pos/uv/color quads, stride-7 format, vertex count = (count-1)*4 |
+| 0x00468f30 | Path_ComputeSegDeltas | Compute segment deltas from path: outputs 4-float {0,0,delta,start} per segment |
+| 0x00469580 | FileHandle_Open | Open file: close prev handle, free buffer, _open with 0x8000 flags, set status flag |
+| 0x00467c60 | Array_CopyDWordsThunk | Thunk: just calls Array_CopyDWords |
+| 0x00467e00 | DualBuffer_Free | Free dual buffer: frees two pointers at +0x14 and +0x04, zeros 6 DWORDs |
+| 0x00468510 | PathGroup_Init | PathGroup init: zero 15 DWORDs across 5 groups of 3 |
+| 0x00466cd0 | Transform_SetDefaultScale | Set transform default scale: NoOp + write 0.1f at +0xc and +0x10 |
+| 0x00466d50 | Transform_ScalarDtor | Transform scalar destructor: calls sub_466cc0 then free if flag bit 0 set |
+| 0x00467780 | Array_CopyBackward | Copy DWORDs backward: src→dest in reverse, count in bytes |
+| 0x004677b0 | Matrix_SolveGaussElim | Gaussian elimination with partial pivoting: solves Ax=b for matrix at param_1 |
+| 0x00467cc0 | Array_FillAndAdvance | Fill DWORD array and advance: Array_FillDWords, returns ptr + count |
+| 0x00467cf0 | Vector_InsertRange | Insert range into vector: copy [param_2, param_3) into this container, update end ptr |
+| 0x004685e0 | PathGroup_PushPair | PathGroup push pair: Vector_PushBack of 4 then 8 onto two vectors offset by 0x10 |
+| 0x004692d0 | SceneObject_ScalarDtor | SceneObject scalar destructor: calls SceneObject_dtor then free if flag bit 0 set |
