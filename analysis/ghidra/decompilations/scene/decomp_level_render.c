@@ -1,103 +1,141 @@
-/* Level_UpdateAndRender - Ball update, render, shadows, and waypoint progression
- * Address: 0x40B600
- * Called from Scene_Render via vtable[0x64]
+/* Level Rendering Pipeline - Deep Documentation
+ * 
+ * Three functions form the level rendering pipeline:
+ *   Level_UpdateAndRender (0x40B600) - Main two-pass render with shadows
+ *   Level_RenderObjects (0x40B570)   - Transparent pass after alpha blend ON
+ *   Level_RenderDynamicObjects (0x40B420) - Sky, water ripples, dynamic vtable[8]
  *
- * SCENE OFFSETS (this = Scene*):
+ * ═══════════════════════════════════════════════════════════════
+ * Level_UpdateAndRender (0x40B600)
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * Signature: void __thiscall Level_UpdateAndRender(Scene* this, Ball* param_1)
+ *
+ * RENDERING PIPELINE (6 phases):
+ *
+ * PHASE 1: Build visible object list
+ *   - Clear visible_list at this+0x3A48 (AthenaList)
+ *   - Append all balls from this+0x29D4 (player 1 ball list)
+ *   - Append all balls from this+0x3204 (player 2 ball list)
+ *
+ * PHASE 2: Opaque render pass
+ *   - If param_1+0x70C != 0: turn alpha blending OFF
+ *     (Graphics_vtable[200](0xE, 0) via param_1+0x154)
+ *   - Increment render counter at param_1+0x7C8
+ *   - Iterate ball_list_1: call each ball->vtable[0x1C]() (opaque render)
+ *   - Iterate ball_list_2: call each ball->vtable[0x1C]() (opaque render)
+ *
+ * PHASE 3: Alpha blending ON
+ *   - If param_1+0x70C != 1: turn alpha blending ON
+ *     (Graphics_vtable[200](0xE, 1) via param_1+0x154)
+ *   - Increment render counter
+ *
+ * PHASE 4: Waypoint arrow (conditional)
+ *   - Conditions: App+0x220[0x11] != 0 (race active)
+ *                App+0x234 == 0 (not paused?)
+ *                App+0x910 != NULL (waypoint list exists)
+ *   - Call WaypointList_SetNextWaypoint(App+0x910, this+0x361C)
+ *   - Set scale 0.3EE66666 (~0.45?) at waypoint+0x2FC
+ *   - Call waypoint->vtable[8]()
+ *
+ * PHASE 5: Visible objects render
+ *   - Iterate visible_list at this+0x3A48
+ *   - Call each object->vtable[8]() (standard render)
+ *
+ * PHASE 6: Ball shadows (conditional)
+ *   - If this+0x8AC[0xCB8] (AthenaList at Level+some offset) has items:
+ *   - Iterate ball_list_1: call Ball_RenderShadow(ball)
+ *   - Iterate ball_list_2: call Ball_RenderShadow(ball)
+ *
+ * SCENE OFFSETS:
  *   +0x29D4  = ball_list_1 (AthenaList<Ball*>, player 1)
  *   +0x29D8  = ball_list_1_count
  *   +0x29DC  = ball_list_1_iterator
- *   +0x2DE0  = ball_list_1_array
+ *   +0x2DE0  = ball_list_1_array (Ball**)
  *   +0x3204  = ball_list_2 (AthenaList<Ball*>, player 2)
  *   +0x3208  = ball_list_2_count
  *   +0x320C  = ball_list_2_iterator
- *   +0x3610  = ball_list_2_array
- *   +0x3A48  = visible_object_list (AthenaList, built each frame)
- *   +0x878   = app_ptr (back-pointer to App)
- *   +0x8AC   = scene_manager (contains level data at +0xCB8)
- *   +0x361C  = waypoint_display_obj (current waypoint arrow/marker)
- *   +0x3AFC  = dynamic_obj_list (for water ripples etc.)
+ *   +0x3610  = ball_list_2_array (Ball**)
+ *   +0x361C  = waypoint_arrow (SceneObject*)
+ *   +0x3A44  = use_skydome flag (bool)
+ *   +0x3A48  = visible_object_list (AthenaList)
+ *   +0x3AFC  = dynamic_object (has vtable[8])
+ *   +0x3F18  = WaterRipple object
+ *   +0x8AC   = Level* (contains collision/render data)
+ *   +0x8B0   = Level* (secondary, for skydome vtable[48])
+ *   +0x878   = App* back-pointer
  *
- * EXECUTION ORDER:
- *   1. Clear visible_object_list (rebuilt each frame)
- *   2. Append all player 1 balls to visible list
- *   3. Append all player 2 balls to visible list
- *   4. If alpha blending flag:
- *      Disable alpha blend: D3D device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE)
- *      (vtable[200](device, 14, 0) - render state index 0x0E = D3DRS_ALPHABLENDENABLE)
- *   5. For each ball in both lists: call vtable[0x1C]() = RenderOpaque
- *   6. If NOT alpha blending (opaque pass done):
- *      Enable alpha blend: D3D device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE)
- *   7. If race is active AND waypoint system exists:
- *      WaypointList_SetNextWaypoint(waypoint_list, waypoint_display)
- *      Set waypoint_display->scale = 0.3f (0x3EE66666)
- *      Call waypoint_display->vtable[8]() = RenderWaypointArrow
- *   8. For each visible object: call vtable[8]() = Render
- *   9. If shadow list exists (scene->scene_manager + 0xCB8 has items):
- *      For each ball in both lists: Ball_RenderShadow(ball)
+ * BALL OFFSETS:
+ *   +0x154  = Graphics* (D3D device wrapper)
+ *   +0x70C  = alpha_blend_state (0=off, 1=on)
+ *   +0x7C8  = render_call_counter
  *
- * KEY INSIGHT: The rendering order is:
- *   Opaque pass (alpha off) -> Ball renders -> Alpha pass (alpha on) ->
- *   Waypoint arrow -> Visible objects -> Shadows
+ * ═══════════════════════════════════════════════════════════════
+ * Level_RenderObjects (0x40B570)
+ * ═══════════════════════════════════════════════════════════════
  *
- * This is a two-pass rendering system:
- *   Pass 1: Opaque geometry (balls, level geometry) with alpha blending OFF
- *   Pass 2: Transparent objects with alpha blending ON
+ * Signature: void __thiscall Level_RenderObjects(Scene* this, Graphics* param_1)
+ *
+ * TRANSPARENT RENDER PASS:
+ *   1. Call Graphics_BeginFrame(param_1, 0)
+ *   2. Call this+0x8AC->vtable[0x4C]() (Level-specific render, likely mesh)
+ *   3. Call Graphics_BeginFrame(param_1, 0) again
+ *   4. Iterate visible_object_list at this+0x3A48
+ *   5. Call each object->vtable[0x0C]() (transparent render callback)
+ *
+ * Note: vtable[0x0C] is the transparent render callback, while vtable[0x08]
+ * is the standard render and vtable[0x1C] is the opaque render.
+ *
+ * ═══════════════════════════════════════════════════════════════
+ * Level_RenderDynamicObjects (0x40B420)
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * Signature: void __fastcall Level_RenderDynamicObjects(Scene* this)
+ *
+ * DYNAMIC OBJECTS RENDER (3 phases):
+ *
+ * PHASE 1: Sky / background
+ *   - If this+0x3A44 == 0: call this+0x8AC->vtable[0x48]() (skybox render)
+ *   - If this+0x3A44 == 1: call this+0x8B0->vtable[0x48](1, 1) (skydome render)
+ *
+ * PHASE 2: Water ripples
+ *   - Iterate ripple list at this+0x2160 (AthenaList<Ripple*>)
+ *   - For each ripple:
+ *     a. Timer_Init / Timer_Cleanup scope
+ *     b. Gfx_SetPositionAndRender(ripple+0x1C, +0x20, +0x24) (rotation/anim)
+ *     c. Gfx_ScaleX(DAT_004CF44C - ripple+0x14) (scale X from time)
+ *     d. Gfx_ScaleZ(-ripple+0x10) (scale Z from time)
+ *     e. Gfx_SetPosition(ripple+0x04, +0x08, +0x0C) (world position)
+ *     f. WaterRipple_Render(this+0x3F18, &timer)
+ *
+ * PHASE 3: Dynamic object vtable callback
+ *   - Call this+0x3AFC->vtable[8]() (dynamic object render callback)
+ *
+ * RIPPLE OBJECT OFFSETS:
+ *   +0x04  = X position
+ *   +0x08  = Y position
+ *   +0x0C  = Z position
+ *   +0x10  = scale Z factor (negated)
+ *   +0x14  = scale X time factor
+ *   +0x1C  = rotation/anim X
+ *   +0x20  = rotation/anim Y
+ *   +0x24  = rotation/anim Z
+ *
+ * ═══════════════════════════════════════════════════════════════
+ * COMPLETE LEVEL RENDER FLOW
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * From Scene_Render (0x41A2E0), the render order is:
+ *
+ * 1. Level_RenderDynamicObjects  - Sky/skydome, water ripples, dynamic vtable
+ * 2. Level_UpdateAndRender        - Opaque balls, alpha blend, waypoints, visible, shadows
+ * 3. Level_RenderObjects          - Transparent objects after alpha ON
+ *
+ * This ensures:
+ *   - Sky renders first (background)
+ *   - Water ripples render on top of sky
+ *   - Opaque ball geometry renders before transparent
+ *   - Alpha blending is toggled ON for transparent objects
+ *   - Shadows render last (on top of everything)
+ *   - Transparent pass runs after opaque + shadows
  */
-void __thiscall Level_UpdateAndRender(void *this, int param_1) {}
-
-/* Level_RenderObjects - Transparent object rendering pass
- * Address: 0x40B570
- * Called from Scene_Render via vtable[0x68]
- *
- * Simply iterates the visible_object_list and calls vtable[0xC]() = RenderTransparent
- * for each object. This is the second render pass for alpha-blended objects.
- *
- * SCENE OFFSETS:
- *   +0x3A48 = visible_object_list (built by Level_UpdateAndRender)
- *   +0x8AC  = scene_manager
- *
- * RENDER ORDER:
- *   1. Graphics_BeginFrame(device, 0) - begin scene
- *   2. scene_manager->vtable[0x4C]() - render level geometry (opaque)
- *   3. Graphics_BeginFrame(device, 0) - flush
- *   4. For each object in visible_object_list:
- *      obj->vtable[0xC]() = RenderTransparent
- */
-void __thiscall Level_RenderObjects(void *this, void *param_1) {}
-
-/* Level_RenderDynamicObjects - Water ripples, dynamic effects, sky rendering
- * Address: 0x40B420
- * Called from Scene_Render via vtable[0x60]
- *
- * SCENE OFFSETS:
- *   +0x3A44 = is_skydome_enabled (bool)
- *   +0x8AC  = sky_dome_mesh (rendered when is_skydome_enabled == false)
- *   +0x8B0  = level_mesh (rendered when is_skydome_enabled == true)
- *   +0x2160 = ripple_list (AthenaList of ripples)
- *   +0x2164 = ripple_count
- *   +0x2168 = ripple_iterator
- *   +0x256C = ripple_array
- *   +0x3F18 = water_ripple_system (WaterRipple renderer)
- *   +0x3AFC = dynamic_object (vtable[8] callback after ripples)
- *
- * EXECUTION ORDER:
- *   1. Sky/Level background:
- *      If is_skydome_enabled: sky_dome_mesh->vtable[0x48](1, 1) = RenderSkyDome
- *      Else: level_mesh->vtable[0x48]() = RenderBackground
- *   2. For each ripple in ripple_list:
- *      Timer_Init (for profiling)
- *      Gfx_SetPositionAndRender(ripple->field_0x1C, ripple->0x20, ripple->0x24)
- *      Gfx_ScaleX(1.0 - ripple->scaleX)  // ripple shrinks X over time
- *      Gfx_ScaleZ(-ripple->scaleZ)       // Z mirrors
- *      Gfx_SetPosition(ripple->x, ripple->y, ripple->z)
- *      WaterRipple_Render(water_ripple_system, position)
- *      Timer_Cleanup
- *   3. dynamic_object->vtable[8]() = PostRippleCallback
- *
- * RIPPLE STRUCT OFFSETS:
- *   +0x04/0x08/0x0C = position (Vec3: X/Y/Z)
- *   +0x10 = scaleZ (float, inverted for Z mirror)
- *   +0x14 = scaleX (float, shrinks toward 0 over lifetime)
- *   +0x1C/0x20/0x24 = ? (render params, passed to Gfx_SetPositionAndRender)
- */
-void __fastcall Level_RenderDynamicObjects(int param_1) {}
