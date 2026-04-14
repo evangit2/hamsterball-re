@@ -28,17 +28,19 @@
 #include "physics/physics.h"
 #include "input/input.h"
 
-/* Constants from data section */
-#define GRAVITY             -0.15f      /* E:GRAVITY default pull */
-#define BALL_RADIUS         3.0f        /* 0x40400000 = 3.0f default at +0x62 */
-#define MAX_VELOCITY       20.0f
-#define FRICTION            0.98f       /* Per-frame friction */
-#define ACCEL_FORCE         0.4f        /* Keyboard force magnitude */
+/* Constants from original binary data section (CONFIRMED via Ghidra) */
+#define GRAVITY             -0.15f      /* Default downward pull */
+#define BALL_RADIUS         35.0f       /* 0x420C0000 at Ball+0x284 */
+#define MAX_VELOCITY        5000.0f     /* Ball+0x188 max_speed */
+#define FRICTION            0.95f       /* _DAT_004CF4C0 per-frame friction */
+#define Y_DAMP              0.8f        /* _DAT_004CF434 vertical damping */
+#define SPEED_FRICTION      0.99f       /* _DAT_004CF4B8 */
+#define ACCEL_FORCE         40.0f       /* Keyboard force magnitude (scaled for radius) */
 #define BRAKE_FORCE         0.7f        /* Braking deceleration */
 #define COLLISION_BOUNCE    0.3f        /* Coefficient of restitution */
 #define CAM_FOLLOW_SPEED    0.08f       /* Camera lerp factor */
-#define CAM_HEIGHT_OFFSET  80.0f        /* Camera height above ball */
-#define CAM_DISTANCE      120.0f        /* Camera distance behind ball */
+#define CAM_HEIGHT_OFFSET   80.0f       /* Camera height above ball */
+#define CAM_DISTANCE        120.0f      /* Camera distance behind ball */
 
 /* Global ball state */
 static ball_t g_ball;
@@ -108,16 +110,12 @@ void ball_apply_force(vec3_t force) {
     g_ball.acceleration.z += force.z * scale;
 }
 
-/* Simple height-map collision for now (flat ground at y=0 + level objects) */
+/* Simple height-map collision for now (flat ground at y=0 + level objects)
+ * Real implementation would use Ball_AdvancePositionOrCollision (0x4564C0)
+ * with Collision_TraverseSpatialTree (0x465EF0) */
 static float get_ground_height(float x, float z) {
-    /* Placeholder: flat ground with a slight bowl shape */
-    /* Real implementation would use Mesh_FindClosestCollision */
-    float dist = sqrtf(x * x + z * z);
-    float bowl = 0.0f;
-    if (dist > 200.0f) {
-        bowl = (dist - 200.0f) * 0.3f;  /* Ramp up at edges */
-    }
-    return bowl;
+    /* Arena floor is at y=0 approximately */
+    return 0.0f;
 }
 
 static void physics_step(float dt) {
@@ -168,11 +166,10 @@ static void physics_step(float dt) {
     g_ball.position.y += g_ball.velocity.y;
     g_ball.position.z += g_ball.velocity.z;
     
-    /* Ground collision */
+    /* Ground collision (Ball_AdvancePositionOrCollision 0x4564C0) */
     float ground_y = get_ground_height(g_ball.position.x, g_ball.position.z);
-    float ball_bottom = g_ball.position.y - g_ball.radius;
     
-    if (ball_bottom < ground_y) {
+    if (g_ball.position.y - g_ball.radius < ground_y) {
         /* On ground */
         g_ball.position.y = ground_y + g_ball.radius;
         
@@ -286,7 +283,6 @@ void physics_render(void) {
     if (!quad) quad = gluNewQuadric();
     gluQuadricNormals(quad, GLU_SMOOTH);
     gluSphere(quad, r, 24, 16);
-    
     glPopMatrix();
     
     /* Draw shadow on ground */

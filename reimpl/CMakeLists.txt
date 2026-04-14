@@ -46,7 +46,7 @@ target_link_libraries(hamsterball
     ${GLEW_LIBRARIES}
     m
 )
-target_include_directories(hamsterball PRIVATE ${CMAKE_SOURCE_DIR}/include ${SDL2_INCLUDE_DIRS})
+target_include_directories(hamsterball PRIVATE ${CMAKE_SOURCE_DIR}/include ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS} ${SDL2_MIXER_INCLUDE_DIRS})
 
 # ==================== Tests ====================
 enable_testing()
@@ -69,6 +69,12 @@ add_executable(test_mesh tests/test_mesh.c src/level/mesh_parser.c)
 target_include_directories(test_mesh PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
 target_link_libraries(test_mesh m)
 add_test(NAME mesh COMMAND test_mesh)
+
+# Unit test: Asset compatibility
+add_executable(test_assets tests/test_assets.c src/core/filesys.c src/level/meshworld_parser.c src/level/mesh_parser.c)
+target_include_directories(test_assets PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(test_assets m)
+add_test(NAME assets COMMAND test_assets)
 
 # Install targets
 install(TARGETS hamsterball level_viewer_v2 DESTINATION bin)
