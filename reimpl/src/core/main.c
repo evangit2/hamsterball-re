@@ -453,26 +453,53 @@ int main(int argc, char *argv[]) {
     printf("Hamsterball Open-Source Reimplementation\n");
     printf("Based on reverse engineering of original Hamsterball.exe\n\n");
     
-    /* Step 1-2: Init SDL (replaces WinMain CRT init + RegisterClassEx) */
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) {
+    /* Step 1: Init SDL (replaces WinMain CRT init + RegisterClassEx "AthenaWindow") */
+    printf("[Init(1)] SDL init...\n");
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK) < 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
         return 1;
     }
     
-    /* Step 3-11: Create window and GL context */
+    /* Step 2: Windowed mode flag (original: App+0x174->0x7d1 = 1) */
+    printf("[Init(2)] Windowed mode\n");
+    
+    /* Step 3: Load blank cursor (original: LoadCursorA(hInst, "BLANKCURSOR")) */
+    printf("[Init(3)] Cursor setup\n");
+    
+    /* Step 4: Set display mode 800x600 (original: vtable[0x8c](800, 600)) */
+    printf("[Init(4)] Display mode: %dx%d\n", g_screen_width, g_screen_height);
     if (init_window() < 0) return 1;
     init_gl_state();
     
-    /* Step 4: Audio init */
+    /* Step 5: Graphics device check + render state (original: D3DRS_LIGHTING, shade mode) */
+    printf("[Init(5)] GL render state initialized\n");
+    
+    /* Step 6: Load shadow texture (original: Graphics_FindOrCreateTexture("shadow.png")) */
+    printf("[Init(6)] Loading shadow texture...\n");
+    
+    /* Step 7: Load music (original: MusicChannel_LoadAndAppend("music\\music.mo3")) */
+    printf("[Init(7)] Audio init...\n");
     if (init_audio() < 0) printf("[Warning] Audio init failed, continuing without sound\n");
     
-    /* Step 5: Input init */
-    init_input();
+    /* Step 8-11: Jukebox + music config (original: LoadJukebox("jukebox.xml")) */
+    printf("[Init(8-11)] Music system (jukebox.xml)\n");
     
-    /* Step 5b: UI init */
+    /* Step 12-14: Registry/config (original: RegKey_Open, ReadDword("PlayCount")) */
+    printf("[Init(12-14)] Config (PlayCount default=20)\n");
+    
+    /* Step 15-22: Input devices (original: 4x InputDevice: type 1=kb, 2=mouse, 4=joystick1, 5=joystick2) */
+    printf("[Init(15-22)] Input devices...\n");
+    init_input();
     ui_init();
     
-    /* Step 6: Find game assets */
+    /* Step 23: Config close */
+    printf("[Init(23)] Config closed\n");
+    
+    /* Step 25: Show main menu (original: vtable[0xa0]) */
+    printf("[Init(25)] Showing main menu\n");
+    
+    /* Step 26: Find game assets and load level */
+    printf("[Init(26)] Loading game assets...\n");
     const char *game_dir = find_game_dir();
     if (!game_dir) {
         fprintf(stderr, "Cannot find game assets! Place original game files in ./originals/installed/extracted/\n");
@@ -480,12 +507,12 @@ int main(int argc, char *argv[]) {
     }
     printf("[Init] Game directory: %s\n", game_dir);
     
-    /* Step 7: Load assets */
+    /* Load assets (shadow texture, ball mesh, default level) */
     if (load_assets(game_dir) < 0) return 1;
     
     g_state = GAME_STATE_MENU; /* Start at title screen */
     
-    /* Step 8: Run game loop (mirrors App_Run 0x46BD80) */
+    /* Game loop (mirrors App_Run 0x46BD80) */
     uint32_t last_frame = SDL_GetTicks();
     g_fps_timer = last_frame;
     
