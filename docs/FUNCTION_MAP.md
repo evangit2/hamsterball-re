@@ -1,7 +1,7 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-Documented: 3206/3781 (84.8%)
+Documented: 3230/3781 (85.4%)
 **User-labeled:** 975+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781), 29 (70.7%→71.6%)
 
@@ -1834,3 +1834,32 @@ Offset | Field | Description
 | 0x00490629 | D3DX_CopyRects_Point | Copies rects between surfaces with point (nearest) sampling |
 | 0x0049082b | D3DX_CopyRects_Stretch | Copies rects between surfaces with stretch blt |
 | 0x004913e4 | D3DX_TransformTex_Bilinear | Bilinear texture transform for D3DX |
+
+## Session 35 — D3DXMesh pipeline, D3DTexture, MeshData, Sort (84.8%→85.4%)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00482f9c | D3DResource_ReleaseA | COM Release - decrements refcount, calls D3DDevice_ReleaseResourcesA when hits 0 |
+| 0x00482fd4 | D3DResource_ReleaseB | COM Release variant B - same pattern, different resource cleanup |
+| 0x0048316c | D3DXMesh_GenerateAdjacency | Generates face adjacency for 32-bit index mesh (locks IB, iterates with MeshIter_InitEdge) |
+| 0x004833df | D3DXMesh_WeldVertices | Welds vertices by position hash + distance check (32-bit indices, heapsort) |
+| 0x00483856 | Sort_IndexHeapByFloat | Heapsort of index array keyed by float values |
+| 0x00483981 | Mesh_FindWeldVertex | Hash-lookup for vertex welding (xyz hash, adjacency chain check, 32-bit indices) |
+| 0x00483ba4 | D3DTexture_CreateFromDesc | Creates D3D texture from description (pool/usage/size, handles Init/Locked paths) |
+| 0x00483d6d | D3DTexture_CopyLockedData | Copies mesh data into locked texture (16-bit indices, 32→16-bit conversion) |
+| 0x00483f2a | D3DTexture_CopyIndexData | Copies mesh index data into texture (32-bit to 16-bit index conversion) |
+| 0x004840f9 | D3DXMesh_GenerateAdjacency16 | 16-bit index version of GenerateAdjacency (MeshIter_InitShortEdge) |
+| 0x0048436d | D3DXMesh_WeldVertices16 | 16-bit index version of WeldVertices (uses Sort_IndexHeapByFloat) |
+| 0x004847eb | Mesh_FindWeldVertex16 | 16-bit vertex weld hash lookup (ushort adjacency chain checking) |
+| 0x004848b7 | D3DTexture_CopyLockedData16 | 16-bit locked data copy (32→16-bit index truncation) |
+| 0x00484a87 | D3DTexture_CopyIndexData16 | 16-bit index data copy (D3DTexture_ResizeAndValidate path) |
+| 0x00484c3a | D3DTexture_CopySurfaceData | Copies surface data between D3D textures (vertex format conversion) |
+| 0x00484d0f | D3DXMesh_Stripify | Converts mesh to triangle strips (32-bit indices, uses MeshData_RemoveFace) |
+| 0x00484de5 | D3DXMesh_StripifyOptimized | Optimized stripification with vcache-awareness (32-bit, SmallIntArray) |
+| 0x004850e2 | D3DXMesh_Stripify16 | 16-bit strip conversion using short vertex adjacency |
+| 0x004851d8 | D3DXMesh_StripifyOptimized16 | 16-bit optimized stripification with ShortArray vcache |
+| 0x00485525 | D3DTexture_CreateSimple | Simplified texture creation from dimensions/usage/pool flags |
+| 0x00485610 | D3DTexture_CloneFromDesc16 | Clones texture via 16-bit copy paths (CopyIndexData16/LockedData16/SurfaceData) |
+| 0x004857d9 | D3DXMesh_ConvertAdjacencyToStrip | Builds adjacency and converts to strips (32-bit, MeshData_Init) |
+| 0x00485ad9 | D3DXMesh_ConvertAdjacencyToStrip16 | 16-bit adjacency-to-strip conversion (MeshSubMesh_Init) |
+| 0x00485dd7 | D3DXMesh_OptimizeFull | Full mesh optimization pipeline (adjacency, attr sort, vcache, strip, reorder) |
