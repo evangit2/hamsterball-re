@@ -76,5 +76,11 @@ target_include_directories(test_assets PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMA
 target_link_libraries(test_assets m)
 add_test(NAME assets COMMAND test_assets)
 
+# Unit test: XML parsers (jukebox + race data)
+add_executable(test_xml tests/test_xml_parsers.c src/audio/jukebox.c src/game/race_data.c)
+target_include_directories(test_xml PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(test_xml m)
+add_test(NAME xml COMMAND test_xml)
+
 # Install targets
 install(TARGETS hamsterball level_viewer_v2 DESTINATION bin)

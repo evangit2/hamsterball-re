@@ -70,6 +70,22 @@ static int g_tests_run = 0, g_tests_pass = 0, g_tests_fail = 0;
     } \
 } while(0)
 
+#define ASSERT_LT(a, b) do { \
+    long _a = (long)(a), _b = (long)(b); \
+    if (!(_a < _b)) { \
+        g_tests_fail++; \
+        printf("FAIL: !(%s < %s) (line %d): %ld vs %ld\n", #a, #b, __LINE__, _a, _b); return; \
+    } \
+} while(0)
+
+#define ASSERT_LE(a, b) do { \
+    long _a = (long)(a), _b = (long)(b); \
+    if (!(_a <= _b)) { \
+        g_tests_fail++; \
+        printf("FAIL: !(%s <= %s) (line %d): %ld vs %ld\n", #a, #b, __LINE__, _a, _b); return; \
+    } \
+} while(0)
+
 #define TEST_SUMMARY() do { \
     g_tests_pass = g_tests_run - g_tests_fail; \
     printf("\n%d/%d passed", g_tests_pass, g_tests_run); \
