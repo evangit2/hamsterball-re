@@ -9,5 +9,13 @@ reimpl/mingw-libs/SDL2_mixer-*/
 reimpl/mingw-libs/glew-*/
 reimpl/mingw-libs/*.zip
 
-# Release builds (tracked via git-lfs or releases)
+# Release builds
 releases/
+
+# Original game binaries (copyrighted, not for redistribution)
+originals/installed/extracted/Hamsterball.exe
+originals/installed/extracted/bass.dll
+originals/installed/extracted/unins000.exe
+originals/installed/Hamsterball.zip
+originals/installer/
+original/hamsterball.zip
