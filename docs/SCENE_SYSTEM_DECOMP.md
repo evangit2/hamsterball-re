@@ -90,6 +90,30 @@ vtable[0x58] = Scene_HandleCountdown   (0x41A540) - race countdown timer
 vtable[0x7C] = Scene_LevelObjUpdate   (0x41AC70) - level object tick (traps, moving platforms)
 ```
 
+## Level vtable Entries (from Scene vtable map)
+
+### Level_UpdateAndRender (0x40B600, vtable[0x64])
+Main level render: two-pass system (opaque + alpha).
+1. Clear visible_object_list, append player balls
+2. SetRenderState(ALPHA_BLEND=FALSE) → opaque pass
+3. For each ball: ball->vtable[0x1C]() = RenderOpaque
+4. SetRenderState(ALPHA_BLEND=TRUE) → alpha pass
+5. If race active: update waypoint arrow + render
+6. For each visible object: obj->vtable[0x08]() = Render
+7. Ball_RenderShadow for each ball (if shadow data exists)
+Scene offsets: +0x29D4=P1 balls, +0x3204=P2 balls, +0x3A48=visible objects, +0x361C=waypoint
+
+### Level_RenderObjects (0x40B570, vtable[0x68])
+Transparent pass. Graphics_BeginFrame, scene_manager->vtable[0x4C]
+for level geometry, then obj->vtable[0x0C]() = RenderTransparent per visible object.
+
+### Level_RenderDynamicObjects (0x40B420, vtable[0x60])
+Sky/dome + water ripples. If is_skydome_enabled (+0x3A44):
+sky_dome_mesh->vtable[0x48](1,1), else level_mesh->vtable[0x48]().
+Then iterate ripple_list (+0x2160), render each:
+Gfx_SetPositionAndRender→ScaleX→ScaleZ→SetPosition→WaterRipple_Render.
+Finally dynamic_object->vtable[8]() callback.
+
 ### Scene vtable Full Map (0x4D0260)
 ```
 [0x00] 0x425020  Scene_ctor
