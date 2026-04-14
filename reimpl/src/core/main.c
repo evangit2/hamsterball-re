@@ -81,7 +81,16 @@ static uint32_t g_fps_timer = 0;
 static int g_current_fps = 0;
 
 /* ===== Asset Path Discovery ===== */
+/* Asset discovery: search common locations for original game files.
+ * Original reads from the exe's directory. We search:
+ * 1. Next to the exe (original game dir structure)  
+ * 2. Development paths (source tree)
+ * 3. Linux absolute path (dev machine)
+ */
 static const char *ASSET_SEARCH[] = {
+    ".",                        /* CWD - works if placed in game dir */
+    "./extracted",              /* extracted subdirectory */
+    "../extracted",             /* sibling directory */
     "./originals/installed/extracted",
     "../originals/installed/extracted",
     "../../originals/installed/extracted",
