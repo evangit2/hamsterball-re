@@ -291,6 +291,35 @@ while (!quit):
   while (updates_this_frame < 1)
 ```
 
+## Additional Scene Functions
+
+### Level_UpdateAndRender (0x40B600)
+6-phase render for level geometry and objects. See RENDERING_PIPELINE.md for details.
+Phases: Build visible list → Opaque pass → Alpha pass → Waypoint arrow → Visible list render → Ball shadows
+
+### Level_RenderObjects (0x40B570)
+Transparent pass: BeginFrame → mesh render → BeginFrame → vtable[0x0C] per object in visible_list
+
+### Scene_CheckPath (0x57EC0)
+Ring topology pathfinder on 359-cell circular grid. Two walkers (forward +1, backward -1)
+search from start to target. Returns 1=forward, -1=backward, 0=unreachable.
+
+### Scene_SpawnBallsAndObjects (0x41C5B0)
+Level startup spawner. Creates player balls at "START%d-%d" hash table positions,
+then creates level objects (flags, signs, dynamic objects, secret objects).
+Ball defaults: radius=26.0, max_speed=5.0, gravity=0.5, speed_scale=0.1
+
+### Scene_RenderAllObjects (0x45E0E0) — Detailed
+3-pass render with object classification into buckets:
+- Pass 1 (Opaque): Objects with all alpha/decal flags=0, rendered immediately
+- Pass 2 (Translucent): Objects with flag 0x860=1, alpha blend ON
+- Pass 3 (Decal): Objects with flag 0x85F=1, stencil+depth bias enabled
+- Post-alpha: Iterate children calling vtable[0x48](1,1)
+
+### Scene_RenderFrame (0x60DA0) — Detailed
+Per-frame: build vertex buffers with zigzag triangle strips (0x20 bytes/vertex),
+render sprites, construct font→texture via Font_RenderToTextureComplex, free temp MeshWorld
+
 Key insight: The game uses a fixed-timestep update with variable rendering.
 If the game falls behind, it caps accumulated lag at 1000ms to prevent
 the "spiral of death" where too many updates cause more lag.

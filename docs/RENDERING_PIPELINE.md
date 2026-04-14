@@ -162,6 +162,170 @@ Iterate scene children at `this+0x480→+0x428`, call `vtable[0x48](1, 1)` for e
 the shadow render pass. This pushes shadow geometry slightly forward in clip
 space to prevent z-fighting with the floor geometry.
 
+## Level Rendering Pipeline
+
+### Level_UpdateAndRender (0x40B600)
+6-phase render for level geometry and objects:
+1. **Build visible_list** from primary (+0x29D4) and secondary (+0x3204) ball object lists
+2. **Opaque pass**: AlphaTest OFF, iterate both lists calling vtable[0x1C]() per object
+3. **Alpha pass**: AlphaTest ON, iterate both lists calling vtable[0x1C]() per object
+4. **Waypoint arrow**: If race active and not game-over, show next waypoint arrow (timer=0.45s)
+5. **Visible list render**: iterate combined visible_list, call vtable[0x08]() per object
+6. **Ball shadows**: If ripple_list has entries, render shadows for all balls
+
+### Level_RenderObjects (0x40B570)
+Transparent pass renderer:
+1. Graphics_BeginFrame(gfx, 0)
+2. level->vtable[0x4C]() - render level mesh (terrain geometry)
+3. Graphics_BeginFrame(gfx, 0)
+4. For each object in visible_list: vtable[0x0C]() (RenderTransparent)
+
+### Scene_RenderFrame (0x60DA0)
+Per-frame scene update with vertex buffer construction:
+1. Set scene+0x10C4 = 1 (render active)
+2. If root scene: allocate MeshWorld + transform buffer
+3. Sprite update: call vtable[0x3C] per sprite
+4. **Triangle strip construction**: For each mesh object, build zigzag strips:
+   - Alternating vertex triples (degenerate-triangle strip pattern)
+   - 0x20 bytes per vertex (pos + normal + texcoord)
+   - SpriteAnim_SetRange for each object
+5. Font_RenderToTextureComplex for text→texture
+6. Mesh_SaveAndFree + free temp MeshWorld
+
+### Scene_CheckPath (0x57EC0)
+Ring topology pathfinder on 360-cell (0x167=359) circular grid.
+Used by Ball_Update for track-snapping collision.
+- Returns 1 = forward reachable, -1 = backward reachable, 0 = unreachable
+- Two walkers: forward (+1) and backward (-1), wrap at 0↔359
+
+### Scene_SpawnBallsAndObjects (0x41C5B0)
+Level startup: spawn player balls + all interactive objects:
+1. For each start entry: lookup "START%d-%d" in hash table for position
+2. Ball_ctor2(0xC60 bytes) at position, radius=26.0, max_speed=5.0, gravity=0.5
+3. 1-player random start for race types 5/11/12/14
+4. Scan SAFESPOT/SAFEPOS entries
+5. Tournament/demo: CreateBadBall + CreateMouseTrap
+6. CreateSecretObjects + Scene_CreateFlags + Scene_CreateSigns + Scene_CreateDynamicObjects
+
+## D3D8 Device Vtable Dispatch Map
+
+The game uses IDirect3DDevice8 COM vtable calls throughout. Key vtable offsets:
+
+| Vtable Offset | D3D Method | Usage in Game |
+|---------------|-----------|---------------|
+| +0x28 | DrawIndexedPrimitiveUP | D3DDevice_DrawIndexedPrimitiveUP (0x47DD56) |
+| +0x2C | DrawIndexedPrimitive | Graphics_DrawIndexedPrimitive (0x47DFB9) |
+| +0x78 | EndScene | Post-render cleanup |
+| +0x88 | BeginScene | Pre-render setup |
+| +0x94 | SetTransform | Matrix setup (View/Projection/World/Texture) |
+| +0xA8 | SetMaterial | Apply D3DMATERIAL8 |
+| +0xF4 | SetTexture | Texture stage 0 setup |
+| +0xFC | SetTextureStageState | Multi-texture config |
+| +0x118 | SetStreamSource | Vertex buffer binding |
+| +0x14C | DrawPrimitiveUP | Immediate-mode vertex draw |
+| +0xC8 | SetVertexShader | FVF / declarator setup |
+| +0x200 (0x200 = SetRenderState) | SetRenderState | D3D render state changes |
+
+### Graphics_DrawIndexedPrimitive (0x47DFB9)
+Thin wrapper: `device->vtable[0x2C](device, 0, 0, prim_type, index_count | 0x800)`
+- The 0x800 flag is D3DPT_TRIANGLELIST with additional index buffer flags
+- Called from Graphics_ApplyMaterialAndDraw
+
+### D3DDevice_DrawIndexedPrimitiveUP (0x47DD56)
+User-pointer draw: parses vertex declaration via D3DX_ParseDeclarationType,
+then calls device->vtable[0x28]. Falls back to cached declaration if NULL.
+
+### Graphics_ApplyMaterialAndDraw (0x455110)
+Complex material system dispatch:
+1. **Material selection**: gfx+0x7C0 custom material override, or param_1
+2. **Scale transform**: If gfx+0x7A8 flag, apply Matrix_ScaleTransform with gfx+0x7B0..0x7BC
+3. **Render state setup** based on material type:
+   - Simple (material[0x12]==0): Set alpha test mode via D3DTS_ALPHA
+   - Complex: Set texture stage, blend mode, cull mode from material struct
+4. **D3DDevice->SetMaterial** (vtable[0xA8]) with material+4
+5. **Lighting state**: D3DRS_LIGHTING (0x39) per material flag
+6. **Transform**: Level_SetObjectTransform sets world matrix
+7. **Draw**: If scaled, call vtable[0x4]() (render callback)
+
+## Material System
+
+### Material Structure (0x50 bytes per material)
+Materials are stored as arrays of 0x50-byte entries in the mesh vertex data.
+Referenced via: `object_index * 0x50 + mesh_base_ptr`
+
+| Offset | Size | Description |
+|--------|------|-------------|
+| +0x00 | 4 | Material vtable / type flag |
+| +0x04 | 64 | D3DMATERIAL8 structure (SetMaterial payload) |
+| +0x12 | 4* | Sub-material pointer (NULL=simple) |
+| +0x13 | 1 | Alpha blend mode (0=solid, 1=alpha blend) |
+| +0x1C | 1 | Source blend factor |
+| +0x1D | 1 | Destination blend factor |
+| +0x1E | 1 | Cull mode (0=CCW, 1=CW) |
+| +0x4D | 1 | Lighting mode (0=off, 1=on) |
+
+### Material Application Flow
+```
+Graphics_ApplyMaterialAndDraw(gfx, material_ptr)
+  ├─ Select material (override or default)
+  ├─ Apply scale transform if needed
+  ├─ Set alpha test state (D3DRS_ALPHATESTENABLE via vtable[200](0x1B))
+  ├─ Set texture blend operation (vtable[0xFC])
+  ├─ Set texture (vtable[0xF4])
+  ├─ Set material (vtable[0xA8])
+  ├─ Set lighting (vtable[200](0x39))
+  ├─ Level_SetObjectTransform (world matrix)
+  └─ Draw (vtable[4])
+```
+
+## Graphics Subsystem Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x453B50 | Graphics_BeginFrame | Set view transform + copy to frustum |
+| 0x453900 | Graphics_ClearViewport | D3D Clear (target+Z+stencil) |
+| 0x453C90 | Graphics_CreateDevice | D3D8 device creation + FPU control |
+| 0x454BC0 | Graphics_RenderScene | Full 3D render: lights+matrices+callbacks |
+| 0x454AB0 | Graphics_SetProjection | Set projection matrix |
+| 0x455110 | Graphics_ApplyMaterialAndDraw | Material + draw dispatch |
+| 0x455A90 | Graphics_PresentOrEnd | D3D Present / EndScene |
+| 0x455C50 | Graphics_FindOrCreateTexture | Texture cache lookup/create |
+| 0x455D60 | Graphics_DrawScreenRect | 2D rectangle (TLVERTEX) |
+| 0x457A50 | Graphics_DisableRenderState | Disable a render state |
+| 0x57A90 | Gfx_SetRenderStateThunk | Thin SetRenderState wrapper |
+| 0x457AB0 | Gfx_LoadMatrixFromStack | Load matrix from stack to D3D |
+| 0x457B50 | Gfx_SetPosition | Set world position |
+| 0x457B80 | Gfx_SetPositionAndRender | Position + render |
+| 0x457BB0 | Gfx_RotateY | Y-axis rotation |
+| 0x457C60 | Gfx_ScaleX | X-axis scale |
+| 0x457C90 | Gfx_ScaleY | Y-axis scale |
+| 0x457CC0 | Gfx_ScaleZ | Z-axis scale |
+| 0x457D40 | Gfx_SetAlphaBlendState | Alpha blend state change |
+| 0x459400 | Gfx_ResetRenderState | Reset all render states |
+| 0x46F100 | Gfx_ApplyLightingState | Apply lighting from scene |
+| 0x46F1E0 | Gfx_ResetLighting | Reset D3D lights |
+| 0x53960 | Gfx_CallVTable8C | Call device vtable[0x8C] |
+| 0x53970 | Graphics_SetCullMode2 | D3DRS_CULLMODE wrapper |
+| 0x53940 | Gfx_ResetRenderState | Full state reset |
+
+## D3D Texture System Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x472B80 | D3DTexture_Ctor | Texture constructor |
+| 0x472C00 | D3DTexture_DeletingDtor | Texture destructor (calls Release) |
+| 0x48300C | D3DTexture_Init | Initialize from D3D surface |
+| 0x483A44 | D3DTexture_InitLocked | Init with locked rect |
+| 0x483BA4 | D3DTexture_CreateFromDesc | Create from texture desc |
+| 0x483F2A | D3DTexture_CopyIndexData | Copy index (16-bit) |
+| 0x483D6D | D3DTexture_CopyLockedData | Copy locked surface data |
+| 0x85525 | D3DTexture_CreateSimple | Create simple texture |
+| 0x85610 | D3DTexture_CloneFromDesc16 | Clone from 16-bit desc |
+| 0x4C3A | D3DTexture_CopySurfaceData | Copy surface data |
+| 0x82F9C | D3DResource_ReleaseA | Release D3D resource |
+| 0x82FD4 | D3DResource_ReleaseB | Release variant |
+| 0x8A900 | D3DResourcePool_Release | Release from pool |
+
 ## Mirror Mode
 
 When `App+0x7D2` (mirror_cull_flag) is set:

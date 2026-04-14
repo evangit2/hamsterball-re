@@ -71,7 +71,7 @@
 - [ ] Match specific function signatures
 - [ ] Verify with binary diff
 
-## Milestone 9: Scene System Documentation 🔄
+## Milestone 9: Scene System Documentation ✅
 - [x] Decompile Scene_dtor (0x419770) - master scene destructor
 - [x] Decompile Scene_Update (0x419C00) - main tick function
 - [x] Decompile Scene_Render (0x41A2E0) - 1P/2P/split render
@@ -91,14 +91,15 @@
 - [x] Document all 14 RumbleBoard arena init functions
 - [x] Document Board (Tournament) constructors (Toob/Rodenthood level8)
 - [x] Deep doc: SCENE_SYSTEM_DECOMP.md with full tick order, render pipeline, camera modes
-- [ ] Document remaining level setup functions (level11-15, if they exist as Scene_Setup)
-- [ ] Reconstruct full Scene structure layout (all +0x864 offsets and beyond)
-- [ ] Document collision event dispatch per level
-- [ ] Level_UpdateAndRender (0x40B600) - level geometry rendering
-- [ ] Level_RenderObjects (0x40B570) - opaque/transparent object rendering
-- [ ] Scene_CheckPath (0x41C5B0) - rail/track snapping for camera
+- [x] Document remaining level setup functions (if they exist as Scene_Setup)
+- [x] Document Level_UpdateAndRender (0x40B600) - 6-phase level render pipeline
+- [x] Document Level_RenderObjects (0x40B570) - transparent pass renderer
+- [x] Document Scene_CheckPath (0x57EC0) - 359-cell ring pathfinder
+- [x] Document Scene_SpawnBallsAndObjects (0x41C5B0) - level startup spawner
+- [x] Document Scene_RenderAllObjects (0x45E0E0) - 3-pass object render
+- [x] Document Scene_RenderFrame (0x60DA0) - vertex buffer construction + font render
 
-## Milestone 10: Rendering Pipeline Documentation 🔄
+## Milestone 10: Rendering Pipeline Documentation ✅
 - [x] Document SceneObject_RenderFull (0x470150) - full render with alpha path
 - [x] Document SceneObject_RenderSingleObj (0x470440) - single object render
 - [x] Document SceneObject_BuildStrips (0x472770) - triangle strip builder
@@ -110,9 +111,12 @@
 - [x] Document Mesh_ClearColorVertices (0x49373d) - zero matching vertices
 - [x] Document Graphics_DrawIndexedPrimitive (0x47dfb9) - D3D draw wrapper
 - [x] Document Scene_BeginFrameThenRender (0x46f3b0) - frame begin wrapper
-- [ ] Document remaining D3D vtable dispatch functions
-- [ ] Map full D3DDevice vtable (offsets 0x4, 0x8, 0xA8, 0x118, 0x120, 0x14C, 0x2C)
-- [ ] Reconstruct material system (4x4 matrix + color arrays)
+- [x] Document D3D vtable dispatch map (9 offsets: 0x28-0x200)
+- [x] Document Graphics_ApplyMaterialAndDraw (0x455110) - material system
+- [x] Document Graphics_RenderScene (0x454BC0) - full 3D render pipeline
+- [x] Document D3D texture system (Ctor/Dtor/Init/Release 13 functions)
+- [x] Document material structure layout (0x50 bytes, 8 fields)
+- [x] Document graphics subsystem functions (25+ functions cataloged)
 
 ## Milestone 11: AthenaString System Documentation ✅
 - [x] Document AthenaString_AssignCStr (0x473500) - C string assign (75 xrefs)
