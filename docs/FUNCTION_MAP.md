@@ -1,7 +1,7 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-Documented: 2848/3781 (75.3%)
+Documented: 3206/3781 (84.8%)
 **User-labeled:** 975+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781), 29 (70.7%→71.6%)
 
@@ -1746,3 +1746,91 @@ Offset | Field | Description
 | 0x004aba27 | Mem_Copy128Blocks | Copies data in 128-byte blocks (param3 << 7 >> 2 dwords) |
 | 0x004ae18e | PNG_ParsePLTE | PNG PLTE (palette) chunk parser with IHDR check and CRC |
 | 0x004b0220 | IMDCT_ForwardTransform | Forward IMDCT/DCT transform with fixed-point cosine tables |
+
+## Session 34 — CPUID, D3DXSkinMesh, MeshStrip, StreamReader, CRT, AthenaList, D3DX texture (83.3%→84.8%)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x0045dd60 | CPUID_CheckMMX | Checks CPUID feature bit 23 (MMX support) |
+| 0x0045dd6f | CPUID_IsMMXAvailable | Returns MMX availability flag from cached CPU features |
+| 0x0045dd7e | CPUID_Check3DNow | Checks CPUID extended features for 3DNow support |
+| 0x0045dda0 | CPUID_DetectFeatures | Runs CPUID leaf 1 and stores feature flags |
+| 0x0045ddb0 | CPUID_GetProcessorFeatures | Returns cached processor feature flags |
+| 0x0045ddc0 | CPUID_CheckProcessorFeature | Tests specific bit in processor feature flags |
+| 0x0045e010 | CopyVec2 | Copies 2-component float vector |
+| 0x0045e190 | D3DXSkinMesh_Ctor | Initializes D3DX skin mesh object with vtable and defaults |
+| 0x0045e340 | D3DXSkinMesh_InitTimerDefaults | Initializes timer-related defaults for skin mesh |
+| 0x0045e6a0 | D3DXSkinMesh_CreateStrip | Creates strip from skin mesh data |
+| 0x0045e770 | D3DXSkinMesh_CopyStripData | Copies strip data between buffers |
+| 0x0045ea30 | D3DXSkinMesh_RebuildList | Rebuilds internal list structure for skin mesh |
+| 0x0045eb40 | D3DXSkinMesh_DestroyAllObjects | Destroys all managed objects in skin mesh |
+| 0x0045ec80 | D3DXSkinMesh_GenerateStrips | Generates triangle strips from mesh data |
+| 0x0045ed90 | D3DXSkinMesh_DeletingDtor | Deleting destructor for D3DX skin mesh |
+| 0x0045ee70 | MeshStrip_ComputeWinding | Computes winding order for mesh strip |
+| 0x0045ef00 | MeshStrip_GenerateNextStrip | Generates next strip in sequence |
+| 0x0045f0a0 | StreamReader_InitVtbl | Initializes stream reader vtable |
+| 0x0045f2b0 | StreamReader_ReadLine | Reads a line from stream |
+| 0x0045f360 | StreamReader_OpenFile | Opens file for stream reading |
+| 0x0045f490 | StreamReader_DeletingDtor_Close | Deleting destructor that also closes file handle |
+| 0x0045f5e0 | Mesh_ConnectFaceEdges | Connects face edges in mesh topology |
+| 0x0045f680 | Mesh_AddFace | Adds face to mesh |
+| 0x0045f8e0 | Mesh_SwapFaceEntries | Swaps two face entries in mesh |
+| 0x0045f990 | Mesh_RemapFaceIndices | Remaps face indices according to remap table |
+| 0x0045fa90 | Mesh_ReorderFacesByAdjacency | Reorders faces by adjacency for cache coherence |
+| 0x0045fb50 | D3DX_CreateErrorHandler | Creates D3D error handler |
+| 0x0045fd60 | VertexDecl_ParseDeclarationType | Parses vertex declaration type from D3D declaration |
+| 0x0045ff50 | VertexDecl_CopyToBuffer | Copies vertex declaration data to buffer |
+| 0x00460020 | VertexDecl_WriteBlendWeights | Writes blend weight data to vertex buffer |
+| 0x0047ee44 | SmallIntArray_Init | Initializes small integer array |
+| 0x0047ee8b | SmallIntArray_Find | Finds value in small integer array |
+| 0x0047eeb2 | SmallIntArray_Push | Pushes value onto small integer array |
+| 0x0047eed6 | ShortArray_Init | Initializes short array |
+| 0x0047ef46 | ShortArray_Push | Pushes value onto short array |
+| 0x0047efd7 | ShortArray_GetNextEdge | Gets next edge from short array iterator |
+| 0x0047ef6c | Mesh_GetNextEdge | Gets next edge in mesh edge traversal |
+| 0x0047efb7 | Mesh_GetPrevVertex | Gets previous vertex in mesh vertex list |
+| 0x0047f091 | Mesh_LinkVertexToHead | Links vertex to head of vertex list |
+| 0x0047f0d0 | Mesh_DecrementVertex | Decrements vertex reference count |
+| 0x0047f0fa | Mesh_UnlinkShortVertex | Unlinks short vertex from list |
+| 0x0047f1ca | Mesh_DecrementShortVertex | Decrements short vertex reference count |
+| 0x0047f1fb | D3D_InitDisplayModes | Initializes available D3D display modes |
+| 0x0047f5a4 | VertexDecl_ParseFVF | Parses FVF (Flexible Vertex Format) flags |
+| 0x00481366 | MeshIter_InitEdge | Initializes mesh edge iterator |
+| 0x004813c4 | MeshIter_InitShortEdge | Initializes mesh short edge iterator |
+| 0x004819ec | MeshData_AttributeSort | Sorts mesh data by attribute group |
+| 0x00481dbd | MeshData_SplitVerticesByAttribute | Splits vertices sharing attributes into separate copies |
+| 0x00482611 | MeshData_SplitShortVertsByAttr | Splits short vertices by attribute group |
+| 0x00482881 | MeshData_OptimizeVertexOrder | Optimizes vertex order for cache performance |
+| 0x004829c6 | MeshData_OptimizeFaceOrder | Optimizes face order for vertex cache coherence |
+| 0x00482ab0 | MeshData_FreeAdjBuffer | Frees adjacency buffer |
+| 0x00482aba | MeshData_FindOrAddAttr | Finds or adds attribute entry |
+| 0x00482adf | MeshData_FindOrAddShortAttr | Finds or adds short attribute entry |
+| 0x00482b04 | MeshData_InitVertexAdj | Initializes vertex adjacency data |
+| 0x00482bf0 | MeshData_RemoveFace | Removes face from mesh data |
+| 0x00482c55 | MeshData_FindBestNextEdge | Finds best next edge for strip generation |
+| 0x00482d2d | MeshData_InitShortVertexAdj | Initializes short vertex adjacency data |
+| 0x00482e29 | MeshData_RemoveShortFace | Removes short face from mesh data |
+| 0x00482ea4 | MeshData_FindBestNextShortEdge | Finds best next short edge for strip generation |
+| 0x00486e92 | D3DXMesh_DrawSubset | Draws a mesh subset by attribute group |
+| 0x00486f10 | CRT_InitLocaleVtable | Initializes C runtime locale vtable |
+| 0x00486f80 | CRT_FormatInteger | Formats integer for printf-style output |
+| 0x00487070 | CRT_FormatFloatOutput | Formats floating-point output with precision |
+| 0x00487410 | CRT_NormalizeFP80 | Normalizes 80-bit extended precision float |
+| 0x00487520 | CRT_ClassifyFP | Classifies floating-point value (NaN/Inf/Zero/Normal) |
+| 0x004875c0 | CRT_FormatFloat | Formats float/double per printf format spec |
+| 0x00487870 | CRT_FormatSpecifier | Parses and applies printf format specifier |
+| 0x00487b30 | CRT_ParseFormatString | Parses printf format string |
+| 0x00487e5e | CRT_InitCriticalSection | Initializes critical section for thread safety |
+| 0x00487e70 | D3DXMesh_OptimizeInPlace | Optimizes mesh in place with flags |
+| 0x00489280 | AthenaList_FreeAllChunks | Frees all chunks in Athena list buffer |
+| 0x00489540 | AthenaList_SplitChunk | Splits a chunk in Athena list buffer |
+| 0x004897a0 | AthenaList_WriteDword | Writes DWORD to Athena list buffer |
+| 0x004897f0 | AthenaList_ReadByte | Reads byte from Athena list buffer |
+| 0x00489830 | AthenaList_ReadDword | Reads DWORD from Athena list buffer |
+| 0x00489b70 | CRT_FltControl87 | Wraps _control87 to set x87 FPU control word |
+| 0x00490054 | D3DX_MipMap_16bit_555 | Generates mipmap for 16-bit 555 format surface |
+| 0x00490175 | D3DX_MipMap_16bit_565 | Generates mipmap for 16-bit 565 format surface |
+| 0x004902c1 | D3DX_MipMap_8bit | Generates mipmap for 8-bit palettized surface |
+| 0x00490629 | D3DX_CopyRects_Point | Copies rects between surfaces with point (nearest) sampling |
+| 0x0049082b | D3DX_CopyRects_Stretch | Copies rects between surfaces with stretch blt |
+| 0x004913e4 | D3DX_TransformTex_Bilinear | Bilinear texture transform for D3DX |
