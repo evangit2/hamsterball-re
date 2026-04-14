@@ -19,3 +19,6 @@ originals/installed/extracted/unins000.exe
 originals/installed/Hamsterball.zip
 originals/installer/
 original/hamsterball.zip
+
+# Ghidra project files (local only - too large for git)
+analysis/ghidra/HamsterballProject/
