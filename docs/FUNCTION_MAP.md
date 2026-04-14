@@ -1,7 +1,7 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-**Documented:** 2,720 (71.9%)
+Documented: 2803/3781 (74.1%)
 **User-labeled:** 975+
 **Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781), 29 (70.7%→71.6%)
 
