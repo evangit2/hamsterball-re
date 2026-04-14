@@ -1,9 +1,9 @@
 # Hamsterball - Function Map
 **Binary:** Hamsterball.exe (MD5: 7d25019366b8d7f55906325bd630d7fe)
 **Total functions:** 3,781 (Ghidra analysis)
-Documented: 3230/3781 (85.4%)
+Documented: 3781/3781 (100%)
 **User-labeled:** 975+
-**Sessions:** 14-17 (50%→60%), 18 (60→64%), 19 (64→66%), 20 (66→71%), 21 (71→72.9%), 22 (72.9→74.4%), 23 (74.4→75.5%), 24 (96% of 3958), 25 (63.8%→67.5%), 26 (67.5→69.1%), 27-28 (69.3%→70.7% of 3781), 29 (70.7%→71.6%)
+**Sessions:** 14-28 (50→71.6%), 29-39 (71.6→96%), 40-45 (96→97.6%), 46 (97.6→100%)
 
 ## Entry Point and Lifecycle
 
@@ -1863,3 +1863,92 @@ Offset | Field | Description
 | 0x004857d9 | D3DXMesh_ConvertAdjacencyToStrip | Builds adjacency and converts to strips (32-bit, MeshData_Init) |
 | 0x00485ad9 | D3DXMesh_ConvertAdjacencyToStrip16 | 16-bit adjacency-to-strip conversion (MeshSubMesh_Init) |
 | 0x00485dd7 | D3DXMesh_OptimizeFull | Full mesh optimization pipeline (adjacency, attr sort, vcache, strip, reorder) |
+
+## CRT Exception Handling (Session 46)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x004ba59f | Exception_ScalarDeletingDtor | Exception scalar deleting destructor |
+| 0x004ba5bb | Exception_VbaseDtor | Exception vbase destructor |
+| 0x004ba5c6 | CRT_ThrowInvalidStringPosition | Throws "invalid string position" |
+| 0x004ba65e | BadAlloc_VbaseDtor | bad_alloc vbase destructor |
+| 0x004ba669 | BadAlloc_ScalarDeletingDtor | bad_alloc scalar deleting destructor |
+| 0x004ba69d | CRT_ThrowBadAlloc | Throws "bad allocation" |
+| 0x004ba6fe | CRT_InitFPFuncTable | Initializes CRT floating-point function pointers |
+| 0x004ba736 | CRT_InitFPState | Initializes FP state (FDIV check) |
+| 0x004ba8ac | EH_FrameHandler | C++ exception frame handler |
+| 0x004ba997 | CRT_PurecallPush | Push handler onto _purecall list |
+| 0x004ba9bf | CRT_PurecallCheck | Check if handler in _purecall list |
+| 0x004baa2c | EH_CallSettingFrame | Call __CallSettingFrame wrapper |
+| 0x004baa7d | EH_NotifyCB | C++ EH notification callback |
+| 0x004bac02 | CRT_SaveSEHContext | Save SEH context (EAX/EBP/ret) |
+| 0x004793d8 | DllEntryPoint | DLL entry point |
+
+## CRT Standard Library (Session 46)
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x004baf41 | CRT_ArrayUnwind1 | Array unwind helper (4 args) |
+| 0x004bafa3 | CRT_ArrayUnwind2 | Array unwind helper (alt params) |
+| 0x004bb411 | CRT_LeaveCritSec8 | LeaveCriticalSection(8) |
+| 0x004bb429 | CRT_mkdir | CRT mkdir wrapper |
+| 0x004bb455 | CRT_remove | CRT remove/delete file wrapper |
+| 0x004bb6ed | CRT_LeaveCritSec4a | LeaveCriticalSection(4) variant |
+| 0x004bb77d | CRT_LeaveCritSec4b | LeaveCriticalSection(4) variant |
+| 0x004bb92c | CRT_LeaveCritSec4c | LeaveCriticalSection(4) variant |
+| 0x004bb9a1 | CRT_Lock8 | __lock(8) wrapper |
+| 0x004bb9aa | CRT_LeaveCritSec8b | LeaveCriticalSection(8) variant |
+| 0x004bb9b3 | CRT_Initterm | Run init/term function arrays |
+| 0x004bba18 | CRT_ExitProcess | CRT ExitProcess with cleanup |
+| 0x004bbb0d | CRT_ExitProcessNoCleanup | ExitProcess without full cleanup |
+| 0x004bbbc0 | CRT_UnlockFile | __unlock_file wrapper |
+| 0x004bbc1a | CRT_UnlockFileEbp | __unlock_file via EBP |
+| 0x004bbc24 | CRT_fsopen | __fsopen wrapper |
+| 0x004bbc40 | FPU_AsinWrapper | FPU asin() wrapper |
+| 0x004bbc5d | FPU_AsinHelper | FPU asin error handling |
+| 0x004bbd0b | FPU_IsFinite | Check if double is finite |
+| 0x004bbd20 | FPU_ClassifyDouble | Classify double (FP_CLASS) |
+| 0x004bbe60 | FPU_RoundDouble | CRT round double with error handling |
+| 0x004bbf81 | StdException_Ctor | std::exception constructor |
+| 0x004bc058 | TypeInfo_Dtor | type_info destructor |
+| 0x004bc081 | TypeInfo_ScalarDeletingDtor | type_info scalar deleting destructor |
+| 0x004bc339 | CRT_UnlockFileEbp14 | __unlock_file via EBP+0x14 |
+| 0x004bc768 | CRT_vsprintf | CRT vsprintf implementation |
+| 0x004bc9c8 | CRT_UnlockFileEbp8 | __unlock_file via EBP+8 |
+| 0x004bcabe | CRT_LeaveCritSec4d | LeaveCriticalSection(4) variant |
+| 0x004bcc68 | CRT_UnlockFileEbp8b | __unlock_file via EBP+8 variant |
+| 0x004bcd9d | CRT_UnlockFileEbp14b | __unlock_file via EBP+0x14 variant |
+| 0x004bce60 | CRT_qsort | CRT qsort implementation |
+| 0x004bd37d | CRT_DivCeil | Ceiling division helper |
+| 0x004bd397 | CRT_GetLocalePtr | Get locale pointer |
+| 0x004bd39d | CRT_FreeLocale | Free locale struct |
+| 0x004bd467 | CRT_SetupThreadLocale | Setup thread locale |
+| 0x004bd55b | CRT_LeaveCritSec12 | LeaveCriticalSection(12) |
+| 0x004bd760 | FPU_FdivThunk | FPU fdiv thunk (SSE/fallback) |
+| 0x004bd7bd | FPU_FdivHelper | FPU fdiv software emulation |
+| 0x004bd982 | FPU_RoundCheck | FPU round check (no-op if already round) |
+| 0x004bdf67 | CRT_cvtToScientific | CRT double-to-scientific conversion |
+| 0x004bdfdb | CRT_FormatFractional | Format fractional part of float |
+| 0x004be077 | CRT_cftof | Float format (%f) |
+| 0x004be0df | CRT_cftoe | Float format (%e scientific) |
+| 0x004be1d0 | CRT_SetFPUAffinity | Set FPU affinity mask |
+| 0x004be36b | CRT_ReleaseTranslator | Release SEH translator count |
+| 0x004be3cb | CRT_NLSStrLen | NLS string length |
+| 0x004be3e8 | EH_CallCatchBlock | EH catch block caller |
+| 0x004be52b | EH_UnwindAndRestore | Unwind and restore EH state |
+| 0x004be772 | EH_SearchEnclosingCatch | Search for enclosing catch handler |
+| 0x004be832 | EH_SearchExceptionHandler | Full EH exception handler search |
+| 0x004beb18 | CRT_MTDeleteLocks | Free TLS + delete MT locks |
+| 0x004beba7 | CRT_MTInitTLS | Init TLS slot for multithreading |
+| 0x004bec6c | CRT_StrtodScan | strtod scanning/parser |
+| 0x004bed07 | CRT_GetCharType | Get character type info (NLS) |
+| 0x004bef25 | CRT_WriteFormatted | Full printf-style formatted output |
+| 0x004bf708 | CRT_CheckThrowInfo | Validate throw info, call SEH handler |
+| 0x004bf761 | CRT_SetUnhandledExceptionFilter | SetUnhandledExceptionFilter wrapper |
+| 0x004bf7db | CRT_LeaveCritSec4e | LeaveCriticalSection(4) variant |
+| 0x004bf7e4 | CRT_RuntimeError | Runtime error message box |
+| 0x004bfaf8 | CRT_ScanMBCSWhitespace | Skip whitespace in MBCS string |
+| 0x004bfc28 | CRT_ParseCommandLine | Parse command line into argv |
+| 0x004bfd94 | CRT_GetMainArgs | __getmainargs implementation |
+| 0x004bff58 | CRT_IOInit | CRT I/O initialization (stdin/stdout/stderr) |
+| 0x004c0fc9 | CRT_UnlockFileHandle | __unlock_fhandle wrapper |
