@@ -384,61 +384,7 @@ static void render_ground_grid(void) {
     glEnable(GL_LIGHTING);
 }
 
-static void render_hud(void) {
-    glDisable(GL_LIGHTING);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_FOG);
-    
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-    glOrtho(0, g_screen_width, g_screen_height, 0, -1, 1);
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-    
-    /* Speed bar */
-    float speed = physics_get_speed();
-    float bar_w = speed * 0.5f;
-    if (bar_w > 200.0f) bar_w = 200.0f;
-    
-    glColor4f(0, 0, 0, 0.5f);
-    glBegin(GL_QUADS);
-    glVertex2f(8, 8); glVertex2f(218, 8);
-    glVertex2f(218, 28); glVertex2f(8, 28);
-    glEnd();
-    
-    glColor4f(0.2f, 0.8f, 0.2f, 0.8f);
-    glBegin(GL_QUADS);
-    glVertex2f(10, 10); glVertex2f(10 + bar_w, 10);
-    glVertex2f(10 + bar_w, 26); glVertex2f(10, 26);
-    glEnd();
-    
-    /* Level name */
-    glColor4f(1, 1, 1, 0.7f);
-    /* Simple text rendering via glRasterPos + bitmap (very basic) */
-    glRasterPos2f(10, g_screen_height - 20);
-    
-    /* FPS display */
-    char fps_str[32];
-    snprintf(fps_str, sizeof(fps_str), "FPS: %d  Objects: %d", 
-             g_current_fps, g_level ? g_level->object_count : 0);
-    glRasterPos2f(g_screen_width - 250, 20);
-    
-    /* State display */
-    const char *state_names[] = {"LOADING", "MENU", "COUNTDOWN", "RACING", "RESULTS"};
-    int si = (g_state >= 0 && g_state <= 4) ? g_state : 0;
-    glRasterPos2f(g_screen_width - 250, 40);
-    
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();
-    
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
-    glEnable(GL_FOG);
-}
+/* ===== Unused old HUD — now in ui.c ===== */
 
 /* ===== Update (mirrors App_Run game loop tick) ===== */
 static void handle_events(void) {
@@ -450,7 +396,34 @@ static void handle_events(void) {
                 break;
             case SDL_KEYDOWN:
                 if (e.key.keysym.sym == SDLK_ESCAPE) {
-                    g_running = false;
+                    if (g_state == GAME_STATE_RACING)
+                        g_state = GAME_STATE_MENU;
+                    else
+                        g_running = false;
+                }
+                /* Menu input */
+                if (g_state == GAME_STATE_MENU) {
+                    if (e.key.keysym.sym == SDLK_UP) {
+                        /* move selection up */
+                    }
+                    if (e.key.keysym.sym == SDLK_DOWN) {
+                        /* move selection down */
+                    }
+                    if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_SPACE) {
+                        /* Start race */
+                        g_state = GAME_STATE_RACING;
+                        /* Reset ball to start position */
+                        vec3_t start = {0, 35.0f, 0};
+                        for (int i = 0; i < (g_level ? g_level->object_count : 0); i++) {
+                            if (g_level->objects[i].type == MW_OBJ_START) {
+                                start.x = g_level->objects[i].position.x;
+                                start.y = g_level->objects[i].position.y + 35.0f;
+                                start.z = g_level->objects[i].position.z;
+                                break;
+                            }
+                        }
+                        ball_reset(start);
+                    }
                 }
                 break;
             case SDL_WINDOWEVENT:
@@ -496,6 +469,9 @@ int main(int argc, char *argv[]) {
     /* Step 5: Input init */
     init_input();
     
+    /* Step 5b: UI init */
+    ui_init();
+    
     /* Step 6: Find game assets */
     const char *game_dir = find_game_dir();
     if (!game_dir) {
@@ -507,7 +483,7 @@ int main(int argc, char *argv[]) {
     /* Step 7: Load assets */
     if (load_assets(game_dir) < 0) return 1;
     
-    g_state = GAME_STATE_RACING; /* Skip menu for now, go straight to gameplay */
+    g_state = GAME_STATE_MENU; /* Start at title screen */
     
     /* Step 8: Run game loop (mirrors App_Run 0x46BD80) */
     uint32_t last_frame = SDL_GetTicks();
@@ -526,10 +502,27 @@ int main(int argc, char *argv[]) {
         
         /* Update (matches Scene_Update 0x419C00) */
         float dt = 1.0f / TARGET_FPS;
-        physics_update(dt);
         
-        /* Render (matches Scene_Render 0x41A2E0 → Scene_RenderAllObjects) */
+        if (g_state == GAME_STATE_MENU) {
+            ui_update(dt);
+        } else if (g_state == GAME_STATE_RACING) {
+            physics_update(dt);
+        }
+        
+        /* Render */
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        if (g_state == GAME_STATE_MENU) {
+            /* Title screen rendering */
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            float aspect = (float)g_screen_width / (float)g_screen_height;
+            gluPerspective(60.0f, aspect, 1.0f, 2000.0f);
+            glMatrixMode(GL_MODELVIEW);
+            glLoadIdentity();
+            gluLookAt(0, 100, 300, 0, 0, 0, 0, 1, 0);
+            ui_render_title(g_screen_width, g_screen_height);
+        } else {
         
         /* Set projection (matches Graphics_SetViewport 0x454B50) */
         glMatrixMode(GL_PROJECTION);
@@ -556,7 +549,10 @@ int main(int argc, char *argv[]) {
         render_ball();
         
         /* UI overlay (matches Scene_RenderScoreHUD 0x41A560) */
-        render_hud();
+        ui_render_hud(g_screen_width, g_screen_height, 
+                      physics_get_speed(), g_current_fps,
+                      g_level ? g_level->object_count : 0);
+        } /* end else (gameplay rendering) */
         
         /* Present (matches Graphics_PresentOrEnd 0x455A90) */
         SDL_GL_SwapWindow(g_window);

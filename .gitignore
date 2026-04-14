@@ -12,7 +12,7 @@ reimpl/mingw-libs/*.zip
 # Release builds
 releases/
 
-# Original game binaries (copyrighted, not for redistribution)
+# Original game binaries (copyrighted - not ours to redistribute)
 originals/installed/extracted/Hamsterball.exe
 originals/installed/extracted/bass.dll
 originals/installed/extracted/unins000.exe
