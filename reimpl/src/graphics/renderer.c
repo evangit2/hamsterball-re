@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <SDL2/SDL.h>
-#include <GL/glew.h>
+#include "graphics/gl_loader.h"
 
 #include "graphics/renderer.h"
 
@@ -51,9 +51,8 @@ bool renderer_init(int width, int height) {
         return false;
     }
     
-    GLenum err = glewInit();
-    if (err != GLEW_OK) {
-        fprintf(stderr, "[RENDERER] GLEW init failed: %s\n", glewGetErrorString(err));
+    if (gl_loader_init() != 0) {
+        fprintf(stderr, "[RENDERER] GL extension init failed\n");
         return false;
     }
     

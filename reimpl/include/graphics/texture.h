@@ -3,7 +3,7 @@
 #define TEXTURE_H
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <GL/glew.h>
+#include "graphics/gl_loader.h"
 #include <stdint.h>
 
 typedef struct {

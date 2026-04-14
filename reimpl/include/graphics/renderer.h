@@ -8,7 +8,7 @@
 
 #include <stdbool.h>
 #include <SDL2/SDL.h>
-#include <GL/glew.h>
+#include "graphics/gl_loader.h"
 #include "physics/physics.h"
 
 bool renderer_init(int width, int height);

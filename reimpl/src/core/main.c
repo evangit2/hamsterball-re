@@ -29,7 +29,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_mixer.h>
-#include <GL/glew.h>
+#include "graphics/gl_loader.h"
 
 #include "core/game.h"
 #include "core/config.h"
@@ -129,10 +129,9 @@ static int init_window(void) {
     SDL_GL_MakeCurrent(g_window, g_gl_context);
     SDL_GL_SetSwapInterval(1); /* VSync */
     
-    glewExperimental = GL_TRUE;
-    GLenum glew_err = glewInit();
-    if (glew_err != GLEW_OK) {
-        fprintf(stderr, "GLEW init failed: %s\n", glewGetErrorString(glew_err));
+    /* Initialize GL extensions (platform-agnostic via gl_loader.h) */
+    if (gl_loader_init() != 0) {
+        fprintf(stderr, "GL extension init failed\n");
         return -1;
     }
     
