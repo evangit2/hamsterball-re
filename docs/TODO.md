@@ -75,19 +75,28 @@
 - [x] Decompile Scene_dtor (0x419770) - master scene destructor
 - [x] Decompile Scene_Update (0x419C00) - main tick function
 - [x] Decompile Scene_Render (0x41A2E0) - 1P/2P/split render
-- [x] Decompile Scene_SetCamera (0x419FA0) - camera positioning
+- [x] Decompile Scene_SetCamera (0x419FA0) - camera positioning (5 modes)
 - [x] Decompile Scene_RenderWithCamera (0x40DFA0) - two-pass render
+- [x] Decompile Scene_UpdateBallsAndState (0x41B540) - per-ball physics + respawn
+- [x] Decompile Scene_HandleRaceEnd (0x41B130) - race finish conditions
+- [x] Decompile Scene_HandleCountdown (0x41A540) - race countdown
+- [x] Decompile Gear_AdvanceAlongPath (0x418930) - 8-sample gradient descent path follower
+- [x] Document Ball_Update (0x405E00) - 23-step physics pipeline
+- [x] Document Ball vtable (0x4CF3A0, 9 entries) and App_Run loop (0x46BD80)
+- [x] Document Scene vtable (0x4D0260, 36 entries, all named)
 - [x] Document SceneObject class (vtable 0x4D934C, 0xD4 bytes)
 - [x] Document 8 level setup functions (leveldark through levelup)
 - [x] Document 3 reflection render passes
 - [x] Document scene object lists (6 lists at known offsets)
-- [x] Document Scene vtable layout (36 entries at 0x4D0260)
-- [x] Document SceneObject vtable layout (10 entries at 0x4D934C)
 - [x] Document all 14 RumbleBoard arena init functions
 - [x] Document Board (Tournament) constructors (Toob/Rodenthood level8)
+- [x] Deep doc: SCENE_SYSTEM_DECOMP.md with full tick order, render pipeline, camera modes
 - [ ] Document remaining level setup functions (level11-15, if they exist as Scene_Setup)
 - [ ] Reconstruct full Scene structure layout (all +0x864 offsets and beyond)
 - [ ] Document collision event dispatch per level
+- [ ] Level_UpdateAndRender (0x40B600) - level geometry rendering
+- [ ] Level_RenderObjects (0x40B570) - opaque/transparent object rendering
+- [ ] Scene_CheckPath (0x41C5B0) - rail/track snapping for camera
 
 ## Milestone 10: Rendering Pipeline Documentation 🔄
 - [x] Document SceneObject_RenderFull (0x470150) - full render with alpha path
