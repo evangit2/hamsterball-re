@@ -1,1 +1,1 @@
-Session 38 progress: 91.5% (3459/3781) - 103 renames
+Session 38 final: 91.9% (3475/3781) - 111 renames
