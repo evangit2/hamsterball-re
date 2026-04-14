@@ -205,6 +205,96 @@ The collision system is called from `Ball_Update` (0x405190) every frame:
 1. Ball computes desired new position from velocity + forces
 2. `Ball_CollisionCheck` tests the mesh via `Mesh_FindClosestCollision`
 3. `Ball_AdvancePositionOrCollision` updates position, detects collision
-4. On collision: velocity zeroed, accumulated distance reset, material tracked
-5. On no collision: advance freely, accumulate trail data
+5. On collision: velocity zeroed, accumulated distance reset, material tracked
+6. On no collision: advance freely, accumulate trail data
+
+## Collision Event Dispatch System
+
+The collision system dispatches game events when the ball hits specific object types.
+There are two dispatchers: Level_HandleCollision (for level objects) and Arena_HandleCollision (for RumbleBoard arena objects).
+
+### Level_HandleCollision (0x40DCD0) — Level Objects
+
+String-based dispatch on collider type name (collider+0x864):
+
+| Type Name | Behavior |
+|-----------|----------|
+| "E:CATAPULTBOTTOM" | Catapult_Launch if ball cooldown < 1, play catapult sound |
+| "E:OPENSESAME" | Trapdoor_Open on first door in list |
+| "N:TRAPDOOR" | Trapdoor_Activate on doors matching collider ID |
+| "E:BITE" | Set damage=25.0 (damage_amount+0x43A0, damage_timer+0x43A8) |
+| "E:MACETRIGGER" | Set active=1 for all maces in mace list |
+| "N:MACE" | Ball bounce callback (vtable[0x20]) if mace is moving |
+
+### Arena_HandleCollision (0x40E6A0) — RumbleBoard Arena Objects
+
+| Type Name | Behavior |
+|-----------|----------|
+| "E:CALLHAMMER" | CreateBonkPopup (tournament only) |
+| "E:HAMMERCHASE" | Hammer_ChaseStart (tournament only) |
+| "E:ALERTSAW1"/"ALERTSAW2" | Saw_AlertActivate (warning phase) |
+| "E:ACTIVATESAW1"/"ACTIVATESAW2" | Saw_Activate (full activation) |
+| "E:ALERTJUDGES" | Judge_Reset for all judges |
+| "E:SCORE\<time\>" | ScoreDisplay_SetTime parsed from suffix |
+| "E:JUMP" | Jump pad: cooldown=10, vert_vel=0.008, vert_vel_on=1, play sound |
+| "E:BELL\<suffix\>" | Bell_Activate, add 500 bonus time if not playing |
+
+### Level_LoadCollision (0x65260) — Collision File Format
+
+Binary .COL file format loaded at level startup:
+
+```
+Header: 24 bytes into MeshWorld+0x45C (transform/flags)
+int32: sublevel_count
+
+If sublevel_count < 1 (single-mesh mode):
+  int32: object_count
+  For each object:
+    CreateMeshBuffer(0x874 bytes)
+    int32: name_length
+    char[name_length]: name string ("N:"=interactive, "E:"=event)
+    int32: face_count
+    For each face (0x60 bytes each):
+      9 floats: v0, v1, v2 positions (3 floats each)
+      Compute normal via cross product, normalize via SIMD
+      Same normal stored for all 3 verts (flat shading)
+
+If sublevel_count >= 1 (multi-level mode):
+  scene->is_sprite_mode = 1
+  For each sublevel: Level_ctor + vtable[0x60](file) recursive load
+```
+
+### CollisionFace Structure (0x60 bytes)
+
+| Offset | Field | Description |
+|--------|-------|-------------|
+| +0x00 | v0.x | Vertex 0 X |
+| +0x04 | v0.y | Vertex 0 Y |
+| +0x08 | v0.z | Vertex 0 Z |
+| +0x0C | n0.x | Face normal X (flat, same for all verts) |
+| +0x10 | n0.y | Face normal Y |
+| +0x14 | n0.z | Face normal Z |
+| +0x18 | v1.x | Vertex 1 X |
+| +0x1C | v1.y | Vertex 1 Y |
+| +0x20 | v1.z | Vertex 1 Z |
+| +0x24 | n1.x | Face normal X (same as n0) |
+| +0x28 | n1.y | Face normal Y |
+| +0x2C | n1.z | Face normal Z |
+| +0x30 | v2.x | Vertex 2 X |
+| +0x34 | v2.y | Vertex 2 Y |
+| +0x38 | v2.z | Vertex 2 Z |
+| +0x3C | n2.x | Face normal X (same as n0) |
+| +0x40 | n2.y | Face normal Y |
+| +0x44 | n2.z | Face normal Z |
+
+### MeshBuffer Structure (0x874 bytes)
+
+| Offset | Field | Description |
+|--------|-------|-------------|
+| +0x000 | vtable | CollisionMesh vtable |
+| +0x00C | AthenaList | Face list |
+| +0x217 | byte | render_flag (=0) |
+| +0x85D | byte | interactive_flag (1 for N:/E: prefixes) |
+| +0x863 | byte | no_render_flag (1 for E: prefix only) |
+| +0x864 | char* | Type name string ("N:WALL", "E:CATAPULTBOTTOM", etc.) |
 6. Vtable[0x1C] callback handles gravity-plane-aware collision (tilted/flat modes)
