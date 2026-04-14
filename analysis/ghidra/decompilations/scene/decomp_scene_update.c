@@ -1,104 +1,100 @@
-/* Scene_Update - Main game tick function
- * Address: 0x419C00
- * Called from: App_Run game loop (0x46BD80) via vtable offset 0x20
- * 
- * Scene struct offsets (int-indexed, multiply by 4 for byte offset):
- * 
- * TICK COUNTER:
- *   [0xD88] = tick_count (incremented each frame)
+/* Scene_Update (0x419C00) - Main Game Tick Deep Documentation
  *
- * DEMO TIMER SYSTEM:
- *   [0x10D6] = demo_timer_active (bool, demo version countdown)
- *   [0x10D7] = demo_countdown (decremented each tick)
- *   [0x10D8] = demo_accumulator (float time accumulator for popup)
- *   [0x10D9] = demo_frame_counter
- *   [0x10DA] = demo_menu_suppressed (bool, skip menu if too many objects)
+ * This is THE central game loop function. Called every frame from App_Run.
+ * Handles demo timer, input, ball propagation, object updates, physics.
  *
- * When demo_countdown hits 0:
- *   - Resets accumulators
- *   - Spawns ScoreDisplay_CtorC with "You have reached the end of the demo..."
- *   - Adds to object list via Scene_AddObject
- *   - Disables further demo timer
+ * ═══════════════════════════════════════════════════════════════
+ * SCENE_UPDATE EXECUTION ORDER
+ * ═══════════════════════════════════════════════════════════════
  *
- * ESCAPE/PAUSE CHECK:
- *   [0x21E] = app_ptr (back-pointer to App singleton)
- *     +0x5FC = game_mode (3=menu, 4=countdown - these skip ESC check)
- *   [0x220] = pause_suppressed (bool, disable pause menu)
- *   Input_CheckKeyCombo(app, 2) - checks ESC key
- *   Scene_CreateGameOverMenu(scene, 1) - creates pause/quit menu
+ * STEP 1: Frame counter increment
+ *   this+0xD88 (= 0x3620) = frame counter (incremented each tick)
  *
- * BALL POSITION UPDATE:
- *   [0xA6C] = ball_positions_dirty (bool flag)
- *   [0xA75] = ball_list_iterator_index
- *   [0xA76] = ball_list_size
- *   [0xA77] = ball_list_current
- *   [0xB78] = ball_list_ptr (pointer to ball pointer array)
- *   For each ball: Ball_SetTargetPos(ball, ball->pos.x, ball->pos.y, ball->pos.z)
- *     Ball struct offsets: +0x164=X, +0x168=Y, +0x16C=Z
- *   Clears ball_positions_dirty after update
+ * STEP 2: Demo timer check (if this+0x10D6 != 0)
+ *   this+0x10D7 (0x438C) = demo countdown timer, decremented
+ *   When timer reaches 0:
+ *     this+0x10D8 (0x4390) = frame counter reset to 0
+ *     this+0x10D9 (0x4394) = secondary counter reset to 0  
+ *   If elapsed > DAT_004D039C (demo time limit):
+ *     this+0x21D (0x874) = bool = 1 (showing demo popup)
+ *     Create ScoreDisplay_CtorC with "You have reached the end of the
+ *       demo version..." message
+ *     Scene_AddObject to add the popup
+ *     this+0x10D6 (0x4388) = 0 (disable demo timer)
+ *     Increment this+0x10D8 by DAT_004CF3E0 (demo timer step)
  *
- * PATH-FOLLOWING GEAR:
- *   [0xD8B] = gear_object_list (AthenaList of Gear objects)
- *   [0xFC7] = gear_has_active_path (bool)
- *   [0xFC8] = gear_path_follower (Gear struct)
- *   When exactly 1 gear object exists AND has active path:
- *     Reads camera position from app->camera (+0x5DC, offsets +0x758/75C/760)
- *     Calls Gear_AdvanceAlongPath(gear, camX, camY, camZ)
- *     -> Gear follows spline path with gradient descent collision avoidance
+ * STEP 3: ESC key / menu check
+ *   If this+0x10DA == 0 OR objects < 2:
+ *     If App+0x5FC input mode not 3-4, and this+0x220 paused flag == 0:
+ *       Input_CheckKeyCombo(App, 2) → Scene_CreateGameOverMenu(this, 1)
  *
- * RUMBLE BOARD TIMERS:
- *   [0x221] = rumble_timer_1 (RumbleBoard at offset 0x221*4=0x884)
- *   [0x226] = rumble_timer_2 (RumbleBoard at offset 0x226*4=0x898)
- *   RumbleBoard_TickTimer called for each
+ * STEP 4: Ball position propagation (if this+0xA6C != 0)
+ *   Iterate ball list at this+0xA75
+ *   For each ball: Ball_SetTargetPos(ball, ball+0x164, ball+0x168, ball+0x16C)
+ *   Set this+0xA6C = 0 (propagation done)
  *
- * RUMBLE INTENSITY DECAY:
- *   [0xE93] = rumble_active (bool)
- *   [0xA6E] = rumble_intensity (starts at -800, decays by -10 per frame when active)
- *   When rumble_active: target=-800, else target=0
- *   If intensity not at target and overflow condition met: intensity -= 10
+ * STEP 5: Gear path following (if objects==1 AND this+0xFC7 != 0)
+ *   Read position from App+0x5DC → +0x758/75C/760
+ *   Gear_AdvanceAlongPath(this+0xFC8, X, Y, Z)
  *
- * OBJECT UPDATE LOOP (SceneObject list at [0x22E]):
- *   [0x22E] = scene_object_list (AthenaList)
- *   [0x22F] = scene_object_count
- *   [0x230] = scene_object_iterator_index
- *   [0x331] = scene_object_array_ptr
- *   For each SceneObject:
- *     vtable[1]() - Update function
- *     if (obj->flags +0x18 != 0):
- *       thunk_Gfx_SetRenderState(scene_obj_list, obj)
- *       vtable[0]() - Render function
- * 
- * PHYSICS/COLLISION UPDATE (when NOT single-gear or camera-locked):
- *   Calls via Scene vtable:
- *     [0x4C]() - UpdateBallPhysics / Step1
- *     [0x50]() - UpdateCollisions / Step2
- *     [0x54]() - ResolveCollisions / Step3
- *     [0x58]() - PostPhysicsUpdate / Step4
+ * STEP 6: Rumble timer ticks
+ *   RumbleBoard_TickTimer(this+0x221)
+ *   RumbleBoard_TickTimer(this+0x226)
  *
- * LEVEL OBJECT UPDATE (another AthenaList at [0xD8B]):
- *   [0xD8C] = level_object_count
- *   [0xD8D] = level_object_iterator_index
- *   [0xE8E] = level_object_array_ptr
- *   For each level object: Scene vtable[0x7C]() - LevelObjectUpdate
+ * STEP 7: Rumble camera shake decay
+ *   this+0xE93 = shake_active flag
+ *   this+0xA6E = shake_magnitude (decays by -10 per frame when > -800)
+ *   When shake_active: target is -800, when not: target is 0
+ *   If crossing zero → stop decay
  *
- * POST-UPDATE CALLBACK:
- *   [0xEBF] = post_update_callback_obj
- *   callback_obj->vtable[1]() - Final cleanup/notifications
+ * STEP 8: Scene object update + render
+ *   Iterate this+0x22E (AthenaList of scene objects)
+ *   For each object:
+ *     obj->vtable[4]() — Update tick
+ *     If obj+0x18 (flag) != 0:
+ *       Gfx_SetRenderState(scene, obj) — apply render state
+ *       obj->vtable[0]() — Render tick
  *
- * EXECUTION ORDER SUMMARY:
- *   1. Increment tick counter
- *   2. Demo timer check (demo version popup)
- *   3. ESC/pause key check
- *   4. Ball position propagation (dirty flag)
- *   5. Gear path following
- *   6. Rumble board timers tick
- *   7. Rumble intensity decay
- *   8. SceneObject update+render loop
- *   9. Physics pipeline (4 vtable calls)
- *   10. Level object update loop
- *   11. Post-update callback
+ * STEP 9: Physics pipeline (if single player OR App+0x5DC[0x14C]==0)
+ *   this->vtable[0x4C]() — Physics step 1
+ *   this->vtable[0x50]() — Physics step 2
+ *   this->vtable[0x54]() — Physics step 3
+ *   this->vtable[0x58]() — Physics step 4
+ *   Iterate this+0xD8B (physics objects list):
+ *     obj->vtable[0x7C]() — Object physics update
+ *   this+0xEBF+0x04() — Post-physics callback
+ *
+ * ═══════════════════════════════════════════════════════════════
+ * SCENE OFFSETS (from this pointer)
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * +0x022E: scene_objects (AthenaList) — object list for update/render
+ * +0x022F: object_count (int)
+ * +0x0331: object_array (void**)
+ * +0x0A6C: ball_propagate_flag (byte, 1 = need to propagate)
+ * +0x0A6E: camera_shake_magnitude (int, decays to 0 or -800)
+ * +0x0A75: ball_list (AthenaList<Ball*>)
+ * +0x0A76: ball_count
+ * +0x0A77: ball_iterator
+ * +0x0B78: ball_array (Ball**)
+ * +0x0D88: frame_counter (int, incremented each tick)
+ * +0x0D8B: physics_objects (AthenaList)
+ * +0x0D8C: physics_count
+ * +0x0D8D: physics_iterator
+ * +0x0E8E: physics_array
+ * +0x0E93: camera_shake_active (bool)
+ * +0x0FC7: gear_enabled (bool, for single-gear mode)
+ * +0x0FC8: gear_path (Gear path data)
+ * +0x10D6: demo_timer_active (int, !=0 = counting down)
+ * +0x10D7: demo_timer_countdown (int, frames remaining)
+ * +0x10D8: demo_elapsed_frames (int)
+ * +0x10D9: demo_frame_counter (int)
+ * +0x10DA: demo_ignore_esc (byte, 0 = allow ESC)
+ * +0x10DA: demo_shown_popup (byte)
+ * +0x21D:  showing_demo_popup (byte)
+ * +0x21E:  App* (back-pointer for scene)
+ * +0x220:  paused_flag (byte)
+ * +0x221:  RumbleBoard timer 1 (0x14 bytes)
+ * +0x226:  RumbleBoard timer 2 (0x14 bytes)
+ * +0xEBF:  post_physics_callback (function pointer)
  */
-void __fastcall Scene_Update(int *param_1)
-{
-    // Full decompilation saved - see comments above for documented offsets
-}
