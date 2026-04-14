@@ -1,18 +1,13 @@
-# Binaries - executables and DLLs
-*.exe
-*.dll
-
-# Zips/archives
-*.zip
-
-# Ghidra project database files (binary)
-analysis/ghidra/HamsterballProject/
-
 # Build artifacts
 reimpl/build/
-*.o
-*.obj
+reimpl/build-win64/
 
-# IDE
-.vscode/
-.idea/
+# Downloaded SDKs (rebuild with build_windows.sh)
+reimpl/mingw-libs/SDL2-*/
+reimpl/mingw-libs/SDL2_image-*/
+reimpl/mingw-libs/SDL2_mixer-*/
+reimpl/mingw-libs/glew-*/
+reimpl/mingw-libs/*.zip
+
+# Release builds (tracked via git-lfs or releases)
+releases/
