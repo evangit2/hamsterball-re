@@ -401,28 +401,33 @@ static void handle_events(void) {
                     else
                         g_running = false;
                 }
-                /* Menu input */
+                /* Menu input (wired to ui.c) */
                 if (g_state == GAME_STATE_MENU) {
                     if (e.key.keysym.sym == SDLK_UP) {
-                        /* move selection up */
+                        ui_handle_key_up();
                     }
                     if (e.key.keysym.sym == SDLK_DOWN) {
-                        /* move selection down */
+                        ui_handle_key_down();
                     }
                     if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_SPACE) {
-                        /* Start race */
-                        g_state = GAME_STATE_RACING;
-                        /* Reset ball to start position */
-                        vec3_t start = {0, 35.0f, 0};
-                        for (int i = 0; i < (g_level ? g_level->object_count : 0); i++) {
-                            if (g_level->objects[i].type == MW_OBJ_START) {
-                                start.x = g_level->objects[i].position.x;
-                                start.y = g_level->objects[i].position.y + 35.0f;
-                                start.z = g_level->objects[i].position.z;
-                                break;
+                        int sel = ui_handle_select();
+                        if (sel == UI_MENU_RACE || sel == UI_MENU_TOURNAMENT) {
+                            /* Start race */
+                            g_state = GAME_STATE_RACING;
+                            vec3_t start = {0, 35.0f, 0};
+                            for (int i = 0; i < (g_level ? g_level->object_count : 0); i++) {
+                                if (g_level->objects[i].type == MW_OBJ_START) {
+                                    start.x = g_level->objects[i].position.x;
+                                    start.y = g_level->objects[i].position.y + 35.0f;
+                                    start.z = g_level->objects[i].position.z;
+                                    break;
+                                }
                             }
+                            ball_reset(start);
+                        } else if (sel == UI_MENU_QUIT) {
+                            g_running = false;
                         }
-                        ball_reset(start);
+                        /* UI_MENU_OPTIONS:TODO */
                     }
                 }
                 break;

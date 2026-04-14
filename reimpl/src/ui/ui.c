@@ -173,6 +173,27 @@ void ui_render_hud(int screen_w, int screen_h, float speed, int fps, int obj_cou
     glEnable(GL_FOG);
 }
 
+void ui_handle_key_up(void) {
+    if (g_title_state == UI_TITLE_MAIN && g_active) {
+        g_selection--;
+        if (g_selection < 0) g_selection = UI_MENU_COUNT - 1;
+    }
+}
+
+void ui_handle_key_down(void) {
+    if (g_title_state == UI_TITLE_MAIN && g_active) {
+        g_selection++;
+        if (g_selection >= UI_MENU_COUNT) g_selection = 0;
+    }
+}
+
+int ui_handle_select(void) {
+    if (g_title_state == UI_TITLE_MAIN && g_active) {
+        return g_selection;
+    }
+    return -1;
+}
+
 int ui_get_selection(void) { return g_selection; }
 bool ui_is_active(void) { return g_active; }
 
