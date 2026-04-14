@@ -12,9 +12,11 @@ pkg_check_modules(SDL2_MIXER REQUIRED SDL2_mixer)
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 
-# Source files - exclude level_viewer.c (has its own main)
+# Source files - exclude test files and level_viewer (has its own main)
 file(GLOB_RECURSE SOURCES "src/*.c")
 list(FILTER SOURCES EXCLUDE REGEX "level_viewer\\.c$")
+list(FILTER SOURCES EXCLUDE REGEX "level_viewer_v2\\.c$")
+list(FILTER SOURCES EXCLUDE REGEX "mesh_test\\.c$")
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -24,14 +26,15 @@ include_directories(${SDL2_MIXER_INCLUDE_DIRS})
 include_directories(${OPENGL_INCLUDE_DIRS})
 
 # Build the level viewer (separate target)
-add_executable(level_viewer src/level/level_viewer.c src/level/meshworld_parser.c)
-target_link_libraries(level_viewer
+add_executable(level_viewer_v2 src/level/level_viewer_v2.c src/level/meshworld_parser.c src/level/mesh_parser.c)
+target_link_libraries(level_viewer_v2
     ${SDL2_LIBRARIES}
+    ${SDL2_IMAGE_LIBRARIES}
     ${OPENGL_LIBRARIES}
     ${GLEW_LIBRARIES}
     m
 )
-target_include_directories(level_viewer PRIVATE ${CMAKE_SOURCE_DIR}/include ${SDL2_INCLUDE_DIRS})
+target_include_directories(level_viewer_v2 PRIVATE ${CMAKE_SOURCE_DIR}/include ${SDL2_INCLUDE_DIRS})
 
 # Build the main game (all sources)
 add_executable(hamsterball ${SOURCES})
@@ -45,5 +48,27 @@ target_link_libraries(hamsterball
 )
 target_include_directories(hamsterball PRIVATE ${CMAKE_SOURCE_DIR}/include ${SDL2_INCLUDE_DIRS})
 
+# ==================== Tests ====================
+enable_testing()
+
+# Common test dependencies: filesys + mesh parsers
+set(TEST_DEPS
+    src/core/filesys.c
+    src/level/meshworld_parser.c
+    src/level/mesh_parser.c
+)
+
+# Unit test: Quick sanity tests
+add_executable(test_quick tests/test_quick.c src/core/filesys.c src/level/meshworld_parser.c src/level/mesh_parser.c)
+target_include_directories(test_quick PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(test_quick m)
+add_test(NAME quick COMMAND test_quick)
+
+# Unit test: MESH parser
+add_executable(test_mesh tests/test_mesh.c src/level/mesh_parser.c)
+target_include_directories(test_mesh PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(test_mesh m)
+add_test(NAME mesh COMMAND test_mesh)
+
 # Install targets
-install(TARGETS hamsterball level_viewer DESTINATION bin)
+install(TARGETS hamsterball level_viewer_v2 DESTINATION bin)
