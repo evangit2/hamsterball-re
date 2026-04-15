@@ -1,163 +1,144 @@
 # Camera System
 
-## Architecture Overview
-
-Hamsterball uses a dual camera system:
-1. **Race Camera** — Smooth-lerp follow camera tracking the ball through race levels
-2. **Arena/Rumble Camera** — Fixed overhead camera centered on arena (CAMERALOOKAT point)
-
-Both modes are managed through the Scene/Board object with camera parameters at fixed offsets.
+## Overview
+Hamsterball uses a 5-mode camera system controlled by `Scene_SetCamera` (0x419FA0).
+The camera follows the ball with spring-damped interpolation, and supports path-based
+rails, shake effects, snap transitions, and orbital rotation.
 
 ## Camera Modes
 
-### Race Camera (Follow Ball)
-Used during tournament / time trial races (races 4-14/15):
-- Camera position lerps toward ball position each frame
-- Called during `Ball_Update` when BALL-ON-FLOOR event (type 5, depth > 0.1)
-- `Scene_SetCamera(scene, ball, FLAG=1)` updates camera target
-- `Graphics_SetViewport` at ball current position
-- Out-of-bounds detection: if ball leaves visible area, flag `0xBA = 1` triggers respawn
+### 1. Default Follow (no flags)
+Camera target = ball position + offset (Scene+0x434C, Scene+0x4350, Scene+0x4354).
+Camera smoothly follows ball with spring damping (hardcoded 0.9 factor).
 
-### Arena/Rumble Camera (Fixed)
-Used during rumble/arena events:
-- Camera positioned above CAMERALOOKAT position in level geometry
-- Static position, does not follow ball
-- Distance 45.0 units, height 800.0 units above target
-- Found via scene hash table lookup at `this[0x22B]`
+### 2. Path Rail Mode (Scene+0x3F1C != 0)
+When a path is active, the camera rides along a spline path:
+1. `Path_GetPosition(path, &pos, path_t)` gets current path position
+2. Direction from path to ball is computed
+3. If distance < threshold → camera offset = 0 (ball on rail)
+4. If distance > threshold → offset scales linearly with sine wobble
+5. Max camera offset capped at 700.0 units
+6. `Ball_SetTargetPos` sets ball's camera target position
 
-## Camera Initialization (CameraLookAt 0x413280)
+Path rail adds a spring-like oscillation using `Wave_Sin` modulation,
+creating a rubber-band effect when the ball deviates from the path.
 
+### 3. Camera Shake (Ball+0x744 != 0)
+When shake flag is set, random offsets of ±50 units are added to camera position:
 ```
-CameraLookAt(this = Scene/Board):
-  1. Load "levels\arena-spawnplatform" as MeshWorld → this[0x10E3]
-  2. Load "levels\arena-stands" as MeshWorld → this[0x10E4]
-  3. Add meshes to scene via vtable[0x90]
-  4. Level_InitScene(this) — set projection, fog, find CAMERALOCUS
-  5. Find "CAMERALOOKAT" in scene hash table
-  6. Set camera target: this[0x10DE-0x10E0] = CAMERALOOKAT position
-  7. Set current position: this[0x10DB-0x10DD] = same (initialized)
-  8. Set parameters:
-     - this[0xA6F] = 45.0  (camera distance/zoom)
-     - this[0xA70] = 800.0 (camera height offset)
-     - this[0x10E1] = 800.0 (camera max height)
-     - this[0x10E2] = 1 (camera initialized flag)
-  9. vtable[0x54]() — post-camera render callback
+shake_x = RNG_Rand(-50, 50)
+shake_y = RNG_Rand(-50, 50)  
+shake_z = RNG_Rand(-50, 50)
+camera_pos += (shake_x, shake_y, shake_z)
 ```
 
-## Camera Offsets (in Scene/Board struct)
+### 4. Camera Snap (Scene+0x3F2C != 0, countdown frames)
+When snap countdown > 0:
+- Set ball target pos directly to ball's forward vector (Ball+0x60..0x68)
+- Set ball actual cam pos to ball's forward vector
+- Decrement countdown each frame
+Used for race start countdowns and scene transitions.
+
+### 5. Orbital Rotation (always active)
+Every frame, regardless of mode:
+```
+cos_angle = Wave_Cos(Scene+0x29BC)  // orbit angle
+sin_angle = Wave_Sin(Scene+0x29BC)  // orbit angle
+orbit_dir = (cos_angle, 0.9, sin_angle)  // slightly above horizontal
+Camera_SetView(orbit_dir, Scene+0x29C0)  // distance
+Graphics_Refresh()  // commit camera
+```
+
+## Scene_SetCamera (0x419FA0)
+
+```c
+void Scene_SetCamera(Scene* this, Ball* ball, char use_path) {
+    // Start with ball's target cam position
+    Vec3 cam_target = ball->cam_target;  // +0x758
+    Vec3 scene_offset = this->cam_offset; // +0x434C
+    Vec3 desired = cam_target + scene_offset;
+    
+    // Mode 2: Path rail (if path active and use_path enabled)
+    if (this->path_active && use_path) {
+        Vec3 path_pos = Path_GetPosition(this->path, this->path_t);
+        Vec3 delta = desired - path_pos;
+        float dist = Vec3_Length(delta);
+        
+        if (dist < threshold) {
+            // On rail - no offset
+            offset = 0.0f;
+        } else {
+            if (dist > 700.0f) dist = 700.0f;
+            dist -= MIN_DIST;  // _DAT_004cf3ec
+            float wave = Wave_Sin(dist * WAVE_SCALE);  // oscillation
+            offset = dist - dist * DAMPING * wave;  // spring
+        }
+        Vec3 offset_vec = Vec3_NormalizeAndScale(delta, offset);
+        desired = path_pos + offset_vec;
+        Ball_SetTargetPos(ball, desired.x, desired.y, desired.z);
+    }
+    
+    // Mode 3: Camera shake
+    if (ball->shake_flag) {  // +0x744
+        desired.x += RNG_Rand(-50, 50);
+        desired.y += RNG_Rand(-50, 50);
+        desired.z += RNG_Rand(-50, 50);
+    }
+    
+    // Mode 4: Camera snap (countdown)
+    if (this->snap_countdown > 0) {  // +0x3F2C
+        this->snap_countdown--;
+        desired = ball->forward;  // +0x60..0x68
+        ball->cam_actual = desired;  // +0x76C..0x774
+        ball->cam_target = desired;  // +0x758..0x760
+    }
+    
+    // Mode 5: Orbital rotation (always)
+    float cos_a = Wave_Cos(this->orbit_angle);  // +0x29BC
+    float sin_a = Wave_Sin(this->orbit_angle);
+    Vec3 orbit_dir = {cos_a, 0.9f, sin_a};
+    Camera_SetView(orbit_dir, this->orbit_distance);  // +0x29C0
+    Graphics_Refresh();
+}
+```
+
+## CameraLookAt (Arena Camera) (0x413280)
+
+Arena initialization sets up a fixed overhead camera:
+```
+1. Load "levels\arena-spawnplatform" mesh (MeshWorld_ctor, 0x10D0 bytes)
+2. Load "levels\arena-stands" mesh (MeshWorld_ctor, 0x10D0 bytes)
+3. Level_InitScene (build scene graph from loaded meshes)
+4. Find "CAMERALOOKAT" object in hash table
+5. Store target position: Scene+0x43BC..0x43C4 = CAMERALOOKAT pos
+6. Store initial position: Scene+0x43AC..0x43B4 = CAMERALOOKAT pos
+7. Set camera distance: Scene+0x29BC = 45.0f  (0x42340000)
+8. Set camera height:  Scene+0x29C0 = 800.0f  (0x44480000)
+9. Set max height:     Scene+0x43C8  = 800.0f  (0x44480000)
+10. Set camera mode:   Scene+0x43CC = 1 (orbits)
+11. Call vtable[0x54]() to apply camera settings
+```
+
+## Level_SelectCameraProfile (0x40ACA0)
+
+Selects camera profile based on level type:
+- Different profiles for: Warm Up, Beginner, Intermediate, etc.
+- Adjusts orbit distance, height, damping factor
+
+## Key Offsets
 
 | Offset | Type | Description |
 |--------|------|-------------|
-| 0x10DB | float | camera_current_X (lerps toward target) |
-| 0x10DC | float | camera_current_Y |
-| 0x10DD | float | camera_current_Z |
-| 0x10DE | float | camera_target_X (from CAMERALOOKAT) |
-| 0x10DF | float | camera_target_Y |
-| 0x10E0 | float | camera_target_Z |
-| 0x10E1 | float | camera_max_height (800.0) |
-| 0x10E2 | bool | camera_initialized (1 = active) |
-| 0x10E3 | MeshWorld* | spawn_platform_mesh |
-| 0x10E4 | MeshWorld* | stands_mesh |
-| 0xA6F | float | camera_distance (45.0 default) |
-| 0xA70 | float | camera_height_offset (800.0 default) |
-
-## Camera Profile Selection (0x40ACA0)
-
-`Level_SelectCameraProfile(app)` — Selects camera based on current race number:
-
-| Race # | App Flag | Description |
-|--------|----------|-------------|
-| 4 | App+0x85A | Race 4 camera profile |
-| 5 | App+0x85B | Race 5 camera profile |
-| 6 | App+0x85C | Race 6 camera profile |
-| 7 | App+0x866 | Race 7 camera profile |
-| 8 | App+0x85D | Race 8 camera profile |
-| 9 | App+0x85E | Race 9 camera profile |
-| 10 | App+0x85F | Race 10 camera profile |
-| 11 | App+0x860 | Race 11 camera profile |
-| 12 | App+0x867 | Race 12 camera profile |
-| 13 | App+0x861 | Race 13 camera profile |
-| 14 | App+0x862 | Race 14 camera profile |
-| 15 | App+0x868 | Race 15 camera profile |
-
-Each flag is a bool: `0` = standard camera, `1` = alternate camera profile
-- If flag == 0: `viewport[0x2A8]+4 = viewport[0x2AC]+4` (standard)
-- If flag == 1: `viewport[0x2A8]+4 = viewport[0x2B0]+4` (alternate)
-
-Races 1-3 (Warm-up, Beginner, Intermediate) use default camera profile.
-
-## Camera Update in Ball_Update
-
-Within the 18-phase ball update loop:
-- **BALL-ON-FLOOR** (event type 5, depth > 0.1):
-  - Camera follows ball: `Scene_SetCamera(scene, ball, 1)`
-  - `Graphics_SetViewport` at ball display position
-  - Out-of-bounds check → trigger respawn
-
-- **Phase 17** (Multiplayer sync):
-  - Updates 3D audio listener position from ball display_pos
-  - `SoundDevice.listeners[ball_index] = ball.display_pos`
-  - Camera does NOT explicitly update here — it's implicit in viewport
-
-## Multiplayer Viewport
-
-In multiplayer, the screen is split:
-- Player 1: top or left half
-- Player 2: bottom or right half
-- Each player has independent camera follow
-- Viewport rects at `App+0x27C/0x280/0x284/0x288/0x28C/0x290`
-- `App+0x234` determines layout (horizontal vs vertical split)
-- Mirror mode swaps cull mode: `App+0x236` → `gfx.reversed`
-
-## Vec3_Bilinear (0x459D90)
-
-Camera path interpolation:
-```
-Vec3_Bilinear(out, a, b, c, u, v):
-  // Bilinear interpolation between 4 corner points
-  // a = bottom-left, b = bottom-right, c = top-left, d = top-right
-  out.x = (d.x - b.x) * v + (c.x - a.x) * u + a.x
-  out.y = (d.y - b.y) * v + (c.y - a.y) * u + a.y
-  out.z = (d.z - b.z) * v + (c.z - a.z) * u + a.z
-```
-Used for smooth camera interpolation across camera trigger volumes.
-
-## Key Address Map
-
-| Address | Function | Description |
-|---------|----------|-------------|
-| 0x40ACA0 | Level_SelectCameraProfile | Select camera by race number |
-| 0x413280 | CameraLookAt | Initialize arena camera (CAMERALOOKAT) |
-| 0x459D90 | Vec3_Bilinear | Bilinear camera path interpolation |
-
-## Reimplementation Notes (SDL2/OpenGL)
-
-### Camera System
-```cpp
-class Camera {
-    Vec3 current_pos;    // Lerps toward target each frame
-    Vec3 target_pos;     // Set by Scene_SetCamera or CAMERALOOKAT
-    float distance = 45.0f;
-    float height = 800.0f;
-    float max_height = 800.0f;
-    
-    void Update(float dt) {
-        // Smooth follow with lerp factor
-        float lerp = 1.0f - pow(0.95f, dt * 60);  // ~0.05/frame at 60fps
-        current_pos = lerp * target_pos + (1.0f - lerp) * current_pos;
-        
-        // Position camera above and behind target
-        Vec3 eye = current_pos + Vec3(0, height, distance);
-        lookAt(eye, current_pos, Vec3::UP);
-    }
-};
-```
-
-### Multiplayer Viewport
-- Use `glViewport()` to render each player's view
-- Screen splits: horizontal or vertical based on `App+0x234` 
-- Each viewport has independent `Camera` instance
-
-### Mirror Mode
-- OpenGL: `glFrontFace(GL_CW)` for normal, `GL_CCW` for mirror
-- Need to verify: is track geometry actually mirrored, or just winding order reversed?
+| Ball+0x60..0x68 | Vec3 | Ball forward vector |
+| Ball+0x164..0x16C | Vec3 | Ball position |
+| Ball+0x758..0x760 | Vec3 | Camera target position |
+| Ball+0x76C..0x774 | Vec3 | Camera actual position |
+| Ball+0x744 | int | Camera shake flag |
+| Scene+0x29BC | float | Camera orbit angle |
+| Scene+0x29C0 | float | Camera orbit distance |
+| Scene+0x3F1C | int | Path rail active flag |
+| Scene+0x3F20 | Path* | Path object pointer |
+| Scene+0x3F24 | float | Path parameter (t) |
+| Scene+0x3F2C | int | Camera snap countdown |
+| Scene+0x434C..0x4354 | Vec3 | Camera offset from ball |
+| Scene+0x87C | Camera* | Camera object pointer |
