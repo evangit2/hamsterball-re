@@ -1,0 +1,51 @@
+# Hamsterball Reimplementation — MinGW Cross-Compile Makefile
+# Target: i686-w64-mingw32 (32-bit Windows)
+# APIs: D3D8, DInput8, DSound8, Win32
+
+CC = i686-w64-mingw32-gcc
+WINDRES = i686-w64-mingw32-windres
+
+# Flags matching original: 32-bit, no SSE2, optimize for size
+CFLAGS = -std=c11 -O2 -g -Wall -Wno-unused-variable \
+         -march=i686 -m32 \
+         -DWIN32_LEAN_AND_MEAN -D_WIN32 -D__MINGW32__ \
+         -Iinclude
+
+# Link against same DLLs as original
+LDFLAGS = -mwindows -m32 -static-libgcc -static-libstdc++
+LIBS = -ld3d8 -ldinput8 -ldsound -ldxguid -ldxerr8 -lole32 -lwinmm
+
+# Source files
+CORE_SRCS = src/core/win32_main.c
+LEVEL_SRCS = src/level/meshworld_parser.c src/level/mesh_parser.c
+
+SRCS = $(CORE_SRCS) $(LEVEL_SRCS)
+OBJS = $(SRCS:.c=.o)
+
+TARGET = hamsterball.exe
+
+.PHONY: all clean run wine deploy
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean:
+	rm -f $(OBJS) $(TARGET)
+
+# Run under Wine for development
+wine: $(TARGET)
+	wine $(TARGET)
+
+# Deploy to game directory for testing
+deploy: $(TARGET)
+	cp $(TARGET) ~/hamsterball-re/originals/installed/extracted/
+	@echo "Deployed to originals/installed/extracted/"
+
+# Test on Windows (copy to Windows-accessible path)
+deploy-win: $(TARGET)
+	cp $(TARGET) /mnt/c/Games/Hamsterball/ 2>/dev/null || echo "Not on WSL"
