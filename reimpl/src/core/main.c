@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <dirent.h>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -102,7 +103,9 @@ static const char *find_game_dir(void) {
     for (int i = 0; ASSET_SEARCH[i]; i++) {
         char test[512];
         snprintf(test, sizeof(test), "%s/Levels", ASSET_SEARCH[i]);
-        if (filesys_file_exists(test)) return ASSET_SEARCH[i];
+        /* Use opendir() instead of fopen() since Levels is a directory */
+        DIR *d = opendir(test);
+        if (d) { closedir(d); return ASSET_SEARCH[i]; }
     }
     return NULL;
 }
