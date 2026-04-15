@@ -71,7 +71,12 @@
 - INPUT_SYSTEM: Ball_GetInputForce (3-mode: keyboard/mouse/joystick), Scene_HandleInput dispatch
 - Ball physics: Ball_AdvancePositionOrCollision 6-phase pipeline (damping, collision, gravity, trail)
 - Race completion: RaceGoalReached ctor, medal thresholds, best time tracking
-- Decompilations: camera/, particles/, save/, input/, audio/, scene/, physics/
+- UI_MENU_SYSTEM_DEEP.md: 101 menu functions, MainMenu 7 items, DifficultyMenu 4 items, UIListItem 0x444B struct
+- COLLISION_SYSTEM_DEEP.md: Octree traversal, AABB, CollisionMesh 0xCB0, .COL format, 3-tier dispatch
+- FONT_TEXT_SYSTEM.md: font.description binary format, FontList struct, SDF builder, 5 fonts
+- DIRECTINPUT_SYSTEM.md: InputDevice 0x91C, 3 input modes, DIK scan codes, Scene_HandleInput
+- GAME_LOOP_WINDOW_MANAGEMENT.md: App_Run fixed-timestep, vtable dispatch, frame timing, WinMain
+- Decompilations: camera/, particles/, save/, input/, audio/, scene/, physics/, level/
 
 ## Milestone 7: Behavior-Polish and Bug Reduction
 - [ ] Match physics feel of original
