@@ -49,7 +49,7 @@
 - [x] Reverse AthenaList container class (0x53210)
 - [x] Document ball vtable and physics constants
 
-## Milestone 6: First Playable Open-Source Build 🔄
+## Milestone 6: First Playable Open-Source Build 🔄 — Phase 2 Docs Complete
 - [x] Create C project scaffold with SDL2 + OpenGL
 - [x] Implement MESH file loader
 - [x] Implement MESHWORLD file loader
