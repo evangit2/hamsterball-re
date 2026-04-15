@@ -49,7 +49,7 @@
 - [x] Reverse AthenaList container class (0x53210)
 - [x] Document ball vtable and physics constants
 
-## Milestone 6: First Playable Open-Source Build 🔄 — Phase 2 Docs Complete
+## Milestone 6: First Playable Open-Source Build 🔄 — Phase 2 Deep Docs Done
 - [x] Create C project scaffold with SDL2 + OpenGL
 - [x] Implement MESH file loader
 - [x] Implement MESHWORLD file loader
@@ -57,6 +57,21 @@
 - [ ] Implement first test level loading
 - [ ] Build and run on Linux
 - [ ] Implement collision plane system (Level_LoadCollision RE in progress)
+
+## Phase 2 Deep Documentation (Complete)
+- PARTICLE_SYSTEM.md: Ball_CreateTrailParticles (9-particle ring, RumbleScore allocator)
+- CAMERA_SYSTEM.md: 5-mode camera (follow/path/shake/snap/orbit), Scene_SetCamera offsets
+- SAVE_CONFIG_REGISTRY_SYSTEM.md: 30+ registry fields, BestTime/Medals binary blobs, App struct
+- AUDIO_SYSTEM_SFX.md: BASS music + DirectSound 3D SFX, 55 sound effects with channel counts
+- LEVEL_OBJECT_FACTORY.md: 25+ Create* functions, struct sizes, scene offsets, full factory map
+- ASSET_MANIFEST.md: Complete resource loading manifest (5 fonts, 40+ textures, 14 meshes, 55 sounds)
+- GAME_STATE_RACE_LIFECYCLE.md: App state machine, start/end race, tournament progression, timer
+- D3D8_RENDERING_PIPELINE.md: 8-pass render system, z-buffer interleaving, alpha blending, lighting
+- SCENE_STRUCT.md: 50+ Scene struct offsets, creation flow, camera config, object lists
+- INPUT_SYSTEM: Ball_GetInputForce (3-mode: keyboard/mouse/joystick), Scene_HandleInput dispatch
+- Ball physics: Ball_AdvancePositionOrCollision 6-phase pipeline (damping, collision, gravity, trail)
+- Race completion: RaceGoalReached ctor, medal thresholds, best time tracking
+- Decompilations: camera/, particles/, save/, input/, audio/, scene/, physics/
 
 ## Milestone 7: Behavior-Polish and Bug Reduction
 - [ ] Match physics feel of original
