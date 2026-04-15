@@ -50,13 +50,15 @@
 - [x] Document ball vtable and physics constants
 
 ## Milestone 6: First Playable Open-Source Build 🔄 — Phase 2 Deep Docs Done
-- [x] Create C project scaffold with SDL2 + OpenGL
+- [x] Create C project scaffold with D3D8/DInput8/DSound8 (Windows APIs)
 - [x] Implement MESH file loader
-- [x] Implement MESHWORLD file loader
-- [ ] Implement basic ball rendering and movement
-- [ ] Implement first test level loading
-- [ ] Build and run on Linux
+- [x] Implement MESHWORLD file loader  
+- [x] Build and run on Wine (D3D8 rendering works, 30K+ FPS counter)
+- [x] WinMain (0x4278E0) mirrored with full D3D8 pipeline
+- [x] Arena-WarmUp level loads: 17 objects, ball at (184.9, 26.4, 183.4)
+- [ ] Handle DirectInput window focus in Xvfb (ball movement)
 - [ ] Implement collision plane system (Level_LoadCollision RE in progress)
+- [ ] Render full MESHWORLD geometry (not just ball/objects)
 
 ## Phase 2 Deep Documentation (Complete)
 - PARTICLE_SYSTEM.md: Ball_CreateTrailParticles (9-particle ring, RumbleScore allocator)
