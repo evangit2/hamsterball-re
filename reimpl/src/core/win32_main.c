@@ -431,22 +431,11 @@ static BOOL LoadAssets(void) {
         }
     }
 
-    /* Camera defaults — position above level, looking down at center */
-    if (g_level && g_level->vertex_count > 0) {
-        float cx = (g_level->bounds_min.x + g_level->bounds_max.x) / 2.0f;
-        float cy = g_level->bounds_max.y;
-        float cz = (g_level->bounds_min.z + g_level->bounds_max.z) / 2.0f;
-        float extent = g_level->bounds_max.x - g_level->bounds_min.x;
-        if (extent < g_level->bounds_max.z - g_level->bounds_min.z)
-            extent = g_level->bounds_max.z - g_level->bounds_min.z;
-        g_camera.height = extent * 0.8f;
-        g_camera.distance = extent * 0.6f;
-        g_camera.tx = cx; g_camera.ty = cy; g_camera.tz = cz;
-    } else {
-        g_camera.height = 800.0f;
-        g_camera.distance = 800.0f;
-        g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    }
+    /* Camera defaults — in D3D left-handed coordinates, +Z is forward (into screen).
+     * Place camera BEHIND the ball (lower Z) looking forward at it. */
+    g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
+    g_camera.height = 200.0f;   /* Above ball */
+    g_camera.distance = 400.0f; /* Behind ball (camera will be at Z - dist) */
     g_camera.angle = 0.0f;
 
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
@@ -549,13 +538,13 @@ static void SetMatrices(void) {
     D3DMATRIX proj;
     float aspect = (float)g_width / (float)g_height;
     float fov = 3.14159265f / 3.0f; /* 60 degree FOV */
-    float zn = 1.0f, zf = 5000.0f;
+    float zn = 1.0f, zf = 10000.0f;  /* Extended far plane for large arena levels */
     float yscale = cosf(fov / 2.0f) / sinf(fov / 2.0f);
     float xscale = yscale / aspect;
     ZeroMemory(&proj, sizeof(proj));
     proj._11 = xscale; proj._22 = yscale;
-    proj._33 = zf / (zn - zf); proj._34 = -1.0f;
-    proj._43 = zn * zf / (zn - zf);
+    proj._33 = zf / (zf - zn); proj._34 = 1.0f;  /* Left-handed D3D convention */
+    proj._43 = -zn * zf / (zf - zn);
     g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &proj);
 
     /* View — camera follow (mirrors Scene_SetCamera 0x419FA0) */
@@ -563,53 +552,55 @@ static void SetMatrices(void) {
     g_camera.ty = g_ball.y;
     g_camera.tz = g_ball.z;
 
-    /* Position camera above and behind, looking down at ball */
+    /* Camera: above and behind ball, looking down at it */
     float cam_height = g_camera.height;
     float cam_dist = g_camera.distance;
-    
-    /* For large levels, use a higher camera to see more of the arena */
-    if (g_level && g_level->vertex_count > 0) {
-        float extent = g_level->bounds_max.x - g_level->bounds_min.x;
-        if (extent < g_level->bounds_max.z - g_level->bounds_min.z)
-            extent = g_level->bounds_max.z - g_level->bounds_min.z;
-        if (extent > 500.0f) {
-            /* Wide overview for arena levels */
-            cam_height = extent * 0.9f;
-            cam_dist = extent * 0.5f;
-        }
-    }
 
     D3DMATRIX view;
-    /* Build look-at matrix manually (d3d8 has no D3DX math functions) */
-    float eyex = g_ball.x, eyey = cam_height, eyez = g_ball.z + cam_dist;
-    float atx = g_ball.x, aty = 0.0f, atz = g_ball.z;
+    float eyex = g_ball.x, eyey = g_ball.y + cam_height, eyez = g_ball.z - cam_dist;
+    float atx = g_ball.x, aty = g_ball.y, atz = g_ball.z;
     float upx = 0, upy = 1, upz = 0;
-
-    /* Compute axes */
+    
+    /* Compute axes for D3D left-handed look-at matrix (D3DXMatrixLookAtLH convention) */
     float zaxis_x = atx - eyex, zaxis_y = aty - eyey, zaxis_z = atz - eyez;
     float zlen = sqrtf(zaxis_x*zaxis_x + zaxis_y*zaxis_y + zaxis_z*zaxis_z);
     if (zlen > 0) { zaxis_x /= zlen; zaxis_y /= zlen; zaxis_z /= zlen; }
 
+    /* Right = normalize(cross(up, zaxis)) — D3D left-handed convention */
     float xaxis_x = upy*zaxis_z - upz*zaxis_y;
     float xaxis_y = upz*zaxis_x - upx*zaxis_z;
     float xaxis_z = upx*zaxis_y - upy*zaxis_x;
     float xlen = sqrtf(xaxis_x*xaxis_x + xaxis_y*xaxis_y + xaxis_z*xaxis_z);
     if (xlen > 0) { xaxis_x /= xlen; xaxis_y /= xlen; xaxis_z /= xlen; }
 
+    /* Up = cross(zaxis, xaxis) — D3D left-handed convention */
     float yaxis_x = zaxis_y*xaxis_z - zaxis_z*xaxis_y;
     float yaxis_y = zaxis_z*xaxis_x - zaxis_x*xaxis_z;
     float yaxis_z = zaxis_x*xaxis_y - zaxis_y*xaxis_x;
 
     ZeroMemory(&view, sizeof(view));
-    view._11 = xaxis_x; view._12 = yaxis_x; view._13 = zaxis_x;
-    view._21 = xaxis_y; view._22 = yaxis_y; view._23 = zaxis_y;
-    view._31 = xaxis_z; view._32 = yaxis_z; view._33 = zaxis_z;
+    /* D3DXMatrixLookAtLH layout (from MS docs) — axes as COLUMNS, translation in ROW 3 */
+    view._11 = xaxis_x;  view._12 = yaxis_x;  view._13 = zaxis_x;  view._14 = 0.0f;
+    view._21 = xaxis_y;  view._22 = yaxis_y;  view._23 = zaxis_y;  view._24 = 0.0f;
+    view._31 = xaxis_z;  view._32 = yaxis_z;  view._33 = zaxis_z;  view._34 = 0.0f;
     view._41 = -(xaxis_x*eyex + xaxis_y*eyey + xaxis_z*eyez);
     view._42 = -(yaxis_x*eyex + yaxis_y*eyey + yaxis_z*eyez);
     view._43 = -(zaxis_x*eyex + zaxis_y*eyey + zaxis_z*eyez);
     view._44 = 1.0f;
 
     g_device->lpVtbl->SetTransform(g_device, D3DTS_VIEW, &view);
+    
+    /* Debug: print first frame camera info */
+    static int frame_count = 0;
+    if (frame_count < 3) {
+        printf("[Camera] Eye=(%.1f,%.1f,%.1f) At=(%.1f,%.1f,%.1f)\n", 
+               eyex, eyey, eyez, atx, aty, atz);
+        printf("[Camera] ViewMat: _11=%.3f _22=%.3f _33=%.3f _44=%.1f\n",
+               view._11, view._22, view._33, view._44);
+        printf("[Camera] ProjMat: _11=%.3f _22=%.3f _33=%.4f _34=%.1f _43=%.4f\n",
+               proj._11, proj._22, proj._33, proj._34, proj._43);
+        frame_count++;
+    }
 }
 
 static void RenderBall(void) {
@@ -678,34 +669,36 @@ static void RenderBall(void) {
 }
 
 /* ===== Render Level Mesh Geometry (Section 5 vertex array) =====
- * Vertex data from MESHWORLD files is already in triangle-list order:
- * every 3 consecutive vertices form a triangle.
- * 
- * Multi-pass rendering mirrors the original 8-pass pipeline:
- *   Pass 1: Render flat geometry with material colors + lighting
- *   (Future passes: textures, environment maps, etc.)
+ * Vertex data from MESHWORLD files is stored as triangle strips in the
+ * octree (Section 6). Without strip indices, we render as point cloud
+ * first to verify coordinate system, then render as triangle-list for
+ * rough visualization (some triangles will be degenerate).
  */
-static void RenderLevelGeometry(void) {
+static IDirect3DVertexBuffer8 *g_level_vbuf = NULL;
+static UINT g_level_vcount = 0;
+static DWORD g_level_fvf = 0;
+
+static void CreateLevelBuffers(void) {
     if (!g_level || g_level->vertex_count == 0) return;
+    if (g_level_vbuf) return;  /* Already created */
     
     /* D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 */
     typedef struct { float x, y, z; float nx, ny, nz; float u, v; } LevelVertex;
     
-    DWORD fvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1;
-    UINT vcount = g_level->vertex_count;
-    UINT vsize = vcount * sizeof(LevelVertex);
+    g_level_fvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1;
+    g_level_vcount = g_level->vertex_count;
+    UINT vsize = g_level_vcount * sizeof(LevelVertex);
     
-    /* Create vertex buffer */
-    IDirect3DVertexBuffer8 *vbuf = NULL;
     HRESULT hr = g_device->lpVtbl->CreateVertexBuffer(g_device, vsize, 
-        D3DUSAGE_WRITEONLY, fvf, D3DPOOL_MANAGED, &vbuf);
+        D3DUSAGE_WRITEONLY, g_level_fvf, D3DPOOL_MANAGED, &g_level_vbuf);
     if (FAILED(hr)) {
         printf("[Render] CreateVertexBuffer failed: 0x%08lx\n", hr);
+        g_level_vbuf = NULL;
         return;
     }
     
     BYTE *pVerts;
-    hr = vbuf->lpVtbl->Lock(vbuf, 0, vsize, &pVerts, 0);
+    hr = g_level_vbuf->lpVtbl->Lock(g_level_vbuf, 0, vsize, &pVerts, 0);
     if (SUCCEEDED(hr)) {
         LevelVertex *dst = (LevelVertex *)pVerts;
         for (int i = 0; i < g_level->vertex_count; i++) {
@@ -719,20 +712,26 @@ static void RenderLevelGeometry(void) {
             dst[i].u = sv->u;
             dst[i].v = sv->v;
         }
-        vbuf->lpVtbl->Unlock(vbuf);
+        g_level_vbuf->lpVtbl->Unlock(g_level_vbuf);
+        printf("[Render] Level vertex buffer created: %d vertices (%u bytes)\n",
+               g_level->vertex_count, vsize);
     } else {
         printf("[Render] Lock VB failed: 0x%08lx\n", hr);
-        vbuf->lpVtbl->Release(vbuf);
-        return;
+        g_level_vbuf->lpVtbl->Release(g_level_vbuf);
+        g_level_vbuf = NULL;
     }
-    
-    /* === Pass 1: Flat-shaded geometry with material colors === */
-    D3DMATERIAL8 mat;
-    ZeroMemory(&mat, sizeof(mat));
-    /* Default grey-brown material (TODO: read from octree geom materials) */
-    mat.Diffuse.r = 0.7f; mat.Diffuse.g = 0.65f; mat.Diffuse.b = 0.55f; mat.Diffuse.a = 1.0f;
-    mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f; mat.Ambient.a = 1.0f;
-    g_device->lpVtbl->SetMaterial(g_device, &mat);
+}
+
+static void ReleaseLevelBuffers(void) {
+    if (g_level_vbuf) {
+        g_level_vbuf->lpVtbl->Release(g_level_vbuf);
+        g_level_vbuf = NULL;
+    }
+    g_level_vcount = 0;
+}
+
+static void RenderLevelGeometry(void) {
+    if (!g_level || g_level->vertex_count == 0) return;
     
     /* Identity world matrix */
     D3DMATRIX world;
@@ -740,23 +739,61 @@ static void RenderLevelGeometry(void) {
     world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
     
-    /* Disable culling for now to see geometry regardless of winding */
+    /* Disable culling and texture */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
     
-    /* Set vertex shader and stream source */
-    g_device->lpVtbl->SetVertexShader(g_device, fvf);
-    g_device->lpVtbl->SetStreamSource(g_device, 0, vbuf, sizeof(LevelVertex));
+    /* Build a temporary vertex buffer with per-vertex colors so geometry is visible.
+     * The source vertices are XYZ+NORMAL+UV (32 bytes). We'll render with
+     * XYZ+DIFFUSE (16 bytes) to force a bright blue-green color. */
+    typedef struct { float x, y, z; DWORD color; } VisVertex;
+    static VisVertex *vis_verts = NULL;
+    static int vis_count = 0;
     
-    /* Draw triangles — every 3 consecutive vertices form a triangle */
-    int prim_count = vcount / 3;
-    if (prim_count > 0) {
-        hr = g_device->lpVtbl->DrawPrimitive(g_device, D3DPT_TRIANGLELIST, 0, prim_count);
-        if (FAILED(hr)) {
-            printf("[Render] DrawPrimitive failed: 0x%08lx\n", hr);
+    if (!vis_verts || vis_count != g_level->vertex_count) {
+        vis_count = g_level->vertex_count;
+        free(vis_verts);
+        vis_verts = malloc(vis_count * sizeof(VisVertex));
+        /* Color vertices by Y position: high=blue, low=green, surface=~white */
+        float ymin = g_level->bounds_min.y, ymax = g_level->bounds_max.y;
+        float yrange = ymax - ymin;
+        if (yrange < 1.0f) yrange = 1.0f;
+        for (int i = 0; i < vis_count; i++) {
+            vis_verts[i].x = g_level->vertices[i].x;
+            vis_verts[i].y = g_level->vertices[i].y;
+            vis_verts[i].z = g_level->vertices[i].z;
+            /* Color by height: hot (red/orange) at surface, cool (blue) deep */
+            float t = (g_level->vertices[i].y - ymin) / yrange;
+            if (t < 0) t = 0; if (t > 1) t = 1;
+            /* Surface (t≈1): warm orange-white. Deep (t≈0): cool blue-purple */
+            int r = (int)(t * 255);
+            int g = (int)(t * 200);
+            int b = (int)((1.0f - t * 0.5f) * 255);
+            vis_verts[i].color = D3DCOLOR_RGBA(r, g, b, 255);
         }
+        printf("[Render] Built %d colored vis-vertices (Y range %.0f to %.0f)\n", 
+               vis_count, ymin, ymax);
     }
     
-    vbuf->lpVtbl->Release(vbuf);
+    DWORD vis_fvf = D3DFVF_XYZ | D3DFVF_DIFFUSE;
+    g_device->lpVtbl->SetVertexShader(g_device, vis_fvf);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
+    
+    /* Render point cloud */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_POINTSIZE, *((DWORD*)&(float){4.0f}));
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_POINTLIST, vis_count,
+        vis_verts, sizeof(VisVertex));
+    
+    /* Render as triangle list */
+    int prim_count = vis_count / 3;
+    if (prim_count > 0) {
+        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLELIST, prim_count,
+            vis_verts, sizeof(VisVertex));
+    }
+    
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
 }
 
 static void RenderLevelObjects(void) {
@@ -831,9 +868,21 @@ static void RenderHUD(void) {
 static void Render(void) {
     if (!g_device) return;
 
+    /* Clear with level background color (Section 4) or default */
+    DWORD clear_color = D3DCOLOR_RGBA(40, 60, 100, 255);  /* Default blue-gray */
+    if (g_level) {
+        /* bg_color is stored as float [0..1] per channel */
+        int r = (int)(g_level->bg_color.x * 255.0f);
+        int g = (int)(g_level->bg_color.y * 255.0f);
+        int b = (int)(g_level->bg_color.z * 255.0f);
+        if (r < 0) r = 0; if (r > 255) r = 255;
+        if (g < 0) g = 0; if (g > 255) g = 255;
+        if (b < 0) b = 0; if (b > 255) b = 255;
+        clear_color = D3DCOLOR_RGBA(r, g, b, 255);
+    }
     g_device->lpVtbl->Clear(g_device, 0, NULL, 
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-        D3DCOLOR_RGBA(40, 60, 100, 255), 1.0f, 0);
+        clear_color, 1.0f, 0);
     g_device->lpVtbl->BeginScene(g_device);
 
     SetMatrices();
@@ -895,6 +944,7 @@ static void GameLoop(void) {
 
 /* ===== Cleanup ===== */
 static void Cleanup(void) {
+    ReleaseLevelBuffers();
     if (g_level) meshworld_free(g_level);
     if (g_mouse) { g_mouse->lpVtbl->Unacquire(g_mouse); g_mouse->lpVtbl->Release(g_mouse); }
     if (g_keyboard) { g_keyboard->lpVtbl->Unacquire(g_keyboard); g_keyboard->lpVtbl->Release(g_keyboard); }

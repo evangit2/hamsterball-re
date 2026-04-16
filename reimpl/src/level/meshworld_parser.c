@@ -79,7 +79,7 @@ static mw_obj_type_t classify_type(const char *s) {
 
 /* ===== Object addition ===== */
 static void add_object(mw_level_t *level, const char *type_str,
-                       float x, float y, float z,
+                       float d3d_x, float d3d_y, float d3d_z,
                        float rx, float ry, float rz) {
     if (level->object_count >= level->object_capacity) {
         level->object_capacity *= 2;
@@ -92,10 +92,10 @@ static void add_object(mw_level_t *level, const char *type_str,
     obj->type = classify_type(type_str);
     strncpy(obj->type_string, type_str, sizeof(obj->type_string) - 1);
     
-    /* NOTE: Exporter writes x,z,y — we swap back to x,y,z (D3D convention) */
-    obj->position.x = x;
-    obj->position.y = y;  /* This was z in the file */
-    obj->position.z = z;  /* This was y in the file */
+    /* Positions already converted to D3D x,y,z by caller */
+    obj->position.x = d3d_x;
+    obj->position.y = d3d_y;
+    obj->position.z = d3d_z;
     
     obj->rot_x = rx;
     obj->rot_y = ry;
@@ -159,19 +159,24 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
         char name[256];
         if (mw_read_string(&r, name, sizeof(name)) < 0) break;
         
-        /* Position: written as x,z,y (Max→D3D swap) */
-        float px = mw_read_f32(&r);
-        float pz = mw_read_f32(&r);  /* z in file → y in D3D */
-        float py = mw_read_f32(&r);  /* y in file → z in D3D */
+        /* Position: exporter writes Max mPosition.x, mPosition.z, mPosition.y
+         * In Max: Z is up, Y is forward. In D3D: Y is up, Z is forward.
+         * So: D3D.x = Max.x, D3D.y = Max.z (up), D3D.z = Max.y (forward) */
+        float max_x = mw_read_f32(&r);
+        float max_z = mw_read_f32(&r);  /* Z-up in Max → Y-up in D3D */
+        float max_y = mw_read_f32(&r);  /* Y-forward in Max → Z-forward in D3D */
+        float d3d_x = max_x;
+        float d3d_y = max_z;   /* Max Z-up becomes D3D Y-up */
+        float d3d_z = max_y;   /* Max Y-forward becomes D3D Z-forward */
         
-        /* Rotation: same x,z,y swap */
+        /* Rotation: same x,z,y → x,y,z swap */
         float rx = mw_read_f32(&r);
         float rz = mw_read_f32(&r);
         float ry = mw_read_f32(&r);
         
         uint32_t has_material = mw_read_u32(&r);
         
-        add_object(level, name, px, py, pz, rx, ry, rz);
+        add_object(level, name, d3d_x, d3d_y, d3d_z, rx, ry, rz);
         mw_object_t *obj = &level->objects[level->object_count - 1];
         
         if (has_material) {
@@ -245,8 +250,22 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
         level->bounds_max.z = mw_read_f32(&r);
     }
     
-    /* Skip rest of octree — we have the vertex buffer which is enough for rendering */
-    /* The octree is for visibility culling, which we can add later */
+    /* Compute actual vertex bounding box (more reliable than octree cube) */
+    if (level->vertices && level->vertex_count > 0) {
+        float vmin[3] = {1e30f,1e30f,1e30f}, vmax[3] = {-1e30f,-1e30f,-1e30f};
+        for (int i = 0; i < level->vertex_count; i++) {
+            mw_vertex_t *v = &level->vertices[i];
+            if (v->x < vmin[0]) vmin[0] = v->x;
+            if (v->y < vmin[1]) vmin[1] = v->y;
+            if (v->z < vmin[2]) vmin[2] = v->z;
+            if (v->x > vmax[0]) vmax[0] = v->x;
+            if (v->y > vmax[1]) vmax[1] = v->y;
+            if (v->z > vmax[2]) vmax[2] = v->z;
+        }
+        /* Override octree bounds with vertex-computed bounds */
+        level->bounds_min.x = vmin[0]; level->bounds_min.y = vmin[1]; level->bounds_min.z = vmin[2];
+        level->bounds_max.x = vmax[0]; level->bounds_max.y = vmax[1]; level->bounds_max.z = vmax[2];
+    }
     
     return level;
 }
