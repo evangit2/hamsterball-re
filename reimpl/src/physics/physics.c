@@ -54,8 +54,8 @@
  *
  * Simplified: camera is high above and slightly behind the target
  */
-#define CAM_ORBIT_DISTANCE  800.0f      /* Scene+0x29C0: camera orbit distance scalar */
-#define CAM_TILT_Y         0.9f        /* Y component of orbit direction (from Scene_SetCamera) */
+#define CAM_ORBIT_DISTANCE  1200.0f     /* Large distance to see the whole arena from above */
+#define CAM_TILT_Y         1.5f        /* Higher Y = more top-down view (was 0.9 = ~42° tilt) */
 #define CAM_FOLLOW_LERP    0.08f       /* Camera interpolation speed */
 #define CAM_SNAP_SPEED     0.15f       /* Faster follow during movement */
 
@@ -119,7 +119,7 @@ void physics_init(void) {
     g_ball.on_ground = false;
     
     memset(&g_camera, 0, sizeof(g_camera));
-    g_camera.orbit_angle = 0.0f;       /* Start facing -Z direction */
+    g_camera.orbit_angle = 0.7854f;    /* pi/4 = 45° — nice diagonal view */
     g_camera.orbit_distance = CAM_ORBIT_DISTANCE;
     g_camera.tilt_y = CAM_TILT_Y;
     g_camera.target = (vec3_t){0, 0, 0};
@@ -164,9 +164,17 @@ void ball_apply_force(vec3_t force) {
     g_ball.acceleration.z += force.z * scale;
 }
 
-/* ===== Simple ground collision (placeholder until full MESHWORLD collision) ===== */
+/* ===== Simple ground collision (placeholder until full MESHWORLD collision) =====
+ * Arena floor Y is computed from vertex data min Y (≈-800 for WarmUp).
+ * Ball sits on floor at floor_y + radius. */
+static float g_arena_floor_y = -800.0f;
+
+void physics_set_floor_y(float floor_y) {
+    g_arena_floor_y = floor_y;
+}
+
 static float get_ground_height(float x, float z) {
-    return 0.0f;
+    return g_arena_floor_y;
 }
 
 /* ===== Update camera position from orbit parameters =====
@@ -313,14 +321,11 @@ bool physics_update(float delta_time) {
      */
     vec3_t desired_target;
     if (g_has_cameralookat) {
-        /* Arena mode: camera tracks midpoint between ball and CAMERALOOKAT
-         * In the original, the CameraLookAt target is the ARENA CENTER,
-         * and the camera can see the whole arena from there.
-         * The ball moves within the arena, camera stays mostly fixed.
-         * We blend: 70% CAMERALOOKAT + 30% ball to keep ball visible.
-         */
+        /* Arena mode: camera looks at a point near arena center (XZ from CAMERALOOKAT)
+         * but at the ball's Y level so the camera stays above the action.
+         * Original: CameraLookAt defines where camera looks, ball moves around below. */
         desired_target.x = g_cameralookat_target.x * 0.7f + g_ball.position.x * 0.3f;
-        desired_target.y = g_cameralookat_target.y * 0.5f + g_ball.position.y * 0.5f;
+        desired_target.y = g_ball.position.y;  /* Follow ball Y, not CAMERALOOKAT Y */
         desired_target.z = g_cameralookat_target.z * 0.7f + g_ball.position.z * 0.3f;
     } else {
         /* Race mode: camera directly follows ball */

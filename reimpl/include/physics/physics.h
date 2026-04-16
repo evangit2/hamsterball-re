@@ -55,4 +55,7 @@ bool physics_check_collision(vec3_t pos, vec3_t dir, collision_result_t *result)
 void physics_set_cameralookat(float x, float y, float z);
 void physics_set_camera_orbit(float angle_radians);
 
+/* Arena floor Y (computed from vertex data, used for ground collision) */
+void physics_set_floor_y(float floor_y);
+
 #endif

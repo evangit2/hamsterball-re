@@ -94,11 +94,15 @@ static struct {
 /* Camera (mirrors Scene camera system 0x419FA0) */
 static struct {
     float x, y, z;       /* Camera position (computed from orbit) */
-    float tx, ty, tz;    /* Look-at target = ball position */
+    float tx, ty, tz;    /* Look-at target (lerps toward desired target) */
     float orbit_angle;   /* Scene+0x29BC: orbital angle (radians) */
     float orbit_dist;    /* Scene+0x29C0: distance from ball (800.0 arena) */
     float orbit_tilt;    /* Y component of orbit direction (0.9 = slightly above) */
 } g_camera;
+
+/* CAMERALOOKAT target from MESHWORLD (arena center point) */
+static float g_camlookat_x = 0, g_camlookat_y = 0, g_camlookat_z = 0;
+static BOOL g_has_camlookat = FALSE;
 
 /* Timing (mirrors App_Run) */
 static DWORD g_last_tick = 0;
@@ -474,14 +478,19 @@ static BOOL LoadAssets(void) {
     g_ball.damping = BALL_DAMPING;
     g_ball.gravity = BALL_GRAVITY;
 
-    /* Find ball start in level objects */
+    /* Find ball start and CAMERALOOKAT in level objects */
     if (g_level) {
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
                 g_ball.x = g_level->objects[i].position.x;
                 g_ball.y = g_level->objects[i].position.y + g_ball.radius + 1.0f;
                 g_ball.z = g_level->objects[i].position.z;
-                break;
+            }
+            if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
+                g_camlookat_x = g_level->objects[i].position.x;
+                g_camlookat_y = g_level->objects[i].position.y;
+                g_camlookat_z = g_level->objects[i].position.z;
+                g_has_camlookat = TRUE;
             }
         }
     }
@@ -493,15 +502,19 @@ static BOOL LoadAssets(void) {
      * Arena default: distance=800, angle=45°, tilt=0.9
      * Race default: distance=250, angle=0°, tilt=1.2 (closer, more overhead) */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    g_camera.orbit_angle = -1.5708f;  /* -PI/2: camera behind ball in -Z direction */
-    g_camera.orbit_dist = 200.0f;     /* Medium follow distance */
-    g_camera.orbit_tilt = 0.15f;      /* Low tilt = nearly horizontal view */
+    g_camera.orbit_angle = 0.7854f;   /* PI/4: 45° orbit (arena isometric) */
+    g_camera.orbit_dist = 800.0f;     /* Arena distance (Scene+0x29C0) */
+    g_camera.orbit_tilt = 0.9f;       /* Isometric tilt (Scene_SetCamera orbit_dir.y) */
+    
+    printf("[Camera] CAMERALOOKAT: %s (center=%.1f,%.1f,%.1f)\n",
+           g_has_camlookat ? "YES" : "NO", g_camlookat_x, g_camlookat_y, g_camlookat_z);
 
     /* Initialize texture system after D3D device is ready */
     {
         char tex_dir[MAX_PATH];
         snprintf(tex_dir, sizeof(tex_dir), "%s/Textures", g_game_dir);
-        texture_system_init(g_device, tex_dir);
+        texture_set_device((void*)g_device);
+        texture_system_init(tex_dir);
         
         /* Pre-load all textures referenced by level geoms */
         if (g_level) {
@@ -623,12 +636,33 @@ static void SetMatrices(void) {
     g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &proj);
 
     /* View — orbital follow camera (mirrors Scene_SetCamera 0x419FA0 Mode 5)
+     * Arena mode: camera targets blend between CAMERALOOKAT center + ball
+     * Race mode: camera targets ball directly
      * orbit_dir = (cos(angle), tilt, sin(angle)) normalized, then:
-     * eye = ball_pos + normalize(orbit_dir) * distance
-     * at  = ball_pos
-     * This gives the classic Hamsterball "floating overhead behind" view. */
+     * eye = target + normalize(orbit_dir) * distance
+     * Smooth lerp: target moves toward desired position each frame */
     float cos_a = cosf(g_camera.orbit_angle);
     float sin_a = sinf(g_camera.orbit_angle);
+
+    /* Compute desired look-at target */
+    float desired_x, desired_y, desired_z;
+    if (g_has_camlookat) {
+        /* Arena mode: blend arena center with ball position (60/40)
+         * Keeps ball visible while showing most of the arena */
+        desired_x = g_camlookat_x * 0.6f + g_ball.x * 0.4f;
+        desired_y = g_camlookat_y * 0.4f + g_ball.y * 0.6f;
+        desired_z = g_camlookat_z * 0.6f + g_ball.z * 0.4f;
+    } else {
+        desired_x = g_ball.x;
+        desired_y = g_ball.y;
+        desired_z = g_ball.z;
+    }
+
+    /* Smooth lerp toward desired target (matches Scene_SetCamera spring) */
+    float lerp_speed = 0.08f;
+    g_camera.tx += (desired_x - g_camera.tx) * lerp_speed;
+    g_camera.ty += (desired_y - g_camera.ty) * lerp_speed;
+    g_camera.tz += (desired_z - g_camera.tz) * lerp_speed;
 
     /* Build orbit direction vector (from focus toward camera) */
     float dir_x = cos_a;
@@ -638,10 +672,10 @@ static void SetMatrices(void) {
     float dlen = sqrtf(dir_x*dir_x + dir_y*dir_y + dir_z*dir_z);
     if (dlen > 0) { dir_x /= dlen; dir_y /= dlen; dir_z /= dlen; }
 
-    float eyex = g_ball.x + dir_x * g_camera.orbit_dist;
-    float eyey = g_ball.y + dir_y * g_camera.orbit_dist;
-    float eyez = g_ball.z + dir_z * g_camera.orbit_dist;
-    float atx = g_ball.x, aty = g_ball.y, atz = g_ball.z;
+    float eyex = g_camera.tx + dir_x * g_camera.orbit_dist;
+    float eyey = g_camera.ty + dir_y * g_camera.orbit_dist;
+    float eyez = g_camera.tz + dir_z * g_camera.orbit_dist;
+    float atx = g_camera.tx, aty = g_camera.ty, atz = g_camera.tz;
     float upx = 0, upy = 1, upz = 0;
     
     D3DMATRIX view;
@@ -837,7 +871,7 @@ static void RenderLevelGeometry(void) {
         if (geom->has_texture && geom->texture[0]) {
             tex = texture_load(geom->texture);
         }
-        texture_bind(tex, g_device);
+        texture_bind(tex, 0);
         
         /* Set texture stage: modulate texture with material color */
         if (tex) {

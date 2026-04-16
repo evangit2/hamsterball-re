@@ -162,11 +162,11 @@ static void init_gl_state(void) {
     glEnable(GL_NORMALIZE);
     glShadeModel(GL_SMOOTH);
     
-    /* Fog (matches Graphics_SetupFog 0x4539A0) */
+    /* Fog (matches Graphics_SetupFog 0x4539A0) — increase range for large arenas */
     glEnable(GL_FOG);
     glFogi(GL_FOG_MODE, GL_LINEAR);
-    glFogf(GL_FOG_START, 400.0f);
-    glFogf(GL_FOG_END, 1200.0f);
+    glFogf(GL_FOG_START, 2000.0f);
+    glFogf(GL_FOG_END, 6000.0f);
     GLfloat fog_color[] = {0.5f, 0.5f, 0.6f, 1.0f};
     glFogfv(GL_FOG_COLOR, fog_color);
     glClearColor(fog_color[0], fog_color[1], fog_color[2], fog_color[3]);
@@ -238,13 +238,27 @@ static int load_assets(const char *game_dir) {
     }
     
     /* Find ball start position AND CAMERALOOKAT target */
-    vec3_t start = {0, -765.0f, 0};  /* Start on floor level (Y approx -800 + radius) */
+    /* Ball sits on the arena floor. Compute floor Y from vertex data
+     * (Section 4 bbox is often invalid — we scan vertices instead). */
+    float floor_y = -800.0f;  /* default fallback */
+    if (g_level && g_level->vertex_count > 0) {
+        float min_y = g_level->vertices[0].y;
+        for (int vi = 1; vi < g_level->vertex_count; vi++) {
+            if (g_level->vertices[vi].y < min_y) min_y = g_level->vertices[vi].y;
+        }
+        floor_y = min_y;
+    }
+    vec3_t start = {0, floor_y + 35.0f /* ball radius */, 0};
     vec3_t cam_target = {0, 0, 0};
     bool has_cam_target = false;
+    
+    /* Set physics floor height for ground collision */
+    physics_set_floor_y(floor_y);
+    printf("[Load] Arena floor Y: %.1f (ball spawn Y: %.1f)\n", floor_y, floor_y + 35.0f);
     for (int i = 0; i < g_level->object_count; i++) {
         if (g_level->objects[i].type == MW_OBJ_START) {
             start.x = g_level->objects[i].position.x;
-            start.y = g_level->objects[i].position.y + 5.0f;
+            start.y = floor_y + 35.0f;  /* Always use floor Y, not object Y */
             start.z = g_level->objects[i].position.z;
         }
         if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
@@ -400,6 +414,114 @@ static void render_ground_grid(void) {
     glEnable(GL_LIGHTING);
 }
 
+/* ===== Track Geometry Rendering =====
+ * Ported from win32_main.c RenderLevelGeometry().
+ * Original D3D8: DrawPrimitiveUP with per-geom materials + textures.
+ * OpenGL equivalent: per-geom glMaterial + optional texture bind, GL_TRIANGLES.
+ *
+ * The MESHWORLD level has:
+ *   - g_level->vertices[]  (Section 5, 32B each: pos+normal+uv)
+ *   - g_level->geoms[]     (material groups from Section 6 octree)
+ *   - Each geom has strips[] with vertex_offset + tri_count
+ *   - Strips expand to triangle list: even/odd vertex swap pattern
+ */
+static void render_track_geometry(void) {
+    if (!g_level || g_level->vertex_count == 0 || !g_level->geoms) return;
+
+    /* Disable culling — track surfaces face both ways (ramps, tunnels) */
+    glDisable(GL_CULL_FACE);
+
+    static int first_frame = 0;
+    int total_tris = 0;
+
+    for (int gi = 0; gi < g_level->geom_count; gi++) {
+        mw_geom_t *geom = &g_level->geoms[gi];
+
+        /* Set OpenGL material from geom properties */
+        GLfloat amb[] = {geom->ambient[0], geom->ambient[1], geom->ambient[2], geom->ambient[3]};
+        GLfloat dif[] = {geom->diffuse[0], geom->diffuse[1], geom->diffuse[2], geom->diffuse[3]};
+        GLfloat spe[] = {geom->specular[0], geom->specular[1], geom->specular[2], geom->specular[3]};
+        GLfloat emi[] = {geom->emissive[0], geom->emissive[1], geom->emissive[2], geom->emissive[3]};
+        GLfloat shin[] = {geom->power};
+
+        glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, amb);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, dif);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, spe);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emi);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shin);
+
+        /* Texture */
+        texture_t *tex = NULL;
+        if (geom->has_texture && geom->texture[0]) {
+            tex = texture_load(geom->texture);
+        }
+        texture_bind(tex, 0);
+
+        if (tex) {
+            glEnable(GL_TEXTURE_2D);
+            /* Texture wraps for tiling (PinkChecker etc.) */
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            /* Point filtering for sharp tiles */
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        }
+
+        /* Draw this geom's strips as triangle lists */
+        glBegin(GL_TRIANGLES);
+        for (int s = 0; s < geom->strip_count; s++) {
+            mw_strip_t *strip = &geom->strips[s];
+            int ntri = strip->tri_count;
+            int base = strip->vertex_offset;
+
+            for (int t = 0; t < ntri; t++) {
+                /* Triangle strip to triangle list: even/odd vertex swap */
+                int v0 = base + t;
+                int v1 = (t % 2 == 0) ? (base + t + 1) : (base + t + 2);
+                int v2 = (t % 2 == 0) ? (base + t + 2) : (base + t + 1);
+
+                if (v0 < g_level->vertex_count && v1 < g_level->vertex_count &&
+                    v2 < g_level->vertex_count) {
+                    mw_vertex_t *sv;
+                    sv = &g_level->vertices[v0];
+                    glNormal3f(sv->nx, sv->ny, sv->nz);
+                    if (tex) glTexCoord2f(sv->u, sv->v);
+                    glVertex3f(sv->x, sv->y, sv->z);
+
+                    sv = &g_level->vertices[v1];
+                    glNormal3f(sv->nx, sv->ny, sv->nz);
+                    if (tex) glTexCoord2f(sv->u, sv->v);
+                    glVertex3f(sv->x, sv->y, sv->z);
+
+                    sv = &g_level->vertices[v2];
+                    glNormal3f(sv->nx, sv->ny, sv->nz);
+                    if (tex) glTexCoord2f(sv->u, sv->v);
+                    glVertex3f(sv->x, sv->y, sv->z);
+                }
+            }
+            total_tris += ntri;
+        }
+        glEnd();
+
+        if (tex) {
+            glDisable(GL_TEXTURE_2D);
+        }
+    }
+
+    /* Clear emission after rendering (prevent bleed) */
+    GLfloat zero_emi[] = {0, 0, 0, 1};
+    glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, zero_emi);
+
+    /* Re-enable culling for ball/object rendering */
+    glEnable(GL_CULL_FACE);
+
+    if (first_frame < 2) {
+        printf("[Render] Track: %d geoms, %d triangles, %d vertices\n",
+               g_level->geom_count, total_tris, g_level->vertex_count);
+        first_frame++;
+    }
+}
+
 /* ===== Unused old HUD — now in ui.c ===== */
 
 /* ===== Update (mirrors App_Run game loop tick) ===== */
@@ -428,18 +550,26 @@ static void handle_events(void) {
                     if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_SPACE) {
                         int sel = ui_handle_select();
                         if (sel == UI_MENU_RACE || sel == UI_MENU_TOURNAMENT) {
-                            /* Start race */
-                            g_state = GAME_STATE_RACING;
-                            vec3_t start = {0, 35.0f, 0};
+                            /* Start race — compute floor Y from vertices */
+                            float floor_y = -800.0f;
+                            if (g_level && g_level->vertex_count > 0) {
+                                float min_y = g_level->vertices[0].y;
+                                for (int vi = 1; vi < g_level->vertex_count; vi++) {
+                                    if (g_level->vertices[vi].y < min_y) min_y = g_level->vertices[vi].y;
+                                }
+                                floor_y = min_y;
+                            }
+                            vec3_t start = {0, floor_y + 35.0f, 0};
+                            physics_set_floor_y(floor_y);
                             for (int i = 0; i < (g_level ? g_level->object_count : 0); i++) {
                                 if (g_level->objects[i].type == MW_OBJ_START) {
                                     start.x = g_level->objects[i].position.x;
-                                    start.y = g_level->objects[i].position.y + 35.0f;
                                     start.z = g_level->objects[i].position.z;
                                     break;
                                 }
                             }
                             ball_reset(start);
+                            g_state = GAME_STATE_RACING;
                         } else if (sel == UI_MENU_QUIT) {
                             g_running = false;
                         }
@@ -598,8 +728,8 @@ int main(int argc, char *argv[]) {
         glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
         
         /* Opaque pass (matches Scene_RenderOpaque 0x461370) */
-        render_ground_grid();
-        render_level_objects();
+        render_track_geometry();    /* THE track geometry (49 geoms, 5226 tris) */
+        render_level_objects();     /* START/FLAG/PLATFORM marker spheres */
         render_ball();
         
         /* UI overlay (matches Scene_RenderScoreHUD 0x41A560) */
