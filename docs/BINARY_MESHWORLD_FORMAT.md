@@ -75,6 +75,14 @@ For each object:
 Note: In the Level STRUCT, there's a 12-byte gap between +0x45C and +0x468
 (+0x460, +0x464, +0x468). But from the FILE it's 6 sequential reads (24 bytes).
 
+**IMPORTANT**: For many Arena levels, the bbox values in the file are INVALID
+(min > max for some axes). They appear to be placeholder/garbage values.
+The game likely computes the real bbox from vertex data at runtime.
+Our reimpl recomputes bbox from vertex positions if invalid or all-zeros.
+
+Example invalid bbox from Arena-WarmUp: (0.98, 0.46, 1.0, 0.56, 0.56, 0.56)
+Example zero bbox from Arena-SpawnPlatform: (0, 0, 0, 0, 0, 0)
+
 === SECTION 5: Vertex Array ===
 [uint32] vertex_count -> level+0x438
 (level+0x43C = 0, buffer allocated = vertex_count * 32 bytes at level+0x440)
@@ -84,6 +92,12 @@ Vertex format (32 bytes each):
   [3 × float] position (x, y, z)     // 12 bytes
   [3 × float] normal (nx, ny, nz)    // 12 bytes
   [2 × float] texcoord (u, v)        // 8 bytes
+
+**RENDERING NOTE**: Vertex data is in TRIANGLE-LIST order.
+Every 3 consecutive vertices form a single triangle.
+Confirmed with SpawnPlatform: V0-V5 = top face (2 tris), V6-V11 = front face,
+V12-V17 = right face, V18-V23 = back face, V24-V29 = left face (10 tris total).
+Use D3DPT_TRIANGLELIST with DrawPrimitive, prim_count = vertex_count / 3.
 
 === SECTION 6: Post-load ===
 level+0x43C = 0 (vertex_data_ready flag)
