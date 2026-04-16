@@ -23,6 +23,7 @@
 /* Reusable parsers from the project */
 #include "level/meshworld_parser.h"
 #include "level/mesh_parser.h"
+#include "graphics/texture.h"
 
 /* ===== Constants (matching original) ===== */
 #define WINDOW_CLASS    "AthenaWindow"       /* Original class name */
@@ -124,72 +125,126 @@ static BOOL SaveScreenshot(const char *filename);
 
 /* ===== Screenshot Function (Windows GDI approach for D3D8 compatibility) ===== */
 static BOOL SaveScreenshot(const char *filename) {
-    /* Get window DC */
-    HDC hdcWindow = GetDC(g_hwnd);
-    if (!hdcWindow) return FALSE;
-
-    HDC hdcMem = CreateCompatibleDC(hdcWindow);
-    if (!hdcMem) {
-        ReleaseDC(g_hwnd, hdcWindow);
-        return FALSE;
-    }
-
-    /* Create bitmap compatible with window */
-    HBITMAP hBitmap = CreateCompatibleBitmap(hdcWindow, g_width, g_height);
-    if (!hBitmap) {
-        DeleteDC(hdcMem);
-        ReleaseDC(g_hwnd, hdcWindow);
-        return FALSE;
-    }
-
-    SelectObject(hdcMem, hBitmap);
+    if (!g_device) return FALSE;
     
-    /* Copy window contents to bitmap */
-    BitBlt(hdcMem, 0, 0, g_width, g_height, hdcWindow, 0, 0, SRCCOPY);
-
-    /* Setup BMP header */
+    /* On Wine SW vertex processing, backbuffer locks and CopyRects both fail.
+     * Use a renderable offscreen surface: render to it, then lock it directly. 
+     * Since we're SW vertex processing, we can create a D3DPOOL_SCRATCH surface 
+     * which is always lockable. */
+    
+    /* Create a lockable offscreen surface in system memory */
+    IDirect3DSurface8 *pSurf = NULL;
+    HRESULT hr = g_device->lpVtbl->CreateImageSurface(g_device, g_width, g_height,
+                                                         D3DFMT_A8R8G8B8, &pSurf);
+    if (FAILED(hr)) {
+        printf("[Screenshot] CreateImageSurface failed: 0x%08lx\n", hr);
+        return FALSE;
+    }
+    
+    /* Get backbuffer */
+    IDirect3DSurface8 *pBack = NULL;
+    hr = g_device->lpVtbl->GetBackBuffer(g_device, 0, D3DBACKBUFFER_TYPE_MONO, &pBack);
+    if (FAILED(hr)) {
+        printf("[Screenshot] GetBackBuffer failed: 0x%08lx\n", hr);
+        pSurf->lpVtbl->Release(pSurf);
+        return FALSE;
+    }
+    
+    /* Try CopyRects from backbuffer to system memory surface */
+    hr = g_device->lpVtbl->CopyRects(g_device, pBack, NULL, 0, pSurf, NULL);
+    pBack->lpVtbl->Release(pBack);
+    
+    if (FAILED(hr)) {
+        /* CopyRects failed — try direct lock of backbuffer as last resort */
+        D3DLOCKED_RECT locked;
+        IDirect3DSurface8 *pBack2 = NULL;
+        HRESULT hr2 = g_device->lpVtbl->GetBackBuffer(g_device, 0, D3DBACKBUFFER_TYPE_MONO, &pBack2);
+        if (SUCCEEDED(hr2)) {
+            hr2 = pBack2->lpVtbl->LockRect(pBack2, &locked, NULL, D3DLOCK_READONLY);
+            if (SUCCEEDED(hr2)) {
+                /* Direct lock worked — save from it directly */
+                int row_size = ((g_width * 3 + 3) & ~3);
+                BITMAPFILEHEADER bf = {0};
+                BITMAPINFOHEADER bi = {0};
+                bi.biSize = sizeof(BITMAPINFOHEADER);
+                bi.biWidth = g_width; bi.biHeight = g_height;
+                bi.biPlanes = 1; bi.biBitCount = 24; bi.biCompression = BI_RGB;
+                DWORD dwBmpSize = row_size * g_height;
+                bf.bfType = 0x4D42;
+                bf.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + dwBmpSize;
+                bf.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+                
+                FILE *fp = fopen(filename, "wb");
+                if (fp) {
+                    fwrite(&bf, sizeof(BITMAPFILEHEADER), 1, fp);
+                    fwrite(&bi, sizeof(BITMAPINFOHEADER), 1, fp);
+                    BYTE *row_buf = malloc(row_size);
+                    for (int y = g_height - 1; y >= 0; y--) {
+                        DWORD *src_row = (DWORD *)((BYTE *)locked.pBits + y * locked.Pitch);
+                        for (int x = 0; x < g_width; x++) {
+                            DWORD px = src_row[x];
+                            row_buf[x*3+0]=(px>>16)&0xFF; row_buf[x*3+1]=(px>>8)&0xFF; row_buf[x*3+2]=px&0xFF;
+                        }
+                        fwrite(row_buf, 1, row_size, fp);
+                    }
+                    free(row_buf);
+                    fclose(fp);
+                    printf("[Screenshot] Saved: %s (%dx%d) via direct backbuffer lock\n", filename, g_width, g_height);
+                }
+                pBack2->lpVtbl->UnlockRect(pBack2);
+                pBack2->lpVtbl->Release(pBack2);
+                pSurf->lpVtbl->Release(pSurf);
+                return TRUE;
+            }
+            pBack2->lpVtbl->Release(pBack2);
+        }
+        
+        printf("[Screenshot] All methods failed (CopyRects=0x%08lx)\n", hr);
+        pSurf->lpVtbl->Release(pSurf);
+        return FALSE;
+    }
+    
+    /* CopyRects succeeded — lock system surface and write BMP */
+    D3DLOCKED_RECT locked;
+    hr = pSurf->lpVtbl->LockRect(pSurf, &locked, NULL, D3DLOCK_READONLY);
+    if (FAILED(hr)) {
+        printf("[Screenshot] LockRect failed: 0x%08lx\n", hr);
+        pSurf->lpVtbl->Release(pSurf);
+        return FALSE;
+    }
+    
+    int row_size = ((g_width * 3 + 3) & ~3);
     BITMAPFILEHEADER bf = {0};
     BITMAPINFOHEADER bi = {0};
-    BITMAP bmp;
-    
-    GetObject(hBitmap, sizeof(BITMAP), &bmp);
     bi.biSize = sizeof(BITMAPINFOHEADER);
-    bi.biWidth = bmp.bmWidth;
-    bi.biHeight = bmp.bmHeight;
-    bi.biPlanes = 1;
-    bi.biBitCount = 24;
-    bi.biCompression = BI_RGB;
-    
-    DWORD dwBmpSize = bmp.bmWidth * bmp.bmHeight * 3;
+    bi.biWidth = g_width; bi.biHeight = g_height;
+    bi.biPlanes = 1; bi.biBitCount = 24; bi.biCompression = BI_RGB;
+    DWORD dwBmpSize = row_size * g_height;
     bf.bfType = 0x4D42;
     bf.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + dwBmpSize;
     bf.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-
+    
     FILE *fp = fopen(filename, "wb");
-    if (!fp) {
-        DeleteObject(hBitmap);
-        DeleteDC(hdcMem);
-        ReleaseDC(g_hwnd, hdcWindow);
-        return FALSE;
+    if (fp) {
+        fwrite(&bf, sizeof(BITMAPFILEHEADER), 1, fp);
+        fwrite(&bi, sizeof(BITMAPINFOHEADER), 1, fp);
+        BYTE *row_buf = malloc(row_size);
+        for (int y = g_height - 1; y >= 0; y--) {
+            DWORD *src_row = (DWORD *)((BYTE *)locked.pBits + y * locked.Pitch);
+            for (int x = 0; x < g_width; x++) {
+                DWORD px = src_row[x];
+                row_buf[x*3+0]=(px>>16)&0xFF; row_buf[x*3+1]=(px>>8)&0xFF; row_buf[x*3+2]=px&0xFF;
+            }
+            fwrite(row_buf, 1, row_size, fp);
+        }
+        free(row_buf);
+        fclose(fp);
+        printf("[Screenshot] Saved: %s (%dx%d)\n", filename, g_width, g_height);
     }
-
-    /* Write headers */
-    fwrite(&bf, sizeof(BITMAPFILEHEADER), 1, fp);
-    fwrite(&bi, sizeof(BITMAPINFOHEADER), 1, fp);
-
-    /* Get and write pixel data */
-    BYTE *bits = malloc(dwBmpSize);
-    GetDIBits(hdcMem, hBitmap, 0, g_height, bits, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-    fwrite(bits, 1, dwBmpSize, fp);
-    free(bits);
-
-    fclose(fp);
-    printf("[Screenshot] Saved: %s (%dx%d)\n", filename, g_width, g_height);
-
-    DeleteObject(hBitmap);
-    DeleteDC(hdcMem);
-    ReleaseDC(g_hwnd, hdcWindow);
-    return TRUE;
+    
+    pSurf->lpVtbl->UnlockRect(pSurf);
+    pSurf->lpVtbl->Release(pSurf);
+    return fp != NULL;
 }
 
 /* ===== Window Procedure (matches original WndProc) ===== */
@@ -442,6 +497,22 @@ static BOOL LoadAssets(void) {
     g_camera.orbit_dist = 200.0f;     /* Medium follow distance */
     g_camera.orbit_tilt = 0.15f;      /* Low tilt = nearly horizontal view */
 
+    /* Initialize texture system after D3D device is ready */
+    {
+        char tex_dir[MAX_PATH];
+        snprintf(tex_dir, sizeof(tex_dir), "%s/Textures", g_game_dir);
+        texture_system_init(g_device, tex_dir);
+        
+        /* Pre-load all textures referenced by level geoms */
+        if (g_level) {
+            for (int g = 0; g < g_level->geom_count; g++) {
+                if (g_level->geoms[g].has_texture && g_level->geoms[g].texture[0]) {
+                    texture_load(g_level->geoms[g].texture);
+                }
+            }
+        }
+    }
+
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
 }
@@ -679,70 +750,22 @@ static void RenderBall(void) {
     }
 }
 
-/* ===== Render Level Mesh Geometry (Section 5 vertex array) =====
- * Vertex data from MESHWORLD files is stored as triangle strips in the
- * octree (Section 6). Without strip indices, we render as point cloud
- * first to verify coordinate system, then render as triangle-list for
- * rough visualization (some triangles will be degenerate).
- */
-static IDirect3DVertexBuffer8 *g_level_vbuf = NULL;
-static UINT g_level_vcount = 0;
-static DWORD g_level_fvf = 0;
+/* ===== Render Level Mesh — Per-geom with D3D lighting + materials + textures =====
+ * Each geom has its own material (ambient/diffuse/specular/emissive/power)
+ * and optional texture. We render each geom separately with:
+ *   - D3D lighting + material for all geoms (realistic shading from normals)
+ *   - Texture modulation for textured geoms (PinkChecker, etc.)
+ * 
+ * Strip format: each strip has (tri_count, vertex_offset) into the global vertex
+ * buffer. We expand to triangle list for DrawPrimitiveUP compatibility.
+ * 
+ * FVF = XYZ|NORMAL|TEX1 (24 bytes) — normals enable proper D3D lighting. */
 
-static void CreateLevelBuffers(void) {
-    if (!g_level || g_level->vertex_count == 0) return;
-    if (g_level_vbuf) return;  /* Already created */
-    
-    /* D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 */
-    typedef struct { float x, y, z; float nx, ny, nz; float u, v; } LevelVertex;
-    
-    g_level_fvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1;
-    g_level_vcount = g_level->vertex_count;
-    UINT vsize = g_level_vcount * sizeof(LevelVertex);
-    
-    HRESULT hr = g_device->lpVtbl->CreateVertexBuffer(g_device, vsize, 
-        D3DUSAGE_WRITEONLY, g_level_fvf, D3DPOOL_MANAGED, &g_level_vbuf);
-    if (FAILED(hr)) {
-        printf("[Render] CreateVertexBuffer failed: 0x%08lx\n", hr);
-        g_level_vbuf = NULL;
-        return;
-    }
-    
-    BYTE *pVerts;
-    hr = g_level_vbuf->lpVtbl->Lock(g_level_vbuf, 0, vsize, &pVerts, 0);
-    if (SUCCEEDED(hr)) {
-        LevelVertex *dst = (LevelVertex *)pVerts;
-        for (int i = 0; i < g_level->vertex_count; i++) {
-            mw_vertex_t *sv = &g_level->vertices[i];
-            dst[i].x = sv->x;
-            dst[i].y = sv->y;
-            dst[i].z = sv->z;
-            dst[i].nx = sv->nx;
-            dst[i].ny = sv->ny;
-            dst[i].nz = sv->nz;
-            dst[i].u = sv->u;
-            dst[i].v = sv->v;
-        }
-        g_level_vbuf->lpVtbl->Unlock(g_level_vbuf);
-        printf("[Render] Level vertex buffer created: %d vertices (%u bytes)\n",
-               g_level->vertex_count, vsize);
-    } else {
-        printf("[Render] Lock VB failed: 0x%08lx\n", hr);
-        g_level_vbuf->lpVtbl->Release(g_level_vbuf);
-        g_level_vbuf = NULL;
-    }
-}
-
-static void ReleaseLevelBuffers(void) {
-    if (g_level_vbuf) {
-        g_level_vbuf->lpVtbl->Release(g_level_vbuf);
-        g_level_vbuf = NULL;
-    }
-    g_level_vcount = 0;
-}
+/* Full vertex for rendering with normals + UV */
+typedef struct { float x, y, z; float nx, ny, nz; float u, v; } LevelVertex;
 
 static void RenderLevelGeometry(void) {
-    if (!g_level || g_level->vertex_count == 0) return;
+    if (!g_level || g_level->vertex_count == 0 || !g_level->geoms) return;
     
     /* Identity world matrix */
     D3DMATRIX world;
@@ -750,113 +773,135 @@ static void RenderLevelGeometry(void) {
     world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
     
-    /* Disable culling and texture */
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
-    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
-    
-    /* Build a temporary vertex buffer with per-vertex colors so geometry is visible.
-     * The source vertices are XYZ+NORMAL+UV (32 bytes). We'll render with
-     * XYZ+DIFFUSE (16 bytes) to force a bright blue-green color. */
-    typedef struct { float x, y, z; DWORD color; } VisVertex;
-    static VisVertex *vis_verts = NULL;
-    static int vis_count = 0;
-    
-    if (!vis_verts || vis_count != g_level->vertex_count) {
-        vis_count = g_level->vertex_count;
-        free(vis_verts);
-        vis_verts = malloc(vis_count * sizeof(VisVertex));
-        /* Color vertices by Y position: high=blue, low=green, surface=~white */
-        float ymin = g_level->bounds_min.y, ymax = g_level->bounds_max.y;
-        float yrange = ymax - ymin;
-        if (yrange < 1.0f) yrange = 1.0f;
-        for (int i = 0; i < vis_count; i++) {
-            vis_verts[i].x = g_level->vertices[i].x;
-            vis_verts[i].y = g_level->vertices[i].y;
-            vis_verts[i].z = g_level->vertices[i].z;
-            /* Color by height: track surface gets warm colors, depth gets cool
-             * Using vivid palette so geometry is always visible against magenta BG */
-            float t = (g_level->vertices[i].y - ymin) / yrange;
-            if (t < 0) t = 0; if (t > 1) t = 1;
-            int r, g, b;
-            if (t > 0.98f) {
-                /* Track surface: warm cream/white */
-                r = 240; g = 220; b = 180;
-            } else if (t > 0.5f) {
-                /* Upper structure: orange-brown */
-                float u = (t - 0.5f) * 2.0f;
-                r = (int)(180 + u * 60);
-                g = (int)(120 + u * 100);
-                b = (int)(60 + u * 120);
-            } else if (t > 0.1f) {
-                /* Mid: teal/green */
-                float u = (t - 0.1f) * 2.5f;
-                r = (int)(40 + u * 140);
-                g = (int)(160 - u * 40);
-                b = (int)(100 + u * 60);
-            } else {
-                /* Deep: blue-purple */
-                float u = t * 10.0f;
-                r = (int)(60 + u * 40);
-                g = (int)(30 + u * 130);
-                b = (int)(180 - u * 80);
-            }
-            vis_verts[i].color = D3DCOLOR_RGBA(r, g, b, 255);
-        }
-        printf("[Render] Built %d colored vis-vertices (Y range %.0f to %.0f)\n", 
-               vis_count, ymin, ymax);
-    }
-    
-    DWORD vis_fvf = D3DFVF_XYZ | D3DFVF_DIFFUSE;
-    g_device->lpVtbl->SetVertexShader(g_device, vis_fvf);
+    /* Enable Z-buffer, disable culling (track surfaces face both ways) */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
     
-    if (g_level->index_count > 0 && g_level->indices) {
-        /* Render proper triangles — expand indexed geometry to flat vertex list
-         * (DrawIndexedPrimitiveUP fails silently on Wine SW VP, so we expand) */
-        static VisVertex *tri_verts = NULL;
-        static int tri_vert_count = 0;
-        int needed = g_level->index_count; /* 3 indices per triangle, each = 1 vertex */
+    /* ENABLE D3D lighting — materials + normals give realistic shading */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
+    
+    /* Directional light (matches original game's lighting setup) */
+    {
+        D3DLIGHT8 light;
+        ZeroMemory(&light, sizeof(light));
+        light.Type = D3DLIGHT_DIRECTIONAL;
+        light.Ambient.r = 0.35f; light.Ambient.g = 0.35f; light.Ambient.b = 0.35f;
+        light.Diffuse.r = 0.8f; light.Diffuse.g = 0.8f; light.Diffuse.b = 0.8f;
+        light.Specular.r = 0.5f; light.Specular.g = 0.5f; light.Specular.b = 0.5f;
+        light.Direction.x = -0.3f; light.Direction.y = -1.0f; light.Direction.z = 0.3f;
+        g_device->lpVtbl->SetLight(g_device, 0, &light);
+        g_device->lpVtbl->LightEnable(g_device, 0, TRUE);
+        DWORD ambient = D3DCOLOR_RGBA(90, 90, 90, 255);
+        g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, ambient);
+    }
+    
+    /* Vertex format with normals: XYZ|NORMAL|TEX1 = 24 bytes per vertex */
+    typedef struct { float x, y, z; float nx, ny, nz; float u, v; } LitVertex;
+    DWORD fvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1;
+    g_device->lpVtbl->SetVertexShader(g_device, fvf);
+    
+    /* Allocate expansion buffer */
+    static LitVertex *tri_buf = NULL;
+    static int tri_buf_count = 0;
+    int max_verts = g_level->vertex_count * 3;
+    if (!tri_buf || tri_buf_count < max_verts) {
+        free(tri_buf);
+        tri_buf = malloc(max_verts * sizeof(LitVertex));
+        tri_buf_count = max_verts;
+    }
+    
+    /* Render each geom with its own D3D material + optional texture */
+    static int first_frame = 0;
+    int total_tris = 0;
+    
+    for (int gi = 0; gi < g_level->geom_count; gi++) {
+        mw_geom_t *geom = &g_level->geoms[gi];
         
-        if (!tri_verts || tri_vert_count < needed) {
-            free(tri_verts);
-            tri_verts = malloc(needed * sizeof(VisVertex));
-            tri_vert_count = needed;
+        /* Set D3D material from geom's material properties */
+        D3DMATERIAL8 mat;
+        ZeroMemory(&mat, sizeof(mat));
+        mat.Ambient.r  = geom->ambient[0];  mat.Ambient.g  = geom->ambient[1];
+        mat.Ambient.b  = geom->ambient[2];  mat.Ambient.a  = geom->ambient[3];
+        mat.Diffuse.r  = geom->diffuse[0];  mat.Diffuse.g  = geom->diffuse[1];
+        mat.Diffuse.b  = geom->diffuse[2];  mat.Diffuse.a  = geom->diffuse[3];
+        mat.Specular.r = geom->specular[0]; mat.Specular.g = geom->specular[1];
+        mat.Specular.b = geom->specular[2]; mat.Specular.a = geom->specular[3];
+        mat.Emissive.r = geom->emissive[0]; mat.Emissive.g = geom->emissive[1];
+        mat.Emissive.b = geom->emissive[2]; mat.Emissive.a = geom->emissive[3];
+        mat.Power = geom->power;
+        g_device->lpVtbl->SetMaterial(g_device, &mat);
+        
+        /* Bind texture or clear it */
+        texture_t *tex = NULL;
+        if (geom->has_texture && geom->texture[0]) {
+            tex = texture_load(geom->texture);
+        }
+        texture_bind(tex, g_device);
+        
+        /* Set texture stage: modulate texture with D3D lighting result */
+        if (tex) {
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        } else {
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
         }
         
-        /* Expand indexed triangles to direct vertex list */
-        int out = 0;
-        for (int i = 0; i + 2 < g_level->index_count; i += 3) {
-            uint32_t i0 = g_level->indices[i];
-            uint32_t i1 = g_level->indices[i+1];
-            uint32_t i2 = g_level->indices[i+2];
-            if (i0 < (uint32_t)vis_count && i1 < (uint32_t)vis_count && i2 < (uint32_t)vis_count && out + 3 <= needed) {
-                tri_verts[out++] = vis_verts[i0];
-                tri_verts[out++] = vis_verts[i1];
-                tri_verts[out++] = vis_verts[i2];
+        /* Expand this geom's strips into triangle list */
+        int tri_out = 0;
+        for (int s = 0; s < geom->strip_count; s++) {
+            mw_strip_t *strip = &geom->strips[s];
+            int ntri = strip->tri_count;
+            int base = strip->vertex_offset;
+            
+            for (int t = 0; t < ntri; t++) {
+                int v0 = base + t;
+                int v1 = (t % 2 == 0) ? (base + t + 1) : (base + t + 2);
+                int v2 = (t % 2 == 0) ? (base + t + 2) : (base + t + 1);
+                
+                if (v0 < g_level->vertex_count && v1 < g_level->vertex_count && 
+                    v2 < g_level->vertex_count && tri_out + 3 <= tri_buf_count) {
+                    mw_vertex_t *sv;
+                    sv = &g_level->vertices[v0];
+                    tri_buf[tri_out++] = (LitVertex){ sv->x, sv->y, sv->z, sv->nx, sv->ny, sv->nz, sv->u, sv->v };
+                    sv = &g_level->vertices[v1];
+                    tri_buf[tri_out++] = (LitVertex){ sv->x, sv->y, sv->z, sv->nx, sv->ny, sv->nz, sv->u, sv->v };
+                    sv = &g_level->vertices[v2];
+                    tri_buf[tri_out++] = (LitVertex){ sv->x, sv->y, sv->z, sv->nx, sv->ny, sv->nz, sv->u, sv->v };
+                }
             }
         }
         
-        int prim_count = out / 3;
+        int prim_count = tri_out / 3;
         if (prim_count > 0) {
-            g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
             g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLELIST, prim_count,
-                tri_verts, sizeof(VisVertex));
-            static int logged = 0;
-            if (!logged) { printf("[Render] Drew %d triangles from %d indices\n", prim_count, g_level->index_count); logged = 1; }
+                tri_buf, sizeof(LitVertex));
+            total_tris += prim_count;
         }
-    } else {
-        /* Fallback: point cloud only */
-        g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
-        g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
-        g_device->lpVtbl->SetRenderState(g_device, D3DRS_POINTSIZE, *((DWORD*)&(float){4.0f}));
-        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_POINTLIST, vis_count,
-            vis_verts, sizeof(VisVertex));
     }
     
+    if (first_frame < 2) {
+        printf("[Render] Per-geom D3D-lit render: %d geoms, %d total triangles, %d vertices\n",
+               g_level->geom_count, total_tris, g_level->vertex_count);
+        /* Dump first 5 geoms' materials */
+        int dump_count = g_level->geom_count < 5 ? g_level->geom_count : 5;
+        for (int di = 0; di < dump_count; di++) {
+            mw_geom_t *dg = &g_level->geoms[di];
+            printf("[Geom %d] amb=(%.2f,%.2f,%.2f,%.2f) dif=(%.2f,%.2f,%.2f,%.2f) tex=%d'%s' strips=%d\n",
+                   di, dg->ambient[0],dg->ambient[1],dg->ambient[2],dg->ambient[3],
+                   dg->diffuse[0],dg->diffuse[1],dg->diffuse[2],dg->diffuse[3],
+                   dg->has_texture, dg->texture, dg->strip_count);
+        }
+        first_frame++;
+    }
+    
+    /* Restore defaults */
+    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
+    g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_DISABLE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CCW);
 }
 
@@ -943,6 +988,7 @@ static void Render(void) {
         if (g < 0) g = 0; if (g > 255) g = 255;
         if (b < 0) b = 0; if (b > 255) b = 255;
         clear_color = D3DCOLOR_RGBA(r, g, b, 255);
+        printf("[Render] BG color: (%d, %d, %d) = 0x%08lx\n", r, g, b, clear_color);
     }
     g_device->lpVtbl->Clear(g_device, 0, NULL, 
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
@@ -957,6 +1003,14 @@ static void Render(void) {
 
     g_device->lpVtbl->EndScene(g_device);
     g_device->lpVtbl->Present(g_device, NULL, NULL, NULL, NULL);
+    
+    /* Auto-screenshot after a few frames for testing */
+    static int render_count = 0;
+    render_count++;
+    if (render_count == 5) {
+        SaveScreenshot("tests/screenshots/reimpl_test31_textured.bmp");
+        printf("[Render] Auto-screenshot saved\n");
+    }
 }
 
 /* ===== Game Loop (mirrors App_Run 0x46BD80) ===== */
@@ -1008,7 +1062,7 @@ static void GameLoop(void) {
 
 /* ===== Cleanup ===== */
 static void Cleanup(void) {
-    ReleaseLevelBuffers();
+    texture_system_shutdown();
     if (g_level) meshworld_free(g_level);
     if (g_mouse) { g_mouse->lpVtbl->Unacquire(g_mouse); g_mouse->lpVtbl->Release(g_mouse); }
     if (g_keyboard) { g_keyboard->lpVtbl->Unacquire(g_keyboard); g_keyboard->lpVtbl->Release(g_keyboard); }
