@@ -90,13 +90,13 @@ static struct {
     float input_fx, input_fy; /* Accumulated input force */
 } g_ball;
 
-/* Camera (mirrors Scene camera system) */
+/* Camera (mirrors Scene camera system 0x419FA0) */
 static struct {
-    float x, y, z;       /* Camera position */
-    float tx, ty, tz;     /* Look-at target = ball */
-    float height;         /* +0x43C0 = 800.0 default */
-    float distance;       /* +0x43C4 = 800.0 default */
-    float angle;          /* Orbit angle (+0x29BC) */
+    float x, y, z;       /* Camera position (computed from orbit) */
+    float tx, ty, tz;    /* Look-at target = ball position */
+    float orbit_angle;   /* Scene+0x29BC: orbital angle (radians) */
+    float orbit_dist;    /* Scene+0x29C0: distance from ball (800.0 arena) */
+    float orbit_tilt;    /* Y component of orbit direction (0.9 = slightly above) */
 } g_camera;
 
 /* Timing (mirrors App_Run) */
@@ -431,12 +431,16 @@ static BOOL LoadAssets(void) {
         }
     }
 
-    /* Camera defaults — in D3D left-handed coordinates, +Z is forward (into screen).
-     * Place camera BEHIND the ball (lower Z) looking forward at it. */
+    /* Camera defaults — orbital follow (mirrors CameraLookAt 0x413280).
+     * Camera_SetView(orbit_dir, distance):
+     *   orbit_dir = (cos(angle), tilt, sin(angle)) normalized 
+     *   eye = ball_pos + normalize(orbit_dir) * distance
+     * Arena default: distance=800, angle=45°, tilt=0.9
+     * Race default: distance=250, angle=0°, tilt=1.2 (closer, more overhead) */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    g_camera.height = 200.0f;   /* Above ball */
-    g_camera.distance = 400.0f; /* Behind ball (camera will be at Z - dist) */
-    g_camera.angle = 0.0f;
+    g_camera.orbit_angle = -1.5708f;  /* -PI/2: camera behind ball in -Z direction */
+    g_camera.orbit_dist = 450.0f;     /* Race follow distance */
+    g_camera.orbit_tilt = 0.4f;      /* Slightly above horizontal (not overhead) */
 
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
@@ -547,20 +551,29 @@ static void SetMatrices(void) {
     proj._43 = -zn * zf / (zf - zn);
     g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &proj);
 
-    /* View — camera follow (mirrors Scene_SetCamera 0x419FA0) */
-    g_camera.tx = g_ball.x;
-    g_camera.ty = g_ball.y;
-    g_camera.tz = g_ball.z;
+    /* View — orbital follow camera (mirrors Scene_SetCamera 0x419FA0 Mode 5)
+     * orbit_dir = (cos(angle), tilt, sin(angle)) normalized, then:
+     * eye = ball_pos + normalize(orbit_dir) * distance
+     * at  = ball_pos
+     * This gives the classic Hamsterball "floating overhead behind" view. */
+    float cos_a = cosf(g_camera.orbit_angle);
+    float sin_a = sinf(g_camera.orbit_angle);
 
-    /* Camera: above and behind ball, looking down at it */
-    float cam_height = g_camera.height;
-    float cam_dist = g_camera.distance;
+    /* Build orbit direction vector (from focus toward camera) */
+    float dir_x = cos_a;
+    float dir_y = g_camera.orbit_tilt;
+    float dir_z = sin_a;
+    /* Normalize it */
+    float dlen = sqrtf(dir_x*dir_x + dir_y*dir_y + dir_z*dir_z);
+    if (dlen > 0) { dir_x /= dlen; dir_y /= dlen; dir_z /= dlen; }
 
-    D3DMATRIX view;
-    float eyex = g_ball.x, eyey = g_ball.y + cam_height, eyez = g_ball.z - cam_dist;
+    float eyex = g_ball.x + dir_x * g_camera.orbit_dist;
+    float eyey = g_ball.y + dir_y * g_camera.orbit_dist;
+    float eyez = g_ball.z + dir_z * g_camera.orbit_dist;
     float atx = g_ball.x, aty = g_ball.y, atz = g_ball.z;
     float upx = 0, upy = 1, upz = 0;
     
+    D3DMATRIX view;
     /* Compute axes for D3D left-handed look-at matrix (D3DXMatrixLookAtLH convention) */
     float zaxis_x = atx - eyex, zaxis_y = aty - eyey, zaxis_z = atz - eyez;
     float zlen = sqrtf(zaxis_x*zaxis_x + zaxis_y*zaxis_y + zaxis_z*zaxis_z);
@@ -593,12 +606,10 @@ static void SetMatrices(void) {
     /* Debug: print first frame camera info */
     static int frame_count = 0;
     if (frame_count < 3) {
+        printf("[Camera] Orbit angle=%.2f dist=%.0f tilt=%.1f\n", 
+               g_camera.orbit_angle, g_camera.orbit_dist, g_camera.orbit_tilt);
         printf("[Camera] Eye=(%.1f,%.1f,%.1f) At=(%.1f,%.1f,%.1f)\n", 
                eyex, eyey, eyez, atx, aty, atz);
-        printf("[Camera] ViewMat: _11=%.3f _22=%.3f _33=%.3f _44=%.1f\n",
-               view._11, view._22, view._33, view._44);
-        printf("[Camera] ProjMat: _11=%.3f _22=%.3f _33=%.4f _34=%.1f _43=%.4f\n",
-               proj._11, proj._22, proj._33, proj._34, proj._43);
         frame_count++;
     }
 }
@@ -778,22 +789,28 @@ static void RenderLevelGeometry(void) {
     
     DWORD vis_fvf = D3DFVF_XYZ | D3DFVF_DIFFUSE;
     g_device->lpVtbl->SetVertexShader(g_device, vis_fvf);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
     
-    /* Render point cloud */
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_POINTSIZE, *((DWORD*)&(float){4.0f}));
-    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_POINTLIST, vis_count,
-        vis_verts, sizeof(VisVertex));
-    
-    /* Render as triangle list */
-    int prim_count = vis_count / 3;
-    if (prim_count > 0) {
-        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLELIST, prim_count,
+    if (g_level->index_count > 0 && g_level->indices) {
+        /* Render proper triangles from strip-converted index buffer */
+        g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+        int prim_count = g_level->index_count / 3;
+        g_device->lpVtbl->DrawIndexedPrimitiveUP(g_device, D3DPT_TRIANGLELIST, 0,
+            vis_count, prim_count, g_level->indices, D3DFMT_INDEX32,
+            vis_verts, sizeof(VisVertex));
+    } else {
+        /* Fallback: point cloud only */
+        g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
+        g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+        g_device->lpVtbl->SetRenderState(g_device, D3DRS_POINTSIZE, *((DWORD*)&(float){4.0f}));
+        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_POINTLIST, vis_count,
             vis_verts, sizeof(VisVertex));
     }
     
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CCW);
 }
 
 static void RenderLevelObjects(void) {

@@ -81,6 +81,26 @@ struct mw_object_t {
     uint32_t *indices;
 };
 
+/* Strip in a geom (one continuous triangle strip) */
+typedef struct {
+    int tri_count;       /* Number of triangles in this strip */
+    int vertex_offset;   /* Offset into global vertex buffer (vertex_ref_offset) */
+} mw_strip_t;
+
+/* Geom (one material group within a leaf of the octree) */
+typedef struct {
+    char name[256];
+    float diffuse[4];
+    float ambient[4];
+    float specular[4];
+    float emissive[4];
+    float power;
+    int has_texture;
+    char texture[256];
+    int strip_count;
+    mw_strip_t *strips;
+} mw_geom_t;
+
 /* Level structure */
 struct mw_level_t {
     char name[256];
@@ -100,9 +120,13 @@ struct mw_level_t {
     mw_vec3_t bounds_min;
     mw_vec3_t bounds_max;
     
-    /* Geometry data (raw binary, for octree walk later) */
-    int geometry_size;
-    uint8_t *geometry_data;
+    /* Mesh groups from Section 6 octree leaves */
+    int geom_count;
+    mw_geom_t *geoms;
+    
+    /* Expanded triangle-list index buffer (3 indices per triangle) */
+    int index_count;
+    uint32_t *indices;   /* Every 3 consecutive = one triangle */
 };
 
 /* Parse a MESHWORLD file from memory */
