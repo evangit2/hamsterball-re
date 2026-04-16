@@ -839,15 +839,23 @@ static void RenderLevelGeometry(void) {
         }
         texture_bind(tex, g_device);
         
-        /* Set texture stage: modulate texture with D3D lighting result */
+        /* Set texture stage: modulate texture with material color */
         if (tex) {
             g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
             g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
             g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
             g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+            /* Wrap/tile texture addressing for repeating patterns (PinkChecker etc.) */
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
+            /* Point filtering for sharp tiling (original uses nearest-neighbor for 2x2) */
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MAGFILTER, D3DTEXF_POINT);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MINFILTER, D3DTEXF_POINT);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
         } else {
             g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
             g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
         }
         
         /* Expand this geom's strips into triangle list */
@@ -887,11 +895,12 @@ static void RenderLevelGeometry(void) {
         printf("[Render] Per-geom D3D-lit render: %d geoms, %d total triangles, %d vertices\n",
                g_level->geom_count, total_tris, g_level->vertex_count);
         /* Dump first 5 geoms' materials */
-        int dump_count = g_level->geom_count < 5 ? g_level->geom_count : 5;
+        int dump_count = g_level->geom_count < 50 ? g_level->geom_count : 50;
         for (int di = 0; di < dump_count; di++) {
             mw_geom_t *dg = &g_level->geoms[di];
-            printf("[Geom %d] amb=(%.2f,%.2f,%.2f,%.2f) dif=(%.2f,%.2f,%.2f,%.2f) tex=%d'%s' strips=%d\n",
-                   di, dg->ambient[0],dg->ambient[1],dg->ambient[2],dg->ambient[3],
+            printf("[Geom %d] name='%s' amb=(%.2f,%.2f,%.2f,%.2f) dif=(%.2f,%.2f,%.2f,%.2f) tex=%d'%s' strips=%d\n",
+                   di, dg->name,
+                   dg->ambient[0],dg->ambient[1],dg->ambient[2],dg->ambient[3],
                    dg->diffuse[0],dg->diffuse[1],dg->diffuse[2],dg->diffuse[3],
                    dg->has_texture, dg->texture, dg->strip_count);
         }
