@@ -388,7 +388,7 @@ static BOOL LoadLevel(const char *name) {
         return FALSE;
     }
     strncpy(g_level_name, name, sizeof(g_level_name) - 1);
-    printf("[Load] %s: %d objects, %d vertices, %d materials\n", name, g_level->object_count, g_level->vertex_count, g_level->material_count);
+    printf("[Load] %s: %d objects, %d vertices, %d materials\n", name, g_level->object_count, g_level->vertex_count, 0 /* TODO: material_count */);
     return TRUE;
 }
 
@@ -406,9 +406,9 @@ static BOOL LoadAssets(void) {
     /* Reset ball at start position — on the level surface */
     if (g_level && g_level->vertex_count > 0) {
         /* Use the computed bbox to position ball at center of the level surface */
-        g_ball.x = (g_level->bbox_min_x + g_level->bbox_max_x) / 2.0f;
-        g_ball.y = g_level->bbox_max_y + g_ball.radius + 1.0f; /* Just above the highest surface */
-        g_ball.z = (g_level->bbox_min_z + g_level->bbox_max_z) / 2.0f;
+        g_ball.x = (g_level->bounds_min.x + g_level->bounds_max.x) / 2.0f;
+        g_ball.y = g_level->bounds_max.y + g_ball.radius + 1.0f; /* Just above the highest surface */
+        g_ball.z = (g_level->bounds_min.z + g_level->bounds_max.z) / 2.0f;
     } else {
         g_ball.x = 0; g_ball.y = 13.33f + 26.0f; g_ball.z = 0;
     }
@@ -433,12 +433,12 @@ static BOOL LoadAssets(void) {
 
     /* Camera defaults — position above level, looking down at center */
     if (g_level && g_level->vertex_count > 0) {
-        float cx = (g_level->bbox_min_x + g_level->bbox_max_x) / 2.0f;
-        float cy = g_level->bbox_max_y;
-        float cz = (g_level->bbox_min_z + g_level->bbox_max_z) / 2.0f;
-        float extent = g_level->bbox_max_x - g_level->bbox_min_x;
-        if (extent < g_level->bbox_max_z - g_level->bbox_min_z)
-            extent = g_level->bbox_max_z - g_level->bbox_min_z;
+        float cx = (g_level->bounds_min.x + g_level->bounds_max.x) / 2.0f;
+        float cy = g_level->bounds_max.y;
+        float cz = (g_level->bounds_min.z + g_level->bounds_max.z) / 2.0f;
+        float extent = g_level->bounds_max.x - g_level->bounds_min.x;
+        if (extent < g_level->bounds_max.z - g_level->bounds_min.z)
+            extent = g_level->bounds_max.z - g_level->bounds_min.z;
         g_camera.height = extent * 0.8f;
         g_camera.distance = extent * 0.6f;
         g_camera.tx = cx; g_camera.ty = cy; g_camera.tz = cz;
@@ -569,9 +569,9 @@ static void SetMatrices(void) {
     
     /* For large levels, use a higher camera to see more of the arena */
     if (g_level && g_level->vertex_count > 0) {
-        float extent = g_level->bbox_max_x - g_level->bbox_min_x;
-        if (extent < g_level->bbox_max_z - g_level->bbox_min_z)
-            extent = g_level->bbox_max_z - g_level->bbox_min_z;
+        float extent = g_level->bounds_max.x - g_level->bounds_min.x;
+        if (extent < g_level->bounds_max.z - g_level->bounds_min.z)
+            extent = g_level->bounds_max.z - g_level->bounds_min.z;
         if (extent > 500.0f) {
             /* Wide overview for arena levels */
             cam_height = extent * 0.9f;
@@ -729,33 +729,9 @@ static void RenderLevelGeometry(void) {
     /* === Pass 1: Flat-shaded geometry with material colors === */
     D3DMATERIAL8 mat;
     ZeroMemory(&mat, sizeof(mat));
-    /* Use the first extended material's diffuse color, or default grey-brown */
-    int found_ext = 0;
-    for (int m = 0; m < g_level->material_count; m++) {
-        if (g_level->materials[m].has_texture || g_level->materials[m].diffuse[0] > 0) {
-            mat.Diffuse.r = g_level->materials[m].diffuse[0];
-            mat.Diffuse.g = g_level->materials[m].diffuse[1];
-            mat.Diffuse.b = g_level->materials[m].diffuse[2];
-            mat.Diffuse.a = g_level->materials[m].diffuse[3];
-            mat.Ambient.r = g_level->materials[m].ambient[0];
-            mat.Ambient.g = g_level->materials[m].ambient[1];
-            mat.Ambient.b = g_level->materials[m].ambient[2];
-            mat.Ambient.a = g_level->materials[m].ambient[3];
-            mat.Specular.r = g_level->materials[m].specular[0];
-            mat.Specular.g = g_level->materials[m].specular[1];
-            mat.Specular.b = g_level->materials[m].specular[2];
-            mat.Power = g_level->materials[m].shine;
-            if (mat.Ambient.r == 0 && mat.Ambient.g == 0 && mat.Ambient.b == 0) {
-                mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f;
-            }
-            found_ext = 1;
-            break;
-        }
-    }
-    if (!found_ext) {
-        mat.Diffuse.r = 0.7f; mat.Diffuse.g = 0.65f; mat.Diffuse.b = 0.55f; mat.Diffuse.a = 1.0f;
-        mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f; mat.Ambient.a = 1.0f;
-    }
+    /* Default grey-brown material (TODO: read from octree geom materials) */
+    mat.Diffuse.r = 0.7f; mat.Diffuse.g = 0.65f; mat.Diffuse.b = 0.55f; mat.Diffuse.a = 1.0f;
+    mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f; mat.Ambient.a = 1.0f;
     g_device->lpVtbl->SetMaterial(g_device, &mat);
     
     /* Identity world matrix */
