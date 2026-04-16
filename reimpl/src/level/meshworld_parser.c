@@ -274,6 +274,9 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
     level->ambient_color.z = mw_read_f32(&r);
     
     /* === SECTION 5: Global Vertex Buffer === */
+    /* Vertices are stored in 3DS Max coordinate system (Z-up, Y-forward).
+     * Must convert to D3D (Y-up, Z-forward): d3d_x=max_x, d3d_y=max_z, d3d_z=max_y
+     * Same conversion as Section 1 objects above. */
     level->vertex_count = mw_read_u32(&r);
     if (level->vertex_count > 0 && level->vertex_count < 200000) {
         size_t vb_size = level->vertex_count * sizeof(mw_vertex_t);
@@ -283,6 +286,19 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
                 free(level->vertices);
                 level->vertices = NULL;
                 level->vertex_count = 0;
+            } else {
+                /* Convert from Max Z-up to D3D Y-up */
+                for (int i = 0; i < level->vertex_count; i++) {
+                    mw_vertex_t *v = &level->vertices[i];
+                    float max_x = v->x, max_y = v->y, max_z = v->z;
+                    float max_nx = v->nx, max_ny = v->ny, max_nz = v->nz;
+                    v->x = max_x;        /* D3D X = Max X */
+                    v->y = max_z;        /* D3D Y = Max Z (up) */
+                    v->z = max_y;        /* D3D Z = Max Y (forward) */
+                    v->nx = max_nx;
+                    v->ny = max_nz;      /* Normal Y = Max Z */
+                    v->nz = max_ny;      /* Normal Z = Max Y */
+                }
             }
         }
     } else {

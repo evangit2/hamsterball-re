@@ -12,11 +12,13 @@ pkg_check_modules(SDL2_MIXER REQUIRED SDL2_mixer)
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 
-# Source files - exclude test files and level_viewer (has its own main)
+# Source files - exclude test files, level_viewer (has its own main), and Windows-only
 file(GLOB_RECURSE SOURCES "src/*.c")
 list(FILTER SOURCES EXCLUDE REGEX "level_viewer\\.c$")
 list(FILTER SOURCES EXCLUDE REGEX "level_viewer_v2\\.c$")
 list(FILTER SOURCES EXCLUDE REGEX "mesh_test\\.c$")
+list(FILTER SOURCES EXCLUDE REGEX "win32_main\\.c$")  # Windows-only D3D8 main
+list(FILTER SOURCES EXCLUDE REGEX "test_parser\\.c$")  # Standalone test, uses old API
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)

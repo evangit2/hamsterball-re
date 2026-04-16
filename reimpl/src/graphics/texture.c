@@ -1,11 +1,8 @@
-/* texture.c - D3D8 texture loading using stb_image
- * No D3DX dependency — loads PNG/BMP/TGA/JPG via stb_image,
- * creates D3D8 textures manually.
+/* texture.c - OpenGL texture loading using stb_image
+ * Matches original game's Texture_Create (0x476770) lookup pattern
+ * Uses SDL2_image + OpenGL instead of D3D8
  */
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <d3d8.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,61 +10,15 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <util/stb_image.h>
 
+#include <GL/glew.h>
+
 #include <graphics/texture.h>
 
-#define MAX_TEXTURES 256
-
 static struct {
-    IDirect3DDevice8 *device;
     char textures_dir[512];
     texture_t textures[MAX_TEXTURES];
     int count;
 } g_tex = {0};
-
-/* Create a D3D8 texture from raw RGBA pixel data */
-static IDirect3DTexture8 *create_texture_from_pixels(IDirect3DDevice8 *device, 
-                                                        int width, int height, 
-                                                        const unsigned char *rgba_data) {
-    IDirect3DTexture8 *tex = NULL;
-    HRESULT hr;
-    
-    /* D3DXCreateTextureFromFile uses power-of-2 textures, so should we */
-    int tw = 1, th = 1;
-    while (tw < width) tw *= 2;
-    while (th < height) th *= 2;
-    
-    hr = device->lpVtbl->CreateTexture(device, tw, th, 1, 0, 
-                                         D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex);
-    if (FAILED(hr)) {
-        printf("[Texture] CreateTexture failed: 0x%08lx (size %dx%d)\n", hr, tw, th);
-        return NULL;
-    }
-    
-    D3DLOCKED_RECT locked;
-    hr = tex->lpVtbl->LockRect(tex, 0, &locked, NULL, 0);
-    if (FAILED(hr)) {
-        printf("[Texture] LockRect failed: 0x%08lx\n", hr);
-        tex->lpVtbl->Release(tex);
-        return NULL;
-    }
-    
-    /* Copy RGBA data into D3D texture (A8R8G8B8 format = native DWORD order) */
-    DWORD *dst = (DWORD *)locked.pBits;
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int si = (y * width + x) * 4;  /* Source index in RGBA data */
-            unsigned char r = rgba_data[si + 0];
-            unsigned char g = rgba_data[si + 1];
-            unsigned char b = rgba_data[si + 2];
-            unsigned char a = rgba_data[si + 3];
-            /* D3DFMT_A8R8G8B8 is stored as ARGB in native byte order on x86 (little-endian) */
-            dst[y * (locked.Pitch / 4) + x] = (a << 24) | (r << 16) | (g << 8) | b;
-        }
-    }
-    
-    tex->lpVtbl->UnlockRect(tex, 0);
-    return tex;
-}
 
 /* Try loading a texture from various paths */
 static texture_t *load_image_file(const char *filename) {
@@ -111,29 +62,48 @@ static texture_t *load_image_file(const char *filename) {
         return NULL;
     }
     
-    /* Create D3D8 texture from pixel data */
-    IDirect3DTexture8 *d3d_tex = create_texture_from_pixels(g_tex.device, w, h, pixels);
-    stbi_image_free(pixels);
+    /* Create OpenGL texture from pixel data */
+    GLuint gl_tex;
+    glGenTextures(1, &gl_tex);
+    glBindTexture(GL_TEXTURE_2D, gl_tex);
     
-    if (!d3d_tex) return NULL;
+    /* Power-of-2 size (for compatibility) */
+    int tw = 1, th = 1;
+    while (tw < w) tw *= 2;
+    while (th < h) th *= 2;
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    
+    /* Generate mipmaps */
+    glGenerateMipmap(GL_TEXTURE_2D);
+    
+    /* Default parameters: wrap + linear filtering */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(pixels);
     
     /* Cache */
     if (g_tex.count >= MAX_TEXTURES) return NULL;
     texture_t *tex = &g_tex.textures[g_tex.count++];
-    tex->d3d_tex = d3d_tex;
+    tex->gl_tex = gl_tex;
     tex->width = w;
     tex->height = h;
     tex->refcount = 1;
+    tex->loaded = true;
     strncpy(tex->filename, filename, sizeof(tex->filename) - 1);
     
-    printf("[Texture] Loaded: %s (%dx%d)\n", filename, w, h);
+    printf("[Texture] Loaded: %s (%dx%d, GL tex %u)\n", filename, w, h, gl_tex);
     return tex;
 }
 
 /* Initialize */
-void texture_system_init(IDirect3DDevice8 *device, const char *textures_dir) {
+void texture_system_init(const char *textures_dir) {
     memset(&g_tex, 0, sizeof(g_tex));
-    g_tex.device = device;
     if (textures_dir) {
         strncpy(g_tex.textures_dir, textures_dir, sizeof(g_tex.textures_dir) - 1);
     }
@@ -154,20 +124,24 @@ texture_t *texture_load(const char *filename) {
     return load_image_file(filename);
 }
 
-/* Bind texture to device */
-void texture_bind(texture_t *tex, IDirect3DDevice8 *device) {
-    if (tex && tex->d3d_tex) {
-        device->lpVtbl->SetTexture(device, 0, (IDirect3DBaseTexture8 *)tex->d3d_tex);
+/* Bind texture for rendering */
+void texture_bind(texture_t *tex, int stage) {
+    glActiveTexture(GL_TEXTURE0 + stage);
+    if (tex && tex->loaded && tex->gl_tex) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, tex->gl_tex);
     } else {
-        device->lpVtbl->SetTexture(device, 0, NULL);
+        glDisable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
+    glActiveTexture(GL_TEXTURE0);
 }
 
 /* Shutdown */
 void texture_system_shutdown(void) {
     for (int i = 0; i < g_tex.count; i++) {
-        if (g_tex.textures[i].d3d_tex) {
-            g_tex.textures[i].d3d_tex->lpVtbl->Release(g_tex.textures[i].d3d_tex);
+        if (g_tex.textures[i].gl_tex) {
+            glDeleteTextures(1, &g_tex.textures[i].gl_tex);
         }
     }
     memset(&g_tex, 0, sizeof(g_tex));

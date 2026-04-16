@@ -1,7 +1,9 @@
 /* ui.c - UI/menu system matching original App_ShowMainMenu (0x46B630) */
-#include "ui/ui.h"
 #include <stdio.h>
 #include <string.h>
+#include <GL/glew.h>
+#include "ui/ui.h"
+#include "graphics/texture.h"
 
 static ui_title_state_t g_title_state = UI_TITLE_LOGO;
 static int g_selection = 0;
@@ -198,7 +200,6 @@ int ui_get_selection(void) { return g_selection; }
 bool ui_is_active(void) { return g_active; }
 
 void ui_shutdown(void) {
-    if (g_title_texture) texture_release(g_title_texture);
-    if (g_miniclip_logo) texture_release(g_miniclip_logo);
-    if (g_raptisoft_logo) texture_release(g_raptisoft_logo);
+    if (g_title_texture) texture_system_shutdown();  /* Releases all textures */
+    (void)g_miniclip_logo; (void)g_raptisoft_logo;  /* Not yet implemented */
 }

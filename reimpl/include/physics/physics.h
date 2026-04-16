@@ -51,4 +51,8 @@ typedef struct {
 
 bool physics_check_collision(vec3_t pos, vec3_t dir, collision_result_t *result);
 
+/* Camera configuration (from CameraLookAt 0x413280 and Scene_SetCamera 0x419FA0) */
+void physics_set_cameralookat(float x, float y, float z);
+void physics_set_camera_orbit(float angle_radians);
+
 #endif

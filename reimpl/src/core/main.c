@@ -237,18 +237,31 @@ static int load_assets(const char *game_dir) {
         return -1;
     }
     
-    /* Find ball start position */
-    vec3_t start = {0, 10.0f, 0};
+    /* Find ball start position AND CAMERALOOKAT target */
+    vec3_t start = {0, -765.0f, 0};  /* Start on floor level (Y approx -800 + radius) */
+    vec3_t cam_target = {0, 0, 0};
+    bool has_cam_target = false;
     for (int i = 0; i < g_level->object_count; i++) {
         if (g_level->objects[i].type == MW_OBJ_START) {
             start.x = g_level->objects[i].position.x;
             start.y = g_level->objects[i].position.y + 5.0f;
             start.z = g_level->objects[i].position.z;
-            break;
+        }
+        if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
+            cam_target.x = g_level->objects[i].position.x;
+            cam_target.y = g_level->objects[i].position.y;
+            cam_target.z = g_level->objects[i].position.z;
+            has_cam_target = true;
         }
     }
     physics_init();
     ball_reset(start);
+    
+    /* Set camera target (CameraLookAt 0x413280) */
+    if (has_cam_target) {
+        physics_set_cameralookat(cam_target.x, cam_target.y, cam_target.z);
+        printf("[Load] CameraLookAt target: (%.1f, %.1f, %.1f)\n", cam_target.x, cam_target.y, cam_target.z);
+    }
     
     printf("[Load] Ball spawned at (%.1f, %.1f, %.1f)\n", start.x, start.y, start.z);
     return 0;
@@ -518,7 +531,7 @@ int main(int argc, char *argv[]) {
     /* Load assets (shadow texture, ball mesh, default level) */
     if (load_assets(game_dir) < 0) return 1;
     
-    g_state = GAME_STATE_MENU; /* Start at title screen */
+    g_state = GAME_STATE_RACING; /* Start directly in race for testing */
     
     /* Game loop (mirrors App_Run 0x46BD80) */
     uint32_t last_frame = SDL_GetTicks();
@@ -559,17 +572,23 @@ int main(int argc, char *argv[]) {
             ui_render_title(g_screen_width, g_screen_height);
         } else {
         
-        /* Set projection (matches Graphics_SetViewport 0x454B50) */
+        /* Set projection (matches Graphics_SetViewport + Graphics_SetProjection 0x454AB0)
+         * Original: near=10.0, far=5000.0, FOV=45.0 (from Game + D3D8) */
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         float aspect = (float)g_screen_width / (float)g_screen_height;
-        gluPerspective(60.0f, aspect, 1.0f, 2000.0f);
+        gluPerspective(45.0f, aspect, 10.0f, 5000.0f);
         
         /* Set view (matches Graphics_SetViewTransform 0x454A30) */
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         vec3_t cam_pos, cam_target;
         physics_get_camera(&cam_pos, &cam_target);
+        
+        static int cam_dbg = 0;
+        if (cam_dbg++ < 3) printf("[Camera] pos=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f)\n",
+            cam_pos.x, cam_pos.y, cam_pos.z, cam_target.x, cam_target.y, cam_target.z);
+        
         gluLookAt(cam_pos.x, cam_pos.y, cam_pos.z,
                   cam_target.x, cam_target.y, cam_target.z,
                   0, 1, 0);
