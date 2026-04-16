@@ -988,7 +988,11 @@ static void Render(void) {
         if (g < 0) g = 0; if (g > 255) g = 255;
         if (b < 0) b = 0; if (b > 255) b = 255;
         clear_color = D3DCOLOR_RGBA(r, g, b, 255);
-        printf("[Render] BG color: (%d, %d, %d) = 0x%08lx\n", r, g, b, clear_color);
+        static int bg_printed = 0;
+        if (bg_printed < 2) {
+            printf("[Render] BG color: (%d, %d, %d) = 0x%08lx\n", r, g, b, clear_color);
+            bg_printed++;
+        }
     }
     g_device->lpVtbl->Clear(g_device, 0, NULL, 
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
