@@ -290,17 +290,7 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
     }
     
     /* === SECTION 6: Octree Mesh Dump === */
-    /* Read root cube bounds */
-    if (r.pos + 24 <= r.size) {
-        level->bounds_min.x = mw_read_f32(&r);
-        level->bounds_min.y = mw_read_f32(&r);
-        level->bounds_min.z = mw_read_f32(&r);
-        level->bounds_max.x = mw_read_f32(&r);
-        level->bounds_max.y = mw_read_f32(&r);
-        level->bounds_max.z = mw_read_f32(&r);
-    }
-    
-    /* Compute actual vertex bounding box (more reliable than octree cube) */
+    /* Compute vertex bounding box first (more reliable than octree cube) */
     if (level->vertices && level->vertex_count > 0) {
         float vmin[3] = {1e30f,1e30f,1e30f}, vmax[3] = {-1e30f,-1e30f,-1e30f};
         for (int i = 0; i < level->vertex_count; i++) {
@@ -312,7 +302,6 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
             if (v->y > vmax[1]) vmax[1] = v->y;
             if (v->z > vmax[2]) vmax[2] = v->z;
         }
-        /* Override octree bounds with vertex-computed bounds */
         level->bounds_min.x = vmin[0]; level->bounds_min.y = vmin[1]; level->bounds_min.z = vmin[2];
         level->bounds_max.x = vmax[0]; level->bounds_max.y = vmax[1]; level->bounds_max.z = vmax[2];
     }
@@ -325,68 +314,23 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
      * Each geom: name, materials, has_texture, texture, strip_count, 
      *   then per strip: (tri_count, vertex_ref_offset)
      */
-    size_t sec6_start = r.pos;
     
-    /* Fallback: if no geoms found, try simple flat parse (arena levels have no octree subdivision) */
     int geom_cap = 64;
     level->geoms = calloc(geom_cap, sizeof(mw_geom_t));
     level->geom_count = 0;
-    int total_indices = 0;
     
-    /* Simple approach for WarmUp/Arena levels: Section 6 is often just a single leaf
-     * Root cube(6 floats) + 0 (no submeshes) + geom_count + geoms.
-     * For levels with octree subdivision, we recurse. */
-    r.pos = sec6_start;
+    /* Use recursive octree walker */
+    octree_ctx_t ctx;
+    ctx.r = &r;
+    ctx.level = level;
+    ctx.geom_cap = geom_cap;
+    ctx.total_indices = 0;
     
-    /* Read root cube */
-    for (int i = 0; i < 6; i++) mw_read_f32(&r);
-    
-    int submesh_count = (int)mw_read_u32(&r);
-    /* For now, handle the simple case: no submeshes (leaf node) */
-    /* TODO: handle recursive octree for complex levels */
-    
-    if (submesh_count == 0) {
-        /* Leaf node — read geoms directly */
-        int gc = (int)mw_read_u32(&r);
-        
-        for (int g = 0; g < gc; g++) {
-            if (level->geom_count >= geom_cap) {
-                geom_cap *= 2;
-                level->geoms = realloc(level->geoms, geom_cap * sizeof(mw_geom_t));
-            }
-            mw_geom_t *geom = &level->geoms[level->geom_count++];
-            memset(geom, 0, sizeof(*geom));
-            
-            mw_read_string(&r, geom->name, sizeof(geom->name));
-            geom->ambient[0] = mw_read_f32(&r); geom->ambient[1] = mw_read_f32(&r);
-            geom->ambient[2] = mw_read_f32(&r); geom->ambient[3] = mw_read_f32(&r);
-            geom->diffuse[0] = mw_read_f32(&r); geom->diffuse[1] = mw_read_f32(&r);
-            geom->diffuse[2] = mw_read_f32(&r); geom->diffuse[3] = mw_read_f32(&r);
-            geom->specular[0] = mw_read_f32(&r); geom->specular[1] = mw_read_f32(&r);
-            geom->specular[2] = mw_read_f32(&r); geom->specular[3] = mw_read_f32(&r);
-            geom->emissive[0] = mw_read_f32(&r); geom->emissive[1] = mw_read_f32(&r);
-            geom->emissive[2] = mw_read_f32(&r); geom->emissive[3] = mw_read_f32(&r);
-            geom->power = mw_read_f32(&r);
-            int has_reflection = (int)mw_read_u32(&r); (void)has_reflection;
-            geom->has_texture = (int)mw_read_u32(&r);
-            if (geom->has_texture)
-                mw_read_string(&r, geom->texture, sizeof(geom->texture));
-            
-            geom->strip_count = (int)mw_read_u32(&r);
-            if (geom->strip_count > 0) {
-                geom->strips = calloc(geom->strip_count, sizeof(mw_strip_t));
-                for (int s = 0; s < geom->strip_count; s++) {
-                    geom->strips[s].tri_count = (int)mw_read_u32(&r);
-                    geom->strips[s].vertex_offset = (int)mw_read_u32(&r);
-                    total_indices += geom->strips[s].tri_count * 3;
-                }
-            }
-        }
-    }
+    walk_octree(&ctx);
     
     /* Build the flat triangle-list index buffer from strips */
-    if (total_indices > 0 && level->geoms) {
-        level->indices = calloc(total_indices, sizeof(uint32_t));
+    if (ctx.total_indices > 0 && level->geoms) {
+        level->indices = calloc(ctx.total_indices, sizeof(uint32_t));
         level->index_count = 0;
         
         for (int g = 0; g < level->geom_count; g++) {
@@ -400,7 +344,7 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
                  * Strip: vertices base+0..base+ntri+1
                  * For each triangle t: even=(t,t+1,t+2), odd=(t,t+2,t+1)
                  */
-                for (int t = 0; t < ntri && level->index_count + 3 <= total_indices; t++) {
+                for (int t = 0; t < ntri && level->index_count + 3 <= ctx.total_indices; t++) {
                     if (t % 2 == 0) {
                         level->indices[level->index_count++] = base + t;
                         level->indices[level->index_count++] = base + t + 1;

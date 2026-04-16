@@ -439,8 +439,8 @@ static BOOL LoadAssets(void) {
      * Race default: distance=250, angle=0°, tilt=1.2 (closer, more overhead) */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
     g_camera.orbit_angle = -1.5708f;  /* -PI/2: camera behind ball in -Z direction */
-    g_camera.orbit_dist = 450.0f;     /* Race follow distance */
-    g_camera.orbit_tilt = 0.4f;      /* Slightly above horizontal (not overhead) */
+    g_camera.orbit_dist = 60.0f;      /* Very close follow */
+    g_camera.orbit_tilt = 0.2f;      /* Just above horizontal */
 
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
@@ -793,12 +793,39 @@ static void RenderLevelGeometry(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
     
     if (g_level->index_count > 0 && g_level->indices) {
-        /* Render proper triangles from strip-converted index buffer */
-        g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
-        int prim_count = g_level->index_count / 3;
-        g_device->lpVtbl->DrawIndexedPrimitiveUP(g_device, D3DPT_TRIANGLELIST, 0,
-            vis_count, prim_count, g_level->indices, D3DFMT_INDEX32,
-            vis_verts, sizeof(VisVertex));
+        /* Render proper triangles — expand indexed geometry to flat vertex list
+         * (DrawIndexedPrimitiveUP fails silently on Wine SW VP, so we expand) */
+        static VisVertex *tri_verts = NULL;
+        static int tri_vert_count = 0;
+        int needed = g_level->index_count; /* 3 indices per triangle, each = 1 vertex */
+        
+        if (!tri_verts || tri_vert_count < needed) {
+            free(tri_verts);
+            tri_verts = malloc(needed * sizeof(VisVertex));
+            tri_vert_count = needed;
+        }
+        
+        /* Expand indexed triangles to direct vertex list */
+        int out = 0;
+        for (int i = 0; i + 2 < g_level->index_count; i += 3) {
+            uint32_t i0 = g_level->indices[i];
+            uint32_t i1 = g_level->indices[i+1];
+            uint32_t i2 = g_level->indices[i+2];
+            if (i0 < (uint32_t)vis_count && i1 < (uint32_t)vis_count && i2 < (uint32_t)vis_count && out + 3 <= needed) {
+                tri_verts[out++] = vis_verts[i0];
+                tri_verts[out++] = vis_verts[i1];
+                tri_verts[out++] = vis_verts[i2];
+            }
+        }
+        
+        int prim_count = out / 3;
+        if (prim_count > 0) {
+            g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLELIST, prim_count,
+                tri_verts, sizeof(VisVertex));
+            static int logged = 0;
+            if (!logged) { printf("[Render] Drew %d triangles from %d indices\n", prim_count, g_level->index_count); logged = 1; }
+        }
     } else {
         /* Fallback: point cloud only */
         g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
