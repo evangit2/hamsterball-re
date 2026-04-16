@@ -1,13 +1,18 @@
 /*
- * Hamsterball Binary MeshWorld Parser v4
- * Based on Ghidra decompilation of 0x4629E0 (binary loader)
+ * Hamsterball Binary MeshWorld Parser v7
  * 
- * The binary format is complex with section-dependent parsing.
- * For reliable object extraction, we use string-scanning which
- * matches how the game's own text-format parser works.
- * 
- * Binary sections: materials → mesh buffers → game objects → bbox → vertices
- * We scan for game objects by finding length-prefixed type strings.
+ * Binary MESHWORLD format per Ghidra decompilation at 0x4629e0:
+ *   1. u32 material_count — then per material: name_len(u32)+name(len)+6×u32+ext_flag(4B)+optional color/tex
+ *   2. u32 meshbuf_count — then per buf: data_len(u32)+data(len)+face_count(u32)+face_data
+ *   3. u32 obj_count — then per obj: type(i32)+type-dependent data (pos/rot/scale etc)
+ *   4. bbox: 6 × float (min_xyz then max_xyz)
+ *   5. u32 vertex_count — then vertex_count × 32 bytes of vertex data
+ *
+ * SpawnPlatform has 0/0/0 counts so sections 1-3 are empty.
+ * Complex levels (WarmUp) have items in section 1 that include both materials and objects.
+ *
+ * Vertex format (32 bytes each):
+ *   position(3×float) + normal(3×float) + uv(2×float)
  */
 
 #include <stdio.h>
@@ -18,7 +23,7 @@
 
 #include "level/meshworld_parser.h"
 
-/* ===== Reader helpers ===== */
+/* ===== Binary reader helpers ===== */
 typedef struct {
     const uint8_t *data;
     size_t size;
@@ -44,136 +49,338 @@ static float mw_read_f32(mw_reader_t *r) {
     return val;
 }
 
-/* ===== String type classification ===== */
+/* Read a length-prefixed string: u32 len + len bytes (may include NUL) */
+static char *mw_read_lps(mw_reader_t *r) {
+    uint32_t len = mw_read_u32(r);
+    if (len == 0 || len > 4096) return NULL;
+    if (r->pos + len > r->size) return NULL;
+    char *s = (char *)malloc(len + 1);
+    if (!s) return NULL;
+    memcpy(s, r->data + r->pos, len);
+    s[len] = '\0';
+    r->pos += len;
+    return s;
+}
+
+/* ===== Object type classification ===== */
 static mw_obj_type_t classify_type(const char *s) {
     if (!s) return MW_OBJ_UNKNOWN;
     if (strncmp(s, "START", 5) == 0) return MW_OBJ_START;
     if (strncmp(s, "FLAG", 4) == 0) return MW_OBJ_FLAG;
     if (strcmp(s, "SAFESPOT") == 0) return MW_OBJ_SAFESPOT;
-    if (strncmp(s, "CameraLocus", 11) == 0 || strncmp(s, "CAMERALOOKAT", 12) == 0) return MW_OBJ_CAMERALOOKAT;
+    if (strncmp(s, "CAMERALOOKAT", 12) == 0) return MW_OBJ_CAMERALOOKAT;
     if (strncmp(s, "PLATFORM", 8) == 0) return MW_OBJ_PLATFORM;
     if (strncmp(s, "N:SINKPLATFORM", 14) == 0) return MW_OBJ_SINKPLATFORM;
     if (strncmp(s, "N:", 2) == 0 || strncmp(s, "E:", 2) == 0 || strncmp(s, "S:", 2) == 0) return MW_OBJ_GOAL;
     if (strncmp(s, "RND", 3) == 0 || strncmp(s, "+RND", 4) == 0) return MW_OBJ_RND;
-    if (strcmp(s, "STANDS") == 0) return MW_OBJ_PLATFORM;
+    if (strcmp(s, "STANDS") == 0) return MW_OBJ_STANDS;
     if (strcmp(s, "BADBALL") == 0) return MW_OBJ_BADBALL;
     if (strcmp(s, "BCMESH") == 0) return MW_OBJ_BCMBALL;
     if (strcmp(s, "BallPath") == 0) return MW_OBJ_BALLPATH;
     return MW_OBJ_UNKNOWN;
 }
 
-static int is_primary_type(const char *s) {
-    if (!s || strlen(s) < 2) return 0;
-    return (strncmp(s, "START", 5) == 0 ||
-            strncmp(s, "FLAG", 4) == 0 ||
-            strcmp(s, "SAFESPOT") == 0 ||
-            strncmp(s, "CameraLocus", 11) == 0 ||
-            strncmp(s, "CAMERALOOKAT", 12) == 0 ||
-            strncmp(s, "PLATFORM", 8) == 0 ||
-            strncmp(s, "N:", 2) == 0 ||
-            strncmp(s, "E:", 2) == 0 ||
-            strncmp(s, "S:", 2) == 0 ||
-            strncmp(s, "RND", 3) == 0 ||
-            strncmp(s, "+RND", 4) == 0 ||
-            strcmp(s, "STANDS") == 0 ||
-            strcmp(s, "BADBALL") == 0 ||
-            strcmp(s, "BCMESH") == 0 ||
-            strcmp(s, "BallPath") == 0);
-}
-
-/* ===== Object addition ===== */
-static void add_object(mw_level_t *level, const char *type_str,
-                       float x, float y, float z,
-                       const uint8_t *data, size_t data_size, size_t obj_start) {
-    if (level->object_count >= level->object_capacity) {
-        level->object_capacity *= 2;
-        level->objects = realloc(level->objects, level->object_capacity * sizeof(mw_object_t));
-    }
+/* ===== Parse section 1: Materials (0x7C structure each) =====
+ * Per Ghidra decomp: alloc 0x7C, init vtable, read name_len + name,
+ * read 6 × u32 (puVar5[1..6]), read ext_flag (puVar5+10, check low byte),
+ * if ext: read ambient(4f), diffuse(4f), specular(4f), shine(f),
+ *         reflective(u32), has_tex(u32), if has_tex==1: texname_len + texname
+ */
+static int parse_materials(mw_reader_t *r, mw_level_t *level, uint32_t count) {
+    level->material_count = count;
+    if (count == 0 || count > 10000) return 0;
     
-    mw_object_t *obj = &level->objects[level->object_count++];
-    memset(obj, 0, sizeof(*obj));
+    level->materials = (mw_material_t *)calloc(count, sizeof(mw_material_t));
+    if (!level->materials) return -1;
     
-    obj->type = classify_type(type_str);
-    strncpy(obj->type_string, type_str, sizeof(obj->type_string) - 1);
-    obj->position.x = x;
-    obj->position.y = y;
-    obj->position.z = z;
-    
-    /* Try to read additional fields after position */
-    if (obj_start + 12 + 16 <= data_size) {
-        const float *extra = (const float *)(data + obj_start + 12);
-        obj->rot_x = extra[0]; obj->rot_y = extra[1];
-        obj->rot_z = extra[2]; obj->rot_w = extra[3];
-    }
-    if (obj_start + 12 + 16 + 32 <= data_size) {
-        const float *mat = (const float *)(data + obj_start + 12 + 16);
-        for (int i = 0; i < 8; i++) obj->transform[i] = mat[i];
-        for (int i = 0; i < 4; i++) obj->diffuse[i] = mat[8+i];
-        for (int i = 0; i < 4; i++) obj->ambient[i] = mat[12+i];
-        obj->size_param = mat[16];
-    }
-}
-
-/* ===== Main parse function ===== */
-mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
-    if (!data || size < 4) return NULL;
-    
-    mw_level_t *level = calloc(1, sizeof(mw_level_t));
-    if (!level) return NULL;
-    
-    level->object_capacity = 128;
-    level->objects = calloc(level->object_capacity, sizeof(mw_object_t));
-    if (!level->objects) { free(level); return NULL; }
-    
-    /* Store geometry reference for later (rendering needs it) */
-    level->geometry_data = malloc(size);
-    if (level->geometry_data) {
-        memcpy(level->geometry_data, data, size);
-        level->geometry_size = (int)size;
-    }
-    
-    /* Scan for length-prefixed strings that identify game objects.
-     * Format: [uint32 length][ASCII type string][object data...]
-     * This is how the original text parser works - it finds type names
-     * and reads subsequent data based on the type. */
-    size_t pos = 0;
-    while (pos + 4 < size) {
-        uint32_t slen = *(const uint32_t *)(data + pos);
+    for (uint32_t i = 0; i < count; i++) {
+        if (r->pos + 8 > r->size) break;
         
-        /* Valid object type strings: 2-80 chars, ASCII, followed by valid data */
-        if (slen >= 2 && slen <= 80 && pos + 4 + slen <= size) {
-            const char *candidate = (const char *)(data + pos + 4);
+        mw_material_t *mat = &level->materials[i];
+        memset(mat, 0, sizeof(*mat));
+        
+        /* Read name: u32 len + len bytes */
+        char *name = mw_read_lps(r);
+        if (!name) break;
+        strncpy(mat->name, name, sizeof(mat->name) - 1);
+        free(name);
+        
+        /* 6 × u32 fields (face_start, face_count, etc.) */
+        if (r->pos + 24 > r->size) break;
+        mat->face_start = mw_read_u32(r);
+        mat->face_count = mw_read_u32(r);
+        mat->unk3 = mw_read_u32(r);
+        mat->unk4 = mw_read_u32(r);
+        mat->unk5 = mw_read_u32(r);
+        mat->unk6 = mw_read_u32(r);
+        
+        /* Extended flag (u32, check low byte) */
+        if (r->pos + 4 > r->size) break;
+        uint32_t ext_raw = mw_read_u32(r);
+        uint8_t ext_flag = (uint8_t)(ext_raw & 0xFF);
+        
+        if (ext_flag != 0 && r->pos + 76 <= r->size) {
+            /* Ambient RGBA (4 floats) — stored at puVar5[0x10..0x13] */
+            for (int j = 0; j < 4; j++) mat->ambient[j] = mw_read_f32(r);
+            /* Diffuse RGBA (4 floats) — stored at puVar5[0x0c..0x0f] */
+            for (int j = 0; j < 4; j++) mat->diffuse[j] = mw_read_f32(r);
+            /* Specular RGBA (4 floats) — stored at puVar5[0x14..0x17] */
+            for (int j = 0; j < 4; j++) mat->specular[j] = mw_read_f32(r);
+            /* Emission RGBA (4 floats) — stored at puVar5[0x18..0x1b] */
+            float emission[4];
+            for (int j = 0; j < 4; j++) emission[j] = mw_read_f32(r);
+            (void)emission; /* not stored in our simplified struct yet */
+            /* Shininess — puVar5[0x1c] */
+            mat->shine = mw_read_f32(r);
+            /* Reflective flag — bool at puVar5+0x79 */
+            mat->has_reflective = mw_read_u32(r) != 0;
+            /* Has texture — checked with == 1 */
+            uint32_t has_tex = mw_read_u32(r);
+            mat->has_texture = (uint8_t)(has_tex & 0xFF);
             
-            /* Check if all chars in the string are valid ASCII */
-            int valid = 1;
-            for (uint32_t i = 0; i < slen; i++) {
-                char c = candidate[i];
-                if ((c < 32 || c > 126) && c != '\0') { valid = 0; break; }
-            }
-            
-            if (valid && is_primary_type(candidate)) {
-                /* Found a valid object type string */
-                size_t obj_data_start = pos + 4 + slen;
-                
-                /* Skip past NUL padding (string may be NUL-padded to alignment) */
-                size_t data_pos = obj_data_start;
-                while (data_pos < size && data[data_pos] == '\0') data_pos++;
-                
-                /* Read position (3 floats = 12 bytes) after the type string */
-                float x = 0, y = 0, z = 0;
-                if (data_pos + 12 <= size) {
-                    const float *fptr = (const float *)(data + data_pos);
-                    x = fptr[0]; y = fptr[1]; z = fptr[2];
+            if (mat->has_texture == 1 && r->pos + 4 <= r->size) {
+                char *tex = mw_read_lps(r);
+                if (tex) {
+                    strncpy(mat->texture, tex, sizeof(mat->texture) - 1);
+                    free(tex);
                 }
-                
-                add_object(level, candidate, x, y, z, data, size, data_pos);
-                
-                /* Advance past this object */
-                pos = obj_data_start;
-                continue;
             }
         }
-        pos++;
+    }
+    return 0;
+}
+
+/* ===== Parse section 2: Mesh Buffers (0x54 structure each) =====
+ * Per decomp: alloc 0x54, read data_len(u32), alloc data, read data,
+ * read face_count(u32), per face: read 3 × u32, call FUN_004685e0
+ */
+static int parse_meshbufs(mw_reader_t *r, mw_level_t *level, uint32_t count) {
+    level->mesh_buffer_count = count;
+    if (count == 0 || count > 10000) return 0;
+    
+    level->mesh_buffers = (mw_mesh_buffer_t *)calloc(count, sizeof(mw_mesh_buffer_t));
+    if (!level->mesh_buffers) return -1;
+    
+    for (uint32_t i = 0; i < count; i++) {
+        if (r->pos + 8 > r->size) break;
+        
+        mw_mesh_buffer_t *buf = &level->mesh_buffers[i];
+        memset(buf, 0, sizeof(*buf));
+        
+        /* Data length + raw data */
+        uint32_t data_len = mw_read_u32(r);
+        if (data_len > 0 && data_len < 1000000 && r->pos + data_len <= r->size) {
+            /* Skip raw mesh data for now */
+            r->pos += data_len;
+        }
+        
+        /* Face count + skip face data (3 × 4 bytes per face) */
+        if (r->pos + 4 > r->size) break;
+        buf->face_count = mw_read_u32(r);
+        if (buf->face_count > 0 && buf->face_count < 1000000) {
+            uint32_t face_bytes = buf->face_count * 12;  /* 3 reads of 4 bytes */
+            if (r->pos + face_bytes <= r->size) {
+                r->pos += face_bytes;
+            }
+        }
+    }
+    return 0;
+}
+
+/* ===== Parse section 3: Objects (0xD4 structure each) =====
+ * Per decomp: alloc 0xD4, read type(i32), if type==0: set type=3, 
+ * read 3 floats for position via vtable, 3 for euler rotation, 3 for scale,
+ * etc. If type!=0: same but different vtable path.
+ * For now, skip objects entirely — they're not needed for geometry rendering.
+ */
+static int parse_objects(mw_reader_t *r, mw_level_t *level, uint32_t count) {
+    level->object_count = 0;
+    level->object_capacity = 0;
+    level->objects = NULL;
+    
+    /* Skip object data — complex variable-length parsing.
+     * We need the object section to end at the right place for bbox reading.
+     * For now, we'll use a different approach: scan for the bbox from the end.
+     */
+    (void)r;
+    (void)count;
+    return 0;
+}
+
+/* ===== Find bbox+vertices by scanning from end of file =====
+ * The last thing in the file is: bbox(6 x float) + vertex_count(u32) + vertex_data
+ * We can find it by looking backwards: vertex_data is count*32 bytes,
+ * then vertex_count, then 6 floats that should be reasonable bounding box values.
+ */
+static int find_bbox_and_vertices(const uint8_t *data, size_t size,
+                                    float *bbox, uint32_t *vtx_count, size_t *vtx_data_offset) {
+    /* Try different vertex counts, working backwards from end */
+    for (int try_count = 1; try_count < 100000; try_count++) {
+        /* vertex_data = try_count * 32 bytes at end
+         * before that: vertex_count (4 bytes)
+         * before that: bbox (24 bytes = 6 floats)
+         */
+        size_t needed = try_count * 32 + 4 + 24;
+        if (needed > size) break;
+        
+        size_t bbox_off = size - needed;
+        
+        /* Read candidate bbox */
+        float bb[6];
+        for (int i = 0; i < 6; i++) {
+            bb[i] = *(float *)(data + bbox_off + i * 4);
+        }
+        
+        /* Validate: bbox values should be in reasonable game-world range (-5000 to 5000) */
+        int valid = 1;
+        for (int i = 0; i < 6; i++) {
+            if (bb[i] < -5000.0f || bb[i] > 5000.0f || bb[i] != bb[i]) { /* NaN check */
+                valid = 0;
+                break;
+            }
+        }
+        if (!valid) continue;
+        
+        /* min should be < max */
+        if (bb[0] >= bb[3] || bb[1] >= bb[4] || bb[2] >= bb[5]) continue;
+        
+        /* Check vertex_count */
+        uint32_t vc = *(uint32_t *)(data + bbox_off + 24);
+        if (vc != (uint32_t)try_count) continue;
+        
+        /* Validate first vertex — should be within bbox-ish range */
+        if (try_count > 0) {
+            float x = *(float *)(data + bbox_off + 28);
+            float y = *(float *)(data + bbox_off + 32);
+            float z = *(float *)(data + bbox_off + 36);
+            /* Vertices should be within a reasonable range of the bbox */
+            if (x < -10000 || x > 10000 || y < -10000 || y > 10000 || z < -10000 || z > 10000)
+                continue;
+        }
+        
+        /* Found it! */
+        for (int i = 0; i < 6; i++) bbox[i] = bb[i];
+        *vtx_count = vc;
+        *vtx_data_offset = bbox_off + 28;  /* after bbox + vertex_count */
+        return 1;
+    }
+    return 0;
+}
+
+/* ===== Main parser — matches Ghidra decompilation flow ===== */
+mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
+    if (!data || size < 12) return NULL;
+    
+    mw_reader_t r = { data, size, 0 };
+    
+    mw_level_t *level = (mw_level_t *)calloc(1, sizeof(mw_level_t));
+    if (!level) return NULL;
+    
+    /* ===== Section 1: Material count + materials ===== */
+    uint32_t mat_count = mw_read_u32(&r);
+    printf("[MW] material_count = %u\n", mat_count);
+    if (mat_count < 10000) {
+        parse_materials(&r, level, mat_count);
+    }
+    
+    /* ===== Section 2: Mesh buffer count + buffers ===== */
+    if (r.pos + 4 > r.size) goto try_scan;
+    uint32_t buf_count = mw_read_u32(&r);
+    printf("[MW] meshbuf_count = %u\n", buf_count);
+    if (buf_count < 10000) {
+        parse_meshbufs(&r, level, buf_count);
+    }
+    
+    /* ===== Section 3: Object count + objects ===== */
+    if (r.pos + 4 > r.size) goto try_scan;
+    uint32_t obj_count = mw_read_u32(&r);
+    printf("[MW] obj_count = %u\n", obj_count);
+    
+    /* For SpawnPlatform (0/0/0 counts), we're now right at the bbox */
+    /* For complex levels, we'd need to parse objects to advance r.pos */
+    /* If obj_count is 0, skip directly */
+    if (obj_count == 0) {
+        /* Read bbox (6 floats) directly — matches Ghidra decomp lines 260-265 */
+        if (r.pos + 24 <= r.size) {
+            level->bbox_min_x = mw_read_f32(&r);
+            level->bbox_min_y = mw_read_f32(&r);
+            level->bbox_min_z = mw_read_f32(&r);
+            level->bbox_max_x = mw_read_f32(&r);
+            level->bbox_max_y = mw_read_f32(&r);
+            level->bbox_max_z = mw_read_f32(&r);
+        }
+        
+        /* Read vertex count — matches Ghidra decomp line 266 */
+        if (r.pos + 4 <= r.size) {
+            level->vertex_count = mw_read_u32(&r);
+        }
+        
+        /* Read vertex data — matches Ghidra decomp lines 268-270 */
+        if (level->vertex_count > 0 && level->vertex_count < 1000000) {
+            level->vertices = (mw_vertex_t *)calloc(level->vertex_count, sizeof(mw_vertex_t));
+            if (level->vertices) {
+                for (uint32_t i = 0; i < level->vertex_count && r.pos + 32 <= r.size; i++) {
+                    mw_vertex_t *v = &level->vertices[i];
+                    v->x  = mw_read_f32(&r);
+                    v->y  = mw_read_f32(&r);
+                    v->z  = mw_read_f32(&r);
+                    v->nx = mw_read_f32(&r);
+                    v->ny = mw_read_f32(&r);
+                    v->nz = mw_read_f32(&r);
+                    v->u  = mw_read_f32(&r);
+                    v->v  = mw_read_f32(&r);
+                }
+            }
+        }
+        
+        printf("[MW] Parsed %d vertices, bbox (%.0f,%.0f,%.0f)-(%.0f,%.0f,%.0f)\n",
+               level->vertex_count,
+               level->bbox_min_x, level->bbox_min_y, level->bbox_min_z,
+               level->bbox_max_x, level->bbox_max_y, level->bbox_max_z);
+        return level;
+    }
+    
+    /* For levels with objects, try scanning from the end */
+try_scan:
+    printf("[MW] Complex level — scanning for bbox+vertices from end\n");
+    {
+        float bbox[6];
+        uint32_t vc = 0;
+        size_t vtx_off = 0;
+        
+        if (find_bbox_and_vertices(data, size, bbox, &vc, &vtx_off)) {
+            level->bbox_min_x = bbox[0];
+            level->bbox_min_y = bbox[1];
+            level->bbox_min_z = bbox[2];
+            level->bbox_max_x = bbox[3];
+            level->bbox_max_y = bbox[4];
+            level->bbox_max_z = bbox[5];
+            level->vertex_count = (int)vc;
+            
+            if (vc > 0 && vc < 1000000) {
+                level->vertices = (mw_vertex_t *)calloc(vc, sizeof(mw_vertex_t));
+                if (level->vertices) {
+                    mw_reader_t vr = { data, size, vtx_off };
+                    for (uint32_t i = 0; i < vc && vr.pos + 32 <= vr.size; i++) {
+                        mw_vertex_t *v = &level->vertices[i];
+                        v->x  = mw_read_f32(&vr);
+                        v->y  = mw_read_f32(&vr);
+                        v->z  = mw_read_f32(&vr);
+                        v->nx = mw_read_f32(&vr);
+                        v->ny = mw_read_f32(&vr);
+                        v->nz = mw_read_f32(&vr);
+                        v->u  = mw_read_f32(&vr);
+                        v->v  = mw_read_f32(&vr);
+                    }
+                }
+            }
+            
+            printf("[MW] Scan found %d vertices, bbox (%.0f,%.0f,%.0f)-(%.0f,%.0f,%.0f) at offset %zu\n",
+                   level->vertex_count,
+                   bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5], vtx_off);
+        } else {
+            printf("[MW] WARNING: Could not find bbox+vertices by scanning\n");
+        }
     }
     
     return level;
@@ -189,25 +396,23 @@ mw_level_t *meshworld_parse_file(const char *path) {
     
     if (sz <= 0) { fclose(f); return NULL; }
     
-    uint8_t *data = malloc((size_t)sz);
+    uint8_t *data = (uint8_t *)malloc((size_t)sz);
     if (!data) { fclose(f); return NULL; }
     
-    size_t read = fread(data, 1, (size_t)sz, f);
+    size_t read_count = fread(data, 1, (size_t)sz, f);
     fclose(f);
     
-    mw_level_t *level = meshworld_parse(data, read);
+    mw_level_t *level = meshworld_parse(data, read_count);
     free(data);
     return level;
 }
 
 void meshworld_free(mw_level_t *level) {
     if (!level) return;
-    if (level->objects) {
-        for (int i = 0; i < level->object_count; i++) {
-            if (level->objects[i].indices) free(level->objects[i].indices);
-        }
-        free(level->objects);
-    }
+    if (level->objects) free(level->objects);
+    if (level->materials) free(level->materials);
+    if (level->mesh_buffers) free(level->mesh_buffers);
+    if (level->vertices) free(level->vertices);
     if (level->geometry_data) free(level->geometry_data);
     free(level);
 }

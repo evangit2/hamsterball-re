@@ -1,6 +1,9 @@
 # Build artifacts
 reimpl/build/
 reimpl/build-win64/
+*.o
+*.exe
+!reimpl/hamsterball.exe
 
 # Downloaded SDKs (rebuild with build_windows.sh)
 reimpl/mingw-libs/SDL2-*/

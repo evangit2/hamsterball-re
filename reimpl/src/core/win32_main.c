@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 /* Reusable parsers from the project */
 #include "level/meshworld_parser.h"
@@ -58,7 +59,6 @@ static IDirectInputDevice8 *g_keyboard = NULL;
 static IDirectInputDevice8 *g_mouse = NULL;
 static BYTE g_keys[256];            /* DIK key state buffer */
 static DIMOUSESTATE g_mouse_state;  /* Mouse relative state */
-static LONG g_mouse_x = 0, g_mouse_y = 0;  /* Absolute mouse pos */
 
 /* DirectSound8 */
 static IDirectSound8 *g_dsound = NULL;
@@ -117,8 +117,80 @@ static void HandleInput(void);
 static void UpdatePhysics(float dt);
 static void Render(void);
 static void RenderBall(void);
+static void RenderLevelGeometry(void);
 static void RenderLevelObjects(void);
 static void RenderHUD(void);
+static BOOL SaveScreenshot(const char *filename);
+
+/* ===== Screenshot Function (Windows GDI approach for D3D8 compatibility) ===== */
+static BOOL SaveScreenshot(const char *filename) {
+    /* Get window DC */
+    HDC hdcWindow = GetDC(g_hwnd);
+    if (!hdcWindow) return FALSE;
+
+    HDC hdcMem = CreateCompatibleDC(hdcWindow);
+    if (!hdcMem) {
+        ReleaseDC(g_hwnd, hdcWindow);
+        return FALSE;
+    }
+
+    /* Create bitmap compatible with window */
+    HBITMAP hBitmap = CreateCompatibleBitmap(hdcWindow, g_width, g_height);
+    if (!hBitmap) {
+        DeleteDC(hdcMem);
+        ReleaseDC(g_hwnd, hdcWindow);
+        return FALSE;
+    }
+
+    SelectObject(hdcMem, hBitmap);
+    
+    /* Copy window contents to bitmap */
+    BitBlt(hdcMem, 0, 0, g_width, g_height, hdcWindow, 0, 0, SRCCOPY);
+
+    /* Setup BMP header */
+    BITMAPFILEHEADER bf = {0};
+    BITMAPINFOHEADER bi = {0};
+    BITMAP bmp;
+    
+    GetObject(hBitmap, sizeof(BITMAP), &bmp);
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biWidth = bmp.bmWidth;
+    bi.biHeight = bmp.bmHeight;
+    bi.biPlanes = 1;
+    bi.biBitCount = 24;
+    bi.biCompression = BI_RGB;
+    
+    DWORD dwBmpSize = bmp.bmWidth * bmp.bmHeight * 3;
+    bf.bfType = 0x4D42;
+    bf.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + dwBmpSize;
+    bf.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+
+    FILE *fp = fopen(filename, "wb");
+    if (!fp) {
+        DeleteObject(hBitmap);
+        DeleteDC(hdcMem);
+        ReleaseDC(g_hwnd, hdcWindow);
+        return FALSE;
+    }
+
+    /* Write headers */
+    fwrite(&bf, sizeof(BITMAPFILEHEADER), 1, fp);
+    fwrite(&bi, sizeof(BITMAPINFOHEADER), 1, fp);
+
+    /* Get and write pixel data */
+    BYTE *bits = malloc(dwBmpSize);
+    GetDIBits(hdcMem, hBitmap, 0, g_height, bits, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+    fwrite(bits, 1, dwBmpSize, fp);
+    free(bits);
+
+    fclose(fp);
+    printf("[Screenshot] Saved: %s (%dx%d)\n", filename, g_width, g_height);
+
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(g_hwnd, hdcWindow);
+    return TRUE;
+}
 
 /* ===== Window Procedure (matches original WndProc) ===== */
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -138,6 +210,18 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
+    case WM_KEYDOWN:
+        if (wp == VK_F12) {  /* F12 for screenshot */
+            char filename[MAX_PATH];
+            time_t now = time(NULL);
+            struct tm *t = localtime(&now);
+            snprintf(filename, sizeof(filename),
+                "screenshot_%04d%02d%02d_%02d%02d%02d.bmp",
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                t->tm_hour, t->tm_min, t->tm_sec);
+            SaveScreenshot(filename);
+        }
+        break;
     }
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
@@ -196,7 +280,10 @@ static BOOL InitD3D8(void) {
             D3DCREATE_SOFTWARE_VERTEXPROCESSING, &g_d3dpp, &g_device
         );
     }
-    if (FAILED(hr)) { fprintf(stderr, "CreateDevice failed: 0x%08X\n", hr); return FALSE; }
+    if (FAILED(hr)) { 
+        fprintf(stderr, "CreateDevice failed: 0x%08lX\n", hr); 
+        return FALSE; 
+    }
 
     /* Graphics_Defaults (0x455A60) — set initial render states */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
@@ -301,7 +388,7 @@ static BOOL LoadLevel(const char *name) {
         return FALSE;
     }
     strncpy(g_level_name, name, sizeof(g_level_name) - 1);
-    printf("[Load] %s: %d objects\n", name, g_level->object_count);
+    printf("[Load] %s: %d objects, %d vertices, %d materials\n", name, g_level->object_count, g_level->vertex_count, g_level->material_count);
     return TRUE;
 }
 
@@ -309,14 +396,15 @@ static BOOL LoadLevel(const char *name) {
 static BOOL LoadAssets(void) {
     if (!FindGameDir()) return FALSE;
 
-    /* Load first level — start with a simple arena */
-    if (!LoadLevel("Arena-WarmUp")) {
-        /* Fallback: try a race level */
-        if (!LoadLevel("Level1")) return FALSE;
+    /* Load simplest level first for testing */
+    if (!LoadLevel("Arena-SpawnPlatform")) {
+        if (!LoadLevel("Arena-WarmUp")) {
+            if (!LoadLevel("Level1")) return FALSE;
+        }
     }
 
-    /* Reset ball at start position */
-    g_ball.x = 0; g_ball.y = 50.0f; g_ball.z = 0;
+    /* Reset ball at start position — on the platform surface */
+    g_ball.x = 0; g_ball.y = 13.33f + 26.0f; g_ball.z = 0;
     g_ball.vx = g_ball.vy = g_ball.vz = 0;
     g_ball.radius = BALL_RADIUS;
     g_ball.max_speed = BALL_MAX_SPEED;
@@ -376,9 +464,8 @@ static void HandleInput(void) {
     }
 
     /* Keyboard mode (matches Ball_GetInputForce mode 1) */
-    /* DIK codes from InputDevice+0x50C..0x518 */
-    if (g_keys[DIK_UP] & 0x80)    g_ball.input_fy -= 0.5f;   /* Forward */
-    if (g_keys[DIK_DOWN] & 0x80)  g_ball.input_fy += 1.0f;    /* Backward */
+    if (g_keys[DIK_UP] & 0x80)    g_ball.input_fy -= 0.5f;
+    if (g_keys[DIK_DOWN] & 0x80)  g_ball.input_fy += 1.0f;
     if (g_keys[DIK_LEFT] & 0x80)  g_ball.input_fx -= 1.0f;
     if (g_keys[DIK_RIGHT] & 0x80) g_ball.input_fx += 1.0f;
 
@@ -407,11 +494,11 @@ static void UpdatePhysics(float dt) {
     if (g_state != STATE_RACING) return;
 
     /* Phase 2: Input velocity */
-    float force_scale = g_ball.speed_scale * 1000.0f; /* Scale to game units */
+    float force_scale = g_ball.speed_scale * 1000.0f;
     g_ball.vx += g_ball.input_fx * force_scale * dt;
     g_ball.vz += g_ball.input_fy * force_scale * dt;
 
-    /* Phase 3: Damping — (1-dt) + (1-damping)*dt */
+    /* Phase 3: Damping */
     float damp = (1.0f - dt) + (1.0f - g_ball.damping) * dt;
     g_ball.vx *= damp;
     g_ball.vz *= damp;
@@ -459,13 +546,14 @@ static void SetMatrices(void) {
     g_camera.ty = g_ball.y;
     g_camera.tz = g_ball.z;
 
-    float cam_dist = 300.0f; /* Fixed follow distance */
+    /* Position camera above and behind, looking down at platform level */
+    float cam_dist = 150.0f;
     float cam_height = 200.0f;
 
     D3DMATRIX view;
     /* Build look-at matrix manually (d3d8 has no D3DX math functions) */
-    float eyex = g_ball.x, eyey = g_ball.y + cam_height, eyez = g_ball.z + cam_dist;
-    float atx = g_ball.x, aty = g_ball.y, atz = g_ball.z;
+    float eyex = g_ball.x, eyey = cam_height, eyez = g_ball.z + cam_dist;
+    float atx = g_ball.x, aty = 0.0f, atz = g_ball.z;
     float upx = 0, upy = 1, upz = 0;
 
     /* Compute axes */
@@ -493,15 +581,6 @@ static void SetMatrices(void) {
     view._44 = 1.0f;
 
     g_device->lpVtbl->SetTransform(g_device, D3DTS_VIEW, &view);
-
-    /* Update directional light to follow camera */
-    D3DLIGHT8 light;
-    ZeroMemory(&light, sizeof(light));
-    light.Type = D3DLIGHT_DIRECTIONAL;
-    light.Diffuse.r = 1.0f; light.Diffuse.g = 1.0f; light.Diffuse.b = 1.0f;
-    light.Ambient.r = 0.3f; light.Ambient.g = 0.3f; light.Ambient.b = 0.3f;
-    light.Direction.x = 0.5f; light.Direction.y = -1.0f; light.Direction.z = 0.3f;
-    g_device->lpVtbl->SetLight(g_device, 0, &light);
 }
 
 static void RenderBall(void) {
@@ -524,14 +603,13 @@ static void RenderBall(void) {
     world._41 = g_ball.x; world._42 = g_ball.y; world._43 = g_ball.z;
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
 
-    /* Draw sphere using triangle fan strips */
     for (int i = 0; i < stacks; i++) {
         float phi1 = 3.14159265f * i / stacks - 3.14159265f / 2.0f;
         float phi2 = 3.14159265f * (i + 1) / stacks - 3.14159265f / 2.0f;
         
         for (int j = 0; j < slices; j++) {
-        float theta1 = 2.0f * 3.14159265f * j / slices;
-        float theta2 = 2.0f * 3.14159265f * (j + 1) / slices;
+            float theta1 = 2.0f * 3.14159265f * j / slices;
+            float theta2 = 2.0f * 3.14159265f * (j + 1) / slices;
 
             struct { float x, y, z; float nx, ny, nz; } verts[4];
             
@@ -568,34 +646,96 @@ static void RenderBall(void) {
                 verts, sizeof(verts[0]));
         }
     }
+}
 
-    /* Shadow (Scene_RenderBallShadow 0x460450) */
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, FALSE);
-
+/* ===== Render Level Mesh Geometry (Section 5 vertex array) ===== */
+static void RenderLevelGeometry(void) {
+    if (!g_level || g_level->vertex_count == 0) return;
+    
+    /* D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 */
+    typedef struct { float x, y, z; float nx, ny, nz; float u, v; } LevelVertex;
+    
+    /* Use vertex buffer instead of DrawPrimitiveUP for better compatibility */
+    DWORD fvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1;
+    UINT vcount = g_level->vertex_count;
+    UINT vsize = vcount * sizeof(LevelVertex);
+    
+    IDirect3DVertexBuffer8 *vbuf = NULL;
+    HRESULT hr = g_device->lpVtbl->CreateVertexBuffer(g_device, vsize, 
+        D3DUSAGE_WRITEONLY, fvf, D3DPOOL_MANAGED, &vbuf);
+    if (FAILED(hr)) {
+        printf("[Render] CreateVertexBuffer failed: 0x%08lx\n", hr);
+        return;
+    }
+    
+    BYTE *pVerts;
+    hr = vbuf->lpVtbl->Lock(vbuf, 0, vsize, &pVerts, 0);
+    if (SUCCEEDED(hr)) {
+        LevelVertex *dst = (LevelVertex *)pVerts;
+        for (int i = 0; i < g_level->vertex_count; i++) {
+            mw_vertex_t *sv = &g_level->vertices[i];
+            dst[i].x = sv->x;
+            dst[i].y = sv->y;
+            dst[i].z = sv->z;
+            dst[i].nx = sv->nx;
+            dst[i].ny = sv->ny;
+            dst[i].nz = sv->nz;
+            dst[i].u = sv->u;
+            dst[i].v = sv->v;
+        }
+        vbuf->lpVtbl->Unlock(vbuf);
+    } else {
+        printf("[Render] Lock VB failed: 0x%08lx\n", hr);
+        vbuf->lpVtbl->Release(vbuf);
+        return;
+    }
+    
+    D3DMATERIAL8 mat;
+    ZeroMemory(&mat, sizeof(mat));
+    /* Use the first material's diffuse color, or default grey-brown */
+    if (g_level->material_count > 0) {
+        mat.Diffuse.r = g_level->materials[0].diffuse[0];
+        mat.Diffuse.g = g_level->materials[0].diffuse[1];
+        mat.Diffuse.b = g_level->materials[0].diffuse[2];
+        mat.Diffuse.a = g_level->materials[0].diffuse[3];
+        mat.Ambient.r = g_level->materials[0].ambient[0];
+        mat.Ambient.g = g_level->materials[0].ambient[1];
+        mat.Ambient.b = g_level->materials[0].ambient[2];
+        mat.Ambient.a = g_level->materials[0].ambient[3];
+        if (mat.Ambient.r == 0 && mat.Ambient.g == 0 && mat.Ambient.b == 0) {
+            mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f;
+        }
+    } else {
+        mat.Diffuse.r = 0.7f; mat.Diffuse.g = 0.65f; mat.Diffuse.b = 0.55f; mat.Diffuse.a = 1.0f;
+        mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f; mat.Ambient.a = 1.0f;
+    }
+    mat.Specular.r = 0.1f; mat.Specular.g = 0.1f; mat.Specular.b = 0.1f;
+    mat.Power = 10.0f;
+    g_device->lpVtbl->SetMaterial(g_device, &mat);
+    
+    /* Identity world matrix */
+    D3DMATRIX world;
     ZeroMemory(&world, sizeof(world));
     world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
-    world._41 = g_ball.x; world._42 = 0.5f; world._43 = g_ball.z;
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
-
-    struct { float x, y, z; DWORD color; } shadow[18];
-    shadow[0].x = 0; shadow[0].y = 0; shadow[0].z = 0; shadow[0].color = D3DCOLOR_RGBA(0,0,0,80);
-    for (int i = 0; i <= 16; i++) {
-        float a = i * 2.0f * 3.14159f / 16;
-        float sr = g_ball.radius * 1.2f;
-        shadow[i+1].x = cosf(a)*sr; shadow[i+1].y = 0; shadow[i+1].z = sinf(a)*sr;
-        shadow[i+1].color = D3DCOLOR_RGBA(0,0,0,80);
+    
+    /* Disable culling for now to see geometry regardless of winding */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+    
+    /* Set vertex shader and stream source */
+    g_device->lpVtbl->SetVertexShader(g_device, fvf);
+    g_device->lpVtbl->SetStreamSource(g_device, 0, vbuf, sizeof(LevelVertex));
+    
+    /* Draw triangles — every 3 consecutive vertices form a triangle */
+    int prim_count = vcount / 3;
+    if (prim_count > 0) {
+        hr = g_device->lpVtbl->DrawPrimitive(g_device, D3DPT_TRIANGLELIST, 0, prim_count);
+        if (FAILED(hr)) {
+            printf("[Render] DrawPrimitive failed: 0x%08lx\n", hr);
+        }
     }
-    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
-    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLEFAN, 16, shadow, sizeof(shadow[0]));
-
-    /* Restore states */
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
+    
+    vbuf->lpVtbl->Release(vbuf);
 }
 
 static void RenderLevelObjects(void) {
@@ -628,69 +768,59 @@ static void RenderLevelObjects(void) {
         world._41 = obj->position.x; world._42 = obj->position.y; world._43 = obj->position.z;
         g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
 
-        /* Render as small sphere indicators */
-        float size = 4.0f;
-        struct { float x, y, z; float nx, ny, nz; } v[2];
-        g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_NORMAL);
-        /* Simple point indicator — actual mesh rendering TODO: load .ASE geometry */
+        /* Render as small cube for each object */
+        float size = 8.0f;
+        struct { float x, y, z; } verts[] = {
+            /* Front face (two triangles as strip) */
+            {-size, 0, -size}, {-size, size, -size}, {size, 0, -size}, {size, size, -size},
+            /* Right face */
+            {size, 0, -size}, {size, size, -size}, {size, 0, size}, {size, size, size},
+            /* Back face */
+            {size, 0, size}, {size, size, size}, {-size, 0, size}, {-size, size, size},
+            /* Left face */
+            {-size, 0, size}, {-size, size, size}, {-size, 0, -size}, {-size, size, -size},
+            /* Top face */
+            {-size, size, -size}, {-size, size, size}, {size, size, -size}, {size, size, size},
+            /* Bottom face */
+            {-size, 0, -size}, {size, 0, -size}, {-size, 0, size}, {size, 0, size},
+        };
+        g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ);
+        /* Draw as triangle strips */
+        for (int f = 0; f < 6; f++) {
+            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, 
+                &verts[f*4], sizeof(verts[0]));
+        }
     }
 }
 
 static void RenderHUD(void) {
-    /* Switch to 2D rendering (matches Scene_RenderScoreHUD 0x41A560) */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
 
-    D3DMATRIX ident;
-    ZeroMemory(&ident, sizeof(ident));
-    ident._11 = 1.0f; ident._22 = 1.0f; ident._33 = 1.0f; ident._44 = 1.0f;
-    g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &ident);
-    g_device->lpVtbl->SetTransform(g_device, D3DTS_VIEW, &ident);
+    /* Just display FPS */
+    char fpsText[64];
+    snprintf(fpsText, sizeof(fpsText), "FPS: %d | Pos(%.1f,%.1f,%.1f)", 
+             g_current_fps, g_ball.x, g_ball.y, g_ball.z);
+    SetWindowTextA(g_hwnd, fpsText);
 
-    /* Orthographic projection for HUD */
-    D3DMATRIX ortho;
-    float w = (float)g_width, h = (float)g_height;
-    ZeroMemory(&ortho, sizeof(ortho));
-    ortho._11 = 2.0f/w; ortho._22 = 2.0f/h;
-    ortho._33 = 1.0f; ortho._44 = 1.0f;
-    ortho._41 = -1.0f; ortho._42 = 1.0f;
-    g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &ortho);
-
-    /* Speed bar */
-    float speed = sqrtf(g_ball.vx*g_ball.vx + g_ball.vz*g_ball.vz);
-    float speed_pct = speed / g_ball.max_speed;
-    float bar_w = 200.0f * speed_pct;
-    struct { float x, y, z; DWORD color; } bar[4] = {
-        { 10, (float)g_height - 30, 0, D3DCOLOR_RGBA(0,200,0,200) },
-        { 10 + bar_w, (float)g_height - 30, 0, D3DCOLOR_RGBA(0,200,0,200) },
-        { 10, (float)g_height - 10, 0, D3DCOLOR_RGBA(0,100,0,200) },
-        { 10 + bar_w, (float)g_height - 10, 0, D3DCOLOR_RGBA(0,100,0,200) },
-    };
-    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
-    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, bar, sizeof(bar[0]));
-
-    /* Restore 3D states */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
 }
 
 static void Render(void) {
     if (!g_device) return;
 
-    /* Graphics_BeginFrame (0x453B50) */
     g_device->lpVtbl->Clear(g_device, 0, NULL, 
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-        D3DCOLOR_RGBA(80, 80, 100, 255), 1.0f, 0);
+        D3DCOLOR_RGBA(40, 60, 100, 255), 1.0f, 0);
     g_device->lpVtbl->BeginScene(g_device);
 
     SetMatrices();
+    RenderLevelGeometry();
     RenderLevelObjects();
     RenderBall();
     RenderHUD();
 
-    /* Graphics_PresentOrEnd (0x455A90) */
     g_device->lpVtbl->EndScene(g_device);
     g_device->lpVtbl->Present(g_device, NULL, NULL, NULL, NULL);
 }
@@ -701,7 +831,6 @@ static void GameLoop(void) {
     g_fps_timer = g_last_tick;
 
     while (g_running) {
-        /* Process Windows messages (matches PeekMessageA loop) */
         MSG msg;
         while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) { g_running = FALSE; break; }
@@ -710,47 +839,40 @@ static void GameLoop(void) {
         }
         if (!g_running) break;
 
-        Sleep(0); /* Yield (matches App_Run Sleep(0)) */
+        Sleep(0);
 
-        /* Fixed-timestep update */
         DWORD now = GetTickCount();
         DWORD dt_ms = now - g_last_tick;
 
         if (dt_ms >= FRAME_TIME_MS || dt_ms > 1000) {
             float dt = (float)FRAME_TIME_MS / 1000.0f;
-            if (dt_ms > 1000) dt = 1.0f / TARGET_FPS; /* Reset on huge gap */
+            if (dt_ms > 1000) dt = 1.0f / TARGET_FPS;
 
             HandleInput();
             UpdatePhysics(dt);
 
-            /* Render (only if not minimized) */
             if (!g_minimized) {
                 Render();
             }
 
             g_last_tick = now;
 
-            /* Prevent tick drift (matches App_Run 1-second clamp) */
             if ((GetTickCount() - g_last_tick) > 1000) {
                 g_last_tick = GetTickCount();
             }
         }
 
-        /* FPS counter (every 1 second) */
         g_frame_counter++;
         now = GetTickCount();
         if (now - g_fps_timer >= 1000) {
             g_current_fps = g_frame_counter;
             g_frame_counter = 0;
             g_fps_timer = now;
-            printf("[FPS] %d | Pos(%.1f,%.1f,%.1f) Speed=%.1f\n",
-                   g_current_fps, g_ball.x, g_ball.y, g_ball.z,
-                   sqrtf(g_ball.vx*g_ball.vx + g_ball.vz*g_ball.vz));
         }
     }
 }
 
-/* ===== Cleanup (mirrors App_Shutdown) ===== */
+/* ===== Cleanup ===== */
 static void Cleanup(void) {
     if (g_level) meshworld_free(g_level);
     if (g_mouse) { g_mouse->lpVtbl->Unacquire(g_mouse); g_mouse->lpVtbl->Release(g_mouse); }
@@ -764,30 +886,18 @@ static void Cleanup(void) {
     UnregisterClassA(WINDOW_CLASS, g_hinst);
 }
 
-/* ===== WinMain (0x4278E0) ===== */
+/* ===== WinMain ===== */
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int show) {
     printf("Hamsterball Reimplementation (D3D8/DInput8/DSound8)\n");
 
-    /* Step 3: Create window */
     if (!InitWindow(hInst)) { Cleanup(); return 1; }
-
-    /* Step 11: Graphics device */
     if (!InitD3D8()) { Cleanup(); return 1; }
-
-    /* Steps 15-22: Input devices */
     if (!InitDInput8()) { Cleanup(); return 1; }
-
-    /* DirectSound (optional) */
     InitDSound8();
-
-    /* Load game assets */
     if (!LoadAssets()) { Cleanup(); return 1; }
 
-    g_state = STATE_RACING; /* Start racing immediately for now */
-
-    /* Game loop */
+    g_state = STATE_RACING;
     GameLoop();
-
     Cleanup();
     return 0;
 }
