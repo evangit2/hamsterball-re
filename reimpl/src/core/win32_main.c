@@ -439,8 +439,8 @@ static BOOL LoadAssets(void) {
      * Race default: distance=250, angle=0°, tilt=1.2 (closer, more overhead) */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
     g_camera.orbit_angle = -1.5708f;  /* -PI/2: camera behind ball in -Z direction */
-    g_camera.orbit_dist = 60.0f;      /* Very close follow */
-    g_camera.orbit_tilt = 0.2f;      /* Just above horizontal */
+    g_camera.orbit_dist = 200.0f;     /* Medium follow distance */
+    g_camera.orbit_tilt = 0.15f;      /* Low tilt = nearly horizontal view */
 
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
@@ -774,13 +774,33 @@ static void RenderLevelGeometry(void) {
             vis_verts[i].x = g_level->vertices[i].x;
             vis_verts[i].y = g_level->vertices[i].y;
             vis_verts[i].z = g_level->vertices[i].z;
-            /* Color by height: hot (red/orange) at surface, cool (blue) deep */
+            /* Color by height: track surface gets warm colors, depth gets cool
+             * Using vivid palette so geometry is always visible against magenta BG */
             float t = (g_level->vertices[i].y - ymin) / yrange;
             if (t < 0) t = 0; if (t > 1) t = 1;
-            /* Surface (t≈1): warm orange-white. Deep (t≈0): cool blue-purple */
-            int r = (int)(t * 255);
-            int g = (int)(t * 200);
-            int b = (int)((1.0f - t * 0.5f) * 255);
+            int r, g, b;
+            if (t > 0.98f) {
+                /* Track surface: warm cream/white */
+                r = 240; g = 220; b = 180;
+            } else if (t > 0.5f) {
+                /* Upper structure: orange-brown */
+                float u = (t - 0.5f) * 2.0f;
+                r = (int)(180 + u * 60);
+                g = (int)(120 + u * 100);
+                b = (int)(60 + u * 120);
+            } else if (t > 0.1f) {
+                /* Mid: teal/green */
+                float u = (t - 0.1f) * 2.5f;
+                r = (int)(40 + u * 140);
+                g = (int)(160 - u * 40);
+                b = (int)(100 + u * 60);
+            } else {
+                /* Deep: blue-purple */
+                float u = t * 10.0f;
+                r = (int)(60 + u * 40);
+                g = (int)(30 + u * 130);
+                b = (int)(180 - u * 80);
+            }
             vis_verts[i].color = D3DCOLOR_RGBA(r, g, b, 255);
         }
         printf("[Render] Built %d colored vis-vertices (Y range %.0f to %.0f)\n", 

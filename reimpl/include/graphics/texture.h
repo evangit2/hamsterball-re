@@ -1,13 +1,16 @@
-/* texture.h - Texture loading matching original game's Texture_Create (0x476770) */
+/* texture.h - Texture loading matching original game's Texture_Create (0x476770) 
+ * Updated for Direct3D8
+ */
 #ifndef TEXTURE_H
 #define TEXTURE_H
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include "graphics/gl_loader.h"
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <d3d8.h>
 #include <stdint.h>
 
 typedef struct {
-    GLuint gl_id;       /* OpenGL texture ID */
+    IDirect3DTexture8 *d3d_tex; /* D3D texture pointer */
     int width;
     int height;
     int channels;
@@ -16,7 +19,7 @@ typedef struct {
 } texture_t;
 
 /* Initialize texture system with the Textures/ directory path */
-void texture_system_init(const char *textures_dir);
+void texture_system_init(const char *textures_dir, IDirect3DDevice8 *device);
 
 /* Load texture matching original's lookup order:
    1. Try {name}-mip1.{fmt} then {name}.{fmt}
@@ -27,7 +30,7 @@ texture_t *texture_load(const char *name);
 /* Release a texture (decrements refcount, frees when 0) */
 void texture_release(texture_t *tex);
 
-/* Bind texture to GL unit */
+/* Bind texture to D3D8 sampler unit */
 void texture_bind(texture_t *tex, int unit);
 
 /* Get texture by filename (cache lookup) */
