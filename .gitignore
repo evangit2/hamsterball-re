@@ -25,5 +25,8 @@ originals/installed/Hamsterball.zip
 originals/installer/
 original/hamsterball.zip
 
+# Large audio renders (too big for git — regenerate with audio-test/scripts/render_songs.py)
+audio-test/songs/*.wav
+
 # Ghidra project files (local only - too large for git)
 analysis/ghidra/HamsterballProject/
