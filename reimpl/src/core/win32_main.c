@@ -396,15 +396,22 @@ static BOOL LoadLevel(const char *name) {
 static BOOL LoadAssets(void) {
     if (!FindGameDir()) return FALSE;
 
-    /* Load simplest level first for testing */
-    if (!LoadLevel("Arena-SpawnPlatform")) {
-        if (!LoadLevel("Arena-WarmUp")) {
+    /* Load level — try WarmUp first (has proper geometry), then SpawnPlatform */
+    if (!LoadLevel("Arena-WarmUp")) {
+        if (!LoadLevel("Arena-SpawnPlatform")) {
             if (!LoadLevel("Level1")) return FALSE;
         }
     }
 
-    /* Reset ball at start position — on the platform surface */
-    g_ball.x = 0; g_ball.y = 13.33f + 26.0f; g_ball.z = 0;
+    /* Reset ball at start position — on the level surface */
+    if (g_level && g_level->vertex_count > 0) {
+        /* Use the computed bbox to position ball at center of the level surface */
+        g_ball.x = (g_level->bbox_min_x + g_level->bbox_max_x) / 2.0f;
+        g_ball.y = g_level->bbox_max_y + g_ball.radius + 1.0f; /* Just above the highest surface */
+        g_ball.z = (g_level->bbox_min_z + g_level->bbox_max_z) / 2.0f;
+    } else {
+        g_ball.x = 0; g_ball.y = 13.33f + 26.0f; g_ball.z = 0;
+    }
     g_ball.vx = g_ball.vy = g_ball.vz = 0;
     g_ball.radius = BALL_RADIUS;
     g_ball.max_speed = BALL_MAX_SPEED;
@@ -424,13 +431,23 @@ static BOOL LoadAssets(void) {
         }
     }
 
-    /* Camera defaults (from Scene+0x43C0/0x43C4) */
-    g_camera.height = 800.0f;
-    g_camera.distance = 800.0f;
+    /* Camera defaults — position above level, looking down at center */
+    if (g_level && g_level->vertex_count > 0) {
+        float cx = (g_level->bbox_min_x + g_level->bbox_max_x) / 2.0f;
+        float cy = g_level->bbox_max_y;
+        float cz = (g_level->bbox_min_z + g_level->bbox_max_z) / 2.0f;
+        float extent = g_level->bbox_max_x - g_level->bbox_min_x;
+        if (extent < g_level->bbox_max_z - g_level->bbox_min_z)
+            extent = g_level->bbox_max_z - g_level->bbox_min_z;
+        g_camera.height = extent * 0.8f;
+        g_camera.distance = extent * 0.6f;
+        g_camera.tx = cx; g_camera.ty = cy; g_camera.tz = cz;
+    } else {
+        g_camera.height = 800.0f;
+        g_camera.distance = 800.0f;
+        g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
+    }
     g_camera.angle = 0.0f;
-    g_camera.tx = g_ball.x;
-    g_camera.ty = g_ball.y;
-    g_camera.tz = g_ball.z;
 
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
@@ -546,9 +563,21 @@ static void SetMatrices(void) {
     g_camera.ty = g_ball.y;
     g_camera.tz = g_ball.z;
 
-    /* Position camera above and behind, looking down at platform level */
-    float cam_dist = 150.0f;
-    float cam_height = 200.0f;
+    /* Position camera above and behind, looking down at ball */
+    float cam_height = g_camera.height;
+    float cam_dist = g_camera.distance;
+    
+    /* For large levels, use a higher camera to see more of the arena */
+    if (g_level && g_level->vertex_count > 0) {
+        float extent = g_level->bbox_max_x - g_level->bbox_min_x;
+        if (extent < g_level->bbox_max_z - g_level->bbox_min_z)
+            extent = g_level->bbox_max_z - g_level->bbox_min_z;
+        if (extent > 500.0f) {
+            /* Wide overview for arena levels */
+            cam_height = extent * 0.9f;
+            cam_dist = extent * 0.5f;
+        }
+    }
 
     D3DMATRIX view;
     /* Build look-at matrix manually (d3d8 has no D3DX math functions) */

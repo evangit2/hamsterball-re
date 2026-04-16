@@ -188,22 +188,67 @@ static int parse_meshbufs(mw_reader_t *r, mw_level_t *level, uint32_t count) {
 }
 
 /* ===== Parse section 3: Objects (0xD4 structure each) =====
- * Per decomp: alloc 0xD4, read type(i32), if type==0: set type=3, 
- * read 3 floats for position via vtable, 3 for euler rotation, 3 for scale,
- * etc. If type!=0: same but different vtable path.
- * For now, skip objects entirely — they're not needed for geometry rendering.
+ * Per Ghidra decomp at 0x4629e0 lines 210-258:
+ *   read(obj_count, 4)
+ *   for each: read(type, 4) → if type==0: set internal type=3,
+ *     read 3 floats → SetPosition (vtable+4)
+ *     read 3 floats → SetRotation (vtable+8) 
+ *     read 3 floats → SetScale (FUN_00453180 quaternion builder)
+ *     Then set internal defaults (no more file reads for this object).
+ *   If type!=0: no reads — just increment counter.
+ *
+ * NOTE: Arena levels always have obj_count=1 with type=0.
+ * The 9 floats are constant-ish per level (pos+rot+scale for a default object).
+ * After objects, the decomp reads bbox(6f) then vertex_count then vertex data.
  */
 static int parse_objects(mw_reader_t *r, mw_level_t *level, uint32_t count) {
     level->object_count = 0;
     level->object_capacity = 0;
     level->objects = NULL;
     
-    /* Skip object data — complex variable-length parsing.
-     * We need the object section to end at the right place for bbox reading.
-     * For now, we'll use a different approach: scan for the bbox from the end.
-     */
-    (void)r;
-    (void)count;
+    for (uint32_t i = 0; i < count; i++) {
+        if (r->pos + 4 > r->size) break;
+        
+        int32_t obj_type = (int32_t)mw_read_u32(r);
+        
+        if (obj_type == 0) {
+            /* Type 0 (START): reads position(3f) + rotation(3f) + scale(3f) = 9 floats */
+            if (r->pos + 36 > r->size) break;
+            
+            /* Allocate object if we have room */
+            if (level->object_count >= level->object_capacity) {
+                int new_cap = level->object_capacity ? level->object_capacity * 2 : 4;
+                mw_object_t *new_objs = (mw_object_t *)realloc(level->objects, new_cap * sizeof(mw_object_t));
+                if (!new_objs) break;
+                level->objects = new_objs;
+                level->object_capacity = new_cap;
+            }
+            
+            mw_object_t *obj = &level->objects[level->object_count];
+            memset(obj, 0, sizeof(*obj));
+            obj->type = MW_OBJ_START;  /* type 0 → START (internal type 3) */
+            
+            /* Position */
+            obj->position.x = mw_read_f32(r);
+            obj->position.y = mw_read_f32(r);
+            obj->position.z = mw_read_f32(r);
+            
+            /* Rotation (euler angles) */
+            obj->rot_x = mw_read_f32(r);
+            obj->rot_y = mw_read_f32(r);
+            obj->rot_z = mw_read_f32(r);
+            
+            /* Scale */
+            obj->transform[0] = mw_read_f32(r);
+            obj->transform[1] = mw_read_f32(r);
+            obj->transform[2] = mw_read_f32(r);
+            
+            level->object_count++;
+        }
+        /* If type != 0: no file reads — just skip */
+    }
+    
+    printf("[MW] Parsed %d objects\n", level->object_count);
     return 0;
 }
 
@@ -295,94 +340,88 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
     if (r.pos + 4 > r.size) goto try_scan;
     uint32_t obj_count = mw_read_u32(&r);
     printf("[MW] obj_count = %u\n", obj_count);
-    
-    /* For SpawnPlatform (0/0/0 counts), we're now right at the bbox */
-    /* For complex levels, we'd need to parse objects to advance r.pos */
-    /* If obj_count is 0, skip directly */
-    if (obj_count == 0) {
-        /* Read bbox (6 floats) directly — matches Ghidra decomp lines 260-265 */
-        if (r.pos + 24 <= r.size) {
-            level->bbox_min_x = mw_read_f32(&r);
-            level->bbox_min_y = mw_read_f32(&r);
-            level->bbox_min_z = mw_read_f32(&r);
-            level->bbox_max_x = mw_read_f32(&r);
-            level->bbox_max_y = mw_read_f32(&r);
-            level->bbox_max_z = mw_read_f32(&r);
-        }
-        
-        /* Read vertex count — matches Ghidra decomp line 266 */
-        if (r.pos + 4 <= r.size) {
-            level->vertex_count = mw_read_u32(&r);
-        }
-        
-        /* Read vertex data — matches Ghidra decomp lines 268-270 */
-        if (level->vertex_count > 0 && level->vertex_count < 1000000) {
-            level->vertices = (mw_vertex_t *)calloc(level->vertex_count, sizeof(mw_vertex_t));
-            if (level->vertices) {
-                for (uint32_t i = 0; i < level->vertex_count && r.pos + 32 <= r.size; i++) {
-                    mw_vertex_t *v = &level->vertices[i];
-                    v->x  = mw_read_f32(&r);
-                    v->y  = mw_read_f32(&r);
-                    v->z  = mw_read_f32(&r);
-                    v->nx = mw_read_f32(&r);
-                    v->ny = mw_read_f32(&r);
-                    v->nz = mw_read_f32(&r);
-                    v->u  = mw_read_f32(&r);
-                    v->v  = mw_read_f32(&r);
-                }
-            }
-        }
-        
-        printf("[MW] Parsed %d vertices, bbox (%.0f,%.0f,%.0f)-(%.0f,%.0f,%.0f)\n",
-               level->vertex_count,
-               level->bbox_min_x, level->bbox_min_y, level->bbox_min_z,
-               level->bbox_max_x, level->bbox_max_y, level->bbox_max_z);
-        return level;
+    if (obj_count < 10000) {
+        parse_objects(&r, level, obj_count);
     }
     
-    /* For levels with objects, try scanning from the end */
+    /* ===== Section 4: Bounding Box (6 floats) =====
+     * Per Ghidra decomp lines 260-265: reads 6 × 4 bytes into Level struct.
+     * NOTE: For many Arena levels, the bbox values in the file are INVALID
+     * (min > max for some axes) — they appear to be placeholder/garbage.
+     * We read them but will recompute from vertex data below if invalid.
+     */
+    if (r.pos + 24 <= r.size) {
+        level->bbox_min_x = mw_read_f32(&r);
+        level->bbox_min_y = mw_read_f32(&r);
+        level->bbox_min_z = mw_read_f32(&r);
+        level->bbox_max_x = mw_read_f32(&r);
+        level->bbox_max_y = mw_read_f32(&r);
+        level->bbox_max_z = mw_read_f32(&r);
+    }
+    
+    /* ===== Section 5: Vertex Count + Vertex Data =====
+     * Per Ghidra decomp lines 266-270: read vertex_count(u32), 
+     * allocate count*32 bytes, read vertex data.
+     * Vertex format: position(3f) + normal(3f) + uv(2f) = 32 bytes.
+     */
+    if (r.pos + 4 <= r.size) {
+        level->vertex_count = mw_read_u32(&r);
+    }
+    
+    if (level->vertex_count > 0 && level->vertex_count < 1000000) {
+        level->vertices = (mw_vertex_t *)calloc(level->vertex_count, sizeof(mw_vertex_t));
+        if (level->vertices) {
+            for (uint32_t i = 0; i < level->vertex_count && r.pos + 32 <= r.size; i++) {
+                mw_vertex_t *v = &level->vertices[i];
+                v->x  = mw_read_f32(&r);
+                v->y  = mw_read_f32(&r);
+                v->z  = mw_read_f32(&r);
+                v->nx = mw_read_f32(&r);
+                v->ny = mw_read_f32(&r);
+                v->nz = mw_read_f32(&r);
+                v->u  = mw_read_f32(&r);
+                v->v  = mw_read_f32(&r);
+            }
+        }
+    }
+    
+    /* ===== Validate/Recompute BBox from vertex data =====
+     * Many level files have placeholder bbox values that are invalid.
+     * Recompute if min > max OR if bbox is all-zeros (degenerate).
+     */
+    if (level->vertex_count > 0 && level->vertices) {
+        int bbox_invalid = (level->bbox_min_x > level->bbox_max_x) ||
+                           (level->bbox_min_y > level->bbox_max_y) ||
+                           (level->bbox_min_z > level->bbox_max_z) ||
+                           (level->bbox_min_x == 0 && level->bbox_max_x == 0 &&
+                            level->bbox_min_y == 0 && level->bbox_max_y == 0 &&
+                            level->bbox_min_z == 0 && level->bbox_max_z == 0);
+        if (bbox_invalid) {
+            level->bbox_min_x = level->bbox_max_x = level->vertices[0].x;
+            level->bbox_min_y = level->bbox_max_y = level->vertices[0].y;
+            level->bbox_min_z = level->bbox_max_z = level->vertices[0].z;
+            for (int i = 1; i < level->vertex_count; i++) {
+                mw_vertex_t *v = &level->vertices[i];
+                if (v->x < level->bbox_min_x) level->bbox_min_x = v->x;
+                if (v->y < level->bbox_min_y) level->bbox_min_y = v->y;
+                if (v->z < level->bbox_min_z) level->bbox_min_z = v->z;
+                if (v->x > level->bbox_max_x) level->bbox_max_x = v->x;
+                if (v->y > level->bbox_max_y) level->bbox_max_y = v->y;
+                if (v->z > level->bbox_max_z) level->bbox_max_z = v->z;
+            }
+            printf("[MW] Bbox was invalid — recomputed from vertices\n");
+        }
+    }
+    
+    printf("[MW] Parsed %d vertices, %d objects, %d materials, bbox (%.0f,%.0f,%.0f)-(%.0f,%.0f,%.0f)\n",
+           level->vertex_count, level->object_count, level->material_count,
+           level->bbox_min_x, level->bbox_min_y, level->bbox_min_z,
+           level->bbox_max_x, level->bbox_max_y, level->bbox_max_z);
+    return level;
+    
+    /* ===== Fallback: scan from end for bbox+vertices (UNUSED — kept for safety) ===== */
 try_scan:
-    printf("[MW] Complex level — scanning for bbox+vertices from end\n");
-    {
-        float bbox[6];
-        uint32_t vc = 0;
-        size_t vtx_off = 0;
-        
-        if (find_bbox_and_vertices(data, size, bbox, &vc, &vtx_off)) {
-            level->bbox_min_x = bbox[0];
-            level->bbox_min_y = bbox[1];
-            level->bbox_min_z = bbox[2];
-            level->bbox_max_x = bbox[3];
-            level->bbox_max_y = bbox[4];
-            level->bbox_max_z = bbox[5];
-            level->vertex_count = (int)vc;
-            
-            if (vc > 0 && vc < 1000000) {
-                level->vertices = (mw_vertex_t *)calloc(vc, sizeof(mw_vertex_t));
-                if (level->vertices) {
-                    mw_reader_t vr = { data, size, vtx_off };
-                    for (uint32_t i = 0; i < vc && vr.pos + 32 <= vr.size; i++) {
-                        mw_vertex_t *v = &level->vertices[i];
-                        v->x  = mw_read_f32(&vr);
-                        v->y  = mw_read_f32(&vr);
-                        v->z  = mw_read_f32(&vr);
-                        v->nx = mw_read_f32(&vr);
-                        v->ny = mw_read_f32(&vr);
-                        v->nz = mw_read_f32(&vr);
-                        v->u  = mw_read_f32(&vr);
-                        v->v  = mw_read_f32(&vr);
-                    }
-                }
-            }
-            
-            printf("[MW] Scan found %d vertices, bbox (%.0f,%.0f,%.0f)-(%.0f,%.0f,%.0f) at offset %zu\n",
-                   level->vertex_count,
-                   bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5], vtx_off);
-        } else {
-            printf("[MW] WARNING: Could not find bbox+vertices by scanning\n");
-        }
-    }
-    
+    printf("[MW] WARNING: Fell through to scan fallback — sequential parse incomplete\n");
     return level;
 }
 
