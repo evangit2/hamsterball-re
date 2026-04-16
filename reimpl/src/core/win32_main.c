@@ -677,18 +677,25 @@ static void RenderBall(void) {
     }
 }
 
-/* ===== Render Level Mesh Geometry (Section 5 vertex array) ===== */
+/* ===== Render Level Mesh Geometry (Section 5 vertex array) =====
+ * Vertex data from MESHWORLD files is already in triangle-list order:
+ * every 3 consecutive vertices form a triangle.
+ * 
+ * Multi-pass rendering mirrors the original 8-pass pipeline:
+ *   Pass 1: Render flat geometry with material colors + lighting
+ *   (Future passes: textures, environment maps, etc.)
+ */
 static void RenderLevelGeometry(void) {
     if (!g_level || g_level->vertex_count == 0) return;
     
     /* D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 */
     typedef struct { float x, y, z; float nx, ny, nz; float u, v; } LevelVertex;
     
-    /* Use vertex buffer instead of DrawPrimitiveUP for better compatibility */
     DWORD fvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1;
     UINT vcount = g_level->vertex_count;
     UINT vsize = vcount * sizeof(LevelVertex);
     
+    /* Create vertex buffer */
     IDirect3DVertexBuffer8 *vbuf = NULL;
     HRESULT hr = g_device->lpVtbl->CreateVertexBuffer(g_device, vsize, 
         D3DUSAGE_WRITEONLY, fvf, D3DPOOL_MANAGED, &vbuf);
@@ -719,27 +726,36 @@ static void RenderLevelGeometry(void) {
         return;
     }
     
+    /* === Pass 1: Flat-shaded geometry with material colors === */
     D3DMATERIAL8 mat;
     ZeroMemory(&mat, sizeof(mat));
-    /* Use the first material's diffuse color, or default grey-brown */
-    if (g_level->material_count > 0) {
-        mat.Diffuse.r = g_level->materials[0].diffuse[0];
-        mat.Diffuse.g = g_level->materials[0].diffuse[1];
-        mat.Diffuse.b = g_level->materials[0].diffuse[2];
-        mat.Diffuse.a = g_level->materials[0].diffuse[3];
-        mat.Ambient.r = g_level->materials[0].ambient[0];
-        mat.Ambient.g = g_level->materials[0].ambient[1];
-        mat.Ambient.b = g_level->materials[0].ambient[2];
-        mat.Ambient.a = g_level->materials[0].ambient[3];
-        if (mat.Ambient.r == 0 && mat.Ambient.g == 0 && mat.Ambient.b == 0) {
-            mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f;
+    /* Use the first extended material's diffuse color, or default grey-brown */
+    int found_ext = 0;
+    for (int m = 0; m < g_level->material_count; m++) {
+        if (g_level->materials[m].has_texture || g_level->materials[m].diffuse[0] > 0) {
+            mat.Diffuse.r = g_level->materials[m].diffuse[0];
+            mat.Diffuse.g = g_level->materials[m].diffuse[1];
+            mat.Diffuse.b = g_level->materials[m].diffuse[2];
+            mat.Diffuse.a = g_level->materials[m].diffuse[3];
+            mat.Ambient.r = g_level->materials[m].ambient[0];
+            mat.Ambient.g = g_level->materials[m].ambient[1];
+            mat.Ambient.b = g_level->materials[m].ambient[2];
+            mat.Ambient.a = g_level->materials[m].ambient[3];
+            mat.Specular.r = g_level->materials[m].specular[0];
+            mat.Specular.g = g_level->materials[m].specular[1];
+            mat.Specular.b = g_level->materials[m].specular[2];
+            mat.Power = g_level->materials[m].shine;
+            if (mat.Ambient.r == 0 && mat.Ambient.g == 0 && mat.Ambient.b == 0) {
+                mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f;
+            }
+            found_ext = 1;
+            break;
         }
-    } else {
+    }
+    if (!found_ext) {
         mat.Diffuse.r = 0.7f; mat.Diffuse.g = 0.65f; mat.Diffuse.b = 0.55f; mat.Diffuse.a = 1.0f;
         mat.Ambient.r = 0.25f; mat.Ambient.g = 0.23f; mat.Ambient.b = 0.20f; mat.Ambient.a = 1.0f;
     }
-    mat.Specular.r = 0.1f; mat.Specular.g = 0.1f; mat.Specular.b = 0.1f;
-    mat.Power = 10.0f;
     g_device->lpVtbl->SetMaterial(g_device, &mat);
     
     /* Identity world matrix */
