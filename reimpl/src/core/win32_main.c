@@ -123,6 +123,7 @@ static void HandleInput(void);
 static void UpdatePhysics(float dt);
 static void Render(void);
 static void RenderBall(void);
+static void RenderBallShadow(void);
 static void DrawSpherePrimitive(void);
 static void RenderLevelGeometry(void);
 static void RenderLevelObjects(void);
@@ -899,10 +900,10 @@ static void UpdatePhysics(float dt) {
             }
         }
         
-        /* Log first collision for debugging */
+        /* Log first frame only for debugging */
         if (ss == 0) {
             static int collision_log_count = 0;
-            if (collision_log_count < 8) {
+            if (collision_log_count < 3) {
                 printf("[Collision] nhits=%d pos=(%.1f,%.1f,%.1f)\n",
                        nhits, g_ball.x, g_ball.y, g_ball.z);
                 collision_log_count++;
@@ -927,7 +928,7 @@ static void UpdatePhysics(float dt) {
     /* Debug: log ball position periodically */
     static int physics_log_count = 0;
     physics_log_count++;
-    if (physics_log_count <= 10 || (physics_log_count % 60 == 0)) {
+    if (physics_log_count <= 3 || (physics_log_count % 300 == 0)) {
         printf("[Physics] frame=%d pos=(%.1f,%.1f,%.1f) vel=(%.1f,%.1f,%.1f) substeps=%d\n",
                physics_log_count, g_ball.x, g_ball.y, g_ball.z,
                g_ball.vx, g_ball.vy, g_ball.vz, substeps);
@@ -1085,6 +1086,86 @@ static void RenderBall(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+}
+
+/* Draw a circular shadow on the ground below the ball.
+ * Original Ball_Render (0x402de0) calls Sprite_RenderQuad for shadow.
+ * We find ground Y by checking ball position against level geometry. */
+static void RenderBallShadow(void) {
+    /* Find ground Y below ball — use collision result from physics if available,
+     * otherwise fall back to simple downward probe. */ 
+    float ground_y = g_ball.y - g_ball.radius - 1.0f;  /* default: just below ball */
+    
+    /* Quick downward probe: test sphere at 3 heights below the ball */
+    if (g_level && g_level->index_count > 0) {
+        #define MAX_SHADOW_HITS 4
+        CollisionResult shadow_hits[MAX_SHADOW_HITS];
+        /* Check at ball radius (touching ground), then further down */
+        int nhits = TestSphereVsLevel(g_ball.x, g_ball.y - g_ball.radius, g_ball.z,
+                                      g_ball.radius * 0.3f, shadow_hits, MAX_SHADOW_HITS);
+        if (nhits > 0) {
+            ground_y = shadow_hits[0].cy;  /* Closest point on triangle */
+        } else {
+            /* Probe further down */
+            for (float dy = 50.0f; dy <= 300.0f; dy += 50.0f) {
+                nhits = TestSphereVsLevel(g_ball.x, g_ball.y - dy, g_ball.z,
+                                          dy * 0.5f, shadow_hits, MAX_SHADOW_HITS);
+                if (nhits > 0) {
+                    ground_y = shadow_hits[0].cy;
+                    break;
+                }
+            }
+        }
+    }
+    
+    float dist_to_ground = g_ball.y - ground_y;
+    float shadow_alpha = 0.3f;
+    /* Shadow fades with distance from ground */
+    if (dist_to_ground > 300.0f) return;  /* Too far, skip shadow entirely */
+    else if (dist_to_ground > 150.0f) shadow_alpha *= (300.0f - dist_to_ground) / 150.0f;
+    if (shadow_alpha <= 0.01f) return;
+    
+    float shadow_size = g_ball.radius * 1.3f;
+    
+    /* Draw shadow as a flat disc at ground_y */
+    D3DMATRIX world;
+    ZeroMemory(&world, sizeof(world));
+    world._11 = shadow_size;  world._22 = 1.0f;  world._33 = shadow_size;  world._44 = 1.0f;
+    world._41 = g_ball.x;  world._42 = ground_y + 0.5f;  world._43 = g_ball.z;
+    g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+    
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+    
+    D3DMATERIAL8 mat;
+    ZeroMemory(&mat, sizeof(mat));
+    mat.Diffuse.r = 0; mat.Diffuse.g = 0; mat.Diffuse.b = 0; mat.Diffuse.a = shadow_alpha;
+    mat.Ambient.r = 0; mat.Ambient.g = 0; mat.Ambient.b = 0; mat.Ambient.a = shadow_alpha;
+    g_device->lpVtbl->SetMaterial(g_device, &mat);
+    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
+    
+    /* Flat circle (8-sided polygon via triangle fan) */
+    struct { float x, y, z; DWORD diff; } verts[10];
+    DWORD color = D3DCOLOR_RGBA(0, 0, 0, (BYTE)(shadow_alpha * 255));
+    verts[0].x = 0; verts[0].y = 0; verts[0].z = 0; verts[0].diff = color;
+    for (int i = 0; i <= 8; i++) {
+        float a = 2.0f * 3.14159265f * i / 8;
+        verts[i + 1].x = cosf(a);
+        verts[i + 1].y = 0;
+        verts[i + 1].z = sinf(a);
+        verts[i + 1].diff = color;
+    }
+    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLEFAN, 8, verts, sizeof(verts[0]));
+    
+    /* Restore */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
 }
 
 /* Draw the ball sphere using vertex buffer (cached) */
@@ -1400,6 +1481,7 @@ static void Render(void) {
     SetMatrices();
     RenderLevelGeometry();
     RenderLevelObjects();
+    RenderBallShadow();  /* Shadow first (behind ball, closer to ground) */
     RenderBall();
     RenderHUD();
 
