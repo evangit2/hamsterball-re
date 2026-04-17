@@ -523,12 +523,20 @@ static BOOL LoadAssets(void) {
      * Camera_SetView(orbit_dir, distance):
      *   orbit_dir = (cos(angle), tilt, sin(angle)) normalized 
      *   eye = ball_pos + normalize(orbit_dir) * distance
-     * Arena default: distance=800, angle=45°, tilt=0.9
-     * Race default: distance=250, angle=0°, tilt=1.2 (closer, more overhead) */
+     * Arena default: distance=800, angle=45°, tilt=0.9 (overview)
+     * Race default: distance=350, angle=0°, tilt=1.0 (close follow) */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    g_camera.orbit_angle = 0.7854f;   /* PI/4: 45° orbit (arena isometric) */
-    g_camera.orbit_dist = 800.0f;     /* Arena distance (Scene+0x29C0) */
-    g_camera.orbit_tilt = 0.9f;       /* Isometric tilt (Scene_SetCamera orbit_dir.y) */
+    if (g_has_camlookat) {
+        /* Arena mode — wide isometric overview */
+        g_camera.orbit_angle = 0.7854f;   /* PI/4: 45° orbit */
+        g_camera.orbit_dist = 800.0f;
+        g_camera.orbit_tilt = 0.9f;
+    } else {
+        /* Race mode — close follow camera */
+        g_camera.orbit_angle = 0.0f;     /* Behind the ball */
+        g_camera.orbit_dist = 350.0f;    /* Closer for race tracks */
+        g_camera.orbit_tilt = 1.0f;      /* ~45° looking down */
+    }
     
     printf("[Camera] CAMERALOOKAT: %s (center=%.1f,%.1f,%.1f)\n",
            g_has_camlookat ? "YES" : "NO", g_camlookat_x, g_camlookat_y, g_camlookat_z);
