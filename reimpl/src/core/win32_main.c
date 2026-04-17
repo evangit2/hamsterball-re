@@ -36,9 +36,10 @@
 /* Ball physics constants from RE */
 #define BALL_RADIUS     26.0f               /* Ball+0x284 */
 #define BALL_MAX_SPEED  5000.0f             /* Ball+0x188 (5.0 * 1000) */
-#define BALL_DAMPING    0.95f               /* _DAT_004CF3F0 */
-#define BALL_GRAVITY    0.5f                /* Ball+0xC94 default */
-#define BALL_SPEED_SCALE 1.05f              /* Ball+0xC */
+#define BALL_DAMPING    0.5f               /* _DAT_004CF3F0: per-frame velocity damping */
+#define BALL_GRAVITY    0.15f              /* Ball+0xC94: default gravity (NOT 0.5) */
+#define BALL_SPEED_SCALE 1.05f             /* Ball+0x18C */
+#define BALL_SPEED_FRICTION 0.85f         /* _DAT_004CF4C0: high-speed friction */
 
 /* ===== Global State (mirrors App struct) ===== */
 static HINSTANCE g_hinst = NULL;
@@ -785,8 +786,10 @@ static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
 static void UpdatePhysics(float dt) {
     if (g_state != STATE_RACING) return;
 
-    /* Phase 1: Gravity (Ball+0x1A8 = 0.5 default, scaled by 100) */
-    g_ball.vy -= g_ball.gravity * 100.0f * dt;
+    /* Phase 1: Gravity (Ball+0x1A8 / Ball+0xC94: default = 0.15)
+     * Original applies in world units where 1 unit ≈ 1 game cm.
+     * Effective gravity ≈ 490 world units/s² (tuned to feel like the original) */
+    g_ball.vy -= g_ball.gravity * 500.0f * dt;
 
     /* Phase 2: Input force (Ball_GetInputForce 0x46EC30) */
     /* Camera-relative input: rotate by orbit_angle so UP = forward on screen */
@@ -799,10 +802,19 @@ static void UpdatePhysics(float dt) {
     g_ball.vx += input_wx * force_scale * dt;
     g_ball.vz += input_wz * force_scale * dt;
 
-    /* Phase 3: Velocity damping (_DAT_004CF3F0 = 0.95) */
-    float damp = (1.0f - dt) + (1.0f - g_ball.damping) * dt;
-    g_ball.vx *= damp;
-    g_ball.vz *= damp;
+    /* Phase 3: Velocity damping
+     * _DAT_004CF3F0 = 0.5: base damping (remove 50% of velocity each step)
+     * _DAT_004CF4C0 = 0.85: speed friction for higher velocities
+     * Combined: low speed uses heavy damping, high speed uses lighter damping */
+    float speed_h = sqrtf(g_ball.vx * g_ball.vx + g_ball.vz * g_ball.vz);
+    float damp_factor;
+    if (speed_h > 100.0f) {
+        damp_factor = BALL_SPEED_FRICTION;  /* 0.85: lighter damping at speed */
+    } else {
+        damp_factor = 1.0f - BALL_DAMPING * dt;  /* 0.5-based for fine control */
+    }
+    g_ball.vx *= damp_factor;
+    g_ball.vz *= damp_factor;
 
     /* Phase 5: Integrate position (with substeps for fast-moving ball) */
     float speed_before = sqrtf(g_ball.vx * g_ball.vx + g_ball.vy * g_ball.vy + g_ball.vz * g_ball.vz);
