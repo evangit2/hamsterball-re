@@ -122,6 +122,7 @@ static void HandleInput(void);
 static void UpdatePhysics(float dt);
 static void Render(void);
 static void RenderBall(void);
+static void DrawSpherePrimitive(void);
 static void RenderLevelGeometry(void);
 static void RenderLevelObjects(void);
 static void RenderHUD(void);
@@ -1013,68 +1014,109 @@ static void SetMatrices(void) {
 }
 
 static void RenderBall(void) {
-    /* Generate sphere geometry for the ball */
-    const int slices = 16, stacks = 12;
-    const float radius = g_ball.radius;
+    /* Ball rendering: translucent sphere matching the original's look.
+     * Original Ball_Render (0x402de0) uses Sphere.MESH with translucent material.
+     * The ball appears as a clear/translucent shell with a hamster inside.
+     * 
+     * We render it with:
+     * - Alpha blending enabled (translucent)
+     * - Grey-blue tinted material (matching the ball texture's mean color)
+     * - Z-write disabled for transparent objects
+     * - Two-pass: back faces (darker interior) then front faces (lighter shell)
+     */
     
-    /* Material (matches original ball material) */
-    D3DMATERIAL8 mat;
-    ZeroMemory(&mat, sizeof(mat));
-    mat.Diffuse.r = 0.9f; mat.Diffuse.g = 0.7f; mat.Diffuse.b = 0.3f; mat.Diffuse.a = 1.0f;
-    mat.Ambient.r = 0.3f; mat.Ambient.g = 0.25f; mat.Ambient.b = 0.1f;
-    mat.Specular.r = 0.7f; mat.Specular.g = 0.7f; mat.Specular.b = 0.7f;
-    mat.Power = 64.0f;
-    g_device->lpVtbl->SetMaterial(g_device, &mat);
-
     D3DMATRIX world;
     ZeroMemory(&world, sizeof(world));
-    world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
+    world._11 = g_ball.radius; world._22 = g_ball.radius; world._33 = g_ball.radius; world._44 = 1.0f;
     world._41 = g_ball.x; world._42 = g_ball.y; world._43 = g_ball.z;
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+    
+    /* Enable alpha blending for translucent ball */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, FALSE);
+    
+    /* Ball material: translucent grey-blue (matches original ball texture).
+     * Original ball texture mean RGBA: ~(210, 210, 210, 103) */
+    D3DMATERIAL8 mat;
+    ZeroMemory(&mat, sizeof(mat));
+    
+    /* --- Pass 1: Back faces (inside of ball, slightly darker) --- */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CW); /* Render back faces */
+    mat.Diffuse.r = 0.55f; mat.Diffuse.g = 0.58f; mat.Diffuse.b = 0.65f; mat.Diffuse.a = 0.35f;
+    mat.Ambient.r = 0.30f; mat.Ambient.g = 0.30f; mat.Ambient.b = 0.35f; mat.Ambient.a = 0.35f;
+    mat.Specular.r = 0.4f; mat.Specular.g = 0.4f; mat.Specular.b = 0.4f; mat.Specular.a = 1.0f;
+    mat.Power = 40.0f;
+    g_device->lpVtbl->SetMaterial(g_device, &mat);
+    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_NORMAL);
+    DrawSpherePrimitive();
+    
+    /* --- Pass 2: Front faces (outside shell, lighter, see-through) --- */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CCW); /* Render front faces */
+    mat.Diffuse.r = 0.75f; mat.Diffuse.g = 0.78f; mat.Diffuse.b = 0.85f; mat.Diffuse.a = 0.45f;
+    mat.Ambient.r = 0.45f; mat.Ambient.g = 0.47f; mat.Ambient.b = 0.52f; mat.Ambient.a = 0.45f;
+    mat.Specular.r = 0.9f; mat.Specular.g = 0.9f; mat.Specular.b = 0.95f; mat.Specular.a = 1.0f;
+    mat.Power = 64.0f;
+    g_device->lpVtbl->SetMaterial(g_device, &mat);
+    DrawSpherePrimitive();
+    
+    /* Restore render state */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+}
 
-    for (int i = 0; i < stacks; i++) {
-        float phi1 = 3.14159265f * i / stacks - 3.14159265f / 2.0f;
-        float phi2 = 3.14159265f * (i + 1) / stacks - 3.14159265f / 2.0f;
+/* Draw the ball sphere using vertex buffer (cached) */
+static void DrawSpherePrimitive(void) {
+    static BOOL generated = FALSE;
+    static struct { float x, y, z; float nx, ny, nz; } sphere_verts[16*12*6]; /* ~1152 verts */
+    static int vert_count = 0;
+    
+    if (!generated) {
+        const int slices = 16, stacks = 12;
+        vert_count = 0;
         
-        for (int j = 0; j < slices; j++) {
-            float theta1 = 2.0f * 3.14159265f * j / slices;
-            float theta2 = 2.0f * 3.14159265f * (j + 1) / slices;
-
-            struct { float x, y, z; float nx, ny, nz; } verts[4];
+        for (int i = 0; i < stacks; i++) {
+            float phi1 = 3.14159265f * i / stacks - 3.14159265f / 2.0f;
+            float phi2 = 3.14159265f * (i + 1) / stacks - 3.14159265f / 2.0f;
             
-            verts[0].x = radius * cosf(phi1) * cosf(theta1);
-            verts[0].y = radius * sinf(phi1);
-            verts[0].z = radius * cosf(phi1) * sinf(theta1);
-            verts[0].nx = cosf(phi1) * cosf(theta1);
-            verts[0].ny = sinf(phi1);
-            verts[0].nz = cosf(phi1) * sinf(theta1);
-
-            verts[1].x = radius * cosf(phi1) * cosf(theta2);
-            verts[1].y = radius * sinf(phi1);
-            verts[1].z = radius * cosf(phi1) * sinf(theta2);
-            verts[1].nx = cosf(phi1) * cosf(theta2);
-            verts[1].ny = sinf(phi1);
-            verts[1].nz = cosf(phi1) * sinf(theta2);
-
-            verts[2].x = radius * cosf(phi2) * cosf(theta1);
-            verts[2].y = radius * sinf(phi2);
-            verts[2].z = radius * cosf(phi2) * sinf(theta1);
-            verts[2].nx = cosf(phi2) * cosf(theta1);
-            verts[2].ny = sinf(phi2);
-            verts[2].nz = cosf(phi2) * sinf(theta1);
-
-            verts[3].x = radius * cosf(phi2) * cosf(theta2);
-            verts[3].y = radius * sinf(phi2);
-            verts[3].z = radius * cosf(phi2) * sinf(theta2);
-            verts[3].nx = cosf(phi2) * cosf(theta2);
-            verts[3].ny = sinf(phi2);
-            verts[3].nz = cosf(phi2) * sinf(theta2);
-
-            g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_NORMAL);
-            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2,
-                verts, sizeof(verts[0]));
+            for (int j = 0; j < slices; j++) {
+                float theta1 = 2.0f * 3.14159265f * j / slices;
+                float theta2 = 2.0f * 3.14159265f * (j + 1) / slices;
+                
+                float cp1 = cosf(phi1), sp1 = sinf(phi1);
+                float cp2 = cosf(phi2), sp2 = sinf(phi2);
+                float ct1 = cosf(theta1), st1 = sinf(theta1);
+                float ct2 = cosf(theta2), st2 = sinf(theta2);
+                
+                /* Tri 1 */
+                sphere_verts[vert_count].x = cp1*ct1; sphere_verts[vert_count].y = sp1; sphere_verts[vert_count].z = cp1*st1;
+                sphere_verts[vert_count].nx = cp1*ct1; sphere_verts[vert_count].ny = sp1; sphere_verts[vert_count].nz = cp1*st1;
+                vert_count++;
+                sphere_verts[vert_count].x = cp1*ct2; sphere_verts[vert_count].y = sp1; sphere_verts[vert_count].z = cp1*st2;
+                sphere_verts[vert_count].nx = cp1*ct2; sphere_verts[vert_count].ny = sp1; sphere_verts[vert_count].nz = cp1*st2;
+                vert_count++;
+                sphere_verts[vert_count].x = cp2*ct1; sphere_verts[vert_count].y = sp2; sphere_verts[vert_count].z = cp2*st1;
+                sphere_verts[vert_count].nx = cp2*ct1; sphere_verts[vert_count].ny = sp2; sphere_verts[vert_count].nz = cp2*st1;
+                vert_count++;
+                /* Tri 2 */
+                sphere_verts[vert_count].x = cp1*ct2; sphere_verts[vert_count].y = sp1; sphere_verts[vert_count].z = cp1*st2;
+                sphere_verts[vert_count].nx = cp1*ct2; sphere_verts[vert_count].ny = sp1; sphere_verts[vert_count].nz = cp1*st2;
+                vert_count++;
+                sphere_verts[vert_count].x = cp2*ct2; sphere_verts[vert_count].y = sp2; sphere_verts[vert_count].z = cp2*st2;
+                sphere_verts[vert_count].nx = cp2*ct2; sphere_verts[vert_count].ny = sp2; sphere_verts[vert_count].nz = cp2*st2;
+                vert_count++;
+                sphere_verts[vert_count].x = cp2*ct1; sphere_verts[vert_count].y = sp2; sphere_verts[vert_count].z = cp2*st1;
+                sphere_verts[vert_count].nx = cp2*ct1; sphere_verts[vert_count].ny = sp2; sphere_verts[vert_count].nz = cp2*st1;
+                vert_count++;
+            }
         }
+        generated = TRUE;
     }
+    
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLELIST, 
+        vert_count / 3, sphere_verts, sizeof(sphere_verts[0]));
 }
 
 /* ===== Render Level Mesh — Per-geom with D3D lighting + materials + textures =====
