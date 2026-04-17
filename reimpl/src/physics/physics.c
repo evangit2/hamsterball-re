@@ -40,22 +40,18 @@
 #define BRAKE_FORCE         0.7f        /* Braking deceleration */
 #define COLLISION_BOUNCE    0.3f        /* Coefficient of restitution */
 
-/* ===== Camera constants from CameraLookAt (0x413280) ===== */
-/* Original: distance=45.0 (0x42340000), height=800.0 (0x44480000)
- * Scene_SetCamera uses orbit_dir = (cos(angle), 0.9, sin(angle))
- * with distance applied, giving camera position at:
- *   orbit_dir * distance from the target
- * The "0.9" Y component means the camera is 0.9/1.0 of the way to horizontal
- * from directly above, creating ~42 degree tilt
+/* ===== Camera constants from CameraLookAt (0x413280) and Scene_SetCamera (0x419FA0) =====
+ * Original: distance=45.0 (0x42340000), height=800.0 (0x44480000)
+ * Scene_SetCamera builds orbit direction = (cos(angle), 0.9, sin(angle)),
+ * then normalizes and scales by distance. But height=800 is used SEPARATELY.
  *
- * For visual parity: 800 is the orbit "distance" (scalar), and the direction
- * vector (cos, 0.9, sin) means camera is at:
- *   eye = target + 800 * normalize(cos(a), 0.9, sin(a))
- *
- * Simplified: camera is high above and slightly behind the target
+ * The real camera setup: the orbit direction (cos, 0.9, sin) normalized × distance
+ * gives the HORIZONTAL offset (~45 units). Height=800 is applied as separate Y offset.
+ * Result: camera is ~800 units above target, ~45 units to the side = nearly top-down.
  */
-#define CAM_ORBIT_DISTANCE  1200.0f     /* Large distance to see the whole arena from above */
-#define CAM_TILT_Y         1.5f        /* Higher Y = more top-down view (was 0.9 = ~42° tilt) */
+#define CAM_ORBIT_DISTANCE  800.0f       /* 800 units horizontal for ~45° isometric angle */
+#define CAM_HEIGHT          800.0f      /* 800 units above target = 45° from horizontal */
+#define CAM_TILT_Y         0.9f        /* Y component of orbit direction (from Scene_SetCamera decomp) */
 #define CAM_FOLLOW_LERP    0.08f       /* Camera interpolation speed */
 #define CAM_SNAP_SPEED     0.15f       /* Faster follow during movement */
 
@@ -123,7 +119,7 @@ void physics_init(void) {
     g_camera.orbit_distance = CAM_ORBIT_DISTANCE;
     g_camera.tilt_y = CAM_TILT_Y;
     g_camera.target = (vec3_t){0, 0, 0};
-    g_camera.position = (vec3_t){0, CAM_ORBIT_DISTANCE * CAM_TILT_Y, -CAM_ORBIT_DISTANCE};
+    g_camera.position = (vec3_t){CAM_ORBIT_DISTANCE * 0.707f, CAM_HEIGHT, CAM_ORBIT_DISTANCE * 0.707f};
     
     memset(&g_input, 0, sizeof(g_input));
     g_frame_count = 0;
@@ -181,20 +177,18 @@ static float get_ground_height(float x, float z) {
  * Matches Scene_SetCamera (0x419FA0) Mode 5 orbit rotation:
  *   cos_a = cos(orbit_angle)
  *   sin_a = sin(orbit_angle)
- *   orbit_dir = (cos_a, 0.9, sin_a) — normalized implicitly by gluLookAt
- *   camera_pos = target + orbit_dir * distance
+ *   orbit_dir = (cos_a, 0.9, sin_a) — normalized, then scaled by distance
+ *   BUT height=800 is applied as SEPARATE Y offset, not part of the direction.
+ *
+ * Camera position = target + (distance*cos(a), height, distance*sin(a))
+ * This gives nearly top-down with slight horizontal offset.
  */
 static void update_camera_position(void) {
     float ca = cosf(g_camera.orbit_angle);
     float sa = sinf(g_camera.orbit_angle);
     
-    /* orbit_dir = (cos(angle), 0.9, sin(angle)) from Scene_SetCamera decomp
-     * This is NOT normalized — it sets the direction/distance ratio.
-     * The actual position: eye = target + orbit_dir * distance
-     * With distance=800: eye.x = target.x + 800*cos(a), etc.
-     */
     g_camera.position.x = g_camera.target.x + g_camera.orbit_distance * ca;
-    g_camera.position.y = g_camera.target.y + g_camera.orbit_distance * g_camera.tilt_y;
+    g_camera.position.y = g_camera.target.y + CAM_HEIGHT;
     g_camera.position.z = g_camera.target.z + g_camera.orbit_distance * sa;
 }
 

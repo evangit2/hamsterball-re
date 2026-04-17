@@ -455,21 +455,43 @@ static BOOL LoadLevel(const char *name) {
 static BOOL LoadAssets(void) {
     if (!FindGameDir()) return FALSE;
 
-    /* Load level — try WarmUp first (has proper geometry), then SpawnPlatform */
-    if (!LoadLevel("Arena-WarmUp")) {
-        if (!LoadLevel("Arena-SpawnPlatform")) {
-            if (!LoadLevel("Level1")) return FALSE;
+    /* Load level — Level1 = WarmUp race (has full track with ramps + platforms) */
+    if (!LoadLevel("Level1")) {
+        if (!LoadLevel("Arena-WarmUp")) {
+            if (!LoadLevel("Arena-SpawnPlatform")) {
+                return FALSE;
+            }
         }
     }
 
     /* Reset ball at start position — on the level surface */
     if (g_level && g_level->vertex_count > 0) {
-        /* Use the computed bbox to position ball at center of the level surface */
-        g_ball.x = (g_level->bounds_min.x + g_level->bounds_max.x) / 2.0f;
-        g_ball.y = g_level->bounds_max.y + g_ball.radius + 1.0f; /* Just above the highest surface */
-        g_ball.z = (g_level->bounds_min.z + g_level->bounds_max.z) / 2.0f;
+        /* Find the topmost surface (upward-facing triangles) for ball spawn.
+         * Arena-WarmUp has geometry from Y=-857 to Y=775, with start platform at Y≈372.
+         * The MW_OBJ_START Y value is often 0 (wrong), so we compute from actual geometry. */
+        float top_floor_y = g_level->bounds_min.y;
+        float top_floor_x = 0, top_floor_z = 0;
+        if (g_level->indices && g_level->index_count >= 3) {
+            for (int i = 0; i + 2 < g_level->index_count; i += 3) {
+                int i0 = g_level->indices[i], i1 = g_level->indices[i+1], i2 = g_level->indices[i+2];
+                if (i0 >= g_level->vertex_count || i1 >= g_level->vertex_count || i2 >= g_level->vertex_count) continue;
+                float ny = (g_level->vertices[i0].ny + g_level->vertices[i1].ny + g_level->vertices[i2].ny) / 3.0f;
+                float ty = (g_level->vertices[i0].y + g_level->vertices[i1].y + g_level->vertices[i2].y) / 3.0f;
+                /* Upward-facing triangle at higher Y than current best = part of top platform */
+                if (ny > 0.5f && ty > top_floor_y + 20.0f) {
+                    top_floor_y = ty;
+                    top_floor_x = (g_level->vertices[i0].x + g_level->vertices[i1].x + g_level->vertices[i2].x) / 3.0f;
+                    top_floor_z = (g_level->vertices[i0].z + g_level->vertices[i1].z + g_level->vertices[i2].z) / 3.0f;
+                }
+            }
+        }
+        g_ball.x = top_floor_x;
+        g_ball.y = top_floor_y + g_ball.radius + 1.0f;
+        g_ball.z = top_floor_z;
+        printf("[Spawn] Top floor surface: Y=%.1f at (%.1f, %.1f, %.1f)\n",
+               top_floor_y, top_floor_x, top_floor_y, top_floor_z);
     } else {
-        g_ball.x = 0; g_ball.y = 13.33f + 26.0f; g_ball.z = 0;
+        g_ball.x = 0; g_ball.y = 26.0f + 26.0f; g_ball.z = 0;
     }
     g_ball.vx = g_ball.vy = g_ball.vz = 0;
     g_ball.radius = BALL_RADIUS;
@@ -483,7 +505,7 @@ static BOOL LoadAssets(void) {
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
                 g_ball.x = g_level->objects[i].position.x;
-                g_ball.y = g_level->objects[i].position.y + g_ball.radius + 1.0f;
+                /* Don't use START Y — it's unreliable. Keep the geometry-computed Y. */
                 g_ball.z = g_level->objects[i].position.z;
             }
             if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
@@ -583,40 +605,311 @@ static void HandleInput(void) {
     }
 }
 
-/* ===== Physics: Ball_AdvancePositionOrCollision (0x4564C0) simplified ===== */
+/* ===== Triangle Collision System =====
+ * Original uses Ball_AdvancePositionOrCollision (0x4564C0) with a 6-phase physics
+ * pipeline. Phase 4 is collision detection against MESHWORLD geometry.
+ * 
+ * We implement sphere-vs-triangle collision:
+ * 1. For each triangle in the level, check if sphere overlaps it
+ * 2. Compute penetration depth and push sphere out along triangle normal
+ * 3. Response: reflect velocity component into the surface, apply friction
+ *
+ * Optimization: only test triangles within a bounding box around the ball.
+ * For WarmUp (2320 verts, ~770 tris) brute-force is fast enough.
+ */
+
+/* Compute cross product */
+static void Vec3Cross(float ax, float ay, float az,
+                     float bx, float by, float bz,
+                     float *ox, float *oy, float *oz) {
+    *ox = ay * bz - az * by;
+    *oy = az * bx - ax * bz;
+    *oz = ax * by - ay * bx;
+}
+
+/* Compute dot product */
+static float Vec3Dot(float ax, float ay, float az,
+                     float bx, float by, float bz) {
+    return ax * bx + ay * by + az * bz;
+}
+
+/* Closest point on triangle to point P (Möller–Trumbore barycentric approach) */
+static void ClosestPointOnTriangle(float px, float py, float pz,
+                                    float ax, float ay, float az,
+                                    float bx, float by, float bz,
+                                    float cx, float cy, float cz,
+                                    float *outx, float *outy, float *outz) {
+    /* Edges */
+    float e0x = bx - ax, e0y = by - ay, e0z = bz - az;
+    float e1x = cx - ax, e1y = cy - ay, e1z = cz - az;
+    float dx = px - ax, dy = py - ay, dz = pz - az;
+    
+    float d00 = Vec3Dot(e0x, e0y, e0z, e0x, e0y, e0z);
+    float d01 = Vec3Dot(e0x, e0y, e0z, e1x, e1y, e1z);
+    float d11 = Vec3Dot(e1x, e1y, e1z, e1x, e1y, e1z);
+    float d20 = Vec3Dot(dx, dy, dz, e0x, e0y, e0z);
+    float d21 = Vec3Dot(dx, dy, dz, e1x, e1y, e1z);
+    
+    float denom = d00 * d11 - d01 * d01;
+    float v = 0.0f, w = 0.0f;
+    if (fabsf(denom) > 1e-8f) {
+        v = (d11 * d20 - d01 * d21) / denom;
+        w = (d00 * d21 - d01 * d20) / denom;
+    }
+    
+    /* Clamp to triangle (Voronoi region classification) */
+    if (v < 0.0f) { v = 0.0f; w = (d21 > 0) ? 0.0f : (d21 < d11 ? 1.0f : -d21 / d11); }
+    else if (w < 0.0f) { w = 0.0f; v = (d20 > 0) ? 0.0f : (d20 < d00 ? 1.0f : -d20 / d00); }
+    
+    /* Clamp v+w to 1 (edge BC) */
+    if (v + w > 1.0f) {
+        float f = 1.0f / (v + w);
+        v *= f;
+        w *= f;
+        /* Re-clamp after scaling */
+        if (v < 0.0f) v = 0.0f;
+        if (w < 0.0f) w = 0.0f;
+        if (v + w > 1.0f) { v = 1.0f - w; }
+    }
+    
+    float u = 1.0f - v - w;
+    *outx = u * ax + v * bx + w * cx;
+    *outy = u * ay + v * by + w * cy;
+    *outz = u * az + v * bz + w * cz;
+}
+
+/* Collision result */
+typedef struct {
+    float nx, ny, nz;    /* Surface normal (pointing outward from surface) */
+    float depth;          /* Penetration depth (positive = overlapping) */
+    float cx, cy, cz;    /* Closest point on triangle */
+    int tri_index;        /* Which triangle was hit (-1 = none) */
+} CollisionResult;
+
+/* Test sphere (center + radius) against all level triangles */
+static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
+                              CollisionResult *results, int max_results) {
+    if (!g_level || g_level->index_count < 3) return 0;
+    
+    int count = 0;
+    int num_tris = g_level->index_count / 3;
+    
+    for (int t = 0; t < num_tris && count < max_results; t++) {
+        int i0 = g_level->indices[t * 3 + 0];
+        int i1 = g_level->indices[t * 3 + 1];
+        int i2 = g_level->indices[t * 3 + 2];
+        
+        if (i0 >= g_level->vertex_count || i1 >= g_level->vertex_count ||
+            i2 >= g_level->vertex_count) continue;
+        
+        mw_vertex_t *v0 = &g_level->vertices[i0];
+        mw_vertex_t *v1 = &g_level->vertices[i1];
+        mw_vertex_t *v2 = &g_level->vertices[i2];
+        
+        /* Quick AABB pre-filter: skip triangles far from sphere */
+        float tri_minx = v0->x < v1->x ? (v0->x < v2->x ? v0->x : v2->x) : (v1->x < v2->x ? v1->x : v2->x);
+        float tri_miny = v0->y < v1->y ? (v0->y < v2->y ? v0->y : v2->y) : (v1->y < v2->y ? v1->y : v2->y);
+        float tri_minz = v0->z < v1->z ? (v0->z < v2->z ? v0->z : v2->z) : (v1->z < v2->z ? v1->z : v2->z);
+        float tri_maxx = v0->x > v1->x ? (v0->x > v2->x ? v0->x : v2->x) : (v1->x > v2->x ? v1->x : v2->x);
+        float tri_maxy = v0->y > v1->y ? (v0->y > v2->y ? v0->y : v2->y) : (v1->y > v2->y ? v1->y : v2->y);
+        float tri_maxz = v0->z > v1->z ? (v0->z > v2->z ? v0->z : v2->z) : (v1->z > v2->z ? v1->z : v2->z);
+        
+        /* Expand AABB by sphere radius for pre-filter.
+         * Use a generous margin to avoid missing thin geometry */
+        float margin = radius * 2.0f;
+        if (tri_maxx < sx - margin || tri_minx > sx + margin ||
+            tri_maxy < sy - margin || tri_miny > sy + margin ||
+            tri_maxz < sz - margin || tri_minz > sz + margin) continue;
+        
+        /* Find closest point on triangle to sphere center */
+        float cpx, cpy, cpz;
+        ClosestPointOnTriangle(sx, sy, sz,
+                                v0->x, v0->y, v0->z,
+                                v1->x, v1->y, v1->z,
+                                v2->x, v2->y, v2->z,
+                                &cpx, &cpy, &cpz);
+        
+        /* Distance from sphere center to closest point */
+        float dx = sx - cpx, dy = sy - cpy, dz = sz - cpz;
+        float dist_sq = dx * dx + dy * dy + dz * dz;
+        
+        if (dist_sq < radius * radius) {
+            float dist = sqrtf(dist_sq);
+            float nx, ny, nz;
+            
+            if (dist > 1e-6f) {
+                /* Normal from closest point toward sphere center */
+                nx = dx / dist;
+                ny = dy / dist;
+                nz = dz / dist;
+            } else {
+                /* Sphere center is ON the triangle — use triangle face normal */
+                float e1x = v1->x - v0->x, e1y = v1->y - v0->y, e1z = v1->z - v0->z;
+                float e2x = v2->x - v0->x, e2y = v2->y - v0->y, e2z = v2->z - v0->z;
+                Vec3Cross(e1x, e1y, e1z, e2x, e2y, e2z, &nx, &ny, &nz);
+                float nlen = sqrtf(nx * nx + ny * ny + nz * nz);
+                if (nlen > 1e-6f) { nx /= nlen; ny /= nlen; nz /= nlen; }
+                else { nx = 0; ny = 1; nz = 0; }
+                
+                /* Make sure normal points away from triangle toward sphere */
+                if (Vec3Dot(nx, ny, nz, dx, dy, dz) < 0) {
+                    nx = -nx; ny = -ny; nz = -nz;
+                }
+            }
+            
+            results[count].nx = nx;
+            results[count].ny = ny;
+            results[count].nz = nz;
+            results[count].depth = radius - dist;
+            results[count].cx = cpx;
+            results[count].cy = cpy;
+            results[count].cz = cpz;
+            results[count].tri_index = t;
+            count++;
+        }
+    }
+    
+    return count;
+}
+
+/* ===== Physics: Ball_AdvancePositionOrCollision (0x4564C0) =====
+ * Simplified from original's 6-phase pipeline:
+ *   Phase 1: Gravity
+ *   Phase 2: Input force
+ *   Phase 3: Velocity damping
+ *   Phase 4: Collision detection + response (NEW — was y=0 plane before)
+ *   Phase 5: Position integration
+ *   Phase 6: Speed clamping
+ */
 static void UpdatePhysics(float dt) {
     if (g_state != STATE_RACING) return;
 
-    /* Phase 2: Input velocity */
-    float force_scale = g_ball.speed_scale * 1000.0f;
-    g_ball.vx += g_ball.input_fx * force_scale * dt;
-    g_ball.vz += g_ball.input_fy * force_scale * dt;
+    /* Phase 1: Gravity (Ball+0x1A8 = 0.5 default, scaled by 100) */
+    g_ball.vy -= g_ball.gravity * 100.0f * dt;
 
-    /* Phase 3: Damping */
+    /* Phase 2: Input force (Ball_GetInputForce 0x46EC30) */
+    /* Camera-relative input: rotate by orbit_angle so UP = forward on screen */
+    float cos_a = cosf(g_camera.orbit_angle);
+    float sin_a = sinf(g_camera.orbit_angle);
+    float input_wx = g_ball.input_fx * cos_a - g_ball.input_fy * sin_a;
+    float input_wz = g_ball.input_fx * sin_a + g_ball.input_fy * cos_a;
+    
+    float force_scale = g_ball.speed_scale * 1000.0f;
+    g_ball.vx += input_wx * force_scale * dt;
+    g_ball.vz += input_wz * force_scale * dt;
+
+    /* Phase 3: Velocity damping (_DAT_004CF3F0 = 0.95) */
     float damp = (1.0f - dt) + (1.0f - g_ball.damping) * dt;
     g_ball.vx *= damp;
     g_ball.vz *= damp;
 
-    /* Clamp max speed */
-    float speed = sqrtf(g_ball.vx * g_ball.vx + g_ball.vz * g_ball.vz);
+    /* Phase 5: Integrate position (with substeps for fast-moving ball) */
+    float speed_before = sqrtf(g_ball.vx * g_ball.vx + g_ball.vy * g_ball.vy + g_ball.vz * g_ball.vz);
+    int substeps = 1;
+    /* If ball moves more than radius per frame, use substeps to prevent tunneling */
+    float move_dist = speed_before * dt;
+    if (move_dist > g_ball.radius * 0.5f) {
+        substeps = (int)(move_dist / (g_ball.radius * 0.5f)) + 1;
+        if (substeps > 8) substeps = 8;  /* Cap to prevent spiral of death */
+    }
+    
+    float sub_dt = dt / (float)substeps;
+    for (int ss = 0; ss < substeps; ss++) {
+        g_ball.x += g_ball.vx * sub_dt;
+        g_ball.y += g_ball.vy * sub_dt;
+        g_ball.z += g_ball.vz * sub_dt;
+        
+        /* Phase 4: Collision detection + response against level geometry */
+        #define MAX_COLLISIONS 16
+        CollisionResult hits[MAX_COLLISIONS];
+        int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius,
+                                       hits, MAX_COLLISIONS);
+        
+        /* Resolve collisions iteratively (up to 4 passes for corners) */
+        for (int pass = 0; pass < 4 && nhits > 0; pass++) {
+            /* Find the deepest penetration */
+            int deepest = 0;
+            for (int i = 1; i < nhits; i++) {
+                if (hits[i].depth > hits[deepest].depth) deepest = i;
+            }
+            
+            CollisionResult *hit = &hits[deepest];
+            
+            /* Push ball out of surface along collision normal */
+            g_ball.x += hit->nx * hit->depth * 1.01f;  /* Slightly over-resolve to prevent sticking */
+            g_ball.y += hit->ny * hit->depth * 1.01f;
+            g_ball.z += hit->nz * hit->depth * 1.01f;
+            
+            /* Velocity response: remove component going INTO the surface */
+            float vel_dot_n = Vec3Dot(g_ball.vx, g_ball.vy, g_ball.vz,
+                                       hit->nx, hit->ny, hit->nz);
+            
+            if (vel_dot_n < 0.0f) {
+                /* Decompose velocity into normal and tangential */
+                float vn_x = hit->nx * vel_dot_n;
+                float vn_y = hit->ny * vel_dot_n;
+                float vn_z = hit->nz * vel_dot_n;
+                float vt_x = g_ball.vx - vn_x;
+                float vt_y = g_ball.vy - vn_y;
+                float vt_z = g_ball.vz - vn_z;
+                
+                /* Bounce: reflect normal component with restitution */
+                float bounce = 0.3f;  /* Coefficient of restitution */
+                g_ball.vx = vt_x - vn_x * bounce;
+                g_ball.vy = vt_y - vn_y * bounce;
+                g_ball.vz = vt_z - vn_z * bounce;
+                
+                /* Surface friction on tangential component */
+                float friction = 0.98f;
+                g_ball.vx = vt_x * friction + (g_ball.vx - vt_x);
+                g_ball.vz = vt_z * friction + (g_ball.vz - vt_z);
+                
+                /* Ground detection: if normal is mostly pointing up, ball is on ground */
+                if (hit->ny > 0.5f) {
+                    /* Kill residual vertical velocity when on near-flat ground */
+                    if (fabsf(g_ball.vy) < 5.0f) g_ball.vy = 0.0f;
+                }
+            }
+            
+            /* Re-test after resolution (for corner cases) */
+            if (pass < 3) {
+                nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius,
+                                           hits, MAX_COLLISIONS);
+            }
+        }
+        
+        /* Log first collision for debugging */
+        if (ss == 0) {
+            static int collision_log_count = 0;
+            if (collision_log_count < 8) {
+                printf("[Collision] nhits=%d pos=(%.1f,%.1f,%.1f)\n",
+                       nhits, g_ball.x, g_ball.y, g_ball.z);
+                collision_log_count++;
+            }
+        }
+    }
+    
+    /* Phase 6: Clamp max speed (after substeps) */
+    float speed = sqrtf(g_ball.vx * g_ball.vx + g_ball.vy * g_ball.vy + g_ball.vz * g_ball.vz);
     if (speed > g_ball.max_speed) {
         float scale = g_ball.max_speed / speed;
-        g_ball.vx *= scale;
-        g_ball.vz *= scale;
+        g_ball.vx *= scale; g_ball.vy *= scale; g_ball.vz *= scale;
     }
-
-    /* Phase 5: Gravity */
-    g_ball.vy -= g_ball.gravity * 100.0f * dt;
-
-    /* Apply velocity */
-    g_ball.x += g_ball.vx * dt;
-    g_ball.y += g_ball.vy * dt;
-    g_ball.z += g_ball.vz * dt;
-
-    /* Simple ground collision (y=0 plane) */
-    if (g_ball.y < g_ball.radius) {
-        g_ball.y = g_ball.radius;
-        g_ball.vy = 0;
+    
+    /* Failsafe: if ball falls way below the level, reset it */
+    if (g_level && g_ball.y < g_level->bounds_min.y - 500.0f) {
+        g_ball.y = g_level->bounds_max.y + 100.0f;
+        g_ball.vy = 0.0f;
+        printf("[Physics] Ball fell below level — resetting y to %.1f\n", g_ball.y);
+    }
+    
+    /* Debug: log ball position periodically */
+    static int physics_log_count = 0;
+    physics_log_count++;
+    if (physics_log_count <= 10 || (physics_log_count % 60 == 0)) {
+        printf("[Physics] frame=%d pos=(%.1f,%.1f,%.1f) vel=(%.1f,%.1f,%.1f) substeps=%d\n",
+               physics_log_count, g_ball.x, g_ball.y, g_ball.z,
+               g_ball.vx, g_ball.vy, g_ball.vz, substeps);
     }
 }
 

@@ -338,23 +338,58 @@ static void render_level_objects(void) {
 static void render_ball(void) {
     vec3_t pos = ball_get_position();
     
-    GLfloat ball_diff[] = {0.9f, 0.7f, 0.3f, 1.0f};
-    GLfloat ball_amb[] = {0.3f, 0.25f, 0.1f, 1.0f};
-    GLfloat ball_spec[] = {0.7f, 0.7f, 0.7f, 1.0f};
-    GLfloat ball_shine[] = {64.0f};
-    
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, ball_diff);
-    glMaterialfv(GL_FRONT, GL_AMBIENT, ball_amb);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, ball_spec);
-    glMaterialfv(GL_FRONT, GL_SHININESS, ball_shine);
-    
     glPushMatrix();
     glTranslatef(pos.x, pos.y, pos.z);
     
-    /* If we have the ball mesh, render it */
+    /* Rolling rotation */
+    /* TODO: compute from angular_velocity properly */
+    
+    /* Ball rendering: translucent grey sphere with HamsterBall texture
+     * Original: translucent shell with hamster visible inside.
+     * We render back faces first (darker inside), then front faces (lighter outside),
+     * both with alpha blending and the texture modulated with material. */
+    
+    /* Enable alpha blending for translucent ball */
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);  /* Don't write depth for transparent object */
+    
+    /* Ball material: grey translucent, matching texture color scheme
+     * Texture is mean RGBA (210,210,210,103) — we modulate with similar values */
+    GLfloat ball_diff[] = {1.0f, 1.0f, 1.0f, 1.0f};  /* White base, let texture provide color+alpha */
+    GLfloat ball_amb[] = {0.7f, 0.7f, 0.7f, 1.0f};
+    GLfloat ball_spec[] = {0.8f, 0.8f, 0.8f, 1.0f};
+    GLfloat ball_shine[] = {64.0f};
+    
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, ball_diff);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ball_amb);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, ball_spec);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, ball_shine);
+    
+    /* If we have the ball mesh, render it with texture */
     if (g_ball_mesh && g_ball_mesh->vertex_count > 0 && g_ball_texture) {
         texture_bind(g_ball_texture, 0);
         glEnable(GL_TEXTURE_2D);
+        /* Modulate: texture color × material color, texture alpha × material alpha */
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        
+        /* Render back faces first (inside of ball — slightly darker) */
+        glCullFace(GL_FRONT);
+        GLfloat inner_amb[] = {0.3f, 0.3f, 0.3f, 1.0f};
+        glMaterialfv(GL_BACK, GL_AMBIENT, inner_amb);
+        
+        glBegin(GL_TRIANGLES);
+        for (int i = 0; i < g_ball_mesh->vertex_count; i++) {
+            mesh_vertex_t *v = &g_ball_mesh->vertices[i];
+            glNormal3f(v->nx, v->ny, v->nz);
+            glTexCoord2f(v->u, v->v);
+            glVertex3f(v->x, v->y, v->z);
+        }
+        glEnd();
+        
+        /* Render front faces (outside of ball — brighter, transparent shell) */
+        glCullFace(GL_BACK);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ball_amb);
         
         glBegin(GL_TRIANGLES);
         for (int i = 0; i < g_ball_mesh->vertex_count; i++) {
@@ -367,19 +402,33 @@ static void render_ball(void) {
         
         glDisable(GL_TEXTURE_2D);
     } else {
-        /* Fallback: GLU sphere */
+        /* Fallback: GLU sphere with no texture — plain translucent grey */
+        glCullFace(GL_BACK);
+        
+        GLfloat fallback_diff[] = {0.8f, 0.8f, 0.8f, 0.4f};
+        GLfloat fallback_amb[] = {0.5f, 0.5f, 0.5f, 0.4f};
+        glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, fallback_diff);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, fallback_amb);
+        
         static GLUquadric *quad = NULL;
         if (!quad) quad = gluNewQuadric();
         gluQuadricNormals(quad, GLU_SMOOTH);
-        gluQuadricTexture(quad, GL_TRUE);
-        gluSphere(quad, 35.0f /* original ball radius */, 24, 16);
+        gluSphere(quad, 35.0f, 24, 16);
     }
+    
+    /* Restore state */
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
     
     glPopMatrix();
     
-    /* Shadow (matches Scene_RenderBallShadow 0x460450) */
+    /* Shadow on ground (matches Scene_RenderBallShadow 0x460450) */
     glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
     glColor4f(0, 0, 0, 0.25f);
     float shadow_y = pos.y - 35.0f + 0.5f;
     float shadow_r = 35.0f * 1.2f;
@@ -390,6 +439,8 @@ static void render_ball(void) {
         glVertex3f(pos.x + cosf(angle) * shadow_r, shadow_y, pos.z + sinf(angle) * shadow_r);
     }
     glEnd();
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
     glEnable(GL_LIGHTING);
 }
 
