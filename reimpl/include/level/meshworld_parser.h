@@ -99,6 +99,10 @@ typedef struct {
     char texture[256];
     int strip_count;
     mw_strip_t *strips;
+    /* Flags from name prefix (Level_LoadMeshes 0x465A0A) */
+    int no_render;      /* N: or E: prefix → invisible (mesh_buf+0x85d) */
+    int no_collide;     /* E: prefix → no collision (mesh_buf+0x863) */
+    int no_collide_tag; /* (NOCOLLIDE) → skipped entirely */
 } mw_geom_t;
 
 /* Level structure */

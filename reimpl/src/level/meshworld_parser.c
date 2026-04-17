@@ -163,6 +163,24 @@ static void walk_octree(octree_ctx_t *ctx) {
             memset(geom, 0, sizeof(*geom));
             
             mw_read_string(ctx->r, geom->name, sizeof(geom->name));
+            
+            /* Classify geom flags from name prefix (Level_LoadMeshes 0x465A0A):
+             * N: prefix → no_render=1 (notification zone, invisible)
+             * E: prefix → no_render=1, no_collide=1 (edge limit, invisible + no collision)
+             * (NOCOLLIDE) → no_collide_tag=1 (skipped entirely by original)
+             * S: prefix → rendered normally (shadow surface, drawn but doesn't receive shadow)
+             * No prefix → rendered normally */
+            if (geom->name[0] != '\0') {
+                if ((geom->name[0] == 'N' || geom->name[0] == 'n') && geom->name[1] == ':')
+                    geom->no_render = 1;
+                if ((geom->name[0] == 'E' || geom->name[0] == 'e') && geom->name[1] == ':') {
+                    geom->no_render = 1;
+                    geom->no_collide = 1;
+                }
+                if (strstr(geom->name, "(NOCOLLIDE)") != NULL)
+                    geom->no_collide_tag = 1;
+            }
+            
             geom->ambient[0] = mw_read_f32(ctx->r); geom->ambient[1] = mw_read_f32(ctx->r);
             geom->ambient[2] = mw_read_f32(ctx->r); geom->ambient[3] = mw_read_f32(ctx->r);
             geom->diffuse[0] = mw_read_f32(ctx->r); geom->diffuse[1] = mw_read_f32(ctx->r);
@@ -351,6 +369,9 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
         
         for (int g = 0; g < level->geom_count; g++) {
             mw_geom_t *geom = &level->geoms[g];
+            /* Skip collision-invisible geoms: E: (no_collide) and (NOCOLLIDE)
+             * per Level_LoadMeshes 0x465A0A */
+            if (geom->no_collide || geom->no_collide_tag) continue;
             for (int s = 0; s < geom->strip_count; s++) {
                 mw_strip_t *strip = &geom->strips[s];
                 int ntri = strip->tri_count;

@@ -533,10 +533,12 @@ static BOOL LoadAssets(void) {
         g_camera.orbit_dist = 800.0f;
         g_camera.orbit_tilt = 0.9f;
     } else {
-        /* Race mode — close follow camera */
-        g_camera.orbit_angle = 0.0f;     /* Behind the ball */
-        g_camera.orbit_dist = 350.0f;    /* Closer for race tracks */
-        g_camera.orbit_tilt = 1.0f;      /* ~45° looking down */
+        /* Race mode — wider view so we can see the track.
+         * Level1 spans 5739 units in Z, 3409 in X, 3167 in Y.
+         * Start near the top of the track, angled to see the descent. */
+        g_camera.orbit_angle = 2.3562f;  /* 135°: looking from front-right */
+        g_camera.orbit_dist = 800.0f;    /* Wide enough to see track structure */
+        g_camera.orbit_tilt = 1.2f;      /* Higher angle to see down the slope */
     }
     
     printf("[Camera] CAMERALOOKAT: %s (center=%.1f,%.1f,%.1f)\n",
@@ -1287,6 +1289,9 @@ static void RenderLevelGeometry(void) {
     
     for (int gi = 0; gi < g_level->geom_count; gi++) {
         mw_geom_t *geom = &g_level->geoms[gi];
+        
+        /* Skip invisible geoms: N: (notification), E: (edge limit) per Level_LoadMeshes */
+        if (geom->no_render) continue;
         
         /* Set D3D material from geom's material properties */
         D3DMATERIAL8 mat;
