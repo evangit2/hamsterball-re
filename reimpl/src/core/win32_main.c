@@ -362,7 +362,7 @@ static BOOL InitD3D8(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, D3DCOLOR_RGBA(150, 155, 175, 255));
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, D3DCOLOR_RGBA(180, 185, 200, 255));
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CCW);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
@@ -462,13 +462,6 @@ static BOOL LoadLevel(const char *name) {
     }
     strncpy(g_level_name, name, sizeof(g_level_name) - 1);
     printf("[Load] %s: %d objects, %d vertices, %d materials\n", name, g_level->object_count, g_level->vertex_count, 0 /* TODO: material_count */);
-    /* Dump Section 1 objects to see what materials are available */
-    for (int i = 0; i < g_level->object_count && i < 20; i++) {
-        mw_object_t *o = &g_level->objects[i];
-        printf("[Obj %d] '%s' type=%d dif=(%.2f,%.2f,%.2f) amb=(%.2f,%.2f,%.2f)\n",
-               i, o->type_string, o->type, o->diffuse[0], o->diffuse[1], o->diffuse[2],
-               o->ambient[0], o->ambient[1], o->ambient[2]);
-    }
     return TRUE;
 }
 
@@ -1326,7 +1319,7 @@ static void RenderLevelGeometry(void) {
         light.Direction.x = -0.4f; light.Direction.y = -0.8f; light.Direction.z = -0.4f;
         g_device->lpVtbl->SetLight(g_device, 0, &light);
         g_device->lpVtbl->LightEnable(g_device, 0, TRUE);
-        DWORD ambient = D3DCOLOR_RGBA(100, 105, 125, 255); /* moderate scene ambient — let directional light do the work */
+        DWORD ambient = D3DCOLOR_RGBA(180, 185, 200, 255); /* scene ambient allows per-geom material color to show through with lighting */
         g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, ambient);
     }
     
@@ -1361,13 +1354,13 @@ static void RenderLevelGeometry(void) {
         if (geom->no_render) continue;
         
         /* Set D3D material from geom's material properties.
-         * Ambient is scaled down to 0.3x of diffuse — the original game uses the
-         * D3D scene ambient + directional light to shade, and high material ambient
-         * washes out the pink/magenta colors to white. */
+         * Use the material's own ambient color directly — the original game 
+         * uses ambient=difuse for wall geoms, allowing surfaces facing away
+         * from the light to still show the level color. */
         D3DMATERIAL8 mat;
         ZeroMemory(&mat, sizeof(mat));
-        mat.Ambient.r  = geom->ambient[0] * 0.3f;  mat.Ambient.g  = geom->ambient[1] * 0.3f;
-        mat.Ambient.b  = geom->ambient[2] * 0.3f;  mat.Ambient.a  = geom->ambient[3];
+        mat.Ambient.r  = geom->ambient[0];  mat.Ambient.g  = geom->ambient[1];
+        mat.Ambient.b  = geom->ambient[2];  mat.Ambient.a  = geom->ambient[3];
         mat.Diffuse.r  = geom->diffuse[0];  mat.Diffuse.g  = geom->diffuse[1];
         mat.Diffuse.b  = geom->diffuse[2];  mat.Diffuse.a  = geom->diffuse[3];
         mat.Specular.r = geom->specular[0]; mat.Specular.g = geom->specular[1];
@@ -1443,11 +1436,26 @@ static void RenderLevelGeometry(void) {
         int dump_count = g_level->geom_count < 50 ? g_level->geom_count : 50;
         for (int di = 0; di < dump_count; di++) {
             mw_geom_t *dg = &g_level->geoms[di];
-            printf("[Geom %d] name='%s' amb=(%.2f,%.2f,%.2f,%.2f) dif=(%.2f,%.2f,%.2f,%.2f) tex=%d'%s' strips=%d\n",
+            printf("[Geom %d] '%s' dif=(%.2f,%.2f,%.2f) amb=(%.2f,%.2f,%.2f) spec=(%.2f,%.2f,%.2f) pow=%.1f tex=%d'%s' strips=%d\n",
                    di, dg->name,
-                   dg->ambient[0],dg->ambient[1],dg->ambient[2],dg->ambient[3],
-                   dg->diffuse[0],dg->diffuse[1],dg->diffuse[2],dg->diffuse[3],
+                   dg->diffuse[0],dg->diffuse[1],dg->diffuse[2],
+                   dg->ambient[0],dg->ambient[1],dg->ambient[2],
+                   dg->specular[0],dg->specular[1],dg->specular[2],
+                   dg->power,
                    dg->has_texture, dg->texture, dg->strip_count);
+        }
+        /* Dump first few vertex positions and find bounds to diagnose camera/geometry alignment */
+        float vmin_y=1e30f, vmax_y=-1e30f;
+        for (int vi = 0; vi < g_level->vertex_count; vi++) {
+            mw_vertex_t *v = &g_level->vertices[vi];
+            if (v->y < vmin_y) vmin_y = v->y;
+            if (v->y > vmax_y) vmax_y = v->y;
+        }
+        printf("[Bounds] Y range: %.1f to %.1f (ball at %.1f)\n", vmin_y, vmax_y, g_ball.y);
+        for (int vi = 0; vi < g_level->vertex_count && vi < 3; vi++) {
+            mw_vertex_t *v = &g_level->vertices[vi];
+            printf("[Vtx %d] pos=(%.1f,%.1f,%.1f) nrm=(%.2f,%.2f,%.2f)\n",
+                   vi, v->x, v->y, v->z, v->nx, v->ny, v->nz);
         }
         first_frame++;
     }

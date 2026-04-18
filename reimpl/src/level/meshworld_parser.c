@@ -114,13 +114,17 @@ static void read_material(mw_reader_t *r, mw_object_t *obj) {
     obj->diffuse[2]  = mw_read_f32(r);
     obj->diffuse[3]  = mw_read_f32(r);
     
-    obj->ambient[0]  = mw_read_f32(r); /* specular r */
-    obj->ambient[1]  = mw_read_f32(r); /* specular g */
-    obj->ambient[2]  = mw_read_f32(r); /* specular b */
-    obj->ambient[3]  = mw_read_f32(r); /* specular a */
+    /* Specular r,g,b,a (stored in transform[0..3] for now) */
+    obj->transform[0] = mw_read_f32(r);
+    obj->transform[1] = mw_read_f32(r);
+    obj->transform[2] = mw_read_f32(r);
+    obj->transform[3] = mw_read_f32(r);
     
-    /* emissive r,g,b,a */
-    mw_read_f32(r); mw_read_f32(r); mw_read_f32(r); mw_read_f32(r);
+    /* Emissive r,g,b,a (stored in transform[4..7]) */
+    obj->transform[4] = mw_read_f32(r);
+    obj->transform[5] = mw_read_f32(r);
+    obj->transform[6] = mw_read_f32(r);
+    obj->transform[7] = mw_read_f32(r);
     
     obj->size_param = mw_read_f32(r);  /* Power/shininess */
     
