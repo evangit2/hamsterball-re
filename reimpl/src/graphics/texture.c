@@ -137,7 +137,9 @@ static IDirect3DTexture8 *create_d3d_texture(int width, int height, const unsign
 }
 
 void texture_system_init(const char *textures_dir) {
-    memset(&g_tex, 0, sizeof(g_tex));
+    /* Preserve g_tex.device across init (set by texture_set_device before this call).
+     * memset would zero the D3D device pointer, breaking all texture creation. */
+    g_tex.count = 0;
     if (textures_dir) {
         strncpy(g_tex.textures_dir, textures_dir, sizeof(g_tex.textures_dir) - 1);
     }
@@ -262,7 +264,9 @@ static texture_t *load_gl_texture(const char *filename) {
 }
 
 void texture_system_init(const char *textures_dir) {
-    memset(&g_tex, 0, sizeof(g_tex));
+    /* Preserve g_tex.device across init (set by texture_set_device before this call).
+     * memset would zero the D3D device pointer, breaking all texture creation. */
+    g_tex.count = 0;
     if (textures_dir) {
         strncpy(g_tex.textures_dir, textures_dir, sizeof(g_tex.textures_dir) - 1);
     }

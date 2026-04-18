@@ -458,9 +458,9 @@ static BOOL LoadLevel(const char *name) {
 static BOOL LoadAssets(void) {
     if (!FindGameDir()) return FALSE;
 
-    /* Load level — Arena-WarmUp is the classic bowl arena (purple tubes, checkered floor) */
-    if (!LoadLevel("Arena-WarmUp")) {
-        if (!LoadLevel("Level1")) {
+    /* Load level — Level1 WarmUp is the race track (pink walls, checkerboard floor) */
+    if (!LoadLevel("Level1")) {
+        if (!LoadLevel("Arena-WarmUp")) {
             if (!LoadLevel("Arena-SpawnPlatform")) {
                 return FALSE;
             }
@@ -1277,13 +1277,13 @@ static void RenderLevelGeometry(void) {
         D3DLIGHT8 light;
         ZeroMemory(&light, sizeof(light));
         light.Type = D3DLIGHT_DIRECTIONAL;
-        light.Ambient.r = 0.3f; light.Ambient.g = 0.3f; light.Ambient.b = 0.45f; /* blue-tinted ambient */
-        light.Diffuse.r = 0.9f; light.Diffuse.g = 0.9f; light.Diffuse.b = 1.0f;   /* slightly blue diffuse */
-        light.Specular.r = 0.5f; light.Specular.g = 0.5f; light.Specular.b = 0.6f;
-        light.Direction.x = -0.5f; light.Direction.y = -1.0f; light.Direction.z = -0.3f;
+        light.Ambient.r = 0.4f; light.Ambient.g = 0.4f; light.Ambient.b = 0.5f; /* brighter ambient fill */
+        light.Diffuse.r = 1.0f; light.Diffuse.g = 1.0f; light.Diffuse.b = 1.0f;   /* white diffuse */
+        light.Specular.r = 0.6f; light.Specular.g = 0.6f; light.Specular.b = 0.7f;
+        light.Direction.x = -0.4f; light.Direction.y = -0.8f; light.Direction.z = -0.4f;
         g_device->lpVtbl->SetLight(g_device, 0, &light);
         g_device->lpVtbl->LightEnable(g_device, 0, TRUE);
-        DWORD ambient = D3DCOLOR_RGBA(50, 60, 110, 255); /* blue-tinted scene ambient */
+        DWORD ambient = D3DCOLOR_RGBA(90, 100, 140, 255); /* brighter blue-tinted scene ambient */
         g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, ambient);
     }
     
@@ -1302,8 +1302,13 @@ static void RenderLevelGeometry(void) {
         tri_buf_count = max_verts;
     }
     
-    /* Render each geom with its own D3D material + optional texture */
+    /* Per-geom material colors from MESHWORLD are correct for race tracks.
+     * Each geom stores its own ambient/diffuse/specular/emissive from the file.
+     * Previously tried using Section 1 PLATFORM material but that's only right
+     * for arena levels — race tracks use pink/magenta per-geom colors. */
     static int first_frame = 0;
+    
+    /* Render each geom with its own D3D material + optional texture */
     int total_tris = 0;
     
     for (int gi = 0; gi < g_level->geom_count; gi++) {
