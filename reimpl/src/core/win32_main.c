@@ -80,6 +80,17 @@ static mw_level_t *g_level = NULL;
 static char g_game_dir[MAX_PATH] = "";
 static char g_level_name[256] = "";
 
+/* Level list — press [ or ] to cycle at runtime, or pass -level NAME on command line */
+static const char *g_level_list[] = {
+    "Level1", "Level2", "Level3", "Level4", "Level5",
+    "Level6", "Level7", "Level8", "Level9", "Level10",
+    "Arena-WarmUp", "Arena-Intermediate", "Arena-Expert", "Arena-Toob", "Arena-SpawnPlatform",
+    NULL
+};
+static int g_level_index = 0; /* default: Level1 (smallest, fastest for Wine sw render) */
+static int g_level_count = 0; /* computed at startup */
+static int g_prev_keys_bracket = 0; /* debounce for [ ] keys */
+
 /* Ball (mirrors Ball struct key fields) */
 static struct {
     float x, y, z;           /* Position (+0x164) */
@@ -351,7 +362,7 @@ static BOOL InitD3D8(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
-    g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, 0x00202020);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, D3DCOLOR_RGBA(150, 155, 175, 255));
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CCW);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
@@ -454,24 +465,18 @@ static BOOL LoadLevel(const char *name) {
     return TRUE;
 }
 
-/* ===== Load Assets ===== */
-static BOOL LoadAssets(void) {
-    if (!FindGameDir()) return FALSE;
+/* Reset ball position and camera after level load */
+static void ResetBallAndCamera(void) {
+    g_ball.vx = g_ball.vy = g_ball.vz = 0;
+    g_ball.radius = BALL_RADIUS;
+    g_ball.max_speed = BALL_MAX_SPEED;
+    g_ball.speed_scale = BALL_SPEED_SCALE;
+    g_ball.damping = BALL_DAMPING;
+    g_ball.gravity = BALL_GRAVITY;
+    g_has_camlookat = FALSE;
 
-    /* Load level — Level1 WarmUp is the race track (pink walls, checkerboard floor) */
-    if (!LoadLevel("Level1")) {
-        if (!LoadLevel("Arena-WarmUp")) {
-            if (!LoadLevel("Arena-SpawnPlatform")) {
-                return FALSE;
-            }
-        }
-    }
-
-    /* Reset ball at start position — on the level surface */
     if (g_level && g_level->vertex_count > 0) {
-        /* Find the topmost surface (upward-facing triangles) for ball spawn.
-         * Arena-WarmUp has geometry from Y=-857 to Y=775, with start platform at Y≈372.
-         * The MW_OBJ_START Y value is often 0 (wrong), so we compute from actual geometry. */
+        /* Find topmost surface from upward-facing triangles */
         float top_floor_y = g_level->bounds_min.y;
         float top_floor_x = 0, top_floor_z = 0;
         if (g_level->indices && g_level->index_count >= 3) {
@@ -480,7 +485,6 @@ static BOOL LoadAssets(void) {
                 if (i0 >= g_level->vertex_count || i1 >= g_level->vertex_count || i2 >= g_level->vertex_count) continue;
                 float ny = (g_level->vertices[i0].ny + g_level->vertices[i1].ny + g_level->vertices[i2].ny) / 3.0f;
                 float ty = (g_level->vertices[i0].y + g_level->vertices[i1].y + g_level->vertices[i2].y) / 3.0f;
-                /* Upward-facing triangle at higher Y than current best = part of top platform */
                 if (ny > 0.5f && ty > top_floor_y + 20.0f) {
                     top_floor_y = ty;
                     top_floor_x = (g_level->vertices[i0].x + g_level->vertices[i1].x + g_level->vertices[i2].x) / 3.0f;
@@ -491,27 +495,12 @@ static BOOL LoadAssets(void) {
         g_ball.x = top_floor_x;
         g_ball.y = top_floor_y + g_ball.radius + 1.0f;
         g_ball.z = top_floor_z;
-        printf("[Spawn] Top floor surface: Y=%.1f at (%.1f, %.1f, %.1f)\n",
-               top_floor_y, top_floor_x, top_floor_y, top_floor_z);
-    } else {
-        g_ball.x = 0; g_ball.y = 26.0f + 26.0f; g_ball.z = 0;
-    }
-    g_ball.vx = g_ball.vy = g_ball.vz = 0;
-    g_ball.radius = BALL_RADIUS;
-    g_ball.max_speed = BALL_MAX_SPEED;
-    g_ball.speed_scale = BALL_SPEED_SCALE;
-    g_ball.damping = BALL_DAMPING;
-    g_ball.gravity = BALL_GRAVITY;
 
-    /* Find ball start and CAMERALOOKAT in level objects */
-    if (g_level) {
-        float start_x = 0, start_z = 0;
-        int has_start = 0;
+        /* Find START and CAMERALOOKAT objects */
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
-                start_x = g_level->objects[i].position.x;
-                start_z = g_level->objects[i].position.z;
-                has_start = 1;
+                g_ball.x = g_level->objects[i].position.x;
+                g_ball.z = g_level->objects[i].position.z;
             }
             if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
                 g_camlookat_x = g_level->objects[i].position.x;
@@ -520,37 +509,70 @@ static BOOL LoadAssets(void) {
                 g_has_camlookat = TRUE;
             }
         }
-        if (has_start) {
-            g_ball.x = start_x;
-            g_ball.z = start_z;
-        }
-        /* For arena levels, spawn ball low (near floor) so the camera
-         * view from behind shows the bowl geometry around the ball.
-         * The geometry-computed Y puts the ball on the high start platform
-         * which gives a boring overhead view of just the platform edge. */
+        /* Arena levels: spawn low so camera sees the bowl */
         if (g_has_camlookat) {
-            g_ball.y = g_ball.radius + 2.0f;  /* Just above ground plane */
+            g_ball.y = g_ball.radius + 2.0f;
+        }
+    } else {
+        g_ball.x = 0; g_ball.y = 52.0f; g_ball.z = 0;
+    }
+
+    /* Reset camera */
+    g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
+    g_camera.orbit_angle = -0.7854f;
+    g_camera.orbit_dist = 300.0f;
+    g_camera.orbit_tilt = 0.7f;
+
+    printf("[Spawn] Ball at (%.1f, %.1f, %.1f) camlookat=%s\n",
+           g_ball.x, g_ball.y, g_ball.z, g_has_camlookat ? "YES" : "NO");
+}
+
+/* Switch to a level by index, reset ball to spawn. Returns TRUE on success. */
+static BOOL SwitchLevel(int index) {
+    if (index < 0 || index >= g_level_count) return FALSE;
+    g_level_index = index;
+    if (!LoadLevel(g_level_list[g_level_index])) return FALSE;
+    ResetBallAndCamera();
+    printf("[Level] Now: %s ([ ] to cycle)\n", g_level_list[g_level_index]);
+    return TRUE;
+}
+
+/* ===== Load Assets ===== */
+static BOOL LoadAssets(void) {
+    if (!FindGameDir()) return FALSE;
+
+    /* Count levels in list */
+    g_level_count = 0;
+    while (g_level_list[g_level_count]) g_level_count++;
+
+    /* Check for -level NAME on command line */
+    const char *cmd_level = NULL;
+    for (int i = 1; i < __argc; i++) {
+        if (strcmp(__argv[i], "-level") == 0 && i + 1 < __argc) {
+            cmd_level = __argv[i + 1];
+            break;
         }
     }
 
-    /* Camera defaults — orbital follow (mirrors CameraLookAt 0x413280).
-     * Camera_SetView(orbit_dir, distance):
-     *   orbit_dir = (cos(angle), tilt, sin(angle)) normalized 
-     *   eye = ball_pos + normalize(orbit_dir) * distance
-     * Close low-angle follow: distance=200, angle=-PI/2, tilt=0.15
-     * This gives the dramatic "in the scene" feel from the original 5bc5b6d build.
-     * Wide isometric: distance=800, angle=PI/4, tilt=0.9 (for arena) */
-    g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    /* Camera — low-angle follow from inside the arena bowl.
-     * Angle=-PI/4: camera at 45° behind-left, looking into the bowl.
-     * dist=250: close enough to see the ball and feel immersed.
-     * tilt=0.3: low angle — see the walls and tubes towering above. */
-    g_camera.orbit_angle = -0.7854f;  /* -PI/4: diagonal behind-left */
-    g_camera.orbit_dist = 300.0f;      /* Medium distance - see level structure */
-    g_camera.orbit_tilt = 0.7f;       /* Mid-high angle */
-    
-    printf("[Camera] CAMERALOOKAT: %s (center=%.1f,%.1f,%.1f)\n",
-           g_has_camlookat ? "YES" : "NO", g_camlookat_x, g_camlookat_y, g_camlookat_z);
+    if (cmd_level) {
+        /* Find matching index */
+        for (int i = 0; i < g_level_count; i++) {
+            if (strcmp(g_level_list[i], cmd_level) == 0) { g_level_index = i; break; }
+        }
+    }
+
+    /* Try to load the selected level, fall back through the list */
+    if (!LoadLevel(g_level_list[g_level_index])) {
+        /* Try each level until one works */
+        for (g_level_index = 0; g_level_index < g_level_count; g_level_index++) {
+            if (LoadLevel(g_level_list[g_level_index])) break;
+        }
+        if (g_level_index >= g_level_count) return FALSE;
+    }
+
+    printf("[Level] Loaded: %s (use [ ] keys to cycle levels)\n", g_level_list[g_level_index]);
+
+    ResetBallAndCamera();
 
     /* Initialize texture system after D3D device is ready */
     {
@@ -623,6 +645,20 @@ static void HandleInput(void) {
     /* Escape → pause/menu */
     if (g_keys[DIK_ESCAPE] & 0x80) {
         g_state = STATE_MENU;
+    }
+
+    /* [ and ] keys cycle through levels at runtime */
+    {
+        int bracket_now = 0;
+        if (g_keys[DIK_LBRACKET] & 0x80) bracket_now = 1;  /* [ = prev level */
+        if (g_keys[DIK_RBRACKET] & 0x80) bracket_now = 2;  /* ] = next level */
+        if (bracket_now && !g_prev_keys_bracket) {
+            int next = g_level_index;
+            if (bracket_now == 1) next = (g_level_index - 1 + g_level_count) % g_level_count;
+            if (bracket_now == 2) next = (g_level_index + 1) % g_level_count;
+            SwitchLevel(next);
+        }
+        g_prev_keys_bracket = bracket_now;
     }
 }
 
@@ -1277,13 +1313,13 @@ static void RenderLevelGeometry(void) {
         D3DLIGHT8 light;
         ZeroMemory(&light, sizeof(light));
         light.Type = D3DLIGHT_DIRECTIONAL;
-        light.Ambient.r = 0.4f; light.Ambient.g = 0.4f; light.Ambient.b = 0.5f; /* brighter ambient fill */
+        light.Ambient.r = 0.3f; light.Ambient.g = 0.3f; light.Ambient.b = 0.35f; /* moderate ambient — let diffuse+material show through */
         light.Diffuse.r = 1.0f; light.Diffuse.g = 1.0f; light.Diffuse.b = 1.0f;   /* white diffuse */
-        light.Specular.r = 0.6f; light.Specular.g = 0.6f; light.Specular.b = 0.7f;
+        light.Specular.r = 0.4f; light.Specular.g = 0.4f; light.Specular.b = 0.5f;
         light.Direction.x = -0.4f; light.Direction.y = -0.8f; light.Direction.z = -0.4f;
         g_device->lpVtbl->SetLight(g_device, 0, &light);
         g_device->lpVtbl->LightEnable(g_device, 0, TRUE);
-        DWORD ambient = D3DCOLOR_RGBA(90, 100, 140, 255); /* brighter blue-tinted scene ambient */
+        DWORD ambient = D3DCOLOR_RGBA(100, 105, 125, 255); /* moderate scene ambient — let directional light do the work */
         g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, ambient);
     }
     
@@ -1317,11 +1353,14 @@ static void RenderLevelGeometry(void) {
         /* Skip invisible geoms: N: (notification), E: (edge limit) per Level_LoadMeshes */
         if (geom->no_render) continue;
         
-        /* Set D3D material from geom's material properties */
+        /* Set D3D material from geom's material properties.
+         * Ambient is scaled down to 0.3x of diffuse — the original game uses the
+         * D3D scene ambient + directional light to shade, and high material ambient
+         * washes out the pink/magenta colors to white. */
         D3DMATERIAL8 mat;
         ZeroMemory(&mat, sizeof(mat));
-        mat.Ambient.r  = geom->ambient[0];  mat.Ambient.g  = geom->ambient[1];
-        mat.Ambient.b  = geom->ambient[2];  mat.Ambient.a  = geom->ambient[3];
+        mat.Ambient.r  = geom->ambient[0] * 0.3f;  mat.Ambient.g  = geom->ambient[1] * 0.3f;
+        mat.Ambient.b  = geom->ambient[2] * 0.3f;  mat.Ambient.a  = geom->ambient[3];
         mat.Diffuse.r  = geom->diffuse[0];  mat.Diffuse.g  = geom->diffuse[1];
         mat.Diffuse.b  = geom->diffuse[2];  mat.Diffuse.a  = geom->diffuse[3];
         mat.Specular.r = geom->specular[0]; mat.Specular.g = geom->specular[1];
@@ -1473,9 +1512,9 @@ static void RenderHUD(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
 
     /* Just display FPS */
-    char fpsText[64];
-    snprintf(fpsText, sizeof(fpsText), "FPS: %d | Pos(%.1f,%.1f,%.1f)", 
-             g_current_fps, g_ball.x, g_ball.y, g_ball.z);
+    char fpsText[128];
+    snprintf(fpsText, sizeof(fpsText), "FPS: %d | %s | Pos(%.1f,%.1f,%.1f) []=cycle", 
+             g_current_fps, g_level_name, g_ball.x, g_ball.y, g_ball.z);
     SetWindowTextA(g_hwnd, fpsText);
 
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
