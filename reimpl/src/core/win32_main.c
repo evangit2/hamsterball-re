@@ -546,8 +546,8 @@ static BOOL LoadAssets(void) {
      * dist=250: close enough to see the ball and feel immersed.
      * tilt=0.3: low angle — see the walls and tubes towering above. */
     g_camera.orbit_angle = -0.7854f;  /* -PI/4: diagonal behind-left */
-    g_camera.orbit_dist = 250.0f;      /* Close follow */
-    g_camera.orbit_tilt = 0.3f;        /* Low angle — dramatic view up at the walls */
+    g_camera.orbit_dist = 300.0f;      /* Medium distance - see level structure */
+    g_camera.orbit_tilt = 0.7f;       /* Mid-high angle */
     
     printf("[Camera] CAMERALOOKAT: %s (center=%.1f,%.1f,%.1f)\n",
            g_has_camlookat ? "YES" : "NO", g_camlookat_x, g_camlookat_y, g_camlookat_z);
@@ -1277,13 +1277,13 @@ static void RenderLevelGeometry(void) {
         D3DLIGHT8 light;
         ZeroMemory(&light, sizeof(light));
         light.Type = D3DLIGHT_DIRECTIONAL;
-        light.Ambient.r = 0.35f; light.Ambient.g = 0.35f; light.Ambient.b = 0.35f;
-        light.Diffuse.r = 0.8f; light.Diffuse.g = 0.8f; light.Diffuse.b = 0.8f;
-        light.Specular.r = 0.5f; light.Specular.g = 0.5f; light.Specular.b = 0.5f;
-        light.Direction.x = -0.3f; light.Direction.y = -1.0f; light.Direction.z = 0.3f;
+        light.Ambient.r = 0.3f; light.Ambient.g = 0.3f; light.Ambient.b = 0.45f; /* blue-tinted ambient */
+        light.Diffuse.r = 0.9f; light.Diffuse.g = 0.9f; light.Diffuse.b = 1.0f;   /* slightly blue diffuse */
+        light.Specular.r = 0.5f; light.Specular.g = 0.5f; light.Specular.b = 0.6f;
+        light.Direction.x = -0.5f; light.Direction.y = -1.0f; light.Direction.z = -0.3f;
         g_device->lpVtbl->SetLight(g_device, 0, &light);
         g_device->lpVtbl->LightEnable(g_device, 0, TRUE);
-        DWORD ambient = D3DCOLOR_RGBA(90, 90, 90, 255);
+        DWORD ambient = D3DCOLOR_RGBA(50, 60, 110, 255); /* blue-tinted scene ambient */
         g_device->lpVtbl->SetRenderState(g_device, D3DRS_AMBIENT, ambient);
     }
     
@@ -1481,22 +1481,8 @@ static void Render(void) {
     if (!g_device) return;
 
     /* Clear with level background color (Section 4) or default */
-    DWORD clear_color = D3DCOLOR_RGBA(40, 60, 100, 255);  /* Default blue-gray */
-    if (g_level) {
-        /* bg_color is stored as float [0..1] per channel */
-        int r = (int)(g_level->bg_color.x * 255.0f);
-        int g = (int)(g_level->bg_color.y * 255.0f);
-        int b = (int)(g_level->bg_color.z * 255.0f);
-        if (r < 0) r = 0; if (r > 255) r = 255;
-        if (g < 0) g = 0; if (g > 255) g = 255;
-        if (b < 0) b = 0; if (b > 255) b = 255;
-        clear_color = D3DCOLOR_RGBA(r, g, b, 255);
-        static int bg_printed = 0;
-        if (bg_printed < 2) {
-            printf("[Render] BG color: (%d, %d, %d) = 0x%08lx\n", r, g, b, clear_color);
-            bg_printed++;
-        }
-    }
+    /* Section 4 bg_color is often garbage in MESHWORLD — hardcode per-level or use dark blue default */
+    DWORD clear_color = D3DCOLOR_RGBA(22, 37, 85, 255);  /* Dark blue (matches original WarmUp) */
     g_device->lpVtbl->Clear(g_device, 0, NULL, 
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
         clear_color, 1.0f, 0);
