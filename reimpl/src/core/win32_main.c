@@ -458,9 +458,9 @@ static BOOL LoadLevel(const char *name) {
 static BOOL LoadAssets(void) {
     if (!FindGameDir()) return FALSE;
 
-    /* Load level — Level1 = WarmUp race (has full track with ramps + platforms) */
-    if (!LoadLevel("Level1")) {
-        if (!LoadLevel("Arena-WarmUp")) {
+    /* Load level — Arena-WarmUp is the classic bowl arena (purple tubes, checkered floor) */
+    if (!LoadLevel("Arena-WarmUp")) {
+        if (!LoadLevel("Level1")) {
             if (!LoadLevel("Arena-SpawnPlatform")) {
                 return FALSE;
             }
@@ -505,11 +505,13 @@ static BOOL LoadAssets(void) {
 
     /* Find ball start and CAMERALOOKAT in level objects */
     if (g_level) {
+        float start_x = 0, start_z = 0;
+        int has_start = 0;
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
-                g_ball.x = g_level->objects[i].position.x;
-                /* Don't use START Y — it's unreliable. Keep the geometry-computed Y. */
-                g_ball.z = g_level->objects[i].position.z;
+                start_x = g_level->objects[i].position.x;
+                start_z = g_level->objects[i].position.z;
+                has_start = 1;
             }
             if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
                 g_camlookat_x = g_level->objects[i].position.x;
@@ -518,28 +520,34 @@ static BOOL LoadAssets(void) {
                 g_has_camlookat = TRUE;
             }
         }
+        if (has_start) {
+            g_ball.x = start_x;
+            g_ball.z = start_z;
+        }
+        /* For arena levels, spawn ball low (near floor) so the camera
+         * view from behind shows the bowl geometry around the ball.
+         * The geometry-computed Y puts the ball on the high start platform
+         * which gives a boring overhead view of just the platform edge. */
+        if (g_has_camlookat) {
+            g_ball.y = g_ball.radius + 2.0f;  /* Just above ground plane */
+        }
     }
 
     /* Camera defaults — orbital follow (mirrors CameraLookAt 0x413280).
      * Camera_SetView(orbit_dir, distance):
      *   orbit_dir = (cos(angle), tilt, sin(angle)) normalized 
      *   eye = ball_pos + normalize(orbit_dir) * distance
-     * Arena default: distance=800, angle=45°, tilt=0.9 (overview)
-     * Race default: distance=350, angle=0°, tilt=1.0 (close follow) */
+     * Close low-angle follow: distance=200, angle=-PI/2, tilt=0.15
+     * This gives the dramatic "in the scene" feel from the original 5bc5b6d build.
+     * Wide isometric: distance=800, angle=PI/4, tilt=0.9 (for arena) */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    if (g_has_camlookat) {
-        /* Arena mode — wide isometric overview */
-        g_camera.orbit_angle = 0.7854f;   /* PI/4: 45° orbit */
-        g_camera.orbit_dist = 800.0f;
-        g_camera.orbit_tilt = 0.9f;
-    } else {
-        /* Race mode — wider view so we can see the track.
-         * Level1 spans 5739 units in Z, 3409 in X, 3167 in Y.
-         * Start near the top of the track, angled to see the descent. */
-        g_camera.orbit_angle = 2.3562f;  /* 135°: looking from front-right */
-        g_camera.orbit_dist = 800.0f;    /* Wide enough to see track structure */
-        g_camera.orbit_tilt = 1.2f;      /* Higher angle to see down the slope */
-    }
+    /* Camera — low-angle follow from inside the arena bowl.
+     * Angle=-PI/4: camera at 45° behind-left, looking into the bowl.
+     * dist=250: close enough to see the ball and feel immersed.
+     * tilt=0.3: low angle — see the walls and tubes towering above. */
+    g_camera.orbit_angle = -0.7854f;  /* -PI/4: diagonal behind-left */
+    g_camera.orbit_dist = 250.0f;      /* Close follow */
+    g_camera.orbit_tilt = 0.3f;        /* Low angle — dramatic view up at the walls */
     
     printf("[Camera] CAMERALOOKAT: %s (center=%.1f,%.1f,%.1f)\n",
            g_has_camlookat ? "YES" : "NO", g_camlookat_x, g_camlookat_y, g_camlookat_z);
@@ -911,6 +919,15 @@ static void UpdatePhysics(float dt) {
                 collision_log_count++;
             }
         }
+        
+        /* Fallback: simple ground plane collision when mesh collision finds nothing.
+         * Prevents ball falling through the world on levels where the collision
+         * mesh doesn't cover the spawn area (like Arena-WarmUp start platform). */
+        if (nhits == 0 && g_ball.y < g_ball.radius) {
+            g_ball.y = g_ball.radius;
+            if (g_ball.vy < 0) g_ball.vy = -g_ball.vy * 0.3f;  /* small bounce */
+            if (fabsf(g_ball.vy) < 5.0f) g_ball.vy = 0.0f;
+        }
     }
     
     /* Phase 6: Clamp max speed (after substeps) */
@@ -961,14 +978,16 @@ static void SetMatrices(void) {
     float cos_a = cosf(g_camera.orbit_angle);
     float sin_a = sinf(g_camera.orbit_angle);
 
-    /* Compute desired look-at target */
+    /* Camera target for arena: blend between arena center (to see the whole bowl)
+     * and ball position (to keep ball visible).
+     * For levels without CAMERALOOKAT, just track the ball. */
     float desired_x, desired_y, desired_z;
     if (g_has_camlookat) {
-        /* Arena mode: blend arena center with ball position (60/40)
-         * Keeps ball visible while showing most of the arena */
-        desired_x = g_camlookat_x * 0.6f + g_ball.x * 0.4f;
-        desired_y = g_camlookat_y * 0.4f + g_ball.y * 0.6f;
-        desired_z = g_camlookat_z * 0.6f + g_ball.z * 0.4f;
+        /* Arena: look toward the bowl center but weighted toward ball
+         * so the ball stays on-screen. This shows the arena geometry. */
+        desired_x = g_camlookat_x * 0.4f + g_ball.x * 0.6f;
+        desired_y = g_camlookat_y * 0.3f + g_ball.y * 0.7f;
+        desired_z = g_camlookat_z * 0.4f + g_ball.z * 0.6f;
     } else {
         desired_x = g_ball.x;
         desired_y = g_ball.y;
