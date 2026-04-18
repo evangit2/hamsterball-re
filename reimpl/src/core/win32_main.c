@@ -87,7 +87,7 @@ static const char *g_level_list[] = {
     "Arena-WarmUp", "Arena-Intermediate", "Arena-Expert", "Arena-Toob", "Arena-SpawnPlatform",
     NULL
 };
-static int g_level_index = 0; /* default: Level1 (smallest, fastest for Wine sw render) */
+static int g_level_index = 0; /* default: Level1 (WarmUp, fastest for Wine sw render) */
 static int g_level_count = 0; /* computed at startup */
 static int g_prev_keys_bracket = 0; /* debounce for [ ] keys */
 
@@ -462,6 +462,13 @@ static BOOL LoadLevel(const char *name) {
     }
     strncpy(g_level_name, name, sizeof(g_level_name) - 1);
     printf("[Load] %s: %d objects, %d vertices, %d materials\n", name, g_level->object_count, g_level->vertex_count, 0 /* TODO: material_count */);
+    /* Dump Section 1 objects to see what materials are available */
+    for (int i = 0; i < g_level->object_count && i < 20; i++) {
+        mw_object_t *o = &g_level->objects[i];
+        printf("[Obj %d] '%s' type=%d dif=(%.2f,%.2f,%.2f) amb=(%.2f,%.2f,%.2f)\n",
+               i, o->type_string, o->type, o->diffuse[0], o->diffuse[1], o->diffuse[2],
+               o->ambient[0], o->ambient[1], o->ambient[2]);
+    }
     return TRUE;
 }
 
