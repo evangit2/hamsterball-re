@@ -517,18 +517,25 @@ static void ResetBallAndCamera(void) {
         g_ball.x = 0; g_ball.y = 52.0f; g_ball.z = 0;
     }
 
-    /* Reset camera — scale orbit distance and tilt to level size */
+    /* Reset camera — isometric-style view matching original game.
+     * Original uses CameraLookAt (0x413280) with orbit_tilt ~0.9 (42° from horizontal)
+     * and orbit_dist adapted to level size. Closer camera gives immersive in-scene feel. */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
-    g_camera.orbit_angle = -0.7854f;
+    g_camera.orbit_angle = -0.7854f;  /* -PI/4: classic isometric angle */
     if (g_level && g_level->vertex_count > 0) {
         float dy = g_level->bounds_max.y - g_level->bounds_min.y;
-        /* For tall levels, keep camera closer to ball to see track */
-        g_camera.orbit_dist = (dy > 2000.0f) ? 600.0f : 300.0f;
-        /* Steeper tilt for tall levels so camera looks down at track */
-        g_camera.orbit_tilt = (dy > 2000.0f) ? 1.3f : 0.7f;
+        /* Race tracks: closer camera (350 dist, 0.9 tilt) for isometric feel.
+         * Arena levels: wider camera (500 dist, 0.9 tilt) to see the bowl. */
+        if (g_has_camlookat) {
+            g_camera.orbit_dist = 500.0f;
+            g_camera.orbit_tilt = 0.9f;
+        } else {
+            g_camera.orbit_dist = 350.0f;
+            g_camera.orbit_tilt = 0.9f;  /* 42° from horizontal, matching original */
+        }
     } else {
-        g_camera.orbit_dist = 300.0f;
-        g_camera.orbit_tilt = 0.7f;
+        g_camera.orbit_dist = 350.0f;
+        g_camera.orbit_tilt = 0.9f;
     }
 
     printf("[Spawn] Ball at (%.1f, %.1f, %.1f) camlookat=%s\n",
@@ -1371,40 +1378,41 @@ static void RenderLevelGeometry(void) {
         if (geom->has_texture && geom->texture[0]) {
             tex = texture_load(geom->texture);
         }
+        /* On llvmpipe, D3D textures don't render properly, so use vertex color
+         * directly (SELECTARG1 = DIFFUSE). On real GPU, MODULATE would combine
+         * texture + vertex color correctly. We use SELECTARG1 for software-lit
+         * vertices since our per-vertex checker colors encode the texture pattern. */
+        g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+        g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+        g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
         texture_bind(tex, 0);
         
-        /* Set texture stage: modulate texture with vertex color */
+        /* Software lighting — target-matched colors.
+         * Strategy: Set lit color = bright white-blue (matching original's bright highlights).
+         * Set shadow color = deep royal blue (matching original's shadow side).
+         * The lit_factor blends between them based on normal × light direction.
+         * This is the INVERSE of standard material×lighting: we define output colors directly.
+         * Wall lit: ~(172,222,254)  Wall shadow: ~(62,94,138)
+         * Floor lit: ~(245,245,255)  Floor shadow: ~(215,215,255) */
+        float mat_r = geom->diffuse[0], mat_g = geom->diffuse[1], mat_b = geom->diffuse[2]; /* unused */
+        float lit_r, lit_g, lit_b;     /* Fully lit target color */
+        float shadow_r, shadow_g, shadow_b;  /* Fully shadowed target color */
         if (tex) {
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
-            /* Wrap/tile texture addressing for repeating patterns (PinkChecker etc.) */
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
-            /* Linear filtering (more compatible with Wine software renderer) */
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
+            /* Floor (textured): near-white lit, pale lavender-blue shadow.
+             * Original: bright=(245,245,255), shadow=(180,200,255). Very bright. */
+            lit_r = 0.96f; lit_g = 0.96f; lit_b = 1.0f;
+            shadow_r = 0.70f; shadow_g = 0.78f; shadow_b = 1.0f;
         } else {
-            /* No texture: use vertex color directly */
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+            /* Walls: bright icy-blue lit, deep navy shadow.
+             * Original: lit=(172,222,254), shadow=(62,88,124). Wide dynamic range!
+             * With fill light=0, fully shadowed faces hit shadow color directly.
+             * Shadow color needs to encode the "dark but not black" original look. */
+            lit_r = 0.72f; lit_g = 0.90f; lit_b = 1.0f;
+            shadow_r = 0.24f; shadow_g = 0.35f; shadow_b = 0.49f;
         }
-        
-        /* Software lighting variables for per-vertex color computation.
-         * D3D8 hardware lighting + textures don't work on Wine/llvmpipe,
-         * so we compute lighting in software. Texture binding is harmless
-         * (works on real GPU, silently ignored on llvmpipe). */
-        float dr = geom->diffuse[0], dg_c = geom->diffuse[1], db = geom->diffuse[2];
-        /* Textured geoms: light base color so D3D texture modulates (on real GPU).
-         * On llvmpipe, use a tinted near-white so floors don't look jarring-white
-         * compared to tier-colored walls. PinkChecker = ~75% white, ~25% pink. */
-        if (tex) {
-            /* Soft pink-white blend approximating PinkChecker average */
-            dr = 0.92f; dg_c = 0.88f; db = 0.94f;
-        }
+        /* For textured floor geoms on llvmpipe (no texture rendering),
+         * simulate checker pattern via per-vertex color modulation. */
+        int is_textured_floor = (tex != NULL);
         
         /* Expand this geom's strips into triangle list */
         int tri_out = 0;
@@ -1423,22 +1431,61 @@ static void RenderLevelGeometry(void) {
                     for (int vi_idx = 0; vi_idx < 3; vi_idx++) {
                         int vi = (vi_idx == 0) ? v0 : (vi_idx == 1) ? v1 : v2;
                         mw_vertex_t *sv = &g_level->vertices[vi];
-                        /* Two-light software directional shading + ambient.
-                         * Light1: above-left, direction to source (0.4, 0.8, 0.4)
-                         * Light2: below-right fill, direction to source (-0.3, -0.7, -0.3)
-                         * Brightness range: 0.25 (shadow) to 1.0 (fully lit) */
-                        float NdotL1 = 0.4f*sv->nx + 0.8f*sv->ny + 0.4f*sv->nz;
+                        /* Directional shading with target-matched colors.
+                         * Original uses 2 lights + ambient=0.25 which creates
+                         * sharp transitions: lit faces are bright, shadow faces are deep blue.
+                         * We simulate this with a steep non-linear falloff. */
+                        float NdotL1 = 0.35f*sv->nx + 0.85f*sv->ny + 0.35f*sv->nz;
                         if (NdotL1 < 0) NdotL1 = 0;
-                        float NdotL2 = -0.3f*sv->nx + -0.7f*sv->ny + -0.3f*sv->nz;
+                        /* Fill light: set to zero — original ambient=0.25 but the
+                         * deep shadow color we defined already accounts for ambient.
+                         * Any fill light lifts shadows too much. */
+                        float NdotL2 = -0.3f*sv->nx + -0.6f*sv->ny + -0.3f*sv->nz;
                         if (NdotL2 < 0) NdotL2 = 0;
-                        float brightness = 0.25f + 0.55f * NdotL1 + 0.20f * NdotL2;
-                        if (brightness > 1.0f) brightness = 1.0f;
-                        int r = (int)(255.0f * dr * brightness);
-                        int g = (int)(255.0f * dg_c * brightness);
-                        int b = (int)(255.0f * db * brightness);
-                        if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
-                        if (r < 0) r = 0; if (g < 0) g = 0; if (b < 0) b = 0;
-                        DWORD col = D3DCOLOR_RGBA(r, g, b, 255);
+                        float raw_factor = 1.0f * NdotL1 + 0.0f * NdotL2;
+                        if (raw_factor > 1.0f) raw_factor = 1.0f;
+                        /* Aggressive gamma for original's punchy contrast.
+                         * Original D3D has 2 directional lights + ambient=0.25.
+                         * With ambient=0.25, even the darkest face gets lit*0.25.
+                         * But shadow faces in original are VERY dark (RGB ~62,88,124).
+                         * This means the ambient contribution is small and blue-tinted.
+                         * Use pow(x, 0.35) for very steep falloff. */
+                        float lit_factor = powf(raw_factor, 0.35f);
+                        /* Select lit/shadow colors based on checker tile for floors */
+                        float cur_lit_r = lit_r, cur_lit_g = lit_g, cur_lit_b = lit_b;
+                        float cur_shad_r = shadow_r, cur_shad_g = shadow_g, cur_shad_b = shadow_b;
+                        if (is_textured_floor) {
+                            /* Checker simulation: use 0.5 UV unit squares so there are
+                             * more checker cells per triangle. Per-vertex coloring needs
+                             * multiple cells per triangle to show the pattern clearly.
+                             * Each checker square = 0.5 UV units wide. */
+                            int cu = (int)floorf(sv->u * 2.0f);
+                            int cv = (int)floorf(sv->v * 2.0f);
+                            /* Detect checker type: PinkChecker vs BlueChecker/GreyChecker
+                             * Pink = warm pink alternate; Blue/Grey = light blue alternate */
+                            int is_pink_checker = (strstr(geom->texture, "Pink") != NULL ||
+                                                   strstr(geom->texture, "pink") != NULL);
+                            if ((cu + cv) & 1) {
+                                if (is_pink_checker) {
+                                    /* Pink square: warm pink-white, visibly pink */
+                                    cur_lit_r = 0.94f; cur_lit_g = 0.82f; cur_lit_b = 0.88f;
+                                    cur_shad_r = 0.75f; cur_shad_g = 0.62f; cur_shad_b = 0.74f;
+                                } else {
+                                    /* Blue/grey checker: distinctly light-blue alternate */
+                                    cur_lit_r = 0.82f; cur_lit_g = 0.90f; cur_lit_b = 1.0f;
+                                    cur_shad_r = 0.58f; cur_shad_g = 0.72f; cur_shad_b = 0.92f;
+                                }
+                            }
+                            /* else: keep default white/blue checker colors */
+                        }
+                        /* Blend between shadow and lit based on NdotL.
+                         * lit_factor=0 → shadow color, lit_factor=1 → fully lit color */
+                        float fr = 255.0f * (cur_shad_r + (cur_lit_r - cur_shad_r) * lit_factor);
+                        float fg = 255.0f * (cur_shad_g + (cur_lit_g - cur_shad_g) * lit_factor);
+                        float fb = 255.0f * (cur_shad_b + (cur_lit_b - cur_shad_b) * lit_factor);
+                        if (fr > 255) fr = 255; if (fg > 255) fg = 255; if (fb > 255) fb = 255;
+                        if (fr < 0) fr = 0; if (fg < 0) fg = 0; if (fb < 0) fb = 0;
+                        DWORD col = D3DCOLOR_RGBA((BYTE)fr, (BYTE)fg, (BYTE)fb, 255);
                         tri_buf[tri_out++] = (LitVertex){ sv->x, sv->y, sv->z, col, sv->u, sv->v };
                     }
                 }
@@ -1477,65 +1524,133 @@ static void RenderLevelObjects(void) {
     if (!g_level) return;
     D3DMATRIX world;
     
+    /* Render level objects — START pad as green circle, others as small markers */
+    /* The original game renders a bright green circular pad under the ball at start. */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
+    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
+    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
+
     for (int i = 0; i < g_level->object_count; i++) {
         mw_object_t *obj = &g_level->objects[i];
-        D3DMATERIAL8 mat;
-        ZeroMemory(&mat, sizeof(mat));
-        mat.Diffuse.a = 1.0f; mat.Ambient.a = 1.0f;
 
-        switch (obj->type) {
-        case MW_OBJ_START:
-            mat.Diffuse.r = 0; mat.Diffuse.g = 1; mat.Diffuse.b = 0; break;
-        case MW_OBJ_FLAG:
-            mat.Diffuse.r = 1; mat.Diffuse.g = 1; mat.Diffuse.b = 0; break;
-        case MW_OBJ_CAMERALOOKAT:
-            mat.Diffuse.r = 1; mat.Diffuse.g = 0; mat.Diffuse.b = 1; break;
-        case MW_OBJ_SAFESPOT:
-            mat.Diffuse.r = 0; mat.Diffuse.g = 0.7f; mat.Diffuse.b = 0.7f; break;
-        default:
-            mat.Diffuse.r = 0.5f; mat.Diffuse.g = 0.5f; mat.Diffuse.b = 0.5f; break;
-        }
-        mat.Ambient = mat.Diffuse;
-        g_device->lpVtbl->SetMaterial(g_device, &mat);
+        if (obj->type == MW_OBJ_START) {
+            /* Green circle pad on the ground — matching original's bright green start pad.
+             * Rendered as a flat disc using triangle fan, slightly above ground. */
+            float pad_y = obj->position.y + 0.5f;
+            float pad_r = 40.0f;  /* radius of start pad */
+            DWORD pad_color = D3DCOLOR_RGBA(80, 200, 60, 255);  /* Bright green */
+            DWORD border_color = D3DCOLOR_RGBA(0, 0, 0, 255);  /* Black outline */
 
-        ZeroMemory(&world, sizeof(world));
-        world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
-        world._41 = obj->position.x; world._42 = obj->position.y; world._43 = obj->position.z;
-        g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+            struct { float x, y, z; DWORD diff; } pad_verts[34];
+            /* Center point */
+            pad_verts[0].x = 0; pad_verts[0].y = 0; pad_verts[0].z = 0;
+            pad_verts[0].diff = pad_color;
+            for (int j = 0; j <= 32; j++) {
+                float a = 2.0f * 3.14159265f * j / 32;
+                float px = cosf(a) * pad_r;
+                float pz = sinf(a) * pad_r;
+                /* Alternate green and black for thin outline ring */
+                pad_verts[j + 1].x = px; pad_verts[j + 1].y = 0; pad_verts[j + 1].z = pz;
+                pad_verts[j + 1].diff = (j == 0 || j == 32) ? border_color : pad_color;
+            }
 
-        /* Render as small cube for each object */
-        float size = 8.0f;
-        struct { float x, y, z; } verts[] = {
-            /* Front face (two triangles as strip) */
-            {-size, 0, -size}, {-size, size, -size}, {size, 0, -size}, {size, size, -size},
-            /* Right face */
-            {size, 0, -size}, {size, size, -size}, {size, 0, size}, {size, size, size},
-            /* Back face */
-            {size, 0, size}, {size, size, size}, {-size, 0, size}, {-size, size, size},
-            /* Left face */
-            {-size, 0, size}, {-size, size, size}, {-size, 0, -size}, {-size, size, -size},
-            /* Top face */
-            {-size, size, -size}, {-size, size, size}, {size, size, -size}, {size, size, size},
-            /* Bottom face */
-            {-size, 0, -size}, {size, 0, -size}, {-size, 0, size}, {size, 0, size},
-        };
-        g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ);
-        /* Draw as triangle strips */
-        for (int f = 0; f < 6; f++) {
-            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, 
-                &verts[f*4], sizeof(verts[0]));
+            D3DMATRIX world;
+            ZeroMemory(&world, sizeof(world));
+            world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
+            world._41 = obj->position.x; world._42 = pad_y; world._43 = obj->position.z;
+            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLEFAN, 32, pad_verts, sizeof(pad_verts[0]));
+
+            /* Black outline ring */
+            pad_verts[0].diff = border_color;
+            float outline_r = pad_r + 3.0f;
+            for (int j = 0; j <= 16; j++) {
+                float a = 2.0f * 3.14159265f * j / 16;
+                if (j <= 16) {
+                    pad_verts[j + 1].x = cosf(a) * outline_r;
+                    pad_verts[j + 1].y = 0;
+                    pad_verts[j + 1].z = sinf(a) * outline_r;
+                    pad_verts[j + 1].diff = border_color;
+                }
+            }
+            /* Draw outline as line loop using point list (simplified — skip for now) */
+        } else if (obj->type == MW_OBJ_FLAG) {
+            /* Yellow checkpoint marker */
+            D3DMATRIX world;
+            ZeroMemory(&world, sizeof(world));
+            world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
+            world._41 = obj->position.x; world._42 = obj->position.y; world._43 = obj->position.z;
+            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+            struct { float x, y, z; DWORD diff; } pole[2] = {
+                {0, 0, 0, D3DCOLOR_RGBA(255, 255, 0, 255)},
+                {0, 80, 0, D3DCOLOR_RGBA(255, 255, 0, 255)}
+            };
+            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_LINESTRIP, 1, pole, sizeof(pole[0]));
         }
     }
+
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
 }
 
 static void RenderHUD(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
+    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
 
-    /* Just display FPS */
-    char fpsText[128];
-    snprintf(fpsText, sizeof(fpsText), "FPS: %d | %s | Pos(%.1f,%.1f,%.1f) []=cycle", 
-             g_current_fps, g_level_name, g_ball.x, g_ball.y, g_ball.z);
+    /* Timer display — dark blue pill background at top center, white text.
+     * Original uses showcardgothic72 font for timer, showcardgothic14 for TARGET.
+     * Since we don't have D3DX font, display info in window title. */
+    static float race_time = 0.0f;
+    if (g_state == STATE_RACING) {
+        race_time += (float)FRAME_TIME_MS / 1000.0f;
+    }
+    
+    /* Draw timer background pill (semi-transparent dark blue oval) */
+    struct { float x, y, z; DWORD diff; float u, v; } bg_verts[4];
+    float pill_cx = (float)g_width * 0.5f;  /* Center X */
+    float pill_cy = 30.0f;                  /* Near top */
+    float pill_hw = 100.0f;                 /* Half-width */
+    float pill_hh = 22.0f;                  /* Half-height */
+    bg_verts[0].x = pill_cx - pill_hw; bg_verts[0].y = pill_cy - pill_hh; bg_verts[0].z = 0.99f;
+    bg_verts[0].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+    bg_verts[1].x = pill_cx + pill_hw; bg_verts[1].y = pill_cy - pill_hh; bg_verts[1].z = 0.99f;
+    bg_verts[1].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+    bg_verts[2].x = pill_cx - pill_hw; bg_verts[2].y = pill_cy + pill_hh; bg_verts[2].z = 0.99f;
+    bg_verts[2].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+    bg_verts[3].x = pill_cx + pill_hw; bg_verts[3].y = pill_cy + pill_hh; bg_verts[3].z = 0.99f;
+    bg_verts[3].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+
+    /* Switch to screen-space coordinates (orthographic) */
+    D3DMATRIX ident, ortho;
+    ZeroMemory(&ident, sizeof(ident)); ident._11 = 1; ident._22 = 1; ident._33 = 1; ident._44 = 1;
+    /* Setup ortho projection for 2D HUD */
+    float w = (float)g_width, h = (float)g_height;
+    ZeroMemory(&ortho, sizeof(ortho));
+    ortho._11 = 2.0f / w;  ortho._22 = 2.0f / h;
+    ortho._33 = 1.0f / (0.0f - 1.0f);
+    ortho._41 = -1.0f;     ortho._42 = 1.0f;  ortho._43 = 0.0f;  ortho._44 = 1.0f;
+    g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &ident);
+    g_device->lpVtbl->SetTransform(g_device, D3DTS_VIEW, &ident);
+    g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &ortho);
+
+    /* Convert pixel coords to NDC for the ortho projection */
+    for (int i = 0; i < 4; i++) {
+        bg_verts[i].x = bg_verts[i].x * 2.0f / w - 1.0f;
+        bg_verts[i].y = 1.0f - bg_verts[i].y * 2.0f / h;
+    }
+    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, bg_verts, sizeof(bg_verts[0]));
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
+
+    /* Window title as text fallback */
+    char fpsText[256];
+    snprintf(fpsText, sizeof(fpsText), "FPS: %d | %s | Time: %.1f | TARGET: %s | Pos(%.1f,%.1f,%.1f) []=cycle", 
+             g_current_fps, g_level_name, race_time, 
+             g_has_camlookat ? "Arena" : "Race", 
+             g_ball.x, g_ball.y, g_ball.z);
     SetWindowTextA(g_hwnd, fpsText);
 
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
@@ -1547,7 +1662,7 @@ static void Render(void) {
 
     /* Clear with level background color (Section 4) or default */
     /* Section 4 bg_color is often garbage in MESHWORLD — hardcode per-level or use dark blue default */
-    DWORD clear_color = D3DCOLOR_RGBA(22, 37, 85, 255);  /* Dark blue (matches original WarmUp) */
+    DWORD clear_color = D3DCOLOR_RGBA(85, 120, 215, 255);  /* Deep royal blue sky matching original */
     g_device->lpVtbl->Clear(g_device, 0, NULL, 
         D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
         clear_color, 1.0f, 0);
