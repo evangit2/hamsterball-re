@@ -1320,13 +1320,48 @@ static void RenderLevelGeometry(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZWRITEENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
     
-    /* Software lighting: D3D8 hardware lighting and textures don't work on
-     * Wine/llvmpipe. We compute per-vertex colors from normals + materials,
-     * and simulate the PinkChecker texture via per-vertex color modulation.
-     * This produces shading contrast (confirmed working) even though the
-     * per-vertex checker simulation is lower quality than pixel-accurate texturing.
-     * On real Windows GPU, hardware lighting + textures produce the correct result. */
+    /* Software lighting: D3D8 hardware lighting doesn't work on Wine/llvmpipe.
+     * We compute per-vertex colors from normals + materials.
+     * For checker textures: we create programmatic checker textures and use
+     * D3DTOP_MODULATE to combine per-pixel texture with per-vertex lighting.
+     * On llvmpipe, BMP-loaded textures don't render, but programmatic ones do. */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
+    
+    /* Create checker textures on first call */
+    static IDirect3DTexture8 *chk_pink = NULL;
+    static IDirect3DTexture8 *chk_blue = NULL;
+    if (!chk_pink) {
+        /* PinkChecker: white + pale pink */
+        int sz = 128;
+        g_device->lpVtbl->CreateTexture(g_device, sz, sz, 1, 0, D3DFMT_A8R8G8B8,
+                                         D3DPOOL_MANAGED, &chk_pink);
+        D3DLOCKED_RECT lr;
+        if (chk_pink && chk_pink->lpVtbl->LockRect(chk_pink, 0, &lr, NULL, 0) == D3D_OK) {
+            for (int y = 0; y < sz; y++) {
+                DWORD *row = (DWORD *)((BYTE *)lr.pBits + y * lr.Pitch);
+                for (int x = 0; x < sz; x++) {
+                    int cell = ((x / (sz/8)) + (y / (sz/8))) & 1;
+                    if (cell) row[x] = 0xFFE0D8EA; /* Pale pink ARGB */
+                    else      row[x] = 0xFFFFF8FF; /* Near-white ARGB */
+                }
+            }
+            chk_pink->lpVtbl->UnlockRect(chk_pink, 0);
+        }
+        /* BlueChecker: white + light blue */
+        g_device->lpVtbl->CreateTexture(g_device, sz, sz, 1, 0, D3DFMT_A8R8G8B8,
+                                         D3DPOOL_MANAGED, &chk_blue);
+        if (chk_blue && chk_blue->lpVtbl->LockRect(chk_blue, 0, &lr, NULL, 0) == D3D_OK) {
+            for (int y = 0; y < sz; y++) {
+                DWORD *row = (DWORD *)((BYTE *)lr.pBits + y * lr.Pitch);
+                for (int x = 0; x < sz; x++) {
+                    int cell = ((x / (sz/8)) + (y / (sz/8))) & 1;
+                    if (cell) row[x] = 0xFFD0E0FF; /* Light blue ARGB */
+                    else      row[x] = 0xFFFFF8FF; /* Near-white ARGB */
+                }
+            }
+            chk_blue->lpVtbl->UnlockRect(chk_blue, 0);
+        }
+    }
     
     /* Vertex format: XYZ + DIFFUSE color + TEX1 = 28 bytes/vertex */
     typedef struct { float x, y, z; DWORD color; float u, v; } LitVertex;
@@ -1373,19 +1408,38 @@ static void RenderLevelGeometry(void) {
         mat.Power = geom->power;
         g_device->lpVtbl->SetMaterial(g_device, &mat);
         
-        /* Bind texture or clear it. With lighting disabled, use vertex color directly */
+        /* Bind texture or clear it. For checker-textured geoms, use programmatic
+         * checker textures + MODULATE (per-pixel texture × per-vertex lighting).
+         * For non-checker geoms, use SELECTARG1 (vertex color only). */
         texture_t *tex = NULL;
+        IDirect3DTexture8 *checker_tex = NULL;
         if (geom->has_texture && geom->texture[0]) {
             tex = texture_load(geom->texture);
+            /* Select programmatic checker texture based on type */
+            if (strstr(geom->texture, "Pink") || strstr(geom->texture, "pink"))
+                checker_tex = chk_pink;
+            else if (strstr(geom->texture, "Checker") || strstr(geom->texture, "checker"))
+                checker_tex = chk_blue;
         }
-        /* On llvmpipe, D3D textures don't render properly, so use vertex color
-         * directly (SELECTARG1 = DIFFUSE). On real GPU, MODULATE would combine
-         * texture + vertex color correctly. We use SELECTARG1 for software-lit
-         * vertices since our per-vertex checker colors encode the texture pattern. */
-        g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-        g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-        g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
-        texture_bind(tex, 0);
+        if (checker_tex) {
+            /* Bind programmatic checker + MODULATE for per-pixel×per-vertex */
+            g_device->lpVtbl->SetTexture(g_device, 0, (IDirect3DBaseTexture8 *)checker_tex);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
+        } else {
+            /* No checker: use vertex color directly */
+            texture_bind(tex, 0);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+            g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        }
         
         /* Software lighting — target-matched colors.
          * Strategy: Set lit color = bright white-blue (matching original's bright highlights).
@@ -1410,9 +1464,7 @@ static void RenderLevelGeometry(void) {
             lit_r = 0.72f; lit_g = 0.90f; lit_b = 1.0f;
             shadow_r = 0.24f; shadow_g = 0.35f; shadow_b = 0.49f;
         }
-        /* For textured floor geoms on llvmpipe (no texture rendering),
-         * simulate checker pattern via per-vertex color modulation. */
-        int is_textured_floor = (tex != NULL);
+        /* For textured floor geoms, checker pattern comes from programmatic textures. */
         
         /* Expand this geom's strips into triangle list */
         int tri_out = 0;
@@ -1454,30 +1506,7 @@ static void RenderLevelGeometry(void) {
                         /* Select lit/shadow colors based on checker tile for floors */
                         float cur_lit_r = lit_r, cur_lit_g = lit_g, cur_lit_b = lit_b;
                         float cur_shad_r = shadow_r, cur_shad_g = shadow_g, cur_shad_b = shadow_b;
-                        if (is_textured_floor) {
-                            /* Checker simulation: use 0.5 UV unit squares so there are
-                             * more checker cells per triangle. Per-vertex coloring needs
-                             * multiple cells per triangle to show the pattern clearly.
-                             * Each checker square = 0.5 UV units wide. */
-                            int cu = (int)floorf(sv->u * 2.0f);
-                            int cv = (int)floorf(sv->v * 2.0f);
-                            /* Detect checker type: PinkChecker vs BlueChecker/GreyChecker
-                             * Pink = warm pink alternate; Blue/Grey = light blue alternate */
-                            int is_pink_checker = (strstr(geom->texture, "Pink") != NULL ||
-                                                   strstr(geom->texture, "pink") != NULL);
-                            if ((cu + cv) & 1) {
-                                if (is_pink_checker) {
-                                    /* Pink square: warm pink-white, visibly pink */
-                                    cur_lit_r = 0.94f; cur_lit_g = 0.82f; cur_lit_b = 0.88f;
-                                    cur_shad_r = 0.75f; cur_shad_g = 0.62f; cur_shad_b = 0.74f;
-                                } else {
-                                    /* Blue/grey checker: distinctly light-blue alternate */
-                                    cur_lit_r = 0.82f; cur_lit_g = 0.90f; cur_lit_b = 1.0f;
-                                    cur_shad_r = 0.58f; cur_shad_g = 0.72f; cur_shad_b = 0.92f;
-                                }
-                            }
-                            /* else: keep default white/blue checker colors */
-                        }
+                        /* No per-vertex checker — checker pattern comes from texture */
                         /* Blend between shadow and lit based on NdotL.
                          * lit_factor=0 → shadow color, lit_factor=1 → fully lit color */
                         float fr = 255.0f * (cur_shad_r + (cur_lit_r - cur_shad_r) * lit_factor);
