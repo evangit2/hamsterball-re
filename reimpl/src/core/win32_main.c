@@ -1398,9 +1398,13 @@ static void RenderLevelGeometry(void) {
          * so we compute lighting in software. Texture binding is harmless
          * (works on real GPU, silently ignored on llvmpipe). */
         float dr = geom->diffuse[0], dg_c = geom->diffuse[1], db = geom->diffuse[2];
-        /* Textured geoms: white base color so texture shows its true colors (on real GPU).
-         * On llvmpipe, textured floors will appear as bright white, which is acceptable. */
-        if (tex) { dr = 1.0f; dg_c = 1.0f; db = 1.0f; }
+        /* Textured geoms: light base color so D3D texture modulates (on real GPU).
+         * On llvmpipe, use a tinted near-white so floors don't look jarring-white
+         * compared to tier-colored walls. PinkChecker = ~75% white, ~25% pink. */
+        if (tex) {
+            /* Soft pink-white blend approximating PinkChecker average */
+            dr = 0.92f; dg_c = 0.88f; db = 0.94f;
+        }
         
         /* Expand this geom's strips into triangle list */
         int tri_out = 0;
