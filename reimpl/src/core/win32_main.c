@@ -1453,22 +1453,9 @@ static void RenderLevelGeometry(void) {
         }
     }
     
-    if (first_frame < 2) {
-        printf("[Render] Per-geom D3D-lit render: %d geoms, %d total triangles, %d vertices\n",
+    if (first_frame < 1) {
+        printf("[Render] %d geoms, %d triangles, %d vertices (software lighting)\n",
                g_level->geom_count, total_tris, g_level->vertex_count);
-        /* Dump first 5 geoms' materials */
-        int dump_count = g_level->geom_count < 50 ? g_level->geom_count : 50;
-        for (int di = 0; di < dump_count; di++) {
-            mw_geom_t *dg = &g_level->geoms[di];
-            printf("[Geom %d] '%s' dif=(%.2f,%.2f,%.2f) amb=(%.2f,%.2f,%.2f) spec=(%.2f,%.2f,%.2f) pow=%.1f tex=%d'%s' strips=%d\n",
-                   di, dg->name,
-                   dg->diffuse[0],dg->diffuse[1],dg->diffuse[2],
-                   dg->ambient[0],dg->ambient[1],dg->ambient[2],
-                   dg->specular[0],dg->specular[1],dg->specular[2],
-                   dg->power,
-                   dg->has_texture, dg->texture, dg->strip_count);
-        }
-        /* Dump first few vertex positions and find bounds to diagnose camera/geometry alignment */
         float vmin_y=1e30f, vmax_y=-1e30f;
         for (int vi = 0; vi < g_level->vertex_count; vi++) {
             mw_vertex_t *v = &g_level->vertices[vi];
@@ -1476,29 +1463,6 @@ static void RenderLevelGeometry(void) {
             if (v->y > vmax_y) vmax_y = v->y;
         }
         printf("[Bounds] Y range: %.1f to %.1f (ball at %.1f)\n", vmin_y, vmax_y, g_ball.y);
-        for (int vi = 0; vi < g_level->vertex_count && vi < 3; vi++) {
-            mw_vertex_t *v = &g_level->vertices[vi];
-            printf("[Vtx %d] pos=(%.1f,%.1f,%.1f) nrm=(%.2f,%.2f,%.2f) uv=(%.3f,%.3f)\n",
-                   vi, v->x, v->y, v->z, v->nx, v->ny, v->nz, v->u, v->v);
-        }
-        /* Dump UVs from the first textured geom (PinkChecker floor) */
-        for (int di = 0; di < dump_count; di++) {
-            mw_geom_t *dg = &g_level->geoms[di];
-            if (dg->has_texture && dg->texture[0] && !dg->no_render) {
-                printf("[TexGeom %d] '%s' tex='%s' strips=%d\n", di, dg->name, dg->texture, dg->strip_count);
-                for (int s = 0; s < dg->strip_count; s++) {
-                    mw_strip_t *st = &dg->strips[s];
-                    for (int t = 0; t < 6 && t < st->tri_count + 2; t++) {
-                        int idx = st->vertex_offset + t;
-                        if (idx < g_level->vertex_count) {
-                            mw_vertex_t *v = &g_level->vertices[idx];
-                            printf("  v[%d] pos=(%.1f,%.1f,%.1f) uv=(%.3f,%.3f)\n", idx, v->x, v->y, v->z, v->u, v->v);
-                        }
-                    }
-                }
-                break;
-            }
-        }
         first_frame++;
     }
     
