@@ -80,6 +80,20 @@ static mw_level_t *g_level = NULL;
 static char g_game_dir[MAX_PATH] = "";
 static char g_level_name[256] = "";
 
+/* Race flow state */
+typedef enum {
+    RACE_COUNTDOWN = 0,
+    RACE_RUNNING,
+    RACE_FINISHED,
+    RACE_RESPAWNING
+} RaceState;
+static RaceState g_race_state = RACE_COUNTDOWN;
+static float g_countdown_timer = 3.0f;   /* 3.0→0.0 then GO */
+static float g_race_time = 0.0f;         /* Elapsed since GO */
+static float g_best_time = 99999.0f;     /* Best finish time */
+static int g_current_checkpoint = -1;    /* Last passed SAFESPOT object index */
+static BOOL g_checkpoint_passed[128];    /* Passed flags per object */
+
 /* Level list — press [ or ] to cycle at runtime, or pass -level NAME on command line */
 static const char *g_level_list[] = {
     "Level1", "Level2", "Level3", "Level4", "Level5",
@@ -139,6 +153,10 @@ static void DrawSpherePrimitive(void);
 static void RenderLevelGeometry(void);
 static void RenderLevelObjects(void);
 static void RenderHUD(void);
+static void RenderCheckpointMarkers(void);
+static void UpdateCountdown(float dt);
+static void UpdateCheckpoints(void);
+static void RespawnBall(void);
 static BOOL SaveScreenshot(const char *filename);
 
 /* ===== Screenshot Function (Windows GDI approach for D3D8 compatibility) ===== */
@@ -465,6 +483,8 @@ static BOOL LoadLevel(const char *name) {
     return TRUE;
 }
 
+static void ResetRaceState(void);
+
 /* Reset ball position and camera after level load */
 static void ResetBallAndCamera(void) {
     g_ball.vx = g_ball.vy = g_ball.vz = 0;
@@ -500,6 +520,7 @@ static void ResetBallAndCamera(void) {
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
                 g_ball.x = g_level->objects[i].position.x;
+                g_ball.y = g_level->objects[i].position.y + g_ball.radius + 2.0f;
                 g_ball.z = g_level->objects[i].position.z;
             }
             if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
@@ -509,6 +530,7 @@ static void ResetBallAndCamera(void) {
                 g_has_camlookat = TRUE;
             }
         }
+        ResetRaceState();
         /* Arena levels: spawn low so camera sees the bowl */
         if (g_has_camlookat) {
             g_ball.y = g_ball.radius + 2.0f;
@@ -540,6 +562,16 @@ static void ResetBallAndCamera(void) {
 
     printf("[Spawn] Ball at (%.1f, %.1f, %.1f) camlookat=%s\n",
            g_ball.x, g_ball.y, g_ball.z, g_has_camlookat ? "YES" : "NO");
+}
+
+/* Reset race state at level start — called from ResetBallAndCamera */
+static void ResetRaceState(void) {
+    g_race_state = RACE_COUNTDOWN;
+    g_countdown_timer = 3.0f;
+    g_race_time = 0.0f;
+    g_current_checkpoint = -1;
+    memset(g_checkpoint_passed, 0, sizeof(g_checkpoint_passed));
+    printf("[Race] Countdown: 3.0...\n");
 }
 
 /* Switch to a level by index, reset ball to spawn. Returns TRUE on success. */
@@ -609,6 +641,84 @@ static BOOL LoadAssets(void) {
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
 }
+
+/* ===== Countdown: 3.0 → 0.0 then GO ===== */
+static void UpdateCountdown(float dt) {
+    if (g_race_state == RACE_COUNTDOWN) {
+        g_countdown_timer -= dt;
+        if (g_countdown_timer <= 0.0f) {
+            g_race_state = RACE_RUNNING;
+            g_countdown_timer = 0.0f;
+            g_race_time = 0.0f;
+            printf("[Race] GO!\n");
+        }
+    } else if (g_race_state == RACE_RUNNING) {
+        g_race_time += dt;
+    }
+}
+
+/* ===== Checkpoint Detection =====
+ * Check if ball crosses near a SAFESPOT object. Respawn uses last passed SAFESPOT.
+ * Also detect GOAL crossing for race finish.
+ */
+static void UpdateCheckpoints(void) {
+    if (!g_level || g_race_state == RACE_FINISHED || g_race_state == RACE_COUNTDOWN) return;
+    for (int i = 0; i < g_level->object_count; i++) {
+        mw_object_t *obj = &g_level->objects[i];
+        if (obj->type == MW_OBJ_SAFESPOT) {
+            if (g_checkpoint_passed[i]) continue;
+            float dx = g_ball.x - obj->position.x;
+            float dz = g_ball.z - obj->position.z;
+            float dy = g_ball.y - obj->position.y;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+            if (dist_sq < 10000.0f) {
+                g_current_checkpoint = i;
+                g_checkpoint_passed[i] = TRUE;
+                printf("[Checkpoint] SAFESPOT %d at (%.1f,%.1f,%.1f)\n",
+                       i, obj->position.x, obj->position.y, obj->position.z);
+            }
+        } else if (obj->type == MW_OBJ_GOAL || strstr(obj->type_string, "GOAL") || strstr(obj->type_string, "FINISH")) {
+            /* GOAL detection — finish line */
+            float dx = g_ball.x - obj->position.x;
+            float dz = g_ball.z - obj->position.z;
+            float dy = g_ball.y - obj->position.y;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+            if (dist_sq < 1600.0f && g_race_state == RACE_RUNNING) {
+                g_race_state = RACE_FINISHED;
+                if (g_race_time < g_best_time) g_best_time = g_race_time;
+                printf("[RACE FINISHED] Time: %.3f seconds (Best: %.3f)\n", g_race_time, g_best_time);
+            }
+        }
+    }
+}
+
+/* ===== Respawn Ball =====
+ * Respawn at current checkpoint (or START if none passed)
+ */
+static void RespawnBall(void) {
+    if (g_current_checkpoint >= 0) {
+        int ci = g_current_checkpoint;
+        g_ball.x = g_level->objects[ci].position.x;
+        g_ball.y = g_level->objects[ci].position.y + g_ball.radius + 2.0f;
+        g_ball.z = g_level->objects[ci].position.z;
+    } else if (g_level) {
+        /* Respawn at START */
+        for (int i = 0; i < g_level->object_count; i++) {
+            if (g_level->objects[i].type == MW_OBJ_START) {
+                g_ball.x = g_level->objects[i].position.x;
+                g_ball.y = g_level->objects[i].position.y + g_ball.radius + 2.0f;
+                g_ball.z = g_level->objects[i].position.z;
+                break;
+            }
+        }
+    }
+    g_ball.vx = g_ball.vy = g_ball.vz = 0;
+    g_race_state = RACE_COUNTDOWN;
+    g_countdown_timer = 3.0f;
+    printf("[Race] Respawned. Countdown: 3.0...\n");
+}
+
+/* ===== End of Checkpoint/Race System ===== */
 
 /* ===== Input: Poll DInput8 (mirrors InputDevice_PollAndRelease 0x46EBD0) ===== */
 static void PollInput(void) {
@@ -758,6 +868,9 @@ typedef struct {
     int tri_index;        /* Which triangle was hit (-1 = none) */
 } CollisionResult;
 
+#define MAX_COLLISIONS 16
+#define MAX_SHADOW_HITS 4
+
 /* Test sphere (center + radius) against all level triangles */
 static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
                               CollisionResult *results, int max_results) {
@@ -854,7 +967,32 @@ static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
  *   Phase 6: Speed clamping
  */
 static void UpdatePhysics(float dt) {
-    if (g_state != STATE_RACING) return;
+    /* During countdown: no gravity, no input, no movement — freeze ball on spawn surface.
+     * Still run collision to keep ball from falling through if spawn is slightly above ground. */
+    if (g_race_state == RACE_COUNTDOWN) {
+        /* Zero velocity, zero input */
+        g_ball.vx = g_ball.vy = g_ball.vz = 0;
+        g_ball.input_fx = g_ball.input_fy = 0;
+        /* One collision pass to snap to surface */
+        if (g_level && g_level->index_count >= 3) {
+            CollisionResult hits[MAX_COLLISIONS];
+            int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+            if (nhits > 0) {
+                int deepest = 0;
+                for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
+                g_ball.x += hits[deepest].nx * hits[deepest].depth * 1.01f;
+                g_ball.y += hits[deepest].ny * hits[deepest].depth * 1.01f;
+                g_ball.z += hits[deepest].nz * hits[deepest].depth * 1.01f;
+            }
+        }
+        return;
+    }
+
+    /* Respawning: freeze, countdown, no physics */
+    if (g_race_state == RACE_RESPAWNING) return;
+
+    /* Finished: don't update physics, just sit there */
+    if (g_race_state == RACE_FINISHED) return;
 
     /* Phase 1: Gravity (Ball+0x1A8 / Ball+0xC94: default = 0.15)
      * Original applies in world units where 1 unit ≈ 1 game cm.
@@ -903,7 +1041,6 @@ static void UpdatePhysics(float dt) {
         g_ball.z += g_ball.vz * sub_dt;
         
         /* Phase 4: Collision detection + response against level geometry */
-        #define MAX_COLLISIONS 16
         CollisionResult hits[MAX_COLLISIONS];
         int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius,
                                        hits, MAX_COLLISIONS);
@@ -988,11 +1125,10 @@ static void UpdatePhysics(float dt) {
         g_ball.vx *= scale; g_ball.vy *= scale; g_ball.vz *= scale;
     }
     
-    /* Failsafe: if ball falls way below the level, reset it */
+    /* Failsafe: if ball falls way below the level, respawn at checkpoint */
     if (g_level && g_ball.y < g_level->bounds_min.y - 500.0f) {
-        g_ball.y = g_level->bounds_max.y + 100.0f;
-        g_ball.vy = 0.0f;
-        printf("[Physics] Ball fell below level — resetting y to %.1f\n", g_ball.y);
+        RespawnBall();
+        printf("[Physics] Ball fell below level — respawned\n");
     }
     
     /* Debug: log ball position periodically */
@@ -1170,7 +1306,6 @@ static void RenderBallShadow(void) {
     
     /* Quick downward probe: test sphere at 3 heights below the ball */
     if (g_level && g_level->index_count > 0) {
-        #define MAX_SHADOW_HITS 4
         CollisionResult shadow_hits[MAX_SHADOW_HITS];
         /* Check at ball radius (touching ground), then further down */
         int nhits = TestSphereVsLevel(g_ball.x, g_ball.y - g_ball.radius, g_ball.z,
@@ -1553,68 +1688,79 @@ static void RenderLevelObjects(void) {
     if (!g_level) return;
     D3DMATRIX world;
     
-    /* Render level objects — START pad as green circle, others as small markers */
-    /* The original game renders a bright green circular pad under the ball at start. */
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
-    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
     g_device->lpVtbl->SetTexture(g_device, 0, NULL);
 
     for (int i = 0; i < g_level->object_count; i++) {
         mw_object_t *obj = &g_level->objects[i];
 
         if (obj->type == MW_OBJ_START) {
-            /* Green circle pad on the ground — matching original's bright green start pad.
-             * Rendered as a flat disc using triangle fan, slightly above ground. */
+            /* Green start pad — matching original's bright green circle pad */
             float pad_y = obj->position.y + 0.5f;
-            float pad_r = 40.0f;  /* radius of start pad */
-            DWORD pad_color = D3DCOLOR_RGBA(80, 200, 60, 255);  /* Bright green */
-            DWORD border_color = D3DCOLOR_RGBA(0, 0, 0, 255);  /* Black outline */
-
+            float pad_r = 40.0f;
+            DWORD pad_color = D3DCOLOR_RGBA(80, 200, 60, 255);
+            DWORD border_color = D3DCOLOR_RGBA(0, 0, 0, 255);
             struct { float x, y, z; DWORD diff; } pad_verts[34];
-            /* Center point */
-            pad_verts[0].x = 0; pad_verts[0].y = 0; pad_verts[0].z = 0;
-            pad_verts[0].diff = pad_color;
+            pad_verts[0].x = 0; pad_verts[0].y = 0; pad_verts[0].z = 0; pad_verts[0].diff = pad_color;
             for (int j = 0; j <= 32; j++) {
                 float a = 2.0f * 3.14159265f * j / 32;
                 float px = cosf(a) * pad_r;
                 float pz = sinf(a) * pad_r;
-                /* Alternate green and black for thin outline ring */
                 pad_verts[j + 1].x = px; pad_verts[j + 1].y = 0; pad_verts[j + 1].z = pz;
                 pad_verts[j + 1].diff = (j == 0 || j == 32) ? border_color : pad_color;
             }
-
-            D3DMATRIX world;
-            ZeroMemory(&world, sizeof(world));
-            world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
-            world._41 = obj->position.x; world._42 = pad_y; world._43 = obj->position.z;
-            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+            D3DMATRIX pad_world;
+            ZeroMemory(&pad_world, sizeof(pad_world));
+            pad_world._11 = 1.0f; pad_world._22 = 1.0f; pad_world._33 = 1.0f; pad_world._44 = 1.0f;
+            pad_world._41 = obj->position.x; pad_world._42 = pad_y; pad_world._43 = obj->position.z;
+            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &pad_world);
+            g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
             g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLEFAN, 32, pad_verts, sizeof(pad_verts[0]));
 
-            /* Black outline ring */
-            pad_verts[0].diff = border_color;
-            float outline_r = pad_r + 3.0f;
-            for (int j = 0; j <= 16; j++) {
-                float a = 2.0f * 3.14159265f * j / 16;
-                if (j <= 16) {
-                    pad_verts[j + 1].x = cosf(a) * outline_r;
-                    pad_verts[j + 1].y = 0;
-                    pad_verts[j + 1].z = sinf(a) * outline_r;
-                    pad_verts[j + 1].diff = border_color;
-                }
-            }
-            /* Draw outline as line loop using point list (simplified — skip for now) */
         } else if (obj->type == MW_OBJ_FLAG) {
-            /* Yellow checkpoint marker */
-            D3DMATRIX world;
-            ZeroMemory(&world, sizeof(world));
-            world._11 = 1.0f; world._22 = 1.0f; world._33 = 1.0f; world._44 = 1.0f;
-            world._41 = obj->position.x; world._42 = obj->position.y; world._43 = obj->position.z;
-            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &world);
+            /* Yellow checkpoint pole */
+            D3DMATRIX flag_world;
+            ZeroMemory(&flag_world, sizeof(flag_world));
+            flag_world._11 = 1.0f; flag_world._22 = 1.0f; flag_world._33 = 1.0f; flag_world._44 = 1.0f;
+            flag_world._41 = obj->position.x; flag_world._42 = obj->position.y; flag_world._43 = obj->position.z;
+            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &flag_world);
             struct { float x, y, z; DWORD diff; } pole[2] = {
                 {0, 0, 0, D3DCOLOR_RGBA(255, 255, 0, 255)},
                 {0, 80, 0, D3DCOLOR_RGBA(255, 255, 0, 255)}
             };
+            g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
             g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_LINESTRIP, 1, pole, sizeof(pole[0]));
+
+        } else if (obj->type == MW_OBJ_SAFESPOT) {
+            /* Checkpoint marker — translucent yellow diamond */
+            float cy = obj->position.y + 40.0f;
+            float size = 25.0f;
+            DWORD cp_col = D3DCOLOR_RGBA(255, 220, 0, 200);   /* Yellow */
+            DWORD cp_border = D3DCOLOR_RGBA(180, 150, 0, 255); /* Darker yellow */
+            if (g_checkpoint_passed[i]) {
+                cp_col = D3DCOLOR_RGBA(80, 220, 80, 200);       /* Green = passed */
+                cp_border = D3DCOLOR_RGBA(40, 150, 40, 255);
+            }
+            struct { float x, y, z; DWORD diff; } cp_verts[6];
+            cp_verts[0].x = 0; cp_verts[0].y = size; cp_verts[0].z = 0; cp_verts[0].diff = cp_col;
+            cp_verts[1].x = size; cp_verts[1].y = 0; cp_verts[1].z = 0; cp_verts[1].diff = cp_border;
+            cp_verts[2].x = 0; cp_verts[2].y = -size; cp_verts[2].z = 0; cp_verts[2].diff = cp_col;
+            cp_verts[3].x = -size; cp_verts[3].y = 0; cp_verts[3].z = 0; cp_verts[3].diff = cp_border;
+            cp_verts[4].x = 0; cp_verts[4].y = 0; cp_verts[4].z = size; cp_verts[4].diff = cp_col;
+            cp_verts[5].x = 0; cp_verts[5].y = 0; cp_verts[5].z = -size; cp_verts[5].diff = cp_border;
+            D3DMATRIX cp_world;
+            ZeroMemory(&cp_world, sizeof(cp_world));
+            cp_world._11 = 1.0f; cp_world._22 = 1.0f; cp_world._33 = 1.0f; cp_world._44 = 1.0f;
+            cp_world._41 = obj->position.x; cp_world._42 = cy; cp_world._43 = obj->position.z;
+            g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &cp_world);
+            g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
+            /* Simple diamond: 4 tris from center to edges */
+            g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
+            g_device->lpVtbl->SetRenderState(g_device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            g_device->lpVtbl->SetRenderState(g_device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+            g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLEFAN, 4, cp_verts, sizeof(cp_verts[0]));
+            g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
         }
     }
 
@@ -1626,33 +1772,9 @@ static void RenderHUD(void) {
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
     g_device->lpVtbl->SetTexture(g_device, 0, NULL);
 
-    /* Timer display — dark blue pill background at top center, white text.
-     * Original uses showcardgothic72 font for timer, showcardgothic14 for TARGET.
-     * Since we don't have D3DX font, display info in window title. */
-    static float race_time = 0.0f;
-    if (g_state == STATE_RACING) {
-        race_time += (float)FRAME_TIME_MS / 1000.0f;
-    }
-    
-    /* Draw timer background pill (semi-transparent dark blue oval) */
-    struct { float x, y, z; DWORD diff; float u, v; } bg_verts[4];
-    float pill_cx = (float)g_width * 0.5f;  /* Center X */
-    float pill_cy = 30.0f;                  /* Near top */
-    float pill_hw = 100.0f;                 /* Half-width */
-    float pill_hh = 22.0f;                  /* Half-height */
-    bg_verts[0].x = pill_cx - pill_hw; bg_verts[0].y = pill_cy - pill_hh; bg_verts[0].z = 0.99f;
-    bg_verts[0].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-    bg_verts[1].x = pill_cx + pill_hw; bg_verts[1].y = pill_cy - pill_hh; bg_verts[1].z = 0.99f;
-    bg_verts[1].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-    bg_verts[2].x = pill_cx - pill_hw; bg_verts[2].y = pill_cy + pill_hh; bg_verts[2].z = 0.99f;
-    bg_verts[2].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-    bg_verts[3].x = pill_cx + pill_hw; bg_verts[3].y = pill_cy + pill_hh; bg_verts[3].z = 0.99f;
-    bg_verts[3].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-
     /* Switch to screen-space coordinates (orthographic) */
     D3DMATRIX ident, ortho;
     ZeroMemory(&ident, sizeof(ident)); ident._11 = 1; ident._22 = 1; ident._33 = 1; ident._44 = 1;
-    /* Setup ortho projection for 2D HUD */
     float w = (float)g_width, h = (float)g_height;
     ZeroMemory(&ortho, sizeof(ortho));
     ortho._11 = 2.0f / w;  ortho._22 = 2.0f / h;
@@ -1661,6 +1783,34 @@ static void RenderHUD(void) {
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &ident);
     g_device->lpVtbl->SetTransform(g_device, D3DTS_VIEW, &ident);
     g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &ortho);
+
+    /* Timer / Countdown display — draw as colored rects with text overlay */
+    char hud_str[256];
+    if (g_race_state == RACE_COUNTDOWN) {
+        if (g_countdown_timer > 2.0f) snprintf(hud_str, sizeof(hud_str), "3");
+        else if (g_countdown_timer > 1.0f) snprintf(hud_str, sizeof(hud_str), "2");
+        else if (g_countdown_timer > 0.0f) snprintf(hud_str, sizeof(hud_str), "1");
+        else snprintf(hud_str, sizeof(hud_str), "GO!");
+    } else if (g_race_state == RACE_FINISHED) {
+        snprintf(hud_str, sizeof(hud_str), "FINISH! Time: %.2f", g_race_time);
+    } else {
+        snprintf(hud_str, sizeof(hud_str), "Time: %.2f", g_race_time);
+    }
+
+    /* Timer background pill (semi-transparent dark blue oval) */
+    struct { float x, y, z; DWORD diff; float u, v; } bg_verts[4];
+    float pill_cx = (float)g_width * 0.5f;
+    float pill_cy = 30.0f;
+    float pill_hw = (g_race_state == RACE_COUNTDOWN) ? 60.0f : 120.0f;
+    float pill_hh = 22.0f;
+    bg_verts[0].x = pill_cx - pill_hw; bg_verts[0].y = pill_cy - pill_hh; bg_verts[0].z = 0.99f;
+    bg_verts[0].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+    bg_verts[1].x = pill_cx + pill_hw; bg_verts[1].y = pill_cy - pill_hh; bg_verts[1].z = 0.99f;
+    bg_verts[1].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+    bg_verts[2].x = pill_cx - pill_hw; bg_verts[2].y = pill_cy + pill_hh; bg_verts[2].z = 0.99f;
+    bg_verts[2].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
+    bg_verts[3].x = pill_cx + pill_hw; bg_verts[3].y = pill_cy + pill_hh; bg_verts[3].z = 0.99f;
+    bg_verts[3].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
 
     /* Convert pixel coords to NDC for the ortho projection */
     for (int i = 0; i < 4; i++) {
@@ -1676,9 +1826,8 @@ static void RenderHUD(void) {
 
     /* Window title as text fallback */
     char fpsText[256];
-    snprintf(fpsText, sizeof(fpsText), "FPS: %d | %s | Time: %.1f | TARGET: %s | Pos(%.1f,%.1f,%.1f) []=cycle", 
-             g_current_fps, g_level_name, race_time, 
-             g_has_camlookat ? "Arena" : "Race", 
+    snprintf(fpsText, sizeof(fpsText), "FPS: %d | %s | %s | Pos(%.1f,%.1f,%.1f) []=cycle",
+             g_current_fps, g_level_name, hud_str,
              g_ball.x, g_ball.y, g_ball.z);
     SetWindowTextA(g_hwnd, fpsText);
 
@@ -1740,6 +1889,8 @@ static void GameLoop(void) {
             if (dt_ms > 1000) dt = 1.0f / TARGET_FPS;
 
             HandleInput();
+            UpdateCountdown(dt);
+            UpdateCheckpoints();
             UpdatePhysics(dt);
 
             if (!g_minimized) {
