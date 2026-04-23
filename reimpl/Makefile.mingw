@@ -8,7 +8,7 @@ WINDRES = i686-w64-mingw32-windres
 # Flags matching original: 32-bit, no SSE2, optimize for size
 CFLAGS = -std=c11 -O2 -g -Wall -Wno-unused-variable \
          -march=i686 -m32 \
-         -DWIN32_LEAN_AND_MEAN -D_WIN32 -D__MINGW32__ \
+         -D_D3D8 -DWIN32_LEAN_AND_MEAN -D_WIN32 -D__MINGW32__ \
          -Iinclude
 
 # Link against same DLLs as original
@@ -16,7 +16,7 @@ LDFLAGS = -mwindows -m32 -static-libgcc -static-libstdc++
 LIBS = -ld3d8 -ldinput8 -ldsound -ldxguid -ldxerr8 -lole32 -lwinmm
 
 # Source files
-CORE_SRCS = src/core/win32_main.c
+CORE_SRCS = src/core/win32_main.c src/graphics/texture.c
 LEVEL_SRCS = src/level/meshworld_parser.c src/level/mesh_parser.c
 
 SRCS = $(CORE_SRCS) $(LEVEL_SRCS)

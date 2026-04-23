@@ -153,10 +153,14 @@ static void DrawSpherePrimitive(void);
 static void RenderLevelGeometry(void);
 static void RenderLevelObjects(void);
 static void RenderHUD(void);
-static void RenderCheckpointMarkers(void);
+/* static void RenderCheckpointMarkers(void); */
 static void UpdateCountdown(float dt);
 static void UpdateCheckpoints(void);
 static void RespawnBall(void);
+
+/* Forward declaration for collision system */
+typedef struct { float nx, ny, nz; float depth; float cx, cy, cz; int tri_index; } CollisionResult;
+static int TestSphereVsLevel(float sx, float sy, float sz, float radius, CollisionResult *results, int max_results);
 static BOOL SaveScreenshot(const char *filename);
 
 /* ===== Screenshot Function (Windows GDI approach for D3D8 compatibility) ===== */
@@ -535,6 +539,26 @@ static void ResetBallAndCamera(void) {
         if (g_has_camlookat) {
             g_ball.y = g_ball.radius + 2.0f;
         }
+        
+        /* FIX Level3 spawn: If START position has no nearby geometry,
+         * scan downward to find the actual floor surface. Level3 START
+         * is at Y=-85 but track geometry is at Y~-2000. */
+        if (g_level && g_level->index_count >= 3) {
+            CollisionResult probe[8];
+            int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, probe, 8);
+            if (nhits == 0) {
+                printf("[Spawn] START at (%.1f,%.1f,%.1f) has no geometry nearby. Scanning down...\n",
+                       g_ball.x, g_ball.y, g_ball.z);
+                for (float scan_y = g_ball.y - 200.0f; scan_y > g_level->bounds_min.y - 100.0f; scan_y -= 100.0f) {
+                    nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, probe, 8);
+                    if (nhits > 0) {
+                        g_ball.y = probe[0].cy + g_ball.radius + 1.0f;
+                        printf("[Spawn] Snapped ball to floor at Y=%.1f\n", g_ball.y);
+                        break;
+                    }
+                }
+            }
+        }
     } else {
         g_ball.x = 0; g_ball.y = 52.0f; g_ball.z = 0;
     }
@@ -695,12 +719,14 @@ static void UpdateCheckpoints(void) {
 /* ===== Respawn Ball =====
  * Respawn at current checkpoint (or START if none passed)
  */
+/* ===== Respawn Ball =====
+ * Respawn at current checkpoint (or START if none passed)
+ */
 static void RespawnBall(void) {
     if (g_current_checkpoint >= 0) {
-        int ci = g_current_checkpoint;
-        g_ball.x = g_level->objects[ci].position.x;
-        g_ball.y = g_level->objects[ci].position.y + g_ball.radius + 2.0f;
-        g_ball.z = g_level->objects[ci].position.z;
+        g_ball.x = g_level->objects[g_current_checkpoint].position.x;
+        g_ball.y = g_level->objects[g_current_checkpoint].position.y + g_ball.radius + 2.0f;
+        g_ball.z = g_level->objects[g_current_checkpoint].position.z;
     } else if (g_level) {
         /* Respawn at START */
         for (int i = 0; i < g_level->object_count; i++) {
@@ -709,6 +735,47 @@ static void RespawnBall(void) {
                 g_ball.y = g_level->objects[i].position.y + g_ball.radius + 2.0f;
                 g_ball.z = g_level->objects[i].position.z;
                 break;
+            }
+        }
+        
+        /* Fix: Check if START position has geometry below. If not (Level3 issue),
+         * do collision scan in both directions to find the floor surface.
+         * Level3 START is at (192, -85, 1359) but geometry is ~300 units below at Y~-2000. */
+        if (g_level && g_level->index_count > 0) {
+            CollisionResult hits[8];
+            int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, hits, 8);
+            if (nhits == 0) {
+                printf("[Spawn] No geometry at START (%g,%g,%g), scanning...\n",
+                       g_ball.x, g_ball.y, g_ball.z);
+                /* Scan both upward and downward to find geometry */
+                int found = 0;
+                /* Scan downward first (gravity direction in D3D, but we scan both) */
+                for (float scan_y = g_ball.y - 50.0f; scan_y >= g_ball.y - 2000.0f; scan_y -= 50.0f) {
+                    nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, 8);
+                    if (nhits > 0) {
+                        g_ball.y = hits[0].cy + g_ball.radius + 1.0f;
+                        printf("[Spawn] Snapped to floor below at Y=%.1f\n", g_ball.y);
+                        found = 1;
+                        break;
+                    }
+                }
+                /* If not found below, scan upward */
+                if (!found) {
+                    for (float scan_y = g_ball.y + 50.0f; scan_y <= g_ball.y + 500.0f; scan_y += 50.0f) {
+                        nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, 8);
+                        if (nhits > 0) {
+                            g_ball.y = hits[0].cy + g_ball.radius + 1.0f;
+                            printf("[Spawn] Snapped to floor above at Y=%.1f\n", g_ball.y);
+                            found = 1;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    printf("[Spawn] WARNING: No geometry found, using fallback Y\n");
+                    /* Fallback: use a reasonable default for Level3 */
+                    g_ball.y = -1975.0f + g_ball.radius + 1.0f;
+                }
             }
         }
     }
@@ -860,18 +927,12 @@ static void ClosestPointOnTriangle(float px, float py, float pz,
     *outz = u * az + v * bz + w * cz;
 }
 
-/* Collision result */
-typedef struct {
-    float nx, ny, nz;    /* Surface normal (pointing outward from surface) */
-    float depth;          /* Penetration depth (positive = overlapping) */
-    float cx, cy, cz;    /* Closest point on triangle */
-    int tri_index;        /* Which triangle was hit (-1 = none) */
-} CollisionResult;
-
+/* Collision system constants */
 #define MAX_COLLISIONS 16
 #define MAX_SHADOW_HITS 4
 
-/* Test sphere (center + radius) against all level triangles */
+/* Test sphere (center + radius) against all level triangles
+ * NOTE: CollisionResult typedef and TestSphereVsLevel prototype are at top of file */
 static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
                               CollisionResult *results, int max_results) {
     if (!g_level || g_level->index_count < 3) return 0;
@@ -977,6 +1038,13 @@ static void UpdatePhysics(float dt) {
         if (g_level && g_level->index_count >= 3) {
             CollisionResult hits[MAX_COLLISIONS];
             int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+            /* If no hits (START is inside/below geometry on some levels), sweep upward from below
+             * to find the floor surface. Try up to 1000 units below. */
+            if (nhits == 0) {
+                for (float scan_y = g_ball.y - 50.0f; scan_y > g_ball.y - 1000.0f && nhits == 0; scan_y -= 25.0f) {
+                    nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+                }
+            }
             if (nhits > 0) {
                 int deepest = 0;
                 for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
@@ -1195,9 +1263,58 @@ static void SetMatrices(void) {
     float dlen = sqrtf(dir_x*dir_x + dir_y*dir_y + dir_z*dir_z);
     if (dlen > 0) { dir_x /= dlen; dir_y /= dlen; dir_z /= dlen; }
 
-    float eyex = g_camera.tx + dir_x * g_camera.orbit_dist;
-    float eyey = g_camera.ty + dir_y * g_camera.orbit_dist;
-    float eyez = g_camera.tz + dir_z * g_camera.orbit_dist;
+    /* Adaptive camera sign: pick + or - based on which side puts more vertices
+     * in front of the camera (positive dot(view_dir, vertex-eye)).
+     * 
+     * Fix: Sample vertices near the ball/START position, not ALL vertices.
+     * Level3 has START at (192, -85, 1359) but geometry is at Z < ball.Z,
+     * so sampling globally gives wrong results. */
+    int best_sign = 1; /* default: eye = target + dir*dist */
+    if (g_level && g_level->vertex_count > 0) {
+        /* Sample radius around ball - geometry near spawn determines camera side.
+         * Level3: START at Y=-85 but geometry is at Y=-2000, so we need larger radius. */
+        float sample_radius = 1200.0f;
+        int vis_plus = 0, vis_minus = 0;
+        for (int v = 0; v < g_level->vertex_count; v += 2) {
+            float vx = g_level->vertices[v].x;
+            float vy = g_level->vertices[v].y;
+            float vz = g_level->vertices[v].z;
+            /* Only count vertices near the ball (within sample_radius) */
+            float dx = vx - g_ball.x;
+            float dy = vy - g_ball.y;
+            float dz = vz - g_ball.z;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+            if (dist_sq > sample_radius * sample_radius) continue;
+            
+            /* Plus sign: eye = target + dir*dist */
+            float ex_p = g_camera.tx + dir_x * g_camera.orbit_dist;
+            float ey_p = g_camera.ty + dir_y * g_camera.orbit_dist;
+            float ez_p = g_camera.tz + dir_z * g_camera.orbit_dist;
+            float vdx_p = vx - ex_p, vdy_p = vy - ey_p, vdz_p = vz - ez_p;
+            float dot_p = dir_x * vdx_p + dir_y * vdy_p + dir_z * vdz_p;
+            if (dot_p > 0) vis_plus++;
+            /* Minus sign: eye = target - dir*dist */
+            float ex_m = g_camera.tx - dir_x * g_camera.orbit_dist;
+            float ey_m = g_camera.ty - dir_y * g_camera.orbit_dist;
+            float ez_m = g_camera.tz - dir_z * g_camera.orbit_dist;
+            float vdx_m = vx - ex_m, vdy_m = vy - ey_m, vdz_m = vz - ez_m;
+            float dot_m = -(dir_x * vdx_m + dir_y * vdy_m + dir_z * vdz_m);
+            if (dot_m > 0) vis_minus++;
+        }
+        /* Fallback: if no vertices found (rare), use default PLUS */
+        if (vis_plus == 0 && vis_minus == 0) {
+            best_sign = 1;
+            printf("[Camera] Adaptive sign: DEFAULT (no vertices in range)\n");
+        } else {
+            best_sign = (vis_minus > vis_plus) ? -1 : 1;
+            printf("[Camera] Adaptive sign: %s (vis_p=%d vis_m=%d)\n", 
+                   best_sign < 0 ? "MINUS" : "PLUS", vis_plus, vis_minus);
+        }
+    }
+
+    float eyex = g_camera.tx + best_sign * dir_x * g_camera.orbit_dist;
+    float eyey = g_camera.ty + best_sign * dir_y * g_camera.orbit_dist;
+    float eyez = g_camera.tz + best_sign * dir_z * g_camera.orbit_dist;
     float atx = g_camera.tx, aty = g_camera.ty, atz = g_camera.tz;
     float upx = 0, upy = 1, upz = 0;
     
