@@ -521,11 +521,15 @@ static void ResetBallAndCamera(void) {
         g_ball.z = top_floor_z;
 
         /* Find START and CAMERALOOKAT objects */
+        float start_x = g_ball.x, start_y_obj = g_ball.y, start_z = g_ball.z;
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
-                g_ball.x = g_level->objects[i].position.x;
-                g_ball.y = g_level->objects[i].position.y + g_ball.radius + 2.0f;
+                start_x = g_level->objects[i].position.x;
+                start_y_obj = g_level->objects[i].position.y;
+                g_ball.x = start_x;
+                g_ball.y = start_y_obj + g_ball.radius + 2.0f;
                 g_ball.z = g_level->objects[i].position.z;
+                start_z = g_ball.z;
             }
             if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
                 g_camlookat_x = g_level->objects[i].position.x;
@@ -539,24 +543,17 @@ static void ResetBallAndCamera(void) {
         if (g_has_camlookat) {
             g_ball.y = g_ball.radius + 2.0f;
         }
-        
+
         /* FIX Level3 spawn: If START position has no nearby geometry,
-         * scan downward to find the actual floor surface. Level3 START
-         * is at Y=-85 but track geometry is at Y~-2000. */
+         * this is expected for some levels where START is above a drop.
+         * Just keep the ball at START Y and let gravity handle it.
+         * The original game does not do collision checks at spawn time. */
         if (g_level && g_level->index_count >= 3) {
             CollisionResult probe[8];
             int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, probe, 8);
             if (nhits == 0) {
-                printf("[Spawn] START at (%.1f,%.1f,%.1f) has no geometry nearby. Scanning down...\n",
+                printf("[Spawn] START at (%.1f,%.1f,%.1f) has no nearby geometry. Keeping START position.\n",
                        g_ball.x, g_ball.y, g_ball.z);
-                for (float scan_y = g_ball.y - 200.0f; scan_y > g_level->bounds_min.y - 100.0f; scan_y -= 100.0f) {
-                    nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, probe, 8);
-                    if (nhits > 0) {
-                        g_ball.y = probe[0].cy + g_ball.radius + 1.0f;
-                        printf("[Spawn] Snapped ball to floor at Y=%.1f\n", g_ball.y);
-                        break;
-                    }
-                }
             }
         }
     } else {
@@ -716,9 +713,6 @@ static void UpdateCheckpoints(void) {
     }
 }
 
-/* ===== Respawn Ball =====
- * Respawn at current checkpoint (or START if none passed)
- */
 /* ===== Respawn Ball =====
  * Respawn at current checkpoint (or START if none passed)
  */
@@ -1273,7 +1267,7 @@ static void SetMatrices(void) {
     if (g_level && g_level->vertex_count > 0) {
         /* Sample radius around ball - geometry near spawn determines camera side.
          * Level3: START at Y=-85 but geometry is at Y=-2000, so we need larger radius. */
-        float sample_radius = 1200.0f;
+        float sample_radius = 8000.0f; /* cover entire level extent for deep tracks like Level3 */
         int vis_plus = 0, vis_minus = 0;
         for (int v = 0; v < g_level->vertex_count; v += 2) {
             float vx = g_level->vertices[v].x;
@@ -1286,19 +1280,21 @@ static void SetMatrices(void) {
             float dist_sq = dx*dx + dy*dy + dz*dz;
             if (dist_sq > sample_radius * sample_radius) continue;
             
-            /* Plus sign: eye = target + dir*dist */
+            /* Plus sign: eye = target + dir*dist, camera looks toward -dir.
+             * Vertex is visible if dot(-dir, vertex-eye) > 0  <=>  dot(dir, vertex-eye) < 0 */
             float ex_p = g_camera.tx + dir_x * g_camera.orbit_dist;
             float ey_p = g_camera.ty + dir_y * g_camera.orbit_dist;
             float ez_p = g_camera.tz + dir_z * g_camera.orbit_dist;
             float vdx_p = vx - ex_p, vdy_p = vy - ey_p, vdz_p = vz - ez_p;
             float dot_p = dir_x * vdx_p + dir_y * vdy_p + dir_z * vdz_p;
-            if (dot_p > 0) vis_plus++;
-            /* Minus sign: eye = target - dir*dist */
+            if (dot_p < 0) vis_plus++;
+            /* Minus sign: eye = target - dir*dist, camera looks toward dir.
+             * Vertex is visible if dot(dir, vertex-eye) > 0 */
             float ex_m = g_camera.tx - dir_x * g_camera.orbit_dist;
             float ey_m = g_camera.ty - dir_y * g_camera.orbit_dist;
             float ez_m = g_camera.tz - dir_z * g_camera.orbit_dist;
             float vdx_m = vx - ex_m, vdy_m = vy - ey_m, vdz_m = vz - ez_m;
-            float dot_m = -(dir_x * vdx_m + dir_y * vdy_m + dir_z * vdz_m);
+            float dot_m = dir_x * vdx_m + dir_y * vdy_m + dir_z * vdz_m;
             if (dot_m > 0) vis_minus++;
         }
         /* Fallback: if no vertices found (rare), use default PLUS */
@@ -1307,8 +1303,8 @@ static void SetMatrices(void) {
             printf("[Camera] Adaptive sign: DEFAULT (no vertices in range)\n");
         } else {
             best_sign = (vis_minus > vis_plus) ? -1 : 1;
-            printf("[Camera] Adaptive sign: %s (vis_p=%d vis_m=%d)\n", 
-                   best_sign < 0 ? "MINUS" : "PLUS", vis_plus, vis_minus);
+            printf("[Camera] Adaptive sign: %s (vis_p=%d vis_m=%d range=%.0f)\n", 
+                   best_sign < 0 ? "MINUS" : "PLUS", vis_plus, vis_minus, sample_radius);
         }
     }
 
