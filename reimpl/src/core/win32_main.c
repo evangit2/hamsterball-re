@@ -1160,14 +1160,15 @@ static void UpdatePhysics(float dt) {
                 
                 /* Bounce: reflect normal component with restitution */
                 float bounce = 0.3f;  /* Coefficient of restitution */
-                g_ball.vx = vt_x - vn_x * bounce;
-                g_ball.vy = vt_y - vn_y * bounce;
-                g_ball.vz = vt_z - vn_z * bounce;
                 
-                /* Surface friction on tangential component */
+                /* Apply bounce to normal component and friction to tangential */
                 float friction = 0.98f;
-                g_ball.vx = vt_x * friction + (g_ball.vx - vt_x);
-                g_ball.vz = vt_z * friction + (g_ball.vz - vt_z);
+                float new_vx = vt_x * friction - vn_x * bounce;
+                float new_vy = vt_y * friction - vn_y * bounce;
+                float new_vz = vt_z * friction - vn_z * bounce;
+                g_ball.vx = new_vx;
+                g_ball.vy = new_vy;
+                g_ball.vz = new_vz;
                 
                 /* Ground detection: if normal is mostly pointing up, ball is on ground */
                 if (hit->ny > 0.5f) {
