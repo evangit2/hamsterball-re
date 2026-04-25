@@ -527,7 +527,10 @@ static void ResetBallAndCamera(void) {
                 start_x = g_level->objects[i].position.x;
                 start_y_obj = g_level->objects[i].position.y;
                 g_ball.x = start_x;
-                g_ball.y = start_y_obj + g_ball.radius + 2.0f;
+                /* Place ball at START position + small offset above track.
+                 * Original places at START.y + radius + 1.0. Level countdown
+                 * will snap it down to actual floor surface on first frame. */
+                g_ball.y = start_y_obj + g_ball.radius + 1.0f;
                 g_ball.z = g_level->objects[i].position.z;
                 start_z = g_ball.z;
             }
@@ -539,10 +542,8 @@ static void ResetBallAndCamera(void) {
             }
         }
         ResetRaceState();
-        /* Arena levels: spawn low so camera sees the bowl */
-        if (g_has_camlookat) {
-            g_ball.y = g_ball.radius + 2.0f;
-        }
+        /* Arena levels: spawn at the actual START position (original behavior) */
+        /* The countdown snap will place ball on floor if slightly above. */
 
         /* FIX Level3 spawn: If START position has no nearby geometry,
          * this is expected for some levels where START is above a drop.
@@ -833,6 +834,17 @@ static void HandleInput(void) {
         g_state = STATE_MENU;
     }
 
+    /* R = manual respawn at last checkpoint (or START if none passed) */
+    {
+        static int prev_r = 0;
+        int r_now = (g_keys[DIK_R] & 0x80) ? 1 : 0;
+        if (r_now && !prev_r) {
+            RespawnBall();
+            printf("[Input] Respawn pressed (R)\n");
+        }
+        prev_r = r_now;
+    }
+
     /* [ and ] keys cycle through levels at runtime */
     {
         int bracket_now = 0;
@@ -1022,32 +1034,43 @@ static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
  *   Phase 6: Speed clamping
  */
 static void UpdatePhysics(float dt) {
+    /* Shared state: countdown snap flag lives across calls */
+    static int s_countdown_snap_done = 0;
+
     /* During countdown: no gravity, no input, no movement — freeze ball on spawn surface.
      * Still run collision to keep ball from falling through if spawn is slightly above ground. */
     if (g_race_state == RACE_COUNTDOWN) {
         /* Zero velocity, zero input */
         g_ball.vx = g_ball.vy = g_ball.vz = 0;
         g_ball.input_fx = g_ball.input_fy = 0;
-        /* One collision pass to snap to surface */
-        if (g_level && g_level->index_count >= 3) {
-            CollisionResult hits[MAX_COLLISIONS];
-            int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
-            /* If no hits (START is inside/below geometry on some levels), sweep upward from below
-             * to find the floor surface. Try up to 1000 units below. */
-            if (nhits == 0) {
-                for (float scan_y = g_ball.y - 50.0f; scan_y > g_ball.y - 1000.0f && nhits == 0; scan_y -= 25.0f) {
-                    nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+        /* One collision pass to snap to surface on FIRST frame of countdown */
+        if (!s_countdown_snap_done) {
+            s_countdown_snap_done = 1;
+            if (g_level && g_level->index_count >= 3) {
+                CollisionResult hits[MAX_COLLISIONS];
+                int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+                /* If no hits (START is inside/below geometry on some levels), sweep upward from below
+                 * to find the floor surface. Try up to 1000 units below. */
+                if (nhits == 0) {
+                    for (float scan_y = g_ball.y - 50.0f; scan_y > g_ball.y - 1000.0f && nhits == 0; scan_y -= 25.0f) {
+                        nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+                    }
                 }
-            }
-            if (nhits > 0) {
-                int deepest = 0;
-                for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
-                g_ball.x += hits[deepest].nx * hits[deepest].depth * 1.01f;
-                g_ball.y += hits[deepest].ny * hits[deepest].depth * 1.01f;
-                g_ball.z += hits[deepest].nz * hits[deepest].depth * 1.01f;
+                if (nhits > 0) {
+                    int deepest = 0;
+                    for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
+                    g_ball.x += hits[deepest].nx * hits[deepest].depth * 1.01f;
+                    g_ball.y += hits[deepest].ny * hits[deepest].depth * 1.01f;
+                    g_ball.z += hits[deepest].nz * hits[deepest].depth * 1.01f;
+                }
             }
         }
         return;
+    }
+
+    /* Reset countdown snap flag when race restarts */
+    if (g_race_state == RACE_RUNNING || g_race_state == RACE_RESPAWNING) {
+        s_countdown_snap_done = 0;
     }
 
     /* Respawning: freeze, countdown, no physics */
@@ -1160,7 +1183,7 @@ static void UpdatePhysics(float dt) {
             }
         }
         
-        /* Log first frame only for debugging */
+        /* Log first 3 frames only for debugging */
         if (ss == 0) {
             static int collision_log_count = 0;
             if (collision_log_count < 3) {
@@ -1249,7 +1272,9 @@ static void SetMatrices(void) {
     g_camera.ty += (desired_y - g_camera.ty) * lerp_speed;
     g_camera.tz += (desired_z - g_camera.tz) * lerp_speed;
 
-    /* Build orbit direction vector (from focus toward camera) */
+    /* Build orbit direction vector (from focus toward camera).
+     * Original: eye = target + dir * dist (always + sign).
+     * Camera looks toward -dir. */
     float dir_x = cos_a;
     float dir_y = g_camera.orbit_tilt;
     float dir_z = sin_a;
@@ -1257,60 +1282,18 @@ static void SetMatrices(void) {
     float dlen = sqrtf(dir_x*dir_x + dir_y*dir_y + dir_z*dir_z);
     if (dlen > 0) { dir_x /= dlen; dir_y /= dlen; dir_z /= dlen; }
 
-    /* Adaptive camera sign: pick + or - based on which side puts more vertices
-     * in front of the camera (positive dot(view_dir, vertex-eye)).
-     * 
-     * Fix: Sample vertices near the ball/START position, not ALL vertices.
-     * Level3 has START at (192, -85, 1359) but geometry is at Z < ball.Z,
-     * so sampling globally gives wrong results. */
-    int best_sign = 1; /* default: eye = target + dir*dist */
-    if (g_level && g_level->vertex_count > 0) {
-        /* Sample radius around ball - geometry near spawn determines camera side.
-         * Level3: START at Y=-85 but geometry is at Y=-2000, so we need larger radius. */
-        float sample_radius = 8000.0f; /* cover entire level extent for deep tracks like Level3 */
-        int vis_plus = 0, vis_minus = 0;
-        for (int v = 0; v < g_level->vertex_count; v += 2) {
-            float vx = g_level->vertices[v].x;
-            float vy = g_level->vertices[v].y;
-            float vz = g_level->vertices[v].z;
-            /* Only count vertices near the ball (within sample_radius) */
-            float dx = vx - g_ball.x;
-            float dy = vy - g_ball.y;
-            float dz = vz - g_ball.z;
-            float dist_sq = dx*dx + dy*dy + dz*dz;
-            if (dist_sq > sample_radius * sample_radius) continue;
-            
-            /* Plus sign: eye = target + dir*dist, camera looks toward -dir.
-             * Vertex is visible if dot(-dir, vertex-eye) > 0  <=>  dot(dir, vertex-eye) < 0 */
-            float ex_p = g_camera.tx + dir_x * g_camera.orbit_dist;
-            float ey_p = g_camera.ty + dir_y * g_camera.orbit_dist;
-            float ez_p = g_camera.tz + dir_z * g_camera.orbit_dist;
-            float vdx_p = vx - ex_p, vdy_p = vy - ey_p, vdz_p = vz - ez_p;
-            float dot_p = dir_x * vdx_p + dir_y * vdy_p + dir_z * vdz_p;
-            if (dot_p < 0) vis_plus++;
-            /* Minus sign: eye = target - dir*dist, camera looks toward dir.
-             * Vertex is visible if dot(dir, vertex-eye) > 0 */
-            float ex_m = g_camera.tx - dir_x * g_camera.orbit_dist;
-            float ey_m = g_camera.ty - dir_y * g_camera.orbit_dist;
-            float ez_m = g_camera.tz - dir_z * g_camera.orbit_dist;
-            float vdx_m = vx - ex_m, vdy_m = vy - ey_m, vdz_m = vz - ez_m;
-            float dot_m = dir_x * vdx_m + dir_y * vdy_m + dir_z * vdz_m;
-            if (dot_m > 0) vis_minus++;
-        }
-        /* Fallback: if no vertices found (rare), use default PLUS */
-        if (vis_plus == 0 && vis_minus == 0) {
-            best_sign = 1;
-            printf("[Camera] Adaptive sign: DEFAULT (no vertices in range)\n");
-        } else {
-            best_sign = (vis_minus > vis_plus) ? -1 : 1;
-            printf("[Camera] Adaptive sign: %s (vis_p=%d vis_m=%d range=%.0f)\n", 
-                   best_sign < 0 ? "MINUS" : "PLUS", vis_plus, vis_minus, sample_radius);
-        }
+    /* Race track: fixed distance 400 for consistent isometric feel.
+     * Arena: 500-600 with camlookat for bowl visibility. */
+    if (g_has_camlookat) {
+        g_camera.orbit_dist = 500.0f;
+    } else {
+        g_camera.orbit_dist = 400.0f;
     }
 
-    float eyex = g_camera.tx + best_sign * dir_x * g_camera.orbit_dist;
-    float eyey = g_camera.ty + best_sign * dir_y * g_camera.orbit_dist;
-    float eyez = g_camera.tz + best_sign * dir_z * g_camera.orbit_dist;
+    /* Always use + sign: eye = target + dir * dist, matching original Scene_SetCamera */
+    float eyex = g_camera.tx + dir_x * g_camera.orbit_dist;
+    float eyey = g_camera.ty + dir_y * g_camera.orbit_dist;
+    float eyez = g_camera.tz + dir_z * g_camera.orbit_dist;
     float atx = g_camera.tx, aty = g_camera.ty, atz = g_camera.tz;
     float upx = 0, upy = 1, upz = 0;
     
@@ -1896,56 +1879,127 @@ static void RenderHUD(void) {
     g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &ident);
     g_device->lpVtbl->SetTransform(g_device, D3DTS_VIEW, &ident);
     g_device->lpVtbl->SetTransform(g_device, D3DTS_PROJECTION, &ortho);
-
-    /* Timer / Countdown display — draw as colored rects with text overlay */
-    char hud_str[256];
-    if (g_race_state == RACE_COUNTDOWN) {
-        if (g_countdown_timer > 2.0f) snprintf(hud_str, sizeof(hud_str), "3");
-        else if (g_countdown_timer > 1.0f) snprintf(hud_str, sizeof(hud_str), "2");
-        else if (g_countdown_timer > 0.0f) snprintf(hud_str, sizeof(hud_str), "1");
-        else snprintf(hud_str, sizeof(hud_str), "GO!");
-    } else if (g_race_state == RACE_FINISHED) {
-        snprintf(hud_str, sizeof(hud_str), "FINISH! Time: %.2f", g_race_time);
-    } else {
-        snprintf(hud_str, sizeof(hud_str), "Time: %.2f", g_race_time);
-    }
-
-    /* Timer background pill (semi-transparent dark blue oval) */
-    struct { float x, y, z; DWORD diff; float u, v; } bg_verts[4];
-    float pill_cx = (float)g_width * 0.5f;
-    float pill_cy = 30.0f;
-    float pill_hw = (g_race_state == RACE_COUNTDOWN) ? 60.0f : 120.0f;
-    float pill_hh = 22.0f;
-    bg_verts[0].x = pill_cx - pill_hw; bg_verts[0].y = pill_cy - pill_hh; bg_verts[0].z = 0.99f;
-    bg_verts[0].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-    bg_verts[1].x = pill_cx + pill_hw; bg_verts[1].y = pill_cy - pill_hh; bg_verts[1].z = 0.99f;
-    bg_verts[1].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-    bg_verts[2].x = pill_cx - pill_hw; bg_verts[2].y = pill_cy + pill_hh; bg_verts[2].z = 0.99f;
-    bg_verts[2].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-    bg_verts[3].x = pill_cx + pill_hw; bg_verts[3].y = pill_cy + pill_hh; bg_verts[3].z = 0.99f;
-    bg_verts[3].diff = D3DCOLOR_RGBA(20, 40, 120, 200);
-
-    /* Convert pixel coords to NDC for the ortho projection */
-    for (int i = 0; i < 4; i++) {
-        bg_verts[i].x = bg_verts[i].x * 2.0f / w - 1.0f;
-        bg_verts[i].y = 1.0f - bg_verts[i].y * 2.0f / h;
-    }
-    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, bg_verts, sizeof(bg_verts[0]));
+
+    struct { float x, y, z; DWORD diff; } v[20];
+
+    /* === Timer / Countdown (top center) === */
+    char time_str[32];
+    if (g_race_state == RACE_COUNTDOWN) {
+        if (g_countdown_timer > 2.0f)     snprintf(time_str, sizeof(time_str), "3");
+        else if (g_countdown_timer > 1.0f) snprintf(time_str, sizeof(time_str), "2");
+        else if (g_countdown_timer > 0.0f) snprintf(time_str, sizeof(time_str), "1");
+        else snprintf(time_str, sizeof(time_str), "GO!");
+    } else if (g_race_state == RACE_FINISHED) {
+        snprintf(time_str, sizeof(time_str), "FINISH! %.2f", g_race_time);
+    } else {
+        snprintf(time_str, sizeof(time_str), "%.2f", g_race_time);
+    }
+
+    /* Timer background pill */
+    float pill_cx = w * 0.5f;
+    float pill_cy = 28.0f;
+    float pill_hw = (g_race_state == RACE_COUNTDOWN && g_countdown_timer > 0.0f) ? 50.0f : 90.0f;
+    float pill_hh = 18.0f;
+    DWORD pill_bg  = D3DCOLOR_RGBA(15, 25, 60, 200);
+    DWORD pill_bdr = D3DCOLOR_RGBA(60, 90, 180, 220);
+    /* Background quad (2 tris) */
+    v[0].x=(pill_cx-pill_hw)*2/w-1; v[0].y=1-(pill_cy-pill_hh)*2/h; v[0].z=0.99f; v[0].diff=pill_bg;
+    v[1].x=(pill_cx+pill_hw)*2/w-1; v[1].y=1-(pill_cy-pill_hh)*2/h; v[1].z=0.99f; v[1].diff=pill_bg;
+    v[2].x=(pill_cx-pill_hw)*2/w-1; v[2].y=1-(pill_cy+pill_hh)*2/h; v[2].z=0.99f; v[2].diff=pill_bg;
+    v[3].x=(pill_cx+pill_hw)*2/w-1; v[3].y=1-(pill_cy+pill_hh)*2/h; v[3].z=0.99f; v[3].diff=pill_bg;
+    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE);
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, v, sizeof(v[0]));
+    /* Border line */
+    struct { float x, y, z; DWORD diff; } bdr[5];
+    for (int i = 0; i < 4; i++) { bdr[i].x = v[i].x; bdr[i].y = v[i].y; bdr[i].z = 0.99f; bdr[i].diff = pill_bdr; }
+    bdr[4] = bdr[0];
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_LINESTRIP, 4, bdr, sizeof(bdr[0]));
+
+    /* === Speed Bar (bottom center) === */
+    float spd_h = w * 0.5f;
+    float spd_v = h - 28.0f;
+    float spd_hw = 140.0f;
+    float spd_hh = 8.0f;
+    /* Background */
+    DWORD spd_bg = D3DCOLOR_RGBA(20, 20, 30, 180);
+    v[0].x=(spd_h-spd_hw)*2/w-1; v[0].y=1-(spd_v-spd_hh)*2/h; v[0].z=0.99f; v[0].diff=spd_bg;
+    v[1].x=(spd_h+spd_hw)*2/w-1; v[1].y=1-(spd_v-spd_hh)*2/h; v[1].z=0.99f; v[1].diff=spd_bg;
+    v[2].x=(spd_h-spd_hw)*2/w-1; v[2].y=1-(spd_v+spd_hh)*2/h; v[2].z=0.99f; v[2].diff=spd_bg;
+    v[3].x=(spd_h+spd_hw)*2/w-1; v[3].y=1-(spd_v+spd_hh)*2/h; v[3].z=0.99f; v[3].diff=spd_bg;
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, v, sizeof(v[0]));
+    /* Fill */
+    float speed = sqrtf(g_ball.vx*g_ball.vx + g_ball.vy*g_ball.vy + g_ball.vz*g_ball.vz);
+    float spd_ratio = speed / g_ball.max_speed;
+    if (spd_ratio > 1.0f) spd_ratio = 1.0f;
+    float fill_w = spd_hw * 2.0f * spd_ratio;
+    DWORD spd_col = D3DCOLOR_RGBA(80, 220, 80, 200);
+    if (spd_ratio > 0.5f) spd_col = D3DCOLOR_RGBA(220, 220, 60, 200);
+    if (spd_ratio > 0.8f) spd_col = D3DCOLOR_RGBA(220, 60, 60, 200);
+    if (fill_w > 1.0f) {
+        v[0].x=(spd_h-spd_hw)*2/w-1; v[0].y=1-(spd_v-spd_hh+2)*2/h; v[0].z=0.99f; v[0].diff=spd_col;
+        v[1].x=(spd_h-spd_hw+fill_w)*2/w-1; v[1].y=1-(spd_v-spd_hh+2)*2/h; v[1].z=0.99f; v[1].diff=spd_col;
+        v[2].x=(spd_h-spd_hw)*2/w-1; v[2].y=1-(spd_v+spd_hh-2)*2/h; v[2].z=0.99f; v[2].diff=spd_col;
+        v[3].x=(spd_h-spd_hw+fill_w)*2/w-1; v[3].y=1-(spd_v+spd_hh-2)*2/h; v[3].z=0.99f; v[3].diff=spd_col;
+        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, v, sizeof(v[0]));
+    }
+    /* Speed bar border */
+    struct { float x, y, z; DWORD diff; } sbd[5];
+    sbd[0].x=(spd_h-spd_hw)*2/w-1; sbd[0].y=1-(spd_v-spd_hh)*2/h; sbd[0].z=0.99f; sbd[0].diff=D3DCOLOR_RGBA(100,100,140,200);
+    sbd[1].x=(spd_h+spd_hw)*2/w-1; sbd[1].y=1-(spd_v-spd_hh)*2/h; sbd[1].z=0.99f; sbd[1].diff=D3DCOLOR_RGBA(100,100,140,200);
+    sbd[2].x=(spd_h+spd_hw)*2/w-1; sbd[2].y=1-(spd_v+spd_hh)*2/h; sbd[2].z=0.99f; sbd[2].diff=D3DCOLOR_RGBA(100,100,140,200);
+    sbd[3].x=(spd_h-spd_hw)*2/w-1; sbd[3].y=1-(spd_v+spd_hh)*2/h; sbd[3].z=0.99f; sbd[3].diff=D3DCOLOR_RGBA(100,100,140,200);
+    sbd[4] = sbd[0];
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_LINESTRIP, 4, sbd, sizeof(sbd[0]));
+
+    /* === Checkpoint Counter (top right) === */
+    int total_cp = 0, passed_cp = 0;
+    if (g_level) {
+        for (int i = 0; i < g_level->object_count; i++) {
+            if (g_level->objects[i].type == MW_OBJ_SAFESPOT) {
+                total_cp++;
+                if (g_checkpoint_passed[i]) passed_cp++;
+            }
+        }
+    }
+    if (total_cp > 0) {
+        float cp_cx = w - 80.0f;
+        float cp_cy = 28.0f;
+        float cp_hw = 60.0f, cp_hh = 14.0f;
+        DWORD cp_bg = D3DCOLOR_RGBA(15, 25, 60, 200);
+        v[0].x=(cp_cx-cp_hw)*2/w-1; v[0].y=1-(cp_cy-cp_hh)*2/h; v[0].z=0.99f; v[0].diff=cp_bg;
+        v[1].x=(cp_cx+cp_hw)*2/w-1; v[1].y=1-(cp_cy-cp_hh)*2/h; v[1].z=0.99f; v[1].diff=cp_bg;
+        v[2].x=(cp_cx-cp_hw)*2/w-1; v[2].y=1-(cp_cy+cp_hh)*2/h; v[2].z=0.99f; v[2].diff=cp_bg;
+        v[3].x=(cp_cx+cp_hw)*2/w-1; v[3].y=1-(cp_cy+cp_hh)*2/h; v[3].z=0.99f; v[3].diff=cp_bg;
+        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, v, sizeof(v[0]));
+        struct { float x, y, z; DWORD diff; } cpb[5];
+        for (int i = 0; i < 4; i++) { cpb[i].x = v[i].x; cpb[i].y = v[i].y; cpb[i].z = 0.99f; cpb[i].diff = pill_bdr; }
+        cpb[4] = cpb[0];
+        g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_LINESTRIP, 4, cpb, sizeof(cpb[0]));
+    }
+
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ALPHABLENDENABLE, FALSE);
-
-    /* Window title as text fallback */
-    char fpsText[256];
-    snprintf(fpsText, sizeof(fpsText), "FPS: %d | %s | %s | Pos(%.1f,%.1f,%.1f) []=cycle",
-             g_current_fps, g_level_name, hud_str,
-             g_ball.x, g_ball.y, g_ball.z);
-    SetWindowTextA(g_hwnd, fpsText);
-
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, TRUE);
     g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
+
+    /* Window title with all info */
+    char fpsText[256];
+    int total_cp2 = 0, passed_cp2 = 0;
+    if (g_level) {
+        for (int i = 0; i < g_level->object_count; i++) {
+            if (g_level->objects[i].type == MW_OBJ_SAFESPOT) {
+                total_cp2++;
+                if (g_checkpoint_passed[i]) passed_cp2++;
+            }
+        }
+    }
+    snprintf(fpsText, sizeof(fpsText), "FPS:%d | %s | %s%s | CP:%d/%d | Spd:%.0f | []=cycle R=respawn",
+             g_current_fps, g_level_name, time_str,
+             (g_race_state == RACE_FINISHED && g_race_time == g_best_time) ? " (BEST!)" : "",
+             passed_cp2, total_cp2, speed);
+    SetWindowTextA(g_hwnd, fpsText);
 }
 
 static void Render(void) {
@@ -1969,13 +2023,16 @@ static void Render(void) {
     g_device->lpVtbl->EndScene(g_device);
     g_device->lpVtbl->Present(g_device, NULL, NULL, NULL, NULL);
     
-    /* Auto-screenshot after a few frames for testing */
+    /* Auto-screenshot after a few frames for testing — disabled on Wine/llvmpipe
+     * (CopyRects returns D3DERR_NOTAVAILABLE with SW vertex processing) */
+    #if 0
     static int render_count = 0;
     render_count++;
     if (render_count == 5) {
         SaveScreenshot("tests/screenshots/reimpl_test31_textured.bmp");
         printf("[Render] Auto-screenshot saved\n");
     }
+    #endif
 }
 
 /* ===== Game Loop (mirrors App_Run 0x46BD80) ===== */

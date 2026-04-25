@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stitch original + reimpl screenshots side-by-side."""
-import sys, os, subprocess, tempfile
+import sys, os, subprocess, tempfile, glob
 from PIL import Image, ImageDraw, ImageFont
 
 def stitch(left_path, right_path, out_path, left_label="ORIGINAL", right_label="REIMPL"):
@@ -24,15 +24,16 @@ def stitch(left_path, right_path, out_path, left_label="ORIGINAL", right_label="
     print(f"Saved comparison: {out_path}")
 
 if __name__ == "__main__":
-    import glob
-    # Auto-stitch any pairs found in /tmp
-    reimpl = sorted(glob.glob("/tmp/hb_reimpl_L*.png")) + sorted(glob.glob("/tmp/hb_L*_v*.png"))
-    originals = sorted(glob.glob("/tmp/hb_orig_*.png"))
-    print(f"Reimpl: {reimpl}")
-    print(f"Originals: {originals}")
-    for r in reimpl:
-        level = os.path.basename(r).split('.')[0].replace('hb_reimpl_','').replace('hb_','')
-        orig = f"/tmp/hb_orig_{level}.png"
-        if os.path.exists(orig):
-            out = f"/tmp/hb_compare_{level}.png"
-            stitch(orig, r, out)
+    # Use explicit paths for this batch
+    comparisons = [
+        ("/home/evan/hamsterball-re/reimpl/reference-screenshots/original/06_warmup2.png",
+         "/tmp/hb_reimpl_L1.png", "/tmp/compare_L1.png"),
+        ("/home/evan/hamsterball-re/reimpl/reference-screenshots/original/05_level2_intermediate.png",
+         "/tmp/hb_reimpl_L2_v2.png", "/tmp/compare_L2.png"),
+        # Level3 — need original gameplay screenshot
+    ]
+    for orig, reimpl, out in comparisons:
+        if os.path.exists(orig) and os.path.exists(reimpl):
+            stitch(orig, reimpl, out)
+        else:
+            print(f"Missing: {orig} or {reimpl}")
