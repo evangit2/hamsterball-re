@@ -1096,16 +1096,10 @@ static void UpdatePhysics(float dt) {
     g_ball.vz += input_wz * force_scale * dt;
 
     /* Phase 3: Velocity damping
-     * _DAT_004CF3F0 = 0.5: base damping (remove 50% of velocity each step)
-     * _DAT_004CF4C0 = 0.85: speed friction for higher velocities
-     * Combined: low speed uses heavy damping, high speed uses lighter damping */
+     * Low speed: heavy damping (0.5 = lose 50% per step — fine control)
+     * High speed: lighter damping (0.85 = lose 15% per step — momentum) */
     float speed_h = sqrtf(g_ball.vx * g_ball.vx + g_ball.vz * g_ball.vz);
-    float damp_factor;
-    if (speed_h > 100.0f) {
-        damp_factor = BALL_SPEED_FRICTION;  /* 0.85: lighter damping at speed */
-    } else {
-        damp_factor = 1.0f - BALL_DAMPING * dt;  /* 0.5-based for fine control */
-    }
+    float damp_factor = (speed_h > 100.0f) ? 0.85f : 0.5f;
     g_ball.vx *= damp_factor;
     g_ball.vz *= damp_factor;
 
