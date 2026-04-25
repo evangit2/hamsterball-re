@@ -1131,6 +1131,8 @@ static void UpdatePhysics(float dt) {
                                        hits, MAX_COLLISIONS);
         
         /* Resolve collisions iteratively (up to 4 passes for corners) */
+        int had_ground_contact = 0;
+        float ground_nx = 0, ground_ny = 0, ground_nz = 0;
         for (int pass = 0; pass < 4 && nhits > 0; pass++) {
             /* Find the deepest penetration */
             int deepest = 0;
@@ -1139,6 +1141,14 @@ static void UpdatePhysics(float dt) {
             }
             
             CollisionResult *hit = &hits[deepest];
+            
+            /* Track ground contact normal for slope gravity */
+            if (hit->ny > 0.5f) {
+                had_ground_contact = 1;
+                ground_nx = hit->nx;
+                ground_ny = hit->ny;
+                ground_nz = hit->nz;
+            }
             
             /* Push ball out of surface along collision normal */
             g_ball.x += hit->nx * hit->depth * 1.01f;  /* Slightly over-resolve to prevent sticking */
@@ -1182,6 +1192,13 @@ static void UpdatePhysics(float dt) {
                 nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius,
                                            hits, MAX_COLLISIONS);
             }
+        }
+        
+        /* Slope gravity: accelerate ball along surface tangent when on ground */
+        if (had_ground_contact) {
+            float slope_accel = g_ball.gravity * 500.0f;
+            g_ball.vx += slope_accel * ground_nx * ground_ny * sub_dt;
+            g_ball.vz += slope_accel * ground_nz * ground_ny * sub_dt;
         }
         
         /* Log first 3 frames only for debugging */
