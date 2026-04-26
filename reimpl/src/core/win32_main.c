@@ -117,6 +117,9 @@ static struct {
     float input_fx, input_fy; /* Accumulated input force */
 } g_ball;
 
+/* Countdown snap flag: file-scope so ResetBallAndCamera can reset it */
+static int s_countdown_snap_done = 0;
+
 /* Camera (mirrors Scene camera system 0x419FA0) */
 static struct {
     float x, y, z;       /* Camera position (computed from orbit) */
@@ -593,6 +596,7 @@ static void ResetRaceState(void) {
     g_race_time = 0.0f;
     g_current_checkpoint = -1;
     memset(g_checkpoint_passed, 0, sizeof(g_checkpoint_passed));
+    s_countdown_snap_done = 0;  /* Reset so next countdown will snap again */
     printf("[Race] Countdown: 3.0...\n");
 }
 
@@ -1034,9 +1038,6 @@ static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
  *   Phase 6: Speed clamping
  */
 static void UpdatePhysics(float dt) {
-    /* Shared state: countdown snap flag lives across calls */
-    static int s_countdown_snap_done = 0;
-
     /* During countdown: no gravity, no input, no movement — freeze ball on spawn surface.
      * Still run collision to keep ball from falling through if spawn is slightly above ground. */
     if (g_race_state == RACE_COUNTDOWN) {
@@ -1052,16 +1053,19 @@ static void UpdatePhysics(float dt) {
                 /* If no hits (START is inside/below geometry on some levels), sweep upward from below
                  * to find the floor surface. Try up to 1000 units below. */
                 if (nhits == 0) {
-                    for (float scan_y = g_ball.y - 50.0f; scan_y > g_ball.y - 1000.0f && nhits == 0; scan_y -= 25.0f) {
+                    for (float scan_y = g_ball.y - 50.0f; scan_y > g_ball.y - 1000.0f; scan_y -= 25.0f) {
                         nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
+                        if (nhits > 0) break;
                     }
-                }
-                if (nhits > 0) {
-                    int deepest = 0;
-                    for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
-                    g_ball.x += hits[deepest].nx * hits[deepest].depth * 1.01f;
-                    g_ball.y += hits[deepest].ny * hits[deepest].depth * 1.01f;
-                    g_ball.z += hits[deepest].nz * hits[deepest].depth * 1.01f;
+                    if (nhits > 0) {
+                        int deepest = 0;
+                        for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
+                        /* Use scan position for displacement, not original g_ball.y.
+                         * Place ball at closest_point + normal * radius to sit on surface. */
+                        g_ball.x = hits[deepest].cx + hits[deepest].nx * g_ball.radius * 1.01f;
+                        g_ball.y = hits[deepest].cy + hits[deepest].ny * g_ball.radius * 1.01f;
+                        g_ball.z = hits[deepest].cz + hits[deepest].nz * g_ball.radius * 1.01f;
+                    }
                 }
             }
         }
