@@ -1209,14 +1209,17 @@ static void UpdatePhysics(float dt) {
             }
         }
         
-        /* Fallback: simple ground plane collision when mesh collision finds nothing.
-         * Prevents ball falling through the world on levels where the collision
-         * mesh doesn't cover the spawn area (like Arena-WarmUp start platform). */
+        /* Fallback removed: ground plane at Y=radius breaks freefall levels
+         * (Level2, Level3) where the ball must fall from START to track.
+         * Ball falling through the world is caught by respawn trigger at
+         * bounds_min.y - 500 instead. */
+#if 0
         if (nhits == 0 && g_ball.y < g_ball.radius) {
             g_ball.y = g_ball.radius;
-            if (g_ball.vy < 0) g_ball.vy = -g_ball.vy * 0.3f;  /* small bounce */
+            if (g_ball.vy < 0) g_ball.vy = -g_ball.vy * 0.3f;
             if (fabsf(g_ball.vy) < 5.0f) g_ball.vy = 0.0f;
         }
+#endif
     }
     
     /* Phase 6: Clamp max speed (after substeps) */
