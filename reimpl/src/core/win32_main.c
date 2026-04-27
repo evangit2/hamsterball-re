@@ -24,6 +24,7 @@
 #include "level/meshworld_parser.h"
 #include "level/mesh_parser.h"
 #include "graphics/texture.h"
+#include "audio/sfx_dsound.h"
 
 /* ===== Constants (matching original) ===== */
 #define WINDOW_CLASS    "AthenaWindow"       /* Original class name */
@@ -448,6 +449,7 @@ static BOOL InitDSound8(void) {
     }
     g_dsound->lpVtbl->SetCooperativeLevel(g_dsound, g_hwnd, DSSCL_NORMAL);
     printf("[DSound8] Initialized\n");
+    sfx_init(g_dsound);
     return TRUE;
 }
 
@@ -706,6 +708,18 @@ static BOOL LoadAssets(void) {
         }
     }
 
+    /* Load sound effects */
+    {
+        char sfx_dir[MAX_PATH];
+        snprintf(sfx_dir, sizeof(sfx_dir), "%s/Sounds", g_game_dir);
+        const char *sfx_names[] = { "Collide", "DropIn", "GOAL", "Bell", "Bumper", NULL };
+        for (int i = 0; sfx_names[i]; i++) {
+            char path[MAX_PATH];
+            snprintf(path, sizeof(path), "%s/%s.ogg", sfx_dir, sfx_names[i]);
+            sfx_load_ogg(sfx_names[i], path);
+        }
+    }
+
     printf("[Load] Ball at (%.1f, %.1f, %.1f)\n", g_ball.x, g_ball.y, g_ball.z);
     return TRUE;
 }
@@ -755,6 +769,7 @@ static void UpdateCheckpoints(void) {
                 g_race_state = RACE_FINISHED;
                 if (g_race_time < g_best_time) g_best_time = g_race_time;
                 printf("[RACE FINISHED] Time: %.3f seconds (Best: %.3f)\n", g_race_time, g_best_time);
+                sfx_play("GOAL");
             }
         }
     }
@@ -1219,6 +1234,12 @@ static void UpdatePhysics(float dt) {
                 g_ball.vx = new_vx;
                 g_ball.vy = new_vy;
                 g_ball.vz = new_vz;
+                
+                /* Play collision sound on significant impact */
+                if (vel_dot_n < -50.0f) {
+                    static int sfx_debounce = 0;
+                    if (sfx_debounce++ % 4 == 0) sfx_play("Collide");
+                }
                 
                 /* Ground detection: if normal is mostly pointing up, ball is on ground */
                 if (hit->ny > 0.5f) {
@@ -2187,6 +2208,7 @@ static void GameLoop(void) {
 
 /* ===== Cleanup ===== */
 static void Cleanup(void) {
+    sfx_shutdown();
     texture_system_shutdown();
     if (g_level) meshworld_free(g_level);
     if (g_mouse) { g_mouse->lpVtbl->Unacquire(g_mouse); g_mouse->lpVtbl->Release(g_mouse); }

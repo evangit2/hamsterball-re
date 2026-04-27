@@ -16,7 +16,7 @@ LDFLAGS = -mwindows -m32 -static-libgcc -static-libstdc++
 LIBS = -ld3d8 -ldinput8 -ldsound -ldxguid -ldxerr8 -lole32 -lwinmm
 
 # Source files
-CORE_SRCS = src/core/win32_main.c src/graphics/texture.c
+CORE_SRCS = src/core/win32_main.c src/graphics/texture.c src/audio/sfx_dsound.c src/audio/stb_vorbis_impl.c
 LEVEL_SRCS = src/level/meshworld_parser.c src/level/mesh_parser.c
 
 SRCS = $(CORE_SRCS) $(LEVEL_SRCS)
