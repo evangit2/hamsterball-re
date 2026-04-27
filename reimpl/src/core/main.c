@@ -718,7 +718,7 @@ int main(int argc, char *argv[]) {
     uint32_t last_frame = SDL_GetTicks();
     g_fps_timer = last_frame;
     
-    printf("\n[Game] Running! Controls: WASD/arrows=move, Space=brake, ESC=quit\n\n");
+    printf("\n[Game] Running! Controls: WASD/arrows=move, ESC=quit\n\n");
     
     while (g_running) {
         uint32_t frame_start = SDL_GetTicks();
