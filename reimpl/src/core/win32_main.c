@@ -80,6 +80,12 @@ static mw_level_t *g_level = NULL;
 static char g_game_dir[MAX_PATH] = "";
 static char g_level_name[256] = "";
 
+/* Sky texture */
+static texture_t *g_sky_tex = NULL;
+
+/* Countdown snap flag: file-scope so ResetBallAndCamera can reset it */
+static int s_countdown_snap_done = 0;
+
 /* Race flow state */
 typedef enum {
     RACE_COUNTDOWN = 0,
@@ -116,9 +122,6 @@ static struct {
     float gravity;           /* +0x1A8 = 0.5 */
     float input_fx, input_fy; /* Accumulated input force */
 } g_ball;
-
-/* Countdown snap flag: file-scope so ResetBallAndCamera can reset it */
-static int s_countdown_snap_done = 0;
 
 /* Camera (mirrors Scene camera system 0x419FA0) */
 static struct {
@@ -653,6 +656,11 @@ static BOOL LoadAssets(void) {
         snprintf(tex_dir, sizeof(tex_dir), "%s/Textures", g_game_dir);
         texture_set_device((void*)g_device);
         texture_system_init(tex_dir);
+        
+        /* Pre-load sky texture */
+        g_sky_tex = texture_load("Clouds.png");
+        if (g_sky_tex) printf("[Sky] Loaded Clouds.png\n");
+        else printf("[Sky] Clouds.png not found in %s\n", tex_dir);
         
         /* Pre-load all textures referenced by level geoms */
         if (g_level) {
@@ -2021,6 +2029,45 @@ static void RenderHUD(void) {
     SetWindowTextA(g_hwnd, fpsText);
 }
 
+/* ===== Sky rendering ===== */
+static void RenderSky(void) {
+    if (!g_sky_tex) return;
+
+    /* Render a large sky dome centered on camera with clouds texture.
+     * The camera is inside the sphere, so render inside-facing triangles. */
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_LIGHTING, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, FALSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_NONE);
+    g_device->lpVtbl->SetTexture(g_device, 0, (IDirect3DBaseTexture8 *)g_sky_tex->d3d_tex);
+    g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+
+    struct _skyvtx { float x, y, z; DWORD diff; float u, v; };
+    struct _skyvtx v[4];
+    DWORD col = D3DCOLOR_RGBA(255,255,255,255);
+    float s = 5000.0f; /* Large sky plane */
+
+    /* Sky plane filling the far view (no depth testing means it covers the whole screen) */
+    v[0].x = -s; v[0].y =  s; v[0].z =  s; v[0].diff = col; v[0].u = 0.0f; v[0].v = 0.0f;
+    v[1].x =  s; v[1].y =  s; v[1].z =  s; v[1].diff = col; v[1].u = 1.0f; v[1].v = 0.0f;
+    v[2].x = -s; v[2].y = -s; v[2].z =  s; v[2].diff = col; v[2].u = 0.0f; v[2].v = 1.0f;
+    v[3].x =  s; v[3].y = -s; v[3].z =  s; v[3].diff = col; v[3].u = 1.0f; v[3].v = 1.0f;
+
+    D3DMATRIX sky_world;
+    ZeroMemory(&sky_world, sizeof(sky_world));
+    sky_world._11 = 1.0f; sky_world._22 = 1.0f; sky_world._33 = 1.0f; sky_world._44 = 1.0f;
+    sky_world._41 = g_camera.x; sky_world._42 = g_camera.y; sky_world._43 = g_camera.z;
+    g_device->lpVtbl->SetTransform(g_device, D3DTS_WORLD, &sky_world);
+    g_device->lpVtbl->SetVertexShader(g_device, D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1);
+    g_device->lpVtbl->DrawPrimitiveUP(g_device, D3DPT_TRIANGLESTRIP, 2, v, sizeof(v[0]));
+
+    g_device->lpVtbl->SetTexture(g_device, 0, NULL);
+    g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
+    g_device->lpVtbl->SetTextureStageState(g_device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_ZENABLE, TRUE);
+    g_device->lpVtbl->SetRenderState(g_device, D3DRS_CULLMODE, D3DCULL_CCW);
+}
+
 static void Render(void) {
     if (!g_device) return;
 
@@ -2033,6 +2080,7 @@ static void Render(void) {
     g_device->lpVtbl->BeginScene(g_device);
 
     SetMatrices();
+    RenderSky();
     RenderLevelGeometry();
     RenderLevelObjects();
     RenderBallShadow();  /* Shadow first (behind ball, closer to ground) */
