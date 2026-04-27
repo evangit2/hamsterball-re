@@ -657,10 +657,44 @@ static BOOL LoadAssets(void) {
         texture_set_device((void*)g_device);
         texture_system_init(tex_dir);
         
-        /* Pre-load sky texture */
-        g_sky_tex = texture_load("Clouds.png");
-        if (g_sky_tex) printf("[Sky] Loaded Clouds.png\n");
-        else printf("[Sky] Clouds.png not found in %s\n", tex_dir);
+        /* Determine sky texture from MESHWORLD file trailing strings.
+         * Each level references its own sky: Arena-Sky=SkyChecker, Level9=Clouds. */
+        const char *sky_name = NULL;
+        {
+            char mw_path[MAX_PATH];
+            snprintf(mw_path, sizeof(mw_path), "%s/Levels/%s.MESHWORLD",
+                     g_game_dir, g_level_list[g_level_index]);
+            FILE *fp = fopen(mw_path, "rb");
+            if (fp) {
+                fseek(fp, 0, SEEK_END);
+                long sz = ftell(fp);
+                fseek(fp, 0, SEEK_SET);
+                char *buf = malloc(sz);
+                if (buf && fread(buf, 1, sz, fp) == (size_t)sz) {
+                    long i;
+                    for (i = 0; i <= sz - 10; i++) {
+                        if (memcmp(buf + i, "Clouds.png", 10) == 0) {
+                            sky_name = "Clouds.png"; break;
+                        }
+                        if (memcmp(buf + i, "SkyChecker.png", 14) == 0) {
+                            sky_name = "SkyChecker.png"; break;
+                        }
+                        if (memcmp(buf + i, "SkyCheckerFlag.png", 18) == 0) {
+                            sky_name = "SkyCheckerFlag.png"; break;
+                        }
+                        if (memcmp(buf + i, "Tourney-Sky.png", 14) == 0) {
+                            sky_name = "Tourney-Sky.png"; break;
+                        }
+                    }
+                }
+                free(buf);
+                fclose(fp);
+            }
+        }
+        if (sky_name) {
+            g_sky_tex = texture_load(sky_name);
+            if (g_sky_tex) printf("[Sky] Loaded %s for this level\n", sky_name);
+        }
         
         /* Pre-load all textures referenced by level geoms */
         if (g_level) {
