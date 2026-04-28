@@ -507,10 +507,16 @@ static void ResetBallAndCamera(void) {
     g_ball.gravity = BALL_GRAVITY;
     g_has_camlookat = FALSE;
 
+    /* Default ball position */
+    g_ball.x = 0;
+    g_ball.y = 52.0f;
+    g_ball.z = 0;
+
     if (g_level && g_level->vertex_count > 0) {
-        /* Find topmost surface from upward-facing triangles */
+        /* Find topmost surface from upward-facing triangles as fallback for race tracks */
         float top_floor_y = g_level->bounds_min.y;
         float top_floor_x = 0, top_floor_z = 0;
+        int found_geometry_floor = 0;
         if (g_level->indices && g_level->index_count >= 3) {
             for (int i = 0; i + 2 < g_level->index_count; i += 3) {
                 int i0 = g_level->indices[i], i1 = g_level->indices[i+1], i2 = g_level->indices[i+2];
@@ -521,26 +527,24 @@ static void ResetBallAndCamera(void) {
                     top_floor_y = ty;
                     top_floor_x = (g_level->vertices[i0].x + g_level->vertices[i1].x + g_level->vertices[i2].x) / 3.0f;
                     top_floor_z = (g_level->vertices[i0].z + g_level->vertices[i1].z + g_level->vertices[i2].z) / 3.0f;
+                    found_geometry_floor = 1;
                 }
             }
         }
-        g_ball.x = top_floor_x;
-        g_ball.y = top_floor_y + g_ball.radius + 1.0f;
-        g_ball.z = top_floor_z;
+        if (!found_geometry_floor) {
+            top_floor_y = g_level->bounds_min.y;
+            top_floor_x = 0; top_floor_z = 0;
+        }
 
         /* Find START and CAMERALOOKAT objects */
-        float start_x = g_ball.x, start_y_obj = g_ball.y, start_z = g_ball.z;
+        float start_x = 0, start_y_obj = 0, start_z = 0;
+        int has_start = 0;
         for (int i = 0; i < g_level->object_count; i++) {
             if (g_level->objects[i].type == MW_OBJ_START) {
                 start_x = g_level->objects[i].position.x;
                 start_y_obj = g_level->objects[i].position.y;
-                g_ball.x = start_x;
-                /* Place ball at START position + small offset above track.
-                 * Original places at START.y + radius + 1.0. Level countdown
-                 * will snap it down to actual floor surface on first frame. */
-                g_ball.y = start_y_obj + g_ball.radius + 1.0f;
-                g_ball.z = g_level->objects[i].position.z;
-                start_z = g_ball.z;
+                start_z = g_level->objects[i].position.z;
+                has_start = 1;
             }
             if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
                 g_camlookat_x = g_level->objects[i].position.x;
@@ -549,44 +553,78 @@ static void ResetBallAndCamera(void) {
                 g_has_camlookat = TRUE;
             }
         }
-        ResetRaceState();
-        /* Arena levels: spawn at the actual START position (original behavior) */
-        /* The countdown snap will place ball on floor if slightly above. */
 
-        /* FIX Level3 spawn: If START position has no nearby geometry,
-         * this is expected for some levels where START is above a drop.
-         * Just keep the ball at START Y and let gravity handle it.
-         * The original game does not do collision checks at spawn time. */
-        if (g_level && g_level->index_count >= 3) {
+        /* Determine spawn strategy: race tracks use geometry floor, arenas use START.
+         * Race tracks (no CAMERALOOKAT): track geometry provides the correct floor surface.
+         * Arena levels (CAMERALOOKAT present): START position is on the arena platform directly. */
+        if (has_start) {
+            if (g_has_camlookat) {
+                /* Arena: START.y is reliable (ball sits on arena platform) */
+                g_ball.x = start_x;
+                g_ball.y = start_y_obj + g_ball.radius + 1.0f;
+                g_ball.z = start_z;
+            } else {
+                /* Race track: use geometry-computed floor position.
+                 * START.y is often inside/below geometry or under overhangs.
+                 * Place ball above the track surface found from geometry. */
+                g_ball.x = top_floor_x;
+                g_ball.y = top_floor_y + g_ball.radius + 1.0f;
+                g_ball.z = top_floor_z;
+            }
+        } else if (found_geometry_floor) {
+            g_ball.x = top_floor_x;
+            g_ball.y = top_floor_y + g_ball.radius + 1.0f;
+            g_ball.z = top_floor_z;
+        }
+
+        /* Probe: if no geometry at spawn, scan downward to find the surface.
+         * This handles race tracks where the geometry floor may be far from (0,0). */
+        if (g_level && g_level->index_count >= 3 && has_start) {
             CollisionResult probe[8];
             int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, probe, 8);
             if (nhits == 0) {
-                printf("[Spawn] START at (%.1f,%.1f,%.1f) has no nearby geometry. Keeping START position.\n",
+                printf("[Spawn] No nearby geometry at (%.1f,%.1f,%.1f), scanning downward...\n",
                        g_ball.x, g_ball.y, g_ball.z);
+                int found = 0;
+                for (float scan_y = g_ball.y - 50.0f; scan_y >= g_ball.y - 2000.0f; scan_y -= 50.0f) {
+                    nhits = TestSphereVsLevel(start_x, scan_y, start_z, g_ball.radius, probe, 8);
+                    if (nhits > 0) {
+                        g_ball.x = start_x;
+                        g_ball.y = probe[0].cy + g_ball.radius + 1.0f;
+                        g_ball.z = start_z;
+                        printf("[Spawn] Snapped to floor below at Y=%.1f\n", g_ball.y);
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) {
+                    printf("[Spawn] WARNING: No geometry found at START. Using START position and letting gravity handle it.\n");
+                    g_ball.x = start_x;
+                    g_ball.y = start_y_obj + g_ball.radius + 1.0f;
+                    g_ball.z = start_z;
+                }
             }
         }
-    } else {
-        g_ball.x = 0; g_ball.y = 52.0f; g_ball.z = 0;
+        ResetRaceState();
     }
 
     /* Reset camera — isometric-style view matching original game.
      * Original uses CameraLookAt (0x413280) with orbit_tilt ~0.9 (42° from horizontal)
-     * and orbit_dist adapted to level size. Closer camera gives immersive in-scene feel. */
+     * and orbit_dist adapted to level size. */
     g_camera.tx = g_ball.x; g_camera.ty = g_ball.y; g_camera.tz = g_ball.z;
     g_camera.orbit_angle = -0.7854f;  /* -PI/4: classic isometric angle */
     if (g_level && g_level->vertex_count > 0) {
-        float dy = g_level->bounds_max.y - g_level->bounds_min.y;
-        /* Race tracks: closer camera (350 dist, 0.9 tilt) for isometric feel.
-         * Arena levels: wider camera (500 dist, 0.9 tilt) to see the bowl. */
+        /* Race tracks: 400 dist, 0.9 tilt.
+         * Arena levels: 500 dist, 0.9 tilt to see the bowl. */
         if (g_has_camlookat) {
             g_camera.orbit_dist = 500.0f;
             g_camera.orbit_tilt = 0.9f;
         } else {
-            g_camera.orbit_dist = 350.0f;
+            g_camera.orbit_dist = 400.0f;
             g_camera.orbit_tilt = 0.9f;  /* 42° from horizontal, matching original */
         }
     } else {
-        g_camera.orbit_dist = 350.0f;
+        g_camera.orbit_dist = 400.0f;
         g_camera.orbit_tilt = 0.9f;
     }
 
