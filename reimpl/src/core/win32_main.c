@@ -540,45 +540,41 @@ static void ResetBallAndCamera(void) {
         float start_x = 0, start_y_obj = 0, start_z = 0;
         int has_start = 0;
         for (int i = 0; i < g_level->object_count; i++) {
-            if (g_level->objects[i].type == MW_OBJ_START) {
-                start_x = g_level->objects[i].position.x;
-                start_y_obj = g_level->objects[i].position.y;
-                start_z = g_level->objects[i].position.z;
-                has_start = 1;
+            mw_object_t *obj = &g_level->objects[i];
+            if (obj->type == MW_OBJ_START) {
+                /* Pick START1-* for single-player; only overwrite if no START1 yet */
+                if (!has_start || strncmp(obj->type_string, "START1-", 7) == 0) {
+                    start_x = obj->position.x;
+                    start_y_obj = obj->position.y;
+                    start_z = obj->position.z;
+                    has_start = 1;
+                }
             }
-            if (g_level->objects[i].type == MW_OBJ_CAMERALOOKAT) {
-                g_camlookat_x = g_level->objects[i].position.x;
-                g_camlookat_y = g_level->objects[i].position.y;
-                g_camlookat_z = g_level->objects[i].position.z;
+            if (obj->type == MW_OBJ_CAMERALOOKAT) {
+                g_camlookat_x = obj->position.x;
+                g_camlookat_y = obj->position.y;
+                g_camlookat_z = obj->position.z;
                 g_has_camlookat = TRUE;
             }
         }
 
-        /* Determine spawn strategy: race tracks use geometry floor, arenas use START.
-         * Race tracks (no CAMERALOOKAT): track geometry provides the correct floor surface.
-         * Arena levels (CAMERALOOKAT present): START position is on the arena platform directly. */
+        /* Determine spawn strategy:
+         * Race tracks (no CAMERALOOKAT): START marks the race start. Place at START XZ
+         *   with Y+radius above the surface. Arena (no CAMERALOOKAT): do same.
+         *   In both cases, countdown-snap will push ball to actual surface if geometry exists. */
         if (has_start) {
-            if (g_has_camlookat) {
-                /* Arena: START.y is reliable (ball sits on arena platform) */
-                g_ball.x = start_x;
-                g_ball.y = start_y_obj + g_ball.radius + 1.0f;
-                g_ball.z = start_z;
-            } else {
-                /* Race track: use geometry-computed floor position.
-                 * START.y is often inside/below geometry or under overhangs.
-                 * Place ball above the track surface found from geometry. */
-                g_ball.x = top_floor_x;
-                g_ball.y = top_floor_y + g_ball.radius + 1.0f;
-                g_ball.z = top_floor_z;
-            }
+            g_ball.x = start_x;
+            g_ball.y = start_y_obj + g_ball.radius + 1.0f;
+            g_ball.z = start_z;
         } else if (found_geometry_floor) {
+            /* Fallback: no START object, use highest upward-facing triangle */
             g_ball.x = top_floor_x;
             g_ball.y = top_floor_y + g_ball.radius + 1.0f;
             g_ball.z = top_floor_z;
         }
 
-        /* Probe: if no geometry at spawn, scan downward to find the surface.
-         * This handles race tracks where the geometry floor may be far from (0,0). */
+        /* Probe: if no mesh collision at spawn, scan downward to find actual surface.
+         * This catches levels where START.y places ball above the track. */
         if (g_level && g_level->index_count >= 3 && has_start) {
             CollisionResult probe[8];
             int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, probe, 8);
@@ -587,21 +583,16 @@ static void ResetBallAndCamera(void) {
                        g_ball.x, g_ball.y, g_ball.z);
                 int found = 0;
                 for (float scan_y = g_ball.y - 50.0f; scan_y >= g_ball.y - 2000.0f; scan_y -= 50.0f) {
-                    nhits = TestSphereVsLevel(start_x, scan_y, start_z, g_ball.radius, probe, 8);
+                    nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, probe, 8);
                     if (nhits > 0) {
-                        g_ball.x = start_x;
                         g_ball.y = probe[0].cy + g_ball.radius + 1.0f;
-                        g_ball.z = start_z;
                         printf("[Spawn] Snapped to floor below at Y=%.1f\n", g_ball.y);
                         found = 1;
                         break;
                     }
                 }
                 if (!found) {
-                    printf("[Spawn] WARNING: No geometry found at START. Using START position and letting gravity handle it.\n");
-                    g_ball.x = start_x;
-                    g_ball.y = start_y_obj + g_ball.radius + 1.0f;
-                    g_ball.z = start_z;
+                    printf("[Spawn] WARNING: No geometry found at START.\n");
                 }
             }
         }
