@@ -584,11 +584,24 @@ static void ResetBallAndCamera(void) {
                 int found = 0;
                 for (float scan_y = g_ball.y - 50.0f; scan_y >= g_ball.y - 2000.0f; scan_y -= 50.0f) {
                     nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, probe, 8);
+                    /* Reject hits where the hit point is far horizontally from START —
+                     * prevents snapping to distant tunnels/lower track sections. */
                     if (nhits > 0) {
-                        g_ball.y = probe[0].cy + g_ball.radius + 1.0f;
-                        printf("[Spawn] Snapped to floor below at Y=%.1f\n", g_ball.y);
-                        found = 1;
-                        break;
+                        float best_dist = 1e9f;
+                        int best_i = 0;
+                        for (int h = 0; h < nhits; h++) {
+                            float dx = probe[h].cx - g_ball.x;
+                            float dz = probe[h].cz - g_ball.z;
+                            float d2 = dx*dx + dz*dz;
+                            if (d2 < best_dist) { best_dist = d2; best_i = h; }
+                        }
+                        if (best_dist < 200.0f*200.0f) {  /* Within 200 units XZ of START */
+                            g_ball.y = probe[best_i].cy + g_ball.radius + 1.0f;
+                            printf("[Spawn] Snapped to floor below at Y=%.1f (distXZ=%.1f)\n",
+                                   g_ball.y, sqrtf(best_dist));
+                            found = 1;
+                            break;
+                        }
                     }
                 }
                 if (!found) {
