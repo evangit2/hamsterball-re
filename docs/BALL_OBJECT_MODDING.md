@@ -93,7 +93,7 @@ Same pattern — writes to `+0x170/174/178` with identical guards.
 |----------|---------|-------------|
 | `Ball_ApplyForceWithMultipliers` | `0x00402650` | Add force to velocity with impact/speed/ice/dizzy multipliers |
 | `Ball_ApplyForceV2` | `0x004016F0` | Alt force app with gravity-plane awareness |
-| `CollisionMesh_SetSpeed` | `0x004029C0` | Set desired speed scalar on CollisionMesh (stored at `+0xC64`, vector at `+0xC98`). **Takes CollisionMesh*, NOT Ball*** |
+| `CollisionMesh_SetSpeed` | `0x004029C0` | **DEAD CODE.** Writes `+0xC64` (roll_friction) and `+0xC98/C9C/CA0` (unused), but physics loop immediately overwrites them. Does NOT control ball speed. |
 | `Ball_SetVec3AtOffset` | `0x00402A20` | Write Vec3 to arbitrary offset (modding helper) |
 | `Ball_SetTargetPos` | `0x00402030` | Network sync position (lerp toward target) |
 | `Ball_SetTrajectory` | `0x00403850` | Launch-pad trajectory setup (stores params at `+0x2AC` to `+0x2B8`) |
@@ -373,7 +373,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0xC58` | byte | `0` | — |
 | `+0xC5C` | int | `0` | dizzy_flag |
 | `+0xC60` | float | `1.0f` | scale_factor |
-| `+0xC64` | float | `0` | desired_speed |
+| `+0xC64` | float | `0` | roll_friction (overwritten every frame by physics loop) |
 | `+0xC74` | int | `0` | render_alpha |
 | `+0xC80` | byte | `0` | has_viewport_clip |
 | `+0xC88` | int[4] | — | viewport clip rect |
