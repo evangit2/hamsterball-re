@@ -10,7 +10,7 @@ version: 2026-04-13
 
 ```bash
 export GHIDRA_HOME=/opt/ghidra_12.0.4_PUBLIC
-MCP_JAR=/home/evan/.config/ghidra/ghidra_12.0.4_PUBLIC/Extensions/GhidraMCP/lib/GhidraMCP-5.2.0.jar
+MCP_JAR=/home/evan/.config/ghidra/ghidra_12.0.4_PUBLIC/Extensions/GhidraMCP/lib/GhidraMCP-5.12.0.jar
 CLASSPATH="$MCP_JAR"
 for jar in $GHIDRA_HOME/Ghidra/Framework/*/lib/*.jar; do CLASSPATH="${CLASSPATH}:${jar}"; done
 for jar in $GHIDRA_HOME/Ghidra/Features/*/lib/*.jar; do CLASSPATH="${CLASSPATH}:${jar}"; done
