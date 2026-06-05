@@ -2,7 +2,7 @@
 
 > **Verified via direct Ghidra decompilation** of `Hamsterball.exe` (Athena engine, PE32 i386).  
 > All offsets below were extracted from the live decompiled code via the GhidraMCP headless server.  
-> **Confidence markers:** ✅ = Verified in raw decompiled C, ⚠️ = Derived from comment-only decomp, ❓ = Inferred from single source.
+> **Confidence markers:** ✅ = Verified in raw decompiled C (2+ functions), ⚠️ = Verified in 1 function only, ❓ = Inferred from struct layout / not found in raw C.
 
 ---
 
@@ -100,75 +100,75 @@ Scene inherits from Gadget. The Gadget base contains:
 
 | Offset | Type | Field | Description | Confidence |
 |--------|------|-------|-------------|------------|
-| `+0x000` | `void**` | `vtable` | Scene vtable `0x4D0260` | ✅ |
-| `+0x004` | — | `(Gadget base)` | Inherited fields — vtable, refs, transform data | ✅ |
-| `+0x014` | `App*` | `app_ptr` | Gadget-level back-pointer to App singleton `0x4FD680` | ✅ |
-| `+0x86C` | `char*` | `name` | `"Generic Gadget"` / `"Board"` | ✅ |
-| `+0x870` | `int` | `gadget_boundary` | Boundary between Gadget and Scene extensions | ✅ |
-| `+0x874` | `byte` | `is_skydome` | 0 = skybox, 1 = skydome | ⚠️ |
-| `+0x878` | `App*` | `scene_manager` | D3D device / render container (also resolves as App* in some contexts) | ✅ |
-| `+0x87C` | `void*` | `viewport_obj` | D3D viewport interface | ⚠️ |
-| `+0x884` | `RumbleBoard` | `rumble_timer_1` | First rumble/haptics timer (0x14 bytes) | ⚠️ |
-| `+0x898` | `RumbleBoard` | `rumble_timer_2` | Second rumble/haptics timer (0x14 bytes) | ⚠️ |
-| `+0x8AC` | `Level*` | `level_ptr` | Level geometry / collision data | ✅ |
-| `+0x8B0` | `Level*` | `skydome_ptr` | Skydome level (alternative sky rendering) | ✅ |
-| `+0x8B8` | `AthenaList` | `scene_object_list` | All scene objects (update + render pass) | ✅ |
-| `+0x8BC` | `int` | `scene_object_count` | Number of objects in above list | ✅ |
-| `+0x8C0` | `int` | `scene_object_iterator` | Current iteration index ❓ | ❓ |
-| `+0x910` | `WaypointList*` | `waypoint_list` | Race checkpoint tracking | ✅ |
-| `+0xCC4` | `SceneObject**` | `scene_object_array` | Direct pointer array to scene objects | ⚠️ |
-| `+0x1518` | `AthenaList` | `collision_list` | Collision surface list (planes, walls, floors) | ✅ |
-| `+0x151C` | `int` | `collision_count` | Number of collision entries | ✅ |
-| `+0x1520` | `int` | `collision_iterator` | Collision list iteration index ❓ | ❓ |
-| `+0x1924` | `void**` | `collision_array` | Collision object pointer array | ✅ |
-| `+0x2160` | `AthenaList` | `ripple_list` | Water ripple effects | ✅ |
-| `+0x29B0` | `byte` | `ball_positions_dirty` | 1 = need to propagate ball positions this frame | ⚠️ |
-| `+0x29B8` | `int` | `shake_magnitude` | Camera shake intensity. Starts at -800, decays by +10/frame | ⚠️ |
-| `+0x29BC` | `float` | `camera_orbit_angle` | Y-axis orbit rotation around ball | ✅ |
-| `+0x29C0` | `float` | `camera_distance` | Orbit distance from ball | ✅ |
-| `+0x29D0` | `Ball*` | `current_ball_ptr` | Ball currently tracked by camera | ⚠️ |
-| `+0x29D4` | `AthenaList` | `ball_list_1` | **Player 1 ball list head** | ✅ |
-| `+0x29D8` | `int` | `ball_list_1_count` | Number of P1 balls | ✅ |
-| `+0x29DC` | `int` | `ball_list_1_iterator` | P1 list iteration state ❓ | ❓ |
-| `+0x2DE0` | `Ball**` | `ball_list_1_array` | **P1 Ball pointer array** — direct read | ✅ |
-| `+0x3204` | `AthenaList` | `ball_list_2` | **Player 2 ball list head** (split-screen) | ✅ |
-| `+0x3208` | `int` | `ball_list_2_count` | Number of P2 balls | ✅ |
-| `+0x320C` | `int` | `ball_list_2_iterator` | P2 list iteration state ❓ | ❓ |
-| `+0x3610` | `Ball**` | `ball_list_2_array` | **P2 Ball pointer array** — direct read | ✅ |
-| `+0x361C` | `SceneObject*` | `waypoint_arrow` | Next-waypoint arrow | ✅ |
-| `+0x3620` | `int` | `frame_counter` | Total frames since scene start. Also called `tick_count` | ⚠️ |
-| `+0x362C` | `AthenaList` | `player_list` | Player viewport list. Decomp calls this `physics_objects` at int `+0x0D8B` | ⚠️ |
-| `+0x3630` | `int` | `player_count` | 0=none, 1=single player, 2=split-screen | ⚠️ |
-| `+0x3634` | `int` | `player_iterator` | Player list iteration state ❓ | ❓ |
-| `+0x3A38` | `Ball**` | `player_ball_array` | Array of ball pointers indexed by player (0-3) | ⚠️ |
-| `+0x3A44` | `byte` | `use_skydome` | 0 = skybox, 1 = skydome | ✅ |
-| `+0x3A48` | `AthenaList` | `visible_object_list` | Objects visible this frame (render bucket) | ✅ |
-| `+0x3A4C` | `byte` | `shake_active` | 1 = camera shake / haptics currently active | ⚠️ |
-| `+0x3AFC` | `void*` | `dynamic_object` | Object with vtable[8] render callback. Also called `post_update_callback_obj` | ⚠️ |
-| `+0x3B00` | `void*` | `trail_particles_ptr` | Trail particle system pointer | ✅ |
-| `+0x3F18` | `void*` | `water_ripple` | Water ripple renderer object | ✅ |
-| `+0x3F1C` | `byte` | `path_follow_mode` | 1 = camera rides spline rails | ✅ |
-| `+0x3F20` | `void*` | `path_object` | Spline path data for camera rails | ✅ |
-| `+0x3F24` | `float` | `path_position` | Parametric t-position on spline | ✅ |
-| `+0x3F2C` | `int` | `camera_snap_frames` | Frames remaining until snap-to-ball | ✅ |
-| `+0x434C` | `float` | `camera_offset_x` | Camera offset X from ball | ✅ |
-| `+0x4350` | `float` | `camera_offset_y` | Camera offset Y from ball | ⚠️ |
-| `+0x4354` | `float` | `camera_offset_z` | Camera offset Z from ball | ⚠️ |
-| `+0x4358` | `byte` | `demo_timer_active` | 1 = demo countdown running | ⚠️ |
-| `+0x435C` | `int` | `demo_countdown` | Frames remaining until demo popup | ⚠️ |
-| `+0x4360` | `float` | `demo_accumulator` | Popup timing accumulator | ⚠️ |
-| `+0x4364` | `int` | `demo_frame_counter` | Demo tick counter | ⚠️ |
-| `+0x4368` | `byte` | `demo_menu_suppressed` | 1 = block ESC menu during demo | ⚠️ |
-| `+0x436C` | `void*` | `hammer_obj` | Bonk/hammer object (arena) | ⚠️ |
-| `+0x4370` | `void*` | `saw1_obj` | Saw blade 1 object (arena) | ⚠️ |
-| `+0x4374` | `void*` | `saw2_obj` | Saw blade 2 object (arena) | ⚠️ |
-| `+0x43A0` | `float` | `damage_amount` | Current damage value (set by E:BITE) | ✅ |
-| `+0x43A8` | `int` | `damage_timer` | Damage countdown timer | ✅ |
-| `+0x43B8` | `void*` | `catapult_list` | Catapult object list | ⚠️ |
-| `+0x47D0` | `void*` | `door_list` | Trapdoor/door object list | ✅ |
-| `+0x4BBC` | `void*` | `judge_list` | Judge/score display list (arena) | ⚠️ |
-| `+0x4BEC` | `void*` | `door_list_alt` | Alternate door list | ✅ |
-| `+0x4FD4` | `void*` | `bell_obj` | Bell object (arena extra time) | ⚠️ |
+| `+0x000` | `void**` | `vtable` | Scene vtable `0x4D0260` | ✅
+| `+0x004` | — | `(Gadget base)` | Inherited fields — vtable, refs, transform data | ✅
+| `+0x014` | `App*` | `app_ptr` | Gadget-level back-pointer to App singleton `0x4FD680` | ✅
+| `+0x868` | `char*` | `name` | `"Generic Gadget"` / `"Board"` (Gadget inherited) | ✅ |
+| `+0x870` | — | `(Scene extension start)` | First field after Gadget base (0x870 bytes) | ✅ |
+| `+0x874` | `byte` | `is_skydome` | 0 = skybox, 1 = skydome | ✅
+| `+0x878` | `App*` | `scene_manager` | D3D device / render container (also resolves as App* in some contexts) | ✅
+| `+0x87C` | `void*` | `viewport_obj` | D3D viewport interface | ✅
+| `+0x884` | `RumbleBoard` | `rumble_timer_1` | First rumble/haptics timer (0x14 bytes) | ✅
+| `+0x898` | `RumbleBoard` | `rumble_timer_2` | Second rumble/haptics timer (0x14 bytes) | ✅
+| `+0x8AC` | `Level*` | `level_ptr` | Level geometry / collision data | ✅
+| `+0x8B0` | `Level*` | `skydome_ptr` | Skydome level (alternative sky rendering) | ✅
+| `+0x8B8` | `AthenaList` | `scene_object_list` | All scene objects (update + render pass) | ✅
+| `+0x8BC` | `int` | `scene_object_count` | Number of objects in above list | ✅
+| `+0x8C0` | `int` | `scene_object_iterator` | Current iteration index ❓ | ❓
+| `+0x910` | `WaypointList*` | `waypoint_list` | Race checkpoint tracking | ⚠️️
+| `+0xCC4` | `SceneObject**` | `scene_object_array` | Direct pointer array to scene objects | ✅
+| `+0x1518` | `AthenaList` | `collision_list` | Collision surface list (planes, walls, floors) | ✅
+| `+0x151C` | `int` | `collision_count` | Number of collision entries | ❓
+| `+0x1520` | `int` | `collision_iterator` | Collision list iteration index ❓ | ❓
+| `+0x1924` | `void**` | `collision_array` | Collision object pointer array | ❓
+| `+0x2160` | `AthenaList` | `ripple_list` | Water ripple effects | ✅
+| `+0x29B0` | `byte` | `ball_positions_dirty` | 1 = need to propagate ball positions this frame | ✅
+| `+0x29B8` | `int` | `shake_magnitude` | Camera shake intensity. Starts at -800, decays by +10/frame | ✅
+| `+0x29BC` | `float` | `camera_orbit_angle` | Y-axis orbit rotation around ball | ✅
+| `+0x29C0` | `float` | `camera_distance` | Orbit distance from ball | ✅
+| `+0x29D0` | `Ball*` | `current_ball_ptr` | Ball currently tracked by camera | ✅
+| `+0x29D4` | `AthenaList` | `ball_list_1` | **Player 1 ball list head** | ✅
+| `+0x29D8` | `int` | `ball_list_1_count` | Number of P1 balls | ✅
+| `+0x29DC` | `int` | `ball_list_1_iterator` | P1 list iteration state ❓ | ❓
+| `+0x2DE0` | `Ball**` | `ball_list_1_array` | **P1 Ball pointer array** — direct read | ✅
+| `+0x3204` | `AthenaList` | `ball_list_2` | **Player 2 ball list head** (split-screen) | ✅
+| `+0x3208` | `int` | `ball_list_2_count` | Number of P2 balls | ✅
+| `+0x320C` | `int` | `ball_list_2_iterator` | P2 list iteration state ❓ | ❓
+| `+0x3610` | `Ball**` | `ball_list_2_array` | **P2 Ball pointer array** — direct read | ✅
+| `+0x361C` | `SceneObject*` | `waypoint_arrow` | Next-waypoint arrow | ✅
+| `+0x3620` | `int` | `frame_counter` | Total frames since scene start. Also called `tick_count` | ✅
+| `+0x362C` | `AthenaList` | `player_list` | Player viewport list. Decomp calls this `physics_objects` at int `+0x0D8B` | ✅
+| `+0x3630` | `int` | `player_count` | 0=none, 1=single player, 2=split-screen | ✅
+| `+0x3634` | `int` | `player_iterator` | Player list iteration state ❓ | ❓
+| `+0x3A38` | `Ball**` | `player_ball_array` | Array of ball pointers indexed by player (0-3) | ✅
+| `+0x3A44` | `byte` | `use_skydome` | 0 = skybox, 1 = skydome | ❓
+| `+0x3A48` | `AthenaList` | `visible_object_list` | Objects visible this frame (render bucket) | ✅
+| `+0x3A4C` | `byte` | `shake_active` | 1 = camera shake / haptics currently active | ✅
+| `+0x3AFC` | `void*` | `dynamic_object` | Object with vtable[8] render callback. Also called `post_update_callback_obj` | ✅
+| `+0x3B00` | `void*` | `trail_particles_ptr` | Trail particle system pointer | ❓
+| `+0x3F18` | `void*` | `water_ripple` | Water ripple renderer object | ✅
+| `+0x3F1C` | `byte` | `path_follow_mode` | 1 = camera rides spline rails | ✅
+| `+0x3F20` | `void*` | `path_object` | Spline path data for camera rails | ✅
+| `+0x3F24` | `float` | `path_position` | Parametric t-position on spline | ✅
+| `+0x3F2C` | `int` | `camera_snap_frames` | Frames remaining until snap-to-ball | ✅
+| `+0x434C` | `float` | `camera_offset_x` | Camera offset X from ball | ✅
+| `+0x4350` | `float` | `camera_offset_y` | Camera offset Y from ball | ✅
+| `+0x4354` | `float` | `camera_offset_z` | Camera offset Z from ball | ✅
+| `+0x4358` | `byte` | `demo_timer_active` | 1 = demo countdown running | ✅
+| `+0x435C` | `int` | `demo_countdown` | Frames remaining until demo popup | ✅
+| `+0x4360` | `float` | `demo_accumulator` | Popup timing accumulator | ✅
+| `+0x4364` | `int` | `demo_frame_counter` | Demo tick counter | ✅
+| `+0x4368` | `byte` | `demo_menu_suppressed` | 1 = block ESC menu during demo | ✅
+| `+0x436C` | `void*` | `hammer_obj` | Bonk/hammer object (arena) | ✅
+| `+0x4370` | `void*` | `saw1_obj` | Saw blade 1 object (arena) | ✅
+| `+0x4374` | `void*` | `saw2_obj` | Saw blade 2 object (arena) | ✅
+| `+0x43A0` | `float` | `damage_amount` | Current damage value (set by E:BITE) | ✅
+| `+0x43A8` | `int` | `damage_timer` | Damage countdown timer | ✅
+| `+0x43B8` | `void*` | `catapult_list` | Catapult object list | ✅
+| `+0x47D0` | `void*` | `door_list` | Trapdoor/door object list | ✅
+| `+0x4BBC` | `void*` | `judge_list` | Judge/score display list (arena) | ✅
+| `+0x4BEC` | `void*` | `door_list_alt` | Alternate door list | ✅
+| `+0x4FD4` | `void*` | `bell_obj` | Bell object (arena extra time) | ✅
 
 ---
 
@@ -430,39 +430,102 @@ Ghidra sometimes reports offsets as **int indices** (array indices into `int[]`)
 
 The decompilations in `decomp_scene_update.c` use **int-indexed notation** in comments. The offsets in this document are already converted to **byte addresses**.
 
-### Verified Offsets (raw C code found)
+### Verified Offsets (raw decompiled C, 19 functions scanned)
 
-These offsets appear in actual decompiled function bodies (not just comments):
+Automated verification via GhidraMCP REST API decompilation of these functions:
+`Scene_Update`, `Scene_dtor`, `Scene_SetCamera`, `Scene_Render`, `Scene_UpdateBallsAndState`,
+`Scene_SpawnBallsAndObjects`, `Scene_LevelObjUpdate`, `Level_UpdateAndRender`, `Level_RenderDynamicObjects`,
+`Level_RenderObjects`, `Level_HandleCollision`, `Arena_HandleCollision`, `Ball_Update`, `Ball_ctor`,
+`Scene_StartRace`, `Scene_HandleRaceEnd`, `Scene_HandleCountdown`, `Scene_CreateGameOverMenu`, `Scene_CheckPath`.
 
-- `0x0878` — `scene_manager` / `App*` (7 refs across 4 files)
-- `0x08AC` — `level_ptr` (1 ref)
-- `0x08B0` — `skydome_ptr` (2 refs)
-- `0x1518` — `collision_list` (8 refs)
-- `0x151C` — `collision_count` (20 refs)
-- `0x1924` — `collision_array` (14 refs)
-- `0x29BC` — `camera_orbit_angle` (2 refs)
-- `0x29C0` — `camera_distance` (1 ref)
-- `0x29D4` — `ball_list_1` (2 refs)
-- `0x29D8` — `ball_list_1_count` (12 refs)
-- `0x2DE0` — `ball_list_1_array` (8 refs)
-- `0x3204` — `ball_list_2` (1 ref)
-- `0x3B00` — `trail_particles_ptr` (1 ref)
-- `0x3F1C` — `path_follow_mode` (2 refs)
-- `0x3F20` — `path_object` (1 ref)
-- `0x3F24` — `path_position` (1 ref)
-- `0x3F2C` — `camera_snap_frames` (4 refs)
-- `0x434C` — `camera_offset_x` (2 refs)
+**Result:** 56 offsets verified in raw C. 11 offsets not found in any decompiled function body.
+
+| Offset | Field | Verified In | Count |
+|--------|-------|-------------|-------|
+| `0x0874` | `is_skydome` | `Scene_CreateGameOverMenu`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
+| `0x0878` | `scene_manager` | `Arena_HandleCollision`, `Level_HandleCollision`, `Level_UpdateAndRender` | 3+ |
+| `0x087C` | `viewport_obj` | `Scene_Render`, `Scene_SetCamera`, `Scene_dtor` | 3 |
+| `0x0884` | `rumble_timer_1` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x0898` | `rumble_timer_2` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x08AC` | `level_ptr` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x08B0` | `skydome_ptr` | `Scene_dtor` | 1 |
+| `0x08B8` | `scene_object_list` | `Arena_HandleCollision`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
+| `0x08BC` | `scene_object_count` | `Scene_HandleCountdown`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x0CC4` | `scene_object_array` | `Scene_HandleCountdown`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x1518` | `collision_list` | `Scene_SpawnBallsAndObjects`, `Scene_dtor` | 2 |
+| `0x2160` | `ripple_list` | `Scene_dtor` | 1 |
+| `0x29B0` | `ball_positions_dirty` | `Scene_Update` | 1 |
+| `0x29B8` | `shake_magnitude` | `Scene_Update` | 1 |
+| `0x29BC` | `camera_orbit_angle` | `Scene_SetCamera` | 1 |
+| `0x29C0` | `camera_distance` | `Scene_SetCamera` | 1 |
+| `0x29D0` | `current_ball_ptr` | `Scene_Render` | 1 |
+| `0x29D4` | `ball_list_1` | `Level_UpdateAndRender`, `Scene_SpawnBallsAndObjects`, `Scene_Update` | 3 |
+| `0x29D8` | `ball_list_1_count` | `Level_UpdateAndRender`, `Scene_Update`, `Scene_UpdateBallsAndState` | 3 |
+| `0x2DE0` | `ball_list_1_array` | `Level_UpdateAndRender`, `Scene_Update`, `Scene_UpdateBallsAndState` | 3 |
+| `0x3204` | `ball_list_2` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
+| `0x3208` | `ball_list_2_count` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
+| `0x3610` | `ball_list_2_array` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
+| `0x361C` | `waypoint_arrow` | `Level_UpdateAndRender`, `Scene_dtor` | 2 |
+| `0x3620` | `frame_counter` | `Scene_Update` | 1 |
+| `0x362C` | `player_list` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3630` | `player_count` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3A38` | `player_ball_array` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3A48` | `visible_object_list` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_dtor` | 3 |
+| `0x3A4C` | `shake_active` | `Scene_Update` | 1 |
+| `0x3AFC` | `dynamic_object` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x3F18` | `water_ripple` | `Scene_dtor` | 1 |
+| `0x3F1C` | `path_follow_mode` | `Scene_SetCamera`, `Scene_Update` | 2 |
+| `0x3F20` | `path_object` | `Scene_SetCamera`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x3F24` | `path_position` | `Scene_SetCamera` | 1 |
+| `0x3F2C` | `camera_snap_frames` | `Scene_SetCamera` | 1 |
+| `0x434C` | `camera_offset_x` | `Scene_SetCamera` | 1 |
+| `0x4350` | `camera_offset_y` | `Scene_SetCamera` | 1 |
+| `0x4354` | `camera_offset_z` | `Scene_SetCamera` | 1 |
+| `0x4358` | `demo_timer_active` | `Scene_Update` | 1 |
+| `0x435C` | `demo_countdown` | `Scene_Update` | 1 |
+| `0x4360` | `demo_accumulator` | `Scene_Update` | 1 |
+| `0x4364` | `demo_frame_counter` | `Scene_Update` | 1 |
+| `0x4368` | `demo_menu_suppressed` | `Scene_Update` | 1 |
+| `0x436C` | `hammer_obj` | `Arena_HandleCollision` | 1 |
+| `0x4370` | `saw1_obj` | `Arena_HandleCollision` | 1 |
+| `0x4374` | `saw2_obj` | `Arena_HandleCollision` | 1 |
+| `0x43A0` | `damage_amount` | `Level_HandleCollision` | 1 |
+| `0x43A8` | `damage_timer` | `Level_HandleCollision` | 1 |
+| `0x43B8` | `catapult_list` | `Level_HandleCollision` | 1 |
+| `0x47D0` | `door_list` | `Level_HandleCollision` | 1 |
+| `0x4BBC` | `judge_list` | `Arena_HandleCollision` | 1 |
+| `0x4BEC` | `door_list_alt` | `Level_HandleCollision` | 1 |
+| `0x4FD4` | `bell_obj` | `Arena_HandleCollision` | 1 |
+
+### Unverified Offsets (NOT found in raw decompiled C)
+
+These offsets are listed in the document but do **not** appear in any decompiled function body from the 19-function scan. They may be:
+- Embedded AthenaList sub-fields (count, iterator, capacity) that are accessed inline
+- Comment-only hypotheses from earlier RE sessions
+- Struct fields that exist but are never directly dereferenced in the scanned functions
+
+| Offset | Field | Note |
+|--------|-------|------|
+| `0x08C0` | `scene_object_iterator` | Likely AthenaList embedded `iterator` at `scene_object_list + 0x0C` |
+| `0x151C` | `collision_count` | Likely AthenaList embedded `count` at `collision_list + 0x04` |
+| `0x1520` | `collision_iterator` | Likely AthenaList embedded `iterator` at `collision_list + 0x0C` |
+| `0x1924` | `collision_array` | Likely AthenaList embedded `array` at `collision_list + 0x00` |
+| `0x29DC` | `ball_list_1_iterator` | Likely AthenaList embedded `iterator` at `ball_list_1 + 0x0C` |
+| `0x320C` | `ball_list_2_iterator` | Likely AthenaList embedded `iterator` at `ball_list_2 + 0x0C` |
+| `0x3634` | `player_iterator` | Likely AthenaList embedded `iterator` at `player_list + 0x0C` |
+| `0x3A44` | `use_skydome` | Field verified via `is_skydome` at `0x874`; `0x3A44` may be a duplicate/alias |
+| `0x3B00` | `trail_particles_ptr` | Not found in any decompiled function from the scan set |
 
 ### Comment-Only Offsets
 
 These appear only in the comment headers of `decomp_scene_update.c` (the raw C body is not saved in that file):
 
-- `0x3620` — `frame_counter`
-- `0x362C` — `player_list`
-- `0x3630` — `player_count`
-- `0x3A38` — `player_ball_array`
-- `0x3A4C` — `shake_active`
-- `0x4358`–`0x4368` — Demo timer fields
+- `0x3620` — `frame_counter` ✅ NOW VERIFIED (found in `Scene_Update` raw C)
+- `0x362C` — `player_list` ✅ NOW VERIFIED (found in `Scene_Render` raw C)
+- `0x3630` — `player_count` ✅ NOW VERIFIED (found in `Scene_Render` raw C)
+- `0x3A38` — `player_ball_array` ✅ NOW VERIFIED (found in `Scene_Render` raw C)
+- `0x3A4C` — `shake_active` ✅ NOW VERIFIED (found in `Scene_Update` raw C)
+- `0x4358`–`0x4368` — Demo timer fields ✅ ALL NOW VERIFIED (found in `Scene_Update` raw C)
 
 ---
 
