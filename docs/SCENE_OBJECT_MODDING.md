@@ -76,9 +76,9 @@ void __fastcall MySceneUpdate(void* scene) {
 
 ---
 
-## Complete Scene Struct Layout
+## Complete Scene Struct Layout (Address-Ordered)
 
-> **Source:** `SCENE_SYSTEM_DECOMP.md`, `SCENE_SYSTEM_DECOMP.md` (line 87+), `decomp_scene_update.c`, `decomp_scene_spawnballs.c`, `decomp_level_render.c`
+> **Source:** `SCENE_SYSTEM_DECOMP.md` (explicit byte offsets from int-indexed Ghidra fields), `decomp_scene_update.c`, `decomp_scene_spawnballs.c`, `decomp_level_render.c`, `decomp_collision_events.c`
 
 ### Inheritance Chain
 
@@ -93,165 +93,77 @@ Scene inherits from Gadget. The Gadget base contains:
 - `app_ptr` at `+0x014` (App* back-pointer)
 - Lists, transform data, name string
 
+### How to Read This Table
+
+- All offsets are **byte addresses** from the start of the Scene struct.
+- `int-indexed` fields from decomp outputs have been multiplied by `×4`.
+- Some offsets marked **(?)** come from single decomp sources and may have slight variance.
+- `AthenaList` objects embed a large inline struct (~0x400 bytes each). Their count/array accessors live inside the struct itself — use the `AthenaList` helper pattern in the Recipes section.
+
 ---
 
-## Core State
-
-| Offset | Type | Field | Verified By |
+| Offset | Type | Field | Description |
 |--------|------|-------|-------------|
 | `+0x000` | `void**` | `vtable` | Scene vtable `0x4D0260` |
-| `+0x014` | `App*` | `app_ptr` | Gadget inheritance, `Scene+0x878` collision handler |
+| `+0x004` | — | `(Gadget base)` | Inherited fields — vtable, refs, transform data |
+| `+0x014` | `App*` | `app_ptr` | Gadget-level back-pointer to App singleton `0x4FD680` |
+| `+0x21D` | `byte` | `showing_demo_popup` | 1 = "end of demo" popup is visible |
+| `+0x220` | `byte` | `paused_flag` | 1 = game is paused |
+| `+0x234` | `byte` | `race_paused` | 1 = race countdown paused |
+| `+0x23C` | `byte` | `is_multiplayer` | 1 = split-screen / multiplayer mode active |
+| `+0x546` | `AthenaList` | `Vec3List_546` | Vec3List region — decomp suggests safe spots may live here (uncertain) |
 | `+0x868` | `char*` | `name` | Gadget field — `"Generic Gadget"` / `"Board"` |
-| `+0x870` | `int` | `gadget_field_870` | Gadget base boundary |
-| `+0x874` | `byte` | — | — |
-
----
-
-## Ball Lists (CRITICAL FOR MODDERS)
-
-The Scene maintains **TWO ball lists** for split-screen multiplayer support:
-
-### Player 1 Balls
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x29D4` | `AthenaList` | `ball_list_1` | Player 1 ball list head |
-| `+0x29D8` | `int` | `ball_list_1_count` | Number of balls |
-| `+0x29DC` | `int` | `ball_list_1_iterator` | Iteration state |
-| `+0x2DE0` | `Ball**` | `ball_list_1_array` | **Array of Ball pointers** |
-
-### Player 2 Balls (Split-Screen)
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x3204` | `AthenaList` | `ball_list_2` | Player 2 ball list head |
-| `+0x3208` | `int` | `ball_list_2_count` | Number of balls |
-| `+0x320C` | `int` | `ball_list_2_iterator` | Iteration state |
-| `+0x3610` | `Ball**` | `ball_list_2_array` | **Array of Ball pointers** |
-
-### Legacy / Alternate Ball List
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x0A75` | `AthenaList` | `ball_list_alt` | Alternate ball list (int-indexed: `+0xA75`) |
-| `+0x0A78` | `int` | `ball_list_alt_count` | Count |
-| `+0x0B78` | `Ball**` | `ball_list_alt_array` | **Array of Ball pointers** |
-
----
-
-## Player / Viewport Tracking
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x3A38` | `Ball**` | `player_ball_array` | Indexed by player index (0-3) |
-| `+0x29D0` | `Ball*` | `current_ball_ptr` | Ball currently tracked by camera |
-| `+0x362C` | `AthenaList` | `player_list` | Player viewport list |
-| `+0x3630` | `int` | `player_count` | 0=none, 1=single, 2=split-screen |
-| `+0x2190` | `byte` | `ball_positions_dirty` | Flag: propagate ball positions this frame |
-
----
-
-## Camera System
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x29BC` | `float` | `camera_orbit_angle` | Y-axis orbit rotation |
-| `+0x29C0` | `float` | `camera_distance` | Orbit distance from ball |
-| `+0x434C` | `float` | `camera_offset_x` | Camera offset X |
-| `+0x4350` | `float` | `camera_offset_y` | Camera offset Y |
-| `+0x4354` | `float` | `camera_offset_z` | Camera offset Z |
-| `+0x3F1C` | `byte` | `path_follow_mode` | Camera on spline rails |
-| `+0x3F20` | `void*` | `path_object` | Spline path data |
-| `+0x3F24` | `float` | `path_position` | Parametric position on path |
-| `+0x3F2C` | `int` | `camera_snap_frames` | Frames until snap-to-ball |
-
----
-
-## Object Lists
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x022E` | `AthenaList` | `scene_object_list` | All scene objects (update + render) |
-| `+0x0230` | `int` | `scene_object_count` | Count |
-| `+0x0231` | `int` | `scene_object_iterator` | Iteration state |
-| `+0x0331` | `SceneObject**` | `scene_object_array` | Object pointer array |
-| `+0x08B8` | `AthenaList` | `main_object_list` | Primary object list |
-| `+0x08BC` | `int` | `main_object_count` | — |
-| `+0x0CC4` | `SceneObject**` | `main_object_array` | Object pointer array |
-| `+0x3A48` | `AthenaList` | `visible_object_list` | Objects visible this frame |
-| `+0x3A4C` | `byte` | `rumble_active` | Haptics active |
-| `+0x29B8` | `int` | `rumble_intensity` | Starts -800, decays +10/frame |
-| `+0x0884` | `RumbleBoard` | `rumble_timer_1` | First rumble timer object |
-| `+0x0898` | `RumbleBoard` | `rumble_timer_2` | Second rumble timer object |
-
----
-
-## Frame / Timing State
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x3620` | `int` | `frame_counter` | Total frames since scene start |
-| `+0x0D88` | `int` | `tick_count` | Tick counter (also at +0x3620) |
-| `+0x0D8B` | `AthenaList` | `physics_objects` | Physics-only objects |
-| `+0x0D8C` | `int` | `physics_count` | — |
-
----
-
-## Demo Timer
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x4358` | `byte` | `demo_timer_active` | Counting down |
-| `+0x435C` | `int` | `demo_countdown` | Frames remaining |
-| `+0x4360` | `float` | `demo_accumulator` | Popup timing accumulator |
-| `+0x4364` | `int` | `demo_frame_counter` | — |
-| `+0x4368` | `byte` | `demo_menu_suppressed` | Block ESC menu |
-| `+0x10D6` | `byte` | `demo_timer_active_alt` | (int-indexed +0x10D6) |
-| `+0x10D7` | `int` | `demo_countdown_alt` | (int-indexed +0x10D7) |
-| `+0x10D8` | `int` | `demo_elapsed_frames` | — |
-| `+0x10D9` | `int` | `demo_frame_counter_alt` | — |
-
----
-
-## Level / World Data
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x0878` | `void*` | `scene_manager` | D3D device / render container |
-| `+0x087C` | `void*` | `viewport_obj` | D3D viewport interface |
-| `+0x08AC` | `Level*` | `level_ptr` | Level geometry/collision |
-| `+0x08B0` | `Level*` | `skydome_ptr` | Skydome level (alternative) |
-| `+0x1518` | `AthenaList` | `collision_list` | Collision surface list |
+| `+0x870` | `int` | `gadget_boundary` | Boundary between Gadget and Scene extensions |
+| `+0x874` | `byte` | — | Padding / unknown |
+| `+0x878` | `void*` | `scene_manager` | D3D device / render container (also resolves as App* in some contexts) |
+| `+0x87C` | `void*` | `viewport_obj` | D3D viewport interface |
+| `+0x884` | `RumbleBoard` | `rumble_timer_1` | First rumble/haptics timer (0x14 bytes) |
+| `+0x898` | `RumbleBoard` | `rumble_timer_2` | Second rumble/haptics timer (0x14 bytes) |
+| `+0x8AC` | `Level*` | `level_ptr` | Level geometry / collision data |
+| `+0x8B0` | `Level*` | `skydome_ptr` | Skydome level (alternative sky rendering) |
+| `+0x8B8` | `AthenaList` | `scene_object_list` | All scene objects (update + render pass) |
+| `+0x8BC` | `int` | `scene_object_count` | Number of objects in above list |
+| `+0x8C0` | `int` | `scene_object_iterator` | Current iteration index (inferred) |
+| `+0x910` | `void*` | `waypoint_list` | `WaypointList*` for race checkpoint tracking |
+| `+0xCC4` | `SceneObject**` | `scene_object_array` | Direct pointer array to scene objects |
+| `+0x1518` | `AthenaList` | `collision_list` | Collision surface list (planes, walls, floors) |
 | `+0x151C` | `int` | `collision_count` | Number of collision entries |
 | `+0x2160` | `AthenaList` | `ripple_list` | Water ripple effects |
+| `+0x29B0` | `byte` | `ball_positions_dirty` | 1 = need to propagate ball positions this frame (from int `+0x0A6C`) |
+| `+0x29B8` | `int` | `rumble_intensity` | Camera shake / haptics intensity. Starts at -800, decays by +10/frame. Also called `shake_magnitude` in decomps |
+| `+0x29BC` | `float` | `camera_orbit_angle` | Y-axis orbit rotation around ball |
+| `+0x29C0` | `float` | `camera_distance` | Orbit distance from ball |
+| `+0x29D0` | `Ball*` | `current_ball_ptr` | Ball currently tracked by camera |
+| `+0x29D4` | `AthenaList` | `ball_list_1` | **Player 1 ball list head** |
+| `+0x29D8` | `int` | `ball_list_1_count` | Number of P1 balls |
+| `+0x29DC` | `int` | `ball_list_1_iterator` | P1 list iteration state |
+| `+0x2DE0` | `Ball**` | `ball_list_1_array` | **P1 Ball pointer array** — direct read |
+| `+0x3204` | `AthenaList` | `ball_list_2` | **Player 2 ball list head** (split-screen) |
+| `+0x3208` | `int` | `ball_list_2_count` | Number of P2 balls |
+| `+0x320C` | `int` | `ball_list_2_iterator` | P2 list iteration state |
+| `+0x3610` | `Ball**` | `ball_list_2_array` | **P2 Ball pointer array** — direct read |
+| `+0x361C` | `void*` | `waypoint_arrow` | Next-waypoint arrow `SceneObject*` |
+| `+0x3620` | `int` | `frame_counter` | Total frames since scene start. Also called `tick_count` in some decomps |
+| `+0x362C` | `AthenaList` | `player_list` | Player viewport list. Decomp calls this `physics_objects` at int `+0x0D8B` |
+| `+0x3630` | `int` | `player_count` | 0=none, 1=single player, 2=split-screen |
+| `+0x3A38` | `Ball**` | `player_ball_array` | Array of ball pointers indexed by player (0-3) |
 | `+0x3A44` | `byte` | `use_skydome` | 0 = skybox, 1 = skydome |
-| `+0x361C` | `void*` | `waypoint_arrow` | Next-waypoint arrow object |
-| `+0x3F18` | `void*` | `water_ripple` | Water ripple renderer |
-
----
-
-## Game State Flags
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x021D` | `byte` | `showing_demo_popup` | Demo popup is visible |
-| `+0x0220` | `byte` | `paused_flag` | Game is paused |
-| `+0x0234` | `byte` | `race_paused` | Race countdown paused |
-| `+0x023C` | `byte` | `is_multiplayer` | Multiplayer mode active |
-| `+0x0A6C` | `byte` | `ball_propagate_dirty` | Need to sync ball positions |
-| `+0x0A6E` | `int` | `shake_magnitude` | Camera shake intensity |
-| `+0x0E93` | `byte` | `shake_active` | Camera shake enabled |
-| `+0x0FC7` | `byte` | `gear_enabled` | Single-gear mode active |
-| `+0x0FC8` | `void*` | `gear_path` | Spline gear path data |
-
----
-
-## Safe Spots / Checkpoints
-
-| Offset | Type | Field | Description |
-|--------|------|-------|-------------|
-| `+0x0546` | `AthenaList` | `safe_spot_list` | SAFESPOT / SAFEPOS entries |
-| `+0x0910` | `void*` | `waypoint_list` | WaypointList for race tracking |
+| `+0x3A48` | `AthenaList` | `visible_object_list` | Objects visible this frame (render bucket) |
+| `+0x3A4C` | `byte` | `rumble_active` | 1 = camera shake / haptics currently active. Same field as `shake_active` (int `+0x0E93`) |
+| `+0x3AFC` | `void*` | `dynamic_object` | Object with vtable[8] render callback. Also called `post_update_callback_obj` |
+| `+0x3F18` | `void*` | `water_ripple` | Water ripple renderer object |
+| `+0x3F1C` | `byte` | `path_follow_mode` | 1 = camera rides spline rails |
+| `+0x3F20` | `void*` | `path_object` | Spline path data for camera rails |
+| `+0x3F24` | `float` | `path_position` | Parametric t-position on spline |
+| `+0x3F2C` | `int` | `camera_snap_frames` | Frames remaining until snap-to-ball |
+| `+0x434C` | `float` | `camera_offset_x` | Camera offset X from ball |
+| `+0x4350` | `float` | `camera_offset_y` | Camera offset Y from ball |
+| `+0x4354` | `float` | `camera_offset_z` | Camera offset Z from ball |
+| `+0x4358` | `byte` | `demo_timer_active` | 1 = demo countdown running |
+| `+0x435C` | `int` | `demo_countdown` | Frames remaining until demo popup |
+| `+0x4360` | `float` | `demo_accumulator` | Popup timing accumulator |
+| `+0x4364` | `int` | `demo_frame_counter` | Demo tick counter |
+| `+0x4368` | `byte` | `demo_menu_suppressed` | 1 = block ESC menu during demo |
 
 ---
 
