@@ -93,7 +93,7 @@ Same pattern — writes to `+0x170/174/178` with identical guards.
 |----------|---------|-------------|
 | `Ball_ApplyForceWithMultipliers` | `0x00402650` | Add force to velocity with impact/speed/ice/dizzy multipliers |
 | `Ball_ApplyForceV2` | `0x004016F0` | Alt force app with gravity-plane awareness |
-| `Ball_SetSpeed` | `0x004029C0` | Set desired speed scalar (stored at `+0xC64`, vector at `+0xC98`) |
+| `CollisionMesh_SetSpeed` | `0x004029C0` | Set desired speed scalar on CollisionMesh (stored at `+0xC64`, vector at `+0xC98`). **Takes CollisionMesh*, NOT Ball*** |
 | `Ball_SetVec3AtOffset` | `0x00402A20` | Write Vec3 to arbitrary offset (modding helper) |
 | `Ball_SetTargetPos` | `0x00402030` | Network sync position (lerp toward target) |
 | `Ball_SetTrajectory` | `0x00403850` | Launch-pad trajectory setup (stores params at `+0x2AC` to `+0x2B8`) |

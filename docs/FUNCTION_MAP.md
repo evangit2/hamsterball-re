@@ -927,7 +927,7 @@ Offset | Field | Description
 | 0x00402270 | Ball_EndFall | Reset from fallen: clear flag, set radius=26.0, physics=5.0 |
 | 0x00402290 | GameObject_Render | Render game obj: scale, depth layer toggle, Sprite_RenderQuad, copy result |
 | 0x004027f0 | Ball_dtor | Ball deleting destructor: calls Ball_Cleanup, optionally frees |
-| 0x004029c0 | Ball_SetSpeed | Set ball speed, computes velocity = speed * direction unit vec |
+| 0x004029c0 | CollisionMesh_SetSpeed | Set speed scalar on CollisionMesh (+0xC64), updates scaled_dir (+0xC98). **Takes CollisionMesh*, NOT Ball*** |
 | 0x457b80 | Gfx_SetPositionAndRender | 5 | Set transform + render state + draw |
 | 0x458f10 | Vtable_CallOffset48 | 7 | Generic vtable call at offset 0x48 |
 | 0x473940 | FontFormatString_Parse | 9 | Parse %-formatted string for font rendering |

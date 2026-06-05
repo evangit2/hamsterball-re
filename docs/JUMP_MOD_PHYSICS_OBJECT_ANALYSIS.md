@@ -129,7 +129,7 @@ pvVar2 = CollisionMesh_ctor(pvVar2, this);    // Initialize, pass Ball as owner
 | Offset | Hex | Type | Name | Initial Value | Source | Modding Use |
 |--------|-----|------|------|---------------|--------|-------------|
 | `+0x0C60` | `0x0C60` | `int32_t` | `battle_mode` | `3` | `Ball_InitBattleMode` | Change game mode physics |
-| `+0x0C64` | `0x0C64` | `float` | `speed_scalar` | `0.0f` | `Ball_SetSpeed` | Direct speed override |
+| `+0x0C64` | `0x0C64` | `float` | `speed_scalar` | `0.0f` | `CollisionMesh_SetSpeed` | Direct speed override |
 | `+0x0C68` | `0x0C68` | `float` | `friction_damping` | `~0.56f` | `Ball_InitBattleMode` | Lower = more slippery |
 | `+0x0C6C` | `0x0C6C` | `float` | `field_c6c` | `1.0f` | `Ball_InitBattleMode` | Unknown physics param |
 | `+0x0C70` | `0x0C70` | `float` | `max_speed_limit` | `1000.0f` | `Ball_InitBattleMode` | Speed cap (raise for turbo) |
@@ -151,7 +151,7 @@ pvVar2 = CollisionMesh_ctor(pvVar2, this);    // Initialize, pass Ball as owner
 | `+0x0C94` | `0x0C94` | `float` | `dir_z` | `0` | Normalized heading Z |
 
 - Direction is reset to `(0, -1, 0)` by `Ball_ResetCollisionMesh` (`0x4030B0`)
-- `Ball_SetSpeed` multiplies `speed_scalar` by `dir` to produce `scaled_dir`
+- `CollisionMesh_SetSpeed` multiplies `speed_scalar` by `dir` to produce `scaled_dir`
 
 ### Scaled Direction (speed * heading)
 
@@ -161,7 +161,7 @@ pvVar2 = CollisionMesh_ctor(pvVar2, this);    // Initialize, pass Ball as owner
 | `+0x0C9C` | `0x0C9C` | `float` | `scaled_dir_y` | `0` | `speed_scalar * dir_y` |
 | `+0x0CA0` | `0x0CA0` | `float` | `scaled_dir_z` | `0` | `speed_scalar * dir_z` |
 
-- Written by `Ball_SetSpeed` (`0x4029C0`)
+- Written by `CollisionMesh_SetSpeed` (`0x4029C0`) — takes `CollisionMesh*` as `this`, NOT `Ball*`
 - Used for trajectory/heading calculations
 
 ### Physics Velocity (THE JUMP MOD TARGET)
@@ -240,7 +240,7 @@ float* cmVelZ          = (float*)((DWORD)cm + 0x0CAC);
 | `Ball_Update` | `0x00405E00` | Reads `cm.vel` into locals, integrates physics, writes back |
 | `Ball_AdvancePositionOrCollision` | `0x00405640` | **Main physics integrator** — adds external velocity to `cm.vel`, applies gravity, collision response, friction |
 | `Ball_InitBattleMode` | `0x004056D0` | Sets `cm.gravity_strength`, `cm.max_speed_limit`, `cm.friction`, `cm.battle_mode`, resets `cm.dir` to down |
-| `Ball_SetSpeed` | `0x004029C0` | Sets `cm.speed_scalar`, updates `cm.scaled_dir` = speed * dir |
+| `CollisionMesh_SetSpeed` | `0x004029C0` | Sets `cm.speed_scalar`, updates `cm.scaled_dir` = speed * dir. **Takes `CollisionMesh*`, NOT `Ball*`** |
 | `Ball_SetVec3AtOffset` | `0x00402A20` | Directly overwrites `cm.vel_x/y/z` with a Vec3 |
 | `Ball_ResetCollisionMesh` | `0x004030B0` | Resets `cm.dir` to `(0, -1, 0)`, clears impact counter |
 | `Ball_FindMeshCollision` | `0x00403980` | Passes `this` (CollisionMesh*) to `Mesh_FindClosestCollision` |
@@ -343,7 +343,10 @@ void* cm = *(void**)((DWORD)ball + 0x1A4);
 *(float*)((DWORD)cm + 0x0C8C) = 0.0f;   // dir_x = 0
 *(float*)((DWORD)cm + 0x0C90) = 1.0f;   // dir_y = up
 *(float*)((DWORD)cm + 0x0C94) = 0.0f;   // dir_z = 0
-// Call Ball_SetSpeed to update scaled_dir
+// Call CollisionMesh_SetSpeed directly (takes CollisionMesh*, NOT Ball*)
+// typedef void (__thiscall *CollisionMesh_SetSpeed_t)(void* cm, float speed);
+// CollisionMesh_SetSpeed_t CollisionMesh_SetSpeed = (CollisionMesh_SetSpeed_t)0x4029C0;
+// CollisionMesh_SetSpeed(cm, 10000.0f);  // sets +0xC64 and updates +0xC98/C9C/CA0
 ```
 
 ---
@@ -373,7 +376,7 @@ All offsets cross-referenced against live decompiled code:
 - **`CollisionMesh_ctor` (0x405680):** Initializes `+0xCA4/CA8/CAC` to `0,0,0`. Sets `+0x10` = owner Ball.
 - **`Ball_InitBattleMode` (0x4056D0):** Initializes `+0xC60` through `+0xC94`.
 - **`Ball_SetVec3AtOffset` (0x402A20):** Directly overwrites `+0xCA4/CA8/CAC`.
-- **`Ball_SetSpeed` (0x4029C0):** Sets `+0xC64` = speed, updates `+0xC98/C9C/CA0` = scaled_dir.
+- **`CollisionMesh_SetSpeed` (0x4029C0):** Sets `+0xC64` = speed, updates `+0xC98/C9C/CA0` = scaled_dir. **IMPORTANT: This is a CollisionMesh method, NOT a Ball method — pass the CollisionMesh pointer from `Ball + 0x1A4`, not the Ball pointer itself.**
 - **`Ball_ResetCollisionMesh` (0x4030B0):** Resets `+0xC8C/C90/C94` to `(0, -1, 0)`.
 
 ---
