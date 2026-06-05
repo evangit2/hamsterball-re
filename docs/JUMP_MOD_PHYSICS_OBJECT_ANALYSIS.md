@@ -1,175 +1,249 @@
-# Jump Mod Physics Object — Deep Dive
+# CollisionMesh Object — Complete Modder's Reference
 
-> **Analysis of the `playerObject + 0x1A4` pointer chain used by the jump mod.**  
-> All offsets verified via live Ghidra MCP decompilation of `Hamsterball.exe`.
+> **Analysis of the `playerObject + 0x1A4` pointer chain used by the jump mod and other physics hacks.**  
+> All offsets verified via live Ghidra MCP decompilation of `Hamsterball.exe`.  
+> This document describes the `CollisionMesh` object — a nested physics body that lives inside the Ball.
 
 ---
 
-## tl;dr for Modders
+## Quick Stats
 
-The jump mod does **NOT** write to the Ball's own velocity. It writes to a **nested `CollisionMesh` object** that lives inside the Ball struct:
+| Property | Value |
+|----------|-------|
+| Primary update function | `Ball_AdvancePositionOrCollision` @ `0x00405640` |
+| Constructor | `CollisionMesh_ctor` @ `0x00405680` |
+| Total struct size | `0x0CB0` bytes (3,248 bytes) |
+| Parent backref | `Ball*` stored at `+0x0010` |
+| VTable | `0x004D8E10` (`Mesh_DeletingDtor`) |
+| Pointer in Ball | `Ball + 0x1A4` stores `CollisionMesh*` |
+
+---
+
+## The Pointer Chain Explained
 
 ```cpp
-// The pointer chain the jump mod follows:
-// 1. Ball + 0x1A4  →  CollisionMesh* (pointer field)
+// The jump mod follows this exact chain:
+// 1. Ball + 0x1A4  →  CollisionMesh* (pointer field inside Ball)
 // 2. *(Ball + 0x1A4) + 0xCA8  →  physics velocity Y (float)
 
 DWORD* physicsObjPtr = (DWORD*)((DWORD)playerObject + 0x1a4);  // CollisionMesh**
 DWORD physicsObj = *physicsObjPtr;                              // CollisionMesh*
-float* trueVelY = (float*)(physicsObj + 0xca8);                // &collisionMesh->vel_y
+float* trueVelY = (float*)(physicsObj + 0xca8);                 // &collisionMesh->vel_y
 ```
 
-**Why this works:** The Ball has **two separate velocity systems**. Writing to `CollisionMesh.vel_y` injects velocity directly into the physics integrator. Writing to `Ball.vel_y` (+0x174) would do **nothing** because that field is cleared every frame after being read.
+The Ball struct ends at `~0xC98`. The `CollisionMesh` object it points to extends **beyond** the Ball's own size with its own fields up to `+0xCA8` and beyond. **These are NOT Ball fields** — they belong to the nested object.
 
 ---
 
-## The Two Objects
+## How CollisionMesh is Created
 
-### 1. Ball Object (the "playerObject")
-
-- **Primary update:** `Ball_Update` @ `0x00405E00`
-- **Constructor:** `Ball_ctor2` @ `0x004039E0`
-- **Struct size:** `0x0C98` bytes (3,224 bytes)
-- **Vtable:** `0x004CF3A0` (9 methods)
-
-### 2. CollisionMesh Object (nested inside Ball)
-
-- **Constructor:** `CollisionMesh_ctor` @ `0x00456D80`
-- **Allocation size:** `0x0CB0` bytes (3,248 bytes) — `operator_new(0xCB0)`
-- **Stored at:** `Ball + 0x1A4` (pointer field)
-- **Owner backref:** `CollisionMesh + 0x10` = pointer to parent Ball
-- **Vtable:** `0x004D8E10` (`Mesh_DeletingDtor`)
-
-The CollisionMesh is constructed during `Ball_ctor2`:
+From `Ball_ctor2` (`0x004039E0`) decompilation:
 
 ```c
-// From Ball_ctor2 (0x4039E0) decompilation:
-pvVar2 = operator_new(0xcb0);          // Allocate 3248 bytes
-pvVar2 = CollisionMesh_ctor(pvVar2, this);  // Initialize, pass Ball as owner
-*(void **)((int)this + 0x1a4) = pvVar2;     // Store pointer in Ball struct
+pvVar2 = operator_new(0xcb0);               // Allocate 3,248 bytes
+pvVar2 = CollisionMesh_ctor(pvVar2, this);    // Initialize, pass Ball as owner
+*(void **)((int)this + 0x1a4) = pvVar2;      // Store pointer in Ball struct
 ```
 
-**`CollisionMesh` is NOT the same as `Ball`.** It is a completely separate object with its own vtable, fields, and behavior. It lives at a **heap address** pointed to by `Ball + 0x1A4`.
+`CollisionMesh` is a **completely separate object** with its own vtable (`0x4D8E10`), its own constructor (`0x405680`), and its own destructor. It lives on the heap and is pointed to by `Ball + 0x1A4`.
 
 ---
 
-## Why `+0x1A4` Points to a Different Object
+## Why Modders Target CollisionMesh Instead of Ball Velocity
 
-| Offset | What it is | Type |
-|--------|-----------|------|
-| `Ball + 0x1A4` | `collision_mesh_ptr` | `CollisionMesh**` (pointer stored IN Ball) |
-| `*(Ball + 0x1A4) + 0x10` | `owner_ball` | `Ball*` (back-pointer to parent) |
-| `*(Ball + 0x1A4) + 0xCA8` | `vel_y` | `float` (physics velocity Y) |
+### System A: Ball Input Velocity (NOT the target)
 
-The Ball struct itself ends around `0xC98`. The `CollisionMesh` object it points to has fields going up to `+0xCA8` and beyond — **these are NOT Ball fields**, they are fields of the nested object.
+| Field | Address | Type | Behaviour |
+|-------|---------|------|-----------|
+| `vel_x` | `Ball + 0x0170` | `float` | Input force accumulator |
+| `vel_y` | `Ball + 0x0174` | `float` | Input force accumulator |
+| `vel_z` | `Ball + 0x0178` | `float` | Input force accumulator |
 
----
+- Written by `Ball_ApplyForceWithMultipliers` (`0x402650`)
+- Read by `Ball_Update` (`0x405E00`) then **cleared to zero every frame**
+- **Writing here does nothing** — values are erased before physics integration
 
-## Two Velocity Systems: The Critical Difference
+### System B: CollisionMesh Physics Velocity (THE target)
 
-### System A: Ball Input Velocity (`+0x170/174/178`)
+| Field | Address | Type | Behaviour |
+|-------|---------|------|-----------|
+| `vel_x` | `CollisionMesh + 0x0CA4` | `float` | Persistent physics state |
+| `vel_y` | `CollisionMesh + 0x0CA8` | `float` | Persistent physics state |
+| `vel_z` | `CollisionMesh + 0x0CAC` | `float` | Persistent physics state |
 
-- **Location:** `Ball + 0x170` (X), `+0x174` (Y), `+0x178` (Z)
-- **Purpose:** **Accumulator** for input forces each frame
-- **How it works:** `Ball_ApplyForceWithMultipliers` (0x402650) adds forces here. `Ball_Update` reads them, passes them to physics, then **clears them to zero**.
-
-```c
-// From Ball_ApplyForceWithMultipliers (0x402650):
-*(float *)((int)this + 0x170) = param_1 * param_4 + *(float *)((int)this + 0x170);
-*(float *)((int)this + 0x174) = param_2 * param_4 + *(float *)((int)this + 0x174);
-*(float *)((int)this + 0x178) = param_3 * param_4 + *(float *)((int)this + 0x178);
-```
-
-```c
-// From Ball_Update (0x405E00) — reads then CLEARS:
-fStack_8b0 = (float)param_1[0x5c];  // param_1[0x5c] = *(ball + 0x170) = vel_x
-// ...physics integration...
-param_1[0x5e] = 0;  // vel_z cleared
-param_1[0x5d] = 0;  // vel_y cleared
-param_1[0x5c] = 0;  // vel_x cleared
-```
-
-**Writing to `Ball + 0x174` would be erased on the next frame.** That's why the jump mod does NOT use this address.
-
-### System B: CollisionMesh Physics Velocity (`+0xCA4/CA8/CAC`)
-
-- **Location:** `CollisionMesh + 0xCA4` (X), `+0xCA8` (Y), `+0xCAC` (Z)
-- **Purpose:** **Persistent physics state** — the actual velocity used for movement
-- **How it works:** `Ball_Update` copies this to local variables, integrates gravity/collisions, then writes back. It is **NOT cleared** each frame.
-
-```c
-// From Ball_Update (0x405E00):
-iVar9 = param_1[0x69];  // param_1[0x69] = *(ball + 0x1A4) = CollisionMesh*
-if (&local_928 != (float *)(iVar9 + 0xca4)) {
-    local_928 = *(float *)(iVar9 + 0xca4);  // read physics vel_x
-    local_924 = *(float *)(iVar9 + 0xca8);  // read physics vel_y
-    local_920 = *(float *)(iVar9 + 0xcac);  // read physics vel_z
-}
-```
-
-The jump mod writes to `CollisionMesh + 0xCA8` because this is the **persistent** velocity that drives actual movement. A value of `20.0f` here gives the ball an immediate upward velocity that the physics system will integrate over multiple frames.
+- Read/written by `Ball_Update` and `Ball_AdvancePositionOrCollision`
+- **Survives across frames** — integrated by the physics engine
+- The jump mod writes `20.0f` to `+0xCA8` to inject an upward impulse
 
 ---
 
-## CollisionMesh Field Map (Verified from Ghidra)
+## Complete CollisionMesh Field Map
 
-### Header / Identity
+### Identity / Header
 
-| Offset | Size | Name | Initial Value | Notes |
-|--------|------|------|---------------|-------|
-| `+0x00` | 4 | `vtable` | `0x4D8E10` | `Mesh_DeletingDtor` |
-| `+0x10` | 4 | `owner_ball` | `this` (Ball*) | Set in `CollisionMesh_ctor` |
+| Offset | Hex | Type | Name | Initial | Notes |
+|--------|-----|------|------|---------|-------|
+| `+0x0000` | `0x0000` | `uint32_t` | `vtable` | `0x4D8E10` | `Mesh_DeletingDtor` |
+| `+0x0004` | `0x0004` | `uint32_t` | `field_04` | `0` | — |
+| `+0x0008` | `0x0008` | `uint32_t` | `field_08` | `0` | — |
+| `+0x000C` | `0x000C` | `uint32_t` | `field_0C` | `0` | — |
+| `+0x0010` | `0x0010` | `Ball*` | `owner_ball` | `this` | Back-pointer to parent Ball |
 
-### AthenaLists (collision data structures)
+### AthenaList #1 — Collision face list
 
-| Offset | Size | Name | Notes |
-|--------|------|------|-------|
-| `+0x18` | ~0x400 | `list1` | `AthenaList_Init` called here |
-| `+0x430` | ~0x400 | `list2` | Second AthenaList |
-| `+0x848` | ~0x400 | `list3` | Third AthenaList |
+| Offset | Hex | Type | Name | Notes |
+|--------|-----|------|------|-------|
+| `+0x0018` | `0x0018` | `uint32_t` | `list1_count` | `0` (from `AthenaList_Init`) |
+| `+0x001C` | `0x001C` | `uint32_t` | `list1_capacity` | `0` |
+| `+0x0020` | `0x0020` | `void**` | `list1_data` | Array of collision face pointers |
+| `+0x0424` | `0x0424` | `void**` | `list1_end_ptr` | End of list data |
 
-### Battle Mode / Physics Parameters
+- **Total span:** `0x0018` to `~0x042F` (~1,044 bytes)
+- Populated during collision detection with level geometry
 
-| Offset | Size | Name | Initial Value | Source Function |
-|--------|------|------|---------------|-----------------|
-| `+0xC60` | 4 | `battle_mode` | `3` | `Ball_InitBattleMode` |
-| `+0xC64` | 4 | `speed_scalar` | — | `Ball_SetSpeed` writes here |
-| `+0xC68` | 4 | `friction_or_damping` | `0x3F0E147B` (~0.56) | `Ball_InitBattleMode` |
-| `+0xC6C` | 4 | `field_c6c` | `1.0f` | `Ball_InitBattleMode` |
-| `+0xC70` | 4 | `max_speed_limit` | `1000.0f` | `Ball_InitBattleMode` |
-| `+0xC74` | 4 | `field_c74` | `0` | `CollisionMesh_ctor` |
-| `+0xC78` | 4 | `gravity_strength` | `25.0f` | `Ball_InitBattleMode` |
-| `+0xC7C` | 1 | `use_gravity` | `1` (bool) | `Ball_InitBattleMode` |
+### AthenaList #2 — Secondary collision data
 
-### Direction Vector (normalized heading)
+| Offset | Hex | Type | Name | Notes |
+|--------|-----|------|------|-------|
+| `+0x0430` | `0x0430` | `uint32_t` | `list2_count` | `0` |
+| `+0x0434` | `0x0434` | `uint32_t` | `list2_capacity` | `0` |
+| `+0x0438` | `0x0438` | `void**` | `list2_data` | — |
+| `+0x083C` | `0x083C` | `void**` | `list2_end_ptr` | — |
 
-| Offset | Size | Name | Initial Value | Notes |
-|--------|------|------|---------------|-------|
-| `+0xC8C` | 4 | `dir_x` | `0` | Set in `Ball_InitBattleMode` |
-| `+0xC90` | 4 | `dir_y` | `-1.0f` | Default = straight down |
-| `+0xC94` | 4 | `dir_z` | `0` | |
+- **Total span:** `0x0430` to `~0x0847` (~1,047 bytes)
 
-### Scaled Direction (speed * dir)
+### AthenaList #3 — Tertiary collision data
 
-| Offset | Size | Name | Notes |
-|--------|------|------|-------|
-| `+0xC98` | 4 | `scaled_dir_x` | `speed_scalar * dir_x` |
-| `+0xC9C` | 4 | `scaled_dir_y` | `speed_scalar * dir_y` |
-| `+0xCA0` | 4 | `scaled_dir_z` | `speed_scalar * dir_z` |
+| Offset | Hex | Type | Name | Notes |
+|--------|-----|------|------|-------|
+| `+0x0848` | `0x0848` | `uint32_t` | `list3_count` | `0` |
+| `+0x084C` | `0x084C` | `uint32_t` | `list3_capacity` | `0` |
+| `+0x0850` | `0x0850` | `void**` | `list3_data` | — |
+| `+0x0C54` | `0x0C54` | `void**` | `list3_end_ptr` | — |
+
+- **Total span:** `0x0848` to `~0x0C57` (~1,047 bytes)
+- Freed and re-allocated during `Ball_AdvancePositionOrCollision`
+
+### Physics Parameters
+
+| Offset | Hex | Type | Name | Initial Value | Source | Modding Use |
+|--------|-----|------|------|---------------|--------|-------------|
+| `+0x0C60` | `0x0C60` | `int32_t` | `battle_mode` | `3` | `Ball_InitBattleMode` | Change game mode physics |
+| `+0x0C64` | `0x0C64` | `float` | `speed_scalar` | `0.0f` | `Ball_SetSpeed` | Direct speed override |
+| `+0x0C68` | `0x0C68` | `float` | `friction_damping` | `~0.56f` | `Ball_InitBattleMode` | Lower = more slippery |
+| `+0x0C6C` | `0x0C6C` | `float` | `field_c6c` | `1.0f` | `Ball_InitBattleMode` | Unknown physics param |
+| `+0x0C70` | `0x0C70` | `float` | `max_speed_limit` | `1000.0f` | `Ball_InitBattleMode` | Speed cap (raise for turbo) |
+| `+0x0C74` | `0x0C74` | `uint32_t` | `field_c74` | `0` | `CollisionMesh_ctor` | — |
+| `+0x0C78` | `0x0C78` | `float` | `gravity_strength` | `25.0f` | `Ball_InitBattleMode` | Lower = moon gravity |
+| `+0x0C7C` | `0x0C7C` | `uint8_t` | `use_gravity` | `1` | `Ball_InitBattleMode` | Set to 0 = zero gravity |
+| `+0x0C7D` | `0x0C7D` | `uint8_t` | `field_c7d` | — | — | Padding/unknown |
+| `+0x0C7E` | `0x0C7E` | `uint16_t` | `field_c7e` | — | — | Padding/unknown |
+
+### Direction Vector (Normalized Heading)
+
+| Offset | Hex | Type | Name | Initial Value | Notes |
+|--------|-----|------|------|---------------|-------|
+| `+0x0C80` | `0x0C80` | `float` | `field_c80` | `0` | Unused / unknown |
+| `+0x0C84` | `0x0C84` | `float` | `field_c84` | `0` | Unused / unknown |
+| `+0x0C88` | `0x0C88` | `float` | `field_c88` | `0` | Unused / unknown |
+| `+0x0C8C` | `0x0C8C` | `float` | `dir_x` | `0` | Normalized heading X |
+| `+0x0C90` | `0x0C90` | `float` | `dir_y` | `-1.0f` | Default = straight down |
+| `+0x0C94` | `0x0C94` | `float` | `dir_z` | `0` | Normalized heading Z |
+
+- Direction is reset to `(0, -1, 0)` by `Ball_ResetCollisionMesh` (`0x4030B0`)
+- `Ball_SetSpeed` multiplies `speed_scalar` by `dir` to produce `scaled_dir`
+
+### Scaled Direction (speed * heading)
+
+| Offset | Hex | Type | Name | Initial Value | Notes |
+|--------|-----|------|------|---------------|-------|
+| `+0x0C98` | `0x0C98` | `float` | `scaled_dir_x` | `0` | `speed_scalar * dir_x` |
+| `+0x0C9C` | `0x0C9C` | `float` | `scaled_dir_y` | `0` | `speed_scalar * dir_y` |
+| `+0x0CA0` | `0x0CA0` | `float` | `scaled_dir_z` | `0` | `speed_scalar * dir_z` |
+
+- Written by `Ball_SetSpeed` (`0x4029C0`)
+- Used for trajectory/heading calculations
 
 ### Physics Velocity (THE JUMP MOD TARGET)
 
-| Offset | Size | Name | Initial Value | Used By |
-|--------|------|------|---------------|---------|
-| `+0xCA4` | 4 | **`vel_x`** | `0` | `Ball_AdvancePositionOrCollision`, `Ball_Update` |
-| `+0xCA8` | 4 | **`vel_y`** | `0` | ← **Jump mod writes here** |
-| `+0xCAC` | 4 | **`vel_z`** | `0` | |
+| Offset | Hex | Type | Name | Initial Value | Used By |
+|--------|-----|------|------|---------------|---------|
+| `+0x0CA4` | `0x0CA4` | `float` | **`vel_x`** | `0` | `Ball_AdvancePositionOrCollision`, `Ball_Update` |
+| `+0x0CA8` | `0x0CA8` | `float` | **`vel_y`** | `0` | ← **Jump mod writes here** |
+| `+0x0CAC` | `0x0CAC` | `float` | **`vel_z`** | `0` | `Ball_AdvancePositionOrCollision`, `Ball_Update` |
 
-### Additional Fields (from `Ball_AdvancePositionOrCollision`)
+- These are **the actual physics velocities** used for movement integration
+- Not cleared each frame — they persist and accumulate gravity/collisions
+- `Ball_Update` reads these, copies to local variables, runs physics, then writes back
 
-| Offset | Size | Name | Notes |
-|--------|------|------|-------|
-| `+0xC64` | 4 | `speed_or_mass` | Read in `Ball_AdvancePositionOrCollision` |
+### Post-Velocity Fields
+
+| Offset | Hex | Type | Name | Notes |
+|--------|-----|------|------|-------|
+| `+0x0CB0` | `0x0CB0` | — | `struct_end` | End of CollisionMesh struct |
+
+---
+
+## Address Cheat Sheet
+
+For quick reference when writing mods:
+
+```cpp
+// === Accessing the CollisionMesh from a Ball pointer ===
+void* ball = playerObject;                          // Ball* (player object)
+void** cmPtr = (void**)((DWORD)ball + 0x1A4);       // CollisionMesh** (pointer field)
+void* cm = *cmPtr;                                   // CollisionMesh* (dereferenced)
+
+// === Identity ===
+uint32_t* cmVtable     = (uint32_t*)((DWORD)cm + 0x0000);
+Ball**    cmOwner      = (Ball**)((DWORD)cm + 0x0010);
+
+// === Physics Parameters ===
+float* cmSpeedScalar   = (float*)((DWORD)cm + 0x0C64);
+float* cmFriction      = (float*)((DWORD)cm + 0x0C68);
+float* cmMaxSpeed      = (float*)((DWORD)cm + 0x0C70);
+float* cmGravity       = (float*)((DWORD)cm + 0x0C78);
+uint8_t* cmUseGravity  = (uint8_t*)((DWORD)cm + 0x0C7C);
+
+// === Direction ===
+float* cmDirX          = (float*)((DWORD)cm + 0x0C8C);
+float* cmDirY          = (float*)((DWORD)cm + 0x0C90);
+float* cmDirZ          = (float*)((DWORD)cm + 0x0C94);
+
+// === Scaled Direction ===
+float* cmScaledDirX    = (float*)((DWORD)cm + 0x0C98);
+float* cmScaledDirY    = (float*)((DWORD)cm + 0x0C9C);
+float* cmScaledDirZ    = (float*)((DWORD)cm + 0x0CA0);
+
+// === PHYSICS VELOCITY (persistent) ===
+float* cmVelX          = (float*)((DWORD)cm + 0x0CA4);
+float* cmVelY          = (float*)((DWORD)cm + 0x0CA8);  // ← Jump mod target
+float* cmVelZ          = (float*)((DWORD)cm + 0x0CAC);
+```
+
+---
+
+## Key Functions
+
+### CollisionMesh Lifecycle
+
+| Function | Address | Description |
+|----------|---------|-------------|
+| `CollisionMesh_ctor` | `0x00405680` | Allocates `0xCB0` bytes, initializes lists, zeros velocity |
+| `Mesh_DeletingDtor` | `0x004D8E10` (vtable) | Destructor — frees collision data |
+
+### Ball Functions That Touch CollisionMesh
+
+| Function | Address | What it does to CollisionMesh |
+|----------|---------|------------------------------|
+| `Ball_ctor2` | `0x004039E0` | Calls `operator_new(0xCB0)` → `CollisionMesh_ctor`, stores ptr at `+0x1A4` |
+| `Ball_Update` | `0x00405E00` | Reads `cm.vel` into locals, integrates physics, writes back |
+| `Ball_AdvancePositionOrCollision` | `0x00405640` | **Main physics integrator** — adds external velocity to `cm.vel`, applies gravity, collision response, friction |
+| `Ball_InitBattleMode` | `0x004056D0` | Sets `cm.gravity_strength`, `cm.max_speed_limit`, `cm.friction`, `cm.battle_mode`, resets `cm.dir` to down |
+| `Ball_SetSpeed` | `0x004029C0` | Sets `cm.speed_scalar`, updates `cm.scaled_dir` = speed * dir |
+| `Ball_SetVec3AtOffset` | `0x00402A20` | Directly overwrites `cm.vel_x/y/z` with a Vec3 |
+| `Ball_ResetCollisionMesh` | `0x004030B0` | Resets `cm.dir` to `(0, -1, 0)`, clears impact counter |
+| `Ball_FindMeshCollision` | `0x00403980` | Passes `this` (CollisionMesh*) to `Mesh_FindClosestCollision` |
 
 ---
 
@@ -182,84 +256,136 @@ if (*trueVelY > -tolerance && *trueVelY < tolerance) {
 }
 ```
 
-The mod checks if `CollisionMesh.vel_y` is between `-0.5` and `+0.5`. This is a **grounded check** — when the ball is resting on a surface, the physics velocity Y is near zero (held by collision response). When airborne, `vel_y` is typically negative (falling) or has significant magnitude.
+The mod checks if `CollisionMesh.vel_y` is between `-0.5` and `+0.5`. This is a **grounded check**:
 
-**Why this works:** `Ball_AdvancePositionOrCollision` resolves collisions by pushing the ball out of intersecting geometry. When resting on a floor plane, the collision response exactly cancels gravity, resulting in `vel_y ≈ 0`. The mod detects this near-zero state and injects an upward impulse.
+- **When resting on a surface:** Collision response from `Ball_AdvancePositionOrCollision` exactly cancels gravity → `vel_y ≈ 0`
+- **When airborne:** `vel_y` is typically negative (falling due to gravity) or has significant magnitude
+- **The tolerance `0.5f`** accounts for minor numerical jitter when the ball is "settled"
 
----
-
-## Key Functions That Touch CollisionMesh Velocity
-
-| Function | Address | What it does |
-|----------|---------|-------------|
-| `CollisionMesh_ctor` | `0x00456D80` | Initializes `vel` to `0,0,0` |
-| `Ball_InitBattleMode` | `0x00456CD0` | Sets physics parameters (gravity, speed limits) |
-| `Ball_AdvancePositionOrCollision` | `0x004564C0` | **Main physics integrator** — adds external velocity to `+0xCA4`, applies gravity, collision response |
-| `Ball_SetVec3AtOffset` | `0x00402A20` | Directly overwrites `+0xCA4/CA8/CAC` with a Vec3 |
-| `Ball_SetSpeed` | `0x004029C0` | Sets `speed_scalar` at `+0xC64`, updates scaled direction |
-| `Ball_ResetCollisionMesh` | `0x004030B0` | Resets direction to down (`-1.0f` Y), clears impact counter |
-| `Ball_Update` | `0x00405E00` | Reads `CollisionMesh.vel` into locals, integrates, writes back |
+When the condition is met, the mod injects `20.0f` into `cm.vel_y`, giving the ball an immediate upward velocity that the physics integrator will process over subsequent frames.
 
 ---
 
-## Modding Implications
+## Modding Recipes
 
-### Why the jump mod chose `+0xCA8` over `+0x174`
-
-| Target | Address | Persistence | Effect |
-|--------|---------|-------------|--------|
-| `Ball.vel_y` | `Ball + 0x174` | **Cleared every frame** | Would be erased immediately, no jump |
-| `CollisionMesh.vel_y` | `CollisionMesh + 0xCA8` | **Persistent physics state** | Jump persists, integrates over frames |
-
-### What else can modders do with the CollisionMesh?
-
-1. **Super-jump:** Write `50.0f` or `100.0f` to `+0xCA8` for mega jumps
-2. **Horizontal launch:** Write to `+0xCA4` (X) or `+0xCAC` (Z) for directional blasts
-3. **Velocity freeze:** Set all three to `0.0f` to stop all movement instantly
-4. **Gravity manipulation:** Write to `+0xC78` (gravity strength, default `25.0f`) — lower = moon gravity
-5. **Speed limit:** Write to `+0xC70` (max speed limit, default `1000.0f`)
-6. **Disable gravity:** Set `+0xC7C` to `0` (it's a bool)
-7. **Friction tweak:** Write to `+0xC68` (~0.56 default) — lower = slipperier
-
-### Pointer chain for direct access
+### 1. Super Jump
 
 ```cpp
-void* ball = playerObject;                          // The Ball
-void** collisionMeshPtr = (void**)((DWORD)ball + 0x1A4);
-void* collisionMesh = *collisionMeshPtr;            // Dereference
-
-float* velX = (float*)((DWORD)collisionMesh + 0xCA4);
-float* velY = (float*)((DWORD)collisionMesh + 0xCA8);  // ← Jump mod target
-float* velZ = (float*)((DWORD)collisionMesh + 0xCAC);
-
-float* gravityStrength = (float*)((DWORD)collisionMesh + 0xC78);
-BYTE*  useGravity      = (BYTE*)((DWORD)collisionMesh + 0xC7C);
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0CA8) = 50.0f;  // Double the original mod's force
 ```
+
+### 2. Horizontal Launch (dash)
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0CA4) = 100.0f;  // Blast forward in X
+*(float*)((DWORD)cm + 0x0CAC) = 0.0f;   // No Z velocity
+```
+
+### 3. Velocity Freeze (stop instantly)
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0CA4) = 0.0f;
+*(float*)((DWORD)cm + 0x0CA8) = 0.0f;
+*(float*)((DWORD)cm + 0x0CAC) = 0.0f;
+```
+
+### 4. Moon Gravity
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0C78) = 5.0f;   // Default is 25.0f
+```
+
+### 5. Disable Gravity Entirely
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(uint8_t*)((DWORD)cm + 0x0C7C) = 0;   // Set use_gravity = false
+```
+
+### 6. Turbo Speed (raise speed cap)
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0C70) = 5000.0f;   // Default is 1000.0f
+```
+
+### 7. Slippery Mode (reduce friction)
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0C68) = 0.1f;   // Default is ~0.56
+```
+
+### 8. Infinite Speed Scalar
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0C64) = 9999.0f;   // Override speed scalar directly
+```
+
+### 9. Direction Override (face a specific way)
+
+```cpp
+void* ball = playerObject;
+void* cm = *(void**)((DWORD)ball + 0x1A4);
+*(float*)((DWORD)cm + 0x0C8C) = 0.0f;   // dir_x = 0
+*(float*)((DWORD)cm + 0x0C90) = 1.0f;   // dir_y = up
+*(float*)((DWORD)cm + 0x0C94) = 0.0f;   // dir_z = 0
+// Call Ball_SetSpeed to update scaled_dir
+```
+
+---
+
+## The Two Velocity Systems Side by Side
+
+| Property | Ball Input Velocity | CollisionMesh Physics Velocity |
+|----------|---------------------|-------------------------------|
+| **Address** | `Ball + 0x170/174/178` | `CollisionMesh + 0xCA4/CA8/CAC` |
+| **Type** | `float` accumulator | `float` persistent state |
+| **Written by** | `Ball_ApplyForceWithMultipliers` | `Ball_Update`, `Ball_AdvancePositionOrCollision` |
+| **Read by** | `Ball_Update` (each frame) | `Ball_Update`, `Ball_AdvancePositionOrCollision` |
+| **Cleared?** | **YES** — set to 0 after reading | **NO** — persists across frames |
+| **Use case** | Input forces from keys/gamepad | Final movement + gravity + collisions |
+| **Mod effect** | Nothing (erased) | Actual movement change |
 
 ---
 
 ## Verified via Ghidra MCP
 
-All offsets in this document were cross-referenced against live decompiled code from the GhidraMCP headless server:
+All offsets cross-referenced against live decompiled code:
 
-- **`Ball_ctor2` (0x4039E0):** Confirms `operator_new(0xCB0)` → `CollisionMesh_ctor` → stored at `this + 0x1A4`
-- **`Ball_ApplyForceWithMultipliers` (0x402650):** Confirms Ball.vel at `+0x170/174/178`
-- **`Ball_Update` (0x405E00):** Confirms Ball.vel is read at `param_1[0x5c/5d/5e]` then cleared to zero. Also reads/writes `CollisionMesh + 0xCA4/CA8/CAC` via `param_1[0x69]`.
-- **`Ball_AdvancePositionOrCollision` (0x405640):** Confirms `CollisionMesh + 0xCA4/CA8/CAC` is the physics velocity used for integration.
-- **`CollisionMesh_ctor` (0x405680):** Confirms `+0xCA4/CA8/CAC` initialized to zero, `+0x10` = owner Ball.
-- **`Ball_InitBattleMode` (0x4056D0):** Confirms `+0xC60` through `+0xC94` initialization values.
-- **`Ball_SetVec3AtOffset` (0x402A20):** Confirms direct write path to `+0xCA4/CA8/CAC`.
-- **`Ball_SetSpeed` (0x4029C0):** Confirms `+0xC64` = speed scalar, `+0xC98/C9C/CA0` = scaled direction.
+- **`Ball_ctor2` (0x4039E0):** `operator_new(0xCB0)` → `CollisionMesh_ctor` → stored at `this + 0x1A4`
+- **`Ball_ApplyForceWithMultipliers` (0x402650):** Writes to `Ball + 0x170/174/178`
+- **`Ball_Update` (0x405E00):** Reads Ball.vel at `param_1[0x5c/5d/5e]` then clears to zero. Reads/writes `CollisionMesh + 0xCA4/CA8/CAC` via `param_1[0x69]`.
+- **`Ball_AdvancePositionOrCollision` (0x405640):** Integrates `CollisionMesh + 0xCA4/CA8/CAC` with gravity, friction, collision response.
+- **`CollisionMesh_ctor` (0x405680):** Initializes `+0xCA4/CA8/CAC` to `0,0,0`. Sets `+0x10` = owner Ball.
+- **`Ball_InitBattleMode` (0x4056D0):** Initializes `+0xC60` through `+0xC94`.
+- **`Ball_SetVec3AtOffset` (0x402A20):** Directly overwrites `+0xCA4/CA8/CAC`.
+- **`Ball_SetSpeed` (0x4029C0):** Sets `+0xC64` = speed, updates `+0xC98/C9C/CA0` = scaled_dir.
+- **`Ball_ResetCollisionMesh` (0x4030B0):** Resets `+0xC8C/C90/C94` to `(0, -1, 0)`.
 
 ---
 
 ## Summary
 
-The jump mod is **correct and sophisticated**. The author understood that:
+The jump mod is **correct and sophisticated**. The author understood the engine's architecture:
 
-1. `Ball + 0x1A4` is a **pointer** to a nested `CollisionMesh` object
+1. `Ball + 0x1A4` is a **pointer** to a nested `CollisionMesh` object (size `0xCB0`)
 2. `CollisionMesh + 0xCA8` is the **persistent physics velocity Y**, not the ephemeral input accumulator
-3. A near-zero `vel_y` means the ball is grounded (collision response canceling gravity)
-4. Injecting `20.0f` creates an immediate upward impulse that the physics integrator will process
+3. A near-zero `cm.vel_y` means the ball is grounded (collision response canceling gravity)
+4. Injecting `20.0f` creates an immediate upward impulse that the physics integrator processes
+5. Writing to `Ball + 0x174` would do **nothing** because that field is cleared every frame
 
 The mod **bypasses** the normal `Ball_ApplyForceWithMultipliers` → `Ball_Update` flow and writes directly to the physics state. This is the correct low-level approach for instant-response cheats.
