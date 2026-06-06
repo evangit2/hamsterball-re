@@ -4,7 +4,9 @@
 
 The "8-ball" or "BADBALL" is an AI-controlled enemy ball that appears in single-player race levels. It is a fully autonomous Ball object with a simple chase-and-spin behavior designed to interfere with the player. The AI is **stateless** — no pathfinding, no planning, just a position-seeking force vector updated every frame.
 
-**Key insight:** The 8-ball is NOT a separate object type. It is a standard `Ball` instance with NPC flags set and an AI override in the vtable. It uses the same physics, collision, and rendering systems as player balls.
+**Key insight:** The 8-ball is NOT a separate object type. It is a standard `Ball` instance with NPC flags set. The AI code lives **inside the same `Ball_Update` function** (vtable `[0x10]` at `0x408390` wrapping `0x405E00`) that runs on **every ball every frame**. For player balls, the AI block is skipped because `is_8ball = 0`. There is no separate 8-ball update function — all balls share the same vtable and the same tick.
+
+**Critical consequence:** If you set `ball[0x31D] = 1` on a player ball, that player ball will execute the 8-ball AI and chase other balls automatically. The AI is a conditional block inside the universal update, not a separate object system.
 
 ---
 
