@@ -150,31 +150,70 @@ AthenaList_Append(scene + 0x2DEC, ball);  // all_balls
 MouseTraps are spawned by `CreateMouseTrap` based on MESHWORLD object names starting with `"N:MOUSETRAP"`.
 
 **`CreateMouseTrap`** — Address: `0x0040BF50`
-- **Convention:** `__thiscall` (ECX = Scene\*)
-- **Parameters:** `this` (Scene\*), `position` (float[3]), `mesh_ref` (int)
-- **Called from:** `CreateLevelObjects` at `0x4121D0` (match: `__strnicmp(name, "MOUSETRAP", 9)`)
-- **Size:** Allocates 0x1104 bytes
-- **Constructor:** `TipperVisual_Level_Ctor` at `0x437880`
+- **Convention:** `__fastcall` (param_1 = Scene*)
+- **MESHWORLD iteration:** Same pattern as `CreateBadBall` — walks `scene+0x8AC → +0x480 → +0xCA0` object array, checks `__stricmp(name, "MOUSETRAP")` (case-insensitive)
+- **Alloc size:** 0x10F8 bytes per MouseTrap
+- **Constructor:** `TipperVisual_Level_Ctor(this, scene)` at `0x437880`
+- **Position copied from object:** `obj+0x10DC/0x10E0/0x10E4 = obj.x/y/z`
+- **Floor offset:** `obj+0x10F4 = _DAT_004CF44C - obj.rot_y` (constant minus Y rotation for floor height)
+- **Post-init:** Calls `vtable[0x2C]()` (virtual function at offset 0xB0 in vtable, likely Activate)
+- **Scene storage:**
+  - `AthenaList_Append(scene+0xCD4, obj)` — mouse_trap_list
+  - `AthenaList_Append(scene+0x1930, obj)` — physics_objects
+  - `AthenaList_Append(scene+0x8AC→0x480→0x1C, obj)` — level_objects
+  - `AthenaList_Append(scene+0x8B0+0x18, obj+0x10D4)` — some sub-component
+- **Gate:** None (not gated by `app+0x23C`)
+- **Scene mesh dependency:** The constructor calls `TipperVisual_Level_Ctor(scene)` — reads `scene+0x4398` (Tipper CollisionLevel). Must be loaded by BoardLevel3 ctor.
 
-- **Internal constructor:** `TipperVisual_Level_Ctor(this, mesh_ref)` where `mesh_ref` comes from the level constructor. The mouse trap is a specialized Tipper variant that uses the same scene mesh dependency — it needs a pre-loaded mesh at the offset provided by the level constructor that created it.
+**Manual spawn:**
+```c
+void* mem = operator_new(0x10F8);
+void* trap = TipperVisual_Level_Ctor(mem, scene);
+*(float*)(trap + 0x10DC) = obj.x;  // position
+*(float*)(trap + 0x10E0) = obj.y;
+*(float*)(trap + 0x10E4) = obj.z;
+*(float*)(trap + 0x10F4) = _DAT_004CF44C - obj.rot_y;  // floor height
+((void(__thiscall*)(void*))(*(void***)(trap))[0x0B])(trap);  // Activate
+AthenaList_Append(scene + 0xCD4, trap);   // mouse_trap_list
+AthenaList_Append(scene + 0x1930, trap);  // physics_objects
+```
 
-**NOTE:** MouseTraps are NOT gated by `app+0x23C`. However, they still reference a scene mesh pointer. In `CreateLevelObjects`, the match is `__strnicmp(param_1, "MOUSETRAP", 9)` — this checks the MESHWORLD object name. The constructor receives a mesh reference parameter.
+### Sawblades (and Arena Object Sub-Dispatcher)
 
-### Sawblades
-
-Sawblades are created by Arena-specific event handlers, not directly from MESHWORLD names.
+⚠️ **`CreateSawblade` is actually a multi-factory**, not just a sawblade creator. It handles 6 different arena objects based on the name prefix. It is called from `CreateLevelObjects` for each section-3 object whose name doesn't match any other prefix.
 
 **`CreateSawblade`** — Address: `0x0040E250`
-- **Convention:** `__thiscall` (ECX = Scene\*)
-- **Called from:** `Arena_HandleCollision` at `0x40E6A0` when event `E:ACTIVATESAW1` or `E:ACTIVATESAW2` fires
-- **Storage:** `scene+0x4370` (saw1), `scene+0x4374` (saw2)
-- **Size:** 0x10E0 bytes
-- **Gate:** `app+0x23C != 0` (tournament mode only)
+- **Convention:** `__thiscall` (ECX = Scene\*, param_1 = name string, param_2/3 = output ptrs, param_4 = transform)
+- **Called from:** `Scene_HandleCollisions` / `CreateLevelObjects`
+- **Gate:** All sub-objects with `app+0x23C != 0` check: BONK, TIP, SAWBLADE
 
-Sawblades are triggered by collision events (`E:ALERTSAW1` → `E:ACTIVATESAW1`). To add sawblades to a level, you need:
-1. MESHWORLD geometry named to trigger `E:ALERTSAW1` / `E:ACTIVATESAW1` event tags
-2. `app+0x23C != 0` (tournament mode)
-3. The arena board constructor to have initialized the saw storage at `scene+0x4370/0x4374`
+**Sub-dispatcher branches:**
+
+| Prefix | Object Type | Alloc Size | Constructor | Notes |
+|--------|-------------|-----------|-------------|-------|
+| `BONK` | Bonk hammer | 0x1200 | `Bonk_ctor` at `0x438850` | Reads position from `param_4+4/8/C`; gate: `app+0x23C != 0` |
+| `TIP` | Tower (swinging arm) | 0x1188 | `TowerLevel_Ctor` | Checks `SLOW`, `SUPER`, `UP` suffixes; gate: `app+0x23C != 0` |
+| `SAWBLADE` | Spinning saw | 0x111C | `Sawblade_Level_Ctor` | Suffix `1` → `scene+0x4370`, suffix `2` → `scene+0x4374`; gate: `app+0x23C != 0` |
+| `BRIDGE` | Spinner platform | 0x10FC | `Spinner_Level_ctor` | Suffix `1` → `scene+0x4380`, suffix `2` → `scene+0x4798`, suffix `NEG` → `obj+0x10F8 = -1.0f` |
+| `JUDGE` | Gear | 0x1100 | `Gear_Level_ctor` | Appended to `scene+0x4BBC` |
+| `BELL` | Bell (Tipper variant) | 0x10E8 | `Tipper_Level_Ctor` | Appended to `scene+0x2578`; stored at `scene+0x4FD4` |
+
+All created objects get appended to `scene+0x2578` (active objects list).
+
+**SAWBLADE details:**
+- `SAWBLADE1` → stored at `scene+0x4370`, calls `Sawblade_SetBreakSound(1)`
+- `SAWBLADE2` → stored at `scene+0x4374`, calls `Sawblade_SetBreakSound(2)`
+- Triggered by collision events `E:ALERTSAW1` / `E:ACTIVATESAW1`
+
+**TIP details:**
+- `TIPSLOW` → `obj+0x10EC = 1`
+- `TIPSUPER` → `obj+0x10ED = 1`
+- `TIPUP` → calls `Sound_InitChannels(obj, 1)`
+
+**BRIDGE spinner details:**
+- `BRIDGE1` → appended to `scene+0x4380`
+- `BRIDGE2` → appended to `scene+0x4798`
+- `BRIDGENEG` → sets spin direction to -1.0f at `obj+0x10F8`
 
 ### Bonks (Hammer popups)
 
@@ -216,34 +255,71 @@ To add Bonks:
 ### Ball Splits (8-ball split into 3)
 
 **`Ball_SplitIntoThree`** — Address: `0x00408D70`
-- **Convention:** `__thiscall` (ECX = Scene\*)
-- **Parameters:** `this` (Scene\*), `parent_ball` (Ball\*)
+- **Convention:** `__thiscall` (ECX = Scene*)
+- **Prologue:** Standard SEH (`PUSH -1; MOV EAX, FS:[0]; PUSH handler`)
+- **Parameters:** `this` (Scene*), `parent_ball` (Ball*)
 - **Creates:** 3 split balls (IDs 1, 2, 4) from parent ball
-- **Per split ball:**
-  - `ball+0x31D = 1` (AI flag)
-  - `ball+0xC60 = 5` (split ball type)
+- **Each split ball:**
+  - Allocated as 0xC64 bytes (slightly smaller than CreateBadBall's 0xC98)
+  - Calls `Ball_ctor2(ball, scene)` at base, then `vtable[1]()` for init
+  - `ball+0x31D = 1` (is_8ball flag, activates AI)
+  - `ball+0xC60 = 0x41200000` (30.0f, split timer — NOT the chase distance)
   - `ball+0x2E8 = 1` (splitting flag)
-  - `ball+0x318 = 30.0` (split timer countdown)
-  - Collision direction copied from parent at `ball+0xCA4/CA8/CAC`
+  - `ball+0x318/319/31A` = collision direction from parent (`ball+0xCA4/CA8/CAC`)
   - Added to `scene+0x29D4` (bad_balls) and `scene+0x2DEC` (all_balls)
 
 ### Ball Init Battle Mode
 
 **`Ball_InitBattleMode`** — Address: `0x00456CD0`
-- **Convention:** `__thiscall` (ECX = Ball\*)
-- **Parameters:** `this` (Ball\*)
-- **Sets ball to battle/arena physics:**
+- **Convention:** `__thiscall` (ECX = Ball*)
+- **Prologue:** `SUB ESP, 0C; PUSH ESI; LEA EAX, [ECX+0xC80]; ...`
+- **Sets ball to arena/battle physics:**
 
-  | Offset | Value | Description |
-  |--------|-------|-------------|
-  | `+0xC60` | 3 | battle_mode = 3 |
-  | `+0xC68` | 0.55 | friction |
-  | `+0xC6C` | 1.0 | bounciness |
-  | `+0xC70` | 1000.0 | max_speed |
-  | `+0xC74` | 25.0 | chase_distance |
-  | `+0xC80` | 0.0 | gravity_vec[0] |
-  | `+0xC84` | -1.0 | gravity_vec[1] |
-  | `+0xC88` | 0.0 | gravity_vec[2] |
+| Offset | Value | Description |
+|--------|-------|-------------|
+| `+0xC60` | 3 | battle_mode = 3 |
+| `+0xC68` | 0.55 | friction |
+| `+0xC6C` | 1.0 | bounciness |
+| `+0xC70` | 1000.0 | max_speed |
+| `+0xC74` | 25.0 | chase_distance |
+| `+0xC80` | 0.0 | gravity_vec[0] |
+| `+0xC84` | -1.0 | gravity_vec[1] |
+| `+0xC88` | 0.0 | gravity_vec[2] |
+
+---
+
+## Additional Spawn Functions (Not in CreateLevelObjects)
+
+These functions are called from `Scene_SpawnBallsAndObjects` (0x41C5B0) AFTER the main level objects are created. They don't go through the object factory dispatcher.
+
+### CreateSecretObjects
+
+**Address:** Unknown (not yet decompiled)
+- **Called from:** `Scene_SpawnBallsAndObjects` at `0x41C5B0`
+- **Purpose:** Creates hidden collectible objects (secret items/bonuses)
+- **Likely scans:** MESHWORLD for objects with `SECRET` or similar prefix
+- **Gate:** Unknown — may be gated by `app+0x23C`
+
+### Scene_CreateFlags
+
+**Address:** Unknown (not yet decompiled)
+- **Called from:** `Scene_SpawnBallsAndObjects` at `0x41C5B0`
+- **Purpose:** Creates checkpoint/finish-line flag objects
+- **Likely scans:** MESHWORLD for `FLAG` or `FINISH` named objects
+
+### Scene_CreateSigns
+
+**Address:** Unknown (not yet decompiled)
+- **Called from:** `Scene_SpawnBallsAndObjects` at `0x41C5B0`
+- **Purpose:** Creates directional arrow sign objects
+- **Likely scans:** MESHWORLD for `SIGN` or `ARROW` named objects
+
+### Scene_CreateDynamicObjects
+
+**Address:** Unknown (not yet decompiled)
+- **Called from:** `Scene_SpawnBallsAndObjects` at `0x41C5B0`
+- **Purpose:** Creates moving/animated objects (platforms, elevators, etc.)
+- **Likely scans:** MESHWORLD for `DYNAMIC` or `MOVING` named objects
 
 ---
 
@@ -342,24 +418,34 @@ In a reimplementation, bypass both gates entirely:
 | Function | Address | Purpose |
 |----------|---------|---------|
 | `CreateLevelObjects` | `0x4121D0` | Main factory dispatcher — matches MESHWORLD names to constructors |
+| `CreateSawblade` | `0x40E250` | Multi-factory: BONK, TIP, SAWBLADE, BRIDGE, JUDGE, BELL sub-dispatcher |
 | `Scene_SpawnBallsAndObjects` | `0x41C5B0` | Ball spawning on level load |
 | `CreateBadBall` | `0x40BCA0` | Spawn 8-ball AI opponent from MESHWORLD BADBALL tag |
+| `CreateMouseTrap` | `0x40BF50` | Spawn mouse trap from MESHWORLD MOUSETRAP objects |
 | `Ball_SplitIntoThree` | `0x408D70` | Split ball into 3 AI balls |
 | `Ball_InitBattleMode` | `0x456CD0` | Set ball to battle/arena physics |
 | `Bonk_ctor` | `0x438850` | Bonk constructor (self-loads `levels\level5-bonk`) |
-| `CreateBumper` | `0x40FA20` | Bumper factory (self-loads `levels\level8`) |
+| `CreateBumper` | `0x40FA20` | Bumper factory (self-loads `levels\level8`) — ⚠️ REPLACES scene mesh |
 | `CreateBumper2` | `0x413CE0` | Arena bumper factory (self-loads `levels\arena-beginner`) |
-| `CreateSawblade` | `0x40E250` | Sawblade factory (arena event-triggered) |
-| `CreateMouseTrap` | `0x40BF50` | Mouse trap factory |
-| `Tipper_ctor` | `0x437960` | Tipper constructor (needs `scene+0x4394`) |
+| `TowerLevel_Ctor` | (in `0x40E250`) | Tower/swinging arm constructor (TIP prefix) |
+| `Sawblade_Level_Ctor` | (in `0x40E250`) | Sawblade constructor (SAWBLADE prefix) |
+| `Spinner_Level_ctor` | (in `0x40E250`) | Spinner platform constructor (BRIDGE prefix) |
+| `Gear_Level_ctor` | (in `0x40E250`) | Gear constructor (JUDGE prefix) |
+| `Tipper_Level_Ctor` | (in `0x40E250`) | Bell/Tipper variant constructor (BELL prefix) |
 | `TipperVisual_Level_Ctor` | `0x437880` | Mouse trap visual constructor |
+| `Tipper_ctor` | `0x437960` | Tipper constructor (needs `scene+0x4394`) |
 | `Gluebie_ctor` | `0x437CB0` | Gluebie constructor (needs `scene+0x607C`) |
 | `Catapult_ctor` | `0x437E10` | Catapult constructor (needs `scene+0x5848`) |
 | `Blockdawg_ctor` | `0x43C310` | BlockDawg constructor (needs `scene+0x5840` + path obj) |
 | `BreakBridge_ctor` | `0x436D70` | Breakable bridge constructor |
 | `PopCylinder_ctor` | `0x436EE0` | Pop cylinder constructor |
+| `CreateSecretObjects` | Unknown | Hidden collectibles (called from `Scene_SpawnBallsAndObjects`) |
+| `Scene_CreateFlags` | Unknown | Finish line flags (called from `Scene_SpawnBallsAndObjects`) |
+| `Scene_CreateSigns` | Unknown | Directional signs (called from `Scene_SpawnBallsAndObjects`) |
+| `Scene_CreateDynamicObjects` | Unknown | Moving platforms, etc. (called from `Scene_SpawnBallsAndObjects`) |
 | `Level_FindObjectByName` | `0x460530` | Find MESHWORLD object by name |
 | `Arena_HandleCollision` | `0x40E6A0` | Arena event dispatcher (HAMMERCHASE, ALERTSAW, etc.) |
+| `operator_new` | `0x4BA57B` | Game's CRT allocator (`__cdecl`, size on stack) |
 | `App singleton` | `0x4FD680` | Global App struct |
 | `app+0x23C` | `0x4FD8B4` | Tournament mode flag |
 
