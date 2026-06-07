@@ -124,7 +124,9 @@ AthenaList_Append(scene + 0x2DEC, ball);  // all_balls
 | Step | Function/Offset | Address |
 |------|-----------------|---------|
 | Allocate | `operator_new(0xC98)` | runtime |
-| Ball_ctor | `Ball_ctor(ball, scene)` | `0x4087A0` |
+| Ball_ctor | `Ball_ctor(ball, scene)` | `0x40AFE0` |
+| Ball_ctor2 | `Ball_ctor2(ball, scene)` (base init only) | `0x4039E0` |
+| Ball_Split_ctor | `Ball_Split_ctor(ball, scene)` (8-ball variant) | `0x408D10` |
 | Ball_Init | `vtable[1]()` | via vtable |
 | Display pos | `ball+0x164/0x168/0x16C` | — |
 | Home pos | `ball+0xC60/0xC64/0xC68` | — |
