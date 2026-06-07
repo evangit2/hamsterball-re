@@ -43,30 +43,103 @@ These constructors receive a pre-loaded mesh pointer as a parameter. That pointe
 
 ### BadBalls (8-balls / AI opponents)
 
-BadBalls are spawned by `CreateBadBall` which is called from `Scene_SpawnBallsAndObjects`. They do NOT go through `CreateLevelObjects` — they are spawned based on MESHWORLD section 1 object names matching the pattern `BADBALL<tag>val</tag>`.
+BadBalls are spawned by `CreateBadBall` which is called from `Scene_SpawnBallsAndObjects`. They do NOT go through `CreateLevelObjects` — they scan ALL MESHWORLD section 3 objects for names starting with "BADBALL".
 
 **`CreateBadBall`** — Address: `0x0040BCA0`
-- **Convention:** `__thiscall` (ECX = Scene\*)
-- **Parameters:** `this` (Scene\*), `ball_index` (int), `meshworld_obj_index` (int)
-- **MESHWORLD tag format:**
+- **Convention:** `__fastcall` (MSVC), first arg = Scene\* (param_1)
+- **Parameters:** `param_1` = Scene\*
+- **MESHWORLD iteration:** Walks `scene+0x8AC → +0x480 → +0xCA0` object array, checks `__strnicmp(name, "BADBALL", 7)`
+- **MESHWORLD tag format (in object name string):**
   ```
   BADBALL<CHASE>25.0</CHASE><HOME>5.0</HOME><SIZE>2.0</SIZE>
   ```
   | Tag | Default | Offset in Ball | Description |
   |-----|---------|----------------|-------------|
-  | `<CHASE>val</CHASE>` | 25.0 | `ball+0xC74` | AI chase activation distance |
-  | `<HOME>val</HOME>` | 5.0 | `ball+0xC78` | AI patrol/home radius |
-  | `<SIZE>val</SIZE>` | 1.0 | `ball+0x188` | Radius multiplier (3.0 = giant 8-ball) |
+  | `<CHASE>val</CHASE>` | 25.0 | `ball+0xC6C` | AI chase activation distance (piVar5[0x31b]) |
+  | `<HOME>val</HOME>` | 5.0 | `ball+0xC70` | AI patrol/home radius (piVar5[0x31c]) |
+  | `<SIZE>val</SIZE>` | 1.0 | `ball+0x188` | Base radius → 3.0 (piVar5[0x62]=0x40400000=3.0f, piVar5[0xa1]=size_val, piVar5[0x9f]=0, piVar5+0x313 flag=1) |
+  | `<SPINDISTANCE>val</SPINDISTANCE>` | (none) | `ball+0xC7C` | AI spin orbit distance (piVar5[799]) |
 
-- **Spawning logic (from `Scene_SpawnBallsAndObjects` at `0x41C5B0`):**
-  1. Iterate all objects in MESHWORLD section 3
-  2. For each object with `type == 1` (ball): search for `BADBALL` in its name string
-  3. Parse `<CHASE>`, `<HOME>`, `<SIZE>` tags from the name
-  4. Call `Ball_ctor2` (`0x408D10`, alloc 0xC98 bytes for 8ball vs 0xC60 for player)
-  5. Set `ball+0x31D = 1` (is_8ball AI flag)
-  6. Set `ball+0xC60 = 5` (split_ball / battle mode type)
-  7. Copy collision direction from parent ball at `ball+0xCA4`
-  8. Add to `scene+0x29D4` (bad_balls list) and `scene+0x2DEC` (all_balls list)
+- **Per-ball spawn sequence (from decompilation):**
+  1. `operator_new(0xC98)` — allocate 8-ball (larger than player's 0xC60)
+  2. `Ball_ctor(this, scene)` — initialize ball with scene reference
+  3. `vtable[1]()` — call Ball_Init (2nd virtual)
+  4. Position from MESHWORLD object: `ball+0x164 = obj.x + radius`, `ball+0x168 = obj.y + ball.radius`, `ball+0x16C = obj.z + radius`
+  5. Clear `ball+0x281 = 0` (some flag)
+  6. Copy same position to home: `ball+0xC60/0xC64/0xC68 = obj.xyz` (spawn/return position)
+  7. Parse `<CHASE>`, `<HOME>`, `<SIZE>`, `<SPINDISTANCE>` tags from name string via `MWParser_ReadTag`
+  8. `AthenaList_Append(scene+0x29D4, ball)` — add to bad_balls list
+  9. `AthenaList_Append(scene+0x2DEC, ball)` — add to all_balls list
+
+- **⚠️ MESHWORLD dependency:** `CreateBadBall` reads position AND tags from MESHWORLD section 3 object entries. You CANNOT call it directly with a custom position — it iterates the object array internally.
+
+#### Spawning a BadBall without MESHWORLD (manual spawn)
+
+You can bypass `CreateBadBall` entirely and construct a BadBall manually by replicating what it does. Here is a code-level pseudocode for spawning at an arbitrary position:
+
+```c
+// Manual BadBall spawn — no MESHWORLD needed
+// Call from a hook or patched function with access to Scene* (param_1)
+
+void* scene = (void*)param_1;  // Scene pointer
+
+// 1. Allocate
+void* ball = operator_new(0xC98);
+
+// 2. Construct
+Ball_ctor(ball, scene);  // 0x4087A0 (base Ball_ctor, NOT Ball_Split_ctor)
+
+// 3. Init (vtable[1])
+((void(__thiscall*)(void*))(*(void***)ball)[1])(ball);
+
+// 4. Set position (ball+0x164/168/16C = display position)
+*(float*)(ball + 0x164) = spawn_x;
+*(float*)(ball + 0x168) = spawn_y;
+*(float*)(ball + 0x16C) = spawn_z;
+
+// 5. Set home position (ball+0xC60/C64/C68 = return-to position)
+*(float*)(ball + 0xC60) = spawn_x;
+*(float*)(ball + 0xC64) = spawn_y;
+*(float*)(ball + 0xC68) = spawn_z;
+
+// 6. Set AI flag
+*(byte*)(ball + 0x281) = 0;  // clear some flag
+
+// 7. Set chase distance (optional, default 25.0)
+*(float*)(ball + 0xC6C) = 25.0f;
+
+// 8. Set home radius (optional, default 5.0)
+*(float*)(ball + 0xC70) = 5.0f;
+
+// 9. Set size (optional, default 1.0 = normal)
+// To make giant: *(float*)(ball + 0x188) = 3.0f; *(byte*)(ball + 0xC4C) = 1;
+
+// 10. Register in scene lists
+AthenaList_Append(scene + 0x29D4, ball);  // bad_balls
+AthenaList_Append(scene + 0x2DEC, ball);  // all_balls
+```
+
+**Key addresses for manual spawn:**
+
+| Step | Function/Offset | Address |
+|------|-----------------|---------|
+| Allocate | `operator_new(0xC98)` | runtime |
+| Ball_ctor | `Ball_ctor(ball, scene)` | `0x4087A0` |
+| Ball_Init | `vtable[1]()` | via vtable |
+| Display pos | `ball+0x164/0x168/0x16C` | — |
+| Home pos | `ball+0xC60/0xC64/0xC68` | — |
+| AI flag clear | `ball+0x281` | — |
+| Chase dist | `ball+0xC6C` | — |
+| Home radius | `ball+0xC70` | — |
+| Add to bad_balls | `AthenaList_Append(scene+0x29D4, ball)` | — |
+| Add to all_balls | `AthenaList_Append(scene+0x2DEC, ball)` | — |
+
+**Alternatively, for split-ball 8-balls (from Ball_SplitIntoThree at 0x408D70):**
+- Uses `Ball_Split_ctor` at `0x408D10` (which calls `Ball_ctor2` then sets `ball+0xC60=5`)
+- Allocates 0xC64 bytes (slightly smaller than CreateBadBall's 0xC98)
+- Sets `ball+0x31D = 1` (is_8ball), `ball+0xC60 = 0x41200000` (30.0f, split timer)
+- Copies collision direction from parent at `ball+0xCA4/0xCA8/0xCAC`
+- Sets split ID: 1, 2, or 4 (`ball+0x324`)
 
 - **To add BadBalls via MESHWORLD:** Add objects of type 1 in section 3 with names like `BADBALL<CHASE>30</CHASE><SIZE>3</SIZE>`. They will be spawned automatically on level load when `app+0x23C != 0` (tournament mode).
 
@@ -118,19 +191,25 @@ To add Bonks:
 1. Add object named `"BONK_01"` (or any BONK-prefixed name) in MESHWORLD section 3
 2. Ensure `app+0x23C != 0` OR patch the gate
 
-### Bumpers
+### Bumpers (⚠️ Level-replacement hazard)
 
 **`CreateBumper`** — Address: `0x0040FA20`
-- **Self-loads:** `levels\level8`
-- **Size:** 0x10D0 bytes
-- **Gate:** None (no `app+0x23C` check)
+- **Convention:** `__fastcall` (param_1 = Scene\* as `int*`)
+- **⚠️ CRITICAL GOTCHA:** This does NOT just spawn bumper objects. It loads the **entire** `levels\level8` MESHWORLD file as a new MeshWorld, creates a CollisionLevel from it, calls `Level_InitScene`, then scans for 8 `N:BUMPER%d` named objects. This **replaces the level's scene data** — the current level's meshes get overwritten at `scene+0x22B` (MeshWorld) and `scene+0x22C` (CollisionLevel). **Calling CreateBumper on non-Level8 levels will crash or corrupt the scene** because it overwrites the active level's collision/geometry.
+- **Self-loads:** `MeshWorld_ctor(buf, graphics, "levels\\level8")` → stored at `param_1[0x22B]`
+- **CollisionLevel:** `CollisionLevel_ctorWithLevel(buf2, meshWorld)` → stored at `param_1[0x22C]`
+- **Init:** `Level_InitScene(param_1)` — reinitializes scene with new level data
+- **8× bumpers:** `Scene_CollectByNameFilter("N:BUMPER%d", ...)` at stride 0x106 (0x10E3 base)
+- **Post-init:** `(*param_1)[0x80]()` — calls vtable offset 0x80 (virtual function, likely level-specific setup)
+- **Size:** 0x10D0 bytes per allocation
+- **Gate:** None
 
 **`CreateBumper2`** — Address: `0x00413CE0`
-- **Self-loads:** `levels\arena-beginner`
+- Same pattern but loads `levels\arena-beginner` — also replaces scene data
 - **Size:** 0x10D0 bytes
 - **Gate:** None
 
-Bumpers are the freest objects — no gates at all. Match names are `"N:BUMPER%d"` format. They load their own mesh and collision data.
+**Bottom line:** Both `CreateBumper` variants are level-scoped constructors, not standalone object spawners. They work correctly only when called from within a BoardLevel8 or Arena board constructor that expects this level-swap behavior. Calling them from another level context will corrupt the scene.
 
 ### Ball Splits (8-ball split into 3)
 
