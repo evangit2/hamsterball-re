@@ -1,23 +1,30 @@
 # Hamsterball Modding Function Reference
 
-A comprehensive reference of the most useful functions for modders, extracted from Ghidra decompilation.
+A comprehensive reference of every useful function for modders, extracted from Ghidra decompilation of `Hamsterball.exe` (PE32, i386, Athena engine).  
+**Last updated:** 2026-06-13  
+**Total functions in binary:** ~3,800
 
 ---
 
 ## Table of Contents
 
 1. [Game Loop & Frame Control](#1-game-loop--frame-control)
-2. [Ball Physics & Movement](#2-ball-physics--movement)
-3. [Input System](#3-input-system)
-4. [Camera System](#4-camera-system)
-5. [Scene & Object Management](#5-scene--object-management)
-6. [Object Spawning & Creation](#6-object-spawning--creation)
-7. [Collision Event System](#7-collision-event-system)
-8. [Rendering Pipeline](#8-rendering-pipeline)
-9. [Collision & Pathfinding](#9-collision--pathfinding)
-10. [App & System Initialization](#10-app--system-initialization)
-11. [Vtables & Calling Conventions](#11-vtables--calling-conventions)
-12. [Quick Reference: Most-Used Offsets](#quick-reference-most-used-offsets)
+2. [App & System Initialization](#2-app--system-initialization)
+3. [Ball Physics & Movement](#3-ball-physics--movement)
+4. [Input System](#4-input-system)
+5. [Camera System](#5-camera-system)
+6. [Scene & Object Management](#6-scene--object-management)
+7. [Object Spawning & Creation](#7-object-spawning--creation)
+8. [Collision Event System](#8-collision-event-system)
+9. [Rendering & Graphics Pipeline](#9-rendering--graphics-pipeline)
+10. [Audio & Music System](#10-audio--music-system)
+11. [UI & Menu System](#11-ui--menu-system)
+12. [Save, Registry & Progression](#12-save-registry--progression)
+13. [Arena Scoring & Timer](#13-arena-scoring--timer)
+14. [Level-Specific Functions](#14-level-specific-functions)
+15. [Utility & Math Functions](#15-utility--math-functions)
+16. [Vtables & Calling Conventions](#16-vtables--calling-conventions)
+17. [Quick Reference: Most-Used Offsets](#quick-reference-most-used-offsets)
 
 ---
 
@@ -26,109 +33,201 @@ A comprehensive reference of the most useful functions for modders, extracted fr
 ### `App_Run`
 - **Address:** `0x0046BD80`
 - **Convention:** `__fastcall` (ECX = `param_1`)
-- **Parameters:**
-  - `param_1` (int\*): Pointer to `App` instance (`g_App` at `0x4FD680`)
-- **Description:**
-  Main game loop. Runs until `App+0x159` (quit flag) is set. Every frame: Win32 message pump → `App.Update` (vtable `0x20`) → `App.Render` (vtable `0x28`) → `Graphics_PresentOrEnd`.
+- **Parameters:** `param_1` (int*): Pointer to `App` instance (`g_App` at `0x4FD680`)
+- **Description:** Main game loop. Runs until `App+0x159` (quit flag) is set. Every frame: Win32 message pump → `App.Update` (vtable `0x20`) → `App.Render` (vtable `0x28`) → `Graphics_PresentOrEnd`.
 - **Modding use:** Hook vtable slot `0x20` (Update) or `0x28` (Render) to inject custom per-frame logic.
-
----
+- **Key code pattern:**
+  ```c
+  while (*(char*)(app + 0x159) == 0) {
+      PeekMessageA(...);
+      app->vtable[0x20]();  // Update
+      app->vtable[0x24]();  // PreRender
+      app->vtable[0x28]();  // Render
+      app->vtable[0x2C]();  // PostRender / HUD
+  }
+  ```
 
 ### `Scene_Update`
 - **Address:** `0x00419C00`
 - **Convention:** `__thiscall` (ECX = `this`)
-- **Parameters:**
-  - `this` (void\*): `Scene*` instance
-- **Description:**
-  Central game tick. Order: frame counter++ → demo timer → ESC check → ball propagation → gear path → rumble timers → camera shake decay → object update/render → physics pipeline (4 vtable calls).
+- **Parameters:** `this` (void*): `Scene*` instance
+- **Description:** Central game tick. Execution order:
+  1. Increment `frame_counter` (`this+0x0D88` / `this+0x3620`)
+  2. Demo timer check (if `demo_timer_active`)
+  3. ESC key → spawn `GameOverMenu` if not suppressed
+  4. Ball position propagation (if `ball_positions_dirty`)
+  5. Gear path following (single-gear camera mode)
+  6. Rumble board timer ticks
+  7. Camera shake decay (`shake_magnitude` += 10/frame toward 0)
+  8. SceneObject update+render loop
+  9. Physics pipeline (4 vtable calls, see below)
+  10. Level object update (`Scene_LevelObjUpdate`)
 - **Key offsets:**
-  - `this+0x022E` = `scene_objects` (AthenaList)
-  - `this+0x0A6C` = `ball_propagate_flag`
-  - `this+0x0A75` = `ball_list` (AthenaList\<Ball*\>)
-  - `this+0x0D88` = `frame_counter`
+  - `this+0x022E` (int index `0x8B`) = `scene_objects` (AthenaList)
+  - `this+0x0A6C` (int index `0x29B`) = `ball_positions_dirty`
+  - `this+0x0A75` (int index `0x29D`) = `ball_list` (AthenaList\<Ball*\>)
+  - `this+0x0D88` (int index `0x362`) = `frame_counter`
 - **Modding use:** Hook object vtable slot `4` (Update) for per-object behavior.
 
 ---
 
-## 2. Ball Physics & Movement
+## 2. App & System Initialization
+
+### `App_Initialize_Full`
+- **Address:** `0x00429530`
+- **Convention:** `__thiscall` (ECX = `this`)
+- **Parameters:** `this` (App*), `param_1`, `param_2` (both unused — WinMain params)
+- **Description:** Full 26-step game init sequence. Each step writes `"Initialize(N)"` to `App+0x208`:
+  1. `App_Initialize` (base init)
+  2. Set `Graphics+0x7D1 = 1`
+  3. Load `"BLANKCURSOR"` → `App+0x240`
+  4. `vtable[0x8C](800, 600)` — set display mode
+  5. Configure D3D render states (16 vs 32-bit depth)
+  6. Load `shadow.png` → `App+0x278`
+  7. Load `music\music.mo3` → `App+0x534`
+  8–11. Parse `jukebox.xml`, create music channels
+  12. `Registry_ReadPlayCount`
+  13–14. Create 4 `InputDevice` instances (players 1–4)
+  15–22. Configure input devices with mode flags
+  23. `RegKey_Close`
+  24. `vtable[0xA0]()` — show title screen / main menu
+  25. Done
+- **Modding use:** Hook after step 24 to inject custom startup code.
+
+### `WinMain`
+- **Address:** `0x004278E0`
+- **Description:** Entry point. Calls `App_Initialize_Full` → `App_Run` → `App_Shutdown`.
+
+### `App_ShowMainMenu`
+- **Address:** `0x004280E0`
+- **Description:** Allocates `0xCDC` bytes, calls `MainMenu_ctor`, stores at `App+0x224`, adds to scene via `Scene_AddObject`.
+
+### `App_SaveAllConfig`
+- **Address:** `0x004284C0`
+- **Description:** Writes all game settings to Windows registry:
+  - Display settings (`App_WriteDisplaySettings`)
+  - Mouse sensitivity (`App+0x84C`)
+  - Mirror tournament (`App+0x850`)
+  - All race/arena unlock flags (`0x851`–`0x868`)
+  - Best times binary blob (`0x86C`, 80 bytes)
+  - Medal status (`0x8BC`, 80 bytes)
+  - 2P controller mappings (`0xB28`–`0xB34`)
+
+### `App_LoadOrSaveConfig`
+- **Address:** `0x004279F0`
+- **Description:** Called on game exit. Decides whether to save or load config based on internal state.
+
+---
+
+## 3. Ball Physics & Movement
 
 ### `Ball_Update`
 - **Address:** `0x00405E00`
 - **Convention:** `__fastcall` (ECX = `param_1`)
-- **Parameters:** `param_1` (int\*): `Ball*` instance
-- **Description:**
-  Per-frame update. Returns early if `ball+0x324` (dead). Clears flags, runs AI if `ball+0x31D` (is_8ball) or `scene+0x237` (battle mode), then calls physics. After physics: proximity checks, trail recording, falling state machine.
+- **Parameters:** `param_1` (int*): `Ball*` instance
+- **Description:** Per-frame ball update. Returns early if `ball+0x324` (dead/eliminated). Clears per-frame flags, runs AI if `ball+0x31D` (is_8ball) or `scene+0x237` (battle mode), then calls physics (`Ball_AdvancePositionOrCollision`). After physics: proximity checks, trail recording, falling state machine.
 - **Key offsets:**
   - `ball+0x324` = dead/eliminated flag
   - `ball+0x31D` = `is_8ball` / AI enable flag
   - `ball+0xC60..0xC94` = AI params (home_pos, chase_distance, npc_flag)
 
----
+### `Ball_ctor` / `Ball_ctor2`
+- **Addresses:** `Ball_ctor` ≈ `0x40AFE0`, `Ball_ctor2` = `0x4039E0`
+- **Description:**
+  - `Ball_ctor`: allocate `0xC98` bytes (8ball) or `0xC60` (player), call `GameObject_ctor`, set vtable to `0x4CF3A0`
+  - `Ball_ctor2`: set physics defaults — gravity `0.5`, radius `26.0`, max_speed `5.0`
+  - Player ball: `operator_new(0xC60)` → `Ball_ctor2(this, scene)` → `vtable[4]()` → `Ball_SetTrajectory`
 
 ### `Ball_GetInputForce`
 - **Address:** `0x46EC30`
-- **Parameters:** `this` (InputDevice\*), `output` (float\*) → `[force_x, force_y]`
-- **Description:** Converts input device state to 2D force vector. 4 modes: keyboard (DIK codes), mouse (screen offset), joystick (axes).
-- **Key offsets:** `this+0x8` = input mode, key state at `+0x50C/0x510/0x514/0x518`
-
----
+- **Parameters:** `this` (InputDevice*), `output` (float*) → `[force_x, force_y]`
+- **Description:** Converts input device state to 2D force vector. Reads DIK codes at `InputDevice+0x50C/0x510/0x514/0x518`.
+- **Key offsets:** `this+0x08` = input mode
 
 ### `Ball_AdvancePositionOrCollision`
 - **Address:** `0x4564C0`
-- **Parameters:** `this` (Ball\*), `out_pos`, `cur_pos`, `input_vel`, `collision_flags`, `dt`
-- **Description:** Core physics step. Velocity integration → damp → gravity → `TestSphereVsLevel` collision → bounce → trail. Key: `ball+0xC68` = damping, `ball+0xC70` = max velocity, `ball+0xC88..C94` = gravity.
-
----
+- **Parameters:** `this` (Ball*), `out_pos`, `cur_pos`, `input_vel`, `collision_flags`, `dt`
+- **Description:** Core physics step. Velocity integration → damp → gravity → `TestSphereVsLevel` collision → bounce → trail.
+- **Key physics globals:**
+  - `0x4CF3F0` = damping constant (`0.95`)
+  - `0x4CF3E8` = ice friction factor (`6.0`)
+  - `0x4CF374` = force multiplier on ice (`0.2`)
+  - `0x4CF380` = force multiplier after first frame (`0.25`)
 
 ### `Ball_SetTargetPos`
 - **Address:** `0x00402030`
-- **Parameters:** `this` (Ball\*), `x`, `y`, `z` (floats)
-- **Description:** Sets `ball+0x758/75C/760` — camera orbit center point. NOT physics position, it's the smoothed display position the camera tracks.
+- **Parameters:** `this` (Ball*), `x`, `y`, `z` (floats)
+- **Description:** Sets `ball+0x758/75C/760` — camera orbit center point (smoothed display position).
+
+### `Ball_StartFall`
+- **Address:** `0x402200`
+- **Description:** Triggered when ball falls off board. Sets `ball+0xC4C = 1` (airborne), `ball+0x284 = 13.0` (shrunk radius), plays fall sound.
+
+### `Ball_FallUpdate`
+- **Address:** `0x408830`
+- **Description:** Physics update while falling. Decrements `fall_timer` (`ball+0x80C`). When timer expires, calls `Ball_FindClosestRespawnPoint`.
+
+### `Ball_FindClosestRespawnPoint`
+- **Address:** `0x405190`
+- **Description:** Scans `scene+0x546` (SAFESPOT/SAFEPOS list) for nearest valid respawn position. Writes new position to `ball+0x164..16C`.
+
+### `Ball_SplitIntoThree`
+- **Address:** `0x408D70`
+- **Description:** Creates 3 AI-controlled split balls (battle mode). Each split ball gets:
+  - Allocation: `0xC64` bytes
+  - `ball+0x31D = 1` (AI enable)
+  - `ball+0x318 = 30.0` (split timer)
+  - `ball+0x274 = 0.01` (speed scale)
+  - `ball+0x27C = 0.5` (force multiplier)
+
+### `Ball_InitBattleMode`
+- **Address:** `0x456CD0`
+- **Description:** Converts ball to battle mode. Sets:
+  - `ball+0xC60 = 3` (battle flag)
+  - `ball+0xC68 = 0.55` (high friction)
+  - `ball+0xC6C = 1.0` (bouncy)
+  - `ball+0xC70 = 1000.0` (max speed — 200x normal!)
 
 ---
 
-## 3. Input System
+## 4. Input System
 
 ### `Input_IsKeyDown`
 - **Address:** `0x46E0B0`
 - **Parameters:** `key` (int) — DIK scancode
 - **Returns:** 1 if held, 0 if not
-- **Modding use:** Poll any key for custom actions.
 
 ### `App_CreateInputDevice`
 - **Address:** `0x0046C050`
 - **Returns:** `InputDevice*` (0x14 bytes)
-- **Key offsets:** `+0x00` vtable, `+0x04` App\*, `+0x08` input mode, `+0x10` joystick ptr
+- **Key offsets:** `+0x00` vtable, `+0x04` App*, `+0x08` input mode, `+0x10` joystick ptr
+
+### `App_CreateInputHandler`
+- **Address:** `0x0046C110`
+- **Returns:** `InputHandler*` — aggregates 4 `InputDevice` instances
+
+### `InputDevice_SetType`
+- **Address:** `0x46DFC0`
+- **Parameters:** `this` (InputDevice*), `mode` (int) — 1=keyboard, 2=mouse, 4-7=joystick
 
 ---
 
-## 4. Camera System
+## 5. Camera System
 
 ### `Scene_SetCamera`
 - **Address:** `0x00419FA0`
 - **Convention:** `__thiscall` (ECX = `this`)
-- **Parameters:**
-  - `this` (void\*): `Scene*` instance
-  - `param_1` (void\*): `Ball*` being tracked
-  - `param_2` (char): Boolean — if true, apply path-following spring
-- **Description:**
-  Camera positioning every frame. 5 modes:
-  
+- **Parameters:** `this` (Scene*), `param_1` (Ball*), `param_2` (char) — if true, apply path-following spring
+- **Description:** Camera positioning every frame. 5 modes:
   1. **Default Follow:** Orbit around `ball+0x758` + `scene+0x434C` offset
-  2. **Path Rail:** If `scene+0x3F1C != 0` AND `param_2 != 0`:
-     - Call `Path_GetPosition(scene+0x3F20, &out, scene+0x3F24)`
-     - Compute spring force toward nearest rail point with sine wobble
-     - Clamp max distance to 700 units
-     - **To DISABLE path follow:** Set `scene+0x3F1C = 0` — camera falls back to default follow
+  2. **Path Rail:** If `scene+0x3F1C != 0` AND `param_2 != 0` → call `Path_GetPosition(scene+0x3F20, &out, scene+0x3F24)`
   3. **Camera Shake:** If `ball+0x744`: random ±50 per axis
-  4. **Snap:** If `scene+0x3F2C > 0`: force camera to ball physics pos, decrement counter
+  4. **Snap:** If `scene+0x3F2C > 0`: force camera to ball physics pos, decrement
   5. **Orbit:** Apply `scene+0x29BC` (angle) and `scene+0x29C0` (distance)
-  
-  After all modes, calls `Ball_SetTargetPos` and updates `ball+0x76C`.
 - **Key offsets:**
-  - `scene+0x3F1C` = `path_follow_mode` (0=follow ball, 1=follow rail path)
-  - `scene+0x3F20` = `path_object` (Path\* for camera rail spline)
-  - `scene+0x3F24` = `path_position` (float, 0.0–1.0 parametric)
+  - `scene+0x3F1C` = `path_follow_mode`
+  - `scene+0x3F20` = `path_object`
+  - `scene+0x3F24` = `path_position`
   - `scene+0x3F2C` = `camera_snap_frames`
   - `scene+0x29BC` = `camera_orbit_angle`
   - `scene+0x29C0` = `camera_distance` (max 700)
@@ -136,414 +235,511 @@ A comprehensive reference of the most useful functions for modders, extracted fr
 
 ---
 
-## 5. Scene & Object Management
+## 6. Scene & Object Management
 
 ### `Scene_AddObject`
 - **Address:** `0x00469990`
-- **Parameters:** `this` (Scene\*), `obj` (Gadget\*)
+- **Parameters:** `this` (Scene*), `obj` (Gadget*)
 - **Description:** Appends to `scene+0x2578` (active object list). Objects receive `Update` (vtable[4]) and `Render` (vtable[0]) per frame.
+
+### `Scene_SpawnBallsAndObjects`
+- **Address:** `0x0041C5B0`
+- **Description:** Level startup factory. Creates all game objects:
+  1. Ball creation loop — lookup `"START%d-%d"` in hash table, `Ball_ctor2`, set properties
+  2. Safe spot scan — `"SAFESPOT"`/`"SAFEPOS"` → `scene+0x546`
+  3. Tournament/demo: `CreateBadBall`, `CreateMouseTrap`
+  4. Decoration: `CreateSecretObjects`, `Scene_CreateFlags`, `Scene_CreateSigns`, `Scene_CreateDynamicObjects`
+- **Ball defaults:** radius=26.0, max_speed=5.0, gravity_scale=0.5
 
 ### `Board_ctor`
 - **Address:** `0x00419030`
 - **Description:** Creates Board (~0x5400 bytes, inherits Gadget). Sets up scene lists, ball list, D3D device, level slots.
 
----
-
-## 6. Object Spawning & Creation
-
-### `Scene_SpawnBallsAndObjects`
-- **Address:** `0x0041C5B0`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Parameters:** `param_1` (Scene\*) — the board/scene instance
-- **Description:**
-  Level startup factory. Creates all game objects in order:
-  
-  **1. Ball creation loop** — For each start entry:
-  - Look up `"START%d-%d"` position in hash table
-  - Tournament mode: alternate start positions
-  - Race types 5, 0xB, 0xC, 0xE: random start between `"START2-1"`/`"START2-2"`
-  - Debug override: `"START-DEBUG"` if present
-  - `Ball_ctor2(new(0xC60), scene)` → `vtable[4]()` init → `Ball_SetTrajectory()` → set properties
-  
-  **2. Safe spot scan** — Parse for `"SAFESPOT"`/`"SAFEPOS"` → `scene+0x546`
-  
-  **3. Tournament/demo objects** (if `app+0x23C` or `app+0x237`):
-  - `CreateBadBall(scene)` — AI opponent balls
-  - `CreateMouseTrap(scene)` — mouse trap obstacles
-  
-  **4. Level decoration:**
-  - `CreateSecretObjects(scene)` — hidden collectibles
-  - `Scene_CreateFlags(scene)` — finish line flags
-  - `Scene_CreateSigns(scene)` — direction signs
-  - `Scene_CreateDynamicObjects(scene)` — moving/animated objects
-
-- **Ball spawn constants:**
-  - Allocation size: `0xC60` bytes
-  - Default radius: `26.0` (not 27)
-  - Max speed: `5.0` (0x40A00000)
-  - Speed scale: `0.1` (0x3DCCCCCD)
-  - Gravity mult: `1.00625` (0x3F866666)
-  - Gravity scale: `0.5`
+### `Scene_CleanupScene`
+- **Address:** `0x419740`
+- **Description:** Destructor helper. Cleans all AthenaLists in reverse order: collision_list → ripple_list → ball_list → scene_object_list → etc.
 
 ---
 
-### `CreateBadBall`
-- **Address:** `0x0040BCA0`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Parameters:** `param_1` (int): `Scene*` instance
-- **Description:**
-  Scans the level meshworld string table for entries starting with `"BADBALL"`. For each match:
-  1. Allocate `Ball_ctor(new(0xC98), scene)` — note: 0xC98, larger than normal ball (0xC60)!
-  2. Call `vtable[4]()` — post-constructor init
-  3. Set position from meshworld object data: `ball+0x164` = X + offset, `ball+0x168` = Y + display_pos, `ball+0x16C` = Z + offset
-  4. Copy home position: `ball+0xC60` = X, `ball+0xC64` = Y, `ball+0xC68` = Z
-  5. Set `ball+0x281 = 0` (clear active flag)
-  6. Parse XML-style tags from the BADBALL name:
-     - `<CHASE>value</CHASE>` → `ball+0xC6C` (chase distance)
-     - `<HOME>value</HOME>` → `ball+0xC70` (home radius)
-     - `<SIZE>value</SIZE>` → `ball+0x188 = 3.0` (0x40400000), `ball+0xA0` = value, and set `ball+0xC4C = 1` (dizzy-resistant)
-     - `<SPINDISTANCE>value</SPINDISTANCE>` → `ball+0x1B4` = distance for spin tracking
-  7. Append to `scene+0x29D4` (8ball list) and `scene+0x2DEC` (active ball list)
-  
-- **BADBALL MESHWORLD name format:**
-  ```
-  BADBALL<CHASE>200</CHASE><HOME>500</HOME><SIZE>30</SIZE>
-  ```
-  All tags are optional. Without SIZE, ball uses default radius (26.0).
-
----
-
-### `Ball_SplitIntoThree`
-- **Address:** `0x00408D70`
-- **Convention:** `__thiscall` (this = Ball\* being split)
-- **Parameters:**
-  - `this` (void\*): The ball being split (must have `ball+0x324 == 0`, i.e. not dead)
-  - `param_1` (int): Collision parameter list (positions for split trajectories)
-- **Description:**
-  Creates 3 split balls from the current ball (used in 8-ball battle mode):
-  1. Free collision direction buffer at `ball+0xC28`
-  2. Call `vtable[0x78]()` — pre-split callback
-  3. Set `ball+0x2E8 = 1` (splitting flag)
-  4. If `ball+0x744 == 0` (no gravity plane): play sound based on `ball+0xC4C` (dizzy flag)
-  5. Call `Scene_ForEachBall_SetVelocity` — propagate current velocity to all balls
-  6. Loop 3 times (for split ball IDs 1, 2, 4):
-     - `Ball_Split_ctor(new(0xC64), scene)` — allocate 0xC64 bytes
-     - Set `ball+0x324 = 0xC9` (split ball marker, 1 byte)
-     - Call `vtable[4]()` — init
-     - Copy collision direction from parent (`ball+0xCA4/CA8/CAC`)
-     - Set position: either from collision param list or from parent display_pos
-     - Call `Ball_SetTrajectory` with parent trajectory data
-     - Set `ball+0x18 = -1` (no player index — AI ball)
-     - Set `ball+0x274 = 0.01` (speed scale), `ball+0x27C = 0.5` (force multiplier)
-     - Copy parent radius to `ball+0xA0`
-     - Call `vtable[0x14]()` — post-init
-     - Set `ball+0x758` (split ball ID): 1, 2, or 4
-     - Append to `scene+0x3204` (split ball list)
-     - Set `ball+0x31D = 1` (AI enable flag — split balls ARE AI-controlled!)
-     - Set `ball+0x318 = 30.0` (0x41200000) — split timer
-     - Add random trajectory variation (`RNG_Rand` 5, 10)
-     - Set `ball+0x324 = split_id` (1, 2, or 4)
-
-- **Key offsets for split balls:**
-  - `ball+0x31D` = `is_8ball` flag (always 1 for splits)
-  - `ball+0x318` = split timer (starts at 30.0)
-  - `ball+0x758` = split ball ID (1, 2, or 4)
-  - `ball+0x274` = speed scale (0.01)
-  - `ball+0x27C` = force multiplier (0.5)
-
----
-
-### `Ball_InitBattleMode`
-- **Address:** `0x00456CD0`
-- **Convention:** `__fastcall` (param_1 = Ball\*)
-- **Parameters:** `param_1` (void\*): Ball instance to convert to battle mode
-- **Description:**
-  Converts a normal ball to battle/8ball mode. Sets physics parameters:
-  - `ball+0xC60 = 3` (battle mode flag — overrides default 5)
-  - `ball+0xC68 = 0.55` (0x3F0E147B — friction higher than normal)
-  - `ball+0xC6C = 1.0` (0x3F800000 — bounciness)
-  - `ball+0xC70 = 1000.0` (0x447A0000 — max speed, much higher than normal 5.0!)
-  - `ball+0xC78 = 25.0` (0x41C80000 — chase distance for AI)
-  - `ball+0xC7C = 1` (AI active flag)
-  - Clear velocity: `ball+0xC80/84/88 = 0`
-  - Set gravity: `ball+0xC8C = 0`, `ball+0xC90 = -1.0`, `ball+0xC94 = 0`
-  - Set `ball+0x14 = 1` (trail recording enabled)
-- **Modding use:** Call on any ball to turn it into a battle-mode AI opponent. The 1000x speed increase (1000 vs 5) and friction change make battle balls behave very differently.
-
----
+## 7. Object Spawning & Creation
 
 ### `CreateLevelObjects` (Object Factory)
 - **Address:** `0x004121D0`
 - **Convention:** `__thiscall` (ECX = `this`)
-- **Parameters:**
-  - `this` (void\*): `Scene*` instance
-  - `name` (char\*): Object name from MESHWORLD (e.g., `"BONK_01"`, `"TIPPER_A"`)
-  - `param_2` (undefined4\*): Transform matrix pointer
-  - `param_3` (undefined4\*): Secondary transform
-  - `param_4` (int): Object index
-- **Description:**
-  The main object factory. Uses `__strnicmp` to match object name prefixes and instantiate the appropriate game object:
-  - `BRIDGE` (6 chars) → configure bridge collision mesh at `scene+0x436C`, position at `scene+0x437C/80/84`. If name contains `"(NOCOLLIDE)"`, skip collision at `scene+0x4370`
-  - `TIPPER` (6 chars, if `app+0x23C != 0`) → `Tipper_ctor(0x1104)` + `TipperVisual_ctor(0x10D0)`, append visual to `scene+0x2578`
-  - `BONK` (4 chars, if `app+0x23C != 0`) → `Bonk_ctor(0x1200)`, store at `scene+0x540C`
-  - `BBRIDGE1`/`BBRIDGE2` (8 chars) → `BreakBridge_ctor(0x1100)`, store mesh at `scene+0x5410`/`0x5414`, obj at `scene+0x5418`/`0x541C`
-  - `POPCYLINDER` (11 chars) → `PopCylinder_ctor(0x10E8)`, append to `scene+0x5428`
-  - `BLOCKDAWG1`/`BLOCKDAWG2` (10 chars, if `app+0x23C != 0`) → `Blockdawg_ctor(0x1154)`, locates path via `Level_FindObjectByName("DAWGPATH1"/"DAWGPATH2")`. DWG2 sets `obj+0x1152 = 1` (variant 2)
-  - `CATAPULT` (8 chars) → `Catapult_ctor(0x1108)`, set `obj+0x440*4 = 1` (active), append to `scene+0x584C`
-  - `GLUEBIE` (7 chars, if `app+0x23C != 0`) → `Gluebie_ctor(0x110C)`, append to `scene+0x6080`
-  - `SAFESPOT`/`SAFEPOS` → safety spawn positions (not game objects)
-  - `START1-1`, `START2-1` etc. → ball spawn positions
-  - `E:LIMIT`, `E:JUMP`, etc. → event triggers (collision volumes)
-  - `BADBALL` → 8-ball AI parameters (`CHASE`, `HOME`, `SIZE`, `SPINDISTANCE`)
+- **Parameters:** `this` (Scene*), `name` (char*), `param_2` (matrix), `param_3` (matrix), `param_4` (index)
+- **Description:** Main object factory. Matches prefixes via `__strnicmp`:
+  - `BRIDGE` → `scene+0x436C`
+  - `TIPPER` → `Tipper_ctor(0x1104)` + visual
+  - `BONK` → `Bonk_ctor(0x1200)` → `scene+0x540C`
+  - `BBRIDGE1`/`BBRIDGE2` → `BreakBridge_ctor(0x1100)`
+  - `POPCYLINDER` → `PopCylinder_ctor(0x10E8)`
+  - `BLOCKDAWG1`/`BLOCKDAWG2` → `Blockdawg_ctor(0x1154)`
+  - `CATAPULT` → `Catapult_ctor(0x1108)` → `scene+0x584C`
+  - `GLUEBIE` → `Gluebie_ctor(0x110C)` → `scene+0x6080`
+  - `SAFESPOT`/`SAFEPOS` → spawn positions
+  - `BADBALL` → 8-ball AI parameters
 
-- **Scene object list offsets (quick lookup by type):**
-  - `scene+0x2578` = all game objects (AthenaList)
-  - `scene+0x436C` = bridge_mesh
-  - `scene+0x540C` = bonk_ref
-  - `scene+0x5410/5418` = breakbridge1 mesh/obj
-  - `scene+0x5414/541C` = breakbridge2 mesh/obj
-  - `scene+0x5420/5428` = popcylinder mesh/list
-  - `scene+0x5840/5844` = blockdawg1/2 mesh
-  - `scene+0x5848/584C` = catapult mesh/list
-  - `scene+0x607C/6080` = gluebie mesh/list
-
----
+### `CreateBadBall`
+- **Address:** `0x0040BCA0`
+- **Description:** Scans meshworld for `"BADBALL"`. For each:
+  - `Ball_ctor(new(0xC98), scene)` — note: larger than player ball!
+  - Parse tags: `<CHASE>`, `<HOME>`, `<SIZE>`, `<SPINDISTANCE>`
+  - Append to `scene+0x29D4` (8ball list) and `scene+0x2DEC` (active ball list)
 
 ### `CreateBumper`
 - **Address:** `0x0040FA20`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Parameters:** `param_1` (int\*): `Scene*` instance
-- **Description:**
-  Creates 8 bumper objects for Level 8 (tournament/arena). Loads `"levels\\level8"` as `MeshWorld`, creates `CollisionLevel` clone, calls `Scene_CollectByNameFilter("N:BUMPER%d")` 8 times. Stores at `scene+0x1913` area blocks. Calls `vtable[0x80]()` post-init.
+- **Description:** Creates 8 bumpers for Level 8. Loads `levels\level8`, calls `Scene_CollectByNameFilter("N:BUMPER%d")`.
 
 ### `CreateBumper2`
 - **Address:** `0x00413CE0`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Description:**
-  Variant for arena levels. Loads `"levels\\arena-beginner"`, creates 4 bumpers instead of 8. Same pattern but offset to `scene+0x1610` block area.
-
-### `CreateSawblade` (inside `CreateLevelObjects`)
-- **Address:** `0x0040E250` (within factory dispatcher)
-- **Convention:** Part of `CreateLevelObjects` dispatch chain
-- **Parameters:** Same as `CreateLevelObjects` — `this`, `name`, `param_2`, `param_3`, `param_4`
-- **Description:**
-  Matched by `__strnicmp(name, "SAWBLADE", 8)`. If `app+0x23C != 0`:
-  - `Sawblade_Level_Ctor(new(0x111C), scene, x, y, z)` — position from `param_4+4/8/C`
-  - Append to `scene+0x2578`
-  - If name contains `"1"`: store at `scene+0x4370`, call `Sawblade_SetBreakSound(1)`
-  - If name contains `"2"`: store at `scene+0x4374`
+- **Description:** Arena variant — 4 bumpers for beginner arena.
 
 ### `CreateMouseTrap`
 - **Address:** `0x0040BF50`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Description:**
-  Scans meshworld string table for `"MOUSETRAP"` entries. For each:
-  - `TipperVisual_Level_Ctor(new(0x10F8), scene)` — 0x10F8 bytes
-  - Append to `scene+0xCD4` (collision list), `scene+0x1930` (render list), mesh data list
-  - Set position from meshworld object data (`+0x437/438/439`)
-  - Set Z offset: `obj+0x43D = _DAT_004CF44C - obj_Z_value`
+- **Description:** Scans meshworld for `"MOUSETRAP"`. Creates `TipperVisual` objects appended to collision and render lists.
 
 ### `CreateBonkPopup`
 - **Address:** `0x00438B30`
-- **Convention:** `__fastcall` (param_1 = hammer object ptr)
-- **Description:**
-  If `obj+0x10FC != 0` (active): clear flag to 0, play 3D sound at stored position, call `vtable[0x88]("BONKPOPUP")`. Simple audio-visual feedback for hammer hits.
+- **Description:** Hammer hit visual feedback. Plays 3D sound, calls `vtable[0x88]("BONKPOPUP")`.
 
 ### `Hammer_ChaseStart`
 - **Address:** `0x00438BB0`
-- **Convention:** `__fastcall` (param_1 = hammer object ptr)
-- **Description:**
-  If `obj+0x10FD == 0` (not already chasing): set `obj+0x10FD = 1`, set `obj+0x1104 = 1` (chase active), copy position from `obj+0x10D4/10D8/10DC` to `obj+0x1108/110C/1110`, copy target from `obj+0x10E0/10E4/10E8` to `obj+0x1120/1124/1128`. Set `obj+0x1138 = 0.5` (0x3F000000 — chase speed).
-
-### `Ball_ctor` / `Ball_ctor2`
-- **Address:** `Ball_ctor` = inside `Ball_ctor2` chain, initial allocation at various addresses
-- **Description:**
-  `Ball_ctor(this, scene)` allocates and initializes a Ball struct:
-  - Calls `GameObject_ctor(this, scene)` base constructor
-  - Sets vtable to `0x4CF3A0` (Ball vtable)
-  - Initializes physics vectors at `ball+0xC84..0xC94` (gravity default: identity quaternion → 0,0,1,0,0,1)
-  - `ball+0xC80 = 0` (gravity mode 0 = flat)
-
-  After construction, the spawner calls `vtable[4]()` for post-init and `Ball_SetTrajectory()` with level data.
+- **Description:** Starts hammer AI chase. Sets chase flags, copies position/target, chase speed = 0.5.
 
 ---
 
-### Additional Object Factories
+## 8. Collision Event System
 
-#### `CreateSecretObjects`
-- **Address:** `0x0040BAA0`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Description:**
-  Scans meshworld string table for objects starting with `"SECRET"` or `"SECRETUNLOCK"`. Creates hidden collectible objects that trigger `Rotator_MarkTriggered` (for `N:SECRET`) or `CheckArenaUnlock` (for `N:UNLOCKSECRET`). Only active if `app+0x23C != 0` and `app+0x234 == 0` and not in demo mode.
-
-#### `Scene_CreateFlags`
-- **Address:** `0x0040C0F0`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Description:**
-  Scans for `"FLAG"` and `"SMALLFLAG"` entries in meshworld. Creates `Flag` objects (0x8C bytes) appended to `scene+0x2160`. `SMALLFLAG` objects get their size scaled down by a constant factor.
-
-#### `Scene_CreateSigns`
-- **Address:** `0x0040C270`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Description:**
-  Scans for `"SIGN"` entries. Creates `Sign` objects (0x10FC bytes). If name contains `"-TARPIT"`, applies tar texture. Appends to `scene+0xCD4` and render lists.
-
-#### `Scene_CreateDynamicObjects`
-- **Address:** `0x0040C430`
-- **Convention:** `__fastcall` (param_1 = Scene\*)
-- **Description:**
-  Iterates ALL meshworld entries. For each, calls `scene->vtable[0x84](name, &result, &count, entry)` — the virtual `CreateDynamicObject` method that each board level overrides. Results are appended to `scene+0x335` (dynamic object list) and sub-lists at `scene+0x43B`.
-
----
-
-## 7. Collision Event System
-
-### `CreateNoDizzy` / `GameObject_HandleCollision`
+### `GameObject_HandleCollision` / `CreateNoDizzy`
 - **Address:** `0x0040C5D0`
-- **Convention:** `__thiscall` (ECX = this, params = Scene\*, Ball\*, CollisionObject\*)
-- **Parameters:**
-  - `this` (void\*): Level/Board instance
-  - `param_1` (int\*): `Ball*` instance
-  - `param_2` (int\*): `CollisionObject*` — contains event name at `collObj[1]+0x864`
-- **Description:**
-  **THE** universal event dispatcher. Every collision in the game ends up here. Dispatches by `__strnicmp` on the event name string:
-  
-  | Event Name | Condition | Action |
-  |------------|-----------|--------|
-  | `N:SECRET` | — | `Rotator_MarkTriggered(collObj+0x47C)` |
-  | `N:UNLOCKSECRET` | — | `CheckArenaUnlock(scene)` |
-  | `E:NODIZZY<TIME>N</TIME>` | — | Parse TIME tag → `Ball_RecordBest(ball, duration)` |
-  | `E:SAFESWITCH(data)` | — | Copy `(data)` to `ball+0xC2C`; if no parens: clear `ball+0x30B` |
-  | `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1`, increment per-player completions at `board+0x47B4..47C0` |
-  | `E:BREAK` | — | Call `ball->vtable[0x20]()` (bounce callback) |
-  | `E:JUMP` | `ball.impactCounter < 1` | Play 3D jump sound, set impactCounter=10, apply upward force 0.025, freeze 10 frames, `Ball_RecordBest(+200)` |
-  | `E:ACTION<ONCE>TRUE</ONCE><SCORE>N</SCORE>` | — | If ONCE: check `ball+0xCB` for duplicate; award score with difficulty modifier |
-  | `E:TRAJECTORY<X>val</X><Y>val</Y><Z>val</Z>` | — | Parse X/Y/Z tags → set ball collision direction at `ball+0xCA4/CA8/CAC` |
-  | `N:NOCONTROL` | — | Set `ball+0x202 = 10` (disable input for 10 frames) |
-  | `N:WATER` | — | Set `ball+0x2D5 = 1` (water flag), `ball+0xB6 = 10` (water timer) |
-  | `N:TARPIT` | `ball+0xB3 == 0` (first time) | Play tar sound, set `ball+0xB3 = 1`, clear `ball+0x1DA` |
-  | `DROPIN` | `dist > threshold` | Play dropin sound, `ball.dropinCounter = 50`, `Ball_RecordBest(+200)` |
-  | `PIPEBONK` | `pipebonkCounter < 1` | Random sound from 3, `counter = 10`, `Ball_RecordBest(+100)` |
-  | `POPOUT` | `popoutCounter < 1` | Play popout sound, `counter = 50`, `Ball_RecordBest(+100)` |
-  | `N:GOAL` | `!ball.finished && ball.active` | First ball: set `board->goalReached = 1`, play goal music. Mark player finished, record time |
-  | `N:MOUSETRAP` | — | Randomize RNG, deflect ball direction × trap speed (0x4CF370), search rotator list for match |
+- **Convention:** `__thiscall` (ECX = this)
+- **Parameters:** `this` (Level*), `ball` (Ball*), `collider` (CollisionObject*)
+- **Description:** Universal collision event dispatcher. Event name at `collider[1]+0x864`.
 
-### `Level_HandleCollision` (Arena-Specific Events)
+| Event | Condition | Action |
+|-------|-----------|--------|
+| `N:SECRET` | — | `Rotator_MarkTriggered` |
+| `N:UNLOCKSECRET` | — | `CheckArenaUnlock(scene)` |
+| `E:NODIZZY<TIME>N</TIME>` | — | `Ball_RecordBest(ball, duration)` |
+| `E:SAFESWITCH(data)` | — | Copy data to `ball+0xC2C` |
+| `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1` |
+| `E:BREAK` | — | `ball->vtable[0x20]()` bounce callback |
+| `E:JUMP` | `impactCounter < 1` | Sound, force 0.025, freeze 10 frames, `Ball_RecordBest(+200)` |
+| `E:ACTION<ONCE>TRUE</ONCE><SCORE>N</SCORE>` | — | Check duplicate at `ball+0xCB`, award score |
+| `E:TRAJECTORY<X>..</X>` | — | Set collision direction `ball+0xCA4/CA8/CAC` |
+| `N:NOCONTROL` | — | `ball+0x202 = 10` (disable input 10 frames) |
+| `N:WATER` | — | `ball+0x2D5 = 1`, `ball+0xB6 = 10` |
+| `N:TARPIT` | first time | Play tar sound, `ball+0xB3 = 1` |
+| `DROPIN` | `dist > threshold` | Sound, `dropinCounter = 50`, `Ball_RecordBest(+200)` |
+| `PIPEBONK` | `counter < 1` | Random sound, `counter = 10`, `Ball_RecordBest(+100)` |
+| `POPOUT` | `counter < 1` | Sound, `counter = 50`, `Ball_RecordBest(+100)` |
+| `N:GOAL` | `!finished && active` | Set `goalReached=1`, play music, mark finished |
+| `N:MOUSETRAP` | — | Randomize RNG, deflect direction × trap speed |
+
+### `Level_HandleCollision`
 - **Address:** `0x40DCD0`
-- **Convention:** `__thiscall` (ECX = this)
-- **Description:**
-  Level-specific collision dispatch, then delegates to `CreateNoDizzy` for all remaining events. Arena-specific events:
-  
-  | Event Name | Condition | Action |
-  |------------|-----------|--------|
-  | `E:CATAPULTBOTTOM` | `impactCounter < 1` | Set `ball+0x202 = 1000`, find matching catapult in `scene+0x47C4`, launch, play sound |
-  | `E:OPENSESAME` | — | Open all trapdoors via `Trapdoor_Open(list->first)` |
-  | `N:TRAPDOOR` | — | Find matching trapdoor in `scene+0x4BDC`, activate |
-  | `E:BITE` | — | Set `scene+0x43A8 = 0`, `scene+0x43A0 = 25.0` |
-  | `E:MACETRIGGER` | — | Iterate mace list, set each `obj+0x10F0 = 1` (active) |
+- **Description:** Level-specific events, then delegates to `CreateNoDizzy`:
+  - `E:CATAPULTBOTTOM` → launch catapult
+  - `E:OPENSESAME` → open all trapdoors
+  - `N:TRAPDOOR` → activate trapdoor
+  - `E:BITE` → `scene+0x43A0 = 25.0`
+  - `E:MACETRIGGER` → activate maces
 
-### `Arena_HandleCollision` (Rumble-Specific Events)
+### `Arena_HandleCollision`
 - **Address:** `0x40E6A0`
-- **Convention:** `__thiscall` (ECX = this)
-- **Description:**
-  Rumble arena collision dispatch, then delegates to `CreateNoDizzy`. Arena-specific events:
-  
-  | Event Name | Condition | Action |
-  |------------|-----------|--------|
-  | `E:CALLHAMMER` | `app+0x23C != 0` (multiplayer) | `CreateBonkPopup(scene+0x436C)` |
-  | `E:HAMMERCHASE` | `app+0x23C != 0` | `Hammer_ChaseStart(scene+0x436C)` |
-  | `E:ALERTSAW1`/`E:ALERTSAW2` | `app+0x23C != 0` | `Saw_AlertActivate(scene+0x4370/0x4374)` |
-  | `E:ACTIVATESAW1`/`E:ACTIVATESAW2` | `app+0x23C != 0` | `Saw_Activate(scene+0x4370/0x4374)` |
-  | `E:ALERTJUDGES` | — | Reset all judge objects in list at `scene+0x4FC8` |
-  | `E:SCORE<number>` | — | Parse number, set score display timer for each display in list |
-  | `E:BELL` | — | `Bell_Activate`, add 500 time units in single player, show "EXTRA TIME:" popup |
-  | `E:JUMP` | `impactCounter < 1` | Same as base: sound, force, `Ball_RecordBest(+200)` |
+- **Description:** Arena-specific events (see `docs/ARENA_SCORING.md` for full table):
+  - `E:CALLHAMMER` → `CreateBonkPopup`
+  - `E:HAMMERCHASE` → `Hammer_ChaseStart`
+  - `E:ALERTSAW1/2` → `Saw_AlertActivate`
+  - `E:ACTIVATESAW1/2` → `Saw_Activate`
+  - `E:ALERTJUDGES` → reset all judges
+  - `E:SCORE<number>` → parse time, `ScoreDisplay_SetTime`
+  - `E:BELL` → `Bell_Activate`, +500 time, "EXTRA TIME:" popup
+  - `E:JUMP` → jump pad
 
 ---
 
-## 8. Rendering Pipeline
+## 9. Rendering & Graphics Pipeline
 
 ### `Scene_Render`
 - **Address:** `0x0041A2E0`
-- **Convention:** `__thiscall` (ECX = `this`)
-- **Parameters:** `this` (Scene\*), `param_1` (int\*): Graphics context
-- **Description:**
-  Main rendering dispatch. Per viewport: `Graphics_SetViewport` → `Scene_SetCamera` → `vtable[0x60]` (Background) → `vtable[0x64]` (Opaque) → `vtable[0x68]` (Transparent) → `vtable[0x70]` (Overlay) → `vtable[0x6C]` (PostEffects).
+- **Convention:** `__thiscall`
+- **Description:** Main render dispatch. Per viewport:
+  1. `Graphics_SetViewport`
+  2. `Scene_SetCamera`
+  3. `vtable[0x60]` — Background (sky/dome)
+  4. `vtable[0x64]` — Opaque geometry
+  5. `vtable[0x68]` — Transparent objects
+  6. `vtable[0x70]` — Overlay (HUD)
+  7. `vtable[0x6C]` — PostEffects (fade/transition)
 
 ### `Scene_RenderAllObjects`
 - **Address:** `0x0045E0E0`
-- **Parameters:** `this` (Scene\*)
-- **Description:** Iterates `scene+0x22E` (AthenaList), calls `obj->vtable[0]()` (Render) for each visible object.
+- **Description:** Iterates `scene+0x22E` (AthenaList), calls `obj->vtable[0]()` (Render) for each.
+
+### `Ball_Render`
+- **Address:** `0x402DE0`
+- **Description:** D3D8 ball rendering. Sets up render state, applies world transform from `ball+0xC88` (4×4 matrix), draws sphere mesh with texture.
+
+### `Ball_RenderShadow`
+- **Address:** `0x401920`
+- **Description:** Draws shadow quad beneath ball. Uses `shadowTexture` (`App+0x278`), alpha blend at ball position with Y offset.
+
+### `Ball_CreateTrailParticles`
+- **Address:** `0x401DD0`
+- **Description:** Creates trail of particles behind moving ball. Appends to `scene+0x3B00` (trail_particles_ptr).
+
+### `Level_UpdateAndRender`
+- **Address:** `0x40B600` (vtable[0x64])
+- **Description:** Two-pass rendering: opaque then alpha. Updates waypoint arrow, renders visible objects.
+
+### `Level_RenderObjects`
+- **Address:** `0x40B570` (vtable[0x68])
+- **Description:** Transparent pass. Glass, water, effects.
+
+### `Level_RenderDynamicObjects`
+- **Address:** `0x40B420` (vtable[0x60])
+- **Description:** Sky/dome + water ripples + dynamic object callback.
+
+### `Graphics_Initialize`
+- **Address:** `0x455380`
+- **Description:** Creates D3D8 device, enumerates display modes, sets up render targets.
+
+### `Gfx_SetAlphaBlendState`
+- **Address:** `0x425FE0`
+- **Description:** Toggles `D3DRS_ALPHABLENDENABLE`.
+
+### `Gfx_SetCullMode`
+- **Address:** `0x427940`
+- **Description:** Sets `D3DRS_CULLMODE`.
 
 ---
 
-## 9. Collision & Pathfinding
+## 10. Audio & Music System
 
-### `Scene_CheckPath`
-- **Address:** `0x00457EC0`
-- **Parameters:** `start` (int), `target` (int)
-- **Returns:** `int` — 1 (clockwise), -1 (counter-clockwise), 0 (unreachable)
-- **Description:** Ring-topology pathfinder on 360-cell circular grid. Used for angular collision and track snapping.
+### `Audio_PlayMusic`
+- **Address:** inferred from `MusicPlayer_ctor` usage
+- **Description:** Plays BASS music stream. Music handle at `App+0x534`.
 
-### `Path_GetPosition`
-- **Address:** `0x00467BF0`
-- **Convention:** `__thiscall` (ECX = Path\*)
-- **Parameters:**
-  - `this` (void\*): Path instance (`scene+0x3F20`)
-  - `param_1` (float\*): OUT — position [x, y, z]
-  - `param_2` (float): Parametric value (0.0–1.0)
-- **Description:**
-  Interpolates path position using cubic splines. Y is always 0.0 (paths are 2D XZ curves). Used by camera path-follow system in `Scene_SetCamera`.
-- **Modding use:** Call with different `param_2` values to trace the entire path rail. Set `scene+0x3F1C = 0` and `scene+0x3F24` manually to force camera to specific path positions.
+### `Audio_PlayMusicAtSpeed`
+- **Address:** inferred
+- **Parameters:** `musicHandle`, `trackName` (char*), `speed` (float)
+- **Description:** Plays music at modified tempo. Used by `MusicPlayer_ctor` for "Main Theme - No Intro" at 2.0× speed.
 
-### `Level_FindObjectByName`
-- **Address:** `0x00460530`
-- **Parameters:** `this` (Level\*), `name` (char\*)
-- **Returns:** `int` — pointer to found object, or 0 if not found
-- **Description:** Linear search of meshworld object list by `__stricmp`. Used by `BLOCKDAWG1`/`BLOCKDAWG2` to find their path objects (`"DAWGPATH1"`/`"DAWGPATH2"`).
+### `MusicPlayer_ctor`
+- **Address:** `0x426030`
+- **Parameters:** `this`, `App*`, `bool skipIntro`
+- **Description:** Creates music player gadget. If `skipIntro==false`: plays `"Main Theme"`. If `true`: plays `"Main Theme - No Intro"` at 2.0×.
 
----
+### `Sound_Play3D`
+- **Address:** inferred from multiple call sites
+- **Parameters:** `soundHandle`, `x`, `y`, `z` (floats)
+- **Description:** Plays positional 3D audio effect at world coordinates.
 
-## 10. App & System Initialization
+### `Level_ReadSoundVolume`
+- **Address:** `0x466570`
+- **Description:** Reads `"Sound Volume"` from registry, defaults to `1.0`.
 
-### `App_Initialize_Full`
-- **Address:** `0x00429530`
-- **Convention:** `__thiscall` (ECX = `this`)
-- **Parameters:** `this` (App\*), `param_1`, `param_2` (both unused)
-- **Description:**
-  Full game init sequence (15+ steps): base init → cursor → graphics → D3D config → shadow texture → music → jukebox → registry → input devices → players → main menu.
+### `SoundDevice_dtor`
+- **Address:** `0x4668A0`
+- **Description:** Writes current volume back to registry before cleanup.
 
 ---
 
-## 11. Vtables & Calling Conventions
+## 11. UI & Menu System
+
+### `MainMenu_ctor`
+- **Address:** `0x42DE50`
+- **Description:** Creates main menu gadget (~0xCDC bytes). Buttons: Play, Practice, Options, Quit.
+
+### `PauseMenu_Ctor`
+- **Address:** `0x42E4B0`
+- **Description:** Creates pause menu overlay. Triggered by ESC during gameplay.
+
+### `OptionsMenu_RenderControls`
+- **Address:** `0x42E840` / `0x42E910`
+- **Description:** Renders control remapping UI. Reads/writes `App+0xB28`–`0xB34` (2P controller mappings).
+
+### `PracticeMenu_ctor`
+- **Address:** `0x42EA30`
+- **Description:** Practice mode menu — level select without tournament constraints.
+
+### `TimeTrialMenu_ctor`
+- **Address:** `0x42F810`
+- **Description:** Time trial menu — race against ghost data.
+
+### `ArenaMenu_ctor`
+- **Address:** `0x42FC40`
+- **Description:** Arena mode menu — multiplayer level select.
+
+### `PartyMenu_ctor`
+- **Address:** `0x42FC10`
+- **Description:** Party mode menu.
+
+### `DifficultyMenu_ctor`
+- **Address:** `0x42E220`
+- **Description:** Difficulty selection menu (affects AI speed/timing).
+
+### `TourneyMenu_GetRaceName`
+- **Address:** `0x4264A0`
+- **Returns:** `char*` — current race level name string
+
+### `UI_DrawTextCentered`
+- **Address:** `0x409C60`
+- **Description:** Draws centered text at screen position.
+
+### `UI_DrawTextCenteredAbsolute`
+- **Address:** `0x4013A0`
+- **Description:** Draws centered text with absolute pixel coordinates.
+
+### `UI_DrawTextShadow`
+- **Address:** `0x4012C0`
+- **Description:** Draws text with drop shadow effect.
+
+### `UI_DrawTextShadow_Wrapper`
+- **Address:** `0x409B90`
+- **Description:** Wrapper for shadow text with additional parameters.
+
+### `Font_DrawCentered`
+- **Address:** `0x42C870`
+- **Description:** Renders centered string using game font.
+
+---
+
+## 12. Save, Registry & Progression
+
+### `TourneyMenu_WriteSave`
+- **Address:** `0x4264B0`
+- **Description:** Writes `DATA\TOURNAMENT.SAV` (~151 bytes):
+  - `Profile+0x08` (4 bytes) — current_race
+  - `Profile+0x14` (4 bytes)
+  - `Profile+0x18` (60 bytes) — race_time_array[15]
+  - `Profile+0x54` (60 bytes) — race_time_array_2[15]
+  - `Profile+0x90` (4 bytes) — accumulated_time
+  - `Profile+0x94` (1 byte) — difficulty
+  - `Profile+0x95` (1 byte) — rollback flag
+  - `App+0x236` (1 byte) — mirror mode
+  - `App+0x23C` (4 bytes) — race active
+  - `App+0x5E8` (4 bytes) — total time
+  - `App+0x5E4` (4 bytes) — ranking time
+  - `App+0x5F4` (4 bytes)
+
+### `TourneyMenu_LoadSaveAndShow`
+- **Address:** `0x4265A0`
+- **Description:** Reads `DATA\TOURNAMENT.SAV` with same field order, then creates `TourneyMenu`.
+
+### `LoadConfig`
+- **Address:** `0x42AE80`
+- **Description:** Loads display settings from registry on startup.
+
+### `SaveConfig`
+- **Address:** `0x42B6E0`
+- **Description:** Saves display settings to registry.
+
+### `CheckPurchaseOrHighScore`
+- **Address:** `0x40A420`
+- **Description:** Shareware nag screen. If not registered:
+  - Creates `ConfirmMenu` with "BUY HAMSTERBALL..." text
+  - Or `HighScoreEntry` if game in progress
+  - Registered version: skips dialog, allows save
+
+### `CheckArenaUnlock`
+- **Address:** `0x40ABA0`
+- **Description:** Checks if arena levels should be unlocked based on race completion progress.
+
+### `LoadRaceData`
+- **Address:** `0x40A120`
+- **Description:** Parses `racedata.xml` for medal thresholds:
+  - `TIME` → target time
+  - `GOLD`/`SILVER`/`BRONZE` → medal cutoffs (stored as `9 - value`)
+  - `WEASEL` → weasel time threshold
+  - Reads per-level data based on level name parameter
+
+---
+
+## 13. Arena Scoring & Timer
+
+> **Full documentation:** See `docs/ARENA_SCORING.md`
+
+### `RumbleBoard_Update`
+- **Address:** `0x421FE0`
+- **Description:** Per-frame arena update. Checks timer expiration, computes winner, handles tie-breaker.
+
+### `RumbleBoard_Render`
+- **Address:** `0x421910`
+- **Description:** Draws countdown timer, 4-player HUD, tie-breaker overlay.
+
+### `ScoreObject_SetScore`
+- **Address:** `0x43B6F0`
+- **Description:** Manages score entry linked list. Always sets score value to 10 per entry.
+
+### `ScoreObject_ctor`
+- **Address:** `0x44BE80`
+- **Parameters:** `this`, `App*`, `playerData*`, `label` (char*)
+- **Size:** `0x30` bytes
+
+### `ScoreDisplay_SetTime`
+- **Address:** `0x434C80`
+- **Description:** Sets displayed timer string with randomized decimal variation.
+
+---
+
+## 14. Level-Specific Functions
+
+Each level has a custom `BoardLevel` subclass with constructor and destructor:
+
+### WarmUp (Level 1)
+- **Ctor:** `BoardLevel1_WarmUp_ctor` @ `0x41CA40`
+- **Dtor:** `BoardLevel1_WarmUp_dtor` @ `0x41CB10`
+
+### Intermediate (Level 2)
+- **Ctor:** `BoardLevel2_Intermediate_ctor` @ `0x41CB20`
+- **Dtor:** `BoardLevel2_Intermediate_dtor` @ `0x41CC80`
+
+### Dizzy (Level 4)
+- **Ctor:** `BoardLevel3_Dizzy_ctor` @ `0x41D060` (note: named Level3 in code)
+- **Dtor:** `BoardLevel3_Dizzy_dtor` @ `0x41D450`
+
+### Tower (Level 5)
+- **Ctor:** `BoardLevel5_Tower_ctor` @ `0x41E340`
+- **Dtor:** `BoardLevel5_Tower_dtor` @ `0x41E640`
+
+### Expert (Level 8)
+- **Ctor:** `BoardLevel8_Expert_ctor` @ `0x41EA40`
+- **Dtor:** `BoardLevel8_Expert_dtor` @ `0x41EC90`
+
+### Odd (Level 9)
+- **Ctor:** `BoardLevel9_Odd_ctor` @ `0x41ED80`
+- **Dtor:** `BoardLevel9_Odd_dtor` @ `0x41EE70`
+
+### Wobbly (Level 12)
+- **Ctor:** `BoardLevel12_Wobbly_ctor` @ `0x41F110`
+- **Dtor:** `BoardLevel12_Wobbly_dtor` @ `0x41F3C0`
+
+### Toob
+- **Ctor:** `BoardLevel_Toob_Ctor` @ `0x41F4B0`
+- **Dtor:** `BoardLevel_Toob_dtor` @ `0x41F720`
+
+### Sky
+- **Ctor:** `BoardLevel_Sky_Ctor` @ `0x41F930`
+- **Dtor:** `BoardLevel_Sky_Dtor` @ `0x41FBC0`
+
+### Beginner
+- **Ctor:** `BoardLevel_Beginner_Ctor` @ `0x4200E0`
+- **Dtor:** `BoardLevel_Beginner_Dtor` @ `0x4201D0`
+- **HandleRaceEnd:** `Board_Beginner_HandleRaceEnd` @ `0x420240`
+
+### Up
+- **Ctor:** `BoardLevel_Up_Ctor` @ `0x420390`
+- **Dtor:** `BoardLevel_Up_Dtor` @ `0x420550`
+
+### Arena Level Constructors (via `TourneyMenu_CreateBoard`)
+| ID | Arena | Ctor Name | Size |
+|----|-------|-----------|------|
+| 1 | WarmUp | `RumbleBoard_Warmup_Ctor` | `0x47E0` |
+| 2 | Beginner | `RumbleBoard_Beginner_Ctor` | `0x5850` |
+| 3 | Intermediate | `RumbleBoard_Intermediate_Ctor` | `0x47E0` |
+| 4 | Dizzy | `RumbleBoard_Dizzy_Ctor` | `0x47E4` |
+| 5 | Tower | `RumbleBoard_Tower_Ctor` | `0x501C` |
+| 6 | UpArena | `RumbleBoard_UpArena_Ctor` | `0x47E4` |
+| 7 | NeonArena | `RumbleBoard_NeonArena_ctor` | `0x47E8` |
+| 8 | ExpertArena | `RumbleBoard_ExpertArena_ctor` | `0x4BFC` |
+| 9 | OddArena | `RumbleBoard_OddArena_ctor` | `0x47E0` |
+| 10 | ToobArena | `RumbleBoard_ToobArena_ctor` | `0x5C6C` |
+| 11 | WobblyArena | `RumbleBoard_WobblyArena_ctor` | `0x47E4` |
+| 12 | Glass | `BoardLevel_Glass_ctor` | `0x47E0` |
+| 13 | SkyArena | `RumbleBoard_SkyArena_ctor` | `0x4CFC` |
+| 14 | WarmupArena | `RumbleBoard_WarmupArena_ctor` | `0x47E0` |
+| 15 | Impossible | `RumbleBoard_Impossible_ctor` | `0x47E4` |
+
+### `TourneyMenu_CreateBoard`
+- **Address:** `0x426780`
+- **Description:** Giant switch statement (cases 1–15) that allocates and constructs the correct `RumbleBoard` subclass for the selected arena level.
+
+---
+
+## 15. Utility & Math Functions
+
+### Vec3 Operations
+| Function | Address | Description |
+|----------|---------|-------------|
+| `Vec3_Copy` | `0x401010` | Copy vector |
+| `Vec3_Init` | `0x401040` | Initialize to zero |
+| `Vec3_dtor` | `0x401070` | Destructor (no-op) |
+| `Vec3_Scale` | `0x4016C0` | Multiply by scalar |
+| `Vec3_DivideByScalar` | `0x401890` | Component-wise divide |
+| `Vec3_AddTwo` | `0x4018C0` | Add two vectors |
+| `Vec3_AddInPlace` | `0x4018F0` | `a += b` |
+| `Vec3_Length` | `0x401A60` | Euclidean length |
+| `Vec3_NormalizeAndScale` | `0x401AA0` | Normalize then scale |
+| `Vec3_Distance` | `0x401D20` | Distance between two vectors |
+
+### Matrix Operations
+| Function | Address | Description |
+|----------|---------|-------------|
+| `Matrix_TransformVec3` | `0x401D60` | 4×4 matrix × vector |
+| `Matrix_TransformPoint2D` | `0x45C273` | 2D point transform |
+
+### Math Utilities
+| Function | Address | Description |
+|----------|---------|-------------|
+| `Gfx_PackColorRGB` | `0x401100` | Pack R,G,B into DWORD |
+| `RNG_Rand` | inferred | Random number generator |
+| `Wave_Sin` / `Wave_Cos` | inferred | Sine/cosine wave functions |
+| `SQRT` | inferred | Square root |
+| `ABS` | inferred | Absolute value |
+
+---
+
+## 16. Vtables & Calling Conventions
 
 ### Ball Vtable (`0x4CF3A0`)
 | Slot | Offset | Function | Purpose |
 |------|--------|----------|---------|
-| 0 | `0x00` | `Render` | Draw ball mesh |
-| 1 | `0x04` | `Init` | Post-constructor setup |
-| 4 | `0x10` | `Update` | Per-frame update (calls `Ball_Update` at `0x405E00`) |
-| 5 | `0x14` | `ApplyForceWithMultipliers` | Force application with scale |
+| 0 | `0x00` | `Ball_dtor` | Destructor |
+| 1 | `0x04` | `Ball_Init` | Post-constructor setup |
+| 4 | `0x10` | `Ball_Update` | Per-frame physics tick |
+| 5 | `0x14` | `ApplyForceWithMultipliers` | Force with scale |
 | 7 | `0x1C` | `CollisionHandler` | Custom collision response |
-| 30 | `0x78` | `PreSplitCallback` | Called before `Ball_SplitIntoThree` |
-| 32 | `0x80` | `PostFactoryInit` | Called by bumper/sawblade factories after creation |
+| 8 | `0x20` | `BounceCallback` | Called on `E:BREAK` events |
+| 30 | `0x78` | `PreSplitCallback` | Before `Ball_SplitIntoThree` |
+| 32 | `0x80` | `PostFactoryInit` | After bumper/sawblade creation |
 
-### Scene/Board Vtable
+### Scene/Board Vtable (`0x4D0260`)
 | Slot | Offset | Function | Purpose |
 |------|--------|----------|---------|
-| 4 | `0x10` | `Update` | Per-frame scene update |
-| 8 | `0x20` | `RunFrame` | Full frame (Update+Render) |
-| 10 | `0x28` | `Render` | Full render dispatch |
-| 12 | `0x30` | `LoadLevel` | Level loading |
-| 33 | `0x84` | `CreateDynamicObject` | Override per level — creates level-specific dynamic objects |
-| 24 | `0x60` | `RenderBackground` | Sky/far plane |
+| 0 | `0x00` | `Scene_ctor` | Constructor |
+| 4 | `0x10` | `Scene_Update` | Main game tick |
+| 8 | `0x20` | `Scene_RunTick` | Single tick (Update+Render) |
+| 10 | `0x28` | `Scene_Render` | Full render dispatch |
+| 12 | `0x30` | `Scene_LoadLevel` | Level loading |
+| 16 | `0x40` | `Scene_CleanupScene` | Cleanup |
+| 18 | `0x48` | `Scene_StartRace` | Race countdown start |
+| 19 | `0x4C` | `Scene_HandleRaceEnd` | Check finish |
+| 20 | `0x50` | `Scene_UpdateBallsAndState` | Ball physics |
+| 22 | `0x58` | `Scene_HandleCountdown` | Countdown timer |
+| 24 | `0x60` | `RenderBackground` | Sky/dome |
 | 25 | `0x64` | `RenderOpaque` | Opaque geometry |
 | 26 | `0x68` | `RenderTransparent` | Glass/effects |
 | 28 | `0x70` | `RenderOverlay` | HUD |
+| 29 | `0x74` | `RenderPostEffects` | Fade/transition |
+| 33 | `0x84` | `CreateDynamicObject` | Level-specific factory override |
+
+### App Vtable (`0x4CE400`)
+| Slot | Offset | Function | Purpose |
+|------|--------|----------|---------|
+| 0 | `0x00` | `App_ScalarDtor` | Destructor |
+| 2 | `0x08` | `App_Shutdown` | Cleanup on exit |
+| 8 | `0x20` | `Update` | Game logic (Scene_Update) |
+| 9 | `0x24` | `PreRender` | Camera setup |
+| 10 | `0x28` | `Render` | Draw scene |
+| 11 | `0x2C` | `PostRender` | HUD / menus |
+| 35 | `0x8C` | `SetDisplayMode` | Resolution change |
+| 40 | `0xA0` | `ShowMainMenu` | Title screen |
 
 ### Calling Conventions
 - `__thiscall`: ECX = `this` pointer. Used for all object methods.
-- `__fastcall`: ECX = first arg, EDX = second arg. Used for some inner loops.
+- `__fastcall`: ECX = first arg, EDX = second arg. Used for inner loops.
 - Standard cdecl: Stack-based args. Used for utility functions.
 
 ---
@@ -553,74 +749,189 @@ A comprehensive reference of the most useful functions for modders, extracted fr
 ### Ball Struct (`0xC98` bytes for 8ball, `0xC60` for player, vtable `0x4CF3A0`)
 | Offset | Type | Name | Description |
 |--------|------|------|-------------|
-| `+0x00` | void\* | vtable | `0x4CF3A0` |
-| `+0x04` | void\* | scene | Parent Scene\* |
-| `+0x14` | char | trail_flag | 1 = record trail points |
+| `+0x00` | void** | vtable | `0x4CF3A0` |
+| `+0x04` | void* | scene | Parent Scene* |
+| `+0x14` | int32 | player_index | -1=AI, 0=P1, 1=P2 |
+| `+0x18` | char[0x14] | rumble_timer1 | RumbleBoard timer sub-object |
 | `+0x60` | float[3] | position | Physics position (X, Y, Z) |
+| `+0x150` | float | accumulated_time | Delta-time accumulator |
+| `+0x158` | float[3] | prev_pos | Previous frame position |
 | `+0x164` | float[3] | display_pos | Smoothed display position |
 | `+0x170` | float[3] | velocity | Current velocity |
-| `+0x188` | float | radius_scale | 3.0 for SIZE-tagged 8balls |
-| `+0x198` | float | facing_angle | Yaw in radians |
-| `+0x284` | float | radius | Ball radius (default 26.0 for player, SIZE-tag for 8ball) |
-| `+0x2E8` | char | splitting | Set to 1 during `Ball_SplitIntoThree` |
-| `+0x2EC` | int | collision_count | Per-frame collision tally |
-| `+0x2F0` | int | frame_counter | Frames since spawn |
-| `+0x2F9` | char | tar_state | Tarpit / stuck flag |
-| `+0x318` | float | split_timer | Countdown for split balls (starts 30.0) |
-| `+0x31D` | char | is_8ball | AI enable flag — set to 1 for split balls |
-| `+0x324` | char | dead | Eliminated / in-tube flag |
-| `+0x748` | int | gravity_plane | 0=flat, 1=tilted, 2=vertical |
-| `+0x758` | float[3] | camera_target | Camera orbit center + set by `Ball_SetTargetPos` |
-| `+0x76C` | float[3] | camera_actual | Camera actual position (written by `Scene_SetCamera`) |
-| `+0xCA4` | float[3] | collision_dir | Last collision direction (copied to split balls) |
-| `+0xC60` | int | battle_mode | 3=battle mode, 5=split ball |
+| `+0x17C` | float[3] | acceleration | Cleared each frame |
+| `+0x188` | float | max_speed | Hard velocity cap (default 5.0) |
+| `+0x18C` | float | speed_scale | Global speed multiplier (default 1.0) |
+| `+0x1A4` | void* | collision_mesh | CollisionMesh ptr |
+| `+0x1A8` | float[3] | gravity_vec | Gravity direction vector |
+| `+0x1C8` | float | render_alpha | Render context alpha (0.75) |
+| `+0x20C` | float[4] | color | RGBA tint (default 1,1,1,1) |
+| `+0x254` | uint8 | uses_alpha | True if color_a != 1.0 |
+| `+0x260` | uint8 | boost_hit_flag | Set on boost pad contact |
+| `+0x278` | float | gravity_scale | Gravity multiplier (default 0.1) |
+| `+0x281` | uint8 | is_falling | 1 when airborne |
+| `+0x284` | float | radius | Collision + render size (default 26.0) |
+| `+0x2A4` | float | spin_rate | Angular spin factor (5.0) |
+| `+0x2BC` | float[3] | force | Accumulated input force |
+| `+0x2CC` | uint8 | force_disable | 1 = skip Ball_ApplyForce |
+| `+0x2DC` | float[3] | checkpoint | Last safe position |
+| `+0x2E8` | uint8 | splitting | Set during Ball_SplitIntoThree |
+| `+0x2F0` | uint32 | force_count | Forces applied this frame |
+| `+0x2F9` | uint8 | frozen | Stuck on surface |
+| `+0x2FC` | uint32 | freeze_timer | Countdown while frozen |
+| `+0x310` | uint8 | state_active | General active flag |
+| `+0x318` | float | split_timer | Countdown for split balls (30.0) |
+| `+0x31D` | uint8 | is_8ball | AI enable flag |
+| `+0x324` | uint8 | dead | Eliminated / in-tube |
+| `+0x748` | int32 | gravity_plane | 0=flat, 1=tilted, 2=vertical |
+| `+0x758` | float[3] | camera_target | Camera orbit center |
+| `+0x76C` | float[3] | camera_actual | Camera position (written by Scene_SetCamera) |
+| `+0xC28` | char** | display_string | Floating text above ball |
+| `+0xC3C` | uint8 | teleport_active | Teleport in progress |
+| `+0xC40` | float[3] | teleport_dest | Destination coordinates |
+| `+0xC4C` | uint8 | airborne | Airborne state |
+| `+0xC60` | int32 | battle_mode | 3=battle, 5=split |
 | `+0xC68` | float | friction | 0.55 in battle mode |
 | `+0xC6C` | float | bounciness | 1.0 in battle mode |
-| `+0xC70` | float | max_speed | 5.0 (player), 1000.0 (battle) |
-| `+0xC74-0xC78` | float | chase_distance | AI chase radius (25.0 in battle mode) |
-| `+0xC80-0xC94` | float[5] | gravity_vec | Gravity vector (battle: 0, -1.0, 0, ...) |
-| `+0xCA0` | float | speed_scale | 0.01 for split balls |
+| `+0xC70` | float | max_speed_battle | 1000.0 in battle mode |
+| `+0xC74` | float | chase_distance | AI chase radius (25.0 battle) |
+| `+0xC80` | float[5] | gravity_vec_battle | Battle gravity (0,-1.0,0,...) |
+| `+0xCA0` | float | speed_scale_split | 0.01 for split balls |
+| `+0xCA4` | float[3] | collision_dir | Last collision direction |
+| `+0xC88` | float[16] | world_matrix | 4×4 transform for rendering |
 
-### Scene Struct (`~0x5400` bytes)
+### Scene Struct (`~0x5400` bytes, vtable `0x4D0260`)
 | Offset | Type | Name | Description |
 |--------|------|------|-------------|
-| `+0x022E` | AthenaList | objects | All scene objects |
-| `+0x0A6C` | char | ball_propagate_flag | 1 = need to propagate ball positions |
-| `+0x0A75` | AthenaList | balls | Ball list |
-| `+0x0D88` | int | frame_counter | Game frame count |
-| `+0x0D8B` | AthenaList | physics_objects | Physics step object list |
-| `+0x237` | char | battle_mode | 8-ball / race mode |
-| `+0x3F1C` | int | path_follow | Camera spline follow (0=direct follow, 1=rail follow) |
-| `+0x3F20` | void\* | path_obj | Path\* for camera rail |
-| `+0x3F24` | float | path_position | Parametric position on camera path (0.0–1.0) |
-| `+0x3F2C` | int | camera_snap_frames | Countdown frames for instant camera snap |
-| `+0x29BC` | float | orbit_angle | Camera orbit rotation |
-| `+0x29C0` | float | cam_distance | Orbit distance (max 700) |
-| `+0x434C` | float[3] | cam_offset | Added to ball pos for camera |
-| `+0x2578` | AthenaList | active_objs | Factory output list |
-| `+0x29D4` | AthenaList | bad_balls | 8-ball / AI ball list |
-| `+0x2DEC` | AthenaList | all_balls | Combined ball list |
+| `+0x0000` | void** | vtable | `0x4D0260` |
+| `+0x0874` | byte | is_skydome | 0=skybox, 1=skydome |
+| `+0x0878` | App* | scene_manager | D3D device / App back-pointer |
+| `+0x087C` | void* | viewport_obj | D3D viewport |
+| `+0x08B8` | AthenaList | scene_object_list | All scene objects |
+| `+0x08BC` | int | scene_object_count | Number of objects |
+| `+0x0CC4` | SceneObject** | scene_object_array | Direct pointer array |
+| `+0x1518` | AthenaList | collision_list | Collision surfaces |
+| `+0x2160` | AthenaList | ripple_list | Water ripples |
+| `+0x29B0` | byte | ball_positions_dirty | Need propagate this frame |
+| `+0x29B8` | int | shake_magnitude | Camera shake (-800→0) |
+| `+0x29BC` | float | camera_orbit_angle | Y-axis rotation |
+| `+0x29C0` | float | camera_distance | Orbit distance (max 700) |
+| `+0x29D0` | Ball* | current_ball_ptr | Camera-tracked ball |
+| `+0x29D4` | AthenaList | ball_list_1 | Player 1 balls |
+| `+0x29D8` | int | ball_list_1_count | P1 ball count |
+| `+0x2DE0` | Ball** | ball_list_1_array | P1 Ball pointer array |
+| `+0x3204` | AthenaList | ball_list_2 | Player 2 balls |
+| `+0x3208` | int | ball_list_2_count | P2 ball count |
+| `+0x3610` | Ball** | ball_list_2_array | P2 Ball pointer array |
+| `+0x361C` | SceneObject* | waypoint_arrow | Next checkpoint arrow |
+| `+0x3620` | int | frame_counter | Total frames |
+| `+0x362C` | AthenaList | player_list | Player viewport list |
+| `+0x3630` | int | player_count | 0=none, 1=SP, 2=split |
+| `+0x3A38` | Ball** | player_ball_array | Indexed by player (0–3) |
+| `+0x3A48` | AthenaList | visible_object_list | Render bucket |
+| `+0x3A4C` | byte | shake_active | Camera shake active |
+| `+0x3AFC` | void* | dynamic_object | Post-update callback obj |
+| `+0x3F1C` | byte | path_follow_mode | 1=camera rides spline rails |
+| `+0x3F20` | void* | path_object | Spline Path* |
+| `+0x3F24` | float | path_position | Parametric t (0.0–1.0) |
+| `+0x3F2C` | int | camera_snap_frames | Snap countdown |
+| `+0x434C` | float[3] | camera_offset | Added to ball pos |
+| `+0x4358` | byte | demo_timer_active | Demo countdown running |
+| `+0x435C` | int | demo_countdown | Frames remaining |
+| `+0x436C` | void* | hammer_obj | Arena hammer |
+| `+0x4370` | void* | saw1_obj | Saw blade 1 |
+| `+0x4374` | void* | saw2_obj | Saw blade 2 |
+| `+0x43A0` | float | damage_amount | From E:BITE |
+| `+0x43A8` | int | damage_timer | Damage countdown |
+| `+0x43B8` | void* | catapult_list | Catapult objects |
+| `+0x47D0` | void* | door_list | Trapdoor list |
+| `+0x4BBC` | void* | judge_list | Judge/score displays |
+| `+0x4FD4` | void* | bell_obj | Bell (extra time) |
 
-### App Struct (singleton at `0x4FD680`)
+### App Struct (singleton at `0x4FD680`, vtable `0x4CE400`)
 | Offset | Type | Name | Description |
 |--------|------|------|-------------|
-| `+0x159` | char | quit_flag | Set to 1 to exit game loop |
-| `+0x234` | char | is_demo | Demo mode flag |
-| `+0x237` | char | is_2player | Multiplayer mode |
-| `+0x23C` | int | is_tournament | Tournament/arena mode |
-| `+0x5FC` | int | input_mode | 1=keyboard, 2=mouse, 4-7=joy |
-| `+0x850` | int | num_balls | Number of player balls |
+| `+0x000` | void** | vtable | `0x4CE400` |
+| `+0x004` | HINSTANCE | hInstance | WinMain param |
+| `+0x054` | RegKey* | registryKey | Registry handle |
+| `+0x05C` | int | targetFPS | Target frame rate (30) |
+| `+0x159` | bool | quitFlag | 1 = exit loop |
+| `+0x15A` | bool | activeFlag | Window focused |
+| `+0x158` | bool | minimizedFlag | Window minimized |
+| `+0x156` | bool | updateDisabled | Pause all updates |
+| `+0x15C` | int | width | Window width (800) |
+| `+0x160` | int | height | Window height (600) |
+| `+0x174` | Graphics* | graphics | D3D8 engine |
+| `+0x17C` | AudioSystem* | audioSystem | BASS audio |
+| `+0x180` | InputHandler* | inputHandler | DirectInput8 |
+| `+0x184` | void* | gameUpdateObj | Passed to tick |
+| `+0x1B4` | char* | versionString | ProductVersion |
+| `+0x1CC` | int | loadedCount | Objects loaded |
+| `+0x200` | bool | initialized | 1 after init |
+| `+0x208` | char* | initStep | "Initialize(1)".."(26)" |
+| `+0x224` | void* | mainMenuObj | MainMenu instance |
+| `+0x228` | void* | resultsScreen | Race results |
+| `+0x234` | bool | is_demo | Demo mode |
+| `+0x237` | bool | is_2player | Multiplayer |
+| `+0x238` | bool | rightButtonPause | Right-click pause |
+| `+0x23C` | int | is_tournament | Tournament/arena active |
+| `+0x278` | Texture* | shadowTexture | shadow.png |
+| `+0x534` | HMUSIC | musicHandle | BASS music |
+| `+0x538` | HCHANNEL | musicChannel1 | BASS channel 1 |
+| `+0x53C` | HCHANNEL | musicChannel2 | BASS channel 2 |
+| `+0x550` | void* | gameMode1 | 1-player mode |
+| `+0x554` | void* | gameMode2 | 2-player mode |
+| `+0x558` | void* | gameMode3 | 4-player mode |
+| `+0x55C` | void* | gameMode4 | Tournament mode |
+| `+0x5D8` | bool | p1_active | Player 1 active |
+| `+0x5E8` | int | p1_current_time | P1 time/score |
+| `+0x5EC` | int | p1_extra_time | P1 bonus time |
+| `+0x60C` | int | p1_race_index | P1 race slot |
+| `+0x678` | bool | p2_active | Player 2 active |
+| `+0x688` | int | p2_current_time | P2 time/score |
+| `+0x84C` | float | mouseSensitivity | 0.0–1.0 |
+| `+0x850` | bool | mirrorMode | Tournament mirror |
+| `+0x851`–`+0x868` | bool[24] | unlock_flags | Race/arena unlocks |
+| `+0x86C` | uint8[0x50] | bestTimes | Per-level best times |
+| `+0x8BC` | uint8[0x50] | medals | Per-level medals |
+| `+0x914` | int | playCount | Total launches |
+| `+0xB28` | DWORD | p2Controller1 | DI device index |
+| `+0xB2C` | DWORD | p2Controller2 | DI device index |
+| `+0xB30` | DWORD | p2Controller3 | DI device index |
+| `+0xB34` | DWORD | p2Controller4 | DI device index |
 
 ---
 
 ## Document Info
 
-- **Generated from:** Ghidra 12.0 decompilation + REST API queries
+- **Generated from:** Ghidra 12.0 decompilation + GhidraMCP REST API
 - **Game version:** Hamsterball.exe (PE32, i386)
-- **Total functions renamed:** 1,200+ (see `analysis/ghidra/renames_backup.json`)
+- **Total functions in binary:** ~3,800
+- **Functions documented:** 120+
 - **Decompilation sources:** `analysis/ghidra/decompilations/`
-- **Last updated:** 2026-06-07
+- **Struct headers:** `analysis/ghidra/structs/*.h`
+- **Last updated:** 2026-06-13
 
-For full struct definitions, see `analysis/ghidra/structs/*.h`.
-For the object catalog, see `docs/OBJECT_CATALOG.md`.
-For AI internals, see `docs/8BALL_AI_SYSTEM.md`.
+### Cross-References
+| Topic | Document |
+|-------|----------|
+| Arena scoring internals | `docs/ARENA_SCORING.md` |
+| Arena hazards | `docs/ARENA_HAZARD_SYSTEM.md` |
+| Ball object deep dive | `docs/BALL_OBJECT.md` |
+| App singleton | `docs/APP_OBJECT.md` |
+| Scene system | `docs/SCENE_SYSTEM_DECOMP.md` |
+| Scene object modding | `docs/SCENE_OBJECT_MODDING.md` |
+| Collision events | `docs/COLLISION_EVENT_SYSTEM.md` |
+| Input system | `docs/DIRECTINPUT_SYSTEM.md` |
+| Save/registry | `docs/SAVE_REGISTRY_SYSTEM.md` |
+| Rendering pipeline | `docs/RENDERING_PIPELINE.md` |
+| Camera system | `docs/CAMERA_SYSTEM.md` |
+| 8-ball AI | `docs/8BALL_AI_SYSTEM.md` |
+| UI menus | `docs/UI_MENU_SYSTEM.md` |
+| MESHWORLD format | `docs/MESHWORLD_FORMAT.md` |
+| Key decompilations | `docs/KEY_DECOMPILATIONS.md` |
+| RumbleBoard system | `docs/RUMBLEBOARD_SYSTEM.md` |
+| Game state lifecycle | `docs/GAME_STATE_RACE_LIFECYCLE.md` |
+
+---
+
+*All offsets verified against raw Ghidra decompiled C. For questions, check the decompilation files in `analysis/ghidra/decompilations/`.*
