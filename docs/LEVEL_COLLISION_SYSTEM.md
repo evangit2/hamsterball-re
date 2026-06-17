@@ -225,62 +225,82 @@ bool IsGroundedAt(float x, float y, float z, void* scene, float radius) {
 
 ## How max_dist Actually Works
 
-**Verified by decompilation of `Mesh_FindClosestCollision` (0x465D90) on 2026-06-17.**
+**Verified by full decompilation chain on 2026-06-17. Traced through 5 functions.**
 
-The name `max_dist` is misleading. It is **not a distance limit** on the raycast. Here is what actually happens inside the function:
+`max_dist` is the **collision sphere radius** — it controls how wide the AABB broad-phase query is around the ray. It is NOT a distance limit on the ray itself (the ray is always ~994 units long after clamping).
 
-### Step 1: Direction is hardcoded to 99999 units
+### Full call chain
 
+**Step 1 — `Mesh_FindClosestCollision` (0x465D90):**
+- Creates a temp `CollisionMesh` and calls `Ball_InitBattleMode` which sets:
+  - `+0xC68` (friction) = `0.555`
+  - `+0xC70` (max_speed) = `1000.0`
+  - `+0xC7C` (use_collision_callback) = `1`
+  - `+0xC8C` (gravity2 vector) = `(0, -1.0, 0)` BUT `+0xC64` (scale) = `0.0` → **no gravity**
+- Scales direction to 99999 units: `Vec3_NormalizeAndScale(&direction, 99999.0)`
+- Packs `max_dist` into `Vec3(d, d, d)`
+- Calls `Ball_AdvancePositionOrCollision(mesh, out, origin, &dir_99999, &max_dist_vec, 0.01)`
+
+**Step 2 — `Ball_AdvancePositionOrCollision` (0x4564C0):**
+- Velocity starts at `(0,0,0)`, adds `dir_99999` → velocity = 99999 units
+- Clamps to `max_speed=1000`: `Vec3_NormalizeAndScale(&velocity, 1000.0)` → effective ray = **1000 units**
+- Friction damping: `velocity *= (1.0 - 0.01) + (1.0 - 0.555) * 0.01 = 0.99445` → ~994 units
+- Gravity: `0.01 * scale(0.0) = 0.0` → **no gravity applied**
+- `use_callback=1` → calls `vtable[7]` (0x456890): `callback(buf, origin, velocity, max_dist_vec, 0.01, &hit_flag)`
+
+**Step 3 — Collision callback (0x456890):**
+- Computes `magnitude = sqrt(max_dist² × 3) = max_dist × √3`
+- If `magnitude < 0.0001`: return origin (no collision — max_dist too small)
+- Calls `AABB_FromSphere(origin, velocity, max_dist_vec, &min_bounds, &max_bounds)`
+
+**Step 4 — `AABB_FromSphere` (0x477330):**
+- Computes the axis-aligned bounding box of the swept sphere:
+  ```
+  min = min(origin, origin+velocity) - max_dist - 0.01
+  max = max(origin, origin+velocity) + max_dist + 0.01
+  ```
+- **`max_dist` is the sphere radius that expands the AABB on all axes**
+- The spatial tree then returns only triangles that intersect this AABB
+
+**Step 5 — Back in callback:**
+- Normalizes space: divides origin and velocity by `max_dist` (sphere radius → 1.0)
+- Does sphere-vs-triangle intersection in normalized space
+- Scales hit point back by `max_dist` to get world-space result
+
+### What this means in practice
+
+The AABB is a box from `origin` to `origin + velocity` (the ray), expanded by `max_dist` on all sides. The spatial tree only returns triangles within this box.
+
+| max_dist | AABB width (perpendicular to ray) | Effect |
+|---|---|---|
+| `39` | 39 units | Wide box → captures floor 26 units below a horizontal ray |
+| `5` | 5 units | Tight box → floor excluded → only nearby walls returned |
+
+**Your `max_dist` should be the ball's collision radius** (or slightly larger). The game uses `radius + 0.5f`. Using a large value like 39 causes the AABB to include geometry far off-axis from the ray direction.
+
+### The 0.01 parameter
+
+The `0.01` (param_5) is a physics damping/timestep factor:
 ```c
-Vec3_NormalizeAndScale(&direction, 99999.0);
+fVar3 = (1.0 - 0.01) + (1.0 - friction) * 0.01;  // velocity damping
+fVar3 = 0.01 * scale;                              // gravity scaling (scale=0 → no gravity)
 ```
-
-The direction vector is normalized and scaled to a fixed length of **99999.0** units, regardless of `max_dist`. This is the actual ray length.
-
-### Step 2: max_dist is packed into a Vec3 and passed to the collision callback
-
-```c
-Vec3 max_dist_vec = { max_dist, max_dist, max_dist };
-Ball_AdvancePositionOrCollision(collision_mesh, out, origin, &direction_scaled, &max_dist_vec, 0.01);
-```
-
-`max_dist` is stuffed into all three components of a Vec3 and passed as `param_4` to `Ball_AdvancePositionOrCollision` (vtable slot 1 = 0x4564C0), which forwards it to the collision callback at **CollisionMesh vtable+0x1C** (slot 7 = 0x456890).
-
-### Step 3: The collision callback uses max_dist as a per-axis normalization divisor
-
-Inside the callback (0x456890):
-
-1. Computes `magnitude = sqrt(max_dist² × 3) = max_dist × √3`
-2. Compares magnitude against epsilon **0.0001** (at 0x4D8E0C)
-3. If magnitude < 0.0001: **no collision** — returns origin unchanged
-4. If magnitude ≥ 0.0001: divides each direction component by `max_dist`, then performs triangle intersection via 0x456150
-
-So `max_dist` acts as a **per-axis normalization divisor** for the ray direction inside the intersection test. The effective search range is always 99999 units (from Step 1), but the intersection math normalizes direction components by `max_dist`.
-
-### Step 4: The 0.01 parameter is a physics damping factor, not a sphere radius
-
-The `0.01` passed as the last argument to `Ball_AdvancePositionOrCollision` is used in:
-
-```c
-fVar3 = (1.0 - 0.01) + (1.0 - this->friction) * 0.01;  // damping interpolation
-fVar3 = 0.01 * this->scale;                              // velocity scaling
-```
-
-It is a **physics timestep/damping factor**, not a collision sphere radius.
+It is NOT a sphere radius and NOT a distance limit.
 
 ### Summary
 
 | Parameter | What it actually does |
 |---|---|
-| `direction` | Normalized and scaled to 99999.0 — this IS the ray length |
-| `max_dist` | Packed into Vec3, used as per-axis normalization divisor in the intersection callback. Also acts as a non-zero guard (must produce magnitude ≥ 0.0001). Does NOT limit search distance. |
-| `0.01` (last arg) | Physics damping/timestep factor in `Ball_AdvancePositionOrCollision`. Not a sphere radius. |
+| `direction` | Normalized → 99999 → clamped to 1000 → damped to ~994. This is the ray length. |
+| `max_dist` | **Sphere radius for AABB broad-phase.** Expands the bounding box perpendicular to the ray. Larger = wider query = more triangles tested. Use `ball_radius + 0.5f`. |
+| `0.01` (internal) | Physics damping factor. Not accessible to callers. |
 
 ### Practical implications
 
-- **To limit search range**: You must check the distance between `origin` and `out` AFTER the call. The function will always search the full 99999 units.
-- **max_dist values**: Any non-zero value works (as long as `max_dist × √3 ≥ 0.0001`). Common values in the original code: `radius + 0.5f`. The exact value affects intersection precision but not search range.
-- **Hit detection**: A hit occurred if `out` differs from `origin` (check squared distance > small epsilon).
+- **To detect walls:** use `max_dist` = ball radius (e.g., 10). The AABB will be tight enough to exclude floor geometry when casting horizontally.
+- **To detect ground:** cast downward with the same `max_dist`. The AABB will include the floor naturally.
+- **To limit search range:** check `distance(origin, out)` after the call. The ray is always ~994 units long.
+- **Too-large max_dist:** includes off-axis geometry in the AABB, causing false hits (like the floor 26 units below when casting horizontally with max_dist=39).
 
 ---
 
