@@ -136,7 +136,7 @@ Mesh_FindClosestCollision_t Original =
 | `0x00461510` | `MeshWorld_ctor` | Loads/references a `.MW` level and creates the source `MeshWorld`. |
 | `0x00465080` | `CollisionLevel_ctorWithLevel` | Creates a collision-only `Level` from a source `MeshWorld`. Sets vtable `0x004D9068`; calls `Level_LoadMeshes`. |
 | `0x00465860` | `Level_LoadMeshes` | Builds the internal `MeshWorld` copy and collision geometry for a `Level`. |
-| `0x00465D90` | `Mesh_FindClosestCollision` | **Main raycast API**; builds a temporary spatial tree over the level and casts a tiny sphere. |
+| `0x00465D90` | `Mesh_FindClosestCollision` | **Main raycast API**; builds a temporary spatial tree over the level and casts a ray. See [How max_dist Actually Works](#how-max_dist-actually-works) below. |
 | `0x00403980` | `Ball_FindMeshCollision` | Thin wrapper around `Mesh_FindClosestCollision`; rarely called by the engine directly. |
 | `0x00465EF0` | `Collision_TraverseSpatialTree` | Recursive triangle-collection function inside `Mesh_FindClosestCollision`. |
 | `0x00463330` | `SpatialTree_ctor` | Initializes an axis-aligned spatial subdivision node. |
@@ -218,6 +218,69 @@ bool IsGroundedAt(float x, float y, float z, void* scene, float radius) {
     return (dy > 0.001f && dy < max_dist);
 }
 ```
+
+> **Note:** The `max_dist` check in the return line above (`dy < max_dist`) is a caller-side filter. The function itself does NOT use max_dist as a distance limit — see below.
+
+---
+
+## How max_dist Actually Works
+
+**Verified by decompilation of `Mesh_FindClosestCollision` (0x465D90) on 2026-06-17.**
+
+The name `max_dist` is misleading. It is **not a distance limit** on the raycast. Here is what actually happens inside the function:
+
+### Step 1: Direction is hardcoded to 99999 units
+
+```c
+Vec3_NormalizeAndScale(&direction, 99999.0);
+```
+
+The direction vector is normalized and scaled to a fixed length of **99999.0** units, regardless of `max_dist`. This is the actual ray length.
+
+### Step 2: max_dist is packed into a Vec3 and passed to the collision callback
+
+```c
+Vec3 max_dist_vec = { max_dist, max_dist, max_dist };
+Ball_AdvancePositionOrCollision(collision_mesh, out, origin, &direction_scaled, &max_dist_vec, 0.01);
+```
+
+`max_dist` is stuffed into all three components of a Vec3 and passed as `param_4` to `Ball_AdvancePositionOrCollision` (vtable slot 1 = 0x4564C0), which forwards it to the collision callback at **CollisionMesh vtable+0x1C** (slot 7 = 0x456890).
+
+### Step 3: The collision callback uses max_dist as a per-axis normalization divisor
+
+Inside the callback (0x456890):
+
+1. Computes `magnitude = sqrt(max_dist² × 3) = max_dist × √3`
+2. Compares magnitude against epsilon **0.0001** (at 0x4D8E0C)
+3. If magnitude < 0.0001: **no collision** — returns origin unchanged
+4. If magnitude ≥ 0.0001: divides each direction component by `max_dist`, then performs triangle intersection via 0x456150
+
+So `max_dist` acts as a **per-axis normalization divisor** for the ray direction inside the intersection test. The effective search range is always 99999 units (from Step 1), but the intersection math normalizes direction components by `max_dist`.
+
+### Step 4: The 0.01 parameter is a physics damping factor, not a sphere radius
+
+The `0.01` passed as the last argument to `Ball_AdvancePositionOrCollision` is used in:
+
+```c
+fVar3 = (1.0 - 0.01) + (1.0 - this->friction) * 0.01;  // damping interpolation
+fVar3 = 0.01 * this->scale;                              // velocity scaling
+```
+
+It is a **physics timestep/damping factor**, not a collision sphere radius.
+
+### Summary
+
+| Parameter | What it actually does |
+|---|---|
+| `direction` | Normalized and scaled to 99999.0 — this IS the ray length |
+| `max_dist` | Packed into Vec3, used as per-axis normalization divisor in the intersection callback. Also acts as a non-zero guard (must produce magnitude ≥ 0.0001). Does NOT limit search distance. |
+| `0.01` (last arg) | Physics damping/timestep factor in `Ball_AdvancePositionOrCollision`. Not a sphere radius. |
+
+### Practical implications
+
+- **To limit search range**: You must check the distance between `origin` and `out` AFTER the call. The function will always search the full 99999 units.
+- **max_dist values**: Any non-zero value works (as long as `max_dist × √3 ≥ 0.0001`). Common values in the original code: `radius + 0.5f`. The exact value affects intersection precision but not search range.
+- **Hit detection**: A hit occurred if `out` differs from `origin` (check squared distance > small epsilon).
 
 ---
 
