@@ -1,0 +1,81 @@
+"""Screenshot capture from virtual X display."""
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+from .config import Config
+
+
+class Capture:
+    def __init__(self, cfg: Optional[Config] = None):
+        self.cfg = cfg or Config()
+
+    def capture(self, output_path: Optional[str] = None) -> dict:
+        out = output_path or self.cfg.screenshot_path
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+
+        if not shutil.which(self.cfg.scrot_binary):
+            return {
+                "success": False,
+                "error": f"{self.cfg.scrot_binary} not found; install scrot",
+            }
+
+        env = os.environ.copy()
+        env["DISPLAY"] = self.cfg.display
+
+        cmd = [
+            self.cfg.scrot_binary,
+            "--silent",
+            "--overwrite",
+            out,
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "error": result.stderr or "scrot failed",
+                }
+            if not os.path.exists(out):
+                return {"success": False, "error": "screenshot file was not created"}
+            size = os.path.getsize(out)
+            return {
+                "success": True,
+                "path": out,
+                "size_bytes": size,
+                "display": self.cfg.display,
+            }
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "screenshot capture timed out"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_base64(self, output_path: Optional[str] = None) -> dict:
+        from base64 import b64encode
+
+        cap = self.capture(output_path)
+        if not cap["success"]:
+            return cap
+
+        try:
+            with open(cap["path"], "rb") as f:
+                data = f.read()
+            ext = Path(cap["path"]).suffix.lstrip(".") or "png"
+            return {
+                "success": True,
+                "path": cap["path"],
+                "mime_type": f"image/{ext}",
+                "base64": b64encode(data).decode("ascii"),
+                "size_bytes": cap["size_bytes"],
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
