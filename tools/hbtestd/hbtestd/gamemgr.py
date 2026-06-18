@@ -22,6 +22,7 @@ class GameManager:
         self.log_file: Optional[io.TextIOWrapper] = None
         self.start_time: Optional[float] = None
         self._lock = asyncio.Lock()
+        self._started_by_hbtestd = False
 
     async def start_xvfb(self) -> bool:
         """Start a virtual X server if not already running."""
@@ -119,6 +120,7 @@ class GameManager:
                 stderr=subprocess.STDOUT,
             )
             self.start_time = time.time()
+            self._started_by_hbtestd = True
         except Exception as e:
             return {"success": False, "error": f"failed to launch game: {e}"}
 
@@ -198,6 +200,7 @@ class GameManager:
             killed.append({"what": "xvfb", "pid": self.xvfb_proc.pid})
 
         self.start_time = None
+        self._started_by_hbtestd = False
         return {"success": True, "killed": killed}
 
     def _find_game_pid(self) -> Optional[int]:
@@ -226,6 +229,9 @@ class GameManager:
 
     def is_running(self) -> bool:
         return self._find_game_pid() is not None
+
+    def started_by_hbtestd(self) -> bool:
+        return self._started_by_hbtestd
 
     def get_status(self) -> dict:
         pid = self._find_game_pid()

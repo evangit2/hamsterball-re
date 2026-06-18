@@ -32,6 +32,12 @@ class Config:
         "/home/evan/hamsterball-re/tools/bass_fps_proxy/hamsterball_fps.ini",
     )
     fps_mod_enabled: bool = os.environ.get("HBTESTD_FPS_MOD_ENABLED", "0") == "1"
+    allow_memory_write: bool = os.environ.get(
+        "HBTESTD_ALLOW_MEMORY_WRITE", "0"
+    ) == "1"
+    default_module_name: str = os.environ.get(
+        "HBTESTD_DEFAULT_MODULE", "Hamsterball.exe"
+    )
 
     @property
     def game_executable_path(self) -> str:
@@ -40,3 +46,7 @@ class Config:
     @property
     def sse_url(self) -> str:
         return f"http://{self.server_host}:{self.server_port}/sse"
+
+    def can_write_memory(self, started_by_hbtestd: bool) -> bool:
+        """Return True if memory writes are permitted for this process."""
+        return self.allow_memory_write or started_by_hbtestd

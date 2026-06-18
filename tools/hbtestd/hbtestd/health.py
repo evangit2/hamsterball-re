@@ -62,7 +62,7 @@ def get_health(cfg: Optional[Config] = None, mgr: Optional[GameManager] = None) 
     return {
         "success": True,
         "server": {
-            "version": "0.2.0",
+            "version": "0.3.0",
             "timestamp": time.time(),
         },
         "game": game_status,
