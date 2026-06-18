@@ -44,6 +44,9 @@ Full game race parameters, loaded at startup.
 - CAM value selects camera profile: 0.0 = default, >0 = alternate
 - No warm-up race in RaceData.xml (race indices 1-2 aren't competitive)
 - Silver in BEGINNERRACE (10.3) < Gold (15.0) — data file has SILVER/GOLD swapped for that race
+- **Internal vs display names:** XML tags do NOT match display names.
+  `BEGINNERRACE` = Warm-up Race (Level 1), `CASCADERACE` = Beginner Race (Level 2).
+  The game's internal naming is offset by one from the display names.
 
 ## Jukebox.xml — Music Track Mapping
 

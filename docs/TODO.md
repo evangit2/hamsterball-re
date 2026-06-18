@@ -110,7 +110,7 @@
 - [x] Document 8 level setup functions (leveldark through levelup)
 - [x] Document 3 reflection render passes
 - [x] Document scene object lists (6 lists at known offsets)
-- [x] Document all 14 RumbleBoard arena init functions
+- [x] Document all 15 RumbleBoard arena init functions
 - [x] Document Board (Tournament) constructors (Toob/Rodenthood level8)
 - [x] Deep doc: SCENE_SYSTEM_DECOMP.md with full tick order, render pipeline, camera modes
 - [x] Document remaining level setup functions (if they exist as Scene_Setup)

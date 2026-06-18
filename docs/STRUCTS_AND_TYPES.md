@@ -284,7 +284,7 @@ typedef struct {
 ### Rumble Board Arena Paths
 
 ```c
-// 14 arena level paths loaded by RumbleBoard_*_Init functions
+// 15 arena level paths loaded by RumbleBoard_*_Init functions
 "levels\\arena-WarmUp"       // 0x413C20
 "levels\\arena-beginner"     // 0x413CE0
 "levels\\arena-intermediate" // 0x414180

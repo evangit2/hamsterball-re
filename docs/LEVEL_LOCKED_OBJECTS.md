@@ -367,7 +367,7 @@ Loads the most sub-meshes of any level:
 | `+0x4378` | `Levels\Level5-Bridge` (MeshWorld) | BRIDGE collision mesh |
 | `+0x437C` | (CollisionLevel from Bridge) | Bridge collision |
 
-### `BoardLevel_Beginner_Ctor` (0x4200E0) — Cascade Race (Arena)
+### `BoardLevel_Beginner_Ctor` (0x4200E0) — Beginner Race (Arena, internal name: Cascade)
 | Scene Offset | Content | Used By |
 |-------------|---------|---------|
 | `+0x436C` | Vec3List array (0x418 bytes, 8 items) | Bumper creation data |
