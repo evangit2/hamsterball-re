@@ -10,6 +10,7 @@ from .config import Config
 from .gamemgr import GameManager
 from .input import InputDevice
 from .telemetry import Telemetry
+from . import fpsmod
 
 
 cfg = Config()
@@ -24,8 +25,17 @@ mcp.settings.port = cfg.server_port
 
 
 @mcp.tool()
-async def start_game() -> dict[str, Any]:
-    """Launch Hamsterball inside a virtual X display."""
+async def start_game(fps_mod: bool = False, target_fps: int = 144, render_fps: int = 144) -> dict[str, Any]:
+    """Launch Hamsterball inside a virtual X display.
+
+    Set fps_mod=True to install the bass.dll FPS mod before launching.
+    target_fps and render_fps override the mod defaults when fps_mod is enabled.
+    """
+    if fps_mod:
+        cfg.fps_mod_enabled = True
+        # Optionally write a temp INI with the requested FPS values
+        if target_fps or render_fps:
+            fpsmod.write_mod_ini(cfg, target_fps=target_fps, render_fps=render_fps)
     return await mgr.start_game()
 
 

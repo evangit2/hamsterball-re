@@ -10,6 +10,7 @@ from typing import Optional
 import psutil
 
 from .config import Config
+from . import fpsmod
 
 
 class GameManager:
@@ -76,6 +77,13 @@ class GameManager:
         if not await self.start_xvfb():
             return {"success": False, "error": "failed to start Xvfb"}
 
+        fps_mod_files: list[str] = []
+        if self.cfg.fps_mod_enabled:
+            ok, msg = fpsmod.install_mod(self.cfg)
+            if not ok:
+                return {"success": False, "error": f"fps mod install failed: {msg}"}
+            fps_mod_files = msg  # type: ignore[assignment]
+
         # If game is already running on the right display, reuse it.
         existing_pid = self._find_game_pid()
         if existing_pid:
@@ -130,7 +138,10 @@ class GameManager:
                 "stdout_tail": self._tail_log(10),
             }
 
-        return {"success": True, "pid": pid, "display": self.cfg.display}
+        result = {"success": True, "pid": pid, "display": self.cfg.display}
+        if fps_mod_files:
+            result["fps_mod_installed"] = fps_mod_files
+        return result
 
     async def stop_game(self) -> dict:
         async with self._lock:
@@ -138,6 +149,10 @@ class GameManager:
 
     async def _do_stop_game(self) -> dict:
         killed = []
+
+        # Remove fps mod files if they were installed
+        if self.cfg.fps_mod_enabled:
+            fpsmod.uninstall_mod(self.cfg)
 
         # Kill the game first
         pid = self._find_game_pid()
@@ -245,3 +260,4 @@ class GameManager:
         if self.log_file and not self.log_file.closed:
             self.log_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
             self.log_file.flush()
+

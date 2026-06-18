@@ -23,6 +23,15 @@ class Config:
     xdotool_binary: str = os.environ.get("HBTESTD_XDOTOOL", "xdotool")
     scrot_binary: str = os.environ.get("HBTESTD_SCROT", "scrot")
     libgl_software: bool = os.environ.get("HBTESTD_LIBGL_SOFTWARE", "1") == "1"
+    fps_mod_dll: str = os.environ.get(
+        "HBTESTD_FPS_MOD_DLL",
+        "/home/evan/hamsterball-re/tools/bass_fps_proxy/bass.dll",
+    )
+    fps_mod_ini: str = os.environ.get(
+        "HBTESTD_FPS_MOD_INI",
+        "/home/evan/hamsterball-re/tools/bass_fps_proxy/hamsterball_fps.ini",
+    )
+    fps_mod_enabled: bool = os.environ.get("HBTESTD_FPS_MOD_ENABLED", "0") == "1"
 
     @property
     def game_executable_path(self) -> str:
