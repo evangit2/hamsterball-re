@@ -1,6 +1,9 @@
 """Send keyboard and mouse input to the game."""
+from __future__ import annotations
+
 import os
 import subprocess
+import time
 from typing import Optional
 
 from .config import Config
@@ -20,12 +23,16 @@ KEY_MAP = {
     "tab": "Tab",
     "shift": "Shift",
     "ctrl": "Control",
+    "control": "Control",
     "alt": "Alt",
     "w": "w",
     "a": "a",
     "s": "s",
     "d": "d",
 }
+
+# In-game control keys that are known to work
+VALID_KEYS = set(KEY_MAP.keys())
 
 
 class InputDevice:
@@ -78,8 +85,12 @@ class InputDevice:
             pass
         return None
 
+    def _normalize_key(self, key: str) -> str:
+        normalized = KEY_MAP.get(key.lower(), key)
+        return normalized
+
     def send_key(self, key: str, duration_ms: int = 50) -> dict:
-        key = KEY_MAP.get(key.lower(), key)
+        key = self._normalize_key(key)
         wid = self._resolve_window_id()
         cmd = [self.cfg.xdotool_binary]
         if wid:
@@ -96,7 +107,7 @@ class InputDevice:
         }
 
     def hold_key(self, key: str, duration_ms: int = 500) -> dict:
-        key = KEY_MAP.get(key.lower(), key)
+        key = self._normalize_key(key)
         wid = self._resolve_window_id()
         base = [self.cfg.xdotool_binary]
 
@@ -109,7 +120,6 @@ class InputDevice:
             return cmd
 
         res_down = self._run(key_cmd("keydown"))
-        import time
         time.sleep(duration_ms / 1000.0)
         res_up = self._run(key_cmd("keyup"))
 
@@ -118,6 +128,46 @@ class InputDevice:
             "key": key,
             "duration_ms": duration_ms,
             "window_id": wid,
+        }
+
+    def send_combo(self, keys: list[str], duration_ms: int = 50) -> dict:
+        """Press multiple keys together (e.g. ['ctrl', 'a'])."""
+        resolved = [self._normalize_key(k) for k in keys]
+        wid = self._resolve_window_id()
+        base = [self.cfg.xdotool_binary]
+
+        if wid:
+            down = base + ["keydown", "--window", wid] + resolved
+            up = base + ["keyup", "--window", wid] + resolved
+        else:
+            down = base + ["keydown"] + resolved
+            up = base + ["keyup"] + resolved
+
+        res_down = self._run(down)
+        time.sleep(duration_ms / 1000.0)
+        res_up = self._run(up)
+
+        return {
+            "success": res_down.get("success", False) and res_up.get("success", False),
+            "keys": resolved,
+            "duration_ms": duration_ms,
+            "window_id": wid,
+        }
+
+    def tap_pattern(self, key: str, count: int = 3, interval_ms: int = 100) -> dict:
+        """Tap a key repeatedly."""
+        key = self._normalize_key(key)
+        successes = 0
+        for _ in range(count):
+            res = self.send_key(key)
+            if res.get("success"):
+                successes += 1
+            time.sleep(interval_ms / 1000.0)
+        return {
+            "success": successes == count,
+            "key": key,
+            "requested": count,
+            "successes": successes,
         }
 
     def send_text(self, text: str) -> dict:
@@ -152,3 +202,7 @@ class InputDevice:
         cmd += ["mousemove", "--sync", str(x), str(y)]
         result = self._run(cmd)
         return {"success": result.get("success", False), "x": x, "y": y, **result}
+
+    def list_keys(self) -> dict:
+        """Return the supported key names."""
+        return {"success": True, "keys": sorted(VALID_KEYS)}
