@@ -91,7 +91,7 @@ typedef struct {
     int   debug;             /* write water_mod.log */
 } water_cfg_t;
 
-static water_cfg_t g_cfg = { 0.70f, 0.03f, 0.04f, 0.45f, 10, 0 };
+static water_cfg_t g_cfg = { 0.70f, 0.03f, 0.04f, 0.45f, 10, 1 };
 
 /* ---- Water state per ball ---- */
 
@@ -112,6 +112,8 @@ static FILE *g_log = NULL;
 
 static void load_config(const char *ini_path);
 static void apply_patches(const char *log_path);
+static int  open_log_fallback(const char *game_path);
+static void log_load_error(const char *msg);
 
 /* ---- Helpers ---- */
 
@@ -155,7 +157,9 @@ static void load_config(const char *ini_path)
         g_cfg.horizontal_drag  = read_ini_float(ini_path, "WaterPhysics", "HorizontalDrag", 0.04f);
         g_cfg.gravity_equivalent = read_ini_float(ini_path, "WaterPhysics", "GravityEquivalent", 0.45f);
         g_cfg.timer_frames     = read_ini_int(ini_path, "WaterPhysics", "TimerFrames", 10);
-        g_cfg.debug            = read_ini_int(ini_path, "Debug", "Debug", 0);
+        g_cfg.debug            = read_ini_int(ini_path, "Debug", "Debug", 1);
+        if (!g_cfg.debug) g_cfg.debug = read_ini_int(ini_path, "Debug", "debug_mode", 0);
+        if (!g_cfg.debug) g_cfg.debug = read_ini_int(ini_path, "Debug", "DebugMode", 0);
     }
 
     if (g_cfg.entry_damping < 0.0f) g_cfg.entry_damping = 0.0f;
@@ -175,6 +179,60 @@ static void open_log(const char *path)
             fprintf(g_log, "Hamsterball E:WATER mod log started\n");
             fflush(g_log);
         }
+    }
+}
+
+/* Try a sequence of candidate log paths; first one that opens wins.
+ * Returns 1 if a log was opened. */
+static int open_log_fallback(const char *game_path)
+{
+    if (g_log) return 1;
+
+    const char *candidates[3];
+    char cwd_path[MAX_PATH];
+    char temp_path[MAX_PATH];
+
+    candidates[0] = game_path;
+
+    GetCurrentDirectoryA(sizeof(cwd_path), cwd_path);
+    if (strlen(cwd_path) + 1 + 14 < sizeof(cwd_path))
+        strcat(cwd_path, "\\water_mod.log");
+    else
+        cwd_path[0] = '\0';
+    candidates[1] = cwd_path;
+
+    GetTempPathA(sizeof(temp_path), temp_path);
+    if (strlen(temp_path) + 26 < sizeof(temp_path))
+        strcat(temp_path, "hamsterball_water_mod.log");
+    else
+        temp_path[0] = '\0';
+    candidates[2] = temp_path;
+
+    for (int i = 0; i < 3; i++) {
+        if (!candidates[i] || !candidates[i][0]) continue;
+        FILE *f = fopen(candidates[i], "w");
+        if (f) {
+            g_log = f;
+            fprintf(g_log, "Hamsterball E:WATER mod log started (path=%s)\n",
+                    candidates[i]);
+            fflush(g_log);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void log_load_error(const char *msg)
+{
+    if (!g_log) {
+        char tmp[MAX_PATH];
+        GetTempPathA(sizeof(tmp), tmp);
+        if (strlen(tmp) + 23 < sizeof(tmp)) strcat(tmp, "hb_water_load_error.log");
+        g_log = fopen(tmp, "w");
+    }
+    if (g_log) {
+        fprintf(g_log, "LOAD ERROR: %s (GLE=%lu)\n", msg, GetLastError());
+        fflush(g_log);
     }
 }
 
@@ -385,7 +443,7 @@ static void apply_water_physics(void *ball, water_state_t *st)
 /* ---- Hooks ---- */
 
 typedef void (__thiscall *ball_update_t)(void *ball);
-typedef void (__thiscall *createnodizzy_t)(void *this_, void *collObj, void *ball);
+typedef void (__thiscall *createnodizzy_t)(void *this_, void *ball, void *collObj);
 
 static ball_update_t      orig_Ball_Update = NULL;
 static createnodizzy_t    orig_CreateNoDizzy = NULL;
@@ -419,7 +477,7 @@ static const char* get_event_name(void *collObj)
     return *(const char **)((char *)obj + OFF_COLLOBJ_NAME);
 }
 
-static void __thiscall Hook_CreateNoDizzy(void *this_, void *collObj, void *ball)
+static void __thiscall Hook_CreateNoDizzy(void *this_, void *ball, void *collObj)
 {
     (void)this_;
 
@@ -451,7 +509,7 @@ static void __thiscall Hook_CreateNoDizzy(void *this_, void *collObj, void *ball
     }
 
     if (orig_CreateNoDizzy) {
-        orig_CreateNoDizzy(this_, collObj, ball);
+        orig_CreateNoDizzy(this_, ball, collObj);
     }
 }
 
@@ -459,7 +517,15 @@ static void __thiscall Hook_CreateNoDizzy(void *this_, void *collObj, void *ball
 
 static void apply_patches(const char *log_path)
 {
-    open_log(log_path);
+    open_log_fallback(log_path);
+
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(NULL, exe_path, sizeof(exe_path));
+    log_msg("E:WATER mod initializing. exe=%s\n", exe_path);
+    log_msg("bass_real.dll handle=0x%p\n", (void *)g_hRealBass);
+    log_msg("Config: debug=%d entry_damp=%.2f drag=%.3f hdrag=%.3f gravity_eq=%.3f timer=%d\n",
+            g_cfg.debug, g_cfg.entry_damping, g_cfg.drag, g_cfg.horizontal_drag,
+            g_cfg.gravity_equivalent, g_cfg.timer_frames);
     log_msg("Applying E:WATER hook patches...\n");
 
     int n_call = 0;
@@ -490,9 +556,10 @@ static DWORD WINAPI mod_thread(LPVOID lpParam)
     else    strcat(ini_path, "hamsterball_water.ini");
 
     GetModuleFileNameA(NULL, log_path, MAX_PATH);
-    p = strrchr(log_path, '.');
-    if (p) strcpy(p, "_water_mod.log");
-    else   strcat(log_path, "_water_mod.log");
+    p = strrchr(log_path, '\\');
+    char *dot = p ? strrchr(p, '.') : NULL;
+    if (dot) strcpy(dot, "_water_mod.log");
+    else     strcat(log_path, "_water_mod.log");
 
     load_config(ini_path);
 
