@@ -41,7 +41,7 @@ DO NOT:
 - Change `__thiscall` free functions into C++ class methods with early returns.
 - Factor repeated pointer arithmetic into accessor methods unless the original did so.
 
-See `analysis/code_ref/GameObject_HandleCollision_clean.cpp` for an example of a faithful cleanup.
+See `analysis/code_ref/CreateNoDizzy_clean.cpp` for an example of a faithful cleanup.
 
 ## 4. Required Reading for New Findings
 

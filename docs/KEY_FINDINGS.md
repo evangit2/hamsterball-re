@@ -305,16 +305,23 @@ Common renderable game object (0xD4 bytes):
 
 All level setups follow: Level_ctor → Level_Clone → Level_InitScene → vmethod +0x80, then level-specific object creation (flags, signs, bumpers, vacuum tubes, etc).
 
-| Level | Address | Special Objects |
-|-------|---------|----------------|
-| leveldark | 0x416270 | 2-player support |
-| level5 | 0x40E190 | (none) |
-| level6 | 0x40EA90 | LAUNCH01/02/03, CHROMESHADOW |
-| level7 | 0x40F360 | (none) |
-| level9 | 0x40830 | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
-| level10 | 0x411F60 | 4 bumpers, TarBubble |
-| levelcascade | 0x4110D0 | 8 bumpers |
-| levelup | 0x411540 | VAC-IN/VAC-OUT vacuum tubes |
+| Level (internal) | Address | Race | Special Objects |
+|-------|---------|------|----------------|
+| Level1 | 0x41CA40 | Warm-up Race | — |
+| levelcascade | 0x4110D0 | Beginner Race | 8 bumpers |
+| Level3 | (base) | Intermediate Race | — |
+| Level4 | 0x416270 | Dizzy Race | 2-player support |
+| Level5 | 0x40E190 | Tower Race | — |
+| Level6 | 0x40830 | Sky Race | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
+| LevelDark | 0x40F360 | Neon Race | — |
+| Level8 | 0x40EA90 | Expert Race | LAUNCH01/02/03, CHROMESHADOW |
+| Level9 | (base) | Odd Race | — |
+| Level10 | 0x411F60 | Toob Race | 4 bumpers, TarBubble |
+| Level7 | (base) | Wobbly Race | — |
+| LevelGlass | (base) | Glass Race | — |
+| Level5-Bonk | (base) | Master Race | — |
+| LevelUp | 0x411540 | Up Race | VAC-IN/VAC-OUT vacuum tubes |
+| LevelImpossible | (base) | Impossible Race | — |
 
 ### Scene Vtable (0x4D0260, 36 entries)
 
@@ -352,14 +359,15 @@ Key identified slots:
 
 ### Rumble/Arena Board System
 
-14 arena init functions (RumbleBoard_*_Init) follow this pattern:
+15 arena init functions (RumbleBoard_*_Init) follow this pattern:
 1. Level_ctor(arena_level_path) → store at scene+0x22B
 2. Level_Clone(source) → store at scene+0x22C
 3. CameraLookAt(scene)
 4. Virtual dispatch vmethod+0x80 (post-setup)
 
 Special arena behaviors:
-- Beginner (0x413CE0): 4 bumpers via N:BUMPER%d
+- Warm-up (0x413C20): —
+- Beginner (0x413CE0): 4 bumpers via N:BUMPER%d (CASCADERACE = Beginner Race)
 - Toob (0x414F00): 5 bumpers via N:BUMPER%d
 - Dizzy (0x414240): Extra Level3-Swirl loaded
 - Sky (0x4158C0): PILLAR name scanning via __strnicmp

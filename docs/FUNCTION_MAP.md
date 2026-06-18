@@ -305,9 +305,9 @@ Offset | Field | Description
 
 | Address | Name | Description |
 |---------|------|-------------|
-| 0x0040C5D0 | GameObject_HandleCollision | Main collision event dispatcher (E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION, E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT) |
-| 0x0040E6A0 | Arena_HandleCollision | Arena-specific collision handler (E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL + delegates to GameObject_HandleCollision) |
-| 0x0040DCD0 | Level_HandleCollision | Level-specific collision handler (E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE + delegates to GameObject_HandleCollision) |
+| 0x0040C5D0 | CreateNoDizzy | Main collision event dispatcher (E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION, E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT) |
+| 0x0040E6A0 | Arena_HandleCollision | Arena-specific collision handler (E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL + delegates to CreateNoDizzy) |
+| 0x0040DCD0 | Level_HandleCollision | Level-specific collision handler (E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE + delegates to CreateNoDizzy) |
 | 0x00434770 | Saw_AlertActivate | Activate saw blade (alert mode - clear flag, play 3D sound) |
 | 0x00434A50 | Saw_Activate | Activate saw blade (full - set active flag, play 3D sound) |
 | 0x00434C40 | Judge_Reset | Reset judges (clear active flag, re-add to list) |
@@ -410,7 +410,7 @@ Offset | Field | Description
 | 0x0040F360 | Scene_SetupLevel7 | levels\level7 | Simple load (no extras) |
 | 0x00410830 | Scene_SetupLevel9 | levels\level9 | PILLAR list, MAGNIFYER on hard, CLOUDSCAPE, fog + projection setup |
 | 0x00411F60 | Scene_SetupLevel10 | levels\level10 | 4 bumpers, FUN_436FC0 removal on easy, TarBubble list, multiplayer append |
-| 0x004110D0 | Scene_SetupLevelCascade | levels\levelcascade | 8 bumpers (N:BUMPER%d 0-7) |
+| 0x004110D0 | Scene_SetupLevelCascade | levels\levelcascade | 8 bumpers (N:BUMPER%d 0-7) — Beginner Race (internal name: Cascade) |
 | 0x00411540 | Scene_SetupLevelUp | levels\levelup | Initial ball pos (0,50,0), VAC-IN/VAC-OUT vacuum tubes |
 
 ## Reflection Rendering Passes
@@ -466,7 +466,7 @@ Offset | Field | Description
 | Slot | Offset | Address | Name | Description |
 |------|--------|---------|------|-------------|
 | 0 | +0x00 | 0x425020 | Scene_DeletingDtor | Destructor + free if flag&1 |
-| 1 | +0x04 | 0x419C00 | Scene_Update | Main tick (9-step: input, bumpers, physics, update, level, objects, cameras, render, HUD) |
+| 1 | +0x04 | 0x419C00 | Scene_Update | Main tick (9-step: input, update pipeline, ball update+respawn, race-end, countdown, objects, cameras, render, HUD) |
 | 2 | +0x08 | 0x41A2E0 | Scene_Render | 1P/2P/split render dispatch |
 | 3 | +0x0C | 0x4692F0 | Scene_HandleInput | Iterate menu items, check input, set current item at +0x864, play sound |
 | 4 | +0x10 | 0x469220 | Scene_ActivateCurrentItem | Call vmethod+0x10 on current menu item (+0x864) |

@@ -48,7 +48,7 @@ Each arena loads a MeshWorld and CollisionLevel pair from these paths:
 
 | Arena Init Function | Arena Mesh Path | Extra Level |
 |---------------------|-----------------|-------------|
-| RumbleBoard_Beginner (0x22550) | "RumbleBoard (Beginner Arena)" | Race: "Cascade Race" |
+| RumbleBoard_Beginner (0x22550) | "RumbleBoard (Beginner Arena)" | Race: "Beginner Race" (internal: Cascade Race) |
 | RumbleBoard_Intermediate_Init (0x414180) | levels\arena-intermediate | — |
 | RumbleBoard_Dizzy_Init (0x414240) | levels\arena-dizzy | Levels\Level3-Swirl |
 | RumbleBoard_Expert_Init (0x414B10) | levels\arena-expert | — |

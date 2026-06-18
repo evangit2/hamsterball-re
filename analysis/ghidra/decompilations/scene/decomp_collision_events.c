@@ -1,9 +1,9 @@
-// GameObject_HandleCollision (0x40C5D0) — "CreateNoDizzy"
+// CreateNoDizzy (0x40C5D0) — "CreateNoDizzy"
 // BASE collision handler — dispatches ALL game events
 // Called by Level_HandleCollision and Arena_HandleCollision as final step
 // Parameters: this=Level, param_1=Ball, param_2=CollisionObject
 
-void __thiscall GameObject_HandleCollision(void *this, int *ball, int *collObj) {
+void __thiscall CreateNoDizzy(void *this, int *ball, int *collObj) {
     char *eventName = *(char **)(collObj[1] + 0x864); // object type string
     int *app = *(int **)((int)this + 0x878);
     
@@ -223,7 +223,7 @@ void __thiscall Level_HandleCollision(void *this, int *ball, int *collObj) {
     }
     
     // Delegate to base handler for all other events
-    CreateNoDizzy(this, ball, collObj); // GameObject_HandleCollision
+    CreateNoDizzy(this, ball, collObj); // CreateNoDizzy
 }
 
 // Arena_HandleCollision (0x40E6A0) — Rumble arena events + delegates to base
@@ -287,5 +287,5 @@ void __thiscall Arena_HandleCollision(void *this, int *ball, int *collObj) {
     }
     
     // Delegate to base handler for all remaining events
-    CreateNoDizzy(this, ball, collObj); // GameObject_HandleCollision
+    CreateNoDizzy(this, ball, collObj); // CreateNoDizzy
 }

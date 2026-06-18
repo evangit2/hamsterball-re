@@ -181,39 +181,52 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 
 ## Known Level Files
 
-### Race Levels (17 levels)
-| File | Race |
-|------|------|
-| Level1.MESHWORLD | Beginner Race |
-| Level2.MESHWORLD | Cascade Race |
-| Level3.MESHWORLD | Intermediate Race |
-| Level4.MESHWORLD | Dizzy Race |
-| Level5.MESHWORLD | Tower Race |
-| Level8.MESHWORLD | Up Race |
-| Level10.MESHWORLD | Neon Race |
-| Level5-Bonk.MESHWORLD | Expert Race (bonk arena) |
-| LevelImpossible.MESHWORLD | Impossible Race |
+### Race Levels (15 levels — one per tournament tier)
 
-### Arena Levels (16 arenas)
-| File | Arena |
-|------|-------|
-| Arena-Beginner.MESHWORLD | Beginner arena |
-| Arena-Dizzy.MESHWORLD | Dizzy arena |
-| Arena-Expert.MESHWORLD | Expert arena |
-| Arena-Glass.MESHWORLD | Glass arena |
-| Arena-Impossible.MESHWORLD | Impossible arena |
-| Arena-Intermediate.MESHWORLD | Intermediate arena |
-| Arena-Master.MESHWORLD | Master arena |
-| Arena-Neon.MESHWORLD | Neon arena |
-| Arena-Odd.MESHWORLD | Odd arena |
-| Arena-Sky.MESHWORLD | Sky arena |
-| Arena-SpawnPlatform.MESHWORLD | Spawn platform |
-| Arena-Stands.MESHWORLD | Audience stands |
-| Arena-Toob.MESHWORLD | Toob arena |
-| Arena-Tower.MESHWORLD | Tower arena |
-| Arena-Up.MESHWORLD | Up arena |
-| Arena-WarmUp.MESHWORLD | Warm-up arena |
-| Arena-Wobbly.MESHWORLD | Wobbly arena |
+> **Note:** Internal file names do NOT match display names. The XML race
+> tags also differ from display names (e.g. `BEGINNERRACE` = Warm-up Race,
+> `CASCADERACE` = Beginner Race). Always cross-reference with RaceData.xml.
+
+| # | Display Name | XML Tag | Level File | Tier Color |
+|---|-------------|---------|-----------|------------|
+| 1 | Warm-up Race | BEGINNERRACE | Level1.MESHWORLD | Pink |
+| 2 | Beginner Race | CASCADERACE | LevelCascade.MESHWORLD | Blue |
+| 3 | Intermediate Race | INTERMEDIATERACE | Level3.MESHWORLD | Green |
+| 4 | Dizzy Race | DIZZYRACE | Level4.MESHWORLD | — |
+| 5 | Tower Race | TOWERRACE | Level5.MESHWORLD | — |
+| 6 | Up Race | UPRACE | LevelUp.MESHWORLD | Red |
+| 7 | Neon Race | NEONRACE | LevelDark.MESHWORLD | Orange |
+| 8 | Expert Race | EXPERTRACE | Level8.MESHWORLD | — |
+| 9 | Odd Race | ODDRACE | Level9.MESHWORLD | — |
+| 10 | Toob Race | TOOBRACE | Level10.MESHWORLD | — |
+| 11 | Wobbly Race | WOBBLYRACE | Level7.MESHWORLD | — |
+| 12 | Glass Race | GLASSRACE | LevelGlass.MESHWORLD | — |
+| 13 | Sky Race | SKYRACE | Level6.MESHWORLD | — |
+| 14 | Master Race | MASTERRACE | Level5-Bonk.MESHWORLD | — |
+| 15 | Impossible Race | IMPOSSIBLERACE | LevelImpossible.MESHWORLD | — |
+
+### Arena Levels (15 arenas — one per race level)
+
+| # | Display Name | Arena File |
+|---|-------------|-----------|
+| 1 | Warm-up Arena | Arena-WarmUp.MESHWORLD |
+| 2 | Beginner Arena | Arena-Beginner.MESHWORLD |
+| 3 | Intermediate Arena | Arena-Intermediate.MESHWORLD |
+| 4 | Dizzy Arena | Arena-Dizzy.MESHWORLD |
+| 5 | Tower Arena | Arena-Tower.MESHWORLD |
+| 6 | Up Arena | Arena-Up.MESHWORLD |
+| 7 | Neon Arena | Arena-Neon.MESHWORLD |
+| 8 | Expert Arena | Arena-Expert.MESHWORLD |
+| 9 | Odd Arena | Arena-Odd.MESHWORLD |
+| 10 | Toob Arena | Arena-Toob.MESHWORLD |
+| 11 | Wobbly Arena | Arena-Wobbly.MESHWORLD |
+| 12 | Glass Arena | Arena-Glass.MESHWORLD |
+| 13 | Sky Arena | Arena-Sky.MESHWORLD |
+| 14 | Master Arena | Arena-Master.MESHWORLD |
+| 15 | Impossible Arena | Arena-Impossible.MESHWORLD |
+
+**Non-playable arena files:** Arena-SpawnPlatform.MESHWORLD (spawn platform),
+Arena-Stands.MESHWORLD (audience stands) — not counted in the 15.
 
 ### Sub-Levels (Object Prefabs)
 | File | Purpose |

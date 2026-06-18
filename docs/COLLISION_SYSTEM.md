@@ -211,7 +211,9 @@ The collision system is called from `Ball_Update` (0x405190) every frame:
 ## Collision Event Dispatch System
 
 The collision system dispatches game events when the ball hits specific object types.
-There are two dispatchers: Level_HandleCollision (for level objects) and Arena_HandleCollision (for RumbleBoard arena objects).
+There are two dispatchers: Level_HandleCollision (for level objects) and Arena_HandleCollision (for RumbleBoard arena objects). Both are vtable-driven — the scene's vtable determines which handler runs. Both delegates to CreateNoDizzy (0x40C5D0) as a shared base handler for universal events (E:JUMP, N:GOAL, E:BREAK, etc.).
+
+Note: Ball_AdvancePositionOrCollision (0x4564C0) handles only geometric collision detection (velocity integration, mesh intersection via CollisionLevel->vtable[0x1C], max-speed clamping). It does NOT dispatch event-name-based collision events. The event dispatch is triggered separately from the ball update chain (ball->vtable[0x10], called by Scene_UpdateBallsAndState).
 
 ### Level_HandleCollision (0x40DCD0) — Level Objects
 

@@ -310,7 +310,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ## 8. Collision Event System
 
-### `GameObject_HandleCollision` / `CreateNoDizzy`
+### `CreateNoDizzy` / `CreateNoDizzy`
 - **Address:** `0x0040C5D0`
 - **Convention:** `__thiscall` (ECX = this)
 - **Parameters:** `this` (Level*), `ball` (Ball*), `collider` (CollisionObject*)

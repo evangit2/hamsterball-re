@@ -80,7 +80,7 @@
 // - Phase 15: Sound_CalculateDistanceAttenuation at ball position
 //            If ambient_sound_id != 0: play at current position
 //
-// Collision Events (GameObject_HandleCollision 0x40C5D0):
+// Collision Events (CreateNoDizzy 0x40C5D0):
 // - E:JUMP: plays 3D sound at collision point
 // - N:TARPIT: plays 3D sound, then modifies ball physics
 // - N:MOUSETRAP: plays 3D sound at collision point

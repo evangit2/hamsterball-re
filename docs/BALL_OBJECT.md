@@ -381,10 +381,13 @@ There is an **alternate force application** at 0x4016F0 that is gravity-plane-aw
 When the ball hits a collision object, the event string (at `object+0x864`) is parsed:
 
 ```
-Arena_HandleCollision (0x40E6A0)   ← Rumble arenas
-  └─→ Level_HandleCollision (0x40DCD0)   ← Race levels
-       └─→ GameObject_HandleCollision (0x40C5D0)   ← ALL events
+Scene vtable determines which handler runs:
+  ├─ Arena_HandleCollision (0x40E6A0)   ← Rumble arenas
+  │    └─→ CreateNoDizzy (0x40C5D0)   ← Shared base (ALL events)
+  └─ Level_HandleCollision (0x40DCD0)   ← Race levels
+       └─→ CreateNoDizzy (0x40C5D0)   ← Shared base (ALL events)
 ```
+Note: Arena and Level handlers are **parallel**, not chained. Ball_AdvancePositionOrCollision (0x4564C0) handles geometric collision only; event dispatch happens from the ball update chain.
 
 **Event prefixes:**
 - `N:` = Named physical object (bumpers, trapdoors, water)

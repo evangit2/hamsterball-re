@@ -2,25 +2,23 @@
 
 ## Architecture
 
-The collision event system uses a **3-tier dispatcher chain**:
+The collision event system uses a **2-tier dispatcher chain**. The scene's vtable determines which top-level handler runs:
 
 ```
-Ball Physics (Ball_Update 0x405190)
-  └─ Per-object collision test
-       └─ Event dispatch based on object type string
-            ├─ Arena_HandleCollision (0x40E6A0)  ← Rumble arenas
-            │    └─ Level_HandleCollision (0x40DCD0)  ← Race levels
-            │         └─ GameObject_HandleCollision (0x40C5D0)  ← Base (ALL events)
-            └─ Direct collision handler (some objects bypass chain)
+Ball Update (ball->vtable[0x10], called from Scene_UpdateBallsAndState 0x41B540)
+  └─ Geometric collision detected by Ball_AdvancePositionOrCollision (0x4564C0)
+       └─ Event dispatch based on object name string at collObj+0x864
+            ├─ Arena_HandleCollision (0x40E6A0)  ← Rumble arenas (vtable-driven)
+            │    └─ CreateNoDizzy (0x40C5D0)  ← Shared base (ALL events)
+            └─ Level_HandleCollision (0x40DCD0)  ← Race levels (vtable-driven)
+                 └─ CreateNoDizzy (0x40C5D0)  ← Shared base (ALL events)
 ```
 
-Each handler processes its domain-specific events first, then calls the base
-handler (`CreateNoDizzy`) for common events. This means ALL collision events
-eventually reach `GameObject_HandleCollision`.
+Arena and Level handlers are **parallel, not chained** — they never call each other. Both delegate to CreateNoDizzy for universal events. Ball_AdvancePositionOrCollision handles only geometric collision detection (velocity integration, mesh intersection) and does NOT dispatch events itself.
 
 ## Event Dispatch Table
 
-### Tier 1: Arena_HandleCollision (0x40E6A0)
+### Tier 1: Arena_HandleCollision (0x40E6A0) — Arena Events
 **Domain**: Rumble arena multiplayer events. Most events gated behind `App+0x23C` (multiplayer flag).
 
 | Event | Effect | Gated |
@@ -36,9 +34,9 @@ eventually reach `GameObject_HandleCollision`.
 | E:JUMP | Ball bounce + sound + 200pts | No |
 | E:BELL | Extra time (+500) + popup | No |
 
-After processing: **delegates to Level_HandleCollision**.
+After processing: **delegates to CreateNoDizzy** (not to Level_HandleCollision — Arena and Level are parallel).
 
-### Tier 2: Level_HandleCollision (0x40DCD0)
+### Tier 2: Level_HandleCollision (0x40DCD0) — Level Events
 **Domain**: Race level mechanical objects.
 
 | Event | Effect | Details |
@@ -50,9 +48,9 @@ After processing: **delegates to Level_HandleCollision**.
 | E:MACETRIGGER | Activate all maces | Sets each mace active flag at +0x10F0 |
 | N:MACE | Ball bounces off mace | Only if mace swinging (not 0x42A00000) and not already hit |
 
-After processing: **delegates to GameObject_HandleCollision**.
+After processing: **delegates to CreateNoDizzy**.
 
-### Tier 3: GameObject_HandleCollision (0x40C5D0)
+### Base Tier: CreateNoDizzy (0x40C5D0) — Shared Base Handler
 **Domain**: All game events (base handler, processes everything).
 
 | Event | Effect | Key Details |

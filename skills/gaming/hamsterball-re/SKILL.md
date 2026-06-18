@@ -88,9 +88,9 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x412850 | CreateSpinner | N:SPINNER |
 | 0x410D00 | CreateLimit | E:LIMIT boundary |
 | 0x40BF50 | CreateMouseTrap | MOUSETRAP |
-| 0x40C5D0 | GameObject_HandleCollision | Main collision event dispatcher — handles ALL object types: E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION (ONCE/SCORE), E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT |
-| 0x40E6A0 | Arena_HandleCollision | Arena events: E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL (+delegates to GameObject_HandleCollision) |
-| 0x40DCD0 | Level_HandleCollision | Level events: E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE (+delegates to GameObject_HandleCollision) |
+| 0x40C5D0 | CreateNoDizzy | Main collision event dispatcher — handles ALL object types: E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION (ONCE/SCORE), E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT |
+| 0x40E6A0 | Arena_HandleCollision | Arena events: E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL (+delegates to CreateNoDizzy) |
+| 0x40DCD0 | Level_HandleCollision | Level events: E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE (+delegates to CreateNoDizzy) |
 | 0x434770 | Saw_AlertActivate | Saw blade alert mode (clear flag + 3D sound) |
 | 0x434A50 | Saw_Activate | Saw blade full activate (set flag + 3D sound) |
 | 0x434C40 | Judge_Reset | Reset judge objects |
@@ -489,7 +489,7 @@ Opens file with _open(path, 0x8000), reads: material_count → materials (with e
 | 6 | RumbleBoard timer ticks | this+0x221, this+0x226 (two RumbleBoard timers) |
 | 7 | Camera shake decay | this+0xE93 (shake active), +0xA6E (magnitude, ±800, decay -10/frame) |
 | 8 | Scene object update+render | iterate this+0x22E, vtable[4]=Update, vtable[0]=Render |
-| 9 | Physics pipeline | vtable[0x4C/0x50/0x54/0x58] + physics objects at this+0xD8B |
+| 9 | Per-frame update pipeline | vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_HandleCountdown + physics objects at this+0xD8B |
 | 10 | Post-physics callback | this+0xEBF+0x04() |
 
 ### Scene_HandleBallFinish State Machine (5 states)
@@ -1315,7 +1315,7 @@ The ball is a GameObject subclass with dedicated physics. Base class is GameObje
 - **Ball_CollisionCheck (0x402DE0)**: Per-frame collision check against mesh, increments counter on hit.
 - **Ball_Render (0x402860)**: D3D8 render: SetRenderState calls, texture setup, DrawPrimitiveUP.
 - **Ball_ResetCollisionMesh (0x4030B0)**: Resets collision mesh and orientation.
-| 0x40C5D0 | GameObject_HandleCollision | Main collision event dispatcher — handles ALL object types: E:NODIZZY (with TIME param), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays "Goal!" music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |
+| 0x40C5D0 | CreateNoDizzy | Main collision event dispatcher — handles ALL object types: E:NODIZZY (with TIME param), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays "Goal!" music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |
 - **Ball_ctor (0x40AFE0)**: Calls GameObject_ctor, sets vtable to 0x4CF3A0, initializes quaternion to identity
 ### Rendering Pipeline (CONFIRMED from Ghidra)
 - Graphics_BeginFrame (0x453B50) → Graphics_RenderScene (0x454BC0) → Graphics_PresentOrEnd (0x455A90)

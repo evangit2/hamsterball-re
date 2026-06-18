@@ -610,7 +610,7 @@
     },
     {
       "address": "0x0040C5D0",
-      "name": "GameObject_HandleCollision"
+      "name": "CreateNoDizzy"
     },
     {
       "address": "0x0040E6A0",

@@ -78,22 +78,24 @@ This is the exact same string that was loaded from the `.COL` file. The dispatch
 
 ---
 
-## 4. Three-Tier Dispatch System
+## 4. Two-Tier Dispatch System
 
-Collision events are dispatched through a **3-tier handler hierarchy**. Level and Arena handlers check their specific events first, then **always** delegate to the base handler (`GameObject_HandleCollision`) as the final step.
+Collision events are dispatched through a **2-tier handler chain**. Level and Arena handlers are **parallel, not chained** — they never call each other. Both delegate to the shared base handler (`CreateNoDizzy`) as the final step. The scene's vtable determines which top-level handler runs.
 
-### Tier 1: `Level_HandleCollision` (0x0040DCD0)
+Note: `Ball_AdvancePositionOrCollision` (0x4564C0) handles only geometric collision detection (velocity integration, mesh intersection via `CollisionLevel->vtable[0x1C]`, max-speed clamping). It does NOT dispatch event-name-based collision events. Event dispatch is triggered from the ball update chain (`ball->vtable[0x10]`, called by `Scene_UpdateBallsAndState`).
+
+### Tier 1a: `Level_HandleCollision` (0x0040DCD0) — Level Events
 **Signature:** `void __thiscall Level_HandleCollision(Scene *scene, Ball *ball, Collider *collider)`
 
-Handles level-specific events (catapults, trapdoors, maces, bite damage), then calls `GameObject_HandleCollision`.
+Handles level-specific events (catapults, trapdoors, maces, bite damage), then calls `CreateNoDizzy`.
 
-### Tier 2: `Arena_HandleCollision` (0x0040E6A0)
+### Tier 1b: `Arena_HandleCollision` (0x0040E6A0) — Arena Events
 **Signature:** `void __thiscall Arena_HandleCollision(Scene *scene, Ball *ball, Collider *collider)`
 
-Handles arena/rumble events (hammers, saw blades, judges, bells), then calls `GameObject_HandleCollision`.
+Handles arena/rumble events (hammers, saw blades, judges, bells), then calls `CreateNoDizzy`.
 
-### Tier 3: `GameObject_HandleCollision` (0x0040C5D0) — Base Handler (a.k.a. "CreateNoDizzy")
-**Signature:** `void __thiscall GameObject_HandleCollision(void *this, int *ball, int *collObj)`
+### Base Tier: `CreateNoDizzy` (0x0040C5D0) — Shared Base Handler
+**Signature:** `void __thiscall CreateNoDizzy(void *this, int *ball, int *collObj)`
 
 Handles ALL common events. This is always called last regardless of level type.
 
@@ -101,7 +103,7 @@ Handles ALL common events. This is always called last regardless of level type.
 
 ## 5. Complete Event Reference
 
-### 5a. Base Handler Events — `GameObject_HandleCollision` (0x0040C5D0)
+### 5a. Base Handler Events — `CreateNoDizzy` (0x0040C5D0)
 
 | Event String | Match Type | Condition | Effect | Ball/Scene Offsets |
 |---|---|---|---|---|
@@ -230,7 +232,7 @@ To add a new event type to the game (e.g., `E:MYNEWEVENT`):
 1. Add a `stricmp`/`strnicmp` check in the appropriate handler:
    - `Level_HandleCollision` (0x40DCD0) for level-specific events
    - `Arena_HandleCollision` (0x40E6A0) for arena-specific events
-   - `GameObject_HandleCollision` (0x40C5D0) for universal events
+   - `CreateNoDizzy` (0x40C5D0) for universal events
 2. The event name is read from `*(char **)(collObj[1] + 0x864)`
 3. Use `strnicmp` for prefix matching (allows suffix data like tags)
 4. Use `stricmp` for exact matching (no suffix data needed)
@@ -285,12 +287,14 @@ To add a new event type to the game (e.g., `E:MYNEWEVENT`):
   │   └─ Mesh_FindClosestCollision — DDA ray traversal
   │       └─ Returns collObj pointing to MeshBuffer
   │
-  ├─ Collision Handler Dispatch (3-tier)
-  │   ├─ Level_HandleCollision (0x40DCD0)
+  ├─ Collision Handler Dispatch (2-tier, vtable-driven)
+  │   ├─ Level_HandleCollision (0x40DCD0) — race levels
   │   │   └─ Level-specific events first (CATAPULTBOTTOM, OPENSESAME, etc.)
-  │   ├─ Arena_HandleCollision (0x40E6A0)
+  │   │   └─ delegates to CreateNoDizzy
+  │   ├─ Arena_HandleCollision (0x40E6A0) — arenas
   │   │   └─ Arena events first (CALLHAMMER, SAW, BELL, etc.)
-  │   └─ GameObject_HandleCollision (0x40C5D0) — always called last
+  │   │   └─ delegates to CreateNoDizzy
+  │   └─ CreateNoDizzy (0x40C5D0) — shared base, always called last
   │       └─ eventName = *(collObj[1] + 0x864)
   │       └─ stricmp/strnicmp dispatch to specific handlers
   │
@@ -307,4 +311,4 @@ To add a new event type to the game (e.g., `E:MYNEWEVENT`):
 - Uses a different internal name
 - Is handled in an undiscovered code path
 
-If you want to implement `E:BLACKOUT` for custom levels, add it as a new `stricmp` case in `GameObject_HandleCollision` and handle it with whatever effect you want (e.g., fade screen to black, toggle visibility).
+If you want to implement `E:BLACKOUT` for custom levels, add it as a new `stricmp` case in `CreateNoDizzy` and handle it with whatever effect you want (e.g., fade screen to black, toggle visibility).
