@@ -385,7 +385,7 @@ static void apply_water_physics(void *ball, water_state_t *st)
 /* ---- Hooks ---- */
 
 typedef void (__thiscall *ball_update_t)(void *ball);
-typedef void (__thiscall *createnodizzy_t)(void *this_, void *ball, void *collObj);
+typedef void (__thiscall *createnodizzy_t)(void *this_, void *collObj, void *ball);
 
 static ball_update_t      orig_Ball_Update = NULL;
 static createnodizzy_t    orig_CreateNoDizzy = NULL;
@@ -419,13 +419,17 @@ static const char* get_event_name(void *collObj)
     return *(const char **)((char *)obj + OFF_COLLOBJ_NAME);
 }
 
-static void __thiscall Hook_CreateNoDizzy(void *this_, void *ball, void *collObj)
+static void __thiscall Hook_CreateNoDizzy(void *this_, void *collObj, void *ball)
 {
     (void)this_;
 
     if (ball && collObj) {
         const char *name = get_event_name(collObj);
-        if (name && (_stricmp(name, "E:WATER") == 0 || _strnicmp(name, "E:WATER", 7) == 0)) {
+        if (name && g_log) {
+            log_msg("[%.3f] CreateNoDizzy: name='%s' ball=%p collObj=%p\n",
+                    (float)GetTickCount() / 1000.0f, name, ball, collObj);
+        }
+        if (name && _strnicmp(name, "E:WATER", 7) == 0) {
             water_state_t *st = get_ball_state(ball);
             if (st) {
                 float pos_y = get_ball_pos_y(ball);
@@ -447,7 +451,7 @@ static void __thiscall Hook_CreateNoDizzy(void *this_, void *ball, void *collObj
     }
 
     if (orig_CreateNoDizzy) {
-        orig_CreateNoDizzy(this_, ball, collObj);
+        orig_CreateNoDizzy(this_, collObj, ball);
     }
 }
 
