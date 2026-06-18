@@ -18,7 +18,9 @@ capture = Capture(cfg)
 inputs = InputDevice(cfg)
 telemetry = Telemetry(cfg)
 
-mcp = FastMCP("hbtestd", host=cfg.server_host, port=cfg.server_port)
+mcp = FastMCP("hbtestd")
+mcp.settings.host = cfg.server_host
+mcp.settings.port = cfg.server_port
 
 
 @mcp.tool()

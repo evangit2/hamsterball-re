@@ -10,10 +10,16 @@ import psutil
 from .config import Config
 
 # Known Hamsterball static addresses (image base 0x400000)
+# g_App is a singleton stored as a pointer at DAT_005341E0 (set by App_Ctor).
+# Offsets are relative to the App* structure and verified against App_Ctor
+# (0x46DC40) and App_Run (0x46BD80) decompilations:
+#   param_1[0x5b] = 100  -> App+0x16C = target update FPS
+#   param_1[0x5c] = 0x4b -> App+0x170 = target render FPS
+#   param_1[0x59] = GetTickCount() -> App+0x164 = last update tick
 APP_GLOBAL_PTR = 0x005341E0  # DAT_005341e0 -> App*
 APP_TARGET_FPS_OFFSET = 0x16C
 APP_RENDER_FPS_OFFSET = 0x170
-APP_LAST_FRAME_TIME = 0x164  # current tick / last frame time
+APP_LAST_FRAME_TIME = 0x164  # last update tick (GetTickCount value)
 
 libc = ctypes.CDLL("libc.so.6")
 
@@ -81,7 +87,7 @@ class Telemetry:
 
             frame_time_bytes = self._read_process_memory(pid, app_ptr + APP_LAST_FRAME_TIME, 4)
             if frame_time_bytes:
-                result["last_frame_time_raw"] = struct.unpack("<I", frame_time_bytes)[0]
+                result["last_frame_tick"] = struct.unpack("<I", frame_time_bytes)[0]
         else:
             result["memory_read_error"] = "could not read App global (ptrace_scope may block)"
 
