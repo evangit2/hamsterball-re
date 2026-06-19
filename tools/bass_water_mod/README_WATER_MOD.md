@@ -1,78 +1,72 @@
-# Hamsterball Water Physics Mod (bass.dll proxy)
+# Hamsterball Water Physics Mod
 
-Adds realistic buoyancy physics for custom `E:WATER` event planes in the original Windows game.
-
-## Features
-
-- **Entry damping**: when the ball first falls into `E:WATER`, it loses 30% of its vertical speed.
-- **Drag**: overall velocity damping while in water, with extra horizontal damping.
-- **Depth-scaled buoyancy**: the deeper the ball is submerged, the stronger the upward force.
-- **Stable floating**: at zero vertical velocity the ball settles half-submerged at the water surface.
-- **Horizontal control preserved**: X/Z movement works normally with a slight drag.
-- **No vertical speed cap**: the mod does not impose its own maximum vertical velocity.
+Custom water physics for Hamsterball via bass.dll proxy.
 
 ## Installation
 
-1. Copy the following files into your **Hamsterball game folder** (next to `Hamsterball.exe`):
-   - `bass.dll`
-   - `hamsterball_water.ini`
-2. **Rename the original `bass.dll` to `bass_real.dll`**.
-3. Run `Hamsterball.exe` normally.
-
-Or run `install_water_mod.bat` from the game folder (it renames the original bass.dll for you).
-
-## Level design
-
-Place an invisible collision plane in your level and name it exactly:
-
-```
-E:WATER
-```
-
-The `E:` prefix marks the object as an invisible event trigger. When the ball touches the plane, the water physics activate.
-
-## Tuning
-
-Edit `hamsterball_water.ini` in the game folder:
-
-```ini
-[WaterPhysics]
-EntryDamping=0.70          ; vertical speed multiplier on first entry while falling
-Drag=0.03                  ; overall water drag per frame (0.03 = 3%)
-HorizontalDrag=0.04        ; extra horizontal drag per frame
-GravityEquivalent=0.45     ; effective gravity per frame; buoyancy balances at half-submerged
-TimerFrames=10             ; frames physics persists after leaving the water plane
-
-[Debug]
-Debug=0                    ; set to 1 to write Hamsterball_water_mod.log
-```
-
-## How it works
-
-This mod is a proxy for `bass.dll`. The game loads it instead of the real BASS audio library. The proxy forwards all BASS calls to `bass_real.dll` and patches two game functions in memory:
-
-- `Ball vtable[4]` (the wrapper at `0x408390`around `Ball_Update` at `0x405E00`) — applies buoyancy, drag, and damping each frame.
-- CALL sites to `CreateNoDizzy` in the level/arena collision handlers — detects `E:WATER` collisions and records the water surface height.
-
-Physics changes use the CollisionMesh persistent velocities (`Ball + 0x1A4 -> +0xCA4/CA8/CAC`) and the engine's gravity multiplier (`CollisionMesh + 0xC7C`). No changes are made to the ephemeral `Ball + 0x170` velocity accumulator.
-
-## Documentation correction
-
-This mod clarified an earlier documentation mistake: the function at `0x405190` is **not** `Ball_Update`; it is the respawn/break cleanup routine that zeros velocities when a ball breaks. The actual main physics tick is `Ball_Update` at **`0x405E00`**.
+1. In your Hamsterball game folder, rename the original `bass.dll` to `bass_real.dll`
+2. Copy the mod `bass.dll` and `hamsterball_water.ini` into the game folder
+3. Place `E:WATER` collision planes in custom levels (see below)
+4. Run Hamsterball.exe normally
 
 ## Uninstall
 
-Run `uninstall_water_mod.bat`, or manually delete the proxy `bass.dll` and rename `bass_real.dll` back to `bass.dll`.
+1. Delete the mod `bass.dll`
+2. Rename `bass_real.dll` back to `bass.dll`
 
-## Build (from Linux with MinGW)
+Or run `uninstall_water_mod.bat`.
 
-```bash
-make
-make package   # creates hamsterball-water-mod.zip
+## How Water Planes Work
+
+### Level Setup
+
+In the Raptisoft level editor, add a collision mesh object named `E:WATER`.
+The object needs at least one face (triangle). The Y coordinate of the first
+vertex of the first face determines the water surface height.
+
+The mod scans both the collision MeshWorld and visual MeshWorld for objects
+named `E:WATER` when a level loads.
+
+### Fallback: INI Water Planes
+
+If your level's collision data doesn't expose E:WATER objects (or you want
+to test without editing a level), you can specify water plane Y coordinates
+in `hamsterball_water.ini`:
+
+```ini
+[WaterPlanes]
+Count=1
+Y0=100.0
 ```
 
-## Troubleshooting
+## Physics Behavior
 
-- **No water effect**: make sure the collision object is named exactly `E:WATER` (case-insensitive). The `E:` prefix is required for it to be loaded as an invisible event trigger.
-- **Game crashes on startup**: verify `bass_real.dll` exists and is the original BASS library.
-- **Strange physics**: adjust `GravityEquivalent` and `EntryDamping` in the INI file.
+When the ball touches a water plane, the following physics apply:
+
+1. **Entry Damping**: On first contact while falling, vertical speed is
+   reduced by 30% (configurable via `EntryDamping`).
+
+2. **Drag**: A small per-frame velocity reduction on all axes (`Drag`).
+
+3. **Buoyancy**: An upward force proportional to how deep the ball is
+   submerged. The force increases linearly from 0 (just touching surface)
+   to 2× gravity (fully submerged).
+
+4. **Equilibrium**: At half-submerged, buoyancy exactly cancels gravity,
+   so the ball floats with zero net vertical force at the surface.
+
+5. **Horizontal Dampening**: Extra drag on X/Z axes, slightly lowering
+   the maximum horizontal speed in water (`HorizontalDrag`).
+
+6. **No Vertical Speed Cap**: The engine's own max velocity remains
+   unchanged — no artificial cap is added.
+
+## Configuration
+
+See `hamsterball_water.ini` for all options with descriptions.
+
+## Debug Log
+
+With `Debug=1` in the INI, the mod writes a log file (`water_mod.log` or
+`Hamsterball_water_mod.log`) showing water plane discovery and per-frame
+physics data.
