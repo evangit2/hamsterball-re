@@ -173,12 +173,16 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ### `Ball_SplitIntoThree`
 - **Address:** `0x408D70`
-- **Description:** Creates 3 AI-controlled split balls (battle mode). Each split ball gets:
+- **Convention:** `__thiscall` (ECX = Ball* — the parent ball being replaced)
+- **Called from:** `FollowBall_Update` (0x43ECC0) — NOT from E:JUMP or any collision handler
+- **Description:** Arena mechanic that replaces the parent ball with 3 AI-controlled split balls. The parent ball is marked for despawn (`+0x2E8 = 1`), then 3 new `Ball_Split` objects are created via `Ball_Split_ctor` (0x408D10). Each split ball gets:
   - Allocation: `0xC64` bytes
-  - `ball+0x31D = 1` (AI enable)
-  - `ball+0x318 = 30.0` (split timer)
-  - `ball+0x274 = 0.01` (speed scale)
-  - `ball+0x27C = 0.5` (force multiplier)
+  - `ball+0x31D = 1` (is_8ball flag, activates AI)
+  - `ball+0xC6 = 10.0` (0x41200000 — split ball size)
+  - Split IDs: 1, 2, 4 (bitmask, one per iteration)
+  - Trajectory from parent's `+0x2AC–0x2B8`
+  - Added to `scene+0x3204` (ball list)
+- **Guard conditions:** `+0x324 == 0` (not already an 8-ball) AND `+0x744 == 0` (hasn't split yet)
 
 ### `Ball_InitBattleMode`
 - **Address:** `0x456CD0`

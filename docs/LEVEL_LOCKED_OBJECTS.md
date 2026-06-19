@@ -252,21 +252,24 @@ To add Bonks:
 
 **Bottom line:** Both `CreateBumper` variants are level-scoped constructors, not standalone object spawners. They work correctly only when called from within a BoardLevel8 or Arena board constructor that expects this level-swap behavior. Calling them from another level context will corrupt the scene.
 
-### Ball Splits (8-ball split into 3)
+### Ball Splits (8-ball arena mechanic)
 
 **`Ball_SplitIntoThree`** — Address: `0x00408D70`
-- **Convention:** `__thiscall` (ECX = Scene*)
+- **Convention:** `__thiscall` (ECX = Ball*)
 - **Prologue:** Standard SEH (`PUSH -1; MOV EAX, FS:[0]; PUSH handler`)
-- **Parameters:** `this` (Scene*), `parent_ball` (Ball*)
-- **Creates:** 3 split balls (IDs 1, 2, 4) from parent ball
-- **Each split ball:**
-  - Allocated as 0xC64 bytes (slightly smaller than CreateBadBall's 0xC98)
-  - Calls `Ball_ctor2(ball, scene)` at base, then `vtable[1]()` for init
-  - `ball+0x31D = 1` (is_8ball flag, activates AI)
-  - `ball+0xC60 = 0x41200000` (30.0f, split timer — NOT the chase distance)
-  - `ball+0x2E8 = 1` (splitting flag)
-  - `ball+0x318/319/31A` = collision direction from parent (`ball+0xCA4/CA8/CAC`)
-  - Added to `scene+0x29D4` (bad_balls) and `scene+0x2DEC` (all_balls)
+- **Parameters:** `this` (Ball* — the parent ball), `param_1` (struct with target position table)
+- **Called from:** `FollowBall_Update` (0x43ECC0) at two call sites (0x43F722, 0x43FE36)
+- **NOT called from E:JUMP.** The E:JUMP collision handler (in collision_events.c) does something different: plays a 3D sound, applies upward force, and adds +200 score. See docs/collision_events.
+- **Behavior:** Marks the parent ball for despawn (+0x2E8=1), then creates 3 new `Ball_Split` objects (0xC64 bytes each) via `Ball_Split_ctor` (0x408D10). Each split ball:
+  - `ball+0x31D = 1` (is_8ball flag, activates AI behavior)
+  - `ball+0xC6 = 0x41200000` (10.0f — split ball size, NOT 30.0f)
+  - Split IDs: 1, 2, 4 (bitmask, assigned by iteration index)
+  - Trajectory copied from parent's `+0x2AC–0x2B8`
+  - Position from parent or lookup table via `param_1`
+  - Added to `scene+0x3204` (ball list)
+- **Guard conditions:**
+  - `+0x324 == 0` (only non-8ball-type balls can split)
+  - `+0x744 == 0` (only split once — split_count must be zero)
 
 ### Ball Init Battle Mode
 
@@ -422,7 +425,7 @@ In a reimplementation, bypass both gates entirely:
 | `Scene_SpawnBallsAndObjects` | `0x41C5B0` | Ball spawning on level load |
 | `CreateBadBall` | `0x40BCA0` | Spawn 8-ball AI opponent from MESHWORLD BADBALL tag |
 | `CreateMouseTrap` | `0x40BF50` | Spawn mouse trap from MESHWORLD MOUSETRAP objects |
-| `Ball_SplitIntoThree` | `0x408D70` | Split ball into 3 AI balls |
+| `Ball_SplitIntoThree` | `0x408D70` | Arena 8-ball split: replaces parent ball with 3 AI split balls |
 | `Ball_InitBattleMode` | `0x456CD0` | Set ball to battle/arena physics |
 | `Bonk_ctor` | `0x438850` | Bonk constructor (self-loads `levels\level5-bonk`) |
 | `CreateBumper` | `0x40FA20` | Bumper factory (self-loads `levels\level8`) — ⚠️ REPLACES scene mesh |

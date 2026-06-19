@@ -113,7 +113,7 @@ Same pattern — writes to `+0x170/174/178` with identical guards.
 | `Ball_StartFall` | `0x00402200` | Enter death-fall: radius=13.0, max_speed=2.5, play fall sound |
 | `Ball_EndFall` | `0x00402270` | Exit death-fall: radius=26.0, max_speed=5.0 |
 | `Ball_ResetCollisionMesh` | `0x004030B0` | Reset physics body orientation, zero velocity, reset timer |
-| `Ball_SplitIntoThree` | `0x00408D70` | **Power-up: split ball into 3** (checks `+0x324` split flag) |
+| `Ball_SplitIntoThree` | `0x00408D70` | **Arena: split ball into 3 AI balls** (called from FollowBall_Update, NOT E:JUMP) |
 | `Ball_RecordBest` | `0x00402400` | Record best time/score at `+0x2F4` |
 
 ### Rendering
@@ -400,7 +400,7 @@ All data verified via **live GhidraMCP headless decompilation** (`http://127.0.0
 - `Ball_StartFall` @ `0x00402200` — death-fall state
 - `Ball_EndFall` @ `0x00402270` — death-fall recovery
 - `Ball_Update` @ `0x00405E00` — main physics tick overview
-- `Ball_SplitIntoThree` @ `0x00408D70` — power-up behavior
+- `Ball_SplitIntoThree` @ `0x00408D70` — arena 8-ball split mechanic (called from FollowBall_Update)
 - `Ball_GetInputForce` @ `0x0046EC30` — input system integration
 - `Ball_SetTrajectory` / `Ball_ApplyTrajectory` — launch pad mechanics
 
