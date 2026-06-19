@@ -58,7 +58,7 @@ FOR each spline:
     [float]  z
     [float]  y
 ```
-Splines are used for BlockDawg patrol paths (`DAWGPATH1`, `DAWGPATH2`).
+Splines are used for BlockDawg patrol paths (`DAWGPATH1`, `DAWGPATH2`, `DAWGPATH3`).
 
 ### Section 3: Lights
 ```
@@ -139,7 +139,7 @@ Parsed into a hash table during scene construction. Looked up by name during `Sc
 | Camera | `CAMERALOOKAT` | Camera target point (present in all 15 race levels) |
 | Secrets | `SECRET`, `SECRETUNLOCK`, `N:SECRET` | `CreateSecretObjects` — hidden collectibles |
 | Signs | `SIGN-TARPIT` | `Scene_CreateSigns` |
-| Splines | `DAWGPATH1`, `DAWGPATH2` | `Level_FindObjectByName` → BlockDawg patrol path |
+| Splines | `DAWGPATH1`, `DAWGPATH2`, `DAWGPATH3` | `Level_FindObjectByName` → BlockDawg patrol path |
 | Misc refs | `FAN`, `FAN(UP)`, `FAN(SUPER)(UP)`, `GEAR01`–`GEAR24`, `BIGGEAR01`–`BIGGEAR14`, `TURRET`, `DRAWBRIDGE`, etc. | Various level-specific handlers |
 
 ### 3.2 Octree Geom Names (Section 6) — Collision & Render Objects
