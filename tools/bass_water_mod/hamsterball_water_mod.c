@@ -1,12 +1,12 @@
 /*
- * hamsterball_water_mod.c — BASS.dll proxy that adds E:WATER physics.
+ * hamsterball_water_mod.c — BASS.dll proxy that adds custom water physics.
  *
  * Build (Linux -> Windows): make
  *
  * Installation (Windows):
  *   1. In the Hamsterball game folder rename original bass.dll -> bass_real.dll
  *   2. Copy this proxy bass.dll + hamsterball_water.ini into the game folder
- *   3. Place invisible collision planes named "E:WATER" in custom levels
+ *   3. Place invisible collision planes named "N:WATER" or "E:WATER" in custom levels
  *   4. Run Hamsterball.exe normally
  *
  * How it works:
@@ -14,7 +14,7 @@
  *   - Patches Ball vtable slot 4 (0x408390 wrapper) so Hook_Ball_Update runs
  *     before the real Ball_Update (0x405E00).
  *   - Patches CALL sites to CreateNoDizzy (0x40C5D0) so Hook_CreateNoDizzy can
- *     detect collisions with objects named "E:WATER" and record the surface Y.
+ *     detect collisions with objects named "N:WATER" or "E:WATER" and record the surface Y.
  *   - Hook_Ball_Update modifies the CollisionMesh persistent velocities
  *     (Ball + 0x1A4 -> +0xCA4/CA8/CAC) and zeroes the engine gravity multiplier
  *     (Ball + 0x1A4 -> +0xC7C) while the ball is in the water, giving the
@@ -176,7 +176,7 @@ static void open_log(const char *path)
     if (g_cfg.debug && !g_log) {
         g_log = fopen(path, "w");
         if (g_log) {
-            fprintf(g_log, "Hamsterball E:WATER mod log started\n");
+            fprintf(g_log, "Hamsterball water mod log started\n");
             fflush(g_log);
         }
     }
@@ -213,7 +213,7 @@ static int open_log_fallback(const char *game_path)
         FILE *f = fopen(candidates[i], "w");
         if (f) {
             g_log = f;
-            fprintf(g_log, "Hamsterball E:WATER mod log started (path=%s)\n",
+            fprintf(g_log, "Hamsterball water mod log started (path=%s)\n",
                     candidates[i]);
             fflush(g_log);
             return 1;
@@ -472,6 +472,12 @@ static void __thiscall Hook_Ball_Update(void *ball)
     }
 }
 
+static int is_water_event(const char *name)
+{
+    if (!name) return 0;
+    return (_strnicmp(name, "N:WATER", 7) == 0) || (_strnicmp(name, "E:WATER", 7) == 0);
+}
+
 static const char* get_event_name(void *collObj)
 {
     if (!collObj) return NULL;
@@ -493,7 +499,7 @@ static void __thiscall Hook_CreateNoDizzy(void *this_, void *ball, void *collObj
             log_msg("[%.3f] CreateNoDizzy: name='%s' ball=%p collObj=%p\n",
                     (float)GetTickCount() / 1000.0f, name, ball, collObj);
         }
-        if (name && _strnicmp(name, "E:WATER", 7) == 0) {
+        if (name && is_water_event(name)) {
             water_state_t *st = get_ball_state(ball);
             if (st) {
                 float pos_y = get_ball_pos_y(ball);
@@ -506,8 +512,8 @@ static void __thiscall Hook_CreateNoDizzy(void *this_, void *ball, void *collObj
                     /* Save the engine's current gravity multiplier so we can restore it on exit. */
                     void *cmesh = get_collision_mesh(ball);
                     if (cmesh) st->orig_gravity_mult = get_cm_float(cmesh, OFF_CMESH_GRAVITY_MULT);
-                    log_msg("[%.3f] ball %p entered E:WATER at surface_y=%.1f\n",
-                            (float)GetTickCount() / 1000.0f, ball, st->surface_y);
+                    log_msg("[%.3f] ball %p entered %s at surface_y=%.1f\n",
+                            (float)GetTickCount() / 1000.0f, ball, name, st->surface_y);
                 }
                 st->timer = g_cfg.timer_frames;
             }
@@ -527,12 +533,12 @@ static void apply_patches(const char *log_path)
 
     char exe_path[MAX_PATH];
     GetModuleFileNameA(NULL, exe_path, sizeof(exe_path));
-    log_msg("E:WATER mod initializing. exe=%s\n", exe_path);
+    log_msg("Water mod initializing. exe=%s\n", exe_path);
     log_msg("bass_real.dll handle=0x%p\n", (void *)g_hRealBass);
     log_msg("Config: debug=%d entry_damp=%.2f drag=%.3f hdrag=%.3f gravity_eq=%.3f timer=%d\n",
             g_cfg.debug, g_cfg.entry_damping, g_cfg.drag, g_cfg.horizontal_drag,
             g_cfg.gravity_equivalent, g_cfg.timer_frames);
-    log_msg("Applying E:WATER hook patches...\n");
+    log_msg("Applying water hook patches...\n");
 
     int n_call = 0;
     int slot_ok = patch_vtable_slot(VTABLE_SLOT_UPDATE, Hook_Ball_Update, (void **)&orig_Ball_Update);
