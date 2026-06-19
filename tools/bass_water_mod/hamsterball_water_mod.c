@@ -279,11 +279,13 @@ static int patch_vtable_slot(int slot_index, void *new_func, void **old_func_out
 
 /* ---- Patching: redirect all CALL sites to a function ---- */
 
-static int patch_call_sites(DWORD target_func, DWORD target_func_end, void *hook_func, int *count_out)
+static int patch_call_sites(DWORD target_func, DWORD target_func_end, void *hook_func,
+                             void **old_func_out, int *count_out)
 {
     unsigned char *base = game_rva_to_ptr(IMAGE_BASE);
     SIZE_T scan_size = 0xCD000;           /* main .text size */
     int count = 0;
+    int first = 1;
 
     for (SIZE_T i = 0; i + 5 <= scan_size; i++) {
         if (base[i] != 0xE8) continue;
@@ -292,6 +294,10 @@ static int patch_call_sites(DWORD target_func, DWORD target_func_end, void *hook
         DWORD dest = (DWORD)(base + i + 5) + rel;
 
         if (dest >= target_func && dest < target_func_end) {
+            if (first && old_func_out) {
+                *old_func_out = (void *)dest;
+                first = 0;
+            }
             DWORD new_rel = (DWORD)hook_func - (DWORD)(base + i + 5);
             DWORD old_protect;
 
@@ -530,7 +536,8 @@ static void apply_patches(const char *log_path)
 
     int n_call = 0;
     int slot_ok = patch_vtable_slot(VTABLE_SLOT_UPDATE, Hook_Ball_Update, (void **)&orig_Ball_Update);
-    patch_call_sites(ADDR_CREATENODIZZY, ADDR_CREATENODIZZY_END, Hook_CreateNoDizzy, &n_call);
+    patch_call_sites(ADDR_CREATENODIZZY, ADDR_CREATENODIZZY_END, Hook_CreateNoDizzy,
+                     (void **)&orig_CreateNoDizzy, &n_call);
 
     log_msg("Ball_Update vtable[%d] hook (orig=0x%p): %s\n",
             VTABLE_SLOT_UPDATE, orig_Ball_Update, slot_ok ? "OK" : "FAILED");
