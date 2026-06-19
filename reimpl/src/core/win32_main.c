@@ -106,6 +106,7 @@ static const char *g_level_list[] = {
     "Level1", "Level2", "Level3", "Level4", "Level5",
     "Level6", "Level7", "Level8", "Level9", "Level10",
     "Arena-WarmUp", "Arena-Intermediate", "Arena-Expert", "Arena-Toob", "Arena-SpawnPlatform",
+    "Custom-TestPlane", "Custom-TestBowl", "Custom-TestRamp", "Custom-TestPlatforms",
     NULL
 };
 static int g_level_index = 0; /* default: Level1 (WarmUp, fastest for Wine sw render) */
@@ -491,7 +492,9 @@ static BOOL LoadLevel(const char *name) {
         return FALSE;
     }
     strncpy(g_level_name, name, sizeof(g_level_name) - 1);
-    printf("[Load] %s: %d objects, %d vertices, %d materials\n", name, g_level->object_count, g_level->vertex_count, 0 /* TODO: material_count */);
+    printf("[Load] %s: %d objects, %d vertices, %d indices, %d geoms\n",
+           name, g_level->object_count, g_level->vertex_count,
+           g_level->index_count, g_level->geom_count);
     return TRUE;
 }
 
@@ -1088,7 +1091,7 @@ static int TestSphereVsLevel(float sx, float sy, float sz, float radius,
         float dx = sx - cpx, dy = sy - cpy, dz = sz - cpz;
         float dist_sq = dx * dx + dy * dy + dz * dz;
         
-        if (dist_sq < radius * radius) {
+        if (dist_sq <= radius * radius) {
             float dist = sqrtf(dist_sq);
             float nx, ny, nz;
             
@@ -1146,26 +1149,25 @@ static void UpdatePhysics(float dt) {
         /* One collision pass to snap to surface on FIRST frame of countdown */
         if (!s_countdown_snap_done) {
             s_countdown_snap_done = 1;
+            printf("[Countdown] Snap: ball at (%.1f,%.1f,%.1f) radius=%.1f\n",
+                   g_ball.x, g_ball.y, g_ball.z, g_ball.radius);
             if (g_level && g_level->index_count >= 3) {
                 CollisionResult hits[MAX_COLLISIONS];
                 int nhits = TestSphereVsLevel(g_ball.x, g_ball.y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
-                /* If no hits (START is inside/below geometry on some levels), sweep upward from below
-                 * to find the floor surface. Try up to 1000 units below. */
-                if (nhits == 0) {
-                    for (float scan_y = g_ball.y - 50.0f; scan_y > g_ball.y - 1000.0f; scan_y -= 25.0f) {
-                        nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, MAX_COLLISIONS);
-                        if (nhits > 0) break;
-                    }
-                    if (nhits > 0) {
-                        int deepest = 0;
-                        for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
-                        /* Use scan position for displacement, not original g_ball.y.
-                         * Place ball at closest_point + normal * radius to sit on surface. */
-                        g_ball.x = hits[deepest].cx + hits[deepest].nx * g_ball.radius * 1.01f;
-                        g_ball.y = hits[deepest].cy + hits[deepest].ny * g_ball.radius * 1.01f;
-                        g_ball.z = hits[deepest].cz + hits[deepest].nz * g_ball.radius * 1.01f;
-                    }
+                if (nhits > 0) {
+                    /* Ball is already touching geometry — resolve collision normally */
+                    int deepest = 0;
+                    for (int i = 1; i < nhits; i++) if (hits[i].depth > hits[deepest].depth) deepest = i;
+                    g_ball.x = hits[deepest].cx + hits[deepest].nx * g_ball.radius * 1.01f;
+                    g_ball.y = hits[deepest].cy + hits[deepest].ny * g_ball.radius * 1.01f;
+                    g_ball.z = hits[deepest].cz + hits[deepest].nz * g_ball.radius * 1.01f;
+                    printf("[Countdown] Snapped to surface at (%.1f,%.1f,%.1f)\n",
+                           g_ball.x, g_ball.y, g_ball.z);
                 }
+                /* If no collision at spawn point, the ball is floating above the surface.
+                 * Don't scan downward — that finds the BOTTOM of geometry and snaps there.
+                 * Instead, let the countdown freeze the ball in place; when GO happens,
+                 * gravity will naturally bring it down to the surface. */
             }
         }
         return;
@@ -1185,7 +1187,8 @@ static void UpdatePhysics(float dt) {
     /* Phase 1: Gravity (Ball+0x1A8 / Ball+0xC94: default = 0.15)
      * Original applies in world units where 1 unit ≈ 1 game cm.
      * Effective gravity ≈ 490 world units/s² (tuned to feel like the original) */
-    g_ball.vy -= g_ball.gravity * 500.0f * dt;
+    float grav_accel = g_ball.gravity * 500.0f * dt;
+    g_ball.vy -= grav_accel;
 
     /* Phase 2: Input force (Ball_GetInputForce 0x46EC30) */
     /* Camera-relative input: rotate by orbit_angle so UP = forward on screen */
@@ -1209,11 +1212,13 @@ static void UpdatePhysics(float dt) {
     /* Phase 5: Integrate position (with substeps for fast-moving ball) */
     float speed_before = sqrtf(g_ball.vx * g_ball.vx + g_ball.vy * g_ball.vy + g_ball.vz * g_ball.vz);
     int substeps = 1;
-    /* If ball moves more than radius per frame, use substeps to prevent tunneling */
+    /* If ball moves more than radius/4 per frame, use substeps to prevent tunneling.
+     * More aggressive than before (radius/4 vs radius/2) to handle thin geometry
+     * like flat planes where the ball can skip through in one frame. */
     float move_dist = speed_before * dt;
-    if (move_dist > g_ball.radius * 0.5f) {
-        substeps = (int)(move_dist / (g_ball.radius * 0.5f)) + 1;
-        if (substeps > 8) substeps = 8;  /* Cap to prevent spiral of death */
+    if (move_dist > g_ball.radius * 0.25f) {
+        substeps = (int)(move_dist / (g_ball.radius * 0.25f)) + 1;
+        if (substeps > 16) substeps = 16;  /* Cap to prevent spiral of death */
     }
     
     float sub_dt = dt / (float)substeps;
