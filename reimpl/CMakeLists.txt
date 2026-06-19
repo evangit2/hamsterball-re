@@ -19,6 +19,7 @@ list(FILTER SOURCES EXCLUDE REGEX "level_viewer_v2\\.c$")
 list(FILTER SOURCES EXCLUDE REGEX "mesh_test\\.c$")
 list(FILTER SOURCES EXCLUDE REGEX "win32_main\\.c$")  # Windows-only D3D8 main
 list(FILTER SOURCES EXCLUDE REGEX "test_parser\\.c$")  # Standalone test, uses old API
+list(FILTER SOURCES EXCLUDE REGEX "sfx_dsound\\.c$")   # Windows-only DirectSound
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -83,6 +84,12 @@ add_executable(test_xml tests/test_xml_parsers.c src/audio/jukebox.c src/game/ra
 target_include_directories(test_xml PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
 target_link_libraries(test_xml m)
 add_test(NAME xml COMMAND test_xml)
+
+# Unit test: Water physics
+add_executable(test_water_physics tests/test_water_physics.c src/physics/water_physics.c)
+target_include_directories(test_water_physics PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(test_water_physics m)
+add_test(NAME water_physics COMMAND test_water_physics)
 
 # Install targets
 install(TARGETS hamsterball level_viewer_v2 DESTINATION bin)

@@ -1,0 +1,3378 @@
+{
+  "ref_points": {
+    "BADBALL": [
+      "Arena-Neon.MESHWORLD",
+      "Level10.MESHWORLD"
+    ],
+    "BADBALL <CHASE>100</CHASE><HOME>150</HOME><SIZE>18</SIZE><SPINDISTANCE>25</SPINDISTANCE>\t": [
+      "Level6.MESHWORLD"
+    ],
+    "BADBALL <CHASE>150</CHASE><HOME>225</HOME>": [
+      "Level4.MESHWORLD"
+    ],
+    "BADBALL <CHASE>150</CHASE><HOME>325</HOME><SIZE>18</SIZE>": [
+      "Level6.MESHWORLD"
+    ],
+    "BADBALL <CHASE>200</CHASE><HOME>250</HOME>": [
+      "LevelDark.MESHWORLD"
+    ],
+    "BADBALL <CHASE>200</CHASE><HOME>300</HOME><SPINDISTANCE>45</SPINDISTANCE>": [
+      "LevelCascade.MESHWORLD"
+    ],
+    "BADBALL <CHASE>250</CHASE><HOME>400</HOME><SPINDISTANCE>45</SPINDISTANCE>": [
+      "Level8.MESHWORLD"
+    ],
+    "BADBALL <CHASE>300</CHASE><HOME>375</HOME>": [
+      "Level2.MESHWORLD"
+    ],
+    "BADBALL<CHASE>100</CHASE><HOME>1000</HOME>": [
+      "Level3.MESHWORLD"
+    ],
+    "BADBALL<CHASE>100</CHASE><HOME>400</HOME>": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Glass.MESHWORLD"
+    ],
+    "BADBALL<CHASE>200</CHASE><HOME>300</HOME>": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "BBRIDGE1": [
+      "Level10.MESHWORLD"
+    ],
+    "BBRIDGE2": [
+      "Level10.MESHWORLD"
+    ],
+    "BELL": [
+      "Level5.MESHWORLD"
+    ],
+    "BIGGEAR": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR-TOUCH": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR01": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR02": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR03": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR04": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR05": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR06": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR07": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR08": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR09": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR10": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR11": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR12": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR13": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGGEAR14": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "BIGNOTHING": [
+      "Level6.MESHWORLD"
+    ],
+    "BLOCKDAWG1": [
+      "Level10.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "BLOCKDAWG2": [
+      "Level10.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "BLOCKDAWG3": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(A)-POS01": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(A)-POS02": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(A)-VECTOR01": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(A)-VECTOR02": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(B)-POS01": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(B)-POS02": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(B)-VECTOR01": [
+      "Level8.MESHWORLD"
+    ],
+    "BRANCH(B)-VECTOR02": [
+      "Level8.MESHWORLD"
+    ],
+    "BREAKER": [
+      "Level4-Mace.MESHWORLD"
+    ],
+    "BRIDGE": [
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD"
+    ],
+    "BRIDGE1(NEG)": [
+      "Level5.MESHWORLD"
+    ],
+    "BRIDGE1(POS)": [
+      "Level5.MESHWORLD"
+    ],
+    "BRIDGE2(NEG)": [
+      "Level5.MESHWORLD"
+    ],
+    "BRIDGE2(POS)": [
+      "Level5.MESHWORLD"
+    ],
+    "Bonk": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "CAMERALOOKAT": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD"
+    ],
+    "CATAPULT": [
+      "Arena-Tower.MESHWORLD"
+    ],
+    "CHOMPER": [
+      "Level4.MESHWORLD"
+    ],
+    "CHROMESHADOW": [
+      "Level6.MESHWORLD"
+    ],
+    "CLOUDSCAPE": [
+      "Level9.MESHWORLD"
+    ],
+    "Catapult": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "Chain1Bridge": [
+      "Level4-Drawbridge.MESHWORLD"
+    ],
+    "Chain1Wall": [
+      "Level4-Drawbridge.MESHWORLD"
+    ],
+    "Chain2Bridge": [
+      "Level4-Drawbridge.MESHWORLD"
+    ],
+    "Chain2Wall": [
+      "Level4-Drawbridge.MESHWORLD"
+    ],
+    "DFLOOR1": [
+      "LevelDark.MESHWORLD"
+    ],
+    "DFLOOR2": [
+      "LevelDark.MESHWORLD"
+    ],
+    "DFLOOR3": [
+      "LevelDark.MESHWORLD"
+    ],
+    "DFLOOR4": [
+      "LevelDark.MESHWORLD"
+    ],
+    "DRAWBRIDGE": [
+      "Level4.MESHWORLD"
+    ],
+    "EDGECYLINDER01": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER02": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER03": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER04": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER05": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER06": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER07": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER08": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER09": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER10": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER11": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER12": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER13": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER14": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER15": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER16": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER17": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER18": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER19": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER20": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER21": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER22": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER23": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EDGECYLINDER24": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "EXPLODEHELPER": [
+      "Level10.MESHWORLD"
+    ],
+    "FALLOUT1": [
+      "Level8.MESHWORLD"
+    ],
+    "FAN": [
+      "Arena-Expert.MESHWORLD"
+    ],
+    "FAN(SUPER)(UP)": [
+      "Level5.MESHWORLD"
+    ],
+    "FAN(UP)": [
+      "Level5.MESHWORLD"
+    ],
+    "FAN01": [
+      "Arena-Expert.MESHWORLD"
+    ],
+    "FAN02": [
+      "Arena-Expert.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "FAN03": [
+      "Arena-Expert.MESHWORLD"
+    ],
+    "FAN04": [
+      "Level5.MESHWORLD"
+    ],
+    "FANSLOW": [
+      "Level5.MESHWORLD"
+    ],
+    "FLAG02": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "FLAG03": [
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "FLAG04": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG05": [
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD"
+    ],
+    "FLAG06": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG07": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG08": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG09": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG10": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG11": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG12": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG13": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG14": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG15": [
+      "Level4.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG16": [
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG17": [
+      "Level7.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "FLAG18": [
+      "Level7.MESHWORLD"
+    ],
+    "FLICKRING": [
+      "Arena-Neon.MESHWORLD"
+    ],
+    "FollowBallSpot": [
+      "Level9.MESHWORLD"
+    ],
+    "GEAR": [
+      "Arena-Impossible.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR01": [
+      "Arena-Impossible.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR02": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR03": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR04": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR05": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR06": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR07": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR08": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR09": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR10": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR11": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR12": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR13": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR14": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR15": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR16": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR17": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR18": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR19": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR20": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR21": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR22": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR23": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "GEAR24": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "Gluebie": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie01": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie02": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie03": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie04": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie05": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie06": [
+      "Level10.MESHWORLD"
+    ],
+    "Gluebie08": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie11": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie12": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie13": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie16": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie18": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie19": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie20": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie21": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie22": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie23": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie24": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie25": [
+      "Level3.MESHWORLD"
+    ],
+    "Gluebie26": [
+      "Level3.MESHWORLD"
+    ],
+    "HAMMERAREA1": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "HAMMERAREA2": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "HAMMERAREA3": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "HAMMERAREA4": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "HAMMERSAFESMACK": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "IMPACT": [
+      "Level5-Bonk.MESHWORLD"
+    ],
+    "JUDGE": [
+      "Level5.MESHWORLD"
+    ],
+    "JUDGE01": [
+      "Level5.MESHWORLD"
+    ],
+    "JUDGE02": [
+      "Level5.MESHWORLD"
+    ],
+    "JUDGE03": [
+      "Level5.MESHWORLD"
+    ],
+    "JUDGE04": [
+      "Level5.MESHWORLD"
+    ],
+    "JUMPPIPE1": [
+      "Level6.MESHWORLD"
+    ],
+    "JUMPPIPE2": [
+      "Level6.MESHWORLD"
+    ],
+    "LAUNCH01": [
+      "Level6.MESHWORLD"
+    ],
+    "LAUNCH02": [
+      "Level6.MESHWORLD"
+    ],
+    "LAUNCH03": [
+      "Level6.MESHWORLD"
+    ],
+    "LAUNCHPOINT": [
+      "Level10.MESHWORLD"
+    ],
+    "LIFTER": [
+      "Level6.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "LIFTER225": [
+      "LevelUp.MESHWORLD"
+    ],
+    "LIFTER86": [
+      "Arena-Up.MESHWORLD"
+    ],
+    "LOOPER": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "MACE": [
+      "Arena-Tower.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "MACE01": [
+      "Level4.MESHWORLD"
+    ],
+    "MACE02": [
+      "Level4.MESHWORLD"
+    ],
+    "MAGNIFYER": [
+      "Level9.MESHWORLD"
+    ],
+    "MOUSETRAP": [
+      "Arena-Intermediate.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD"
+    ],
+    "NEONPLATFORM": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NEONPLATFORM01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NEONPLATFORM02": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NEONPLATFORM03": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NOTHING": [
+      "Level10.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "NOTHING01": [
+      "Level10.MESHWORLD"
+    ],
+    "NOTHING02": [
+      "Level10.MESHWORLD"
+    ],
+    "PENDULUM": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "PENDULUM01": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "PENDULUM02": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "PILLAR": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR01": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR02": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR03": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR04": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR05": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR06": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR07": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR08": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR09": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR10": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR11": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR12": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR13": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR14": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR15": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR16": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR17": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR18": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR19": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR20": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR21": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR22": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR23": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR24": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR25": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR26": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR27": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR28": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR29": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR30": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR31": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR32": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR33": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR34": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR35": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR36": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR37": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR38": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR39": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR40": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR41": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR42": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR43": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR44": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR45": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR46": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR47": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR48": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR49": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR50": [
+      "Level9.MESHWORLD"
+    ],
+    "PILLAR51": [
+      "Level9.MESHWORLD"
+    ],
+    "PIPERANDOM1": [
+      "Level6.MESHWORLD"
+    ],
+    "PIPERANDOM2": [
+      "Level6.MESHWORLD"
+    ],
+    "PLATFORM": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD"
+    ],
+    "POPCYLINDER0": [
+      "Level10.MESHWORLD"
+    ],
+    "POPCYLINDER01": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER02": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER03": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER04": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER05": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER06": [
+      "Arena-Sky.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER07": [
+      "Arena-Sky.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER08": [
+      "Arena-Sky.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER09": [
+      "Arena-Sky.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER1": [
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER10": [
+      "Arena-Sky.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER11": [
+      "Arena-Sky.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER12": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER13": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER14": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER15": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER16": [
+      "Arena-Sky.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER17": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER18": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER19": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER2": [
+      "Level9.MESHWORLD"
+    ],
+    "POPCYLINDER20": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER21": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER22": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER23": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER24": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER25": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER26": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER27": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER28": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER29": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER30": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER31": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER32": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER33": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER34": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER35": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "POPCYLINDER36": [
+      "Arena-Sky.MESHWORLD"
+    ],
+    "PSAFESPOT\t": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "Point01": [
+      "Level4.MESHWORLD"
+    ],
+    "ROTATOR": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "SAFE SPOT": [
+      "Level3.MESHWORLD"
+    ],
+    "SAFEPOS": [
+      "Level2.MESHWORLD"
+    ],
+    "SAFEPOS\t": [
+      "Level2.MESHWORLD"
+    ],
+    "SAFESPOT": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD",
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "SAFESPOT\t": [
+      "Arena-Expert.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "SAFESPOT(A)": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "SAFESPOT(A)\t": [
+      "Level4.MESHWORLD",
+      "Level6.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "SAFESPOT(A)\t\t": [
+      "Level6.MESHWORLD"
+    ],
+    "SAFESPOT(B)": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "SAFESPOT(B)\t": [
+      "Level5.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "SAFESPOT(B)\t\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(C)": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(C)\t": [
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(D)": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(D)\t": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(D)\t\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(E)": [
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(E)\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(E)\t\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(F)": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(F)\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(G)": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(G)\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(H)": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(H)\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(H)\t\t": [
+      "Level9.MESHWORLD"
+    ],
+    "SAFESPOT(Q)": [
+      "Level10.MESHWORLD"
+    ],
+    "SAFESPOT(Q)\t": [
+      "Level10.MESHWORLD"
+    ],
+    "SAFESPOT(X)": [
+      "Level10.MESHWORLD"
+    ],
+    "SAFESPOT(Z)": [
+      "Level10.MESHWORLD"
+    ],
+    "SAFESPOT[X]": [
+      "Level6.MESHWORLD"
+    ],
+    "SAFESPOT[X]\t": [
+      "Level6.MESHWORLD"
+    ],
+    "SAFESPOT[Z]": [
+      "Level6.MESHWORLD"
+    ],
+    "SAFESPOT[Z]\t": [
+      "Level6.MESHWORLD"
+    ],
+    "SAFESPOt": [
+      "Level10.MESHWORLD"
+    ],
+    "SAW": [
+      "Level8.MESHWORLD"
+    ],
+    "SAW1-BREAK": [
+      "Level5.MESHWORLD"
+    ],
+    "SAW2": [
+      "Level8.MESHWORLD"
+    ],
+    "SAW2-BREAK": [
+      "Level5.MESHWORLD"
+    ],
+    "SAWBLADE1": [
+      "Level5.MESHWORLD"
+    ],
+    "SAWBLADE2": [
+      "Level5.MESHWORLD"
+    ],
+    "SECRET": [
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD"
+    ],
+    "SECRETUNLOCK": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "SHRINKCENTER": [
+      "Level6.MESHWORLD"
+    ],
+    "SIGN-TARPIT": [
+      "Level3.MESHWORLD"
+    ],
+    "SMALLFLAG01": [
+      "Level6.MESHWORLD"
+    ],
+    "SMALLFLAG02": [
+      "Level6.MESHWORLD"
+    ],
+    "SMALLFLAG03": [
+      "Level6.MESHWORLD"
+    ],
+    "SMASHER1": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "SMASHER2": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "SPEEDCYLINDER": [
+      "LevelUp.MESHWORLD"
+    ],
+    "SPEEDCYLINDER01": [
+      "LevelUp.MESHWORLD"
+    ],
+    "SPINNY": [
+      "Arena-Dizzy.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "STANDS": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD"
+    ],
+    "START-DEBUG01": [
+      "Level5.MESHWORLD"
+    ],
+    "START-DEBUG02": [
+      "Level5.MESHWORLD"
+    ],
+    "START-DEBUG03": [
+      "Level5.MESHWORLD"
+    ],
+    "START-DEBUG04": [
+      "Level5.MESHWORLD"
+    ],
+    "START-DEBUG05": [
+      "Level5.MESHWORLD"
+    ],
+    "START-DEBUG06": [
+      "Level5.MESHWORLD"
+    ],
+    "START-DEBUGX": [
+      "Level7.MESHWORLD",
+      "LevelGlass.MESHWORLD"
+    ],
+    "START1-1": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "START2-1": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD",
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "START2-2": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD",
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "START2-3": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD"
+    ],
+    "START2-4": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD"
+    ],
+    "SWIRL": [
+      "Level3.MESHWORLD"
+    ],
+    "Start1-1": [
+      "Level9.MESHWORLD"
+    ],
+    "Start2-1": [
+      "Level9.MESHWORLD"
+    ],
+    "Start2-2": [
+      "Level9.MESHWORLD"
+    ],
+    "TIMEBUTTON": [
+      "LevelUp.MESHWORLD"
+    ],
+    "TRAPDOOR": [
+      "Level9.MESHWORLD"
+    ],
+    "TRODE02": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE03": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE04": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE05": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE06": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE07": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE08": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE09": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE10": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE13": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE14": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE15": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TRODE17": [
+      "LevelDark.MESHWORLD"
+    ],
+    "TUBE(NOCOLLIDE)01": [
+      "Level6.MESHWORLD"
+    ],
+    "TURRET": [
+      "Arena-Tower.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "TURRET01": [
+      "Arena-Tower.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "TURRET02": [
+      "Arena-Tower.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "TURRET03": [
+      "Arena-Tower.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "TURRET04": [
+      "Arena-Tower.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "TURRET05": [
+      "Level4.MESHWORLD"
+    ],
+    "TURRET09": [
+      "Level4.MESHWORLD"
+    ],
+    "TarBubble": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble01": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble02": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble03": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble04": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble05": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble06": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble07": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble08": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble09": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble10": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble11": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble12": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble13": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble14": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble15": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble16": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble17": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble18": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble19": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble20": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble21": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble22": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble23": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble24": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble25": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble26": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble27": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble28": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble29": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble30": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble31": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble32": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble33": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble34": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble35": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "TarBubble36": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble37": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble38": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble39": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble40": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble41": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble42": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble43": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble44": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble45": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble46": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble47": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble48": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble49": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble50": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble51": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble52": [
+      "Level10.MESHWORLD"
+    ],
+    "TarBubble53": [
+      "Level10.MESHWORLD"
+    ],
+    "Tipper": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "Trapdoor": [
+      "Level4.MESHWORLD"
+    ],
+    "VAC-IN-02": [
+      "LevelUp.MESHWORLD"
+    ],
+    "VAC-IN-1": [
+      "LevelUp.MESHWORLD"
+    ],
+    "VAC-OUT-02": [
+      "LevelUp.MESHWORLD"
+    ],
+    "VAC-OUT-1": [
+      "LevelUp.MESHWORLD"
+    ],
+    "VAC-VEC-02": [
+      "LevelUp.MESHWORLD"
+    ],
+    "VAC-VEC-1": [
+      "LevelUp.MESHWORLD"
+    ],
+    "WAVY1": [
+      "Level7.MESHWORLD"
+    ],
+    "WINDMILL": [
+      "Level4.MESHWORLD"
+    ],
+    "WOBBLY1": [
+      "Arena-Wobbly.MESHWORLD",
+      "Level7.MESHWORLD"
+    ],
+    "WOBBLY2": [
+      "Level7.MESHWORLD"
+    ],
+    "WOBBLY3": [
+      "Level7.MESHWORLD"
+    ],
+    "WOBBLY4": [
+      "Level7.MESHWORLD"
+    ],
+    "WOBBLY5": [
+      "Level7.MESHWORLD"
+    ],
+    "WOBBLY6": [
+      "Level7.MESHWORLD"
+    ],
+    "WOBBLY7": [
+      "Level7.MESHWORLD"
+    ],
+    "WaterWheel": [
+      "Level3.MESHWORLD"
+    ],
+    "XTURRET07": [
+      "Level4.MESHWORLD"
+    ]
+  },
+  "splines": [
+    "BALLPATH",
+    "CameraLocus",
+    "DAWGPATH1",
+    "DAWGPATH2",
+    "DAWGPATH3",
+    "SawPath",
+    "SmallSawPath"
+  ],
+  "geom_names": {
+    "BlinkWall(NOCOLLIDE)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:ACTION<ONCE>TRUE</ONCE><SCORE>5000</SCORE>": [
+      "Level4.MESHWORLD"
+    ],
+    "E:ACTIVATESAW1": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ACTIVATESAW2": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ALERTJUDGES": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ALERTSAW1": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ALERTSAW2": [
+      "Level5.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "E:ALERTSAW2\t": [
+      "Level8.MESHWORLD"
+    ],
+    "E:BELL": [
+      "Level5.MESHWORLD"
+    ],
+    "E:BITE": [
+      "Level4.MESHWORLD"
+    ],
+    "E:BRANCH(A)": [
+      "Level8-Spinny.MESHWORLD"
+    ],
+    "E:BRANCH(B)": [
+      "Level8.MESHWORLD"
+    ],
+    "E:CALLHAMMER": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "E:CATAPULTBOTTOM": [
+      "Level4-Catapult.MESHWORLD"
+    ],
+    "E:DROPIN": [
+      "Arena-Master.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8-Spinny.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:DROPIN01": [
+      "Level10.MESHWORLD"
+    ],
+    "E:DROPLIFT": [
+      "Level6.MESHWORLD"
+    ],
+    "E:Dropin": [
+      "Level4.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>01": [
+      "Arena-Odd.MESHWORLD",
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>02": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>03": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>01": [
+      "Arena-Odd.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>02": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>03": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>04": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>01": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>02": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>03": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>04": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GROWSOUND": [
+      "Level6.MESHWORLD"
+    ],
+    "E:HAMMERCHASE": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "E:HEATOFF": [
+      "Level9.MESHWORLD"
+    ],
+    "E:HEATON": [
+      "Level9.MESHWORLD"
+    ],
+    "E:HELPINERTIA": [
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:JUMP": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "E:LAUNCH": [
+      "Arena-Master.MESHWORLD",
+      "Level10.MESHWORLD"
+    ],
+    "E:LIGHTSOFF": [
+      "LevelDark.MESHWORLD"
+    ],
+    "E:LIGHTSON": [
+      "LevelDark.MESHWORLD"
+    ],
+    "E:LIMIT": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Stands.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD",
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6-Lifter.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7-Wobbly2.MESHWORLD",
+      "Level7-Wobbly3.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD",
+      "Level7-Wobbly8.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp-Lifter.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:LIMITPIPE1": [
+      "Level6.MESHWORLD"
+    ],
+    "E:LIMITPIPE2": [
+      "Level6.MESHWORLD"
+    ],
+    "E:LIMITX": [
+      "Level6.MESHWORLD"
+    ],
+    "E:LIMITZ": [
+      "Level6.MESHWORLD"
+    ],
+    "E:MACETRIGGER": [
+      "Level4.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>100</TIME>": [
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>100</TIME>\t": [
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>100</TIME>01": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>200</TIME>": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "LevelDark.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>300</TIME>": [
+      "Level2.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>300</TIME>\t": [
+      "Level3.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>400</TIME>": [
+      "Level5.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>500</TIME>": [
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>50</TIME>": [
+      "Arena-SpawnPlatform.MESHWORLD",
+      "Level10.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>600</TIME>": [
+      "Level3.MESHWORLD"
+    ],
+    "E:NOPEGS": [
+      "Level9.MESHWORLD"
+    ],
+    "E:OPENSESAME": [
+      "Level4.MESHWORLD"
+    ],
+    "E:PEGS": [
+      "Level9.MESHWORLD"
+    ],
+    "E:PIPEBONK": [
+      "Level2.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:PIPERANDOM": [
+      "Level6.MESHWORLD"
+    ],
+    "E:POPOUT": [
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:POPOUT01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "E:SAFESWITCH": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:SAFESWITCH(A)": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:SAFESWITCH(B)": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:SAFESWITCH(C)": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(D)": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(E)": [
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(F)": [
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(G)": [
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(H)": [
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(Q)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:SAFESWITCH(X)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:SAFESWITCH(Z)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:SCORE1": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SCORE5": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SCORE7": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SCORE9": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SHRINK": [
+      "Level6.MESHWORLD"
+    ],
+    "E:SWALLOW": [
+      "Level6.MESHWORLD"
+    ],
+    "E:TRAJECTORY <X>5</X>": [
+      "Level4.MESHWORLD"
+    ],
+    "E:TRAJECTORY<X>0</X><Y>-1</Y><Z>0</Z>": [
+      "Level7.MESHWORLD"
+    ],
+    "E:TRAPPOP": [
+      "Level9.MESHWORLD"
+    ],
+    "E:UNHELPINERTIA": [
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:VACPOPOUT": [
+      "LevelUp.MESHWORLD"
+    ],
+    "E:ZOOP": [
+      "LevelDark.MESHWORLD"
+    ],
+    "Face(NOCOLLIDE)": [
+      "Level5-Bonk.MESHWORLD"
+    ],
+    "JOIN(NOCOLLIDE)": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "N:BOUNCE(NOSHADOW)": [
+      "LevelImpossible-Gear.MESHWORLD"
+    ],
+    "N:BRIDGE": [
+      "Level2-Bridge.MESHWORLD"
+    ],
+    "N:BUMP": [
+      "LevelDark-FlickRing.MESHWORLD"
+    ],
+    "N:BUMPER1": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER2": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER3": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER4": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER5": [
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER6": [
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER7": [
+      "Level8.MESHWORLD"
+    ],
+    "N:BUMPER8": [
+      "Level8.MESHWORLD"
+    ],
+    "N:DROPIN": [
+      "Level2.MESHWORLD"
+    ],
+    "N:EXTRATIME": [
+      "LevelUp-Button.MESHWORLD"
+    ],
+    "N:GLASS": [
+      "Arena-Glass.MESHWORLD",
+      "LevelGlass.MESHWORLD"
+    ],
+    "N:GOAL": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "N:JUMPFIRST": [
+      "Level6.MESHWORLD"
+    ],
+    "N:JUMPSECOND": [
+      "Level6.MESHWORLD"
+    ],
+    "N:LOOPER(NOSHADOW)": [
+      "LevelImpossible-Looper.MESHWORLD"
+    ],
+    "N:MOUSETRAP": [
+      "MouseTrap.MESHWORLD"
+    ],
+    "N:MOUSETRAP\t": [
+      "MouseTrap.MESHWORLD"
+    ],
+    "N:MOUSETRAP (NOCOLLIDE)": [
+      "MouseTrap.MESHWORLD"
+    ],
+    "N:NEONPLATFORM": [
+      "LevelDark-NeonPlatform.MESHWORLD"
+    ],
+    "N:NOCONTROL": [
+      "Level3-Tipper.MESHWORLD"
+    ],
+    "N:ONGEAR(NOSHADOW)": [
+      "LevelImpossible-BigGear.MESHWORLD"
+    ],
+    "N:ONPENDULUM": [
+      "LevelImpossible-Pendulum.MESHWORLD"
+    ],
+    "N:ONROTATOR": [
+      "LevelImpossible-Rotator.MESHWORLD"
+    ],
+    "N:SAWTEETH": [
+      "Level8-Saw.MESHWORLD"
+    ],
+    "N:SECRET": [
+      "Secret-Unlock.MESHWORLD"
+    ],
+    "N:SECRET(NOSHADOW)": [
+      "Secret.MESHWORLD"
+    ],
+    "N:SINKPLATFORM": [
+      "Arena-SpawnPlatform.MESHWORLD"
+    ],
+    "N:SPEEDCYLINDER": [
+      "LevelUp-SpeedCylinder.MESHWORLD"
+    ],
+    "N:SPINNY": [
+      "Level8-Spinny.MESHWORLD"
+    ],
+    "N:SQUAREWOBBLY": [
+      "Level7-Wobbly1.MESHWORLD",
+      "Level7-Wobbly2.MESHWORLD",
+      "Level7-Wobbly3.MESHWORLD",
+      "Level7-Wobbly4.MESHWORLD",
+      "Level7-Wobbly5.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD",
+      "Level7-Wobbly7.MESHWORLD",
+      "Level7-Wobbly8.MESHWORLD"
+    ],
+    "N:SQUAREWOBBLY\t": [
+      "Level7-Wobbly8.MESHWORLD"
+    ],
+    "N:SQUAREWOBBLY(NOSHADOW)": [
+      "Level7-Wobbly3.MESHWORLD",
+      "Level7-Wobbly4.MESHWORLD",
+      "Level7-Wobbly5.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD"
+    ],
+    "N:SWIRL": [
+      "Level3-Swirl.MESHWORLD"
+    ],
+    "N:TARPIT": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "N:TENBONUS1": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "N:TENBONUS2": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "N:TRAPDOOR": [
+      "Level4-Trapdoor1.MESHWORLD",
+      "Level4-Trapdoor2.MESHWORLD"
+    ],
+    "N:UNLOCKSECRET": [
+      "Secret-Unlock.MESHWORLD"
+    ],
+    "N:WATERWHEEL(NOSHADOW)": [
+      "Level3-WaterWheel.MESHWORLD"
+    ],
+    "N:WAVY": [
+      "Level7-Wavy1.MESHWORLD"
+    ],
+    "N:WHEELEMBED": [
+      "Level3-WaterWheel.MESHWORLD"
+    ],
+    "NeonToob(NOCOLLIDE)": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NeonToob(NOCOLLIDE)01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NeonToob(NOCOLLIDE)02": [
+      "LevelDark.MESHWORLD"
+    ],
+    "NeonToob(NOCOLLIDE)03": [
+      "LevelDark.MESHWORLD"
+    ],
+    "O:EXITTOOB": [
+      "Level8.MESHWORLD"
+    ],
+    "O:EXITTOOB01": [
+      "Level8.MESHWORLD"
+    ],
+    "O:EXITTOOB02": [
+      "Level8.MESHWORLD"
+    ],
+    "O:EXITTOOB03": [
+      "Level8.MESHWORLD"
+    ],
+    "O:EXITTOOB04": [
+      "Level8.MESHWORLD"
+    ],
+    "O:EXITTOOB05": [
+      "Level8.MESHWORLD"
+    ],
+    "O:EXITTOOB06": [
+      "Level8.MESHWORLD"
+    ],
+    "O:HANDLE": [
+      "Level8-Saw.MESHWORLD"
+    ],
+    "O:SAW": [
+      "Level8-Saw.MESHWORLD"
+    ],
+    "O:TOOB": [
+      "Level8-Spinny.MESHWORLD"
+    ],
+    "O:TOOBY01": [
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "O:TOOBY02": [
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "O:TOOBY03": [
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "O:TOOBY04": [
+      "Arena-Toob.MESHWORLD"
+    ],
+    "O:Tube01": [
+      "Level8.MESHWORLD"
+    ],
+    "O:Tube02": [
+      "Level8.MESHWORLD"
+    ],
+    "OPipe(NOCOLLIDE)": [
+      "Level10.MESHWORLD"
+    ],
+    "PipeRings(NOCOLLIDE)": [
+      "Level7.MESHWORLD"
+    ],
+    "RampThing(NOCOLLIDE)": [
+      "Level6.MESHWORLD"
+    ],
+    "Ring(NOCOLLIDE)": [
+      "Level10.MESHWORLD"
+    ],
+    "S:(NOSHADOW)": [
+      "Level10.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelImpossible-BigGear.MESHWORLD",
+      "LevelImpossible-Gear.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "S:(NOSHADOW)\t": [
+      "LevelCascade.MESHWORLD"
+    ],
+    "S:AXLE(NOSHADOW)": [
+      "Level3-WaterWheel.MESHWORLD"
+    ],
+    "S:BRICK(NOSHADOW)": [
+      "Level10.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "S:BRICKS(NOSHADOW)": [
+      "Level7.MESHWORLD"
+    ],
+    "S:BUGFIXPLANE(NOSHADOW)": [
+      "Level6.MESHWORLD"
+    ],
+    "S:EnlargePipe(NOSHADOW)": [
+      "Level6.MESHWORLD"
+    ],
+    "S:PIPERIM(NOSHADOW)": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "S:PIPERIM(NOSHADOW)(NOCOLLIDE)": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "S:PIPING(NOSHADOW)": [
+      "Level6.MESHWORLD"
+    ],
+    "S:Pipes(NOSHADOW)": [
+      "Level7.MESHWORLD"
+    ],
+    "S:RAILS(NOSHADOW)": [
+      "Level6.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "S:Rim(NOSHADOW)": [
+      "Level7-Wobbly1.MESHWORLD"
+    ],
+    "S:ShrinkPipe(NOSHADOW)": [
+      "Level6.MESHWORLD"
+    ],
+    "S:TUBE(NOSHADOW)": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "S:WALLS(NOSHADOW)": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "S:Walls(NOSHADOW)": [
+      "Level1.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7-Wobbly2.MESHWORLD",
+      "Level7-Wobbly7.MESHWORLD",
+      "Level7.MESHWORLD"
+    ],
+    "T:ARROW": [
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)": [
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8-Spinny.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)01": [
+      "Level2.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)02": [
+      "Level6.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)03": [
+      "Level6.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)04": [
+      "Level6.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)05": [
+      "Level6.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)06": [
+      "Level6.MESHWORLD"
+    ],
+    "T:ARROW(NOCOLLIDE)07": [
+      "Level6.MESHWORLD"
+    ],
+    "T:ARROW01": [
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "T:ARROW01(NOCOLLIDE)": [
+      "Level3.MESHWORLD"
+    ],
+    "T:ARROWCURVE(NOCOLLIDE)": [
+      "Level3.MESHWORLD"
+    ],
+    "T:ARROWROOT01": [
+      "Level8.MESHWORLD"
+    ],
+    "T:ARROWROOT02": [
+      "Level8.MESHWORLD"
+    ],
+    "T:Arrow(NOCOLLIDE)": [
+      "Level2.MESHWORLD"
+    ],
+    "T:Arrow(NOCOLLIDE)01": [
+      "Level2.MESHWORLD"
+    ],
+    "T:ArrowCurveRight(NOCOLLIDE)": [
+      "Level1.MESHWORLD"
+    ],
+    "T:BULLSEYE(NOCOLLIDE)": [
+      "LevelUp.MESHWORLD"
+    ],
+    "T:BULLSEYE(NOCOLLIDE)(WANTZ)": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "T:BULLSEYE(NOCOLLIDE)(WANTZ)01": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "T:BULLSEYE(NOCOLLIDE)(WANTZ)02": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "T:BULLSEYE(NOCOLLIDE)01": [
+      "LevelUp.MESHWORLD"
+    ],
+    "T:CURVEARROW(NOCOLLIDE)": [
+      "Level8.MESHWORLD"
+    ],
+    "T:CURVEARROW01(NOCOLLIDE)": [
+      "Level8.MESHWORLD"
+    ],
+    "T:CURVEARROW02(NOCOLLIDE)": [
+      "Level8.MESHWORLD"
+    ],
+    "T:FLOORLIGHTS": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:GOALAREA": [
+      "Level3.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "T:GOALAREA(NOCOLLIDE)": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "T:GOSPOT(NOCOLLIDE)": [
+      "Level2.MESHWORLD"
+    ],
+    "T:GoalImage(NOCOLLIDE)": [
+      "Level1.MESHWORLD"
+    ],
+    "T:GoalOverlay(NOCOLLIDE)": [
+      "Level2.MESHWORLD",
+      "Level5.MESHWORLD",
+      "LevelDark.MESHWORLD"
+    ],
+    "T:JUMPARROW(NOCOLLIDE)": [
+      "Level5.MESHWORLD"
+    ],
+    "T:LIGHT": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:LIGHT01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:LIGHTS": [
+      "Arena-Neon.MESHWORLD"
+    ],
+    "T:Lighties": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON08": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON09": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON10": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON11": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON12": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEON13": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONARROW(NOCOLLIDE)": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONARROW(NOCOLLIDE)01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONARROW(NOCOLLIDE)02": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONARROW(NOCOLLIDE)04": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONARROW(NOCOLLIDE)05": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONARROW(NOCOLLIDE)06": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONRING": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONRING01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONRING02": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:NEONSTRIP": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:RAMPARROW(NOCOLLIDE)": [
+      "Level3.MESHWORLD"
+    ],
+    "T:SIDEARROW(NOCOLLIDE)": [
+      "Level5.MESHWORLD"
+    ],
+    "T:SPEEDARROW": [
+      "LevelUp.MESHWORLD"
+    ],
+    "T:START": [
+      "LevelCascade.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "T:START(NOCOLLIDE)": [
+      "Level7.MESHWORLD"
+    ],
+    "T:STARTER": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "T:STARTSPOT": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelDark.MESHWORLD"
+    ],
+    "T:STARTSPOT(NOCOLLIDE)": [
+      "Level3.MESHWORLD"
+    ],
+    "T:STARTSTOP(NOCOLLIDE)": [
+      "Level4.MESHWORLD"
+    ],
+    "T:STARTSTOP01(NOCOLLIDE)": [
+      "Level4.MESHWORLD"
+    ],
+    "T:StartSpot(NOCOLLIDE)": [
+      "Level1.MESHWORLD"
+    ],
+    "T:TUBETOP": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:TUBETOP01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:TUBETOP02": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:TUBETOP03": [
+      "LevelDark.MESHWORLD"
+    ],
+    "T:TunnelArrow(NOCOLLIDE)": [
+      "Level2.MESHWORLD"
+    ],
+    "T:WARN(NOCOLLIDE)": [
+      "Level3-Swirl.MESHWORLD"
+    ],
+    "T:WARNING": [
+      "Level10.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelUp-Lifter.MESHWORLD"
+    ],
+    "T:WARNING(NOCOLLIDE)": [
+      "Level2-Bridge.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD"
+    ],
+    "T:WARNING(NOCOLLIDE)01": [
+      "Level5.MESHWORLD"
+    ],
+    "T:WARNINGDECAL(NOCOLLIDE)": [
+      "Level7-Wobbly1.MESHWORLD"
+    ],
+    "T:Warning(NOCOLLIDE)": [
+      "Level4.MESHWORLD"
+    ],
+    "T:WarningDecalNOCOLLIDE)": [
+      "Level1.MESHWORLD"
+    ],
+    "T:YELLOWARROW(NOCOLLIDE)": [
+      "Level5.MESHWORLD"
+    ],
+    "T:ZIGZAG(NOCOLLIDE)": [
+      "Level5.MESHWORLD"
+    ],
+    "TARRY(NOCOLLIDE)": [
+      "Level10.MESHWORLD"
+    ],
+    "THING(NOCOLLIDE)": [
+      "Level4-Mace.MESHWORLD"
+    ],
+    "TUBERING(NOCOLLIDE)": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "TUBERING(NOCOLLIDE)01": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "TUBERING(NOCOLLIDE)02": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "TUBERING(NOCOLLIDE)03": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "TUBERING(NOCOLLIDE)04": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "TUBERING(NOCOLLIDE)05": [
+      "LevelImpossible.MESHWORLD"
+    ],
+    "Tarry(NOCOLLIDE)": [
+      "Level3.MESHWORLD"
+    ],
+    "Tube(NOCOLLIDE)": [
+      "Level6.MESHWORLD"
+    ],
+    "TubeRings(NOCOLLIDE)": [
+      "Level8.MESHWORLD"
+    ],
+    "WALLY(NOCOLLIDE)": [
+      "Level6.MESHWORLD"
+    ],
+    "Wall(NOCOLLIDE)": [
+      "Level10.MESHWORLD"
+    ]
+  },
+  "n_objects": {
+    "N:BOUNCE(NOSHADOW)": [
+      "LevelImpossible-Gear.MESHWORLD"
+    ],
+    "N:BRIDGE": [
+      "Level2-Bridge.MESHWORLD"
+    ],
+    "N:BUMP": [
+      "LevelDark-FlickRing.MESHWORLD"
+    ],
+    "N:BUMPER1": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER2": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER3": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER4": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER5": [
+      "Arena-Toob.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER6": [
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD"
+    ],
+    "N:BUMPER7": [
+      "Level8.MESHWORLD"
+    ],
+    "N:BUMPER8": [
+      "Level8.MESHWORLD"
+    ],
+    "N:DROPIN": [
+      "Level2.MESHWORLD"
+    ],
+    "N:EXTRATIME": [
+      "LevelUp-Button.MESHWORLD"
+    ],
+    "N:GLASS": [
+      "Arena-Glass.MESHWORLD",
+      "LevelGlass.MESHWORLD"
+    ],
+    "N:GOAL": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "N:JUMPFIRST": [
+      "Level6.MESHWORLD"
+    ],
+    "N:JUMPSECOND": [
+      "Level6.MESHWORLD"
+    ],
+    "N:LOOPER(NOSHADOW)": [
+      "LevelImpossible-Looper.MESHWORLD"
+    ],
+    "N:MOUSETRAP": [
+      "MouseTrap.MESHWORLD"
+    ],
+    "N:MOUSETRAP\t": [
+      "MouseTrap.MESHWORLD"
+    ],
+    "N:MOUSETRAP (NOCOLLIDE)": [
+      "MouseTrap.MESHWORLD"
+    ],
+    "N:NEONPLATFORM": [
+      "LevelDark-NeonPlatform.MESHWORLD"
+    ],
+    "N:NOCONTROL": [
+      "Level3-Tipper.MESHWORLD"
+    ],
+    "N:ONGEAR(NOSHADOW)": [
+      "LevelImpossible-BigGear.MESHWORLD"
+    ],
+    "N:ONPENDULUM": [
+      "LevelImpossible-Pendulum.MESHWORLD"
+    ],
+    "N:ONROTATOR": [
+      "LevelImpossible-Rotator.MESHWORLD"
+    ],
+    "N:SAWTEETH": [
+      "Level8-Saw.MESHWORLD"
+    ],
+    "N:SECRET": [
+      "Secret-Unlock.MESHWORLD"
+    ],
+    "N:SECRET(NOSHADOW)": [
+      "Secret.MESHWORLD"
+    ],
+    "N:SINKPLATFORM": [
+      "Arena-SpawnPlatform.MESHWORLD"
+    ],
+    "N:SPEEDCYLINDER": [
+      "LevelUp-SpeedCylinder.MESHWORLD"
+    ],
+    "N:SPINNY": [
+      "Level8-Spinny.MESHWORLD"
+    ],
+    "N:SQUAREWOBBLY": [
+      "Level7-Wobbly1.MESHWORLD",
+      "Level7-Wobbly2.MESHWORLD",
+      "Level7-Wobbly3.MESHWORLD",
+      "Level7-Wobbly4.MESHWORLD",
+      "Level7-Wobbly5.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD",
+      "Level7-Wobbly7.MESHWORLD",
+      "Level7-Wobbly8.MESHWORLD"
+    ],
+    "N:SQUAREWOBBLY\t": [
+      "Level7-Wobbly8.MESHWORLD"
+    ],
+    "N:SQUAREWOBBLY(NOSHADOW)": [
+      "Level7-Wobbly3.MESHWORLD",
+      "Level7-Wobbly4.MESHWORLD",
+      "Level7-Wobbly5.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD"
+    ],
+    "N:SWIRL": [
+      "Level3-Swirl.MESHWORLD"
+    ],
+    "N:TARPIT": [
+      "Level10.MESHWORLD",
+      "Level3.MESHWORLD"
+    ],
+    "N:TENBONUS1": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "N:TENBONUS2": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "N:TRAPDOOR": [
+      "Level4-Trapdoor1.MESHWORLD",
+      "Level4-Trapdoor2.MESHWORLD"
+    ],
+    "N:UNLOCKSECRET": [
+      "Secret-Unlock.MESHWORLD"
+    ],
+    "N:WATERWHEEL(NOSHADOW)": [
+      "Level3-WaterWheel.MESHWORLD"
+    ],
+    "N:WAVY": [
+      "Level7-Wavy1.MESHWORLD"
+    ],
+    "N:WHEELEMBED": [
+      "Level3-WaterWheel.MESHWORLD"
+    ]
+  },
+  "e_objects": {
+    "E:ACTION<ONCE>TRUE</ONCE><SCORE>5000</SCORE>": [
+      "Level4.MESHWORLD"
+    ],
+    "E:ACTIVATESAW1": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ACTIVATESAW2": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ALERTJUDGES": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ALERTSAW1": [
+      "Level5.MESHWORLD"
+    ],
+    "E:ALERTSAW2": [
+      "Level5.MESHWORLD",
+      "Level8.MESHWORLD"
+    ],
+    "E:ALERTSAW2\t": [
+      "Level8.MESHWORLD"
+    ],
+    "E:BELL": [
+      "Level5.MESHWORLD"
+    ],
+    "E:BITE": [
+      "Level4.MESHWORLD"
+    ],
+    "E:BRANCH(A)": [
+      "Level8-Spinny.MESHWORLD"
+    ],
+    "E:BRANCH(B)": [
+      "Level8.MESHWORLD"
+    ],
+    "E:CALLHAMMER": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "E:CATAPULTBOTTOM": [
+      "Level4-Catapult.MESHWORLD"
+    ],
+    "E:DROPIN": [
+      "Arena-Master.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8-Spinny.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:DROPIN01": [
+      "Level10.MESHWORLD"
+    ],
+    "E:DROPLIFT": [
+      "Level6.MESHWORLD"
+    ],
+    "E:Dropin": [
+      "Level4.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>01": [
+      "Arena-Odd.MESHWORLD",
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>02": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>NORMAL</TYPE>03": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>01": [
+      "Arena-Odd.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>02": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>03": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>X</TYPE>04": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>01": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>02": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>03": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GRAVITY<TYPE>Z</TYPE>04": [
+      "Level6.MESHWORLD"
+    ],
+    "E:GROWSOUND": [
+      "Level6.MESHWORLD"
+    ],
+    "E:HAMMERCHASE": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "E:HEATOFF": [
+      "Level9.MESHWORLD"
+    ],
+    "E:HEATON": [
+      "Level9.MESHWORLD"
+    ],
+    "E:HELPINERTIA": [
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:JUMP": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD"
+    ],
+    "E:LAUNCH": [
+      "Arena-Master.MESHWORLD",
+      "Level10.MESHWORLD"
+    ],
+    "E:LIGHTSOFF": [
+      "LevelDark.MESHWORLD"
+    ],
+    "E:LIGHTSON": [
+      "LevelDark.MESHWORLD"
+    ],
+    "E:LIMIT": [
+      "Arena-Beginner.MESHWORLD",
+      "Arena-Dizzy.MESHWORLD",
+      "Arena-Expert.MESHWORLD",
+      "Arena-Glass.MESHWORLD",
+      "Arena-Impossible.MESHWORLD",
+      "Arena-Intermediate.MESHWORLD",
+      "Arena-Master.MESHWORLD",
+      "Arena-Neon.MESHWORLD",
+      "Arena-Odd.MESHWORLD",
+      "Arena-Sky.MESHWORLD",
+      "Arena-Stands.MESHWORLD",
+      "Arena-Toob.MESHWORLD",
+      "Arena-Tower.MESHWORLD",
+      "Arena-Up.MESHWORLD",
+      "Arena-WarmUp.MESHWORLD",
+      "Arena-Wobbly.MESHWORLD",
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6-Lifter.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7-Wobbly2.MESHWORLD",
+      "Level7-Wobbly3.MESHWORLD",
+      "Level7-Wobbly6.MESHWORLD",
+      "Level7-Wobbly8.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD",
+      "LevelUp-Lifter.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:LIMITPIPE1": [
+      "Level6.MESHWORLD"
+    ],
+    "E:LIMITPIPE2": [
+      "Level6.MESHWORLD"
+    ],
+    "E:LIMITX": [
+      "Level6.MESHWORLD"
+    ],
+    "E:LIMITZ": [
+      "Level6.MESHWORLD"
+    ],
+    "E:MACETRIGGER": [
+      "Level4.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>100</TIME>": [
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level8.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>100</TIME>\t": [
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>100</TIME>01": [
+      "LevelGlass.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>200</TIME>": [
+      "Level1.MESHWORLD",
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "LevelDark.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>300</TIME>": [
+      "Level2.MESHWORLD",
+      "Level4.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>300</TIME>\t": [
+      "Level3.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>400</TIME>": [
+      "Level5.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>500</TIME>": [
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>50</TIME>": [
+      "Arena-SpawnPlatform.MESHWORLD",
+      "Level10.MESHWORLD"
+    ],
+    "E:NODIZZY<TIME>600</TIME>": [
+      "Level3.MESHWORLD"
+    ],
+    "E:NOPEGS": [
+      "Level9.MESHWORLD"
+    ],
+    "E:OPENSESAME": [
+      "Level4.MESHWORLD"
+    ],
+    "E:PEGS": [
+      "Level9.MESHWORLD"
+    ],
+    "E:PIPEBONK": [
+      "Level2.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:PIPERANDOM": [
+      "Level6.MESHWORLD"
+    ],
+    "E:POPOUT": [
+      "Level10.MESHWORLD",
+      "Level2.MESHWORLD",
+      "Level3.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "LevelCascade.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelGlass.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:POPOUT01": [
+      "LevelDark.MESHWORLD"
+    ],
+    "E:SAFESWITCH": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:SAFESWITCH(A)": [
+      "Level10.MESHWORLD",
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "LevelDark.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:SAFESWITCH(B)": [
+      "Level4.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD",
+      "LevelImpossible.MESHWORLD"
+    ],
+    "E:SAFESWITCH(C)": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level6.MESHWORLD",
+      "Level7.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(D)": [
+      "Level10.MESHWORLD",
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(E)": [
+      "Level5.MESHWORLD",
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(F)": [
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(G)": [
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(H)": [
+      "Level9.MESHWORLD"
+    ],
+    "E:SAFESWITCH(Q)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:SAFESWITCH(X)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:SAFESWITCH(Z)": [
+      "Level10.MESHWORLD"
+    ],
+    "E:SCORE1": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SCORE5": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SCORE7": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SCORE9": [
+      "Level5.MESHWORLD"
+    ],
+    "E:SHRINK": [
+      "Level6.MESHWORLD"
+    ],
+    "E:SWALLOW": [
+      "Level6.MESHWORLD"
+    ],
+    "E:TRAJECTORY <X>5</X>": [
+      "Level4.MESHWORLD"
+    ],
+    "E:TRAJECTORY<X>0</X><Y>-1</Y><Z>0</Z>": [
+      "Level7.MESHWORLD"
+    ],
+    "E:TRAPPOP": [
+      "Level9.MESHWORLD"
+    ],
+    "E:UNHELPINERTIA": [
+      "LevelImpossible.MESHWORLD",
+      "LevelUp.MESHWORLD"
+    ],
+    "E:VACPOPOUT": [
+      "LevelUp.MESHWORLD"
+    ],
+    "E:ZOOP": [
+      "LevelDark.MESHWORLD"
+    ]
+  }
+}

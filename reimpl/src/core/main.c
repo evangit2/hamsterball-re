@@ -24,6 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>  /* strncasecmp */
 #include <math.h>
 #include <dirent.h>
 
@@ -40,6 +41,7 @@
 #include "audio/audio.h"
 #include "input/input.h"
 #include "physics/physics.h"
+#include "physics/water_physics.h"
 #include "level/meshworld_parser.h"
 #include "level/mesh_parser.h"
 #include "level/level.h"
@@ -255,6 +257,11 @@ static int load_assets(const char *game_dir) {
     /* Set physics floor height for ground collision */
     physics_set_floor_y(floor_y);
     printf("[Load] Arena floor Y: %.1f (ball spawn Y: %.1f)\n", floor_y, floor_y + 35.0f);
+    
+    /* Initialize physics BEFORE registering water zones */
+    physics_init();
+    
+    int water_count = 0;
     for (int i = 0; i < g_level->object_count; i++) {
         if (g_level->objects[i].type == MW_OBJ_START) {
             start.x = g_level->objects[i].position.x;
@@ -267,8 +274,52 @@ static int load_assets(const char *game_dir) {
             cam_target.z = g_level->objects[i].position.z;
             has_cam_target = true;
         }
+        
+        /* === E:WATER event plane detection ===
+         * Check for E:Water objects in the level.
+         * These define invisible buoyancy zones. The object position
+         * is the center of the water volume, and size_param (or
+         * default size) determines the volume bounds. */
+        if (strncasecmp(g_level->objects[i].type_string, "E:Water", 7) == 0) {
+            /* Parse optional size from tag: E:Water<WIDTH>50</WIDTH><DEPTH>50</DEPTH><HEIGHT>30</HEIGHT> */
+            float water_size_x = 100.0f;  /* Default: 100x50x100 pool */
+            float water_size_y = 50.0f;
+            float water_size_z = 100.0f;
+            
+            const char *tag_start = strchr(g_level->objects[i].type_string, '<');
+            if (tag_start) {
+                /* Very simple tag parser for sizing */
+                float width = 100.0f, height = 50.0f, depth = 100.0f;
+                if (strstr(tag_start, "WIDTH")) {
+                    sscanf(tag_start, "<WIDTH>%f</WIDTH>", &width);
+                    water_size_x = width;
+                }
+                if (strstr(tag_start, "HEIGHT")) {
+                    sscanf(tag_start, "<HEIGHT>%f</HEIGHT>", &height);
+                    water_size_y = height;
+                }
+                if (strstr(tag_start, "DEPTH")) {
+                    sscanf(tag_start, "<DEPTH>%f</DEPTH>", &depth);
+                    water_size_z = depth;
+                }
+            }
+            
+            vec3_t water_center = {
+                g_level->objects[i].position.x,
+                g_level->objects[i].position.y,
+                g_level->objects[i].position.z
+            };
+            water_register_zone(water_center, water_size_x, water_size_y, water_size_z);
+            water_count++;
+            printf("[Load] E:Water zone %d: center(%.1f,%.1f,%.1f) size(%.1f,%.1f,%.1f)\n",
+                   water_count, water_center.x, water_center.y, water_center.z,
+                   water_size_x, water_size_y, water_size_z);
+        }
     }
-    physics_init();
+    if (water_count == 0) {
+        printf("[Load] No E:Water zones found in this level\n");
+    }
+    
     ball_reset(start);
     
     /* Set camera target (CameraLookAt 0x413280) */

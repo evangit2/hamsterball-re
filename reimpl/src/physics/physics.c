@@ -27,6 +27,7 @@
 #include <GL/glu.h>
 
 #include "physics/physics.h"
+#include "physics/water_physics.h"
 #include "input/input.h"
 
 /* ===== Constants from original binary (CONFIRMED via Ghidra) ===== */
@@ -114,8 +115,11 @@ void physics_init(void) {
     g_ball.health = 1.0f;
     g_ball.on_ground = false;
     
+    /* Allocate water state for E:Water event plane physics */
+    g_ball.water_state = calloc(1, sizeof(water_state_t));
+    
     memset(&g_camera, 0, sizeof(g_camera));
-    g_camera.orbit_angle = 0.7854f;    /* pi/4 = 45° — nice diagonal view */
+    g_camera.orbit_angle = 0.7854f;    /* pi/4 = 45° */
     g_camera.orbit_distance = CAM_ORBIT_DISTANCE;
     g_camera.tilt_y = CAM_TILT_Y;
     g_camera.target = (vec3_t){0, 0, 0};
@@ -126,9 +130,17 @@ void physics_init(void) {
     
     g_has_cameralookat = false;
     g_cameralookat_target = (vec3_t){0, 0, 0};
+    
+    /* Initialize water zone system */
+    water_physics_init();
 }
 
 void physics_shutdown(void) {
+    if (g_ball.water_state) {
+        free(g_ball.water_state);
+        g_ball.water_state = NULL;
+    }
+    water_physics_shutdown();
 }
 
 void ball_reset(vec3_t start_position) {
@@ -210,8 +222,29 @@ void physics_set_camera_orbit(float angle) {
 }
 
 static void physics_step(float dt) {
-    /* Gravity */
-    g_ball.acceleration.y += GRAVITY;
+    /* ===== Water physics: Check if ball is in water BEFORE gravity =====
+     * Water zones provide buoyancy that counteracts gravity.
+     * We process water first so we can skip/reduced gravity for submerged balls. */
+    if (g_ball.water_state) {
+        bool in_water = water_process_frame(
+            &g_ball.position,
+            &g_ball.velocity,
+            g_ball.radius,
+            (water_state_t *)g_ball.water_state
+        );
+        if (in_water) {
+            /* Ball is in water: skip normal gravity, ball is grounded */
+            g_ball.on_ground = true;
+            g_ball.in_water = true;
+        } else {
+            /* Normal gravity when not in water */
+            g_ball.acceleration.y += GRAVITY;
+            g_ball.in_water = false;
+        }
+    } else {
+        /* No water zones registered: normal gravity */
+        g_ball.acceleration.y += GRAVITY;
+    }
     
     /* Camera-relative input force
      * Ball_GetInputForce (0x46EC30) applies force in world space,

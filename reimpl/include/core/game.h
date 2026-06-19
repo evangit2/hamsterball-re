@@ -17,6 +17,9 @@ typedef enum {
 /* Vec3 - matches original Vec3_Init (0x4531E0): x,y,z + w=255.0 */
 typedef struct { float x, y, z; } vec3_t;
 
+/* Forward declaration for water physics */
+struct water_state_s;
+
 /* Ball state - matches Ball object at 0xC98 bytes, key fields */
 typedef struct {
     vec3_t position;      /* +0x164 */
@@ -27,9 +30,10 @@ typedef struct {
     bool on_ground;
     bool in_tar;          /* N:TARPIT */
     bool dizzy;           /* N:NOCONTROL / dizzy state */
-    bool in_water;        /* N:WATER */
+    bool in_water;        /* N:WATER (original water surface flag) */
     float angular_velocity; /* Rolling visual speed */
     int freeze_counter;   /* +0x808: skip force if > 0 */
+    void *water_state;    /* water_state_t* for E:Water buoyancy physics */
 } ball_t;
 
 #endif
