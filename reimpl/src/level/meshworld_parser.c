@@ -168,20 +168,29 @@ static void walk_octree(octree_ctx_t *ctx) {
             
             mw_read_string(ctx->r, geom->name, sizeof(geom->name));
             
-            /* Classify geom flags from name prefix (Level_LoadCollision 0x465260):
-             * N: prefix → interactive=1 (named collision, triggers event on hit)
-             * E: prefix → interactive=1, no_render=1 (invisible collision zone, triggers event)
-             * O:, S:, T: prefixes → no engine flag (designer conventions only)
-             * No prefix → standard collision + standard render */
+            /* Classify geom render flags from name prefix (binary MESHWORLD loader ~0x461680):
+             * O: prefix → is_translucent=1 (+0x862) — alpha blend, see-through render
+             * T: prefix → is_decal=1 (+0x85F) — stencil-based decal render
+             * N:GLASS → is_alpha_test=1 (+0x860) — alpha-tested transparency
+             * E: prefix → no_render=1 (+0x863) — invisible collision zone
+             * (NOSHADOW) → no_shadow=1 (+0x85E) — excluded from shadow pass
+             * N: prefix → interactive=1 (+0x85D, set by text loader 0x465260)
+             * No prefix → standard opaque collision + render */
             if (geom->name[0] != '\0') {
+                if (geom->name[1] == ':')
+                    geom->has_named_prefix = 1;
+                if ((geom->name[0] == 'O' || geom->name[0] == 'o') && geom->name[1] == ':')
+                    geom->is_translucent = 1;
+                if ((geom->name[0] == 'T' || geom->name[0] == 't') && geom->name[1] == ':')
+                    geom->is_decal = 1;
+                if (strnicmp(geom->name, "N:GLASS", 7) == 0)
+                    geom->is_alpha_test = 1;
+                if ((geom->name[0] == 'E' || geom->name[0] == 'e') && geom->name[1] == ':')
+                    geom->no_render = 1;
                 if ((geom->name[0] == 'N' || geom->name[0] == 'n') && geom->name[1] == ':')
-                    geom->no_render = 1;
-                if ((geom->name[0] == 'E' || geom->name[0] == 'e') && geom->name[1] == ':') {
-                    geom->no_render = 1;
-                    geom->no_collide = 1;
-                }
-                if (strstr(geom->name, "(NOCOLLIDE)") != NULL)
-                    geom->no_collide_tag = 1;
+                    geom->interactive = 1;
+                if (strstr(geom->name, "(NOSHADOW)") != NULL)
+                    geom->no_shadow = 1;
             }
             
             geom->ambient[0] = mw_read_f32(ctx->r); geom->ambient[1] = mw_read_f32(ctx->r);

@@ -144,25 +144,42 @@ Parsed into a hash table during scene construction. Looked up by name during `Sc
 
 ### 3.2 Octree Geom Names (Section 6) — Collision & Render Objects
 
-Parsed by `Level_LoadCollision` (0x465260) into MeshBuffer objects. The engine only checks for two name prefixes:
+Parsed by the binary MESHWORLD loader (function at ~0x461680) into MeshBuffer objects. The loader checks geom name prefixes and sets **render classification flags** on the MeshBuffer struct:
 
 ```c
-if (strnicmp(name, "N:", 2) == 0) buf->interactive = 1;        // +0x85D
+// Binary MESHWORLD loader (~0x461680) — checks ALL prefixes:
+if (name[1] == ':')                 obj->has_named_prefix = 1;     // +0x85C
+if (strnicmp(name, "O:", 2) == 0)   obj->is_translucent = 1;       // +0x862
+if (strnicmp(name, "T:", 2) == 0)   obj->is_decal = 1;             // +0x85F
+if (strnicmp(name, "N:GLASS", 7)==0)obj->is_alpha_test = 1;        // +0x860
+if (strnicmp(name, "E:", 2) == 0)   obj->no_render = 1;            // +0x863
+if (strstr(name, "(NOSHADOW)"))     obj->no_shadow = 1;            // +0x85E
+
+// Text/.COL loader (Level_LoadCollision 0x465260) — checks N: and E: only:
+if (strnicmp(name, "N:", 2) == 0)   buf->interactive = 1;          // +0x85D
 if (strnicmp(name, "E:", 2) == 0) { buf->interactive = 1; buf->no_render = 1; }  // +0x85D, +0x863
 ```
 
-**No other prefix (`O:`, `S:`, `T:`) is checked by the engine.** They are designer naming conventions only — they cause the name to be written to the file (because the exporter writes any name where `name[1] == ':'`), but no engine code reads them to trigger behavior. Transparency, decal rendering, and shadow exclusion are controlled by **material flags** (`+0x862` is_translucent, `+0x85F` is_decal, etc.) set from material properties during loading, not from the name prefix.
+These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom into render passes:
+- **Opaque pass** (default): AlphaBlend OFF, AlphaTest OFF
+- **Translucent pass** (`+0x862`): AlphaBlend ON — objects behind transparent parts are still visible. This is why the ball renders correctly behind `O:` tubes.
+- **Alpha test pass** (`+0x860`): Sorted into translucent bucket with per-pixel alpha cutoff
+- **Decal pass** (`+0x85F`): Stencil-based, with depth bias
+- **Skip** (`+0x863`): Not rendered at all (invisible collision zones)
+- **No shadow** (`+0x85E`): Excluded from shadow rendering pass
 
-`NOCOLLIDE` (as a substring) is also not explicitly checked by the engine loader — it's a designer tag. The exporter writes names containing `NOCOLLIDE` to the file, but the engine does not search for this substring.
+**Verified by user testing**: Changing `O:` to `A:` in a level file causes the ball to stop rendering behind tubes, confirming `O:` directly sets the translucent render flag (`+0x862`).
 
-| Prefix | Count | Engine Flag | Actual Behavior |
-|--------|-------|-------------|-----------------|
-| `N:` | 278 | `+0x85D = 1` (interactive) | Named collision + triggers event handler on hit (e.g. `N:GOAL`, `N:BUMPER1`) |
-| `E:` | 581 | `+0x85D = 1, +0x863 = 1` (interactive + no_render) | Invisible collision zone, triggers event on hit (e.g. `E:JUMP`, `E:LIMIT`) |
-| `O:` | 60 | *(none — standard)* | Standard collision + standard render. Designer convention for object meshes (tubes, saws). Transparency comes from material alpha, not the prefix. |
-| `S:` | 831 | *(none — standard)* | Standard collision + standard render. Designer convention for shadowless geometry. `(NOSHADOW)` in the name is a designer note, not an engine flag. |
-| `T:` | 175 | *(none — standard)* | Standard collision + standard render. Designer convention for texture decals. Any transparency comes from material alpha, not the prefix. |
-| (none) | — | *(none — standard)* | Standard collision + standard render. Unnamed level geometry (walls, floors). |
+| Prefix | Count | Engine Flag | Offset | Render Pass | Behavior |
+|--------|-------|-------------|--------|-------------|----------|
+| `N:` | 278 | interactive | +0x85D | Opaque | Named collision, triggers event handler on hit (set by text loader) |
+| `E:` | 581 | no_render | +0x863 | Skip (invisible) | Invisible collision zone, triggers event on hit |
+| `O:` | 60 | is_translucent | +0x862 | Translucent (alpha blend) | See-through render — ball visible behind transparent parts (tubes, saws) |
+| `T:` | 175 | is_decal | +0x85F | Decal (stencil + depth bias) | Texture overlays: arrows, warnings, bullseyes |
+| `N:GLASS` | — | is_alpha_test | +0x860 | Alpha test (sorted into translucent) | Alpha-tested transparency (glass platforms) |
+| `(NOSHADOW)` | — | no_shadow | +0x85E | Excluded from shadow pass | Designer tag in name, checked via `strstr` |
+| `S:` | 831 | *(none specific)* | — | Opaque (standard) | Standard collision + standard render. `(NOSHADOW)` suffix in name sets +0x85E. |
+| (none) | — | *(none)* | — | Opaque (standard) | Standard level geometry (walls, floors) |
 
 ### 3.3 Complete N: Object Catalog (44 unique types)
 | Name | Triangles | Texture | Files | Behavior |
@@ -354,9 +371,16 @@ Objects are classified into render buckets by flags on SceneObject:
 2. **Translucent pass**: AlphaBlend ON, AlphaTest OFF
 3. **Decal pass**: Stencil + depth bias
 
-Render bucket classification is driven by **material flags**, not by name prefix. All objects with `+0x863` (has_bounding_sphere) are skipped; the rest are sorted by their material-derived flags into the 3 passes above.
+Render bucket classification is driven by **name prefix flags** set during MESHWORLD loading (see §3.2 above), NOT by material properties. The binary loader at ~0x461680 checks each prefix and sets the corresponding flag byte on the MeshBuffer struct before rendering.
 
-Name prefixes like `S:(NOSHADOW)` and `T:` are designer conventions — they do not trigger engine behavior. Shadow exclusion and decal rendering are controlled by material properties, not by the name string.
+| Flag | Offset | Set by | Render effect |
+|------|--------|--------|---------------|
+| has_named_prefix | +0x85C | `name[1]==':'` | Name was preserved in file |
+| no_shadow | +0x85E | `(NOSHADOW)` substring | Excluded from shadow pass |
+| is_decal | +0x85F | `T:` prefix | Stencil + depth bias render pass |
+| is_alpha_test | +0x860 | `N:GLASS` prefix | Sorted into translucent with alpha cutoff |
+| is_translucent | +0x862 | `O:` prefix | Alpha blend ON — see-through rendering |
+| no_render | +0x863 | `E:` prefix | Skipped entirely (invisible) |
 
 ## 7. String Format Convention
 

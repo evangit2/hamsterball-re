@@ -99,10 +99,14 @@ typedef struct {
     char texture[256];
     int strip_count;
     mw_strip_t *strips;
-    /* Flags from name prefix (Level_LoadMeshes 0x465A0A) */
-    int no_render;      /* N: or E: prefix → invisible (mesh_buf+0x85d) */
-    int no_collide;     /* E: prefix → no collision (mesh_buf+0x863) */
-    int no_collide_tag; /* (NOCOLLIDE) → skipped entirely */
+    /* Render classification flags from name prefix (binary MESHWORLD loader ~0x461680) */
+    int has_named_prefix;  /* name[1]==':' → +0x85C */
+    int no_shadow;        /* (NOSHADOW) substring → +0x85E */
+    int is_decal;         /* T: prefix → +0x85F (stencil + depth bias render) */
+    int is_alpha_test;    /* N:GLASS prefix → +0x860 (alpha-tested transparency) */
+    int is_translucent;   /* O: prefix → +0x862 (alpha blend, see-through) */
+    int no_render;        /* E: prefix → +0x863 (invisible, not rendered) */
+    int interactive;      /* N: prefix → +0x85D (named collision, triggers event) */
 } mw_geom_t;
 
 /* Level structure */
