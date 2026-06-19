@@ -587,6 +587,10 @@ static void ResetBallAndCamera(void) {
                 int found = 0;
                 for (float scan_y = g_ball.y - 50.0f; scan_y >= g_ball.y - 2000.0f; scan_y -= 50.0f) {
                     nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, probe, 8);
+                    if (nhits > 0) {
+                        printf("[Spawn-DBG] scan_y=%.1f nhits=%d cy=%.1f cx=%.1f cz=%.1f\n",
+                               scan_y, nhits, probe[0].cy, probe[0].cx, probe[0].cz);
+                    }
                     /* Reject hits where the hit point is far horizontally from START —
                      * prevents snapping to distant tunnels/lower track sections. */
                     if (nhits > 0) {
@@ -850,14 +854,26 @@ static void RespawnBall(void) {
                        g_ball.x, g_ball.y, g_ball.z);
                 /* Scan both upward and downward to find geometry */
                 int found = 0;
+                float start_x = g_ball.x, start_z = g_ball.z;
                 /* Scan downward first (gravity direction in D3D, but we scan both) */
                 for (float scan_y = g_ball.y - 50.0f; scan_y >= g_ball.y - 2000.0f; scan_y -= 50.0f) {
                     nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, 8);
                     if (nhits > 0) {
-                        g_ball.y = hits[0].cy + g_ball.radius + 1.0f;
-                        printf("[Spawn] Snapped to floor below at Y=%.1f\n", g_ball.y);
-                        found = 1;
-                        break;
+                        /* Pick the closest hit by XZ distance from START, not just hits[0] */
+                        float best_d2 = 1e9f; int best_i = 0;
+                        for (int h = 0; h < nhits; h++) {
+                            float dx = hits[h].cx - start_x;
+                            float dz = hits[h].cz - start_z;
+                            float d2 = dx*dx + dz*dz;
+                            if (d2 < best_d2) { best_d2 = d2; best_i = h; }
+                        }
+                        if (best_d2 < 200.0f*200.0f) {
+                            g_ball.y = hits[best_i].cy + g_ball.radius + 1.0f;
+                            printf("[Spawn] Snapped to floor below at Y=%.1f (distXZ=%.1f)\n",
+                                   g_ball.y, sqrtf(best_d2));
+                            found = 1;
+                            break;
+                        }
                     }
                 }
                 /* If not found below, scan upward */
@@ -865,10 +881,20 @@ static void RespawnBall(void) {
                     for (float scan_y = g_ball.y + 50.0f; scan_y <= g_ball.y + 500.0f; scan_y += 50.0f) {
                         nhits = TestSphereVsLevel(g_ball.x, scan_y, g_ball.z, g_ball.radius, hits, 8);
                         if (nhits > 0) {
-                            g_ball.y = hits[0].cy + g_ball.radius + 1.0f;
-                            printf("[Spawn] Snapped to floor above at Y=%.1f\n", g_ball.y);
-                            found = 1;
-                            break;
+                            float best_d2 = 1e9f; int best_i = 0;
+                            for (int h = 0; h < nhits; h++) {
+                                float dx = hits[h].cx - start_x;
+                                float dz = hits[h].cz - start_z;
+                                float d2 = dx*dx + dz*dz;
+                                if (d2 < best_d2) { best_d2 = d2; best_i = h; }
+                            }
+                            if (best_d2 < 200.0f*200.0f) {
+                                g_ball.y = hits[best_i].cy + g_ball.radius + 1.0f;
+                                printf("[Spawn] Snapped to floor above at Y=%.1f (distXZ=%.1f)\n",
+                                       g_ball.y, sqrtf(best_d2));
+                                found = 1;
+                                break;
+                            }
                         }
                     }
                 }

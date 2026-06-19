@@ -10,6 +10,10 @@ Coordinate system: D3D (Y-up). All positions written in D3D order.
 The binary MESHWORLD format stores vertices as (x, y, z) D3D coords,
 NOT Max (x, z, y). Verified from Arena-WarmUp binary analysis.
 
+CRITICAL: The strip format uses D3D triangle strips, NOT flat triangle lists!
+Each strip with tri_count=N consumes N+2 vertices starting at vertex_offset.
+The reimpl decodes strips with even/odd winding flip (standard D3D strip).
+
 Usage:
   python3 mw_create.py --output CustomLevel.MESHWORLD
   python3 mw_create.py --preset plane --output TestPlane.MESHWORLD
@@ -74,13 +78,7 @@ class MWWriter:
             self.write_u32(0)  # no texture
 
     def write_vertex(self, x, y, z, nx=0, ny=1, nz=0, u=0, v=0):
-        """Write a 32-byte vertex in D3D coordinate order (Y-up).
-        
-        The binary MESHWORLD format stores vertices in D3D (x, y, z) order,
-        NOT Max (x, z, y) order. Verified from Arena-WarmUp binary:
-        vertex at D3D (0.34, -833.33, -375.07) stored as same values.
-        The original game reads raw bytes directly into the D3D vertex buffer.
-        """
+        """Write a 32-byte vertex in D3D coordinate order (Y-up)."""
         self.write_f32(x)       # D3D X
         self.write_f32(y)       # D3D Y (vertical)
         self.write_f32(z)       # D3D Z
@@ -99,15 +97,14 @@ class MWWriter:
         self.write_f32(y2)
         self.write_f32(z2)
 
-    def write_geom(self, name="", diffuse=None, ambient=None, specular=None,
-                   emissive=None, power=10.0, triangles=None):
+    def write_geom_with_strips(self, name="", diffuse=None, ambient=None, specular=None,
+                                emissive=None, power=10.0, strips=None):
         """Write a complete geom (name + material + strip data).
-        
-        triangles: list of (v0_idx, v1_idx, v2_idx) index triples.
-        
-        The proven format for the original game is:
-        strip_count=1, tri_count=N, vertex_offset=0
-        with vertices laid out as 3 per triangle in the vertex buffer.
+
+        strips: list of (tri_count, vertex_offset) tuples.
+        Each strip with tri_count=N references N+2 consecutive vertices
+        in the global vertex buffer starting at vertex_offset.
+        This is the D3D triangle strip format.
         """
         self.write_string(name)
         self.write_material(
@@ -119,11 +116,12 @@ class MWWriter:
             has_reflection=0,
             texture=None
         )
-        
-        n_tris = len(triangles) if triangles else 0
-        self.write_u32(1)        # strip_count = 1 (proven working format)
-        self.write_u32(n_tris)   # triangle_count
-        self.write_u32(0)        # vertex_ref_offset = 0
+
+        self.write_u32(len(strips) if strips else 0)
+        if strips:
+            for tri_count, vertex_offset in strips:
+                self.write_u32(tri_count)
+                self.write_u32(vertex_offset)
 
     def get_bytes(self):
         return self.buf.getvalue()
@@ -170,15 +168,14 @@ def _write_sections_1_to_4(w, start_pos, camera_pos, n_lights=1, light_pos=None,
 def create_plane_level(size=400.0, y=0.0, color=None, start_pos=None):
     """Create a minimal MESHWORLD level: a thick box slab with a START point.
 
-    This is the simplest proven-working custom level format.
-    Uses strip_count=1, tri_count=12, vertex_offset=0 with 36 vertices
-    arranged as 12 triangles (3 verts each) in a flat triangle list.
+    Uses triangle strip format: 12 triangles in one strip using 14 vertices.
+    A box has 12 triangles total, but we write it as a flat triangle list
+    in strip-compatible order by using strip_count=12 with 1 tri each.
+    Actually — simplest proven format: write each face as a 2-tri strip.
 
-    Args:
-        size: Half-width of the plane (in D3D units)
-        y: Y position of the plane center (D3D Y-up)
-        color: Diffuse color as (r,g,b,a) tuple, or None for default
-        start_pos: (x, y, z) D3D coords for START point, or None for auto
+    Proven format that works: 6 faces × 1 strip each, 2 tris per strip.
+    Each strip uses 4 vertices (2 triangles in strip = 4 vertices).
+    Total: 6 strips, 12 tris, 24 unique vertices.
     """
     w = MWWriter()
 
@@ -198,50 +195,39 @@ def create_plane_level(size=400.0, y=0.0, color=None, start_pos=None):
                            light_pos=(100, y_top + 500, 100),
                            light_lookat=(0, y_top, 0))
 
-    # Section 5: Vertex buffer — 6 faces × 2 tris × 3 verts = 36 vertices
+    # Section 5: Vertex buffer — 6 faces, each as a 4-vertex strip (2 tris)
+    # Total: 24 vertices
     vertices = [
-        # Top face (y=y_top, normal up)
-        (-h, y_top, -h, 0, 1, 0, 0, 1),
-        ( h, y_top, -h, 0, 1, 0, 1, 1),
-        ( h, y_top,  h, 0, 1, 0, 1, 0),
-        (-h, y_top, -h, 0, 1, 0, 0, 1),
-        ( h, y_top,  h, 0, 1, 0, 1, 0),
-        (-h, y_top,  h, 0, 1, 0, 0, 0),
-        # Bottom face (y=y_bot, normal down)
-        (-h, y_bot, -h, 0, -1, 0, 0, 1),
-        ( h, y_bot,  h, 0, -1, 0, 1, 0),
-        ( h, y_bot, -h, 0, -1, 0, 1, 1),
-        (-h, y_bot, -h, 0, -1, 0, 0, 1),
-        (-h, y_bot,  h, 0, -1, 0, 0, 0),
-        ( h, y_bot,  h, 0, -1, 0, 1, 0),
-        # Front face (z=h, normal forward)
-        (-h, y_bot, h, 0, 0, 1, 0, 1),
-        (-h, y_top, h, 0, 0, 1, 0, 0),
-        ( h, y_top, h, 0, 0, 1, 1, 0),
-        (-h, y_bot, h, 0, 0, 1, 0, 1),
-        ( h, y_top, h, 0, 0, 1, 1, 0),
-        ( h, y_bot, h, 0, 0, 1, 1, 1),
-        # Back face (z=-h, normal backward)
-        (-h, y_bot, -h, 0, 0, -1, 1, 1),
-        ( h, y_top, -h, 0, 0, -1, 0, 0),
-        (-h, y_top, -h, 0, 0, -1, 1, 0),
-        (-h, y_bot, -h, 0, 0, -1, 1, 1),
-        ( h, y_bot, -h, 0, 0, -1, 0, 1),
-        ( h, y_top, -h, 0, 0, -1, 0, 0),
-        # Right face (x=h, normal right)
-        (h, y_bot, -h, 1, 0, 0, 0, 1),
-        (h, y_top,  h, 1, 0, 0, 1, 0),
-        (h, y_top, -h, 1, 0, 0, 0, 0),
-        (h, y_bot, -h, 1, 0, 0, 0, 1),
-        (h, y_bot,  h, 1, 0, 0, 1, 1),
-        (h, y_top,  h, 1, 0, 0, 1, 0),
-        # Left face (x=-h, normal left)
-        (-h, y_bot, -h, -1, 0, 0, 1, 1),
-        (-h, y_top, -h, -1, 0, 0, 1, 0),
-        (-h, y_top,  h, -1, 0, 0, 0, 0),
-        (-h, y_bot, -h, -1, 0, 0, 1, 1),
-        (-h, y_top,  h, -1, 0, 0, 0, 0),
-        (-h, y_bot,  h, -1, 0, 0, 0, 1),
+        # Top face (y=y_top, normal up) — strip: v0,v1,v2,v3 → tris (0,1,2),(1,3,2)
+        (-h, y_top, -h, 0, 1, 0, 0, 1),   # 0
+        ( h, y_top, -h, 0, 1, 0, 1, 1),   # 1
+        (-h, y_top,  h, 0, 1, 0, 0, 0),   # 2
+        ( h, y_top,  h, 0, 1, 0, 1, 0),   # 3
+        # Bottom face (y=y_bot, normal down) — strip
+        (-h, y_bot, -h, 0, -1, 0, 0, 1),  # 4
+        (-h, y_bot,  h, 0, -1, 0, 0, 0),  # 5
+        ( h, y_bot, -h, 0, -1, 0, 1, 1),  # 6
+        ( h, y_bot,  h, 0, -1, 0, 1, 0),  # 7
+        # Front face (z=h, normal forward) — strip
+        (-h, y_bot, h, 0, 0, 1, 0, 1),    # 8
+        (-h, y_top, h, 0, 0, 1, 0, 0),    # 9
+        ( h, y_bot, h, 0, 0, 1, 1, 1),    # 10
+        ( h, y_top, h, 0, 0, 1, 1, 0),    # 11
+        # Back face (z=-h, normal backward) — strip
+        (-h, y_bot, -h, 0, 0, -1, 1, 1),  # 12
+        ( h, y_bot, -h, 0, 0, -1, 0, 1),  # 13
+        (-h, y_top, -h, 0, 0, -1, 1, 0),  # 14
+        ( h, y_top, -h, 0, 0, -1, 0, 0),  # 15
+        # Right face (x=h, normal right) — strip
+        (h, y_bot, -h, 1, 0, 0, 0, 1),    # 16
+        (h, y_bot,  h, 1, 0, 0, 1, 1),    # 17
+        (h, y_top, -h, 1, 0, 0, 0, 0),    # 18
+        (h, y_top,  h, 1, 0, 0, 1, 0),    # 19
+        # Left face (x=-h, normal left) — strip
+        (-h, y_bot, -h, -1, 0, 0, 1, 1),  # 20
+        (-h, y_top, -h, -1, 0, 0, 1, 0),  # 21
+        (-h, y_bot,  h, -1, 0, 0, 0, 1),  # 22
+        (-h, y_top,  h, -1, 0, 0, 0, 0),  # 23
     ]
 
     w.write_u32(len(vertices))
@@ -252,14 +238,24 @@ def create_plane_level(size=400.0, y=0.0, color=None, start_pos=None):
     w.write_cube(-h - 1, y_bot - 1, -h - 1, h + 1, y_top + 1, h + 1)
     w.write_u32(0)  # leaf
     w.write_u32(1)  # 1 geom
-    w.write_geom(
+
+    # 6 strips, each with 2 tris and correct vertex_offset
+    strips = [
+        (2, 0),   # Top face: vertices 0-3
+        (2, 4),   # Bottom face: vertices 4-7
+        (2, 8),   # Front face: vertices 8-11
+        (2, 12),  # Back face: vertices 12-15
+        (2, 16),  # Right face: vertices 16-19
+        (2, 20),  # Left face: vertices 20-23
+    ]
+    w.write_geom_with_strips(
         name="",
         ambient=(0.3, 0.35, 0.5, 1.0),
         diffuse=color,
         specular=(0.5, 0.5, 0.5, 1.0),
         emissive=(0.0, 0.0, 0.0, 1.0),
         power=10.0,
-        triangles=list(range(12))  # 12 triangles
+        strips=strips
     )
 
     return w.get_bytes()
@@ -268,13 +264,12 @@ def create_plane_level(size=400.0, y=0.0, color=None, start_pos=None):
 def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
     """Create a MESHWORLD arena-style bowl level.
 
-    Generates a smooth hemispherical bowl with inward-facing normals
-    and a rim edge. Uses the proven single-strip format:
-    strip_count=1, tri_count=N, vertex_offset=0.
-    
-    The vertex buffer is organized as a flat triangle list:
-    each triangle's 3 vertices appear consecutively.
-    This matches the proven plane preset format.
+    Generates a hemispherical bowl with inward-facing normals, a closed bottom
+    (triangle fan), and a rim edge. Uses D3D triangle strip format.
+
+    Key design: bottom ring has small but nonzero radius to avoid degenerate
+    triangles, plus a center vertex fan to close the bottom completely.
+    The ball (radius ~26) cannot fall through the closed bottom.
     """
     w = MWWriter()
 
@@ -282,7 +277,7 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
         color = (0.78, 0.32, 0.80, 1.0)  # Purple-pink like Arena-WarmUp
 
     if start_pos is None:
-        start_pos = (0, -depth + 52, 0)
+        start_pos = (0, -depth + 26 + 1, 0)  # Ball center just above bowl floor
 
     # Sections 1-4
     _write_sections_1_to_4(w, start_pos=start_pos,
@@ -290,28 +285,29 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
                            bg_color=(0.98, 0.46, 1.0),
                            ambient_color=(0.56, 0.56, 0.56))
 
-    # Section 5: Vertex buffer
-    # Build the bowl as a triangle list (3 vertices per triangle, sequential).
-    # This is the proven format: strip_count=1 reads vertices sequentially.
-    n_rings = 8
+    # Bowl parameters — use more rings for smoother curve and closed bottom
+    n_rings = 12
     n_sectors = 16
+    bottom_radius = 5.0  # Small but nonzero — avoids degenerate triangles
 
-    # Generate ring positions
+    # Generate ring positions (bowl interior)
+    # Ring 0 = rim (radius=300, y=0)
+    # Ring n_rings = bottom (radius=bottom_radius, y=-depth)
     rings = []  # rings[ring][sector] = (x, y, z, nx, ny, nz, u, v)
     for ring in range(n_rings + 1):
         t = ring / n_rings
-        r = radius * (1.0 - t)
+        r = radius * (1.0 - t) + bottom_radius * t  # Linear interpolation to bottom_radius
         y = -depth * t
         ring_data = []
         for sector in range(n_sectors):
             angle = 2.0 * math.pi * sector / n_sectors
             x = r * math.cos(angle)
             z = r * math.sin(angle)
-            # Inward-pointing normal
+            # Inward-pointing normal (toward bowl center)
             if r > 0.01:
                 nx = -x / r
                 nz = -z / r
-                ny = depth / radius
+                ny = depth / (radius - bottom_radius)  # Approximate bowl slope
             else:
                 nx = 0; ny = 1; nz = 0
             nl = math.sqrt(nx*nx + ny*ny + nz*nz)
@@ -319,63 +315,112 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
             ring_data.append((x, y, z, nx, ny, nz, sector/n_sectors, t))
         rings.append(ring_data)
 
-    # Rim top vertices (outside the bowl, going up)
+    # Bottom center vertex (closes the bowl)
+    center_y = -depth
+    bottom_center = (0, center_y, 0, 0, 1, 0, 0.5, 1.0)
+
+    # Rim top vertices (flat rim at y=10, slightly outside the bowl edge)
     rim_tops = []
     for sector in range(n_sectors):
         angle = 2.0 * math.pi * sector / n_sectors
-        x = (radius + 10) * math.cos(angle)
-        z = (radius + 10) * math.sin(angle)
+        x = (radius + 15) * math.cos(angle)
+        z = (radius + 15) * math.sin(angle)
         rim_tops.append((x, 10, z, 0, 1, 0, sector/n_sectors, 0))
 
-    # Build vertex list as flat triangle list
-    vertices = []
+    # Rim bottom vertices (at the bowl rim level, outside edge)
+    rim_bottoms = []
+    for sector in range(n_sectors):
+        angle = 2.0 * math.pi * sector / n_sectors
+        x = (radius + 15) * math.cos(angle)
+        z = (radius + 15) * math.sin(angle)
+        rim_bottoms.append((x, -5, z, 0, 1, 0, sector/n_sectors, 0))
 
-    def emit_tri(i0_tuple, i1_tuple, i2_tuple):
-        """Append 3 vertices for one triangle."""
-        vertices.append(i0_tuple)
-        vertices.append(i1_tuple)
-        vertices.append(i2_tuple)
+    # Build vertex buffer as triangle strips
+    all_vertices = []
+    geom_strips = []
+    current_offset = 0
 
-    # Interior bowl: ring-to-ring quads → 2 triangles each
+    # Bowl wall bands: each ring-to-ring band is one strip
     for ring in range(n_rings):
+        strip_verts = []
         for sector in range(n_sectors):
-            s_next = (sector + 1) % n_sectors
-            v0 = rings[ring][sector]
-            v1 = rings[ring][s_next]
-            v2 = rings[ring + 1][sector]
-            v3 = rings[ring + 1][s_next]
-            emit_tri(v0, v2, v1)
-            emit_tri(v1, v2, v3)
+            strip_verts.append(rings[ring][sector])
+            strip_verts.append(rings[ring + 1][sector])
+        # Close the strip
+        strip_verts.append(rings[ring][0])
+        strip_verts.append(rings[ring + 1][0])
 
-    # Rim edge: connects rim (ring 0) to rim_top
+        n_tris = 2 * n_sectors
+        for v in strip_verts:
+            all_vertices.append(v)
+        geom_strips.append((n_tris, current_offset))
+        current_offset += len(strip_verts)
+
+    # Bottom cap: triangle fan from bottom ring to center vertex
+    # In strip format: center, ring[n_rings][0], ring[n_rings][1], center, ring[n_rings][1], ring[n_rings][2], ...
+    # Actually, simpler: write each triangle of the fan as a separate strip (1 tri each)
+    # Or use a single strip that zigzags: c, r[0], r[1], c, r[1], r[2], c, ...
+    # Most compatible: write as individual 1-tri strips
+    bottom_ring = rings[n_rings]
+    center_offset = len(all_vertices)
+    all_vertices.append(bottom_center)  # center vertex
+    for sector in range(n_sectors):
+        s_next = (sector + 1) % n_sectors
+        # Each fan triangle: center, ring[sector], ring[sector+1]
+        # As a 1-tri strip: needs 3 vertices
+        v0 = bottom_center
+        v1 = bottom_ring[sector]
+        v2 = bottom_ring[s_next]
+        # Add 3 vertices for this 1-tri strip
+        for v in [v0, v1, v2]:
+            all_vertices.append(v)
+        geom_strips.append((1, current_offset))
+        current_offset += 3
+
+    # Rim edge: connect bowl rim (ring 0) to rim_bottom and rim_top
+    # Outer wall strip: ring0 → rim_bottom (vertical wall)
     for sector in range(n_sectors):
         s_next = (sector + 1) % n_sectors
         v0 = rings[0][sector]
-        v1 = rings[0][s_next]
-        v2 = rim_tops[sector]
+        v1 = rim_bottoms[sector]
+        v2 = rings[0][s_next]
+        v3 = rim_bottoms[s_next]
+        for v in [v0, v1, v2, v3]:
+            all_vertices.append(v)
+        geom_strips.append((2, current_offset))
+        current_offset += 4
+
+    # Top rim strip: rim_bottom → rim_top (horizontal surface)
+    for sector in range(n_sectors):
+        s_next = (sector + 1) % n_sectors
+        v0 = rim_bottoms[sector]
+        v1 = rim_tops[sector]
+        v2 = rim_bottoms[s_next]
         v3 = rim_tops[s_next]
-        emit_tri(v0, v2, v1)
-        emit_tri(v1, v2, v3)
+        for v in [v0, v1, v2, v3]:
+            all_vertices.append(v)
+        geom_strips.append((2, current_offset))
+        current_offset += 4
 
-    n_tris = len(vertices) // 3
-
-    w.write_u32(len(vertices))
-    for v in vertices:
+    # Write vertex buffer
+    w.write_u32(len(all_vertices))
+    for v in all_vertices:
         w.write_vertex(*v)
 
-    # Section 6: Octree
-    w.write_cube(-radius - 15, -depth - 5, -radius - 15,
-                 radius + 15, 15, radius + 15)
+    # Section 6: Octree — single leaf with one geom
+    w.write_cube(-radius - 20, -depth - 5, -radius - 20,
+                 radius + 20, 15, radius + 20)
     w.write_u32(0)  # leaf
     w.write_u32(1)  # 1 geom
-    w.write_geom(
+
+    w.write_geom_with_strips(
         name="",
         ambient=(0.4, 0.3, 0.4, 1.0),
         diffuse=color,
         specular=(0.6, 0.6, 0.6, 1.0),
         emissive=(0.1, 0.05, 0.1, 1.0),
         power=20.0,
-        triangles=list(range(n_tris))
+        strips=geom_strips
     )
 
     return w.get_bytes()
@@ -383,8 +428,8 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
 
 def create_ramp_level(size=400.0, ramp_angle=15.0, color=None, start_pos=None):
     """Create a MESHWORLD level with a flat plane and a ramp.
-    
-    Two separate geoms, each with their own vertices laid out sequentially.
+
+    Two separate geoms, each with their own strips.
     """
     w = MWWriter()
 
@@ -406,24 +451,19 @@ def create_ramp_level(size=400.0, ramp_angle=15.0, color=None, start_pos=None):
     ny = math.cos(angle_rad)
     nz = -math.sin(angle_rad)
 
-    # Vertices for both geoms, laid out sequentially
-    # Geom 1 (flat): vertices 0-5
-    # Geom 2 (ramp): vertices 6-11
+    # Geom 1: flat section — 4 vertices, 1 strip of 2 tris
+    # Geom 2: ramp section — 4 vertices, 1 strip of 2 tris
     vertices = [
-        # Flat section
+        # Flat section (strip: v0,v1,v2,v3)
         (-h/2, 0, -h, 0, 1, 0, 0, 1),  # 0
-        ( h/2, 0, -h, 0, 1, 0, 1, 1),  # 1
-        ( h/2, 0,  0, 0, 1, 0, 1, 0),  # 2
-        (-h/2, 0, -h, 0, 1, 0, 0, 1),  # 3
-        ( h/2, 0,  0, 0, 1, 0, 1, 0),  # 4
-        (-h/2, 0,  0, 0, 1, 0, 0, 0),  # 5
-        # Ramp section
-        (-h/2, 0,          0, 0, ny, nz, 0, 1),  # 6
-        ( h/2, 0,          0, 0, ny, nz, 1, 1),  # 7
-        ( h/2, ramp_height, h, 0, ny, nz, 1, 0),  # 8
-        (-h/2, 0,          0, 0, ny, nz, 0, 1),  # 9
-        ( h/2, ramp_height, h, 0, ny, nz, 1, 0),  # 10
-        (-h/2, ramp_height, h, 0, ny, nz, 0, 0),  # 11
+        (-h/2, 0,  0, 0, 1, 0, 0, 0),  # 1
+        ( h/2, 0, -h, 0, 1, 0, 1, 1),  # 2
+        ( h/2, 0,  0, 0, 1, 0, 1, 0),  # 3
+        # Ramp section (strip: v0,v1,v2,v3)
+        (-h/2, 0,          0, 0, ny, nz, 0, 1),  # 4
+        (-h/2, ramp_height, h, 0, ny, nz, 0, 0),  # 5
+        ( h/2, 0,          0, 0, ny, nz, 1, 1),  # 6
+        ( h/2, ramp_height, h, 0, ny, nz, 1, 0),  # 7
     ]
 
     w.write_u32(len(vertices))
@@ -434,16 +474,13 @@ def create_ramp_level(size=400.0, ramp_angle=15.0, color=None, start_pos=None):
     w.write_u32(0)
     w.write_u32(2)
 
-    # Geom 1: flat section (2 tris at offset 0)
-    w.write_geom("", ambient=(0.3, 0.35, 0.5, 1.0),
-                 diffuse=(0.6, 0.7, 0.9, 1.0), triangles=list(range(2)))
-    # Geom 2: ramp (2 tris at offset 6) — but write_geom writes offset=0
-    # We need to write the offset manually
-    w.write_string("")
-    w.write_material(ambient=(0.35, 0.25, 0.15, 1.0), diffuse=color)
-    w.write_u32(1)   # strip_count
-    w.write_u32(2)   # tri_count
-    w.write_u32(6)   # vertex_offset = 6
+    # Geom 1: flat (2 tris, offset 0)
+    w.write_geom_with_strips("", ambient=(0.3, 0.35, 0.5, 1.0),
+                              diffuse=(0.6, 0.7, 0.9, 1.0),
+                              strips=[(2, 0)])
+    # Geom 2: ramp (2 tris, offset 4)
+    w.write_geom_with_strips("", ambient=(0.35, 0.25, 0.15, 1.0), diffuse=color,
+                              strips=[(2, 4)])
 
     return w.get_bytes()
 
@@ -463,31 +500,25 @@ def create_platforms_level(color=None):
                            bg_color=(0.1, 0.15, 0.3),
                            ambient_color=(0.2, 0.25, 0.35))
 
-    # All vertices in sequential order for 3 geoms
-    # Geom 1 (platform 1): verts 0-5
-    # Geom 2 (platform 2): verts 6-11
-    # Geom 3 (ramp): verts 12-17
+    # Each surface is a 4-vertex strip (2 tris)
     vertices = [
+        # Platform 1
         (-100, 0, -100, 0, 1, 0, 0, 1),   # 0
-        ( 100, 0, -100, 0, 1, 0, 1, 1),   # 1
-        ( 100, 0,  100, 0, 1, 0, 1, 0),   # 2
-        (-100, 0, -100, 0, 1, 0, 0, 1),   # 3
-        ( 100, 0,  100, 0, 1, 0, 1, 0),   # 4
-        (-100, 0,  100, 0, 1, 0, 0, 0),   # 5
+        (-100, 0,  100, 0, 1, 0, 0, 0),   # 1
+        ( 100, 0, -100, 0, 1, 0, 1, 1),   # 2
+        ( 100, 0,  100, 0, 1, 0, 1, 0),   # 3
 
-        (-100, 50, 200, 0, 1, 0, 0, 1),   # 6
-        ( 100, 50, 200, 0, 1, 0, 1, 1),   # 7
-        ( 100, 50, 400, 0, 1, 0, 1, 0),   # 8
-        (-100, 50, 200, 0, 1, 0, 0, 1),   # 9
-        ( 100, 50, 400, 0, 1, 0, 1, 0),   # 10
-        (-100, 50, 400, 0, 1, 0, 0, 0),   # 11
+        # Platform 2
+        (-100, 50, 200, 0, 1, 0, 0, 1),   # 4
+        (-100, 50, 400, 0, 1, 0, 0, 0),   # 5
+        ( 100, 50, 200, 0, 1, 0, 1, 1),   # 6
+        ( 100, 50, 400, 0, 1, 0, 1, 0),   # 7
 
-        (-100,  0, 100, 0, 0.894, -0.447, 0, 1),  # 12
-        ( 100,  0, 100, 0, 0.894, -0.447, 1, 1),  # 13
-        ( 100, 50, 200, 0, 0.894, -0.447, 1, 0),  # 14
-        (-100,  0, 100, 0, 0.894, -0.447, 0, 1),  # 15
-        ( 100, 50, 200, 0, 0.894, -0.447, 1, 0),  # 16
-        (-100, 50, 200, 0, 0.894, -0.447, 0, 0),  # 17
+        # Ramp
+        (-100,  0, 100, 0, 0.894, -0.447, 0, 1),  # 8
+        (-100, 50, 200, 0, 0.894, -0.447, 0, 0),  # 9
+        ( 100,  0, 100, 0, 0.894, -0.447, 1, 1),  # 10
+        ( 100, 50, 200, 0, 0.894, -0.447, 1, 0),  # 11
     ]
 
     w.write_u32(len(vertices))
@@ -498,20 +529,14 @@ def create_platforms_level(color=None):
     w.write_u32(0)
     w.write_u32(3)
 
-    w.write_geom("", ambient=(0.2, 0.35, 0.2, 1.0), diffuse=color,
-                 triangles=list(range(2)))
-
-    # Geom 2: offset 6
-    w.write_string("")
-    w.write_material(ambient=(0.2, 0.2, 0.35, 1.0),
-                     diffuse=(0.4, 0.4, 0.8, 1.0))
-    w.write_u32(1); w.write_u32(2); w.write_u32(6)
-
-    # Geom 3: offset 12
-    w.write_string("")
-    w.write_material(ambient=(0.3, 0.3, 0.15, 1.0),
-                     diffuse=(0.8, 0.7, 0.3, 1.0))
-    w.write_u32(1); w.write_u32(2); w.write_u32(12)
+    w.write_geom_with_strips("", ambient=(0.2, 0.35, 0.2, 1.0), diffuse=color,
+                              strips=[(2, 0)])
+    w.write_geom_with_strips("", ambient=(0.2, 0.2, 0.35, 1.0),
+                              diffuse=(0.4, 0.4, 0.8, 1.0),
+                              strips=[(2, 4)])
+    w.write_geom_with_strips("", ambient=(0.3, 0.3, 0.15, 1.0),
+                              diffuse=(0.8, 0.7, 0.3, 1.0),
+                              strips=[(2, 8)])
 
     return w.get_bytes()
 

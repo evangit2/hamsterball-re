@@ -383,7 +383,7 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
             mw_geom_t *geom = &level->geoms[g];
             /* Skip collision-invisible geoms: E: (no_collide) and (NOCOLLIDE)
              * per Level_LoadMeshes 0x465A0A */
-            if (geom->no_collide || geom->no_collide_tag) continue;
+            if (geom->no_render) continue;
             for (int s = 0; s < geom->strip_count; s++) {
                 mw_strip_t *strip = &geom->strips[s];
                 int ntri = strip->tri_count;
