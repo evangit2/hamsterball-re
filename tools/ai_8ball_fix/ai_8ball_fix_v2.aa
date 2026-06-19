@@ -1,0 +1,28 @@
+[ENABLE]
+// ai_8ball_fix_v2.aa - Cheat Engine Auto Assembler script
+// Fixes motionless grounded 8balls in Hamsterball
+// 
+// ROOT CAUSE: Ball_AI_ChaseNearest (vtable[4], 0x408390) has Gate 0 at
+// 0x4083AE. When ball+0xC74==0 AND App+0x237==0, it jumps directly to
+// the function exit at 0x40882A, skipping Ball_Update + targeting + SetVelocity.
+// In practice mode, App+0x237=0. For fresh CreateBadBall'd 8balls, ball+0xC74=0.
+// Result: 8ball does nothing.
+//
+// FIX: Replace the 6-byte JZ with 6 NOPs so it always falls through to the
+// rest of the function (Ball_Update, targeting, SetVelocity).
+//
+// WARNING: Previous "3-patch" scripts (0x4083D3 + 0x4085D1 + 0x408598) were
+// WRONG - those gates are downstream of this one and were NEVER REACHED.
+// Also, 0x408598 and 0x4085D1 are TARGET FILTERS that skip inactive/invalid
+// balls. NOPing them causes 8balls to chase dead balls and crash.
+// ONLY patch 0x4083AE.
+
+define(address, Hamsterball.exe+83AE)
+define(orig_bytes, 0F 84 76 04 00 00)
+
+address:
+  db 90 90 90 90 90 90
+
+[DISABLE]
+address:
+  db orig_bytes
