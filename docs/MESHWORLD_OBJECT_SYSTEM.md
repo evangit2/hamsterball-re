@@ -143,17 +143,26 @@ Parsed into a hash table during scene construction. Looked up by name during `Sc
 | Misc refs | `FAN`, `FAN(UP)`, `FAN(SUPER)(UP)`, `GEAR01`–`GEAR24`, `BIGGEAR01`–`BIGGEAR14`, `TURRET`, `DRAWBRIDGE`, etc. | Various level-specific handlers |
 
 ### 3.2 Octree Geom Names (Section 6) — Collision & Render Objects
-Parsed by `Level_LoadCollision` (0x465260) into MeshBuffer objects. The name prefix determines collision behavior:
 
-| Prefix | Count | Meaning | Engine Flag | Behavior |
-|--------|-------|---------|-------------|----------|
-| `N:` | 278 | Named/Interactive collision | `+0x85D = 1` (interactive) | Ball collides + triggers named event |
-| `E:` | 581 | Event trigger (invisible) | `+0x85D = 1, +0x863 = 1` (no_render) | Invisible collision zone, triggers event on hit |
-| `O:` | 60 | Object mesh | Standard collision | Pipe/tube/saw visual meshes with collision |
-| `S:` | 831 | Shadowless geometry | Standard collision | Renders without shadow (walls, pipes, rims) |
-| `T:` | 175 | Texture/Decal (NOCOLLIDE) | No collision | Visual overlays: arrows, warnings, bullseyes |
-| (none) | — | Standard geometry | Standard collision | Walls, floors, standard level geometry |
-| `NOCOLLIDE` | — | No collision | Excluded from collision | Pure visual geometry (tube rings, ramp things) |
+Parsed by `Level_LoadCollision` (0x465260) into MeshBuffer objects. The engine only checks for two name prefixes:
+
+```c
+if (strnicmp(name, "N:", 2) == 0) buf->interactive = 1;        // +0x85D
+if (strnicmp(name, "E:", 2) == 0) { buf->interactive = 1; buf->no_render = 1; }  // +0x85D, +0x863
+```
+
+**No other prefix (`O:`, `S:`, `T:`) is checked by the engine.** They are designer naming conventions only — they cause the name to be written to the file (because the exporter writes any name where `name[1] == ':'`), but no engine code reads them to trigger behavior. Transparency, decal rendering, and shadow exclusion are controlled by **material flags** (`+0x862` is_translucent, `+0x85F` is_decal, etc.) set from material properties during loading, not from the name prefix.
+
+`NOCOLLIDE` (as a substring) is also not explicitly checked by the engine loader — it's a designer tag. The exporter writes names containing `NOCOLLIDE` to the file, but the engine does not search for this substring.
+
+| Prefix | Count | Engine Flag | Actual Behavior |
+|--------|-------|-------------|-----------------|
+| `N:` | 278 | `+0x85D = 1` (interactive) | Named collision + triggers event handler on hit (e.g. `N:GOAL`, `N:BUMPER1`) |
+| `E:` | 581 | `+0x85D = 1, +0x863 = 1` (interactive + no_render) | Invisible collision zone, triggers event on hit (e.g. `E:JUMP`, `E:LIMIT`) |
+| `O:` | 60 | *(none — standard)* | Standard collision + standard render. Designer convention for object meshes (tubes, saws). Transparency comes from material alpha, not the prefix. |
+| `S:` | 831 | *(none — standard)* | Standard collision + standard render. Designer convention for shadowless geometry. `(NOSHADOW)` in the name is a designer note, not an engine flag. |
+| `T:` | 175 | *(none — standard)* | Standard collision + standard render. Designer convention for texture decals. Any transparency comes from material alpha, not the prefix. |
+| (none) | — | *(none — standard)* | Standard collision + standard render. Unnamed level geometry (walls, floors). |
 
 ### 3.3 Complete N: Object Catalog (44 unique types)
 | Name | Triangles | Texture | Files | Behavior |
@@ -345,8 +354,9 @@ Objects are classified into render buckets by flags on SceneObject:
 2. **Translucent pass**: AlphaBlend ON, AlphaTest OFF
 3. **Decal pass**: Stencil + depth bias
 
-`S:` prefix geoms have `(NOSHADOW)` suffix → excluded from shadow rendering.
-`T:` prefix geoms are `(NOCOLLIDE)` → visual-only decals rendered in the decal pass.
+Render bucket classification is driven by **material flags**, not by name prefix. All objects with `+0x863` (has_bounding_sphere) are skipped; the rest are sorted by their material-derived flags into the 3 passes above.
+
+Name prefixes like `S:(NOSHADOW)` and `T:` are designer conventions — they do not trigger engine behavior. Shadow exclusion and decal rendering are controlled by material properties, not by the name string.
 
 ## 7. String Format Convention
 

@@ -168,12 +168,11 @@ static void walk_octree(octree_ctx_t *ctx) {
             
             mw_read_string(ctx->r, geom->name, sizeof(geom->name));
             
-            /* Classify geom flags from name prefix (Level_LoadMeshes 0x465A0A):
-             * N: prefix → no_render=1 (notification zone, invisible)
-             * E: prefix → no_render=1, no_collide=1 (edge limit, invisible + no collision)
-             * (NOCOLLIDE) → no_collide_tag=1 (skipped entirely by original)
-             * S: prefix → rendered normally (shadow surface, drawn but doesn't receive shadow)
-             * No prefix → rendered normally */
+            /* Classify geom flags from name prefix (Level_LoadCollision 0x465260):
+             * N: prefix → interactive=1 (named collision, triggers event on hit)
+             * E: prefix → interactive=1, no_render=1 (invisible collision zone, triggers event)
+             * O:, S:, T: prefixes → no engine flag (designer conventions only)
+             * No prefix → standard collision + standard render */
             if (geom->name[0] != '\0') {
                 if ((geom->name[0] == 'N' || geom->name[0] == 'n') && geom->name[1] == ':')
                     geom->no_render = 1;
