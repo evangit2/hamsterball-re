@@ -1,26 +1,16 @@
 /*
  * jump_mod.c — BASS.dll proxy that lets Player 1 jump with the spacebar.
  *
- * APPROACH: Binary hook at the end of Ball_Update (0x004082B6).
- * A code cave runs AFTER Ball_Update finishes physics but BEFORE control
- * returns to the caller. At that point ESI = ball pointer.
+ * APPROACH: Binary hook (code cave) at the end of Ball_Update (0x004082B6).
+ * The cave runs AFTER Ball_Update's physics + collision detection completes,
+ * so the jump velocity persists for one full frame before the next Ball_Update
+ * zeroes it for collision.
  *
- * The cave:
- *   1. Checks if this is Player 1 (ball+0x18 == 0)
- *   2. Reads the game's DirectInput8 keyboard buffer for DIK_SPACE (0x39)
- *      via App+0x434 → KeyboardDevice+0xC+0x39
- *   3. Edge-detects key press (was up, now down)
- *   4. Checks on-ground: fall_mode == 0, is_falling == 0
- *   5. Applies upward velocity impulse to ball+0x174
- *
- * This timing is critical: velocity set here persists until the NEXT frame's
- * Ball_Update zeroes it for collision detection. Setting it at the END of
- * Ball_Update ensures it survives one full frame.
- *
- * Installation:
- *   1. Rename bass.dll → bass_real.dll in your Hamsterball game folder
- *   2. Copy this bass.dll into the game folder
- *   3. Launch Hamsterball — press SPACE during gameplay to jump
+ * Keyboard reading: Uses the game's own DirectInput8 buffer.
+ *   App = *(DWORD*)0x005341E0
+ *   InputHandler = *(DWORD*)(App + 0x180)
+ *   KeyboardDevice = *(DWORD*)(InputHandler + 0x434)
+ *   DIK_SPACE state = *(BYTE*)(KeyboardDevice + 0xC + 0x39)
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -31,7 +21,7 @@
 #include <windows.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports — forward all 10 game imports to bass_real.dll
+ * BASS Proxy Exports — forward all game imports to bass_real.dll
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static HMODULE g_hRealBass = NULL;
@@ -42,71 +32,61 @@ __declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(DWORD a, float b, 
     if (real_BASS_ChannelSetAttributes) return real_BASS_ChannelSetAttributes(a, b, c, d);
     return 1;
 }
-
 typedef int  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
 static BASS_MusicPlayEx_t real_BASS_MusicPlayEx = NULL;
 __declspec(dllexport) int __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
     if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(a, b, c);
     return 1;
 }
-
 typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
 static BASS_SetConfig_t real_BASS_SetConfig = NULL;
 __declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
     if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
     return 1;
 }
-
 typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, HWND, void*);
 static BASS_Init_t real_BASS_Init = NULL;
 __declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, HWND d, void* e) {
     if (real_BASS_Init) return real_BASS_Init(a, b, c, d, e);
     return 1;
 }
-
 typedef int  (__stdcall *BASS_Free_t)(void);
 static BASS_Free_t real_BASS_Free = NULL;
 __declspec(dllexport) int __stdcall BASS_Free(void) {
     if (real_BASS_Free) return real_BASS_Free();
     return 1;
 }
-
 typedef int  (__stdcall *BASS_Start_t)(void);
 static BASS_Start_t real_BASS_Start = NULL;
 __declspec(dllexport) int __stdcall BASS_Start(void) {
     if (real_BASS_Start) return real_BASS_Start();
     return 1;
 }
-
 typedef int  (__stdcall *BASS_Stop_t)(void);
 static BASS_Stop_t real_BASS_Stop = NULL;
 __declspec(dllexport) int __stdcall BASS_Stop(void) {
     if (real_BASS_Stop) return real_BASS_Stop();
     return 1;
 }
-
 typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
 static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
 __declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
     if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
     return 0;
 }
-
 typedef DWORD (__stdcall *BASS_MusicLoad_t)(int, void*, DWORD, DWORD, DWORD, DWORD);
 static BASS_MusicLoad_t real_BASS_MusicLoad = NULL;
 __declspec(dllexport) DWORD __stdcall BASS_MusicLoad(int a, void* b, DWORD c, DWORD d, DWORD e, DWORD f) {
     if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d, e, f);
     return 0;
 }
-
 typedef int  (__stdcall *BASS_ChannelStop_t)(DWORD);
 static BASS_ChannelStop_t real_BASS_ChannelStop = NULL;
 __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
     if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
     return 1;
 }
-
-/* Extra BASS stubs */
+/* Extra stubs */
 __declspec(dllexport) void __stdcall BASS_Pause(void) {}
 __declspec(dllexport) void __stdcall BASS_SetVolume(DWORD a) {}
 __declspec(dllexport) DWORD __stdcall BASS_GetVolume(void) { return 0; }
@@ -161,7 +141,6 @@ static void load_real_bass(void)
  * Jump Mod — Binary Hook into Ball_Update epilogue
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Global addresses and constants */
 #define G_APP_ADDR          0x005341E0
 #define BALL_UPDATE_HOOK    0x004082B6   /* MOV [ESP+0x944],ECX — just before epilogue */
 #define HOOK_ORIG_BYTES     7            /* 89 8C 24 44 09 00 00 */
@@ -173,182 +152,163 @@ static void load_real_bass(void)
 #define BALL_FALL_MODE      0xC4C
 
 /* App struct offsets */
-#define APP_KEYBOARD_DEV    0x434
+#define APP_INPUT_HANDLER   0x180
+
+/* InputHandler offsets */
+#define IH_KEYBOARD_DEV    0x434
 
 /* KeyboardDevice offsets */
-#define KBD_KEY_BUFFER      0x00C
-#define DIK_SPACE           0x039
+#define KBD_KEY_BUFFER     0x00C
+#define DIK_SPACE          0x039
 
-/* Jump parameters */
-#define JUMP_VELOCITY       500.0f
+/* Jump velocity: 500.0f = 0x43FA0000 */
+#define JUMP_VELOCITY_BITS 0x43FA0000
 
-/* Edge detection state — static so it persists between calls */
+/* Edge detection state */
 static BYTE g_space_was_down = 0;
 
-/* Code cave: assembled machine code.
+/* Debug counter */
+static volatile DWORD g_jump_count = 0;
+
+/* Code cave: hand-assembled x86 machine code.
  *
  * At entry: ESI = ball pointer (this)
- *           ESP points to the stack at the hook point
+ *           ESP at the hook point in Ball_Update's epilogue
  *
  * The cave:
  *   1. Saves registers (EAX, ECX, EDX, EDI)
- *   2. Executes the original instruction: MOV [ESP+0x944+0x10], ECX
- *      (note: +0x10 because we PUSH'd 4 registers = 16 bytes)
+ *   2. Executes the original instruction: MOV [ESP+0x954], ECX
+ *      (+0x10 offset from 4 PUSHes)
  *   3. Checks ball+0x18 == 0 (Player 1)
- *   4. Reads App → KeyboardDevice → keyboard buffer for DIK_SPACE
- *   5. Edge detects key press
- *   6. Checks fall_mode == 0 and is_falling == 0
- *   7. If all conditions met, sets ball+0x174 = JUMP_VELOCITY
- *   8. Restores registers
- *   9. JMP back to hook_addr + 7
+ *   4. Reads App → InputHandler(App+0x180) → KeyboardDevice(IH+0x434)
+ *   5. Reads DIK_SPACE from KeyboardDevice+0xC+0x39
+ *   6. Edge-detects key press (rising edge only)
+ *   7. Checks fall_mode == 0 and is_falling == 0
+ *   8. If all conditions met, sets ball+0x174 = JUMP_VELOCITY
+ *   9. Restores registers
+ *   10. JMP back to hook_addr + 7
  */
 static void install_hook(void)
 {
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
 
-    /* Allocate executable memory for the code cave (256 bytes, plenty) */
     BYTE *cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
                                      PAGE_EXECUTE_READWRITE);
     if (!cave) return;
 
-    /* Calculate relative jump offsets */
-    /* JMP from hook_addr to cave = cave - (hook_addr + 5) */
     DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
-    /* JMP from cave_end back to hook_addr + 7 */
-    DWORD jmp_back_addr = (DWORD)(hook_addr + HOOK_ORIG_BYTES);
-
-    /* JUMP_VELOCITY as float bits: 500.0f = 0x43FA0000 */
-    DWORD jump_vel_bits = 0x43FA0000;
-
-    /*
-     * Code cave assembly (hand-assembled):
-     *
-     *   PUSH EAX               ; save registers
-     *   PUSH ECX
-     *   PUSH EDX
-     *   PUSH EDI
-     *
-     *   ; Execute original instruction (with stack adjusted by 16 bytes)
-     *   MOV [ESP+0x944+0x10], ECX   ; 89 8C 24 54 09 00 00
-     *
-     *   ; Check player_index == 0
-     *   MOV EAX, [ESI+0x18]    ; 8B 86 18 00 00 00
-     *   TEST EAX, EAX          ; 85 C0
-     *   JNZ .done              ; 75 XX
-     *
-     *   ; Check fall_mode == 0
-     *   MOV EAX, [ESI+0xC4C]   ; 8B 86 4C 0C 00 00
-     *   TEST EAX, EAX          ; 85 C0
-     *   JNZ .done              ; 75 XX
-     *
-     *   ; Check is_falling == 0
-     *   MOV AL, [ESI+0x281]    ; 8A 86 81 02 00 00
-     *   TEST AL, AL            ; 84 C0
-     *   JNZ .done              ; 75 XX
-     *
-     *   ; Read keyboard: App = *(DWORD*)0x005341E0
-     *   MOV EAX, [0x005341E0]  ; A1 E0 41 53 00
-     *   TEST EAX, EAX           ; 85 C0
-     *   JZ .done               ; 74 XX
-     *   ; KeyboardDevice = *(DWORD*)(App + 0x434)
-     *   MOV EDI, [EAX+0x434]   ; 8B B8 34 04 00 00
-     *   TEST EDI, EDI          ; 85 FF
-     *   JZ .done               ; 74 XX
-     *   ; space_state = *(BYTE*)(KeyboardDevice + 0xC + 0x39)
-     *   MOV AL, [EDI+0xC+0x39] ; 8A 87 45 00 00 00  (0xC+0x39=0x45)
-     *   ; Check if key is down (bit 7 set)
-     *   TEST AL, 0x80          ; A8 80
-     *   JZ .not_pressed        ; 74 XX
-     *   ; Key is down now — check if it was down before (edge detect)
-     *   CMP byte ptr [g_space_was_down], 0 ; 80 3D XX XX XX XX 00
-     *   JNE .done              ; 75 XX  (already pressed, skip)
-     *   ; Rising edge! Set jump velocity
-     *   MOV DWORD PTR [ESI+0x174], jump_vel_bits ; C7 86 74 01 00 00 00 00 FA 43
-     *   MOV byte ptr [g_space_was_down], 1        ; C6 05 XX XX XX XX 01
-     *   JMP .done              ; EB XX
-     *   .not_pressed:
-     *   MOV byte ptr [g_space_was_down], 0        ; C6 05 XX XX XX XX 00
-     *
-     *   .done:
-     *   POP EDI                ; 5F
-     *   POP EDX                ; 5A
-     *   POP ECX                ; 59
-     *   POP EAX                ; 58
-     *   JMP hook_addr + 7      ; E9 XX XX XX XX
-     */
 
     int p = 0;
-    /* PUSH EAX, ECX, EDX, EDI */
+
+    /* PUSH EAX, ECX, EDX, EDI — save registers */
     cave[p++] = 0x50;  /* PUSH EAX */
     cave[p++] = 0x51;  /* PUSH ECX */
     cave[p++] = 0x52;  /* PUSH EDX */
     cave[p++] = 0x57;  /* PUSH EDI */
 
-    /* MOV [ESP+0x954], ECX  (original: [ESP+0x944], but +0x10 from 4 PUSHes) */
+    /* Execute original instruction: MOV [ESP+0x954], ECX
+     * Original was [ESP+0x944], but we pushed 4 regs = +0x10 */
     cave[p++] = 0x89; cave[p++] = 0x8C; cave[p++] = 0x24;
     cave[p++] = 0x54; cave[p++] = 0x09; cave[p++] = 0x00; cave[p++] = 0x00;
 
-    /* Check player_index == 0: MOV EAX, [ESI+0x18] */
-    cave[p++] = 0x8B; cave[p++] = 0x86; cave[p++] = 0x18; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
-    cave[p++] = 0x85; cave[p++] = 0xC0;  /* TEST EAX, EAX */
-    cave[p++] = 0x75; cave[p++] = 0x00;  /* JNZ .done (placeholder) */
-    int jnz1_pos = p - 1;
+    /* --- Check player_index == 0 (ball+0x18) --- */
+    /* MOV EAX, [ESI+0x18] */
+    cave[p++] = 0x8B; cave[p++] = 0x86;
+    cave[p++] = 0x18; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
+    /* TEST EAX, EAX */
+    cave[p++] = 0x85; cave[p++] = 0xC0;
+    /* JNZ .done */
+    cave[p++] = 0x75; cave[p++] = 0x00;
+    int jnz_player = p - 1;
 
-    /* Check fall_mode == 0: MOV EAX, [ESI+0xC4C] */
-    cave[p++] = 0x8B; cave[p++] = 0x86; cave[p++] = 0x4C; cave[p++] = 0x0C; cave[p++] = 0x00; cave[p++] = 0x00;
-    cave[p++] = 0x85; cave[p++] = 0xC0;  /* TEST EAX, EAX */
-    cave[p++] = 0x75; cave[p++] = 0x00;  /* JNZ .done (placeholder) */
-    int jnz2_pos = p - 1;
+    /* --- Check fall_mode == 0 (ball+0xC4C, byte) --- */
+    /* MOV AL, [ESI+0xC4C] */
+    cave[p++] = 0x8A; cave[p++] = 0x86;
+    cave[p++] = 0x4C; cave[p++] = 0x0C; cave[p++] = 0x00; cave[p++] = 0x00;
+    /* TEST AL, AL */
+    cave[p++] = 0x84; cave[p++] = 0xC0;
+    /* JNZ .done */
+    cave[p++] = 0x75; cave[p++] = 0x00;
+    int jnz_fallmode = p - 1;
 
-    /* Check is_falling == 0: MOV AL, [ESI+0x281] */
-    cave[p++] = 0x8A; cave[p++] = 0x86; cave[p++] = 0x81; cave[p++] = 0x02; cave[p++] = 0x00; cave[p++] = 0x00;
-    cave[p++] = 0x84; cave[p++] = 0xC0;  /* TEST AL, AL */
-    cave[p++] = 0x75; cave[p++] = 0x00;  /* JNZ .done (placeholder) */
-    int jnz3_pos = p - 1;
+    /* --- Check is_falling == 0 (ball+0x281, byte) --- */
+    /* MOV AL, [ESI+0x281] */
+    cave[p++] = 0x8A; cave[p++] = 0x86;
+    cave[p++] = 0x81; cave[p++] = 0x02; cave[p++] = 0x00; cave[p++] = 0x00;
+    /* TEST AL, AL */
+    cave[p++] = 0x84; cave[p++] = 0xC0;
+    /* JNZ .done */
+    cave[p++] = 0x75; cave[p++] = 0x00;
+    int jnz_isfalling = p - 1;
 
-    /* Read App pointer: MOV EAX, [0x005341E0] */
+    /* --- Read App pointer: MOV EAX, [0x005341E0] --- */
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = G_APP_ADDR; p += 4;
-    cave[p++] = 0x85; cave[p++] = 0xC0;  /* TEST EAX, EAX */
-    cave[p++] = 0x74; cave[p++] = 0x00;  /* JZ .done (placeholder) */
-    int jz1_pos = p - 1;
+    /* TEST EAX, EAX */
+    cave[p++] = 0x85; cave[p++] = 0xC0;
+    /* JZ .done */
+    cave[p++] = 0x74; cave[p++] = 0x00;
+    int jz_app = p - 1;
 
-    /* KeyboardDevice = [EAX+0x434]: MOV EDI, [EAX+0x434] */
-    cave[p++] = 0x8B; cave[p++] = 0xB8; *(DWORD*)(cave + p) = APP_KEYBOARD_DEV; p += 4;
-    cave[p++] = 0x85; cave[p++] = 0xFF;  /* TEST EDI, EDI */
-    cave[p++] = 0x74; cave[p++] = 0x00;  /* JZ .done (placeholder) */
-    int jz2_pos = p - 1;
+    /* --- InputHandler = [EAX+0x180]: MOV EDI, [EAX+0x180] --- */
+    cave[p++] = 0x8B; cave[p++] = 0xB8;
+    *(DWORD*)(cave + p) = APP_INPUT_HANDLER; p += 4;
+    /* TEST EDI, EDI */
+    cave[p++] = 0x85; cave[p++] = 0xFF;
+    /* JZ .done */
+    cave[p++] = 0x74; cave[p++] = 0x00;
+    int jz_ih = p - 1;
 
-    /* Read space key: MOV AL, [EDI+0x45]  (0xC + 0x39 = 0x45) */
-    cave[p++] = 0x8A; cave[p++] = 0x87; *(DWORD*)(cave + p) = (KBD_KEY_BUFFER + DIK_SPACE); p += 4;
-    cave[p++] = 0xA8; cave[p++] = 0x80;  /* TEST AL, 0x80 */
+    /* --- KeyboardDevice = [EDI+0x434]: MOV EDI, [EDI+0x434] --- */
+    cave[p++] = 0x8B; cave[p++] = 0xBF;
+    *(DWORD*)(cave + p) = IH_KEYBOARD_DEV; p += 4;
+    /* TEST EDI, EDI */
+    cave[p++] = 0x85; cave[p++] = 0xFF;
+    /* JZ .done */
+    cave[p++] = 0x74; cave[p++] = 0x00;
+    int jz_kbd = p - 1;
 
+    /* --- Read DIK_SPACE: MOV AL, [EDI+0x45] (0xC+0x39=0x45) --- */
+    cave[p++] = 0x8A; cave[p++] = 0x87;
+    *(DWORD*)(cave + p) = (KBD_KEY_BUFFER + DIK_SPACE); p += 4;
+    /* TEST AL, 0x80 */
+    cave[p++] = 0xA8; cave[p++] = 0x80;
     /* JZ .not_pressed */
-    cave[p++] = 0x74; cave[p++] = 0x00;  /* placeholder */
-    int jz_not_pressed_pos = p - 1;
+    cave[p++] = 0x74; cave[p++] = 0x00;
+    int jz_notpressed = p - 1;
 
-    /* Key IS pressed — check edge detect */
+    /* --- Key IS pressed: edge detect --- */
     /* CMP byte ptr [g_space_was_down], 0 */
     cave[p++] = 0x80; cave[p++] = 0x3D;
     *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
     cave[p++] = 0x00;
-    /* JNE .done (already down, skip) */
-    cave[p++] = 0x75; cave[p++] = 0x00;  /* placeholder */
-    int jne_done_pos = p - 1;
+    /* JNE .done (already pressed, skip) */
+    cave[p++] = 0x75; cave[p++] = 0x00;
+    int jne_already = p - 1;
 
-    /* Rising edge! Apply jump velocity: MOV DWORD PTR [ESI+0x174], 0x43FA0000 */
+    /* --- Rising edge! Apply jump: MOV DWORD PTR [ESI+0x174], 0x43FA0000 --- */
     cave[p++] = 0xC7; cave[p++] = 0x86;
     *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
-    *(DWORD*)(cave + p) = jump_vel_bits; p += 4;
+    *(DWORD*)(cave + p) = JUMP_VELOCITY_BITS; p += 4;
 
     /* Set g_space_was_down = 1 */
     cave[p++] = 0xC6; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
     cave[p++] = 0x01;
 
+    /* Increment g_jump_count */
+    /* MOV EAX, [g_jump_count] */
+    cave[p++] = 0xA1;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
+    /* INC EAX */
+    cave[p++] = 0x40;
+    /* MOV [g_jump_count], EAX */
+    cave[p++] = 0xA3;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
+
     /* JMP .done */
-    cave[p++] = 0xEB; cave[p++] = 0x00;  /* placeholder */
-    int jmp_done_pos = p - 1;
+    cave[p++] = 0xEB; cave[p++] = 0x00;
+    int jmp_done = p - 1;
 
     /* .not_pressed: */
     int not_pressed_label = p;
@@ -371,58 +331,45 @@ static void install_hook(void)
     DWORD jmp_back = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
     *(DWORD*)(cave + p) = jmp_back; p += 4;
 
-    /* Now fix up all the placeholder jumps */
-    /* JNZ .done (player_index check) */
-    cave[jnz1_pos] = (BYTE)(done_label - (jnz1_pos + 1));
-    /* JNZ .done (fall_mode check) */
-    cave[jnz2_pos] = (BYTE)(done_label - (jnz2_pos + 1));
-    /* JNZ .done (is_falling check) */
-    cave[jnz3_pos] = (BYTE)(done_label - (jnz3_pos + 1));
-    /* JZ .done (App null check) */
-    cave[jz1_pos] = (BYTE)(done_label - (jz1_pos + 1));
-    /* JZ .done (KeyboardDevice null check) */
-    cave[jz2_pos] = (BYTE)(done_label - (jz2_pos + 1));
-    /* JZ .not_pressed (key not down) */
-    cave[jz_not_pressed_pos] = (BYTE)(not_pressed_label - (jz_not_pressed_pos + 1));
-    /* JNE .done (already pressed, skip) */
-    cave[jne_done_pos] = (BYTE)(done_label - (jne_done_pos + 1));
-    /* JMP .done (after applying jump) */
-    cave[jmp_done_pos] = (BYTE)(done_label - (jmp_done_pos + 1));
+    /* Fix up all placeholder jumps */
+    cave[jnz_player]     = (BYTE)(done_label - (jnz_player + 1));
+    cave[jnz_fallmode]   = (BYTE)(done_label - (jnz_fallmode + 1));
+    cave[jnz_isfalling]  = (BYTE)(done_label - (jnz_isfalling + 1));
+    cave[jz_app]         = (BYTE)(done_label - (jz_app + 1));
+    cave[jz_ih]          = (BYTE)(done_label - (jz_ih + 1));
+    cave[jz_kbd]         = (BYTE)(done_label - (jz_kbd + 1));
+    cave[jz_notpressed]  = (BYTE)(not_pressed_label - (jz_notpressed + 1));
+    cave[jne_already]    = (BYTE)(done_label - (jne_already + 1));
+    cave[jmp_done]       = (BYTE)(done_label - (jmp_done + 1));
 
-    /* Now patch the hook site: replace original 7 bytes with JMP + 2 NOPs */
+    /* Patch the hook site: JMP + 2 NOPs */
     DWORD old_protect;
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
-    hook_addr[0] = 0xE9;  /* JMP rel32 */
+    hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_to_cave;
-    hook_addr[5] = 0x90;  /* NOP */
-    hook_addr[6] = 0x90;  /* NOP */
+    hook_addr[5] = 0x90;
+    hook_addr[6] = 0x90;
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
-
-    /* Flush instruction cache */
     FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Patch Thread — waits for game to load, then installs the hook
+ * Patch Thread
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static DWORD WINAPI patch_thread(LPVOID param)
 {
     (void)param;
-
-    /* Wait for the game to fully load and Ball_Update to be callable */
     Sleep(5000);
 
-    /* Verify the hook site has the expected bytes */
+    /* Verify hook site has expected bytes */
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
     BYTE expected[] = { 0x89, 0x8C, 0x24, 0x44, 0x09, 0x00, 0x00 };
     if (memcmp(hook_addr, expected, 7) != 0) {
-        /* Bytes don't match — wrong game version or already patched */
         return 1;
     }
 
     install_hook();
-
     return 0;
 }
 
