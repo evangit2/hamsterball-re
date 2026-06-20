@@ -2289,7 +2289,107 @@
       "struct_offsets": "+0x44C (AthenaList), +0x88C (items), +0xCB0 (min scroll), +0xCB4 (total height), +0xCAC (max), +0xCBC (dirty=1)",
       "xrefs": "1+ call from MainMenu_ctor",
       "batch": 35
+    },
+    {
+      "name": "UIList_SetColorsByName",
+      "address": "0x0044a970",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, undefined4 param_5, char *param_6)",
+      "parameters": "this: UIList* | param_2-5: color values (4 components) | param_6: char* item name to match",
+      "description": "Iterates AthenaList items, matches by __stricmp on item name (+4). Sets 4 color components at item+0xC/+0x10/+0x14/+0x18. 3 calls.",
+      "struct_offsets": "+0x88C (AthenaList), +0x890 (count), +0xC98 (array), +0x894 (iter index). Item: +4 (name), +0xC/+0x10/+0x14/+0x18 (colors)",
+      "xrefs": "3 calls from OptionsMenu_RenderControls, OptionsMenu_ctor, Tourney_SetCurrentLevel",
+      "batch": 36
+    },
+    {
+      "name": "Scene_FindTextureByName",
+      "address": "0x0044aa40",
+      "signature": "void __thiscall ...(void *this, undefined4 *param_1, char *param_2)",
+      "parameters": "this: Scene* | param_1: output struct (5 fields) | param_2: char* texture name",
+      "description": "Searches AthenaList for texture by name via __stricmp. If found: copies texture data from item+0x1C into 5-field output (vtable, data ptr, w, h, format). If not found: zeros output.",
+      "struct_offsets": "+0x88C (AthenaList), +0x890 (count), +0xC98 (array). Item: +4 (name), +0x1C (texture data ptr\u2192+4/+8/+0xC/+0x10)",
+      "xrefs": "4+ calls from GraphicsOptionsMenu_Update",
+      "batch": 36
+    },
+    {
+      "name": "Scene_FindTextureDimensions",
+      "address": "0x0044ab00",
+      "signature": "void __thiscall ...(void *this, undefined4 *param_1, char *param_2)",
+      "parameters": "this: Scene* | param_1: output struct (5 fields) | param_2: char* texture name",
+      "description": "Like FindTextureByName but also measures text width via Font_MeasureText. Returns vtable, data ptr, width, height, measured text width.",
+      "struct_offsets": "+0x88C (AthenaList), +0x890 (count), +0xC98 (array). Item: +4 (ptr\u2192name), +0x1C (tex\u2192+4/+8/+0x10)",
+      "xrefs": "4+ calls from GraphicsOptionsMenu_Update",
+      "batch": 36
+    },
+    {
+      "name": "Scene_AddTextureToList",
+      "address": "0x0044abf0",
+      "signature": "void __thiscall ...(void *this, char *param_1, int param_2)",
+      "parameters": "this: Scene* | param_1: char* texture name | param_2: int (object/value to append)",
+      "description": "Finds texture by name in AthenaList, appends param_2 to the texture's sub-list at +0x28 via AthenaList_Append. Sets dirty flag +0xCBC=1.",
+      "struct_offsets": "+0x88C (AthenaList), +0x890 (count), +0xC98 (array), +0xCBC (dirty). Item: +4 (name), +0x28 (sub-list)",
+      "xrefs": "4+ calls from TimeTrialMenu_ctor",
+      "batch": 36
+    },
+    {
+      "name": "UIList_DeletingDtor",
+      "address": "0x0044ac80",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: UIList* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for UIList. Calls UIList_Cleanup then _free if bit 0. 1 DATA ref from vtable 0x4D6A70.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D6A70",
+      "batch": 36
+    },
+    {
+      "name": "SimpleList_vtbl_Init",
+      "address": "0x0044aca0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: SimpleList* this \u2014 sets vtable only",
+      "description": "Minimal vtable initializer. Sets vtable to PTR_LAB_004D6AE0. Called from Unwind handlers for exception cleanup.",
+      "struct_offsets": "+0x00 (vtable\u21920x4D6AE0)",
+      "xrefs": "4+ calls from Unwind handlers",
+      "batch": 36
+    },
+    {
+      "name": "RumbleScore_ctor",
+      "address": "0x0044ad50",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: RumbleScore* (vtable=0x4D6AEC) | param_1: undefined4 (stored at +4)",
+      "description": "Constructor for RumbleScore (arena score display). Stores param_1 at +4, sets vtable 0x4D6AEC. Initializes SSO string at +0x14. Sets scale=1.0f (+0x20). Randomly selects one of 3 scale multipliers (0.02, 0.03, 0.04) via RNG_Rand(0-2). 4+ calls.",
+      "struct_offsets": "+0x04 (param_1), +0x14 (SSO string), +0x20 (scale=1.0), +0x24 (random scale mult: 0.02/0.03/0.04)",
+      "xrefs": "4+ calls from Ball_CreateTrailParticles, CreateSpinner, RumbleObject_Update, RaceResults",
+      "batch": 36
+    },
+    {
+      "name": "RumbleScoreListA_Ctor",
+      "address": "0x0044ae60",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: RumbleScoreListA* (vtable=0x4D6AF8) | param_1: undefined4 (score data)",
+      "description": "Constructor for RumbleScoreListA variant. Calls RumbleScore_ctor, overrides vtable to 0x4D6AF8. Multiplies scale (+0x24) by _DAT_004CF468. 1 call.",
+      "struct_offsets": "+0x24 (scale \u00d7 _DAT_004CF468)",
+      "xrefs": "1 call from 0x439CA4",
+      "batch": 36
+    },
+    {
+      "name": "RumbleScoreListB_Ctor",
+      "address": "0x0044ae90",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: RumbleScoreListB* (vtable=0x4D6B04) | param_1: undefined4 (score data)",
+      "description": "Constructor for RumbleScoreListB variant. Calls RumbleScore_ctor, overrides vtable to 0x4D6B04. Multiplies scale (+0x24) by _DAT_004CF468. 1 call.",
+      "struct_offsets": "+0x24 (scale \u00d7 _DAT_004CF468)",
+      "xrefs": "1 call from 0x43CF3C",
+      "batch": 36
+    },
+    {
+      "name": "RaceResults_Ctor",
+      "address": "0x0044aec0",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: RaceResults* (vtable=0x4D6B10) | param_1: undefined4 (stored at +4)",
+      "description": "Constructor for RaceResults display. Calls RumbleScore_ctor, overrides vtable to 0x4D6B10. Initializes Vec3 at +0x28. Calls Matrix_Scale4x4 (0.5,0.5,0.5,1.0), stores result at +0x2C through +0x38. Calls Matrix_Identity. 1 call.",
+      "struct_offsets": "+0x28 (Vec3), +0x2C/+0x30/+0x34/+0x38 (scale matrix: 0.5,0.5,0.5,1.0)",
+      "xrefs": "1 call from 0x43CDAF",
+      "batch": 36
     }
   ],
-  "total_documented": 220
+  "total_documented": 230
 }
