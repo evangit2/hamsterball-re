@@ -1,247 +1,635 @@
-# Hamsterball UI Text Elements: Adding Custom On-Screen Text
+# Hamsterball UI Text Elements: Drawing On-Screen Text
 
-**Scope:** Original `Hamsterball.exe` (PE32, i386, Athena engine, VS2003).  
-**Method:** Direct Ghidra decompilation and PE disassembly.  
-**Last Updated:** 2026-06-14
+**Scope:** Original `Hamsterball.exe` (PE32, i386, Athena engine, VS2003).
+**Method:** Direct Ghidra decompilation and disassembly verification.
+**Last Updated:** 2026-06-20
 
 ---
 
 ## 1. Overview
 
-Hamsterball already has a small set of text-drawing helpers that render bitmap fonts in 2-D screen space.  This document explains how to add your own on-screen text elements — for example a HUD label, a timer overlay, a debug readout, or a custom message — using the engine's existing functions.
+This document explains how to draw text on screen in Hamsterball using the
+engine's built-in bitmap-font rendering pipeline. It covers the correct `this`
+(Font*) pointer chain, function signatures, color/transform struct layout, and
+practical DLL-mod examples.
 
-The two main approaches are:
-
-1. **Menu-driven / UIList text** — change the text of an existing menu item with `UIList_SetTextByName`.
-2. **Free 2-D screen text** — call `UI_DrawTextCentered`, `UI_DrawTextShadow`, or `Font_DrawCentered` from any render hook.
-
-This document covers both.
-
----
-
-## 2. Core Text-Drawing Functions
-
-| Function | Address | Purpose |
-|---|---|---|
-| `UI_DrawTextShadow` | `0x004012C0` | Draws a string with a drop-shadow effect. |
-| `UI_DrawTextCentered` | `0x00409C60` | Draws a string centered around `(x, y)`. |
-| `UI_DrawTextCenteredAbsolute` | `0x004013A0` | Centered text with absolute coordinate semantics. |
-| `UI_DrawTextShadow_Wrapper` | `0x00409B90` | Convenience wrapper around `UI_DrawTextShadow`. |
-| `Font_DrawCentered` | `0x0042C870` | Lower-level: measures text, then calls `Font_DrawGlyph`. |
-| `Font_MeasureText` | `0x00456E20` | Returns pixel width of a string. |
-| `Font_DrawGlyph` | `0x00457440` | Single-character glyph renderer. |
-| `UIList_SetTextByName` | `0x0044A8B0` | Updates text of an existing menu item by ID. |
-| `AthenaString_SprintfToBuffer` | `0x004BAE43` | Safe `printf`-family string formatter. |
-| `CRT_vsprintf` | `0x004BC768` | Standard CRT `vsprintf`. |
+The old version of this doc incorrectly described the `this` pointer as
+"GraphicsDevice/App" and gave wrong parameter descriptions. All findings below
+are verified against raw Ghidra decompilation and cross-referenced with actual
+call sites in the game code.
 
 ---
 
-## 3. Free On-Screen Text
+## 2. The Font Object
 
-### 3.1 Simplest entry point: `UI_DrawTextCentered`
+All text drawing functions are `__thiscall` with `this` = a **Font object
+pointer**, NOT the App, GraphicsDevice, or Scene.
 
-From the decompilation:
+### 2.1 Font* pointer chain from App
 
-```cpp
-void __thiscall
-UI_DrawTextCentered(void *this, byte *text, int x, int y, int z_or_layer,
-                   undefined4 param_6, undefined4 r, undefined4 g, undefined4 b,
-                   undefined4 param_10, undefined4 param_11, undefined4 param_12,
-                   undefined4 param_13, undefined4 param_14, undefined4 param_15);
+The global App pointer is at `0x005341E0`:
+
+```
+void* g_App = *(void**)0x005341E0;
 ```
 
-* `this` — usually the active `GraphicsDevice` / `App` pointer.
-* `text` — null-terminated ASCII string.
-* `x`, `y` — screen pixel coordinates.
-* `r`, `g`, `b` — color arguments (exact encoding is RGB triple or packed; verify in `Font_DrawGlyph`).
-* The remaining arguments are transforms / font state / scale; in most cases you can pass identity/default values.
+The App object stores pointers to loaded Font objects at these offsets
+(verified via `decomp_resource_manifest.c` — the master asset loader at
+`0x0042A8C0`):
 
-**Usage example:**
+| App Offset | Font Path                  | Usage                     |
+|------------|----------------------------|---------------------------|
+| `+0x318`   | `fonts\showcardgothic28`   | Main title / UI text      |
+| `+0x31C`   | `fonts\showcardgothic14`   | Small label text          |
+| `+0x324`   | `fonts\arialnarrow12bold`  | UI detail text            |
+| `+0x328`   | `fonts\showcardgothic72`   | Race timer digits (large) |
+| `+0x320`   | `fonts\showcardgothic16`   | Info text                 |
 
-```cpp
-char buf[256];
-AthenaString_SprintfToBuffer(buf, "FPS: %.1f", current_fps);
-UI_DrawTextCentered(app_ptr, buf, 400, 30, 0,
-                  0, 0xFFFFFFFF, 0, 0, 0, 0, 0, 0, 0, 0);
-```
-
-> **Note:** The exact color argument packing is not fully documented here.  The engine's font functions accept either separate RGBA floats or a packed color depending on the call path.  Disassemble `Font_DrawGlyph` (`0x00457440`) for the precise layout when building a patch.
-
-### 3.2 Shadowed text: `UI_DrawTextShadow`
+### 2.2 How to get the Font* in a DLL mod
 
 ```cpp
-void __thiscall
-UI_DrawTextShadow(void *this, byte *text, int x, int y, int shadow_dx, int shadow_dy,
-                 undefined4 param_6, undefined4 shadow_color,
-                 undefined4 r, undefined4 g, undefined4 b,
-                 undefined4 param_10, undefined4 param_11,
-                 undefined4 param_12, undefined4 param_13,
-                 undefined4 param_14, undefined4 param_15);
+// Global App pointer (Athena engine)
+void* g_App = *(void**)0x005341E0;
+
+// Get font pointers
+void* font_title    = *(void**)((char*)g_App + 0x318);  // showcardgothic28
+void* font_small    = *(void**)((char*)g_App + 0x31C);  // showcardgothic14
+void* font_detail   = *(void**)((char*)g_App + 0x324);  // arialnarrow12bold
+void* font_timer    = *(void**)((char*)g_App + 0x328);  // showcardgothic72
+void* font_info     = *(void**)((char*)g_App + 0x320);  // showcardgothic16
 ```
 
-This draws the same text twice: once offset by `(shadow_dx, shadow_dy)` with the shadow color, and once at `(x, y)` with the foreground color.  It is what the UI uses for readable labels over bright backgrounds.
+### 2.3 Font struct layout (from `LoadFont` at `0x00457130`)
 
-### 3.3 Lower-level: `Font_DrawCentered`
+| Offset | Type     | Field                          |
+|--------|----------|--------------------------------|
+| `+0x00`| `void*`  | vtable                         |
+| `+0x04`| `void*`  | Graphics device ptr            |
+| `+0x08`| AthenaList| Glyph texture list             |
+| `+0x420`| `int`   | Space width                    |
+| `+0x424`| `int`   | Max line height               |
+| `+0x428`| `float` | Scale (default 1.0 = `0x3f800000`) |
+| `+0x42C`| `char[0x500]` | Per-glyph table (0x14 bytes × 128 entries) |
 
-```cpp
-void __thiscall
-Font_DrawCentered(void *this, byte *text, int x, int y,
-                 undefined4 color_or_param4, undefined4 r, undefined4 g, undefined4 b,
-                 undefined4 param_8);
-```
+Each glyph entry at `font + char × 0x14 + 0x42C`:
 
-This function measures the text with `Font_MeasureText`, computes the centered origin, and calls `Font_DrawGlyph`.  It is a good choice when you do **not** want a shadow and want direct color control.
+| Offset | Type  | Field         |
+|--------|-------|---------------|
+| `+0x00`| `char`| Valid flag    |
+| `+0x04`| `int` | advance_width |
+| `+0x08`| `int` | offset_x      |
+| `+0x0C`| `int` | offset_y      |
+| `+0x10`| `int` | width         |
+| `+0x14`| `void*`| sprite ptr   |
+
+> **Note:** The glyph entry offsets are approximate based on `LoadFont` and
+> `Font_DrawGlyph` decompilation. The key fields used by the renderer are:
+> valid flag (`+0x00`), advance width (`+0x04`→`+0x430` via index math),
+> and sprite pointer (`+0x43C`).
 
 ---
 
-## 4. Where to Call Text Functions
+## 3. Color / Transform Struct
 
-### 4.1 During a menu update
+The text-drawing functions use a **5-DWORD struct** for color/transform data.
+This is NOT a simple RGBA int — it's a struct with a vtable pointer followed
+by 4 floats (R, G, B, A).
 
-`GraphicsOptionsMenu_Update` (`0x00441E70`) is the per-frame update/render function for the options menu.  It is an ideal hook for text that must change every frame.
+### 3.1 Static identity transform
 
-### 4.2 During gameplay
+A pre-built static struct exists at `0x004CF300`:
 
-The scene's main render/update path is `Scene_UpdateBallsAndState` / `Scene_Render` (around `0x46BD80` region).  Hooking there lets you draw HUD text during a race.  The `App` object has an active `Scene` pointer at `App + 0x0C`, and the scene holds the ball list, timer, and score data.
+| Offset | Value         | Meaning       |
+|--------|---------------|---------------|
+| `+0x00`| `0x00401070`  | vtable (Vec3_dtor) |
+| `+0x04`| `255.0f`      | R (white)     |
+| `+0x08`| (garbage)     | G             |
+| `+0x0C`| `1.45f`       | B / scale     |
 
-### 4.3 A dedicated render callback
+In practice, most callers use `Matrix_Scale4x4` to build a fresh 4×4 matrix on
+the stack, then pass its address. The first DWORD of the matrix is treated as a
+vtable pointer by the rendering code.
 
-If you are writing a DLL mod or patch, the cleanest approach is:
+### 3.2 How the game builds color structs
 
-1. Allocate a small struct in your injected code.
-2. Hook the chosen render/update function via a 5-byte `jmp` or `__declspec(naked)` trampoline.
-3. In your hook, format the string, call `UI_DrawTextCentered`, then jump back to the original function.
-
----
-
-## 5. Formatting Strings: `AthenaString_SprintfToBuffer`
-
-`AthenaString_SprintfToBuffer` (`0x004BAE43`) is the engine's safe wrapper around the CRT formatter.  It behaves like `sprintf` into a caller-provided buffer and supports all standard `printf` specifiers including `%f`.
-
-Example formats useful for UI text:
+From `TourneyContinueDialog_Render` (`0x00445F50`):
 
 ```cpp
-char buf[1024];
+// The game creates two 20-byte structs on the stack
+// (one for text color, one for shadow color)
+// via Matrix_Scale4x4, then passes them to UI_DrawTextShadow.
 
-// Integer
-AthenaString_SprintfToBuffer(buf, "Score: %d", score);
+float text_color[5];    // [vtable, R, G, B, A]
+float shadow_color[5];   // [vtable, R, G, B, A]
 
-// Float with one decimal
-AthenaString_SprintfToBuffer(buf, "Speed: %.1f", speed);
-
-// String
-AthenaString_SprintfToBuffer(buf, "Level: %s", level_name);
-
-// Mixed
-AthenaString_SprintfToBuffer(buf, "P1: %d  P2: %d  Time: %.1f",
-                             p1_score, p2_score, timer);
+// Matrix_Scale4x4 fills the struct with a scale matrix
+Matrix_Scale4x4(text_color, 0, 0, 0, 1.0f);    // identity
+Matrix_Scale4x4(shadow_color, 1.0f, 1.0f, 1.0f, 1.0f); // white shadow
 ```
 
-The game uses this same pattern in `OptionsMenu_ctor` (lines 100–112 of the decompilation) to set dynamic menu labels such as `"Resolution: %d x %d"`.
+**Practical shortcut:** Use `0x004CF300` as the vtable pointer value and fill
+the rest with floats. Or better yet, use the wrapper function (§4.3) which
+auto-fills the vtable.
 
 ---
 
-## 6. Updating Existing Menu Text
+## 4. Text Drawing Functions
 
-If you want to show dynamic text inside an existing menu entry instead of drawing free-floating screen text, use `UIList_SetTextByName`:
+### 4.1 `UI_DrawTextShadow` — Full control (15 stack params + this)
+
+**Address:** `0x004012C0`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x3C` (15 × 4 = 60 bytes cleaned)
 
 ```cpp
-char buf[256];
-AthenaString_SprintfToBuffer(buf, "Ping: %d ms", ping_ms);
-UI_SetTextByName(menu_ptr, buf, "MYCUSTOMID");
+void __thiscall UI_DrawTextShadow(
+    Font* this,           // ECX
+    char* text,           // [ESP+0x00] param_1
+    int x,                // [ESP+0x04] param_2
+    int y,                // [ESP+0x08] param_3
+    int shadow_dx,        // [ESP+0x0C] param_4
+    int shadow_dy,        // [ESP+0x10] param_5
+    void* text_xform_vtbl,// [ESP+0x14] param_6  — vtable ptr for text color
+    float text_r,         // [ESP+0x18] param_7
+    float text_g,         // [ESP+0x1C] param_8
+    float text_b,         // [ESP+0x20] param_9
+    float text_a,         // [ESP+0x24] param_10
+    void* shdw_xform_vtbl,// [ESP+0x28] param_11 — vtable ptr for shadow color
+    float shadow_r,       // [ESP+0x2C] param_12
+    float shadow_g,       // [ESP+0x30] param_13
+    float shadow_b,       // [ESP+0x34] param_14
+    float shadow_a        // [ESP+0x38] param_15
+);
 ```
 
-Requirements:
+This is the lowest-level text function. It draws text with a drop-shadow.
+The color params are part of 5-DWORD transform structs (vtable + 4 floats).
 
-* The menu entry with ID `"MYCUSTOMID"` must have been created with `UIList_AddItem(..., "MYCUSTOMID", ...)`.
-* The ID string comparison is case-insensitive (`__stricmp`).
-* The old string is freed and a new copy is allocated automatically.
+**This is the most complex function and hardest to call directly.**
+Prefer the wrapper (§4.3) or Font_DrawCentered (§4.4) instead.
 
-This is the **safest** way to display changing text, because it reuses the existing menu layout, selection, and rendering code.
+### 4.2 `UI_DrawTextCentered` — Centered with shadow (15 params + this)
 
----
+**Address:** `0x00409C60`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x3C` (15 × 4 = 60 bytes cleaned)
 
-## 7. Measuring and Positioning Text
+Same signature as `UI_DrawTextShadow`. Internally:
+1. Calls `Font_MeasureText(this, text)` to get text width
+2. Subtracts width/2 from x to center
+3. Calls `UI_DrawTextShadow`
 
-Use `Font_MeasureText` (`0x00456E20`) to compute pixel width before drawing if you need custom alignment:
+**The `this` pointer MUST be a Font\*, obtained via `*(App + 0x318)` etc.**
+
+### 4.3 `UI_DrawTextShadow_Wrapper` — Easiest high-level (15 params + this)
+
+**Address:** `0x00409B90`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x3C` (15 × 4 = 60 bytes cleaned)
 
 ```cpp
-int width = Font_MeasureText(text);
-int left_aligned_x = 0;
-int right_aligned_x = screen_width - width;
-int centered_x = screen_width / 2 - width / 2;
+void __thiscall UI_DrawTextShadow_Wrapper(
+    Font* this,           // ECX
+    char* text,           // param_1  — text to draw
+    int x,                // param_2  — screen X
+    int y,                // param_3  — screen Y
+    int shadow_dx,        // param_4  — shadow pixel offset X (typically 2-5)
+    int shadow_dy,        // param_5  — shadow pixel offset Y (typically 2-5)
+    void* unused_6,       // param_6  — IGNORED (replaced with &0x4CF300 internally)
+    float text_r,         // param_7  — text red   (0.0-1.0)
+    float text_g,         // param_8  — text green (0.0-1.0)
+    float text_b,         // param_9  — text blue  (0.0-1.0)
+    float text_a,         // param_10 — text alpha (0.0-1.0)
+    void* unused_11,      // param_11 — IGNORED (replaced with &0x4CF300 internally)
+    float shadow_r,      // param_12 — shadow red
+    float shadow_g,       // param_13 — shadow green
+    float shadow_b,       // param_14 — shadow blue
+    float shadow_a        // param_15 — shadow alpha
+);
 ```
 
-`Font_MeasureText` returns the total advance width in pixels for the current font.  The height of a line is controlled by the font's own metrics; there is no separate `Font_MeasureHeight` exposed in the simple helpers.
+**This is the RECOMMENDED function for DLL mods.** It auto-fills the vtable
+pointers (`0x4CF300`) for both color structs, so you only pass raw RGBA floats.
+Pass `0` (NULL) for params 6 and 11 — they're overwritten internally.
 
----
+### 4.4 `Font_DrawCentered` — No shadow, auto-centered (8 params + this)
 
-## 8. Font and Color Notes
-
-* The game loads fonts through `LoadFont` (`0x00457130`) and stores them in a `FontList`.
-* `Menu_AddFont` (`0x00475390`) is used during menu setup to register a font for UI rendering.
-* Most UI text uses a single engine font.  If you add custom text during a menu, the current menu font is already active.
-* Color handling varies by call path.  Some functions take packed `0xAARRGGBB`-style values, others take separate `r, g, b` floats in the range `0.0..1.0`.  Inspect the disassembly of `Font_DrawGlyph` (`0x00457440`) for the exact convention before hard-coding colors.
-
----
-
-## 9. Practical Example: HUD Timer Overlay
-
-Suppose you want to draw the current scene timer at the top center of the screen during gameplay.
+**Address:** `0x0042C870`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x20` (8 × 4 = 32 bytes cleaned)
 
 ```cpp
-void __fastcall MyHudHook(void* scene_or_app)
-{
-    // Locate the timer value.  In arena/rumble mode, the timer is at Scene + 0x47AC.
-    int timer_ticks = *(int*)((char*)scene_or_app + 0x47AC);
-    float seconds = timer_ticks / 60.0f;
+void __thiscall Font_DrawCentered(
+    Font* this,           // ECX
+    char* text,           // param_1
+    int x,                // param_2  — center X
+    int y,                // param_3  — Y
+    void* unused_4,       // param_4  — IGNORED (overwritten with &0x4CF300)
+    float r,              // param_5  — red   (0.0-1.0)
+    float g,              // param_6  — green (0.0-1.0)
+    float b,              // param_7  — blue  (0.0-1.0)
+    float a               // param_8  — alpha (0.0-1.0)
+);
+```
 
-    char buf[64];
-    AthenaString_SprintfToBuffer(buf, "TIME: %.1f", seconds);
+This is the **simplest text function** — no shadow, auto-centered, auto-fills
+the transform vtable. Internally calls `Font_MeasureText` then `Font_DrawGlyph`.
 
-    // Draw centered near the top (assume 800x600 screen)
-    UI_DrawTextCentered(app_or_graphics_ptr, buf, 400, 20, 0,
-                       0, 0xFFFFFFFF, 0, 0, 0, 0, 0, 0, 0, 0);
+**Note on color:** When font scale (`Font+0x428`) == 1.0f (the default), the
+color params are IGNORED — each glyph sprite is drawn via `Sprite_DrawRect`
+which uses `Color_RandomRGBA()` internally. To get colored text, you must
+either set `Font+0x428` to something other than 1.0 (which triggers the
+`Scene_CreateObject4f` path that uses the color params), or accept the default
+white text from the sprite textures.
+
+### 4.5 `Font_DrawGlyph` — Raw glyph rendering (8 params + this)
+
+**Address:** `0x00457440`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x20` (8 × 4 = 32 bytes cleaned)
+
+```cpp
+void __thiscall Font_DrawGlyph(
+    Font* this,           // ECX
+    char* text,           // param_1  — text (iterates each char)
+    int x,                // param_2  — start X (left-aligned)
+    int y,                // param_3  — start Y
+    void* xform_vtbl,     // param_4  — vtable ptr (use 0x4CF300)
+    float r,              // param_5
+    float g,              // param_6
+    float b,              // param_7
+    float a               // param_8
+);
+```
+
+This is the lowest-level text function. Iterates each character, looks up its
+glyph at `Font + char × 0x14 + 0x42C`, and draws it via `Sprite_DrawRect`
+(scale 1.0) or `Scene_CreateObject4f` (scaled). Same color caveat as
+`Font_DrawCentered` — colors only work when scale ≠ 1.0.
+
+### 4.6 `Font_MeasureText` — Measure string width
+
+**Address:** `0x00456E20`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x04` (1 × 4 = 4 bytes cleaned)
+
+```cpp
+int __thiscall Font_MeasureText(Font* this, char* text);
+```
+
+Returns total advance width in pixels for the string. Uses `Font+0x428` (scale)
+and each glyph's advance width at `Font + char × 0x14 + 0x430`.
+
+### 4.7 `Font_DrawGlyph3D` — World-space text (18 params + this)
+
+**Address:** `0x00457690`
+**Calling convention:** `__thiscall` (ECX = Font*)
+**RET:** `0x48` (18 × 4 = 72 bytes cleaned)
+
+Draws text in 3D world space with arbitrary orientation vectors. Too complex
+for simple HUD use. Not recommended for DLL mods.
+
+---
+
+## 5. Why `0x409C60` May Not Work
+
+The function at `0x409C60` (`UI_DrawTextCentered`) is **correct and works**,
+but there are several reasons it may fail in practice:
+
+### 5.1 Wrong `this` pointer
+
+The #1 cause of failure. The old version of this doc said `this` was
+"GraphicsDevice/App" — **this is wrong**. The `this` pointer MUST be a `Font*`
+obtained from `App+0x318` (or another font offset). Passing the App, Scene,
+or GraphicsDevice pointer will crash inside `Font_DrawGlyph` when it tries to
+access `this+0x42C` (the glyph table).
+
+**Correct:**
+```cpp
+void* app  = *(void**)0x005341E0;
+void* font = *(void**)((char*)app + 0x318);
+UI_DrawTextCentered(font, "Hello", 400, 300, ...);
+```
+
+**Wrong (will crash):**
+```cpp
+void* app = *(void**)0x005341E0;
+UI_DrawTextCentered(app, "Hello", 400, 300, ...);  // CRASH!
+```
+
+### 5.2 Too many parameters
+
+`UI_DrawTextCentered` takes 15 stack params + ECX (this). If you're calling it
+from C/C++ with `__thiscall`, you must push exactly 15 DWORDs. Many callers
+get the count wrong. Use `Font_DrawCentered` (8 params) or
+`UI_DrawTextShadow_Wrapper` (15 params but auto-fills vtable) instead.
+
+### 5.3 Color struct vtable not set
+
+Params 6 and 11 must be a valid vtable pointer (`0x4CF300`) or the function
+will crash when dereferencing the transform struct. The wrapper function
+(`0x409B90`) handles this automatically.
+
+### 5.4 Font not loaded yet
+
+The font pointers at `App+0x318` etc. are only valid after the resource
+loader (`0x0042A8C0`) has completed. If you call during early initialization,
+the pointer will be NULL. Hook after the loading screen completes.
+
+---
+
+## 6. Recommended Approach for DLL Mods
+
+### 6.1 Best: Use `UI_DrawTextShadow_Wrapper` (`0x409B90`)
+
+This is the easiest function because it auto-fills the color struct vtable:
+
+```cpp
+typedef void (__thiscall *DrawTextShadowWrapper_t)(
+    void* font, char* text, int x, int y,
+    int sx, int sy, void* unused1,
+    float tr, float tg, float tb, float ta,
+    void* unused2, float sr, float sg, float sb, float sa);
+
+// At address 0x409B90 in the original EXE
+DrawTextShadowWrapper_t DrawTextShadowWrapper =
+    (DrawTextShadowWrapper_t)0x00409B90;
+
+void DrawHUDText(const char* text, int x, int y) {
+    void* app  = *(void**)0x005341E0;
+    void* font = *(void**)((char*)app + 0x318);  // showcardgothic28
+
+    if (!font) return;  // font not loaded yet
+
+    DrawTextShadowWrapper(
+        font,                           // ECX = Font*
+        (char*)text,                     // text
+        x, y,                            // position
+        3, 3,                            // shadow offset (3px right, 3px down)
+        (void*)0,                        // unused (auto-filled)
+        1.0f, 1.0f, 1.0f, 1.0f,         // text color: white, opaque
+        (void*)0,                        // unused (auto-filled)
+        0.0f, 0.0f, 0.0f, 1.0f          // shadow color: black, opaque
+    );
 }
 ```
 
-Then hook this function into `Scene_UpdateBallsAndState` or a comparable render path.
+### 6.2 Alternative: Use `Font_DrawCentered` (`0x0042C870`)
+
+Simpler signature (8 params), no shadow, auto-centered:
+
+```cpp
+typedef void (__thiscall *FontDrawCentered_t)(
+    void* font, char* text, int x, int y,
+    void* unused, float r, float g, float b, float a);
+
+FontDrawCentered_t FontDrawCentered =
+    (FontDrawCentered_t)0x0042C870;
+
+void DrawCenteredText(const char* text, int x, int y) {
+    void* app  = *(void**)0x005341E0;
+    void* font = *(void**)((char*)app + 0x318);
+
+    if (!font) return;
+
+    FontDrawCentered(
+        font,                   // ECX = Font*
+        (char*)text,             // text
+        x, y,                    // center position
+        (void*)0,                // unused (auto-filled with 0x4CF300)
+        1.0f, 1.0f, 1.0f, 1.0f  // RGBA (only used if font scale != 1.0)
+    );
+}
+```
+
+### 6.3 Direct assembly call (for inline asm in DLL)
+
+If calling from inline assembly in a bass.dll proxy:
+
+```asm
+; Example: Call UI_DrawTextShadow_Wrapper(font, "Hello", 400, 300, 3, 3, ...)
+; ECX = Font*, 15 stack params
+
+push_immediate 1.0          ; param_15: shadow_alpha (0x3f800000)
+push_immediate 0.0          ; param_14: shadow_blue  (0x0)
+push_immediate 0.0          ; param_13: shadow_green (0x0)
+push_immediate 0.0          ; param_12: shadow_red   (0x0)
+push_immediate 0x4cf300     ; param_11: shadow vtable (or 0 for wrapper)
+push_immediate 1.0          ; param_10: text_alpha
+push_immediate 1.0          ; param_9:  text_blue
+push_immediate 1.0          ; param_8:  text_green
+push_immediate 1.0          ; param_7:  text_red
+push_immediate 0x4cf300     ; param_6:  text vtable (or 0 for wrapper)
+push_immediate 3            ; param_5:  shadow_dy
+push_immediate 3            ; param_4:  shadow_dx
+push_immediate 300          ; param_3:  y
+push_immediate 400          ; param_2:  x
+push_offset hello_str       ; param_1:  text
+mov  ecx, [font_ptr]       ; ECX = Font*
+call dword ptr [0x00409B90] ; UI_DrawTextShadow_Wrapper
+; No add esp needed — function cleans 0x3C bytes via RET 0x3C
+```
 
 ---
 
-## 10. Common Pitfalls
+## 7. Font Object Access Paths (for reference)
 
-1. **Wrong `this` pointer.**  `UI_DrawTextCentered` expects the graphics/font device, not a `Scene*` or `App*`.  Passing the wrong pointer will crash inside `Font_DrawGlyph`.
-2. **Uninitialized font.**  Drawing text before the font list is loaded produces missing glyphs or crashes.  Hook after the menu/scene has finished initialization.
-3. **Format-string buffer overflow.**  Always use `AthenaString_SprintfToBuffer` with a fixed-size stack buffer.  Do not call `CRT_vsprintf` directly unless you control the format string completely.
-4. **Wrong color format.**  Verify whether a function wants packed RGBA or separate float channels.  The high-level wrappers and low-level glyph function may differ.
-5. **Registry text not persisted.**  If you need your text content to survive restarts, store the underlying data in the registry via `App_SaveAllConfig` (`0x004284C0`), not the displayed string itself.
+Different game contexts access the font through different object chains:
+
+### 7.1 From Gadget-derived objects (Board, Menu, etc.)
+
+All Gadget-derived objects store the App pointer at `+0x878`:
+
+```
+this+0x878 = App
+Font = *(App + 0x318)   // or 0x31C, 0x324, 0x328, 0x320
+```
+
+Verified call sites:
+- `RumbleBoard_Render` (`0x421910`): `MOV ECX,[ESI+0x878]; MOV ECX,[ECX+0x328]`
+- `TourneyMenu_Render` (`0x00450AF0`): `UI_DrawTextShadow(*([this+0x878]+0x318), ...)`
+- `HighScoreEntry_Render` (`0x0042BD40`): `*([this+0x878]+0x318)`
+- `TourneyContinueDialog_Render` (`0x00445F50`): `*([this+0x878]+0x318)`
+- `OkayDialog_ctor` (`0x00440E70`): `*([this+0x878]+0x318)`
+
+### 7.2 From SimpleMenu-derived objects
+
+SimpleMenu caches the font pointer at `+0x87C`:
+
+```
+this+0x87C = *(App + 0x318)  // set in SimpleMenu_ctor (0x00448F20)
+```
+
+Verified: `UIList_Render` (`0x449D40`) line: `MOV EBP,[EDI+0x87C]`
+
+### 7.3 From ConfirmMenu_Ctor objects (RaceGoalReached)
+
+```
+this+0x0C = [parent+0x878] = App
+Font = *(App + 0x318)
+```
+
+Verified: `ConfirmMenu_Render` (`0x44CD10`): `MOV EAX,[ESI+0x0C]; MOV ECX,[EAX+0x318]`
+
+### 7.4 From CreditsScreen
+
+```
+this+0xCDC = App  (stored in ConfirmMenu_ctor)
+Font = *(App + 0x318)
+```
+
+### 7.5 Direct from global App
+
+```
+void* g_App = *(void**)0x005341E0;
+Font = *(void**)((char*)g_App + 0x318);
+```
+
+This is the most reliable approach for DLL mods — no need to trace through
+object hierarchies.
+
+---
+
+## 8. Changing Font Scale for Colored Text
+
+By default, font scale (`Font+0x428`) = 1.0f, which causes `Font_DrawGlyph`
+to use the fast `Sprite_DrawRect` path that ignores color params. To get
+colored text:
+
+```cpp
+// Temporarily change font scale to enable colored rendering
+float* font_scale = (float*)((char*)font + 0x428);
+float old_scale = *font_scale;
+*font_scale = 1.2f;  // any value != 1.0 triggers the colored path
+
+FontDrawCentered(font, text, x, y, 0, r, g, b, a);
+
+*font_scale = old_scale;  // restore
+```
+
+The game itself does this in `HighScoreEntry_Render` (`0x0042BD40`):
+```cpp
+*(float*)(font + 0x428) = 0x3f400000;  // 0.75f — shrink for subtitle
+// ... draw text ...
+*(float*)(font + 0x428) = 0x3f800000;  // 1.0f — restore
+```
+
+---
+
+## 9. String Formatting
+
+Use `AthenaString_SprintfToBuffer` (`0x004BAE43`) for safe formatting:
+
+```cpp
+typedef void (*AthenaSprintf_t)(char* buffer, const char* fmt, ...);
+AthenaSprintf_t AthenaSprintf = (AthenaSprintf_t)0x004BAE43;
+
+char buf[256];
+AthenaSprintf(buf, "Score: %d", score);
+DrawHUDText(buf, 10, 10);
+```
+
+---
+
+## 10. Practical Example: HUD Timer Overlay
+
+```cpp
+// In bass.dll proxy — hook during render frame
+void OnRenderFrame() {
+    void* app  = *(void**)0x005341E0;
+    if (!app) return;
+
+    void* font = *(void**)((char*)app + 0x318);  // showcardgothic28
+    if (!font) return;
+
+    // Get scene timer (arena mode: Scene+0x47AC)
+    void* scene = *(void**)((char*)app + 0x184);
+    if (!scene) return;
+
+    int timer = *(int*)((char*)scene + 0x47AC);
+    float seconds = timer / 60.0f;
+
+    char buf[64];
+    typedef void (*Sprintf_t)(char*, const char*, ...);
+    Sprintf_t Sprintf = (Sprintf_t)0x004BAE43;
+    Sprintf(buf, "TIME: %.1f", seconds);
+
+    // Draw using wrapper (simplest API)
+    typedef void (__thiscall *DrawText_t)(void*, char*, int, int, int, int,
+        void*, float, float, float, float, void*, float, float, float, float);
+    DrawText_t DrawText = (DrawText_t)0x00409B90;
+
+    DrawText(font, buf, 400, 20, 3, 3,
+        0, 1.0f, 1.0f, 1.0f, 1.0f,    // white text
+        0, 0.0f, 0.0f, 0.0f, 1.0f);   // black shadow
+}
+```
 
 ---
 
 ## 11. Quick Reference
 
-| Task | Function | Address |
+| Function | Address | Params (stack+this) | RET | Purpose |
+|---|---|---|---|---|
+| `UI_DrawTextShadow_Wrapper` | `0x00409B90` | 15+1 | `0x3C` | **Best for mods** — auto-fills vtable |
+| `UI_DrawTextCentered` | `0x00409C60` | 15+1 | `0x3C` | Centered + shadow |
+| `UI_DrawTextShadow` | `0x004012C0` | 15+1 | `0x3C` | Raw shadowed text |
+| `Font_DrawCentered` | `0x0042C870` | 8+1 | `0x20` | Simplest — centered, no shadow |
+| `Font_DrawGlyph` | `0x00457440` | 8+1 | `0x20` | Raw per-char rendering |
+| `Font_MeasureText` | `0x00456E20` | 1+1 | `0x04` | Measure string width |
+| `Font_DrawGlyph3D` | `0x00457690` | 18+1 | `0x48` | 3D world-space text (complex) |
+| `LoadFont` | `0x00457130` | 2+1 | — | Load a font from disk |
+| `AthenaString_SprintfToBuffer` | `0x004BAE43` | — | — | Safe printf |
+| `UIList_SetTextByName` | `0x0044A8B0` | — | — | Change menu item text |
+| `UIList_AddItem` | `0x004497F0` | — | — | Add menu item |
+
+### Font offsets from App (`0x005341E0`)
+
+| Offset | Font | Purpose |
 |---|---|---|
-| Draw centered screen text | `UI_DrawTextCentered` | `0x00409C60` |
-| Draw shadowed screen text | `UI_DrawTextShadow` | `0x004012C0` |
-| Draw centered no-shadow | `Font_DrawCentered` | `0x0042C870` |
-| Measure text width | `Font_MeasureText` | `0x00456E20` |
-| Format a string | `AthenaString_SprintfToBuffer` | `0x004BAE43` |
-| Change menu item text | `UIList_SetTextByName` | `0x0044A8B0` |
-| Add a menu item | `UIList_AddItem` | `0x004497F0` |
-| Save persistent values | `App_SaveAllConfig` | `0x004284C0` |
+| `+0x318` | showcardgothic28 | Main title / UI text |
+| `+0x31C` | showcardgothic14 | Small label text |
+| `+0x320` | showcardgothic16 | Info text |
+| `+0x324` | arialnarrow12bold | UI detail text |
+| `+0x328` | showcardgothic72 | Race timer digits |
+
+### Font struct key offsets
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0x428` | `float` | Scale (1.0 = no color, ≠1.0 = colored) |
+| `+0x424` | `int` | Line height |
+| `+0x42C` | `char[]` | Per-glyph table start |
+
+### Static identity transform
+
+| Address | Value | Purpose |
+|---|---|---|
+| `0x004CF300` | vtable+floats | Default color/transform struct |
 
 ---
 
-## 12. Summary
+## 12. Common Pitfalls
 
-To add a custom UI text element:
+1. **Wrong `this` pointer.** `UI_DrawTextCentered` and all text functions expect
+   a **Font\*** as `this` (ECX), obtained via `*(App + 0x318)`. Passing the App,
+   Scene, GraphicsDevice, or any other pointer will crash in `Font_DrawGlyph`.
 
-1. **Pick a hook point** — menu update (`GraphicsOptionsMenu_Update`), scene render, or your own injected callback.
-2. **Format the string** with `AthenaString_SprintfToBuffer`.
-3. **Draw it** with `UI_DrawTextCentered` / `UI_DrawTextShadow` for free screen text, or `UIList_SetTextByName` for menu-integrated text.
-4. **Use `Font_MeasureText`** if you need custom alignment.
-5. **Persist underlying data** through `App_SaveAllConfig` if needed.
+2. **Too many/few params.** `UI_DrawTextCentered`/`UI_DrawTextShadow` take 15
+   stack params (RET 0x3C). `Font_DrawCentered`/`Font_DrawGlyph` take 8 (RET 0x20).
+   Mismatching the count corrupts the stack.
 
-The engine already provides all necessary primitives; the main work is finding a stable render hook and passing the correct `this` pointer.
+3. **Color struct vtable not set.** Params 6 and 11 of `UI_DrawTextShadow` must
+   be a valid vtable pointer (`0x4CF300`). Use `UI_DrawTextShadow_Wrapper`
+   (`0x409B90`) which auto-fills these — pass 0 for those params.
+
+4. **Colors ignored at scale 1.0.** When `Font+0x428 == 1.0f`, the fast path
+   (`Sprite_DrawRect`) is used and color params are ignored. Set scale ≠ 1.0
+   temporarily for colored text (see §8).
+
+5. **Font not loaded.** Font pointers at `App+0x318` etc. are NULL until the
+   resource loader completes. Always null-check before drawing.
+
+6. **Calling convention.** These are `__thiscall` — Font* goes in ECX, params
+   go on stack right-to-left, callee cleans the stack (RET N). From C, use
+   `__thiscall` typedefs or inline assembly.
