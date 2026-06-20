@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hamsterball Player Clones Mod — Cheat Engine Auto Assembler Script
+  ===================================================================
+
+  WHAT THIS DOES:
+  1. Patches the AI gate so all balls get COMPUTER AI in races AND arenas
+  2. Patches the targeting filter so balls target ALL entities (not just players)
+  3. (Manual) You can use the Lua enable script below to spawn clone balls at runtime
+
+  REQUIREMENTS:
+  - Cheat Engine (any recent version)
+  - Hamsterball.exe running (32-bit process)
+
+  USAGE:
+  1. Open Cheat Engine, attach to Hamsterball.exe
+  2. Load this .CT file or paste the script into Auto Assembler (Ctrl+A)
+  3. Enable the [Enable] section to apply the binary patches
+  4. To spawn clones, use the Lua script at the bottom
+
+  PATCHES:
+  ─ Patch 1: Gate 0 @ 0x004083AE — enable AI in races
+     Original: 0F 84 76 04 00 00  (JZ → skip AI)
+     Patched:  90 90 90 90 90 90  (NOP → AI always runs)
+
+  ─ Patch 2: Targeting filter @ 0x004085CD — target all entities
+     Original: 83 7F 18 FF 74 61  (CMP [edi+0x18],-1; JE skip)
+     Patched:  39 FE 90 90 74 61  (CMP esi,edi; NOP; NOP; JE skip)
+-->
+
+<CheatTable CheatEngineTableVersion="42">
+  <CheatEntries>
+    <CheatEntry>
+      <ID>1</ID>
+      <Description>"Player Clones AI Mod"</Description>
+      <Options moHideChildren="0"/>
+      <LastState/>
+      <VariableType>Auto Assembler Script</VariableType>
+      <AssemblerScript>
+{ Hamsterball Player Clones AI Mod
+  Patches the AI chase logic to work in all modes and target all entities.
+
+  Patch 1: Gate 0 @ 0x004083AE
+    Ball_UpdateAndAI checks: if (collision_contacts==0 && arena_mode==0) skip AI
+    We NOP the JZ so AI always runs — in races AND arenas.
+
+  Patch 2: Targeting filter @ 0x004085CD
+    AI targeting loop skips balls with player_index==-1 (8-balls)
+    We change it to skip only self (cmp esi,edi) so ALL balls are valid targets.
+}
+
+[ENABLE]
+
+// Patch 1: Enable AI in races (NOP the gate JZ)
+// 0x004083AE: 0F 84 76 04 00 00 → 90 90 90 90 90 90
+Hamsterball.exe+83AE:
+  db 90 90 90 90 90 90
+
+// Patch 2: Target all entities (self-exclusion instead of player-only)
+// 0x004085CD: 83 7F 18 FF 74 61 → 39 FE 90 90 74 61
+//   cmp [edi+0x18],-1; je skip  →  cmp esi,edi; nop; nop; je skip
+Hamsterball.exe+85CD:
+  db 39 FE 90 90 74 61
+
+[DISABLE]
+
+// Restore Patch 1
+Hamsterball.exe+83AE:
+  db 0F 84 76 04 00 00
+
+// Restore Patch 2
+Hamsterball.exe+85CD:
+  db 83 7F 18 FF 74 61
+      </AssemblerScript>
+    </CheatEntry>
+
+    <CheatEntry>
+      <ID>2</ID>
+      <Description>"Clone spawn count for each player"</Description>
+      <Options moHideChildren="1"/>
+      <LastState/>
+      <VariableType>4 Bytes</VariableType>
+      <Address>0</Address>
+      <Offsets>
+        <Offset>5E4</Offset>
+        <Offset>0</Offset>
+      </Offsets>
+      <CheatEntries>
+        <CheatEntry>
+          <ID>3</ID>
+          <Description>"Player 1 Clone Count"</Description>
+          <LastState Value="??" RealAddress="00000000"/>
+          <VariableType>4 Bytes</VariableType>
+          <Address>Hamsterball.exe+1341E0</Address>
+          <Offsets/>
+        </CheatEntry>
+        <CheatEntry>
+          <ID>4</ID>
+          <Description>"Player 2 Clone Count"</Description>
+          <LastState Value="??" RealAddress="00000000"/>
+          <VariableType>4 Bytes</VariableType>
+          <Address>Hamsterball.exe+1341E4</Address>
+          <Offsets/>
+        </CheatEntry>
+      </CheatEntries>
+    </CheatEntry>
+
+    <CheatEntry>
+      <ID>5</ID>
+      <Description>"Lua: Spawn Player Clones"</Description>
+      <Options moHideChildren="0"/>
+      <LastState/>
+      <VariableType>Auto Assembler Script</VariableType>
+      <AssemblerScript>
+{ Lua script to spawn AI clones of players.
+
+  This script:
+  1. Finds the Scene/Board pointer by scanning App struct
+  2. Finds each player's ball in the all_balls_list
+  3. Creates N clones using operator_new + Ball_ctor
+  4. Sets AI params and player_index for score sharing
+  5. Adds clones to both ball lists
+
+  HOW TO USE:
+  1. Enable the AI patches (Patch 1 + Patch 2) above
+  2. Start a race or arena with players
+  3. Run this Lua script (Ctrl+Shift+L in Lua engine, or assign to a hotkey)
+
+  Change CLONES_PER_PLAYER below to set how many clones each player gets.
+}
+[ENABLE]
+
+alloc(clones_cmd, 1024)
+registersymbol(clones_cmd)
+
+clones_cmd:
+  // This is just a marker — the actual spawning is done via Lua below
+  ret
+
+[DISABLE]
+
+dealloc(clones_cmd)
+unregistersymbol(clones_cmd)
+
+{$lua}
+-- ============================================================
+-- Hamsterball Player Clone Spawner
+-- ============================================================
+
+if syntaxcheck then return end
+
+-- Configuration: how many clones per player
+local CLONES_PER_PLAYER = {0, 2, 1, 0}  -- P1, P2, P3, P4
+
+-- Constants
+local IMAGE_BASE = 0x400000
+local APP_PTR_ADDR = 0x005341E0
+local OPERATOR_NEW = 0x004BA57B
+local BALL_CTOR    = 0x0040AFE0
+local ATHENA_LIST_APPEND = 0x00453780
+
+local BALL_SCENE      = 0x014
+local BALL_PLAYER_IDX = 0x018
+local BALL_DISPLAY_X  = 0x164
+local BALL_DISPLAY_Y  = 0x168
+local BALL_DISPLAY_Z  = 0x16C
+local BALL_RADIUS_VAL = 0x284
+local BALL_HOME_X     = 0xC60
+local BALL_HOME_Y     = 0xC64
+local BALL_HOME_Z     = 0xC68
+local BALL_CHASE_DIST  = 0xC6C
+local BALL_HOME_RADIUS = 0xC70
+local BALL_SPIN_DIST   = 0xC7C
+local BALL_ALLOC_SIZE = 0xC98
+
+local SCENE_BAD_BALLS = 0x29D4
+local SCENE_ALL_BALLS = 0x2DEC
+local ATHENA_LIST_COUNT = 0x004
+local ATHENA_LIST_ARRAY = 0x40C
+
+local BOARD_VTABLE = 0x4D0260
+
+-- Read a DWORD from a process address
+local function readDWORD(addr)
+  return readInteger(addr)
+end
+
+-- Write a DWORD to a process address
+local function writeDWORD(addr, val)
+  writeInteger(addr, val)
+end
+
+-- Read a FLOAT
+local function readFLOAT(addr)
+  return readFloat(addr)
+end
+
+-- Write a FLOAT
+local function writeFLOAT(addr, val)
+  writeFloat(addr, val)
+end
+
+-- Find the Scene/Board pointer by scanning App struct
+local function findScene()
+  local appPtr = readDWORD(APP_PTR_ADDR)
+  if not appPtr or appPtr == 0 then return nil end
+
+  -- Scan App struct for a pointer to a Board/Scene object
+  for offset = 0x100, 0xA00, 4 do
+    local candidate = readDWORD(appPtr + offset)
+    if candidate and candidate > 0x10000 then
+      -- Check if this pointer's vtable matches Board vtable
+      local vt = readDWORD(candidate)
+      if vt == BOARD_VTABLE then
+        return candidate
+      end
+      -- Also check if it looks like a Scene (has valid ball list at +0x29D4)
+      local list_count = readDWORD(candidate + SCENE_ALL_BALLS + ATHENA_LIST_COUNT)
+      local list_array = readDWORD(candidate + SCENE_ALL_BALLS + ATHENA_LIST_ARRAY)
+      if list_count and list_array and list_count > 0 and list_count < 100 and list_array > 0x10000 then
+        local first_ball = readDWORD(list_array)
+        if first_ball and first_ball > 0x10000 then
+          return candidate
+        end
+      end
+    end
+  end
+  return nil
+end
+
+-- Find a player's ball by player_index
+local function findPlayerBall(scene, playerIdx)
+  local count = readDWORD(scene + SCENE_ALL_BALLS + ATHENA_LIST_COUNT)
+  local array = readDWORD(scene + SCENE_ALL_BALLS + ATHENA_LIST_ARRAY)
+  if not count or not array or count <= 0 then return nil end
+
+  for i = 0, count - 1 do
+    local ball = readDWORD(array + i * 4)
+    if ball and ball > 0x10000 then
+      local idx = readDWORD(ball + BALL_PLAYER_IDX)
+      if idx == playerIdx then
+        return ball
+      end
+    end
+  end
+  return nil
+end
+
+-- Create a clone ball
+local function createClone(scene, srcBall, playerIdx, cloneNum)
+  -- 1. Allocate memory: call operator_new(0xC98)
+  -- We use CE's executeCodeEx for __cdecl calls
+  local mem = executeCodeEx(0, nil, OPERATOR_NEW, BALL_ALLOC_SIZE)
+  if not mem or mem == 0 then
+    print("  Clone " .. cloneNum .. ": operator_new failed")
+    return nil
+  end
+
+  -- 2. Call Ball_ctor(mem, scene) — __thiscall: ECX=mem, stack=scene
+  -- CE's executeCodeEx with calling convention 1 = __thiscall
+  local clone = executeCodeEx(1, nil, BALL_CTOR, mem, scene)
+  if not clone or clone == 0 then
+    print("  Clone " .. cloneNum .. ": Ball_ctor failed")
+    return nil
+  end
+
+  -- 3. Call vtable[1] = Ball_InitPhysicsDefaults — __thiscall
+  local vtable = readDWORD(clone)
+  local initFn = readDWORD(vtable + 4)  -- vtable[1]
+  executeCodeEx(1, nil, initFn, clone)
+
+  -- 4. Copy position from source (offset slightly)
+  local sx = readFLOAT(srcBall + BALL_DISPLAY_X)
+  local sy = readFLOAT(srcBall + BALL_DISPLAY_Y)
+  local sz = readFLOAT(srcBall + BALL_DISPLAY_Z)
+
+  writeFLOAT(clone + BALL_DISPLAY_X, sx + 10.0 * cloneNum)
+  writeFLOAT(clone + BALL_DISPLAY_Y, sy)
+  writeFLOAT(clone + BALL_DISPLAY_Z, sz)
+
+  -- 5. Set home position
+  writeFLOAT(clone + BALL_HOME_X, sx)
+  writeFLOAT(clone + BALL_HOME_Y, sy)
+  writeFLOAT(clone + BALL_HOME_Z, sz)
+
+  -- 6. Set AI params
+  writeFLOAT(clone + BALL_CHASE_DIST, 1500.0)
+  writeFLOAT(clone + BALL_HOME_RADIUS, 500.0)
+  writeFLOAT(clone + BALL_SPIN_DIST, 100.0)
+
+  -- 7. Copy ball radius
+  local radius = readFLOAT(srcBall + BALL_RADIUS_VAL)
+  if radius then
+    writeFLOAT(clone + BALL_RADIUS_VAL, radius)
+  end
+
+  -- 8. Set player_index (score sharing!)
+  writeDWORD(clone + BALL_PLAYER_IDX, playerIdx)
+
+  -- 9. Add to ball lists: AthenaList_Append(list, ball) — __thiscall
+  executeCodeEx(1, nil, ATHENA_LIST_APPEND, scene + SCENE_BAD_BALLS, clone)
+  executeCodeEx(1, nil, ATHENA_LIST_APPEND, scene + SCENE_ALL_BALLS, clone)
+
+  return clone
+end
+
+-- Main spawn function
+local function spawnClones()
+  print("=== Hamsterball Player Clones Mod ===")
+
+  local scene = findScene()
+  if not scene then
+    print("ERROR: Could not find Scene/Board pointer!")
+    print("       Make sure a level or arena is loaded.")
+    return
+  end
+  print(string.format("Scene found at 0x%08X", scene))
+
+  local allCount = readDWORD(scene + SCENE_ALL_BALLS + ATHENA_LIST_COUNT)
+  print("All balls count: " .. (allCount or "?"))
+
+  local totalClones = 0
+  for p = 0, 3 do
+    local n = CLONES_PER_PLAYER[p + 1]
+    if n and n > 0 then
+      local srcBall = findPlayerBall(scene, p)
+      if srcBall then
+        local sx = readFLOAT(srcBall + BALL_DISPLAY_X)
+        local sy = readFLOAT(srcBall + BALL_DISPLAY_Y)
+        local sz = readFLOAT(srcBall + BALL_DISPLAY_Z)
+        print(string.format("Player %d: source at (%.1f, %.1f, %.1f) — creating %d clones",
+              p + 1, sx, sy, sz, n))
+
+        for i = 1, n do
+          local clone = createClone(scene, srcBall, p, i)
+          if clone then
+            print(string.format("  Clone %d: 0x%08X [player_idx=%d]", i, clone, p))
+            totalClones = totalClones + 1
+          end
+        end
+      else
+        print("Player " .. (p+1) .. ": no ball found (skipping)")
+      end
+    end
+  end
+
+  print(string.format("\nTotal clones created: %d", totalClones))
+  print("Done! Clones use COMPUTER AI and share their original player's score.")
+end
+
+-- Run it!
+spawnClones()
+
+{$asm}
+      </AssemblerScript>
+    </CheatEntry>
+  </CheatEntries>
+
+  <UserdefinedSymbols/>
+
+  <LuaScript>
+-- ============================================================
+-- Hamsterball Player Clones Mod — Lua Helper Functions
+-- ============================================================
+--
+-- This script provides reusable functions for spawning clones.
+-- You can call these from the CE Lua console or assign to hotkeys.
+--
+-- Quick start:
+--   1. Enable the AI patches (Patch 1 + Patch 2) in the table
+--   2. Load a level/arena in Hamsterball
+--   3. Run: spawnClones() in the Lua console
+--   4. Or set CLONES_PER_PLAYER and call spawnClones() again
+-- ============================================================
+
+CLONES_PER_PLAYER = {0, 2, 1, 0}  -- P1, P2, P3, P4
+
+-- (Functions are defined in the Auto Assembler script above)
+-- To re-spawn with different counts, change CLONES_PER_PLAYER and re-run.
+
+print("Hamsterball Clones Mod loaded!")
+print("Set CLONES_PER_PLAYER = {P1, P2, P3, P4} and run spawnClones()")
+print("Current: P1=" .. CLONES_PER_PLAYER[1] .. " P2=" .. CLONES_PER_PLAYER[2] ..
+      " P3=" .. CLONES_PER_PLAYER[3] .. " P4=" .. CLONES_PER_PLAYER[4])
+  </LuaScript>
+</CheatTable>
