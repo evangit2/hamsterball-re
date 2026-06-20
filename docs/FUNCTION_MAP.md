@@ -1952,3 +1952,18 @@ Offset | Field | Description
 | 0x004bfd94 | CRT_GetMainArgs | __getmainargs implementation |
 | 0x004bff58 | CRT_IOInit | CRT I/O initialization (stdin/stdout/stderr) |
 | 0x004c0fc9 | CRT_UnlockFileHandle | __unlock_fhandle wrapper |
+
+## Session 2690 — 10 New Function Decompilations
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x00458220 | AABB_TriangleIntersect | Test if triangle edge (2 vertices + FPU 3rd) overlaps AABB. Called 6× by AABB_TriangleTest6Edges for SAT collision test. Returns 1 if intersection, 0 otherwise. |
+| 0x00465EF0 | Collision_TraverseSpatialTree | Recursive octree traversal for broad-phase collision. Walks spatial tree nodes, at leaf level tests each face vertex against query AABB via AABB_ContainsPoint. Matches appended to output AthenaList. Called from Stands_BuildCollision + self-recursive. |
+| 0x00498200 | BitStream_ReadBits | Bit-level reader for Ogg Vorbis audio streams. Reads N bits (1-32) from byte buffer at arbitrary bit alignment, handles multi-byte crossing. 20+ xrefs from Vorbis header parsing (ID/Comment/Setup). Part of statically-linked Vorbis decoder. |
+| 0x0049675E | D3DXMesh_ComputeLightingFromNormals | D3DX8 software mesh lighting: computes per-vertex 565-format colors from vertex normals × fixed light direction matrix. Clamps to [0,255], packs into 16-bit color stream. Called from D3DXMesh_ComputeLighting565 and ComputeLightingThenAssemble. |
+| 0x00425F90 | App_CompleteRace | Finalizes a completed race: increments counter (+0x7C8), calls graphics vtable+0xFC twice to re-enable ZENABLE and ZWRITEENABLE render states, clears pending flag (+0x704=0). Called from 7 render contexts. |
+| 0x00420DA0 | Board_Master_Update | Per-frame update for Master Race (L14) board. Calls Scene_Update, handles ball-vs-mechanical-object collision (distance check against tipper/crusher activation radius), falling ball gravity + respawn, 3D sound + particle spawning on collision, random register dialog popup (1/11 chance). |
+| 0x00435B00 | CollisionLevel_PlayBreakSound | Plays 3D positional "break" sound at collision level position. Chains through parent→sound_mgr→sample. Sets 1.0f cooldown at +0x10E4. Called when breakable objects shatter. |
+| 0x004B3878 | Audio_DecodeOutputBuffer | MO3 audio codec: decodes compressed frame to PCM output buffer. Manages stream state (source ptr, frame size, consumed count), calls codec vtable for decode, output converter for format transform, post-processor for remaining samples. Accumulates decoded count. |
+| 0x0046C290 | App_OnMouseDown | Window message handler for mouse clicks. Calls SetCapture, sets button flags (L/R/M at +0x1C8/9/A), stores mouse X/Y, delegates to mouse interceptor if set (+0x1B0) or hit-tests UIWidget tree and dispatches click to widget vtable+0x14. |
+| 0x004912E4 | ComputeScanlineZBuffer | D3DX8 software rasterizer: pre-computes per-pixel Z-buffer for bilinear texture filtering. Allocates width×16 bytes, computes V coordinate + fractional weight + adjacent texel V for each scanline pixel. Clamp/wrap mode based on param_1. Used by D3DX_TransformTex_Bilinear and DDSurface_Blt3PointWBuffer. |
