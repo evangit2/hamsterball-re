@@ -2989,7 +2989,107 @@
       "struct_offsets": "+0xC60 (mode=3), +0xC68 (friction=0.555), +0xC6C (1.0), +0xC70 (max_speed=1000), +0xC78 (radius=25.0), +0xC7C (use_gravity=1), +0xC8C (grav_dir=(0,-1,0)), +0x14 (active=1)",
       "xrefs": "2 refs: CollisionMesh_ctor, vtable DATA",
       "batch": 42
+    },
+    {
+      "name": "Timer_Cleanup",
+      "address": "0x00457a40",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Timer* this",
+      "description": "Minimal cleanup: sets vtable to 0x4CF338 (Timer_dtor). 4+ calls.",
+      "struct_offsets": "+0x00 (vtable\u21920x4CF338)",
+      "xrefs": "4+ calls from GameObject_dtor, Level_Cleanup, Graphics_SetViewport, App_Run",
+      "batch": 43
+    },
+    {
+      "name": "Graphics_DisableRenderState",
+      "address": "0x00457a50",
+      "signature": "void ...(void)",
+      "parameters": "No parameters",
+      "description": "Thin wrapper that calls Graphics_SetRenderState (with no args, effectively disabling). 3 refs.",
+      "struct_offsets": "N/A",
+      "xrefs": "3 refs from vtables 0x4CF348, 0x4D6A30, 1 call",
+      "batch": 43
+    },
+    {
+      "name": "Gfx_SetRenderStateThunk",
+      "address": "0x00457a90",
+      "signature": "void ...(void)",
+      "parameters": "No parameters",
+      "description": "Thunk: calls Graphics_SetRenderState. Used from timer array rendering. 1 call.",
+      "struct_offsets": "N/A",
+      "xrefs": "1 call from TimerArray_RenderTimed (0x475C0E)",
+      "batch": 43
+    },
+    {
+      "name": "Gfx_LoadMatrixFromStack",
+      "address": "0x00457ab0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: undefined4* (destination matrix, 16 floats)",
+      "description": "Copies 16 floats from stack (offset 0x08) to param_1. Used in timer array dtors. 2 calls.",
+      "struct_offsets": "+0x00 (16-float matrix filled from stack)",
+      "xrefs": "2 calls from TimerArray_FullDtor",
+      "batch": 43
+    },
+    {
+      "name": "Timer_Init",
+      "address": "0x00457ad0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Timer* this \u2014 being initialized",
+      "description": "Initializes Timer. Sets vtable 0x4CF338. Zeros 12 fields (+0x08 through +0x3C). Sets 4 floats to 1.0f at +0x04/+0x18/+0x18/+0x2C/+0x40. 4+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4CF338), +0x04/+0x18/+0x2C/+0x40 (1.0f), +0x08-0x3C (zeros)",
+      "xrefs": "4+ calls from Graphics_SetViewport, App_Run, Ball_Render, Ball_ctor2",
+      "batch": 43
+    },
+    {
+      "name": "Matrix44_Zero",
+      "address": "0x00457b10",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: int (matrix base address)",
+      "description": "Zeros a 4x4 matrix (68 bytes). Sets 12 elements to 0, then 4 diagonal elements to 1.0f at +4/+0x18/+0x2C/+0x40. 5+ refs.",
+      "struct_offsets": "+0x04/+0x18/+0x2C/+0x40 (diagonal=1.0), rest=0",
+      "xrefs": "5+ refs from Scene_RenderWithCamera, Sawblade_Render, Gear_Render, vtables",
+      "batch": 43
+    },
+    {
+      "name": "Gfx_SetPosition",
+      "address": "0x00457b50",
+      "signature": "void ...(undefined4 param_1, undefined4 param_2, undefined4 param_3)",
+      "parameters": "param_1-3: x, y, z position",
+      "description": "Sets world position via D3DX_ShaderDispatch_4b (translation matrix). Calls Graphics_SetRenderState. 4+ calls.",
+      "struct_offsets": "N/A (uses stack-local matrix)",
+      "xrefs": "4+ calls from Scene_RenderWithCamera",
+      "batch": 43
+    },
+    {
+      "name": "Gfx_SetPositionAndRender",
+      "address": "0x00457b80",
+      "signature": "void ...(undefined4 param_1, undefined4 param_2, undefined4 param_3)",
+      "parameters": "param_1-3: x, y, z position",
+      "description": "Sets world position AND triggers render. Uses D3DX_ShaderDispatch_4 (translation+render). Calls Graphics_SetRenderState. 5+ refs.",
+      "struct_offsets": "N/A",
+      "xrefs": "5+ refs from Level_RenderDynamicObjects, FollowBall_Update, vtables",
+      "batch": 43
+    },
+    {
+      "name": "Gfx_RotateY",
+      "address": "0x00457bb0",
+      "signature": "void ...(float param_1, float param_2, float param_3)",
+      "parameters": "param_1-3: float (rotation center x, y, z)",
+      "description": "Rotates around Y axis. Builds LookAt matrix with up=(0,1,0), eye=(-x,-y,-z). Calls D3D_Thunk_5 and Graphics_SetRenderState. 6+ refs.",
+      "struct_offsets": "N/A (stack-local matrix)",
+      "xrefs": "6+ refs from RumbleObject_Update, vtables, Ball_Update",
+      "batch": 43
+    },
+    {
+      "name": "Gfx_ScaleX",
+      "address": "0x00457c60",
+      "signature": "void ...(float param_1)",
+      "parameters": "param_1: float (X scale factor)",
+      "description": "Scales X axis by param_1 \u00d7 _DAT_004D8E58. Calls D3DX_ShaderDispatch_2b then Graphics_SetRenderState. 4+ calls.",
+      "struct_offsets": "N/A",
+      "xrefs": "4+ calls from Scene_RenderWithCamera, Level_RenderDynamicObjects, TowerLevel_Ctor",
+      "batch": 43
     }
   ],
-  "total_documented": 290
+  "total_documented": 300
 }
