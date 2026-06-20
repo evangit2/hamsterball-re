@@ -2589,7 +2589,107 @@
       "struct_offsets": "param_1[0x21E] (App\u2192+0x174: Gfx), Gfx+0x7D2 (cull), Gfx+0x708 (state=3), Gfx+0x154 (render dispatch)",
       "xrefs": "1 DATA ref from vtable 0x4D8444",
       "batch": 38
+    },
+    {
+      "name": "TourneyBoard_ObjectScalarDtor",
+      "address": "0x00451dd0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: TourneyBoard* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor. Calls TourneyBoard_ObjectDtorInner then _free if bit 0. 1 DATA ref.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D8628",
+      "batch": 39
+    },
+    {
+      "name": "TourneyMenu_TickWithRank",
+      "address": "0x00451df0",
+      "signature": "void __fastcall ...(int *param_1)",
+      "parameters": "param_1: TourneyMenu* this (as int*)",
+      "description": "Per-frame tick with rank computation. Calls NoOp then __ftol2 for rank. Increments/decrements tournament score (+0x220). If score below threshold: calls vtable+0x40 (quit), CheckPurchaseOrHighScore. Counter at +0x32F increments, subtracts 0x4D per tick from +0x32C. 1 DATA ref.",
+      "struct_offsets": "+0x21E (App\u2192+0x220), +0x21F (rank), +0x220 (score), +0x221 (direction flag), +0x32C (countdown), +0x32F (tick counter), +0x334 (max ticks), +0x335 (next state)",
+      "xrefs": "1 DATA ref from vtable 0x4D862C",
+      "batch": 39
+    },
+    {
+      "name": "Rect_ContainsPoint",
+      "address": "0x00453100",
+      "signature": "ushort __thiscall ...(void *this, float param_1, float param_2)",
+      "parameters": "this: Rect* (x,y,w,h at +4/+8/+0xC/+0x10) | param_1: float x | param_2: float y",
+      "description": "Tests if point (x,y) is inside rectangle. Checks x>=left(+4), y>=top(+8), x<left+width(+4+0xC), y<top+height(+8+0x10). Returns 1 if inside, 0 otherwise. Handles NaN comparison flags. 1 call.",
+      "struct_offsets": "+0x04 (left), +0x08 (top), +0x0C (width), +0x10 (height)",
+      "xrefs": "1 call from UIWidget_HitTest (0x469B40)",
+      "batch": 39
+    },
+    {
+      "name": "Matrix_Scale4x4",
+      "address": "0x00453150",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: Matrix* | param_1-3: scale x/y/z | param_4: w component",
+      "description": "Initializes a 4x4 scale matrix. Sets vtable to 0x4CF300, stores 4 scale components at +4/+8/+0xC/+0x10. 4+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4CF300), +0x04 (scaleX), +0x08 (scaleY), +0x0C (scaleZ), +0x10 (w)",
+      "xrefs": "4+ calls from SceneObj_SetScale, Graphics_SetViewportClip, ConfirmMenu_ctor",
+      "batch": 39
+    },
+    {
+      "name": "Vec3_Init3Comp",
+      "address": "0x00453180",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3)",
+      "parameters": "this: Vec3* | param_1-3: x/y/z components",
+      "description": "Initializes Vec3 with 3 components + w=1.0. Sets vtable 0x4CF300, stores x at +4, y at +8, z at +0xC, w=1.0f at +0x10. 4+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4CF300), +0x04 (x), +0x08 (y), +0x0C (z), +0x10 (w=1.0)",
+      "xrefs": "4+ calls from Level_InitMeshes4",
+      "batch": 39
+    },
+    {
+      "name": "Vec3_SetScalar",
+      "address": "0x004531b0",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: Vec3* | param_1: scalar value for all 3 components",
+      "description": "Sets all 3 components of Vec3 to same scalar value. Vtable 0x4CF300, x=y=z=param_1 at +4/+8/+0xC, w=1.0f at +0x10. 5+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4CF300), +0x04/+0x08/+0x0C (all=param_1), +0x10 (w=1.0)",
+      "xrefs": "5+ calls from various UI/graphics functions",
+      "batch": 39
+    },
+    {
+      "name": "Vec3_InitZero",
+      "address": "0x004531e0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Vec3* this \u2014 being initialized to zero",
+      "description": "Initializes Vec3 to zero with large default W. Sets vtable 0x4CF300, x=y=z=0, w=255.0f (0x437F0000). 4+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4CF300), +0x04/+0x08/+0x0C (all=0), +0x10 (w=255.0)",
+      "xrefs": "4+ calls from Ball_ctor2, UIListItem_ctor, Ball_ctor, SceneObject_BaseInit",
+      "batch": 39
+    },
+    {
+      "name": "Matrix_Identity",
+      "address": "0x00453200",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Matrix* this \u2014 sets vtable only",
+      "description": "Sets matrix vtable to 0x4CF300 (identity/default vtable). Minimal init. 4+ calls from dtors and cleanup functions.",
+      "struct_offsets": "+0x00 (vtable=0x4CF300)",
+      "xrefs": "4+ calls from GameObject_dtor, Scene_dtor, UIList_Cleanup, SceneObject_BaseClear",
+      "batch": 39
+    },
+    {
+      "name": "AthenaList_Init",
+      "address": "0x00453210",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: AthenaList* | param_1: undefined4 (stored at +0x414)",
+      "description": "Initializes AthenaList. Sets vtable 0x4D875C. Stores param_1 at +0x414. Zeros count (+0x410), head (+4), tail (+0x40C). Zeroes 256 entries (0x400 bytes) starting at +8. +0x408=0. 4+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4D875C), +0x04 (head=0), +0x08 through +0x407 (256 entries zeroed), +0x408 (0), +0x40C (tail=0), +0x410 (count=0), +0x414 (param_1)",
+      "xrefs": "4+ calls from MusicChannel_Ctor, Ball_ctor2, CollisionMesh_ctor, etc.",
+      "batch": 39
+    },
+    {
+      "name": "Vec3List_Free",
+      "address": "0x00453250",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Vec3List* this",
+      "description": "Frees Vec3List. Sets vtable to 0x4D875C. If +0x40C (0x103 DWORDs) is non-NULL, calls _free. Sets +0x40C=0. 4+ calls.",
+      "struct_offsets": "+0x00 (vtable=0x4D875C), +0x40C (heap pointer\u2192freed)",
+      "xrefs": "4+ calls from GameObject_dtor, MeshBuffer_dtor, SceneObject_dtor",
+      "batch": 39
     }
   ],
-  "total_documented": 250
+  "total_documented": 260
 }
