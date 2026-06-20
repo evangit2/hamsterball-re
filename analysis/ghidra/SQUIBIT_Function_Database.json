@@ -1889,7 +1889,107 @@
       "struct_offsets": "N/A (operates on Graphics*)",
       "xrefs": "5+ calls from OkayDialog_Render, QuitToDesktopDialog_Render, QuitAbortDialog_Render, TourneyContinueDialog_Render, etc.",
       "batch": 31
+    },
+    {
+      "name": "UI_SetPauseRightButtonText",
+      "address": "0x00442540",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: void* (UIList pointer with 'PWRB' item)",
+      "description": "Updates 'PAUSE W/RIGHT BUTTON: %s' text in options menu. Uses AthenaString_SprintfToBuffer + UIList_SetTextByName.",
+      "struct_offsets": "N/A (operates on UIList)",
+      "xrefs": "1 call from OptionsMenu_Update (0x443909)",
+      "batch": 32
+    },
+    {
+      "name": "OptionsMenu_UpdateFullscreenText",
+      "address": "0x00442590",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: void* (UIList with 'FS' item)",
+      "description": "Updates 'FULLSCREEN: %s' text in options menu. Uses AthenaString_SprintfToBuffer + UIList_SetTextByName('FS').",
+      "struct_offsets": "N/A",
+      "xrefs": "1 call from OptionsMenu_Update (0x4438DF)",
+      "batch": 32
+    },
+    {
+      "name": "OptionsMenu_UpdateColorQualityText",
+      "address": "0x004425e0",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: void* (UIList with 'CM' item)",
+      "description": "Updates 'COLOR QUALITY: %s' text. Uses AthenaString_SprintfToBuffer + UIList_SetTextByName('CM').",
+      "struct_offsets": "N/A",
+      "xrefs": "1 call from OptionsMenu_Update (0x44388B)",
+      "batch": 32
+    },
+    {
+      "name": "OptionsMenu_UpdateSafeModeText",
+      "address": "0x00442630",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: void* (UIList with 'SM' item)",
+      "description": "Updates 'SAFE MODE: %s' text. Uses AthenaString_SprintfToBuffer + UIList_SetTextByName('SM').",
+      "struct_offsets": "N/A",
+      "xrefs": "1 call from OptionsMenu_Update (0x4438B5)",
+      "batch": 32
+    },
+    {
+      "name": "OptionsMenu_AdjustVolume",
+      "address": "0x00442680",
+      "signature": "void __thiscall ...(void *this, char *param_1, int param_2)",
+      "parameters": "this: OptionsMenu* | param_1: char* control name ('SV'/'MV'/'TQ'/'MS') | param_2: int adjustment direction",
+      "description": "Adjusts volume/quality sliders in Options menu. 'SV'=Sound(+0xD10), 'MV'=Music(+0xD48), 'TQ'=Texture(+0xD80), 'MS'=Master(+0xDF0). Clamps to [min,max], sets dirty flag.",
+      "struct_offsets": "+0xD10 (Sound Vol), +0xD1C (dirty), +0xD48 (Music Vol), +0xD54 (dirty), +0xD80 (Texture Q), +0xD8C (dirty), +0xDF0 (Master), +0xDFC (dirty)",
+      "xrefs": "1 DATA ref from vtable 0x4D5E7C",
+      "batch": 32
+    },
+    {
+      "name": "KeyRemapMenu_Cleanup",
+      "address": "0x00442820",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: KeyRemapMenu* this",
+      "description": "Cleanup for KeyRemapMenu. Sets vtable to PTR_KeyRemapMenu_DeletingDtor (0x4D5F50), calls UIList_Cleanup.",
+      "struct_offsets": "+0x00 (vtable)",
+      "xrefs": "1 call from KeyRemapMenu_DeletingDtor (0x443413)",
+      "batch": 32
+    },
+    {
+      "name": "KeyRemapMenu_UpdateKeyLabels",
+      "address": "0x00442af0",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: void* (KeyRemapMenu UIList)",
+      "description": "Updates all 6 key binding labels: UP, DOWN, LEFT, RIGHT, ACTION1, ACTION2. Uses AthenaString_SprintfToBuffer for each label, UIList_SetTextByName to set text.",
+      "struct_offsets": "N/A (operates on UIList)",
+      "xrefs": "2 calls from KeyRemapMenu_Ctor (0x4433EA) and KeyRemapMenu_WaitForKey (0x4434CB)",
+      "batch": 32
+    },
+    {
+      "name": "OptionsMenu_ctor",
+      "address": "0x00442ce0",
+      "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: OptionsMenu* (vtable=0x4D5E30) | param_1: App | param_2: menu context (+0xCDC)",
+      "description": "Constructor for Options Menu. Inherits SimpleMenu. 5 Transform objects. Adds 9 UIList items: REZ, FS, CM, SM, PWRB, SV, MV, TQ, MS. Title 'OPTIONS'. 6 call sites.",
+      "struct_offsets": "+0x868 (name), +0x888 (title), +0x878 (App), +0xCAC (spacing=0x15E), +0xCF0/+0xD28/+0xD60/+0xD98/+0xDD0 (Transforms), +0xD10 (Sound), +0xD48 (Music), +0xD80 (Tex), +0xDF0 (Master)",
+      "xrefs": "6 calls from PauseMenu, TourneyMenu, and other menu handlers",
+      "batch": 32
+    },
+    {
+      "name": "UIList_DeletingDtor",
+      "address": "0x004431c0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: UIList* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for UIList. Calls UIList_dtor then _free. Referenced from vtable 0x4D5E30 used by OptionsMenu_ctor.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5E30",
+      "batch": 32
+    },
+    {
+      "name": "KeyRemapMenu_Ctor",
+      "address": "0x004431e0",
+      "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: KeyRemapMenu* (vtable=0x4D5F50) | param_1: App | param_2: menu context (+0xCDC)",
+      "description": "Constructor for Key Remap Menu. Inherits SimpleMenu. Adds 6 UIList items: UP, DOWN, LEFT, RIGHT, ACTION1, ACTION2. Title 'Remap Keyboard'. Calls UpdateKeyLabels to populate current bindings.",
+      "struct_offsets": "+0x868 (name='Remap Menu'), +0x888 (title='Remap Keyboard'), +0x878 (App), +0xCAC (spacing=0x15E), +0xCDC (context)",
+      "xrefs": "1 call from 0x44394A",
+      "batch": 32
     }
   ],
-  "total_documented": 180
+  "total_documented": 190
 }
