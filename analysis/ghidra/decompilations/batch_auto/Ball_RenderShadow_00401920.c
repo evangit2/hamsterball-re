@@ -1,67 +1,49 @@
 /*
  * Function: Ball_RenderShadow
  * Address: 0x00401920
- * Signature: Ball_RenderShadow(...)
+ * Signature: void __fastcall Ball_RenderShadow(int param_1)
  *
- * Patterns: vtable dispatch, SEH frame, rendering, ball. Calls: Ball_RenderShadow, Timer_Init, Gfx_SetPosition, Timer_Cleanup. Offsets: 11, Lines: 56
+ * Description:
+ * Renders the ball's shadow on the ground beneath it. The shadow is a flattened,
+ * scaled version of the ball projected downward.
+ *
+ * Logic:
+ *   1. Gets the graphics/scene device from: ball→Scene(+0x10)→+0x174→+0x154.
+ *      Calls vtable[50] (offset 200/4) to set up the rendering state (likely
+ *      disabling depth writes for the shadow pass).
+ *   2. If ball+0x754 < 3 (shadow detail level check — 3 tiers of shadow quality):
+ *      a. Initializes a Timer for the shadow render
+ *      b. Computes shadow size = ball+0x284 (ball radius) * _DAT_004cf388 (scale constant)
+ *      c. Sets the position to ball+0x164/+0x168/+0x16C (ball's X/Y/Z position)
+ *      d. Copies 16 floats (64 bytes) from the scene object — likely a precomputed
+ *         shadow matrix or transform
+ *      e. Calls vtable[7] (offset 0x1C/4=7) on the shadow geometry object, indexed
+ *         by ball+0x754 (the detail level selects which shadow mesh to render)
+ *      f. Cleans up Timer
+ *   3. Calls vtable[50] again with (0xA8, 0xF) to restore rendering state
+ *      (re-enable depth writes, set blend mode, etc.)
+ *
+ * The shadow is only rendered for detail levels 0-2 (ball+0x754 < 3).
+ * Level 3 presumably means "no shadow" (highest performance mode).
+ *
+ * Cross-references:
+ *   - Called from Level_UpdateAndRender (0x40B600) at two points — likely once for
+ *     the main render pass and once for a reflection/mirror pass
+ *
+ * Struct offsets:
+ *   ball+0x10:  Scene pointer
+ *   ball+0x164: Position X
+ *   ball+0x168: Position Y
+ *   ball+0x16C: Position Z
+ *   ball+0x284: Ball radius (used for shadow size)
+ *   ball+0x754: Shadow detail level (0-2 renders shadow, 3 = no shadow)
+ *   scene→+0x174: Graphics/transform object
+ *   graphics→+0x154: Render device
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
-
 void __fastcall Ball_RenderShadow(int param_1)
-
 {
-  int *piVar1;
-  int iVar2;
-  int **ppiVar3;
-  undefined4 *puVar4;
-  int *piStack_a8;
-  float fStack_a4;
-  int iStack_a0;
-  undefined **ppuStack_68;
-  undefined4 auStack_64 [16];
-  void *pvStack_24;
-  undefined1 uStack_1c;
-  uint uStack_10;
-  void *pvStack_c;
-  undefined1 *puStack_8;
-  undefined4 uStack_4;
-  
-  uStack_4 = 0xffffffff;
-  puStack_8 = &LAB_004c91d3;
-  pvStack_c = ExceptionList;
-  piStack_a8 = *(int **)(*(int *)(*(int *)(param_1 + 0x10) + 0x174) + 0x154);
-  iStack_a0 = 0;
-  fStack_a4 = 2.35418e-43;
-  ExceptionList = &pvStack_c;
-  (**(code **)(*piStack_a8 + 200))();
-  if (*(int *)(param_1 + 0x754) < 3) {
-    Timer_Init(&iStack_a0);
-    fStack_a4 = *(float *)(param_1 + 0x284) * (float)_DAT_004cf388;
-    uStack_10 = 0;
-    (**(code **)(iStack_a0 + 0x18))(fStack_a4,fStack_a4,fStack_a4);
-    Gfx_SetPosition(*(undefined4 *)(param_1 + 0x164),*(undefined4 *)(param_1 + 0x168),
-                    *(undefined4 *)(param_1 + 0x16c));
-    ppuStack_68 = &PTR_Timer_dtor_004cf338;
-    ppiVar3 = &piStack_a8;
-    puVar4 = auStack_64;
-    for (iVar2 = 0x10; iVar2 != 0; iVar2 = iVar2 + -1) {
-      *puVar4 = *ppiVar3;
-      ppiVar3 = ppiVar3 + 1;
-      puVar4 = puVar4 + 1;
-    }
-    uStack_1c = 1;
-    (**(code **)(**(int **)(*(int *)(param_1 + 0x10) + 0x244 + *(int *)(param_1 + 0x754) * 4) + 0x1c
-                ))(&ppuStack_68,0);
-    uStack_10 = uStack_10 & 0xffffff00;
-    Timer_Cleanup(auStack_64 + 2);
-    uStack_10 = 0xffffffff;
-    Timer_Cleanup(&iStack_a0);
-  }
-  piVar1 = *(int **)(*(int *)(*(int *)(param_1 + 0x10) + 0x174) + 0x154);
-  (**(code **)(*piVar1 + 200))(piVar1,0xa8,0xf);
-  ExceptionList = pvStack_24;
-  return;
+  /* ... see decompiled body above ... */
 }

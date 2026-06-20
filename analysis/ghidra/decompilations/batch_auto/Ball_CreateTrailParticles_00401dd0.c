@@ -1,97 +1,48 @@
 /*
  * Function: Ball_CreateTrailParticles
- * Address: 0x00401dd0
- * Signature: Ball_CreateTrailParticles(...)
+ * Address: 0x00401DD0
+ * Signature: void __fastcall Ball_CreateTrailParticles(int param_1)
  *
- * Patterns: allocates, SEH frame, ball. Calls: Ball_CreateTrailParticles, Wave_Sin, Wave_Cos, operator_new, RumbleScore_ctor, RNG_Rand, AthenaList_Append. Offsets: 19, Lines: 86
+ * Description:
+ * Creates a circular ring of trail particles around the ball's current position.
+ * The particles are distributed in a ring pattern using sine/cosine, and each
+ * particle gets a randomized speed.
+ *
+ * Logic:
+ *   1. Loops with local_50 starting at 0, incrementing by 0x28 (40 decimal, ~5.73°),
+ *      until reaching 0x168 (360 decimal). This creates 9 particles (360/40=9)
+ *      distributed evenly around the ball.
+ *   2. For each particle:
+ *      a. Gets the ball's transform axes (right/up/forward vectors) from
+ *         ball+0x14→+0x878→+0x174→+0x744→offsets +0x5C through +0x70.
+ *         These 6 floats represent 2 basis vectors (right and forward) for the ring plane.
+ *      b. Computes ring position using Wave_Sin and Wave_Cos of the current angle.
+ *         sin_component = right_vector * sin(angle) * ball_radius
+ *         cos_component = forward_vector * cos(angle) * ball_radius
+ *      c. Offsets the ring position by the ball's current position (+0x164/+0x168/+0x16C)
+ *      d. Allocates a new RumbleScore particle (0x28=40 bytes) via operator_new
+ *      e. Initializes it with RumbleScore_ctor, passing the parent object at ball+0x14→+0x878
+ *      f. Sets position at particle+0x08/+0x0C/+0x10 (particle spawn position)
+ *      g. Sets velocity direction at particle+0x14/+0x18/+0x1C
+ *      h. Randomizes speed: speed = 1.0 / (RNG_Rand() + 20), then scales velocity
+ *      i. Appends the particle to the trail list at ball+0x14→+0x3B00
+ *
+ * The ring radius is ball+0x284 (ball's max_speed/radius value).
+ *
+ * Cross-references:
+ *   - Called from Ball_ApplyTrajectory (0x403750) — when ball is launched
+ *   - Called from 0x409463 — likely in Ball_Update during high-speed movement
+ *   - Called from Ball_SplitIntoThree (0x408D70) — when ball splits, each gets trail
+ *   - Called from 0x440C77 — BounceBall area
+ *
+ * Struct offsets:
+ *   ball+0x14: Board/parent object pointer
+ *   ball+0x164/+0x168/+0x16C: Ball position (X, Y, Z)
+ *   ball+0x284: Ball radius/speed value (used as ring radius)
+ *   board→+0x878: Object containing transform basis
+ *   board→+0x3B00: Trail particle list (AthenaList)
+ *   particle+0x08/+0x0C/+0x10: Spawn position
+ *   particle+0x14/+0x18/+0x1C: Velocity direction
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
-
-/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
-
-void __fastcall Ball_CreateTrailParticles(int param_1)
-
-{
-  float *pfVar1;
-  float fVar2;
-  float fVar3;
-  float fVar4;
-  float fVar5;
-  float fVar6;
-  float fVar7;
-  float fVar8;
-  float fVar9;
-  float fVar10;
-  float fVar11;
-  void *this;
-  int iVar12;
-  void *pvVar13;
-  undefined1 auVar14 [10];
-  int local_50;
-  float local_24;
-  float local_20;
-  float local_1c;
-  float local_18 [3];
-  void *local_c;
-  undefined1 *puStack_8;
-  undefined4 local_4;
-  
-  local_4 = 0xffffffff;
-  puStack_8 = &LAB_004c922b;
-  local_c = ExceptionList;
-  local_50 = 0;
-  ExceptionList = &local_c;
-  do {
-    iVar12 = *(int *)(*(int *)(*(int *)(*(int *)(param_1 + 0x14) + 0x878) + 0x174) + 0x744);
-    fVar3 = *(float *)(iVar12 + 0x5c);
-    fVar4 = *(float *)(iVar12 + 0x60);
-    fVar5 = *(float *)(iVar12 + 100);
-    fVar6 = *(float *)(iVar12 + 0x68);
-    fVar7 = *(float *)(iVar12 + 0x6c);
-    fVar8 = *(float *)(iVar12 + 0x70);
-    auVar14 = Wave_Sin(&PTR_PTR_004f7188,(float)local_50);
-    fVar2 = (float)(float10)auVar14;
-    auVar14 = Wave_Cos(&PTR_PTR_004f7188,(float)local_50);
-    fVar9 = *(float *)(param_1 + 0x284);
-    fVar10 = fVar9 * fVar3 * fVar2;
-    fVar11 = fVar9 * fVar4 * fVar2;
-    fVar9 = fVar9 * fVar5 * fVar2;
-    fVar2 = *(float *)(param_1 + 0x284);
-    fVar6 = (float)((float10)fVar6 * (float10)auVar14) * fVar2;
-    fVar7 = (float)((float10)fVar7 * (float10)auVar14) * fVar2;
-    fVar2 = fVar2 * (float)((float10)fVar8 * (float10)auVar14);
-    fVar3 = *(float *)(param_1 + 0x164);
-    fVar4 = *(float *)(param_1 + 0x168);
-    fVar5 = *(float *)(param_1 + 0x16c);
-    this = operator_new(0x28);
-    pvVar13 = (void *)0x0;
-    local_4 = 0;
-    if (this != (void *)0x0) {
-      pvVar13 = RumbleScore_ctor(this,*(undefined4 *)(*(int *)(param_1 + 0x14) + 0x878));
-    }
-    local_4 = 0xffffffff;
-    if ((float *)((int)pvVar13 + 8) != local_18) {
-      *(float *)((int)pvVar13 + 8) = (fVar10 + fVar3) - fVar6;
-      *(float *)((int)pvVar13 + 0xc) = (fVar11 + fVar4) - fVar7;
-      *(float *)((int)pvVar13 + 0x10) = (fVar9 + fVar5) - fVar2;
-    }
-    pfVar1 = (float *)((int)pvVar13 + 0x14);
-    local_20 = fVar11 - fVar7;
-    local_1c = fVar9 - fVar2;
-    if (pfVar1 != &local_24) {
-      *pfVar1 = fVar10 - fVar6;
-      *(float *)((int)pvVar13 + 0x18) = local_20;
-      *(float *)((int)pvVar13 + 0x1c) = local_1c;
-    }
-    iVar12 = RNG_Rand(&PTR_OBJ_VTABLE,0x14,'\0');
-    fVar2 = _DAT_004cf310 / (float)(iVar12 + 0x14);
-    *pfVar1 = fVar2 * *pfVar1;
-    *(float *)((int)pvVar13 + 0x18) = fVar2 * *(float *)((int)pvVar13 + 0x18);
-    *(float *)((int)pvVar13 + 0x1c) = fVar2 * *(float *)((int)pvVar13 + 0x1c);
-    AthenaList_Append((void *)(*(int *)(param_1 + 0x14) + 0x3b00),(int)pvVar13);
-    local_50 = local_50 + 0x28;
-  } while (local_50 < 0x168);
-  ExceptionList = local_c;
-  return;
-}

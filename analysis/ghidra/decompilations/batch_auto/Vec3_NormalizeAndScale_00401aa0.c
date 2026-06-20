@@ -1,14 +1,39 @@
 /*
  * Function: Vec3_NormalizeAndScale
- * Address: 0x00401aa0
- * Signature: Vec3_NormalizeAndScale(...)
+ * Address: 0x00401AA0
+ * Signature: void __thiscall Vec3_NormalizeAndScale(void *this, float param_1)
  *
- * Patterns: none identified. Calls: Vec3_NormalizeAndScale, SQRT. Offsets: 0, Lines: 19
+ * Description:
+ * Normalizes the vector (this) to unit length, then scales it by param_1.
+ * In-place operation: this = (this / |this|) * param_1
+ *
+ * Logic:
+ *   1. Computes length² = x² + y² + z²
+ *   2. If length² is not negative and not zero:
+ *      a. Computes length = SQRT(length²)
+ *      b. If length > 0: computes scale = param_1 / length
+ *      c. Multiplies each component by scale
+ *   3. If length² is zero or negative, scale defaults to 0.0 (_DAT_004cf368),
+ *      effectively zeroing the vector (safe fallback for degenerate inputs)
+ *
+ * This is one of the most widely-used utility functions in the engine — it
+ * appears in 50+ call sites including ball physics, camera, collision, rendering,
+ * particle systems, water ripples, and AI.
+ *
+ * Cross-references (most significant):
+ *   - Ball_FallUpdate, Ball_AdvancePositionOrCollision (physics)
+ *   - Scene_SetCamera (camera direction)
+ *   - Ball_GetInputForce (input → force direction)
+ *   - Ball_ApplyTrajectory (trajectory setup)
+ *   - CreateSpinner, CreateNoDizzy (object creation)
+ *   - TowerLevel_Ctor, CollisionFace_ctor (level construction)
+ *   - WaterRipple_UpdateVertices (water effects)
+ *   - Mesh_FindClosestCollision (collision detection)
+ *   - Font_DrawGlyph3D (3D text rendering)
+ *   - FollowBall_Update (AI)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
-
-/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
 void __thiscall Vec3_NormalizeAndScale(void *this,float param_1)
 
