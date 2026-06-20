@@ -199,7 +199,117 @@
       "struct_offsets": "N/A (destructor)",
       "xrefs": "0 calls, 1 data ref (vtable)",
       "batch": 15
+    },
+    {
+      "name": "RumbleBoard_dtor",
+      "address": "0x004251e0",
+      "signature": "void __fastcall RumbleBoard_dtor(undefined4 *param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 735 chars. 1 call xrefs, 0 data refs. First code lines: void *pvStack_c;; undefined1 *puStack_8;; int iStack_4;",
+      "struct_offsets": "See decompilation",
+      "xrefs": "1 calls, 0 data refs",
+      "batch": 16,
+      "decompilation_length": 735
+    },
+    {
+      "name": "BoardLevel_Generic_dtor5",
+      "address": "0x004251f0",
+      "signature": "void * __thiscall BoardLevel_Generic_dtor5(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 189 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlices_DeletingDtorVdtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 1 data refs",
+      "batch": 16,
+      "decompilation_length": 189
+    },
+    {
+      "name": "RumbleBoard_CollSlices_DeletingDtorVdtor",
+      "address": "0x00425210",
+      "signature": "void __fastcall RumbleBoard_CollSlices_DeletingDtorVdtor(undefined4 *param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 416 chars. 1 call xrefs, 0 data refs. First code lines: void *local_c;; undefined1 *puStack_8;; undefined4 local_4;",
+      "struct_offsets": "See decompilation",
+      "xrefs": "1 calls, 0 data refs",
+      "batch": 16,
+      "decompilation_length": 416
+    },
+    {
+      "name": "RumbleBoard_ExpertArena_DeletingDtor",
+      "address": "0x00425270",
+      "signature": "void * __thiscall RumbleBoard_ExpertArena_DeletingDtor(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 183 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_Dizzy_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 1 data refs",
+      "batch": 16,
+      "decompilation_length": 183
+    },
+    {
+      "name": "RumbleBoard_OddArena_DeletingDtor",
+      "address": "0x00425290",
+      "signature": "void * __thiscall RumbleBoard_OddArena_DeletingDtor(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 180 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_Tower_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 1 data refs",
+      "batch": 16,
+      "decompilation_length": 180
+    },
+    {
+      "name": "RumbleBoard_ToobArena_DeletingDtor",
+      "address": "0x004252b0",
+      "signature": "void * __thiscall RumbleBoard_ToobArena_DeletingDtor(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 183 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_UpArena_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 1 data refs",
+      "batch": 16,
+      "decompilation_length": 183
+    },
+    {
+      "name": "RumbleBoard_CollSlicesArena_DeletingDtor",
+      "address": "0x004252d0",
+      "signature": "void * __thiscall RumbleBoard_CollSlicesArena_DeletingDtor(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 203 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlicesArena_ScalarDtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 1 data refs",
+      "batch": 16,
+      "decompilation_length": 203
+    },
+    {
+      "name": "RumbleBoard_CollSlicesArena_ScalarDtor",
+      "address": "0x004252f0",
+      "signature": "void __fastcall RumbleBoard_CollSlicesArena_ScalarDtor(undefined4 *param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 374 chars. 1 call xrefs, 0 data refs. First code lines: void *local_c;; undefined1 *puStack_8;; undefined4 local_4;",
+      "struct_offsets": "See decompilation",
+      "xrefs": "1 calls, 0 data refs",
+      "batch": 16,
+      "decompilation_length": 374
+    },
+    {
+      "name": "RumbleBoard_DeletingDtor",
+      "address": "0x00425340",
+      "signature": "void * __thiscall RumbleBoard_DeletingDtor(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 165 chars. 0 call xrefs, 4 data refs. First code lines: RumbleBoard_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 4 data refs",
+      "batch": 16,
+      "decompilation_length": 165
+    },
+    {
+      "name": "RumbleBoard_CollSlices_scalar_dtor",
+      "address": "0x00425360",
+      "signature": "void * __thiscall RumbleBoard_CollSlices_scalar_dtor(void *this,byte param_1)",
+      "parameters": "See signature",
+      "description": "Decompiled function. 186 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlices_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "struct_offsets": "See decompilation",
+      "xrefs": "0 calls, 1 data refs",
+      "batch": 16,
+      "decompilation_length": 186
     }
   ],
-  "total_documented": 20
+  "total_documented": 30
 }
