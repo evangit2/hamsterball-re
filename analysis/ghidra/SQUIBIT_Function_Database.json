@@ -1489,7 +1489,107 @@
       "struct_offsets": "+0x00 (vtable=0x4D5A70), +0x43B (RumbleBoard timer)",
       "xrefs": "1 call from RumbleCollision_DeletingDtor (0x43E5C3)",
       "batch": 27
+    },
+    {
+      "name": "Catapult_ctor",
+      "address": "0x00437e10",
+      "signature": "void * __thiscall Catapult_ctor(void *this, undefined4 param_1, int param_2)",
+      "parameters": "this: Catapult* (vtable=0x4D4F98) | param_1: Scene (+0x10D0) | param_2: Stands_ctor parent",
+      "description": "Constructor for Catapult launch pad obstacles. Creates CollisionLevel, position=(0,0,0), launch direction Y=-1.0 (upward), launch power=17.0f. Called from CreateLevelObjects and Tower level setup.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8/+0x10DC/+0x10E0 (pos=0,0,0), +0x10E8 (launchDir=-1.0), +0x10F0 (triggered=0), +0x1100 (active=0), +0x1104 (power=17.0)",
+      "xrefs": "3 calls from CreateLevelObjects, Tower setup, and CreateWobbly1",
+      "batch": 28
+    },
+    {
+      "name": "MeshNode_Level_DeleteDtor3",
+      "address": "0x00437ef0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: MeshNode* | param_1: scalar delete flag (bit 0 = free memory)",
+      "description": "Scalar deleting destructor for MeshNode Level vtable3. Calls MeshNode_LevelDtor3 then optionally _free. Referenced from vtable 0x4D4F8 used by Catapult_ctor.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D4F98",
+      "batch": 28
+    },
+    {
+      "name": "GlassStands_Ctor",
+      "address": "0x00438290",
+      "signature": "void * __thiscall GlassStands_Ctor(void *this, int param_1)",
+      "parameters": "this: GlassStands* (vtable=0x4D4FF8) | param_1: parent Scene (accesses App\u2192+0x594/59C/598/5A0 for 3 sub-meshes)",
+      "description": "Constructor for Glass Race breakable glass stands. Composite object with 3 sub-objects: TipperVisual (glass top, +0x10D4), Stands (glass base, +0x10D8), TipperVisual (glass bottom, +0x10DC). Uses TipperVisual_Attach for break animations. break direction=-1.0.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (TipperVisual top), +0x10D8 (Stands base), +0x10DC (TipperVisual bottom), +0x10EC (timer=0), +0x10F0 (breakDir=-1.0), +0x10F4 (triggered=0)",
+      "xrefs": "1 call from Glass level setup (0x40DABA)",
+      "batch": 28
+    },
+    {
+      "name": "Glass_Level_scalar_dtor",
+      "address": "0x004383f0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Glass* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Glass level objects. Calls Glass_Level_Dtor then optionally _free. Referenced from vtable 0x4D4FF8 used by GlassStands_Ctor.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D4FF8",
+      "batch": 28
+    },
+    {
+      "name": "Trapdoor_Activate",
+      "address": "0x00438410",
+      "signature": "void __fastcall Trapdoor_Activate(int param_1)",
+      "parameters": "param_1: Trapdoor* this",
+      "description": "Activates trapdoor (opens it). Only if +0x10F4==0 (not activated). Plays 3D sound if timer < threshold. Sets activation timer=10 frames. Called from Level_HandleCollision when ball touches trigger.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10E0/+0x10E4/+0x10E8 (pos), +0x10EC (timer), +0x10F4 (activation=10)",
+      "xrefs": "1 call from Level_HandleCollision (0x40DE37)",
+      "batch": 28
+    },
+    {
+      "name": "Glass_Level_ctor",
+      "address": "0x004384a0",
+      "signature": "void * __thiscall Glass_Level_ctor(void *this, undefined4 param_1, int param_2)",
+      "parameters": "this: Glass_Level* (vtable=0x4D5060, shared with Impossible) | param_1: Scene (+0x10D0) | param_2: Stands_ctor parent",
+      "description": "Constructor for Glass Race level objects. Creates CollisionLevel, Timer array (2 elements), calls Gfx_ScaleY(-80/-100) for glass wall height, allocates TimerArray at +0x10EC. Looks up Chain1Bridge positions. Shares Impossible_Level vtable.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8/+0x10DC/+0x10E0 (pos=0,0,0), +0x10E8 (breakDir=-1.0), +0x10EC (TimerArray ptr)",
+      "xrefs": "1 call from Glass level setup (0x40D991)",
+      "batch": 28
+    },
+    {
+      "name": "Impossible_Level_scalar_dtor",
+      "address": "0x00438730",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Impossible_Level* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Impossible/Glass level objects. Calls Impossible_Level_Dtor then optionally _free. Referenced from vtable 0x4D5060 shared by Glass_Level_ctor and Impossible level.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5060",
+      "batch": 28
+    },
+    {
+      "name": "CascadeStands_Ctor",
+      "address": "0x00438750",
+      "signature": "void * __thiscall CascadeStands_Ctor(void *this, undefined4 param_1, int param_2)",
+      "parameters": "this: CascadeStands* (vtable=0x4D50C0) | param_1: Scene (+0x10D0) | param_2: Stands_ctor parent",
+      "description": "Constructor for Cascade (Beginner Race L2) collapsible platforms. Creates CollisionLevel, sets position=0, breakDir=-1.0, triggered=0, is_cascade=1 (+0x1108). These platforms fall away after ball passes.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8/+0x10DC/+0x10E0 (pos=0,0,0), +0x10EC (breakDir=-1.0), +0x10F0 (triggered=0), +0x10F4 (timer=0), +0x1108 (is_cascade=1)",
+      "xrefs": "2 calls from Cascade level setup and CreateWobbly1",
+      "batch": 28
+    },
+    {
+      "name": "Cascade_Level_scalar_dtor",
+      "address": "0x00438830",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Cascade_Level* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Cascade level objects. Calls Cascade_Level_Dtor then optionally _free. Referenced from vtable 0x4D50C0 used by CascadeStands_Ctor.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D50C0",
+      "batch": 28
+    },
+    {
+      "name": "Bonk_ctor",
+      "address": "0x00438850",
+      "signature": "void * __thiscall Bonk_ctor(void *this, int param_1, float param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: Bonk* (vtable=0x4D5120, shared with WarmUp) | param_1: Scene | param_2-4: position X/Y/Z (float)",
+      "description": "Constructor for Bonk hammer obstacles in Tower Race (L5). Loads mesh 'levels\\\\level5-bonk', creates CollisionLevel, stores primary+offset positions, looks up IMPACT and HAMMERAREA1 in hash table. Timer max=1000 (16.7s), active=1.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0/+0x10E4/+0x10E8 (offset pos), +0x10EC/+0x10F0/+0x10F4 (impact pos), +0x10F8 (CollisionLevel), +0x10FC (active=1), +0x10FD (triggered=0), +0x1100 (timer=1000), +0x1138 (state=0)",
+      "xrefs": "2 calls from CreateSawblade and CreateLevelObjects",
+      "batch": 28
     }
   ],
-  "total_documented": 140
+  "total_documented": 150
 }
