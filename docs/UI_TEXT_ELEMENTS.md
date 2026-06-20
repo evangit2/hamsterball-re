@@ -2,7 +2,7 @@
 
 **Scope:** Original `Hamsterball.exe` (PE32, i386, Athena engine, VS2003).
 **Method:** Direct Ghidra decompilation and disassembly verification.
-**Last Updated:** 2026-06-20
+**Last Updated:** 2026-06-20 (revision 2 — vtable params, Color struct passing, troubleshooting)
 
 ---
 
@@ -15,8 +15,12 @@ practical DLL-mod examples.
 
 The old version of this doc incorrectly described the `this` pointer as
 "GraphicsDevice/App" and gave wrong parameter descriptions. All findings below
-are verified against raw Ghidra decompilation and cross-referenced with actual
-call sites in the game code.
+are verified against raw Ghidra decompilation and disassembly, cross-referenced
+with actual call sites in the game code.
+
+**Revision 2 adds:** critical finding that params 6 and 11 are overwritten
+internally by `UI_DrawTextCentered`/`UI_DrawTextShadow_Wrapper`, troubleshooting
+for Color struct passing, and a concrete failing-call analysis.
 
 ---
 
@@ -175,11 +179,24 @@ Prefer the wrapper (§4.3) or Font_DrawCentered (§4.4) instead.
 **RET:** `0x3C` (15 × 4 = 60 bytes cleaned)
 
 Same signature as `UI_DrawTextShadow`. Internally:
-1. Calls `Font_MeasureText(this, text)` to get text width
-2. Subtracts width/2 from x to center
-3. Calls `UI_DrawTextShadow`
+1. Builds two 5-DWORD color structs on the stack, using `0x4CF300` as the
+   vtable pointer (params 6 and 11 from the caller are **ignored/overwritten**)
+2. Calls `Font_MeasureText(this, text)` to get text width
+3. Subtracts width/2 from x to center
+4. Calls `UI_DrawTextShadow` with the two internally-built structs
 
 **The `this` pointer MUST be a Font\*, obtained via `*(App + 0x318)` etc.**
+
+> **CRITICAL (verified from disassembly):** Params 6 and 11 are overwritten
+> with the hardcoded absolute address `0x4CF300` inside the function body:
+> ```
+> 00409c7f: MOV dword ptr [EAX],0x4cf300   ; overwrites param_6 slot
+> 00409cae: MOV dword ptr [EAX],0x4cf300   ; overwrites param_11 slot
+> ```
+> This means you do NOT need to pass a valid vtable pointer for params 6
+> and 11 — they are replaced internally. Pass 0, NULL, or any value; it
+> will be overwritten. The actual color data lives in params 7–10 (text
+> RGBA) and 12–15 (shadow RGBA) as individual floats.
 
 ### 4.3 `UI_DrawTextShadow_Wrapper` — Easiest high-level (15 params + this)
 
@@ -324,17 +341,108 @@ from C/C++ with `__thiscall`, you must push exactly 15 DWORDs. Many callers
 get the count wrong. Use `Font_DrawCentered` (8 params) or
 `UI_DrawTextShadow_Wrapper` (15 params but auto-fills vtable) instead.
 
-### 5.3 Color struct vtable not set
+### 5.3 Color struct vtable not set — **DEBUNKED**
 
-Params 6 and 11 must be a valid vtable pointer (`0x4CF300`) or the function
-will crash when dereferencing the transform struct. The wrapper function
-(`0x409B90`) handles this automatically.
+> **Previous doc said:** "Params 6 and 11 must be a valid vtable pointer
+> (`0x4CF300`) or the function will crash."
+>
+> **WRONG.** Verified from disassembly: `UI_DrawTextCentered` (0x409C60)
+> overwrites params 6 and 11 with the hardcoded immediate `0x4CF300`:
+> ```
+> 00409c7f: MOV dword ptr [EAX],0x4cf300   ; param_6 overwritten
+> 00409cae: MOV dword ptr [EAX],0x4cf300   ; param_11 overwritten
+> ```
+> The same is true for `UI_DrawTextShadow_Wrapper` (0x409B90).
+> Params 6 and 11 are **always replaced internally** — you can pass 0, NULL,
+> or garbage. The actual color data is the 4 floats after each vtable slot
+> (params 7–10 and 12–15).
 
 ### 5.4 Font not loaded yet
 
 The font pointers at `App+0x318` etc. are only valid after the resource
 loader (`0x0042A8C0`) has completed. If you call during early initialization,
 the pointer will be NULL. Hook after the loading screen completes.
+
+### 5.5 Color struct not expanded to individual floats
+
+If your mod API wrapper (`CallMethod` or similar) takes a `Color` struct
+(e.g. `struct Color { float r, g, b, a; }`) as a single parameter, it may
+pass it as a **pointer** (1 DWORD) instead of pushing 4 individual floats
+onto the stack. This results in only 9 DWORDs on the stack instead of 15,
+causing stack corruption and a crash when the function executes `RET 0x3C`
+(it tries to clean 60 bytes but only 36 were pushed).
+
+**Fix:** Pass each color component as a separate `float` argument:
+
+```cpp
+// WRONG — Color struct may be passed as pointer (1 DWORD):
+CallMethod(0x409C60, font, "text", x, y, 5, 5,
+    0, Color(0.5f, 0.5f, 0.5f, 0.8f),
+    0, Color(0.0f, 0.0f, 0.0f, 1.0f));
+
+// CORRECT — 15 individual DWORDs on the stack:
+CallMethod(0x409C60, font, "text", x, y, 5, 5,
+    0,                           // param_6 (ignored, overwritten)
+    0.5f, 0.5f, 0.5f, 0.8f,     // params 7-10: text RGBA
+    0,                           // param_11 (ignored, overwritten)
+    0.0f, 0.0f, 0.0f, 1.0f);    // params 12-15: shadow RGBA
+```
+
+### 5.6 Y coordinate at screen edge
+
+Setting `y=0` places text at the very top of the screen. Depending on the
+font's glyph baseline offset and the viewport, the text may be partially or
+fully clipped. Use `y=20` or higher to ensure visibility.
+
+### 5.7 Failing call analysis (real example)
+
+This call was reported as not working:
+
+```cpp
+DWORD vtable = baseAddr + 0xCF300;
+void* font = *(void**)((char*) api->GetApp() + 0x318);
+CallMethod(0x409C60, font, (char*)"69420", 437, 0, 5, 5,
+    vtable, Color(.5f, .5f, .5f, .8f),
+    vtable, Color(0.0f, 0.0f, 0.0f, 1.0f));
+```
+
+**Issues identified:**
+
+1. **`vtable` param is unnecessary.** Params 6 and 11 are overwritten with
+   `0x4CF300` inside the function. The `baseAddr + 0xCF300` calculation is
+   wasted effort and irrelevant.
+
+2. **`Color()` struct passing.** If `CallMethod` passes `Color()` as a struct
+   by pointer (1 DWORD) instead of expanding to 4 floats (4 DWORDs), the
+   stack is misaligned. This is the **most likely cause of failure**.
+   Total params would be 9 instead of 15.
+
+3. **`y=0`** may cause text to be clipped at the top of the screen.
+
+4. **No null check on font.** If `App+0x318` is NULL (font not loaded yet),
+   the call will crash.
+
+**Recommended fix** — use `Font_DrawCentered` (8 params, simplest):
+
+```cpp
+void* font = *(void**)((char*)api->GetApp() + 0x318);
+if (!font) return;
+CallMethod(0x42C870, font, (char*)"69420", 437, 20,
+    0,                    // ignored (overwritten with 0x4CF300)
+    0.5f, 0.5f, 0.5f, 0.8f);  // RGBA (note: only works if font scale ≠ 1.0)
+```
+
+Or use `UI_DrawTextShadow_Wrapper` (15 params, with shadow):
+
+```cpp
+void* font = *(void**)((char*)api->GetApp() + 0x318);
+if (!font) return;
+CallMethod(0x409B90, font, (char*)"69420", 437, 20, 3, 3,
+    0,                        // ignored
+    0.5f, 0.5f, 0.5f, 0.8f,   // text RGBA
+    0,                        // ignored
+    0.0f, 0.0f, 0.0f, 1.0f);  // shadow RGBA
+```
 
 ---
 
@@ -619,17 +727,23 @@ void OnRenderFrame() {
    stack params (RET 0x3C). `Font_DrawCentered`/`Font_DrawGlyph` take 8 (RET 0x20).
    Mismatching the count corrupts the stack.
 
-3. **Color struct vtable not set.** Params 6 and 11 of `UI_DrawTextShadow` must
-   be a valid vtable pointer (`0x4CF300`). Use `UI_DrawTextShadow_Wrapper`
-   (`0x409B90`) which auto-fills these — pass 0 for those params.
+3. **Color struct vtable not set — DEBUNKED.** Params 6 and 11 of
+   `UI_DrawTextShadow`/`UI_DrawTextCentered` are **overwritten internally** with
+   `0x4CF300`. You can pass 0 for these params. They are NOT read from the
+   caller's stack. (See §5.3 for disassembly proof.)
 
 4. **Colors ignored at scale 1.0.** When `Font+0x428 == 1.0f`, the fast path
    (`Sprite_DrawRect`) is used and color params are ignored. Set scale ≠ 1.0
    temporarily for colored text (see §8).
 
-5. **Font not loaded.** Font pointers at `App+0x318` etc. are NULL until the
+5. **Color struct passed as pointer instead of 4 floats.** If your `CallMethod`
+   wrapper receives a `Color` struct, it may push 1 pointer instead of 4 floats.
+   This gives 9 stack params instead of 15 → stack corruption via `RET 0x3C`.
+   Always expand `Color` into 4 individual `float` arguments. (See §5.5.)
+
+6. **Font not loaded.** Font pointers at `App+0x318` etc. are NULL until the
    resource loader completes. Always null-check before drawing.
 
-6. **Calling convention.** These are `__thiscall` — Font* goes in ECX, params
+7. **Calling convention.** These are `__thiscall` — Font* goes in ECX, params
    go on stack right-to-left, callee cleans the stack (RET N). From C, use
    `__thiscall` typedefs or inline assembly.
