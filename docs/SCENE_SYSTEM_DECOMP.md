@@ -151,7 +151,7 @@ Finally dynamic_object->vtable[8]() callback.
 [0x80] 0x41C5B0  Scene_?? (0x41C5B0)
 [0x84] 0x419750  Scene_?? (0x419750)
 [0x88] 0x44B840  Scene_NoOp5
-[0x8C] 0x41A9A0  Scene_?? (0x41A9A0)
+[0x8C] 0x41A9A0  Scene_ComputeInputForceDirection (NOT lighting — computes 3D force from player input)
 ```
 
 ### Level Objects

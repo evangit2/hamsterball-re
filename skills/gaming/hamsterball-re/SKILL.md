@@ -475,7 +475,7 @@ Opens file with _open(path, 0x8000), reads: material_count → materials (with e
 | 27 | 0x41A560 | Scene_RenderScoreHUD | Render score HUD overlay |
 | 28 | 0x41A680 | Scene_RenderTimerHUD | Render timer HUD overlay |
 | 32 | 0x41C5B0 | Scene_SpawnBallsAndObjects | Create game objects (balls, traps, secrets, flags) |
-| 35 | 0x41A9A0 | Scene_ComputeLighting | Find closest light, compute direction vector |
+| 35 | 0x41A9A0 | Scene_ComputeInputForceDirection | Computes 3D force vector from strongest player input across balls in slot (Ghidra label "Scene_ComputeLighting" is a MISNOMER) |
 
 ### Scene_Update (0x419C00) — Main Game Tick (10 phases)
 

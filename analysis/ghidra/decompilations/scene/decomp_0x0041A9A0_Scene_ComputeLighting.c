@@ -1,7 +1,27 @@
 // Decompiled via GhidraMCP
-// Function: Scene_ComputeLighting
+// Function: Scene_ComputeInputForceDirection (Ghidra label: Scene_ComputeLighting — MISNOMER)
 // Address: 0x0041A9A0
 // Category: scene
+// Vtable slot: 35 (+0x8C) of Board/Scene vtable
+//
+// PURPOSE: Computes a 3D directional force vector based on the strongest player input
+// across all balls in a player slot. NOT a lighting function despite the Ghidra label.
+//
+// Algorithm:
+//   1. Determine ball count for the given player slot (App+0xB28+slot*4), default 3
+//   2. Iterate balls in slot (stride 4 starting at App+0x550):
+//      - Call Ball_GetInputForce(ball, &force_x, &force_z) → reads keyboard/mouse/joystick
+//      - Track ball with MAXIMUM input force magnitude (Vec2_Distance from origin)
+//      - If winning ball's type (ball+8) == 2 (AI), set AI flag
+//   3. If no input (max force == 0.0): fall back to default camera direction
+//   4. Compute 3D direction: (input_dir - camera_pos), normalize via 1/sqrt(len^2)
+//   5. Scale: 0.12 for human players; (App+0x84C * 89128.96 + 0) for AI balls
+//   6. Output param_1 = normalized_direction * scale (Vec3)
+//
+// Key constants: _DAT_004cf368=0.0, _DAT_004cf310=1.0, _DAT_004d03b8=0.12 (human scale)
+//
+// Callers: RumbleBoard_Update (0x421FE0), Scene_ComputeArenaLighting (0x422C70),
+//          Scene_ComputeArenaLighting2 (0x423800) — all via vtable dispatch
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 

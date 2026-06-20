@@ -500,7 +500,7 @@ Offset | Field | Description
 | 32 | +0x80 | 0x41C5B0 | Scene_SpawnBallsAndObjects | vmethod[32]: spawn balls (GameObject_ctor), scan SAFESPOT, CreateBadBall/MouseTrap/Secret/Flags/Signs/DynamicObjects |
 | 33 | +0x84 | 0x419750 | Scene_method33 | Near Scene_dtor helper |
 | 34 | +0x88 | 0x44B840 | NoOp_return | Empty stub (default) |
-| 35 | +0x8C | 0x41A9A0 | Scene_ComputeLighting | Find closest light source from array, compute direction/scale, camera-relative vector |
+| 35 | +0x8C | 0x41A9A0 | Scene_ComputeInputForceDirection | Computes 3D force vector from strongest player input across balls in slot. Ghidra label "Scene_ComputeLighting" is a MISNOMER. Scale: 0.12 human, different for AI. |
 
 ## SceneObject Vtable Layout (0x4D934C, 10 entries)
 

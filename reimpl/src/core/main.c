@@ -825,7 +825,10 @@ int main(int argc, char *argv[]) {
                   cam_target.x, cam_target.y, cam_target.z,
                   0, 1, 0);
         
-        /* Update light position (matches Scene_ComputeLighting 0x41A9A0) */
+        /* Update light position (NOTE: 0x41A9A0 is Scene_ComputeInputForceDirection,
+           NOT a lighting function — Ghidra label was wrong. This reimpl code is
+           setting an actual OpenGL light, which is separate from the original's
+           input-force-direction computation at this vtable slot.) */
         GLfloat light_pos[] = {cam_pos.x + 100, 500.0f, cam_pos.z + 100, 1.0f};
         glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
         

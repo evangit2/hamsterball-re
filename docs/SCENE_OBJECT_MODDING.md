@@ -211,7 +211,7 @@ Scene inherits from Gadget. The Gadget base contains:
 | `[0x80]` | `0x41C5B0` | `Scene_??` | Unknown | — |
 | `[0x84]` | `0x419750` | `Scene_??` | Unknown | — |
 | `[0x88]` | `0x44B840` | `Scene_NoOp5` | No-op stub | — |
-| `[0x8C]` | `0x41A9A0` | `Scene_??` | Unknown | — |
+| `[0x8C]` | `0x41A9A0` | `Scene_ComputeInputForceDirection` | Computes 3D force vector from strongest player input (Ghidra label "ComputeLighting" is wrong) | `__thiscall` |
 
 ---
 
