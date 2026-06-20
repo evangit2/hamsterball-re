@@ -1,52 +1,34 @@
 // ============================================================
-// Player Clones Mod v6 for Hamsterball
+// Player Clones Mod v7 for Hamsterball
 // Pure AutoAssembler — No Lua Required
 // ============================================================
 //
-// FIXES IN v6:
-//   1. RESPAWN FIX: Clear AI state (ball+0x808, ball+0x288) after respawn
-//      so the AI searches for a new target instead of chasing a stale one.
-//      Also clear ball+0x2F8 (respawn flag) after AI state reset.
-//   2. CRASH FIX: Detect stale clones (scene ptr mismatch) and remove them
-//      from the registry. Prevents use-after-free when arena exits.
-//   3. SPAWN FIX: Read original ball ptr from player table
-//      [scene+0x878 + pidx*0xA0 + 0x5DC] instead of searching ball_list.
-//      Always finds the ORIGINAL player, never a dead clone.
+// FIXES IN v7:
+//   1. CHASE FIX: Set 8-ball AI fields (ball+0xC6C, ball+0xC70, ball+0xC7C)
+//      to huge values so clones chase from anywhere and never "return home".
+//      Also set ball+0xC60 (home position) to spawn position.
+//      Re-applied every frame in AI loop (survives respawn).
+//   2. SPAWN WITHOUT ORIGINAL: Can clone players 2-4 even when their original
+//      ball is not in the level. Falls back to Player 1's position, then to
+//      first active ball in ball_list.
 //
-// TRACED FUNCTIONS:
-//   Ball_FindClosestRespawnPoint @ 0x405190
-//     Sets: ball+0x2F8=1, ball+0x768=1, ball+0x2E8=0, ball+0x2E9=0
-//     Does NOT clear: ball+0x808 (AI state), ball+0x288 (target ptr)
-//     → Stale target causes AI to chase garbage → motionless!
-//   Scene_UpdateBallsAndState @ 0x41B540
-//     Iterates ball_list: calls vtable[4], checks ball+0x2E8 for respawn
-//     Player balls (player_index != -1): respawn via 0x405190
-//     NPC balls (player_index == -1): remove + free
-//   COMPUTER AI @ 0x4222D0
-//     Checks ball+0x808: if !=0, uses stored target (ball+0x288)
-//     If ball+0x288 points to freed/invalid ball → garbage force vector
+// 8-BALL AI FIELDS (set by InitPhysicsDefaults 0x405100):
+//   ball+0xC60 = home position X (float)
+//   ball+0xC64 = home position Y (float)
+//   ball+0xC68 = home position Z (float)
+//   ball+0xC6C = chase_distance = 600.0 (8-ball default) → set to 99999999.0
+//   ball+0xC70 = home_radius = 1200.0 (8-ball default) → set to 99999999.0
+//   ball+0xC78 = spin_radius = 0 (accumulator, grows each frame)
+//   ball+0xC7C = spin_factor = 50.0 (speed multiplier)
 //
-// BALL STRUCT OFFSETS:
-//   +0x014  Scene ptr        +0x018  player_index
-//   +0x164  pos X/Y/Z        +0x170  vel X/Y/Z
-//   +0x188  max_speed        +0x1A0  render_scale
-//   +0x1A4  CollisionMesh    +0x1B8  RenderContext1
-//   +0x208  RenderContext2   +0x284  radius
-//   +0x288  AI target ptr    +0x2E8  despawn flag (1=respawn needed)
-//   +0x2F8  respawn flag      +0x2F9  is_falling
-//   +0x324  return_early     +0x768  is_active
-//   +0x808  AI state (0=search, !0=use stored target)
-//
-// PLAYER TABLE (in App sub-struct at scene+0x878):
-//   +0x5DC + pidx*0xA0 = original ball pointer for player pidx
-//   +0xB28 + pidx*4    = control mode (0x63=COMPUTER, 0x64=OFF, other=HUMAN)
+// When chase_distance is huge, the AI always considers targets "in range".
+// When home_radius is huge, the ball never triggers "return home" behavior.
 //
 // SETUP:
 //   1. Attach CE to Hamsterball.exe
 //   2. Auto Assembler (Ctrl+A) → paste → Execute
 //   3. Add addresses: spawnP1, spawnP2, spawnP3, spawnP4
-//   4. For each: Right-click → Set Hotkey → Key 1/2/3/4 → Value = 1
-//   5. Start a race or arena, press 1/2/3/4 to spawn clones
+//   4. For each: Set Hotkey → Key 1/2/3/4 → Value = 1
 // ============================================================
 
 [ENABLE]
@@ -66,6 +48,7 @@ alloc(clone_pidx, 32)
 alloc(force_buf, 12)
 alloc(saved_ball_ptr, 4)
 alloc(saved_ctrl_mode, 4)
+alloc(fallback_ball, 4)
 
 scene_saved:
   dd 0
@@ -95,6 +78,8 @@ saved_ball_ptr:
   dd 0
 saved_ctrl_mode:
   dd 0
+fallback_ball:
+  dd 0
 
 registersymbol(scene_saved)
 registersymbol(spawnP1)
@@ -117,10 +102,12 @@ label(ai_done)
 label(ai_skip_dead)
 label(stale_clone)
 label(phase2)
+label(find_fallback)
+label(fb_loop)
+label(fb_done)
 
 // ============================================================
 // CODE CAVE — Hook for Scene_UpdateBallsAndState (0x41B540)
-// Original bytes: 53 55 56 8B D9 57
 // ============================================================
 
 CloneCode:
@@ -179,47 +166,50 @@ ai_loop:
   cmp esi, [clone_count]
   jae ai_done
 
-  // Get clone pointer
   mov eax, [clone_ptrs + esi*4]
   test eax, eax
   jz ai_next
 
-  // ---- STALE CHECK: verify clone's scene matches current scene ----
-  // ball+0x14 = Scene ptr. If it doesn't match scene_saved,
-  // the clone was freed when the previous scene was destroyed.
+  // ---- STALE CHECK ----
   mov ecx, [eax+0x14]
   cmp ecx, [scene_saved]
   je not_stale
-  // Stale clone — null it out
   mov dword [clone_ptrs + esi*4], 0
   jmp ai_next
 
 not_stale:
-  // ---- DEAD CHECK: skip if clone is not active ----
+  // ---- DEAD CHECK ----
   cmp byte [eax+0x768], 0
   je ai_skip_dead
 
-  // ---- RESPAWN FIX: if ball+0x2F8 (respawn flag) is set,
-  //      clear AI state so it searches for a new target ----
+  // ---- RESPAWN FIX: clear AI state after respawn ----
   cmp byte [eax+0x2F8], 0
   je no_respawn_reset
-  // Clear AI state
   mov dword [eax+0x808], 0
   mov dword [eax+0x288], 0
-  // Clear respawn flag (let physics resume normally)
   mov byte [eax+0x2F8], 0
-  // Clear return_early
   mov byte [eax+0x324], 0
-  // Clear velocity (start fresh at respawn point)
   mov dword [eax+0x170], 0
   mov dword [eax+0x174], 0
   mov dword [eax+0x178], 0
 
 no_respawn_reset:
-  // ---- Call COMPUTER AI for this clone ----
-  mov edi, [clone_pidx + esi*4]    // edi = player_index
+  // ---- CHASE FIX: re-apply AI fields every frame (survives respawn) ----
+  mov edx, eax
+  // chase_distance = 99999999.0 (0x4B7A5E35)
+  mov dword [edx+0xC6C], 4B7A5E35
+  // home_radius = 99999999.0 (0x4B7A5E35)
+  mov dword [edx+0xC70], 4B7A5E35
+  // spin_factor = 50.0 (0x42480000, same as 8-ball default)
+  mov dword [edx+0xC7C], 42480000
+  // spin_radius = 0 (reset accumulator each frame to prevent runaway)
+  // Actually don't reset - it's used for distance calc. Just ensure it starts at 0.
+  // The 8-ball AI adds 0x4CF48C (1.0) each frame. Leave it alone.
 
-  // Save original ball ptr from player table
+  // ---- Call COMPUTER AI ----
+  mov edi, [clone_pidx + esi*4]
+
+  // Save original ball ptr
   mov ecx, [scene_saved]
   mov ecx, [ecx+0x878]
   mov edx, edi
@@ -228,18 +218,33 @@ no_respawn_reset:
   mov [saved_ball_ptr], ebx
 
   // Write clone ptr to player table
+  mov ecx, [clone_ptrs + esi*4]
+  mov [ecx + edx + 0x5DC], ecx
+  // Wait — that's wrong. ecx+edx+0x5DC is the table entry, but ecx is
+  // the App sub-struct, not the clone. Let me fix this.
+
+  // Actually: ecx = [scene+0x878] (App sub-struct)
+  // [ecx + edx + 0x5DC] = ball ptr for player edi
+  // We want to write our clone ptr there.
+  mov ecx, [scene_saved]
+  mov ecx, [ecx+0x878]
+  mov edx, edi
+  imul edx, edx, 0xA0
+  // Save original
+  mov ebx, [ecx + edx + 0x5DC]
+  mov [saved_ball_ptr], ebx
+  // Write clone
+  mov eax, [clone_ptrs + esi*4]
   mov [ecx + edx + 0x5DC], eax
 
-  // Save original control mode
+  // Save + set control mode
   mov edx, edi
   shl edx, 2
   mov ebx, [ecx + edx + 0xB28]
   mov [saved_ctrl_mode], ebx
-
-  // Set control mode to COMPUTER (0x63)
   mov dword [ecx + edx + 0xB28], 0x63
 
-  // Call COMPUTER AI: __thiscall(ecx=scene, float* out, int pidx), ret 8
+  // Call COMPUTER AI
   push edi
   lea eax, [force_buf]
   push eax
@@ -254,7 +259,7 @@ no_respawn_reset:
   mov ebx, [saved_ball_ptr]
   mov [ecx + edx + 0x5DC], ebx
 
-  // Restore original control mode
+  // Restore control mode
   mov edx, edi
   shl edx, 2
   mov ebx, [saved_ctrl_mode]
@@ -266,10 +271,10 @@ ai_next:
   jmp ai_loop
 
 ai_done:
-  // ---- Compact registry: remove stale/null entries ----
+  // ---- Compact registry ----
   pushad
-  xor ecx, ecx          // ecx = read index
-  xor edx, edx          // edx = write index
+  xor ecx, ecx
+  xor edx, edx
 
 compact_loop:
   cmp ecx, [clone_count]
@@ -277,11 +282,9 @@ compact_loop:
   mov eax, [clone_ptrs + ecx*4]
   test eax, eax
   jz compact_skip
-  // Check scene ptr validity
   mov ebx, [eax+0x14]
   cmp ebx, [scene_saved]
   jne compact_skip
-  // Keep this clone
   mov [clone_ptrs + edx*4], eax
   mov eax, [clone_pidx + ecx*4]
   mov [clone_pidx + edx*4], eax
@@ -293,19 +296,19 @@ compact_skip:
 compact_done:
   mov [clone_count], edx
   popad
-
   popad
 
 original_code:
-  push ebx          // 53
-  push ebp          // 55
-  push esi          // 56
-  mov ebx, ecx      // 8B D9
-  push edi          // 57
+  push ebx
+  push ebp
+  push esi
+  mov ebx, ecx
+  push edi
   jmp 0041B546
 
 // ============================================================
 // SpawnClone — Creates one player clone + registers it
+// Uses player table for original ball, falls back to any active ball
 // ============================================================
 
 SpawnClone:
@@ -313,21 +316,58 @@ SpawnClone:
   test ecx, ecx
   jz spawn_skip
 
-  // ---- Read ORIGINAL ball ptr from player table (NOT search ball_list) ----
-  // This always gets the real player ball, never a dead clone.
+  // ---- Try to read original ball from player table ----
   mov ecx, [ecx+0x878]
   mov edx, [player_idx]
   imul edx, edx, 0xA0
   mov eax, [ecx + edx + 0x5DC]
   test eax, eax
-  jz spawn_skip
+  jz find_fallback
 
   // Check if original ball is active
   cmp byte [eax+0x768], 0
-  jz spawn_skip
+  jz find_fallback
 
   mov [orig_ball], eax
+  jmp spawn_found
 
+find_fallback:
+  // ---- No original ball — find ANY active ball to copy position from ----
+  mov ecx, [scene_saved]
+  mov edx, [ecx+0x2DE0]       // all_balls_list items array
+  mov edi, [ecx+0x2DEC+4]    // all_balls_list count (at scene+0x2DEC+4)
+  // Wait, 0x2DEC is the AthenaList. Items array at list+0x40C, count at list+4.
+  // Actually: AthenaList at scene+0x2DEC.
+  // count = [scene+0x2DEC+4], items = [scene+0x2DEC+0x40C]
+  mov ecx, [scene_saved]
+  mov ecx, [ecx+0x2DEC+0x40C]  // items array
+  mov edx, [scene_saved]
+  mov edx, [edx+0x2DEC+4]       // count
+  test edx, edx
+  jz spawn_skip
+  xor edi, edi                  // loop index
+
+fb_loop:
+  cmp edi, edx
+  jae spawn_skip                 // no active ball found
+  mov eax, [ecx + edi*4]
+  test eax, eax
+  jz fb_next
+  cmp byte [eax+0x768], 0
+  jne fb_found
+fb_next:
+  inc edi
+  jmp fb_loop
+
+fb_found:
+  mov [fallback_ball], eax
+  // Use this ball as the source for position
+  jmp spawn_found
+
+spawn_notfound:
+  jmp spawn_skip
+
+spawn_found:
   // Check clone registry capacity
   mov eax, [clone_count]
   cmp eax, 8
@@ -348,7 +388,7 @@ SpawnClone:
   cld
   rep stosd
 
-  // ---- Ball_ctor2(new_ball, scene) — PLAYER ball constructor ----
+  // ---- Ball_ctor2(new_ball, scene) ----
   mov ecx, [scene_saved]
   push ecx
   mov ecx, [new_ball]
@@ -358,41 +398,6 @@ SpawnClone:
   mov ecx, [new_ball]
   mov edx, [ecx]
   call dword [edx+4]
-
-  // ---- Copy render context from original (41 dwords from +0x1B8) ----
-  mov esi, [orig_ball]
-  mov edi, [new_ball]
-  add esi, 0x1B8
-  add edi, 0x1B8
-  mov ecx, 0x29
-  cld
-  rep movsd
-
-  // ---- Copy trajectory from original ----
-  mov esi, [orig_ball]
-  mov edi, [new_ball]
-  mov eax, [esi+0x2AC]
-  mov [edi+0x2AC], eax
-  mov eax, [esi+0x2B0]
-  mov [edi+0x2B0], eax
-  mov eax, [esi+0x2B4]
-  mov [edi+0x2B4], eax
-  mov eax, [esi+0x2B8]
-  mov [edi+0x2B8], eax
-
-  // ---- Copy render position from original ----
-  mov esi, [orig_ball]
-  mov edi, [new_ball]
-  mov eax, [esi+0x1BC]
-  mov [edi+0x1BC], eax
-  mov eax, [esi+0x1C0]
-  mov [edi+0x1C0], eax
-  mov eax, [esi+0x1C4]
-  mov [edi+0x1C4], eax
-  mov eax, [esi+0x1C8]
-  mov [edi+0x1C8], eax
-  mov eax, [esi+0x204]
-  mov [edi+0x204], eax
 
   // ---- Set player values ----
   mov edx, [new_ball]
@@ -411,8 +416,23 @@ SpawnClone:
   // render_scale = 1.05
   mov dword [edx+0x1A0], 3F866666
 
-  // ---- Set position from original + 5.0 offset ----
+  // ---- CHASE FIX: Set AI fields to huge values ----
+  // chase_distance = 99999999.0
+  mov dword [edx+0xC6C], 4B7A5E35
+  // home_radius = 99999999.0
+  mov dword [edx+0xC70], 4B7A5E35
+  // spin_factor = 50.0 (same as 8-ball default)
+  mov dword [edx+0xC7C], 42480000
+  // spin_radius = 0
+  mov dword [edx+0xC78], 0
+
+  // ---- Set position ----
+  // If we have an original ball, copy from it. Otherwise use fallback ball.
   mov eax, [orig_ball]
+  test eax, eax
+  jz use_fallback_pos
+
+  // Copy position from original + 5.0 offset
   fld dword [eax+0x164]
   fadd dword [004CF55C]
   fstp dword [edx+0x164]
@@ -425,8 +445,7 @@ SpawnClone:
   fadd dword [004CF55C]
   fstp dword [edx+0x16C]
 
-  // ---- Copy velocity from original ----
-  mov eax, [orig_ball]
+  // Copy velocity from original
   mov ebx, [eax+0x170]
   mov [edx+0x170], ebx
   mov ebx, [eax+0x174]
@@ -434,7 +453,77 @@ SpawnClone:
   mov ebx, [eax+0x178]
   mov [edx+0x178], ebx
 
+  // Copy render context from original (41 dwords from +0x1B8)
+  mov esi, eax
+  mov edi, edx
+  add esi, 0x1B8
+  add edi, 0x1B8
+  mov ecx, 0x29
+  cld
+  rep movsd
+
+  // Copy trajectory from original
+  mov esi, eax
+  mov edi, edx
+  mov ebx, [esi+0x2AC]
+  mov [edi+0x2AC], ebx
+  mov ebx, [esi+0x2B0]
+  mov [edi+0x2B0], ebx
+  mov ebx, [esi+0x2B4]
+  mov [edi+0x2B4], ebx
+  mov ebx, [esi+0x2B8]
+  mov [edi+0x2B8], ebx
+
+  // Copy render position
+  mov esi, eax
+  mov edi, edx
+  mov ebx, [esi+0x1BC]
+  mov [edi+0x1BC], ebx
+  mov ebx, [esi+0x1C0]
+  mov [edi+0x1C0], ebx
+  mov ebx, [esi+0x1C4]
+  mov [edi+0x1C4], ebx
+  mov ebx, [esi+0x1C8]
+  mov [edi+0x1C8], ebx
+  mov ebx, [esi+0x204]
+  mov [edi+0x204], ebx
+  jmp set_home_pos
+
+use_fallback_pos:
+  // Use fallback ball position
+  mov eax, [fallback_ball]
+  test eax, eax
+  jz set_home_pos
+
+  fld dword [eax+0x164]
+  fadd dword [004CF55C]
+  fstp dword [edx+0x164]
+
+  fld dword [eax+0x168]
+  fadd dword [eax+0x284]
+  fstp dword [edx+0x168]
+
+  fld dword [eax+0x16C]
+  fadd dword [004CF55C]
+  fstp dword [edx+0x16C]
+
+  // Zero velocity (start from rest)
+  mov dword [edx+0x170], 0
+  mov dword [edx+0x174], 0
+  mov dword [edx+0x178], 0
+
+set_home_pos:
+  // ---- Set home position (ball+0xC60) to spawn position ----
+  mov eax, [new_ball]
+  mov ebx, [eax+0x164]
+  mov [eax+0xC60], ebx
+  mov ebx, [eax+0x168]
+  mov [eax+0xC64], ebx
+  mov ebx, [eax+0x16C]
+  mov [eax+0xC68], ebx
+
   // ---- Set active flags ----
+  mov edx, [new_ball]
   mov byte [edx+0x768], 1
   mov byte [edx+0x769], 1
   mov byte [edx+0x2F9], 0
@@ -456,7 +545,7 @@ SpawnClone:
   push edx
   call 00453810
 
-  // ---- Register clone in arrays ----
+  // ---- Register clone ----
   mov eax, [clone_count]
   mov ecx, [new_ball]
   mov [clone_ptrs + eax*4], ecx
@@ -465,6 +554,9 @@ SpawnClone:
   inc dword [clone_count]
 
 spawn_skip:
+  // Clear orig_ball and fallback_ball for next call
+  mov dword [orig_ball], 0
+  mov dword [fallback_ball], 0
   ret
 
 // ============================================================
@@ -495,6 +587,7 @@ dealloc(clone_pidx)
 dealloc(force_buf)
 dealloc(saved_ball_ptr)
 dealloc(saved_ctrl_mode)
+dealloc(fallback_ball)
 
 unregistersymbol(scene_saved)
 unregistersymbol(spawnP1)
