@@ -2089,7 +2089,107 @@
       "struct_offsets": "+0x878 (App\u2192+0x318 for Font), param_1+0x708 (modal flag\u21921)",
       "xrefs": "1 DATA ref from vtable 0x4D64D0",
       "batch": 33
+    },
+    {
+      "name": "RumbleBoard_TickTimerWrapper",
+      "address": "0x004468c0",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: RumbleBoard* this",
+      "description": "Wrapper: calls RumbleBoard_TickTimer on +0x110C, then NoOp. Used as generic per-frame tick callback for multiple board types.",
+      "struct_offsets": "+0x110C (Timer)",
+      "xrefs": "4 DATA refs from vtables 0x4D67EC, 0x4D691C, 0x4D6974, 0x4D69CC",
+      "batch": 34
+    },
+    {
+      "name": "QuitDialog_CreateBuyLabel",
+      "address": "0x00446910",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: QuitDialog* this",
+      "description": "Creates buy label for unregistered copies. eSellerate_ReadAffiliateKey, fallback URL raptisoft.com/buyhamsterball, allocates Gadget_Label (0x880 bytes).",
+      "struct_offsets": "+0x878 (App\u2192+0x184)",
+      "xrefs": "1 call from 0x448870",
+      "batch": 34
+    },
+    {
+      "name": "App_CreateConfirmMenu",
+      "address": "0x004469e0",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: Scene/App with App at +0x878",
+      "description": "Allocates ConfirmMenu (0xCFC bytes), calls ConfirmMenu_ctor with App and mode=1, adds to scene.",
+      "struct_offsets": "+0x878 (App\u2192+0x184)",
+      "xrefs": "1 DATA ref from vtable 0x4D69B8",
+      "batch": 34
+    },
+    {
+      "name": "App_CreateHighScoreEntry",
+      "address": "0x00446a60",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: Scene/App with App at +0x878",
+      "description": "Allocates HighScoreEntry (0x904 bytes), calls HighScoreEntry_ctor with App and score data at App+0x5CC, adds to scene.",
+      "struct_offsets": "+0x878 (App\u2192+0x184, +0x5CC)",
+      "xrefs": "1 DATA ref from vtable 0x4D69C0",
+      "batch": 34
+    },
+    {
+      "name": "QuitToDesktop_Execute",
+      "address": "0x00446ae0",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: QuitToDesktopDialog* this",
+      "description": "Executes quit-to-desktop: cleanup linked scene, set Gfx cull mode, dispatch render mode change, set exit state=3, call StartRace+ShowResults+ShowMainMenu.",
+      "struct_offsets": "+0x878 (App), App+0x115C (linked scene), App+0x174 (Gfx: +0x7D2, +0x708, +0x154)",
+      "xrefs": "1 DATA ref from vtable 0x4D6A10",
+      "batch": 34
+    },
+    {
+      "name": "RegisterDialog_ValidateSerial",
+      "address": "0x00446b80",
+      "signature": "void __fastcall ...(int *param_1)",
+      "parameters": "param_1: RegisterDialog* this (as int*)",
+      "description": "Validates serial key: RNG generates 128 bytes, copies serial/affiliate keys (SSO), ESellerate_Init, LicenseKey_Validate with '54138'. If valid: creates OkayDialog 'THANKS FOR BUYING HAMSTERBALL!'. Uses SSO pattern.",
+      "struct_offsets": "param_1[0x21E] (App), param_1[0x449] (serial SSO), param_1[0x450] (affiliate SSO)",
+      "xrefs": "4 DATA refs from vtables 0x4D6834, 0x4D6964, 0x4D69BC, 0x4D6A14",
+      "batch": 34
+    },
+    {
+      "name": "ScoreDisplay_dtor",
+      "address": "0x004470d0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: ScoreDisplay* this",
+      "description": "Dtor for ScoreDisplay: frees 2 SSO strings (+0x449, +0x450), RumbleBoard_CleanupTimer on +0x443, BaseObject_Init on 5 sub-objects, SceneObject_dtor.",
+      "struct_offsets": "+0x41F/+0x426/+0x42D/+0x434/+0x43B (BaseObjects), +0x443 (Timer), +0x449 (serial SSO), +0x450 (affiliate SSO)",
+      "xrefs": "2 calls from scalar_dtor and jump",
+      "batch": 34
+    },
+    {
+      "name": "StdString_Replace",
+      "address": "0x004471e0",
+      "signature": "void * __thiscall ...(void *this, uint param_1, void *param_2, uint param_3, uint param_4)",
+      "parameters": "this: StdString* | param_1: pos in this | param_2: source StdString* | param_3: start in source | param_4: count",
+      "description": "MSVC STL std::string::replace. Replaces range in 'this' at param_1 with chars from source starting at param_3. Handles SSO, self-replacement, bounds checking, buffer realloc, memmove.",
+      "struct_offsets": "+0x04 (data ptr/SSO), +0x14 (length), +0x18 (capacity)",
+      "xrefs": "1 call from StdString_Insert (0x4473DB)",
+      "batch": 34
+    },
+    {
+      "name": "ScoreDisplay_scalar_dtor",
+      "address": "0x00447370",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: ScoreDisplay* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for ScoreDisplay. Calls ScoreDisplay_dtor then _free if bit 0 set.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D67E8",
+      "batch": 34
+    },
+    {
+      "name": "StdString_Insert",
+      "address": "0x00447390",
+      "signature": "void * __thiscall ...(void *this, uint param_1, undefined4 *param_2, uint param_3)",
+      "parameters": "this: StdString* | param_1: insert pos | param_2: source StdString* | param_3: count",
+      "description": "MSVC STL std::string::insert. Inserts source chars into 'this' at position. Handles self-insertion (delegates to Replace), SSO, bounds checking, buffer realloc.",
+      "struct_offsets": "+0x04 (data/SSO), +0x14 (length), +0x18 (capacity)",
+      "xrefs": "1 call from StdString_InsertCStr (0x447590)",
+      "batch": 34
     }
   ],
-  "total_documented": 200
+  "total_documented": 210
 }
