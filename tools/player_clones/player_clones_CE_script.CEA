@@ -1,70 +1,44 @@
 // ============================================================
-// Player Clones Mod v5 for Hamsterball
+// Player Clones Mod v6 for Hamsterball
 // Pure AutoAssembler — No Lua Required
 // ============================================================
 //
-// WHAT'S NEW IN v5:
-//   - Calls COMPUTER AI function (0x4222D0) for each clone every frame
-//   - Uses PLAYER ball vtable (player appearance) NOT 8-ball vtable
-//   - Swaps ball pointer in player table so AI targets the clone
-//   - Temporarily sets control mode to COMPUTER (0x63)
-//   - Restores original ball pointer and control mode after AI call
-//   - COMPUTER AI excludes self from targeting (unlike 8-ball AI)
-//   - Score sharing via player_index (same as original)
+// FIXES IN v6:
+//   1. RESPAWN FIX: Clear AI state (ball+0x808, ball+0x288) after respawn
+//      so the AI searches for a new target instead of chasing a stale one.
+//      Also clear ball+0x2F8 (respawn flag) after AI state reset.
+//   2. CRASH FIX: Detect stale clones (scene ptr mismatch) and remove them
+//      from the registry. Prevents use-after-free when arena exits.
+//   3. SPAWN FIX: Read original ball ptr from player table
+//      [scene+0x878 + pidx*0xA0 + 0x5DC] instead of searching ball_list.
+//      Always finds the ORIGINAL player, never a dead clone.
 //
-// ROOT CAUSE OF "MOTIONLESS" BUG (v3/v4):
-//   The 8-ball AI tick (0x408390) does NOT exclude self from targeting.
-//   When a clone is in the ball_list with player_index != -1,
-//   the AI finds ITSELF as the nearest target (distance=0),
-//   computes a zero force vector, and the ball never moves.
-//   The COMPUTER AI function (0x4222D0) DOES exclude self:
-//   it compares each candidate with [App+0x878 + pidx*0xA0 + 0x5DC]
-//   and skips if they match.
-//
-// APPROACH:
-//   1. Create PLAYER ball (Ball_ctor2, player vtable, player appearance)
-//   2. Keep PLAYER vtable (NOT custom vtable with AI tick)
-//      - vtable[4] = 0x405E00 (Ball_Update, physics only)
-//      - The game calls vtable[4] every frame for physics
-//   3. Every frame, for each clone:
-//      a. Save original ball ptr at [scene+0x878 + pidx*0xA0 + 0x5DC]
-//      b. Write clone ptr to that location
-//      c. Save original control mode at [scene+0x878 + pidx*4 + 0xB28]
-//      d. Write 0x63 (COMPUTER) to control mode
-//      e. Call 0x4222D0(scene, &forceBuf, pidx) — AI computes force + applies via vtable[5]
-//      f. Restore original ball ptr
-//      g. Restore original control mode
-//   4. The AI function internally:
-//      - Checks control mode == 0x63 (COMPUTER) → passes
-//      - Reads ball from [scene+0x878 + pidx*0xA0 + 0x5DC] → our clone
-//      - Searches ball_list for nearest target (excludes self)
-//      - Computes direction to target
-//      - Normalizes + multiplies by speed scalar
-//      - Applies force via ball->vtable[5] (player vtable[5] = 0x401590)
-//      - Clears AI state (ball+0x808)
-//
-// FUNCTIONS TRACED:
-//   Ball_ctor2             @ 0x4039E0  (PLAYER ball ctor, vtable=0x4CF314)
-//   COMPUTER AI            @ 0x4222D0  (__thiscall, ecx=scene, ret 8)
-//     [esp+4] = float* outForce (12 bytes)
-//     [esp+8] = int playerIndex
-//   Ball_Update            @ 0x405E00  (player vtable[4], physics only)
-//   Force wrapper          @ 0x401590  (player vtable[5], applies force)
-//   AthenaList_Append      @ 0x453810  (__thiscall, ecx=list, push item)
-//   operator_new           @ 0x4BA57B  (__cdecl)
+// TRACED FUNCTIONS:
+//   Ball_FindClosestRespawnPoint @ 0x405190
+//     Sets: ball+0x2F8=1, ball+0x768=1, ball+0x2E8=0, ball+0x2E9=0
+//     Does NOT clear: ball+0x808 (AI state), ball+0x288 (target ptr)
+//     → Stale target causes AI to chase garbage → motionless!
+//   Scene_UpdateBallsAndState @ 0x41B540
+//     Iterates ball_list: calls vtable[4], checks ball+0x2E8 for respawn
+//     Player balls (player_index != -1): respawn via 0x405190
+//     NPC balls (player_index == -1): remove + free
+//   COMPUTER AI @ 0x4222D0
+//     Checks ball+0x808: if !=0, uses stored target (ball+0x288)
+//     If ball+0x288 points to freed/invalid ball → garbage force vector
 //
 // BALL STRUCT OFFSETS:
-//   +0x000  vtable          +0x010  App ptr
-//   +0x014  Scene ptr       +0x018  player_index
-//   +0x164  pos X/Y/Z       +0x170  vel X/Y/Z
-//   +0x188  max_speed       +0x1A0  render_scale
-//   +0x1A4  CollisionMesh   +0x1B8  RenderContext1
-//   +0x208  RenderContext2  +0x278  gravity_scale
-//   +0x284  radius          +0x288  AI target ptr
-//   +0x768  is_active       +0x808  AI state (0=search, !0=use stored)
+//   +0x014  Scene ptr        +0x018  player_index
+//   +0x164  pos X/Y/Z        +0x170  vel X/Y/Z
+//   +0x188  max_speed        +0x1A0  render_scale
+//   +0x1A4  CollisionMesh    +0x1B8  RenderContext1
+//   +0x208  RenderContext2   +0x284  radius
+//   +0x288  AI target ptr    +0x2E8  despawn flag (1=respawn needed)
+//   +0x2F8  respawn flag      +0x2F9  is_falling
+//   +0x324  return_early     +0x768  is_active
+//   +0x808  AI state (0=search, !0=use stored target)
 //
 // PLAYER TABLE (in App sub-struct at scene+0x878):
-//   +0x5DC + pidx*0xA0 = ball pointer for player pidx
+//   +0x5DC + pidx*0xA0 = original ball pointer for player pidx
 //   +0xB28 + pidx*4    = control mode (0x63=COMPUTER, 0x64=OFF, other=HUMAN)
 //
 // SETUP:
@@ -77,7 +51,6 @@
 
 [ENABLE]
 
-// ---- Allocate code cave, variables, clone registry ----
 alloc(CloneCode, 8192)
 alloc(scene_saved, 4)
 alloc(spawnP1, 4)
@@ -88,13 +61,12 @@ alloc(player_idx, 4)
 alloc(orig_ball, 4)
 alloc(new_ball, 4)
 alloc(clone_count, 4)
-alloc(clone_ptrs, 32)       // up to 8 clone ball pointers
-alloc(clone_pidx, 32)       // up to 8 clone player indices
-alloc(force_buf, 12)        // 3 floats for AI force output
-alloc(saved_ball_ptr, 4)    // temp save for ball ptr swap
-alloc(saved_ctrl_mode, 4)   // temp save for control mode swap
+alloc(clone_ptrs, 32)
+alloc(clone_pidx, 32)
+alloc(force_buf, 12)
+alloc(saved_ball_ptr, 4)
+alloc(saved_ctrl_mode, 4)
 
-// ---- Initialize variables ----
 scene_saved:
   dd 0
 spawnP1:
@@ -124,14 +96,12 @@ saved_ball_ptr:
 saved_ctrl_mode:
   dd 0
 
-// ---- Register symbols ----
 registersymbol(scene_saved)
 registersymbol(spawnP1)
 registersymbol(spawnP2)
 registersymbol(spawnP3)
 registersymbol(spawnP4)
 
-// ---- Labels ----
 label(original_code)
 label(check_p2)
 label(check_p3)
@@ -141,12 +111,12 @@ label(spawn_skip)
 label(spawn_notfound)
 label(spawn_found)
 label(spawn_next)
-label(registry_full)
 label(ai_loop)
 label(ai_next)
 label(ai_done)
-label(ai_skip)
-label(skip_ai_for_dead)
+label(ai_skip_dead)
+label(stale_clone)
+label(phase2)
 
 // ============================================================
 // CODE CAVE — Hook for Scene_UpdateBallsAndState (0x41B540)
@@ -154,10 +124,9 @@ label(skip_ai_for_dead)
 // ============================================================
 
 CloneCode:
-  // Save scene pointer
   mov [scene_saved], ecx
 
-  // ---- PHASE 1: Check spawn flags and create clones ----
+  // ---- PHASE 1: Spawn clones if requested ----
   mov eax, [spawnP1]
   or eax, [spawnP2]
   or eax, [spawnP3]
@@ -204,56 +173,80 @@ phase2:
 
   pushad
 
-  xor esi, esi          // esi = loop index
+  xor esi, esi
 
 ai_loop:
   cmp esi, [clone_count]
   jae ai_done
 
-  // Get clone pointer and player index
+  // Get clone pointer
   mov eax, [clone_ptrs + esi*4]
   test eax, eax
   jz ai_next
 
-  // Check if clone is still active (ball+0x768 != 0)
+  // ---- STALE CHECK: verify clone's scene matches current scene ----
+  // ball+0x14 = Scene ptr. If it doesn't match scene_saved,
+  // the clone was freed when the previous scene was destroyed.
+  mov ecx, [eax+0x14]
+  cmp ecx, [scene_saved]
+  je not_stale
+  // Stale clone — null it out
+  mov dword [clone_ptrs + esi*4], 0
+  jmp ai_next
+
+not_stale:
+  // ---- DEAD CHECK: skip if clone is not active ----
   cmp byte [eax+0x768], 0
-  je skip_ai_for_dead
+  je ai_skip_dead
 
-  // Save the clone's player index
-  mov edi, [clone_pidx + esi*4]
+  // ---- RESPAWN FIX: if ball+0x2F8 (respawn flag) is set,
+  //      clear AI state so it searches for a new target ----
+  cmp byte [eax+0x2F8], 0
+  je no_respawn_reset
+  // Clear AI state
+  mov dword [eax+0x808], 0
+  mov dword [eax+0x288], 0
+  // Clear respawn flag (let physics resume normally)
+  mov byte [eax+0x2F8], 0
+  // Clear return_early
+  mov byte [eax+0x324], 0
+  // Clear velocity (start fresh at respawn point)
+  mov dword [eax+0x170], 0
+  mov dword [eax+0x174], 0
+  mov dword [eax+0x178], 0
 
-  // ---- Swap ball pointer in player table ----
-  // Original ball ptr at [scene+0x878 + pidx*0xA0 + 0x5DC]
+no_respawn_reset:
+  // ---- Call COMPUTER AI for this clone ----
+  mov edi, [clone_pidx + esi*4]    // edi = player_index
+
+  // Save original ball ptr from player table
   mov ecx, [scene_saved]
-  mov ecx, [ecx+0x878]           // ecx = App sub-struct
-  // Calculate offset: pidx * 0xA0
+  mov ecx, [ecx+0x878]
   mov edx, edi
   imul edx, edx, 0xA0
-  // Save original
   mov ebx, [ecx + edx + 0x5DC]
   mov [saved_ball_ptr], ebx
-  // Write clone ptr
+
+  // Write clone ptr to player table
   mov [ecx + edx + 0x5DC], eax
 
-  // ---- Swap control mode to COMPUTER ----
-  // Control mode at [App+0x878 + pidx*4 + 0xB28]
+  // Save original control mode
   mov edx, edi
-  shl edx, 2                       // pidx * 4
+  shl edx, 2
   mov ebx, [ecx + edx + 0xB28]
   mov [saved_ctrl_mode], ebx
-  // Set to COMPUTER (0x63)
+
+  // Set control mode to COMPUTER (0x63)
   mov dword [ecx + edx + 0xB28], 0x63
 
-  // ---- Call COMPUTER AI function ----
-  // __thiscall: ecx = scene, push force_buf, push pidx
-  // ret 8 (callee cleans 8 bytes)
-  push edi                         // push playerIndex
+  // Call COMPUTER AI: __thiscall(ecx=scene, float* out, int pidx), ret 8
+  push edi
   lea eax, [force_buf]
-  push eax                         // push &force_buf
+  push eax
   mov ecx, [scene_saved]
-  call 004222D0                    // COMPUTER AI (ret 8)
+  call 004222D0
 
-  // ---- Restore original ball ptr ----
+  // Restore original ball ptr
   mov ecx, [scene_saved]
   mov ecx, [ecx+0x878]
   mov edx, edi
@@ -261,18 +254,46 @@ ai_loop:
   mov ebx, [saved_ball_ptr]
   mov [ecx + edx + 0x5DC], ebx
 
-  // ---- Restore original control mode ----
+  // Restore original control mode
   mov edx, edi
   shl edx, 2
   mov ebx, [saved_ctrl_mode]
   mov [ecx + edx + 0xB28], ebx
 
-skip_ai_for_dead:
+ai_skip_dead:
 ai_next:
   inc esi
   jmp ai_loop
 
 ai_done:
+  // ---- Compact registry: remove stale/null entries ----
+  pushad
+  xor ecx, ecx          // ecx = read index
+  xor edx, edx          // edx = write index
+
+compact_loop:
+  cmp ecx, [clone_count]
+  jae compact_done
+  mov eax, [clone_ptrs + ecx*4]
+  test eax, eax
+  jz compact_skip
+  // Check scene ptr validity
+  mov ebx, [eax+0x14]
+  cmp ebx, [scene_saved]
+  jne compact_skip
+  // Keep this clone
+  mov [clone_ptrs + edx*4], eax
+  mov eax, [clone_pidx + ecx*4]
+  mov [clone_pidx + edx*4], eax
+  inc edx
+compact_skip:
+  inc ecx
+  jmp compact_loop
+
+compact_done:
+  mov [clone_count], edx
+  popad
+
   popad
 
 original_code:
@@ -285,7 +306,6 @@ original_code:
 
 // ============================================================
 // SpawnClone — Creates one player clone + registers it
-// Uses Ball_ctor2 (PLAYER ball) + player vtable (no custom vtable)
 // ============================================================
 
 SpawnClone:
@@ -293,36 +313,19 @@ SpawnClone:
   test ecx, ecx
   jz spawn_skip
 
-  // Get ball_list items and count
-  mov edx, [ecx+0x2DE0]
-  mov edi, [ecx+0x29D8]
-  test edi, edi
-  jz spawn_skip
-  test edx, edx
-  jz spawn_skip
-
-  // Find player's ball
-  xor esi, esi
-
-spawn_next:
-  cmp esi, edi
-  jae spawn_notfound
-  mov eax, esi
-  shl eax, 2
-  add eax, edx
-  mov eax, [eax]
+  // ---- Read ORIGINAL ball ptr from player table (NOT search ball_list) ----
+  // This always gets the real player ball, never a dead clone.
+  mov ecx, [ecx+0x878]
+  mov edx, [player_idx]
+  imul edx, edx, 0xA0
+  mov eax, [ecx + edx + 0x5DC]
   test eax, eax
-  jz spawn_notfound
-  mov ebx, [player_idx]
-  cmp [eax+0x18], ebx
-  je spawn_found
-  inc esi
-  jmp spawn_next
+  jz spawn_skip
 
-spawn_notfound:
-  jmp spawn_skip
+  // Check if original ball is active
+  cmp byte [eax+0x768], 0
+  jz spawn_skip
 
-spawn_found:
   mov [orig_ball], eax
 
   // Check clone registry capacity
@@ -345,7 +348,7 @@ spawn_found:
   cld
   rep stosd
 
-  // ---- Ball_ctor2(new_ball, scene) ----
+  // ---- Ball_ctor2(new_ball, scene) — PLAYER ball constructor ----
   mov ecx, [scene_saved]
   push ecx
   mov ecx, [new_ball]
@@ -394,7 +397,6 @@ spawn_found:
   // ---- Set player values ----
   mov edx, [new_ball]
 
-  // player_index (score sharing)
   mov eax, [player_idx]
   mov [edx+0x18], eax
 
@@ -438,7 +440,7 @@ spawn_found:
   mov byte [edx+0x2F9], 0
   mov byte [edx+0x324], 0
 
-  // ---- Clear AI state (ball+0x808 = 0, ball+0x288 = 0) ----
+  // ---- Clear AI state ----
   mov dword [edx+0x808], 0
   mov dword [edx+0x288], 0
 
