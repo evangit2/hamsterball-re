@@ -2189,7 +2189,107 @@
       "struct_offsets": "+0x04 (data/SSO), +0x14 (length), +0x18 (capacity)",
       "xrefs": "1 call from StdString_InsertCStr (0x447590)",
       "batch": 34
+    },
+    {
+      "name": "ScoreDisplay_CtorC",
+      "address": "0x004485f0",
+      "signature": "void * __thiscall ...(void *this, int param_1, byte *param_2, undefined4 param_3)",
+      "parameters": "this: ScoreDisplay* (vtable=0x4D69C8) | param_1: App | param_2: byte* (serial/affiliate key) | param_3: undefined4 (stored at +0x115C)",
+      "description": "Calls RegisterDialog_ctor, overrides vtable to PTR_ScoreDisplay_DeletingDtor (0x4D69C8). Stores param_3 at +0x115C. 1 call from Scene_Update.",
+      "struct_offsets": "+0x115C (param_3)",
+      "xrefs": "1 call from Scene_Update (0x419CA4)",
+      "batch": 35
+    },
+    {
+      "name": "ScoreDisplay_DeletingDtor",
+      "address": "0x00448620",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: ScoreDisplay* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for ScoreDisplay. Calls ScoreDisplay_dtor then _free if bit 0 set. 3 DATA refs from vtables.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "3 DATA refs from vtables 0x4D6918, 0x4D6970, 0x4D69C8",
+      "batch": 35
+    },
+    {
+      "name": "RegisterDialog_HandleKey",
+      "address": "0x00448890",
+      "signature": "void __thiscall ...(void *this, void *param_1)",
+      "parameters": "this: RegisterDialog* | param_1: void* (virtual key code)",
+      "description": "Handles keyboard input for serial key entry dialog. VK_BACK=erase char, VK_TAB=switch fields, VK_HOME/END=cursor pos, VK_LEFT/RIGHT=move cursor, VK_DELETE=erase, Ctrl+V=paste. Two text fields at +0x1098 and +0x10B4. Cursor at +0x1158.",
+      "struct_offsets": "+0x1108 (active field), +0x1098 (field 1), +0x10B4 (field 2), +0x1120/+0x113C (field data), +0x1158 (cursor pos)",
+      "xrefs": "4 DATA refs from vtables",
+      "batch": 35
+    },
+    {
+      "name": "UITimer_dtor",
+      "address": "0x00448a40",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: UITimer* this",
+      "description": "Dtor for UITimer. Sets vtable to PTR_UITimer_DeletingDtor (0x4D6A20), calls Timer_Cleanup. 4 callers.",
+      "struct_offsets": "+0x00 (vtable)",
+      "xrefs": "4 calls from GameObject_dtor, Unwind handlers, UITimer_DeletingDtor",
+      "batch": 35
+    },
+    {
+      "name": "UITimer_Ctor",
+      "address": "0x00448ac0",
+      "signature": "undefined4 * __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: UITimer* this \u2014 being constructed",
+      "description": "Constructor for UITimer (embedded in Ball). Calls Timer_Init, sets vtable to 0x4D6A20. Initializes ~60 fields: 5 float pairs set to 1.0f (0x3F800000) at offsets +0x17/+0x1C/+0x21/+0x26/+0x27/+0x2C/+0x31/+0x36, rest zeroed. 1 call from Ball_ctor2.",
+      "struct_offsets": "+0x00 (vtable=0x4D6A20), +0x11 through +0x3A (various timer fields), 5 float pairs at 1.0f",
+      "xrefs": "1 call from Ball_ctor2 (0x403A0D)",
+      "batch": 35
+    },
+    {
+      "name": "UITimer_DeletingDtor",
+      "address": "0x00448bc0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: UITimer* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for UITimer. Calls UITimer_dtor then _free if bit 0. 1 DATA ref from vtable.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D6A20",
+      "batch": 35
+    },
+    {
+      "name": "SimpleMenu_ctor",
+      "address": "0x00448f20",
+      "signature": "void * __thiscall ...(void *this, int param_1)",
+      "parameters": "this: SimpleMenu* (vtable=0x4D6A70) | param_1: App pointer",
+      "description": "Base constructor for all menus. Inherits Gadget_ctor. Initializes AthenaList at +0x88C, stores App at +0x878, copies Font from App+0x318 to +0x87C. Sets default position (0,0,800,600). Creates 2 AthenaString objects (0x1C bytes each) at +0xCA4/+0xCA8 with pos/scale data. 7+ call sites.",
+      "struct_offsets": "+0x868 (name='Simple Menu'), +0x878 (App), +0x87C (Font from App+0x318), +0x88C (AthenaList), +0xCAC (spacing=0), +0xCB0/+0xCB4 (scroll), +0xCBC (dirty=1), +0xCA4/+0xCA8 (AthenaStrings)",
+      "xrefs": "7+ calls from ConfirmMenu_ctor, PauseMenu_Ctor, QuitRaceMenu, PauseRumbleMenu_ctor, PracticeMenu_ctor, etc.",
+      "batch": 35
+    },
+    {
+      "name": "UIListItem_ctor",
+      "address": "0x004490a0",
+      "signature": "int __fastcall ...(int param_1)",
+      "parameters": "param_1: UIListItem* this \u2014 being constructed",
+      "description": "Constructor for UIListItem (0x444 bytes). Calls Vec3_Init on +0x08 (position), AthenaList_Init on +0x28 (sub-items). 4 call sites.",
+      "struct_offsets": "+0x08 (Vec3 position), +0x28 (AthenaList sub-items)",
+      "xrefs": "4 calls from UIList_AddItem, UIList_AddSpacer, UIList_AddItemWithFormat",
+      "batch": 35
+    },
+    {
+      "name": "UIList_AddItemWithFormat",
+      "address": "0x004490f0",
+      "signature": "void __thiscall ...(void *this, char *param_1, char *param_2, undefined4 param_3-7, int param_8)",
+      "parameters": "this: UIList* | param_1: char* display text | param_2: char* item name | param_3-7: format params | param_8: int format type",
+      "description": "Adds a formatted UIList item. Allocates UIListItem (0x444 bytes), copies display text and name strings. Creates AthenaString (0x1C bytes) for formatting. Appends to AthenaList at +0x44C and +0x88C. Sets +0x441=1 (formatted flag). 4 calls from MPMenu_ctor.",
+      "struct_offsets": "+0x44C (AthenaList strings), +0x88C (AthenaList items)",
+      "xrefs": "4 calls from MPMenu_ctor",
+      "batch": 35
+    },
+    {
+      "name": "UIList_AddItem",
+      "address": "0x004492d0",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1, char *param_2, int param_3, int param_4)",
+      "parameters": "this: UIList* | param_1: undefined4 (callback data) | param_2: char* item name | param_3: int (height) | param_4: int (spacing)",
+      "description": "Adds a simple UIList item. Allocates UIListItem (0x444 bytes), copies name string, creates AthenaString. Appends to AthenaLists. Updates scroll metrics at +0xCB0/+0xCB4, sets dirty flag +0xCBC=1. 1+ call from MainMenu_ctor.",
+      "struct_offsets": "+0x44C (AthenaList), +0x88C (items), +0xCB0 (min scroll), +0xCB4 (total height), +0xCAC (max), +0xCBC (dirty=1)",
+      "xrefs": "1+ call from MainMenu_ctor",
+      "batch": 35
     }
   ],
-  "total_documented": 210
+  "total_documented": 220
 }
