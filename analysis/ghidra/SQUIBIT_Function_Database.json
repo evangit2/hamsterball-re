@@ -1189,7 +1189,107 @@
       "xrefs": "1 calls, 0 data refs",
       "batch": 24,
       "decompilation_length": 1555
+    },
+    {
+      "name": "Bell_Activate",
+      "address": "0x00434e20",
+      "signature": "void __fastcall Bell_Activate(int param_1)",
+      "parameters": "param_1: int \u2014 pointer to the bell game object. Accesses offsets +0x10D0 (parent Scene), +0x10E0 (active state), +0x10E4 (timer).",
+      "description": "Activates a bell in the arena. Plays bell sound via Sound_PlayChannel (chain: param_1+0x10D0\u2192+0x878\u2192+0x4C8). Sets timer at +0x10E4=90.0f (1.5s) and active flag at +0x10E0=1.0f. Called from Arena_HandleCollision when a ball hits a bell.",
+      "struct_offsets": "+0x10D0 (parent Scene), +0x10E0 (active=1.0f), +0x10E4 (timer=90.0f)",
+      "xrefs": "1 call from Arena_HandleCollision (0x40E9DB)",
+      "batch": 25
+    },
+    {
+      "name": "Stands_CtorWithCollision",
+      "address": "0x00434e60",
+      "signature": "void * __thiscall Stands_CtorWithCollision(void *this, int param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: Stands* | param_1: parent Scene (accessed at +0x878\u2192App\u2192+0x5C8 for MeshWorld) | param_2/3/4: position/rotation stored at +0x10D8/+0x10DC/+0x10E0",
+      "description": "Constructor for breakable arena stands. Inherits from Stands_ctor, sets vtable (0x4D5390), stores position, creates CollisionLevel (0x10D0 bytes), initializes health=3 at +0x10E4, break state=0 at +0x10E8, last breaker=0xFFFFFFFF at +0x10F0.",
+      "struct_offsets": "+0x10D0 (Scene ptr), +0x10D4 (CollisionLevel ptr), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (health=3), +0x10E8 (break=0), +0x10F0 (last breaker=-1)",
+      "xrefs": "1 call from 0x40ECBA (Arena_HandleCollision factory)",
+      "batch": 25
+    },
+    {
+      "name": "Stands_Dtor",
+      "address": "0x00434f50",
+      "signature": "void __fastcall Stands_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: Stands* this \u2014 stands object to destroy",
+      "description": "Destructor for Stands objects. Sets vtable to 0x4D5390, calls Level_Cleanup which frees CollisionLevel at +0x10D4. Does NOT free memory \u2014 handled by scalar deleting dtor.",
+      "struct_offsets": "+0x00 (vtable=0x4D5390)",
+      "xrefs": "1 call from Stands_DeletingDtor (0x43A6C3)",
+      "batch": 25
+    },
+    {
+      "name": "Stands_PlayBreakSound",
+      "address": "0x00435170",
+      "signature": "void __fastcall Stands_PlayBreakSound(int param_1)",
+      "parameters": "param_1: Stands* this \u2014 stands object that was hit",
+      "description": "Plays break sound on first hit (when health +0x10E4==3). Sets health=0 (broken), sets decay timer +0x10F8=0.25s, plays 3D positional sound via Sound_Play3D using position from +0x10D8/+0x10DC/+0x10E0 and sound buffer from App\u2192Scene\u2192+0x47C.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (health 3\u21920), +0x10F8 (decay=0.25s)",
+      "xrefs": "1 call from 0x40F074 (Arena_HandleCollision)",
+      "batch": 25
+    },
+    {
+      "name": "GameLevel_ctor (MISNAMED \u2014 Spinner constructor)",
+      "address": "0x004351f0",
+      "signature": "void * __thiscall GameLevel_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "parameters": "this: Spinner* | param_1: parent Scene (stored +0x10D0) | param_2/3/4: position (+0x10D8/+0x10DC/+0x10E0) | param_5: passed to Stands_ctor (accesses App\u2192MeshWorld)",
+      "description": "MISNAMED by Ghidra \u2014 vtable is PTR_Spinner_DeletingDtor (0x4D53F8), so this is actually a Spinner constructor. Inherits Stands_ctor, creates CollisionLevel, sets radius=10.0f (+0x10E8/+0x10EC), rotation speed=150.0f (+0x1100), gets sound channel at +0x1520. Called 8x from Scene_SetupLevel7 (Neon Race) + 1x from CreateWobbly1.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (active=1), +0x10E8/+0x10EC (radius=10.0), +0x1100 (rotSpeed=150.0), +0x1108 (AthenaList), +0x1520 (sound)",
+      "xrefs": "8 calls from Scene_SetupLevel7, 1 from CreateWobbly1",
+      "batch": 25
+    },
+    {
+      "name": "Spinner_Level_Dtor",
+      "address": "0x00435330",
+      "signature": "void __fastcall Spinner_Level_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: Spinner* this \u2014 spinner obstacle to destroy",
+      "description": "Destructor for Spinner obstacles. Sets vtable (0x4D53F8), cleans sub-object at +0x548 via vtable[0x48], frees Vec3List at +0x442, calls Level_Cleanup.",
+      "struct_offsets": "+0x00 (vtable=0x4D53F8), +0x442 (Vec3List), +0x548 (sub-object)",
+      "xrefs": "1 call from Spinner_DeletingDtor (0x43A6E3)",
+      "batch": 25
+    },
+    {
+      "name": "Blockdawg_Level_Dtor",
+      "address": "0x004353a0",
+      "signature": "void __fastcall Blockdawg_Level_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: Blockdawg* this \u2014 Blockdawg obstacle to destroy",
+      "description": "Destructor for Blockdawg obstacles (large objects ~65KB). Sets vtable (0x4D5458), frees buffer at +0x43F, frees Vec3List at +0x6A99, destroys two 50-element arrays (0x418 bytes each) at +0x376D and +0x441, calls Level_Cleanup.",
+      "struct_offsets": "+0x00 (vtable), +0x43F (buffer), +0x376D (50\u00d70x418 array), +0x441 (50\u00d70x418 array), +0x6A99 (Vec3List)",
+      "xrefs": "1 call from Blockdawg_DeletingDtor (0x43AED3)",
+      "batch": 25
+    },
+    {
+      "name": "Stands_BuildCollision",
+      "address": "0x00435440",
+      "signature": "void __thiscall Stands_BuildCollision(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: Stands* | param_1: section count (+0x10EC) | param_2: float\u2192int (+0x10F0) | param_3: intermediate | param_4: position override (+0x10DC)",
+      "description": "Builds collision mesh data for breakable stands. Allocates vertex buffer (vertexCount\u00d732 bytes) at +0x10FC, copies vertex data from MeshWorld. For each collision section: builds two AABBs (upper/lower halves), traverses spatial tree, collects triangles. Slices mesh into horizontal bands for independent section breaking.",
+      "struct_offsets": "+0x10D4 (CollisionLevel), +0x10DC (pos), +0x10EC (sections), +0x10F0 (int), +0x10FC (vertex buffer), +0x1100 (vertex count)",
+      "xrefs": "1 call from Scene_SetupLevel7 (0x40F609)",
+      "batch": 25
+    },
+    {
+      "name": "Looper_ctor",
+      "address": "0x00435800",
+      "signature": "void * __thiscall Looper_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "parameters": "this: Looper* | param_1: parent Scene (+0x10D0) | param_2/3/4: position (+0x10D8/+0x10DC/+0x10E0) | param_5: passed to Stands_ctor",
+      "description": "Constructor for Looper mechanical obstacles. Inherits Stands_ctor, sets vtable to PTR_PopCylinder_DeletingDtor (0x4D54B8) \u2014 shares vtable with PopCylinder. Creates CollisionLevel, initializes AthenaList at +0x10E8, sets state=0 (inactive). Called when CreateMechanicalObjects matches 'LOOPER' prefix.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (state=0), +0x10E8 (AthenaList)",
+      "xrefs": "1 call from CreateMechanicalObjects (0x41805F)",
+      "batch": 25
+    },
+    {
+      "name": "PopCylinder_Level_Dtor",
+      "address": "0x004358e0",
+      "signature": "void __fastcall PopCylinder_Level_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: PopCylinder* this \u2014 PopCylinder obstacle to destroy",
+      "description": "Destructor for PopCylinder obstacles. Sets vtable (0x4D54B8), frees Vec3List at +0x43A, calls Level_Cleanup. Shares vtable with Looper_ctor confirming Looper inherits from PopCylinder.",
+      "struct_offsets": "+0x00 (vtable=0x4D54B8), +0x43A (Vec3List)",
+      "xrefs": "1 call from PopCylinder_DeletingDtor (0x43AF83)",
+      "batch": 25
     }
   ],
-  "total_documented": 110
+  "total_documented": 120
 }
