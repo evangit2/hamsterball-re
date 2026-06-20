@@ -2689,7 +2689,107 @@
       "struct_offsets": "+0x00 (vtable=0x4D875C), +0x40C (heap pointer\u2192freed)",
       "xrefs": "4+ calls from GameObject_dtor, MeshBuffer_dtor, SceneObject_dtor",
       "batch": 39
+    },
+    {
+      "name": "IndexList_Dtor",
+      "address": "0x00453740",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: IndexList* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for IndexList. Sets vtable 0x4D875C. If +0x40C (heap array) non-NULL: _free, set to 0. Then _free(this) if bit 0. 1 DATA ref.",
+      "struct_offsets": "+0x00 (vtable=0x4D875C), +0x40C (heap array\u2192freed)",
+      "xrefs": "1 DATA ref from vtable 0x4D875C",
+      "batch": 40
+    },
+    {
+      "name": "AthenaList_Append_v1",
+      "address": "0x00453780",
+      "signature": "void __thiscall ...(void *this, int param_1)",
+      "parameters": "this: AthenaList* | param_1: int (element to append)",
+      "description": "Appends element to AthenaList. If sorted mode (+0x414!=0): calls AthenaList_SortedInsert. Else: first element _malloc(4), zero 256 entries. Subsequent: _realloc(array, count*4). Element stored at array[count-1]. 4+ calls.",
+      "struct_offsets": "+0x04 (count), +0x08 through +0x407 (256 entries), +0x40C (heap array), +0x414 (sorted mode flag)",
+      "xrefs": "4+ calls from Graphics_FindOrCreateTexture, Ball_FallUpdate, MeshWorld",
+      "batch": 40
+    },
+    {
+      "name": "AthenaList_Append_v2",
+      "address": "0x00453810",
+      "signature": "void __thiscall ...(void *this, int param_1)",
+      "parameters": "this: AthenaList* | param_1: int (element to append)",
+      "description": "Duplicate of AthenaList_Append_v1 at slightly different address. Same logic: sorted insert or realloc+append. 4+ calls.",
+      "struct_offsets": "+0x04 (count), +0x40C (heap array), +0x414 (sorted flag)",
+      "xrefs": "4+ calls from RegKeyList_AppendStr, MusicChannel_LoadAndAppend, Ball_CreateTrailParticles",
+      "batch": 40
+    },
+    {
+      "name": "AthenaList_MergeSorted",
+      "address": "0x00453820",
+      "signature": "void __thiscall ...(void *this, int param_1)",
+      "parameters": "this: AthenaList* (destination) | param_1: int (source AthenaList*)",
+      "description": "Merges source AthenaList into destination. If destination not sorted (+0x414==0): _realloc to combined size, memcpy source elements. If sorted: uses circular buffer at +0x408 (0-255), inserts via sorted insert. 4+ calls.",
+      "struct_offsets": "+0x04 (count), +0x408 (circular buffer index 0-255), +0x40C (heap array), +0x414 (sorted flag)",
+      "xrefs": "4+ calls from MeshWorld_Parse, Scene_ComputeArenaLighting",
+      "batch": 40
+    },
+    {
+      "name": "Graphics_ClearViewport",
+      "address": "0x00453900",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: Graphics* | param_1: undefined4 (clear color)",
+      "description": "Clears viewport via D3D device vtable+0x90 (Clear). If +0x182 flag set: clears with flags=7 (target+Z+stencil). Else: clears with flags=3, color=param_1, Z=1.0. 4+ calls.",
+      "struct_offsets": "+0x154 (D3D device ptr), +0x182 (clear mode flag)",
+      "xrefs": "4+ calls from Graphics_InitRenderStates, LoadingScreenGadget_Render, TourneyResultsScreen_Render",
+      "batch": 40
+    },
+    {
+      "name": "Gfx_ResetRenderState",
+      "address": "0x00453940",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: Graphics* this",
+      "description": "Resets render state: zeros +0x7C8 and +0x7CC. Calls D3D device vtable+0x88 (likely SetRenderState or BeginScene). 1 call from App_ResetFrame.",
+      "struct_offsets": "+0x7C8 (reset=0), +0x7CC (reset=0), +0x154 (D3D device\u2192vtable+0x88)",
+      "xrefs": "1 call from App_ResetFrame (0x46C209)",
+      "batch": 40
+    },
+    {
+      "name": "Gfx_CallVTable8C",
+      "address": "0x00453960",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: Graphics* this",
+      "description": "Thin wrapper: calls D3D device vtable+0x8C (likely EndScene or present). 1 call.",
+      "struct_offsets": "+0x154 (D3D device\u2192vtable+0x8C)",
+      "xrefs": "1 call from 0x46C256",
+      "batch": 40
+    },
+    {
+      "name": "Graphics_SetCullMode2",
+      "address": "0x00453970",
+      "signature": "void __thiscall ...(void *this, undefined1 param_1)",
+      "parameters": "this: Graphics* | param_1: cull mode value",
+      "description": "Sets D3D cull mode via device vtable+200 (SetRenderState), state 0x1C (D3DRS_CULLMODE). If unaff_BL flag set: stores at +0x734. 4+ calls.",
+      "struct_offsets": "+0x154 (D3D device\u2192vtable+200, state 0x1C), +0x734 (cull mode cache)",
+      "xrefs": "4+ calls from Ball_InitRenderState, Level_InitScene, Gfx_SetupAlphaRenderState",
+      "batch": 40
+    },
+    {
+      "name": "Graphics_SetViewportZ",
+      "address": "0x004539a0",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1, undefined4 param_2)",
+      "parameters": "this: Graphics* | param_1: minZ | param_2: maxZ",
+      "description": "Sets viewport Z range. Stores minZ at +0x73C, maxZ at +0x740. Sets D3DRS_ZENABLE (0x30=0). If Z buffer flags (+0xA4 & 0x100 & 0x300000): sets ZFUNC (0x23=3), ZWRITEENABLE (0x24), ZMIN/ZMAX (0x24/0x25). 4+ calls.",
+      "struct_offsets": "+0x73C (minZ), +0x740 (maxZ), +0xA4 (flags), +0x7D7 (flag), +0x154 (D3D device)",
+      "xrefs": "4+ calls from Graphics_RenderScene, Level_InitScene, Scene_SetupLevel9, OptionsMenu",
+      "batch": 40
+    },
+    {
+      "name": "Gfx_SetVTable22",
+      "address": "0x00453b20",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1)",
+      "parameters": "this: Graphics* | param_1: undefined4 (stored at +0x738)",
+      "description": "Sets D3D render state 0x22 (D3DRS_SHADEMODE) via device vtable+200. Caches value at +0x738. 1 call from Level_InitScene.",
+      "struct_offsets": "+0x738 (shade mode cache), +0x154 (D3D device\u2192vtable+200, state 0x22)",
+      "xrefs": "1 call from Level_InitScene (0x40B175)",
+      "batch": 40
     }
   ],
-  "total_documented": 260
+  "total_documented": 270
 }
