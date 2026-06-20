@@ -1389,7 +1389,107 @@
       "struct_offsets": "+0x00 (vtable=0x4D5770)",
       "xrefs": "1 call from Rotator_DeletingDtor3 (0x43D403)",
       "batch": 26
+    },
+    {
+      "name": "PopCylinder_ctor",
+      "address": "0x00436ee0",
+      "signature": "void * __thiscall PopCylinder_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "parameters": "this: PopCylinder* (vtable5=0x4D58F0) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: Stands_ctor parent",
+      "description": "Constructor for PopCylinder obstacles (Rotator vtable5 variant). Creates CollisionLevel, sets active=1, triggered=0. Called from CreateLevelObjects.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (CollisionLevel), +0x10E4 (active=1), +0x10E5 (triggered=0)",
+      "xrefs": "1 call from CreateLevelObjects (0x412540)",
+      "batch": 27
+    },
+    {
+      "name": "Rotator_Cleanup_vtable4",
+      "address": "0x00436fb0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Rotator* (vtable5 variant)",
+      "description": "Cleanup for Rotator vtable5 (0x4D58F0): sets vtable, calls Level_Cleanup.",
+      "struct_offsets": "+0x00 (vtable=0x4D58F0)",
+      "xrefs": "1 call from Rotator_DeletingDtor5 (0x43DEB3)",
+      "batch": 27
+    },
+    {
+      "name": "Rotator_RemoveAndFree",
+      "address": "0x00436fc0",
+      "signature": "void __fastcall Rotator_RemoveAndFree(int param_1)",
+      "parameters": "param_1: Rotator* this \u2014 obstacle to remove",
+      "description": "Removes obstacle from scene: adjusts Y position (sinks below floor), sets removed+triggered flags, calls Gfx_SetRenderState twice, frees CollisionLevel via vtable[0](1), clears pointer. Only runs if not already removed.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D8 (Y adjusted), +0x10E0 (CollisionLevel freed), +0x10E4 (triggered=1), +0x10E5 (removed 0\u21921)",
+      "xrefs": "2 calls from Scene_SetupLevel10 and 0x413067",
+      "batch": 27
+    },
+    {
+      "name": "Platform_ctor (v2)",
+      "address": "0x00437040",
+      "signature": "void * __thiscall Platform_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "parameters": "this: Platform* (vtable=0x4D5950, Level_Generic) | param_1: Scene (+0x10D0) | param_2-4: pos | param_5: Stands_ctor parent",
+      "description": "Second Platform_ctor variant using generic Level vtable (0x4D5950) instead of Rotator. Copies position to backup buffer (+0x10E0), creates CollisionLevel at +0x10EC, sets active=1, sink=0, timer=400. Called from CreatePlatformOrStands.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0/+0x10E4/+0x10E8 (backup pos), +0x10EC (CollisionLevel), +0x10F0 (active=1), +0x10F1 (sink=0), +0x10F4 (timer=400), +0x10F8 (counter=0)",
+      "xrefs": "1 call from CreatePlatformOrStands (0x413464)",
+      "batch": 27
+    },
+    {
+      "name": "Scene_StartCountdown",
+      "address": "0x00437130",
+      "signature": "void __thiscall Scene_StartCountdown(void *this, int param_1)",
+      "parameters": "this: Scene*/Board* | param_1: Ball* that triggered countdown",
+      "description": "Starts pre-race countdown. Only if +0x10F1==0, +0x10F2==0, param_1!=0. Sets started=1, timer=400 (or 50 if ball type==-1), stores ball at +0x10F8, sets ball+0x14C=1, ball+0x2FC=1.0. Called from 10+ collision handlers.",
+      "struct_offsets": "+0x10F1 (started), +0x10F2 (finished), +0x10F4 (timer=400/50), +0x10F8 (ball ptr)",
+      "xrefs": "10+ calls from various collision handlers",
+      "batch": 27
+    },
+    {
+      "name": "Rotator_Cleanup_vtable5",
+      "address": "0x004371a0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Rotator* (vtable6 variant)",
+      "description": "Cleanup for Rotator vtable6 (0x4D59B0): sets vtable, calls Level_Cleanup.",
+      "struct_offsets": "+0x00 (vtable=0x4D59B0)",
+      "xrefs": "1 call from Rotator_DeletingDtor6 (0x43E0F3)",
+      "batch": 27
+    },
+    {
+      "name": "Rotator_MarkTriggered",
+      "address": "0x004371f0",
+      "signature": "void __fastcall Rotator_MarkTriggered(int param_1)",
+      "parameters": "param_1: Rotator* this \u2014 obstacle to mark",
+      "description": "Simple one-liner: sets +0x10E4=1 (triggered flag). Other functions check this to determine if obstacle was activated by ball collision.",
+      "struct_offsets": "+0x10E4 (triggered=1)",
+      "xrefs": "1 call from CreateNoDizzy (0x40C617)",
+      "batch": 27
+    },
+    {
+      "name": "Rotator_Cleanup_vtable6",
+      "address": "0x004372f0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Rotator* (vtable7 variant)",
+      "description": "Cleanup for Rotator vtable7 (0x4D5A10): sets vtable, calls Level_Cleanup. 7th Rotator vtable variant.",
+      "struct_offsets": "+0x00 (vtable=0x4D5A10)",
+      "xrefs": "1 call from Rotator_DeletingDtor7 (0x43E243)",
+      "batch": 27
+    },
+    {
+      "name": "Lifter_PlaySound",
+      "address": "0x00437300",
+      "signature": "void __fastcall Lifter_PlaySound(int param_1)",
+      "parameters": "param_1: Lifter* this \u2014 lifter obstacle",
+      "description": "Plays lifter activation sound only if +0x10E4==0. Plays 3D sound via Sound_Play3D using pos +0x10D8/+0x10DC/+0x10E0 and buffer from App\u2192Scene\u2192+0x51C. Sets sound_played=1, triggered=1, timer=300 (5s).",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (sound_played 0\u21921), +0x10E5 (triggered 0\u21921), +0x10E8 (timer=300)",
+      "xrefs": "1 call from 0x416CD3",
+      "batch": 27
+    },
+    {
+      "name": "RumbleCollision_Level_Dtor",
+      "address": "0x00437380",
+      "signature": "void __fastcall RumbleCollision_Level_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: RumbleCollision* this \u2014 arena collision object to destroy",
+      "description": "Destructor for RumbleCollision (arena mode collision). Sets vtable (0x4D5A70), cleans up timer at +0x43B via RumbleBoard_CleanupTimer, calls Level_Cleanup. Used in Arena knockoff/respawn cycle.",
+      "struct_offsets": "+0x00 (vtable=0x4D5A70), +0x43B (RumbleBoard timer)",
+      "xrefs": "1 call from RumbleCollision_DeletingDtor (0x43E5C3)",
+      "batch": 27
     }
   ],
-  "total_documented": 130
+  "total_documented": 140
 }
