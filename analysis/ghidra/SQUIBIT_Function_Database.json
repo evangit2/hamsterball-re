@@ -1289,7 +1289,107 @@
       "struct_offsets": "+0x00 (vtable=0x4D54B8), +0x43A (Vec3List)",
       "xrefs": "1 call from PopCylinder_DeletingDtor (0x43AF83)",
       "batch": 25
+    },
+    {
+      "name": "Platform_ctor",
+      "address": "0x004363f0",
+      "signature": "void * __thiscall Platform_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "parameters": "this: Platform* (Rotator subclass, vtable=0x4D56A8) | param_1: parent Scene (+0x10D0) | param_2-4: position X/Y/Z (+0x10D4/+0x10D8/+0x10DC) | param_5: passed to Stands_ctor",
+      "description": "Constructor for Platform obstacles (Rotator subclass). Inherits Stands_ctor, creates CollisionLevel, sets width=45.0f (+0x10E4), rotation direction=-1.0f (+0x10E8), active=0 (+0x10EC). Calls Gfx_SetPosition, SceneObject_CallUpdate/Render. Called from CreateLimit and CreateWobbly1.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (CollisionLevel), +0x10E4 (width=45.0), +0x10E8 (rotDir=-1.0), +0x10EC (active=0)",
+      "xrefs": "5 calls from CreateLimit (\u00d72) and CreateWobbly1 (\u00d73)",
+      "batch": 26
+    },
+    {
+      "name": "Rotator_Cleanup_vtable",
+      "address": "0x00436530",
+      "signature": "void __fastcall Rotator_Cleanup_vtable(undefined4 *param_1)",
+      "parameters": "param_1: Rotator* this (vtable variant 1)",
+      "description": "Cleanup for Rotator vtable1 (0x4D56A8): sets vtable, calls Level_Cleanup to free CollisionLevel and resources.",
+      "struct_offsets": "+0x00 (vtable=0x4D56A8)",
+      "xrefs": "1 call from Rotator_DeletingDtor (0x43D123)",
+      "batch": 26
+    },
+    {
+      "name": "Scene_SetRaceActive",
+      "address": "0x004366e0",
+      "signature": "void __fastcall Scene_SetRaceActive(int param_1)",
+      "parameters": "param_1: Scene*/Board* \u2014 the scene to activate the race on",
+      "description": "Sets race-active flag at +0x10EC=1. Called from 10+ level constructors and race-start sequences. Marks countdown finished, gameplay started.",
+      "struct_offsets": "+0x10EC (race_active=1)",
+      "xrefs": "10+ calls from various BoardLevel constructors",
+      "batch": 26
+    },
+    {
+      "name": "Rotator_ctor",
+      "address": "0x004366f0",
+      "signature": "void * __thiscall Rotator_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, undefined4 param_5, void *param_6)",
+      "parameters": "this: Rotator* (vtable2=0x4D5708) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: rotation speed/extra (+0x10E0) | param_6: passed to Stands_ctor",
+      "description": "Constructor for Rotator vtable2 variant. Inherits Stands_ctor, creates CollisionLevel at +0x10F0, sets rotation=0, active=1, sound_started=0. Called from CreateLimit.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (speed), +0x10E4 (angle=0), +0x10EC (active=1), +0x10ED (sound=0), +0x10F0 (CollisionLevel)",
+      "xrefs": "1 call from CreateLimit (0x410C98)",
+      "batch": 26
+    },
+    {
+      "name": "Rotator_Cleanup",
+      "address": "0x004367d0",
+      "signature": "void __fastcall Rotator_Cleanup(undefined4 *param_1)",
+      "parameters": "param_1: Rotator* this (vtable2 variant)",
+      "description": "Cleanup for Rotator vtable2 (0x4D5708): sets vtable, calls Level_Cleanup.",
+      "struct_offsets": "+0x00 (vtable=0x4D5708)",
+      "xrefs": "1 call from Rotator_DeletingDtor2 (0x43D143)",
+      "batch": 26
+    },
+    {
+      "name": "Rotator_StartSound",
+      "address": "0x004367e0",
+      "signature": "void __fastcall Rotator_StartSound(int param_1)",
+      "parameters": "param_1: Rotator* this \u2014 rotator to start sound for",
+      "description": "Starts rotator sound only if not already started (+0x10ED==0). Sets flag=1, resets timer=0, volume=1.0, plays 3D positional sound via Sound_Play3D using position +0x10D4/+0x10D8/+0x10DC and sound buffer from App\u2192Scene\u2192+0x498.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E4 (volume=1.0), +0x10E8 (timer=0), +0x10ED (sound_started 0\u21921)",
+      "xrefs": "1 call from CreateLimit (0x410D73)",
+      "batch": 26
+    },
+    {
+      "name": "CollisionFace_ctor",
+      "address": "0x00436860",
+      "signature": "void * __thiscall CollisionFace_ctor(void *this, undefined4 param_1, float param_2-10)",
+      "parameters": "this: CollisionFace* (~0x30 bytes) | param_1: face ID/material (+0x04) | param_2-4: vertex1 X/Y/Z (+0x08/+0x0C/+0x10) | param_5-7: vertex2 X/Y/Z (+0x14/+0x18/+0x1C) | param_8-10: used for normal computation",
+      "description": "Constructor for collision triangle faces. Stores 2 vertices, computes edge vectors, normalizes to get face normal at +0x20/+0x24/+0x28. Sets flags +0x2C=0. Key struct for spatial collision detection.",
+      "struct_offsets": "+0x00 (vtable=0x4D5768), +0x04 (face ID), +0x08/+0x0C/+0x10 (v1), +0x14/+0x18/+0x1C (v2), +0x20/+0x24/+0x28 (normal), +0x2C (flags=0)",
+      "xrefs": "1 call from Scene_SetupLevelUp (0x411736)",
+      "batch": 26
+    },
+    {
+      "name": "CollisionFace_dtor_vtable",
+      "address": "0x00436910",
+      "signature": "void __fastcall CollisionFace_dtor_vtable(undefined4 *param_1)",
+      "parameters": "param_1: CollisionFace* this \u2014 collision face to destruct",
+      "description": "Trivial destructor for CollisionFace. Sets vtable to 0x4D5768. No heap cleanup needed \u2014 vertices and normals are inline floats.",
+      "struct_offsets": "+0x00 (vtable=0x4D5768)",
+      "xrefs": "1 call from BoardLevel_Up_Dtor (0x4205B5)",
+      "batch": 26
+    },
+    {
+      "name": "Rotator_ctor_sound",
+      "address": "0x00436920",
+      "signature": "void * __thiscall Rotator_ctor_sound(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5, int param_6)",
+      "parameters": "this: Rotator* (vtable3=0x4D5770) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: passed to Stands_ctor | param_6: rotation speed (+0x10EC, defaults to 150 if 0)",
+      "description": "Constructor for Rotator vtable3 variant with sound. Creates CollisionLevel, sets rotation angle=0, timer=60, active=1. Called from CreateSpeedCylinder and CreateLifter.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (CollisionLevel), +0x10E4 (angle=0), +0x10E8 (timer=60), +0x10EC (speed), +0x10F0 (active=1)",
+      "xrefs": "2 calls from CreateSpeedCylinder and CreateLifter",
+      "batch": 26
+    },
+    {
+      "name": "Rotator_Cleanup_vtable2",
+      "address": "0x00436a10",
+      "signature": "void __fastcall Rotator_Cleanup_vtable2(undefined4 *param_1)",
+      "parameters": "param_1: Rotator* this (vtable3 variant)",
+      "description": "Cleanup for Rotator vtable3 (0x4D5770): sets vtable, calls Level_Cleanup.",
+      "struct_offsets": "+0x00 (vtable=0x4D5770)",
+      "xrefs": "1 call from Rotator_DeletingDtor3 (0x43D403)",
+      "batch": 26
     }
   ],
-  "total_documented": 120
+  "total_documented": 130
 }
