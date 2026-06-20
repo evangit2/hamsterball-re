@@ -2889,7 +2889,107 @@
       "struct_offsets": "+0x224 (viewport base), +0x264 (ptr to viewport), +0x268 (param_2), +0x26C (param_3)",
       "xrefs": "2+ calls from 0x402AF6, Ball_Update",
       "batch": 41
+    },
+    {
+      "name": "Graphics_DrawScreenRect",
+      "address": "0x00455d60",
+      "signature": "void __thiscall ...(void *this, int param_1, int param_2, int param_3, int param_4)",
+      "parameters": "this: Graphics* | param_1-4: int (x, y, w, h)",
+      "description": "Draws a colored rectangle on screen. Multiplies coords by parent+0x1F8/+0x1FC (scale). Random RGBA color via Color_RandomRGBA. 4+ calls.",
+      "struct_offsets": "+0x5C (parent\u2192+0x1F8/+0x1FC: scale)",
+      "xrefs": "4+ calls from UI_DrawRectAndReset, CreditsScreen_Render, UIList_Render",
+      "batch": 42
+    },
+    {
+      "name": "Graphics_DrawPoint",
+      "address": "0x00455f40",
+      "signature": "void __thiscall ...(void *this)",
+      "parameters": "this: Graphics* (params passed via stack/registers)",
+      "description": "Draws a single point. Sets D3DRS_FILLMODE(0x16). Calls D3D vtable+0xCC (DrawPrimitive). Random RGBA color. 4+ calls.",
+      "struct_offsets": "+0x154 (D3D device\u2192vtable+0xCC, +200)",
+      "xrefs": "4+ calls from UIList_Render, HighScoreEntry_Render",
+      "batch": 42
+    },
+    {
+      "name": "CollisionMesh_AddTriangle",
+      "address": "0x00456120",
+      "signature": "void __thiscall ...(void *this, int param_1)",
+      "parameters": "this: CollisionMesh* | param_1: int (triangle node to add)",
+      "description": "Adds a triangle to the collision mesh. Appends to AthenaList at +0x430. Sets triangle's owner to this (param_1+8=this). 2 refs.",
+      "struct_offsets": "+0x430 (AthenaList of triangles), triangle+8 (owner=CollisionMesh)",
+      "xrefs": "2 refs: Mesh_FindClosestCollision, vtable DATA",
+      "batch": 42
+    },
+    {
+      "name": "Ray_SetDirection",
+      "address": "0x00456150",
+      "signature": "void __thiscall ...(void *this, float *param_1)",
+      "parameters": "this: Ray* | param_1: float* (3-component direction vector)",
+      "description": "Sets ray direction. Copies 3 floats to +0xC (raw) and +0x18 (normalized). Vec3_NormalizeAndScale on +0x18 with 1.0. Computes length = sqrt(x\u00b2+y\u00b2+z\u00b2). If length < epsilon: sets +0x24=0. 3 calls.",
+      "struct_offsets": "+0x0C (raw direction), +0x18 (normalized direction), +0x24 (length)",
+      "xrefs": "3 calls from collision detection",
+      "batch": 42
+    },
+    {
+      "name": "Material_Init",
+      "address": "0x004561e0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Material* this \u2014 being zeroed",
+      "description": "Initializes Material struct to all zeros. Zeros 26 DWORDs (7 groups of 3 + 5 singles). Material is 0x64 bytes. 5+ calls from Ball_AdvancePositionOrCollision and collision detection.",
+      "struct_offsets": "0x00-0x64 (26 DWORDs, all zeroed)",
+      "xrefs": "5+ calls from Ball_AdvancePositionOrCollision, collision functions",
+      "batch": 42
+    },
+    {
+      "name": "Material_Copy",
+      "address": "0x004562b0",
+      "signature": "void __thiscall ...(void *this, undefined4 *param_1)",
+      "parameters": "this: Material* (destination) | param_1: Material* (source)",
+      "description": "Copies entire Material struct (0x64 bytes, 26 fields in 7 groups). Uses self-copy detection (if dest==source for each group). 6+ calls from collision detection.",
+      "struct_offsets": "0x00-0x64 (all Material fields copied)",
+      "xrefs": "6+ calls from collision functions",
+      "batch": 42
+    },
+    {
+      "name": "Mesh_Clear",
+      "address": "0x00456390",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Mesh* this",
+      "description": "Clears mesh data. Sets vtable to 0x4D8E10. Iterates and _free's all elements in AthenaList at +0x18 (offset 6 DWORDs). Then frees AthenaList at +0x848 (offset 0x212 DWORDs). 3 refs.",
+      "struct_offsets": "+0x18 (AthenaList, offset 6), +0x848 (AthenaList, offset 0x212), vtable=0x4D8E10",
+      "xrefs": "3 refs from Unwind, Mesh_FindClosestCollision, Mesh_DeletingDtor",
+      "batch": 42
+    },
+    {
+      "name": "Ball_AdvancePositionOrCollision",
+      "address": "0x004564c0",
+      "signature": "void __thiscall ...(void *this, float *param_1, float *param_2, float *param_3, undefined4 param_4, float param_5)",
+      "parameters": "this: Ball* | param_1: float* (position delta) | param_2: float* (velocity) | param_3: float* (collision data) | param_4: undefined4 | param_5: float (dt)",
+      "description": "Core collision/physics advancement. If +0x14 flag set: iterates collision triangles, frees old data. Performs Material_Init, calls Ray_SetDirection for raycasting. This is the main function that moves the ball and checks collision with the level geometry. 2 refs.",
+      "struct_offsets": "+0x14 (flag), +0x18 (AthenaList of triangles), +0x1C (count), +0x424 (triangle array)",
+      "xrefs": "2 refs: Mesh_FindClosestCollision, vtable DATA",
+      "batch": 42
+    },
+    {
+      "name": "Mesh_DeletingDtor",
+      "address": "0x00456870",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Mesh* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Mesh. Calls Mesh_Clear then _free if bit 0. 1 DATA ref.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D8E10",
+      "batch": 42
+    },
+    {
+      "name": "Ball_InitBattleMode",
+      "address": "0x00456cd0",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: Ball* this",
+      "description": "Initializes ball for arena/battle mode. Sets: +0xC60=3 (mode), +0xC68=0.555f (friction), +0xC6C=1.0f, +0xC70=1000.0f (max_speed), +0xC78=25.0f (radius), +0xC7C=1 (use_gravity). Gravity vector at +0xC8C=(0,-1,0). Sets +0x14=1 (active). Calls Ball_SetSpeed with computed value. 2 refs.",
+      "struct_offsets": "+0xC60 (mode=3), +0xC68 (friction=0.555), +0xC6C (1.0), +0xC70 (max_speed=1000), +0xC78 (radius=25.0), +0xC7C (use_gravity=1), +0xC8C (grav_dir=(0,-1,0)), +0x14 (active=1)",
+      "xrefs": "2 refs: CollisionMesh_ctor, vtable DATA",
+      "batch": 42
     }
   ],
-  "total_documented": 280
+  "total_documented": 290
 }
