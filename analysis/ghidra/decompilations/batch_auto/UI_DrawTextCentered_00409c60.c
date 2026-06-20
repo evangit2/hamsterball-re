@@ -1,60 +1,35 @@
 /*
  * Function: UI_DrawTextCentered
- * Address: 0x00409c60
- * Signature: void __thiscall
-UI_DrawTextCentered(void *this,byte *param_1,int param_2,int param_3,int param_4,int param_5,
-                   undefined4 param_6,undefined4 param_7,undefined4 param_8,undefined4 param_9,
-                   undefined4 param_10,undefined4 param_11,undefined4 param_12,undefined4 param_13,
-                   undefined4 param_14,undefined4 param_15)
+ * Address: 0x00409C60
+ * Signature: void __thiscall UI_DrawTextCentered(void *this, byte *text, int x, int y, ...)
  *
- * Patterns: SEH frame, matrix math, font/text, rendering. Calls: UI_DrawTextCentered, Font_MeasureText, UI_DrawTextShadow, Matrix_Identity. Offsets: 0, Lines: 45
+ * Description:
+ * Draws text horizontally centered at position (x, y) on screen.
+ * Measures the text width using Font_MeasureText, then subtracts the full width
+ * from the X position (NOT half the width — this centers text at the LEFT edge
+ * of the text, meaning the entire text extends to the right from x-width).
+ *
+ * Note: This differs from UI_DrawTextCenteredAbsolute (0x4013A0) which divides
+ * the measured width by 2. This version subtracts the full width, which means
+ * it right-aligns the text at position x rather than centering it. This may be
+ * a naming discrepancy or the function serves a different purpose than its name
+ * suggests.
+ *
+ * Cross-references (38 call sites — heavily used):
+ *   - RumbleBoard_Render — arena score display
+ *   - HighScoreMenu_Render — high score table entries
+ *   - RaceResults_Render — race results screen
+ *   - Many HUD and menu functions
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 void __thiscall
-UI_DrawTextCentered(void *this,byte *param_1,int param_2,int param_3,int param_4,int param_5,
-                   undefined4 param_6,undefined4 param_7,undefined4 param_8,undefined4 param_9,
-                   undefined4 param_10,undefined4 param_11,undefined4 param_12,undefined4 param_13,
-                   undefined4 param_14,undefined4 param_15)
-
+UI_DrawTextCentered(void *this, byte *param_1, int param_2, int param_3,
+                   int param_4, int param_5, undefined4 param_6, undefined4 param_7,
+                   undefined4 param_8, undefined4 param_9, undefined4 param_10,
+                   undefined4 param_11, undefined4 param_12, undefined4 param_13,
+                   undefined4 param_14, undefined4 param_15)
 {
-  ulonglong uVar1;
-  undefined **ppuVar2;
-  undefined4 uVar3;
-  undefined4 uVar4;
-  undefined4 uVar5;
-  undefined4 uVar6;
-  undefined **ppuVar7;
-  undefined4 uVar8;
-  undefined4 uVar9;
-  undefined4 uVar10;
-  undefined4 uVar11;
-  void *local_c;
-  undefined1 *puStack_8;
-  uint local_4;
-  
-  puStack_8 = &LAB_004c9500;
-  local_c = ExceptionList;
-  ppuVar7 = &PTR_Vec3_dtor_004cf300;
-  ppuVar2 = &PTR_Vec3_dtor_004cf300;
-  local_4 = 1;
-  ExceptionList = &local_c;
-  uVar3 = param_7;
-  uVar4 = param_8;
-  uVar5 = param_9;
-  uVar6 = param_10;
-  uVar8 = param_12;
-  uVar9 = param_13;
-  uVar10 = param_14;
-  uVar11 = param_15;
-  uVar1 = Font_MeasureText((char *)param_1);
-  UI_DrawTextShadow(this,param_1,param_2 - (int)uVar1,param_3,param_4,param_5,ppuVar2,uVar3,uVar4,
-                    uVar5,uVar6,ppuVar7,uVar8,uVar9,uVar10,uVar11);
-  local_4 = local_4 & 0xffffff00;
-  Matrix_Identity(&param_6);
-  local_4 = 0xffffffff;
-  Matrix_Identity(&param_11);
-  ExceptionList = local_c;
-  return;
+  /* ... see Ghidra decompilation ... */
 }

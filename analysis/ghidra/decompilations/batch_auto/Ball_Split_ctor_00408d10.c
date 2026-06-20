@@ -1,14 +1,28 @@
 /*
  * Function: Ball_Split_ctor
- * Address: 0x00408d10
- * Signature: Ball_Split_ctor(...)
+ * Address: 0x00408D10
+ * Signature: void * __thiscall Ball_Split_ctor(void *this, int param_1)
  *
- * Patterns: ball. Calls: Ball_Split_ctor, Ball_ctor2, Ball_SetSpeed. Offsets: 4, Lines: 13
+ * Description:
+ * Constructor for split balls (created when Ball_SplitIntoThree divides a ball
+ * into three smaller copies). Calls Ball_ctor2 for full initialization, then
+ * applies split-specific settings:
+ *   1. Sets vtable to PTR_GameObject_sub_dtor_004cf560 (split ball vtable)
+ *   2. Clears CollisionMesh+0x14 flag (marks as split ball)
+ *   3. Calls Ball_SetSpeed with a computed value:
+ *      speed = (_DAT_004D8E00 × _DAT_004CF55C × _DAT_004D8E04) /
+ *              (CollisionMesh+0xC78 / _DAT_004D8DFC)
+ *      This computes a speed based on global constants and the parent ball's
+ *      radius, ensuring split balls move at an appropriate speed for their size.
+ *   4. Sets scale (+0xC60) = 5 (visual scale — split balls are scaled down)
+ *
+ * Cross-references (3 call sites, all from Ball_SplitIntoThree):
+ *   - 0x409151: first split ball creation
+ *   - 0x40951F: second split ball creation
+ *   - 0x408E68: third split ball creation (within Ball_SplitIntoThree itself)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
-
-/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
 void * __thiscall Ball_Split_ctor(void *this,int param_1)
 
