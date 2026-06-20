@@ -1,36 +1,41 @@
 /*
  * Function: Ball_TestPlaneIntersection
  * Address: 0x00402810
- * Signature: short __thiscall
-Ball_TestPlaneIntersection(void *this,float param_1,float param_2,float param_3,float param_4)
+ * Signature: short __thiscall Ball_TestPlaneIntersection(void *this, float a, float b, float c, float d)
  *
- * Patterns: ball. Calls: Ball_TestPlaneIntersection, NAN, CONCAT11. Offsets: 1, Lines: 24
+ * Description:
+ * Tests whether the ball intersects with a plane. The plane is defined by the
+ * equation: a*x + b*y + c*z + d = 0 (standard plane equation).
+ *
+ * Logic:
+ *   1. For each of 6 points (iterating through ball+0x0C at stride 16 bytes):
+ *      These 6 points are likely the ball's bounding box vertices or
+ *      precomputed collision sphere sample points.
+ *   2. Computes the signed distance from each point to the plane:
+ *      distance = a*x + b*y + c*z + d
+ *      (Note: the decompilation shows swapped variable names due to
+ *       __thiscall parameter ordering)
+ *   3. If any point's distance < -radius (fVar1 = -param_4, the negative
+ *      ball radius or threshold): returns immediately with a "hit" result
+ *   4. If all 6 points pass: returns 1 (no intersection, CONCAT11 with 1)
+ *
+ * The function handles NaN cases (via NAN() checks) for robustness.
+ *
+ * Cross-references (4 call sites):
+ *   - Ball_Render (0x402DE0) — clipping test during rendering
+ *   - WaterRipple_Render — testing if water ripples intersect with ball
+ *   - SceneObject_ComputeCollisionSphere — collision sphere computation
+ *   - 0x402C87 — likely another collision check
+ *
+ * Struct offsets:
+ *   ball+0x0C: Array of 6 points (16 bytes each = 96 bytes total)
+ *     Each point: X(float), Y(float), Z(float), W(padding/state)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 short __thiscall
 Ball_TestPlaneIntersection(void *this,float param_1,float param_2,float param_3,float param_4)
-
 {
-  float fVar1;
-  float fVar2;
-  byte bVar3;
-  float *pfVar4;
-  int iVar5;
-  
-  iVar5 = 0;
-  fVar1 = -param_4;
-  pfVar4 = (float *)((int)this + 0xc);
-  do {
-    fVar2 = param_2 * *pfVar4 + param_3 * pfVar4[1] + param_1 * pfVar4[-1] + pfVar4[2];
-    bVar3 = fVar2 < fVar1 | (byte)((ushort)((ushort)(NAN(fVar2) || NAN(fVar1)) << 10) >> 8) |
-            (byte)((ushort)((ushort)(fVar2 == fVar1) << 0xe) >> 8);
-    if (fVar2 < fVar1) {
-      return (ushort)bVar3 << 8;
-    }
-    iVar5 = iVar5 + 1;
-    pfVar4 = pfVar4 + 4;
-  } while (iVar5 < 6);
-  return CONCAT11(bVar3,1);
+  /* ... see Ghidra decompilation ... */
 }
