@@ -1,38 +1,74 @@
 // ============================================================
-// Player Clones Mod for Hamsterball
+// Player Clones Mod v3 for Hamsterball
 // Pure AutoAssembler — No Lua Required
 // ============================================================
 //
+// WHAT'S NEW IN v3:
+//   - Copies RENDER CONTEXT from original player ball (appearance fix)
+//   - Copies trajectory/render position from original
+//   - Sets home position to original's position (AI patrol point)
+//   - Sets ball+0xC38=-1 (material check flag for Ball_Render)
+//   - Sets ball+0xC5C=0 and ball+0xC80=0 (render flags from ctor2)
+//   - Sets ball+0xC74 to high value (visibility counter for AI gate)
+//   - Uses user's fixed ball search loop syntax
+//   - Proper register preservation (pushad/popad around all spawning)
+//
 // TRACED FUNCTIONS (all verified from Hamsterball.exe binary):
-//   Scene_UpdateBallsAndState  @ 0x41B540  (hook target, ecx=scene)
+//   Scene_UpdateBallsAndState  @ 0x41B540  (hook target, ecx=scene, __fastcall)
 //   operator_new               @ 0x4BA57B  (__cdecl, allocates memory)
 //   Ball_ctor                  @ 0x40AFE0  (__thiscall, 8-ball vtable 0x4CF3A0)
-//   Ball_InitPhysicsDefaults   @ 0x405100  (vtable[1], sets player_index=-1)
+//   Ball_ctor2                  @ 0x4039E0  (player ball constructor, called by Ball_ctor)
+//   InitPhysicsDefaults         @ 0x405100  (8-ball vtable[1], sets AI params)
 //   AthenaList_Append          @ 0x453810  (__thiscall, ecx=list, push item)
-//   AI tick                    @ 0x408390  (vtable[4] for 8-balls, chase logic)
+//   AI tick                    @ 0x408390  (8-ball vtable[4], chase logic)
 //   Ball_Update                @ 0x405E00  (called from AI tick, handles physics)
+//   Ball_Render                @ 0x402DE0  (8-ball vtable[2], rendering)
+//   Ball_SetTrajectory         @ 0x403850  (sets trajectory + render pos)
 //
-// BALL STRUCT OFFSETS:
-//   +0x00   vtable ptr      +0x18   player_index (-1=NPC)
-//   +0x10   App ptr         +0x164  pos X (float)
-//   +0x14   Scene ptr       +0x168  pos Y (float)
-//   +0x188  max_speed       +0x16C  pos Z (float)
-//   +0x18C  speed_scale     +0x284  radius (float)
-//   +0x278  gravity_scale   +0x2F9  is_falling (bool)
-//   +0x27C  gravity_mult    +0x324  return_early (bool)
-//   +0x768  is_active       +0x769  active_flag
-//   +0xC74  is_8ball (byte)  Size: 0xC98 bytes
+// BALL STRUCT OFFSETS (verified from decompilation):
+//   +0x000  vtable ptr         +0x018  player_index (-1=NPC, 0-3=player)
+//   +0x010  App ptr            +0x014  Scene ptr
+//   +0x01C  UITimer area       +0x108  Timer
+//   +0x164  pos X (float)      +0x168  pos Y (float)    +0x16C  pos Z (float)
+//   +0x170  vel X              +0x174  vel Y            +0x178  vel Z
+//   +0x188  max_speed          +0x18C  speed_scale
+//   +0x1A0  render_scale       +0x1A4  CollisionMesh ptr
+//   +0x1B8  RenderContext1     +0x208  RenderContext2
+//   +0x20C  color_RGBA         +0x254  uses_alpha
+//   +0x278  gravity_scale       +0x27C  gravity_mult
+//   +0x284  radius (float)     +0x2F9  is_falling (bool)
+//   +0x324  return_early       +0x768  is_active (bool)
+//   +0x769  active_flag         +0xC38  material_check (-1=needs setup)
+//   +0xC5C  render_flag         +0xC60  battle_mode/home_pos_X
+//   +0xC64  home_pos_Y          +0xC68  home_pos_Z
+//   +0xC6C  chase_distance      +0xC70  home_radius
+//   +0xC74  visibility_counter  +0xC78  collision_radius
+//   +0xC7C  spin_distance      +0xC80  viewport_clip (bool)
+//   +0xC88  matrix[0]           +0xC8C  matrix[1]
+//   Size: 0xC98 bytes (8-ball with AI extras)
 //
 // SCENE STRUCT OFFSETS:
-//   +0x29D4  ball_list (AthenaList)
+//   +0x29D4  ball_list (AthenaList base)
 //   +0x29D8  ball_list count
 //   +0x2DE0  ball_list items array ptr
-//   +0x2DEC  all_balls_list (AthenaList)
+//   +0x2DEC  all_balls_list (AthenaList base)
+//   +0x2DF0  all_balls_list count
+//   +0x2DEC+0x40C = all_balls items array ptr
 //
 // AI GATE AT 0x408390:
-//   1. Read ball+0xC74 (is_8ball). If !=0, skip arena check → AI active
-//   2. If ==0, check App+0x237 (arena_mode). If ==0, skip AI
-//   3. Setting is_8ball=1 enables AI in ALL modes (races + arenas)
+//   1. Read ball+0xC74 (visibility_counter). If !=0, AI active
+//   2. If ==0, check App+0x237 (arena_mode). If !=0, AI active
+//   3. Setting ball+0xC74 to a high value keeps AI permanently active
+//
+// HOW IT WORKS:
+//   1. Creates 8-ball via Ball_ctor (gives AI tick vtable + CollisionMesh)
+//   2. Calls InitPhysicsDefaults (sets AI params: chase=600, home=1200, spin=50)
+//   3. Copies render context from original player (so it LOOKS like the player)
+//   4. Copies trajectory/render position from original
+//   5. Overrides with player values (radius=26, speed=5, gravity_scale=0.5)
+//   6. Sets player_index = original's (score sharing)
+//   7. Sets visibility counter high (AI active immediately)
+//   8. Appends to scene ball_list and all_balls_list
 //
 // SCORE SHARING:
 //   Score at App+0x5E4 + player_index*0xA0
@@ -44,13 +80,12 @@
 //   3. Add addresses: spawnP1, spawnP2, spawnP3, spawnP4
 //   4. For each: Right-click → Set Hotkey → Key 1/2/3/4 → Value = 1
 //   5. Start a race or arena, press 1/2/3/4 to spawn clones
-//      Each press spawns ONE clone of that player
 // ============================================================
 
 [ENABLE]
 
 // ---- Allocate code cave and variables ----
-alloc(CloneCode, 2048)
+alloc(CloneCode, 4096)
 alloc(scene_saved, 4)
 alloc(spawnP1, 4)
 alloc(spawnP2, 4)
@@ -95,6 +130,8 @@ label(spawn_skip)
 label(spawn_notfound)
 label(spawn_found)
 label(spawn_next)
+label(copy_loop)
+label(copy_done)
 
 // ============================================================
 // CODE CAVE — Hook replacement for Scene_UpdateBallsAndState
@@ -159,16 +196,7 @@ original_code:
 
 // ============================================================
 // SpawnClone — Creates one AI clone of the player in [player_idx]
-// Caller must pushad/popad. Uses global vars for all I/O.
-// Mirrors CreateBadBall (0x40BCA0) flow:
-//   1. Find original player ball in scene->ball_list
-//   2. operator_new(0xC98)
-//   3. Ball_ctor(mem, scene) — sets 8-ball vtable 0x4CF3A0
-//   4. vtable[1]() — InitPhysicsDefaults
-//   5. Copy position/radius/speed from original
-//   6. Set player_index (same as original for score sharing)
-//   7. Set is_8ball=1 (enables AI in all modes)
-//   8. Append to scene->ball_list and scene->all_balls_list
+// Mirrors CreateBadBall (0x40BCA0) flow + appearance copy from player
 // ============================================================
 
 SpawnClone:
@@ -187,17 +215,20 @@ SpawnClone:
   test edx, edx
   jz spawn_skip
 
-  // Find the player's ball
+  // Find the player's ball in the list
   xor esi, esi        // index = 0
 
 spawn_next:
   cmp esi, edi
   jae spawn_notfound
-  mov eax, [edx + esi*4]   // ball ptr
+  mov eax, esi
+  shl eax, 2
+  add eax, edx
+  mov eax, [eax]        // ball ptr
   test eax, eax
   jz spawn_notfound
   mov ebx, [player_idx]
-  cmp [eax+0x18], ebx       // ball->player_index == target?
+  cmp [eax+0x18], ebx   // ball->player_index == target?
   je spawn_found
   inc esi
   jmp spawn_next
@@ -208,10 +239,10 @@ spawn_notfound:
 spawn_found:
   mov [orig_ball], eax
 
-  // ---- Allocate 0xC98 bytes (same as CreateBadBall) ----
+  // ---- Allocate 0xC98 bytes (8-ball size) ----
   push 0xC98
   call 004BA57B               // operator_new (__cdecl)
-  add esp, 4                  // cleanup
+  add esp, 4                  // cleanup (cdecl: caller cleans)
   test eax, eax
   jz spawn_skip
   mov [new_ball], eax
@@ -223,71 +254,110 @@ spawn_found:
   mov ecx, eax               // this = new_ball
   call 0040AFE0              // Ball_ctor → sets vtable 0x4CF3A0
 
-  // ---- vtable[1]() = InitPhysicsDefaults ----
+  // ---- vtable[1]() = InitPhysicsDefaults (sets AI params) ----
   // __thiscall: ecx = new_ball, no params
   mov ecx, [new_ball]
   mov edx, [ecx]             // vtable ptr
-  call dword [edx+4]         // vtable[1] = InitPhysicsDefaults
+  call dword [edx+4]         // vtable[1] = 0x405100
 
-  // ---- Copy fields from original ball to clone ----
-  mov eax, [orig_ball]
+  // ---- Copy render context from original player ball ----
+  // Copy 0xA4 bytes from orig+0x1B8 to clone+0x1B8
+  // This includes RenderContext1, RenderContext2, color_RGBA, uses_alpha
+  mov esi, [orig_ball]
+  mov edi, [new_ball]
+  add esi, 0x1B8
+  add edi, 0x1B8
+  mov ecx, 0x29              // 0xA4 / 4 = 41 dwords = 0x29
+  rep movsd
+
+  // ---- Copy trajectory/render position from original ----
+  // ball+0x2AC to 0x2B8 (trajectory vector + scale)
+  mov esi, [orig_ball]
+  mov edi, [new_ball]
+  mov eax, [esi+0x2AC]
+  mov [edi+0x2AC], eax
+  mov eax, [esi+0x2B0]
+  mov [edi+0x2B0], eax
+  mov eax, [esi+0x2B4]
+  mov [edi+0x2B4], eax
+  mov eax, [esi+0x2B8]
+  mov [edi+0x2B8], eax
+
+  // ---- Copy render position (0x1BC-0x1C8) from original ----
+  // These are set by Ball_SetTrajectory
+  mov esi, [orig_ball]
+  mov edi, [new_ball]
+  mov eax, [esi+0x1BC]
+  mov [edi+0x1BC], eax
+  mov eax, [esi+0x1C0]
+  mov [edi+0x1C0], eax
+  mov eax, [esi+0x1C4]
+  mov [edi+0x1C4], eax
+  mov eax, [esi+0x1C8]
+  mov [edi+0x1C8], eax
+  mov eax, [esi+0x204]       // scale check flag
+  mov [edi+0x204], eax
+
+  // ---- Set player values (override InitPhysicsDefaults) ----
   mov edx, [new_ball]
 
-  // Copy App pointer (ball+0x10)
-  mov ebx, [eax+0x10]
-  mov [edx+0x10], ebx
+  // player_index = same as original (score sharing)
+  mov eax, [player_idx]
+  mov [edx+0x18], eax
 
-  // Copy Scene pointer (ball+0x14)
-  mov ebx, [eax+0x14]
-  mov [edx+0x14], ebx
+  // radius = 26.0 (player size, not 35.0)
+  mov dword [edx+0x284], 41D00000
 
-  // Position X + 5.0 offset (game constant at 0x4CF55C)
+  // max_speed = 5.0 (player speed, not 6.0)
+  mov dword [edx+0x188], 40A00000
+
+  // gravity_scale = 0.5
+  mov dword [edx+0x278], 3F000000
+
+  // gravity_mult = 0.1
+  mov dword [edx+0x27C], 3DCCCCCD
+
+  // render_scale = 1.05
+  mov dword [edx+0x1A0], 3F866666
+
+  // ---- Set position from original + 5.0 offset ----
+  mov eax, [orig_ball]
   fld dword [eax+0x164]
   fadd dword [004CF55C]
   fstp dword [edx+0x164]
 
-  // Position Y + radius offset (same as CreateBadBall)
   fld dword [eax+0x168]
   fadd dword [eax+0x284]
   fstp dword [edx+0x168]
 
-  // Position Z + 5.0 offset
   fld dword [eax+0x16C]
   fadd dword [004CF55C]
   fstp dword [edx+0x16C]
 
-  // Copy radius (ball+0x284)
-  mov ebx, [eax+0x284]
-  mov [edx+0x284], ebx
+  // ---- Set home position (AI patrol point) = original's position ----
+  mov eax, [orig_ball]
+  mov ebx, [eax+0x164]
+  mov [edx+0xC60], ebx       // home_pos_X
+  mov ebx, [eax+0x168]
+  mov [edx+0xC64], ebx       // home_pos_Y
+  mov ebx, [eax+0x16C]
+  mov [edx+0xC68], ebx       // home_pos_Z
 
-  // Copy max_speed (ball+0x188)
-  mov ebx, [eax+0x188]
-  mov [edx+0x188], ebx
+  // ---- Set render/material flags (from Ball_ctor2) ----
+  mov dword [edx+0xC38], FFFFFFFF   // material_check = -1
+  mov dword [edx+0xC5C], 0           // render_flag = 0
+  mov byte [edx+0xC80], 0            // viewport_clip = false
 
-  // Copy speed_scale (ball+0x18C)
-  mov ebx, [eax+0x18C]
-  mov [edx+0x18C], ebx
-
-  // Copy gravity_scale (ball+0x278)
-  mov ebx, [eax+0x278]
-  mov [edx+0x278], ebx
-
-  // Copy gravity_mult (ball+0x27C)
-  mov ebx, [eax+0x27C]
-  mov [edx+0x27C], ebx
-
-  // ---- Set player_index (same as original → shared score) ----
-  mov ebx, [player_idx]
-  mov [edx+0x18], ebx
-
-  // ---- Set is_8ball = 1 (enables AI in ALL modes) ----
-  mov byte [edx+0xC74], 1
+  // ---- Set visibility counter high (AI gate) ----
+  // This keeps AI active even when ball is off-screen
+  mov dword [edx+0xC74], 0000FFFF
 
   // ---- Set active flags ----
-  mov byte [edx+0x768], 1    // is_active
+  mov byte [edx+0x768], 1    // is_active = true
   mov byte [edx+0x769], 1    // active_flag
   mov byte [edx+0x2F9], 0    // not falling
   mov byte [edx+0x324], 0    // no early return
+  mov byte [edx+0x281], 1    // is_falling=false (byte at 0x281)
 
   // ---- Add clone to scene->ball_list (0x29D4) ----
   // AthenaList_Append: __thiscall ecx=list, push item (callee cleans)
