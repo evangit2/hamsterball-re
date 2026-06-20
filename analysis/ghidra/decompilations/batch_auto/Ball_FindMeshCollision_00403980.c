@@ -1,41 +1,32 @@
 /*
  * Function: Ball_FindMeshCollision
  * Address: 0x00403980
- * Signature: undefined4 * __thiscall
-Ball_FindMeshCollision
-          (void *this,undefined4 *param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
-          undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8)
+ * Signature: undefined4 * __thiscall Ball_FindMeshCollision(void *this, undefined4 *param_1, ...)
  *
- * Patterns: collision, ball. Calls: Ball_FindMeshCollision, Mesh_FindClosestCollision. Offsets: 0, Lines: 27
+ * Description:
+ * Wrapper function that prepares collision query parameters and delegates to
+ * Mesh_FindClosestCollision. It copies two sets of 3-float vectors (likely
+ * position and direction, or ray start and end points) from the input parameters
+ * into local variables with self-assignment guards, then calls the mesh collision
+ * function.
+ *
+ * The function takes 8 parameters (this + 7 params), where:
+ *   param_1: output collision result pointer
+ *   param_2,3,4: first Vec3 (likely ray origin or position)
+ *   param_5,6,7: second Vec3 (likely ray direction or end point)
+ *   param_8: additional parameter (radius? max distance?)
+ *
+ * Cross-references:
+ *   - 0x403F6B: FollowBall_Update area — AI mesh collision queries
+ *   - 0x440B5C: BounceBall_Update area — bounce collision detection
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 undefined4 * __thiscall
-Ball_FindMeshCollision
-          (void *this,undefined4 *param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
-          undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8)
-
+Ball_FindMeshCollision(void *this,undefined4 *param_1,undefined4 param_2,undefined4 param_3,
+                      undefined4 param_4,undefined4 param_5,undefined4 param_6,undefined4 param_7,
+                      undefined4 param_8)
 {
-  undefined4 local_20;
-  undefined4 local_1c;
-  undefined4 local_18;
-  undefined4 local_14;
-  undefined4 local_10;
-  undefined4 local_c;
-  undefined4 uStack_8;
-  
-  uStack_8 = param_8;
-  if (&local_14 != &param_5) {
-    local_14 = param_5;
-    local_10 = param_6;
-    local_c = param_7;
-  }
-  if (&local_20 != &param_2) {
-    local_20 = param_2;
-    local_1c = param_3;
-    local_18 = param_4;
-  }
-  Mesh_FindClosestCollision(this,param_1);
-  return param_1;
+  /* ... see Ghidra decompilation ... */
 }

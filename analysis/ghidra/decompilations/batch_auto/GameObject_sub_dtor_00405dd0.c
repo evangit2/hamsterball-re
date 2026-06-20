@@ -1,9 +1,16 @@
 /*
  * Function: GameObject_sub_dtor
- * Address: 0x00405dd0
- * Signature: void * __thiscall GameObject_sub_dtor(void *this,byte param_1)
+ * Address: 0x00405DD0
+ * Signature: void * __thiscall GameObject_sub_dtor(void *this, byte param_1)
  *
- * Patterns: frees memory. Calls: GameObject_sub_dtor, GameObject_dtor, _free. Offsets: 0, Lines: 8
+ * Description:
+ * Scalar deleting destructor for the GameObject_sub class. Simply delegates
+ * to the base GameObject_dtor for cleanup, then conditionally frees memory.
+ * No sub-class specific cleanup needed (the sub-class only sets a few fields
+ * that are cleaned up by the base destructor).
+ *
+ * Cross-references:
+ *   - Referenced from vtables at 0x4CF314, 0x4CF49C, 0x4CF564 (data references)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
