@@ -1,0 +1,70 @@
+[ENABLE]
+// ai_8ball_full_v3.aa - Cheat Engine Auto Assembler script
+// 8ball AI: fix motionless + target ALL entities (including other 8balls)
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// PATCH 1: Gate 0 — fix motionless 8balls (KEEP from v2)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Function: Ball_UpdateAndAI at 0x408390 (Ball vtable[4])
+// Gate 0 at 0x4083AE (6-byte JZ rel32 to 0x40882A):
+//   Checks: ball+0xC74 == 0 (CreateBadBall 8balls, not SplitIntoThree)
+//           AND App+0x237 == 0 (game not in progress — countdown, menu, etc.)
+//   When both true: jumps DIRECTLY to function exit.
+//   Ball_Update (physics), targeting, and SetVelocity NEVER run → motionless.
+//
+// FIX: NOP the 6-byte JZ → always falls through to Ball_Update + targeting.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// PATCH 2: Targeting filter — 8balls attack ALL entities including each other
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// After Ball_Update, the function iterates the ball list (Scene+0x29D4) and
+// finds the NEAREST valid target. It then either chases or flees based on
+// relative speed (ball+0x284 comparison).
+//
+// Filter at 0x4085CD (inside the targeting loop at 0x408590):
+//   cmp DWORD PTR [edi+0x18], 0xFFFFFFFF   ; edi = candidate ball
+//   je 0x408634                             ; skip if player_index == -1
+//
+// ball+0x18 = player_index, set to -1 (0xFFFFFFFF) by Ball_ctor2 for ALL balls.
+// Player balls get 0–3 assigned later. CreateBadBall 8balls keep -1.
+// This filter skips ALL 8balls → 8balls can only target player balls 1–4.
+//
+// FIX: Replace the "cmp [edi+0x18], -1" with "cmp esi, edi" (self-check).
+//   39 FE 90 90 74 61
+//   cmp esi, edi    ; is this ball ME?
+//   nop nop         ; padding
+//   je 0x408634     ; skip if target == self (prevents self-targeting / div-by-zero)
+//
+// This makes 8balls consider ALL other balls as valid targets — players AND
+// other 8balls — while preventing self-targeting (which would set velocity
+// to zero due to zero distance → NaN normalization).
+//
+// Other filters in the targeting loop (all left intact, they're sensible):
+//   0x408598: [edi+0x768]==0 → skip (ball fallen off arena / inactive)
+//   0x4085A6: [edi+0x2F9]!=0 → skip (ball in special state)
+//   0x4085B4: [edi+0x300]!=0 → skip (ball finished/eliminated)
+//   0x4085BE: [edi+0x324]!=0 → skip (ball in special mode)
+//   0x4085CB: Scene+0x3A4C==0 → skip (scene flag not set)
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+// PATCH 1: NOP Gate 0 (motionless fix)
+define(gate0, Hamsterball.exe+83AE)
+gate0:
+  db 90 90 90 90 90 90
+
+// PATCH 2: Replace player_index filter with self-check (target all entities)
+define(filter, Hamsterball.exe+85CD)
+filter:
+  db 39 FE 90 90 74 61
+
+[DISABLE]
+// Restore Gate 0
+gate0:
+  db 0F 84 76 04 00 00
+
+// Restore targeting filter
+filter:
+  db 83 7F 18 FF 74 61
