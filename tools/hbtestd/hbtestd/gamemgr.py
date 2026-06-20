@@ -105,6 +105,9 @@ class GameManager:
         env["DISPLAY"] = self.cfg.display
         if self.cfg.libgl_software:
             env["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        # Ensure d3d8.dll proxy is loaded as native (not Wine builtin)
+        env.setdefault("WINEDLLOVERRIDES", "d3d8=native")
+        env.setdefault("WINEDEBUG", "-all")
 
         cmd = [
             self.cfg.wine_binary,
