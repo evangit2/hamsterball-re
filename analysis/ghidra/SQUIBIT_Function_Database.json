@@ -2489,7 +2489,107 @@
       "struct_offsets": "N/A (dispatcher)",
       "xrefs": "1 DATA ref from vtable 0x4D6BF4",
       "batch": 37
+    },
+    {
+      "name": "RegisterDialog_DeletingDtor",
+      "address": "0x0044f9f0",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: RegisterDialog* this",
+      "description": "Deleting dtor for RegisterDialog. Initializes Timer, multiplies timer value (+0x1C) by _DAT_004D6E40, calls vtable+0x18, Gfx_SetPosition, dispatches vtable+0x1C on parent+0x5A4, Timer_Cleanup. 1 DATA ref.",
+      "struct_offsets": "+0x04 (parent\u2192+0x5A4), +0x08 (Gfx), +0x0C/+0x10 (position), +0x14 (offset), +0x1C (timer\u00d7_DAT_004D6E40)",
+      "xrefs": "1 DATA ref from vtable 0x4D6E5C",
+      "batch": 38
+    },
+    {
+      "name": "RegisterDialog_Render",
+      "address": "0x0044fa90",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1, int param_2)",
+      "parameters": "this: RegisterDialog* | param_1: undefined4 (stored at +4) | param_2: int (AthenaList source)",
+      "description": "Renders register dialog. Sets vtable 0x4D6E48. Gets random element from AthenaList via RNG_Rand. Copies position data (x,y,z from item+4/+8/+0xC). Sets size=25.0 (+0x14=0x41C80000). Random lifetime 25-50 (+0x18). 2 calls.",
+      "struct_offsets": "+0x04 (param_1), +0x08/+0x0C/+0x10 (position), +0x14 (size=25.0), +0x18 (lifetime 25-50)",
+      "xrefs": "2 calls from Board_Master_Update, 0x41D59D",
+      "batch": 38
+    },
+    {
+      "name": "RegisterDialog_OnKey",
+      "address": "0x0044fb50",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: RegisterDialog* | param_1: stored at +4 | param_2-4: position data (x,y,z)",
+      "description": "Key handler for RegisterDialog. Sets vtable 0x4D6E48. Stores param_1 at +4. Copies position (param_2-4) to +8/+0xC/+0x10 if different. Sets size=25.0. Random lifetime 25-50. 2 calls.",
+      "struct_offsets": "+0x04 (param_1), +0x08/+0x0C/+0x10 (position), +0x14 (size=25.0), +0x18 (lifetime 25-50)",
+      "xrefs": "2 calls from Board_Master_Update, 0x41D779",
+      "batch": 38
+    },
+    {
+      "name": "RegisterDialog_Tick",
+      "address": "0x0044fc90",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: RegisterDialog* | param_1: stored at +4 | param_2-4: position data",
+      "description": "Tick for RegisterDialog. Sets vtable 0x4D6E54. Copies position. Sets size=0 (+0x14). Random lifetime 200-300 (+0x18). Random drift speed 50-100\u00d7_DAT_004CF524 (+0x1C). 2 calls.",
+      "struct_offsets": "+0x04 (param_1), +0x08/+0x0C/+0x10 (position), +0x14 (size=0), +0x18 (lifetime 200-300), +0x1C (drift=(50-100)\u00d7_DAT_004CF524)",
+      "xrefs": "2 calls from FollowBall_Update, Ball_Update",
+      "batch": 38
+    },
+    {
+      "name": "SimpleList_dtor",
+      "address": "0x0044fd40",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: SimpleList* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for SimpleList. Calls SimpleList_vtbl_Init (vtable\u21920x4D6AE0), then _free if bit 0. 5 DATA refs from multiple vtables.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "5 DATA refs from vtables 0x4D6AEC, 0x4D6AF8, 0x4D6B04, 0x4D6E48, 0x4D6E54",
+      "batch": 38
+    },
+    {
+      "name": "SaveTourneyDialog_ctor",
+      "address": "0x0044fd60",
+      "signature": "void * __thiscall ...(void *this, int param_1, char *param_2, byte *param_3, undefined4 param_4, int param_5)",
+      "parameters": "this: SaveTourneyDialog* (vtable=0x4D8358) | param_1: App | param_2: char* title | param_3: byte* body text | param_4: undefined4 (stored at +0x8A8) | param_5: int (duration)",
+      "description": "Constructor for SaveTourneyDialog. Calls OkayDialog_ctor (parent), overrides vtable to 0x4D8358. Sets name 'SaveTourneyDialog' at +0x868. Stores param_4 at +0x8A8. 1 call.",
+      "struct_offsets": "+0x868 ('SaveTourneyDialog'), +0x8A8 (param_4)",
+      "xrefs": "1 call from TourneyMenu_HandleButton (0x4505B7)",
+      "batch": 38
+    },
+    {
+      "name": "TourneyMenu_ctor",
+      "address": "0x0044fda0",
+      "signature": "void * __thiscall ...(void *this, int param_1, char param_2)",
+      "parameters": "this: TourneyMenu* (vtable=0x4D83F0) | param_1: App | param_2: char (mode flag)",
+      "description": "Constructor for TourneyMenu. Calls SimpleMenu_ctor, overrides vtable to 0x4D83F0. RumbleBoard_InitTimer at +0xCDC. Name 'Tourney Menu'. Calls Scene_UpdateChildren, UIList_AddItem for 'PLAY!' button. Checks tournament state at App+0x220 (+0x90=loss, +0x95=lost flag, +0x96=won flag). 4+ calls.",
+      "struct_offsets": "+0x868 ('Tourney Menu'), +0x878 (App\u2192+0x220), +0xCDC (timer), +0xCF4 (flag), +0xCF8/+0xD00/+0xD04 (zeros), +0xCFC (level index)",
+      "xrefs": "4+ calls from Tournament_AdvanceRace, TourneyMenu_Advance, TourneyMenu_LoadSaveAndShow",
+      "batch": 38
+    },
+    {
+      "name": "RumbleBoard_Menu_dtor",
+      "address": "0x004502f0",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: RumbleBoard_Menu* this",
+      "description": "Dtor for RumbleBoard_Menu. Sets vtable to 0x4D83F0. Frees sub-object at +0xD04 (0x341 DWORDs). RumbleBoard_CleanupTimer on +0xCDC (0x337 DWORDs). Calls UIList_Cleanup. 1 call.",
+      "struct_offsets": "+0xD04 (sub-object), +0xCDC (timer), vtable=0x4D83F0",
+      "xrefs": "1 call from TourneyBoard_MenuScalarDtor (0x450AD3)",
+      "batch": 38
+    },
+    {
+      "name": "TourneyMenu_HandleButton",
+      "address": "0x00450360",
+      "signature": "void __thiscall ...(void *this, char *param_1)",
+      "parameters": "this: TourneyMenu* | param_1: char* button name",
+      "description": "Handles tourney menu button presses. 'PLAY': sets level at App+0x220+0x90, sets flag +0xCF4=1, MusicPlayer_SetTempoScale(0.5). If tournament lost: creates OkayDialog 'LOST TOURNAMENT' with rollback instructions. 'ROLL': rollback support. 1 DATA ref.",
+      "struct_offsets": "+0x878 (App\u2192+0x220), +0xCF4 (flag=1), +0xCFC (level index), App+0x534 (MusicPlayer), App+0x220+0x90/+0x95/+0x96",
+      "xrefs": "1 DATA ref from vtable 0x4D8438",
+      "batch": 38
+    },
+    {
+      "name": "TourneyMenu_Quit",
+      "address": "0x004506a0",
+      "signature": "void __fastcall ...(int *param_1)",
+      "parameters": "param_1: TourneyMenu* this (as int*) \u2014 contains App at param_1[0x21E]",
+      "description": "Quits tournament menu. Cleans up linked scene via vtable+0x40. Sets Gfx cull mode. Dispatches render mode change. Sets exit state=3 (Gfx+0x708). Calls App_ShowResults(0), App_ShowMainMenu. 1 DATA ref.",
+      "struct_offsets": "param_1[0x21E] (App\u2192+0x174: Gfx), Gfx+0x7D2 (cull), Gfx+0x708 (state=3), Gfx+0x154 (render dispatch)",
+      "xrefs": "1 DATA ref from vtable 0x4D8444",
+      "batch": 38
     }
   ],
-  "total_documented": 240
+  "total_documented": 250
 }
