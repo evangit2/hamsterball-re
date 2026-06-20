@@ -1789,7 +1789,107 @@
       "struct_offsets": "N/A (dispatcher)",
       "xrefs": "1 DATA ref from vtable 0x4D5830",
       "batch": 30
+    },
+    {
+      "name": "Gear_Vec3List_DeletingDtor",
+      "address": "0x0043e5e0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Gear_Vec3List* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Gear_Vec3List. Calls Gear_Vec3List_Level_Dtor then _free. Referenced from vtable 0x4D5AD0.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5AD0",
+      "batch": 31
+    },
+    {
+      "name": "Catapult_Update",
+      "address": "0x0043e600",
+      "signature": "undefined4 __fastcall ...(int *param_1)",
+      "parameters": "param_1: Catapult* this (as int*)",
+      "description": "Per-frame update for Catapult launch pads. Decrements frame counter, sets Gfx scales, renders mesh, iterates AthenaList to manage tracked objects (balls on pad). Removes expired entries.",
+      "struct_offsets": "+0x436/+0x437/+0x438 (pos), +0x439/+0x43A/+0x43B (scale), +0x43C (frame), +0x43D (decrement), +0x43E (AthenaList), +0x43F (count), +0x541 (data)",
+      "xrefs": "1 DATA ref from vtable 0x4D5AFC",
+      "batch": 31
+    },
+    {
+      "name": "Catapult_AddObjectConditional",
+      "address": "0x0043e9c0",
+      "signature": "void __thiscall ...(void *this, int param_1)",
+      "parameters": "this: Catapult* | param_1: int (Ball* pointer)",
+      "description": "Adds object to catapult tracking list ONLY if +0x1510 != 0 (launch pad enabled). If enabled, uses same logic as Stands_AddObject (refresh timer or new 8-byte node with timer=10). Conditional version allows activating/deactivating launch pads.",
+      "struct_offsets": "+0x10F8 (AthenaList), +0x10FC (count), +0x1100+ (flags), +0x1504 (data), +0x1510 (enable flag)",
+      "xrefs": "1 call from Scene_UpdateBallsAndState (0x4184D9)",
+      "batch": 31
+    },
+    {
+      "name": "Catapult_Vec3List_DeletingDtor",
+      "address": "0x0043ea50",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Catapult_Vec3List* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Catapult_Vec3List. Calls Catapult_Vec3List_Level_Dtor then _free. Referenced from vtable 0x4D5B30.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5B30",
+      "batch": 31
+    },
+    {
+      "name": "Catapult_Render",
+      "address": "0x0043ea70",
+      "signature": "undefined4 __fastcall ...(int *param_1)",
+      "parameters": "param_1: Catapult* this (as int*)",
+      "description": "Renders Catapult with oscillating Z-scale (Wave_Sin animation). Advances rotation angle each frame. Iterates AthenaList to manage tracked objects. Referenced from vtable 0x4D5B5C.",
+      "struct_offsets": "+0x436/+0x437/+0x438 (pos), +0x439 (AthenaList), +0x53C (data), +0x53F (anim angle), +0x540 (rotation speed)",
+      "xrefs": "1 DATA ref from vtable 0x4D5B5C",
+      "batch": 31
+    },
+    {
+      "name": "FollowBall_Ctor",
+      "address": "0x0043ebc0",
+      "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: FollowBall* (vtable=0x4D5D24) | param_1: Scene (passed to Ball_ctor2) | param_2: BallPath object (+0xC60)",
+      "description": "Constructor for FollowBall (path-following balls). Inherits Ball_ctor2. Stores BallPath at +0xC60, initializes path progress=0, sets up orientation matrix. Created by BounceBall_Update when bounce ball transforms.",
+      "struct_offsets": "+0x1BC/+0x1C0/+0x1C4 (pos), +0x204 (bool flag), +0x2AC (orientation), +0xC60 (BallPath ptr), +0xC64 (progress=0)",
+      "xrefs": "1 call from BounceBall_Update (0x4408E9)",
+      "batch": 31
+    },
+    {
+      "name": "FollowBall_Update",
+      "address": "0x0043ecc0",
+      "signature": "undefined4 __fastcall ...(int *param_1)",
+      "parameters": "param_1: FollowBall* this (as int*)",
+      "description": "Per-frame update for FollowBall. Computes interpolated Y position, renders with mirror scale, follows BallPath. Manages animation counter, scale velocity, state transitions. Two modes: path-follow and special.",
+      "struct_offsets": "+0x435/+0x436/+0x437 (path pos), +0x438/+0x439/+0x43A (direction), +0x43B (anim), +0x43C (scale), +0x43D (scale vel), +0x43E (height), +0x43F (speed), +0x441 (mode), +0x442 (transition timer)",
+      "xrefs": "1 DATA ref from vtable 0x4D4F64",
+      "batch": 31
+    },
+    {
+      "name": "Scene_UpdateArenaPhysics",
+      "address": "0x00440390",
+      "signature": "undefined4 __fastcall ...(int *param_1)",
+      "parameters": "param_1: Scene* this (as int*)",
+      "description": "Per-frame physics update for Arena mode. Runs every 3rd frame. Calls Graphics_BeginFrame, iterates all arena balls (AthenaList at +0x442), computes 360\u00b0/count distribution for camera positioning. Drives arena physics loop.",
+      "struct_offsets": "+0x434 (Scene\u2192App\u2192MeshWorld), +0x436/+0x437 (base pos), +0x438/+0x439/+0x43A (pos), +0x43B (ball count), +0x43C (angle mult), +0x43E (frame counter), +0x442 (AthenaList)",
+      "xrefs": "1 DATA ref from vtable 0x4D5484",
+      "batch": 31
+    },
+    {
+      "name": "BounceBall_Update",
+      "address": "0x00440840",
+      "signature": "undefined4 __fastcall ...(int *param_1)",
+      "parameters": "param_1: BounceBall* this (as int*)",
+      "description": "Per-frame update for BounceBall. Ball shrinks each frame (scale \u00d7 factor). When below threshold, transforms into FollowBall: allocates 0xC68B, calls FollowBall_Ctor with BallPath, sets velocity=(-3,10,0), sets ball type=15. Appends to AthenaList.",
+      "struct_offsets": "+0x434 (Scene), +0x439 (scale, shrinks), +0x43A (state: 0=shrinking, 1=transformed), +0x80C (ball type\u219215), +0x164/+0x168/+0x16C (spawn pos), +0x1A4 (CollisionMesh ptr)",
+      "xrefs": "1 DATA ref from vtable 0x4D5734",
+      "batch": 31
+    },
+    {
+      "name": "Graphics_DrawRectAndReset",
+      "address": "0x00440dd0",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1-6)",
+      "parameters": "this: Graphics* | param_1-6: float rect params (x, y, w, h, color1, color2) converted to int via __ftol2",
+      "description": "Draws screen-space rectangle and resets transform matrix. Converts 4 float params to int via __ftol2, calls Graphics_DrawScreenRect, then Matrix_Identity. Used by ALL dialog/menu render functions for background panels.",
+      "struct_offsets": "N/A (operates on Graphics*)",
+      "xrefs": "5+ calls from OkayDialog_Render, QuitToDesktopDialog_Render, QuitAbortDialog_Render, TourneyContinueDialog_Render, etc.",
+      "batch": 31
     }
   ],
-  "total_documented": 170
+  "total_documented": 180
 }
