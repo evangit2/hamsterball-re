@@ -1,64 +1,71 @@
 // ============================================================
-// Player Clones Mod v4 for Hamsterball
+// Player Clones Mod v5 for Hamsterball
 // Pure AutoAssembler — No Lua Required
 // ============================================================
 //
-// WHAT'S NEW IN v4:
-//   - Creates PLAYER ball (Ball_ctor2), NOT 8-ball (Ball_ctor)
-//   - Allocates 0xC98 bytes (extra space for AI fields at 0xC60-0xC98)
-//   - Zeros entire allocation before construction
-//   - Allocates CUSTOM VTABLE: copy of player vtable with [4]=AI tick
-//   - Sets AI fields manually (chase=600, home=1200, spin=50)
-//   - Sets high visibility counter (ball+0xC74) for AI gate
-//   - Copies render context from original player (appearance)
-//   - Uses 8-ball dtor (vtable[0]) for proper 0xC98 cleanup
+// WHAT'S NEW IN v5:
+//   - Calls COMPUTER AI function (0x4222D0) for each clone every frame
+//   - Uses PLAYER ball vtable (player appearance) NOT 8-ball vtable
+//   - Swaps ball pointer in player table so AI targets the clone
+//   - Temporarily sets control mode to COMPUTER (0x63)
+//   - Restores original ball pointer and control mode after AI call
+//   - COMPUTER AI excludes self from targeting (unlike 8-ball AI)
+//   - Score sharing via player_index (same as original)
+//
+// ROOT CAUSE OF "MOTIONLESS" BUG (v3/v4):
+//   The 8-ball AI tick (0x408390) does NOT exclude self from targeting.
+//   When a clone is in the ball_list with player_index != -1,
+//   the AI finds ITSELF as the nearest target (distance=0),
+//   computes a zero force vector, and the ball never moves.
+//   The COMPUTER AI function (0x4222D0) DOES exclude self:
+//   it compares each candidate with [App+0x878 + pidx*0xA0 + 0x5DC]
+//   and skips if they match.
 //
 // APPROACH:
-//   Ball_ctor2 creates a PLAYER ball (vtable=0x4CF314, player render, player physics).
-//   We allocate 0xC98 (not 0xC60) to have space for AI fields at 0xC60-0xC98.
-//   We build a custom vtable = player vtable + [4]=AI tick + [0]=8-ball dtor.
-//   This gives: player appearance + player physics + AI targeting + AI force.
+//   1. Create PLAYER ball (Ball_ctor2, player vtable, player appearance)
+//   2. Keep PLAYER vtable (NOT custom vtable with AI tick)
+//      - vtable[4] = 0x405E00 (Ball_Update, physics only)
+//      - The game calls vtable[4] every frame for physics
+//   3. Every frame, for each clone:
+//      a. Save original ball ptr at [scene+0x878 + pidx*0xA0 + 0x5DC]
+//      b. Write clone ptr to that location
+//      c. Save original control mode at [scene+0x878 + pidx*4 + 0xB28]
+//      d. Write 0x63 (COMPUTER) to control mode
+//      e. Call 0x4222D0(scene, &forceBuf, pidx) — AI computes force + applies via vtable[5]
+//      f. Restore original ball ptr
+//      g. Restore original control mode
+//   4. The AI function internally:
+//      - Checks control mode == 0x63 (COMPUTER) → passes
+//      - Reads ball from [scene+0x878 + pidx*0xA0 + 0x5DC] → our clone
+//      - Searches ball_list for nearest target (excludes self)
+//      - Computes direction to target
+//      - Normalizes + multiplies by speed scalar
+//      - Applies force via ball->vtable[5] (player vtable[5] = 0x401590)
+//      - Clears AI state (ball+0x808)
 //
-// TRACED FUNCTIONS (all verified from Hamsterball.exe binary):
-//   Scene_UpdateBallsAndState  @ 0x41B540  (__fastcall, ecx=scene)
-//   operator_new               @ 0x4BA57B  (__cdecl, allocates memory)
-//   Ball_ctor2                  @ 0x4039E0  (__thiscall, PLAYER ball ctor, vtable=0x4CF314)
-//   Ball_SetupCollisionRender  @ 0x4015B0  (player vtable[1], sound setup)
-//   AthenaList_Append          @ 0x453810  (__thiscall, ecx=list, push item)
-//   AI tick                    @ 0x408390  (8-ball vtable[4], calls Ball_Update + AI)
-//   Ball_Update                @ 0x405E00  (called by AI tick, handles physics)
-//   8-ball dtor                @ 0x4027F0  (handles 0xC98 cleanup + _free)
-//
-// PLAYER VTABLE (0x4CF314, 16 entries = 64 bytes):
-//   [0] 0x402A50  dtor          [8]  0x409050  Player shadow
-//   [1] 0x4015B0  SetupCollision [9]  0x401640  Timer_dtor
-//   [2] 0x403DC0  Player render  [10] 0x457B10
-//   [3] 0x402A70  (shared)       [11] 0x457B50
-//   [4] 0x405E00  Ball_Update    [12] 0x457A70
-//   [5] 0x401590  Force wrapper  [13] 0x457A50
-//   [6] 0x4016F0  ApplyForceV2   [14] 0x401000
-//   [7] 0x402C10  (shared)       [15] 0x457B80
-//
-// CUSTOM VTABLE: copy of player vtable with:
-//   [0] = 0x4027F0  (8-ball dtor — handles 0xC98 byte free)
-//   [4] = 0x408390  (AI tick — Ball_Update + AI targeting + force)
-//   Everything else = player vtable entries (unchanged)
+// FUNCTIONS TRACED:
+//   Ball_ctor2             @ 0x4039E0  (PLAYER ball ctor, vtable=0x4CF314)
+//   COMPUTER AI            @ 0x4222D0  (__thiscall, ecx=scene, ret 8)
+//     [esp+4] = float* outForce (12 bytes)
+//     [esp+8] = int playerIndex
+//   Ball_Update            @ 0x405E00  (player vtable[4], physics only)
+//   Force wrapper          @ 0x401590  (player vtable[5], applies force)
+//   AthenaList_Append      @ 0x453810  (__thiscall, ecx=list, push item)
+//   operator_new           @ 0x4BA57B  (__cdecl)
 //
 // BALL STRUCT OFFSETS:
-//   +0x000  vtable ptr         +0x018  player_index (-1=NPC, 0-3=player)
-//   +0x010  App ptr            +0x014  Scene ptr
-//   +0x164  pos X              +0x168  pos Y            +0x16C  pos Z
-//   +0x188  max_speed          +0x1A0  render_scale
-//   +0x1A4  CollisionMesh ptr   +0x1B8  RenderContext1
-//   +0x208  RenderContext2     +0x20C  color_RGBA
-//   +0x278  gravity_scale      +0x27C  gravity_mult
-//   +0x284  radius             +0x2F9  is_falling
-//   +0x324  return_early       +0x768  is_active
-//   +0xC38  material_check(-1) +0xC60  home_pos_X (AI patrol)
-//   +0xC64  home_pos_Y         +0xC68  home_pos_Z
-//   +0xC6C  chase_distance     +0xC70  home_radius
-//   +0xC74  visibility_counter +0xC7C  spin_distance
-//   Size: 0xC98 bytes
+//   +0x000  vtable          +0x010  App ptr
+//   +0x014  Scene ptr       +0x018  player_index
+//   +0x164  pos X/Y/Z       +0x170  vel X/Y/Z
+//   +0x188  max_speed       +0x1A0  render_scale
+//   +0x1A4  CollisionMesh   +0x1B8  RenderContext1
+//   +0x208  RenderContext2  +0x278  gravity_scale
+//   +0x284  radius          +0x288  AI target ptr
+//   +0x768  is_active       +0x808  AI state (0=search, !0=use stored)
+//
+// PLAYER TABLE (in App sub-struct at scene+0x878):
+//   +0x5DC + pidx*0xA0 = ball pointer for player pidx
+//   +0xB28 + pidx*4    = control mode (0x63=COMPUTER, 0x64=OFF, other=HUMAN)
 //
 // SETUP:
 //   1. Attach CE to Hamsterball.exe
@@ -70,9 +77,8 @@
 
 [ENABLE]
 
-// ---- Allocate code cave, custom vtable, and variables ----
-alloc(CloneCode, 4096)
-alloc(CloneVTable, 64)
+// ---- Allocate code cave, variables, clone registry ----
+alloc(CloneCode, 8192)
 alloc(scene_saved, 4)
 alloc(spawnP1, 4)
 alloc(spawnP2, 4)
@@ -81,25 +87,12 @@ alloc(spawnP4, 4)
 alloc(player_idx, 4)
 alloc(orig_ball, 4)
 alloc(new_ball, 4)
-
-// ---- Build custom vtable (copy of player vtable with [0]+[4] replaced) ----
-CloneVTable:
-  dd 004027F0    // [0]  = 8-ball dtor (handles 0xC98 free)
-  dd 004015B0    // [1]  = SetupCollisionRender (player)
-  dd 00403DC0    // [2]  = Player render
-  dd 00402A70    // [3]  = shared
-  dd 00408390    // [4]  = AI tick (Ball_Update + AI targeting)
-  dd 00401590    // [5]  = Force wrapper (shared)
-  dd 004016F0    // [6]  = ApplyForceV2 (player)
-  dd 00402C10    // [7]  = shared
-  dd 00409050    // [8]  = Player shadow
-  dd 00401640    // [9]  = Timer_dtor
-  dd 00457B10    // [10]
-  dd 00457B50    // [11]
-  dd 00457A70    // [12]
-  dd 00457A50    // [13]
-  dd 00401000    // [14]
-  dd 00457B80    // [15]
+alloc(clone_count, 4)
+alloc(clone_ptrs, 32)       // up to 8 clone ball pointers
+alloc(clone_pidx, 32)       // up to 8 clone player indices
+alloc(force_buf, 12)        // 3 floats for AI force output
+alloc(saved_ball_ptr, 4)    // temp save for ball ptr swap
+alloc(saved_ctrl_mode, 4)   // temp save for control mode swap
 
 // ---- Initialize variables ----
 scene_saved:
@@ -117,6 +110,18 @@ player_idx:
 orig_ball:
   dd 0
 new_ball:
+  dd 0
+clone_count:
+  dd 0
+clone_ptrs:
+  dd 0 0 0 0 0 0 0 0
+clone_pidx:
+  dd 0 0 0 0 0 0 0 0
+force_buf:
+  dd 0 0 0
+saved_ball_ptr:
+  dd 0
+saved_ctrl_mode:
   dd 0
 
 // ---- Register symbols ----
@@ -136,8 +141,12 @@ label(spawn_skip)
 label(spawn_notfound)
 label(spawn_found)
 label(spawn_next)
-label(zero_loop)
-label	copy_done
+label(registry_full)
+label(ai_loop)
+label(ai_next)
+label(ai_done)
+label(ai_skip)
+label(skip_ai_for_dead)
 
 // ============================================================
 // CODE CAVE — Hook for Scene_UpdateBallsAndState (0x41B540)
@@ -145,21 +154,19 @@ label	copy_done
 // ============================================================
 
 CloneCode:
-  // Save scene pointer (ecx = scene, __fastcall)
+  // Save scene pointer
   mov [scene_saved], ecx
 
-  // Quick check: any spawn flag set?
+  // ---- PHASE 1: Check spawn flags and create clones ----
   mov eax, [spawnP1]
   or eax, [spawnP2]
   or eax, [spawnP3]
   or eax, [spawnP4]
   test eax, eax
-  jz original_code
+  jz phase2
 
-  // Save all registers
   pushad
 
-  // ---- Player 1 ----
   cmp [spawnP1], 0
   je check_p2
   mov [spawnP1], 0
@@ -190,6 +197,84 @@ check_p4:
 done_spawn:
   popad
 
+  // ---- PHASE 2: Call COMPUTER AI for each clone ----
+phase2:
+  cmp [clone_count], 0
+  je original_code
+
+  pushad
+
+  xor esi, esi          // esi = loop index
+
+ai_loop:
+  cmp esi, [clone_count]
+  jae ai_done
+
+  // Get clone pointer and player index
+  mov eax, [clone_ptrs + esi*4]
+  test eax, eax
+  jz ai_next
+
+  // Check if clone is still active (ball+0x768 != 0)
+  cmp byte [eax+0x768], 0
+  je skip_ai_for_dead
+
+  // Save the clone's player index
+  mov edi, [clone_pidx + esi*4]
+
+  // ---- Swap ball pointer in player table ----
+  // Original ball ptr at [scene+0x878 + pidx*0xA0 + 0x5DC]
+  mov ecx, [scene_saved]
+  mov ecx, [ecx+0x878]           // ecx = App sub-struct
+  // Calculate offset: pidx * 0xA0
+  mov edx, edi
+  imul edx, edx, 0xA0
+  // Save original
+  mov ebx, [ecx + edx + 0x5DC]
+  mov [saved_ball_ptr], ebx
+  // Write clone ptr
+  mov [ecx + edx + 0x5DC], eax
+
+  // ---- Swap control mode to COMPUTER ----
+  // Control mode at [App+0x878 + pidx*4 + 0xB28]
+  mov edx, edi
+  shl edx, 2                       // pidx * 4
+  mov ebx, [ecx + edx + 0xB28]
+  mov [saved_ctrl_mode], ebx
+  // Set to COMPUTER (0x63)
+  mov dword [ecx + edx + 0xB28], 0x63
+
+  // ---- Call COMPUTER AI function ----
+  // __thiscall: ecx = scene, push force_buf, push pidx
+  // ret 8 (callee cleans 8 bytes)
+  push edi                         // push playerIndex
+  lea eax, [force_buf]
+  push eax                         // push &force_buf
+  mov ecx, [scene_saved]
+  call 004222D0                    // COMPUTER AI (ret 8)
+
+  // ---- Restore original ball ptr ----
+  mov ecx, [scene_saved]
+  mov ecx, [ecx+0x878]
+  mov edx, edi
+  imul edx, edx, 0xA0
+  mov ebx, [saved_ball_ptr]
+  mov [ecx + edx + 0x5DC], ebx
+
+  // ---- Restore original control mode ----
+  mov edx, edi
+  shl edx, 2
+  mov ebx, [saved_ctrl_mode]
+  mov [ecx + edx + 0xB28], ebx
+
+skip_ai_for_dead:
+ai_next:
+  inc esi
+  jmp ai_loop
+
+ai_done:
+  popad
+
 original_code:
   push ebx          // 53
   push ebp          // 55
@@ -199,12 +284,11 @@ original_code:
   jmp 0041B546
 
 // ============================================================
-// SpawnClone — Creates one AI clone of the player in [player_idx]
-// Uses Ball_ctor2 (PLAYER ball) + custom vtable + manual AI fields
+// SpawnClone — Creates one player clone + registers it
+// Uses Ball_ctor2 (PLAYER ball) + player vtable (no custom vtable)
 // ============================================================
 
 SpawnClone:
-  // Get scene pointer
   mov ecx, [scene_saved]
   test ecx, ecx
   jz spawn_skip
@@ -241,60 +325,38 @@ spawn_notfound:
 spawn_found:
   mov [orig_ball], eax
 
+  // Check clone registry capacity
+  mov eax, [clone_count]
+  cmp eax, 8
+  jae spawn_skip
+
   // ---- Allocate 0xC98 bytes ----
   push 0xC98
-  call 004BA57B               // operator_new (__cdecl)
+  call 004BA57B
   add esp, 4
   test eax, eax
   jz spawn_skip
   mov [new_ball], eax
 
-  // ---- Zero entire allocation (0xC98 / 4 = 0x326 dwords) ----
+  // ---- Zero entire allocation ----
   mov edi, eax
   xor eax, eax
   mov ecx, 0x326
   cld
   rep stosd
 
-  // ---- Ball_ctor2(new_ball, scene) — PLAYER ball constructor ----
-  // __thiscall: ecx=this, push scene (callee cleans 4 bytes)
+  // ---- Ball_ctor2(new_ball, scene) ----
   mov ecx, [scene_saved]
   push ecx
   mov ecx, [new_ball]
-  call 004039E0               // Ball_ctor2 → vtable=0x4CF314
+  call 004039E0
 
   // ---- Call player vtable[1] = SetupCollisionRender ----
-  // __thiscall: ecx=new_ball, no params
   mov ecx, [new_ball]
   mov edx, [ecx]
   call dword [edx+4]
 
-  // ---- Replace vtable with our custom vtable ----
-  mov eax, [new_ball]
-  mov dword [eax], CloneVTable
-
-  // ---- Zero AI fields area (0xC60-0xC98) just in case ctor2 wrote there ----
-  mov edi, [new_ball]
-  add edi, 0xC60
-  xor eax, eax
-  mov ecx, 14                  // 0x38 / 4 = 14 dwords
-  cld
-  rep stosd
-
-  // ---- Set AI fields ----
-  mov edx, [new_ball]
-
-  // chase_distance = 600.0
-  mov dword [edx+0xC6C], 44160000
-  // home_radius = 1200.0
-  mov dword [edx+0xC70], 44960000
-  // visibility_counter = 0xFFFF (high, keeps AI active)
-  mov dword [edx+0xC74], 0000FFFF
-  // spin_distance = 50.0
-  mov dword [edx+0xC7C], 42480000
-
-  // ---- Copy render context from original (0xA4 bytes = 41 dwords) ----
-  // Includes RenderContext1, RenderContext2, color_RGBA, uses_alpha
+  // ---- Copy render context from original (41 dwords from +0x1B8) ----
   mov esi, [orig_ball]
   mov edi, [new_ball]
   add esi, 0x1B8
@@ -361,27 +423,6 @@ spawn_found:
   fadd dword [004CF55C]
   fstp dword [edx+0x16C]
 
-  // ---- Set home position = original's position ----
-  mov eax, [orig_ball]
-  mov ebx, [eax+0x164]
-  mov [edx+0xC60], ebx
-  mov ebx, [eax+0x168]
-  mov [edx+0xC64], ebx
-  mov ebx, [eax+0x16C]
-  mov [edx+0xC68], ebx
-
-  // ---- Set render/material flags ----
-  mov dword [edx+0xC38], FFFFFFFF    // material_check = -1
-  mov dword [edx+0xC5C], 0           // render_flag = 0
-  mov byte [edx+0xC80], 0            // viewport_clip = false
-
-  // ---- Set active flags ----
-  mov byte [edx+0x768], 1             // is_active
-  mov byte [edx+0x769], 1             // active_flag
-  mov byte [edx+0x2F9], 0             // not falling
-  mov byte [edx+0x324], 0             // no early return
-  mov byte [edx+0x281], 1             // is_falling = false (byte)
-
   // ---- Copy velocity from original ----
   mov eax, [orig_ball]
   mov ebx, [eax+0x170]
@@ -390,6 +431,16 @@ spawn_found:
   mov [edx+0x174], ebx
   mov ebx, [eax+0x178]
   mov [edx+0x178], ebx
+
+  // ---- Set active flags ----
+  mov byte [edx+0x768], 1
+  mov byte [edx+0x769], 1
+  mov byte [edx+0x2F9], 0
+  mov byte [edx+0x324], 0
+
+  // ---- Clear AI state (ball+0x808 = 0, ball+0x288 = 0) ----
+  mov dword [edx+0x808], 0
+  mov dword [edx+0x288], 0
 
   // ---- Add to scene->ball_list (0x29D4) ----
   mov ecx, [scene_saved]
@@ -402,6 +453,14 @@ spawn_found:
   lea ecx, [ecx+0x2DEC]
   push edx
   call 00453810
+
+  // ---- Register clone in arrays ----
+  mov eax, [clone_count]
+  mov ecx, [new_ball]
+  mov [clone_ptrs + eax*4], ecx
+  mov ecx, [player_idx]
+  mov [clone_pidx + eax*4], ecx
+  inc dword [clone_count]
 
 spawn_skip:
   ret
@@ -420,7 +479,6 @@ spawn_skip:
   db 53 55 56 8B D9 57
 
 dealloc(CloneCode)
-dealloc(CloneVTable)
 dealloc(scene_saved)
 dealloc(spawnP1)
 dealloc(spawnP2)
@@ -429,6 +487,12 @@ dealloc(spawnP4)
 dealloc(player_idx)
 dealloc(orig_ball)
 dealloc(new_ball)
+dealloc(clone_count)
+dealloc(clone_ptrs)
+dealloc(clone_pidx)
+dealloc(force_buf)
+dealloc(saved_ball_ptr)
+dealloc(saved_ctrl_mode)
 
 unregistersymbol(scene_saved)
 unregistersymbol(spawnP1)
