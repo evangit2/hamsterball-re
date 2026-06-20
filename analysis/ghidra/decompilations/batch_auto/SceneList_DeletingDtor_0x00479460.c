@@ -1,0 +1,11 @@
+
+void * __thiscall SceneList_DeletingDtor(void *this,byte param_1)
+
+{
+  SceneList_Reset(this);
+  if ((param_1 & 1) != 0) {
+    _free(this);
+  }
+  return this;
+}
+

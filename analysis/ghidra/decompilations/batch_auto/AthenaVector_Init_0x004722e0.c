@@ -1,0 +1,24 @@
+
+undefined4 __thiscall AthenaVector_Init(void *this,uint param_1)
+
+{
+  undefined4 uVar1;
+  void *pvVar2;
+  
+  *(undefined4 *)((int)this + 4) = 0;
+  *(undefined4 *)((int)this + 8) = 0;
+  *(undefined4 *)((int)this + 0xc) = 0;
+  if (param_1 == 0) {
+    return 0;
+  }
+  if (0x3fffffff < param_1) {
+    uVar1 = Throw_VectorTooLong();
+    return CONCAT31((int3)((uint)uVar1 >> 8),1);
+  }
+  pvVar2 = operator_new(param_1 * 4);
+  *(void **)((int)this + 0xc) = (void *)(param_1 * 4 + (int)pvVar2);
+  *(void **)((int)this + 4) = pvVar2;
+  *(void **)((int)this + 8) = pvVar2;
+  return CONCAT31((int3)((uint)pvVar2 >> 8),1);
+}
+
