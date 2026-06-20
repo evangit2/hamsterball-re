@@ -1,0 +1,105 @@
+{
+  "functions": [
+    {
+      "name": "RumbleBoard_Tower_Dtor",
+      "address": "0x00422a60",
+      "signature": "void __fastcall RumbleBoard_Tower_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: RumbleBoard* this \u2014 the Tower Arena board object to destroy",
+      "description": "Destructor for Tower Arena board. Sets vtable to PTR_RumbleBoard_OddArena_DeletingDtor, frees 2 sub-mesh objects at +0x11F8 and +0x12FF via vtable delete, then calls Scene_dtor for base cleanup.",
+      "struct_offsets": "+0x11F8 (sub-mesh 1), +0x12FF (sub-mesh 2)",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_UpArena_Ctor",
+      "address": "0x00422b10",
+      "signature": "void * __thiscall RumbleBoard_UpArena_Ctor(void *this, int param_1)",
+      "parameters": "this: RumbleBoard* \u2014 arena board to construct | param_1: int \u2014 parent App/Scene pointer",
+      "description": "Constructor for Up Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Up Arena)' / 'UP ARENA'. Creates MeshWorld 'levels\\\\arena-up' and CollisionLevel. Initializes Vec3 (1,0,1).",
+      "struct_offsets": "+0x868 (board name), +0x4344 (game mode), +0x29B4 (display name)",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_UpArena_Dtor",
+      "address": "0x00422c00",
+      "signature": "void __fastcall RumbleBoard_UpArena_Dtor(undefined4 *param_1)",
+      "parameters": "param_1: RumbleBoard* this \u2014 the Up Arena board to destroy",
+      "description": "Destructor for Up Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls RumbleBoard_dtor for base cleanup.",
+      "struct_offsets": "+0x11F8 (sub-mesh)",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "Scene_ComputeArenaLighting",
+      "address": "0x00422c70",
+      "signature": "float * __thiscall Scene_ComputeArenaLighting(void *this, float *param_1, int param_2)",
+      "parameters": "this: Scene* | param_1: float* \u2014 output lighting/color buffer | param_2: int \u2014 ball/player index for per-player lighting",
+      "description": "Computes per-ball arena lighting. Iterates collision face lists, accumulates light contributions from nearby objects. Returns modified param_1 (lighting buffer). Complex 5099-char function with nested loops over AthenaLists.",
+      "struct_offsets": "Multiple collision mesh offsets, AthenaList iteration",
+      "xrefs": "0 calls, 1 data ref (vtable)",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_ExpertArena_ctor",
+      "address": "0x00423060",
+      "signature": "void * __thiscall RumbleBoard_ExpertArena_ctor(void *this, int param_1)",
+      "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
+      "description": "Constructor for Expert Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Expert Arena)' / 'Fight!'. Initializes AthenaList at +0x47E0. Vec3 init.",
+      "struct_offsets": "+0x47E0 (AthenaList), +0x868, +0x4344, +0x29B4",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_OddArena_ctor",
+      "address": "0x00423220",
+      "signature": "void * __thiscall RumbleBoard_OddArena_ctor(void *this, int param_1)",
+      "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
+      "description": "Constructor for Odd Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Odd Arena)' / 'ODD ARENA'. Clears flag at +0x4348. Vec3 init (1,0.5,0).",
+      "struct_offsets": "+0x4348 (flag), +0x868, +0x29B4",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_ToobArena_ctor",
+      "address": "0x004234e0",
+      "signature": "void * __thiscall RumbleBoard_ToobArena_ctor(void *this, int param_1)",
+      "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
+      "description": "Constructor for Toob Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Toob Arena)' / 'Rodenthood'. Initializes 5-element array at +0x47E0 (0x418 bytes each) via _eh_vector_constructor_iterator.",
+      "struct_offsets": "+0x47E0 (5-element array, 0x418 each), +0x868, +0x4344, +0x29B4",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "Scene_ApplyGravityDrag",
+      "address": "0x004235c0",
+      "signature": "void __fastcall Scene_ApplyGravityDrag(int param_1)",
+      "parameters": "param_1: Scene* this \u2014 the scene to apply gravity drag to",
+      "description": "Applies gravity drag decay to 4+ reflection values at +0x5C58/+0x5C5C/+0x5C60/+0x5C64 by subtracting _DAT_004CF428 and clamping to minimum _DAT_004CF6A8. Called as vtable HandleRaceEnd variant \u2014 reduces mirror effects after race ends.",
+      "struct_offsets": "+0x5C58, +0x5C5C, +0x5C60, +0x5C64 (reflection decay values)",
+      "xrefs": "0 calls, 1 data ref (vtable)",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_WobblyArena_ctor",
+      "address": "0x00423690",
+      "signature": "void * __thiscall RumbleBoard_WobblyArena_ctor(void *this, int param_1)",
+      "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
+      "description": "Constructor for Wobbly Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Wobbly Arena)' / 'Hamster Chase' / 'WOBBLY ARENA'. Creates MeshWorld 'levels\\\\arena-wobbly'. Vec3 init.",
+      "struct_offsets": "+0x868, +0x4344, +0x29B4",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    },
+    {
+      "name": "RumbleBoard_WobblyArena_DeletingDtor",
+      "address": "0x00423790",
+      "signature": "void __fastcall RumbleBoard_WobblyArena_DeletingDtor(undefined4 *param_1)",
+      "parameters": "param_1: RumbleBoard* this \u2014 the Wobbly Arena board to destroy",
+      "description": "Scalar deleting destructor for Wobbly Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls RumbleBoard_dtor for base cleanup.",
+      "struct_offsets": "+0x11F8 (sub-mesh)",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 14
+    }
+  ],
+  "total_documented": 10
+}
