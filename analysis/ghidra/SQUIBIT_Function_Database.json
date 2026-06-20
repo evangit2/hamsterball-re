@@ -1589,7 +1589,107 @@
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0/+0x10E4/+0x10E8 (offset pos), +0x10EC/+0x10F0/+0x10F4 (impact pos), +0x10F8 (CollisionLevel), +0x10FC (active=1), +0x10FD (triggered=0), +0x1100 (timer=1000), +0x1138 (state=0)",
       "xrefs": "2 calls from CreateSawblade and CreateLevelObjects",
       "batch": 28
+    },
+    {
+      "name": "Gear_Level_ctor",
+      "address": "0x0043a150",
+      "signature": "void * __thiscall Gear_Level_ctor(void *this, int param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
+      "parameters": "this: Gear* (vtable=0x4D52B8) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z",
+      "description": "Constructor for Gear obstacles. Inherits Level_ctor (not Stands). Random initial rotation (0-9), Y rotation (0-359), rotation speed (100-150), timer=400, active=1. Called from CreateSawblade.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (initRot 0-9), +0x10E4 (Yrot 0-359), +0x10F4 (active=1), +0x10F8 (timer=400), +0x10FC (speed 100-150)",
+      "xrefs": "1 call from CreateSawblade (0x40E5E2)",
+      "batch": 29
+    },
+    {
+      "name": "Gear_DeletingDtor",
+      "address": "0x0043a250",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Gear* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Gear. Calls Gear_Level_Dtor then _free. Referenced from vtable 0x4D52B8.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D52B8",
+      "batch": 29
+    },
+    {
+      "name": "Gear_Render",
+      "address": "0x0043a270",
+      "signature": "void __fastcall Gear_Render(int param_1)",
+      "parameters": "param_1: Gear* this \u2014 gear to render",
+      "description": "Renders gear with oscillating animation. Uses Wave_Sin for Y-rotation offset, Gfx_ScaleX for gear scale. Renders mesh twice (shadow/reflection). Gear bobs up/down while rotating.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (posX), +0x10D8 (posY adjusted), +0x10DC (posZ), +0x10E0 (rotAngle), +0x10E4 (Yrot), +0x10F8 (timer)",
+      "xrefs": "1 DATA ref from vtable 0x4D5300",
+      "batch": 29
+    },
+    {
+      "name": "Tipper_DeletingDtor",
+      "address": "0x0043a5c0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Tipper* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for TipperVisual. Calls Tipper_Level_Dtor then _free. Referenced from vtable 0x4D5330.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5330",
+      "batch": 29
+    },
+    {
+      "name": "Tipper_Render",
+      "address": "0x0043a5e0",
+      "signature": "void __fastcall Tipper_Render(int param_1)",
+      "parameters": "param_1: Tipper* this \u2014 TipperVisual to render",
+      "description": "Renders TipperVisual (glass break animation). Uses Wave_Sin for Y-scale oscillation: sin(tilt) \u00d7 amplitude \u00d7 constant. Creates rocking/tipping effect for breakable glass panels.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (tilt amplitude), +0x10E4 (tilt angle)",
+      "xrefs": "1 DATA ref from vtable 0x4D5378",
+      "batch": 29
+    },
+    {
+      "name": "Stands_DeletingDtor",
+      "address": "0x0043a6c0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Stands* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Stands. Calls Stands_Dtor (sets vtable, Level_Cleanup) then _free. Referenced from vtable 0x4D5390.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5390",
+      "batch": 29
+    },
+    {
+      "name": "Spinner_DeletingDtor",
+      "address": "0x0043a6e0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Spinner* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Spinner. Calls Spinner_Level_Dtor (frees Vec3List, sub-objects) then _free. Referenced from vtable 0x4D53F8.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D53F8",
+      "batch": 29
+    },
+    {
+      "name": "Stands_Update",
+      "address": "0x0043a700",
+      "signature": "undefined4 __fastcall Stands_Update(int *param_1)",
+      "parameters": "param_1: Stands* this (as int*)",
+      "description": "Per-frame update for Stands. Iterates AthenaList at +0x442: decrements per-entry timers (start at 10), removes expired entries via Gfx_SetRenderState + _free. Accumulates position data from tracked objects. Manages balls/objects currently on the stands.",
+      "struct_offsets": "+0x436/+0x437/+0x438 (local pos), +0x43C/+0x43D (state), +0x442 (AthenaList), +0x444 (per-entry flags), +0x545 (data ptr)",
+      "xrefs": "1 DATA ref from vtable 0x4D5424",
+      "batch": 29
+    },
+    {
+      "name": "Stands_AddObject",
+      "address": "0x0043acb0",
+      "signature": "void __thiscall Stands_AddObject(void *this, int param_1)",
+      "parameters": "this: Stands* | param_1: int \u2014 object pointer (Ball*) being added",
+      "description": "Adds object to stands tracking list. If object already in list, refreshes timer to 10. Otherwise allocates 8-byte node (ptr + timer=10) and appends to AthenaList at +0x1108. Called when ball touches stands.",
+      "struct_offsets": "+0x1108 (AthenaList), +0x110C (count), +0x1110+ (flags), +0x1514 (data ptr)",
+      "xrefs": "2 calls from Arena_HandleCollision and CreateWobbly1",
+      "batch": 29
+    },
+    {
+      "name": "Stands_CtorWithCollisionLevel",
+      "address": "0x0043ad40",
+      "signature": "void * __thiscall Stands_CtorWithCollisionLevel(void *this, int param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, char *param_5)",
+      "parameters": "this: Stands* (vtable=0x4D5458, actually Blockdawg) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: char* mesh name",
+      "description": "Constructor for Blockdawg-type stands with custom mesh. Loads mesh via MeshWorld_ctor, constructs two 50-element arrays (0x418 bytes each) at +0x1104 and +0xDDB4, creates CollisionLevel, sets health=20 (+0x10F8). Called from Neon Race setup.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8 (state=0), +0x10E0/+0x10E4/+0x10E8 (pos), +0x10F8 (health=20), +0x1104 (50\u00d70x418 array), +0xDDB4 (50\u00d70x418 array), +0x1AA64 (AthenaList)",
+      "xrefs": "1 call from Scene_SetupLevel7 (0x40F5E3)",
+      "batch": 29
     }
   ],
-  "total_documented": 150
+  "total_documented": 160
 }
