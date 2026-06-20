@@ -183,7 +183,7 @@ static void walk_octree(octree_ctx_t *ctx) {
                     geom->is_translucent = 1;
                 if ((geom->name[0] == 'T' || geom->name[0] == 't') && geom->name[1] == ':')
                     geom->is_decal = 1;
-                if (strnicmp(geom->name, "N:GLASS", 7) == 0)
+                if (strncasecmp(geom->name, "N:GLASS", 7) == 0)
                     geom->is_alpha_test = 1;
                 if ((geom->name[0] == 'E' || geom->name[0] == 'e') && geom->name[1] == ':')
                     geom->no_render = 1;
@@ -239,20 +239,18 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
         char name[256];
         if (mw_read_string(&r, name, sizeof(name)) < 0) break;
         
-        /* Position: exporter writes Max mPosition.x, mPosition.z, mPosition.y
-         * In Max: Z is up, Y is forward. In D3D: Y is up, Z is forward.
-         * So: D3D.x = Max.x, D3D.y = Max.z (up), D3D.z = Max.y (forward) */
-        float max_x = mw_read_f32(&r);
-        float max_z = mw_read_f32(&r);  /* Z-up in Max → Y-up in D3D */
-        float max_y = mw_read_f32(&r);  /* Y-forward in Max → Z-forward in D3D */
-        float d3d_x = max_x;
-        float d3d_y = max_z;   /* Max Z-up becomes D3D Y-up */
-        float d3d_z = max_y;   /* Max Y-forward becomes D3D Z-forward */
+        /* Position: The Raptisoft exporter writes in Max order (x, z, y) but
+         * the ORIGINAL Hamsterball.exe reads vertices as-is without swap.
+         * Original Level1 vertices and ref points are in D3D Y-up order.
+         * So we read (x, y, z) directly without the Max→D3D swap. */
+        float d3d_x = mw_read_f32(&r);
+        float d3d_y = mw_read_f32(&r);
+        float d3d_z = mw_read_f32(&r);
         
-        /* Rotation: same x,z,y → x,y,z swap */
+        /* Rotation: same, no swap */
         float rx = mw_read_f32(&r);
-        float rz = mw_read_f32(&r);
         float ry = mw_read_f32(&r);
+        float rz = mw_read_f32(&r);
         
         uint32_t has_material = mw_read_u32(&r);
         
@@ -304,9 +302,8 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
     level->ambient_color.z = mw_read_f32(&r);
     
     /* === SECTION 5: Global Vertex Buffer === */
-    /* Vertices are stored in 3DS Max coordinate system (Z-up, Y-forward).
-     * Must convert to D3D (Y-up, Z-forward): d3d_x=max_x, d3d_y=max_z, d3d_z=max_y
-     * Same conversion as Section 1 objects above. */
+    /* Original Hamsterball.exe reads vertex positions as-is (D3D Y-up order).
+     * No Max→D3D coordinate swap needed. */
     level->vertex_count = mw_read_u32(&r);
     if (level->vertex_count > 0 && level->vertex_count < 200000) {
         size_t vb_size = level->vertex_count * sizeof(mw_vertex_t);
@@ -316,20 +313,8 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
                 free(level->vertices);
                 level->vertices = NULL;
                 level->vertex_count = 0;
-            } else {
-                /* Convert from Max Z-up to D3D Y-up */
-                for (int i = 0; i < level->vertex_count; i++) {
-                    mw_vertex_t *v = &level->vertices[i];
-                    float max_x = v->x, max_y = v->y, max_z = v->z;
-                    float max_nx = v->nx, max_ny = v->ny, max_nz = v->nz;
-                    v->x = max_x;        /* D3D X = Max X */
-                    v->y = max_z;        /* D3D Y = Max Z (up) */
-                    v->z = max_y;        /* D3D Z = Max Y (forward) */
-                    v->nx = max_nx;
-                    v->ny = max_nz;      /* Normal Y = Max Z */
-                    v->nz = max_ny;      /* Normal Z = Max Y */
-                }
             }
+            /* No coordinate swap — vertices are already in D3D order */
         }
     } else {
         level->vertex_count = 0;

@@ -50,8 +50,10 @@ class MWWriter:
 
     def write_vec3(self, x, y, z):
         """Write position in D3D file order (x, y, z).
-        Verified from Arena-WarmUp binary: vertices and ref points
-        are stored in D3D Y-up order, NOT Max XZY order."""
+        NOTE: The official Raptisoft exporter writes in Max order (x, z, y),
+        but the ORIGINAL Hamsterball.exe does NOT swap Y↔Z when loading.
+        The reimplementation parser does swap — so there's a mismatch.
+        For the original game, write directly in D3D (x, y, z)."""
         self.write_f32(x)
         self.write_f32(y)
         self.write_f32(z)
@@ -78,7 +80,9 @@ class MWWriter:
             self.write_u32(0)  # no texture
 
     def write_vertex(self, x, y, z, nx=0, ny=1, nz=0, u=0, v=0):
-        """Write a 32-byte vertex in D3D coordinate order (Y-up)."""
+        """Write a 32-byte vertex in D3D order (x, y, z).
+        The ORIGINAL game reads vertices as-is without Y↔Z swap.
+        The reimplementation parser swaps Y↔Z — mismatch with original."""
         self.write_f32(x)       # D3D X
         self.write_f32(y)       # D3D Y (vertical)
         self.write_f32(z)       # D3D Z
@@ -261,7 +265,8 @@ def create_plane_level(size=400.0, y=0.0, color=None, start_pos=None):
     return w.get_bytes()
 
 
-def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
+def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None,
+                       n_rings=12, n_sectors=16):
     """Create a MESHWORLD arena-style bowl level.
 
     Generates a hemispherical bowl with inward-facing normals, a closed bottom
@@ -270,6 +275,9 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
     Key design: bottom ring has small but nonzero radius to avoid degenerate
     triangles, plus a center vertex fan to close the bottom completely.
     The ball (radius ~26) cannot fall through the closed bottom.
+
+    n_rings: number of horizontal ring bands (more = smoother vertical curve)
+    n_sectors: number of vertical sectors (more = smoother circle)
     """
     w = MWWriter()
 
@@ -285,9 +293,7 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
                            bg_color=(0.98, 0.46, 1.0),
                            ambient_color=(0.56, 0.56, 0.56))
 
-    # Bowl parameters — use more rings for smoother curve and closed bottom
-    n_rings = 12
-    n_sectors = 16
+    # Bowl parameters
     bottom_radius = 5.0  # Small but nonzero — avoids degenerate triangles
 
     # Generate ring positions (bowl interior)
@@ -407,21 +413,58 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None):
     for v in all_vertices:
         w.write_vertex(*v)
 
-    # Section 6: Octree — single leaf with one geom
+    # Section 6: Octree — single leaf
     w.write_cube(-radius - 20, -depth - 5, -radius - 20,
                  radius + 20, 15, radius + 20)
     w.write_u32(0)  # leaf
-    w.write_u32(1)  # 1 geom
 
-    w.write_geom_with_strips(
-        name="",
-        ambient=(0.4, 0.3, 0.4, 1.0),
-        diffuse=color,
-        specular=(0.6, 0.6, 0.6, 1.0),
-        emissive=(0.1, 0.05, 0.1, 1.0),
-        power=20.0,
-        strips=geom_strips
-    )
+    # Split geoms when vertex count exceeds MAX_VERTS_PER_GEOM
+    # D3D8 uses 16-bit vertex indices; max ~32768 vertices per geom
+    MAX_VERTS_PER_GEOM = 30000
+
+    if len(all_vertices) <= MAX_VERTS_PER_GEOM:
+        # Single geom — original format
+        w.write_u32(1)  # 1 geom
+        w.write_geom_with_strips(
+            name="",
+            ambient=(0.4, 0.3, 0.4, 1.0),
+            diffuse=color,
+            specular=(0.6, 0.6, 0.6, 1.0),
+            emissive=(0.1, 0.05, 0.1, 1.0),
+            power=20.0,
+            strips=geom_strips
+        )
+    else:
+        # Split into multiple geoms, each with ≤ MAX_VERTS_PER_GEOM vertices
+        # Group strips by their vertex ranges
+        geom_groups = []  # list of (strip_list, max_vert_idx)
+        current_strips = []
+        current_max_vert = 0
+
+        for tri_count, vertex_offset in geom_strips:
+            # This strip uses vertices [vertex_offset, vertex_offset + tri_count + 2)
+            strip_end = vertex_offset + tri_count + 2
+            if current_strips and strip_end - current_strips[0][1] > MAX_VERTS_PER_GEOM:
+                # This strip would exceed the limit — start a new geom
+                geom_groups.append(current_strips)
+                current_strips = []
+            current_strips.append((tri_count, vertex_offset))
+            current_max_vert = max(current_max_vert, strip_end)
+
+        if current_strips:
+            geom_groups.append(current_strips)
+
+        w.write_u32(len(geom_groups))
+        for i, group_strips in enumerate(geom_groups):
+            w.write_geom_with_strips(
+                name="" if i == 0 else f"part{i}",
+                ambient=(0.4, 0.3, 0.4, 1.0),
+                diffuse=color,
+                specular=(0.6, 0.6, 0.6, 1.0),
+                emissive=(0.1, 0.05, 0.1, 1.0),
+                power=20.0,
+                strips=group_strips
+            )
 
     return w.get_bytes()
 
@@ -559,6 +602,10 @@ def main():
                         help='Diffuse color as R,G,B,A (0-1 range)')
     parser.add_argument('--start', type=str, default=None,
                         help='Start position as X,Y,Z (D3D coords)')
+    parser.add_argument('--rings', type=int, default=12,
+                        help='Bowl: number of ring bands (default: 12)')
+    parser.add_argument('--sectors', type=int, default=16,
+                        help='Bowl: number of sectors (default: 16)')
 
     args = parser.parse_args()
 
@@ -576,7 +623,15 @@ def main():
     print(f"Creating preset '{args.preset}': {desc}")
 
     if args.preset == 'bowl':
-        data = create_bowl_level(color=color, start_pos=start_pos)
+        data = create_bowl_level(color=color, start_pos=start_pos,
+                                  n_rings=args.rings, n_sectors=args.sectors)
+        n_tri_wall = 2 * args.rings * args.sectors
+        n_tri_fan = args.sectors
+        n_tri_rim = 2 * 2 * args.sectors
+        n_tri_total = n_tri_wall + n_tri_fan + n_tri_rim
+        n_verts_total = args.rings * (2 * args.sectors + 2) + 1 + 3 * args.sectors + 2 * 4 * args.sectors
+        print(f"  Tessellation: {args.rings} rings × {args.sectors} sectors")
+        print(f"  Estimated: ~{n_tri_total} tris, ~{n_verts_total} verts")
     elif args.preset == 'platforms':
         data = create_platforms_level(color=color)
     elif args.preset == 'ramp':
