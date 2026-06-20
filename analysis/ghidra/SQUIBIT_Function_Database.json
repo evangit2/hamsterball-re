@@ -1689,7 +1689,107 @@
       "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8 (state=0), +0x10E0/+0x10E4/+0x10E8 (pos), +0x10F8 (health=20), +0x1104 (50\u00d70x418 array), +0xDDB4 (50\u00d70x418 array), +0x1AA64 (AthenaList)",
       "xrefs": "1 call from Scene_SetupLevel7 (0x40F5E3)",
       "batch": 29
+    },
+    {
+      "name": "Button_DeletingDtor",
+      "address": "0x0043be90",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Button* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Button. Calls Button_Level_Dtor then _free. Referenced from TWO vtables: 0x4D5578 and 0x4D5CA0.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "2 DATA refs from vtables 0x4D5578 and 0x4D5CA0",
+      "batch": 30
+    },
+    {
+      "name": "Blockdawg_ctor",
+      "address": "0x0043c310",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1, int param_2, undefined4 param_3, undefined4 param_4, void *param_5, undefined4 param_6)",
+      "parameters": "this: Blockdawg* (vtable=0x4D5638, RumbleObject) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: Stands_ctor parent | param_6: path data ptr (+0x10F0)",
+      "description": "Constructor for Blockdawg obstacles (moving block enemies). Inherits RumbleObject. Follows predefined path (param_6). Random starting position on path. Speed multiplier=1.0. 5 calls from CreateLevelObjects and level setups.",
+      "struct_offsets": "+0x10D0 (Scene), +0x10D4 (CollisionLevel), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10F0 (path data), +0x10F4 (Timer), +0x1138 (random init), +0x113C (speed=1.0)",
+      "xrefs": "5 calls from CreateLevelObjects and 3 level setup functions",
+      "batch": 30
+    },
+    {
+      "name": "RumbleObject_DeletingDtor",
+      "address": "0x0043c4c0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: RumbleObject* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for RumbleObject. Calls RumbleObject_Level_Dtor then _free. Referenced from vtable 0x4D5638 used by Blockdawg_ctor.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5638",
+      "batch": 30
+    },
+    {
+      "name": "RumbleObject_Update",
+      "address": "0x0043c4e0",
+      "signature": "undefined4 __fastcall ...(int *param_1)",
+      "parameters": "param_1: RumbleObject* this (as int*)",
+      "description": "Per-frame update for RumbleObject/Blockdawg. Generates random frame offset. Mode 0 (+0x454==0): follows path via Path_GetPosition, calculates direction, normalizes, updates position. Mode 1: alternative movement (chase/attack behavior).",
+      "struct_offsets": "+0x436/+0x437/+0x438 (pos), +0x439/+0x43A/+0x43B (direction), +0x43C (path ptr), +0x44E (segment idx), +0x44F (speed mult), +0x450 (frame offset), +0x454 (mode flag)",
+      "xrefs": "1 DATA ref from vtable 0x4D5664",
+      "batch": 30
+    },
+    {
+      "name": "Pendulum_DeletingDtor",
+      "address": "0x0043cb50",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Pendulum* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Pendulum (vtable1). Calls Pendulum_Cleanup_vtable then _free. Referenced from vtable 0x4D569C.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D569C",
+      "batch": 30
+    },
+    {
+      "name": "Rotator_DeletingDtor",
+      "address": "0x0043d120",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Rotator* (vtable1) | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Rotator (vtable1). Calls Rotator_Cleanup_vtable then _free. Referenced from vtable 0x4D56A8.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D56A8",
+      "batch": 30
+    },
+    {
+      "name": "Rotator_DeletingDtor2",
+      "address": "0x0043d140",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Rotator* (vtable2) | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Rotator (vtable2). Calls Rotator_Cleanup (not _vtable) then _free. Referenced from vtable 0x4D5708.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5708",
+      "batch": 30
+    },
+    {
+      "name": "Rotator_DeletingDtor3",
+      "address": "0x0043d400",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Rotator* (vtable3) | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Rotator (vtable3). Calls Rotator_Cleanup_vtable2 then _free. Referenced from vtable 0x4D5770.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5770",
+      "batch": 30
+    },
+    {
+      "name": "Pendulum_DeletingDtor2",
+      "address": "0x0043d8a0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Pendulum* (vtable2) | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Pendulum (vtable2). Calls Pendulum_Cleanup then _free. Referenced from vtable 0x4D57D0.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D57D0",
+      "batch": 30
+    },
+    {
+      "name": "Rotator_DeletingDtor4",
+      "address": "0x0043dc20",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: Rotator* (vtable4) | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for Rotator (vtable4). Calls Rotator_Cleanup_vtable3 then _free. Referenced from vtable 0x4D5830. 4th of 7+ Rotator vtable variants.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D5830",
+      "batch": 30
     }
   ],
-  "total_documented": 160
+  "total_documented": 170
 }
