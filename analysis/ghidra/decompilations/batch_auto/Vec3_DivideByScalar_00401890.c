@@ -1,14 +1,26 @@
 /*
  * Function: Vec3_DivideByScalar
  * Address: 0x00401890
- * Signature: Vec3_DivideByScalar(...)
+ * Signature: void __thiscall Vec3_DivideByScalar(void *this, float param_1)
  *
- * Patterns: none identified. Calls: Vec3_DivideByScalar. Offsets: 0, Lines: 12
+ * Description:
+ * Divides all three components of a Vec3 (this) by a scalar (param_1), in-place.
+ * Rather than dividing each component directly, it precomputes the reciprocal
+ * (1.0 / param_1) using the constant _DAT_004cf310 (which is 1.0f), then
+ * multiplies each component by the reciprocal. This is a common optimization
+ * to avoid three division operations (which are slower than multiplications).
+ *
+ * Layout:
+ *   +0x00: X (float)
+ *   +0x04: Y (float)
+ *   +0x08: Z (float)
+ *
+ * Cross-references:
+ *   - Called from Transform_ScalarDtor (0x466D50) — during transform computation,
+ *     likely normalizing or scaling vectors
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
-
-/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
 void __thiscall Vec3_DivideByScalar(void *this,float param_1)
 
