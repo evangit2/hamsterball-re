@@ -2389,7 +2389,107 @@
       "struct_offsets": "+0x28 (Vec3), +0x2C/+0x30/+0x34/+0x38 (scale matrix: 0.5,0.5,0.5,1.0)",
       "xrefs": "1 call from 0x43CDAF",
       "batch": 36
+    },
+    {
+      "name": "RaceResults_Reset",
+      "address": "0x0044c450",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: RaceResults* this",
+      "description": "Resets RaceResults. Sets vtable to PTR_RaceGoalReached_ScalarDtor (0x4D6CA0). Frees sub-object at +0x15 (0x54 offset) if non-NULL. Calls RumbleBoard_CleanupTimer on +0xF (0x3C offset). Sets vtable to 0x4D6C00. 1 call.",
+      "struct_offsets": "+0x00 (vtable), +0x15 (sub-object ptr\u21920x54), +0xF (timer\u21920x3C)",
+      "xrefs": "1 call from RaceGoalReached_ScalarDtor (0x44D643)",
+      "batch": 37
+    },
+    {
+      "name": "RaceResults_Tick",
+      "address": "0x0044c4b0",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: RaceResults* this",
+      "description": "Per-frame tick for race results display. Increments frame counter at +0x10. If past max (+0x14) and active (+0x19), decrements counter at parent+0x8B4. Handles key input: Input_CheckKeyCombo sets +0x58/+0x59 flags. Calls RumbleBoard_TickTimer on +0x3C. Decrements timer at +0x28 by _DAT_004D6CB0.",
+      "struct_offsets": "+0x04 (parent), +0x0C (input handler), +0x10 (frame count), +0x14 (max frames), +0x19 (active flag), +0x28 (timer), +0x3C (RumbleBoard timer), +0x58/+0x59 (key flags), parent+0x8B4 (active count)",
+      "xrefs": "1 DATA ref from vtable 0x4D6CA4",
+      "batch": 37
+    },
+    {
+      "name": "ConfirmMenu_Ctor",
+      "address": "0x0044c780",
+      "signature": "void __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: ConfirmMenu* (vtable=0x4D6CB8) | param_1: parent (Board/App) | param_2: undefined4 (stored at +8)",
+      "description": "Constructor for ConfirmMenu. Stores parent at +4, param_2 at +8, App at +0xC (from parent+0x878). Increments active count at parent+0x8B4. Sets max frames=500 (+0x14). Width=800 (+0x1C). Vtable\u21920x4D6CB8. 2 calls.",
+      "struct_offsets": "+0x04 (parent), +0x08 (param_2), +0x0C (App), +0x10 (frame=0), +0x14 (max=500), +0x18 (flag=0), +0x19 (active=1), +0x1C (width=800), +0x20 (flag=0)",
+      "xrefs": "2 calls from 0x409ED3, 0x409FE2",
+      "batch": 37
+    },
+    {
+      "name": "RaceResults_Update",
+      "address": "0x0044c7d0",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: RaceResults* this",
+      "description": "Updates race results display. Handles key input (Input_CheckKeyCombo\u2192+0x20 flag). Decrements frame counter. When all frames processed: sets App+0x5FC=5 and App+0x69C=5 (results state). Increments frame counter at +0x10 each iteration. Speed multiplier at +0x20 controls iterations per call (\u00d710).",
+      "struct_offsets": "+0x04 (parent), +0x0C (App\u2192+0x5FC/+0x69C), +0x10 (frame count), +0x14 (max frames), +0x19 (active flag), +0x1C (width), +0x20 (speed mult)",
+      "xrefs": "1 DATA ref from vtable 0x4D6CBC",
+      "batch": 37
+    },
+    {
+      "name": "RaceGoalReached_Ctor",
+      "address": "0x0044c880",
+      "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: RaceGoalReached* (vtable=0x4D6CF0) | param_1: parent | param_2: undefined4 (stored at +8)",
+      "description": "Constructor for 'GOAL REACHED!' display. Stores parent at +4, param_2 at +8, App at +0xC. Increments active count at parent+0x8B4. Sets max frames=100 (+0x14). Vtable\u21920x4D6CF0. Initializes SceneObject_EmptyListCtor at +0x90, RumbleBoard_InitTimer at +0x4C4. Sets 'GOAL REACHED!' text at +0x24. Width=800 (+0x20/+0x4C0). 1 call.",
+      "struct_offsets": "+0x04 (parent), +0x08 (param_2), +0x0C (App), +0x10 (frame=0), +0x14 (max=100), +0x18 (flag=0), +0x19 (active=1), +0x20 (width=800), +0x24 ('GOAL REACHED!'), +0x90 (SceneObject list), +0x4AC-0x4BC (zeros), +0x4C0 (width=800), +0x4C4 (timer)",
+      "xrefs": "1 call from 0x409F51",
+      "batch": 37
+    },
+    {
+      "name": "RaceResultsMenu_scalar_dtor",
+      "address": "0x0044ca80",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: RaceResultsMenu* this",
+      "description": "Scalar dtor for RaceResultsMenu. Sets vtable to 0x4D6CF0. Frees 2 sub-objects at +0x137 and +0x138 (0x4DC/+0x4E0 offsets) if non-NULL. Calls RumbleBoard_CleanupTimer on +0x131 (0x4C4 offset). Calls SceneObject_BaseDtor on +0x24. Sets vtable to 0x4D6C00. 1 call.",
+      "struct_offsets": "+0x137/+0x138 (sub-objects\u21920x4DC/0x4E0), +0x131 (timer\u21920x4C4), +0x24 (SceneObject)",
+      "xrefs": "1 call from RaceGoalReached_DeletingDtor (0x44D743)",
+      "batch": 37
+    },
+    {
+      "name": "RaceResultsMenu_ctor",
+      "address": "0x0044cb10",
+      "signature": "void __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: RaceResultsMenu* (vtable=0x4D6CFC) | param_1: parent | param_2: undefined4 (stored at +8)",
+      "description": "Constructor for RaceResultsMenu. Stores parent at +4, param_2 at +8, App at +0xC. Increments active count at parent+0x8B4. Sets max frames=500 (+0x14), width=800 (+0x1C). Vtable\u21920x4D6CFC. Sets scale=1.0f at +0x20. 1 call from RumbleBoard_Update.",
+      "struct_offsets": "+0x04 (parent), +0x08 (param_2), +0x0C (App), +0x10 (frame=0), +0x14 (max=500), +0x18 (flag=0), +0x19 (active=1), +0x1C (width=800), +0x20 (scale=1.0f), +0x24 (flag=0), +0x25 (flag=0)",
+      "xrefs": "1 call from RumbleBoard_Update (0x422240)",
+      "batch": 37
+    },
+    {
+      "name": "ConfirmMenu_OnKey",
+      "address": "0x0044cb70",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: ConfirmMenu* this",
+      "description": "Key handler for ConfirmMenu. Sets vtable to 0x4D6CFC. Reads index from param_1[2]+0x14, accesses array at param_1[3]+0xB38+index*4. Adds 4 to that int. Resets vtable to 0x4D6C00. 1 call.",
+      "struct_offsets": "param_1[2] (object\u2192+0x14=index), param_1[3] (object\u2192+0xB38+index*4=counter)",
+      "xrefs": "1 call from HighScoreEntry_ScalarDtor (0x44F073)",
+      "batch": 37
+    },
+    {
+      "name": "ConfirmMenu_Tick",
+      "address": "0x0044cb90",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: ConfirmMenu* this",
+      "description": "Per-frame tick for ConfirmMenu. Handles key input (Input_CheckKeyCombo\u2192+0x25 flag). Decrements timer at +0x20 by _DAT_004D6CB0. Increments frame counter at +0x10. When complete: sets App+0x5D6=1 (and another flag). Speed mult at +0x25 \u00d7 10 controls iterations.",
+      "struct_offsets": "+0x04 (parent), +0x0C (App\u2192+0x5D6), +0x10 (frame count), +0x14 (max), +0x19 (active), +0x20 (timer), +0x24 (flag), +0x25 (speed mult)",
+      "xrefs": "1 DATA ref from vtable 0x4D6D00",
+      "batch": 37
+    },
+    {
+      "name": "ConfirmMenu_DeletingDtor",
+      "address": "0x0044cca0",
+      "signature": "void * __thiscall ...(void *this, byte param_1)",
+      "parameters": "this: ConfirmMenu* | param_1: scalar delete flag",
+      "description": "Scalar deleting dtor for ConfirmMenu. Calls SimpleList_vtbl_Init (resets vtable to 0x4D6AE0), then _free if bit 0. 1 DATA ref.",
+      "struct_offsets": "N/A (dispatcher)",
+      "xrefs": "1 DATA ref from vtable 0x4D6BF4",
+      "batch": 37
     }
   ],
-  "total_documented": 230
+  "total_documented": 240
 }
