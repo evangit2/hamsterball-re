@@ -305,7 +305,7 @@ mw_level_t *meshworld_parse(const uint8_t *data, size_t size) {
     /* Original Hamsterball.exe reads vertex positions as-is (D3D Y-up order).
      * No Max→D3D coordinate swap needed. */
     level->vertex_count = mw_read_u32(&r);
-    if (level->vertex_count > 0 && level->vertex_count < 200000) {
+    if (level->vertex_count > 0 && level->vertex_count < 2000000) {
         size_t vb_size = level->vertex_count * sizeof(mw_vertex_t);
         level->vertices = malloc(vb_size);
         if (level->vertices) {

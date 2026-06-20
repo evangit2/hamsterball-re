@@ -419,8 +419,9 @@ def create_bowl_level(radius=300.0, depth=150.0, color=None, start_pos=None,
     w.write_u32(0)  # leaf
 
     # Split geoms when vertex count exceeds MAX_VERTS_PER_GEOM
-    # D3D8 uses 16-bit vertex indices; max ~32768 vertices per geom
-    MAX_VERTS_PER_GEOM = 30000
+    # D3D8 uses 16-bit vertex indices; max 65535 vertices per geom
+    # Using 65000 to leave headroom
+    MAX_VERTS_PER_GEOM = 65000
 
     if len(all_vertices) <= MAX_VERTS_PER_GEOM:
         # Single geom — original format

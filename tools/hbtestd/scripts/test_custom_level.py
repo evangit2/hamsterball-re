@@ -20,7 +20,8 @@ import subprocess
 import sys
 import time
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# Repo root is hamsterball-re/, not hamsterball-re/tools/hbtestd/
 GAME_DIR = os.path.join(REPO_ROOT, "originals", "installed", "extracted")
 LEVELS_DIR = os.path.join(GAME_DIR, "Levels")
 MW_CREATE = os.path.join(REPO_ROOT, "tools", "mw_create.py")
@@ -39,10 +40,16 @@ def run(cmd, **kwargs):
     return result
 
 
-def generate_level(preset, output_path):
+def generate_level(preset, output_path, rings=None, sectors=None):
     """Generate a custom MESHWORLD level using mw_create.py."""
     print(f"\n[1/6] Generating '{preset}' level...")
-    result = run(["python3", MW_CREATE, "--preset", preset, "--output", output_path])
+    cmd = ["python3", MW_CREATE, "--preset", preset]
+    if rings is not None:
+        cmd += ["--rings", str(rings)]
+    if sectors is not None:
+        cmd += ["--sectors", str(sectors)]
+    cmd += ["--output", output_path]
+    result = run(cmd)
     if result.returncode != 0:
         print(f"ERROR: Failed to generate level", file=sys.stderr)
         sys.exit(1)
@@ -161,13 +168,25 @@ def main():
         "--keep-level", action="store_true",
         help="Don't restore original level after test"
     )
+    parser.add_argument(
+        "--rings", type=int, default=None,
+        help="Number of rings for bowl tessellation"
+    )
+    parser.add_argument(
+        "--sectors", type=int, default=None,
+        help="Number of sectors for bowl tessellation"
+    )
+    parser.add_argument(
+        "--wait-after-nav", type=float, default=10.0,
+        help="Seconds to wait after navigation before screenshot (default: 10)"
+    )
     args = parser.parse_args()
 
     custom_path = os.path.join(LEVELS_DIR, f"Custom-Test{args.preset.capitalize()}.MESHWORLD")
 
     try:
-        # Step 1: Generate level
-        generate_level(args.preset, custom_path)
+        # Step 1: Generate level (with optional tessellation args)
+        generate_level(args.preset, custom_path, rings=args.rings, sectors=args.sectors)
 
         # Step 2: Swap into level slot
         swap_level(custom_path, args.level_slot)
@@ -179,7 +198,8 @@ def main():
         time.sleep(2)  # Brief wait before starting navigation
         navigate_to_race()
 
-        # Step 5: Take screenshot
+        # Step 5: Wait for level to load, then take screenshot
+        time.sleep(args.wait_after_nav)
         screenshot = take_screenshot(args.screenshot_path)
 
         # Wait a moment then kill the game

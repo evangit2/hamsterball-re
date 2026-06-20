@@ -682,9 +682,24 @@ static BOOL LoadAssets(void) {
     }
 
     if (cmd_level) {
-        /* Find matching index */
+        /* First try exact match in level list */
+        int found = 0;
         for (int i = 0; i < g_level_count; i++) {
-            if (strcmp(g_level_list[i], cmd_level) == 0) { g_level_index = i; break; }
+            if (strcmp(g_level_list[i], cmd_level) == 0) {
+                g_level_index = i;
+                found = 1;
+                break;
+            }
+        }
+        /* If not in predefined list, try loading it as an arbitrary filename */
+        if (!found) {
+            if (LoadLevel(cmd_level)) {
+                /* Loaded successfully — add a temporary entry */
+                printf("[Level] Loaded custom level: %s\n", cmd_level);
+                ResetBallAndCamera();
+                return TRUE;
+            }
+            fprintf(stderr, "[Level] Custom level '%s' not found, trying default\n", cmd_level);
         }
     }
 
