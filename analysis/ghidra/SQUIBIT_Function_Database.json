@@ -2789,7 +2789,107 @@
       "struct_offsets": "+0x738 (shade mode cache), +0x154 (D3D device\u2192vtable+200, state 0x22)",
       "xrefs": "1 call from Level_InitScene (0x40B175)",
       "batch": 40
+    },
+    {
+      "name": "Gfx_SaveQualitySettings",
+      "address": "0x00453f90",
+      "signature": "void __fastcall ...(int param_1)",
+      "parameters": "param_1: Graphics* this",
+      "description": "Saves texture quality, color mode, and safe mode to registry. Opens reg key at parent+0x54, writes DWORD 'Texture Quality' (+0x184), Bool 'ColorMode' (+0x18C), Bool 'SafeMode' (+0x7D7). 1 call from Graphics_Cleanup.",
+      "struct_offsets": "+0x5C (parent\u2192+0x54: RegKey), +0x184 (Texture Quality), +0x18C (ColorMode), +0x7D7 (SafeMode)",
+      "xrefs": "1 call from Graphics_Cleanup (0x4545D1)",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_SetTexturePath",
+      "address": "0x00454000",
+      "signature": "void __thiscall ...(void *this, char *param_1)",
+      "parameters": "this: Graphics* | param_1: char* texture directory path",
+      "description": "Frees existing texture path at +0x7D8. If param_1 non-NULL: allocates new string via operator_new (strlen+1), copies it. 1 call from App_Initialize.",
+      "struct_offsets": "+0x7D8 (texture path string)",
+      "xrefs": "1 call from App_Initialize (0x46BC84)",
+      "batch": 41
+    },
+    {
+      "name": "D3DFMT_ToString",
+      "address": "0x00454060",
+      "signature": "char * ...(undefined4 param_1)",
+      "parameters": "param_1: undefined4 (D3DFORMAT enum value)",
+      "description": "Converts D3DFORMAT enum to string. Handles 15 formats: R8G8B8(0x14), A8R8G8B8(0x15), X8R8G8B8(0x16), R5G6B5(0x17), X1R5G5B5(0x18), A1R5G5B5(0x19), A4R4G4B4(0x1A), R3G3B2(0x1B), A8(0x1C), A8R3G3B2(0x1D), X4R4G4B4(0x1E), A2B10G10R10(0x1F), G16R16(0x22), A8P8(0x28), P8(0x29), L8(0x32), A8L8(0x33), A4L4(0x34). 2 calls from App_BuildDiagnosticReport.",
+      "struct_offsets": "N/A (pure function)",
+      "xrefs": "2 calls from App_BuildDiagnosticReport",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_SetRenderMode",
+      "address": "0x00454190",
+      "signature": "void __thiscall ...(void *this, char param_1)",
+      "parameters": "this: Graphics* | param_1: char (render mode: 0=software, 1=hardware)",
+      "description": "Sets D3D render mode via vtable+200 (state 7=D3DRS_FILLMODE). If mode changed: increments dirty counter +0x7C8. If +0x6FC flag set: resets vertex processing, sets D3DRS_STENCILENABLE(0x16=1), D3DRS_ZENABLE(0x1D=0), D3DRS_ALPHATESTENABLE(0x89=0). If +0x700==1: sets D3DRS_CLIPPING(0x1B=1). 4+ calls.",
+      "struct_offsets": "+0x154 (D3D device), +0x6FC (reset flag), +0x700 (clipping mode), +0x70D (current mode), +0x7C8 (dirty counter)",
+      "xrefs": "4+ calls from Sprite_DrawRect, Gfx_DrawQuadRandomColor, Graphics_DrawScreenRect",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_ctor",
+      "address": "0x004542c0",
+      "signature": "void * __thiscall ...(void *this, undefined4 param_1, undefined1 param_2)",
+      "parameters": "this: Graphics* (vtable=0x4D88A0) | param_1: App/parent (stored at +0x5C) | param_2: undefined1 (stored at +4)",
+      "description": "Main Graphics constructor. Initializes RenderContext (+0xC), AthenaList (+0x2E4), Timer (+0x74C), Vec3 (+0x7AC). Allocates D3DX_ErrorHandler (0x68 bytes) at +0x748. Calls GetModuleHandle for D3D8. 2 calls.",
+      "struct_offsets": "+0x04 (param_2), +0x0C (RenderContext), +0x2E4 (AthenaList), +0x5C (parent), +0x154 (D3D device), +0x748 (D3DX_ErrorHandler), +0x74C (Timer), +0x7AC (Vec3)",
+      "xrefs": "2 calls from App_CreateGraphics",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_Cleanup",
+      "address": "0x00454550",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: Graphics* this",
+      "description": "Full cleanup for Graphics. Frees AthenaList (+0x2E4), texture path (+0x7D8), D3D device (+0x154\u2192vtable+8), D3DX handler (+0x7C\u2192vtable+8), D3DX_ErrorHandler (+0x748). Saves quality settings. Matrix_Identity, Timer_Cleanup, Vec3List_Free. 1 call from Graphics_dtor.",
+      "struct_offsets": "+0x154 (D3D device), +0x748 (D3DX_ErrorHandler), +0x74C (Timer), +0x7D8 (texture path), +0x2E4 (AthenaList)",
+      "xrefs": "1 call from Graphics_dtor (0x455363)",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_SetupLights",
+      "address": "0x00454630",
+      "signature": "void __fastcall ...(void *param_1)",
+      "parameters": "param_1: Graphics* this",
+      "description": "Sets up D3D lighting with 8 light slots. Configures directional lights with type=1, diffuse colors, directions. Sets D3DRS_LIGHTING(0x1A=0x454657), D3DRS_AMBIENT(0x2A), D3DRS_SPECULARENABLE(0x1B). 2 calls.",
+      "struct_offsets": "+0x154 (D3D device\u2192vtable+200: SetRenderState, SetLight)",
+      "xrefs": "2 calls from Graphics_Initialize, Graphics_RenderScene",
+      "batch": 41
+    },
+    {
+      "name": "Gfx_SetViewMatrix",
+      "address": "0x00454a30",
+      "signature": "void __thiscall ...(void *this, float *param_1)",
+      "parameters": "this: Graphics* | param_1: float* (16-element view matrix)",
+      "description": "Copies 16 floats from param_1 to +0x264 (view matrix). If +0x7D2 (mirror flag): negates elements [0], [4], [8] (column 0). Calls D3D vtable+0x94 (SetTransform, type=2=view). Calls Matrix_ComputeFrustum on +0x748. 1 call.",
+      "struct_offsets": "+0x264 (view matrix, 16 floats), +0x7D2 (mirror flag), +0x748 (frustum), +0x154 (D3D device\u2192vtable+0x94)",
+      "xrefs": "1 call from Graphics_RenderScene (0x454C13)",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_SetProjection",
+      "address": "0x00454ab0",
+      "signature": "void __thiscall ...(void *this, float param_1, float param_2)",
+      "parameters": "this: Graphics* | param_1: float (near Z) | param_2: float (far Z)",
+      "description": "Sets projection matrix. Stores nearZ at +0x790, farZ at +0x794. Builds perspective FOV matrix (PI/4, aspectRatio=+0x7A0/+0x7A4, near, far). Calls D3D vtable+0x94 (SetTransform, type=3=projection). Copies 16 floats to +0x2A4. Calls Matrix_ComputeFrustum. 4+ calls.",
+      "struct_offsets": "+0x790 (nearZ), +0x794 (farZ), +0x7A0/+0x7A4 (aspect ratio), +0x2A4 (projection matrix), +0x748 (frustum), +0x154 (D3D device)",
+      "xrefs": "4+ calls from Graphics_Initialize, Level_InitScene, Scene_RenderReflectiveObjects",
+      "batch": 41
+    },
+    {
+      "name": "Graphics_SetViewport",
+      "address": "0x00454b50",
+      "signature": "void __thiscall ...(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3)",
+      "parameters": "this: Graphics* | param_1-3: viewport params (x, y, dimensions)",
+      "description": "Sets viewport: stores base ptr (this+0x224) at +0x264, param_2 at +0x268, param_3 at +0x26C. Calls D3D_Thunk_0. 2+ calls.",
+      "struct_offsets": "+0x224 (viewport base), +0x264 (ptr to viewport), +0x268 (param_2), +0x26C (param_3)",
+      "xrefs": "2+ calls from 0x402AF6, Ball_Update",
+      "batch": 41
     }
   ],
-  "total_documented": 270
+  "total_documented": 280
 }
