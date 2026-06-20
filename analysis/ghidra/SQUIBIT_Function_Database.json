@@ -99,7 +99,107 @@
       "struct_offsets": "+0x11F8 (sub-mesh)",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
+    },
+    {
+      "name": "BoardLevel_Glass_ctor",
+      "address": "0x00424b60",
+      "signature": "void * __thiscall BoardLevel_Glass_ctor(void *this, int param_1)",
+      "parameters": "this: Board* \u2014 the Glass Race board to construct | param_1: int \u2014 parent App/Scene pointer",
+      "description": "Constructor for Glass Race board (Level 12). Calls Board_ctor, sets vtable, names 'Board (Glass)' / 'GLASS RACE'. Initializes AthenaList. Creates Glass-specific mechanics.",
+      "struct_offsets": "+0x868 (name), +0x29B4 (display name), AthenaList init",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 15
+    },
+    {
+      "name": "RumbleBoard_DeletingDtor",
+      "address": "0x00424c10",
+      "signature": "void __fastcall RumbleBoard_DeletingDtor(undefined4 *param_1)",
+      "parameters": "param_1: RumbleBoard* this \u2014 the arena board to destroy",
+      "description": "Simple scalar deleting destructor for base RumbleBoard. Sets vtable and calls Scene_dtor.",
+      "struct_offsets": "vtable pointer at +0x00",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 15
+    },
+    {
+      "name": "Board_Impossible_ctor",
+      "address": "0x00424c20",
+      "signature": "void * __thiscall Board_Impossible_ctor(void *this, int param_1)",
+      "parameters": "this: Board* | param_1: int \u2014 parent App/Scene",
+      "description": "Constructor for Impossible Race board (Level 15). Calls Board_ctor, sets vtable, names 'Board (Impossible)' / 'IMPOSSIBLE RACE'. Initializes multiple AthenaLists for complex level data. ~2796 chars.",
+      "struct_offsets": "Multiple AthenaList inits, +0x868, +0x29B4",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 15
+    },
+    {
+      "name": "Board_Impossible_dtor",
+      "address": "0x00424e20",
+      "signature": "void __fastcall Board_Impossible_dtor(undefined4 *param_1)",
+      "parameters": "param_1: Board* this \u2014 the Impossible board to destroy",
+      "description": "Destructor for Impossible Race board. Frees multiple sub-mesh objects via vtable delete, frees Vec3Lists, then Scene_dtor. ~962 chars.",
+      "struct_offsets": "Multiple sub-mesh offsets freed",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 15
+    },
+    {
+      "name": "RumbleBoard_Impossible_ctor",
+      "address": "0x00424ec0",
+      "signature": "void * __thiscall RumbleBoard_Impossible_ctor(void *this, int param_1)",
+      "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
+      "description": "Constructor for Impossible Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Impossible Arena)' / 'IMPOSSIBLE ARENA'. Creates MeshWorld 'levels\\\\arena-impossible'.",
+      "struct_offsets": "+0x868, +0x4344, +0x29B4",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 15
+    },
+    {
+      "name": "RumbleBoard_Impossible_dtor",
+      "address": "0x00424fb0",
+      "signature": "void __fastcall RumbleBoard_Impossible_dtor(undefined4 *param_1)",
+      "parameters": "param_1: RumbleBoard* this",
+      "description": "Destructor for Impossible Arena board. Frees sub-mesh at +0x11F8, calls RumbleBoard_dtor.",
+      "struct_offsets": "+0x11F8",
+      "xrefs": "1 call, 0 data refs",
+      "batch": 15
+    },
+    {
+      "name": "Scene_DeletingDtor",
+      "address": "0x00425020",
+      "signature": "void * __thiscall Scene_DeletingDtor(void *this, byte param_1)",
+      "parameters": "this: Scene* | param_1: byte \u2014 flags (bit 0 = free memory after destroy)",
+      "description": "Scalar deleting destructor for base Scene class. Calls Scene_dtor then conditionally frees memory based on param_1 bit 0.",
+      "struct_offsets": "N/A (destructor)",
+      "xrefs": "0 calls, 1 data ref (vtable)",
+      "batch": 15
+    },
+    {
+      "name": "BoardLevel1_WarmUp_dtor",
+      "address": "0x00425040",
+      "signature": "void * __thiscall BoardLevel1_WarmUp_dtor(void *this, byte param_1)",
+      "parameters": "this: BoardLevel1* | param_1: byte \u2014 delete flag (bit 0 = free)",
+      "description": "Scalar deleting destructor for Warm-Up Race board. Calls BoardLevel1_WarmUp_dtor (non-deleting) then conditionally frees.",
+      "struct_offsets": "N/A (destructor)",
+      "xrefs": "0 calls, 1 data ref (vtable)",
+      "batch": 15
+    },
+    {
+      "name": "BoardLevel2_Intermediate_dtor",
+      "address": "0x00425060",
+      "signature": "void * __thiscall BoardLevel2_Intermediate_dtor(void *this, byte param_1)",
+      "parameters": "this: BoardLevel2* | param_1: byte \u2014 delete flag",
+      "description": "Scalar deleting destructor for Intermediate Race board. Calls the non-deleting dtor then conditionally frees.",
+      "struct_offsets": "N/A (destructor)",
+      "xrefs": "0 calls, 1 data ref (vtable)",
+      "batch": 15
+    },
+    {
+      "name": "BoardLevel3_Dizzy_dtor",
+      "address": "0x00425080",
+      "signature": "void * __thiscall BoardLevel3_Dizzy_dtor(void *this, byte param_1)",
+      "parameters": "this: BoardLevel3* | param_1: byte \u2014 delete flag",
+      "description": "Scalar deleting destructor for Dizzy Race board. Calls the non-deleting dtor then conditionally frees.",
+      "struct_offsets": "N/A (destructor)",
+      "xrefs": "0 calls, 1 data ref (vtable)",
+      "batch": 15
     }
   ],
-  "total_documented": 10
+  "total_documented": 20
 }
