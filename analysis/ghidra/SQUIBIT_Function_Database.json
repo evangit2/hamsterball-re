@@ -1989,7 +1989,107 @@
       "struct_offsets": "+0x868 (name='Remap Menu'), +0x888 (title='Remap Keyboard'), +0x878 (App), +0xCAC (spacing=0x15E), +0xCDC (context)",
       "xrefs": "1 call from 0x44394A",
       "batch": 32
+    },
+    {
+      "name": "QuitDialog_ctor",
+      "address": "0x00443e30",
+      "signature": "void * __thiscall ...(void *this, int param_1)",
+      "parameters": "this: QuitDialog* (vtable=0x4D62C0) | param_1: App (+0x878)",
+      "description": "Base constructor for quit dialogs. Inherits Gadget_ctor. Two AthenaStrings at +0x87C/+0x898, appended to AthenaList +0x44C. Position (112,150,500,300). 4 call sites.",
+      "struct_offsets": "+0x04/+0x08/+0x0C/+0x10 (pos), +0x44C (AthenaList), +0x868 (name), +0x878 (App), +0x87C/+0x898 (strings), +0x880/+0x884/+0x888/+0x88C (rect), +0x8B4 (flag=0)",
+      "xrefs": "4 calls from TourneyContinueDialog, QuitToDesktopDialog, QuitAbortDialog ctors and 0x43060D",
+      "batch": 33
+    },
+    {
+      "name": "GameObject2_dtor",
+      "address": "0x00443f50",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: GameObject2* this",
+      "description": "Destructor for GameObject2 (dialog base). Sets vtable 0x4D62C0, BaseObject_Init on +0x226/+0x21F, calls SceneObject_dtor. 5 callers.",
+      "struct_offsets": "+0x00 (vtable), +0x21F/+0x226 (BaseObjects)",
+      "xrefs": "5 calls from DeletingDtor variants and Unwind handler",
+      "batch": 33
+    },
+    {
+      "name": "QuitToDesktopDialog_Render",
+      "address": "0x00443fc0",
+      "signature": "void __thiscall ...(void *this, void *param_1)",
+      "parameters": "this: QuitToDesktopDialog* | param_1: Graphics* context",
+      "description": "Renders 'QUIT TO DESKTOP?' dialog. Dark overlay (0,0,800,600), background rect, UI frame, centered text via UI_DrawTextShadow. Uses Font_MeasureText for centering.",
+      "struct_offsets": "+0x878 (App\u2192+0x318 for Font)",
+      "xrefs": "1 DATA ref from vtable 0x4D62C8",
+      "batch": 33
+    },
+    {
+      "name": "QuitToDesktopDialog_Ctor",
+      "address": "0x00444790",
+      "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: QuitToDesktopDialog* (vtable=0x4D6368) | param_1: App | param_2: context (+0x8B8)",
+      "description": "Constructor for 'Quit To Desktop' dialog. Calls QuitDialog_ctor, overrides vtable to 0x4D6368, adjusts positions. 1 call from 0x42E648.",
+      "struct_offsets": "+0x8B8 (context), inherits QuitDialog offsets",
+      "xrefs": "1 call from 0x42E648",
+      "batch": 33
+    },
+    {
+      "name": "QuitToDesktop_ScalarDtor",
+      "address": "0x00444870",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: QuitToDesktopDialog* this",
+      "description": "Scalar dtor for QuitToDesktopDialog. Sets vtable 0x4D6368, calls GameObject2_dtor. 1 call from scalar_dtor dispatcher.",
+      "struct_offsets": "+0x00 (vtable)",
+      "xrefs": "1 call from QuitToDesktop_scalar_dtor (0x446863)",
+      "batch": 33
+    },
+    {
+      "name": "QuitToDesktop_Render",
+      "address": "0x00444880",
+      "signature": "void __thiscall ...(void *this, void *param_1)",
+      "parameters": "this: QuitToDesktopDialog* | param_1: Graphics* context",
+      "description": "Renders 'REALLY ABORT?' dialog. Same layout as QuitToDesktopDialog_Render but different text. Dark overlay, background rect, UI frame, centered text.",
+      "struct_offsets": "+0x878 (App\u2192+0x318 for Font)",
+      "xrefs": "1 DATA ref from vtable 0x4D6370",
+      "batch": 33
+    },
+    {
+      "name": "Scene_StartTournament",
+      "address": "0x00445230",
+      "signature": "void __fastcall ...(int *param_1)",
+      "parameters": "param_1: Scene* this (as int*)",
+      "description": "Starts tournament mode. Sets MusicPlayer tempo (1.0/0.5), allocates TourneyMenu (0x111C bytes), calls TourneyMenu_ctor + AdvanceRound + SetCurrentLevel. Resets score to 0.",
+      "struct_offsets": "param_1[0x21E] (App), App+0x184 (Scene objects), App+0x220\u2192+0x08 (level), App+0x534/+0x53C (MusicPlayers), App+0x5E4 (score\u21920)",
+      "xrefs": "1 DATA ref from vtable 0x4D63B0",
+      "batch": 33
+    },
+    {
+      "name": "QuitAbortDialog_Ctor",
+      "address": "0x00445320",
+      "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
+      "parameters": "this: QuitAbortDialog* (vtable=0x4D64C8) | param_1: App | param_2: context (+0x8B8)",
+      "description": "Constructor for 'Quit Abort' dialog. Calls QuitDialog_ctor, overrides vtable to 0x4D64C8. Similar to QuitToDesktopDialog_Ctor. 1 call from TourneyMenu_HandleButton.",
+      "struct_offsets": "+0x8B8 (context), inherits QuitDialog offsets",
+      "xrefs": "1 call from TourneyMenu_HandleButton (0x450485)",
+      "batch": 33
+    },
+    {
+      "name": "QuitAbortDialog_ScalarDtor",
+      "address": "0x00445400",
+      "signature": "void __fastcall ...(undefined4 *param_1)",
+      "parameters": "param_1: QuitAbortDialog* this",
+      "description": "Scalar dtor for QuitAbortDialog. Sets vtable 0x4D64C8, calls GameObject2_dtor. 1 call from scalar_dtor dispatcher.",
+      "struct_offsets": "+0x00 (vtable)",
+      "xrefs": "1 call from GameObject2_scalar_dtor (0x446883)",
+      "batch": 33
+    },
+    {
+      "name": "QuitAbortDialog_Render",
+      "address": "0x00445410",
+      "signature": "void __thiscall ...(void *this, void *param_1)",
+      "parameters": "this: QuitAbortDialog* | param_1: Graphics* context",
+      "description": "Renders quit abort confirmation dialog. Sets param_1+0x708=1 (modal flag). Dark overlay, background rect, UI frame, centered text. Uses vtable dispatch for initial render.",
+      "struct_offsets": "+0x878 (App\u2192+0x318 for Font), param_1+0x708 (modal flag\u21921)",
+      "xrefs": "1 DATA ref from vtable 0x4D64D0",
+      "batch": 33
     }
   ],
-  "total_documented": 190
+  "total_documented": 200
 }
