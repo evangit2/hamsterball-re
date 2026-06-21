@@ -154,6 +154,131 @@ def screenshot() -> dict[str, Any]:
     return capture.capture()
 
 
+# --------------------------------------------------------------------------- #
+# Level management tools
+# --------------------------------------------------------------------------- #
+
+@mcp.tool()
+@tool_guard
+def install_level(custom_path: str, level_slot: str = "Level1") -> dict[str, Any]:
+    """Swap a custom MESHWORLD file into a level slot, backing up the original.
+
+    Args:
+        custom_path: Path to the .MESHWORLD file to install.
+        level_slot: Level name to replace (e.g. Level1, Arena-WarmUp).
+    """
+    import os
+    import shutil
+
+    levels_dir = os.path.join(cfg.game_dir, "Levels")
+    target = os.path.join(levels_dir, f"{level_slot}.MESHWORLD")
+    backup = target + ".bak"
+
+    if not os.path.exists(custom_path):
+        return failure(f"custom level not found: {custom_path}")
+
+    # Backup original if not already backed up
+    if os.path.exists(target) and not os.path.exists(backup):
+        shutil.copy2(target, backup)
+
+    # Copy custom level into slot
+    shutil.copy2(custom_path, target)
+    return success(
+        installed=custom_path,
+        slot=level_slot,
+        target=target,
+        backup=backup if os.path.exists(backup) else None,
+    )
+
+
+@mcp.tool()
+@tool_guard
+def restore_level(level_slot: str = "Level1") -> dict[str, Any]:
+    """Restore the original level file from backup.
+
+    Args:
+        level_slot: Level name to restore (e.g. Level1, Arena-WarmUp).
+    """
+    import os
+    import shutil
+
+    levels_dir = os.path.join(cfg.game_dir, "Levels")
+    target = os.path.join(levels_dir, f"{level_slot}.MESHWORLD")
+    backup = target + ".bak"
+
+    if not os.path.exists(backup):
+        return failure(f"no backup found for {level_slot}")
+
+    shutil.copy2(backup, target)
+    os.remove(backup)
+    return success(restored=target, slot=level_slot)
+
+
+# --------------------------------------------------------------------------- #
+# Navigation tools
+# --------------------------------------------------------------------------- #
+
+@mcp.tool()
+@tool_guard
+async def navigate_to_race(
+    wait_title: float = 35.0,
+    key_delay: float = 5.0,
+) -> dict[str, Any]:
+    """Navigate the original Hamsterball menu to start a race.
+
+    Assumes the game is already running. Sends the following key sequence:
+      Space (title → main menu)
+      → Return (LET'S PLAY → CHOOSE A GAME)
+      → Return (select first game mode)
+      → Down + Return (select NORMAL difficulty, if shown)
+      → Mouse click at (600, 480) to hit PLAY!
+
+    Args:
+        wait_title: Seconds to wait for the title screen before navigating.
+        key_delay: Seconds between key presses.
+    """
+    import asyncio
+
+    steps = [
+        # Wait for title screen
+        ("wait", wait_title, "Waiting for title screen"),
+        # Space → main menu
+        ("key", "space", "Title → Main menu"),
+        ("wait", key_delay, ""),
+        # Return → CHOOSE A GAME
+        ("key", "Return", "LET'S PLAY → CHOOSE A GAME"),
+        ("wait", key_delay, ""),
+        # Return → select game mode (Time Trials / Tournament)
+        ("key", "Return", "Select game mode"),
+        ("wait", key_delay, ""),
+        # Down + Return → NORMAL difficulty (if shown)
+        ("key", "Down", "Navigate to NORMAL"),
+        ("wait", 2.0, ""),
+        ("key", "Return", "Select NORMAL → Level intro"),
+        ("wait", key_delay, ""),
+        # Click PLAY! to start the race
+        ("click", (600, 480), "Click PLAY! → Start race"),
+    ]
+
+    for step in steps:
+        kind, value, desc = step
+        if desc:
+            print(f"  {desc}")
+        if kind == "wait":
+            await asyncio.sleep(value)
+        elif kind == "key":
+            inputs.send_key(value)
+            await asyncio.sleep(0.5)
+        elif kind == "click":
+            inputs.click(value[0], value[1])
+            await asyncio.sleep(0.5)
+
+    # Wait for race to load
+    await asyncio.sleep(15)
+    result = capture.capture()
+    return success(navigation="complete", screenshot=result)
+
+
 @mcp.tool()
 @tool_guard
 def screenshot_base64() -> dict[str, Any]:
