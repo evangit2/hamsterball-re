@@ -17,6 +17,7 @@
  *
  * EFFECT:
  *   - Increments g_hit_count (readable via registered symbol / debugger)
+ *   - Appends a line to hitlog.txt in the game directory on every hit
  *   - Uses pointer comparison (ESI < EDI) to count each collision once,
  *     since Ball_Update runs for both balls (symmetric double-fire)
  *   - Pure detection only — no gameplay changes
@@ -34,6 +35,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string.h>
+#include <stdio.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * BASS Proxy Exports — forward all game imports to bass_real.dll
@@ -174,6 +176,34 @@ static const BYTE HOOK_ORIG[] = { 0xD9, 0x87, 0x84, 0x02, 0x00, 0x00 };
 static volatile DWORD g_hit_count = 0;
 
 /*
+ * log_hit — called from the code cave when a player→8-ball collision is
+ * detected. Writes a line to hitlog.txt in the game directory.
+ *   idx1 = this ball's player_index (from ESI+0x18)
+ *   idx2 = other ball's player_index (from EDI+0x18)
+ * One is >= 0 (the player), the other is -1 (the 8-ball).
+ */
+static void __cdecl log_hit(int idx1, int idx2)
+{
+    int player = (idx1 >= 0) ? idx1 : idx2;
+
+    char buf[160];
+    int n = snprintf(buf, sizeof(buf),
+        "[Hit %lu] Player %d struck an 8-ball\r\n",
+        (unsigned long)g_hit_count, player + 1);
+
+    if (n > 0) {
+        HANDLE hFile = CreateFileA("hitlog.txt", FILE_APPEND_DATA,
+            FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile != INVALID_HANDLE_VALUE) {
+            DWORD written;
+            WriteFile(hFile, buf, (DWORD)n, &written, NULL);
+            CloseHandle(hFile);
+        }
+    }
+}
+
+/*
  * Code cave layout (x86, hand-assembled):
  *
  * Entry: ESI = this ball, EDI = other ball (from Ball_Update collision loop)
@@ -207,6 +237,12 @@ static volatile DWORD g_hit_count = 0;
  *
  *   ; --- Increment hit counter ---
  *   INC DWORD [g_hit_count]
+ *
+ *   ; --- Log to hitlog.txt ---
+ *   PUSH EBX                       ; arg2 = other ball's player_index
+ *   PUSH EAX                       ; arg1 = this ball's player_index
+ *   CALL log_hit
+ *   ADD ESP, 8                     ; cdecl cleanup
  *
  *   .done:
  *   POPAD                           ; restore all registers
@@ -278,6 +314,24 @@ static void install_hook(void)
     /* INC DWORD [g_hit_count] */
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_hit_count; p += 4;
+
+    /* --- Call log_hit(idx1, idx2) — cdecl ---
+     * EAX still has this ball's player_index, EBX has other ball's.
+     * PUSH EBX (arg2), PUSH EAX (arg1), CALL, ADD ESP,8 */
+    /* PUSH EBX */
+    cave[p++] = 0x53;
+    /* PUSH EAX */
+    cave[p++] = 0x50;
+    /* CALL log_hit (near, relative) */
+    cave[p++] = 0xE8;
+    {
+        DWORD call_addr = (DWORD)(cave + p + 4);
+        DWORD target = (DWORD)&log_hit;
+        *(DWORD*)(cave + p) = target - call_addr;
+    }
+    p += 4;
+    /* ADD ESP, 8 — cdecl cleanup */
+    cave[p++] = 0x83; cave[p++] = 0xC4; cave[p++] = 0x08;
 
     /* .done: */
     int done_label = p;

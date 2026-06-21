@@ -14,9 +14,19 @@ The mod checks `ball+0x18` (player_index) on both balls:
 - `0-3` = Player 1-4
 - `-1` (0xFFFFFFFF) = NPC 8-ball
 
-If exactly one ball is a player and the other is an 8-ball, it increments `g_hit_count`.
+If exactly one ball is a player and the other is an 8-ball, it increments `g_hit_count` and appends a line to `hitlog.txt` in the game directory.
 
 Uses pointer comparison (ESI < EDI) to avoid double-counting, since Ball_Update runs for both balls in a collision pair.
+
+## Log Output
+
+The mod writes to `hitlog.txt` in the Hamsterball game directory. Example:
+
+```
+[Hit 1] Player 1 struck an 8-ball
+[Hit 2] Player 1 struck an 8-ball
+[Hit 3] Player 2 struck an 8-ball
+```
 
 ## Installation
 
