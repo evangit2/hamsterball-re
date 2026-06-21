@@ -1,13 +1,12 @@
 /*
- * jump_mod.c — BASS.dll proxy that lets Player 1 jump with the spacebar.
+ * jump_mod.c — BASS.dll proxy — v6 ABSOLUTE MINIMUM diagnostic
  *
- * v5: Stripped down to MINIMAL to diagnose why spacebar doesn't work.
- * - Removed type-5 ground detection hook (Cave 1) entirely
- * - Removed g_on_ground check
- * - Removed air momentum injection
- * - Jump is now: FADD 20.0f to ball+0x168 (position Y) — crude but visible
- * - No ground detection: unlimited jumps while space held (rising edge only)
- * - This version PROVES the code cave and keyboard reading work
+ * This version does ONE thing: FADD 2.0f to ball+0x168 (position Y)
+ * EVERY SINGLE FRAME with NO checks whatsoever.
+ *
+ * If the ball floats upward continuously → cave works, problem is in
+ *   the player_index/fall_mode/keyboard checks.
+ * If the ball doesn't move → the hook is never reached or not installed.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -41,9 +40,9 @@ __declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
     if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
     return 1;
 }
-typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, HWND, void*);
+typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, DWORD, void*);
 static BASS_Init_t real_BASS_Init = NULL;
-__declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, HWND d, void* e) {
+__declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, DWORD d, void* e) {
     if (real_BASS_Init) return real_BASS_Init(a, b, c, d, e);
     return 1;
 }
@@ -134,191 +133,49 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v5 — Minimal diagnostic version
+ * Jump Mod v6 — ABSOLUTE MINIMUM diagnostic
+ *
+ * NO checks. NO keyboard reading. NO ground detection.
+ * Just FADD 2.0f to ball+0x168 every frame.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define G_APP_ADDR          0x005341E0
 #define BALL_UPDATE_HOOK    0x00407BB4
 #define HOOK_ORIG_BYTES     6
 
-/* Ball struct offsets */
-#define BALL_POS_Y          0x168
-#define BALL_PLAYER_IDX     0x018
-#define BALL_FALL_MODE      0xC4C
+static float g_nudge = 2.0f;
 
-/* App/Input offsets */
-#define APP_INPUT_HANDLER   0x180
-#define IH_KEYBOARD_DEV     0x434
-#define KBD_KEY_BUFFER      0x00C
-#define DIK_SPACE           0x039
-
-/* Jump nudge: add this to position Y on each rising-edge space press */
-static float g_jump_nudge = 20.0f;
-
-/* Edge detection */
-static BYTE g_space_was_down = 0;
-
-/* Debug counter — if this increments, the cave is working */
-static volatile DWORD g_jump_count = 0;
-
-/* ─── Helper: emit near JNZ (0F 85 + rel32) ─── */
-static int emit_jnz_near(BYTE *cave, int p) {
-    cave[p]   = 0x0F;
-    cave[p+1] = 0x85;
-    int disp_offset = p + 2;
-    *(DWORD*)(cave + p + 2) = 0x12345678;
-    return disp_offset;
-}
-
-/* ─── Helper: emit near JZ (0F 84 + rel32) ─── */
-static int emit_jz_near(BYTE *cave, int p) {
-    cave[p]   = 0x0F;
-    cave[p+1] = 0x84;
-    int disp_offset = p + 2;
-    *(DWORD*)(cave + p + 2) = 0x12345678;
-    return disp_offset;
-}
-
-/* ─── Helper: fix up near-jump displacement ─── */
-static void fixup_near_jump(BYTE *cave, int disp_offset, int target_offset) {
-    DWORD disp = (DWORD)(target_offset - (disp_offset + 4));
-    *(DWORD*)(cave + disp_offset) = disp;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Code Cave — MINIMAL version
- *
- * At entry: ESI = ball pointer
- *
- * Flow:
- * 1. PUSH EAX, EDI
- * 2. Execute original 6 bytes (MOV ECX,[ESP+0x24]; MOV EDX,[ECX])
- * 3. Check player_index == 0
- * 4. Check fall_mode == 0
- * 5. Read keyboard: App → InputHandler → KeyboardDevice → DIK_SPACE
- * 6. Edge detect space
- * 7. On rising edge: FADD 20.0f to ball+0x168 (position Y nudge)
- * 8. POP EDI, EAX
- * 9. JMP back to hook_addr + 6
- * ═══════════════════════════════════════════════════════════════════════════ */
 static void install_hook(void)
 {
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
 
-    BYTE *cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
+    BYTE *cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
                                      PAGE_EXECUTE_READWRITE);
     if (!cave) return;
 
     DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
     int p = 0;
 
-    /* PUSH EAX, EDI — save clobbered registers */
-    cave[p++] = 0x50;  /* PUSH EAX */
-    cave[p++] = 0x57;  /* PUSH EDI */
-
-    /* Execute original 6 bytes with ESP+8 offset */
-    cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24;
-    cave[p++] = 0x24;  /* 0x1C + 8 = 0x24 */
+    /* Execute original 6 bytes: MOV ECX,[ESP+0x1C]; MOV EDX,[ECX]
+     * ESP is unmodified (no pushes), so offset stays 0x1C */
+    cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24; cave[p++] = 0x1C;
     cave[p++] = 0x8B; cave[p++] = 0x11;
 
-    /* ═══ CHECK: player_index == 0 ═══ */
-    cave[p++] = 0x8B; cave[p++] = 0x86;
-    cave[p++] = 0x18; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
-    cave[p++] = 0x85; cave[p++] = 0xC0;
-    int jnz_player = emit_jnz_near(cave, p); p += 6;
-
-    /* ═══ CHECK: fall_mode == 0 (byte) ═══ */
-    cave[p++] = 0x8A; cave[p++] = 0x86;
-    cave[p++] = 0x4C; cave[p++] = 0x0C; cave[p++] = 0x00; cave[p++] = 0x00;
-    cave[p++] = 0x84; cave[p++] = 0xC0;
-    int jnz_fall = emit_jnz_near(cave, p); p += 6;
-
-    /* ═══ Read keyboard: App pointer ═══ */
-    cave[p++] = 0xA1;
-    *(DWORD*)(cave + p) = G_APP_ADDR; p += 4;
-    cave[p++] = 0x85; cave[p++] = 0xC0;
-    int jz_app = emit_jz_near(cave, p); p += 6;
-
-    /* ═══ InputHandler = App+0x180 ═══ */
-    cave[p++] = 0x8B; cave[p++] = 0xB8;
-    *(DWORD*)(cave + p) = APP_INPUT_HANDLER; p += 4;
-    cave[p++] = 0x85; cave[p++] = 0xFF;
-    int jz_ih = emit_jz_near(cave, p); p += 6;
-
-    /* ═══ KeyboardDevice = InputHandler+0x434 ═══ */
-    cave[p++] = 0x8B; cave[p++] = 0xBF;
-    *(DWORD*)(cave + p) = IH_KEYBOARD_DEV; p += 4;
-    cave[p++] = 0x85; cave[p++] = 0xFF;
-    int jz_kbd = emit_jz_near(cave, p); p += 6;
-
-    /* ═══ DIK_SPACE state ═══ */
-    cave[p++] = 0x8A; cave[p++] = 0x87;
-    *(DWORD*)(cave + p) = (KBD_KEY_BUFFER + DIK_SPACE); p += 4;
-    cave[p++] = 0xA8; cave[p++] = 0x80;  /* TEST AL, 0x80 */
-    /* JZ .not_pressed (short) */
-    cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_notpressed = p - 1;
-
-    /* ═══ Edge detect: CMP [g_space_was_down], 0 ═══ */
-    cave[p++] = 0x80; cave[p++] = 0x3D;
-    *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
-    cave[p++] = 0x00;
-    /* JNE .done (short) */
-    cave[p++] = 0x75; cave[p++] = 0x00;
-    int jne_already = p - 1;
-
-    /* ═══ RISING EDGE! FADD 20.0f to ball+0x168 (pos Y) ═══ */
+    /* FLD [ESI+0x168] — load ball position Y */
     cave[p++] = 0xD9; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = BALL_POS_Y; p += 4;   /* FLD [ESI+0x168] */
+    *(DWORD*)(cave + p) = 0x168; p += 4;
+
+    /* FADD [g_nudge] — add 2.0f */
     cave[p++] = 0xD8; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_nudge; p += 4;  /* FADD [g_jump_nudge] */
+    *(DWORD*)(cave + p) = (DWORD)&g_nudge; p += 4;
+
+    /* FSTP [ESI+0x168] — store back */
     cave[p++] = 0xD9; cave[p++] = 0x9E;
-    *(DWORD*)(cave + p) = BALL_POS_Y; p += 4;   /* FSTP [ESI+0x168] */
-
-    /* g_space_was_down = 1 */
-    cave[p++] = 0xC6; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
-    cave[p++] = 0x01;
-
-    /* g_jump_count++ */
-    cave[p++] = 0xA1;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
-    cave[p++] = 0x40;  /* INC EAX */
-    cave[p++] = 0xA3;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
-
-    /* JMP .done (short) */
-    cave[p++] = 0xEB; cave[p++] = 0x00;
-    int jmp_done = p - 1;
-
-    /* .not_pressed: */
-    int not_pressed_label = p;
-    cave[p++] = 0xC6; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
-    cave[p++] = 0x00;
-
-    /* .done: */
-    int done_label = p;
-
-    /* POP EDI, EAX */
-    cave[p++] = 0x5F;
-    cave[p++] = 0x58;
+    *(DWORD*)(cave + p) = 0x168; p += 4;
 
     /* JMP back to hook_addr + 6 */
     cave[p++] = 0xE9;
     *(DWORD*)(cave + p) = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
     p += 4;
-
-    /* ═══ Fix up jumps ═══ */
-    fixup_near_jump(cave, jnz_player, done_label);
-    fixup_near_jump(cave, jnz_fall, done_label);
-    fixup_near_jump(cave, jz_app, done_label);
-    fixup_near_jump(cave, jz_ih, done_label);
-    fixup_near_jump(cave, jz_kbd, done_label);
-
-    cave[jz_notpressed] = (BYTE)(not_pressed_label - (jz_notpressed + 1));
-    cave[jne_already]   = (BYTE)(done_label - (jne_already + 1));
-    cave[jmp_done]      = (BYTE)(done_label - (jmp_done + 1));
 
     /* Patch hook site */
     DWORD old_protect;
