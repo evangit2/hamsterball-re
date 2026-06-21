@@ -226,7 +226,12 @@ static void install_hook(void)
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 
-    diag_log("install_hook: HOOK INSTALLED SUCCESSFULLY");
+    {
+        char buf2[128];
+        wsprintfA(buf2, "HOOK INSTALLED!\ncave=%08X  nudge=%08X  frames=%08X",
+                  (DWORD)cave, (DWORD)&g_nudge, (DWORD)&g_frame_count);
+        MessageBoxA(NULL, buf2, "jump_mod OK", MB_OK);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -236,42 +241,34 @@ static void install_hook(void)
 static DWORD WINAPI patch_thread(LPVOID param)
 {
     (void)param;
-    char buf[128];
-
-    diag_log("=== jump_mod v7 diagnostic ===");
-    diag_log("patch_thread: started, sleeping 5000ms...");
+    char buf[256];
 
     Sleep(5000);
-
-    diag_log("patch_thread: awake, checking hook bytes...");
 
     BYTE *hook = (BYTE*)BALL_UPDATE_HOOK;
     BYTE expected[] = { 0x8B, 0x4C, 0x24, 0x1C, 0x8B, 0x11 };
 
-    wsprintfA(buf, "patch_thread: actual bytes: %02X %02X %02X %02X %02X %02X",
-              hook[0], hook[1], hook[2], hook[3], hook[4], hook[5]);
-    diag_log(buf);
-
-    wsprintfA(buf, "patch_thread: expected bytes: %02X %02X %02X %02X %02X %02X",
-              expected[0], expected[1], expected[2], expected[3], expected[4], expected[5]);
-    diag_log(buf);
+    wsprintfA(buf, "Actual:   %02X %02X %02X %02X %02X %02X\n"
+                   "Expected: %02X %02X %02X %02X %02X %02X\n"
+                   "bass_real: %08X",
+              hook[0], hook[1], hook[2], hook[3], hook[4], hook[5],
+              expected[0], expected[1], expected[2], expected[3], expected[4], expected[5],
+              (DWORD)g_hRealBass);
+    MessageBoxA(NULL, buf, "jump_mod: pre-patch", MB_OK);
 
     if (memcmp(hook, expected, 6) != 0) {
-        diag_log("patch_thread: BYTE MISMATCH — hook NOT installed!");
+        MessageBoxA(NULL, "BYTE MISMATCH — hook NOT installed", "jump_mod FAIL", MB_OK);
         return 1;
     }
 
-    diag_log("patch_thread: bytes match, calling install_hook...");
     install_hook();
 
-    /* Wait a bit then log frame count to verify cave runs */
-    Sleep(3000);
-    wsprintfA(buf, "patch_thread: after 3s, g_frame_count = %u", g_frame_count);
-    diag_log(buf);
-
+    /* Wait 5s then check frame count */
     Sleep(5000);
-    wsprintfA(buf, "patch_thread: after 8s total, g_frame_count = %u", g_frame_count);
-    diag_log(buf);
+    wsprintfA(buf, "g_frame_count = %u\n"
+                   "(0 = cave never runs, >0 = cave works)",
+              g_frame_count);
+    MessageBoxA(NULL, buf, "jump_mod: frame count", MB_OK);
 
     return 0;
 }
@@ -286,12 +283,9 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
     switch (reason) {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hInst);
+        /* ABSOLUTE MINIMUM TEST: does this DLL even load? */
+        MessageBoxA(NULL, "jump_mod v7 loaded!", "BASS PROXY", MB_OK);
         load_real_bass();
-        {
-            char buf[128];
-            wsprintfA(buf, "DllMain: bass_real = %08X", (DWORD)g_hRealBass);
-            diag_log(buf);
-        }
         CreateThread(NULL, 0, patch_thread, NULL, 0, NULL);
         break;
     case DLL_PROCESS_DETACH:
