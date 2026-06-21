@@ -182,8 +182,9 @@ static void load_real_bass(void)
 #define KBD_KEY_BUFFER     0x00C
 #define DIK_SPACE          0x039
 
-/* Jump velocity: 500.0f = 0x43FA0000 */
-#define JUMP_VELOCITY_BITS 0x43FA0000
+/* Jump velocity: 500.0f = 0x43FA0000
+ * Stored as a float constant in memory so the code cave can FADD it. */
+static float g_jump_vel = 500.0f;
 
 /* Ground check threshold: ball is "on ground" if floor is within radius+2.0 below */
 #define GROUND_THRESHOLD   2.0f
@@ -417,10 +418,29 @@ static void install_hook(void)
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jne_already = p - 1;
 
-    /* --- Rising edge! Apply jump: MOV DWORD PTR [ESI+0x174], 0x43FA0000 --- */
-    cave[p++] = 0xC7; cave[p++] = 0x86;
+    /* --- Rising edge! ADD jump impulse to vel.y (preserves vel.x/vel.z) ---
+     *
+     * OLD approach: MOV DWORD PTR [ESI+0x174], 0x43FA0000
+     * This REPLACED vel.y, wiping out the frame's accumulated forces.
+     * The velocity fields (0x170/0x174/0x178) are force accumulators that
+     * Ball_ApplyForce writes to during Ball_Update. By the time our hook
+     * runs (end of Ball_Update), they contain the frame's movement forces.
+     * Replacing vel.y with 500.0 made the jump dominate and killed
+     * horizontal momentum.
+     *
+     * NEW approach: FLD [ESI+0x174] → FADD [jump_vel_const] → FSTP [ESI+0x174]
+     * This ADDS 500.0 to whatever vel.y already is, preserving the
+     * accumulated X/Z forces in 0x170/0x178.
+     */
+    /* FLD DWORD PTR [ESI+0x174]  — load current vel.y onto FPU stack */
+    cave[p++] = 0xD9; cave[p++] = 0x86;
     *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
-    *(DWORD*)(cave + p) = JUMP_VELOCITY_BITS; p += 4;
+    /* FADD DWORD PTR [g_jump_vel]  — add 500.0f from memory constant */
+    cave[p++] = 0xD8; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_vel; p += 4;
+    /* FSTP DWORD PTR [ESI+0x174]  — store result back, preserving vel.x/z */
+    cave[p++] = 0xD9; cave[p++] = 0x9E;
+    *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
 
     /* Set g_space_was_down = 1 */
     cave[p++] = 0xC6; cave[p++] = 0x05;

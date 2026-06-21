@@ -4,7 +4,9 @@ Press SPACE to jump (Player 1 only, raycast-based ground check).
 
 ## Behavior
 
-- **SPACE** applies an upward velocity impulse (500.0) to Player 1's ball.
+- **SPACE** adds an upward velocity impulse (+500.0) to Player 1's ball.
+  The impulse is **added** to the existing accumulated velocity via x87 FPU
+  (`FLD`/`FADD`/`FSTP`), so horizontal momentum is fully preserved.
 - **Raycast ground detection:** A background thread probes downward from the ball
   center each ~10ms using the engine's own `Mesh_FindClosestCollision` (0x00465D90).
   If geometry is within `(radius + 2.0)` units below the ball, `g_on_ground` is set
