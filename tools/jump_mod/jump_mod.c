@@ -145,10 +145,9 @@ static void load_real_bass(void)
 #define BALL_UPDATE_HOOK    0x004082B6   /* MOV [ESP+0x944],ECX — just before epilogue */
 #define HOOK_ORIG_BYTES     7            /* 89 8C 24 44 09 00 00 */
 
-/* Ball struct offsets */
+/* Ball struct offsets (byte) */
 #define BALL_PLAYER_IDX     0x018
-#define BALL_VEL_Y          0x174
-#define BALL_ON_SURFACE     0x2E9   /* set to 1 inside Ball_Update type-5 floor collision */
+#define BALL_VEL_Y          0x174   /* [0x5D] = accumulated force Y (impulse, zeroed each tick) */
 #define BALL_FALL_MODE      0xC4C   /* fall-off-level (death/respawn) state */
 
 /* App struct offsets */
@@ -164,11 +163,25 @@ static void load_real_bass(void)
 /* Jump velocity: 500.0f = 0x43FA0000 */
 #define JUMP_VELOCITY_BITS 0x43FA0000
 
+/* Cooldown after jump: 60 frames = ~1 second at 60fps.
+ * Prevents midair re-jump for the entire duration of a jump arc.
+ * Jump velocity 500 with gravity ~15/frame:
+ *   - Apex at ~33 frames (vel = 500 - 15*33 ≈ 0)
+ *   - Landing at ~66 frames
+ * The 60-frame cooldown covers most of the arc. When the ball lands,
+ * the cooldown has expired and the ball can jump again.
+ * This is the ONLY ground check — no velocity threshold needed,
+ * which means you CAN jump on ramps (no false "airborne" rejections). */
+#define JUMP_COOLDOWN_FRAMES 60
+
 /* Edge detection state */
 static BYTE g_space_was_down = 0;
 
 /* Debug counter */
 static volatile DWORD g_jump_count = 0;
+
+/* Jump cooldown counter (decremented each frame in the code cave) */
+static volatile DWORD g_jump_cooldown = 0;
 
 /* Code cave: hand-assembled x86 machine code.
  *
@@ -183,10 +196,16 @@ static volatile DWORD g_jump_count = 0;
  *   4. Reads App → InputHandler(App+0x180) → KeyboardDevice(IH+0x434)
  *   5. Reads DIK_SPACE from KeyboardDevice+0xC+0x39
  *   6. Edge-detects key press (rising edge only)
- *   7. Checks fall_mode == 0 (not dying) and on_surface == 1 (grounded)
- *   8. If all conditions met, sets ball+0x174 = JUMP_VELOCITY
- *   9. Restores registers
- *   10. JMP back to hook_addr + 7
+ *   7. Checks fall_mode == 0 (not dying)
+ *   8. Checks cooldown == 0 (60-frame timer prevents midair re-jump)
+ *   9. If all conditions met, sets ball+0x174 = JUMP_VELOCITY + cooldown = 60
+ *   10. Restores registers
+ *   11. JMP back to hook_addr + 7
+ *
+ * Ground detection: 60-frame cooldown timer after each jump.
+ * No velocity threshold — you can jump on ramps and slopes freely.
+ * The cooldown covers the entire jump arc (~66 frames at 500 vel, 15 grav).
+ * When ball lands and cooldown expires, jump is available again.
  */
 static void install_hook(void)
 {
@@ -231,19 +250,26 @@ static void install_hook(void)
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jnz_fallmode = p - 1;
 
-    /* --- Check on_surface != 0 (ball+0x2E9, byte) ---
-     * on_surface is set to 1 inside Ball_Update's type-5 floor-collision
-     * branch when the ball is touching level geometry this frame.
-     * Our cave runs at the END of Ball_Update, so this flag is fresh.
-     * If on_surface == 0, the ball is airborne — skip the jump. */
-    /* MOV AL, [ESI+0x2E9] */
-    cave[p++] = 0x8A; cave[p++] = 0x86;
-    cave[p++] = 0xE9; cave[p++] = 0x02; cave[p++] = 0x00; cave[p++] = 0x00;
-    /* TEST AL, AL */
-    cave[p++] = 0x84; cave[p++] = 0xC0;
-    /* JZ .done (ball is airborne, skip jump) */
+    /* --- Decrement cooldown counter if > 0 --- */
+    /* MOV EAX, [g_jump_cooldown] */
+    cave[p++] = 0xA1;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_cooldown; p += 4;
+    /* TEST EAX, EAX */
+    cave[p++] = 0x85; cave[p++] = 0xC0;
+    /* JZ .check_input (cooldown is 0, can jump) */
     cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_notsurface = p - 1;
+    int jz_cooldown_zero = p - 1;
+    /* DEC EAX */
+    cave[p++] = 0x48;
+    /* MOV [g_jump_cooldown], EAX */
+    cave[p++] = 0xA3;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_cooldown; p += 4;
+    /* JMP .done (cooldown active, can't jump) */
+    cave[p++] = 0xEB; cave[p++] = 0x00;
+    int jmp_cooldown_active = p - 1;
+
+    /* .check_input: */
+    int check_vel_label = p;  /* label kept for fixup compatibility */
 
     /* --- Read App pointer: MOV EAX, [0x005341E0] --- */
     cave[p++] = 0xA1;
@@ -310,6 +336,12 @@ static void install_hook(void)
     cave[p++] = 0xA3;
     *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
 
+    /* Set cooldown timer = JUMP_COOLDOWN_FRAMES (60) */
+    /* MOV DWORD PTR [g_jump_cooldown], 60 */
+    cave[p++] = 0xC7; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_cooldown; p += 4;
+    *(DWORD*)(cave + p) = JUMP_COOLDOWN_FRAMES; p += 4;
+
     /* JMP .done */
     cave[p++] = 0xEB; cave[p++] = 0x00;
     int jmp_done = p - 1;
@@ -338,7 +370,8 @@ static void install_hook(void)
     /* Fix up all placeholder jumps */
     cave[jnz_player]     = (BYTE)(done_label - (jnz_player + 1));
     cave[jnz_fallmode]   = (BYTE)(done_label - (jnz_fallmode + 1));
-    cave[jz_notsurface]  = (BYTE)(done_label - (jz_notsurface + 1));
+    cave[jz_cooldown_zero]  = (BYTE)(check_vel_label - (jz_cooldown_zero + 1));
+    cave[jmp_cooldown_active] = (BYTE)(done_label - (jmp_cooldown_active + 1));
     cave[jz_app]         = (BYTE)(done_label - (jz_app + 1));
     cave[jz_ih]          = (BYTE)(done_label - (jz_ih + 1));
     cave[jz_kbd]         = (BYTE)(done_label - (jz_kbd + 1));
