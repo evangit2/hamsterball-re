@@ -148,8 +148,8 @@ static void load_real_bass(void)
 /* Ball struct offsets */
 #define BALL_PLAYER_IDX     0x018
 #define BALL_VEL_Y          0x174
-#define BALL_IS_FALLING     0x281
-#define BALL_FALL_MODE      0xC4C
+#define BALL_ON_SURFACE     0x2E9   /* set to 1 inside Ball_Update type-5 floor collision */
+#define BALL_FALL_MODE      0xC4C   /* fall-off-level (death/respawn) state */
 
 /* App struct offsets */
 #define APP_INPUT_HANDLER   0x180
@@ -183,7 +183,7 @@ static volatile DWORD g_jump_count = 0;
  *   4. Reads App → InputHandler(App+0x180) → KeyboardDevice(IH+0x434)
  *   5. Reads DIK_SPACE from KeyboardDevice+0xC+0x39
  *   6. Edge-detects key press (rising edge only)
- *   7. Checks fall_mode == 0 and is_falling == 0
+ *   7. Checks fall_mode == 0 (not dying) and on_surface == 1 (grounded)
  *   8. If all conditions met, sets ball+0x174 = JUMP_VELOCITY
  *   9. Restores registers
  *   10. JMP back to hook_addr + 7
@@ -231,15 +231,19 @@ static void install_hook(void)
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jnz_fallmode = p - 1;
 
-    /* --- Check is_falling == 0 (ball+0x281, byte) --- */
-    /* MOV AL, [ESI+0x281] */
+    /* --- Check on_surface != 0 (ball+0x2E9, byte) ---
+     * on_surface is set to 1 inside Ball_Update's type-5 floor-collision
+     * branch when the ball is touching level geometry this frame.
+     * Our cave runs at the END of Ball_Update, so this flag is fresh.
+     * If on_surface == 0, the ball is airborne — skip the jump. */
+    /* MOV AL, [ESI+0x2E9] */
     cave[p++] = 0x8A; cave[p++] = 0x86;
-    cave[p++] = 0x81; cave[p++] = 0x02; cave[p++] = 0x00; cave[p++] = 0x00;
+    cave[p++] = 0xE9; cave[p++] = 0x02; cave[p++] = 0x00; cave[p++] = 0x00;
     /* TEST AL, AL */
     cave[p++] = 0x84; cave[p++] = 0xC0;
-    /* JNZ .done */
-    cave[p++] = 0x75; cave[p++] = 0x00;
-    int jnz_isfalling = p - 1;
+    /* JZ .done (ball is airborne, skip jump) */
+    cave[p++] = 0x74; cave[p++] = 0x00;
+    int jz_notsurface = p - 1;
 
     /* --- Read App pointer: MOV EAX, [0x005341E0] --- */
     cave[p++] = 0xA1;
@@ -334,7 +338,7 @@ static void install_hook(void)
     /* Fix up all placeholder jumps */
     cave[jnz_player]     = (BYTE)(done_label - (jnz_player + 1));
     cave[jnz_fallmode]   = (BYTE)(done_label - (jnz_fallmode + 1));
-    cave[jnz_isfalling]  = (BYTE)(done_label - (jnz_isfalling + 1));
+    cave[jz_notsurface]  = (BYTE)(done_label - (jz_notsurface + 1));
     cave[jz_app]         = (BYTE)(done_label - (jz_app + 1));
     cave[jz_ih]          = (BYTE)(done_label - (jz_ih + 1));
     cave[jz_kbd]         = (BYTE)(done_label - (jz_kbd + 1));
