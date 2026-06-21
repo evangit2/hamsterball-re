@@ -21,6 +21,13 @@
  *     since Ball_Update runs for both balls (symmetric double-fire)
  *   - Pure detection only — no gameplay changes
  *
+ * ARCHITECTURE:
+ *   The code cave does minimal work: checks player indices, increments
+ *   g_hit_count, and sets g_hit_pending (a volatile DWORD). A polling
+ *   thread in the DLL checks g_hit_pending every 50ms and writes the log.
+ *   This avoids calling C functions from hand-assembled code (which caused
+ *   FPU/stack corruption in v4).
+ *
  * BUILD:
  *   i686-w64-mingw32-gcc -shared -o bass.dll 8ball_hit_detect.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias
@@ -173,9 +180,12 @@ static const BYTE HOOK_ORIG[] = { 0xD9, 0x87, 0x84, 0x02, 0x00, 0x00 };
 /* Hit counter — readable via debugger or CE */
 static volatile DWORD g_hit_count = 0;
 
+/* Pending hit flag — set by code cave, read by polling thread.
+ * 0 = no pending hit. Non-zero = player_index + 1 of the hitter. */
+static volatile DWORD g_hit_pending = 0;
+
 /*
- * write_log_line — appends a string to hitlog.txt. Uses only Win32 API
- * (CreateFileA/WriteFile), no CRT, so no FPU side-effects.
+ * write_log_line — appends a string to hitlog.txt. Pure Win32 API.
  */
 static void write_log_line(const char *msg, int len)
 {
@@ -190,26 +200,30 @@ static void write_log_line(const char *msg, int len)
 }
 
 /*
- * log_hit — called from the code cave when a player→8-ball collision is
- * detected. Writes a line to hitlog.txt in the game directory.
- *
- * __attribute__((used, noinline)) prevents GCC -O2 from optimizing this
- * function away (no C-level caller exists — only a hand-assembled CALL).
- *
- * Uses only Win32 API (wsprintfA, CreateFileA, WriteFile) — no CRT functions
- * that might touch the FPU stack and corrupt game state.
+ * Polling thread — checks g_hit_pending every 50ms and writes to hitlog.txt.
+ * This runs on a separate thread, so file I/O and wsprintfA can't corrupt
+ * the game's FPU state or stack.
  */
-__attribute__((used, noinline))
-static void __cdecl log_hit(int idx1, int idx2)
+static DWORD WINAPI log_thread(LPVOID param)
 {
-    int player = (idx1 >= 0) ? idx1 : idx2;
+    (void)param;
+    for (;;) {
+        DWORD pending = g_hit_pending;
+        if (pending != 0) {
+            /* Clear the flag first (interlocked) so we don't double-log */
+            InterlockedExchange(&g_hit_pending, 0);
 
-    char buf[128];
-    /* wsprintfA is a Win32 API — no CRT, no FPU side-effects */
-    int n = wsprintfA(buf, "[Hit %lu] Player %d struck an 8-ball\r\n",
-        (unsigned long)g_hit_count, player + 1);
+            DWORD count = g_hit_count;
+            int player = (int)pending - 1;  /* convert back to 0-based */
 
-    write_log_line(buf, n);
+            char buf[128];
+            int n = wsprintfA(buf, "[Hit %lu] Player %d struck an 8-ball\r\n",
+                (unsigned long)count, player + 1);
+            write_log_line(buf, n);
+        }
+        Sleep(50);
+    }
+    return 0;
 }
 
 /*
@@ -224,39 +238,37 @@ static void __cdecl log_hit(int idx1, int idx2)
  *   MOV EBX, [EDI+0x18]             ; other ball's player_index
  *
  *   ; --- Check: is this a player→8-ball collision? ---
- *   ; Case 1: ESI is player (EAX != -1), EDI is 8-ball (EBX == -1)
  *   CMP EAX, 0xFFFFFFFF
  *   JE  .check_case2                ; this ball is 8-ball → check other
  *   CMP EBX, 0xFFFFFFFF
  *   JNE .done                       ; both players → skip
- *   ; Player (ESI) hit 8-ball (EDI) — player is the hitter
  *   JMP .hit_detected
  *
  *   .check_case2:
- *   ; ESI is 8-ball (EAX == -1), check if EDI is player (EBX != -1)
  *   CMP EBX, 0xFFFFFFFF
  *   JE  .done                       ; both 8-balls → skip
- *   ; Player (EDI) hit 8-ball (ESI) — player is the hitter
  *
  *   .hit_detected:
  *   ; --- Avoid double-counting (Ball_Update runs for both balls) ---
- *   ; Only count when ESI < EDI (lower address wins)
  *   CMP ESI, EDI
  *   JAE .done                       ; let the other Ball_Update handle it
  *
  *   ; --- Increment hit counter ---
  *   INC DWORD [g_hit_count]
  *
- *   ; --- Log to hitlog.txt ---
- *   ; Save FPU state (log_hit might touch it via Win32 internals)
- *   SUB ESP, 108                    ; FNSAVE needs 108 bytes
- *   FNSAVE [ESP]                     ; save full FPU state
- *   PUSH EBX                       ; arg2 = other ball's player_index
- *   PUSH EAX                       ; arg1 = this ball's player_index
- *   CALL log_hit
- *   ADD ESP, 8                     ; cdecl cleanup
- *   FNRSTOR [ESP]                   ; restore FPU state
- *   ADD ESP, 108
+ *   ; --- Set pending flag for polling thread ---
+ *   ; player_index is in EAX (if player) or EBX (if other is player)
+ *   ; Use: if EAX >= 0, player = EAX; else player = EBX
+ *   CMP EAX, 0xFFFFFFFF
+ *   JNE .esi_is_player
+ *   ; EDI is the player — use EBX
+ *   MOV ECX, EBX
+ *   JMP .set_flag
+ *   .esi_is_player:
+ *   MOV ECX, EAX
+ *   .set_flag:
+ *   INC ECX                         ; convert to 1-based (0 = no pending)
+ *   MOV DWORD [g_hit_pending], ECX
  *
  *   .done:
  *   POPAD                           ; restore all registers
@@ -329,37 +341,33 @@ static void install_hook(void)
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_hit_count; p += 4;
 
-    /* --- Save FPU state before calling log_hit ---
-     * SUB ESP, 108 */
-    cave[p++] = 0x81; cave[p++] = 0xEC;
-    *(DWORD*)(cave + p) = 108; p += 4;
-    /* FNSAVE [ESP] — save full FPU state (also clears it) */
-    cave[p++] = 0xDD; cave[p++] = 0x34; cave[p++] = 0x24;
+    /* --- Set g_hit_pending = player_index + 1 ---
+     * If EAX >= 0 (ESI is player), use EAX. Else use EBX (EDI is player).
+     * CMP EAX, 0xFFFFFFFF */
+    cave[p++] = 0x3D;
+    *(DWORD*)(cave + p) = 0xFFFFFFFF; p += 4;
+    /* JNE .esi_is_player */
+    cave[p++] = 0x75; cave[p++] = 0x00;
+    int jne_esi_player = p - 1;
 
-    /* --- Call log_hit(idx1, idx2) — cdecl ---
-     * EAX still has this ball's player_index, EBX has other ball's.
-     * PUSH EBX (arg2), PUSH EAX (arg1), CALL, ADD ESP,8 */
-    /* PUSH EBX */
-    cave[p++] = 0x53;
-    /* PUSH EAX */
-    cave[p++] = 0x50;
-    /* CALL log_hit (near, relative) */
-    cave[p++] = 0xE8;
-    {
-        DWORD call_addr = (DWORD)(cave + p + 4);
-        DWORD target = (DWORD)&log_hit;
-        *(DWORD*)(cave + p) = target - call_addr;
-    }
-    p += 4;
-    /* ADD ESP, 8 — cdecl cleanup */
-    cave[p++] = 0x83; cave[p++] = 0xC4; cave[p++] = 0x08;
+    /* EDI is the player — MOV ECX, EBX */
+    cave[p++] = 0x89; cave[p++] = 0xD9;  /* MOV ECX, EBX */
+    /* JMP .set_flag */
+    cave[p++] = 0xEB; cave[p++] = 0x00;
+    int jmp_set_flag = p - 1;
 
-    /* --- Restore FPU state ---
-     * FNRSTOR [ESP] */
-    cave[p++] = 0xDD; cave[p++] = 0x2C; cave[p++] = 0x24;
-    /* ADD ESP, 108 */
-    cave[p++] = 0x81; cave[p++] = 0xC4;
-    *(DWORD*)(cave + p) = 108; p += 4;
+    /* .esi_is_player: */
+    int esi_player_label = p;
+    /* MOV ECX, EAX */
+    cave[p++] = 0x89; cave[p++] = 0xC1;  /* MOV ECX, EAX */
+
+    /* .set_flag: */
+    int set_flag_label = p;
+    /* INC ECX (convert to 1-based: 0 = no pending, 1-4 = player 1-4) */
+    cave[p++] = 0x41;  /* INC ECX */
+    /* MOV DWORD [g_hit_pending], ECX */
+    cave[p++] = 0x89; cave[p++] = 0x0D;
+    *(DWORD*)(cave + p) = (DWORD)&g_hit_pending; p += 4;
 
     /* .done: */
     int done_label = p;
@@ -383,6 +391,8 @@ static void install_hook(void)
     cave[jmp_hit1]           = (BYTE)(hit_detected_label - (jmp_hit1 + 1));
     cave[je_both_8balls]     = (BYTE)(done_label - (je_both_8balls + 1));
     cave[jae_double]         = (BYTE)(done_label - (jae_double + 1));
+    cave[jne_esi_player]     = (BYTE)(esi_player_label - (jne_esi_player + 1));
+    cave[jmp_set_flag]       = (BYTE)(set_flag_label - (jmp_set_flag + 1));
 
     /* --- Patch the hook site: JMP + NOP --- */
     DWORD old_protect;
@@ -416,6 +426,10 @@ static DWORD WINAPI patch_thread(LPVOID param)
     write_log_line("[MOD] Hook site verified, installing hook...\r\n", 44);
     install_hook();
     write_log_line("[MOD] Hook installed successfully\r\n", 34);
+
+    /* Start the polling thread that writes hitlog.txt entries */
+    CreateThread(NULL, 0, log_thread, NULL, 0, NULL);
+    write_log_line("[MOD] Log polling thread started\r\n", 33);
 
     return 0;
 }
