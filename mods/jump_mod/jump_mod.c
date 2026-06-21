@@ -311,9 +311,10 @@ static DWORD WINAPI ground_check_thread(LPVOID param)
  *           ESP at the hook point in Ball_Update's Phase 15
  *
  * The cave:
- *   1.  Saves registers (EAX, ECX, EDX, EDI)
- *   2.  Executes the original 6 bytes: MOV ECX,[ESP+0x2C]; MOV EDX,[ECX]
- *       (ESP+0x2C = original ESP+0x1C + 0x10 from 4 PUSHes)
+ *   1.  Saves registers (EAX, EDI) — NOT ECX/EDX (those are set by the
+ *       original instructions and must survive to the code after the hook)
+ *   2.  Executes the original 6 bytes: MOV ECX,[ESP+0x24]; MOV EDX,[ECX]
+ *       (ESP+0x24 = original ESP+0x1C + 0x08 from 2 PUSHes)
  *   3.  Stores ball pointer: g_ball_ptr = ESI (for background thread)
  *   4.  Checks ball+0x18 == 0 (Player 1)
  *   5.  Checks fall_mode == 0 (not dying)
@@ -341,17 +342,18 @@ static void install_hook(void)
 
     int p = 0;
 
-    /* PUSH EAX, ECX, EDX, EDI — save registers */
+    /* PUSH EAX, EDI — save ONLY registers we clobber.
+     * Do NOT save/restore ECX or EDX: the original instructions set them,
+     * and the code after the hook (CALL [EDX] at 0x407BBC) depends on their
+     * values surviving. If we PUSH/POP them, we restore stale pre-hook values. */
     cave[p++] = 0x50;  /* PUSH EAX */
-    cave[p++] = 0x51;  /* PUSH ECX */
-    cave[p++] = 0x52;  /* PUSH EDX */
     cave[p++] = 0x57;  /* PUSH EDI */
 
-    /* Execute original 6 bytes: MOV ECX,[ESP+0x1C+0x10]; MOV EDX,[ECX]
+    /* Execute original 6 bytes: MOV ECX,[ESP+0x1C+0x08]; MOV EDX,[ECX]
      * Original: 8B 4C 24 1C 8B 11
-     * With 4 pushes: ESP is 0x10 lower, so offset becomes 0x2C */
+     * With 2 pushes: ESP is 0x08 lower, so offset becomes 0x24 */
     cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24;
-    cave[p++] = 0x2C;
+    cave[p++] = 0x24;
     cave[p++] = 0x8B; cave[p++] = 0x11;
 
     /* --- Store ball pointer for background thread: MOV [g_ball_ptr], ESI --- */
@@ -483,10 +485,8 @@ static void install_hook(void)
     /* .done: */
     int done_label = p;
 
-    /* POP EDI, EDX, ECX, EAX */
+    /* POP EDI, EAX — restore only the 2 registers we saved */
     cave[p++] = 0x5F;  /* POP EDI */
-    cave[p++] = 0x5A;  /* POP EDX */
-    cave[p++] = 0x59;  /* POP ECX */
     cave[p++] = 0x58;  /* POP EAX */
 
     /* JMP back to hook_addr + 6 */
