@@ -171,7 +171,11 @@ static void load_real_bass(void)
 #define BALL_POS_X          0x164   /* float (position X) */
 #define BALL_POS_Y          0x168   /* float (position Y) */
 #define BALL_POS_Z          0x16C   /* float (position Z) */
+#define BALL_VEL_X          0x170   /* accumulated force X (impulse, zeroed each tick) */
 #define BALL_VEL_Y          0x174   /* accumulated force Y (impulse, zeroed each tick) */
+#define BALL_VEL_Z          0x178   /* accumulated force Z (impulse, zeroed each tick) */
+#define BALL_DISP_VEL_X     0x17C   /* display velocity X (pos delta, computed post-ApplyForce) */
+#define BALL_DISP_VEL_Z     0x184   /* display velocity Z (pos delta, computed post-ApplyForce) */
 #define BALL_RADIUS         0x284   /* float (collision radius) */
 #define BALL_FALL_MODE      0xC4C   /* fall-off-level (death/respawn) state */
 
@@ -237,6 +241,18 @@ static BYTE g_space_was_down = 0;
 
 /* Debug counter */
 static volatile DWORD g_jump_count = 0;
+
+/* ─── Air momentum preservation ───
+ * The engine has NO persistent velocity. Each frame, force accumulators
+ * (0x170/0x174/0x178) are zeroed and rebuilt from scratch. When airborne,
+ * no horizontal forces are computed, so the ball goes straight up/down.
+ *
+ * Fix: on jump, save the current horizontal velocity (0x17C/0x184 = position
+ * delta from last frame). Each subsequent frame while airborne, re-inject
+ * that as horizontal force (0x170/0x178) BEFORE Ball_ApplyForce runs. */
+static volatile float g_air_vel_x = 0.0f;  /* saved horizontal vel.x */
+static volatile float g_air_vel_z = 0.0f;  /* saved horizontal vel.z */
+static volatile DWORD g_is_airborne = 0;   /* 1 = ball is airborne from jump */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Background Thread — Raycast Ground Detection
@@ -334,7 +350,7 @@ static void install_hook(void)
 {
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
 
-    BYTE *cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
+    BYTE *cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
                                      PAGE_EXECUTE_READWRITE);
     if (!cave) return;
 
@@ -380,6 +396,49 @@ static void install_hook(void)
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jnz_fallmode = p - 1;
 
+    /* ═══ AIR MOMENTUM INJECTION (runs every frame for Player 1) ═══
+     * If g_is_airborne is set, inject saved horizontal velocity as force
+     * so the ball maintains forward momentum while in the air.
+     *
+     * FLD [g_air_vel_x] → FADD [ESI+0x170] → FSTP [ESI+0x170]
+     * FLD [g_air_vel_z] → FADD [ESI+0x178] → FSTP [ESI+0x178]
+     *
+     * This runs BEFORE the g_on_ground check and jump logic, so the
+     * horizontal force is present when Ball_ApplyForce integrates it. */
+
+    /* MOV EAX, [g_is_airborne] */
+    cave[p++] = 0xA1;
+    *(DWORD*)(cave + p) = (DWORD)&g_is_airborne; p += 4;
+    /* TEST EAX, EAX */
+    cave[p++] = 0x85; cave[p++] = 0xC0;
+    /* JZ .check_ground (not airborne, skip momentum injection) */
+    cave[p++] = 0x74; cave[p++] = 0x00;
+    int jz_not_airborne = p - 1;
+
+    /* Inject horizontal velocity as force:
+     * FLD [g_air_vel_x]  → load saved horizontal vel.x */
+    cave[p++] = 0xD9; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_air_vel_x; p += 4;
+    /* FADD [ESI+0x170]  → add to force accumulator X */
+    cave[p++] = 0xD8; cave[p++] = 0x86;
+    *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
+    /* FSTP [ESI+0x170]  → store back */
+    cave[p++] = 0xD9; cave[p++] = 0x9E;
+    *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
+
+    /* FLD [g_air_vel_z]  → load saved horizontal vel.z */
+    cave[p++] = 0xD9; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_air_vel_z; p += 4;
+    /* FADD [ESI+0x178]  → add to force accumulator Z */
+    cave[p++] = 0xD8; cave[p++] = 0x86;
+    *(DWORD*)(cave + p) = BALL_VEL_Z; p += 4;
+    /* FSTP [ESI+0x178]  → store back */
+    cave[p++] = 0xD9; cave[p++] = 0x9E;
+    *(DWORD*)(cave + p) = BALL_VEL_Z; p += 4;
+
+    /* .check_ground: (label for the JZ above to land here) */
+    int check_ground_label = p;
+
     /* --- Check g_on_ground == 1 (raycast ground detection) --- */
     /* MOV EAX, [g_on_ground] */
     cave[p++] = 0xA1;
@@ -389,6 +448,12 @@ static void install_hook(void)
     /* JZ .done (not on ground, can't jump) */
     cave[p++] = 0x74; cave[p++] = 0x00;
     int jz_not_grounded = p - 1;
+
+    /* --- Ball is on ground: clear airborne flag if it was set --- */
+    /* MOV dword [g_is_airborne], 0 */
+    cave[p++] = 0xC7; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_is_airborne; p += 4;
+    cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
 
     /* --- Read App pointer: MOV EAX, [0x005341E0] --- */
     cave[p++] = 0xA1;
@@ -456,6 +521,28 @@ static void install_hook(void)
     cave[p++] = 0xD9; cave[p++] = 0x9E;
     *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
 
+    /* ═══ Save horizontal velocity for air momentum ═══
+     * 0x17C/0x184 contain the position delta from the LAST frame (computed
+     * at 0x407C25 AFTER our hook). They still hold the ball's horizontal
+     * speed from when it was rolling on the ground. Save them now, before
+     * Ball_ApplyForce overwrites them with this frame's delta.
+     *
+     * MOV EAX, [ESI+0x17C] → MOV [g_air_vel_x], EAX
+     * MOV EAX, [ESI+0x184] → MOV [g_air_vel_z], EAX
+     * MOV dword [g_is_airborne], 1 */
+    cave[p++] = 0x8B; cave[p++] = 0x86;
+    *(DWORD*)(cave + p) = BALL_DISP_VEL_X; p += 4;
+    cave[p++] = 0xA3;
+    *(DWORD*)(cave + p) = (DWORD)&g_air_vel_x; p += 4;
+    cave[p++] = 0x8B; cave[p++] = 0x86;
+    *(DWORD*)(cave + p) = BALL_DISP_VEL_Z; p += 4;
+    cave[p++] = 0xA3;
+    *(DWORD*)(cave + p) = (DWORD)&g_air_vel_z; p += 4;
+    /* MOV dword [g_is_airborne], 1 */
+    cave[p++] = 0xC7; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_is_airborne; p += 4;
+    cave[p++] = 0x01; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
+
     /* Set g_space_was_down = 1 */
     cave[p++] = 0xC6; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
@@ -495,6 +582,7 @@ static void install_hook(void)
     *(DWORD*)(cave + p) = jmp_back; p += 4;
 
     /* Fix up all placeholder jumps */
+    cave[jz_not_airborne]  = (BYTE)(check_ground_label - (jz_not_airborne + 1));
     cave[jnz_player]       = (BYTE)(done_label - (jnz_player + 1));
     cave[jnz_fallmode]     = (BYTE)(done_label - (jnz_fallmode + 1));
     cave[jz_not_grounded]  = (BYTE)(done_label - (jz_not_grounded + 1));
