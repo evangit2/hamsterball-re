@@ -101,15 +101,15 @@ reference/      # Raptisoft official exporter reference
 
 ## Credits
 
-**rsks** — Project lead, reverse engineering, documentation, mods, and tooling
+**RodentRacer** — Contributions to the project
 
-**RodentRacer** — Contributions to RE analysis and testing
+**Artizard** — Contributions to the project
 
-**Arti (Artizard)** — Contributions to RE analysis and testing
+**BookwormKevin** — Contributions to the project
 
-**XRow** — Contributions to RE analysis and testing
+**Makyuni** — Contributions to the project
 
-**BookwormKevin** — Contributions to RE analysis and testing
+**XRow** — Contributions to the project
 
 ## License
 
