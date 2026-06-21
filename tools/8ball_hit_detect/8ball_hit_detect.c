@@ -17,9 +17,9 @@
  *
  * EFFECT:
  *   - Increments g_hit_count (readable via registered symbol / debugger)
- *   - Boosts the 8-ball's velocity ×1.5 (knockback effect)
  *   - Uses pointer comparison (ESI < EDI) to count each collision once,
  *     since Ball_Update runs for both balls (symmetric double-fire)
+ *   - Pure detection only — no gameplay changes
  *
  * BUILD:
  *   i686-w64-mingw32-gcc -shared -o bass.dll 8ball_hit_detect.c -lwinmm \
@@ -169,18 +169,9 @@ static const BYTE HOOK_ORIG[] = { 0xD9, 0x87, 0x84, 0x02, 0x00, 0x00 };
 
 /* Ball struct offsets */
 #define BALL_PLAYER_IDX     0x018    /* int: 0-3 = Player 1-4, -1 = NPC 8-ball */
-#define BALL_VEL_X          0x170    /* float */
-#define BALL_VEL_Y          0x174    /* float */
-#define BALL_VEL_Z          0x178    /* float */
-
-/* Knockback velocity multiplier (1.5x = boost 8-ball away harder) */
-#define KNOCKBACK_MULT      0x3FC00000  /* 1.5f as IEEE-754 bits */
 
 /* Hit counter — readable via debugger or CE */
 static volatile DWORD g_hit_count = 0;
-
-/* Knockback multiplier float (1.5x) — referenced by address in the code cave */
-static float g_knockback_mult = 1.5f;
 
 /*
  * Code cave layout (x86, hand-assembled):
@@ -216,34 +207,6 @@ static float g_knockback_mult = 1.5f;
  *
  *   ; --- Increment hit counter ---
  *   INC DWORD [g_hit_count]
- *
- *   ; --- Boost 8-ball velocity ×1.5 (knockback) ---
- *   ; Find which ball is the 8-ball (player_index == -1)
- *   CMP EAX, 0xFFFFFFFF             ; is ESI the 8-ball?
- *   JNE .edi_is_8ball               ; no → EDI is the 8-ball
- *   ; ESI is the 8-ball — boost its velocity
- *   FLD  DWORD [ESI+0x170]          ; vel_x
- *   FMUL DWORD [knockback_mult]
- *   FSTP DWORD [ESI+0x170]
- *   FLD  DWORD [ESI+0x174]          ; vel_y
- *   FMUL DWORD [knockback_mult]
- *   FSTP DWORD [ESI+0x174]
- *   FLD  DWORD [ESI+0x178]          ; vel_z
- *   FMUL DWORD [knockback_mult]
- *   FSTP DWORD [ESI+0x178]
- *   JMP .done
- *
- *   .edi_is_8ball:
- *   ; EDI is the 8-ball — boost its velocity
- *   FLD  DWORD [EDI+0x170]          ; vel_x
- *   FMUL DWORD [knockback_mult]
- *   FSTP DWORD [EDI+0x170]
- *   FLD  DWORD [EDI+0x174]          ; vel_y
- *   FMUL DWORD [knockback_mult]
- *   FSTP DWORD [EDI+0x174]
- *   FLD  DWORD [EDI+0x178]          ; vel_z
- *   FMUL DWORD [knockback_mult]
- *   FSTP DWORD [EDI+0x178]
  *
  *   .done:
  *   POPAD                           ; restore all registers
@@ -316,76 +279,6 @@ static void install_hook(void)
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_hit_count; p += 4;
 
-    /* --- Boost 8-ball velocity ×1.5 ---
-     * CMP EAX, 0xFFFFFFFF — is ESI the 8-ball? */
-    cave[p++] = 0x3D;
-    *(DWORD*)(cave + p) = 0xFFFFFFFF; p += 4;
-    /* JNE .edi_is_8ball */
-    cave[p++] = 0x75; cave[p++] = 0x00;
-    int jne_edi_is_8ball = p - 1;
-
-    /* ESI is the 8-ball — boost vel_x */
-    /* FLD DWORD [ESI+0x170] */
-    cave[p++] = 0xD9; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
-    /* FMUL DWORD [knockback_mult] */
-    cave[p++] = 0xD8; cave[p++] = 0x0D;
-    *(DWORD*)(cave + p) = (DWORD)&g_knockback_mult; p += 4;
-    /* FSTP DWORD [ESI+0x170] */
-    cave[p++] = 0xD9; cave[p++] = 0x9E;
-    *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
-    /* FLD DWORD [ESI+0x174] — vel_y */
-    cave[p++] = 0xD9; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
-    /* FMUL DWORD [knockback_mult] */
-    cave[p++] = 0xD8; cave[p++] = 0x0D;
-    *(DWORD*)(cave + p) = (DWORD)&g_knockback_mult; p += 4;
-    /* FSTP DWORD [ESI+0x174] */
-    cave[p++] = 0xD9; cave[p++] = 0x9E;
-    *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
-    /* FLD DWORD [ESI+0x178] — vel_z */
-    cave[p++] = 0xD9; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = BALL_VEL_Z; p += 4;
-    /* FMUL DWORD [knockback_mult] */
-    cave[p++] = 0xD8; cave[p++] = 0x0D;
-    *(DWORD*)(cave + p) = (DWORD)&g_knockback_mult; p += 4;
-    /* FSTP DWORD [ESI+0x178] */
-    cave[p++] = 0xD9; cave[p++] = 0x9E;
-    *(DWORD*)(cave + p) = BALL_VEL_Z; p += 4;
-    /* JMP .done */
-    cave[p++] = 0xEB; cave[p++] = 0x00;
-    int jmp_done_esi = p - 1;
-
-    /* .edi_is_8ball: */
-    int edi_is_8ball_label = p;
-    /* FLD DWORD [EDI+0x170] */
-    cave[p++] = 0xD9; cave[p++] = 0x87;
-    *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
-    /* FMUL DWORD [knockback_mult] */
-    cave[p++] = 0xD8; cave[p++] = 0x0D;
-    *(DWORD*)(cave + p) = (DWORD)&g_knockback_mult; p += 4;
-    /* FSTP DWORD [EDI+0x170] */
-    cave[p++] = 0xD9; cave[p++] = 0x9F;
-    *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
-    /* FLD DWORD [EDI+0x174] — vel_y */
-    cave[p++] = 0xD9; cave[p++] = 0x87;
-    *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
-    /* FMUL DWORD [knockback_mult] */
-    cave[p++] = 0xD8; cave[p++] = 0x0D;
-    *(DWORD*)(cave + p) = (DWORD)&g_knockback_mult; p += 4;
-    /* FSTP DWORD [EDI+0x174] */
-    cave[p++] = 0xD9; cave[p++] = 0x9F;
-    *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
-    /* FLD DWORD [EDI+0x178] — vel_z */
-    cave[p++] = 0xD9; cave[p++] = 0x87;
-    *(DWORD*)(cave + p) = BALL_VEL_Z; p += 4;
-    /* FMUL DWORD [knockback_mult] */
-    cave[p++] = 0xD8; cave[p++] = 0x0D;
-    *(DWORD*)(cave + p) = (DWORD)&g_knockback_mult; p += 4;
-    /* FSTP DWORD [EDI+0x178] */
-    cave[p++] = 0xD9; cave[p++] = 0x9F;
-    *(DWORD*)(cave + p) = BALL_VEL_Z; p += 4;
-
     /* .done: */
     int done_label = p;
 
@@ -408,8 +301,6 @@ static void install_hook(void)
     cave[jmp_hit1]           = (BYTE)(hit_detected_label - (jmp_hit1 + 1));
     cave[je_both_8balls]     = (BYTE)(done_label - (je_both_8balls + 1));
     cave[jae_double]         = (BYTE)(done_label - (jae_double + 1));
-    cave[jne_edi_is_8ball]   = (BYTE)(edi_is_8ball_label - (jne_edi_is_8ball + 1));
-    cave[jmp_done_esi]       = (BYTE)(done_label - (jmp_done_esi + 1));
 
     /* --- Patch the hook site: JMP + NOP --- */
     DWORD old_protect;

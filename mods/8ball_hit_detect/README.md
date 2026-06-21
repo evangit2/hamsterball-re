@@ -1,6 +1,6 @@
 # 8-Ball Hit Detection Mod
 
-Detects whenever a player ball collides with an 8-ball (NPC) and applies a 1.5x velocity knockback boost to the 8-ball.
+Detects whenever a player ball collides with an 8-ball (NPC). **Pure detection only — no gameplay changes.**
 
 ## How It Works
 
@@ -14,9 +14,7 @@ The mod checks `ball+0x18` (player_index) on both balls:
 - `0-3` = Player 1-4
 - `-1` (0xFFFFFFFF) = NPC 8-ball
 
-If exactly one ball is a player and the other is an 8-ball, it:
-1. Increments a hit counter (`g_hit_count`)
-2. Boosts the 8-ball's velocity ×1.5 (knockback effect)
+If exactly one ball is a player and the other is an 8-ball, it increments `g_hit_count`.
 
 Uses pointer comparison (ESI < EDI) to avoid double-counting, since Ball_Update runs for both balls in a collision pair.
 
@@ -42,8 +40,6 @@ i686-w64-mingw32-gcc -shared -o bass.dll 8ball_hit_detect.c -lwinmm \
 | Hook type | JMP code cave (5-byte JMP + 1 NOP) |
 | Activation delay | 5 seconds after DLL load |
 | Player index offset | ball+0x18 (int: -1 = NPC, 0-3 = player) |
-| Velocity offsets | ball+0x170/0x174/0x178 (float x/y/z) |
-| Knockback multiplier | 1.5x (0x3FC00000) |
 | Hit counter | `g_hit_count` (volatile DWORD, readable via debugger) |
 
 ## Verification
