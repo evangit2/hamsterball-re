@@ -1,24 +1,13 @@
 /*
  * jump_mod.c — BASS.dll proxy that lets Player 1 jump with the spacebar.
  *
- * v2: NO BACKGROUND THREAD. Ground detection uses the game's own
- * collision type-5 (floor) handler, eliminating the data race that
- * caused crashes in v1.
+ * v3: Fixed byte-sized jump overflow that caused NULL dereference crashes.
+ * Short conditional jumps (74/75 xx) can only reach ±127 bytes. When the
+ * .done label was >127 bytes from early checks, the displacement truncated,
+ * sending execution to uninitialized memory (zeros) → crash at 0000:00000000.
+ * Fix: use 32-bit near jumps (0F 84/0F 85 + rel32) for distant targets.
  *
- * GROUND DETECTION: Two code caves cooperate:
- *   Cave 1 (type-5 floor handler at 0x407391):
- *     Sets g_on_ground = 1 whenever Ball_Update processes a type-5
- *     (floor) collision result. This is the game's own ground detection.
- *   Cave 2 (Phase 15 at 0x407BB4):
- *     Reads g_on_ground to determine if the ball can jump.
- *     Clears g_on_ground = 0 at the end (prep for next frame).
- *     NO background thread, NO raycast, NO data race.
- *
- * JUMP HOOK: Phase 15 of Ball_Update (0x00407BB4) — the vtable[0] call site.
- * The jump impulse is FADD'd to vel.y BEFORE Ball_ApplyForce runs, so the
- * ball lifts off the ground in the SAME frame. This preserves horizontal
- * momentum: next frame the ball is airborne, so floor collision (type 5)
- * won't fire and zero the XZ velocity.
+ * Ground detection: collision type-5 (floor) result, no background thread.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -29,7 +18,7 @@
 #include <windows.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports — forward all game imports to bass_real.dll
+ * BASS Proxy Exports
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static HMODULE g_hRealBass = NULL;
@@ -94,7 +83,6 @@ __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
     if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
     return 1;
 }
-/* Extra stubs */
 __declspec(dllexport) void __stdcall BASS_Pause(void) {}
 __declspec(dllexport) void __stdcall BASS_SetVolume(DWORD a) {}
 __declspec(dllexport) DWORD __stdcall BASS_GetVolume(void) { return 0; }
@@ -146,30 +134,27 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v2 — Collision-Based Ground Detection (no threads)
+ * Jump Mod v3 — Fixed jump overflow + collision ground detection
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define G_APP_ADDR          0x005341E0
 
-/* Hook 1: Type-5 floor collision handler.
- * At 0x407391, Ball_Update sets ball+0x2E9 = 1 (on_ramp) when type-5
- * collision fires. We hook HERE to also set g_on_ground = 1.
- * Original bytes: C6 86 E9 02 00 00 01 (7 bytes: mov byte [esi+0x2E9], 1) */
+/* Hook 1: Type-5 floor collision handler at 0x407391 */
 #define TYPE5_HOOK          0x00407391
 #define TYPE5_ORIG_BYTES    7
 
-/* Hook 2: Phase 15 vtable call (jump logic). */
+/* Hook 2: Phase 15 vtable call at 0x407BB4 */
 #define BALL_UPDATE_HOOK    0x00407BB4
-#define HOOK_ORIG_BYTES     6   /* 8B 4C 24 1C 8B 11 */
+#define HOOK2_ORIG_BYTES    6
 
-/* Ball struct offsets (byte) */
+/* Ball struct offsets */
 #define BALL_VEL_X          0x170
 #define BALL_VEL_Y          0x174
 #define BALL_VEL_Z          0x178
 #define BALL_PLAYER_IDX     0x018
 #define BALL_FALL_MODE      0xC4C
 
-/* App/Input struct offsets */
+/* App/Input offsets */
 #define APP_INPUT_HANDLER   0x180
 #define IH_KEYBOARD_DEV     0x434
 #define KBD_KEY_BUFFER      0x00C
@@ -178,37 +163,42 @@ static void load_real_bass(void)
 /* Jump velocity */
 static float g_jump_vel = 500.0f;
 
-/* ─── Shared state between the two code caves ─── */
-static volatile DWORD g_on_ground = 0;     /* Set by Cave 1, read/cleared by Cave 2 */
-
-/* Edge detection + air momentum (Cave 2 only) */
+/* Shared state */
+static volatile DWORD g_on_ground = 0;
 static BYTE g_space_was_down = 0;
 static volatile float g_air_vel_x = 0.0f;
 static volatile float g_air_vel_z = 0.0f;
 static volatile DWORD g_is_airborne = 0;
-
-/* Debug counter */
 static volatile DWORD g_jump_count = 0;
 
+/* ─── Helper: emit a near JZ (0F 84 + rel32) with placeholder ─── */
+static int emit_jz_near(BYTE *cave, int p) {
+    cave[p++] = 0x0F; cave[p++] = 0x84;
+    *(DWORD*)(cave + p) = 0x12345678;  /* placeholder */
+    return p;  /* returns position AFTER the 4-byte placeholder */
+}
+
+/* ─── Helper: emit a near JNZ (0F 85 + rel32) with placeholder ─── */
+static int emit_jnz_near(BYTE *cave, int p) {
+    cave[p++] = 0x0F; cave[p++] = 0x85;
+    *(DWORD*)(cave + p) = 0x12345678;  /* placeholder */
+    return p;
+}
+
+/* ─── Helper: fix up a near-jump placeholder ─── */
+static void fixup_near_jump(BYTE *cave, int placeholder_offset, int target_offset) {
+    /* The 4-byte displacement is at placeholder_offset.
+     * Displacement = target - (placeholder_offset + 4) */
+    DWORD disp = (DWORD)(target_offset - (placeholder_offset + 4));
+    *(DWORD*)(cave + placeholder_offset) = disp;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
- * Cave 1 — Type-5 Floor Detection Hook (at 0x407391)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * When Ball_Update processes a type-5 (floor) collision result, it sets
- * ball+0x2E9 = 1 at 0x407391. We hook this point to also set g_on_ground = 1.
- *
- * At entry: ESI = ball pointer
- *
- * The cave:
- *   1. Execute original 7 bytes: MOV BYTE [ESI+0x2E9], 1
- *   2. MOV DWORD [g_on_ground], 1
- *   3. JMP back to 0x407398 (the call to Scene_SetCamera)
- */
+ * Cave 1 — Type-5 Floor Detection (at 0x407391)
+ * ═══════════════════════════════════════════════════════════════════════════ */
 static void install_type5_hook(void)
 {
     BYTE *hook_addr = (BYTE*)TYPE5_HOOK;
-
-    /* Verify expected bytes: C6 86 E9 02 00 00 01 */
     BYTE expected[] = { 0xC6, 0x86, 0xE9, 0x02, 0x00, 0x00, 0x01 };
     if (memcmp(hook_addr, expected, 7) != 0) return;
 
@@ -219,41 +209,38 @@ static void install_type5_hook(void)
     DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
     int p = 0;
 
-    /* Execute original 7 bytes: MOV BYTE [ESI+0x2E9], 1 */
+    /* Original 7 bytes: MOV BYTE [ESI+0x2E9], 1 */
     cave[p++] = 0xC6; cave[p++] = 0x86;
     cave[p++] = 0xE9; cave[p++] = 0x02; cave[p++] = 0x00; cave[p++] = 0x00;
     cave[p++] = 0x01;
 
-    /* Set g_on_ground = 1: MOV DWORD [g_on_ground], 1 */
+    /* Set g_on_ground = 1 */
     cave[p++] = 0xC7; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_on_ground; p += 4;
     cave[p++] = 0x01; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
 
-    /* JMP back to hook_addr + 7 = 0x407398 */
+    /* JMP back to 0x407398 */
     cave[p++] = 0xE9;
-    DWORD jmp_back = (DWORD)(hook_addr + TYPE5_ORIG_BYTES) - (DWORD)(cave + p + 4);
-    *(DWORD*)(cave + p) = jmp_back; p += 4;
+    *(DWORD*)(cave + p) = (DWORD)(hook_addr + TYPE5_ORIG_BYTES) - (DWORD)(cave + p + 4);
+    p += 4;
 
-    /* Patch the hook site: JMP + 2 NOPs (7 bytes total) */
+    /* Patch hook site */
     DWORD old_protect;
     VirtualProtect(hook_addr, TYPE5_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_to_cave;
-    hook_addr[5] = 0x90;  /* NOP */
-    hook_addr[6] = 0x90;  /* NOP */
+    hook_addr[5] = 0x90;
+    hook_addr[6] = 0x90;
     VirtualProtect(hook_addr, TYPE5_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, TYPE5_ORIG_BYTES);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Cave 2 — Jump Logic Hook (at 0x407BB4, Phase 15)
- * ═══════════════════════════════════════════════════════════════════════════
+ * Cave 2 — Jump Logic (at 0x407BB4, Phase 15)
  *
- * Same as v1 code cave but:
- * - Ground detection reads g_on_ground (set by Cave 1) instead of raycasting
- * - Clears g_on_ground = 0 at the end (for next frame)
- * - NO background thread
- */
+ * Uses NEAR jumps (0F 84/0F 85 + rel32) for ALL conditional branches
+ * to avoid the ±127 byte overflow that crashed v2.
+ * ═══════════════════════════════════════════════════════════════════════════ */
 static void install_jump_hook(void)
 {
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
@@ -269,7 +256,7 @@ static void install_jump_hook(void)
     cave[p++] = 0x50;
     cave[p++] = 0x57;
 
-    /* Execute original 6 bytes with ESP+8 offset */
+    /* Original 6 bytes with ESP+8 offset */
     cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24;
     cave[p++] = 0x24;
     cave[p++] = 0x8B; cave[p++] = 0x11;
@@ -278,20 +265,23 @@ static void install_jump_hook(void)
     cave[p++] = 0x8B; cave[p++] = 0x86;
     cave[p++] = 0x18; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    cave[p++] = 0x75; cave[p++] = 0x00;
-    int jnz_player = p - 1;
+    /* JNZ .done (near) */
+    int jnz_player = p;
+    p = emit_jnz_near(cave, p);
 
     /* ═══ CHECK: fall_mode == 0 ═══ */
     cave[p++] = 0x8A; cave[p++] = 0x86;
     cave[p++] = 0x4C; cave[p++] = 0x0C; cave[p++] = 0x00; cave[p++] = 0x00;
     cave[p++] = 0x84; cave[p++] = 0xC0;
-    cave[p++] = 0x75; cave[p++] = 0x00;
-    int jnz_fallmode = p - 1;
+    /* JNZ .done (near) */
+    int jnz_fallmode = p;
+    p = emit_jnz_near(cave, p);
 
     /* ═══ AIR MOMENTUM INJECTION ═══ */
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = (DWORD)&g_is_airborne; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xC0;
+    /* JZ .check_ground (short — only 36 bytes, within range) */
     cave[p++] = 0x74; cave[p++] = 0x00;
     int jz_not_airborne = p - 1;
 
@@ -314,12 +304,13 @@ static void install_jump_hook(void)
     /* .check_ground: */
     int check_ground_label = p;
 
-    /* ═══ CHECK: g_on_ground (set by Cave 1 from type-5 collision) ═══ */
+    /* ═══ CHECK: g_on_ground ═══ */
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = (DWORD)&g_on_ground; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_not_grounded = p - 1;
+    /* JZ .done (near — distance > 127) */
+    int jz_not_grounded = p;
+    p = emit_jz_near(cave, p);
 
     /* ═══ Grounded: clear airborne flag ═══ */
     cave[p++] = 0xC7; cave[p++] = 0x05;
@@ -330,35 +321,40 @@ static void install_jump_hook(void)
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = G_APP_ADDR; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_app = p - 1;
+    /* JZ .done (near) */
+    int jz_app = p;
+    p = emit_jz_near(cave, p);
 
     cave[p++] = 0x8B; cave[p++] = 0xB8;
     *(DWORD*)(cave + p) = APP_INPUT_HANDLER; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xFF;
-    cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_ih = p - 1;
+    /* JZ .done (near) */
+    int jz_ih = p;
+    p = emit_jz_near(cave, p);
 
     cave[p++] = 0x8B; cave[p++] = 0xBF;
     *(DWORD*)(cave + p) = IH_KEYBOARD_DEV; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xFF;
-    cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_kbd = p - 1;
+    /* JZ .done (near) */
+    int jz_kbd = p;
+    p = emit_jz_near(cave, p);
 
     cave[p++] = 0x8A; cave[p++] = 0x87;
     *(DWORD*)(cave + p) = (KBD_KEY_BUFFER + DIK_SPACE); p += 4;
     cave[p++] = 0xA8; cave[p++] = 0x80;
+    /* JZ .not_pressed (short — within range) */
     cave[p++] = 0x74; cave[p++] = 0x00;
     int jz_notpressed = p - 1;
 
-    /* Edge detect: CMP [g_space_was_down], 0 */
+    /* Edge detect */
     cave[p++] = 0x80; cave[p++] = 0x3D;
     *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
     cave[p++] = 0x00;
+    /* JNE .done (short — within range after keyboard checks) */
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jne_already = p - 1;
 
-    /* ═══ Rising edge! FADD jump impulse to vel.y ═══ */
+    /* ═══ Rising edge! FADD jump impulse ═══ */
     cave[p++] = 0xD9; cave[p++] = 0x86;
     *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
     cave[p++] = 0xD8; cave[p++] = 0x05;
@@ -366,7 +362,7 @@ static void install_jump_hook(void)
     cave[p++] = 0xD9; cave[p++] = 0x9E;
     *(DWORD*)(cave + p) = BALL_VEL_Y; p += 4;
 
-    /* Save horizontal velocity for air momentum */
+    /* Save horizontal velocity */
     cave[p++] = 0x8B; cave[p++] = 0x86;
     *(DWORD*)(cave + p) = BALL_VEL_X; p += 4;
     cave[p++] = 0xA3;
@@ -379,18 +375,17 @@ static void install_jump_hook(void)
     *(DWORD*)(cave + p) = (DWORD)&g_is_airborne; p += 4;
     cave[p++] = 0x01; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
 
-    /* g_space_was_down = 1 */
     cave[p++] = 0xC6; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_space_was_down; p += 4;
     cave[p++] = 0x01;
 
-    /* g_jump_count++ */
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
     cave[p++] = 0x40;
     cave[p++] = 0xA3;
     *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
 
+    /* JMP .done (short) */
     cave[p++] = 0xEB; cave[p++] = 0x00;
     int jmp_done = p - 1;
 
@@ -403,10 +398,7 @@ static void install_jump_hook(void)
     /* .done: */
     int done_label = p;
 
-    /* ═══ Clear g_on_ground for next frame ═══
-     * This runs EVERY frame (not just when jumping).
-     * Next frame's type-5 handler (Cave 1) will set it again
-     * if the ball is still on the floor. */
+    /* Clear g_on_ground for next frame */
     cave[p++] = 0xC7; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_on_ground; p += 4;
     cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
@@ -417,29 +409,35 @@ static void install_jump_hook(void)
 
     /* JMP back to hook_addr + 6 */
     cave[p++] = 0xE9;
-    DWORD jmp_back = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
-    *(DWORD*)(cave + p) = jmp_back; p += 4;
+    *(DWORD*)(cave + p) = (DWORD)(hook_addr + HOOK2_ORIG_BYTES) - (DWORD)(cave + p + 4);
+    p += 4;
 
-    /* Fix up all placeholder jumps */
-    cave[jz_not_airborne]  = (BYTE)(check_ground_label - (jz_not_airborne + 1));
-    cave[jnz_player]       = (BYTE)(done_label - (jnz_player + 1));
-    cave[jnz_fallmode]     = (BYTE)(done_label - (jnz_fallmode + 1));
-    cave[jz_not_grounded]  = (BYTE)(done_label - (jz_not_grounded + 1));
-    cave[jz_app]           = (BYTE)(done_label - (jz_app + 1));
-    cave[jz_ih]            = (BYTE)(done_label - (jz_ih + 1));
-    cave[jz_kbd]           = (BYTE)(done_label - (jz_kbd + 1));
-    cave[jz_notpressed]    = (BYTE)(not_pressed_label - (jz_notpressed + 1));
-    cave[jne_already]      = (BYTE)(done_label - (jne_already + 1));
-    cave[jmp_done]         = (BYTE)(done_label - (jmp_done + 1));
+    /* ═══ Fix up ALL jump placeholders ═══ */
 
-    /* Patch the hook site */
+    /* Near jumps (0F 84/0F 85 + rel32): fixup_near_jump takes the offset
+     * of the 4-byte displacement, which is 2 bytes AFTER the emit call's
+     * returned position (0F xx + 4-byte disp). */
+    fixup_near_jump(cave, jnz_player + 2, done_label);
+    fixup_near_jump(cave, jnz_fallmode + 2, done_label);
+    fixup_near_jump(cave, jz_not_grounded + 2, done_label);
+    fixup_near_jump(cave, jz_app + 2, done_label);
+    fixup_near_jump(cave, jz_ih + 2, done_label);
+    fixup_near_jump(cave, jz_kbd + 2, done_label);
+
+    /* Short jumps (74/75/EB + rel8): displacement byte is at (position - 1) */
+    cave[jz_not_airborne] = (BYTE)(check_ground_label - (jz_not_airborne + 1));
+    cave[jz_notpressed]   = (BYTE)(not_pressed_label - (jz_notpressed + 1));
+    cave[jne_already]     = (BYTE)(done_label - (jne_already + 1));
+    cave[jmp_done]        = (BYTE)(done_label - (jmp_done + 1));
+
+    /* Patch hook site */
     DWORD old_protect;
-    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
+    VirtualProtect(hook_addr, HOOK2_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_to_cave;
     hook_addr[5] = 0x90;
-    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
+    VirtualProtect(hook_addr, HOOK2_ORIG_BYTES, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK2_ORIG_BYTES);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -451,7 +449,6 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     Sleep(5000);
 
-    /* Verify both hook sites have expected bytes */
     BYTE *hook1 = (BYTE*)TYPE5_HOOK;
     BYTE exp1[] = { 0xC6, 0x86, 0xE9, 0x02, 0x00, 0x00, 0x01 };
     if (memcmp(hook1, exp1, 7) != 0) return 1;
@@ -477,10 +474,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
         DisableThreadLibraryCalls(hInst);
         load_real_bass();
         CreateThread(NULL, 0, patch_thread, NULL, 0, NULL);
-        /* NO background thread! Ground detection uses type-5 collision flag. */
         break;
     case DLL_PROCESS_DETACH:
-        /* Nothing to clean up */
         break;
     }
     return TRUE;
