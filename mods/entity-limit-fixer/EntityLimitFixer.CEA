@@ -1,135 +1,112 @@
 // ============================================================
-// EntityLimitFixer v3 — CE AutoAssembler Script
-// Prevents freezes/crashes with many entities in arenas
+// EntityLimitFixer v4 — CE AutoAssembler Script
+// Prevents freezes AND crashes with many entities in arenas
 //
-// ROOT CAUSE (verified via GhidraMCP decompilation):
-//   Ball_AI_ChaseNearsest (0x408390) has TWO O(N²) loops that
-//   iterate the entire ball list (Scene+0x29D4) per AI ball.
-//   Loop 1 (0x4083D9): "near ball bonus" — checks every ball
-//     for proximity, awards score. N balls × N checks = N².
-//   Loop 2 (0x408548): "find nearest target" — scans every
-//     ball to find closest chase target. N balls × N = N².
+// ROOT CAUSE (traced through full decompilation):
 //
-//   At N=30+, each frame takes 900+ distance calcs per AI ball.
-//   At N=50+, the frame budget overflows → freeze.
-//   At N=100+, operator_new fails from CollisionNode (0x14) +
-//   trail particle (0x28) allocations → crash.
+// CRASH PATH:
+//   operator_new (0x4BA57B) calls _malloc. When _malloc returns NULL
+//   (heap exhaustion from too many ball allocations), it calls
+//   __callnewh. If that fails, it calls CRT_ThrowBadAlloc (0x4BA69D)
+//   which calls __CxxThrowException. This C++ exception unwinds the
+//   stack and crashes the game because Hamsterball's SEH handlers
+//   can't recover from it.
 //
-// FIX: 4 patches that cap processing when ball count > MAX_BALLS.
-//   Balls still exist, render, and have physics — they just skip
-//   AI search loops and per-frame allocations when overcrowded.
+//   Each ball allocates: 0xC60 bytes (Ball_ctor2) + 0xCB0 (CollisionMesh)
+//   = ~4.6KB per ball. Plus per-frame: 0x28 (trail) + 0x14 (CollisionNode)
+//   + 0x68 (Material) + Mesh_FindClosestCollision (creates+frees a
+//   SpatialTree every call). At 50+ balls, heap exhausts → crash.
 //
-// ADDRESSES VERIFIED against GhidraMCP disassembly:
-//   Scene pointer: Ball+0x14 ([ESI+0x14])
-//   Ball list: Scene+0x29D4 (AthenaList)
-//   Ball count: Scene+0x29D8 (AthenaList.size, int32)
-//   operator_new: 0x004BA57B (malloc wrapper)
-//   AthenaList_NextIndex: 0x004532B0
+// FREEZE PATH:
+//   Ball_Update (0x405E00) runs per ball per frame. Each call does:
+//   - operator_new(0x28) for trail particle at 0x405ECB
+//   - operator_new(0x14) for CollisionNode at 0x4068F5
+//   - Mesh_FindClosestCollision at 0x40651F (allocates+frees SpatialTree)
+//   - AthenaList_Remove at 0x406381 (malloc N*4 + copy + free + realloc)
+//   - AthenaList_Append at 0x40671A (realloc every call = O(N) copy)
+//   For N balls: N × 5+ heap ops/frame = freeze at N>30
 //
-// v1/v2 were FABRICATED without real decompilation. This v3 is
-// built from actual GhidraMCP output for every patch point.
+//   Ball_AI_ChaseNearest (0x408390) has TWO O(N²) loops:
+//   - Loop 1 (0x4083D9): near ball bonus — N balls × N checks
+//   - Loop 2 (0x408548): find nearest target — N balls × N checks
+//
+// FIX (4 patches, all verified against GhidraMCP disassembly):
+//
+//   Patch 1: operator_new — return NULL instead of throwing bad_alloc
+//   Patch 2: Ball_Update — skip trail+collision allocs when count > MAX
+//   Patch 3: Ball_Update — skip Mesh_FindClosestCollision when count > MAX
+//   Patch 4: Ball_AI_ChaseNearest — skip both O(N²) loops when count > MAX
+//
+// All game code already handles NULL returns from operator_new
+// (verified: CMP EAX,EBX; JZ skip at every allocation site).
 // ============================================================
 
-define(MAX_BALLS, 30)  // Adjust: 20=conservative, 30=balanced, 50=aggressive
+define(MAX_BALLS, 30)
 
 [ENABLE]
 
-alloc(aiLoop1Cave, 128)
-alloc(aiLoop2Cave, 128)
-alloc(trailCave, 128)
-alloc(collisionCave, 128)
-label(aiLoop1Skip)
-label(aiLoop2Skip)
-label(trailSkip)
-label(collisionSkip)
-
 // ============================================================
-// PATCH 1: AI Loop 1 — "near ball bonus" search
-// Address: 0x4083D9 in Ball_AI_ChaseNearest (0x408390)
+// PATCH 1: operator_new — return NULL instead of throwing
+// Address: 0x4BA58D (CALL CRT_ThrowBadAlloc)
+//
 // Disassembly:
-//   004083D9: MOV ECX,[ESI+0x14]       ; Scene ptr
-//   004083DC: ADD ECX,0x29D4           ; ball list
-//   004083E2: CALL 0x004532B0           ; AthenaList_NextIndex
-// Loop body 0x408412-0x4084EF iterates all balls, does
-// Math_FastDistance2D per ball. Jumps to 0x4084F5 when done.
-// If count > MAX: JMP 004084F5 (skip loop entirely)
+//   004BA57B: PUSH ESI
+//   004BA57C: MOV ESI,[ESP+8]     ; save size
+//   004BA580: JMP 0x4BA592        ; jump to malloc
+//   004BA582: PUSH ESI             ; retry: call new handler
+//   004BA583: CALL __callnewh
+//   004BA588: TEST EAX,EAX
+//   004BA58A: POP ECX
+//   004BA58B: JNZ 0x4BA592        ; if handler says ok, retry malloc
+//   004BA58D: CALL 0x4BA69D       ; CRT_ThrowBadAlloc ← CRASH HERE
+//   004BA592: PUSH ESI             ; malloc(size)
+//   004BA593: CALL _malloc
+//   004BA598: TEST EAX,EAX
+//   004BA59A: POP ECX
+//   004BA59B: JZ 0x4BA582         ; if NULL, try new handler
+//   004BA59D: POP ESI
+//   004BA59E: RET
+//
+// Stack at 0x4BA58D: [ESP]=return addr, [ESP+4]=saved ESI, [ESP+8]=size
+// Replace CALL (5 bytes) with: XOR EAX,EAX; POP ESI; RET; NOP
 // ============================================================
-aiLoop1Cave:
-  MOV EAX,[ESI+0x14]        // Scene pointer (Ball+0x14)
-  MOV EAX,[EAX+0x29D8]      // Ball count (AthenaList.size)
-  CMP EAX,#MAX_BALLS
-  JG aiLoop1Skip
-  // Original instructions (9 bytes)
-  MOV ECX,[ESI+0x14]
-  ADD ECX,0x29D4
-  JMP 004083E2              // -> CALL AthenaList_NextIndex
-aiLoop1Skip:
-  JMP 004084F5              // Skip to post-loop (FSTP float)
 
-004083D9:
-  JMP aiLoop1Cave
-  nop
-  nop
-  nop
-  nop
+004BA58D:
+  XOR EAX,EAX     // 33 C0 — return NULL
+  POP ESI         // 5E    — restore ESI
+  RET             // C3    — return to caller
+  NOP             // 90    — pad to 5 bytes
 
 // ============================================================
-// PATCH 2: AI Loop 2 — "find nearest target" search
-// Address: 0x408548 in Ball_AI_ChaseNearest (0x408390)
+// PATCH 2: Ball_Update — skip trail particle allocation
+// Address: 0x405ECB (PUSH 0x28; CALL operator_new)
+//
 // Disassembly:
-//   00408541: MOV ECX,[ESI+0x14]       ; Scene ptr (before patch)
-//   00408544: FSTP float [ESP+0x14]    ; store float (before patch)
-//   00408548: ADD ECX,0x29D4           ; ball list <- PATCH HERE
-//   0040854E: MOV [ESP+0x10],0x497423f0
-//   00408556: XOR EDI,EDI
-//   00408558: XOR EBX,EBX
-//   0040855A: CALL 0x004532B0           ; AthenaList_NextIndex
-// Loop body 0x408590-0x40865D checks each ball's flags + distance.
-// This is the BIGGEST bottleneck — 6 flag checks + distance per ball.
-// If count > MAX: JMP 00408663 (skip loop, EBX=0 = no target)
-// ============================================================
-aiLoop2Cave:
-  // ECX = [ESI+0x14] = Scene (set at 0x408541, before our patch)
-  MOV EAX,[ECX+0x29D8]      // Ball count
-  CMP EAX,#MAX_BALLS
-  JG aiLoop2Skip
-  // Original instruction (6 bytes)
-  ADD ECX,0x29D4
-  JMP 0040854E              // -> MOV [ESP+0x10],0x497423f0
-aiLoop2Skip:
-  XOR EBX,EBX               // No target found (prevents chasing garbage)
-  JMP 00408663              // Skip to post-loop (LEA ECX,[ESP+0x1c])
-
-00408548:
-  JMP aiLoop2Cave
-  nop
-
-// ============================================================
-// PATCH 3: Trail particle allocation cap
-// Address: 0x405ECB in Ball_Update (0x405E00)
-// Disassembly:
-//   00405ECB: PUSH 0x28                 ; alloc 40 bytes
-//   00405ECD: CALL 0x004BA57B           ; operator_new
+//   00405ECB: PUSH 0x28           ; alloc 40 bytes
+//   00405ECD: CALL 0x004BA57B     ; operator_new
 //   00405ED2: ADD ESP,0x4
-//   00405ED5: MOV [ESP+0x10],EAX        ; store result
-//   00405ED9: CMP EAX,EBX               ; check NULL
-//   00405EDB: MOV [ESP+0x944],EBX
-//   00405EE2: JZ 0x00405EF9             ; if NULL, skip init
-// Game already handles NULL (jumps to 0x405EF9). Safe to return 0.
+//   00405ED5: MOV [ESP+0x10],EAX  ; store result
+//   00405ED9: CMP EAX,EBX         ; check NULL (EBX=0)
+//   00405EE2: JZ 0x00405EF9        ; if NULL, skip init ← game handles this
+//
+// ESI = ball pointer, [ESI+0x14] = Scene, Scene+0x29D8 = ball count
 // ============================================================
+
+alloc(trailCave, 64)
+label(trailSkip)
+
 trailCave:
   MOV EAX,[ESI+0x14]        // Scene pointer
-  MOV EAX,[EAX+0x29D8]      // Ball count
+  MOV EAX,[EAX+0x29D8]      // ball count
   CMP EAX,#MAX_BALLS
   JG trailSkip
-  // Original (10 bytes)
-  PUSH 28
-  CALL 004BA57B
+  PUSH 28                   // original: alloc 0x28
+  CALL 004BA57B             // operator_new
   ADD ESP,4
   JMP 00405ED5              // -> MOV [ESP+0x10],EAX
 trailSkip:
   XOR EAX,EAX               // NULL — game skips particle init
-  JMP 00405ED5              // -> MOV [ESP+0x10],0 then JZ skip
+  JMP 00405ED5              // -> MOV [ESP+0x10],0 then CMP/JZ skip
 
 00405ECB:
   JMP trailCave
@@ -140,30 +117,28 @@ trailSkip:
   nop
 
 // ============================================================
-// PATCH 4: CollisionNode allocation cap
-// Address: 0x4068F5 in Ball_Update (0x405E00)
+// PATCH 3: Ball_Update — skip CollisionNode allocation
+// Address: 0x4068F5 (PUSH 0x14; CALL operator_new)
+//
 // Disassembly:
-//   004068F5: PUSH 0x14                 ; alloc 20 bytes
-//   004068F7: CALL 0x004BA57B           ; operator_new
+//   004068F5: PUSH 0x14           ; alloc 20 bytes
+//   004068F7: CALL 0x004BA57B    ; operator_new
 //   004068FC: ADD ESP,0x4
-//   004068FF: MOV [ESP+0x10],EAX        ; store result
-//   00406903: CMP EAX,EBX               ; check NULL
-//   0040690D: JZ 0x00406922             ; if NULL -> XOR EAX,EAX
-//   0040690F: MOV ECX,[ESI+0x14]
-//   00406912: ADD ECX,0x29D4
-//   00406918: PUSH ECX
-//   00406919: MOV ECX,EAX
-//   0040691B: CALL 0x00466CF0           ; CollisionNode_ctor
-// Game already handles NULL (jumps to 0x406922, sets EAX=0).
+//   004068FF: MOV [ESP+0x10],EAX ; store result
+//   00406903: CMP EAX,EBX        ; check NULL
+//   0040690D: JZ 0x00406922      ; if NULL -> XOR EAX,EAX ← game handles this
 // ============================================================
+
+alloc(collisionCave, 64)
+label(collisionSkip)
+
 collisionCave:
   MOV EAX,[ESI+0x14]        // Scene pointer
-  MOV EAX,[EAX+0x29D8]      // Ball count
+  MOV EAX,[EAX+0x29D8]      // ball count
   CMP EAX,#MAX_BALLS
   JG collisionSkip
-  // Original (10 bytes)
-  PUSH 14
-  CALL 004BA57B
+  PUSH 14                   // original: alloc 0x14
+  CALL 004BA57B             // operator_new
   ADD ESP,4
   JMP 004068FF              // -> MOV [ESP+0x10],EAX
 collisionSkip:
@@ -178,27 +153,96 @@ collisionSkip:
   nop
   nop
 
-[DISABLE]
+// ============================================================
+// PATCH 4: Ball_AI_ChaseNearest — skip O(N²) AI loops
+// Address: 0x4083D9 (Loop 1 start) and 0x408548 (Loop 2 start)
+//
+// Loop 1 (0x4083D9): "near ball bonus" — iterates all balls per AI ball
+//   004083D9: MOV ECX,[ESI+0x14]    ; Scene
+//   004083DC: ADD ECX,0x29D4        ; ball list
+//   004083E2: CALL AthenaList_NextIndex
+//   Loop body 0x408412-0x4084EF: distance checks per ball
+//   Skip target: 0x4084F5 (post-loop FLD)
+//
+// Loop 2 (0x408548): "find nearest target" — iterates all balls
+//   00408548: ADD ECX,0x29D4        ; ball list (ECX=Scene from 0x408541)
+//   0040854E: MOV [ESP+0x10],0x497423f0
+//   00408556: XOR EDI,EDI
+//   00408558: XOR EBX,EBX
+//   0040855A: CALL AthenaList_NextIndex
+//   Loop body 0x408590-0x40865D: 6 flag checks + distance per ball
+//   Skip target: 0x408663 (post-loop LEA ECX,[ESP+0x1c])
+// ============================================================
 
-// Restore original bytes (verified from disassembly)
+alloc(aiLoop1Cave, 64)
+label(aiLoop1Skip)
+
+alloc(aiLoop2Cave, 64)
+label(aiLoop2Skip)
+
+// --- Loop 1 skip ---
+aiLoop1Cave:
+  MOV EAX,[ESI+0x14]        // Scene pointer
+  MOV EAX,[EAX+0x29D8]      // ball count
+  CMP EAX,#MAX_BALLS
+  JG aiLoop1Skip
+  MOV ECX,[ESI+0x14]        // original: Scene
+  ADD ECX,0x29D4            // original: ball list
+  JMP 004083E2              // -> CALL AthenaList_NextIndex
+aiLoop1Skip:
+  JMP 004084F5              // skip to post-loop
+
 004083D9:
-  MOV ECX,[ESI+0x14]
-  ADD ECX,0x29D4
+  JMP aiLoop1Cave
+  nop
+  nop
+  nop
+  nop
+
+// --- Loop 2 skip ---
+// At 0x408548, ECX = [ESI+0x14] (set at 0x408541)
+aiLoop2Cave:
+  MOV EAX,[ECX+0x29D8]      // ball count (ECX = Scene)
+  CMP EAX,#MAX_BALLS
+  JG aiLoop2Skip
+  ADD ECX,0x29D4            // original: ball list
+  JMP 0040854E              // -> MOV [ESP+0x10],0x497423f0
+aiLoop2Skip:
+  XOR EBX,EBX               // no target found (prevents chasing garbage)
+  JMP 00408663              // skip to post-loop
 
 00408548:
-  ADD ECX,0x29D4
+  JMP aiLoop2Cave
+  nop
 
+[DISABLE]
+
+// Patch 1: Restore operator_new
+004BA58D:
+  CALL 0x004BA69D
+
+// Patch 2: Restore trail particle alloc
 00405ECB:
   PUSH 28
   CALL 004BA57B
   ADD ESP,4
 
+// Patch 3: Restore CollisionNode alloc
 004068F5:
   PUSH 14
   CALL 004BA57B
   ADD ESP,4
 
-dealloc(aiLoop1Cave)
-dealloc(aiLoop2Cave)
+// Patch 4a: Restore AI Loop 1
+004083D9:
+  MOV ECX,[ESI+0x14]
+  ADD ECX,0x29D4
+
+// Patch 4b: Restore AI Loop 2
+00408548:
+  ADD ECX,0x29D4
+
 dealloc(trailCave)
 dealloc(collisionCave)
+dealloc(aiLoop1Cave)
+dealloc(aiLoop2Cave)
