@@ -7,8 +7,7 @@
  * At the hook point:
  *   ESI = this ball (running Ball_Update)
  *   EDI = other ball (the collision partner)
- *   We are inside the ball-ball collision response (collision type 1, past
- *   the piVar16 type check). Both balls are valid pointers.
+ *   We are inside the ball-ball collision scoring section.
  *
  * DETECTION:
  *   ball+0x18 = player_index:  0-3 = Player 1-4,  -1 = NPC 8-ball
@@ -16,7 +15,7 @@
  *   other has player_index == -1.
  *
  * EFFECT:
- *   - Increments g_hit_count (readable via registered symbol / debugger)
+ *   - Increments g_hit_count (readable via debugger/CE)
  *   - Appends a line to hitlog.txt in the game directory on every hit
  *   - Uses pointer comparison (ESI < EDI) to count each collision once,
  *     since Ball_Update runs for both balls (symmetric double-fire)
@@ -35,7 +34,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string.h>
-#include <stdio.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * BASS Proxy Exports — forward all game imports to bass_real.dll
@@ -176,31 +174,42 @@ static const BYTE HOOK_ORIG[] = { 0xD9, 0x87, 0x84, 0x02, 0x00, 0x00 };
 static volatile DWORD g_hit_count = 0;
 
 /*
+ * write_log_line — appends a string to hitlog.txt. Uses only Win32 API
+ * (CreateFileA/WriteFile), no CRT, so no FPU side-effects.
+ */
+static void write_log_line(const char *msg, int len)
+{
+    HANDLE hFile = CreateFileA("hitlog.txt", FILE_APPEND_DATA,
+        FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        WriteFile(hFile, msg, (DWORD)len, &written, NULL);
+        CloseHandle(hFile);
+    }
+}
+
+/*
  * log_hit — called from the code cave when a player→8-ball collision is
  * detected. Writes a line to hitlog.txt in the game directory.
- *   idx1 = this ball's player_index (from ESI+0x18)
- *   idx2 = other ball's player_index (from EDI+0x18)
- * One is >= 0 (the player), the other is -1 (the 8-ball).
+ *
+ * __attribute__((used, noinline)) prevents GCC -O2 from optimizing this
+ * function away (no C-level caller exists — only a hand-assembled CALL).
+ *
+ * Uses only Win32 API (wsprintfA, CreateFileA, WriteFile) — no CRT functions
+ * that might touch the FPU stack and corrupt game state.
  */
+__attribute__((used, noinline))
 static void __cdecl log_hit(int idx1, int idx2)
 {
     int player = (idx1 >= 0) ? idx1 : idx2;
 
-    char buf[160];
-    int n = snprintf(buf, sizeof(buf),
-        "[Hit %lu] Player %d struck an 8-ball\r\n",
+    char buf[128];
+    /* wsprintfA is a Win32 API — no CRT, no FPU side-effects */
+    int n = wsprintfA(buf, "[Hit %lu] Player %d struck an 8-ball\r\n",
         (unsigned long)g_hit_count, player + 1);
 
-    if (n > 0) {
-        HANDLE hFile = CreateFileA("hitlog.txt", FILE_APPEND_DATA,
-            FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-            FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hFile != INVALID_HANDLE_VALUE) {
-            DWORD written;
-            WriteFile(hFile, buf, (DWORD)n, &written, NULL);
-            CloseHandle(hFile);
-        }
-    }
+    write_log_line(buf, n);
 }
 
 /*
@@ -239,10 +248,15 @@ static void __cdecl log_hit(int idx1, int idx2)
  *   INC DWORD [g_hit_count]
  *
  *   ; --- Log to hitlog.txt ---
+ *   ; Save FPU state (log_hit might touch it via Win32 internals)
+ *   SUB ESP, 108                    ; FNSAVE needs 108 bytes
+ *   FNSAVE [ESP]                     ; save full FPU state
  *   PUSH EBX                       ; arg2 = other ball's player_index
  *   PUSH EAX                       ; arg1 = this ball's player_index
  *   CALL log_hit
  *   ADD ESP, 8                     ; cdecl cleanup
+ *   FNRSTOR [ESP]                   ; restore FPU state
+ *   ADD ESP, 108
  *
  *   .done:
  *   POPAD                           ; restore all registers
@@ -315,6 +329,13 @@ static void install_hook(void)
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_hit_count; p += 4;
 
+    /* --- Save FPU state before calling log_hit ---
+     * SUB ESP, 108 */
+    cave[p++] = 0x81; cave[p++] = 0xEC;
+    *(DWORD*)(cave + p) = 108; p += 4;
+    /* FNSAVE [ESP] — save full FPU state (also clears it) */
+    cave[p++] = 0xDD; cave[p++] = 0x34; cave[p++] = 0x24;
+
     /* --- Call log_hit(idx1, idx2) — cdecl ---
      * EAX still has this ball's player_index, EBX has other ball's.
      * PUSH EBX (arg2), PUSH EAX (arg1), CALL, ADD ESP,8 */
@@ -332,6 +353,13 @@ static void install_hook(void)
     p += 4;
     /* ADD ESP, 8 — cdecl cleanup */
     cave[p++] = 0x83; cave[p++] = 0xC4; cave[p++] = 0x08;
+
+    /* --- Restore FPU state ---
+     * FNRSTOR [ESP] */
+    cave[p++] = 0xDD; cave[p++] = 0x2C; cave[p++] = 0x24;
+    /* ADD ESP, 108 */
+    cave[p++] = 0x81; cave[p++] = 0xC4;
+    *(DWORD*)(cave + p) = 108; p += 4;
 
     /* .done: */
     int done_label = p;
@@ -375,13 +403,20 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     Sleep(5000);
 
+    /* Diagnostic: confirm DLL loaded and patch thread is running */
+    write_log_line("[MOD] 8ball_hit_detect DLL loaded\r\n", 33);
+
     /* Verify hook site has expected bytes */
     BYTE *hook_addr = (BYTE*)HOOK_ADDR;
     if (memcmp(hook_addr, HOOK_ORIG, HOOK_ORIG_BYTES) != 0) {
+        write_log_line("[MOD] ERROR: Hook site bytes mismatch — wrong game version?\r\n", 61);
         return 1;
     }
 
+    write_log_line("[MOD] Hook site verified, installing hook...\r\n", 44);
     install_hook();
+    write_log_line("[MOD] Hook installed successfully\r\n", 34);
+
     return 0;
 }
 
