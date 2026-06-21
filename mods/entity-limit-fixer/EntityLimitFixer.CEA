@@ -1,78 +1,74 @@
 // ============================================================
-// Hamsterball Entity Limit Fixer v5 — CE AutoAssembler Script
-// Prevents freezes AND crashes when spawning many entities
-// (8-balls, cloned players) in arenas.
+// Hamsterball Entity Limit Fixer v6 — CE AutoAssembler Script
+// Prevents freezes AND crashes when many entities are active.
+//
+// v5→v6 FIX: Removed patch 5 (throttle Ball_FindClosestRespawnPoint).
+// v5's patch 5 caused a crash when ANY ball fell in an arena (even with
+// just 3 balls). Root cause: skipping Ball_FindClosestRespawnPoint left
+// event_flag (ball+0x2E8) set. The second loop in Scene_UpdateBallsAndState
+// then saw event_flag still set and despawned the ball via vtable[0](1).
+// The freed ball remained as a dangling pointer in the first ball list
+// (Scene+0x29D4). Next frame → use-after-free → crash at corrupted vtable
+// address 0x419B (EIP jumped to near-null).
+//
+// FIX: Ball_FindClosestRespawnPoint MUST always run to completion — it
+// clears event_flag, resets collision mesh, frees trail particles, and
+// teleports the ball to a respawn point. Patch 3 (conditional skip of
+// Mesh_FindClosestCollision INSIDE the function) already handles the
+// expensive part without breaking the respawn flow.
 //
 // FREEZE ROOT CAUSE (traced via GhidraMCP decompilation):
 //
-// When many balls are spawned, the game freezes because of THREE
-// compounding per-frame costs:
+// Mesh_FindClosestCollision (0x465D90, RET 0x20) builds a full SpatialTree
+// + CollisionMesh from level geometry, traverses it, then frees everything.
+// Each call takes ~1ms. Called from:
 //
-// 1. Mesh_FindClosestCollision (0x465D90) is called 2× per ball per
-//    frame inside Ball_Update (0x405E00) at 0x40651F and 0x407557.
-//    Each call builds a full SpatialTree + CollisionMesh from level
-//    geometry, traverses it, then frees everything.
-//    At 30 balls: 60 spatial tree builds per frame.
+// 1. Ball_Update (0x405E00): 2× per ball per frame
+//    - 0x40651F: floor collision check
+//    - 0x407557: wall collision check
+//    At 30 balls: 60 calls/frame = 60ms → freeze
 //
-// 2. Ball_FindClosestRespawnPoint (0x405190) is called EVERY FRAME
-//    for each fallen ball with player_index != −1 (i.e. player clones).
-//    This function iterates ALL respawn points (~16 in arenas) and
-//    for EACH candidate calls Mesh_FindClosestCollision at 0x405C46.
-//    With 10 fallen clones: 10 × 16 = 160 spatial tree builds per frame.
+// 2. Ball_FindClosestRespawnPoint (0x405190): 16× per fallen ball per frame
+//    - 0x405C46: path check to each spawn point
+//    At 10 fallen balls: 160 calls/frame = 160ms → freeze
 //
-// 3. Ball_AI_ChaseNearest (0x408390) has two O(N) loops scanning ALL
-//    balls, making total AI cost O(N²). At 30 balls: 900 iterations.
+// 3. Ball_AI_ChaseNearest (0x408390): two O(N) loops = O(N²) total
+//    At 30 balls: 900 iterations/frame (each with string ops)
 //
-// Total: ~200+ spatial tree builds + thousands of heap allocs per frame
-// → game thread takes >16ms per frame → FREEZE.
+// v6 PATCHES (all addresses verified via GhidraMCP disassembly):
 //
-// CRASH ROOT CAUSE:
-//   operator_new (0x4BA57B) calls CRT_ThrowBadAlloc (0x4BA69D) when
-//   malloc fails. This throws a C++ exception that Hamsterball doesn't
-//   catch → crash. Patch 1 replaces the CALL with return-NULL.
-//
-// v5 PATCHES (all addresses verified via GhidraMCP disassembly):
-//
-//   1  0x4BA58D  operator_new → return NULL instead of throwing
+//   1  0x4BA58D  operator_new → return NULL instead of throwing bad_alloc
 //   2a 0x40651F  Skip Mesh_FindClosestCollision #1 in Ball_Update (conditional)
 //   2b 0x407557  Skip Mesh_FindClosestCollision #2 in Ball_Update (conditional)
 //   3  0x405C46  Skip Mesh_FindClosestCollision in RespawnPoint (conditional)
 //   4a 0x4083D9  Skip AI O(N²) loop 1 when too many balls
 //   4b 0x408548  Skip AI O(N²) loop 2 when too many balls
-//   5  0x405190  Throttle Ball_FindClosestRespawnPoint to every Nth frame
 //
-// All Mesh_FindClosestCollision patches are CONDITIONAL: they only
-// skip when ball count > MAX_BALLS (default 30). Below that threshold,
-// the game runs normally with full collision detection.
+// All patches are CONDITIONAL: they only activate when ball count
+// (Scene+0x29D8) exceeds MAX_BALLS (default 30). Below that threshold,
+// the game runs 100% normally with full collision detection.
 //
 // Mesh_FindClosestCollision uses RET 0x20 (callee cleans 32 bytes = 8
-// params). When we skip the call, we must manually ADD ESP,0x20 to
-// clean up the stack. We also write 99999.0f (0x47C34F80) to the output
-// buffer so callers get a valid "no collision" result.
+// params). When we skip the call, we manually ADD ESP,0x20 to clean up
+// the stack and write 99999.0f (0x47C34F80) to the output buffer — the
+// same value the function returns when no collision is found.
 //
 // ADJUSTABLE PARAMETERS (add to CE address list):
 //   MAX_BALLS (default 30): ball count threshold for skipping
 //     - Lower = more aggressive skipping (more stable, less accurate)
 //     - Higher = less skipping (more accurate, may freeze at high counts)
-//   RESPAWN_THROTTLE (default 60): frames between respawn searches
-//     - Lower = more frequent respawns (smoother, more CPU)
-//     - Higher = less frequent (more stable, slower respawns)
-//     - 0 = no throttle (always execute)
 // ============================================================
 
 [ENABLE]
 
-alloc(GlobalState, 32)
+alloc(GlobalState, 16)
 alloc(Cave2A, 128)
 alloc(Cave2B, 128)
 alloc(Cave3, 128)
 alloc(Cave4A, 128)
 alloc(Cave4B, 128)
-alloc(Cave5, 128)
 
-label(frame_counter)
 label(MAX_BALLS)
-label(RESPAWN_THROTTLE)
 
 label(cave2a_skip)
 label(cave2a_call)
@@ -84,22 +80,15 @@ label(cave4a_skip)
 label(cave4a_call)
 label(cave4b_skip)
 label(cave4b_call)
-label(cave5_skip)
-label(cave5_call)
 
 registersymbol(MAX_BALLS)
-registersymbol(RESPAWN_THROTTLE)
 
 // ============================================================
 // Global state
 // ============================================================
 GlobalState:
-  frame_counter:
-    dd 0
   MAX_BALLS:
     dd #30        // Ball count threshold for skipping expensive ops
-  RESPAWN_THROTTLE:
-    dd #60        // Frames between respawn searches (0 = no throttle)
   padding:
     dd 0
 
@@ -117,6 +106,10 @@ GlobalState:
 //
 // All allocation sites in Hamsterball have NULL checks, so returning
 // NULL is handled gracefully (ball creation skipped, no crash).
+//
+// Stack at patch point: [ESP]=saved_ESI, [ESP+4]=return_addr, [ESP+8]=size
+// POP ESI restores saved ESI, RET pops return addr → returns to caller.
+// Caller cleans up size param via ADD ESP,4 (__cdecl convention).
 // ============================================================
 
 0x4BA58D:
@@ -132,15 +125,16 @@ GlobalState:
 // collision. This is the #2 freeze cause (2× per ball per frame).
 //
 // When ball count > MAX_BALLS, we skip the call and write 99999.0f
-// to the output buffer (meaning "no collision far away"). The game
-// treats this as "no floor below ball" — fallen balls keep falling,
-// active balls may fall through (but only when > MAX_BALLS active).
+// to the output buffer (meaning "no collision far away" — the same
+// value returned when no collision is found). The game treats this
+// as "no floor below ball" — active balls may fall through, but they
+// get respawned by Ball_FindClosestRespawnPoint (which still runs).
 //
 // Original: E8 6C F8 05 00 (CALL 0x465D90)
 // Stack: 0x20 bytes of params (RET 0x20 callee-cleanup)
 //
 // Register state at 0x40651F:
-//   ESI = ball pointer
+//   ESI = ball pointer (set at 0x405E20: MOV ESI,ECX)
 //   [ESP] = output ptr (pushed by LEA+PUSH at 0x40651A-0x40651E)
 // ============================================================
 
@@ -153,7 +147,7 @@ Cave2A:
   test edx, edx
   jz cave2a_call            // No scene → call original
 
-  // Read ball count from Scene+0x29D8 (bad_balls_list count)
+  // Read ball count from Scene+0x29D8 (AthenaList count at Scene+0x29D4)
   mov eax, [edx+0x29D8]
   cmp eax, [MAX_BALLS]
   jle cave2a_call           // Count <= MAX → call original
@@ -191,6 +185,9 @@ cave2a_call:
 // collision. Same conditional skip as patch 2a.
 //
 // Original: E8 34 E8 05 00 (CALL 0x465D90)
+//
+// Register state at 0x407557:
+//   ESI = ball pointer (same as patch 2a, not modified between)
 // ============================================================
 
 Cave2B:
@@ -239,11 +236,14 @@ cave2b_call:
 // The function picks the nearest respawn point by raw distance instead
 // of collision-aware pathfinding — fine for gameplay.
 //
+// CRITICAL: The function still runs to completion — it resets event_flag,
+// frees trail particles, resets collision mesh, and teleports the ball.
+// Only the expensive Mesh_FindClosestCollision call is skipped.
+//
 // Original: E8 45 01 06 00 (CALL 0x465D90)
 //
 // Register state at 0x405C46:
-//   ESI = ball pointer (set at 0x405199: MOV ESI,ECX)
-//   ECX = [EDX+0x8B0] (SpatialTree, set at 0x405BF9 — clobbered)
+//   ESI = ball pointer (set at 0x405199: MOV ESI,ECX, not modified since)
 //   [ESP] = output ptr (pushed at 0x405C45)
 // ============================================================
 
@@ -295,14 +295,14 @@ cave3_call:
 // Original bytes (9 bytes):
 //   0x4083D9: 8B 4E 14           MOV ECX,[ESI+0x14]    (3 bytes)
 //   0x4083DC: 81 C1 D4 29 00 00  ADD ECX,0x29D4        (6 bytes)
-//   0x4083E2: E8 C9 AE 04 00     CALL AthenaList_NextIndex (untouched)
+//   0x4083E2: E8 C9 AE 04 00     CALL AthenaList_NextIndex (preserved)
 //
 // We overwrite 9 bytes (0x4083D9-0x4083E1) with JMP + 4 NOPs.
 // The CALL at 0x4083E2 is preserved — the cave jumps to it on the
 // "continue" path.
 //
 // Register state at 0x4083D9:
-//   ESI = ball pointer (this)
+//   ESI = ball pointer (set at 0x408394: MOV ESI,ECX)
 // ============================================================
 
 Cave4A:
@@ -376,54 +376,6 @@ cave4b_skip:
   jmp Cave4B
   nop
 
-// ============================================================
-// PATCH 5: Throttle Ball_FindClosestRespawnPoint
-//
-// Ball_FindClosestRespawnPoint (0x405190) is called EVERY FRAME for
-// each fallen player clone (player_index != −1). At 10 fallen clones,
-// that's 10 calls per frame, each doing 16 Mesh_FindClosestCollision
-// calls = 160 spatial tree builds per frame.
-//
-// We throttle it to run only every RESPAWN_THROTTLE frames (default 60
-// = once per second at 60fps). On off-frames, the function returns
-// immediately (plain RET — __thiscall with ECX only, no stack params).
-//
-// The ball keeps its despawn flag and retries next frame automatically.
-//
-// Original bytes (6 bytes):
-//   0x405190: 81 EC 84 00 00 00  SUB ESP,0x84
-//
-// Calling convention: __thiscall (ECX = ball, no stack params, plain RET)
-// ============================================================
-
-Cave5:
-  // Increment frame counter
-  inc dword ptr [frame_counter]
-
-  // Check if this is a throttle frame
-  mov eax, [frame_counter]
-  mov ecx, [RESPAWN_THROTTLE]
-  test ecx, ecx
-  jz cave5_call             // Throttle = 0 → always execute (no throttle)
-
-  xor edx, edx
-  div ecx                    // EDX = frame_counter % RESPAWN_THROTTLE
-  test edx, edx
-  jnz cave5_skip             // Not zero → skip this frame
-
-cave5_call:
-  // Execute original: SUB ESP,0x84
-  sub esp, 0x84
-  jmp 0x405196               // Continue function body
-
-cave5_skip:
-  // Early return — __thiscall with no stack params → plain RET
-  ret
-
-0x405190:
-  jmp Cave5
-  nop
-
 [DISABLE]
 
 // ============================================================
@@ -454,16 +406,10 @@ cave5_skip:
 0x408548:
   db 81 C1 D4 29 00 00
 
-// Patch 5: SUB ESP,0x84
-0x405190:
-  db 81 EC 84 00 00 00
-
 dealloc(Cave2A)
 dealloc(Cave2B)
 dealloc(Cave3)
 dealloc(Cave4A)
 dealloc(Cave4B)
-dealloc(Cave5)
 dealloc(GlobalState)
 unregistersymbol(MAX_BALLS)
-unregistersymbol(RESPAWN_THROTTLE)
