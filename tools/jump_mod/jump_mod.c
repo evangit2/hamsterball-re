@@ -1,16 +1,13 @@
 /*
- * jump_mod.c — BASS.dll proxy — v8 WORKING DIAGNOSTIC
+ * jump_mod.c — BASS.dll proxy — v9 SPACEBAR JUMP
  *
- * Hooks the FINAL write to ball+0x168 (position Y) at 0x407D03.
- * Previous versions hooked Phase 15 (0x407BB4) but ball+0x168 gets
- * overwritten multiple times AFTER that point, so FADD was invisible.
- *
- * The instruction at 0x407D03 (FSTP [ESI+0x168]) is the LAST write
- * to ball position Y in Ball_Update. After our cave modifies it,
- * nothing overwrites it until the next frame.
- *
- * This version adds 2.0f every frame UNCONDITIONALLY (no keyboard
- * check). If the ball floats up, we know the hook works.
+ * v8 proved the hook works (unconditional +2.0f floated the ball).
+ * v9 adds:
+ *   - Spacebar input via DirectInput keyboard buffer
+ *   - Rising-edge detection (one jump per press)
+ *   - Single 20.0f impulse (not continuous — proper jump arc)
+ *   - Input polled from a separate thread (no complex asm in cave)
+ *   - The cave just reads g_jump_requested (atomic DWORD on x86)
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -165,26 +162,69 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v8 — hook the FINAL write to ball+0x168
+ * Jump Mod v9 — spacebar jump with rising edge
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* NEW HOOK POINT: 0x407D03
- * Original instruction: D9 9E 68 01 00 00 = FSTP [ESI+0x168]
- * This is the LAST write to ball position Y in Ball_Update.
- * After this, no more writes until next frame.
- */
+/* Hook point: 0x407D03 — the FINAL FSTP [ESI+0x168] in Ball_Update
+ * Original bytes: D9 9E 68 01 00 00 */
 #define FINAL_POSY_HOOK    0x00407D03
-#define FINAL_POSY_BYTES   6
+#define HOOK_ORIG_BYTES    6
 
+/* Jump impulse — single shot, large enough to overcome gravity */
+static float g_jump_impulse = 20.0f;
+
+/* Shared state between input thread and cave code.
+ * Aligned DWORDs are atomic on x86, no lock needed. */
+static volatile DWORD g_jump_requested = 0;
 static volatile DWORD g_frame_count = 0;
-static float g_nudge = 2.0f;
+static volatile DWORD g_jump_count = 0;
+
+/* ─── Input polling thread ────────────────────────────────────────────────
+ * Reads the DirectInput keyboard buffer via the game's own input chain:
+ *   App (0x5341E0) → InputHandler (+0x180) → KeyboardDevice (+0x434)
+ *   → key buffer at KeyboardDevice+0xC, DIK_SPACE=0x39, 0x80=down
+ *
+ * Uses rising-edge detection: only requests a jump on the transition
+ * from not-pressed to pressed. Holding space doesn't re-trigger.
+ */
+static volatile int g_prev_space = 0;
+
+static DWORD WINAPI input_thread(LPVOID param)
+{
+    (void)param;
+    char buf[256];
+
+    diag_log("input_thread: started");
+
+    while (1) {
+        Sleep(16);  /* ~60 Hz poll */
+
+        DWORD app = *(DWORD*)0x005341E0;
+        if (!app) continue;
+
+        DWORD ih = *(DWORD*)(app + 0x180);
+        if (!ih) continue;
+
+        DWORD kb = *(DWORD*)(ih + 0x434);
+        if (!kb) continue;
+
+        BYTE *keys = (BYTE*)(kb + 0xC);
+        int space_down = (keys[0x39] & 0x80) != 0;
+
+        if (space_down && !g_prev_space) {
+            g_jump_requested = 1;
+        }
+        g_prev_space = space_down;
+    }
+    return 0;
+}
+
+/* ─── Hook installation ──────────────────────────────────────────────────── */
 
 static void install_hook(void)
 {
     BYTE *hook_addr = (BYTE*)FINAL_POSY_HOOK;
     char buf[256];
-
-    diag_log("install_hook: allocating cave...");
 
     BYTE *cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
                                      PAGE_EXECUTE_READWRITE);
@@ -193,60 +233,68 @@ static void install_hook(void)
         return;
     }
 
-    wsprintfA(buf, "install_hook: cave=%08X hook=%08X", (DWORD)cave, (DWORD)hook_addr);
+    wsprintfA(buf, "install_hook: cave=%08X", (DWORD)cave);
     diag_log(buf);
 
-    DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
     int p = 0;
 
-    /* ─── Execute original 6 bytes: FSTP [ESI+0x168] ───
-     * This stores the computed Y position from the FPU stack
-     * into ball+0x168 (the standard position write). */
+    /* ─── 1. Original instruction: FSTP [ESI+0x168] ─── */
     cave[p++] = 0xD9; cave[p++] = 0x9E;
     *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* ─── FLD [ESI+0x168] — reload the just-stored Y position ─── */
+    /* ─── 2. CMP [g_jump_requested], 0 ─── */
+    cave[p++] = 0x83; cave[p++] = 0x3D;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
+    cave[p++] = 0x00;
+
+    /* ─── 3. JZ skip (skip the FLD+FADD+FSTP+MOV = 6+6+6+10 = 28 bytes) ─── */
+    cave[p++] = 0x74;
+    cave[p++] = 28;  /* jump over FLD(6)+FADD(6)+FSTP(6)+MOV(10) = 28 */
+
+    /* ─── 4. FLD [ESI+0x168] — load current Y position ─── */
     cave[p++] = 0xD9; cave[p++] = 0x86;
     *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* ─── FADD [g_nudge] — add 2.0f jump impulse ─── */
+    /* ─── 5. FADD [g_jump_impulse] — add jump impulse ─── */
     cave[p++] = 0xD8; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_nudge; p += 4;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_impulse; p += 4;
 
-    /* ─── FSTP [ESI+0x168] — store the nudged Y back ─── */
+    /* ─── 6. FSTP [ESI+0x168] — store modified Y ─── */
     cave[p++] = 0xD9; cave[p++] = 0x9E;
     *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* ─── INC [g_frame_count] — diagnostic counter ─── */
+    /* ─── 7. MOV [g_jump_requested], 0 — consume the request ─── */
+    cave[p++] = 0xC7; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
+    *(DWORD*)(cave + p) = 0; p += 4;
+
+    /* ─── skip: target of JZ ─── */
+
+    /* ─── 8. INC [g_frame_count] — diagnostic ─── */
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_frame_count; p += 4;
 
-    /* ─── JMP back to hook_addr + 6 (= 0x407D09) ─── */
+    /* ─── 9. JMP back to hook_addr + 6 (= 0x407D09) ─── */
     cave[p++] = 0xE9;
-    *(DWORD*)(cave + p) = (DWORD)(hook_addr + FINAL_POSY_BYTES) - (DWORD)(cave + p + 4);
+    *(DWORD*)(cave + p) = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
     p += 4;
 
-    wsprintfA(buf, "cave is %d bytes, patching...", p);
+    wsprintfA(buf, "cave: %d bytes, installing...", p);
     diag_log(buf);
 
-    /* Patch hook site */
+    /* Patch hook site: E9 <disp32> + 90 */
     DWORD old_protect;
-    BOOL vp = VirtualProtect(hook_addr, FINAL_POSY_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
-    if (!vp) {
-        wsprintfA(buf, "VirtualProtect FAILED err=%d", GetLastError());
-        diag_log(buf);
-        return;
-    }
+    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
 
+    DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_to_cave;
     hook_addr[5] = 0x90;
 
-    VirtualProtect(hook_addr, FINAL_POSY_BYTES, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), hook_addr, FINAL_POSY_BYTES);
+    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 
-    wsprintfA(buf, "HOOK INSTALLED at 0x407D03! cave=%08X frames_ptr=%08X nudge=%f",
-              (DWORD)cave, (DWORD)&g_frame_count, g_nudge);
+    wsprintfA(buf, "HOOK v9 INSTALLED! impulse=%f cave=%08X", g_jump_impulse, (DWORD)cave);
     diag_log(buf);
 }
 
@@ -266,15 +314,19 @@ static DWORD WINAPI patch_thread(LPVOID param)
     diag_log(buf);
 
     if (memcmp(hook, expected, 6) != 0) {
-        diag_log("BYTE MISMATCH — hook NOT installed!");
+        diag_log("BYTE MISMATCH!");
         return 1;
     }
 
-    diag_log("Bytes match, installing hook...");
     install_hook();
 
-    Sleep(5000);
-    wsprintfA(buf, "After 5s: g_frame_count = %u", g_frame_count);
+    /* Start input polling thread */
+    CreateThread(NULL, 0, input_thread, NULL, 0, NULL);
+    diag_log("input_thread launched");
+
+    Sleep(8000);
+    wsprintfA(buf, "After 8s: frames=%u jumps=%u",
+              g_frame_count, g_jump_count);
     diag_log(buf);
 
     return 0;
@@ -291,7 +343,6 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hInst);
 
-        /* Set up log paths */
         GetTempPathA(MAX_PATH, g_logpath1);
         lstrcatA(g_logpath1, "hamsterball_jump_debug.txt");
 
@@ -301,18 +352,12 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v8 loaded ===");
+        diag_log("=== jump_mod v9 loaded ===");
+
+        load_real_bass();
         {
             char buf[128];
             wsprintfA(buf, "bass_real = %08X", (DWORD)g_hRealBass);
-            diag_log(buf);
-        }
-
-        load_real_bass();
-
-        {
-            char buf[128];
-            wsprintfA(buf, "bass_real after load = %08X", (DWORD)g_hRealBass);
             diag_log(buf);
         }
 
