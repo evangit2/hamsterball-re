@@ -1,13 +1,13 @@
 /*
- * jump_mod.c — BASS.dll proxy — v13 GROUND-DETECTED JUMP
+ * jump_mod.c — BASS.dll proxy — v14 RAYCAST GROUND DETECTION
  *
- * v12 works but allows mid-air jumping. v13 adds ground detection.
+ * v13 used Y displacement which fails on slopes.
+ * v14 uses ACTUAL RAYCASTING via Ball_FindMeshCollision (0x403980)
+ * to cast a ray downward from the ball and detect ground contact.
  *
- * Ground detection: reads ball+0x180 (Y displacement per frame).
- *   - On ground: Y disp ≈ 0 (ball is stationary or rolling horizontally)
- *   - In air rising: Y disp > 0
- *   - In air falling: Y disp < -0.5
- *   - Jump only allowed when abs(Y_disp) < GROUND_THRESHOLD
+ * Ground detection: cast ray from ball position straight down (0,-1,0).
+ * If the closest collision point is within ball_radius + tolerance,
+ * the ball is on the ground. Works on ALL surfaces including slopes.
  *
  * Hook: 0x407BB4 — adds impulse to ball+0x174 (Y force accumulator)
  * before Phase 15 physics integration.
@@ -165,7 +165,7 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v13 — velocity impulse with ground detection
+ * Jump Mod v14 — velocity impulse with raycast ground detection
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define PHASE15_HOOK       0x00407BB4
@@ -173,15 +173,75 @@ static void diag_log(const char *msg)
 
 static float g_jump_impulse = 20.0f;
 
-/* Ground detection threshold for ball+0x180 (Y displacement).
- * On ground: |Y_disp| < threshold. In air: |Y_disp| >= threshold. */
-#define GROUND_THRESHOLD   0.5f
+/* Ground detection tolerance: if raycast hit is within
+ * ball_radius + GROUND_TOLERANCE below ball center, ball is grounded. */
+#define GROUND_TOLERANCE   2.0f
 
 static volatile DWORD g_jump_requested = 0;
 static volatile DWORD g_frame_count = 0;
 static volatile DWORD g_jump_count = 0;
 
-/* ─── Input polling thread with ground detection ─────────────────────────── */
+/* ─── Raycast function type ──────────────────────────────────────────────── */
+
+typedef struct { float x, y, z; } Vec3;
+
+/* Ball_FindMeshCollision (0x403980) — thin wrapper over Mesh_FindClosestCollision.
+ * __thiscall: ECX = this (mesh pointer from Scene+0x8B0)
+ *   ret 0x20 (callee cleans 8 DWORD params from stack) */
+typedef Vec3* (__thiscall *FindMeshCollision_fn)(
+    void *mesh,
+    Vec3 *output,
+    float originX, float originY, float originZ,
+    float dirX,    float dirY,    float dirZ,
+    float param8
+);
+
+#define FN_FIND_MESH_COLLISION ((FindMeshCollision_fn)0x403980)
+
+/* ─── Raycast ground detection ───────────────────────────────────────────── */
+
+static Vec3 g_raycast_hit;
+static volatile int g_raycast_ok = 0;
+
+static int do_raycast_ground_check(DWORD ball)
+{
+    DWORD scene = *(DWORD*)(ball + 0x14);
+    if (!scene) return 0;
+
+    DWORD mesh = *(DWORD*)(scene + 0x8B0);
+    if (!mesh) return 0;
+
+    float ball_x = *(float*)(ball + 0x164);
+    float ball_y = *(float*)(ball + 0x168);
+    float ball_z = *(float*)(ball + 0x16C);
+    float ball_radius = *(float*)(ball + 0x284);
+
+    Vec3 result;
+
+    /* Cast ray straight down from ball position */
+    Vec3 *ret = FN_FIND_MESH_COLLISION(
+        (void*)mesh,
+        &result,
+        ball_x, ball_y, ball_z,    /* origin: ball position */
+        0.0f, -1.0f, 0.0f,         /* direction: straight down */
+        0.0f                        /* param8: unused */
+    );
+
+    if (!ret) return 0;
+
+    g_raycast_hit = result;
+    g_raycast_ok = 1;
+
+    /* Distance from ball center to ground hit (Y axis only) */
+    float dy = ball_y - result.y;
+    /* On ground: dy ≈ ball_radius (ball sitting on surface)
+     * In air:    dy >> ball_radius (ground is far below) */
+    if (dy < 0) dy = -dy;
+
+    return (dy <= ball_radius + GROUND_TOLERANCE);
+}
+
+/* ─── Input polling thread with raycast ground detection ─────────────────── */
 static volatile int g_prev_space = 0;
 
 static DWORD WINAPI input_thread(LPVOID param)
@@ -206,33 +266,40 @@ static DWORD WINAPI input_thread(LPVOID param)
         int space_down = (keys[0x39] & 0x80) != 0;
 
         if (space_down && !g_prev_space) {
-            /* Spacebar just pressed — check if ball is on ground */
+            /* Spacebar just pressed — raycast ground check */
             DWORD scene = *(DWORD*)(app + 0x1A4);
             if (scene) {
-                /* Get ball list from Scene+0x29D4 and find player ball */
                 DWORD ball_list = scene + 0x29D4;
                 int count = *(int*)(ball_list + 0x1C);
                 if (count > 0) {
-                    /* First ball in the list is usually the player */
                     DWORD *balls = *(DWORD**)(ball_list + 0x424);
                     if (balls && balls[0]) {
                         DWORD ball = balls[0];
-                        /* Read Y displacement at ball+0x180 */
-                        float y_disp = *(float*)(ball + 0x180);
-                        float abs_y = y_disp < 0 ? -y_disp : y_disp;
+                        int on_ground = do_raycast_ground_check(ball);
 
-                        if (abs_y < GROUND_THRESHOLD) {
+                        if (on_ground) {
                             g_jump_requested = 1;
                             g_jump_count++;
 
-                            if (log_counter < 50) {
-                                wsprintfA(buf, "JUMP #%u: y_disp=%.3f (grounded!)", g_jump_count, y_disp);
+                            if (log_counter < 100) {
+                                wsprintfA(buf,
+                                    "JUMP #%u: raycast GROUNDED (ball_y=%.1f hit_y=%.1f dist=%.1f radius=%.1f)",
+                                    g_jump_count,
+                                    *(float*)(ball + 0x168),
+                                    g_raycast_hit.y,
+                                    *(float*)(ball + 0x168) - g_raycast_hit.y,
+                                    *(float*)(ball + 0x284));
                                 diag_log(buf);
                                 log_counter++;
                             }
                         } else {
-                            if (log_counter < 50) {
-                                wsprintfA(buf, "JUMP DENIED: y_disp=%.3f (airborne)", y_disp);
+                            if (log_counter < 100) {
+                                wsprintfA(buf,
+                                    "DENIED: AIRBORNE (ball_y=%.1f hit_y=%.1f dist=%.1f radius=%.1f)",
+                                    *(float*)(ball + 0x168),
+                                    g_raycast_hit.y,
+                                    *(float*)(ball + 0x168) - g_raycast_hit.y,
+                                    *(float*)(ball + 0x284));
                                 diag_log(buf);
                                 log_counter++;
                             }
@@ -321,8 +388,8 @@ static void install_hook(void)
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 
-    wsprintfA(buf, "HOOK v13 INSTALLED! impulse=%f threshold=%f cave=%08X",
-              g_jump_impulse, GROUND_THRESHOLD, (DWORD)cave);
+    wsprintfA(buf, "HOOK v14 INSTALLED! impulse=%f tolerance=%f cave=%08X",
+              g_jump_impulse, GROUND_TOLERANCE, (DWORD)cave);
     diag_log(buf);
 }
 
@@ -378,7 +445,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v13 loaded ===");
+        diag_log("=== jump_mod v14 loaded ===");
 
         load_real_bass();
         {
