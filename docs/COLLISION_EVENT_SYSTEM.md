@@ -107,7 +107,7 @@ Tags are parsed by `MWParser_ReadTag` which extracts name-value pairs.
 | +0x1F7 | int | Impact counter (jump/bounce cooldown) |
 | +0x202 | int | Freeze counter (input disabled while > 0) |
 | +0x2D5 | byte | In-water flag |
-| +0x2E9 | byte | LIMIT hit flag |
+| +0x2E9 | byte | LIMIT hit flag (⚠ sticky — never cleared within Ball_Update, NOT a ground flag) |
 | +0x30B | byte | SAFESWITCH state |
 | +0xC2C | char[] | SAFESWITCH data buffer |
 | player_index*0xA0 | per-player | Score, timer, finish state offsets |

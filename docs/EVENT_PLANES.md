@@ -252,7 +252,7 @@ To add a new event type to the game (e.g., `E:MYNEWEVENT`):
 | +0x1F7 | byte | impact_counter | Jump/bounce cooldown timer |
 | +0x202 | int | freeze_counter | Input freeze timer |
 | +0x2D5 | byte | in_water | In water zone flag |
-| +0x2E9 | byte | limit_hit | Finish line reached flag |
+| +0x2E9 | byte | limit_hit | Finish line reached flag (⚠ sticky — never cleared in Ball_Update, NOT ground contact) |
 | +0x30B | byte | safe_switch | Switch state (0 = clear) |
 | +0xC2C | char[?] | safe_switch_data | Switch data buffer |
 | +0xCA4 | Vec3 | collision_direction | Trajectory direction vector |

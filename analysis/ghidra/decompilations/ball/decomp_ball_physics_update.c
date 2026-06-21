@@ -146,6 +146,9 @@
 // -----------------------------------
 // - If ball_speed > 0.1 (0x4CF420): zero XZ velocity (landing)
 // - If ball_speed > 0.1 AND not in dizzy: set trajectory flag (0x2E9)
+//   ⚠ 0x2E9 is NOT a ground/on_surface flag — it's a sticky limit/trajectory flag
+//   set by E:LIMIT events + type-5 deep collision. Never cleared within Ball_Update.
+//   See docs/agent-knowledge/ball-ground-detection.md
 //   Camera focuses on ball via Scene_SetCamera
 // - If in_tube flag (0x313) NOT set:
 //     - If ball_wall_hits >= 1 AND floor_count >= 3 AND ball_speed > 0.2:

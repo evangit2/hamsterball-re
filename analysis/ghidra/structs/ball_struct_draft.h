@@ -74,7 +74,12 @@ typedef struct {
     float checkpoint_y;           // +0x2E0 (param_1[0xb8])
     float checkpoint_z;           // +0x2E4 (param_1[0xb9])
     char event_flag;              // +0x2E8 (param_1[0xba])
-    char on_ramp;                 // +0x2E9 (param_1[0x2e9]) slope/ramp flag
+    /* ⚠ DO NOT USE as ground/on_surface flag! See docs/agent-knowledge/ball-ground-detection.md
+     * Sticky limit/trajectory flag (E:LIMIT arena events + type-5 deep collision).
+     * NEVER cleared within Ball_Update(0x405E00) — the `param_1 + 0x2e9 = 0`
+     * clears in decompiled code use int* arithmetic (= byte 0xBA4), NOT byte 0x2E9.
+     * Once set to 1, stays 1 until full Ball_ctor2 respawn. */
+    char limit_flag;              // +0x2E9 (param_1[0x2e9]) sticky limit/trajectory flag
     char pad_2ea[2];              // +0x2EA
     char spinning;                // +0x2EC (param_1[0xbb]) collision counter
     int collision_count_bc;       // +0x2F0 (param_1[0xbc])

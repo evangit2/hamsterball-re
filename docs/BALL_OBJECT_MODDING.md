@@ -343,7 +343,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x2D8` | int | `0` | — |
 | `+0x2DC` | int | `0` | checkpoint index |
 | `+0x2E8` | byte | `0` | event_flag |
-| `+0x2E9` | byte | `0` | on_ramp |
+| `+0x2E9` | byte | `0` | ⚠ limit_flag (NOT on_ramp! Sticky limit/trajectory, never cleared in Ball_Update) |
 | `+0x2EC` | int | `0` | current_score |
 | `+0x2F0` | int | `0` | impact_counter (frames force is blocked) |
 | `+0x2F4` | int | `0` | best_score |

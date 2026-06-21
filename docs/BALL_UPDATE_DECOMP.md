@@ -23,7 +23,7 @@ Ball_Update is the main per-frame physics update for the ball. It handles:
 | +0x2E0 | float | ??? | Used as Y/height for collision |
 | +0x2E4 | float | ??? | Used as Z position for collision |
 | +0x2E8 | char | flag1 | Reset to 0 each frame |
-| +0x2E9 | char | flag2 | Reset to 0 each frame |
+| +0x2E9 | char | limit_flag | ⚠ **NOT "reset to 0 each frame"!** Sticky flag, only cleared by Ball_ctor2 (full respawn). The `param_1 + 0x2e9 = 0` in decompiled code uses int* arithmetic (= byte 0xBA4), NOT byte 0x2E9. |
 | +0x2EC | uint32 | ??? | Reset to 0 each frame |
 | +0x2F0 | uint32 | force_count | Number of forces this frame |
 | +0x2F8 | char | update_in_progress | Set to 1 during update |
