@@ -1,4 +1,4 @@
-# EntityLimitFixer v5
+# EntityLimitFixer v6
 
 Prevents freezes AND crashes when spawning many entities (8-balls, clones) in arenas.
 
@@ -9,7 +9,7 @@ Prevents freezes AND crashes when spawning many entities (8-balls, clones) in ar
 - AI loops (partial — only 8-balls)
 - Respawn throttle (too aggressive — every 3rd frame)
 
-**v5 fixes the freeze at the source** by patching the THREE compounding per-frame costs:
+**v6 fixes the freeze at the source** by patching the THREE compounding per-frame costs:
 
 ### The Freeze Root Cause (traced via GhidraMCP)
 
@@ -35,7 +35,7 @@ Per frame at 30 balls (10 fallen clones, 16 respawn points):
   → game thread takes >16ms → FREEZE
 ```
 
-## v5 Patches (all verified via GhidraMCP disassembly)
+## v6 Patches (all verified via GhidraMCP disassembly)
 
 | # | Address | What | How |
 |---|---------|------|-----|
@@ -51,7 +51,7 @@ Per frame at 30 balls (10 fallen clones, 16 respawn points):
 
 Mesh_FindClosestCollision (0x465D90) is the **most expensive per-ball operation** — it builds a full SpatialTree from level geometry, traverses it for collision, then frees everything. Called 2× per ball in Ball_Update + up to 16× per fallen clone in RespawnPoint search = the main freeze cause.
 
-v5 skips these calls when ball count exceeds MAX_BALLS, and NOPs the respawn-point collision check entirely (the ball just teleports to the nearest point without path-checking — fine for gameplay).
+v6 skips these calls when ball count exceeds MAX_BALLS, and NOPs the respawn-point collision check entirely (the ball just teleports to the nearest point without path-checking — fine for gameplay).
 
 ## Usage
 

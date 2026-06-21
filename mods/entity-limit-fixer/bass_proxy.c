@@ -1,6 +1,6 @@
 
 // ============================================================
-// Hamsterball Entity Limit Fixer - bass.dll proxy v5
+// Hamsterball Entity Limit Fixer - bass.dll proxy v6
 // Prevents freezes AND crashes when spawning many entities
 // Exports all BASS functions as stubs + delayed patching
 // ============================================================
@@ -113,7 +113,7 @@ __declspec(dllexport) void __stdcall BASS_StreamPreBuf(void) {}
 __declspec(dllexport) void __stdcall BASS_Update(void) {}
 
 /* ════════════════════════════════════════════════════════════════════
- * Entity Limit Fixer v5
+ * Entity Limit Fixer v6
  *
  * FREEZE ROOT CAUSE (traced via GhidraMCP decompilation):
  *
@@ -155,7 +155,7 @@ static BOOL patched = FALSE;
 
 /* --- Configuration --- */
 static const int MAX_BALLS = 30;        /* skip expensive ops above this count */
-static const int RESPAWN_THROTTLE = 60;  /* frames between respawn searches */
+/* v6: RESPAWN_THROTTLE removed — patch 5 deleted (caused crash) */
 
 /* --- Original bytes for verification + restore --- */
 
@@ -192,7 +192,7 @@ static unsigned char orig_patch4b[] = {0x8B, 0x4E, 0x14, 0x81, 0xC1, 0xD4, 0x29,
 
 /* Patch 5: Ball_FindClosestRespawnPoint entry
  * 0x405190: SUB ESP,0x84 (6 bytes: 81 EC 84 00 00 00) */
-static unsigned char orig_patch5[] = {0x81, 0xEC, 0x84, 0x00, 0x00, 0x00};
+/* v6: orig_patch5 removed — patch 5 deleted (caused crash) */
 
 /* --- Memory helpers --- */
 
@@ -654,90 +654,17 @@ static void BuildCave4B() {
 }
 
 /* ════════════════════════════════════════════════════════════════════
- * PATCH 5: Throttle Ball_FindClosestRespawnPoint
+ * v6: PATCH 5 DELETED — caused crash (use-after-free)
  *
- * Ball_FindClosestRespawnPoint (0x405190) is called EVERY FRAME for each
- * fallen player clone. We throttle it to run only every RESPAWN_THROTTLE
- * frames (60 = once per second at 60fps).
+ * v5's patch 5 skipped Ball_FindClosestRespawnPoint with RET, leaving
+ * event_flag (ball+0x2E8) set. The second loop in Scene_UpdateBallsAndState
+ * then despawned the ball via vtable[0](1). The freed ball remained in the
+ * first ball list (Scene+0x29D4) as a dangling pointer. Next frame:
+ * use-after-free → crash at corrupted vtable address 0x419B.
  *
- * On off-frames, the function returns immediately (RET 4, thiscall).
- * The ball stays in its falling state but doesn't burn CPU.
- *
- * Original entry: SUB ESP,0x84 (6 bytes)
- * We replace with JMP to a cave that:
- *   1. Increments a global frame counter
- *   2. If counter % RESPAWN_THROTTLE != 0: RET 4 (skip)
- *   3. Else: execute original SUB ESP,0x84 and continue
+ * FIX: Ball_FindClosestRespawnPoint MUST always run. Patch 3 already
+ * handles the expensive part (Mesh_FindClosestCollision calls inside it).
  * ════════════════════════════════════════════════════════════════════ */
-static unsigned char* cave_5 = NULL;
-
-static void BuildCave5() {
-    cave_5 = (unsigned char*)VirtualAlloc(NULL, 256, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    memset(cave_5, 0x90, 256);
-
-    unsigned char* buf = cave_5;
-    int i = 0;
-
-    /* PUSH EAX, PUSH EDX */
-    buf[i++] = 0x50;
-    buf[i++] = 0x52;
-
-    /* MOV EAX, [g_frame_counter] */
-    buf[i++] = 0xA1;
-    *(unsigned int*)(buf + i) = (unsigned int)&g_frame_counter;
-    i += 4;
-
-    /* INC EAX */
-    buf[i++] = 0x40;
-
-    /* MOV [g_frame_counter], EAX */
-    buf[i++] = 0xA3;
-    *(unsigned int*)(buf + i) = (unsigned int)&g_frame_counter;
-    i += 4;
-
-    /* XOR EDX, EDX */
-    buf[i++] = 0x31; buf[i++] = 0xD2;
-
-    /* PUSH RESPAWN_THROTTLE */
-    buf[i++] = 0x6A; buf[i++] = (unsigned char)RESPAWN_THROTTLE;
-
-    /* DIV [ESP] — EDX = EAX % RESPAWN_THROTTLE */
-    buf[i++] = 0xF7; buf[i++] = 0x34; buf[i++] = 0x24;
-
-    /* ADD ESP, 4 — clean up PUSH */
-    buf[i++] = 0x83; buf[i++] = 0xC4; buf[i++] = 0x04;
-
-    /* TEST EDX, EDX */
-    buf[i++] = 0x85; buf[i++] = 0xD2;
-
-    /* JNZ skip (not zero → not our frame → return) */
-    int jnz_pos = i;
-    buf[i++] = 0x75; buf[i++] = 0x00;
-
-    /* POP EDX, POP EAX (restore) */
-    buf[i++] = 0x5A;
-    buf[i++] = 0x58;
-
-    /* Original: SUB ESP,0x84 */
-    buf[i++] = 0x81; buf[i++] = 0xEC; buf[i++] = 0x84; buf[i++] = 0x00; buf[i++] = 0x00; buf[i++] = 0x00;
-
-    /* JMP to 0x405196 (instruction after original SUB ESP) */
-    buf[i++] = 0xE9;
-    *(int*)(buf + i) = 0x405196 - ((unsigned int)cave_5 + i + 4);
-    i += 4;
-
-    /* skip: return immediately (thiscall, 1 param = RET 4) */
-    int skip_label = i;
-    buf[jnz_pos + 1] = (unsigned char)(skip_label - (jnz_pos + 2));
-
-    buf[i++] = 0x5A;  /* POP EDX */
-    buf[i++] = 0x58;  /* POP EAX */
-    /* RET 4 — thiscall with 1 stack param */
-    buf[i++] = 0xC2; buf[i++] = 0x04; buf[i++] = 0x00;
-
-    WriteJump((void*)0x405190, cave_5);
-    WriteNops((void*)0x405195, 1);
-}
 
 /* ════════════════════════════════════════════════════════════════════
  * Main patch thread
@@ -802,10 +729,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
         BuildCave4B();
     }
 
-    /* Patch 5: Respawn throttle */
-    if (VerifyBytes((void*)0x405190, orig_patch5, 6)) {
-        BuildCave5();
-    }
+    /* v6: Patch 5 removed (caused crash) */
 
     patched = TRUE;
     return 0;
@@ -823,15 +747,14 @@ static void RemovePatches() {
     WriteBytes((void*)0x4083D9, orig_patch4a, 4);
     WriteNops((void*)0x4083DD, 1);
     WriteBytes((void*)0x408548, orig_patch4b, 9);
-    WriteBytes((void*)0x405190, orig_patch5, 6);
-    WriteNops((void*)0x405195, 1);
+    /* v6: Patch 5 removed (caused crash) */
 
     /* Free caves */
     if (cave_2a) { VirtualFree(cave_2a, 0, MEM_RELEASE); cave_2a = NULL; }
     if (cave_2b) { VirtualFree(cave_2b, 0, MEM_RELEASE); cave_2b = NULL; }
     if (cave_4a) { VirtualFree(cave_4a, 0, MEM_RELEASE); cave_4a = NULL; }
     if (cave_4b) { VirtualFree(cave_4b, 0, MEM_RELEASE); cave_4b = NULL; }
-    if (cave_5)  { VirtualFree(cave_5,  0, MEM_RELEASE); cave_5  = NULL; }
+    /* v6: cave_5 removed (patch 5 deleted) */
 
     patched = FALSE;
 }
