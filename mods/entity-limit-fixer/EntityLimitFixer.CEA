@@ -1,0 +1,236 @@
+// ============================================================
+// Hamsterball Entity Limit Fixer v2
+// Prevents game freeze when many entities (balls, 8-balls, clones)
+// are active simultaneously in arenas.
+//
+// ROOT CAUSE (traced via Ghidra decompilation + disassembly):
+//
+//   1. Scene_UpdateBallsAndState (0x41B540) iterates ALL balls each frame.
+//   2. Each ball's Ball_Update (0x405E00) creates a CollisionNode at
+//      0x40691B (call to 0x466CF0) referencing the ball list (Scene+0x29D4),
+//      then adds it to the CollisionMesh at Ball+0x1A4.
+//   3. When CollisionMesh::AdvancePosition (vtable[1], 0x4564C0) is called
+//      at 0x4069E7, it traverses the spatial tree, hitting CollisionNode's
+//      vtable[2] (0x467030 = CheckAllBalls) which iterates ALL balls.
+//      → O(N) per ball, O(N²) total per frame.
+//   4. Each 8-ball's Ball_AI_ChaseNearest (0x408390) calls Ball_Update
+//      at 0x4083BE, THEN iterates ALL balls AGAIN to find nearest target
+//      at 0x4083D9. → Another O(N²) per frame.
+//   5. Ball_FindClosestRespawnPoint (0x405190) iterates all SAFESPOT
+//      ref points when balls fall — called per falling ball per frame.
+//
+// With 50 balls: ~5000 collision checks + ~5000 AI checks = 10K/frame
+// With 100 balls: ~20000 checks = 1.2M/sec → hard freeze
+//
+// PATCHES:
+//   A) At 0x40690F: Skip CollisionNode creation when ball count > MAX_BALLS.
+//      ESI = ball pointer (confirmed at 0x405E20: MOV ESI,ECX)
+//      [ESI+0x14] = Scene pointer. [Scene+0x29D8] = ball count (AthenaList+4).
+//      When skipped: EAX = 0 (null CollisionNode) → no ball-ball collision.
+//      Ball-GEOMETRY collision still works (SpatialTree is separate, 0x4068BC).
+//   B) At 0x4083D9: Skip AI nearest-target search when ball count > MAX_BALLS.
+//      Ball_Update has already run, so physics still works.
+//   C) At 0x005190: Throttle respawn search to every Nth frame.
+//      FIX: Uses plain RET (not RET 0x04) — function is __thiscall with
+//      0 stack params, confirmed by disassembly (RET at 0x405D83).
+//
+// COMPATIBILITY: Does NOT overlap with Player Clone System v13 (hooks 0x41B540).
+// No address conflicts with spawn/clone mods.
+//
+// Addresses verified via Ghidra disassembly + memory reads + decompilation.
+// ============================================================
+
+[ENABLE]
+
+// ---- Config ----
+alloc(MAX_BALLS, 4)
+alloc(frame_counter, 4)
+alloc(respawn_throttle, 4)
+
+MAX_BALLS:
+  dd (int)20          // Ball count threshold. Game runs fine up to ~15 balls.
+                      // When exceeded: collision + AI throttling kicks in.
+                      // Lower = more aggressive (10=very safe, 30=risky)
+                      // Default 20 = good balance for clone mods
+
+frame_counter:
+  dd (int)0
+
+respawn_throttle:
+  dd (int)3           // Run respawn search every 3rd frame (1=every frame)
+
+// ================================================================
+// PATCH A: Skip CollisionNode creation when too many balls
+// ================================================================
+// At 0x40690F, the code sets up CollisionNode_ctor args:
+//   0040690F: MOV ECX,[ESI+0x14]     ; ECX = Scene (6 bytes)
+//   00406912: ADD ECX,0x29D4        ; ECX = Ball list (6 bytes)
+//   00406918: PUSH ECX               ; arg: ball list (1 byte)
+//   00406919: MOV ECX,EAX            ; this = CollisionNode (2 bytes)
+//   0040691B: CALL 0x466CF0          ; CollisionNode_ctor (5 bytes)
+//   00406920: JMP 0x406924           ; continue
+//   00406922: XOR EAX,EAX            ; (alloc-fail path: null collision node)
+//   00406924: ... (next instruction)
+//
+// We intercept at 0x40690F (6 bytes: MOV ECX,[ESI+0x14]).
+// If ball count > MAX_BALLS: jump to 0x406922 (XOR EAX,EAX → null node).
+// This prevents the ball list from being registered with the CollisionMesh.
+// Ball-geometry collision (floor/walls) still works — the SpatialTree
+// created at 0x4068BC is separate from the CollisionNode.
+
+alloc(coll_cave, 128)
+label(coll_skip)
+label(coll_ok)
+
+coll_cave:
+  push eax
+  // Get ball count: Scene->ballList.count
+  mov eax, [esi + 0x14]          // Scene pointer
+  test eax, eax
+  jz coll_skip                    // No scene → skip collision node
+  mov eax, [eax + 0x29D8]        // ballList.count (Scene+0x29D4+4)
+  cmp eax, [MAX_BALLS]
+  jg coll_skip                   // Too many balls → skip
+  // OK — proceed with CollisionNode creation
+  pop eax
+
+coll_ok:
+  // Original instructions
+  mov ecx, [esi + 0x14]
+  add ecx, 0x29D4
+  push ecx
+  mov ecx, eax
+  call 0x00466CF0
+  jmp 0x00406924                  // Continue after ctor
+
+coll_skip:
+  pop eax
+  xor eax, eax                   // EAX = 0 (null collision node)
+  jmp 0x00406924                  // Skip CollisionNode_ctor entirely
+
+// Apply: 6 bytes at 0x40690F → JMP (5) + NOP (1)
+0040690F:
+  jmp coll_cave
+  nop
+
+// ================================================================
+// PATCH B: Skip AI nearest-target search when too many balls
+// ================================================================
+// At 0x4083D9, after Ball_Update returns, the AI iterates all balls:
+//   004083D9: MOV ECX,[ESI+0x14]     ; Scene (3 bytes)
+//   004083DC: ADD ECX,0x29D4       ; Ball list (6 bytes)
+//   004083E2: CALL 0x004532B0       ; AthenaList_NextIndex (5 bytes)
+//   ...iterates all balls to find nearest target...
+//   004084F5: (end of AI function)
+//
+// Ball_Update (0x4083BE) has already run, so physics still works.
+// The AI ball just won't chase targets when too many balls are active.
+
+alloc(ai_cave, 128)
+label(ai_skip)
+label(ai_ok)
+
+ai_cave:
+  push eax
+  mov eax, [esi + 0x14]          // Scene pointer
+  test eax, eax
+  jz ai_skip
+  mov eax, [eax + 0x29D8]        // ballList.count
+  cmp eax, [MAX_BALLS]
+  jg ai_skip                     // Too many balls → skip AI search
+  pop eax
+
+ai_ok:
+  // Original instructions
+  mov ecx, [esi + 0x14]
+  add ecx, 0x29D4
+  call 0x004532B0
+  jmp 0x004083E7                 // Continue after AthenaList_NextIndex
+
+ai_skip:
+  pop eax
+  jmp 0x004084F5                 // Jump to end of AI function
+
+// Apply: 9 bytes at 0x4083D9 → JMP (5) + 4 NOPs
+004083D9:
+  jmp ai_cave
+  nop
+  nop
+  nop
+  nop
+
+// ================================================================
+// PATCH C: Throttle Ball_FindClosestRespawnPoint
+// ================================================================
+// At 0x405190, function entry:
+//   00405190: SUB ESP,0x84   (81 EC 84 00 00 00) — 6 bytes
+//
+// Function is __thiscall with 0 stack params (RET at 0x405D83, no cleanup).
+// On skip frames: return 0 (null respawn point) using plain RET.
+// ECX = ball pointer (this).
+
+alloc(respawn_cave, 128)
+label(respawn_run)
+label(respawn_skip)
+
+respawn_cave:
+  push eax
+  push edx
+  // Increment frame counter
+  mov eax, [frame_counter]
+  inc eax
+  mov [frame_counter], eax
+  // Check if this frame should run
+  xor edx, edx
+  div dword ptr [respawn_throttle]
+  test edx, edx
+  jnz respawn_skip                // Not this frame → skip
+  // Run respawn search this frame
+  pop edx
+  pop eax
+
+respawn_run:
+  // Original instruction
+  sub esp, 0x84
+  jmp 0x00405196                  // Continue function body
+
+respawn_skip:
+  pop edx
+  pop eax
+  // Return null — no respawn point found this frame
+  // FIX: plain RET (NOT ret 0x04) — function has 0 stack params!
+  xor eax, eax
+  ret
+
+// Apply: 6 bytes at 0x405190 → JMP (5) + NOP (1)
+00405190:
+  jmp respawn_cave
+  nop
+
+[DISABLE]
+
+// ---- Restore original bytes ----
+
+// Patch A: 6 bytes at 0x40690F
+// Original: MOV ECX,[ESI+0x14] (8B 8E 14 00 00 00)
+0040690F:
+  db 8B 8E 14 00 00 00
+
+// Patch B: 9 bytes at 0x4083D9
+// Original: MOV ECX,[ESI+0x14] + ADD ECX,0x29D4
+// 8B 4E 14 81 C1 D4 29 00 00
+004083D9:
+  db 8B 4E 14 81 C1 D4 29 00 00
+
+// Patch C: 6 bytes at 0x405190
+// Original: SUB ESP,0x84 (81 EC 84 00 00 00)
+00405190:
+  db 81 EC 84 00 00 00
+
+// ---- Free allocations ----
+dealloc(MAX_BALLS)
+dealloc(frame_counter)
+dealloc(respawn_throttle)
+dealloc(coll_cave)
+dealloc(ai_cave)
+dealloc(respawn_cave)
