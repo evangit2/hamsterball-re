@@ -247,12 +247,7 @@ static DWORD WINAPI log_thread(LPVOID param)
  *   .check_case2:
  *   CMP EBX, 0xFFFFFFFF
  *   JE  .done                       ; both 8-balls → skip
- *
  *   .hit_detected:
- *   ; --- Avoid double-counting (Ball_Update runs for both balls) ---
- *   CMP ESI, EDI
- *   JAE .done                       ; let the other Ball_Update handle it
- *
  *   ; --- Increment hit counter ---
  *   INC DWORD [g_hit_count]
  *
@@ -331,12 +326,6 @@ static void install_hook(void)
     /* .hit_detected: */
     int hit_detected_label = p;
 
-    /* CMP ESI, EDI — avoid double-counting (only count when ESI < EDI) */
-    cave[p++] = 0x39; cave[p++] = 0xFE;  /* CMP ESI, EDI */
-    /* JAE .done */
-    cave[p++] = 0x73; cave[p++] = 0x00;
-    int jae_double = p - 1;
-
     /* INC DWORD [g_hit_count] */
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_hit_count; p += 4;
@@ -390,7 +379,6 @@ static void install_hook(void)
     cave[jne_both_players]   = (BYTE)(done_label - (jne_both_players + 1));
     cave[jmp_hit1]           = (BYTE)(hit_detected_label - (jmp_hit1 + 1));
     cave[je_both_8balls]     = (BYTE)(done_label - (je_both_8balls + 1));
-    cave[jae_double]         = (BYTE)(done_label - (jae_double + 1));
     cave[jne_esi_player]     = (BYTE)(esi_player_label - (jne_esi_player + 1));
     cave[jmp_set_flag]       = (BYTE)(set_flag_label - (jmp_set_flag + 1));
 
