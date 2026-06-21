@@ -1,104 +1,61 @@
-# Entity Limit Fixer v2
+# EntityLimitFixer v3
 
-A Cheat Engine AutoAssembler script that prevents Hamsterball from freezing when too many entities (balls, 8-balls, clones) are active simultaneously in arenas.
+Prevents freezes/crashes when spawning many entities (8-balls, clones) in arenas.
 
-## Root Cause
+## Root Cause (verified via GhidraMCP decompilation)
 
-The freeze is caused by three O(N²) loops running every frame:
+`Ball_AI_ChaseNearest` (0x408390) contains **two O(N²) loops** that iterate the entire ball list (`Scene+0x29D4`, count at `Scene+0x29D8`) per AI ball per frame:
 
-1. **Ball-Ball Collision**: Each ball's `Ball_Update` (0x405E00) creates a `CollisionNode` at 0x40691B that references the full ball list (Scene+0x29D4). When `CollisionMesh::AdvancePosition` (0x4564C0) traverses the spatial tree, it hits `CollisionNode::CheckAllBalls` (0x467030) which iterates ALL balls → O(N) per ball, O(N²) total per frame.
+| Loop | Address | Purpose | Complexity |
+|------|---------|---------|------------|
+| Loop 1 | 0x4083D9 | "Near ball bonus" — awards score to nearby balls | O(N) per AI ball |
+| Loop 2 | 0x408548 | "Find nearest target" — 6 flag checks + distance per ball | O(N) per AI ball |
 
-2. **AI Target Search**: Each 8-ball's `Ball_AI_ChaseNearest` (0x408390) calls `Ball_Update`, then iterates ALL balls AGAIN at 0x4083D9 to find the nearest target → another O(N²).
+With N balls, each AI ball does 2N distance calculations → **2N² total per frame**.
+- N=30: 1,800 calcs/frame → mild slowdown
+- N=50: 5,000 calcs/frame → severe freeze
+- N=100+: frame budget overflow → permanent freeze
 
-3. **Respawn Storm**: `Ball_FindClosestRespawnPoint` (0x405190) iterates all SAFESPOT ref points per falling ball per frame.
+Additionally, `Ball_Update` (0x405E00) allocates per-frame objects:
+- Trail particle: `operator_new(0x28)` at 0x405ECB — 40 bytes per ball per frame
+- CollisionNode: `operator_new(0x14)` at 0x4068F5 — 20 bytes per ball per frame
 
-With 50+ balls: ~10K checks/frame. With 100+ balls: ~20K checks/frame → hard freeze.
+At high entity counts, these allocations fragment the heap and eventually fail → crash.
 
-## Patches
+## Fix
 
-| Patch | Address | Original Bytes | What It Does |
-|-------|---------|---------------|-------------|
-| A | 0x40690F | `8B 8E 14 00 00 00` | Skip CollisionNode creation when ball count > MAX_BALLS |
-| B | 0x4083D9 | `8B 4E 14 81 C1 D4 29 00 00` | Skip AI nearest-target search when ball count > MAX_BALLS |
-| C | 0x005190 | `81 EC 84 00 00 00` | Throttle respawn search to every Nth frame |
+4 code caves that check `Scene+0x29D8` (ball count) against `MAX_BALLS` (default 30):
 
-## v2 Fixes (from v1)
+1. **Patch 1 (0x4083D9)**: Skip AI Loop 1 (near ball bonus) → JMP 0x4084F5
+2. **Patch 2 (0x408548)**: Skip AI Loop 2 (find nearest target) → JMP 0x408663, EBX=0
+3. **Patch 3 (0x405ECB)**: Skip trail particle alloc → return NULL (game handles gracefully)
+4. **Patch 4 (0x4068F5)**: Skip CollisionNode alloc → return NULL (game handles gracefully)
 
-- **CRITICAL FIX**: Patch C now uses plain `RET` instead of `RET 0x04`. The function `Ball_FindClosestRespawnPoint` is `__thiscall` with **0 stack parameters** (confirmed by disassembly: `RET` at 0x405D83, no stack cleanup). The previous `ret 0x04` corrupted the caller's stack → crash when combined with spawn/clone mods.
-- **MAX_BALLS default lowered** from 30 to 20 (game freezes at ~20 balls, not 30).
-- **Compatibility verified**: No address conflicts with Player Clone System v13 (hooks 0x41B540). All three patch sites (0x40690F, 0x4083D9, 0x005190) are inside Ball_Update / Ball_AI / Ball_FindClosestRespawnPoint — completely separate from the clone mod's hook on Scene_UpdateBallsAndState.
+When ball count ≤ MAX_BALLS, all patches execute original code unchanged.
+When ball count > MAX_BALLS, loops are skipped and allocations return NULL.
 
-## Configuration
+**Balls still exist, render, and have physics** — they just skip AI target search and per-frame allocations when overcrowded. 8-balls wander instead of chasing.
 
-- **MAX_BALLS** (default: 20): Ball count threshold. When exceeded, collision + AI throttling activates. Lower = more aggressive (10=very safe, 30=risky).
-- **respawn_throttle** (default: 3): Run respawn search every 3rd frame.
+## Verification
+
+All addresses verified against GhidraMCP disassembly:
+- `Ball_AI_ChaseNearest` @ 0x408390: decompiled, both loops confirmed
+- `Ball_Update` @ 0x405E00: disassembled 600 instructions, alloc sites confirmed
+- `AthenaList_NextIndex` @ 0x004532B0: confirmed via call sites
+- `operator_new` @ 0x004BA57B: confirmed via call sites
+- Skip targets (0x4084F5, 0x408663, 0x00405ED5, 0x004068FF): verified in disassembly
+- NULL paths: game already handles NULL returns (JZ to skip init) at 0x406922 and 0x405EF9
 
 ## Usage
 
-1. Open Cheat Engine, attach to `Hamsterball.exe`
-2. Load `EntityLimitFixer.CEA`
+1. Open Cheat Engine, attach to Hamsterball.exe
+2. Load EntityLimitFixer.CEA
 3. Enable the script
-4. Spawn as many entities as you want — no freeze
+4. Spawn as many 8-balls/clones as you want
 
-## How It Works
+## Configuration
 
-- **Patch A**: When ball count exceeds MAX_BALLS, skips `CollisionNode_ctor` (0x466CF0) by jumping to the null-node path (XOR EAX,EAX at 0x406922). This prevents the ball list from being registered with the CollisionMesh, so the spatial tree traversal never iterates balls → eliminates O(N²) ball-ball collision. Ball-geometry collision (floor/walls) still works because the `SpatialTree` at 0x4068BC is separate.
-- **Patch B**: Skips the AI target search iteration when ball count is high. `Ball_Update` has already run, so physics still works. The AI ball just won't chase targets when too many balls are active.
-- **Patch C**: Throttles respawn point searches to every Nth frame, preventing respawn storms when many balls fall simultaneously. Returns 0 (null) on skip frames using plain `RET`.
-
-## Compatibility with Other Mods
-
-- **Player Clone System v13**: ✅ No conflicts. Clone mod hooks `Scene_UpdateBallsAndState` at 0x41B540. Entity limiter patches are inside `Ball_Update` (0x40690F), `Ball_AI_ChaseNearest` (0x4083D9), and `Ball_FindClosestRespawnPoint` (0x005190).
-- **8-ball AI Fix**: ✅ No conflicts. That mod patches 0x4083AE and 0x4085CD (inside the AI function but at different offsets).
-- **Jump Mod**: ✅ No conflicts. That mod hooks 0x407BB4 (Ball_ApplyForce call site).
-
-## Technical Details
-
-### Function Call Chain
-
-```
-Scene_UpdateBallsAndState (0x41B540)  ← clone mod hooks HERE
-  └─ for each ball in AthenaList (Scene+0x29D4):
-       └─ Ball_Update (0x405E00)      ← ESI = ball pointer (MOV ESI,ECX at 0x405E20)
-            ├─ SpatialTree_ctor (0x463330)          ← geometry collision tree (unaffected)
-            ├─ CollisionNode_ctor (0x466CF0)       ← ball list reference ← PATCH A HERE
-            ├─ CollisionMesh::AdvancePosition (0x4564C0)
-            │    └─ traverse spatial tree
-            │         └─ CollisionNode::CheckAllBalls (0x467030)  ← O(N) per ball
-            └─ collision result iteration (0x406B3B)
-
-Ball_AI_ChaseNearest (0x408390)      ← 8-ball AI tick (vtable[4])
-  ├─ Ball_Update (0x405E00)          ← runs full physics
-  └─ iterate ALL balls (0x4083D9)   ← PATCH B HERE
-
-Ball_FindClosestRespawnPoint (0x405190) ← PATCH C HERE
-  └─ RET at 0x405D83 (plain RET, 0 stack params)
-```
-
-### AthenaList Layout (from AthenaList_Append decompilation at 0x453810)
-
-```
-Scene + 0x29D4 = Ball AthenaList
-  +0x00: unknown
-  +0x04: count (int) — number of balls
-  +0x08: iteration state (0x400 bytes = 256 ints)
-  +0x40C: data pointer (array of ball pointers)
-  +0x414: sorted mode flag
-```
-
-### Ball Struct Layout (from Ball_ctor2 at 0x4039E0)
-
-```
-Ball + 0x00: vtable pointer
-Ball + 0x10: App pointer
-Ball + 0x14: Scene pointer       ← used by Patch A and B to get ball count
-Ball + 0x18: player_index
-Ball + 0x1A4: CollisionMesh pointer
-Ball + 0x164: position (x, y, z)
-Ball + 0x170: velocity (x, y, z)
-Ball + 0x284: radius
-Ball + 0x768: alive flag
-Ball + 0x80C: state (controls CollisionNode creation path)
-```
-
-All addresses verified via Ghidra decompilation + disassembly + memory reads.
+Change `MAX_BALLS` at the top of the script:
+- `20` = conservative (very stable)
+- `30` = balanced (default, handles most scenarios)
+- `50` = aggressive (may still slow down with 50+ balls)
