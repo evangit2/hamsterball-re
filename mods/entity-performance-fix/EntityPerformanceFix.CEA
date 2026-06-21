@@ -1,0 +1,300 @@
+// ============================================================
+// Hamsterball Entity Performance Fix v1.0
+// Prevents game freeze when many entities (balls, clones,
+// 8-balls) are active in arenas.
+//
+// ROOT CAUSE (traced through Ghidra decompilation):
+//
+// 1. Scene_UpdateBallsAndState (0x41B540) iterates ALL balls
+//    every frame via AthenaList at Scene+0x29D4, calling
+//    vtable[4] (Ball_Update 0x405E00) for each ball.
+//
+// 2. Ball_Update (0x405E00) per ball per frame does:
+//    - operator_new(0x20) for SpatialTree at 0x40689A
+//    - operator_new(0x14) for CollisionNode at 0x4068F7
+//    - Collision_TraverseSpatialTree (0x465EF0) recursive walk
+//    - Iterates ALL collision entries (O(N) per ball)
+//    - For type==1 (ball-ball): full physics response per pair
+//    Total cost: O(N^2) per frame for N balls
+//
+// 3. AthenaList_Remove (0x453690): malloc(N*4) + memcpy entire
+//    array PER REMOVAL. O(N) per removal, O(N^2) for mass
+//    despawn when many balls fall simultaneously.
+//
+// 4. Ball_FindClosestRespawnPoint (0x405190): scans ALL spawn
+//    points in Scene+0x1518 list. For each: stricmp, strstr,
+//    distance calc. Also calls Mesh_FindClosestCollision
+//    (0x465D90) which builds a FULL spatial tree from scratch
+//    (AthenaList_Init + CollisionMesh_ctor + SpatialTree_ctor
+//    + CollisionMesh_AddTriangle + Ball_AdvancePositionOrCollision
+//    + full cleanup). O(spawn_points) per respawn call.
+//
+// 5. AthenaList_Append (0x453780): realloc(ptr, (count+1)*4)
+//    PER ADD. O(N) heap churn per spawn, causes fragmentation.
+//
+// 6. AthenaList_NextIndex (0x4532B0): wraps at 0xFF (255).
+//    Hard limit on concurrent nested iterations — if exceeded,
+//    iterators corrupt each other's indices.
+//
+// FIX: Four hooks that cap work per frame:
+//   Hook 1: Reset counters at frame start (0x41B540)
+//   Hook 2: Skip non-player balls in first loop when count > cap (0x41B58A)
+//   Hook 3: Same skip logic for second loop (0x41B62F)
+//   Hook 4: Throttle respawns — max N per frame (0x405190)
+//
+// Skip logic uses hash(ball_ptr) XOR frame_counter for fair rotation.
+// All balls get processed within ceil(count/MAX) frames.
+// Player ball (ball+0x18 != -1) ALWAYS gets full physics.
+//
+// Performance with 100 balls: 18 balls/frame → 5.5x improvement
+// Performance with 200 balls: 18 balls/frame → 11x improvement
+// At 60 FPS, each ball updates every ~6 frames (10 Hz) — smooth enough.
+//
+// ADJUSTABLE PARAMETERS (add to CE address list):
+//   MAX_BALLS_PER_FRAME (default 18): max balls with full physics/frame
+//     - Increase for smoother but more CPU-intensive
+//     - Decrease if still lagging (try 10-12)
+//   MAX_RESPAWNS_PER_FRAME (default 3): max respawns per frame
+//     - Increase if respawns feel too slow
+//     - Decrease if respawn storms still cause lag
+// ============================================================
+
+[ENABLE]
+
+alloc(FrameState, 32)
+alloc(Cave1, 128)
+alloc(Cave2, 256)
+alloc(Cave3, 256)
+alloc(Cave4, 128)
+
+registersymbol(MAX_BALLS_PER_FRAME)
+registersymbol(MAX_RESPAWNS_PER_FRAME)
+registersymbol(BALL_COUNT)
+
+label(frame_counter)
+label(balls_processed)
+label(respawns_this_frame)
+label(MAX_BALLS_PER_FRAME)
+label(MAX_RESPAWNS_PER_FRAME)
+label(BALL_COUNT)
+
+// ============================================================
+// Global state (all DWORDs)
+// ============================================================
+FrameState:
+  frame_counter:
+    dd 0
+  balls_processed:
+    dd 0
+  respawns_this_frame:
+    dd 0
+  MAX_BALLS_PER_FRAME:
+    dd 18      // Max balls with full physics per frame
+  MAX_RESPAWNS_PER_FRAME:
+    dd 3       // Max respawns per frame
+  BALL_COUNT:
+    dd 0       // Current ball count (for CE address list)
+
+// ============================================================
+// HOOK 1: Scene_UpdateBallsAndState entry (0x41B540)
+// Resets per-frame counters at start of each update
+//
+// Original bytes: 53 55 56 8B D9
+//   PUSH EBX; PUSH EBP; PUSH ESI; MOV EBX,ECX
+// ============================================================
+Cave1:
+  // Increment frame counter for rotation
+  inc dword ptr [frame_counter]
+
+  // Reset per-frame counters
+  mov dword ptr [balls_processed], 0
+  mov dword ptr [respawns_this_frame], 0
+
+  // Store ball count for debugging/CE address list
+  // ECX = Scene pointer (__fastcall this)
+  // Ball count at Scene+0x29D4+0x04 = Scene+0x29D8
+  mov eax, [ecx + 0x29D8]
+  mov [BALL_COUNT], eax
+
+  // Original code
+  push ebx
+  push ebp
+  push esi
+  mov ebx, ecx
+  jmp 0x41B545
+
+0x41B540:
+  jmp Cave1
+
+// ============================================================
+// HOOK 2: First loop — vtable[4] call (0x41B58A)
+// Caps active physics updates per frame
+//
+// Original bytes: 8B 16 8B CE FF 52 10
+//   MOV EDX,[ESI]; MOV ECX,ESI; CALL [EDX+0x10]
+//
+// Register state at hook point:
+//   ESI = ball pointer
+//   EDI = AthenaList (Scene+0x29D4)
+//   EBX = Scene pointer
+//   EBP = NextIndex result (iteration slot)
+//   EAX = trashed (return from Scene_SetCamera)
+// ============================================================
+Cave2:
+  // Check total ball count
+  mov eax, [edi + 4]          // AthenaList.count
+  cmp eax, [MAX_BALLS_PER_FRAME]
+  jle Cave2_DoCall            // Few balls -> process all
+
+  // Player balls always get full physics
+  // ball+0x18 = player_index (-1 = AI/no player)
+  cmp dword ptr [esi + 0x18], -1
+  jne Cave2_DoCall            // Player ball -> process
+
+  // Compute skip ratio: count / MAX_BALLS_PER_FRAME
+  // Each frame, 1/skip_ratio of non-player balls get processed
+  // All balls get processed within skip_ratio frames
+  mov ecx, [MAX_BALLS_PER_FRAME]
+  xor edx, edx
+  div ecx                     // EAX = count / MAX = skip_ratio
+  mov ecx, eax               // ECX = skip_ratio (>=2 since count > MAX)
+
+  // Hash: (ball_ptr >> 4) XOR frame_counter
+  // Ball pointers are heap-aligned, >>4 gives unique-ish bits
+  // XOR with frame_counter rotates which balls get processed each frame
+  mov eax, esi
+  shr eax, 4
+  xor eax, [frame_counter]
+
+  // Check: hash % skip_ratio == 0?
+  xor edx, edx
+  div ecx                    // EDX = hash % skip_ratio
+  test edx, edx
+  jnz Cave2_Skip             // Nonzero -> skip physics this frame
+
+Cave2_DoCall:
+  // Original code: call vtable[4] (Ball_Update or AI tick)
+  mov edx, [esi]
+  mov ecx, esi
+  call dword ptr [edx + 0x10]
+  jmp 0x41B591               // Continue to despawn check
+
+Cave2_Skip:
+  // Skip vtable[4] — ball is frozen for this frame only
+  // Despawn flag check at 0x41B591 still runs
+  jmp 0x41B591
+
+0x41B58A:
+  jmp Cave2
+  nop
+  nop
+
+// ============================================================
+// HOOK 3: Second loop — vtable[4] call (0x41B62F)
+// Same skip logic for secondary entity list (Scene+0x3204)
+//
+// Original bytes: 8B 06 8B CE FF 50 10
+//   MOV EAX,[ESI]; MOV ECX,ESI; CALL [EAX+0x10]
+//
+// Note: This loop uses EAX (not EDX) for vtable pointer
+// ============================================================
+Cave3:
+  // Check total ball count
+  mov eax, [edi + 4]          // AthenaList.count
+  cmp eax, [MAX_BALLS_PER_FRAME]
+  jle Cave3_DoCall
+
+  // Player balls always get full physics
+  cmp dword ptr [esi + 0x18], -1
+  jne Cave3_DoCall
+
+  // Compute skip ratio
+  mov ecx, [MAX_BALLS_PER_FRAME]
+  xor edx, edx
+  div ecx                     // EAX = skip_ratio
+  mov ecx, eax               // ECX = skip_ratio
+
+  // Hash
+  mov eax, esi
+  shr eax, 4
+  xor eax, [frame_counter]
+
+  xor edx, edx
+  div ecx                    // EDX = hash % skip_ratio
+  test edx, edx
+  jnz Cave3_Skip
+
+Cave3_DoCall:
+  // Original code (uses EAX for vtable, not EDX)
+  mov eax, [esi]
+  mov ecx, esi
+  call dword ptr [eax + 0x10]
+  jmp 0x41B636
+
+Cave3_Skip:
+  jmp 0x41B636
+
+0x41B62F:
+  jmp Cave3
+  nop
+  nop
+
+// ============================================================
+// HOOK 4: Ball_FindClosestRespawnPoint entry (0x405190)
+// Throttles respawns: max MAX_RESPAWNS_PER_FRAME per frame
+//
+// Prevents O(N * spawn_points) when many balls fall at once.
+// Each throttled ball retries next frame automatically
+// (despawn flag at ball+0x2E8 stays set until respawn completes).
+//
+// Original bytes: 81 EC 84 00 00 00
+//   SUB ESP, 0x84
+//
+// Calling convention: __fastcall (ECX = ball pointer)
+// ============================================================
+Cave4:
+  // Check respawn throttle
+  mov eax, [respawns_this_frame]
+  cmp eax, [MAX_RESPAWNS_PER_FRAME]
+  jge Cave4_Skip               // Limit reached -> early return
+
+  inc dword ptr [respawns_this_frame]
+
+  // Original code
+  sub esp, 0x84
+  jmp 0x405196
+
+Cave4_Skip:
+  // Early return — ball keeps despawn flag, retries next frame
+  ret
+
+0x405190:
+  jmp Cave4
+  nop
+
+[DISABLE]
+
+// ============================================================
+// Restore original bytes
+// ============================================================
+
+0x41B540:
+  db 53 55 56 8B D9
+
+0x41B58A:
+  db 8B 16 8B CE FF 52 10
+
+0x41B62F:
+  db 8B 06 8B CE FF 50 10
+
+0x405190:
+  db 81 EC 84 00 00 00
+
+dealloc(Cave1)
+dealloc(Cave2)
+dealloc(Cave3)
+dealloc(Cave4)
+dealloc(FrameState)
+unregistersymbol(MAX_BALLS_PER_FRAME)
+unregistersymbol(MAX_RESPAWNS_PER_FRAME)
+unregistersymbol(BALL_COUNT)
