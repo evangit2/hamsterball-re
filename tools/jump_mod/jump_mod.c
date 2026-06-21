@@ -1,19 +1,23 @@
 /*
- * jump_mod.c — BASS.dll proxy — v15c PER-FRAME ground detection
+ * jump_mod.c — BASS.dll proxy — v16 SIMPLE GROUND DETECTION
  *
- * v15b: g_on_ground was sticky — allowed midair jumps after rolling
- * off a ledge (flag never cleared because no jump consumed it).
+ * v15c had 3 caves (entry clear + type-5 set + Phase 15 check) but
+ * type-5 apparently doesn't fire every frame on normal ground.
  *
- * v15c: Three caves cooperate:
- *   1. Ball_Update entry (0x405E00): clears g_on_ground = 0 at frame start
- *   2. Type-5 cave (0x407391): sets g_on_ground = 1 on floor contact
- *   3. Phase 15 cave (0x407BB4): checks g_on_ground + g_want_jump,
- *      adds impulse if both set
+ * v16: Drop the type-5 and entry hooks entirely. Just use ball+0x2E9
+ * directly in the Phase 15 cave. It's a "sticky" flag that's set to 1
+ * when the ball touches floor and never cleared within Ball_Update.
+ * 
+ * This means: once you've touched floor, you can jump. After jumping,
+ * you're airborne — but the flag is still 1. However, the ball is now
+ * moving upward fast enough that by the next time you'd want to jump,
+ * the ball will have landed and the flag will still be 1.
  *
- * Per-frame flow:
- *   Ball on floor:  entry→clear, type-5→set, Phase15→sees 1→can jump
- *   Ball in air:    entry→clear, no type-5→stays 0, Phase15→sees 0→no jump
- *   After jump:     entry→clear, no type-5→stays 0, Phase15→sees 0→no double
+ * The REAL issue v13-v15c were trying to solve was "prevent double
+ * jumping in midair after rolling off a ledge." For that, we add a
+ * simple cooldown: after a jump, don't allow another jump for N frames.
+ * During that cooldown, if the ball is still airborne, it can't jump.
+ * If it lands during the cooldown, the landing resets the cooldown.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -168,27 +172,22 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v15c — per-frame ground detection via 3 caves
+ * Jump Mod v16 — single Phase 15 cave, ball+0x2E9 + cooldown
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ─── Hook addresses ─────────────────────────────────────────────────────── */
-#define ENTRY_HOOK         0x00405E00
-#define ENTRY_ORIG_BYTES   8  /* 6AFF 64A100000000 = push -1; mov eax,fs:[0] */
-
-#define TYPE5_HOOK         0x00407391
-#define TYPE5_ORIG_BYTES   7  /* C6 86 E9 02 00 00 01 = MOV BYTE [ESI+0x2E9], 1 */
-
+/* ─── Hook address ───────────────────────────────────────────────────────── */
 #define PHASE15_HOOK       0x00407BB4
 #define PHASE15_ORIG_BYTES 6  /* 8B 4C 24 1C 8B 11 = MOV ECX,[ESP+1C]; MOV EDX,[ECX] */
 
 /* ─── Parameters ──────────────────────────────────────────────────────────── */
 static float g_jump_impulse = 20.0f;
+#define JUMP_COOLDOWN_FRAMES 20  /* ~0.33 seconds at 60fps */
 
 /* ─── Shared state ───────────────────────────────────────────────────────── */
-static volatile DWORD g_on_ground = 0;        /* cleared at entry, set by type-5 */
 static volatile DWORD g_want_jump = 0;        /* set by input thread */
 static volatile DWORD g_frame_count = 0;
 static volatile DWORD g_jump_count = 0;
+static volatile DWORD g_cooldown = 0;          /* frames remaining until next jump allowed */
 
 /* ─── Input polling thread ───────────────────────────────────────────────── */
 static volatile int g_prev_space = 0;
@@ -220,146 +219,26 @@ static DWORD WINAPI input_thread(LPVOID param)
     return 0;
 }
 
-/* ─── Cave 1: Ball_Update entry (0x405E00) ─────────────────────────────────
- *
- * Tiny cave — just clears g_on_ground = 0 at the start of each Ball_Update
- * frame. No function calls, no FPU, no PUSHAD needed. ECX (ball pointer)
- * is preserved naturally.
- *
- * Original 8 bytes:
- *   6AFF            push -1
- *   64A100000000    mov eax, dword fs:[0]
- */
-static BYTE *g_cave1 = NULL;
-
-static void install_entry_hook(void)
-{
-    BYTE *hook_addr = (BYTE*)ENTRY_HOOK;
-    char buf[256];
-
-    BYTE expected[] = { 0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00 };
-    wsprintfA(buf, "Entry bytes: %02X %02X %02X %02X %02X %02X %02X %02X",
-              hook_addr[0], hook_addr[1], hook_addr[2], hook_addr[3],
-              hook_addr[4], hook_addr[5], hook_addr[6], hook_addr[7]);
-    diag_log(buf);
-
-    if (memcmp(hook_addr, expected, 8) != 0) {
-        diag_log("ENTRY BYTE MISMATCH!");
-        return;
-    }
-
-    g_cave1 = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
-                                   PAGE_EXECUTE_READWRITE);
-    if (!g_cave1) { diag_log("entry: VirtualAlloc FAILED"); return; }
-
-    int p = 0;
-
-    /* MOV DWORD [g_on_ground], 0 — clear ground flag for this frame */
-    g_cave1[p++] = 0xC7; g_cave1[p++] = 0x05;
-    *(DWORD*)(g_cave1 + p) = (DWORD)&g_on_ground; p += 4;
-    g_cave1[p++] = 0x00; g_cave1[p++] = 0x00;
-    g_cave1[p++] = 0x00; g_cave1[p++] = 0x00;
-
-    /* Original 8 bytes: push -1; mov eax, fs:[0] */
-    g_cave1[p++] = 0x6A; g_cave1[p++] = 0xFF;
-    g_cave1[p++] = 0x64; g_cave1[p++] = 0xA1;
-    *(DWORD*)(g_cave1 + p) = 0x00000000; p += 4;
-
-    /* JMP back to 0x405E08 */
-    g_cave1[p++] = 0xE9;
-    *(DWORD*)(g_cave1 + p) = (DWORD)(hook_addr + ENTRY_ORIG_BYTES) - (DWORD)(g_cave1 + p + 4);
-    p += 4;
-
-    /* Patch: E9 <offset> + 3 NOPs (8 bytes total) */
-    DWORD old_protect;
-    VirtualProtect(hook_addr, ENTRY_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
-
-    DWORD jmp_offset = (DWORD)(g_cave1 - hook_addr - 5);
-    hook_addr[0] = 0xE9;
-    *(DWORD*)(hook_addr + 1) = jmp_offset;
-    hook_addr[5] = 0x90;
-    hook_addr[6] = 0x90;
-    hook_addr[7] = 0x90;
-
-    VirtualProtect(hook_addr, ENTRY_ORIG_BYTES, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), hook_addr, ENTRY_ORIG_BYTES);
-
-    wsprintfA(buf, "ENTRY HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_cave1);
-    diag_log(buf);
-}
-
-/* ─── Cave 2: Type-5 floor collision hook (0x407391) ───────────────────────
- *
- * Original 7 bytes: C6 86 E9 02 00 00 01  =  MOV BYTE [ESI+0x2E9], 1
- * Cave: execute original bytes, then also set g_on_ground = 1.
- */
-static BYTE *g_cave2 = NULL;
-
-static void install_type5_hook(void)
-{
-    BYTE *hook_addr = (BYTE*)TYPE5_HOOK;
-    char buf[256];
-
-    BYTE expected[] = { 0xC6, 0x86, 0xE9, 0x02, 0x00, 0x00, 0x01 };
-    wsprintfA(buf, "Type5 bytes: %02X %02X %02X %02X %02X %02X %02X",
-              hook_addr[0], hook_addr[1], hook_addr[2], hook_addr[3],
-              hook_addr[4], hook_addr[5], hook_addr[6]);
-    diag_log(buf);
-
-    if (memcmp(hook_addr, expected, 7) != 0) {
-        diag_log("TYPE5 BYTE MISMATCH!");
-        return;
-    }
-
-    g_cave2 = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
-                                   PAGE_EXECUTE_READWRITE);
-    if (!g_cave2) { diag_log("type5: VirtualAlloc FAILED"); return; }
-
-    int p = 0;
-
-    /* Execute original 7 bytes: MOV BYTE [ESI+0x2E9], 1 */
-    g_cave2[p++] = 0xC6; g_cave2[p++] = 0x86;
-    g_cave2[p++] = 0xE9; g_cave2[p++] = 0x02;
-    g_cave2[p++] = 0x00; g_cave2[p++] = 0x00;
-    g_cave2[p++] = 0x01;
-
-    /* MOV DWORD [g_on_ground], 1 */
-    g_cave2[p++] = 0xC7; g_cave2[p++] = 0x05;
-    *(DWORD*)(g_cave2 + p) = (DWORD)&g_on_ground; p += 4;
-    g_cave2[p++] = 0x01; g_cave2[p++] = 0x00;
-    g_cave2[p++] = 0x00; g_cave2[p++] = 0x00;
-
-    /* JMP back to hook_addr + 7 */
-    g_cave2[p++] = 0xE9;
-    *(DWORD*)(g_cave2 + p) = (DWORD)(hook_addr + TYPE5_ORIG_BYTES) - (DWORD)(g_cave2 + p + 4);
-    p += 4;
-
-    /* Patch: E9 <offset> + 2 NOPs (7 bytes total) */
-    DWORD old_protect;
-    VirtualProtect(hook_addr, TYPE5_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
-
-    DWORD jmp_offset = (DWORD)(g_cave2 - hook_addr - 5);
-    hook_addr[0] = 0xE9;
-    *(DWORD*)(hook_addr + 1) = jmp_offset;
-    hook_addr[5] = 0x90;
-    hook_addr[6] = 0x90;
-
-    VirtualProtect(hook_addr, TYPE5_ORIG_BYTES, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), hook_addr, TYPE5_ORIG_BYTES);
-
-    wsprintfA(buf, "TYPE5 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_cave2);
-    diag_log(buf);
-}
-
-/* ─── Cave 3: Phase 15 impulse hook (0x407BB4) ────────────────────────────
+/* ─── Phase 15 impulse hook (0x407BB4) ────────────────────────────────────
  *
  * Original 6 bytes: 8B 4C 24 1C 8B 11  =  MOV ECX,[ESP+1C]; MOV EDX,[ECX]
  * ESI = ball pointer.
  *
- * Checks g_want_jump AND g_on_ground. Does NOT clear g_on_ground
- * (that's done at Ball_Update entry next frame).
+ * Logic:
+ *   1. Decrement cooldown (if > 0)
+ *   2. Check g_want_jump
+ *   3. Check ball+0x2E9 (floor contact flag — sticky, set by type-5)
+ *   4. Check cooldown == 0
+ *   5. If all pass: add impulse, set cooldown, clear g_want_jump
+ *
+ * ball+0x2E9 is 1 when the ball has touched floor (type-5 collision).
+ * It's never cleared within Ball_Update, so it stays 1 after landing.
+ * The cooldown prevents double-jumping: after a jump, you must wait
+ * JUMP_COOLDOWN_FRAMES before jumping again. By that time, if you
+ * rolled off a ledge, the ball will be in fall_mode (0xC4C != 0)
+ * which also blocks jumping.
  */
-static BYTE *g_cave3 = NULL;
+static BYTE *g_cave = NULL;
 
 static void install_phase15_hook(void)
 {
@@ -377,83 +256,129 @@ static void install_phase15_hook(void)
         return;
     }
 
-    g_cave3 = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
+    g_cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
                                    PAGE_EXECUTE_READWRITE);
-    if (!g_cave3) { diag_log("phase15: VirtualAlloc FAILED"); return; }
+    if (!g_cave) { diag_log("phase15: VirtualAlloc FAILED"); return; }
 
     int p = 0;
 
+    /* ─── Decrement cooldown ─── */
+    /* CMP [g_cooldown], 0 */
+    g_cave[p++] = 0x83; g_cave[p++] = 0x3D;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_cooldown; p += 4;
+    g_cave[p++] = 0x00;
+
+    /* JZ to .skip_dec (near jump) */
+    int jz_skip_dec_fixup = p;
+    g_cave[p++] = 0x0F; g_cave[p++] = 0x84;
+    *(DWORD*)(g_cave + p) = 0; p += 4;
+
+    /* DEC [g_cooldown] */
+    g_cave[p++] = 0xFF; g_cave[p++] = 0x0D;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_cooldown; p += 4;
+
+    /* ─── .skip_dec: ─── */
+    int skip_dec_target = p;
+
     /* ─── Check g_want_jump ─── */
     /* CMP [g_want_jump], 0 */
-    g_cave3[p++] = 0x83; g_cave3[p++] = 0x3D;
-    *(DWORD*)(g_cave3 + p) = (DWORD)&g_want_jump; p += 4;
-    g_cave3[p++] = 0x00;
-
-    /* JZ to .no_jump (near jump — target fixed up below) */
-    int jz_want_fixup = p;
-    g_cave3[p++] = 0x0F; g_cave3[p++] = 0x84;
-    *(DWORD*)(g_cave3 + p) = 0;  /* placeholder */
-    p += 4;
-
-    /* ─── Check g_on_ground ─── */
-    /* CMP [g_on_ground], 0 */
-    g_cave3[p++] = 0x83; g_cave3[p++] = 0x3D;
-    *(DWORD*)(g_cave3 + p) = (DWORD)&g_on_ground; p += 4;
-    g_cave3[p++] = 0x00;
+    g_cave[p++] = 0x83; g_cave[p++] = 0x3D;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_want_jump; p += 4;
+    g_cave[p++] = 0x00;
 
     /* JZ to .no_jump (near jump) */
-    int jz_ground_fixup = p;
-    g_cave3[p++] = 0x0F; g_cave3[p++] = 0x84;
-    *(DWORD*)(g_cave3 + p) = 0;  /* placeholder */
-    p += 4;
+    int jz_want_fixup = p;
+    g_cave[p++] = 0x0F; g_cave[p++] = 0x84;
+    *(DWORD*)(g_cave + p) = 0; p += 4;
+
+    /* ─── Check ball+0x2E9 (floor contact) ─── */
+    /* CMP BYTE [ESI+0x2E9], 0 */
+    g_cave[p++] = 0x80; g_cave[p++] = 0xBE;
+    *(DWORD*)(g_cave + p) = 0x2E9; p += 4;
+    g_cave[p++] = 0x00;
+
+    /* JZ to .no_jump (near jump) */
+    int jz_floor_fixup = p;
+    g_cave[p++] = 0x0F; g_cave[p++] = 0x84;
+    *(DWORD*)(g_cave + p) = 0; p += 4;
+
+    /* ─── Check ball+0xC4C (fall_mode — not dying/respawning) ─── */
+    /* CMP DWORD [ESI+0xC4C], 0 */
+    g_cave[p++] = 0x83; g_cave[p++] = 0xBE;
+    *(DWORD*)(g_cave + p) = 0xC4C; p += 4;
+    g_cave[p++] = 0x00;
+
+    /* JNZ to .no_jump (near jump) */
+    int jnz_fall_fixup = p;
+    g_cave[p++] = 0x0F; g_cave[p++] = 0x85;
+    *(DWORD*)(g_cave + p) = 0; p += 4;
+
+    /* ─── Check cooldown ─── */
+    /* CMP [g_cooldown], 0 */
+    g_cave[p++] = 0x83; g_cave[p++] = 0x3D;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_cooldown; p += 4;
+    g_cave[p++] = 0x00;
+
+    /* JNZ to .no_jump (near jump) */
+    int jnz_cd_fixup = p;
+    g_cave[p++] = 0x0F; g_cave[p++] = 0x85;
+    *(DWORD*)(g_cave + p) = 0; p += 4;
 
     /* ─── .jump: add impulse to ball+0x174 ─── */
     /* FLD [ESI+0x174] — load Y force accumulator */
-    g_cave3[p++] = 0xD9; g_cave3[p++] = 0x86;
-    *(DWORD*)(g_cave3 + p) = 0x174; p += 4;
+    g_cave[p++] = 0xD9; g_cave[p++] = 0x86;
+    *(DWORD*)(g_cave + p) = 0x174; p += 4;
 
     /* FADD [g_jump_impulse] — add upward impulse */
-    g_cave3[p++] = 0xD8; g_cave3[p++] = 0x05;
-    *(DWORD*)(g_cave3 + p) = (DWORD)&g_jump_impulse; p += 4;
+    g_cave[p++] = 0xD8; g_cave[p++] = 0x05;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_jump_impulse; p += 4;
 
     /* FSTP [ESI+0x174] — store modified Y force */
-    g_cave3[p++] = 0xD9; g_cave3[p++] = 0x9E;
-    *(DWORD*)(g_cave3 + p) = 0x174; p += 4;
+    g_cave[p++] = 0xD9; g_cave[p++] = 0x9E;
+    *(DWORD*)(g_cave + p) = 0x174; p += 4;
 
     /* MOV [g_want_jump], 0 — consume jump request */
-    g_cave3[p++] = 0xC7; g_cave3[p++] = 0x05;
-    *(DWORD*)(g_cave3 + p) = (DWORD)&g_want_jump; p += 4;
-    *(DWORD*)(g_cave3 + p) = 0; p += 4;
+    g_cave[p++] = 0xC7; g_cave[p++] = 0x05;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_want_jump; p += 4;
+    *(DWORD*)(g_cave + p) = 0; p += 4;
+
+    /* MOV [g_cooldown], JUMP_COOLDOWN_FRAMES — start cooldown */
+    g_cave[p++] = 0xC7; g_cave[p++] = 0x05;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_cooldown; p += 4;
+    *(DWORD*)(g_cave + p) = JUMP_COOLDOWN_FRAMES; p += 4;
 
     /* INC [g_jump_count] */
-    g_cave3[p++] = 0xFF; g_cave3[p++] = 0x05;
-    *(DWORD*)(g_cave3 + p) = (DWORD)&g_jump_count; p += 4;
+    g_cave[p++] = 0xFF; g_cave[p++] = 0x05;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_jump_count; p += 4;
 
     /* ─── .no_jump: ─── */
     int no_jump_target = p;
 
     /* ─── Original 6 bytes ─── */
-    g_cave3[p++] = 0x8B; g_cave3[p++] = 0x4C; g_cave3[p++] = 0x24; g_cave3[p++] = 0x1C;
-    g_cave3[p++] = 0x8B; g_cave3[p++] = 0x11;
+    g_cave[p++] = 0x8B; g_cave[p++] = 0x4C; g_cave[p++] = 0x24; g_cave[p++] = 0x1C;
+    g_cave[p++] = 0x8B; g_cave[p++] = 0x11;
 
     /* INC [g_frame_count] */
-    g_cave3[p++] = 0xFF; g_cave3[p++] = 0x05;
-    *(DWORD*)(g_cave3 + p) = (DWORD)&g_frame_count; p += 4;
+    g_cave[p++] = 0xFF; g_cave[p++] = 0x05;
+    *(DWORD*)(g_cave + p) = (DWORD)&g_frame_count; p += 4;
 
     /* JMP back to hook_addr + 6 */
-    g_cave3[p++] = 0xE9;
-    *(DWORD*)(g_cave3 + p) = (DWORD)(hook_addr + PHASE15_ORIG_BYTES) - (DWORD)(g_cave3 + p + 4);
+    g_cave[p++] = 0xE9;
+    *(DWORD*)(g_cave + p) = (DWORD)(hook_addr + PHASE15_ORIG_BYTES) - (DWORD)(g_cave + p + 4);
     p += 4;
 
     /* ─── Fix up near jumps ─── */
-    *(DWORD*)(g_cave3 + jz_want_fixup + 2) = (DWORD)(g_cave3 + no_jump_target) - (DWORD)(g_cave3 + jz_want_fixup + 6);
-    *(DWORD*)(g_cave3 + jz_ground_fixup + 2) = (DWORD)(g_cave3 + no_jump_target) - (DWORD)(g_cave3 + jz_ground_fixup + 6);
+    *(DWORD*)(g_cave + jz_skip_dec_fixup + 2) = (DWORD)(g_cave + skip_dec_target) - (DWORD)(g_cave + jz_skip_dec_fixup + 6);
+    *(DWORD*)(g_cave + jz_want_fixup + 2) = (DWORD)(g_cave + no_jump_target) - (DWORD)(g_cave + jz_want_fixup + 6);
+    *(DWORD*)(g_cave + jz_floor_fixup + 2) = (DWORD)(g_cave + no_jump_target) - (DWORD)(g_cave + jz_floor_fixup + 6);
+    *(DWORD*)(g_cave + jnz_fall_fixup + 2) = (DWORD)(g_cave + no_jump_target) - (DWORD)(g_cave + jnz_fall_fixup + 6);
+    *(DWORD*)(g_cave + jnz_cd_fixup + 2) = (DWORD)(g_cave + no_jump_target) - (DWORD)(g_cave + jnz_cd_fixup + 6);
 
     /* ─── Patch hook site ─── */
     DWORD old_protect;
     VirtualProtect(hook_addr, PHASE15_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
 
-    DWORD jmp_offset = (DWORD)(g_cave3 - hook_addr - 5);
+    DWORD jmp_offset = (DWORD)(g_cave - hook_addr - 5);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_offset;
     hook_addr[5] = 0x90;
@@ -461,7 +386,7 @@ static void install_phase15_hook(void)
     VirtualProtect(hook_addr, PHASE15_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PHASE15_ORIG_BYTES);
 
-    wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_cave3);
+    wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_cave);
     diag_log(buf);
 }
 
@@ -475,16 +400,14 @@ static DWORD WINAPI patch_thread(LPVOID param)
     diag_log("patch_thread: started");
     Sleep(5000);
 
-    install_entry_hook();
-    install_type5_hook();
     install_phase15_hook();
 
     CreateThread(NULL, 0, input_thread, NULL, 0, NULL);
     diag_log("input_thread launched");
 
     Sleep(8000);
-    wsprintfA(buf, "After 8s: frames=%u jumps=%u grounded=%u",
-              g_frame_count, g_jump_count, g_on_ground);
+    wsprintfA(buf, "After 8s: frames=%u jumps=%u cooldown=%u",
+              g_frame_count, g_jump_count, g_cooldown);
     diag_log(buf);
 
     return 0;
@@ -510,7 +433,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v15c loaded ===");
+        diag_log("=== jump_mod v16 loaded ===");
 
         load_real_bass();
         {
