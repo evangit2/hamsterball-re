@@ -7,7 +7,7 @@ Each subfolder has the C source, compiled DLL, and (where available) a zip packa
 
 | # | Mod | Description | Proxy Type |
 |---|-----|-------------|------------|
-| 1 | [jump_mod](jump_mod/) | Press SPACE to jump (Player 1 only, ground check) | bass.dll |
+| 1 | [jump_mod](jump_mod/) | Press SPACE to jump (Player 1 only, raycast ground check) | bass.dll |
 | 2 | [half_size_p1](half_size_p1/) | Halves Player 1's ball size only | bass.dll |
 | 3 | [half_size_all](half_size_all/) | Halves ALL balls' size | bass.dll |
 | 4 | [player_clones](player_clones/) | Spawns AI clone balls that follow Player 1 | bass.dll |

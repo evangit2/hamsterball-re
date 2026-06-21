@@ -1,10 +1,23 @@
 /*
  * jump_mod.c — BASS.dll proxy that lets Player 1 jump with the spacebar.
  *
- * APPROACH: Binary hook (code cave) at the end of Ball_Update (0x004082B6).
- * The cave runs AFTER Ball_Update's physics + collision detection completes,
- * so the jump velocity persists for one full frame before the next Ball_Update
- * zeroes it for collision.
+ * GROUND DETECTION: Raycast via Mesh_FindClosestCollision (0x00465D90).
+ * A background thread probes downward from the ball center each ~10ms.
+ * If geometry is within (radius + 2.0) units below, g_on_ground is set.
+ * The code cave checks g_on_ground — NO cooldown timer.
+ *
+ * This means the player can jump again the instant they touch ground.
+ *
+ * ARCHITECTURE (Pattern 4: volatile flag + polling thread):
+ *   Code cave (Ball_Update epilogue):
+ *     - Stores ball pointer in g_ball_ptr (for the background thread)
+ *     - Edge-detects spacebar press
+ *     - Checks g_on_ground flag (set by background thread)
+ *     - If all conditions met: writes jump velocity to ball+0x174
+ *   Background thread (Sleep 10ms loop):
+ *     - Reads g_ball_ptr → ball → Scene → CollisionLevel
+ *     - Calls Mesh_FindClosestCollision(cl, &out, pos, {0,-1,0}, radius+0.5)
+ *     - Sets g_on_ground = (|out.y - pos.y| <= radius + 2.0) ? 1 : 0
  *
  * Keyboard reading: Uses the game's own DirectInput8 buffer.
  *   App = *(DWORD*)0x005341E0
@@ -138,17 +151,26 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod — Binary Hook into Ball_Update epilogue
+ * Jump Mod — Raycast Ground Detection + Binary Hook
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define G_APP_ADDR          0x005341E0
 #define BALL_UPDATE_HOOK    0x004082B6   /* MOV [ESP+0x944],ECX — just before epilogue */
 #define HOOK_ORIG_BYTES     7            /* 89 8C 24 44 09 00 00 */
+#define MESH_RAYCAST_ADDR   0x00465D90   /* Mesh_FindClosestCollision */
 
 /* Ball struct offsets (byte) */
-#define BALL_PLAYER_IDX     0x018
-#define BALL_VEL_Y          0x174   /* [0x5D] = accumulated force Y (impulse, zeroed each tick) */
+#define BALL_SCENE          0x014   /* Scene* */
+#define BALL_PLAYER_IDX     0x018   /* int (player index, 0 = Player 1) */
+#define BALL_POS_X          0x164   /* float (position X) */
+#define BALL_POS_Y          0x168   /* float (position Y) */
+#define BALL_POS_Z          0x16C   /* float (position Z) */
+#define BALL_VEL_Y          0x174   /* accumulated force Y (impulse, zeroed each tick) */
+#define BALL_RADIUS         0x284   /* float (collision radius) */
 #define BALL_FALL_MODE      0xC4C   /* fall-off-level (death/respawn) state */
+
+/* Scene struct offsets */
+#define SCENE_COLLISION_LEVEL  0x8B0  /* CollisionLevel* */
 
 /* App struct offsets */
 #define APP_INPUT_HANDLER   0x180
@@ -163,50 +185,133 @@ static void load_real_bass(void)
 /* Jump velocity: 500.0f = 0x43FA0000 */
 #define JUMP_VELOCITY_BITS 0x43FA0000
 
-/* Cooldown after jump: 60 frames = ~1 second at 60fps.
- * Prevents midair re-jump for the entire duration of a jump arc.
- * Jump velocity 500 with gravity ~15/frame:
- *   - Apex at ~33 frames (vel = 500 - 15*33 ≈ 0)
- *   - Landing at ~66 frames
- * The 60-frame cooldown covers most of the arc. When the ball lands,
- * the cooldown has expired and the ball can jump again.
- * This is the ONLY ground check — no velocity threshold needed,
- * which means you CAN jump on ramps (no false "airborne" rejections). */
-#define JUMP_COOLDOWN_FRAMES 60
+/* Ground check threshold: ball is "on ground" if floor is within radius+2.0 below */
+#define GROUND_THRESHOLD   2.0f
 
-/* Edge detection state */
+/* ─── Raycast API ─── */
+
+typedef struct { float x, y, z; } Vec3;
+
+/* Mesh_FindClosestCollision — __thiscall
+ *   ECX = collision_level (Scene+0x8B0)
+ *   Stack: out*, origin(3 floats), direction(3 floats), max_dist(float)
+ *   ret 0x20 (32 bytes = 8 DWORDs on stack)
+ *
+ * Direction is normalized internally then scaled to 99999, clamped to ~994.
+ * max_dist = sphere radius for AABB broad-phase. Use ball_radius + 0.5f.
+ *
+ * No-hit behavior: returns endpoint ~994 units along direction (NOT origin).
+ * Always check distance between origin and out after the call.
+ */
+typedef Vec3* (__thiscall *MeshRaycast_t)(
+    void* collision_level,
+    Vec3* out,
+    Vec3 origin,
+    Vec3 direction,
+    float max_dist
+);
+
+static MeshRaycast_t pfn_raycast = (MeshRaycast_t)MESH_RAYCAST_ADDR;
+
+/* ─── Shared state between code cave and background thread ─── */
+
+/* Set by background thread, read by code cave */
+static volatile DWORD g_on_ground = 0;
+
+/* Set by code cave each frame (ball pointer in ESI), read by background thread */
+static volatile DWORD g_ball_ptr = 0;
+
+/* Background thread control */
+static volatile DWORD g_bg_active = 1;
+static HANDLE g_bg_thread = NULL;
+
+/* Edge detection state (code cave only) */
 static BYTE g_space_was_down = 0;
 
 /* Debug counter */
 static volatile DWORD g_jump_count = 0;
 
-/* Jump cooldown counter (decremented each frame in the code cave) */
-static volatile DWORD g_jump_cooldown = 0;
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Background Thread — Raycast Ground Detection
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Continuously probes downward from the ball position using the engine's
+ * own collision raycast. Sets g_on_ground = 1 when geometry is close below.
+ *
+ * This thread calls Mesh_FindClosestCollision, which is safe because:
+ * - Level collision geometry is static during gameplay
+ * - The function creates a temp CollisionMesh per call (no shared state)
+ * - We're NOT calling from inside Ball_Update (code cave rule)
+ *
+ * Sleep(10) gives ~100 checks/sec — about 1.5x per frame at 60fps.
+ * Ground state staleness is at most 10ms (less than one frame).
+ */
 
-/* Code cave: hand-assembled x86 machine code.
+static DWORD WINAPI ground_check_thread(LPVOID param)
+{
+    (void)param;
+    while (g_bg_active) {
+        DWORD ball_val = g_ball_ptr;
+        if (ball_val) {
+            char *ball = (char*)ball_val;
+            void* scene = *(void**)(ball + BALL_SCENE);
+            if (scene) {
+                void* cl = *(void**)((char*)scene + SCENE_COLLISION_LEVEL);
+                if (cl) {
+                    Vec3 pos;
+                    pos.x = *(float*)(ball + BALL_POS_X);
+                    pos.y = *(float*)(ball + BALL_POS_Y);
+                    pos.z = *(float*)(ball + BALL_POS_Z);
+                    float radius = *(float*)(ball + BALL_RADIUS);
+
+                    Vec3 down   = { 0.0f, -1.0f, 0.0f };
+                    Vec3 out    = { 0.0f, 0.0f, 0.0f };
+
+                    /* Raycast downward: origin=ball center, direction=(0,-1,0)
+                     * max_dist = radius + 0.5 (matches engine's own ground probes) */
+                    pfn_raycast(cl, &out, pos, down, radius + 0.5f);
+
+                    /* Check if hit point is within radius + 2.0 below the ball.
+                     * On hit: out.y ≈ pos.y - radius (floor directly below)
+                     * On miss: out.y ≈ pos.y - 994 (ray endpoint, far away) */
+                    float dy = out.y - pos.y;
+                    /* dy is negative (we cast downward). Use absolute value. */
+                    if (dy < 0.0f) dy = -dy;
+                    g_on_ground = (dy <= radius + GROUND_THRESHOLD) ? 1 : 0;
+                }
+            }
+        }
+        Sleep(10);
+    }
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Code Cave — Hand-assembled x86 in Ball_Update epilogue
+ * ═══════════════════════════════════════════════════════════════════════════
  *
  * At entry: ESI = ball pointer (this)
  *           ESP at the hook point in Ball_Update's epilogue
  *
  * The cave:
- *   1. Saves registers (EAX, ECX, EDX, EDI)
- *   2. Executes the original instruction: MOV [ESP+0x954], ECX
- *      (+0x10 offset from 4 PUSHes)
- *   3. Checks ball+0x18 == 0 (Player 1)
- *   4. Reads App → InputHandler(App+0x180) → KeyboardDevice(IH+0x434)
- *   5. Reads DIK_SPACE from KeyboardDevice+0xC+0x39
- *   6. Edge-detects key press (rising edge only)
- *   7. Checks fall_mode == 0 (not dying)
- *   8. Checks cooldown == 0 (60-frame timer prevents midair re-jump)
- *   9. If all conditions met, sets ball+0x174 = JUMP_VELOCITY + cooldown = 60
- *   10. Restores registers
- *   11. JMP back to hook_addr + 7
+ *   1.  Saves registers (EAX, ECX, EDX, EDI)
+ *   2.  Executes the original instruction: MOV [ESP+0x954], ECX
+ *       (+0x10 offset from 4 PUSHes)
+ *   3.  Stores ball pointer: g_ball_ptr = ESI (for background thread)
+ *   4.  Checks ball+0x18 == 0 (Player 1)
+ *   5.  Checks fall_mode == 0 (not dying)
+ *   6.  Checks g_on_ground == 1 (raycast says floor is close)
+ *   7.  Reads App → InputHandler(App+0x180) → KeyboardDevice(IH+0x434)
+ *   8.  Reads DIK_SPACE from KeyboardDevice+0xC+0x39
+ *   9.  Edge-detects key press (rising edge only)
+ *   10. If all conditions met, sets ball+0x174 = JUMP_VELOCITY
+ *   11. Restores registers
+ *   12. JMP back to hook_addr + 7
  *
- * Ground detection: 60-frame cooldown timer after each jump.
- * No velocity threshold — you can jump on ramps and slopes freely.
- * The cooldown covers the entire jump arc (~66 frames at 500 vel, 15 grav).
- * When ball lands and cooldown expires, jump is available again.
+ * Ground detection: background thread raycasts downward and sets g_on_ground.
+ * NO cooldown timer — the player can jump the instant they touch ground.
  */
+
 static void install_hook(void)
 {
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
@@ -230,6 +335,10 @@ static void install_hook(void)
     cave[p++] = 0x89; cave[p++] = 0x8C; cave[p++] = 0x24;
     cave[p++] = 0x54; cave[p++] = 0x09; cave[p++] = 0x00; cave[p++] = 0x00;
 
+    /* --- Store ball pointer for background thread: MOV [g_ball_ptr], ESI --- */
+    cave[p++] = 0x89; cave[p++] = 0x35;
+    *(DWORD*)(cave + p) = (DWORD)&g_ball_ptr; p += 4;
+
     /* --- Check player_index == 0 (ball+0x18) --- */
     /* MOV EAX, [ESI+0x18] */
     cave[p++] = 0x8B; cave[p++] = 0x86;
@@ -250,26 +359,18 @@ static void install_hook(void)
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jnz_fallmode = p - 1;
 
-    /* --- Decrement cooldown counter if > 0 --- */
-    /* MOV EAX, [g_jump_cooldown] */
+    /* --- Check g_on_ground == 1 (replaces cooldown timer) --- */
+    /* MOV EAX, [g_on_ground] */
     cave[p++] = 0xA1;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_cooldown; p += 4;
+    *(DWORD*)(cave + p) = (DWORD)&g_on_ground; p += 4;
     /* TEST EAX, EAX */
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    /* JZ .check_input (cooldown is 0, can jump) */
+    /* JZ .done (not on ground, can't jump) */
     cave[p++] = 0x74; cave[p++] = 0x00;
-    int jz_cooldown_zero = p - 1;
-    /* DEC EAX */
-    cave[p++] = 0x48;
-    /* MOV [g_jump_cooldown], EAX */
-    cave[p++] = 0xA3;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_cooldown; p += 4;
-    /* JMP .done (cooldown active, can't jump) */
-    cave[p++] = 0xEB; cave[p++] = 0x00;
-    int jmp_cooldown_active = p - 1;
+    int jz_not_grounded = p - 1;
 
     /* .check_input: */
-    int check_vel_label = p;  /* label kept for fixup compatibility */
+    int check_input_label = p;
 
     /* --- Read App pointer: MOV EAX, [0x005341E0] --- */
     cave[p++] = 0xA1;
@@ -336,12 +437,6 @@ static void install_hook(void)
     cave[p++] = 0xA3;
     *(DWORD*)(cave + p) = (DWORD)&g_jump_count; p += 4;
 
-    /* Set cooldown timer = JUMP_COOLDOWN_FRAMES (60) */
-    /* MOV DWORD PTR [g_jump_cooldown], 60 */
-    cave[p++] = 0xC7; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_cooldown; p += 4;
-    *(DWORD*)(cave + p) = JUMP_COOLDOWN_FRAMES; p += 4;
-
     /* JMP .done */
     cave[p++] = 0xEB; cave[p++] = 0x00;
     int jmp_done = p - 1;
@@ -368,16 +463,15 @@ static void install_hook(void)
     *(DWORD*)(cave + p) = jmp_back; p += 4;
 
     /* Fix up all placeholder jumps */
-    cave[jnz_player]     = (BYTE)(done_label - (jnz_player + 1));
-    cave[jnz_fallmode]   = (BYTE)(done_label - (jnz_fallmode + 1));
-    cave[jz_cooldown_zero]  = (BYTE)(check_vel_label - (jz_cooldown_zero + 1));
-    cave[jmp_cooldown_active] = (BYTE)(done_label - (jmp_cooldown_active + 1));
-    cave[jz_app]         = (BYTE)(done_label - (jz_app + 1));
-    cave[jz_ih]          = (BYTE)(done_label - (jz_ih + 1));
-    cave[jz_kbd]         = (BYTE)(done_label - (jz_kbd + 1));
-    cave[jz_notpressed]  = (BYTE)(not_pressed_label - (jz_notpressed + 1));
-    cave[jne_already]    = (BYTE)(done_label - (jne_already + 1));
-    cave[jmp_done]       = (BYTE)(done_label - (jmp_done + 1));
+    cave[jnz_player]       = (BYTE)(done_label - (jnz_player + 1));
+    cave[jnz_fallmode]     = (BYTE)(done_label - (jnz_fallmode + 1));
+    cave[jz_not_grounded]  = (BYTE)(done_label - (jz_not_grounded + 1));
+    cave[jz_app]           = (BYTE)(done_label - (jz_app + 1));
+    cave[jz_ih]            = (BYTE)(done_label - (jz_ih + 1));
+    cave[jz_kbd]           = (BYTE)(done_label - (jz_kbd + 1));
+    cave[jz_notpressed]    = (BYTE)(not_pressed_label - (jz_notpressed + 1));
+    cave[jne_already]     = (BYTE)(done_label - (jne_already + 1));
+    cave[jmp_done]         = (BYTE)(done_label - (jmp_done + 1));
 
     /* Patch the hook site: JMP + 2 NOPs */
     DWORD old_protect;
@@ -422,8 +516,15 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
         DisableThreadLibraryCalls(hInst);
         load_real_bass();
         CreateThread(NULL, 0, patch_thread, NULL, 0, NULL);
+        g_bg_thread = CreateThread(NULL, 0, ground_check_thread, NULL, 0, NULL);
         break;
     case DLL_PROCESS_DETACH:
+        g_bg_active = 0;
+        if (g_bg_thread) {
+            WaitForSingleObject(g_bg_thread, 2000);
+            CloseHandle(g_bg_thread);
+            g_bg_thread = NULL;
+        }
         break;
     }
     return TRUE;
