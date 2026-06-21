@@ -356,6 +356,11 @@ static void install_phase15_hook(void)
     *(DWORD*)(g_cave2 + p) = (DWORD)&g_want_jump; p += 4;
     *(DWORD*)(g_cave2 + p) = 0; p += 4;
 
+    /* MOV [g_on_ground], 0 — consume ground state (ball is now airborne) */
+    g_cave2[p++] = 0xC7; g_cave2[p++] = 0x05;
+    *(DWORD*)(g_cave2 + p) = (DWORD)&g_on_ground; p += 4;
+    *(DWORD*)(g_cave2 + p) = 0; p += 4;
+
     /* INC [g_jump_count] */
     g_cave2[p++] = 0xFF; g_cave2[p++] = 0x05;
     *(DWORD*)(g_cave2 + p) = (DWORD)&g_jump_count; p += 4;
@@ -363,11 +368,10 @@ static void install_phase15_hook(void)
     /* ─── .no_jump: ─── */
     int no_jump_target = p;
 
-    /* Clear g_on_ground for next frame */
-    /* MOV DWORD [g_on_ground], 0 */
-    g_cave2[p++] = 0xC7; g_cave2[p++] = 0x05;
-    *(DWORD*)(g_cave2 + p) = (DWORD)&g_on_ground; p += 4;
-    *(DWORD*)(g_cave2 + p) = 0; p += 4;
+    /* Do NOT clear g_on_ground here — only clear it when a jump happens.
+     * Type-5 is an event (fires on landing), not per-frame state.
+     * If we clear every frame, g_on_ground is 0 by the time the user
+     * presses spacebar. Instead, keep it sticky until a jump consumes it. */
 
     /* ─── Original 6 bytes ─── */
     g_cave2[p++] = 0x8B; g_cave2[p++] = 0x4C; g_cave2[p++] = 0x24; g_cave2[p++] = 0x1C;
