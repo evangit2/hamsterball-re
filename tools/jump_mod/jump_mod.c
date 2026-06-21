@@ -1,9 +1,16 @@
 /*
- * jump_mod.c — BASS.dll proxy — v7c DIAGNOSTIC
+ * jump_mod.c — BASS.dll proxy — v8 WORKING DIAGNOSTIC
  *
- * Writes diagnostics to %TEMP%\hamsterball_jump_debug.txt
- * AND to the DLL's own directory (next to Hamsterball.exe).
- * Also attempts to write C:\hamsterball_jump_debug.txt as fallback.
+ * Hooks the FINAL write to ball+0x168 (position Y) at 0x407D03.
+ * Previous versions hooked Phase 15 (0x407BB4) but ball+0x168 gets
+ * overwritten multiple times AFTER that point, so FADD was invisible.
+ *
+ * The instruction at 0x407D03 (FSTP [ESI+0x168]) is the LAST write
+ * to ball position Y in Ball_Update. After our cave modifies it,
+ * nothing overwrites it until the next frame.
+ *
+ * This version adds 2.0f every frame UNCONDITIONALLY (no keyboard
+ * check). If the ball floats up, we know the hook works.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -132,18 +139,17 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Diagnostic logging — writes to MULTIPLE locations
+ * Diagnostic logging
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static char g_logpath1[MAX_PATH] = "";  /* %TEMP% */
-static char g_logpath2[MAX_PATH] = "";  /* game dir */
-static char g_logpath3[] = "C:\\hamsterball_jump_debug.txt";
+static char g_logpath1[MAX_PATH] = "";
+static char g_logpath2[MAX_PATH] = "";
 
 static void diag_log(const char *msg)
 {
-    const char *paths[] = { g_logpath1, g_logpath2, g_logpath3 };
+    const char *paths[] = { g_logpath1, g_logpath2 };
     int i;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 2; i++) {
         if (paths[i][0] == '\0') continue;
         HANDLE hFile = CreateFileA(paths[i],
                                    FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -159,18 +165,23 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v7c — diagnostic with file logging
+ * Jump Mod v8 — hook the FINAL write to ball+0x168
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define BALL_UPDATE_HOOK    0x00407BB4
-#define HOOK_ORIG_BYTES     6
+/* NEW HOOK POINT: 0x407D03
+ * Original instruction: D9 9E 68 01 00 00 = FSTP [ESI+0x168]
+ * This is the LAST write to ball position Y in Ball_Update.
+ * After this, no more writes until next frame.
+ */
+#define FINAL_POSY_HOOK    0x00407D03
+#define FINAL_POSY_BYTES   6
 
 static volatile DWORD g_frame_count = 0;
 static float g_nudge = 2.0f;
 
 static void install_hook(void)
 {
-    BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
+    BYTE *hook_addr = (BYTE*)FINAL_POSY_HOOK;
     char buf[256];
 
     diag_log("install_hook: allocating cave...");
@@ -188,36 +199,41 @@ static void install_hook(void)
     DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
     int p = 0;
 
-    /* Execute original 6 bytes */
-    cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24; cave[p++] = 0x1C;
-    cave[p++] = 0x8B; cave[p++] = 0x11;
-
-    /* FLD [ESI+0x168] */
-    cave[p++] = 0xD9; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = 0x168; p += 4;
-
-    /* FADD [g_nudge] */
-    cave[p++] = 0xD8; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_nudge; p += 4;
-
-    /* FSTP [ESI+0x168] */
+    /* ─── Execute original 6 bytes: FSTP [ESI+0x168] ───
+     * This stores the computed Y position from the FPU stack
+     * into ball+0x168 (the standard position write). */
     cave[p++] = 0xD9; cave[p++] = 0x9E;
     *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* INC [g_frame_count] */
+    /* ─── FLD [ESI+0x168] — reload the just-stored Y position ─── */
+    cave[p++] = 0xD9; cave[p++] = 0x86;
+    *(DWORD*)(cave + p) = 0x168; p += 4;
+
+    /* ─── FADD [g_nudge] — add 2.0f jump impulse ─── */
+    cave[p++] = 0xD8; cave[p++] = 0x05;
+    *(DWORD*)(cave + p) = (DWORD)&g_nudge; p += 4;
+
+    /* ─── FSTP [ESI+0x168] — store the nudged Y back ─── */
+    cave[p++] = 0xD9; cave[p++] = 0x9E;
+    *(DWORD*)(cave + p) = 0x168; p += 4;
+
+    /* ─── INC [g_frame_count] — diagnostic counter ─── */
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_frame_count; p += 4;
 
-    /* JMP back */
+    /* ─── JMP back to hook_addr + 6 (= 0x407D09) ─── */
     cave[p++] = 0xE9;
-    *(DWORD*)(cave + p) = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
+    *(DWORD*)(cave + p) = (DWORD)(hook_addr + FINAL_POSY_BYTES) - (DWORD)(cave + p + 4);
     p += 4;
+
+    wsprintfA(buf, "cave is %d bytes, patching...", p);
+    diag_log(buf);
 
     /* Patch hook site */
     DWORD old_protect;
-    BOOL vp = VirtualProtect(hook_addr, HOOK_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
+    BOOL vp = VirtualProtect(hook_addr, FINAL_POSY_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
     if (!vp) {
-        wsprintfA(buf, "install_hook: VirtualProtect FAILED err=%d", GetLastError());
+        wsprintfA(buf, "VirtualProtect FAILED err=%d", GetLastError());
         diag_log(buf);
         return;
     }
@@ -226,10 +242,10 @@ static void install_hook(void)
     *(DWORD*)(hook_addr + 1) = jmp_to_cave;
     hook_addr[5] = 0x90;
 
-    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
+    VirtualProtect(hook_addr, FINAL_POSY_BYTES, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, FINAL_POSY_BYTES);
 
-    wsprintfA(buf, "HOOK INSTALLED! cave=%08X frames=%08X nudge=%f",
+    wsprintfA(buf, "HOOK INSTALLED at 0x407D03! cave=%08X frames_ptr=%08X nudge=%f",
               (DWORD)cave, (DWORD)&g_frame_count, g_nudge);
     diag_log(buf);
 }
@@ -242,18 +258,11 @@ static DWORD WINAPI patch_thread(LPVOID param)
     diag_log("patch_thread: started");
     Sleep(5000);
 
-    BYTE *hook = (BYTE*)BALL_UPDATE_HOOK;
-    BYTE expected[] = { 0x8B, 0x4C, 0x24, 0x1C, 0x8B, 0x11 };
+    BYTE *hook = (BYTE*)FINAL_POSY_HOOK;
+    BYTE expected[] = { 0xD9, 0x9E, 0x68, 0x01, 0x00, 0x00 };
 
     wsprintfA(buf, "Actual:   %02X %02X %02X %02X %02X %02X",
               hook[0], hook[1], hook[2], hook[3], hook[4], hook[5]);
-    diag_log(buf);
-
-    wsprintfA(buf, "Expected: %02X %02X %02X %02X %02X %02X",
-              expected[0], expected[1], expected[2], expected[3], expected[4], expected[5]);
-    diag_log(buf);
-
-    wsprintfA(buf, "bass_real: %08X", (DWORD)g_hRealBass);
     diag_log(buf);
 
     if (memcmp(hook, expected, 6) != 0) {
@@ -261,6 +270,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
         return 1;
     }
 
+    diag_log("Bytes match, installing hook...");
     install_hook();
 
     Sleep(5000);
@@ -282,26 +292,27 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
         DisableThreadLibraryCalls(hInst);
 
         /* Set up log paths */
-        {
-            /* Path 1: %TEMP% */
-            GetTempPathA(MAX_PATH, g_logpath1);
-            lstrcatA(g_logpath1, "hamsterball_jump_debug.txt");
+        GetTempPathA(MAX_PATH, g_logpath1);
+        lstrcatA(g_logpath1, "hamsterball_jump_debug.txt");
 
-            /* Path 2: game directory (next to this DLL) */
-            GetModuleFileNameA(hInst, g_logpath2, MAX_PATH);
-            {
-                char *p = strrchr(g_logpath2, '\\');
-                if (p) strcpy(p + 1, "jump_debug.txt");
-            }
+        GetModuleFileNameA(hInst, g_logpath2, MAX_PATH);
+        {
+            char *p = strrchr(g_logpath2, '\\');
+            if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v7c loaded ===");
+        diag_log("=== jump_mod v8 loaded ===");
+        {
+            char buf[128];
+            wsprintfA(buf, "bass_real = %08X", (DWORD)g_hRealBass);
+            diag_log(buf);
+        }
 
         load_real_bass();
 
         {
             char buf[128];
-            wsprintfA(buf, "bass_real.dll = %08X", (DWORD)g_hRealBass);
+            wsprintfA(buf, "bass_real after load = %08X", (DWORD)g_hRealBass);
             diag_log(buf);
         }
 
