@@ -99,6 +99,18 @@ reference/      # Raptisoft official exporter reference
 *.MESHWORLD     # Custom level files
 ```
 
+## Credits
+
+**rsks** — Project lead, reverse engineering, documentation, mods, and tooling
+
+**RodentRacer** — Contributions to RE analysis and testing
+
+**Arti (Artizard)** — Contributions to RE analysis and testing
+
+**XRow** — Contributions to RE analysis and testing
+
+**BookwormKevin** — Contributions to RE analysis and testing
+
 ## License
 
 Analysis and mod code is original work. Original Hamsterball is copyright Raptisoft.
