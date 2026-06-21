@@ -19,7 +19,7 @@ Each subfolder has the C source, compiled DLL, and (where available) a zip packa
 | 10 | [fps_unlock_standalone](fps_unlock_standalone/) | Standalone FPS unlock DLL (injector) | standalone |
 | 11 | [collision_hook](collision_hook/) | Hooks collision detection for debugging | standalone |
 | 12 | [8ball_hit_detect](8ball_hit_detect/) | Detects player→8-ball collisions + 1.5x knockback | bass.dll |
-| 13 | [entity_performance_fix](entity-performance-fix/) | Prevents freeze with many entities (balls/clones/8-balls) via per-frame throttling | CE script |
+| 13 | [entity-limit-fixer](entity-limit-fixer/) | Prevents freeze+crash with many entities (v5: skips Mesh_FindClosestCollision + throttles respawn + AI loops) | bass.dll |
 | 14 | [direction_detect](direction_detect/) | Detects ball facing direction, shows compass + heading angle on-screen (press D to toggle) | bass.dll |
 
 ## Installation (bass.dll proxy mods)
