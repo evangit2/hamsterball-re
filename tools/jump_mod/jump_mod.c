@@ -1,16 +1,14 @@
 /*
- * jump_mod.c — BASS.dll proxy — v14 RAYCAST GROUND DETECTION
+ * jump_mod.c — BASS.dll proxy — v14b RAYCAST via game thread
  *
- * v13 used Y displacement which fails on slopes.
- * v14 uses ACTUAL RAYCASTING via Ball_FindMeshCollision (0x403980)
- * to cast a ray downward from the ball and detect ground contact.
+ * v14 called Ball_FindMeshCollision from the input thread — CRASHED
+ * because game functions that create/destroy internal objects (AthenaList,
+ * CollisionMesh, SpatialTree) are NOT thread-safe.
  *
- * Ground detection: cast ray from ball position straight down (0,-1,0).
- * If the closest collision point is within ball_radius + tolerance,
- * the ball is on the ground. Works on ALL surfaces including slopes.
- *
- * Hook: 0x407BB4 — adds impulse to ball+0x174 (Y force accumulator)
- * before Phase 15 physics integration.
+ * v14b uses TWO hooks:
+ *   1. Ball_Update entry (0x405E00) — GAME THREAD, safe to call C
+ *      Checks g_want_jump, does raycast, sets g_jump_approved
+ *   2. Phase 15 cave (0x407BB4) — adds impulse if g_jump_approved
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -165,29 +163,29 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v14 — velocity impulse with raycast ground detection
+ * Jump Mod v14b — raycast on game thread, impulse on game thread
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define PHASE15_HOOK       0x00407BB4
-#define HOOK_ORIG_BYTES    6
+/* ─── Hook addresses ─────────────────────────────────────────────────────── */
+#define BALL_UPDATE_ENTRY    0x00405E00
+#define BALL_UPDATE_RELOC    8    /* bytes to relocate (push -1 + mov eax,fs:[0]) */
+#define PHASE15_HOOK         0x00407BB4
+#define PHASE15_RELOC        6    /* bytes to relocate (MOV ECX,[ESP+1C]; MOV EDX,[ECX]) */
 
+/* ─── Jump parameters ────────────────────────────────────────────────────── */
 static float g_jump_impulse = 20.0f;
+#define GROUND_TOLERANCE     2.0f
 
-/* Ground detection tolerance: if raycast hit is within
- * ball_radius + GROUND_TOLERANCE below ball center, ball is grounded. */
-#define GROUND_TOLERANCE   2.0f
-
-static volatile DWORD g_jump_requested = 0;
+/* ─── Shared state between hooks ─────────────────────────────────────────── */
+static volatile DWORD g_want_jump = 0;      /* set by input thread */
+static volatile DWORD g_jump_approved = 0;   /* set by entry hook if grounded */
 static volatile DWORD g_frame_count = 0;
 static volatile DWORD g_jump_count = 0;
 
-/* ─── Raycast function type ──────────────────────────────────────────────── */
+/* ─── Raycast function ───────────────────────────────────────────────────── */
 
 typedef struct { float x, y, z; } Vec3;
 
-/* Ball_FindMeshCollision (0x403980) — thin wrapper over Mesh_FindClosestCollision.
- * __thiscall: ECX = this (mesh pointer from Scene+0x8B0)
- *   ret 0x20 (callee cleans 8 DWORD params from stack) */
 typedef Vec3* (__thiscall *FindMeshCollision_fn)(
     void *mesh,
     Vec3 *output,
@@ -198,18 +196,25 @@ typedef Vec3* (__thiscall *FindMeshCollision_fn)(
 
 #define FN_FIND_MESH_COLLISION ((FindMeshCollision_fn)0x403980)
 
-/* ─── Raycast ground detection ───────────────────────────────────────────── */
-
 static Vec3 g_raycast_hit;
-static volatile int g_raycast_ok = 0;
 
-static int do_raycast_ground_check(DWORD ball)
+/* Called from Ball_Update entry hook — on the GAME THREAD.
+ * ECX (ball pointer) is passed as the parameter. */
+static void __cdecl do_raycast_and_approve(DWORD ball)
 {
-    DWORD scene = *(DWORD*)(ball + 0x14);
-    if (!scene) return 0;
+    char buf[256];
 
+    /* Only process if input thread requested a jump */
+    if (g_want_jump == 0) return;
+
+    /* Only process player ball (player_index >= 0 at ball+0x18) */
+    if (*(int*)(ball + 0x18) < 0) return;
+
+    /* Get mesh from Scene+0x8B0 */
+    DWORD scene = *(DWORD*)(ball + 0x14);
+    if (!scene) return;
     DWORD mesh = *(DWORD*)(scene + 0x8B0);
-    if (!mesh) return 0;
+    if (!mesh) return;
 
     float ball_x = *(float*)(ball + 0x164);
     float ball_y = *(float*)(ball + 0x168);
@@ -219,36 +224,44 @@ static int do_raycast_ground_check(DWORD ball)
     Vec3 result;
 
     /* Cast ray straight down from ball position */
-    Vec3 *ret = FN_FIND_MESH_COLLISION(
+    FN_FIND_MESH_COLLISION(
         (void*)mesh,
         &result,
-        ball_x, ball_y, ball_z,    /* origin: ball position */
-        0.0f, -1.0f, 0.0f,         /* direction: straight down */
-        0.0f                        /* param8: unused */
+        ball_x, ball_y, ball_z,
+        0.0f, -1.0f, 0.0f,
+        0.0f
     );
 
-    if (!ret) return 0;
-
     g_raycast_hit = result;
-    g_raycast_ok = 1;
 
-    /* Distance from ball center to ground hit (Y axis only) */
+    /* Distance from ball center to ground hit (Y axis) */
     float dy = ball_y - result.y;
-    /* On ground: dy ≈ ball_radius (ball sitting on surface)
-     * In air:    dy >> ball_radius (ground is far below) */
     if (dy < 0) dy = -dy;
 
-    return (dy <= ball_radius + GROUND_TOLERANCE);
+    if (dy <= ball_radius + GROUND_TOLERANCE) {
+        /* Grounded — approve the jump */
+        g_jump_approved = 1;
+        g_jump_count++;
+
+        wsprintfA(buf, "JUMP #%u: raycast GROUNDED (ball_y=%.1f hit_y=%.1f dy=%.1f r=%.1f)",
+                  g_jump_count, ball_y, result.y, ball_y - result.y, ball_radius);
+        diag_log(buf);
+    } else {
+        /* Airborne — deny */
+        wsprintfA(buf, "DENIED: AIRBORNE (ball_y=%.1f hit_y=%.1f dy=%.1f r=%.1f)",
+                  ball_y, result.y, dy, ball_radius);
+        diag_log(buf);
+    }
+
+    g_want_jump = 0;
 }
 
-/* ─── Input polling thread with raycast ground detection ─────────────────── */
+/* ─── Input polling thread ───────────────────────────────────────────────── */
 static volatile int g_prev_space = 0;
 
 static DWORD WINAPI input_thread(LPVOID param)
 {
     (void)param;
-    char buf[256];
-    int log_counter = 0;
 
     while (1) {
         Sleep(16);
@@ -265,133 +278,181 @@ static DWORD WINAPI input_thread(LPVOID param)
         BYTE *keys = (BYTE*)(kb + 0xC);
         int space_down = (keys[0x39] & 0x80) != 0;
 
-        if (space_down && !g_prev_space) {
-            /* Spacebar just pressed — raycast ground check */
-            DWORD scene = *(DWORD*)(app + 0x1A4);
-            if (scene) {
-                DWORD ball_list = scene + 0x29D4;
-                int count = *(int*)(ball_list + 0x1C);
-                if (count > 0) {
-                    DWORD *balls = *(DWORD**)(ball_list + 0x424);
-                    if (balls && balls[0]) {
-                        DWORD ball = balls[0];
-                        int on_ground = do_raycast_ground_check(ball);
-
-                        if (on_ground) {
-                            g_jump_requested = 1;
-                            g_jump_count++;
-
-                            if (log_counter < 100) {
-                                wsprintfA(buf,
-                                    "JUMP #%u: raycast GROUNDED (ball_y=%.1f hit_y=%.1f dist=%.1f radius=%.1f)",
-                                    g_jump_count,
-                                    *(float*)(ball + 0x168),
-                                    g_raycast_hit.y,
-                                    *(float*)(ball + 0x168) - g_raycast_hit.y,
-                                    *(float*)(ball + 0x284));
-                                diag_log(buf);
-                                log_counter++;
-                            }
-                        } else {
-                            if (log_counter < 100) {
-                                wsprintfA(buf,
-                                    "DENIED: AIRBORNE (ball_y=%.1f hit_y=%.1f dist=%.1f radius=%.1f)",
-                                    *(float*)(ball + 0x168),
-                                    g_raycast_hit.y,
-                                    *(float*)(ball + 0x168) - g_raycast_hit.y,
-                                    *(float*)(ball + 0x284));
-                                diag_log(buf);
-                                log_counter++;
-                            }
-                        }
-                    }
-                }
-            }
+        if (space_down && !g_prev_space && g_want_jump == 0) {
+            g_want_jump = 1;
         }
         g_prev_space = space_down;
     }
     return 0;
 }
 
-/* ─── Hook installation ──────────────────────────────────────────────────── */
+/* ─── Hook 1: Ball_Update entry (0x405E00) ─────────────────────────────────
+ * At function entry it's safe to call C functions.
+ * Ball_Update is __thiscall: ECX = ball pointer.
+ *
+ * Original 8 bytes:
+ *   6AFF            push -1
+ *   64A100000000    mov eax, fs:[0]
+ *
+ * Cave layout:
+ *   PUSHAD
+ *   PUSHFD
+ *   PUSH ECX            ; ball pointer
+ *   CALL do_raycast_and_approve
+ *   ADD ESP, 4
+ *   POPFD
+ *   POPAD
+ *   ; original 8 bytes
+ *   push -1
+ *   mov eax, fs:[0]
+ *   JMP back to 0x405E08
+ */
 
-static void install_hook(void)
+static BYTE *g_cave1 = NULL;
+
+static void install_entry_hook(void)
 {
-    BYTE *hook_addr = (BYTE*)PHASE15_HOOK;
+    BYTE *hook_addr = (BYTE*)BALL_UPDATE_ENTRY;
     char buf[256];
 
-    BYTE *cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
-                                     PAGE_EXECUTE_READWRITE);
-    if (!cave) {
-        diag_log("install_hook: VirtualAlloc FAILED!");
-        return;
-    }
+    g_cave1 = (BYTE*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE,
+                                   PAGE_EXECUTE_READWRITE);
+    if (!g_cave1) { diag_log("entry hook: VirtualAlloc FAILED"); return; }
 
-    wsprintfA(buf, "install_hook: cave=%08X", (DWORD)cave);
+    wsprintfA(buf, "entry cave: %08X", (DWORD)g_cave1);
     diag_log(buf);
 
     int p = 0;
 
-    /* ─── 1. CMP [g_jump_requested], 0 ─── */
-    cave[p++] = 0x83; cave[p++] = 0x3D;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
-    cave[p++] = 0x00;
+    /* PUSHAD — save all general registers */
+    g_cave1[p++] = 0x60;
 
-    /* ─── 2. JZ skip ─── */
-    cave[p++] = 0x74;
-    cave[p++] = 28;
+    /* PUSHFD — save flags */
+    g_cave1[p++] = 0x9C;
 
-    /* ─── 3. FLD [ESI+0x174] — load Y force accumulator ─── */
-    cave[p++] = 0xD9; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = 0x174; p += 4;
+    /* PUSH ECX (ball pointer — the __thiscall 'this') */
+    g_cave1[p++] = 0x51;
 
-    /* ─── 4. FADD [g_jump_impulse] — add upward impulse ─── */
-    cave[p++] = 0xD8; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_impulse; p += 4;
-
-    /* ─── 5. FSTP [ESI+0x174] — store modified Y force ─── */
-    cave[p++] = 0xD9; cave[p++] = 0x9E;
-    *(DWORD*)(cave + p) = 0x174; p += 4;
-
-    /* ─── 6. MOV [g_jump_requested], 0 — consume the request ─── */
-    cave[p++] = 0xC7; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
-    *(DWORD*)(cave + p) = 0; p += 4;
-
-    /* ─── skip: ─── */
-
-    /* ─── 7. Original 6 bytes: MOV ECX,[ESP+1C]; MOV EDX,[ECX] ─── */
-    cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24; cave[p++] = 0x1C;
-    cave[p++] = 0x8B; cave[p++] = 0x11;
-
-    /* ─── 8. INC [g_frame_count] ─── */
-    cave[p++] = 0xFF; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_frame_count; p += 4;
-
-    /* ─── 9. JMP back to hook_addr + 6 (= 0x407BBA) ─── */
-    cave[p++] = 0xE9;
-    *(DWORD*)(cave + p) = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
+    /* CALL do_raycast_and_approve — relative call */
+    g_cave1[p++] = 0xE8;
+    *(DWORD*)(g_cave1 + p) = (DWORD)do_raycast_and_approve - (DWORD)(g_cave1 + p + 4);
     p += 4;
 
-    wsprintfA(buf, "cave: %d bytes, installing...", p);
+    /* ADD ESP, 4 — clean up the parameter */
+    g_cave1[p++] = 0x83; g_cave1[p++] = 0xC4; g_cave1[p++] = 0x04;
+
+    /* POPFD — restore flags */
+    g_cave1[p++] = 0x9D;
+
+    /* POPAD — restore all general registers */
+    g_cave1[p++] = 0x61;
+
+    /* Original 8 bytes: push -1; mov eax, fs:[0] */
+    g_cave1[p++] = 0x6A; g_cave1[p++] = 0xFF;
+    g_cave1[p++] = 0x64; g_cave1[p++] = 0xA1;
+    *(DWORD*)(g_cave1 + p) = 0x00000000; p += 4;
+
+    /* JMP back to 0x405E08 */
+    g_cave1[p++] = 0xE9;
+    *(DWORD*)(g_cave1 + p) = (DWORD)(hook_addr + BALL_UPDATE_RELOC) - (DWORD)(g_cave1 + p + 4);
+    p += 4;
+
+    /* Patch hook site: E9 <offset> + 3 NOPs */
+    DWORD old_protect;
+    VirtualProtect(hook_addr, BALL_UPDATE_RELOC, PAGE_EXECUTE_READWRITE, &old_protect);
+
+    DWORD jmp_offset = (DWORD)(g_cave1 - hook_addr - 5);
+    hook_addr[0] = 0xE9;
+    *(DWORD*)(hook_addr + 1) = jmp_offset;
+    hook_addr[5] = 0x90;
+    hook_addr[6] = 0x90;
+    hook_addr[7] = 0x90;
+
+    VirtualProtect(hook_addr, BALL_UPDATE_RELOC, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, BALL_UPDATE_RELOC);
+
+    wsprintfA(buf, "ENTRY HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_cave1);
     diag_log(buf);
+}
+
+/* ─── Hook 2: Phase 15 cave (0x407BB4) ─────────────────────────────────────
+ * Same as v12/v13: checks g_jump_approved and adds impulse to ball+0x174.
+ *
+ * Original 6 bytes: MOV ECX,[ESP+1C]; MOV EDX,[ECX]
+ * ESI = ball pointer
+ */
+
+static BYTE *g_cave2 = NULL;
+
+static void install_phase15_hook(void)
+{
+    BYTE *hook_addr = (BYTE*)PHASE15_HOOK;
+    char buf[256];
+
+    g_cave2 = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
+                                   PAGE_EXECUTE_READWRITE);
+    if (!g_cave2) { diag_log("phase15 hook: VirtualAlloc FAILED"); return; }
+
+    int p = 0;
+
+    /* CMP [g_jump_approved], 0 */
+    g_cave2[p++] = 0x83; g_cave2[p++] = 0x3D;
+    *(DWORD*)(g_cave2 + p) = (DWORD)&g_jump_approved; p += 4;
+    g_cave2[p++] = 0x00;
+
+    /* JZ skip — jump not approved */
+    g_cave2[p++] = 0x74;
+    g_cave2[p++] = 28;
+
+    /* FLD [ESI+0x174] — load Y force accumulator */
+    g_cave2[p++] = 0xD9; g_cave2[p++] = 0x86;
+    *(DWORD*)(g_cave2 + p) = 0x174; p += 4;
+
+    /* FADD [g_jump_impulse] — add upward impulse */
+    g_cave2[p++] = 0xD8; g_cave2[p++] = 0x05;
+    *(DWORD*)(g_cave2 + p) = (DWORD)&g_jump_impulse; p += 4;
+
+    /* FSTP [ESI+0x174] — store modified Y force */
+    g_cave2[p++] = 0xD9; g_cave2[p++] = 0x9E;
+    *(DWORD*)(g_cave2 + p) = 0x174; p += 4;
+
+    /* MOV [g_jump_approved], 0 — consume the approval */
+    g_cave2[p++] = 0xC7; g_cave2[p++] = 0x05;
+    *(DWORD*)(g_cave2 + p) = (DWORD)&g_jump_approved; p += 4;
+    *(DWORD*)(g_cave2 + p) = 0; p += 4;
+
+    /* skip: */
+
+    /* Original 6 bytes: MOV ECX,[ESP+1C]; MOV EDX,[ECX] */
+    g_cave2[p++] = 0x8B; g_cave2[p++] = 0x4C; g_cave2[p++] = 0x24; g_cave2[p++] = 0x1C;
+    g_cave2[p++] = 0x8B; g_cave2[p++] = 0x11;
+
+    /* INC [g_frame_count] */
+    g_cave2[p++] = 0xFF; g_cave2[p++] = 0x05;
+    *(DWORD*)(g_cave2 + p) = (DWORD)&g_frame_count; p += 4;
+
+    /* JMP back to hook_addr + 6 */
+    g_cave2[p++] = 0xE9;
+    *(DWORD*)(g_cave2 + p) = (DWORD)(hook_addr + PHASE15_RELOC) - (DWORD)(g_cave2 + p + 4);
+    p += 4;
 
     /* Patch hook site */
     DWORD old_protect;
-    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
+    VirtualProtect(hook_addr, PHASE15_RELOC, PAGE_EXECUTE_READWRITE, &old_protect);
 
-    DWORD jmp_to_cave = (DWORD)(cave - hook_addr - 5);
+    DWORD jmp_offset = (DWORD)(g_cave2 - hook_addr - 5);
     hook_addr[0] = 0xE9;
-    *(DWORD*)(hook_addr + 1) = jmp_to_cave;
+    *(DWORD*)(hook_addr + 1) = jmp_offset;
     hook_addr[5] = 0x90;
 
-    VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
+    VirtualProtect(hook_addr, PHASE15_RELOC, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, PHASE15_RELOC);
 
-    wsprintfA(buf, "HOOK v14 INSTALLED! impulse=%f tolerance=%f cave=%08X",
-              g_jump_impulse, GROUND_TOLERANCE, (DWORD)cave);
+    wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_cave2);
     diag_log(buf);
 }
+
+/* ─── Patch thread ───────────────────────────────────────────────────────── */
 
 static DWORD WINAPI patch_thread(LPVOID param)
 {
@@ -401,19 +462,31 @@ static DWORD WINAPI patch_thread(LPVOID param)
     diag_log("patch_thread: started");
     Sleep(5000);
 
-    BYTE *hook = (BYTE*)PHASE15_HOOK;
-    BYTE expected[] = { 0x8B, 0x4C, 0x24, 0x1C, 0x8B, 0x11 };
-
-    wsprintfA(buf, "Actual:   %02X %02X %02X %02X %02X %02X",
-              hook[0], hook[1], hook[2], hook[3], hook[4], hook[5]);
+    /* Verify bytes at both hook sites */
+    BYTE *entry_hook = (BYTE*)BALL_UPDATE_ENTRY;
+    BYTE entry_expected[] = { 0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00 };
+    wsprintfA(buf, "Entry bytes: %02X %02X %02X %02X %02X %02X %02X %02X",
+              entry_hook[0], entry_hook[1], entry_hook[2], entry_hook[3],
+              entry_hook[4], entry_hook[5], entry_hook[6], entry_hook[7]);
     diag_log(buf);
-
-    if (memcmp(hook, expected, 6) != 0) {
-        diag_log("BYTE MISMATCH!");
+    if (memcmp(entry_hook, entry_expected, 8) != 0) {
+        diag_log("ENTRY BYTE MISMATCH!");
         return 1;
     }
 
-    install_hook();
+    BYTE *phase15_hook = (BYTE*)PHASE15_HOOK;
+    BYTE phase15_expected[] = { 0x8B, 0x4C, 0x24, 0x1C, 0x8B, 0x11 };
+    wsprintfA(buf, "Phase15 bytes: %02X %02X %02X %02X %02X %02X",
+              phase15_hook[0], phase15_hook[1], phase15_hook[2],
+              phase15_hook[3], phase15_hook[4], phase15_hook[5]);
+    diag_log(buf);
+    if (memcmp(phase15_hook, phase15_expected, 6) != 0) {
+        diag_log("PHASE15 BYTE MISMATCH!");
+        return 1;
+    }
+
+    install_entry_hook();
+    install_phase15_hook();
 
     CreateThread(NULL, 0, input_thread, NULL, 0, NULL);
     diag_log("input_thread launched");
@@ -445,7 +518,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v14 loaded ===");
+        diag_log("=== jump_mod v14b loaded ===");
 
         load_real_bass();
         {
