@@ -1,63 +1,105 @@
-# Hamsterball — Open-Source Reimplementation
+# Hamsterball — Reverse Engineering Experiments
 
-Reverse-engineered, clean-room reimplementation of **Hamsterball** (2004, Raptisoft).
-Loads original MESHWORLD levels and runs on Windows (MinGW) and Linux (Wine + Xvfb).
+A collection of reverse-engineering experiments targeting **Hamsterball** (2004, Raptisoft) —
+a 3D marble racing game built on the Athena engine (PE32 i386, DirectX 8 / BASS audio / DirectInput8).
 
-⚠️ **Very early stage.** Track geometry renders with flat vertex colors. No textures, no
-transparency, no HUD, no menu, no audio in-game yet.
+This project explores the game's internal architecture, binary file formats, physics systems,
+and modding capabilities through Ghidra decompilation, DLL proxy mods, and custom level creation.
 
-![Best current render](reimpl/tests/screenshots/reimpl_d3d_lit_textured.png)
+---
 
-*Best current render — WarmUp track geometry with per-geom material colors (solid shading only).*
+## What's in this repo
 
-## What Works
+### 📖 Documentation (81 files across 11 categories)
 
-| System | Status | Notes |
+Comprehensive reverse-engineering documentation generated from Ghidra decompilation of the
+original `Hamsterball.exe`, covering every major game subsystem:
+
+| Category | Docs | Highlights |
 |---|---|---|
-| MESHWORLD parser | ✅ | All 6 sections + strings |
-| Geometry rendering | ✅ | Flat shaded, no textures |
-| Ball movement | ✅ | Arrow keys only |
-| Collision | ✅ | Sphere vs level triangles |
-| Camera | ✅ | Isometric follow |
+| `objects/` | 15 | App, Ball, Scene struct layouts, object factory, global variables |
+| `physics/` | 13 | Collision system, ball physics, event planes, raycasting, particle system |
+| `meshworld/` | 7 | Binary file format spec, object types, parser decompilation |
+| `rendering/` | 7 | D3D8 pipeline, camera system, font/text rendering, iteration logs |
+| `gameplay/` | 7 | Arena scoring, rumble board, 8-ball AI, tournament state machine |
+| `decompilation/` | 7 | Key function decompilations, full function map, game loop analysis |
+| `modding/` | 6 | DLL modding guides, function reference, custom controls, audio modding |
+| `project/` | 12 | Build notes, file formats, registry system, asset manifest |
+| `ui/` | 3 | Menu system, HUD/timer, text elements |
+| `audio/` | 2 | Audio system, SFX reference |
+| `input/` | 2 | DirectInput, full input system with control remapping |
 
-## What Doesn't Work Yet
+Plus `docs/agent-knowledge/` — a structured onboarding guide for AI agents working on the codebase.
 
-- Textured walls/floors
-- Ball glass / visible hamster inside
-- HUD, timer, score
-- Start pad / GO arrow
-- Menu system
-- Audio playback in game
-- Particle effects
-- Any visual parity with original
+### 🛠️ DLL Mods (15+ mods)
 
-## Build
+Runtime modifications via `bass.dll` proxy injection — no game patches required:
 
-```bash
-cd reimpl
-make -f Makefile.mingw
+- **player_clones** — Spawn AI-controlled player balls with custom targeting
+- **jump_mod** — Jump physics with ground detection via raycasting
+- **8ball_hit_detect** — Detect and log 8-ball collisions
+- **entity-limit-fixer** — Fix game crashes from too many entities
+- **fps_unlock** — Uncap the 30 FPS framerate limit
+- **half_size_balls** — Shrink ball collision radius
+- **water_mod** — Water surface rendering experiment
+- **collision_hook** — Intercept ball-ball collision events
+- **unlimited_tris** — Remove triangle render limit
+
+...and more. See [`mods/README.md`](mods/README.md) for the full catalog.
+
+### 🎮 Custom Levels
+
+Custom `.MESHWORLD` level files created from scratch, verified working in the original game:
+
+- `DualPlatformArena.MESHWORLD` — Two-platform arena layout
+- `DualPlatformArenaV2.MESHWORLD` — Refined version with railings
+
+### 🔧 Tools
+
+- `tools/mw_create.py` — Python MESHWORLD level generator
+- `tools/d3d8_proxy_logger/` — D3D8 COM proxy logger for API call tracing
+- `tools/recon-analyzer/` — Automated binary reconnaissance
+- `tools/decompile_batch.py` — Batch Ghidra decompilation
+- `tools/hbtestd/` — Automated game testing harness
+
+### 📊 Binary Analysis
+
+- `analysis/` — Function catalogs, struct layouts, and JSON exports from Ghidra
+- `reference/raptisoft-exporter/` — Raptisoft's official MESHWORLD exporter reference
+
+---
+
+## Technical Details
+
+**Target binary:** `Hamsterball.exe` (PE32 i386, ~580KB)
+
+**Engine:** Athena engine — DirectX 8 (D3D8), BASS audio library, DirectInput8
+
+**Analysis tools:** Ghidra (with custom MCP server for programmatic decompilation),
+Cheat Engine for runtime hooks, MinGW for cross-compiling DLL proxies.
+
+**Key addresses:**
+
+| Symbol | Address |
+|---|---|
+| App global | `0x005341E0` |
+| WinMain | `0x004278E0` |
+| Game loop | `0x0046BD80` |
+| Ball vtable | `0x004CF3A0` |
+| Scene vtable | `0x004D0260` |
+
+## Repo Structure
+
 ```
-
-Run on Linux:
-```bash
-Xvfb :99 -screen 0 1280x720x24 &
-DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 wine hamsterball.exe
+docs/           # 81 RE docs in 11 category subfolders
+mods/           # 15+ compiled DLL mods with source
+tools/          # Python/C tools for analysis and level creation
+analysis/       # JSON catalogs and struct exports from Ghidra
+reference/      # Raptisoft official exporter reference
+*.MESHWORLD     # Custom level files
 ```
-
-## Architecture Docs
-
-- [`docs/BALL_PHYSICS_DECOMP.md`](docs/BALL_PHYSICS_DECOMP.md) — Ball physics
-- [`docs/CAMERA_SYSTEM.md`](docs/CAMERA_SYSTEM.md) — Camera decomp
-- [`docs/MESHWORLD_BINARY_FORMAT_OFFICIAL.md`](docs/MESHWORLD_BINARY_FORMAT_OFFICIAL.md) — Official file format
-- [`docs/INPUT_SYSTEM.md`](docs/INPUT_SYSTEM.md) — Verified input (arrows only)
-- [`docs/RENDERING_ITERATION_LOG.md`](docs/RENDERING_ITERATION_LOG.md) — Rendering experiments
-
-## Repos
-
-- **Public** (this repo) — source only
-- **Private** — source + original `.exe`/`.dll`/`.mo3`/assets
 
 ## License
 
-Reimplementation code is original. Original Hamsterball assets are copyright their
-respective owners and are not distributed here.
+Analysis and mod code is original work. Original Hamsterball is copyright Raptisoft.
+No original game binaries are distributed in this repo.
