@@ -8,6 +8,12 @@
  *
  * This means the player can jump again the instant they touch ground.
  *
+ * HOOK LOCATION: Phase 15 of Ball_Update (0x00407BB4) — the Ball_ApplyForce
+ * call site. The jump impulse is FADD'd to vel.y BEFORE position is finalized,
+ * so the ball lifts off the ground in the SAME frame. This preserves horizontal
+ * momentum: next frame the ball is airborne, so floor collision (type 5) won't
+ * fire and zero the XZ velocity.
+ *
  * ARCHITECTURE (Pattern 4: volatile flag + polling thread):
  *   Code cave (Ball_Update epilogue):
  *     - Stores ball pointer in g_ball_ptr (for the background thread)
@@ -155,8 +161,8 @@ static void load_real_bass(void)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define G_APP_ADDR          0x005341E0
-#define BALL_UPDATE_HOOK    0x004082B6   /* MOV [ESP+0x944],ECX — just before epilogue */
-#define HOOK_ORIG_BYTES     7            /* 89 8C 24 44 09 00 00 */
+#define BALL_UPDATE_HOOK    0x00407BB4   /* MOV ECX,[ESP+0x1C]; MOV EDX,[ECX] — Phase 15 */
+#define HOOK_ORIG_BYTES     6            /* 8B 4C 24 1C 8B 11 */
 #define MESH_RAYCAST_ADDR   0x00465D90   /* Mesh_FindClosestCollision */
 
 /* Ball struct offsets (byte) */
@@ -288,16 +294,26 @@ static DWORD WINAPI ground_check_thread(LPVOID param)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Code Cave — Hand-assembled x86 in Ball_Update epilogue
+ * Code Cave — Hand-assembled x86 in Ball_Update Phase 15
  * ═══════════════════════════════════════════════════════════════════════════
  *
+ * Hook point: 0x00407BB4 — the Ball_ApplyForce call site in Phase 15.
+ * At this point in Ball_Update, all roll physics are done and velocity
+ * accumulators (0x170/0x174/0x178) contain the frame's forces. Ball_ApplyForce
+ * is about to be called to accumulate these into position delta.
+ *
+ * By adding the jump impulse to vel.y HERE, the impulse enters the force
+ * pipeline BEFORE position is finalized. The ball lifts off the ground in the
+ * SAME frame, so next frame's floor collision (type 5) won't fire and zero
+ * the horizontal velocity. This preserves horizontal momentum.
+ *
  * At entry: ESI = ball pointer (this)
- *           ESP at the hook point in Ball_Update's epilogue
+ *           ESP at the hook point in Ball_Update's Phase 15
  *
  * The cave:
  *   1.  Saves registers (EAX, ECX, EDX, EDI)
- *   2.  Executes the original instruction: MOV [ESP+0x954], ECX
- *       (+0x10 offset from 4 PUSHes)
+ *   2.  Executes the original 6 bytes: MOV ECX,[ESP+0x2C]; MOV EDX,[ECX]
+ *       (ESP+0x2C = original ESP+0x1C + 0x10 from 4 PUSHes)
  *   3.  Stores ball pointer: g_ball_ptr = ESI (for background thread)
  *   4.  Checks ball+0x18 == 0 (Player 1)
  *   5.  Checks fall_mode == 0 (not dying)
@@ -305,9 +321,9 @@ static DWORD WINAPI ground_check_thread(LPVOID param)
  *   7.  Reads App → InputHandler(App+0x180) → KeyboardDevice(IH+0x434)
  *   8.  Reads DIK_SPACE from KeyboardDevice+0xC+0x39
  *   9.  Edge-detects key press (rising edge only)
- *   10. If all conditions met, sets ball+0x174 = JUMP_VELOCITY
+ *   10. If all conditions met: ADDS jump impulse to ball+0x174 via FADD
  *   11. Restores registers
- *   12. JMP back to hook_addr + 7
+ *   12. JMP back to hook_addr + 6
  *
  * Ground detection: background thread raycasts downward and sets g_on_ground.
  * NO cooldown timer — the player can jump the instant they touch ground.
@@ -331,10 +347,12 @@ static void install_hook(void)
     cave[p++] = 0x52;  /* PUSH EDX */
     cave[p++] = 0x57;  /* PUSH EDI */
 
-    /* Execute original instruction: MOV [ESP+0x954], ECX
-     * Original was [ESP+0x944], but we pushed 4 regs = +0x10 */
-    cave[p++] = 0x89; cave[p++] = 0x8C; cave[p++] = 0x24;
-    cave[p++] = 0x54; cave[p++] = 0x09; cave[p++] = 0x00; cave[p++] = 0x00;
+    /* Execute original 6 bytes: MOV ECX,[ESP+0x1C+0x10]; MOV EDX,[ECX]
+     * Original: 8B 4C 24 1C 8B 11
+     * With 4 pushes: ESP is 0x10 lower, so offset becomes 0x2C */
+    cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24;
+    cave[p++] = 0x2C;
+    cave[p++] = 0x8B; cave[p++] = 0x11;
 
     /* --- Store ball pointer for background thread: MOV [g_ball_ptr], ESI --- */
     cave[p++] = 0x89; cave[p++] = 0x35;
@@ -360,7 +378,7 @@ static void install_hook(void)
     cave[p++] = 0x75; cave[p++] = 0x00;
     int jnz_fallmode = p - 1;
 
-    /* --- Check g_on_ground == 1 (replaces cooldown timer) --- */
+    /* --- Check g_on_ground == 1 (raycast ground detection) --- */
     /* MOV EAX, [g_on_ground] */
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = (DWORD)&g_on_ground; p += 4;
@@ -369,9 +387,6 @@ static void install_hook(void)
     /* JZ .done (not on ground, can't jump) */
     cave[p++] = 0x74; cave[p++] = 0x00;
     int jz_not_grounded = p - 1;
-
-    /* .check_input: */
-    int check_input_label = p;
 
     /* --- Read App pointer: MOV EAX, [0x005341E0] --- */
     cave[p++] = 0xA1;
@@ -420,17 +435,14 @@ static void install_hook(void)
 
     /* --- Rising edge! ADD jump impulse to vel.y (preserves vel.x/vel.z) ---
      *
-     * OLD approach: MOV DWORD PTR [ESI+0x174], 0x43FA0000
-     * This REPLACED vel.y, wiping out the frame's accumulated forces.
-     * The velocity fields (0x170/0x174/0x178) are force accumulators that
-     * Ball_ApplyForce writes to during Ball_Update. By the time our hook
-     * runs (end of Ball_Update), they contain the frame's movement forces.
-     * Replacing vel.y with 500.0 made the jump dominate and killed
-     * horizontal momentum.
+     * We are in Phase 15, BEFORE Ball_ApplyForce runs. The velocity
+     * accumulators (0x170/0x174/0x178) contain the frame's roll physics
+     * forces. By FADDing the jump impulse to vel.y NOW, the impulse enters
+     * the force pipeline and Ball_ApplyForce will accumulate it into the
+     * position delta. The ball lifts off the ground THIS frame, so next
+     * frame's floor collision (type 5) won't fire and zero XZ velocity.
      *
-     * NEW approach: FLD [ESI+0x174] → FADD [jump_vel_const] → FSTP [ESI+0x174]
-     * This ADDS 500.0 to whatever vel.y already is, preserving the
-     * accumulated X/Z forces in 0x170/0x178.
+     * FLD [ESI+0x174] → FADD [g_jump_vel] → FSTP [ESI+0x174]
      */
     /* FLD DWORD PTR [ESI+0x174]  — load current vel.y onto FPU stack */
     cave[p++] = 0xD9; cave[p++] = 0x86;
@@ -477,7 +489,7 @@ static void install_hook(void)
     cave[p++] = 0x59;  /* POP ECX */
     cave[p++] = 0x58;  /* POP EAX */
 
-    /* JMP back to hook_addr + 7 */
+    /* JMP back to hook_addr + 6 */
     cave[p++] = 0xE9;
     DWORD jmp_back = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
     *(DWORD*)(cave + p) = jmp_back; p += 4;
@@ -490,16 +502,15 @@ static void install_hook(void)
     cave[jz_ih]            = (BYTE)(done_label - (jz_ih + 1));
     cave[jz_kbd]           = (BYTE)(done_label - (jz_kbd + 1));
     cave[jz_notpressed]    = (BYTE)(not_pressed_label - (jz_notpressed + 1));
-    cave[jne_already]     = (BYTE)(done_label - (jne_already + 1));
+    cave[jne_already]      = (BYTE)(done_label - (jne_already + 1));
     cave[jmp_done]         = (BYTE)(done_label - (jmp_done + 1));
 
-    /* Patch the hook site: JMP + 2 NOPs */
+    /* Patch the hook site: JMP + 1 NOP (6 bytes total) */
     DWORD old_protect;
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_to_cave;
     hook_addr[5] = 0x90;
-    hook_addr[6] = 0x90;
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 }
@@ -515,8 +526,8 @@ static DWORD WINAPI patch_thread(LPVOID param)
 
     /* Verify hook site has expected bytes */
     BYTE *hook_addr = (BYTE*)BALL_UPDATE_HOOK;
-    BYTE expected[] = { 0x89, 0x8C, 0x24, 0x44, 0x09, 0x00, 0x00 };
-    if (memcmp(hook_addr, expected, 7) != 0) {
+    BYTE expected[] = { 0x8B, 0x4C, 0x24, 0x1C, 0x8B, 0x11 };
+    if (memcmp(hook_addr, expected, 6) != 0) {
         return 1;
     }
 

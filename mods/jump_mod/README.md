@@ -19,17 +19,41 @@ Press SPACE to jump (Player 1 only, raycast-based ground check).
   jump while in the fall-off-level/respawn state.
 - **Edge detection:** SPACE uses rising-edge detection (one jump per keypress).
 
+## v3: Phase 15 Hook (Horizontal Momentum Fix)
+
+Previous versions hooked at `0x004082B6` (end of Ball_Update, Phase 23). The jump
+impulse was written to `ball+0x174` AFTER position was already finalized. Next frame,
+the ball was still on the ground, so **floor collision (type 5) fired and zeroed
+the horizontal velocity** — the jump killed all XZ momentum.
+
+**v3 hooks at `0x00407BB4` (Phase 15)** — the `Ball_ApplyForce` call site. This is
+BEFORE position finalization. The jump impulse enters the force pipeline and
+`Ball_ApplyForce` accumulates it into the position delta. The ball lifts off the
+ground in the **same frame** as the jump, so next frame's floor collision (type 5)
+never fires. Horizontal momentum is fully preserved.
+
+### Ball_Update physics pipeline context
+
+| Phase | What happens | Hook impact |
+|-------|-------------|-------------|
+| 8     | Velocity accumulators zeroed | — |
+| 9-13  | Collision tree built, gravity reflected, floor/wall collisions processed | If ball on ground: type 5 zeroes XZ |
+| 14    | Roll physics: surface gradient → velocity direction | Computes roll direction |
+| **15**| **Ball_ApplyForce called (0x407BB4)** ← **HOOK HERE** | **Jump impulse added before position finalize** |
+| 16    | Position finalized from velocity + lerp | Ball lifts off THIS frame |
+| 23    | End of Ball_Update (old hook site) | Too late — position already done |
+
 ## Architecture (Pattern 4: volatile flag + polling thread)
 
 This mod uses the **code cave + background thread** pattern, which is the only
 safe way to call game functions from a DLL mod (calling C functions directly
 from a hand-assembled code cave corrupts the stack/FPU/SEH state):
 
-1. **Code cave** (in Ball_Update epilogue, per frame):
+1. **Code cave** (in Ball_Update Phase 15, per frame):
    - Stores ball pointer in `g_ball_ptr` (for the background thread)
    - Edge-detects SPACE press
    - Checks `g_on_ground` flag (set by background thread)
-   - If grounded + pressed: writes jump velocity to `ball+0x174`
+   - If grounded + pressed: FADD's jump velocity to `ball+0x174`
 
 2. **Background thread** (Sleep 10ms loop, ~100 checks/sec):
    - Reads `g_ball_ptr` → Ball → Scene (Ball+0x14) → CollisionLevel (Scene+0x8B0)
@@ -68,7 +92,7 @@ Key details:
 ## Files
 - `jump_mod.c` — C source code (BASS proxy + code cave + background thread)
 - `bass.dll` — Compiled DLL (PE32 i386, 93KB)
-- `jump_mod.zip` — Packaged zip
+- `jump_mod_v3.zip` — Packaged zip
 
 ## Previous approaches that didn't work
 
@@ -76,9 +100,12 @@ Key details:
 2. **`Ball+0x2E9` (`on_surface`):** Sticky limit/trajectory flag, never cleared in
    Ball_Update. Once set to 1, stays 1 until respawn — inverted behavior.
 3. **Velocity threshold:** Would block jumping on ramps.
-4. **60-frame cooldown timer (previous version):** Worked but was imprecise —
-   player had to wait the full 1 second even if they landed earlier. Replaced
-   by raycast which gives instant ground contact detection.
+4. **60-frame cooldown timer (v1):** Worked but was imprecise — player had to wait
+   the full 1 second even if they landed earlier. Replaced by raycast.
+5. **Phase 23 hook with FADD (v2):** Hooked at end of Ball_Update. The FADD
+   preserved vel.x/z in the accumulator, but next frame's floor collision (type 5)
+   zeroed XZ before the jump could lift the ball. Fixed in v3 by moving hook to
+   Phase 15 (before position finalization).
 
 ## Proxy Type
 BASS.dll proxy. Installation:
