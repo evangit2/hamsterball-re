@@ -1,21 +1,18 @@
 /*
- * jump_mod.c — BASS.dll proxy — v10 VELOCITY-BASED JUMP
+ * jump_mod.c — BASS.dll proxy — v11 JUMP ARC via position + timer
  *
- * v9 worked but teleported position (+20.0f to ball+0x168).
- * v10 adds impulse to the COLLISION NODE VELOCITY Y instead.
+ * v10's collision node velocity approach didn't work (velocity already
+ * consumed by physics before our hook runs).
  *
- * The collision node at ball+0x1A4 stores persistent velocity:
- *   +0xC98 = velocity X
- *   +0xC9C = velocity Y  ← we add jump impulse here
- *   +0xCA0 = velocity Z
+ * v11 goes back to position modification (which WORKED in v8/v9) but
+ * instead of a single teleport, applies a per-frame rise for N frames,
+ * creating a natural parabolic jump arc:
  *
- * This velocity is used by the physics integration in Phase 15,
- * so adding to it creates a natural jump arc: ball rises with
- * the impulse velocity, gravity decelerates it, ball falls back.
+ *   - Spacebar → g_jump_timer = 12 frames
+ *   - Each frame: ball+0x168 += 1.5f, timer--
+ *   - After timer expires: game gravity naturally pulls ball back down
  *
- * Hook point: 0x407D03 (FINAL FSTP [ESI+0x168] in Ball_Update)
- * We execute the original instruction, then add to collision node
- * velocity Y when jump is requested.
+ * Total rise = 1.5 * 12 = 18 units. Game gravity handles the fall.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -170,18 +167,18 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v10 — velocity-based jump via collision node
+ * Jump Mod v11 — position + timer = jump arc
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define FINAL_POSY_HOOK    0x00407D03
 #define HOOK_ORIG_BYTES    6
 
-/* Jump impulse — added to collision node velocity Y.
- * This creates persistent upward velocity that decays naturally
- * due to the game's gravity integration. */
-static float g_jump_impulse = 240.0f;
+/* Jump parameters — tunable */
+static float g_rise_per_frame = 1.5f;     /* units per frame upward */
+static volatile DWORD g_jump_timer = 0;    /* frames remaining in jump */
+#define JUMP_DURATION 12                    /* total frames of rise */
+/* Total jump height = 1.5 * 12 = 18 units */
 
-static volatile DWORD g_jump_requested = 0;
 static volatile DWORD g_frame_count = 0;
 static volatile DWORD g_jump_count = 0;
 
@@ -207,8 +204,9 @@ static DWORD WINAPI input_thread(LPVOID param)
         BYTE *keys = (BYTE*)(kb + 0xC);
         int space_down = (keys[0x39] & 0x80) != 0;
 
-        if (space_down && !g_prev_space) {
-            g_jump_requested = 1;
+        if (space_down && !g_prev_space && g_jump_timer == 0) {
+            g_jump_timer = JUMP_DURATION;
+            g_jump_count++;
         }
         g_prev_space = space_down;
     }
@@ -238,51 +236,39 @@ static void install_hook(void)
     cave[p++] = 0xD9; cave[p++] = 0x9E;
     *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* ─── 2. CMP [g_jump_requested], 0 ─── */
+    /* ─── 2. CMP [g_jump_timer], 0 ─── */
     cave[p++] = 0x83; cave[p++] = 0x3D;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_timer; p += 4;
     cave[p++] = 0x00;
 
-    /* ─── 3. JZ skip — skip velocity injection if no jump ─── */
-    /*   skip target is after: MOV(6)+TEST(2)+JZ(2)+FLD(6)+FADD(6)+FSTP(6)+MOV(10) = 38 */
+    /* ─── 3. JZ skip (jump not active) ─── */
+    /*   skip over: FLD(6)+FADD(6)+FSTP(6)+DEC(6) = 24 bytes */
     cave[p++] = 0x74;
-    cave[p++] = 38;
+    cave[p++] = 24;
 
-    /* ─── 4. MOV EAX, [ESI+0x1A4] — load collision node ptr ─── */
-    cave[p++] = 0x8B; cave[p++] = 0x86;
-    *(DWORD*)(cave + p) = 0x1A4; p += 4;
+    /* ─── 4. FLD [ESI+0x168] — load current Y position ─── */
+    cave[p++] = 0xD9; cave[p++] = 0x86;
+    *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* ─── 5. TEST EAX, EAX — null check ─── */
-    cave[p++] = 0x85; cave[p++] = 0xC0;
-
-    /* ─── 6. JZ skip — no collision node, can't jump ─── */
-    cave[p++] = 0x74;
-    cave[p++] = 26;  /* skip over FLD(6)+FADD(6)+FSTP(6)+MOV(10) = 28, minus the 2 for this JZ */
-
-    /* ─── 7. FLD [EAX+0xC9C] — load velocity Y from collision node ─── */
-    cave[p++] = 0xD9; cave[p++] = 0x80;
-    *(DWORD*)(cave + p) = 0xC9C; p += 4;
-
-    /* ─── 8. FADD [g_jump_impulse] — add jump impulse to velocity ─── */
+    /* ─── 5. FADD [g_rise_per_frame] — add rise amount ─── */
     cave[p++] = 0xD8; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_impulse; p += 4;
+    *(DWORD*)(cave + p) = (DWORD)&g_rise_per_frame; p += 4;
 
-    /* ─── 9. FSTP [EAX+0xC9C] — store modified velocity Y ─── */
-    cave[p++] = 0xD9; cave[p++] = 0x98;
-    *(DWORD*)(cave + p) = 0xC9C; p += 4;
+    /* ─── 6. FSTP [ESI+0x168] — store modified Y ─── */
+    cave[p++] = 0xD9; cave[p++] = 0x9E;
+    *(DWORD*)(cave + p) = 0x168; p += 4;
 
-    /* ─── 10. MOV [g_jump_requested], 0 — consume the request ─── */
-    cave[p++] = 0xC7; cave[p++] = 0x05;
-    *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
-    *(DWORD*)(cave + p) = 0; p += 4;
+    /* ─── 7. DEC [g_jump_timer] — one less frame of rising ─── */
+    cave[p++] = 0xFF; cave[p++] = 0x0D;
+    *(DWORD*)(cave + p) = (DWORD)&g_jump_timer; p += 4;
 
-    /* ─── skip: target of both JZ ─── */
+    /* ─── skip: target of JZ ─── */
 
-    /* ─── 11. INC [g_frame_count] ─── */
+    /* ─── 8. INC [g_frame_count] ─── */
     cave[p++] = 0xFF; cave[p++] = 0x05;
     *(DWORD*)(cave + p) = (DWORD)&g_frame_count; p += 4;
 
-    /* ─── 12. JMP back to hook_addr + 6 (= 0x407D09) ─── */
+    /* ─── 9. JMP back to hook_addr + 6 (= 0x407D09) ─── */
     cave[p++] = 0xE9;
     *(DWORD*)(cave + p) = (DWORD)(hook_addr + HOOK_ORIG_BYTES) - (DWORD)(cave + p + 4);
     p += 4;
@@ -302,7 +288,8 @@ static void install_hook(void)
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 
-    wsprintfA(buf, "HOOK v10 INSTALLED! impulse=%f cave=%08X", g_jump_impulse, (DWORD)cave);
+    wsprintfA(buf, "HOOK v11 INSTALLED! rise=%f dur=%d cave=%08X",
+              g_rise_per_frame, JUMP_DURATION, (DWORD)cave);
     diag_log(buf);
 }
 
@@ -332,7 +319,8 @@ static DWORD WINAPI patch_thread(LPVOID param)
     diag_log("input_thread launched");
 
     Sleep(8000);
-    wsprintfA(buf, "After 8s: frames=%u jumps=%u", g_frame_count, g_jump_count);
+    wsprintfA(buf, "After 8s: frames=%u jumps=%u timer=%u",
+              g_frame_count, g_jump_count, g_jump_timer);
     diag_log(buf);
 
     return 0;
@@ -358,7 +346,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v10 loaded ===");
+        diag_log("=== jump_mod v11 loaded ===");
 
         load_real_bass();
         {
