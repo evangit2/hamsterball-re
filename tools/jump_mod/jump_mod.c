@@ -171,18 +171,26 @@ static volatile float g_air_vel_z = 0.0f;
 static volatile DWORD g_is_airborne = 0;
 static volatile DWORD g_jump_count = 0;
 
-/* ─── Helper: emit a near JZ (0F 84 + rel32) with placeholder ─── */
+/* ─── Helper: emit a near JZ (0F 84 + rel32) with placeholder ───
+ * Writes 6 bytes starting at cave[p]. Does NOT advance p.
+ * Returns offset of 4-byte displacement for fixup_near_jump. */
 static int emit_jz_near(BYTE *cave, int p) {
-    cave[p++] = 0x0F; cave[p++] = 0x84;
-    *(DWORD*)(cave + p) = 0x12345678;  /* placeholder */
-    return p;  /* returns position AFTER the 4-byte placeholder */
+    cave[p]   = 0x0F;
+    cave[p+1] = 0x84;
+    int disp_offset = p + 2;
+    *(DWORD*)(cave + p + 2) = 0x12345678;  /* placeholder */
+    return disp_offset;
 }
 
-/* ─── Helper: emit a near JNZ (0F 85 + rel32) with placeholder ─── */
+/* ─── Helper: emit a near JNZ (0F 85 + rel32) with placeholder ───
+ * Writes 6 bytes starting at cave[p]. Does NOT advance p.
+ * Returns offset of 4-byte displacement for fixup_near_jump. */
 static int emit_jnz_near(BYTE *cave, int p) {
-    cave[p++] = 0x0F; cave[p++] = 0x85;
-    *(DWORD*)(cave + p) = 0x12345678;  /* placeholder */
-    return p;
+    cave[p]   = 0x0F;
+    cave[p+1] = 0x85;
+    int disp_offset = p + 2;
+    *(DWORD*)(cave + p + 2) = 0x12345678;  /* placeholder */
+    return disp_offset;
 }
 
 /* ─── Helper: fix up a near-jump placeholder ─── */
@@ -265,17 +273,17 @@ static void install_jump_hook(void)
     cave[p++] = 0x8B; cave[p++] = 0x86;
     cave[p++] = 0x18; cave[p++] = 0x00; cave[p++] = 0x00; cave[p++] = 0x00;
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    /* JNZ .done (near) */
-    int jnz_player = p;
-    p = emit_jnz_near(cave, p);
+    /* JNZ .done (near, 6 bytes) */
+    int jnz_player = emit_jnz_near(cave, p);
+    p += 6;
 
     /* ═══ CHECK: fall_mode == 0 ═══ */
     cave[p++] = 0x8A; cave[p++] = 0x86;
     cave[p++] = 0x4C; cave[p++] = 0x0C; cave[p++] = 0x00; cave[p++] = 0x00;
     cave[p++] = 0x84; cave[p++] = 0xC0;
-    /* JNZ .done (near) */
-    int jnz_fallmode = p;
-    p = emit_jnz_near(cave, p);
+    /* JNZ .done (near, 6 bytes) */
+    int jnz_fallmode = emit_jnz_near(cave, p);
+    p += 6;
 
     /* ═══ AIR MOMENTUM INJECTION ═══ */
     cave[p++] = 0xA1;
@@ -308,9 +316,9 @@ static void install_jump_hook(void)
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = (DWORD)&g_on_ground; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    /* JZ .done (near — distance > 127) */
-    int jz_not_grounded = p;
-    p = emit_jz_near(cave, p);
+    /* JZ .done (near, 6 bytes) */
+    int jz_not_grounded = emit_jz_near(cave, p);
+    p += 6;
 
     /* ═══ Grounded: clear airborne flag ═══ */
     cave[p++] = 0xC7; cave[p++] = 0x05;
@@ -321,23 +329,23 @@ static void install_jump_hook(void)
     cave[p++] = 0xA1;
     *(DWORD*)(cave + p) = G_APP_ADDR; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xC0;
-    /* JZ .done (near) */
-    int jz_app = p;
-    p = emit_jz_near(cave, p);
+    /* JZ .done (near, 6 bytes) */
+    int jz_app = emit_jz_near(cave, p);
+    p += 6;
 
     cave[p++] = 0x8B; cave[p++] = 0xB8;
     *(DWORD*)(cave + p) = APP_INPUT_HANDLER; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xFF;
-    /* JZ .done (near) */
-    int jz_ih = p;
-    p = emit_jz_near(cave, p);
+    /* JZ .done (near, 6 bytes) */
+    int jz_ih = emit_jz_near(cave, p);
+    p += 6;
 
     cave[p++] = 0x8B; cave[p++] = 0xBF;
     *(DWORD*)(cave + p) = IH_KEYBOARD_DEV; p += 4;
     cave[p++] = 0x85; cave[p++] = 0xFF;
-    /* JZ .done (near) */
-    int jz_kbd = p;
-    p = emit_jz_near(cave, p);
+    /* JZ .done (near, 6 bytes) */
+    int jz_kbd = emit_jz_near(cave, p);
+    p += 6;
 
     cave[p++] = 0x8A; cave[p++] = 0x87;
     *(DWORD*)(cave + p) = (KBD_KEY_BUFFER + DIK_SPACE); p += 4;
@@ -414,15 +422,13 @@ static void install_jump_hook(void)
 
     /* ═══ Fix up ALL jump placeholders ═══ */
 
-    /* Near jumps (0F 84/0F 85 + rel32): fixup_near_jump takes the offset
-     * of the 4-byte displacement, which is 2 bytes AFTER the emit call's
-     * returned position (0F xx + 4-byte disp). */
-    fixup_near_jump(cave, jnz_player + 2, done_label);
-    fixup_near_jump(cave, jnz_fallmode + 2, done_label);
-    fixup_near_jump(cave, jz_not_grounded + 2, done_label);
-    fixup_near_jump(cave, jz_app + 2, done_label);
-    fixup_near_jump(cave, jz_ih + 2, done_label);
-    fixup_near_jump(cave, jz_kbd + 2, done_label);
+    /* Near jumps: fixup with displacement offsets returned by emit_*. */
+    fixup_near_jump(cave, jnz_player, done_label);
+    fixup_near_jump(cave, jnz_fallmode, done_label);
+    fixup_near_jump(cave, jz_not_grounded, done_label);
+    fixup_near_jump(cave, jz_app, done_label);
+    fixup_near_jump(cave, jz_ih, done_label);
+    fixup_near_jump(cave, jz_kbd, done_label);
 
     /* Short jumps (74/75/EB + rel8): displacement byte is at (position - 1) */
     cave[jz_not_airborne] = (BYTE)(check_ground_label - (jz_not_airborne + 1));
