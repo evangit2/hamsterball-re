@@ -1,0 +1,7 @@
+Hamsterball Unlimited Tris Mod (d3d8.dll proxy)
+==================================================
+Real D3D8 DLL: loaded
+Direct3DCreate8: found
+This mod removes vertex buffer size limits.
+CreateVertexBuffer will fall back to SYSTEMMEM when DEFAULT fails.
+DrawPrimitiveUP calls >65535 primitives will be split into chunks.

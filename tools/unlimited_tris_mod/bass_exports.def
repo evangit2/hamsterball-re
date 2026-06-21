@@ -1,0 +1,12 @@
+LIBRARY bass.dll
+EXPORTS
+    BASS_Stop
+    BASS_ChannelSetAttributes
+    BASS_Free
+    BASS_Init
+    BASS_Start
+    BASS_SetConfig
+    BASS_ChannelStop
+    BASS_MusicPlayEx
+    BASS_ErrorGetCode
+    BASS_MusicLoad

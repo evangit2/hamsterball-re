@@ -1,0 +1,8 @@
+Hamsterball water mod log started (path=Z:\home\evan\hamsterball-re\tools\unlimited_tris_mod\hamsterball_unlimited_tris\Hamsterball_water_mod.log)
+Water mod initializing. exe=Z:\home\evan\hamsterball-re\tools\unlimited_tris_mod\hamsterball_unlimited_tris\Hamsterball.exe
+bass_real.dll handle=0x10000000
+Config: debug=1 entry_damp=0.70 drag=0.030 hdrag=0.040 gravity_eq=0.450 timer=10
+Applying water hook patches...
+Ball_Update vtable[4] hook (orig=0x00408390): OK
+CreateNoDizzy CALL-site redirects: 25 patched
+Config: entry_damping=0.70 drag=0.030 hdrag=0.040 gravity_eq=0.450 timer=10
