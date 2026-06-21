@@ -1,19 +1,16 @@
 /*
- * jump_mod.c — BASS.dll proxy — v12 VELOCITY IMPULSE via force accumulator
+ * jump_mod.c — BASS.dll proxy — v13 GROUND-DETECTED JUMP
  *
- * v10 tried collision node velocity (+0xC9C) — didn't work (already consumed).
- * v11 used position+timer — worked but not a real velocity impulse.
+ * v12 works but allows mid-air jumping. v13 adds ground detection.
  *
- * v12 adds impulse to the FORCE ACCUMULATOR (ball+0x174) BEFORE Phase 15.
- * Phase 15's vtable[0] call INTEGRATES the force into velocity/position,
- * creating a real velocity impulse with a natural gravity arc.
+ * Ground detection: reads ball+0x180 (Y displacement per frame).
+ *   - On ground: Y disp ≈ 0 (ball is stationary or rolling horizontally)
+ *   - In air rising: Y disp > 0
+ *   - In air falling: Y disp < -0.5
+ *   - Jump only allowed when abs(Y_disp) < GROUND_THRESHOLD
  *
- * Force accumulators are zeroed at 0x4066E7 at the start of each frame.
- * Gravity and collision forces accumulate. Then Phase 15 at 0x407BB4
- * integrates them. By adding our impulse to ball+0x174 right before
- * Phase 15, it becomes part of the physics integration.
- *
- * Hook: 0x407BB4 (6 bytes: 8B 4C 24 1C 8B 11)
+ * Hook: 0x407BB4 — adds impulse to ball+0x174 (Y force accumulator)
+ * before Phase 15 physics integration.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll jump_mod.c -lwinmm \
@@ -168,34 +165,30 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Jump Mod v12 — force accumulator impulse
+ * Jump Mod v13 — velocity impulse with ground detection
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Hook at Phase 15 entry (0x407BB4) — BEFORE the vtable[0] integration call.
- * By adding to ball+0x174 (Y force accumulator) here, Phase 15 will
- * integrate our impulse into real velocity, and gravity will create
- * a natural arc on the way down.
- *
- * Original bytes: 8B 4C 24 1C 8B 11 (MOV ECX,[ESP+1C]; MOV EDX,[ECX]) */
 #define PHASE15_HOOK       0x00407BB4
 #define HOOK_ORIG_BYTES    6
 
-/* Jump impulse — added to Y force accumulator (ball+0x174).
- * Phase 15 integrates this into velocity. The impulse magnitude
- * needs to be large enough to overcome gravity (~9.8 units/s²)
- * scaled by the game's physics timestep. */
 static float g_jump_impulse = 20.0f;
+
+/* Ground detection threshold for ball+0x180 (Y displacement).
+ * On ground: |Y_disp| < threshold. In air: |Y_disp| >= threshold. */
+#define GROUND_THRESHOLD   0.5f
 
 static volatile DWORD g_jump_requested = 0;
 static volatile DWORD g_frame_count = 0;
 static volatile DWORD g_jump_count = 0;
 
-/* ─── Input polling thread ──────────────────────────────────────────────── */
+/* ─── Input polling thread with ground detection ─────────────────────────── */
 static volatile int g_prev_space = 0;
 
 static DWORD WINAPI input_thread(LPVOID param)
 {
     (void)param;
+    char buf[256];
+    int log_counter = 0;
 
     while (1) {
         Sleep(16);
@@ -213,7 +206,40 @@ static DWORD WINAPI input_thread(LPVOID param)
         int space_down = (keys[0x39] & 0x80) != 0;
 
         if (space_down && !g_prev_space) {
-            g_jump_requested = 1;
+            /* Spacebar just pressed — check if ball is on ground */
+            DWORD scene = *(DWORD*)(app + 0x1A4);
+            if (scene) {
+                /* Get ball list from Scene+0x29D4 and find player ball */
+                DWORD ball_list = scene + 0x29D4;
+                int count = *(int*)(ball_list + 0x1C);
+                if (count > 0) {
+                    /* First ball in the list is usually the player */
+                    DWORD *balls = *(DWORD**)(ball_list + 0x424);
+                    if (balls && balls[0]) {
+                        DWORD ball = balls[0];
+                        /* Read Y displacement at ball+0x180 */
+                        float y_disp = *(float*)(ball + 0x180);
+                        float abs_y = y_disp < 0 ? -y_disp : y_disp;
+
+                        if (abs_y < GROUND_THRESHOLD) {
+                            g_jump_requested = 1;
+                            g_jump_count++;
+
+                            if (log_counter < 50) {
+                                wsprintfA(buf, "JUMP #%u: y_disp=%.3f (grounded!)", g_jump_count, y_disp);
+                                diag_log(buf);
+                                log_counter++;
+                            }
+                        } else {
+                            if (log_counter < 50) {
+                                wsprintfA(buf, "JUMP DENIED: y_disp=%.3f (airborne)", y_disp);
+                                diag_log(buf);
+                                log_counter++;
+                            }
+                        }
+                    }
+                }
+            }
         }
         g_prev_space = space_down;
     }
@@ -244,8 +270,7 @@ static void install_hook(void)
     *(DWORD*)(cave + p) = (DWORD)&g_jump_requested; p += 4;
     cave[p++] = 0x00;
 
-    /* ─── 2. JZ skip — no jump requested ─── */
-    /*   skip over: FLD(6)+FADD(6)+FSTP(6)+MOV(10) = 28 bytes */
+    /* ─── 2. JZ skip ─── */
     cave[p++] = 0x74;
     cave[p++] = 28;
 
@@ -296,7 +321,8 @@ static void install_hook(void)
     VirtualProtect(hook_addr, HOOK_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, HOOK_ORIG_BYTES);
 
-    wsprintfA(buf, "HOOK v12 INSTALLED! impulse=%f cave=%08X", g_jump_impulse, (DWORD)cave);
+    wsprintfA(buf, "HOOK v13 INSTALLED! impulse=%f threshold=%f cave=%08X",
+              g_jump_impulse, GROUND_THRESHOLD, (DWORD)cave);
     diag_log(buf);
 }
 
@@ -352,7 +378,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "jump_debug.txt");
         }
 
-        diag_log("=== jump_mod v12 loaded ===");
+        diag_log("=== jump_mod v13 loaded ===");
 
         load_real_bass();
         {
