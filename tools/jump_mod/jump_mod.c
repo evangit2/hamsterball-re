@@ -179,7 +179,7 @@ static void diag_log(const char *msg)
 /* Jump impulse — added to collision node velocity Y.
  * This creates persistent upward velocity that decays naturally
  * due to the game's gravity integration. */
-static float g_jump_impulse = 8.0f;
+static float g_jump_impulse = 240.0f;
 
 static volatile DWORD g_jump_requested = 0;
 static volatile DWORD g_frame_count = 0;
