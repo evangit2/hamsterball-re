@@ -12,6 +12,7 @@ from . import fpsmod
 from .addresses import list_known_symbols, get_struct_layout
 from .capture import Capture
 from .config import Config
+from .dlltester import DllTester
 from .errors import failure, success, tool_guard
 from .gamemgr import GameManager
 from .health import get_health as _get_health
@@ -28,6 +29,7 @@ capture = Capture(cfg)
 inputs = InputDevice(cfg)
 telemetry = Telemetry(cfg)
 logs = GameLog(cfg)
+dlltester = DllTester(cfg)
 
 # Persistent monitor/freeze managers (created lazily with correct PID)
 _monitor: Optional[AddressMonitor] = None
@@ -141,6 +143,68 @@ def get_status() -> dict[str, Any]:
 def get_health() -> dict[str, Any]:
     """Return full server/game/display health status."""
     return _get_health(cfg, mgr)
+
+
+# ---------------------------------------------------------------------------
+# DLL mod testing tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+@tool_guard
+def test_dll_mod(
+    mod_dll_path: str,
+    target_dll: str = "bass.dll",
+    timeout: float = 8.0,
+) -> dict[str, Any]:
+    """Test a DLL mod for crashes by launching the game with it.
+
+    Swaps the modded DLL into the game directory, launches Hamsterball
+    under Wine/Xvfb, and monitors for crashes. If the game exits within
+    the timeout period, it's reported as a crash. If it survives, it's
+    reported as OK. Original DLLs are always restored afterwards.
+
+    Args:
+        mod_dll_path: Absolute path to the modded DLL file to test.
+        target_dll: Name of the DLL to replace (bass.dll, d3d8.dll, etc).
+        timeout: Seconds to wait before declaring the DLL safe (default 8s).
+                 Most crash-on-startup DLLs crash within 1-2 seconds.
+
+    Returns:
+        {success: bool, crash: bool, exit_code: int|null,
+         runtime_seconds: float, restored: bool, error: str|null}
+    """
+    result = dlltester.test_dll(
+        mod_dll_path=mod_dll_path,
+        target_dll=target_dll,
+        timeout=timeout,
+    )
+    return success(
+        ok=result.ok,
+        crash=result.crash,
+        exit_code=result.exit_code,
+        runtime_seconds=result.runtime_seconds,
+        error=result.error,
+        dll_path=result.dll_path,
+        backup_path=result.backup_path,
+        restored=result.restored,
+        verdict="CRASH" if result.crash else "OK",
+    )
+
+
+@mcp.tool()
+@tool_guard
+def restore_dlls() -> dict[str, Any]:
+    """Restore all original DLLs that were backed up during testing."""
+    result = dlltester.restore_all()
+    return success(**result)
+
+
+@mcp.tool()
+@tool_guard
+def list_dll_backups() -> dict[str, Any]:
+    """List all DLL backups created by test_dll_mod."""
+    result = dlltester.list_backups()
+    return success(backups=result)
 
 
 # ---------------------------------------------------------------------------

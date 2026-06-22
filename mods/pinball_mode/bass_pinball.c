@@ -424,10 +424,8 @@ static DWORD WINAPI KeyPollThread(LPVOID param) {
 /* --- Installation --- */
 
 static DWORD WINAPI InstallPatches(LPVOID param) {
-    /* Initialize BASS forwarding first */
-    init_bass_proxy();
-
-    /* Wait for the game's code to be fully loaded — App must be allocated
+    /* BASS proxy is already initialized in DllMain — no need to redo it.
+     * Wait for the game's code to be fully loaded — App must be allocated
      * before we can safely patch. App is at 0x5341E0. */
     int wait_count = 0;
     while (!(*(DWORD*)0x5341E0) && wait_count < 100) {
@@ -466,6 +464,12 @@ static DWORD WINAPI InstallPatches(LPVOID param) {
 BOOL APIENTRY DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hInst);
+        /* Initialize BASS forwarding IMMEDIATELY — the game calls BASS_Init
+         * and BASS_MusicLoad during App.Initialize(), which runs before our
+         * patch thread even wakes up. If bass_real.dll isn't loaded yet,
+         * the stub returns wrong values and the game crashes. */
+        init_bass_proxy();
+        /* Spawn the hook installation thread (delayed) */
         CreateThread(NULL, 0, InstallPatches, NULL, 0, NULL);
     }
     return TRUE;
