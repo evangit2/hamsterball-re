@@ -192,6 +192,8 @@ static volatile DWORD g_frame_count = 0;
 static volatile DWORD g_jump_count = 0;
 static volatile DWORD g_raycast_count = 0;
 static volatile DWORD g_grounded_count = 0;
+/* Ball pointer captured from Phase 15 cave (ESI=ball). Set every frame. */
+static volatile DWORD g_ball_ptr = 0;
 
 /* ─── Mesh_FindClosestCollision wrapper ────────────────────────────────────
  *
@@ -355,7 +357,7 @@ static DWORD WINAPI input_thread(LPVOID param)
 
         if (space_down && !g_prev_space) {
             /* Spacebar just pressed — check if grounded via raycast */
-            DWORD ball = get_player_ball();
+            DWORD ball = g_ball_ptr;
             if (ball) {
                 int grounded = is_ball_grounded(ball);
                 if (grounded) {
@@ -368,6 +370,10 @@ static DWORD WINAPI input_thread(LPVOID param)
                              g_raycast_count, g_grounded_count);
                     diag_log(buf);
                 }
+            } else {
+                /* Ball pointer not yet captured — allow jump as fallback (v12 behavior) */
+                g_want_jump = 1;
+                diag_log("JUMP: ball_ptr not set, fallback allow");
             }
         }
         g_prev_space = space_down;
@@ -444,6 +450,11 @@ static void install_phase15_hook(void)
 
     /* ─── .no_jump: ─── */
     int no_jump_target = p;
+
+    /* Save ball pointer (ESI) for input thread to use for raycast */
+    /* MOV [g_ball_ptr], ESI */
+    g_phase15_cave[p++] = 0x89; g_phase15_cave[p++] = 0x35;
+    *(DWORD*)(g_phase15_cave + p) = (DWORD)&g_ball_ptr; p += 4;
 
     /* INC [g_frame_count] */
     g_phase15_cave[p++] = 0xFF; g_phase15_cave[p++] = 0x05;
