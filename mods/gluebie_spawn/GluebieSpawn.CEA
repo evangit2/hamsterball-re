@@ -12,6 +12,7 @@ alloc(gluebie_array, 68)
 alloc(float_900, 4)
 alloc(last_board, 4)
 alloc(near_flag, 4)
+alloc(sound_cooldown, 4)
 
 registersymbol(SpawnGluebie)
 
@@ -49,6 +50,9 @@ last_board:
 near_flag:
   dd 0
 
+sound_cooldown:
+  dd 0
+
 label(original_code)
 label(save_pos)
 label(check_spawn)
@@ -59,10 +63,8 @@ label(prox_next)
 label(prox_near)
 label(prox_done)
 label(no_clear)
-label(apply_tar)
-label(set_tar_flags)
-label(already_tarred)
-label(check_recover)
+label(apply_slow)
+label(try_sound)
 
 SpawnCode:
   mov eax, [esi+0x14]
@@ -121,21 +123,33 @@ prox_done:
   popad
 
   cmp dword [near_flag], 1
-  jne check_recover
+  jne save_pos
 
-apply_tar:
-  cmp byte [esi+0x2CC], 0
-  jne already_tarred
+apply_slow:
+  fld dword [esi+0x764]
+  fmul dword [0x4CF4C0]
+  fstp dword [esi+0x764]
+
+try_sound:
+  mov eax, [sound_cooldown]
+  test eax, eax
+  jz save_pos
+  dec eax
+  mov [sound_cooldown], eax
+  cmp eax, 0
+  jne save_pos
+
+  pushad
 
   mov eax, [esi+0x14]
   test eax, eax
-  jz set_tar_flags
+  jz sound_done
   mov eax, [eax+0x878]
   test eax, eax
-  jz set_tar_flags
+  jz sound_done
   mov eax, [eax+0x484]
   test eax, eax
-  jz set_tar_flags
+  jz sound_done
 
   push 0x3F800000
   sub esp, 0xC
@@ -148,18 +162,8 @@ apply_tar:
   mov ecx, eax
   call 00459860
 
-set_tar_flags:
-  mov byte [esi+0x2CC], 1
-
-already_tarred:
-  mov byte [esi+0x768], 0
-  jmp save_pos
-
-check_recover:
-  cmp byte [esi+0x2CC], 0
-  je save_pos
-  mov byte [esi+0x2CC], 0
-  mov byte [esi+0x768], 1
+sound_done:
+  popad
 
 save_pos:
   cmp dword [esi+0x18], 0
@@ -313,4 +317,5 @@ dealloc(gluebie_array)
 dealloc(float_900)
 dealloc(last_board)
 dealloc(near_flag)
+dealloc(sound_cooldown)
 unregistersymbol(SpawnGluebie)
