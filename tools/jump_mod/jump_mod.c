@@ -181,7 +181,8 @@ static void diag_log(const char *msg)
 
 /* ─── Hook addresses ──────────────────────────────────────────────────────── */
 #define PRESENT_HOOK       0x00455A90   /* Graphics_PresentOrEnd — function entry */
-#define PRESENT_ORIG_BYTES 6            /* first 6 bytes: 83 EC 0C 53 55 56      */
+#define PRESENT_ORIG_BYTES 7            /* first 7 bytes: 8A 44 24 04 83 EC 20
+                                         * MOV AL,[ESP+4]; SUB ESP,0x20          */
 #define PHASE15_HOOK       0x00407BB4   /* Ball_Update Phase 15 point             */
 #define PHASE15_ORIG_BYTES 6            /* 8B 4C 24 1C 8B 11                      */
 
@@ -588,13 +589,13 @@ static void install_present_hook(void)
     BYTE *hook_addr = (BYTE*)PRESENT_HOOK;
     char buf[256];
 
-    BYTE expected[] = { 0x83, 0xEC, 0x0C, 0x53, 0x55, 0x56 };
-    wsprintfA(buf, "Present bytes: %02X %02X %02X %02X %02X %02X",
+    BYTE expected[] = { 0x8A, 0x44, 0x24, 0x04, 0x83, 0xEC, 0x20 };
+    wsprintfA(buf, "Present bytes: %02X %02X %02X %02X %02X %02X %02X",
               hook_addr[0], hook_addr[1], hook_addr[2],
-              hook_addr[3], hook_addr[4], hook_addr[5]);
+              hook_addr[3], hook_addr[4], hook_addr[5], hook_addr[6]);
     diag_log(buf);
 
-    if (memcmp(hook_addr, expected, 6) != 0) {
+    if (memcmp(hook_addr, expected, 7) != 0) {
         diag_log("PRESENT BYTE MISMATCH!");
         return;
     }
@@ -640,12 +641,14 @@ static void install_present_hook(void)
     /* POPAD (61) */
     g_present_cave[p++] = 0x61;
 
-    /* Original 6 bytes */
+    /* Original 7 bytes: 8A 44 24 04 83 EC 20
+     * MOV AL,[ESP+4]; SUB ESP,0x20 */
+    g_present_cave[p++] = 0x8A; g_present_cave[p++] = 0x44;
+    g_present_cave[p++] = 0x24; g_present_cave[p++] = 0x04;
     g_present_cave[p++] = 0x83; g_present_cave[p++] = 0xEC;
-    g_present_cave[p++] = 0x0C; g_present_cave[p++] = 0x53;
-    g_present_cave[p++] = 0x55; g_present_cave[p++] = 0x56;
+    g_present_cave[p++] = 0x20;
 
-    /* JMP back to hook_addr + 6 */
+    /* JMP back to hook_addr + 7 */
     g_present_cave[p++] = 0xE9;
     *(DWORD*)(g_present_cave + p) = (DWORD)(hook_addr + PRESENT_ORIG_BYTES) - (DWORD)(g_present_cave + p + 4);
     p += 4;
@@ -661,7 +664,8 @@ static void install_present_hook(void)
     DWORD jmp_offset = (DWORD)(g_present_cave - hook_addr - 5);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_offset;
-    hook_addr[5] = 0x90;
+    hook_addr[5] = 0x90;  /* NOP byte 6 */
+    hook_addr[6] = 0x90;  /* NOP byte 7 */
 
     VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENT_ORIG_BYTES);
