@@ -1,69 +1,219 @@
 // ============================================================
-// SpeedCylinder Spawner — CE AutoAssembler Script v1
-//
-// REQUIRES: bass.dll proxy (speedcyl_spawn mod) installed in
-//   the Hamsterball game folder (rename original bass.dll →
-//   bass_real.dll, copy this mod's bass.dll in).
+// SpeedCylinder Global Spawner — CE AutoAssembler Script v2
+// Pure CEA, no Lua, no bass.dll required.
 //
 // WHAT THIS DOES:
-//   Adds "spawnSpeed" to CE's address list, pointing to the
-//   exported g_spawn_flag variable inside bass.dll.
+//   Spawns a SpeedCylinder (Pendulum) at Player 1's position
+//   in ANY level, not just Level 6 (Up).
 //
-//   Set a hotkey on spawnSpeed:
-//     Right-click → "Set/Change Hotkeys" →
-//     Action: "Set value to" → Value: 1
-//
-//   During gameplay, press the hotkey to spawn one SpeedCylinder
-//   at Player 1's position. The DLL auto-resets the flag to 0
-//   after spawning.
+// HOW TO USE:
+//   1. Enable this script in Cheat Engine
+//   2. Add "SpawnFlag" to CE address list (Type: 4 Bytes, Hex)
+//   3. Set a hotkey on SpawnFlag:
+//      Right-click → Set/Change Hotkeys →
+//      Action: Set value to → Value: 1
+//   4. During gameplay, press the hotkey to spawn a SpeedCylinder
+//      at Player 1's position
 //
 // HOW IT WORKS:
-//   bass.dll hooks Graphics_PresentOrEnd (per-frame). Each frame
-//   it checks if g_spawn_flag==1. If so:
-//     1. Loads SpeedCylinder MeshWorld (cached after first spawn)
-//     2. Finds Player 1 ball position (Scene+0x2DEC → ball+0x164)
-//     3. Creates Pendulum (SpeedCylinder) via Pendulum_ctor
-//     4. Appends to Scene's object list (Scene+0x2578)
-//     5. Resets g_spawn_flag to 0
+//   Hooks Graphics_PresentOrEnd (0x455A90) per-frame.
+//   When SpawnFlag=1:
+//     1. Loads "levels\levelup-speedcylinder" mesh via MeshWorld_ctor
+//        (cached in MeshCache after first spawn)
+//     2. Gets Player 1 ball position from all_balls_list (Scene+0x2DEC)
+//     3. operator_new(0x150C) → Pendulum_ctor(mem, scene, x, y, z, 0, mesh)
+//     4. AthenaList_Append(Scene+0x2578, pendulum)
+//     5. Resets SpawnFlag to 0
+//
+// ADDRESSES (verified from Ghidra decompilations):
+//   0x005341E0  App pointer (global)
+//   App+0x178   Scene pointer
+//   App+0x174   GraphicsDevice pointer
+//   Scene+0x2578  Objects AthenaList (where Pendulums go)
+//   Scene+0x2DEC  All balls AthenaList
+//     count at +0x04 = Scene+0x2DF0
+//     array at +0x40C = Scene+0x31F8
+//   Ball+0x164/0x168/0x16C  Display position X/Y/Z (floats)
+//
+//   0x004BA57B  operator_new  (__cdecl, caller cleans 4 bytes)
+//   0x00461510  MeshWorld_ctor (__thiscall: ECX=this, 2 stack params, RET 0x08)
+//   0x00436A20  Pendulum_ctor  (__thiscall: ECX=this, 6 stack params, RET 0x18)
+//   0x00453780  AthenaList_Append (__thiscall: ECX=list, 1 stack param, RET 0x04)
 // ============================================================
 
 [ENABLE]
 
-// g_spawn_flag is exported by bass.dll, so CE can access it directly
-// via the module!symbol syntax.
+alloc(SpawnFlag, 4)
+alloc(MeshCache, 4)
+alloc(CaveSpawn, 512)
+alloc(SpeedCylStr, 32)
 
-alloc(spawnSpeedHolder, 4)
+label(mesh_ready)
+label(spawn_restore)
 
-lua:
-  -- Try to find g_spawn_flag exported from bass.dll
-  local flagAddr = getAddressSafe("bass.dll!g_spawn_flag")
+registersymbol(SpawnFlag)
+registersymbol(MeshCache)
 
-  if flagAddr and flagAddr ~= 0 then
-    -- Write the address to our holder
-    writeInteger(getAddress("spawnSpeedHolder"), flagAddr)
+// "levels\levelup-speedcylinder\0" (29 bytes)
+SpeedCylStr:
+  db 6C 65 76 65 6C 73 5C 6C 65 76 65 6C 75 70 2D 73
+  db 70 65 65 64 63 79 6C 69 6E 64 65 72 00 00 00 00
 
-    -- Add to CE address list
-    local al = getAddressList()
-    local entry = al.createMemoryRecord()
-    entry.Description = "spawnSpeed"
-    entry.Type = vtDword
-    entry.Address = string.format("%08X", flagAddr)
-    entry.Active = false
+SpawnFlag:
+  dd 0
 
-    showMessage("SpeedCylinder Spawner ready!\n\n" ..
-               "Set a hotkey on 'spawnSpeed' address:\n" ..
-               "  Right-click → Set/Change Hotkeys\n" ..
-               "  Action: Set value to → 1\n\n" ..
-               "Press the hotkey during gameplay to spawn a SpeedCylinder at Player 1's position.")
-  else
-    showMessage("ERROR: Could not find bass.dll!g_spawn_flag\n" ..
-               "Make sure the SpeedCylinder Spawner bass.dll is installed in the game folder.")
-  end
-endlua
+MeshCache:
+  dd 0
 
-registersymbol(spawnSpeedHolder)
+// ============================================================
+// Code cave: hooks Graphics_PresentOrEnd entry (0x455A90)
+// Original 9 bytes: 8A 44 24 04 83 EC 20 3C 01
+//   MOV AL,[ESP+4] / SUB ESP,0x20 / CMP AL,1
+// We JMP to cave (5 bytes) + 4 NOPs = 9 bytes overwritten
+// ============================================================
+CaveSpawn:
+  // Execute original 9 bytes first
+  db 8A 44 24 04    // MOV AL, [ESP+4]
+  db 83 EC 20       // SUB ESP, 0x20
+  db 3C 01          // CMP AL, 1
+
+  // Save all registers and flags (function-entry hook, safe)
+  pushfd
+  pushad
+
+  // Check if spawn requested
+  cmp dword ptr [SpawnFlag], 0
+  je spawn_restore
+
+  // Clear flag immediately (prevents double-spawn)
+  mov dword ptr [SpawnFlag], 0
+
+  // Get App pointer
+  mov eax, [0x005341E0]
+  test eax, eax
+  je spawn_restore
+
+  // Get Scene = App+0x178
+  mov eax, [eax+0x178]
+  test eax, eax
+  je spawn_restore
+  mov esi, eax               // ESI = Scene
+
+  // Check if mesh is already cached
+  mov edi, [MeshCache]
+  test edi, edi
+  jne mesh_ready
+
+  // --- Load SpeedCylinder mesh (first time only) ---
+
+  // operator_new(0x10D0) for MeshWorld struct
+  push 0x10D0
+  mov eax, 0x004BA57B
+  call eax
+  add esp, 4                 // __cdecl: caller cleans 1 param
+  test eax, eax
+  je spawn_restore
+  mov edi, eax               // EDI = MeshWorld memory
+
+  // Get GraphicsDevice = App+0x174
+  mov eax, [0x005341E0]
+  mov eax, [eax+0x174]
+
+  // MeshWorld_ctor(mem, gfxDevice, "levels\levelup-speedcylinder")
+  // __thiscall: ECX=mem, push param_2(string), push param_1(gfx)
+  push SpeedCylStr           // param_2: mesh path string
+  push eax                   // param_1: GraphicsDevice
+  mov ecx, edi               // this = MeshWorld memory
+  mov eax, 0x00461510        // MeshWorld_ctor
+  call eax
+  // callee does RET 0x08 (cleans 2 stack params)
+
+  // Cache the mesh pointer
+  mov [MeshCache], edi
+
+mesh_ready:
+  // --- Get Player 1 ball position ---
+
+  // all_balls AthenaList at Scene+0x2DEC
+  // count at +0x04 = Scene+0x2DF0
+  mov ecx, [esi+0x2DF0]
+  test ecx, ecx
+  je spawn_restore
+
+  // array pointer at +0x40C = Scene+0x31F8
+  mov edx, [esi+0x31F8]
+  test edx, edx
+  je spawn_restore
+
+  // ball[0] (usually Player 1)
+  mov eax, [edx]
+  test eax, eax
+  je spawn_restore
+
+  // --- Allocate Pendulum ---
+
+  // operator_new(0x150C) for Pendulum struct
+  push 0x150C
+  mov eax, 0x004BA57B
+  call eax
+  add esp, 4                 // __cdecl: caller cleans
+  test eax, eax
+  je spawn_restore
+  mov ebx, eax               // EBX = Pendulum memory
+
+  // --- Pendulum_ctor(mem, scene, x, y, z, 0, mesh) ---
+  // __thiscall: ECX=mem, 6 stack params pushed right-to-left
+  // Pendulum_ctor at 0x436A20, RET 0x18
+  mov eax, [edx]             // ball[0] pointer
+  push edi                   // param_6: mesh (MeshWorld*)
+  push 0                     // param_5: int 0 (rotation angle)
+  push dword ptr [eax+0x16C] // param_4: Z position (float)
+  push dword ptr [eax+0x168] // param_3: Y position (float)
+  push dword ptr [eax+0x164] // param_2: X position (float)
+  push esi                   // param_1: Scene pointer
+  mov ecx, ebx               // this = Pendulum memory
+  mov eax, 0x00436A20        // Pendulum_ctor (SpeedCylinder variant)
+  call eax
+  // callee does RET 0x18 (cleans 6 stack params)
+
+  // --- Add to Scene's objects list ---
+  // AthenaList_Append(Scene+0x2578, pendulum)
+  // __thiscall: ECX=&AthenaList, 1 stack param
+  lea ecx, [esi+0x2578]      // ECX = address of objects AthenaList
+  push ebx                   // push Pendulum pointer
+  mov eax, 0x00453780        // AthenaList_Append
+  call eax
+  // callee does RET 0x04 (cleans 1 stack param)
+
+spawn_restore:
+  // Restore all registers and flags
+  popad
+  popfd
+
+  // Jump back to original code after our 9 overwritten bytes
+  // 0x455A90 + 9 = 0x455A99 (original instruction: PUSH ESI)
+  jmp 0x455A99
+
+// ============================================================
+// Install hook at Graphics_PresentOrEnd (0x455A90)
+// JMP = 5 bytes, need 4 NOPs to fill 9 bytes total
+// ============================================================
+0x455A90:
+  jmp CaveSpawn
+  nop
+  nop
+  nop
+  nop
 
 [DISABLE]
 
-unregistersymbol(spawnSpeedHolder)
-dealloc(spawnSpeedHolder)
+// Restore original 9 bytes
+0x455A90:
+  db 8A 44 24 04 83 EC 20 3C 01
+
+dealloc(SpeedCylStr)
+dealloc(CaveSpawn)
+dealloc(MeshCache)
+dealloc(SpawnFlag)
+unregistersymbol(MeshCache)
+unregistersymbol(SpawnFlag)
