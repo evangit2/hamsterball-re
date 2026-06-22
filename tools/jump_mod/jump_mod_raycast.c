@@ -184,7 +184,10 @@ static void diag_log(const char *msg)
 
 /* ─── Parameters ──────────────────────────────────────────────────────────── */
 static float g_jump_impulse = 20.0f;
-static const float GROUND_RAY_EPSILON = 5.0f;  /* extra tolerance beyond radius */
+/* Slope-aware threshold: on a slope of angle θ, a straight-down raycast
+ * hits at distance r/cos(θ) from ball center (not r). Using radius*1.4
+ * covers slopes up to ~44° (cos(44°)≈0.719, r/0.719≈1.39r). */
+static const float GROUND_SLOPE_FACTOR = 1.4f;
 
 /* ─── Shared state ────────────────────────────────────────────────────────── */
 /* g_want_jump: 0=idle, 1=spacebar pressed AND grounded (ready to jump) */
@@ -319,7 +322,7 @@ static int is_ball_grounded(DWORD ball)
 
     float hit_y = hit_result[1];
     float dist = fabsf(hit_y - ball_y);
-    float threshold = radius + 2.0f;
+    float threshold = radius * GROUND_SLOPE_FACTOR;
 
     if (dist < threshold) {
         g_grounded_count++;
@@ -532,7 +535,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             }
         }
 
-        diag_log("=== jump_mod v19+RAYCAST (thiscall_fn_ptr) loaded ===");
+        diag_log("=== jump_mod v20+RAYCAST (slope-aware threshold) loaded ===");
 
         load_real_bass();
 
