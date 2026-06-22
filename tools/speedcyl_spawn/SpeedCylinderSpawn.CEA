@@ -1,63 +1,42 @@
 [ENABLE]
 
 // ============================================================
-// SpeedCylinder Spawn Mod v7 — Global (all races + arenas)
+// SpeedCylinder Spawn Mod v8
 // Pure CEA — no bass.dll, no Lua
 //
-// ROOT CAUSE OF "NO COLLISIONS" (found in v7):
-// Scene_CreateDynamicObjects (0x40C430) registers the Pendulum's
-// CollisionLevel (out_col) with TWO lists:
-//   a. Board+0x10EC (collision levels master list)
-//   b. Board+0x8B0+0x18 (level CollisionLevel's AthenaList)
-// The ball checks Board+0x8B0 for collisions. Without step (b),
-// the Pendulum's collision data is invisible to the ball!
+// Based on user's stable pastebin version (hooks Ball_Update).
 //
-// ROOT CAUSE OF "NO FUNCTIONS" (found in v7):
-// Scene_CreateDynamicObjects calls init callbacks WITH a Timer:
-//   vtable[0x58]() — SceneObject_CallUpdate (starts animation)
-//   vtable[0x54](&timer) — SceneObject_CallRender (render init)
-// Timer_Init/Timer_Cleanup bracket these calls.
-// Without these, the Pendulum doesn't animate/spin.
+// FIXES IN v8:
+// 1. "No function" fix: SpatialTree_CloneToLevel does NOT copy +0x864
+//    (entity name). The collision dispatch (FUN_004119B0) checks
+//    node+0x864 for "N:SPEEDCYLINDER". If NULL, stricmp fails and
+//    Pendulum_PlayCollisionSound is never called → no speed boost.
+//    FIX: After spawn, recursively walk the CollisionLevel's spatial
+//    tree and set +0x864 = "N:SPEEDCYLINDER" (0x4CFE68) on every node.
 //
-// ROOT CAUSE OF WRONG POSITION:
-// The param_block needs [0x14]=rotation field. The game computes
-// rotation as (int)(360.0 - param_block[0x14]). Setting [0x14]=0
-// gives rotation=360 which is fine. Position fields at +4/+8/+0xC
-// are correct. The "wrong position" was likely caused by crashes
-// corrupting memory — with the crash fixes, position should work.
+// 2. Position: Uses player 1's ball position saved every frame.
+//    Works correctly — spawns at Player 1 location.
 //
-// CRASH FIXES (from v5/v6):
-// - No mesh loading on Up Race (vtable check 0x4D11A0)
-// - Force mesh load on non-Up levels
-// - NULL checks on Board+0x8AC and SceneObject
+// 3. Collisions: Registered with Board+0x10EC and Board+0x8B0+0x18.
+//    Works correctly — balls can touch SpeedCylinders.
 //
-// VERIFIED FROM Scene_CreateDynamicObjects disasm (0x40C430):
-//   Timer_Init   @ 0x457AD0  __fastcall ECX=&timer, plain RET
-//   Timer_Cleanup @ 0x457A40  __fastcall ECX=&timer, plain RET
-//   vtable[0x58] = SceneObject_CallUpdate @ 0x45DF80  __thiscall, plain RET
-//   vtable[0x54] = SceneObject_CallRender @ 0x45DF90  __thiscall, 1 param, RET 0x4
-//   AthenaList_Append @ 0x453810  __thiscall, 1 param, RET 0x4
-//   CreateSpeedCylinder @ 0x4117B0  __thiscall, 4 params, RET 0x10
-//   MeshWorld_ctor @ 0x461510  __thiscall, 2 params, RET 0x8
-//   operator_new @ 0x4BA57B  __cdecl, plain RET
+// HOOK: Ball_Update at 0x405E22 (ESI = ball pointer)
+// Original bytes: 8B 86 5C 0C 00 00 (mov eax,[esi+0x0c5c])
 //
-//   Timer struct: 68 bytes (0x44), vtable=0x4CF338
-//   Board+0x10EC = collision levels AthenaList
-//   Board+0x8B0  = level CollisionLevel; +0x18 = its AthenaList
-//   Board+0xCD4  = scene objects AthenaList
-//   Board+0x8AC  = level MeshWorld; +0x480 = SceneObject; +0x1C = AthenaList
-//
-// Usage: Add address "SpawnFlag" in CE. Set to 1 to spawn.
+// Entity name string "N:SPEEDCYLINDER" at 0x4CFE68 in binary.
+// Pendulum_PlayCollisionSound (0x436B70) sets Ball+0x808 = 10 (speed boost).
 // ============================================================
 
 alloc(SpawnCode, 4096)
 alloc(SpawnFlag, 4)
 alloc(saved_board, 4)
-alloc(last_board, 4)
-alloc(mesh_loaded, 4)
 alloc(param_block, 32)
 alloc(out_obj, 4)
 alloc(out_col, 4)
+alloc(temp_mesh, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
 
 registersymbol(SpawnFlag)
 
@@ -65,12 +44,6 @@ SpawnFlag:
   dd 0
 
 saved_board:
-  dd 0
-
-last_board:
-  dd 0
-
-mesh_loaded:
   dd 0
 
 param_block:
@@ -82,56 +55,73 @@ out_obj:
 out_col:
   dd 0
 
+temp_mesh:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
 label(original_code)
-label(ensure_mesh)
-label(skip_mesh_load)
-label(load_mesh)
-label(find_player)
-label(found_player)
-label(next_ball)
-label(use_default_pos)
+label(check_spawn)
 label(do_spawn)
 label(post_spawn)
 label(skip_post_spawn)
 label(register_collision)
 label(skip_collision)
 label(done_spawn)
-label(find_player_loop)
+label(set_name_recursive)
+label(set_name_loop)
+label(set_name_ret)
 
 SpawnCode:
-  // ECX = Board pointer (from Scene_UpdateBallsAndState)
-  mov [saved_board], ecx
+  // Save player 1 position every frame (when player_index == 0)
+  cmp dword [esi+0x18], 0
+  jne check_spawn
 
-  // Check spawn flag
-  cmp [SpawnFlag], 0
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  cmp dword [SpawnFlag], 0
   je original_code
 
-  // Clear flag immediately
-  mov [SpawnFlag], 0
+  // Only spawn from player 1's ball update
+  cmp dword [esi+0x18], 0
+  jne original_code
+
+  mov dword [SpawnFlag], 0
 
   pushad
 
-  // === LEVEL TRANSITION DETECTION ===
-  mov eax, [saved_board]
-  cmp eax, [last_board]
-  je ensure_mesh
-  mov [last_board], eax
-  mov [mesh_loaded], 0
+  // Get Board pointer from ball+0x14
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
 
-ensure_mesh:
-  cmp [mesh_loaded], 0
-  jne find_player
+  // Validate Board fields before mesh loading
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
 
-  // Check if this is Up Race Board (vtable at Board+0x00 == 0x4D11A0)
-  mov eax, [saved_board]
-  mov eax, [eax]
-  cmp eax, 0x4D11A0
-  je skip_mesh_load
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
 
-load_mesh:
-  // Force-load SpeedCylinder mesh into Board+0x4788
-
-  // Step 1: operator_new(0x10D0)
+  // === LOAD SPEEDCYLINDER MESH ===
   push 0x10D0
   call 004BA57B
   add esp, 4
@@ -139,227 +129,217 @@ load_mesh:
   test eax, eax
   jz done_spawn
 
-  mov ebx, eax  // ebx = allocated memory
+  mov ebx, eax
 
-  // Step 2: Get render context: Board+0x878 → App → App+0x174
   mov edx, [saved_board]
-  mov edx, [edx + 0x878]
-  test edx, edx
-  jz done_spawn
-  mov edx, [edx + 0x174]
-  test edx, edx
-  jz done_spawn
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
 
-  // Step 3: MeshWorld_ctor(mem, render_ctx, "levels\levelup-speedcylinder")
-  push 004D1140           // param_2: mesh file path
-  push edx                // param_1: render context
-  mov ecx, ebx            // this = allocated memory
-  call 00461510
-  // RET 0x8 — callee cleaned 8 bytes
+  push 004D1140              // "levels\levelup-speedcylinder"
+  push edx                   // render context
+  mov ecx, ebx
+  call 00461510               // MeshWorld_ctor — RET 0x8
 
   test eax, eax
   jz done_spawn
 
-  // Step 4: Store loaded mesh in Board+0x4788
+  mov [temp_mesh], eax
+
+  // Store mesh in Board+0x4788
   mov edx, [saved_board]
-  mov [edx + 0x4788], eax
-  mov [mesh_loaded], 1
-  jmp find_player
+  mov [edx+0x4788], eax
 
-skip_mesh_load:
-  // Up Race: mesh already loaded by BoardLevel_Up_ctor
-  mov [mesh_loaded], 1
-
-find_player:
-  // === FIND PLAYER 1 BALL ===
-  mov esi, [saved_board]
-  add esi, 0x29D4         // esi = &AthenaList (ball list)
-
-  mov ecx, [esi + 0x004]  // count
-  test ecx, ecx
-  jz use_default_pos
-
-  mov edi, [esi + 0x40C]   // array_ptr
-  test edi, edi
-  jz use_default_pos
-
-  xor ebx, ebx  // index = 0
-
-find_player_loop:
-  cmp ebx, ecx
-  jae use_default_pos
-
-  mov eax, [edi + ebx*4]  // ball pointer
-  test eax, eax
-  jz next_ball
-
-  cmp byte [eax + 0x769], 0  // alive?
-  je next_ball
-
-  cmp dword [eax + 0x018], 0  // player_index == 0?
-  je found_player
-
-next_ball:
-  inc ebx
-  jmp find_player_loop
-
-found_player:
-  // Copy player position into param_block
-  mov edx, [eax + 0x164]
-  mov [param_block + 4], edx
-  mov edx, [eax + 0x168]
-  mov [param_block + 8], edx
-  mov edx, [eax + 0x16C]
-  mov [param_block + 0xC], edx
-  jmp do_spawn
-
-use_default_pos:
-  mov dword [param_block + 4], 0
-  mov dword [param_block + 8], 0x42480000  // 50.0f
-  mov dword [param_block + 0xC], 0
+  // Copy saved player position into param_block
+  mov edx, [playerX]
+  mov [param_block+4], edx
+  mov edx, [playerY]
+  mov [param_block+8], edx
+  mov edx, [playerZ]
+  mov [param_block+0xC], edx
 
 do_spawn:
   // Clear unused param_block fields
   mov dword [param_block], 0
-  mov dword [param_block + 0x10], 0
-  mov dword [param_block + 0x14], 0      // rotation: 360-0=360 degrees
-  mov dword [param_block + 0x18], 0
+  mov dword [param_block+0x10], 0
+  mov dword [param_block+0x14], 0
+  mov dword [param_block+0x18], 0
 
-  // Clear output buffers
   mov dword [out_obj], 0
   mov dword [out_col], 0
 
-  // === CALL CreateSpeedCylinder ===
-  // __thiscall: ECX = Board, 4 stack params, RET 0x10
-  lea eax, [param_block]
-  push eax                 // param_4: position data ptr
-  push out_col             // param_3: receives CollisionLevel ptr
-  push out_obj             // param_2: receives Pendulum ptr
-  push 004CFE4C            // param_1: "SPEEDCYLINDER" string
+  // CreateSpeedCylinder(Board, "SPEEDCYLINDER", &out_obj, &out_col, param_block)
+  // __thiscall: ECX=Board, 4 stack params, RET 0x10
+  push param_block
+  push out_col
+  push out_obj
+  push 004CFE4C              // "SPEEDCYLINDER"
   mov ecx, [saved_board]
   call 004117B0
-  // RET 0x10 — callee cleaned 16 bytes
 
 post_spawn:
-  // Check if out_obj is valid
   mov eax, [out_obj]
   test eax, eax
   jz skip_post_spawn
 
-  mov esi, eax  // esi = Pendulum ptr
+  mov esi, eax               // esi = Pendulum pointer
 
-  // === ALLOCATE TIMER ON STACK ===
-  // Timer struct = 68 bytes (0x44)
-  sub esp, 68              // allocate timer on stack
-  mov ebx, esp             // ebx = &timer
+  // === ALLOCATE TIMER ON STACK (68 bytes) ===
+  sub esp, 68
+  mov ebx, esp               // ebx = &timer
 
   // Timer_Init(&timer) — __fastcall ECX=&timer
   mov ecx, ebx
   call 00457AD0
-  // plain RET — no stack cleanup
 
-  // === 1. AthenaList_Append(Board+0xCD4, pendulum) ===
+  // 1. AthenaList_Append(Board+0xCD4, pendulum) — scene objects list
   push esi
   mov ecx, [saved_board]
   add ecx, 0xCD4
-  call 00453810
-  // RET 0x4 — callee cleaned 4 bytes
+  call 00453810              // RET 0x4
 
-  // === 2. AthenaList_Append(level_mesh->SceneObject+0x1C, pendulum) ===
+  // 2. AthenaList_Append(level_mesh->SceneObject+0x1C, pendulum)
   mov edx, [saved_board]
-  mov edx, [edx + 0x8AC]
-  test edx, edx
-  jz skip_collision
-  mov edx, [edx + 0x480]
+  mov edx, [edx+0x8AC]
+  mov edx, [edx+0x480]
   test edx, edx
   jz skip_collision
 
   push esi
-  lea ecx, [edx + 0x1C]
-  call 00453810
-  // RET 0x4 — callee cleaned 4 bytes
+  lea ecx, [edx+0x1C]
+  call 00453810              // RET 0x4
 
-  // === 3. CALL vtable[0x58] — SceneObject_CallUpdate ===
-  // __thiscall: ECX=pendulum, no stack params, plain RET
-  mov ecx, esi
-  mov eax, [esi]           // eax = vtable ptr
-  call dword [eax + 0x58]  // vtable[0x58]
-  // plain RET — no stack cleanup
-
-  // === 4. CALL vtable[0x54] — SceneObject_CallRender ===
-  // __thiscall: ECX=pendulum, 1 stack param (&timer), RET 0x4
-  push ebx                  // push &timer
+  // 3. vtable[0x58] — SceneObject_CallUpdate (start animation)
   mov ecx, esi
   mov eax, [esi]
-  call dword [eax + 0x54]   // vtable[0x54]
-  // RET 0x4 — callee cleaned 4 bytes
+  call dword [eax+0x58]
+
+  // 4. vtable[0x54] — SceneObject_CallRender (render init)
+  push ebx                   // push &timer
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x54]     // RET 0x4
 
 register_collision:
-  // === 5. Register CollisionLevel with level collision system ===
-  // This is THE MISSING STEP that enables ball collision!
   mov eax, [out_col]
   test eax, eax
   jz skip_collision
 
+  // === FIX: Set entity name on ALL spatial tree nodes ===
+  // SpatialTree_CloneToLevel does NOT copy +0x864 (entity name).
+  // Without this, collision dispatch can't match "N:SPEEDCYLINDER"
+  // and Pendulum_PlayCollisionSound never fires → no speed boost.
+  // We recursively walk the tree and set +0x864 = 0x4CFE68.
+  mov ecx, eax
+  call set_name_recursive
+
   // 5a. AthenaList_Append(Board+0x10EC, out_col) — collision levels list
+  mov eax, [out_col]         // re-read (clobbered by subroutine)
   push eax
   mov ecx, [saved_board]
   add ecx, 0x10EC
-  call 00453810
-  // RET 0x4 — callee cleaned 4 bytes
+  call 00453810              // RET 0x4
 
-  // 5b. AthenaList_Append(Board+0x8B0+0x18, out_col) — level CollisionLevel's AthenaList
+  // 5b. AthenaList_Append(Board+0x8B0+0x18, out_col)
   mov edx, [saved_board]
-  mov edx, [edx + 0x8B0]   // level CollisionLevel
+  mov edx, [edx+0x8B0]
   test edx, edx
   jz skip_collision
 
   mov eax, [out_col]
   push eax
-  lea ecx, [edx + 0x18]    // CollisionLevel+0x18 = AthenaList
-  call 00453810
-  // RET 0x4 — callee cleaned 4 bytes
+  lea ecx, [edx+0x18]
+  call 00453810              // RET 0x4
 
 skip_collision:
-  // === Timer_Cleanup(&timer) — __fastcall ECX=&timer ===
+  // Timer_Cleanup(&timer) — __fastcall ECX=&timer
   mov ecx, ebx
   call 00457A40
-  // plain RET — no stack cleanup
 
   // Restore stack (remove 68-byte timer)
   add esp, 68
 
 skip_post_spawn:
+  mov dword [temp_mesh], 0
 
 done_spawn:
   popad
-  // Fall through to original code
 
 original_code:
-  // Re-execute original 6 bytes: PUSH EBX; PUSH EBP; PUSH ESI; MOV EBX,ECX; PUSH EDI
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+// === SUBROUTINE: set_name_recursive ===
+// Recursively walks a SpatialTree/Level node and its children,
+// setting +0x864 = "N:SPEEDCYLINDER" (0x4CFE68) on each node.
+// This fixes the "no function" bug where the speed boost doesn't trigger.
+//
+// Input: ECX = node pointer
+// Clobbers: EAX, EDX, ESI, EDI, EBX (all saved by pushad in caller)
+// Stack per level: 16 bytes (3 pushes + return addr)
+// Max depth: ~10 levels (160 bytes) — SpeedCylinder mesh is shallow (2-3 levels)
+set_name_recursive:
+  test ecx, ecx
+  jz set_name_ret
+
+  // Set this node's entity name
+  mov dword [ecx + 0x864], 004CFE68
+
+  // Get AthenaList at node+0x18 (embedded struct, not pointer)
+  lea edx, [ecx + 0x18]
+  mov edi, [edx + 0x04]      // count
+  test edi, edi
+  jz set_name_ret
+
+  mov esi, [edx + 0x40C]    // data_ptr (array of child node pointers)
+  test esi, esi
+  jz set_name_ret
+
+  xor ebx, ebx               // index = 0
+
+set_name_loop:
+  cmp ebx, edi
+  jae set_name_ret
+
+  // Save loop state
   push ebx
-  push ebp
-  push esi
-  mov ebx, ecx
   push edi
-  jmp 0041B546
+  push esi
+
+  // Get child node
+  mov ecx, [esi + ebx*4]
+
+  // Recursive call
+  call set_name_recursive
+
+  // Restore loop state
+  pop esi
+  pop edi
+  pop ebx
+
+  inc ebx
+  jmp set_name_loop
+
+set_name_ret:
+  ret
 
 // === HOOK INSTALLATION ===
-0041B540:
+00405E22:
   jmp SpawnCode
   nop
 
 [DISABLE]
 
-0041B540:
-  db 53 55 56 8B D9 57
+00405E22:
+  db 8B 86 5C 0C 00 00
 
 dealloc(SpawnCode)
 dealloc(SpawnFlag)
 dealloc(saved_board)
-dealloc(last_board)
-dealloc(mesh_loaded)
 dealloc(param_block)
 dealloc(out_obj)
 dealloc(out_col)
+dealloc(temp_mesh)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
 unregistersymbol(SpawnFlag)
