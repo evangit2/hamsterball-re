@@ -210,63 +210,41 @@ static volatile DWORD g_ball_ptr = 0;
  *   [ESP+0x1C] radius_scale
  * Returns: out_hit pointer (always non-NULL if function doesn't crash)
  *
- * CRITICAL: Do NOT use "push" with "g" constraints! When GCC runs out of
- * registers for "g" operands, it uses ESP-relative memory operands. Each
- * "push" decrements ESP by 4, making subsequent ESP-relative operands read
- * from wrong addresses → garbage params → NaN hit results.
+ * Verified via GhidraMCP: the game's own call at 0x4064b9-0x40651f pushes
+ * args in this exact order. ECX = scene+0x8B0 (mesh_data). Callee does
+ * RET 0x20 (callee-clean, pops 32 bytes).
  *
- * Instead: sub esp once, write via mov [esp+N] (ESP stays stable), call.
- * The callee's RET 0x20 pops the 0x20 bytes, restoring ESP automatically.
+ * Uses __attribute__((thiscall)) function pointer — MinGW 13-win32 generates
+ * correct callee-clean code (sets ECX, pushes args, no caller cleanup).
+ * Verified by cross-compiling and disassembling the output.
+ *
+ * DO NOT use inline asm for this call! Previous versions used inline asm
+ * with manual `sub esp, 0x20` + `mov [esp+N]`, which corrupted GCC's stack
+ * frame tracking — when GCC inlines do_raycast into is_ball_grounded at -O2,
+ * the manual ESP manipulation causes all subsequent local variable reads
+ * (ball_x, ball_y, radius, hit_result) to be at wrong stack offsets,
+ * producing garbage 0x80000000 values for everything.
  */
+typedef float* (__attribute__((thiscall)) *raycast_fn_t)(
+    void *mesh_data,   /* this → ECX */
+    float *out_hit,    /* [ESP+0x00] */
+    float ox,           /* [ESP+0x04] */
+    float oy,           /* [ESP+0x08] */
+    float oz,           /* [ESP+0x0C] */
+    float dx,           /* [ESP+0x10] */
+    float dy,           /* [ESP+0x14] */
+    float dz,           /* [ESP+0x18] */
+    float radius        /* [ESP+0x1C] */
+);
+
 static float* do_raycast(void *mesh_data,
                           float ox, float oy, float oz,
                           float dx, float dy, float dz,
                           float radius_scale,
                           float *out_hit)
 {
-    /* Pack all 8 args into a local array. We pass only the array pointer
-     * to inline asm (1 register), plus mesh_data (1 reg) and fn (1 reg).
-     * This avoids running out of registers. */
-    DWORD args[8];
-    args[0] = (DWORD)out_hit;             /* [ESP+0x00] */
-    args[1] = *(DWORD*)&ox;               /* [ESP+0x04] */
-    args[2] = *(DWORD*)&oy;               /* [ESP+0x08] */
-    args[3] = *(DWORD*)&oz;               /* [ESP+0x0C] */
-    args[4] = *(DWORD*)&dx;               /* [ESP+0x10] */
-    args[5] = *(DWORD*)&dy;               /* [ESP+0x14] */
-    args[6] = *(DWORD*)&dz;               /* [ESP+0x18] */
-    args[7] = *(DWORD*)&radius_scale;     /* [ESP+0x1C] */
-
-    float *result = NULL;
-    void *fn = (void*)(DWORD)ADDR_Mesh_FindClosestCollision;
-
-    __asm__ __volatile__ (
-        "subl $0x20, %%esp\n\t"           /* reserve 32 bytes for 8 params */
-        "movl 0x00(%3), %%eax\n\t"       /* out_hit */
-        "movl %%eax, 0x00(%%esp)\n\t"
-        "movl 0x04(%3), %%eax\n\t"       /* origin_x */
-        "movl %%eax, 0x04(%%esp)\n\t"
-        "movl 0x08(%3), %%eax\n\t"       /* origin_y */
-        "movl %%eax, 0x08(%%esp)\n\t"
-        "movl 0x0C(%3), %%eax\n\t"       /* origin_z */
-        "movl %%eax, 0x0C(%%esp)\n\t"
-        "movl 0x10(%3), %%eax\n\t"       /* dir_x */
-        "movl %%eax, 0x10(%%esp)\n\t"
-        "movl 0x14(%3), %%eax\n\t"       /* dir_y */
-        "movl %%eax, 0x14(%%esp)\n\t"
-        "movl 0x18(%3), %%eax\n\t"       /* dir_z */
-        "movl %%eax, 0x18(%%esp)\n\t"
-        "movl 0x1C(%3), %%eax\n\t"       /* radius_scale */
-        "movl %%eax, 0x1C(%%esp)\n\t"
-        "movl %1, %%ecx\n\t"             /* ECX = mesh_data (this) */
-        "call *%2\n\t"                    /* Mesh_FindClosestCollision */
-        /* NO esp cleanup — callee RET 0x20 pops 0x20 bytes, restoring ESP */
-        "movl %%eax, %0\n\t"             /* save return value */
-        : "=m" (result)
-        : "r" (mesh_data), "r" (fn), "r" (args)
-        : "eax", "ecx", "edx", "memory"
-    );
-    return result;
+    raycast_fn_t fn = (raycast_fn_t)(DWORD)ADDR_Mesh_FindClosestCollision;
+    return fn(mesh_data, out_hit, ox, oy, oz, dx, dy, dz, radius_scale);
 }
 
 /* ─── Get player ball pointer ─────────────────────────────────────────────── */
@@ -554,7 +532,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             }
         }
 
-        diag_log("=== jump_mod v12+RAYCAST loaded ===");
+        diag_log("=== jump_mod v19+RAYCAST (thiscall_fn_ptr) loaded ===");
 
         load_real_bass();
 
