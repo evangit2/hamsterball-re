@@ -345,6 +345,133 @@ async def navigate_to_race(
 
 @mcp.tool()
 @tool_guard
+async def load_level(
+    level_name: str = "Beginner",
+    wait_title: float = 18.0,
+    key_delay: float = 3.0,
+) -> dict[str, Any]:
+    """Navigate the Hamsterball menu to start a Time Trial race.
+
+    Starts the game if not already running, waits for the title screen,
+    then sends the verified key sequence to reach the Time Trials race
+    selection screen and start the specified race.
+
+    The navigation sequence (verified via vision model step-by-step):
+      1. Enter  — title screen → main menu (LET'S PLAY highlighted)
+      2. Enter  — LET'S PLAY → CHOOSE A GAME (TOURNAMENT highlighted)
+      3. Down   — TOURNAMENT → TIME TRIALS
+      4. Enter  — TIME TRIALS → race selection screen (Warm-Up Race highlighted)
+      5. Down   — Warm-Up Race → Beginner Race
+      6. Enter  — Start Beginner Race
+
+    For levels other than Beginner, additional Down presses are sent
+    before the final Enter. The race list order is:
+      0=Warm-Up, 1=Beginner, 2=Intermediate, 3=Dizzy, 4=Tower,
+      5=Up, 6=Neon, 7=Expert, 8=Odd, 9=Toob, 10=Wobbly, 11=Glass,
+      12=Sky, 13=Master, 14=Impossible
+
+    Args:
+        level_name: Race name (e.g. "Beginner", "Warm-Up", "Intermediate", "Dizzy").
+                    Case-insensitive. Defaults to "Beginner".
+        wait_title: Seconds to wait for the title screen to load.
+        key_delay: Seconds between key presses for menu navigation.
+    """
+    import asyncio
+
+    # Normalized level name → index in the race list
+    LEVEL_MAP = {
+        "warm-up": 0, "warmup": 0, "warm up": 0,
+        "beginner": 1,
+        "intermediate": 2,
+        "dizzy": 3,
+        "tower": 4,
+        "up": 5,
+        "neon": 6,
+        "expert": 7,
+        "odd": 8,
+        "toob": 9,
+        "wobbly": 10,
+        "glass": 11,
+        "sky": 12,
+        "master": 13,
+        "impossible": 14,
+    }
+
+    key = level_name.lower().strip()
+    if key not in LEVEL_MAP:
+        valid = ", ".join(sorted(set(LEVEL_MAP.keys())))
+        return failure(
+            f"unknown level name '{level_name}'. Valid: {valid}"
+        )
+    level_index = LEVEL_MAP[key]
+
+    # Start the game if it's not running
+    if not mgr.is_running():
+        start_result = await mgr.start_game(timeout=45.0)
+        if not start_result.get("success"):
+            return failure(
+                f"failed to start game: {start_result.get('error', 'unknown')}"
+            )
+
+    # Wait for the title screen to be ready
+    await asyncio.sleep(wait_title)
+
+    # Build the key sequence.
+    # Base sequence: Enter, Enter, Down, Enter (reaches race selection screen
+    # with Warm-Up Race highlighted at index 0).
+    # Then send `level_index` Down presses to navigate to the target race.
+    # Then Enter to start it.
+    #
+    # Uses subprocess directly instead of inputs.send_key() because xdotool's
+    # --window flag doesn't reliably deliver keys to Wine windows.
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env["DISPLAY"] = cfg.display
+
+    def _send_key(k: str) -> None:
+        """Send a key via xdotool without --window (more reliable on Wine)."""
+        subprocess.run(
+            [cfg.xdotool_binary, "key", "--delay", "200", k],
+            env=env,
+            capture_output=True,
+            timeout=5,
+        )
+
+    # Full key sequence: Enter, Enter, Down, Enter, [Down×N], Enter
+    # Step 1: Enter (title → main menu)
+    _send_key("Return")
+    await asyncio.sleep(key_delay)
+    # Step 2: Enter (LET'S PLAY → CHOOSE A GAME)
+    _send_key("Return")
+    await asyncio.sleep(key_delay)
+    # Step 3: Down (TOURNAMENT → TIME TRIALS)
+    _send_key("Down")
+    await asyncio.sleep(key_delay)
+    # Step 4: Enter (TIME TRIALS → race selection)
+    _send_key("Return")
+    await asyncio.sleep(key_delay)
+    # Step 5: Down × level_index (navigate to target race)
+    for i in range(level_index):
+        _send_key("Down")
+        await asyncio.sleep(1.0)
+    # Step 6: Enter (start the race)
+    _send_key("Return")
+
+    # Wait for the race to load (keep short — ball falls off edge on llvmpipe)
+    await asyncio.sleep(4)
+    result = capture.capture()
+    return success(
+        level=level_name,
+        level_index=level_index,
+        navigation="complete",
+        screenshot=result,
+    )
+
+
+@mcp.tool()
+@tool_guard
 def screenshot_base64() -> dict[str, Any]:
     """Capture a screenshot and return it as base64 image data."""
     return capture.get_base64()
