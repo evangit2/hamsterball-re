@@ -57,10 +57,13 @@ __declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
     return 0;
 }
 
-typedef int (__stdcall *BASS_MusicLoad_t)(const char*, DWORD, DWORD, DWORD);
+/* BASS_MusicLoad: BOOL mem, const void *file, QWORD offset, DWORD length, DWORD flags, DWORD freq
+ * 6 params = 28 bytes on 32-bit stack (QWORD = 8 bytes = 2 DWORDs).
+ * WRONG param count = stack corruption = crash! Must match exactly. */
+typedef int (__stdcall *BASS_MusicLoad_t)(BOOL, const void*, unsigned long long, DWORD, DWORD, DWORD);
 static BASS_MusicLoad_t real_BASS_MusicLoad = NULL;
-__declspec(dllexport) int __stdcall BASS_MusicLoad(const char* a, DWORD b, DWORD c, DWORD d) {
-    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d);
+__declspec(dllexport) int __stdcall BASS_MusicLoad(BOOL a, const void* b, unsigned long long c, DWORD d, DWORD e, DWORD f) {
+    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d, e, f);
     return 0;
 }
 
@@ -420,18 +423,33 @@ static DWORD WINAPI KeyPollThread(LPVOID param) {
 
 /* --- Installation --- */
 
-static void InstallPatches() {
+static DWORD WINAPI InstallPatches(LPVOID param) {
     /* Initialize BASS forwarding first */
     init_bass_proxy();
+
+    /* Wait for the game's code to be fully loaded — App must be allocated
+     * before we can safely patch. App is at 0x5341E0. */
+    int wait_count = 0;
+    while (!(*(DWORD*)0x5341E0) && wait_count < 100) {
+        Sleep(100);
+        wait_count++;
+    }
+    if (!(*(DWORD*)0x5341E0)) {
+        /* App not initialized after 10s — bail out silently */
+        return 0;
+    }
+
+    /* Small extra delay to ensure all code sections are mapped */
+    Sleep(500);
 
     /* Verify original bytes */
     if (!VerifyBytes((void*)0x407300, orig_typecheck, 5)) {
         MessageBoxA(NULL, "Hook 1: byte mismatch at 0x407300", "Pinball Mode", MB_OK | MB_ICONERROR);
-        return;
+        return 0;
     }
     if (!VerifyBytes((void*)0x407BB4, orig_phase15, 6)) {
         MessageBoxA(NULL, "Hook 2: byte mismatch at 0x407BB4", "Pinball Mode", MB_OK | MB_ICONERROR);
-        return;
+        return 0;
     }
 
     /* Build code caves */
@@ -440,6 +458,7 @@ static void InstallPatches() {
 
     /* Start keyboard polling thread */
     CreateThread(NULL, 0, KeyPollThread, NULL, 0, NULL);
+    return 0;
 }
 
 /* --- DLL Entry Point --- */
@@ -447,8 +466,7 @@ static void InstallPatches() {
 BOOL APIENTRY DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hInst);
-        /* Delayed patching: game hasn't loaded Hamsterball.exe code yet at DllMain time */
-        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)InstallPatches, NULL, 0, NULL);
+        CreateThread(NULL, 0, InstallPatches, NULL, 0, NULL);
     }
     return TRUE;
 }
