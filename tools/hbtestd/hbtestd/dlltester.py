@@ -75,6 +75,32 @@ class DllTester:
             return True
         return False
 
+    def _is_xvfb_running(self) -> bool:
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            name = (proc.info.get("name") or "").lower()
+            if name == "xvfb":
+                cmdline = proc.info.get("cmdline") or []
+                if self.cfg.display in cmdline:
+                    return True
+        return False
+
+    def _ensure_xvfb(self) -> bool:
+        """Ensure Xvfb is running on the configured display."""
+        if self._is_xvfb_running():
+            return True
+        try:
+            subprocess.Popen(
+                [self.cfg.xvfb_binary, self.cfg.display,
+                 "-screen", "0", self.cfg.screen_resolution,
+                 "+extension", "RANDR", "-noreset", "-nolisten", "tcp"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(1.0)
+            return self._is_xvfb_running()
+        except Exception:
+            return False
+
     def _kill_game(self) -> None:
         """Kill any running game/wine processes."""
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
@@ -145,6 +171,14 @@ class DllTester:
         # Kill any existing game
         self._kill_game()
         time.sleep(0.5)
+
+        # Ensure Xvfb is running (game exits immediately without a display)
+        if not self._ensure_xvfb():
+            return TestResult(
+                ok=False, crash=False, exit_code=None,
+                runtime_seconds=0.0,
+                error="failed to start Xvfb display server",
+            )
 
         # Back up the original DLL
         self._backup_original(target_dll)
