@@ -26,6 +26,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <math.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * BASS Proxy Exports
@@ -306,29 +307,35 @@ static int is_ball_grounded(DWORD ball)
     /* Raycast: origin = ball position, direction = straight down (0, -1, 0) */
     float hit_result[3] = {0.0f, 0.0f, 0.0f};
 
-    float *hit = do_raycast((void*)mesh_data,
-                             ball_x, ball_y, ball_z,
-                             0.0f, -1.0f, 0.0f,
-                             1.0f,
-                             hit_result);
+    do_raycast((void*)mesh_data,
+               ball_x, ball_y, ball_z,
+               0.0f, -1.0f, 0.0f,
+               1.0f,
+               hit_result);
 
     g_raycast_count++;
 
-    if (!hit) return 0;  /* no collision = airborne */
+    /* The game at 0x406524 reads from the OUT_HIT BUFFER (hit_result),
+     * NOT from the EAX return value. It does:
+     *   FLD [ESP+0x60]        ; hit_y from out_hit buffer
+     *   FSUB [ESI+0x168]      ; hit_y - ball_y
+     *   FABS                  ; abs(hit_y - ball_y)
+     *   FLD [ESI+0x284]       ; radius
+     *   FADD ds:0x4CF48C      ; radius + 2.0 (epsilon, confirmed from EXE)
+     *   FCOMPP                ; compare abs(dist) < (radius + 2.0)
+     *
+     * We match the game exactly: use fabsf and compare against radius + 2.0.
+     */
+    float hit_y = hit_result[1];
+    float dist = fabsf(hit_y - ball_y);
+    float threshold = radius + 2.0f;  /* game's epsilon at 0x4CF48C = 2.0f */
 
-    /* Check if hit point Y is within (radius + epsilon) of ball Y.
-     * If the ground is below us and within reach, we're grounded. */
-    float hit_y = hit[1];  /* Y component of hit point */
-    float dist = ball_y - hit_y;  /* distance below ball */
-
-    if (dist < 0.0f) return 0;  /* hit is above ball — not ground */
-
-    if (dist <= (radius + GROUND_RAY_EPSILON)) {
+    if (dist < threshold) {
         g_grounded_count++;
         return 1;  /* grounded */
     }
 
-    return 0;  /* too far from ground */
+    return 0;  /* airborne */
 }
 
 /* ─── Input polling thread ─────────────────────────────────────────────────── */
