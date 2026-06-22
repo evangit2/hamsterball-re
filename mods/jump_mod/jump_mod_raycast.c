@@ -288,54 +288,56 @@ static int is_ball_grounded(DWORD ball)
 {
     if (!ball) return 0;
 
-    /* Scene pointer is at ball+0x14 (same as game uses in Ball_Update at 0x4064b9) */
     DWORD scene = *(DWORD*)(ball + 0x14);
-    if (!scene) return 0;
+    if (!scene) {
+        diag_log("DBG: ball+0x14 (scene) = NULL");
+        return 0;
+    }
 
-    /* Scene mesh data pointer at Scene+0x8B0 */
     DWORD mesh_data = *(DWORD*)(scene + 0x8B0);
-    if (!mesh_data) return 0;
+    if (!mesh_data) {
+        diag_log("DBG: scene+0x8B0 (mesh_data) = NULL");
+        return 0;
+    }
 
-    /* Ball position */
     float ball_x = *(float*)(ball + 0x164);
     float ball_y = *(float*)(ball + 0x168);
     float ball_z = *(float*)(ball + 0x16C);
-
-    /* Ball radius */
     float radius = *(float*)(ball + 0x284);
 
-    /* Raycast: origin = ball position, direction = straight down (0, -1, 0) */
     float hit_result[3] = {0.0f, 0.0f, 0.0f};
 
-    do_raycast((void*)mesh_data,
-               ball_x, ball_y, ball_z,
-               0.0f, -1.0f, 0.0f,
-               1.0f,
-               hit_result);
+    float *ret = do_raycast((void*)mesh_data,
+                             ball_x, ball_y, ball_z,
+                             0.0f, -1.0f, 0.0f,
+                             1.0f,
+                             hit_result);
 
     g_raycast_count++;
 
-    /* The game at 0x406524 reads from the OUT_HIT BUFFER (hit_result),
-     * NOT from the EAX return value. It does:
-     *   FLD [ESP+0x60]        ; hit_y from out_hit buffer
-     *   FSUB [ESI+0x168]      ; hit_y - ball_y
-     *   FABS                  ; abs(hit_y - ball_y)
-     *   FLD [ESI+0x284]       ; radius
-     *   FADD ds:0x4CF48C      ; radius + 2.0 (epsilon, confirmed from EXE)
-     *   FCOMPP                ; compare abs(dist) < (radius + 2.0)
-     *
-     * We match the game exactly: use fabsf and compare against radius + 2.0.
-     */
+    /* Diagnostic dump */
+    {
+        char buf[512];
+        int bx = (int)(ball_x * 100.0f);
+        int by = (int)(ball_y * 100.0f);
+        int bz = (int)(ball_z * 100.0f);
+        int hy = (int)(hit_result[1] * 100.0f);
+        int rad = (int)(radius * 100.0f);
+        sprintf(buf, "DBG: ball=%08X mesh=%08X ret=%08X pos=(%d,%d,%d) hit_y=%d radius=%d",
+                ball, mesh_data, (DWORD)ret, bx, by, bz, hy, rad);
+        diag_log(buf);
+    }
+
     float hit_y = hit_result[1];
     float dist = fabsf(hit_y - ball_y);
-    float threshold = radius + 2.0f;  /* game's epsilon at 0x4CF48C = 2.0f */
+    float threshold = radius + 2.0f;
 
     if (dist < threshold) {
         g_grounded_count++;
-        return 1;  /* grounded */
+        return 1;
     }
 
-    return 0;  /* airborne */
+    return 0;
 }
 
 /* ─── Input polling thread ─────────────────────────────────────────────────── */
