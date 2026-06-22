@@ -525,17 +525,6 @@ static void __cdecl present_raycast_check(void)
         return;
     }
 
-    /* Check that controls are not disabled (countdown / goal reached).
-     * ball+0x14C is the "controls disabled" flag — set to 1 by Scene_StartCountdown
-     * during the Ready-Set-Go countdown and by Scene_HandleRaceEnd when the ball
-     * reaches the goal. The game's own Ball_Update checks this at 0x4060A1 and
-     * skips the entire movement/input block when it's non-zero. */
-    BYTE controls_disabled = *(BYTE*)(ball + 0x14C);
-    if (controls_disabled) {
-        g_want_jump = 0;
-        return;
-    }
-
     /* RAYCAST: is the ball on the ground? */
     int grounded = is_ball_grounded(ball);
 
