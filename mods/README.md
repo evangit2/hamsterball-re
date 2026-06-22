@@ -21,6 +21,7 @@ Each subfolder has the C source, compiled DLL, and (where available) a zip packa
 | 12 | [8ball_hit_detect](8ball_hit_detect/) | Detects player→8-ball collisions + 1.5x knockback | bass.dll |
 | 13 | [entity-limit-fixer](entity-limit-fixer/) | Prevents freeze+crash with many entities (v5: skips Mesh_FindClosestCollision + throttles respawn + AI loops) | bass.dll |
 | 14 | [direction_detect](direction_detect/) | Detects ball facing direction, shows compass + heading angle on-screen (press D to toggle) | bass.dll |
+| 15 | [wall_bumpers](wall_bumpers/) | ALL walls act as pinball bumpers — launches ball on every wall collision (F8 toggle, F9 force) | bass.dll |
 
 
 ## Installation (bass.dll proxy mods)
