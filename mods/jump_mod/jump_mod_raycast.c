@@ -212,28 +212,45 @@ static float* do_raycast(void *mesh_data,
                           float radius_scale,
                           float *out_hit)
 {
+    /* Build the argument block in memory, then push onto stack and call.
+     * The callee (Mesh_FindClosestCollision) is __thiscall with RET 0x20:
+     *   ECX = mesh_data (this pointer)
+     *   Stack (pushed right-to-left, 8 DWORDs):
+     *     out_hit, origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, radius
+     *   Callee cleans 0x20 bytes via RET 0x20.
+     *
+     * We use "g" constraints (memory or register) to avoid running out
+     * of registers. GCC can use memory operands for PUSH.
+     */
     float *result = NULL;
+    DWORD arg_ox = *(DWORD*)&ox;
+    DWORD arg_oy = *(DWORD*)&oy;
+    DWORD arg_oz = *(DWORD*)&oz;
+    DWORD arg_dx = *(DWORD*)&dx;
+    DWORD arg_dy = *(DWORD*)&dy;
+    DWORD arg_dz = *(DWORD*)&dz;
+    DWORD arg_radius = *(DWORD*)&radius_scale;
+    DWORD arg_out = (DWORD)out_hit;
+    void *fn = (void*)(DWORD)ADDR_Mesh_FindClosestCollision;
+
     __asm__ __volatile__ (
-        "subl $0xc, %%esp\n\t"         /* room for origin */
-        "fstps (%%esp)\n\t"            /* origin_z */
-        "fstps 4(%%esp)\n\t"           /* origin_y */
-        "fstps 8(%%esp)\n\t"           /* origin_x */
-        "subl $0xc, %%esp\n\t"         /* room for direction */
-        "fstps (%%esp)\n\t"            /* dir_z */
-        "fstps 4(%%esp)\n\t"           /* dir_y */
-        "fstps 8(%%esp)\n\t"           /* dir_x */
-        "subl $0x8, %%esp\n\t"         /* room for radius_scale + out_hit */
-        "fstps (%%esp)\n\t"            /* radius_scale (float) */
-        "movl %[out], 4(%%esp)\n\t"    /* out_hit pointer */
-        "movl %[mesh], %%ecx\n\t"      /* ECX = this */
-        "call *%[fn]\n\t"              /* call Mesh_FindClosestCollision */
-        /* callee did RET 0x20, stack already cleaned */
-        "movl %%eax, %[res]\n\t"
-        : [res] "=m" (result)
-        : [mesh] "r" (mesh_data),
-          [fn] "r" ((void*)(DWORD)ADDR_Mesh_FindClosestCollision),
-          [out] "r" (out_hit)
-        : "eax", "ecx", "edx", "memory", "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
+        "push %0\n\t"           /* radius_scale */
+        "push %1\n\t"           /* dir_z */
+        "push %2\n\t"           /* dir_y */
+        "push %3\n\t"           /* dir_x */
+        "push %4\n\t"           /* origin_z */
+        "push %5\n\t"           /* origin_y */
+        "push %6\n\t"           /* origin_x */
+        "push %7\n\t"           /* out_hit_ptr */
+        "movl %8, %%ecx\n\t"   /* ECX = mesh_data */
+        "call *%9\n\t"          /* Mesh_FindClosestCollision */
+        "movl %%eax, %10\n\t"   /* save result */
+        :
+        : "g" (arg_radius), "g" (arg_dz), "g" (arg_dy), "g" (arg_dx),
+          "g" (arg_oz), "g" (arg_oy), "g" (arg_ox), "g" (arg_out),
+          "r" (mesh_data), "r" (fn),
+          "m" (result)
+        : "eax", "ecx", "edx", "memory"
     );
     return result;
 }
