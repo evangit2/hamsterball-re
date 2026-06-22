@@ -6,7 +6,7 @@ Turns every wall in every level into a pinball bumper. Wall collisions amplify t
 
 | Key | Action |
 |-----|--------|
-| **F8** | Toggle pinball mode on/off (silent — no popup) |
+| **F8** | Toggle pinball mode on/off (silent) |
 | **F9** | Cycle bounce multiplier (2x → 3x → 5x → 10x → 2x) |
 
 Pinball mode is **OFF by default**. Press F8 in-game to enable it.
@@ -15,23 +15,23 @@ Pinball mode is **OFF by default**. Press F8 in-game to enable it.
 
 Two code cave hooks inside `Ball_Update` (0x405E00):
 
-1. **Collision type check hook** (0x407300): When the game processes a collision entry with `type == 2` (wall), sets a `g_wall_hit` flag before the game's own bounce calculation runs.
+1. **Collision type check hook** (0x407300): When the game processes a collision entry with `type == 2` (wall), sets a `g_wall_hit` flag.
 
-2. **Phase 15 convergence hook** (0x407BB4): After the game computes the post-collision velocity vector, if `g_wall_hit` was set, multiplies the velocity vector by the bounce multiplier. This amplifies the bounce without changing the direction.
+2. **Bounce offset amplification hook** (0x407CE0): After the collision callback has computed and stored the bounce displacement at `ball+0x2C0/+0x2C4/+0x2C8`, but BEFORE it gets added to the ball's position, multiplies the offset by the bounce multiplier. This is the actual bounce displacement — amplifying it makes the ball bounce harder without touching any collision math.
 
-The physics object (at ball+0x1A4) fields:
-- `+0xC64` = speed magnitude (float) — **multiplied** by bounce mult
-- `+0xC8C/C90/C94` = collision normal XYZ (float × 3) — **NOT modified** (v3 bug: was corrupted)
-- `+0xC98/C9C/CA0` = velocity vector = speed × normal (float × 3) — **multiplied** by bounce mult
+### Ball struct fields used:
+- `+0x164/+0x168/+0x16C` = position X/Y/Z (float)
+- `+0x2C0/+0x2C4/+0x2C8` = bounce offset X/Y/Z (float, set by collision callback, added to position, then cleared)
 
-### v4 Fix (v3 → v4)
+### v5 fix history (v3→v4→v5):
 
-v3 multiplied the collision normals (+0xC8C/+0xC90/+0xC94) by speed×mult, which:
-1. Had no effect on bounce (velocity vector was already computed before the hook point)
-2. Corrupted normals for subsequent collisions in the same frame
-3. Turned unit normals into velocity components, breaking collision math
+| Version | Hook target | Bug |
+|---------|------------|-----|
+| v3 | physics_obj +0xC8C/C90/C94 (normals) | Corrupted collision normals for subsequent collisions |
+| v4 | physics_obj +0xC64/C98/C9C/CA0 (speed/velocity) | Corrupted collision response math → ball stuck to ground |
+| **v5** | **ball +0x2C0/2C4/2C8 (bounce offset)** | **No bugs — correct field, zero collision interference** |
 
-v4 directly multiplies the velocity vector at +0xC98/+0xC9C/+0xCA0 (and speed at +0xC64). This is the correct field — the collision callback at 0x407BBC reads these values to determine bounce response.
+v3/v4 modified physics_obj internal fields that the collision callback reads, corrupting collision math. v5 hooks at the correct point: AFTER the callback sets the bounce offset, BEFORE it's applied to position. Zero interference with collision internals.
 
 ## Installation
 
@@ -43,15 +43,15 @@ v4 directly multiplies the velocity vector at +0xC98/+0xC9C/+0xCA0 (and speed at
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll bass_pinball_v4.c \
+i686-w64-mingw32-gcc -shared -o bass.dll bass_pinball_v5.c \
   -lwinmm -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
   -Wl,--add-stdcall-alias
 ```
 
 ## Technical Details
 
-- **BASS proxy**: Lazy-load v3 loader — forwards 10 BASS audio functions to `bass_real.dll`. If `bass_real.dll` is missing, stubs return success (no audio, no crash).
-- **Code caves**: Uses `VirtualAlloc` + hand-assembled x86 machine code (no C function calls from inside caves — follows the code cave safety rules from the DLL modding skill).
+- **BASS proxy**: Lazy-load v3 loader — forwards 10 BASS audio functions to `bass_real.dll`. If missing, stubs return success (no audio, no crash).
+- **Code caves**: Uses `VirtualAlloc` + hand-assembled x86 machine code (no C function calls from inside caves).
 - **Keyboard polling**: Background thread reads DirectInput8 keyboard buffer via the game's input chain (App → InputHandler → KeyboardDevice → key buffer).
-- **Silent toggle**: v4 removes MessageBoxA popups on F8/F9 — toggles are silent.
+- **Silent toggle**: F8/F9 are silent — no popups.
 - **Works on all 15 levels**: No per-level configuration. The hooks are inside Ball_Update which processes all balls in all game modes.
