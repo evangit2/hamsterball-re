@@ -1,44 +1,51 @@
 [ENABLE]
 
 // ============================================================
-// SpeedCylinder Spawn Mod v6 — Global (all races + arenas)
+// SpeedCylinder Spawn Mod v7 — Global (all races + arenas)
 // Pure CEA — no bass.dll, no Lua
 //
-// CHANGES FROM v5:
-// - REMOVED init callbacks (vtable[0x54], [0x58]) — they caused
-//   heap corruption and crashes during gameplay (0001:0006186E)
-// - Added vtable check: on Up Race (Board vtable==0x4D11A0), mesh
-//   is already loaded by BoardLevel_Up_ctor — skip loading
-// - On non-Up levels: force-load mesh, overwrite garbage at +0x4788
-// - Added NULL checks for Board+0x8AC, level_mesh, SceneObject
-// - Use lea+push for param_block to avoid CE address ambiguity
+// ROOT CAUSE OF "NO COLLISIONS" (found in v7):
+// Scene_CreateDynamicObjects (0x40C430) registers the Pendulum's
+// CollisionLevel (out_col) with TWO lists:
+//   a. Board+0x10EC (collision levels master list)
+//   b. Board+0x8B0+0x18 (level CollisionLevel's AthenaList)
+// The ball checks Board+0x8B0 for collisions. Without step (b),
+// the Pendulum's collision data is invisible to the ball!
 //
-// CRASH ROOT CAUSES (v5):
-// 1. Init callbacks called during gameplay corrupted heap state
-//    → operator_new returned NULL → Level_ctor crash at 0x46186E
-// 2. Stack corruption from callback tail-calls (6500C0:B40001B5)
+// ROOT CAUSE OF "NO FUNCTIONS" (found in v7):
+// Scene_CreateDynamicObjects calls init callbacks WITH a Timer:
+//   vtable[0x58]() — SceneObject_CallUpdate (starts animation)
+//   vtable[0x54](&timer) — SceneObject_CallRender (render init)
+// Timer_Init/Timer_Cleanup bracket these calls.
+// Without these, the Pendulum doesn't animate/spin.
 //
-// VERIFIED ADDRESSES (Ghidra 2026-06-22):
-//   0x41B540  Scene_UpdateBallsAndState (__fastcall, ECX=Board)
-//   0x4117B0  CreateSpeedCylinder (__thiscall, ECX=Board, RET 0x10)
-//   0x4BA57B  operator_new (__cdecl, plain RET)
-//   0x461510  MeshWorld_ctor (__thiscall, ECX=mem, RET 0x8)
-//   0x453810  AthenaList_Append (__thiscall, ECX=list, 1 param, RET 0x4)
-//   0x4CFE4C  "SPEEDCYLINDER" string
-//   0x4D1140  "levels\levelup-speedcylinder" mesh file path
-//   0x4D11A0  Up Race Board vtable (if Board+0x00 == this, mesh is loaded)
+// ROOT CAUSE OF WRONG POSITION:
+// The param_block needs [0x14]=rotation field. The game computes
+// rotation as (int)(360.0 - param_block[0x14]). Setting [0x14]=0
+// gives rotation=360 which is fine. Position fields at +4/+8/+0xC
+// are correct. The "wrong position" was likely caused by crashes
+// corrupting memory — with the crash fixes, position should work.
 //
-//   Board+0x878  = App ptr
-//   App+0x174    = render context (D3D device)
-//   Board+0x8AC  = level MeshWorld ptr (Level/MeshWorld object)
-//   Board+0x4788 = SpeedCylinder mesh (set by Up ctor, garbage on other levels)
-//   Board+0x29D4 = ball AthenaList (count@+4, array@+0x40C)
-//   Board+0xCD4  = scene objects AthenaList (for update/render/dtor)
-//   Level+0x480  = SceneObject ptr
-//   SceneObject+0x1C = AthenaList (for level-based rendering)
-//   Ball+0x018   = player_index (0=Player1, -1=NPC)
-//   Ball+0x164/+0x168/+0x16C = pos.x/pos.y/pos.z (floats)
-//   Ball+0x769   = alive flag (byte, 1=alive)
+// CRASH FIXES (from v5/v6):
+// - No mesh loading on Up Race (vtable check 0x4D11A0)
+// - Force mesh load on non-Up levels
+// - NULL checks on Board+0x8AC and SceneObject
+//
+// VERIFIED FROM Scene_CreateDynamicObjects disasm (0x40C430):
+//   Timer_Init   @ 0x457AD0  __fastcall ECX=&timer, plain RET
+//   Timer_Cleanup @ 0x457A40  __fastcall ECX=&timer, plain RET
+//   vtable[0x58] = SceneObject_CallUpdate @ 0x45DF80  __thiscall, plain RET
+//   vtable[0x54] = SceneObject_CallRender @ 0x45DF90  __thiscall, 1 param, RET 0x4
+//   AthenaList_Append @ 0x453810  __thiscall, 1 param, RET 0x4
+//   CreateSpeedCylinder @ 0x4117B0  __thiscall, 4 params, RET 0x10
+//   MeshWorld_ctor @ 0x461510  __thiscall, 2 params, RET 0x8
+//   operator_new @ 0x4BA57B  __cdecl, plain RET
+//
+//   Timer struct: 68 bytes (0x44), vtable=0x4CF338
+//   Board+0x10EC = collision levels AthenaList
+//   Board+0x8B0  = level CollisionLevel; +0x18 = its AthenaList
+//   Board+0xCD4  = scene objects AthenaList
+//   Board+0x8AC  = level MeshWorld; +0x480 = SceneObject; +0x1C = AthenaList
 //
 // Usage: Add address "SpawnFlag" in CE. Set to 1 to spawn.
 // ============================================================
@@ -86,7 +93,10 @@ label(use_default_pos)
 label(do_spawn)
 label(post_spawn)
 label(skip_post_spawn)
+label(register_collision)
+label(skip_collision)
 label(done_spawn)
+label(find_player_loop)
 
 SpawnCode:
   // ECX = Board pointer (from Scene_UpdateBallsAndState)
@@ -113,15 +123,13 @@ ensure_mesh:
   jne find_player
 
   // Check if this is Up Race Board (vtable at Board+0x00 == 0x4D11A0)
-  // Up Race already loaded the mesh in BoardLevel_Up_ctor
   mov eax, [saved_board]
-  mov eax, [eax]           // eax = Board vtable ptr
-  cmp eax, 0x4D11A0        // Up Race Board vtable?
+  mov eax, [eax]
+  cmp eax, 0x4D11A0
   je skip_mesh_load
 
 load_mesh:
   // Force-load SpeedCylinder mesh into Board+0x4788
-  // (non-Up levels have GARBAGE here — Board_ctor doesn't zero it)
 
   // Step 1: operator_new(0x10D0)
   push 0x10D0
@@ -143,12 +151,11 @@ load_mesh:
   jz done_spawn
 
   // Step 3: MeshWorld_ctor(mem, render_ctx, "levels\levelup-speedcylinder")
-  // __thiscall: ECX=mem, push param_2(path) first, push param_1(render_ctx) second
-  // RET 0x8 (callee cleans 8 bytes)
-  push 004D1140           // param_2: mesh file path string
+  push 004D1140           // param_2: mesh file path
   push edx                // param_1: render context
   mov ecx, ebx            // this = allocated memory
   call 00461510
+  // RET 0x8 — callee cleaned 8 bytes
 
   test eax, eax
   jz done_spawn
@@ -168,13 +175,11 @@ find_player:
   mov esi, [saved_board]
   add esi, 0x29D4         // esi = &AthenaList (ball list)
 
-  // count = [list + 0x004]
-  mov ecx, [esi + 0x004]
+  mov ecx, [esi + 0x004]  // count
   test ecx, ecx
   jz use_default_pos
 
-  // array_ptr = [list + 0x40C]
-  mov edi, [esi + 0x40C]
+  mov edi, [esi + 0x40C]   // array_ptr
   test edi, edi
   jz use_default_pos
 
@@ -184,17 +189,14 @@ find_player_loop:
   cmp ebx, ecx
   jae use_default_pos
 
-  // Get ball pointer from array
-  mov eax, [edi + ebx*4]
+  mov eax, [edi + ebx*4]  // ball pointer
   test eax, eax
   jz next_ball
 
-  // Check alive: ball+0x769 != 0
-  cmp byte [eax + 0x769], 0
+  cmp byte [eax + 0x769], 0  // alive?
   je next_ball
 
-  // Check player_index == 0 (Player 1)
-  cmp dword [eax + 0x018], 0
+  cmp dword [eax + 0x018], 0  // player_index == 0?
   je found_player
 
 next_ball:
@@ -203,7 +205,6 @@ next_ball:
 
 found_player:
   // Copy player position into param_block
-  // param_block+0x04 = pos.x, +0x08 = pos.y, +0x0C = pos.z
   mov edx, [eax + 0x164]
   mov [param_block + 4], edx
   mov edx, [eax + 0x168]
@@ -213,17 +214,16 @@ found_player:
   jmp do_spawn
 
 use_default_pos:
-  // Fallback: spawn at (0, 50, 0)
   mov dword [param_block + 4], 0
   mov dword [param_block + 8], 0x42480000  // 50.0f
   mov dword [param_block + 0xC], 0
 
 do_spawn:
   // Clear unused param_block fields
-  mov dword [param_block], 0          // +0x00: type
-  mov dword [param_block + 0x10], 0   // +0x10: unused
-  mov dword [param_block + 0x14], 0   // +0x14: rotation = 0 → 360-0=360
-  mov dword [param_block + 0x18], 0   // +0x18: unused
+  mov dword [param_block], 0
+  mov dword [param_block + 0x10], 0
+  mov dword [param_block + 0x14], 0      // rotation: 360-0=360 degrees
+  mov dword [param_block + 0x18], 0
 
   // Clear output buffers
   mov dword [out_obj], 0
@@ -231,11 +231,10 @@ do_spawn:
 
   // === CALL CreateSpeedCylinder ===
   // __thiscall: ECX = Board, 4 stack params, RET 0x10
-  // Push right-to-left: param_4, param_3, param_2, param_1
-  lea eax, [param_block]   // use lea to ensure we push the ADDRESS
+  lea eax, [param_block]
   push eax                 // param_4: position data ptr
-  push out_col             // param_3: receives collision level ptr
-  push out_obj             // param_2: receives created Pendulum ptr
+  push out_col             // param_3: receives CollisionLevel ptr
+  push out_obj             // param_2: receives Pendulum ptr
   push 004CFE4C            // param_1: "SPEEDCYLINDER" string
   mov ecx, [saved_board]
   call 004117B0
@@ -249,31 +248,86 @@ post_spawn:
 
   mov esi, eax  // esi = Pendulum ptr
 
-  // 1. AthenaList_Append(Board+0xCD4, pendulum)
-  // __thiscall: ECX = list, push pendulum, RET 0x4
+  // === ALLOCATE TIMER ON STACK ===
+  // Timer struct = 68 bytes (0x44)
+  sub esp, 68              // allocate timer on stack
+  mov ebx, esp             // ebx = &timer
+
+  // Timer_Init(&timer) — __fastcall ECX=&timer
+  mov ecx, ebx
+  call 00457AD0
+  // plain RET — no stack cleanup
+
+  // === 1. AthenaList_Append(Board+0xCD4, pendulum) ===
   push esi
   mov ecx, [saved_board]
   add ecx, 0xCD4
   call 00453810
   // RET 0x4 — callee cleaned 4 bytes
 
-  // 2. AthenaList_Append(level_mesh->SceneObject+0x1C, pendulum)
-  // level_mesh = Board+0x8AC
+  // === 2. AthenaList_Append(level_mesh->SceneObject+0x1C, pendulum) ===
   mov edx, [saved_board]
   mov edx, [edx + 0x8AC]
   test edx, edx
-  jz skip_post_spawn
-  mov edx, [edx + 0x480]  // SceneObject ptr
+  jz skip_collision
+  mov edx, [edx + 0x480]
   test edx, edx
-  jz skip_post_spawn
+  jz skip_collision
 
   push esi
   lea ecx, [edx + 0x1C]
   call 00453810
   // RET 0x4 — callee cleaned 4 bytes
 
-  // NO init callbacks — they caused heap corruption and crashes
-  // The Pendulum will still render via the AthenaList at Board+0xCD4
+  // === 3. CALL vtable[0x58] — SceneObject_CallUpdate ===
+  // __thiscall: ECX=pendulum, no stack params, plain RET
+  mov ecx, esi
+  mov eax, [esi]           // eax = vtable ptr
+  call dword [eax + 0x58]  // vtable[0x58]
+  // plain RET — no stack cleanup
+
+  // === 4. CALL vtable[0x54] — SceneObject_CallRender ===
+  // __thiscall: ECX=pendulum, 1 stack param (&timer), RET 0x4
+  push ebx                  // push &timer
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax + 0x54]   // vtable[0x54]
+  // RET 0x4 — callee cleaned 4 bytes
+
+register_collision:
+  // === 5. Register CollisionLevel with level collision system ===
+  // This is THE MISSING STEP that enables ball collision!
+  mov eax, [out_col]
+  test eax, eax
+  jz skip_collision
+
+  // 5a. AthenaList_Append(Board+0x10EC, out_col) — collision levels list
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+  // RET 0x4 — callee cleaned 4 bytes
+
+  // 5b. AthenaList_Append(Board+0x8B0+0x18, out_col) — level CollisionLevel's AthenaList
+  mov edx, [saved_board]
+  mov edx, [edx + 0x8B0]   // level CollisionLevel
+  test edx, edx
+  jz skip_collision
+
+  mov eax, [out_col]
+  push eax
+  lea ecx, [edx + 0x18]    // CollisionLevel+0x18 = AthenaList
+  call 00453810
+  // RET 0x4 — callee cleaned 4 bytes
+
+skip_collision:
+  // === Timer_Cleanup(&timer) — __fastcall ECX=&timer ===
+  mov ecx, ebx
+  call 00457A40
+  // plain RET — no stack cleanup
+
+  // Restore stack (remove 68-byte timer)
+  add esp, 68
 
 skip_post_spawn:
 
