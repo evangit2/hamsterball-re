@@ -2,11 +2,22 @@
 
 ## Overview
 
-Hamsterball's collision system is **symmetric**: each ball maintains its own
-collision list and creates its own entries for every contact. When ball A hits
-ball B, both A's and B's collision lists receive separate entries. This was
-confirmed by hooking `Ball_Update` (0x405E00) — which runs for ALL balls, not
-just the player — and observing paired entries from both perspectives.
+Hamsterball's ball-ball collision system is **asymmetric**: each collision
+event generates an entry in only ONE ball's collision list, not both. When
+ball A hits ball B, only one of them receives a collision entry for that
+contact. This was confirmed by runtime dump data showing:
+
+- **No two entries share the same tick** — if symmetric, paired entries would
+  appear at the same frame (~33ms apart at 30fps). The smallest gap between
+  any two entries is 453ms (~14 frames).
+- **Unequal counts**: 4 PLAYER→8BALL entries vs 7 8BALL→PLAYER entries (1:1.8
+  ratio). If symmetric, counts would be equal.
+- **Each tick is a separate collision event** — not the same collision seen
+  from two perspectives.
+
+The 8-ball receives collision entries ~1.8x more often than the player. This
+likely reflects which ball is the "moving" one in each contact — the ball whose
+physics step detects the overlap creates the entry.
 
 ## Key Addresses
 
@@ -45,68 +56,70 @@ the field at that offset; "Unread" means Ball_Update never accesses it.
 | +0x58 | float | **prev_point_x** | Previous-frame contact point X. Close to +0x14 values. Never read by Ball_Update. |
 | +0x5C | float | **prev_point_y** | Previous-frame contact point Y. |
 | +0x60 | float | **prev_point_z** | Previous-frame contact point Z. |
-| +0x64 | ptr | **source_ref** | Compared against `unaff_EBP` and `unaff_ESI` (ball pointer in registers) at lines 494, 503, 517, 686. **NOT a ball pointer** — dump values (0x0F3C7FD8 etc.) don't match ball addresses. Likely a CollisionNode or internal tracking object. Determines which ball "owns" the entry. |
+| +0x64 | ptr | **source_ref** | Compared against `unaff_EBP` and `unaff_ESI` (ball pointer in registers) at lines 494, 503, 517, 686. **NOT a ball pointer** — dump values (0x0F3C7FD8 etc.) don't match ball addresses. Likely a CollisionNode or internal tracking object. Acts as an ownership/processing filter: only the ball whose register matches `+0x64` processes the entry. |
 | +0x68–0x7C | — | **metadata** | Contains pointers and flags. Pattern varies between player and 8-ball entries. Never read by Ball_Update. |
 
-## Symmetry Evidence
+## Asymmetry Evidence
 
 Hooking `Ball_Update` (0x405E00) for ALL balls and logging ball-ball entries
-reveals paired collision events from both perspectives:
+reveals that collisions are NOT paired — each event creates a single entry in
+one ball's list only:
 
-### Example Pair 1
-
-```
-[tick 47852375] PLAYER 0FD680C8 -> 8-BALL 0FD699E8
-  +0x0C: 0x0FD699E8  (other ball = 8-ball)
-  +0x20: 0x3F33A673  [0.7018]   (normal X)
-  +0x24: 0xBE14D0E1  [-0.1453]  (normal Y)
-  +0x28: 0x3F328B10  [0.6974]   (normal Z)
-  +0x64: 0x0F3C7FD8             (source_ref — player's node)
-
-[tick 47866750] 8-BALL 0FD699E8 -> PLAYER 0FD680C8
-  +0x0C: 0x0FD680C8  (other ball = player)
-  +0x20: 0xBE660BC8  [-0.2247]  (normal X — roughly opposite)
-  +0x24: 0x3E17EEBD  [0.1484]   (normal Y — roughly opposite)
-  +0x28: 0xBF768C2F  [-0.9631]  (normal Z — roughly opposite)
-  +0x64: 0x0F3C8118             (source_ref — 8-ball's node, DIFFERENT)
-```
-
-### Example Pair 2
+### All Recorded Entries (chronological)
 
 ```
-[tick 47962890] PLAYER 0FD680C8 -> 8-BALL 0FD699E8
-  +0x20: 0xBF41E475  [-0.7574]  (normal)
-  +0x64: 0x0F3C7FF8             (player's node)
-
-[tick 47966265] 8-BALL 0FD699E8 -> PLAYER 0FD680C8
-  +0x20: 0xBE5C5AD9  [-0.2152]  (normal — different but same collision)
-  +0x64: 0x0F3C7DD8             (8-ball's node, DIFFERENT)
+tick 47852375  PLAYER -> 8-BALL   (14.4s gap to next)
+tick 47866750  8-BALL -> PLAYER   (48.5s gap to next)
+tick 47915281  8-BALL -> PLAYER   (42.8s gap to next)
+tick 47958093  8-BALL -> PLAYER   (2.4s gap to next)
+tick 47960468  8-BALL -> PLAYER   (2.4s gap to next)
+tick 47962890  PLAYER -> 8-BALL   (1.4s gap to next)
+tick 47964281  PLAYER -> 8-BALL   (2.0s gap to next)
+tick 47966265  8-BALL -> PLAYER   (2.9s gap to next)
+tick 47969125  8-BALL -> PLAYER   (0.6s gap to next)
+tick 47969765  PLAYER -> 8-BALL   (0.5s gap to next)
+tick 47970218  8-BALL -> PLAYER
 ```
 
 ### Key Observations
 
-1. **Separate entries**: `+0x64` (source_ref) differs between paired entries,
-   proving they are distinct CollisionNode objects in separate lists.
+1. **No paired ticks**: Zero duplicate ticks. If symmetric, each collision would
+   produce two entries at the same tick (or within ~33ms = one frame). The
+   smallest gap is 453ms (~14 frames apart).
 
-2. **Opposite normals**: The contact normals are roughly opposite (dot product
-   ~-0.47 to -0.85, not exactly -1.0 because the balls are at different
-   positions when their respective Ball_Update runs).
+2. **Unequal distribution**: 4 PLAYER→8BALL vs 7 8BALL→PLAYER. If symmetric,
+   counts would be 1:1. The 8-ball receives ~1.8x more collision entries.
 
-3. **Different timestamps**: Paired entries often have slightly different tick
-   values because Ball_Update runs sequentially for each ball within the same
-   frame. The tick difference (~1–14ms) represents the time between each ball's
-   physics tick within the frame.
+3. **Each tick is a separate event**: The entries represent individual collision
+   detections, not the same collision from two perspectives. The normals and
+   contact points differ because the balls are at different positions across
+   these separate events.
 
-4. **Both balls process the collision**: The game code at lines 502–631
-   (trajectory/bounce + push apart + exchange velocity) runs for both the
-   player and the 8-ball when they process their respective entries.
+### Example: NOT a pair
+
+```
+[tick 47852375] PLAYER 0FD680C8 -> 8-BALL 0FD699E8
+  +0x0C: 0x0FD699E8  (other = 8-ball)
+  +0x14: 2144.48      (contact X)
+  +0x20: 0.7018       (normal X)
+  +0x64: 0x0F3C7FD8   (source_ref)
+
+[tick 47866750] 8-BALL 0FD699E8 -> PLAYER 0FD680C8
+  +0x0C: 0x0FD680C8  (other = player)
+  +0x14: 2324.83      (contact X — 180 units away, different location!)
+  +0x20: -0.2247      (normal X — not simply opposite)
+  +0x64: 0x0F3C8118   (source_ref — different node)
+```
+
+These are **two separate collisions at two different locations** (2144 vs 2325
+on X axis), 14 seconds apart — NOT the same contact seen from both sides.
 
 ## How Ball_Update Processes Collisions
 
 The collision loop in `Ball_Update` (0x405E00) iterates entries at
 `ball->collision_mesh + 0x424` with count at `+0x1C`:
 
-### Phase 1: Self-entry check (lines 502–516)
+### Phase 1: Trajectory/bounce check (lines 502–516)
 
 ```c
 if (*piVar16 == 1) {                                    // type = ball-ball
@@ -116,7 +129,7 @@ if (*piVar16 == 1) {                                    // type = ball-ball
 }
 ```
 
-### Phase 2: Other-ball entry check (lines 517–631)
+### Phase 2: Push-apart / velocity exchange (lines 517–631)
 
 ```c
 if ((*piVar16 == 1) && ((float)piVar16[0x19] == unaff_ESI)) {
@@ -128,15 +141,13 @@ if ((*piVar16 == 1) && ((float)piVar16[0x19] == unaff_ESI)) {
 
 Both `unaff_EBP` and `unaff_ESI` are "unaffected" registers that Ghidra lost
 track of, but both were set to `param_1` (the current ball) early in the
-function. The two checks fire for different entries in the same list:
+function. Both phases check the SAME condition (`+0x64 == this ball`):
+- Phase 1 handles trajectory/bounce for entries owned by this ball
+- Phase 2 handles push-apart physics for entries owned by this ball
 
-- Phase 1 fires when `+0x64` matches the current ball (its own entry)
-- Phase 2 fires when `+0x64` matches the current ball (also its own entry)
-
-**Correction**: Both phases check the SAME condition (`+0x64 == this ball`).
-Phase 1 handles trajectory/bounce, Phase 2 handles push-apart physics. They
-fire for the same entry, not different entries. The "other ball" entry (where
-`+0x64` does NOT match) is simply skipped by both checks.
+Because collisions are asymmetric, only one ball's list contains the entry for
+any given contact. That ball performs BOTH the trajectory bounce AND the
+push-apart/velocity exchange. The other ball never sees this collision.
 
 ## Collision List Location
 
@@ -174,9 +185,10 @@ Only `0` (player) and `-1` (8-ball) are valid ball IDs in the game.
 
 ## Recommended Detection Pattern
 
-For mods that need to detect ball-ball collisions (e.g., player bumping an
-8-ball), hook `Ball_Update` (0x405E00) and scan the collision list after the
-original function returns:
+Because collisions are asymmetric, a mod hooking only the player's Ball_Update
+will MISS ~64% of collisions (only 4 of 11 entries were PLAYER→8BALL). To catch
+all ball-ball contacts, hook Ball_Update for ALL balls and scan each ball's
+collision list:
 
 ```c
 void __fastcall Hooked_BallUpdate(Ball* ball, void* edx) {
@@ -207,6 +219,20 @@ void __fastcall Hooked_BallUpdate(Ball* ball, void* edx) {
         }
     }
 }
+```
+
+### Catching Collisions From the Other Side
+
+Since only one ball receives the entry per collision, you can also check the
+OTHER ball's list. When ball A's list has an entry pointing to ball B, ball B
+was also involved in this collision even though B's list has no entry for it.
+For full coverage, fire `onBallBump` for both `ball` and `(Ball*)other_ptr`:
+
+```c
+// Fire for both balls involved — only one has the entry,
+// but both are participants in the collision
+mod->onBallBump(ball, (Ball*)other_ptr);
+mod->onBallBump((Ball*)other_ptr, ball);
 ```
 
 ### Contact Deduplication
@@ -253,11 +279,13 @@ for both player and 8-balls every frame.
 | +0x3C–0x50 | ❌ No | Always zero — padding/reserved |
 | +0x54 (penetration) | ✅ Yes (type 5 only) | Floor collision depth thresholds |
 | +0x58–0x60 (prev_point) | ❌ No | Previous contact point — ignored |
-| +0x64 (source_ref) | ✅ Yes | Ownership check: "is this MY entry?" |
+| +0x64 (source_ref) | ✅ Yes | Ownership filter: only ball matching +0x64 processes entry |
 | +0x68–0x7C | ❌ No | Metadata — ignored |
 
 ---
 
 *Document created from decompiled Ball_Update (0x405E00) analysis and
 runtime collision dumps. All offsets verified against Ghidra decompilation
-output. Dump data captured via MinGW-compiled bass.dll proxy hook.*
+output. Dump data captured via MinGW-compiled bass.dll proxy hook.
+Asymmetry confirmed by tick analysis: zero paired entries, unequal counts
+(4P vs 7B), all gaps >14 frames.*
