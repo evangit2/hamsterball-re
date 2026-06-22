@@ -114,6 +114,10 @@ DEFINE_BASS_FORWARDED(BASS_ChannelStop,
 /* PhysicsObject struct offsets */
 #define PHYS_COLLISION_COUNT  0x1C   /* int */
 #define PHYS_COLLISION_ARRAY  0x424  /* void**: array of CollisionEntry* */
+#define PHYS_SPEED            0xC64  /* float: speed magnitude */
+#define PHYS_VEL_X            0xC98  /* float: velocity X */
+#define PHYS_VEL_Y            0xC9C  /* float: velocity Y */
+#define PHYS_VEL_Z            0xCA0  /* float: velocity Z */
 
 /* CollisionEntry struct offsets */
 #define ENTRY_TYPE       0x00   /* int32: 1=ball-ball, 2=wall, 5=floor */
@@ -265,10 +269,22 @@ static void __fastcall hook_BallFallUpdate(void *ball, void *edx_dummy) {
         }
     }
 
-    /* Push ball away from wall */
+    /* Push ball position away from wall (immediate displacement) */
     *(float*)((char*)ball + BALL_POS_X) += push_x * force;
     *(float*)((char*)ball + BALL_POS_Y) += push_y * force;
     *(float*)((char*)ball + BALL_POS_Z) += push_z * force;
+
+    /* Reflect & amplify velocity along wall normal (prevents the ball
+     * from immediately flying back into the wall next frame).
+     * v' = v - 2*(v·n)*n + n*force  (reflection + outward boost)
+     * We use a simplified approach: overwrite velocity with the
+     * push direction × force. This gives a clean "launch" effect. */
+    if (!IsBadReadPtr(physics, 0xCA4)) {
+        *(float*)((char*)physics + PHYS_VEL_X) = push_x * force;
+        *(float*)((char*)physics + PHYS_VEL_Y) = push_y * force;
+        *(float*)((char*)physics + PHYS_VEL_Z) = push_z * force;
+        *(float*)((char*)physics + PHYS_SPEED) = force;
+    }
 
     /* Set speed_boost counter — briefly disables player input,
      * simulating the "launch" effect of real pinball bumpers */
