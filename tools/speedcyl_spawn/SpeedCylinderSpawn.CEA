@@ -230,7 +230,9 @@ register_collision:
   // and Pendulum_PlayCollisionSound never fires → no speed boost.
   // We recursively walk the tree and set +0x864 = 0x4CFE68.
   mov ecx, eax
+  push ebx                   // save timer pointer (subroutine clobbers EBX)
   call set_name_recursive
+  pop ebx                    // restore timer pointer
 
   // 5a. AthenaList_Append(Board+0x10EC, out_col) — collision levels list
   mov eax, [out_col]         // re-read (clobbered by subroutine)
