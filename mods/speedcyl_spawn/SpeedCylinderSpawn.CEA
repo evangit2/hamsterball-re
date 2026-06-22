@@ -1,0 +1,69 @@
+// ============================================================
+// SpeedCylinder Spawner — CE AutoAssembler Script v1
+//
+// REQUIRES: bass.dll proxy (speedcyl_spawn mod) installed in
+//   the Hamsterball game folder (rename original bass.dll →
+//   bass_real.dll, copy this mod's bass.dll in).
+//
+// WHAT THIS DOES:
+//   Adds "spawnSpeed" to CE's address list, pointing to the
+//   exported g_spawn_flag variable inside bass.dll.
+//
+//   Set a hotkey on spawnSpeed:
+//     Right-click → "Set/Change Hotkeys" →
+//     Action: "Set value to" → Value: 1
+//
+//   During gameplay, press the hotkey to spawn one SpeedCylinder
+//   at Player 1's position. The DLL auto-resets the flag to 0
+//   after spawning.
+//
+// HOW IT WORKS:
+//   bass.dll hooks Graphics_PresentOrEnd (per-frame). Each frame
+//   it checks if g_spawn_flag==1. If so:
+//     1. Loads SpeedCylinder MeshWorld (cached after first spawn)
+//     2. Finds Player 1 ball position (Scene+0x2DEC → ball+0x164)
+//     3. Creates Pendulum (SpeedCylinder) via Pendulum_ctor
+//     4. Appends to Scene's object list (Scene+0x2578)
+//     5. Resets g_spawn_flag to 0
+// ============================================================
+
+[ENABLE]
+
+// g_spawn_flag is exported by bass.dll, so CE can access it directly
+// via the module!symbol syntax.
+
+alloc(spawnSpeedHolder, 4)
+
+lua:
+  -- Try to find g_spawn_flag exported from bass.dll
+  local flagAddr = getAddressSafe("bass.dll!g_spawn_flag")
+
+  if flagAddr and flagAddr ~= 0 then
+    -- Write the address to our holder
+    writeInteger(getAddress("spawnSpeedHolder"), flagAddr)
+
+    -- Add to CE address list
+    local al = getAddressList()
+    local entry = al.createMemoryRecord()
+    entry.Description = "spawnSpeed"
+    entry.Type = vtDword
+    entry.Address = string.format("%08X", flagAddr)
+    entry.Active = false
+
+    showMessage("SpeedCylinder Spawner ready!\n\n" ..
+               "Set a hotkey on 'spawnSpeed' address:\n" ..
+               "  Right-click → Set/Change Hotkeys\n" ..
+               "  Action: Set value to → 1\n\n" ..
+               "Press the hotkey during gameplay to spawn a SpeedCylinder at Player 1's position.")
+  else
+    showMessage("ERROR: Could not find bass.dll!g_spawn_flag\n" ..
+               "Make sure the SpeedCylinder Spawner bass.dll is installed in the game folder.")
+  end
+endlua
+
+registersymbol(spawnSpeedHolder)
+
+[DISABLE]
+
+unregistersymbol(spawnSpeedHolder)
+dealloc(spawnSpeedHolder)
