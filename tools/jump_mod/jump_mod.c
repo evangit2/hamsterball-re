@@ -301,7 +301,10 @@ static DWORD get_player_ball(void)
     DWORD app = *(DWORD*)ADDR_App;
     if (!app) return 0;
 
-    DWORD scene = *(DWORD*)(app + 0x14);
+    /* Scene pointer is at App+0x178 (confirmed from App_StartRace at 0x4287C0:
+     * Scene_UpdateChildren(*(int*)(param_1 + 0x178))).
+     * NOT App+0x14 — that's a different field. */
+    DWORD scene = *(DWORD*)(app + 0x178);
     if (!scene) return 0;
 
     /* AthenaList at Scene+0x29D4: count at +0x04, data at +0x40C */
@@ -326,13 +329,14 @@ static int is_ball_grounded(DWORD ball)
 {
     if (!ball) return 0;
 
-    DWORD app = *(DWORD*)ADDR_App;
-    if (!app) return 0;
-
-    DWORD scene = *(DWORD*)(app + 0x14);
+    /* Scene pointer is at ball+0x14 (same offset the game uses in Ball_Update
+     * at 0x4064b9: MOV EDX,[ESI+0x14] where ESI=ball).
+     * NOT app+0x14 — that's a different field in the App struct.
+     * The actual scene pointer in App is at App+0x178 (from App_StartRace). */
+    DWORD scene = *(DWORD*)(ball + 0x14);
     if (!scene) return 0;
 
-    /* Scene mesh data pointer at Scene+0x8B0 */
+    /* Scene mesh data pointer at Scene+0x8B0 (ECX for Mesh_FindClosestCollision) */
     DWORD mesh_data = *(DWORD*)(scene + 0x8B0);
     if (!mesh_data) return 0;
 
@@ -403,41 +407,58 @@ static int is_ball_grounded(DWORD ball)
     /* Build the trampoline each time (params change each frame) */
     int tp = 0;
 
-    /* MOV ECX, mesh_data */
+    /* MOV ECX, mesh_data (this pointer for __thiscall) */
     trampoline[tp++] = 0xB9;
     *(DWORD*)(trampoline + tp) = mesh_data; tp += 4;
 
-    /* PUSH out_hit ptr (push the address of hit_result[0]) */
-    trampoline[tp++] = 0x68;
-    *(DWORD*)(trampoline + tp) = (DWORD)hit_result; tp += 4;
+    /* Push parameters in REVERSE order (right-to-left, like cdecl/stdcall).
+     * The callee does RET 0x20 (cleans 8 DWORDs = 0x20 bytes).
+     *
+     * Stack layout the function expects (before CALL pushes return addr):
+     *   ESP+0x00: out_ptr    (param_1, first stack param)
+     *   ESP+0x04: origin_x   (ball+0x164)
+     *   ESP+0x08: origin_y   (ball+0x168)
+     *   ESP+0x0C: origin_z   (ball+0x16C)
+     *   ESP+0x10: dir_x      (0.0)
+     *   ESP+0x14: dir_y      (-1.0)
+     *   ESP+0x18: dir_z      (0.0)
+     *   ESP+0x1C: radius     (1.0f)
+     *
+     * So we push radius FIRST (ends up at ESP+0x1C), out_ptr LAST (ESP+0x00).
+     * This matches how Ball_Update calls it at 0x4064d4-0x40651f.
+     */
 
-    /* PUSH 1.0f (0x3F800000) */
+    /* PUSH 1.0f (0x3F800000) — radius_scale (pushed first → ESP+0x1C) */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = 0x3F800000; tp += 4;
 
-    /* PUSH 0.0f (dir_z) */
+    /* PUSH 0.0f (dir_z) → ESP+0x18 */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = 0x00000000; tp += 4;
 
-    /* PUSH -1.0f (dir_y = 0xBF800000) */
+    /* PUSH -1.0f (dir_y = 0xBF800000) → ESP+0x14 */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = 0xBF800000; tp += 4;
 
-    /* PUSH 0.0f (dir_x) */
+    /* PUSH 0.0f (dir_x) → ESP+0x10 */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = 0x00000000; tp += 4;
 
-    /* PUSH ball_z */
+    /* PUSH ball_z → ESP+0x0C */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = *(DWORD*)&ball_z; tp += 4;
 
-    /* PUSH ball_y */
+    /* PUSH ball_y → ESP+0x08 */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = *(DWORD*)&ball_y; tp += 4;
 
-    /* PUSH ball_x */
+    /* PUSH ball_x → ESP+0x04 */
     trampoline[tp++] = 0x68;
     *(DWORD*)(trampoline + tp) = *(DWORD*)&ball_x; tp += 4;
+
+    /* PUSH out_hit ptr (pushed last → ESP+0x00 = param_1) */
+    trampoline[tp++] = 0x68;
+    *(DWORD*)(trampoline + tp) = (DWORD)hit_result; tp += 4;
 
     /* CALL Mesh_FindClosestCollision */
     trampoline[tp++] = 0xE8;
