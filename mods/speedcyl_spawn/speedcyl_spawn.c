@@ -30,37 +30,123 @@
 #include <string.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports (stubs — Hamsterball only needs import resolution)
+ * BASS Proxy Exports — forward all game imports to bass_real.dll
+ * Requires: rename original bass.dll → bass_real.dll in game folder
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-__declspec(dllexport) void BASS_Init(void) {}
-__declspec(dllexport) void BASS_Free(void) {}
-__declspec(dllexport) void BASS_Start(void) {}
-__declspec(dllexport) void BASS_Stop(void) {}
-__declspec(dllexport) void BASS_Pause(void) {}
-__declspec(dllexport) void BASS_SetVolume(void) {}
-__declspec(dllexport) void BASS_GetVolume(void) {}
-__declspec(dllexport) void BASS_GetDevice(void) {}
-__declspec(dllexport) void BASS_SetDevice(void) {}
-__declspec(dllexport) void BASS_GetInfo(void) {}
-__declspec(dllexport) void BASS_Update(void) {}
-__declspec(dllexport) void BASS_ErrorGetCode(void) {}
-__declspec(dllexport) void BASS_StreamCreateFile(void) {}
-__declspec(dllexport) void BASS_MusicLoad(void) {}
-__declspec(dllexport) void BASS_SampleLoad(void) {}
-__declspec(dllexport) void BASS_ChannelPlay(void) {}
-__declspec(dllexport) void BASS_ChannelStop(void) {}
-__declspec(dllexport) void BASS_ChannelSetAttribute(void) {}
-__declspec(dllexport) void BASS_ChannelGetAttribute(void) {}
-__declspec(dllexport) void BASS_ChannelGetData(void) {}
-__declspec(dllexport) void BASS_ChannelGetLevel(void) {}
-__declspec(dllexport) void BASS_ChannelSetPosition(void) {}
-__declspec(dllexport) void BASS_ChannelGetPosition(void) {}
-__declspec(dllexport) void BASS_ChannelIsActive(void) {}
-__declspec(dllexport) void BASS_ChannelRemoveSync(void) {}
-__declspec(dllexport) void BASS_ChannelSetSync(void) {}
-__declspec(dllexport) void BASS_SampleCreate(void) {}
-__declspec(dllexport) void BASS_SampleGetChannel(void) {}
+static HMODULE g_hRealBass = NULL;
+
+typedef int  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, int, int);
+static BASS_ChannelSetAttributes_t real_BASS_ChannelSetAttributes = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(DWORD a, float b, int c, int d) {
+    if (real_BASS_ChannelSetAttributes) return real_BASS_ChannelSetAttributes(a, b, c, d);
+    return 1;
+}
+typedef int  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
+static BASS_MusicPlayEx_t real_BASS_MusicPlayEx = NULL;
+__declspec(dllexport) int __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
+    if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(a, b, c);
+    return 1;
+}
+typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
+static BASS_SetConfig_t real_BASS_SetConfig = NULL;
+__declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
+    return 1;
+}
+typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, HWND, void*);
+static BASS_Init_t real_BASS_Init = NULL;
+__declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, HWND d, void* e) {
+    if (real_BASS_Init) return real_BASS_Init(a, b, c, d, e);
+    return 1;
+}
+typedef int  (__stdcall *BASS_Free_t)(void);
+static BASS_Free_t real_BASS_Free = NULL;
+__declspec(dllexport) int __stdcall BASS_Free(void) {
+    if (real_BASS_Free) return real_BASS_Free();
+    return 1;
+}
+typedef int  (__stdcall *BASS_Start_t)(void);
+static BASS_Start_t real_BASS_Start = NULL;
+__declspec(dllexport) int __stdcall BASS_Start(void) {
+    if (real_BASS_Start) return real_BASS_Start();
+    return 1;
+}
+typedef int  (__stdcall *BASS_Stop_t)(void);
+static BASS_Stop_t real_BASS_Stop = NULL;
+__declspec(dllexport) int __stdcall BASS_Stop(void) {
+    if (real_BASS_Stop) return real_BASS_Stop();
+    return 1;
+}
+typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
+static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
+__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
+    return 0;
+}
+typedef DWORD (__stdcall *BASS_MusicLoad_t)(int, void*, DWORD, DWORD, DWORD, DWORD);
+static BASS_MusicLoad_t real_BASS_MusicLoad = NULL;
+__declspec(dllexport) DWORD __stdcall BASS_MusicLoad(int a, void* b, DWORD c, DWORD d, DWORD e, DWORD f) {
+    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d, e, f);
+    return 0;
+}
+typedef int  (__stdcall *BASS_ChannelStop_t)(DWORD);
+static BASS_ChannelStop_t real_BASS_ChannelStop = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
+    if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
+    return 1;
+}
+
+/* Extra stubs — forward if available, otherwise return safe defaults */
+__declspec(dllexport) void __stdcall BASS_Pause(void) {}
+__declspec(dllexport) void __stdcall BASS_SetVolume(DWORD a) {}
+__declspec(dllexport) DWORD __stdcall BASS_GetVolume(void) { return 0; }
+__declspec(dllexport) int __stdcall BASS_GetDevice(void) { return 0; }
+__declspec(dllexport) int __stdcall BASS_SetDevice(DWORD a) { return 1; }
+__declspec(dllexport) void __stdcall BASS_GetInfo(void *a) {}
+__declspec(dllexport) int __stdcall BASS_Update(DWORD a) { return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_StreamCreateFile(void *a, void *b, DWORD c, DWORD d, DWORD e) { return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_SampleLoad(int a, void *b, DWORD c, DWORD d, DWORD e) { return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) { return 1; }
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttribute(DWORD a, DWORD b, float c) { return 1; }
+__declspec(dllexport) int __stdcall BASS_ChannelGetAttribute(DWORD a, DWORD b, float *c) { return 1; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetData(DWORD a, void *b, DWORD c) { return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetLevel(DWORD a) { return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelSetPosition(DWORD a, void *b, DWORD c) { return 1; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetPosition(DWORD a, DWORD b) { return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelIsActive(DWORD a) { return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelRemoveSync(DWORD a, DWORD b) { return 1; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelSetSync(DWORD a, DWORD b, DWORD c, void *d, void *e) { return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_SampleCreate(DWORD a, DWORD b, DWORD c, DWORD d, DWORD e) { return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) { return 0; }
+
+static void load_real_bass(void)
+{
+    g_hRealBass = LoadLibraryA("bass_real.dll");
+    if (g_hRealBass == NULL) {
+        char path[MAX_PATH];
+        HMODULE hSelf = NULL;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                          | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          (LPCSTR)&load_real_bass, &hSelf);
+        if (hSelf && GetModuleFileNameA(hSelf, path, MAX_PATH)) {
+            char *p = strrchr(path, '\\');
+            if (p) { strcpy(p + 1, "bass_real.dll"); g_hRealBass = LoadLibraryA(path); }
+        }
+    }
+    if (g_hRealBass) {
+        real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
+        real_BASS_MusicPlayEx          = (BASS_MusicPlayEx_t)GetProcAddress(g_hRealBass, "BASS_MusicPlayEx");
+        real_BASS_SetConfig             = (BASS_SetConfig_t)GetProcAddress(g_hRealBass, "BASS_SetConfig");
+        real_BASS_Init                  = (BASS_Init_t)GetProcAddress(g_hRealBass, "BASS_Init");
+        real_BASS_Free                  = (BASS_Free_t)GetProcAddress(g_hRealBass, "BASS_Free");
+        real_BASS_Start                 = (BASS_Start_t)GetProcAddress(g_hRealBass, "BASS_Start");
+        real_BASS_Stop                  = (BASS_Stop_t)GetProcAddress(g_hRealBass, "BASS_Stop");
+        real_BASS_ErrorGetCode          = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
+        real_BASS_MusicLoad             = (BASS_MusicLoad_t)GetProcAddress(g_hRealBass, "BASS_MusicLoad");
+        real_BASS_ChannelStop           = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
+    }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game Constants & Struct Offsets
@@ -337,6 +423,7 @@ static DWORD WINAPI PatchThread(LPVOID lpParam)
 {
     Sleep(2000);  /* Wait for game to fully load */
 
+    load_real_bass();
     resolve_functions();
 
     /* Verify function pointers resolved */

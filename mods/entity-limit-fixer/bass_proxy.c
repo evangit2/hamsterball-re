@@ -1,6 +1,6 @@
 
 // ============================================================
-// Hamsterball Entity Limit Fixer - bass.dll proxy v8
+// Hamsterball Entity Limit Fixer - bass.dll proxy v9
 // Prevents freezes AND crashes when spawning many entities
 // Exports all BASS functions as stubs + delayed patching
 // ============================================================
@@ -196,11 +196,13 @@ static unsigned char* cave_ai2 = NULL;
 static unsigned char* cave_stree = NULL;
 
 /* Patch A: Hook Scene_UpdateBallsAndState entry (0x41B540)
- * ECX = Scene pointer (thiscall). Ball count at Scene+0x29D8.
+ * ECX = Scene pointer (thiscall). 
+ * v9: Checks BOTH bad_balls count (Scene+0x29D8) AND all_balls count (Scene+0x2DF0).
+ * Uses the larger count so player clones (in all_balls_list) trigger the flag.
  * Sets g_skip_collisions based on ball count vs MAX_BALLS. */
 static void BuildCaveScene() {
-    cave_scene = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    memset(cave_scene, 0x90, 128);
+    cave_scene = (unsigned char*)VirtualAlloc(NULL, 256, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memset(cave_scene, 0x90, 256);
 
     unsigned char* buf = cave_scene;
     int i = 0;
@@ -211,18 +213,36 @@ static void BuildCaveScene() {
     buf[i++] = 0x56;                    /* PUSH ESI */
     buf[i++] = 0x8B; buf[i++] = 0xD9;  /* MOV EBX,ECX */
 
-    /* MOV EAX, [EBX+0x29D8] — ball count */
+    /* MOV EAX, [EBX+0x29D8] — bad_balls count */
     buf[i++] = 0x8B; buf[i++] = 0x83;
     *(unsigned int*)(buf + i) = 0x29D8;
     i += 4;
 
+    /* MOV ESI, [EBX+0x2DF0] — all_balls count (Scene+0x2DEC+0x04) */
+    buf[i++] = 0x8B; buf[i++] = 0xB3;
+    *(unsigned int*)(buf + i) = 0x2DF0;
+    i += 4;
+
+    /* CMP ESI, EAX — use the larger count */
+    buf[i++] = 0x39; buf[i++] = 0xC6;  /* CMP ESI, EAX */
+
+    /* JLE skip_mov (bad_balls >= all_balls, keep EAX) */
+    int jle1_pos = i;
+    buf[i++] = 0x7E; buf[i++] = 0x00;  /* JLE — fill later */
+
+    /* MOV EAX, ESI — all_balls is larger */
+    buf[i++] = 0x89; buf[i++] = 0xF0;  /* MOV EAX, ESI */
+
     /* CMP EAX, MAX_BALLS */
+    int cmp_pos = i;
+    buf[jle1_pos + 1] = (unsigned char)(cmp_pos - (jle1_pos + 2));
+
     buf[i++] = 0x3D;                    /* CMP EAX, imm32 */
     *(unsigned int*)(buf + i) = (unsigned int)MAX_BALLS;
     i += 4;
 
     /* JLE +offset (skip to "clear flag") */
-    int jle_pos = i;
+    int jle2_pos = i;
     buf[i++] = 0x7E; buf[i++] = 0x00;  /* JLE — fill offset later */
 
     /* Set flag = 1 */
@@ -239,7 +259,7 @@ static void BuildCaveScene() {
 
     /* Clear flag = 0 (JLE target) */
     int clear_pos = i;
-    buf[jle_pos + 1] = (unsigned char)(clear_pos - (jle_pos + 2));
+    buf[jle2_pos + 1] = (unsigned char)(clear_pos - (jle2_pos + 2));
 
     buf[i++] = 0xC7; buf[i++] = 0x05;  /* MOV DWORD [imm32], 0 */
     *(unsigned int*)(buf + i) = (unsigned int)&g_skip_collisions;

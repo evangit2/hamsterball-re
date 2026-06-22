@@ -1,6 +1,11 @@
 // ============================================================
-// Hamsterball Entity Limit Fixer v8 — CE AutoAssembler Script
+// Hamsterball Entity Limit Fixer v9 — CE AutoAssembler Script
 // Prevents freezes AND crashes when many entities are active.
+//
+// v8→v9 FIX: Patch A only checked bad_balls_list count (Scene+0x29D8).
+// Player clones are added to all_balls_list (Scene+0x2DEC), NOT bad_balls!
+// So SKIP_COLLISIONS never activated for player clones → freeze.
+// v9 Patch A now checks BOTH lists and uses the larger count.
 //
 // v7→v8 FIX: Player clones freeze because Ball_FallUpdate (0x408830)
 // builds its OWN SpatialTree directly via SpatialTree_ctor (0x463330),
@@ -11,25 +16,13 @@
 //   - Ball_FallUpdate (0x4088FC) — direct SpatialTree_ctor call (FALLEN balls!)
 //   - Mesh_FindClosestCollision (0x465DF9) — internal call (already covered by Patch B)
 //
-// When a ball falls, its vtable is swapped to the "Fall" vtable (0x4CF494)
-// where vtable[4] = Ball_FallUpdate (0x408830). This function:
-//   1. operator_new(0x20) — allocate SpatialTree
-//   2. SpatialTree_ctor — BUILD FULL TREE from level geometry (EXPENSIVE!)
-//   3. operator_new(0x14) — allocate CollisionNode
-//   4. CollisionNode_ctor — init collision node
-//   5. vtable calls — collision checks using the tree
-//
-// With 5-8 fallen player clones, that's 5-8 full SpatialTree builds per frame.
-// Patch F skips the tree construction — returns the allocated memory with
-// just the vtable pointer set (valid for later SpatialTree_Free).
-//
 // ALL PATCHES:
 //   A  0x41B540  Hook Scene_UpdateBallsAndState → set SKIP_COLLISIONS flag
 //   B  0x465D90  Hook Mesh_FindClosestCollision → skip if flag set (covers 5 call sites)
 //   C  0x4BA58D  operator_new → return NULL (crash protection)
 //   D  0x4083D9  Skip AI O(N²) loop 1 when flag set
 //   E  0x408548  Skip AI O(N²) loop 2 when flag set
-//   F  0x463330  Hook SpatialTree_ctor → skip tree build if flag set (NEW!)
+//   F  0x463330  Hook SpatialTree_ctor → skip tree build if flag set
 //
 // ADJUSTABLE PARAMETERS (add to CE address list):
 //   MAX_BALLS (default 5): ball count threshold for skipping collision
@@ -49,6 +42,7 @@ label(MAX_BALLS)
 label(SKIP_COLLISIONS)
 
 label(scene_check)
+label(scene_check_bad)
 label(scene_set)
 label(scene_clear)
 label(scene_done)
@@ -89,6 +83,8 @@ GlobalState:
 // ============================================================
 // PATCH A: Hook Scene_UpdateBallsAndState entry (0x41B540)
 // Sets SKIP_COLLISIONS based on ball count vs MAX_BALLS.
+// v9: Checks BOTH bad_balls (Scene+0x29D8) AND all_balls (Scene+0x2DF0).
+// Uses the larger count so player clones (in all_balls) trigger the flag.
 // Original 5 bytes: 53 55 56 8B D9
 // ============================================================
 CaveScene:
@@ -96,7 +92,18 @@ CaveScene:
   push ebp
   push esi
   mov ebx,ecx
+  // Check bad_balls_list count first (Scene+0x29D4 is AthenaList, count at +0x04 = +0x29D8)
   mov eax, [ebx+0x29D8]
+  // Check all_balls_list count (Scene+0x2DEC is AthenaList, count at +0x04 = +0x2DF0)
+  mov esi, [ebx+0x2DF0]
+  // Use the larger of the two
+  cmp esi, eax
+  jle scene_check_bad
+  mov eax, esi
+  jmp scene_check
+scene_check_bad:
+  mov eax, [ebx+0x29D8]
+scene_check:
   cmp eax, [MAX_BALLS]
   jle scene_clear
 
