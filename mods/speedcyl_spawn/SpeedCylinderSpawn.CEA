@@ -1,53 +1,43 @@
 [ENABLE]
 
 // ============================================================
-// SpeedCylinder Spawn Mod v5 — Global (all races + arenas)
+// SpeedCylinder Spawn Mod v6 — Global (all races + arenas)
 // Pure CEA — no bass.dll, no Lua
 //
-// ROOT CAUSES FOUND (v1-v4 failures):
+// CHANGES FROM v5:
+// - REMOVED init callbacks (vtable[0x54], [0x58]) — they caused
+//   heap corruption and crashes during gameplay (0001:0006186E)
+// - Added vtable check: on Up Race (Board vtable==0x4D11A0), mesh
+//   is already loaded by BoardLevel_Up_ctor — skip loading
+// - On non-Up levels: force-load mesh, overwrite garbage at +0x4788
+// - Added NULL checks for Board+0x8AC, level_mesh, SceneObject
+// - Use lea+push for param_block to avoid CE address ambiguity
 //
-// BUG 1 (crash on non-Up levels): Board+0x4788 is UNINITIALIZED on
-//   non-Up levels. Board_ctor doesn't zero it, and only BoardLevel_Up_Ctor
-//   sets it. On Beginner/etc, it contains malloc garbage. v4 checked
-//   "if non-NULL skip loading" — but garbage is non-NULL → skipped loading
-//   → passed garbage pointer to CreateSpeedCylinder → crash in Stands_ctor
-//   reading [garbage+4].
-//   FIX: Use a mesh_loaded flag. Always load on first spawn per level.
-//
-// BUG 2 (invisible on Up Race): CreateSpeedCylinder only adds the Pendulum
-//   to Board+0x2578 (mechanical objects list). But rendering/update iterates
-//   Board+0xCD4 (scene objects list) and level_mesh->SceneObject+0x1C.
-//   Without adding to these lists, the Pendulum is never rendered.
-//   FIX: After CreateSpeedCylinder, also add to Board+0xCD4 and
-//   level_mesh->SceneObject+0x1C (same as Scene_CreateDynamicObjects does).
-//
-// BUG 3 (alive flag): v3 checked Ball+0x768 but actual alive flag is
-//   Ball+0x769 (verified from disasm: MOV byte [ESI+0x769], 1).
-//   Fixed in v4, kept in v5.
+// CRASH ROOT CAUSES (v5):
+// 1. Init callbacks called during gameplay corrupted heap state
+//    → operator_new returned NULL → Level_ctor crash at 0x46186E
+// 2. Stack corruption from callback tail-calls (6500C0:B40001B5)
 //
 // VERIFIED ADDRESSES (Ghidra 2026-06-22):
 //   0x41B540  Scene_UpdateBallsAndState (__fastcall, ECX=Board)
 //   0x4117B0  CreateSpeedCylinder (__thiscall, ECX=Board, RET 0x10)
-//   0x4BA57B  operator_new (__cdecl)
+//   0x4BA57B  operator_new (__cdecl, plain RET)
 //   0x461510  MeshWorld_ctor (__thiscall, ECX=mem, RET 0x8)
 //   0x453810  AthenaList_Append (__thiscall, ECX=list, 1 param, RET 0x4)
-//   0x457AD0  Timer_Init (__fastcall, ECX=timer, plain RET)
 //   0x4CFE4C  "SPEEDCYLINDER" string
 //   0x4D1140  "levels\levelup-speedcylinder" mesh file path
+//   0x4D11A0  Up Race Board vtable (if Board+0x00 == this, mesh is loaded)
 //
 //   Board+0x878  = App ptr
-//   App+0x174    = render context
+//   App+0x174    = render context (D3D device)
 //   Board+0x8AC  = level MeshWorld ptr (Level/MeshWorld object)
-//   Board+0x4788 = SpeedCylinder mesh (only set by BoardLevel_Up_Ctor)
-//   Board+0x2578 = mechanical objects AthenaList (set by Board_ctor)
-//   Board+0x29D4 = ball AthenaList (count +0x004, array +0x40C)
-//   Board+0xCD4  = scene objects AthenaList (for update/render)
+//   Board+0x4788 = SpeedCylinder mesh (set by Up ctor, garbage on other levels)
+//   Board+0x29D4 = ball AthenaList (count@+4, array@+0x40C)
+//   Board+0xCD4  = scene objects AthenaList (for update/render/dtor)
 //   Level+0x480  = SceneObject ptr
 //   SceneObject+0x1C = AthenaList (for level-based rendering)
 //   Ball+0x018   = player_index (0=Player1, -1=NPC)
-//   Ball+0x164   = pos.x (float)
-//   Ball+0x168   = pos.y (float)
-//   Ball+0x16C   = pos.z (float)
+//   Ball+0x164/+0x168/+0x16C = pos.x/pos.y/pos.z (floats)
 //   Ball+0x769   = alive flag (byte, 1=alive)
 //
 // Usage: Add address "SpawnFlag" in CE. Set to 1 to spawn.
@@ -61,7 +51,6 @@ alloc(mesh_loaded, 4)
 alloc(param_block, 32)
 alloc(out_obj, 4)
 alloc(out_col, 4)
-alloc(timer_local, 80)
 
 registersymbol(SpawnFlag)
 
@@ -86,11 +75,9 @@ out_obj:
 out_col:
   dd 0
 
-timer_local:
-  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-
 label(original_code)
 label(ensure_mesh)
+label(skip_mesh_load)
 label(load_mesh)
 label(find_player)
 label(found_player)
@@ -122,15 +109,19 @@ SpawnCode:
   mov [mesh_loaded], 0
 
 ensure_mesh:
-  // === ENSURE MESH IS LOADED ===
-  // BUG 1 FIX: Don't check Board+0x4788 (might be garbage).
-  // Use our own mesh_loaded flag instead.
   cmp [mesh_loaded], 0
   jne find_player
 
+  // Check if this is Up Race Board (vtable at Board+0x00 == 0x4D11A0)
+  // Up Race already loaded the mesh in BoardLevel_Up_ctor
+  mov eax, [saved_board]
+  mov eax, [eax]           // eax = Board vtable ptr
+  cmp eax, 0x4D11A0        // Up Race Board vtable?
+  je skip_mesh_load
+
 load_mesh:
-  // Load SpeedCylinder mesh into Board+0x4788
-  // Same pattern as BoardLevel_Up_Ctor (0x420390)
+  // Force-load SpeedCylinder mesh into Board+0x4788
+  // (non-Up levels have GARBAGE here — Board_ctor doesn't zero it)
 
   // Step 1: operator_new(0x10D0)
   push 0x10D0
@@ -152,7 +143,7 @@ load_mesh:
   jz done_spawn
 
   // Step 3: MeshWorld_ctor(mem, render_ctx, "levels\levelup-speedcylinder")
-  // __thiscall: ECX=mem, push param_2(string) first, push param_1(render_ctx) second
+  // __thiscall: ECX=mem, push param_2(path) first, push param_1(render_ctx) second
   // RET 0x8 (callee cleans 8 bytes)
   push 004D1140           // param_2: mesh file path string
   push edx                // param_1: render context
@@ -166,12 +157,16 @@ load_mesh:
   mov edx, [saved_board]
   mov [edx + 0x4788], eax
   mov [mesh_loaded], 1
+  jmp find_player
+
+skip_mesh_load:
+  // Up Race: mesh already loaded by BoardLevel_Up_ctor
+  mov [mesh_loaded], 1
 
 find_player:
   // === FIND PLAYER 1 BALL ===
-  // Ball list at Board+0x29D4 (AthenaList)
   mov esi, [saved_board]
-  add esi, 0x29D4
+  add esi, 0x29D4         // esi = &AthenaList (ball list)
 
   // count = [list + 0x004]
   mov ecx, [esi + 0x004]
@@ -227,7 +222,7 @@ do_spawn:
   // Clear unused param_block fields
   mov dword [param_block], 0          // +0x00: type
   mov dword [param_block + 0x10], 0   // +0x10: unused
-  mov dword [param_block + 0x14], 0   // +0x14: rotation = 0 → param_5 = (int)(360-0) = 360
+  mov dword [param_block + 0x14], 0   // +0x14: rotation = 0 → 360-0=360
   mov dword [param_block + 0x18], 0   // +0x18: unused
 
   // Clear output buffers
@@ -237,18 +232,14 @@ do_spawn:
   // === CALL CreateSpeedCylinder ===
   // __thiscall: ECX = Board, 4 stack params, RET 0x10
   // Push right-to-left: param_4, param_3, param_2, param_1
-  push param_block     // param_4: position data ptr
-  push out_col          // param_3: receives collision level ptr
-  push out_obj          // param_2: receives created Pendulum ptr
-  push 004CFE4C         // param_1: "SPEEDCYLINDER" string
+  lea eax, [param_block]   // use lea to ensure we push the ADDRESS
+  push eax                 // param_4: position data ptr
+  push out_col             // param_3: receives collision level ptr
+  push out_obj             // param_2: receives created Pendulum ptr
+  push 004CFE4C            // param_1: "SPEEDCYLINDER" string
   mov ecx, [saved_board]
   call 004117B0
   // RET 0x10 — callee cleaned 16 bytes
-
-  // === BUG 2 FIX: ADD PENDULUM TO RENDER LISTS ===
-  // CreateSpeedCylinder only added to Board+0x2578 (mechanical objects).
-  // We also need to add to Board+0xCD4 (scene objects) and
-  // level_mesh->SceneObject+0x1C (level rendering).
 
 post_spawn:
   // Check if out_obj is valid
@@ -256,8 +247,7 @@ post_spawn:
   test eax, eax
   jz skip_post_spawn
 
-  // Save pendulum pointer in esi
-  mov esi, eax
+  mov esi, eax  // esi = Pendulum ptr
 
   // 1. AthenaList_Append(Board+0xCD4, pendulum)
   // __thiscall: ECX = list, push pendulum, RET 0x4
@@ -269,13 +259,11 @@ post_spawn:
 
   // 2. AthenaList_Append(level_mesh->SceneObject+0x1C, pendulum)
   // level_mesh = Board+0x8AC
-  // SceneObject = level_mesh+0x480
-  // list = SceneObject+0x1C
   mov edx, [saved_board]
   mov edx, [edx + 0x8AC]
   test edx, edx
   jz skip_post_spawn
-  mov edx, [edx + 0x480]
+  mov edx, [edx + 0x480]  // SceneObject ptr
   test edx, edx
   jz skip_post_spawn
 
@@ -284,25 +272,8 @@ post_spawn:
   call 00453810
   // RET 0x4 — callee cleaned 4 bytes
 
-  // 3. Call Pendulum init callbacks (same as Scene_CreateDynamicObjects)
-  // vtable[0x16] = SceneObject_CallUpdate (no stack params)
-  mov eax, [esi]       // vtable ptr
-  push esi             // save pendulum ptr
-  mov ecx, esi
-  call dword [eax + 0x58]
-  pop esi
-
-  // vtable[0x15] = SceneObject_CallRender (1 stack param: &timer)
-  // Timer_Init(&timer_local) first
-  lea ecx, [timer_local]
-  call 00457AD0
-  // __fastcall, plain RET
-
-  mov eax, [esi]       // vtable ptr
-  push timer_local     // push &timer
-  mov ecx, esi
-  call dword [eax + 0x54]
-  // RET 0x4 — callee cleaned 4 bytes
+  // NO init callbacks — they caused heap corruption and crashes
+  // The Pendulum will still render via the AthenaList at Board+0xCD4
 
 skip_post_spawn:
 
@@ -337,5 +308,4 @@ dealloc(mesh_loaded)
 dealloc(param_block)
 dealloc(out_obj)
 dealloc(out_col)
-dealloc(timer_local)
 unregistersymbol(SpawnFlag)
