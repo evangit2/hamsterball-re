@@ -199,15 +199,24 @@ static volatile DWORD g_ball_ptr = 0;
 /* ─── Mesh_FindClosestCollision wrapper ────────────────────────────────────
  *
  * __thiscall: ECX = mesh_data (this pointer)
- * Stack params (pushed right-to-left, callee-clean RET 0x20):
- *   origin_x, origin_y, origin_z   (3 floats)
- *   dir_x, dir_y, dir_z            (3 floats)
- *   radius_scale                    (1 float = 1.0)
- *   out_hit_vec3_ptr                (1 pointer)
- * Returns: pointer to hit vec3 (3 floats: x, y, z), or NULL if no hit
+ * Stack params (callee-clean RET 0x20, 8 DWORDs = 0x20 bytes):
+ *   [ESP+0x00] out_hit_vec3_ptr  (pushed last)
+ *   [ESP+0x04] origin_x
+ *   [ESP+0x08] origin_y
+ *   [ESP+0x0C] origin_z
+ *   [ESP+0x10] dir_x
+ *   [ESP+0x14] dir_y
+ *   [ESP+0x18] dir_z
+ *   [ESP+0x1C] radius_scale
+ * Returns: out_hit pointer (always non-NULL if function doesn't crash)
  *
- * We use inline asm to set ECX and push params, since MinGW doesn't
- * support __thiscall.
+ * CRITICAL: Do NOT use "push" with "g" constraints! When GCC runs out of
+ * registers for "g" operands, it uses ESP-relative memory operands. Each
+ * "push" decrements ESP by 4, making subsequent ESP-relative operands read
+ * from wrong addresses → garbage params → NaN hit results.
+ *
+ * Instead: sub esp once, write via mov [esp+N] (ESP stays stable), call.
+ * The callee's RET 0x20 pops the 0x20 bytes, restoring ESP automatically.
  */
 static float* do_raycast(void *mesh_data,
                           float ox, float oy, float oz,
@@ -215,44 +224,46 @@ static float* do_raycast(void *mesh_data,
                           float radius_scale,
                           float *out_hit)
 {
-    /* Build the argument block in memory, then push onto stack and call.
-     * The callee (Mesh_FindClosestCollision) is __thiscall with RET 0x20:
-     *   ECX = mesh_data (this pointer)
-     *   Stack (pushed right-to-left, 8 DWORDs):
-     *     out_hit, origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, radius
-     *   Callee cleans 0x20 bytes via RET 0x20.
-     *
-     * We use "g" constraints (memory or register) to avoid running out
-     * of registers. GCC can use memory operands for PUSH.
-     */
+    /* Pack all 8 args into a local array. We pass only the array pointer
+     * to inline asm (1 register), plus mesh_data (1 reg) and fn (1 reg).
+     * This avoids running out of registers. */
+    DWORD args[8];
+    args[0] = (DWORD)out_hit;             /* [ESP+0x00] */
+    args[1] = *(DWORD*)&ox;               /* [ESP+0x04] */
+    args[2] = *(DWORD*)&oy;               /* [ESP+0x08] */
+    args[3] = *(DWORD*)&oz;               /* [ESP+0x0C] */
+    args[4] = *(DWORD*)&dx;               /* [ESP+0x10] */
+    args[5] = *(DWORD*)&dy;               /* [ESP+0x14] */
+    args[6] = *(DWORD*)&dz;               /* [ESP+0x18] */
+    args[7] = *(DWORD*)&radius_scale;     /* [ESP+0x1C] */
+
     float *result = NULL;
-    DWORD arg_ox = *(DWORD*)&ox;
-    DWORD arg_oy = *(DWORD*)&oy;
-    DWORD arg_oz = *(DWORD*)&oz;
-    DWORD arg_dx = *(DWORD*)&dx;
-    DWORD arg_dy = *(DWORD*)&dy;
-    DWORD arg_dz = *(DWORD*)&dz;
-    DWORD arg_radius = *(DWORD*)&radius_scale;
-    DWORD arg_out = (DWORD)out_hit;
     void *fn = (void*)(DWORD)ADDR_Mesh_FindClosestCollision;
 
     __asm__ __volatile__ (
-        "push %0\n\t"           /* radius_scale */
-        "push %1\n\t"           /* dir_z */
-        "push %2\n\t"           /* dir_y */
-        "push %3\n\t"           /* dir_x */
-        "push %4\n\t"           /* origin_z */
-        "push %5\n\t"           /* origin_y */
-        "push %6\n\t"           /* origin_x */
-        "push %7\n\t"           /* out_hit_ptr */
-        "movl %8, %%ecx\n\t"   /* ECX = mesh_data */
-        "call *%9\n\t"          /* Mesh_FindClosestCollision */
-        "movl %%eax, %10\n\t"   /* save result */
-        :
-        : "g" (arg_radius), "g" (arg_dz), "g" (arg_dy), "g" (arg_dx),
-          "g" (arg_oz), "g" (arg_oy), "g" (arg_ox), "g" (arg_out),
-          "r" (mesh_data), "r" (fn),
-          "m" (result)
+        "subl $0x20, %%esp\n\t"           /* reserve 32 bytes for 8 params */
+        "movl 0x00(%3), %%eax\n\t"       /* out_hit */
+        "movl %%eax, 0x00(%%esp)\n\t"
+        "movl 0x04(%3), %%eax\n\t"       /* origin_x */
+        "movl %%eax, 0x04(%%esp)\n\t"
+        "movl 0x08(%3), %%eax\n\t"       /* origin_y */
+        "movl %%eax, 0x08(%%esp)\n\t"
+        "movl 0x0C(%3), %%eax\n\t"       /* origin_z */
+        "movl %%eax, 0x0C(%%esp)\n\t"
+        "movl 0x10(%3), %%eax\n\t"       /* dir_x */
+        "movl %%eax, 0x10(%%esp)\n\t"
+        "movl 0x14(%3), %%eax\n\t"       /* dir_y */
+        "movl %%eax, 0x14(%%esp)\n\t"
+        "movl 0x18(%3), %%eax\n\t"       /* dir_z */
+        "movl %%eax, 0x18(%%esp)\n\t"
+        "movl 0x1C(%3), %%eax\n\t"       /* radius_scale */
+        "movl %%eax, 0x1C(%%esp)\n\t"
+        "movl %1, %%ecx\n\t"             /* ECX = mesh_data (this) */
+        "call *%2\n\t"                    /* Mesh_FindClosestCollision */
+        /* NO esp cleanup — callee RET 0x20 pops 0x20 bytes, restoring ESP */
+        "movl %%eax, %0\n\t"             /* save return value */
+        : "=m" (result)
+        : "r" (mesh_data), "r" (fn), "r" (args)
         : "eax", "ecx", "edx", "memory"
     );
     return result;
