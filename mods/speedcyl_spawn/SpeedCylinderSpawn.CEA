@@ -1,24 +1,5 @@
 [ENABLE]
 
-// ============================================================
-// SpeedCylinder Spawn Mod v9
-// Pure CEA — no bass.dll, no Lua
-//
-// Based on user's stable pastebin version (hooks Ball_Update).
-//
-// FIX IN v9: Speed boost function works globally!
-// Root cause: Collision dispatch (FUN_004119B0) checks node+0x864
-// for "N:SPEEDCYLINDER". On spawned cylinders, the entity name lookup
-// fails so Pendulum_PlayCollisionSound is never called.
-//
-// Fix: BYPASS the collision dispatch entirely. Every frame, for every
-// ball, check distance to all spawned Pendulums. If within 60 units,
-// call Pendulum_PlayCollisionSound(pendulum, ball) which sets
-// Ball+0x808 = 10 (speed boost counter, decremented each frame).
-//
-// This works in ALL levels and arenas, not just Up Race.
-// ============================================================
-
 alloc(SpawnCode, 4096)
 alloc(SpawnFlag, 4)
 alloc(saved_board, 4)
@@ -29,7 +10,9 @@ alloc(temp_mesh, 4)
 alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
-alloc(pendulum_array, 68)       // [0]=count, [4..67]=16 pendulum ptrs
+alloc(pendulum_array, 68)
+alloc(float_3600, 4)
+alloc(last_board, 4)
 
 registersymbol(SpawnFlag)
 
@@ -64,7 +47,14 @@ pendulum_array:
   dd 0
   dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 
+float_3600:
+  dd 0x45410000
+
+last_board:
+  dd 0
+
 label(original_code)
+label(save_pos)
 label(check_spawn)
 label(do_spawn)
 label(post_spawn)
@@ -76,65 +66,59 @@ label(prox_loop)
 label(prox_next)
 label(prox_near)
 label(prox_done)
+label(no_clear)
 
 SpawnCode:
-  // === PHASE 1: Proximity check (runs for ALL balls every frame) ===
-  // Wrapped in pushad/popad to preserve all registers for original code.
-  mov eax, [pendulum_array]     // count of stored pendulums
+  mov eax, [esi+0x14]
   test eax, eax
-  jz check_spawn
+  jz no_clear
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+  mov dword [pendulum_array], 0
+
+no_clear:
+  mov eax, [pendulum_array]
+  test eax, eax
+  jz save_pos
+
+  cmp dword [esi+0x808], 0
+  jne save_pos
 
   pushad
 
-  // ESI = ball pointer (still valid inside pushad)
-  // Loop through pendulum array
-  xor ebx, ebx                  // index = 0
+  xor ebx, ebx
 
 prox_loop:
   cmp ebx, [pendulum_array]
   jae prox_done
 
-  // Get pendulum pointer
-  mov eax, [pendulum_array + 4 + ebx*4]
+  mov eax, [pendulum_array+4+ebx*4]
   test eax, eax
   jz prox_next
 
-  // Validate pendulum: check vtable pointer is non-null
   mov ecx, [eax]
   test ecx, ecx
   jz prox_next
 
-  // Distance check: XZ plane (ignore Y)
-  // dX = ballX - pendX
-  fld dword [esi + 0x164]
-  fsub dword [eax + 0x10D4]
-  fmul st, st                   // dX²
+  fld dword [esi+0x164]
+  fsub dword [eax+0x10D4]
+  fmul st, st
 
-  // dZ = ballZ - pendZ
-  fld dword [esi + 0x16C]
-  fsub dword [eax + 0x10DC]
-  fmul st, st                   // dZ²
-  faddp                         // dX² + dZ²
+  fld dword [esi+0x16C]
+  fsub dword [eax+0x10DC]
+  fmul st, st
+  faddp
 
-  // Compare with radius² (60² = 3600.0f)
-  fcomp dword [float_3600]
-  fnstsw ax
-  test ah, 0x41                 // C0 flag = result is below (ball within radius)
-  jnz prox_near
-
-  fstp st                       // pop unused FPU value (fcomp sets but doesn't pop on >=)
-
-  jmp prox_next
+  fld dword [float_3600]
+  fcomip st(1)
+  fstp st
+  jb prox_next
 
 prox_near:
-  // Ball is within 60 units of this SpeedCylinder!
-  // Call Pendulum_PlayCollisionSound(pendulum, ball)
-  // __thiscall: ECX = pendulum, push ball, RET 0x4
-  // EAX still holds the pendulum pointer
   push esi
   mov ecx, eax
-  call 00436B70                  // sets Ball+0x808 = 10
-  // RET 0x4 — callee cleaned 4 bytes
+  call 00436B70
   jmp prox_done
 
 prox_next:
@@ -144,12 +128,10 @@ prox_next:
 prox_done:
   popad
 
-  // === PHASE 2: Spawn check (player 1 only) ===
-check_spawn:
+save_pos:
   cmp dword [esi+0x18], 0
-  jne original_code
+  jne check_spawn
 
-  // Save player 1 position every frame
   mov eax, [esi+0x164]
   mov [playerX], eax
   mov eax, [esi+0x168]
@@ -157,9 +139,12 @@ check_spawn:
   mov eax, [esi+0x16C]
   mov [playerZ], eax
 
-  // Check spawn flag
+check_spawn:
   cmp dword [SpawnFlag], 0
   je original_code
+
+  cmp dword [esi+0x18], 0
+  jne original_code
 
   mov dword [SpawnFlag], 0
 
@@ -293,7 +278,6 @@ skip_collision:
 
   add esp, 68
 
-  // === STORE PENDULUM POINTER ===
   mov eax, [out_obj]
   test eax, eax
   jz skip_post_spawn
@@ -302,7 +286,7 @@ skip_collision:
   cmp ecx, 16
   jae skip_post_spawn
 
-  mov [pendulum_array + 4 + ecx*4], eax
+  mov [pendulum_array+4+ecx*4], eax
   inc dword [pendulum_array]
 
 skip_post_spawn:
@@ -315,11 +299,6 @@ original_code:
   mov eax, [esi+0x0c5c]
   jmp 00405E28
 
-// === FLOAT CONSTANT ===
-float_3600:
-  dd 0x45410000                 // 3600.0f (60²)
-
-// === HOOK INSTALLATION ===
 00405E22:
   jmp SpawnCode
   nop
@@ -340,4 +319,6 @@ dealloc(playerX)
 dealloc(playerY)
 dealloc(playerZ)
 dealloc(pendulum_array)
+dealloc(float_3600)
+dealloc(last_board)
 unregistersymbol(SpawnFlag)
