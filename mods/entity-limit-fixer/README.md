@@ -1,83 +1,54 @@
-# EntityLimitFixer v6
+# Entity Limit Fixer v7
 
-Prevents freezes AND crashes when spawning many entities (8-balls, clones) in arenas.
+Prevents freezes and crashes when spawning many entities (8-balls, player clones) in Hamsterball arenas.
 
-## What changed from v4
+## What it does
 
-**v4 still froze** because it only patched:
-- operator_new (crash fix)
-- AI loops (partial — only 8-balls)
-- Respawn throttle (too aggressive — every 3rd frame)
+When ball count exceeds `MAX_BALLS` (default 5), all `Mesh_FindClosestCollision` calls are skipped — returning "no collision" (99999.0f) instead of building an expensive SpatialTree from level geometry each call.
 
-**v6 fixes the freeze at the source** by patching the THREE compounding per-frame costs:
+## Root cause
 
-### The Freeze Root Cause (traced via GhidraMCP)
+`Mesh_FindClosestCollision` (0x465D90) builds a full `SpatialTree` + `CollisionMesh` from level geometry on **every call**, traverses it, then frees everything. Each call takes ~1ms. Called from **5 call sites**:
 
-```
-Per frame at 30 balls (10 fallen clones, 16 respawn points):
+1. `Ball_Update` (0x40651F): 2× per ball per frame
+2. `Ball_Update` (0x407557): 2× per ball per frame  
+3. `Ball_FindClosestRespawnPoint` (0x405C46): ~16× per fallen ball per frame
+4. `Scene_UpdateArenaPhysics` (0x4406EE): 1× per ball per frame
+5. `Ball_FindMeshCollision` (0x4039CD): 1× per BounceBall per frame
 
-  1. Ball_FindClosestRespawnPoint (called every frame per fallen clone):
-     → iterates ALL 16 respawn points
-     → for EACH: calls Mesh_FindClosestCollision at 0x405C46
-       (builds SpatialTree + CollisionMesh + traverses geometry + frees)
-     → 10 × 16 = 160 spatial tree builds per frame
+With 10 balls: ~50+ SpatialTree builds per frame → 50ms+ → freeze.
 
-  2. Ball_Update (called per ball per frame):
-     → calls Mesh_FindClosestCollision at 0x40651F (floor collision)
-     → calls Mesh_FindClosestCollision at 0x407557 (wall collision)
-     → 20 × 2 = 40 spatial tree builds per frame
+## v7 approach
 
-  3. Ball_AI_ChaseNearest (called per 8-ball per frame):
-     → two O(N) loops scanning ALL balls = O(N²) total
-     → 30 × 30 = 900 iterations per frame
+Instead of patching each call site individually (v5/v6 only covered 3 of 5), v7 patches `Mesh_FindClosestCollision`'s **entry point** directly. A global flag `SKIP_COLLISIONS` is set once per frame at `Scene_UpdateBallsAndState` entry when ball count > `MAX_BALLS`. When the flag is set, the function returns immediately with 99999.0f — covering all 5 call sites with a single patch.
 
-  TOTAL: ~200 spatial tree builds + thousands of allocs per frame
-  → game thread takes >16ms → FREEZE
-```
-
-## v6 Patches (all verified via GhidraMCP disassembly)
-
-| # | Address | What | How |
-|---|---------|------|-----|
-| 1 | 0x4BA58D | operator_new crash | Replace `CALL CRT_ThrowBadAlloc` with `XOR EAX,EAX; POP ESI; RET` — return NULL instead of throwing |
-| 2a | 0x40651F | Mesh_FindClosestCollision #1 in Ball_Update | Cave: if ball count > MAX_BALLS, skip call and write 99999 (no collision) |
-| 2b | 0x407557 | Mesh_FindClosestCollision #2 in Ball_Update | Same cave pattern — skip when too many balls |
-| 3 | 0x405C46 | Mesh_FindClosestCollision in RespawnPoint | NOP the CALL — pick nearest respawn by distance without collision check |
-| 4a | 0x4083D9 | AI Loop 1 (near ball bonus) | Cave: skip O(N²) loop when count > MAX_BALLS |
-| 4b | 0x408548 | AI Loop 2 (find nearest target) | Cave: skip O(N²) loop when count > MAX_BALLS |
-| 5 | 0x405190 | Ball_FindClosestRespawnPoint | Cave: throttle to every 60th frame (was 3rd in v4) |
-
-### Key insight
-
-Mesh_FindClosestCollision (0x465D90) is the **most expensive per-ball operation** — it builds a full SpatialTree from level geometry, traverses it for collision, then frees everything. Called 2× per ball in Ball_Update + up to 16× per fallen clone in RespawnPoint search = the main freeze cause.
-
-v6 skips these calls when ball count exceeds MAX_BALLS, and NOPs the respawn-point collision check entirely (the ball just teleports to the nearest point without path-checking — fine for gameplay).
-
-## Usage
-
-1. Rename `bass.dll` → `bass_real.dll` in your Hamsterball folder
-2. Copy this `bass.dll` into the game folder
-3. Launch the game
-
-The mod waits 5 seconds after DLL load, verifies all byte signatures match, then applies patches.
-
-## Configuration
-
-Change `MAX_BALLS` at top of source and recompile:
-- `20` = conservative (very stable)
-- `30` = balanced (default)
-- `50` = aggressive
-- `99` = max (won't crash, may stutter at very high counts)
-
-Change `RESPAWN_THROTTLE` for respawn frequency:
-- `60` = once per second at 60fps (default)
-- `30` = twice per second
-- `120` = every 2 seconds (very stable but slow respawns)
+| Patch | Address | Description |
+|-------|---------|-------------|
+| A | 0x41B540 | Hook `Scene_UpdateBallsAndState` → set `SKIP_COLLISIONS` flag |
+| B | 0x465D90 | Hook `Mesh_FindClosestCollision` → skip if flag set |
+| C | 0x4BA58D | `operator_new` → return NULL (crash protection) |
+| D | 0x4083D9 | Skip AI O(N²) loop 1 when flag set |
+| E | 0x408548 | Skip AI O(N²) loop 2 when flag set |
 
 ## Build
 
+```bash
+i686-w64-mingw32-gcc -shared -o bass.dll bass_proxy.c -lwinmm \
+  -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias
 ```
-i686-w64-mingw32-gcc -shared -o bass.dll bass_proxy.c \
-    -lwinmm -Wl,--enable-stdcall-fixup \
-    -O2 -static -static-libgcc -Wl,--add-stdcall-alias
-```
+
+## Adjustable parameters (CE address list)
+
+- `MAX_BALLS` (default 5): Ball count threshold for skipping collision
+- `SKIP_COLLISIONS`: Runtime flag (1=skip, 0=normal), set automatically
+
+## Behavior
+
+- **≤5 balls**: Full collision detection, game runs 100% normally
+- **>5 balls**: All `Mesh_FindClosestCollision` calls skip the expensive SpatialTree build. Balls won't collide with level geometry but still bounce off each other (ball-ball collision is a separate system). Balls that fall still respawn normally.
+
+## Files
+
+- `EntityLimitFixer.CEA` — CE AutoAssembler script
+- `bass_proxy.c` — DLL proxy source
+- `bass.dll` — Compiled DLL proxy
