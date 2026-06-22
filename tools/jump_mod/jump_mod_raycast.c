@@ -186,8 +186,9 @@ static void diag_log(const char *msg)
 static float g_jump_impulse = 20.0f;
 /* Slope-aware threshold: on a slope of angle θ, a straight-down raycast
  * hits at distance r/cos(θ) from ball center (not r). Using radius*1.4
- * covers slopes up to ~44° (cos(44°)≈0.719, r/0.719≈1.39r). */
-static const float GROUND_SLOPE_FACTOR = 1.4f;
+ * covers slopes up to 45° (cos(45°)≈0.707, r/0.707≈1.414r). 1.45 gives
+ * a small safety margin beyond the theoretical minimum of √2≈1.414. */
+static const float GROUND_SLOPE_FACTOR = 1.45f;
 
 /* ─── Shared state ────────────────────────────────────────────────────────── */
 /* g_want_jump: 0=idle, 1=spacebar pressed AND grounded (ready to jump) */
