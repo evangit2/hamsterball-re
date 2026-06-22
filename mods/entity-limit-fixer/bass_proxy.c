@@ -1,6 +1,6 @@
 
 // ============================================================
-// Hamsterball Entity Limit Fixer - bass.dll proxy v7
+// Hamsterball Entity Limit Fixer - bass.dll proxy v8
 // Prevents freezes AND crashes when spawning many entities
 // Exports all BASS functions as stubs + delayed patching
 // ============================================================
@@ -106,6 +106,9 @@ __declspec(dllexport) void __stdcall BASS_Update(void) {}
  *   call sites with one patch.
  * Patch C: operator_new → return NULL (crash protection).
  * Patch D/E: Skip AI O(N²) loops when flag set.
+ * Patch F (NEW v8): Hook SpatialTree_ctor entry → skip tree build if flag set.
+ *   This catches Ball_Update (0x4068BC) and Ball_FallUpdate (0x4088FC)
+ *   which call SpatialTree_ctor DIRECTLY, bypassing Mesh_FindClosestCollision.
  *
  * Ball_FindClosestRespawnPoint still runs to completion — it clears
  * event_flag (ball+0x2E8), frees trail, resets collision mesh, teleports
@@ -149,6 +152,11 @@ static unsigned char orig_ai1[] = {0x8B, 0x4E, 0x14, 0x81, 0xC1, 0xD4, 0x29, 0x0
  * ADD ECX,0x29D4 */
 static unsigned char orig_ai2[] = {0x81, 0xC1, 0xD4, 0x29, 0x00, 0x00};
 
+/* Patch F: SpatialTree_ctor entry (0x463330)
+ * 7 bytes: 6A FF 68 48 D1 4C 00
+ * PUSH -1; PUSH 0x4CD148 (SEH prolog) */
+static unsigned char orig_stree[] = {0x6A, 0xFF, 0x68, 0x48, 0xD1, 0x4C, 0x00};
+
 /* --- Memory helpers --- */
 
 static void WriteBytes(void* addr, const void* data, int len) {
@@ -185,6 +193,7 @@ static unsigned char* cave_scene = NULL;
 static unsigned char* cave_mesh = NULL;
 static unsigned char* cave_ai1 = NULL;
 static unsigned char* cave_ai2 = NULL;
+static unsigned char* cave_stree = NULL;
 
 /* Patch A: Hook Scene_UpdateBallsAndState entry (0x41B540)
  * ECX = Scene pointer (thiscall). Ball count at Scene+0x29D8.
@@ -390,6 +399,63 @@ static void BuildCaveAI2() {
     WriteJump((void*)0x408548, cave_ai2);
 }
 
+/* Patch F: Hook SpatialTree_ctor entry (0x463330) — NEW in v8
+ * __thiscall: ECX = this (allocated memory), 1 stack param, RET 0x4.
+ * Original 7 bytes: 6A FF 68 48 D1 4C 00 (PUSH -1; PUSH 0x4CD148)
+ *
+ * When flag set: set vtable pointer at [ECX] and return ECX.
+ * The tree has no triangles → all collision checks find nothing.
+ * SpatialTree_Free works (just sets vtable + CollisionObj_Init). */
+static void BuildCaveSTree() {
+    cave_stree = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memset(cave_stree, 0x90, 128);
+
+    unsigned char* buf = cave_stree;
+    int i = 0;
+
+    /* CMP DWORD [g_skip_collisions], 0 */
+    buf[i++] = 0x83; buf[i++] = 0x3D;
+    *(unsigned int*)(buf + i) = (unsigned int)&g_skip_collisions;
+    i += 4;
+    buf[i++] = 0x00;
+
+    /* JE to "original" path */
+    int je_pos = i;
+    buf[i++] = 0x74; buf[i++] = 0x00;  /* JE — fill offset later */
+
+    /* Skip path: minimal init — set vtable pointer, return ECX */
+    /* MOV DWORD [ECX], 0x4D9038 — SpatialTree vtable */
+    buf[i++] = 0xC7; buf[i++] = 0x01;
+    *(unsigned int*)(buf + i) = 0x004D9038;
+    i += 4;
+
+    /* MOV EAX, ECX — return this pointer */
+    buf[i++] = 0x8B; buf[i++] = 0xC1;
+
+    /* RET 0x4 — callee cleans 1 param */
+    buf[i++] = 0xC2; buf[i++] = 0x04; buf[i++] = 0x00;
+
+    /* Original path: execute PUSH -1; PUSH 0x4CD148; JMP to 0x463337 */
+    int orig_pos = i;
+    buf[je_pos + 1] = (unsigned char)(orig_pos - (je_pos + 2));
+
+    /* PUSH -1 */
+    buf[i++] = 0x6A; buf[i++] = 0xFF;
+
+    /* PUSH 0x4CD148 */
+    buf[i++] = 0x68;
+    *(unsigned int*)(buf + i) = 0x004CD148;
+    i += 4;
+
+    /* JMP to 0x463337 (continue to MOV EAX, FS:[0]) */
+    buf[i++] = 0xE9;
+    *(int*)(buf + i) = 0x463337 - ((unsigned int)cave_stree + i + 4);
+    i += 4;
+
+    WriteJump((void*)0x463330, cave_stree);
+    WriteNops((void*)0x463335, 2);  /* NOP bytes 6-7 (rest of PUSH 0x4CD148) */
+}
+
 /* --- Patch thread --- */
 
 static BOOL patched = FALSE;
@@ -423,6 +489,11 @@ static DWORD WINAPI PatchThread(LPVOID lpParam) {
         BuildCaveAI2();
     }
 
+    /* Patch F: SpatialTree_ctor (NEW v8 — catches Ball_FallUpdate freeze) */
+    if (VerifyBytes((void*)0x463330, orig_stree, 7)) {
+        BuildCaveSTree();
+    }
+
     patched = TRUE;
     return 0;
 }
@@ -436,11 +507,13 @@ static void RemovePatches() {
     WriteBytes((void*)0x465D90, orig_mesh, 6);
     WriteBytes((void*)0x4083D9, orig_ai1, 9);
     WriteBytes((void*)0x408548, orig_ai2, 6);
+    WriteBytes((void*)0x463330, orig_stree, 7);
 
     if (cave_scene) { VirtualFree(cave_scene, 0, MEM_RELEASE); cave_scene = NULL; }
     if (cave_mesh)  { VirtualFree(cave_mesh,  0, MEM_RELEASE); cave_mesh  = NULL; }
     if (cave_ai1)   { VirtualFree(cave_ai1,   0, MEM_RELEASE); cave_ai1   = NULL; }
     if (cave_ai2)   { VirtualFree(cave_ai2,   0, MEM_RELEASE); cave_ai2   = NULL; }
+    if (cave_stree) { VirtualFree(cave_stree, 0, MEM_RELEASE); cave_stree = NULL; }
 
     patched = FALSE;
 }

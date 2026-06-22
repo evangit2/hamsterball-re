@@ -1,52 +1,39 @@
 // ============================================================
-// Hamsterball Entity Limit Fixer v7 — CE AutoAssembler Script
+// Hamsterball Entity Limit Fixer v8 — CE AutoAssembler Script
 // Prevents freezes AND crashes when many entities are active.
 //
-// v6→v7 REDESIGN: Single-function-entry hooks instead of per-call-site patches.
+// v7→v8 FIX: Player clones freeze because Ball_FallUpdate (0x408830)
+// builds its OWN SpatialTree directly via SpatialTree_ctor (0x463330),
+// BYPASSING Mesh_FindClosestCollision entirely! v7 Patch B doesn't catch it.
 //
-// ROOT CAUSE (traced via GhidraMCP decompilation):
+// v8 adds Patch F: hook SpatialTree_ctor ENTRY directly. This catches:
+//   - Ball_Update (0x4068BC) — direct SpatialTree_ctor call
+//   - Ball_FallUpdate (0x4088FC) — direct SpatialTree_ctor call (FALLEN balls!)
+//   - Mesh_FindClosestCollision (0x465DF9) — internal call (already covered by Patch B)
 //
-// Mesh_FindClosestCollision (0x465D90, RET 0x20) builds a full SpatialTree
-// + CollisionMesh from level geometry EVERY CALL, traverses it, then frees
-// everything. Each call = ~1ms. Called from 5 call sites:
+// When a ball falls, its vtable is swapped to the "Fall" vtable (0x4CF494)
+// where vtable[4] = Ball_FallUpdate (0x408830). This function:
+//   1. operator_new(0x20) — allocate SpatialTree
+//   2. SpatialTree_ctor — BUILD FULL TREE from level geometry (EXPENSIVE!)
+//   3. operator_new(0x14) — allocate CollisionNode
+//   4. CollisionNode_ctor — init collision node
+//   5. vtable calls — collision checks using the tree
 //
-//   1. Ball_Update (0x40651F): 2× per ball per frame
-//   2. Ball_Update (0x407557): 2× per ball per frame
-//   3. Ball_FindClosestRespawnPoint (0x405C46): ~16× per fallen ball per frame
-//   4. Scene_UpdateArenaPhysics (0x4406EE): 1× per ball per frame
-//   5. Ball_FindMeshCollision (0x4039CD → 0x403980): 1× per BounceBall per frame
+// With 5-8 fallen player clones, that's 5-8 full SpatialTree builds per frame.
+// Patch F skips the tree construction — returns the allocated memory with
+// just the vtable pointer set (valid for later SpatialTree_Free).
 //
-// v6 only patched 3 of 5 call sites, and only when ball count > 30.
-// With 10 balls, NOTHING was patched → freeze.
-//
-// v7 FIX: Hook Mesh_FindClosestCollision's ENTRY POINT directly.
-// A global flag SKIP_COLLISIONS is set at Scene_UpdateBallsAndState entry
-// when ball count > MAX_BALLS (default 5). When the flag is set, ALL
-// Mesh_FindClosestCollision calls return immediately with "no collision"
-// (99999.0f) — covering ALL 5 call sites with a SINGLE patch.
-//
-// Ball_FindClosestRespawnPoint still runs to completion (it clears
-// event_flag, resets collision mesh, teleports ball). Only the expensive
-// Mesh_FindClosestCollision call inside it is skipped.
-//
-// PATCHES:
+// ALL PATCHES:
 //   A  0x41B540  Hook Scene_UpdateBallsAndState → set SKIP_COLLISIONS flag
-//   B  0x465D90  Hook Mesh_FindClosestCollision → check flag, skip if set
+//   B  0x465D90  Hook Mesh_FindClosestCollision → skip if flag set (covers 5 call sites)
 //   C  0x4BA58D  operator_new → return NULL (crash protection)
 //   D  0x4083D9  Skip AI O(N²) loop 1 when flag set
 //   E  0x408548  Skip AI O(N²) loop 2 when flag set
+//   F  0x463330  Hook SpatialTree_ctor → skip tree build if flag set (NEW!)
 //
 // ADJUSTABLE PARAMETERS (add to CE address list):
 //   MAX_BALLS (default 5): ball count threshold for skipping collision
-//     - Lower = more aggressive (more stable, less collision)
-//     - Higher = less skipping (more collision, may freeze at high counts)
 //   SKIP_COLLISIONS: runtime flag (1=skip, 0=normal), set automatically
-//
-// With ≤5 balls: SKIP_COLLISIONS=0, game runs 100% normally.
-// With >5 balls: SKIP_COLLISIONS=1, all Mesh_FindClosestCollision calls
-//   skip the expensive SpatialTree build. Balls won't collide with level
-//   geometry but still bounce off each other (ball-ball collision is
-//   separate). Balls that fall still respawn normally.
 // ============================================================
 
 [ENABLE]
@@ -54,6 +41,7 @@
 alloc(GlobalState, 16)
 alloc(CaveScene, 128)
 alloc(CaveMesh, 128)
+alloc(CaveSTree, 128)
 alloc(CaveAI1, 64)
 alloc(CaveAI2, 64)
 
@@ -67,6 +55,9 @@ label(scene_done)
 
 label(mesh_skip)
 label(mesh_original)
+
+label(stree_skip)
+label(stree_original)
 
 label(ai1_skip)
 label(ai1_orig)
@@ -88,15 +79,7 @@ GlobalState:
 
 // ============================================================
 // PATCH C: operator_new → return NULL instead of bad_alloc crash
-//
-// At 0x4BA58D, operator_new calls CRT_ThrowBadAlloc (0x4BA69D) when
-// malloc fails. This throws an uncaught C++ exception → crash.
-//
-// Replace 5-byte CALL with: XOR EAX,EAX; POP ESI; RET; NOP
-// Stack: [ESP]=saved_ESI, [ESP+4]=return_addr, [ESP+8]=size
-// All allocation sites have NULL checks → safe.
 // ============================================================
-
 0x4BA58D:
   xor eax,eax
   pop esi
@@ -105,28 +88,15 @@ GlobalState:
 
 // ============================================================
 // PATCH A: Hook Scene_UpdateBallsAndState entry (0x41B540)
-//
-// This function is called once per frame. ECX = Scene pointer (__thiscall).
-// Ball count is at Scene+0x29D8 (AthenaList count field at Scene+0x29D4+4).
-//
-// Original first 5 bytes: 53 55 56 8B D9
-//   PUSH EBX; PUSH EBP; PUSH ESI; MOV EBX,ECX
-//
-// Cave executes original bytes, then checks ball count.
-// If count > MAX_BALLS: set SKIP_COLLISIONS=1 (all collision calls skip this frame)
-// If count <= MAX_BALLS: set SKIP_COLLISIONS=0 (normal collision)
-// Then jumps to 0x41B545 (PUSH EDI — original code continues).
+// Sets SKIP_COLLISIONS based on ball count vs MAX_BALLS.
+// Original 5 bytes: 53 55 56 8B D9
 // ============================================================
-
 CaveScene:
-  // Execute original 5 bytes
   push ebx
   push ebp
   push esi
-  mov ebx,ecx          // EBX = Scene pointer
-
-  // Check ball count
-  mov eax, [ebx+0x29D8]  // Ball count (AthenaList[+4] = count)
+  mov ebx,ecx
+  mov eax, [ebx+0x29D8]
   cmp eax, [MAX_BALLS]
   jle scene_clear
 
@@ -138,78 +108,87 @@ scene_clear:
   mov dword ptr [SKIP_COLLISIONS], 0
 
 scene_done:
-  jmp 0x41B545          // Continue to PUSH EDI (original next instruction)
+  jmp 0x41B545
 
 0x41B540:
   jmp CaveScene
 
 // ============================================================
 // PATCH B: Hook Mesh_FindClosestCollision entry (0x465D90)
-//
-// This is THE expensive function. It builds a SpatialTree from level
-// geometry every call, does collision traversal, then frees everything.
-//
-// __thiscall: ECX = this (mesh object), RET 0x20 (callee cleans 32B).
-// First stack param [ESP+4] = output pointer (3 floats: x,y,z).
-//
-// Original first 6 bytes: 64 A1 00 00 00 00
-//   MOV EAX, FS:[0]  (SEH prolog start)
-//
-// Cave checks SKIP_COLLISIONS flag:
-//   If 0: execute original 6 bytes, jump to 0x465D96 (continue prolog)
-//   If 1: write 99999.0f to output[0..2], RET 0x20 (skip everything)
-//
-// 99999.0f = 0x47C34F80 (same value function returns when no collision).
+// __thiscall, RET 0x20. [ESP+4] = output pointer (3 floats).
+// Original 6 bytes: 64 A1 00 00 00 00 (MOV EAX, FS:[0])
 // ============================================================
-
 CaveMesh:
-  // Check flag
   cmp dword ptr [SKIP_COLLISIONS], 0
   je mesh_original
 
 mesh_skip:
-  // Write "no collision" result to output
-  mov eax, [esp+4]       // param_1 = output pointer
-  mov dword ptr [eax], 47C34F80      // 99999.0f
+  mov eax, [esp+4]
+  mov dword ptr [eax], 47C34F80
   mov dword ptr [eax+4], 47C34F80
   mov dword ptr [eax+8], 47C34F80
-  xor eax, eax           // Return value (unused by callers)
-  ret 0x20               // Callee cleans 32 bytes (8 stack params)
+  xor eax, eax
+  ret 0x20
 
 mesh_original:
-  // Execute original 6 bytes: MOV EAX, FS:[0]
   mov eax, fs:[0]
-  jmp 0x465D96           // Continue original prolog (PUSH -1, etc.)
+  jmp 0x465D96
 
 0x465D90:
   jmp CaveMesh
-  nop                    // Pad 6th byte (original was 6-byte instruction)
+  nop
+
+// ============================================================
+// PATCH F (NEW in v8): Hook SpatialTree_ctor entry (0x463330)
+//
+// __thiscall: ECX = this (allocated memory), 1 stack param, RET 0x4.
+// Original first 7 bytes: 6A FF 68 48 D1 4C 00
+//   PUSH -1; PUSH 0x4CD148  (SEH prolog)
+//
+// When SKIP_COLLISIONS=1: set vtable pointer at [ECX] and return ECX.
+// The tree has no triangles → all collision checks find nothing (no hit).
+// SpatialTree_Free works because it just sets vtable + CollisionObj_Init.
+//
+// Caller writes [EAX+0x10]=type and [EAX+0xC]=field — works on our
+// minimally-initialized memory (just vtable ptr at offset 0).
+// ============================================================
+CaveSTree:
+  cmp dword ptr [SKIP_COLLISIONS], 0
+  je stree_original
+
+stree_skip:
+  // Minimal init: just set vtable pointer so Free works
+  mov dword ptr [ecx], 004D9038    // SpatialTree vtable
+  mov eax, ecx                     // return this pointer
+  ret 0x4                          // callee cleans 1 param (4 bytes)
+
+stree_original:
+  // Execute original 7 bytes: PUSH -1; PUSH 0x4CD148
+  push -1
+  push 004CD148
+  jmp 0x463337                     // Continue to MOV EAX, FS:[0]
+
+0x463330:
+  jmp CaveSTree
+  nop
+  nop
 
 // ============================================================
 // PATCH D: Skip AI O(N²) loop 1 in Ball_AI_ChaseNearest
-//
-// At 0x4083D9, 8-ball AI iterates ball list to find nearby balls.
-// O(N) per ball = O(N²) total. Skip when SKIP_COLLISIONS=1.
-//
-// Original 9 bytes: 8B 4E 14 81 C1 D4 29 00 00
-//   MOV ECX,[ESI+0x14]; ADD ECX,0x29D4
-// (followed by CALL AthenaList_NextIndex at 0x4083E2, preserved)
-//
-// Skip target: 0x4084F5 (after loop body)
+// Original 9 bytes at 0x4083D9: 8B 4E 14 81 C1 D4 29 00 00
+// Skip target: 0x4084F5
 // ============================================================
-
 CaveAI1:
   cmp dword ptr [SKIP_COLLISIONS], 0
   je ai1_orig
 
 ai1_skip:
-  jmp 0x4084F5           // Skip to end of loop 1
+  jmp 0x4084F5
 
 ai1_orig:
-  // Original instructions
   mov ecx, [esi+0x14]
   add ecx, 0x29D4
-  jmp 0x4083E2           // Continue to CALL AthenaList_NextIndex
+  jmp 0x4083E2
 
 0x4083D9:
   jmp CaveAI1
@@ -220,36 +199,24 @@ ai1_orig:
 
 // ============================================================
 // PATCH E: Skip AI O(N²) loop 2 in Ball_AI_ChaseNearest
-//
-// At 0x408548, second loop finds nearest target ball.
-// ECX = Scene pointer (from MOV at 0x408541).
-//
-// Original 6 bytes: 81 C1 D4 29 00 00
-//   ADD ECX,0x29D4
-//
-// Skip target: 0x408663 (end of loop 2)
+// Original 6 bytes at 0x408548: 81 C1 D4 29 00 00
+// Skip target: 0x408663
 // ============================================================
-
 CaveAI2:
   cmp dword ptr [SKIP_COLLISIONS], 0
   je ai2_orig
 
 ai2_skip:
-  jmp 0x408663           // Skip to end of loop 2
+  jmp 0x408663
 
 ai2_orig:
-  // Original instruction
   add ecx, 0x29D4
-  jmp 0x40854E           // Continue after ADD
+  jmp 0x40854E
 
 0x408548:
   jmp CaveAI2
 
 [DISABLE]
-
-// ============================================================
-// Restore original bytes
-// ============================================================
 
 // Patch C: operator_new CALL CRT_ThrowBadAlloc
 0x4BA58D:
@@ -263,6 +230,10 @@ ai2_orig:
 0x465D90:
   db 64 A1 00 00 00 00
 
+// Patch F: SpatialTree_ctor entry (7 bytes)
+0x463330:
+  db 6A FF 68 48 D1 4C 00
+
 // Patch D: AI loop 1 (9 bytes)
 0x4083D9:
   db 8B 4E 14 81 C1 D4 29 00 00
@@ -273,6 +244,7 @@ ai2_orig:
 
 dealloc(CaveAI2)
 dealloc(CaveAI1)
+dealloc(CaveSTree)
 dealloc(CaveMesh)
 dealloc(CaveScene)
 dealloc(GlobalState)
