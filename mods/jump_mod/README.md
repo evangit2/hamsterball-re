@@ -89,10 +89,21 @@ Key details:
 - The `__thiscall` keyword in the typedef is **critical** — without it,
   `collision_level` goes on the stack instead of ECX and all params shift
 
+## v21: Controls-Gated (Countdown + Goal Freeze)
+
+The game disables directional controls during the Ready-Set-Go countdown at race
+start and after the ball reaches the goal. This is done via `ball+0x14C` — a byte
+flag set to 1 by `Scene_StartCountdown` (0x437130) and `Scene_HandleRaceEnd`
+(0x41B130). `Ball_Update` checks this at `0x4060A1` and skips the entire
+movement/input block when non-zero.
+
+The jump mod now also checks `ball+0x14C` before allowing a jump, preventing
+jumps during the countdown and after finishing the race.
+
 ## Files
 - `jump_mod.c` — C source code (BASS proxy + code cave + background thread)
-- `bass.dll` — Compiled DLL (PE32 i386, 93KB)
-- `jump_mod_v3.zip` — Packaged zip
+- `bass.dll` — Compiled DLL (PE32 i386, 96KB)
+- `jump_mod_v21.zip` — Packaged zip
 
 ## Previous approaches that didn't work
 
