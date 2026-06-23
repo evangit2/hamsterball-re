@@ -179,6 +179,30 @@ Some refs support suffix modifiers checked via `strstr()`:
 - `NEG` — on BRIDGE refs in Expert, sets negative rotation
 - `TOUCH` — on BIGGEAR refs, sets touch-activated flag
 
+### Verified Ref Names per Level
+
+Confirmed by binary-grepping the original MESHWORLD files:
+
+| MESHWORLD File | Object Refs (Section 1, bare names) | Entity Names (Section 3, N:/E: prefixed) |
+|----------------|-------------------------------------|------------------------------------------|
+| Level1 (Warm-up) | START | (none) |
+| LevelCascade (Beginner) | BUMP, BUMPER | N:GOAL, N:BUMP, N:BUMPER |
+| Level2 (Intermediate) | BONK, BRIDGE | N:GOAL, E:LIMIT |
+| Level3 (Dizzy) | SWIRL | N:GOAL, N:TARPIT |
+| Level4 (Tower) | BRIDGE, MACE, DRAWBRIDGE, WINDMILL, CHOMPER, TURRET | N:GOAL, E:JUMP, E:ACTION |
+| Level5 (Expert) | SAWBLADE, BRIDGE, JUDGE, BELL, SAW, SAW2 | N:GOAL, E:JUMP |
+| Level6 (Odd) | LIFTER | N:GOAL, N:JUMPFIRST, N:JUMPSECOND |
+| LevelUp (Up) | SPEEDCYLINDER, LIFTER, TIMEBUTTON | N:GOAL, T:SPEEDARROW |
+| LevelDark (Neon) | NEONPLATFORM, DFLOOR, TRODE | N:GOAL |
+| Level7 (Wobbly) | BONK, WOBBLY, WAVY | N:GOAL |
+| Level8 (Toob) | SPINNY, SAW, SAW2, FALLOUT, BLOCKDAWG, BUMP, BUMPER | N:GOAL, N:BUMP, N:BUMPER |
+| LevelGlass (Glass) | BONK, SMASHER | N:GOAL, N:GLASS, N:TENBONUS1, N:TENBONUS2 |
+| Level9 (Sky) | TRAPDOOR, POPCYLINDER | N:GOAL |
+| Level10 (Master) | BRIDGE, BLOCKDAWG, POPCYLINDER, BBRIDGE | N:GOAL, N:TARPIT |
+| LevelImpossible (Impossible) | BONK, LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM | N:GOAL |
+
+Common refs in ALL levels: START (spawn point), SAFESPOT (respawn point), FLAG (checkpoint), E:LIMIT (boundary kill plane).
+
 ---
 
 ## How to Load Any Ref Into Any Level
