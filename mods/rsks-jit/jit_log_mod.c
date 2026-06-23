@@ -56,7 +56,7 @@ static void log_init(void)
     /* Clear the log at startup */
     if (fopen_s(&f, g_logPath, "w") == 0 && f) {
         fprintf(f, "=== Universal Ref Loader LOG — DLL Loaded ===\n");
-        fprintf(f, "BUILD: rsks-jit v4 INJECTION MODE (no-restore, no-collision-alloc)\n");
+        fprintf(f, "BUILD: rsks-jit v5 INJECTION+RESTORE (system-ref skip, restore on miss)\n");
         fprintf(f, "Timestamp: DLL_PROCESS_ATTACH\n");
         fprintf(f, "Log path: %s\n", g_logPath);
         fclose(f);
@@ -267,6 +267,18 @@ static int is_difficulty_gated(const char* refName)
     if (_strnicmp(refName, "FAN",        3) == 0) return 1;
     if (_strnicmp(refName, "SAWBLADE",   8) == 0) return 1;
     if (_strnicmp(refName, "MACE",       4) == 0) return 1;
+    return 0;
+}
+
+/* System refs are NOT game objects — they're level metadata (start positions,
+   camera loci, secret triggers). The original factory returns NULL for these
+   because they're handled by a different code path. We must NOT try alternative
+   factories or inject meshes for these, as that corrupts the board. */
+static int is_system_ref(const char* refName)
+{
+    if (_strnicmp(refName, "START",      5) == 0) return 1;
+    if (_strnicmp(refName, "Camera",     6) == 0) return 1;
+    if (_strnicmp(refName, "Secret",     6) == 0) return 1;
     return 0;
 }
 
@@ -580,8 +592,19 @@ static void __thiscall universal_factory(
         return;
     }
 
-    log_msg("[REF #%d] Original factory did NOT handle ref '%s'. Trying %d Arena factories...",
-            g_refCounter, refNameSafe, (int)NUM_FACTORIES);
+    log_msg("[REF #%d] Original factory did NOT handle ref '%s'.", g_refCounter, refNameSafe);
+
+    /* System refs (START, Camera, Secret) are level metadata, not game objects.
+       They're handled by a different code path. Do NOT try alternative factories
+       or inject meshes — doing so corrupts board slots and crashes the level loader. */
+    if (is_system_ref(refNameSafe)) {
+        log_msg("[REF #%d] System ref '%s' — skipping factory trial (not a game object)", g_refCounter, refNameSafe);
+        log_msg("[REF #%d] DONE (system ref, unhandled)", g_refCounter);
+        return;
+    }
+
+    log_msg("[REF #%d] Trying %d Arena factories...",
+            g_refCounter, (int)NUM_FACTORIES);
 
     /* Step 2: Try all Arena factories with JIT slot injection */
     needDiffBypass = is_difficulty_gated(refNameSafe);
@@ -632,7 +655,10 @@ static void __thiscall universal_factory(
         /* Safety check */
         if (!factory_slots_safe(board, sf)) {
             log_msg("[REF #%d] SKIPPING factory '%s' — safety check failed", g_refCounter, sf->name);
-            /* Don't restore — slots stay injected for future factory attempts */
+            /* Restore injected slots — we couldn't call the factory, so the
+               injected meshes are not referenced by any object. Leaving them
+               in the board would corrupt the level loader. */
+            restore_injected_slots(board, injected, injectCount);
             continue;
         }
 
@@ -648,12 +674,9 @@ static void __thiscall universal_factory(
         log_msg("[REF #%d] Factory '%s' returned: outObj=%p, outCol=%p",
                 g_refCounter, sf->name, *outObj, *outCol);
 
-        /* KEY FIX: Do NOT restore injected slots.
-           The factory-created objects reference these meshes.
-           Restoring to NULL causes use-after-free → heap corruption.
-           The board owns these meshes for the lifetime of the level. */
-
         if (*outObj != NULL) {
+            /* Factory HANDLED this ref — keep injected slots (factory-created
+               objects reference these meshes; restoring causes use-after-free). */
             log_msg("[REF #%d] *** Factory '%s' HANDLED ref '%s' -> obj=%p ***",
                     g_refCounter, sf->name, refNameSafe, *outObj);
 
@@ -668,7 +691,12 @@ static void __thiscall universal_factory(
             return;
         }
 
-        log_msg("[REF #%d] Factory '%s' did not handle ref '%s'", g_refCounter, sf->name, refNameSafe);
+        /* Factory did NOT handle this ref — restore injected slots to prevent
+           permanent board corruption. If we leave foreign meshes in the board's
+           slots, the level ctor will crash when it tries to use them. */
+        log_msg("[REF #%d] Factory '%s' did not handle ref '%s' — restoring %d injected slots",
+                g_refCounter, sf->name, refNameSafe, injectCount);
+        restore_injected_slots(board, injected, injectCount);
     }
 
     /* No factory handled this ref */
