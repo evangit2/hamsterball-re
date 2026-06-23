@@ -60,11 +60,16 @@ label(skip_post_spawn)
 label(done_spawn)
 label(prox_loop)
 label(prox_next)
-label(prox_near)
 label(prox_done)
 label(no_clear)
 label(apply_slow)
 label(try_sound)
+label(sound_ok)
+label(sound_fail)
+label(add_glue_list)
+label(glue_dizzy)
+label(glue_master)
+label(glue_skip)
 
 SpawnCode:
   mov eax, [esi+0x14]
@@ -111,7 +116,6 @@ prox_loop:
   fstp st
   jb prox_next
 
-prox_near:
   mov dword [near_flag], 1
   jmp prox_done
 
@@ -127,7 +131,7 @@ prox_done:
 
 apply_slow:
   fld dword [esi+0x764]
-  fmul dword [0x4CF4C0]
+  fmul dword [004CF4C0]
   fstp dword [esi+0x764]
 
 try_sound:
@@ -143,14 +147,15 @@ try_sound:
 
   mov eax, [esi+0x14]
   test eax, eax
-  jz sound_done
+  jz sound_fail
   mov eax, [eax+0x878]
   test eax, eax
-  jz sound_done
+  jz sound_fail
   mov eax, [eax+0x484]
   test eax, eax
-  jz sound_done
+  jz sound_fail
 
+sound_ok:
   push 0x3F800000
   sub esp, 0xC
   mov edx, [esi+0x164]
@@ -161,8 +166,9 @@ try_sound:
   mov [esp+8], edx
   mov ecx, eax
   call 00459860
+  mov dword [sound_cooldown], 180
 
-sound_done:
+sound_fail:
   popad
 
 save_pos:
@@ -268,16 +274,41 @@ check_spawn:
   mov edx, [saved_board]
   mov edx, [edx+0x8AC]
   test edx, edx
-  jz skip_post_spawn
+  jz add_glue_list
   mov edx, [edx+0x480]
   test edx, edx
-  jz skip_post_spawn
+  jz add_glue_list
 
   mov eax, [out_obj]
   push eax
   lea ecx, [edx+0x1C]
   call 00453810
 
+add_glue_list:
+  mov eax, [saved_board]
+  mov eax, [eax]
+  cmp eax, 004D0890
+  je glue_dizzy
+  cmp eax, 004D12B0
+  je glue_master
+  jmp glue_skip
+
+glue_dizzy:
+  mov eax, [out_obj]
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x4378
+  call 00453810
+  jmp glue_skip
+
+glue_master:
+  mov eax, [out_obj]
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x6080
+  call 00453810
+
+glue_skip:
   mov eax, [out_obj]
   mov ecx, [gluebie_array]
   cmp ecx, 16
