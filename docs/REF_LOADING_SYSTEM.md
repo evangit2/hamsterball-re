@@ -176,16 +176,16 @@ CALL 0x0040C5D0        ; N: handler(mesh_entity, ref_entry, board)
 
 Many (but not all) factory branches check `*(int *)(*(int *)(board + 0x878) + 0x23c) != 0` before creating objects. This field is the **graphics quality setting**.
 
-**Verified quality-gated refs** (15 types — only created when quality is non-zero/high):
-- TIPPER, GLUEBIE, MACE, FAN, SAWBLADE, SPINNY, BONK, POPCYLINDER, MAGNIFYER, EDGECYLINDER
+**Quality-gated refs** (only created when quality is non-zero/high):
+- TIPPER, GLUEBIE, MACE, FAN, SAWBLADE, SPINNY, BONK, POPCYLINDER, MAGNIFYER
 - BLOCKDAWG1, BLOCKDAWG2, BLOCKDAWG3
 - E:ALERTSAW2, E:BRANCH
 
-**Always-created refs** (44 types — created regardless of quality setting):
+**Always-created refs** (created regardless of quality setting):
 - BRIDGE, WATERWHEEL, SWIRL, SMASHER1-2, CATAPULT, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET
 - LIFTER, SPEEDCYLINDER, TIMEBUTTON, NEONPLATFORM, DFLOOR1-4, TRODE, BELL, JUDGE
 - SAW, SAW2, FALLOUT1, WOBBLY1-7, WAVY1, LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM
-- BBRIDGE1-2, SECRET, SECRETUNLOCK, BADBALL, PILLAR
+- BBRIDGE1-2, SECRET, SECRETUNLOCK, BADBALL, PILLAR, TARBUBBLE, MOUSETRAP, LAUNCH
 
 40 quality gate checks found across the factory function range (0x40A000–0x419000), verified by binary pattern matching: `MOV EAX, [reg+0x23C]; TEST EAX, EAX; JZ skip_creation`.
 
@@ -199,25 +199,27 @@ Hamsterball has **TWO independent Board systems**: one for Race mode and one for
 
 Race Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from a jump table at `0x426AB0` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x42761C]` at `0x427102`.
 
-Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM`, `STANDS`, `N:BUMPER`).
+Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM`, `STANDS`).
 
-| # | Race Level | Constructor | Board Vtable | Factory Addr | Refs Handled (verified from binary) |
+| # | Race Level | Constructor | Board Vtable | Factory Addr | Refs Handled (from decompilation) |
 |---|-----------|------------|-------------|-------------|-------------------------------------|
-| 1 | Warm-up | 0x4224A0 | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 2 | Beginner | 0x422550 | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 3 | Intermediate | 0x4226E0 | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 4 | Dizzy | 0x422790 | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY + base |
-| 5 | Tower | 0x4228C0 | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY, N:BUMPER + base |
-| 6 | Up | 0x422B10 | 0x4D17F8 | 0x414A20 | LIFTER, FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
-| 7 | Neon | 0x424860 | 0x4D1EC8 | 0x4173B0 | FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1-2 + base |
-| 8 | Expert | 0x423060 | 0x4D18C8 | 0x414BD0 | FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
-| 9 | Odd | 0x423220 | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 10 | Toob | 0x4234E0 | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 11 | Wobbly | 0x423690 | 0x4D1B18 | 0x415460 | WOBBLY1, N:SQUAREWOBBLY, PILLAR, POPCYLINDER, EDGECYLINDER + base |
-| 12 | Glass | 0x424B60 | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 13 | Sky | 0x423BF0 | 0x4D1BD8 | 0x415A30 | POPCYLINDER, EDGECYLINDER, E:LAUNCH + base |
-| 14 | Master | 0x424380 | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 1 | Warm-up | 0x4224A0 | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 2 | Beginner | 0x422550 | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 3 | Intermediate | 0x4226E0 | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 4 | Dizzy | 0x422790 | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER, FAN + base |
+| 5 | Tower | 0x4228C0 | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN + base |
+| 6 | Up | 0x422B10 | 0x4D17F8 | 0x414A20 | LIFTER, FAN, WOBBLY + base |
+| 7 | Neon | 0x424860 | 0x4D1EC8 | 0x4173B0 | NEONPLATFORM, DFLOOR, TRODE + base |
+| 8 | Expert | 0x423060 | 0x4D18C8 | 0x414BD0 | FAN, WOBBLY + base |
+| 9 | Odd | 0x423220 | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 10 | Toob | 0x4234E0 | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 11 | Wobbly | 0x423690 | 0x4D1B18 | 0x415460 | WOBBLY, PILLAR, POPCYLINDER + base |
+| 12 | Glass | 0x424B60 | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 13 | Sky | 0x423BF0 | 0x4D1BD8 | 0x415A30 | POPCYLINDER + base |
+| 14 | Master | 0x424380 | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS (base only) |
 | 15 | Impossible | 0x424EC0 | 0x4D2298 | 0x418760 | GEAR + base |
+
+**Note**: The "Refs Handled" column above lists what the factory's decompiled code can match via `__strnicmp`. This is NOT the same as what refs actually exist in the MESHWORLD files — see `docs/VERIFIED_REFS_BY_LEVEL.md` for the ground-truth list of refs that are actually placed in each level's MESHWORLD file. Several refs the factories can handle (like PLATFORM, STANDS) are utility/system refs, not game objects.
 
 **Key insight**: Levels 1, 2, 3, 9, 10, 12, 14 use ONLY the base factory — they handle only `PLATFORM`, `STANDS`, `N:BUMPER` in race mode. Their level-specific objects (tippers, bridges, etc.) are NOT created by vtable[33] in race mode — they are either part of the static level geometry or loaded via the Arena Board system.
 
@@ -271,45 +273,55 @@ The game's internal level numbers map to file paths differently for race vs aren
 
 ### Complete Ref Name → Constructor Mapping
 
-| Ref Name | Constructor | Alloc Size | Quality-Gated? | Levels Found In |
-|----------|------------|-----------|----------------|-----------------|
-| BRIDGE | (returns pre-loaded mesh) | 0 | No | Intermediate, Expert, Master |
-| TIPPER | Tipper_ctor | 0x1104 | Yes | Dizzy, Master |
-| WATERWHEEL | (returns pre-loaded mesh) | 0 | No | Dizzy |
-| SWIRL | (returns pre-loaded mesh) | 0 | No | Dizzy |
-| GLUEBIE | Gluebie_ctor | 0x110C | Yes | Dizzy, Master |
-| CATAPULT | Catapult_ctor | 0x1108 | No | Tower, Master |
-| MACE | CascadeStands_Ctor | 0x110C | Yes | Tower |
-| DRAWBRIDGE | Glass_Level_ctor | 0x113C | No | Tower |
-| WINDMILL | (returns pre-loaded mesh + collision) | 0 | No | Tower |
-| TRAPDOOR | GlassStands_Ctor / Rotator_ctor | 0x10F8 / 0x10F4 | No | Tower, Sky |
-| CHOMPER | (position update only) | 0 | No | Tower |
-| TURRET | Stands_ctor + CollisionLevel | 0x10D0 | No | Tower |
-| LIFTER | Stands_CtorWithCollision / Rotator_ctor_sound | 0x10FC / 0x10F4 | No | Odd, Up |
-| SPEEDCYLINDER | Pendulum_ctor | 0x150C | No | Up |
-| TIMEBUTTON | Rotator_ctor_nosound | 0x10E8 | No | Up |
-| NEONPLATFORM | Stands_CtorRotator | 0x10EC | No | Neon |
-| DFLOOR1-4 | RumbleBoard_Stands_ctor | 0x1104 | No | Neon |
-| TRODE | RumbleBoard_Stands_ctor | 0x1104 | No | Neon |
-| BONK | Bonk_ctor | 0x1200 | Yes | Expert, Master |
-| SAWBLADE | Sawblade_Level_Ctor | 0x111C | Yes | Expert |
-| JUDGE | Gear_Level_ctor | 0x1100 | No | Expert |
+Verified against the actual MESHWORLD binary data (46 unique object types). Numbered suffixes (e.g. TIPPER01, GEAR02) are collapsed to their base type. See `docs/VERIFIED_REFS_BY_LEVEL.md` for the full verified data.
+
+| Ref Name | Constructor | Alloc Size | Quality-Gated? | Race Levels Found In |
+|----------|------------|-----------|----------------|---------------------|
+| BBRIDGE | BreakBridge_ctor | 0x1100 | No | Master |
 | BELL | Tipper_Level_Ctor | 0x10E8 | No | Expert |
-| SPINNY | Rotator_ctor | 0x1508 | No | Toob |
-| SAW | Stands_CtorCollision | 0x1110 | Yes | Toob |
-| SAW2 | Stands_CtorSpeedCylinder | 0x1118 | Yes | Toob |
-| FALLOUT1 | Stands_CtorCollisionV2 | 0x10E8 | No | Toob |
-| BLOCKDAWG1-3 | Blockdawg_ctor | 0x1154 | Yes | Toob, Master |
-| WOBBLY1-7 | GameLevel_ctor | 0x1524 | No | Wobbly |
-| WAVY1 | Stands_CtorWithCollisionLevel | 0x1AE7C | No | Wobbly |
-| SMASHER1-2 | (position update only) | 0 | No | Glass |
-| POPCYLINDER | PopCylinder_ctor / Platform_ctor | 0x10E8 / 0x10F4 | Conditional | Sky, Master |
-| LOOPER | Looper_ctor | 0x1500 | No | Impossible |
-| GEAR | Gear_ctor | 0x1514 | No | Impossible |
 | BIGGEAR | Gear_ctor | 0x1514 | No | Impossible |
-| ROTATOR | Rotator_ctor | 0x1508 | No | Impossible |
+| BLOCKDAWG | Blockdawg_ctor | 0x1154 | Yes | Toob, Master |
+| BONK | Bonk_ctor | 0x1200 | Yes | Expert, Master |
+| BRIDGE | (returns pre-loaded mesh) | 0 | No | Intermediate, Expert, Master |
+| CATAPULT | Catapult_ctor | 0x1108 | No | Tower, Master |
+| CHOMPER | (position update only) | 0 | No | Tower |
+| DFLOOR | RumbleBoard_Stands_ctor | 0x1104 | No | Neon |
+| DRAWBRIDGE | Glass_Level_ctor | 0x113C | No | Tower |
+| FALLOUT1 | Stands_CtorCollisionV2 | 0x10E8 | No | Toob |
+| FAN | (FAN + FANSLOW + FAN(SUPER)(UP) variants) | varies | varies | Expert |
+| GEAR | Gear_ctor | 0x1514 | No | Impossible |
+| GLUEBIE | Gluebie_ctor | 0x110C | Yes | Dizzy, Master |
+| JUDGE | Gear_Level_ctor | 0x1100 | No | Expert |
+| LAUNCH | (launch pad marker) | 0 | No | Odd |
+| LIFTER | Stands_CtorWithCollision / Rotator_ctor_sound | 0x10FC / 0x10F4 | No | Up, Odd |
+| LOOPER | Looper_ctor | 0x1500 | No | Impossible |
+| MACE | CascadeStands_Ctor | 0x110C | Yes | Tower |
+| MAGNIFYER | (magnifying glass object) | 0 | No | Sky |
+| MOUSETRAP | GlassStands_Ctor | 0x10F8 | No | Intermediate, Master |
+| NEONPLATFORM | Stands_CtorRotator | 0x10EC | No | Neon |
 | PENDULUM | Pendulum_ctor | 0x1504 | No | Impossible |
-| BBRIDGE1-2 | BreakBridge_ctor | 0x1100 | No | Master |
+| PILLAR | (static mesh + collision) | 0 | No | Sky |
+| POPCYLINDER | PopCylinder_ctor / Platform_ctor | 0x10E8 / 0x10F4 | Conditional | Sky, Master |
+| ROTATOR | Rotator_ctor | 0x1508 | No | Impossible |
+| SAW | Stands_CtorCollision | 0x1110 | Yes | Toob |
+| SAW-BREAK | (breakable saw marker) | 0 | No | Expert |
+| SAW2 | Stands_CtorSpeedCylinder | 0x1118 | Yes | Toob |
+| SAWBLADE | Sawblade_Level_Ctor | 0x111C | Yes | Expert |
+| SIGN-TARPIT | (sign handler + tar pit data) | 0 | No | Dizzy |
+| SMASHER | (position update only) | 0 | No | Glass |
+| SPEEDCYLINDER | Pendulum_ctor | 0x150C | No | Up |
+| SPINNY | Rotator_ctor | 0x1508 | No | Toob |
+| SWIRL | (returns pre-loaded mesh) | 0 | No | Dizzy |
+| TARBUBBLE | (tar bubble animation) | 0 | No | Dizzy, Master |
+| TIMEBUTTON | Rotator_ctor_nosound | 0x10E8 | No | Up |
+| TIPPER | Tipper_ctor | 0x1104 | Yes | Dizzy, Master |
+| TRAPDOOR | GlassStands_Ctor / Rotator_ctor | 0x10F8 / 0x10F4 | No | Tower, Sky |
+| TRODE | RumbleBoard_Stands_ctor | 0x1104 | No | Neon |
+| TURRET | Stands_ctor + CollisionLevel | 0x10D0 | No | Tower |
+| WATERWHEEL | (returns pre-loaded mesh) | 0 | No | Dizzy |
+| WAVY | Stands_CtorWithCollisionLevel | 0x1AE7C | No | Wobbly |
+| WINDMILL | (returns pre-loaded mesh + collision) | 0 | No | Tower |
+| WOBBLY | GameLevel_ctor | 0x1524 | No | Wobbly |
 
 ### Special Ref Modifiers
 
@@ -324,27 +336,29 @@ Some refs support suffix modifiers checked via `strstr()`:
 
 ### Verified Ref Names per Level
 
-Confirmed by binary-grepping the original MESHWORLD files:
+Confirmed by parsing the original MESHWORLD binary files with a spec-compliant parser. See `docs/VERIFIED_REFS_BY_LEVEL.md` for the full ground-truth data.
 
-| MESHWORLD File | Object Refs (Section 1, bare names) | Entity Names (Section 3, N:/E: prefixed) |
-|----------------|-------------------------------------|------------------------------------------|
-| Level1 (Warm-up) | START | (none) |
-| LevelCascade (Beginner) | BUMP, BUMPER | N:GOAL, N:BUMP, N:BUMPER |
-| Level2 (Intermediate) | BONK, BRIDGE | N:GOAL, E:LIMIT |
-| Level3 (Dizzy) | SWIRL | N:GOAL, N:TARPIT |
-| Level4 (Tower) | BRIDGE, MACE, DRAWBRIDGE, WINDMILL, CHOMPER, TURRET | N:GOAL, E:JUMP, E:ACTION |
-| Level5 (Expert) | SAWBLADE, BRIDGE, JUDGE, BELL, SAW, SAW2 | N:GOAL, E:JUMP |
-| Level6 (Odd) | LIFTER | N:GOAL, N:JUMPFIRST, N:JUMPSECOND |
-| LevelUp (Up) | SPEEDCYLINDER, LIFTER, TIMEBUTTON | N:GOAL, T:SPEEDARROW |
-| LevelDark (Neon) | NEONPLATFORM, DFLOOR, TRODE | N:GOAL |
-| Level7 (Wobbly) | BONK, WOBBLY, WAVY | N:GOAL |
-| Level8 (Toob) | SPINNY, SAW, SAW2, FALLOUT, BLOCKDAWG, BUMP, BUMPER | N:GOAL, N:BUMP, N:BUMPER |
-| LevelGlass (Glass) | BONK, SMASHER | N:GOAL, N:GLASS, N:TENBONUS1, N:TENBONUS2 |
-| Level9 (Sky) | TRAPDOOR, POPCYLINDER | N:GOAL |
-| Level10 (Master) | BRIDGE, BLOCKDAWG, POPCYLINDER, BBRIDGE | N:GOAL, N:TARPIT |
-| LevelImpossible (Impossible) | BONK, LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM | N:GOAL |
+**46 unique object types** across 15 race levels. Refs listed below are Section 1 ref points only (object spawn markers). Utility refs (START, SAFESPOT, FLAG, BADBALL, SECRET, etc.) are omitted — see the standalone doc for the full list.
 
-Common refs in ALL levels: START (spawn point), SAFESPOT (respawn point), FLAG (checkpoint), E:LIMIT (boundary kill plane).
+| # | Race Level | Object Refs (Section 1) |
+|---|-----------|------------------------|
+| L1 | Warm-up | (none) |
+| L2 | Beginner | (none) |
+| L3 | Intermediate | BRIDGE, MOUSETRAP |
+| L4 | Dizzy | SIGN-TARPIT, TARBUBBLE, GLUEBIE, TIPPER, WATERWHEEL, SWIRL |
+| L5 | Tower | CATAPULT, TRAPDOOR, DRAWBRIDGE, MACE, WINDMILL, CHOMPER, TURRET |
+| L6 | Up | SPEEDCYLINDER, LIFTER, TIMEBUTTON |
+| L7 | Neon | DFLOOR, TRODE, NEONPLATFORM |
+| L8 | Expert | BONK, FAN, FANSLOW, SAWBLADE, BRIDGE, SAW-BREAK, JUDGE, BELL |
+| L9 | Odd | LIFTER, LAUNCH |
+| L10 | Toob | SPINNY, SAW, FALLOUT1, SAW2, BLOCKDAWG |
+| L11 | Wobbly | WOBBLY, WAVY |
+| L12 | Glass | SMASHER |
+| L13 | Sky | PILLAR, MAGNIFYER, POPCYLINDER, TRAPDOOR |
+| L14 | Master | BBRIDGE, BLOCKDAWG, BONK, BRIDGE, CATAPULT, GLUEBIE, MOUSETRAP, POPCYLINDER, TIPPER, TARBUBBLE |
+| L15 | Impossible | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
+
+Common utility refs in ALL levels: START (spawn point), SAFESPOT (respawn point), FLAG (checkpoint), BADBALL (AI ball).
 
 ---
 
@@ -556,80 +570,58 @@ A separate dispatch function handles `SIGN` refs. This function is **not** vtabl
 
 ## Complete Ref Name → Factory Reverse Index
 
-This table shows every ref name and which factory(ies) can create it. Use this to determine which sub-meshes need to be loaded to support a given ref in a given level.
+This table shows every verified Section 1 ref name and which factory(ies) can create it. Only 46 verified object types are listed — refs that were previously listed here but do not exist in any original MESHWORLD file have been removed. See `docs/VERIFIED_REFS_BY_LEVEL.md` for the ground-truth source data.
+
+**Note**: The "Arena Factories" column lists which Arena Board vtable[33] factory can create the object. The "Race Factories" column lists which Race Board factory handles it. Many refs are Arena-only (no Race factory handles them).
 
 | Ref Name | Arena Factories | Race Factories | Required Slots |
 |----------|----------------|----------------|----------------|
-| BADBALL | Wobbly | — | +0x4344 |
-| BBRIDGE1-2 | Tower, Master | — | +0x436C, +0x4370, +0x4394, +0x4398 |
-| BELL | Dizzy, Expert | — | +0x436C, +0x4370, +0x4374 |
+| BBRIDGE | Master | — | +0x436C, +0x4370, +0x4394, +0x4398 |
+| BELL | Expert | — | +0x436C, +0x4370, +0x4374 |
 | BIGGEAR | Impossible | — | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C |
-| BLOCKDAWG1-2 | Tower, Toob, Glass, Master | — | varies |
-| BLOCKDAWG3 | Toob, Glass | — | +0x436C to +0x4384 |
-| BONK | Dizzy, Tower, Expert, Master | — | varies |
+| BLOCKDAWG | Toob, Master | — | +0x436C to +0x4384 |
+| BONK | Dizzy, Expert, Master | — | varies |
 | BRIDGE | Beginner, Dizzy, Tower, Expert, Master | — | +0x436C, +0x4370, +0x4374 |
-| CATAPULT | Dizzy, Tower, Master | Race Dizzy, Race Tower | +0x436C, +0x4378 |
-| CHOMPER | Dizzy | — | +0x436C, +0x4378, +0x43B0 |
-| DFLOOR1-4 | Neon | — | +0x4374 to +0x4390 |
-| DRAWBRIDGE | Dizzy | — | +0x436C, +0x4378, +0x4390 |
-| E:ALERTSAW2 | Toob, Glass | — | +0x436C to +0x4384 |
-| E:BELL | Expert | — | +0x436C, +0x4370, +0x4374 |
-| E:BRANCH | Toob, Glass | — | +0x436C to +0x4384 |
-| E:GRAVITY | Expert, Odd | Race Dizzy, Tower, Up, Expert | varies |
-| E:LAUNCH | Master | Race Sky | +0x436C, +0x4394 |
-| E:LIGHTSOFF/ON | Neon | — | +0x4374 to +0x4390 |
-| E:SCORE | Expert | — | +0x436C, +0x4370, +0x4374 |
-| E:ZOOP | Neon | — | +0x4374 to +0x4390 |
-| EDGECYLINDER | — | Race Wobbly, Race Sky | (race, no sub-mesh slots) |
+| CATAPULT | Tower, Master | Race Tower | +0x436C, +0x4378 |
+| CHOMPER | Tower | — | +0x436C, +0x4378, +0x43B0 |
+| DFLOOR | Neon | — | +0x4374 to +0x4390 |
+| DRAWBRIDGE | Tower | — | +0x436C, +0x4378, +0x4390 |
 | FALLOUT1 | Toob, Glass | — | +0x436C to +0x4384 |
-| FAN | Dizzy, Expert | Race Dizzy, Tower, Up, Expert | varies |
-| FLICKNING | Neon | Race Neon | +0x4374 to +0x4390 |
+| FAN | Expert | Race Expert | varies |
+| FANSLOW | Expert | — | +0x436C, +0x4370, +0x4374 |
 | GEAR | Impossible | Race Impossible | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C |
 | GLUEBIE | Beginner, Intermediate, Master | — | +0x436C, +0x4370, +0x4374 |
-| JUDGE | Dizzy, Expert | — | +0x436C, +0x4370, +0x4374 |
-| LIFTER | Tower, Expert, Odd, Sky | Race Dizzy, Tower, Up | varies |
+| JUDGE | Expert | — | +0x436C, +0x4370, +0x4374 |
+| LAUNCH | — | Race Odd | (race) |
+| LIFTER | Tower, Expert, Odd | Race Up, Odd | varies |
 | LOOPER | Impossible | — | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C |
-| MACE | Dizzy | Race Dizzy, Race Tower | +0x436C, +0x4378 |
-| MAGNIFYER | Toob | — | +0x436C to +0x4384 |
-| N:BOUNCE | Impossible | — | +0x436C to +0x437C |
-| N:BUMP | Neon | Race Neon | +0x4374 to +0x4390 |
-| N:BUMPER | Toob, Sky, Master | Race Base, Tower, Up, Expert | varies |
-| N:GLASS | Neon | Race Neon | +0x4374 to +0x4390 |
-| N:NEONPLATFORM | Neon | — | +0x4374 to +0x4390 |
-| N:ONGEAR | Impossible | — | +0x436C to +0x437C |
-| N:ONROTATOR | Impossible | — | +0x436C to +0x437C |
-| N:SAWTEETH | Toob | — | +0x436C to +0x4384 |
-| N:SPINNER | Master | — | +0x436C, +0x4394 |
-| N:SPINNY | Toob, Glass | — | +0x436C to +0x4384 |
-| N:SQUAREWOBBLY | Odd, Glass | Race Up, Expert, Wobbly | varies |
-| N:TENBONUS1 | Neon | Race Neon | +0x4374 to +0x4390 |
-| N:TENBONUS2 | — | Race Neon | (race) |
-| N:WAVY | Odd, Glass | — | +0x436C to +0x4384 |
+| MACE | Tower | Race Tower | +0x436C, +0x4378 |
+| MAGNIFYER | Sky | — | +0x436C to +0x4384 |
+| MOUSETRAP | Master | — | +0x436C |
 | NEONPLATFORM | Neon | — | +0x4374 to +0x4390 |
 | PENDULUM | Impossible | — | +0x436C to +0x437C |
-| PILLAR | Toob | Race Wobbly | +0x436C to +0x4384 |
-| PLATFORM | — | Race Base | (base, no sub-mesh) |
-| POPCYLINDER | Tower, Sky, Master | Race Wobbly, Race Sky | varies |
+| PILLAR | Sky | — | +0x436C |
+| POPCYLINDER | Sky, Master | Race Sky | varies |
 | ROTATOR | Impossible | — | +0x436C to +0x437C |
-| SAWBLADE | Dizzy, Expert | — | +0x436C, +0x4370, +0x4374 |
-| SECRET | Wobbly | — | +0x4344 |
-| SECRETUNLOCK | Wobbly | — | +0x4344 |
-| SMASHER1-2 | Beginner, Intermediate, Wobbly | — | +0x4344 or +0x436C |
-| SPEEDCYLINDER | Tower, Sky | — | +0x436C, +0x4394, +0x4398 |
-| SPINNY | Odd, Toob, Glass | Race Dizzy | varies |
-| STANDS | — | Race Base | (base, no sub-mesh) |
+| SAW | Toob | — | +0x436C to +0x4384 |
+| SAW-BREAK | Expert | — | +0x436C, +0x4370, +0x4374 |
+| SAW2 | Toob | — | +0x436C to +0x4384 |
+| SAWBLADE | Expert | — | +0x436C, +0x4370, +0x4374 |
+| SIGN-TARPIT | — | (separate Scene_CreateSigns dispatch) | N/A |
+| SMASHER | Glass | — | +0x4344 |
+| SPEEDCYLINDER | Tower, Sky | Race Up | +0x436C, +0x4394, +0x4398 |
+| SPINNY | Toob, Glass | — | +0x436C to +0x4384 |
 | SWIRL | Beginner, Intermediate | — | +0x436C, +0x4370, +0x4374 |
-| TarBubble | Tower | — | +0x436C, +0x4394 |
-| TIMEBUTTON | Tower, Sky | — | +0x436C, +0x4394, +0x4398 |
-| TIPPER | Beginner, Intermediate, Tower, Master | — | +0x436C, +0x4370, +0x4374 |
-| TRAPDOOR | Dizzy, Sky | — | +0x436C, +0x4378, +0x4390 |
+| TARBUBBLE | Tower | — | +0x436C, +0x4394 |
+| TIMEBUTTON | Tower, Sky | Race Up | +0x436C, +0x4394, +0x4398 |
+| TIPPER | Beginner, Intermediate, Master | — | +0x436C, +0x4370, +0x4374 |
+| TRAPDOOR | Tower, Sky | — | +0x436C, +0x4378, +0x4390 |
 | TRODE | Neon | — | +0x4374 to +0x4390 |
-| TURRET | — | Race Dizzy, Race Tower | (race) |
-| VAC-IN | Sky | — | +0x436C, +0x4390 |
+| TURRET | — | Race Tower | (race) |
 | WATERWHEEL | Beginner, Intermediate | — | +0x436C, +0x4370, +0x4374 |
-| WAVY1 | Odd, Glass | — | +0x436C to +0x4384 |
-| WINDMILL | Dizzy | — | +0x436C, +0x4378, +0x43A4 |
-| WOBBLY1-7 | Odd, Glass | Race Up, Expert, Wobbly | varies |
+| WAVY | Odd, Glass | Race Wobbly | +0x436C to +0x4384 |
+| WINDMILL | Tower | — | +0x436C, +0x4378, +0x43A4 |
+| WOBBLY | Odd, Glass | Race Wobbly | varies |
 
 1. **Two independent Board systems**: RACE Boards (constructors at 0x422xxx, vtables 0x4D1428–0x4D2298) and ARENA Boards (constructors at 0x41Cxxx, vtables 0x4D05A0–0x4D21C0). Race mode uses App+0x237=0; Arena mode uses App+0x237=1. Each has its own vtable[33] factory.
 2. **vtable[33] dispatch**: `Scene_CreateDynamicObjects` (0x0040C430) iterates MESHWORLD Section 1 ref points, and for each ref, calls `board->vtable[33](board, refName, &outObj, &outCol, refEntry)` at instruction `0x0040C4BA`. If the factory returns NULL, the ref is silently ignored.
@@ -641,8 +633,8 @@ This table shows every ref name and which factory(ies) can create it. Use this t
 
 ### How to Load Any Ref Into Any Level
 
-**Option A — MESHWORLD mod only (simple refs)**:
-For refs handled by the Race base factory (PLATFORM, STANDS, N:BUMPER), simply add the ref name to the MESHWORLD Section 1. No code changes needed.
+**Option A — MESHWORLD mod only (limited)**:
+For refs handled by the Race base factory (PLATFORM, STANDS), simply add the ref name to the MESHWORLD Section 1. No code changes needed. Note: the base factory handles very few object types — most objects require level-specific factory support.
 
 **Option B — MESHWORLD mod + DLL hook (any ref)**:
 1. Add the desired ref name to the level's MESHWORLD Section 1.
@@ -654,4 +646,4 @@ For refs handled by the Race base factory (PLATFORM, STANDS, N:BUMPER), simply a
 1. Add the ref name to the level's MESHWORLD Section 1.
 2. Pre-load the required sub-mesh by modifying the Board constructor to load additional MESHWORLD files (binary patch the constructor to add MeshWorld loading calls).
 3. Install the universal-ref-loader bass.dll proxy.
-4. All 75 ref types can now be loaded into any level.
+4. All 46 verified ref types can now be loaded into any level.
