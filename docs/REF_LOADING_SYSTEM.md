@@ -541,11 +541,27 @@ This table shows every ref name and which factory(ies) can create it. Use this t
 | WINDMILL | Dizzy | — | +0x436C, +0x4378, +0x43A4 |
 | WOBBLY1-7 | Odd, Glass | Race Up, Expert, Wobbly | varies |
 
-1. **Two independent Board systems**: RACE Boards (0x422xxx constructors, vtable 0x4D14xx-0x4D22xx) and ARENA Boards (0x41Cxxx constructors, vtable 0x4D05xx-0x4D21xx). Each has its own set of vtable[33] factories. Race factories handle fewer ref types; Arena factories handle the full set.
-2. **Two independent dispatch systems**: (A) vtable[33] factory creates objects from bare-name ref points in MESHWORLD Section 1; (B) the N:/E: handler at 0x0040C5D0 processes entity names from Section 3 meshes to set behavioral flags.
-3. **The `N:` prefix is NOT stripped** — it's part of the entity name in Section 3, not the ref point name in Section 1. Ref points use bare names.
-4. **Race factory inheritance chain**: Dizzy → Tower → Up → Expert all share the same base factory (0x4133E0). Each adds its own refs on top. Levels 1,2,3,9,10,12,14 use ONLY the base factory.
-5. **Arena factories are more inclusive**: Master Arena factory (0x4121D0) handles 9+ ref types from other levels.
-6. **To load any ref into any level**, you need: (a) patch the Board's vtable[33] to a combined factory that calls multiple level factories, AND (b) preload the required sub-meshes into board struct slots. A MESHWORLD-only approach is insufficient — the factory must recognize the ref name.
-7. **Quality gating** (`scene+0x23C`) blocks creation of complex visual objects on low quality settings.
-8. **The N:/E: handler is called from within the factories** — it runs as a sub-step of object creation, not as a separate top-level dispatch.
+1. **Two independent Board systems**: RACE Boards (constructors at 0x422xxx, vtables 0x4D1428–0x4D2298) and ARENA Boards (constructors at 0x41Cxxx, vtables 0x4D05A0–0x4D21C0). Race mode uses App+0x237=0; Arena mode uses App+0x237=1. Each has its own vtable[33] factory.
+2. **vtable[33] dispatch**: `Scene_CreateDynamicObjects` (0x0040C430) iterates MESHWORLD Section 1 ref points, and for each ref, calls `board->vtable[33](board, refName, &outObj, &outCol, refEntry)` at instruction `0x0040C4BA`. If the factory returns NULL, the ref is silently ignored.
+3. **Factory chain (Race)**: Race factories form an inheritance chain — each level-specific factory checks its own refs, then falls through to the base factory `0x4133E0` which handles `PLATFORM`, `STANDS`, `N:BUMPER`.
+4. **Factory chain (Arena)**: Arena factories are standalone — each handles its complete ref set without falling through. The most inclusive Arena factory is Master (13 ref types), followed by Dizzy (12 ref types) and Tower (13 ref types).
+5. **Sub-mesh preloading**: Each Board constructor preloads specific MESHWORLD files into board struct slots (+0x4344 through +0x43B4). Factories access these slots to get mesh data for object creation. **Factories do NOT null-check these slots** — calling a factory with unloaded slots causes an access violation crash.
+6. **N:/E: handler (0x0040C5D0)**: A separate system that processes entity names from Section 3 objects to set behavioral flags (gravity modifiers, launch pads, bumpers, etc.). Called from 25 sites within the Arena factories.
+7. **Universal ref loader mod**: A bass.dll proxy that hooks the vtable[33] dispatch at 0x0040C4BA and tries all 13 Arena factories in sequence, with per-factory sub-mesh slot safety checks. Allows loading any ref type into any level (limited by sub-mesh availability).
+
+### How to Load Any Ref Into Any Level
+
+**Option A — MESHWORLD mod only (simple refs)**:
+For refs handled by the Race base factory (PLATFORM, STANDS, N:BUMPER), simply add the ref name to the MESHWORLD Section 1. No code changes needed.
+
+**Option B — MESHWORLD mod + DLL hook (any ref)**:
+1. Add the desired ref name to the level's MESHWORLD Section 1.
+2. Install the universal-ref-loader bass.dll proxy.
+3. The DLL mod will try all Arena factories when the level's own factory doesn't recognize the ref.
+4. **Limitation**: The ref's sub-mesh data must already be loaded in a board slot. If the ref requires a sub-mesh that wasn't loaded by the current Board constructor, the factory will be skipped (safety check prevents crash, but ref won't be created).
+
+**Option C — MESHWORLD mod + pre-loaded sub-meshes (full support)**:
+1. Add the ref name to the level's MESHWORLD Section 1.
+2. Pre-load the required sub-mesh by modifying the Board constructor to load additional MESHWORLD files (binary patch the constructor to add MeshWorld loading calls).
+3. Install the universal-ref-loader bass.dll proxy.
+4. All 75 ref types can now be loaded into any level.
