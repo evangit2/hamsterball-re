@@ -31,7 +31,7 @@
  * LOGGING
  * ============================================================ */
 
-static const char* LOG_PATH = "Z:\\tmp\\ref_loader_log.txt";
+static const char* LOG_PATH = "C:\\tmp\\ref_loader_log.txt";
 static HANDLE g_logMutex = NULL;
 
 static void log_init(void)
