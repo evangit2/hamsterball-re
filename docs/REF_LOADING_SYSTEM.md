@@ -174,7 +174,20 @@ CALL 0x0040C5D0        ; N: handler(mesh_entity, ref_entry, board)
 
 ### 5. The `Scene+0x23C` Quality Gate
 
-Many (but not all) factory branches check `*(int *)(*(int *)(board + 0x878) + 0x23c) != 0` before creating objects. This field is the **graphics quality setting** — objects like TIPPER, BONK, MACE, SAW, SAW2, BLOCKDAWG, GEARS, etc. are only created when quality is non-zero (high quality). Objects like BRIDGE, SPEEDCYLINDER, LIFTER, POPCYLINDER, TRAPDOOR are created regardless of quality.
+Many (but not all) factory branches check `*(int *)(*(int *)(board + 0x878) + 0x23c) != 0` before creating objects. This field is the **graphics quality setting**.
+
+**Verified quality-gated refs** (15 types — only created when quality is non-zero/high):
+- TIPPER, GLUEBIE, MACE, FAN, SAWBLADE, SPINNY, BONK, POPCYLINDER, MAGNIFYER, EDGECYLINDER
+- BLOCKDAWG1, BLOCKDAWG2, BLOCKDAWG3
+- E:ALERTSAW2, E:BRANCH
+
+**Always-created refs** (44 types — created regardless of quality setting):
+- BRIDGE, WATERWHEEL, SWIRL, SMASHER1-2, CATAPULT, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET
+- LIFTER, SPEEDCYLINDER, TIMEBUTTON, NEONPLATFORM, DFLOOR1-4, TRODE, BELL, JUDGE
+- SAW, SAW2, FALLOUT1, WOBBLY1-7, WAVY1, LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM
+- BBRIDGE1-2, SECRET, SECRETUNLOCK, BADBALL, PILLAR
+
+40 quality gate checks found across the factory function range (0x40A000–0x419000), verified by binary pattern matching: `MOV EAX, [reg+0x23C]; TEST EAX, EAX; JZ skip_creation`.
 
 ---
 
