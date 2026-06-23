@@ -1,10 +1,11 @@
 /*
- * universal_ref_loader.c — Hamsterball DLL Mod v2
+ * universal_ref_loader.c — Hamsterball DLL Mod v3
  *
  * Hooks the vtable[33] factory dispatch in Scene_CreateDynamicObjects.
  * When the original Board factory doesn't recognize a ref name, tries all
  * other Arena factories in sequence. Features:
  *
+ *   - JIT mesh injection: loads meshes from disk into board slots on demand
  *   - Clone-on-return for static-mesh objects (WATERWHEEL, SWIRL, BRIDGE-base)
  *     via Level_CloneTree (0x466060) for multi-instance support
  *   - Difficulty gate bypass (temporarily sets App+0x23C = 1)
@@ -34,24 +35,28 @@
 #define HOOK_CALL_SITE_LEN 6
 
 #define LEVEL_CLONE_TREE   0x00466060
+#define MESHWORLD_CTOR    0x00461510
+#define COLLISION_CTOR    0x00465080
+#define OPERATOR_NEW      0x004BA57B
 #define APP_SINGLETON      0x004FD680
 #define APP_DIFFICULTY    0x23C
+#define APP_D3D_DEVICE    0x174
 #define BOARD_APP_PTR     0x878
 
 /* Arena factory addresses (verified via vtable[33] reads) */
-#define FACTORY_MASTER      0x004121D0  /* BRIDGE,TIPPER,BONK,BBRIDGE1-2,POPCYLINDER,BLOCKDAWG1-2,CATAPULT,GLUEBIE */
-#define FACTORY_TOWER       0x0040D7C0  /* CATAPULT,MACE,DRAWBRIDGE,WINDMILL,TRAPDOOR,CHOMPER,TURRET,BONK,FAN,SAWBLADE,BRIDGE,JUDGE,BELL */
-#define FACTORY_IMPOSSIBLE  0x00417FE0  /* LOOPER,GEAR,BIGGEAR,ROTATOR,PENDULUM */
-#define FACTORY_EXPERT      0x0040E250  /* BONK,FAN,SAWBLADE,BRIDGE,JUDGE,BELL (self-loading, no mesh deps) */
-#define FACTORY_UP          0x004117B0  /* LIFTER,SPEEDCYLINDER,TIMEBUTTON */
-#define FACTORY_DIZZY       0x0040A5F0  /* TIPPER,WATERWHEEL,SWIRL,GLUEBIE */
-#define FACTORY_BEGINNER    0x0040A550  /* BRIDGE (base, static return) */
-#define FACTORY_WOBBLY      0x0040AD80  /* SMASHER1,SMASHER2 (configuring) */
-#define FACTORY_NEON        0x00416910  /* NEONPLATFORM,DFLOOR,TRODE,etc */
-#define FACTORY_ODD         0x0040EC40  /* WOBBLY,WAVY,SPINNY,etc */
-#define FACTORY_TOOB        0x0040FB30  /* SPINNY,FALLOUT,BLOCKDAWG,PILLAR,etc */
-#define FACTORY_GLASS       0x0040F420  /* similar to Odd */
-#define FACTORY_SKY         0x00410AD0  /* POPCYLINDER,TRAPDOOR,N:BUMPER,etc */
+#define FACTORY_MASTER      0x004121D0
+#define FACTORY_TOWER       0x0040D7C0
+#define FACTORY_IMPOSSIBLE  0x00417FE0
+#define FACTORY_EXPERT      0x0040E250
+#define FACTORY_UP          0x004117B0
+#define FACTORY_DIZZY       0x0040A5F0
+#define FACTORY_BEGINNER    0x0040A550
+#define FACTORY_WOBBLY      0x0040AD80
+#define FACTORY_NEON        0x00416910
+#define FACTORY_ODD         0x0040EC40
+#define FACTORY_TOOB        0x0040FB30
+#define FACTORY_GLASS       0x0040F420
+#define FACTORY_SKY         0x00410AD0
 
 /* ============================================================
  * Types
@@ -61,13 +66,31 @@ typedef void (__thiscall *FactoryFunc)(void* board, char* refName,
     void** outObj, void** outCol, int* refEntry);
 
 typedef void* (__thiscall *CloneTreeFn)(void* mesh, int board);
+typedef void* (__thiscall *MeshWorldCtorFn)(void* mem, int d3dDevice, const char* path);
+typedef void* (__thiscall *CollisionCtorFn)(void* mem, int sourceMesh);
+typedef void* (__cdecl *OperatorNewFn)(unsigned int size);
 
 /* Factory entry: function pointer + board offsets that must be non-NULL */
 typedef struct {
     FactoryFunc func;
-    int slots[14];  /* board+0x4xxx offsets that must be non-NULL, 0 = end */
+    int slots[14];  /* board+0x4xxx offsets READ by this factory, 0 = end */
     const char* name;
 } SafeFactory;
+
+/* Mesh database entry: maps a board slot to its mesh file path */
+typedef struct {
+    int boardOffset;        /* e.g. 0x436C */
+    const char* meshPath;   /* e.g. "Levels\\Level3-WaterWheel" */
+    int needsCollision;     /* 1 = also create CollisionLevel at next slot */
+    int collisionOffset;    /* where to store the CollisionLevel (e.g. 0x4370) */
+} MeshEntry;
+
+/* Cached loaded mesh */
+typedef struct {
+    int boardOffset;     /* which slot this was injected into */
+    void* mesh;          /* loaded MeshWorld* */
+    void* collision;     /* loaded CollisionLevel* (or NULL) */
+} CachedMesh;
 
 /* ============================================================
  * Globals
@@ -75,17 +98,84 @@ typedef struct {
 
 static BYTE  g_origBytes[6];
 static BOOL  g_hooked = FALSE;
-static CloneTreeFn g_cloneTree = (CloneTreeFn)LEVEL_CLONE_TREE;
+static CloneTreeFn      g_cloneTree     = (CloneTreeFn)LEVEL_CLONE_TREE;
+static MeshWorldCtorFn  g_meshWorldCtor = (MeshWorldCtorFn)MESHWORLD_CTOR;
+static CollisionCtorFn  g_collisionCtor = (CollisionCtorFn)COLLISION_CTOR;
+static OperatorNewFn    g_operatorNew   = (OperatorNewFn)OPERATOR_NEW;
+
+/* ============================================================
+ * Mesh database
+ *
+ * Maps board slots to mesh file paths. When a factory needs a slot
+ * that's NULL, we load the mesh from disk and inject it temporarily.
+ * Meshes are cached so we only load each one once.
+ *
+ * Paths verified from decompiled board constructors:
+ *   BoardLevel3_ctor (Dizzy): Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie
+ *   BoardLevel5_ctor (Tower): Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret
+ *   BoardLevel2_ctor (Intermediate): Level2-Bridge
+ *   etc.
+ * ============================================================ */
+
+static const MeshEntry g_meshDB[] = {
+    /* Dizzy Arena meshes */
+    { 0x436C, "Levels\\Level3-Tipper",      1, 0x4370 },  /* Tipper mesh + collision */
+    { 0x4394, "Levels\\Level3-Tipper",      1, 0x4398 },  /* Master also uses Tipper at different slot */
+    { 0x4BA8, "Levels\\Level3-WaterWheel",  1, 0x4BAC },  /* WaterWheel mesh + collision */
+    { 0x4BC4, "Levels\\Level3-Swirl",       1, 0x4BC8 },  /* Swirl mesh + collision */
+    { 0x4374, "Levels\\Level3-Gluebie",      0, 0 },        /* Gluebie mesh only */
+    { 0x607C, "Levels\\Level3-Gluebie",      0, 0 },        /* Master also stores Gluebie at 0x607C */
+
+    /* Tower Arena meshes */
+    { 0x436C, "Levels\\Level4-Catapult",     0, 0 },        /* Catapult mesh (Tower uses 0x436C too) */
+    { 0x4370, "Levels\\Level4-Drawbridge",   0, 0 },        /* Drawbridge mesh */
+    { 0x4378, "Levels\\Level4-Mace",         0, 0 },        /* Mace mesh */
+    { 0x437C, "Levels\\Level4-Windmill",     0, 0 },        /* Windmill mesh */
+    { 0x43B4, "Levels\\Level4-Turret",       0, 0 },        /* Turret mesh */
+
+    /* Impossible Arena meshes */
+    /* LOOPER uses 0x436C, GEAR uses 0x4370, BIGGEAR uses 0x4374, ROTATOR uses 0x4378, PENDULUM uses 0x437C */
+    { 0x436C, "Levels\\LevelImpossible-Looper",   0, 0 },
+    { 0x4370, "Levels\\LevelImpossible-Gear",     0, 0 },
+    { 0x4374, "Levels\\LevelImpossible-BigGear",  0, 0 },
+    { 0x4378, "Levels\\LevelImpossible-Rotator",   0, 0 },
+    { 0x437C, "Levels\\LevelImpossible-Pendulum", 0, 0 },
+
+    /* Up Arena meshes */
+    { 0x4784, "Levels\\LevelUp-Lifter",        0, 0 },
+    { 0x4788, "Levels\\LevelUp-SpeedCylinder", 0, 0 },
+    { 0x478C, "Levels\\LevelUp-Button",        0, 0 },
+
+    /* Expert Arena — Bonk self-loads, but Bridge/Judge/Bell have mesh deps in some paths */
+    { 0x4378, "Levels\\Level5-Bridge",         0, 0 },   /* Expert Bridge uses 0x4378 */
+
+    /* Master Arena meshes (different slots than Dizzy) */
+    { 0x5410, "Levels\\Level10-Bridge1",       0, 0 },   /* BreakBridge1 */
+    { 0x5414, "Levels\\Level10-Bridge2",       0, 0 },   /* BreakBridge2 */
+    { 0x5420, "Levels\\Level9-PopCylinder1",   0, 0 },   /* PopCylinder */
+    { 0x5840, "Levels\\Level8-BlockDawg1",     0, 0 },   /* BlockDawg1 */
+    { 0x5844, "Levels\\Level8-BlockDawg2",     0, 0 },   /* BlockDawg2 */
+    { 0x5848, "Levels\\Level4-Catapult",       0, 0 },   /* Catapult (same mesh, different slot) */
+
+    /* Toob/Odd/Glass Arena meshes */
+    { 0x47E0, "Levels\\Level8-Spinny",         0, 0 },   /* Spinny */
+};
+
+#define NUM_MESH_ENTRIES (sizeof(g_meshDB) / sizeof(g_meshDB[0]))
+
+/* Mesh cache — stores loaded meshes so we only load each file once */
+#define MAX_CACHED_MESHES 32
+static CachedMesh g_meshCache[MAX_CACHED_MESHES];
+static int g_meshCacheCount = 0;
 
 /* ============================================================
  * Factory table
  *
  * Each entry lists ALL board+0x4xxx offsets the factory READS.
- * If any slot is NULL, the factory is skipped (safety check).
- * Factories that don't read any slots (self-loading) have empty lists.
+ * If any slot is NULL, the factory is skipped — UNLESS we can
+ * JIT-load the mesh for that slot from the mesh database.
  *
- * Order: most inclusive factories first (handle the most ref types).
- * Expert and Wobbly have no mesh deps, so they're tried early.
+ * Factories that don't read any slots (self-loading) have empty lists.
  * ============================================================ */
 
 static SafeFactory g_factories[] = {
@@ -101,6 +191,7 @@ static SafeFactory g_factories[] = {
                                        0x5840, 0x5844, 0x5848, 0x607C, 0}, "Master" },
 
     /* Tower Arena: CATAPULT,MACE,DRAWBRIDGE,WINDMILL,TRAPDOOR,CHOMPER,TURRET */
+    /* Note: 0x4374 is MeshNode (YellowLink), 0x4390 is MeshNode (Chomper) — not MeshWorld */
     { (FactoryFunc)FACTORY_TOWER,      {0x436C, 0x4370, 0x4378, 0x437C, 0x43B4, 0}, "Tower" },
 
     /* Impossible Arena: LOOPER,GEAR,BIGGEAR,ROTATOR,PENDULUM */
@@ -116,21 +207,21 @@ static SafeFactory g_factories[] = {
     /* Beginner Arena: BRIDGE (base, static return) */
     { (FactoryFunc)FACTORY_BEGINNER,   {0x436C, 0x4370, 0}, "Beginner" },
 
-    /* Neon Arena: NEONPLATFORM,DFLOOR,TRODE,etc */
+    /* Neon Arena */
     { (FactoryFunc)FACTORY_NEON,       {0x4374, 0x4378, 0x437C, 0x4380, 0x4384, 0x4388, 0}, "Neon" },
 
-    /* Odd Arena: WOBBLY,WAVY,SPINNY,etc */
+    /* Odd Arena */
     { (FactoryFunc)FACTORY_ODD,        {0x436C, 0x4370, 0x4374, 0x4378, 0x437C, 0}, "Odd" },
 
-    /* Toob Arena: SPINNY,FALLOUT,BLOCKDAWG,PILLAR,etc */
+    /* Toob Arena */
     { (FactoryFunc)FACTORY_TOOB,       {0x436C, 0x4370, 0x4374, 0x4378, 0x437C,
                                        0x4380, 0x4384, 0}, "Toob" },
 
-    /* Glass Arena: similar to Odd */
+    /* Glass Arena */
     { (FactoryFunc)FACTORY_GLASS,      {0x436C, 0x4370, 0x4374, 0x4378, 0x437C,
                                        0x4380, 0x4384, 0}, "Glass" },
 
-    /* Sky Arena: POPCYLINDER,TRAPDOOR,N:BUMPER,etc */
+    /* Sky Arena */
     { (FactoryFunc)FACTORY_SKY,        {0x436C, 0x4374, 0x4378, 0x437C, 0x4380,
                                        0x438C, 0x4390, 0}, "Sky" },
 };
@@ -138,21 +229,7 @@ static SafeFactory g_factories[] = {
 #define NUM_FACTORIES (sizeof(g_factories) / sizeof(g_factories[0]))
 
 /* ============================================================
- * Static-mesh detection
- *
- * These objects return a board slot pointer directly (no alloc,
- * no constructor). Multiple refs all point to the same object,
- * so only one renders (at the last position). We clone them
- * via Level_CloneTree for multi-instance support.
- *
- * Verified from decompiled factory code:
- *   WATERWHEEL → returns board+0x4BA8 (Dizzy Arena)
- *   SWIRL      → returns board+0x4BC4 (Dizzy Arena)
- *   BRIDGE     → returns board+0x436C (Beginner/Master Arena)
- *
- * WINDMILL also returns a static mesh (board+0x437C) but additionally
- * creates a CollisionLevel and attaches it — more complex, skip for now.
- * CHOMPER and SMASHER1/2 don't return objects (configuring only).
+ * Static-mesh detection (objects that return board slot pointer directly)
  * ============================================================ */
 
 static int is_static_mesh_object(const char* refName)
@@ -160,25 +237,11 @@ static int is_static_mesh_object(const char* refName)
     if (_strnicmp(refName, "WATERWHEEL", 10) == 0) return 1;
     if (_strnicmp(refName, "SWIRL", 5) == 0) return 1;
     if (_strnicmp(refName, "BRIDGE", 6) == 0) return 1;
-    /* WINDMILL: returns static mesh + creates collision. Complex — skip for now. */
     return 0;
 }
 
 /* ============================================================
  * Difficulty-gated object detection
- *
- * These objects only spawn when App+0x23C != 0 (Normal or Frenzied).
- * The universal factory temporarily sets App+0x23C = 1 to bypass the gate.
- *
- * Verified from decompiled factory code:
- *   TIPPER:     *(int*)(App+0x23C) != 0  (Master Arena, Dizzy Arena)
- *   BONK:       *(int*)(App+0x23C) != 0  (Master Arena, Expert Arena)
- *   BLOCKDAWG1: *(int*)(App+0x23C) != 0  (Master Arena)
- *   BLOCKDAWG2: *(int*)(App+0x23C) != 0  (Master Arena)
- *   GLUEBIE:    *(int*)(App+0x23C) != 0  (Master Arena, Dizzy Arena)
- *   FAN:        *(int*)(App+0x23C) != 0  (Expert Arena)
- *   SAWBLADE:   *(int*)(App+0x23C) != 0  (Expert Arena)
- *   MACE:       *(int*)(App+0x23C) != 0  (Tower Arena)
  * ============================================================ */
 
 static int is_difficulty_gated(const char* refName)
@@ -194,7 +257,194 @@ static int is_difficulty_gated(const char* refName)
 }
 
 /* ============================================================
+ * Mesh database lookup: find mesh path for a given board offset
+ * Returns the MeshEntry* or NULL if not in database.
+ *
+ * Note: Some board offsets map to different mesh files depending on
+ * context (e.g. 0x436C = Level3-Tipper on Dizzy, Level4-Catapult on Tower,
+ * LevelImpossible-Looper on Impossible). We try each matching entry.
+ * ============================================================ */
+
+static const MeshEntry* find_mesh_for_slot(int boardOffset, int index)
+{
+    int i;
+    int count = 0;
+    for (i = 0; i < (int)NUM_MESH_ENTRIES; i++) {
+        if (g_meshDB[i].boardOffset == boardOffset) {
+            if (count == index) return &g_meshDB[i];
+            count++;
+        }
+    }
+    return NULL;
+}
+
+/* ============================================================
+ * JIT mesh loading: load a mesh from disk into the cache
+ *
+ * Uses MeshWorld_ctor (0x461510) which:
+ *   1. Allocates 0x10D0 bytes (we call operator_new first)
+ *   2. Calls MeshWorld_ctor(mem, d3dDevice, path)
+ *
+ * For meshes that also need CollisionLevel, we:
+ *   3. Allocate another 0x10D0 bytes
+ *   4. Call CollisionLevel_ctorWithLevel(mem, sourceMesh)
+ *
+ * D3D device comes from *(board+0x878) + 0x174 (App+0x174)
+ * ============================================================ */
+
+static CachedMesh* jit_load_mesh(void* board, const MeshEntry* entry)
+{
+    int app, d3dDevice;
+    void* meshMem = NULL;
+    void* collisionMem = NULL;
+    CachedMesh* cached = NULL;
+
+    if (g_meshCacheCount >= MAX_CACHED_MESHES) return NULL;
+
+    app = *(int*)((char*)board + BOARD_APP_PTR);
+    if (!app) return NULL;
+
+    d3dDevice = *(int*)((char*)app + APP_D3D_DEVICE);
+    if (!d3dDevice) return NULL;
+
+    /* Allocate and construct MeshWorld */
+    meshMem = g_operatorNew(0x10D0);
+    if (!meshMem) return NULL;
+
+    meshMem = g_meshWorldCtor(meshMem, d3dDevice, entry->meshPath);
+    if (!meshMem) return NULL;
+
+    /* Optionally create CollisionLevel */
+    if (entry->needsCollision && entry->collisionOffset) {
+        collisionMem = g_operatorNew(0x10D0);
+        if (collisionMem) {
+            collisionMem = g_collisionCtor(collisionMem, (int)meshMem);
+        }
+    }
+
+    /* Store in cache */
+    cached = &g_meshCache[g_meshCacheCount++];
+    cached->boardOffset = entry->boardOffset;
+    cached->mesh = meshMem;
+    cached->collision = collisionMem;
+
+    return cached;
+}
+
+/* ============================================================
+ * Find or load a cached mesh for a board slot
+ * ============================================================ */
+
+static CachedMesh* get_or_load_mesh(void* board, int boardOffset)
+{
+    int i, tryIndex;
+
+    /* Check cache first — look for any cached mesh for this slot */
+    for (i = 0; i < g_meshCacheCount; i++) {
+        if (g_meshCache[i].boardOffset == boardOffset && g_meshCache[i].mesh) {
+            return &g_meshCache[i];
+        }
+    }
+
+    /* Not in cache — try loading from mesh database */
+    for (tryIndex = 0; ; tryIndex++) {
+        const MeshEntry* entry = find_mesh_for_slot(boardOffset, tryIndex);
+        if (!entry) break;
+
+        CachedMesh* cached = jit_load_mesh(board, entry);
+        if (cached) return cached;
+    }
+
+    return NULL;  /* No mesh available for this slot */
+}
+
+/* ============================================================
+ * JIT slot injection: ensure all factory slots are non-NULL
+ *
+ * For each required slot:
+ *   - If already non-NULL, skip (level constructor loaded it)
+ *   - If NULL, try JIT-loading from mesh database
+ *   - Inject loaded mesh into the slot
+ *
+ * Returns the number of slots that were JIT-injected (for later restore).
+ * Saves original values in the provided arrays.
+ * ============================================================ */
+
+#define MAX_INJECTED_SLOTS 16
+
+typedef struct {
+    int boardOffset;
+    void* originalValue;      /* what was there before (NULL if empty) */
+    void* injectedMesh;       /* mesh we injected (NULL if we didn't inject) */
+    void* injectedCollision;  /* collision we injected (or NULL) */
+    int collisionOffset;      /* where collision was injected (0 = nowhere) */
+} InjectedSlot;
+
+static int ensure_slots_loaded(void* board, const SafeFactory* sf,
+                                 InjectedSlot* injected, int maxInjected)
+{
+    int j;
+    int injectCount = 0;
+
+    for (j = 0; sf->slots[j] != 0; j++) {
+        int offset = sf->slots[j];
+        void* currentVal = *(void**)((char*)board + offset);
+
+        if (currentVal != NULL) continue;  /* already loaded */
+
+        if (injectCount >= maxInjected) break;
+
+        /* Try to JIT-load this slot */
+        CachedMesh* cached = get_or_load_mesh(board, offset);
+        if (!cached) continue;  /* can't load — will be caught by safety check */
+
+        /* Save original (NULL) and inject */
+        injected[injectCount].boardOffset = offset;
+        injected[injectCount].originalValue = currentVal;  /* NULL */
+        injected[injectCount].injectedMesh = cached->mesh;
+        injected[injectCount].injectedCollision = cached->collision;
+        injected[injectCount].collisionOffset = 0;
+
+        /* Inject mesh */
+        *(void**)((char*)board + offset) = cached->mesh;
+
+        /* Inject collision if available and the next slot in the list needs it */
+        if (cached->collision) {
+            /* Find if the next slot in the factory's list is the collision offset */
+            int nextOffset = sf->slots[j + 1];
+            if (nextOffset != 0) {
+                void* nextVal = *(void**)((char*)board + nextOffset);
+                if (nextVal == NULL) {
+                    *(void**)((char*)board + nextOffset) = cached->collision;
+                    injected[injectCount].collisionOffset = nextOffset;
+                    j++;  /* skip the collision slot, it's now filled */
+                }
+            }
+        }
+
+        injectCount++;
+    }
+
+    return injectCount;
+}
+
+/* Restore injected slots to their original values */
+static void restore_injected_slots(void* board, InjectedSlot* injected, int count)
+{
+    int i;
+    for (i = 0; i < count; i++) {
+        *(void**)((char*)board + injected[i].boardOffset) = injected[i].originalValue;
+        if (injected[i].collisionOffset) {
+            /* Restore collision slot — it was NULL before we injected */
+            void* origCol = NULL;  /* we only inject into NULL slots */
+            *(void**)((char*)board + injected[i].collisionOffset) = origCol;
+        }
+    }
+}
+
+/* ============================================================
  * Safety check: verify all required board slots are non-NULL
+ * (after JIT injection attempt)
  * ============================================================ */
 
 static int factory_slots_safe(void* board, const SafeFactory* sf)
@@ -218,10 +468,14 @@ static int factory_slots_safe(void* board, const SafeFactory* sf)
  * Flow:
  *   1. Call the original factory (from board's vtable[33])
  *   2. If it returned an object, clone if static-mesh, return
- *   3. If not, try each Arena factory in order (with safety checks)
- *   4. For difficulty-gated objects, temporarily set App+0x23C = 1
- *   5. If a factory returned an object, clone if static-mesh, return
- *   6. Return NULL if nothing handled it
+ *   3. If not, try each Arena factory in order:
+ *      a. JIT-load any missing mesh slots from disk
+ *      b. Safety-check all slots are non-NULL
+ *      c. For difficulty-gated objects, temporarily set App+0x23C = 1
+ *      d. Call the factory
+ *      e. Restore board slots and difficulty
+ *   4. If a factory returned an object, clone if static-mesh, return
+ *   5. Return NULL if nothing handled it
  * ============================================================ */
 
 static void __thiscall universal_factory(
@@ -233,6 +487,8 @@ static void __thiscall universal_factory(
     int i;
     int savedDiff = 0;
     int needDiffBypass = 0;
+    InjectedSlot injected[MAX_INJECTED_SLOTS];
+    int injectCount = 0;
 
     /* Initialize outputs */
     *outObj = NULL;
@@ -270,9 +526,16 @@ static void __thiscall universal_factory(
         if (sf->func == original)
             continue;
 
+        /* JIT load any missing mesh slots */
+        injectCount = ensure_slots_loaded(board, sf, injected, MAX_INJECTED_SLOTS);
+
         /* Safety check: verify all required board slots are non-NULL */
-        if (!factory_slots_safe(board, sf))
+        if (!factory_slots_safe(board, sf)) {
+            /* Restore anything we injected */
+            if (injectCount > 0)
+                restore_injected_slots(board, injected, injectCount);
             continue;
+        }
 
         /* Clear outputs before calling */
         *outObj = NULL;
@@ -280,6 +543,10 @@ static void __thiscall universal_factory(
 
         /* Call the factory */
         sf->func(board, refName, outObj, outCol, refEntry);
+
+        /* Restore injected slots */
+        if (injectCount > 0)
+            restore_injected_slots(board, injected, injectCount);
 
         if (*outObj != NULL) {
             /* This factory handled it — clone if static-mesh */
@@ -311,13 +578,6 @@ static void __thiscall universal_factory(
 
 /* ============================================================
  * Hook installation
- *
- * Patches the CALL at 0x0040C4BA:
- *   Original:  FF 90 84 00 00 00  (CALL dword ptr [EAX + 0x84])
- *   Patched:   E8 XX XX XX XX 90  (CALL rel32 + NOP)
- *
- * The calling convention is already set up by the caller:
- *   ECX = board, stack has 4 args (refName, &outObj, &outCol, refEntry)
  * ============================================================ */
 
 static void install_hook(void)
@@ -327,25 +587,19 @@ static void install_hook(void)
     DWORD rel32;
     DWORD oldProt;
 
-    /* Save original bytes */
     memcpy(g_origBytes, callSite, 6);
 
-    /* Calculate relative offset: target - (callSite + 5) */
     rel32 = (DWORD)universal_factory - (DWORD)(callSite + 5);
 
-    /* Build patch: E8 rel32 90 (CALL rel32 + NOP) */
     patch[0] = 0xE8;
     *(DWORD*)(patch + 1) = rel32;
-    patch[5] = 0x90; /* NOP */
+    patch[5] = 0x90;
 
-    /* Write patch */
     VirtualProtect(callSite, 6, PAGE_EXECUTE_READWRITE, &oldProt);
     memcpy(callSite, patch, 6);
     VirtualProtect(callSite, 6, oldProt, &oldProt);
 
-    /* Flush instruction cache */
     FlushInstructionCache(GetCurrentProcess(), callSite, 6);
-
     g_hooked = TRUE;
 }
 
@@ -366,13 +620,6 @@ static void remove_hook(void)
 
 /* ============================================================
  * BASS Proxy (v3 lazy loader pattern)
- *
- * Loads bass_real.dll on first BASS call (NOT in DllMain).
- * If bass_real.dll exists, all calls forwarded.
- * If missing, stubs return 0 (no audio, but no crash).
- *
- * CRITICAL: Each function's param count MUST match the real
- * BASS function's stack cleanup. See skill hamsterball-dll-modding.
  * ============================================================ */
 
 static HMODULE g_realBass = NULL;
@@ -395,11 +642,6 @@ static void load_real_bass(void)
         return stub_ret; \
     }
 
-/* The 10 BASS functions the game imports.
- * Param counts verified from working bass.dll mods.
- * BASS_MusicLoad has 6 params (QWORD offset counts as 2 DWORDs = 8 bytes
- * but BASS 32-bit packs it differently — 6 params works, 4 doesn't).
- */
 DEFINE_BASS_FORWARDED(BASS_Init,              int,     (int a, int b, int c, HWND d, void* e), (a,b,c,d,e), 0)
 DEFINE_BASS_FORWARDED(BASS_Free,              int,     (void), (), 0)
 DEFINE_BASS_FORWARDED(BASS_GetVersion,        DWORD,   (void), (), 0)
@@ -410,13 +652,11 @@ DEFINE_BASS_FORWARDED(BASS_SetConfig,         int,     (DWORD a, DWORD b), (a,b)
 DEFINE_BASS_FORWARDED(BASS_GetConfig,         DWORD,   (DWORD a), (a), 0)
 DEFINE_BASS_FORWARDED(BASS_SetVolume,         int,     (float a), (a), 0)
 DEFINE_BASS_FORWARDED(BASS_GetVolume,         float,   (void), (), 0)
-
-/* Additional BASS functions the game may call */
 DEFINE_BASS_FORWARDED(BASS_ChannelPlay,        int,     (DWORD a, int b), (a,b), 0)
-DEFINE_BASS_FORWARDED(BASS_ChannelStop,        int,     (DWORD a), (a), 0)
-DEFINE_BASS_FORWARDED(BASS_ChannelSetAttribute, int,     (DWORD a, DWORD b, float c), (a,b,c), 0)
-DEFINE_BASS_FORWARDED(BASS_ChannelGetAttribute, int,     (DWORD a, DWORD b, float* c), (a,b,c), 0)
-DEFINE_BASS_FORWARDED(BASS_SampleCreate,       void*,   (DWORD a, DWORD b, DWORD c, DWORD d, DWORD e), (a,b,c,d,e), 0)
+DEFINE_BASS_FORWARDED(BASS_ChannelStop,       int,     (DWORD a), (a), 0)
+DEFINE_BASS_FORWARDED(BASS_ChannelSetAttribute, int,    (DWORD a, DWORD b, float c), (a,b,c), 0)
+DEFINE_BASS_FORWARDED(BASS_ChannelGetAttribute, int,    (DWORD a, DWORD b, float* c), (a,b,c), 0)
+DEFINE_BASS_FORWARDED(BASS_SampleCreate,      void*,   (DWORD a, DWORD b, DWORD c, DWORD d, DWORD e), (a,b,c,d,e), 0)
 
 /* ============================================================
  * DLL Entry Point
@@ -427,8 +667,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
     switch (fdwReason)
     {
     case DLL_PROCESS_ATTACH:
-        /* Do NOT load bass_real.dll here — use lazy loading on first BASS call.
-         * Loading in DllMain deadlocks on real Windows (loader lock). */
         install_hook();
         break;
 
