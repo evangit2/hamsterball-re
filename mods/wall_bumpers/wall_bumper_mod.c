@@ -1,27 +1,35 @@
 /*
- * wall_bumper_mod.c — ALL WALLS ARE BUMPERS
+ * wall_bumper_mod.c — ALL WALLS ARE BUMPERS (v2)
  *
- * Hooks Ball_FallUpdate (0x00408830) — the player's physics/collision
- * function. After the original runs, we scan the collision entry list
- * for type==2 (wall) hits. For each wall hit, we push the ball away
- * from the wall surface along the collision normal, simulating a
- * pinball bumper effect on EVERY wall in the game.
+ * Hooks Ball_AI_ChaseNearest (0x00408390) — the player's per-frame update
+ * function that IS called every frame for the player in race mode.
+ * After the original runs (force applied, physics processed), we scan
+ * the collision entry list on the PhysicsObject for type==2 (wall) hits.
+ * For each wall hit, we push the ball away from the wall surface along
+ * the collision normal and amplify velocity — simulating a pinball bumper.
  *
- * Also sets ball+0x808 (speed_boost counter) briefly to disable player
- * input during the bumper launch — just like real Hamsterball bumpers do.
+ * v1 FAILED: hooked Ball_FallUpdate (0x408830) — DEAD CODE, never called
+ *             for the player in race mode (no code xrefs, only vtable DATA ref).
+ * v2: Hooks Ball_AI_ChaseNearest (0x408390) which IS called for the player.
+ *      Scans collision entries AFTER the original function returns. The
+ *      collision entries from the previous frame's physics step persist
+ *      in the PhysicsObject's collision list until the next frame.
+ *
+ * Also sets ball+0x808 (speed_boost counter) to briefly disable player
+ * input during the bumper launch — same mechanism real Hamsterball bumpers use.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * HOOK DETAILS
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Target:   Ball_FallUpdate at 0x00408830 (__thiscall, ECX = ball)
+ * Target:   Ball_AI_ChaseNearest at 0x00408390 (__thiscall, ECX = ball)
  *
- * First instructions (7 bytes total — crosses instruction boundary):
- *   0x408830: 6A FF                 PUSH -1           (2 bytes)
- *   0x408832: 68 57 94 4C 00        PUSH 0x004C9457   (5 bytes)
+ * First instructions (6 bytes total — clean instruction boundary):
+ *   0x408390: 83 EC 30           SUB ESP,0x30     (3 bytes)
+ *   0x408393: 56                 PUSH ESI         (1 byte)
+ *   0x408394: 8B F1              MOV ESI,ECX      (2 bytes)
  *
- * A 5-byte JMP covers 0x408830-0x408834 (2+3 partial), so we need 7 bytes
- * total: 5-byte JMP + 2 NOPs. Trampoline = original 7 bytes + JMP to 0x408837.
+ * 5-byte JMP + 1 NOP = 6 bytes. Trampoline = 6 original bytes + JMP to 0x408396.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * BUILD
@@ -49,157 +57,167 @@
  * BASS Proxy Exports — v3 lazy loader with stub fallback
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static HMODULE g_hRealBass = NULL;
-static int g_bass_tried_load = 0;
+typedef void (WINAPI *BASS_FUNC)();
 
-static void load_real_bass(void) {
-    g_bass_tried_load = 1;
-    char path[MAX_PATH];
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-    char *slash = strrchr(path, '\\');
-    if (slash) strcpy(slash + 1, "bass_real.dll");
-    else strcpy(path, "bass_real.dll");
-    g_hRealBass = LoadLibraryA(path);
-}
-
-#define DEFINE_BASS_FORWARDED(name, ret_type, params, args, stub_ret) \
-    typedef ret_type (__stdcall *name##_t) params; \
-    static name##_t real_##name = NULL; \
-    __declspec(dllexport) ret_type __stdcall name params { \
-        if (!g_bass_tried_load) load_real_bass(); \
-        if (g_hRealBass && !real_##name) \
-            real_##name = (name##_t)GetProcAddress(g_hRealBass, #name); \
-        if (real_##name) return real_##name args; \
-        return stub_ret; \
+/* Forward declarations for BASS functions we proxy */
+#define DEFINE_BASS_FORWARDED(name, ordinal) \
+    static BASS_FUNC g_pfn_##name = NULL; \
+    __declspec(dllexport) void WINAPI name() { \
+        if (!g_pfn_##name) { \
+            HMODULE h = LoadLibraryA("bass_real.dll"); \
+            if (h) g_pfn_##name = (BASS_FUNC)GetProcAddress(h, #name); \
+        } \
+        if (g_pfn_##name) g_pfn_##name(); \
     }
 
-DEFINE_BASS_FORWARDED(BASS_Init,
-    int, (int a, DWORD b, DWORD c, HWND d, void* e), (a,b,c,d,e), 1)
-DEFINE_BASS_FORWARDED(BASS_Free,
-    int, (void), (), 1)
-DEFINE_BASS_FORWARDED(BASS_Start,
-    int, (void), (), 1)
-DEFINE_BASS_FORWARDED(BASS_Stop,
-    int, (void), (), 1)
-DEFINE_BASS_FORWARDED(BASS_SetConfig,
-    int, (DWORD a, DWORD b), (a,b), 1)
-DEFINE_BASS_FORWARDED(BASS_ErrorGetCode,
-    int, (void), (), 0)
-DEFINE_BASS_FORWARDED(BASS_MusicLoad,
-    DWORD, (int a, void* b, DWORD c, DWORD d, DWORD e, DWORD f), (a,b,c,d,e,f), 0)
-DEFINE_BASS_FORWARDED(BASS_MusicPlayEx,
-    int, (DWORD a, DWORD b, BOOL c), (a,b,c), 1)
-DEFINE_BASS_FORWARDED(BASS_MusicFree,
-    int, (DWORD a), (a), 1)
-DEFINE_BASS_FORWARDED(BASS_ChannelSetAttributes,
-    int, (DWORD a, float b, int c, int d), (a,b,c,d), 1)
-DEFINE_BASS_FORWARDED(BASS_ChannelStop,
-    int, (DWORD a), (a), 1)
+/* Forward all BASS exports to bass_real.dll */
+DEFINE_BASS_FORWARDED(BASS_Init, 1)
+DEFINE_BASS_FORWARDED(BASS_Free, 2)
+DEFINE_BASS_FORWARDED(BASS_GetVersion, 3)
+DEFINE_BASS_FORWARDED(BASS_ErrorGetCode, 4)
+DEFINE_BASS_FORWARDED(BASS_SetDevice, 5)
+DEFINE_BASS_FORWARDED(BASS_GetDevice, 6)
+DEFINE_BASS_FORWARDED(BASS_Start, 7)
+DEFINE_BASS_FORWARDED(BASS_Stop, 8)
+DEFINE_BASS_FORWARDED(BASS_Pause, 9)
+DEFINE_BASS_FORWARDED(BASS_SetVolume, 10)
+DEFINE_BASS_FORWARDED(BASS_GetVolume, 11)
+DEFINE_BASS_FORWARDED(BASS_PluginLoad, 12)
+DEFINE_BASS_FORWARDED(BASS_PluginFree, 13)
+DEFINE_BASS_FORWARDED(BASS_MusicLoad, 14)
+DEFINE_BASS_FORWARDED(BASS_MusicFree, 15)
+DEFINE_BASS_FORWARDED(BASS_SampleLoad, 16)
+DEFINE_BASS_FORWARDED(BASS_SampleCreate, 17)
+DEFINE_BASS_FORWARDED(BASS_SampleFree, 18)
+DEFINE_BASS_FORWARDED(BASS_SampleGetChannel, 19)
+DEFINE_BASS_FORWARDED(BASS_SampleStop, 20)
+DEFINE_BASS_FORWARDED(BASS_ChannelPlay, 21)
+DEFINE_BASS_FORWARDED(BASS_ChannelStop, 22)
+DEFINE_BASS_FORWARDED(BASS_ChannelPause, 23)
+DEFINE_BASS_FORWARDED(BASS_ChannelSetPosition, 24)
+DEFINE_BASS_FORWARDED(BASS_ChannelGetPosition, 25)
+DEFINE_BASS_FORWARDED(BASS_ChannelSetSync, 26)
+DEFINE_BASS_FORWARDED(BASS_ChannelRemoveSync, 27)
+DEFINE_BASS_FORWARDED(BASS_ChannelGetLevel, 28)
+DEFINE_BASS_FORWARDED(BASS_ChannelGetData, 29)
+DEFINE_BASS_FORWARDED(BASS_ChannelSetAttribute, 30)
+DEFINE_BASS_FORWARDED(BASS_ChannelGetAttribute, 31)
+DEFINE_BASS_FORWARDED(BASS_ChannelGetInfo, 32)
+DEFINE_BASS_FORWARDED(BASS_ChannelFlags, 33)
+DEFINE_BASS_FORWARDED(BASS_ChannelUpdate, 34)
+DEFINE_BASS_FORWARDED(BASS_StreamCreateFile, 35)
+DEFINE_BASS_FORWARDED(BASS_StreamFree, 36)
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Game Constants
+ * Game Constants & Struct Offsets
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define IMAGE_BASE          0x00400000
-#define ADDR_BallFallUpdate (IMAGE_BASE + 0x0008830)  /* 0x00408830 */
-#define ADDR_App            0x005341E0
+#define APP_PTR                0x005341E0
+#define HOOK_TARGET            0x00408390
+#define HOOK_SIZE              6
+#define TRAMPOLINE_SIZE        (HOOK_SIZE + 5)
 
 /* Ball struct offsets */
-#define BALL_POS_X          0x164    /* float */
-#define BALL_POS_Y          0x168    /* float */
-#define BALL_POS_Z          0x16C    /* float */
-#define BALL_PHYSICS        0x1A4    /* void* → PhysicsObject */
-#define BALL_SPEED_BOOST    0x808    /* int: decrement each frame, disables input */
+#define BALL_PHYSICS           0x1A4   /* void* PhysicsObject */
+#define BALL_POS_X             0x164   /* float */
+#define BALL_POS_Y             0x168   /* float */
+#define BALL_POS_Z             0x16C   /* float */
+#define BALL_SPEED_BOOST       0x808   /* int: speed_boost counter */
+#define BALL_FALLING_FLAG      0x2F9   /* byte: 1 when falling/despawning */
 
 /* PhysicsObject struct offsets */
-#define PHYS_COLLISION_COUNT  0x1C   /* int */
-#define PHYS_COLLISION_ARRAY  0x424  /* void**: array of CollisionEntry* */
-#define PHYS_SPEED            0xC64  /* float: speed magnitude */
-#define PHYS_VEL_X            0xC98  /* float: velocity X */
-#define PHYS_VEL_Y            0xC9C  /* float: velocity Y */
-#define PHYS_VEL_Z            0xCA0  /* float: velocity Z */
+#define PHYS_COLLISION_COUNT   0x1C    /* int */
+#define PHYS_COLLISION_ARRAY   0x424   /* void**: array of CollisionEntry* */
+#define PHYS_SPEED             0xC64   /* float: speed magnitude */
+#define PHYS_VEL_X             0xC98   /* float: velocity X */
+#define PHYS_VEL_Y             0xC9C   /* float: velocity Y */
+#define PHYS_VEL_Z             0xCA0   /* float: velocity Z */
 
 /* CollisionEntry struct offsets */
-#define ENTRY_TYPE       0x00   /* int32: 1=ball-ball, 2=wall, 5=floor */
-#define ENTRY_NORMAL_X   0x20   /* float */
-#define ENTRY_NORMAL_Y   0x24   /* float */
-#define ENTRY_NORMAL_Z   0x28   /* float */
+#define ENTRY_TYPE             0x00    /* int32: 1=ball-ball, 2=wall, 5=floor */
+#define ENTRY_NORMAL_X         0x20    /* float: surface normal X */
+#define ENTRY_NORMAL_Y         0x24    /* float: surface normal Y */
+#define ENTRY_NORMAL_Z         0x28    /* float: surface normal Z */
 
-/* Original bytes at Ball_FallUpdate entry (7 bytes = 2 instructions) */
-static const BYTE ORIG_BYTES[7] = {
-    0x6A, 0xFF,                          /* PUSH -1 */
-    0x68, 0x57, 0x94, 0x4C, 0x00         /* PUSH 0x004C9457 */
-};
-
-/* Detour size: 5-byte JMP + 2 NOPs = 7 bytes */
-#define DETOUR_SIZE 7
-#define TRAMP_SIZE  16  /* 7 original + 5 JMP + padding */
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * State
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static unsigned char g_trampoline[TRAMP_SIZE];
-static int g_hook_installed = 0;
-
-/* __thiscall workaround: __fastcall with dummy EDX */
-typedef void (__fastcall *BallFallUpdate_t)(void *ball, void *edx_dummy);
-static BallFallUpdate_t g_orig_BallFallUpdate = NULL;
-
-/* Mod state */
-static volatile int g_mod_enabled = 1;
-static volatile int g_force_index = 0;
+/* Bumper force presets */
 static const float BUMPER_FORCES[] = { 40.0f, 60.0f, 80.0f, 120.0f, 200.0f };
 #define NUM_FORCES (sizeof(BUMPER_FORCES) / sizeof(BUMPER_FORCES[0]))
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Safe Memory Read
+ * Globals
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int safe_read(void *addr, void *dest, size_t len) {
-    if (!addr || !dest || len == 0) return 0;
-    if (IsBadReadPtr(addr, len)) return 0;
-    memcpy(dest, addr, len);
-    return 1;
-}
+static int g_mod_enabled = 1;
+static int g_force_index = 2;  /* default: 80 */
+static void *g_trampoline = NULL;
+static int g_initialized = 0;
 
-static float safe_read_float(void *addr) {
-    float val = 0.0f;
-    safe_read(addr, &val, 4);
-    return val;
+/* Keyboard state (DIK codes) */
+#define DIK_F8  0x42
+#define DIK_F9  0x43
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Safe Memory Access
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int safe_read(void *addr, void *dest, int size) {
+    if (!addr || IsBadReadPtr(addr, size)) return 0;
+    memcpy(dest, addr, size);
+    return 1;
 }
 
 static int safe_read_int(void *addr) {
     int val = 0;
-    safe_read(addr, &val, 4);
+    if (!safe_read(addr, &val, sizeof(val))) return 0;
     return val;
 }
 
+static float safe_read_float(void *addr) {
+    float val = 0.0f;
+    if (!safe_read(addr, &val, sizeof(val))) return 0.0f;
+    return val;
+}
+
+/* Fast inverse square root (Quake III style) */
+static float fast_inv_sqrt(float x) {
+    union { float f; DWORD d; } inv;
+    DWORD i = *(DWORD*)&x;
+    i = 0x5f3759df - (i >> 1);
+    inv.d = i;
+    inv.f *= (1.5f - 0.5f * x * inv.f * inv.f);
+    return inv.f;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
- * Hook: Ball_FallUpdate
+ * Hook: Ball_AI_ChaseNearest
  *
- * After the original function completes:
- * 1. Read collision entries from physics object
- * 2. For each type==2 (wall) entry, read the wall normal
- * 3. Push ball position along the normal by BUMPER_FORCE
- * 4. Set ball+0x808 (speed_boost) for brief input disable
+ * Called every frame for the player ball in race mode.
+ * After the original runs, we scan the PhysicsObject's collision list
+ * for wall hits (type==2) and apply a pinball bumper effect.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void __fastcall hook_BallFallUpdate(void *ball, void *edx_dummy) {
-    /* Call original function via trampoline */
-    if (g_orig_BallFallUpdate)
-        g_orig_BallFallUpdate(ball, edx_dummy);
+typedef void (__fastcall *BallAIChaseNearest_t)(void *ball, void *edx_dummy);
+static BallAIChaseNearest_t g_orig_BallAIChaseNearest = NULL;
+
+static void __fastcall hook_BallAIChaseNearest(void *ball, void *edx_dummy) {
+    /* Call original function first (applies input force, AI logic, etc.) */
+    if (g_orig_BallAIChaseNearest)
+        g_orig_BallAIChaseNearest(ball, edx_dummy);
 
     if (!g_mod_enabled) return;
     if (!ball || IsBadReadPtr(ball, 0x200)) return;
 
-    /* Get physics object from ball+0x1A4 */
+    /* Don't process when ball is falling/despawning */
+    if (safe_read_int((char*)ball + BALL_FALLING_FLAG))
+        return;
+
+    /* Get PhysicsObject from ball+0x1A4 */
     void *physics = NULL;
     if (!safe_read((char*)ball + BALL_PHYSICS, &physics, sizeof(physics)) || !physics)
         return;
     if (IsBadReadPtr(physics, 0x428)) return;
 
-    /* Read collision count and array */
+    /* Read collision count and array from PhysicsObject */
     int count = safe_read_int((char*)physics + PHYS_COLLISION_COUNT);
     if (count <= 0 || count > 200) return;
 
@@ -227,18 +245,12 @@ static void __fastcall hook_BallFallUpdate(void *ball, void *edx_dummy) {
 
             /* Normalize (game normals are usually already normalized, but be safe) */
             float mag = nx*nx + ny*ny + nz*nz;
-            if (mag > 0.0001f && mag != 1.0f) {
-                /* Already normalized if mag ≈ 1.0; skip sqrt if close */
+            if (mag > 0.0001f) {
                 if (mag < 0.99f || mag > 1.01f) {
-                    /* Approximate normalize without math.h */
-                    union { float f; DWORD d; } inv_sqrt;
-                    DWORD i = *(DWORD*)&mag;
-                    i = 0x5f3759df - (i >> 1);
-                    inv_sqrt.d = i;
-                    inv_sqrt.f *= (1.5f - 0.5f * mag * inv_sqrt.f * inv_sqrt.f);
-                    nx *= inv_sqrt.f;
-                    ny *= inv_sqrt.f;
-                    nz *= inv_sqrt.f;
+                    float inv = fast_inv_sqrt(mag);
+                    nx *= inv;
+                    ny *= inv;
+                    nz *= inv;
                 }
             }
 
@@ -258,14 +270,10 @@ static void __fastcall hook_BallFallUpdate(void *ball, void *edx_dummy) {
     if (wall_hits > 1) {
         float mag = push_x*push_x + push_y*push_y + push_z*push_z;
         if (mag > 0.0001f) {
-            union { float f; DWORD d; } inv_sqrt;
-            DWORD i = *(DWORD*)&mag;
-            i = 0x5f3759df - (i >> 1);
-            inv_sqrt.d = i;
-            inv_sqrt.f *= (1.5f - 0.5f * mag * inv_sqrt.f * inv_sqrt.f);
-            push_x *= inv_sqrt.f;
-            push_y *= inv_sqrt.f;
-            push_z *= inv_sqrt.f;
+            float inv = fast_inv_sqrt(mag);
+            push_x *= inv;
+            push_y *= inv;
+            push_z *= inv;
         }
     }
 
@@ -274,11 +282,8 @@ static void __fastcall hook_BallFallUpdate(void *ball, void *edx_dummy) {
     *(float*)((char*)ball + BALL_POS_Y) += push_y * force;
     *(float*)((char*)ball + BALL_POS_Z) += push_z * force;
 
-    /* Reflect & amplify velocity along wall normal (prevents the ball
-     * from immediately flying back into the wall next frame).
-     * v' = v - 2*(v·n)*n + n*force  (reflection + outward boost)
-     * We use a simplified approach: overwrite velocity with the
-     * push direction × force. This gives a clean "launch" effect. */
+    /* Overwrite velocity along wall normal (prevents the ball from
+     * immediately flying back into the wall next frame) */
     if (!IsBadReadPtr(physics, 0xCA4)) {
         *(float*)((char*)physics + PHYS_VEL_X) = push_x * force;
         *(float*)((char*)physics + PHYS_VEL_Y) = push_y * force;
@@ -292,145 +297,93 @@ static void __fastcall hook_BallFallUpdate(void *ball, void *edx_dummy) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Detour Installation (7-byte: 5-byte JMP + 2 NOPs)
+ * Detour Installation (6-byte: 5-byte JMP + 1 NOP)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int install_detour(void *target, void *hook, unsigned char *trampoline) {
-    DWORD oldProtect;
-    unsigned char *t = (unsigned char *)target;
+static void install_detour(void) {
+    DWORD old_protect;
+    BYTE *target = (BYTE*)HOOK_TARGET;
+    BYTE jump_instr[5] = { 0xE9, 0, 0, 0, 0 };
 
-    /* Verify original bytes match */
-    if (memcmp(t, ORIG_BYTES, DETOUR_SIZE) != 0)
-        return 0;
+    /* Allocate trampoline */
+    g_trampoline = VirtualAlloc(NULL, TRAMPOLINE_SIZE + 16,
+                                 MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_trampoline) return;
 
-    if (!VirtualProtect(t, TRAMP_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect))
-        return 0;
+    BYTE *tramp = (BYTE*)g_trampoline;
 
-    /* Copy original 7 bytes to trampoline */
-    memcpy(trampoline, t, DETOUR_SIZE);
+    /* Copy original bytes to trampoline */
+    memcpy(tramp, target, HOOK_SIZE);
 
-    /* Append JMP rel32 back to target+7 */
-    trampoline[DETOUR_SIZE] = 0xE9;  /* JMP rel32 */
-    *(unsigned long *)(trampoline + DETOUR_SIZE + 1) =
-        (unsigned long)((char *)target + DETOUR_SIZE - (char *)(trampoline + DETOUR_SIZE) - 5);
+    /* Add JMP from trampoline back to target+HOOK_SIZE */
+    tramp[HOOK_SIZE] = 0xE9;
+    DWORD rel_addr = (DWORD)target + HOOK_SIZE - ((DWORD)tramp + HOOK_SIZE + 5);
+    *(DWORD*)(tramp + HOOK_SIZE + 1) = rel_addr;
 
-    /* Make trampoline executable */
-    DWORD tp;
-    VirtualProtect(trampoline, TRAMP_SIZE, PAGE_EXECUTE_READWRITE, &tp);
+    /* Set up function pointer to trampoline */
+    g_orig_BallAIChaseNearest = (BallAIChaseNearest_t)tramp;
 
-    /* Overwrite target: JMP rel32 to hook (5 bytes) + 2 NOPs */
-    unsigned long rel = (unsigned long)((char *)hook - (char *)target - 5);
-    t[0] = 0xE9;
-    *(unsigned long *)(t + 1) = rel;
-    t[5] = 0x90;  /* NOP */
-    t[6] = 0x90;  /* NOP */
+    /* Write JMP from target to hook function */
+    DWORD hook_addr = (DWORD)hook_BallAIChaseNearest;
+    rel_addr = hook_addr - ((DWORD)target + 5);
+    jump_instr[1] = rel_addr & 0xFF;
+    jump_instr[2] = (rel_addr >> 8) & 0xFF;
+    jump_instr[3] = (rel_addr >> 16) & 0xFF;
+    jump_instr[4] = (rel_addr >> 24) & 0xFF;
 
-    FlushInstructionCache(GetCurrentProcess(), target, DETOUR_SIZE);
-    return 1;
+    VirtualProtect(target, HOOK_SIZE, PAGE_EXECUTE_READWRITE, &old_protect);
+    memcpy(target, jump_instr, 5);
+    target[5] = 0x90;  /* NOP */
+    VirtualProtect(target, HOOK_SIZE, old_protect, &old_protect);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Keyboard Polling Thread
+ * Keyboard Handling
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static DWORD WINAPI key_poll_thread(LPVOID param) {
-    (void)param;
-    int f8_was_down = 0;
-    int f9_was_down = 0;
-
-    while (1) {
-        /* F8 — toggle mod on/off */
-        int f8 = GetAsyncKeyState(VK_F8) & 0x8000;
-        if (f8 && !f8_was_down) {
-            g_mod_enabled = !g_mod_enabled;
-            char msg[128];
-            wsprintfA(msg, "Wall Bumpers: %s\nForce: %.0f",
-                      g_mod_enabled ? "ON" : "OFF",
-                      BUMPER_FORCES[g_force_index]);
-            MessageBoxA(NULL, msg, "Wall Bumper Mod", MB_OK | MB_ICONINFORMATION);
-        }
-        f8_was_down = f8;
-
-        /* F9 — cycle bumper force */
-        int f9 = GetAsyncKeyState(VK_F9) & 0x8000;
-        if (f9 && !f9_was_down) {
-            g_force_index = (g_force_index + 1) % NUM_FORCES;
-            char msg[128];
-            wsprintfA(msg, "Bumper Force: %.0f", BUMPER_FORCES[g_force_index]);
-            MessageBoxA(NULL, msg, "Wall Bumper Mod", MB_OK | MB_ICONINFORMATION);
-        }
-        f9_was_down = f9;
-
-        Sleep(50);  /* poll every 50ms */
+static void handle_keyboard(void) {
+    /* Check F8 (toggle) */
+    if (GetAsyncKeyState(DIK_F8) & 0x8000) {
+        g_mod_enabled = !g_mod_enabled;
+        Sleep(200);  /* debounce */
     }
-    return 0;
+
+    /* Check F9 (cycle force) */
+    if (GetAsyncKeyState(DIK_F9) & 0x8000) {
+        g_force_index = (g_force_index + 1) % NUM_FORCES;
+        Sleep(200);  /* debounce */
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Patch Thread
+ * Main Thread
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static DWORD WINAPI patch_thread(LPVOID param) {
-    (void)param;
-
+static DWORD WINAPI main_thread(LPVOID param) {
     /* Wait for game to fully load */
-    int wait = 0;
-    while (!(*(DWORD*)ADDR_App) && wait < 100) {
-        Sleep(100);
-        wait++;
+    Sleep(3000);
+
+    /* Install detour */
+    install_detour();
+    g_initialized = 1;
+
+    /* Main loop — handle keyboard */
+    while (1) {
+        handle_keyboard();
+        Sleep(50);
     }
-    if (!(*(DWORD*)ADDR_App)) return 0;
-    Sleep(500);  /* extra safety margin */
-
-    /* Install detour on Ball_FallUpdate */
-    void *target = (void*)ADDR_BallFallUpdate;
-    g_orig_BallFallUpdate = (BallFallUpdate_t)g_trampoline;
-
-    if (install_detour(target, (void*)hook_BallFallUpdate, g_trampoline)) {
-        g_hook_installed = 1;
-        MessageBoxA(NULL,
-            "Wall Bumper Mod installed!\n\n"
-            "ALL walls now act as pinball bumpers.\n\n"
-            "F8: Toggle on/off (currently ON)\n"
-            "F9: Cycle bumper force (currently 40)",
-            "Wall Bumper Mod", MB_OK | MB_ICONINFORMATION);
-    } else {
-        MessageBoxA(NULL,
-            "Wall Bumper Mod: FAILED to install hook!\n"
-            "Byte mismatch at Ball_FallUpdate (0x408830).\n"
-            "The game may be a different version.",
-            "Wall Bumper Mod Error", MB_OK | MB_ICONERROR);
-    }
-
-    /* Start keyboard polling thread */
-    CreateThread(NULL, 0, key_poll_thread, NULL, 0, NULL);
 
     return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * DLL Entry Point
+ * DllMain
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
-    (void)reserved;
-    switch (reason) {
-    case DLL_PROCESS_ATTACH:
-        DisableThreadLibraryCalls(hInst);
-        CreateThread(NULL, 0, patch_thread, NULL, 0, NULL);
-        break;
-    case DLL_PROCESS_DETACH:
-        /* Restore original bytes */
-        if (g_hook_installed) {
-            DWORD oldProtect;
-            void *target = (void*)ADDR_BallFallUpdate;
-            if (VirtualProtect(target, DETOUR_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-                memcpy(target, ORIG_BYTES, DETOUR_SIZE);
-                VirtualProtect(target, DETOUR_SIZE, oldProtect, &oldProtect);
-                FlushInstructionCache(GetCurrentProcess(), target, DETOUR_SIZE);
-            }
-        }
-        break;
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hinst);
+        CreateThread(NULL, 0, main_thread, NULL, 0, NULL);
     }
     return TRUE;
 }
