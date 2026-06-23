@@ -1,15 +1,15 @@
 /*
- * Function: CreateNoDizzy
+ * Function: DispatchCollisionEvents
  * Address: 0x0040c5d0
- * Signature: CreateNoDizzy(...)
+ * Signature: DispatchCollisionEvents(...)
  *
- * Patterns: vtable dispatch, SEH frame, audio, collision, rendering, ball. Calls: CreateNoDizzy, SetForce, ACTION, TRAJECTORY, __strnicmp, Rotator_MarkTriggered, CheckArenaUnlock, Sprite_DrawColoredRect. Offsets: 61, Lines: 362
+ * Patterns: vtable dispatch, SEH frame, audio, collision, rendering, ball. Calls: DispatchCollisionEvents, SetForce, ACTION, TRAJECTORY, __strnicmp, Rotator_MarkTriggered, CheckArenaUnlock, Sprite_DrawColoredRect. Offsets: 61, Lines: 362
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
-/* CreateNoDizzy (shared collision handler): Dispatches ALL game events -
+/* DispatchCollisionEvents (shared collision handler): Dispatches ALL game events -
    N:SECRET→Rotator_MarkTriggered, N:UNLOCKSECRET→CheckArenaUnlock,
    E:NODIZZY<TIME>N</TIME>→Ball_RecordBest, E:SAFESWITCH→copy parenthesized data to ball+0xC2C,
    E:LIMIT→track arena completions per player, E:BREAK→vtable[0x20] callback,
@@ -19,7 +19,7 @@
    POPOUT→sound+score+100, N:GOAL→finish race sequence, N:MOUSETRAP→deflect+rotator collision
     */
 
-void __thiscall CreateNoDizzy(void *this,int *param_1,int *param_2)
+void __thiscall DispatchCollisionEvents(void *this,int *param_1,int *param_2)
 
 {
   float *pfVar1;

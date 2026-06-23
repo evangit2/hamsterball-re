@@ -217,7 +217,7 @@ From the `InputDevice` constructor (0x466620) disassembly, the default scan-code
 | Escape / Pause | `DIK_ESCAPE` | `0x01` (1) | Escape key |
 | Pause (alt) | `DIK_P` | `0x19` (25) | P key |
 
-> **Important:** There is **no separate "brake" key** — releasing the up/down arrows simply stops applying force.  There is **no "jump" key** in the input system; ball jumping is caused by `E:JUMP` collision events handled in `CreateNoDizzy` (0x40C5D0).
+> **Important:** There is **no separate "brake" key** — releasing the up/down arrows simply stops applying force.  There is **no "jump" key** in the input system; ball jumping is caused by `E:JUMP` collision events handled in `DispatchCollisionEvents` (0x40C5D0).
 
 ### Registry Persistence
 

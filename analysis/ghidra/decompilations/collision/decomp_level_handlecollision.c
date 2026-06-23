@@ -27,7 +27,7 @@
 //   - AND not already bouncing (+0x10F4 == 0)
 //   - Call ball->vtable[0x20] (BounceForce)
 //
-// Always ends with: CreateNoDizzy(this, ball, collider)
+// Always ends with: DispatchCollisionEvents(this, ball, collider)
 
 void __thiscall Level_HandleCollision(Scene *scene, Ball *ball, Collider *collider)
 {
@@ -73,5 +73,5 @@ void __thiscall Level_HandleCollision(Scene *scene, Ball *ball, Collider *collid
     }
   }
   
-  CreateNoDizzy(scene, ball, collider);
+  DispatchCollisionEvents(scene, ball, collider);
 }

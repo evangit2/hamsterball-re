@@ -1375,9 +1375,9 @@
       "address": "0x00436920",
       "signature": "void * __thiscall Rotator_ctor_sound(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5, int param_6)",
       "parameters": "this: Rotator* (vtable3=0x4D5770) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: passed to Stands_ctor | param_6: rotation speed (+0x10EC, defaults to 150 if 0)",
-      "description": "Constructor for Rotator vtable3 variant with sound. Creates CollisionLevel, sets rotation angle=0, timer=60, active=1. Called from CreateSpeedCylinder and CreateLifter.",
+      "description": "Constructor for Rotator vtable3 variant with sound. Creates CollisionLevel, sets rotation angle=0, timer=60, active=1. Called from CreateUpLevelObjects and CreateLifter.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (CollisionLevel), +0x10E4 (angle=0), +0x10E8 (timer=60), +0x10EC (speed), +0x10F0 (active=1)",
-      "xrefs": "2 calls from CreateSpeedCylinder and CreateLifter",
+      "xrefs": "2 calls from CreateUpLevelObjects and CreateLifter",
       "batch": 26
     },
     {
@@ -1457,7 +1457,7 @@
       "parameters": "param_1: Rotator* this \u2014 obstacle to mark",
       "description": "Simple one-liner: sets +0x10E4=1 (triggered flag). Other functions check this to determine if obstacle was activated by ball collision.",
       "struct_offsets": "+0x10E4 (triggered=1)",
-      "xrefs": "1 call from CreateNoDizzy (0x40C617)",
+      "xrefs": "1 call from DispatchCollisionEvents (0x40C617)",
       "batch": 27
     },
     {
@@ -1587,7 +1587,7 @@
       "parameters": "this: Bonk* (vtable=0x4D5120, shared with WarmUp) | param_1: Scene | param_2-4: position X/Y/Z (float)",
       "description": "Constructor for Bonk hammer obstacles in Tower Race (L5). Loads mesh 'levels\\\\level5-bonk', creates CollisionLevel, stores primary+offset positions, looks up IMPACT and HAMMERAREA1 in hash table. Timer max=1000 (16.7s), active=1.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0/+0x10E4/+0x10E8 (offset pos), +0x10EC/+0x10F0/+0x10F4 (impact pos), +0x10F8 (CollisionLevel), +0x10FC (active=1), +0x10FD (triggered=0), +0x1100 (timer=1000), +0x1138 (state=0)",
-      "xrefs": "2 calls from CreateSawblade and CreateLevelObjects",
+      "xrefs": "2 calls from CreateExpertLevelObjects and CreateLevelObjects",
       "batch": 28
     },
     {
@@ -1595,9 +1595,9 @@
       "address": "0x0043a150",
       "signature": "void * __thiscall Gear_Level_ctor(void *this, int param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4)",
       "parameters": "this: Gear* (vtable=0x4D52B8) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z",
-      "description": "Constructor for Gear obstacles. Inherits Level_ctor (not Stands). Random initial rotation (0-9), Y rotation (0-359), rotation speed (100-150), timer=400, active=1. Called from CreateSawblade.",
+      "description": "Constructor for Gear obstacles. Inherits Level_ctor (not Stands). Random initial rotation (0-9), Y rotation (0-359), rotation speed (100-150), timer=400, active=1. Called from CreateExpertLevelObjects.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (initRot 0-9), +0x10E4 (Yrot 0-359), +0x10F4 (active=1), +0x10F8 (timer=400), +0x10FC (speed 100-150)",
-      "xrefs": "1 call from CreateSawblade (0x40E5E2)",
+      "xrefs": "1 call from CreateExpertLevelObjects (0x40E5E2)",
       "batch": 29
     },
     {
@@ -2357,7 +2357,7 @@
       "parameters": "this: RumbleScore* (vtable=0x4D6AEC) | param_1: undefined4 (stored at +4)",
       "description": "Constructor for RumbleScore (arena score display). Stores param_1 at +4, sets vtable 0x4D6AEC. Initializes SSO string at +0x14. Sets scale=1.0f (+0x20). Randomly selects one of 3 scale multipliers (0.02, 0.03, 0.04) via RNG_Rand(0-2). 4+ calls.",
       "struct_offsets": "+0x04 (param_1), +0x14 (SSO string), +0x20 (scale=1.0), +0x24 (random scale mult: 0.02/0.03/0.04)",
-      "xrefs": "4+ calls from Ball_CreateTrailParticles, CreateSpinner, RumbleObject_Update, RaceResults",
+      "xrefs": "4+ calls from Ball_CreateTrailParticles, HandleArenaCollisionEvents, RumbleObject_Update, RaceResults",
       "batch": 36
     },
     {

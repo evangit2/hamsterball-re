@@ -1,9 +1,9 @@
-// CreateSawblade (0x40E250) — Raw Ghidra decompilation
+// CreateExpertLevelObjects (0x40E250) — Raw Ghidra decompilation
 // Multi-factory: handles BONK, TIP (tower), SAWBLADE, BRIDGE (spinner), JUDGE (gear), BELL
 // THIS IS NOT JUST SAWBLADE — it's the arena object sub-dispatcher
 
 void __thiscall
-CreateSawblade(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
+CreateExpertLevelObjects(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
 {
   int iVar1;
   void *pvVar2;

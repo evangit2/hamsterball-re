@@ -1,16 +1,16 @@
 /*
- * Function: CreateSpeedCylinder
+ * Function: CreateUpLevelObjects
  * Address: 0x004117b0
  * Signature: void __thiscall
-CreateSpeedCylinder(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
+CreateUpLevelObjects(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
  *
- * Patterns: allocates, SEH frame. Calls: CreateSpeedCylinder, __strnicmp, _atol, operator_new, Rotator_ctor_sound, AthenaList_Append, __ftol2, Pendulum_ctor. Offsets: 6, Lines: 98
+ * Patterns: allocates, SEH frame. Calls: CreateUpLevelObjects, __strnicmp, _atol, operator_new, Rotator_ctor_sound, AthenaList_Append, __ftol2, Pendulum_ctor. Offsets: 6, Lines: 98
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 void __thiscall
-CreateSpeedCylinder(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
+CreateUpLevelObjects(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
 
 {
   int iVar1;

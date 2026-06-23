@@ -47,7 +47,7 @@
  *   +0x1138: state (0)
  *
  * Cross-references:
- *   Called from CreateSawblade (0x40E2DA) — UNCONDITIONAL_CALL
+ *   Called from CreateExpertLevelObjects (0x40E2DA) — UNCONDITIONAL_CALL
  *   Called from CreateLevelObjects (0x4123A2) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

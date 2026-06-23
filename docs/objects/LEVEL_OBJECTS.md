@@ -163,4 +163,4 @@ the main arena, and some levels have additional sub-levels.
 | 0x46CB00 | App_CreateScoreDisplay | Create score display widget |
 | 0x446A60 | App_CreateHighScoreEntry | Create high score entry |
 | 0x40A420 | CheckPurchaseOrHighScore | Purchase/registration gate |
-| 0x40E250 | CreateSawblade | Master arena factory |
+| 0x40E250 | CreateExpertLevelObjects | Master arena factory |

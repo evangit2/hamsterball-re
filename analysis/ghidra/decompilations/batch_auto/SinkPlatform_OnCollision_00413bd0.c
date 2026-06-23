@@ -3,7 +3,7 @@
  * Address: 0x00413bd0
  * Signature: void __thiscall SinkPlatform_OnCollision(void *this,int *param_1,int *param_2)
  *
- * Patterns: collision, scene. Calls: SinkPlatform_OnCollision, Scene_StartCountdown, CreateNoDizzy. Offsets: 2, Lines: 24
+ * Patterns: collision, scene. Calls: SinkPlatform_OnCollision, Scene_StartCountdown, DispatchCollisionEvents. Offsets: 2, Lines: 24
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -30,6 +30,6 @@ void __thiscall SinkPlatform_OnCollision(void *this,int *param_1,int *param_2)
   if (bVar4) {
     Scene_StartCountdown(*(void **)(*param_2 + 0x47c),(int)param_1);
   }
-  CreateNoDizzy(this,param_1,param_2);
+  DispatchCollisionEvents(this,param_1,param_2);
   return;
 }

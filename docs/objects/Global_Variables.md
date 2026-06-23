@@ -74,7 +74,7 @@ These are the primary game state variables used by the Hamsterball engine.
   - `Scene_UpdateBallsAndState+0x3E4` — main game logic update
   - `Scene_ComputeArenaLighting+0x202` — arena lighting
   - `Board_Master_Update+0x42` — master board update
-  - `CreateBumper+0x7F3`, `CreateSpinner+0x3C0`, `CreateNoDizzy+0x7AC` — object creation
+  - `CreateBumper+0x7F3`, `HandleArenaCollisionEvents+0x3C0`, `DispatchCollisionEvents+0x7AC` — object creation
   - `RumbleBoard_Update+0x331` — arena mode update
   - `Sound_InitChannels+0x90` — audio system init
   - `LoadingScreenGadget_Ctor+0x2E2` — loading screen

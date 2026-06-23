@@ -186,15 +186,15 @@
     },
     {
       "address": "0x004117B0",
-      "name": "CreateSpeedCylinder"
+      "name": "CreateUpLevelObjects"
     },
     {
       "address": "0x00412850",
-      "name": "CreateSpinner"
+      "name": "HandleArenaCollisionEvents"
     },
     {
       "address": "0x0040E250",
-      "name": "CreateSawblade"
+      "name": "CreateExpertLevelObjects"
     },
     {
       "address": "0x0040BF50",
@@ -202,7 +202,7 @@
     },
     {
       "address": "0x0040C5D0",
-      "name": "CreateNoDizzy"
+      "name": "DispatchCollisionEvents"
     },
     {
       "address": "0x00438B30",
@@ -610,7 +610,7 @@
     },
     {
       "address": "0x0040C5D0",
-      "name": "CreateNoDizzy"
+      "name": "DispatchCollisionEvents"
     },
     {
       "address": "0x0040E6A0",

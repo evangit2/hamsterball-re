@@ -61,11 +61,11 @@ CollisionMesh_ctor(this, scene):
 ```
 Scene vtable determines which top-level handler runs:
   ├─ Level_HandleCollision (0x40DCD0) — race levels
-  │    └─→ CreateNoDizzy (0x40C5D0)  ← shared base
+  │    └─→ DispatchCollisionEvents (0x40C5D0)  ← shared base
   └─ Arena_HandleCollision (0x40E6A0) — arenas
-       └─→ CreateNoDizzy (0x40C5D0)  ← shared base
+       └─→ DispatchCollisionEvents (0x40C5D0)  ← shared base
 ```
-Arena and Level handlers are **parallel** — neither calls the other. Both delegate to CreateNoDizzy for universal events.
+Arena and Level handlers are **parallel** — neither calls the other. Both delegate to DispatchCollisionEvents for universal events.
 
 ### Arena Events
 | Event Name | Objects Affected |
@@ -84,7 +84,7 @@ Arena and Level handlers are **parallel** — neither calls the other. Both dele
 | TRAPDOOR | Trapdoor opening |
 | ROTATOR | Rotating platform collision |
 
-### Base Events (CreateNoDizzy)
+### Base Events (DispatchCollisionEvents)
 | Event Name | Description |
 |-----------|-------------|
 | SECRET | Secret area discovered |
@@ -182,6 +182,6 @@ float positions[vertex_count * 3]        // 32-bit float positions
 | 0x456D80 | CollisionMesh_ctor | Collision mesh constructor |
 | 0x40E6A0 | Arena_HandleCollision | Arena collision dispatcher |
 | 0x40DCD0 | Level_HandleCollision | Level collision dispatcher |
-| 0x40C5D0 | CreateNoDizzy | Base collision handler |
+| 0x40C5D0 | DispatchCollisionEvents | Base collision handler |
 | 0x46B070 | WaterRipple_Render | Water ripple collision (physics-based) |
 | 0x415480 | CreateWobbly1 | Wobbly bridge (baked vertex animation) |

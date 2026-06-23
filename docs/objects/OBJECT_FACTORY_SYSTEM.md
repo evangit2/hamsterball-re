@@ -22,7 +22,7 @@ Level data → Named objects parsed from MESHWORLD
   ├─ CreateWobbly1 (0x415460) — WOBBLY1-8 → GameLevel_ctor + falls through
   ├─ CreateMechanicalObjects (0x417FE0) — LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM
   ├─ CreateBumper (0x40FA20) — BUMPER1-4 → MeshWorld + 8x Scene_CollectByNameFilter
-  ├─ CreateSawblade (0x40E250) — Multi-factory for arenas
+  ├─ CreateExpertLevelObjects (0x40E250) — Multi-factory for arenas
   │    ├─ BONK → Bonk_ctor (0x1200 bytes)
   │    ├─ "UP?" → TowerLevel_Ctor (0x1188 bytes)
   │    ├─ SAWBLADE1/2 → Sawblade_Level_Ctor (0x111C bytes)
@@ -33,7 +33,7 @@ Level data → Named objects parsed from MESHWORLD
   ├─ CreateSecretObjects (0x40BAA0) — SECRET / SECRETUNLOCK
   ├─ CreateMouseTrap (0x40BF50) — MOUSETRAP → MouseTrap_ctor
   ├─ CreateLimit (0x410D00) — E:LIMIT → Level collision
-  └─ CreateSpeedCylinder (0x4117B0) — SPEEDCYLINDER
+  └─ CreateUpLevelObjects (0x4117B0) — SPEEDCYLINDER
 ```
 
 ## CreateLevelObjects (0x4121D0) — Detailed
@@ -70,7 +70,7 @@ All objects read position from `param_4` (transform matrix):
 - `param_4+0x14`: Y rotation (also used for scale in some objects)
 - `param_4+0x18`: Z rotation
 
-## CreateSawblade (0x40E250) — Arena Multi-Factory
+## CreateExpertLevelObjects (0x40E250) — Arena Multi-Factory
 
 This is actually a combined factory that handles **6 different object types**
 for arena levels. All created objects get multiplayer gating (`App+0x23C`).

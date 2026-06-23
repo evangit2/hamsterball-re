@@ -4,7 +4,7 @@
  *
  * Description:
  *
-Collision event handler for limit objects (like CreateNoDizzy but with additional events).
+Collision event handler for limit objects (like DispatchCollisionEvents but with additional events).
 Processes events at ball+0x864:
   - E:PEGS → increments peg counter at this+0x47F4, sets flag param_1+0x1E2=1
   - E:NOPEGS → decrements peg counter, sets flag param_1+0x1E3=1
@@ -12,7 +12,7 @@ Processes events at ball+0x864:
   - E:HEATON → Pendulum_AddIndex (if difficulty≠0)
   - E:HEATOFF → Gfx_SetRenderState (remove from pendulum)
   - E:LIMIT → Gfx_SetRenderState (limit collision visual)
-  Then calls CreateNoDizzy for standard event processing.
+  Then calls DispatchCollisionEvents for standard event processing.
 
 Cross-refs: 0 calls, 1 data ref (vtable entry).
 
