@@ -57,9 +57,46 @@ Each Board subclass overrides vtable[33] with its own factory function. This fun
 
 The factory uses `__strnicmp(refName, "KEYWORD", len)` to match ref names to object constructors. **Unmatched refs are silently ignored** — the factory simply returns null pointers.
 
-### 4. The `N:` Prefix
+### 4. The `N:` Prefix — TWO Separate Systems
 
-The ref names in MESHWORLD files are stored with an `N:` prefix (e.g. `N:SPEEDCYLINDER`, `N:BONK`). However, the factory functions receive the name **without** the `N:` prefix — the dispatch code strips it before passing to the factory. (Verified: all `__strnicmp` calls compare against bare names like `"BONK"`, `"GEAR"`, `"SPEEDCYLINDER"`.)
+There are **two independent dispatch systems** for MESHWORLD data:
+
+**System A: Ref Points (Section 1) → vtable[33] Factory Dispatch**
+- Ref names stored WITHOUT `N:` prefix: `SPEEDCYLINDER`, `BONK`, `GEAR`, `LIFTER`, etc.
+- Processed by `Scene_CreateDynamicObjects` → `board->vtable[33]` factory
+- Factory uses `__strnicmp(refName, "SPEEDCYLINDER", len)` — bare name comparison
+- Creates game OBJECTS (visual + collision entities)
+
+**System B: Entity Names (Section 3) → N:/E: Prefix Handler (0x0040C5D0)**
+- Entity names stored WITH `N:` or `E:` prefix: `N:GOAL`, `N:TARPIT`, `E:JUMP`, `E:BREAK`
+- Entity name is stored at `mesh_entity+0x864` during `Level_LoadMeshes` / `CreateMeshBuffer`
+- Processed by the N:/E: handler at `0x0040C5D0`, which is called from within the vtable[33] factories
+- Sets behavioral FLAGS on the board/scene (e.g. tar pit behavior, water effects, jump zones, breakable surfaces)
+- Does NOT create objects — modifies existing mesh entities
+
+**The N: handler (0x0040C5D0)** processes these prefixes:
+- `N:SECRET`, `N:UNLOCKSECRET` — secret level unlock flags
+- `N:GOAL` — goal/finish marker
+- `N:TARPIT` — tar pit collision behavior
+- `N:WATER` — water surface effect
+- `N:NOCONTROL` — disables ball control in this area
+- `N:BRIDGE`, `N:SWIRL`, `N:WHEELEMBED`, `N:WATERWHEEL` — mesh behavior modifiers
+- `N:MACE`, `N:TRAPDOOR` — object-specific behaviors
+- `N:JUMPFIRST`, `N:JUMPSECOND` — jump pad sequencing
+- `N:WAVY`, `N:SQUAREWOBBLY` — wavy surface behavior
+- `N:BUMPER`, `N:BUMPER%d` — bumper assignment
+- `N:SAWTEETH`, `N:SPINNY` — saw/spinner behavior
+- `N:EXTRATIME`, `N:SPEEDCYLINDER` — time/speed zone markers
+- `N:SPINNER`, `N:NEONPLATFORM` — platform behavior
+- `N:BUMP`, `N:TENBONUS1`, `N:TENBONUS2` — bonus point markers
+- `N:GLASS` — breakable glass surface
+- `N:ONGEAR`, `N:ONROTATOR` — gear/rotator attachment
+- `N:BOUNCE` — bounce surface
+- `N:MOUSETRAP` — mouse trap behavior
+- `E:JUMP`, `E:BREAK`, `E:ACTION`, `E:LIMIT`, `E:TRAJECTORY` — event triggers
+- `ONCE`, `TRUE`, `SCORE`, `X`, `Y`, `Z`, `PIPEBONK`, `POPOUT`, `ZIP` — modifiers
+
+The handler is called from 25 sites within the vtable[33] factory functions. Each factory calls the handler after creating the object, passing the mesh entity so it can check the entity name field.
 
 ### 5. The `Scene+0x23C` Quality Gate
 
@@ -235,9 +272,10 @@ A separate dispatch function handles `SIGN` refs. This function is **not** vtabl
 
 ## Summary
 
-1. **Refs are code-gated, not file-driven.** The MESHWORLD file provides the ref name and position, but the Board's vtable[33] factory determines whether to create an object.
-2. **Each level has its own factory** with different supported ref names.
-3. **Master Race has the most inclusive factory** — it handles 9 different ref types borrowed from other levels.
-4. **To load any ref into any level**, you need a DLL mod that either patches the vtable or hooks the dispatch, AND ensures the required sub-meshes are preloaded.
-5. **The `N:` prefix is stripped** before the factory sees the name.
+1. **Two independent dispatch systems**: (A) vtable[33] factory creates objects from bare-name ref points in MESHWORLD Section 1; (B) the N:/E: handler at 0x0040C5D0 processes entity names from Section 3 meshes to set behavioral flags.
+2. **The `N:` prefix is NOT stripped** — it's part of the entity name in Section 3, not the ref point name in Section 1. Ref points use bare names.
+3. **Each level has its own vtable[33] factory** with different supported ref names.
+4. **Master Race has the most inclusive factory** — it handles 9 different ref types borrowed from other levels.
+5. **To load any ref into any level**, you need a DLL mod that either patches the vtable or hooks the dispatch, AND ensures the required sub-meshes are preloaded.
 6. **Quality gating** (`scene+0x23C`) blocks creation of complex visual objects on low quality settings.
+7. **The N:/E: handler is called from within the factories** — it runs as a sub-step of object creation, not as a separate top-level dispatch.
