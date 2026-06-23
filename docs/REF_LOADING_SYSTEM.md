@@ -153,27 +153,80 @@ Many (but not all) factory branches check `*(int *)(*(int *)(board + 0x878) + 0x
 
 ---
 
-## Complete Factory Dispatch Table
+## Race vs Arena — Two Separate Board Systems
 
-### Level → Factory Mapping
+Hamsterball has **TWO independent Board systems**: one for Race mode and one for Arena mode. Each uses different Board constructors, different vtables, and different vtable[33] factories.
 
-| # | Level | Board Vtable | Factory Addr | Factory Name | Refs Handled |
-|---|-------|-------------|-------------|-------------|--------------|
-| 1 | Warm-up Race | 0x4D04A8 | 0x419750 | NoOp | (none — returns null) |
-| 2 | Beginner Race | 0x4D1098 | 0x419750 | NoOp | (none) |
-| 3 | Intermediate Race | 0x4D05A0 | 0x40A550 | BridgeFactory | BRIDGE |
-| 4 | Dizzy Race | 0x4D0890 | 0x40A5F0 | DizzyFactory | TIPPER, WATERWHEEL, SWIRL, GLUEBIE |
-| 5 | Tower Race | 0x4D0A08 | 0x40D7C0 | TowerFactory | CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET |
-| 6 | Up Race | 0x4D11A0 | 0x4117B0 | CreateSpeedCylinder | LIFTER, SPEEDCYLINDER, TIMEBUTTON |
-| 7 | Neon Race | 0x4D1DF0 | 0x416910 | NeonFactory | NEONPLATFORM, DFLOOR1-4, TRODE |
-| 8 | Expert Race | 0x4D0B00 | 0x40E250 | CreateSawblade | BONK, [UP/TOW], SAWBLADE, BRIDGE, JUDGE, BELL |
-| 9 | Odd Race | 0x4D0BC0 | 0x40EC40 | LifterFactory | LIFTER |
-| 10 | Toob Race | 0x4D0E78 | 0x40FB30 | ToobFactory | SPINNY, SAW, SAW2, FALLOUT1, BLOCKDAWG1-3 |
-| 11 | Wobbly Race | 0x4D0D38 | 0x40F420 | WobblyFactory | WOBBLY1-7, WAVY1 |
-| 12 | Glass Race | 0x4D1F90 | 0x40AD80 | SmasherFactory | SMASHER1, SMASHER2 |
-| 13 | Sky Race | 0x4D0FC8 | 0x410AD0 | SkyFactory | POPCYLINDER, TRAPDOOR |
-| 14 | Master Race | 0x4D12B0 | 0x4121D0 | CreateLevelObjects | BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE |
-| 15 | Impossible Race | 0x4D21C0 | 0x417FE0 | CreateMechanicalObjects | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
+### RACE Board System (0x422xxx constructors)
+
+Race Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from a jump table at `0x426AB0` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x426AB0]` at `0x4267A0`.
+
+Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM` and `STANDS`).
+
+| # | Race Level | Board Vtable | Factory Addr | Refs Handled (factory-specific) |
+|---|-----------|-------------|-------------|-------------------------------|
+| 1 | Warm-up | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 2 | Beginner | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 3 | Intermediate | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 4 | Dizzy | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER + base |
+| 5 | Tower | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY + base |
+| 6 | Up | 0x4D17F8 | 0x414A20 | LIFTER, FAN, E:GRAVITY, N:BUMPER + base |
+| 7 | Neon | 0x4D1EC8 | 0x4173B0 | FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1-2 + base |
+| 8 | Expert | 0x4D18C8 | 0x414BD0 | FAN, E:GRAVITY, N:BUMPER + base |
+| 9 | Odd | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 10 | Toob | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 11 | Wobbly | 0x4D1B18 | 0x415460 | WOBBLY1, N:SQUAREWOBBLY, PILLAR, POPCYLINDER, EDGECYLINDER + base |
+| 12 | Glass | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 13 | Sky | 0x4D1BD8 | 0x415A30 | POPCYLINDER, EDGECYLINDER, E:LAUNCH + base |
+| 14 | Master | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 15 | Impossible | 0x4D2298 | 0x418760 | GEAR + base |
+
+**Key insight**: Levels 1, 2, 3, 9, 10, 12, 14 use ONLY the base factory — they handle only `PLATFORM` and `STANDS` in race mode. Their level-specific objects (tippers, bridges, etc.) are NOT created by vtable[33] in race mode — they are either part of the static level geometry or loaded via the Arena Board system.
+
+### ARENA Board System (0x41Cxxx constructors)
+
+Arena Board constructors are at `0x41CB20`–`0x424C20`. Each is called from a sequential switch at `0x427140` (sequential `MOV [ESP+0x18], level_id; JZ skip; CALL constructor`).
+
+Arena Board vtables are at `0x4D05A0`–`0x4D21C0`. The Arena factories handle **many more ref types** than Race factories — they create ALL interactive objects for Arena mode.
+
+| # | Arena Level | Board Vtable | Factory Addr | Refs Handled |
+|---|-----------|-------------|-------------|--------------|
+| 1 | Warm-up Arena | 0x4D1098 | 0x419750 | (none — NoOp) |
+| 2 | Beginner Arena | 0x4D05A0 | 0x40A550 | BRIDGE, TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1-2 |
+| 3 | Intermediate Arena | 0x4D0890 | 0x40A5F0 | TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1-2 |
+| 4 | Dizzy Arena | 0x4D0A08 | 0x40D7C0 | CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET, BONK, FAN |
+| 5 | Tower Arena | 0x4D11A0 | 0x4117B0 | LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK |
+| 6 | Up Arena | 0x4D1DF0 | 0x416910 | NEONPLATFORM, DFLOOR1-4, TRODE, N:NEONPLATFORM, E:ZOOP, E:LIGHTSOFF, E:LIGHTSON, FLICKNING, N:BUMP |
+| 7 | Expert Arena | 0x4D0B00 | 0x40E250 | BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL, E:SCORE, E:BELL, LIFTER, E:GRAVITY |
+| 8 | Odd Arena | 0x4D0BC0 | 0x40EC40 | LIFTER, E:GRAVITY, WOBBLY1-5, WAVY1 |
+| 9 | Toob Arena | 0x4D0E78 | 0x40FB30 | SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY, N:SAWTEETH, N:BUMPER |
+| 10 | Glass Arena | 0x4D0D38 | 0x40F420 | WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY, FALLOUT1, BLOCKDAWG1-3 |
+| 11 | Wobbly Arena | 0x4D1F90 | 0x40AD80 | SMASHER1, SMASHER2 |
+| 12 | Sky Arena | 0x4D0FC8 | 0x410AD0 | POPCYLINDER, TRAPDOOR, N:BUMPER, VAC-in |
+| 13 | Master Arena | 0x4D12B0 | 0x4121D0 | BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE, N:SPINNER, N:BUMPER, E:LAUNCH |
+| 14 | Impossible Arena | 0x4D21C0 | 0x417FE0 | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM, N:BOUNCE, N:ONROTATOR, N:ONGEAR |
+
+### Level File → Board Mapping
+
+The game's internal level numbers map to file paths differently for race vs arena:
+
+| Race Level | File Path | Arena Level | File Path |
+|-----------|----------|-----------|----------|
+| L1 (Warm-up) | levels\level1 | L1 (Warm-up Arena) | levels\arena1 |
+| L2 (Beginner) | levels\levelcascade | L2 (Beginner Arena) | levels\arena2 |
+| L3 (Intermediate) | levels\level3 | L3 (Intermediate Arena) | levels\arena3 |
+| L4 (Dizzy) | levels\level4 | L4 (Dizzy Arena) | levels\arena4 |
+| L5 (Tower) | levels\level5 | L5 (Tower Arena) | levels\arena5 |
+| L6 (Up) | levels\levelup | L6 (Up Arena) | levels\arena6 |
+| L7 (Neon) | levels\leveldark | L7 (Neon Arena) | levels\arena7 |
+| L8 (Expert) | levels\level8 | L8 (Expert Arena) | levels\arena8 |
+| L9 (Odd) | levels\level9 | L9 (Odd Arena) | levels\arena9 |
+| L10 (Toob) | levels\level10 | L10 (Toob Arena) | levels\arena10 |
+| L11 (Wobbly) | levels\level7 | L11 (Wobbly Arena) | levels\arena11 |
+| L12 (Glass) | levels\levelglass | L12 (Glass Arena) | levels\arena12 |
+| L13 (Sky) | levels\level9 | L13 (Sky Arena) | levels\arena13 |
+| L14 (Master) | levels\level10 | L14 (Master Arena) | levels\arena14 |
+| L15 (Impossible) | levels\levelimpossible | L15 (Impossible Arena) | levels\arena15 |
 
 ### Complete Ref Name → Constructor Mapping
 
@@ -276,10 +329,10 @@ void __thiscall UniversalFactory(void* board, char* refName, void** outObj, void
     if (*outObj != NULL) return;
     
     // Try other level factories
-    CreateSpeedCylinder(board, refName, outObj, outCol, refEntry);
+    CreateUpLevelObjects(board, refName, outObj, outCol, refEntry);
     if (*outObj != NULL) return;
     
-    CreateSawblade(board, refName, outObj, outCol, refEntry);
+    CreateExpertLevelObjects(board, refName, outObj, outCol, refEntry);
     if (*outObj != NULL) return;
     
     CreateMechanicalObjects(board, refName, outObj, outCol, refEntry);
@@ -390,10 +443,11 @@ A separate dispatch function handles `SIGN` refs. This function is **not** vtabl
 
 ## Summary
 
-1. **Two independent dispatch systems**: (A) vtable[33] factory creates objects from bare-name ref points in MESHWORLD Section 1; (B) the N:/E: handler at 0x0040C5D0 processes entity names from Section 3 meshes to set behavioral flags.
-2. **The `N:` prefix is NOT stripped** — it's part of the entity name in Section 3, not the ref point name in Section 1. Ref points use bare names.
-3. **Each level has its own vtable[33] factory** with different supported ref names.
-4. **Master Race has the most inclusive factory** — it handles 9 different ref types borrowed from other levels.
-5. **To load any ref into any level**, you need a DLL mod that either patches the vtable or hooks the dispatch, AND ensures the required sub-meshes are preloaded.
-6. **Quality gating** (`scene+0x23C`) blocks creation of complex visual objects on low quality settings.
-7. **The N:/E: handler is called from within the factories** — it runs as a sub-step of object creation, not as a separate top-level dispatch.
+1. **Two independent Board systems**: RACE Boards (0x422xxx constructors, vtable 0x4D14xx-0x4D22xx) and ARENA Boards (0x41Cxxx constructors, vtable 0x4D05xx-0x4D21xx). Each has its own set of vtable[33] factories. Race factories handle fewer ref types; Arena factories handle the full set.
+2. **Two independent dispatch systems**: (A) vtable[33] factory creates objects from bare-name ref points in MESHWORLD Section 1; (B) the N:/E: handler at 0x0040C5D0 processes entity names from Section 3 meshes to set behavioral flags.
+3. **The `N:` prefix is NOT stripped** — it's part of the entity name in Section 3, not the ref point name in Section 1. Ref points use bare names.
+4. **Race factory inheritance chain**: Dizzy → Tower → Up → Expert all share the same base factory (0x4133E0). Each adds its own refs on top. Levels 1,2,3,9,10,12,14 use ONLY the base factory.
+5. **Arena factories are more inclusive**: Master Arena factory (0x4121D0) handles 9+ ref types from other levels.
+6. **To load any ref into any level**, you need: (a) patch the Board's vtable[33] to a combined factory that calls multiple level factories, AND (b) preload the required sub-meshes into board struct slots. A MESHWORLD-only approach is insufficient — the factory must recognize the ref name.
+7. **Quality gating** (`scene+0x23C`) blocks creation of complex visual objects on low quality settings.
+8. **The N:/E: handler is called from within the factories** — it runs as a sub-step of object creation, not as a separate top-level dispatch.
