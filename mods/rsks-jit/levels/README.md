@@ -1,22 +1,45 @@
 # Drop-in Levels Folder (Beginner ↔ Intermediate Swapped)
 
-Complete copy of the game's `Levels/` folder with Beginner Race and Intermediate Race MESHWORLD files swapped.
+Complete copy of the game's `Levels/` folder with Beginner Race and Intermediate Race swapped.
 
 ## What's swapped
 
-| File | Original (game) | This folder |
-|------|-----------------|-------------|
+| File | Original | This folder |
+|------|----------|-------------|
 | `Level2.MESHWORLD` | Beginner Race (788 KB) | **Intermediate Race** (1026 KB) |
 | `Level3.MESHWORLD` | Intermediate Race (1026 KB) | **Beginner Race** (788 KB) |
-| `LevelCascade.MESHWORLD` | Dizzy Race — restored to original (unchanged) | 239 KB |
 
-All other files unchanged. Level3 sub-meshes (Gluebie, Swirl, Tipper, WaterWheel) stay in place.
+Everything else is original. No `.cached` or `.bak` files included.
 
-## Usage
+## CRITICAL: Delete .cached files in YOUR game folder!
 
-1. Back up your game's `Levels/` folder
-2. Copy this entire `levels/` folder as the game's `Levels/` folder
-3. Install `mods/rsks-jit/bass.dll` as the game's `bass.dll` (back up original as `bass_real.dll`)
-4. Create `C:\tmp\` directory
-5. Launch game → select **Beginner Race** → you'll get Intermediate Race geometry
-6. Read `C:\tmp\ref_loader_log.txt` for the full JIT injection trace
+The game caches pre-processed level data in `.cached` files. **If any `.cached` files exist in your game's `Levels/` folder, the game will use the cached version and IGNORE your swapped `.MESHWORLD` files.**
+
+Before copying this folder:
+
+1. Go to your game's `Levels/` folder
+2. **Delete ALL `*.cached` files** (e.g. `level1.cached`, `level2.cached`, `Level2-Bridge.cached`, etc.)
+3. **Delete ALL `*.bak` files** (e.g. `Level1.MESHWORLD.bak`)
+4. **Delete the entire `Levels/` folder** (or rename to `Levels_backup/`)
+5. Copy this entire `levels/` folder as the new `Levels/` folder
+6. Do NOT run the game before installing the bass.dll mod — running the game regenerates `.cached` files from whatever `.MESHWORLD` files are present
+
+## Level mapping (for reference)
+
+| Race name | Game filename |
+|-----------|--------------|
+| Warm-up Race | `Level1.MESHWORLD` |
+| Beginner Race | `Level2.MESHWORLD` |
+| Intermediate Race | `Level3.MESHWORLD` |
+| Dizzy Race | `LevelCascade.MESHWORLD` |
+| Tower Race | `Level4.MESHWORLD` |
+| Up Race | `LevelUp.MESHWORLD` |
+| Expert Race | `Level8.MESHWORLD` |
+| Odd Race | `Level9.MESHWORLD` |
+| Toob Race | `Level10.MESHWORLD` |
+| Wobbly Race | `Level7.MESHWORLD` |
+| Glass Race | `LevelGlass.MESHWORLD` |
+| Sky Race | `LevelImpossible.MESHWORLD` |
+| Master Race | `LevelDark.MESHWORLD` |
+| Neon Race | (check EXE strings) |
+| Impossible Race | (check EXE strings) |
