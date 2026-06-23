@@ -336,17 +336,8 @@ static CachedMesh* jit_load_mesh(void* board, const MeshEntry* entry)
         return NULL;
     }
 
-    if (entry->needsCollision && entry->collisionOffset) {
-        log_msg("  [JIT_LOAD] Allocating 0x10D0 bytes for CollisionLevel...");
-        collisionMem = g_operatorNew(0x10D0);
-        log_msg("  [JIT_LOAD] operator_new (collision) returned: %p", collisionMem);
-        if (collisionMem) {
-            log_msg("  [JIT_LOAD] Calling CollisionLevel_ctorWithLevel(mem=%p, sourceMesh=%p)...",
-                    collisionMem, meshMem);
-            collisionMem = g_collisionCtor(collisionMem, (int)meshMem);
-            log_msg("  [JIT_LOAD] CollisionLevel_ctor returned: %p", collisionMem);
-        }
-    }
+    /* Skip collision allocation — the factory creates its own collision internally.
+       Allocating it here causes double-free / heap corruption. */
 
     cached = &g_meshCache[g_meshCacheCount++];
     cached->boardOffset = entry->boardOffset;
@@ -572,22 +563,126 @@ static void __thiscall universal_factory(
     *outObj = NULL;
     *outCol = NULL;
 
-    /* === LOG-ONLY MODE: just call original factory, no JIT injection === */
+    /* === INJECTION MODE: call original, if unhandled, JIT-inject and retry === */
     vtable = *(void***)board;
     original = (FactoryFunc)vtable[33];
 
-    log_msg("[REF #%d] Calling ORIGINAL factory at %p (LOG-ONLY, no injection) ...", g_refCounter, original);
+    log_msg("[REF #%d] Step 1: Calling ORIGINAL factory at %p ...", g_refCounter, original);
 
     original(board, refName, outObj, outCol, refEntry);
 
-    log_msg("[REF #%d] Factory returned: outObj=%p, outCol=%p", g_refCounter, *outObj, *outCol);
+    log_msg("[REF #%d] Step 1 result: outObj=%p, outCol=%p", g_refCounter, *outObj, *outCol);
 
     if (*outObj != NULL) {
-        log_msg("[REF #%d] HANDLED ref '%s' -> obj=%p", g_refCounter, refNameSafe, *outObj);
-    } else {
-        log_msg("[REF #%d] UNHANDLED ref '%s'", g_refCounter, refNameSafe);
+        log_msg("[REF #%d] ORIGINAL factory HANDLED ref '%s' -> obj=%p", g_refCounter, refNameSafe, *outObj);
+        log_msg("[REF #%d] DONE (handled by original)", g_refCounter);
+        return;
     }
-    log_msg("[REF #%d] DONE", g_refCounter);
+
+    log_msg("[REF #%d] Original factory did NOT handle ref '%s'. Trying %d Arena factories...",
+            g_refCounter, refNameSafe, (int)NUM_FACTORIES);
+
+    /* Step 2: Try all Arena factories with JIT slot injection */
+    needDiffBypass = is_difficulty_gated(refNameSafe);
+    log_msg("[REF #%d] Difficulty gated? %s", g_refCounter, needDiffBypass ? "YES" : "NO");
+
+    if (needDiffBypass) {
+        int* app = *(int**)((char*)board + BOARD_APP_PTR);
+        if (app) {
+            savedDiff = *(int*)((char*)app + APP_DIFFICULTY);
+            log_msg("[REF #%d] DIFFICULTY BYPASS: saving current diff=%d, setting to 1 (Normal)",
+                    g_refCounter, savedDiff);
+            *(int*)((char*)app + APP_DIFFICULTY) = 1;
+        }
+    }
+
+    for (i = 0; i < (int)NUM_FACTORIES; i++) {
+        SafeFactory* sf = &g_factories[i];
+
+        log_msg("[REF #%d] --- Trying factory %d/%d: '%s' (addr=%p) ---",
+                g_refCounter, i + 1, (int)NUM_FACTORIES, sf->name, sf->func);
+
+        if (sf->func == original) {
+            log_msg("[REF #%d] SKIP: same as original factory", g_refCounter);
+            continue;
+        }
+
+        /* Log all slot values before JIT */
+        {
+            int j2;
+            for (j2 = 0; sf->slots[j2] != 0; j2++) {
+                void* val = *(void**)((char*)board + sf->slots[j2]);
+                log_msg("[REF #%d]   pre-JIT slot +0x%X = %p", g_refCounter, sf->slots[j2], val);
+            }
+        }
+
+        /* JIT load missing mesh slots — DO NOT restore after */
+        injectCount = ensure_slots_loaded(board, sf, injected, MAX_INJECTED_SLOTS);
+
+        /* Log all slot values after JIT */
+        {
+            int j2;
+            for (j2 = 0; sf->slots[j2] != 0; j2++) {
+                void* val = *(void**)((char*)board + sf->slots[j2]);
+                log_msg("[REF #%d]   post-JIT slot +0x%X = %p", g_refCounter, sf->slots[j2], val);
+            }
+        }
+
+        /* Safety check */
+        if (!factory_slots_safe(board, sf)) {
+            log_msg("[REF #%d] SKIPPING factory '%s' — safety check failed", g_refCounter, sf->name);
+            /* Don't restore — slots stay injected for future factory attempts */
+            continue;
+        }
+
+        /* Clear outputs */
+        *outObj = NULL;
+        *outCol = NULL;
+
+        log_msg("[REF #%d] CALLING factory '%s' (addr=%p) with refName='%s'...",
+                g_refCounter, sf->name, sf->func, refNameSafe);
+
+        sf->func(board, refName, outObj, outCol, refEntry);
+
+        log_msg("[REF #%d] Factory '%s' returned: outObj=%p, outCol=%p",
+                g_refCounter, sf->name, *outObj, *outCol);
+
+        /* KEY FIX: Do NOT restore injected slots.
+           The factory-created objects reference these meshes.
+           Restoring to NULL causes use-after-free → heap corruption.
+           The board owns these meshes for the lifetime of the level. */
+
+        if (*outObj != NULL) {
+            log_msg("[REF #%d] *** Factory '%s' HANDLED ref '%s' -> obj=%p ***",
+                    g_refCounter, sf->name, refNameSafe, *outObj);
+
+            if (needDiffBypass) {
+                int* app = *(int**)((char*)board + BOARD_APP_PTR);
+                if (app) {
+                    log_msg("[REF #%d] Restoring difficulty to %d", g_refCounter, savedDiff);
+                    *(int*)((char*)app + APP_DIFFICULTY) = savedDiff;
+                }
+            }
+            log_msg("[REF #%d] DONE (handled by factory '%s', slots NOT restored)", g_refCounter, sf->name);
+            return;
+        }
+
+        log_msg("[REF #%d] Factory '%s' did not handle ref '%s'", g_refCounter, sf->name, refNameSafe);
+    }
+
+    /* No factory handled this ref */
+    log_msg("[REF #%d] *** NO FACTORY HANDLED ref '%s' — returning NULL ***", g_refCounter, refNameSafe);
+    *outObj = NULL;
+    *outCol = NULL;
+
+    if (needDiffBypass) {
+        int* app = *(int**)((char*)board + BOARD_APP_PTR);
+        if (app) {
+            log_msg("[REF #%d] Restoring difficulty to %d", g_refCounter, savedDiff);
+            *(int*)((char*)app + APP_DIFFICULTY) = savedDiff;
+        }
+    }
+    log_msg("[REF #%d] DONE (unhandled)", g_refCounter);
 }
 
 /* ============================================================
