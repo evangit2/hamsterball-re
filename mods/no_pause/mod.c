@@ -61,32 +61,32 @@ __declspec(dllexport) void __stdcall BASS_ChannelStop(DWORD a) {
     if (real_BASS_ChannelStop) real_BASS_ChannelStop(a);
 }
 
-typedef int  (__stdcall *BASS_ChannelSetFX_t)(DWORD, int, int);
-static BASS_ChannelSetFX_t real_BASS_ChannelSetFX = NULL;
-__declspec(dllexport) int __stdcall BASS_ChannelSetFX(DWORD a, int b, int c) {
-    if (real_BASS_ChannelSetFX) return real_BASS_ChannelSetFX(a, b, c);
+typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
+static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
+__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
     return 0;
 }
 
-typedef int  (__stdcall *BASS_FXSetParameters_t)(DWORD, void*);
-static BASS_FXSetParameters_t real_BASS_FXSetParameters = NULL;
-__declspec(dllexport) int __stdcall BASS_FXSetParameters(DWORD a, void* b) {
-    if (real_BASS_FXSetParameters) return real_BASS_FXSetParameters(a, b);
+typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
+static BASS_SetConfig_t real_BASS_SetConfig = NULL;
+__declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
     return 1;
 }
 
-typedef int  (__stdcall *BASS_SampleLoad_t)(const char*, DWORD, DWORD, int, DWORD);
-static BASS_SampleLoad_t real_BASS_SampleLoad = NULL;
-__declspec(dllexport) int __stdcall BASS_SampleLoad(const char* a, DWORD b, DWORD c, int d, DWORD e) {
-    if (real_BASS_SampleLoad) return real_BASS_SampleLoad(a, b, c, d, e);
-    return 0;
+typedef int  (__stdcall *BASS_Start_t)(void);
+static BASS_Start_t real_BASS_Start = NULL;
+__declspec(dllexport) int __stdcall BASS_Start(void) {
+    if (real_BASS_Start) return real_BASS_Start();
+    return 1;
 }
 
-typedef int  (__stdcall *BASS_SampleGetChannel_t)(DWORD, DWORD);
-static BASS_SampleGetChannel_t real_BASS_SampleGetChannel = NULL;
-__declspec(dllexport) int __stdcall BASS_SampleGetChannel(DWORD a, DWORD b) {
-    if (real_BASS_SampleGetChannel) return real_BASS_SampleGetChannel(a, b);
-    return 0;
+typedef int  (__stdcall *BASS_Stop_t)(void);
+static BASS_Stop_t real_BASS_Stop = NULL;
+__declspec(dllexport) int __stdcall BASS_Stop(void) {
+    if (real_BASS_Stop) return real_BASS_Stop();
+    return 1;
 }
 
 /* ── Mod: Disable Pause ─────────────────────────────────────────────── */
@@ -124,10 +124,10 @@ static void init_bass_proxy(void) {
     real_BASS_Free                  = (BASS_Free_t)GetProcAddress(g_hRealBass, "BASS_Free");
     real_BASS_Init                  = (BASS_Init_t)GetProcAddress(g_hRealBass, "BASS_Init");
     real_BASS_ChannelStop           = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
-    real_BASS_ChannelSetFX          = (BASS_ChannelSetFX_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetFX");
-    real_BASS_FXSetParameters       = (BASS_FXSetParameters_t)GetProcAddress(g_hRealBass, "BASS_FXSetParameters");
-    real_BASS_SampleLoad            = (BASS_SampleLoad_t)GetProcAddress(g_hRealBass, "BASS_SampleLoad");
-    real_BASS_SampleGetChannel      = (BASS_SampleGetChannel_t)GetProcAddress(g_hRealBass, "BASS_SampleGetChannel");
+    real_BASS_ErrorGetCode          = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
+    real_BASS_SetConfig             = (BASS_SetConfig_t)GetProcAddress(g_hRealBass, "BASS_SetConfig");
+    real_BASS_Start                 = (BASS_Start_t)GetProcAddress(g_hRealBass, "BASS_Start");
+    real_BASS_Stop                  = (BASS_Stop_t)GetProcAddress(g_hRealBass, "BASS_Stop");
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
