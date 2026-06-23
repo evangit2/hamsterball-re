@@ -236,25 +236,25 @@ Arena Board vtables are at `0x4D04A8`–`0x4D21C0`. The Arena factories handle *
 
 ### Level File → Board Mapping
 
-The game's internal level numbers map to file paths differently for race vs arena:
+The game's internal level numbers map to file paths differently for race vs arena. **Race file numbers do NOT match level order** — e.g. `level5` = Expert Race (L8), `level6` = Odd Race (L9).
 
 | Race Level | File Path | Arena Level | File Path |
 |-----------|----------|-----------|----------|
-| L1 (Warm-up) | levels\level1 | L1 (Warm-up Arena) | levels\arena1 |
-| L2 (Beginner) | levels\levelcascade | L2 (Beginner Arena) | levels\arena2 |
-| L3 (Intermediate) | levels\level3 | L3 (Intermediate Arena) | levels\arena3 |
-| L4 (Dizzy) | levels\level4 | L4 (Dizzy Arena) | levels\arena4 |
-| L5 (Tower) | levels\level5 | L5 (Tower Arena) | levels\arena5 |
-| L6 (Up) | levels\levelup | L6 (Up Arena) | levels\arena6 |
-| L7 (Neon) | levels\leveldark | L7 (Neon Arena) | levels\arena7 |
-| L8 (Expert) | levels\level8 | L8 (Expert Arena) | levels\arena8 |
-| L9 (Odd) | levels\level9 | L9 (Odd Arena) | levels\arena9 |
-| L10 (Toob) | levels\level10 | L10 (Toob Arena) | levels\arena10 |
-| L11 (Wobbly) | levels\level7 | L11 (Wobbly Arena) | levels\arena11 |
-| L12 (Glass) | levels\levelglass | L12 (Glass Arena) | levels\arena12 |
-| L13 (Sky) | levels\level9 | L13 (Sky Arena) | levels\arena13 |
-| L14 (Master) | levels\level10 | L14 (Master Arena) | levels\arena14 |
-| L15 (Impossible) | levels\levelimpossible | L15 (Impossible Arena) | levels\arena15 |
+| L1 (Warm-up) | levels\level1 | L1 (Warm-up Arena) | levels\arena-WarmUp |
+| L2 (Beginner) | levels\levelcascade | L2 (Beginner Arena) | levels\arena-beginner |
+| L3 (Intermediate) | levels\level2 | L3 (Intermediate Arena) | levels\arena-intermediate |
+| L4 (Dizzy) | levels\level3 | L4 (Dizzy Arena) | levels\arena-dizzy |
+| L5 (Tower) | levels\level4 | L5 (Tower Arena) | levels\arena-tower |
+| L6 (Up) | levels\levelup | L6 (Up Arena) | levels\arena-up |
+| L7 (Neon) | levels\leveldark | L7 (Neon Arena) | levels\arena-neon |
+| L8 (Expert) | levels\level5 | L8 (Expert Arena) | levels\arena-expert |
+| L9 (Odd) | levels\level6 | L9 (Odd Arena) | levels\arena-Odd |
+| L10 (Toob) | levels\level8 | L10 (Toob Arena) | levels\arena-Toob |
+| L11 (Wobbly) | levels\level7 | L11 (Wobbly Arena) | levels\arena-Wobbly |
+| L12 (Glass) | levels\levelglass | L12 (Glass Arena) | levels\arena-glass |
+| L13 (Sky) | levels\level9 | L13 (Sky Arena) | levels\arena-Sky |
+| L14 (Master) | levels\level10 | L14 (Master Arena) | levels\arena-Master |
+| L15 (Impossible) | levels\levelimpossible | L15 (Impossible Arena) | levels\arena-impossible |
 
 ### Complete Ref Name → Constructor Mapping
 
