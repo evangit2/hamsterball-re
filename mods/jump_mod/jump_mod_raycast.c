@@ -358,32 +358,51 @@ static DWORD WINAPI input_thread(LPVOID param)
         int space_down = (key_state & 0x80) != 0;
 
         if (space_down && !g_prev_space) {
-            /* Spacebar just pressed — check gates before raycast */
-            DWORD ball = g_ball_ptr;
-            if (ball) {
+            /* Spacebar just pressed — check gates before raycast.
+             *
+             * All gates use App global (0x5341E0) to avoid stale ball pointer.
+             * When ball+0x14C is set (race end), Ball_Update skips Phase 15,
+             * so g_ball_ptr goes stale. We can't rely on it.
+             * Instead, use App+0x5D5 and App+0x5D6 (player_data[0]+0x09/+0x0A),
+             * which are the EXACT same flags the game checks in Scene_vmethod31 (0x41AC70).
+             */
+            DWORD app = *(DWORD*)ADDR_App;
+            if (app) {
                 /* Gate 1: Countdown — Scene+0x3A4C must be 1 (countdown done).
-                 * Set by Scene_HandleRaceEnd when all 3 Ready/Set/Go phases complete.
-                 * If 0, the game itself blocks all input in Scene_vmethod31 (0x41AC70). */
-                DWORD scene = *(DWORD*)(ball + 0x14);
+                 * Scene = App+0x178. */
+                DWORD scene = *(DWORD*)(app + 0x178);
                 if (scene) {
                     BYTE countdown_done = *(BYTE*)(scene + 0x3A4C);
                     if (!countdown_done) {
-                        wsprintfA(buf, "DENY: countdown active. scene=%08X countdown_done=%u",
-                                 scene, countdown_done);
+                        wsprintfA(buf, "DENY: countdown active. countdown_done=%u",
+                                 countdown_done);
                         diag_log(buf);
                         goto next_key;
                     }
                 }
 
-                /* Gate 2: Race end — ball+0x14C is the freeze flag.
-                 * Set to 1 by Scene_HandleRaceEnd at 0x41B40D when the race timer
-                 * expires. Also checked by the game's Ball_Update at 0x4060A1. */
-                BYTE frozen = *(BYTE*)(ball + 0x14C);
-                if (frozen) {
-                    diag_log("DENY: race ended (ball frozen)");
+                /* Gate 2: Race end — player_data[0]+0x0A (finished flag).
+                 * This is at App+0x5D6. Set by Scene_HandleRaceEnd when the
+                 * race timer counts down below 0. The game checks this in
+                 * Scene_vmethod31 to block input. */
+                BYTE finished = *(BYTE*)(app + 0x5D6);
+                if (finished) {
+                    diag_log("DENY: race ended (player finished)");
                     goto next_key;
                 }
 
+                /* Gate 3: player_data[0]+0x09 — another flag checked by Scene_vmethod31.
+                 * At App+0x5D5. Purpose unknown but the game blocks input when set. */
+                BYTE flag2 = *(BYTE*)(app + 0x5D5);
+                if (flag2) {
+                    diag_log("DENY: player flag2 set");
+                    goto next_key;
+                }
+            }
+
+            /* Get current ball pointer (not stale g_ball_ptr) */
+            DWORD ball = get_player_ball();
+            if (ball) {
                 /* Raycast: is the ball on the ground? */
                 int grounded = is_ball_grounded(ball);
                 if (grounded) {
@@ -397,7 +416,7 @@ static DWORD WINAPI input_thread(LPVOID param)
                     diag_log(buf);
                 }
             } else {
-                /* Ball pointer not yet captured — allow jump as fallback (v12 behavior) */
+                /* Ball pointer not yet available — allow jump as fallback (v12 behavior) */
                 g_want_jump = 1;
                 diag_log("JUMP: ball_ptr not set, fallback allow");
             }
@@ -561,7 +580,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             }
         }
 
-        diag_log("=== jump_mod v22+RAYCAST (countdown+race-end gating) loaded ===");
+        diag_log("=== jump_mod v23+RAYCAST (App-level race-end gating) loaded ===");
 
         load_real_bass();
 
