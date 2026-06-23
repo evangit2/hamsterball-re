@@ -9,12 +9,12 @@ Ball Update (ball->vtable[0x10], called from Scene_UpdateBallsAndState 0x41B540)
   └─ Geometric collision detected by Ball_AdvancePositionOrCollision (0x4564C0)
        └─ Event dispatch based on object name string at collObj+0x864
             ├─ Arena_HandleCollision (0x40E6A0)  ← Rumble arenas (vtable-driven)
-            │    └─ CreateNoDizzy (0x40C5D0)  ← Shared base (ALL events)
+            │    └─ DispatchCollisionEvents (0x40C5D0)  ← Shared base (ALL events)
             └─ Level_HandleCollision (0x40DCD0)  ← Race levels (vtable-driven)
-                 └─ CreateNoDizzy (0x40C5D0)  ← Shared base (ALL events)
+                 └─ DispatchCollisionEvents (0x40C5D0)  ← Shared base (ALL events)
 ```
 
-Arena and Level handlers are **parallel, not chained** — they never call each other. Both delegate to CreateNoDizzy for universal events. Ball_AdvancePositionOrCollision handles only geometric collision detection (velocity integration, mesh intersection) and does NOT dispatch events itself.
+Arena and Level handlers are **parallel, not chained** — they never call each other. Both delegate to DispatchCollisionEvents for universal events. Ball_AdvancePositionOrCollision handles only geometric collision detection (velocity integration, mesh intersection) and does NOT dispatch events itself.
 
 ## Event Dispatch Table
 
@@ -34,7 +34,7 @@ Arena and Level handlers are **parallel, not chained** — they never call each 
 | E:JUMP | Ball bounce + sound + 200pts | No |
 | E:BELL | Extra time (+500) + popup | No |
 
-After processing: **delegates to CreateNoDizzy** (not to Level_HandleCollision — Arena and Level are parallel).
+After processing: **delegates to DispatchCollisionEvents** (not to Level_HandleCollision — Arena and Level are parallel).
 
 ### Tier 2: Level_HandleCollision (0x40DCD0) — Level Events
 **Domain**: Race level mechanical objects.
@@ -48,9 +48,9 @@ After processing: **delegates to CreateNoDizzy** (not to Level_HandleCollision �
 | E:MACETRIGGER | Activate all maces | Sets each mace active flag at +0x10F0 |
 | N:MACE | Ball bounces off mace | Only if mace swinging (not 0x42A00000) and not already hit |
 
-After processing: **delegates to CreateNoDizzy**.
+After processing: **delegates to DispatchCollisionEvents**.
 
-### Base Tier: CreateNoDizzy (0x40C5D0) — Shared Base Handler
+### Base Tier: DispatchCollisionEvents (0x40C5D0) — Shared Base Handler
 **Domain**: All game events (base handler, processes everything).
 
 | Event | Effect | Key Details |

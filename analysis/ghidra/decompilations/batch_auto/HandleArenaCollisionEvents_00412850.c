@@ -1,16 +1,16 @@
 /*
- * Function: CreateSpinner
+ * Function: HandleArenaCollisionEvents
  * Address: 0x00412850
- * Signature: CreateSpinner(...)
+ * Signature: HandleArenaCollisionEvents(...)
  *
- * Patterns: allocates, SEH frame, audio, ball. Calls: CreateSpinner, __strnicmp, Rotator_AddObject, Sound_Play3D, SQRT, Vec3_NormalizeAndScale, _atol, AthenaHashTable_Lookup. Offsets: 25, Lines: 168
+ * Patterns: allocates, SEH frame, audio, ball. Calls: HandleArenaCollisionEvents, __strnicmp, Rotator_AddObject, Sound_Play3D, SQRT, Vec3_NormalizeAndScale, _atol, AthenaHashTable_Lookup. Offsets: 25, Lines: 168
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __thiscall CreateSpinner(void *this,int *param_1,int *param_2)
+void __thiscall HandleArenaCollisionEvents(void *this,int *param_1,int *param_2)
 
 {
   float *pfVar1;
@@ -173,7 +173,7 @@ void __thiscall CreateSpinner(void *this,int *param_1,int *param_2)
       *(int *)((int)this + iVar8 * 4 + 0x5854) = iVar2 + 1;
     }
   }
-  CreateNoDizzy(this,piVar7,param_2);
+  DispatchCollisionEvents(this,piVar7,param_2);
   ExceptionList = local_c;
   return;
 }

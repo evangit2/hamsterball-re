@@ -75,11 +75,11 @@ Documented: 3781/3781 (100%)
 | 0x0040FA20 | CreateBumper | Create BUMPER1/2/3/4 objects |
 | 0x00413CE0 | CreateBumper2 | Create bumper variant |
 | 0x00410D00 | CreateLimit | Create E:LIMIT boundary |
-| 0x004117B0 | CreateSpeedCylinder | Create SPEEDCYLINDER |
-| 0x00412850 | CreateSpinner | Create N:SPINNER |
-| 0x0040E250 | CreateSawblade | Create SAWBLADE |
+| 0x004117B0 | CreateUpLevelObjects | Create SPEEDCYLINDER |
+| 0x00412850 | HandleArenaCollisionEvents | Create N:SPINNER |
+| 0x0040E250 | CreateExpertLevelObjects | Create SAWBLADE |
 | 0x0040BF50 | CreateMouseTrap | Create MOUSETRAP |
-| 0x0040C5D0 | CreateNoDizzy | Create E:NODIZZY |
+| 0x0040C5D0 | DispatchCollisionEvents | Create E:NODIZZY |
 | 0x00438B30 | CreateBonkPopup | Create BONKPOPUP feedback |
 | 0x0041D060 | BoardLevel3_ctor | BoardLevel3 constructor |
 | 0x0040BAA0 | CreateSecretObjects | Create SECRET and SECRETUNLOCK objects |
@@ -305,9 +305,9 @@ Offset | Field | Description
 
 | Address | Name | Description |
 |---------|------|-------------|
-| 0x0040C5D0 | CreateNoDizzy | Main collision event dispatcher (E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION, E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT) |
-| 0x0040E6A0 | Arena_HandleCollision | Arena-specific collision handler (E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL + delegates to CreateNoDizzy) |
-| 0x0040DCD0 | Level_HandleCollision | Level-specific collision handler (E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE + delegates to CreateNoDizzy) |
+| 0x0040C5D0 | DispatchCollisionEvents | Main collision event dispatcher (E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION, E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT) |
+| 0x0040E6A0 | Arena_HandleCollision | Arena-specific collision handler (E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL + delegates to DispatchCollisionEvents) |
+| 0x0040DCD0 | Level_HandleCollision | Level-specific collision handler (E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE + delegates to DispatchCollisionEvents) |
 | 0x00434770 | Saw_AlertActivate | Activate saw blade (alert mode - clear flag, play 3D sound) |
 | 0x00434A50 | Saw_Activate | Activate saw blade (full - set active flag, play 3D sound) |
 | 0x00434C40 | Judge_Reset | Reset judges (clear active flag, re-add to list) |

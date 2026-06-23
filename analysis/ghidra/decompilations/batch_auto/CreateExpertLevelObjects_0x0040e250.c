@@ -1,6 +1,6 @@
 
 void __thiscall
-CreateSawblade(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
+CreateExpertLevelObjects(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
 
 {
   int iVar1;

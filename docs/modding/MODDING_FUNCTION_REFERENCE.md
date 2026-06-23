@@ -314,7 +314,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ## 8. Collision Event System
 
-### `CreateNoDizzy` / `CreateNoDizzy`
+### `DispatchCollisionEvents` / `DispatchCollisionEvents`
 - **Address:** `0x0040C5D0`
 - **Convention:** `__thiscall` (ECX = this)
 - **Parameters:** `this` (Level*), `ball` (Ball*), `collider` (CollisionObject*)
@@ -342,7 +342,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ### `Level_HandleCollision`
 - **Address:** `0x40DCD0`
-- **Description:** Level-specific events, then delegates to `CreateNoDizzy`:
+- **Description:** Level-specific events, then delegates to `DispatchCollisionEvents`:
   - `E:CATAPULTBOTTOM` → launch catapult
   - `E:OPENSESAME` → open all trapdoors
   - `N:TRAPDOOR` → activate trapdoor

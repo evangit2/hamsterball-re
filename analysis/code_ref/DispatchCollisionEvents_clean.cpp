@@ -1,5 +1,5 @@
 // ============================================================================
-// CreateNoDizzy  (0x40C5D0)  — Clean C++ Reconstruction
+// DispatchCollisionEvents  (0x40C5D0)  — Clean C++ Reconstruction
 // ============================================================================
 // Base collision event handler. Called as the FINAL step by:
 //   • Level_HandleCollision    (0x40DCD0)
@@ -126,9 +126,9 @@ constexpr int   WATER_TIMER_FRAMES    = 10;
 #define WRITE_FLT(base, off,v)(*(float*)PTR_OFF(base, off) = (float)(v))
 
 // ---------------------------------------------------------------------------
-// CreateNoDizzy  (0x40C5D0)
+// DispatchCollisionEvents  (0x40C5D0)
 // ---------------------------------------------------------------------------
-void __thiscall CreateNoDizzy(Scene* this_, Ball* ball, int* collObj)
+void __thiscall DispatchCollisionEvents(Scene* this_, Ball* ball, int* collObj)
 {
     /* Event name is stored inside the SceneObject at collObj[1] + 0x864 */
     const char* eventName = *(const char**)(collObj[1] + COLLIDER_EVENTNAME);

@@ -12,7 +12,7 @@ App offsets (0x85A-0x868). If the flag is 0 (not yet unlocked):
   3. Copies camera profile from locked to unlocked
   4. Sets ball name to "ARENA UNLOCKED!"
 
-Cross-refs: 1 call — CreateNoDizzy.
+Cross-refs: 1 call — DispatchCollisionEvents.
 
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

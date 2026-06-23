@@ -180,9 +180,9 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 
 ### Sawblades (and Arena Object Sub-Dispatcher)
 
-⚠️ **`CreateSawblade` is actually a multi-factory**, not just a sawblade creator. It handles 6 different arena objects based on the name prefix. It is called from `CreateLevelObjects` for each section-3 object whose name doesn't match any other prefix.
+⚠️ **`CreateExpertLevelObjects` is actually a multi-factory**, not just a sawblade creator. It handles 6 different arena objects based on the name prefix. It is called from `CreateLevelObjects` for each section-3 object whose name doesn't match any other prefix.
 
-**`CreateSawblade`** — Address: `0x0040E250`
+**`CreateExpertLevelObjects`** — Address: `0x0040E250`
 - **Convention:** `__thiscall` (ECX = Scene\*, param_1 = name string, param_2/3 = output ptrs, param_4 = transform)
 - **Called from:** `Scene_HandleCollisions` / `CreateLevelObjects`
 - **Gate:** All sub-objects with `app+0x23C != 0` check: BONK, TIP, SAWBLADE
@@ -421,7 +421,7 @@ In a reimplementation, bypass both gates entirely:
 | Function | Address | Purpose |
 |----------|---------|---------|
 | `CreateLevelObjects` | `0x4121D0` | Main factory dispatcher — matches MESHWORLD names to constructors |
-| `CreateSawblade` | `0x40E250` | Multi-factory: BONK, TIP, SAWBLADE, BRIDGE, JUDGE, BELL sub-dispatcher |
+| `CreateExpertLevelObjects` | `0x40E250` | Multi-factory: BONK, TIP, SAWBLADE, BRIDGE, JUDGE, BELL sub-dispatcher |
 | `Scene_SpawnBallsAndObjects` | `0x41C5B0` | Ball spawning on level load |
 | `CreateBadBall` | `0x40BCA0` | Spawn 8-ball AI opponent from MESHWORLD BADBALL tag |
 | `CreateMouseTrap` | `0x40BF50` | Spawn mouse trap from MESHWORLD MOUSETRAP objects |

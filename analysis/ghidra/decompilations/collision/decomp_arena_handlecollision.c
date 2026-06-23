@@ -35,7 +35,7 @@
 //   - Create ScoreObject with "EXTRA TIME:" text
 //   - Timer_Decrement + append to scene score list (+0x8B8)
 //
-// Always ends with: CreateNoDizzy(scene, ball, collider)
+// Always ends with: DispatchCollisionEvents(scene, ball, collider)
 
 void __thiscall Arena_HandleCollision(Scene *scene, Ball *ball, Collider *collider)
 {
@@ -88,5 +88,5 @@ void __thiscall Arena_HandleCollision(Scene *scene, Ball *ball, Collider *collid
     }
   }
   
-  CreateNoDizzy(scene, ball, collider);
+  DispatchCollisionEvents(scene, ball, collider);
 }

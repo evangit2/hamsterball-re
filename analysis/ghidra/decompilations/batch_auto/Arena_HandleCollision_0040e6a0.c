@@ -115,7 +115,7 @@ void __thiscall Arena_HandleCollision(void *this,int *param_1,int *param_2)
       AthenaList_Append((void *)((int)this + 0x8b8),iVar2);
     }
   }
-  CreateNoDizzy(this,param_1,param_2);
+  DispatchCollisionEvents(this,param_1,param_2);
   ExceptionList = local_c;
   return;
 }

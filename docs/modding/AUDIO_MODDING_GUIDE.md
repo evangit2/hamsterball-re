@@ -254,7 +254,7 @@ if (fwing) {
 
 ### 5.1 Triggering sounds from collision events
 
-The engine already wires many level tags to sounds in `CreateNoDizzy` (a.k.a. `CreateNoDizzy`, `0x0040C5D0`) and `Level_HandleCollision` (`0x0040DCD0`):
+The engine already wires many level tags to sounds in `DispatchCollisionEvents` (a.k.a. `DispatchCollisionEvents`, `0x0040C5D0`) and `Level_HandleCollision` (`0x0040DCD0`):
 
 | Tag | Sound source | Function called |
 |---|---|---|
@@ -266,7 +266,7 @@ The engine already wires many level tags to sounds in `CreateNoDizzy` (a.k.a. `C
 | `N:GOAL` | `Audio_PlayMusic(App+0x53C, "Goal!")` | BASS |
 | `E:CATAPULTBOTTOM` | `App + 0x464` (`sounds\\dropinshort`) | `Sound_PlayChannel` |
 
-So adding an object with one of these tags in a MESHWORLD level already produces the corresponding sound. For custom tags, hook `CreateNoDizzy` and call the sound yourself.
+So adding an object with one of these tags in a MESHWORLD level already produces the corresponding sound. For custom tags, hook `DispatchCollisionEvents` and call the sound yourself.
 
 ---
 

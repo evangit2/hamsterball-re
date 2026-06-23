@@ -49,7 +49,7 @@
  *
  * Signature: void __thiscall Level_HandleCollision(Level* this, Ball* param_1, CollisionObj* param_2)
  *
- * Level-specific collision event handler. Delegates to CreateNoDizzy() at the end.
+ * Level-specific collision event handler. Delegates to DispatchCollisionEvents() at the end.
  * The event type is read from param_2[1]+0x864 (object name string).
  *
  * E:CATAPULTBOTTOM:
@@ -85,7 +85,7 @@
  *     AND obj+0x10F4 == 0 (not already triggered)
  *   - Call param_1->vtable[0x20]() (ball bounce callback)
  *
- * Finally: CreateNoDizzy(this, param_1, param_2)
+ * Finally: DispatchCollisionEvents(this, param_1, param_2)
  *
  * LEVEL OBJECT LIST OFFSETS:
  *   this+0x43B8 = catapult list (AthenaList)

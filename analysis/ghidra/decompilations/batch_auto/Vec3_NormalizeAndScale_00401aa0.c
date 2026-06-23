@@ -25,7 +25,7 @@
  *   - Scene_SetCamera (camera direction)
  *   - Ball_GetInputForce (input → force direction)
  *   - Ball_ApplyTrajectory (trajectory setup)
- *   - CreateSpinner, CreateNoDizzy (object creation)
+ *   - HandleArenaCollisionEvents, DispatchCollisionEvents (object creation)
  *   - TowerLevel_Ctor, CollisionFace_ctor (level construction)
  *   - WaterRipple_UpdateVertices (water effects)
  *   - Mesh_FindClosestCollision (collision detection)

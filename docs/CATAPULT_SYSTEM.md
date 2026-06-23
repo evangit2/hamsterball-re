@@ -4,7 +4,7 @@
 
 Catapults are level objects that launch the ball when it touches a specific collision surface. They appear in Level4 (Dizzy Race) and the Dizzy Arena. The catapult mesh is loaded from `Levels/Level4-Catapult.MESHWORLD`, which contains a single entity name: `E:CATAPULTBOTTOM`.
 
-**Why your global-spawn catapults are "hollow":** Catapults are NOT standalone objects — they require a `CollisionLevel` child object with a spatial tree, the mesh must be registered with the scene's collision system, the catapult must be added to TWO AthenaLists on the scene (general + catapult-specific), and the launch is triggered by the **collision dispatcher** (Level_HandleCollision / CreateSpinner) matching the collision entry's entity name. If you just `operator_new` + `Catapult_ctor` without going through `CreateLevelObjects`, you get a visual shell with no collision registration and no event-name association.
+**Why your global-spawn catapults are "hollow":** Catapults are NOT standalone objects — they require a `CollisionLevel` child object with a spatial tree, the mesh must be registered with the scene's collision system, the catapult must be added to TWO AthenaLists on the scene (general + catapult-specific), and the launch is triggered by the **collision dispatcher** (Level_HandleCollision / HandleArenaCollisionEvents) matching the collision entry's entity name. If you just `operator_new` + `Catapult_ctor` without going through `CreateLevelObjects`, you get a visual shell with no collision registration and no event-name association.
 
 ---
 
@@ -227,16 +227,16 @@ void Level_HandleCollision(void* this, int* ball, int* coll_obj) {
         }
     }
     // ... other collision handlers (OPENSESAME, TRAPDOOR, BITE, MACETRIGGER, etc.)
-    CreateNoDizzy(this, ball, coll_obj);
+    DispatchCollisionEvents(this, ball, coll_obj);
 }
 ```
 
-### Arena Mode: CreateSpinner
+### Arena Mode: HandleArenaCollisionEvents
 
-`CreateSpinner` (@ 0x00412D57) handles the same `E:CATAPULTBOTTOM` collision but uses **different scene offsets** for the catapult list:
+`HandleArenaCollisionEvents` (@ 0x00412D57) handles the same `E:CATAPULTBOTTOM` collision but uses **different scene offsets** for the catapult list:
 
 ```c
-// In CreateSpinner, E:CATAPULTBOTTOM handler:
+// In HandleArenaCollisionEvents, E:CATAPULTBOTTOM handler:
 if (__stricmp(*(char**)(coll_obj[1] + 0x864), "E:CATAPULTBOTTOM") == 0) {
     if (ball[0x202] < 1) {
         ball[0x202] = 1000;
@@ -390,7 +390,7 @@ The catapult's collision geometry (the "bottom" surface the ball touches) is tag
 | Context | General Objects List | Catapult List | Catapult Items Array |
 |---|---|---|---|
 | **Race (Level_HandleCollision)** | Scene+0x2578 | Scene+0x43B8 | Scene+0x47C4 |
-| **Arena (CreateSpinner)** | Scene+0x2578 | Scene+0x584C | Scene+0x5C58 |
+| **Arena (HandleArenaCollisionEvents)** | Scene+0x2578 | Scene+0x584C | Scene+0x5C58 |
 
 > Note: In race mode, `Scene+0x43B8` is the catapult AthenaList and `Scene+0x47C4` is its internal items array. In arena mode, `Scene+0x584C` and `Scene+0x5C58` serve the same purpose. The CreateLevelObjects factory adds to `Scene+0x584C` for both modes — the arena offsets appear to be the primary ones, and Level_HandleCollision uses different offsets that may be set up during race initialization.
 
@@ -443,7 +443,7 @@ The `CollisionLevel` at `cat+0x10D4` has its own SpatialTree (cloned from the pa
 In the normal level loading flow, this happens because:
 1. `Level_LoadMeshes` creates MeshBuffers with entity names and collision triangles
 2. The SpatialTree in the CollisionLevel stores these triangles
-3. When `Level_HandleCollision` / `CreateSpinner` checks `catapult+0x10D4 == *coll_obj`, it's matching the collision object that was created from the CollisionLevel's mesh data
+3. When `Level_HandleCollision` / `HandleArenaCollisionEvents` checks `catapult+0x10D4 == *coll_obj`, it's matching the collision object that was created from the CollisionLevel's mesh data
 
 **For a global spawn**, you need to ensure:
 1. The CollisionLevel's mesh is loaded (Catapult_ctor does this via `CollisionLevel_ctorWithLevel`)
@@ -467,7 +467,7 @@ The simplest approach: call `CreateLevelObjects` with a mesh named "CATAPULT" �
 | 0x00437820 | Catapult_Vec3List_Level_Dtor | Level destructor |
 | 0x00412711 | CreateLevelObjects | Factory: matches "CATAPULT" mesh name |
 | 0x0040DCD0 | Level_HandleCollision | Race collision dispatcher (E:CATAPULTBOTTOM) |
-| 0x00412D57 | CreateSpinner | Arena collision dispatcher (E:CATAPULTBOTTOM) |
+| 0x00412D57 | HandleArenaCollisionEvents | Arena collision dispatcher (E:CATAPULTBOTTOM) |
 | 0x00462850 | Stands_ctor | Parent constructor |
 | 0x00465080 | CollisionLevel_ctorWithLevel | Creates CollisionLevel + loads meshes |
 | 0x00461740 | Level_ctor | Grandparent constructor |

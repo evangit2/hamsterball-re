@@ -1,10 +1,10 @@
 # Arena Hazard System (RumbleBoard Objects)
 
 The RumbleBoard arenas contain interactive hazards created by the master factory
-function `CreateSawblade` (0x40E250). Despite its name, this function creates
+function `CreateExpertLevelObjects` (0x40E250). Despite its name, this function creates
 ALL arena object types, not just sawblades.
 
-## Object Factory: CreateSawblade (0x40E250)
+## Object Factory: CreateExpertLevelObjects (0x40E250)
 
 Dispatches on name prefix (case-insensitive `__strnicmp`). Only creates objects
 when `App+0x23C != 0` (Frenzied difficulty check for tournament-only objects).
@@ -178,7 +178,7 @@ and reduces time bonus from +1000 to +500.
 
 | Address | Name | Purpose |
 |---------|------|---------|
-| 0x40E250 | CreateSawblade | Master arena object factory |
+| 0x40E250 | CreateExpertLevelObjects | Master arena object factory |
 | 0x434660 | Sawblade_Level_Ctor | Sawblade constructor |
 | 0x434A50 | Saw_Activate | Full activation |
 | 0x434770 | Saw_AlertActivate | Warning phase |

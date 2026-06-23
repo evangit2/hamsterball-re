@@ -331,11 +331,11 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Glue blob that slows the ball
 
 ### Spinner
-- **Factory:** `CreateSpinner` (0x412850)
+- **Factory:** `HandleArenaCollisionEvents` (0x412850)
 - **Description:** Spinning blade / propeller hazard
 
 ### Sawblade
-- **Factory:** `CreateSawblade` (0x40E250)
+- **Factory:** `CreateExpertLevelObjects` (0x40E250)
 - **Description:** Rotating saw blade hazard
 
 ### MouseTrap
@@ -347,11 +347,11 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Pinball-style bumper that knocks ball away
 
 ### SpeedCylinder
-- **Factory:** `CreateSpeedCylinder` (0x4117B0)
+- **Factory:** `CreateUpLevelObjects` (0x4117B0)
 - **Description:** Cylinder that accelerates or decelerates ball
 
 ### NoDizzy
-- **Factory:** `CreateNoDizzy` (0x40C5D0)
+- **Factory:** `DispatchCollisionEvents` (0x40C5D0)
 - **Description:** Power-up that prevents dizzy state
 
 ---
@@ -540,7 +540,7 @@ These objects have constructors or factories in the binary but lack deep reverse
 | Object | Constructor/Factory | Notes |
 |--------|---------------------|-------|
 | E:LIMIT boundary | `CreateLimit` (0x410D00) | Invisible race boundary |
-| E:NODIZZY power-up | `CreateNoDizzy` (0x40C5D0) | Prevents dizzy state |
+| E:NODIZZY power-up | `DispatchCollisionEvents` (0x40C5D0) | Prevents dizzy state |
 | E:JUMP trigger | *(inline in collision)* | Launch pad trigger object |
 | SAFESPOT | *(inline in factory)* | Safe zone / checkpoint |
 | CAMERALOOKAT | `CameraLookAt` (0x413280) | Camera target marker |

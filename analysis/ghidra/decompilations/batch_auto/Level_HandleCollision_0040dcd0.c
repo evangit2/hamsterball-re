@@ -3,7 +3,7 @@
  * Address: 0x0040dcd0
  * Signature: Level_HandleCollision(...)
  *
- * Patterns: vtable dispatch, audio, collision, level. Calls: Level_HandleCollision, __stricmp, AthenaList_NextIndex, Catapult_Launch, Sound_PlayChannel, Trapdoor_Open, Trapdoor_Activate, CreateNoDizzy. Offsets: 26, Lines: 115
+ * Patterns: vtable dispatch, audio, collision, level. Calls: Level_HandleCollision, __stricmp, AthenaList_NextIndex, Catapult_Launch, Sound_PlayChannel, Trapdoor_Open, Trapdoor_Activate, DispatchCollisionEvents. Offsets: 26, Lines: 115
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -11,7 +11,7 @@
 /* Level_HandleCollision(this, ball, collObj): Level collision dispatcher.
    E:CATAPULTBOTTOM→Catapult_Launch+E:OPENSESAME→Trapdoor_Open N:TRAPDOOR→Trapdoor_Activate
    E:BITE→set damage 25.0 E:MACETRIGGER→activate mace N:MACE→ball bounce callback. Ends with
-   CreateNoDizzy. See decomp_water_collision.c */
+   DispatchCollisionEvents. See decomp_water_collision.c */
 
 void __thiscall Level_HandleCollision(void *this,int *param_1,int *param_2)
 
@@ -121,6 +121,6 @@ void __thiscall Level_HandleCollision(void *this,int *param_1,int *param_2)
       *(int *)((int)this + iVar2 * 4 + 0x5008) = iVar1 + 1;
     }
   }
-  CreateNoDizzy(this,param_1,param_2);
+  DispatchCollisionEvents(this,param_1,param_2);
   return;
 }

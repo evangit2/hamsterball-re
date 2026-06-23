@@ -366,25 +366,40 @@ This is the simplest method but only gives you ONE level's factory at a time.
 
 Each Board constructor preloads specific MeshWorld files into board struct slots. The table below shows which sub-mesh files each Board constructor loads (verified by tracing string references in the binary):
 
-### Board Constructor → Sub-Mesh File Mapping
+### Board Creation — Mode Determination
 
-| Board | Constructor Area | Sub-Meshes Loaded |
-|-------|-----------------|-------------------|
-| Warm-up (L1) | 0x004197xx | (none — no factory) |
-| Beginner (L2) | 0x004197xx | (none — no factory) |
-| Intermediate (L3) | 0x0041CBxx | Level2-Bridge |
-| Dizzy (L4) | 0x0041D0xx-0x0041D3xx | Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
-| Tower (L5) | 0x0041E3xx-0x0041E6xx | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, Level4-Trapdoor1-2 |
-| Up (L6) | 0x0042A0xx-0x0042A1xx | Level6-Lifter, LevelUp-SpeedCylinder, LevelUp-Button, LevelUp |
-| Neon (L7) | 0x004245xx-0x004249xx | LevelDark-NeonPlatform, LevelDark-DFloor1-4, LevelDark-Trode, LevelDark-Flickning |
-| Expert (L8) | 0x0041EBxx | Level5-Bridge |
-| Odd (L9) | 0x0042A1xx | Level6-Lifter |
-| Toob (L10) | 0x0041F5xx-0x0041F6xx | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1-2 |
-| Wobbly (L11) | 0x0041F2xx-0x0040F5xx | Level7-Wobbly1-7, Level7-Wavy1 |
-| Glass (L12) | 0x004177xx | (position-only refs, minimal mesh loading) |
-| Sky (L13) | 0x00429Fxx | Level4-Trapdoor1-2 (shared with Tower), Level9-PopCylinder |
-| Master (L14) | 0x004207xx-0x00420Bxx | Level2-Bridge, Level3-Tipper, Level3-Gluebie, Level3-Swirl, Level3-WaterWheel, Level4-Catapult, Level4-Mace, Level4-Windmill, Level4-Turret, Level4-Trapdoor1-2, Level7-Wobbly8, Level8-Blockdawg1-2, Level10-Bridge1-2, Level10-2PBridge |
-| Impossible (L15) | 0x00424Cxx-0x00424Fxx | LevelImpossible-Looper, LevelImpossible-Pendulum, LevelImpossible-Gear, LevelImpossible-BigGear, LevelImpossible-Rotator |
+The game checks `App+0x237` (byte) to determine whether to use Race Board or Arena Board:
+
+```asm
+; At ~0x4270AB
+CMP [EAX+0x237], BL    ; check App+0x237 (BL=0)
+JZ  skip_race           ; if zero, skip race board creation
+CALL 0x00426780        ; Race Board switch (jump table at 0x426AB0)
+```
+
+- **App+0x237 = 1 (non-zero)** → Race mode → Race Board constructors (0x422xxx)
+- **App+0x237 = 0** → Arena mode → Arena Board constructors (0x41Cxxx), called from `0x427080`
+
+The Race Board function (`0x426780`) uses a jump table at `0x426AB0` with 15 entries (indexed by `level_number - 1`). The Arena Board function (`0x427080`) uses a sequential switch at `0x427140` with sequential level IDs 1–14.
+
+### Board Constructor → Sub-Mesh File Mapping (Arena)
+
+| Board | Constructor Area | Sub-Meshes Loaded (verified from binary) |
+|-------|-----------------|------------------------------------------|
+| Arena L1 | 0x4200E0 | LevelUp-Lifter, LevelUp-SpeedCylinder, LevelUp-Button, Level2-Bridge, Level10-2PBridge |
+| Arena L2 | 0x41CB20 | Level2-Bridge, Level3-Tipper, Level3-WaterWheel, Level3-Swirl |
+| Arena L3 | 0x41D060 | Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
+| Arena L4 | 0x41E340 | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret |
+| Arena L5 | 0x420390 | LevelUp-Lifter, LevelUp-SpeedCylinder, LevelUp-Button, Level2-Bridge, Level10-2PBridge, Level3-Tipper, Level10-Bridge1-2, Level9-PopCylinder1-2, Level8-Blockdawg1-2, Level4-Catapult, Level3-Gluebie |
+| Arena L6 | 0x424440 | LevelDark-NeonPlatform, LevelDark-DFloor1-4, LevelDark-Trode, LevelDark-Flickring |
+| Arena L7 | 0x41EA40 | Level5-Bridge, Level7-Wobbly1 |
+| Arena L8 | 0x41ED80 | Level7-Wobbly1-7 |
+| Arena L9 | 0x41F4B0 | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1-2, Level9-PopCylinder1-2, Level9-Trapdoor |
+| Arena L10 | 0x41F110 | Level7-Wobbly1-7, Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1-2 |
+| Arena L11 | 0x424A90 | LevelImpossible-Looper, Gear, BigGear, Rotator, Pendulum |
+| Arena L12 | 0x41F930 | Level9-PopCylinder1-2, Level9-Trapdoor |
+| Arena L13 | 0x4206D0 | Level2-Bridge, Level10-2PBridge, Level3-Tipper, Level10-Bridge1-2, Level9-PopCylinder1-2, Level8-Blockdawg1-2, Level4-Catapult, Level3-Gluebie |
+| Arena L14 | 0x424C20 | LevelImpossible-Looper, Gear, BigGear, Rotator, Pendulum |
 
 ### Board Struct Slots for Sub-Meshes
 
