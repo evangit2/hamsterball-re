@@ -56,6 +56,7 @@ static void log_init(void)
     /* Clear the log at startup */
     if (fopen_s(&f, g_logPath, "w") == 0 && f) {
         fprintf(f, "=== Universal Ref Loader LOG — DLL Loaded ===\n");
+        fprintf(f, "BUILD: rsks-jit v4 INJECTION MODE (no-restore, no-collision-alloc)\n");
         fprintf(f, "Timestamp: DLL_PROCESS_ATTACH\n");
         fprintf(f, "Log path: %s\n", g_logPath);
         fclose(f);
