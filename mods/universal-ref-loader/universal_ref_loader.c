@@ -109,42 +109,67 @@ static DWORD g_operator_new_addr = 0x00449E70;  /* operator new in Hamsterball.e
  * all other level factories until one succeeds.
  * ============================================================ */
 
+/* Sub-mesh slot dependency table: which slots each factory accesses.
+ * Factories do NOT null-check these slots — if a slot is NULL, the factory
+ * will crash with an access violation. We must check before calling.
+ */
+typedef struct {
+    FactoryFunc func;
+    int slots[9];  /* board offsets that must be non-NULL, -1 = end */
+    const char* name;
+} SafeFactory;
+
+static SafeFactory safe_factories[] = {
+    { (FactoryFunc)FACTORY_ARENA_MASTER,     {0x436C, 0x4370, 0x4394, 0x4398, -1}, "Master" },
+    { (FactoryFunc)FACTORY_ARENA_DIZZY,      {0x436C, 0x4370, 0x4378, 0x437C, 0x4390, 0x43A4, 0x43B0, 0x43B4, -1}, "Dizzy" },
+    { (FactoryFunc)FACTORY_ARENA_IMPOSSIBLE, {0x436C, 0x4370, 0x4374, 0x4378, 0x437C, -1}, "Impossible" },
+    { (FactoryFunc)FACTORY_ARENA_EXPERT,     {0x436C, 0x4370, 0x4374, -1}, "Expert" },
+    { (FactoryFunc)FACTORY_ARENA_TOWER,     {0x436C, 0x4370, 0x4374, 0x4378, 0x4394, 0x4398, -1}, "Tower" },
+    { (FactoryFunc)FACTORY_ARENA_GLASS,     {0x436C, 0x4370, 0x4374, 0x4378, 0x437C, 0x4380, 0x4384, -1}, "Glass" },
+    { (FactoryFunc)FACTORY_ARENA_TOOB,      {0x436C, 0x4370, 0x4374, 0x4378, 0x437C, 0x4380, 0x4384, -1}, "Toob" },
+    { (FactoryFunc)FACTORY_ARENA_UP,        {0x4374, 0x4378, 0x437C, 0x4380, 0x4384, 0x4388, 0x438C, 0x4390, -1}, "Neon" },
+    { (FactoryFunc)FACTORY_ARENA_ODD,       {0x436C, 0x4370, 0x4374, 0x4378, 0x437C, -1}, "Odd" },
+    { (FactoryFunc)FACTORY_ARENA_SKY,       {0x436C, 0x4374, 0x4378, 0x437C, 0x4380, 0x438C, 0x4390, -1}, "Sky" },
+    { (FactoryFunc)FACTORY_ARENA_BEGINNER,  {0x436C, 0x4370, 0x4374, -1}, "Beginner" },
+    { (FactoryFunc)FACTORY_ARENA_INTERMED,  {0x436C, 0x4370, 0x4374, -1}, "Intermediate" },
+    { (FactoryFunc)FACTORY_ARENA_WOBBLY,   {0x4344, -1}, "Wobbly" },
+    { (FactoryFunc)FACTORY_RACE_BASE,      {-1}, "RaceBase" },  /* no sub-mesh slots needed */
+};
+
 static void __thiscall universal_factory(
     void* board, char* refName, 
     void** outObj, void** outCol, int* refEntry)
 {
-    FactoryFunc factories[] = {
-        /* Most inclusive Arena factories first */
-        (FactoryFunc)FACTORY_ARENA_MASTER,     /* BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE, N:SPINNER, N:BUMPER, E:LAUNCH */
-        (FactoryFunc)FACTORY_ARENA_DIZZY,      /* CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET, BONK, FAN */
-        (FactoryFunc)FACTORY_ARENA_IMPOSSIBLE, /* LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM, N:BOUNCE, N:ONROTATOR, N:ONGEAR */
-        (FactoryFunc)FACTORY_ARENA_EXPERT,     /* BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL, E:SCORE, E:BELL, LIFTER, E:GRAVITY */
-        (FactoryFunc)FACTORY_ARENA_TOWER,     /* LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK */
-        (FactoryFunc)FACTORY_ARENA_GLASS,     /* WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY, FALLOUT1, BLOCKDAWG1-3 */
-        (FactoryFunc)FACTORY_ARENA_TOOB,      /* SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY, N:SAWTEETH, N:BUMPER */
-        (FactoryFunc)FACTORY_ARENA_UP,        /* NEONPLATFORM, DFLOOR1-4, TRODE, N:NEONPLATFORM, E:ZOOP, E:LIGHTSOFF, E:LIGHTSON, FLICKNING, N:BUMP */
-        (FactoryFunc)FACTORY_ARENA_ODD,       /* LIFTER, E:GRAVITY, WOBBLY1-5, WAVY1 */
-        (FactoryFunc)FACTORY_ARENA_SKY,       /* POPCYLINDER, TRAPDOOR, N:BUMPER, VAC-in */
-        (FactoryFunc)FACTORY_ARENA_BEGINNER,  /* BRIDGE, TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1-2 */
-        (FactoryFunc)FACTORY_ARENA_INTERMED,  /* TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1-2 */
-        (FactoryFunc)FACTORY_ARENA_WOBBLY,   /* SMASHER1-2 */
-        /* Race factories as fallback (handle PLATFORM and STANDS) */
-        (FactoryFunc)FACTORY_RACE_BASE,       /* PLATFORM, STANDS (base race factory) */
-    };
-    int numFactories = sizeof(factories) / sizeof(factories[0]);
-    int i;
+    int numFactories = sizeof(safe_factories) / sizeof(safe_factories[0]);
+    int i, j;
     
     /* Initialize outputs to null */
     *outObj = NULL;
     *outCol = NULL;
     
-    /* Try each factory in sequence */
+    /* Try each factory in sequence, but only if its sub-mesh slots are loaded */
     for (i = 0; i < numFactories; i++) {
-        *outObj = NULL;
-        *outCol = NULL;
+        SafeFactory* sf = &safe_factories[i];
+        
+        /* Check if all required sub-mesh slots are non-NULL */
+        BOOL safe = TRUE;
+        for (j = 0; sf->slots[j] != -1; j++) {
+            void* slot_val = *(void**)((char*)board + sf->slots[j]);
+            if (slot_val == NULL) {
+                safe = FALSE;
+                break;
+            }
+        }
+        
+        if (!safe) {
+            /* Skip this factory — its sub-mesh slots aren't loaded */
+            continue;
+        }
         
         /* Call the factory */
-        factories[i](board, refName, outObj, outCol, refEntry);
+        *outObj = NULL;
+        *outCol = NULL;
+        sf->func(board, refName, outObj, outCol, refEntry);
         
         /* If it returned a non-null object, we're done */
         if (*outObj != NULL) {
