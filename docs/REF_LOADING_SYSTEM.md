@@ -421,7 +421,9 @@ Each Arena factory accesses specific board struct offsets (0x4344–0x4398) to r
 | Master (0x4121D0) | +0x436C, +0x4370, +0x4394, +0x4398 | BRIDGE, TIPPER, BONK, BBRIDGE, POPCYLINDER, BLOCKDAWG, CATAPULT, GLUEBIE |
 | Impossible (0x417FE0) | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
 
-**Critical implication for the universal ref loader**: When the DLL mod tries a factory from another level, that factory will access board slots that weren't loaded by the current level's constructor. The slots will be null, and the factory must handle this gracefully (check for null before dereferencing). Most factories do check for null and skip the mesh assignment if the slot is empty, but this needs to be verified per-factory.
+**Critical implication for the universal ref loader**: When the DLL mod tries a factory from another level, that factory will access board slots that weren't loaded by the current level's constructor. **Factories do NOT null-check their sub-mesh slots** — they dereference the slot pointer directly after checking only that `operator_new` succeeded. If the slot is NULL, the factory will crash with an access violation.
+
+The DLL mod must check sub-mesh slots BEFORE calling each factory, or pre-load the required sub-meshes. The slot dependency table above provides the exact offsets each factory accesses.
 
 ### Runtime Sub-Mesh Loading (DLL Mod Approach)
 
