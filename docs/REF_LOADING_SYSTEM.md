@@ -401,21 +401,27 @@ The Race Board function (`0x426780`) uses a jump table at `0x426AB0` with 15 ent
 | Arena L13 | 0x4206D0 | Level2-Bridge, Level10-2PBridge, Level3-Tipper, Level10-Bridge1-2, Level9-PopCylinder1-2, Level8-Blockdawg1-2, Level4-Catapult, Level3-Gluebie |
 | Arena L14 | 0x424C20 | LevelImpossible-Looper, Gear, BigGear, Rotator, Pendulum |
 
-### Board Struct Slots for Sub-Meshes
+### Factory → Board Sub-Mesh Slot Dependencies
 
-| Board Offset | Typical Use | Example |
-|-------------|-------------|---------|
-| +0x436C | Primary sub-mesh (e.g. Tipper mesh, Bridge mesh) | Dizzy: Level3-Tipper |
-| +0x4370 | Primary collision level or secondary mesh | Dizzy: CollisionLevel(Tipper) |
-| +0x4374 | Secondary sub-mesh | Dizzy: Level3-Gluebie |
-| +0x4378 | Tertiary sub-mesh | Tower: Level4-Mace |
-| +0x437C | Quaternary sub-mesh | Tower: Level4-Windmill |
-| +0x4380-0x4390 | Additional sub-meshes | Neon: DFloor1-4, Trode |
+Each Arena factory accesses specific board struct offsets (0x4344–0x4398) to retrieve pre-loaded sub-mesh data. If a slot is null (because the Board constructor didn't load that mesh), the factory will skip that ref type or crash.
 
-**When a factory tries to create an object that references a sub-mesh slot, the slot must contain a valid MeshWorld pointer.** If the Board constructor didn't load that mesh, the factory will either:
-- Crash (dereferencing null)
-- Create an object with no visual mesh (invisible)
-- Silently fail
+| Factory | Board Slots Accessed | Refs Dependent on Slots |
+|---------|---------------------|------------------------|
+| Beginner (0x40A550) | +0x436C, +0x4370, +0x4374 | BRIDGE, TIPPER, WATERWHEEL/SWIRL |
+| Intermediate (0x40A5F0) | +0x436C, +0x4370, +0x4374 | TIPPER, WATERWHEEL, SWIRL, GLUEBIE |
+| Dizzy (0x40D7C0) | +0x436C, +0x4370, +0x4378, +0x437C, +0x4390, +0x43A4, +0x43B0, +0x43B4 | CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, TURRET (8 slots) |
+| Tower (0x4117B0) | +0x436C, +0x4370, +0x4374, +0x4378, +0x4394, +0x4398 | LIFTER, SPEEDCYLINDER, TIMEBUTTON, BRIDGE, TIPPER, BONK |
+| Neon (0x416910) | +0x4374, +0x4378, +0x437C, +0x4380, +0x4384, +0x4388, +0x438C, +0x4390 | NEONPLATFORM, DFLOOR1-4, TRODE, FLICKNING (8 slots) |
+| Expert (0x40E250) | +0x436C, +0x4370, +0x4374 | BONK, SAWBLADE, BRIDGE, JUDGE, BELL |
+| Odd (0x40EC40) | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C | LIFTER, WOBBLY1-5, WAVY1 |
+| Toob (0x40FB30) | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C, +0x4380, +0x4384 | SPINNY, SAW, FALLOUT, BLOCKDAWG (7 slots) |
+| Glass (0x40F420) | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C, +0x4380, +0x4384 | WOBBLY1-7, WAVY1, SPINNY, FALLOUT, BLOCKDAWG (7 slots) |
+| Wobbly (0x40AD80) | +0x4344 | SMASHER1-2 (1 slot) |
+| Sky (0x410AD0) | +0x436C, +0x4374, +0x4378, +0x437C, +0x4380, +0x438C, +0x4390 | POPCYLINDER, TRAPDOOR (7 slots) |
+| Master (0x4121D0) | +0x436C, +0x4370, +0x4394, +0x4398 | BRIDGE, TIPPER, BONK, BBRIDGE, POPCYLINDER, BLOCKDAWG, CATAPULT, GLUEBIE |
+| Impossible (0x417FE0) | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
+
+**Critical implication for the universal ref loader**: When the DLL mod tries a factory from another level, that factory will access board slots that weren't loaded by the current level's constructor. The slots will be null, and the factory must handle this gracefully (check for null before dereferencing). Most factories do check for null and skip the mesh assignment if the slot is empty, but this needs to be verified per-factory.
 
 ### Runtime Sub-Mesh Loading (DLL Mod Approach)
 
