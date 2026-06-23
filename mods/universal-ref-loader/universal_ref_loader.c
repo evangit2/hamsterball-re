@@ -35,21 +35,41 @@
 #define HOOK_CALL_SITE                0x0040C4BA
 #define HOOK_CALL_SITE_LEN            6           /* FF 90 84 00 00 00 */
 
-/* Original factory function addresses */
-#define FACTORY_NOOP             0x00419750  /* WarmUp, Beginner */
-#define FACTORY_BRIDGE           0x0040A550  /* Intermediate */
-#define FACTORY_DIZZY            0x0040A5F0  /* Dizzy */
-#define FACTORY_TOWER            0x0040D7C0  /* Tower */
-#define FACTORY_UP               0x004117B0  /* Up (SpeedCylinder) */
-#define FACTORY_NEON             0x00416910  /* Neon */
-#define FACTORY_EXPERT           0x0040E250  /* Expert (Sawblade) */
-#define FACTORY_ODD              0x0040EC40  /* Odd (Lifter) */
-#define FACTORY_TOOB             0x0040FB30  /* Toob */
-#define FACTORY_WOBBLY           0x0040F420  /* Wobbly */
-#define FACTORY_GLASS            0x0040AD80  /* Glass (Smasher) */
-#define FACTORY_SKY              0x00410AD0  /* Sky */
-#define FACTORY_MASTER           0x004121D0  /* Master (CreateLevelObjects) */
-#define FACTORY_IMPOSSIBLE       0x00417FE0  /* Impossible (CreateMechanicalObjects) */
+/* Original factory function addresses
+ * 
+ * ARENA Board factories (0x40Axxx-0x417xxx) — handle full ref set
+ * RACE Board factories (0x413xxx-0x418xxx) — handle subset of refs
+ * 
+ * The universal factory should try ALL Arena factories to maximize
+ * the number of ref types that can be created.
+ */
+
+/* ARENA factories */
+#define FACTORY_ARENA_NOOP        0x00419750  /* Arena L1 (WarmUp) */
+#define FACTORY_ARENA_BEGINNER    0x0040A550  /* Arena L2 */
+#define FACTORY_ARENA_INTERMED    0x0040A5F0  /* Arena L3 */
+#define FACTORY_ARENA_DIZZY       0x0040D7C0  /* Arena L4 */
+#define FACTORY_ARENA_TOWER       0x004117B0  /* Arena L5 */
+#define FACTORY_ARENA_UP          0x00416910  /* Arena L6 */
+#define FACTORY_ARENA_EXPERT      0x0040E250  /* Arena L7 */
+#define FACTORY_ARENA_ODD         0x0040EC40  /* Arena L8 */
+#define FACTORY_ARENA_TOOB        0x0040FB30  /* Arena L9 */
+#define FACTORY_ARENA_GLASS      0x0040F420  /* Arena L10 */
+#define FACTORY_ARENA_WOBBLY     0x0040AD80  /* Arena L11 */
+#define FACTORY_ARENA_SKY        0x00410AD0  /* Arena L12 */
+#define FACTORY_ARENA_MASTER     0x004121D0  /* Arena L13 (most inclusive) */
+#define FACTORY_ARENA_IMPOSSIBLE 0x00417FE0  /* Arena L14 */
+
+/* RACE factories (for race mode) */
+#define FACTORY_RACE_BASE         0x004133E0  /* Race L1,2,3,9,10,12,14 */
+#define FACTORY_RACE_DIZZY        0x004143D0  /* Race L4 */
+#define FACTORY_RACE_TOWER        0x00414680  /* Race L5 */
+#define FACTORY_RACE_UP           0x00414A20  /* Race L6 */
+#define FACTORY_RACE_NEON         0x004173B0  /* Race L7 */
+#define FACTORY_RACE_EXPERT       0x00414BD0  /* Race L8 */
+#define FACTORY_RACE_WOBBLY       0x00415460  /* Race L11 */
+#define FACTORY_RACE_SKY          0x00415A30  /* Race L13 */
+#define FACTORY_RACE_IMPOSSIBLE   0x00418760  /* Race L15 */
 
 /* Board struct offsets */
 #define BOARD_VTABLE             0x000       /* *(void***)board = vtable */
@@ -94,20 +114,22 @@ static void __thiscall universal_factory(
     void** outObj, void** outCol, int* refEntry)
 {
     FactoryFunc factories[] = {
-        /* Most inclusive factories first */
-        (FactoryFunc)FACTORY_MASTER,        /* BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE */
-        (FactoryFunc)FACTORY_IMPOSSIBLE,    /* LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM */
-        (FactoryFunc)FACTORY_TOWER,         /* CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET */
-        (FactoryFunc)FACTORY_EXPERT,        /* BONK, SAWBLADE, BRIDGE, JUDGE, BELL */
-        (FactoryFunc)FACTORY_TOOB,          /* SPINNY, SAW, SAW2, FALLOUT1, BLOCKDAWG1-3 */
-        (FactoryFunc)FACTORY_UP,            /* LIFTER, SPEEDCYLINDER, TIMEBUTTON */
-        (FactoryFunc)FACTORY_DIZZY,         /* TIPPER, WATERWHEEL, SWIRL, GLUEBIE */
-        (FactoryFunc)FACTORY_NEON,          /* NEONPLATFORM, DFLOOR1-4, TRODE */
-        (FactoryFunc)FACTORY_WOBBLY,        /* WOBBLY1-7, WAVY1 */
-        (FactoryFunc)FACTORY_SKY,           /* POPCYLINDER, TRAPDOOR */
-        (FactoryFunc)FACTORY_BRIDGE,        /* BRIDGE */
-        (FactoryFunc)FACTORY_ODD,           /* LIFTER */
-        (FactoryFunc)FACTORY_GLASS,         /* SMASHER1-2 */
+        /* Most inclusive Arena factories first */
+        (FactoryFunc)FACTORY_ARENA_MASTER,     /* BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE, N:SPINNER, N:BUMPER, E:LAUNCH */
+        (FactoryFunc)FACTORY_ARENA_DIZZY,      /* CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, TURRET, BONK, FAN */
+        (FactoryFunc)FACTORY_ARENA_IMPOSSIBLE, /* LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM, N:BOUNCE, N:ONROTATOR, N:ONGEAR */
+        (FactoryFunc)FACTORY_ARENA_EXPERT,     /* BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL, E:SCORE, E:BELL, LIFTER, E:GRAVITY */
+        (FactoryFunc)FACTORY_ARENA_TOWER,     /* LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK */
+        (FactoryFunc)FACTORY_ARENA_GLASS,     /* WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY, FALLOUT1, BLOCKDAWG1-3 */
+        (FactoryFunc)FACTORY_ARENA_TOOB,      /* SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY, N:SAWTEETH, N:BUMPER */
+        (FactoryFunc)FACTORY_ARENA_UP,        /* NEONPLATFORM, DFLOOR1-4, TRODE, N:NEONPLATFORM, E:ZOOP, E:LIGHTSOFF, E:LIGHTSON, FLICKNING, N:BUMP */
+        (FactoryFunc)FACTORY_ARENA_ODD,       /* LIFTER, E:GRAVITY, WOBBLY1-5, WAVY1 */
+        (FactoryFunc)FACTORY_ARENA_SKY,       /* POPCYLINDER, TRAPDOOR, N:BUMPER, VAC-in */
+        (FactoryFunc)FACTORY_ARENA_BEGINNER,  /* BRIDGE, TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1-2 */
+        (FactoryFunc)FACTORY_ARENA_INTERMED,  /* TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1-2 */
+        (FactoryFunc)FACTORY_ARENA_WOBBLY,   /* SMASHER1-2 */
+        /* Race factories as fallback (handle PLATFORM and STANDS) */
+        (FactoryFunc)FACTORY_RACE_BASE,       /* PLATFORM, STANDS (base race factory) */
     };
     int numFactories = sizeof(factories) / sizeof(factories[0]);
     int i;
