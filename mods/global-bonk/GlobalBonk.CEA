@@ -52,9 +52,14 @@ label(prox_done)
 label(no_clear)
 label(skip_col)
 label(skip_scene)
+label(find_player_ball)
+label(player_found)
+label(no_player)
 
 SpawnCode:
-  // Save the current ball's Board pointer
+  // =====================================================
+  // Get Board from current ball
+  // =====================================================
   mov eax, [esi+0x14]
   test eax, eax
   jz no_clear
@@ -65,14 +70,66 @@ SpawnCode:
 
 no_clear:
   // =====================================================
-  // PER-FRAME CHASE UPDATE: For each active bonk, update
-  // the chase target to the current ball's position.
-  // This is the KEY FIX — without this, the hammer chases
-  // a static point set once at proximity trigger time.
+  // FIND PLAYER BALL: Read player ball from Board+0x29D4
+  // Ball_Update only runs for AI balls in race mode.
+  // We need the PLAYER's position, not the AI ball's.
+  // AthenaList at Board+0x29D4:
+  //   count  = [Board+0x29D8]   (+4)
+  //   array  = [Board+0x29E0]   (+0x40C)
+  //   ball[0] = [[Board+0x29E0]]
+  // Player ball has ball+0x18 == 0
+  // =====================================================
+  mov edx, [esi+0x14]
+  test edx, edx
+  jz save_pos
+
+  mov ecx, [edx+0x29D8]       // ball count
+  test ecx, ecx
+  jz save_pos
+  cmp ecx, #64
+  ja save_pos                  // sanity: >64 is garbage
+
+  mov edx, [edx+0x29E0]       // ball array pointer
+  test edx, edx
+  jz save_pos
+
+  xor edi, edi                // index = 0
+
+find_player_ball:
+  cmp edi, ecx
+  jae save_pos                 // no player found, use default
+
+  mov eax, [edx+edi*4]        // ball = array[index]
+  test eax, eax
+  je find_player_next
+
+  mov ebx, [eax+0x18]         // ball+0x18 == 0 → player 1
+  test ebx, ebx
+  jz player_found
+
+find_player_next:
+  inc edi
+  jmp find_player_ball
+
+player_found:
+  // eax = player ball pointer
+  // Save player position
+  mov ebx, [eax+0x164]
+  mov [playerX], ebx
+  fld dword [eax+0x168]
+  fsub dword [float_20]
+  fstp dword [playerY]
+  mov ebx, [eax+0x16C]
+  mov [playerZ], ebx
+
+  // =====================================================
+  // PER-FRAME BONK UPDATE
+  // For each bonk: update target_pos AND start_pos to player pos.
+  // This makes BOTH the head (pos_copy) and base (pos) follow the player.
   // =====================================================
   mov eax, [bonk_array]
   test eax, eax
-  jz save_pos
+  jz check_spawn
 
   pushad
   xor ebx, ebx
@@ -85,21 +142,43 @@ prox_loop:
   test eax, eax
   jz prox_next
 
-  // Check vtable is valid (not freed)
   mov ecx, [eax]
   test ecx, ecx
-  jz prox_next
+  jz prox_next                 // freed/null vtable
 
-  // Check if bonk is active (obj+0x10FC != 0)
+  // Read player position fresh from playerX/Y/Z
+  // Update target_pos (0x1120-0x1128) = player position
+  // This is where the hammer head swings toward
+  mov edx, [playerX]
+  mov [eax+0x1120], edx
+  mov edx, [playerY]
+  mov [eax+0x1124], edx
+  mov edx, [playerZ]
+  mov [eax+0x1128], edx
+
+  // Update start_pos (0x1108-0x1110) = player position
+  // This is where the hammer base moves toward
+  mov edx, [playerX]
+  mov [eax+0x1108], edx
+  mov edx, [playerY]
+  mov [eax+0x110C], edx
+  mov edx, [playerZ]
+  mov [eax+0x1110], edx
+
+  // Check if not chasing yet — trigger chase if player is near
+  cmp byte [eax+0x10FD], 0
+  jne prox_next                // already chasing, just updated target
+
+  // Not chasing — check proximity to trigger chase
   cmp byte [eax+0x10FC], 0
-  je prox_next
+  je prox_next                 // not active either, skip
 
-  // Check distance: ball pos (esi+0x164/168/16C) vs bonk pos (eax+0x10D4)
-  fld dword [esi+0x164]
+  // Check distance: player pos vs bonk pos (0x10D4)
+  fld dword [playerX]
   fsub dword [eax+0x10D4]
   fmul st, st
 
-  fld dword [esi+0x16C]
+  fld dword [playerZ]
   fsub dword [eax+0x10DC]
   fmul st, st
   faddp
@@ -111,29 +190,14 @@ prox_loop:
   jb prox_next
 
 prox_near:
-  // Activate chase mode
-  mov byte [eax+0x10FC], 0      // clear active (stop idle animation)
-  mov byte [eax+0x10FD], 1      // set chasing = 1
-  mov dword [eax+0x1104], 1     // chase_state = 1 (THE CHASE)
+  // Activate chase — same as E:HAMMERCHASE handler (0x438BB0)
+  mov byte [eax+0x10FC], 0     // clear active (stop idle)
+  mov byte [eax+0x10FD], 1     // set chasing = 1
+  mov dword [eax+0x1104], 1    // chase_state = 1
   mov dword [eax+0x1138], 0x3F000000  // speed = 0.5
 
-  // Set start_pos = current bonk position
-  mov edx, [eax+0x10D4]
-  mov [eax+0x1108], edx
-  mov edx, [eax+0x10D8]
-  mov [eax+0x110C], edx
-  mov edx, [eax+0x10DC]
-  mov [eax+0x1110], edx
-
-  // Set target_pos = ball position (will be updated every frame below)
-  mov edx, [esi+0x164]
-  mov [eax+0x1120], edx
-  mov edx, [esi+0x168]
-  mov [eax+0x1124], edx
-  mov edx, [esi+0x16C]
-  mov [eax+0x1128], edx
-
-  jmp prox_next
+  // target_pos already set above
+  // start_pos already set above
 
 prox_next:
   inc ebx
@@ -141,70 +205,20 @@ prox_next:
 
 prox_done:
   popad
+  jmp check_spawn
 
   // =====================================================
-  // CONTINUOUS TARGET UPDATE: For all chasing bonks,
-  // update target_pos to current ball position every frame.
-  // This keeps the hammer chasing the ball as it moves.
+  // SPAWN: Create new BONK at player position
   // =====================================================
-  pushad
-  xor ebx, ebx
-
-chase_update_loop:
-  cmp ebx, [bonk_array]
-  jae chase_update_done
-
-  mov eax, [bonk_array+4+ebx*4]
-  test eax, eax
-  jz chase_update_next
-
-  mov ecx, [eax]
-  test ecx, ecx
-  jz chase_update_next
-
-  // If this bonk is chasing, update target to ball pos
-  cmp byte [eax+0x10FD], 0
-  je chase_update_next
-
-  // FORCE chase_state = 1 (don't let it transition to state 2/0)
-  mov dword [eax+0x1104], 1
-
-  // Update target_pos = ball position EVERY FRAME
-  mov edx, [esi+0x164]
-  mov [eax+0x1120], edx
-  mov edx, [esi+0x168]
-  mov [eax+0x1124], edx
-  mov edx, [esi+0x16C]
-  mov [eax+0x1128], edx
-
-chase_update_next:
-  inc ebx
-  jmp chase_update_loop
-
-chase_update_done:
-  popad
-
-save_pos:
-  // Save ball position for spawning (only if this is a "primary" ball)
-  cmp dword [esi+0x18], 0
-  jne check_spawn
-
-  mov eax, [esi+0x164]
-  mov [playerX], eax
-  fld dword [esi+0x168]
-  fsub dword [float_20]
-  fstp dword [playerY]
-  mov eax, [esi+0x16C]
-  mov [playerZ], eax
-
 check_spawn:
   cmp dword [SpawnBonk], 0
   je original_code
-  cmp dword [esi+0x18], 0
-  jne original_code
   mov dword [SpawnBonk], 0
 
+  // Use player position (already saved above)
+  // But if we didn't find the player, skip spawn
   pushad
+
   mov eax, [esi+0x14]
   mov [saved_board], eax
   test eax, eax
