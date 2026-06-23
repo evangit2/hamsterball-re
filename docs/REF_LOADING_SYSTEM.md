@@ -426,7 +426,37 @@ Each Arena factory accesses specific board struct offsets (0x4344–0x4398) to r
 
 The DLL mod must check sub-mesh slots BEFORE calling each factory, or pre-load the required sub-meshes. The slot dependency table above provides the exact offsets each factory accesses.
 
-### Complete Sub-Mesh File List (verified from binary)
+### Arena Board Constructor Chain Architecture
+
+The Arena Board constructors are **NOT separate functions** — they are **chained sections of one large function** starting at `0x41CA40`. Each section:
+
+1. Compares the level name string (e.g. `"BEGINNERRACE"`, `"INTERMEDIATERACE"`, `"DIZZYRACE"`, `"UPRACE"`, etc.)
+2. If the name matches, loads the appropriate sub-meshes for that level
+3. Falls through to the next section for the next level
+
+The jump table at `0x42761C` calls `operator_new` with different allocation sizes for each level (ranging from 17,260 to 25,752 bytes), then calls the constructor at `0x41CA40` which chains through all level sections.
+
+**Key implication**: Since all Arena constructors share one function, ALL sub-meshes can be loaded by bypassing the level name comparison. The level name check (not separate function calls) is what prevents loading unrelated sub-meshes.
+
+### Complete Verified Sub-Mesh Loading Table
+
+| Arena Level | Level Name String | Sub-Meshes Loaded |
+|-----------|------------------|-------------------|
+| L1 Warm-up | (none — first section) | (no sub-meshes) |
+| L2 Beginner | CASCADERACE | (no sub-meshes) |
+| L3 Intermediate | INTERMEDIATERACE | Level2-Bridge, Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
+| L4 Dizzy | DIZZYRACE | Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
+| L5 Tower | (checks TOWERRACE) | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret |
+| L6 Up | UPRACE | LevelUp-Lifter, LevelUp-SpeedCylinder, LevelUp-Button, Level2-Bridge, Level10-2PBridge, Level3-Tipper, Level10-Bridge1, Level10-Bridge2, Level9-PopCylinder1-2, Level8-Blockdawg1-2, Level4-Catapult, Level3-Gluebie |
+| L7 Neon | (checks NEONRACE) | LevelDark-NeonPlatform, LevelDark-DFloor1-4, LevelDark-Trode, LevelDark-Flickning |
+| L8 Expert | EXPERTRACE | Level5-Bridge |
+| L9 Odd | ODDRACE | Level7-Wobbly1-7 |
+| L10 Toob | TOOBRACE | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1-2 |
+| L11 Glass | GLASSRACE | Level7-Wobbly1-7 |
+| L12 Wobbly | (no section found) | (no sub-meshes) |
+| L13 Sky | SKYRACE | meshes/skypillar, meshes/magnifyingglass, Level9-PopCylinder1-2, Level9-Trapdoor, textures/clouds.png |
+| L14 Master | MASTERRACE | Level2-Bridge, Level10-2PBridge, Level3-Tipper, Level10-Bridge1-2, Level8-Blockdawg1-2, Level4-Catapult, Level3-Gluebie, Level4-Mace, Level4-Catapult, Level4-Turret, Level7-Wobbly8 |
+| L15 Impossible | IMPOSSIBLERACE | LevelImpossible-Looper, LevelImpossible-Gear, LevelImpossible-BigGear, LevelImpossible-Rotator, LevelImpossible-Pendulum, LevelImpossible-Gear |
 
 All 46 sub-mesh files referenced by Arena Board constructors:
 
