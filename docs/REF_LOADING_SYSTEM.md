@@ -464,7 +464,82 @@ A separate dispatch function handles `SIGN` refs. This function is **not** vtabl
 
 ---
 
-## Summary
+## Complete Ref Name → Factory Reverse Index
+
+This table shows every ref name and which factory(ies) can create it. Use this to determine which sub-meshes need to be loaded to support a given ref in a given level.
+
+| Ref Name | Arena Factories | Race Factories | Required Slots |
+|----------|----------------|----------------|----------------|
+| BADBALL | Wobbly | — | +0x4344 |
+| BBRIDGE1-2 | Tower, Master | — | +0x436C, +0x4370, +0x4394, +0x4398 |
+| BELL | Dizzy, Expert | — | +0x436C, +0x4370, +0x4374 |
+| BIGGEAR | Impossible | — | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C |
+| BLOCKDAWG1-2 | Tower, Toob, Glass, Master | — | varies |
+| BLOCKDAWG3 | Toob, Glass | — | +0x436C to +0x4384 |
+| BONK | Dizzy, Tower, Expert, Master | — | varies |
+| BRIDGE | Beginner, Dizzy, Tower, Expert, Master | — | +0x436C, +0x4370, +0x4374 |
+| CATAPULT | Dizzy, Tower, Master | Race Dizzy, Race Tower | +0x436C, +0x4378 |
+| CHOMPER | Dizzy | — | +0x436C, +0x4378, +0x43B0 |
+| DFLOOR1-4 | Neon | — | +0x4374 to +0x4390 |
+| DRAWBRIDGE | Dizzy | — | +0x436C, +0x4378, +0x4390 |
+| E:ALERTSAW2 | Toob, Glass | — | +0x436C to +0x4384 |
+| E:BELL | Expert | — | +0x436C, +0x4370, +0x4374 |
+| E:BRANCH | Toob, Glass | — | +0x436C to +0x4384 |
+| E:GRAVITY | Expert, Odd | Race Dizzy, Tower, Up, Expert | varies |
+| E:LAUNCH | Master | Race Sky | +0x436C, +0x4394 |
+| E:LIGHTSOFF/ON | Neon | — | +0x4374 to +0x4390 |
+| E:SCORE | Expert | — | +0x436C, +0x4370, +0x4374 |
+| E:ZOOP | Neon | — | +0x4374 to +0x4390 |
+| EDGECYLINDER | — | Race Wobbly, Race Sky | (race, no sub-mesh slots) |
+| FALLOUT1 | Toob, Glass | — | +0x436C to +0x4384 |
+| FAN | Dizzy, Expert | Race Dizzy, Tower, Up, Expert | varies |
+| FLICKNING | Neon | Race Neon | +0x4374 to +0x4390 |
+| GEAR | Impossible | Race Impossible | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C |
+| GLUEBIE | Beginner, Intermediate, Master | — | +0x436C, +0x4370, +0x4374 |
+| JUDGE | Dizzy, Expert | — | +0x436C, +0x4370, +0x4374 |
+| LIFTER | Tower, Expert, Odd, Sky | Race Dizzy, Tower, Up | varies |
+| LOOPER | Impossible | — | +0x436C, +0x4370, +0x4374, +0x4378, +0x437C |
+| MACE | Dizzy | Race Dizzy, Race Tower | +0x436C, +0x4378 |
+| MAGNIFYER | Toob | — | +0x436C to +0x4384 |
+| N:BOUNCE | Impossible | — | +0x436C to +0x437C |
+| N:BUMP | Neon | Race Neon | +0x4374 to +0x4390 |
+| N:BUMPER | Toob, Sky, Master | Race Base, Tower, Up, Expert | varies |
+| N:GLASS | Neon | Race Neon | +0x4374 to +0x4390 |
+| N:NEONPLATFORM | Neon | — | +0x4374 to +0x4390 |
+| N:ONGEAR | Impossible | — | +0x436C to +0x437C |
+| N:ONROTATOR | Impossible | — | +0x436C to +0x437C |
+| N:SAWTEETH | Toob | — | +0x436C to +0x4384 |
+| N:SPINNER | Master | — | +0x436C, +0x4394 |
+| N:SPINNY | Toob, Glass | — | +0x436C to +0x4384 |
+| N:SQUAREWOBBLY | Odd, Glass | Race Up, Expert, Wobbly | varies |
+| N:TENBONUS1 | Neon | Race Neon | +0x4374 to +0x4390 |
+| N:TENBONUS2 | — | Race Neon | (race) |
+| N:WAVY | Odd, Glass | — | +0x436C to +0x4384 |
+| NEONPLATFORM | Neon | — | +0x4374 to +0x4390 |
+| PENDULUM | Impossible | — | +0x436C to +0x437C |
+| PILLAR | Toob | Race Wobbly | +0x436C to +0x4384 |
+| PLATFORM | — | Race Base | (base, no sub-mesh) |
+| POPCYLINDER | Tower, Sky, Master | Race Wobbly, Race Sky | varies |
+| ROTATOR | Impossible | — | +0x436C to +0x437C |
+| SAWBLADE | Dizzy, Expert | — | +0x436C, +0x4370, +0x4374 |
+| SECRET | Wobbly | — | +0x4344 |
+| SECRETUNLOCK | Wobbly | — | +0x4344 |
+| SMASHER1-2 | Beginner, Intermediate, Wobbly | — | +0x4344 or +0x436C |
+| SPEEDCYLINDER | Tower, Sky | — | +0x436C, +0x4394, +0x4398 |
+| SPINNY | Odd, Toob, Glass | Race Dizzy | varies |
+| STANDS | — | Race Base | (base, no sub-mesh) |
+| SWIRL | Beginner, Intermediate | — | +0x436C, +0x4370, +0x4374 |
+| TarBubble | Tower | — | +0x436C, +0x4394 |
+| TIMEBUTTON | Tower, Sky | — | +0x436C, +0x4394, +0x4398 |
+| TIPPER | Beginner, Intermediate, Tower, Master | — | +0x436C, +0x4370, +0x4374 |
+| TRAPDOOR | Dizzy, Sky | — | +0x436C, +0x4378, +0x4390 |
+| TRODE | Neon | — | +0x4374 to +0x4390 |
+| TURRET | — | Race Dizzy, Race Tower | (race) |
+| VAC-IN | Sky | — | +0x436C, +0x4390 |
+| WATERWHEEL | Beginner, Intermediate | — | +0x436C, +0x4370, +0x4374 |
+| WAVY1 | Odd, Glass | — | +0x436C to +0x4384 |
+| WINDMILL | Dizzy | — | +0x436C, +0x4378, +0x43A4 |
+| WOBBLY1-7 | Odd, Glass | Race Up, Expert, Wobbly | varies |
 
 1. **Two independent Board systems**: RACE Boards (0x422xxx constructors, vtable 0x4D14xx-0x4D22xx) and ARENA Boards (0x41Cxxx constructors, vtable 0x4D05xx-0x4D21xx). Each has its own set of vtable[33] factories. Race factories handle fewer ref types; Arena factories handle the full set.
 2. **Two independent dispatch systems**: (A) vtable[33] factory creates objects from bare-name ref points in MESHWORLD Section 1; (B) the N:/E: handler at 0x0040C5D0 processes entity names from Section 3 meshes to set behavioral flags.
