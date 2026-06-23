@@ -1,48 +1,72 @@
-# jump_mod v2
+# jump_mod v22
 
-Press SPACE to jump (Player 1 only, collision-based ground check).
+Press SPACE to jump (Player 1 only, raycast ground detection).
 
-## What changed from v1
+## What changed from v20
 
-**v1 crash fix:** The background raycast thread in v1 called
-`Mesh_FindClosestCollision` from a separate thread while Ball_Update
-was building its collision tree on the main thread. This data race
-corrupted the CollisionLevel's internal AABB state, causing crashes
-at `0x407BCA` (vtable call on garbage pointer) in Ball_Update.
+**v22 adds countdown and race-end gating:**
 
-**v2 fix:** No background thread. Ground detection uses the game's
-own type-5 (floor) collision result:
+1. **Countdown gate:** Before allowing a jump, checks `Scene+0x3A4C`
+   (countdown_done flag). This flag is set to 1 by `Scene_HandleRaceEnd`
+   (0x41B130) when all 3 Ready/Set/Go phases complete. If 0, the game
+   itself blocks all input in `Scene_vmethod31` (0x41AC70) — the jump
+   mod now mirrors this behavior.
 
-1. **Cave 1** hooks the type-5 handler at `0x407391` (where
-   `ball+0x2E9 = 1` is set). It also sets `g_on_ground = 1`.
-2. **Cave 2** at Phase 15 (`0x407BB4`) reads `g_on_ground` for jump
-   permission, then clears it to `0` at the end of each frame.
-3. If the ball is airborne next frame, no type-5 fires, `g_on_ground`
-   stays `0`, and jumping is blocked.
+2. **Race-end gate:** Checks `ball+0x14C` (freeze flag). Set to 1 by
+   `Scene_HandleRaceEnd` at 0x41B40D when the race timer expires
+   (player touches the goal). Also checked by the game's `Ball_Update`
+   at 0x4060A1. When set, the ball is frozen and jumping is blocked.
 
-No raycast, no threads, no data races.
+Both gates are checked in the input thread BEFORE running the raycast,
+so denied jumps don't waste a raycast call.
+
+## What changed from v17
+
+**v20 changed ground detection from a fixed epsilon to a slope-aware
+threshold (radius × 1.45):**
+
+On a slope of angle θ, a straight-down raycast hits at distance r/cos(θ)
+from the ball center, not r. Using `radius * 1.45` covers slopes up to
+45° (cos(45°) ≈ 0.707, r/0.707 ≈ 1.414r). The 1.45 factor gives a small
+safety margin beyond the theoretical minimum of √2 ≈ 1.414.
 
 ## Features
 
-- **Collision-based ground detection:** Uses the game's own type-5
-  floor collision result. No raycast thread, no data races.
-- **Instant re-jump:** The player can jump again the exact frame they
-  touch ground after a jump arc. No artificial cooldown.
-- **Ramp-friendly:** Type-5 fires on ramps too, so jumping on slopes
-  works naturally.
-- **Air momentum:** Horizontal velocity is preserved during jump arcs.
-- **Safety checks:** Won't jump during fall/respawn (ball+0xC4C) or
-  if not Player 1.
+- **Raycast ground detection:** Casts a ray straight down from the ball
+  position using the game's own `Mesh_FindClosestCollision` (0x465D90).
+  If the hit point is within `radius × 1.45` of the ball Y, the ball is
+  grounded and can jump.
+- **Countdown gating:** No jumping during Ready/Set/Go countdown
+  (`Scene+0x3A4C == 0`).
+- **Race-end gating:** No jumping after touching the goal
+  (`ball+0x14C == 1`).
+- **Airborne denial:** Can't jump while in the air (raycast misses).
 - **Edge detection:** SPACE uses rising-edge detection (one jump per keypress).
+- **Safety checks:** Won't jump if ball pointer not yet captured or
+  during fall/respawn.
 
 ## Hook points
 
 | Hook | Address | Original bytes | Purpose |
 |------|---------|---------------|---------|
-| Cave 1 | `0x407391` | `C6 86 E9 02 00 00 01` (7 bytes) | Type-5 floor → set `g_on_ground` |
-| Cave 2 | `0x407BB4` | `8B 4C 24 1C 8B 11` (6 bytes) | Jump logic + clear `g_on_ground` |
+| Phase 15 cave | `0x407BB4` | `8B 4C 24 1C 8B 11` (6 bytes) | Jump impulse application |
+
+The input thread polls the keyboard (DIK_SPACE at KeyboardDevice+0x45)
+every 16ms. On rising-edge keypress, it checks countdown/race-end gates,
+then runs the raycast. If grounded, sets `g_want_jump=1`. The Phase 15
+cave checks this flag and adds an upward impulse to `ball+0x174` (Y force
+accumulator) if set.
 
 ## Files
 
-- `jump_mod.c` — C source code (BASS proxy + two code caves)
-- `bass.dll` — Compiled DLL
+- `jump_mod_raycast.c` — C source code (BASS proxy + raycast + gates)
+- `bass.dll` — Compiled DLL (MinGW cross-compiled, PE32 i386)
+- `jump_mod_v22.zip` — Distribution archive
+
+## Build
+
+```bash
+i686-w64-mingw32-gcc -shared -o bass.dll jump_mod_raycast.c -lwinmm \
+  -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
+  -Wl,--add-stdcall-alias
+```
