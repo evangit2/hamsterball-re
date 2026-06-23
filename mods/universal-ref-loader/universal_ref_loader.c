@@ -458,6 +458,30 @@ static int factory_slots_safe(void* board, const SafeFactory* sf)
 }
 
 /* ============================================================
+ * Logging — writes ref load results to Z:\tmp\ref_loader_log.txt
+ * ============================================================ */
+
+static void log_ref(const char* refName, const char* result, const char* factory)
+{
+    /* Use OutputDebugString — doesn't interfere with rendering/input */
+    char buf[256];
+    /* Simple string concatenation (no snprintf to keep DLL small) */
+    lstrcpyA(buf, "REFLOAD\t");
+    lstrcatA(buf, refName);
+    lstrcatA(buf, "\t");
+    lstrcatA(buf, result);
+    lstrcatA(buf, "\t");
+    lstrcatA(buf, factory ? factory : "(null)");
+    lstrcatA(buf, "\r\n");
+    OutputDebugStringA(buf);
+}
+
+static void log_sep(const char* msg)
+{
+    /* No-op */
+}
+
+/* ============================================================
  * Universal Factory Dispatch
  *
  * Called instead of the original vtable[33] dispatch.
@@ -505,6 +529,7 @@ static void __thiscall universal_factory(
         if (is_static_mesh_object(refName)) {
             *outObj = g_cloneTree(*outObj, (int)board);
         }
+        log_ref(refName, "OK_ORIG", "original");
         return;
     }
 
@@ -560,6 +585,7 @@ static void __thiscall universal_factory(
                 if (app)
                     *(int*)((char*)app + APP_DIFFICULTY) = savedDiff;
             }
+            log_ref(refName, "OK_JIT", sf->name);
             return;
         }
     }
@@ -567,6 +593,8 @@ static void __thiscall universal_factory(
     /* No factory handled this ref — return NULL */
     *outObj = NULL;
     *outCol = NULL;
+
+    log_ref(refName, "FAIL", "none");
 
     /* Restore difficulty if we changed it */
     if (needDiffBypass) {
