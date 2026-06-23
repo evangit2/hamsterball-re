@@ -9,3 +9,4 @@
 | global-neon | Spawns all 6 Neon Race objects (NeonPlatform, DFloor1-4, Trode) on any level with a hotkey | [global-neon/](global-neon/) |
 | global-expert | Spawns all 6 Expert Race objects (Bonk/Hammer, Fan, Sawblade, Bridge, Judge, Bell) on any level with a hotkey | [global-expert/](global-expert/) |
 | global-bonk | Spawns Bonk the Hammer from Expert Race on any level — standalone, constructor loads its own mesh internally | [global-bonk/](global-bonk/) |
+| wall-bumpers | All walls act as pinball bumpers — velocity-reversal detection amplifies wall bounces. F8 toggle, F9 force cycle | [wall_bumpers/](wall_bumpers/) |
