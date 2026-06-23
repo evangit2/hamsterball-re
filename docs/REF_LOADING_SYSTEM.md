@@ -2,11 +2,35 @@
 
 ## Overview
 
-Hamsterball levels load "reference nodes" (refs) from MESHWORLD files. Each ref has a name (e.g. `N:SPEEDCYLINDER`, `N:BONK`, `N:GEAR`) that determines what game object gets created. The game uses a **code-gated vtable dispatch** system — not a file-driven registry — to decide which refs to instantiate. Each level's Board subclass overrides a virtual method (vtable slot 33, offset +0x84) that contains the factory logic for that level's objects.
+Hamsterball levels load "reference nodes" (refs) from MESHWORLD files. Each ref has a name (e.g. `SPEEDCYLINDER`, `BONK`, `GEAR`) that determines what game object gets created. The game uses a **multi-pass code-gated dispatch system** — not a file-driven registry — to decide which refs to instantiate. The full pipeline runs in the master level loading function (~0x0041C8xx), which makes sequential passes over the ref point list.
 
-**Key finding:** Adding a ref name to a MESHWORLD file is **necessary but not sufficient**. The ref must ALSO be handled by the Board's vtable[33] factory function, or the game will silently skip it. To load any ref into any level, you must either:
-1. Patch the target Board's vtable[33] to point to a factory that handles the desired ref names, OR
-2. Use a DLL mod that hooks `Scene_CreateDynamicObjects` and intercepts the ref dispatch.
+**Key finding:** Adding a ref name to a MESHWORLD file is **necessary but not sufficient**. The ref must ALSO be handled by one of the dispatch passes (SAFESPOT extractor, SIGN handler, or vtable[33] factory), or the game will silently skip it. To load any object ref into any level, you must patch the Board's vtable[33] to point to a factory that handles the desired ref names, since each level's factory only recognizes its own subset of ref names.
+
+### Complete Loading Pipeline
+
+```
+Board constructor
+  ├─ 1. Creates LevelData (board+0x8AC, size 0x10D0) with MESHWORLD file path
+  │     LevelData parses MESHWORLD binary into AthenaLists:
+  │     • Section 1 ref points → LevelData+0x480+0x894
+  │     • Section 3 scene objects → mesh entities with name at +0x864
+  │
+  └─ 2. Loads sub-mesh MESHWORLD files into board+0x436C..0x4390
+
+Master loading function (~0x0041C8xx)
+  ├─ 3a. Iterates ref points, extracts SAFESPOT and START-DEBUG refs
+  ├─ 3b. Conditional quality-dependent setup (scene+0x237 byte)
+  ├─ 3c. Additional setup (0x0040BAA0, 0x0040C0F0)
+  ├─ 3d. Scene_CreateSigns (0x0040C270) — "SIGN" prefix refs → StandsTipper objects
+  ├─ 3e. Scene_CreateDynamicObjects (0x0040C430) — object refs via vtable[33] factory
+  │     ├─ Factory matches ref name via __strnicmp
+  │     ├─ Creates game object (Pendulum, Bonk, Gear, etc.)
+  │     ├─ Appends to board+0xCD4 and scene object lists
+  │     └─ Factory calls N: handler (0x0040C5D0) on created mesh entities
+  └─ 3f. N: handler processes entity names from Section 3:
+        • N:GOAL, N:TARPIT, N:WATER, N:SECRET, E:JUMP, E:BREAK, etc.
+        • Sets behavioral flags on board/scene/mesh
+```
 
 ---
 
@@ -15,36 +39,52 @@ Hamsterball levels load "reference nodes" (refs) from MESHWORLD files. Each ref 
 ### 1. MESHWORLD Ref Points (Section 1)
 
 Each MESHWORLD file contains a Section 1 with "reference points" — named position markers stored as:
-- `name` (string, e.g. `N:SPEEDCYLINDER`)
-- `position` (3 floats: x, y, z)
-- `rotation` (3 floats)
-- `scale` (3 floats)
+- `name` (string, e.g. `SPEEDCYLINDER`, `BONK`, `GEAR` — stored WITHOUT `N:` prefix)
+- `position` (3 floats: x, y, z at offsets +0x04, +0x08, +0x0C)
+- `rotation/scale` data (at offset +0x10)
+- `extra float` (at offset +0x14, used for scale/size calculations)
 - Additional flags and color data
 
-These are the "refs" that the factory dispatch reads. The `N:` prefix is part of the name string in the binary.
+The ref points are parsed from the MESHWORLD binary and stored in an `AthenaList` at:
+- `board+0x8AC` → LevelData object (0x10D0 bytes, created in Board constructor)
+- `LevelData+0x480` → SceneObject
+- `SceneObject+0x894` → AthenaList of ref points (count at +0x898, array at +0x40C)
 
-### 2. Scene_CreateDynamicObjects (0x0040C4BA) — The Central Dispatch
+Each ref entry in the array has the structure:
+```
++0x00: char* name          // pointer to ref name string
++0x04: float posX          
++0x08: float posY
++0x0C: float posZ
++0x10: rotation/scale data
++0x14: float extraScale    // used in Timer_Init and position calculations
+```
+
+### 2. Scene_CreateDynamicObjects (0x0040C430) — The Central Dispatch
 
 ```
-void __fastcall Scene_CreateDynamicObjects(int *board)
+void __thiscall Scene_CreateDynamicObjects(int *board)  // ECX = board
 ```
 
 This function iterates over all ref points in the loaded MESHWORLD level data. For each ref:
-1. Gets the ref name string (`*puVar4` — the first DWORD of the ref entry)
-2. Calls `board->vtable[33](refName, &out_obj, &out_col, refEntry)` — i.e. `(**(code**)(*board + 0x84))(name, &out1, &out2, refPtr)`
-3. If the factory returns a non-null object, it:
-   - Initializes a Timer
-   - Sets graphics position/scale from the ref entry
-   - Appends the object to `board+0x2578` (the general object list)
-   - Appends to the scene's SceneObject list
-   - Calls the object's vtable[0x58] (Update) and vtable[0x54] (Render)
 
-The ref entry structure (param_5 / puVar4) is an array of DWORDs:
-- `[0]` = name string pointer
-- `[1],[2],[3]` = position (x, y, z as floats)
-- `[4],[5],[6]` = rotation/scale data
-- `[5]` = used for ScaleX calculation
-- `[0x14]` = additional float parameter (used by some factories)
+1. Reads the ref name string from `ref_entry+0x00` (`*puVar4`)
+2. Reads position/scale data from `ref_entry+0x04` through `ref_entry+0x14`
+3. Calls `board->vtable[33](refName, &out_obj, &out_col, ref_entry)` — i.e. `(**(code**)(*board + 0x84))(name, &out1, &out2, refPtr)` at address `0x0040C4BA`
+4. If the factory returns a non-null object (`out_obj != NULL`):
+   - Initializes a `Timer` (via `Timer_Init` at 0x00457AD0) using a float from `ref_entry+0x14`
+   - Sets graphics position/scale from the ref entry position data
+   - Appends the object to `board+0xCD4` (board-specific object list) via `AthenaList_Append` at 0x00453810
+   - Appends to the scene's SceneObject list (`LevelData+0x480+0x1C`)
+   - Calls the object's `vtable[0x58]` (Update setup) at 0x0040C531
+   - Calls the object's `vtable[0x54]` (Render setup) with the timer at 0x0040C53F
+   - If a collision object was returned, appends it to `board+0x10EC` and `board+0x8B0+0x18`
+
+**Ref entry structure** (param_5 / puVar4):
+- `[0x00]` = name string pointer (char*)
+- `[0x04],[0x08],[0x0C]` = position (x, y, z as floats)
+- `[0x10]` = rotation data
+- `[0x14]` = extra float parameter (used by Timer_Init and some factories)
 
 ### 3. Board Vtable Slot 33 (+0x84) — The Factory Method
 
@@ -96,7 +136,16 @@ There are **two independent dispatch systems** for MESHWORLD data:
 - `E:JUMP`, `E:BREAK`, `E:ACTION`, `E:LIMIT`, `E:TRAJECTORY` — event triggers
 - `ONCE`, `TRUE`, `SCORE`, `X`, `Y`, `Z`, `PIPEBONK`, `POPOUT`, `ZIP` — modifiers
 
-The handler is called from 25 sites within the vtable[33] factory functions. Each factory calls the handler after creating the object, passing the mesh entity so it can check the entity name field.
+The handler is called from 25 sites within the vtable[33] factory functions. Each factory calls the handler after creating the object, passing the mesh entity as `this` (ECX) and two additional arguments. The handler reads the entity name from `mesh_entity+4 → +0x864` (the entity name set during `CreateMeshBuffer` when parsing MESHWORLD Section 3).
+
+**Call site example** (at 0x0040D380, Dizzy factory):
+```asm
+MOV EAX, [ESP+0x0C]    ; load ref entry from stack
+PUSH EDI               ; push board pointer (param_3)
+PUSH EAX               ; push ref entry (param_2)
+MOV ECX, ESI           ; ECX = mesh entity (this for __thiscall)
+CALL 0x0040C5D0        ; N: handler(mesh_entity, ref_entry, board)
+```
 
 ### 5. The `Scene+0x23C` Quality Gate
 
