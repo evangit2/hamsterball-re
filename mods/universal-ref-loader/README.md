@@ -2,34 +2,21 @@
 
 ## What It Does
 
-This mod patches the game's level-object dispatch system to allow **any ref type to be loaded into any level**. Normally, each level only creates objects for its own specific ref types (e.g. SpeedCylinders only in Up Race, Gears only in Impossible Race). This mod replaces the per-level factory dispatch with a universal dispatcher that tries all 13 level factories in sequence until one handles the ref.
+This mod patches the game's level-object dispatch system to allow **any ref type to be loaded into any level**. Normally, each level only loads refs that its own Board vtable[33] factory recognizes (e.g. SpeedCylinder only in Tower/Up Race, Bonk only in Expert/Master Race, Gears only in Impossible Race).
 
-## How It Works
+The mod hooks the vtable[33] dispatch at `0x0040C4BA` (inside `Scene_CreateDynamicObjects` at `0x0040C430`) and replaces it with a universal factory that tries all 13 Arena factories in sequence. Each factory's sub-mesh slot dependencies are checked before calling — factories with unloaded sub-mesh slots are skipped to prevent crashes.
 
-1. The game's `Scene_CreateDynamicObjects` function (0x0040C4BA) iterates over all ref points in the loaded MESHWORLD level data
-2. For each ref, it calls `board->vtable[33](refName, &outObj, &outCol, refEntry)` — the Board's factory method
-3. This mod patches the `CALL dword ptr [EAX + 0x84]` instruction at 0x0040C4BA to call `universal_factory()` instead
-4. `universal_factory()` tries each of the 13 level factory functions in sequence (most inclusive first)
-5. The first factory that returns a non-null object wins
+## How to Use
 
-## Installation
-
-1. Backup your original `bass.dll` (rename to `bass_real.dll`)
-2. Copy this mod's `bass.dll` into the Hamsterball game directory
-3. Ensure `bass_real.dll` exists for audio to work
-
-## Usage
-
-Simply add ref names from other levels to your custom MESHWORLD files. For example:
-- Add `N:SPEEDCYLINDER` refs to a Warm-up Race custom level → speed boost pads will appear
-- Add `N:GEAR` refs to an Intermediate level → rotating gears will appear
-- Add `N:BONK` refs to any level → bumpers will appear
+1. Copy `bass.dll` to your Hamsterball game directory (replaces the original bass.dll)
+2. Add ref names to MESHWORLD Section 1 in any level file
+3. The mod will try all Arena factories to create the object
 
 ## Limitations
 
-- **Sub-mesh dependency**: Some objects require pre-loaded MeshWorld sub-meshes (e.g. TIPPER needs `Levels\Level3-Tipper` loaded in the Board constructor). If the target level didn't load that mesh, the factory may create an object with no visual or silently fail. This is a known limitation — to fully support all refs, the Board constructor would need patching to preload additional meshes.
-- **Quality gating**: Some factories check `scene+0x23C` (quality setting) and skip creation on low quality. This is preserved from the original behavior.
-- **Audio proxy**: This mod acts as a bass.dll proxy. Missing BASS function exports may cause audio warnings but won't crash the game.
+- **Sub-mesh requirement**: If a ref requires a sub-mesh that wasn't loaded by the current Board constructor, the factory will be skipped (safety check prevents crash, but ref won't be created). For full support, modify the Board constructor to preload additional sub-meshes.
+- **Arena vs Race**: The mod tries Arena factories only (they handle the full ref set). Race factories are only used as fallback for PLATFORM/STANDS.
+- The mod does not modify sub-mesh loading — it only changes the factory dispatch.
 
 ## Build
 
@@ -41,8 +28,8 @@ i686-w64-mingw32-gcc -shared -o bass.dll universal_ref_loader.c \
 
 ## Technical Details
 
-- **Hook point**: 0x0040C4BA (6 bytes: `FF 90 84 00 00 00` → `E8 rel32 90`)
-- **Factory order**: Master → Impossible → Tower → Expert → Toob → Up → Dizzy → Neon → Wobbly → Sky → Bridge → Odd → Glass
-- **Crash tested**: Game survives 35+ seconds on Wine/Xvfb with the hook active
+- **Hook point**: `0x0040C4BA` (`CALL dword ptr [EAX + 0x84]` → `CALL universal_factory`)
+- **Safety**: Each factory's board+0x43xx sub-mesh slots are checked for NULL before calling
+- **Factory order**: Most inclusive factories first (Master, Dizzy, Impossible, Expert, Tower, Glass, Toob, Neon, Odd, Sky, Beginner, Intermediate, Wobbly, RaceBase)
 
-See `docs/REF_LOADING_SYSTEM.md` for the complete reverse-engineering analysis.
+See `docs/REF_LOADING_SYSTEM.md` for the complete reverse engineering analysis.
