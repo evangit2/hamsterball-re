@@ -425,7 +425,26 @@ Each Arena factory accesses specific board struct offsets (0x4344–0x4398) to r
 
 The DLL mod must check sub-mesh slots BEFORE calling each factory, or pre-load the required sub-meshes. The slot dependency table above provides the exact offsets each factory accesses.
 
-### Runtime Sub-Mesh Loading (DLL Mod Approach)
+### Complete Sub-Mesh File List (verified from binary)
+
+All 46 sub-mesh files referenced by Arena Board constructors:
+
+| Source Level | Sub-Mesh Files |
+|-------------|---------------|
+| Level2 | Level2-Bridge |
+| Level3 | Level3-Tipper, Level3-WaterWheel, Level3-Gluebie, Level3-Swirl |
+| Level4 | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, Level4-Trapdoor1, Level4-Trapdoor2 |
+| Level5 | Level5-Bridge, Level5-Bonk |
+| Level6 | Level6-Lifter |
+| Level7 (Neon) | Level7-Wobbly1-8, Level7-Wavy1 |
+| Level8 | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1-2 |
+| Level9 (Sky) | Level9-Trapdoor, Level9-PopCylinder1-2 |
+| Level10 | Level10-Bridge1-2, Level10-2PBridge |
+| LevelDark (Neon) | LevelDark-NeonPlatform, LevelDark-DFloor1-4, LevelDark-Trode, LevelDark-Flickning |
+| LevelUp | LevelUp-Lifter, LevelUp-SpeedCylinder, LevelUp-Button |
+| LevelImpossible | LevelImpossible-Looper, LevelImpossible-Gear, LevelImpossible-BigGear, LevelImpossible-Rotator, LevelImpossible-Pendulum |
+
+**Note**: "Level7" in the sub-mesh names = Neon Race (internal level 7), while "LevelDark" = the dark/neon-themed mesh set. Both are used by the Neon Arena constructor.
 
 To load additional sub-meshes at runtime from a DLL mod:
 
