@@ -31,16 +31,33 @@
  * LOGGING
  * ============================================================ */
 
-static const char* LOG_PATH = "C:\\tmp\\ref_loader_log.txt";
+static char g_logPath[MAX_PATH] = "ref_loader_log.txt";
 static HANDLE g_logMutex = NULL;
 
 static void log_init(void)
 {
     FILE* f = NULL;
+    /* Build log path next to the DLL (same dir as bass.dll / Hamsterball.exe) */
+    HMODULE hSelf = NULL;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCSTR)&log_init, &hSelf);
+    if (hSelf) {
+        char dllPath[MAX_PATH];
+        DWORD len = GetModuleFileNameA(hSelf, dllPath, MAX_PATH);
+        if (len > 0) {
+            /* Strip filename, keep directory */
+            char* lastSlash = strrchr(dllPath, '\\');
+            if (lastSlash) {
+                lastSlash[1] = '\0';
+                _snprintf(g_logPath, MAX_PATH, "%sref_loader_log.txt", dllPath);
+            }
+        }
+    }
     /* Clear the log at startup */
-    if (fopen_s(&f, LOG_PATH, "w") == 0 && f) {
+    if (fopen_s(&f, g_logPath, "w") == 0 && f) {
         fprintf(f, "=== Universal Ref Loader LOG — DLL Loaded ===\n");
         fprintf(f, "Timestamp: DLL_PROCESS_ATTACH\n");
+        fprintf(f, "Log path: %s\n", g_logPath);
         fclose(f);
     }
     g_logMutex = CreateMutexA(NULL, FALSE, "RefLoaderLogMutex");
@@ -51,7 +68,7 @@ static void log_msg(const char* fmt, ...)
     FILE* f = NULL;
     va_list args;
 
-    if (fopen_s(&f, LOG_PATH, "a") != 0 || !f) return;
+    if (fopen_s(&f, g_logPath, "a") != 0 || !f) return;
 
     if (g_logMutex) WaitForSingleObject(g_logMutex, INFINITE);
 
