@@ -1,352 +1,266 @@
+// ============================================================================
+// GluebieSpawn v5 — Spawn Gluebies globally + real tar effect
+// ============================================================================
+// PROBLEM: Gluebies are purely visual (Level3-Gluebie.MESHWORLD has 0
+// collision geometry, no N:TARPIT). The tar effect comes from N:TARPIT
+// level geometry in the main MESHWORLD, not the Gluebie object.
+//
+// SOLUTION:
+//   1. Spawn Gluebie using board's pre-loaded mesh (same as factory):
+//      operator_new(0x110C) -> Gluebie_ctor(alloc, board, mesh)
+//      -> set position -> AthenaList_Append to gluebie list + general list
+//   2. Per-frame proximity check: iterate board's Gluebie list.
+//      When ball is within 30 units AND ball+0x2CC==0:
+//      Call CreateNoDizzy(board, ball, fake_entry) with fake N:TARPIT name.
+//      This triggers EXACT original tar logic: 0x2CC=1, 0x768=0, tar sound.
+//
+// HOTKEY: Numpad 7 spawns Gluebie at player position
+// WORKS: Dizzy (mesh=board+0x4374, list=board+0x4378)
+//        Master (mesh=board+0x607C, list=board+0x6080)
+// HOOK: Ball_Update at 0x405E22 (ESI=ball, fires for all balls in arena)
+// ============================================================================
+
 [ENABLE]
 
-alloc(SpawnCode, 4096)
-alloc(SpawnGluebie, 4)
-alloc(saved_board, 4)
-alloc(out_obj, 4)
-alloc(temp_mesh, 4)
-alloc(playerX, 4)
-alloc(playerY, 4)
-alloc(playerZ, 4)
-alloc(gluebie_array, 68)
-alloc(float_900, 4)
-alloc(last_board, 4)
-alloc(near_flag, 4)
-alloc(sound_cooldown, 4)
+alloc(TarCode, 4096)
+alloc(SpawnFlag, 4)
+alloc(fake_coll_obj, 0x868)
+alloc(fake_coll_entry, 8)
+alloc(tarpit_str, 16)
 
-registersymbol(SpawnGluebie)
+registersymbol(SpawnFlag)
 
-SpawnGluebie:
+// --- "N:TARPIT" string ---
+tarpit_str:
+  db 'N:TARPIT',00
+
+// --- Fake collision entry: [type=0, obj_ptr=fake_coll_obj] ---
+fake_coll_entry:
   dd 0
+  dd fake_coll_obj
 
-saved_board:
-  dd 0
+// --- Fake collision obj: only +0x864 (entity name) matters ---
+fake_coll_obj+864:
+  dd tarpit_str
 
-out_obj:
-  dd 0
+// ============================================================================
+// HOOK: Ball_Update at 0x405E22
+// Original: MOV EAX,[ESI+0xC5C] (6 bytes)
+// ESI = ball
+// ============================================================================
+00405E22:
+  jmp TarCode
+  nop
 
-temp_mesh:
-  dd 0
+TarCode:
+  // --- Execute original instruction ---
+  mov eax,[esi+0xC5C]
 
-playerX:
-  dd 0
-
-playerY:
-  dd 0
-
-playerZ:
-  dd 0
-
-gluebie_array:
-  dd 0
-  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-
-float_900:
-  dd 0x44610000
-
-last_board:
-  dd 0
-
-near_flag:
-  dd 0
-
-sound_cooldown:
-  dd 0
-
-label(original_code)
-label(save_pos)
-label(check_spawn)
-label(skip_post_spawn)
-label(done_spawn)
-label(prox_loop)
-label(prox_next)
-label(prox_done)
-label(no_clear)
-label(apply_slow)
-label(try_sound)
-label(sound_ok)
-label(sound_fail)
-label(add_glue_list)
-label(glue_dizzy)
-label(glue_master)
-label(glue_skip)
-
-SpawnCode:
-  mov eax, [esi+0x14]
-  test eax, eax
-  jz no_clear
-  cmp eax, [last_board]
-  je no_clear
-  mov [last_board], eax
-  mov dword [gluebie_array], 0
-
-no_clear:
-  mov dword [near_flag], 0
-  mov eax, [gluebie_array]
-  test eax, eax
-  jz save_pos
-
+  // --- Save all registers ---
   pushad
 
-  xor ebx, ebx
+  // --- EBP = ball (preserved across all calls below) ---
+  mov ebp,esi
 
-prox_loop:
-  cmp ebx, [gluebie_array]
-  jae prox_done
+  // ==============================
+  // PART 1: Spawn check (hotkey)
+  // ==============================
+  push 67h                    // VK_NUMPAD7
+  call GetAsyncKeyState
+  test ax,8000h
+  jz TarCode_SpawnDone        // key not pressed
 
-  mov eax, [gluebie_array+4+ebx*4]
-  test eax, eax
-  jz prox_next
+  cmp dword ptr [SpawnFlag],0
+  jne TarCode_SpawnDone       // debounce: already pressed
+  mov dword ptr [SpawnFlag],1
 
-  mov ecx, [eax]
-  test ecx, ecx
-  jz prox_next
+  // --- Get board = ball+0x14 ---
+  mov edx,[ebp+0x14]          // EDX = board
+  test edx,edx
+  jz TarCode_SpawnDone
 
-  fld dword [esi+0x164]
-  fsub dword [eax+0x10D4]
-  fmul st, st
+  // --- Save board in ESP-4 (free stack slot, below pushad frame) ---
+  // Actually, just use a register we can restore later.
+  // EDI = board (we'll save/restore via push)
+  push edx                    // [esp] = board
 
-  fld dword [esi+0x16C]
-  fsub dword [eax+0x10DC]
-  fmul st, st
-  faddp
+  // --- Check arena mode: scene+0x23C ---
+  mov eax,[edx+0x878]         // scene
+  test eax,eax
+  jz TarCode_SpawnPop
+  mov ebx,[eax+0x23C]
+  test ebx,ebx
+  jz TarCode_SpawnPop          // race mode, skip
 
-  fld dword [float_900]
-  fcomip st(1)
-  fstp st
-  jb prox_next
+  // --- Detect board type ---
+  mov ecx,[edx]               // board vtable
+  cmp ecx,#0x4D0890           // Dizzy?
+  je TarCode_SpawnDizzy
+  cmp ecx,#0x4D12B0           // Master?
+  je TarCode_SpawnMaster
+  jmp TarCode_SpawnPop
 
-  mov dword [near_flag], 1
-  jmp prox_done
+TarCode_SpawnDizzy:
+  mov ecx,[edx+0x4374]        // mesh
+  lea edi,[edx+0x4378]        // gluebie list
+  jmp TarCode_DoSpawn
 
-prox_next:
-  inc ebx
-  jmp prox_loop
+TarCode_SpawnMaster:
+  mov ecx,[edx+0x607C]        // mesh
+  lea edi,[edx+0x6080]        // gluebie list
 
-prox_done:
-  popad
+TarCode_DoSpawn:
+  test ecx,ecx
+  jz TarCode_SpawnPop          // no mesh loaded
 
-  cmp dword [near_flag], 1
-  jne save_pos
-
-apply_slow:
-  fld dword [esi+0x764]
-  fmul dword [004CF4C0]
-  fstp dword [esi+0x764]
-
-try_sound:
-  mov eax, [sound_cooldown]
-  test eax, eax
-  jz save_pos
-  dec eax
-  mov [sound_cooldown], eax
-  cmp eax, 0
-  jne save_pos
-
-  pushad
-
-  mov eax, [esi+0x14]
-  test eax, eax
-  jz sound_fail
-  mov eax, [eax+0x878]
-  test eax, eax
-  jz sound_fail
-  mov eax, [eax+0x484]
-  test eax, eax
-  jz sound_fail
-
-sound_ok:
-  push 0x3F800000
-  sub esp, 0xC
-  mov edx, [esi+0x164]
-  mov [esp], edx
-  mov edx, [esi+0x168]
-  mov [esp+4], edx
-  mov edx, [esi+0x16C]
-  mov [esp+8], edx
-  mov ecx, eax
-  call 00459860
-  mov dword [sound_cooldown], 180
-
-sound_fail:
-  popad
-
-save_pos:
-  cmp dword [esi+0x18], 0
-  jne check_spawn
-
-  mov eax, [esi+0x164]
-  mov [playerX], eax
-  mov eax, [esi+0x168]
-  mov [playerY], eax
-  mov eax, [esi+0x16C]
-  mov [playerZ], eax
-
-check_spawn:
-  cmp dword [SpawnGluebie], 0
-  je original_code
-
-  cmp dword [esi+0x18], 0
-  jne original_code
-
-  mov dword [SpawnGluebie], 0
-
-  pushad
-
-  mov eax, [esi+0x14]
-  mov [saved_board], eax
-  test eax, eax
-  jz done_spawn
-
-  mov edx, [eax+0x8AC]
-  test edx, edx
-  jz done_spawn
-
-  mov edx, [eax+0x878]
-  test edx, edx
-  jz done_spawn
-  mov edx, [edx+0x174]
-  test edx, edx
-  jz done_spawn
-
-  push 0x10D0
-  call 004BA57B
-  add esp, 4
-
-  test eax, eax
-  jz done_spawn
-
-  mov ebx, eax
-
-  mov edx, [saved_board]
-  mov edx, [edx+0x878]
-  mov edx, [edx+0x174]
-
-  push 004D0728
-  push edx
-  mov ecx, ebx
-  call 00461510
-
-  test eax, eax
-  jz done_spawn
-
-  mov [temp_mesh], eax
-
+  // --- operator_new(0x110C) ---
+  push ecx                    // save mesh
+  push edi                    // save list
   push 0x110C
   call 004BA57B
-  add esp, 4
+  add esp,4
+  pop edi                     // restore list
+  pop ecx                     // restore mesh
+  test eax,eax
+  jz TarCode_SpawnPop
 
-  test eax, eax
-  jz done_spawn
-
-  mov edi, eax
-
-  mov edx, [temp_mesh]
-  push edx
-  mov edx, [saved_board]
-  push edx
-  mov ecx, edi
+  // --- Gluebie_ctor(this=EAX, board=EDX, mesh=ECX) ---
+  // __thiscall: push mesh, push board, mov ecx,this, call
+  mov esi,eax                 // ESI = new Gluebie
+  push ecx                    // push mesh (param_2)
+  push edx                    // push board (param_1)
+  mov ecx,eax                 // ECX = this
   call 00437CB0
 
-  test eax, eax
-  jz done_spawn
+  // --- Set position from ball ---
+  mov eax,[ebp+0x164]         // ball X
+  mov [esi+0x10D4],eax
+  mov eax,[ebp+0x168]         // ball Y
+  mov [esi+0x10D8],eax
+  mov eax,[ebp+0x16C]         // ball Z
+  mov [esi+0x10DC],eax
 
-  mov [out_obj], eax
+  // --- AthenaList_Append(gluebie_list, gluebie) ---
+  push esi
+  mov ecx,edi
+  call 00453810               // thiscall, callee cleans
 
-  mov edx, [playerX]
-  mov [eax+0x10D4], edx
-  mov edx, [playerY]
-  mov [eax+0x10D8], edx
-  mov edx, [playerZ]
-  mov [eax+0x10DC], edx
-
-  push eax
-  mov ecx, [saved_board]
-  add ecx, 0x2578
+  // --- AthenaList_Append(general_list, gluebie) ---
+  // general_list = board+0x2578
+  mov edx,[esp+0]             // recover board from stack
+  push esi
+  lea ecx,[edx+0x2578]
   call 00453810
 
-  mov eax, [out_obj]
-  push eax
-  mov ecx, [saved_board]
-  add ecx, 0xCD4
-  call 00453810
+TarCode_SpawnPop:
+  pop edx                     // clean up saved board
 
-  mov edx, [saved_board]
-  mov edx, [edx+0x8AC]
-  test edx, edx
-  jz add_glue_list
-  mov edx, [edx+0x480]
-  test edx, edx
-  jz add_glue_list
+TarCode_SpawnDone:
+  // Reset debounce when key released
+  push 67h
+  call GetAsyncKeyState
+  test ax,8000h
+  jnz TarCode_ProxCheck       // still held
+  mov dword ptr [SpawnFlag],0
 
-  mov eax, [out_obj]
-  push eax
-  lea ecx, [edx+0x1C]
-  call 00453810
+  // ==============================
+  // PART 2: Tar proximity check
+  // ==============================
+TarCode_ProxCheck:
+  // --- EBP = ball ---
+  // Skip if already tarred
+  cmp byte ptr [ebp+0x2CC],0
+  jne TarCode_End
 
-add_glue_list:
-  mov eax, [saved_board]
-  mov eax, [eax]
-  cmp eax, 004D0890
-  je glue_dizzy
-  cmp eax, 004D12B0
-  je glue_master
-  jmp glue_skip
+  // --- Get board ---
+  mov edx,[ebp+0x14]          // board
+  test edx,edx
+  jz TarCode_End
 
-glue_dizzy:
-  mov eax, [out_obj]
-  push eax
-  mov ecx, [saved_board]
-  add ecx, 0x4378
-  call 00453810
-  jmp glue_skip
+  // --- Detect board type ---
+  mov ecx,[edx]               // vtable
+  cmp ecx,#0x4D0890           // Dizzy?
+  je TarCode_ProxDizzy
+  cmp ecx,#0x4D12B0           // Master?
+  je TarCode_ProxMaster
+  jmp TarCode_End
 
-glue_master:
-  mov eax, [out_obj]
-  push eax
-  mov ecx, [saved_board]
-  add ecx, 0x6080
-  call 00453810
+TarCode_ProxDizzy:
+  lea edi,[edx+0x4378]        // gluebie list
+  jmp TarCode_ProxIterate
 
-glue_skip:
-  mov eax, [out_obj]
-  mov ecx, [gluebie_array]
-  cmp ecx, 16
-  jae skip_post_spawn
+TarCode_ProxMaster:
+  lea edi,[edx+0x6080]        // gluebie list
 
-  mov [gluebie_array+4+ecx*4], eax
-  inc dword [gluebie_array]
+TarCode_ProxIterate:
+  // --- AthenaList: count at +4, array at +0x40C ---
+  mov ecx,[edi+0x04]          // count
+  test ecx,ecx
+  jz TarCode_End
 
-skip_post_spawn:
-  mov dword [temp_mesh], 0
+  mov ebx,[edi+0x40C]         // array_ptr
+  test ebx,ebx
+  jz TarCode_End
 
-done_spawn:
+  // --- Loop: check each Gluebie ---
+TarCode_ProxLoop:
+  mov esi,[ebx]               // ESI = gluebie[i]
+  test esi,esi
+  jz TarCode_ProxNext
+
+  // --- XZ distance² = (ballX-glueX)² + (ballZ-glueZ)² ---
+  fld dword ptr [ebp+0x164]           // ballX
+  fsub dword ptr [esi+0x10D4]         // dx
+  fmul st(0),st(0)                    // dx²
+
+  fld dword ptr [ebp+0x16C]           // ballZ
+  fsub dword ptr [esi+0x10DC]         // dz
+  fmul st(0),st(0)                    // dz²
+
+  faddp st(1),st(0)                   // dx²+dz²
+
+  // --- Compare with 900.0 (= 30²) ---
+  fcom dword ptr [TarCode_Range]
+  fnstsw ax
+  sahf
+  fstp st(0)                          // pop distance
+  jae TarCode_ProxNext                 // too far
+
+  // --- Ball is near! Call CreateNoDizzy ---
+  // CreateNoDizzy(board, ball, entry): ECX=board, push entry, push ball
+  mov edx,[ebp+0x14]                  // board
+  push fake_coll_entry                 // collision_entry
+  push ebp                            // ball
+  mov ecx,edx                        // board
+  call 0040C5D0                      // CreateNoDizzy (RET 0x8)
+  // Callee cleans 8 bytes — no add esp needed
+
+  // --- CreateNoDizzy set 0x2CC=1, 0x768=0, played sound ---
+  jmp TarCode_End
+
+TarCode_ProxNext:
+  add ebx,4                           // next entry
+  dec ecx
+  jnz TarCode_ProxLoop
+
+TarCode_End:
+  // --- Restore ESI = ball (we clobbered it in the loop) ---
+  mov esi,ebp
   popad
-
-original_code:
-  mov eax, [esi+0x0c5c]
   jmp 00405E28
 
-00405E22:
-  jmp SpawnCode
-  nop
+TarCode_Range:
+  dd 44610000h                        // float 900.0 (30²)
 
 [DISABLE]
 
 00405E22:
-  db 8B 86 5C 0C 00 00
+  mov eax,[esi+0xC5C]
 
-dealloc(SpawnCode)
-dealloc(SpawnGluebie)
-dealloc(saved_board)
-dealloc(out_obj)
-dealloc(temp_mesh)
-dealloc(playerX)
-dealloc(playerY)
-dealloc(playerZ)
-dealloc(gluebie_array)
-dealloc(float_900)
-dealloc(last_board)
-dealloc(near_flag)
-dealloc(sound_cooldown)
-unregistersymbol(SpawnGluebie)
+unregistersymbol(SpawnFlag)
+
+dealloc(TarCode)
+dealloc(SpawnFlag)
+dealloc(fake_coll_obj)
+dealloc(fake_coll_entry)
+dealloc(tarpit_str)
