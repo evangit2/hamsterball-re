@@ -262,7 +262,29 @@ This is the simplest method but only gives you ONE level's factory at a time.
 
 ## Sub-Mesh Preloading
 
-Each Board constructor preloads specific MeshWorld files into board struct slots:
+Each Board constructor preloads specific MeshWorld files into board struct slots. The table below shows which sub-mesh files each Board constructor loads (verified by tracing string references in the binary):
+
+### Board Constructor → Sub-Mesh File Mapping
+
+| Board | Constructor Area | Sub-Meshes Loaded |
+|-------|-----------------|-------------------|
+| Warm-up (L1) | 0x004197xx | (none — no factory) |
+| Beginner (L2) | 0x004197xx | (none — no factory) |
+| Intermediate (L3) | 0x0041CBxx | Level2-Bridge |
+| Dizzy (L4) | 0x0041D0xx-0x0041D3xx | Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
+| Tower (L5) | 0x0041E3xx-0x0041E6xx | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, Level4-Trapdoor1-2 |
+| Up (L6) | 0x0042A0xx-0x0042A1xx | Level6-Lifter, LevelUp-SpeedCylinder, LevelUp-Button, LevelUp |
+| Neon (L7) | 0x004245xx-0x004249xx | LevelDark-NeonPlatform, LevelDark-DFloor1-4, LevelDark-Trode, LevelDark-Flickning |
+| Expert (L8) | 0x0041EBxx | Level5-Bridge |
+| Odd (L9) | 0x0042A1xx | Level6-Lifter |
+| Toob (L10) | 0x0041F5xx-0x0041F6xx | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1-2 |
+| Wobbly (L11) | 0x0041F2xx-0x0040F5xx | Level7-Wobbly1-7, Level7-Wavy1 |
+| Glass (L12) | 0x004177xx | (position-only refs, minimal mesh loading) |
+| Sky (L13) | 0x00429Fxx | Level4-Trapdoor1-2 (shared with Tower), Level9-PopCylinder |
+| Master (L14) | 0x004207xx-0x00420Bxx | Level2-Bridge, Level3-Tipper, Level3-Gluebie, Level3-Swirl, Level3-WaterWheel, Level4-Catapult, Level4-Mace, Level4-Windmill, Level4-Turret, Level4-Trapdoor1-2, Level7-Wobbly8, Level8-Blockdawg1-2, Level10-Bridge1-2, Level10-2PBridge |
+| Impossible (L15) | 0x00424Cxx-0x00424Fxx | LevelImpossible-Looper, LevelImpossible-Pendulum, LevelImpossible-Gear, LevelImpossible-BigGear, LevelImpossible-Rotator |
+
+### Board Struct Slots for Sub-Meshes
 
 | Board Offset | Typical Use | Example |
 |-------------|-------------|---------|
@@ -278,13 +300,36 @@ Each Board constructor preloads specific MeshWorld files into board struct slots
 - Create an object with no visual mesh (invisible)
 - Silently fail
 
-For the DLL mod approach, you can load additional MeshWorld files at runtime:
+### Runtime Sub-Mesh Loading (DLL Mod Approach)
+
+To load additional sub-meshes at runtime from a DLL mod:
+
 ```c
-// Load a mesh world into a free board slot
-void* mesh = operator_new(0x10d0);
-MeshWorld_ctor(mesh, graphicsDevice, "Levels\\Level3-Tipper");
-*(void**)(board + 0x436C) = mesh;
+// Load a mesh world into a free board slot at runtime
+// MeshWorld_ctor address: find from Board constructor code
+// operator_new: 0x00449E70
+typedef void* (__cdecl *operator_new_t)(size_t);
+typedef void* (__thiscall *MeshWorld_Load_t)(void* mesh, void* graphics, const char* path);
+
+void load_submesh(void* board, int slot_offset, const char* path) {
+    operator_new_t op_new = (operator_new_t)0x00449E70;
+    // Allocate and load the mesh
+    void* mesh = op_new(0x10D0);  // MeshWorld struct size
+    if (mesh) {
+        // Call MeshWorld constructor with graphics device and path
+        // The graphics device is at board+0x8AC (Scene pointer) → scene+0x480
+        void* scene = *(void**)((char*)board + 0x878);
+        void* graphics = *(void**)((char*)scene + 0x480);
+        // MeshWorld_Load(mesh, graphics, path);
+        // Store in board slot
+        *(void**)((char*)board + slot_offset) = mesh;
+    }
+}
 ```
+
+### Master Race as the Universal Level
+
+Master Race's Board constructor is the most inclusive — it preloads sub-meshes from **5 other levels** (Tower, Toob, Dizzy, Intermediate, Wobbly) plus its own meshes. This is why Master's `CreateLevelObjects` factory (0x4121D0) can create 9 different object types. The universal ref loader DLL mod will work most reliably on Master Race levels, or on any level where you manually preload the required sub-meshes.
 
 ---
 
