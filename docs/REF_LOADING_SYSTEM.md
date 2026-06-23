@@ -535,7 +535,7 @@ Master Race's Board constructor is the most inclusive — it preloads sub-meshes
 
 ---
 
-## Scene_CreateSigns (0x0040C400)
+## Scene_CreateSigns (0x0040C270)
 
 A separate dispatch function handles `SIGN` refs. This function is **not** vtable-gated — it runs for all levels and creates `StandsTipper` objects for any ref starting with "SIGN". Special case: `SIGN-TARPIT` gets additional tar-pit data from `scene+0x27C`.
 
