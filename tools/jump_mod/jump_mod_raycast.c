@@ -358,22 +358,13 @@ static DWORD WINAPI input_thread(LPVOID param)
         int space_down = (key_state & 0x80) != 0;
 
         if (space_down && !g_prev_space) {
-            /* Spacebar just pressed — check gates before raycast.
-             *
-             * Race-end gates use App global (0x5341E0) to avoid stale ball
-             * pointer. When ball+0x14C is set (race end), Ball_Update skips
-             * Phase 15, so g_ball_ptr goes stale.
-             *
-             * Countdown gate uses ball+0x14 (Scene ptr) because App+0x178
-             * points to a different object — the countdown fields at
-             * Scene+0x3A4C are only valid via the ball's Scene pointer.
-             */
-
-            /* Get fresh ball pointer (not stale g_ball_ptr) */
-            DWORD ball = get_player_ball();
+            /* Spacebar just pressed — check gates before raycast. */
 
             /* Gate 1: Countdown — Scene+0x3A4C must be 1 (countdown done).
-             * Scene pointer comes from ball+0x14 (same offset Ball_Update uses). */
+             * Use g_ball_ptr (captured by Phase 15 hook) for the Scene
+             * pointer via ball+0x14. This worked in v22. */
+            DWORD ball = g_ball_ptr;
+            if (!ball) ball = get_player_ball();
             if (ball) {
                 DWORD scene = *(DWORD*)(ball + 0x14);
                 if (scene) {
@@ -382,11 +373,13 @@ static DWORD WINAPI input_thread(LPVOID param)
                         goto next_key;
                     }
                 }
+            } else {
+                /* No ball at all — deny */
+                goto next_key;
             }
 
             /* Gate 2: Race end — player_data[0]+0x0A (finished flag).
-             * At App+0x5D6. Same flag the game checks in Scene_vmethod31
-             * (0x41AC70) to block input. */
+             * At App+0x5D6. Uses App global to avoid stale ball pointer. */
             DWORD app = *(DWORD*)ADDR_App;
             if (app) {
                 BYTE finished = *(BYTE*)(app + 0x5D6);
@@ -404,23 +397,17 @@ static DWORD WINAPI input_thread(LPVOID param)
                 }
             }
 
-            if (ball) {
-                /* Raycast: is the ball on the ground? */
-                int grounded = is_ball_grounded(ball);
-                if (grounded) {
-                    g_want_jump = 1;  /* grounded — allow jump */
-                    wsprintfA(buf, "JUMP: grounded! raycasts=%u grounded=%u want=%u",
-                             g_raycast_count, g_grounded_count, g_want_jump);
-                    diag_log(buf);
-                } else {
-                    wsprintfA(buf, "DENY: airborne. raycasts=%u grounded=%u",
-                             g_raycast_count, g_grounded_count);
-                    diag_log(buf);
-                }
-            } else {
-                /* Ball pointer not yet available — allow jump as fallback (v12 behavior) */
+            /* Raycast: is the ball on the ground? */
+            int grounded = is_ball_grounded(ball);
+            if (grounded) {
                 g_want_jump = 1;
-                diag_log("JUMP: ball_ptr not set, fallback allow");
+                wsprintfA(buf, "JUMP: grounded! raycasts=%u grounded=%u want=%u",
+                         g_raycast_count, g_grounded_count, g_want_jump);
+                diag_log(buf);
+            } else {
+                wsprintfA(buf, "DENY: airborne. raycasts=%u grounded=%u",
+                         g_raycast_count, g_grounded_count);
+                diag_log(buf);
             }
         }
         next_key:
@@ -582,7 +569,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             }
         }
 
-        diag_log("=== jump_mod v23+RAYCAST (App-level race-end gating) loaded ===");
+        diag_log("=== jump_mod v24+RAYCAST (fixed countdown gate) loaded ===");
 
         load_real_bass();
 
