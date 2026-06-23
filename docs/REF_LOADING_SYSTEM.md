@@ -181,7 +181,9 @@ Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **
 | 14 | Master | 0x424380 | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
 | 15 | Impossible | 0x424EC0 | 0x4D2298 | 0x418760 | GEAR + base |
 
-**Key insight**: Levels 1, 2, 3, 9, 10, 12, 14 use ONLY the base factory — they handle only `PLATFORM` and `STANDS` in race mode. Their level-specific objects (tippers, bridges, etc.) are NOT created by vtable[33] in race mode — they are either part of the static level geometry or loaded via the Arena Board system.
+**Key insight**: Levels 1, 2, 3, 9, 10, 12, 14 use ONLY the base factory — they handle only `PLATFORM`, `STANDS`, `N:BUMPER` in race mode. Their level-specific objects (tippers, bridges, etc.) are NOT created by vtable[33] in race mode — they are either part of the static level geometry or loaded via the Arena Board system.
+
+**Race constructor chain**: Like the Arena constructors, Race Board constructors also form a chained function. Race L7 (Neon) loads Impossible sub-meshes, L12 (Glass) loads Impossible sub-meshes, and L14 (Master) loads Neon sub-meshes — all via conditional level-name checks (GLASSRACE, IMPOSSIBLERACE, NEONRACE).
 
 ### ARENA Board System (0x41Cxxx constructors)
 
@@ -196,7 +198,7 @@ Arena Board vtables are at `0x4D04A8`–`0x4D21C0`. The Arena factories handle *
 | 3 | Intermediate Arena | 0x41CB20 | 0x4D05A0 | 0x40A550 | BRIDGE, TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1, SMASHER2 |
 | 4 | Dizzy Arena | 0x41D060 | 0x4D0890 | 0x40A5F0 | TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1, SMASHER2 |
 | 5 | Tower Arena | 0x41E340 | 0x4D0A08 | 0x40D7C0 | CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL |
-| 6 | Tower Arena | 0x420390 | 0x4D11A0 | 0x4117B0 | LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT |
+| 6 | Up Arena | 0x420390 | 0x4D11A0 | 0x4117B0 | LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT |
 | 7 | Neon Arena | 0x424440 | 0x4D1DF0 | 0x416910 | NEONPLATFORM, DFLOOR1-4, TRODE, N:NEONPLATFORM, E:ZOOP, E:LIGHTSOFF, E:LIGHTSON, FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1 |
 | 8 | Expert Arena | 0x41EA40 | 0x4D0B00 | 0x40E250 | BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL, E:SCORE, E:BELL, LIFTER, E:GRAVITY |
 | 9 | Odd Arena | 0x41ED80 | 0x4D0BC0 | 0x40EC40 | LIFTER, E:GRAVITY, WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY |
