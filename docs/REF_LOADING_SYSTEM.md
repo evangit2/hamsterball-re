@@ -159,52 +159,53 @@ Hamsterball has **TWO independent Board systems**: one for Race mode and one for
 
 ### RACE Board System (0x422xxx constructors)
 
-Race Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from a jump table at `0x426AB0` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x426AB0]` at `0x4267A0`.
+Race Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from a jump table at `0x426AB0` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x42761C]` at `0x427102`.
 
-Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM` and `STANDS`).
+Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM`, `STANDS`, `N:BUMPER`).
 
-| # | Race Level | Board Vtable | Factory Addr | Refs Handled (verified from binary) |
-|---|-----------|-------------|-------------|-------------------------------------|
-| 1 | Warm-up | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 2 | Beginner | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 3 | Intermediate | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 4 | Dizzy | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY + base |
-| 5 | Tower | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY, N:BUMPER + base |
-| 6 | Up | 0x4D17F8 | 0x414A20 | LIFTER, FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
-| 7 | Neon | 0x4D1EC8 | 0x4173B0 | FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1-2 + base |
-| 8 | Expert | 0x4D18C8 | 0x414BD0 | FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
-| 9 | Odd | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 10 | Toob | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 11 | Wobbly | 0x4D1B18 | 0x415460 | WOBBLY1, N:SQUAREWOBBLY, PILLAR, POPCYLINDER, EDGECYLINDER + base |
-| 12 | Glass | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 13 | Sky | 0x4D1BD8 | 0x415A30 | POPCYLINDER, EDGECYLINDER, E:LAUNCH + base |
-| 14 | Master | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
-| 15 | Impossible | 0x4D2298 | 0x418760 | GEAR + base |
+| # | Race Level | Constructor | Board Vtable | Factory Addr | Refs Handled (verified from binary) |
+|---|-----------|------------|-------------|-------------|-------------------------------------|
+| 1 | Warm-up | 0x4224A0 | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 2 | Beginner | 0x422550 | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 3 | Intermediate | 0x4226E0 | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 4 | Dizzy | 0x422790 | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY + base |
+| 5 | Tower | 0x4228C0 | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY, N:BUMPER + base |
+| 6 | Up | 0x422B10 | 0x4D17F8 | 0x414A20 | LIFTER, FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
+| 7 | Neon | 0x424860 | 0x4D1EC8 | 0x4173B0 | FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1-2 + base |
+| 8 | Expert | 0x423060 | 0x4D18C8 | 0x414BD0 | FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
+| 9 | Odd | 0x423220 | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 10 | Toob | 0x4234E0 | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 11 | Wobbly | 0x423690 | 0x4D1B18 | 0x415460 | WOBBLY1, N:SQUAREWOBBLY, PILLAR, POPCYLINDER, EDGECYLINDER + base |
+| 12 | Glass | 0x424B60 | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 13 | Sky | 0x423BF0 | 0x4D1BD8 | 0x415A30 | POPCYLINDER, EDGECYLINDER, E:LAUNCH + base |
+| 14 | Master | 0x424380 | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 15 | Impossible | 0x424EC0 | 0x4D2298 | 0x418760 | GEAR + base |
 
 **Key insight**: Levels 1, 2, 3, 9, 10, 12, 14 use ONLY the base factory — they handle only `PLATFORM` and `STANDS` in race mode. Their level-specific objects (tippers, bridges, etc.) are NOT created by vtable[33] in race mode — they are either part of the static level geometry or loaded via the Arena Board system.
 
 ### ARENA Board System (0x41Cxxx constructors)
 
-Arena Board constructors are at `0x41CB20`–`0x424C20`. Each is called from a sequential switch at `0x427140` (sequential `MOV [ESP+0x18], level_id; JZ skip; CALL constructor`).
+Arena Board constructors are at `0x41CA40`–`0x424C20`. Each is called from the Arena switch function at `0x427080` (jump table at `0x42761C`, 15 entries).
 
-Arena Board vtables are at `0x4D05A0`–`0x4D21C0`. The Arena factories handle **many more ref types** than Race factories — they create ALL interactive objects for Arena mode.
+Arena Board vtables are at `0x4D04A8`–`0x4D21C0`. The Arena factories handle **many more ref types** than Race factories — they create ALL interactive objects for Arena mode.
 
-| # | Arena Level | Board Vtable | Factory Addr | Refs Handled (verified from binary) |
-|---|-----------|-------------|-------------|-------------------------------------|
-| 1 | Warm-up Arena | 0x4D1098 | 0x419750 | (none — NoOp) |
-| 2 | Beginner Arena | 0x4D05A0 | 0x40A550 | BRIDGE, TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1, SMASHER2 |
-| 3 | Intermediate Arena | 0x4D0890 | 0x40A5F0 | TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1, SMASHER2 |
-| 4 | Dizzy Arena | 0x4D0A08 | 0x40D7C0 | CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL |
-| 5 | Tower Arena | 0x4D11A0 | 0x4117B0 | LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT |
-| 6 | Neon Arena | 0x4D1DF0 | 0x416910 | NEONPLATFORM, DFLOOR1-4, TRODE, N:NEONPLATFORM, E:ZOOP, E:LIGHTSOFF, E:LIGHTSON, FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1 |
-| 7 | Expert Arena | 0x4D0B00 | 0x40E250 | BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL, E:SCORE, E:BELL, LIFTER, E:GRAVITY |
-| 8 | Odd Arena | 0x4D0BC0 | 0x40EC40 | LIFTER, E:GRAVITY, WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY |
-| 9 | Toob Arena | 0x4D0E78 | 0x40FB30 | SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY, N:SAWTEETH, N:BUMPER, PILLAR, MAGNIFYER |
-| 10 | Glass Arena | 0x4D0D38 | 0x40F420 | WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY |
-| 11 | Wobbly Arena | 0x4D1F90 | 0x40AD80 | SMASHER1, SMASHER2, SECRETUNLOCK, SECRET, BADBALL |
-| 12 | Sky Arena | 0x4D0FC8 | 0x410AD0 | POPCYLINDER, TRAPDOOR, N:BUMPER, VAC-IN, LIFTER, SPEEDCYLINDER, TIMEBUTTON |
-| 13 | Master Arena | 0x4D12B0 | 0x4121D0 | BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE, N:SPINNER, N:BUMPER, E:LAUNCH |
-| 14 | Impossible Arena | 0x4D21C0 | 0x417FE0 | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM, N:BOUNCE, N:ONROTATOR, N:ONGEAR |
+| # | Arena Level | Constructor | Board Vtable | Factory Addr | Refs Handled (verified from binary) |
+|---|-----------|------------|-------------|-------------|-------------------------------------|
+| 1 | Warm-up Arena | 0x41CA40 | 0x4D04A8 | 0x419750 | (none — NoOp) |
+| 2 | Beginner Arena | 0x4200E0 | 0x4D1098 | 0x419750 | (none — NoOp) |
+| 3 | Intermediate Arena | 0x41CB20 | 0x4D05A0 | 0x40A550 | BRIDGE, TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1, SMASHER2 |
+| 4 | Dizzy Arena | 0x41D060 | 0x4D0890 | 0x40A5F0 | TIPPER, WATERWHEEL, SWIRL, GLUEBIE, SMASHER1, SMASHER2 |
+| 5 | Tower Arena | 0x41E340 | 0x4D0A08 | 0x40D7C0 | CATAPULT, MACE, DRAWBRIDGE, WINDMILL, TRAPDOOR, CHOMPER, BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL |
+| 6 | Tower Arena | 0x420390 | 0x4D11A0 | 0x4117B0 | LIFTER, SPEEDCYLINDER, TIMEBUTTON, TarBubble, BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT |
+| 7 | Neon Arena | 0x424440 | 0x4D1DF0 | 0x416910 | NEONPLATFORM, DFLOOR1-4, TRODE, N:NEONPLATFORM, E:ZOOP, E:LIGHTSOFF, E:LIGHTSON, FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1 |
+| 8 | Expert Arena | 0x41EA40 | 0x4D0B00 | 0x40E250 | BONK, FAN, SAWBLADE, BRIDGE, JUDGE, BELL, E:SCORE, E:BELL, LIFTER, E:GRAVITY |
+| 9 | Odd Arena | 0x41ED80 | 0x4D0BC0 | 0x40EC40 | LIFTER, E:GRAVITY, WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY |
+| 10 | Toob Arena | 0x41F4B0 | 0x4D0E78 | 0x40FB30 | SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY, N:SAWTEETH, N:BUMPER, PILLAR, MAGNIFYER |
+| 11 | Glass Arena | 0x41F110 | 0x4D0D38 | 0x40F420 | WOBBLY1-7, WAVY1, N:SQUAREWOBBLY, N:WAVY, SPINNY, FALLOUT1, BLOCKDAWG1-3, E:ALERTSAW2, E:BRANCH, N:SPINNY |
+| 12 | Wobbly Arena | 0x424A90 | 0x4D1F90 | 0x40AD80 | SMASHER1, SMASHER2, SECRETUNLOCK, SECRET, BADBALL |
+| 13 | Sky Arena | 0x41F930 | 0x4D0FC8 | 0x410AD0 | POPCYLINDER, TRAPDOOR, N:BUMPER, VAC-IN, LIFTER, SPEEDCYLINDER, TIMEBUTTON |
+| 14 | Master Arena | 0x4206D0 | 0x4D12B0 | 0x4121D0 | BRIDGE, TIPPER, BONK, BBRIDGE1-2, POPCYLINDER, BLOCKDAWG1-2, CATAPULT, GLUEBIE, N:SPINNER, N:BUMPER, E:LAUNCH |
+| 15 | Impossible Arena | 0x424C20 | 0x4D21C0 | 0x417FE0 | LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM, N:BOUNCE, N:ONROTATOR, N:ONGEAR |
 
 ### Level File → Board Mapping
 
