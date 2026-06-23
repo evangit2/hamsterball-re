@@ -138,6 +138,31 @@ There are **two independent dispatch systems** for MESHWORLD data:
 
 The handler is called from 25 sites within the vtable[33] factory functions. Each factory calls the handler after creating the object, passing the mesh entity as `this` (ECX) and two additional arguments. The handler reads the entity name from `mesh_entity+4 → +0x864` (the entity name set during `CreateMeshBuffer` when parsing MESHWORLD Section 3).
 
+**Complete list of entity names processed by the N:/E: handler** (verified from binary):
+
+| Entity Name | Behavior |
+|------------|----------|
+| N:SECRET | Secret/unlock mechanics |
+| N:UNLOCKSECRET | Unlock secret areas |
+| E:NODIZZY | Disable dizzy effect |
+| TIME | Timer object |
+| E:SAFESWITCH | Safe switch trigger |
+| E:LIMIT | Boundary kill plane |
+| E:BREAK | Breakable surface |
+| E:JUMP | Jump pad |
+| E:ACTION | Action trigger |
+| ONCE, TRUE, YES | Boolean modifiers |
+| SCORE | Scoring object |
+| E:TRAJECTORY | Trajectory modifier |
+| N:NOCONTROL | Disable control |
+| N:WATER | Water effect |
+| N:TARPIT | Tar pit effect |
+| DROPIN | Pipe drop-in |
+| PIPEBONK | Pipe collision |
+| POPOUT | Pipe pop-out |
+| ZIP | Zip/boost effect |
+| Goal! | Goal text popup |
+
 **Call site example** (at 0x0040D380, Dizzy factory):
 ```asm
 MOV EAX, [ESP+0x0C]    ; load ref entry from stack
