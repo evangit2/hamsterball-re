@@ -163,22 +163,22 @@ Race Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from a ju
 
 Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM` and `STANDS`).
 
-| # | Race Level | Board Vtable | Factory Addr | Refs Handled (factory-specific) |
-|---|-----------|-------------|-------------|-------------------------------|
-| 1 | Warm-up | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS (base only) |
-| 2 | Beginner | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS (base only) |
-| 3 | Intermediate | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS (base only) |
-| 4 | Dizzy | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER + base |
-| 5 | Tower | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY + base |
-| 6 | Up | 0x4D17F8 | 0x414A20 | LIFTER, FAN, E:GRAVITY, N:BUMPER + base |
+| # | Race Level | Board Vtable | Factory Addr | Refs Handled (verified from binary) |
+|---|-----------|-------------|-------------|-------------------------------------|
+| 1 | Warm-up | 0x4D1428 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 2 | Beginner | 0x4D14F0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 3 | Intermediate | 0x4D15C0 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 4 | Dizzy | 0x4D1680 | 0x4143D0 | SPINNY, MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY + base |
+| 5 | Tower | 0x4D1740 | 0x414680 | MACE, CATAPULT, TURRET, LIFTER, FAN, E:GRAVITY, N:BUMPER + base |
+| 6 | Up | 0x4D17F8 | 0x414A20 | LIFTER, FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
 | 7 | Neon | 0x4D1EC8 | 0x4173B0 | FLICKNING, N:BUMP, N:GLASS, N:TENBONUS1-2 + base |
-| 8 | Expert | 0x4D18C8 | 0x414BD0 | FAN, E:GRAVITY, N:BUMPER + base |
-| 9 | Odd | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS (base only) |
-| 10 | Toob | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 8 | Expert | 0x4D18C8 | 0x414BD0 | FAN, E:GRAVITY, N:BUMPER, WOBBLY1, N:SQUAREWOBBLY + base |
+| 9 | Odd | 0x4D1980 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
+| 10 | Toob | 0x4D1A40 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
 | 11 | Wobbly | 0x4D1B18 | 0x415460 | WOBBLY1, N:SQUAREWOBBLY, PILLAR, POPCYLINDER, EDGECYLINDER + base |
-| 12 | Glass | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 12 | Glass | 0x4D2048 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
 | 13 | Sky | 0x4D1BD8 | 0x415A30 | POPCYLINDER, EDGECYLINDER, E:LAUNCH + base |
-| 14 | Master | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS (base only) |
+| 14 | Master | 0x4D1C80 | 0x4133E0 | PLATFORM, STANDS, N:BUMPER (base) |
 | 15 | Impossible | 0x4D2298 | 0x418760 | GEAR + base |
 
 **Key insight**: Levels 1, 2, 3, 9, 10, 12, 14 use ONLY the base factory — they handle only `PLATFORM` and `STANDS` in race mode. Their level-specific objects (tippers, bridges, etc.) are NOT created by vtable[33] in race mode — they are either part of the static level geometry or loaded via the Arena Board system.
