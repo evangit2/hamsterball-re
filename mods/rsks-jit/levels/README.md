@@ -1,28 +1,21 @@
-# Swapped MESHWORLD Levels for JIT Logging Test
+# Drop-in Levels Folder (Beginner ↔ Intermediate Swapped)
 
-This folder contains pre-swapped MESHWORLD files for testing the JIT mesh injection DLL.
+This is a **complete copy of the game's `Levels/` folder** with Beginner Race and Intermediate Race MESHWORLD files swapped.
 
 ## What's swapped
 
-### BeginnerRace/ — Intermediate Race geometry loaded as Beginner Race
-- `LevelCascade.MESHWORLD` — actually Level3.MESHWORLD (Intermediate Race, 1026 KB)
-- `Level3-Gluebie.MESHWORLD` — Intermediate sub-mesh
-- `Level3-Swirl.MESHWORLD` — Intermediate sub-mesh
-- `Level3-Tipper.MESHWORLD` — Intermediate sub-mesh
-- `Level3-WaterWheel.MESHWORLD` — Intermediate sub-mesh
+| File | Original (game) | This folder |
+|------|-----------------|-------------|
+| `LevelCascade.MESHWORLD` | Beginner Race (239 KB) | **Intermediate Race** (1 MB) |
+| `Level3.MESHWORLD` | Intermediate Race (1 MB) | **Beginner Race** (239 KB) |
 
-Copy these into the game's `Levels/` folder. When you select **Beginner Race** in-game, you'll get Intermediate Race geometry.
-
-### IntermediateRace/ — Beginner Race geometry loaded as Intermediate Race
-- `Level3.MESHWORLD` — actually LevelCascade.MESHWORLD (Beginner Race, 239 KB)
-
-Copy this into the game's `Levels/` folder. When you select **Intermediate Race** in-game, you'll get Beginner Race geometry.
+All other files are identical to the original game. Level3 sub-meshes (Gluebie, Swirl, Tipper, WaterWheel) are unchanged — they're referenced by internal string names, not filenames.
 
 ## Usage
 
-1. Back up your original `Levels/` folder
-2. Copy the contents of `BeginnerRace/` into the game's `Levels/` folder
-3. Install `mods/rsks-jit/bass.dll` as `bass.dll` (back up original first)
+1. Back up your game's `Levels/` folder (rename to `Levels_backup/`)
+2. Copy this entire `levels/` folder as the game's `Levels/` folder
+3. Install `mods/rsks-jit/bass.dll` as the game's `bass.dll` (back up original as `bass_real.dll`)
 4. Create `C:\tmp\` directory
-5. Launch game, select Beginner Race
-6. Read `C:\tmp\ref_loader_log.txt` for full JIT injection trace
+5. Launch game → select **Beginner Race** → you'll get Intermediate Race geometry
+6. Read `C:\tmp\ref_loader_log.txt` for the full JIT injection trace
