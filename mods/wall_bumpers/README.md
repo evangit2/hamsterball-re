@@ -1,10 +1,10 @@
 # Wall Bumpers Mod
 
-**ALL walls are bumpers.** Every wall collision in the game launches the ball away like a pinball bumper.
+Makes all walls in Hamsterball act as pinball bumpers. Every time the ball touches any wall, it gets launched away with configurable force.
 
-## What It Does
+## How It Works
 
-Hooks `Ball_FallUpdate` (0x408830) — the player's per-frame physics/collision function. After the original physics runs, the mod scans the collision entry list for type==2 (wall) hits. For each wall hit, it reads the surface normal and pushes the ball away along that normal, simulating a bumper effect on every wall in the game.
+Hooks `Ball_AI_ChaseNearest` (0x00408390, ball vtable[4]) — the player's per-frame update function that IS called every frame in race mode. After the original runs (force applied), scans the PhysicsObject's collision entry list for type==2 (wall) hits and applies bumper force: position push + velocity overwrite + speed_boost input disable.
 
 Also sets `ball+0x808` (speed_boost counter) to 3, briefly disabling player input — just like real Hamsterball bumpers do during a launch.
 
