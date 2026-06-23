@@ -358,9 +358,33 @@ static DWORD WINAPI input_thread(LPVOID param)
         int space_down = (key_state & 0x80) != 0;
 
         if (space_down && !g_prev_space) {
-            /* Spacebar just pressed — check if grounded via raycast */
+            /* Spacebar just pressed — check gates before raycast */
             DWORD ball = g_ball_ptr;
             if (ball) {
+                /* Gate 1: Countdown — Scene+0x3A4C must be 1 (countdown done).
+                 * Set by Scene_HandleRaceEnd when all 3 Ready/Set/Go phases complete.
+                 * If 0, the game itself blocks all input in Scene_vmethod31 (0x41AC70). */
+                DWORD scene = *(DWORD*)(ball + 0x14);
+                if (scene) {
+                    BYTE countdown_done = *(BYTE*)(scene + 0x3A4C);
+                    if (!countdown_done) {
+                        wsprintfA(buf, "DENY: countdown active. scene=%08X countdown_done=%u",
+                                 scene, countdown_done);
+                        diag_log(buf);
+                        goto next_key;
+                    }
+                }
+
+                /* Gate 2: Race end — ball+0x14C is the freeze flag.
+                 * Set to 1 by Scene_HandleRaceEnd at 0x41B40D when the race timer
+                 * expires. Also checked by the game's Ball_Update at 0x4060A1. */
+                BYTE frozen = *(BYTE*)(ball + 0x14C);
+                if (frozen) {
+                    diag_log("DENY: race ended (ball frozen)");
+                    goto next_key;
+                }
+
+                /* Raycast: is the ball on the ground? */
                 int grounded = is_ball_grounded(ball);
                 if (grounded) {
                     g_want_jump = 1;  /* grounded — allow jump */
@@ -378,6 +402,7 @@ static DWORD WINAPI input_thread(LPVOID param)
                 diag_log("JUMP: ball_ptr not set, fallback allow");
             }
         }
+        next_key:
         g_prev_space = space_down;
     }
     return 0;
@@ -536,7 +561,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             }
         }
 
-        diag_log("=== jump_mod v20+RAYCAST (slope-aware threshold) loaded ===");
+        diag_log("=== jump_mod v22+RAYCAST (countdown+race-end gating) loaded ===");
 
         load_real_bass();
 
