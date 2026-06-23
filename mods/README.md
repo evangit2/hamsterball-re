@@ -8,3 +8,4 @@
 | global-trapdoor | Spawns Tower Race trapdoors on any level with a hotkey | [global-trapdoor/](global-trapdoor/) |
 | global-neon | Spawns all 6 Neon Race objects (NeonPlatform, DFloor1-4, Trode) on any level with a hotkey | [global-neon/](global-neon/) |
 | global-expert | Spawns all 6 Expert Race objects (Bonk/Hammer, Fan, Sawblade, Bridge, Judge, Bell) on any level with a hotkey | [global-expert/](global-expert/) |
+| global-bonk | Spawns Bonk the Hammer from Expert Race on any level — standalone, constructor loads its own mesh internally | [global-bonk/](global-bonk/) |
