@@ -1,6 +1,38 @@
 # Global Bonk (Hammer) Mod
 
-Spawns Bonk the Hammer from Expert Race on any level with a hotkey.
+Spawns Bonk the Hammer on any level. Hammers chase ALL ball entities, physically move toward their targets, and smash without head-turning during the smash animation.
+
+## Usage
+
+1. Load `GlobalBonk.CEA` in Cheat Engine
+2. Enable the script
+3. Set `SpawnBonk` to 1 in CE (or use a hotkey)
+4. Bonk spawns at player 1's position and activates when any ball comes within ~30 units
+
+## v2 Fixes (June 2026)
+
+### Issue 1: No head turn during smash
+**Root cause:** The old script wrote player 1's position into the target fields (`+0x1120-0x1128`) every frame, even during smash state. This fought with the game's own target-finding logic and forced the hammer to always face player 1.
+
+**Fix:** Removed ALL manual target writes. The game's `vtable[11]` (Bonk_Update at `0x43F930`) sets targets itself. During state 2 (smash), positions are frozen — no rotation drift.
+
+### Issue 2: Hammer doesn't move (only rotates head)
+**Root cause:** Two compounding bugs:
+- (a) `vtable[11]` was never called by the script — the old version only manually wrote positions, never invoking the game's update function.
+- (b) The original Bonk is a **stationary turret** — `current` moves toward `start`, but `start` was set to the spawn position, so `current` never moved toward the ball.
+
+**Fix:**
+- Call `vtable[11]` every frame (during player 1's Ball_Update for once-per-frame timing)
+- After the call, if NOT smashing (state ≠ 2), copy target → start (`0x1120` → `0x1108`)
+- This redirects the game's own movement code: `current` now moves toward the ball at 20%/frame
+
+### Issue 3: Only targets player 1
+**Root cause:** The old script filtered everything to `[esi+0x18]==0` (player 1 only) and overwrote the game's target with player 1's position. But `vtable[11]` already iterates the full ball list (`board+0x29D4`) and finds the nearest ball automatically.
+
+**Fix:**
+- Removed player-1 filter from proximity check — any ball can activate
+- Do NOT override target positions — let `vtable[11]` find the nearest ball from ALL balls
+- Activation state set to 0 (find target) so the game finds nearest ball on the very next frame
 
 ## Object Details
 
@@ -8,81 +40,64 @@ Spawns Bonk the Hammer from Expert Race on any level with a hotkey.
 - **Alloc size:** 0x1200 (4608 bytes)
 - **Constructor:** 0x438850 (ret 0x10 — 4 stack params)
 - **Vtable:** 0x4D5120
-- **Mesh:** "levels\level5-bonk" (0x4D5C10) — loaded INTERNALLY by the constructor
-
-## Usage
-
-1. Load `GlobalBonk.CEA` in Cheat Engine
-2. Enable the script
-3. Set `SpawnBonk` to 1 in CE (or use a hotkey to set it)
-4. Bonk spawns at the player's position
-
-## How It Works
-
-### Constructor Flow (0x438850):
-1. Reads Board+0x878 → App → App+0x174 (D3D device)
-2. Calls MeshWorld_ctor(0x461510) with D3D device + "levels\level5-bonk"
-   → loads Level5-Bonk.MESHWORLD mesh
-3. Sets vtable = 0x4D5120
-4. Stores Board at obj+0x10D0
-5. Copies position → obj+0x10D4 (XYZ), obj+0x10E0 (XYZ copy)
-6. Adjusts Y by ±10.0 (float at 0x4CF9F8)
-7. Creates CollisionLevel: operator_new(0x10D0) → CollisionLevel_ctorWithLevel(0x465080) → obj+0x10F8
-8. Copies collision data via Level_LoadMeshes(0x465200)
-9. Sets initial state:
-   - obj+0x10FC = 1 (active flag)
-   - obj+0x10FD = 0 (not chasing)
-   - obj+0x1100 = 1000 (0x3E8 — timer/state)
-   - obj+0x1138 = 0
-10. Looks up 6 named sub-meshes from the mesh via 0x4605E0:
-    - "HAMMERSAFESMACK" → obj+0x10EC (safe zone position)
-    - "IMPACT" → obj+0x112C (impact position)
-    - "HAMMERAREA1" → obj+0x1140/1144 (patrol area 1)
-    - "HAMMERAREA2" → obj+0x1160/1164 (patrol area 2)
-    - "HAMMERAREA3" → obj+0x1180/1184 (patrol area 3)
-    - "HAMMERAREA4" → obj+0x11A0/11A4 (patrol area 4)
-    - (Lookups for AREA1-4 go through Board+0x8AC collision level)
-
-### Factory Post-Processing:
-- Appends to Board+0x2578 (general list — always available)
-- Stores at Board+0x436C (for E:CALLHAMMER event)
-
-### Collision Events:
-- **E:CALLHAMMER** (0x438B30): If active (obj+0x10FC), deactivates, plays Sound3D at position, calls Board vtable[0x88] with "BONKPOPUP"
-- **E:HAMMERCHASE** (0x438BB0): If not chasing, sets obj+0x10FD=1, obj+0x1104=1, copies start/target positions, sets speed=0.5
-
-### Update Function (vtable[0x2C] = 0x43F930):
-- Reads obj+0x10FC (active) and obj+0x10FD (chasing)
-- If not chasing: manages timer at obj+0x1100 (min 150, reset to 0)
-- If chasing: executes chase AI based on obj+0x1104 (chase state)
+- **Mesh:** "levels\\level5-bonk" — loaded INTERNALLY by the constructor
+- **Update function:** vtable[11] at offset 0x2C → 0x43F930
 
 ## Key Object Fields
 
 | Offset | Size | Description |
 |--------|------|-------------|
 | +0x10D0 | 4 | Board pointer |
-| +0x10D4 | 12 | Position XYZ (float) |
-| +0x10E0 | 12 | Position copy XYZ (float) |
-| +0x10EC | 12 | HAMMERSAFESMACK position |
+| +0x10D4 | 12 | Current position XYZ (float) |
+| +0x10E0 | 12 | Home position XYZ (float) |
 | +0x10F8 | 4 | CollisionLevel pointer |
-| +0x10FC | 1 | Active flag (1=active) |
+| +0x10FC | 1 | Idle flag (1=idle, 0=active) |
 | +0x10FD | 1 | Chasing flag (1=chasing) |
-| +0x1100 | 4 | Timer/state (init 1000) |
-| +0x1104 | 4 | Chase state |
-| +0x1108 | 12 | Chase start position |
-| +0x1120 | 12 | Chase target position |
-| +0x112C | 12 | IMPACT position |
-| +0x1138 | 4 | Chase speed (0.5) |
-| +0x1140-11E4 | ~168 | Patrol area positions (AREA1-4) |
+| +0x1100 | 4 | Timer/decay (init 1000, decays to 0) |
+| +0x1104 | 4 | State machine: 0=find target, 1=approach, 2=smash |
+| +0x1108 | 12 | Start position (where current moves toward) |
+| +0x1120 | 12 | Target position (ball position, set by vtable[11]) |
+| +0x1138 | 4 | Speed (starts 0.5, ×1.15/frame until ≥90 → smash) |
+| +0x113C | 4 | Smash countdown (25 frames) |
+
+## State Machine (vtable[11] @ 0x43F930)
+
+```
+State 0 (find target): speed -= 10.0
+  When speed < 1.0:
+    speed = 0.5, state → 1
+    Iterate board+0x29D4 ball list, find NEAREST ball
+    Set target (0x1120-0x1128) = ball position + radius offset
+    Set start (0x1108-0x1110) = current position
+
+State 1 (approach): speed *= 1.15
+  Move home → target at dist*0.333/frame
+  Move current → start at dist*0.2/frame
+  When speed ≥ 90.0: SMASH
+    Play BONKBASH sound, state → 2, countdown = 25
+    Knockback all balls within 80.0 units
+
+State 2 (smash): countdown -= 1, when 0 → state 0
+
+Rendering (every frame):
+  Gfx_RotateY(home.x - current.x, 0, home.z - current.z)
+  Gfx_SetPosition(current.x, current.y - timer, current.z)
+```
+
+## How v2 Makes the Hammer Chase
+
+The original game's Bonk is stationary — `current` moves toward `start`, but `start` = spawn position, so the hammer never physically relocates. v2 fixes this by redirecting `start = target` after each `vtable[11]` call (when not smashing). This makes the game's own movement code move `current` toward the target ball at 20% of remaining distance per frame (~0.25s to reach 95%).
 
 ## No External Dependencies
 
 - Mesh loaded internally by constructor (no Board+0x43xx needed)
 - CollisionLevel created internally
 - Only appends to Board+0x2578 (always init'd)
-- Board+0x436C is a simple store (no list init needed)
+- Board+0x436C is saved/restored (slot JIT pattern)
 
 ## Hook Point
 
-- Address: 0x405E22 (inside Ball_Update)
+- Address: 0x405E22 (inside Ball_Update, ESI = current ball)
 - Original: `mov eax, [esi+0x0C5C]` (6 bytes: 8B 86 5C 0C 00 00)
+- Player 1 filter (`[esi+0x18]==0`) used only for: vtable[11] call (once per frame), spawn trigger, position save
+- Proximity check: no player filter — any ball can activate idle bonks
