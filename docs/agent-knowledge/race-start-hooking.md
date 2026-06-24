@@ -613,13 +613,20 @@ Example level vtable[18] overrides (verified from vtable memory reads):
 | Offset | Type | Name | Description |
 |--------|------|------|-------------|
 | +0x174 | ptr | gfx_device | Graphics device (D3D) |
-| +0x178 | ptr | scene | Scene/Board pointer (old scene during reset) |
-| +0x184 | ptr | scene_object_list | Scene object AthenaList |
-| +0x220 | ptr | player_profile | Current PlayerProfile |
+| +0x178 | ptr | sound_device | SoundDevice (SoundDevice_UpdateChannels) — NOT scene! |
+| +0x17C | ptr | music_device | MusicDevice (MusicDevice_FadeAll) |
+| +0x180 | ptr | input_device | InputDevice (InputDevice_PollAndRelease) |
+| +0x184 | ptr | meshworld | MeshWorld / scene manager (contains board in its list) |
+| +0x220 | ptr | player_profile | Current PlayerProfile (profile+0xC = board) |
 | +0x237 | byte | is_arena | 1 = arena mode (2P), 0 = tournament/practice |
 | +0x23C | int | difficulty | 0=Pipsqueak, 1=Normal, 2=Frenzied |
-| +0x5DC | ptr | physics_ball | Current physics ball pointer (for gate check) |
+| +0x5DC | ptr | physics_ball | Current physics ball pointer (read-only, never written in code) |
 | +0x10EC | int | race_active | Set to 1 by Scene_SetRaceActive |
+
+**WARNING**: Previous versions of this doc claimed App+0x178 = "scene". This is
+WRONG. App+0x178 is the SoundDevice, verified via App_FrameUpdate (0x46C170)
+which calls `SoundDevice_UpdateChannels(*(App+0x178))`. The scene/board is
+NOT stored at any single App field — see "Getting the Scene Pointer" below.
 
 ---
 
@@ -651,6 +658,98 @@ All verified via disassembly (RET instruction inspection).
 | CollisionLevel_ctorWithLevel | 0x465080 | __thiscall | RET 0x4 | ECX=alloc, [ESP+4]=sourceMesh |
 | Board_ctor | 0x419030 | __thiscall | RET 0x4 | ECX=alloc, [ESP+4]=App |
 | Scene_SetRaceActive | 0x4366E0 | __fastcall | RET | ECX=board |
+
+## Getting the Scene Pointer
+
+There is **NO global variable** that directly holds the current board/scene
+pointer. The board is only accessible through indirect chains or by hooking
+a function that receives it as a parameter. Verified by searching the entire
+binary for writes to any dedicated "current scene" field — none exist.
+
+### Method 1: Hook + Global (RECOMMENDED for MinHook)
+
+Hook any board function (Scene_Update, Scene_SpawnBallsAndObjects, etc.)
+and save ECX to a global. ECX IS the board in all `__fastcall` board functions.
+
+```c
+static int* g_scene = NULL;
+
+typedef void (__fastcall *SceneUpdateFn)(int* board);
+SceneUpdateFn Orig_SceneUpdate;
+
+void __fastcall Hooked_SceneUpdate(int* board) {
+    g_scene = board;  // Save for use elsewhere
+    Orig_SceneUpdate(board);
+}
+
+// Install: MH_CreateHook((LPVOID)0x419C00, &Hooked_SceneUpdate, (LPVOID*)&Orig_SceneUpdate);
+// Then anywhere: if (g_scene && !IsBadReadPtr(g_scene, 0x100)) { ... use g_scene ... }
+```
+
+This is the simplest and most reliable method. The global is always valid
+during gameplay (set every frame by Scene_Update). Add a null check and
+`IsBadReadPtr` for safety during transitions.
+
+### Method 2: App Global → PlayerProfile → Board
+
+Read the App global at 0x5341E0, then follow the profile chain.
+
+```c
+int* app = *(int**)0x5341E0;
+if (!app || IsBadReadPtr(app, 0x300)) return NULL;
+
+int* profile = *(int**)((char*)app + 0x220);
+if (!profile || IsBadReadPtr(profile, 0x20)) return NULL;
+
+int* board = *(int**)((char*)profile + 0x0C);
+if (!board || IsBadReadPtr(board, 0x100)) return NULL;
+
+// board is now the scene/board pointer
+```
+
+**Caveat**: profile+0xC is set to NULL at the START of Tournament_AdvanceRace
+(before creating the new board). It's only valid during active gameplay.
+
+### Method 3: App Global → MeshWorld → Items Array → Board
+
+Read the scene manager (MeshWorld) and iterate its object list.
+
+```c
+int* app = *(int**)0x5341E0;
+if (!app || IsBadReadPtr(app, 0x200)) return NULL;
+
+int* meshworld = *(int**)((char*)app + 0x184);
+if (!meshworld || IsBadReadPtr(meshworld, 0x500)) return NULL;
+
+// MeshWorld+0x40C = pointer to items array (AthenaList internal)
+int* items = *(int**)((char*)meshworld + 0x40C);
+if (!items || IsBadReadPtr(items, 0x10)) return NULL;
+
+// First item = board (usually the only object in the list)
+int* board = *(int**)items;
+if (!board || IsBadReadPtr(board, 0x100)) return NULL;
+
+// board is now the scene/board pointer
+```
+
+**Verified**: GameUpdate (0x469CF0) uses this exact path:
+`MOV EAX, [EBP+0x40C]; MOV ECX, [EAX]` to get the first board from the list.
+
+### Why App+0x178 Does NOT Work
+
+Previous docs claimed App+0x178 = "scene pointer". This is **wrong**.
+App_FrameUpdate (0x46C170) proves it:
+
+```c
+// From App_FrameUpdate decompilation:
+if (*(int*)(param_1 + 0x178) != 0)
+    SoundDevice_UpdateChannels(*(int*)(param_1 + 0x178));  // App+0x178 = SOUND DEVICE
+GameUpdate(*(int*)(param_1 + 0x184));                       // App+0x184 = scene manager
+```
+
+App+0x178 is the SoundDevice, not the scene. The confusion arose because
+App_StartRace calls `Scene_UpdateChildren(*(App+0x178))`, and Scene_UpdateChildren
+was misidentified as a scene function — it's actually a sound channel cleanup call.
 
 ---
 
