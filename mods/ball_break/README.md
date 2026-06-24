@@ -10,7 +10,7 @@ Press **X** to shatter your ball and respawn at the nearest checkpoint.
    - Race not ended (App+0x5D6 == 0)
    - Player flag2 clear (App+0x5D5 == 0)
    - Ball not already shattered (ball+0x2E8 == 0)
-3. Calls `Ball_SplitIntoThree` (0x408D70) — the game's own "ball breaks into 3 pieces" function
+3. Calls `Ball_Shatter` (0x408D70) — the game's own "ball breaks into 3 pieces" function
 4. Sets `ball+0x2E8=1` (shattered flag)
 5. Next frame, `Scene_UpdateBallsAndState` (0x41B540) detects the shattered flag and calls `Ball_FindClosestRespawnPoint` (0x405190) → teleports ball to nearest respawn point, clears velocity, starts fall animation
 
@@ -18,7 +18,7 @@ Press **X** to shatter your ball and respawn at the nearest checkpoint.
 
 | Function | Address | Convention | Purpose |
 |---|---|---|---|
-| `Ball_SplitIntoThree` | 0x408D70 | `__thiscall(ball, Vec3List*)` | Breaks ball into 3 debris pieces, plays sound |
+| `Ball_Shatter` | 0x408D70 | `__thiscall(ball, Vec3List*)` | Breaks ball into 3 debris pieces, plays sound |
 | `Ball_StartFall` | 0x402200 | `__fastcall(ball)` | Sets ball+0xC4C=1, radius to 13.0 (falling) |
 | `Ball_EndFall` | 0x402270 | `__fastcall(ball)` | Sets ball+0xC4C=0, radius to 26.0 (normal) |
 | `Ball_FindClosestRespawnPoint` | 0x405190 | `__fastcall(ball)` | Finds nearest respawn, teleports, clears velocity |
@@ -32,7 +32,7 @@ Press **X** to shatter your ball and respawn at the nearest checkpoint.
 | 0x164 | float | Position X |
 | 0x168 | float | Position Y |
 | 0x16C | float | Position Z |
-| 0x2E8 | byte | Is shattered (set by SplitIntoThree) |
+| 0x2E8 | byte | Is shattered (set by Shatter) |
 | 0x2F9 | byte | Is falling (set by FindClosestRespawnPoint) |
 | 0x300 | DWORD | Respawn timer (set to 150 = 0x96) |
 | 0x324 | byte | Is invincible (if 1, destroyed instead of respawned) |

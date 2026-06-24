@@ -6,7 +6,7 @@
  *   2. Player ball spawn radius:   26.0 → 13.0  (MOV immediate patch)
  *   3. CreateBadBall SIZE tag:     halve FPU value via code cave
  *
- * Ball_SplitIntoThree copies the parent's radius, which is already halved
+ * Ball_Shatter copies the parent's radius, which is already halved
  * by patch #1 or #2, so split balls are automatically half size too.
  *
  * ═══════════════════════════════════════════════════════════════════════════

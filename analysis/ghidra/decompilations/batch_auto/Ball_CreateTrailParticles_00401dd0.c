@@ -32,7 +32,7 @@
  * Cross-references:
  *   - Called from Ball_ApplyTrajectory (0x403750) — when ball is launched
  *   - Called from 0x409463 — likely in Ball_Update during high-speed movement
- *   - Called from Ball_SplitIntoThree (0x408D70) — when ball splits, each gets trail
+ *   - Called from Ball_Shatter (0x408D70) — when ball splits, each gets trail
  *   - Called from 0x440C77 — BounceBall area
  *
  * Struct offsets:

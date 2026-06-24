@@ -458,27 +458,112 @@ static int factory_slots_safe(void* board, const SafeFactory* sf)
 }
 
 /* ============================================================
- * Logging — writes ref load results to Z:\tmp\ref_loader_log.txt
+ * In-memory stats (read via /proc/PID/mem — no file I/O)
+ *
+ * Layout: magic number (0xCAFEBABE) followed by counters and a
+ * ring buffer of ref names + results.  Found by scanning the
+ * DLL's .data section for the magic number.
  * ============================================================ */
+
+#define STATS_MAGIC     0xCAFEBABE
+#define STATS_RING_SIZE  96   /* ring buffer entries */
+
+typedef struct {
+    char name[28];            /* ref name (truncated) */
+    unsigned char result;     /* 0=fail, 1=ok_orig, 2=ok_jit */
+    unsigned char factory;    /* factory index (0=original) */
+} RefEntry;
+
+typedef struct {
+    unsigned int magic;       /* STATS_MAGIC = 0xCAFEBABE */
+    unsigned int total_refs;   /* total refs processed */
+    unsigned int ok_orig;     /* handled by original factory */
+    unsigned int ok_jit;      /* handled by JIT (cross-factory) */
+    unsigned int fail_count;   /* not handled by any factory */
+    unsigned int clone_count;  /* clones made (static-mesh) */
+    unsigned int entry_count; /* ring buffer entries written */
+    unsigned int entry_head;   /* ring buffer write index */
+    RefEntry entries[STATS_RING_SIZE];
+} RefLoaderStats;
+
+/* Use a pointer indirection so the struct lives in heap (always findable) */
+static RefLoaderStats* g_stats = NULL;
+
+static void stats_init(void)
+{
+    if (g_stats) return;
+    g_stats = (RefLoaderStats*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(RefLoaderStats));
+    if (g_stats) {
+        g_stats->magic = STATS_MAGIC;
+    }
+}
+
+static void stats_record(const char* refName, int result, int factoryIdx)
+{
+    if (!g_stats) return;
+
+    g_stats->total_refs++;
+
+    if (result == 1) g_stats->ok_orig++;
+    else if (result == 2) g_stats->ok_jit++;
+    else g_stats->fail_count++;
+
+    /* Record in ring buffer */
+    unsigned int idx = g_stats->entry_head % STATS_RING_SIZE;
+    RefEntry* e = &g_stats->entries[idx];
+    /* Copy name (max 27 chars + NUL) */
+    int i;
+    for (i = 0; i < 27 && refName[i]; i++)
+        e->name[i] = refName[i];
+    e->name[i] = '\0';
+    e->result = (unsigned char)result;
+    e->factory = (unsigned char)factoryIdx;
+
+    g_stats->entry_head++;
+    if (g_stats->entry_count < STATS_RING_SIZE)
+        g_stats->entry_count++;
+}
+
+/* Exported function: returns pointer to g_stats.
+ * hbtestd can find this via PE export table to locate the stats block. */
+__declspec(dllexport) void* __cdecl GetRefStats(void)
+{
+    return (void*)g_stats;
+}
+
+/* ============================================================
+ * Logging — writes ref load results to ref_loader_log.txt
+ * Uses Win32 file I/O (no CRT/stdio bloat, no input interference)
+ * ============================================================ */
+
+static void log_write(const char* text, int len)
+{
+    /* No-op — logging disabled to prevent rendering issues on llvmpipe */
+}
 
 static void log_ref(const char* refName, const char* result, const char* factory)
 {
-    /* Use OutputDebugString — doesn't interfere with rendering/input */
     char buf[256];
-    /* Simple string concatenation (no snprintf to keep DLL small) */
-    lstrcpyA(buf, "REFLOAD\t");
-    lstrcatA(buf, refName);
-    lstrcatA(buf, "\t");
-    lstrcatA(buf, result);
-    lstrcatA(buf, "\t");
-    lstrcatA(buf, factory ? factory : "(null)");
-    lstrcatA(buf, "\r\n");
-    OutputDebugStringA(buf);
+    int pos = 0;
+    lstrcpyA(buf + pos, "REFLOAD\t"); pos += 8;
+    lstrcpyA(buf + pos, refName); pos += lstrlenA(refName);
+    buf[pos++] = '\t';
+    lstrcpyA(buf + pos, result); pos += lstrlenA(result);
+    buf[pos++] = '\t';
+    lstrcpyA(buf + pos, factory ? factory : "(null)"); pos += lstrlenA(factory ? factory : "(null)");
+    buf[pos++] = '\r';
+    buf[pos++] = '\n';
+    log_write(buf, pos);
 }
 
 static void log_sep(const char* msg)
 {
-    /* No-op */
+    char buf[256];
+    int pos = 0;
+    lstrcpyA(buf + pos, msg); pos += lstrlenA(msg);
+    buf[pos++] = '\r';
+    buf[pos++] = '\n';
+    log_write(buf, pos);
 }
 
 /* ============================================================
@@ -502,6 +587,8 @@ static void log_sep(const char* msg)
  *   5. Return NULL if nothing handled it
  * ============================================================ */
 
+static int g_firstCall = 1;
+
 static void __thiscall universal_factory(
     void* board, char* refName,
     void** outObj, void** outCol, int* refEntry)
@@ -513,6 +600,12 @@ static void __thiscall universal_factory(
     int needDiffBypass = 0;
     InjectedSlot injected[MAX_INJECTED_SLOTS];
     int injectCount = 0;
+
+    /* Log first call to verify hook is working */
+    if (g_firstCall) {
+        g_firstCall = 0;
+        log_sep("=== First ref dispatch — hook active ===");
+    }
 
     /* Initialize outputs */
     *outObj = NULL;
@@ -528,8 +621,10 @@ static void __thiscall universal_factory(
         /* Original factory handled it — clone if static-mesh */
         if (is_static_mesh_object(refName)) {
             *outObj = g_cloneTree(*outObj, (int)board);
+            g_stats->clone_count++;
         }
         log_ref(refName, "OK_ORIG", "original");
+        stats_record(refName, 1, 0);
         return;
     }
 
@@ -577,6 +672,7 @@ static void __thiscall universal_factory(
             /* This factory handled it — clone if static-mesh */
             if (is_static_mesh_object(refName)) {
                 *outObj = g_cloneTree(*outObj, (int)board);
+                g_stats->clone_count++;
             }
 
             /* Restore difficulty if we changed it */
@@ -586,6 +682,7 @@ static void __thiscall universal_factory(
                     *(int*)((char*)app + APP_DIFFICULTY) = savedDiff;
             }
             log_ref(refName, "OK_JIT", sf->name);
+            stats_record(refName, 2, i + 1);
             return;
         }
     }
@@ -595,6 +692,7 @@ static void __thiscall universal_factory(
     *outCol = NULL;
 
     log_ref(refName, "FAIL", "none");
+    stats_record(refName, 0, 0);
 
     /* Restore difficulty if we changed it */
     if (needDiffBypass) {
@@ -685,6 +783,11 @@ DEFINE_BASS_FORWARDED(BASS_ChannelStop,       int,     (DWORD a), (a), 0)
 DEFINE_BASS_FORWARDED(BASS_ChannelSetAttribute, int,    (DWORD a, DWORD b, float c), (a,b,c), 0)
 DEFINE_BASS_FORWARDED(BASS_ChannelGetAttribute, int,    (DWORD a, DWORD b, float* c), (a,b,c), 0)
 DEFINE_BASS_FORWARDED(BASS_SampleCreate,      void*,   (DWORD a, DWORD b, DWORD c, DWORD d, DWORD e), (a,b,c,d,e), 0)
+DEFINE_BASS_FORWARDED(BASS_Start,             int,     (void), (), 0)
+DEFINE_BASS_FORWARDED(BASS_Stop,               int,     (void), (), 0)
+DEFINE_BASS_FORWARDED(BASS_MusicPlayEx,        int,     (void* a, void* b, DWORD c, DWORD d), (a,b,c,d), 0)
+DEFINE_BASS_FORWARDED(BASS_ErrorGetCode,       int,     (void), (), 0)
+DEFINE_BASS_FORWARDED(BASS_ChannelSetAttributes, int,   (DWORD a, DWORD b, float c, int d), (a,b,c,d), 0)  /* plural variant */
 
 /* ============================================================
  * DLL Entry Point
@@ -692,11 +795,12 @@ DEFINE_BASS_FORWARDED(BASS_SampleCreate,      void*,   (DWORD a, DWORD b, DWORD 
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    switch (fdwReason)
-    {
-    case DLL_PROCESS_ATTACH:
-        install_hook();
-        break;
+switch (fdwReason)
+{
+case DLL_PROCESS_ATTACH:
+    stats_init();
+    install_hook();
+    break;
 
     case DLL_PROCESS_DETACH:
         remove_hook();

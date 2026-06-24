@@ -6,15 +6,15 @@
  * How it works:
  *   1. Background thread polls DIK_X (0x2D) every 16ms
  *   2. On rising-edge keypress, checks gates (countdown done, race active)
- *   3. Calls Ball_SplitIntoThree(ball, &dummy_vec3list) — the game's own
+ *   3. Calls Ball_Shatter(ball, &dummy_vec3list) — the game's own
  *      "ball breaks into 3 pieces" function
- *   4. Ball_SplitIntoThree sets ball+0x2E8=1 (shattered flag)
+ *   4. Ball_Shatter sets ball+0x2E8=1 (shattered flag)
  *   5. Next frame, Scene_UpdateBallsAndState sees the shattered flag and
  *      calls Ball_FindClosestRespawnPoint → teleports ball to nearest
  *      respawn point, clears velocity, starts fall animation
  *
  * Game functions called:
- *   Ball_SplitIntoThree (0x408D70) — __thiscall: ECX=ball, [ESP+4]=Vec3List*
+ *   Ball_Shatter (0x408D70) — __thiscall: ECX=ball, [ESP+4]=Vec3List*
  *     - If Vec3List count=0, uses ball position as fallback for split directions
  *     - Sets ball+0x2E8=1 (shattered), creates 3 debris balls, plays sound
  *
@@ -155,7 +155,7 @@ static void load_real_bass(void)
 
 /* Game addresses */
 #define ADDR_App                    0x005341E0
-#define ADDR_Ball_SplitIntoThree    0x00408D70
+#define ADDR_Ball_Shatter    0x00408D70
 
 /* Ball struct offsets */
 #define BALL_BOARD          0x014   /* board pointer */
@@ -163,7 +163,7 @@ static void load_real_bass(void)
 #define BALL_POS_X          0x164
 #define BALL_POS_Y          0x168
 #define BALL_POS_Z          0x16C
-#define BALL_IS_SHATTERED   0x2E8   /* set to 1 by Ball_SplitIntoThree */
+#define BALL_IS_SHATTERED   0x2E8   /* set to 1 by Ball_Shatter */
 #define BALL_IS_INVINCIBLE  0x324   /* if 1, ball is destroyed instead of respawned */
 
 /* Scene offsets (via ball+0x14 → board, board+0x878 → scene/app) */
@@ -176,7 +176,7 @@ static void load_real_bass(void)
 /* DIK_X = 0x2D in DirectInput key enum */
 #define DIK_X  0x2D
 
-/* Ball_SplitIntoThree is __thiscall: ECX=ball (this), [ESP+4]=Vec3List*
+/* Ball_Shatter is __thiscall: ECX=ball (this), [ESP+4]=Vec3List*
  * RET 4 (callee cleans 4 bytes = 1 stack param)
  *
  * The Vec3List param provides directional vectors for the 3 split pieces.
@@ -186,17 +186,17 @@ static void load_real_bass(void)
  * We pass a zeroed 0x410-byte buffer (AthenaList is 0x410 bytes min).
  * With count=0, no data array is accessed, so NULL data ptr is safe.
  */
-typedef void (__attribute__((thiscall)) *SplitIntoThree_t)(
+typedef void (__attribute__((thiscall)) *Shatter_t)(
     void *ball,      /* this → ECX */
     void *vec3list   /* [ESP+4], RET 4 */
 );
-static SplitIntoThree_t Ball_SplitIntoThree = (SplitIntoThree_t)ADDR_Ball_SplitIntoThree;
+static Shatter_t Ball_Shatter = (Shatter_t)ADDR_Ball_Shatter;
 
 /* Shared state */
 static volatile DWORD g_break_count = 0;
 
 /* Dummy Vec3List — zeroed = count 0, data NULL.
- * Ball_SplitIntoThree checks *(int*)(param_1+4) for count.
+ * Ball_Shatter checks *(int*)(param_1+4) for count.
  * With count=0, it uses ball position as fallback for all 3 splits.
  * Size 0x410 to match AthenaList layout (count at +4, data at +0x40C). */
 static char g_dummy_vec3list[0x410];
@@ -290,10 +290,10 @@ static DWORD WINAPI input_thread(LPVOID param)
             if (is_shattered) goto next_key;
 
             /* All gates passed — break the ball!
-             * Ball_SplitIntoThree sets ball+0x2E8=1.
+             * Ball_Shatter sets ball+0x2E8=1.
              * Next frame, Scene_UpdateBallsAndState detects it and calls
              * Ball_FindClosestRespawnPoint → respawn at nearest checkpoint. */
-            Ball_SplitIntoThree((void*)ball, (void*)g_dummy_vec3list);
+            Ball_Shatter((void*)ball, (void*)g_dummy_vec3list);
             g_break_count++;
         }
 

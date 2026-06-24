@@ -171,7 +171,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 - **Address:** `0x405190`
 - **Description:** Scans `scene+0x546` (SAFESPOT/SAFEPOS list) for nearest valid respawn position. Writes new position to `ball+0x164..16C`.
 
-### `Ball_SplitIntoThree`
+### `Ball_Shatter`
 - **Address:** `0x408D70`
 - **Convention:** `__thiscall` (ECX = Ball* — the parent ball being replaced)
 - **Called from:** `FollowBall_Update` (0x43ECC0) — NOT from E:JUMP or any collision handler
@@ -706,7 +706,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | 5 | `0x14` | `ApplyForceWithMultipliers` | Force with scale |
 | 7 | `0x1C` | `CollisionHandler` | Custom collision response |
 | 8 | `0x20` | `BounceCallback` | Called on `E:BREAK` events |
-| 30 | `0x78` | `PreSplitCallback` | Before `Ball_SplitIntoThree` |
+| 30 | `0x78` | `PreSplitCallback` | Before `Ball_Shatter` |
 | 32 | `0x80` | `PostFactoryInit` | After bumper/sawblade creation |
 
 ### Scene/Board Vtable (`0x4D0260`)
@@ -778,7 +778,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x2BC` | float[3] | force | Accumulated input force |
 | `+0x2CC` | uint8 | force_disable | 1 = skip Ball_ApplyForce |
 | `+0x2DC` | float[3] | checkpoint | Last safe position |
-| `+0x2E8` | uint8 | splitting | Set during Ball_SplitIntoThree |
+| `+0x2E8` | uint8 | splitting | Set during Ball_Shatter |
 | `+0x2F0` | uint32 | force_count | Forces applied this frame |
 | `+0x2F9` | uint8 | frozen | Stuck on surface |
 | `+0x2FC` | uint32 | freeze_timer | Countdown while frozen |

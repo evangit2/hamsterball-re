@@ -1,5 +1,5 @@
 /* Ghidra Decompilation
- * Function: Ball_SplitIntoThree
+ * Function: Ball_Shatter
  * Address: 0x408D70
  * Decompiled: 2026-06-19
  */
@@ -7,7 +7,7 @@
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __thiscall Ball_SplitIntoThree(void *this,int param_1)
+void __thiscall Ball_Shatter(void *this,int param_1)
 
 {
   int *piVar1;

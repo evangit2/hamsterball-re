@@ -68,7 +68,7 @@ These are the primary game state variables used by the Hamsterball engine.
 - **Used in** (193 locations, key ones):
   - `Ball_ctor2+0x126` — `RNG_Rand(&PTR_OBJ_VTABLE, 3, '\0')` for random ball properties
   - `Ball_Update+0xFF` — per-frame ball physics
-  - `Ball_SplitIntoThree+0x21F` — ball splitting mechanic
+  - `Ball_Shatter+0x21F` — ball splitting mechanic
   - `Scene_SetCamera+0x1EA` — camera setup
   - `Scene_SpawnBallsAndObjects+0x174` — level object spawning
   - `Scene_UpdateBallsAndState+0x3E4` — main game logic update

@@ -25,7 +25,7 @@
  *
  * So checking [ESI+0x18] at the radius-write point is safe.
  *
- * Ball_SplitIntoThree copies the parent's radius, so if Player 1 splits,
+ * Ball_Shatter copies the parent's radius, so if Player 1 splits,
  * the split balls inherit the already-halved 13.0f. No patch needed there.
  * CreateBadBall sets radius from MESHWORLD SIZE tags for 8-balls
  * (player_index=-1), so they're unaffected. No patch needed there either.
