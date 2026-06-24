@@ -666,29 +666,56 @@ pointer. The board is only accessible through indirect chains or by hooking
 a function that receives it as a parameter. Verified by searching the entire
 binary for writes to any dedicated "current scene" field — none exist.
 
-### Method 1: Hook + Global (RECOMMENDED for MinHook)
+### Method 1: Hook Scene_Update + Global (RECOMMENDED for MinHook)
 
-Hook any board function (Scene_Update, Scene_SpawnBallsAndObjects, etc.)
-and save ECX to a global. ECX IS the board in all `__fastcall` board functions.
+Hook Scene_Update (0x419C00), save ECX to a global, and compare with the
+previous frame to detect level changes.
+
+**Why Scene_Update (0x419C00) and NOT Ball_Update (0x405E00):**
+- Scene_Update is called for ALL levels, ALL modes, EVERY frame
+- vtable[1] is overridden by some levels (Intermediate=0x41CC90, Dizzy=0x41D510,
+  RumbleBoard=0x421FE0), but ALL overrides `CALL 0x419C00` directly — so the
+  MinHook at 0x419C00 fires for every level
+- Ball_Update (0x405E00) is NOT called for player balls in race mode!
+  vtable[4] (Ball_AI_ChaseNearest, 0x408390) checks `ball+0xC74` (AI flag)
+  and `App+0x237` (is_arena). If neither is set: skips Ball_Update and calls
+  vtable[5] instead. Ball_Update only fires for AI balls or arena mode.
+- Scene_Update is `__fastcall` (ECX = board), plain `RET` — clean hooking
+
+**Why Scene_SpawnBallsAndObjects (0x41C5B0) may not have fired:**
+The function IS called for every level (verified via vtable analysis + disasm
+of 4 level loaders). ASLR is disabled, address is correct. If the hook doesn't
+fire, likely causes are: MinHook initialization failure (check `MH_CreateHook`
+return code), hook not enabled (`MH_EnableHook` not called), or output
+mechanism not working (use `MessageBoxA` for debugging, not `fopen`).
 
 ```c
 static int* g_scene = NULL;
+static int* g_prev_scene = NULL;
+static bool g_level_just_started = false;
 
 typedef void (__fastcall *SceneUpdateFn)(int* board);
 SceneUpdateFn Orig_SceneUpdate;
 
 void __fastcall Hooked_SceneUpdate(int* board) {
-    g_scene = board;  // Save for use elsewhere
+    g_scene = board;
+
+    if (g_scene != g_prev_scene) {
+        // Level just changed (or first frame)
+        g_level_just_started = true;
+        g_prev_scene = g_scene;
+    } else {
+        g_level_just_started = false;
+    }
+
     Orig_SceneUpdate(board);
 }
 
 // Install: MH_CreateHook((LPVOID)0x419C00, &Hooked_SceneUpdate, (LPVOID*)&Orig_SceneUpdate);
-// Then anywhere: if (g_scene && !IsBadReadPtr(g_scene, 0x100)) { ... use g_scene ... }
+// Then anywhere: if (g_level_just_started) { ... onLevelStart code ... }
 ```
 
-This is the simplest and most reliable method. The global is always valid
-during gameplay (set every frame by Scene_Update). Add a null check and
-`IsBadReadPtr` for safety during transitions.
+This gives you both a persistent scene pointer AND a level-change callback.
 
 ### Method 2: App Global → PlayerProfile → Board
 
