@@ -93,7 +93,7 @@ call AthenaList_Append (0x453810)  ; Board+0x4BE8 (drawbridge list)
 | [24] | 0x438830 | scalar_deleting_dtor (alt) |
 
 ### Collision
-- No dedicated handler in `Level_HandleCollision` (0x40DCD0)
+- No dedicated handler in `TowerCollisionEvents` (0x40DCD0)
 - Collision is via the CollisionLevel sub-object at obj+0x10D4
 - CollisionLevel has its own spatial tree built from the Drawbridge mesh
 - Chain bridge/wall names are looked up in the mesh's entity table for collision triggers
@@ -213,7 +213,7 @@ and [25]=0x42A00000 are float constants (40.0 and 80.0), not function pointers.
 The next vtable (Glass_Level at 0x4D5060) starts at [26].
 
 ### Collision
-Handled in `Level_HandleCollision` (0x40DCD0):
+Handled in `TowerCollisionEvents` (0x40DCD0):
 
 1. **"N:TRAPDOOR"** → `Trapdoor_Activate(obj)` @ 0x438410
    - Iterates Board+0x47D0 (trapdoor list) via Board+0x4BDC (heap array)
@@ -299,7 +299,7 @@ if (obj+0x10E4 == threshold):
 | 0x438290 | GlassStands_Ctor (Trapdoor) | ecx=alloc, push Board, call (ret 4) |
 | 0x438410 | Trapdoor_Activate | ecx=trapdoor_obj, call |
 | 0x4344D0 | Trapdoor_Open | ecx=trapdoor_obj, call |
-| 0x40DCD0 | Level_HandleCollision | thiscall(Board, ball, collObj) |
+| 0x40DCD0 | TowerCollisionEvents | thiscall(Board, ball, collObj) |
 | 0x40D7C0 | CreateTowerObjects | thiscall, processes MESHWORLD objects |
 | 0x41E340 | BoardLevel5_Tower_ctor | thiscall, loads Tower meshes + inits lists |
 

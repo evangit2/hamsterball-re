@@ -182,7 +182,7 @@
     },
     {
       "address": "0x00410D00",
-      "name": "CreateLimit"
+      "name": "NeonCollisionEvents"
     },
     {
       "address": "0x004117B0",
@@ -614,11 +614,11 @@
     },
     {
       "address": "0x0040E6A0",
-      "name": "Arena_HandleCollision"
+      "name": "ExpertCollisionEvents"
     },
     {
       "address": "0x0040DCD0",
-      "name": "Level_HandleCollision"
+      "name": "TowerCollisionEvents"
     },
     {
       "address": "0x00434770",

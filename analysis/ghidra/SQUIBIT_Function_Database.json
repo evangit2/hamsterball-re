@@ -1195,9 +1195,9 @@
       "address": "0x00434e20",
       "signature": "void __fastcall Bell_Activate(int param_1)",
       "parameters": "param_1: int \u2014 pointer to the bell game object. Accesses offsets +0x10D0 (parent Scene), +0x10E0 (active state), +0x10E4 (timer).",
-      "description": "Activates a bell in the arena. Plays bell sound via Sound_PlayChannel (chain: param_1+0x10D0\u2192+0x878\u2192+0x4C8). Sets timer at +0x10E4=90.0f (1.5s) and active flag at +0x10E0=1.0f. Called from Arena_HandleCollision when a ball hits a bell.",
+      "description": "Activates a bell in the arena. Plays bell sound via Sound_PlayChannel (chain: param_1+0x10D0\u2192+0x878\u2192+0x4C8). Sets timer at +0x10E4=90.0f (1.5s) and active flag at +0x10E0=1.0f. Called from ExpertCollisionEvents when a ball hits a bell.",
       "struct_offsets": "+0x10D0 (parent Scene), +0x10E0 (active=1.0f), +0x10E4 (timer=90.0f)",
-      "xrefs": "1 call from Arena_HandleCollision (0x40E9DB)",
+      "xrefs": "1 call from ExpertCollisionEvents (0x40E9DB)",
       "batch": 25
     },
     {
@@ -1207,7 +1207,7 @@
       "parameters": "this: Stands* | param_1: parent Scene (accessed at +0x878\u2192App\u2192+0x5C8 for MeshWorld) | param_2/3/4: position/rotation stored at +0x10D8/+0x10DC/+0x10E0",
       "description": "Constructor for breakable arena stands. Inherits from Stands_ctor, sets vtable (0x4D5390), stores position, creates CollisionLevel (0x10D0 bytes), initializes health=3 at +0x10E4, break state=0 at +0x10E8, last breaker=0xFFFFFFFF at +0x10F0.",
       "struct_offsets": "+0x10D0 (Scene ptr), +0x10D4 (CollisionLevel ptr), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (health=3), +0x10E8 (break=0), +0x10F0 (last breaker=-1)",
-      "xrefs": "1 call from 0x40ECBA (Arena_HandleCollision factory)",
+      "xrefs": "1 call from 0x40ECBA (ExpertCollisionEvents factory)",
       "batch": 25
     },
     {
@@ -1227,7 +1227,7 @@
       "parameters": "param_1: Stands* this \u2014 stands object that was hit",
       "description": "Plays break sound on first hit (when health +0x10E4==3). Sets health=0 (broken), sets decay timer +0x10F8=0.25s, plays 3D positional sound via Sound_Play3D using position from +0x10D8/+0x10DC/+0x10E0 and sound buffer from App\u2192Scene\u2192+0x47C.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D8/+0x10DC/+0x10E0 (pos), +0x10E4 (health 3\u21920), +0x10F8 (decay=0.25s)",
-      "xrefs": "1 call from 0x40F074 (Arena_HandleCollision)",
+      "xrefs": "1 call from 0x40F074 (ExpertCollisionEvents)",
       "batch": 25
     },
     {
@@ -1295,9 +1295,9 @@
       "address": "0x004363f0",
       "signature": "void * __thiscall Platform_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
       "parameters": "this: Platform* (Rotator subclass, vtable=0x4D56A8) | param_1: parent Scene (+0x10D0) | param_2-4: position X/Y/Z (+0x10D4/+0x10D8/+0x10DC) | param_5: passed to Stands_ctor",
-      "description": "Constructor for Platform obstacles (Rotator subclass). Inherits Stands_ctor, creates CollisionLevel, sets width=45.0f (+0x10E4), rotation direction=-1.0f (+0x10E8), active=0 (+0x10EC). Calls Gfx_SetPosition, SceneObject_CallUpdate/Render. Called from CreateLimit and CreateWobbly1.",
+      "description": "Constructor for Platform obstacles (Rotator subclass). Inherits Stands_ctor, creates CollisionLevel, sets width=45.0f (+0x10E4), rotation direction=-1.0f (+0x10E8), active=0 (+0x10EC). Calls Gfx_SetPosition, SceneObject_CallUpdate/Render. Called from NeonCollisionEvents and CreateWobbly1.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (CollisionLevel), +0x10E4 (width=45.0), +0x10E8 (rotDir=-1.0), +0x10EC (active=0)",
-      "xrefs": "5 calls from CreateLimit (\u00d72) and CreateWobbly1 (\u00d73)",
+      "xrefs": "5 calls from NeonCollisionEvents (\u00d72) and CreateWobbly1 (\u00d73)",
       "batch": 26
     },
     {
@@ -1325,9 +1325,9 @@
       "address": "0x004366f0",
       "signature": "void * __thiscall Rotator_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, undefined4 param_5, void *param_6)",
       "parameters": "this: Rotator* (vtable2=0x4D5708) | param_1: Scene (+0x10D0) | param_2-4: pos X/Y/Z | param_5: rotation speed/extra (+0x10E0) | param_6: passed to Stands_ctor",
-      "description": "Constructor for Rotator vtable2 variant. Inherits Stands_ctor, creates CollisionLevel at +0x10F0, sets rotation=0, active=1, sound_started=0. Called from CreateLimit.",
+      "description": "Constructor for Rotator vtable2 variant. Inherits Stands_ctor, creates CollisionLevel at +0x10F0, sets rotation=0, active=1, sound_started=0. Called from NeonCollisionEvents.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (speed), +0x10E4 (angle=0), +0x10EC (active=1), +0x10ED (sound=0), +0x10F0 (CollisionLevel)",
-      "xrefs": "1 call from CreateLimit (0x410C98)",
+      "xrefs": "1 call from NeonCollisionEvents (0x410C98)",
       "batch": 26
     },
     {
@@ -1347,7 +1347,7 @@
       "parameters": "param_1: Rotator* this \u2014 rotator to start sound for",
       "description": "Starts rotator sound only if not already started (+0x10ED==0). Sets flag=1, resets timer=0, volume=1.0, plays 3D positional sound via Sound_Play3D using position +0x10D4/+0x10D8/+0x10DC and sound buffer from App\u2192Scene\u2192+0x498.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E4 (volume=1.0), +0x10E8 (timer=0), +0x10ED (sound_started 0\u21921)",
-      "xrefs": "1 call from CreateLimit (0x410D73)",
+      "xrefs": "1 call from NeonCollisionEvents (0x410D73)",
       "batch": 26
     },
     {
@@ -1535,9 +1535,9 @@
       "address": "0x00438410",
       "signature": "void __fastcall Trapdoor_Activate(int param_1)",
       "parameters": "param_1: Trapdoor* this",
-      "description": "Activates trapdoor (opens it). Only if +0x10F4==0 (not activated). Plays 3D sound if timer < threshold. Sets activation timer=10 frames. Called from Level_HandleCollision when ball touches trigger.",
+      "description": "Activates trapdoor (opens it). Only if +0x10F4==0 (not activated). Plays 3D sound if timer < threshold. Sets activation timer=10 frames. Called from TowerCollisionEvents when ball touches trigger.",
       "struct_offsets": "+0x10D0 (Scene), +0x10E0/+0x10E4/+0x10E8 (pos), +0x10EC (timer), +0x10F4 (activation=10)",
-      "xrefs": "1 call from Level_HandleCollision (0x40DE37)",
+      "xrefs": "1 call from TowerCollisionEvents (0x40DE37)",
       "batch": 28
     },
     {
@@ -1677,7 +1677,7 @@
       "parameters": "this: Stands* | param_1: int \u2014 object pointer (Ball*) being added",
       "description": "Adds object to stands tracking list. If object already in list, refreshes timer to 10. Otherwise allocates 8-byte node (ptr + timer=10) and appends to AthenaList at +0x1108. Called when ball touches stands.",
       "struct_offsets": "+0x1108 (AthenaList), +0x110C (count), +0x1110+ (flags), +0x1514 (data ptr)",
-      "xrefs": "2 calls from Arena_HandleCollision and CreateWobbly1",
+      "xrefs": "2 calls from ExpertCollisionEvents and CreateWobbly1",
       "batch": 29
     },
     {

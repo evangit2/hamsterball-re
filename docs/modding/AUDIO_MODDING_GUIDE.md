@@ -254,7 +254,7 @@ if (fwing) {
 
 ### 5.1 Triggering sounds from collision events
 
-The engine already wires many level tags to sounds in `DispatchCollisionEvents` (a.k.a. `DispatchCollisionEvents`, `0x0040C5D0`) and `Level_HandleCollision` (`0x0040DCD0`):
+The engine already wires many level tags to sounds in `DispatchCollisionEvents` (a.k.a. `DispatchCollisionEvents`, `0x0040C5D0`) and `TowerCollisionEvents` (`0x0040DCD0`):
 
 | Tag | Sound source | Function called |
 |---|---|---|

@@ -269,10 +269,10 @@ The 3D listener array enables per-ball positional audio in multiplayer:
 | N:TARPIT | DispatchCollisionEvents | Tarpit 3D sound + physics modify |
 | N:MOUSETRAP | DispatchCollisionEvents | Mousetrap 3D sound |
 | PIPEBONK | DispatchCollisionEvents | Random from 3 impact sounds |
-| E:CATAPULTBOTTOM | Level_HandleCollision (0x40DCD0) | Catapult launch sound |
-| E:OPENSESAME | Level_HandleCollision | Door opening sound |
-| N:TRAPDOOR | Level_HandleCollision | 3D trapdoor + timer activation |
-| E:MACETRIGGER | Level_HandleCollision | Mace activation 3D sound |
+| E:CATAPULTBOTTOM | TowerCollisionEvents (0x40DCD0) | Catapult launch sound |
+| E:OPENSESAME | TowerCollisionEvents | Door opening sound |
+| N:TRAPDOOR | TowerCollisionEvents | 3D trapdoor + timer activation |
+| E:MACETRIGGER | TowerCollisionEvents | Mace activation 3D sound |
 
 ## Key Address Map
 

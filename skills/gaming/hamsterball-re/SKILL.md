@@ -86,11 +86,11 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x40E250 | CreateExpertLevelObjects | SAWBLADE objects |
 | 0x4117B0 | CreateUpLevelObjects | SPEEDCYLINDER |
 | 0x412850 | HandleArenaCollisionEvents | N:SPINNER |
-| 0x410D00 | CreateLimit | E:LIMIT boundary |
+| 0x410D00 | NeonCollisionEvents | Neon board collision handler (E:PEGS, E:HEATON, E:LIMIT, etc.) |
 | 0x40BF50 | CreateMouseTrap | MOUSETRAP |
 | 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION (ONCE/SCORE), E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT |
-| 0x40E6A0 | Arena_HandleCollision | Arena events: E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL (+delegates to DispatchCollisionEvents) |
-| 0x40DCD0 | Level_HandleCollision | Level events: E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE (+delegates to DispatchCollisionEvents) |
+| 0x40E6A0 | ExpertCollisionEvents | Expert board events: E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL (+delegates to DispatchCollisionEvents) |
+| 0x40DCD0 | TowerCollisionEvents | Tower board events: E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE (+delegates to DispatchCollisionEvents) |
 | 0x434770 | Saw_AlertActivate | Saw blade alert mode (clear flag + 3D sound) |
 | 0x434A50 | Saw_Activate | Saw blade full activate (set flag + 3D sound) |
 | 0x434C40 | Judge_Reset | Reset judge objects |

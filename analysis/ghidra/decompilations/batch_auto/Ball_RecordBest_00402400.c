@@ -16,7 +16,7 @@
  *
  * Cross-references (7 call sites):
  *   - DispatchCollisionEvents (5 calls) — scoring events in the NoDizzy game mode
- *   - Arena_HandleCollision — arena collision scoring
+ *   - ExpertCollisionEvents — arena collision scoring
  *   - HandleArenaCollisionEvents — spinner interaction scoring
  *
  * Struct offsets:

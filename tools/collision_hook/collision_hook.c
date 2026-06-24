@@ -3,8 +3,8 @@
  *
  * Hooks three collision dispatch functions:
  *   1. DispatchCollisionEvents          (0x0040C5D0) — shared base handler (all events)
- *   2. Level_HandleCollision   (0x0040DCD0) — race level events
- *   3. Arena_HandleCollision   (0x0040E6A0) — arena events
+ *   2. TowerCollisionEvents   (0x0040DCD0) — Tower board events
+ *   3. ExpertCollisionEvents   (0x0040E6A0) — Expert board events
  *
  * Build: i686-w64-mingw32-gcc -shared -o collision_hook.dll collision_hook.c \
  *          -Wl,--enable-stdcall-fixup
@@ -24,8 +24,8 @@
 
 #define GAME_BASE        0x00400000
 #define ADDR_DispatchCollisionEvents          (GAME_BASE + 0x0000C5D0)
-#define ADDR_Level_HandleCollision   (GAME_BASE + 0x0000DCD0)
-#define ADDR_Arena_HandleCollision   (GAME_BASE + 0x0000E6A0)
+#define ADDR_TowerCollisionEvents   (GAME_BASE + 0x0000DCD0)
+#define ADDR_ExpertCollisionEvents   (GAME_BASE + 0x0000E6A0)
 
 #define LOG_FILE "collision_log.csv"
 #define CFG_FILE "collision_hook.cfg"
@@ -142,18 +142,18 @@ void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
         g_orig_DispatchCollisionEvents(this_, NULL, ball, collObj);
 }
 
-void __fastcall hook_Level_HandleCollision(void *this_, void *edx_dummy,
+void __fastcall hook_TowerCollisionEvents(void *this_, void *edx_dummy,
                                              void *ball, void *collObj) {
     (void)edx_dummy;
-    log_event("Level_HandleCollision", this_, ball, collObj);
+    log_event("TowerCollisionEvents", this_, ball, collObj);
     if (g_orig_Level)
         g_orig_Level(this_, NULL, ball, collObj);
 }
 
-void __fastcall hook_Arena_HandleCollision(void *this_, void *edx_dummy,
+void __fastcall hook_ExpertCollisionEvents(void *this_, void *edx_dummy,
                                             void *ball, void *collObj) {
     (void)edx_dummy;
-    log_event("Arena_HandleCollision", this_, ball, collObj);
+    log_event("ExpertCollisionEvents", this_, ball, collObj);
     if (g_orig_Arena)
         g_orig_Arena(this_, NULL, ball, collObj);
 }
@@ -217,20 +217,20 @@ static DWORD WINAPI hook_thread(LPVOID lpParam) {
     DWORD offset = base - GAME_BASE;
 
     void *pDispatchCollisionEvents = (void *)(ADDR_DispatchCollisionEvents + offset);
-    void *pLevel = (void *)(ADDR_Level_HandleCollision + offset);
-    void *pArena = (void *)(ADDR_Arena_HandleCollision + offset);
+    void *pLevel = (void *)(ADDR_TowerCollisionEvents + offset);
+    void *pArena = (void *)(ADDR_ExpertCollisionEvents + offset);
 
     if (g_hook_DispatchCollisionEvents && install_hook(pDispatchCollisionEvents, hook_DispatchCollisionEvents, g_tramp_DispatchCollisionEvents)) {
         g_orig_DispatchCollisionEvents = (handler_t)g_tramp_DispatchCollisionEvents;
         if (g_log) { fprintf(g_log, "# Hooked DispatchCollisionEvents at 0x%08X\n", (unsigned int)(uintptr_t)pDispatchCollisionEvents); }
     }
-    if (g_hook_Level && install_hook(pLevel, hook_Level_HandleCollision, g_tramp_Level)) {
+    if (g_hook_Level && install_hook(pLevel, hook_TowerCollisionEvents, g_tramp_Level)) {
         g_orig_Level = (handler_t)g_tramp_Level;
-        if (g_log) { fprintf(g_log, "# Hooked Level_HandleCollision at 0x%08X\n", (unsigned int)(uintptr_t)pLevel); }
+        if (g_log) { fprintf(g_log, "# Hooked TowerCollisionEvents at 0x%08X\n", (unsigned int)(uintptr_t)pLevel); }
     }
-    if (g_hook_Arena && install_hook(pArena, hook_Arena_HandleCollision, g_tramp_Arena)) {
+    if (g_hook_Arena && install_hook(pArena, hook_ExpertCollisionEvents, g_tramp_Arena)) {
         g_orig_Arena = (handler_t)g_tramp_Arena;
-        if (g_log) { fprintf(g_log, "# Hooked Arena_HandleCollision at 0x%08X\n", (unsigned int)(uintptr_t)pArena); }
+        if (g_log) { fprintf(g_log, "# Hooked ExpertCollisionEvents at 0x%08X\n", (unsigned int)(uintptr_t)pArena); }
     }
 
     if (g_log) { fprintf(g_log, "# Hooks installed. Logging active.\n"); fflush(g_log); }
@@ -254,9 +254,9 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
             if (g_hook_DispatchCollisionEvents && g_orig_DispatchCollisionEvents)
                 uninstall_hook((void *)(ADDR_DispatchCollisionEvents + offset), g_tramp_DispatchCollisionEvents);
             if (g_hook_Level && g_orig_Level)
-                uninstall_hook((void *)(ADDR_Level_HandleCollision + offset), g_tramp_Level);
+                uninstall_hook((void *)(ADDR_TowerCollisionEvents + offset), g_tramp_Level);
             if (g_hook_Arena && g_orig_Arena)
-                uninstall_hook((void *)(ADDR_Arena_HandleCollision + offset), g_tramp_Arena);
+                uninstall_hook((void *)(ADDR_ExpertCollisionEvents + offset), g_tramp_Arena);
             if (g_log) {
                 fprintf(g_log, "# Hooks uninstalled. DLL detaching.\n");
                 fclose(g_log);

@@ -447,7 +447,7 @@ In a reimplementation, bypass both gates entirely:
 | `Scene_CreateSigns` | Unknown | Directional signs (called from `Scene_SpawnBallsAndObjects`) |
 | `Scene_CreateDynamicObjects` | Unknown | Moving platforms, etc. (called from `Scene_SpawnBallsAndObjects`) |
 | `Level_FindObjectByName` | `0x460530` | Find MESHWORLD object by name |
-| `Arena_HandleCollision` | `0x40E6A0` | Arena event dispatcher (HAMMERCHASE, ALERTSAW, etc.) |
+| `ExpertCollisionEvents` | `0x40E6A0` | Arena event dispatcher (HAMMERCHASE, ALERTSAW, etc.) |
 | `operator_new` | `0x4BA57B` | Game's CRT allocator (`__cdecl`, size on stack) |
 | `App singleton` | `0x4FD680` | Global App struct |
 | `app+0x23C` | `0x4FD8B4` | Tournament mode flag |

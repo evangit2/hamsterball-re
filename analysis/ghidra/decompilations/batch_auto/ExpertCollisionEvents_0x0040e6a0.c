@@ -1,5 +1,5 @@
 /*
- * Function: Arena_HandleCollision
+ * Function: ExpertCollisionEvents
  * Address: 0x0040e6a0
  *
  * Description:

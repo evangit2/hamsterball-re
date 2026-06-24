@@ -84,13 +84,13 @@ Collision events are dispatched through a **2-tier handler chain**. Level and Ar
 
 Note: `Ball_AdvancePositionOrCollision` (0x4564C0) handles only geometric collision detection (velocity integration, mesh intersection via `CollisionLevel->vtable[0x1C]`, max-speed clamping). It does NOT dispatch event-name-based collision events. Event dispatch is triggered from the ball update chain (`ball->vtable[0x10]`, called by `Scene_UpdateBallsAndState`).
 
-### Tier 1a: `Level_HandleCollision` (0x0040DCD0) — Level Events
-**Signature:** `void __thiscall Level_HandleCollision(Scene *scene, Ball *ball, Collider *collider)`
+### Tier 1a: `TowerCollisionEvents` (0x0040DCD0) — Level Events
+**Signature:** `void __thiscall TowerCollisionEvents(Scene *scene, Ball *ball, Collider *collider)`
 
 Handles level-specific events (catapults, trapdoors, maces, bite damage), then calls `DispatchCollisionEvents`.
 
-### Tier 1b: `Arena_HandleCollision` (0x0040E6A0) — Arena Events
-**Signature:** `void __thiscall Arena_HandleCollision(Scene *scene, Ball *ball, Collider *collider)`
+### Tier 1b: `ExpertCollisionEvents` (0x0040E6A0) — Arena Events
+**Signature:** `void __thiscall ExpertCollisionEvents(Scene *scene, Ball *ball, Collider *collider)`
 
 Handles arena/rumble events (hammers, saw blades, judges, bells), then calls `DispatchCollisionEvents`.
 
@@ -127,7 +127,7 @@ Handles ALL common events. This is always called last regardless of level type.
 
 **Note on `E:DROPIN`, `E:PIPEBONK`, `E:POPOUT`:** These three events use `eventName+2` comparison, skipping the "E:" prefix. The name in the `.COL` file is still `"E:PIPEBONK"` etc.
 
-### 5b. Level Handler Events — `Level_HandleCollision` (0x0040DCD0)
+### 5b. Level Handler Events — `TowerCollisionEvents` (0x0040DCD0)
 
 | Event String | Match | Condition | Effect | Scene Offsets |
 |---|---|---|---|---|
@@ -138,7 +138,7 @@ Handles ALL common events. This is always called last regardless of level type.
 | `E:MACETRIGGER` | `stricmp` exact | — | Set all maces active | mace list+0x5000, mace+0x10F0=1 |
 | `N:MACE` | `stricmp` exact | mace active & speed ≠ 80.0 | Call BounceForce on ball | `ball->vtable[0x20]()` |
 
-### 5c. Arena Handler Events — `Arena_HandleCollision` (0x0040E6A0)
+### 5c. Arena Handler Events — `ExpertCollisionEvents` (0x0040E6A0)
 
 | Event String | Match | Condition | Effect | Scene Offsets |
 |---|---|---|---|---|
@@ -230,8 +230,8 @@ To add a new event type to the game (e.g., `E:MYNEWEVENT`):
 
 ### In the collision handler:
 1. Add a `stricmp`/`strnicmp` check in the appropriate handler:
-   - `Level_HandleCollision` (0x40DCD0) for level-specific events
-   - `Arena_HandleCollision` (0x40E6A0) for arena-specific events
+   - `TowerCollisionEvents` (0x40DCD0) for level-specific events
+   - `ExpertCollisionEvents` (0x40E6A0) for arena-specific events
    - `DispatchCollisionEvents` (0x40C5D0) for universal events
 2. The event name is read from `*(char **)(collObj[1] + 0x864)`
 3. Use `strnicmp` for prefix matching (allows suffix data like tags)
@@ -288,10 +288,10 @@ To add a new event type to the game (e.g., `E:MYNEWEVENT`):
   │       └─ Returns collObj pointing to MeshBuffer
   │
   ├─ Collision Handler Dispatch (2-tier, vtable-driven)
-  │   ├─ Level_HandleCollision (0x40DCD0) — race levels
+  │   ├─ TowerCollisionEvents (0x40DCD0) — Tower board
   │   │   └─ Level-specific events first (CATAPULTBOTTOM, OPENSESAME, etc.)
   │   │   └─ delegates to DispatchCollisionEvents
-  │   ├─ Arena_HandleCollision (0x40E6A0) — arenas
+  │   ├─ ExpertCollisionEvents (0x40E6A0) — arenas
   │   │   └─ Arena events first (CALLHAMMER, SAW, BELL, etc.)
   │   │   └─ delegates to DispatchCollisionEvents
   │   └─ DispatchCollisionEvents (0x40C5D0) — shared base, always called last

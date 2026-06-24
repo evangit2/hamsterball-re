@@ -526,8 +526,8 @@ static int install_detour(void *target, void *hook, unsigned char *trampoline) {
 ### Working Reference
 
 - **Pattern**: `tools/collision_hook/collision_hook.c` (hooks event dispatchers
-  using the same detour technique, but on `DispatchCollisionEvents`/`Level_HandleCollision`/
-  `Arena_HandleCollision` instead of `Ball_Update`)
+  using the same detour technique, but on `DispatchCollisionEvents`/`TowerCollisionEvents`/
+  `ExpertCollisionEvents` instead of `Ball_Update`)
 
 ---
 
@@ -873,8 +873,8 @@ ball-ball collisions, but for **level geometry** and **event trigger** collision
 | Address | Function | Domain |
 |---------|----------|--------|
 | `0x40C5D0` | `DispatchCollisionEvents` | Shared base handler (all events) |
-| `0x40DCD0` | `Level_HandleCollision` | Race level events |
-| `0x40E6A0` | `Arena_HandleCollision` | Arena events |
+| `0x40DCD0` | `TowerCollisionEvents` | Race level events |
+| `0x40E6A0` | `ExpertCollisionEvents` | Arena events |
 
 ### Important Distinction
 

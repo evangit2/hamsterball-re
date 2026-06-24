@@ -1,4 +1,4 @@
-// Arena_HandleCollision @ 0x0040E6A0
+// ExpertCollisionEvents @ 0x0040E6A0
 // Arena (RumbleBoard) collision event dispatcher
 // Handles all multiplayer arena specific collision events:
 //
@@ -37,7 +37,7 @@
 //
 // Always ends with: DispatchCollisionEvents(scene, ball, collider)
 
-void __thiscall Arena_HandleCollision(Scene *scene, Ball *ball, Collider *collider)
+void __thiscall ExpertCollisionEvents(Scene *scene, Ball *ball, Collider *collider)
 {
   const char *type = collider->sceneObject->type_name;
   

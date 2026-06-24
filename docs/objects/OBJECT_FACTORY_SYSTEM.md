@@ -32,7 +32,7 @@ Level data → Named objects parsed from MESHWORLD
   ├─ CreateBadBall (0x40BCA0) — BADBALL → Ball_ctor
   ├─ CreateSecretObjects (0x40BAA0) — SECRET / SECRETUNLOCK
   ├─ CreateMouseTrap (0x40BF50) — MOUSETRAP → MouseTrap_ctor
-  ├─ CreateLimit (0x410D00) — E:LIMIT → Level collision
+  ├─ NeonCollisionEvents (0x410D00) — E:LIMIT → Level collision
   └─ CreateUpLevelObjects (0x4117B0) — SPEEDCYLINDER
 ```
 

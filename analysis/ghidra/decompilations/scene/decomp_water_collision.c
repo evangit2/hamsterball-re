@@ -1,7 +1,7 @@
 /* Water Ripple & Level Collision Systems - Deep Documentation
  *
  * WaterRipple_Render (0x46B070) - Water ripple rendering with mesh and alpha
- * Level_HandleCollision (0x40DCD0) - Level collision event dispatcher
+ * TowerCollisionEvents (0x40DCD0) - Level collision event dispatcher
  *
  * ═══════════════════════════════════════════════════════════════
  * WaterRipple_Render (0x46B070)
@@ -44,10 +44,10 @@
  *   this+0x04->0x7CC = draw call counter
  *
  * ═══════════════════════════════════════════════════════════════
- * Level_HandleCollision (0x40DCD0)
+ * TowerCollisionEvents (0x40DCD0)
  * ═══════════════════════════════════════════════════════════════
  *
- * Signature: void __thiscall Level_HandleCollision(Level* this, Ball* param_1, CollisionObj* param_2)
+ * Signature: void __thiscall TowerCollisionEvents(Level* this, Ball* param_1, CollisionObj* param_2)
  *
  * Level-specific collision event handler. Delegates to DispatchCollisionEvents() at the end.
  * The event type is read from param_2[1]+0x864 (object name string).

@@ -236,7 +236,7 @@ list_584c_ready:
  //  REGISTER COLLISION LEVEL
  //  This makes the ball physically collide with the catapult's
  //  E:CATAPULTBOTTOM triangles. When collision fires, the game's
- //  Level_HandleCollision (race) or CreateSpinner (arena) will:
+ //  TowerCollisionEvents (race) or MasterCollisionEvents (arena) will:
  //    1. Iterate Board+0x43B8 or Board+0x584C
  //    2. Match catapult+0x10D4 == collision_mesh_ptr
  //    3. Set catapult+0x10EC = ball_ptr

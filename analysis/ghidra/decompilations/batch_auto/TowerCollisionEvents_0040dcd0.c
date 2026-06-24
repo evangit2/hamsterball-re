@@ -1,19 +1,19 @@
 /*
- * Function: Level_HandleCollision
+ * Function: TowerCollisionEvents
  * Address: 0x0040dcd0
- * Signature: Level_HandleCollision(...)
+ * Signature: TowerCollisionEvents(...)
  *
- * Patterns: vtable dispatch, audio, collision, level. Calls: Level_HandleCollision, __stricmp, AthenaList_NextIndex, Catapult_Launch, Sound_PlayChannel, Trapdoor_Open, Trapdoor_Activate, DispatchCollisionEvents. Offsets: 26, Lines: 115
+ * Patterns: vtable dispatch, audio, collision, level. Calls: TowerCollisionEvents, __stricmp, AthenaList_NextIndex, Catapult_Launch, Sound_PlayChannel, Trapdoor_Open, Trapdoor_Activate, DispatchCollisionEvents. Offsets: 26, Lines: 115
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-/* Level_HandleCollision(this, ball, collObj): Level collision dispatcher.
+/* TowerCollisionEvents(this, ball, collObj): Level collision dispatcher.
    E:CATAPULTBOTTOM→Catapult_Launch+E:OPENSESAME→Trapdoor_Open N:TRAPDOOR→Trapdoor_Activate
    E:BITE→set damage 25.0 E:MACETRIGGER→activate mace N:MACE→ball bounce callback. Ends with
    DispatchCollisionEvents. See decomp_water_collision.c */
 
-void __thiscall Level_HandleCollision(void *this,int *param_1,int *param_2)
+void __thiscall TowerCollisionEvents(void *this,int *param_1,int *param_2)
 
 {
   int iVar1;

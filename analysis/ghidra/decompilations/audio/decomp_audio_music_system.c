@@ -86,7 +86,7 @@
 // - N:MOUSETRAP: plays 3D sound at collision point
 // - PIPEBONK: plays random sound from 3 possible impact sounds
 //
-// Level Events (Level_HandleCollision 0x40DCD0):
+// Level Events (TowerCollisionEvents 0x40DCD0):
 // - E:CATAPULTBOTTOM: plays catapult launch sound
 // - E:OPENSESAME: plays door opening sound
 // - N:TRAPDOOR: plays 3D trapdoor sound + timer activation

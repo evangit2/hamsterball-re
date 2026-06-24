@@ -1,14 +1,14 @@
 /*
- * Function: CreateLimit
+ * Function: NeonCollisionEvents
  * Address: 0x00410d00
- * Signature: void __thiscall CreateLimit(void *this,int *param_1,int *param_2)
+ * Signature: void __thiscall NeonCollisionEvents(void *this,int *param_1,int *param_2)
  *
- * Patterns: audio, rendering. Calls: CreateLimit, __stricmp, Rotator_StartSound, AthenaList_ContainsValue, Pendulum_AddIndex, thunk_Gfx_SetRenderState, DispatchCollisionEvents. Offsets: 7, Lines: 37
+ * Patterns: audio, rendering. Calls: NeonCollisionEvents, __stricmp, Rotator_StartSound, AthenaList_ContainsValue, Pendulum_AddIndex, thunk_Gfx_SetRenderState, DispatchCollisionEvents. Offsets: 7, Lines: 37
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __thiscall CreateLimit(void *this,int *param_1,int *param_2)
+void __thiscall NeonCollisionEvents(void *this,int *param_1,int *param_2)
 
 {
   int iVar1;

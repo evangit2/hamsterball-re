@@ -105,11 +105,11 @@ not the function itself).
 void __thiscall DispatchCollisionEvents(void *this, int *param_1, int *param_2);
 ```
 
-Verified by decompiling `Level_HandleCollision` (0x0040DCD0), which calls
+Verified by decompiling `TowerCollisionEvents` (0x0040DCD0), which calls
 `DispatchCollisionEvents` with the same parameters it receives:
 
 ```c
-// In Level_HandleCollision(this, ball, collObj):
+// In TowerCollisionEvents(this, ball, collObj):
 //   ... handles E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE ...
 //   ... then falls through to:
 DispatchCollisionEvents(this, ball, collObj);
@@ -210,10 +210,10 @@ so they match any `X:` prefix (e.g., `E:DROPIN`, `N:DROPIN`, etc.).
 ### Call Sites (28 total)
 
 ```
-Level_HandleCollision     (0x0040DCD0) — primary level collision dispatcher
-Arena_HandleCollision     (0x0040EA6B) — arena mode collision dispatcher
+TowerCollisionEvents     (0x0040DCD0) — primary level collision dispatcher
+ExpertCollisionEvents     (0x0040EA6B) — arena mode collision dispatcher
 HandleArenaCollisionEvents             (0x00412850) — spinner/bumper/launch collision
-CreateLimit               (0x00410E6F) — arena limit collision
+NeonCollisionEvents               (0x00410E6F) — arena limit collision
 SinkPlatform_OnCollision  (0x00413C09) — sinking platform collision
 + 23 other Create* and collision handler functions
 + 2 DATA references (vtable entries)
@@ -222,7 +222,7 @@ SinkPlatform_OnCollision  (0x00413C09) — sinking platform collision
 ### Summary
 
 `DispatchCollisionEvents` is the **universal level collision event handler**. It is called
-as a fall-through from `Level_HandleCollision` and `Arena_HandleCollision` after
+as a fall-through from `TowerCollisionEvents` and `ExpertCollisionEvents` after
 those functions handle their own specific events. It dispatches 18 different event
 types based on the collision event string:
 

@@ -30,7 +30,7 @@
  *   this+0x10F0: last breaker ball index (0xFFFFFFFF = none)
  *
  * Cross-references:
- *   Called from 0x40ECBA — UNCONDITIONAL_CALL (from Arena_HandleCollision factory dispatch)
+ *   Called from 0x40ECBA — UNCONDITIONAL_CALL (from ExpertCollisionEvents factory dispatch)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

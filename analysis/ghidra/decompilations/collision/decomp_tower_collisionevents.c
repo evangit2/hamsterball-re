@@ -1,4 +1,4 @@
-// Level_HandleCollision @ 0x0040DCD0
+// TowerCollisionEvents @ 0x0040DCD0
 // Level-specific collision event dispatcher
 // Strings at collider->type_name (collider+0x864) determine behavior:
 //
@@ -29,7 +29,7 @@
 //
 // Always ends with: DispatchCollisionEvents(this, ball, collider)
 
-void __thiscall Level_HandleCollision(Scene *scene, Ball *ball, Collider *collider)
+void __thiscall TowerCollisionEvents(Scene *scene, Ball *ball, Collider *collider)
 {
   const char *type = collider->sceneObject->type_name;  // +0x864
   
