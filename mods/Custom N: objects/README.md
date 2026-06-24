@@ -31,7 +31,7 @@ This means **N: events are not objects** in the traditional sense (they have no 
 |--------|---------|---------------|
 | `N:` | Natural/environmental event | DispatchCollisionEvents (base) |
 | `E:` | Effect/interaction event | Level/Arena handler → DispatchCollisionEvents |
-| `DN:` | Delayed natural event | Custom vtable override (e.g. SinkPlatform_OnCollision) → DispatchCollisionEvents |
+| `DN:` | Delayed natural event | Custom vtable override (e.g. SinkPlatformArenaCollisionEvents) → DispatchCollisionEvents |
 | *(none)* | Bare-name event | DispatchCollisionEvents (checked at name+2 offset) |
 | `(NOCOLLIDE)` | Suffix in name | Skips collision geometry creation entirely — visual only |
 
@@ -108,23 +108,47 @@ Ball_FallUpdate (0x408830)
 
 **IMPORTANT:** There is no single "TowerCollisionEvents" or "ExpertCollisionEvents" — these were incorrect Ghidra labels. The truth is that **almost every board type overrides vtable[0x1D] with its own unique collision handler**. Each handler processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base.
 
-The base Scene vtable (0x4D0260) sets vtable[0x1D] = DispatchCollisionEvents directly. Only the WarmUp board uses this default. Every other board overrides it:
+The base Scene vtable (0x4D0260) sets vtable[0x1D] = DispatchCollisionEvents directly. Only the WarmUp board uses this default. Every other board overrides it.
+
+**Arena boards** (Rumble) have their OWN separate vtables and collision handlers, distinct from their race-mode counterparts. Every arena handler includes `DN:SINKPLATFORM` handling (some via a shared `SinkPlatformArenaCollisionEvents` at 0x413BD0).
+
+### Race Boards
 
 | Board | vtable[0x1D] Address | Handler | Events Handled Before Base |
 |-------|---------------------|---------|---------------------------|
 | **WarmUp** | 0x0040C5D0 | DispatchCollisionEvents (no override) | *(none — uses base directly)* |
-| **Intermediate** | 0x0040D340 | custom | N:BRIDGE |
-| **Dizzy** | 0x0040D500 | custom | N:WATERWHEEL, N:WHEELEMBED, N:SWIRL |
-| **Tower** | 0x0040DCD0 | custom | E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE |
-| **Expert** | 0x0040E6A0 | custom | E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1, E:ALERTSAW2, E:ACTIVATESAW1, E:ACTIVATESAW2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL |
-| **Odd** | 0x0040ED30 | custom | E:GRAVITY, N:JUMPFIRST, N:JUMPSECOND, E:SHRINK, E:GROWSOUND, E:GROW, E:DROPLIFT, E:PIPERANDOM, E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW |
-| **Beginner** | 0x004111E0 | custom | N:BUMPER |
-| **Master (Arena)** | 0x00412850 | custom (MasterCollisionEvents) | N:SPINNER, N:BUMPER, E:LAUNCH, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM |
-| **Sky/Neon** | 0x00410D00 | custom (NeonCollisionEvents) | E:PEGS, E:TRAPPOP, E:NOPEGS, E:HEATON, E:HEATOFF, E:LIMIT |
-| **Toob** | 0x00410020 | custom | E:ALERTSAW2, E:BRANCH(A/B), N:SPINNY, N:SAWTEETH, N:BUMPER |
-| **Up** | 0x004119B0 | custom | E:HELPINERTIA, E:UNHELPINERTIA, E:VACPOPOUT, N:SPEEDCYLINDER, N:EXTRATIME |
-| **Wobbly** | 0x0040F9A0 | custom | N:SQUAREWOBBLY, N:WAVY |
-| **Glass** | 0x00417EB0 | custom | N:GLASS, DN:SINKPLATFORM |
+| **Intermediate** | 0x0040D340 | IntermediateCollisionEvents | N:BRIDGE |
+| **Dizzy** | 0x0040D500 | DizzyCollisionEvents | N:WATERWHEEL, N:WHEELEMBED, N:SWIRL |
+| **Tower** | 0x0040DCD0 | TowerCollisionEvents | E:CATAPULTBOTTOM, E:OPENSESAM, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE |
+| **Expert** | 0x0040E6A0 | ExpertCollisionEvents | E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1, E:ALERTSAW2, E:ACTIVATESAW1, E:ACTIVATESAW2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL |
+| **Odd** | 0x0040ED30 | OddCollisionEvents | E:GRAVITY, N:JUMPFIRST, N:JUMPSECOND, E:SHRINK, E:GROWSOUND, E:GROW, E:DROPLIFT, E:PIPERANDOM, E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW |
+| **Beginner** | 0x004111E0 | BeginnerCollisionEvents | N:BUMPER |
+| **Master (Arena)** | 0x00412850 | MasterCollisionEvents | N:SPINNER, N:BUMPER, E:LAUNCH, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM |
+| **Sky/Neon** | 0x00410D00 | NeonCollisionEvents | E:PEGS, E:TRAPPOP, E:NOPEGS, E:HEATON, E:HEATOFF, E:LIMIT |
+| **Toob** | 0x00410020 | ToobCollisionEvents | E:ALERTSAW2, E:BRANCH(A/B), N:SPINNY, N:SAWTEETH, N:BUMPER |
+| **Up** | 0x004119B0 | UpCollisionEvents | E:HELPINERTIA, E:UNHELPINERTIA, E:VACPOPOUT, N:SPEEDCYLINDER, N:EXTRATIME |
+| **Wobbly** | 0x0040F9A0 | WobblyCollisionEvents | N:SQUAREWOBBLY, N:WAVY |
+| **Glass** | 0x00417EB0 | GlassCollisionEvents | N:GLASS, DN:SINKPLATFORM |
+
+### Arena (Rumble) Boards
+
+| Arena Board | vtable Addr | vtable[0x1D] Addr | Handler | Events Handled Before Base |
+|-------------|-----------|-----------------|---------|---------------------------|
+| **Beginner Arena** | 0x004D14F0 | 0x00413DF0 | BeginnerArenaCollisionEvents | N:BUMPER, DN:SINKPLATFORM |
+| **Intermediate Arena** | 0x004D15C0 | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM |
+| **Dizzy Arena** | 0x004D1680 | 0x00414350 | DizzyArenaCollisionEvents | N:SWIRL, DN:SINKPLATFORM |
+| **Tower Arena** | 0x004D1740 | 0x00414570 | TowerArenaCollisionEvents | E:CATAPULTBOTTOM, DN:SINKPLATFORM |
+| **Up Arena** | 0x004D17F8 | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM |
+| **Odd Arena** | 0x004D1980 | 0x00414DA0 | OddArenaCollisionEvents | E:GRAVITY(TYPE), DN:SINKPLATFORM |
+| **Expert Arena** | 0x004D18C8 | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM |
+| **Toob Arena** | 0x004D1A40 | 0x00415010 | ToobArenaCollisionEvents | N:BUMPER, DN:SINKPLATFORM |
+| **Wobbly Arena** | 0x004D1B18 | 0x00415540 | WobblyArenaCollisionEvents | N:SQUAREWOBBLY, DN:SINKPLATFORM |
+| **Sky/Neon Arena** | 0x004D1BD8 | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM |
+| **Warmup Arena** | 0x004D1C80 | 0x00416140 | WarmupArenaCollisionEvents | E:LAUNCH, DN:SINKPLATFORM |
+| **Impossible Arena** | 0x004D2298 | 0x00418600 | ImpossibleArenaCollisionEvents | N:BOUNCE, DN:SINKPLATFORM |
+| **Master Arena** | 0x004D12B0 | 0x00412850 | MasterCollisionEvents | N:SPINNER, N:BUMPER, E:LAUNCH, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM |
+
+**Key observation:** The Intermediate, Up, Expert, and Sky/Neon arenas share the same minimal `SinkPlatformArenaCollisionEvents` (0x413BD0) handler — it only processes `DN:SINKPLATFORM` then delegates to the base. The Master Arena reuses the exact same `MasterCollisionEvents` handler as the Master race board. All other arenas have their own unique handlers.
 
 Dispatch chain for any collision event:
 
@@ -486,7 +510,7 @@ The event name would be placed in a custom MESHWORLD file's Section 6 geometry (
 
 **Best for:** Adding per-object custom collision handling (like SinkPlatform's `DN:` pattern).
 
-Override the scene's vtable[0x1D] (+0x74) to point to your own collision handler. This is how `SinkPlatform_OnCollision` works — it checks for `DN:SINKPLATFORM` before calling `DispatchCollisionEvents`.
+Override the scene's vtable[0x1D] (+0x74) to point to your own collision handler. This is how `SinkPlatformArenaCollisionEvents` works — it checks for `DN:SINKPLATFORM` before calling `DispatchCollisionEvents`.
 
 ```c
 // Custom collision handler (same signature as DispatchCollisionEvents)
@@ -520,18 +544,30 @@ VirtualProtect(&vtable[0x1D], 4, oldProtect, &oldProtect);
 | Address | Name | Description |
 |---------|------|-------------|
 | 0x0040C5D0 | DispatchCollisionEvents | Base collision event handler (universal N:/E:/bare events) |
-| 0x0040D340 | Intermediate_HandleCollision | Intermediate board handler (N:BRIDGE) |
-| 0x0040D500 | Dizzy_HandleCollision | Dizzy board handler (N:WATERWHEEL, N:WHEELEMBED, N:SWIRL) |
-| 0x0040DCD0 | Tower_HandleCollision | Tower board handler (catapult, trapdoor, mace, bite) |
-| 0x0040E6A0 | Expert_HandleCollision | Expert board handler (hammer, saw, judge, bell, score) |
-| 0x0040ED30 | Odd_HandleCollision | Odd board handler (gravity, pipes, shrink/grow, limits) |
-| 0x0040F9A0 | Wobbly_HandleCollision | Wobbly board handler (N:SQUAREWOBBLY, N:WAVY) |
-| 0x00410020 | Toob_HandleCollision | Toob board handler (branch pipes, spinny, sawteeth, bumper) |
-| 0x00410D00 | SkyNeon_HandleCollision | Sky/Neon board handler (pegs, heat, limit) |
-| 0x004111E0 | Beginner_HandleCollision | Beginner board handler (N:BUMPER) |
-| 0x004119B0 | Up_HandleCollision | Up board handler (inertia, vacpopout, speed cylinder, extra time) |
-| 0x00412850 | Master_HandleCollision | Master/Arena board handler (spinner, bumper, launch, catapult) |
-| 0x00417EB0 | Glass_HandleCollision | Glass board handler (N:GLASS, DN:SINKPLATFORM) |
+| **Race Board Handlers** | | |
+| 0x0040D340 | IntermediateCollisionEvents | Intermediate race board (N:BRIDGE) |
+| 0x0040D500 | DizzyCollisionEvents | Dizzy race board (N:WATERWHEEL, N:WHEELEMBED, N:SWIRL) |
+| 0x0040DCD0 | TowerCollisionEvents | Tower race board (catapult, trapdoor, mace, bite) |
+| 0x0040E6A0 | ExpertCollisionEvents | Expert race board (hammer, saw, judge, bell, score) |
+| 0x0040ED30 | OddCollisionEvents | Odd race board (gravity, pipes, shrink/grow, limits) |
+| 0x0040F9A0 | WobblyCollisionEvents | Wobbly race board (N:SQUAREWOBBLY, N:WAVY) |
+| 0x00410020 | ToobCollisionEvents | Toob race board (branch pipes, spinny, sawteeth, bumper) |
+| 0x00410D00 | NeonCollisionEvents | Sky/Neon race board (pegs, heat, limit) |
+| 0x004111E0 | BeginnerCollisionEvents | Beginner race board (N:BUMPER) |
+| 0x004119B0 | UpCollisionEvents | Up race board (inertia, vacpopout, speed cylinder, extra time) |
+| 0x00412850 | MasterCollisionEvents | Master race board AND Master Arena (spinner, bumper, launch, catapult) |
+| 0x00417EB0 | GlassCollisionEvents | Glass race board (N:GLASS, DN:SINKPLATFORM) |
+| **Arena (Rumble) Board Handlers** | | |
+| 0x00413BD0 | SinkPlatformArenaCollisionEvents | Shared handler for Intermediate/Up/Expert/Sky arenas (DN:SINKPLATFORM only) |
+| 0x00413DF0 | BeginnerArenaCollisionEvents | Beginner arena (N:BUMPER, DN:SINKPLATFORM) |
+| 0x00414350 | DizzyArenaCollisionEvents | Dizzy arena (N:SWIRL, DN:SINKPLATFORM) |
+| 0x00414570 | TowerArenaCollisionEvents | Tower arena (E:CATAPULTBOTTOM, DN:SINKPLATFORM) |
+| 0x00414DA0 | OddArenaCollisionEvents | Odd arena (E:GRAVITY, DN:SINKPLATFORM) |
+| 0x00415010 | ToobArenaCollisionEvents | Toob arena (N:BUMPER, DN:SINKPLATFORM) |
+| 0x00415540 | WobblyArenaCollisionEvents | Wobbly arena (N:SQUAREWOBBLY, DN:SINKPLATFORM) |
+| 0x00416140 | WarmupArenaCollisionEvents | Warmup arena (E:LAUNCH, DN:SINKPLATFORM) |
+| 0x00418600 | ImpossibleArenaCollisionEvents | Impossible arena (N:BOUNCE, DN:SINKPLATFORM) |
+| **Other** | | |
 | 0x00465860 | Level_LoadMeshes | Loads collision geometry + copies event names to mesh buffers |
 | 0x00458970 | CreateMeshBuffer | Allocates 0x874-byte collision mesh buffer |
 | 0x00408830 | Ball_FallUpdate | Physics update — triggers collision dispatch |
