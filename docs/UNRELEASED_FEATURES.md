@@ -37,16 +37,25 @@ The mirror rendering works by adjusting projection matrix offsets (`+0x790`/`+0x
 
 ---
 
-## 3. Network/Online Multiplayer (Stub)
+## 3. "NetworkConnection" — Actually an InputDevice (Not Networking)
 
-**Status: Stub only — constructor exists, no actual networking**
+**Status: Misleading name — this is an InputDevice class, NOT network multiplayer**
 
-- **Function:** `NetworkConnection_Ctor` (0x0046dfa0)
-- **Implementation:** Trivial — sets `this+4 = param_1`, `this+8 = 0`, `this = "Not Connected"`, `this+0xC = 1.0f`
-- **No send/receive/disconnect functions exist** — this is a placeholder that was never completed
-- **Strings:** `"Not Connected"`, `"CONNECTION ERROR:"`, `"Cannot connect through socket."`
+- **Function:** `NetworkConnection_Ctor` (0x0046dfa0) — base InputDevice constructor
+- **Struct layout (20 bytes / 0x14):**
+  - `+0x00`: char* name (`"Keyboard"`, `"Mouse/Trackball"`, `"Not Connected"`)
+  - `+0x04`: InputHandler* parent
+  - `+0x08`: int type (0=none, 1=keyboard, 2=mouse, 4-7=gamepad 1-4)
+  - `+0x0C`: float sensitivity (1.0f default, 0.0 when not connected)
+  - `+0x10`: void* device_data (keyboard buffer, joystick state, etc.)
+- **Created in:** `App_Initialize_Full` — 4 instances at `App+0x550..0x55C`, then `InputDevice_SetType` configures each as keyboard/mouse/gamepad1/gamepad2
+- **`"Not Connected"`** is just the default name when no gamepad/joystick is physically plugged in — NOT a network status
 
-This suggests Raptisoft considered online multiplayer but abandoned it early.
+**WS2_32.dll imports (socket, connect, send, recv, etc.) exist in the binary but are used exclusively by:**
+1. **eSellerate DRM** — HTTP connections to `store.esellerate.net` for activation/serial verification
+2. **Raptisoft crash reporter** — sends error reports to Raptisoft's server
+
+**There is no online multiplayer code in Hamsterball.** The `MPMenu` ("MP Menu" / `App_StartMPRace`) stands for Multiplayer **Party** (local), offering "PARTY RACE (2P ONLY)" and "RODENT RUMBLE (1-4P)" — both local modes.
 
 ---
 
@@ -334,7 +343,7 @@ Registry keys for persistent game state:
 |---|---|---|
 | Party Race (2P split-screen) | ✅ Implemented | Requires 2 human players, dedicated level asset |
 | Mirror Tournament | ✅ Unlockable | Win tournament at Normal/Frenzied |
-| Online Multiplayer | ❌ Stub only | NetworkConnection_Ctor = "Not Connected" |
+| Online Multiplayer | ❌ Not present | NetworkConnection is InputDevice, WS2_32 is for DRM/crash reporter |
 | Secret Collectibles | ✅ Implemented | Unlock arenas in tournament mode |
 | Tournament Campaign | ✅ Retail | Full save/load, 3 difficulties, rollback |
 | Demo/Trial Mode | ✅ Embedded | Free play counter, purchase prompts |
