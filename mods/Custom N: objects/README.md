@@ -129,6 +129,7 @@ The base Scene vtable (0x4D0260) sets vtable[0x1D] = DispatchCollisionEvents dir
 | **Up** | 0x004119B0 | UpCollisionEvents | E:HELPINERTIA, E:UNHELPINERTIA, E:VACPOPOUT, N:SPEEDCYLINDER, N:EXTRATIME |
 | **Wobbly** | 0x0040F9A0 | WobblyCollisionEvents | N:SQUAREWOBBLY, N:WAVY |
 | **Glass** | 0x00417EB0 | GlassCollisionEvents | N:GLASS, DN:SINKPLATFORM |
+| **Impossible** | 0x00418360 | ImpossibleCollisionEvents | N:BOUNCE, N:ONROTATOR, N:ONGEAR, E:HELPINERTIA, E:UNHELPINERTIA |
 
 ### Arena (Rumble) Boards
 
@@ -351,6 +352,18 @@ These events are ONLY processed by specific board types. If the ball touches geo
 | `N:GLASS` | Sets `ball[0x317] = 0xF` (glass break counter — 15 hits to break) |
 | `DN:SINKPLATFORM` | Calls `Scene_StartCountdown` to sink the platform the ball is standing on |
 
+#### Impossible (0x00418360)
+
+Handles events for the Impossible Race (Race of Ages) — the gear/rotator level.
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:BOUNCE` | Bounces ball off gears: doubles velocity, clamps to min 1.25 / max 3.0 via normalize-and-scale. Gated on `ball+0x1DA != 0` (active flag). |
+| `N:ONROTATOR` | Calls `ScoreObject_SetScore` — awards score from rotator contact |
+| `N:ONGEAR` | Calls `Catapult_AddObjectConditional` — attaches ball to gear rotational physics |
+| `E:HELPINERTIA` | Sets `ball[0xA9] = 2.5` (reduces inertia — easier to control on gears) |
+| `E:UNHELPINERTIA` | Sets `ball[0xA9] = 5.0` (restores normal inertia) |
+
 ---
 
 ## 6. Collision Entry Struct Layout
@@ -557,6 +570,7 @@ VirtualProtect(&vtable[0x1D], 4, oldProtect, &oldProtect);
 | 0x004119B0 | UpCollisionEvents | Up race board (inertia, vacpopout, speed cylinder, extra time) |
 | 0x00412850 | MasterCollisionEvents | Master race board AND Master Arena (spinner, bumper, launch, catapult) |
 | 0x00417EB0 | GlassCollisionEvents | Glass race board (N:GLASS, DN:SINKPLATFORM) |
+| 0x00418360 | ImpossibleCollisionEvents | Impossible race board (N:BOUNCE, N:ONROTATOR, N:ONGEAR, E:HELPINERTIA, E:UNHELPINERTIA) |
 | **Arena (Rumble) Board Handlers** | | |
 | 0x00413BD0 | SinkPlatformArenaCollisionEvents | Shared handler for Intermediate/Up/Expert/Sky arenas (DN:SINKPLATFORM only) |
 | 0x00413DF0 | BeginnerArenaCollisionEvents | Beginner arena (N:BUMPER, DN:SINKPLATFORM) |
