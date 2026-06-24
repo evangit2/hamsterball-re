@@ -104,29 +104,43 @@ Ball_FallUpdate (0x408830)
         → Board vtable[0x1D] (+0x74) = collision dispatch callback
 ```
 
-### 4.2 Three-Tier Parallel Dispatch
+### 4.2 Per-Board Collision Handlers (NOT "Level vs Arena")
 
-The scene's vtable determines which top-level handler runs. Race levels use `Level_HandleCollision`, arenas use `Arena_HandleCollision`. Both are **parallel** — neither calls the other. Both end by calling `DispatchCollisionEvents` as the shared base.
+**IMPORTANT:** There is no single "Level_HandleCollision" or "Arena_HandleCollision" — these were incorrect Ghidra labels. The truth is that **almost every board type overrides vtable[0x1D] with its own unique collision handler**. Each handler processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base.
+
+The base Scene vtable (0x4D0260) sets vtable[0x1D] = DispatchCollisionEvents directly. Only the WarmUp board uses this default. Every other board overrides it:
+
+| Board | vtable[0x1D] Address | Handler | Events Handled Before Base |
+|-------|---------------------|---------|---------------------------|
+| **WarmUp** | 0x0040C5D0 | DispatchCollisionEvents (no override) | *(none — uses base directly)* |
+| **Intermediate** | 0x0040D340 | custom | N:BRIDGE |
+| **Dizzy** | 0x0040D500 | custom | N:WATERWHEEL, N:WHEELEMBED, N:SWIRL |
+| **Tower** | 0x0040DCD0 | custom | E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE |
+| **Expert** | 0x0040E6A0 | custom | E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1, E:ALERTSAW2, E:ACTIVATESAW1, E:ACTIVATESAW2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL |
+| **Odd** | 0x0040ED30 | custom | E:GRAVITY, N:JUMPFIRST, N:JUMPSECOND, E:SHRINK, E:GROWSOUND, E:GROW, E:DROPLIFT, E:PIPERANDOM, E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW |
+| **Beginner** | 0x004111E0 | custom | N:BUMPER |
+| **Master (Arena)** | 0x00412850 | custom (CreateSpinner) | N:SPINNER, N:BUMPER, E:LAUNCH, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM |
+| **Sky/Neon** | 0x00410D00 | custom (CreateLimit) | E:PEGS, E:TRAPPOP, E:NOPEGS, E:HEATON, E:HEATOFF, E:LIMIT |
+| **Toob** | 0x00410020 | custom | E:ALERTSAW2, E:BRANCH(A/B), N:SPINNY, N:SAWTEETH, N:BUMPER |
+| **Up** | 0x004119B0 | custom | E:HELPINERTIA, E:UNHELPINERTIA, E:VACPOPOUT, N:SPEEDCYLINDER, N:EXTRATIME |
+| **Wobbly** | 0x0040F9A0 | custom | N:SQUAREWOBBLY, N:WAVY |
+| **Glass** | 0x00417EB0 | custom | N:GLASS, DN:SINKPLATFORM |
+
+Dispatch chain for any collision event:
 
 ```
-Scene vtable[0x1D] (+0x74):
-  ├─ Level_HandleCollision (0x40DCD0) — race levels
-  │    handles: E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE
-  │    then calls → DispatchCollisionEvents (0x40C5D0)
-  │
-  ├─ Arena_HandleCollision (0x40E6A0) — arenas
-  │    handles: E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2,
-  │             E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL
-  │    then calls → DispatchCollisionEvents (0x40C5D0)
-  │
-  └─ Custom overrides (e.g. SinkPlatform_OnCollision at 0x413BD0)
-       handles: DN:SINKPLATFORM
-       then calls → DispatchCollisionEvents (0x40C5D0)
+Board vtable[0x1D] (board-specific handler)
+  ├─ Process board-specific events (if event name matches)
+  │   └─ Return early (for some events) OR fall through
+  └─ DispatchCollisionEvents (0x40C5D0) — shared base handler
+      └─ Process universal events (N:GOAL, N:TARPIT, N:WATER, E:JUMP, etc.)
 ```
+
+Note: Some board handlers **return early** without calling DispatchCollisionEvents for certain events (e.g., Intermediate returns early on N:BRIDGE, Dizzy returns early on N:WATERWHEEL/N:WHEELEMBED/N:SWIRL). Most fall through to the base.
 
 ### 4.3 How the Dispatch Reads the Event Name
 
-All three handlers read the event name the same way:
+All handlers read the event name the same way:
 
 ```c
 // param_1 = ball (int*)
@@ -147,7 +161,15 @@ if (__strnicmp(eventName, "N:SECRET", 8) == 0) { ... }
 
 ## 5. Complete Event Catalog
 
-### 5.1 N: Events (DispatchCollisionEvents — 0x40C5D0)
+Events are split into two categories:
+1. **Universal events** — handled by `DispatchCollisionEvents` (0x40C5D0), the shared base that ALL boards call
+2. **Board-specific events** — handled by each board's own vtable[0x1D] override BEFORE calling DispatchCollisionEvents
+
+### 5.1 Universal Events — DispatchCollisionEvents (0x40C5D0)
+
+These events fire on ALL board types because every board handler calls DispatchCollisionEvents at the end.
+
+#### N: Events (Universal)
 
 | Event Name | What It Does | Ball Fields Affected |
 |-----------|-------------|---------------------|
@@ -159,7 +181,7 @@ if (__strnicmp(eventName, "N:SECRET", 8) == 0) { ... }
 | `N:GOAL` | Finishes the race for the current player | Sets `App+0x5D6` (finished flag), plays "Goal!" music, copies camera angles, sets `App+0x5F0` |
 | `N:MOUSETRAP` | Deflects ball trajectory, plays rotator collision sound, adds to rotator list | Scales trajectory vector by `_DAT_004CF370`, sets Y=15.0, iterates rotator list |
 
-### 5.2 E: Events (DispatchCollisionEvents — 0x40C5D0)
+#### E: Events (Universal)
 
 | Event Name | What It Does | Key Details |
 |-----------|-------------|-------------|
@@ -171,37 +193,7 @@ if (__strnicmp(eventName, "N:SECRET", 8) == 0) { ... }
 | `E:ACTION(ONCE)(SCORE)` | Score event with optional once-only tracking | Parses XML: `ONCE=TRUE` → `AthenaList_Append(ball+0xCB, obj)`, `SCORE=N` → adds to `App+0x5E4 + pIdx*0xA0` |
 | `E:TRAJECTORY(X,Y,Z)` | Sets ball trajectory vector | Writes to `physics+0xCA4/CA8/CAC` |
 
-### 5.3 E: Events (Level_HandleCollision — 0x40DCD0)
-
-| Event Name | What It Does |
-|-----------|-------------|
-| `E:CATAPULTBOTTOM` | Sets impact=1000, iterates catapult list, calls `Catapult_Launch` |
-| `E:OPENSESAM` | Opens trapdoor — iterates trapdoor list, calls `Trapdoor_Open` |
-| `N:TRAPDOOR` | Activates trapdoor — iterates trapdoor list, calls `Trapdoor_Activate` |
-| `E:BITE` | Sets damage = 25.0 at `board+0x43A0`, clears `board+0x43A8` |
-| `E:MACETRIGGER` | Activates all maces — sets `mace+0x10F0 = 1` |
-| `N:MACE` | Ball bounce callback — calls ball vtable[0x20] if mace conditions met |
-
-### 5.4 E: Events (Arena_HandleCollision — 0x40E6A0)
-
-| Event Name | What It Does |
-|-----------|-------------|
-| `E:CALLHAMMER` | Creates BONK popup (difficulty-gated: App+0x23C != 0) |
-| `E:HAMMERCHASE` | Starts hammer chase (difficulty-gated) |
-| `E:ALERTSAW1` / `E:ALERTSAW2` | Alerts saw blade (difficulty-gated) |
-| `E:ACTIVATESAW1` / `E:ACTIVATESAW2` | Activates saw blade (difficulty-gated) |
-| `E:ALERTJUDGES` | Resets all judges via `Judge_Reset` |
-| `E:SCORE` (prefix match) | Sets score display time via `ScoreDisplay_SetTime` |
-| `E:JUMP` | Duplicate of base E:JUMP (arena has its own copy) |
-| `E:BELL` (prefix match) | Activates bell, awards 500 bonus time + creates ScoreObject |
-
-### 5.5 DN: Events (Custom vtable overrides)
-
-| Event Name | Handler | What It Does |
-|-----------|---------|-------------|
-| `DN:SINKPLATFORM` | SinkPlatform_OnCollision (0x413BD0) | Calls `Scene_StartCountdown` to sink the platform, then DispatchCollisionEvents |
-
-### 5.6 Bare-Name Events (DispatchCollisionEvents — checked at name+2)
+#### Bare-Name Events (Universal — checked at name+2)
 
 These events are checked by skipping the first 2 characters of the name (comparing at `name + 2`), meaning they work with or without a prefix:
 
@@ -211,6 +203,129 @@ These events are checked by skipping the first 2 characters of the name (compari
 | `PIPEBONK` | Random sound + score +100 | `ball[500]` (0x32) |
 | `POPOUT` | Sound + score +100 | `ball[499]` (0x32) |
 | *(4th, at PTR_DAT_004cf80c)* | Sound | `ball[0x1F5]` (0x32) |
+
+### 5.2 Board-Specific Events — Per-Board vtable[0x1D] Handlers
+
+These events are ONLY processed by specific board types. If the ball touches geometry with one of these names on a different board, it will be ignored (the board handler won't match it, and DispatchCollisionEvents doesn't know about it either).
+
+#### Tower (0x40DCD0)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `E:CATAPULTBOTTOM` | Sets impact=1000, iterates catapult list at board+0x43B8, calls `Catapult_Launch` |
+| `E:OPENSESAM` | Opens trapdoor — iterates trapdoor list at board+0x4BE8, calls `Trapdoor_Open` |
+| `N:TRAPDOOR` | Activates trapdoor — iterates trapdoor list, calls `Trapdoor_Activate` |
+| `E:BITE` | Sets damage = 25.0 at `board+0x43A0`, clears `board+0x43A8` |
+| `E:MACETRIGGER` | Activates all maces — sets `mace+0x10F0 = 1` |
+| `N:MACE` | Ball bounce callback — calls ball vtable[0x20] if mace conditions met |
+
+#### Expert (0x40E6A0)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `E:CALLHAMMER` | Creates BONK popup (difficulty-gated: App+0x23C != 0) |
+| `E:HAMMERCHASE` | Starts hammer chase (difficulty-gated) |
+| `E:ALERTSAW1` / `E:ALERTSAW2` | Alerts saw blade (difficulty-gated) |
+| `E:ACTIVATESAW1` / `E:ACTIVATESAW2` | Activates saw blade (difficulty-gated) |
+| `E:ALERTJUDGES` | Resets all judges via `Judge_Reset` |
+| `E:SCORE` (prefix match) | Sets score display time via `ScoreDisplay_SetTime` |
+| `E:JUMP` | Duplicate of base E:JUMP (Expert has its own copy) |
+| `E:BELL` (prefix match) | Activates bell, awards 500 bonus time + creates ScoreObject |
+
+#### Master / Arena (0x00412850 — CreateSpinner)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:SPINNER` | Calls `Rotator_AddObject` — attaches ball to spinner rotator |
+| `N:BUMPER` | Bumper physics: plays sound, scales/reverses velocity, sets board flag at +0x53FC + bumperIndex*4 |
+| `E:LAUNCH` | Launch pad: looks up "LAUNCHPOINT" position, sets upward trajectory (Y=16.0), impact=50, creates RumbleScore explosion particles |
+| `E:CALLHAMMER` | Creates BONK popup (difficulty-gated) |
+| `E:HAMMERCHASE` | Starts hammer chase (difficulty-gated) |
+| `E:CATAPULTBOTTOM` | Same as Tower — iterates catapult list at board+0x584C, calls `Catapult_Launch` |
+
+#### Dizzy (0x0040D500)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:WATERWHEEL` | Sets `ball+0x1DE = 1` (water wheel flag), returns early — does NOT call DispatchCollisionEvents |
+| `N:WHEELEMBED` | Embeds ball in wheel: computes relative position to wheel center (board+0x4BB0), applies rotation transform, sets `ball+0x30F = 1` (teleport flag), writes new position to `ball+0x310/311/312`, sets impact=50. Returns early. |
+| `N:SWIRL` | Sets `ball+0x779 = 1` (swirl flag), returns early |
+
+#### Intermediate (0x0040D340)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:BRIDGE` | Checks if `board+0x4384 == 3` (bridge state). If so, sets `ball+0x1DE = 1` and returns early. Otherwise falls through to DispatchCollisionEvents. |
+
+#### Odd (0x0040ED30)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `E:GRAVITY(TYPE)` | Changes gravity type: `NORMAL` → `Ball_ResetCollisionMesh`, `X` → `Ball_SetTiltedGravity`, `Z` → `Ball_SetFlatGravity`. Parses XML tags. |
+| `N:JUMPFIRST` | Teleports ball to "JUMPPIPE1" position, sets upward trajectory (Y=16.0) |
+| `N:JUMPSECOND` | Teleports ball to "JUMPPIPE2" position, sets upward trajectory (Y=16.0) |
+| `E:SHRINK` | Calls `Ball_StartFall` (shrinks ball), teleports to "SHRINKCENTER", sets downward trajectory (Y=-1.0) |
+| `E:GROWSOUND` | Plays grow sound (cooldown: `ball[0x1FE]`, 100 frames) |
+| `E:GROW` | Calls `Ball_EndFall` (restores ball size) |
+| `E:DROPLIFT` | Calls `Stands_PlayBreakSound` on mesh at board+0x436C |
+| `E:PIPERANDOM` | Randomly teleports ball to "PIPERANDOM1" or "PIPERANDOM2" position, zeroes velocity, plays sound |
+| `E:LIMIT` | If `ball[0x1D2] == 0`: sets `ball+0x1DA = 0`, `ball+0x2E9 = 1` (qualifies for this limit gate) |
+| `E:LIMITX` | Same as LIMIT but checks `ball[0x1D2] == 1` |
+| `E:LIMITZ` | Same as LIMIT but checks `ball[0x1D2] == 2` |
+| `E:LIMITPIPE1` | If `ball[0x1] != 0` (pipe 1 flag): qualifies for limit |
+| `E:LIMITPIPE2` | If `ball[0x5] != 0` (pipe 2 flag): qualifies for limit |
+| `E:SWALLOW` | Sets `ball+0xBA = 1` (swallow/pipe entry flag) |
+
+#### Beginner (0x004111E0)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:BUMPER` | Bumper physics: plays sound, scales/reverses velocity (similar to Master's N:BUMPER), sets board flag at +0x6428 + bumperIndex*4 |
+
+#### Sky / Neon Race (0x00410D00 — CreateLimit)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `E:PEGS` | Increments peg counter at `board+0x47F4`, sets `ball[0x1E2] = 1` (peg hit flag) |
+| `E:TRAPPOP` | Plays rotator sound (difficulty-gated: App+0x23C != 0) |
+| `E:NOPEGS` | Decrements peg counter at `board+0x47F4`, sets `ball[0x1E3] = 1` |
+| `E:HEATON` | Adds ball to pendulum list via `Pendulum_AddIndex` (difficulty-gated) |
+| `E:HEATOFF` | Removes ball from pendulum list (difficulty-gated) |
+| `E:LIMIT` | Removes ball from pendulum list (difficulty-gated, same as HEATOFF) |
+
+#### Toob (0x00410020)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `E:ALERTSAW2` | Alerts saw at board+0x4384 (difficulty-gated) |
+| `E:BRANCH(A)` / `E:BRANCH(B)` | Branching pipe: looks up numbered POS/VECTOR pairs from hash table, randomly selects one, teleports ball with scaled trajectory. (A) = normal, (B) = double velocity. |
+| `N:SPINNY` | Calls `ScoreObject_SetScore` — awards score from rotator |
+| `N:SAWTEETH` | Deflects ball: reads position from rotator+0x1100, normalizes and scales by 3.0, calls `Ball_ApplyTrajectory`. Cooldown: `ball[0x1F7]`. |
+| `N:BUMPER` | Bumper physics: plays sound, scales/reverses velocity, sets board flag at +0x6448 + bumperIndex*4 |
+
+#### Up (0x004119B0)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `E:HELPINERTIA` | Sets `ball[0xA9] = 2.5` (reduces inertia — easier to control) |
+| `E:UNHELPINERTIA` | Sets `ball[0xA9] = 5.0` (restores normal inertia) |
+| `E:VACPOPOUT` | Sets `ball[0xA1] = 20.0` (vacuum popout force), plays 3D sound |
+| `N:SPEEDCYLINDER` | Calls `Pendulum_PlayCollisionSound` — speed boost sound from rotator |
+| `N:EXTRATIME` | Awards 500 bonus time: creates ScoreObject "EXTRA TIME:", calls `Timer_Decrement`, adds to board's score list at +0x8B8. Checks rotator+0x10E4 (once-only flag). |
+
+#### Wobbly (0x0040F9A0)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:SQUAREWOBBLY` | Calls `Stands_AddObject` — adds ball to wobbly platform physics |
+| `N:WAVY` | Calls `Blockdawg_AddObject` — adds ball to wavy/blockdawg physics |
+
+#### Glass (0x00417EB0)
+
+| Event Name | What It Does |
+|-----------|-------------|
+| `N:GLASS` | Sets `ball[0x317] = 0xF` (glass break counter — 15 hits to break) |
+| `DN:SINKPLATFORM` | Calls `Scene_StartCountdown` to sink the platform the ball is standing on |
 
 ---
 
@@ -404,10 +519,19 @@ VirtualProtect(&vtable[0x1D], 4, oldProtect, &oldProtect);
 
 | Address | Name | Description |
 |---------|------|-------------|
-| 0x0040C5D0 | DispatchCollisionEvents | Base collision event handler (all N:/E:/bare events) |
-| 0x0040DCD0 | Level_HandleCollision | Race level collision handler (catapult, trapdoor, mace, bite) |
-| 0x0040E6A0 | Arena_HandleCollision | Arena collision handler (hammer, saw, judge, bell, score) |
-| 0x00413BD0 | SinkPlatform_OnCollision | Custom DN: handler (sink platform) |
+| 0x0040C5D0 | DispatchCollisionEvents | Base collision event handler (universal N:/E:/bare events) |
+| 0x0040D340 | Intermediate_HandleCollision | Intermediate board handler (N:BRIDGE) |
+| 0x0040D500 | Dizzy_HandleCollision | Dizzy board handler (N:WATERWHEEL, N:WHEELEMBED, N:SWIRL) |
+| 0x0040DCD0 | Tower_HandleCollision | Tower board handler (catapult, trapdoor, mace, bite) |
+| 0x0040E6A0 | Expert_HandleCollision | Expert board handler (hammer, saw, judge, bell, score) |
+| 0x0040ED30 | Odd_HandleCollision | Odd board handler (gravity, pipes, shrink/grow, limits) |
+| 0x0040F9A0 | Wobbly_HandleCollision | Wobbly board handler (N:SQUAREWOBBLY, N:WAVY) |
+| 0x00410020 | Toob_HandleCollision | Toob board handler (branch pipes, spinny, sawteeth, bumper) |
+| 0x00410D00 | SkyNeon_HandleCollision | Sky/Neon board handler (pegs, heat, limit) |
+| 0x004111E0 | Beginner_HandleCollision | Beginner board handler (N:BUMPER) |
+| 0x004119B0 | Up_HandleCollision | Up board handler (inertia, vacpopout, speed cylinder, extra time) |
+| 0x00412850 | Master_HandleCollision | Master/Arena board handler (spinner, bumper, launch, catapult) |
+| 0x00417EB0 | Glass_HandleCollision | Glass board handler (N:GLASS, DN:SINKPLATFORM) |
 | 0x00465860 | Level_LoadMeshes | Loads collision geometry + copies event names to mesh buffers |
 | 0x00458970 | CreateMeshBuffer | Allocates 0x874-byte collision mesh buffer |
 | 0x00408830 | Ball_FallUpdate | Physics update — triggers collision dispatch |
