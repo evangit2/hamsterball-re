@@ -2206,7 +2206,7 @@
     },
     {
       "address": "0x43b6f0",
-      "name": "ScoreObject_SetScore"
+      "name": "Rotator_AddBall"
     },
     {
       "address": "0x44bef0",

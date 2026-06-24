@@ -111,7 +111,7 @@ During gameplay, scores increase through these mechanisms:
 When a ball falls off the arena platform:
 1. `Ball_StartFall` (0x402200) triggers — sets airborne flag, plays sound
 2. `Ball_FallUpdate` (0x408830) runs physics until ball hits void
-3. The RumbleBoard detects the fallen player and awards **+10 points** to all surviving players via `ScoreObject_SetScore` (0x43B6F0)
+3. The RumbleBoard detects the fallen player and awards **+10 points** to all surviving players via `Rotator_AddBall` (0x43B6F0)
 
 #### B. Bell Collision Bonus
 When a ball hits an `E:BELL` event plane:
@@ -132,7 +132,7 @@ AthenaList_Append(rumbleBoard + 0x8B8, scoreObj);
 
 ### 3. Score Storage
 
-`ScoreObject_SetScore` (0x43B6F0) manages a linked list of score entries:
+`Rotator_AddBall` (0x43B6F0) manages a linked list of score entries:
 
 ```c
 // Each entry in the list is 8 bytes:
@@ -246,22 +246,22 @@ if (*(uint32_t*)scene == 0x004D1358) {
 }
 ```
 
-### Method 2: Hook ScoreObject_SetScore
+### Method 2: Hook Rotator_AddBall
 
 Intercept score changes as they happen:
 
 ```cpp
-// Original: 0x43B6F0 __thiscall ScoreObject_SetScore(void* this, int player_id)
-void __fastcall Hook_ScoreObject_SetScore(void* scoreObj, int player_id) {
+// Original: 0x43B6F0 __thiscall Rotator_AddBall(void* this, int player_id)
+void __fastcall Hook_Rotator_AddBall(void* scoreObj, int player_id) {
     // Force P1 to always get +100 instead of +10
     if (player_id == 0) {
         // Write directly to the score entry after original processes
-        Original_ScoreObject_SetScore(scoreObj, player_id);
+        Original_Rotator_AddBall(scoreObj, player_id);
         // Now patch the stored value from 10 to 100
         // (Requires walking the list at scoreObj+0x10F0)
         return;
     }
-    Original_ScoreObject_SetScore(scoreObj, player_id);
+    Original_Rotator_AddBall(scoreObj, player_id);
 }
 ```
 
@@ -319,7 +319,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 | Address | Name | Signature | Description |
 |---------|------|-----------|-------------|
-| `0x43B6F0` | `ScoreObject_SetScore` | `__thiscall (void* this, int player_id)` | Set/add score entry for a player |
+| `0x43B6F0` | `Rotator_AddBall` | `__thiscall (void* this, int player_id)` | Set/add score entry for a player |
 | `0x44BE80` | `ScoreObject_ctor` | `__thiscall (void* this, int app, int player_data, char* label)` | Create score popup object |
 | `0x434C80` | `ScoreDisplay_SetTime` | `__thiscall (void* this, int time)` | Set displayed time string |
 | `0x421FE0` | `RumbleBoard_Update` | `__fastcall (int* this)` | Per-frame update + win check |
@@ -432,7 +432,7 @@ void* rumbleBoard = *(void**)(app + 0x178);
 
 ### Tip 3: Score Multiplier
 
-Hook `ScoreObject_SetScore` and multiply all scores:
+Hook `Rotator_AddBall` and multiply all scores:
 ```cpp
 void __fastcall Hook_SetScore(void* this, int player_id) {
     Original_SetScore(this, player_id);

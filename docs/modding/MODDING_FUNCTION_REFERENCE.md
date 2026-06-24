@@ -573,14 +573,16 @@ A comprehensive reference of every useful function for modders, extracted from G
 - **Address:** `0x421910`
 - **Description:** Draws countdown timer, 4-player HUD, tie-breaker overlay.
 
-### `ScoreObject_SetScore`
+### `Rotator_AddBall`
 - **Address:** `0x43B6F0`
-- **Description:** Manages score entry linked list. Always sets score value to 10 per entry.
+- **Signature:** `__thiscall Rotator_AddBall(Scene* scene, Ball* ball)`
+- **Description:** Registers ball on rotator's ball-tracking AthenaList (at `scene+0x10F0`). Allocates 8-byte entry `[ball_ptr, tick_counter=10]`. If ball already in list, resets tick to 10. Called from collision handlers on `N:ONROTATOR` (Impossible), `N:SPINNY` (Toob), `N:SWIRL` (Dizzy arena). Tick counter decremented each frame by `Catapult_Update` (0x43E600); resets to 10 on every frame of continued contact (10-frame grace period after leaving). Formerly misnamed `ScoreObject_SetScore` — has nothing to do with scoring.
 
 ### `ScoreObject_ctor`
 - **Address:** `0x44BE80`
 - **Parameters:** `this`, `App*`, `playerData*`, `label` (char*)
 - **Size:** `0x30` bytes
+- **Description:** Creates a SceneObject with vtable `PTR_RaceGoalReached_Render` (0x4D6C70). Used for race goal rendering and as the container type for rotator ball tracking.
 
 ### `ScoreDisplay_SetTime`
 - **Address:** `0x434C80`

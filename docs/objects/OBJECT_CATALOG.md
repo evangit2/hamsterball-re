@@ -277,12 +277,12 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 ### Gear / BigGear
 - **Constructor:** `Gear_ctor` (0x437590)
 - **Size:** 0x1514 bytes
-- **Description:** Rotating gear obstacles
+- **Description:** Rotating gear obstacles. Uses `N:BOUNCE` (bounce off gear surface), `N:ONGEAR` (attach to gear rotation via `Catapult_AddObjectConditional`), and `N:ONROTATOR` (attach via `Rotator_AddBall`). Found in `LevelImpossible-Gear.MESHWORLD` (8 N:BOUNCE triggers). Gear rotation handled by `Catapult_Update` (0x43E600) which applies rotation matrix to tracked balls each frame. See [Rotator System](../physics/COLLISION_SYSTEM_DEEP.md#rotator-system) for mechanics.
 
 ### Rotator
 - **Constructor:** `Rotator_ctor` (0x435940)
 - **Size:** 0x1508 bytes
-- **Description:** Rotating platform / arm
+- **Description:** Rotating platform / arm. Uses `N:ONROTATOR` event to attach balls via `Rotator_AddBall` (0x43B6F0). Ball position and velocity rotated each frame by `Catapult_Update` (0x43E600). 10-frame grace period after ball leaves surface before release.
 
 ### Pendulum
 - **Constructor:** `Pendulum_ctor` (0x437700)
@@ -501,8 +501,8 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Floating score popup in Rumble mode. Difficulty scale: 0.02/0.03/0.04.
 
 ### ScoreObject
-- **Description:** Generic score display object. Created in collision events.
-- **Used by:** `CollisionEvents`, `ExpertCollisionEvents`
+- **Description:** SceneObject subclass. Despite the name, its `SetScore` method (now renamed `Rotator_AddBall` at 0x43B6F0) does NOT set a score — it registers balls on a rotator's tracking list for physical rotation. The `ScoreObject_ctor` (0x44BE80) creates a SceneObject with vtable `PTR_RaceGoalReached_Render` (0x4D6C70), used for race goal rendering.
+- **Used by:** `Rotator_AddBall` called from `ImpossibleCollisionEvents` (N:ONROTATOR), `ToobCollisionEvents` (N:SPINNY), `DizzyArenaCollisionEvents` (N:SWIRL)
 
 ### RumbleBoard
 - **Constructor:** `RumbleBoard_ctor` (0x4217B0)

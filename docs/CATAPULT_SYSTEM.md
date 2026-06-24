@@ -60,7 +60,7 @@ All offsets are byte offsets from the catapult object pointer.
 | +0x10EC | void* | launch_ball_ptr | **Ball to launch** (set by TowerCollisionEvents when E:CATAPULTBOTTOM fires) |
 | +0x10F0 | float | launch_timer | **Launch countdown timer** (set to 0 initially, set to 50.0 by Catapult_Launch, decremented each frame) |
 | +0x10F4 | float | launch_decrement | Set to **50.0** (0x42480000) by Catapult_Launch — wait, that's wrong. |
-| +0x10F8 | AthenaList | ball_list | **List of balls currently on the catapult** (AthenaList, initialized in ctor) |
+| +0x10F8 | AthenaList | ball_list | **List of balls currently on the catapult** (AthenaList, initialized in ctor). Each entry is 8 bytes: `[ball_ptr, tick_counter]`. Used by `Catapult_AddObjectConditional` (N:ONGEAR). Tick counter starts at 10, decremented each frame by `Catapult_Update`, entry freed when it reaches 0. Counter resets to 10 on every frame of continued contact (grace period, not carry limit). |
 | +0x10FC | int | ball_list_count | Count of balls in ball_list |
 | +0x1100 | byte | active_flag | Set to **1** in CreateLevelObjects (marks catapult as active) |
 | +0x1104 | float | launch_force | Initial value = **17.0** (0x41880000) — upward launch velocity |
@@ -69,6 +69,8 @@ All offsets are byte offsets from the catapult object pointer.
 | +0x1510 | byte | conditional_flag | Checked by Catapult_AddObjectConditional (must be non-zero) |
 
 > **Important**: The `0x1104` value of 17.0 is set in `Catapult_ctor` at `*(float*)(this + 0x1104) = 0x41880000`. This is the launch velocity applied to the ball.
+
+> **Rotator system note**: `Catapult_Update` (0x43E600) serves double duty — it handles both catapult launch arcs AND rotator/gear ball carrying. When used by the rotator system (via `Rotator_AddBall` at 0x43B6F0), the tick counter at entry+4 counts down from 10 and the rotation matrix is applied to the ball's position and velocity each frame. The counter resets to 10 on every frame of continued collision contact, so the ball stays on the rotator indefinitely while touching it, with a 10-frame grace period after leaving. See `docs/physics/COLLISION_SYSTEM_DEEP.md` → "Rotator System" for full details.
 
 ---
 
