@@ -10,4 +10,4 @@
 | global-expert | Spawns all 6 Expert Race objects (Bonk/Hammer, Fan, Sawblade, Bridge, Judge, Bell) on any level with a hotkey | [global-expert/](global-expert/) |
 | global-bonk | Spawns Bonk the Hammer from Expert Race on any level — standalone, constructor loads its own mesh internally | [global-bonk/](global-bonk/) |
 | wall-bumpers | All walls act as pinball bumpers — velocity-reversal detection amplifies wall bounces. F8 toggle, F9 force cycle | [wall_bumpers/](wall_bumpers/) |
-| ball-break | Press X to shatter your ball and respawn at nearest checkpoint. Calls the game's own Ball_SplitIntoThree function | [ball_break/](ball_break/) |
+| ball-break | Press X to shatter your ball and respawn at nearest checkpoint. Calls the game's own Ball_Shatter function | [ball_break/](ball_break/) |

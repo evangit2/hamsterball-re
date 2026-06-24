@@ -25,7 +25,7 @@
  *   - Scene_SpawnBallsAndObjects — initial ball spawn trajectory
  *   - Ball_ctor2 area (0x40511F) — constructor initialization
  *   - CreateBadBall — enemy ball spawn trajectories
- *   - Ball_SplitIntoThree — split ball trajectories
+ *   - Ball_Shatter — split ball trajectories
  *   - Scene_SetupLevel6 — Up Race specific trajectories
  *
  * Struct offsets:

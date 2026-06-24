@@ -878,7 +878,7 @@ Offset | Field | Description
 | 0x00408390 | Ball_AI_ChaseNearest | 60 | AI steering: finds nearest opponent ball, applies force toward it, sine wave wandering fallback |
 | 0x00408830 | Ball_FallUpdate | 40 | Ball update when fallen: shrinks ball, handles scale change, trail cleanup |
 | 0x00408d10 | Ball_Split_ctor | 14 | Split ball constructor: vtable 0x4CF560, +0xc60=5, calls scene function |
-| 0x00408d70 | Ball_SplitIntoThree | 50 | Arena: marks parent ball for despawn, spawns 3 AI split balls (IDs 1/2/4). Called from FollowBall_Update 0x43ECC0, NOT from E:JUMP |
+| 0x00408d70 | Ball_Shatter | 50 | Arena: marks parent ball for despawn, spawns 3 AI split balls (IDs 1/2/4). Called from FollowBall_Update 0x43ECC0, NOT from E:JUMP |
 | 0x00409480 | Ball_SplitAndExplode | 70 | Creates 2 split balls + circular RumbleScore explosion pattern (0-360 degrees) |
 | 0x0040a920 | Scene_CreateGameOverMenu | 25 | Creates game-over UI based on game state: single quit, multiplayer quit, or menu mode |
 | 0x0040ae50 | Sprite_DrawCentered | 12 | Sprite draw centered at position: Sprite_DrawRect with center offset |

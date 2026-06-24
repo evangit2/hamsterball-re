@@ -136,7 +136,7 @@ AthenaList_Append(scene + 0x2DEC, ball);  // all_balls
 | Add to bad_balls | `AthenaList_Append(scene+0x29D4, ball)` | — |
 | Add to all_balls | `AthenaList_Append(scene+0x2DEC, ball)` | — |
 
-**Alternatively, for split-ball 8-balls (from Ball_SplitIntoThree at 0x408D70):**
+**Alternatively, for split-ball 8-balls (from Ball_Shatter at 0x408D70):**
 - Uses `Ball_Split_ctor` at `0x408D10` (which calls `Ball_ctor2` then sets `ball+0xC60=5`)
 - Allocates 0xC64 bytes (slightly smaller than CreateBadBall's 0xC98)
 - Sets `ball+0x31D = 1` (is_8ball), `ball+0xC60 = 0x41200000` (30.0f, split timer)
@@ -254,7 +254,7 @@ To add Bonks:
 
 ### Ball Splits (8-ball arena mechanic)
 
-**`Ball_SplitIntoThree`** — Address: `0x00408D70`
+**`Ball_Shatter`** — Address: `0x00408D70`
 - **Convention:** `__thiscall` (ECX = Ball*)
 - **Prologue:** Standard SEH (`PUSH -1; MOV EAX, FS:[0]; PUSH handler`)
 - **Parameters:** `this` (Ball* — the parent ball), `param_1` (struct with target position table)
@@ -425,7 +425,7 @@ In a reimplementation, bypass both gates entirely:
 | `Scene_SpawnBallsAndObjects` | `0x41C5B0` | Ball spawning on level load |
 | `CreateBadBall` | `0x40BCA0` | Spawn 8-ball AI opponent from MESHWORLD BADBALL tag |
 | `CreateMouseTrap` | `0x40BF50` | Spawn mouse trap from MESHWORLD MOUSETRAP objects |
-| `Ball_SplitIntoThree` | `0x408D70` | Arena 8-ball split: replaces parent ball with 3 AI split balls |
+| `Ball_Shatter` | `0x408D70` | Arena 8-ball split: replaces parent ball with 3 AI split balls |
 | `Ball_InitBattleMode` | `0x456CD0` | Set ball to battle/arena physics |
 | `Bonk_ctor` | `0x438850` | Bonk constructor (self-loads `levels\level5-bonk`) |
 | `CreateBumper` | `0x40FA20` | Bumper factory (self-loads `levels\level8`) — ⚠️ REPLACES scene mesh |

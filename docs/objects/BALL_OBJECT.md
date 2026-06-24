@@ -496,7 +496,7 @@ Resets from fallen state:
 | Function | Address | What It Does |
 |----------|---------|--------------|
 | Ball_Split_ctor | 0x408D10 | Constructor for split ball (vtable 0x4CF560) |
-| Ball_SplitIntoThree | 0x408D70 | Arena 8-ball mechanic: marks parent ball for despawn, spawns 3 AI split balls (called from FollowBall_Update 0x43ECC0) |
+| Ball_Shatter | 0x408D70 | Arena 8-ball mechanic: marks parent ball for despawn, spawns 3 AI split balls (called from FollowBall_Update 0x43ECC0) |
 | Ball_SplitAndExplode | 0x409480 | Creates 2 split balls + circular RumbleScore explosion (0–360°) |
 
 Split balls are temporary physics objects that scatter from the original ball position and expire after a timer.
@@ -598,7 +598,7 @@ gravity[2] = 0.0f;   // Z
 | 0x408390 | Ball_AI_ChaseNearest | 60 | AI opponent steering |
 | 0x408830 | Ball_FallUpdate | 40 | Fall animation + respawn |
 | 0x408D10 | Ball_Split_ctor | 14 | Split ball constructor |
-| 0x408D70 | Ball_SplitIntoThree | 50 | Arena: split parent ball into 3 AI balls |
+| 0x408D70 | Ball_Shatter | 50 | Arena: split parent ball into 3 AI balls |
 | 0x409480 | Ball_SplitAndExplode | 70 | Split + RumbleScore ring |
 | 0x40AFE0 | Ball_ctor | 30 | Primary allocator + base init |
 | 0x40AF90 | Ball_GetTransform | — | Read transform into struct |

@@ -8,7 +8,7 @@
 //
 // Function: Ball_UpdateAndAI at 0x408390 (Ball vtable[4])
 // Gate 0 at 0x4083AE (6-byte JZ rel32 to 0x40882A):
-//   Checks: ball+0xC74 == 0 (CreateBadBall 8balls, not SplitIntoThree)
+//   Checks: ball+0xC74 == 0 (CreateBadBall 8balls, not Shatter)
 //           AND App+0x237 == 0 (game not in progress — countdown, menu, etc.)
 //   When both true: jumps DIRECTLY to function exit.
 //   Ball_Update (physics), targeting, and SetVelocity NEVER run → motionless.

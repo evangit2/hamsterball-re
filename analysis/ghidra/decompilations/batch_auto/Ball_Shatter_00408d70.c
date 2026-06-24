@@ -1,7 +1,7 @@
 /*
- * Function: Ball_SplitIntoThree
+ * Function: Ball_Shatter
  * Address: 0x00408D70
- * Signature: void __thiscall Ball_SplitIntoThree(void *this, int param_1)
+ * Signature: void __thiscall Ball_Shatter(void *this, int param_1)
  *
  * Description:
  * Splits the ball into three smaller balls — the signature move of the 8-ball
