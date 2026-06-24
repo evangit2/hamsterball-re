@@ -58,7 +58,9 @@ CollisionMesh_ctor(this, scene):
 
 ## Collision Event Dispatch (Per-Board Handlers → Shared Base)
 
-**IMPORTANT:** There is no single "Level" or "Arena" handler. Almost every board type overrides vtable[0x1D] (+0x74) with its own unique collision handler. Each processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base.
+**IMPORTANT:** There is no single "Level" or "Arena" handler. Almost every board type overrides vtable[0x1D] (+0x74) with its own unique collision handler. Each processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base. Arena (Rumble) boards have their own separate vtables with separate handlers.
+
+### Race Board Handlers
 
 | Board | Handler Address | Handler Name |
 |-------|----------------|-------------|
@@ -73,8 +75,26 @@ CollisionMesh_ctor(this, scene):
 | Sky/Neon | 0x00410D00 | NeonCollisionEvents |
 | Beginner | 0x004111E0 | BeginnerCollisionEvents |
 | Up | 0x004119B0 | UpCollisionEvents |
-| Master/Arena | 0x00412850 | MasterCollisionEvents |
+| Master | 0x00412850 | MasterCollisionEvents |
 | Glass | 0x00417EB0 | GlassCollisionEvents |
+
+### Arena (Rumble) Board Handlers
+
+| Arena | Handler Address | Handler Name | Events |
+|-------|----------------|-------------|--------|
+| Beginner Arena | 0x00413DF0 | BeginnerArenaCollisionEvents | N:BUMPER, DN:SINKPLATFORM |
+| Intermediate Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Dizzy Arena | 0x00414350 | DizzyArenaCollisionEvents | N:SWIRL, DN:SINKPLATFORM |
+| Tower Arena | 0x00414570 | TowerArenaCollisionEvents | E:CATAPULTBOTTOM, DN:SINKPLATFORM |
+| Up Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Odd Arena | 0x00414DA0 | OddArenaCollisionEvents | E:GRAVITY, DN:SINKPLATFORM |
+| Expert Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Toob Arena | 0x00415010 | ToobArenaCollisionEvents | N:BUMPER, DN:SINKPLATFORM |
+| Wobbly Arena | 0x00415540 | WobblyArenaCollisionEvents | N:SQUAREWOBBLY, DN:SINKPLATFORM |
+| Sky/Neon Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Warmup Arena | 0x00416140 | WarmupArenaCollisionEvents | E:LAUNCH, DN:SINKPLATFORM |
+| Impossible Arena | 0x00418600 | ImpossibleArenaCollisionEvents | N:BOUNCE, DN:SINKPLATFORM |
+| Master Arena | 0x00412850 | MasterCollisionEvents | (shared with race board) |
 
 ```
 Board vtable[0x1D] (board-specific handler)

@@ -147,7 +147,7 @@ codebase decrements it — it may be processed by a function Ghidra hasn't
 identified, or it may be a dead feature that was replaced by the
 Scene_HandleRaceEnd phase system.
 
-**Callers of Scene_StartCountdown**: SinkPlatform_OnCollision (0x413BD0),
+**Callers of Scene_StartCountdown**: SinkPlatformArenaCollisionEvents (0x413BD0),
 and various level-specific collision handlers at 0x413FA0, 0x4143AE,
 0x414660, 0x414ED9, 0x4151C0, 0x4155B6, 0x41624F, 0x417620, 0x417F08,
 0x41873E.

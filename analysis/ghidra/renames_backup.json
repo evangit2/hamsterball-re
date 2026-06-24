@@ -846,7 +846,7 @@
     },
     {
       "address": "0x00413BD0",
-      "name": "SinkPlatform_OnCollision"
+      "name": "SinkPlatformArenaCollisionEvents"
     },
     {
       "address": "0x004130E0",

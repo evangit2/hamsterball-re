@@ -452,7 +452,7 @@ Offset | Field | Description
 |---------|------|-------------|
 | 0x004287C0 | App_StartRace | Restart audio, setup race, play sound, free dialogs, start music (vol 1.0/0.5) |
 | 0x00428ED0 | Difficulty_GetTimeModifier | Time modifier by difficulty: 0=easy, 1=normal, 2=hard, default=0.0 |
-| 0x00413BD0 | SinkPlatform_OnCollision | Match "DN:SINKPLATFORM" name, call sinking behavior, then base handler |
+| 0x00413BD0 | SinkPlatformArenaCollisionEvents | Match "DN:SINKPLATFORM" name, call sinking behavior, then base handler |
 
 ## Level Texture/Scale Assignment
 

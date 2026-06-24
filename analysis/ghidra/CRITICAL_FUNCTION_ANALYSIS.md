@@ -214,7 +214,7 @@ TowerCollisionEvents     (0x0040DCD0) — primary level collision dispatcher
 ExpertCollisionEvents     (0x0040EA6B) — arena mode collision dispatcher
 HandleArenaCollisionEvents             (0x00412850) — spinner/bumper/launch collision
 NeonCollisionEvents               (0x00410E6F) — arena limit collision
-SinkPlatform_OnCollision  (0x00413C09) — sinking platform collision
+SinkPlatformArenaCollisionEvents  (0x00413C09) — sinking platform collision
 + 23 other Create* and collision handler functions
 + 2 DATA references (vtable entries)
 ```
