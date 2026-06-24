@@ -77,6 +77,7 @@ CollisionMesh_ctor(this, scene):
 | Up | 0x004119B0 | UpCollisionEvents |
 | Master | 0x00412850 | MasterCollisionEvents |
 | Glass | 0x00417EB0 | GlassCollisionEvents |
+| Impossible | 0x00418360 | ImpossibleCollisionEvents |
 
 ### Arena (Rumble) Board Handlers
 
@@ -222,6 +223,7 @@ float positions[vertex_count * 3]        // 32-bit float positions
 | 0x465EF0 | Collision_TraverseSpatialTree | Octree traversal + AABB test |
 | 0x456D80 | CollisionMesh_ctor | Collision mesh constructor |
 | 0x40E6A0 | ExpertCollisionEvents | Expert board collision handler |
+| 0x418360 | ImpossibleCollisionEvents | Impossible board collision handler (N:BOUNCE, N:ONGEAR) |
 | 0x40DCD0 | TowerCollisionEvents | Tower board collision handler |
 | 0x40C5D0 | DispatchCollisionEvents | Base collision handler |
 | 0x46B070 | WaterRipple_Render | Water ripple collision (physics-based) |
