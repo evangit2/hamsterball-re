@@ -359,17 +359,99 @@ Handles events for the Impossible Race (Race of Ages) — the gear/rotator level
 | Event Name | What It Does |
 |-----------|-------------|
 | `N:BOUNCE` | Bounces ball off gears: doubles velocity, clamps to min 1.25 / max 3.0 via normalize-and-scale. Gated on `ball+0x1DA != 0` (active flag). |
-| `N:ONROTATOR` | Calls `Rotator_AddBall` (was misnamed `Rotator_AddBall`) — registers ball on the rotator's tracking list with a 10-frame tick counter. `Catapult_Update` then applies the rotator's rotation matrix to the ball's position and velocity each frame, physically moving the ball with the spinning object. After 10 frames the ball is automatically released. |
+| `N:ONROTATOR` | Calls `Rotator_AddBall` — registers ball on the rotator's tracking list with a 10-frame tick counter. See [Rotator System](#rotator-system) below. |
 | `N:ONGEAR` | Calls `Catapult_AddObjectConditional` — same pattern as `Rotator_AddBall` but on a Catapult object (guarded by `catapult+0x1510 != 0`). Registers ball on the gear's tracking list for rotational movement. |
 | `E:HELPINERTIA` | Sets `ball[0xA9] = 2.5` (reduces inertia — easier to control on gears) |
 | `E:UNHELPINERTIA` | Sets `ball[0xA9] = 5.0` (restores normal inertia) |
 
-**Key insight:** `Rotator_AddBall` (0x43B6F0) was completely misnamed. It has nothing to do with scoring. It adds the ball to a rotator's AthenaList tracking list with a tick value of 10. The `Catapult_Update` function (0x43E600) iterates this list each frame, decrements the counter, and applies a rotation matrix transform to both the ball's position (`ball+0x164/+0x168/+0x16C`) and velocity (`ball+0xCA4/+0xCA8/+0xCAC`). When the counter reaches 0, the ball is freed from the list. This is how spinning gears, swirls, and spinny objects carry the ball.
+<a id="rotator-system"></a>
+### The Rotator System (Gears, Swirls, Spinny Objects)
 
-Called from 3 collision handlers:
-- `ImpossibleCollisionEvents`: `N:ONROTATOR` → `Rotator_AddBall`
-- `ToobCollisionEvents`: `N:SPINNY` → `Rotator_AddBall`
-- `DizzyArenaCollisionEvents`: `N:SWIRL` → `Rotator_AddBall`
+The rotator system is how Hamsterball makes spinning objects physically carry the ball. It involves two functions working together: one registers the ball on contact, the other applies rotation every frame.
+
+**`Rotator_AddBall`** (0x43B6F0 — formerly misnamed `Rotator_AddBall`)
+
+This function does NOT set a score. It registers the ball on a rotator's ball-tracking list.
+
+```
+Rotator_AddBall(Scene* scene, Ball* ball):
+    // Search existing list for this ball
+    for each entry in scene->rotatorList (AthenaList at scene+0x10F0):
+        if entry->ball_ptr == ball:
+            entry->tick_counter = 10    // RESET to 10 — ball already tracked
+            return
+
+    // Ball not in list — add new entry
+    entry = malloc(8)                   // 8-byte struct: [ball_ptr, tick_counter]
+    entry->ball_ptr = ball
+    entry->tick_counter = 10
+    AthenaList_Append(scene->rotatorList, entry)
+```
+
+**Critical behavior:** The counter resets to 10 every frame the ball is touching the rotator's collision surface. Since `Ball_FallUpdate` fires `N:ONROTATOR`/`N:SPINNY`/`N:SWIRL` on every frame of contact, `Rotator_AddBall` finds the ball already in the list and just resets the counter. The 10-frame countdown only starts ticking down **after the ball leaves the rotator surface** — it's a grace/release period, not a carry limit.
+
+**`Catapult_Update`** (0x43E600 — shared update for Catapult AND Rotator objects)
+
+Each frame, this function iterates the ball-tracking list and applies the object's rotation matrix:
+
+```
+Catapult_Update(Catapult* this):
+    // Build rotation matrix from this->rotation params (this+0x439..0x43C)
+    Gfx_ScaleZ(this->rotSpeedZ)
+    Gfx_ScaleX(this->rotSpeedX)
+    Gfx_ScaleY(this->rotAngle)
+    Gfx_ScaleY(this->rotSpeedAngle)
+
+    for each entry in this->ballList (AthenaList at this+0x43E):
+        entry->tick_counter -= 1
+        if tick_counter < 1:
+            free(entry)          // Remove ball from tracking
+            continue
+
+        // Get ball position relative to rotator center
+        relX = ball->posX (ball+0x164) - this->centerX (this+0x436)
+        relY = ball->posY (ball+0x168) - this->centerY (this+0x437)
+        relZ = ball->posZ (ball+0x16C) - this->centerZ (this+0x438)
+
+        // Apply rotation matrix to relative position
+        newX = mat[0]*relX + mat[1]*relY + mat[2]*relZ + mat[3]
+        newY = mat[4]*relX + mat[5]*relY + mat[6]*relZ + mat[7]
+
+        // Write rotated position back to ball
+        ball->posX = newX + this->centerX
+        ball->posY = newY + this->centerY
+        ball->posZ = newZ + this->centerZ
+
+        // Also rotate ball's velocity vector (ball+0xCA4/+0xCA8/+0xCAC)
+        // using the same rotation matrix
+        ball->velX = mat[0]*velX + mat[1]*velY + mat[2]*velZ + mat[3]
+        ball->velY = mat[4]*velX + mat[5]*velY + mat[6]*velZ + mat[7]
+        ball->velZ = ...
+```
+
+**Struct layout (Catapult/Rotator object):**
+
+| Offset | Type | Field |
+|--------|------|-------|
+| +0x436 | float | centerX (rotator pivot X) |
+| +0x437 | float | centerY (rotator pivot Y) |
+| +0x438 | float | centerZ (rotator pivot Z) |
+| +0x439 | float | rotSpeedZ |
+| +0x43A | float | rotSpeedX |
+| +0x43B | float | rotSpeedAngle |
+| +0x43C | float | rotAngle (accumulated) |
+| +0x43E | AthenaList | ballList (tracked balls with tick counters) |
+| +0x10F0 | AthenaList | rotatorList (Scene-level, used by Rotator_AddBall) |
+| +0x10F8 | AthenaList | catapultBallList (used by Catapult_AddObjectConditional) |
+| +0x1510 | byte | active flag (Catapult_AddObjectConditional guard) |
+
+**Called from 3 collision handlers:**
+
+| Collision Handler | Event | Level |
+|-------------------|-------|-------|
+| `ImpossibleCollisionEvents` (0x418360) | `N:ONROTATOR` | Impossible race (gears) |
+| `ToobCollisionEvents` (0x410020) | `N:SPINNY` | Toob race |
+| `DizzyArenaCollisionEvents` (0x414350) | `N:SWIRL` | Dizzy arena |
 
 ---
 

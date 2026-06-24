@@ -621,7 +621,7 @@ Scene vtable at 0x4D0260 has 36 entries (144 bytes). Read memory at the vtable a
 | 0x457a50 | Graphics_DisableRenderState | 3 | Thunk → Graphics_SetRenderState (disable mode) |
 | 0x428c50 | App_StartPracticeRace | 3 | Start practice/tournament race: calls App_StartRace, PlayerProfile, Tournament_AdvanceRace |
 | 0x434580 | Sound_InitChannels | 3 | Allocate sound channels, get next sample, play 3D positioned, set timer 0x140 |
-| 0x43b6f0 | ScoreObject_SetScore | 3 | Find score by ID and set to 10, or create new entry with value 10 |
+| 0x43b6f0 | Rotator_AddBall | 3 | Find score by ID and set to 10, or create new entry with value 10 |
 | 0x44bef0 | Timer_Decrement | 4 | Timer tick: value = end - 100, set flag at +0x2A |
 | 0x448620 | ScoreDisplay_DeletingDtor | 3 | ScoreDisplay scalar deleting destructor |
 | 0x4470d0 | ScoreDisplay_dtor | 3 | Clean up: free strings, timers, 5 BaseObjects, SceneObject_dtor |

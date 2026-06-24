@@ -223,8 +223,63 @@ float positions[vertex_count * 3]        // 32-bit float positions
 | 0x465EF0 | Collision_TraverseSpatialTree | Octree traversal + AABB test |
 | 0x456D80 | CollisionMesh_ctor | Collision mesh constructor |
 | 0x40E6A0 | ExpertCollisionEvents | Expert board collision handler |
-| 0x418360 | ImpossibleCollisionEvents | Impossible board collision handler (N:BOUNCE, N:ONGEAR) |
+| 0x418360 | ImpossibleCollisionEvents | Impossible board collision handler (N:BOUNCE, N:ONROTATOR, N:ONGEAR) |
 | 0x40DCD0 | TowerCollisionEvents | Tower board collision handler |
 | 0x40C5D0 | DispatchCollisionEvents | Base collision handler |
 | 0x46B070 | WaterRipple_Render | Water ripple collision (physics-based) |
 | 0x415480 | CreateWobbly1 | Wobbly bridge (baked vertex animation) |
+| 0x43B6F0 | Rotator_AddBall | Registers ball on rotator tracking list (formerly misnamed Rotator_AddBall) |
+| 0x43E600 | Catapult_Update | Per-frame rotation of tracked balls (applies rotation matrix to pos+vel) |
+| 0x43E9C0 | Catapult_AddObjectConditional | Registers ball on catapult/gear tracking list (guarded by +0x1510) |
+| 0x434290 | Catapult_Launch | Launch pad activation (sets catapult+0x10F0=1, +0x10F4=50 timer) |
+
+## Rotator System (Gears, Swirls, Spinny Objects)
+
+Spinning objects in Hamsterball physically carry the ball using a two-function system:
+
+1. **`Rotator_AddBall`** (0x43B6F0) — called on collision with `N:ONROTATOR`, `N:SPINNY`, or `N:SWIRL`
+2. **`Catapult_Update`** (0x43E600) — called every frame, applies rotation matrix to tracked balls
+
+### How it works
+
+When the ball touches a spinning object's collision surface, the collision handler calls `Rotator_AddBall(scene, ball)`. This function:
+
+1. Searches the rotator's AthenaList (at `scene+0x10F0`) for the ball pointer
+2. **If found**: resets the entry's tick counter to 10 (ball already tracked — keeps it on the rotator)
+3. **If not found**: allocates an 8-byte struct `[ball_ptr, tick_counter=10]` and appends it to the list
+
+Every frame, `Catapult_Update` iterates the ball-tracking list:
+- Decrements each entry's tick counter
+- If counter reaches 0: frees the entry (ball released from rotator)
+- Otherwise: applies the object's rotation matrix to the ball's position (`ball+0x164/+0x168/+0x16C`) and velocity (`ball+0xCA4/+0xCA8/+0xCAC`)
+
+### 10-frame grace period (not a carry limit)
+
+The counter **resets to 10 every frame** the ball remains in contact with the rotator surface, because `Ball_FallUpdate` fires the collision event every frame. The countdown only starts ticking down after the ball leaves the rotator. This means:
+- While on the rotator: ball stays tracked indefinitely (counter keeps resetting to 10)
+- After leaving: 10 more frames of rotation before release (smooth transition)
+
+### Rotator/Catapult struct offsets
+
+| Offset | Type | Field |
+|--------|------|-------|
+| +0x436 | float | centerX (pivot X) |
+| +0x437 | float | centerY (pivot Y) |
+| +0x438 | float | centerZ (pivot Z) |
+| +0x439 | float | rotSpeedZ |
+| +0x43A | float | rotSpeedX |
+| +0x43B | float | rotSpeedAngle |
+| +0x43C | float | rotAngle (accumulated, decremented by rotSpeed each frame) |
+| +0x43E | AthenaList | ballList (tracked balls with tick counters) |
+| +0x10F0 | AthenaList | rotatorList (Scene-level, used by Rotator_AddBall) |
+| +0x10F8 | AthenaList | catapultBallList (used by Catapult_AddObjectConditional) |
+| +0x1510 | byte | active flag (Catapult_AddObjectConditional guard) |
+
+### Event → collision handler mapping
+
+| Event | Collision Handler | Level |
+|-------|-------------------|-------|
+| N:ONROTATOR | ImpossibleCollisionEvents (0x418360) | Impossible race (gears) |
+| N:SPINNY | ToobCollisionEvents (0x410020) | Toob race |
+| N:SWIRL | DizzyArenaCollisionEvents (0x414350) | Dizzy arena |
+| N:ONGEAR | ImpossibleCollisionEvents (0x418360) | Impossible race (calls Catapult_AddObjectConditional) |

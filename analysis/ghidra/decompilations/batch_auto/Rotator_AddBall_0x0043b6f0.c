@@ -1,5 +1,5 @@
 
-void __thiscall ScoreObject_SetScore(void *this,int param_1)
+void __thiscall Rotator_AddBall(void *this,int param_1)
 
 {
   int iVar1;

@@ -8,12 +8,18 @@
 
 ## 1. Catapult_Update @ 0x0043E600
 
-**Category:** Arena Hazard Physics (Catapult object)
+**Category:** Arena Hazard Physics (Catapult + Rotator objects — shared update)
 **Called via:** vtable DATA ref at 0x004D5AFC
 **Signature:** `__fastcall Catapult_Update(int *this)`
 
 ### Summary
-Updates the Catapult arena hazard — a rotating platform that carries balls and launches them. The catapult has a rotation timer at `this+0x43C` that decreases by `this+0x43D` (rotation speed) each frame. It applies the rotation matrix to all attached balls (via `AthenaList` at `this+0x43E`), transforming both their positions (`ball+0x164/0x168/0x16C` = X/Y/Z) and their velocity vectors (`CollisionMesh+0xCA4/CA8/CAC`).
+Updates the Catapult/Rotator arena hazard — a rotating platform that carries balls and launches them. The catapult has a rotation timer at `this+0x43C` that decreases by `this+0x43D` (rotation speed) each frame. It applies the rotation matrix to all attached balls (via `AthenaList` at `this+0x43E`), transforming both their positions (`ball+0x164/0x168/0x16C` = X/Y/Z) and their velocity vectors (`CollisionMesh+0xCA4/CA8/CAC`).
+
+This function serves double duty:
+1. **Catapult launch system** — triggered by `E:CATAPULTBOTTOM`, launches ball via `Catapult_Launch` (0x434290)
+2. **Rotator/gear system** — triggered by `N:ONROTATOR`/`N:SPINNY`/`N:SWIRL`, attaches ball via `Rotator_AddBall` (0x43B6F0) or `Catapult_AddObjectConditional` (0x43E9C0)
+
+In both cases, the 8-byte ball tracking entry `[ball_ptr, tick_counter]` is decremented each frame. The tick counter starts at 10 and resets to 10 on every frame of continued collision contact (grace period, not carry limit). When it reaches 0 after the ball leaves the surface, the entry is freed.
 
 ### Key Struct Offsets
 | Offset | Type | Description |

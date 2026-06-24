@@ -979,7 +979,7 @@ Offset | Field | Description
 | 0x467750 | Array_CopyDWords | 5 | Copy N dwords from src to dst |
 | 0x429520 | Game_SetInProgress | 5 | Mark game in progress (sets +0x200=1) |
 | 0x440dd0 | Graphics_DrawRectAndReset | 5 | Draw rect, then reset matrix to identity |
-| 0x44be80 | ScoreObject_ctor | 5 | Score display object constructor |
+| 0x44be80 | ScoreObject_ctor | 5 | SceneObject constructor (vtable PTR_RaceGoalReached_Render) — creates object used for race goal rendering and rotator ball tracking |
 | 0x44fd40 | SimpleList_dtor | 5 | SimpleList destructor |
 | 0x459610 | Scene_RenderIfVisible | 5 | Render scene object if visible flag set |
 | 0x470650 | Array_FillDWords | 5 | Fill N dwords with same value |
@@ -1027,7 +1027,10 @@ Offset | Field | Description
 |---------|------|-------|-------------|
 | 0x428c50 | App_StartPracticeRace | 3 | Start practice/tournament race: calls App_StartRace, sets up PlayerProfile, calls Tournament_AdvanceRace |
 | 0x434580 | Sound_InitChannels | 3 | Allocate sound channels for object, get next sample, play 3D positioned sound, set timer 0x140 |
-| 0x43b6f0 | ScoreObject_SetScore | 3 | Find score by ID, set to 10, or create new score entry with value 10 |
+| 0x43b6f0 | Rotator_AddBall | 3 | Register ball on rotator tracking list (8-byte entry [ball_ptr, tick=10]). Resets tick to 10 if ball already tracked. Formerly misnamed ScoreObject_SetScore. Called from N:ONROTATOR, N:SPINNY, N:SWIRL. |
+| 0x43e600 | Catapult_Update | 4 | Per-frame update: decrements tick counters, applies rotation matrix to tracked balls' position (+0x164/+0x168/+0x16C) and velocity (+0xCA4/+0xCA8/+0xCAC). Frees entries when counter reaches 0. Shared by catapult launch and rotator/gear systems. |
+| 0x43e9c0 | Catapult_AddObjectConditional | 3 | Register ball on catapult/gear tracking list (guarded by +0x1510). Same 8-byte entry pattern as Rotator_AddBall. Called from N:ONGEAR. |
+| 0x434290 | Catapult_Launch | 2 | Launch pad activation: sets catapult+0x10F0=1 (active), +0x10F4=50 (launch timer). Called on E:CATAPULTBOTTOM. |
 | 0x44bef0 | Timer_Decrement | 4 | Timer tick: value = end_value - 100, set flag at +0x2A |
 | 0x448620 | ScoreDisplay_DeletingDtor | 3 | ScoreDisplay scalar deleting destructor |
 | 0x4470d0 | ScoreDisplay_dtor | 3 | Clean up ScoreDisplay: free strings, timers, BaseObjects (5), SceneObject_dtor |
