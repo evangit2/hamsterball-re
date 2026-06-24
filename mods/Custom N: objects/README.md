@@ -324,7 +324,7 @@ These events are ONLY processed by specific board types. If the ball touches geo
 |-----------|-------------|
 | `E:ALERTSAW2` | Alerts saw at board+0x4384 (difficulty-gated) |
 | `E:BRANCH(A)` / `E:BRANCH(B)` | Branching pipe: looks up numbered POS/VECTOR pairs from hash table, randomly selects one, teleports ball with scaled trajectory. (A) = normal, (B) = double velocity. |
-| `N:SPINNY` | Calls `ScoreObject_SetScore` — awards score from rotator |
+| `N:SPINNY` | Calls `Rotator_AddBall` — awards score from rotator |
 | `N:SAWTEETH` | Deflects ball: reads position from rotator+0x1100, normalizes and scales by 3.0, calls `Ball_ApplyTrajectory`. Cooldown: `ball[0x1F7]`. |
 | `N:BUMPER` | Bumper physics: plays sound, scales/reverses velocity, sets board flag at +0x6448 + bumperIndex*4 |
 
@@ -359,10 +359,17 @@ Handles events for the Impossible Race (Race of Ages) — the gear/rotator level
 | Event Name | What It Does |
 |-----------|-------------|
 | `N:BOUNCE` | Bounces ball off gears: doubles velocity, clamps to min 1.25 / max 3.0 via normalize-and-scale. Gated on `ball+0x1DA != 0` (active flag). |
-| `N:ONROTATOR` | Calls `ScoreObject_SetScore` — awards score from rotator contact |
-| `N:ONGEAR` | Calls `Catapult_AddObjectConditional` — attaches ball to gear rotational physics |
+| `N:ONROTATOR` | Calls `Rotator_AddBall` (was misnamed `Rotator_AddBall`) — registers ball on the rotator's tracking list with a 10-frame tick counter. `Catapult_Update` then applies the rotator's rotation matrix to the ball's position and velocity each frame, physically moving the ball with the spinning object. After 10 frames the ball is automatically released. |
+| `N:ONGEAR` | Calls `Catapult_AddObjectConditional` — same pattern as `Rotator_AddBall` but on a Catapult object (guarded by `catapult+0x1510 != 0`). Registers ball on the gear's tracking list for rotational movement. |
 | `E:HELPINERTIA` | Sets `ball[0xA9] = 2.5` (reduces inertia — easier to control on gears) |
 | `E:UNHELPINERTIA` | Sets `ball[0xA9] = 5.0` (restores normal inertia) |
+
+**Key insight:** `Rotator_AddBall` (0x43B6F0) was completely misnamed. It has nothing to do with scoring. It adds the ball to a rotator's AthenaList tracking list with a tick value of 10. The `Catapult_Update` function (0x43E600) iterates this list each frame, decrements the counter, and applies a rotation matrix transform to both the ball's position (`ball+0x164/+0x168/+0x16C`) and velocity (`ball+0xCA4/+0xCA8/+0xCAC`). When the counter reaches 0, the ball is freed from the list. This is how spinning gears, swirls, and spinny objects carry the ball.
+
+Called from 3 collision handlers:
+- `ImpossibleCollisionEvents`: `N:ONROTATOR` → `Rotator_AddBall`
+- `ToobCollisionEvents`: `N:SPINNY` → `Rotator_AddBall`
+- `DizzyArenaCollisionEvents`: `N:SWIRL` → `Rotator_AddBall`
 
 ---
 
