@@ -74,7 +74,7 @@ Documented: 3781/3781 (100%)
 |---------|------|-------------|
 | 0x0040FA20 | CreateBumper | Create BUMPER1/2/3/4 objects |
 | 0x00413CE0 | CreateBumper2 | Create bumper variant |
-| 0x00410D00 | CreateLimit | Create E:LIMIT boundary |
+| 0x00410D00 | NeonCollisionEvents | Create E:LIMIT boundary |
 | 0x004117B0 | CreateUpLevelObjects | Create SPEEDCYLINDER |
 | 0x00412850 | HandleArenaCollisionEvents | Create N:SPINNER |
 | 0x0040E250 | CreateExpertLevelObjects | Create SAWBLADE |
@@ -306,8 +306,8 @@ Offset | Field | Description
 | Address | Name | Description |
 |---------|------|-------------|
 | 0x0040C5D0 | DispatchCollisionEvents | Main collision event dispatcher (E:NODIZZY, E:SAFESWITCH, E:LIMIT, E:BREAK, E:JUMP, E:ACTION, E:TRAJECTORY, N:NOCONTROL, N:WATER, N:TARPIT, N:GOAL, N:MOUSETRAP, N:SECRET, N:UNLOCKSECRET, DROPIN, PIPEBONK, POPOUT) |
-| 0x0040E6A0 | Arena_HandleCollision | Arena-specific collision handler (E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL + delegates to DispatchCollisionEvents) |
-| 0x0040DCD0 | Level_HandleCollision | Level-specific collision handler (E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE + delegates to DispatchCollisionEvents) |
+| 0x0040E6A0 | ExpertCollisionEvents | Arena-specific collision handler (E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1/2, E:ACTIVATESAW1/2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL + delegates to DispatchCollisionEvents) |
+| 0x0040DCD0 | TowerCollisionEvents | Level-specific collision handler (E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE + delegates to DispatchCollisionEvents) |
 | 0x00434770 | Saw_AlertActivate | Activate saw blade (alert mode - clear flag, play 3D sound) |
 | 0x00434A50 | Saw_Activate | Activate saw blade (full - set active flag, play 3D sound) |
 | 0x00434C40 | Judge_Reset | Reset judges (clear active flag, re-add to list) |

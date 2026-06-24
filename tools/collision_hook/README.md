@@ -5,8 +5,8 @@
 Hooks three collision dispatch functions in Hamsterball.exe to log all collision events:
 
 1. **DispatchCollisionEvents** (0x0040C5D0) — shared base handler, processes ALL event types
-2. **Level_HandleCollision** (0x0040DCD0) — race level events (catapults, trapdoors, maces)
-3. **Arena_HandleCollision** (0x0040E6A0) — arena events (hammers, saws, judges, bells)
+2. **TowerCollisionEvents** (0x0040DCD0) — Tower board events (catapults, trapdoors, maces)
+3. **ExpertCollisionEvents** (0x0040E6A0) — Expert board events (hammers, saws, judges, bells)
 
 ## Files
 
@@ -50,7 +50,7 @@ timestamp_ms,handler,scene_ptr,ball_ptr,collobj_ptr,event_name,x,y,z
 ```
 
 - `timestamp_ms` — milliseconds since Windows boot (GetTickCount)
-- `handler` — which function was called (DispatchCollisionEvents/Level_HandleCollision/Arena_HandleCollision)
+- `handler` — which function was called (DispatchCollisionEvents/TowerCollisionEvents/ExpertCollisionEvents)
 - `scene_ptr` — pointer to the Scene/BoardLevel object (ECX/this)
 - `ball_ptr` — pointer to the Ball object
 - `collobj_ptr` — pointer to the collision pair array
@@ -76,8 +76,8 @@ Hamsterball.exe calls DispatchCollisionEvents(this, ball, collObj)
 
 - **Target addresses** (image base 0x400000):
   - DispatchCollisionEvents: VA 0x0040C5D0
-  - Level_HandleCollision: VA 0x0040DCD0
-  - Arena_HandleCollision: VA 0x0040E6A0
+  - TowerCollisionEvents: VA 0x0040DCD0
+  - ExpertCollisionEvents: VA 0x0040E6A0
 - **Calling convention**: `__thiscall` (ECX = this/Scene pointer, stack = ball, collObj)
 - **ASLR**: The DLL computes the actual address by adding the module base offset
 - **Trampoline**: 5-byte original prologue + jmp back to original+5

@@ -32,7 +32,7 @@ All 6 meshes are loaded on first spawn (cached):
 
 Each object creates its own CollisionLevel sub-object internally via `CollisionLevel_ctorWithLevel` (0x465080). The ball will physically collide with the geometry.
 
-**Note:** Neon-specific collision events (lights on/off, zoop effect, platform activation) are handled by `Level_HandleCollision` at 0x416CA0 (vtable[0x74] of Neon Board). On non-Neon levels, these events will NOT fire. Objects have physical collision but no special behaviors.
+**Note:** Neon-specific collision events (lights on/off, zoop effect, platform activation) are handled by `TowerCollisionEvents` at 0x416CA0 (vtable[0x74] of Neon Board). On non-Neon levels, these events will NOT fire. Objects have physical collision but no special behaviors.
 
 ## Object Placement
 

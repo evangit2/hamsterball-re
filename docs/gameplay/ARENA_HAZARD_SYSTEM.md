@@ -145,7 +145,7 @@ Has speed modifiers via name suffixes:
 
 ## Collision-to-Action Dispatch
 
-See COLLISION_SYSTEM.md for the full Arena_HandleCollision dispatch table.
+See COLLISION_SYSTEM.md for the full ExpertCollisionEvents dispatch table.
 Summary of arena collision events:
 
 | Event Name | Action | Object |

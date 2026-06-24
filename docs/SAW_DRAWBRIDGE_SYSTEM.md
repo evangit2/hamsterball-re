@@ -91,7 +91,7 @@ velocity = 0;                                     // +0x1118
 
 ### Activation
 
-Two-stage activation via collision events in `Arena_HandleCollision` (0x40E6A0):
+Two-stage activation via collision events in `ExpertCollisionEvents` (0x40E6A0):
 
 1. **Alert** (`E:ALERTSAW1` / `E:ALERTSAW2`):
    ```c

@@ -2,8 +2,8 @@
 // DispatchCollisionEvents  (0x40C5D0)  — Clean C++ Reconstruction
 // ============================================================================
 // Base collision event handler. Called as the FINAL step by:
-//   • Level_HandleCollision    (0x40DCD0)
-//   • Arena_HandleCollision    (0x40E6A0)
+//   • TowerCollisionEvents    (0x40DCD0)
+//   • ExpertCollisionEvents    (0x40E6A0)
 //
 // All E: (event) and N: (notification) collision objects from the MESHWORLD
 // file eventually reach this function.  Every check below is an EXACT

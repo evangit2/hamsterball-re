@@ -99,8 +99,8 @@ void __thiscall Hooked_DispatchCollisionEvents(void* this, int* ball, int* collO
 
 **Key addresses for hooking**:
 - `DispatchCollisionEvents` = 0x40C5D0 (base collision event handler)
-- `Level_HandleCollision` = 0x40DCD0 (race-specific events)
-- `Arena_HandleCollision` = 0x40E6A0 (arena-specific events)
+- `TowerCollisionEvents` = 0x40DCD0 (race-specific events)
+- `ExpertCollisionEvents` = 0x40E6A0 (arena-specific events)
 - `CreateLevelObjects` = 0x4121D0 (factory dispatcher)
 - `CreateExpertLevelObjects` = 0x40E250 (arena factory sub-dispatcher)
 - `Mesh_FindClosestCollision` = 0x465D90 (collision raycast)

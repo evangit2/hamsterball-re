@@ -56,33 +56,54 @@ CollisionMesh_ctor(this, scene):
   Ball_InitBattleMode(this)
 ```
 
-## Collision Event Dispatch (2-Tier, Parallel Handlers)
+## Collision Event Dispatch (Per-Board Handlers → Shared Base)
+
+**IMPORTANT:** There is no single "Level" or "Arena" handler. Almost every board type overrides vtable[0x1D] (+0x74) with its own unique collision handler. Each processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base.
+
+| Board | Handler Address | Handler Name |
+|-------|----------------|-------------|
+| WarmUp | 0x0040C5D0 | DispatchCollisionEvents (no override — uses base directly) |
+| Intermediate | 0x0040D340 | IntermediateCollisionEvents |
+| Dizzy | 0x0040D500 | DizzyCollisionEvents |
+| Tower | 0x0040DCD0 | TowerCollisionEvents |
+| Expert | 0x0040E6A0 | ExpertCollisionEvents |
+| Odd | 0x0040ED30 | OddCollisionEvents |
+| Wobbly | 0x0040F9A0 | WobblyCollisionEvents |
+| Toob | 0x00410020 | ToobCollisionEvents |
+| Sky/Neon | 0x00410D00 | NeonCollisionEvents |
+| Beginner | 0x004111E0 | BeginnerCollisionEvents |
+| Up | 0x004119B0 | UpCollisionEvents |
+| Master/Arena | 0x00412850 | MasterCollisionEvents |
+| Glass | 0x00417EB0 | GlassCollisionEvents |
 
 ```
-Scene vtable determines which top-level handler runs:
-  ├─ Level_HandleCollision (0x40DCD0) — race levels
-  │    └─→ DispatchCollisionEvents (0x40C5D0)  ← shared base
-  └─ Arena_HandleCollision (0x40E6A0) — arenas
-       └─→ DispatchCollisionEvents (0x40C5D0)  ← shared base
+Board vtable[0x1D] (board-specific handler)
+  ├─ Process board-specific events (if event name matches)
+  │   └─ Return early (for some events) OR fall through
+  └─ DispatchCollisionEvents (0x40C5D0) — shared base handler
+      └─ Process universal events (N:GOAL, N:TARPIT, N:WATER, E:JUMP, etc.)
 ```
-Arena and Level handlers are **parallel** — neither calls the other. Both delegate to DispatchCollisionEvents for universal events.
 
-### Arena Events
-| Event Name | Objects Affected |
-|-----------|-----------------|
-| CALLHAMMER | Hammer chase activation |
-| HAMMERCHASE | Hammer movement |
-| ALERTSAW1 | Saw warning #1 |
-| ALERTSAW2 | Saw warning #2 |
-| ACTIVATESAW | Saw blade activation |
-
-### Level Events
+### Tower Events (TowerCollisionEvents)
 | Event Name | Description |
 |-----------|-------------|
-| CATAPULT | Launch pad activation |
-| MACE | Swinging mace collision |
-| TRAPDOOR | Trapdoor opening |
-| ROTATOR | Rotating platform collision |
+| E:CATAPULTBOTTOM | Launch pad activation |
+| N:TRAPDOOR | Trapdoor opening |
+| E:OPENSESAM | Open trapdoor |
+| E:BITE | Mace/Chomper bite damage |
+| E:MACETRIGGER | Trigger mace swing |
+| N:MACE | Mace ball bounce |
+
+### Expert Events (ExpertCollisionEvents)
+| Event Name | Description |
+|-----------|-------------|
+| E:CALLHAMMER | Hammer chase activation |
+| E:HAMMERCHASE | Hammer movement |
+| E:ALERTSAW1/2 | Saw warning |
+| E:ACTIVATESAW1/2 | Saw blade activation |
+| E:ALERTJUDGES | Reset all judges |
+| E:SCORE | Score display |
+| E:BELL | Bell + bonus time |
 
 ### Base Events (DispatchCollisionEvents)
 | Event Name | Description |
@@ -180,8 +201,8 @@ float positions[vertex_count * 3]        // 32-bit float positions
 | 0x4564C0 | Ball_AdvancePositionOrCollision | Main physics pipeline (6 phases) |
 | 0x465EF0 | Collision_TraverseSpatialTree | Octree traversal + AABB test |
 | 0x456D80 | CollisionMesh_ctor | Collision mesh constructor |
-| 0x40E6A0 | Arena_HandleCollision | Arena collision dispatcher |
-| 0x40DCD0 | Level_HandleCollision | Level collision dispatcher |
+| 0x40E6A0 | ExpertCollisionEvents | Expert board collision handler |
+| 0x40DCD0 | TowerCollisionEvents | Tower board collision handler |
 | 0x40C5D0 | DispatchCollisionEvents | Base collision handler |
 | 0x46B070 | WaterRipple_Render | Water ripple collision (physics-based) |
 | 0x415480 | CreateWobbly1 | Wobbly bridge (baked vertex animation) |

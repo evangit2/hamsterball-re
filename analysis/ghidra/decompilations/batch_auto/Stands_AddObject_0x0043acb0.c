@@ -31,7 +31,7 @@
  *   +0x1514: AthenaList data pointer
  *
  * Cross-references:
- *   Called from 0x40F9DD — UNCONDITIONAL_CALL (Arena_HandleCollision)
+ *   Called from 0x40F9DD — UNCONDITIONAL_CALL (ExpertCollisionEvents)
  *   Called from 0x41558A — UNCONDITIONAL_CALL (CreateWobbly1 or similar)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

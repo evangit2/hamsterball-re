@@ -119,7 +119,7 @@ When a ball hits an `E:BELL` event plane:
 2. If not in a race/demo: **+500 bonus time** added to the player's timer (`App+0x5EC`)
 3. A `ScoreObject` popup with `"EXTRA TIME:"` text is created and appended to the scene score list (`RumbleBoard+0x8B8`)
 
-> **Source:** `Arena_HandleCollision` (0x40E6A0), lines 90-108
+> **Source:** `ExpertCollisionEvents` (0x40E6A0), lines 90-108
 
 #### C. Direct ScoreObject Creation
 Any code can create a score popup:
@@ -338,7 +338,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 | Address | Name | Description |
 |---------|------|-------------|
-| `0x40E6A0` | `Arena_HandleCollision` | Master collision dispatcher |
+| `0x40E6A0` | `ExpertCollisionEvents` | Master collision dispatcher |
 | `0x434E20` | `Bell_Activate` | Bell hit → bonus time |
 | `0x438BB0` | `Hammer_ChaseStart` | Start hammer chase sequence |
 | `0x434A50` | `Saw_Activate` | Activate saw blade |
@@ -466,7 +466,7 @@ AthenaList_Append(rumbleBoard + 0x8B8, popup);
 
 | File | Description |
 |------|-------------|
-| `analysis/ghidra/decompilations/collision/decomp_arena_handlecollision.c` | Arena collision events |
+| `analysis/ghidra/decompilations/collision/decomp_expert_collisionevents.c` | Arena collision events |
 | `analysis/ghidra/decompilations/tournament/decomp_rumbleboard_render.c` | HUD rendering |
 | `analysis/ghidra/decompilations/scene/decomp_scene_updateballs.c` | Ball update logic |
 | `analysis/ghidra/structs/rumbleboard_struct.h` | RumbleBoard C struct |

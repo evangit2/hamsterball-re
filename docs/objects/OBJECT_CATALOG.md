@@ -502,7 +502,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 
 ### ScoreObject
 - **Description:** Generic score display object. Created in collision events.
-- **Used by:** `CollisionEvents`, `Arena_HandleCollision`
+- **Used by:** `CollisionEvents`, `ExpertCollisionEvents`
 
 ### RumbleBoard
 - **Constructor:** `RumbleBoard_ctor` (0x4217B0)
@@ -539,7 +539,7 @@ These objects have constructors or factories in the binary but lack deep reverse
 
 | Object | Constructor/Factory | Notes |
 |--------|---------------------|-------|
-| E:LIMIT boundary | `CreateLimit` (0x410D00) | Invisible race boundary |
+| E:LIMIT boundary | `NeonCollisionEvents` (0x410D00) | Invisible race boundary |
 | E:NODIZZY power-up | `DispatchCollisionEvents` (0x40C5D0) | Prevents dizzy state |
 | E:JUMP trigger | *(inline in collision)* | Launch pad trigger object |
 | SAFESPOT | *(inline in factory)* | Safe zone / checkpoint |

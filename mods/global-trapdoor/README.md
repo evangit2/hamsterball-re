@@ -34,7 +34,7 @@ Spawns Tower Race trapdoors on any level with a hotkey.
 
 ## Collision
 
-Handled in `Level_HandleCollision` (0x40DCD0):
+Handled in `TowerCollisionEvents` (0x40DCD0):
 - **"N:TRAPDOOR"** → `Trapdoor_Activate(obj)` @ 0x438410 — sets obj+0x10F4=10, plays sound
 - **"E:OPENSESAME"** → `Trapdoor_Open(obj)` @ 0x4344D0 — opens first trapdoor in drawbridge list
 

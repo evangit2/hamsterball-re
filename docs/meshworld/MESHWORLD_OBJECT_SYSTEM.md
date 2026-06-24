@@ -277,7 +277,7 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
    e. CreateMouseTrap (0x40BF50) — mouse trap spawner
 5. Per-frame: Ball_AdvancePositionOrCollision checks CollisionLevel
    → Mesh_FindClosestCollision (0x465D90) raycasts against named faces
-   → On hit: Level_HandleCollision or Arena_HandleCollision dispatches by name
+   → On hit: TowerCollisionEvents or ExpertCollisionEvents dispatches by name
 ```
 
 ### 4.2 Collision Dispatch Chain
@@ -285,8 +285,8 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 Ball physics update
   → Mesh_FindClosestCollision (0x465D90) — raycast against CollisionLevel
     → If hit named collision object:
-      → Level_HandleCollision (0x40DCD0) [race levels]
-         OR Arena_HandleCollision (0x40E6A0) [arenas]
+      → TowerCollisionEvents (0x40DCD0) [Tower board]
+         OR ExpertCollisionEvents (0x40E6A0) [arenas]
         → __stricmp / __strnicmp on object name (at collider+0x864)
         → Dispatch to specific handler (Catapult_Launch, Trapdoor_Open, etc.)
         → Always ends with: DispatchCollisionEvents (0x40C5D0) — base event handler
@@ -395,6 +395,6 @@ Empty string = length 1, single `\x00` byte.
 - Official exporter: `reference/raptisoft-exporter/MeshWorldExport/`
 - Binary loader: `Level_LoadCollision` at 0x465260 (Ghidra decompilation)
 - ASE parser: `MeshWorld_Parse` at 0x470930 (Ghidra decompilation)
-- Collision dispatch: `Level_HandleCollision` at 0x40DCD0, `Arena_HandleCollision` at 0x40E6A0
+- Collision dispatch: `TowerCollisionEvents` at 0x40DCD0, `ExpertCollisionEvents` at 0x40E6A0
 - Base event handler: `DispatchCollisionEvents` at 0x40C5D0
 - Object factory: `CreateLevelObjects` at 0x4121D0, `CreateExpertLevelObjects` at 0x40E250

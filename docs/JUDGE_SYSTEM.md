@@ -17,7 +17,7 @@ Hammy Judges are floating, spinning score-display objects placed around the Expe
 | Gear_Update (vtable[11]) | 0x434B60 | Per-frame update (countdown + rotation) |
 | Gear_Render (vtable[18]) | 0x43A270 | Renders mesh + floating 3D text |
 | ScoreDisplay_SetTime | 0x434C80 | Sets score text with random modifiers |
-| Arena_HandleCollision | 0x40E6A0 | Collision handler (E:ALERTJUDGES, E:SCORE) |
+| ExpertCollisionEvents | 0x40E6A0 | Collision handler (E:ALERTJUDGES, E:SCORE) |
 | Gear_Level_Dtor | 0x434B50 | Destructor |
 | Gear_DeletingDtor | 0x43A250 | Deleting destructor |
 
@@ -102,7 +102,7 @@ void Gear_Level_ctor(this, board, x, y, z) {
 
 ## Activation — `E:ALERTJUDGES`
 
-When a ball rolls over the `E:ALERTJUDGES` collision trigger, `Arena_HandleCollision` (0x40E6A0) runs:
+When a ball rolls over the `E:ALERTJUDGES` collision trigger, `ExpertCollisionEvents` (0x40E6A0) runs:
 
 ```c
 if (stricmp(event_name, "E:ALERTJUDGES") == 0) {
@@ -261,9 +261,9 @@ The judge mesh is drawn at board+0x4BB0's MeshNode render function, which render
 | +0x4BBC | ~24 | AthenaList — Judge object list |
 | +0x4FC8 | 4 | Internal AthenaList iteration array |
 
-## Arena_HandleCollision Events
+## ExpertCollisionEvents Events
 
-The Expert Arena collision handler (0x40E6A0) processes these events:
+The Expert board collision handler (0x40E6A0) processes these events:
 
 | Event | Action |
 |-------|--------|

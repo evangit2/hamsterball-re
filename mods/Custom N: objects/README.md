@@ -106,7 +106,7 @@ Ball_FallUpdate (0x408830)
 
 ### 4.2 Per-Board Collision Handlers (NOT "Level vs Arena")
 
-**IMPORTANT:** There is no single "Level_HandleCollision" or "Arena_HandleCollision" — these were incorrect Ghidra labels. The truth is that **almost every board type overrides vtable[0x1D] with its own unique collision handler**. Each handler processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base.
+**IMPORTANT:** There is no single "TowerCollisionEvents" or "ExpertCollisionEvents" — these were incorrect Ghidra labels. The truth is that **almost every board type overrides vtable[0x1D] with its own unique collision handler**. Each handler processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base.
 
 The base Scene vtable (0x4D0260) sets vtable[0x1D] = DispatchCollisionEvents directly. Only the WarmUp board uses this default. Every other board overrides it:
 
@@ -119,8 +119,8 @@ The base Scene vtable (0x4D0260) sets vtable[0x1D] = DispatchCollisionEvents dir
 | **Expert** | 0x0040E6A0 | custom | E:CALLHAMMER, E:HAMMERCHASE, E:ALERTSAW1, E:ALERTSAW2, E:ACTIVATESAW1, E:ACTIVATESAW2, E:ALERTJUDGES, E:SCORE, E:JUMP, E:BELL |
 | **Odd** | 0x0040ED30 | custom | E:GRAVITY, N:JUMPFIRST, N:JUMPSECOND, E:SHRINK, E:GROWSOUND, E:GROW, E:DROPLIFT, E:PIPERANDOM, E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW |
 | **Beginner** | 0x004111E0 | custom | N:BUMPER |
-| **Master (Arena)** | 0x00412850 | custom (CreateSpinner) | N:SPINNER, N:BUMPER, E:LAUNCH, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM |
-| **Sky/Neon** | 0x00410D00 | custom (CreateLimit) | E:PEGS, E:TRAPPOP, E:NOPEGS, E:HEATON, E:HEATOFF, E:LIMIT |
+| **Master (Arena)** | 0x00412850 | custom (MasterCollisionEvents) | N:SPINNER, N:BUMPER, E:LAUNCH, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM |
+| **Sky/Neon** | 0x00410D00 | custom (NeonCollisionEvents) | E:PEGS, E:TRAPPOP, E:NOPEGS, E:HEATON, E:HEATOFF, E:LIMIT |
 | **Toob** | 0x00410020 | custom | E:ALERTSAW2, E:BRANCH(A/B), N:SPINNY, N:SAWTEETH, N:BUMPER |
 | **Up** | 0x004119B0 | custom | E:HELPINERTIA, E:UNHELPINERTIA, E:VACPOPOUT, N:SPEEDCYLINDER, N:EXTRATIME |
 | **Wobbly** | 0x0040F9A0 | custom | N:SQUAREWOBBLY, N:WAVY |
@@ -232,7 +232,7 @@ These events are ONLY processed by specific board types. If the ball touches geo
 | `E:JUMP` | Duplicate of base E:JUMP (Expert has its own copy) |
 | `E:BELL` (prefix match) | Activates bell, awards 500 bonus time + creates ScoreObject |
 
-#### Master / Arena (0x00412850 — CreateSpinner)
+#### Master / Arena (0x00412850 — MasterCollisionEvents)
 
 | Event Name | What It Does |
 |-----------|-------------|
@@ -282,7 +282,7 @@ These events are ONLY processed by specific board types. If the ball touches geo
 |-----------|-------------|
 | `N:BUMPER` | Bumper physics: plays sound, scales/reverses velocity (similar to Master's N:BUMPER), sets board flag at +0x6428 + bumperIndex*4 |
 
-#### Sky / Neon Race (0x00410D00 — CreateLimit)
+#### Sky / Neon Race (0x00410D00 — NeonCollisionEvents)
 
 | Event Name | What It Does |
 |-----------|-------------|

@@ -82,7 +82,7 @@ sub-object = [obj+0x10E8]  ; CollisionLevel (created internally)
 ### Physical Collision
 Both constructors create a CollisionLevel sub-object internally via `CollisionLevel_ctorWithLevel` (0x465080). This gives the object its own spatial collision tree built from the mesh geometry. The ball will physically collide with the geometry through the generic spatial tree collision system.
 
-### Neon-Specific Collision Events (Level_HandleCollision @ 0x416CA0)
+### Neon-Specific Collision Events (TowerCollisionEvents @ 0x416CA0)
 The Neon Board vtable has a custom collision handler at vtable[0x74] = 0x416CA0. This handles:
 
 | Event String | Address | Action |
@@ -113,6 +113,6 @@ Finally calls `DispatchCollisionEvents` (0x40C5D0) at the end.
 | DFloor/Trode ctor | 0x43E450 | 0x14 |
 | AthenaList_Append | 0x453810 | 4 |
 | CreateNeonObjects factory | 0x416910 | 0x10 |
-| Level_HandleCollision (Neon) | 0x416CA0 | 8 |
+| TowerCollisionEvents (Neon) | 0x416CA0 | 8 |
 | Board_NeonRace_ctor | 0x424440 | 4 |
 | Scene_SetupLevelDark | 0x416270 | — |

@@ -23,8 +23,8 @@ Spawns functional catapults on any level/arena. Ball is launched via the game's 
 
 1. Ball touches `E:CATAPULTBOTTOM` collision triangle on the catapult's CollisionLevel mesh
 2. Collision dispatch fires:
-   - **Race mode:** `Level_HandleCollision` (0x0040DCD0) iterates `Board+0x43B8`
-   - **Arena mode:** `CreateSpinner` (0x00412850) iterates `Board+0x584C`
+   - **Race mode:** `TowerCollisionEvents` (0x0040DCD0) iterates `Board+0x43B8`
+   - **Arena mode:** `MasterCollisionEvents` (0x00412850) iterates `Board+0x584C`
 3. For each catapult in the list, checks `catapult+0x10D4 == *collision_entry`
 4. On match: sets `catapult+0x10EC = ball_ptr`, calls `Catapult_Launch(catapult)`
 5. `Catapult_Launch` sets `+0x10F0 = 1` (active), `+0x10F4 = 50` (launch timer frames)

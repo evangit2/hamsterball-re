@@ -1,14 +1,14 @@
 /*
- * Function: Arena_HandleCollision
+ * Function: ExpertCollisionEvents
  * Address: 0x0040e6a0
- * Signature: void __thiscall Arena_HandleCollision(void *this,int *param_1,int *param_2)
+ * Signature: void __thiscall ExpertCollisionEvents(void *this,int *param_1,int *param_2)
  *
- * Patterns: allocates, SEH frame, audio, collision, ball. Calls: Arena_HandleCollision, __stricmp, CreateBonkPopup, Hammer_ChaseStart, Saw_AlertActivate, Saw_Activate, AthenaList_NextIndex, Judge_Reset. Offsets: 18, Lines: 110
+ * Patterns: allocates, SEH frame, audio, collision, ball. Calls: ExpertCollisionEvents, __stricmp, CreateBonkPopup, Hammer_ChaseStart, Saw_AlertActivate, Saw_Activate, AthenaList_NextIndex, Judge_Reset. Offsets: 18, Lines: 110
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __thiscall Arena_HandleCollision(void *this,int *param_1,int *param_2)
+void __thiscall ExpertCollisionEvents(void *this,int *param_1,int *param_2)
 
 {
   int iVar1;

@@ -8,9 +8,9 @@ The collision event system uses a **2-tier dispatcher chain**. The scene's vtabl
 Ball Update (ball->vtable[0x10], called from Scene_UpdateBallsAndState 0x41B540)
   └─ Geometric collision detected by Ball_AdvancePositionOrCollision (0x4564C0)
        └─ Event dispatch based on object name string at collObj+0x864
-            ├─ Arena_HandleCollision (0x40E6A0)  ← Rumble arenas (vtable-driven)
+            ├─ ExpertCollisionEvents (0x40E6A0)  ← Rumble arenas (vtable-driven)
             │    └─ DispatchCollisionEvents (0x40C5D0)  ← Shared base (ALL events)
-            └─ Level_HandleCollision (0x40DCD0)  ← Race levels (vtable-driven)
+            └─ TowerCollisionEvents (0x40DCD0)  ← Race levels (vtable-driven)
                  └─ DispatchCollisionEvents (0x40C5D0)  ← Shared base (ALL events)
 ```
 
@@ -18,7 +18,7 @@ Arena and Level handlers are **parallel, not chained** — they never call each 
 
 ## Event Dispatch Table
 
-### Tier 1: Arena_HandleCollision (0x40E6A0) — Arena Events
+### Tier 1: ExpertCollisionEvents (0x40E6A0) — Arena Events
 **Domain**: Rumble arena multiplayer events. Most events gated behind `App+0x23C` (multiplayer flag).
 
 | Event | Effect | Gated |
@@ -34,9 +34,9 @@ Arena and Level handlers are **parallel, not chained** — they never call each 
 | E:JUMP | Ball bounce + sound + 200pts | No |
 | E:BELL | Extra time (+500) + popup | No |
 
-After processing: **delegates to DispatchCollisionEvents** (not to Level_HandleCollision — Arena and Level are parallel).
+After processing: **delegates to DispatchCollisionEvents** (not to TowerCollisionEvents — Arena and Level are parallel).
 
-### Tier 2: Level_HandleCollision (0x40DCD0) — Level Events
+### Tier 2: TowerCollisionEvents (0x40DCD0) — Level Events
 **Domain**: Race level mechanical objects.
 
 | Event | Effect | Details |

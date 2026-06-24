@@ -1,5 +1,5 @@
 /*
- * Function: CreateLimit
+ * Function: NeonCollisionEvents
  * Address: 0x00410d00
  *
  * Description:

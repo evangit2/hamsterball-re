@@ -4,7 +4,7 @@
 
 Catapults are level objects that launch the ball when it touches a specific collision surface. They appear in Level4 (Dizzy Race) and the Dizzy Arena. The catapult mesh is loaded from `Levels/Level4-Catapult.MESHWORLD`, which contains a single entity name: `E:CATAPULTBOTTOM`.
 
-**Why your global-spawn catapults are "hollow":** Catapults are NOT standalone objects — they require a `CollisionLevel` child object with a spatial tree, the mesh must be registered with the scene's collision system, the catapult must be added to TWO AthenaLists on the scene (general + catapult-specific), and the launch is triggered by the **collision dispatcher** (Level_HandleCollision / HandleArenaCollisionEvents) matching the collision entry's entity name. If you just `operator_new` + `Catapult_ctor` without going through `CreateLevelObjects`, you get a visual shell with no collision registration and no event-name association.
+**Why your global-spawn catapults are "hollow":** Catapults are NOT standalone objects — they require a `CollisionLevel` child object with a spatial tree, the mesh must be registered with the scene's collision system, the catapult must be added to TWO AthenaLists on the scene (general + catapult-specific), and the launch is triggered by the **collision dispatcher** (TowerCollisionEvents / HandleArenaCollisionEvents) matching the collision entry's entity name. If you just `operator_new` + `Catapult_ctor` without going through `CreateLevelObjects`, you get a visual shell with no collision registration and no event-name association.
 
 ---
 
@@ -57,7 +57,7 @@ All offsets are byte offsets from the catapult object pointer.
 | +0x10D8 | float[3] | position | **XYZ position** (set from param_4 in CreateLevelObjects) |
 | +0x10E4 | int | pad | Set to 0 |
 | +0x10E8 | float | launch_dir_y | Initial value = **-1.0** (0xBF800000) — negative Y = downward initial direction |
-| +0x10EC | void* | launch_ball_ptr | **Ball to launch** (set by Level_HandleCollision when E:CATAPULTBOTTOM fires) |
+| +0x10EC | void* | launch_ball_ptr | **Ball to launch** (set by TowerCollisionEvents when E:CATAPULTBOTTOM fires) |
 | +0x10F0 | float | launch_timer | **Launch countdown timer** (set to 0 initially, set to 50.0 by Catapult_Launch, decremented each frame) |
 | +0x10F4 | float | launch_decrement | Set to **50.0** (0x42480000) by Catapult_Launch — wait, that's wrong. |
 | +0x10F8 | AthenaList | ball_list | **List of balls currently on the catapult** (AthenaList, initialized in ctor) |
@@ -202,12 +202,12 @@ void* CollisionLevel_ctorWithLevel(void* this, int parent_level) {
 
 The game's collision system (SpatialTree) detects when the ball intersects a collision triangle. When a collision entry is created, its entity name (at `collision_obj+0x864`) is checked by the **collision dispatcher**.
 
-### Race Mode: Level_HandleCollision
+### Race Mode: TowerCollisionEvents
 
-`Level_HandleCollision` (@ 0x0040DCD0, `__thiscall`):
+`TowerCollisionEvents` (@ 0x0040DCD0, `__thiscall`):
 
 ```c
-void Level_HandleCollision(void* this, int* ball, int* coll_obj) {
+void TowerCollisionEvents(void* this, int* ball, int* coll_obj) {
     // Check entity name on the collision object
     if (__stricmp(*(char**)(coll_obj[1] + 0x864), "E:CATAPULTBOTTOM") == 0) {
         // Cooldown check: ball+0x202 prevents re-triggering
@@ -389,10 +389,10 @@ The catapult's collision geometry (the "bottom" surface the ball touches) is tag
 
 | Context | General Objects List | Catapult List | Catapult Items Array |
 |---|---|---|---|
-| **Race (Level_HandleCollision)** | Scene+0x2578 | Scene+0x43B8 | Scene+0x47C4 |
+| **Race (TowerCollisionEvents)** | Scene+0x2578 | Scene+0x43B8 | Scene+0x47C4 |
 | **Arena (HandleArenaCollisionEvents)** | Scene+0x2578 | Scene+0x584C | Scene+0x5C58 |
 
-> Note: In race mode, `Scene+0x43B8` is the catapult AthenaList and `Scene+0x47C4` is its internal items array. In arena mode, `Scene+0x584C` and `Scene+0x5C58` serve the same purpose. The CreateLevelObjects factory adds to `Scene+0x584C` for both modes — the arena offsets appear to be the primary ones, and Level_HandleCollision uses different offsets that may be set up during race initialization.
+> Note: In race mode, `Scene+0x43B8` is the catapult AthenaList and `Scene+0x47C4` is its internal items array. In arena mode, `Scene+0x584C` and `Scene+0x5C58` serve the same purpose. The CreateLevelObjects factory adds to `Scene+0x584C` for both modes — the arena offsets appear to be the primary ones, and TowerCollisionEvents uses different offsets that may be set up during race initialization.
 
 ---
 
@@ -443,7 +443,7 @@ The `CollisionLevel` at `cat+0x10D4` has its own SpatialTree (cloned from the pa
 In the normal level loading flow, this happens because:
 1. `Level_LoadMeshes` creates MeshBuffers with entity names and collision triangles
 2. The SpatialTree in the CollisionLevel stores these triangles
-3. When `Level_HandleCollision` / `HandleArenaCollisionEvents` checks `catapult+0x10D4 == *coll_obj`, it's matching the collision object that was created from the CollisionLevel's mesh data
+3. When `TowerCollisionEvents` / `HandleArenaCollisionEvents` checks `catapult+0x10D4 == *coll_obj`, it's matching the collision object that was created from the CollisionLevel's mesh data
 
 **For a global spawn**, you need to ensure:
 1. The CollisionLevel's mesh is loaded (Catapult_ctor does this via `CollisionLevel_ctorWithLevel`)
@@ -466,7 +466,7 @@ The simplest approach: call `CreateLevelObjects` with a mesh named "CATAPULT" �
 | 0x0043EA50 | Catapult_Vec3List_DeletingDtor | Destructor |
 | 0x00437820 | Catapult_Vec3List_Level_Dtor | Level destructor |
 | 0x00412711 | CreateLevelObjects | Factory: matches "CATAPULT" mesh name |
-| 0x0040DCD0 | Level_HandleCollision | Race collision dispatcher (E:CATAPULTBOTTOM) |
+| 0x0040DCD0 | TowerCollisionEvents | Race collision dispatcher (E:CATAPULTBOTTOM) |
 | 0x00412D57 | HandleArenaCollisionEvents | Arena collision dispatcher (E:CATAPULTBOTTOM) |
 | 0x00462850 | Stands_ctor | Parent constructor |
 | 0x00465080 | CollisionLevel_ctorWithLevel | Creates CollisionLevel + loads meshes |

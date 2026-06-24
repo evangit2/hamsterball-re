@@ -340,7 +340,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 | `N:GOAL` | `!finished && active` | Set `goalReached=1`, play music, mark finished |
 | `N:MOUSETRAP` | — | Randomize RNG, deflect direction × trap speed |
 
-### `Level_HandleCollision`
+### `TowerCollisionEvents`
 - **Address:** `0x40DCD0`
 - **Description:** Level-specific events, then delegates to `DispatchCollisionEvents`:
   - `E:CATAPULTBOTTOM` → launch catapult
@@ -349,7 +349,7 @@ A comprehensive reference of every useful function for modders, extracted from G
   - `E:BITE` → `scene+0x43A0 = 25.0`
   - `E:MACETRIGGER` → activate maces
 
-### `Arena_HandleCollision`
+### `ExpertCollisionEvents`
 - **Address:** `0x40E6A0`
 - **Description:** Arena-specific events (see `docs/ARENA_SCORING.md` for full table):
   - `E:CALLHAMMER` → `CreateBonkPopup`

@@ -111,7 +111,7 @@ high scores. Also may check for purchase/unlock status.
 
 ## Damage System
 
-From Level_HandleCollision (0x40DCD0):
+From TowerCollisionEvents (0x40DCD0):
 
 ### "E:BITE" Collision Event
 
@@ -124,7 +124,7 @@ and potentially affecting ball speed/handling temporarily.
 
 ## Jump Pad System
 
-From Arena_HandleCollision (0x40E6A0):
+From ExpertCollisionEvents (0x40E6A0):
 
 ### "E:JUMP" Collision Event
 

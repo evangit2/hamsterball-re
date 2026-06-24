@@ -24,12 +24,12 @@ Ball_FallUpdate (0x408830, vtable[65] at offset 0x104)
   └─ For each collision entry in physics+0x848 list:
       └─ board->vtable[0x1D] (offset +0x74)
           │
-          ├─ Level_HandleCollision  (0x40DCD0) — race levels (optional override)
-          ├─ Arena_HandleCollision  (0x40E6A0) — arenas (optional override)
+          ├─ TowerCollisionEvents  (0x40DCD0) — Tower board (optional override)
+          ├─ ExpertCollisionEvents  (0x40E6A0) — arenas (optional override)
           └─ DispatchCollisionEvents (0x40C5D0) — shared base, ALWAYS called last
 ```
 
-**Key insight:** `DispatchCollisionEvents` is the universal chokepoint. Every level-specific handler (`Level_HandleCollision`, `Arena_HandleCollision`, and the 25+ unnamed board-specific handlers) processes its own `E:` events, then falls through to `DispatchCollisionEvents` as a catch-all. Hooking this one function gives you coverage for ALL board types and ALL game modes.
+**Key insight:** `DispatchCollisionEvents` is the universal chokepoint. Every level-specific handler (`TowerCollisionEvents`, `ExpertCollisionEvents`, and the 25+ unnamed board-specific handlers) processes its own `E:` events, then falls through to `DispatchCollisionEvents` as a catch-all. Hooking this one function gives you coverage for ALL board types and ALL game modes.
 
 ### Calling Convention
 
@@ -648,7 +648,7 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 | `E:PIPEBONK` | suffix match | Random sound + 100 score (cooldown 10) |
 | `E:POPOUT` | suffix match | Sound + 100 score (cooldown 50) |
 
-### `Level_HandleCollision` (0x40DCD0) — Race-Only Events
+### `TowerCollisionEvents` (0x40DCD0) — Race-Only Events
 
 | Event | Effect |
 |-------|--------|
@@ -659,7 +659,7 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 | `E:MACETRIGGER` | Activate all maces |
 | `N:MACE` | Ball bounce on mace |
 
-### `Arena_HandleCollision` (0x40E6A0) — Arena-Only Events
+### `ExpertCollisionEvents` (0x40E6A0) — Arena-Only Events
 
 | Event | Effect |
 |-------|--------|
@@ -690,8 +690,8 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 | Address | Function | Purpose |
 |---------|----------|---------|
 | `0x0040C5D0` | `DispatchCollisionEvents` | **Hook target** — universal event dispatcher |
-| `0x0040DCD0` | `Level_HandleCollision` | Race-specific events (optional secondary hook) |
-| `0x0040E6A0` | `Arena_HandleCollision` | Arena-specific events (optional secondary hook) |
+| `0x0040DCD0` | `TowerCollisionEvents` | Race-specific events (optional secondary hook) |
+| `0x0040E6A0` | `ExpertCollisionEvents` | Arena-specific events (optional secondary hook) |
 | `0x00402400` | `Ball_RecordBest` | Award score to ball |
 | `0x00465D90` | `Mesh_FindClosestCollision` | Raycast collision (for custom collision checks) |
 | `0x00465260` | `Level_LoadCollision` | How event planes are loaded from MESHWORLD |

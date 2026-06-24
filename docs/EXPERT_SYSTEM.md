@@ -128,7 +128,7 @@ On non-Expert levels, these are NOT initialized → must call `AthenaList_Init(0
 
 ## Collision Events
 
-**Level_HandleCollision** @ `0x40E6A0` (Expert Board vtable[29] at 0x74):
+**TowerCollisionEvents** @ `0x40E6A0` (Expert Board vtable[29] at 0x74):
 
 | Event | String Addr | Handler | Action |
 |-------|-------------|---------|--------|

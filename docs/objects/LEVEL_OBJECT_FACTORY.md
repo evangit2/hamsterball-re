@@ -38,7 +38,7 @@ All created objects are appended to **Scene+0x2578** (AthenaList, the master obj
 | 0x40C5D0 | DispatchCollisionEvents | No-dizzy pickup | 27 xrefs — common collectible |
 | 0x40E250 | CreateExpertLevelObjects | BONK/TOWER/SAWBLADE/BRIDGE/JUDGE/BELL | Multi-factory for arena |
 | 0x40FA20 | CreateBumper | Bumper | Standard collision bumper |
-| 0x410D00 | CreateLimit | Level boundary | Invisible wall/limit |
+| 0x410D00 | NeonCollisionEvents | Level boundary | Invisible wall/limit |
 | 0x4117B0 | CreateUpLevelObjects | Speed boost | Acceleration cylinder |
 | 0x412850 | HandleArenaCollisionEvents | Spinning obstacle | Rotating hazard |
 | 0x4133E0 | CreatePlatformOrStands | Platform/Stands | 16 xrefs - most common factory |
