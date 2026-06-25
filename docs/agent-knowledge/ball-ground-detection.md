@@ -26,35 +26,24 @@ Previous versions of multiple docs (BALL_OBJECT.md, BALL_UPDATE_DECOMP.md, etc.)
 
 ### What 0x2E9 actually is
 
-`Ball+0x2E9` is a **sticky limit/trajectory flag**:
+`Ball+0x2E9` is a **limit/trajectory flag**:
 
 - **Set to 1** by:
   - `E:LIMIT` arena events (finish line reached)
   - Type-5 floor collision with deep penetration (`piVar16[0x15] > _DAT_004cf310`)
-- **NEVER cleared within `Ball_Update` (0x405E00)**
+- **Cleared to 0** by `Ball_FindClosestRespawnPoint` (at 0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2`
 
-### Why the "cleared each frame" myth exists
+### ⚠ CORRECTION: Previous "sticky flag" claim was wrong
 
-The clears in `Ball_FindClosestRespawnPoint` (0x405190) and decompiled `Ball_Update` appear as:
-```c
-*(undefined1 *)(param_1 + 0x2e9) = 0;
+Previous versions of this doc claimed `Ball_FindClosestRespawnPoint`'s clear was `int*` arithmetic writing to `+0xBA4` instead of `+0x2E9`, making the flag "sticky." **This was wrong.** The actual disassembly at 0x00405262 is:
+
+```asm
+00405262: C6 86 E9 02 00 00 00    MOV byte [ESI+0x2E9], 0
 ```
 
-But `param_1` is declared as `int*` (int pointer). `int* + 0x2e9` = **byte offset `0x2e9 * 4 = 0xBA4`**, NOT byte offset `0x2E9`.
+This is a direct byte write to offset `0x2E9` via the ModRM `9E` encoding (`[ESI+disp32]`). The Ghidra decompilation's `param_1 + 0x2e9` uses `param_1` declared as `int` (not `int*`), so the arithmetic IS byte offset `0x2E9`. The flag IS properly cleared on respawn.
 
-The actual byte at `Ball+0x2E9` is ONLY cleared by `Ball_ctor2` (full constructor, called on respawn). The `Ball_Update` code that writes to it:
-```c
-// In decomp_0x405E00_Ball_Update.c, line 804:
-*(undefined1 *)((int)param_1 + 0x2e9) = 1;  // SET: uses (int) cast = byte offset 0x2E9
-```
-
-Note the `(int)` cast — this IS a byte offset. But the clears do NOT use this cast:
-```c
-// In decomp_ball_update.c, line 81:
-*(undefined1 *)(param_1 + 0x2e9) = 0;  // CLEAR: uses int* arithmetic = byte offset 0xBA4
-```
-
-**This makes `0x2E9` a sticky flag** — once set to 1, it stays 1 until the ball is fully reconstructed by `Ball_ctor2`.
+However, the flag is still **not cleared per-frame within `Ball_Update`** — it persists between frames within a single life. It's only cleared on respawn/teleport, not every physics tick.
 
 ### Real-world bug caused by this
 
