@@ -301,10 +301,13 @@ def compute_related_docs(files_info: dict) -> dict:
             if other_info["type"] == my_type:
                 scores[other_path] += 1
         
-        # Sort by score, take top 3
-        top = sorted(scores.items(), key=lambda x: -x[1])[:3]
-        # Only keep strong relationships (score >= 5 = at least one shared hex addr)
-        related[rel_path] = [(p, s) for p, s in top if s >= 5]
+        # Sort by score, take top 2
+        top = sorted(scores.items(), key=lambda x: -x[1])[:2]
+        related_list = [(p, s) for p, s in top if s >= 5]
+        # Ensure every doc has at least 1 link (take strongest match even if score < 5)
+        if not related_list and top:
+            related_list = [top[0]]
+        related[rel_path] = related_list
     
     return related
 
