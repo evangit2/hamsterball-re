@@ -12,3 +12,4 @@
 | wall-bumpers | All walls act as pinball bumpers — velocity-reversal detection amplifies wall bounces. F8 toggle, F9 force cycle | [wall_bumpers/](wall_bumpers/) |
 | ball-break | Press X to shatter your ball and respawn at nearest checkpoint. Calls the game's own Ball_Shatter function | [ball_break/](ball_break/) |
 | raptisoft-live-log | Passive logger — taps Raptisoft's hidden in-memory status tracking system (App+0x208/0x20C/0x210) and writes live updates to live_status.txt. No gameplay changes | [raptisoft_live_log/](raptisoft_live_log/) |
+| level-colors | Changes per-level base colors (timer oval, timer text, race selection menu text) from a colors.txt config file. Edit at runtime | [level_colors/](level_colors/) |
