@@ -38,17 +38,23 @@ When these conditions are met, the flag is set AND:
 - `Graphics_SetViewport` sets up the viewport around the ball position
 - A viewport bounds check may set the swallow flag (`ball+0xBA = 1`), which triggers respawn
 
-## The Clear Bug
+## Clearing
 
-`Ball_FindClosestRespawnPoint` (0x00405190) attempts to clear the flag:
+`Ball_FindClosestRespawnPoint` (0x00405190) clears the flag at address 0x00405262:
 
-```c
-*(undefined1 *)(param_1 + 0x2e9) = 0;   // NO (int) cast!
+```asm
+00405262: C6 86 E9 02 00 00 00    MOV byte [ESI+0x2E9], 0
 ```
 
-But `param_1` is `int*`, so `param_1 + 0x2e9` = byte offset `0x2E9 * 4 = 0xBA4`, NOT byte offset `0x2E9`. This means the clear writes to `Ball+0xBA4`, not `Ball+0x2E9`.
+The Ghidra decompilation shows `*(undefined1 *)(param_1 + 0x2e9) = 0` without an `(int)` cast. Previous documentation (ball-ground-detection.md) claimed this was `int*` arithmetic writing to `+0xBA4` instead of `+0x2E9`. **This was wrong.** The actual disassembly confirms it is `MOV byte [ESI+0x2E9], 0` — a direct byte write to offset `0x2E9` via the ModRM `9E` encoding (`[ESI+disp32]`). The flag IS properly cleared on respawn.
 
-**Result: Once `limit_flag` is set to 1, it stays 1 until `Ball_ctor2` fully reconstructs the ball.** The respawn teleport (`Ball_FindClosestRespawnPoint`) does NOT clear it.
+`Ball_ctor2` (0x004039E0) also initializes it to 0:
+
+```asm
+; At ctor2+0x1FE: 88 9E E9 02 00 00 = MOV [ESI+0x2E9], BL  (BL pre-loaded with 0)
+```
+
+**Result: `limit_flag` is cleared both on respawn (`Ball_FindClosestRespawnPoint`) and on full reconstruction (`Ball_ctor2`).** It is NOT sticky — the previous "sticky flag" claim was based on an incorrect `int*` arithmetic assumption that the disassembly disproves.
 
 ## Effects When Set (limit_flag = 1)
 
@@ -119,7 +125,7 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | **Name** | `limit_flag` |
 | **Init** | 0 (by `Ball_ctor2`) |
 | **Set by** | Type-5 floor collision, speed > 1.0, `in_shrunk == 0` |
-| **Cleared by** | Only `Ball_ctor2` (full reconstruction). `Ball_FindClosestRespawnPoint` writes to wrong offset (0xBA4 instead of 0x2E9) |
+| **Cleared by** | `Ball_FindClosestRespawnPoint` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x004039E0+0x1FE: `MOV [ESI+0x2E9],BL`) |
 | **Effect 1** | Skip `Ball_ApplyTrajectory` — no wall bouncing |
 | **Effect 2** | Trigger `Ball_Shatter` on wall hit if moving in "wrong" direction |
 | **Effect 3** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
