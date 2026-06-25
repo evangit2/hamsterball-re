@@ -1,24 +1,33 @@
 # half_size_all
 
-Halves ALL balls' size using the game's own `Ball_Shrink` function
+Shrinks the player's ball to half size by inlining Ball_Shrink's physics fields
 
 ## How It Works
 
-Instead of patching float immediates, this mod hooks two ball creation points and calls the game's own `Ball_Shrink` function (0x00402200) — the same function Odd Race uses to shrink the ball in its pipe maze.
+Hooks `Scene_SpawnBallsAndObjects` at the point where the player ball has just been created and registered. A code cave checks if the ball's player index (`ball+0x18`) is 0, and if so, writes the same three fields that `Ball_Shrink` (0x00402200) sets — but **without calling the function**, so no sound effect plays.
 
-**`Ball_Shrink`** sets:
-- `ball+0x284` = 13.0 (radius, down from 26.0)
-- `ball+0x188` = 2.5 (physics_scale, down from 5.0)
-- `ball+0xC4C` = 1 (is_falling flag)
+**Fields written (identical to Ball_Shrink):**
 
-### Hooks
+| Ball Offset | Field | Value | Effect |
+|-------------|-------|-------|--------|
+| `+0x284` | radius | 13.0 (0x41500000) | Half visual + collision size |
+| `+0x188` | physics_scale | 2.5 (0x40200000) | Half max speed |
+| `+0xC4C` | is_falling | 1 | Shrunk physics state |
 
-| Hook | Address | Target | Catches |
-|------|---------|--------|---------|
-| Ball_ctor2 exit | 0x00403DB1 | `Ball_Shrink` via code cave | Player, split, follow, board-init balls |
-| CreateBadBall FSTP | 0x0040BE74 | `Ball_Shrink` via code cave | AI/bad balls (after SIZE computed) |
+**Only player index 0 is affected.** AI balls, split balls, follow balls, and board-init balls remain normal size.
 
-Each hook saves registers, sets ECX = ball pointer (`__fastcall`), calls `Ball_Shrink`, restores registers, then executes the original instruction.
+## Hook Details
+
+| Hook Point | Address | Original Instruction | Catches |
+|------------|---------|---------------------|---------|
+| Scene_SpawnBallsAndObjects | 0x0041C8D7 | `MOV byte [ESI+0x281], 0` (7 bytes) | Player balls (loop, gated on index 0) |
+
+The code cave:
+1. `CMP dword [ESI+0x18], 0` — is this player 0?
+2. If no → skip to step 4
+3. If yes → write radius=13.0, physics_scale=2.5, is_falling=1
+4. Execute original `MOV byte [ESI+0x281], 0`
+5. `JMP` back to 0x0041C8DE
 
 ## Files
 - `half_size_balls.c` — C source code
@@ -31,4 +40,4 @@ BASS.dll proxy. Installation:
 2. Copy the mod's `bass.dll` into the game folder
 3. Launch Hamsterball
 
-A `Hamsterball_half_size.log` file is written next to the EXE showing which hooks applied.
+A `Hamsterball_half_size.log` file is written next to the EXE showing whether the hook applied.
