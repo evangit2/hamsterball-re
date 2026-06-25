@@ -90,16 +90,43 @@ def get_type_for_file(filepath: str) -> str:
     if filepath == "README.md": return "root"
     return "docs"
 
+def shorten_title(title: str) -> str:
+    """Intelligently shorten a title for graph display."""
+    # Remove common prefixes
+    for prefix in ["Hamsterball — ", "Hamsterball - ", "Hamsterball ", "The "]:
+        if title.startswith(prefix):
+            title = title[len(prefix):]
+            break
+    
+    # Cut at subtitle separators — take the main part
+    for sep in [" — ", " - ", ": "]:
+        if sep in title:
+            main = title.split(sep)[0].strip()
+            # Only use the shorter part if it's still meaningful
+            if len(main) >= 5:
+                title = main
+                break
+    
+    # Remove common suffixes
+    for suffix in [" Complete Reverse Engineering", " Complete Modder's Reference",
+                   " Comprehensive Analysis", " Design Document", " — Complete RE",
+                   " (Expert + Tower Races)", " (Expert Race)", " (Session 2928)"]:
+        if title.endswith(suffix):
+            title = title[:-len(suffix)]
+            break
+    
+    # If still too long, cap at 30 chars
+    if len(title) > 30:
+        title = title[:30]
+    
+    return title.strip()
+
 def extract_title(filepath: str, content: str) -> str:
     """Extract title from first H1 heading, or fall back to filename."""
     # Try H1
     match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
     if match:
-        title = match.group(1).strip()
-        # Shorten for graph readability — cap at 17 chars
-        if len(title) > 17:
-            title = title[:14] + "..."
-        return title
+        return shorten_title(match.group(1).strip())
     # Try filename without extension
     return Path(filepath).stem.replace("_", " ").replace("-", " ")
 
