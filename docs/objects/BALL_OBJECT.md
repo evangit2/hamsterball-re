@@ -415,7 +415,7 @@ Note: Arena and Level handlers are **parallel**, not chained. Ball_AdvancePositi
 |-------------|----------------|
 | 0x164–0x16C (pos) | 3D sound positioning |
 | 0x170–0x178 (vel) | Cleared by TARPIT, modified by JUMP |
-| 0x2DC–0x2E4 (checkpoint) | `Ball_StartFall` respawns here |
+| 0x2DC–0x2E4 (checkpoint) | `Ball_Shrink` respawns here |
 | 0xC2C (section_filter) | `E:SAFESWITCH` copies data here |
 | 0xC4C (airborne) | Set by fall code |
 
@@ -477,14 +477,14 @@ Called when the ball falls off the track:
 3. Clean up trail particles
 4. After fall animation completes, respawn at last checkpoint (0x2DC)
 
-### Ball_StartFall (0x402200)
+### Ball_Shrink (0x402200)
 
 Marks ball as fallen:
 - `airborne = 1`
 - `radius = 13.0`
 - Play 3D sound at ball position
 
-### Ball_EndFall (0x402270)
+### Ball_Grow (0x402270)
 
 Resets from fallen state:
 - `airborne = 0`
@@ -522,7 +522,7 @@ Initializes ball for Rodent Rumble arena mode:
 | 3 | Ball_GetInputForce | 0x46EC30 | On input | Add custom actions (brake, jump, camera snap) |
 | 4 | Ball_CollisionCheck | 0x402DE0 | Every frame | Disable collision (noclip), custom bounce logic |
 | 5 | Ball_Render | 0x402860 | Every frame | Custom visual effects, wireframe, size changes |
-| 6 | Ball_StartFall | 0x402200 | On OOB | Prevent falling, teleport instead |
+| 6 | Ball_Shrink | 0x402200 | On OOB | Prevent falling, teleport instead |
 | 7 | Scene_UpdateBallsAndState | 0x41B540 | Every frame | Modify ball list iteration, add/remove balls |
 | 8 | Ball_AI_ChaseNearest | 0x408390 | AI tick | Change AI behavior, make AI friendly/hostile |
 
@@ -580,8 +580,8 @@ gravity[2] = 0.0f;   // Z
 | 0x401590 | Ball_vtable5 | — | Unknown vtable slot |
 | 0x401920 | Ball_RenderShadow | — | Shadow quad renderer |
 | 0x401DD0 | Ball_CreateTrailParticles | — | 9-particle trail ring |
-| 0x402200 | Ball_StartFall | — | Mark fallen, shrink radius |
-| 0x402270 | Ball_EndFall | — | Reset from fallen state |
+| 0x402200 | Ball_Shrink | — | Mark fallen, shrink radius |
+| 0x402270 | Ball_Grow | — | Reset from fallen state |
 | 0x402650 | Ball_ApplyForce | 47 | Apply force vector to velocity |
 | 0x4027F0 | Ball_dtor | — | Destructor |
 | 0x402810 | Ball_CheckCollisionPlanes | — | 6-plane collision test |

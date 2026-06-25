@@ -109,7 +109,7 @@ During gameplay, scores increase through these mechanisms:
 
 #### A. Ball Falls Off Board
 When a ball falls off the arena platform:
-1. `Ball_StartFall` (0x402200) triggers — sets airborne flag, plays sound
+1. `Ball_Shrink` (0x402200) triggers — sets airborne flag, plays sound
 2. `Ball_FallUpdate` (0x408830) runs physics until ball hits void
 3. The RumbleBoard detects the fallen player and awards **+10 points** to all surviving players via `Rotator_AddBall` (0x43B6F0)
 
@@ -330,7 +330,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 | Address | Name | Description |
 |---------|------|-------------|
-| `0x402200` | `Ball_StartFall` | Ball begins falling off board |
+| `0x402200` | `Ball_Shrink` | Ball begins falling off board |
 | `0x408830` | `Ball_FallUpdate` | Physics update while falling |
 | `0x405190` | `Ball_FindClosestRespawnPoint` | Find respawn after fall |
 

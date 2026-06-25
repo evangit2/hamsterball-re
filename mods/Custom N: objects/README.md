@@ -289,9 +289,9 @@ These events are ONLY processed by specific board types. If the ball touches geo
 | `E:GRAVITY(TYPE)` | Changes gravity type: `NORMAL` → `Ball_ResetCollisionMesh`, `X` → `Ball_SetTiltedGravity`, `Z` → `Ball_SetFlatGravity`. Parses XML tags. |
 | `N:JUMPFIRST` | Teleports ball to "JUMPPIPE1" position, sets upward trajectory (Y=16.0) |
 | `N:JUMPSECOND` | Teleports ball to "JUMPPIPE2" position, sets upward trajectory (Y=16.0) |
-| `E:SHRINK` | Calls `Ball_StartFall` (shrinks ball), teleports to "SHRINKCENTER", sets downward trajectory (Y=-1.0) |
+| `E:SHRINK` | Calls `Ball_Shrink` (shrinks ball), teleports to "SHRINKCENTER", sets downward trajectory (Y=-1.0) |
 | `E:GROWSOUND` | Plays grow sound (cooldown: `ball[0x1FE]`, 100 frames) |
-| `E:GROW` | Calls `Ball_EndFall` (restores ball size) |
+| `E:GROW` | Calls `Ball_Grow` (restores ball size) |
 | `E:DROPLIFT` | Calls `Stands_PlayBreakSound` on mesh at board+0x436C |
 | `E:PIPERANDOM` | Randomly teleports ball to "PIPERANDOM1" or "PIPERANDOM2" position, zeroes velocity, plays sound |
 | `E:LIMIT` | If `ball[0x1D2] == 0`: sets `ball+0x1DA = 0`, `ball+0x2E9 = 1` (qualifies for this limit gate) |

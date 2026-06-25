@@ -1,7 +1,7 @@
 /*
- * Function: Ball_StartFall
+ * Function: Ball_Shrink
  * Address: 0x00402200
- * Signature: void __fastcall Ball_StartFall(int param_1)
+ * Signature: void __fastcall Ball_Shrink(int param_1)
  *
  * Description:
  * Initiates the ball's falling state. This is called when a ball goes off the
@@ -35,7 +35,7 @@
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall Ball_StartFall(int param_1)
+void __fastcall Ball_Shrink(int param_1)
 
 {
   *(undefined1 *)(param_1 + 0xc4c) = 1;
