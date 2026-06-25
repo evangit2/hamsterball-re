@@ -1,25 +1,17 @@
 /*
- * half_size_balls.c — BASS.dll proxy that shrinks all balls to half size.
+ * half_size_balls.c — BASS.dll proxy that shrinks the player's ball to half size.
  *
- * Uses the game's own Ball_Shrink function (0x00402200) — the same function
- * the Odd Race uses to shrink the ball in its pipe maze. This is cleaner than
- * patching float immediates because it exactly replicates the game's shrink
- * behavior: radius 26→13, physics_scale 5→2.5, is_falling flag set.
+ * Hooks the player ball spawn in Scene_SpawnBallsAndObjects and inlines the
+ * same field writes that Ball_Shrink (0x00402200) performs — but WITHOUT
+ * calling the function, so no sound effect plays.
  *
- * Two hooks:
- *   1. Ball_ctor2 exit (0x00403DB1): catches ALL balls at creation
- *      (player, split, follow, board-init). Calls Ball_Shrink(ball) via
- *      code cave that saves/restores EAX (return value).
+ * Only affects player index 0. AI balls, split balls, follow balls, and
+ * board-init balls are left at their normal size.
  *
- *   2. CreateBadBall FSTP (0x0040BE74): catches AI balls after their
- *      custom SIZE value is computed. Replaces the FSTP [ESI+0x284]
- *      with Ball_Shrink(ESI), which overrides the SIZE with a fixed 13.0.
- *
- * Ball_Shrink (0x00402200) — __fastcall(ball):
- *   ball+0xC4C = 1          (is_falling flag)
- *   ball+0x284 = 13.0       (radius, was 26.0)
- *   ball+0x188 = 2.5        (physics_scale, was 5.0)
- *   Sound_Play3D(fall_sound, ball->pos)
+ * Fields set (identical to Ball_Shrink):
+ *   ball+0x284 = 0x41500000  (radius = 13.0, down from 26.0)
+ *   ball+0x188 = 0x40200000  (physics_scale = 2.5, down from 5.0)
+ *   ball+0xC4C = 1            (is_falling flag)
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * BUILD
@@ -32,7 +24,7 @@
  * Installation (Windows):
  *   1. In your Hamsterball game folder, rename bass.dll → bass_real.dll
  *   2. Copy this proxy bass.dll into the game folder
- *   3. Run the game — all balls will be half their normal size
+ *   3. Run the game — player ball will be half size
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -42,7 +34,7 @@
 #include <string.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports (stubs — Hamsterball only needs import resolution)
+ * BASS Proxy Exports
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 __declspec(dllexport) void BASS_Init(void) {}
@@ -75,82 +67,67 @@ __declspec(dllexport) void BASS_SampleCreate(void) {}
 __declspec(dllexport) void BASS_SampleGetChannel(void) {}
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Patch Constants
+ * Hook Constants
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define IMAGE_BASE  0x00400000
 
-/* Ball_Shrink (0x00402200) — __fastcall(ball in ECX)
- * Sets radius=13.0, physics_scale=2.5, is_falling=1, plays fall sound */
-#define BALL_SHRINK_ADDR  0x00402200
+/*
+ * Hook point: Scene_SpawnBallsAndObjects, after AthenaList_Append returns.
+ *
+ * At 0x0041C8D7 the game executes:
+ *   C6 86 81 02 00 00 00    MOV byte [ESI+0x281], 0   (7 bytes)
+ *
+ * ESI = ball pointer, [ESI+0x18] = player_index (set at 0x0041C893).
+ * This runs inside a loop that creates one ball per player. We replace it
+ * with a CALL to a code cave that:
+ *   1. Checks if [ESI+0x18] == 0 (player index 0)
+ *   2. If yes, writes the three Ball_Shrink fields inline (no function call)
+ *   3. Executes the original MOV byte [ESI+0x281], 0
+ *   4. JMPs back to 0x0041C8DE
+ */
+#define HOOK_ADDR     0x0041C8D7
+#define HOOK_ORIG    "\xC6\x86\x81\x02\x00\x00\x00"   /* MOV byte [ESI+0x281],0 */
+#define HOOK_LEN      7
+#define RETURN_ADDR   0x0041C8DE   /* instruction after the hooked one */
 
 /*
- * Hook 1: Ball_ctor2 exit
+ * Code cave layout (36 bytes):
  *
- *   Address:  0x00403DB1
- *   Original: 83 C4 20          ADD ESP,0x20  (3 bytes)
- *             C2 04 00          RET 0x4       (3 bytes)
- *   Total:    6 bytes
- *   Replace:  E8 xx xx xx xx    CALL code_cave1 (5 bytes)
- *             90                NOP            (1 byte)
+ *   83 BE 18 00 00 00 00           CMP dword [ESI+0x18], 0      ; 7 bytes
+ *   75 1B                          JNE skip                      ; 2 bytes
+ *   C7 86 84 02 00 00 00 00 50 41  MOV dword [ESI+0x284], 0x41500000  ; 10 bytes (radius=13.0)
+ *   C7 86 88 01 00 00 00 00 20 40  MOV dword [ESI+0x188], 0x40200000  ; 10 bytes (physics=2.5)
+ *   C6 86 4C 0C 00 00 01           MOV byte [ESI+0xC4C], 1      ; 7 bytes (is_falling=1)
+ * skip:
+ *   C6 86 81 02 00 00 00           MOV byte [ESI+0x281], 0      ; 7 bytes (original instruction)
+ *   E9 xx xx xx xx                 JMP RETURN_ADDR              ; 5 bytes
+ * Total: 7+2+10+10+7+7+5 = 48 bytes
  *
- *   At this point EAX = ball pointer (return value from Ball_ctor2).
- *   ECX = frame chain (from FS:[0] pop), not the ball.
- *
- *   Code cave 1 (15 bytes):
- *     50              PUSH EAX          ; save ball pointer
- *     8B C8           MOV ECX,EAX       ; __fastcall this = ball
- *     E8 xx xx xx xx  CALL Ball_Shrink  ; shrink the ball
- *     58              POP EAX           ; restore ball pointer (return value)
- *     83 C4 20        ADD ESP,0x20      ; original instruction
- *     C2 04 00        RET 0x4           ; original instruction
+ * The JNE offset 0x1B = 27 = 10+10+7 (the three field writes it skips).
  */
-#define HOOK1_ADDR     0x00403DB1
-#define HOOK1_ORIG    "\x83\xC4\x20\xC2\x04\x00"
-#define HOOK1_LEN      6
+#define CAVE_SIZE  48
 
-/*
- * Hook 2: CreateBadBall — FSTP [ESI+0x284]
- *
- *   Address:  0x0040BE74
- *   Original: D9 9E 84 02 00 00    FSTP [ESI+0x284]  (6 bytes)
- *   Replace:  E8 xx xx xx xx       CALL code_cave2    (5 bytes)
- *             90                   NOP                  (1 byte)
- *
- *   At this point ESI = ball pointer, and the SIZE value from the level data
- *   is on the FPU stack. Ball_Shrink doesn't use the FPU stack, so the SIZE
- *   value will be lost (popped by nothing). That's fine — Ball_Shrink sets
- *   a fixed radius of 13.0, overriding whatever SIZE was specified.
- *
- *   Wait — we need to pop the FPU value to avoid stack corruption!
- *   Code cave 2 (18 bytes):
- *     D9 9E 84 02 00 00   FSTP [ESI+0x284]   ; original: store SIZE (pops FPU)
- *     56                  PUSH ESI            ; save ball pointer
- *     8B CE               MOV ECX,ESI        ; __fastcall this = ball
- *     E8 xx xx xx xx      CALL Ball_Shrink   ; shrink (overrides SIZE)
- *     5E                  POP ESI            ; restore ESI
- *     C3                  RET
- */
-#define HOOK2_ADDR     0x0040BE74
-#define HOOK2_ORIG    "\xD9\x9E\x84\x02\x00\x00"
-#define HOOK2_LEN      6
+static const unsigned char cave_template[CAVE_SIZE] = {
+    /* CMP dword [ESI+0x18], 0 */
+    0x83, 0xBE, 0x18, 0x00, 0x00, 0x00, 0x00,
+    /* JNE skip (offset 0x1B = 27 bytes ahead) */
+    0x75, 0x1B,
+    /* MOV dword [ESI+0x284], 0x41500000 (radius = 13.0) */
+    0xC7, 0x86, 0x84, 0x02, 0x00, 0x00, 0x00, 0x00, 0x50, 0x41,
+    /* MOV dword [ESI+0x188], 0x40200000 (physics_scale = 2.5) */
+    0xC7, 0x86, 0x88, 0x01, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40,
+    /* MOV byte [ESI+0xC4C], 1 (is_falling flag) */
+    0xC6, 0x86, 0x4C, 0x0C, 0x00, 0x00, 0x01,
+    /* skip: — MOV byte [ESI+0x281], 0 (original instruction) */
+    0xC6, 0x86, 0x81, 0x02, 0x00, 0x00, 0x00,
+    /* JMP rel32 back to RETURN_ADDR — filled at runtime */
+    0xE9, 0x00, 0x00, 0x00, 0x00
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Memory Patching Helpers
  * ═══════════════════════════════════════════════════════════════════════════ */
-
-static int patch_bytes(BYTE *addr, const BYTE *expected, const BYTE *replacement, SIZE_T len)
-{
-    DWORD oldProtect;
-    if (memcmp(addr, expected, len) != 0)
-        return 0;
-    if (!VirtualProtect(addr, len, PAGE_EXECUTE_READWRITE, &oldProtect))
-        return 0;
-    memcpy(addr, replacement, len);
-    VirtualProtect(addr, len, oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), addr, len);
-    return 1;
-}
 
 static int write_bytes(BYTE *addr, const BYTE *data, SIZE_T len)
 {
@@ -163,21 +140,22 @@ static int write_bytes(BYTE *addr, const BYTE *data, SIZE_T len)
     return 1;
 }
 
-/* Allocate a code cave within ±2GB of a target address for relative CALL. */
+/* Allocate a code cave within ±2GB for relative CALL/JMP. */
 static void *allocate_code_cave(void *near_addr, SIZE_T size)
 {
     SYSTEM_INFO si;
     GetSystemInfo(&si);
 
-    /* Try just past the .text section first (preferred) */
-    DWORD_PTR addr = (IMAGE_BASE + 0xF8000);
     SIZE_T alloc_size = ((size + si.dwPageSize - 1) / si.dwPageSize) * si.dwPageSize;
+
+    /* Try just past .text section first */
+    DWORD_PTR addr = (IMAGE_BASE + 0xF8000);
     void *cave = VirtualAlloc((void*)addr, alloc_size, MEM_COMMIT | MEM_RESERVE,
                               PAGE_EXECUTE_READWRITE);
     if (cave)
         return cave;
 
-    /* Scan outward from the target */
+    /* Scan outward from target */
     DWORD_PTR target = (DWORD_PTR)near_addr;
     DWORD_PTR lo = target > 0x40000000 ? target - 0x40000000 : (DWORD_PTR)si.lpMinimumApplicationAddress;
     DWORD_PTR hi = target + 0x40000000;
@@ -197,83 +175,6 @@ static void *allocate_code_cave(void *near_addr, SIZE_T size)
                        PAGE_EXECUTE_READWRITE);
 }
 
-/* Build a relative CALL (E8 rel32) at call_addr targeting target_addr. */
-static int make_rel32_call(BYTE *call_addr, DWORD_PTR target_addr)
-{
-    DWORD_PTR src = (DWORD_PTR)call_addr + 5;  /* E8 + 4 bytes = 5 */
-    ptrdiff_t rel = (ptrdiff_t)(target_addr - src);
-    if (rel > 0x7FFFFFFF || rel < (ptrdiff_t)0x80000000)
-        return 0;
-    int32_t rel32 = (int32_t)rel;
-    call_addr[0] = 0xE8;
-    memcpy(call_addr + 1, &rel32, 4);
-    return 1;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Code Cave Builders
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Build code cave 1: Ball_ctor2 exit hook.
- *   PUSH EAX; MOV ECX,EAX; CALL Ball_Shrink; POP EAX; ADD ESP,0x20; RET 0x4
- * Returns total size. */
-static int build_cave1(BYTE *cave, DWORD_PTR cave_addr)
-{
-    int off = 0;
-
-    /* 50: PUSH EAX */
-    cave[off++] = 0x50;
-
-    /* 8B C8: MOV ECX,EAX */
-    cave[off++] = 0x8B; cave[off++] = 0xC8;
-
-    /* E8 rel32: CALL Ball_Shrink */
-    off += 5;  /* placeholder — filled below */
-    make_rel32_call(&cave[off - 5], (DWORD_PTR)BALL_SHRINK_ADDR);
-
-    /* 58: POP EAX */
-    cave[off++] = 0x58;
-
-    /* 83 C4 20: ADD ESP,0x20 (original instruction) */
-    cave[off++] = 0x83; cave[off++] = 0xC4; cave[off++] = 0x20;
-
-    /* C2 04 00: RET 0x4 (original instruction) */
-    cave[off++] = 0xC2; cave[off++] = 0x04; cave[off++] = 0x00;
-
-    return off;
-}
-
-/* Build code cave 2: CreateBadBall FSTP hook.
- *   FSTP [ESI+0x284]; PUSH ESI; MOV ECX,ESI; CALL Ball_Shrink; POP ESI; RET
- * The FSTP pops the FPU stack (prevents corruption), then Ball_Shrink overrides. */
-static int build_cave2(BYTE *cave, DWORD_PTR cave_addr)
-{
-    int off = 0;
-
-    /* D9 9E 84 02 00 00: FSTP [ESI+0x284] (original — pops FPU stack) */
-    cave[off++] = 0xD9; cave[off++] = 0x9E;
-    cave[off++] = 0x84; cave[off++] = 0x02;
-    cave[off++] = 0x00; cave[off++] = 0x00;
-
-    /* 56: PUSH ESI (save ball pointer) */
-    cave[off++] = 0x56;
-
-    /* 8B CE: MOV ECX,ESI (__fastcall this = ball) */
-    cave[off++] = 0x8B; cave[off++] = 0xCE;
-
-    /* E8 rel32: CALL Ball_Shrink */
-    off += 5;
-    make_rel32_call(&cave[off - 5], (DWORD_PTR)BALL_SHRINK_ADDR);
-
-    /* 5E: POP ESI (restore) */
-    cave[off++] = 0x5E;
-
-    /* C3: RET */
-    cave[off++] = 0xC3;
-
-    return off;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
  * Patch Thread
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -286,75 +187,51 @@ static void patch_thread(void *param)
     if (!hExe) return;
     BYTE *base = (BYTE*)hExe;
 
-    /* Wait for the game to finish loading */
     Sleep(500);
 
-    int hook1_ok = 0, hook2_ok = 0;
+    int hook_ok = 0;
+    BYTE *hook_addr = base + (HOOK_ADDR - IMAGE_BASE);
 
-    /* ═══════════════════════════════════════════════════════════════════════
-     * Hook 1: Ball_ctor2 exit → Ball_Shrink
-     * Catches: all balls (player, split, follow, board-init)
-     * ═══════════════════════════════════════════════════════════════════════ */
+    /* Verify original bytes match */
+    if (memcmp(hook_addr, HOOK_ORIG, HOOK_LEN) == 0)
     {
-        BYTE *hook1_addr = base + (HOOK1_ADDR - IMAGE_BASE);
+        /* Build code cave */
+        unsigned char cave[CAVE_SIZE];
+        memcpy(cave, cave_template, CAVE_SIZE);
 
-        if (memcmp(hook1_addr, HOOK1_ORIG, HOOK1_LEN) == 0)
+        /* Allocate cave within relative JMP range */
+        void *cave_mem = allocate_code_cave(hook_addr, CAVE_SIZE);
+        if (cave_mem && write_bytes((BYTE*)cave_mem, cave, CAVE_SIZE))
         {
-            BYTE cave1[32];
-            int cave1_size = build_cave1(cave1, 0);  /* rel32 filled by make_rel32_call */
-
-            void *cave = allocate_code_cave(hook1_addr, cave1_size);
-            if (cave && write_bytes((BYTE*)cave, cave1, cave1_size))
+            /* Fix JMP rel32 at end of cave to target RETURN_ADDR */
+            BYTE *jmp_addr = (BYTE*)cave_mem + CAVE_SIZE - 5;  /* E9 + 4 bytes */
+            DWORD_PTR jmp_src = (DWORD_PTR)jmp_addr + 5;  /* address after JMP */
+            ptrdiff_t jmp_rel = (ptrdiff_t)(base + (RETURN_ADDR - IMAGE_BASE) - jmp_src);
+            if (jmp_rel <= 0x7FFFFFFF && jmp_rel >= (ptrdiff_t)0x80000000)
             {
-                BYTE call_nop[6];
-                call_nop[0] = 0xE8;
-                call_nop[5] = 0x90;  /* NOP */
+                int32_t rel32 = (int32_t)jmp_rel;
+                memcpy(jmp_addr + 1, &rel32, 4);
 
-                /* Fix CALL target to point to our cave */
-                DWORD_PTR src = (DWORD_PTR)hook1_addr + 5;
-                ptrdiff_t rel = (ptrdiff_t)((DWORD_PTR)cave - src);
-                if (rel <= 0x7FFFFFFF && rel >= (ptrdiff_t)0x80000000)
+                /* Build CALL + 2 NOPs to replace original 7-byte instruction */
+                BYTE call_nop[7];
+                call_nop[0] = 0xE8;  /* CALL rel32 */
+                /* CALL target = cave_mem */
+                DWORD_PTR call_src = (DWORD_PTR)hook_addr + 5;
+                ptrdiff_t call_rel = (ptrdiff_t)((DWORD_PTR)cave_mem - call_src);
+                if (call_rel <= 0x7FFFFFFF && call_rel >= (ptrdiff_t)0x80000000)
                 {
-                    int32_t rel32 = (int32_t)rel;
-                    memcpy(call_nop + 1, &rel32, 4);
-                    hook1_ok = write_bytes(hook1_addr, call_nop, 6);
+                    int32_t call_rel32 = (int32_t)call_rel;
+                    memcpy(call_nop + 1, &call_rel32, 4);
+                    call_nop[5] = 0x90;  /* NOP */
+                    call_nop[6] = 0x90;  /* NOP */
+
+                    hook_ok = write_bytes(hook_addr, call_nop, 7);
                 }
             }
         }
     }
 
-    /* ═══════════════════════════════════════════════════════════════════════
-     * Hook 2: CreateBadBall FSTP → Ball_Shrink
-     * Catches: AI/bad balls (after SIZE computed)
-     * ═══════════════════════════════════════════════════════════════════════ */
-    {
-        BYTE *hook2_addr = base + (HOOK2_ADDR - IMAGE_BASE);
-
-        if (memcmp(hook2_addr, HOOK2_ORIG, HOOK2_LEN) == 0)
-        {
-            BYTE cave2[32];
-            int cave2_size = build_cave2(cave2, 0);
-
-            void *cave = allocate_code_cave(hook2_addr, cave2_size);
-            if (cave && write_bytes((BYTE*)cave, cave2, cave2_size))
-            {
-                BYTE call_nop[6];
-                call_nop[0] = 0xE8;
-                call_nop[5] = 0x90;
-
-                DWORD_PTR src = (DWORD_PTR)hook2_addr + 5;
-                ptrdiff_t rel = (ptrdiff_t)((DWORD_PTR)cave - src);
-                if (rel <= 0x7FFFFFFF && rel >= (ptrdiff_t)0x80000000)
-                {
-                    int32_t rel32 = (int32_t)rel;
-                    memcpy(call_nop + 1, &rel32, 4);
-                    hook2_ok = write_bytes(hook2_addr, call_nop, 6);
-                }
-            }
-        }
-    }
-
-    /* Write a log file so users can verify the patches applied */
+    /* Write log file */
     {
         char log_path[MAX_PATH];
         GetModuleFileNameA(hExe, log_path, MAX_PATH);
@@ -365,17 +242,15 @@ static void patch_thread(void *param)
         FILE *f = NULL;
         if (fopen_s(&f, log_path, "w") == 0 && f)
         {
-            fprintf(f, "Hamsterball Half-Size Balls Mod (v2)\n");
+            fprintf(f, "Hamsterball Half-Size Balls Mod (v3)\n");
             fprintf(f, "====================================\n\n");
-            fprintf(f, "Uses Ball_Shrink (0x00402200) — the game's own shrink function\n");
-            fprintf(f, "from Odd Race. Sets radius=13.0, physics_scale=2.5, is_falling=1.\n\n");
-            fprintf(f, "Hook 1 (Ball_ctor2 exit → Ball_Shrink):  %s\n",
-                    hook1_ok ? "APPLIED" : "FAILED");
-            fprintf(f, "  Catches: player, split, follow, board-init balls\n");
-            fprintf(f, "Hook 2 (CreateBadBall FSTP → Ball_Shrink): %s\n",
-                    hook2_ok ? "APPLIED" : "FAILED");
-            fprintf(f, "  Catches: AI/bad balls (after SIZE computed)\n\n");
-            fprintf(f, "Exe base: 0x%08X\n", (unsigned)(DWORD_PTR)base);
+            fprintf(f, "Inlines Ball_Shrink physics (no sound, no function call):\n");
+            fprintf(f, "  ball+0x284 = 13.0 (radius)\n");
+            fprintf(f, "  ball+0x188 = 2.5  (physics_scale)\n");
+            fprintf(f, "  ball+0xC4C = 1    (is_falling)\n\n");
+            fprintf(f, "Only applies to player index 0.\n\n");
+            fprintf(f, "Hook (Scene_SpawnBallsAndObjects 0x0041C8D7): %s\n",
+                    hook_ok ? "APPLIED" : "FAILED");
             fclose(f);
         }
     }
