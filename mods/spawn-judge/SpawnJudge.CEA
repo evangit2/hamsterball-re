@@ -1,0 +1,142 @@
+[ENABLE] 
+ 
+alloc(SpawnCode, 4096) 
+alloc(SpawnJudge, 4) 
+alloc(saved_board, 4) 
+alloc(playerX, 4) 
+alloc(playerY, 4) 
+alloc(playerZ, 4) 
+alloc(float_50, 4) 
+ 
+registersymbol(SpawnJudge) 
+ 
+SpawnJudge: 
+ dd 0 
+ 
+saved_board: 
+ dd 0 
+ 
+playerX: 
+ dd 0 
+ 
+playerY: 
+ dd 0 
+ 
+playerZ: 
+ dd 0 
+ 
+float_50: 
+ dd 0x42480000 
+ 
+label(original_code) 
+label(save_pos) 
+label(check_spawn) 
+label(done_spawn) 
+label(skip_render_list) 
+ 
+SpawnCode: 
+save_pos: 
+ cmp dword [esi+0x18], 0 
+ jne check_spawn 
+ mov eax, [esi+0x164] 
+ mov [playerX], eax 
+ mov eax, [esi+0x168] 
+ mov [playerY], eax 
+ mov eax, [esi+0x16C] 
+ mov [playerZ], eax 
+ 
+check_spawn: 
+ cmp dword [SpawnJudge], 0 
+ je original_code 
+ cmp dword [esi+0x18], 0 
+ jne original_code 
+ mov dword [SpawnJudge], 0 
+ 
+ pushad 
+ mov eax, [esi+0x14] 
+ mov [saved_board], eax 
+ test eax, eax 
+ jz done_spawn 
+ 
+ // Allocate 0x1100 bytes for the Judge object (same as CreateExpertLevelObjects)
+ push 0x1100 
+ call 004BA57B 
+ add esp, 4 
+ test eax, eax 
+ jz done_spawn 
+ 
+ // Raise Y by 50.0 so the Judge appears above the ball
+ fld dword [playerY] 
+ fadd dword [float_50] 
+ fstp dword [playerY] 
+ 
+ // Push position (z, y, x) and board for Gear_Level_ctor
+ // Gear_Level_ctor(this, board, x, y, z) - thiscall: ECX=this, params on stack
+ sub esp, 0xC 
+ mov edx, [playerX] 
+ mov [esp], edx 
+ mov edx, [playerY] 
+ mov [esp+4], edx 
+ mov edx, [playerZ] 
+ mov [esp+8], edx 
+ mov edx, [saved_board] 
+ push edx 
+ mov ecx, eax 
+ call 0043A150 
+ test eax, eax 
+ jz done_spawn 
+ 
+ // Save Judge pointer in EDI for later use
+ mov edi, eax
+ 
+ // Call Judge_Reset to activate the Judge (adds to board+0x2578, sets +0x10F4=0)
+ // Judge_Reset is __thiscall: ECX = Judge obj
+ mov ecx, eax 
+ call 00434C40 
+
+ // --- THE FIX: Add Judge to the board's post-alpha render list ---
+ // The post-alpha render pass in Scene_RenderAllObjects iterates:
+ //   *(board+0x480) + 0x1C  (SceneObject's child AthenaList)
+ // and calls vtable[18] (Gear_Render) on each item.
+ // Without this, the Judge is updated (sound plays) but never rendered (invisible).
+ 
+ // Load board pointer
+ mov edx, [saved_board] 
+ test edx, edx
+ jz done_spawn
+ 
+ // Load board+0x480 = board's internal SceneObject
+ mov edx, [edx + 0x480]
+ test edx, edx
+ jz done_spawn
+ 
+ // EDX + 0x1C = SceneObject's child AthenaList (post-alpha render list)
+ // Call AthenaList_Append(list_ptr, item)
+ // __thiscall: ECX = list_ptr, push item, ret 4
+ lea ecx, [edx + 0x1C]
+ push edi                 ; push Judge object pointer
+ call 00453810            ; AthenaList_Append
+ 
+done_spawn: 
+ popad 
+ 
+original_code: 
+ mov eax, [esi+0x0c5c] 
+ jmp 00405E28 
+ 
+00405E22: 
+ jmp SpawnCode 
+ nop 
+ 
+[DISABLE] 
+00405E22: 
+ db 8B 86 5C 0C 00 00 
+ 
+dealloc(SpawnCode) 
+dealloc(SpawnJudge) 
+dealloc(saved_board) 
+dealloc(playerX) 
+dealloc(playerY) 
+dealloc(playerZ) 
+dealloc(float_50) 
+unregistersymbol(SpawnJudge) 
