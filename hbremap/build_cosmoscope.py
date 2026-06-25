@@ -129,7 +129,7 @@ def extract_headings(content: str) -> list:
         headings.append(m.group(1).strip())
     return headings
 
-GITHUB_BASE = "https://github.com/evangit2/hamsterball-re/blob/main"
+GITHUB_BASE = "https://github.com/evangit2/hamsterball-re/blob/master"
 
 def get_github_url(rel_path: str) -> str:
     """Get GitHub URL for a file in the repo."""
@@ -265,6 +265,59 @@ def insert_wikilinks(content: str, link_map: dict, own_id: str) -> str:
     
     return "\n".join(result)
 
+def compute_related_docs(files_info: dict) -> dict:
+    """For each doc, find related docs by shared tags and same type.
+    Returns map of rel_path → list of (other_path, score) tuples."""
+    related = {}
+    
+    # Build tag → docs index
+    tag_to_docs = defaultdict(list)
+    for rel_path, info in files_info.items():
+        for tag in info["tags"]:
+            tag_to_docs[tag].append(rel_path)
+    
+    for rel_path, info in files_info.items():
+        scores = defaultdict(int)
+        my_tags = set(info["tags"])
+        my_type = info["type"]
+        
+        # Score by shared tags
+        for tag in my_tags:
+            for other_path in tag_to_docs[tag]:
+                if other_path == rel_path:
+                    continue
+                # Weight hex address matches heavily (same function/offset = strongly related)
+                weight = 5 if tag.startswith("0x") else 1
+                scores[other_path] += weight
+        
+        # Bonus for same type
+        for other_path, other_info in files_info.items():
+            if other_path == rel_path:
+                continue
+            if other_info["type"] == my_type:
+                scores[other_path] += 1
+        
+        # Sort by score, take top 8
+        top = sorted(scores.items(), key=lambda x: -x[1])[:8]
+        # Only keep meaningful relationships (score >= 2)
+        related[rel_path] = [(p, s) for p, s in top if s >= 2]
+    
+    return related
+
+def add_related_links(content: str, own_id: str, related: list, files_info: dict) -> str:
+    """Append a 'Related Documents' section with wikilinks at the bottom."""
+    if not related:
+        return content
+    
+    links_section = "\n\n---\n\n## 🔗 Related Documents\n\n"
+    for other_path, score in related:
+        other_info = files_info[other_path]
+        title = other_info["title"]
+        rid = other_info["id"]
+        links_section += f"- [[{rid}|{title}]]\n"
+    
+    return content + links_section
+
 def write_config_yml():
     """Write Cosma configuration file."""
     
@@ -291,16 +344,16 @@ graph_background_color: "#1a1a2e"
 graph_text_color: "#e0e0e0"
 graph_link_color: "#555555"
 graph_highlight_color: "#ff6a6a"
-graph_text_size: 10
+graph_text_size: 14
 graph_arrows: true
 node_size_method: degree
-node_size: 10
-node_size_max: 25
+node_size: 8
+node_size_max: 18
 node_size_min: 4
-attraction_force: 200
-attraction_distance_max: 300
-attraction_vertical: 0.05
-attraction_horizontal: 0.05
+attraction_force: 80
+attraction_distance_max: 600
+attraction_vertical: 0.01
+attraction_horizontal: 0.01
 generate_id: always
 link_context: tooltip
 hide_id_from_record_header: true
@@ -668,6 +721,12 @@ def main():
     
     # Step 3: Build wikilink map and process content
     link_map = build_wikilink_map(files_info)
+    related_map = compute_related_docs(files_info)
+    
+    # Count how many docs got related links
+    total_related = sum(1 for v in related_map.values() if len(v) > 0)
+    total_links_count = sum(len(v) for v in related_map.values())
+    print(f"       Related doc links: {total_links_count} across {total_related} docs")
     
     # Clear content directory
     if CONTENT_DIR.exists():
@@ -679,6 +738,8 @@ def main():
         content = add_frontmatter(content, info["id"], info["title"],
                                   info["type"], info["tags"], info["github_url"])
         content = insert_wikilinks(content, link_map, info["id"])
+        # Add related documents section for more graph edges
+        content = add_related_links(content, info["id"], related_map.get(rel_path, []), files_info)
         
         # Write to content dir with sanitized filename
         safe_name = rel_path.replace("/", "_").replace(" ", "-")
@@ -690,11 +751,6 @@ def main():
     print(f"[3/5] Wrote {len(files_info)} processed files to {CONTENT_DIR}")
     
     # Print stats
-    total_links = 0
-    total_tags = 0
-    for info in files_info.values():
-        total_links += content.count("[[")
-        total_tags += len(info["tags"])
     print(f"       Tags extracted: {sum(len(i['tags']) for i in files_info.values())}")
     
     # Step 4: Write config
