@@ -1,0 +1,376 @@
+[ENABLE]
+ 
+// =====================================================
+// Global Sky Race Object Spawner — FUNBALL, PILLAR, MAGNIFYER
+// =====================================================
+// Spawns Sky Race objects at Player 1's position in ANY level.
+//
+// Set ObjectType (1-3), then set SpawnObject to 1.
+//
+// Object types:
+//   1 = FUNBALL    (PopCylinder — blue ball that pops up near goal)
+//   2 = PILLAR     (Platform — pillar that pops up and blocks path)
+//   3 = MAGNIFYER  (CollisionLevel_Spatial — magnifying glass lens effect)
+//
+// =====================================================
+// DEEP FUNCTION TRACE (via GhidraMCP)
+// =====================================================
+//
+// BoardLevel_Sky_Ctor (0x41F930):
+//   LoadRaceData("SKYRACE")
+//   board+0x436C = MeshNode("meshes\skypillar")        → PILLAR mesh
+//   board+0x4370 = MeshNode("meshes\magnifyingglass")  → MAGNIFYER mesh
+//   board+0x4384 = MeshWorld("levels\level9-popcylinder1") → FUNBALL mesh
+//   board+0x4388 = MeshWorld("levels\level9-popcylinder2") → FUNBALL2 mesh
+//   board+0x438C = MeshWorld("levels\level9-trapdoor")    → TRAPDOOR mesh
+//
+// Scene_SetupLevel9 (0x410830):
+//   Scans MESHWORLD refs:
+//   "PILLAR"     → collected into board+0x4394 (AthenaList) for later popping
+//   "MAGNIFYER"  → CollisionLevel_Spatial_Ctor(alloc 0x444, board, X, Y, Z)
+//                  Stored at board+0x46AC. Gate: difficulty != 0.
+//                  This is a collision sphere (radius 90.0), NOT a visible mesh!
+//   "CLOUDSCAPE" → position lookup via AthenaHashTable
+//
+// Sky Factory Dispatch (0x410AD0, vtable[0x21]/+0x84):
+//   "POPCYLINDER" → Platform_ctor(alloc 0x10F4, board, X, Y, Z, board+0x4384)
+//   "TRAPDOOR"    → Rotator_ctor(alloc 0x10F4, board, X, Y, Z, board+0x438C)
+//
+// CreateLevelObjects (0x4121D0):
+//   "POPCYLINDER" → PopCylinder_ctor(alloc 0x10E8, board, X, Y, Z, mesh)
+//   (Different constructor than Sky factory — PopCylinder_ctor vs Platform_ctor)
+//
+// CONSTRUCTOR SIGNATURES:
+//
+// FUNBALL: PopCylinder_ctor (0x436EE0), alloc 0x10E8, RET 0x14
+//   (this, board, X, Y, Z, mesh)
+//   vtable = 0x4D58F0
+//   Stands_ctor → renders automatically
+//   Update (0x43DED0): if +0x10E4 flag set → position update, clear flag. SAFE.
+//   +0x10D0 = board, +0x10D4 = X, +0x10D8 = Y, +0x10DC = Z
+//   +0x10E0 = CollisionLevel, +0x10E4 = 1 (active flag)
+//
+// PILLAR: Platform_ctor (0x4363F0), alloc 0x10F4, RET 0x14
+//   (this, board, X, Y, Z, mesh)
+//   vtable = 0x4D56A8
+//   Stands_ctor → renders automatically
+//   Update (0x436540): state machine (0=idle,1=descend,2=wait,3=ascend)
+//     Pops up/down using Gfx_SetPosition. Timer at +0x10F0.
+//     Reads +0x10E4 (pos offset), +0x10E8 (target), +0x10EC (state)
+//   +0x10D0 = board, +0x10D4 = X, +0x10D8 = Y, +0x10DC = Z
+//   +0x10E0 = CollisionLevel, +0x10E4 = 45.0, +0x10E8 = -1.0
+//   NO crash risks.
+//
+// MAGNIFYER: CollisionLevel_Spatial_Ctor (0x436250), alloc 0x444, RET 0x10
+//   (this, board, X, Y, Z) — NO mesh parameter!
+//   vtable = 0x4D569C (Pendulum variant)
+//   Creates a collision sphere (radius 90.0 at +0x24 and +0x28)
+//   This is an INVISIBLE lens effect — magnifies ball when it passes through
+//   NO Stands_ctor — does NOT render a visible mesh!
+//   +0x04 = board, +0x08 = X, +0x0C = Y, +0x10 = Z
+//   +0x24 = 90.0, +0x28 = 90.0 (collision sphere dimensions)
+//
+// MESH STRING ADDRESSES:
+//   0x4D0F5C = "levels\level9-popcylinder1"
+//   0x4D0F40 = "levels\level9-popcylinder2"
+//   0x4D0F90 = "meshes\skypillar"
+//   0x4D0F78 = "meshes\magnifyingglass"
+//
+// REGISTRATION:
+//   Factory adds each object to board+0x2578 via AthenaList_Append.
+//   Stands_ctor clones SpatialTree → renders automatically.
+//   CollisionLevel_Spatial_Ctor does NOT use Stands_ctor → no visible mesh.
+// =====================================================
+ 
+alloc(SpawnCode, 8192)
+alloc(SpawnObject, 4)
+alloc(ObjectType, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_30, 4)
+alloc(temp_mesh, 4)
+alloc(obj_array, 68)
+alloc(last_board, 4)
+ 
+registersymbol(SpawnObject)
+registersymbol(ObjectType)
+ 
+SpawnObject:
+ dd 0
+ 
+ObjectType:
+ dd 1   // 1=FUNBALL, 2=PILLAR, 3=MAGNIFYER
+ 
+saved_board:
+ dd 0
+ 
+playerX:
+ dd 0
+ 
+playerY:
+ dd 0
+ 
+playerZ:
+ dd 0
+ 
+float_30:
+ dd 0x41F00000  // 30.0
+ 
+temp_mesh:
+ dd 0
+ 
+obj_array:
+ dd 0
+ dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ 
+last_board:
+ dd 0
+ 
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(do_spawn)
+label(spawn_funball)
+label(spawn_pillar)
+label(spawn_magnifyer)
+label(register_obj)
+label(prox_loop)
+label(prox_next)
+label(prox_done)
+ 
+SpawnCode:
+ 
+ mov eax, [esi+0x14]
+ test eax, eax
+ jz no_clear
+ cmp eax, [last_board]
+ je no_clear
+ mov [last_board], eax
+ mov dword [obj_array], 0
+ 
+no_clear:
+ mov eax, [obj_array]
+ test eax, eax
+ jz save_pos
+ pushad
+ xor ebx, ebx
+ 
+prox_loop:
+ cmp ebx, [obj_array]
+ jae prox_done
+ mov eax, [obj_array+4+ebx*4]
+ test eax, eax
+ jz prox_next
+ mov ecx, [eax]
+ test ecx, ecx
+ jz prox_next
+ cmp dword [esi+0x18], 0
+ jne prox_next
+ 
+ mov ecx, eax
+ mov edx, [eax]
+ call dword [edx+0x2C]
+ 
+prox_next:
+ inc ebx
+ jmp prox_loop
+prox_done:
+ popad
+ 
+save_pos:
+ cmp dword [esi+0x18], 0
+ jne check_spawn
+ fld dword [esi+0x164]
+ fadd dword [float_30]
+ fstp dword [playerX]
+ mov eax, [esi+0x168]
+ mov [playerY], eax
+ mov eax, [esi+0x16C]
+ mov [playerZ], eax
+ 
+check_spawn:
+ cmp dword [SpawnObject], 0
+ je original_code
+ cmp dword [esi+0x18], 0
+ jne original_code
+ mov dword [SpawnObject], 0
+ 
+ pushad
+ mov eax, [esi+0x14]
+ mov [saved_board], eax
+ test eax, eax
+ jz done_spawn
+ mov edx, [eax+0x878]
+ test edx, edx
+ jz done_spawn
+ mov edx, [edx+0x174]
+ test edx, edx
+ jz done_spawn
+ 
+do_spawn:
+ cmp dword [ObjectType], 1
+ je spawn_funball
+ cmp dword [ObjectType], 2
+ je spawn_pillar
+ cmp dword [ObjectType], 3
+ je spawn_magnifyer
+ jmp spawn_funball  // default
+ 
+// === FUNBALL (PopCylinder_ctor) ===
+// alloc 0x10E8, RET 0x14 (5 params: board, X, Y, Z, mesh)
+// Mesh: "levels\level9-popcylinder1" (0x4D0F5C)
+spawn_funball:
+ // Create MeshWorld
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ push 004D0F5C            // "levels\level9-popcylinder1"
+ push edx                // D3D device
+ mov ecx, eax
+ call 00461510           // MeshWorld_ctor
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ // Allocate PopCylinder object
+ push 0x10E8
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // PopCylinder_ctor(this, board, X, Y, Z, mesh)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 00436EE0          // PopCylinder_ctor
+ jmp register_obj
+ 
+// === PILLAR (Platform_ctor) ===
+// alloc 0x10F4, RET 0x14 (5 params: board, X, Y, Z, mesh)
+// Uses Sky factory's Platform_ctor with popcylinder1 mesh
+spawn_pillar:
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ push 004D0F5C            // "levels\level9-popcylinder1"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x10F4
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Platform_ctor(this, board, X, Y, Z, mesh)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 004363F0          // Platform_ctor
+ jmp register_obj
+ 
+// === MAGNIFYER (CollisionLevel_Spatial_Ctor) ===
+// alloc 0x444, RET 0x10 (4 params: board, X, Y, Z)
+// NO mesh — creates collision sphere (invisible lens effect)
+spawn_magnifyer:
+ push 0x444
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // CollisionLevel_Spatial_Ctor(this, board, X, Y, Z)
+ // __thiscall RET 0x10: push Z, Y, X, board
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 00436250          // CollisionLevel_Spatial_Ctor
+ // Note: MAGNIFYER has no visible mesh — it's a collision sphere
+ // The lens effect magnifies the ball when it passes through
+ // To register in board+0x2578, the object needs to be in the active list
+ jmp register_obj
+ 
+// === REGISTER OBJECT ===
+register_obj:
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Register in board+0x2578 (active objects list)
+ push edi
+ mov ecx, [saved_board]
+ add ecx, 0x2578
+ call 00453810           // AthenaList_Append
+ 
+done_spawn:
+ popad
+ 
+original_code:
+ mov eax, [esi+0x0c5c]
+ jmp 00405E28
+ 
+00405E22:
+ jmp SpawnCode
+ nop
+ 
+[DISABLE]
+00405E22:
+ db 8B 86 5C 0C 00 00
+ 
+dealloc(SpawnCode)
+dealloc(SpawnObject)
+dealloc(ObjectType)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_30)
+dealloc(temp_mesh)
+dealloc(obj_array)
+dealloc(last_board)
+unregistersymbol(SpawnObject)
+unregistersymbol(ObjectType)
