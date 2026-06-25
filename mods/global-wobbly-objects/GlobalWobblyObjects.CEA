@@ -1,0 +1,469 @@
+[ENABLE]
+ 
+// =====================================================
+// Global Wobbly Race Object Spawner — WAVY1, WOBBLY1-4
+// =====================================================
+// Spawns Wobbly Race objects at Player 1's position in ANY level.
+//
+// Set ObjectType (1-5), then set SpawnObject to 1.
+//
+// Object types:
+//   1 = WAVY1    (wavy floor — wave-based physics, uses collision)
+//   2 = WOBBLY1  (wobbly platform 1)
+//   3 = WOBBLY2  (wobbly platform 2)
+//   4 = WOBBLY3  (wobbly platform 3)
+//   5 = WOBBLY4  (wobbly platform 4)
+//
+// =====================================================
+// DEEP FUNCTION TRACE (via GhidraMCP)
+// =====================================================
+//
+// FACTORY DISPATCH (unlabeled, at 0x40F420):
+//   Handles ALL Wobbly Race objects via __strnicmp:
+//   "WOBBLY1" → GameLevel_ctor, mesh=board+0x436C ("Level7-Wobbly1")
+//   "WOBBLY2" → GameLevel_ctor, mesh=board+0x4370 ("Level7-Wobbly2")
+//   "WAVY1"   → Stands_CtorWithCollisionLevel, mesh="Levels\Level7-Wavy1" (path string)
+//   "WOBBLY3" → GameLevel_ctor, mesh=board+0x4374 ("Level7-Wobbly3")
+//   "WOBBLY4" → GameLevel_ctor, mesh=board+0x4378 ("Level7-Wobbly4")
+//   Fallback → CreatePlatformOrStands (handles PLATFORM, STANDS)
+//
+// MESH SLOTS (set by BoardLevel12_Wobbly_ctor 0x41F110):
+//   board+0x436C = MeshWorld("Levels\Level7-Wobbly1")
+//   board+0x4370 = MeshWorld("Levels\Level7-Wobbly2")
+//   board+0x4374 = MeshWorld("Levels\Level7-Wobbly3")
+//   board+0x4378 = MeshWorld("Levels\Level7-Wobbly4")
+//   board+0x437C = MeshWorld("Levels\Level7-Wobbly5")
+//   board+0x4380 = MeshWorld("Levels\Level7-Wobbly6")
+//   board+0x4384 = MeshWorld("Levels\Level7-Wobbly7")
+//
+// MESH STRING ADDRESSES:
+//   0x4D0CF4 = "Levels\Level7-Wobbly1"
+//   0x4D0CDC = "Levels\Level7-Wobbly2"
+//   0x4D0CC4 = "Levels\Level7-Wobbly3"
+//   0x4D0CAC = "Levels\Level7-Wobbly4"
+//   0x4CFC54 = "Levels\Level7-Wavy1"
+//
+// WAVY1 (Wavy Floor):
+//   Constructor: Stands_CtorWithCollisionLevel (0x43AD40)
+//   Alloc: 0x1AE7C (110,204 bytes — huge!)
+//   RET 0x14 = 5 params: (this, board, X, Y, Z, mesh_path_string)
+//   NOTE: Takes mesh PATH STRING (not MeshWorld pointer).
+//   Internally calls MeshWorld_ctor(this, device, path) to create its own mesh.
+//   vtable: 0x4D5458
+//   Update (vtable[0x0B/+0x2C] = 0x440390, Scene_UpdateArenaPhysics):
+//     - Increments counter at +0x10F8 each frame
+//     - When counter > 2: begins wave physics
+//     - Uses Wave_Sin for wave motion deformation
+//     - Calls Mesh_FindClosestCollision for collision
+//     - Transforms ball positions riding on the surface
+//     - No path access, no external dependencies → SAFE
+//   +0x10D0 = board, +0x10D4 = CollisionLevel
+//   +0x10E0 = X, +0x10E4 = Y, +0x10E8 = Z (position)
+//   +0x10EC = 0, +0x10F0 = 0, +0x10F4 = 0
+//   +0x10F8 = 0x14 (initial count = 20)
+//
+// WOBBLY1-4 (Wobbly Platforms):
+//   Constructor: GameLevel_ctor (0x4351F0)
+//   Alloc: 0x1524
+//   RET 0x14 = 5 params: (this, board, X, Y, Z, mesh_pointer)
+//   NOTE: Takes MeshWorld POINTER (not path string).
+//   Must create MeshWorld first, then pass pointer.
+//   vtable: 0x4D53F8 (Spinner vtable)
+//   Update (vtable[0x0B/+0x2C] = 0x43A700, Stands_Update):
+//     - Reads wave amplitudes at +0x10F0/+0x10F4
+//     - Reads position at +0x10D8/+0x10DC/+0x10E0
+//     - Reads wave scale at +0x1100 (=150.0)
+//     - Reads max amplitude at +0x10E8/+0x10EC (=10.0)
+//     - Iterates balls on platform, transforms positions (wave motion)
+//     - Uses Gfx_ScaleY/Z for deformation
+//     - No path access, no crash risks → SAFE
+//   +0x10D0 = board, +0x10D4 = CollisionLevel
+//   +0x10D8 = X, +0x10DC = Y, +0x10E0 = Z
+//   +0x10E4 = 1 (flag), +0x10E8 = 10.0, +0x10EC = 10.0
+//   +0x1100 = 150.0 (wave scale)
+//   +0x1104 = 0, +0x1105 = 0
+//
+// REGISTRATION:
+//   Factory adds each object to board+0x2578 via AthenaList_Append.
+//   Stands_ctor clones SpatialTree → board renders automatically.
+//   No manual render list registration needed.
+//
+// RENDERING:
+//   Both constructors call Stands_ctor or MeshWorld_ctor internally,
+//   which clones/creates the SpatialTree. The board's render pipeline
+//   picks it up automatically through normal opaque/translucent passes.
+// =====================================================
+ 
+alloc(SpawnCode, 8192)
+alloc(SpawnObject, 4)
+alloc(ObjectType, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_30, 4)
+alloc(temp_mesh, 4)
+alloc(obj_array, 68)
+alloc(last_board, 4)
+ 
+registersymbol(SpawnObject)
+registersymbol(ObjectType)
+ 
+SpawnObject:
+ dd 0
+ 
+ObjectType:
+ dd 1   // 1=WAVY1, 2=WOBBLY1, 3=WOBBLY2, 4=WOBBLY3, 5=WOBBLY4
+ 
+saved_board:
+ dd 0
+ 
+playerX:
+ dd 0
+ 
+playerY:
+ dd 0
+ 
+playerZ:
+ dd 0
+ 
+float_30:
+ dd 0x41F00000  // 30.0
+ 
+temp_mesh:
+ dd 0
+ 
+obj_array:
+ dd 0
+ dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ 
+last_board:
+ dd 0
+ 
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(do_spawn)
+label(spawn_wavy1)
+label(spawn_wobbly1)
+label(spawn_wobbly2)
+label(spawn_wobbly3)
+label(spawn_wobbly4)
+label(register_obj)
+label(prox_loop)
+label(prox_next)
+label(prox_done)
+ 
+SpawnCode:
+ 
+ mov eax, [esi+0x14]
+ test eax, eax
+ jz no_clear
+ cmp eax, [last_board]
+ je no_clear
+ mov [last_board], eax
+ mov dword [obj_array], 0
+ 
+no_clear:
+ mov eax, [obj_array]
+ test eax, eax
+ jz save_pos
+ pushad
+ xor ebx, ebx
+ 
+prox_loop:
+ cmp ebx, [obj_array]
+ jae prox_done
+ mov eax, [obj_array+4+ebx*4]
+ test eax, eax
+ jz prox_next
+ mov ecx, [eax]
+ test ecx, ecx
+ jz prox_next
+ cmp dword [esi+0x18], 0
+ jne prox_next
+ 
+ // Call vtable[0x0B] (+0x2C) — update function, ECX=this
+ mov ecx, eax
+ mov edx, [eax]
+ call dword [edx+0x2C]
+ 
+prox_next:
+ inc ebx
+ jmp prox_loop
+prox_done:
+ popad
+ 
+save_pos:
+ cmp dword [esi+0x18], 0
+ jne check_spawn
+ fld dword [esi+0x164]
+ fadd dword [float_30]
+ fstp dword [playerX]
+ mov eax, [esi+0x168]
+ mov [playerY], eax
+ mov eax, [esi+0x16C]
+ mov [playerZ], eax
+ 
+check_spawn:
+ cmp dword [SpawnObject], 0
+ je original_code
+ cmp dword [esi+0x18], 0
+ jne original_code
+ mov dword [SpawnObject], 0
+ 
+ pushad
+ mov eax, [esi+0x14]
+ mov [saved_board], eax
+ test eax, eax
+ jz done_spawn
+ mov edx, [eax+0x878]
+ test edx, edx
+ jz done_spawn
+ mov edx, [edx+0x174]
+ test edx, edx
+ jz done_spawn
+ 
+do_spawn:
+ cmp dword [ObjectType], 1
+ je spawn_wavy1
+ cmp dword [ObjectType], 2
+ je spawn_wobbly1
+ cmp dword [ObjectType], 3
+ je spawn_wobbly2
+ cmp dword [ObjectType], 4
+ je spawn_wobbly3
+ cmp dword [ObjectType], 5
+ je spawn_wobbly4
+ jmp spawn_wavy1  // default
+ 
+// === WAVY1 (Wavy Floor) ===
+// Stands_CtorWithCollisionLevel (0x43AD40), alloc 0x1AE7C, RET 0x14
+// Takes mesh PATH STRING (not MeshWorld pointer)
+// Constructor creates its own MeshWorld internally
+spawn_wavy1:
+ push 0x1AE7C
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Stands_CtorWithCollisionLevel(this, board, X, Y, Z, mesh_path_string)
+ // __thiscall RET 0x14: push path, Z, Y, X, board
+ push 004CFC54            // param_5 = "Levels\Level7-Wavy1" (path string)
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 0043AD40          // Stands_CtorWithCollisionLevel
+ jmp register_obj
+ 
+// === WOBBLY1 (Wobbly Platform 1) ===
+// GameLevel_ctor (0x4351F0), alloc 0x1524, RET 0x14
+// Takes MeshWorld POINTER (must create MeshWorld first)
+spawn_wobbly1:
+ // Create MeshWorld
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ 
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ push 004D0CF4            // "Levels\Level7-Wobbly1"
+ push edx                // D3D device
+ mov ecx, eax
+ call 00461510           // MeshWorld_ctor
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ // Allocate Wobbly object
+ push 0x1524
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // GameLevel_ctor(this, board, X, Y, Z, mesh)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 004351F0          // GameLevel_ctor
+ jmp register_obj
+ 
+// === WOBBLY2 (Wobbly Platform 2) ===
+spawn_wobbly2:
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ push 004D0CDC            // "Levels\Level7-Wobbly2"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1524
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 004351F0          // GameLevel_ctor
+ jmp register_obj
+ 
+// === WOBBLY3 (Wobbly Platform 3) ===
+spawn_wobbly3:
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ push 004D0CC4            // "Levels\Level7-Wobbly3"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1524
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 004351F0          // GameLevel_ctor
+ jmp register_obj
+ 
+// === WOBBLY4 (Wobbly Platform 4) ===
+spawn_wobbly4:
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ push 004D0CAC            // "Levels\Level7-Wobbly4"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1524
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 004351F0          // GameLevel_ctor
+ 
+// === REGISTER OBJECT ===
+register_obj:
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Register in board+0x2578 (active objects list)
+ push edi
+ mov ecx, [saved_board]
+ add ecx, 0x2578
+ call 00453810           // AthenaList_Append
+ 
+done_spawn:
+ popad
+ 
+original_code:
+ mov eax, [esi+0x0c5c]
+ jmp 00405E28
+ 
+00405E22:
+ jmp SpawnCode
+ nop
+ 
+[DISABLE]
+00405E22:
+ db 8B 86 5C 0C 00 00
+ 
+dealloc(SpawnCode)
+dealloc(SpawnObject)
+dealloc(ObjectType)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_30)
+dealloc(temp_mesh)
+dealloc(obj_array)
+dealloc(last_board)
+unregistersymbol(SpawnObject)
+unregistersymbol(ObjectType)
