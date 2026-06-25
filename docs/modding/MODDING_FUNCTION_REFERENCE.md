@@ -159,7 +159,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 - **Parameters:** `this` (Ball*), `x`, `y`, `z` (floats)
 - **Description:** Sets `ball+0x758/75C/760` — camera orbit center point (smoothed display position).
 
-### `Ball_StartFall`
+### `Ball_Shrink`
 - **Address:** `0x402200`
 - **Description:** Triggered when ball falls off board. Sets `ball+0xC4C = 1` (airborne), `ball+0x284 = 13.0` (shrunk radius), plays fall sound.
 

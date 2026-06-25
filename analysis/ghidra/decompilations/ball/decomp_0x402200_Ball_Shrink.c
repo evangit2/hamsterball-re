@@ -1,11 +1,11 @@
 /* Ghidra Decompilation
- * Function: Ball_StartFall
+ * Function: Ball_Shrink
  * Address: 0x402200
  * Decompiled: 2026-06-19
  */
 
 
-void __fastcall Ball_StartFall(int param_1)
+void __fastcall Ball_Shrink(int param_1)
 
 {
   *(undefined1 *)(param_1 + 0xc4c) = 1;

@@ -119,7 +119,7 @@ find_collision(ball_ptr, &out);
 
 ## fall_mode (Ball+0xC4C) is death-state only
 
-- Set by `Ball_StartFall` (0x402200) when ball falls off the level edge
-- Cleared by `Ball_EndFall` (0x402270) after respawn animation
+- Set by `Ball_Shrink` (0x402200) when ball falls off the level edge
+- Cleared by `Ball_Grow` (0x402270) after respawn animation
 - **Does NOT track per-frame ground contact** — ball can be midair (from a jump) with fall_mode=0
 - Safe to use as a **secondary gate** (don't allow jumping while dying), but NOT as a primary ground check

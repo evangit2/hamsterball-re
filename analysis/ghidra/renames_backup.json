@@ -1870,11 +1870,11 @@
     },
     {
       "address": "0x00402200",
-      "name": "Ball_StartFall"
+      "name": "Ball_Shrink"
     },
     {
       "address": "0x00402270",
-      "name": "Ball_EndFall"
+      "name": "Ball_Grow"
     },
     {
       "address": "0x00402290",

@@ -33,14 +33,14 @@ The ball has three operational modes:
 | **Dizzy/Falling** | `ball+0xC4C = 1` | Reduced physics, no camera follow, 0.75× force, no boost |
 | **Launch** | `ball+0x2F0 ≥ 100` | Free trajectory for ~1.67s, no external forces |
 
-### Ball_StartFall (0x402200)
+### Ball_Shrink (0x402200)
 Sets the falling/dizzy state:
 - `ball+0xC4C = 1` (dizzy flag)
 - `ball+0x284 = 13.0f` (shrink radius — was 26.0f)
 - `ball+0x188 = 2.5f` (reduce max speed — was 5.0f)
 - Plays fall sound from `Scene+0x4D4`
 
-### Ball_EndFall (0x402270)
+### Ball_Grow (0x402270)
 Restores normal state:
 - `ball+0xC4C = 0` (clear dizzy)
 - `ball+0x284 = 26.0f` (restore radius)

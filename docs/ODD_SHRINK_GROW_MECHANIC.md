@@ -24,10 +24,10 @@ All three are event-name-triggered (`E:` prefix) collision geometry inside `Leve
 | `E:GROWSOUND` | `0x0040F04E` in `OddCollisionEvents` | Plays grow sound (100-frame cooldown) |
 | `E:GROW` | `0x0040F09E` in `OddCollisionEvents` | Restores ball to full size |
 
-### `E:SHRINK` — Ball_StartFall (0x00402200)
+### `E:SHRINK` — Ball_Shrink (0x00402200)
 
 ```c
-void __fastcall Ball_StartFall(int ball) {
+void __fastcall Ball_Shrink(int ball) {
     ball[0xC4C] = 1;           // is_falling flag = ON (ball is shrunk)
     ball[0x284] = 0x41500000;  // radius = 13.0 (was 26.0)
     ball[0x188] = 0x40200000;  // physics_scale = 2.5 (was 5.0)
@@ -49,10 +49,10 @@ if (ball[0x1FE] == 0) {  // cooldown counter
 ball[0x1FE] = 100;  // 100-frame cooldown (4 seconds at 25fps)
 ```
 
-### `E:GROW` — Ball_EndFall (0x00402270)
+### `E:GROW` — Ball_Grow (0x00402270)
 
 ```c
-void __fastcall Ball_EndFall(int ball) {
+void __fastcall Ball_Grow(int ball) {
     ball[0xC4C] = 0;           // is_falling flag = OFF (ball is normal)
     ball[0x284] = 0x41D00000;  // radius = 26.0 (restored)
     ball[0x188] = 0x40A00000;  // physics_scale = 5.0 (restored)
@@ -156,8 +156,8 @@ The Odd board's collision dispatch handler is at `0x0040ED30` (vtable[0x1D], `+0
 
 | Function | Address | Role |
 |----------|---------|------|
-| `Ball_StartFall` | `0x00402200` | Shrinks ball (radius 26→13, physics 5→2.5) |
-| `Ball_EndFall` | `0x00402270` | Restores ball (radius 13→26, physics 2.5→5) |
+| `Ball_Shrink` | `0x00402200` | Shrinks ball (radius 26→13, physics 5→2.5) |
+| `Ball_Grow` | `0x00402270` | Restores ball (radius 13→26, physics 2.5→5) |
 | `Ball_FallUpdate` | `0x00408830` | Physics update when shrunk (vtable[65]) |
 | `Ball_Update` | `0x00405E00` | Normal physics (checks is_falling flag) |
 | `Ball_Render` | `0x00402DE0` | Visual scaling from radius |
