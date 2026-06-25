@@ -56,7 +56,7 @@ namespace BallOffsets {
     constexpr int RADIUS_VALUE    = 0x284;  // piVar5[0xa1] — SIZE tag parsed value
     constexpr int RADIUS_OVERRIDE  = 0x27C;  // piVar5[0x9f]=0 flag when SIZE tag set
     constexpr int SIZE_FLAG        = 0xC4C;  // *(byte*)(piVar5+0x313)=1 when SIZE tag present
-    constexpr int SOME_FLAG       = 0x281;  // cleared to 0 on spawn
+    constexpr int UNUSED_INIT_FLAG = 0x281;  // DEAD: set to 1 by ctor, never read by any function
     constexpr int VTABLE          = 0x000;   // *piVar5 = vtable pointer
 }
 

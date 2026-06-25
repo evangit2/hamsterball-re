@@ -90,7 +90,7 @@ typedef struct {
     float gravity_scale;          // +0x278 0x3DCCCCCD = 0.1f
     uint32_t field_27c;           // +0x27C = 0
     uint8_t field_280;            // +0x280 = 0
-    uint8_t is_falling;           // +0x281 set to 1 in ctor
+    uint8_t unused_init_flag;      // +0x281 set to 1 in ctor, NEVER READ (dead code)
     uint8_t pad_282[2];          // +0x282
     float radius;                 // +0x284 0x41D80000 = 27.0f
     uint32_t field_288;           // +0x288 = 0

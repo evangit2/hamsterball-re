@@ -77,7 +77,7 @@ Ball (vtable 0x4CF3A0, size 0xC98) - player ball (NOT in Gadget hierarchy)
 | 0x254 | bUses_alpha | byte | color_a != 1.0f |
 | 0x264 | pRumble_timer1 | byte[20] | RumbleBoard timer 1 |
 | 0x278 | flGravity_scale | float | 0.1f |
-| 0x281 | bIs_falling | byte | 1=falling |
+| 0x281 | bUnused_init_flag | byte | 1=init (DEAD: never read) |
 | 0x284 | flRadius | float | 27.0f |
 | 0x290 | pRumble_timer2 | byte[20] | RumbleBoard timer 2 |
 | 0x2A4 | - | float | 5.0f |

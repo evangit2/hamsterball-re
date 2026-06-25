@@ -4,7 +4,7 @@
 
 | Offset | Name | Reliable for ground check? | Notes |
 |--------|------|---------------------------|-------|
-| `Ball+0x281` | `is_falling` | ❌ NO | Legacy/init flag, NOT read during Ball_Update physics tick |
+| `Ball+0x281` | `unused_init_flag` | ❌ NO | DEAD: set by ctor, NEVER read by any function |
 | `Ball+0xC4C` | `fall_mode` | ⚠ Partial | Only tracks death/respawn (fall-off-level), NOT ground contact |
 | `Ball+0x2E9` | `impact_shatter` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE.** |
 | `Ball+0x260` | `is_airborne` | ⚠ Partial | Set by speed/friction thresholds, not true ground contact |
@@ -99,9 +99,9 @@ find_collision(ball_ptr, &out);
 
 ---
 
-## ⚠ is_falling (Ball+0x281) is also NOT reliable
+## ⚠ unused_init_flag (Ball+0x281) is DEAD CODE
 
-- Documented as `is_falling` in BALL_OBJECT.md
+- Documented as `unused_init_flag` (formerly is_falling) in BALL_OBJECT.md
 - **NOT read during `Ball_Update` (0x405E00)** physics tick
 - Legacy/init flag only
 - Setting it to 0 in water mods works as a side effect (clears a stale state), but it does NOT reflect current ground contact
