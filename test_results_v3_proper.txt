@@ -3,17 +3,17 @@ Date: Wed Jun 24 00:11:17 UTC 2026
 Mod DLL: c61dcba9f277828730ba8e65f9c4a465
 Original bass_real.dll: 1a69210c5e399b5d007218a7d3a31dbd
 
-=== Testing: Beginner (Level2) ===
+=== Testing: Beginner (LevelCascade) ===
   20s: PID=115639 ALIVE=YES HOOK=HOOKED (e81150387690)
   35s: PID=115639 ALIVE=YES HOOK=HOOKED (e81150387690)
   Result: PASS
 
-=== Testing: Intermediate (Level3) ===
+=== Testing: Intermediate (Level2) ===
   20s: PID=115794 ALIVE=YES HOOK=HOOKED (e81150387690)
   35s: PID=115794 ALIVE=YES HOOK=HOOKED (e81150387690)
   Result: PASS
 
-=== Testing: Dizzy (LevelCascade) ===
+=== Testing: Dizzy (Level3) ===
   20s: PID=115959 ALIVE=YES HOOK=HOOKED (e81150387690)
   35s: PID=115959 ALIVE=YES HOOK=HOOKED (e81150387690)
   Result: PASS

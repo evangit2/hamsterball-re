@@ -498,7 +498,7 @@ The jump table at `0x42761C` calls `operator_new` with different allocation size
 |-----------|------------------|-------------------|
 | L1 Warm-up | (none — first section) | (no sub-meshes) |
 | L2 Beginner | CASCADERACE | (no sub-meshes) |
-| L3 Intermediate | INTERMEDIATERACE | Level2-Bridge, Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
+| L3 Intermediate | INTERMEDIATERACE | Level2-Bridge, MOUSETRAP |
 | L4 Dizzy | DIZZYRACE | Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie |
 | L5 Tower | (checks TOWERRACE) | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret |
 | L6 Up | UPRACE | LevelUp-Lifter, LevelUp-SpeedCylinder, LevelUp-Button, Level2-Bridge, Level10-2PBridge, Level3-Tipper, Level10-Bridge1, Level10-Bridge2, Level9-PopCylinder1-2, Level8-Blockdawg1-2, Level4-Catapult, Level3-Gluebie |

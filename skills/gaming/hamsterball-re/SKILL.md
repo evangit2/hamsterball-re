@@ -259,7 +259,7 @@ Pattern: Each Board constructor calls Board_ctor, sets vtable, name strings ("Bo
 | Map Case | Level | Board Address | Levels Loaded |
 |----------|-------|--------------|---------------|
 | 1 | Warm-Up | 0x41CA40 | none (uses existing data) |
-| 2 | Intermediate | 0x41CB20 | Level2-Bridge |
+| 2 | Intermediate | 0x41CB20 | Level2-Bridge (Intermediate) |
 | 3 | Dizzy | 0x41D060 (known) | Level3-Swirl |
 | 5 | Tower | 0x41E340 | Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret + YellowLink, Chomper meshes |
 | 8 | Expert | 0x41EA40 | Level5-Bridge + 3x hammyjudge meshes |

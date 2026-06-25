@@ -21,9 +21,9 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 # All 14 race levels (excluding Level1=Warm-Up itself)
 LEVELS = [
-    ("Level2",          "Beginner"),
-    ("Level3",          "Intermediate"),
-    ("LevelCascade",   "Dizzy"),
+    ("LevelCascade",   "Beginner"),
+    ("Level2",          "Intermediate"),
+    ("Level3",          "Dizzy"),
     ("Level4",          "Tower"),
     ("LevelUp",         "Up"),
     ("LevelDark",       "Neon"),

@@ -14,7 +14,7 @@ Spawns Tower Race drawbridges at Player 1's position in any level via hotkey.
 | Level | board+0x4378 contains |
 |-------|----------------------|
 | Tower (Level4) | `Levels\Level4-Mace` mesh (set by BoardLevel5_Tower_ctor) |
-| Beginner (Level2) | 0 (unused) |
+| Beginner (LevelCascade) | 0 (unused) |
 | Other races | varies — may contain other mesh data |
 
 The original script wrote the drawbridge mesh to board+0x4378 permanently and never restored it. In Beginner Race the slot was 0 (unused) so it worked. In Tower Race and other races, the slot already contained another level's mesh, causing:

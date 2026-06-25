@@ -309,7 +309,7 @@ All level setups follow: Level_ctor → Level_Clone → Level_InitScene → vmet
 |-------|---------|------|----------------|
 | Level1 | 0x41CA40 | Warm-up Race | — |
 | levelcascade | 0x4110D0 | Beginner Race | 8 bumpers |
-| Level3 | (base) | Intermediate Race | — |
+| Level2 | (base) | Intermediate Race | — |
 | Level4 | 0x416270 | Dizzy Race | 2-player support |
 | Level5 | 0x40E190 | Tower Race | — |
 | Level6 | 0x40830 | Sky Race | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
