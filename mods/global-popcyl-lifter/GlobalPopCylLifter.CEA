@@ -1,0 +1,429 @@
+[ENABLE]
+
+// =============================================================
+// Global PopCylinder + Lifter Spawn (Odd Race objects globally)
+// =============================================================
+// PopCylinder: the launch cylinder from Odd Race (level9-popcylinder1 mesh)
+// Lifter: the drop-lift platform from Up Race (levelup-lifter mesh)
+// Both clone their mesh via Stands_ctor → have real geometry → render properly.
+//
+// Usage: Set SpawnPopCylinder or SpawnLifter to 1 via CE address list,
+//       then advance one frame (or just wait). Object spawns at P1 position.
+// =============================================================
+
+alloc(SpawnCode, 8192)
+alloc(SpawnPopCylinder, 4)
+alloc(SpawnLifter, 4)
+alloc(saved_board, 4)
+alloc(param_block, 32)
+alloc(out_obj, 4)
+alloc(out_col, 4)
+alloc(temp_mesh, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20, 4)
+alloc(popcyl_str, 16)
+alloc(lifter_str, 8)
+alloc(popcyl_mesh_str, 32)
+alloc(lifter_mesh_str, 32)
+
+registersymbol(SpawnPopCylinder)
+registersymbol(SpawnLifter)
+
+SpawnPopCylinder:
+  dd 0
+
+SpawnLifter:
+  dd 0
+
+saved_board:
+  dd 0
+
+param_block:
+  dd 0 0 0 0 0 0 0 0
+
+out_obj:
+  dd 0
+
+out_col:
+  dd 0
+
+temp_mesh:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20:
+  dd 0x41A00000
+
+popcyl_str:
+  db 'POPCYLINDER',0
+
+lifter_str:
+  db 'LIFTER',0
+
+popcyl_mesh_str:
+  db 'levels\level9-popcylinder1',0
+
+lifter_mesh_str:
+  db 'levels\levelup-lifter',0
+
+label(original_code)
+label(save_pos)
+label(check_popcyl)
+label(check_lifter)
+label(do_popcyl_mesh)
+label(do_popcyl_factory)
+label(popcyl_post)
+label(popcyl_skip)
+label(do_lifter_mesh)
+label(do_lifter_factory)
+label(lifter_post)
+label(lifter_skip)
+label(register_obj)
+label(register_done)
+label(done_spawn)
+
+SpawnCode:
+save_pos:
+  cmp dword [esi+0x18], 0
+  jne check_popcyl
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_popcyl:
+  cmp dword [SpawnPopCylinder], 0
+  je check_lifter
+  cmp dword [esi+0x18], 0
+  jne check_lifter
+  mov dword [SpawnPopCylinder], 0
+  pushad
+
+  // === POPCYLINDER SPAWN ===
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+
+  // Safety checks: board+0x8AC and board+0x878→+0x174
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+do_popcyl_mesh:
+  // Allocate MeshWorld (0x10D0 bytes)
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  // MeshWorld_ctor(this=alloc, gfx_device=board→app→+0x174, path=popcyl_mesh_str)
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push popcyl_mesh_str
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  // Store mesh in board+0x5420 (popcylinder_mesh slot)
+  mov edx, [saved_board]
+  mov [edx+0x5420], eax
+
+  // Set up position param_block
+  mov edx, [playerX]
+  mov [param_block+4], edx
+  mov edx, [playerY]
+  mov [param_block+8], edx
+  mov edx, [playerZ]
+  mov [param_block+0xC], edx
+
+do_popcyl_factory:
+  // Clear param_block fields
+  mov dword [param_block], 0
+  mov dword [param_block+0x10], 0
+  mov dword [param_block+0x14], 0
+  mov dword [param_block+0x18], 0
+  mov dword [out_obj], 0
+  mov dword [out_col], 0
+
+  // CreateLevelObjects(this=board, param_1="POPCYLINDER", param_2=&out_obj, param_3=&out_col, param_4=param_block)
+  push param_block
+  push out_col
+  push out_obj
+  push popcyl_str
+  mov ecx, [saved_board]
+  call 004121D0
+
+popcyl_post:
+  mov eax, [out_obj]
+  test eax, eax
+  jz popcyl_skip
+
+  mov esi, eax
+
+  // Allocate Timer struct (0x68 bytes) for render state
+  sub esp, 0x68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0            // Timer_Init
+
+  // Register in board+0xCD4 (main render list)
+  push esi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810            // AthenaList_Append (ret 4)
+
+  // Register in board+0x8AC→+0x480→+0x1C (post-alpha render list)
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz popcyl_skip
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz popcyl_skip
+  push esi
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+  // Call vtable[0x58] (SceneObject_CallUpdate)
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x58]
+
+  // Call vtable[0x54] (SceneObject_CallRender) — no stack params
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x54]
+
+  // Register collision sub-objects
+  mov eax, [out_col]
+  test eax, eax
+  jz popcyl_skip_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz popcyl_skip_col
+  mov eax, [out_col]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+
+popcyl_skip_col:
+  // Timer cleanup
+  mov ecx, ebx
+  call 00457A40
+  add esp, 0x68
+
+popcyl_skip:
+  mov dword [temp_mesh], 0
+  popad
+  jmp check_lifter
+
+check_lifter:
+  cmp dword [SpawnLifter], 0
+  je original_code
+  cmp dword [esi+0x18], 0
+  jne original_code
+  mov dword [SpawnLifter], 0
+  pushad
+
+  // === LIFTER SPAWN ===
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+do_lifter_mesh:
+  // Allocate MeshWorld (0x10D0 bytes)
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  // MeshWorld_ctor(this=alloc, gfx_device, path=lifter_mesh_str)
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push lifter_mesh_str
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  // Store mesh in board+0x47E0 (shared SpatialTree slot for Lifters)
+  mov edx, [saved_board]
+  mov [edx+0x47E0], eax
+
+  // Set up position param_block
+  mov edx, [playerX]
+  mov [param_block+4], edx
+  // Raise Y by 20.0 so lifter appears slightly above ball
+  fld dword [playerY]
+  fsub dword [float_20]
+  fstp dword [param_block+8]
+  mov edx, [playerZ]
+  mov [param_block+0xC], edx
+
+do_lifter_factory:
+  mov dword [param_block], 0
+  mov dword [param_block+0x10], 0
+  mov dword [param_block+0x14], 0
+  mov dword [param_block+0x18], 0
+  mov dword [out_obj], 0
+  mov dword [out_col], 0
+
+  // CreateSpeedCylinder(this=board, param_1="LIFTER", param_2=&out_obj, param_3=&out_col, param_4=param_block)
+  push param_block
+  push out_col
+  push out_obj
+  push lifter_str
+  mov ecx, [saved_board]
+  call 004117B0
+
+lifter_post:
+  mov eax, [out_obj]
+  test eax, eax
+  jz lifter_skip
+
+  mov esi, eax
+
+  // Allocate Timer struct (0x68 bytes)
+  sub esp, 0x68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  // Register in board+0xCD4 (main render list)
+  push esi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // Register in board+0x8AC→+0x480→+0x1C (post-alpha render list)
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz lifter_skip
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz lifter_skip
+  push esi
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+  // Call vtable[0x58] (SceneObject_CallUpdate)
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x58]
+
+  // Call vtable[0x54] (SceneObject_CallRender) — no stack params
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x54]
+
+  // Register collision sub-objects
+  mov eax, [out_col]
+  test eax, eax
+  jz lifter_skip_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz lifter_skip_col
+  mov eax, [out_col]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+
+lifter_skip_col:
+  // Timer cleanup
+  mov ecx, ebx
+  call 00457A40
+  add esp, 0x68
+
+lifter_skip:
+  mov dword [temp_mesh], 0
+  popad
+  jmp original_code
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnPopCylinder)
+dealloc(SpawnLifter)
+dealloc(saved_board)
+dealloc(param_block)
+dealloc(out_obj)
+dealloc(out_col)
+dealloc(temp_mesh)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20)
+dealloc(popcyl_str)
+dealloc(lifter_str)
+dealloc(popcyl_mesh_str)
+dealloc(lifter_mesh_str)
+unregistersymbol(SpawnPopCylinder)
+unregistersymbol(SpawnLifter)
