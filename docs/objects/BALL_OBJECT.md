@@ -1,7 +1,7 @@
 # Hamsterball — The Ball Object: Complete Modding Reference
 
 **Scope:** Original `Hamsterball.exe` (PE32, i386, Athena engine)  
-**Last Updated:** 2026-06-04  
+**Last Updated:** 2026-06-25  
 **Target Audience:** Modders, DLL injectors, reverse-engineers
 
 ---
@@ -10,20 +10,21 @@
 
 1. [What Is the Ball Object?](#what-is-the-ball-object)
 2. [Memory Layout (0xC98 bytes)](#memory-layout)
-3. [Vtable Methods](#vtable-methods)
-4. [Key Modifiable Fields](#key-modifiable-fields)
-5. [Physics Pipeline (Ball_Update)](#physics-pipeline)
-6. [Collision & Events](#collision--events)
-7. [Rendering](#rendering)
-8. [AI & Special Modes](#ai--special-modes)
-9. [Modding Hook Points](#modding-hook-points)
-10. [Quick Reference](#quick-reference)
+3. [PhysicsObject / CollisionMesh (at +0x1A4, size 0xCB0)](#physics-object)
+4. [Vtable Methods](#vtable-methods)
+5. [Key Modifiable Fields](#key-modifiable-fields)
+6. [Physics Pipeline (Ball_Update)](#physics-pipeline)
+7. [Collision & Events](#collision--events)
+8. [Rendering](#rendering)
+9. [AI & Special Modes](#ai--special-modes)
+10. [Modding Hook Points](#modding-hook-points)
+11. [Quick Reference](#quick-reference)
 
 ---
 
 ## What Is the Ball Object?
 
-The Ball is the player-controlled hamsterball. It is the **first parameter** of `Ball_Update` (0x405E00) and the core physics actor in every race and arena mode. The Ball derives from `GameObject` and has a vtable at **0x4CF3A0** with 9 method pointers.
+The Ball is the player-controlled hamsterball. It is the **first parameter** of `Ball_Update` (0x405E00) and the core physics actor in every race and arena mode. The Ball derives from `GameObject` and has a vtable at **0x4CF3A0** with **65+ entries** (not 9 — see [Vtable Methods](#vtable-methods)).
 
 **Constructor chain:**
 ```
@@ -32,7 +33,19 @@ Ball_ctor2 (0x4039E0)     → init physics defaults, radius, gravity, timers
 Scene_SpawnBallsAndObjects → place at START object, set player_index
 ```
 
-**Destructor:** `Ball_dtor` (0x4027F0) → `Ball_Cleanup` → free strings, timers, render contexts.
+**Constructor field overrides:** `Ball_ctor2` sets initial defaults. Then `Ball_InitPhysicsDefaults` (vtable[1], 0x405100) is called during setup and **overrides many fields** with different values. The runtime values differ from the raw ctor2 defaults:
+
+| Field | ctor2 value | InitPhysicsDefaults value |
+|-------|-------------|---------------------------|
+| +0x188 max_speed | 5000.0 | **6.0** |
+| +0x1A0 speed_scale | 1.0 | **0.2** |
+| +0x278 gravity_scale | 0.1 | **0.5** |
+| +0x27C (unknown) | 0.0 | **0.2** |
+| +0x284 radius | 27.0 | **35.0** |
+
+Always reference the InitPhysicsDefaults column for actual in-game defaults.
+
+**Destructor:** `Ball_dtor` (0x4027F0) → `Ball_dtor2` → `GameObject_dtor` → optionally `free(this)`.
 
 ---
 
@@ -42,116 +55,209 @@ Scene_SpawnBallsAndObjects → place at START object, set player_index
 **Base class:** `GameObject` (vtable 0x4CF314)  
 **Own vtable:** 0x4CF3A0
 
-### Top-Level Layout
-
-| Range | Section | Size |
-|-------|---------|------|
-| 0x000–0x01C | Identity / vtable / scene links | 0x1C |
-| 0x01C–0x107 | UITimer sub-object | 0xEC |
-| 0x108–0x1A7 | Timer sub-object | 0xA0 |
-| 0x1A8–0x1B7 | Gravity data | 0x10 |
-| 0x1B8–0x207 | Render Context #1 | 0x50 |
-| 0x208–0x253 | Render Context #2 + tint | 0x4C |
-| 0x254–0x263 | Alpha / boost flags | 0x10 |
-| 0x264–0x277 | RumbleBoard Timer #1 | 0x14 |
-| 0x278–0x28F | Gravity scale / falling / radius | 0x18 |
-| 0x290–0x2DB | RumbleBoard Timer #2 + spin | 0x4C |
-| 0x2DC–0x31B | Checkpoint / collision state | 0x40 |
-| 0x31C–0x767 | (camera / matrix / audio gap) | ~0x44C |
-| 0x768–0x7C7 | Camera flags + follow factor | ~0x60 |
-| 0x7C8–0x807 | Matrix #1 (4×4) | 0x40 |
-| 0x808–0x847 | Matrix #2 (4×4) | 0x40 |
-| 0x848–0xC27 | (collision / trail lists / misc) | ~0x3E0 |
-| 0xC28–0xC4B | Display string + teleport | 0x24 |
-| 0xC4C–0xC87 | Airborne / misc flags | 0x3C |
-| 0xC88–0xC97 | World transform matrix (4×4) | 0x40 |
-
 ### Critical Fields (Modder-Useful Offsets)
 
-| Offset | Type | Name | Default | Description |
+| Offset | Type | Name | Default (runtime) | Description |
 |--------|------|------|---------|-------------|
-| 0x000 | void** | vtable | 0x4CF314 | Ball vtable (switches to 0x4CF3A0 after ctor2) |
-| 0x014 | void* | scene | — | Pointer to parent Scene object |
-| 0x018 | int32 | player_index | -1 | -1 = AI / none, 0 = Player 1, 1 = Player 2 |
+| 0x000 | void** | vtable | 0x4CF3A0 | Ball vtable (65+ entries) |
+| 0x00C | int32 | string_timer | 0 | Countdown to free display_string |
+| 0x010 | void* | app_state | — | App pointer (from param_1+0x878) |
+| 0x014 | void* | scene | — | Pointer to parent Scene/Board object |
+| 0x018 | int32 | player_index | -1 | -1 = AI / none, 0 = Player 1, 1 = Player 2, etc. |
+| 0x014 | void* | render_callback | — | UITimer sub-object start |
 | 0x150 | float | accumulated_time | 0.0 | Delta-time accumulator per frame |
+| 0x154 | int32 | rng_seed | — | Random seed (set by RNG_Rand) |
 | 0x158 | float | prev_pos_x | 0.0 | Previous frame X |
 | 0x15C | float | prev_pos_y | 0.0 | Previous frame Y |
 | 0x160 | float | prev_pos_z | 0.0 | Previous frame Z |
 | **0x164** | **float** | **pos_x** | **0.0** | **Current position X** |
 | **0x168** | **float** | **pos_y** | **0.0** | **Current position Y** |
 | **0x16C** | **float** | **pos_z** | **0.0** | **Current position Z** |
-| **0x170** | **float** | **vel_x** | **0.0** | **Velocity X** |
-| **0x174** | **float** | **vel_y** | **0.0** | **Velocity Y** |
-| **0x178** | **float** | **vel_z** | **0.0** | **Velocity Z** |
-| 0x17C | float | accel_x | 0.0 | Acceleration X (cleared each frame) |
+| **0x170** | **float** | **force_x** | **0.0** | **Force accumulator X (cleared each frame, filled by ApplyForce)** |
+| **0x174** | **float** | **force_y** | **0.0** | **Force accumulator Y** |
+| **0x178** | **float** | **force_z** | **0.0** | **Force accumulator Z** |
+| 0x17C | float | accel_x | 0.0 | Acceleration X |
 | 0x180 | float | accel_y | 0.0 | Acceleration Y |
 | 0x184 | float | accel_z | 0.0 | Acceleration Z |
-| **0x188** | **float** | **max_speed** | **5000.0** | **Speed cap (default = 5.0f)** |
+| **0x188** | **float** | **max_speed** | **6.0** | **Speed cap (ctor2=5000.0, overridden to 6.0 by InitPhysicsDefaults)** |
 | **0x18C** | **float** | **speed_scale** | **1.0** | **Global speed multiplier** |
-| 0x1A0 | float | max_speed_cap | 1.0 | Secondary cap multiplier |
-| 0x1A4 | void* | collision_mesh | — | CollisionMesh ptr (from CollisionMesh_ctor) |
+| 0x190 | float | unknown_190 | -1.0 | Unknown (set to -1.0 in ctor2) |
+| 0x194 | float | unknown_194 | -1.0 | Unknown (set to -1.0 in ctor2) |
+| 0x19C | byte | unknown_19C | 0 | Unknown flag |
+| **0x1A0** | **float** | **speed_cap_multiplier** | **0.2** | **Secondary cap multiplier (ctor2=1.0, overridden to 0.2)** |
+| **0x1A4** | **PhysicsObject*** | **physics_object** | — | **PhysicsObject (CollisionMesh) pointer, size 0xCB0 — see [PhysicsObject](#physics-object)** |
 | 0x1A8 | float[3] | gravity_vec | (0,1,0) | Gravity direction vector |
+| 0x1B8 | — | render_ctx_1 | — | RenderContext sub-object |
 | 0x1C8 | float | render_alpha | 0.75 | Render context #1 alpha |
+| 0x1BC | float | render_scale_x | 0.25 | Render context scale |
+| 0x1C0 | float | render_scale_y | 0.25 | Render context scale |
+| 0x1C4 | float | render_scale_z | 0.25 | Render context scale |
+| 0x204 | byte | render_flag_204 | 1 | Unknown render flag |
+| 0x208 | — | render_ctx_2 | — | RenderContext sub-object #2 |
 | 0x20C | float | color_r | 1.0 | RGBA red |
 | 0x210 | float | color_g | 1.0 | RGBA green |
 | 0x214 | float | color_b | 1.0 | RGBA blue |
 | 0x218 | float | color_a | 1.0 | RGBA alpha |
+| 0x23C | float | render2_r | 1.0 | Render context #2 RGBA |
+| 0x240 | float | render2_g | 1.0 | Render context #2 RGBA |
+| 0x244 | float | render2_b | 1.0 | Render context #2 RGBA |
+| 0x248 | float | render2_a | 1.0 | Render context #2 RGBA |
 | 0x254 | uint8 | uses_alpha | 0 | True if color_a != 1.0 |
+| 0x25C | float | unknown_25C | 0.0 | Unknown (modified in Ball_Update spin friction) |
 | 0x260 | uint8 | boost_hit_flag | 0 | Set on boost pad contact |
 | 0x264 | uint8[0x14] | rumble_timer1 | — | RumbleBoard timer sub-object |
-| 0x278 | float | gravity_scale | 0.1 | Gravity multiplier |
+| 0x26C | int32 | unknown_26C | 20 | Unknown int (0x14) |
+| **0x278** | **float** | **gravity_scale** | **0.5** | **Gravity multiplier (ctor2=0.1, overridden to 0.5)** |
+| 0x27C | float | unknown_27C | 0.2 | Unknown (ctor2=0.0, overridden to 0.2) |
+| 0x280 | uint8 | unknown_280 | 0 | Unknown flag |
 | 0x281 | uint8 | is_falling | 1 | Set to 1 in ctor; 0 when on surface |
-| **0x284** | **float** | **radius** | **27.0** | **Ball radius (collision + render)** |
+| **0x284** | **float** | **radius** | **35.0** | **Ball radius (ctor2=27.0, overridden to 35.0; shrunk to 13.0 on fall)** |
+| 0x288 | float | unknown_288 | 0.0 | Unknown |
 | 0x290 | uint8[0x14] | rumble_timer2 | — | Second RumbleBoard timer |
-| 0x2A4 | float | spin_rate | 5.0 | Angular spin factor |
-| 0x2BC | float | force_x | 0.0 | Accumulated force X (from input) |
-| 0x2C0 | float | force_y | 0.0 | Accumulated force Y |
-| 0x2C4 | float | force_z | 0.0 | Accumulated force Z |
+| 0x29C | float | unknown_29C | 1.0 | Unknown (modified in Ball_Update) |
+| **0x2A4** | **float** | **spin_rate** | **5.0** | **Angular spin factor** |
+| 0x2A8 | float[3] | speed_modifier | (0,0,0) | Vec3 speed modifier (init by Vec3_Init) |
+| 0x2B8 | float[3] | accel_vec | (0,0,0) | Acceleration vector |
+| 0x2C0 | float | force_x_2C0 | 0.0 | Secondary force accumulator X |
+| 0x2C4 | float | force_y_2C4 | 0.0 | Secondary force accumulator Y |
+| 0x2C8 | float | force_z_2C8 | 0.0 | Secondary force accumulator Z |
 | 0x2CC | uint8 | force_disable | 0 | If 1, Ball_ApplyForce is skipped |
+| 0x2D5 | uint8 | unknown_2D5 | 0 | Unknown (cleared by timer decay) |
+| 0x2D8 | int32 | unknown_2D8 | 0 | Unknown |
 | **0x2DC** | **float** | **checkpoint_x** | **0.0** | **Last safe position X** |
 | **0x2E0** | **float** | **checkpoint_y** | **0.0** | **Last safe position Y** |
 | **0x2E4** | **float** | **checkpoint_z** | **0.0** | **Last safe position Z** |
 | 0x2E8 | uint8 | event_flag | 0 | Checkpoint-hit event marker |
 | 0x2E9 | uint8 | impact_shatter | 0 | ⚠ **NOT on_ramp/ground flag!** Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. See docs/agent-knowledge/ball-ground-detection.md |
+| 0x2EC | int32 | unknown_2EC | 0 | Unknown |
 | 0x2F0 | uint32 | force_count | 0 | Number of forces applied this frame |
+| 0x2F4 | int32 | unknown_2F4 | 0 | Unknown |
 | 0x2F8 | uint8 | update_in_progress | 0 | Set 1 during Ball_Update |
 | 0x2F9 | uint8 | frozen | 0 | Stuck on surface (velocity zeroed) |
-| 0x2FC | uint32 | freeze_timer | 0 | Countdown while frozen |
-| 0x300 | uint32 | freeze_val | 150 | Constant written when surface found |
+| 0x2FC | float | freeze_timer | 1.0 | Countdown while frozen (ctor2=1.0, not 150 as previously documented) |
+| 0x300 | uint32 | freeze_val | 0 | (ctor2=0, not 150 as previously documented) |
+| 0x30A | char* | display_string_ptr | NULL | Floating text string (freed when string_timer hits 0) |
+| 0x30F | uint8 | teleport_flag | 0 | Teleport pending flag |
 | 0x310 | uint8 | state_active | 1 | General active flag |
-| 0x324 | uint8 | in_tube | 0 | If true, Ball_Update returns immediately |
-| 0x768 | uint8 | cam_active | 1 | Camera follow enabled |
-| 0x76A | uint8 | cam_flag | 0 | Cleared on surface snap |
-| 0x7C8 | float[16] | matrix_1 | identity | 4×4 transform matrix |
-| 0x808 | float[16] | matrix_2 | identity | 4×4 transform matrix |
+| 0x311 | float | teleport_x | 0.0 | Teleport destination X |
+| 0x312 | float | teleport_y | 0.0 | Teleport destination Y |
+| 0x313 | uint8 | unknown_313 | 0 | Camera/limit-related flag |
+| 0x314 | float | ambient_sound_timer | 0.0 | Timer for ambient sound decay |
+| 0x324 | uint8 | in_tube | 0 | If true, Ball_Update returns immediately — no physics! |
+| 0x328 | int32 | unknown_328 | -1 | Unknown (set to 0xFFFFFFFF) |
+| 0x32C | AthenaList | trail_list_32C | — | Trail particle list |
 | 0x700 | int32 | sound_3d_handle | — | 3D sound effect handle |
+| 0x744 | int32 | unknown_744 | 0 | Unknown |
+| 0x748 | int32 | unknown_748 | 0 | Unknown |
+| 0x74C | int32 | unknown_74C | 0 | Unknown |
+| 0x750 | int32 | unknown_750 | 0 | Unknown |
+| 0x754 | int32 | unknown_754 | 0 | Unknown |
+| 0x768 | uint8 | cam_active | 1 | Camera follow enabled |
+| 0x769 | uint8 | cam_flag_769 | 0 | Camera snap flag |
+| 0x76A | uint8 | cam_flag_76A | 0 | Cleared on surface snap |
+| 0x764 | float | cam_follow_factor | 1.0 | Camera follow lerp factor |
+| 0x778-0x784 | float[4] | unknown_778 | 0.0 | Unknown camera-related fields |
+| 0x788 | float[16] | matrix_2 | zeros | Second matrix (4×4, zeroed in ctor2) |
+| 0x7C8 | float[16] | matrix_1 | identity | 4×4 transform matrix |
+| 0x808 | float[2] | unknown_808 | (0,0) | Unknown (NOT freeze_counter — see freeze_timer at 0x2FC) |
+| 0x810 | AthenaList | list_810 | — | Unknown list |
 | **0xC28** | **char*** | **display_string** | **NULL** | **Floating text above ball** |
+| 0x0C38 | int32 | unknown_C38 | -1 | Unknown (set to 0xFFFFFFFF) |
 | 0xC3C | uint8 | teleport_active | 0 | Teleport in progress |
 | 0xC40 | float | teleport_x | 0.0 | Teleport destination X |
 | 0xC44 | float | teleport_y | 0.0 | Teleport destination Y |
 | 0xC48 | float | teleport_z | 0.0 | Teleport destination Z |
 | 0xC4C | uint8 | airborne | 0 | Airborne state flag |
+| 0xC50 | int32 | unknown_C50 | 0 | Unknown |
+| 0xC54 | int32 | unknown_C54 | 0 | Unknown (AthenaList data pointer) |
+| 0xC58 | uint8 | unknown_C58 | 0 | Unknown |
+| 0xC5C | int32 | unknown_C5C | 0 | Unknown (alternate_state flag used by ApplyForce) |
 | 0xC88 | float[16] | world_matrix | identity | 4×4 world transform for rendering |
 
-> **Modding note:** To teleport the ball, write to `pos_x/y/z` (0x164) AND set `teleport_active=1` with destination coords at 0xC40. The engine will lerp toward the destination over several frames.
+> **Field naming note:** Fields at +0x170/+0x174/+0x178 were previously documented as "vel_x/y/z". They are actually **force accumulators** — cleared to zero at the start of each Ball_Update frame, then populated by Ball_ApplyForce. The actual per-frame velocity is the delta between `pos` (0x164) and `prev_pos` (0x158), computed internally by Ball_Update and stored temporarily.
+
+---
+
+## Physics Object
+
+The field at **+0x1A4** is a pointer to a **PhysicsObject** (internally called `CollisionMesh`), allocated as `operator_new(0xCB0)` (3264 bytes) and constructed via `CollisionMesh_ctor` (0x456D80).
+
+This is NOT just a collision mesh — it stores the ball's runtime physics state including gravity normal, computed velocity, collision entries, and AI parameters.
+
+### Construction
+
+```
+CollisionMesh_ctor(this, ball_ptr)    // 0x456D80
+  → Sets vtable to 0x4D8E10 (Mesh_DeletingDtor)
+  → Stores ball back-reference at +0x10
+  → Inits 3 AthenaLists at +0x18, +0x430, +0x848
+  → Calls Ball_InitBattleMode(this)   // 0x456CD0
+```
+
+### PhysicsObject Internal Layout (size 0xCB0)
+
+| Offset | Type | Default | Description |
+|--------|------|---------|-------------|
+| +0x000 | void** | 0x4D8E10 | Vtable (Mesh_DeletingDtor) |
+| +0x010 | void* | ball ptr | Back-reference to owner Ball |
+| +0x018 | AthenaList | — | **Collision entry list** (type 1=ball-ball, 2=wall, 5=floor entries) |
+| +0x430 | AthenaList | — | Second collision node list |
+| +0x848 | AthenaList | — | Third list (event collision objects) |
+| +0xC60 | int32 | 3 | Battle mode state (3 = arena default) |
+| +0xC64 | float | — | (not set in ctor) — written by Ball_Update as **speed** |
+| +0xC68 | float | 0.555 | Battle mode friction parameter |
+| +0xC6C | float | 1.0 → 600.0 | **CHASE distance** (overridden to 600.0 by InitPhysicsDefaults) |
+| +0xC70 | float | 1000.0 → 1200.0 | **HOME distance** (overridden to 1200.0 by InitPhysicsDefaults) |
+| +0xC74 | float | 0 | Speed value (written by Ball_SetSpeed) |
+| +0xC78 | float | 25.0 → 0.0 | **spin_angle** (overridden to 0.0 by InitPhysicsDefaults) |
+| +0xC7C | byte | 1 | Unknown flag |
+| +0xC80 | float[3] | (0,0,0) | Unknown velocity vector |
+| +0xC8C | float[3] | (0,-1.0,0) | **Gravity normal** (default points down) |
+| +0xC98 | float[3] | — | **Computed velocity** (written every frame by Ball_Update) |
+| +0xCA4 | float[3] | (0,0,0) | Direction vector (surface normal cache) |
+
+### Collision Entry Structure
+
+Each entry in the PhysicsObject+0x18 AthenaList is a struct accessed by Ball_Update as `int*`. Known fields:
+
+| Index | Byte Offset | Type | Description |
+|-------|-------------|------|-------------|
+| [0] | +0x00 | int32 | **Type**: 1=ball-ball, 2=wall, 5=floor |
+| [1] | +0x04 | int32 | Unknown (not read by Ball_Update — verify before using) |
+| [3] | +0x0C | Ball* | **Other ball** (for type 1 = ball-ball collision) |
+| [4] | +0x10 | Scene* | Board pointer (used for +0x434, +0x43C lookups) |
+| [8] | +0x20 | float | Collision normal vector X |
+| [9] | +0x24 | float | Collision normal vector Y |
+| [10] | +0x28 | float | Collision normal vector Z |
+| [12] | +0x30 | float | Secondary vector X |
+| [13] | +0x34 | float | Secondary vector Y |
+| [14] | +0x38 | float | Secondary vector Z |
+| [21] | +0x54 | float | Collision depth/distance |
+| [25] | +0x64 | PhysicsObject* | Owner physics object (compared against ball's physics) |
+
+> **Note:** The `currCollision[1] == 4` check used in some mod frameworks targets offset +0x04, which is not read by Ball_Update. This field may be set during collision creation in `Ball_AdvancePositionOrCollision` (0x4564C0), but its meaning is unverified. Test with MessageBoxA dumps before relying on it.
 
 ---
 
 ## Vtable Methods
 
-The Ball vtable lives at **0x4CF3A0** (9 entries). Each entry is a `__thiscall` function taking `Ball*` in ECX.
+The Ball vtable lives at **0x4CF3A0** with **65+ entries** (not 9 as previously documented). The vtable is NOT terminated at index 9 — the NULL at index 9 is a valid entry, not an end marker.
+
+### Documented Vtable Entries
 
 | Vtable Offset | Address | Name | Description |
 |---------------|---------|------|-------------|
-| +0x00 | 0x4027F0 | Ball_dtor | Destructor — calls Ball_Cleanup, optionally frees memory |
-| +0x04 | 0x405100 | Ball_Update_thunk | Jumps to Ball_Update (0x405E00). **The main physics tick.** |
+| +0x00 | 0x4027F0 | Ball_dtor | Destructor — calls Ball_dtor2, optionally frees memory |
+| +0x04 | 0x405100 | Ball_InitPhysicsDefaults | Sets runtime physics defaults (overrides ctor2 values) |
 | +0x08 | 0x402DE0 | Ball_CollisionCheck | Per-frame collision against level mesh + planes |
 | +0x0C | 0x402A70 | Ball_OnCollision | Collision response dispatcher |
-| +0x10 | 0x408390 | Ball_Render | D3D8 ball rendering — sphere mesh + texture |
+| +0x10 | 0x408390 | Ball_AI_ChaseNearest | AI opponent steering (finds nearest ball, applies force) |
 | +0x14 | 0x401590 | Ball_vtable5 | Unknown (called from collision path) |
-| +0x18 | 0x402650 | Ball_ApplyForce | Apply directional force vector to velocity |
+| +0x18 | 0x402650 | Ball_ApplyForceWithMultipliers | Apply directional force vector to velocity accumulators |
 | +0x1C | 0x402C10 | Ball_vtable7 | Unknown (render-related) |
-| +0x20 | 0x409480 | Ball_vtable8 | Called on E:BREAK collision events |
+| +0x20 | 0x409480 | Ball_SplitAndExplode | Called on E:BREAK collision events |
+| ... | ... | ... | (many more entries up to 65+) |
+| +0x104 | 0x408830 | Ball_FallUpdate | Fall animation + respawn logic |
 
 **Base GameObject vtable** (0x4CF314) provides shared destructor logic used before Ball-specific cleanup.
 
@@ -169,11 +275,13 @@ Writing to these offsets from a DLL hook is **safe** during `Ball_Update` or `Sc
 *(float*)(ball + 0x168) = newY;
 *(float*)(ball + 0x16C) = newZ;
 
-// Zero velocity (emergency stop)
+// Zero force accumulators (emergency stop)
 *(float*)(ball + 0x170) = 0.0f;
 *(float*)(ball + 0x174) = 0.0f;
 *(float*)(ball + 0x178) = 0.0f;
 ```
+
+> **Note:** +0x170/+0x174/+0x178 are force accumulators, NOT persistent velocity. They are cleared to zero at the start of each Ball_Update frame. The actual per-frame velocity is computed internally as `pos - prev_pos`.
 
 ### Physics Constants (Game Data Section)
 
@@ -194,14 +302,15 @@ These global floats at **0x4CF3xx** affect ALL balls. Patch once, affects every 
 
 ### Per-Ball Physics Overrides
 
-| Field | Offset | What It Does |
-|-------|--------|--------------|
-| radius | 0x284 | Collision + visual size. Default 27.0. Shrunk to 13.0 on fall. |
-| max_speed | 0x188 | Hard velocity cap. Default 5000.0 (=5.0f). |
-| speed_scale | 0x18C | Global multiplier on ALL velocity changes. Default 1.0. |
-| gravity_scale | 0x278 | Gravity strength multiplier. Default 0.1. |
-| in_tube | 0x324 | If non-zero, Ball_Update returns immediately — no physics! |
-| force_disable | 0x2CC | If non-zero, Ball_ApplyForce is skipped entirely. |
+| Field | Offset | Runtime Default | What It Does |
+|-------|--------|-----------------|--------------|
+| radius | 0x284 | 35.0 | Collision + visual size. Shrunk to 13.0 on fall. |
+| max_speed | 0x188 | 6.0 | Hard velocity cap. ctor2=5000.0, InitPhysicsDefaults=6.0. |
+| speed_scale | 0x18C | 1.0 | Global multiplier on ALL velocity changes. |
+| gravity_scale | 0x278 | 0.5 | Gravity strength multiplier. ctor2=0.1, InitPhysicsDefaults=0.5. |
+| speed_cap_multiplier | 0x1A0 | 0.2 | Secondary cap multiplier. ctor2=1.0, InitPhysicsDefaults=0.2. |
+| in_tube | 0x324 | 0 | If non-zero, Ball_Update returns immediately — no physics! |
+| force_disable | 0x2CC | 0 | If non-zero, Ball_ApplyForce is skipped entirely. |
 
 > **Mod idea:** Setting `speed_scale = 2.0f` gives a permanent speed boost. Setting `gravity_scale = 0.0f` makes the ball weightless (but collision snapping still applies).
 
@@ -213,46 +322,43 @@ These global floats at **0x4CF3xx** affect ALL balls. Patch once, affects every 
 
 Called once per frame for every active ball from `Scene_UpdateBallsAndState` (0x41B540).
 
-**Phase 1 — Reset:**
+**Phase 1 — Reset & Timer Decay:**
 ```
-accumulated_time = 0
-force_count = 0
-collision_count = 0
-string_timer = 0  (frees display_string at 0xC28 when it hits 0)
-event_flag = 0
-impact_shatter = 0  # ⚠ NOT on_ramp! Sticky limit/trajectory flag
-update_in_progress = 1
+ambient_sound_timer *= decay_factor
+Various timer decrements (trail, boost, sound cooldowns)
+string_timer decrements (frees display_string at 0xC28 when it hits 0)
 ```
 
-**Phase 2 — Early-outs:**
-- If `in_tube` (0x324) is set: **return immediately** — no physics at all
-- If collision mesh flag set: call `Ball_ResetCollisionMesh` (0x4030B0)
+**Phase 2 — Trail Particles:**
+If trail timer active, spawn RumbleScore particle at ball position + random offset.
 
-**Phase 3 — Surface Finding (Gravity Planes):**
+**Phase 3 — Force Accumulator Save & Clear:**
+```
+prev_pos = pos                    // Save current position
+saved_force = force_accumulators   // Copy +0x170/+0x174/+0x178
+force_accumulators = (0,0,0)       // Clear for next frame
+```
 
-The game has **3 gravity plane modes** set by `Ball_SetTiltedGravity` (0x403100) and `Ball_SetFlatGravity` (0x403150):
+**Phase 4 — Spatial Tree Build:**
+Build a temporary SpatialTree from the scene's collision mesh for this frame's collision queries.
 
-| Plane | Normal | Tag Filter | Snap Behavior |
-|-------|--------|------------|---------------|
-| 0 | (0, -1, 0) | Skip `[X]` | `y = surface.y + radius` |
-| 1 | (-1, 0, 0) | Skip `[Z]` | `x = surface.x + radius`, `y = surface.y`, `z = surface.z` |
-| 2 | (0, 0, 1) | Skip `[X]` | `z = surface.z - radius` |
+**Phase 5 — Collision Iteration:**
+Iterate PhysicsObject+0x18 AthenaList entries:
+- **Type 1 (ball-ball):** Compute collision response, apply forces, play sound, award points
+- **Type 2 (wall):** Reflect velocity, update surface normal, apply friction
+- **Type 5 (floor):** Set ground flag, snap to surface, trigger limit/trajectory events
 
-**Phase 4 — Surface Snap:**
-When the closest surface is found:
-1. Ball position snaps to surface + radius offset
-2. `vel_x = vel_y = vel_z = 0`
-3. `ang_vel_x = ang_vel_y = 0`
-4. `frozen = 1`
-5. `freeze_timer = 150`
+**Phase 6 — Spin & Roll Physics:**
+3 iterations of spin friction computation using gravity normal and surface velocity.
 
-**Phase 5 — No Surface (Falling):**
-If no collision surface is found, the ball falls under gravity. Gravity is applied in `Ball_AdvancePositionOrCollision` (0x4564C0), not inside `Ball_Update` itself.
+**Phase 7 — Position Integration:**
+```
+pos += computed_velocity           // Apply final velocity
+display_pos = lerp(display_pos, pos, follow_factor)
+```
 
-**Phase 6 — Ball-to-Ball (2-Player):**
-If `level+0x234` (2-player mode) is active and `player_index != -1`:
-- Get the other ball at `level + 0x5DC + (1 - player_index) * 0xA0`
-- Skip collision surfaces that are within `radius` of the other ball
+**Phase 8 — Teleport Override:**
+If teleport_flag (0x30F) is set, override position with teleport destination.
 
 ### Ball_AdvancePositionOrCollision (0x4564C0) — Core Physics
 
@@ -286,7 +392,7 @@ void __thiscall Ball_ApplyForce(
 **What it does:**
 1. Normalize the `(force_x, force_y, force_z)` direction vector
 2. Multiply by `magnitude` and several conditional multipliers
-3. Accumulate the result into **velocity at ball+0x170**
+3. Accumulate the result into **force accumulators at ball+0x170**
 4. Increment `force_count` at **ball+0x2F0**
 
 ### Conditional Multipliers (Applied in Order)
@@ -309,7 +415,7 @@ void __thiscall Ball_ApplyForce(
 |-----------|--------|-------|
 | `frozen` | ball+0x2F9 | `1` — ball is snapped to a surface |
 | `force_disable` | ball+0x2CC | `1` — force application globally disabled |
-| `freeze_counter` | ball+0x808 | `> 0` — input freeze timer active |
+| `freeze_counter` | ball+0x2FC | `> 0` — input freeze timer active |
 
 ### Writing Your Own Force Calls
 
@@ -354,7 +460,7 @@ tApplyForce pfn = (tApplyForce)vtable[6]; // vtable[0x18] = ApplyForce
 pfn(ball, fx, fy, fz, magnitude);
 ```
 
-> **Pitfall:** Writing directly to `ball+0x170` (velocity) bypasses the multipliers, clamping, and surface-snap logic. This is fine for teleport-style hacks, but for gameplay-compatible movement, **always use `Ball_ApplyForce`** so the engine handles ice, tubes, dizzy states, and max_speed correctly.
+> **Pitfall:** Writing directly to `ball+0x170` (force accumulators) bypasses the multipliers, clamping, and surface-snap logic. This is fine for teleport-style hacks, but for gameplay-compatible movement, **always use `Ball_ApplyForce`** so the engine handles ice, tubes, dizzy states, and max_speed correctly.
 
 ### Ball_ApplyForceV2 (0x4016F0)
 
@@ -414,7 +520,7 @@ Note: Arena and Level handlers are **parallel**, not chained. Ball_AdvancePositi
 | Ball Offset | Event Using It |
 |-------------|----------------|
 | 0x164–0x16C (pos) | 3D sound positioning |
-| 0x170–0x178 (vel) | Cleared by TARPIT, modified by JUMP |
+| 0x170–0x178 (force) | Cleared by TARPIT, modified by JUMP |
 | 0x2DC–0x2E4 (checkpoint) | `Ball_Shrink` respawns here |
 | 0xC2C (section_filter) | `E:SAFESWITCH` copies data here |
 | 0xC4C (airborne) | Set by fall code |
@@ -472,7 +578,7 @@ AI steering for computer-controlled balls:
 ### Ball_FallUpdate (0x408830)
 
 Called when the ball falls off the track:
-1. Shrink radius from 27.0 → 13.0
+1. Shrink radius from 35.0 → 13.0
 2. Handle scale change smoothly
 3. Clean up trail particles
 4. After fall animation completes, respawn at last checkpoint (0x2DC)
@@ -488,7 +594,7 @@ Marks ball as fallen:
 
 Resets from fallen state:
 - `airborne = 0`
-- `radius = 26.0` (note: different from default 27.0!)
+- `radius = 26.0` (note: different from runtime default 35.0!)
 - Restore physics defaults
 
 ### Split Ball Mechanics
@@ -504,7 +610,7 @@ Split balls are temporary physics objects that scatter from the original ball po
 ### Ball_InitBattleMode (0x456CD0)
 
 Initializes ball for Rodent Rumble arena mode:
-- Friction = 0.18
+- Friction = 0.555
 - Bounciness = 1.0
 - Radius = 400.0 (much larger than race mode!)
 - Speed scale adjusted for arena physics
@@ -525,12 +631,52 @@ Initializes ball for Rodent Rumble arena mode:
 | 6 | Ball_Shrink | 0x402200 | On OOB | Prevent falling, teleport instead |
 | 7 | Scene_UpdateBallsAndState | 0x41B540 | Every frame | Modify ball list iteration, add/remove balls |
 | 8 | Ball_AI_ChaseNearest | 0x408390 | AI tick | Change AI behavior, make AI friendly/hostile |
+| 9 | Scene_dtor | 0x419770 | Scene destroy | Null out cached ball/scene pointers (use-after-free prevention) |
+| 10 | Board_ctor | 0x419030 | Scene create | Detect new level load, acquire scene pointer |
+
+### Scene Lifecycle Hook Pattern
+
+For mods that cache ball/scene pointers across frames, hook both construction and destruction to avoid use-after-free:
+
+```cpp
+// In Ball_Update hook (acquire pointers)
+void Hooked_BallUpdate(Ball* ball) {
+    if (ball->player_index == 0) {
+        g_Player = ball;
+        if (g_Scene == nullptr) {
+            g_Scene = ball->scene;  // nullptr→addr transition = new level loaded
+        }
+    }
+    Original_BallUpdate(ball);
+}
+
+// In Scene_dtor hook (null pointers BEFORE calling original)
+void Hooked_SceneDtor(Scene* scene) {
+    if (scene == g_Scene) {
+        g_Scene = nullptr;       // null FIRST, before balls get freed
+        g_Player = nullptr;
+        // g_Player2/3/4 = nullptr;
+        // g_Enemies.clear();
+    }
+    Original_SceneDtor(scene);   // now safe — original frees balls
+}
+```
+
+**Destruction order inside Scene_dtor:**
+1. Vtable pointer overwritten (data fields still intact)
+2. Ball list iterated — every ball gets `Ball_dtor(this, 1)` → `free()`
+3. Effect/object lists iterated and freed
+4. AthenaList containers freed
+5. `SceneObject_dtor` base cleanup
+6. Returns → caller calls `free(scene)`
+
+The scene's own inline fields (camera, timers, race state) remain readable throughout, but every **pointer** the scene holds becomes dangling partway through. Always null your cached pointers at the top of your hook before calling the original.
 
 ### Example: Speed Hack (Single Write)
 
 ```cpp
 // Multiply max_speed for all balls by 2x
-*(float*)(ball + 0x188) = 10000.0f;  // 10.0f max speed
+*(float*)(ball + 0x188) = 12.0f;  // 6.0 default × 2
 ```
 
 ### Example: Noclip (Hook Ball_CollisionCheck)
@@ -552,10 +698,10 @@ void __fastcall hkCollisionCheck(void* ball) {
 oBallGetInputForce(ball, outForce);
 
 if (g_CustomBrakeKey.isDown) {
-    float* vel = (float*)((char*)ball + 0x170);
-    vel[0] *= 0.85f;
-    vel[1] *= 0.85f;
-    vel[2] *= 0.85f;
+    float* force = (float*)((char*)ball + 0x170);
+    force[0] *= 0.85f;
+    force[1] *= 0.85f;
+    force[2] *= 0.85f;
 }
 ```
 
@@ -582,7 +728,7 @@ gravity[2] = 0.0f;   // Z
 | 0x401DD0 | Ball_CreateTrailParticles | — | 9-particle trail ring |
 | 0x402200 | Ball_Shrink | — | Mark fallen, shrink radius |
 | 0x402270 | Ball_Grow | — | Reset from fallen state |
-| 0x402650 | Ball_ApplyForce | 47 | Apply force vector to velocity |
+| 0x402650 | Ball_ApplyForceWithMultipliers | 47 | Apply force vector to velocity accumulators |
 | 0x4027F0 | Ball_dtor | — | Destructor |
 | 0x402810 | Ball_CheckCollisionPlanes | — | 6-plane collision test |
 | 0x402860 | Ball_Render | — | D3D8 ball mesh render |
@@ -593,8 +739,8 @@ gravity[2] = 0.0f;   // Z
 | 0x403100 | Ball_SetTiltedGravity | — | Set gravity plane = 1 |
 | 0x403150 | Ball_SetFlatGravity | — | Set gravity plane = 2 |
 | 0x4039E0 | Ball_ctor2 | — | Secondary constructor (physics init) |
-| 0x405100 | Ball_Update_thunk | — | Vtable trampoline to 0x405E00 |
-| **0x405E00** | **Ball_Update** | **400+** | **Main physics tick** |
+| 0x405100 | Ball_InitPhysicsDefaults | — | vtable[1] — overrides ctor2 physics defaults |
+| 0x405E00 | Ball_Update | 400+ | Main physics tick |
 | 0x408390 | Ball_AI_ChaseNearest | 60 | AI opponent steering |
 | 0x408830 | Ball_FallUpdate | 40 | Fall animation + respawn |
 | 0x408D10 | Ball_Split_ctor | 14 | Split ball constructor |
@@ -604,7 +750,17 @@ gravity[2] = 0.0f;   // Z
 | 0x40AF90 | Ball_GetTransform | — | Read transform into struct |
 | 0x4564C0 | Ball_AdvancePositionOrCollision | — | 6-phase physics pipeline |
 | 0x456CD0 | Ball_InitBattleMode | — | Arena physics defaults |
+| 0x456D80 | CollisionMesh_ctor | — | PhysicsObject constructor (0xCB0 bytes) |
 | 0x46EC30 | Ball_GetInputForce | 7 | Convert input to force vector |
+
+### Scene Lifecycle Functions
+
+| Address | Name | Description |
+|---------|------|-------------|
+| 0x419030 | Board_ctor | Base board constructor (calls Gadget_ctor → Scene init) |
+| 0x419770 | Scene_dtor | Scene destructor (frees balls, objects, lists) |
+| 0x425020 | Scene_DeletingDtor | Calls Scene_dtor + free(this) |
+| 0x458CE0 | Scene_Destroy | Calls Scene_ScalarDtor (alternate dtor path) |
 
 ### Ball Struct C Header
 
@@ -629,4 +785,4 @@ It contains the full 0xC98 layout with verified offsets from `Ball_ctor2` decomp
 
 ---
 
-*Document compiled from 3,700+ documented functions, live Ghidra decompilation, and cross-referenced struct analysis. All offsets verified against PE32 Hamsterball.exe loaded at 0x00400000.*
+*Document compiled from 3,700+ documented functions, live Ghidra decompilation, and cross-referenced struct analysis. All offsets verified against PE32 Hamsterball.exe loaded at 0x00400000. PhysicsObject layout verified via CollisionMesh_ctor (0x456D80) and Ball_InitBattleMode (0x456CD0) decompilation. Runtime defaults verified via Ball_InitPhysicsDefaults (0x405100) decompilation.*
