@@ -11,5 +11,6 @@
 | global-bonk | Spawns Bonk the Hammer from Expert Race on any level — standalone, constructor loads its own mesh internally | [global-bonk/](global-bonk/) |
 | wall-bumpers | All walls act as pinball bumpers — velocity-reversal detection amplifies wall bounces. F8 toggle, F9 force cycle | [wall_bumpers/](wall_bumpers/) |
 | ball-break | Press X to shatter your ball and respawn at nearest checkpoint. Calls the game's own Ball_Shatter function | [ball_break/](ball_break/) |
+| half-size-all | Shrinks ALL balls to half size using the game's own Ball_Shrink function (0x00402200) from Odd Race — sets radius=13.0, physics_scale=2.5 | [half_size_all/](half_size_all/) |
 | raptisoft-live-log | Passive logger — taps Raptisoft's hidden in-memory status tracking system (App+0x208/0x20C/0x210) and writes live updates to live_status.txt. No gameplay changes | [raptisoft_live_log/](raptisoft_live_log/) |
 | level-colors | Changes per-level base colors (timer oval, timer text, race selection menu text) from a colors.txt config file. Edit at runtime | [level_colors/](level_colors/) |
