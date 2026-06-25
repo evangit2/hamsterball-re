@@ -11,7 +11,7 @@
  * Fields set (identical to Ball_Shrink):
  *   ball+0x284 = 0x41500000  (radius = 13.0, down from 26.0)
  *   ball+0x188 = 0x40200000  (physics_scale = 2.5, down from 5.0)
- *   ball+0xC4C = 1            (is_falling flag)
+ *   ball+0xC4C = 1            (in_shrunk flag)
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * BUILD
@@ -98,7 +98,7 @@ __declspec(dllexport) void BASS_SampleGetChannel(void) {}
  *   75 1B                          JNE skip                      ; 2 bytes
  *   C7 86 84 02 00 00 00 00 50 41  MOV dword [ESI+0x284], 0x41500000  ; 10 bytes (radius=13.0)
  *   C7 86 88 01 00 00 00 00 20 40  MOV dword [ESI+0x188], 0x40200000  ; 10 bytes (physics=2.5)
- *   C6 86 4C 0C 00 00 01           MOV byte [ESI+0xC4C], 1      ; 7 bytes (is_falling=1)
+ *   C6 86 4C 0C 00 00 01           MOV byte [ESI+0xC4C], 1      ; 7 bytes (in_shrunk=1)
  * skip:
  *   C6 86 81 02 00 00 00           MOV byte [ESI+0x281], 0      ; 7 bytes (original instruction)
  *   E9 xx xx xx xx                 JMP RETURN_ADDR              ; 5 bytes
@@ -117,7 +117,7 @@ static const unsigned char cave_template[CAVE_SIZE] = {
     0xC7, 0x86, 0x84, 0x02, 0x00, 0x00, 0x00, 0x00, 0x50, 0x41,
     /* MOV dword [ESI+0x188], 0x40200000 (physics_scale = 2.5) */
     0xC7, 0x86, 0x88, 0x01, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40,
-    /* MOV byte [ESI+0xC4C], 1 (is_falling flag) */
+    /* MOV byte [ESI+0xC4C], 1 (in_shrunk flag) */
     0xC6, 0x86, 0x4C, 0x0C, 0x00, 0x00, 0x01,
     /* skip: — MOV byte [ESI+0x281], 0 (original instruction) */
     0xC6, 0x86, 0x81, 0x02, 0x00, 0x00, 0x00,
@@ -247,7 +247,7 @@ static void patch_thread(void *param)
             fprintf(f, "Inlines Ball_Shrink physics (no sound, no function call):\n");
             fprintf(f, "  ball+0x284 = 13.0 (radius)\n");
             fprintf(f, "  ball+0x188 = 2.5  (physics_scale)\n");
-            fprintf(f, "  ball+0xC4C = 1    (is_falling)\n\n");
+            fprintf(f, "  ball+0xC4C = 1    (in_shrunk)\n\n");
             fprintf(f, "Only applies to player index 0.\n\n");
             fprintf(f, "Hook (Scene_SpawnBallsAndObjects 0x0041C8D7): %s\n",
                     hook_ok ? "APPLIED" : "FAILED");

@@ -188,7 +188,7 @@ ball[0x16c/4] = 200.0f;   // Z position
 
 ```c
 Ball_Shrink(ball_ptr);  // @ 0x00402200
-// Sets: +0xC4C = 1 (is_falling), radius=13.0, max_speed=2.5, plays sound
+// Sets: +0xC4C = 1 (in_shrunk), radius=13.0, max_speed=2.5, plays sound
 ```
 
 ### 6. Force Split Power-Up
@@ -220,7 +220,7 @@ Ball_ResetCollisionMesh(ball); // Reset orientation        @ 0x004030B0
 ### 9. Check If Ball Is Falling
 
 ```c
-char is_falling = *(char*)(ball + 0xC4C);
+char in_shrunk = *(char*)(ball + 0xC4C);
 // Set by Ball_Shrink (→1), cleared by Ball_Grow (→0)
 ```
 
@@ -367,7 +367,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x808` | int | `0` | freeze_timer |
 | `+0xC28` | char* | `0` | display_name string |
 | `+0xC3C` | byte | `0` | teleport_flag |
-| `+0xC4C` | byte | `0` | is_falling (runtime) |
+| `+0xC4C` | byte | `0` | in_shrunk (runtime) |
 | `+0xC50` | float | `0` | fall_depth |
 | `+0xC54` | int | `0` | sound_channel |
 | `+0xC58` | byte | `0` | — |
