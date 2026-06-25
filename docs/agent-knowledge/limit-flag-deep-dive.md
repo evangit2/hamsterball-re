@@ -20,7 +20,7 @@ Previous documentation labeled this field as `on_ramp`, `on_surface`, `flag2`, o
 
 ```c
 // Inside collision type 5 (floor) handler:
-if (piVar16[0x15] > 1.0  &&  in_shrunk == 0) {
+if (piVar16[0x15] > 1.0  &&  is_shrunk == 0) {
     *(byte*)((int)param_1 + 0x2E9) = 1;   // SET (uses (int) cast = byte offset 0x2E9)
     Scene_SetCamera(param_1[5], param_1, 1);
     Graphics_SetViewport(..., param_1[0x59], param_1[0x5A]);
@@ -31,7 +31,7 @@ if (piVar16[0x15] > 1.0  &&  in_shrunk == 0) {
 **Trigger conditions:**
 1. Ball is colliding with a type-5 (floor) surface
 2. Surface speed (`piVar16[0x15]`, collision_obj+0x54) > 1.0
-3. `in_shrunk` (ball+0xC4C) == 0 (ball is NOT in shrunk state)
+3. `is_shrunk` (ball+0xC4C) == 0 (ball is NOT in shrunk state)
 
 When these conditions are met, the flag is set AND:
 - `Scene_SetCamera` is called (camera follows ball)
@@ -89,7 +89,7 @@ If the ball is moving in the "wrong" direction for the current axis AND hits a w
 
 **`Ball_OnRampEvent` (0x00409480, vtable[8]):**
 - Sets `ball+0x2E8 = 1` (shattered flag)
-- Checks `in_shrunk` (0xC4C) to select which shatter sound to play
+- Checks `is_shrunk` (0xC4C) to select which shatter sound to play
 - Creates 3 `Ball_Split_ctor` debris pieces at the ball's position
 - Copies velocity, position, radius to each debris piece
 - Creates `RumbleScore` objects (score popup particles)
@@ -107,9 +107,9 @@ if (limit_flag != 0 && param_1[0xC9] == 0) {
 
 `_DAT_004cf4f8 = 0.0`, and `ABS(x) < 0.0` is **always false** for any float. This code path **never executes**.
 
-## Interaction with in_shrunk (0xC4C)
+## Interaction with is_shrunk (0xC4C)
 
-The `limit_flag` is only SET when `in_shrunk == 0`. If the ball is in shrunk state (our half-size mod), `limit_flag` cannot be set by type-5 floor collisions. This means:
+The `limit_flag` is only SET when `is_shrunk == 0`. If the ball is in shrunk state (our half-size mod), `limit_flag` cannot be set by type-5 floor collisions. This means:
 
 - Shrunk balls never get their trajectory limited
 - Shrunk balls never trigger the shatter-on-wall-hit behavior
@@ -124,10 +124,10 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | **Field** | `Ball+0x2E9` (byte) |
 | **Name** | `limit_flag` |
 | **Init** | 0 (by `Ball_ctor2`) |
-| **Set by** | Type-5 floor collision, speed > 1.0, `in_shrunk == 0` |
+| **Set by** | Type-5 floor collision, speed > 1.0, `is_shrunk == 0` |
 | **Cleared by** | `Ball_FindClosestRespawnPoint` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x004039E0+0x1FE: `MOV [ESI+0x2E9],BL`) |
 | **Effect 1** | Skip `Ball_ApplyTrajectory` — no wall bouncing |
 | **Effect 2** | Trigger `Ball_Shatter` on wall hit if moving in "wrong" direction |
 | **Effect 3** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
 | **vtable[8]** | `Ball_OnRampEvent` (0x00409480) — shatter function called from this path |
-| **Interaction with `in_shrunk`** | `in_shrunk=1` prevents `limit_flag` from being set |
+| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `limit_flag` from being set |

@@ -28,7 +28,7 @@ All three are event-name-triggered (`E:` prefix) collision geometry inside `Leve
 
 ```c
 void __fastcall Ball_Shrink(int ball) {
-    ball[0xC4C] = 1;           // in_shrunk flag = ON (ball is shrunk)
+    ball[0xC4C] = 1;           // is_shrunk flag = ON (ball is shrunk)
     ball[0x284] = 0x41500000;  // radius = 13.0 (was 26.0)
     ball[0x188] = 0x40200000;  // physics_scale = 2.5 (was 5.0)
     Sound_Play3D(board->sound_device->fall_sound, ball->pos);
@@ -53,7 +53,7 @@ ball[0x1FE] = 100;  // 100-frame cooldown (4 seconds at 25fps)
 
 ```c
 void __fastcall Ball_Grow(int ball) {
-    ball[0xC4C] = 0;           // in_shrunk flag = OFF (ball is normal)
+    ball[0xC4C] = 0;           // is_shrunk flag = OFF (ball is normal)
     ball[0x284] = 0x41D00000;  // radius = 26.0 (restored)
     ball[0x188] = 0x40A00000;  // physics_scale = 5.0 (restored)
 }
@@ -63,13 +63,13 @@ void __fastcall Ball_Grow(int ball) {
 
 | Ball Offset | Field Name | Normal Value | Shrunk Value | Ratio |
 |------------|-----------|-------------|-------------|-------|
-| `+0xC4C` | `in_shrunk` (byte) | `0` | `1` | — |
+| `+0xC4C` | `is_shrunk` (byte) | `0` | `1` | — |
 | `+0x284` | `radius` (float) | `26.0` | `13.0` | 50% |
 | `+0x188` | `physics_scale` (float) | `5.0` | `2.5` | 50% |
 
 ## Physics Effects of Shrunk State
 
-The `in_shrunk` flag (`ball+0xC4C`) gates several behaviors in `Ball_Update` (0x00405E00):
+The `is_shrunk` flag (`ball+0xC4C`) gates several behaviors in `Ball_Update` (0x00405E00):
 
 ### 1. Speed Penalty (line ~858)
 When the ball exceeds max speed and is shrunk:
