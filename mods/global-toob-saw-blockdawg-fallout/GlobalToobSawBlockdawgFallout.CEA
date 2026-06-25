@@ -1,0 +1,460 @@
+[ENABLE]
+ 
+// =====================================================
+// Global Toob Race Object Spawner — SAW, FALLOUT, BLOCKDAWGS
+// =====================================================
+// Spawns Toob Race objects at Player 1's position in ANY level.
+//
+// Object types (set ObjectType before triggering SpawnObject):
+//   1 = SAW         (Gear_ctor, mesh "Levels\Level8-Saw")
+//   2 = FALLOUT     (Gear_ctor, mesh "Levels\Level8-Fallout", slower rotation)
+//   3 = BLOCKDAWG1  (Blockdawg_ctor, mesh "Levels\Level8-Blockdawg1")
+//   4 = BLOCKDAWG2  (Blockdawg_ctor, mesh "Levels\Level8-Blockdawg2")
+//
+// FUNCTIONS TRACED (via GhidraMCP):
+//
+// BoardLevel_Toob_Ctor (0x41F4B0):
+//   board+0x4370 = MeshWorld("Levels\Level8-Saw")        → SAW mesh
+//   board+0x4374 = MeshWorld("Levels\Level8-Fallout")    → FALLOUT mesh
+//   board+0x4378 = MeshWorld("Levels\Level8-Blockdawg1") → BLOCKDAWG1 mesh
+//   board+0x437C = MeshWorld("Levels\Level8-Blockdawg2") → BLOCKDAWG2 mesh
+//
+// CreateMechanicalObjects (0x417FE0):
+//   "GEAR"    → Gear_ctor(alloc 0x1514, board, X, Y, Z, X2, Y2, Z2, board+0x4370)
+//   "BIGGEAR" → Gear_ctor(alloc 0x1514, board, X, Y, Z, X2, Y2, Z2, board+0x4374)
+//               Then sets +0x10F4 = 0x3f000000 (0.5 rotation speed)
+//
+// CreateLevelObjects (0x4121D0):
+//   "BLOCKDAWG1" → Blockdawg_ctor(alloc 0x1154, board, X, Y, Z, board+0x5840, pathId)
+//                  pathId = Level_FindObjectByName("DAWGPATH1")
+//   "BLOCKDAWG2" → Blockdawg_ctor(alloc 0x1154, board, X, Y, Z, board+0x5844, pathId)
+//                  pathId = Level_FindObjectByName("DAWGPATH2")
+//                  Then sets +0x1152 = 1 (is_blockdawg2 flag)
+//
+// Gear_ctor (0x437590): __thiscall RET 0x20 (8 stack params)
+//   this, param_1=board, param_2=X, param_3=Y, param_4=Z,
+//   param_5=X2, param_6=Y2, param_7=Z2, param_8=mesh
+//   Stands_ctor(this, mesh) → clones SpatialTree
+//   +0x10D0 = board, +0x10D8 = X, +0x10DC = Y, +0x10E0 = Z
+//   +0x10E4 = X2, +0x10E8 = Y2, +0x10EC = Z2
+//   +0x10D4 = CollisionLevel, +0x10F0 = 0 (timer), +0x10F4 = 1.0 (speed)
+//
+// Gear Update vtable[0x0B/+0x2C] = Catapult_Update (0x43E600):
+//   Decrements timer (+0x10F0) by speed (+0x10F4)
+//   Rotates platform using Gfx_ScaleY/X/Z
+//   Transforms ball positions when balls ride on the gear
+//   Ball list at +0x10F8 (AthenaList, initialized empty → safe)
+//
+// Blockdawg_ctor (0x43C310): __thiscall RET 0x18 (6 stack params)
+//   this, param_1=board, param_2=X, param_3=Y, param_4=Z, param_5=mesh, param_6=pathId
+//   Stands_ctor(this, mesh) → clones SpatialTree
+//   +0x10D0 = board, +0x10D8 = X, +0x10DC = Y, +0x10E0 = Z
+//   +0x10D4 = CollisionLevel, +0x10F0 = pathId, +0x1150 = 0 (awake)
+//   +0x1151 = 0, +0x1152 = 0
+//
+// Blockdawg Update vtable[0x0B/+0x2C] = RumbleObject_Update (0x43C4E0):
+//   If +0x1150 == 0 (awake): follows path via Path_GetPosition(+0x10F0, ...)
+//     → CRASH if pathId=0 and no DAWGPATH ref in level!
+//   If +0x1150 != 0 (sleeping): plays wake-up sound, creates particle ring
+//     → Safe! No path needed.
+//   FIX: Set +0x1150 = 1 after construction to use sleeping mode.
+// =====================================================
+ 
+alloc(SpawnCode, 8192)
+alloc(SpawnObject, 4)
+alloc(ObjectType, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_30, 4)
+alloc(temp_mesh, 4)
+alloc(obj_array, 68)
+alloc(last_board, 4)
+ 
+registersymbol(SpawnObject)
+registersymbol(ObjectType)
+ 
+SpawnObject:
+ dd 0
+ 
+ObjectType:
+ dd 1   // 1=SAW, 2=FALLOUT, 3=BLOCKDAWG1, 4=BLOCKDAWG2
+ 
+saved_board:
+ dd 0
+ 
+playerX:
+ dd 0
+ 
+playerY:
+ dd 0
+ 
+playerZ:
+ dd 0
+ 
+float_30:
+ dd 0x41F00000  // 30.0
+ 
+temp_mesh:
+ dd 0
+ 
+obj_array:
+ dd 0
+ dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ 
+last_board:
+ dd 0
+ 
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(spawn_saw)
+label(spawn_fallout)
+label(spawn_blockdawg1)
+label(spawn_blockdawg2)
+label(register_obj)
+label(skip_render)
+label(skip_col)
+label(prox_loop)
+label(prox_next)
+label(prox_done)
+label(do_blockdawg_fix)
+ 
+SpawnCode:
+ 
+ mov eax, [esi+0x14]
+ test eax, eax
+ jz no_clear
+ cmp eax, [last_board]
+ je no_clear
+ mov [last_board], eax
+ mov dword [obj_array], 0
+ 
+no_clear:
+ mov eax, [obj_array]
+ test eax, eax
+ jz save_pos
+ pushad
+ xor ebx, ebx
+ 
+prox_loop:
+ cmp ebx, [obj_array]
+ jae prox_done
+ mov eax, [obj_array+4+ebx*4]
+ test eax, eax
+ jz prox_next
+ mov ecx, [eax]
+ test ecx, ecx
+ jz prox_next
+ cmp dword [esi+0x18], 0
+ jne prox_next
+ 
+ // Call vtable[0x0B] (+0x2C) — update function, __fastcall, ECX=this
+ mov ecx, eax
+ mov edx, [eax]
+ call dword [edx+0x2C]
+ 
+prox_next:
+ inc ebx
+ jmp prox_loop
+prox_done:
+ popad
+ 
+save_pos:
+ cmp dword [esi+0x18], 0
+ jne check_spawn
+ fld dword [esi+0x164]
+ fadd dword [float_30]
+ fstp dword [playerX]
+ mov eax, [esi+0x168]
+ mov [playerY], eax
+ mov eax, [esi+0x16C]
+ mov [playerZ], eax
+ 
+check_spawn:
+ cmp dword [SpawnObject], 0
+ je original_code
+ cmp dword [esi+0x18], 0
+ jne original_code
+ mov dword [SpawnObject], 0
+ 
+ pushad
+ mov eax, [esi+0x14]
+ mov [saved_board], eax
+ test eax, eax
+ jz done_spawn
+ mov edx, [eax+0x878]
+ test edx, edx
+ jz done_spawn
+ mov edx, [edx+0x174]
+ test edx, edx
+ jz done_spawn
+ 
+ // Create MeshWorld (0x10D0 bytes)
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ 
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ 
+ // Select mesh path and constructor based on ObjectType
+ cmp dword [ObjectType], 1
+ je spawn_saw
+ cmp dword [ObjectType], 2
+ je spawn_fallout
+ cmp dword [ObjectType], 3
+ je spawn_blockdawg1
+ cmp dword [ObjectType], 4
+ je spawn_blockdawg2
+ jmp spawn_saw  // default
+ 
+// === SAW (Gear_ctor with Level8-Saw mesh) ===
+spawn_saw:
+ push 004D0E24            // "Levels\Level8-Saw"
+ push edx                // D3D device
+ mov ecx, eax            // this = MeshWorld
+ call 00461510           // MeshWorld_ctor
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ // Allocate Gear object (0x1514 bytes)
+ push 0x1514
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Gear_ctor(this, board, X, Y, Z, X2, Y2, Z2, mesh)
+ // __thiscall RET 0x20: push mesh, Z2, Y2, X2, Z, Y, X, board
+ // X2,Y2,Z2 = second position (use same as spawn position for stationary gear)
+ mov edx, [temp_mesh]
+ push edx               // param_8 = mesh
+ mov edx, [playerZ]
+ push edx               // param_7 = Z2
+ mov edx, [playerY]
+ push edx               // param_6 = Y2
+ mov edx, [playerX]
+ push edx               // param_5 = X2
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 00437590           // Gear_ctor
+ jmp register_obj
+ 
+// === FALLOUT (Gear_ctor with Level8-Fallout mesh, slower rotation) ===
+spawn_fallout:
+ push 004D0E0C            // "Levels\Level8-Fallout"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1514
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Same as SAW but different mesh
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 00437590           // Gear_ctor
+ 
+ // BIGGEAR sets +0x10F4 = 0x3f000000 (0.5 rotation speed, half of normal 1.0)
+ // This makes the fallout floor rotate slower than the saw
+ test eax, eax
+ jz done_spawn
+ mov dword [edi+0x10F4], 0x3F000000
+ 
+ jmp register_obj
+ 
+// === BLOCKDAWG1 (Blockdawg_ctor with Level8-Blockdawg1 mesh) ===
+spawn_blockdawg1:
+ push 004D0DF0            // "Levels\Level8-Blockdawg1"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1154
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Blockdawg_ctor(this, board, X, Y, Z, mesh, pathId)
+ // __thiscall RET 0x18: push pathId, mesh, Z, Y, X, board
+ push 0                 // param_6 = pathId (0 = no path)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 0043C310           // Blockdawg_ctor
+ jmp do_blockdawg_fix
+ 
+// === BLOCKDAWG2 (Blockdawg_ctor with Level8-Blockdawg2 mesh) ===
+spawn_blockdawg2:
+ push 004D0DD4            // "Levels\Level8-Blockdawg2"
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1154
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ push 0                 // param_6 = pathId (0 = no path)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 0043C310           // Blockdawg_ctor
+ 
+ // Set is_blockdawg2 flag (like the game factory does)
+ test eax, eax
+ jz done_spawn
+ mov byte [edi+0x1152], 1
+ 
+do_blockdawg_fix:
+ // CRITICAL: Set sleeping flag (+0x1150 = 1) to prevent Path_GetPosition crash
+ // Without this, the update function tries to follow a path at pathId=0 → null deref
+ test eax, eax
+ jz done_spawn
+ mov byte [edi+0x1150], 1
+ 
+// === REGISTER OBJECT ===
+register_obj:
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Register in board+0x2578 (active objects list)
+ push edi
+ mov ecx, [saved_board]
+ add ecx, 0x2578
+ call 00453810
+ 
+ // Register collision level (both Gear and Blockdawg use +0x10D4)
+ mov eax, [edi+0x10D4]
+ test eax, eax
+ jz skip_col
+ push eax
+ mov ecx, [saved_board]
+ add ecx, 0x10EC
+ call 00453810
+ 
+ // Register in collision dispatch list (board+0x8B0+0x18)
+ mov edx, [saved_board]
+ mov edx, [edx+0x8B0]
+ test edx, edx
+ jz skip_col
+ mov eax, [edi+0x10D4]
+ push eax
+ lea ecx, [edx+0x18]
+ call 00453810
+ 
+skip_col:
+ // Register in render list (board+0x8AC→+0x480→+0x1C)
+ mov edx, [saved_board]
+ mov edx, [edx+0x8AC]
+ test edx, edx
+ jz skip_render
+ mov edx, [edx+0x480]
+ test edx, edx
+ jz skip_render
+ push edi
+ lea ecx, [edx+0x1C]
+ call 00453810
+ 
+skip_render:
+ // Add to tracking array (max 16)
+ mov eax, [obj_array]
+ cmp eax, 16
+ jae done_spawn
+ mov [obj_array+4+eax*4], edi
+ inc dword [obj_array]
+ 
+done_spawn:
+ popad
+ 
+original_code:
+ mov eax, [esi+0x0c5c]
+ jmp 00405E28
+ 
+00405E22:
+ jmp SpawnCode
+ nop
+ 
+[DISABLE]
+00405E22:
+ db 8B 86 5C 0C 00 00
+ 
+dealloc(SpawnCode)
+dealloc(SpawnObject)
+dealloc(ObjectType)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_30)
+dealloc(temp_mesh)
+dealloc(obj_array)
+dealloc(last_board)
+unregistersymbol(SpawnObject)
+unregistersymbol(ObjectType)
