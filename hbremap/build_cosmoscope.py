@@ -95,7 +95,11 @@ def extract_title(filepath: str, content: str) -> str:
     # Try H1
     match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
     if match:
-        return match.group(1).strip()
+        title = match.group(1).strip()
+        # Cap title length — some docs have huge H1s
+        if len(title) > 80:
+            title = title[:77] + "..."
+        return title
     # Try filename without extension
     return Path(filepath).stem.replace("_", " ").replace("-", " ")
 
@@ -297,10 +301,10 @@ def compute_related_docs(files_info: dict) -> dict:
             if other_info["type"] == my_type:
                 scores[other_path] += 1
         
-        # Sort by score, take top 8
-        top = sorted(scores.items(), key=lambda x: -x[1])[:8]
-        # Only keep meaningful relationships (score >= 2)
-        related[rel_path] = [(p, s) for p, s in top if s >= 2]
+        # Sort by score, take top 3
+        top = sorted(scores.items(), key=lambda x: -x[1])[:3]
+        # Only keep strong relationships (score >= 5 = at least one shared hex addr)
+        related[rel_path] = [(p, s) for p, s in top if s >= 5]
     
     return related
 
@@ -344,16 +348,16 @@ graph_background_color: "#1a1a2e"
 graph_text_color: "#e0e0e0"
 graph_link_color: "#555555"
 graph_highlight_color: "#ff6a6a"
-graph_text_size: 14
+graph_text_size: 12
 graph_arrows: true
 node_size_method: degree
-node_size: 8
-node_size_max: 18
-node_size_min: 4
-attraction_force: 80
-attraction_distance_max: 600
-attraction_vertical: 0.01
-attraction_horizontal: 0.01
+node_size: 6
+node_size_max: 14
+node_size_min: 3
+attraction_force: 50
+attraction_distance_max: 800
+attraction_vertical: 0.0
+attraction_horizontal: 0.0
 generate_id: always
 link_context: tooltip
 hide_id_from_record_header: true
@@ -405,7 +409,7 @@ def inject_search_overlay(html: str, files_info: dict) -> str:
             "tags": info["tags"],
             "github_url": info["github_url"],
             "path": rel_path,
-            "content": clean[:5000],  # First 5K chars for snippet extraction
+            "content": clean[:2000],  # First 2K chars for snippet extraction
         })
     
     index_json = jsonmod.dumps(search_index)
