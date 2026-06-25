@@ -6,7 +6,7 @@
 |--------|------|---------------------------|-------|
 | `Ball+0x281` | `is_falling` | ❌ NO | Legacy/init flag, NOT read during Ball_Update physics tick |
 | `Ball+0xC4C` | `fall_mode` | ⚠ Partial | Only tracks death/respawn (fall-off-level), NOT ground contact |
-| `Ball+0x2E9` | `limit_flag` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE.** |
+| `Ball+0x2E9` | `impact_shatter` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE.** |
 | `Ball+0x260` | `is_airborne` | ⚠ Partial | Set by speed/friction thresholds, not true ground contact |
 
 **For jump mods:** Use a cooldown timer (60 frames). No ground flag needed.

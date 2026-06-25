@@ -97,7 +97,7 @@ or by tracking collision IDs (`[EBP+0x64]`).
 | `+0x1A4` | `void*` | physics_body | CollisionMesh/PhysicsBody pointer |
 | `+0x284` | `float` | radius | Collision radius (default ~27.0) |
 | `+0x2E8` | `byte` | respawn_flag | Set during respawn handling |
-| `+0x2E9` | `byte` | limit_flag | Sticky flag (E:LIMIT collision) — NEVER use for ground check |
+| `+0x2E9` | `byte` | impact_shatter | Sticky flag (E:LIMIT collision) — NEVER use for ground check |
 | `+0x2EC` | `int32` | collision_state | Counter (0 = none, 1 = active, 2+ = depth) |
 | `+0x2F0` | `int32` | force_count | Number of forces applied this frame |
 | `+0x2F4` | `int32` | best_streak | Per-ball best streak (int32) |
@@ -1164,7 +1164,7 @@ collision list.
 
 ### 5. `ball+0x2E9` is NOT a Ground/On-Surface Flag
 
-**Problem**: The `limit_flag` at `ball+0x2E9` looks like it indicates
+**Problem**: The `impact_shatter` at `ball+0x2E9` looks like it indicates
 surface contact, but it's actually a sticky flag set by `E:LIMIT` (arena
 boundary) collisions. It's never cleared within `Ball_Update`.
 

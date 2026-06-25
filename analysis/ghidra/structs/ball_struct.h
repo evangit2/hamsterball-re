@@ -119,7 +119,7 @@ typedef struct {
     uint8_t event_flag;           // +0x2E8 checkpoint hit event
     /* ⚠ NOT a ground/on_surface flag! Sticky limit/trajectory flag.
      * See docs/agent-knowledge/ball-ground-detection.md */
-    uint8_t limit_flag;            // +0x2E9 sticky limit/trajectory (E:LIMIT + type-5 collision)
+    uint8_t impact_shatter;            // +0x2E9 sticky limit/trajectory (E:LIMIT + type-5 collision)
     uint8_t field_2f9;            // +0x2F9
     uint8_t field_2f8;            // +0x2F8
     uint32_t field_2ec;           // +0x2EC collision counter

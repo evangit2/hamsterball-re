@@ -1,4 +1,4 @@
-# Deep-Dive: Ball+0x2E9 (limit_flag)
+# Deep-Dive: Ball+0x2E9 (impact_shatter)
 
 ## Overview
 
@@ -6,7 +6,7 @@
 
 ## Naming History
 
-Previous documentation labeled this field as `on_ramp`, `on_surface`, `flag2`, or `is_teleporting`. **All of these labels are wrong.** The correct name is `limit_flag` because it limits trajectory application and can trigger ball shatter.
+Previous documentation labeled this field as `on_ramp`, `on_surface`, `flag2`, or `is_teleporting`. **All of these labels are wrong.** The correct name is `impact_shatter` because it limits trajectory application and can trigger ball shatter.
 
 ## Initialization
 
@@ -54,26 +54,26 @@ The Ghidra decompilation shows `*(undefined1 *)(param_1 + 0x2e9) = 0` without an
 ; At ctor2+0x1FE: 88 9E E9 02 00 00 = MOV [ESI+0x2E9], BL  (BL pre-loaded with 0)
 ```
 
-**Result: `limit_flag` is cleared both on respawn (`Ball_FindClosestRespawnPoint`) and on full reconstruction (`Ball_ctor2`).** It is NOT sticky — the previous "sticky flag" claim was based on an incorrect `int*` arithmetic assumption that the disassembly disproves.
+**Result: `impact_shatter` is cleared both on respawn (`Ball_FindClosestRespawnPoint`) and on full reconstruction (`Ball_ctor2`).** It is NOT sticky — the previous "sticky flag" claim was based on an incorrect `int*` arithmetic assumption that the disassembly disproves.
 
-## Effects When Set (limit_flag = 1)
+## Effects When Set (impact_shatter = 1)
 
 ### 1. Skip Ball_ApplyTrajectory (L498)
 
 ```c
 if (piVar16[0] == 1) {   // type 1 = surface/wall collision
     if (piVar16[0x19] == unaff_EBP) {   // belongs to this board
-        if (param_1[0xBB] > 1 && limit_flag == 0) {
+        if (param_1[0xBB] > 1 && impact_shatter == 0) {
             Ball_ApplyTrajectory(param_1);   // BOUNCE/REFLECT
         }
 ```
 
-When `limit_flag = 1`: `Ball_ApplyTrajectory` is **skipped**. The ball does not bounce off walls. This means the ball slides along surfaces instead of reflecting.
+When `impact_shatter = 1`: `Ball_ApplyTrajectory` is **skipped**. The ball does not bounce off walls. This means the ball slides along surfaces instead of reflecting.
 
 ### 2. Trigger Ball_Shatter on Wall Hit (L502)
 
 ```c
-if (limit_flag == 1) {
+if (impact_shatter == 1) {
     if (velocity_check_based_on_axis) {
         (*vtable[8])();   // calls Ball_OnRampEvent = Ball_Shatter!
     }
@@ -98,7 +98,7 @@ If the ball is moving in the "wrong" direction for the current axis AND hits a w
 ### 3. Dead Code: Position-Match Shatter (L642)
 
 ```c
-if (limit_flag != 0 && param_1[0xC9] == 0) {
+if (impact_shatter != 0 && param_1[0xC9] == 0) {
     if (ABS(ball_pos - ramp_entry_pos) < _DAT_004cf4f8) {   // threshold = 0.0
         (*vtable[8])();   // Ball_Shatter
     }
@@ -109,7 +109,7 @@ if (limit_flag != 0 && param_1[0xC9] == 0) {
 
 ## Interaction with is_shrunk (0xC4C)
 
-The `limit_flag` is only SET when `is_shrunk == 0`. If the ball is in shrunk state (our half-size mod), `limit_flag` cannot be set by type-5 floor collisions. This means:
+The `impact_shatter` is only SET when `is_shrunk == 0`. If the ball is in shrunk state (our half-size mod), `impact_shatter` cannot be set by type-5 floor collisions. This means:
 
 - Shrunk balls never get their trajectory limited
 - Shrunk balls never trigger the shatter-on-wall-hit behavior
@@ -122,7 +122,7 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | Aspect | Detail |
 |--------|--------|
 | **Field** | `Ball+0x2E9` (byte) |
-| **Name** | `limit_flag` |
+| **Name** | `impact_shatter` |
 | **Init** | 0 (by `Ball_ctor2`) |
 | **Set by** | Type-5 floor collision, speed > 1.0, `is_shrunk == 0` |
 | **Cleared by** | `Ball_FindClosestRespawnPoint` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x004039E0+0x1FE: `MOV [ESI+0x2E9],BL`) |
@@ -130,4 +130,4 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | **Effect 2** | Trigger `Ball_Shatter` on wall hit if moving in "wrong" direction |
 | **Effect 3** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
 | **vtable[8]** | `Ball_OnRampEvent` (0x00409480) — shatter function called from this path |
-| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `limit_flag` from being set |
+| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `impact_shatter` from being set |
