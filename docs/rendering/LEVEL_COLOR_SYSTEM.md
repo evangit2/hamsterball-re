@@ -212,11 +212,45 @@ These are read by `Scene_LoadMeshWorld` (0x00461890) via `__read(file, MW+0x45C,
 
 These are **completely independent** from the board+0x1508 timer oval color.
 
+## Race Selection Menu Colors (Separate System)
+
+The race selection menu (Practice/Time Trial) uses **separate hardcoded colors**
+in `PracticeMenu_ctor` (0x0042EA30). Each `UIList_AddItem` call is preceded by a
+`Matrix_Scale4x4` that sets the text color for that item. These colors are **NOT**
+the same as board+0x1508 — they are independently defined and generally brighter
+(more pastel) versions of the level colors.
+
+| Level | Menu RGB255 | Board RGB255 | Same? |
+|-------|-------------|-------------|-------|
+| Warm-Up | (255,191,255) | (255,0,255) | No |
+| Beginner | (255,191,64) | (255,191,64) | Yes |
+| Intermediate | (191,191,255) | (0,0,255) | No |
+| Dizzy | (191,255,191) | (0,255,0) | No |
+| Tower | (255,229,115) | (255,191,0) | No |
+| Up | (191,115,255) | (255,0,255) | No |
+| Neon | (255,255,0) | (255,255,0) | Yes |
+| Expert | (255,64,64) | (255,0,0) | No |
+| Odd | (255,191,0) | (255,128,0) | No |
+| Toob | (191,191,255) | (128,128,255) | No |
+| Wobbly | (156,240,74) | (158,214,77) | No |
+| Glass | (255,191,255) | (255,0,255) | No |
+| Sky | (64,191,255) | (0,128,255) | No |
+| Master | (217,184,69) | (128,128,128) | No |
+| Impossible | (255,0,0) | (255,0,0) | Yes |
+
+**Conclusion:** Changing board+0x1508 would NOT affect the race selection menu text
+colors. Those are separate hardcoded values in `PracticeMenu_ctor` at 0x0042EA30.
+Locked levels all use gray (0x3f266666 = ~0.65) for all channels.
+
+The menu also loads level preview images (`practice-level1.png` through
+`practice-impossible.png`) stored as Sprite objects at menu+0xCDC through +0xD14.
+
 ## Summary
 
 | Color Source | Where Set | What It Controls |
 |-------------|------------|-------------------|
 | Board ctor `Vec3_Init` | board+0x1508/0x150C/0x1510 | Timer oval tint, timer text tint, arena score oval tint |
+| PracticeMenu_ctor `Matrix_Scale4x4` | Per-item in UIList | Race selection menu text color (NOT same as board color) |
 | MESHWORLD Section 4 | MW+0x45C (bg) / MW+0x468 (ambient) | Background clear color, ambient scene lighting |
 | MESHWORLD `*BITMAP` | Per-material texture reference | Floor checker/brick texture (the actual pixel colors) |
 | MESHWORLD `*MATERIAL_DIFFUSE` | Per-material diffuse color | Mesh surface diffuse color |
@@ -225,7 +259,9 @@ These are **completely independent** from the board+0x1508 timer oval color.
 The timer oval color and level text color are **hardcoded per-level in the EXE** —
 they cannot be changed by editing the MESHWORLD file. To change them, you must
 either patch the EXE's `Vec3_Init` call arguments or use a DLL mod to overwrite
-board+0x1508/0x150C/0x1510 at runtime after the board constructor runs.
+board+0x1508/0x150C/0x1510 at runtime after the board constructor runs. The race
+selection menu text colors are a **separate set** of hardcoded values in
+`PracticeMenu_ctor` — changing board+0x1508 will NOT change the menu text.
 
 ## Key Function Addresses
 
