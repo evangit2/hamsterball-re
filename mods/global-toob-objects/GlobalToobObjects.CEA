@@ -1,0 +1,686 @@
+[ENABLE]
+ 
+// =====================================================
+// Global Toob Race Object Spawner
+// =====================================================
+// Spawns Toob Race objects (SPINNY) at Player 1's position in ANY level.
+// Uses direct mesh passing to constructor (no board slot injection needed).
+//
+// Toob Race objects (all traced via GhidraMCP):
+//
+// | Object        | Constructor          | Addr    | Alloc  | RET  | Mesh String           | Mesh Addr  |
+// |---------------|----------------------|---------|--------|------|-----------------------|------------|
+// | SPINNY        | Rotator_ctor         | 0x435940| 0x1508 | 0x14 | Levels\Level8-Spinny  | 0x4D0E38   |
+// | LIFTER        | Rotator_ctor_sound   | 0x436920| 0x10F4 | 0x18 | (board+0x4784)        | runtime    |
+// | SPEEDCYLINDER | Pendulum_ctor        | 0x436A20| 0x150C | 0x18 | (board+0x4788)        | runtime    |
+// | TIMEBUTTON    | Rotator_ctor_nosound | 0x436C10| 0x10E8 | 0x14 | (board+0x478C)        | runtime    |
+// | LOOPER        | Looper_ctor          | 0x435800| 0x1500 | 0x14 | Levels\Level8-Spinny  | 0x4D0E38   |
+// | GEAR          | Gear_ctor            | 0x437590| 0x1514 | 0x20 | Levels\Level8-Saw     | 0x4D0E24   |
+// | BIGGEAR       | Gear_ctor            | 0x437590| 0x1514 | 0x20 | Levels\Level8-Fallout | 0x4D0E0C   |
+// | ROTATOR       | Rotator_ctor         | 0x435940| 0x1508 | 0x14 | Levels\Level8-Blkdawg1| 0x4D0DF0   |
+// | BLOCKDAWG1    | Blockdawg_ctor       | 0x43C310| 0x1154 | 0x18 | Levels\Level8-Blkdawg1| 0x4D0DF0   |
+// | BLOCKDAWG2    | Blockdawg_ctor       | 0x43C310| 0x1154 | 0x18 | Levels\Level8-Blkdawg2| 0x4D0DD4   |
+//
+// Constructor signatures (all __thiscall):
+//   Rotator_ctor(this, board, X, Y, Z, mesh)                    RET 0x14 (5 stack params)
+//   Rotator_ctor_sound(this, board, X, Y, Z, mesh, soundId)     RET 0x18 (6 stack params)
+//   Pendulum_ctor(this, board, X, Y, Z, int_val, mesh)         RET 0x18 (6 stack params)
+//   Rotator_ctor_nosound(this, board, X, Y, Z, mesh)           RET 0x14 (5 stack params)
+//   Looper_ctor(this, board, X, Y, Z, mesh)                    RET 0x14 (5 stack params)
+//   Gear_ctor(this, board, X, Y, Z, X2, Y2, Z2, mesh)          RET 0x20 (8 stack params)
+//   Blockdawg_ctor(this, board, X, Y, Z, mesh, pathId)         RET 0x18 (6 stack params)
+//
+// All constructors call Stands_ctor(this, mesh) which clones the SpatialTree.
+// The mesh param is always the LAST stack parameter.
+// We pass our own MeshWorld directly — no board slot injection needed.
+//
+// Collision level pointer offset varies by object:
+//   Rotator_ctor:       +0x10D4
+//   Rotator_ctor_sound: +0x10E0
+//   Pendulum_ctor:     +0x10E0
+//   Rotator_ctor_nosound: +0x10E0
+//   Looper_ctor:       +0x10D4
+//   Gear_ctor:         +0x10D4
+//   Blockdawg_ctor:    +0x10D4
+// =====================================================
+ 
+alloc(SpawnCode, 8192)
+alloc(SpawnObject, 4)
+alloc(ObjectType, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_30, 4)
+alloc(temp_mesh, 4)
+alloc(obj_array, 68)
+alloc(last_board, 4)
+alloc(saved_slot, 4)
+ 
+registersymbol(SpawnObject)
+registersymbol(ObjectType)
+ 
+SpawnObject:
+ dd 0
+ 
+ObjectType:
+ dd 0
+ 
+saved_board:
+ dd 0
+ 
+playerX:
+ dd 0
+ 
+playerY:
+ dd 0
+ 
+playerZ:
+ dd 0
+ 
+float_30:
+ dd 0x41F00000  // 30.0
+ 
+temp_mesh:
+ dd 0
+ 
+obj_array:
+ dd 0
+ dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ 
+last_board:
+ dd 0
+ 
+saved_slot:
+ dd 0
+ 
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(do_spawn)
+label(spawn_spinny)
+label(spawn_looper)
+label(spawn_gear)
+label(spawn_biggear)
+label(spawn_rotator)
+label(spawn_speedcyl)
+label(spawn_lifter)
+label(spawn_timebutton)
+label(spawn_blockdawg1)
+label(spawn_blockdawg2)
+label(register_obj)
+label(skip_render)
+label(skip_col)
+label(prox_loop)
+label(prox_next)
+label(prox_done)
+label(mesh_fail)
+ 
+SpawnCode:
+ 
+ mov eax, [esi+0x14]
+ test eax, eax
+ jz no_clear
+ cmp eax, [last_board]
+ je no_clear
+ mov [last_board], eax
+ mov dword [obj_array], 0
+ 
+no_clear:
+ mov eax, [obj_array]
+ test eax, eax
+ jz save_pos
+ pushad
+ xor ebx, ebx
+ 
+prox_loop:
+ cmp ebx, [obj_array]
+ jae prox_done
+ mov eax, [obj_array+4+ebx*4]
+ test eax, eax
+ jz prox_next
+ mov ecx, [eax]
+ test ecx, ecx
+ jz prox_next
+ cmp dword [esi+0x18], 0
+ jne prox_next
+ 
+ // Call vtable[0x2C] (update, __fastcall, ECX=this)
+ mov ecx, eax
+ mov edx, [eax]
+ call dword [edx+0x2C]
+ 
+prox_next:
+ inc ebx
+ jmp prox_loop
+prox_done:
+ popad
+ 
+save_pos:
+ cmp dword [esi+0x18], 0
+ jne check_spawn
+ fld dword [esi+0x164]
+ fadd dword [float_30]
+ fstp dword [playerX]
+ mov eax, [esi+0x168]
+ mov [playerY], eax
+ mov eax, [esi+0x16C]
+ mov [playerZ], eax
+ 
+check_spawn:
+ cmp dword [SpawnObject], 0
+ je original_code
+ cmp dword [esi+0x18], 0
+ jne original_code
+ mov dword [SpawnObject], 0
+ 
+ pushad
+ mov eax, [esi+0x14]
+ mov [saved_board], eax
+ test eax, eax
+ jz done_spawn
+ mov edx, [eax+0x878]
+ test edx, eax
+ jz done_spawn
+ mov edx, [edx+0x174]
+ test edx, edx
+ jz done_spawn
+ 
+do_spawn:
+ // Always create a fresh MeshWorld
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ 
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]
+ mov edx, [edx+0x174]
+ 
+ // Select mesh path based on ObjectType
+ cmp dword [ObjectType], 1
+ je spawn_spinny
+ cmp dword [ObjectType], 2
+ je spawn_looper
+ cmp dword [ObjectType], 3
+ je spawn_gear
+ cmp dword [ObjectType], 4
+ je spawn_biggear
+ cmp dword [ObjectType], 5
+ je spawn_rotator
+ cmp dword [ObjectType], 6
+ je spawn_speedcyl
+ cmp dword [ObjectType], 7
+ je spawn_lifter
+ cmp dword [ObjectType], 8
+ je spawn_timebutton
+ cmp dword [ObjectType], 9
+ je spawn_blockdawg1
+ cmp dword [ObjectType], 10
+ je spawn_blockdawg2
+ jmp spawn_spinny  // default
+ 
+// === SPINNY (Rotator_ctor) ===
+// mesh="Levels\Level8-Spinny" (0x4D0E38), alloc=0x1508, RET 0x14
+spawn_spinny:
+ push 004D0E38            // mesh path
+ push edx                // D3D device
+ mov ecx, eax
+ call 00461510           // MeshWorld_ctor
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1508
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Rotator_ctor(this, board, X, Y, Z, mesh)
+ // __thiscall RET 0x14: push mesh, push Z, push Y, push X, push board
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi           // this
+ call 00435940          // Rotator_ctor
+ jmp register_obj
+ 
+// === LOOPER (Looper_ctor) ===
+// mesh="Levels\Level8-Spinny" (0x4D0E38), alloc=0x1500, RET 0x14
+spawn_looper:
+ push 004D0E38
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1500
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Looper_ctor(this, board, X, Y, Z, mesh) RET 0x14
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 00435800          // Looper_ctor
+ jmp register_obj
+ 
+// === GEAR (Gear_ctor) ===
+// mesh="Levels\Level8-Saw" (0x4D0E24), alloc=0x1514, RET 0x20
+spawn_gear:
+ push 004D0E24
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1514
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Gear_ctor(this, board, X, Y, Z, X2, Y2, Z2, mesh) RET 0x20
+ // X2,Y2,Z2 = second position (use same as X,Y,Z for stationary)
+ mov edx, [temp_mesh]
+ push edx               // param_8 = mesh
+ mov edx, [playerZ]
+ push edx               // param_7 = Z2
+ mov edx, [playerY]
+ push edx               // param_6 = Y2
+ mov edx, [playerX]
+ push edx               // param_5 = X2
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 00437590          // Gear_ctor
+ jmp register_obj
+ 
+// === BIGGEAR (Gear_ctor) ===
+// mesh="Levels\Level8-Fallout" (0x4D0E0C), alloc=0x1514, RET 0x20
+spawn_biggear:
+ push 004D0E0C
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1514
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Same as GEAR but different mesh
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 00437590          // Gear_ctor
+ jmp register_obj
+ 
+// === ROTATOR (Rotator_ctor, uses Blockdawg1 mesh) ===
+// mesh="Levels\Level8-Blockdawg1" (0x4D0DF0), alloc=0x1508, RET 0x14
+spawn_rotator:
+ push 004D0DF0
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1508
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ mov edx, [temp_mesh]
+ push edx
+ mov edx, [playerZ]
+ push edx
+ mov edx, [playerY]
+ push edx
+ mov edx, [playerX]
+ push edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 00435940          // Rotator_ctor
+ jmp register_obj
+ 
+// === SPEEDCYLINDER (Pendulum_ctor) ===
+// mesh="Levels\Level8-Spinny" (0x4D0E38, fallback), alloc=0x150C, RET 0x18
+spawn_speedcyl:
+ push 004D0E38
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x150C
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Pendulum_ctor(this, board, X, Y, Z, int_val, mesh) RET 0x18
+ // param_5 = int (angle/speed, use 0)
+ mov edx, [temp_mesh]
+ push edx               // param_6 = mesh
+ push 0                 // param_5 = int_val (0)
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 00436A20          // Pendulum_ctor
+ jmp register_obj
+ 
+// === LIFTER (Rotator_ctor_sound) ===
+// mesh="Levels\Level8-Spinny" (0x4D0E38), alloc=0x10F4, RET 0x18
+spawn_lifter:
+ push 004D0E38
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x10F4
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Rotator_ctor_sound(this, board, X, Y, Z, mesh, soundId) RET 0x18
+ mov edx, [temp_mesh]
+ push edx               // param_6 = mesh... wait
+ // Actually: Rotator_ctor_sound(this, p1=board, p2=X, p3=Y, p4=Z, p5=mesh, p6=soundId)
+ // But from decompile: pvVar4 = Rotator_ctor_sound(pvVar4, this, x, y, z, mesh, lVar2)
+ // lVar2 = _atol(param_1 + 6) → sound ID from name
+ push 0                 // param_6 = soundId (0)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 00436920          // Rotator_ctor_sound
+ jmp register_obj
+ 
+// === TIMEBUTTON (Rotator_ctor_nosound) ===
+// mesh="Levels\Level8-Spinny" (0x4D0E38), alloc=0x10E8, RET 0x14
+spawn_timebutton:
+ push 004D0E38
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x10E8
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Rotator_ctor_nosound(this, board, X, Y, Z, mesh) RET 0x14
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 00436C10          // Rotator_ctor_nosound
+ jmp register_obj
+ 
+// === BLOCKDAWG1 (Blockdawg_ctor) ===
+// mesh="Levels\Level8-Blockdawg1" (0x4D0DF0), alloc=0x1154, RET 0x18
+spawn_blockdawg1:
+ push 004D0DF0
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1154
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Blockdawg_ctor(this, board, X, Y, Z, mesh, pathId) RET 0x18
+ // pathId = result of Level_FindObjectByName("DAWGPATH1") — pass 0 as fallback
+ push 0                 // param_6 = pathId (0 = no path, dog stays still)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 0043C310          // Blockdawg_ctor
+ jmp register_obj
+ 
+// === BLOCKDAWG2 (Blockdawg_ctor) ===
+// mesh="Levels\Level8-Blockdawg2" (0x4D0DD4), alloc=0x1154, RET 0x18
+spawn_blockdawg2:
+ push 004D0DD4
+ push edx
+ mov ecx, eax
+ call 00461510
+ test eax, eax
+ jz done_spawn
+ mov [temp_mesh], eax
+ 
+ push 0x1154
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ push 0                 // param_6 = pathId (0)
+ mov edx, [temp_mesh]
+ push edx               // param_5 = mesh
+ mov edx, [playerZ]
+ push edx               // param_4 = Z
+ mov edx, [playerY]
+ push edx               // param_3 = Y
+ mov edx, [playerX]
+ push edx               // param_2 = X
+ mov edx, [saved_board]
+ push edx               // param_1 = board
+ mov ecx, edi
+ call 0043C310          // Blockdawg_ctor
+ 
+// === REGISTER OBJECT ===
+register_obj:
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Register in board+0x2578 (active objects list)
+ push edi
+ mov ecx, [saved_board]
+ add ecx, 0x2578
+ call 00453810
+ 
+ // Register collision level
+ // Rotator_ctor/Looper_ctor/Gear_ctor/Blockdawg_ctor: +0x10D4
+ // Rotator_ctor_sound/Pendulum_ctor/Rotator_ctor_nosound: +0x10E0
+ cmp dword [ObjectType], 6
+ je register_col_10e0
+ cmp dword [ObjectType], 7
+ je register_col_10e0
+ cmp dword [ObjectType], 8
+ je register_col_10e0
+ jmp register_col_10d4
+ 
+register_col_10e0:
+ mov eax, [edi+0x10E0]
+ jmp register_col_do
+ 
+register_col_10d4:
+ mov eax, [edi+0x10D4]
+ 
+register_col_do:
+ test eax, eax
+ jz skip_col
+ push eax
+ mov ecx, [saved_board]
+ add ecx, 0x10EC
+ call 00453810
+ 
+ mov edx, [saved_board]
+ mov edx, [edx+0x8B0]
+ test edx, edx
+ jz skip_col
+ mov eax, [edi+0x10D4]
+ test eax, eax
+ jz skip_col_col2
+ cmp dword [ObjectType], 6
+ je col2_10e0
+ cmp dword [ObjectType], 7
+ je col2_10e0
+ cmp dword [ObjectType], 8
+ je col2_10e0
+ jmp col2_10d4
+col2_10e0:
+ mov eax, [edi+0x10E0]
+col2_10d4:
+ push eax
+ lea ecx, [edx+0x18]
+ call 00453810
+ 
+skip_col:
+ // Register in render list (board+0x8AC→+0x480→+0x1C)
+ mov edx, [saved_board]
+ mov edx, [edx+0x8AC]
+ test edx, edx
+ jz skip_render
+ mov edx, [edx+0x480]
+ test edx, edx
+ jz skip_render
+ push edi
+ lea ecx, [edx+0x1C]
+ call 00453810
+ 
+skip_render:
+ // Add to tracking array
+ mov eax, [obj_array]
+ cmp eax, 16
+ jae done_spawn
+ mov [obj_array+4+eax*4], edi
+ inc dword [obj_array]
+ 
+done_spawn:
+ popad
+ 
+original_code:
+ mov eax, [esi+0x0c5c]
+ jmp 00405E28
+ 
+00405E22:
+ jmp SpawnCode
+ nop
+ 
+[DISABLE]
+00405E22:
+ db 8B 86 5C 0C 00 00
+ 
+dealloc(SpawnCode)
+dealloc(SpawnObject)
+dealloc(ObjectType)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_30)
+dealloc(temp_mesh)
+dealloc(obj_array)
+dealloc(last_board)
+dealloc(saved_slot)
+unregistersymbol(SpawnObject)
+unregistersymbol(ObjectType)
