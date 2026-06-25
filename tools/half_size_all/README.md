@@ -12,7 +12,7 @@ Hooks `Scene_SpawnBallsAndObjects` at the point where the player ball has just b
 |-------------|-------|-------|--------|
 | `+0x284` | radius | 13.0 (0x41500000) | Half visual + collision size |
 | `+0x188` | physics_scale | 2.5 (0x40200000) | Half max speed |
-| `+0xC4C` | is_falling | 1 | Shrunk physics state |
+| `+0xC4C` | in_shrunk | 1 | Shrunk physics state |
 
 **Only player index 0 is affected.** AI balls, split balls, follow balls, and board-init balls remain normal size.
 

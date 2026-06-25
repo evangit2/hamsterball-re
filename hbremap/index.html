@@ -13180,7 +13180,7 @@ ball[0x16c/4] = 200.0f;   // Z position
 </code></pre>
 <h3>5. Force Death-Fall State</h3>
 <pre><code class="language-c">Ball_Shrink(ball_ptr);  // @ 0x00402200
-// Sets: +0xC4C = 1 (is_falling), radius=13.0, max_speed=2.5, plays sound
+// Sets: +0xC4C = 1 (in_shrunk), radius=13.0, max_speed=2.5, plays sound
 </code></pre>
 <h3>6. Force Split Power-Up</h3>
 <pre><code class="language-c">Ball_Shatter(ball_ptr, some_param);  // @ 0x00408D70
@@ -13200,7 +13200,7 @@ Ball_SetFlatGravity(ball);    // Normal = (0, 0, 1)     @ 0x00403150
 Ball_ResetCollisionMesh(ball); // Reset orientation        @ 0x004030B0
 </code></pre>
 <h3>9. Check If Ball Is Falling</h3>
-<pre><code class="language-c">char is_falling = *(char*)(ball + 0xC4C);
+<pre><code class="language-c">char in_shrunk = *(char*)(ball + 0xC4C);
 // Set by Ball_Shrink (→1), cleared by Ball_Grow (→0)
 </code></pre>
 <h3>10. Read Ball Speed Scale</h3>
