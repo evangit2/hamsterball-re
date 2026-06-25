@@ -249,7 +249,7 @@ do_spawn:
  mov dword [edi+0xC74], 0
  // ball+0xC80 = 0 (flag)
  mov byte [edi+0xC80], 0
- // ball+0x281 = 1 (is active/renderable)
+ // ball+0x281 = 1 (dead flag, never read by any function)
  mov byte [edi+0x281], 1
  // ball+0x280 = 0
  mov byte [edi+0x280], 0

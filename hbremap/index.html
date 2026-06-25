@@ -13465,7 +13465,7 @@ nop
 <td><code>+0x281</code></td>
 <td>byte</td>
 <td><code>1</code></td>
-<td>is_falling (init: 1, set to 0 by Reset)</td>
+<td>unused_init_flag (DEAD: set by ctor, never read)</td>
 </tr>
 <tr>
 <td><code>+0x284</code></td>
@@ -30103,9 +30103,9 @@ mapping was corrected against raw x86 disassembly.</em></p>
 <tbody>
 <tr>
 <td><code>Ball+0x281</code></td>
-<td><code>is_falling</code></td>
+<td><code>unused_init_flag</code></td>
 <td>❌ NO</td>
-<td>Legacy/init flag, NOT read during Ball_Update physics tick</td>
+<td>DEAD: set by ctor, NEVER read by any function</td>
 </tr>
 <tr>
 <td><code>Ball+0xC4C</code></td>
@@ -30242,11 +30242,11 @@ find_collision(ball_ptr, &amp;out);
 </tbody>
 </table>
 <hr>
-<h2>⚠ is_falling (Ball+0x281) is also NOT reliable</h2>
+<h2>⚠ unused_init_flag (Ball+0x281) is DEAD CODE</h2>
 <ul>
-<li>Documented as <code>is_falling</code> in BALL_OBJECT.md</li>
-<li><strong>NOT read during <code>Ball_Update</code> (0x405E00)</strong> physics tick</li>
-<li>Legacy/init flag only</li>
+<li>Documented as <code>unused_init_flag</code> (formerly is_falling) in BALL_OBJECT.md</li>
+<li><strong>NEVER read by any function in the entire binary</strong></li>
+<li>Set to 1 by Ball_ctor2, cleared to 0 on spawn — but no code ever checks its value</li>
 <li>Setting it to 0 in water mods works as a side effect (clears a stale state), but it does NOT reflect current ground contact</li>
 </ul>
 <h2>fall_mode (Ball+0xC4C) is death-state only</h2>
@@ -30876,9 +30876,9 @@ find_collision(ball_ptr, &amp;out);
 <tr>
 <td>0x281</td>
 <td><code>bool</code></td>
-<td><strong>is_falling</strong></td>
+<td><strong>unused_init_flag</strong></td>
 <td>ctor2, Update</td>
-<td><code>1</code> in ctor; cleared when grounded</td>
+<td><code>1</code> in ctor; cleared (DEAD: never read)when grounded</td>
 </tr>
 <tr>
 <td>0x282</td>
@@ -31819,8 +31819,8 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 // Scale the output vector: output[0] *= 2.0f; output[1] *= 2.0f;
 </code></pre>
 <h3>Recipe H: Disable Fall State</h3>
-<pre><code class="language-cpp">// Keep is_falling = false for permanent ground contact
-*(bool*)(ball + 0x281) = false;
+<pre><code class="language-cpp">// Keep unused_init_flag = false (NOTE: this flag is DEAD code, never read by any function)
+*(bool*)(ball + 0x281) = false; // dead flag (never read)
 </code></pre>
 <hr>
 <h2>6. Cross-Reference Map</h2>
@@ -32289,9 +32289,9 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 <tr>
 <td>0x281</td>
 <td><code>bool</code></td>
-<td><strong>is_falling</strong></td>
+<td><strong>unused_init_flag</strong></td>
 <td>ctor2, Update</td>
-<td><code>1</code> in ctor; cleared when grounded</td>
+<td><code>1</code> in ctor; cleared (DEAD: never read)when grounded</td>
 </tr>
 <tr>
 <td>0x282</td>
@@ -40830,9 +40830,9 @@ If sublevel_count &gt;= 1 (multi-level mode):
 </tr>
 <tr>
 <td>0x281</td>
-<td>bIs_falling</td>
+<td>bUnused_init_flag</td>
 <td>byte</td>
-<td>1=falling</td>
+<td>DEAD: 1=init, never read</td>
 </tr>
 <tr>
 <td>0x284</td>
@@ -41336,9 +41336,9 @@ If sublevel_count &gt;= 1 (multi-level mode):
 <tr>
 <td>0x281</td>
 <td><code>bool</code></td>
-<td><strong>is_falling</strong></td>
+<td><strong>unused_init_flag</strong></td>
 <td>ctor2, Update</td>
-<td><code>1</code> in ctor; cleared when grounded</td>
+<td><code>1</code> in ctor; cleared (DEAD: never read)when grounded</td>
 </tr>
 <tr>
 <td>0x282</td>
@@ -51134,7 +51134,7 @@ Engine: cos=0.731 sin=0.682
 <tr>
 <td>0x281</td>
 <td>uint8</td>
-<td>is_falling</td>
+<td>unused_init_flag</td>
 <td>1</td>
 <td>Set to 1 in ctor; 0 when on surface</td>
 </tr>
@@ -93124,7 +93124,7 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td><code>+0x281</code></td>
 <td>uint8</td>
-<td>is_falling</td>
+<td>unused_init_flag</td>
 <td>1 when airborne</td>
 </tr>
 <tr>
@@ -124421,7 +124421,7 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <tr>
 <td>0x281</td>
 <td>uint8</td>
-<td>is_falling</td>
+<td>unused_init_flag</td>
 <td>1</td>
 <td>Set to 1 in ctor; 0 when on surface</td>
 </tr>
@@ -127437,9 +127437,9 @@ Ball (vtable 0x4CF3A0, size 0xC98) - player ball (NOT in Gadget hierarchy)
 </tr>
 <tr>
 <td>0x281</td>
-<td>bIs_falling</td>
+<td>bUnused_init_flag</td>
 <td>byte</td>
-<td>1=falling</td>
+<td>DEAD: 1=init, never read</td>
 </tr>
 <tr>
 <td>0x284</td>
@@ -127686,9 +127686,9 @@ To fully apply: manually retype <code>this</code> in Ghidra GUI (right-click -&g
 </tr>
 <tr>
 <td>0x281</td>
-<td>bIs_falling</td>
+<td>bUnused_init_flag</td>
 <td>byte</td>
-<td>1=falling</td>
+<td>DEAD: 1=init, never read</td>
 </tr>
 <tr>
 <td>0x284</td>
@@ -128944,7 +128944,7 @@ Scene_SpawnBallsAndObjects → place at START object, set player_index
 <tr>
 <td>0x281</td>
 <td>uint8</td>
-<td>is_falling</td>
+<td>unused_init_flag</td>
 <td>1</td>
 <td>Set to 1 in ctor; 0 when on surface</td>
 </tr>
@@ -130380,7 +130380,7 @@ gravity[2] = 0.0f;   // Z
 <tr>
 <td>0x281</td>
 <td>uint8</td>
-<td>is_falling</td>
+<td>unused_init_flag</td>
 <td>1</td>
 <td>Set to 1 in ctor; 0 when on surface</td>
 </tr>
@@ -130844,7 +130844,7 @@ gravity[2] = 0.0f;   // Z
 <tr>
 <td>0x281</td>
 <td>uint8</td>
-<td>is_falling</td>
+<td>unused_init_flag</td>
 <td>1</td>
 <td>Set to 1 in ctor; 0 when on surface</td>
 </tr>

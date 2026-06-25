@@ -774,7 +774,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x254` | uint8 | uses_alpha | True if color_a != 1.0 |
 | `+0x260` | uint8 | boost_hit_flag | Set on boost pad contact |
 | `+0x278` | float | gravity_scale | Gravity multiplier (default 0.1) |
-| `+0x281` | uint8 | is_falling | 1 when airborne |
+| `+0x281` | uint8 | unused_init_flag | DEAD: set to 1 in ctor, never read |
 | `+0x284` | float | radius | Collision + render size (default 26.0) |
 | `+0x2A4` | float | spin_rate | Angular spin factor (5.0) |
 | `+0x2BC` | float[3] | force | Accumulated input force |

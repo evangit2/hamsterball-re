@@ -79,7 +79,7 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x278 | `float` | **gravity_scale** | ctor2, Update | Default `0.1f`. **Scale gravity strength.** |
 | 0x27C | `uint32_t` | field_27c | ctor2 | `0` |
 | 0x280 | `uint8_t` | field_280 | ctor2 | `0` |
-| 0x281 | `bool` | **is_falling** | ctor2, Update | `1` in ctor; cleared when grounded |
+| 0x281 | `bool` | **unused_init_flag** | ctor2, Update | `1` in ctor; DEAD: never read by any function |
 | 0x282 | `uint8_t[2]` | pad_282 | | |
 | 0x284 | `float` | **radius** | ctor2, Update | Default `27.0f`. Hit-box size. |
 | 0x288 | `uint32_t` | field_288 | ctor2 | `0` |
@@ -305,8 +305,8 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 
 ### Recipe H: Disable Fall State
 ```cpp
-// Keep is_falling = false for permanent ground contact
-*(bool*)(ball + 0x281) = false;
+// Keep unused_init_flag = false (NOTE: this flag is DEAD code, never read by any function)
+*(bool*)(ball + 0x281) = false; // dead flag (never read) // dead flag (never read)
 ```
 
 ---

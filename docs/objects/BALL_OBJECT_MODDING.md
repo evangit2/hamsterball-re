@@ -330,7 +330,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x264` | RumbleBoard | — | Rumble timer (0x14 bytes) |
 | `+0x278` | float | `0x3DCCCCCD` | (0.1f) |
 | `+0x27C` | int | `0` | — |
-| `+0x281` | byte | `1` | is_falling (init: 1, set to 0 by Reset) |
+| `+0x281` | byte | `1` | unused_init_flag (DEAD: set by ctor, never read by any function) |
 | `+0x284` | float | `0x41D80000` | radius (27.0f) |
 | `+0x290` | int | `0` | spin_timer |
 | `+0x2A4` | float | `0x40A00000` | (5.0f) |

@@ -65,7 +65,7 @@ BadBalls are spawned by `CreateBadBall` which is called from `Scene_SpawnBallsAn
   2. `Ball_ctor(this, scene)` — initialize ball with scene reference
   3. `vtable[1]()` — call Ball_Init (2nd virtual)
   4. Position from MESHWORLD object: `ball+0x164 = obj.x + radius`, `ball+0x168 = obj.y + ball.radius`, `ball+0x16C = obj.z + radius`
-  5. Clear `ball+0x281 = 0` (some flag)
+  5. Clear `ball+0x281 = 0` (dead flag, never read)
   6. Copy same position to home: `ball+0xC60/0xC64/0xC68 = obj.xyz` (spawn/return position)
   7. Parse `<CHASE>`, `<HOME>`, `<SIZE>`, `<SPINDISTANCE>` tags from name string via `MWParser_ReadTag`
   8. `AthenaList_Append(scene+0x29D4, ball)` — add to bad_balls list
@@ -103,7 +103,7 @@ Ball_ctor(ball, scene);  // 0x4087A0 (base Ball_ctor, NOT Ball_Split_ctor)
 *(float*)(ball + 0xC68) = spawn_z;
 
 // 6. Set AI flag
-*(byte*)(ball + 0x281) = 0;  // clear some flag
+*(byte*)(ball + 0x281) = 0;  // dead flag (never read by any function)
 
 // 7. Set chase distance (optional, default 25.0)
 *(float*)(ball + 0xC6C) = 25.0f;
@@ -130,7 +130,7 @@ AthenaList_Append(scene + 0x2DEC, ball);  // all_balls
 | Ball_Init | `vtable[1]()` | via vtable |
 | Display pos | `ball+0x164/0x168/0x16C` | — |
 | Home pos | `ball+0xC60/0xC64/0xC68` | — |
-| AI flag clear | `ball+0x281` | — |
+| AI flag clear | `ball+0x281` | DEAD: never read |
 | Chase dist | `ball+0xC6C` | — |
 | Home radius | `ball+0xC70` | — |
 | Add to bad_balls | `AthenaList_Append(scene+0x29D4, ball)` | — |

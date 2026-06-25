@@ -51,7 +51,7 @@ typedef struct {
     char pad_278_pad[4];         // +0x278 0x3DCCCCCD = 0.1f
     float gravity_rumble_val;    // +0x27C set 0
     int field_280;                // +0x280 (0 in ctor)
-    char is_falling;             // +0x281 set 1 in ctor (ball falling state)
+    char unused_init_flag;          // +0x281 set 1 in ctor, NEVER READ (dead code)
     char pad_282[2];             // +0x282
     float radius;                 // +0x284 0x41D80000 = 27.0f
     char pad_288[4];             // +0x288 set 0

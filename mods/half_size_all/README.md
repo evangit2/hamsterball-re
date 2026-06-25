@@ -25,7 +25,7 @@ Hooks `Scene_SpawnBallsAndObjects` at the point where the player ball has just b
 The code cave:
 1. `CMP dword [ESI+0x18], 0` — is this player 0?
 2. If no → skip to step 4
-3. If yes → write radius=13.0, physics_scale=2.5, is_falling=1
+3. If yes → write radius=13.0, physics_scale=2.5, unused_init_flag=1 (NOTE: this flag is DEAD code — never read by any function, but we set it anyway to match original behavior)
 4. Execute original `MOV byte [ESI+0x281], 0`
 5. `JMP` back to 0x0041C8DE
 

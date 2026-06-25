@@ -110,7 +110,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | **0x278** | **float** | **gravity_scale** | **0.5** | **Gravity multiplier (ctor2=0.1, overridden to 0.5)** |
 | 0x27C | float | unknown_27C | 0.2 | Unknown (ctor2=0.0, overridden to 0.2) |
 | 0x280 | uint8 | unknown_280 | 0 | Unknown flag |
-| 0x281 | uint8 | is_falling | 1 | Set to 1 in ctor; 0 when on surface |
+| 0x281 | uint8 | unused_init_flag | 1 | DEAD: set to 1 in ctor, 0 on spawn; never read by any function |
 | **0x284** | **float** | **radius** | **35.0** | **Ball radius (ctor2=27.0, overridden to 35.0; shrunk to 13.0 on fall)** |
 | 0x288 | float | unknown_288 | 0.0 | Unknown |
 | 0x290 | uint8[0x14] | rumble_timer2 | — | Second RumbleBoard timer |
