@@ -222,53 +222,71 @@ This is significantly more complex than spawning a Mace.
 
 ---
 
-## CHOMPER (and TURRET)
+## CHOMPER (Purple Thing in the Pit)
 
-### The Truth About Chompers
+The Chomper is the purple thing sitting in the pit near the goal in the Tower Race. It DOES interact with the ball — when the ball touches it, the `E:BITE` collision event fires, dealing 25.0 damage.
 
-**CHOMPER is NOT a separate game object.** It is just a visual mesh (MeshNode) loaded by the Tower constructor:
+### What It Actually Is
+
+The Chomper is a **MeshWorld + CollisionLevel** (not a game object with vtable). It's rendered as static geometry and has collision via a CollisionLevel. The E:BITE events are baked into the mesh's collision triangles — they fire automatically wherever the chomper is placed.
+
+### Binary Addresses
+
+| Symbol | Address | Purpose |
+|--------|---------|---------|
+| "Meshes\\Chomper" | 0x4D094C | Mesh file path string |
+| "sounds\\chomp" | 0x4D2D98 | Chomp sound file path |
+| "E:BITE" | 0x4CFECC (→25.0 at 0x41C80000) | Collision event on chomper triangles |
+
+### Creation Flow (Tower Constructor @ 0x41E340)
 
 ```c
-board+0x4390 = MeshNode_ctor("Meshes\\Chomper");  // VA 0x4D094C
+// 1. Load Chomper mesh
+board+0x4390 = MeshWorld_ctor("Meshes\\Chomper");  // VA 0x4D094C
+
+// 2. Allocate CollisionLevel
+coll = operator_new(0x10D0);
+CollisionLevel_ctorWithLevel(coll, board+0x4390);  // creates collision from mesh
+
+// 3. Register with scene manager (0x4F7360) for collision detection
+SceneObject_SetupCallback(0x4F7360, 0x168, 0);
 ```
 
-The MeshNode is a static visual element with no collision, update, or interaction logic.
+### Collision (E:BITE)
 
-### The Actual Object: TURRET
-
-The game object that appears near chompers is the **TURRET**, which uses the `Level4-Turret` mesh (not the Chomper mesh).
-
-| Function | Address | Purpose |
-|----------|---------|---------|
-| Stands_ctor | 0x462850 | Constructor — thiscall(obj, mesh) ret 4 |
-| Turret vtable | 0x4D8FB0 | Set by Stands_ctor |
-
-**Object Structure** (0x10D0 bytes):
-
-| Offset | Description |
-|--------|-------------|
-| +0x10D0 | Board pointer |
-| +0x10D4/+0x10D8/+0x10DC | Position XYZ |
-
-### Creation Flow
+Handled in `Level_HandleCollision` (0x40DCD0):
 
 ```c
-// Find "TURRET" mesh ref
-mesh_ref = Level_FindObjectByName("TURRET");
-if (mesh_ref == NULL) skip;
+// E:BITE — ball touches chomper
+if (stricmp(eventName, "E:BITE") == 0) {
+    board+0x43A0 = 25.0;   // bite damage (0x41C80000)
+    board+0x43A8 = 0;      // reset bite counter
+}
+```
 
-// Allocate
+The damage value at `board+0x43A0` is read by the game loop at 0x4023C1, which applies it to the ball (splits/respawns). The "chomp" sound plays on contact.
+
+### Position in Tower Level
+
+From Level4.MESHWORLD: Chomper mesh ref at position (5080.9, -2659.6, -3410.8) — in the pit near the goal.
+
+### Spawnable: YES
+
+The Chomper CAN be spawned globally using the same CollisionLevel pattern as the Windmill:
+1. Load `Meshes\Chomper` mesh via `MeshWorld_ctor`
+2. Create CollisionLevel from mesh via `CollisionLevel_ctorWithLevel`
+3. Register with scene manager
+4. E:BITE events are baked into the mesh → automatically work at any position!
+
+### TURRET (separate object, not Chomper)
+
+The Turret is a separate game object that uses `Level4-Turret` mesh:
+
+```c
+board+0x43B4 = MeshWorld_ctor("Levels\\Level4-Turret");
+// Turret creation in Scene_LoadLevel4:
 obj = operator_new(0x10D0);
-
-// Construct with Level4-Turret mesh
-mesh_ptr = *(board + 0x43B4);  // pre-loaded Level4-Turret
-Stands_ctor(obj, mesh_ptr);    // thiscall, ret 4 → sets vtable = 0x4D8FB0
-
-// Copy position
-obj->pos = mesh_ref->pos;
-
-// Register
-call 0x457AD0;  // Timer_Init or similar setup
+Stands_ctor(obj, mesh);  // sets vtable = 0x4D8FB0
 ```
 
 ### Mesh Pre-loading (Tower Constructor)
@@ -279,7 +297,7 @@ board+0x4370 = MeshWorld_ctor("Levels\\Level4-Drawbridge");
 board+0x4374 = MeshNode_ctor("Meshes\\YellowLink");
 board+0x4378 = MeshWorld_ctor("Levels\\Level4-Mace");      // Mace mesh
 board+0x437C = MeshWorld_ctor("Levels\\Level4-Windmill");  // Windmill mesh
-board+0x4390 = MeshNode_ctor("Meshes\\Chomper");            // Chomper visual
+board+0x4390 = MeshWorld_ctor("Meshes\\Chomper");           // Chomper mesh + collision
 board+0x43B4 = MeshWorld_ctor("Levels\\Level4-Turret");     // Turret mesh
 ```
 
