@@ -96,9 +96,9 @@ def extract_title(filepath: str, content: str) -> str:
     match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
     if match:
         title = match.group(1).strip()
-        # Cap title length — some docs have huge H1s
-        if len(title) > 80:
-            title = title[:77] + "..."
+        # Shorten for graph readability — cap at 17 chars
+        if len(title) > 17:
+            title = title[:14] + "..."
         return title
     # Try filename without extension
     return Path(filepath).stem.replace("_", " ").replace("-", " ")
@@ -351,14 +351,14 @@ graph_background_color: "#1a1a2e"
 graph_text_color: "#e0e0e0"
 graph_link_color: "#555555"
 graph_highlight_color: "#ff6a6a"
-graph_text_size: 12
+graph_text_size: 8
 graph_arrows: true
 node_size_method: degree
-node_size: 6
-node_size_max: 14
+node_size: 5
+node_size_max: 10
 node_size_min: 3
 attraction_force: 50
-attraction_distance_max: 800
+attraction_distance_max: 1200
 attraction_vertical: 0.0
 attraction_horizontal: 0.0
 generate_id: always
