@@ -7,9 +7,10 @@
 // When the ball gets close to a spawned PopCylinder, it triggers
 // the E:LAUNCH collision event (chrome particles + ball launch + sound).
 //
-// Based on the original global popcylinder spawner.
-// Fix: adds proximity-based HandleArenaCollisionEvents call with
-// fake E:LAUNCH collision entry to trigger the chrome launch effect.
+// FIX v2: Swapped collision handler args (ball was pushed as param_2
+//   instead of param_1). Game pushes: entry(high) then ball(low),
+//   so [ESP]=ball=param_1, [ESP+4]=entry=param_2.
+//   Old script had them reversed → heap corruption → crash.
 // =====================================================
  
 alloc(SpawnCode, 8192)
@@ -65,7 +66,7 @@ fake_entry:
  db 00 00 00 00
  times 0x868 db 00
  
-// fake_pair[0] = 0 (unused, function reads [ebp+4] = pair[1])
+// fake_pair[0] = 0 (unused)
 // fake_pair[1] = fake_entry ptr (set once at init)
 fake_pair:
  dd 0
@@ -146,12 +147,10 @@ prox_loop:
  cmp edx, [last_board]
  jne prox_next
  
- // Call vtable[0x2C] (init/update function)
- push eax
+ // Call vtable[0x2C] (update/pop animation function, __fastcall, ECX=this)
  mov ecx, eax
  mov edx, [eax]
  call dword [edx+0x2C]
- pop eax
  
  // === CHROME LAUNCH PROXIMITY CHECK ===
  // Check cooldown
@@ -182,7 +181,7 @@ prox_loop:
  
  // === BALL IS NEAR POPCYLINDER — TRIGGER E:LAUNCH ===
 do_launch:
- // Save ball position (HandleArenaCollisionEvents will teleport it)
+ // Save ball position (HandleArenaCollisionEvents will teleport it to LAUNCHPOINT)
  mov eax, [esi+0x164]
  mov [saved_ball_x], eax
  mov eax, [esi+0x168]
@@ -190,13 +189,20 @@ do_launch:
  mov eax, [esi+0x16C]
  mov [saved_ball_z], eax
  
- // Call HandleArenaCollisionEvents(board, ball, &fake_pair)
- // __thiscall: ECX=board, push ball, push &fake_pair, ret 8
+ // Call CreateSpinner (0x412850) — the Odd Arena collision handler
+ // __thiscall: ECX=board, RET 0x8 (2 stack params)
+ // Game's calling convention (from Ball_FallUpdate disasm at 0x408B87):
+ //   PUSH collision_entry  ; param_2 (pushed first = high address)
+ //   PUSH ball             ; param_1 (pushed second = low address, [ESP])
+ //   MOV ECX, board        ; this
+ //   CALL [vtable+0x74]
+ // So [ESP]=ball=param_1, [ESP+4]=entry=param_2
+ 
  mov edx, [saved_board]
  mov ecx, edx
- push esi
- lea edx, [fake_pair]
- push edx
+ lea eax, [fake_pair]
+ push eax              // param_2 = &fake_pair (pushed first = high address)
+ push esi              // param_1 = ball (pushed second = low address, [ESP])
  call 00412850
  
  // Restore ball position (undo the LAUNCHPOINT teleport)
@@ -238,6 +244,7 @@ check_spawn:
  jz done_spawn
  
 do_mesh:
+ // Allocate MeshWorld (0x10D0 bytes) and load popcylinder mesh
  push 0x10D0
  call 004BA57B
  add esp, 4
@@ -247,14 +254,15 @@ do_mesh:
  mov edx, [saved_board]
  mov edx, [edx+0x878]
  mov edx, [edx+0x174]
- push 004D0F5C
- push edx
- mov ecx, eax
- call 00461510
+ push 004D0F5C           // "levels\level9-popcylinder1"
+ push edx                // D3D device
+ mov ecx, eax            // this = new MeshWorld
+ call 00461510           // MeshWorld_ctor
  test eax, eax
  jz done_spawn
  mov [temp_mesh], eax
  
+ // Allocate PopCylinder (0x10E8 bytes)
  push 0x10E8
  call 004BA57B
  add esp, 4
@@ -262,37 +270,44 @@ do_mesh:
  jz done_spawn
  mov edi, eax
  
+ // PopCylinder_ctor(this, board, X, Y, Z, mesh)
+ // __thiscall: ECX=this, 5 stack params, RET 0x14
+ // Push order (right-to-left): mesh, Z, Y, X, board
  mov edx, [temp_mesh]
- push edx
+ push edx                // param_5 = mesh source
  mov edx, [playerZ]
- push edx
+ push edx                // param_4 = Z
  mov edx, [playerY]
- push edx
+ push edx                // param_3 = Y
  mov edx, [playerX]
- push edx
+ push edx                // param_2 = X
  mov edx, [saved_board]
- push edx
- mov ecx, edi
- call 00436EE0
+ push edx                // param_1 = board
+ mov ecx, edi            // this = new PopCylinder
+ call 00436EE0           // PopCylinder_ctor
  test eax, eax
  jz done_spawn
  mov edi, eax
  
+ // Register in board+0x2578 (active objects list)
  push edi
  mov ecx, [saved_board]
  add ecx, 0x2578
  call 00453810
  
+ // Register in board+0xCD4 (collision objects list)
  push edi
  mov ecx, [saved_board]
  add ecx, 0xCD4
  call 00453810
  
+ // Register in board+0x5428 (popcylinder-specific list)
  push edi
  mov ecx, [saved_board]
  add ecx, 0x5428
  call 00453810
  
+ // Register collision level in board+0x10EC
  mov eax, [edi+0x10E0]
  test eax, eax
  jz skip_col
@@ -301,6 +316,7 @@ do_mesh:
  add ecx, 0x10EC
  call 00453810
  
+ // Register collision level in board+0x8B0+0x18
  mov edx, [saved_board]
  mov edx, [edx+0x8B0]
  test edx, edx
@@ -311,6 +327,7 @@ do_mesh:
  call 00453810
  
 skip_col:
+ // Register in render list (board+0x8AC→+0x480→+0x1C)
  mov edx, [saved_board]
  mov edx, [edx+0x8AC]
  test edx, edx
@@ -323,6 +340,7 @@ skip_col:
  call 00453810
  
 skip_render:
+ // Add to our tracking array
  mov eax, [popcyl_array]
  cmp eax, 16
  jae done_spawn
