@@ -38,9 +38,9 @@ STATS_TOTAL_SIZE = STATS_HEADER_SIZE + (STATS_RING_SIZE * REF_ENTRY_SIZE)
 
 # Levels to test (Level1=Warm-Up is the slot, so test all others)
 TEST_LEVELS = [
-    ("Level2", "Beginner"),
-    ("Level3", "Intermediate"),
-    ("LevelCascade", "Dizzy"),
+    ("LevelCascade", "Beginner"),
+    ("Level2", "Intermediate"),
+    ("Level3", "Dizzy"),
     ("Level4", "Tower"),
     ("LevelUp", "Up"),
     ("LevelDark", "Neon"),

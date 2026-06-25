@@ -191,7 +191,7 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 |---|-------------|---------|-----------|------------|
 | 1 | Warm-up Race | BEGINNERRACE | Level1.MESHWORLD | Pink |
 | 2 | Beginner Race | CASCADERACE | LevelCascade.MESHWORLD | Blue |
-| 3 | Intermediate Race | INTERMEDIATERACE | Level3.MESHWORLD | Green |
+| 3 | Intermediate Race | INTERMEDIATERACE | Level2.MESHWORLD | Green |
 | 4 | Dizzy Race | DIZZYRACE | Level4.MESHWORLD | — |
 | 5 | Tower Race | TOWERRACE | Level5.MESHWORLD | — |
 | 6 | Up Race | UPRACE | LevelUp.MESHWORLD | Red |

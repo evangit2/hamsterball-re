@@ -14,9 +14,9 @@ RESULTS="/tmp/ref_loader_proper_results.txt"
 
 # Levels to test (excluding Level1=Warm-Up itself)
 TEST_LEVELS=(
-    "Level2:Beginner"
-    "Level3:Intermediate"
-    "LevelCascade:Dizzy"
+    "LevelCascade:Beginner"
+    "Level2:Intermediate"
+    "Level3:Dizzy"
     "Level4:Tower"
     "LevelUp:Up"
     "LevelDark:Neon"

@@ -17,7 +17,7 @@ The authoritative list of all 15 race tracks and 15 arenas in Hamsterball.
 |---|-------------|---------|-----------|------------|------------|
 | 1 | Warm-up Race | `BEGINNERRACE` | `Level1.MESHWORLD` | Pink | `BoardLevel1_WarmUp_ctor` (0x41CA40) |
 | 2 | Beginner Race | `CASCADERACE` | `LevelCascade.MESHWORLD` | Blue | `BoardLevel_Beginner_Ctor` (0x4200E0) |
-| 3 | Intermediate Race | `INTERMEDIATERACE` | `Level3.MESHWORLD` | Green | `BoardLevel2_Intermediate_ctor` |
+| 3 | Intermediate Race | `INTERMEDIATERACE` | `Level2.MESHWORLD` | Green | `BoardLevel2_Intermediate_ctor` |
 | 4 | Dizzy Race | `DIZZYRACE` | `Level4.MESHWORLD` | — | `BoardLevel3_ctor` |
 | 5 | Tower Race | `TOWERRACE` | `Level5.MESHWORLD` | — | `BoardLevel5_Tower_ctor` |
 | 6 | Up Race | `UPRACE` | `LevelUp.MESHWORLD` | Red | `BoardLevel_Up_Ctor` (0x420390) |
@@ -79,7 +79,7 @@ not what we'd call "Beginner" in the display.
 |-----------|---------------------|-------------|
 | `Level1` | 1 | Warm-up Race |
 | `LevelCascade` | 2 | Beginner Race |
-| `Level3` | 3 | Intermediate Race |
+| `Level2` | 3 | Intermediate Race |
 | `Level4` | 4 | Dizzy Race |
 | `Level5` | 5 | Tower Race |
 | `LevelUp` | 6 | Up Race |
@@ -99,11 +99,11 @@ These are not standalone race tracks — they are 3D object meshes loaded by rac
 
 | File | Purpose | Used By |
 |------|---------|---------|
-| `Level2-Bridge` | Bridge section | Beginner Race |
-| `Level3-Gluebie` | Glue trap object | Intermediate Race |
-| `Level3-Swirl` | Swirl vortex | Intermediate Race / Dizzy Arena |
-| `Level3-Tipper` | Tipping platform | Intermediate Race |
-| `Level3-WaterWheel` | Water wheel | Intermediate Race |
+| `Level2-Bridge` | Bridge section | Intermediate Race |
+| `Level3-Gluebie` | Glue trap object | Dizzy Race |
+| `Level3-Swirl` | Swirl vortex | Dizzy Race / Dizzy Arena |
+| `Level3-Tipper` | Tipping platform | Dizzy Race |
+| `Level3-WaterWheel` | Water wheel | Dizzy Race |
 | `Level4-Catapult` | Catapult launcher | Dizzy Race |
 | `Level4-Drawbridge` | Drawbridge | Dizzy Race |
 | `Level4-Mace` | Swinging mace | Dizzy Race |

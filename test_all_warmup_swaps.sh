@@ -16,9 +16,9 @@ fi
 
 # Levels to test (excluding Level1=Warm-Up itself, and Level14=Master which doesn't have a standalone race level file)
 LEVELS_TO_TEST=(
-    "Level2:Beginner"
-    "Level3:Intermediate"
-    "LevelCascade:Dizzy"
+    "LevelCascade:Beginner"
+    "Level2:Intermediate"
+    "Level3:Dizzy"
     "Level4:Tower"
     "LevelUp:Up"
     "LevelDark:Neon"

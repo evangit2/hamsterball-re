@@ -6,8 +6,8 @@ Complete copy of the game's `Levels/` folder with Beginner Race and Intermediate
 
 | File | Original | This folder |
 |------|----------|-------------|
-| `Level2.MESHWORLD` | Beginner Race (788 KB) | **Intermediate Race** (1026 KB) |
-| `Level3.MESHWORLD` | Intermediate Race (1026 KB) | **Beginner Race** (788 KB) |
+| `LevelCascade.MESHWORLD` | Beginner Race | **Intermediate Race** (Level2 data) |
+| `Level2.MESHWORLD` | Intermediate Race | **Beginner Race** (LevelCascade data) |
 
 Everything else is original. No `.cached` or `.bak` files included.
 
@@ -29,9 +29,9 @@ Before copying this folder:
 | Race name | Game filename |
 |-----------|--------------|
 | Warm-up Race | `Level1.MESHWORLD` |
-| Beginner Race | `Level2.MESHWORLD` |
-| Intermediate Race | `Level3.MESHWORLD` |
-| Dizzy Race | `LevelCascade.MESHWORLD` |
+| Beginner Race | `LevelCascade.MESHWORLD` |
+| Intermediate Race | `Level2.MESHWORLD` |
+| Dizzy Race | `Level3.MESHWORLD` |
 | Tower Race | `Level4.MESHWORLD` |
 | Up Race | `LevelUp.MESHWORLD` |
 | Expert Race | `Level8.MESHWORLD` |
