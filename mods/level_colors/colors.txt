@@ -1,0 +1,17 @@
+; Level Colors Config File
+; Format: LevelName=RRGGBB (hex RGB, like HTML colors)
+WarmUp=FF00FF
+Beginner=FFBF40
+Intermediate=0000FF
+Dizzy=00FF00
+Tower=FFBF00
+Up=FF00FF
+Neon=FFFF00
+Expert=FF0000
+Odd=FF8000
+Toob=8080FF
+Wobbly=9ED64D
+Glass=FF00FF
+Sky=0080FF
+Master=808080
+Impossible=FF0000
