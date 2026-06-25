@@ -1,0 +1,314 @@
+[ENABLE]
+
+alloc(SpawnCode, 4096)
+alloc(SpawnMace, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20, 4)
+alloc(mesh_loaded, 4)
+alloc(saved_4378, 4)
+alloc(mace_array, 68)
+alloc(last_board, 4)
+alloc(float_80, 4)
+
+registersymbol(SpawnMace)
+
+SpawnMace:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20:
+  dd 0x41A00000
+
+mesh_loaded:
+  dd 0
+
+saved_4378:
+  dd 0
+
+mace_array:
+  dd 0
+  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+last_board:
+  dd 0
+
+float_80:
+  dd 0x42A00000
+
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(load_mesh)
+label(load_fresh)
+label(do_spawn)
+label(skip_scene)
+label(skip_mace_list)
+label(prox_loop)
+label(prox_next)
+label(prox_done)
+label(do_update)
+label(restore_4378)
+label(spawn_fail)
+
+SpawnCode:
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz no_clear
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+  mov dword [mace_array], 0
+
+no_clear:
+  mov eax, [mace_array]
+  test eax, eax
+  jz save_pos
+
+  pushad
+  xor ebx, ebx
+
+prox_loop:
+  cmp ebx, [mace_array]
+  jae prox_done
+
+  mov eax, [mace_array+4+ebx*4]
+  test eax, eax
+  jz prox_next
+
+  mov ecx, [eax]
+  test ecx, ecx
+  jz prox_next
+
+do_update:
+  // Only update during player 1's Ball_Update
+  cmp dword [esi+0x18], 0
+  jne prox_next
+
+  // Call vtable[11] (Pendulum_Update) — swing animation
+  push eax
+  mov ecx, eax
+  mov edx, [eax]
+  call dword [edx+0x2C]
+  pop eax
+
+prox_next:
+  inc ebx
+  jmp prox_loop
+
+prox_done:
+  popad
+
+save_pos:
+  cmp dword [esi+0x18], 0
+  jne check_spawn
+
+  // Save player position (slightly above for mace to hang down)
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  fld dword [esi+0x168]
+  fadd dword [float_20]
+  fstp dword [playerY]
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  cmp dword [SpawnMace], 0
+  je original_code
+  cmp dword [esi+0x18], 0
+  jne original_code
+  mov dword [SpawnMace], 0
+
+  pushad
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+  // === STEP 1: Load Level4-Mace mesh if not already loaded ===
+load_mesh:
+  cmp dword [mesh_loaded], 0
+  jne do_spawn
+
+  // Check if board+0x4378 already has a valid mesh (Tower Race)
+  mov edx, [saved_board]
+  mov edx, [edx+0x4378]
+  test edx, edx
+  jnz do_spawn
+  // Tower Race already has the mesh — mark loaded and proceed
+
+  load_fresh:
+  // Allocate 0x10D0 for MeshWorld
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+
+  mov ebx, eax
+
+  // Get D3D device from App
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+
+  // MeshWorld_ctor(this=alloc, D3D_device, "Levels\Level4-Mace")
+  push 004D0974            // "Levels\Level4-Mace"
+  push edx                // D3D device
+  mov ecx, ebx            // this = MeshWorld alloc
+  call 00461510           // MeshWorld_ctor — ret 8
+  test eax, eax
+  jz done_spawn
+
+  // Force-set mesh+0x878 = App (needed by Stands_ctor)
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov [ebx+0x878], edx
+
+  // Store mesh at board+0x4378
+  mov edx, [saved_board]
+  mov [edx+0x4378], eax
+  mov dword [mesh_loaded], 1
+
+  // === STEP 2: Allocate and construct Mace ===
+do_spawn:
+  // JIT mesh injection: save board+0x4378, ensure mesh is there, call ctor, restore
+  // If mesh_loaded=0, the Tower already has the mesh at board+0x4378
+  // If mesh_loaded=1, we just loaded it fresh
+
+  // Allocate Mace object
+  push 0x110C
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // CascadeStands_Ctor(this=alloc, board, mesh)
+  // thiscall: ECX=obj, PUSH mesh, PUSH board → ret 8
+  mov edx, [saved_board]
+  mov edx, [edx+0x4378]    // mesh ptr from board+0x4378
+  test edx, edx
+  jz spawn_fail
+
+  push edx                 // param 2: mesh
+  mov edx, [saved_board]
+  push edx                 // param 1: board
+  mov ecx, edi             // this = obj
+  call 00438750            // CascadeStands_Ctor — ret 8
+  test eax, eax
+  jz spawn_fail
+
+  // Set position at obj+0x10D8 (X), +0x10DC (Y), +0x10E0 (Z)
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  // Set swing amplitude = 80.0
+  mov edx, [float_80]
+  mov [edi+0x10E8], edx
+
+  // Set active flag = 1
+  mov dword [edi+0x10F4], 1
+
+  // Set timer = 50
+  mov dword [edi+0x10F8], 50
+
+  // AthenaList_Append(Board+0x2578, obj) — general list
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // AthenaList_Append(Board+0x5000, obj) — mace list
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x5000
+  call 00453810
+
+  // Append collision level to scene
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz skip_scene
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_scene
+  push edi
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+skip_scene:
+  // Append to Board+0xCD4
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // Add to mace_array for per-frame update
+  mov eax, edi
+  mov ecx, [mace_array]
+  cmp ecx, 16
+  jae skip_mace_list
+  mov [mace_array+4+ecx*4], eax
+  inc dword [mace_array]
+
+skip_mace_list:
+  jmp done_spawn
+
+spawn_fail:
+  // If construction failed, don't add to arrays
+  nop
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnMace)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20)
+dealloc(mesh_loaded)
+dealloc(saved_4378)
+dealloc(mace_array)
+dealloc(last_board)
+dealloc(float_80)
+unregistersymbol(SpawnMace)
