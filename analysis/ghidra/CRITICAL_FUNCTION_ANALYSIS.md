@@ -149,7 +149,7 @@ DispatchCollisionEvents(this, ball, collObj);
 | +0x1F4 (param_1[499]) | int | ball.popout_cooldown | READ/WRITE | POPOUT (=50) |
 | +0x202 (param_1[0x202]) | int | ball.impact_timer | WRITE | E:JUMP, N:NOCONTROL (=10) |
 | +0x2D5 (param_1+0x2D5) | byte | ball.in_water | WRITE | N:WATER (=1) |
-| +0x2E9 (param_1+0x2E9) | byte | ball.limit_flag | WRITE | E:LIMIT (=1) |
+| +0x2E9 (param_1+0x2E9) | byte | ball.impact_shatter | WRITE | E:LIMIT (=1) |
 | +0x30B (param_1+0x30B) | byte | ball.safe_switch_flag | WRITE | E:SAFESWITCH (=0 if no paren) |
 | +0xC2C (param_1+0xC2C) | char[] | ball.switch_data | WRITE | E:SAFESWITCH (copies parenthesized data) |
 

@@ -104,7 +104,7 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x2E0 | `float` | **checkpoint_y** | Update | " |
 | 0x2E4 | `float` | **checkpoint_z** | Update | " |
 | 0x2E8 | `bool` | **event_flag** | ctor2, Update | Checkpoint hit event |
-| 0x2E9 | `bool` | **limit_flag** | ctor2 | ⚠ NOT on_ramp! Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. |
+| 0x2E9 | `bool` | **impact_shatter** | ctor2 | ⚠ NOT on_ramp! Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. |
 | 0x2EC | `uint32_t` | field_2ec | ctor2 | Collision counter |
 | 0x2F0 | `uint32_t` | field_2f0 | ctor2 | `0` |
 | 0x2F4 | `uint32_t` | field_2f4 | ctor2 | `0` |

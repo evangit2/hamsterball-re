@@ -79,7 +79,7 @@ typedef struct {
      * NEVER cleared within Ball_Update(0x405E00) — the `param_1 + 0x2e9 = 0`
      * clears in decompiled code use int* arithmetic (= byte 0xBA4), NOT byte 0x2E9.
      * Once set to 1, stays 1 until full Ball_ctor2 respawn. */
-    char limit_flag;              // +0x2E9 (param_1[0x2e9]) sticky limit/trajectory flag
+    char impact_shatter;              // +0x2E9 (param_1[0x2e9]) sticky limit/trajectory flag
     char pad_2ea[2];              // +0x2EA
     char spinning;                // +0x2EC (param_1[0xbb]) collision counter
     int collision_count_bc;       // +0x2F0 (param_1[0xbc])

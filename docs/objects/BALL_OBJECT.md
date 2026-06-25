@@ -112,7 +112,7 @@ Scene_SpawnBallsAndObjects → place at START object, set player_index
 | **0x2E0** | **float** | **checkpoint_y** | **0.0** | **Last safe position Y** |
 | **0x2E4** | **float** | **checkpoint_z** | **0.0** | **Last safe position Z** |
 | 0x2E8 | uint8 | event_flag | 0 | Checkpoint-hit event marker |
-| 0x2E9 | uint8 | limit_flag | 0 | ⚠ **NOT on_ramp/ground flag!** Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. See docs/agent-knowledge/ball-ground-detection.md |
+| 0x2E9 | uint8 | impact_shatter | 0 | ⚠ **NOT on_ramp/ground flag!** Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. See docs/agent-knowledge/ball-ground-detection.md |
 | 0x2F0 | uint32 | force_count | 0 | Number of forces applied this frame |
 | 0x2F8 | uint8 | update_in_progress | 0 | Set 1 during Ball_Update |
 | 0x2F9 | uint8 | frozen | 0 | Stuck on surface (velocity zeroed) |
@@ -220,7 +220,7 @@ force_count = 0
 collision_count = 0
 string_timer = 0  (frees display_string at 0xC28 when it hits 0)
 event_flag = 0
-limit_flag = 0  # ⚠ NOT on_ramp! Sticky limit/trajectory flag
+impact_shatter = 0  # ⚠ NOT on_ramp! Sticky limit/trajectory flag
 update_in_progress = 1
 ```
 
