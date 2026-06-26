@@ -34,12 +34,12 @@ Before copying this folder:
 | Dizzy Race | `Level3.MESHWORLD` |
 | Tower Race | `Level4.MESHWORLD` |
 | Up Race | `LevelUp.MESHWORLD` |
-| Expert Race | `Level8.MESHWORLD` |
-| Odd Race | `Level9.MESHWORLD` |
-| Toob Race | `Level10.MESHWORLD` |
+| Expert Race | `Level5.MESHWORLD` |
+| Odd Race | `Level6.MESHWORLD` |
+| Toob Race | `Level8.MESHWORLD` |
 | Wobbly Race | `Level7.MESHWORLD` |
 | Glass Race | `LevelGlass.MESHWORLD` |
-| Sky Race | `LevelImpossible.MESHWORLD` |
-| Master Race | `LevelDark.MESHWORLD` |
-| Neon Race | (check EXE strings) |
-| Impossible Race | (check EXE strings) |
+| Sky Race | `Level9.MESHWORLD` |
+| Master Race | `Level10.MESHWORLD` |
+| Neon Race | `LevelDark.MESHWORLD` |
+| Impossible Race | `LevelImpossible.MESHWORLD` |

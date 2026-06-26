@@ -115,7 +115,7 @@ These are the primary game state variables used by the Hamsterball engine.
   - `RumbleBoard_Render+0x218` — arena rendering
   - `DifficultyMenu_Render+0x252` — difficulty selection
   - `RaceGoalReached_Tick+0x297` — race completion
-  - `Scene_SetupLevel10+0xBB` — Toob level setup
+  - `Scene_SetupLevel10+0xBB` — Master level setup
   - `Scene_SetupLevelCascade+0xCA` — Beginner Race setup
   - `TourneyMenu_ctor+0x26F` — tournament menu construction
   - `MPMenu_ctor+0x356` — multiplayer menu

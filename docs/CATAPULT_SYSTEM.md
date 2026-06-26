@@ -2,7 +2,7 @@
 
 ## Overview
 
-Catapults are level objects that launch the ball when it touches a specific collision surface. They appear in Level4 (Dizzy Race) and the Dizzy Arena. The catapult mesh is loaded from `Levels/Level4-Catapult.MESHWORLD`, which contains a single entity name: `E:CATAPULTBOTTOM`.
+Catapults are level objects that launch the ball when it touches a specific collision surface. They appear in Level4 (Tower Race) and the Dizzy Arena. The catapult mesh is loaded from `Levels/Level4-Catapult.MESHWORLD`, which contains a single entity name: `E:CATAPULTBOTTOM`.
 
 **Why your global-spawn catapults are "hollow":** Catapults are NOT standalone objects — they require a `CollisionLevel` child object with a spatial tree, the mesh must be registered with the scene's collision system, the catapult must be added to TWO AthenaLists on the scene (general + catapult-specific), and the launch is triggered by the **collision dispatcher** (TowerCollisionEvents / HandleArenaCollisionEvents) matching the collision entry's entity name. If you just `operator_new` + `Catapult_ctor` without going through `CreateLevelObjects`, you get a visual shell with no collision registration and no event-name association.
 

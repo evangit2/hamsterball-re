@@ -131,14 +131,14 @@ Related textures also loaded but used elsewhere:
 | Intermediate | Level2 | 0x0041CB20 | 0.0 | 0.0 | 1.0 | (0,0,255) | Blue |
 | Dizzy | Level3 | 0x0041D060 | 0.0 | 1.0 | 0.0 | (0,255,0) | Green |
 | Tower | Level4 | 0x0041E340 | 1.0 | 0.75 | 0.0 | (255,191,0) | Orange |
-| Expert | Level8 | 0x0041EA40 | 1.0 | 0.0 | 0.0 | (255,0,0) | Red |
-| Odd | Level9 | 0x0041ED80 | 1.0 | 0.5 | 0.0 | (255,128,0) | Orange |
+| Expert | Level5 | 0x0041EA40 | 1.0 | 0.0 | 0.0 | (255,0,0) | Red |
+| Odd | Level6 | 0x0041ED80 | 1.0 | 0.5 | 0.0 | (255,128,0) | Orange |
 | Wobbly | Level7 | 0x0041F110 | 0.62 | 0.84 | 0.30 | (158,214,77) | Yellow-Green |
-| Toob | Level10 | 0x0041F4B0 | 0.5 | 0.5 | 1.0 | (128,128,255) | Light Blue |
-| Sky | Level12 | 0x0041F930 | 0.0 | 0.5 | 1.0 | (0,128,255) | Sky Blue |
+| Toob | Level8 | 0x0041F4B0 | 0.5 | 0.5 | 1.0 | (128,128,255) | Light Blue |
+| Sky | Level9 | 0x0041F930 | 0.0 | 0.5 | 1.0 | (0,128,255) | Sky Blue |
 | Beginner | LevelCascade | 0x004200E0 | 1.0 | 0.75 | 0.25 | (255,191,64) | Gold |
 | Up | LevelUp | 0x00420390 | 1.0 | 0.0 | 1.0 | (255,0,255) | Magenta/Pink |
-| Master | Level13 | 0x004206D0 | 0.5 | 0.5 | 0.5 | (128,128,128) | Gray |
+| Master | Level10 | 0x004206D0 | 0.5 | 0.5 | 0.5 | (128,128,128) | Gray |
 | Neon | LevelDark | 0x00424440 | 1.0 | 1.0 | 0.0 | (255,255,0) | Yellow |
 | Impossible | LevelImpossible | 0x00424C20 | 1.0 | 0.0 | 0.0 | (255,0,0) | Red |
 
