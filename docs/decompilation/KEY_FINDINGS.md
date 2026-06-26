@@ -310,16 +310,16 @@ All level setups follow: Level_ctor → Level_Clone → Level_InitScene → vmet
 | Level1 | 0x41CA40 | Warm-up Race | — |
 | levelcascade | 0x4110D0 | Beginner Race | 8 bumpers |
 | Level2 | (base) | Intermediate Race | — |
-| Level4 | 0x416270 | Dizzy Race | 2-player support |
-| Level5 | 0x40E190 | Tower Race | — |
-| Level6 | 0x40830 | Sky Race | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
+| Level3 | 0x416270 | Dizzy Race | 2-player support |
+| Level4 | 0x40E190 | Tower Race | — |
+| Level6 | 0x40830 | Odd Race | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
 | LevelDark | 0x40F360 | Neon Race | — |
-| Level8 | 0x40EA90 | Expert Race | LAUNCH01/02/03, CHROMESHADOW |
-| Level9 | (base) | Odd Race | — |
-| Level10 | 0x411F60 | Toob Race | 4 bumpers, TarBubble |
+| Level5 | 0x40EA90 | Expert Race | LAUNCH01/02/03, CHROMESHADOW |
+| Level8 | 0x411F60 | Toob Race | 4 bumpers, TarBubble |
 | Level7 | (base) | Wobbly Race | — |
 | LevelGlass | (base) | Glass Race | — |
-| Level5-Bonk | (base) | Master Race | — |
+| Level9 | (base) | Sky Race | — |
+| Level10 | (base) | Master Race | — |
 | LevelUp | 0x411540 | Up Race | VAC-IN/VAC-OUT vacuum tubes |
 | LevelImpossible | (base) | Impossible Race | — |
 

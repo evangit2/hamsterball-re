@@ -112,7 +112,7 @@ static OperatorNewFn    g_operatorNew   = (OperatorNewFn)OPERATOR_NEW;
  *
  * Paths verified from decompiled board constructors:
  *   BoardLevel3_ctor (Dizzy): Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie
- *   BoardLevel5_ctor (Tower): Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret
+ *   BoardLevel4_ctor (Tower): Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret
  *   BoardLevel2_ctor (Intermediate): Level2-Bridge
  *   etc.
  * ============================================================ */

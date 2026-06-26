@@ -1045,11 +1045,11 @@ Offset | Field | Description
 | 0x41CB20 | BoardLevel2_Intermediate_ctor | 1 | Board constructor for Intermediate race (Level 2), loads Level2-Bridge, creates level clone, TipperVisual_Attach |
 | 0x41CC80 | BoardLevel2_Intermediate_dtor | 1 | Board destructor for Intermediate race |
 | 0x41D450 | BoardLevel3_Dizzy_dtor | 1 | Board destructor for Dizzy race (Level 3), frees Vec3Lists at +0x11E4 and +0x10DE |
-| 0x41E340 | BoardLevel5_Tower_ctor | 1 | Board constructor for Tower race (Level 5), loads 6 levels: Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, plus YellowLink and Chomper meshes |
+| 0x41E340 | BoardLevel5_Tower_ctor | 1 | Board constructor for Tower race (Level4), loads 6 levels: Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, plus YellowLink and Chomper meshes |
 | 0x41E640 | BoardLevel5_Tower_dtor | 1 | Board destructor for Tower race, frees Vec3Lists at multiple offsets |
-| 0x41EA40 | BoardLevel8_Expert_ctor | 1 | Board constructor for Expert race (Level 8), loads Level5-Bridge, creates clone, 3x hammyjudge meshes |
+| 0x41EA40 | BoardLevel8_Expert_ctor | 1 | Board constructor for Expert race (Level5), loads Level5-Bridge, creates clone, 3x hammyjudge meshes |
 | 0x41EC90 | BoardLevel8_Expert_dtor | 1 | Board destructor for Expert race |
-| 0x41ED80 | BoardLevel9_Odd_ctor | 1 | Board constructor for Odd race (Level 9), sets "Board (Odd)", ODDRACE data |
+| 0x41ED80 | BoardLevel9_Odd_ctor | 1 | Board constructor for Odd race (Level6), sets "Board (Odd)", ODDRACE data |
 | 0x41EE70 | BoardLevel9_Odd_dtor | 1 | Board destructor for Odd race |
 | 0x41F110 | BoardLevel12_Wobbly_ctor | 1 | Board constructor for Wobbly race (Level 12), loads 7 levels: Level7-Wobbly1 through Level7-Wobbly7 |
 | 0x41F3C0 | BoardLevel12_Wobbly_dtor | 1 | Board destructor for Wobbly race |

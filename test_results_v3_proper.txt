@@ -38,7 +38,7 @@ Original bass_real.dll: 1a69210c5e399b5d007218a7d3a31dbd
   35s: PID=116580 ALIVE=YES HOOK=HOOKED (e81150387690)
   Result: PASS
 
-=== Testing: Odd (Level9) ===
+=== Testing: Sky (Level9) ===
   20s: PID=116734 ALIVE=YES HOOK=HOOKED (e81150387690)
   35s: PID=116734 ALIVE=YES HOOK=HOOKED (e81150387690)
   Result: PASS
