@@ -85,7 +85,7 @@ void App::Run(App* this);  // ECX = App* (0x4FD680)
 | +0x31D | char | ??? | Render flag |
 | +0x324 | char | in_tube | Ball is in tube/pipe |
 | +0x748 | int | gravity_plane | 0=XY, 1=Y-tilted, 2=XZ |
-| +0xC4C | char | is_dizzy | Dizzy effect |
+| +0xC4C | char | is_shrunk | Odd Race shrunk state (E:SHRINK/E:GROW) |
 | +0xC5C | int | on_ice | Ice surface |
 | +0xC74 | int | collision_count | Reset to 0 each frame |
 | +0xC78 | float | ??? | 0.0 (set by Update dispatcher) |
