@@ -49,7 +49,7 @@ void __thiscall NeonRaceCollisionEvents(void *param_1,int *param_2,int *param_3)
       *(undefined4 *)(*(int *)((int)param_1 + 0x438c) + 0x10e0) = 0;
     }
   }
-  CreateNoDizzy(param_1,param_2,param_3);
+  DispatchCollisionEvents(param_1,param_2,param_3);
   return;
 }
 

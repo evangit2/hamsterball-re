@@ -64,7 +64,7 @@ Beginner Collision Dispatch (0x004111E0) — vtable[0x1D]
      f. Writes scaled velocity back to Ball+0xCA4/+0xCA8/+0xCAC
      g. Reads bumper index from event name: _atol(name + 8) → "N:BUMPER3" → index 3
      h. Sets Board+0x6428 + index*4 = 1.0 (0x3F800000) — bumper activation flag
-  3. Falls through to CreateNoDizzy (0x0040C5D0) for shared event handling
+  3. Falls through to DispatchCollisionEvents (0x0040C5D0) for shared event handling
 ```
 
 ### Bumper Data Structure
@@ -81,7 +81,7 @@ Bumpers are **embedded collision triangles**, not standalone objects. To spawn t
 3. Position it at the player
 4. Register it in the board's collision lists (Board+0x10EC and Board+0x8B0→+0x18)
 
-The collision dispatch (vtable[0x1D]) automatically handles "N:BUMPER" events regardless of which board type you're on, because ALL boards inherit from the same base collision dispatch that calls `CreateNoDizzy`.
+The collision dispatch (vtable[0x1D]) automatically handles "N:BUMPER" events regardless of which board type you're on, because ALL boards inherit from the same base collision dispatch that calls `DispatchCollisionEvents`.
 
 ---
 
@@ -237,10 +237,10 @@ if (ball->is_active) {  // ball+0x2E8 (param_2[0x1DA] in Ghidra int* indexing = 
     }
 }
 // Always calls shared handler:
-CreateNoDizzy(board, ball, collision);
+DispatchCollisionEvents(board, ball, collision);
 ```
 
-### CreateNoDizzy (0x0040C5D0) — Shared Event Handler
+### DispatchCollisionEvents (0x0040C5D0) — Shared Event Handler
 Processes ALL common collision events:
 - `N:SECRET` → Rotator_MarkTriggered
 - `N:UNLOCKSECRET` → CheckArenaUnlock

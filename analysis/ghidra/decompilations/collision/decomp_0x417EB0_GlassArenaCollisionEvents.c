@@ -29,7 +29,7 @@ void __thiscall GlassArenaCollisionEvents(void *param_1,int *param_2,int *param_
   if (bVar5) {
     Scene_StartCountdown(*(void **)(*param_3 + 0x47c),(int)param_2);
   }
-  CreateNoDizzy(param_1,param_2,param_3);
+  DispatchCollisionEvents(param_1,param_2,param_3);
   return;
 }
 

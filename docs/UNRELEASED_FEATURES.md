@@ -296,11 +296,11 @@ Hamster character model meshes beyond the ball:
 
 ---
 
-## 15. CreateNoDizzy Object
+## 15. DispatchCollisionEvents Object
 
 **Status: Implemented but obscure**
 
-- **Function:** `CreateNoDizzy` (0x0040c5d0) — creates an object that disables the dizzy/spin effect
+- **Function:** `DispatchCollisionEvents` (0x0040c5d0) — dispatches collision events (N:GOAL, N:TARPIT, E:JUMP, E:NODIZZY, etc.)
 - **Event:** `E:NODIZZY` — triggered when ball enters this zone
 - Likely used on specific levels where the player would otherwise get dizzy (e.g., after spinning platforms)
 
