@@ -1,5 +1,18 @@
 [ENABLE]
 
+// ==========================================
+// Global Neon Mod — Spawn Objects + Lighting
+// ==========================================
+// Feature 1: Spawn 6 Neon Race objects at ball position (SpawnNeon flag)
+// Feature 2: Neon lighting — dark scene + ball-emitted point light (NeonLighting flag)
+//
+// Hook 1: 0x405E22 (Ball_Update) — object spawning
+// Hook 2: 0x454BC0 (Graphics_RenderScene) — per-frame lighting override
+
+// ==========================================
+// ALLOCATIONS
+// ==========================================
+
 alloc(SpawnCode, 8192)
 alloc(SpawnNeon, 4)
 alloc(saved_board, 4)
@@ -15,7 +28,19 @@ alloc(mesh_dfloor3, 4)
 alloc(mesh_dfloor4, 4)
 alloc(mesh_trode, 4)
 
+alloc(NeonRenderCave, 1024)
+alloc(NeonLighting, 4)
+alloc(NeonAmbient, 4)
+alloc(light_data, 88)
+alloc(saved_gfx, 4)
+
 registersymbol(SpawnNeon)
+registersymbol(NeonLighting)
+registersymbol(NeonAmbient)
+
+// ==========================================
+// DATA INITIALIZATION
+// ==========================================
 
 SpawnNeon:
   dd 0
@@ -56,6 +81,49 @@ mesh_dfloor4:
 mesh_trode:
   dd 0
 
+// --- Neon lighting flags ---
+NeonLighting:
+  dd 1
+
+// Ambient color applied to scene (default: very dark blue-gray)
+// Format: 0x00RRGGBB. Change in CE to adjust darkness.
+NeonAmbient:
+  dd 0x000C0C14
+
+saved_gfx:
+  dd 0
+
+// --- D3DLIGHT8 structure (88 bytes) ---
+// Pre-filled with a cool white-cyan point light.
+// Position (offset 52-60) is updated per-frame from ball coords.
+light_data:
+  dd 00000001       //  0: Type = D3DLIGHT_POINT (1)
+  dd 3F4CCCCD       //  4: Diffuse.r = 0.8
+  dd 3F666666       //  8: Diffuse.g = 0.9
+  dd 3F800000       // 12: Diffuse.b = 1.0
+  dd 00000000       // 16: Diffuse.a = 0.0
+  dd 3E99999A       // 20: Specular.r = 0.3
+  dd 3ECCCCCD       // 24: Specular.g = 0.4
+  dd 3F000000       // 28: Specular.b = 0.5
+  dd 00000000       // 32: Specular.a = 0.0
+  dd 00000000       // 36: Ambient.r = 0.0
+  dd 00000000       // 40: Ambient.g = 0.0
+  dd 00000000       // 44: Ambient.b = 0.0
+  dd 00000000       // 48: Ambient.a = 0.0
+  dd 00000000       // 52: Position.x (updated per frame)
+  dd 00000000       // 56: Position.y (updated per frame)
+  dd 00000000       // 60: Position.z (updated per frame)
+  dd 43FA0000       // 64: Range = 500.0
+  dd 00000000       // 68: Attenuation0 = 0.0 (no constant)
+  dd 3C23D70A       // 72: Attenuation1 = 0.02 (linear falloff)
+  dd 00000000       // 76: Attenuation2 = 0.0
+  dd 00000000       // 80: Theta = 0.0 (spot only)
+  dd 00000000       // 84: Phi = 0.0 (spot only)
+
+// ==========================================
+// LABELS
+// ==========================================
+
 label(original_code)
 label(done_spawn)
 label(skip_neonplatform)
@@ -65,6 +133,16 @@ label(skip_dfloor3)
 label(skip_dfloor4)
 label(skip_trode)
 label(load_meshes)
+label(load_meshes_done)
+
+label(neon_on)
+label(neon_off)
+label(neon_skip_light)
+label(neon_finish)
+
+// ==========================================
+// HOOK 1: OBJECT SPAWNING (Ball_Update)
+// ==========================================
 
 SpawnCode:
   cmp dword [SpawnNeon], 0
@@ -377,10 +455,148 @@ original_code:
   jmp SpawnCode
   nop
 
+// ==========================================
+// HOOK 2: NEON LIGHTING (Graphics_RenderScene)
+// ==========================================
+// Entry: 0x454BC0, ECX = gfx (graphics object)
+// Original: SUB ESP, 0xC0 (81 EC C0 00 00 00, 6 bytes)
+//
+// gfx struct offsets:
+//   +0x154 = IDirect3DDevice8* (raw D3D device)
+//   +0x730 = D3DRS_AMBIENT value (DWORD color)
+//   +0x734 = fog enable (byte)
+//   +0x738 = fog color (DWORD)
+//   +0x854/858/85C = ball position X/Y/Z (set by Scene_Render)
+//
+// D3D8 vtable offsets (IDirect3DDevice8):
+//   +0xB0 = vtable[44] = SetLight(Index, D3DLIGHT8*)
+//   +0xB8 = vtable[46] = LightEnable(Index, BOOL)
+//   +0xC8 = vtable[50] = SetRenderState(State, Value)
+//
+// Render state IDs:
+//   0x89 = D3DRS_LIGHTING
+//   0x8B = D3DRS_AMBIENT
+
+NeonRenderCave:
+  // ECX = gfx (this pointer)
+  pushfd
+  pushad
+
+  // Check if neon lighting is enabled
+  cmp dword [NeonLighting], 0
+  je neon_off
+
+  // --- NEON LIGHTING ON ---
+  jmp neon_on
+
+neon_off:
+  // Disable our point light (index 7) when toggled off
+  mov eax, [saved_gfx]
+  test eax, eax
+  jz neon_finish
+  mov eax, [eax + 0x154]      // D3D device
+  test eax, eax
+  jz neon_finish
+  mov edx, [eax]              // vtable
+  push 0                      // bEnable = FALSE
+  push 7                      // Index
+  push eax                    // this (device)
+  call dword ptr [edx + 0xB8] // LightEnable(7, FALSE)
+  jmp neon_finish
+
+neon_on:
+  // Check gfx pointer validity
+  test ecx, ecx
+  jz neon_finish
+
+  // Save gfx pointer for later use
+  mov [saved_gfx], ecx
+
+  // Override ambient to dark (gfx+0x730)
+  mov eax, [NeonAmbient]
+  mov [ecx + 0x730], eax
+
+  // Disable fog (gfx+0x734)
+  mov byte [ecx + 0x734], 0
+
+  // Set fog color to black (gfx+0x738)
+  mov dword [ecx + 0x738], 0
+
+  // Get D3D device (gfx+0x154)
+  mov eax, [ecx + 0x154]
+  test eax, eax
+  jz neon_finish
+
+  mov edx, [eax]              // vtable
+
+  // Enable D3D lighting (D3DRS_LIGHTING = 0x89)
+  push 1                      // Value = TRUE
+  push 0x89                   // State = D3DRS_LIGHTING
+  push eax                    // this (device)
+  call dword ptr [edx + 0xC8] // SetRenderState(LIGHTING, 1)
+
+  // Read ball position from gfx+0x854/858/85C
+  // (set by Scene_Render; one-frame latency is imperceptible)
+  mov ecx, [saved_gfx]
+  mov eax, [ecx + 0x854]      // ball X
+  mov [light_data + 52], eax
+  mov eax, [ecx + 0x858]      // ball Y
+  mov [light_data + 56], eax
+  mov eax, [ecx + 0x85C]      // ball Z
+  mov [light_data + 60], eax
+
+  // Check if position is valid (not all zeros = no ball)
+  mov eax, [light_data + 52]
+  or eax, [light_data + 56]
+  or eax, [light_data + 60]
+  jz neon_skip_light
+
+  // --- Set up D3D point light at ball position ---
+  // device->SetLight(7, &light_data)
+  mov eax, [saved_gfx]
+  mov eax, [eax + 0x154]      // D3D device
+  mov edx, [eax]              // vtable
+  mov ebx, light_data
+  push ebx                    // pLight (D3DLIGHT8*)
+  push 7                      // Index
+  push eax                    // this (device)
+  call dword ptr [edx + 0xB0] // SetLight(7, &light)
+
+  // device->LightEnable(7, TRUE)
+  mov eax, [saved_gfx]
+  mov eax, [eax + 0x154]      // D3D device
+  mov edx, [eax]              // vtable
+  push 1                      // bEnable = TRUE
+  push 7                      // Index
+  push eax                    // this (device)
+  call dword ptr [edx + 0xB8] // LightEnable(7, TRUE)
+
+neon_skip_light:
+
+neon_finish:
+  popad
+  popfd
+
+  // Execute original instruction
+  sub esp, 0xC0
+
+  // Jump back to 0x454BC6 (after the 6-byte SUB ESP instruction)
+  jmp 00454BC6
+
+// Patch Graphics_RenderScene entry
+00454BC0:
+  jmp NeonRenderCave
+  nop
+
 [DISABLE]
 
+// Restore Hook 1 (Ball_Update)
 00405E22:
   db 8B 86 5C 0C 00 00
+
+// Restore Hook 2 (Graphics_RenderScene)
+00454BC0:
+  db 81 EC C0 00 00 00
 
 dealloc(SpawnCode)
 dealloc(SpawnNeon)
@@ -396,4 +612,11 @@ dealloc(mesh_dfloor2)
 dealloc(mesh_dfloor3)
 dealloc(mesh_dfloor4)
 dealloc(mesh_trode)
+dealloc(NeonRenderCave)
+dealloc(NeonLighting)
+dealloc(NeonAmbient)
+dealloc(light_data)
+dealloc(saved_gfx)
 unregistersymbol(SpawnNeon)
+unregistersymbol(NeonLighting)
+unregistersymbol(NeonAmbient)
