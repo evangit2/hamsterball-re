@@ -167,7 +167,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0xC40 | float | teleport_x | 0.0 | Teleport destination X |
 | 0xC44 | float | teleport_y | 0.0 | Teleport destination Y |
 | 0xC48 | float | teleport_z | 0.0 | Teleport destination Z |
-| 0xC4C | uint8 | airborne | 0 | Airborne state flag |
+| 0xC4C | uint8 | is_shrunk | 0 | Odd Race shrunk state (E:SHRINK=1, E:GROW=0) |
 | 0xC50 | int32 | unknown_C50 | 0 | Unknown |
 | 0xC54 | int32 | unknown_C54 | 0 | Unknown (AthenaList data pointer) |
 | 0xC58 | uint8 | unknown_C58 | 0 | Unknown |
@@ -290,7 +290,7 @@ These global floats at **0x4CF3xx** affect ALL balls. Patch once, affects every 
 | Address | Value | Effect |
 |---------|-------|--------|
 | 0x4CF368 | 0.0 | Float epsilon |
-| 0x4CF36C | 0.75 | Force multiplier when dizzy |
+| 0x4CF36C | 0.75 | Force multiplier when is_shrunk (Odd Race) |
 | 0x4CF374 | 0.2 | Force multiplier on ice |
 | 0x4CF378 | 0.0 | Force multiplier in tube (0 = no control!) |
 | 0x4CF380 | 0.25 | Force multiplier after first frame of input |
@@ -403,7 +403,7 @@ void __thiscall Ball_ApplyForce(
 | `force_count > 0` (held) | `DAT_004CF380` | `0.25` | Quarter force while held |
 | `in_tube` (ball+0x324) | `DAT_004CF378` | `0.0` | **Zero force — completely disabled** |
 | `on_ice` flag | `DAT_004CF374` | `0.2` | Ice: 20% force + friction 6.0 |
-| `is_dizzy` flag | `DAT_004CF36C` | `0.75` | Dizzy: 75% force |
+| `is_shrunk` flag (ball+0xC4C) | `DAT_004CF36C` | `0.75` | Shrunk (Odd Race): 75% force |
 | `alternate_state` (ball+0xC5C) | `DAT_004CF374` | `0.2` | Alternate physics mode |
 | Direction tweak | `DAT_004CF3E8` | `6.0` | Scales the final direction vector |
 
@@ -460,7 +460,7 @@ tApplyForce pfn = (tApplyForce)vtable[6]; // vtable[0x18] = ApplyForce
 pfn(ball, fx, fy, fz, magnitude);
 ```
 
-> **Pitfall:** Writing directly to `ball+0x170` (force accumulators) bypasses the multipliers, clamping, and surface-snap logic. This is fine for teleport-style hacks, but for gameplay-compatible movement, **always use `Ball_ApplyForce`** so the engine handles ice, tubes, dizzy states, and max_speed correctly.
+> **Pitfall:** Writing directly to `ball+0x170` (force accumulators) bypasses the multipliers, clamping, and surface-snap logic. This is fine for teleport-style hacks, but for gameplay-compatible movement, **always use `Ball_ApplyForce`** so the engine handles ice, tubes, is_shrunk state, and max_speed correctly.
 
 ### Ball_ApplyForceV2 (0x4016F0)
 
@@ -521,9 +521,9 @@ Note: Arena and Level handlers are **parallel**, not chained. Ball_AdvancePositi
 |-------------|----------------|
 | 0x164–0x16C (pos) | 3D sound positioning |
 | 0x170–0x178 (force) | Cleared by TARPIT, modified by JUMP |
-| 0x2DC–0x2E4 (checkpoint) | `Ball_Shrink` respawns here |
+| 0x2DC–0x2E4 (checkpoint) | `Ball_FindClosestRespawnPoint` respawns here |
 | 0xC2C (section_filter) | `E:SAFESWITCH` copies data here |
-| 0xC4C (airborne) | Set by fall code |
+| 0xC4C (is_shrunk) | Set by Odd Race E:SHRINK/E:GROW |
 
 ---
 
