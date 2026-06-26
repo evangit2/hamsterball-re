@@ -5,6 +5,9 @@
  * player's hamster ball. The 8-ball spawns with physics and falls/collides
  * just like the balls in Rodent Rumble arenas.
  *
+ * Only ONE 8-ball can exist at a time. Pressing B again overwrites the
+ * existing 8-ball (repositions it to the new spawn location).
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  * HOW IT WORKS
  * ═══════════════════════════════════════════════════════════════════════════
@@ -24,7 +27,11 @@
  *   7. Copy player's exact velocity vector (same direction and speed)
  *   8. Radius stays at Ball_InitPhysicsDefaults default (35.0) — NOT player radius
  *   9. AthenaList_Append to scene+0x29D4 (bad_balls_list)
- *   10. AthenaList_Append to scene+0x2DEC (all_balls_list)
+ *  10. AthenaList_Append to scene+0x2DEC (all_balls_list)
+ *
+ * Overwrite behavior: If a spawned 8-ball already exists and is still valid,
+ * pressing B again repositions it to the new spawn location with the player's
+ * current velocity. No new allocation — the same ball object is reused.
  *
  * Key detection: GetAsyncKeyState('B') polled in a background thread at
  * 16ms intervals. Edge-triggered (only spawns on key-down transition).
@@ -33,6 +40,10 @@
  * the Scene/Board vtable (0x4D0260). Same brute-force approach as player_clones.
  * Once the board is found, the player's ball is located by scanning the
  * all_balls_list (board+0x2DEC) for a ball with player_index == 0.
+ *
+ * Audio forwarding: All 10 BASS imports the game uses are forwarded to
+ * bass_real.dll (the original renamed DLL). If bass_real.dll is not found,
+ * exports return success values (1/0) so the game runs without audio.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * BUILD
@@ -67,43 +78,137 @@
 #include <math.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports (stubs — Hamsterball only needs import resolution)
+ * BASS Proxy Exports — forward all 10 game imports to bass_real.dll
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Match player_clones pattern: plain void, no __stdcall, no .def file.
- * --enable-stdcall-fixup + --add-stdcall-alias handles name mangling. */
-__declspec(dllexport) void BASS_Init(void) {}
-__declspec(dllexport) void BASS_Free(void) {}
-__declspec(dllexport) void BASS_Start(void) {}
-__declspec(dllexport) void BASS_Stop(void) {}
-__declspec(dllexport) void BASS_Pause(void) {}
-__declspec(dllexport) void BASS_SetVolume(void) {}
-__declspec(dllexport) void BASS_GetVolume(void) {}
-__declspec(dllexport) void BASS_GetDevice(void) {}
-__declspec(dllexport) void BASS_SetDevice(void) {}
-__declspec(dllexport) void BASS_GetInfo(void) {}
-__declspec(dllexport) void BASS_Update(void) {}
-__declspec(dllexport) void BASS_ErrorGetCode(void) {}
-/* BASS_SetConfig / BASS_GetConfig intentionally NOT exported.
- * Game calls these via SEH-protected code — Wine's "unimplemented function"
- * exception is caught by the game's KiUserCallbackDispatcher. Exporting them
- * with wrong calling convention crashes the game (stack corruption at 0x424). */
-__declspec(dllexport) void BASS_StreamCreateFile(void) {}
-__declspec(dllexport) void BASS_MusicLoad(void) {}
-__declspec(dllexport) void BASS_SampleLoad(void) {}
-__declspec(dllexport) void BASS_ChannelPlay(void) {}
-__declspec(dllexport) void BASS_ChannelStop(void) {}
-__declspec(dllexport) void BASS_ChannelSetAttribute(void) {}
-__declspec(dllexport) void BASS_ChannelGetAttribute(void) {}
-__declspec(dllexport) void BASS_ChannelGetData(void) {}
-__declspec(dllexport) void BASS_ChannelGetLevel(void) {}
-__declspec(dllexport) void BASS_ChannelSetPosition(void) {}
-__declspec(dllexport) void BASS_ChannelGetPosition(void) {}
-__declspec(dllexport) void BASS_ChannelIsActive(void) {}
-__declspec(dllexport) void BASS_ChannelRemoveSync(void) {}
-__declspec(dllexport) void BASS_ChannelSetSync(void) {}
-__declspec(dllexport) void BASS_SampleCreate(void) {}
-__declspec(dllexport) void BASS_SampleGetChannel(void) {}
+static HMODULE g_hRealBass = NULL;
+
+/* The game imports exactly these 10 functions from BASS.dll (verified via
+ * objdump). We forward each one to bass_real.dll with correct __stdcall
+ * calling convention. If bass_real.dll is not loaded, return success. */
+
+typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, HWND, void*);
+static BASS_Init_t real_BASS_Init = NULL;
+__declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, HWND d, void* e) {
+    if (real_BASS_Init) return real_BASS_Init(a, b, c, d, e);
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_Free_t)(void);
+static BASS_Free_t real_BASS_Free = NULL;
+__declspec(dllexport) int __stdcall BASS_Free(void) {
+    if (real_BASS_Free) return real_BASS_Free();
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_Start_t)(void);
+static BASS_Start_t real_BASS_Start = NULL;
+__declspec(dllexport) int __stdcall BASS_Start(void) {
+    if (real_BASS_Start) return real_BASS_Start();
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_Stop_t)(void);
+static BASS_Stop_t real_BASS_Stop = NULL;
+__declspec(dllexport) int __stdcall BASS_Stop(void) {
+    if (real_BASS_Stop) return real_BASS_Stop();
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
+static BASS_SetConfig_t real_BASS_SetConfig = NULL;
+__declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
+static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
+__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
+    return 0;
+}
+
+typedef DWORD (__stdcall *BASS_MusicLoad_t)(int, void*, DWORD, DWORD, DWORD, DWORD);
+static BASS_MusicLoad_t real_BASS_MusicLoad = NULL;
+__declspec(dllexport) DWORD __stdcall BASS_MusicLoad(int a, void* b, DWORD c, DWORD d, DWORD e, DWORD f) {
+    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d, e, f);
+    return 0;
+}
+
+typedef int  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
+static BASS_MusicPlayEx_t real_BASS_MusicPlayEx = NULL;
+__declspec(dllexport) int __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
+    if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(a, b, c);
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, int, int);
+static BASS_ChannelSetAttributes_t real_BASS_ChannelSetAttributes = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(DWORD a, float b, int c, int d) {
+    if (real_BASS_ChannelSetAttributes) return real_BASS_ChannelSetAttributes(a, b, c, d);
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_ChannelStop_t)(DWORD);
+static BASS_ChannelStop_t real_BASS_ChannelStop = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
+    if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
+    return 1;
+}
+
+/* Extra stubs — not imported by the game, exported for completeness.
+ * These are NOT forwarded because the game never calls them. */
+__declspec(dllexport) void __stdcall BASS_Pause(void) {}
+__declspec(dllexport) void __stdcall BASS_SetVolume(DWORD a) { (void)a; }
+__declspec(dllexport) DWORD __stdcall BASS_GetVolume(void) { return 0; }
+__declspec(dllexport) int __stdcall BASS_GetDevice(void) { return 0; }
+__declspec(dllexport) int __stdcall BASS_SetDevice(DWORD a) { (void)a; return 1; }
+__declspec(dllexport) void __stdcall BASS_GetInfo(void *a) { (void)a; }
+__declspec(dllexport) int __stdcall BASS_Update(DWORD a) { (void)a; return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_StreamCreateFile(void *a, void *b, DWORD c, DWORD d, DWORD e) { (void)a;(void)b;(void)c;(void)d;(void)e; return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_SampleLoad(int a, void *b, DWORD c, DWORD d, DWORD e) { (void)a;(void)b;(void)c;(void)d;(void)e; return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) { (void)a;(void)b; return 1; }
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttribute(DWORD a, DWORD b, float c) { (void)a;(void)b;(void)c; return 1; }
+__declspec(dllexport) int __stdcall BASS_ChannelGetAttribute(DWORD a, DWORD b, float *c) { (void)a;(void)b;(void)c; return 1; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetData(DWORD a, void *b, DWORD c) { (void)a;(void)b;(void)c; return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetLevel(DWORD a) { (void)a; return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelSetPosition(DWORD a, void *b, DWORD c) { (void)a;(void)b;(void)c; return 1; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetPosition(DWORD a, DWORD b) { (void)a;(void)b; return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelIsActive(DWORD a) { (void)a; return 0; }
+__declspec(dllexport) int __stdcall BASS_ChannelRemoveSync(DWORD a, DWORD b) { (void)a;(void)b; return 1; }
+__declspec(dllexport) DWORD __stdcall BASS_ChannelSetSync(DWORD a, DWORD b, DWORD c, void *d, void *e) { (void)a;(void)b;(void)c;(void)d;(void)e; return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_SampleCreate(DWORD a, DWORD b, DWORD c, DWORD d, DWORD e) { (void)a;(void)b;(void)c;(void)d;(void)e; return 0; }
+__declspec(dllexport) DWORD __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) { (void)a;(void)b; return 0; }
+
+static void load_real_bass(void)
+{
+    g_hRealBass = LoadLibraryA("bass_real.dll");
+    if (g_hRealBass == NULL) {
+        /* Try loading from the same directory as this DLL */
+        char path[MAX_PATH];
+        HMODULE hSelf = NULL;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                          | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          (LPCSTR)&load_real_bass, &hSelf);
+        if (hSelf && GetModuleFileNameA(hSelf, path, MAX_PATH)) {
+            char *p = strrchr(path, '\\');
+            if (p) { strcpy(p + 1, "bass_real.dll"); g_hRealBass = LoadLibraryA(path); }
+        }
+    }
+    if (g_hRealBass) {
+        real_BASS_Init                  = (BASS_Init_t)GetProcAddress(g_hRealBass, "BASS_Init");
+        real_BASS_Free                  = (BASS_Free_t)GetProcAddress(g_hRealBass, "BASS_Free");
+        real_BASS_Start                 = (BASS_Start_t)GetProcAddress(g_hRealBass, "BASS_Start");
+        real_BASS_Stop                  = (BASS_Stop_t)GetProcAddress(g_hRealBass, "BASS_Stop");
+        real_BASS_SetConfig             = (BASS_SetConfig_t)GetProcAddress(g_hRealBass, "BASS_SetConfig");
+        real_BASS_ErrorGetCode          = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
+        real_BASS_MusicLoad             = (BASS_MusicLoad_t)GetProcAddress(g_hRealBass, "BASS_MusicLoad");
+        real_BASS_MusicPlayEx           = (BASS_MusicPlayEx_t)GetProcAddress(g_hRealBass, "BASS_MusicPlayEx");
+        real_BASS_ChannelSetAttributes  = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
+        real_BASS_ChannelStop           = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
+    }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game Constants (RVAs, struct offsets)
@@ -170,9 +275,11 @@ __declspec(dllexport) void BASS_SampleGetChannel(void) {}
 /* Config */
 static int g_spawn_key = 0x42;      /* 'B' key */
 static float g_spawn_distance = 40.0f;
-/* g_spawn_velocity removed — 8-ball now copies player's exact velocity */
 static int g_prev_key_down = 0;
 static int g_spawned_count = 0;
+
+/* Track the single spawned 8-ball. NULL = no ball exists yet. */
+static void* g_spawned_ball = NULL;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game Function Wrappers
@@ -237,7 +344,6 @@ static void load_config(void)
         } else if (_stricmp(key, "spawn_distance") == 0) {
             g_spawn_distance = (float)atof(val);
         }
-        /* spawn_velocity removed — 8-ball now copies player's exact velocity */
     }
     fclose(f);
 }
@@ -279,15 +385,6 @@ static void* find_player_ball(void* scene)
 {
     BYTE *s = (BYTE*)scene;
 
-    /* AthenaList at scene+SCENE_ALL_BALLS:
-     *   +0x00 = vtable
-     *   +0x04 = count
-     *   +0x08 = items[0] (inline array, capacity=1)
-     *   When count > 1, items are stored at the pointer at +0x08
-     *   Actually: AthenaList stores items inline from +0x08 when count==1,
-     *   and uses a heap-allocated array at *(+0x08) when count > 1.
-     *   Let's handle both cases. */
-
     int count = *(int*)(s + SCENE_ALL_BALLS + ATHENA_LIST_COUNT);
     if (count <= 0 || count > 100) return NULL;
 
@@ -315,30 +412,24 @@ static void* find_player_ball(void* scene)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * 8-Ball Spawning
+ * 8-Ball Spawning (single-ball with overwrite)
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Check if a previously spawned ball is still valid (not freed/reused).
+ * Verifies the vtable pointer matches the Ball vtable. */
+static int is_ball_valid(void* ball)
+{
+    if (!ball || IsBadReadPtr(ball, 0x20)) return 0;
+    DWORD vt = *(DWORD*)ball;
+    return vt == BALL_VTABLE_ADDR;
+}
 
 static void spawn_8ball(void* scene, void* player_ball)
 {
     BYTE *src = (BYTE*)player_ball;
     BYTE *s = (BYTE*)scene;
 
-    /* 1. Allocate memory for the new ball */
-    void *mem = pfn_operator_new(BALL_ALLOC_SIZE);
-    if (!mem) return;
-
-    /* 2. Construct the ball: Ball_ctor(mem, scene) — __thiscall: ECX=mem */
-    void *ball = pfn_ball_ctor(mem, scene);
-    if (!ball) return;
-
-    BYTE *b = (BYTE*)ball;
-
-    /* 3. Call vtable[1] = Ball_InitPhysicsDefaults */
-    void **vtable = *(void***)b;
-    void (__thiscall *init_fn)(void*) = (void (__thiscall *)(void*))vtable[1];
-    init_fn(ball);
-
-    /* 4. Read player ball position and velocity */
+    /* Read player ball position and velocity */
     float px = *(float*)(src + BALL_DISPLAY_X);
     float py = *(float*)(src + BALL_DISPLAY_Y);
     float pz = *(float*)(src + BALL_DISPLAY_Z);
@@ -347,37 +438,79 @@ static void spawn_8ball(void* scene, void* player_ball)
     float vy = *(float*)(src + BALL_VEL_Y);
     float vz = *(float*)(src + BALL_VEL_Z);
 
-    /* Normalize velocity direction for "forward" spawn position */
+    /* Normalize velocity direction for "forward" spawn position.
+     * Only dirx/dirz are used for horizontal spawn offset; diry is
+     * intentionally unused (spawn_y is set separately as py + 20). */
     float vlen = vx*vx + vy*vy + vz*vz;
-    float dirx = 0.0f, diry = 0.0f, dirz = 1.0f;
+    float dirx = 0.0f, dirz = 1.0f;
     if (vlen > 0.001f) {
         vlen = 1.0f / sqrtf(vlen);
         dirx = vx * vlen;
-        diry = vy * vlen;
         dirz = vz * vlen;
     }
 
-    /* 5. Position the 8-ball in front of the player */
+    /* Compute spawn position */
     float spawn_x = px + dirx * g_spawn_distance;
     float spawn_y = py + 20.0f;  /* Slightly above to avoid spawning inside ground */
     float spawn_z = pz + dirz * g_spawn_distance;
 
+    /* ── Overwrite path: reuse existing 8-ball ── */
+    if (is_ball_valid(g_spawned_ball)) {
+        BYTE *b = (BYTE*)g_spawned_ball;
+
+        /* Reposition the existing ball to the new spawn location */
+        *(float*)(b + BALL_DISPLAY_X) = spawn_x;
+        *(float*)(b + BALL_DISPLAY_Y) = spawn_y;
+        *(float*)(b + BALL_DISPLAY_Z) = spawn_z;
+
+        /* Copy the player's current velocity */
+        *(float*)(b + BALL_VEL_X) = vx;
+        *(float*)(b + BALL_VEL_Y) = vy;
+        *(float*)(b + BALL_VEL_Z) = vz;
+
+        /* Reset state to alive/active */
+        *(BYTE*)(b + BALL_DEAD) = 0;
+        *(BYTE*)(b + BALL_IS_ACTIVE) = 1;
+        *(float*)(b + BALL_RENDER_SCALE) = 1.0f;
+        *(float*)(b + BALL_FALL_TIMER) = 1.0f;
+
+        g_spawned_count++;
+        return;
+    }
+
+    /* ── Create path: allocate a new 8-ball ── */
+    g_spawned_ball = NULL;  /* old pointer was invalid, clear it */
+
+    void *mem = pfn_operator_new(BALL_ALLOC_SIZE);
+    if (!mem) return;
+
+    void *ball = pfn_ball_ctor(mem, scene);
+    if (!ball) return;
+
+    BYTE *b = (BYTE*)ball;
+
+    /* Call vtable[1] = Ball_InitPhysicsDefaults */
+    void **vtable = *(void***)b;
+    void (__thiscall *init_fn)(void*) = (void (__thiscall *)(void*))vtable[1];
+    init_fn(ball);
+
+    /* Set position */
     *(float*)(b + BALL_DISPLAY_X) = spawn_x;
     *(float*)(b + BALL_DISPLAY_Y) = spawn_y;
     *(float*)(b + BALL_DISPLAY_Z) = spawn_z;
 
-    /* 6. Copy the player's exact velocity (same direction and speed) */
+    /* Copy the player's exact velocity (same direction and speed) */
     *(float*)(b + BALL_VEL_X) = vx;
     *(float*)(b + BALL_VEL_Y) = vy;
     *(float*)(b + BALL_VEL_Z) = vz;
 
-    /* 7. Set mesh index to 9 (8Ball) */
+    /* Set mesh index to 9 (8Ball) */
     *(int*)(b + BALL_MESH_INDEX) = MESH_8BALL;
 
-    /* 8. Set player_index to -1 (no player controls this ball) */
+    /* Set player_index to -1 (no player controls this ball) */
     *(int*)(b + BALL_PLAYER_IDX) = -1;
 
-    /* 9. Ensure the ball is alive and active */
+    /* Ensure the ball is alive and active */
     *(BYTE*)(b + BALL_DEAD) = 0;
     *(BYTE*)(b + BALL_IS_ACTIVE) = 1;
     *(float*)(b + BALL_RENDER_SCALE) = 1.0f;
@@ -389,7 +522,12 @@ static void spawn_8ball(void* scene, void* player_ball)
     /* 11. AI tuning: HOME and CHASE set to 100000 (effectively infinite leash
      * and detection range — always chase, never retreat to home).
      * SPINDISTANCE set to 1 (tight orbit when near home, but chase always
-     * wins since HOME is 100000). */
+     * wins since HOME is 100000).
+     *
+     * NOTE: These fields are dead code on this ball because ball+0xC74
+     * (is_8ball flag) is never set to 1. Without that flag, Ball_Update
+     * skips the AI chase block entirely. The ball is a physics-only debris
+     * ball. These values would only take effect if is_8ball were set. */
     *(float*)(b + BALL_CHASE) = 100000.0f;
     *(float*)(b + BALL_HOME) = 100000.0f;
     *(float*)(b + BALL_SPINDISTANCE) = 1.0f;
@@ -398,6 +536,7 @@ static void spawn_8ball(void* scene, void* player_ball)
     pfn_athena_list_append(s + SCENE_BAD_BALLS, (int)ball);
     pfn_athena_list_append(s + SCENE_ALL_BALLS, (int)ball);
 
+    g_spawned_ball = ball;
     g_spawned_count++;
 }
 
@@ -412,6 +551,7 @@ static DWORD WINAPI spawn_thread(LPVOID param)
     /* Wait for game to load */
     Sleep(3000);
 
+    load_real_bass();
     resolve_functions();
     load_config();
 
@@ -423,7 +563,7 @@ static DWORD WINAPI spawn_thread(LPVOID param)
         int key_down = (key_state & 0x8000) != 0;
 
         if (key_down && !g_prev_key_down) {
-            /* Key just pressed — spawn an 8-ball */
+            /* Key just pressed — spawn or overwrite 8-ball */
 
             /* Find the current scene/board */
             void *scene = find_scene();
