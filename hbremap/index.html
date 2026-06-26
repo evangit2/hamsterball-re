@@ -91876,7 +91876,7 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <h3><code>Ball_Shrink</code></h3>
 <ul>
 <li><strong>Address:</strong> <code>0x402200</code></li>
-<li><strong>Description:</strong> Triggered when ball falls off board. Sets <code>ball+0xC4C = 1</code> (airborne), <code>ball+0x284 = 13.0</code> (shrunk radius), plays fall sound.</li>
+<li><strong>Description:</strong> Odd Race E:SHRINK collision event. Sets <code>ball+0xC4C = 1</code> (is_shrunk), <code>ball+0x284 = 13.0</code> (shrunk radius), plays shrink sound.</li>
 </ul>
 <h3><code>Ball_FallUpdate</code></h3>
 <ul>
@@ -95973,7 +95973,7 @@ UI / Menu hierarchy:
 <li><code>+0x284</code> radius (27.0f)</li>
 <li><code>+0x2DC</code> checkpoint_x/y/z</li>
 <li><code>+0x768</code> cam_active</li>
-<li><code>+0xC4C</code> airborne flag</li>
+<li><code>+0xC4C</code> is_shrunk flag (Odd Race)</li>
 <li><code>+0xC88</code> world transform matrix (4x4)</li>
 </ul>
 </li>
@@ -129688,7 +129688,7 @@ pfn(ball, fx, fy, fz, magnitude);
 <td><code>E:SAFESWITCH</code> copies data here</td>
 </tr>
 <tr>
-<td>0xC4C (airborne)</td>
+<td>0xC4C (is_shrunk)</td>
 <td>Set by fall code</td>
 </tr>
 </tbody>

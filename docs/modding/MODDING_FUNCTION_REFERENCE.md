@@ -794,7 +794,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0xC28` | char** | display_string | Floating text above ball |
 | `+0xC3C` | uint8 | teleport_active | Teleport in progress |
 | `+0xC40` | float[3] | teleport_dest | Destination coordinates |
-| `+0xC4C` | uint8 | airborne | Airborne state |
+| `+0xC4C` | uint8 | is_shrunk | Odd Race shrunk state (E:SHRINK=1, E:GROW=0) |
 | `+0xC60` | int32 | battle_mode | 3=battle, 5=split |
 | `+0xC68` | float | friction | 0.55 in battle mode |
 | `+0xC6C` | float | bounciness | 1.0 in battle mode |
