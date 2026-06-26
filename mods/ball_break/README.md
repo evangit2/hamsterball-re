@@ -19,7 +19,7 @@ Press **X** to shatter your ball and respawn at the nearest checkpoint.
 | Function | Address | Convention | Purpose |
 |---|---|---|---|
 | `Ball_Shatter` | 0x408D70 | `__thiscall(ball, Vec3List*)` | Breaks ball into 3 debris pieces, plays sound |
-| `Ball_Shrink` | 0x402200 | `__fastcall(ball)` | Sets ball+0xC4C=1, radius to 13.0 (falling) |
+| `Ball_Shrink` | 0x402200 | `__fastcall(ball)` | Odd Race E:SHRINK: ball+0xC4C=1, radius to 13.0 |
 | `Ball_Grow` | 0x402270 | `__fastcall(ball)` | Sets ball+0xC4C=0, radius to 26.0 (normal) |
 | `Ball_FindClosestRespawnPoint` | 0x405190 | `__fastcall(ball)` | Finds nearest respawn, teleports, clears velocity |
 | `Scene_UpdateBallsAndState` | 0x41B540 | `__fastcall(scene)` | Per-frame: checks ball+0x2E8, triggers respawn |

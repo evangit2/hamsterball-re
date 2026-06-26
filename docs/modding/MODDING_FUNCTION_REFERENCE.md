@@ -125,7 +125,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 - **Address:** `0x00405E00`
 - **Convention:** `__fastcall` (ECX = `param_1`)
 - **Parameters:** `param_1` (int*): `Ball*` instance
-- **Description:** Per-frame ball update. Returns early if `ball+0x324` (dead/eliminated). Clears per-frame flags, runs AI if `ball+0x31D` (is_8ball) or `scene+0x237` (battle mode), then calls physics (`Ball_AdvancePositionOrCollision`). After physics: proximity checks, trail recording, falling state machine.
+- **Description:** Per-frame ball update. Returns early if `ball+0x324` (dead/eliminated). Clears per-frame flags, runs AI if `ball+0x31D` (is_8ball) or `scene+0x237` (battle mode), then calls physics (`Ball_AdvancePositionOrCollision`). After physics: proximity checks, trail recording, respawn state machine.
 - **Key offsets:**
   - `ball+0x324` = dead/eliminated flag
   - `ball+0x31D` = `is_8ball` / AI enable flag
@@ -161,7 +161,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ### `Ball_Shrink`
 - **Address:** `0x402200`
-- **Description:** Triggered when ball falls off board. Sets `ball+0xC4C = 1` (airborne), `ball+0x284 = 13.0` (shrunk radius), plays fall sound.
+- **Description:** Odd Race E:SHRINK collision handler. Sets `ball+0xC4C = 1` (is_shrunk), `ball+0x284 = 13.0` (shrunk radius), plays fall sound.
 
 ### `Ball_FallUpdate`
 - **Address:** `0x408830`

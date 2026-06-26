@@ -427,7 +427,7 @@ Steps 13-26 are in App_Initialize_Full (0x429530):
 ### Ball Physics Constants (CONFIRMED from Ghidra decompilation)
 - Ball radius = 35.0 at offset +0x284
 - Position: +0x164/168/16C (XYZ), Velocity: +0x170/174/178 (XYZ)
-- First-frame force modifier at +0x2F0 (1.0→0.25), Ice at +0xC5C, Dizzy at +0xC4C
+- First-frame force modifier at +0x2F0 (1.0→0.25), Ice at +0xC5C, is_shrunk at +0xC4C (Odd Race E:SHRINK/E:GROW only, NOT falling/dizzy)
 - Gravity plane at +0x748 (0=XY, 1=tilted, 2=XZ)
 - Ball vtable entry +0x04 is dispatcher at 0x405100 that sets defaults: +0x278=0.5, +0x27C=0.2, +0x188=6.0, +0xC6C=600.0, +0xC70=1200.0
 

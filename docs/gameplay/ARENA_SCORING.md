@@ -330,7 +330,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 | Address | Name | Description |
 |---------|------|-------------|
-| `0x402200` | `Ball_Shrink` | Ball begins falling off board |
+| `0x402200` | `Ball_Shrink` | Odd Race E:SHRINK collision — shrink ball |
 | `0x408830` | `Ball_FallUpdate` | Physics update while falling |
 | `0x405190` | `Ball_FindClosestRespawnPoint` | Find respawn after fall |
 

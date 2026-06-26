@@ -111,7 +111,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x27C | float | unknown_27C | 0.2 | Unknown (ctor2=0.0, overridden to 0.2) |
 | 0x280 | uint8 | unknown_280 | 0 | Unknown flag |
 | 0x281 | uint8 | unused_init_flag | 1 | DEAD: set to 1 in ctor, 0 on spawn; never read by any function |
-| **0x284** | **float** | **radius** | **35.0** | **Ball radius (ctor2=27.0, overridden to 35.0; shrunk to 13.0 on fall)** |
+| **0x284** | **float** | **radius** | **35.0** | **Ball radius (ctor2=27.0, overridden to 35.0; shrunk to 13.0 on Odd Race shrink)** |
 | 0x288 | float | unknown_288 | 0.0 | Unknown |
 | 0x290 | uint8[0x14] | rumble_timer2 | — | Second RumbleBoard timer |
 | 0x29C | float | unknown_29C | 1.0 | Unknown (modified in Ball_Update) |
@@ -304,7 +304,7 @@ These global floats at **0x4CF3xx** affect ALL balls. Patch once, affects every 
 
 | Field | Offset | Runtime Default | What It Does |
 |-------|--------|-----------------|--------------|
-| radius | 0x284 | 35.0 | Collision + visual size. Shrunk to 13.0 on fall. |
+| radius | 0x284 | 35.0 | Collision + visual size. Shrunk to 13.0 on Odd Race shrink. |
 | max_speed | 0x188 | 6.0 | Hard velocity cap. ctor2=5000.0, InitPhysicsDefaults=6.0. |
 | speed_scale | 0x18C | 1.0 | Global multiplier on ALL velocity changes. |
 | gravity_scale | 0x278 | 0.5 | Gravity strength multiplier. ctor2=0.1, InitPhysicsDefaults=0.5. |
@@ -628,7 +628,7 @@ Initializes ball for Rodent Rumble arena mode:
 | 3 | Ball_GetInputForce | 0x46EC30 | On input | Add custom actions (brake, jump, camera snap) |
 | 4 | Ball_CollisionCheck | 0x402DE0 | Every frame | Disable collision (noclip), custom bounce logic |
 | 5 | Ball_Render | 0x402860 | Every frame | Custom visual effects, wireframe, size changes |
-| 6 | Ball_Shrink | 0x402200 | On OOB | Prevent falling, teleport instead |
+| 6 | Ball_Shrink | 0x402200 | On Odd Race | Prevent shrink, teleport instead |
 | 7 | Scene_UpdateBallsAndState | 0x41B540 | Every frame | Modify ball list iteration, add/remove balls |
 | 8 | Ball_AI_ChaseNearest | 0x408390 | AI tick | Change AI behavior, make AI friendly/hostile |
 | 9 | Scene_dtor | 0x419770 | Scene destroy | Null out cached ball/scene pointers (use-after-free prevention) |
@@ -726,8 +726,8 @@ gravity[2] = 0.0f;   // Z
 | 0x401590 | Ball_vtable5 | — | Unknown vtable slot |
 | 0x401920 | Ball_RenderShadow | — | Shadow quad renderer |
 | 0x401DD0 | Ball_CreateTrailParticles | — | 9-particle trail ring |
-| 0x402200 | Ball_Shrink | — | Mark fallen, shrink radius |
-| 0x402270 | Ball_Grow | — | Reset from fallen state |
+| 0x402200 | Ball_Shrink | — | Odd Race shrink ball, reduce radius |
+| 0x402270 | Ball_Grow | — | Exit Odd Race shrink state |
 | 0x402650 | Ball_ApplyForceWithMultipliers | 47 | Apply force vector to velocity accumulators |
 | 0x4027F0 | Ball_dtor | — | Destructor |
 | 0x402810 | Ball_CheckCollisionPlanes | — | 6-plane collision test |
