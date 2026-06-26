@@ -15,3 +15,4 @@
 | raptisoft-live-log | Passive logger — taps Raptisoft's hidden in-memory status tracking system (App+0x208/0x20C/0x210) and writes live updates to live_status.txt. No gameplay changes | [raptisoft_live_log/](raptisoft_live_log/) |
 | level-colors | Changes per-level base colors (timer oval, timer text, race selection menu text) from a colors.txt config file. Edit at runtime | [level_colors/](level_colors/) |
 | universal-safespots | Adds SAFESPOT(*) universal checkpoint — always accepted as respawn candidate regardless of active SAFESWITCH filter. Competes on distance with lettered SAFESPOTs | [universal-safespots/](universal-safespots/) |
+| 8ball-spawn | Press B to spawn an 8-ball in front of the player's hamster ball. Uses mesh index 9 (8Ball), spawns as physics debris (player_index=-1) | [8ball_spawn/](8ball_spawn/) |
