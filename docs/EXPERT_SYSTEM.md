@@ -2,7 +2,7 @@
 
 ## Overview
 
-Expert Race (Level8) contains 6 unique object types. All can be spawned globally.
+Expert Race (Level5) contains 6 unique object types. All can be spawned globally.
 
 ## Objects
 
