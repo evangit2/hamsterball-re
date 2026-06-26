@@ -195,9 +195,11 @@ Many (but not all) factory branches check `*(int *)(*(int *)(board + 0x878) + 0x
 
 Hamsterball has **TWO independent Board systems**: one for Race mode and one for Arena mode. Each uses different Board constructors, different vtables, and different vtable[33] factories.
 
-### RACE Board System (0x422xxx constructors)
+### RACE Board System (0x41Cxxx constructors)
 
-Race Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from a jump table at `0x426AB0` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x42761C]` at `0x427102`.
+**CORRECTED (June 2026):** Previous version of this section swapped race and arena constructors. The 0x41Cxxx constructors create RACE boards (verified by decompiling all 30 constructors and reading board name strings: "Board (X)" + "X RACE"). The 0x422xxx constructors create ARENA boards ("RumbleBoard (X)" + "X ARENA").
+
+Race Board constructors are at `0x41CA40`–`0x424C20`. Each is called from a jump table at `0x42761C` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x42761C]` at `0x427080`.
 
 Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **inheritance chain**: each level-specific factory checks its own refs, then falls through to call the base factory `0x4133E0` (which handles `PLATFORM`, `STANDS`).
 
@@ -225,9 +227,9 @@ Race Board vtables are at `0x4D1428`–`0x4D2298`. The Race factories form an **
 
 **Race constructor chain**: Like the Arena constructors, Race Board constructors also form a chained function. Race L7 (Neon) loads Impossible sub-meshes, L12 (Glass) loads Impossible sub-meshes, and L14 (Master) loads Neon sub-meshes — all via conditional level-name checks (GLASSRACE, IMPOSSIBLERACE, NEONRACE).
 
-### ARENA Board System (0x41Cxxx constructors)
+### ARENA Board System (0x422xxx constructors)
 
-Arena Board constructors are at `0x41CA40`–`0x424C20`. Each is called from the Arena switch function at `0x427080` (jump table at `0x42761C`, 15 entries).
+Arena Board constructors are at `0x4224A0`–`0x424EC0`. Each is called from the Arena switch function at `0x426AB0` (jump table, 15 entries).
 
 Arena Board vtables are at `0x4D04A8`–`0x4D21C0`. The Arena factories handle **many more ref types** than Race factories — they create ALL interactive objects for Arena mode.
 
