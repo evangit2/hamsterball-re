@@ -98031,17 +98031,17 @@ in steps of 0x28, giving 9 particles: 0x168/0x28 = 9).</p>
 </tbody>
 </table>
 <h3>Ball_Shrink (0x402200)</h3>
-<p>Sets the falling/dizzy state:</p>
+<p>Sets the Odd Race shrunk state:</p>
 <ul>
-<li><code>ball+0xC4C = 1</code> (dizzy flag)</li>
+<li><code>ball+0xC4C = 1</code> (is_shrunk flag)</li>
 <li><code>ball+0x284 = 13.0f</code> (shrink radius — was 26.0f)</li>
 <li><code>ball+0x188 = 2.5f</code> (reduce max speed — was 5.0f)</li>
-<li>Plays fall sound from <code>Scene+0x4D4</code></li>
+<li>Plays shrink sound from <code>Scene+0x4D4</code></li>
 </ul>
 <h3>Ball_Grow (0x402270)</h3>
 <p>Restores normal state:</p>
 <ul>
-<li><code>ball+0xC4C = 0</code> (clear dizzy)</li>
+<li><code>ball+0xC4C = 0</code> (clear is_shrunk)</li>
 <li><code>ball+0x284 = 26.0f</code> (restore radius)</li>
 <li><code>ball+0x188 = 5.0f</code> (restore max speed)</li>
 </ul>
@@ -98207,7 +98207,7 @@ ball+0x178 += dir_z × magnitude
 <p>When ball touches floor geometry:</p>
 <ol>
 <li>Check floor depth (<code>[edi+0x54]</code>) against threshold (<code>_DAT_004CF420 ≈ 0.0</code>)</li>
-<li>If NOT dizzy (<code>ball+0xC4C == 0</code>):
+<li>If NOT shrunk (<code>ball+0xC4C == 0</code>):
 <ul>
 <li>Set <code>ball+0x2E9 = 1</code> (on_ramp flag)</li>
 <li><code>Scene_SetCamera(ball, 1)</code> — camera follows ball</li>
@@ -98222,7 +98222,7 @@ ball+0x178 += dir_z × magnitude
 </ul>
 </li>
 </ol>
-<p><strong>When dizzy (<code>ball+0xC4C = 1</code>)</strong>:</p>
+<p><strong>When shrunk (<code>ball+0xC4C = 1</code>)</strong>:</p>
 <ul>
 <li>SKIPS <code>Scene_SetCamera</code> call — camera doesn't follow falling ball</li>
 <li>SKIPS <code>on_ramp</code> flag set — no ramp detection during fall</li>
@@ -98482,7 +98482,7 @@ ball+0x178 += dir_z × magnitude
 <td>param_1[0xA1]</td>
 <td>float</td>
 <td><code>radius</code></td>
-<td>26.0 (normal) / 13.0 (falling)</td>
+<td>26.0 (normal) / 13.0 (shrunk, Odd Race)</td>
 </tr>
 <tr>
 <td>+0x2E8</td>
@@ -98625,7 +98625,7 @@ ball+0x178 += dir_z × magnitude
 <p><strong>Simple velocity reflection</strong>: Reimpl reflects velocity with fixed bounce=0.3. Original uses the collision node's direction vector for smooth sliding along walls.</p>
 </li>
 <li>
-<p><strong>No dizzy/falling state</strong>: Reimpl has no <code>ball+0xC4C</code> equivalent. Ball falling off edges doesn't shrink radius or reduce max speed.</p>
+<p><strong>No is_shrunk state</strong>: Reimpl has no <code>ball+0xC4C</code> equivalent. The Odd Race shrink mechanic is not implemented.</p>
 </li>
 <li>
 <p><strong>No launch trajectory system</strong>: Reimpl has no <code>Ball_ApplyTrajectory</code> equivalent. Boost ramps and launch surfaces are not implemented.</p>

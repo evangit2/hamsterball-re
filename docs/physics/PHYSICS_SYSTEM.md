@@ -137,7 +137,7 @@ When ball hits a wall surface:
 
 When ball touches floor geometry:
 1. Check floor depth (`[edi+0x54]`) against threshold (`_DAT_004CF420 ≈ 0.0`)
-2. If NOT dizzy (`ball+0xC4C == 0`):
+2. If NOT shrunk (`ball+0xC4C == 0`):
    - Set `ball+0x2E9 = 1` (on_ramp flag)
    - `Scene_SetCamera(ball, 1)` — camera follows ball
    - `Graphics_SetViewport` — update camera viewport
@@ -146,7 +146,7 @@ When ball touches floor geometry:
    - OOB detection: compare ball position against viewport bounds
    - If out of bounds: set `ball+0x2E8 = 1` (fell off flag)
 
-**When dizzy (`ball+0xC4C = 1`)**:
+**When shrunk (`ball+0xC4C = 1`)**:
 - SKIPS `Scene_SetCamera` call — camera doesn't follow falling ball
 - SKIPS `on_ramp` flag set — no ramp detection during fall
 - SKIPS boost counter increment — can't charge boost while falling
