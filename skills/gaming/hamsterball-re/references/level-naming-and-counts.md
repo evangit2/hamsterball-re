@@ -122,13 +122,13 @@ File numbers are internal asset IDs, not menu positions.
 | `Level4` | 5 | Tower Race |
 | `LevelUp` | 6 | Up Race |
 | `LevelDark` | 7 | Neon Race |
-| `Level8` | 8 | Expert Race |
+| `Level5` | 8 | Expert Race |
 | `Level6` | 9 | Odd Race |
-| `Level10` | 10 | Toob Race |
+| `Level8` | 10 | Toob Race |
 | `Level7` | 11 | Wobbly Race |
 | `LevelGlass` | 12 | Glass Race |
 | `Level9` | 13 | Sky Race |
-| `Level5-Bonk` | 14 | Master Race |
+| `Level10` | 14 | Master Race |
 | `LevelImpossible` | 15 | Impossible Race |
 
 ## Tier Colors
