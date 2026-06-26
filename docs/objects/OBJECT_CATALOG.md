@@ -195,7 +195,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
   - `+0x284` radius (27.0f)
   - `+0x2DC` checkpoint_x/y/z
   - `+0x768` cam_active
-  - `+0xC4C` airborne flag
+  - `+0xC4C` is_shrunk flag (Odd Race E:SHRINK/E:GROW)
   - `+0xC88` world transform matrix (4x4)
 - **Methods (vtable slots):**
   - `[0x10]` Ball_Update (0x405E00) — main tick
