@@ -60,7 +60,7 @@ void __thiscall NeonArenaCollisionEvents(void *param_1,int *param_2,int *param_3
   if (bVar6) {
     Scene_StartCountdown(*(void **)(*param_3 + 0x47c),(int)param_2);
   }
-  CreateNoDizzy(param_1,param_2,param_3);
+  DispatchCollisionEvents(param_1,param_2,param_3);
   return;
 }
 

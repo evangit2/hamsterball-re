@@ -100,7 +100,7 @@ Verified by decompiling all 30 constructors and reading the board name strings.
 | `E:LIGHTSOFF` | Sound + vtable[4](0) on neon platform + Scene_RegisterObject + AthenaList_Append to board+0x2578 (update list) + increment light-off counter at board+0x4390 |
 | `E:LIGHTSON` | Sound + vtable[4](1) on neon platform + Scene_RegisterObject + decrement light-off counter; when counter reaches 0, set state=2 at mesh+0x10DC |
 
-Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
+Falls through to: `DispatchCollisionEvents` (master collision dispatcher)
 
 ### NeonArenaCollisionEvents @ 0x417490
 `__thiscall void(void *board, int *ball, int *collPair)` — Neon Arena board only.
@@ -110,7 +110,7 @@ Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
 | `N:BUMP` | Bumper kick: reads velocity from physics_obj+0xCA4, scales by _DAT_004CF55C. If too slow: normalize to 5.0. If fast enough: normalize to **8.0** (different from Master's 12.0!). Writes back to physics velocity. |
 | `DN:SINKPLATFORM` | Scene_StartCountdown (arena sink) |
 
-Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
+Falls through to: `DispatchCollisionEvents` (master collision dispatcher)
 
 ### GlassRaceCollisionEvents @ 0x417760
 `__thiscall void(void *board, int *ball, int *collPair)` — Glass Race board only.
@@ -121,7 +121,7 @@ Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
 | `N:TENBONUS1` | Speed-gated time bonus. If ball speed > threshold (_DAT_004D0178) and not already triggered (board+0x438C==0): +1000 score (App+0x5EC + player_idx*0xA0), "EXTRA TIME:" ScoreObject popup, Sound_Play3D. Uses board+0x436C/4370/4374 for sound position. |
 | `N:TENBONUS2` | Same as TENBONUS1 but uses board+0x4378/437C/4380 for position and board+0x438D for triggered flag |
 
-Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
+Falls through to: `DispatchCollisionEvents` (master collision dispatcher)
 
 ### GlassArenaCollisionEvents @ 0x417EB0
 `__thiscall void(void *board, int *ball, int *collPair)` — Glass Arena board only.
@@ -131,7 +131,7 @@ Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
 | `N:GLASS` | Sets ball+0xCDC = 15 (glass break effect counter) |
 | `DN:SINKPLATFORM` | Scene_StartCountdown (arena sink) |
 
-Falls through to: `CreateNoDizzy` (E:NODIZZY handler)
+Falls through to: `DispatchCollisionEvents` (master collision dispatcher)
 
 ## Shared Handler Summary
 
@@ -157,22 +157,22 @@ These event names were NOT in previous documentation:
 | `N:TENBONUS1` | GlassRaceCollisionEvents | Speed-gated +1000 time bonus (position 1) |
 | `N:TENBONUS2` | GlassRaceCollisionEvents | Speed-gated +1000 time bonus (position 2) |
 
-## CreateNoDizzy — Common Fallthrough
+## DispatchCollisionEvents — Common Fallthrough
 
-All 4 new handlers fall through to `CreateNoDizzy` instead of `DispatchCollisionEvents`.
-CreateNoDizzy is the E:NODIZZY handler extracted as a separate function — it parses
+All 4 new handlers fall through to `DispatchCollisionEvents` (the master dispatcher at 0x40C5D0).
+DispatchCollisionEvents is the master collision event dispatcher — it parses
 `<TIME>value</TIME>` XML tags and calls Ball_RecordBest. This is a subset of
 DispatchCollisionEvents that only handles the E:NODIZZY event.
 
 **Implication:** The 4 new handlers do NOT call DispatchCollisionEvents as fallthrough.
-They only call CreateNoDizzy. This means universal events (N:GOAL, N:TARPIT, E:JUMP,
+They only call DispatchCollisionEvents. This means universal events (N:GOAL, N:TARPIT, E:JUMP,
 etc.) do NOT fire on Neon Race, Neon Arena, Glass Race, or Glass Arena boards unless
-DispatchCollisionEvents is also called. However, since CreateNoDizzy is a separate
+DispatchCollisionEvents is also called. However, since DispatchCollisionEvents is a separate
 function that only handles E:NODIZZY, these boards may handle universal events
 elsewhere in their update pipeline, or they may simply not support them.
 
 **Wait — correction:** Looking more carefully at the decompilation, the function name
-"CreateNoDizzy" is a Ghidra mislabel. It is actually a CALL to DispatchCollisionEvents
+The function was previously mislabeled "DispatchCollisionEvents" in Ghidra. It is actually DispatchCollisionEvents
 (0x40C5D0) — the decompiler resolved the call target to a thunk/mislabel. The function
 at the call target IS DispatchCollisionEvents. So all 4 handlers DO fall through to
 DispatchCollisionEvents as expected.
