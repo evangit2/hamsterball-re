@@ -130,6 +130,9 @@ __declspec(dllexport) void BASS_SampleGetChannel(void) {}
 #define BALL_RENDER_SCALE   0x2FC   /* float render_scale (1.0=visible) */
 #define BALL_IS_ACTIVE      0x768   /* byte is_active */
 #define BALL_FALL_TIMER     0xC60   /* float fall timer */
+#define BALL_HOME           0xC70   /* float HOME (leash distance from spawn) */
+#define BALL_CHASE          0xC6C   /* float CHASE (player detection radius) */
+#define BALL_SPINDISTANCE   0xC7C   /* float SPINDISTANCE (orbit radius) */
 #define BALL_ALLOC_SIZE     0xC98   /* Ball allocation size */
 
 /* Scene/Board struct offsets */
@@ -383,7 +386,15 @@ static void spawn_8ball(void* scene, void* player_ball)
     /* 10. Radius: keep Ball_InitPhysicsDefaults default (35.0 = 0x420C0000).
      * Do NOT overwrite with player radius — bad balls are larger than player. */
 
-    /* 11. Add to scene ball lists */
+    /* 11. AI tuning: HOME and CHASE set to 100000 (effectively infinite leash
+     * and detection range — always chase, never retreat to home).
+     * SPINDISTANCE set to 1 (tight orbit when near home, but chase always
+     * wins since HOME is 100000). */
+    *(float*)(b + BALL_CHASE) = 100000.0f;
+    *(float*)(b + BALL_HOME) = 100000.0f;
+    *(float*)(b + BALL_SPINDISTANCE) = 1.0f;
+
+    /* 12. Add to scene ball lists */
     pfn_athena_list_append(s + SCENE_BAD_BALLS, (int)ball);
     pfn_athena_list_append(s + SCENE_ALL_BALLS, (int)ball);
 
