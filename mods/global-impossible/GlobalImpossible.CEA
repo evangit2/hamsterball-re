@@ -1,0 +1,616 @@
+[ENABLE]
+// ============================================================
+//  Global Impossible Objects Spawner
+//  Spawns ALL 5 mechanical objects from Impossible Race:
+//    1. LOOPER     (alloc 0x1500, ctor=0x435800, mesh="LevelImpossible-Looper")
+//    2. GEAR       (alloc 0x1514, ctor=0x437590, mesh="LevelImpossible-Gear")
+//    3. BIGGEAR    (alloc 0x1514, ctor=0x437590, mesh="LevelImpossible-BigGear")
+//    4. ROTATOR    (alloc 0x1508, ctor=0x435940, mesh="LevelImpossible-Rotator")
+//    5. PENDULUM   (alloc 0x1504, ctor=0x436A20, mesh="LevelImpossible-Pendulum")
+//
+//  Each object is:
+//    a. MeshWorld_ctor'd from the sub-MESHWORLD file
+//    b. Stored in the appropriate board+0x43xx slot (needed by ctor)
+//    c. Object alloc'd and ctor'd with (board, posX, posY, posZ, mesh)
+//    d. Position set at player 1's location
+//    e. Registered in Board+0x2578 (general objects) + collision lists
+//    f. Timer_Init + vtable[0x58] (CallUpdate) + vtable[0x54] (CallRender)
+//
+//  All 5 objects spawn on EVERY hotkey press.
+//  Hook: Ball_Update @ 0x00405E22 (original: mov eax,[esi+0x0C5C])
+// ============================================================
+
+alloc(SpawnCode, 8192)
+alloc(SpawnImpossible, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(obj_array, 68)
+alloc(last_board, 4)
+alloc(temp_mesh, 4)
+alloc(out_obj, 4)
+
+registersymbol(SpawnImpossible)
+
+SpawnImpossible:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+obj_array:
+  dd 0
+  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+last_board:
+  dd 0
+
+temp_mesh:
+  dd 0
+
+out_obj:
+  dd 0
+
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(skip_mesh_list)
+label(skip_collision)
+label(spawn_one)
+label(spawn_done)
+label(mesh_loaded)
+label(mesh_failed)
+
+// String addresses in .rdata:
+// 0x4D2158 = "Levels\LevelImpossible-Looper"
+// 0x4D213C = "Levels\LevelImpossible-Gear"
+// 0x4D211C = "Levels\LevelImpossible-BigGear"
+// 0x4D20FC = "Levels\LevelImpossible-Rotator"
+// 0x4D20DC = "Levels\LevelImpossible-Pendulum"
+
+SpawnCode:
+  // === BOARD CHANGE DETECTION ===
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz no_clear
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+  mov dword [obj_array], 0
+
+no_clear:
+  // === SAVE BALL POSITION ===
+  cmp dword [esi+0x18], 0
+  jne check_spawn
+
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  cmp dword [SpawnImpossible], 0
+  je original_code
+
+  cmp dword [esi+0x18], 0
+  jne original_code
+
+  mov dword [SpawnImpossible], 0
+  pushad
+
+  // === GET BOARD ===
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+
+  // Validate Board+0x8AC (scene level mesh)
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
+
+  // Get App from Board+0x878, then App+0x174
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+  // ==========================================================
+  //  SPAWN EACH OBJECT TYPE
+  //  For each: load MeshWorld → store in board slot →
+  //  alloc object → call ctor → set position → register
+  // ==========================================================
+
+  // --- 1. LOOPER ---
+  // Mesh string: 0x4D2158, Board slot: +0x436C
+  // Alloc: 0x1500, Ctor: 0x435800 (thiscall, RET 0x14 = 5 stack params)
+
+  // Load mesh
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push 004D2158
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  // Store mesh in board+0x436C
+  mov edx, [saved_board]
+  mov [edx+0x436C], eax
+
+  // Alloc Looper object
+  push 0x1500
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Looper_ctor(this, board, posX, posY, posZ, mesh)
+  // thiscall: ECX=this, push mesh, posZ, posY, posX, board → RET 0x14
+  mov edx, [temp_mesh]
+  push edx
+  mov edx, [playerZ]
+  push edx
+  mov edx, [playerY]
+  push edx
+  mov edx, [playerX]
+  push edx
+  mov edx, [saved_board]
+  push edx
+  mov ecx, edi
+  call 00435800
+
+  // Register in Board+0x2578
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // Set position (already set by ctor from params, but enforce)
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  // Register collision
+  mov eax, [edi+0x10D4]
+  test eax, eax
+  jz skip_looper_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_looper_col
+  mov eax, [edi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+skip_looper_col:
+
+  // Track
+  mov eax, edi
+  mov ecx, [obj_array]
+  cmp ecx, 16
+  jae skip_looper_track
+  mov [obj_array+4+ecx*4], eax
+  inc dword [obj_array]
+skip_looper_track:
+
+  // --- 2. GEAR ---
+  // Mesh string: 0x4D213C, Board slot: +0x4370
+  // Alloc: 0x1514, Ctor: 0x437590 (thiscall, RET 0x20 = 8 stack params)
+  // Gear_ctor(this, board, posX, posY, posZ, dirX, dirY, dirZ, mesh)
+
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push 004D213C
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  mov edx, [saved_board]
+  mov [edx+0x4370], eax
+
+  push 0x1514
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Gear_ctor(this, board, posX, posY, posZ, dirX, dirY, dirZ, mesh)
+  // Push in reverse: mesh, dirZ, dirY, dirX, posZ, posY, posX, board
+  mov edx, [temp_mesh]
+  push edx
+  push 0                        // dirZ = 0
+  push 0x3F800000               // dirY = 1.0 (upward rotation axis)
+  push 0                        // dirX = 0
+  mov edx, [playerZ]
+  push edx
+  mov edx, [playerY]
+  push edx
+  mov edx, [playerX]
+  push edx
+  mov edx, [saved_board]
+  push edx
+  mov ecx, edi
+  call 00437590
+
+  // Set scale for gear (0x10F4 = 0x3F800000 = 1.0)
+  mov dword [edi+0x10F4], 0x3F800000
+
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  mov eax, [edi+0x10D4]
+  test eax, eax
+  jz skip_gear_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_gear_col
+  mov eax, [edi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+skip_gear_col:
+
+  mov eax, edi
+  mov ecx, [obj_array]
+  cmp ecx, 16
+  jae skip_gear_track
+  mov [obj_array+4+ecx*4], eax
+  inc dword [obj_array]
+skip_gear_track:
+
+  // --- 3. BIGGEAR ---
+  // Mesh string: 0x4D211C, Board slot: +0x4374
+  // Alloc: 0x1514, Ctor: 0x437590 (same as Gear)
+  // BigGear sets +0x10F4 = 0x3F000000 (0.5 scale) and +0x1510 touch flag
+
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push 004D211C
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  mov edx, [saved_board]
+  mov [edx+0x4374], eax
+
+  push 0x1514
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Gear_ctor with BigGear mesh
+  mov edx, [temp_mesh]
+  push edx
+  push 0
+  push 0x3F800000
+  push 0
+  mov edx, [playerZ]
+  push edx
+  mov edx, [playerY]
+  push edx
+  mov edx, [playerX]
+  push edx
+  mov edx, [saved_board]
+  push edx
+  mov ecx, edi
+  call 00437590
+
+  // BigGear-specific: half scale + touch flag
+  mov dword [edi+0x10F4], 0x3F000000
+  mov byte [edi+0x1510], 1
+
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  mov eax, [edi+0x10D4]
+  test eax, eax
+  jz skip_biggear_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_biggear_col
+  mov eax, [edi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+skip_biggear_col:
+
+  mov eax, edi
+  mov ecx, [obj_array]
+  cmp ecx, 16
+  jae skip_biggear_track
+  mov [obj_array+4+ecx*4], eax
+  inc dword [obj_array]
+skip_biggear_track:
+
+  // --- 4. ROTATOR ---
+  // Mesh string: 0x4D20FC, Board slot: +0x4378
+  // Alloc: 0x1508, Ctor: 0x435940 (thiscall, RET 0x14 = 5 stack params)
+  // Rotator_ctor(this, board, posX, posY, posZ, mesh)
+
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push 004D20FC
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  mov edx, [saved_board]
+  mov [edx+0x4378], eax
+
+  push 0x1508
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Rotator_ctor(this, board, posX, posY, posZ, mesh)
+  mov edx, [temp_mesh]
+  push edx
+  mov edx, [playerZ]
+  push edx
+  mov edx, [playerY]
+  push edx
+  mov edx, [playerX]
+  push edx
+  mov edx, [saved_board]
+  push edx
+  mov ecx, edi
+  call 00435940
+
+  // Rotator: set spin direction (+0x10E8 = 1.0 or -1.0)
+  mov dword [edi+0x10E8], 0x3F800000
+
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  mov eax, [edi+0x10D4]
+  test eax, eax
+  jz skip_rotator_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_rotator_col
+  mov eax, [edi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+skip_rotator_col:
+
+  mov eax, edi
+  mov ecx, [obj_array]
+  cmp ecx, 16
+  jae skip_rotator_track
+  mov [obj_array+4+ecx*4], eax
+  inc dword [obj_array]
+skip_rotator_track:
+
+  // --- 5. PENDULUM ---
+  // Mesh string: 0x4D20DC, Board slot: +0x437C
+  // Alloc: 0x1504, Ctor: 0x436A20 (thiscall, RET 0x18 = 6 stack params)
+  // Pendulum_ctor(this, board, posX, posY, posZ, param5, mesh)
+  // param5 = speed/phase (int), use 0
+
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push 004D20DC
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  mov edx, [saved_board]
+  mov [edx+0x437C], eax
+
+  push 0x1504
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Pendulum_ctor(this, board, posX, posY, posZ, phase, mesh)
+  // Push in reverse: mesh, phase(0), posZ, posY, posX, board
+  mov edx, [temp_mesh]
+  push edx
+  push 0                        // phase = 0
+  mov edx, [playerZ]
+  push edx
+  mov edx, [playerY]
+  push edx
+  mov edx, [playerX]
+  push edx
+  mov edx, [saved_board]
+  push edx
+  mov ecx, edi
+  call 00436A20
+
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  mov eax, [edi+0x10D4]
+  test eax, eax
+  jz skip_pendulum_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_pendulum_col
+  mov eax, [edi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+skip_pendulum_col:
+
+  mov eax, edi
+  mov ecx, [obj_array]
+  cmp ecx, 16
+  jae skip_pendulum_track
+  mov [obj_array+4+ecx*4], eax
+  inc dword [obj_array]
+skip_pendulum_track:
+
+  // === CLEAR TEMP MESH ===
+  mov dword [temp_mesh], 0
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnImpossible)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(obj_array)
+dealloc(last_board)
+dealloc(temp_mesh)
+dealloc(out_obj)
+unregistersymbol(SpawnImpossible)

@@ -1,0 +1,279 @@
+[ENABLE]
+// ============================================================
+//  Global Bumper Spawner
+//  Spawns bumper geometry from Level8.MESHWORLD (Toob Race)
+//  at Player 1's position on every hotkey press.
+//
+//  Bumpers are NOT separate game objects — they are scene geometry
+//  with "N:BUMPER%d" collision event names embedded in the
+//  MESHWORLD octree. The board's vtable[0x1D] (collision dispatch)
+//  checks for "N:BUMPER" prefix and applies knockback physics.
+//
+//  This script loads the Level8 mesh (which contains 8 bumpers),
+//  creates a Stands object from it, positions it at the player,
+//  and registers it in the board's collision/render lists.
+//
+//  Hook: Ball_Update @ 0x00405E22 (original: mov eax,[esi+0x0C5C])
+//  Hotkey: Set SpawnBumper to 1 via CE address list
+// ============================================================
+
+alloc(SpawnCode, 4096)
+alloc(SpawnBumper, 4)
+alloc(saved_board, 4)
+alloc(out_obj, 4)
+alloc(temp_mesh, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(bumper_array, 68)
+alloc(last_board, 4)
+
+registersymbol(SpawnBumper)
+
+SpawnBumper:
+  dd 0
+
+saved_board:
+  dd 0
+
+out_obj:
+  dd 0
+
+temp_mesh:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+bumper_array:
+  dd 0
+  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+last_board:
+  dd 0
+
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(skip_mesh_list)
+label(skip_collision)
+
+SpawnCode:
+  // === BOARD CHANGE DETECTION ===
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz no_clear
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+  mov dword [bumper_array], 0
+
+no_clear:
+  // === SAVE BALL POSITION ===
+  cmp dword [esi+0x18], 0
+  jne check_spawn
+
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  // === CHECK SPAWN FLAG ===
+  cmp dword [SpawnBumper], 0
+  je original_code
+
+  cmp dword [esi+0x18], 0
+  jne original_code
+
+  mov dword [SpawnBumper], 0
+  pushad
+
+  // === GET BOARD ===
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+
+  // Validate Board+0x8AC (scene level mesh)
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
+
+  // Get App from Board+0x878, then App+0x174 (D3D device for MeshWorld_ctor)
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+  // === CREATE MESHWORLD from Level8 (contains N:BUMPER1-8) ===
+  // String "levels\level8" is at 0x4CFCA4 in .rdata
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
+
+  // MeshWorld_ctor(mesh, App+0x174, "levels\level8")
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push 004CFCA4
+  push edx
+  mov ecx, ebx
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  // === CREATE STANDS OBJECT (clones mesh, includes bumper geometry) ===
+  // Stands_ctor: thiscall(this, mesh) — RET 0x4
+  // Alloc size 0x10D0 (same as level objects)
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Stands_ctor(alloc, mesh)
+  mov edx, [temp_mesh]
+  push edx
+  mov ecx, edi
+  call 00462850
+  test eax, eax
+  jz done_spawn
+  mov [out_obj], eax
+  mov esi, eax
+
+  // === SET POSITION (at player) ===
+  // Stands position: +0x10D8 (X), +0x10DC (Y), +0x10E0 (Z)
+  mov edx, [playerX]
+  mov [esi+0x10D8], edx
+  mov edx, [playerY]
+  mov [esi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [esi+0x10E0], edx
+
+  // === REGISTER IN BOARD LISTS ===
+
+  // 1. Board+0x2578 — general objects list
+  push esi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // 2. Board+0x0CD4 — objects list
+  push esi
+  mov ecx, [saved_board]
+  add ecx, 0x0CD4
+  call 00453810
+
+  // 3. Board+0x8AC->+0x480->+0x1C — SceneObject mesh list
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz skip_mesh_list
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_mesh_list
+  push esi
+  lea ecx, [edx+0x1C]
+  call 00453810
+skip_mesh_list:
+
+  // === REGISTER COLLISION ===
+  // The bumper collision is embedded in the mesh geometry.
+  // The CollisionLevel (created by Stands_ctor internally) contains
+  // the "N:BUMPER%d" event names. Register it in:
+  //   Board+0x10EC (collision level list)
+  //   Board+0x8B0->+0x18 (spatial tree collision list)
+  mov eax, [esi+0x10D4]
+  test eax, eax
+  jz skip_collision
+
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_collision
+  mov eax, [esi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+
+skip_collision:
+  // === TIMER INIT + VTABLE CALLS ===
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  // vtable[0x58] = CallUpdate
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x58]
+
+  // vtable[0x54] = CallRender(timer)
+  push ebx
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x54]
+
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
+  // === TRACK FOR CLEANUP ===
+  mov eax, [out_obj]
+  mov ecx, [bumper_array]
+  cmp ecx, 16
+  jae done_spawn
+  mov [bumper_array+4+ecx*4], eax
+  inc dword [bumper_array]
+
+done_spawn:
+  popad
+  mov dword [temp_mesh], 0
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnBumper)
+dealloc(saved_board)
+dealloc(out_obj)
+dealloc(temp_mesh)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(bumper_array)
+dealloc(last_board)
+unregistersymbol(SpawnBumper)
