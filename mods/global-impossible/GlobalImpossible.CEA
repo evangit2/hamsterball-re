@@ -219,6 +219,25 @@ check_spawn:
   call 00453810
 skip_looper_col:
 
+  // Timer_Init + vtable[0x58] (CallUpdate) + vtable[0x54] (CallRender)
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x58]
+
+  push ebx
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x54]
+
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
   // Track
   mov eax, edi
   mov ecx, [obj_array]
@@ -311,6 +330,25 @@ skip_looper_track:
   call 00453810
 skip_gear_col:
 
+  // Timer_Init + vtable[0x58] (CallUpdate) + vtable[0x54] (CallRender)
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x58]
+
+  push ebx
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x54]
+
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
   mov eax, edi
   mov ecx, [obj_array]
   cmp ecx, 16
@@ -402,6 +440,25 @@ skip_gear_track:
   call 00453810
 skip_biggear_col:
 
+  // Timer_Init + vtable[0x58] (CallUpdate) + vtable[0x54] (CallRender)
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x58]
+
+  push ebx
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x54]
+
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
   mov eax, edi
   mov ecx, [obj_array]
   cmp ecx, 16
@@ -489,6 +546,25 @@ skip_biggear_track:
   call 00453810
 skip_rotator_col:
 
+  // Timer_Init + vtable[0x58] (CallUpdate) + vtable[0x54] (CallRender)
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x58]
+
+  push ebx
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x54]
+
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
   mov eax, edi
   mov ecx, [obj_array]
   cmp ecx, 16
@@ -575,6 +651,25 @@ skip_rotator_track:
   lea ecx, [edx+0x18]
   call 00453810
 skip_pendulum_col:
+
+  // Timer_Init + vtable[0x58] (CallUpdate) + vtable[0x54] (CallRender)
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x58]
+
+  push ebx
+  mov ecx, edi
+  mov eax, [edi]
+  call dword [eax+0x54]
+
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
 
   mov eax, edi
   mov ecx, [obj_array]
