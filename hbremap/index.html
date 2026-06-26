@@ -13045,12 +13045,12 @@ This document replaces / supplements <code>BALL_OBJECT.md</code> with authoritat
 <tr>
 <td><code>Ball_Shrink</code></td>
 <td><code>0x00402200</code></td>
-<td>Enter death-fall: radius=13.0, max_speed=2.5, play fall sound</td>
+<td>Odd Race E:SHRINK: radius=13.0, max_speed=2.5, play shrink sound</td>
 </tr>
 <tr>
 <td><code>Ball_Grow</code></td>
 <td><code>0x00402270</code></td>
-<td>Exit death-fall: radius=26.0, max_speed=5.0</td>
+<td>Odd Race E:GROW: radius=26.0, max_speed=5.0 (restores from shrunk)</td>
 </tr>
 <tr>
 <td><code>Ball_ResetCollisionMesh</code></td>
@@ -13766,8 +13766,8 @@ nop
 <li><code>Ball_ctor2</code> @ <code>0x004039E0</code> — struct layout, initial values</li>
 <li><code>Ball_ApplyForceWithMultipliers</code> @ <code>0x00402650</code> — velocity write pattern</li>
 <li><code>Ball_ApplyForceV2</code> @ <code>0x004016F0</code> — velocity write pattern (alt)</li>
-<li><code>Ball_Shrink</code> @ <code>0x00402200</code> — death-fall state</li>
-<li><code>Ball_Grow</code> @ <code>0x00402270</code> — death-fall recovery</li>
+<li><code>Ball_Shrink</code> @ <code>0x00402200</code> — Odd Race shrink state (E:SHRINK)</li>
+<li><code>Ball_Grow</code> @ <code>0x00402270</code> — Odd Race grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
 <li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link ">input system</a> integration</li>
@@ -13838,8 +13838,8 @@ nop
 <li><code>Ball_ctor2</code> @ <code>0x004039E0</code> — struct layout, initial values</li>
 <li><code>Ball_ApplyForceWithMultipliers</code> @ <code>0x00402650</code> — velocity write pattern</li>
 <li><code>Ball_ApplyForceV2</code> @ <code>0x004016F0</code> — velocity write pattern (alt)</li>
-<li><code>Ball_Shrink</code> @ <code>0x00402200</code> — death-fall state</li>
-<li><code>Ball_Grow</code> @ <code>0x00402270</code> — death-fall recovery</li>
+<li><code>Ball_Shrink</code> @ <code>0x00402200</code> — Odd Race shrink state (E:SHRINK)</li>
+<li><code>Ball_Grow</code> @ <code>0x00402270</code> — Odd Race grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
 <li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link highlight">input system</a> integration</li>
@@ -29828,7 +29828,7 @@ mapping was corrected against raw x86 disassembly.</em></p>
 <td><code>Ball_Shrink</code></td>
 <td>0x402200</td>
 <td><code>__fastcall(ball)</code></td>
-<td>Sets ball+0xC4C=1, radius to 13.0 (falling)</td>
+<td>Sets ball+0xC4C=1, radius to 13.0 (Odd Race E:SHRINK)</td>
 </tr>
 <tr>
 <td><code>Ball_Grow</code></td>
@@ -30109,9 +30109,9 @@ mapping was corrected against raw x86 disassembly.</em></p>
 </tr>
 <tr>
 <td><code>Ball+0xC4C</code></td>
-<td><code>fall_mode</code></td>
+<td><code>is_shrunk</code></td>
 <td>⚠ Partial</td>
-<td>Only tracks death/respawn (fall-off-level), NOT ground contact</td>
+<td>Only set by Odd Race E:SHRINK/E:GROW, NOT ground contact</td>
 </tr>
 <tr>
 <td><code>Ball+0x2E9</code></td>
@@ -30249,12 +30249,12 @@ find_collision(ball_ptr, &amp;out);
 <li>Set to 1 by Ball_ctor2, cleared to 0 on spawn — but no code ever checks its value</li>
 <li>Setting it to 0 in water mods works as a side effect (clears a stale state), but it does NOT reflect current ground contact</li>
 </ul>
-<h2>fall_mode (Ball+0xC4C) is death-state only</h2>
+<h2>is_shrunk (Ball+0xC4C) is Odd Race shrink mechanic only</h2>
 <ul>
-<li>Set by <code>Ball_Shrink</code> (0x402200) when ball falls off the level edge</li>
-<li>Cleared by <code>Ball_Grow</code> (0x402270) after respawn animation</li>
-<li><strong>Does NOT track per-frame ground contact</strong> — ball can be midair (from a jump) with fall_mode=0</li>
-<li>Safe to use as a <strong>secondary gate</strong> (don't allow jumping while dying), but NOT as a primary ground check</li>
+<li>Set by <code>Ball_Shrink</code> (0x402200) during Odd Race E:SHRINK collision event</li>
+<li>Cleared by <code>Ball_Grow</code> (0x402270) during Odd Race E:GROW collision event</li>
+<li><strong>Does NOT track per-frame ground contact</strong> — ball can be midair (from a jump) with is_shrunk=0</li>
+<li>NOT related to falling off edges — Ball_Shatter (0x408D70) handles falling and never writes to 0xC4C</li>
 </ul>
 <hr>
 <h2>🔗 Related Documents</h2>
@@ -64396,12 +64396,12 @@ Documented: 3781/3781 (100%)<br>
 <tr>
 <td>0x00402200</td>
 <td>Ball_Shrink</td>
-<td>Mark ball fallen: set flag+0xC4C=1, shrink radius to 13.0, play 3D sound</td>
+<td>Odd Race E:SHRINK: set is_shrunk+0xC4C=1, shrink radius to 13.0, play 3D sound</td>
 </tr>
 <tr>
 <td>0x00402270</td>
 <td>Ball_Grow</td>
-<td>Reset from fallen: clear flag, set radius=26.0, physics=5.0</td>
+<td>Odd Race E:GROW: clear is_shrunk, set radius=26.0, physics=5.0</td>
 </tr>
 <tr>
 <td>0x00402290</td>
@@ -69579,12 +69579,12 @@ Documented: 3781/3781 (100%)<br>
 <tr>
 <td>0x00402200</td>
 <td>Ball_Shrink</td>
-<td>Mark ball fallen: set flag+0xC4C=1, shrink radius to 13.0, play 3D sound</td>
+<td>Odd Race E:SHRINK: set is_shrunk+0xC4C=1, shrink radius to 13.0, play 3D sound</td>
 </tr>
 <tr>
 <td>0x00402270</td>
 <td>Ball_Grow</td>
-<td>Reset from fallen: clear flag, set radius=26.0, physics=5.0</td>
+<td>Odd Race E:GROW: clear is_shrunk, set radius=26.0, physics=5.0</td>
 </tr>
 <tr>
 <td>0x00402290</td>
@@ -80720,8 +80720,8 @@ with different device types: 1=keyboard, 2=mouse, 4=joystick1, 5=joystick2.- <a 
 <li><code>Ball_ctor2</code> @ <code>0x004039E0</code> — struct layout, initial values</li>
 <li><code>Ball_ApplyForceWithMultipliers</code> @ <code>0x00402650</code> — velocity write pattern</li>
 <li><code>Ball_ApplyForceV2</code> @ <code>0x004016F0</code> — velocity write pattern (alt)</li>
-<li><code>Ball_Shrink</code> @ <code>0x00402200</code> — death-fall state</li>
-<li><code>Ball_Grow</code> @ <code>0x00402270</code> — death-fall recovery</li>
+<li><code>Ball_Shrink</code> @ <code>0x00402200</code> — Odd Race shrink state (E:SHRINK)</li>
+<li><code>Ball_Grow</code> @ <code>0x00402270</code> — Odd Race grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
 <li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link highlight">input system</a> integration</li>
@@ -97258,12 +97258,12 @@ float value = raw / 100.0f;
 <tr>
 <td>0x00402200</td>
 <td>Ball_Shrink</td>
-<td>Mark ball fallen: set flag+0xC4C=1, shrink radius to 13.0, play 3D sound</td>
+<td>Odd Race E:SHRINK: set is_shrunk+0xC4C=1, shrink radius to 13.0, play 3D sound</td>
 </tr>
 <tr>
 <td>0x00402270</td>
 <td>Ball_Grow</td>
-<td>Reset from fallen: clear flag, set radius=26.0, physics=5.0</td>
+<td>Odd Race E:GROW: clear is_shrunk, set radius=26.0, physics=5.0</td>
 </tr>
 <tr>
 <td>0x00402290</td>

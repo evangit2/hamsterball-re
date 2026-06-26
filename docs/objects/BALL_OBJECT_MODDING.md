@@ -110,8 +110,8 @@ Same pattern — writes to `+0x170/174/178` with identical guards.
 
 | Function | Address | What It Does |
 |----------|---------|-------------|
-| `Ball_Shrink` | `0x00402200` | Enter death-fall: radius=13.0, max_speed=2.5, play fall sound |
-| `Ball_Grow` | `0x00402270` | Exit death-fall: radius=26.0, max_speed=5.0 |
+| `Ball_Shrink` | `0x00402200` | Odd Race E:SHRINK: radius=13.0, max_speed=2.5, play shrink sound |
+| `Ball_Grow` | `0x00402270` | Odd Race E:GROW: radius=26.0, max_speed=5.0 (restores from shrunk) |
 | `Ball_ResetCollisionMesh` | `0x004030B0` | Reset physics body orientation, zero velocity, reset timer |
 | `Ball_Shatter` | `0x00408D70` | **Arena: split ball into 3 AI balls** (called from FollowBall_Update, NOT E:JUMP) |
 | `Ball_RecordBest` | `0x00402400` | Record best time/score at `+0x2F4` |
@@ -397,8 +397,8 @@ All data verified via **live GhidraMCP headless decompilation** (`http://127.0.0
 - `Ball_ctor2` @ `0x004039E0` — struct layout, initial values
 - `Ball_ApplyForceWithMultipliers` @ `0x00402650` — velocity write pattern
 - `Ball_ApplyForceV2` @ `0x004016F0` — velocity write pattern (alt)
-- `Ball_Shrink` @ `0x00402200` — death-fall state
-- `Ball_Grow` @ `0x00402270` — death-fall recovery
+- `Ball_Shrink` @ `0x002200` — Odd Race shrink state (E:SHRINK)
+- `Ball_Grow` @ `0x00402270` — Odd Race grow recovery (E:GROW)
 - `Ball_Update` @ `0x00405E00` — main physics tick overview
 - `Ball_Shatter` @ `0x00408D70` — arena 8-ball split mechanic (called from FollowBall_Update)
 - `Ball_GetInputForce` @ `0x0046EC30` — input system integration

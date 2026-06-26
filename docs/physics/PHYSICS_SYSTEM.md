@@ -30,19 +30,19 @@ The ball has three operational modes:
 | Mode | Flag | Effect |
 |------|------|--------|
 | **Normal** | `ball+0xC4C = 0` | Full physics, camera follow, boost, friction |
-| **Dizzy/Falling** | `ball+0xC4C = 1` | Reduced physics, no camera follow, 0.75× force, no boost |
+| **Odd Race Shrunk** | `ball+0xC4C = 1` | Reduced physics, no camera follow, 0.75× force, no boost |
 | **Launch** | `ball+0x2F0 ≥ 100` | Free trajectory for ~1.67s, no external forces |
 
 ### Ball_Shrink (0x402200)
-Sets the falling/dizzy state:
-- `ball+0xC4C = 1` (dizzy flag)
+Sets the Odd Race shrunk state:
+- `ball+0xC4C = 1` (is_shrunk flag)
 - `ball+0x284 = 13.0f` (shrink radius — was 26.0f)
 - `ball+0x188 = 2.5f` (reduce max speed — was 5.0f)
-- Plays fall sound from `Scene+0x4D4`
+- Plays shrink sound from `Scene+0x4D4`
 
 ### Ball_Grow (0x402270)
 Restores normal state:
-- `ball+0xC4C = 0` (clear dizzy)
+- `ball+0xC4C = 0` (clear is_shrunk)
 - `ball+0x284 = 26.0f` (restore radius)
 - `ball+0x188 = 5.0f` (restore max speed)
 
@@ -236,7 +236,7 @@ In the original, this doesn't happen because:
 |---------|-------|------|-------|
 | `0x4CF310` | 1.0 | `UNIT_VALUE` | General purpose 1.0 constant |
 | `0x4CF368` | 0.0 | `GROUND_THRESHOLD` | Floor detection threshold |
-| `0x4CF36C` | 0.75 | `DIZZY_MULT` | Force multiplier when dizzy/falling |
+| `0x4CF36C` | 0.75 | `DIZZY_MULT` | Force multiplier when is_shrunk (Odd Race) |
 | `0x4CF374` | 0.2 | `ON_ICE_MULT` | Force multiplier on ice surfaces |
 | `0x4CF378` | 0.0 | `IN_TUBE_MULT` | Force multiplier in tube sections |
 | `0x4CF380` | 0.25 | `FIRST_FRAME_MULT` | Force multiplier on first frame / after impact |
@@ -261,11 +261,11 @@ In the original, this doesn't happen because:
 | +0x158 | param_1[0x56] | Vec3 | `prev_pos` | Previous frame position |
 | +0x164 | param_1[0x59] | Vec3 | `pos` | Current position |
 | +0x170 | param_1[0x5C] | Vec3 | `vel` | Velocity (cleared each frame, recomputed) |
-| +0x188 | param_1[0x62] | float | `max_speed` | 5000.0 (normal) / 2.5 (falling) |
+| +0x188 | param_1[0x62] | float | `max_speed` | 5000.0 (normal) / 2.5 (shrunk, Odd Race) |
 | +0x198 | param_1[0x66] | float | `facing_angle` | Target rotation angle |
 | +0x19C | param_1[0x67] | byte | `facing_dirty` | 1 = rotation needs update |
 | +0x1A4 | param_1[0x69] | ptr | `physics_body` | Scene physics body (trajectory, friction) |
-| +0x284 | param_1[0xA1] | float | `radius` | 26.0 (normal) / 13.0 (falling) |
+| +0x284 | param_1[0xA1] | float | `radius` | 26.0 (normal) / 13.0 (shrunk, Odd Race) |
 | +0x2E8 | | byte | `fell_off` | Ball fell off level edge |
 | +0x2E9 | | byte | `on_ramp` | Ball is on a ramp/slope surface |
 | +0x2F0 | param_1[0xBC] | int | `impact_counter` | ≥100 = in launch, ≥81 = no force |
@@ -274,7 +274,7 @@ In the original, this doesn't happen because:
 | +0x324 | param_1[0xC9] | byte | `in_tube` | In tube section (zeroes force) |
 | +0x748 | param_1[0x1D2] | int | `gravity_plane` | 0=XZ flat, 1=tilted, 2=XY vertical |
 | +0x808 | | int | `freeze_counter` | >0 = frozen, no force |
-| +0xC4C | | byte | `dizzy` | 1 = falling/dizzy state |
+| +0xC4C | | byte | `is_shrunk` | 1 = Odd Race shrunk state (E:SHRINK) |
 | +0xC50 | param_1[0x314] | float | `spin_timer` | Decayed by 0.98× per frame |
 | +0xC5C | param_1[0x317] | int | `momentum_transfer` | Flag for ice momentum |
 | +0xC3C | param_1[0x30F] | byte | `teleport_active` | 1 = teleport pending |
@@ -329,7 +329,7 @@ Ball_Update (0x405E00)
 
 3. **Simple velocity reflection**: Reimpl reflects velocity with fixed bounce=0.3. Original uses the collision node's direction vector for smooth sliding along walls.
 
-4. **No dizzy/falling state**: Reimpl has no `ball+0xC4C` equivalent. Ball falling off edges doesn't shrink radius or reduce max speed.
+4. **No is_shrunk state**: Reimpl has no `ball+0xC4C` equivalent. The Odd Race shrink mechanic (Ball_Shrink/Ball_Grow) is not implemented.
 
 5. **No launch trajectory system**: Reimpl has no `Ball_ApplyTrajectory` equivalent. Boost ramps and launch surfaces are not implemented.
 

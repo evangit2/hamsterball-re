@@ -923,8 +923,8 @@ Offset | Field | Description
 | 0x00401660 | Ball_SetName | Set ball display name at +0xC28, copies string, sets type ID=200 |
 | 0x00402030 | Ball_SetTargetPos | Set/interpolate target position with smooth damping threshold |
 | 0x00402150 | Ball_CheckProximity | Check position proximity radius, store integer distance result |
-| 0x00402200 | Ball_Shrink | Mark ball fallen: set flag+0xC4C=1, shrink radius to 13.0, play 3D sound |
-| 0x00402270 | Ball_Grow | Reset from fallen: clear flag, set radius=26.0, physics=5.0 |
+| 0x00402200 | Ball_Shrink | Odd Race shrink ball: set is_shrunk+0xC4C=1, shrink radius to 13.0, play 3D sound |
+| 0x00402270 | Ball_Grow | Odd Race grow ball: clear is_shrunk, set radius=26.0, physics=5.0 |
 | 0x00402290 | GameObject_Render | Render game obj: scale, depth layer toggle, Sprite_RenderQuad, copy result |
 | 0x004027f0 | Ball_dtor | Ball deleting destructor: calls Ball_Cleanup, optionally frees |
 | 0x004029c0 | CollisionMesh_SetSpeed | **DEAD CODE.** Writes roll_friction (+0xC64) and scaled_dir (+0xC98), immediately overwritten by Ball_Update Phase 14. Does NOT control ball speed. |

@@ -5,7 +5,7 @@
 | Offset | Name | Reliable for ground check? | Notes |
 |--------|------|---------------------------|-------|
 | `Ball+0x281` | `unused_init_flag` | ❌ NO | DEAD: set by ctor, NEVER read by any function |
-| `Ball+0xC4C` | `fall_mode` | ⚠ Partial | Only tracks death/respawn (fall-off-level), NOT ground contact |
+| `Ball+0xC4C` | `is_shrunk` | ⚠ Partial | Only set by Odd Race E:SHRINK/E:GROW, NOT ground contact |
 | `Ball+0x2E9` | `impact_shatter` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE.** |
 | `Ball+0x260` | `is_airborne` | ⚠ Partial | Set by speed/friction thresholds, not true ground contact |
 
@@ -106,9 +106,9 @@ find_collision(ball_ptr, &out);
 - Legacy/init flag only
 - Setting it to 0 in water mods works as a side effect (clears a stale state), but it does NOT reflect current ground contact
 
-## fall_mode (Ball+0xC4C) is death-state only
+## is_shrunk (Ball+0xC4C) is Odd Race shrink mechanic only
 
-- Set by `Ball_Shrink` (0x402200) when ball falls off the level edge
-- Cleared by `Ball_Grow` (0x402270) after respawn animation
-- **Does NOT track per-frame ground contact** — ball can be midair (from a jump) with fall_mode=0
-- Safe to use as a **secondary gate** (don't allow jumping while dying), but NOT as a primary ground check
+- Set by `Ball_Shrink` (0x402200) during Odd Race E:SHRINK collision event
+- Cleared by `Ball_Grow` (0x402270) during Odd Race E:GROW collision event
+- **Does NOT track per-frame ground contact** — ball can be midair (from a jump) with is_shrunk=0
+- NOT related to falling off edges — Ball_Shatter (0x408D70) handles falling and never writes to 0xC4C
