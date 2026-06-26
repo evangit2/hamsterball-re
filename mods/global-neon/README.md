@@ -97,4 +97,4 @@ The hook intercepts `Graphics_RenderScene` (0x454BC0) per frame:
 - Ball position (gfx+0x854/858/85C) is written by `Scene_Render` (0x41A2E0) each frame before `Graphics_RenderScene` is called, so the light position is always current.
 - Light index 7 is used to avoid conflicts with the game's own light setup (which uses indices 0-3 at most).
 - When `NeonLighting` is set to 0, the hook disables light 7 and lets the game's original lighting run unmodified.
-- `D3DLIGHT8` struct is 88 bytes. Position is at offset 52 (three floats). The struct is pre-filled in the script with all necessary fields; only Position.x/y/z are updated per-frame.
+- `D3DLIGHT8` struct is 104 bytes (not 88 — includes Direction vector between Position and Range). Position is at offset 52 (three floats). The struct is pre-filled in the script with all necessary fields; only Position.x/y/z are updated per-frame.
