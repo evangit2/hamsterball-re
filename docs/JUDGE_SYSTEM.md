@@ -67,7 +67,7 @@ MeshNode("meshes\hammyjudge") → board+0x4BB4  ← pre-load judge mesh 2
 MeshNode("meshes\hammyjudge") → board+0x4BB8  ← pre-load judge mesh 3
 ```
 
-The Expert level uses `Level5.MESHWORLD` (shared with Tower!) for its geometry. This mesh file contains `N:JUDGE` ref points and `E:ALERTJUDGES` / `E:SCORE` collision triggers.
+The Expert level uses `Level5.MESHWORLD` for its geometry. This mesh file contains `N:JUDGE` ref points and `E:ALERTJUDGES` / `E:SCORE` collision triggers.
 
 ### 2. Factory — `CreateSawblade` (0x40E590)
 
@@ -278,7 +278,7 @@ The Expert board collision handler (0x40E6A0) processes these events:
 
 ## Notes
 
-- The Expert race level shares `Level5.MESHWORLD` (Tower's mesh) for its geometry
+- The Expert race level uses `Level5.MESHWORLD` for its geometry
 - Three judge meshes are pre-loaded but the number of judge objects depends on how many `N:JUDGE` refs exist in the mesh
 - Judges are NOT difficulty-gated (unlike BONK which requires `App+0x23C != 0`)
 - The judge continuously spins at +2.0 degrees/frame regardless of state

@@ -13,7 +13,7 @@ A complete 2-player local mode exists in the binary:
 - **Functions:** `App_Is2PMode` (0x00427910), `App_Start2PRace` (0x00429230), `PartyMenu_ctor` (0x0042fc10)
 - **Strings:** `"PARTY GAMES!"`, `"CHOOSE A PARTY RACE!"`, `"PARTY RACE (2P ONLY)"`, `"THE PARTY RACE REQUIRES THAT PLAYER 1 AND PLAYER 2 BE HUMAN PLAYERS!"`
 - **Controls:** `2PController1` through `2PController4` — 4 separate control profiles for local multiplayer
-- **Level asset:** `Levels\Level10-2PBridge` — a dedicated 2P bridge level for the Toob race
+- **Level asset:** `Levels\\Level10-2PBridge` — a dedicated 2P bridge level for the Master race
 - **Textures:** `partyrace.png`, `Winner2p.png`
 - **Menu flag:** Sets `App+0x237=1` (is_2p_mode), `App+0x234=1`, and enables player slots at `+0x677`, `+0x717`, `+0x7b7`
 - **Player 2 status:** `"PLAYER 2: %s"`, `"PLAYER 2: COMPUTER"`, `"PLAYER 2: OFF"` — P2 can be human, AI, or disabled

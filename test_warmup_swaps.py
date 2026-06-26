@@ -28,7 +28,7 @@ LEVELS = [
     ("LevelUp",         "Up"),
     ("LevelDark",       "Neon"),
     ("Level5",          "Expert"),
-    ("Level9",          "Odd"),
+    ("Level9",          "Sky"),
     ("Level8",          "Toob"),
     ("Level7",          "Wobbly"),
     ("LevelGlass",      "Glass"),
