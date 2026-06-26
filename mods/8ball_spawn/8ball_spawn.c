@@ -21,8 +21,10 @@
  *   4. Set position in front of the player's ball
  *   5. Set ball+0x754 = 9 (8Ball mesh index)
  *   6. Set ball+0x18 (player_index) = -1 (no player, AI-less debris ball)
- *   7. AthenaList_Append to scene+0x29D4 (bad_balls_list)
- *   8. AthenaList_Append to scene+0x2DEC (all_balls_list)
+ *   7. Copy player's exact velocity vector (same direction and speed)
+ *   8. Radius stays at Ball_InitPhysicsDefaults default (35.0) — NOT player radius
+ *   9. AthenaList_Append to scene+0x29D4 (bad_balls_list)
+ *   10. AthenaList_Append to scene+0x2DEC (all_balls_list)
  *
  * Key detection: GetAsyncKeyState('B') polled in a background thread at
  * 16ms intervals. Edge-triggered (only spawns on key-down transition).
@@ -53,7 +55,6 @@
  *   [8ball]
  *   spawn_key=0x42      ; Virtual key code (default: B = 0x42)
  *   spawn_distance=40   ; Distance in front of player (default: 40)
- *   spawn_velocity=200  ; Initial forward velocity (default: 200)
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -166,7 +167,7 @@ __declspec(dllexport) void BASS_SampleGetChannel(void) {}
 /* Config */
 static int g_spawn_key = 0x42;      /* 'B' key */
 static float g_spawn_distance = 40.0f;
-static float g_spawn_velocity = 200.0f;
+/* g_spawn_velocity removed — 8-ball now copies player's exact velocity */
 static int g_prev_key_down = 0;
 static int g_spawned_count = 0;
 
@@ -232,9 +233,8 @@ static void load_config(void)
             g_spawn_key = (int)strtol(val, NULL, 0);
         } else if (_stricmp(key, "spawn_distance") == 0) {
             g_spawn_distance = (float)atof(val);
-        } else if (_stricmp(key, "spawn_velocity") == 0) {
-            g_spawn_velocity = (float)atof(val);
         }
+        /* spawn_velocity removed — 8-ball now copies player's exact velocity */
     }
     fclose(f);
 }
@@ -344,7 +344,7 @@ static void spawn_8ball(void* scene, void* player_ball)
     float vy = *(float*)(src + BALL_VEL_Y);
     float vz = *(float*)(src + BALL_VEL_Z);
 
-    /* Normalize velocity direction for "forward" */
+    /* Normalize velocity direction for "forward" spawn position */
     float vlen = vx*vx + vy*vy + vz*vz;
     float dirx = 0.0f, diry = 0.0f, dirz = 1.0f;
     if (vlen > 0.001f) {
@@ -363,10 +363,10 @@ static void spawn_8ball(void* scene, void* player_ball)
     *(float*)(b + BALL_DISPLAY_Y) = spawn_y;
     *(float*)(b + BALL_DISPLAY_Z) = spawn_z;
 
-    /* 6. Give it initial velocity in the forward direction */
-    *(float*)(b + BALL_VEL_X) = dirx * g_spawn_velocity;
-    *(float*)(b + BALL_VEL_Y) = 0.0f;
-    *(float*)(b + BALL_VEL_Z) = dirz * g_spawn_velocity;
+    /* 6. Copy the player's exact velocity (same direction and speed) */
+    *(float*)(b + BALL_VEL_X) = vx;
+    *(float*)(b + BALL_VEL_Y) = vy;
+    *(float*)(b + BALL_VEL_Z) = vz;
 
     /* 7. Set mesh index to 9 (8Ball) */
     *(int*)(b + BALL_MESH_INDEX) = MESH_8BALL;
@@ -380,8 +380,8 @@ static void spawn_8ball(void* scene, void* player_ball)
     *(float*)(b + BALL_RENDER_SCALE) = 1.0f;
     *(float*)(b + BALL_FALL_TIMER) = 1.0f;
 
-    /* 10. Copy radius from source ball */
-    *(float*)(b + BALL_RADIUS) = *(float*)(src + BALL_RADIUS);
+    /* 10. Radius: keep Ball_InitPhysicsDefaults default (35.0 = 0x420C0000).
+     * Do NOT overwrite with player radius — bad balls are larger than player. */
 
     /* 11. Add to scene ball lists */
     pfn_athena_list_append(s + SCENE_BAD_BALLS, (int)ball);

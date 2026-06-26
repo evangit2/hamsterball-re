@@ -20,7 +20,9 @@ Ball creation follows the same pattern as `CreateBadBall` (0x40BCA0):
 4. Position is set in front of the player's ball
 5. `ball+0x754 = 9` selects the 8Ball mesh
 6. `ball+0x18 = -1` sets player_index to none (debris ball)
-7. Ball is added to `scene+0x29D4` (bad_balls_list) and `scene+0x2DEC` (all_balls_list)
+7. Player's exact velocity vector is copied (same direction and speed)
+8. Radius stays at `Ball_InitPhysicsDefaults` default (35.0) — not player radius
+9. Ball is added to `scene+0x29D4` (bad_balls_list) and `scene+0x2DEC` (all_balls_list)
 
 Key detection: `GetAsyncKeyState('B')` polled in a background thread at 16ms intervals, edge-triggered (only spawns on key-down transition).
 
@@ -32,7 +34,6 @@ Edit `8ball_spawn.ini` (placed next to `bass.dll`):
 [8ball]
 spawn_key=0x42       ; B key (default). See VK_* constants on MSDN
 spawn_distance=40    ; Distance in front of player
-spawn_velocity=200   ; Initial forward velocity
 ```
 
 ## Build
