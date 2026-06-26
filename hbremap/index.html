@@ -98229,13 +98229,13 @@ ball+0x178 += dir_z × magnitude
 <li>SKIPS boost counter increment — can't charge boost while falling</li>
 <li>Jump target: <code>0x40743D</code> which goes to player_index check</li>
 </ul>
-<h3>How Dizzy Affects Collision Direction</h3>
-<p><strong>The collision normal is NOT modified when dizzy.</strong> The collision tree is built and queried identically regardless of the dizzy flag. The direction vector flows through the same reflection/friction code. The dizzy flag only affects:</p>
+<h3>How is_shrunk Affects Collision Direction</h3>
+<p><strong>The collision normal is NOT modified when shrunk.</strong> The collision tree is built and queried identically regardless of the is_shrunk flag. The direction vector flows through the same reflection/friction code. The is_shrunk flag only affects:</p>
 <ol>
-<li><strong>Camera</strong>: No <code>Scene_SetCamera</code> call when dizzy (camera stays at last position)</li>
-<li><strong>Boost</strong>: No boost counter accumulation when dizzy</li>
-<li><strong>Friction</strong>: Different spin friction calculation (0.25× multiplier at 0x4CF380 when dizzy vs normal friction)</li>
-<li><strong>Force</strong>: 0.75× multiplier on all applied forces when dizzy</li>
+<li><strong>Camera</strong>: No <code>Scene_SetCamera</code> call when shrunk (camera stays at last position)</li>
+<li><strong>Boost</strong>: No boost counter accumulation when shrunk</li>
+<li><strong>Friction</strong>: Different spin friction calculation (0.25× multiplier at 0x4CF380 when shrunk vs normal friction)</li>
+<li><strong>Force</strong>: 0.75× multiplier on all applied forces when shrunk</li>
 </ol>
 <hr>
 <h2>5. Gravity and Velocity Integration</h2>
@@ -98454,7 +98454,7 @@ ball+0x178 += dir_z × magnitude
 <td>param_1[0x62]</td>
 <td>float</td>
 <td><code>max_speed</code></td>
-<td>5000.0 (normal) / 2.5 (falling)</td>
+<td>5000.0 (normal) / 2.5 (shrunk, Odd Race)</td>
 </tr>
 <tr>
 <td>+0x198</td>
@@ -98544,8 +98544,8 @@ ball+0x178 += dir_z × magnitude
 <td>+0xC4C</td>
 <td></td>
 <td>byte</td>
-<td><code>dizzy</code></td>
-<td>1 = falling/dizzy state</td>
+<td><code>is_shrunk</code></td>
+<td>1 = Odd Race shrunk state (E:SHRINK)</td>
 </tr>
 <tr>
 <td>+0xC50</td>
