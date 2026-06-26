@@ -22,7 +22,8 @@ Ball creation follows the same pattern as `CreateBadBall` (0x40BCA0):
 6. `ball+0x18 = -1` sets player_index to none (debris ball)
 7. Player's exact velocity vector is copied (same direction and speed)
 8. Radius stays at `Ball_InitPhysicsDefaults` default (35.0) — not player radius
-9. Ball is added to `scene+0x29D4` (bad_balls_list) and `scene+0x2DEC` (all_balls_list)
+9. AI tuning: HOME=100000, CHASE=100000, SPINDISTANCE=1 (always chase, no leash)
+10. Ball is added to `scene+0x29D4` (bad_balls_list) and `scene+0x2DEC` (all_balls_list)
 
 Key detection: `GetAsyncKeyState('B')` polled in a background thread at 16ms intervals, edge-triggered (only spawns on key-down transition).
 
