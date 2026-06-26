@@ -152,14 +152,14 @@ When ball touches floor geometry:
 - SKIPS boost counter increment — can't charge boost while falling
 - Jump target: `0x40743D` which goes to player_index check
 
-### How Dizzy Affects Collision Direction
+### How is_shrunk Affects Collision Direction
 
-**The collision normal is NOT modified when dizzy.** The collision tree is built and queried identically regardless of the dizzy flag. The direction vector flows through the same reflection/friction code. The dizzy flag only affects:
+**The collision normal is NOT modified when shrunk.** The collision tree is built and queried identically regardless of the is_shrunk flag. The direction vector flows through the same reflection/friction code. The is_shrunk flag only affects:
 
-1. **Camera**: No `Scene_SetCamera` call when dizzy (camera stays at last position)
-2. **Boost**: No boost counter accumulation when dizzy
-3. **Friction**: Different spin friction calculation (0.25× multiplier at 0x4CF380 when dizzy vs normal friction)
-4. **Force**: 0.75× multiplier on all applied forces when dizzy
+1. **Camera**: No `Scene_SetCamera` call when shrunk (camera stays at last position)
+2. **Boost**: No boost counter accumulation when shrunk
+3. **Friction**: Different spin friction calculation (0.25× multiplier at 0x4CF380 when shrunk vs normal friction)
+4. **Force**: 0.75× multiplier on all applied forces when shrunk
 
 ---
 
