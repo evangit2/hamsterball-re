@@ -31,7 +31,7 @@ alloc(mesh_trode, 4)
 alloc(NeonRenderCave, 1024)
 alloc(NeonLighting, 4)
 alloc(NeonAmbient, 4)
-alloc(light_data, 88)
+alloc(light_data, 104)
 alloc(saved_gfx, 4)
 
 registersymbol(SpawnNeon)
@@ -93,9 +93,10 @@ NeonAmbient:
 saved_gfx:
   dd 0
 
-// --- D3DLIGHT8 structure (88 bytes) ---
+// --- D3DLIGHT8 structure (104 bytes) ---
 // Pre-filled with a cool white-cyan point light.
 // Position (offset 52-60) is updated per-frame from ball coords.
+// Layout: Type(4) + Diffuse(16) + Specular(16) + Ambient(16) + Position(12) + Direction(12) + Range(4) + Falloff(4) + Att0(4) + Att1(4) + Att2(4) + Theta(4) + Phi(4) = 104
 light_data:
   dd 00000001       //  0: Type = D3DLIGHT_POINT (1)
   dd 3F4CCCCD       //  4: Diffuse.r = 0.8
@@ -113,12 +114,16 @@ light_data:
   dd 00000000       // 52: Position.x (updated per frame)
   dd 00000000       // 56: Position.y (updated per frame)
   dd 00000000       // 60: Position.z (updated per frame)
-  dd 43FA0000       // 64: Range = 500.0
-  dd 00000000       // 68: Attenuation0 = 0.0 (no constant)
-  dd 3C23D70A       // 72: Attenuation1 = 0.02 (linear falloff)
-  dd 00000000       // 76: Attenuation2 = 0.0
-  dd 00000000       // 80: Theta = 0.0 (spot only)
-  dd 00000000       // 84: Phi = 0.0 (spot only)
+  dd 00000000       // 64: Direction.x = 0.0 (unused for point light)
+  dd 00000000       // 68: Direction.y = 0.0
+  dd 00000000       // 72: Direction.z = 0.0
+  dd 43FA0000       // 76: Range = 500.0
+  dd 00000000       // 80: Falloff = 0.0 (unused for point light)
+  dd 00000000       // 84: Attenuation0 = 0.0 (no constant)
+  dd 3C23D70A       // 88: Attenuation1 = 0.02 (linear falloff)
+  dd 00000000       // 92: Attenuation2 = 0.0
+  dd 00000000       // 96: Theta = 0.0 (spot only)
+  dd 00000000       //100: Phi = 0.0 (spot only)
 
 // ==========================================
 // LABELS
