@@ -1,28 +1,28 @@
 // ═══════════════════════════════════════════════════════════════════════
-// SHAPESHIFT MOD v2 — Transform Player 1 into 8-Ball / BadBall
-// Fixes: black ball, dark lighting, wrong size/speed, crash on disable
+// SHAPESHIFT MOD v3 — Transform Player 1 into 8-Ball / BadBall
+// Fixes: black ball, dark lighting, crash on disable
 //
-// ROOT CAUSE OF ISSUES (traced from binary):
-//   1. BLACK BALL: Ball_Render_AI (0x402DE0) checks ball+0xC80 (dark mode
-//      flag). When set to 1, it reads ball+0xC88/C8C/C90 (viewport clip
-//      matrix) to set ambient color. Player balls DON'T have these fields
-//      initialized (only Ball_ctor sets them, not Ball_ctor2) → garbage
-//      values → ambient=black → ball renders invisible/dark.
-//      FIX: Don't set +0xC80 on player ball. The AI render function works
-//      fine without it — it just renders the 8Ball mesh normally.
+// ROOT CAUSE ANALYSIS (traced from binary):
 //
-//   2. DARK LIGHTING: Same root cause. +0xC80=1 triggers the dark mode
-//      path which sets ambient=black after rendering. Removing +0xC80
-//      fixes both issues.
+//   1. BLACK BALL: Ball_Render_AI (0x402DE0) renders the 8Ball mesh from
+//      App+0x268, but does NOT call SetMaterial or set D3DRS_AMBIENT.
+//      The player render (0x403DC0) calls SetMaterial every frame.
+//      When we swap vtable[2] to AI render, the 8Ball mesh uses whatever
+//      material was left from the previous render — often a black material.
+//      FIX: Wrap Ball_Render_AI in a function that sets gfx+0x730 (ambient)
+//      to white (0xFFFFFFFF) before rendering, then restores it after.
+//      This makes the 8Ball mesh visible with full lighting.
 //
-//   3. WRONG SIZE/SPEED: Player balls have radius=26.0, max_speed=5.0.
-//      AI 8-balls have radius=35.0, max_speed=6.0 (Ball_InitPhysicsDefaults).
-//      FIX: Swap these values when transforming.
+//   2. DARK LIGHTING: Was caused by v1 setting ball+0xC80=1 (dark mode flag).
+//      v2 already removed this. v3 adds the ambient wrapper to ensure
+//      consistent lighting — the wrapper saves/restores gfx+0x730 so the
+//      white ambient only applies during the 8Ball mesh render, not globally.
 //
-//   4. CRASH ON DISABLE: When the CEA script is disabled, the hook code
-//      is removed and g_CustomVtable is freed. But ball+0x00 still points
-//      to the freed custom vtable → crash on next vtable call.
-//      FIX: In DISABLE, restore ball+0x00 to 0x4CF314 BEFORE freeing memory.
+//   3. CRASH ON DISABLE: When the CEA script is disabled, g_CustomVtable
+//      was deallocated while ball+0x00 still pointed to it. Next vtable
+//      call → jump to freed memory → crash.
+//      FIX: In DISABLE, use createthread to run cleanup code that restores
+//      ball+0x00 to 0x4CF314 and physics values BEFORE any dealloc.
 //
 // PHYSICS VALUES:
 //   Player (Ball_ctor2):    radius(+0x284)=26.0 (0x41D00000), max_speed(+0x188)=5.0 (0x40A00000)
@@ -43,16 +43,65 @@ alloc(g_PlayerBall, 4)
 alloc(g_ShapeState, 4)
 alloc(g_CustomVtable, 84)
 alloc(shapeshift_hook, 256)
+alloc(shapeshift_render_wrapper, 128)
 
 registersymbol(g_PlayerBall)
 registersymbol(g_ShapeState)
 registersymbol(g_CustomVtable)
 
-// ── Custom vtable: player vtable copy with vtable[2] = AI render ──────
+// ── Init globals ───────────────────────────────────────────────────────
+g_PlayerBall:
+  dd 00000000
+
+g_ShapeState:
+  dd 00000000
+
+// ═══════════════════════════════════════════════════════════════════════
+// RENDER WRAPPER: sets white ambient before AI render, restores after
+// Called as vtable[2] — ECX = ball (thiscall)
+//
+// Ball_Render_AI (0x402DE0) renders the 8Ball mesh (App+0x268) but does
+// NOT set any material or ambient color. Without this wrapper, the mesh
+// inherits whatever material was left by the previous render → often black.
+// The wrapper temporarily sets gfx+0x730 (D3DRS_AMBIENT) to white so the
+// mesh is fully lit, then restores the original ambient after rendering.
+// ═══════════════════════════════════════════════════════════════════════
+shapeshift_render_wrapper:
+  // ECX = ball (thiscall)
+  push ebx              // save callee-saved registers
+  push esi
+  mov esi, ecx           // ESI = ball
+
+  // Get gfx device: gfx = *(*(ball+0x10) + 0x174)
+  mov ebx, [esi+0x10]     // EBX = App
+  mov ebx, [ebx+0x174]    // EBX = gfx device
+
+  // Save original ambient (gfx+0x730) on stack
+  push dword ptr [ebx+0x730]
+
+  // Set white ambient — makes 8Ball mesh fully lit
+  mov dword ptr [ebx+0x730], FFFFFFFF
+
+  // Call Ball_Render_AI (0x402DE0) with ECX = ball
+  mov ecx, esi
+  mov eax, 00402DE0
+  call eax
+
+  // Restore original ambient
+  pop dword ptr [ebx+0x730]
+
+  // Restore callee-saved registers
+  pop esi
+  pop ebx
+  ret
+
+// ═══════════════════════════════════════════════════════════════════════
+// CUSTOM VTABLE: player vtable copy with vtable[2] = render wrapper
+// ═══════════════════════════════════════════════════════════════════════
 g_CustomVtable:
   dd 00402A50                    // [0] dtor (player)
   dd 004015B0                    // [1] SetupCollisionRender (player)
-  dd 00402DE0                    // [2] Ball Render = AI 8-BALL RENDER ← PATCHED
+  dd shapeshift_render_wrapper   // [2] Ball Render = WRAPPER ← PATCHED
   dd 00402A70                    // [3] GetTransform (shared)
   dd 00405E00                    // [4] Ball_Update (player) ← KEEPS INPUT
   dd 00401590                    // [5] sub (shared)
@@ -71,13 +120,6 @@ g_CustomVtable:
   dd 00457C90                    // [18]
   dd 00457CC0                    // [19]
   dd 00457CF0                    // [20]
-
-// ── Init globals ───────────────────────────────────────────────────────
-g_PlayerBall:
-  dd 00000000
-
-g_ShapeState:
-  dd 00000000
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK: Ball_Update entry (0x00405E22)
@@ -104,7 +146,7 @@ shapeshift_hook:
   // SHAPESHIFT ON: transform to 8-Ball
   // ═════════════════════════════════════════════════════════════════════
 
-  // 1. Swap vtable to custom (AI render + player update)
+  // 1. Swap vtable to custom (wrapper render + player update)
   mov eax, g_CustomVtable
   mov [esi], eax
 
@@ -113,9 +155,6 @@ shapeshift_hook:
 
   // 3. Set AI physics: max_speed(+0x188) = 6.0 (0x40C00000)
   mov dword ptr [esi+0x188], 40C00000
-
-  // 4. DO NOT set ball+0xC80 — it causes black ball + dark lighting
-  //    The AI render works fine without it
 
   jmp shapeshift_done
 
@@ -154,30 +193,35 @@ Ball_Update_Entry:
   db 8B 86 5C 0C 00 00
 
 // ── CRASH FIX: restore ball vtable BEFORE freeing memory ──────────────
-// g_PlayerBall holds the last known P1 ball pointer.
-// We must write 0x4CF314 back to ball+0x00 before deallocating g_CustomVtable,
-// otherwise the game crashes when it tries to call through the freed vtable.
-alloc(neon_cleanup, 64)
-neon_cleanup:
+// createthread runs cleanup code that restores ball+0x00 to player vtable
+// and physics values BEFORE deallocating g_CustomVtable
+alloc(shapeshift_cleanup, 128)
+shapeshift_cleanup:
   mov eax, [g_PlayerBall]
   test eax, eax
-  jz neon_cleanup_done
+  jz shapeshift_cleanup_done
+
+  // Restore vtable pointer
   mov dword ptr [eax], 004CF314
-  // Also restore player physics values
+
+  // Restore player physics: radius = 26.0
   mov dword ptr [eax+0x284], 41D00000
+
+  // Restore player physics: max_speed = 5.0
   mov dword ptr [eax+0x188], 40A00000
-neon_cleanup_done:
+
+shapeshift_cleanup_done:
   ret
 
-call neon_cleanup
-
-dealloc(neon_cleanup)
+createthread(shapeshift_cleanup)
 
 // ── Cleanup ────────────────────────────────────────────────────────────
 unregistersymbol(g_PlayerBall)
 unregistersymbol(g_ShapeState)
 unregistersymbol(g_CustomVtable)
 
+dealloc(shapeshift_cleanup)
+dealloc(shapeshift_render_wrapper)
 dealloc(shapeshift_hook)
 dealloc(g_CustomVtable)
 dealloc(g_ShapeState)
@@ -188,7 +232,8 @@ dealloc(g_PlayerBall)
 //   Numpad 1 → Set g_ShapeState = 1 (transform to 8-Ball)
 //   Numpad 0 → Set g_ShapeState = 0 (revert to hamster ball)
 //
-// When ON:  vtable[2]=AI render (8Ball mesh), radius=35.0, max_speed=6.0
+// When ON:  vtable[2]=render wrapper (8Ball mesh + white ambient),
+//           radius=35.0, max_speed=6.0
 // When OFF: vtable[2]=player render (Sphere+hamster), radius=26.0, max_speed=5.0
 // Player 1 retains FULL CONTROL at all times (vtable[4]=Ball_Update, player_index=0)
 // ═══════════════════════════════════════════════════════════════════════
