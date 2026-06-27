@@ -1,0 +1,188 @@
+// ═══════════════════════════════════════════════════════════════════════
+// SHAPESHIFT MOD — Transform Player 1 into different entities
+// First form: 8-Ball / BadBall (physical + visual identity swap)
+//
+// HOW IT WORKS:
+//   The player ball has TWO vtables that control behavior:
+//     - Player vtable (0x4CF314): vtable[2]=Player Render (Sphere mesh+hamster)
+//                                 vtable[4]=Ball_Update (physics + keyboard input)
+//     - AI vtable (0x4CF3A0):    vtable[2]=AI Render (8Ball mesh)
+//                                 vtable[4]=Ball_AI_ChaseNearest (AI targeting)
+//
+//   To shapeshift P1 into an 8-Ball WITHOUT losing player control:
+//   1. Copy the player vtable to a writable buffer
+//   2. Patch ONLY vtable[2] (render) to the AI Ball_Render (0x00402DE0)
+//   3. Keep vtable[4] = Ball_Update (0x00405E00) so input/physics still work
+//   4. Swap ball+0x00 (vtable ptr) between original and custom vtable
+//
+//   Result: Player 1 looks like an 8-Ball, but controls identically to normal.
+//   The 8Ball mesh (App+0x268, loaded at startup as "Meshes\8Ball") renders
+//   instead of the Sphere mesh (App+0x244).
+//
+// HOTKEYS:
+//   Numpad 1 = Transform to 8-Ball (toggle ON)
+//   Numpad 0 = Revert to normal hamster ball (toggle OFF)
+//   Numpad 2 = Toggle (flip between forms)
+//
+// HOOK POINT: Ball_Update entry at 0x00405E22
+//   Original: MOV EAX, [ESI+0xC5C]
+//   We intercept ESI (ball pointer) and save it for player 1 (ball+0x18==0)
+//
+// BALL STRUCT KEY OFFSETS:
+//   +0x00  vtable ptr     (4 bytes) — what we swap
+//   +0x10  App*            (4 bytes) — dereferenced by render for mesh table
+//   +0x18  player_index   (4 bytes) — 0=P1, -1=AI. We check this to find P1
+//   +0x281 is_player_ctrl (1 byte)  — keep as 1 for player input
+//   +0x754 mesh_state     (4 bytes) — 0=Sphere (player render uses this)
+//   +0xC50 speed_float    (4 bytes) — per-frame physics
+//
+// VTABLE LAYOUT (4 bytes per entry):
+//   [0] +0x00 = dtor                    0x00402A50 (player) / 0x004027F0 (AI)
+//   [1] +0x04 = SetupCollisionRender    0x004015B0 (player) / 0x00405100 (AI)
+//   [2] +0x08 = Ball Render             0x00403DC0 (player) / 0x00402DE0 (AI) ← SWAP THIS
+//   [3] +0x0C = GetTransform            0x00402A70 (shared)
+//   [4] +0x10 = Update                  0x00405E00 (player) / 0x00408390 (AI) ← KEEP PLAYER
+//   [5] +0x14 = sub                     0x00401590 (shared)
+//   [6] +0x18 = ApplyForce              0x004016F0 (player) / 0x00402650 (AI)
+//   [7] +0x1C = RenderWithCollision     0x00402C10 (shared)
+//   [8] +0x20 = SplitAndExplode         0x00409050 (player) / 0x00409480 (AI)
+//   ... entries [9]-[20] follow
+//
+// ═══════════════════════════════════════════════════════════════════════
+
+[ENABLE]
+
+// ── Constants ──────────────────────────────────────────────────────────
+aobscanmodule(Ball_Update_Entry, Hamsterball.exe, 8B 86 5C 0C 00 00 D9 86 50 0C 00 00 48 D8 0D 40 F5 4C 00 33)
+
+// Player vtable: 21 function pointers = 84 bytes (0x4CF314 to 0x4CF367)
+// AI render function: 0x00402DE0
+// Player render function: 0x00403DC0
+
+alloc(g_PlayerBall, 4)           // Global: pointer to P1's ball struct
+alloc(g_ShapeState, 4)           // Global: 0=normal, 1=8ball
+alloc(g_CustomVtable, 84)        // Custom vtable copy with patched render
+alloc(shapeshift_hook, 256)      // Code cave for Ball_Update hook
+
+registersymbol(g_PlayerBall)
+registersymbol(g_ShapeState)
+registersymbol(g_CustomVtable)
+
+// ── Initialize custom vtable (copy player vtable, patch entry [2]) ────
+g_CustomVtable:
+  // Copy 21 entries (84 bytes) from player vtable 0x4CF314
+  // Entry [2] at offset +0x08 will be patched to 0x00402DE0 (AI render)
+  dd 00402A50                    // [0] +0x00 dtor (player)
+  dd 004015B0                    // [1] +0x04 SetupCollisionRender (player)
+  dd 00402DE0                    // [2] +0x08 Ball Render (AI 8-BALL!) ← PATCHED
+  dd 00402A70                    // [3] +0x0C GetTransform (shared)
+  dd 00405E00                    // [4] +0x10 Ball_Update (player) ← KEEPS INPUT
+  dd 00401590                    // [5] +0x14 sub (shared)
+  dd 004016F0                    // [6] +0x18 ApplyForce (player)
+  dd 00402C10                    // [7] +0x1C RenderWithCollision (shared)
+  dd 00409050                    // [8] +0x20 SplitAndExplode (player)
+  dd 00401640                    // [9] +0x24
+  dd 00457B10                    // [10]+0x28
+  dd 00457B50                    // [11]+0x2C
+  dd 00457A70                    // [12]+0x30
+  dd 00457A50                    // [13]+0x34
+  dd 00401000                    // [14]+0x38
+  dd 00457B80                    // [15]+0x3C
+  dd 00457BB0                    // [16]+0x40
+  dd 00457C60                    // [17]+0x44
+  dd 00457C90                    // [18]+0x48
+  dd 00457CC0                    // [19]+0x4C
+  dd 00457CF0                    // [20]+0x50
+
+// ── Initialize globals ────────────────────────────────────────────────
+g_PlayerBall:
+  dd 00000000
+
+g_ShapeState:
+  dd 00000000
+
+// ── Hook: Ball_Update entry (0x00405E22) ───────────────────────────────
+// Original instruction: MOV EAX, [ESI+0xC5C]  (6 bytes: 8B 86 5C 0C 00 00)
+// ESI = ball pointer (set at 0x00405E20: MOV ESI,ECX)
+//
+// We intercept to save ESI as the player ball pointer (if P1)
+shapeshift_hook:
+  push eax
+
+  // Check if this is player 1: ball+0x18 == 0
+  mov eax, [esi+0x18]
+  test eax, eax
+  jnz shapeshift_hook_not_p1
+
+  // This is P1's ball — save pointer
+  mov [g_PlayerBall], esi
+
+  // Check if shapeshift is active
+  mov eax, [g_ShapeState]
+  test eax, eax
+  jz shapeshift_hook_revert
+
+  // Shapeshift ON: swap vtable to custom (8-Ball render)
+  mov eax, g_CustomVtable       // load address of custom vtable
+  mov [esi], eax                // ball+0x00 = custom vtable
+  jmp shapeshift_hook_restore
+
+shapeshift_hook_revert:
+  // Shapeshift OFF: restore original player vtable
+  mov dword ptr [esi], 004CF314    // ball+0x00 = player vtable (original)
+  jmp shapeshift_hook_restore
+
+shapeshift_hook_not_p1:
+  // Not player 1 — leave AI balls alone
+
+shapeshift_hook_restore:
+  pop eax
+
+  // Restore original instruction: MOV EAX, [ESI+0xC5C]
+  mov eax, [esi+0x00000C5C]
+
+  // Jump back to original code after the hooked instruction
+  jmp 00405E28
+
+// ── Install hook ──────────────────────────────────────────────────────
+Ball_Update_Entry:
+  jmp shapeshift_hook
+  nop
+
+[DISABLE]
+
+// ── Restore original code ─────────────────────────────────────────────
+Ball_Update_Entry:
+  db 8B 86 5C 0C 00 00
+
+// ── Cleanup ───────────────────────────────────────────────────────────
+unregistersymbol(g_PlayerBall)
+unregistersymbol(g_ShapeState)
+unregistersymbol(g_CustomVtable)
+
+dealloc(shapeshift_hook)
+dealloc(g_CustomVtable)
+dealloc(g_ShapeState)
+dealloc(g_PlayerBall)
+
+// ═══════════════════════════════════════════════════════════════════════
+// HOTKEY BINDINGS — set these in Cheat Engine's table:
+//
+// ┌─────────────────┬──────────────────────────────────────────────────┐
+// │ Hotkey          │ Action                                          │
+// ├─────────────────┼──────────────────────────────────────────────────┤
+// │ Numpad 1        │ Set g_ShapeState = 1 (transform to 8-Ball)       │
+// │ Numpad 0        │ Set g_ShapeState = 0 (revert to hamster ball)  │
+// │ Numpad 2        │ Toggle g_ShapeState between 0 and 1            │
+// └─────────────────┴──────────────────────────────────────────────────┘
+//
+// The vtable swap happens AUTOMATICALLY each frame in the Ball_Update hook.
+// When g_ShapeState=1 → hook sets ball+0x00 = g_CustomVtable (8-Ball render)
+// When g_ShapeState=0 → hook sets ball+0x00 = 0x4CF314 (player vtable, original)
+//
+// Player 1 retains FULL CONTROL at all times:
+//   - vtable[4] stays as Ball_Update (0x00405E00) → physics + keyboard input
+//   - player_index (ball+0x18) stays as 0 → input routed to P1
+//   - is_player_ctrl (ball+0x281) stays as 1 → player controlled
+// Only vtable[2] (render function) changes → visual appearance swaps
+// ═══════════════════════════════════════════════════════════════════════
