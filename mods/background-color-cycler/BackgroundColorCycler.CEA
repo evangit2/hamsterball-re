@@ -1,123 +1,134 @@
-{ ============================================================
-  Background Color Cycler v1
-  Cycles the ambient scene color every ~3 seconds
-  Colors: Blue -> Green -> Yellow -> White -> Black -> Red -> repeat
-  Works in ALL races and arenas
-
-  Hook: Graphics_RenderScene ambient read at 0x454C97
-  Original: MOV ESI, [EBP+0x730]  (gfx+0x730 = D3DRS_AMBIENT color)
-
-  Timer: 180 frames ~= 3 seconds at 60fps
-  Adjust bgcolor_timer in CE address list to change interval
-  Lower = faster cycling, Higher = slower cycling
-
-  Register safety: EAX, EDX clobbered (both dead at hook point)
-  No PUSHAD/POPFD needed -- only dead registers and flags used
-
-  NOTE: Mutually exclusive with GlobalNeonEffect (same hook address).
-  Enable one OR the other, never both simultaneously.
-  ============================================================ }
+// BackgroundColorCycler v2 — Cycles the actual BACKGROUND (fog) color
+// 
+// HOOK POINT: 0x454CEE (MOV ESI, [EBP+0x738]) inside Graphics_RenderScene
+//   EBP = gfx pointer
+//   gfx+0x738 = cached D3DRS_FOGCOLOR (the background/sky color)
+//   After this read, the game calls SetRenderState(0x22, ESI) at 0x454D00
+//
+// DEEP ANALYSIS: How background colors work in Hamsterball
+//   1. Level_InitScene (0x40B090) calls Color_RandomRGBA() to pick a random
+//      fog color, then calls Gfx_SetVTable22 (0x453B20) which stores it at
+//      gfx+0x738 AND calls SetRenderState(D3DRS_FOGCOLOR=0x22, color).
+//   2. Every frame, Graphics_RenderScene (0x454BC0) reads gfx+0x738 at
+//      0x454CEE, then calls SetRenderState(0x22, fogColor) at 0x454D00.
+//   3. D3DRS_FOGCOLOR fills the background (sky, distant areas) with this color.
+//
+// This script intercepts the per-frame read at 0x454CEE and replaces the
+// fog color with a cycling palette of 15 colors. The game's own
+// SetRenderState(0x22, ...) call at 0x454D00 then uses our cycled color.
+//
+// The old v1 script hooked Ball_Update and wrote to gfx+0x730 (ambient
+// lighting) — that changed object brightness, NOT the actual background.
+// This v2 hooks the REAL background color source.
+//
+// REGISTER SAFETY:
+//   EBP = gfx (preserved, not touched)
+//   ESI = output (set to our cycled color)
+//   EAX, ECX, EDX = clobbered (all reloaded by game after hook point:
+//     EAX reloaded at 0x454CF4, ECX at 0x454CFA, EDX not used after)
+//   EBX, EDI = not touched
+//
+// TIMER: bgcolor_timer (default 180 = ~3 seconds at 60fps)
+//   Edit this value in the CE address list to change cycle speed.
 
 [ENABLE]
 
 alloc(bgcolor_cave, 256)
-alloc(bgcolor_colors, 28)    // 7 dwords: 6 colors + terminator
-alloc(bgcolor_frame, 4)       // frame counter
-alloc(bgcolor_index, 4)       // current color index
-alloc(bgcolor_timer, 4)       // frames per color cycle (configurable)
+alloc(bgcolor_colors, 64)
+alloc(bgcolor_frame, 4)
+alloc(bgcolor_index, 4)
+alloc(bgcolor_timer, 4)
 
-registersymbol(bgcolor_cave)
-registersymbol(bgcolor_colors)
 registersymbol(bgcolor_frame)
 registersymbol(bgcolor_index)
 registersymbol(bgcolor_timer)
 
-// D3DCOLOR format: 0xAARRGGBB (AA=alpha, RR=red, GG=green, BB=blue)
-// All colors use full alpha (0xFF) for opaque ambient
+// 15 background colors in D3DCOLOR format (0xAARRGGBB)
 bgcolor_colors:
-  dd FF0000FF    // Blue
-  dd FF00FF00    // Green
-  dd FFFFFF00    // Yellow
-  dd FFFFFFFF    // White
-  dd FF000000    // Black
-  dd FFFF0000    // Red
-  dd 00000000    // Terminator (0 = wrap to start)
+ dd FF000000  // 0  Black
+ dd FF0000FF  // 1  Blue
+ dd FF00FF00  // 2  Green
+ dd FFFFFF00  // 3  Yellow
+ dd FFFFFFFF  // 4  White
+ dd FFFF0000  // 5  Red
+ dd FF00FFFF  // 6  Cyan
+ dd FFFF00FF  // 7  Magenta
+ dd FF808080  // 8  Gray
+ dd FFFF8000  // 9  Orange
+ dd FF8000FF  // 10 Purple
+ dd FF0080FF  // 11 Light Blue
+ dd FF80FF00  // 12 Lime
+ dd FFFF0080  // 13 Pink
+ dd FF008080  // 14 Teal
+ dd 00000000  //    Terminator (wrap to 0)
 
 bgcolor_frame:
-  dd 0
+ dd 0
 
 bgcolor_index:
-  dd 0
+ dd 0
 
 bgcolor_timer:
-  dd #180        // 180 frames ~= 3 seconds at 60fps
+ dd 180           // ~3 seconds at 60fps
+
+label(bgcolor_write)
+label(bgcolor_store)
 
 bgcolor_cave:
-  // EBP = gfx struct pointer (callee-preserved, do NOT modify)
-  // EAX, EDX = dead at this point (loaded fresh after 0x454C9D)
-  // Original instruction: MOV ESI, [EBP+0x730]  (6 bytes)
-
-  // --- Increment frame counter ---
+  // --- Frame counter ---
   mov eax, [bgcolor_frame]
   inc eax
   mov [bgcolor_frame], eax
-
-  // Check if timer elapsed
+  
   cmp eax, [bgcolor_timer]
-  jl bgcolor_keep
-
-  // --- Timer elapsed: advance to next color ---
-  mov dword ptr [bgcolor_frame], 0    // reset counter
+  jl bgcolor_write         // not expired yet, keep current color
+  
+  // --- Timer expired: advance palette index ---
+  mov dword ptr [bgcolor_frame], 0
   mov eax, [bgcolor_index]
-  inc eax                              // next index
-
-  // Check for terminator (0 = wrap to start)
+  inc eax
+  
+  // Check if next color is terminator (0)
   mov edx, bgcolor_colors
-  mov edx, [edx + eax*4]
+  mov edx, [edx + eax * 4]
   test edx, edx
-  jnz bgcolor_store
-  xor eax, eax                         // wrap to 0
+  jnz bgcolor_store        // valid color, use this index
+  xor eax, eax             // terminator: wrap to index 0
 
 bgcolor_store:
   mov [bgcolor_index], eax
 
-bgcolor_keep:
-  // --- Write current cycling color to gfx+0x730 ---
-  // Overwrites the game's ambient color with our cycling value.
-  // The game reads it immediately after and applies via
-  // SetRenderState(D3DRS_AMBIENT=0x8B, color)
+bgcolor_write:
+  // --- Load current color and write to gfx+0x738 ---
   mov eax, [bgcolor_index]
   mov edx, bgcolor_colors
-  mov edx, [edx + eax*4]
-  mov [ebp+0x730], edx
-
-  // --- Execute original instruction ---
-  mov esi, [ebp+0x730]
-
-  // --- Return to 0x454C9D ---
-  jmp 00454C9D
+  mov edx, [edx + eax * 4]
+  
+  // Write cycled color to fog color cache
+  mov [ebp + 0x738], edx
+  // Set ESI = our color (game pushes ESI to SetRenderState at 0x454CFC)
+  mov esi, edx
+  
+  // Jump back to 0x454CF4 (after original 6-byte instruction)
+  jmp 00454CF4
 
 // --- Hook installation ---
-// Original bytes: 8B B5 30 07 00 00  (MOV ESI, [EBP+0x730])
-// Patched bytes:  E9 XX XX XX XX 90  (JMP bgcolor_cave + NOP)
-00454C97:
+// Original: 8B B5 38 07 00 00 = MOV ESI, [EBP+0x738]
+// Replace:  E9 xx xx xx xx 90 = JMP bgcolor_cave + NOP (6 bytes)
+00454CEE:
   jmp bgcolor_cave
   nop
 
 [DISABLE]
 
-// --- Restore original instruction ---
-// 8B B5 30 07 00 00 = MOV ESI, [EBP+0x730]
-00454C97:
-  mov esi, [ebp+0x730]
+00454CEE:
+  db 8B B5 38 07 00 00
 
 dealloc(bgcolor_cave)
 dealloc(bgcolor_colors)
 dealloc(bgcolor_frame)
 dealloc(bgcolor_index)
 dealloc(bgcolor_timer)
-unregistersymbol(bgcolor_cave)
-unregistersymbol(bgcolor_colors)
 unregistersymbol(bgcolor_frame)
 unregistersymbol(bgcolor_index)
 unregistersymbol(bgcolor_timer)
