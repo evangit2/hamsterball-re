@@ -665,17 +665,17 @@ static void __thiscall universal_factory(
     original(board, refName, outObj, outCol, refEntry);
 
     if (*outObj != NULL) {
-        /* Original factory handled it — create fresh instance if static-mesh */
-        if (is_static_mesh_object(refName)) {
-            const char* meshPath = static_mesh_path(refName);
-            if (meshPath) {
-                void* newMesh = create_mesh_instance(board, meshPath);
-                if (newMesh) {
-                    *outObj = newMesh;
-                    g_stats->clone_count++;
-                }
-            }
-        }
+        /* Original factory handled it — return board slot pointer directly.
+         *
+         * Static-mesh objects (SWIRL, WATERWHEEL, BRIDGE) store their mesh,
+         * collision, and position data at fixed board offsets. The board's
+         * update function rotates/animates via these slots. Replacing outObj
+         * with a fresh MeshWorld breaks this link — the board updates the
+         * slot, not our instance, so behavior and collision are lost.
+         *
+         * We leave *outObj as the board slot pointer. This means only 1
+         * instance per board (same as the original Dizzy level), but all
+         * behavior, spinning, and collision work correctly. */
         log_ref(refName, "OK_ORIG", "original");
         stats_record(refName, 1, 0);
         return;
@@ -718,17 +718,11 @@ static void __thiscall universal_factory(
         sf->func(board, refName, outObj, outCol, refEntry);
 
         if (*outObj != NULL) {
-            /* This factory handled it — create fresh instance if static-mesh */
-            if (is_static_mesh_object(refName)) {
-                const char* meshPath = static_mesh_path(refName);
-                if (meshPath) {
-                    void* newMesh = create_mesh_instance(board, meshPath);
-                    if (newMesh) {
-                        *outObj = newMesh;
-                        g_stats->clone_count++;
-                    }
-                }
-            }
+            /* This factory handled it — return board slot pointer directly.
+             *
+             * See comment above: static-mesh objects are tied to board slots.
+             * Don't replace outObj — the board manages behavior + collision
+             * through fixed offsets. */
 
             /* KEEP injected slots on HIT — the board may need them for
              * rendering, updates, or additional refs of the same type.
