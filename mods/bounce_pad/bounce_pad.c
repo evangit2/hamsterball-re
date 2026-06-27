@@ -27,6 +27,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <string.h>
+#include <math.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * BASS Proxy Exports
@@ -200,11 +201,26 @@ static void __fastcall hook_Dispatch(void *board, void *dummy,
                             /* Read Y velocity (negative = falling) */
                             float vy = *(float *)((char *)phys + PHYS_VEL_Y);
 
-                            /* Bounce: reverse Y velocity × factor
-                             * Fall at -30 → bounce at +24 (upward, 80%)
-                             * Fall at -10 → bounce at +8  (upward, 80%)
-                             * X and Z velocities are never touched */
-                            *(float *)((char *)phys + PHYS_VEL_Y) = -vy * BOUNCE_FACTOR;
+                            /* Bounce: set upward velocity proportional to |vy|
+                             *
+                             * CRITICAL: By the time DispatchCollisionEvents
+                             * runs, the physics engine has ALREADY called
+                             * phys->vtable[0x18]() TWICE — once for gravity
+                             * integration, once for collision response. The
+                             * second call may have ALREADY reflected vy from
+                             * negative (falling) to positive (bouncing).
+                             *
+                             * Using -vy * factor would be WRONG:
+                             *   If vy is already +15 (reflected) → -15*0.8 = -12
+                             *   → drives ball DOWN into ground!
+                             *
+                             * Using fabsf(vy) * factor is SAFE:
+                             *   If vy is -30 (falling)   → 30*0.8 = +24 (up) ✓
+                             *   If vy is +15 (reflected)  → 15*0.8 = +12 (up) ✓
+                             * Always bounces UP, proportional to speed magnitude.
+                             *
+                             * X and Z velocities are never touched. */
+                            *(float *)((char *)phys + PHYS_VEL_Y) = fabsf(vy) * BOUNCE_FACTOR;
 
                             /* Set cooldown to prevent retriggering */
                             *(int *)((char *)ball + BALL_COOLDOWN) = BOUNCE_COOLDOWN;
