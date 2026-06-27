@@ -1,30 +1,29 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v3 — Dark ambient + ball glow for ALL races/arenas
-// Based on XRow's working script + gfx+0x730 write fix
+// GLOBAL NEON EFFECT v4 — Pitch black scene + glowing ball for ALL races
 //
-// PROBLEM IN ORIGINAL: Hook 1 called SetRenderState(0x8B, 0) directly on
-// the D3D device, but did NOT write 0 to gfx+0x730. Then
-// Graphics_RenderScene (0x454BC0) ran and read gfx+0x730 (still the
-// ORIGINAL ambient value) → called SetRenderState(0x8B, original_value)
-// → overrode our dark ambient back to normal → scene was only "a bit darker"
-// instead of pitch black.
+// ROOT CAUSE ANALYSIS (why v3 didn't work):
+//   1. SCENE NOT DARK ENOUGH: gfx+0x730=0 only kills ambient light.
+//      D3D directional lights (from MESHWORLD Section 3) still illuminate
+//      the scene. Need to also disable D3DRS_LIGHTING (0x89).
+//   2. BALL NOT GLOWING: Entry hook called SetRenderState(AMBIENT, white)
+//      but NOT SetMaterial. D3D formula: FinalColor = Material.Diffuse×Light
+//      + Material.Ambient×AMBIENT + Emissive. Without SetMaterial,
+//      Material.Ambient=0 → 0×white=0 → no glow!
+//      FIX: Add SetMaterial(white diffuse+ambient+emissive).
+//      Emissive makes the ball self-illuminated regardless of lights/ambient.
 //
-// FIX: Also write 0 to gfx+0x730 so Graphics_RenderScene reads and applies
-// dark ambient. Also set gfx+0x734=1 (fog on) and gfx+0x738=0 (black fog)
-// for the full neon dark distance effect.
+// D3D RENDER STATES:
+//   0x8B = D3DRS_AMBIENT    (ambient light color)
+//   0x89 = D3DRS_LIGHTING   (0=disable all D3D lighting, 1=enable)
+//   0x1C = D3DRS_FOGENABLE
+//   0x22 = D3DRS_FOGCOLOR
 //
-// GFX DEVICE STRUCT:
-//   +0x154 = D3D device pointer
-//   +0x730 = ambient color (D3DRS_AMBIENT, render state 0x8B)
-//   +0x734 = fog enable (D3DRS_FOGENABLE, render state 0x1C)
-//   +0x738 = fog color (D3DRS_FOGCOLOR, render state 0x22)
+// D3D vtable offsets:
+//   0xA8 (index 42) = SetMaterial(D3DMATERIAL8*)
+//   0xC8 (index 50) = SetRenderState(state, value)
 //
-// HOOK POINTS:
-//   1. Ball_Update at 0x405E22 — force gfx+0x730=0 + fog=on/black
-//   2. Player Render Entry at 0x403DDF — set D3DRS_AMBIENT=white (ball glows)
-//   3. Player Render Exit at 0x4050D9 — set D3DRS_AMBIENT=0 (dark again)
-//
-// Enable/Disable only — no hotkey address needed.
+// BALL INIT: Ball_InitRenderState (0x402860) sets LIGHTING=1 + SPECULARENABLE=1
+// before each ball render. Hook 3 sets LIGHTING=0 after ball render exits.
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
@@ -33,27 +32,40 @@ alloc(neon_cave, 256)
 alloc(neon_glow_entry, 256)
 alloc(neon_glow_exit, 256)
 alloc(g_GfxDevice, 4)
+alloc(g_WhiteMaterial, 68)
 
 registersymbol(g_GfxDevice)
 
 g_GfxDevice:
   dd 00000000
 
+// D3DMATERIAL8 (68 bytes): white diffuse + ambient + emissive
+// Diffuse  (1,1,1,1) — reflects all direct light (when lighting enabled)
+// Ambient  (1,1,1,1) — reflects all ambient light
+// Specular (0,0,0,0)
+// Emissive (1,1,1,1) — self-illumination (works even with lighting off!)
+// Power    0
+g_WhiteMaterial:
+  dd 3F800000 3F800000 3F800000 3F800000    // Diffuse: 1,1,1,1
+  dd 3F800000 3F800000 3F800000 3F800000    // Ambient: 1,1,1,1
+  dd 00000000 00000000 00000000 00000000    // Specular: 0,0,0,0
+  dd 3F800000 3F800000 3F800000 3F800000    // Emissive: 1,1,1,1
+  dd 00000000                                // Power: 0
+
 label(skip_neon)
 label(skip_glow_entry)
 label(skip_glow_exit)
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 1: Ball_Update (0x405E22) — force dark ambient + black fog
+// HOOK 1: Ball_Update (0x405E22) — force dark ambient + disable lighting
 // ESI = ball pointer
-// gfx = *(*(ball+0x10) + 0x174)
 // ═══════════════════════════════════════════════════════════════════════
 neon_cave:
   push eax
   push ecx
   push edx
 
-  // Get gfx device: gfx = *(*(ball+0x10) + 0x174)
+  // Get gfx: gfx = *(*(ball+0x10) + 0x174)
   mov eax, [esi+0x10]
   test eax, eax
   jz skip_neon
@@ -61,96 +73,108 @@ neon_cave:
   test eax, eax
   jz skip_neon
 
-  // Write dark ambient to gfx struct so Graphics_RenderScene reads it
+  // Write to gfx struct so Graphics_RenderScene reads dark values
   mov dword ptr [eax+0x730], 0      // ambient = black
   mov byte ptr [eax+0x734], 1       // fog enabled
   mov dword ptr [eax+0x738], 0      // fog color = black
 
-  // Also call SetRenderState directly for immediate effect this frame
-  mov eax, [eax+0x154]              // D3D device
+  // Disable D3D lighting on the device → pitch black scene
+  mov eax, [eax+0x154]               // D3D device
   test eax, eax
   jz skip_neon
-  mov edx, [eax]                    // D3D vtable
-  push 0                            // value = 0 (black)
-  push 8B                           // state = D3DRS_AMBIENT
+  mov edx, [eax]                     // D3D vtable
+  push 0                             // value = 0 (disable)
+  push 89                            // state = D3DRS_LIGHTING
   push eax                           // this = D3D device
-  call dword ptr [edx+C8]           // SetRenderState(AMBIENT, 0)
+  call dword ptr [edx+C8]            // SetRenderState(LIGHTING, 0)
 
 skip_neon:
   pop edx
   pop ecx
   pop eax
 
-  // Original instruction: MOV EAX, [ESI+0xC5C]
+  // Original instruction
   mov eax, [esi+0x00000C5C]
   jmp 00405E28
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 2: Player Render Entry (0x403DDF) — set white ambient (ball glows)
-// EBP = ball (set at 0x403DDD)
+// HOOK 2: Player Render Entry (0x403DDF) — ball glow setup
+// EBP = ball
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_entry:
   push eax
   push ecx
+  push edx
 
-  // Get gfx device
+  // Get gfx
   mov eax, [ebp+0x10]
   test eax, eax
   jz skip_glow_entry
   mov ecx, [eax+0x174]
   test ecx, ecx
   jz skip_glow_entry
-
-  // Cache gfx for exit hook
   mov [g_GfxDevice], ecx
 
-  // Set white ambient via direct SetRenderState
-  mov eax, [ecx+0x154]              // D3D device
+  // SetMaterial(white) — emissive makes ball glow regardless of lights
+  mov eax, [ecx+0x154]               // D3D device
   test eax, eax
   jz skip_glow_entry
-  mov edx, [eax]                    // D3D vtable
-  push FFFFFFFF                     // value = white
+  mov edx, [eax]                     // D3D vtable
+  push g_WhiteMaterial               // material pointer
+  push eax                           // this = D3D device
+  call dword ptr [edx+0xA8]         // SetMaterial(d3d, &whiteMat)
+
+  // SetRenderState(AMBIENT, white)
+  push FFFFFFFF                      // value = white
   push 8B                           // state = D3DRS_AMBIENT
   push eax                          // this = D3D device
   call dword ptr [edx+C8]           // SetRenderState(AMBIENT, white)
 
 skip_glow_entry:
+  pop edx
   pop ecx
   pop eax
 
-  // Original instructions (9 bytes):
-  // MOV EAX, [EBP+0x10]
+  // Original instructions (9 bytes)
   mov eax, [ebp+0x10]
-  // MOV ECX, [EAX+0x174]
   mov ecx, [eax+0x174]
   jmp 00403DE8
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 3: Player Render Exit (0x4050D9) — restore dark ambient
+// HOOK 3: Player Render Exit (0x4050D9) — restore dark scene
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_exit:
   push eax
   push ecx
+  push edx
 
   mov ecx, [g_GfxDevice]
   test ecx, ecx
   jz skip_glow_exit
 
-  // Set dark ambient via direct SetRenderState
-  mov eax, [ecx+0x154]              // D3D device
+  mov eax, [ecx+0x154]               // D3D device
   test eax, eax
   jz skip_glow_exit
-  mov edx, [eax]                    // D3D vtable
-  push 0                            // value = black
-  push 8B                           // state = D3DRS_AMBIENT
-  push eax                          // this = D3D device
-  call dword ptr [edx+C8]           // SetRenderState(AMBIENT, 0)
+  mov edx, [eax]                     // D3D vtable
+
+  // SetRenderState(AMBIENT, 0) — dark ambient
+  push 0                             // value = black
+  push 8B                            // state = D3DRS_AMBIENT
+  push eax                           // this = D3D device
+  call dword ptr [edx+C8]            // SetRenderState(AMBIENT, 0)
+
+  // SetRenderState(LIGHTING, 0) — disable D3D lighting again
+  push 0                             // value = 0 (disable)
+  push 89                            // state = D3DRS_LIGHTING
+  push eax                           // this = D3D device
+  call dword ptr [edx+C8]            // SetRenderState(LIGHTING, 0)
 
 skip_glow_exit:
+  pop edx
   pop ecx
   pop eax
 
-  // Original instruction: MOV ECX, [ESP+0x12C]
+  // Original instruction
   mov ecx, [esp+0x0000012C]
   jmp 004050E0
 
@@ -170,7 +194,6 @@ skip_glow_exit:
 
 [DISABLE]
 
-// ── Restore original code ──────────────────────────────────────────────
 00405E22:
   db 8B 86 5C 0C 00 00
 
@@ -185,16 +208,11 @@ unregistersymbol(g_GfxDevice)
 dealloc(neon_glow_exit)
 dealloc(neon_glow_entry)
 dealloc(neon_cave)
+dealloc(g_WhiteMaterial)
 dealloc(g_GfxDevice)
 
 // ═══════════════════════════════════════════════════════════════════════
-// USAGE:
-//   1. Open this CEA in Cheat Engine
-//   2. Activate the script (Enable checkbox)
-//   3. Start any race or arena
-//   4. Everything goes pitch black, player ball glows white
-//   5. Disable to restore normal lighting
-//
-// NOTE: This mod hooks Ball_Update at 0x405E22 — same hook point as
-// the Shapeshift mod. Do NOT run both simultaneously.
+// USAGE: Enable script, start any race. Scene goes pitch black, ball glows.
+// Disable to restore normal lighting.
+// NOTE: Hooks Ball_Update at 0x405E22 — same as Shapeshift. Don't run both.
 // ═══════════════════════════════════════════════════════════════════════
