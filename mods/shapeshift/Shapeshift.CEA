@@ -1,81 +1,94 @@
+// ═══════════════════════════════════════════════════════════════════════
+// SHAPESHIFT v11 — Player balls render as 8Ball mesh
+//
+// ROOT CAUSE (why v10 didn't work):
+// v10's render wrapper called 0x403DC0 (Ball_RenderAI) — the SAME function
+// already at vtable[2]! It was a no-op! The comment said "Call Ball_Render
+// (0x403DC0)" but 0x403DC0 IS Ball_RenderAI, NOT Ball_Render.
+//
+// Ball_RenderAI (0x403DC0) uses App+0x244[ball+0x754] for mesh selection.
+// ball+0x754 defaults to 0 = Sphere. So the ball always rendered as Sphere.
+//
+// Ball_Render (0x402DE0) uses App+0x268 (8Ball mesh DIRECTLY), bypassing
+// the mesh index entirely. This gives the ball the 8Ball appearance.
+//
+// v11 FIX:
+// Change the wrapper to call Ball_Render (0x402DE0) instead of Ball_RenderAI
+// (0x403DC0). This renders the 8Ball mesh for all player balls.
+//
+// VTABLE LAYOUT (0x4CF314 = player ball in race):
+// [0] = 0x00402A50   [1] = 0x004015B0   [2] = 0x00403DC0 (Ball_RenderAI)
+// [3] = 0x00402A70   [4] = 0x00405E00 (Ball_Update)
+// [5] = 0x00401590   [6] = 0x004016F0   [7] = 0x00402C10
+// [8] = 0x00409050   [9] = 0x00401640   [10-20] = 0x00457B10..0x00457CF0
+//
+// Ball_Render (0x402DE0) rendering path:
+// 1. Graphics_BeginFrame(gfx)
+// 2. Ball_TestPlaneIntersection (visibility check)
+// 3. If visible: mesh draw via App+0x268 → 8Ball mesh
+// 4. Sprite_RenderQuad for shadow
+// 5. Graphics_BeginFrame(gfx, 0) — end frame
+// ═══════════════════════════════════════════════════════════════════════
+
 [ENABLE]
 
-alloc(g_PlayerBall, 4)
 alloc(g_CustomVtable, 84)
-alloc(g_WhiteMaterial, 68)
 alloc(shapeshift_hook, 256)
-alloc(shapeshift_render_wrapper, 512)
+alloc(shapeshift_render_wrapper, 256)
 
-registersymbol(g_PlayerBall)
-
-g_PlayerBall:
-  dd 00000000
-
-// D3DMATERIAL8 (68 bytes): white diffuse + ambient + emissive
-g_WhiteMaterial:
-  dd 3F800000 3F800000 3F800000 3F800000    // Diffuse: 1,1,1,1
-  dd 3F800000 3F800000 3F800000 3F800000    // Ambient: 1,1,1,1
-  dd 00000000 00000000 00000000 00000000    // Specular: 0,0,0,0
-  dd 3F800000 3F800000 3F800000 3F800000    // Emissive: 1,1,1,1
-  dd 00000000                                // Power: 0
+// Custom vtable: copy of 0x4CF314 with vtable[2] replaced
+g_CustomVtable:
+  dd 00402A50                  // [0] scalar deleting dtor
+  dd 004015B0                  // [1] InitPhysicsDefaults
+  dd shapeshift_render_wrapper // [2] ← REPLACED: Ball_Render (8Ball mesh)
+  dd 00402A70                  // [3]
+  dd 00405E00                  // [4] Ball_Update
+  dd 00401590                  // [5]
+  dd 004016F0                  // [6]
+  dd 00402C10                  // [7] Ball_RenderWithCollision
+  dd 00409050                  // [8]
+  dd 00401640                  // [9]
+  dd 00457B10                  // [10] Gfx_SetPosition
+  dd 00457B50                  // [11] Gfx_SetPositionAndRender
+  dd 00457A70                  // [12]
+  dd 00457A50                  // [13]
+  dd 00401000                  // [14]
+  dd 00457B80                  // [15]
+  dd 00457BB0                  // [16]
+  dd 00457C60                  // [17]
+  dd 00457C90                  // [18]
+  dd 00457CC0                  // [19]
+  dd 00457CF0                  // [20]
 
 // ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER v10
-// ROOT CAUSE: v9 called Ball_RenderAI (0x402DE0 = AI render) instead of
-//   Ball_Render (0x403DC0 = player render). AI render uses
-//   App+0x244[ball+0x754] for mesh (Sphere, not 8Ball). Player render
-//   uses App+0x268 (8Ball directly).
-// FIX: Call Ball_Render (0x403DC0), NOT Ball_RenderAI (0x402DE0).
-//   No SetMaterial or LIGHTING changes needed — Ball_Render already
-//   renders the 8Ball mesh properly with normal lighting.
+// RENDER WRAPPER v11
+// Calls Ball_Render (0x402DE0) which renders the 8Ball mesh from App+0x268.
+// ECX = ball (this pointer, __thiscall)
+// Ball_Render expects ECX = ball, reads ball+0x10 (App), ball+0x164/168/16C
+// (position), ball+0x284 (radius), ball+0x2FC (alpha) — all standard fields.
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_render_wrapper:
-  // Simply call the player ball render function
-  // ECX = ball (this pointer, __thiscall)
-  mov eax, 00403DC0
+  mov eax, 00402DE0            // Ball_Render (NOT 0x403DC0 = Ball_RenderAI!)
   jmp eax
-
-g_CustomVtable:
-  dd 00402A50
-  dd 004015B0
-  dd shapeshift_render_wrapper
-  dd 00402A70
-  dd 00405E00
-  dd 00401590
-  dd 004016F0
-  dd 00402C10
-  dd 00409050
-  dd 00401640
-  dd 00457B10
-  dd 00457B50
-  dd 00457A70
-  dd 00457A50
-  dd 00401000
-  dd 00457B80
-  dd 00457BB0
-  dd 00457C60
-  dd 00457C90
-  dd 00457CC0
-  dd 00457CF0
 
 label(shapeshift_skip)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK: Ball_Update (0x405E22) — ESI = ball
-// Only swap player balls (vtable == 0x4CF314).
+// Swap vtable for player balls (vtable == 0x4CF314).
+// Set 8Ball-like size (radius=35.0) and speed (max_speed=6.0).
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_hook:
-  mov eax, [esi]
-  cmp eax, 004CF314
+  mov eax, [esi]               // ball vtable
+  cmp eax, 004CF314             // player ball in race?
   jne shapeshift_skip
 
-  mov [g_PlayerBall], esi
-  mov [esi], g_CustomVtable
-  mov dword ptr [esi+284], 420C0000
-  mov dword ptr [esi+188], 40C00000
+  mov [esi], g_CustomVtable     // swap to custom vtable
+  mov dword ptr [esi+284], 420C0000  // radius = 35.0 (8Ball size)
+  mov dword ptr [esi+188], 40C00000  // max_speed = 6.0 (8Ball speed)
 
 shapeshift_skip:
-  mov eax, [esi+0x00000C5C]
+  mov eax, [esi+0x00000C5C]    // original instruction
   jmp 00405E28
 
 00405E22:
@@ -86,3 +99,7 @@ shapeshift_skip:
 
 00405E22:
   db 8B 86 5C 0C 00 00
+
+dealloc(shapeshift_render_wrapper)
+dealloc(shapeshift_hook)
+dealloc(g_CustomVtable)
