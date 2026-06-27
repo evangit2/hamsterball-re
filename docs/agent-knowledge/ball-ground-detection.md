@@ -65,10 +65,12 @@ Fix: replaced with a 60-frame cooldown timer after each jump.
 | `Ball+0x2E0` | `lgp_y` | float | Y coordinate of last type-2 surface collision |
 | `Ball+0x2E4` | `lgp_z` | float | Z coordinate of last type-2 surface collision |
 
-The LGP is the ball's position **snapshot at the moment of its last type-2 surface collision** —
-i.e., the last place the ball was touching solid ground or a surface it was moving into. It is
-written inside `Ball_Update` (0x405E00) whenever the ball's own collision mesh registers a type-2
-surface hit:
+The LGP is the ball's position **snapshot at the moment of its last type-2 surface collision**.
+It is written inside `Ball_Update` (0x405E00) whenever the ball's own collision mesh registers a
+type-2 surface hit. Type-2 entries are created by `SpatialTree_TestFace` (0x463E20), which has
+**no backface culling** — it uses an absolute distance check and a velocity gate (`dot <= 0`)
+that passes for wall slides (dot ≈ 0) and clip-throughs while falling (dot ≈ 0). See
+`docs/physics/BALL_RESPAWN_SYSTEM.md` for the full gate analysis.
 
 ```c
 param_1[0xB7] = param_1[0x59];  // ball+0x2DC = ball+0x164 (current X → LGP X)
