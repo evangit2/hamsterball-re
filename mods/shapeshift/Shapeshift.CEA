@@ -11,34 +11,30 @@ registersymbol(g_PlayerBall)
 g_PlayerBall:
   dd 00000000
 
-// D3DMATERIAL8 (68 bytes): white diffuse + white ambient
-// Diffuse  (1.0, 1.0, 1.0, 1.0) — reflects all direct light
-// Ambient  (1.0, 1.0, 1.0, 1.0) — reflects all ambient light
-// Specular (0, 0, 0, 0)
-// Emissive (0, 0, 0, 0)
-// Power    0
+// D3DMATERIAL8 (68 bytes): white diffuse + ambient + emissive
 g_WhiteMaterial:
-  dd 3F800000 3F800000 3F800000 3F800000
-  dd 3F800000 3F800000 3F800000 3F800000
-  dd 00000000 00000000 00000000 00000000
-  dd 00000000 00000000 00000000 00000000
-  dd 00000000
+  dd 3F800000 3F800000 3F800000 3F800000    // Diffuse: 1,1,1,1
+  dd 3F800000 3F800000 3F800000 3F800000    // Ambient: 1,1,1,1
+  dd 00000000 00000000 00000000 00000000    // Specular: 0,0,0,0
+  dd 3F800000 3F800000 3F800000 3F800000    // Emissive: 1,1,1,1
+  dd 00000000                                // Power: 0
 
 label(shapeshift_done)
 
 // ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER
-// Fixes: black ball (SetMaterial) + dark lighting (restore D3D ambient)
+// RENDER WRAPPER v6
+// Fixes black ball by: SetMaterial + DISABLE LIGHTING + white ambient
 //
-// BLACK BALL: Ball_Render_AI doesn't call SetMaterial. Without a material,
-// D3D lighting produces 0 (Material.Diffuse × Light = 0). We call
-// SetMaterial(white) before rendering so the mesh is fully lit.
+// Root cause: Ball_Render_AI renders the 8Ball mesh via DrawSubset.
+// DrawSubset uses current D3D material + lighting states.
+// With LIGHTING=1, D3D needs normals + lights to compute diffuse color.
+// If the mesh lacks proper normals or the lights don't illuminate it
+// correctly, the result is black (Diffuse×Light=0).
 //
-// DARK LIGHTING: The old wrapper saved/restored gfx+0x730 (cached value)
-// but never called SetRenderState to restore the actual D3D device state.
-// Ball_Render_AI changes D3D render states directly via the D3D device.
-// After it returns, the device ambient is wrong. We now save/restore the
-// actual D3D device ambient via SetRenderState.
+// Fix: Disable LIGHTING before mesh render. With LIGHTING=0:
+//   FinalColor = Emissive (our white) + vertex color
+// The emissive white makes the mesh fully bright regardless of normals.
+// After render, restore LIGHTING=1 for other scene objects.
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_render_wrapper:
   push ebx
@@ -46,44 +42,59 @@ shapeshift_render_wrapper:
   mov esi, ecx                    // ESI = ball
 
   // Get gfx: gfx = *(*(ball+0x10) + 0x174)
-  mov ebx, [esi+0x10]            // EBX = App
+  mov ebx, [esi+0x10]
   mov ebx, [ebx+0x174]           // EBX = gfx
 
-  // --- Set white material (fixes black ball) ---
-  // d3d = *(gfx+0x154)
+  // Get D3D device
   mov eax, [ebx+0x154]           // EAX = D3D device
   mov ecx, [eax]                 // ECX = D3D vtable
-  push g_WhiteMaterial           // param: material pointer
-  push eax                       // this: D3D device
-  call dword ptr [ecx+0xA8]     // SetMaterial(d3d, &material)
 
-  // --- Set white ambient on D3D device (fixes dark lighting) ---
-  push dword ptr [ebx+0x730]    // save cached ambient on stack
-  mov dword ptr [ebx+0x730], FFFFFFFF  // write white to cached
+  // SetMaterial(white) — emissive makes ball self-illuminated
+  push g_WhiteMaterial
+  push eax
+  call dword ptr [ecx+0xA8]     // SetMaterial
 
-  // SetRenderState(d3d, 0x8B, 0xFFFFFFFF) — white ambient on device
-  mov eax, [ebx+0x154]           // EAX = D3D device
-  mov ecx, [eax]                 // ECX = D3D vtable
-  push FFFFFFFF                  // value = white
-  push 8B                        // state = D3DRS_AMBIENT
-  push eax                       // this = D3D device
+  // SetRenderState(AMBIENT, white)
+  push FFFFFFFF
+  push 8B
+  push eax
   call dword ptr [ecx+0xC8]     // SetRenderState(AMBIENT, white)
 
-  // --- Call Ball_Render_AI (0x402DE0) ---
+  // SetRenderState(LIGHTING, 0) — disable D3D lighting for mesh render
+  push 0
+  push 89
+  push eax
+  call dword ptr [ecx+0xC8]     // SetRenderState(LIGHTING, 0)
+
+  // Save original ambient on stack
+  push dword ptr [ebx+0x730]
+  mov dword ptr [ebx+0x730], FFFFFFFF
+
+  // Call Ball_Render_AI
   mov ecx, esi
   mov eax, 00402DE0
   call eax
 
-  // --- Restore D3D ambient (fixes dark lighting for subsequent renders) ---
-  pop dword ptr [ebx+0x730]     // restore cached ambient
+  // Restore ambient
+  pop dword ptr [ebx+0x730]
 
-  // SetRenderState(d3d, 0x8B, gfx+0x730) — restore original on device
-  mov eax, [ebx+0x154]           // EAX = D3D device
-  mov ecx, [eax]                 // ECX = D3D vtable
-  push dword ptr [ebx+0x730]     // value = original ambient
-  push 8B                        // state = D3DRS_AMBIENT
-  push eax                       // this = D3D device
-  call dword ptr [ecx+0xC8]     // SetRenderState(AMBIENT, original)
+  // Restore D3D device states
+  mov eax, [ebx+0x154]
+  mov ecx, [eax]
+
+  // SetRenderState(AMBIENT, original)
+  push dword ptr [ebx+0x730]
+  push 8B
+  push eax
+  call dword ptr [ecx+0xC8]
+
+  // SetRenderState(LIGHTING, 1) — restore for other renders
+  push 1
+  push 89
+  push eax
+  mov ecx, [eax]
+  push eax
+  call dword ptr [ecx+0xC8]     // SetRenderState(LIGHTING, 1)
 
   pop esi
   pop ebx
