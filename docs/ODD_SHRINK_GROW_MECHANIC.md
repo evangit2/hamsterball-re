@@ -102,7 +102,7 @@ if (bumper_count != 0 && ball[0xC4C] == 0 && speed >= threshold) {
 ```
 
 ### 4. Ball_FallUpdate (vtable[65], 0x00408830)
-When `is_falling=1`, the game calls `Ball_FallUpdate` instead of normal physics. This function:
+When `is_stunned=1`, the game calls `Ball_FallUpdate` instead of normal physics. This function:
 - Copies `ball+0x188` (physics_scale) to `physics_obj+0xC70`
 - Uses `ball+0x284` (radius) for collision detection via `SpatialTree`
 - Decays `ball+0xC60` (a float, starts at 1.0, decremented by 0.02/frame) — when it hits 0, sets `ball+0x2E8=1` (event flag, likely triggers respawn/end)
@@ -159,7 +159,7 @@ The Odd board's collision dispatch handler is at `0x0040ED30` (vtable[0x1D], `+0
 | `Ball_Shrink` | `0x00402200` | Shrinks ball (radius 26→13, physics 5→2.5) |
 | `Ball_Grow` | `0x00402270` | Restores ball (radius 13→26, physics 2.5→5) |
 | `Ball_FallUpdate` | `0x00408830` | Physics update when shrunk (vtable[65]) |
-| `Ball_Update` | `0x00405E00` | Normal physics (checks is_falling flag) |
+| `Ball_Update` | `0x00405E00` | Normal physics (checks is_stunned flag) |
 | `Ball_Render` | `0x00402DE0` | Visual scaling from radius |
 | `OddCollisionEvents` | `0x0040ED30` | Event dispatch for Odd race |
 | `BoardLevel9_Odd_ctor` | `0x0041ED80` | Odd board constructor |

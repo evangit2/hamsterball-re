@@ -165,7 +165,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ### `Ball_FallUpdate`
 - **Address:** `0x408830`
-- **Description:** Physics update while falling. Decrements `fall_timer` (`ball+0x80C`). When timer expires, calls `Ball_FindClosestRespawnPoint`.
+- **Description:** Physics update while falling. Decrements `alpha` (`ball+0x80C`). When timer expires, calls `Ball_FindClosestRespawnPoint`.
 
 ### `Ball_FindClosestRespawnPoint`
 - **Address:** `0x405190`

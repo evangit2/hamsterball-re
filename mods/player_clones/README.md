@@ -45,7 +45,7 @@ Every frame, the AI loop clears these flags on each clone:
 |--------|------|-----------|
 | `0x2E8` | respawn_needed | Prevents teleport to respawn point ("going home") |
 | `0x2E9` | sticky_limit | Prevents stuck-on-limit behavior |
-| `0x2F8` | respawn_in_progress | Prevents respawn sequence |
+| `0x2F8` | show_stars | Prevents respawn sequence |
 | `0x2F9` | falling | Allows force application while "falling" |
 | `0x2CC` | block | Allows force application while "blocked" |
 | `0x808` | state | Must be 0 for AI to process ball |

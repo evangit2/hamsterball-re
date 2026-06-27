@@ -192,15 +192,15 @@ When a ball falls off the track:
 2. **Ball_FallUpdate (0x408830)** countdown: `ball+0xC60 -= 0.02` per frame
 3. **Timer expires** (`ball+0xC60 < 0.0`) → `ball+0x2E8 = 1` (needs_respawn)
 4. **Ball_FindClosestRespawnPoint (0x405190)** runs:
-   - Resets ball state (render_scale=0, is_falling=1, invisible)
+   - Resets ball state (alpha=0, is_stunned=1, invisible)
    - Reads `ball+0x748` to determine search mode (0=nearest, 1/2=random)
    - Reads `ball+0xC2C` to determine filter string
    - Iterates SAFESPOT list on `board+0x1518` (AthenaList)
    - For each SAFESPOT: check filter match, check [X]/[Z] tags, compute distance
    - Selects closest matching SAFESPOT (or random in modes 1/2)
    - Teleports ball to selected SAFESPOT position
-5. **Ball_Update (0x405E00)** recovery: `render_scale` grows from 0.0 back to 1.0
-6. When `render_scale >= 1.0`: `is_falling = 0`, ball is interactive again
+5. **Ball_Update (0x405E00)** recovery: `alpha` grows from 0.0 back to 1.0
+6. When `alpha >= 1.0`: `is_stunned = 0`, ball is interactive again
 
 ## Modding Implications
 

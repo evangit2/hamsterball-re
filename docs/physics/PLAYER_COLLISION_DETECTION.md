@@ -102,7 +102,7 @@ or by tracking collision IDs (`[EBP+0x64]`).
 | `+0x2F0` | `int32` | force_count | Number of forces applied this frame |
 | `+0x2F4` | `int32` | best_streak | Per-ball best streak (int32) |
 | `+0x2F9` | `byte` | frozen | Ball is frozen/stuck |
-| `+0x2FC` | `int32` | fall_timer | Countdown when falling |
+| `+0x2FC` | `int32` | alpha | Countdown when falling |
 | `+0x324` | `byte` | in_tube | Skip collision processing when set |
 | `+0x748` | `int32` | gravity_axis | 0=Y, 1=X, 2=Z (gravity plane) |
 | `+0x808` | `int32` | teleport_active | Non-zero = teleport in progress |

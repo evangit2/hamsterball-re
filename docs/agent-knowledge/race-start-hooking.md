@@ -582,7 +582,7 @@ Example level vtable[18] overrides (verified from vtable memory reads):
 | +0x1A0 | float | speed_multiplier | Scene_SpawnBallsAndObjects | 1.05 |
 | +0x27C | float | friction_scale | Scene_SpawnBallsAndObjects | 0.1 |
 | +0x284 | float | radius | Ball_ctor2 → SpawnBalls | ctor=27.0, SpawnBalls=26.0 |
-| +0x2F8 | byte | is_falling | Ball_ctor2 / SpawnBalls | 0 |
+| +0x2F8 | byte | is_stunned | Ball_ctor2 / SpawnBalls | 0 |
 | +0x2FC | float | gravity_scale | Ball_ctor2 → SpawnBalls | ctor=1.0, SpawnBalls=0.5 |
 | +0x310 | byte | has_target_pos | Ball_ctor2 | 1 |
 | +0x769 | byte | active_flag | Scene_SpawnBallsAndObjects | 1 |
