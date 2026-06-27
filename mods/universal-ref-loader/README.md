@@ -1,4 +1,4 @@
-# Universal Ref Loader — Hamsterball DLL Mod v5
+# Universal Ref Loader — Hamsterball DLL Mod v6
 
 ## What It Does
 
@@ -89,6 +89,13 @@ and collision — the board updates SWIRL/WATERWHEEL via fixed offsets
 (board+0x4BCC etc.), not through the returned object pointer. v5 returns
 the board slot pointer directly, preserving full behavior, spinning,
 and collision. Only 1 instance per board (same as original Dizzy level).
+
+v6 adds a collision dispatch hook: patches Tower's vtable[0x1D] to
+intercept N:SWIRL collision events. Tower's dispatcher (Level_HandleCollision
+at 0x40DCD0) only handles catapult/trapdoor/mace events — N:SWIRL falls
+through to base DispatchCollisionEvents which ignores it. The wrapper calls
+the original Tower dispatcher, then checks for N:SWIRL and sets ball+0x779
+(on-swirl flag) — the same behavior as Dizzy's dispatcher at 0x40D500.
 
 ## Factory Dispatch Order
 

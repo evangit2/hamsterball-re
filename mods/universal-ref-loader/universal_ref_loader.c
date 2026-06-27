@@ -43,6 +43,11 @@
 #define APP_D3D_DEVICE    0x174
 #define BOARD_APP_PTR     0x878
 
+/* Tower collision dispatch vtable entry — patch to intercept N:SWIRL */
+#define TOWER_VTABLE_ADDR     0x004D0A08
+#define TOWER_VTABLE_1D_OFF   (0x1D * 4)   /* 0x74 */
+#define TOWER_ORIG_COLLISION  0x0040DCD0   /* Level_HandleCollision */
+
 /* Arena factory addresses (verified via vtable[33] reads) */
 #define FACTORY_MASTER      0x004121D0
 #define FACTORY_TOWER       0x0040D7C0
@@ -761,6 +766,69 @@ static void __thiscall universal_factory(
 }
 
 /* ============================================================
+ * Collision dispatch hook for SWIRL
+ *
+ * Tower's vtable[0x1D] (Level_HandleCollision at 0x40DCD0) handles
+ * catapult/trapdoor/mace events but NOT N:SWIRL. Dizzy's dispatcher
+ * (0x40D500) handles N:SWIRL by setting ball+0x779=1 (on-swirl flag).
+ *
+ * We wrap Tower's dispatcher: call original first, then check if
+ * the collision event was N:SWIRL and set the on-swirl flag.
+ * ============================================================ */
+
+typedef void (__thiscall *CollisionDispatchFn)(void* board, int* ball, int* collObj);
+
+static CollisionDispatchFn g_origTowerCollision = (CollisionDispatchFn)TOWER_ORIG_COLLISION;
+static BOOL g_collisionHooked = FALSE;
+
+static void __thiscall swirl_collision_wrapper(void* board, int* ball, int* collObj)
+{
+    /* Call Tower's original collision dispatcher first */
+    g_origTowerCollision(board, ball, collObj);
+
+    /* Then check if this was an N:SWIRL collision event.
+     * collObj layout: collObj[0] = mesh ptr, collObj[1] = entry struct.
+     * The entry struct has the event name at +0x864. */
+    if (collObj && collObj[1]) {
+        char* eventName = *(char**)((int)collObj[1] + 0x864);
+        if (eventName) {
+            if (_stricmp(eventName, "N:SWIRL") == 0) {
+                /* Set on-swirl flag on the ball */
+                *(unsigned char*)((int)ball + 0x779) = 1;
+            }
+        }
+    }
+}
+
+static void install_collision_hook(void)
+{
+    DWORD* vtableEntry = (DWORD*)(TOWER_VTABLE_ADDR + TOWER_VTABLE_1D_OFF);
+    DWORD oldProt;
+
+    /* Save original, patch to our wrapper */
+    VirtualProtect(vtableEntry, 4, PAGE_READWRITE, &oldProt);
+    g_origTowerCollision = (CollisionDispatchFn)*vtableEntry;
+    *vtableEntry = (DWORD)swirl_collision_wrapper;
+    VirtualProtect(vtableEntry, 4, oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), vtableEntry, 4);
+    g_collisionHooked = TRUE;
+}
+
+static void remove_collision_hook(void)
+{
+    if (!g_collisionHooked) return;
+
+    DWORD* vtableEntry = (DWORD*)(TOWER_VTABLE_ADDR + TOWER_VTABLE_1D_OFF);
+    DWORD oldProt;
+
+    VirtualProtect(vtableEntry, 4, PAGE_READWRITE, &oldProt);
+    *vtableEntry = (DWORD)g_origTowerCollision;
+    VirtualProtect(vtableEntry, 4, oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), vtableEntry, 4);
+    g_collisionHooked = FALSE;
+}
+
+/* ============================================================
  * Hook installation
  * ============================================================ */
 
@@ -785,6 +853,9 @@ static void install_hook(void)
 
     FlushInstructionCache(GetCurrentProcess(), callSite, 6);
     g_hooked = TRUE;
+
+    /* Also install collision dispatch hook for SWIRL behavior */
+    install_collision_hook();
 }
 
 static void remove_hook(void)
@@ -800,6 +871,9 @@ static void remove_hook(void)
 
     FlushInstructionCache(GetCurrentProcess(), callSite, 6);
     g_hooked = FALSE;
+
+    /* Remove collision hook too */
+    remove_collision_hook();
 }
 
 /* ============================================================
