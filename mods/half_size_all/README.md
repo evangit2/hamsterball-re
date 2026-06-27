@@ -1,43 +1,32 @@
-# half_size_all
+# Half Size All Balls
 
-Shrinks the player's ball to half size by inlining Ball_Shrink's physics fields
+Shrinks ALL balls (player + AI + split balls) to half their normal size.
 
-## How It Works
+## What it does
 
-Hooks `Scene_SpawnBallsAndObjects` at the point where the player ball has just been created and registered. A code cave checks if the ball's player index (`ball+0x18`) is 0, and if so, writes the same three fields that `Ball_Shrink` (0x00402200) sets — but **without calling the function**, so no sound effect plays.
+Patches 3 sites in the game executable:
 
-**Fields written (identical to Ball_Shrink):**
+1. **Ball_ctor2 default radius**: 27.0 → 13.5 (AI/bad balls)
+2. **Player ball spawn radius**: 26.0 → 13.0
+3. **CreateBadBall SIZE tag**: Halves the FPU value via code cave (MESHWORLD-specified sizes)
 
-| Ball Offset | Field | Value | Effect |
-|-------------|-------|-------|--------|
-| `+0x284` | radius | 13.0 (0x41500000) | Half visual + collision size |
-| `+0x188` | physics_scale | 2.5 (0x40200000) | Half max speed |
-| `+0xC4C` | is_shrunk | 1 | Shrunk physics state |
+Ball_Shatter (split balls) copies the parent's radius, so split balls are automatically half size too.
 
-**Only player index 0 is affected.** AI balls, split balls, follow balls, and board-init balls remain normal size.
+## Installation
 
-## Hook Details
+1. Go to your Hamsterball game folder
+2. Rename `bass.dll` → `bass_real.dll`
+3. Copy this `bass.dll` into the game folder
+4. Run the game — all balls will be half size!
 
-| Hook Point | Address | Original Instruction | Catches |
-|------------|---------|---------------------|---------|
-| Scene_SpawnBallsAndObjects | 0x0041C8D7 | `MOV byte [ESI+0x281], 0` (7 bytes) | Player balls (loop, gated on index 0) |
+## Build
 
-The code cave:
-1. `CMP dword [ESI+0x18], 0` — is this player 0?
-2. If no → skip to step 4
-3. If yes → write radius=13.0, physics_scale=2.5, unused_init_flag=1 (NOTE: this flag is DEAD code — never read by any function, but we set it anyway to match original behavior)
-4. Execute original `MOV byte [ESI+0x281], 0`
-5. `JMP` back to 0x0041C8DE
+```
+i686-w64-mingw32-gcc -shared -o bass.dll half_size_balls.c \
+    -lwinmm -Wl,--enable-stdcall-fixup \
+    -O2 -static -static-libgcc -Wl,--add-stdcall-alias
+```
 
-## Files
-- `half_size_balls.c` — C source code
-- `bass.dll` — Compiled DLL (PE32 i386)
-- `half_size_balls.zip` — Packaged zip
+## Crash Test
 
-## Proxy Type
-BASS.dll proxy. Installation:
-1. Rename original `bass.dll` → `bass_real.dll` in the Hamsterball game folder
-2. Copy the mod's `bass.dll` into the game folder
-3. Launch Hamsterball
-
-A `Hamsterball_half_size.log` file is written next to the EXE showing whether the hook applied.
+✅ Passed — 38.7s runtime, no crash (hbtestd, June 2026)
