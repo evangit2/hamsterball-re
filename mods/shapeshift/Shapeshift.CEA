@@ -1,36 +1,52 @@
 // ═══════════════════════════════════════════════════════════════════════
-// SHAPESHIFT MOD v3 — Transform Player 1 into 8-Ball / BadBall
+// SHAPESHIFT MOD v4 — Transform Player 1 into 8-Ball / BadBall
 // Fixes: black ball, dark lighting, crash on disable
 //
 // ROOT CAUSE ANALYSIS (traced from binary):
 //
 //   1. BLACK BALL: Ball_Render_AI (0x402DE0) renders the 8Ball mesh from
-//      App+0x268, but does NOT call SetMaterial or set D3DRS_AMBIENT.
-//      The player render (0x403DC0) calls SetMaterial every frame.
-//      When we swap vtable[2] to AI render, the 8Ball mesh uses whatever
-//      material was left from the previous render — often a black material.
-//      FIX: Wrap Ball_Render_AI in a function that sets gfx+0x730 (ambient)
-//      to white (0xFFFFFFFF) before rendering, then restores it after.
-//      This makes the 8Ball mesh visible with full lighting.
+//      App+0x268 but does NOT call SetMaterial. The player render
+//      (0x403DC0) sets up materials every frame. Without a material,
+//      D3D uses a zero diffuse → mesh renders black regardless of ambient.
+//      D3D lighting formula: FinalColor = Material.Diffuse × Light + Material.Ambient × D3DRS_AMBIENT
+//      With Material.Diffuse = 0 → FinalColor = 0 → black.
+//      FIX: The wrapper creates a white D3DMATERIAL8 (diffuse=1,1,1,1,
+//      ambient=1,1,1,1) and calls SetMaterial (D3D vtable[42], offset
+//      0xA8) before calling Ball_Render_AI.
 //
-//   2. DARK LIGHTING: Was caused by v1 setting ball+0xC80=1 (dark mode flag).
-//      v2 already removed this. v3 adds the ambient wrapper to ensure
-//      consistent lighting — the wrapper saves/restores gfx+0x730 so the
-//      white ambient only applies during the 8Ball mesh render, not globally.
+//   2. DARK LIGHTING: Same root cause. Without a material, even with
+//      white ambient (gfx+0x730=0xFFFFFFFF), the diffuse component is 0.
+//      Setting a proper material fixes both issues.
 //
-//   3. CRASH ON DISABLE: When the CEA script is disabled, g_CustomVtable
-//      was deallocated while ball+0x00 still pointed to it. Next vtable
-//      call → jump to freed memory → crash.
-//      FIX: In DISABLE, use createthread to run cleanup code that restores
-//      ball+0x00 to 0x4CF314 and physics values BEFORE any dealloc.
+//   3. CRASH ON DISABLE: v3 used createthread (async) for cleanup, which
+//      raced with dealloc → freed memory access → crash.
+//      v4 FIX: DON'T restore Ball_Update_Entry bytes or dealloc anything
+//      in DISABLE. Just set g_ShapeState=0. The hook stays installed but
+//      becomes a no-op (always restores player vtable). All allocated
+//      memory stays valid until CE closes. No race, no crash.
 //
 // PHYSICS VALUES:
-//   Player (Ball_ctor2):    radius(+0x284)=26.0 (0x41D00000), max_speed(+0x188)=5.0 (0x40A00000)
-//   AI 8Ball (Ball_InitPhysicsDefaults 0x405100): radius=35.0 (0x420C0000), max_speed=6.0 (0x40C00000)
+//   Player:    radius(+0x284)=26.0 (0x41D00000), max_speed(+0x188)=5.0 (0x40A00000)
+//   AI 8Ball:  radius=35.0 (0x420C0000), max_speed=6.0 (0x40C00000)
 //
-// HOOK POINT: Ball_Update entry at 0x00405E22
-//   Original: MOV EAX, [ESI+0xC5C] (6 bytes)
-//   ESI = ball pointer (set at 0x00405E20: MOV ESI,ECX)
+// D3DMATERIAL8 STRUCT (68 bytes):
+//   +0x00: Diffuse  (4 floats: r,g,b,a) — how mesh reflects direct light
+//   +0x10: Ambient  (4 floats) — how mesh reflects ambient light
+//   +0x20: Specular (4 floats)
+//   +0x30: Emissive (4 floats) — self-illumination
+//   +0x40: Power    (1 float)
+//
+// D3D8 vtable:
+//   offset 0xA8 (index 42) = SetMaterial(D3DMATERIAL8*)
+//   offset 0xC8 (index 50) = SetRenderState(state, value)
+//
+// SETMATERIAL CALL PATTERN (from 0x455308):
+//   MOV EAX, [gfx+0x154]     ; D3D device
+//   MOV ECX, [EAX]           ; vtable
+//   LEA EDX, [material]      ; &material
+//   PUSH EDX                ; param: material ptr
+//   PUSH EAX                ; this: D3D device
+//   CALL [ECX+0xA8]         ; SetMaterial
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
@@ -42,6 +58,7 @@ aobscanmodule(Ball_Update_Entry, Hamsterball.exe, 8B 86 5C 0C 00 00 D9 86 50 0C 
 alloc(g_PlayerBall, 4)
 alloc(g_ShapeState, 4)
 alloc(g_CustomVtable, 84)
+alloc(g_WhiteMaterial, 68)
 alloc(shapeshift_hook, 256)
 alloc(shapeshift_render_wrapper, 128)
 
@@ -56,31 +73,46 @@ g_PlayerBall:
 g_ShapeState:
   dd 00000000
 
+// ── White D3DMATERIAL8 (68 bytes) ─────────────────────────────────────
+// Diffuse = (1.0, 1.0, 1.0, 1.0) — reflects all direct light
+// Ambient = (1.0, 1.0, 1.0, 1.0) — reflects all ambient light
+// Specular = (0, 0, 0, 0)
+// Emissive = (0, 0, 0, 0)
+// Power = 0
+g_WhiteMaterial:
+  dd 3F800000 3F800000 3F800000 3F800000    // Diffuse: 1.0, 1.0, 1.0, 1.0
+  dd 3F800000 3F800000 3F800000 3F800000    // Ambient: 1.0, 1.0, 1.0, 1.0
+  dd 00000000 00000000 00000000 00000000    // Specular: 0,0,0,0
+  dd 00000000 00000000 00000000 00000000    // Emissive: 0,0,0,0
+  dd 00000000                                // Power: 0
+
 // ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER: sets white ambient before AI render, restores after
+// RENDER WRAPPER: SetMaterial + white ambient → Ball_Render_AI → restore
 // Called as vtable[2] — ECX = ball (thiscall)
-//
-// Ball_Render_AI (0x402DE0) renders the 8Ball mesh (App+0x268) but does
-// NOT set any material or ambient color. Without this wrapper, the mesh
-// inherits whatever material was left by the previous render → often black.
-// The wrapper temporarily sets gfx+0x730 (D3DRS_AMBIENT) to white so the
-// mesh is fully lit, then restores the original ambient after rendering.
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_render_wrapper:
-  // ECX = ball (thiscall)
-  push ebx              // save callee-saved registers
+  // ECX = ball
+  push ebx
   push esi
-  mov esi, ecx           // ESI = ball
+  mov esi, ecx                    // ESI = ball
 
   // Get gfx device: gfx = *(*(ball+0x10) + 0x174)
-  mov ebx, [esi+0x10]     // EBX = App
-  mov ebx, [ebx+0x174]    // EBX = gfx device
+  mov ebx, [esi+0x10]            // EBX = App
+  mov ebx, [ebx+0x174]           // EBX = gfx device
 
   // Save original ambient (gfx+0x730) on stack
   push dword ptr [ebx+0x730]
 
-  // Set white ambient — makes 8Ball mesh fully lit
+  // Set white ambient
   mov dword ptr [ebx+0x730], FFFFFFFF
+
+  // Set white material via SetMaterial
+  // D3D device = *(gfx+0x154)
+  mov eax, [ebx+0x154]           // EAX = D3D device
+  mov ecx, [eax]                 // ECX = D3D vtable
+  push g_WhiteMaterial           // push material pointer
+  push eax                       // push D3D device (thiscall: ECX = device)
+  call dword ptr [ecx+0xA8]     // SetMaterial(device, &material)
 
   // Call Ball_Render_AI (0x402DE0) with ECX = ball
   mov ecx, esi
@@ -90,13 +122,13 @@ shapeshift_render_wrapper:
   // Restore original ambient
   pop dword ptr [ebx+0x730]
 
-  // Restore callee-saved registers
+  // Restore registers
   pop esi
   pop ebx
   ret
 
 // ═══════════════════════════════════════════════════════════════════════
-// CUSTOM VTABLE: player vtable copy with vtable[2] = render wrapper
+// CUSTOM VTABLE: player vtable copy with vtable[2] = wrapper
 // ═══════════════════════════════════════════════════════════════════════
 g_CustomVtable:
   dd 00402A50                    // [0] dtor (player)
@@ -188,52 +220,32 @@ Ball_Update_Entry:
 
 [DISABLE]
 
-// ── Restore original code ──────────────────────────────────────────────
-Ball_Update_Entry:
-  db 8B 86 5C 0C 00 00
+// ── SAFE DISABLE: no dealloc, no byte restore ──────────────────────────
+// The hook stays installed but becomes a no-op (g_ShapeState=0 always
+// restores player vtable). All memory stays valid — no freed pointers.
+// Memory is freed when CE closes.
 
-// ── CRASH FIX: restore ball vtable BEFORE freeing memory ──────────────
-// createthread runs cleanup code that restores ball+0x00 to player vtable
-// and physics values BEFORE deallocating g_CustomVtable
-alloc(shapeshift_cleanup, 128)
-shapeshift_cleanup:
-  mov eax, [g_PlayerBall]
-  test eax, eax
-  jz shapeshift_cleanup_done
+// Set g_ShapeState = 0 so the hook reverts P1 to normal
+g_ShapeState:
+  dd 00000000
 
-  // Restore vtable pointer
-  mov dword ptr [eax], 004CF314
-
-  // Restore player physics: radius = 26.0
-  mov dword ptr [eax+0x284], 41D00000
-
-  // Restore player physics: max_speed = 5.0
-  mov dword ptr [eax+0x188], 40A00000
-
-shapeshift_cleanup_done:
-  ret
-
-createthread(shapeshift_cleanup)
-
-// ── Cleanup ────────────────────────────────────────────────────────────
 unregistersymbol(g_PlayerBall)
 unregistersymbol(g_ShapeState)
 unregistersymbol(g_CustomVtable)
 
-dealloc(shapeshift_cleanup)
-dealloc(shapeshift_render_wrapper)
-dealloc(shapeshift_hook)
-dealloc(g_CustomVtable)
-dealloc(g_ShapeState)
-dealloc(g_PlayerBall)
+// NOTE: We intentionally do NOT dealloc anything here.
+// g_CustomVtable and shapeshift_render_wrapper stay allocated so
+// that even if ball+0x00 still points to them, the memory is valid.
+// The hook stays installed and restores ball+0x00 = 0x4CF314 every
+// frame (since g_ShapeState=0 → shapeshift_revert path).
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOTKEYS — set in Cheat Engine table:
 //   Numpad 1 → Set g_ShapeState = 1 (transform to 8-Ball)
 //   Numpad 0 → Set g_ShapeState = 0 (revert to hamster ball)
 //
-// When ON:  vtable[2]=render wrapper (8Ball mesh + white ambient),
+// When ON:  SetMaterial(white) + Ball_Render_AI → 8Ball mesh fully lit
 //           radius=35.0, max_speed=6.0
-// When OFF: vtable[2]=player render (Sphere+hamster), radius=26.0, max_speed=5.0
-// Player 1 retains FULL CONTROL at all times (vtable[4]=Ball_Update, player_index=0)
+// When OFF: Player render (Sphere+hamster), radius=26.0, max_speed=5.0
+// Player 1 retains FULL CONTROL at all times (vtable[4]=Ball_Update)
 // ═══════════════════════════════════════════════════════════════════════
