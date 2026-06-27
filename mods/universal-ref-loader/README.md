@@ -1,4 +1,4 @@
-# Universal Ref Loader — Hamsterball DLL Mod v4
+# Universal Ref Loader — Hamsterball DLL Mod v5
 
 ## What It Does
 
@@ -78,15 +78,17 @@ Objects like WATERWHEEL and SWIRL return the same board slot pointer for every r
 
 | Object | Board Slot | Instance Method |
 |--------|-----------|-----------------|
-| WATERWHEEL | +0x4BA8 | ✅ Fresh MeshWorld per ref |
-| SWIRL | +0x4BC4 | ✅ Fresh MeshWorld per ref |
-| BRIDGE (base) | +0x436C | ✅ Fresh MeshWorld per ref |
+| WATERWHEEL | +0x4BA8 | ✅ Board slot (behavior + collision via board offsets) |
+| SWIRL | +0x4BC4 | ✅ Board slot (behavior + collision via board offsets) |
+| BRIDGE (base) | +0x436C | ✅ Board slot (behavior + collision via board offsets) |
 | WINDMILL | +0x437C | ⚠️ Not handled (complex: creates CollisionLevel + attaches) |
 
-**Note:** v3 used `Level_CloneTree` (0x466060) which created a `Level` (base class)
-with an uninitialized world matrix — caused NULL pointer crash in matrix inverse
-function (0x49B4E7) during Draw. v4 replaces this with `MeshWorld_ctor` (0x461510)
-so each instance gets its own valid vtable, world matrix, and render state.
+**Note:** v4 attempted to create fresh MeshWorld instances per ref via
+`MeshWorld_ctor`. This fixed the Level_CloneTree crash but broke behavior
+and collision — the board updates SWIRL/WATERWHEEL via fixed offsets
+(board+0x4BCC etc.), not through the returned object pointer. v5 returns
+the board slot pointer directly, preserving full behavior, spinning,
+and collision. Only 1 instance per board (same as original Dizzy level).
 
 ## Factory Dispatch Order
 
