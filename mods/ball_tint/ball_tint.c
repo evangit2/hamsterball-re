@@ -1,5 +1,5 @@
 /*
- * ball_tint.c — BASS.dll proxy mod
+ * ball_tint.c — BASS.dll proxy mod (v2 — board color table method)
  *
  * Tints player 1's ball to a hex color read from ball_tint.txt.
  *
@@ -7,11 +7,15 @@
  *   1. On load: creates ball_tint.txt next to the DLL (if missing)
  *   2. Background thread polls every ~60ms
  *   3. Reads hex color from ball_tint.txt (e.g. "FF6B35" or "#FF6B35")
- *   4. Finds player 1's ball via App→Scene→ball_list
- *   5. Writes RGBA floats into ball+0x20C (diffuse), +0x21C (ambient),
- *      +0x23C (emissive) — tints the sprite overlays (border, hamster)
- *   6. Sets gfx+0x7C0 = ball+0x208 (render context override) — tints the
- *      3D sphere mesh body through the game's own material override system
+ *   4. Finds the board via App+0x220 → PlayerProfile+0xC → board
+ *   5. Writes RGBA floats directly into the board's player ball color
+ *      table at board+0x3AB0 (player 1). These are the same color
+ *      values initialized by Board_ctor's four Vec3_Init calls:
+ *        board+0x3AB0 = (1.0, 1.0, 1.0) white   (Player 1) ← we write here
+ *        board+0x3AC4 = (0.0, 0.5, 1.0) blue    (Player 2)
+ *        board+0x3AD8 = (1.0, 0.25, 0.25) salmon (Player 3)
+ *        board+0x3AEC = (1.0, 1.0, 0.0) yellow  (Player 4)
+ *      Each entry is 4 floats (R, G, B, A) = 16 bytes, spaced 0x14 apart.
  *
  * Color file format:
  *   - Plain text, one line
@@ -128,7 +132,6 @@ static void load_real_bass(void)
                           | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                           (LPCSTR)&load_real_bass, &hSelf);
         GetModuleFileNameA(hSelf, path, MAX_PATH);
-        /* Replace "bass.dll" with "bass_real.dll" in the same directory */
         char *p = strrchr(path, '\\');
         if (p) {
             strcpy(p + 1, "bass_real.dll");
@@ -152,30 +155,26 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Ball Tint Mod
+ * Ball Tint Mod — Board Color Table Method
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Game addresses (static) */
-#define APP_PTR_ADDR   0x005341E0   /* Global pointer to App struct */
-#define GFX_OFFSET     0x174        /* App+0x174 = Graphics object pointer */
-#define MATERIAL_OVERRIDE_OFFSET 0x7C0  /* gfx+0x7C0 = material override pointer */
+/* Game addresses */
+#define APP_PTR_ADDR       0x005341E0   /* Global pointer to App struct */
 
-/* Ball struct offsets */
-#define BALL_PLAYER_INDEX  0x018   /* ball+0x18 = player index (0=player 1) */
-#define BALL_RENDER_CTX2   0x208   /* ball+0x208 = render context 2 (sphere/sprite material) */
-/* RenderContext layout (0x50 bytes):
- * +0x00: vtable
- * +0x04: Diffuse RGBA (4 floats)
- * +0x14: Ambient RGBA (4 floats)
- * +0x24: Specular RGBA (4 floats)
- * +0x34: Emissive RGBA (4 floats)
- * +0x44: Power (1 float)
- */
+/* App struct offsets */
+#define APP_PROFILE_OFFSET 0x220        /* App+0x220 = PlayerProfile pointer */
 
-/* Scene struct offsets for finding balls */
-#define SCENE_BALL_LIST  0x29D4     /* Scene+0x29D4 = AthenaList of balls */
-#define ATHENA_COUNT_OFFSET  0x004  /* count at list+0x04 */
-#define ATHENA_ARRAY_OFFSET  0x40C  /* array ptr at list+0x40C */
+/* PlayerProfile struct offsets */
+#define PROFILE_BOARD_OFFSET 0x0C      /* profile+0x0C = current Board pointer */
+
+/* Board struct offsets — player ball color table (set by Board_ctor Vec3_Init) */
+#define BOARD_COLOR_BASE    0x3AB0     /* Player 1 color RGBA (4 floats) */
+#define BOARD_COLOR_STRIDE  0x14       /* 20 bytes per player entry (0x3AB0→0x3AC4→...) */
+
+/* Fallback: ball list for board-scanning method */
+#define SCENE_BALL_LIST     0x29D4     /* Board+0x29D4 = AthenaList of balls */
+#define ATHENA_COUNT_OFFSET 0x004      /* count at list+0x04 */
+#define ATHENA_ARRAY_OFFSET 0x40C      /* array ptr at list+0x40C */
 
 static char g_config_path[MAX_PATH] = {0};
 static DWORD g_last_color = 0xFFFFFFFF;  /* Force initial read */
@@ -202,7 +201,6 @@ static void create_default_config(void)
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        /* File doesn't exist — create it */
         const char *default_content =
             "FFFFFF\n"
             "# Ball Tint Color (hex RGB, no alpha)\n"
@@ -224,17 +222,12 @@ static void create_default_config(void)
 /* Parse hex color from text. Returns 0xRRGGBB. */
 static DWORD parse_hex_color(const char *text)
 {
-    DWORD r = 0xFF, g = 0xFF, b = 0xFF;  /* Default white */
     const char *p = text;
 
-    /* Skip leading whitespace */
     while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-
-    /* Skip # or 0x prefix */
     if (*p == '#') p++;
     if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) p += 2;
 
-    /* Parse up to 6 hex digits */
     DWORD hex = 0;
     int digits = 0;
     while (digits < 6 && *p) {
@@ -249,22 +242,20 @@ static DWORD parse_hex_color(const char *text)
             hex = (hex << 4) | (c - 'A' + 10);
             digits++;
         } else {
-            break;  /* Stop at non-hex char */
+            break;
         }
         p++;
     }
 
     if (digits >= 6) {
-        return hex;  /* Full 0xRRGGBB */
+        return hex;
     } else if (digits >= 3) {
-        /* Short form like "F63" -> "FF6633" */
-        r = ((hex >> 8) & 0xF) * 0x11;
-        g = ((hex >> 4) & 0xF) * 0x11;
-        b = (hex & 0xF) * 0x11;
+        DWORD r = ((hex >> 8) & 0xF) * 0x11;
+        DWORD g = ((hex >> 4) & 0xF) * 0x11;
+        DWORD b = (hex & 0xF) * 0x11;
         return (r << 16) | (g << 8) | b;
     }
 
-    /* Couldn't parse — return white */
     return 0xFFFFFF;
 }
 
@@ -282,57 +273,70 @@ static DWORD read_color_from_file(void)
 
     if (bytesRead == 0) return 0xFFFFFF;
 
-    /* Find the first non-comment, non-blank line */
     char *line = buf;
     while (*line) {
-        /* Skip whitespace */
         while (*line == ' ' || *line == '\t') line++;
         if (*line == '#' || *line == '\r' || *line == '\n' || *line == '\0') {
-            /* Skip to end of line */
             while (*line && *line != '\n') line++;
             if (*line == '\n') line++;
             continue;
         }
-        /* Found a content line — parse it */
         return parse_hex_color(line);
     }
 
     return 0xFFFFFF;
 }
 
-/* Write RGBA floats into ball render context material */
-static void set_ball_material_color(DWORD ball, float r, float g, float b)
+/*
+ * Find the current board (scene) pointer.
+ * Primary: App+0x220 → PlayerProfile+0xC → board
+ * Fallback: scan App for a pointer with a valid AthenaList at +0x29D4
+ */
+static DWORD find_board(DWORD app)
 {
-    DWORD rc = ball + BALL_RENDER_CTX2;  /* render context at ball+0x208 */
+    /* Primary path: App → profile → board */
+    if (!IsBadReadPtr((void*)(app + APP_PROFILE_OFFSET), 4)) {
+        DWORD profile = *(DWORD*)(app + APP_PROFILE_OFFSET);
+        if (profile && profile > 0x10000 && !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
+            DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+            if (board && board > 0x10000 && !IsBadReadPtr((void*)board, 0x4000)) {
+                return board;
+            }
+        }
+    }
 
-    if (IsBadWritePtr((void*)(rc + 0x04), 4)) return;
+    /* Fallback: scan App for board via AthenaList at +0x29D4 */
+    for (int off = 0x100; off < 0xA00; off += 4) {
+        DWORD candidate = *(DWORD*)((BYTE*)app + off);
+        if (candidate == 0 || candidate < 0x10000) continue;
+        if (IsBadReadPtr((void*)candidate, 0x4000)) continue;
+        DWORD list_base = candidate + SCENE_BALL_LIST;
+        if (IsBadReadPtr((void*)list_base, 0x10)) continue;
+        DWORD count = *(DWORD*)(list_base + ATHENA_COUNT_OFFSET);
+        DWORD array = *(DWORD*)(list_base + ATHENA_ARRAY_OFFSET);
+        if (count > 0 && count < 100 && array != 0 && !IsBadReadPtr((void*)array, 4)) {
+            return candidate;
+        }
+    }
 
-    /* Diffuse RGBA (rc+0x04..0x10) */
-    *(float*)(rc + 0x04) = r;  /* R */
-    *(float*)(rc + 0x08) = g;  /* G */
-    *(float*)(rc + 0x0C) = b;  /* B */
-    *(float*)(rc + 0x10) = 1.0f;  /* A */
+    return 0;
+}
 
-    /* Ambient RGBA (rc+0x14..0x20) */
-    *(float*)(rc + 0x14) = r;
-    *(float*)(rc + 0x18) = g;
-    *(float*)(rc + 0x1C) = b;
-    *(float*)(rc + 0x20) = 1.0f;
+/*
+ * Write RGBA floats into the board's player ball color table.
+ * board+0x3AB0 = Player 1 color (R, G, B, A) — 4 floats
+ * board+0x3AC4 = Player 2, board+0x3AD8 = Player 3, board+0x3AEC = Player 4
+ */
+static void set_board_ball_color(DWORD board, int player_index, float r, float g, float b)
+{
+    DWORD color_addr = board + BOARD_COLOR_BASE + (player_index * BOARD_COLOR_STRIDE);
 
-    /* Specular RGBA (rc+0x24..0x30) — keep white for highlights */
-    *(float*)(rc + 0x24) = 1.0f;
-    *(float*)(rc + 0x28) = 1.0f;
-    *(float*)(rc + 0x2C) = 1.0f;
-    *(float*)(rc + 0x30) = 1.0f;
+    if (IsBadWritePtr((void*)color_addr, 16)) return;
 
-    /* Emissive RGBA (rc+0x34..0x40) — use color for glow effect */
-    *(float*)(rc + 0x34) = r * 0.3f;  /* Slight emissive tint */
-    *(float*)(rc + 0x38) = g * 0.3f;
-    *(float*)(rc + 0x3C) = b * 0.3f;
-    *(float*)(rc + 0x40) = 1.0f;
-
-    /* Power (rc+0x44) */
-    *(float*)(rc + 0x44) = 20.0f;
+    *(float*)(color_addr + 0x00) = r;   /* R */
+    *(float*)(color_addr + 0x04) = g;   /* G */
+    *(float*)(color_addr + 0x08) = b;   /* B */
+    *(float*)(color_addr + 0x0C) = 1.0f;/* A */
 }
 
 /* Background thread: poll and apply tint */
@@ -341,11 +345,11 @@ static DWORD WINAPI tint_thread(LPVOID param)
     Sleep(3000);  /* Wait for game to fully load */
 
     for (;;) {
-        Sleep(60);  /* ~16fps poll (fast enough for color changes) */
+        Sleep(60);
 
         /* Read color from file */
         DWORD color = read_color_from_file();
-        if (color == g_last_color) continue;  /* No change */
+        if (color == g_last_color) continue;
         g_last_color = color;
 
         /* Convert hex to floats */
@@ -358,53 +362,12 @@ static DWORD WINAPI tint_thread(LPVOID param)
         if (!app || app < 0x10000) continue;
         if (IsBadReadPtr((void*)app, 0x300)) continue;
 
-        /* Get Graphics object (App+0x174) */
-        DWORD gfx = *(DWORD*)((BYTE*)app + GFX_OFFSET);
-        if (!gfx || gfx < 0x10000) continue;
-        if (IsBadReadPtr((void*)gfx, 0x800)) continue;
+        /* Find board */
+        DWORD board = find_board(app);
+        if (!board) continue;
 
-        /* Find Scene by scanning App for ball list */
-        /* The scene is accessible through App+0x220→profile+0xC→board→scene
-         * But simpler: scan App for a pointer that has a valid AthenaList at +0x29D4 */
-        DWORD scene = 0;
-        for (int off = 0x100; off < 0xA00; off += 4) {
-            DWORD candidate = *(DWORD*)((BYTE*)app + off);
-            if (candidate == 0 || candidate < 0x10000) continue;
-            if (IsBadReadPtr((void*)candidate, 0x3000)) continue;
-            DWORD list_base = candidate + SCENE_BALL_LIST;
-            if (IsBadReadPtr((void*)list_base, 0x10)) continue;
-            DWORD count = *(DWORD*)(list_base + ATHENA_COUNT_OFFSET);
-            DWORD array = *(DWORD*)(list_base + ATHENA_ARRAY_OFFSET);
-            if (count > 0 && count < 100 && array != 0 && !IsBadReadPtr((void*)array, 4)) {
-                scene = candidate;
-                break;
-            }
-        }
-        if (!scene) continue;
-
-        /* Find player 1's ball (player_index == 0) */
-        DWORD list_base = scene + SCENE_BALL_LIST;
-        int bcount = *(int*)(list_base + ATHENA_COUNT_OFFSET);
-        DWORD *barray = *(DWORD**)(list_base + ATHENA_ARRAY_OFFSET);
-
-        for (int i = 0; i < bcount; i++) {
-            DWORD ball = barray[i];
-            if (!ball || ball < 0x10000) continue;
-            if (IsBadReadPtr((void*)ball, 0xD00)) continue;
-
-            int pidx = *(int*)((BYTE*)ball + BALL_PLAYER_INDEX);
-            if (pidx == 0) {
-                /* Found player 1's ball */
-                set_ball_material_color(ball, r, g, b);
-
-                /* Set gfx+0x7C0 = ball+0x208 (material override)
-                 * This makes the game use OUR material instead of the mesh's
-                 * own material when rendering the sphere mesh body */
-                *(DWORD*)((BYTE*)gfx + MATERIAL_OVERRIDE_OFFSET) = ball + BALL_RENDER_CTX2;
-
-                break;  /* Only tint player 1 */
-            }
-        }
+        /* Write color into board's player 1 ball color slot */
+        set_board_ball_color(board, 0, r, g, b);
     }
 
     return 0;
