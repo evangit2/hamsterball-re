@@ -1,32 +1,28 @@
-// BackgroundColorCycler v2 — Cycles the actual BACKGROUND (fog) color
+// BackgroundColorCycler v3 — Cycles the ACTUAL BACKGROUND color (Clear color)
 // 
-// HOOK POINT: 0x454CEE (MOV ESI, [EBP+0x738]) inside Graphics_RenderScene
-//   EBP = gfx pointer
-//   gfx+0x738 = cached D3DRS_FOGCOLOR (the background/sky color)
-//   After this read, the game calls SetRenderState(0x22, ESI) at 0x454D00
+// ROOT CAUSE FIX (v2→v3):
+//   v2 hooked at 0x454CEE inside Graphics_RenderScene — AFTER Clear() already
+//   painted the background. It only updated D3DRS_FOGCOLOR (fog blending on
+//   distant geometry), NOT the actual background fill.
 //
-// DEEP ANALYSIS: How background colors work in Hamsterball
-//   1. Level_InitScene (0x40B090) calls Color_RandomRGBA() to pick a random
-//      fog color, then calls Gfx_SetVTable22 (0x453B20) which stores it at
-//      gfx+0x738 AND calls SetRenderState(D3DRS_FOGCOLOR=0x22, color).
-//   2. Every frame, Graphics_RenderScene (0x454BC0) reads gfx+0x738 at
-//      0x454CEE, then calls SetRenderState(0x22, fogColor) at 0x454D00.
-//   3. D3DRS_FOGCOLOR fills the background (sky, distant areas) with this color.
+//   v3 hooks at 0x46C214 inside App_ResetFrame — BEFORE Clear() runs.
+//   The cycled color is written to gfx+0x738, then the game pushes EAX
+//   (our color) and calls Graphics_ClearViewport → Clear() paints the
+//   background with our cycled color.
 //
-// This script intercepts the per-frame read at 0x454CEE and replaces the
-// fog color with a cycling palette of 15 colors. The game's own
-// SetRenderState(0x22, ...) call at 0x454D00 then uses our cycled color.
+// FRAME PIPELINE (traced from disassembly):
+//   1. App_ResetFrame (0x46C200):
+//      0x46C214: MOV EAX, [ECX+0x738]  ← OUR HOOK (inject cycled color)
+//      0x46C21A: PUSH EAX               ← pushes our color
+//      0x46C21B: CALL ClearViewport     ← Clear() paints background with our color
+//   2. Graphics_RenderScene (0x454BC0):
+//      0x454CEE: MOV ESI, [EBP+0x738]   ← reads our already-updated color
+//      0x454D00: SetRenderState(0x22, ESI) ← fog color matches background
 //
-// The old v1 script hooked Ball_Update and wrote to gfx+0x730 (ambient
-// lighting) — that changed object brightness, NOT the actual background.
-// This v2 hooks the REAL background color source.
-//
-// REGISTER SAFETY:
-//   EBP = gfx (preserved, not touched)
-//   ESI = output (set to our cycled color)
-//   EAX, ECX, EDX = clobbered (all reloaded by game after hook point:
-//     EAX reloaded at 0x454CF4, ECX at 0x454CFA, EDX not used after)
-//   EBX, EDI = not touched
+// HOOK POINT: 0x46C214 (MOV EAX, [ECX+0x738]) — 6 bytes: 8B 81 38 07 00 00
+//   ECX = gfx pointer (MUST preserve — ClearViewport reads it as `this`)
+//   EAX = output (game pushes EAX as Clear color at 0x46C21A)
+//   EDX = clobbered (safe — reloaded inside ClearViewport)
 //
 // TIMER: bgcolor_timer (default 180 = ~3 seconds at 60fps)
 //   Edit this value in the CE address list to change cycle speed.
@@ -81,7 +77,7 @@ bgcolor_cave:
   mov [bgcolor_frame], eax
   
   cmp eax, [bgcolor_timer]
-  jl bgcolor_write         // not expired yet, keep current color
+  jl bgcolor_write           // not expired yet, keep current color
   
   // --- Timer expired: advance palette index ---
   mov dword ptr [bgcolor_frame], 0
@@ -92,37 +88,38 @@ bgcolor_cave:
   mov edx, bgcolor_colors
   mov edx, [edx + eax * 4]
   test edx, edx
-  jnz bgcolor_store        // valid color, use this index
-  xor eax, eax             // terminator: wrap to index 0
+  jnz bgcolor_store          // valid color, use this index
+  xor eax, eax               // terminator: wrap to index 0
 
 bgcolor_store:
   mov [bgcolor_index], eax
 
 bgcolor_write:
   // --- Load current color and write to gfx+0x738 ---
+  // ECX = gfx pointer (preserved through this hook)
   mov eax, [bgcolor_index]
   mov edx, bgcolor_colors
   mov edx, [edx + eax * 4]
   
-  // Write cycled color to fog color cache
-  mov [ebp + 0x738], edx
-  // Set ESI = our color (game pushes ESI to SetRenderState at 0x454CFC)
-  mov esi, edx
+  // Write cycled color to fog/background color cache
+  mov [ecx + 0x738], edx
+  // Set EAX = our color (game pushes EAX at 0x46C21A for Clear())
+  mov eax, edx
   
-  // Jump back to 0x454CF4 (after original 6-byte instruction)
-  jmp 00454CF4
+  // Jump back to 0x46C21A (PUSH EAX → CALL ClearViewport)
+  jmp 0046C21A
 
 // --- Hook installation ---
-// Original: 8B B5 38 07 00 00 = MOV ESI, [EBP+0x738]
+// Original: 8B 81 38 07 00 00 = MOV EAX, [ECX+0x738]
 // Replace:  E9 xx xx xx xx 90 = JMP bgcolor_cave + NOP (6 bytes)
-00454CEE:
+0046C214:
   jmp bgcolor_cave
   nop
 
 [DISABLE]
 
-00454CEE:
-  db 8B B5 38 07 00 00
+0046C214:
+  db 8B 81 38 07 00 00
 
 dealloc(bgcolor_cave)
 dealloc(bgcolor_colors)
