@@ -98,6 +98,13 @@ __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
     if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
     return 1;
 }
+/* Forwarded (was previously a no-op stub — caused per-channel volume/pan to silently fail) */
+typedef int  (__stdcall *BASS_ChannelSetAttribute_t)(DWORD, DWORD, float);
+static BASS_ChannelSetAttribute_t real_BASS_ChannelSetAttribute = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttribute(DWORD a, DWORD b, float c) {
+    if (real_BASS_ChannelSetAttribute) return real_BASS_ChannelSetAttribute(a, b, c);
+    return 1;
+}
 
 /* Extra stubs */
 __declspec(dllexport) void __stdcall BASS_Pause(void) {}
@@ -110,7 +117,6 @@ __declspec(dllexport) int __stdcall BASS_Update(DWORD a) { return 0; }
 __declspec(dllexport) DWORD __stdcall BASS_StreamCreateFile(void *a, void *b, DWORD c, DWORD d, DWORD e) { return 0; }
 __declspec(dllexport) DWORD __stdcall BASS_SampleLoad(int a, void *b, DWORD c, DWORD d, DWORD e) { return 0; }
 __declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) { return 1; }
-__declspec(dllexport) int __stdcall BASS_ChannelSetAttribute(DWORD a, DWORD b, float c) { return 1; }
 __declspec(dllexport) int __stdcall BASS_ChannelGetAttribute(DWORD a, DWORD b, float *c) { return 1; }
 __declspec(dllexport) DWORD __stdcall BASS_ChannelGetData(DWORD a, void *b, DWORD c) { return 0; }
 __declspec(dllexport) DWORD __stdcall BASS_ChannelGetLevel(DWORD a) { return 0; }
@@ -150,6 +156,7 @@ static void load_real_bass(void)
         LOAD(BASS_ErrorGetCode);
         LOAD(BASS_MusicLoad);
         LOAD(BASS_ChannelStop);
+        LOAD(BASS_ChannelSetAttribute);
         #undef LOAD
     }
 }
@@ -178,6 +185,7 @@ static void load_real_bass(void)
 
 static char g_config_path[MAX_PATH] = {0};
 static DWORD g_last_color = 0xFFFFFFFF;  /* Force initial read */
+static DWORD g_last_board = 0;           /* Track board to detect new race (re-apply tint) */
 
 /* Get DLL directory path and build config file path */
 static void init_config_path(void)
@@ -347,16 +355,6 @@ static DWORD WINAPI tint_thread(LPVOID param)
     for (;;) {
         Sleep(60);
 
-        /* Read color from file */
-        DWORD color = read_color_from_file();
-        if (color == g_last_color) continue;
-        g_last_color = color;
-
-        /* Convert hex to floats */
-        float r = ((color >> 16) & 0xFF) / 255.0f;
-        float g = ((color >> 8)  & 0xFF) / 255.0f;
-        float b = ( color        & 0xFF) / 255.0f;
-
         /* Find App */
         DWORD app = *(DWORD*)APP_PTR_ADDR;
         if (!app || app < 0x10000) continue;
@@ -365,6 +363,24 @@ static DWORD WINAPI tint_thread(LPVOID param)
         /* Find board */
         DWORD board = find_board(app);
         if (!board) continue;
+
+        /* Read color from file */
+        DWORD color = read_color_from_file();
+
+        /*
+         * Re-apply tint if EITHER the color changed OR the board changed.
+         * A new board (new race / restart) is initialized with default white
+         * by Board_ctor, so we must re-write our tint even if the file color
+         * is the same as last time.
+         */
+        if (color == g_last_color && board == g_last_board) continue;
+        g_last_color = color;
+        g_last_board = board;
+
+        /* Convert hex to floats */
+        float r = ((color >> 16) & 0xFF) / 255.0f;
+        float g = ((color >> 8)  & 0xFF) / 255.0f;
+        float b = ( color        & 0xFF) / 255.0f;
 
         /* Write color into board's player 1 ball color slot */
         set_board_ball_color(board, 0, r, g, b);
