@@ -230,6 +230,15 @@ static SafeFactory g_factories[] = {
 
 /* ============================================================
  * Static-mesh detection (objects that return board slot pointer directly)
+ *
+ * These objects' factories return the board+0x4xxx mesh pointer directly
+ * without allocating a new object. If multiple refs of the same type exist,
+ * they all point to the same mesh — only one renders (at the last position).
+ *
+ * FIX: Instead of Level_CloneTree (which creates a Level, NOT a MeshWorld,
+ * causing NULL matrix crashes during Draw), we create a fresh MeshWorld
+ * via MeshWorld_ctor for each ref. Each instance gets its own vtable,
+ * world matrix, and render state.
  * ============================================================ */
 
 static int is_static_mesh_object(const char* refName)
@@ -238,6 +247,44 @@ static int is_static_mesh_object(const char* refName)
     if (_strnicmp(refName, "SWIRL", 5) == 0) return 1;
     if (_strnicmp(refName, "BRIDGE", 6) == 0) return 1;
     return 0;
+}
+
+/* Maps static-mesh ref names to their mesh file paths.
+ * Used to create a fresh MeshWorld for each instance instead of cloning. */
+static const char* static_mesh_path(const char* refName)
+{
+    if (_strnicmp(refName, "WATERWHEEL", 10) == 0) return "Levels\\Level3-WaterWheel";
+    if (_strnicmp(refName, "SWIRL", 5) == 0) return "Levels\\Level3-Swirl";
+    /* BRIDGE is handled by the original factory's BRIDGE code path,
+     * not a static return — but keep for safety */
+    return NULL;
+}
+
+/* Create a fresh MeshWorld instance for a static-mesh ref.
+ * This replaces Level_CloneTree which created a Level (base class)
+ * with an uninitialized world matrix, causing crashes in the render
+ * pipeline's matrix inverse function (0x49B4E7).
+ *
+ * Parameters: board pointer (for D3D device access), mesh file path.
+ * Returns: new MeshWorld* or NULL on failure. */
+static void* create_mesh_instance(void* board, const char* meshPath)
+{
+    int app, d3dDevice;
+    void* mem;
+
+    if (!meshPath || !board) return NULL;
+
+    app = *(int*)((char*)board + BOARD_APP_PTR);
+    if (!app) return NULL;
+
+    d3dDevice = *(int*)((char*)app + APP_D3D_DEVICE);
+    if (!d3dDevice) return NULL;
+
+    mem = g_operatorNew(0x10D0);
+    if (!mem) return NULL;
+
+    mem = g_meshWorldCtor(mem, d3dDevice, meshPath);
+    return mem;
 }
 
 /* ============================================================
@@ -618,10 +665,16 @@ static void __thiscall universal_factory(
     original(board, refName, outObj, outCol, refEntry);
 
     if (*outObj != NULL) {
-        /* Original factory handled it — clone if static-mesh */
+        /* Original factory handled it — create fresh instance if static-mesh */
         if (is_static_mesh_object(refName)) {
-            *outObj = g_cloneTree(*outObj, (int)board);
-            g_stats->clone_count++;
+            const char* meshPath = static_mesh_path(refName);
+            if (meshPath) {
+                void* newMesh = create_mesh_instance(board, meshPath);
+                if (newMesh) {
+                    *outObj = newMesh;
+                    g_stats->clone_count++;
+                }
+            }
         }
         log_ref(refName, "OK_ORIG", "original");
         stats_record(refName, 1, 0);
@@ -665,10 +718,16 @@ static void __thiscall universal_factory(
         sf->func(board, refName, outObj, outCol, refEntry);
 
         if (*outObj != NULL) {
-            /* This factory handled it — clone if static-mesh */
+            /* This factory handled it — create fresh instance if static-mesh */
             if (is_static_mesh_object(refName)) {
-                *outObj = g_cloneTree(*outObj, (int)board);
-                g_stats->clone_count++;
+                const char* meshPath = static_mesh_path(refName);
+                if (meshPath) {
+                    void* newMesh = create_mesh_instance(board, meshPath);
+                    if (newMesh) {
+                        *outObj = newMesh;
+                        g_stats->clone_count++;
+                    }
+                }
             }
 
             /* KEEP injected slots on HIT — the board may need them for
