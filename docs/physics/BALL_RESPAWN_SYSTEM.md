@@ -140,22 +140,46 @@ by `CollisionNode_IntersectTest`, but the main entry type (`entry+0x00`) is only
 
 See `references/collision-detection-pipeline.md` for the full vtable map and entry creation details.
 
-### Type-2 Entry: Backface Culling Gate
+### Type-2 Entry: Velocity Gate (NO Backface Culling)
 
-Type-2 entries are NOT created for every surface contact. The SpatialTree collision substep
-(vtable[7] at 0x463E20) applies a **directional filter** at 0x4640b4–0x4640d5 before creating any
-type-2 entry:
+Type-2 entries are created by `SpatialTree_TestFace` (0x463E20), the per-face swept-sphere test.
+**There is NO backface culling.** The function has one directional filter — a velocity gate —
+and it does not discriminate which side of the triangle the ball approaches from.
 
-```asm
-; dot(face_normal, ball_velocity) computed from [edi+0x4C/0x50/0x54] × [ebp+0x0/0x4/0x8]
-4640ca: fcomp 0x4cf368        ; compare dot product to 0.0f
-4640d2: test ah, 0x5
-4640d5: jnp  0x4640a8        ; if dot >= 0 → SKIP (no type-2 entry created)
+**Step 1 — Distance check (symmetric):** `Vec3_DotDiffAbs` computes the **absolute value** of
+the distance from the ball to the triangle plane. If `|distance| > 1.0`, skip. This is symmetric —
+it passes regardless of which side the ball is on.
+
+**Step 2 — Ray-sphere intersection:** Finds the contact point on the ball's sphere closest to
+the triangle. Side-agnostic.
+
+**Step 3 — Velocity gate** (the only directional check):
+```c
+fVar7 = Vec3_DotDiff(param_4, contact_pos, contact_normal);
+if (fVar7 <= 0.0f) {  // proceed
+    // ... point-in-triangle test, then create type-2 entry
+}
+// else: return 0 (ball moving away → no entry)
 ```
+- `param_4` = ball velocity direction
+- Passes when `dot(velocity, contact_normal) <= 0` — ball moving into or parallel to surface
+- **Fails only when `dot > 0`** — ball moving *away* from surface
 
-**Type-2 entries are only created when `dot(face_normal, ball_velocity) < 0`** — the ball must be
-moving *into* the surface. This is a swept-sphere system: it detects future intersections (ball
-moving toward a surface), not current contact (ball already touching).
+**Step 4 — Point-in-triangle test:** Checks whether the contact point projects inside the
+triangle via edge dot products. Geometric, side-agnostic.
+
+**Consequence for wall slides:** When the ball slides along a wall, velocity is perpendicular
+to the wall normal → `dot ≈ 0` → `0 <= 0` → **PASSES**. Type-2 entries are created every frame
+during wall contact. LGP updates continuously.
+
+**Consequence for clip-through:** When the ball clips through a wall from the wrong side while
+falling, velocity is downward and the wall normal is horizontal → `dot ≈ 0` → **PASSES**.
+The distance check is absolute (side-agnostic), and the point-in-triangle test is geometric.
+A type-2 entry is created → **LGP resets to the wall contact position.**
+
+The game does NOT have double-sided walls. Level geometry is single-sided. The swept sphere
+simply does not check which side the ball approaches from — it only checks whether the ball
+is moving away (dot > 0 → skip) vs. into/parallel (dot <= 0 → pass).
 
 ### Type-5 Entry: Penetration Depth Gates
 
@@ -208,35 +232,47 @@ Distance formula using LGP:
 dist = sqrt((lgp_x - point_x)² + (lgp_y - point_y)² + (lgp_z - point_z)²)
 ```
 
-### ⚠ OPEN QUESTION: LGP Behavior During Wall Slides
+### LGP Behavior During Wall Slides — RESOLVED (v3)
 
 **The LGP write in Ball_Update has NO surface-normal filter of its own** — it blindly writes LGP
 for every type-2 entry from the ball's SpatialTree. The filtering happens upstream in the entry
-*creation* path (SpatialTree substep backface culling gate, see above).
+*creation* path via `SpatialTree_TestFace` (0x463E20).
 
-A backface culling gate exists at 0x4640b4 that only creates type-2 entries when
-`dot(face_normal, ball_velocity) < 0` (ball moving into surface). This was initially hypothesized
-to explain why LGP doesn't continuously reset during wall slides. However, **this explanation is
-incomplete**: speedrunning wall-slide shortcuts work by resetting the LGP to a point on the wall
-*below* the track surface — meaning the LGP does update during wall contact at some point, just
-not continuously every frame.
+**There is NO backface culling gate.** The swept-sphere collision system does not discriminate
+which side of a triangle the ball approaches from:
 
-**What is verified:**
-- The backface culling gate exists and filters type-2 entry creation by velocity direction
-- The LGP write in Ball_Update is unconditional for all type-2 entries
-- Type-2 entries are rebuilt every frame by `Ball_AdvancePositionOrCollision`
-- Wall-slide shortcuts exist and work by getting LGP to update to a lower wall position
+1. **Distance check** (`Vec3_DotDiffAbs`) uses **absolute value** — symmetric, passes regardless
+   of which side the ball is on
+2. **Velocity gate** uses `<= 0` — passes when `dot ≈ 0` (falling perpendicular to wall normal)
+3. **Point-in-triangle test** — geometric, side-agnostic
 
-**What is NOT yet understood:**
-- The exact mechanism by which LGP updates during wall slides
-- Whether there are additional code paths that write LGP outside the type-2 entry loop
-- Whether the swept-sphere re-impacts the wall at intervals during a slide, creating periodic type-2 entries
-- Whether `Ball_FallUpdate` (0x408830) has its own LGP update path during falls
+The game does NOT have double-sided walls (user-corrected). Level geometry is single-sided.
+The swept sphere simply doesn't check which side the ball is on — it only checks whether the
+ball is moving away (dot > 0 → skip) vs. into/parallel (dot <= 0 → pass).
 
-**RE methodology lesson:** When analyzing why a field does or doesn't update, always trace the entry
-*creation* path, not just the entry *processing* path. The processing code may look like it updates
-unconditionally, but the creation code can have gates that prevent entries from existing in the first
-place. However, real-world behavior can involve additional code paths not yet traced.
+When the ball clips through a wall from the wrong side while falling:
+- Velocity is downward, wall normal is horizontal → `dot ≈ 0` → **PASSES**
+- Distance check is absolute → **PASSES** regardless of side
+- Type-2 entry created → **LGP resets to the wall contact position**
+
+**Wall slides DO create type-2 entries every frame.** LGP updates continuously during wall
+contact — it does NOT freeze. The wall-slide shortcut works because the LGP follows the ball
+down the wall to a position *below* the track surface, giving a respawn point that's lower
+than where the ball originally fell from.
+
+**Ball_FallUpdate (0x408830) uses the SAME pipeline** — creates a temporary SpatialTree from
+Scene+0x8B0 and calls Ball_AdvancePositionOrCollision (vtable[1]), running the same
+SpatialTree_TestFace. No separate LGP update path exists during falls.
+
+**⚠ RE methodology lesson (3 iterations to get right):**
+1. First claimed a "backface culling gate" at 0x4640b4 blocks back-side hits — WRONG
+2. Then claimed double-sided walls explain it — WRONG (user: "game does not have
+   double-sided walls")
+3. Finally decompiled the full function via Ghidra `create_function` + `decompile_function`
+   and found the distance check uses `Vec3_DotDiffAbs` (ABS) and velocity gate uses `<= 0`
+   **Always `create_function` + decompile via Ghidra FIRST, before drawing conclusions
+   from raw ASM.** The ASM dot-product patterns were misread across two iterations
+   without the full decompiled context.
 
 **Previous labels corrected:** `checkpoint_x/y/z` and "Last safe position" were partially correct
 but misleading. These are specifically the last grounded position from a type-2 surface collision,
