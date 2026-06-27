@@ -230,7 +230,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
   - `+0x361C` Ball pointer (first player ball)
   - `+0x29B0` Gravity parameter
   - `+0x29C0` Camera orbit distance
-  - `+0x3AAC` Camera Vec3+Matrix pairs (5 sets)
+  - `+0x3AAC` Player ball colors (4 RGB entries, 0x14 bytes each)
 
 ### Level
 - **Constructor:** `Level_ctor` (0x461740)
