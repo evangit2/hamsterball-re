@@ -1,17 +1,13 @@
 /*
- * half_size_balls.c — BASS.dll proxy that shrinks the player's ball to half size.
+ * half_size_balls.c — BASS.dll proxy that halves all ball sizes.
  *
- * Hooks the player ball spawn in Scene_SpawnBallsAndObjects and inlines the
- * same field writes that Ball_Shrink (0x00402200) performs — but WITHOUT
- * calling the function, so no sound effect plays.
+ * Patches 3 sites:
+ *   1. Ball_ctor2 default radius:  27.0 → 13.5  (MOV immediate patch)
+ *   2. Player ball spawn radius:   26.0 → 13.0  (MOV immediate patch)
+ *   3. CreateBadBall SIZE tag:     halve FPU value via code cave
  *
- * Only affects player index 0. AI balls, split balls, follow balls, and
- * board-init balls are left at their normal size.
- *
- * Fields set (identical to Ball_Shrink):
- *   ball+0x284 = 0x41500000  (radius = 13.0, down from 26.0)
- *   ball+0x188 = 0x40200000  (physics_scale = 2.5, down from 5.0)
- *   ball+0xC4C = 1            (is_shrunk flag)
+ * Ball_Shatter copies the parent's radius, which is already halved
+ * by patch #1 or #2, so split balls are automatically half size too.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * BUILD
@@ -24,17 +20,21 @@
  * Installation (Windows):
  *   1. In your Hamsterball game folder, rename bass.dll → bass_real.dll
  *   2. Copy this proxy bass.dll into the game folder
- *   3. Run the game — player ball will be half size
+ *   3. Run the game — all balls will be half their normal size
+ *
+ * If you already use another bass.dll proxy mod (FPS unlock, player clones,
+ * etc.), you can merge this into that proxy — just combine the patch_thread
+ * functions and DllMain calls.
  */
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <stdint.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports
+ * BASS Proxy Exports (stubs — Hamsterball only needs import resolution)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 __declspec(dllexport) void BASS_Init(void) {}
@@ -67,68 +67,108 @@ __declspec(dllexport) void BASS_SampleCreate(void) {}
 __declspec(dllexport) void BASS_SampleGetChannel(void) {}
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Hook Constants
+ * Patch Constants
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define IMAGE_BASE  0x00400000
 
 /*
- * Hook point: Scene_SpawnBallsAndObjects, after AthenaList_Append returns.
+ * Patch 1: Ball_ctor2 default radius
  *
- * At 0x0041C8D7 the game executes:
- *   C6 86 81 02 00 00 00    MOV byte [ESI+0x281], 0   (7 bytes)
+ *   Address:  0x00403C8B
+ *   Original: C7 86 84 02 00 00 00 00 D8 41
+ *             MOV dword ptr [ESI+0x284], 0x41D80000  (27.0f)
+ *   Patched:  C7 86 84 02 00 00 00 00 58 41
+ *             MOV dword ptr [ESI+0x284], 0x41580000  (13.5f)
  *
- * ESI = ball pointer, [ESI+0x18] = player_index (set at 0x0041C893).
- * This runs inside a loop that creates one ball per player. We replace it
- * with a CALL to a code cave that:
- *   1. Checks if [ESI+0x18] == 0 (player index 0)
- *   2. If yes, writes the three Ball_Shrink fields inline (no function call)
- *   3. Executes the original MOV byte [ESI+0x281], 0
- *   4. JMPs back to 0x0041C8DE
+ * The immediate value starts at offset +6 from the instruction start.
+ * We patch 4 bytes at 0x00403C91.
  */
-#define HOOK_ADDR     0x0041C8D7
-#define HOOK_ORIG    "\xC6\x86\x81\x02\x00\x00\x00"   /* MOV byte [ESI+0x281],0 */
-#define HOOK_LEN      7
-#define RETURN_ADDR   0x0041C8DE   /* instruction after the hooked one */
+#define PATCH1_ADDR      0x00403C91
+#define PATCH1_ORIGINAL  "\x00\x00\xD8\x41"   /* 27.0f */
+#define PATCH1_PATCHED   "\x00\x00\x58\x41"   /* 13.5f */
+#define PATCH1_LEN       4
 
 /*
- * Code cave layout (36 bytes):
+ * Patch 2: Player ball spawn radius (Scene_SpawnBallsAndObjects)
  *
- *   83 BE 18 00 00 00 00           CMP dword [ESI+0x18], 0      ; 7 bytes
- *   75 1B                          JNE skip                      ; 2 bytes
- *   C7 86 84 02 00 00 00 00 50 41  MOV dword [ESI+0x284], 0x41500000  ; 10 bytes (radius=13.0)
- *   C7 86 88 01 00 00 00 00 20 40  MOV dword [ESI+0x188], 0x40200000  ; 10 bytes (physics=2.5)
- *   C6 86 4C 0C 00 00 01           MOV byte [ESI+0xC4C], 1      ; 7 bytes (is_shrunk=1)
- * skip:
- *   C6 86 81 02 00 00 00           MOV byte [ESI+0x281], 0      ; 7 bytes (original instruction)
- *   E9 xx xx xx xx                 JMP RETURN_ADDR              ; 5 bytes
- * Total: 7+2+10+10+7+7+5 = 48 bytes
+ *   Address:  0x0041C8AA
+ *   Original: C7 86 84 02 00 00 00 00 D0 41
+ *             MOV dword ptr [ESI+0x284], 0x41D00000  (26.0f)
+ *   Patched:  C7 86 84 02 00 00 00 00 50 41
+ *             MOV dword ptr [ESI+0x284], 0x41500000  (13.0f)
  *
- * The JNE offset 0x1B = 27 = 10+10+7 (the three field writes it skips).
+ * The immediate value starts at offset +6 from the instruction start.
+ * We patch 4 bytes at 0x0041C8B0.
  */
-#define CAVE_SIZE  48
+#define PATCH2_ADDR      0x0041C8B0
+#define PATCH2_ORIGINAL  "\x00\x00\xD0\x41"   /* 26.0f */
+#define PATCH2_PATCHED   "\x00\x00\x50\x41"   /* 13.0f */
+#define PATCH2_LEN       4
 
-static const unsigned char cave_template[CAVE_SIZE] = {
-    /* CMP dword [ESI+0x18], 0 */
-    0x83, 0xBE, 0x18, 0x00, 0x00, 0x00, 0x00,
-    /* JNE skip (offset 0x1B = 27 bytes ahead) */
-    0x75, 0x1B,
-    /* MOV dword [ESI+0x284], 0x41500000 (radius = 13.0) */
-    0xC7, 0x86, 0x84, 0x02, 0x00, 0x00, 0x00, 0x00, 0x50, 0x41,
-    /* MOV dword [ESI+0x188], 0x40200000 (physics_scale = 2.5) */
-    0xC7, 0x86, 0x88, 0x01, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40,
-    /* MOV byte [ESI+0xC4C], 1 (is_shrunk flag) */
-    0xC6, 0x86, 0x4C, 0x0C, 0x00, 0x00, 0x01,
-    /* skip: — MOV byte [ESI+0x281], 0 (original instruction) */
-    0xC6, 0x86, 0x81, 0x02, 0x00, 0x00, 0x00,
-    /* JMP rel32 back to RETURN_ADDR — filled at runtime */
-    0xE9, 0x00, 0x00, 0x00, 0x00
+/*
+ * Patch 3: CreateBadBall SIZE tag handler
+ *
+ *   Address:  0x0040BE74
+ *   Original: D9 9E 84 02 00 00
+ *             FSTP float ptr [ESI+0x284]
+ *
+ * This instruction writes the SIZE value from the FPU stack to ball+0x284.
+ * We replace it with a CALL to a code cave that:
+ *   1. Executes the original FSTP (stores the SIZE value)
+ *   2. Reloads the value
+ *   3. Multiplies by 0.5f (halving it)
+ *   4. Stores the halved value back
+ *
+ * The CALL is 5 bytes (E8 + rel32), plus 1 NOP = 6 bytes (same as original).
+ *
+ * Code cave (25 bytes):
+ *   D9 9E 84 02 00 00     FSTP [ESI+0x284]      ; original store
+ *   D9 86 84 02 00 00     FLD  [ESI+0x284]      ; reload value
+ *   D8 0D <addr>          FMUL dword [0x41C89C]  ; multiply by 0.5f
+ *   D9 9E 84 02 00 00     FSTP [ESI+0x284]      ; store halved value
+ *   C3                     RET
+ *
+ * 0.5f (0x3F000000) lives at VA 0x0041C89C as the immediate of the
+ * MOV [ESI+0x278], 0x3F000000 instruction in Scene_SpawnBallsAndObjects.
+ */
+#define PATCH3_ADDR      0x0040BE74
+#define PATCH3_ORIGINAL  "\xD9\x9E\x84\x02\x00\x00"   /* FSTP [ESI+0x284] */
+#define PATCH3_LEN       6
+
+/* Address of 0.5f float constant in .text (immediate of nearby MOV) */
+#define HALF_FLOAT_ADDR   0x0041C89C
+
+/* Code cave machine code (built at runtime) */
+static unsigned char code_cave[] = {
+    0xD9, 0x9E, 0x84, 0x02, 0x00, 0x00,   /* FSTP [ESI+0x284] */
+    0xD9, 0x86, 0x84, 0x02, 0x00, 0x00,   /* FLD  [ESI+0x284] */
+    0xD8, 0x0D, 0x9C, 0xC8, 0x41, 0x00,   /* FMUL dword [0x0041C89C] */
+    0xD9, 0x9E, 0x84, 0x02, 0x00, 0x00,   /* FSTP [ESI+0x284] */
+    0xC3                                    /* RET */
 };
+#define CODE_CAVE_SIZE   sizeof(code_cave)
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Memory Patching Helpers
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Verify bytes match expected pattern, then patch in place.
+ * Returns 1 on success, 0 on mismatch or failure. */
+static int patch_bytes(BYTE *addr, const BYTE *expected, const BYTE *replacement, SIZE_T len)
+{
+    DWORD oldProtect;
+    if (memcmp(addr, expected, len) != 0)
+        return 0;
+    if (!VirtualProtect(addr, len, PAGE_EXECUTE_READWRITE, &oldProtect))
+        return 0;
+    memcpy(addr, replacement, len);
+    VirtualProtect(addr, len, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), addr, len);
+    return 1;
+}
+
+/* Write arbitrary bytes to an address (no verify, for code cave). */
 static int write_bytes(BYTE *addr, const BYTE *data, SIZE_T len)
 {
     DWORD oldProtect;
@@ -140,29 +180,34 @@ static int write_bytes(BYTE *addr, const BYTE *data, SIZE_T len)
     return 1;
 }
 
-/* Allocate a code cave within ±2GB for relative CALL/JMP. */
+/* Allocate a code cave near a target address (within ±2GB for relative CALL).
+ * Returns the cave address, or NULL on failure. */
 static void *allocate_code_cave(void *near_addr, SIZE_T size)
 {
+    /* Try VirtualAlloc near the target. If the exe is loaded at its preferred
+     * base (0x400000), we can allocate right after the .text section. */
     SYSTEM_INFO si;
     GetSystemInfo(&si);
 
+    /* Search for free memory pages within ±2GB of the target */
+    DWORD_PTR target = (DWORD_PTR)near_addr;
+    DWORD_PTR lo = target > 0x40000000 ? target - 0x40000000 : (DWORD_PTR)si.lpMinimumApplicationAddress;
+    DWORD_PTR hi = target + 0x40000000;
+
+    /* Round size to page boundary */
     SIZE_T alloc_size = ((size + si.dwPageSize - 1) / si.dwPageSize) * si.dwPageSize;
 
-    /* Try just past .text section first */
-    DWORD_PTR addr = (IMAGE_BASE + 0xF8000);
+    /* Try addresses near the exe first (preferred base region) */
+    DWORD_PTR addr = (IMAGE_BASE + 0xF8000);  /* just past typical .text end */
     void *cave = VirtualAlloc((void*)addr, alloc_size, MEM_COMMIT | MEM_RESERVE,
                               PAGE_EXECUTE_READWRITE);
     if (cave)
         return cave;
 
-    /* Scan outward from target */
-    DWORD_PTR target = (DWORD_PTR)near_addr;
-    DWORD_PTR lo = target > 0x40000000 ? target - 0x40000000 : (DWORD_PTR)si.lpMinimumApplicationAddress;
-    DWORD_PTR hi = target + 0x40000000;
-
+    /* Scan outward from the target */
     for (DWORD_PTR a = target & ~((DWORD_PTR)si.dwPageSize - 1);
          a >= lo && a <= hi;
-         a += si.dwPageSize)
+         a += (a > target ? si.dwPageSize : -(DWORD_PTR)si.dwPageSize))
     {
         cave = VirtualAlloc((void*)a, alloc_size, MEM_COMMIT | MEM_RESERVE,
                            PAGE_EXECUTE_READWRITE);
@@ -171,8 +216,27 @@ static void *allocate_code_cave(void *near_addr, SIZE_T size)
         if (a <= lo) break;
     }
 
+    /* Last resort: let the OS pick anywhere (may fail for relative CALL) */
     return VirtualAlloc(NULL, alloc_size, MEM_COMMIT | MEM_RESERVE,
                        PAGE_EXECUTE_READWRITE);
+}
+
+/* Calculate relative offset for E8 CALL instruction.
+ * CALL rel32: E8 xx xx xx xx
+ * rel32 = target - (call_addr + 5) */
+static int make_rel32_call(BYTE *call_addr, void *target)
+{
+    DWORD_PTR src = (DWORD_PTR)call_addr + 5;  /* E8 + 4 bytes = 5 bytes */
+    DWORD_PTR dst = (DWORD_PTR)target;
+    ptrdiff_t rel = (ptrdiff_t)(dst - src);
+
+    /* Check it fits in int32 */
+    if (rel > 0x7FFFFFFF || rel < (ptrdiff_t)0x80000000)
+        return 0;
+
+    int32_t rel32 = (int32_t)rel;
+    memcpy(call_addr + 1, &rel32, 4);
+    return 1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -187,70 +251,104 @@ static void patch_thread(void *param)
     if (!hExe) return;
     BYTE *base = (BYTE*)hExe;
 
+    /* Resolve ASLR-safe addresses */
+    BYTE *patch1_addr = base + (PATCH1_ADDR - IMAGE_BASE);
+    BYTE *patch2_addr = base + (PATCH2_ADDR - IMAGE_BASE);
+    BYTE *patch3_addr = base + (PATCH3_ADDR - IMAGE_BASE);
+
+    /* Wait for the game to finish loading (it patches its own code during init) */
     Sleep(500);
 
-    int hook_ok = 0;
-    BYTE *hook_addr = base + (HOOK_ADDR - IMAGE_BASE);
+    int results = 0;
 
-    /* Verify original bytes match */
-    if (memcmp(hook_addr, HOOK_ORIG, HOOK_LEN) == 0)
+    /* ═══════════════════════════════════════════════════════════════════════
+     * Patch 1: Ball_ctor2 default radius 27.0 → 13.5
+     * ═══════════════════════════════════════════════════════════════════════ */
     {
-        /* Build code cave */
-        unsigned char cave[CAVE_SIZE];
-        memcpy(cave, cave_template, CAVE_SIZE);
+        int ok = patch_bytes(patch1_addr,
+                             (const BYTE*)PATCH1_ORIGINAL,
+                             (const BYTE*)PATCH1_PATCHED,
+                             PATCH1_LEN);
+        results += ok;
+    }
 
-        /* Allocate cave within relative JMP range */
-        void *cave_mem = allocate_code_cave(hook_addr, CAVE_SIZE);
-        if (cave_mem && write_bytes((BYTE*)cave_mem, cave, CAVE_SIZE))
+    /* ═══════════════════════════════════════════════════════════════════════
+     * Patch 2: Player ball spawn radius 26.0 → 13.0
+     * ═══════════════════════════════════════════════════════════════════════ */
+    {
+        int ok = patch_bytes(patch2_addr,
+                             (const BYTE*)PATCH2_ORIGINAL,
+                             (const BYTE*)PATCH2_PATCHED,
+                             PATCH2_LEN);
+        results += ok;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+     * Patch 3: CreateBadBall SIZE tag — code cave to halve FPU value
+     *
+     * Replace:  FSTP [ESI+0x284]            (6 bytes)
+     * With:     CALL code_cave + NOP        (5+1 bytes)
+     *
+     * Code cave does the FSTP, then halves the stored value via FMUL 0.5f.
+     * ═══════════════════════════════════════════════════════════════════════ */
+    {
+        /* Verify original bytes */
+        if (memcmp(patch3_addr, PATCH3_ORIGINAL, PATCH3_LEN) == 0)
         {
-            /* Fix JMP rel32 at end of cave to target RETURN_ADDR */
-            BYTE *jmp_addr = (BYTE*)cave_mem + CAVE_SIZE - 5;  /* E9 + 4 bytes */
-            DWORD_PTR jmp_src = (DWORD_PTR)jmp_addr + 5;  /* address after JMP */
-            ptrdiff_t jmp_rel = (ptrdiff_t)(base + (RETURN_ADDR - IMAGE_BASE) - jmp_src);
-            if (jmp_rel <= 0x7FFFFFFF && jmp_rel >= (ptrdiff_t)0x80000000)
+            /* Allocate code cave within relative CALL range */
+            void *cave = allocate_code_cave(patch3_addr, CODE_CAVE_SIZE);
+            if (cave)
             {
-                int32_t rel32 = (int32_t)jmp_rel;
-                memcpy(jmp_addr + 1, &rel32, 4);
-
-                /* Build CALL + 2 NOPs to replace original 7-byte instruction */
-                BYTE call_nop[7];
-                call_nop[0] = 0xE8;  /* CALL rel32 */
-                /* CALL target = cave_mem */
-                DWORD_PTR call_src = (DWORD_PTR)hook_addr + 5;
-                ptrdiff_t call_rel = (ptrdiff_t)((DWORD_PTR)cave_mem - call_src);
-                if (call_rel <= 0x7FFFFFFF && call_rel >= (ptrdiff_t)0x80000000)
+                /* Write the code cave */
+                if (write_bytes((BYTE*)cave, code_cave, CODE_CAVE_SIZE))
                 {
-                    int32_t call_rel32 = (int32_t)call_rel;
-                    memcpy(call_nop + 1, &call_rel32, 4);
-                    call_nop[5] = 0x90;  /* NOP */
-                    call_nop[6] = 0x90;  /* NOP */
+                    /* Build the CALL+NOP replacement */
+                    BYTE call_nop[6];
+                    call_nop[0] = 0xE8;  /* CALL rel32 */
+                    call_nop[5] = 0x90;  /* NOP (pad to 6 bytes) */
 
-                    hook_ok = write_bytes(hook_addr, call_nop, 7);
+                    if (make_rel32_call(call_nop, cave))
+                    {
+                        /* Patch the FSTP → CALL cave + NOP */
+                        if (write_bytes(patch3_addr, call_nop, 6))
+                        {
+                            results++;
+                        }
+                    }
                 }
             }
         }
     }
 
-    /* Write log file */
+    /* Write a log file so users can verify the patches applied */
     {
         char log_path[MAX_PATH];
         GetModuleFileNameA(hExe, log_path, MAX_PATH);
+        /* Replace .exe with _half_size.log in the path */
         char *dot = strrchr(log_path, '.');
         if (dot) strcpy(dot, "_half_size.log");
         else strcat(log_path, "_half_size.log");
 
-        FILE *f = NULL;
-        if (fopen_s(&f, log_path, "w") == 0 && f)
+        FILE *f = fopen(log_path, "w");
+        if (f)
         {
-            fprintf(f, "Hamsterball Half-Size Balls Mod (v3)\n");
-            fprintf(f, "====================================\n\n");
-            fprintf(f, "Inlines Ball_Shrink physics (no sound, no function call):\n");
-            fprintf(f, "  ball+0x284 = 13.0 (radius)\n");
-            fprintf(f, "  ball+0x188 = 2.5  (physics_scale)\n");
-            fprintf(f, "  ball+0xC4C = 1    (is_shrunk)\n\n");
-            fprintf(f, "Only applies to player index 0.\n\n");
-            fprintf(f, "Hook (Scene_SpawnBallsAndObjects 0x0041C8D7): %s\n",
-                    hook_ok ? "APPLIED" : "FAILED");
+            fprintf(f, "Hamsterball Half-Size Balls Mod\n");
+            fprintf(f, "================================\n");
+            fprintf(f, "\n");
+            fprintf(f, "Patch 1 (Ball_ctor2 default 27.0→13.5): %s\n",
+                    (results & 1) ? "APPLIED" : "FAILED");
+            fprintf(f, "Patch 2 (Player spawn 26.0→13.0):       %s\n",
+                    (results & 2) ? "APPLIED" : "FAILED");
+            fprintf(f, "Patch 3 (CreateBadBall SIZE code cave):  %s\n",
+                    (results & 4) ? "APPLIED" : "FAILED");
+            fprintf(f, "\n");
+            fprintf(f, "Exe base: 0x%08X\n", (unsigned)(DWORD_PTR)base);
+            fprintf(f, "Patch1 at: 0x%08X\n", (unsigned)(DWORD_PTR)patch1_addr);
+            fprintf(f, "Patch2 at: 0x%08X\n", (unsigned)(DWORD_PTR)patch2_addr);
+            fprintf(f, "Patch3 at: 0x%08X\n", (unsigned)(DWORD_PTR)patch3_addr);
+            fprintf(f, "\n");
+            fprintf(f, "All balls should now render at half their normal size.\n");
+            fprintf(f, "Collision is also halved (balls fit through smaller gaps).\n");
             fclose(f);
         }
     }
@@ -266,6 +364,7 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved)
     {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hInst);
+        /* Spawn the patch thread — don't block DllMain */
         CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)patch_thread, NULL, 0, NULL);
         break;
     }
