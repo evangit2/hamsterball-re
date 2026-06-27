@@ -17,7 +17,7 @@ The mod creates `ball_tint.txt` next to `bass.dll` on first launch. Edit the fil
 
 Each entry is 4 floats (R, G, B, A) = 16 bytes, spaced 0x14 bytes apart.
 
-This is a much cleaner approach than v1: instead of writing to the ball's render context material and setting a gfx material override, we simply overwrite the board-level color value that the game's own rendering pipeline reads when drawing each player's ball.
+This is a much cleaner approach than v1: instead of writing to the ball's per-ball material fields and setting a gfx override, we simply overwrite the board-level color value that the game's own rendering pipeline reads when drawing each player's ball.
 
 The board is found via `App+0x220 → PlayerProfile+0xC → board`, with a fallback scanner that looks for a valid AthenaList at `+0x29D4`.
 
