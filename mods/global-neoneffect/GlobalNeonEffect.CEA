@@ -1,26 +1,38 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v13 — Pitch black scene + glowing player balls
+// GLOBAL NEON EFFECT v14 — Pitch black scene + glowing player balls
 //
-// v12 PROBLEMS (user feedback):
-// 1. "Lighting is just decreased, not pitch black" — Fog with black color
-//    was partially darkening the scene but not fully black. Also, setting
-//    AMBIENT=white for balls didn't work because ball material's Ambient
-//    component may be 0, so AMBIENT×AmbientMaterial = 0.
-// 2. "Player 1-4 balls still retain their normal lighting" — Setting
-//    D3DRS_AMBIENT=white during ball render only works if the ball's
-//    material has non-zero Ambient. If AmbientMaterial=0, no glow.
+// v13 BUG (FREEZE ROOT CAUSE):
+// LightEnable vtable offset was 0xB8 = SetClipPlane (index 46), NOT LightEnable.
+// SetClipPlane(Index, pPlane=NULL) dereferences NULL to read 4 floats →
+// access violation 8 times per frame (~480/sec at 60fps). SEH handler caught
+// each one but kernel-mode exception overhead froze the game. "Not crash, freeze."
 //
-// v13 FIX — toggle D3DRS_LIGHTING itself:
-// - Scene: LIGHTING=TRUE + AMBIENT=0 + lights disabled
-//   D3D formula: FinalColor = Emissive + Ambient×AmbientMaterial + Σ(Lights)
-//   = Emissive(0) + 0×AmbientMaterial + 0 = 0 = PITCH BLACK
+// v13b: "Lighting is just decreased, not pitch black" — because lights were
+// never actually disabled (SetClipPlane doesn't disable lights).
+//
+// v14 FIX:
+// 1. LightEnable offset corrected: 0xB8 → 0xB4 (vtable[45])
+//    Verified via D3D8 vtable layout: SetMaterial=0xA4, SetRenderState=0xC8
+//    Methods between: GetMaterial(0xA8), SetLight(0xAC), GetLight(0xB0),
+//    LightEnable(0xB4), SetClipPlane(0xB8), GetClipPlane(0xBC),
+//    SetClipStatus(0xC0), GetClipStatus(0xC4), SetRenderState(0xC8)
+// 2. All push values use explicit hex (push 0x89 not push 89)
+// 3. Same 4-hook architecture, just with correct D3D calls
+//
+// EFFECT:
+// - Scene: LIGHTING=TRUE + AMBIENT=0 + all 8 lights disabled
+//   FinalColor = Emissive(0) + 0×AmbientMaterial + 0 = 0 = PITCH BLACK
 // - Ball: LIGHTING=FALSE → D3D skips ALL lighting calculations
-//   FinalColor = VertexColor × Texture (textures show at full brightness)
-//   Against pitch-black scene, fully-lit ball = GLOWING
+//   FinalColor = VertexColor × Texture (full brightness = GLOWING)
 //
-// Also: removed fog override. v12 set gfx+0x734=1 (fog on) + gfx+0x738=0
-// (black fog). This caused "decreased not pitch black" — fog darkened distant
-// objects but near objects stayed lit. v13 only sets gfx+0x730=0 (ambient=0).
+// D3D8 vtable offsets (verified against game's own calls):
+//   SetRenderState = vtable[50] = 0xC8  (confirmed: game uses [ECX+0xC8])
+//   LightEnable    = vtable[45] = 0xB4  (FIXED: was 0xB8=SetClipPlane)
+//   SetTransform   = vtable[37] = 0x94  (confirmed: game uses [ECX+0x94])
+//
+// D3D8 render states:
+//   D3DRS_LIGHTING = 0x89 (137)
+//   D3DRS_AMBIENT  = 0x8B (139)
 //
 // HOOKS:
 // 1. Ball_Update (0x405E22): gfx+0x730=0 (ambient=black). NO stdcall.
@@ -29,18 +41,10 @@
 // 4. Ball_RenderAI exit (0x4050D9): SetRenderState(LIGHTING=0x89, TRUE=1)
 //    + gfx+0x730=0 (restore dark ambient for remaining scene objects)
 //
-// D3D8 vtable offsets (verified):
-//   SetRenderState = vtable[50] = 0xC8
-//   LightEnable    = vtable[46] = 0xB8
-//
-// D3D8 render states:
-//   D3DRS_LIGHTING = 0x89 (137)
-//   D3DRS_AMBIENT  = 0x8B (139)
-//
 // REGISTER SAFETY (stdcall clobbering rule):
 // After EVERY stdcall (call dword ptr [...]), EAX/ECX/EDX are DESTROYED.
 // Only EBX/ESI/EDI/EBP survive. Must reload from callee-preserved registers
-// or global addresses. This was the v11 crash cause.
+// or global addresses.
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
@@ -104,7 +108,7 @@ neon_light_loop:
   push 0                       // FALSE = disable
   push esi                      // light index
   push eax                      // device (this)
-  call dword ptr [edx+0xB8]    // LightEnable = vtable[46]
+  call dword ptr [edx+0xB4]    // LightEnable = vtable[45] (FIXED: was 0xB8=SetClipPlane)
 
   mov eax, [ebp+0x154]         // reload device (clobbered by stdcall)
   mov edx, [eax]               // reload vtable
@@ -126,7 +130,6 @@ skip_lights:
 // Sets D3DRS_LIGHTING=FALSE so ball renders with vertex/texture colors
 // directly (no D3D lighting calculations). Ball appears fully lit against
 // the pitch-black scene = GLOWING effect.
-// Push/pop around the stdcall — no clobbered register use after pop.
 // Original: push -1; mov eax, fs:[0] (8 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_ball_lit:
@@ -145,9 +148,9 @@ neon_ball_lit:
   jz skip_ball_lit
   mov eax, [edx]               // vtable
 
-  // SetRenderState(LIGHTING=0x89, FALSE=0) — disable D3D lighting for ball
+  // SetRenderState(LIGHTING=0x89, FALSE=0)
   push 0                        // value = 0 (LIGHTING disabled)
-  push 89                       // state = D3DRS_LIGHTING
+  push 0x89                     // state = D3DRS_LIGHTING
   push edx                      // device (this)
   call dword ptr [eax+0xC8]    // SetRenderState = vtable[50]
 
@@ -183,9 +186,9 @@ neon_ball_dark:
   jz skip_ball_dark
   mov eax, [edx]               // vtable
 
-  // SetRenderState(LIGHTING=0x89, TRUE=1) — re-enable D3D lighting
+  // SetRenderState(LIGHTING=0x89, TRUE=1)
   push 1                        // value = 1 (LIGHTING enabled)
-  push 89                       // state = D3DRS_LIGHTING
+  push 0x89                     // state = D3DRS_LIGHTING
   push edx                      // device (this)
   call dword ptr [eax+0xC8]    // SetRenderState — clobbers EAX/ECX/EDX
 
