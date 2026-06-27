@@ -231,8 +231,8 @@ static void load_real_bass(void)
 #define BALL_VEL_Z          0x178   /* float velocity_z */
 #define BALL_RADIUS         0x284   /* float radius */
 #define BALL_MESH_INDEX     0x754   /* int mesh index (0=Sphere, 9=8Ball) */
-#define BALL_DEAD           0x2F9   /* byte is_falling/dead */
-#define BALL_RENDER_SCALE   0x2FC   /* float render_scale (1.0=visible) */
+#define BALL_DEAD           0x2F9   /* byte is_stunned/dead */
+#define BALL_ALPHA         0x2FC   /* float alpha (0=invisible, 1.0=visible) */
 #define BALL_IS_ACTIVE      0x768   /* byte is_active */
 #define BALL_FALL_TIMER     0xC60   /* float fall timer */
 #define BALL_HOME           0xC70   /* float HOME (leash distance from spawn) */

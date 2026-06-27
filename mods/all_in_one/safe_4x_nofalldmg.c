@@ -131,7 +131,7 @@ static int apply_4x(BYTE*base){
  * 1. ball+0x2E8 = 1 (shatter flag) — 8 write sites, ALL NOPed
  * 2. ball+0x2E9 = 1 (E:LIMIT respawn flag) — 5 write sites, ALL NOPed
  * 3. ball+0x768 = 0 (is_active → deactivates ball) — 5 write sites, ALL NOPed
- * 4. ball+0x2FC = 0 (render_scale → invisible) — 2 write sites, NOPed
+ * 4. ball+0x2FC = 0 (alpha → invisible) — 2 write sites, NOPed
  * Plus Ball_Shatter and Ball_Shatter_OnRamp function-entry RETs
  */
 static int apply_nofall(BYTE*base){

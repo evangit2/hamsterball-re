@@ -101,7 +101,7 @@ Scene_Render (0x41A2E0):
    e. Ball_ctor2(0xC60 bytes) → init physics defaults
    f. Ball_SetTrajectory → set trajectory from level data
    g. Set: player_index, gravity_scale=0.5, radius=26.0,
-           max_speed=5.0, is_falling=false, field_0x769=true
+           max_speed=5.0, is_stunned=false, field_0x769=true
    h. AthenaList_Append to ball_list (+0xA75)
    i. Store ball pointer in level_start_entry+0x10
 3. Scan object list for "SAFESPOT"/"SAFEPOS" entries → append to safe_list

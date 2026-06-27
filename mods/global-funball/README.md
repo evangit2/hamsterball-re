@@ -61,8 +61,8 @@ Balls are registered in two lists:
 | +0x16C | float | position Z |
 | +0x281 | byte | unused_init_flag (DEAD: set by ctor, never read) |
 | +0x284 | float | radius (26.0) |
-| +0x2F9 | byte | is_falling (0=not falling) |
-| +0x2FC | float | fall_timer (1.0) |
+| +0x2F9 | byte | is_stunned (0=not falling) |
+| +0x2FC | float | alpha (1.0) |
 | +0x754 | int32 | mesh type index (10=FunBall) |
 | +0xC74 | int32 | AI chase target (0=none) |
 | +0xC80 | byte | flag (0) |
