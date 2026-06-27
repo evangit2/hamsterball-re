@@ -471,7 +471,7 @@ static void spawn_8ball(void* scene, void* player_ball)
         /* Reset state to alive/active */
         *(BYTE*)(b + BALL_DEAD) = 0;
         *(BYTE*)(b + BALL_IS_ACTIVE) = 1;
-        *(float*)(b + BALL_RENDER_SCALE) = 1.0f;
+        *(float*)(b + BALL_ALPHA) = 1.0f;
         *(float*)(b + BALL_FALL_TIMER) = 1.0f;
 
         g_spawned_count++;
@@ -513,7 +513,7 @@ static void spawn_8ball(void* scene, void* player_ball)
     /* Ensure the ball is alive and active */
     *(BYTE*)(b + BALL_DEAD) = 0;
     *(BYTE*)(b + BALL_IS_ACTIVE) = 1;
-    *(float*)(b + BALL_RENDER_SCALE) = 1.0f;
+    *(float*)(b + BALL_ALPHA) = 1.0f;
     *(float*)(b + BALL_FALL_TIMER) = 1.0f;
 
     /* 10. Radius: keep Ball_InitPhysicsDefaults default (35.0 = 0x420C0000).
