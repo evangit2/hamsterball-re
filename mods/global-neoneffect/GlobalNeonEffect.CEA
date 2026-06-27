@@ -1,18 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v7 — Pitch black + glowing ball
+// GLOBAL NEON EFFECT v8 — Pitch black + glowing ball
 //
-// CRASH FIX: Reload EAX/ECX after every __stdcall D3D call.
-// PITCH BLACK FIX: Hook AFTER Graphics_SetupLights to disable all 8
-//   directional lights via LightEnable(0..7, FALSE).
-//   v6 only set ambient=0 but lights still illuminated scene.
-// BALL GLOW: SetMaterial(white emissive) + SetRenderState(AMBIENT, white)
-//   during player ball render. Emissive works even with lights off.
+// FIX: Hook 2 moved from 0x454BD1 (after SetupLights, BEFORE light loop)
+//      to 0x454C97 (AFTER light loop). Lights are re-enabled by the
+//      8 light objects at gfx+0x710 which run AFTER Graphics_SetupLights.
+//      Now we disable them AFTER they're all set up.
 //
-// HOOK POINTS:
-//   Hook 1: Ball_Update (0x405E22) — gfx+0x730=0 + fog
-//   Hook 2: After Graphics_SetupLights (0x454BD1) — LightEnable(0..7, FALSE)
-//   Hook 3: Player Render Entry (0x403DDF) — SetMaterial + white ambient
-//   Hook 4: Player Render Exit (0x4050D9) — restore dark ambient
+// HOOKS:
+//   1. Ball_Update (0x405E22) — gfx+0x730=0 + fog + SetRenderState(AMBIENT,0)
+//   2. After light loop (0x454C97) — LightEnable(0..7, FALSE)
+//   3. Player Render Entry (0x403DDF) — SetMaterial(white emissive) + AMBIENT=white
+//   4. Player Render Exit (0x4050D9) — AMBIENT=0
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
@@ -39,6 +37,8 @@ g_WhiteMaterial:
 
 label(skip_dark)
 label(skip_lights)
+label(skip_glow_entry)
+label(skip_glow_exit)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 1: Ball_Update (0x405E22) — dark ambient + fog
@@ -76,9 +76,9 @@ skip_dark:
   jmp 00405E28
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 2: After Graphics_SetupLights (0x454BD1) — disable all 8 lights
-// EBP = gfx device (set by Graphics_RenderScene prologue)
-// Original instruction: LEA EBX, [EBP+0x224] (6 bytes)
+// HOOK 2: After light loop (0x454C97) — disable all 8 lights
+// EBP = gfx device
+// Original instruction: MOV ESI, [EBP+0x730] (6 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_lights_off:
   push eax
@@ -86,23 +86,20 @@ neon_lights_off:
   push edx
   push esi
 
-  // Get D3D device from gfx (EBP = gfx)
   mov eax, [ebp+0x154]
   test eax, eax
   jz skip_lights
-  mov edx, [eax]                 // EDX = D3D vtable
+  mov edx, [eax]
 
-  // LightEnable(0..7, FALSE) — disable all 8 lights
-  xor esi, esi                    // light index = 0
+  xor esi, esi
 
 neon_lights_loop:
-  push 0                          // bEnable = FALSE
-  push esi                        // light index
-  push eax                        // device
-  call dword ptr [edx+0xB0]      // LightEnable — clobbers EAX/ECX/EDX
+  push 0
+  push esi
+  push eax
+  call dword ptr [edx+0xB0]      // LightEnable — clobbers
 
-  // Reload after clobber
-  mov eax, [ebp+0x154]
+  mov eax, [ebp+0x154]           // reload
   mov edx, [eax]
   inc esi
   cmp esi, 8
@@ -115,8 +112,8 @@ skip_lights:
   pop eax
 
   // Original instruction
-  lea ebx, [ebp+0x224]
-  jmp 00454BD7
+  mov esi, [ebp+0x730]
+  jmp 00454C9D
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 3: Player Render Entry (0x403DDF) — SetMaterial + white ambient
@@ -193,7 +190,7 @@ skip_glow_exit:
   jmp neon_dark
   nop
 
-00454BD1:
+00454C97:
   jmp neon_lights_off
   nop
 
@@ -211,8 +208,8 @@ skip_glow_exit:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-00454BD1:
-  db 8D 9D 24 02 00 00
+00454C97:
+  db 8B B5 30 07 00 00
 
 00403DDF:
   db 8B 45 10 8B 88 74 01 00 00
