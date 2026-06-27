@@ -1,45 +1,25 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v14 — Pitch black scene + glowing player balls
+// GLOBAL NEON EFFECT v15 — Pitch dark scene + glowing player balls
 //
-// v13 BUG (FREEZE ROOT CAUSE):
-// LightEnable vtable offset was 0xB8 = SetClipPlane (index 46), NOT LightEnable.
-// SetClipPlane(Index, pPlane=NULL) dereferences NULL to read 4 floats →
-// access violation 8 times per frame (~480/sec at 60fps). SEH handler caught
-// each one but kernel-mode exception overhead froze the game. "Not crash, freeze."
+// v14 BUG (FREEZE ROOT CAUSE):
+// Hook 2 called LightEnable(device, 0..7, FALSE) 8 times per frame.
+// The game NEVER calls LightEnable itself (verified: zero matches for
+// call [edx+0xB4] in the entire binary). The game manages lighting through
+// SetRenderState(LIGHTING, TRUE/FALSE) + SetLight + SetMaterial.
+// Calling LightEnable 8x/frame on a D3D device that never expects these
+// calls causes driver-level synchronization stalls → FREEZE on level load.
 //
-// v13b: "Lighting is just decreased, not pitch black" — because lights were
-// never actually disabled (SetClipPlane doesn't disable lights).
+// v15 FIX:
+// Removed Hook 2 entirely. No LightEnable calls at all.
+// The neon effect now uses 3 hooks instead of 4:
+//   Hook 1: gfx+0x730=0 (ambient=black) during Ball_Update — NO stdcall
+//   Hook 3: SetRenderState(LIGHTING=0x89, FALSE=0) at Ball_RenderAI entry
+//   Hook 4: SetRenderState(LIGHTING=0x89, TRUE=1) + gfx+0x730=0 at exit
 //
-// v14 FIX:
-// 1. LightEnable offset corrected: 0xB8 → 0xB4 (vtable[45])
-//    Verified via D3D8 vtable layout: SetMaterial=0xA4, SetRenderState=0xC8
-//    Methods between: GetMaterial(0xA8), SetLight(0xAC), GetLight(0xB0),
-//    LightEnable(0xB4), SetClipPlane(0xB8), GetClipPlane(0xBC),
-//    SetClipStatus(0xC0), GetClipStatus(0xC4), SetRenderState(0xC8)
-// 2. All push values use explicit hex (push 0x89 not push 89)
-// 3. Same 4-hook architecture, just with correct D3D calls
-//
-// EFFECT:
-// - Scene: LIGHTING=TRUE + AMBIENT=0 + all 8 lights disabled
-//   FinalColor = Emissive(0) + 0×AmbientMaterial + 0 = 0 = PITCH BLACK
-// - Ball: LIGHTING=FALSE → D3D skips ALL lighting calculations
-//   FinalColor = VertexColor × Texture (full brightness = GLOWING)
-//
-// D3D8 vtable offsets (verified against game's own calls):
-//   SetRenderState = vtable[50] = 0xC8  (confirmed: game uses [ECX+0xC8])
-//   LightEnable    = vtable[45] = 0xB4  (FIXED: was 0xB8=SetClipPlane)
-//   SetTransform   = vtable[37] = 0x94  (confirmed: game uses [ECX+0x94])
-//
-// D3D8 render states:
-//   D3DRS_LIGHTING = 0x89 (137)
-//   D3DRS_AMBIENT  = 0x8B (139)
-//
-// HOOKS:
-// 1. Ball_Update (0x405E22): gfx+0x730=0 (ambient=black). NO stdcall.
-// 2. After light loop (0x454C97): gfx+0x730=0 + LightEnable(0..7, FALSE)
-// 3. Ball_RenderAI entry (0x403DC0): SetRenderState(LIGHTING=0x89, FALSE=0)
-// 4. Ball_RenderAI exit (0x4050D9): SetRenderState(LIGHTING=0x89, TRUE=1)
-//    + gfx+0x730=0 (restore dark ambient for remaining scene objects)
+// With ambient=0, unlit areas (backfaces, shadows, distant geometry) are
+// pitch black. Directional lights still illuminate facing surfaces, but
+// the overall scene is much darker. The ball renders at full vertex/texture
+// brightness with LIGHTING=FALSE → glowing effect.
 //
 // REGISTER SAFETY (stdcall clobbering rule):
 // After EVERY stdcall (call dword ptr [...]), EAX/ECX/EDX are DESTROYED.
@@ -50,15 +30,12 @@
 [ENABLE]
 
 alloc(neon_dark, 64)
-alloc(neon_lights_off, 256)
 alloc(neon_ball_lit, 64)
 alloc(neon_ball_dark, 64)
 
 label(skip_dark)
-label(skip_lights)
 label(skip_ball_lit)
 label(skip_ball_dark)
-label(neon_light_loop)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 1: Ball_Update (0x405E22) — ESI = ball
@@ -84,52 +61,10 @@ skip_dark:
   jmp 00405E28
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 2: After light loop (0x454C97) — EBP = gfx (callee-preserved)
-// Resets gfx+0x730=0 + disables all 8 D3D lights via LightEnable(0..7, FALSE).
-// EBP survives stdcall, so gfx is re-readable after each call.
-// Original: mov esi, [ebp+0x730] (6 bytes)
-// ═══════════════════════════════════════════════════════════════════════
-neon_lights_off:
-  push eax
-  push ecx
-  push edx
-  push esi
-
-  mov dword ptr [ebp+0x730], 0       // gfx+0x730 = 0 (ambient = black)
-
-  mov eax, [ebp+0x154]         // D3D device
-  test eax, eax
-  jz skip_lights
-  mov edx, [eax]               // vtable
-
-  xor esi, esi                  // light index 0..7
-
-neon_light_loop:
-  push 0                       // FALSE = disable
-  push esi                      // light index
-  push eax                      // device (this)
-  call dword ptr [edx+0xB4]    // LightEnable = vtable[45] (FIXED: was 0xB8=SetClipPlane)
-
-  mov eax, [ebp+0x154]         // reload device (clobbered by stdcall)
-  mov edx, [eax]               // reload vtable
-  inc esi
-  cmp esi, 8
-  jl neon_light_loop
-
-skip_lights:
-  pop esi
-  pop edx
-  pop ecx
-  pop eax
-
-  mov esi, [ebp+0x730]         // original instruction (reads 0)
-  jmp 00454C9D
-
-// ═══════════════════════════════════════════════════════════════════════
 // HOOK 3: Ball_RenderAI entry (0x403DC0) — ECX = ball
 // Sets D3DRS_LIGHTING=FALSE so ball renders with vertex/texture colors
 // directly (no D3D lighting calculations). Ball appears fully lit against
-// the pitch-black scene = GLOWING effect.
+// the dark scene = GLOWING effect.
 // Original: push -1; mov eax, fs:[0] (8 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_ball_lit:
@@ -165,7 +100,7 @@ skip_ball_lit:
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 4: Ball_RenderAI exit (0x4050D9) — restore dark scene
 // Sets D3DRS_LIGHTING=TRUE so remaining scene objects use D3D lighting
-// (with ambient=0 and no lights → pitch black).
+// (with ambient=0 → dark).
 // Also writes gfx+0x730=0 to ensure dark ambient for next frame.
 // Re-reads App from global 0x5341E0 after stdcall (EAX clobbered).
 // Original: mov ecx, [esp+0x12C] (7 bytes)
@@ -209,10 +144,6 @@ skip_ball_dark:
   jmp neon_dark
   nop
 
-00454C97:
-  jmp neon_lights_off
-  nop
-
 00403DC0:
   jmp neon_ball_lit
   nop
@@ -229,9 +160,6 @@ skip_ball_dark:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-00454C97:
-  db 8B B5 30 07 00 00
-
 00403DC0:
   db 6A FF 64 A1 00 00 00 00
 
@@ -240,5 +168,4 @@ skip_ball_dark:
 
 dealloc(neon_ball_dark)
 dealloc(neon_ball_lit)
-dealloc(neon_lights_off)
 dealloc(neon_dark)
