@@ -1,32 +1,17 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v2 — Dark ambient + ball glow for ALL races/arenas
-// Fixes: crash from +0xC80 on player balls, AOB conflict with shapeshift
+// GLOBAL NEON EFFECT v3 — Dark ambient + ball glow for ALL races/arenas
+// Based on XRow's working script + gfx+0x730 write fix
 //
-// HOW NEON RACE WORKS (deep binary trace):
+// PROBLEM IN ORIGINAL: Hook 1 called SetRenderState(0x8B, 0) directly on
+// the D3D device, but did NOT write 0 to gfx+0x730. Then
+// Graphics_RenderScene (0x454BC0) ran and read gfx+0x730 (still the
+// ORIGINAL ambient value) → called SetRenderState(0x8B, original_value)
+// → overrode our dark ambient back to normal → scene was only "a bit darker"
+// instead of pitch black.
 //
-//   1. Level_InitScene (0x40B090) calls Color_RandomRGBA (0x40A050) which
-//      reads color values from the MESHWORLD collision data (Section 4).
-//      For LevelDark.MESHWORLD, these colors are dark.
-//      Then calls Gfx_SetVTable8B (0x453BA0) which:
-//        - SetRenderState(D3DRS_AMBIENT, color) → applies to D3D device
-//        - Stores color to gfx+0x730
-//   2. Graphics_RenderScene (0x454BC0) reads gfx+0x730 every frame and
-//      re-applies it via SetRenderState(0x8B, gfx+0x730).
-//   3. Ball_Render_AI (0x402DE0) checks ball+0xC80:
-//        If dark: SetRenderState(AMBIENT, white) → render ball → SetRenderState(AMBIENT, black)
-//      This per-ball ambient toggle makes the ball "glow" in the dark.
-//   4. Player Ball Render (0x403DC0) does NOT check +0xC80.
-//
-// WHY v1 CRASHED:
-//   - Set ball+0xC80=1 on PLAYER balls → Ball_Render_AI reads ball+0xC88/
-//     C8C/C90 (viewport clip matrix) which are UNINITIALIZED on player balls
-//     (only Ball_ctor sets them, not Ball_ctor2) → garbage values → crash.
-//   - Hooked Ball_Update at 0x405E22 → AOB conflict with Shapeshift mod.
-//
-// v2 APPROACH (3 clean hooks, no Ball_Update, no +0xC80):
-//   Hook 1: Graphics_RenderScene AFTER ambient applied → force gfx+0x730=0 (dark)
-//   Hook 2: Player Ball Render ENTRY → set gfx+0x730=white (ball glows)
-//   Hook 3: Player Ball Render EXIT → set gfx+0x730=0 (dark again)
+// FIX: Also write 0 to gfx+0x730 so Graphics_RenderScene reads and applies
+// dark ambient. Also set gfx+0x734=1 (fog on) and gfx+0x738=0 (black fog)
+// for the full neon dark distance effect.
 //
 // GFX DEVICE STRUCT:
 //   +0x154 = D3D device pointer
@@ -34,84 +19,102 @@
 //   +0x734 = fog enable (D3DRS_FOGENABLE, render state 0x1C)
 //   +0x738 = fog color (D3DRS_FOGCOLOR, render state 0x22)
 //
-// HOTKEY: Set g_NeonEnabled = 1 (on) or 0 (off) in CE table.
+// HOOK POINTS:
+//   1. Ball_Update at 0x405E22 — force gfx+0x730=0 + fog=on/black
+//   2. Player Render Entry at 0x403DDF — set D3DRS_AMBIENT=white (ball glows)
+//   3. Player Render Exit at 0x4050D9 — set D3DRS_AMBIENT=0 (dark again)
+//
+// Enable/Disable only — no hotkey address needed.
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-// ── AOB scans ──────────────────────────────────────────────────────────
-aobscanmodule(Neon_AmbientWrite,  Hamsterball.exe, 89 B5 30 07 00 00)
-aobscanmodule(Neon_RenderEntry,   Hamsterball.exe, 8B 45 10 8B 88 74 01 00 00 8B 95 38 0C 00 00 3B 91 C4 07 00 00 56 57)
-aobscanmodule(Neon_RenderExit,     Hamsterball.exe, 8B 8C 24 2C 01 00 00 5F 5E 5D 64 89 0D 00 00 00 00 5B 81 C4 28 01 00 00 C3)
-
-// ── Allocs ─────────────────────────────────────────────────────────────
-alloc(g_NeonEnabled, 4)
+alloc(neon_cave, 256)
+alloc(neon_glow_entry, 256)
+alloc(neon_glow_exit, 256)
 alloc(g_GfxDevice, 4)
-alloc(neon_ambient_cave, 128)
-alloc(neon_entry_cave, 256)
-alloc(neon_exit_cave, 128)
 
-registersymbol(g_NeonEnabled)
 registersymbol(g_GfxDevice)
-
-// ── Init ───────────────────────────────────────────────────────────────
-g_NeonEnabled:
-  dd 00000001
 
 g_GfxDevice:
   dd 00000000
 
-// ═══════════════════════════════════════════════════════════════════════
-// HOOK 1: Graphics_RenderScene (0x454CC4)
-// After ambient is applied, override to dark.
-// Original (6 bytes): MOV [EBP+0x730], ESI
-// EBP = gfx device
-// ═══════════════════════════════════════════════════════════════════════
-neon_ambient_cave:
-  push eax
-  mov eax, [g_NeonEnabled]
-  test eax, eax
-  jz neon_ambient_original
-
-  // Neon ON: force dark ambient + fog
-  mov dword ptr [ebp+0x730], 0       // black ambient
-  mov byte ptr [ebp+0x734], 1        // fog enabled
-  mov dword ptr [ebp+0x738], 0       // black fog color
-  jmp neon_ambient_done
-
-neon_ambient_original:
-  // Neon OFF: original behavior
-  mov [ebp+0x730], esi
-
-neon_ambient_done:
-  pop eax
-  jmp Neon_AmbientWrite+6
-
-Neon_AmbientWrite:
-  jmp neon_ambient_cave
-  nop
+label(skip_neon)
+label(skip_glow_entry)
+label(skip_glow_exit)
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 2: Player Ball Render ENTRY (0x403DDF)
-// Before rendering P1's ball, set ambient = white (ball glows).
-// Original (9 bytes): MOV EAX,[EBP+0x10] / MOV ECX,[EAX+0x174] / MOV EDX,[EBP+0xC38]
-// EBP = ball (set at 0x403DDD)
+// HOOK 1: Ball_Update (0x405E22) — force dark ambient + black fog
+// ESI = ball pointer
+// gfx = *(*(ball+0x10) + 0x174)
 // ═══════════════════════════════════════════════════════════════════════
-neon_entry_cave:
-  // Check if neon is enabled
+neon_cave:
   push eax
   push ecx
-  mov eax, [g_NeonEnabled]
+  push edx
+
+  // Get gfx device: gfx = *(*(ball+0x10) + 0x174)
+  mov eax, [esi+0x10]
   test eax, eax
-  jz neon_entry_original
+  jz skip_neon
+  mov eax, [eax+0x174]
+  test eax, eax
+  jz skip_neon
 
-  // Neon ON: set white ambient
-  mov eax, [ebp+0x10]           // EAX = App
-  mov ecx, [eax+0x174]          // ECX = gfx device
-  mov [g_GfxDevice], ecx        // cache for exit hook
-  mov dword ptr [ecx+0x730], FFFFFFFF  // white ambient
+  // Write dark ambient to gfx struct so Graphics_RenderScene reads it
+  mov dword ptr [eax+0x730], 0      // ambient = black
+  mov byte ptr [eax+0x734], 1       // fog enabled
+  mov dword ptr [eax+0x738], 0      // fog color = black
 
-neon_entry_original:
+  // Also call SetRenderState directly for immediate effect this frame
+  mov eax, [eax+0x154]              // D3D device
+  test eax, eax
+  jz skip_neon
+  mov edx, [eax]                    // D3D vtable
+  push 0                            // value = 0 (black)
+  push 8B                           // state = D3DRS_AMBIENT
+  push eax                           // this = D3D device
+  call dword ptr [edx+C8]           // SetRenderState(AMBIENT, 0)
+
+skip_neon:
+  pop edx
+  pop ecx
+  pop eax
+
+  // Original instruction: MOV EAX, [ESI+0xC5C]
+  mov eax, [esi+0x00000C5C]
+  jmp 00405E28
+
+// ═══════════════════════════════════════════════════════════════════════
+// HOOK 2: Player Render Entry (0x403DDF) — set white ambient (ball glows)
+// EBP = ball (set at 0x403DDD)
+// ═══════════════════════════════════════════════════════════════════════
+neon_glow_entry:
+  push eax
+  push ecx
+
+  // Get gfx device
+  mov eax, [ebp+0x10]
+  test eax, eax
+  jz skip_glow_entry
+  mov ecx, [eax+0x174]
+  test ecx, ecx
+  jz skip_glow_entry
+
+  // Cache gfx for exit hook
+  mov [g_GfxDevice], ecx
+
+  // Set white ambient via direct SetRenderState
+  mov eax, [ecx+0x154]              // D3D device
+  test eax, eax
+  jz skip_glow_entry
+  mov edx, [eax]                    // D3D vtable
+  push FFFFFFFF                     // value = white
+  push 8B                           // state = D3DRS_AMBIENT
+  push eax                          // this = D3D device
+  call dword ptr [edx+C8]           // SetRenderState(AMBIENT, white)
+
+skip_glow_entry:
   pop ecx
   pop eax
 
@@ -120,85 +123,78 @@ neon_entry_original:
   mov eax, [ebp+0x10]
   // MOV ECX, [EAX+0x174]
   mov ecx, [eax+0x174]
-  // MOV EDX, [EBP+0xC38]
-  mov edx, [ebp+0x00000C38]
-
-  // Jump back to 0x403DE8
-  jmp Neon_RenderEntry+9
-
-Neon_RenderEntry:
-  jmp neon_entry_cave
-  nop
-  nop
-  nop
-  nop
+  jmp 00403DE8
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 3: Player Ball Render EXIT (0x4050D9)
-// After P1's ball renders, restore ambient = dark.
-// Original (7 bytes): MOV ECX, [ESP+0x12C]
-// EBP = ball still valid
+// HOOK 3: Player Render Exit (0x4050D9) — restore dark ambient
 // ═══════════════════════════════════════════════════════════════════════
-neon_exit_cave:
+neon_glow_exit:
   push eax
   push ecx
-  mov eax, [g_NeonEnabled]
-  test eax, eax
-  jz neon_exit_original
 
-  // Neon ON: restore dark ambient
   mov ecx, [g_GfxDevice]
   test ecx, ecx
-  jz neon_exit_original
-  mov dword ptr [ecx+0x730], 0
+  jz skip_glow_exit
 
-neon_exit_original:
+  // Set dark ambient via direct SetRenderState
+  mov eax, [ecx+0x154]              // D3D device
+  test eax, eax
+  jz skip_glow_exit
+  mov edx, [eax]                    // D3D vtable
+  push 0                            // value = black
+  push 8B                           // state = D3DRS_AMBIENT
+  push eax                          // this = D3D device
+  call dword ptr [edx+C8]           // SetRenderState(AMBIENT, 0)
+
+skip_glow_exit:
   pop ecx
   pop eax
 
   // Original instruction: MOV ECX, [ESP+0x12C]
   mov ecx, [esp+0x0000012C]
+  jmp 004050E0
 
-  // Jump back to 0x4050E0
-  jmp Neon_RenderExit+7
+// ── Install hooks ─────────────────────────────────────────────────────
+00405E22:
+  jmp neon_cave
+  nop
 
-Neon_RenderExit:
-  jmp neon_exit_cave
+00403DDF:
+  jmp neon_glow_entry
+  nop
+
+004050D9:
+  jmp neon_glow_exit
   nop
   nop
 
 [DISABLE]
 
 // ── Restore original code ──────────────────────────────────────────────
-Neon_AmbientWrite:
-  db 89 B5 30 07 00 00
+00405E22:
+  db 8B 86 5C 0C 00 00
 
-Neon_RenderEntry:
+00403DDF:
   db 8B 45 10 8B 88 74 01 00 00
 
-Neon_RenderExit:
+004050D9:
   db 8B 8C 24 2C 01 00 00
 
-// ── Cleanup ────────────────────────────────────────────────────────────
-unregistersymbol(g_NeonEnabled)
 unregistersymbol(g_GfxDevice)
 
-dealloc(neon_exit_cave)
-dealloc(neon_entry_cave)
-dealloc(neon_ambient_cave)
+dealloc(neon_glow_exit)
+dealloc(neon_glow_entry)
+dealloc(neon_cave)
 dealloc(g_GfxDevice)
-dealloc(g_NeonEnabled)
 
 // ═══════════════════════════════════════════════════════════════════════
 // USAGE:
 //   1. Open this CEA in Cheat Engine
 //   2. Activate the script (Enable checkbox)
 //   3. Start any race or arena
-//   4. Everything goes dark, player ball glows white
-//   5. Toggle g_NeonEnabled between 0/1 to turn effect on/off
+//   4. Everything goes pitch black, player ball glows white
+//   5. Disable to restore normal lighting
 //
-//   Set hotkey in CE: Numpad 1 → toggle g_NeonEnabled (0↔1)
-//
-// NOTE: This mod does NOT conflict with the Shapeshift mod.
-// They use completely different hook points.
+// NOTE: This mod hooks Ball_Update at 0x405E22 — same hook point as
+// the Shapeshift mod. Do NOT run both simultaneously.
 // ═══════════════════════════════════════════════════════════════════════
