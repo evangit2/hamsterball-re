@@ -1,0 +1,123 @@
+{ ============================================================
+  Background Color Cycler v1
+  Cycles the ambient scene color every ~3 seconds
+  Colors: Blue -> Green -> Yellow -> White -> Black -> Red -> repeat
+  Works in ALL races and arenas
+
+  Hook: Graphics_RenderScene ambient read at 0x454C97
+  Original: MOV ESI, [EBP+0x730]  (gfx+0x730 = D3DRS_AMBIENT color)
+
+  Timer: 180 frames ~= 3 seconds at 60fps
+  Adjust bgcolor_timer in CE address list to change interval
+  Lower = faster cycling, Higher = slower cycling
+
+  Register safety: EAX, EDX clobbered (both dead at hook point)
+  No PUSHAD/POPFD needed -- only dead registers and flags used
+
+  NOTE: Mutually exclusive with GlobalNeonEffect (same hook address).
+  Enable one OR the other, never both simultaneously.
+  ============================================================ }
+
+[ENABLE]
+
+alloc(bgcolor_cave, 256)
+alloc(bgcolor_colors, 28)    // 7 dwords: 6 colors + terminator
+alloc(bgcolor_frame, 4)       // frame counter
+alloc(bgcolor_index, 4)       // current color index
+alloc(bgcolor_timer, 4)       // frames per color cycle (configurable)
+
+registersymbol(bgcolor_cave)
+registersymbol(bgcolor_colors)
+registersymbol(bgcolor_frame)
+registersymbol(bgcolor_index)
+registersymbol(bgcolor_timer)
+
+// D3DCOLOR format: 0xAARRGGBB (AA=alpha, RR=red, GG=green, BB=blue)
+// All colors use full alpha (0xFF) for opaque ambient
+bgcolor_colors:
+  dd FF0000FF    // Blue
+  dd FF00FF00    // Green
+  dd FFFFFF00    // Yellow
+  dd FFFFFFFF    // White
+  dd FF000000    // Black
+  dd FFFF0000    // Red
+  dd 00000000    // Terminator (0 = wrap to start)
+
+bgcolor_frame:
+  dd 0
+
+bgcolor_index:
+  dd 0
+
+bgcolor_timer:
+  dd #180        // 180 frames ~= 3 seconds at 60fps
+
+bgcolor_cave:
+  // EBP = gfx struct pointer (callee-preserved, do NOT modify)
+  // EAX, EDX = dead at this point (loaded fresh after 0x454C9D)
+  // Original instruction: MOV ESI, [EBP+0x730]  (6 bytes)
+
+  // --- Increment frame counter ---
+  mov eax, [bgcolor_frame]
+  inc eax
+  mov [bgcolor_frame], eax
+
+  // Check if timer elapsed
+  cmp eax, [bgcolor_timer]
+  jl bgcolor_keep
+
+  // --- Timer elapsed: advance to next color ---
+  mov dword ptr [bgcolor_frame], 0    // reset counter
+  mov eax, [bgcolor_index]
+  inc eax                              // next index
+
+  // Check for terminator (0 = wrap to start)
+  mov edx, bgcolor_colors
+  mov edx, [edx + eax*4]
+  test edx, edx
+  jnz bgcolor_store
+  xor eax, eax                         // wrap to 0
+
+bgcolor_store:
+  mov [bgcolor_index], eax
+
+bgcolor_keep:
+  // --- Write current cycling color to gfx+0x730 ---
+  // Overwrites the game's ambient color with our cycling value.
+  // The game reads it immediately after and applies via
+  // SetRenderState(D3DRS_AMBIENT=0x8B, color)
+  mov eax, [bgcolor_index]
+  mov edx, bgcolor_colors
+  mov edx, [edx + eax*4]
+  mov [ebp+0x730], edx
+
+  // --- Execute original instruction ---
+  mov esi, [ebp+0x730]
+
+  // --- Return to 0x454C9D ---
+  jmp 00454C9D
+
+// --- Hook installation ---
+// Original bytes: 8B B5 30 07 00 00  (MOV ESI, [EBP+0x730])
+// Patched bytes:  E9 XX XX XX XX 90  (JMP bgcolor_cave + NOP)
+00454C97:
+  jmp bgcolor_cave
+  nop
+
+[DISABLE]
+
+// --- Restore original instruction ---
+// 8B B5 30 07 00 00 = MOV ESI, [EBP+0x730]
+00454C97:
+  mov esi, [ebp+0x730]
+
+dealloc(bgcolor_cave)
+dealloc(bgcolor_colors)
+dealloc(bgcolor_frame)
+dealloc(bgcolor_index)
+dealloc(bgcolor_timer)
+unregistersymbol(bgcolor_cave)
+unregistersymbol(bgcolor_colors)
+unregistersymbol(bgcolor_frame)
+unregistersymbol(bgcolor_index)
+unregistersymbol(bgcolor_timer)
