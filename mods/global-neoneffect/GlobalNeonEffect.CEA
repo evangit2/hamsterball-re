@@ -1,16 +1,26 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v8 — Pitch black + glowing ball
+// GLOBAL NEON EFFECT v9 — Pitch black + ALL player balls glow
 //
-// FIX: Hook 2 moved from 0x454BD1 (after SetupLights, BEFORE light loop)
-//      to 0x454C97 (AFTER light loop). Lights are re-enabled by the
-//      8 light objects at gfx+0x710 which run AFTER Graphics_SetupLights.
-//      Now we disable them AFTER they're all set up.
+// ROOT CAUSE (why v8 didn't work):
+// 1. LIGHTING=0 makes D3D IGNORE materials entirely. Emissive is only
+//    applied when LIGHTING=1. v8's wrapper set LIGHTING=0 which
+//    disabled the emissive glow.
+// 2. v8 hooks at 0x403DDF/0x4050D9 only fire inside Ball_Render (player).
+//    But they didn't set the material correctly because LIGHTING was off.
 //
-// HOOKS:
-//   1. Ball_Update (0x405E22) — gfx+0x730=0 + fog + SetRenderState(AMBIENT,0)
-//   2. After light loop (0x454C97) — LightEnable(0..7, FALSE)
-//   3. Player Render Entry (0x403DDF) — SetMaterial(white emissive) + AMBIENT=white
-//   4. Player Render Exit (0x4050D9) — AMBIENT=0
+// v9 FIX:
+// - Keep LIGHTING=1 globally (never disable it)
+// - Disable all 8 directional lights via LightEnable(0..7, FALSE)
+// - Set gfx+0x730=0 (ambient) so scene renders black
+// - Hook Ball_Render (0x403DC0) entry: SetMaterial(white emissive) +
+//   SetRenderState(AMBIENT, white) → ball glows
+// - Hook Ball_Render exit (0x4050D9): SetRenderState(AMBIENT, 0)
+//   → scene stays dark
+//
+// D3D lighting formula (LIGHTING=1):
+//   FinalColor = Material.Diffuse × Light + Material.Ambient × AmbientState + Material.Emissive
+// Scene objects: Diffuse×0(lights off) + Ambient×0(ambient=0) + Emissive×0 = BLACK
+// Ball: Diffuse×0 + Ambient(white)×white(ambient=white) + Emissive(white) = WHITE GLOW
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
@@ -78,7 +88,7 @@ skip_dark:
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 2: After light loop (0x454C97) — disable all 8 lights
 // EBP = gfx device
-// Original instruction: MOV ESI, [EBP+0x730] (6 bytes)
+// Original: MOV ESI, [EBP+0x730] (6 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_lights_off:
   push eax
@@ -111,28 +121,32 @@ skip_lights:
   pop ecx
   pop eax
 
-  // Original instruction
   mov esi, [ebp+0x730]
   jmp 00454C9D
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 3: Player Render Entry (0x403DDF) — SetMaterial + white ambient
+// HOOK 3: Ball_Render entry (0x403DC0) — ECX = ball (__thiscall)
+// Set SetMaterial(white emissive) + SetRenderState(AMBIENT, white)
+// Original: push -1; mov eax, fs:[0] (8 bytes total)
+// JMP (5) + 3 NOP = 8 bytes, jump back to 0x403DC8
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_entry:
   push eax
   push ecx
   push edx
+  push esi
 
-  mov eax, [ebp+0x10]
+  // ECX = ball. ball+0x10 = App, App+0x174 = gfx
+  mov eax, [ecx+0x10]
   test eax, eax
   jz skip_glow_entry
-  mov ecx, [eax+0x174]
-  test ecx, ecx
+  mov esi, [eax+0x174]
+  test esi, esi
   jz skip_glow_entry
-  mov [g_GfxDevice], ecx
+  mov [g_GfxDevice], esi
 
   // SetMaterial(white emissive)
-  mov edx, [ecx+0x154]
+  mov edx, [esi+0x154]
   test edx, edx
   jz skip_glow_entry
   mov eax, [edx]
@@ -141,8 +155,8 @@ neon_glow_entry:
   call dword ptr [eax+0xA8]     // SetMaterial — clobbers
 
   // SetRenderState(AMBIENT, white) — reload
-  mov ecx, [g_GfxDevice]
-  mov edx, [ecx+0x154]
+  mov esi, [g_GfxDevice]
+  mov edx, [esi+0x154]
   mov eax, [edx]
   push FFFFFFFF
   push 8B
@@ -150,15 +164,18 @@ neon_glow_entry:
   call dword ptr [eax+0xC8]     // SetRenderState — clobbers
 
 skip_glow_entry:
+  pop esi
   pop edx
   pop ecx
   pop eax
-  mov eax, [ebp+0x10]
-  mov ecx, [eax+0x174]
-  jmp 00403DE8
+  // Original instructions: push -1; mov eax, fs:[0]
+  push -1
+  mov eax, fs:[0]
+  jmp 00403DC8
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 4: Player Render Exit (0x4050D9) — restore dark ambient
+// HOOK 4: Ball_Render exit (0x4050D9) — restore dark ambient
+// Original: MOV ECX, [ESP+0x12C] (7 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_exit:
   push eax
@@ -194,8 +211,10 @@ skip_glow_exit:
   jmp neon_lights_off
   nop
 
-00403DDF:
+00403DC0:
   jmp neon_glow_entry
+  nop
+  nop
   nop
 
 004050D9:
@@ -211,8 +230,8 @@ skip_glow_exit:
 00454C97:
   db 8B B5 30 07 00 00
 
-00403DDF:
-  db 8B 45 10 8B 88 74 01 00 00
+00403DC0:
+  db 6A FF 64 A1 00 00 00 00
 
 004050D9:
   db 8B 8C 24 2C 01 00 00
