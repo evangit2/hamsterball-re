@@ -1,63 +1,86 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v11 — Pitch black scene + glowing player balls
+// GLOBAL NEON EFFECT v12 — Pitch black scene + glowing player balls
 //
-// v10 PROBLEMS (user feedback):
-// 1. "Balls became white squares" — gfx+0x7C0 material override had NULL
-//    texture, so Graphics_ApplyMaterialAndDraw used the "no texture" path.
-// 2. "Lighting is just decreased, not pitch black" — gfx+0x730 wasn't being
-//    reset before Graphics_RenderScene read it (previous frame's white value
-//    persisted).
-// 3. "Not neon race lighting" — needed LIGHTING=TRUE with ambient=0 and all
-//    lights disabled, so only Emissive materials show (neon glow effect).
+// v11 CRASH ROOT CAUSE:
+// Hook 1 called SetRenderState (stdcall) which clobbered EAX. The second
+// SetRenderState call used EAX as gfx pointer, but EAX=0 (S_OK return).
+// mov edx,[eax+0x154] read from address 0x154 → ACCESS VIOLATION → crash.
+// This is the CEA D3D stdcall clobbering rule: after EVERY stdcall, EAX/ECX/EDX
+// are destroyed. Only EBX/ESI/EDI/EBP survive.
 //
-// v11 FIX:
-// - REMOVED gfx+0x7C0 material override entirely. Balls keep their own
-//   materials + textures.
-// - D3D lighting formula (LIGHTING=TRUE, ambient=0, no lights):
-//     FinalColor = Diffuse×0 + Ambient_material×0 + Emissive
-//   Scene objects: 0 + 0 + 0 = PITCH BLACK (most have Emissive=0)
-//   Ball (with white ambient): 0 + Ambient_material×white + 0 = GLOWS
-// - Hook 2 now resets gfx+0x730=0 BEFORE the original instruction reads it,
-//   ensuring dark ambient at the start of every scene render.
-// - Added SetRenderState(0x89, 1) to ensure D3DRS_LIGHTING=TRUE.
+// v12 FIX:
+// - Hook 1: REMOVED all SetRenderState calls. Just writes gfx+0x730=0,
+//   gfx+0x734=1, gfx+0x738=0 (cached values). The game itself calls
+//   SetRenderState(AMBIENT, gfx+0x730) in Graphics_RenderScene. No stdcall
+//   = no register clobbering = no crash.
+// - Hook 2: Fixed LightEnable vtable offset: 0xB8 (index 46), NOT 0xB0
+//   (which is SetLight — calling with wrong params would crash).
+//   EBP=gfx (callee-preserved) survives stdcall, reload device after each call.
+// - Hooks 3+4: Already safe (push/pop around call, no clobbered register use).
+//
+// NEON LIGHTING SYSTEM (traced from decompilation):
+//
+// Graphics_SetupLights (0x454630) — called every frame:
+//   Sets D3DRS_LIGHTING=TRUE, D3DRS_SPECULARENABLE=TRUE
+//   Clears gfx+0x7C0=0 (no material override)
+//   Sets up D3D defaults (cull mode, blend mode, etc.)
+//
+// Graphics_RenderScene (0x454BC0) — render pipeline:
+//   1. Graphics_SetupLights(gfx)
+//   2. Light loop: 8 light objects at gfx+0x710, each calls vtable[3] (apply)
+//      → Each light object calls D3D::SetLight + D3D::LightEnable internally
+//   3. Reads gfx+0x730 → SetRenderState(AMBIENT, gfx+0x730) ← HOOK 2 HERE
+//   4. Reads gfx+0x734 → SetRenderState(FOGENABLE, gfx+0x734)
+//   5. Reads gfx+0x738 → SetRenderState(FOGCOLOR, gfx+0x738)
+//   6. Renders opaque objects (vtable[0x64]) — includes balls
+//   7. Renders transparent objects (vtable[0x68])
+//   8. Renders overlay (vtable[0x70]) + postFX (vtable[0x6C])
+//
+// Gfx_SetVTable8B (0x453BA0): writes gfx+0x730 + SetRenderState(0x8B, val)
+// Gfx_SetVTable22 (0x453B20): writes gfx+0x738 + SetRenderState(0x22, val)
+//
+// D3D8 vtable offsets (verified from SetMaterial at 0xA8):
+//   SetMaterial     = vtable[42] = 0xA8
+//   SetLight        = vtable[44] = 0xB0
+//   LightEnable     = vtable[46] = 0xB8  ← v11 used 0xB0 (WRONG!)
+//   SetRenderState  = vtable[50] = 0xC8
+//
+// D3D lighting formula (LIGHTING=TRUE, AMBIENT=0, lights disabled):
+//   FinalColor = Emissive + Ambient_light*Ambient_material + Σ(Lights)
+//             = Emissive + 0 + 0 = Emissive
+//   Scene objects: Emissive=0 → PITCH BLACK
+//   Neon geometry: Emissive=color → GLOWS
+//   Ball (AMBIENT=white): Emissive + 1.0*Ambient_material = GLOWS in player color
 //
 // HOOKS:
-// 1. Ball_Update (0x405E22): gfx+0x730=0 (dark ambient) + fog + LIGHTING=TRUE
-// 2. After light loop (0x454C97): LightEnable(0..7, FALSE) + reset gfx+0x730=0
-// 3. Ball_RenderAI entry (0x403DC0): SetRenderState(AMBIENT, white) for ball
-// 4. Ball_RenderAI exit (0x4050D9): SetRenderState(AMBIENT, 0) restore dark
-//
-// KEY FUNCTIONS TRACED:
-// - Gfx_SetVTable8B (0x453BA0): Sets gfx+0x730 + SetRenderState(0x8B, val)
-// - Gfx_SetVTable22 (0x453B20): Sets gfx+0x738 (fog color) + SetRenderState(0x22)
-// - Graphics_RenderScene (0x454BC0): Reads gfx+0x730, applies via SetRenderState
-// - Graphics_SetupLights (0x454630): Sets D3D defaults, clears gfx+0x7C0=0
-// - Graphics_ApplyMaterialAndDraw (0x455110): If gfx+0x7C0!=NULL, uses override
-//   material (including its texture). If NULL, uses param_1 (object's material).
-// - Ball_RenderAI (0x403DC0): Draws ball mesh from App+0x244[ball+0x754]
-// - Scene_SetupLevelDark (0x416270): Neon race scene setup — loads LevelDark
-//   MESHWORLD, calls Level_InitScene which sets ambient via Color_RandomRGBA
-// - Level_InitScene (0x40B090): Calls Gfx_SetVTable8B(gfx, randomColor) for
-//   ambient, Gfx_SetVTable22(gfx, randomColor) for fog color
-// - Board_ctor (0x419030): Player ball colors at board+0x3AB0 (4 RGBA entries):
-//   P1=white(1,1,1), P2=blue(0,0.5,1), P3=salmon(1,0.25,0.25), P4=yellow(1,1,0)
+// 1. Ball_Update (0x405E22): Write gfx+0x730=0, gfx+0x734=1, gfx+0x738=0
+//    (No SetRenderState — game applies these in Graphics_RenderScene)
+// 2. After light loop (0x454C97): gfx+0x730=0 + LightEnable(0..7, FALSE)
+//    (EBP=gfx, callee-preserved. Reload device from EBP after each stdcall)
+// 3. Ball_RenderAI entry (0x403DC0): SetRenderState(AMBIENT, white)
+//    (Push/pop EAX/ECX/EDX around call. No clobbered register use after)
+// 4. Ball_RenderAI exit (0x4050D9): SetRenderState(AMBIENT, 0) + gfx+0x730=0
+//    (Re-reads App from global 0x5341E0 after stdcall)
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(neon_dark, 256)
+alloc(neon_dark, 128)
 alloc(neon_lights_off, 256)
-alloc(neon_glow_entry, 256)
-alloc(neon_glow_exit, 256)
+alloc(neon_glow_entry, 128)
+alloc(neon_glow_exit, 128)
 
 label(skip_dark)
 label(skip_lights)
 label(skip_glow_entry)
 label(skip_glow_exit)
+label(neon_light_loop)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 1: Ball_Update (0x405E22) — ESI = ball
-// Sets gfx+0x730=0 (dark ambient) + black fog + LIGHTING=TRUE every frame
+// Writes cached gfx values: ambient=0, fog=on, fog color=black.
+// NO SetRenderState calls — the game applies these in Graphics_RenderScene.
+// ESI is callee-preserved, so ball pointer is safe.
 // Original: mov eax, [esi+0x00000C5C] (6 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_dark:
@@ -65,37 +88,17 @@ neon_dark:
   push ecx
   push edx
 
-  mov eax, [esi+0x10]          // ball+0x10 = App
+  mov eax, [esi+0x10]           // ball+0x10 = App
   test eax, eax
   jz skip_dark
-  mov eax, [eax+0x174]         // App+0x174 = gfx
+  mov eax, [eax+0x174]          // App+0x174 = gfx
   test eax, eax
   jz skip_dark
 
-  // Zero ambient + enable fog + black fog color
-  mov dword ptr [eax+0x730], 0       // gfx+0x730 = 0 (ambient color = black)
+  // Write cached gfx values — NO stdcall, no register clobbering
+  mov dword ptr [eax+0x730], 0       // gfx+0x730 = 0 (ambient = black)
   mov byte ptr [eax+0x734], 1        // gfx+0x734 = 1 (fog enabled)
   mov dword ptr [eax+0x738], 0       // gfx+0x738 = 0 (fog color = black)
-
-  // SetRenderState(AMBIENT=0x8B, 0) — black ambient on D3D device
-  mov edx, [eax+0x154]         // gfx+0x154 = D3D device
-  test edx, edx
-  jz skip_dark
-  mov ecx, [edx]               // vtable
-  push 0                       // value = 0 (black)
-  push 8B                      // state = D3DRS_AMBIENT
-  push edx                     // device
-  call dword ptr [ecx+0xC8]    // SetRenderState — clobbers EAX/ECX/EDX
-
-  // Reload device (clobbered by stdcall)
-  mov edx, [eax+0x154]         // D3D device
-  test edx, edx
-  jz skip_dark
-  mov ecx, [edx]               // vtable
-  push 1                       // value = 1 (TRUE)
-  push 89                      // state = D3DRS_LIGHTING
-  push edx                     // device
-  call dword ptr [ecx+0xC8]    // SetRenderState — clobbers EAX/ECX/EDX
 
 skip_dark:
   pop edx
@@ -105,10 +108,11 @@ skip_dark:
   jmp 00405E28
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 2: After light loop (0x454C97) — EBP = gfx
-// Resets gfx+0x730=0 (clear last frame's white from ball render)
-// Then disables all 8 directional lights via LightEnable(0..7, FALSE)
-// Original: MOV ESI, [EBP+0x730] (6 bytes)
+// HOOK 2: After light loop (0x454C97) — EBP = gfx (callee-preserved)
+// Writes gfx+0x730=0 (clears any ambient set by light objects).
+// Then disables all 8 D3D lights via LightEnable(0..7, FALSE).
+// EBP survives stdcall, so gfx is re-readable after each call.
+// Original: mov esi, [ebp+0x730] (6 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_lights_off:
   push eax
@@ -116,30 +120,30 @@ neon_lights_off:
   push edx
   push esi
 
-  // Reset gfx+0x730=0 (clear white from last frame's ball render)
-  // This ensures the original instruction reads 0, not the white value
-  // that Ball_RenderAI set last frame.
+  // Reset gfx+0x730=0 (clear ambient from last frame's ball render)
   mov dword ptr [ebp+0x730], 0
 
-  // Disable all 8 lights
-  mov eax, [ebp+0x154]         // D3D device
+  // Disable all 8 D3D lights
+  mov eax, [ebp+0x154]         // D3D device (EBP = gfx, preserved)
   test eax, eax
   jz skip_lights
   mov edx, [eax]               // vtable
 
   xor esi, esi                  // light index 0..7
 
-neon_lights_loop:
+neon_light_loop:
   push 0                       // FALSE = disable
   push esi                      // light index
-  push eax                      // device
-  call dword ptr [edx+0xB0]    // LightEnable — clobbers EAX/ECX/EDX
+  push eax                      // device (this)
+  call dword ptr [edx+0xB8]    // LightEnable = vtable[46] (0xB8)
+                                // clobbers EAX/ECX/EDX
 
-  mov eax, [ebp+0x154]         // reload device (clobbered by stdcall)
-  mov edx, [eax]               // reload vtable
+  // Reload device + vtable from EBP (callee-preserved, survives stdcall)
+  mov eax, [ebp+0x154]         // device
+  mov edx, [eax]               // vtable
   inc esi
   cmp esi, 8
-  jl neon_lights_loop
+  jl neon_light_loop
 
 skip_lights:
   pop esi
@@ -147,14 +151,13 @@ skip_lights:
   pop ecx
   pop eax
 
-  mov esi, [ebp+0x730]         // original instruction (now reads 0)
+  mov esi, [ebp+0x730]         // original instruction (reads 0)
   jmp 00454C9D
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 3: Ball_RenderAI entry (0x403DC0) — ECX = ball (__thiscall)
-// Sets D3DRS_AMBIENT=white so the ball's Ambient material component lights up.
-// The ball keeps its own texture and material — only the ambient light changes.
-// With white ambient: FinalColor = Ambient_material × white = player color!
+// HOOK 3: Ball_RenderAI entry (0x403DC0) — ECX = ball (__fastcall this)
+// Sets D3DRS_AMBIENT=white so ball's Ambient material lights up.
+// Push/pop EAX/ECX/EDX around the call — no clobbered register use after pop.
 // Original: push -1; mov eax, fs:[0] (8 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_entry:
@@ -177,30 +180,30 @@ neon_glow_entry:
   // SetRenderState(AMBIENT=0x8B, 0xFFFFFFFF) — white ambient for ball
   push FFFFFFFF                 // value = white
   push 8B                       // state = D3DRS_AMBIENT
-  push edx                      // device
-  call dword ptr [eax+0xC8]    // SetRenderState — clobbers
+  push edx                      // device (this)
+  call dword ptr [eax+0xC8]    // SetRenderState = vtable[50] — clobbers EAX/ECX/EDX
 
 skip_glow_entry:
   pop edx
   pop ecx
   pop eax
-  // Original instructions: push -1; mov eax, fs:[0]
+  // Original instructions
   push -1
   mov eax, fs:[0]
   jmp 00403DC8
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 4: Ball_RenderAI exit (0x4050D9) — restore dark scene
-// Sets D3DRS_AMBIENT=0 so objects after the ball render dark again
-// Original: MOV ECX, [ESP+0x12C] (7 bytes)
+// Sets D3DRS_AMBIENT=0 + gfx+0x730=0.
+// Re-reads App from global 0x5341E0 after stdcall (not from clobbered EAX).
+// Original: mov ecx, [esp+0x12C] (7 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_exit:
   push eax
   push ecx
   push edx
 
-  // Get gfx from App (we can't rely on ECX being ball here — it's restored
-  // from stack. Use App global at 0x5341E0)
+  // Get gfx from global App (safe — 0x5341E0 is a constant address)
   mov eax, [005341E0]           // App
   test eax, eax
   jz skip_glow_exit
@@ -215,11 +218,11 @@ neon_glow_exit:
   // SetRenderState(AMBIENT=0x8B, 0) — restore dark ambient
   push 0                        // value = 0 (black)
   push 8B                       // state = D3DRS_AMBIENT
-  push edx                      // device
-  call dword ptr [eax+0xC8]    // SetRenderState — clobbers
+  push edx                      // device (this)
+  call dword ptr [eax+0xC8]    // SetRenderState — clobbers EAX/ECX/EDX
 
-  // Also write gfx+0x730=0 so Graphics_RenderScene reads 0 next frame
-  mov eax, [005341E0]           // App
+  // Write gfx+0x730=0 (re-read from global — EAX was clobbered by stdcall)
+  mov eax, [005341E0]           // App (re-read, safe)
   mov eax, [eax+0x174]         // gfx
   mov dword ptr [eax+0x730], 0
 
