@@ -124,10 +124,10 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x2CC | uint8 | force_disable | 0 | If 1, Ball_ApplyForce is skipped |
 | 0x2D5 | uint8 | unknown_2D5 | 0 | Unknown (cleared by timer decay) |
 | 0x2D8 | int32 | unknown_2D8 | 0 | Unknown |
-| **0x2DC** | **float** | **checkpoint_x** | **0.0** | **Last safe position X** |
-| **0x2E0** | **float** | **checkpoint_y** | **0.0** | **Last safe position Y** |
-| **0x2E4** | **float** | **checkpoint_z** | **0.0** | **Last safe position Z** |
-| 0x2E8 | uint8 | event_flag | 0 | Checkpoint-hit event marker |
+| **0x2DC** | **float** | **lgp_x** | **0.0** | **Last Grounded Position X (LGP)** |
+| **0x2E0** | **float** | **lgp_y** | **0.0** | **Last Grounded Position Y (LGP)** |
+| **0x2E4** | **float** | **lgp_z** | **0.0** | **Last Grounded Position Z (LGP)** |
+| 0x2E8 | uint8 | event_flag | 0 | Needs-respawn (shattered) flag |
 | 0x2E9 | uint8 | impact_shatter | 0 | ⚠ **NOT on_ramp/ground flag!** Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. See docs/agent-knowledge/ball-ground-detection.md |
 | 0x2EC | int32 | unknown_2EC | 0 | Unknown |
 | 0x2F0 | uint32 | force_count | 0 | Number of forces applied this frame |

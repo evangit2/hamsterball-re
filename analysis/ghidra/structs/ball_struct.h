@@ -112,11 +112,11 @@ typedef struct {
     uint8_t pad_2d6[2];          // +0x2D6
     uint32_t field_2d8;           // +0x2D8 set 0
 
-    // === Checkpoint/Collision ===
-    float checkpoint_x;           // +0x2DC last collision/bump position
-    float checkpoint_y;           // +0x2E0
-    float checkpoint_z;           // +0x2E4
-    uint8_t event_flag;           // +0x2E8 checkpoint hit event
+    // === Last Grounded Position (LGP) ===
+    float lgp_x;                  // +0x2DC Last Grounded Position X — snapshot at last type-2 ground collision
+    float lgp_y;                  // +0x2E0 Last Grounded Position Y
+    float lgp_z;                  // +0x2E4 Last Grounded Position Z
+    uint8_t event_flag;           // +0x2E8 needs_respawn (shattered) flag
     /* ⚠ NOT a ground/on_surface flag! Sticky limit/trajectory flag.
      * See docs/agent-knowledge/ball-ground-detection.md */
     uint8_t impact_shatter;            // +0x2E9 sticky limit/trajectory (E:LIMIT + type-5 collision)

@@ -100,10 +100,10 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x2D5 | `uint8_t` | field_2d5 | ctor2, Update | `0` |
 | 0x2D6 | `uint8_t[2]` | pad_2d6 | | |
 | 0x2D8 | `uint32_t` | field_2d8 | ctor2 | `0` |
-| 0x2DC | `float` | **checkpoint_x** | Update | Last collision/bump position |
-| 0x2E0 | `float` | **checkpoint_y** | Update | " |
-| 0x2E4 | `float` | **checkpoint_z** | Update | " |
-| 0x2E8 | `bool` | **event_flag** | ctor2, Update | Checkpoint hit event |
+| 0x2DC | `float` | **lgp_x** | Update | Last Grounded Position X (type-2 ground collision snapshot) |
+| 0x2E0 | `float` | **lgp_y** | Update | " |
+| 0x2E4 | `float` | **lgp_z** | Update | " |
+| 0x2E8 | `bool` | **event_flag** | ctor2, Update | Needs-respawn (shattered) flag |
 | 0x2E9 | `bool` | **impact_shatter** | ctor2 | ⚠ NOT on_ramp! Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. |
 | 0x2EC | `uint32_t` | field_2ec | ctor2 | Collision counter |
 | 0x2F0 | `uint32_t` | field_2f0 | ctor2 | `0` |
