@@ -92,5 +92,6 @@ shapeshift_skip:
 // No crash — the 8Ball mesh is a valid persistent game object.
 // To restore Sphere appearance, reload the level.
 
+unregistersymbol(saved_sphere_mesh)
 dealloc(saved_sphere_mesh)
 dealloc(shapeshift_hook)
