@@ -5,7 +5,7 @@
 
 /* Board_ctor: Base board constructor. Size~0x4368. Calls Gadget_ctor, inits
    RumbleTimers@+0x884/+0x898, 13 AthenaLists, Ball@+0x361C via Ball_ctor2, physics params@+0x29B0,
-   camera matrices@+0x3AAC. See decompilations/scene/decomp_object_factory.c */
+   player ball colors@+0x3AAC (4 RGB entries). See decompilations/scene/decomp_object_factory.c */
 
 void * __thiscall Board_ctor(void *this,int param_1)
 

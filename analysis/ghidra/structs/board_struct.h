@@ -8,7 +8,7 @@
 //   - Gadget base (inherited): vtable, app_ptr, name, AthenaLists
 //   - Scene game state: RumbleBoard timers, 13+ AthenaLists, camera, physics
 //   - Ball list management: ball ptr at 0x361C, ball list at 0x362C
-//   - Camera: 5 Vec3+Matrix pairs (0x3AAC-0x3AFC)
+//   - Player ball colors: 4 RGB entries (0x3AAC-0x3AFC, 0x14 bytes each)
 //   - Physics: gravity, scale, speed params at 0x29B0+
 //   - Level config: board name, sizes, display settings
 
@@ -95,19 +95,30 @@ typedef struct {
     uint8_t byte_3a58;               // +0x3A58 = 1
     uint8_t byte_3a4c;               // +0x3A4C multiplayer flag
     
-    // Camera matrices (4x Vec3+Matrix pairs)
-    float cam_bounds1_x;            // +0x3A8C = 50.0f
-    float cam_bounds1_y;            // +0x3A90 = 50.0f
-    float cam_bounds1_z;            // +0x3A94 = 750.0f
-    float cam_bounds2_x;            // +0x3A9C = 50.0f
-    float cam_bounds2_y;            // +0x3AA0 = 600.0f (0x44098000)
-    float cam_bounds2_z;            // +0x3AA4 = 750.0f (0x443B8000)
-    float cam_bounds3_x;             // +0x3AA8 = 600.0f
-    float cam_pos_min;              // +0x3AB0 (Vec3 Init)
-    float cam_matrix1[16];          // +0x3AB0 Matrix4x4
-    float cam_matrix2[16];          // +0x3AC4 Matrix4x4
-    float cam_matrix3[16];          // +0x3AD8 Matrix4x4
-    float cam_matrix4[16];          // +0x3AEC Matrix4x4
+    // Player ball colors (4 RGB entries, set via Vec3_Init in Board_ctor)
+    float ball_clip_near;           // +0x3A8C = 50.0f (camera near clip, NOT ball color)
+    float ball_clip_near2;          // +0x3A90 = 50.0f
+    float ball_clip_far;            // +0x3A94 = 750.0f
+    float ball_clip_near3;          // +0x3A9C = 50.0f
+    float ball_clip_dist;           // +0x3AA0 = 700.0f (0x44098000)
+    float ball_clip_far2;            // +0x3AA4 = 750.0f (0x443B8000)
+    float ball_clip_far3;            // +0x3AA8 = 700.0f
+    float ball_color1_r;            // +0x3AB0 Player 1 ball R = 1.0f (white)
+    float ball_color1_g;            // +0x3AB4 Player 1 ball G = 1.0f
+    float ball_color1_b;            // +0x3AB8 Player 1 ball B = 1.0f
+    float ball_color1_a;            // +0x3ABC Player 1 ball A = 1.0f
+    float ball_color2_r;            // +0x3AC0 Player 2 ball R = 0.0f
+    float ball_color2_g;            // +0x3AC4 Player 2 ball G = 0.5f (light blue)
+    float ball_color2_b;            // +0x3AC8 Player 2 ball B = 1.0f
+    float ball_color2_a;            // +0x3ACC Player 2 ball A = 1.0f
+    float ball_color3_r;            // +0x3AD0 Player 3 ball R = 1.0f
+    float ball_color3_g;            // +0x3AD4 Player 3 ball G = 0.25f (salmon/red)
+    float ball_color3_b;            // +0x3AD8 Player 3 ball B = 0.25f
+    float ball_color3_a;            // +0x3ADC Player 3 ball A = 1.0f
+    float ball_color4_r;            // +0x3AE0 Player 4 ball R = 1.0f
+    float ball_color4_g;            // +0x3AE4 Player 4 ball G = 1.0f (yellow)
+    float ball_color4_b;            // +0x3AE8 Player 4 ball B = 0.0f
+    float ball_color4_a;            // +0x3AEC Player 4 ball A = 1.0f
     
     // SceneObject sub-objects
     uint8_t obj_list_3afc[0x24];    // +0x3AFC SceneObject_EmptyListCtor
