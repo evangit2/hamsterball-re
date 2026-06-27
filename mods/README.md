@@ -17,3 +17,4 @@
 | universal-safespots | Adds SAFESPOT(*) universal checkpoint — always accepted as respawn candidate regardless of active SAFESWITCH filter. Competes on distance with lettered SAFESPOTs | [universal-safespots/](universal-safespots/) |
 | 8ball-spawn | Press B to spawn an 8-ball in front of the player's hamster ball. Uses mesh index 9 (8Ball), spawns as physics debris (player_index=-1) | [8ball_spawn/](8ball_spawn/) |
 | 8ball-goal-fix | Prevents crash when 8-ball (BadBall) touches N:GOAL or E:ACTION(SCORE) triggers. Adds player_index<0 guard (same pattern Raptisoft used for E:LIMIT) to 3 patch points in DispatchCollisionEvents | [8ball_goal_fix/](8ball_goal_fix/) |
+| ball-tint | v2: Tints player 1's ball by writing RGBA floats to the board's player color table (board+0x3AB0), the same entries Board_ctor initializes via Vec3_Init. Reads hex color from ball_tint.txt at runtime | [ball_tint/](ball_tint/) |

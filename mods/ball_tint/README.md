@@ -6,7 +6,20 @@ Tints player 1's ball to any hex color, read from a text file at runtime.
 
 The mod creates `ball_tint.txt` next to `bass.dll` on first launch. Edit the file with any hex color (e.g. `FF6B35` for orange) and the ball recolors within ~60ms — no restart needed.
 
-**Mechanism:** Writes RGBA floats into the ball's render context material (ball+0x20C diffuse, +0x21C ambient, +0x23C emissive), then sets the Graphics material override (gfx+0x7C0 = ball+0x208) so the game uses our material instead of the mesh's default white material. This tints both the 3D sphere body and the sprite overlays (border, hamster).
+**Mechanism (v2):** Writes RGBA floats directly into the board's player ball color table at `board+0x3AB0`. These are the same color entries initialized by `Board_ctor` (0x419030) via four `Vec3_Init` calls — one per player:
+
+| Board Offset | Player | Default Color |
+|---|---|---|
+| +0x3AB0 | Player 1 | (1.0, 1.0, 1.0) white |
+| +0x3AC4 | Player 2 | (0.0, 0.5, 1.0) light blue |
+| +0x3AD8 | Player 3 | (1.0, 0.25, 0.25) salmon |
+| +0x3AEC | Player 4 | (1.0, 1.0, 0.0) yellow |
+
+Each entry is 4 floats (R, G, B, A) = 16 bytes, spaced 0x14 bytes apart.
+
+This is a much cleaner approach than v1: instead of writing to the ball's render context material and setting a gfx material override, we simply overwrite the board-level color value that the game's own rendering pipeline reads when drawing each player's ball.
+
+The board is found via `App+0x220 → PlayerProfile+0xC → board`, with a fallback scanner that looks for a valid AthenaList at `+0x29D4`.
 
 ## Files
 
