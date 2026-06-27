@@ -664,10 +664,6 @@ static void __thiscall universal_factory(
         /* Call the factory */
         sf->func(board, refName, outObj, outCol, refEntry);
 
-        /* Restore injected slots */
-        if (injectCount > 0)
-            restore_injected_slots(board, injected, injectCount);
-
         if (*outObj != NULL) {
             /* This factory handled it — clone if static-mesh */
             if (is_static_mesh_object(refName)) {
@@ -675,6 +671,11 @@ static void __thiscall universal_factory(
                 g_stats->clone_count++;
             }
 
+            /* KEEP injected slots on HIT — the board may need them for
+             * rendering, updates, or additional refs of the same type.
+             * Restoring to NULL here causes crashes because the game
+             * later reads these board slots (e.g. SWIRL position at
+             * board+0x4BCC, WATERWHEEL flag at board+0x4BBC). */
             /* Restore difficulty if we changed it */
             if (needDiffBypass) {
                 int* app = *(int**)((char*)board + BOARD_APP_PTR);
@@ -685,6 +686,10 @@ static void __thiscall universal_factory(
             stats_record(refName, 2, i + 1);
             return;
         }
+
+        /* Factory FAILED — restore injected slots to NULL */
+        if (injectCount > 0)
+            restore_injected_slots(board, injected, injectCount);
     }
 
     /* No factory handled this ref — return NULL */
