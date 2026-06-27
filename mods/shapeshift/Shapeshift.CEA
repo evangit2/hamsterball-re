@@ -1,94 +1,82 @@
 // ═══════════════════════════════════════════════════════════════════════
-// SHAPESHIFT v11 — Player balls render as 8Ball mesh
+// SHAPESHIFT v12 — Player balls render as 8Ball mesh
 //
-// ROOT CAUSE (why v10 didn't work):
-// v10's render wrapper called 0x403DC0 (Ball_RenderAI) — the SAME function
-// already at vtable[2]! It was a no-op! The comment said "Call Ball_Render
-// (0x403DC0)" but 0x403DC0 IS Ball_RenderAI, NOT Ball_Render.
+// v11 PROBLEMS (user feedback):
+// 1. "Crash on disable" — custom vtable (g_CustomVtable) was deallocated but
+//    balls still had pointers to it → dangling pointer → crash.
+// 2. "Lighting is darker" — Ball_Render (0x402DE0) doesn't set up D3D render
+//    states that Ball_RenderAI (0x403DC0) does (ALPHABLEND, ZENABLE, etc).
+// 3. "Still a black ball" — Ball_Render uses a different, simpler draw path.
 //
-// Ball_RenderAI (0x403DC0) uses App+0x244[ball+0x754] for mesh selection.
-// ball+0x754 defaults to 0 = Sphere. So the ball always rendered as Sphere.
+// v12 FIX — mesh pointer swap (no vtable, no function redirect):
+// Ball_RenderAI reads the mesh from: board+0x244[ball+0x754]
+// ball+0x754 defaults to 0 (Sphere). The 8Ball mesh is at index 9:
+//   board+0x244 + 9*4 = board+0x268
+// By swapping board+0x244[0] → board+0x268 every frame, Ball_RenderAI
+// draws the 8Ball mesh through the NORMAL render path — with all proper
+// textures, materials, lighting, alpha blending, and render states.
 //
-// Ball_Render (0x402DE0) uses App+0x268 (8Ball mesh DIRECTLY), bypassing
-// the mesh index entirely. This gives the ball the 8Ball appearance.
+// No custom vtable → no crash on disable.
+// No function redirect → no missing render states.
+// The 8Ball mesh is a valid persistent game object → no invalid pointers.
 //
-// v11 FIX:
-// Change the wrapper to call Ball_Render (0x402DE0) instead of Ball_RenderAI
-// (0x403DC0). This renders the 8Ball mesh for all player balls.
+// On disable: the mesh stays as 8Ball until the level is reloaded.
+// This is safe — no crash, just visual persistence.
 //
-// VTABLE LAYOUT (0x4CF314 = player ball in race):
-// [0] = 0x00402A50   [1] = 0x004015B0   [2] = 0x00403DC0 (Ball_RenderAI)
-// [3] = 0x00402A70   [4] = 0x00405E00 (Ball_Update)
-// [5] = 0x00401590   [6] = 0x004016F0   [7] = 0x00402C10
-// [8] = 0x00409050   [9] = 0x00401640   [10-20] = 0x00457B10..0x00457CF0
+// BALL MESH ARRAY (board+0x244, indexed by ball+0x754):
+// [0]=Sphere [1-2]=SphereBreak [3-6]=Hamster [7]=RBGlare
+// [8]=Sphere+Tar [9]=8Ball [10]=FunBall [11]=Bell [12]=Dizzy
 //
-// Ball_Render (0x402DE0) rendering path:
-// 1. Graphics_BeginFrame(gfx)
-// 2. Ball_TestPlaneIntersection (visibility check)
-// 3. If visible: mesh draw via App+0x268 → 8Ball mesh
-// 4. Sprite_RenderQuad for shadow
-// 5. Graphics_BeginFrame(gfx, 0) — end frame
+// BALL FIELDS:
+// ball+0x10 = board (has mesh array at +0x244, gfx at +0x174)
+// ball+0x14 = board (has App at +0x878, sound at +0x87c)
+// ball+0x754 = mesh index (default 0 = Sphere)
+//
+// HOOK: Ball_Update (0x405E22) — ESI = ball (__thiscall this)
+// Original: mov eax, [esi+0x00000C5C] (6 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(g_CustomVtable, 84)
-alloc(shapeshift_hook, 256)
-alloc(shapeshift_render_wrapper, 256)
+alloc(shapeshift_hook, 128)
+alloc(saved_sphere_mesh, 4)
 
-// Custom vtable: copy of 0x4CF314 with vtable[2] replaced
-g_CustomVtable:
-  dd 00402A50                  // [0] scalar deleting dtor
-  dd 004015B0                  // [1] InitPhysicsDefaults
-  dd shapeshift_render_wrapper // [2] ← REPLACED: Ball_Render (8Ball mesh)
-  dd 00402A70                  // [3]
-  dd 00405E00                  // [4] Ball_Update
-  dd 00401590                  // [5]
-  dd 004016F0                  // [6]
-  dd 00402C10                  // [7] Ball_RenderWithCollision
-  dd 00409050                  // [8]
-  dd 00401640                  // [9]
-  dd 00457B10                  // [10] Gfx_SetPosition
-  dd 00457B50                  // [11] Gfx_SetPositionAndRender
-  dd 00457A70                  // [12]
-  dd 00457A50                  // [13]
-  dd 00401000                  // [14]
-  dd 00457B80                  // [15]
-  dd 00457BB0                  // [16]
-  dd 00457C60                  // [17]
-  dd 00457C90                  // [18]
-  dd 00457CC0                  // [19]
-  dd 00457CF0                  // [20]
-
-// ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER v11
-// Calls Ball_Render (0x402DE0) which renders the 8Ball mesh from App+0x268.
-// ECX = ball (this pointer, __thiscall)
-// Ball_Render expects ECX = ball, reads ball+0x10 (App), ball+0x164/168/16C
-// (position), ball+0x284 (radius), ball+0x2FC (alpha) — all standard fields.
-// ═══════════════════════════════════════════════════════════════════════
-shapeshift_render_wrapper:
-  mov eax, 00402DE0            // Ball_Render (NOT 0x403DC0 = Ball_RenderAI!)
-  jmp eax
+registersymbol(saved_sphere_mesh)
 
 label(shapeshift_skip)
+label(shapeshift_swap)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK: Ball_Update (0x405E22) — ESI = ball
-// Swap vtable for player balls (vtable == 0x4CF314).
-// Set 8Ball-like size (radius=35.0) and speed (max_speed=6.0).
+// Swaps board+0x244[0] (Sphere mesh) → board+0x268 (8Ball mesh) every frame.
+// Saves original Sphere mesh pointer on first execution (for debugging).
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_hook:
-  mov eax, [esi]               // ball vtable
-  cmp eax, 004CF314             // player ball in race?
-  jne shapeshift_skip
+  mov eax, [esi+0x10]           // ball+0x10 = board
+  test eax, eax
+  jz shapeshift_skip
 
-  mov [esi], g_CustomVtable     // swap to custom vtable
-  mov dword ptr [esi+284], 420C0000  // radius = 35.0 (8Ball size)
-  mov dword ptr [esi+188], 40C00000  // max_speed = 6.0 (8Ball speed)
+  // Save original Sphere mesh pointer (first time only)
+  mov ecx, [saved_sphere_mesh]
+  test ecx, ecx
+  jnz shapeshift_swap            // already saved, skip to swap
+
+  mov ecx, [eax+0x244]          // board+0x244[0] = Sphere mesh ptr
+  test ecx, ecx
+  jz shapeshift_skip             // sphere mesh not loaded yet
+  mov [saved_sphere_mesh], ecx   // save original for debugging
+
+shapeshift_swap:
+  // Read 8Ball mesh (index 9: board+0x244 + 9*4 = board+0x268)
+  mov ecx, [eax+0x268]          // 8Ball mesh pointer
+  test ecx, ecx
+  jz shapeshift_skip             // 8Ball mesh not loaded, skip
+
+  // Swap Sphere slot → 8Ball mesh
+  mov [eax+0x244], ecx          // board+0x244[0] = 8Ball mesh
 
 shapeshift_skip:
-  mov eax, [esi+0x00000C5C]    // original instruction
+  mov eax, [esi+0x00000C5C]     // original instruction
   jmp 00405E28
 
 00405E22:
@@ -100,6 +88,9 @@ shapeshift_skip:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-dealloc(shapeshift_render_wrapper)
+// Note: board+0x244[0] stays as 8Ball mesh until level reload.
+// No crash — the 8Ball mesh is a valid persistent game object.
+// To restore Sphere appearance, reload the level.
+
+dealloc(saved_sphere_mesh)
 dealloc(shapeshift_hook)
-dealloc(g_CustomVtable)
