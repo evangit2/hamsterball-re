@@ -1,4 +1,4 @@
-# Universal Ref Loader — Hamsterball DLL Mod v3
+# Universal Ref Loader — Hamsterball DLL Mod v4
 
 ## What It Does
 
@@ -74,14 +74,19 @@ Meshes are cached so each file is only loaded once per session.
 
 ## Static-Mesh Cloning
 
-Objects like WATERWHEEL and SWIRL return the same board slot pointer for every ref — only one instance renders. This mod calls `Level_CloneTree` to create independent copies:
+Objects like WATERWHEEL and SWIRL return the same board slot pointer for every ref — only one instance renders. This mod creates a fresh `MeshWorld` via `MeshWorld_ctor` for each ref instance:
 
-| Object | Board Slot | Clone Status |
-|--------|-----------|-------------|
-| WATERWHEEL | +0x4BA8 | ✅ Cloned |
-| SWIRL | +0x4BC4 | ✅ Cloned |
-| BRIDGE (base) | +0x436C | ✅ Cloned |
-| WINDMILL | +0x437C | ⚠️ Not cloned (complex: creates CollisionLevel + attaches) |
+| Object | Board Slot | Instance Method |
+|--------|-----------|-----------------|
+| WATERWHEEL | +0x4BA8 | ✅ Fresh MeshWorld per ref |
+| SWIRL | +0x4BC4 | ✅ Fresh MeshWorld per ref |
+| BRIDGE (base) | +0x436C | ✅ Fresh MeshWorld per ref |
+| WINDMILL | +0x437C | ⚠️ Not handled (complex: creates CollisionLevel + attaches) |
+
+**Note:** v3 used `Level_CloneTree` (0x466060) which created a `Level` (base class)
+with an uninitialized world matrix — caused NULL pointer crash in matrix inverse
+function (0x49B4E7) during Draw. v4 replaces this with `MeshWorld_ctor` (0x461510)
+so each instance gets its own valid vtable, world matrix, and render state.
 
 ## Factory Dispatch Order
 
