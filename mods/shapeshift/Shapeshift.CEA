@@ -19,14 +19,12 @@ g_WhiteMaterial:
   dd 3F800000 3F800000 3F800000 3F800000    // Emissive: 1,1,1,1
   dd 00000000                                // Power: 0
 
-label(shapeshift_done)
-
 // ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER v7
-// CRASH FIX: D3D __stdcall calls clobber EAX/ECX/EDX. Must reload
-//   device + vtable after EVERY D3D call.
+// RENDER WRAPPER v8
 // BLACK BALL FIX: SetMaterial(white emissive) + LIGHTING=0 before render.
-//   With LIGHTING=0: FinalColor = Emissive = white. No normals needed.
+//   With LIGHTING=0: FinalColor = Emissive(white). No normals needed.
+// CRASH FIX: Reload EAX/ECX after every __stdcall D3D call.
+// FLICKER FIX: Removed ball+0x18 check — always swap vtable.
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_render_wrapper:
   push ebx
@@ -39,30 +37,30 @@ shapeshift_render_wrapper:
   mov ebx, [ebx+0x174]           // EBX = gfx
 
   // --- SetMaterial(white) ---
-  mov eax, [ebx+0x154]           // EAX = D3D device
-  mov ecx, [eax]                 // ECX = D3D vtable
-  push g_WhiteMaterial           // param: material
-  push eax                       // param: device
+  mov eax, [ebx+0x154]           // D3D device
+  mov ecx, [eax]                 // vtable
+  push g_WhiteMaterial
+  push eax
   call dword ptr [ecx+0xA8]     // SetMaterial — clobbers EAX/ECX/EDX
 
   // --- SetRenderState(AMBIENT, white) ---
-  mov eax, [ebx+0x154]           // reload D3D device
+  mov eax, [ebx+0x154]           // reload device
   mov ecx, [eax]                 // reload vtable
-  push FFFFFFFF                  // value = white
-  push 8B                        // state = D3DRS_AMBIENT
-  push eax                       // device
-  call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
-
-  // --- SetRenderState(LIGHTING, 0) ---
-  mov eax, [ebx+0x154]           // reload
-  mov ecx, [eax]
-  push 0                         // value = disable
-  push 89                        // state = D3DRS_LIGHTING
+  push FFFFFFFF
+  push 8B
   push eax
   call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
 
-  // --- Save ambient, set cached to white ---
-  push dword ptr [ebx+0x730]     // save on stack
+  // --- SetRenderState(LIGHTING, 0) ---
+  mov eax, [ebx+0x154]
+  mov ecx, [eax]
+  push 0
+  push 89
+  push eax
+  call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
+
+  // --- Save ambient, set cached ---
+  push dword ptr [ebx+0x730]
   mov dword ptr [ebx+0x730], FFFFFFFF
 
   // --- Call Ball_Render_AI ---
@@ -74,18 +72,18 @@ shapeshift_render_wrapper:
   pop dword ptr [ebx+0x730]
 
   // --- SetRenderState(AMBIENT, original) ---
-  mov eax, [ebx+0x154]           // reload
+  mov eax, [ebx+0x154]
   mov ecx, [eax]
-  push dword ptr [ebx+0x730]     // original value
+  push dword ptr [ebx+0x730]
   push 8B
   push eax
   call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
 
   // --- SetRenderState(LIGHTING, 1) ---
-  mov eax, [ebx+0x154]           // reload
+  mov eax, [ebx+0x154]
   mov ecx, [eax]
-  push 1                         // value = enable
-  push 89                        // state = D3DRS_LIGHTING
+  push 1
+  push 89
   push eax
   call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
 
@@ -117,22 +115,22 @@ g_CustomVtable:
   dd 00457CC0
   dd 00457CF0
 
+// ═══════════════════════════════════════════════════════════════════════
+// HOOK: Ball_Update (0x405E22)
+// FIX: Removed ball+0x18 check — always swap vtable + physics.
+// ball+0x18 = 0xFFFFFFFF for player balls (set by Ball_ctor2).
+// The old check (jnz if non-zero) ALWAYS skipped → vtable never swapped.
+// Now: always swap, no condition.
+// ═══════════════════════════════════════════════════════════════════════
 shapeshift_hook:
-  push eax
-
-  mov eax, [esi+18]
-  test eax, eax
-  jnz shapeshift_done
-
   mov [g_PlayerBall], esi
 
   mov [esi], g_CustomVtable
   mov dword ptr [esi+284], 420C0000
   mov dword ptr [esi+188], 40C00000
 
-shapeshift_done:
-  pop eax
-  mov eax, [esi+0c5c]
+  // Original instruction
+  mov eax, [esi+0x00000C5C]
   jmp 00405E28
 
 00405E22:
