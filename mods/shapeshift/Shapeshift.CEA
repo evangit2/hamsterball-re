@@ -4,7 +4,7 @@ alloc(g_PlayerBall, 4)
 alloc(g_CustomVtable, 84)
 alloc(g_WhiteMaterial, 68)
 alloc(shapeshift_hook, 256)
-alloc(shapeshift_render_wrapper, 256)
+alloc(shapeshift_render_wrapper, 512)
 
 registersymbol(g_PlayerBall)
 
@@ -22,80 +22,74 @@ g_WhiteMaterial:
 label(shapeshift_done)
 
 // ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER v6
-// Fixes black ball by: SetMaterial + DISABLE LIGHTING + white ambient
-//
-// Root cause: Ball_Render_AI renders the 8Ball mesh via DrawSubset.
-// DrawSubset uses current D3D material + lighting states.
-// With LIGHTING=1, D3D needs normals + lights to compute diffuse color.
-// If the mesh lacks proper normals or the lights don't illuminate it
-// correctly, the result is black (Diffuse×Light=0).
-//
-// Fix: Disable LIGHTING before mesh render. With LIGHTING=0:
-//   FinalColor = Emissive (our white) + vertex color
-// The emissive white makes the mesh fully bright regardless of normals.
-// After render, restore LIGHTING=1 for other scene objects.
+// RENDER WRAPPER v7
+// CRASH FIX: D3D __stdcall calls clobber EAX/ECX/EDX. Must reload
+//   device + vtable after EVERY D3D call.
+// BLACK BALL FIX: SetMaterial(white emissive) + LIGHTING=0 before render.
+//   With LIGHTING=0: FinalColor = Emissive = white. No normals needed.
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_render_wrapper:
   push ebx
   push esi
+  push edi
   mov esi, ecx                    // ESI = ball
 
-  // Get gfx: gfx = *(*(ball+0x10) + 0x174)
+  // EBX = gfx (preserved across stdcall calls)
   mov ebx, [esi+0x10]
   mov ebx, [ebx+0x174]           // EBX = gfx
 
-  // Get D3D device
+  // --- SetMaterial(white) ---
   mov eax, [ebx+0x154]           // EAX = D3D device
   mov ecx, [eax]                 // ECX = D3D vtable
+  push g_WhiteMaterial           // param: material
+  push eax                       // param: device
+  call dword ptr [ecx+0xA8]     // SetMaterial — clobbers EAX/ECX/EDX
 
-  // SetMaterial(white) — emissive makes ball self-illuminated
-  push g_WhiteMaterial
+  // --- SetRenderState(AMBIENT, white) ---
+  mov eax, [ebx+0x154]           // reload D3D device
+  mov ecx, [eax]                 // reload vtable
+  push FFFFFFFF                  // value = white
+  push 8B                        // state = D3DRS_AMBIENT
+  push eax                       // device
+  call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
+
+  // --- SetRenderState(LIGHTING, 0) ---
+  mov eax, [ebx+0x154]           // reload
+  mov ecx, [eax]
+  push 0                         // value = disable
+  push 89                        // state = D3DRS_LIGHTING
   push eax
-  call dword ptr [ecx+0xA8]     // SetMaterial
+  call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
 
-  // SetRenderState(AMBIENT, white)
-  push FFFFFFFF
-  push 8B
-  push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState(AMBIENT, white)
-
-  // SetRenderState(LIGHTING, 0) — disable D3D lighting for mesh render
-  push 0
-  push 89
-  push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState(LIGHTING, 0)
-
-  // Save original ambient on stack
-  push dword ptr [ebx+0x730]
+  // --- Save ambient, set cached to white ---
+  push dword ptr [ebx+0x730]     // save on stack
   mov dword ptr [ebx+0x730], FFFFFFFF
 
-  // Call Ball_Render_AI
+  // --- Call Ball_Render_AI ---
   mov ecx, esi
   mov eax, 00402DE0
   call eax
 
-  // Restore ambient
+  // --- Restore cached ambient ---
   pop dword ptr [ebx+0x730]
 
-  // Restore D3D device states
-  mov eax, [ebx+0x154]
+  // --- SetRenderState(AMBIENT, original) ---
+  mov eax, [ebx+0x154]           // reload
   mov ecx, [eax]
-
-  // SetRenderState(AMBIENT, original)
-  push dword ptr [ebx+0x730]
+  push dword ptr [ebx+0x730]     // original value
   push 8B
   push eax
-  call dword ptr [ecx+0xC8]
+  call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
 
-  // SetRenderState(LIGHTING, 1) — restore for other renders
-  push 1
-  push 89
-  push eax
+  // --- SetRenderState(LIGHTING, 1) ---
+  mov eax, [ebx+0x154]           // reload
   mov ecx, [eax]
+  push 1                         // value = enable
+  push 89                        // state = D3DRS_LIGHTING
   push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState(LIGHTING, 1)
+  call dword ptr [ecx+0xC8]     // SetRenderState — clobbers
 
+  pop edi
   pop esi
   pop ebx
   ret
