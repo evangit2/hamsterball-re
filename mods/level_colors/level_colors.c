@@ -1,5 +1,5 @@
 /*
- * level_colors.c — BASS.dll proxy mod
+ * level_colors.c — BASS.dll proxy mod  (v2 — crash fix)
  *
  * Changes per-level base colors based on a colors.txt config file.
  *
@@ -11,8 +11,17 @@
  *
  *   2. MENU COLORS (race selection menu text color in Practice/Time Trial)
  *      - Hardcoded as PUSH immediates in PracticeMenu_ctor (0x0042EA30)
- *      - Applied by patching the 4-byte float operands in the PUSH instructions
+ *      - Applied by patching the 4-byte float operands in PUSH instructions
  *      - Patches are applied once at startup (code is in .text, persists)
+ *
+ * v2 FIX: Three levels (Neon, Odd, Impossible) use "push 0" (6a 00, 2 bytes)
+ *   instead of "push imm32" (68 XX XX XX XX, 5 bytes) for zero-valued color
+ *   components. The v1 mod assumed ALL pushes were 5-byte push-imm32 and wrote
+ *   4 bytes at the operand offset, corrupting adjacent instructions and crashing
+ *   the game when the Time Trial menu was opened.
+ *   Fix: For those 3 levels, a CODE CAVE replaces the entire push sequence.
+ *   The cave uses proper 5-byte push-imm32 for all 4 components, so the float
+ *   operands can be safely patched like the other levels.
  *
  * Config file format (colors.txt next to bass.dll):
  *   ; Per-level colors in hex RGB (like HTML colors, no alpha)
@@ -22,26 +31,6 @@
  *   ; "board:" prefix = timer oval/text color during gameplay
  *   ; "menu:" prefix  = race selection menu text color
  *   ; no prefix       = applies to BOTH (recommended)
- *   ;
- *   WarmUp=FF00FF       ; pink/magenta
- *   Intermediate=0000FF ; blue
- *   Dizzy=00FF00        ; green
- *   Tower=FFBF00        ; orange
- *   Expert=FF0000       ; red
- *   Odd=FF8000          ; dark orange
- *   Wobbly=9ED64D       ; yellow-green
- *   Toob=8080FF         ; light blue
- *   Sky=0080FF          ; sky blue
- *   Beginner=FFBF40     ; gold
- *   Up=FF00FF           ; magenta
- *   Master=808080       ; gray
- *   Neon=FFFF00         ; yellow
- *   Impossible=FF0000   ; red
- *   Glass=FF00FF        ; magenta
- *
- *   ; Advanced: separate board vs menu colors
- *   ; board:WarmUp=FF00FF    ; only changes timer oval
- *   ; menu:WarmUp=FFBFFF     ; only changes menu text
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll level_colors.c -lwinmm \
@@ -186,32 +175,68 @@ static void load_real_bass(void)
 #define BOARD_COLOR_A    0x1514
 #define BOARD_SCALE      0x4340
 
+/* The call target in PracticeMenu_ctor for all 15 levels */
+#define COLOR_INIT_CALL  0x00453150
+
 /* Level definitions */
 typedef struct {
     const char *name;       /* config file name (case-insensitive) */
     int          id;        /* level index 0-14 */
-    /* Menu color patch addresses (PUSH immediate + 1 for the float operand) */
-    DWORD menu_r_addr;      /* address of R float in PUSH instruction */
-    DWORD menu_g_addr;
+    /* Menu color patch addresses (PUSH immediate + 1 for the float operand).
+     * These are for the "completed" branch (level is unlocked).
+     * For levels with code_cave=1, these are the operand offsets WITHIN the
+     * code cave (set by install_code_cave), not the original .text addresses. */
+    DWORD menu_a_addr;      /* address of A float in push instruction */
     DWORD menu_b_addr;
+    DWORD menu_g_addr;
+    DWORD menu_r_addr;
+    int   code_cave;        /* 1 = uses code cave, 0 = direct patch */
+    /* For code cave levels: original push sequence start and size */
+    DWORD push_seq_start;   /* address of first push instruction */
+    int   push_seq_size;    /* total bytes of push sequence */
+    DWORD return_addr;      /* address of the call instruction after pushes */
 } LevelDef;
 
-static const LevelDef g_levels[] = {
-    {"WarmUp",       0, 0x0042EE94, 0x0042EE8F, 0x0042EE8A},
-    {"Beginner",     1, 0x0042EED3, 0x0042EECE, 0x0042EEC9},
-    {"Intermediate", 2, 0x0042EF0D, 0x0042EF08, 0x0042EF03},
-    {"Dizzy",        3, 0x0042EF60, 0x0042EF5B, 0x0042EF56},
-    {"Tower",        4, 0x0042EFDA, 0x0042EFD5, 0x0042EFD0},
-    {"Up",           5, 0x0042F054, 0x0042F04F, 0x0042F04A},
-    {"Neon",         6, 0x0042F0D4, 0x0042F0CF, 0x0042F0CD},
-    {"Expert",       7, 0x0042F14E, 0x0042F149, 0x0042F144},
-    {"Odd",          8, 0x0042F1C5, 0x0042F1C0, 0x0042F1BE},
-    {"Toob",         9, 0x0042F248, 0x0042F243, 0x0042F23E},
-    {"Wobbly",      10, 0x0042F2C2, 0x0042F2BD, 0x0042F2B8},
-    {"Glass",       11, 0x0042F33C, 0x0042F337, 0x0042F332},
-    {"Sky",         12, 0x0042F3BF, 0x0042F3BA, 0x0042F3B5},
-    {"Master",      13, 0x0042F439, 0x0042F434, 0x0042F42F},
-    {"Impossible",  14, 0x0042F4AD, 0x0042F4AB, 0x0042F4A9},
+/* Addresses verified via objdump disassembly of PracticeMenu_ctor (0x0042EA30).
+ *
+ * The push order is: A, B, G, R (pushed right-to-left for the call).
+ * For levels with all-68 pushes, the operand is at push_addr+1.
+ *   e.g. WarmUp A: push at 0x42EE84, operand at 0x42EE85
+ *
+ * For Neon(6), Odd(8), Impossible(14): the original code uses "6a 00"
+ *   (push 0, 2 bytes) for zero-valued components. These use code caves.
+ *   The menu_*_addr fields are filled at runtime by install_code_cave(). */
+static LevelDef g_levels[] = {
+    /* 0: WarmUp — all 68 pushes */
+    {"WarmUp",       0, 0x42EE85, 0x42EE8A, 0x42EE8F, 0x42EE94, 0, 0, 0, 0},
+    /* 1: Beginner — all 68 pushes */
+    {"Beginner",     1, 0x42EEC4, 0x42EEC9, 0x42EECE, 0x42EED3, 0, 0, 0, 0},
+    /* 2: Intermediate — all 68 pushes */
+    {"Intermediate", 2, 0x42EEFE, 0x42EF03, 0x42EF08, 0x42EF0D, 0, 0, 0, 0},
+    /* 3: Dizzy — all 68 pushes */
+    {"Dizzy",        3, 0x42EF51, 0x42EF56, 0x42EF5B, 0x42EF60, 0, 0, 0, 0},
+    /* 4: Tower — all 68 pushes */
+    {"Tower",        4, 0x42EFCB, 0x42EFD0, 0x42EFD5, 0x42EFDA, 0, 0, 0, 0},
+    /* 5: Up — all 68 pushes */
+    {"Up",           5, 0x42F045, 0x42F04A, 0x42F04F, 0x42F054, 0, 0, 0, 0},
+    /* 6: Neon — has 6a 00 (B=0.0) → CODE CAVE */
+    {"Neon",         6, 0, 0, 0, 0, 1, 0x42F0C7, 17, 0x42F0D8},
+    /* 7: Expert — all 68 pushes */
+    {"Expert",       7, 0x42F13F, 0x42F144, 0x42F149, 0x42F14E, 0, 0, 0, 0},
+    /* 8: Odd — has 6a 00 (B=0.0) → CODE CAVE */
+    {"Odd",          8, 0, 0, 0, 0, 1, 0x42F1B8, 17, 0x42F1C9},
+    /* 9: Toob — all 68 pushes */
+    {"Toob",         9, 0x42F239, 0x42F23E, 0x42F243, 0x42F248, 0, 0, 0, 0},
+    /* 10: Wobbly — all 68 pushes */
+    {"Wobbly",      10, 0x42F2B3, 0x42F2B8, 0x42F2BD, 0x42F2C2, 0, 0, 0, 0},
+    /* 11: Glass — all 68 pushes */
+    {"Glass",       11, 0x42F32D, 0x42F332, 0x42F337, 0x42F33C, 0, 0, 0, 0},
+    /* 12: Sky — all 68 pushes */
+    {"Sky",         12, 0x42F3B0, 0x42F3B5, 0x42F3BA, 0x42F3BF, 0, 0, 0, 0},
+    /* 13: Master — all 68 pushes */
+    {"Master",      13, 0x42F42A, 0x42F42F, 0x42F434, 0x42F439, 0, 0, 0, 0},
+    /* 14: Impossible — has 6a 00 (B=0.0, G=0.0) → CODE CAVE */
+    {"Impossible",  14, 0, 0, 0, 0, 1, 0x42F4A3, 14, 0x42F4B1},
 };
 #define NUM_LEVELS 15
 
@@ -224,6 +249,7 @@ typedef struct {
 static ColorEntry g_board_colors[NUM_LEVELS];  /* for runtime board polling */
 static ColorEntry g_menu_colors[NUM_LEVELS];   /* for menu code patching */
 static char g_config_path[MAX_PATH] = {0};
+static int g_caves_installed = 0;
 
 /* ── Config file parsing ─────────────────────────────────────────────────── */
 
@@ -399,7 +425,7 @@ static void create_default_config(void)
     }
 }
 
-/* ── Menu color patching (code modification) ────────────────────────────── */
+/* ── Menu color patching ────────────────────────────────────────────────── */
 
 /* Write a 4-byte float into the code section at the given address.
  * Uses VirtualProtect to temporarily make the page writable. */
@@ -413,7 +439,134 @@ static int patch_float(DWORD addr, float value)
     return 1;
 }
 
-/* Patch all menu colors in PracticeMenu_ctor */
+/* Write a byte at the given address (with VirtualProtect). */
+static int patch_byte(DWORD addr, BYTE value)
+{
+    DWORD oldProtect;
+    if (!VirtualProtect((void*)addr, 1, PAGE_EXECUTE_READWRITE, &oldProtect))
+        return 0;
+    *(BYTE*)addr = value;
+    VirtualProtect((void*)addr, 1, oldProtect, &oldProtect);
+    return 1;
+}
+
+/* Write a 4-byte dword at the given address (with VirtualProtect). */
+static int patch_dword(DWORD addr, DWORD value)
+{
+    DWORD oldProtect;
+    if (!VirtualProtect((void*)addr, 4, PAGE_EXECUTE_READWRITE, &oldProtect))
+        return 0;
+    *(DWORD*)addr = value;
+    VirtualProtect((void*)addr, 4, oldProtect, &oldProtect);
+    return 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Code Cave System
+ *
+ * For levels whose original push sequence contains "6a 00" (push 0, 2-byte
+ * instruction), we can't safely patch a 4-byte float operand into a 2-byte
+ * instruction. Instead we:
+ *   1. VirtualAlloc an executable page
+ *   2. Write a trampoline: 4× push imm32 + jmp back_to_call
+ *   3. At the original push sequence: write JMP to trampoline + NOP padding
+ *
+ * The trampoline's push immediates can then be patched via patch_float
+ * just like the regular levels.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static BYTE *g_cave_mem = NULL;   /* base of allocated cave page */
+static int g_cave_offset = 0;     /* current write offset in cave page */
+
+/* Allocate the code cave page (called once at startup). */
+static int init_code_cave_page(void)
+{
+    if (g_cave_mem) return 1;
+    g_cave_mem = (BYTE*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE,
+                                     PAGE_EXECUTE_READWRITE);
+    if (!g_cave_mem) return 0;
+    return 1;
+}
+
+/* Allocate `size` bytes from the cave page (bump allocator). */
+static BYTE* cave_alloc(int size)
+{
+    if (!g_cave_mem || g_cave_offset + size > 4096) return NULL;
+    BYTE *p = g_cave_mem + g_cave_offset;
+    g_cave_offset += size;
+    return p;
+}
+
+/* Install a code cave for one level.
+ * Replaces the original push sequence with: JMP cave + NOPs
+ * Cave contains: 4× push imm32 + jmp return_addr
+ * Updates g_levels[idx].menu_*_addr to point to the cave's push operands. */
+static int install_code_cave(int idx)
+{
+    LevelDef *lv = &g_levels[idx];
+    if (!init_code_cave_page()) return 0;
+
+    /* Cave layout:
+     *   push imm32 (A)   = 68 XX XX XX XX   (5 bytes)
+     *   push imm32 (B)   = 68 XX XX XX XX   (5 bytes)
+     *   push imm32 (G)   = 68 XX XX XX XX   (5 bytes)
+     *   push imm32 (R)   = 68 XX XX XX XX   (5 bytes)
+     *   jmp return_addr  = E9 XX XX XX XX   (5 bytes)
+     * Total: 25 bytes */
+    BYTE *cave = cave_alloc(25);
+    if (!cave) return 0;
+
+    /* Write the 4 push instructions (initial values = 0.0, will be patched later) */
+    cave[0] = 0x68; *(DWORD*)(cave + 1) = 0;       /* push A */
+    cave[5] = 0x68; *(DWORD*)(cave + 6) = 0;       /* push B */
+    cave[10] = 0x68; *(DWORD*)(cave + 11) = 0;     /* push G */
+    cave[15] = 0x68; *(DWORD*)(cave + 16) = 0;     /* push R */
+
+    /* Write jmp return_addr (E9 = jmp rel32) */
+    cave[20] = 0xE9;
+    DWORD rel = lv->return_addr - ((DWORD)cave + 25);
+    *(DWORD*)(cave + 21) = rel;
+
+    /* Now patch the original push sequence:
+     * Replace first 5 bytes with JMP to cave, fill rest with NOPs. */
+    DWORD orig = lv->push_seq_start;
+    int orig_size = lv->push_seq_size;
+
+    /* JMP rel32 to cave */
+    patch_byte(orig, 0xE9);
+    DWORD jmp_rel = (DWORD)cave - (orig + 5);
+    patch_dword(orig + 1, jmp_rel);
+
+    /* NOP padding for remaining bytes */
+    for (int i = 5; i < orig_size; i++) {
+        patch_byte(orig + i, 0x90);
+    }
+
+    /* Update the level's menu addresses to point to the cave's push operands */
+    lv->menu_a_addr = (DWORD)(cave + 1);
+    lv->menu_b_addr = (DWORD)(cave + 6);
+    lv->menu_g_addr = (DWORD)(cave + 11);
+    lv->menu_r_addr = (DWORD)(cave + 16);
+
+    return 1;
+}
+
+/* Install code caves for all levels that need them (call once at startup). */
+static void install_all_code_caves(void)
+{
+    if (g_caves_installed) return;
+    for (int i = 0; i < NUM_LEVELS; i++) {
+        if (g_levels[i].code_cave) {
+            install_code_cave(i);
+        }
+    }
+    g_caves_installed = 1;
+}
+
+/* Patch all menu colors.
+ * For regular levels: patches the float operands in the original PUSH instructions.
+ * For code-cave levels: patches the float operands in the cave's PUSH instructions.
+ * Both use the same patch_float mechanism. */
 static void patch_menu_colors(void)
 {
     for (int i = 0; i < NUM_LEVELS; i++) {
@@ -422,10 +575,13 @@ static void patch_menu_colors(void)
         float r = ((g_menu_colors[i].rgb >> 16) & 0xFF) / 255.0f;
         float g = ((g_menu_colors[i].rgb >> 8) & 0xFF) / 255.0f;
         float b = (g_menu_colors[i].rgb & 0xFF) / 255.0f;
+        float a = 1.0f;
 
-        patch_float(g_levels[i].menu_r_addr, r);
-        patch_float(g_levels[i].menu_g_addr, g);
+        /* Alpha is always 1.0 (not configurable, but we patch it for completeness) */
+        patch_float(g_levels[i].menu_a_addr, a);
         patch_float(g_levels[i].menu_b_addr, b);
+        patch_float(g_levels[i].menu_g_addr, g);
+        patch_float(g_levels[i].menu_r_addr, r);
     }
 }
 
@@ -473,19 +629,6 @@ static void apply_board_colors(void)
     DWORD board = find_board();
     if (!board) return;
 
-    for (int i = 0; i < NUM_LEVELS; i++) {
-        if (!g_board_colors[i].valid) continue;
-
-        /* We don't know which level is currently active, so we check
-         * if the board's CURRENT color matches this level's original color.
-         * If it does, we apply the override. */
-        /* Actually, simpler: just write to ALL valid levels. The board
-         * only has one color set. But we don't know which level is active...
-         *
-         * Better approach: check board+0x29B4 (level name string) to identify
-         * the current level, then apply only that level's override. */
-    }
-
     /* Identify current level by checking board+0x29B4 (level name pointer) */
     if (IsBadReadPtr((void*)(board + 0x29B4), 4)) return;
     char *level_name = *(char**)(board + 0x29B4);
@@ -493,8 +636,6 @@ static void apply_board_colors(void)
 
     /* Match level name to find index */
     int current_level = -1;
-    /* The board stores names like "WARM-UP RACE", "BEGINNER RACE", etc.
-     * We need to match these to our level indices. */
     static const char *level_name_strings[] = {
         "WARM-UP RACE", "BEGINNER RACE", "INTERMEDIATE RACE", "DIZZY RACE",
         "TOWER RACE", "UP RACE", "NEON RACE", "EXPERT RACE", "ODD RACE",
@@ -532,6 +673,10 @@ static DWORD WINAPI color_thread(LPVOID param)
 {
     (void)param;
     Sleep(3000);  /* Wait for game to fully load */
+
+    /* Install code caves for levels that need them (Neon, Odd, Impossible).
+     * Must be done before patch_menu_colors(). */
+    install_all_code_caves();
 
     DWORD last_config_check = 0;
 
