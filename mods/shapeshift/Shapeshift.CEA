@@ -20,77 +20,21 @@ g_WhiteMaterial:
   dd 00000000                                // Power: 0
 
 // ═══════════════════════════════════════════════════════════════════════
-// RENDER WRAPPER v9
-// SetMaterial(white emissive) + LIGHTING=0 → FinalColor = Emissive = white
-// Reload EAX/ECX after every __stdcall D3D call (clobbers EAX/ECX/EDX)
+// RENDER WRAPPER v10
+// ROOT CAUSE: v9 called Ball_RenderAI (0x402DE0 = AI render) instead of
+//   Ball_Render (0x403DC0 = player render). AI render uses
+//   App+0x244[ball+0x754] for mesh (Sphere, not 8Ball). Player render
+//   uses App+0x268 (8Ball directly).
+// FIX: Call Ball_Render (0x403DC0), NOT Ball_RenderAI (0x402DE0).
+//   No SetMaterial or LIGHTING changes needed — Ball_Render already
+//   renders the 8Ball mesh properly with normal lighting.
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_render_wrapper:
-  push ebx
-  push esi
-  push edi
-  mov esi, ecx
+  // Simply call the player ball render function
+  // ECX = ball (this pointer, __thiscall)
+  mov eax, 00403DC0
+  jmp eax
 
-  // EBX = gfx (preserved across stdcall calls)
-  mov ebx, [esi+0x10]
-  mov ebx, [ebx+0x174]
-
-  // --- SetMaterial(white) ---
-  mov eax, [ebx+0x154]
-  mov ecx, [eax]
-  push g_WhiteMaterial
-  push eax
-  call dword ptr [ecx+0xA8]     // SetMaterial
-
-  // --- SetRenderState(AMBIENT, white) ---
-  mov eax, [ebx+0x154]
-  mov ecx, [eax]
-  push FFFFFFFF
-  push 8B
-  push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState
-
-  // --- SetRenderState(LIGHTING, 0) ---
-  mov eax, [ebx+0x154]
-  mov ecx, [eax]
-  push 0
-  push 89
-  push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState
-
-  // --- Save + set cached ambient ---
-  push dword ptr [ebx+0x730]
-  mov dword ptr [ebx+0x730], FFFFFFFF
-
-  // --- Call Ball_Render_AI ---
-  mov ecx, esi
-  mov eax, 00402DE0
-  call eax
-
-  // --- Restore cached ambient ---
-  pop dword ptr [ebx+0x730]
-
-  // --- SetRenderState(AMBIENT, original) ---
-  mov eax, [ebx+0x154]
-  mov ecx, [eax]
-  push dword ptr [ebx+0x730]
-  push 8B
-  push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState
-
-  // --- SetRenderState(LIGHTING, 1) ---
-  mov eax, [ebx+0x154]
-  mov ecx, [eax]
-  push 1
-  push 89
-  push eax
-  call dword ptr [ecx+0xC8]     // SetRenderState
-
-  pop edi
-  pop esi
-  pop ebx
-  ret
-
-// Custom vtable = player vtable with vtable[2] replaced
 g_CustomVtable:
   dd 00402A50
   dd 004015B0
@@ -118,25 +62,19 @@ label(shapeshift_skip)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK: Ball_Update (0x405E22) — ESI = ball
-// PLAYER-ONLY FIX: Check ball+0x00 == 0x4CF314 (player vtable).
-//   Player vtable = 0x4CF314 → swap to custom.
-//   AI vtable = 0x4CF3A0 → skip.
-//   Already swapped (g_CustomVtable) → skip.
+// Only swap player balls (vtable == 0x4CF314).
 // ═══════════════════════════════════════════════════════════════════════
 shapeshift_hook:
-  // Check: is this a player ball? (vtable == 0x4CF314)
   mov eax, [esi]
   cmp eax, 004CF314
   jne shapeshift_skip
 
-  // Player ball — swap vtable + physics
   mov [g_PlayerBall], esi
   mov [esi], g_CustomVtable
   mov dword ptr [esi+284], 420C0000
   mov dword ptr [esi+188], 40C00000
 
 shapeshift_skip:
-  // Original instruction
   mov eax, [esi+0x00000C5C]
   jmp 00405E28
 
