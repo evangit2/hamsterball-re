@@ -1,16 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v5 — Dark scene + glowing ball
-// Fixes: v4 crashed from disabling D3DRS_LIGHTING globally.
-//
-// v5 approach: Don't disable lighting. Just set dark ambient + fog.
-// Use SetMaterial(white emissive) for ball glow.
-// Emissive works even with dark ambient — self-illumination.
+// GLOBAL NEON EFFECT v6 — Dark scene + glowing ball
+// CRASH FIX: D3D __stdcall calls clobber EAX/ECX/EDX. Reload after each call.
+// No LIGHTING changes — just dark ambient + SetMaterial(white emissive).
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
 alloc(neon_cave, 256)
-alloc(neon_glow_entry, 256)
+alloc(neon_glow_entry, 512)
 alloc(neon_glow_exit, 256)
 alloc(g_GfxDevice, 4)
 alloc(g_WhiteMaterial, 68)
@@ -34,7 +31,6 @@ label(skip_glow_exit)
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 1: Ball_Update (0x405E22) — dark ambient + fog
-// ESI = ball
 // ═══════════════════════════════════════════════════════════════════════
 neon_cave:
   push eax
@@ -53,15 +49,15 @@ neon_cave:
   mov byte ptr [eax+0x734], 1       // fog enabled
   mov dword ptr [eax+0x738], 0      // fog color = black
 
-  // Also call SetRenderState(AMBIENT, 0) on D3D device
-  mov eax, [eax+0x154]
-  test eax, eax
+  // SetRenderState(AMBIENT, 0) on D3D device
+  mov edx, [eax+0x154]               // EDX = D3D device (save in EDX before clobber)
+  test edx, edx
   jz skip_neon
-  mov edx, [eax]
+  mov ecx, [edx]                     // ECX = vtable
   push 0
   push 8B
-  push eax
-  call dword ptr [edx+C8]
+  push edx
+  call dword ptr [ecx+0xC8]         // SetRenderState — clobbers EAX/ECX/EDX
 
 skip_neon:
   pop edx
@@ -72,7 +68,6 @@ skip_neon:
 
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK 2: Player Render Entry (0x403DDF) — SetMaterial + white ambient
-// EBP = ball
 // ═══════════════════════════════════════════════════════════════════════
 neon_glow_entry:
   push eax
@@ -85,29 +80,30 @@ neon_glow_entry:
   mov ecx, [eax+0x174]
   test ecx, ecx
   jz skip_glow_entry
-  mov [g_GfxDevice], ecx
+  mov [g_GfxDevice], ecx             // save gfx for exit hook
 
   // SetMaterial(white emissive)
-  mov eax, [ecx+0x154]
-  test eax, eax
+  mov edx, [ecx+0x154]               // EDX = D3D device
+  test edx, edx
   jz skip_glow_entry
-  mov edx, [eax]
+  mov eax, [edx]                     // EAX = vtable
   push g_WhiteMaterial
-  push eax
-  call dword ptr [edx+0xA8]
+  push edx
+  call dword ptr [eax+0xA8]         // SetMaterial — clobbers EAX/ECX/EDX
 
-  // SetRenderState(AMBIENT, white)
+  // SetRenderState(AMBIENT, white) — reload after clobber
+  mov ecx, [g_GfxDevice]             // reload gfx
+  mov edx, [ecx+0x154]              // reload D3D device
+  mov eax, [edx]                     // reload vtable
   push FFFFFFFF
   push 8B
-  push eax
-  call dword ptr [edx+C8]
+  push edx
+  call dword ptr [eax+0xC8]         // SetRenderState — clobbers
 
 skip_glow_entry:
   pop edx
   pop ecx
   pop eax
-
-  // Original instructions (9 bytes)
   mov eax, [ebp+0x10]
   mov ecx, [eax+0x174]
   jmp 00403DE8
@@ -124,23 +120,19 @@ neon_glow_exit:
   test ecx, ecx
   jz skip_glow_exit
 
-  mov eax, [ecx+0x154]
-  test eax, eax
+  mov edx, [ecx+0x154]               // D3D device
+  test edx, edx
   jz skip_glow_exit
-  mov edx, [eax]
-
-  // SetRenderState(AMBIENT, 0)
+  mov eax, [edx]                     // vtable
   push 0
   push 8B
-  push eax
-  call dword ptr [edx+C8]
+  push edx
+  call dword ptr [eax+0xC8]         // SetRenderState(AMBIENT, 0) — clobbers
 
 skip_glow_exit:
   pop edx
   pop ecx
   pop eax
-
-  // Original instruction
   mov ecx, [esp+0x0000012C]
   jmp 004050E0
 
