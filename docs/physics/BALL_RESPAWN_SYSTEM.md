@@ -121,6 +121,49 @@ if (*(char*)(ball + 0x2F9) != 0) {
 Stun timer (+0x300) is decremented by 1 each frame, clamped at 0.
 When it reaches 0, show_stars (+0x2F8) is cleared.
 
+## Last Grounded Position (LGP) — Respawn Search Position Source
+
+The respawn point search does **NOT** use the ball's current live position (`ball+0x164/0x168/0x16C`).
+Instead, it uses the **Last Grounded Position (LGP)** stored at:
+
+| Offset | Name | Type | Description |
+|--------|------|------|-------------|
+| `Ball+0x2DC` | `lgp_x` | float | X coordinate of last ground collision |
+| `Ball+0x2E0` | `lgp_y` | float | Y coordinate of last ground collision |
+| `Ball+0x2E4` | `lgp_z` | float | Z coordinate of last ground collision |
+
+The LGP is a **snapshot of the ball's position at the moment of its last type-2 (ground) collision**.
+It is written inside `Ball_Update` (0x405E00) in the type-2 surface collision handler:
+
+```c
+// When ball's own collision mesh registers a type-2 surface hit:
+param_1[0xB7] = param_1[0x59];  // ball+0x2DC = ball+0x164 (current X → LGP X)
+param_1[0xB8] = param_1[0x5A];  // ball+0x2E0 = ball+0x168 (current Y → LGP Y)
+param_1[0xB9] = param_1[0x5B];  // ball+0x2E4 = ball+0x16C (current Z → LGP Z)
+```
+
+*(Indices are `int*` stride — 0xB7 × 4 = 0x2DC, 0x59 × 4 = 0x164, etc.)*
+
+**Why LGP instead of live position?** By the time the ball dies and `Ball_FindClosestRespawnPoint`
+fires, the ball has typically fallen far below the track. Using the live position would find respawn
+points near wherever the ball landed in the void. Instead, the game uses the LGP — the last place the
+ball was touching solid ground — so it respawns you near where you fell off, not wherever your corpse
+ended up.
+
+The height gate in Mode 0 also uses LGP: `ball+0x2E0 (lgp_y) - (radius + 2.0) < respawn_point.Y` —
+only considers respawn points above where the ball last touched ground (plus a small tolerance),
+preventing it from teleporting you downward.
+
+Distance formula using LGP:
+```
+dist = sqrt((lgp_x - point_x)² + (lgp_y - point_y)² + (lgp_z - point_z)²)
+```
+
+**Note:** Type-2 collision = ground/surface collision. This is the collision type where the ball's
+own collision mesh (`piVar16[0x19] == unaff_EBP`) hits a walkable surface. The previous labels
+`checkpoint_x/y/z` and "Last safe position" were partially correct but misleading — these are
+specifically the last grounded position, not a checkpoint save.
+
 ## Related Fields (NOT part of respawn)
 
 - **Ball+0xC4C** = is_shrunk (Odd Race only, set by Ball_Shrink/Ball_Grow)

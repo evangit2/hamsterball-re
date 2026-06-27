@@ -193,7 +193,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
   - `+0x18C` speed_scale (1.0f)
   - `+0x1A8` gravity vector
   - `+0x284` radius (27.0f)
-  - `+0x2DC` checkpoint_x/y/z
+  - `+0x2DC` lgp_x/y/z (Last Grounded Position)
   - `+0x768` cam_active
   - `+0xC4C` is_shrunk flag (Odd Race E:SHRINK/E:GROW)
   - `+0xC88` world transform matrix (4x4)

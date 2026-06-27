@@ -15440,7 +15440,7 @@ nop
 <td><code>+0x2DC</code></td>
 <td>int</td>
 <td><code>0</code></td>
-<td>checkpoint index</td>
+<td>LGP X (Last Grounded Position)</td>
 </tr>
 <tr>
 <td><code>+0x2E8</code></td>
@@ -35326,21 +35326,21 @@ find_collision(ball_ptr, &amp;out);
 <tr>
 <td>0x2DC</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td>Update</td>
-<td>Last collision/bump position</td>
+<td>Last Grounded Position (LGP) — snapshot at last type-2 ground collision</td>
 </tr>
 <tr>
 <td>0x2E0</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td>Update</td>
 <td>&quot;</td>
 </tr>
 <tr>
 <td>0x2E4</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td>Update</td>
 <td>&quot;</td>
 </tr>
@@ -36739,21 +36739,21 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 <tr>
 <td>0x2DC</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td>Update</td>
-<td>Last collision/bump position</td>
+<td>Last Grounded Position (LGP) — snapshot at last type-2 ground collision</td>
 </tr>
 <tr>
 <td>0x2E0</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td>Update</td>
 <td>&quot;</td>
 </tr>
 <tr>
 <td>0x2E4</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td>Update</td>
 <td>&quot;</td>
 </tr>
@@ -46830,21 +46830,21 @@ If sublevel_count &gt;= 1 (multi-level mode):
 <tr>
 <td>0x2DC</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td>Update</td>
-<td>Last collision/bump position</td>
+<td>Last Grounded Position (LGP) — snapshot at last type-2 ground collision</td>
 </tr>
 <tr>
 <td>0x2E0</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td>Update</td>
 <td>&quot;</td>
 </tr>
 <tr>
 <td>0x2E4</td>
 <td><code>float</code></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td>Update</td>
 <td>&quot;</td>
 </tr>
@@ -57461,23 +57461,23 @@ Engine: cos=0.731 sin=0.682
 <tr>
 <td><strong>0x2DC</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position X</strong></td>
+<td><strong>Last Grounded Position X (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E0</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Y</strong></td>
+<td><strong>Last Grounded Position Y (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E4</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Z</strong></td>
+<td><strong>Last Grounded Position Z (LGP)</strong></td>
 </tr>
 <tr>
 <td>0x2E8</td>
@@ -110630,7 +110630,7 @@ UI / Menu hierarchy:
 <li><code>+0x18C</code> speed_scale (1.0f)</li>
 <li><code>+0x1A8</code> gravity vector</li>
 <li><code>+0x284</code> radius (27.0f)</li>
-<li><code>+0x2DC</code> checkpoint_x/y/z</li>
+<li><code>+0x2DC</code> lgp_x/y/z</li>
 <li><code>+0x768</code> cam_active</li>
 <li><code>+0xC4C</code> is_shrunk flag (<a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> E:SHRINK/E:GROW)</li>
 <li><code>+0xC88</code> world transform matrix (4x4)</li>
@@ -111190,7 +111190,7 @@ else if (strcmp(type, &quot;BONK&quot;) == 0) {
 <li><code>+0x18C</code> speed_scale (1.0f)</li>
 <li><code>+0x1A8</code> gravity vector</li>
 <li><code>+0x284</code> radius (27.0f)</li>
-<li><code>+0x2DC</code> checkpoint_x/y/z</li>
+<li><code>+0x2DC</code> lgp_x/y/z</li>
 <li><code>+0x768</code> cam_active</li>
 <li><code>+0xC4C</code> is_shrunk flag (<a href="#64833895235269" title="Odd Race" class="record-link highlight">odd race</a> E:SHRINK/E:GROW)</li>
 <li><code>+0xC88</code> world transform matrix (4x4)</li>
@@ -114274,23 +114274,23 @@ behavior than the standard mode 0.</li>
 <tr>
 <td><strong>0x2DC</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position X</strong></td>
+<td><strong>Last Grounded Position X (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E0</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Y</strong></td>
+<td><strong>Last Grounded Position Y (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E4</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Z</strong></td>
+<td><strong>Last Grounded Position Z (LGP)</strong></td>
 </tr>
 <tr>
 <td>0x2E8</td>
@@ -115402,7 +115402,7 @@ behavior than the standard mode 0.</li>
 <li><code>+0x18C</code> speed_scale (1.0f)</li>
 <li><code>+0x1A8</code> gravity vector</li>
 <li><code>+0x284</code> radius (27.0f)</li>
-<li><code>+0x2DC</code> checkpoint_x/y/z</li>
+<li><code>+0x2DC</code> lgp_x/y/z</li>
 <li><code>+0x768</code> cam_active</li>
 <li><code>+0xC4C</code> is_shrunk flag (<a href="#64833895235269" title="Odd Race" class="record-link highlight">odd race</a> E:SHRINK/E:GROW)</li>
 <li><code>+0xC88</code> world transform matrix (4x4)</li>
@@ -150383,23 +150383,23 @@ Scene_SpawnBallsAndObjects → place at START object, set player_index
 <tr>
 <td><strong>0x2DC</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position X</strong></td>
+<td><strong>Last Grounded Position X (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E0</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Y</strong></td>
+<td><strong>Last Grounded Position Y (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E4</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Z</strong></td>
+<td><strong>Last Grounded Position Z (LGP)</strong></td>
 </tr>
 <tr>
 <td>0x2E8</td>
@@ -152480,23 +152480,23 @@ gravity[2] = 0.0f;   // Z
 <tr>
 <td><strong>0x2DC</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position X</strong></td>
+<td><strong>Last Grounded Position X (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E0</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Y</strong></td>
+<td><strong>Last Grounded Position Y (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E4</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Z</strong></td>
+<td><strong>Last Grounded Position Z (LGP)</strong></td>
 </tr>
 <tr>
 <td>0x2E8</td>
@@ -153826,23 +153826,23 @@ gravity[2] = 0.0f;   // Z
 <tr>
 <td><strong>0x2DC</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_x</strong></td>
+<td><strong>lgp_x</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position X</strong></td>
+<td><strong>Last Grounded Position X (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E0</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_y</strong></td>
+<td><strong>lgp_y</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Y</strong></td>
+<td><strong>Last Grounded Position Y (LGP)</strong></td>
 </tr>
 <tr>
 <td><strong>0x2E4</strong></td>
 <td><strong>float</strong></td>
-<td><strong>checkpoint_z</strong></td>
+<td><strong>lgp_z</strong></td>
 <td><strong>0.0</strong></td>
-<td><strong>Last safe position Z</strong></td>
+<td><strong>Last Grounded Position Z (LGP)</strong></td>
 </tr>
 <tr>
 <td>0x2E8</td>

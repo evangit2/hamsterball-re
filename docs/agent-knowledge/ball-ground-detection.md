@@ -57,6 +57,38 @@ Fix: replaced with a 60-frame cooldown timer after each jump.
 
 ## What DOES work for ground detection
 
+### Ball+0x2DC/0x2E0/0x2E4 — Last Grounded Position (LGP) ✅ VERIFIED
+
+| Offset | Name | Type | Description |
+|--------|------|------|-------------|
+| `Ball+0x2DC` | `lgp_x` | float | X coordinate of last ground collision |
+| `Ball+0x2E0` | `lgp_y` | float | Y coordinate of last ground collision |
+| `Ball+0x2E4` | `lgp_z` | float | Z coordinate of last ground collision |
+
+The LGP is the ball's position **snapshot at the moment of its last type-2 (ground) collision** —
+i.e., the last place the ball was touching solid ground. It is written inside `Ball_Update`
+(0x405E00) whenever the ball's own collision mesh registers a type-2 surface hit:
+
+```c
+param_1[0xB7] = param_1[0x59];  // ball+0x2DC = ball+0x164 (current X → LGP X)
+param_1[0xB8] = param_1[0x5A];  // ball+0x2E0 = ball+0x168 (current Y → LGP Y)
+param_1[0xB9] = param_1[0x5B];  // ball+0x2E4 = ball+0x16C (current Z → LGP Z)
+```
+
+The respawn system (`Ball_FindClosestRespawnPoint` at 0x405190) uses the LGP — **not** the live
+position — for all its distance and height calculations. This is so the ball respawns near where
+it fell off the track, not wherever it landed in the void.
+
+**For mods:** LGP is a reliable indicator of where the ball was last grounded. If you need a "last
+safe position" for any custom respawn/teleport logic, read these fields. They are updated every
+frame the ball is touching ground via type-2 collision, and remain stale (holding the last grounded
+position) while the ball is airborne or falling.
+
+**Previous labels:** These fields were previously named `checkpoint_x/y/z` and described as
+"Last safe position" or "Last collision/bump position." The correct terminology is **Last Grounded
+Position (LGP)** — they are specifically the position from the last type-2 ground collision, not
+a checkpoint save or a generic bump position.
+
 ### Option 1: Cooldown timer (simplest, for jump mods)
 
 After applying jump velocity, set a 60-frame counter. While >0, block jumping.

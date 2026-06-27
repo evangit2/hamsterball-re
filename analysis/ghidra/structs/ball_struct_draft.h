@@ -70,9 +70,9 @@ typedef struct {
     char field_2d4;               // +0x2D4 set 0
     char field_2d5;               // +0x2D5 set 0
     int bump_timer;               // +0x2D8 set 0
-    float checkpoint_x;           // +0x2DC (param_1[0xb7])
-    float checkpoint_y;           // +0x2E0 (param_1[0xb8])
-    float checkpoint_z;           // +0x2E4 (param_1[0xb9])
+    float lgp_x;                  // +0x2DC Last Grounded Position X (param_1[0xb7])
+    float lgp_y;                  // +0x2E0 Last Grounded Position Y (param_1[0xb8])
+    float lgp_z;                  // +0x2E4 Last Grounded Position Z (param_1[0xb9])
     char event_flag;              // +0x2E8 (param_1[0xba])
     /* ⚠ DO NOT USE as ground/on_surface flag! See docs/agent-knowledge/ball-ground-detection.md
      * Sticky limit/trajectory flag (E:LIMIT arena events + type-5 deep collision).
