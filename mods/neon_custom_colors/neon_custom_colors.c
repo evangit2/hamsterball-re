@@ -10,23 +10,19 @@
  * This bypasses the 2-byte PUSH imm8 limitation for B channels.
  *
  * Config file: neon_colors.txt (next to bass.dll)
- * Format:
+ * Format (float values, NOT hex):
  *   NEON PLAYER1 OUTLINE:
- *   * R = 0x3f800000
- *   * G = 0x3f800000
- *   * B = 0x00000000
+ *   * R = 1.0
+ *   * G = 1.0
+ *   * B = 0.0
  *
  *   NEON PLAYER1 GLOW:
- *   * R = 0x41200000
- *   * G = 0x41200000
- *   * B = 0x00000000
+ *   * R = 10.0
+ *   * G = 10.0
+ *   * B = 0.0
  *   (same for PLAYER2 OUTLINE and GLOW)
  *
- * Values are IEEE 754 hex floats.
- * Common: 0x3F800000=1.0, 0x00000000=0.0, 0x41200000=10.0,
- *         0x3F000000=0.5, 0x40000000=2.0, 0xC0A00000=-5.0
- *
- * If neon_colors.txt is missing, original yellow colors are used.
+ * If neon_colors.txt is missing, a default one is generated automatically.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -118,20 +114,27 @@ typedef struct {
 /* Defaults = original yellow */
 static PlayerNeonConfig g_config[2];
 
+/* Helper: float → DWORD bit representation (avoid strict-aliasing UB) */
+static DWORD f2d(float f) {
+    DWORD d;
+    memcpy(&d, &f, 4);
+    return d;
+}
+
 static void init_defaults(void) {
     /* Outline: R=1.0, G=1.0, B=0.0 = yellow */
-    g_config[0].outline.r = 0x3F800000;
-    g_config[0].outline.g = 0x3F800000;
-    g_config[0].outline.b = 0x00000000;
+    g_config[0].outline.r = f2d(1.0f);
+    g_config[0].outline.g = f2d(1.0f);
+    g_config[0].outline.b = f2d(0.0f);
     /* Glow: R=10.0, G=10.0, B=0.0 = bright yellow */
-    g_config[0].glow.r = 0x41200000;
-    g_config[0].glow.g = 0x41200000;
-    g_config[0].glow.b = 0x00000000;
+    g_config[0].glow.r = f2d(10.0f);
+    g_config[0].glow.g = f2d(10.0f);
+    g_config[0].glow.b = f2d(0.0f);
     /* P2 = same as P1 */
     g_config[1] = g_config[0];
 }
 
-/* ── Config file parser ────────────────────────────────────────────── */
+/* ── Config file path ──────────────────────────────────────────────── */
 /* Forward declare DllMain for GetModuleHandleEx */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved);
 
@@ -153,22 +156,58 @@ static void get_config_path(char* out, DWORD len) {
     _snprintf(out, len, "neon_colors.txt");
 }
 
+/* ── Generate default config file ──────────────────────────────────── */
+static void generate_default_config(const char* path) {
+    FILE* f = NULL;
+    if (fopen_s(&f, path, "w") != 0 || !f) return;
+
+    fprintf(f, "NEON PLAYER1 OUTLINE:\n");
+    fprintf(f, "* R = 1.0\n");
+    fprintf(f, "* G = 1.0\n");
+    fprintf(f, "* B = 0.0\n");
+    fprintf(f, "\n");
+    fprintf(f, "NEON PLAYER1 GLOW:\n");
+    fprintf(f, "* R = 10.0\n");
+    fprintf(f, "* G = 10.0\n");
+    fprintf(f, "* B = 0.0\n");
+    fprintf(f, "\n");
+    fprintf(f, "NEON PLAYER2 OUTLINE:\n");
+    fprintf(f, "* R = 1.0\n");
+    fprintf(f, "* G = 1.0\n");
+    fprintf(f, "* B = 0.0\n");
+    fprintf(f, "\n");
+    fprintf(f, "NEON PLAYER2 GLOW:\n");
+    fprintf(f, "* R = 10.0\n");
+    fprintf(f, "* G = 10.0\n");
+    fprintf(f, "* B = 0.0\n");
+
+    fclose(f);
+}
+
+/* ── Config file parser (float values) ─────────────────────────────── */
 static void read_config(void) {
     char path[MAX_PATH];
     FILE* f = NULL;
     char line[512];
-    int section = -1; /* 0=P1 outline, 1=P1 glow, 2=P2 outline, 3=P2 glow */
     int player = 0, is_glow = 0;
 
     init_defaults();
     get_config_path(path, MAX_PATH);
-    if (fopen_s(&f, path, "r") != 0 || !f) return;
+
+    /* If config doesn't exist, generate a default one and return */
+    if (fopen_s(&f, path, "r") != 0 || !f) {
+        generate_default_config(path);
+        return;
+    }
 
     while (fgets(line, sizeof(line), f)) {
         char* p = line;
 
         /* Skip whitespace */
         while (*p == ' ' || *p == '\t') p++;
+
+        /* Skip empty lines and comments */
+        if (*p == '\n' || *p == '\r' || *p == '\0' || *p == '#') continue;
 
         /* Check for section headers */
         if (_strnicmp(p, "NEON", 4) == 0) {
@@ -183,10 +222,10 @@ static void read_config(void) {
             continue;
         }
 
-        /* Check for color values: "* R = 0x..." */
+        /* Check for color values: "* R = 1.0" */
         if (*p == '*') {
             char channel = 0;
-            DWORD val = 0;
+            float fval = 0.0f;
             char* eq = strchr(p, '=');
             if (!eq) continue;
 
@@ -195,10 +234,13 @@ static void read_config(void) {
             while (cp > p && (*cp == ' ' || *cp == '\t')) cp--;
             if (cp > p) channel = *cp;
 
-            /* Parse hex value after = */
+            /* Parse float value after = */
             char* vp = eq + 1;
             while (*vp == ' ' || *vp == '\t') vp++;
-            val = strtoul(vp, NULL, 16);
+            fval = (float)strtod(vp, NULL);
+
+            /* Convert float to DWORD bits */
+            DWORD val = f2d(fval);
 
             /* Store value */
             ColorRGB* target = NULL;
