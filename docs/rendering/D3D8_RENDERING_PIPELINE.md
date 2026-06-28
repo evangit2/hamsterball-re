@@ -22,6 +22,19 @@ into multiple passes with specific render states for each. Graphics_RenderScene
 | +0x740 | float | Z far |
 | +0x748 | Matrix* | Frustum matrix |
 
+## Texture Filtering
+
+See [TEXTURE_FILTERING_SYSTEM.md](./TEXTURE_FILTERING_SYSTEM.md) for full details.
+
+In D3D8, texture filtering is controlled via `SetTextureStageState` (vtable[63],
+offset 0xFC). The game does not explicitly set filtering — it relies on D3D8's
+default of `D3DTEXF_LINEAR` (smooth/blurry). The `sharp_textures` mod overrides
+this each frame via a hook on `Graphics_BeginFrame` (0x00453B50).
+
+**Critical:** D3D8 COM device methods use `__stdcall` (this pointer on stack),
+NOT `__thiscall` (this in ECX). Using `__thiscall` causes a crash in d3d8.dll
+at 1 second runtime (LoadingScreen Gadget).
+
 ## Render Pipeline (Graphics_RenderScene 0x454BC0)
 
 ### Pass 1: Setup Lights
