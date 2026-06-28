@@ -96,6 +96,27 @@ __declspec(dllexport) int __stdcall BASS_Free(void) {
     return 1;
 }
 
+typedef int  (__stdcall *BASS_Stop_t)(void);
+static BASS_Stop_t real_BASS_Stop = NULL;
+__declspec(dllexport) int __stdcall BASS_Stop(void) {
+    if (real_BASS_Stop) return real_BASS_Stop();
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
+static BASS_SetConfig_t real_BASS_SetConfig = NULL;
+__declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
+    return 1;
+}
+
+typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
+static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
+__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
+    return 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
  *  Lifter mod
  * ═══════════════════════════════════════════════════════════════════ */
@@ -303,6 +324,12 @@ static void load_real_bass(void)
         GetProcAddress(g_hRealBass, "BASS_Init");
     real_BASS_Free = (BASS_Free_t)
         GetProcAddress(g_hRealBass, "BASS_Free");
+    real_BASS_Stop = (BASS_Stop_t)
+        GetProcAddress(g_hRealBass, "BASS_Stop");
+    real_BASS_SetConfig = (BASS_SetConfig_t)
+        GetProcAddress(g_hRealBass, "BASS_SetConfig");
+    real_BASS_ErrorGetCode = (BASS_ErrorGetCode_t)
+        GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
 }
 
 static DWORD WINAPI patch_thread(LPVOID param)
