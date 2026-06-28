@@ -1,32 +1,17 @@
 /*
- * heavy_8ball.c — BASS.dll proxy mod
+ * heavy_8ball.c — BASS.dll proxy mod (v2)
  *
- * Play as the Heavy 8-Ball! Changes your player ball to use the 8-ball mesh
- * and gives it 4x mass so it knocks other balls around like a bowling ball.
+ * Play as the 8-Ball! Changes your player ball to use the 8-ball mesh.
  *
- * What it does:
- *   1. Sets ball+0x754 = 9 (8Ball mesh index) every frame
- *   2. Sets ball+0xC78 = 100.0 (heavy mass, 4x normal Arena mass of 25.0)
- *   3. Sets ball+0xC7C = 1 (enable battle physics flag)
+ * v2 fixes: Uses App→profile→board chain for reliable ball detection
+ * on Wine/Winlator. Strips mass changes — just the mesh swap.
  *
- * The 8Ball mesh is preloaded by the game at board+0x268 (mesh index 9).
- * The mass at +0xC78 controls collision response — higher mass = more
- * momentum transfer to other balls, less knockback to yourself.
- *
- * Android-safe:
- *   - No IAT hooks, no code caves, no VirtualProtect
- *   - Background thread does memory writes only
- *   - All pointer accesses guarded by IsBadReadPtr
+ * Android-safe: No IAT hooks, no code caves, no VirtualProtect.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll heavy_8ball.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
- *
- * Installation:
- *   1. In your Hamsterball game folder, rename bass.dll -> bass_real.dll
- *   2. Copy this proxy bass.dll into the game folder
- *   3. Launch the game — your ball will be the heavy 8-ball automatically
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -155,78 +140,93 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Heavy 8-Ball Mod
+ * 8-Ball Mesh Mod
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Game addresses */
 #define APP_PTR_ADDR   0x005341E0
 
 /* Ball struct offsets */
-#define BALL_PLAYER_INDEX  0x018   /* ball+0x18 = player index (0=player 1) */
-#define BALL_MESH_INDEX    0x754   /* ball+0x754 = mesh index (0=Sphere, 9=8Ball) */
-#define BALL_MASS           0xC78   /* ball+0xC78 = mass (Arena default 25.0) */
-#define BALL_BATTLE_FLAG    0xC7C   /* ball+0xC7C = battle physics enabled (byte) */
+#define BALL_PLAYER_INDEX  0x018   /* 0 = player 1 */
+#define BALL_MESH_INDEX    0x754   /* 0=Sphere, 9=8Ball */
 
-/* Scene struct offsets */
-#define SCENE_BALL_LIST     0x29D4
-#define ATHENA_COUNT_OFFSET 0x004
-#define ATHENA_ARRAY_OFFSET 0x40C
+/* App struct offsets (verified via decompilation) */
+#define APP_PROFILE         0x220   /* App+0x220 = PlayerProfile* */
+#define PROFILE_BOARD       0x00C   /* profile+0xC = Board* */
 
-#define EIGHTBALL_MESH_IDX  9
-#define HEAVY_MASS          100.0f  /* 4x normal Arena mass (25.0) */
+/* Board struct offsets */
+#define BOARD_BALL_LIST     0x29D4  /* AthenaList of balls */
+#define BOARD_ALL_BALLS     0x2DEC  /* AthenaList of all balls (backup) */
 
-/* Background thread: set player 1's ball to heavy 8-ball every frame */
-static DWORD WINAPI heavy_8ball_thread(LPVOID param)
+/* AthenaList struct offsets */
+#define ATHENA_VTABLE       0x000
+#define ATHENA_COUNT        0x004
+#define ATHENA_ITEMS_INLINE 0x008   /* items when count==1 */
+#define ATHENA_ITEMS_PTR    0x008   /* pointer to items array when count>1 */
+
+/* Mesh indices */
+#define MESH_8BALL          9
+
+/* Scene vtable for verification */
+#define SCENE_VTABLE        0x004D0260
+#define BALL_VTABLE_ADDR    0x004CF3A0
+
+/* Background thread: set player 1's ball mesh to 8Ball */
+static DWORD WINAPI eight_ball_thread(LPVOID param)
 {
-    Sleep(3000);  /* Wait for game to fully load */
+    Sleep(5000);  /* Wait for game to fully load */
 
     for (;;) {
-        Sleep(50);  /* 20fps — fast enough to catch ball spawns */
+        Sleep(33);  /* ~30fps polling */
 
-        /* Find App */
-        DWORD app = *(DWORD*)APP_PTR_ADDR;
+        /* Step 1: Get App */
+        DWORD *pAppPtr = (DWORD*)APP_PTR_ADDR;
+        if (IsBadReadPtr(pAppPtr, 4)) continue;
+        DWORD app = *pAppPtr;
         if (!app || app < 0x10000) continue;
-        if (IsBadReadPtr((void*)app, 0x300)) continue;
+        if (IsBadReadPtr((void*)app, 0x400)) continue;
 
-        /* Find Scene by scanning App for ball list */
-        DWORD scene = 0;
-        for (int off = 0x100; off < 0xA00; off += 4) {
-            DWORD candidate = *(DWORD*)((BYTE*)app + off);
-            if (candidate == 0 || candidate < 0x10000) continue;
-            if (IsBadReadPtr((void*)candidate, 0x3000)) continue;
-            DWORD list_base = candidate + SCENE_BALL_LIST;
-            if (IsBadReadPtr((void*)list_base, 0x10)) continue;
-            DWORD count = *(DWORD*)(list_base + ATHENA_COUNT_OFFSET);
-            DWORD array = *(DWORD*)(list_base + ATHENA_ARRAY_OFFSET);
-            if (count > 0 && count < 100 && array != 0 && !IsBadReadPtr((void*)array, 4)) {
-                scene = candidate;
-                break;
-            }
+        /* Step 2: App→profile→board chain (verified method) */
+        DWORD profile = *(DWORD*)((BYTE*)app + APP_PROFILE);
+        if (!profile || profile < 0x10000) continue;
+        if (IsBadReadPtr((void*)profile, 0x20)) continue;
+
+        DWORD board = *(DWORD*)((BYTE*)profile + PROFILE_BOARD);
+        if (!board || board < 0x10000) continue;
+        if (IsBadReadPtr((void*)board, 0x3000)) continue;
+
+        /* Step 3: Scan ball list for player 1 */
+        DWORD list_addr = board + BOARD_BALL_LIST;
+        if (IsBadReadPtr((void*)list_addr, 0x10)) continue;
+
+        int count = *(int*)(list_addr + ATHENA_COUNT);
+        if (count <= 0 || count > 100) {
+            /* Try the all-balls list as fallback */
+            list_addr = board + BOARD_ALL_BALLS;
+            if (IsBadReadPtr((void*)list_addr, 0x10)) continue;
+            count = *(int*)(list_addr + ATHENA_COUNT);
+            if (count <= 0 || count > 100) continue;
         }
-        if (!scene) continue;
 
-        /* Find player 1's ball and make it the heavy 8-ball */
-        DWORD list_base = scene + SCENE_BALL_LIST;
-        int bcount = *(int*)(list_base + ATHENA_COUNT_OFFSET);
-        DWORD *barray = *(DWORD**)(list_base + ATHENA_ARRAY_OFFSET);
+        /* Get items array */
+        DWORD *items = *(DWORD**)(list_addr + ATHENA_ITEMS_PTR);
+        if (!items || IsBadReadPtr((void*)items, count * 4)) continue;
 
-        for (int i = 0; i < bcount && i < 100; i++) {
-            if (IsBadReadPtr((void*)&barray[i], 4)) break;
-            DWORD ball = barray[i];
+        /* Find player 1's ball (player_index == 0) */
+        for (int i = 0; i < count; i++) {
+            if (IsBadReadPtr((void*)&items[i], 4)) break;
+            DWORD ball = items[i];
             if (!ball || ball < 0x10000) continue;
             if (IsBadReadPtr((void*)ball, 0xD00)) continue;
 
+            /* Verify it's a Ball (vtable check) */
+            DWORD vt = *(DWORD*)ball;
+            if (vt != BALL_VTABLE_ADDR) continue;
+
             int pidx = *(int*)((BYTE*)ball + BALL_PLAYER_INDEX);
             if (pidx == 0) {
-                /* Found player 1's ball — make it the heavy 8-ball */
+                /* Found player 1 — set mesh to 8Ball */
                 if (!IsBadWritePtr((void*)(ball + BALL_MESH_INDEX), 4)) {
-                    *(int*)((BYTE*)ball + BALL_MESH_INDEX) = EIGHTBALL_MESH_IDX;
-                }
-                if (!IsBadWritePtr((void*)(ball + BALL_MASS), 4)) {
-                    *(float*)((BYTE*)ball + BALL_MASS) = HEAVY_MASS;
-                }
-                if (!IsBadWritePtr((void*)(ball + BALL_BATTLE_FLAG), 1)) {
-                    *(BYTE*)((BYTE*)ball + BALL_BATTLE_FLAG) = 1;
+                    *(int*)((BYTE*)ball + BALL_MESH_INDEX) = MESH_8BALL;
                 }
                 break;
             }
@@ -246,7 +246,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
     case DLL_PROCESS_ATTACH:
         load_real_bass();
         {
-            HANDLE hThread = CreateThread(NULL, 0, heavy_8ball_thread, NULL, 0, NULL);
+            HANDLE hThread = CreateThread(NULL, 0, eight_ball_thread, NULL, 0, NULL);
             if (hThread) CloseHandle(hThread);
         }
         break;
