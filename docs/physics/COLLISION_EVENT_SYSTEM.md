@@ -57,7 +57,7 @@ After processing: **delegates to DispatchCollisionEvents**.
 |-------|--------|-------------|
 | N:SECRET | Mark rotator triggered | Secret found marker |
 | N:UNLOCKSECRET | Check arena unlock | May unlock new arena |
-| E:NODIZZY | Anti-dizzy zone | Parses `<TIME>N</TIME>` tags, records best time |
+| E:NODIZZY | TIME checkpoint clear (NOT dizzy-related) | Parses `<TIME>N</TIME>` tags, records best time |
 | E:SAFESWITCH | Copy switch data | Data in parentheses → ball+0xC2C |
 | E:LIMIT | Arena boundary | Tracks completions per player (0-3) |
 | E:BREAK | Ball bounce | Calls ball vtable[0x20] |

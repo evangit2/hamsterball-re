@@ -630,7 +630,7 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 
 | Event | Match | Effect |
 |-------|------|--------|
-| `E:NODIZZY<TIME>N</TIME>` | prefix | Anti-dizzy zone, duration in frames |
+| `E:NODIZZY<TIME>N</TIME>` | prefix | TIME checkpoint clear zone (NOT dizzy-related), duration in frames |
 | `E:SAFESWITCH` or `E:SAFESWITCH(data)` | prefix | Copy data to ball+0xC2C |
 | `E:LIMIT` | exact | Arena finish line tracking |
 | `E:BREAK` | exact | Ball bounce callback (vtable[0x20]) |

@@ -6,7 +6,7 @@
 |--------|------|---------------------------|-------|
 | `Ball+0x281` | `unused_init_flag` | ❌ NO | DEAD: set by ctor, NEVER read by any function |
 | `Ball+0xC4C` | `is_shrunk` | ⚠ Partial | Only set by Odd Race E:SHRINK/E:GROW, NOT ground contact |
-| `Ball+0x2E9` | `impact_shatter` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE.** |
+| `Ball+0x2E9` | `dizzy_lock` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE for ground detection.** |
 | `Ball+0x260` | `is_airborne` | ⚠ Partial | Set by speed/friction thresholds, not true ground contact |
 
 **For jump mods:** Use a cooldown timer (60 frames). No ground flag needed.
