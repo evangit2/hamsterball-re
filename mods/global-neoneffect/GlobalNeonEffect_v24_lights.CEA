@@ -1,0 +1,124 @@
+// ═══════════════════════════════════════════════════════════════════════
+// GLOBAL NEON EFFECT v24 — Disable lights (CORRECTED vtable offset)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// This is an ALTERNATIVE approach to v23. Use v23 (fog) for the Neon Race
+// look. Use v24 if you want to test light disabling instead.
+//
+// v22 BUG: Used vtable+0xB4 = GetLight (read-only!) instead of
+// vtable+0xB8 = LightEnable. GetLight with bogus args just returns
+// D3DERR_INVALIDCALL — lights stay ON. Scene unchanged.
+//
+// v24 FIX: Use CORRECT vtable+0xB8 for LightEnable.
+//
+// D3D8 vtable (verified from d3d8.h — IDirect3DDevice8 method count):
+//   [44] +0xB0 = SetLight
+//   [45] +0xB4 = GetLight      ← v22 WRONGLY used this
+//   [46] +0xB8 = LightEnable   ← v24 uses this (CORRECT)
+//   [50] +0xC8 = SetRenderState
+//
+// HOOK POINT: 0x454CEE (mid-function in Graphics_RenderScene)
+//   Same as v23 — AFTER the light loop, BEFORE fog color is applied.
+//   EBP = gfx at this point.
+//
+//   The light loop at 0x454C7B-0x454C95 iterates 8 light objects and
+//   calls each one's vtable[3] (Apply), which internally calls
+//   SetLight + LightEnable. Our hook runs AFTER the loop, so we
+//   disable lights that were just enabled.
+//
+//   We also patch the light loop (JZ→JMP at 0x454C8A) so lights are
+//   never re-applied in subsequent frames.
+//
+// BALL VISIBILITY:
+//   Ball_Render checks ball+0xC80 (glow flag). When set, emissive
+//   material is applied via Gfx_PackColorRGB(1,1,1). Sprite rendering
+//   (shadow, aura, stars) bypasses D3D lighting entirely. So the ball
+//   is fully visible even with all lights disabled.
+//
+// ═══════════════════════════════════════════════════════════════════════
+
+[ENABLE]
+
+alloc(neon_cave, 256)
+
+label(neon_skip)
+label(neon_light_loop)
+
+// ═══════════════════════════════════════════════════════════════════════
+// CODE CAVE: Hook at 0x454CEE (mid-function in Graphics_RenderScene)
+// EBP = gfx at this point
+// ═══════════════════════════════════════════════════════════════════════
+neon_cave:
+  pushfd
+  pushad
+
+  // ── Get D3D device wrapper ──────────────────────────────────────
+  mov eax, [ebp+0x154]       // gfx+0x154 = D3D device wrapper
+  test eax, eax
+  jz neon_skip
+  mov edi, eax               // EDI = device (saved by PUSHAD)
+
+  // ── Disable all 8 D3D lights ────────────────────────────────────
+  // LightEnable(index, FALSE) via CORRECT vtable+0xB8
+  // __stdcall: callee cleans 12 bytes (3 args × 4)
+  // Clobbers EAX/ECX/EDX — reload vtable each iteration
+  xor esi, esi               // ESI = light index (0..7)
+neon_light_loop:
+  push 0                     // Enable = FALSE
+  push esi                   // Index (0..7)
+  push edi                   // device (this)
+  mov eax, [edi]             // vtable (reload after __stdcall clobber)
+  call dword ptr [eax+0xB8]  // LightEnable(Index, FALSE) — CORRECT OFFSET!
+  inc esi
+  cmp esi, 8
+  jl neon_light_loop
+
+  // ── Set ambient to dim gray (geometry barely visible) ───────────
+  // SetRenderState(D3DRS_AMBIENT=0x8B, 0xFF202020)
+  // 0xFF202020 = Alpha=255, R=32, G=32, B=32 (~12% brightness)
+  // Adjust: 0xFF000000=pure black, 0xFF101010=darker, 0xFF303030=brighter
+  push 0FF202020
+  push 8B
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+neon_skip:
+  popad
+  popfd
+
+  // ── Original instruction ────────────────────────────────────────
+  mov esi, [ebp+0x738]
+
+  // ── Return to next instruction ──────────────────────────────────
+  jmp 00454CF4
+
+// ═══════════════════════════════════════════════════════════════════════
+// INSTALL HOOKS
+// ═══════════════════════════════════════════════════════════════════════
+
+// Hook at 0x454CEE: MOV ESI,[EBP+0x738] (6 bytes: 8B B5 38 07 00 00)
+// Replace with: JMP neon_cave (5 bytes) + NOP (1 byte) = 6 bytes
+00454CEE:
+  jmp neon_cave
+  nop
+
+// Patch light loop: JZ → JMP (always skip light Apply calls)
+// At 0x454C8A: original 74 05 (JZ +5) → patched EB 05 (JMP +5)
+// This prevents light objects from re-enabling themselves per-frame.
+00454C8A:
+  db EB
+
+[DISABLE]
+
+// Restore original instruction at 0x454CEE
+// MOV ESI, [EBP+0x738] = 8B B5 38 07 00 00
+00454CEE:
+  db 8B B5 38 07 00 00
+
+// Restore light loop JZ
+// Original: 74 05 (JZ +5)
+00454C8A:
+  db 74
+
+dealloc(neon_cave)
