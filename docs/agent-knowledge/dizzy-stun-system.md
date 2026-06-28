@@ -160,12 +160,101 @@ leaves the playable area. It:
 `Ball_Shatter_OnRamp` (0x409480) is a variant for ramp-based deaths that creates
 2 fragments and spawns score particles in a circular pattern.
 
-## E:NODIZZY — NOT a Dizzy Trigger
+## E:NODIZZY — NOT Related to the Dizzy System
 
-The `E:NODIZZY` collision event name is misleading — it does NOT prevent or remove
-the dizzy state. It actually calls `Ball_RecordBest` with a TIME tag, recording the
-player's best time for that section. The "NODIZZY" name likely means "this section
-doesn't make you dizzy" (i.e., it's a safe zone checkpoint), not "cure dizziness."
+The `E:NODIZZY` collision event (string at 0x4CF8B8) is checked in
+`DispatchCollisionEvents` (0x40C5D0) at 0x40C64B. Its handler:
+1. Creates a `Sprite_DrawColoredRect` (0x4694F0) — visual effect
+2. Iterates a list via 0x469510/0x469600
+3. For each "TIME" entry: calls `Ball_RecordBest` (0x402400)
+4. Removes entries via vtable[0](1)
+
+**E:NODIZZY does NOT touch ball+0x2E9 (dizzy_lock) or ball+0x2EC (bounce_count).**
+It clears TIME checkpoint entries and records best times. The name likely means
+"this section doesn't make you dizzy" (a safe-zone checkpoint), not "cure dizziness."
+
+## The Bounce-Induced "Dizzy" Counter (End Screen)
+
+### End Screen Display
+
+The time-trial end screen ("DIZZIED BALLS:" at 0x4D6DC0) reads:
+- `*(App + player_index * 0xA0 + 0x5F8)` — per-player dizzy count (int32)
+
+The adjacent "BROKEN BALLS:" (0x4D6DD0) reads:
+- `*(App + player_index * 0xA0 + 0x5F4)` — per-player broken count (int32)
+
+These per-player data blocks start at `App + 0x5CC + pIdx * 0xA0` and are added to
+`board+0x362C` (AthenaList) during `Board_ctor` (0x419030, line 124).
+
+### Ball_Update Two-Pass Collision Architecture
+
+`Ball_Update` (0x405E00) processes collisions in TWO separate passes over the
+same collision list (physics_body+0x424):
+
+**Pass 1** (line 495, `while (piVar16 != 0)`):
+- Line 506: `if (bounce_count > 1 AND ball+0x2E9 == 0)` → `Ball_ApplyTrajectory(ball)`
+- This is the CHECK pass — it only fires if bounce_count was already incremented
+
+**Pass 2** (line 686, `while (piVar16 != 0)`):
+- Line 805: `if (collision_speed > 1.0 AND !is_shrunk)` → `ball+0x2E9 = 1` + camera change
+- Line 820: `if (collision_speed >= 0.03 AND bounce_count == 0)` → `bounce_count++` (0→1)
+  - Also does a raycast (Mesh_FindClosestCollision) to verify the ball moved significantly
+  - Checks `ball->radius * 3.0 < distance_to_collision_point`
+- Line 847: `if (bounce_count != 0 AND !is_shrunk AND collision_speed >= 0.1)` → `bounce_count++` (1→2)
+
+### Can You Get Dizzied on Your First Fall? — YES
+
+The bounce counter is **double-incremented in a single frame** during Pass 2:
+1. First increment: speed ≥ 0.03 AND bounce_count == 0 → bounce_count = 1
+2. Second increment: bounce_count != 0 (now 1) AND speed ≥ 0.1 → bounce_count = 2
+
+Both happen in the same loop iteration. On the NEXT frame, Pass 1 sees
+bounce_count = 2 and fires `Ball_ApplyTrajectory` — **effectively dizzying
+the ball from a single qualifying bounce**.
+
+### Speed > 1.0 Blocks the Counter
+
+If collision speed > 1.0 (hard hits from long falls):
+- Pass 2 sets `ball+0x2E9 = 1` (dizzy_lock) BEFORE the bounce counter can trigger
+  the trajectory on the next frame
+- This BLOCKS `Ball_ApplyTrajectory` from firing (Pass 1 checks `ball+0x2E9 == 0`)
+- The ball gets a camera change but NO dizzy counter increment, NO speed halving,
+  and NO impact_count = 100
+
+So the end-screen "DIZZIED BALLS" counter only counts **medium-speed bounces**
+(0.1 ≤ speed ≤ 1.0), not hard impacts from long falls.
+
+### ball+0x2E9 (dizzy_lock) Lifecycle
+
+Set to 1 by:
+- `Ball_ApplyTrajectory` (0x403750) — after trajectory effect applied
+- Speed > 1.0 collision check (Ball_Update line 806)
+- `E:LIMIT` / `E:LIMITX` / `E:LIMITZ` — level boundary events
+- `E:LIMITPIPE1` / `E:LIMITPIPE2` — pipe limit events
+- `E:SWALLOW` — fall off edge
+
+Reset to 0 ONLY by `Ball_InitPhysicsDefaults` (0x405100) — called on respawn/new race.
+
+### Ball_ApplyTrajectory (0x403750) — The Dizzy Effect
+
+When triggered:
+1. Reads trajectory direction from `physics_body+0xCA4/CA8/CAC`
+2. Normalizes and scales velocity by 0.5 (`_DAT_004CF3F0` = 0.5)
+3. Damps Y velocity by 1.25× (`_DAT_004CF434` = 1.25)
+4. Plays boost sound
+5. Sets `ball+0x2F0 = 100` (impact_count → wobble + control loss)
+6. Creates trail particles
+7. Sets `ball+0x2E9 = 1` (dizzy_lock)
+8. Sets `ball+0x14D = 1` (has_trajectory flag)
+9. If `ball+0x18 (player_index) != -1`:
+   - Increments `*(App + pIdx * 0xA0 + 0x5F8)` — **THE DIZZY COUNTER**
+
+### Bounce Counter Reset
+
+`ball+0x2EC` (bounce_count) is reset to 0 when:
+- `ball+0x14D` (has_trajectory) is set (Ball_Update line 642-644) — next frame after trajectory
+- `Ball_RecordBest` (0x402400) — clears to 0
+- `Ball_InitPhysicsDefaults` (0x405100) — full physics reset
 
 ## Visual Effects During Stun
 
