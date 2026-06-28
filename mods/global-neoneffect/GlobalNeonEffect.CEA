@@ -1,61 +1,52 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v20 — Pitch-black scene + glowing ball
+// GLOBAL NEON EFFECT v21 — Dark ambient, NO fog, ball visible via lights
 //
 // ═══════════════════════════════════════════════════════════════════════
-// ROOT CAUSE OF v19 FAILURE: WRONG D3D8 RENDER STATE IDs!
+// ROOT CAUSE OF v19/v20 FAILURE: FOG WAS THE PROBLEM!
 //
-// Verified against d3d8types.h (MinGW header):
-//   0x89 = 137 = D3DRS_LIGHTING
-//   0x8B = 139 = D3DRS_AMBIENT               ← gfx+0x730 (game applies this!)
-//   0x8C = 140 = D3DRS_FOGVERTEXMODE
-//   0x8D = 141 = D3DRS_COLORVERTEX
-//   0x91 = 145 = D3DRS_DIFFUSEMATERIALSOURCE
-//   0x93 = 147 = D3DRS_AMBIENTMATERIALSOURCE
-//   0x94 = 148 = D3DRS_EMISSIVEMATERIALSOURCE
+// v19/v20 enabled fog with FOGSTART=0, FOGEND=500. In Hamsterball levels,
+// the camera is typically 800-1200 units from geometry. With FOGEND=500,
+// EVERYTHING beyond 500 units is pure black. This caused most of the
+// scene to disappear into black void, leaving only nearby flat geometry.
 //
-// v19 had THREE critical errors:
-//   1. Claimed 0x8A=AMBIENT — but 0x8A=138 is UNDEFINED in D3D8!
-//   2. Claimed 0x8B=FOGVERTEXMODE — but 0x8B=139 IS D3DRS_AMBIENT!
-//   3. Used 0x93 for EMISSIVEMATERIALSOURCE — but 0x93=AMBIENTMATERIALSOURCE!
-//      EMISSIVEMATERIALSOURCE is 0x94=148.
+// The actual Neon Race does NOT use fog! Its dark look comes from:
+//   - Dark ambient color (MESHWORLD Section 4 background)
+//   - Directional lights still illuminating geometry
+//   - Ball visible because it's lit by scene lights
 //
-// Graphics_RenderScene (0x454BC0) disassembly at 0x454CAC:
-//   PUSH ESI           ; value = gfx+0x730
-//   PUSH 0x8B          ; state = 139 = D3DRS_AMBIENT  ← NOT FOGVERTEXMODE!
-//   PUSH EAX           ; this
-//   CALL [ECX+0xC8]    ; SetRenderState(AMBIENT, gfx+0x730)
-//
-// So gfx+0x730 IS the ambient color. The game applies it every frame.
-// Writing 3 to gfx+0x730 set ambient = 0x00000003 (alpha=0, broken).
-//
-// ═══════════════════════════════════════════════════════════════════════
-// v20 FIX:
+// v21 approach:
 //   1. gfx+0x730 = 0xFF000000 (AMBIENT = pure black, alpha=255)
-//      → game applies this via SetRenderState(0x8B, ...) every frame
-//   2. gfx+0x734 = 1 (FOGENABLE = TRUE)
-//   3. gfx+0x738 = 0xFF000000 (FOGCOLOR = BLACK)
-//   4. SetRenderState(0x8C, 3)   → FOGVERTEXMODE = D3DFOG_LINEAR (NEW)
-//   5. SetRenderState(0x23, 3)   → FOGTABLEMODE = D3DFOG_LINEAR
-//   6. SetRenderState(0x24, 0.0) → FOGSTART = 0
-//   7. SetRenderState(0x25, 500.0) → FOGEND = 500
-//   8. SetRenderState(0x94, 1)   → EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1
-//      (FIXED: was 0x93=AMBIENTMATERIALSOURCE, now 0x94=EMISSIVEMATERIALSOURCE)
-//   9. SetRenderState(0x8D, 1)   → COLORVERTEX = TRUE (NEW)
-//      (needed for emissive from vertex diffuse color)
-//  10. Removed bogus SetRenderState(0x8A, 0) — 0x8A=138 is UNDEFINED
+//      → Removes ambient light, making the scene dark
+//      → Directional lights still work (set by Graphics_SetupLights)
+//   2. gfx+0x734 = 0 (FOGENABLE = FALSE) ← KEY FIX: disable fog!
+//   3. gfx+0x738 = 0xFF000000 (FOGCOLOR = black, irrelevant if fog off)
+//   4. Remove ALL direct SetRenderState calls — not needed!
+//      The game applies gfx+0x730/734/738 via Graphics_RenderScene.
+//      No need for FOGVERTEXMODE, FOGTABLEMODE, FOGSTART, FOGEND.
+//      No need for EMISSIVEMATERIALSOURCE or COLORVERTEX.
+//      The ball will be visible because LIGHTING=TRUE (set by
+//      Ball_InitRenderState) and directional lights still illuminate it.
 //
-// D3DMCS values: 0=MATERIAL, 1=COLOR1 (diffuse), 2=COLOR2 (specular)
-// D3DFOG values: 0=NONE, 1=EXP, 2=EXP2, 3=LINEAR
+// D3D8 render state IDs (verified against d3d8types.h):
+//   0x8B = 139 = D3DRS_AMBIENT (gfx+0x730, applied by Graphics_RenderScene)
+//   0x1C = 28  = D3DRS_FOGENABLE (gfx+0x734)
+//   0x22 = 34  = D3DRS_FOGCOLOR (gfx+0x738)
+//
+// Graphics_RenderScene (0x454BC0) at 0x454CAC:
+//   SetRenderState(0x8B, [gfx+0x730])  → AMBIENT
+//   SetRenderState(0x1C, [gfx+0x734])  → FOGENABLE
+//   SetRenderState(0x22, [gfx+0x738])  → FOGCOLOR
 //
 // ═══════════════════════════════════════════════════════════════════════
 // HOOK SAFETY: Ball_Update (0x405E22) — SEH frame installed at 0x405E0E,
-// BEFORE our hook. stdcall calls are safe. ECX/EDX clobbered after hook
-// (XOR at 0x405E35/0x405E42). EAX saved with PUSH/POP. ESI=callee-preserved.
+// BEFORE our hook. ECX/EDX clobbered after hook (XOR at 0x405E35/0x405E42).
+// EAX saved with PUSH/POP. ESI=callee-preserved (ball pointer).
+// No stdcall calls needed — just memory writes to gfx struct!
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(neon_cave, 512)
+alloc(neon_cave, 128)
 
 label(neon_skip)
 label(neon_done)
@@ -75,84 +66,20 @@ neon_cave:
   test eax, eax
   jz neon_skip
 
-  // ── Write cached fog/ambient values (RenderScene reads these) ───
+  // ── Write cached values (Graphics_RenderScene applies these) ────
   // gfx+0x730 = 0xFF000000 (AMBIENT = pure black, alpha=255)
-  // v19 wrote 3 here — alpha=0 caused broken rendering!
+  // This removes ambient light → scene becomes dark
+  // Directional lights still work (set by Graphics_SetupLights)
   mov dword ptr [eax+0x730], 0FF000000h
 
-  // gfx+0x734 = 1 (FOGENABLE = TRUE)
-  mov byte ptr [eax+0x734], 1
+  // gfx+0x734 = 0 (FOGENABLE = FALSE) ← KEY: NO fog!
+  // v19/v20 had fog enabled with FOGEND=500, which fogged out
+  // everything beyond 500 units. Camera is typically 800-1200
+  // units away, so entire scene was black. Disabling fog fixes this.
+  mov byte ptr [eax+0x734], 0
 
-  // gfx+0x738 = 0xFF000000 (FOGCOLOR = BLACK)
+  // gfx+0x738 = 0xFF000000 (FOGCOLOR = black, irrelevant with fog off)
   mov dword ptr [eax+0x738], 0FF000000h
-
-  // ── Direct SetRenderState calls (SEH-safe) ──────────────────────
-  // D3D device wrapper = [gfx+0x154]
-  // SetRenderState = vtable[0xC8]
-  // __stdcall: callee cleans 12 bytes (this + state + value)
-
-  // SetRenderState(0x8C=FOGVERTEXMODE, 3=D3DFOG_LINEAR)
-  // v19 MISSING — this is the actual fog vertex mode, NOT 0x8B!
-  mov eax, [eax+0x154]       // device wrapper
-  mov ecx, [eax]             // vtable
-  push 3                     // value = D3DFOG_LINEAR
-  push 8Ch                   // state = D3DRS_FOGVERTEXMODE (140)
-  push eax                   // this
-  call dword ptr [ecx+0xc8]
-
-  // SetRenderState(0x23=FOGTABLEMODE, 3=D3DFOG_LINEAR)
-  mov eax, [esi+0x10]        // reload App
-  mov eax, [eax+0x174]       // reload gfx
-  mov eax, [eax+0x154]       // reload device wrapper
-  mov ecx, [eax]
-  push 3                     // value = D3DFOG_LINEAR
-  push 23h                   // state = D3DRS_FOGTABLEMODE (35)
-  push eax
-  call dword ptr [ecx+0xc8]
-
-  // SetRenderState(0x24=FOGSTART, 0.0)
-  mov eax, [esi+0x10]
-  mov eax, [eax+0x174]
-  mov eax, [eax+0x154]
-  mov ecx, [eax]
-  push 0                     // value = 0.0f
-  push 24h                   // state = D3DRS_FOGSTART (36)
-  push eax
-  call dword ptr [ecx+0xc8]
-
-  // SetRenderState(0x25=FOGEND, 500.0)
-  // 500.0f = 0x43FA0000
-  mov eax, [esi+0x10]
-  mov eax, [eax+0x174]
-  mov eax, [eax+0x154]
-  mov ecx, [eax]
-  push 43FA0000h             // value = 500.0f
-  push 25h                   // state = D3DRS_FOGEND (37)
-  push eax
-  call dword ptr [ecx+0xc8]
-
-  // SetRenderState(0x94=EMISSIVEMATERIALSOURCE, 1=D3DMCS_COLOR1)
-  // v19 used 0x93 (AMBIENTMATERIALSOURCE) — WRONG!
-  // 0x94 = 148 = D3DRS_EMISSIVEMATERIALSOURCE
-  mov eax, [esi+0x10]
-  mov eax, [eax+0x174]
-  mov eax, [eax+0x154]
-  mov ecx, [eax]
-  push 1                     // value = D3DMCS_COLOR1 (use vertex diffuse)
-  push 94h                   // state = D3DRS_EMISSIVEMATERIALSOURCE (148)
-  push eax
-  call dword ptr [ecx+0xc8]
-
-  // SetRenderState(0x8D=COLORVERTEX, 1=TRUE)
-  // Needed so EMISSIVEMATERIALSOURCE uses vertex color
-  mov eax, [esi+0x10]
-  mov eax, [eax+0x174]
-  mov eax, [eax+0x154]
-  mov ecx, [eax]
-  push 1                     // value = TRUE
-  push 8Dh                   // state = D3DRS_COLORVERTEX (141)
-  push eax
-  call dword ptr [ecx+0xc8]
 
   jmp neon_done
 
