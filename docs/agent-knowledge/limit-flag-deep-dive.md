@@ -73,7 +73,7 @@ The Ghidra decompilation shows `*(undefined1 *)(param_1 + 0x2e9) = 0` without an
 ```c
 if (piVar16[0] == 1) {   // type 1 = surface/wall collision
     if (piVar16[0x19] == unaff_EBP) {   // belongs to this board
-        if (param_1[0xBB] > 1 && impact_shatter == 0) {
+        if (param_1[0xBB] > 1 && dizzy_lock == 0) {
             Ball_ApplyTrajectory(param_1);   // BOUNCE/REFLECT
         }
 ```
@@ -83,7 +83,7 @@ When `dizzy_lock = 1`: `Ball_ApplyTrajectory` is **skipped**. The ball does not 
 ### 2. Trigger Ball_Shatter on Wall Hit (L502)
 
 ```c
-if (impact_shatter == 1) {
+if (dizzy_lock == 1) {
     if (velocity_check_based_on_axis) {
         (*vtable[8])();   // calls Ball_OnRampEvent = Ball_Shatter!
     }
@@ -133,11 +133,14 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 |--------|--------|
 | **Field** | `Ball+0x2E9` (byte) |
 | **Name** | `dizzy_lock` |
-| **Init** | 0 (by `Ball_ctor2`) |
-| **Set by** | Type-5 floor collision, speed > 1.0, `is_shrunk == 0`; also by E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW, and Ball_ApplyTrajectory itself |
-| **Cleared by** | `Ball_InitPhysicsDefaults` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x004039E0+0x1FE: `MOV [ESI+0x2E9],BL`) |
-| **Effect 1** | Skip `Ball_ApplyTrajectory` — no wall bouncing |
-| **Effect 2** | Trigger `Ball_Shatter` on wall hit if moving in "wrong" direction |
-| **Effect 3** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
-| **vtable[8]** | `Ball_OnRampEvent` (0x00409480) — shatter function called from this path |
-| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `dizzy_lock` from being set |
+| **Init** | 0 (by `Ball_ctor2` at 0x4039E0+0x1FE) |
+| **Set by** | Ball_ApplyTrajectory (0x403750), speed>1.0 collision (0x407391), E:LIMIT (0x40C767), E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW |
+| **Cleared by** | `Ball_InitPhysicsDefaults` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x404039E0+0x1FE) |
+| **Effect 1** | Blocks `Ball_ApplyTrajectory` from firing (Pass 1 checks `dizzy_lock == 0`) |
+| **Effect 2** | When set by speed>1.0: camera change + viewport setup |
+| **Effect 3** | When set by E:LIMIT/E:SWALLOW: enables wall-hit shatter path (vtable[8] = Ball_OnRampEvent) |
+| **Effect 4** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
+| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `dizzy_lock` from being set by speed>1.0 collision |
+| **Related fields** | `ball+0x2EC` (bounce_count), `ball+0x14D` (has_trajectory), `ball+0x2F0` (impact_count) |
+| **End screen** | When set by Ball_ApplyTrajectory: increments `App+pIdx×0xA0+0x5F8` (dizzy counter) |
+| **Full analysis** | See [dizzy-stun-system.md](dizzy-stun-system.md) for the complete dizzy system including two-pass collision architecture |
