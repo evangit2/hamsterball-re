@@ -175,6 +175,72 @@ static RenderFn_t g_OriginalRender = NULL;
 #define FALL_STEP  0.2f
 #define SUB_STEPS  3
 
+/* Ball-carry constants (from original decompilation at 0x0043D420) */
+#define BALL_Y_THRESHOLD  50.0f   /* _DAT_004D5D10 (double) */
+#define BALL_XZ_RANGE     75.0f   /* _DAT_004CF480 */
+
+/* Ball struct offsets */
+#define BALL_X      0x164
+#define BALL_Y      0x168
+#define BALL_Z      0x16C
+
+/* Board struct offsets for ball list (AthenaList) */
+#define BOARD_BALL_LIST   0x29D4
+#define BOARD_BALL_COUNT  0x29D8
+#define BOARD_BALL_ARRAY  0x2DE0
+
+/* Game function addresses */
+#define FUNC_AthenaList_Lock  0x004532B0  /* FUN_004532b0 — iterator lock */
+
+/* Function pointer type for AthenaList lock */
+typedef int (__cdecl *AthenaListLock_t)(int list_ptr);
+
+/*
+ * Carry balls on the lifter by the same delta as the lifter movement.
+ * Mirrors the original game's ball-carry logic from Rotator_vtable0B:
+ *   1. Lock the board's ball AthenaList
+ *   2. Iterate all balls
+ *   3. If ball Y is within BALL_Y_THRESHOLD of lifter Y
+ *      AND ball X/Z is within BALL_XZ_RANGE of lifter X/Z
+ *   4. Move ball Y by the same delta as the lifter
+ */
+static void carry_balls(BYTE *thisptr, float delta_y)
+{
+    int board = *(int *)(thisptr + OFF_BOARD);
+    if (!board) return;
+
+    int ball_count = *(int *)(board + BOARD_BALL_COUNT);
+    if (ball_count < 1) return;
+
+    int *ball_array = *(int **)(board + BOARD_BALL_ARRAY);
+    if (!ball_array) return;
+
+    float lifter_x = *(float *)(thisptr + OFF_POS_X);
+    float lifter_y = *(float *)(thisptr + OFF_POS_Y);
+    float lifter_z = *(float *)(thisptr + OFF_POS_Z);
+
+    for (int i = 0; i < ball_count; i++) {
+        int ball = ball_array[i];
+        if (!ball) continue;
+        if (IsBadReadPtr((void *)ball, 0x180)) continue;
+
+        float bx = *(float *)(ball + BALL_X);
+        float by = *(float *)(ball + BALL_Y);
+        float bz = *(float *)(ball + BALL_Z);
+
+        /* Check: ball is on the lifter platform */
+        float y_diff = by - lifter_y;
+        if (y_diff < 0) y_diff = -y_diff;  /* fabsf */
+
+        if (y_diff < BALL_Y_THRESHOLD &&
+            bx > lifter_x - BALL_XZ_RANGE && bx < lifter_x + BALL_XZ_RANGE &&
+            bz > lifter_z - BALL_XZ_RANGE && bz < lifter_z + BALL_XZ_RANGE)
+        {
+            *(float *)(ball + BALL_Y) = by + delta_y;
+        }
+    }
+}
+
 /*
  * Custom lifter render function.
  * Replaces Rotator vtable[0x0B] (original at 0x0043D420).
@@ -231,9 +297,9 @@ int __thiscall CustomLifter_Render(void *thisptr)
     case 1:
         for (int i = 0; i < SUB_STEPS; i++) {
             *pos_y += RISE_STEP;
+            carry_balls(bytes, RISE_STEP);
         }
         *dirty = 1;              /* mark mesh for repositioning next frame */
-        /* No ball carrying */
         /* No clunk sound */
         (*timer)--;
         if (*timer < 1) {
@@ -255,9 +321,9 @@ int __thiscall CustomLifter_Render(void *thisptr)
     case 3:
         for (int i = 0; i < SUB_STEPS; i++) {
             *pos_y -= FALL_STEP;
+            carry_balls(bytes, -FALL_STEP);
         }
         *dirty = 1;
-        /* No ball carrying */
         (*timer)--;
         if (*timer < 1) {
             *state = 0;          /* → bottom pause */
