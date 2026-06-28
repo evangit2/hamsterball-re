@@ -1,84 +1,169 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v18 — Pitch-black scene via proven hook + fog fix
+// GLOBAL NEON EFFECT v19 — Pitch-black scene + glowing ball
 //
-// v16: Hook at 0x405E22 (Ball_Update) WORKED — background went black.
-//      BUG: gfx+0x734=0 DISABLED FOG. Scene geometry stayed fully lit.
-//      User saw: "only changes the background color."
+// ═══════════════════════════════════════════════════════════════════════
+// ROOT CAUSE OF v16/v18 FAILURE: WRONG D3D RENDER STATE IDs!
 //
-// v17: Moved hook to 0x454C97 (Graphics_RenderScene). HOOK DIDN'T FIRE.
-//      User saw: "nothing changes at all, literally nothing."
+// Graphics_RenderScene (0x454BC0) calls SetRenderState every frame:
+//   0x454CAC: SetRenderState(0x8B, [gfx+0x730])  → 0x8B=139=FOGVERTEXMODE
+//   0x454CCD: SetRenderState(0x1C, [gfx+0x734])  → 0x1C=28=FOGENABLE
+//   0x454D00: SetRenderState(0x22, [gfx+0x738])  → 0x22=34=FOGCOLOR
 //
-// v18: Back to v16's PROVEN hook point (0x405E22). Fix the ONE bug:
-//      gfx+0x734=1 (FOG ENABLED) instead of 0 (FOG DISABLED).
-//      With fog enabled + black fog color, distant geometry fades to
-//      black. Ball appears bright by contrast = NEON GLOW.
+// v16/v18 wrote gfx+0x730=0 thinking it was AMBIENT. It was actually
+// FOGVERTEXMODE=0 (D3DFOG_NONE). This DISABLED vertex fog! Combined with
+// no AMBIENT being set (0x8A was never called), the scene stayed bright.
 //
-// HOW NEON RACE WORKS (traced from binary):
-//   - Scene_SetupLevelDark (0x416270) loads LevelDark.MESHWORLD (dark textures)
-//   - Level_InitScene (0x40B090) picks RANDOM ambient + fog via Color_RandomRGBA()
-//   - Graphics_RenderScene (0x454BC0) calls SetRenderState every frame:
-//       0x454C97: SetRenderState(AMBIENT=0x8B, gfx+0x730)
-//       0x454CB2: SetRenderState(FOGENABLE=0x1C, gfx+0x734)
-//       0x454CEE: SetRenderState(FOGCOLOR=0x22, gfx+0x738)
-//   - Ball_InitRenderState (0x402860) sets LIGHTING=TRUE for ball
-//   - Ball "glows" by contrast: lit by directional lights against dark scene
-//   - Game description: "YOUR HAMSTER GIVES OFF SOME GLOW OF HIS OWN"
+// D3D8 render state IDs:
+//   0x8A = 138 = D3DRS_AMBIENT          (NEVER set by RenderScene!)
+//   0x8B = 139 = D3DRS_FOGVERTEXMODE    (gfx+0x730)
+//   0x1C = 28  = D3DRS_FOGENABLE         (gfx+0x734)
+//   0x22 = 34  = D3DRS_FOGCOLOR          (gfx+0x738)
+//   0x23 = 35  = D3DRS_FOGTABLEMODE
+//   0x24 = 36  = D3DRS_FOGSTART
+//   0x25 = 37  = D3DRS_FOGEND
+//   0x92 = 146 = D3DRS_DIFFUSEMATERIALSOURCE
+//   0x93 = 147 = D3DRS_EMISSIVEMATERIALSOURCE
 //
-// v18 writes to cached gfx values in Ball_Update (runs per-frame before
-// RenderScene). RenderScene picks up our values via its own SetRenderState
-// calls. NO stdcall from our cave = NO freeze risk.
+// ═══════════════════════════════════════════════════════════════════════
+// v19 FIX:
+//   1. gfx+0x730 = 3 (FOGVERTEXMODE = D3DFOG_LINEAR, was 0=NONE)
+//   2. gfx+0x734 = 1 (FOGENABLE = TRUE)
+//   3. gfx+0x738 = 0xFF000000 (FOGCOLOR = BLACK)
+//   4. SetRenderState(0x8A, 0)         → AMBIENT = BLACK (direct call)
+//   5. SetRenderState(0x23, 3)         → FOGTABLEMODE = LINEAR
+//   6. SetRenderState(0x24, 0.0)       → FOGSTART = 0
+//   7. SetRenderState(0x25, 500.0)     → FOGEND = 500 (far distance)
+//   8. SetRenderState(0x93, 1)         → EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1
+//      (ball emits vertex color as glow; only affects COLORVERTEX=1 objects)
 //
-// REGISTER SAFETY:
-//   ESI = callee-preserved (ball pointer survives)
-//   EAX = saved/restored (push/pop)
-//   NO call instructions → NO register clobbering
+// ═══════════════════════════════════════════════════════════════════════
+// HOOK SAFETY ANALYSIS:
+//
+// Ball_Update (0x405E00):
+//   0x405E00: PUSH -1               ; SEH setup
+//   0x405E02: MOV EAX, FS:[0]       ; SEH chain
+//   0x405E0E: MOV FS:[0], ESP       ; ← SEH frame installed HERE
+//   ...
+//   0x405E22: MOV EAX, [ESI+0xC5C]  ; ← OUR HOOK (AFTER SEH setup!)
+//
+// SEH is set up BEFORE our hook point → stdcall calls are safe!
+// The v15 freeze was in Ball_RenderAI (0x403DC0) where SEH was NOT yet
+// set up at the hook point. Ball_Update is different — SEH is ready.
+//
+// Register liveness after 0x405E22:
+//   EAX: needed at 0x405E2E (DEC EAX) → save with PUSH/POP + restore
+//   ECX: overwritten at 0x405E35 (XOR ECX,ECX) → safe to clobber
+//   EDX: overwritten at 0x405E42 (XOR EDX,EDX) → safe to clobber
+//   ESI: callee-preserved → safe (ball pointer)
+//   EBX: callee-preserved, =0 → safe
+//   EBP: callee-preserved → safe
+//
+// After each stdcall (which clobbers EAX/ECX/EDX), we reload gfx+device.
+// PUSHFD/POPFD not needed — no conditional logic depends on flags after
+// the cave (DEC EAX at 0x405E2E uses the EAX value, not prior flags).
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(neon_dark, 128)
+alloc(neon_cave, 512)
 
-label(skip_dark)
+label(neon_skip)
+label(neon_done)
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK: Ball_Update (0x405E22) — ESI = ball (PROVEN in v16)
-// Original: mov eax, [esi+0x00000C5C] (6 bytes: 8B 86 5C 0C 00 00)
+// HOOK: Ball_Update (0x405E22) — ESI = ball, SEH already set up
+// Original: MOV EAX, [ESI+0x00000C5C] (6 bytes: 8B 86 5C 0C 00 00)
 // ═══════════════════════════════════════════════════════════════════════
-neon_dark:
-  push eax
+neon_cave:
+  push eax                    // save EAX (original instruction's target)
 
-  // ball+0x10 = App
-  mov eax, [esi+0x10]
+  // ── Resolve gfx pointer ──────────────────────────────────────────
+  mov eax, [esi+0x10]         // ball+0x10 = App
   test eax, eax
-  jz skip_dark
-
-  // App+0x174 = gfx
-  mov eax, [eax+0x174]
+  jz neon_skip
+  mov eax, [eax+0x174]        // App+0x174 = gfx
   test eax, eax
-  jz skip_dark
+  jz neon_skip
 
-  // gfx+0x730 = 0 (AMBIENT = BLACK)
-  // Game calls SetRenderState(0x8B, [gfx+0x730]) at 0x454CAC
-  mov dword ptr [eax+0x730], 0
+  // ── Write cached fog values (RenderScene reads these) ───────────
+  // gfx+0x730 = 3 (FOGVERTEXMODE = D3DFOG_LINEAR, was 0=NONE in v16!)
+  mov dword ptr [eax+0x730], 3
 
-  // gfx+0x738 = 0xFF000000 (FOG COLOR = BLACK)
-  // Game calls SetRenderState(0x22, [gfx+0x738]) at 0x454D00
-  mov dword ptr [eax+0x738], 0FF000000h
-
-  // gfx+0x734 = 1 (FOG ENABLE = TRUE) *** v16 BUG FIX ***
-  // v16 wrote 0 here → FOG DISABLED → scene stayed fully lit
-  // Game calls SetRenderState(0x1C, [gfx+0x734]) at 0x454CCD
-  // With fog=TRUE + fogcolor=BLACK, distant geometry fades to black
+  // gfx+0x734 = 1 (FOGENABLE = TRUE)
   mov byte ptr [eax+0x734], 1
 
-skip_dark:
-  pop eax
-  mov eax, [esi+0x00000C5C]    // original instruction
+  // gfx+0x738 = 0xFF000000 (FOGCOLOR = BLACK)
+  mov dword ptr [eax+0x738], 0FF000000h
+
+  // ── Direct SetRenderState calls (SEH-safe, ECX/EDX clobberable) ──
+  // D3D device wrapper = [gfx+0x154]
+  // SetRenderState = vtable[0xC8] (offset 0x32 × 4 = 0xC8)
+  // __stdcall: callee cleans 12 bytes (this + state + value)
+
+  // SetRenderState(0x8A=AMBIENT, 0=BLACK)
+  mov eax, [eax+0x154]       // EAX = device wrapper (reload after writes)
+  mov ecx, [eax]             // ECX = vtable
+  push 0                     // value = 0 (black, no ambient light)
+  push 8Ah                   // state = D3DRS_AMBIENT (138)
+  push eax                   // this = device wrapper
+  call dword ptr [ecx+0xc8]  // SetRenderState
+
+  // SetRenderState(0x23=FOGTABLEMODE, 3=D3DFOG_LINEAR)
+  mov eax, [esi+0x10]        // reload App
+  mov eax, [eax+0x174]       // reload gfx
+  mov eax, [eax+0x154]       // reload device wrapper
+  mov ecx, [eax]
+  push 3                    // value = D3DFOG_LINEAR
+  push 23h                  // state = D3DRS_FOGTABLEMODE (35)
+  push eax
+  call dword ptr [ecx+0xc8]
+
+  // SetRenderState(0x24=FOGSTART, 0.0)
+  // 0.0f = 0x00000000
+  mov eax, [esi+0x10]
+  mov eax, [eax+0x174]
+  mov eax, [eax+0x154]
+  mov ecx, [eax]
+  push 0                    // value = 0.0f
+  push 24h                  // state = D3DRS_FOGSTART (36)
+  push eax
+  call dword ptr [ecx+0xc8]
+
+  // SetRenderState(0x25=FOGEND, 500.0)
+  // 500.0f = 0x43FA0000
+  mov eax, [esi+0x10]
+  mov eax, [eax+0x174]
+  mov eax, [eax+0x154]
+  mov ecx, [eax]
+  push 43FA0000h            // value = 500.0f
+  push 25h                  // state = D3DRS_FOGEND (37)
+  push eax
+  call dword ptr [ecx+0xc8]
+
+  // SetRenderState(0x93=EMISSIVEMATERIALSOURCE, 1=D3DMCS_COLOR1)
+  // Makes ball emit its vertex diffuse color as emissive glow
+  mov eax, [esi+0x10]
+  mov eax, [eax+0x174]
+  mov eax, [eax+0x154]
+  mov ecx, [eax]
+  push 1                    // value = D3DMCS_COLOR1
+  push 93h                  // state = D3DRS_EMISSIVEMATERIALSOURCE (147)
+  push eax
+  call dword ptr [ecx+0xc8]
+
+  jmp neon_done
+
+neon_skip:
+  // Null pointer path — just restore EAX
+
+neon_done:
+  pop eax                     // restore EAX
+  mov eax, [esi+0x00000C5C]  // original instruction
   jmp 00405E28
 
 // ── Install hook ─────────────────────────────────────────────────────
 00405E22:
-  jmp neon_dark
+  jmp neon_cave
   nop
 
 [DISABLE]
@@ -86,4 +171,4 @@ skip_dark:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-dealloc(neon_dark)
+dealloc(neon_cave)
