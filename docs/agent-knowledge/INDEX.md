@@ -29,6 +29,7 @@ Start here and read the numbered sections in order. Each file is designed to be 
 | [A1-THISCALL.md](A1-THISCALL.md) | __thiscall calling convention deep-dive for Ghidra decompilation |
 | [A2-OBJECT-SPAWNING.md](A2-OBJECT-SPAWNING.md) | Runtime object spawning: operator_new, ctor, AthenaList_Append patterns |
 | [A3-CAMERA-PITFALLS.md](A3-CAMERA-PITFALLS.md) | Camera system: 5 modes, pitch hardcode, smooth distance per-frame override |
+| [../SWEAT_MODE.md](../SWEAT_MODE.md) | Sweat bubble physics assist: ball+0x260 flag, RumbleBoard toggle timer, min slope speed 0.25, flashing visual |
 
 ## External Authorities
 
