@@ -25,10 +25,12 @@ typedef unsigned __int64 QWORD;
  * ═══════════════════════════════════════════════════════════════════ */
 
 static HMODULE g_hRealBass = NULL;
+static void lazy_load_real_bass(void);  /* forward decl */
 
 typedef int  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, int, int);
 static BASS_ChannelSetAttributes_t real_BASS_ChannelSetAttributes = NULL;
 __declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(DWORD a, float b, int c, int d) {
+    lazy_load_real_bass();
     if (real_BASS_ChannelSetAttributes) return real_BASS_ChannelSetAttributes(a, b, c, d);
     return 1;
 }
@@ -36,6 +38,7 @@ __declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(DWORD a, float b, 
 typedef int  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
 static BASS_MusicPlayEx_t real_BASS_MusicPlayEx = NULL;
 __declspec(dllexport) int __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
+    lazy_load_real_bass();
     if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(a, b, c);
     return 1;
 }
@@ -43,6 +46,7 @@ __declspec(dllexport) int __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
 typedef int  (__stdcall *BASS_MusicLoad_t)(int, const char*, QWORD, DWORD, DWORD, DWORD);
 static BASS_MusicLoad_t real_BASS_MusicLoad = NULL;
 __declspec(dllexport) int __stdcall BASS_MusicLoad(int a, const char* b, QWORD c, DWORD d, DWORD e, DWORD f) {
+    lazy_load_real_bass();
     if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d, e, f);
     return 0;
 }
@@ -50,6 +54,7 @@ __declspec(dllexport) int __stdcall BASS_MusicLoad(int a, const char* b, QWORD c
 typedef int  (__stdcall *BASS_SampleLoad_t)(int, const char*, QWORD, DWORD, DWORD, DWORD);
 static BASS_SampleLoad_t real_BASS_SampleLoad = NULL;
 __declspec(dllexport) int __stdcall BASS_SampleLoad(int a, const char* b, QWORD c, DWORD d, DWORD e, DWORD f) {
+    lazy_load_real_bass();
     if (real_BASS_SampleLoad) return real_BASS_SampleLoad(a, b, c, d, e, f);
     return 0;
 }
@@ -57,6 +62,7 @@ __declspec(dllexport) int __stdcall BASS_SampleLoad(int a, const char* b, QWORD 
 typedef int  (__stdcall *BASS_StreamCreateFile_t)(int, const char*, QWORD, QWORD, DWORD);
 static BASS_StreamCreateFile_t real_BASS_StreamCreateFile = NULL;
 __declspec(dllexport) int __stdcall BASS_StreamCreateFile(int a, const char* b, QWORD c, QWORD d, DWORD e) {
+    lazy_load_real_bass();
     if (real_BASS_StreamCreateFile) return real_BASS_StreamCreateFile(a, b, c, d, e);
     return 0;
 }
@@ -64,6 +70,7 @@ __declspec(dllexport) int __stdcall BASS_StreamCreateFile(int a, const char* b, 
 typedef int  (__stdcall *BASS_SampleGetChannel_t)(DWORD, BOOL);
 static BASS_SampleGetChannel_t real_BASS_SampleGetChannel = NULL;
 __declspec(dllexport) int __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) {
+    lazy_load_real_bass();
     if (real_BASS_SampleGetChannel) return real_BASS_SampleGetChannel(a, b);
     return 0;
 }
@@ -71,6 +78,7 @@ __declspec(dllexport) int __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) {
 typedef int  (__stdcall *BASS_ChannelPlay_t)(DWORD, BOOL);
 static BASS_ChannelPlay_t real_BASS_ChannelPlay = NULL;
 __declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) {
+    lazy_load_real_bass();
     if (real_BASS_ChannelPlay) return real_BASS_ChannelPlay(a, b);
     return 1;
 }
@@ -78,6 +86,7 @@ __declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) {
 typedef int  (__stdcall *BASS_ChannelStop_t)(DWORD);
 static BASS_ChannelStop_t real_BASS_ChannelStop = NULL;
 __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
+    lazy_load_real_bass();
     if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
     return 1;
 }
@@ -85,6 +94,7 @@ __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
 typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, DWORD, DWORD);
 static BASS_Init_t real_BASS_Init = NULL;
 __declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, DWORD d, DWORD e) {
+    lazy_load_real_bass();
     if (real_BASS_Init) return real_BASS_Init(a, b, c, d, e);
     return 1;
 }
@@ -92,6 +102,7 @@ __declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, DWORD d, 
 typedef int  (__stdcall *BASS_Free_t)(void);
 static BASS_Free_t real_BASS_Free = NULL;
 __declspec(dllexport) int __stdcall BASS_Free(void) {
+    lazy_load_real_bass();
     if (real_BASS_Free) return real_BASS_Free();
     return 1;
 }
@@ -99,6 +110,7 @@ __declspec(dllexport) int __stdcall BASS_Free(void) {
 typedef int  (__stdcall *BASS_Stop_t)(void);
 static BASS_Stop_t real_BASS_Stop = NULL;
 __declspec(dllexport) int __stdcall BASS_Stop(void) {
+    lazy_load_real_bass();
     if (real_BASS_Stop) return real_BASS_Stop();
     return 1;
 }
@@ -106,6 +118,7 @@ __declspec(dllexport) int __stdcall BASS_Stop(void) {
 typedef int  (__stdcall *BASS_Start_t)(void);
 static BASS_Start_t real_BASS_Start = NULL;
 __declspec(dllexport) int __stdcall BASS_Start(void) {
+    lazy_load_real_bass();
     if (real_BASS_Start) return real_BASS_Start();
     return 1;
 }
@@ -113,6 +126,7 @@ __declspec(dllexport) int __stdcall BASS_Start(void) {
 typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
 static BASS_SetConfig_t real_BASS_SetConfig = NULL;
 __declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    lazy_load_real_bass();
     if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
     return 1;
 }
@@ -120,6 +134,7 @@ __declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
 typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
 static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
 __declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    lazy_load_real_bass();
     if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
     return 0;
 }
@@ -294,21 +309,30 @@ static void install_lifter_hook(void)
  *  BASS proxy initialization
  * ═══════════════════════════════════════════════════════════════════ */
 
-static void load_real_bass(void)
+/* Lazy initialization: loads real bass.dll on first BASS proxy call.
+ * This runs synchronously during the game's BASS_Init (App::Initialize),
+ * so the real DLL is available before any audio operations. */
+static void lazy_load_real_bass(void)
 {
+    if (g_hRealBass) return;  /* already loaded */
+
     char path[MAX_PATH];
-    GetSystemDirectoryA(path, MAX_PATH);
-    lstrcatA(path, "\\bass.dll");
-    g_hRealBass = LoadLibraryA(path);
-    if (!g_hRealBass) {
-        /* Try game directory */
-        GetModuleFileNameA(NULL, path, MAX_PATH);
-        char *slash = strrchr(path, '\\');
-        if (slash) {
-            strcpy(slash + 1, "bass_real.dll");
-            g_hRealBass = LoadLibraryA(path);
-        }
+
+    /* Try game directory first (bass_real.dll — user renames original) */
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    char *slash = strrchr(path, '\\');
+    if (slash) {
+        strcpy(slash + 1, "bass_real.dll");
+        g_hRealBass = LoadLibraryA(path);
     }
+
+    /* Fallback: system directory */
+    if (!g_hRealBass) {
+        GetSystemDirectoryA(path, MAX_PATH);
+        lstrcatA(path, "\\bass.dll");
+        g_hRealBass = LoadLibraryA(path);
+    }
+
     if (!g_hRealBass) return;
 
     real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)
@@ -347,7 +371,6 @@ static DWORD WINAPI patch_thread(LPVOID param)
     /* Wait for game to finish loading */
     Sleep(2000);
 
-    load_real_bass();
     install_lifter_hook();
 
     return 0;
