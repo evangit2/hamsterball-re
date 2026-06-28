@@ -62,8 +62,8 @@ All 3,305 previously-undecompiled functions have been decompiled from GhidraMCP 
 
 - **Severity:** MODERATE
 - **Suggested name:** `CreateArenaObjects`
-- **Description:** Named 'HandleArenaCollisionEvents' but handles N:SPINNER, N:BUMPER, E:LAUNCH, LAUNCHPOINT, EXPLODEHELPER, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM. Only creates RumbleScore_ctor. This is an arena-specific object factory, not just a spinner creator.
-- **Evidence:** Handles 8 different event/object types, only 1 ctor call (RumbleScore_ctor)
+- **Description:** Named 'HandleArenaCollisionEvents' but handles N:SPINNER, N:BUMPER, E:LAUNCH, LAUNCHPOINT, EXPLODEHELPER, E:CALLHAMMER, E:HAMMERCHASE, E:CATAPULTBOTTOM. Only creates ArenaScoreParticle_ctor. This is an arena-specific object factory, not just a spinner creator.
+- **Evidence:** Handles 8 different event/object types, only 1 ctor call (ArenaScoreParticle_ctor)
 
 ## Notes
 

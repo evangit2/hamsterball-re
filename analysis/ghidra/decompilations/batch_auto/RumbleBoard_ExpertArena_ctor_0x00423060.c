@@ -1,11 +1,11 @@
 /*
- * Function: RumbleBoard_ExpertArena_ctor
+ * Function: ArenaBoard_Expert_Ctor
  * Address: 0x00423060
- * Signature: void * __thiscall RumbleBoard_ExpertArena_ctor(void *this, int param_1)
+ * Signature: void * __thiscall ArenaBoard_Expert_Ctor(void *this, int param_1)
  * Parameters: this: RumbleBoard* | param_1: int — parent App/Scene
  *
  * Description:
- * Constructor for Expert Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Expert Arena)' / 'Fight!'. Initializes AthenaList at +0x47E0. Vec3 init.
+ * Constructor for Expert Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Expert Arena)' / 'Fight!'. Initializes AthenaList at +0x47E0. Vec3 init.
  *
  * Struct offsets: +0x47E0 (AthenaList), +0x868, +0x4344, +0x29B4
  * Cross-references: 1 call, 0 data refs

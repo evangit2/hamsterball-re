@@ -166,8 +166,8 @@ Documented: 3781/3781 (100%)
 
 | Address | Name | Description |
 |---------|------|-------------|
-| 0x00413C20 | RumbleBoard_WarmUp_Init | Initialize Warm-Up arena (levels\arena-WarmUp) |
-| 0x00416F40 | RumbleBoard_Neon_Init | Initialize Neon arena (levels\arena-neon) |
+| 0x00413C20 | ArenaLevel_WarmUp_Init | Initialize Warm-Up arena (levels\arena-WarmUp) |
+| 0x00416F40 | ArenaLevel_Neon_Init | Initialize Neon arena (levels\arena-neon) |
 
 ## Game Logic
 
@@ -521,23 +521,23 @@ Offset | Field | Description
 
 | Address | Name | Level Path | Special Features |
 |---------|------|------------|-----------------|
-| 0x00413C20 | RumbleBoard_WarmUp_Init | levels\arena-WarmUp | Simple load + clone |
-| 0x00413CE0 | RumbleBoard_Beginner_Init | levels\arena-beginner | 4 bumpers (N:BUMPER%d), Level_ctor + Clone |
-| 0x00414180 | RumbleBoard_Intermediate_Init | levels\arena-intermediate | Simple load + clone |
-| 0x00414240 | RumbleBoard_Dizzy_Init | levels\arena-dizzy | Extra Level3-Swirl loaded, no bumpers |
-| 0x004144B0 | RumbleBoard_Tower_Init | levels\arena-tower | Simple load + clone |
-| 0x00414960 | RumbleBoard_Up_Init | levels\arena-up | Simple load + clone |
-| 0x00414B10 | RumbleBoard_Expert_Init | levels\arena-expert | Simple load + clone |
-| 0x00414CE0 | RumbleBoard_Odd_Init | levels\arena-Odd | Simple load + clone |
-| 0x00414F00 | RumbleBoard_Toob_Init | levels\arena-Toob | 5 bumpers (N:BUMPER%d) |
-| 0x004153A0 | RumbleBoard_Wobbly_Init | levels\arena-Wobbly | Simple load + clone |
-| 0x004158C0 | RumbleBoard_Sky_Init | levels\arena-Sky | PILLAR name scan via __strnicmp, append to +0x11FB |
-| 0x00416080 | RumbleBoard_Master_Init | levels\arena-Master | Simple load + clone |
-| 0x00416F40 | RumbleBoard_Neon_Init | levels\arena-neon | Scale matrix setup for dynamic objects, SceneObject at +0x11F9 |
-| 0x00417DF0 | RumbleBoard_Glass_Init | levels\arena-glass | Simple load + clone |
-| 0x00418540 | RumbleBoard_Impossible_Init | levels\arena-impossible | Simple load + clone |
+| 0x00413C20 | ArenaLevel_WarmUp_Init | levels\arena-WarmUp | Simple load + clone |
+| 0x00413CE0 | ArenaLevel_Beginner_Init | levels\arena-beginner | 4 bumpers (N:BUMPER%d), Level_ctor + Clone |
+| 0x00414180 | ArenaLevel_Intermediate_Init | levels\arena-intermediate | Simple load + clone |
+| 0x00414240 | ArenaLevel_Dizzy_Init | levels\arena-dizzy | Extra Level3-Swirl loaded, no bumpers |
+| 0x004144B0 | ArenaLevel_Tower_Init | levels\arena-tower | Simple load + clone |
+| 0x00414960 | ArenaLevel_Up_Init | levels\arena-up | Simple load + clone |
+| 0x00414B10 | ArenaLevel_Expert_Init | levels\arena-expert | Simple load + clone |
+| 0x00414CE0 | ArenaLevel_Odd_Init | levels\arena-Odd | Simple load + clone |
+| 0x00414F00 | ArenaLevel_Toob_Init | levels\arena-Toob | 5 bumpers (N:BUMPER%d) |
+| 0x004153A0 | ArenaLevel_Wobbly_Init | levels\arena-Wobbly | Simple load + clone |
+| 0x004158C0 | ArenaLevel_Sky_Init | levels\arena-Sky | PILLAR name scan via __strnicmp, append to +0x11FB |
+| 0x00416080 | ArenaLevel_Master_Init | levels\arena-Master | Simple load + clone |
+| 0x00416F40 | ArenaLevel_Neon_Init | levels\arena-neon | Scale matrix setup for dynamic objects, SceneObject at +0x11F9 |
+| 0x00417DF0 | ArenaLevel_Glass_Init | levels\arena-glass | Simple load + clone |
+| 0x00418540 | ArenaLevel_Impossible_Init | levels\arena-impossible | Simple load + clone |
 
-**Common RumbleBoard pattern:** Level_ctor → Level_Clone → CameraLookAt → vmethod+0x80 (post-init). Simple arenas have just load+clone; complex ones add bumper objects, pillar scans, or SceneObject decorations.
+**Common ArenaBoard pattern:** Level_ctor → Level_Clone → CameraLookAt → vmethod+0x80 (post-init). Simple arenas have just load+clone; complex ones add bumper objects, pillar scans, or SceneObject decorations.
 
 ## Board (Tournament) Constructors
 
@@ -650,19 +650,19 @@ Offset | Field | Description
 | 0x0044a570 | UIList_Layout | 18 | Compute text widths, position SceneObjects, set scrollers |
 | 0x0044a8b0 | UIList_SetTextByName | 27 | Find item by subtext, replace display text |
 | 0x00449750 | UIList_ActivateCurrentItem | 18 | Activate selected item: Back→650, Continue→50, else callback |
-| 0x0044ad50 | RumbleScore_ctor | 12 | Init RumbleScore vtable + difficulty scale (0.02/0.03/0.04) |
+| 0x0044ad50 | ArenaScoreParticle_ctor | 12 | Init ArenaScoreParticle vtable + difficulty scale (0.02/0.03/0.04) |
 
 ## Rumble Board System
 
 | Address | Name | Xrefs | Description |
 |---------|------|-------|-------------|
-| 0x004217b0 | RumbleBoard_ctor | 15 | Init board with "RumbleBoard" string, timer, base score=6000 |
-| 0x00421880 | RumbleBoard_dtor | 24 | Cleanup timer, release SceneObjects, call Scene_dtor |
-| 0x00421910 | RumbleBoard_Render | 16 | Draw timer bar, round info, difficulty status, "TIE BREAKER!" |
-| 0x00421fe0 | RumbleBoard_Update | 16 | Check round end, resolve ties, play "Game Over" music |
-| 0x00458e60 | RumbleBoard_InitTimer | 12 | Initialize round timer |
-| 0x00458e80 | RumbleBoard_CleanupTimer | 32 | Cleanup round timer |
-| 0x00458e90 | RumbleBoard_TickTimer | 12 | Tick round timer countdown |
+| 0x004217b0 | ArenaBoard_ctor | 15 | Init board with "ArenaBoard" string, timer, base score=6000 |
+| 0x00421880 | ArenaBoard_dtor | 24 | Cleanup timer, release SceneObjects, call Scene_dtor |
+| 0x00421910 | ArenaBoard_Render | 16 | Draw timer bar, round info, difficulty status, "TIE BREAKER!" |
+| 0x00421fe0 | ArenaBoard_Update | 16 | Check round end, resolve ties, play "Game Over" music |
+| 0x00458e60 | ToggleTimer_Init | 12 | Initialize round timer |
+| 0x00458e80 | ToggleTimer_Cleanup | 32 | Cleanup round timer |
+| 0x00458e90 | ToggleTimer_Tick | 12 | Tick round timer countdown |
 
 ## Scene / Rendering Pipeline
 
@@ -717,12 +717,12 @@ Offset | Field | Description
 | 0x004015b0 | Ball_SetupCollisionRender | 4 | Initialize collision mesh render objects from level collision data |
 | 0x004016f0 | Ball_ApplyForceV2 | 4 | Alternate force application (gravity plane aware, ice/dizzy/tube multipliers) |
 | 0x00402c10 | Ball_RenderWithCollision | 10 | Ball render: check collision planes, render shadow, apply scaling, end frame |
-| 0x00425340 | RumbleBoard_DeletingDtor | 4 | RumbleBoard destructor (calls RumbleBoard_dtor, then free) |
+| 0x00425340 | ArenaBoard_DeletingDtor | 4 | ArenaBoard destructor (calls ArenaBoard_dtor, then free) |
 | 0x004280e0 | App_ShowMainMenu | 4 | Create MainMenu (0xCDC bytes) and store at App+0x224 |
 | 0x004288b0 | App_StartTournamentRace | 4 | Start tournament race: config mirror/mode, create level scene, advance race |
 | 0x0042c7c0 | Graphics_SetScaleAndPosition | 4 | Set identity scale matrix then set position (x,y) on Graphics object |
 | 0x00443e30 | QuitDialog_ctor | 4 | Quit Dialog constructor — "Quit Dialog" with "YES"/"NO" buttons |
-| 0x004468c0 | RumbleBoard_TickTimerWrapper | 4 | Wrapper: calls RumbleBoard_TickTimer at offset +0x110C |
+| 0x004468c0 | ToggleTimer_TickWrapper | 4 | Wrapper: calls ToggleTimer_Tick at offset +0x110C |
 | 0x00446b80 | RegisterDialog_ValidateSerial | 5 | Validate serial number using XOR cipher with key "54138", write DXCaps to registry |
 
 ## Session 2026-04-13 Additions — Register/Security Dialog
@@ -870,7 +870,7 @@ Offset | Field | Description
 | 0x004a167b | Matrix4x4_Multiply_SSE2 | 12 | 4x4 matrix multiply using SSE2 packed float ops |
 | 0x00402a20 | Ball_SetVec3AtOffset | 12 | Set 3 floats at offset 0xca4 in ball (camera/force vector) |
 | 0x00402a50 | GameObject_sub2_dtor | 12 | GameObject deleting destructor variant 2 |
-| 0x00402a70 | Ball_DrawRumbleScoreText | 25 | Draw rumble score text at viewport using Graphics_SetViewport + UI_DrawTextCenteredAbsolute |
+| 0x00402a70 | Ball_DrawArenaScoreText | 25 | Draw rumble score text at viewport using Graphics_SetViewport + UI_DrawTextCenteredAbsolute |
 | 0x00405100 | Ball_InitPhysicsDefaults | 14 | Set ball physics defaults: radius=0.5, friction=0.2, max_speed=35.0, gravity=6.0 |
 | 0x00405d90 | GameObject_sub_ctor | 14 | GameObject subclass constructor: vtable 0x4CF494, scale=1.0, visibility flag, +0x80c=0x32 |
 | 0x00405dd0 | GameObject_sub_dtor | 12 | GameObject deleting destructor variant 1 |
@@ -879,7 +879,7 @@ Offset | Field | Description
 | 0x00408830 | Ball_FallUpdate | 40 | Ball update when fallen: shrinks ball, handles scale change, trail cleanup |
 | 0x00408d10 | Ball_Split_ctor | 14 | Split ball constructor: vtable 0x4CF560, +0xc60=5, calls scene function |
 | 0x00408d70 | Ball_Shatter | 50 | Arena: marks parent ball for despawn, spawns 3 AI split balls (IDs 1/2/4). Called from FollowBall_Update 0x43ECC0, NOT from E:JUMP |
-| 0x00409480 | Ball_SplitAndExplode | 70 | Creates 2 split balls + circular RumbleScore explosion pattern (0-360 degrees) |
+| 0x00409480 | Ball_SplitAndExplode | 70 | Creates 2 split balls + circular ArenaScoreParticle explosion pattern (0-360 degrees) |
 | 0x0040a920 | Scene_CreateGameOverMenu | 25 | Creates game-over UI based on game state: single quit, multiplayer quit, or menu mode |
 | 0x0040ae50 | Sprite_DrawCentered | 12 | Sprite draw centered at position: Sprite_DrawRect with center offset |
 | 0x0040b960 | SceneObj_SetBounds | 14 | SceneObject bounds setter: sets +0x14-20, identity matrix if scale != 1.0 |
@@ -1082,7 +1082,7 @@ Offset | Field | Description
 | 0x453c00 | Graphics_InitShaderProfileThunk | 1 | Shader profile init thunk |
 | 0x441150 | UI_CheckKeyCombo | 2 | UI key combo handler (calls vtable on press) |
 | 0x41f7e0 | Scene_HandleRaceEnd_ClampZoom | 1 | Clamps camera zoom levels after race end |
-| 0x430330 | PauseRumbleMenu_ctor | 2 | Pause Rumble menu constructor (RESUME, OPTIONS, QUIT) |
+| 0x430330 | PauseArenaMenu_ctor | 2 | Pause Rumble menu constructor (RESUME, OPTIONS, QUIT) |
 | 0x4601a0 | Scene_MarkDirty | 2 | Recursively marks scene objects as dirty (tree traversal) |
 | 0x470680 | MeshWorld_ClearObjectLists | 3 | Clears AthenaLists on marked objects during cleanup |
 | 0x474e70 | Menu_dtor | 1 | Menu destructor: frees 10 Vec3List entries, clears AthenaLists |
@@ -1090,14 +1090,14 @@ Offset | Field | Description
 | 0x441190 | OkayDialog_Render | 2 | Okay dialog render: draws gradient bars, "OKAY!" button |
 | 0x4415b0 | UI_SetQuarterViewport | 1 | Sets quarter-screen viewport dimensions (50x50) |
 | 0x446710 | UI_ConfirmYes | 1 | UI confirm handler ("YES" dialog response) |
-| 0x424c10 | RumbleBoard_DeletingDtor | 1 | RumbleBoard scalar deleting destructor |
+| 0x424c10 | ArenaBoard_DeletingDtor | 1 | ArenaBoard scalar deleting destructor |
 | 0x460220 | Scene_ResetObjectSlots | 1 | Resets scene object slots, re-registers objects |
 | 0x453100 | Rect_ContainsPoint | 1 | Point-in-rectangle test (AABB containment) |
 | 0x4415f0 | UI_ResetViewportToQuarter | 1 | Resets viewport to quarter-screen (4x 0x32 values) |
 | 0x442540 | UI_SetPauseRightButtonText | 1 | Sets "PAUSE W/RIGHT BUTTON: %s" text in UIList |
 | 0x4431c0 | UIList_DeletingDtor | 1 | UIList scalar deleting destructor |
 | 0x441660 | UIList_dtor | 1 | UIList destructor: initializes 5 AthenaHashTables, cleanup |
-| 0x4502f0 | RumbleBoard_Menu_dtor | 1 | RumbleBoard menu destructor: vtable, timer, UIList cleanup |
+| 0x4502f0 | ArenaBoard_Menu_dtor | 1 | ArenaBoard menu destructor: vtable, timer, UIList cleanup |
 | 0x445230 | Scene_StartTournament | 1 | Starts tournament mode: creates TourneyMenu, sets music tempo |
 | 0x446730 | Tourney_SaveTournament | 1 | Saves tournament to "DATA\\tournament.sav" |
 | 0x450960 | Tourney_AdvanceRound | 1 | Advances tournament to next round, creates new TourneyMenu |
@@ -1180,19 +1180,19 @@ Offset | Field | Description
 | 0x80c4d | Gfx_ResizeBuffers | 5 | D3D render target resize: recreates vertex/index buffers, validates device |
 | 0x472340 | Font_RenderToTextureComplex | 4 | Complex font rendering to texture with vertex buffers and shaders |
 
-## Session 18 - RumbleBoard/BoardLevel Scalar Destructors
+## Session 18 - ArenaBoard/BoardLevel Scalar Destructors
 
 | Address | Name | Description |
 |---------|------|-------------|
-| 0x425360 | RumbleBoard_CollSlices_scalar_dtor | Scalar deleting destructor for CollSlices board |
-| 0x425380 | RumbleBoard_CollSlices_dtor | Destructor for CollSlices board |
-| 0x4253e0 | RumbleBoard_Expert_Arena_scalar_dtor | Scalar deleting destructor for Expert Arena board |
-| 0x425400 | RumbleBoard9_PopCylinder_scalar_dtor | Scalar deleting destructor for RumbleBoard9 PopCylinder |
+| 0x425360 | ArenaBoard_CollSlices_scalar_dtor | Scalar deleting destructor for CollSlices board |
+| 0x425380 | ArenaBoard_CollSlices_dtor | Destructor for CollSlices board |
+| 0x4253e0 | ArenaBoard_Expert_ScalarDtor | Scalar deleting destructor for Expert Arena board |
+| 0x425400 | ArenaBoard9_PopCylinder_ScalarDtor | Scalar deleting destructor for ArenaBoard9 PopCylinder |
 | 0x425420 | BoardLevel14_RaceOfAges_Scene_scalar_dtor | Scalar deleting destructor for RaceOfAges scene |
-| 0x425440 | RumbleBoard_Odd_Arena_scalar_dtor | Scalar deleting destructor for Odd Arena board |
+| 0x425440 | ArenaBoard_Odd_ScalarDtor | Scalar deleting destructor for Odd Arena board |
 | 0x425460 | BoardLevel_Glass_scalar_dtor | Scalar deleting destructor for Glass board level |
-| 0x425480 | RumbleBoard_scalar_dtor | Scalar deleting destructor for RumbleBoard |
-| 0x4254c0 | RumbleBoard_Level_scalar_dtor | Scalar deleting destructor for RumbleBoard level |
+| 0x425480 | ArenaBoard_ScalarDtor | Scalar deleting destructor for ArenaBoard |
+| 0x4254c0 | ArenaBoard_Level_ScalarDtor | Scalar deleting destructor for ArenaBoard level |
 
 ## Session 18 - CreditsScreen, MusicPlayer, TourneyMenu
 
@@ -1581,10 +1581,10 @@ Offset | Field | Description
 | 0x0046ff60 | MeshWorld_OptimizeAll | Optimizes all meshes, builds vertex buffers |
 | 0x00471ce0 | Throw_VectorTooLong | Throws "vector<T> too long" exception |
 | 0x00472570 | MeshWorld_BuildFontMeshes | Builds font meshes via Font_RenderToTextureComplex |
-| 0x00472a30 | RumbleBoard_dtor | RumbleBoard destructor, frees sub-object and calls SceneObject_dtor |
-| 0x00472a50 | RumbleBoard_TickDown | Decrements countdown, triggers vtable callbacks at zero |
-| 0x00472a80 | RumbleBoard_RenderThenFree | Calls render (vtable+0x48) then free (vtable+0x40) |
-| 0x00472ad0 | RumbleBoard_DeletingDtor | Deleting dtor for RumbleBoard |
+| 0x00472a30 | ArenaBoard_dtor | ArenaBoard destructor, frees sub-object and calls SceneObject_dtor |
+| 0x00472a50 | ArenaBoard_TickDown | Decrements countdown, triggers vtable callbacks at zero |
+| 0x00472a80 | ArenaBoard_RenderThenFree | Calls render (vtable+0x48) then free (vtable+0x40) |
+| 0x00472ad0 | ArenaBoard_DeletingDtor | Deleting dtor for ArenaBoard |
 | 0x00472b20 | HitBox_PointInBounds | AABB point-in-bounds check with float comparisons |
 | 0x00472b80 | D3DTexture_Ctor | Initializes D3D texture object with vtable 004d9ecc |
 | 0x00472c00 | D3DTexture_DeletingDtor | Deleting dtor for D3D texture |

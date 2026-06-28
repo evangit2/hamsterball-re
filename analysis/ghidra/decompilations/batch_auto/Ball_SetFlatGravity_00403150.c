@@ -18,7 +18,7 @@
  * Cross-references (3 call sites):
  *   - 0x409280: likely in Ball_Update or init path for Odd Race
  *   - 0x40EE24: Scene_SetupLevel9 (Odd Race level)
- *   - 0x414E84: RumbleBoard_Odd_Init (Odd Race arena)
+ *   - 0x414E84: ArenaLevel_Odd_Init (Odd Race arena)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

@@ -28,7 +28,7 @@ void * __thiscall RegisterDialog_ctor(void *this,int param_1,byte *param_2)
   local_4._0_1_ = 4;
   AthenaString_Init((undefined4 *)((int)this + 0x10ec));
   local_4._0_1_ = 5;
-  RumbleBoard_InitTimer((undefined4 *)((int)this + 0x110c));
+  ToggleTimer_Init((undefined4 *)((int)this + 0x110c));
   *(undefined4 *)((int)this + 0x1138) = 0xf;
   *(undefined4 *)((int)this + 0x1134) = 0;
   *(undefined1 *)((int)this + 0x1124) = 0;

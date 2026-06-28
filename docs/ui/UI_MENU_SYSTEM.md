@@ -12,10 +12,10 @@ SceneObject (base)
     ├── MainMenu (0x4D3F30) — "LET'S PLAY!", HIGH SCORES, OPTIONS, CREDITS, EXIT
     ├── DifficultyMenu (0x4D40A8) — PIPSQUEAK, NORMAL, FRENZIED!
     ├── PauseMenu (0x4D4120) — RESUME, OPTIONS, ABORT RACE
-    ├── PauseRumbleMenu (0x430330) — pause for RumbleBoard modes
+    ├── PauseArenaMenu (0x430330) — pause for ArenaBoard modes
     ├── PracticeMenu (0xD18 bytes) — level select for practice
     ├── TimeTrialMenu (0xD18 bytes) — level select for time trial
-    ├── ArenaMenu (0x42FC40) — RumbleBoard arena select
+    ├── ArenaMenu (0x42FC40) — Arena board arena select
     ├── MPMenu (0x4D3F30, 0xCDC bytes) — multiplayer party setup
     ├── HighScoreMenu (0x42B290) — high scores display
     ├── OptionsMenu — graphics/sound/controls
@@ -120,9 +120,9 @@ Title: "CHOOSE A DIFFICULTY!"
 
 Title: "Pause Menu"
 
-### RumbleBoard Menu (0x433AC0 — TournamentManager)
+### ArenaBoard Menu (0x433AC0 — TournamentManager)
 
-See [RUMBLEBOARD_SYSTEM.md](RUMBLEBOARD_SYSTEM.md) for full dispatch table.
+See [ARENA_BOARD_SYSTEM.md](ARENA_BOARD_SYSTEM.md) for full dispatch table.
 
 ### Play Mode Selection (from TournamentManager)
 

@@ -35,21 +35,21 @@ The authoritative list of all 15 race tracks and 15 arenas in Hamsterball.
 
 | # | Display Name | Arena File | Init Function |
 |---|-------------|-----------|---------------|
-| 1 | Warm-up Arena | `Arena-WarmUp.MESHWORLD` | `RumbleBoard_WarmUp_Init` (0x413C20) |
-| 2 | Beginner Arena | `Arena-Beginner.MESHWORLD` | `RumbleBoard_Beginner_Init` (0x413CE0) |
-| 3 | Intermediate Arena | `Arena-Intermediate.MESHWORLD` | `RumbleBoard_Intermediate_Init` (0x414180) |
-| 4 | Dizzy Arena | `Arena-Dizzy.MESHWORLD` | `RumbleBoard_Dizzy_Init` (0x414240) |
-| 5 | Tower Arena | `Arena-Tower.MESHWORLD` | `RumbleBoard_Tower_Init` (0x4144B0) |
-| 6 | Up Arena | `Arena-Up.MESHWORLD` | `RumbleBoard_Up_Init` (0x414960) |
-| 7 | Neon Arena | `Arena-Neon.MESHWORLD` | `RumbleBoard_Neon_Init` (0x416F40) |
-| 8 | Expert Arena | `Arena-Expert.MESHWORLD` | `RumbleBoard_Expert_Init` (0x414B10) |
-| 9 | Odd Arena | `Arena-Odd.MESHWORLD` | `RumbleBoard_Odd_Init` (0x414CE0) |
-| 10 | Toob Arena | `Arena-Toob.MESHWORLD` | `RumbleBoard_Toob_Init` (0x414F00) |
-| 11 | Wobbly Arena | `Arena-Wobbly.MESHWORLD` | `RumbleBoard_Wobbly_Init` (0x4153A0) |
-| 12 | Glass Arena | `Arena-Glass.MESHWORLD` | `RumbleBoard_Glass_Init` (0x417DF0) |
-| 13 | Sky Arena | `Arena-Sky.MESHWORLD` | `RumbleBoard_Sky_Init` (0x4158C0) |
-| 14 | Master Arena | `Arena-Master.MESHWORLD` | `RumbleBoard_Master_Init` (0x416080) |
-| 15 | Impossible Arena | `Arena-Impossible.MESHWORLD` | `RumbleBoard_Impossible_Init` (0x418540) |
+| 1 | Warm-up Arena | `Arena-WarmUp.MESHWORLD` | `ArenaLevel_WarmUp_Init` (0x413C20) |
+| 2 | Beginner Arena | `Arena-Beginner.MESHWORLD` | `ArenaLevel_Beginner_Init` (0x413CE0) |
+| 3 | Intermediate Arena | `Arena-Intermediate.MESHWORLD` | `ArenaLevel_Intermediate_Init` (0x414180) |
+| 4 | Dizzy Arena | `Arena-Dizzy.MESHWORLD` | `ArenaLevel_Dizzy_Init` (0x414240) |
+| 5 | Tower Arena | `Arena-Tower.MESHWORLD` | `ArenaLevel_Tower_Init` (0x4144B0) |
+| 6 | Up Arena | `Arena-Up.MESHWORLD` | `ArenaLevel_Up_Init` (0x414960) |
+| 7 | Neon Arena | `Arena-Neon.MESHWORLD` | `ArenaLevel_Neon_Init` (0x416F40) |
+| 8 | Expert Arena | `Arena-Expert.MESHWORLD` | `ArenaLevel_Expert_Init` (0x414B10) |
+| 9 | Odd Arena | `Arena-Odd.MESHWORLD` | `ArenaLevel_Odd_Init` (0x414CE0) |
+| 10 | Toob Arena | `Arena-Toob.MESHWORLD` | `ArenaLevel_Toob_Init` (0x414F00) |
+| 11 | Wobbly Arena | `Arena-Wobbly.MESHWORLD` | `ArenaLevel_Wobbly_Init` (0x4153A0) |
+| 12 | Glass Arena | `Arena-Glass.MESHWORLD` | `ArenaLevel_Glass_Init` (0x417DF0) |
+| 13 | Sky Arena | `Arena-Sky.MESHWORLD` | `ArenaLevel_Sky_Init` (0x4158C0) |
+| 14 | Master Arena | `Arena-Master.MESHWORLD` | `ArenaLevel_Master_Init` (0x416080) |
+| 15 | Impossible Arena | `Arena-Impossible.MESHWORLD` | `ArenaLevel_Impossible_Init` (0x418540) |
 
 **Non-playable arena files:** `Arena-SpawnPlatform.MESHWORLD` (spawn platform),
 `Arena-Stands.MESHWORLD` (audience stands) — not counted in the 15.

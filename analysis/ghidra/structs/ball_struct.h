@@ -84,7 +84,7 @@ typedef struct {
     uint8_t pad_261[3];          // +0x261
 
     // === RumbleBoard Timer #1 (0x264, 0x14 bytes) ===
-    uint8_t rumble_timer1[0x14]; // +0x264 RumbleBoard_InitTimer
+    uint8_t rumble_timer1[0x14]; // +0x264 ToggleTimer_Init
 
     // === Gravity/Falling ===
     float gravity_scale;          // +0x278 0x3DCCCCCD = 0.1f

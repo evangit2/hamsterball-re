@@ -162,8 +162,8 @@ On-screen timer display:
 - Shows minutes:seconds:centiseconds
 - Position derived from Scene+0x87C (camera)
 
-#### RumbleBoard Timer (0x458E60-0x458E90)
+#### ToggleTimer (0x458E60-0x458E90)
 Arena tournament timer:
-- RumbleBoard_InitTimer: Set countdown (typically 60-90 seconds)
-- RumbleBoard_TickTimer: Per-frame countdown
-- RumbleBoard_CleanupTimer: Reset timer
+- ToggleTimer_Init: Set countdown (typically 60-90 seconds)
+- ToggleTimer_Tick: Per-frame countdown
+- ToggleTimer_Cleanup: Reset timer

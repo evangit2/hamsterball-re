@@ -26,7 +26,7 @@ void * __thiscall RaceResultPopup_ctor(void *this,int param_1,undefined4 param_2
   *(undefined1 *)((int)this + 0x19) = 1;
   local_4 = 0;
   *(undefined ***)this = &PTR_RaceGoalReached_ScalarDtor_004d6ca0;
-  RumbleBoard_InitTimer((undefined4 *)((int)this + 0x3c));
+  ToggleTimer_Init((undefined4 *)((int)this + 0x3c));
   iVar4 = *(int *)((int)this + 8);
   local_4._0_1_ = 1;
   *(undefined4 *)((int)this + 0x50) = 0;

@@ -5,7 +5,7 @@
  * Description:
  *
 Creates the appropriate game-over menu based on game state. Decision tree:
-  1. If App+0x237 (arena mode): creates PauseRumbleMenu_ctor
+  1. If App+0x237 (arena mode): creates PauseArenaMenu_ctor
   2. Else checks App+0x220→+0x11 and +0x10 flags:
      - Both 0: creates PauseMenu_Ctor (standard pause)
      - +0x10 set: creates QuitRaceMenu

@@ -108,8 +108,8 @@ Scene inherits from Gadget. The Gadget base contains:
 | `+0x874` | `byte` | `is_skydome` | 0 = skybox, 1 = skydome | ✅
 | `+0x878` | `App*` | `scene_manager` | D3D device / render container (also resolves as App* in some contexts) | ✅
 | `+0x87C` | `void*` | `viewport_obj` | D3D viewport interface | ✅
-| `+0x884` | `RumbleBoard` | `rumble_timer_1` | First rumble/haptics timer (0x14 bytes) | ✅
-| `+0x898` | `RumbleBoard` | `rumble_timer_2` | Second rumble/haptics timer (0x14 bytes) | ✅
+| `+0x884` | `ArenaBoard` | `toggle_timer_1` | First rumble/haptics timer (0x14 bytes) | ✅
+| `+0x898` | `ArenaBoard` | `toggle_timer_2` | Second rumble/haptics timer (0x14 bytes) | ✅
 | `+0x8AC` | `Level*` | `level_ptr` | Level geometry / collision data | ✅
 | `+0x8B0` | `Level*` | `skydome_ptr` | Skydome level (alternative sky rendering) | ✅
 | `+0x8B8` | `AthenaList` | `scene_object_list` | All scene objects (update + render pass) | ✅
@@ -445,8 +445,8 @@ Automated verification via GhidraMCP REST API decompilation of these functions:
 | `0x0874` | `is_skydome` | `Scene_CreateGameOverMenu`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
 | `0x0878` | `scene_manager` | `ExpertCollisionEvents`, `TowerCollisionEvents`, `Level_UpdateAndRender` | 3+ |
 | `0x087C` | `viewport_obj` | `Scene_Render`, `Scene_SetCamera`, `Scene_dtor` | 3 |
-| `0x0884` | `rumble_timer_1` | `Scene_Update`, `Scene_dtor` | 2 |
-| `0x0898` | `rumble_timer_2` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x0884` | `toggle_timer_1` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x0898` | `toggle_timer_2` | `Scene_Update`, `Scene_dtor` | 2 |
 | `0x08AC` | `level_ptr` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_SpawnBallsAndObjects` | 3 |
 | `0x08B0` | `skydome_ptr` | `Scene_dtor` | 1 |
 | `0x08B8` | `scene_object_list` | `ExpertCollisionEvents`, `Scene_HandleCountdown`, `Scene_Update` | 3 |

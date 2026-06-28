@@ -316,7 +316,7 @@ Arena combat mode for 1-4 players:
 - **13 arenas:** Warmup, Beginner, Intermediate, Dizzy, Tower, Up, Expert, Odd, Toob, Wobbly, Neon, Glass, Impossible, Master, Sky
 - **AI players:** `"PLAYER 2: COMPUTER"` — CPU-controlled opponents
 - **Scoring:** Survival bonus, knockoff count tracking
-- **Pause:** `PauseRumbleMenu_ctor` (0x00430330) — `"Pause Rumble Menu"`
+- **Pause:** `PauseArenaMenu_ctor` (0x00430330) — `"Pause Rumble Menu"`
 - **Special:** `ImpossibleArenaCollisionEvents` (0x00418600) has unique `N:BOUNCE` handling not in other arenas
 
 ---

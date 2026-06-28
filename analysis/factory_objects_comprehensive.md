@@ -209,8 +209,8 @@ Used by: Impossible Race and other gear levels.
 | Levels\Level4-Catapult | 0x4D09B8 | +0x5848 | (none) | CATAPULT mesh |
 | Levels\Level3-Gluebie | 0x4D0728 | +0x607C | (none) | GLUEBIE mesh |
 
-### RumbleBoard_Tower_Ctor (0x004228C0) — "Tower Arena"
-- Vtable: PTR_RumbleBoard_OddArena_DeletingDtor_004d1740
+### ArenaBoard_Tower_Ctor (0x004228C0) — "Tower Arena"
+- Vtable: PTR_ArenaBoard_Odd_DeletingDtor_004d1740
 - AthenaLists: +0x47E4, +0x4C00
 - Race name: "TOWER ARENA", Display: "Happy Rush"
 

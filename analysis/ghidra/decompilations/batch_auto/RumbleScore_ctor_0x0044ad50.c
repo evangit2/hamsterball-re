@@ -1,5 +1,5 @@
 /*
- * Function: RumbleScore_ctor
+ * Function: ArenaScoreParticle_ctor
  * Address: 0x0044ad50
  * Signature: void * __thiscall ...(void *this, undefined4 param_1)
  * Parameters:
@@ -12,7 +12,7 @@
  *   +0x04 (param_1), +0x14 (SSO string), +0x20 (scale=1.0), +0x24 (random scale mult: 0.02/0.03/0.04)
  *
  * Cross-references:
- *   4+ calls from Ball_CreateTrailParticles, HandleArenaCollisionEvents, RumbleObject_Update, RaceResults
+ *   4+ calls from Ball_CreateTrailParticles, HandleArenaCollisionEvents, ArenaObject_Update, RaceResults
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

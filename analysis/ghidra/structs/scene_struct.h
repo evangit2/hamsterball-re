@@ -21,7 +21,7 @@
 //   10. SceneObject_BaseDtor at +0xebf
 //   11. Vec3 arrays at +0xeab (4 Vec3s)
 //   12. Vec3List at +0xd8b, +0xb7b, +0x95e, +0x858, +0x752, +0x64c, +0x546, +0x43b, +0x335, +0x22e
-//   13. RumbleBoard_CleanupTimer at +0x226, +0x221
+//   13. ToggleTimer_Cleanup at +0x226, +0x221
 //   14. SceneObject_dtor
 
 #ifndef GAME_SCENE_H
@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 
-// RumbleBoard embedded at +0x221 (from RumbleBoard_CleanupTimer calls)
+// ToggleTimer embedded at +0x221 (from ToggleTimer_Cleanup calls)
 typedef struct {
     uint8_t rumble_data[0x20];  // +0x221 RumbleBoard data (20 bytes)
 } RumbleBoard_embedded;
@@ -62,7 +62,7 @@ typedef struct {
     char* name;                   // +0x868 "Generic Gadget" / "Board"
     
     // === SCENE EXTENSION ===
-    // RumbleBoard sub-object (from RumbleBoard_CleanupTimer at +0x226, +0x221)
+    // ToggleTimer sub-object (from ToggleTimer_Cleanup at +0x226, +0x221)
     uint8_t pad_878[0x221-0x878]; // +0x878 padding to RumbleBoard
     uint8_t rumble_board[0x20];   // +0x221 RumbleBoard timer data
     

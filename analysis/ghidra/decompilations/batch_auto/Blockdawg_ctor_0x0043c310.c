@@ -13,12 +13,12 @@
  *
  * Description:
  * Constructor for Blockdawg obstacles (moving block enemies that follow paths).
- * Uses vtable PTR_RumbleObject_DeletingDtor (0x4D5638) — Blockdawg inherits from
+ * Uses vtable PTR_ArenaObject_DeletingDtor (0x4D5638) — Blockdawg inherits from
  * RumbleObject, not directly from Stands.
  *
  * Steps:
  *   1. Calls Stands_ctor(this, param_5) — base class init
- *   2. Sets vtable to PTR_RumbleObject_DeletingDtor (0x4D5638)
+ *   2. Sets vtable to PTR_ArenaObject_DeletingDtor (0x4D5638)
  *   3. Initializes Timer at +0x10F4
  *   4. Stores parent Scene at +0x10D0, position at +0x10D8/+0x10DC/+0x10E0
  *   5. Stores path data pointer at +0x10F0

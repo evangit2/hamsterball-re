@@ -102,7 +102,7 @@ If the ball is moving in the "wrong" direction for the current axis AND hits a w
 - Checks `is_shrunk` (0xC4C) to select which shatter sound to play
 - Creates 3 `Ball_Split_ctor` debris pieces at the ball's position
 - Copies velocity, position, radius to each debris piece
-- Creates `RumbleScore` objects (score popup particles)
+- Creates `ArenaScoreParticle` objects (score popup particles)
 - This is essentially the same as `Ball_Shatter` (0x00408D70) but called from a different path
 
 ### 3. Dead Code: Position-Match Shatter (L642)

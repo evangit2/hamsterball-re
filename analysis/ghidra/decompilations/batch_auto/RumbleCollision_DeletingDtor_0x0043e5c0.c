@@ -1,8 +1,8 @@
 
-void * __thiscall RumbleCollision_DeletingDtor(void *this,byte param_1)
+void * __thiscall ArenaCollisionLevel_DeletingDtor(void *this,byte param_1)
 
 {
-  RumbleCollision_Level_Dtor(this);
+  ArenaCollisionLevel_Dtor(this);
   if ((param_1 & 1) != 0) {
     _free(this);
   }

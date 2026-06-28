@@ -1,6 +1,6 @@
 
 void * __thiscall
-RumbleBoard_Stands_ctor
+ArenaStands_ctor
           (void *this,undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
           void *param_5)
 
@@ -21,8 +21,8 @@ RumbleBoard_Stands_ctor
   ExceptionList = &pvStack_c;
   Stands_ctor(this,(int)param_5);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleCollision_DeletingDtor_004d5a70;
-  RumbleBoard_InitTimer((undefined4 *)((int)this + 0x10ec));
+  *(undefined ***)this = &PTR_ArenaCollisionLevel_DeletingDtor_004d5a70;
+  ToggleTimer_Init((undefined4 *)((int)this + 0x10ec));
   puVar1 = (undefined4 *)((int)this + 0x10d0);
   local_4._0_1_ = 1;
   *(undefined4 *)((int)this + 0x10e4) = param_1;

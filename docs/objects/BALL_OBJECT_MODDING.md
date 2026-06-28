@@ -327,7 +327,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x1B8` | RenderContext | — | Primary render context |
 | `+0x208` | RenderContext | — | Secondary render context |
 | `+0x260` | byte | `0` | boost_active |
-| `+0x264` | RumbleBoard | — | Rumble timer (0x14 bytes) |
+| `+0x264` | ArenaBoard | — | Rumble timer (0x14 bytes) |
 | `+0x278` | float | `0x3DCCCCCD` | (0.1f) |
 | `+0x27C` | int | `0` | — |
 | `+0x281` | byte | `1` | unused_init_flag (DEAD: set by ctor, never read by any function) |

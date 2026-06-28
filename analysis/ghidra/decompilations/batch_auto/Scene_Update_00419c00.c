@@ -121,8 +121,8 @@ void __fastcall Scene_Update(int *param_1)
       }
       Gear_AdvanceAlongPath(param_1 + 0xfc8,in_stack_ffffffd4,in_stack_ffffffd8,fVar10);
     }
-    RumbleBoard_TickTimer((int)(param_1 + 0x221));
-    RumbleBoard_TickTimer((int)(param_1 + 0x226));
+    ToggleTimer_Tick((int)(param_1 + 0x221));
+    ToggleTimer_Tick((int)(param_1 + 0x226));
     bVar8 = (char)param_1[0xe93] != '\0';
     iVar6 = param_1[0xa6e];
     if (bVar8) {

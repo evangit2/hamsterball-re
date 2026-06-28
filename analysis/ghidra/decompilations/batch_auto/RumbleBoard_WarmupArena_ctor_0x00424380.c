@@ -1,5 +1,5 @@
 
-void * __thiscall RumbleBoard_WarmupArena_ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_WarmupArena_Ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -12,9 +12,9 @@ void * __thiscall RumbleBoard_WarmupArena_ctor(void *this,int param_1)
   puStack_8 = &LAB_004ca8e8;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_DeletingDtor_004d1c80;
+  *(undefined ***)this = &PTR_ArenaBoard_DeletingDtor_004d1c80;
   *(char **)((int)this + 0x868) = "RumbleBoard (Warmup Arena)";
   iVar1 = Vec3_Init(local_20,0x3f000000,0x3f000000,0x3f000000);
   *(undefined4 *)((int)this + 0x1508) = *(undefined4 *)(iVar1 + 4);

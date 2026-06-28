@@ -47,9 +47,9 @@ typedef struct {
     uint8_t pad_87c[4];            // +0x87C
     uint32_t field_880;            // +0x880 = 0
     uint8_t pad_884[4];            // +0x884
-    uint8_t rumble_timer1[0x14];   // +0x884 RumbleBoard_InitTimer
+    uint8_t rumble_timer1[0x14];   // +0x884 ToggleTimer_Init
     uint8_t pad_898[4];            // +0x898
-    uint8_t rumble_timer2[0x14];   // +0x89C RumbleBoard_InitTimer
+    uint8_t rumble_timer2[0x14];   // +0x89C ToggleTimer_Init
     uint8_t pad_8b0[4];            // +0x8B0
     uint32_t field_8ac;            // +0x8AC = 0
     uint8_t list_8b8[0x21C];       // +0x8B8 AthenaList (0x21C bytes)

@@ -1,5 +1,5 @@
 
-void * __thiscall RumbleBoard_NeonArena_ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Neon_Ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -13,9 +13,9 @@ void * __thiscall RumbleBoard_NeonArena_ctor(void *this,int param_1)
   puStack_8 = &LAB_004cab53;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_Odd_Arena_scalar_dtor_004d1ec8;
+  *(undefined ***)this = &PTR_ArenaBoard_Odd_ScalarDtor_004d1ec8;
   *(char **)((int)this + 0x868) = "RumbleBoard (Neon Arena)";
   *(char **)((int)this + 0x4344) = "Neon Theme";
   *(char **)((int)this + 0x29b4) = "NEON ARENA";

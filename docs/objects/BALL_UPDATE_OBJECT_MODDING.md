@@ -75,7 +75,7 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x255 | `uint8_t[0xB]` | pad_255 | | |
 | 0x260 | `uint8_t` | boost_flag | ctor2 | Set `0` |
 | 0x261 | `uint8_t[3]` | pad_261 | | |
-| 0x264 | `RumbleBoard` | rumble_timer1 | ctor2 | `RumbleBoard_InitTimer` target (20 bytes) |
+| 0x264 | `ArenaBoard` | toggle_timer1 | ctor2 | `ToggleTimer_Init` target (20 bytes) |
 | 0x278 | `float` | **gravity_scale** | ctor2, Update | Default `0.1f`. **Scale gravity strength.** |
 | 0x27C | `uint32_t` | field_27c | ctor2 | `0` |
 | 0x280 | `uint8_t` | field_280 | ctor2 | `0` |
@@ -85,7 +85,7 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x288 | `uint32_t` | field_288 | ctor2 | `0` |
 | 0x28C | `uint8_t` | field_28c | ctor2 | `0` |
 | 0x28D | `uint8_t[3]` | pad_28d | | |
-| 0x290 | `RumbleBoard` | rumble_timer2 | ctor2 | Second RumbleBoard timer |
+| 0x290 | `ArenaBoard` | toggle_timer2 | ctor2 | Second ArenaBoard timer |
 | 0x2A4 | `float` | field_2a4 | ctor2 | `5.0f` |
 | 0x2A8 | `Vec3` | speed_modifier | ctor2 | `Vec3_Init` target |
 | 0x2B4 | `uint8_t[4]` | pad_2b4 | | |

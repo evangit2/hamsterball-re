@@ -1,4 +1,4 @@
-# RumbleBoard Arena System
+# ArenaBoard Arena System
 
 The multiplayer arena battle mode in Hamsterball. Players compete on floating
 platforms ("boards") with hazards, trying to knock each other off or survive
@@ -7,22 +7,22 @@ the longest.
 ## Architecture Overview
 
 ```
-RumbleBoard (base class)
-├── RumbleBoard_Warmup_Ctor        → Warm-up Arena (ID 1)
-├── RumbleBoard_Beginner_Ctor      → Beginner Arena (ID 2)
-├── RumbleBoard_Intermediate_Ctor  → Intermediate Arena (ID 3)
-├── RumbleBoard_Dizzy_Ctor         → Dizzy Arena (ID 4)
-├── RumbleBoard_Tower_Ctor         → Tower Arena (ID 5)
-├── RumbleBoard_UpArena_Ctor       → Up Arena (ID 6)
-├── RumbleBoard_NeonArena_ctor     → Neon Arena (ID 7)
-├── RumbleBoard_ExpertArena_ctor   → Expert Arena (ID 8)
-├── RumbleBoard_OddArena_ctor      → Odd Arena (ID 9)
-├── RumbleBoard_ToobArena_ctor     → Toob Arena (ID 10)
-├── RumbleBoard_WobblyArena_ctor   → Wobbly Arena (ID 11)
+ArenaBoard (base class)
+├── ArenaBoard_Warmup_Ctor        → Warm-up Arena (ID 1)
+├── ArenaBoard_Beginner_Ctor      → Beginner Arena (ID 2)
+├── ArenaBoard_Intermediate_Ctor  → Intermediate Arena (ID 3)
+├── ArenaBoard_Dizzy_Ctor         → Dizzy Arena (ID 4)
+├── ArenaBoard_Tower_Ctor         → Tower Arena (ID 5)
+├── ArenaBoard_Up_Ctor       → Up Arena (ID 6)
+├── ArenaBoard_Neon_Ctor     → Neon Arena (ID 7)
+├── ArenaBoard_Expert_Ctor   → Expert Arena (ID 8)
+├── ArenaBoard_Odd_Ctor      → Odd Arena (ID 9)
+├── ArenaBoard_Toob_Ctor     → Toob Arena (ID 10)
+├── ArenaBoard_Wobbly_Ctor   → Wobbly Arena (ID 11)
 ├── BoardLevel_Glass_ctor          → Glass Arena (ID 12)
-├── RumbleBoard_SkyArena_ctor      → Sky Arena (ID 13)
-├── RumbleBoard_WarmupArena_ctor   → Master Arena (ID 14)
-├── RumbleBoard_Impossible_ctor    → Impossible Arena (ID 15)
+├── ArenaBoard_Sky_Ctor      → Sky Arena (ID 13)
+├── ArenaBoard_WarmupArena_Ctor   → Master Arena (ID 14)
+├── ArenaBoard_Impossible_Ctor    → Impossible Arena (ID 15)
 └── CollSlices variants (collision mesh slicing)
 ```
 
@@ -48,46 +48,46 @@ The 15-race tournament sequence, revealed by the switch statement:
 | 14 | BoardLevel_Master_Ctor | Master | 0x6498 | — |
 | 15 | Board_Impossible_ctor | Impossible | 0x4380 | — |
 
-## RumbleBoard Arena Asset Paths
+## ArenaBoard Arena Asset Paths
 
 Each arena loads a MeshWorld and CollisionLevel pair from these paths:
 
 | Arena Init Function | Arena Mesh Path | Extra Level |
 |---------------------|-----------------|-------------|
-| RumbleBoard_Beginner (0x22550) | "RumbleBoard (Beginner Arena)" | Race: "Beginner Race" (internal: Cascade Race) |
-| RumbleBoard_Intermediate_Init (0x414180) | levels\arena-intermediate | — |
-| RumbleBoard_Dizzy_Init (0x414240) | levels\arena-dizzy | Levels\Level3-Swirl |
-| RumbleBoard_Expert_Init (0x414B10) | levels\arena-expert | — |
-| RumbleBoard_Neon_Init (0x416F40) | levels\arena-neon | 2x AthenaList transforms + boundary sphere |
-| RumbleBoard_Glass_Init (0x417DF0) | levels\arena-Glass | — |
-| RumbleBoard_Impossible_Init (0x418540) | levels\arena-impossible | — |
-| RumbleBoard_Sky_Init (0x4158C0) | levels\arena-Sky | "PILLAR" object collection |
-| RumbleBoard_Master_Init (0x416080) | levels\arena-Master | — |
-| RumbleBoard_Toob_Init (0x414F00) | (in ctor) | — |
-| RumbleBoard_Odd_Init (0x414CE0) | levels\arena-Odd | — |
-| RumbleBoard_Toob_Init (0x414F00) | levels\arena-Toob | 5x "N:BUMPER%d" objects |
+| ArenaBoard_Beginner (0x22550) | "ArenaBoard (Beginner Arena)" | Race: "Beginner Race" (internal: Cascade Race) |
+| ArenaLevel_Intermediate_Init (0x414180) | levels\arena-intermediate | — |
+| ArenaLevel_Dizzy_Init (0x414240) | levels\arena-dizzy | Levels\Level3-Swirl |
+| ArenaLevel_Expert_Init (0x414B10) | levels\arena-expert | — |
+| ArenaLevel_Neon_Init (0x416F40) | levels\arena-neon | 2x AthenaList transforms + boundary sphere |
+| ArenaLevel_Glass_Init (0x417DF0) | levels\arena-Glass | — |
+| ArenaLevel_Impossible_Init (0x418540) | levels\arena-impossible | — |
+| ArenaLevel_Sky_Init (0x4158C0) | levels\arena-Sky | "PILLAR" object collection |
+| ArenaLevel_Master_Init (0x416080) | levels\arena-Master | — |
+| ArenaLevel_Toob_Init (0x414F00) | (in ctor) | — |
+| ArenaLevel_Odd_Init (0x414CE0) | levels\arena-Odd | — |
+| ArenaLevel_Toob_Init (0x414F00) | levels\arena-Toob | 5x "N:BUMPER%d" objects |
 
 ### Special Arena Init Logic
 
-**RumbleBoard_Dizzy_Init**: Loads TWO mesh worlds — the arena
+**ArenaLevel_Dizzy_Init**: Loads TWO mesh worlds — the arena
 (levels\arena-dizzy) and a bonus level (Levels\Level3-Swirl) at `this+0x11F8`.
 
-**RumbleBoard_Sky_Init**: Iterates all objects in the arena MeshWorld looking
+**ArenaLevel_Sky_Init**: Iterates all objects in the arena MeshWorld looking
 for "PILLAR" name prefix (case-insensitive via `__strnicmp`). Adds matching
 objects to a pillar list at `this+0x11FB`.
 
-**RumbleBoard_Toob_Init**: Collects 5 bumper objects named "N:BUMPER1" through
+**ArenaLevel_Toob_Init**: Collects 5 bumper objects named "N:BUMPER1" through
 "N:BUMPER5" via `Scene_CollectByNameFilter`. Each bumper stored at `this+0x11F8`
 (stride 0x106). Bumper count array at `this+0x1716`.
 
-**RumbleBoard_Neon_Init**: Most complex init — loads arena, then applies
+**ArenaLevel_Neon_Init**: Most complex init — loads arena, then applies
 Matrix transformations to all objects in two AthenaLists (first at
 `this+0xA75`, second at `this+0xB7B`). Each object gets 3 matrix transforms
 applied to its position/orientation, with a "visible" check based on whether
 the object's float value differs from `DAT_004CF3C8`. Also creates a SceneObject
 with 10x10 scale and 400.0 radius for the arena boundary.
 
-## RumbleBoard Timer System
+## ToggleTimer System
 
 ### Timer Structure (0x14 bytes)
 
@@ -99,10 +99,10 @@ with 10x10 scale and 400.0 radius for the arena boundary.
 | +0x0C | int32 | count | Current tick count |
 | +0x10 | byte | expired | Set to 1 when count >= period |
 
-### RumbleBoard_InitTimer (0x458E60)
+### ToggleTimer_Init (0x458E60)
 
 ```c
-RumbleBoard_InitTimer(Timer *t) {
+ToggleTimer_Init(Timer *t) {
     t->vtable = &Timer_Vtable;
     t->active = 0;
     t->period = 100;
@@ -110,10 +110,10 @@ RumbleBoard_InitTimer(Timer *t) {
 }
 ```
 
-### RumbleBoard_TickTimer (0x458E90)
+### ToggleTimer_Tick (0x458E90)
 
 ```c
-RumbleBoard_TickTimer(Timer *t) {
+ToggleTimer_Tick(Timer *t) {
     t->expired = 0;
     t->count++;
     if (t->count >= t->period) {
@@ -124,27 +124,27 @@ RumbleBoard_TickTimer(Timer *t) {
 }
 ```
 
-### RumbleBoard_CleanupTimer (0x458E80)
+### ToggleTimer_Cleanup (0x458E80)
 
 ```c
-RumbleBoard_CleanupTimer(Timer *t) {
+ToggleTimer_Cleanup(Timer *t) {
     t->vtable = &Timer_Vtable;  // Reset to default (deactivate)
 }
 ```
 
-### RumbleBoard_TickDown (0x472A50)
+### ArenaBoard_TickDown (0x472A50)
 
 Decrements the tick counter at `this+0x21F*4` (object lifetime counter).
 When it reaches < 1, calls `vtable[0x4C]` (cleanup) and `vtable[0x40]` (destructor).
 
-## RumbleBoard Object System
+## ArenaObject System
 
-### RumbleBoard_Object_Tick (0x42B660)
+### ArenaSceneObj_Tick (0x42B660)
 
 Per-frame update for arena objects (hammers, saws, etc.):
 
 ```c
-RumbleBoard_Object_Tick(Object *obj) {
+ArenaSceneObj_Tick(Object *obj) {
     // Animate vertical position (float up)
     obj->float_offset += DAT_004cf524;  // small upward velocity
     if (obj->float_offset > DAT_004cf438)  // max float height
@@ -156,8 +156,8 @@ RumbleBoard_Object_Tick(Object *obj) {
         obj->cooldown = 0;
 
     // Tick two embedded timers (offset 0x888 and 0x89C)
-    RumbleBoard_TickTimer(obj + 0x888);
-    RumbleBoard_TickTimer(obj + 0x89C);
+    ToggleTimer_Tick(obj + 0x888);
+    ToggleTimer_Tick(obj + 0x89C);
 }
 ```
 
@@ -167,7 +167,7 @@ Object offsets:
 - `+0x888`: Timer struct (0x14 bytes) — primary animation timer
 - `+0x89C`: Timer struct (0x14 bytes) — secondary animation timer
 
-## RumbleBoard Render System (0x421910)
+## ArenaBoard Render System (0x421910)
 
 ### HUD Layout (4-player split screen)
 
@@ -279,21 +279,21 @@ For races 3+: `extra_time = base_time` (adds to existing accumulated time)
 |---------|------|---------|
 | 0x427080 | Tournament_AdvanceRace | Create next race in tournament |
 | 0x433AC0 | TournamentManager | Title screen command dispatcher |
-| 0x422550 | RumbleBoard_Beginner_Ctor | Beginner arena constructor |
-| 0x4226E0 | RumbleBoard_Intermediate_Ctor | Intermediate arena ctor |
-| 0x422790 | RumbleBoard_Dizzy_Ctor | Dizzy arena ctor |
-| 0x423060 | RumbleBoard_ExpertArena_ctor | Expert arena ctor |
-| 0x424860 | RumbleBoard_NeonArena_ctor | Neon arena ctor |
-| 0x423BF0 | RumbleBoard_SkyArena_ctor | Sky arena ctor |
-| 0x4234E0 | RumbleBoard_ToobArena_ctor | Toob arena ctor |
-| 0x423220 | RumbleBoard_OddArena_ctor | Odd arena ctor |
-| 0x424EC0 | RumbleBoard_Impossible_ctor | Impossible arena ctor |
-| 0x421910 | RumbleBoard_Render | HUD/timer rendering |
-| 0x42B660 | RumbleBoard_Object_Tick | Arena hazard animation |
-| 0x458E60 | RumbleBoard_InitTimer | Timer struct initializer |
-| 0x458E90 | RumbleBoard_TickTimer | Timer tick + toggle logic |
-| 0x458E80 | RumbleBoard_CleanupTimer | Timer deactivation |
-| 0x472A50 | RumbleBoard_TickDown | Lifetime countdown |
+| 0x422550 | ArenaBoard_Beginner_Ctor | Beginner arena constructor |
+| 0x4226E0 | ArenaBoard_Intermediate_Ctor | Intermediate arena ctor |
+| 0x422790 | ArenaBoard_Dizzy_Ctor | Dizzy arena ctor |
+| 0x423060 | ArenaBoard_Expert_Ctor | Expert arena ctor |
+| 0x424860 | ArenaBoard_Neon_Ctor | Neon arena ctor |
+| 0x423BF0 | ArenaBoard_Sky_Ctor | Sky arena ctor |
+| 0x4234E0 | ArenaBoard_Toob_Ctor | Toob arena ctor |
+| 0x423220 | ArenaBoard_Odd_Ctor | Odd arena ctor |
+| 0x424EC0 | ArenaBoard_Impossible_Ctor | Impossible arena ctor |
+| 0x421910 | ArenaBoard_Render | HUD/timer rendering |
+| 0x42B660 | ArenaSceneObj_Tick | Arena hazard animation |
+| 0x458E60 | ToggleTimer_Init | Timer struct initializer |
+| 0x458E90 | ToggleTimer_Tick | Timer tick + toggle logic |
+| 0x458E80 | ToggleTimer_Cleanup | Timer deactivation |
+| 0x472A50 | ArenaBoard_TickDown | Lifetime countdown |
 | 0x4288B0 | App_StartTournamentRace | Tournament launch entry |
 | 0x445230 | Scene_StartTournament | Scene tournament setup |
 | 0x446730 | Tourney_SaveTournament | Save tournament state |

@@ -176,9 +176,9 @@ void __fastcall Scene_dtor(undefined4 *param_1)
   local_4._0_1_ = 2;
   Vec3List_Free(param_1 + 0x22e);
   local_4._0_1_ = 1;
-  RumbleBoard_CleanupTimer(param_1 + 0x226);
+  ToggleTimer_Cleanup(param_1 + 0x226);
   local_4 = (uint)local_4._1_3_ << 8;
-  RumbleBoard_CleanupTimer(param_1 + 0x221);
+  ToggleTimer_Cleanup(param_1 + 0x221);
   local_4 = 0xffffffff;
   SceneObject_dtor(param_1);
   ExceptionList = pvStack_c;

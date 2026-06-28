@@ -108,7 +108,7 @@ void __thiscall HandleArenaCollisionEvents(void *this,int *param_1,int *param_2)
       pvVar11 = (void *)0x0;
       local_4 = 0;
       if (this_00 != (void *)0x0) {
-        pvVar11 = RumbleScore_ctor(this_00,*(undefined4 *)((int)this + 0x878));
+        pvVar11 = ArenaScoreParticle_ctor(this_00,*(undefined4 *)((int)this + 0x878));
       }
       fVar5 = (float)(int)param_1;
       local_4 = 0xffffffff;

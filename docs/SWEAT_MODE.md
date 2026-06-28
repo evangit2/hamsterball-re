@@ -78,13 +78,13 @@ if (ball+0x260 != 0 && ball+0x268 != 0) {
 }
 ```
 
-### Flashing effect (RumbleBoard)
+### Flashing effect (ToggleTimer)
 
-The second condition (`ball+0x268 != 0`) is the **RumbleBoard.active** toggle flag. The RumbleBoard struct (at `ball+0x264`) toggles its `active` flag every `period` ticks:
+The second condition (`ball+0x268 != 0`) is the **ToggleTimer.active** toggle flag. The ToggleTimer struct (at `ball+0x264`) toggles its `active` flag every `period` ticks:
 
 | Offset | Field | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| +0x264 | vtable | dword | — | RumbleBoard vtable pointer |
+| +0x264 | vtable | dword | — | ArenaBoard vtable pointer |
 | +0x268 | active | byte | 0 | Toggles 0↔1 every period ticks |
 | +0x26C | period | int | 20 | Toggle interval (~0.8s at 25fps) |
 | +0x270 | counter | int | 0 | Increments each tick, resets at period |
@@ -103,11 +103,11 @@ This makes the sweat sprite **flash on/off** rather than display continuously, c
 
 ```
 ball+0x260  byte   sweat_flag        — 1 when struggling on slope, 0 when at high speed
-ball+0x264  dword  RumbleBoard.vtable
-ball+0x268  byte   RumbleBoard.active — toggles 0↔1 every 20 ticks (controls flashing)
-ball+0x26C  int    RumbleBoard.period — toggle interval (default 20)
-ball+0x270  int    RumbleBoard.counter — tick counter
-ball+0x274  byte   RumbleBoard.signal — toggle event flag
+ball+0x264  dword  ToggleTimer.vtable
+ball+0x268  byte   ToggleTimer.active — toggles 0↔1 every 20 ticks (controls flashing)
+ball+0x26C  int    ToggleTimer.period — toggle interval (default 20)
+ball+0x270  int    ToggleTimer.counter — tick counter
+ball+0x274  byte   ToggleTimer.signal — toggle event flag
 ```
 
 ## Key Constants
@@ -129,9 +129,9 @@ ball+0x274  byte   RumbleBoard.signal — toggle event flag
 | Function | Address | Role |
 |----------|---------|------|
 | `Ball_Update` | 0x405E00 | Sets/clears sweat flag in collision response |
-| `Ball_RenderAI` | 0x403DC0 | Renders sweat sprite when flag + RumbleBoard active |
-| `RumbleBoard_TickTimer` | 0x458E90 | Toggles active flag every period ticks |
-| `RumbleBoard_InitTimer` | 0x458E60 | Initializes RumbleBoard struct |
+| `Ball_RenderAI` | 0x403DC0 | Renders sweat sprite when flag + ArenaBoard active |
+| `ToggleTimer_Tick` | 0x458E90 | Toggles active flag every period ticks |
+| `ToggleTimer_Init` | 0x458E60 | Initializes ToggleTimer struct |
 | `Ball_ctor2` | 0x4039E0 | Initializes ball+0x260 = 0 |
 | `App_ResourceLoader` | 0x4298C0 | Loads sweat.png texture at App+0x344 |
 
@@ -139,4 +139,4 @@ ball+0x274  byte   RumbleBoard.signal — toggle event flag
 
 - The `_DAT_004cf3e0 = 0.0` constant effectively disables the dynamic target speed calculation, making the minimum speed floors (1.25 ground, 0.25 slope) the actual effective speeds. This may have been a tuning decision during development — the dynamic scaling was turned off by zeroing the multiplier.
 - The sweat flag is set whenever the ball has partial surface contact (slopes) and the target speed is ≤ 0 (always). This means it can also trigger during brief airborne moments, but the tiny sprite size and flashing make it nearly invisible during fast movement.
-- The RumbleBoard at `ball+0x264` was previously documented as "rumble_timer" — it's actually a periodic toggle timer that controls the sweat sprite's flashing animation.
+- The ToggleTimer at `ball+0x264` was previously documented as "toggle_timer" — it's actually a periodic toggle timer that controls the sweat sprite's flashing animation.

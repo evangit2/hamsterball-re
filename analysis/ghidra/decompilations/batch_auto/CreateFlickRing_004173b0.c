@@ -4,7 +4,7 @@
  * Signature: void __thiscall
 CreateFlickRing(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3,int param_4)
  *
- * Patterns: allocates, SEH frame, board. Calls: CreateFlickRing, __strnicmp, operator_new, RumbleBoard_Stands_ctor, AthenaList_Append, CreatePlatformOrStands. Offsets: 4, Lines: 47
+ * Patterns: allocates, SEH frame, board. Calls: CreateFlickRing, __strnicmp, operator_new, ArenaStands_ctor, AthenaList_Append, CreatePlatformOrStands. Offsets: 4, Lines: 47
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -42,7 +42,7 @@ CreateFlickRing(void *this,char *param_1,undefined4 *param_2,undefined4 *param_3
         pcVar5 = *(char **)(param_4 + 8);
         uVar2 = *(undefined4 *)(param_4 + 0xc);
       }
-      pvVar3 = RumbleBoard_Stands_ctor
+      pvVar3 = ArenaStands_ctor
                          (this_00,this,uVar4,pcVar5,uVar2,*(void **)((int)this + 0x47e0));
     }
     local_4 = 0xffffffff;

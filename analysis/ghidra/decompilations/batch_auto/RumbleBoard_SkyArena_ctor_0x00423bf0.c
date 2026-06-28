@@ -1,5 +1,5 @@
 
-void * __thiscall RumbleBoard_SkyArena_ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Sky_Ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -13,9 +13,9 @@ void * __thiscall RumbleBoard_SkyArena_ctor(void *this,int param_1)
   puStack_8 = &LAB_004caa57;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard9_PopCylinder_scalar_dtor_004d1bd8;
+  *(undefined ***)this = &PTR_ArenaBoard9_PopCylinder_ScalarDtor_004d1bd8;
   AthenaList_Init((void *)((int)this + 0x47ec),0);
   local_4._0_1_ = 1;
   *(char **)((int)this + 0x868) = "RumbleBoard (Sky Arena)";

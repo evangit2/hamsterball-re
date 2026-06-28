@@ -84,7 +84,7 @@ void __fastcall GameObject_dtor(undefined4 *param_1)
   local_4._0_1_ = 4;
   Matrix_Identity(param_1 + 0xaa);
   local_4._0_1_ = 3;
-  RumbleBoard_CleanupTimer(param_1 + 0x99);
+  ToggleTimer_Cleanup(param_1 + 0x99);
   local_4._0_1_ = 2;
   Matrix4_Identity(param_1 + 0x82);
   local_4._0_1_ = 1;

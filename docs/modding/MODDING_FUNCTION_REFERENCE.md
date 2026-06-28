@@ -565,11 +565,11 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 > **Full documentation:** See `docs/ARENA_SCORING.md`
 
-### `RumbleBoard_Update`
+### `ArenaBoard_Update`
 - **Address:** `0x421FE0`
 - **Description:** Per-frame arena update. Checks timer expiration, computes winner, handles tie-breaker.
 
-### `RumbleBoard_Render`
+### `ArenaBoard_Render`
 - **Address:** `0x421910`
 - **Description:** Draws countdown timer, 4-player HUD, tie-breaker overlay.
 
@@ -642,25 +642,25 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 ### Arena Level Constructors (via `TourneyMenu_CreateBoard`)
 | ID | Arena | Ctor Name | Size |
 |----|-------|-----------|------|
-| 1 | WarmUp | `RumbleBoard_Warmup_Ctor` | `0x47E0` |
-| 2 | Beginner | `RumbleBoard_Beginner_Ctor` | `0x5850` |
-| 3 | Intermediate | `RumbleBoard_Intermediate_Ctor` | `0x47E0` |
-| 4 | Dizzy | `RumbleBoard_Dizzy_Ctor` | `0x47E4` |
-| 5 | Tower | `RumbleBoard_Tower_Ctor` | `0x501C` |
-| 6 | UpArena | `RumbleBoard_UpArena_Ctor` | `0x47E4` |
-| 7 | NeonArena | `RumbleBoard_NeonArena_ctor` | `0x47E8` |
-| 8 | ExpertArena | `RumbleBoard_ExpertArena_ctor` | `0x4BFC` |
-| 9 | OddArena | `RumbleBoard_OddArena_ctor` | `0x47E0` |
-| 10 | ToobArena | `RumbleBoard_ToobArena_ctor` | `0x5C6C` |
-| 11 | WobblyArena | `RumbleBoard_WobblyArena_ctor` | `0x47E4` |
+| 1 | WarmUp | `ArenaBoard_Warmup_Ctor` | `0x47E0` |
+| 2 | Beginner | `ArenaBoard_Beginner_Ctor` | `0x5850` |
+| 3 | Intermediate | `ArenaBoard_Intermediate_Ctor` | `0x47E0` |
+| 4 | Dizzy | `ArenaBoard_Dizzy_Ctor` | `0x47E4` |
+| 5 | Tower | `ArenaBoard_Tower_Ctor` | `0x501C` |
+| 6 | UpArena | `ArenaBoard_Up_Ctor` | `0x47E4` |
+| 7 | NeonArena | `ArenaBoard_Neon_Ctor` | `0x47E8` |
+| 8 | ExpertArena | `ArenaBoard_Expert_Ctor` | `0x4BFC` |
+| 9 | OddArena | `ArenaBoard_Odd_Ctor` | `0x47E0` |
+| 10 | ToobArena | `ArenaBoard_Toob_Ctor` | `0x5C6C` |
+| 11 | WobblyArena | `ArenaBoard_Wobbly_Ctor` | `0x47E4` |
 | 12 | Glass | `BoardLevel_Glass_ctor` | `0x47E0` |
-| 13 | SkyArena | `RumbleBoard_SkyArena_ctor` | `0x4CFC` |
-| 14 | WarmupArena | `RumbleBoard_WarmupArena_ctor` | `0x47E0` |
-| 15 | Impossible | `RumbleBoard_Impossible_ctor` | `0x47E4` |
+| 13 | SkyArena | `ArenaBoard_Sky_Ctor` | `0x4CFC` |
+| 14 | WarmupArena | `ArenaBoard_WarmupArena_Ctor` | `0x47E0` |
+| 15 | Impossible | `ArenaBoard_Impossible_Ctor` | `0x47E4` |
 
 ### `TourneyMenu_CreateBoard`
 - **Address:** `0x426780`
-- **Description:** Giant switch statement (cases 1–15) that allocates and constructs the correct `RumbleBoard` subclass for the selected arena level.
+- **Description:** Giant switch statement (cases 1–15) that allocates and constructs the correct `ArenaBoard` subclass for the selected arena level.
 
 ---
 
@@ -758,7 +758,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x00` | void** | vtable | `0x4CF3A0` |
 | `+0x04` | void* | scene | Parent Scene* |
 | `+0x14` | int32 | player_index | -1=AI, 0=P1, 1=P2 |
-| `+0x18` | char[0x14] | rumble_timer1 | RumbleBoard timer sub-object |
+| `+0x18` | char[0x14] | toggle_timer1 | ArenaBoard timer sub-object |
 | `+0x60` | float[3] | position | Physics position (X, Y, Z) |
 | `+0x150` | float | accumulated_time | Delta-time accumulator |
 | `+0x158` | float[3] | prev_pos | Previous frame position |
@@ -935,7 +935,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | UI menus | `docs/UI_MENU_SYSTEM.md` |
 | MESHWORLD format | `docs/MESHWORLD_FORMAT.md` |
 | Key decompilations | `docs/KEY_DECOMPILATIONS.md` |
-| RumbleBoard system | `docs/RUMBLEBOARD_SYSTEM.md` |
+| ArenaBoard system | `docs/ARENA_BOARD_SYSTEM.md` |
 | Game state lifecycle | `docs/GAME_STATE_RACE_LIFECYCLE.md` |
 
 ---

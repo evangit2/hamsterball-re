@@ -74,7 +74,7 @@ All Toob Race mechanical objects are created by a single unlabeled factory funct
 - **Mesh**: `Levels\Level8-Blockdawg1` (string at 0x4D0DF0, same for both)
 - **vtable**: 0x4D5638 (RumbleObject vtable)
 - **pathId**: stored at +0x10F0
-- **Update** (0x43C4E0, RumbleObject_Update):
+- **Update** (0x43C4E0, ArenaObject_Update):
   - If `+0x1150 == 0` (awake): follows path via `Path_GetPosition(+0x10F0)` → **crashes if 0**
   - If `+0x1150 != 0` (sleeping): plays wake-up sound + creates particle ring → **safe**
 - **CRASH FIX**: Set `+0x1150 = 1` (sleeping mode)

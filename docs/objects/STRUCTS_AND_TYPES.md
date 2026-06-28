@@ -284,7 +284,7 @@ typedef struct {
 ### Rumble Board Arena Paths
 
 ```c
-// 15 arena level paths loaded by RumbleBoard_*_Init functions
+// 15 arena level paths loaded by ArenaBoard_*_Init functions
 "levels\\arena-WarmUp"       // 0x413C20
 "levels\\arena-beginner"     // 0x413CE0
 "levels\\arena-intermediate" // 0x414180
@@ -356,16 +356,16 @@ struct SimpleMenu {          // extends Scene
 };
 ```
 
-## RumbleBoard (vtable PTR 0x4D1358, extends Board extends Scene)
+## ArenaBoard (vtable PTR 0x4D1358, extends Board extends Scene)
 
 ```c
-struct RumbleBoard {
+struct ArenaBoard {
     // ... Board/Scene base fields ...
     int         base_score;     // +0x47AC = 6000
     uint8_t     is_tie_breaker; // +0x47C5
     uint8_t     tie_active;     // +0x47CC
     int         max_rounds;     // +0x47D0 = 0x19 = 25
-    // Timer fields at +0x47C8 (RumbleBoard_InitTimer/CleanupTimer/TickTimer)
+    // Timer fields at +0x47C8 (ToggleTimer_Init/CleanupTimer/TickTimer)
     // Player scores at +0x11ED..+0x11F0 (4 players)
     int         round_end_timer;// +0x11EB (countdown after round ends)
     int         game_over_flag; // +0x11F1

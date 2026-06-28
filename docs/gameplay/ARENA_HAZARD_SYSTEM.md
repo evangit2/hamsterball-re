@@ -1,6 +1,6 @@
-# Arena Hazard System (RumbleBoard Objects)
+# Arena Hazard System (ArenaObjects)
 
-The RumbleBoard arenas contain interactive hazards created by the master factory
+The Arena board arenas contain interactive hazards created by the master factory
 function `CreateExpertLevelObjects` (0x40E250). Despite its name, this function creates
 ALL arena object types, not just sawblades.
 
@@ -41,7 +41,7 @@ Objects can be named with suffix modifiers that change behavior:
 
 | Offset | Type | Field | Default |
 |--------|------|-------|---------|
-| +0x10D0 | int | board_ptr | Parent RumbleBoard |
+| +0x10D0 | int | board_ptr | Parent ArenaBoard |
 | +0x10D4 | Vec3 | position | Creation position |
 | +0x10E0 | Vec3 | base_position | Copy of position |
 | +0x10EC | int | state | 0 (inactive) |
@@ -130,7 +130,7 @@ Has speed modifiers via name suffixes:
 - "SUPER": Enhanced mode (obj+0x10ED=1)
 - "UP": Initialize additional sound channel
 
-## Object Storage Map (RumbleBoard offsets)
+## Object Storage Map (ArenaBoard offsets)
 
 | Offset | Type | Purpose |
 |--------|------|---------|

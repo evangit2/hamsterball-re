@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Render
+ * Function: ArenaBoard_Render
  * Address: 0x00421910
- * Signature: void __thiscall RumbleBoard_Render(void *this,undefined4 param_1)
+ * Signature: void __thiscall ArenaBoard_Render(void *this,undefined4 param_1)
  *
- * Patterns: vtable dispatch, SEH frame, matrix math, rendering, scene, board. Calls: RumbleBoard_Render, __ftol2, Scene_CreateObject4f, Matrix_Scale4x4, CONCAT31, Matrix_Identity, AthenaString_Format, UI_DrawTextCentered. Offsets: 23, Lines: 251
+ * Patterns: vtable dispatch, SEH frame, matrix math, rendering, scene, board. Calls: ArenaBoard_Render, __ftol2, Scene_CreateObject4f, Matrix_Scale4x4, CONCAT31, Matrix_Identity, AthenaString_Format, UI_DrawTextCentered. Offsets: 23, Lines: 251
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __thiscall RumbleBoard_Render(void *this,undefined4 param_1)
+void __thiscall ArenaBoard_Render(void *this,undefined4 param_1)
 
 {
   int iVar1;

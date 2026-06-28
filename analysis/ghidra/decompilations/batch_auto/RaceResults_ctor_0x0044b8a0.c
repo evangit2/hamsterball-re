@@ -22,7 +22,7 @@ void * __thiscall RaceResults_ctor(void *this,int param_1,undefined4 param_2)
   *(undefined1 *)((int)this + 0x19) = 1;
   local_4 = 0;
   *(undefined ***)this = &PTR_ConfirmMenu_ScalarDtor_004d6c4c;
-  RumbleBoard_InitTimer((undefined4 *)((int)this + 0x74));
+  ToggleTimer_Init((undefined4 *)((int)this + 0x74));
   local_4 = CONCAT31(local_4._1_3_,1);
   *(undefined4 *)((int)this + 0x88) = 0;
   *(undefined1 *)((int)this + 0x54) = 0;

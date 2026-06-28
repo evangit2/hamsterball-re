@@ -1,7 +1,7 @@
 /*
- * Function: RumbleObject_Update
+ * Function: ArenaObject_Update
  * Address: 0x0043C4E0
- * Signature: undefined4 __fastcall RumbleObject_Update(int *param_1)
+ * Signature: undefined4 __fastcall ArenaObject_Update(int *param_1)
  * Parameters:
  *   param_1: RumbleObject* this (as int*) — the rumble object to update
  *
