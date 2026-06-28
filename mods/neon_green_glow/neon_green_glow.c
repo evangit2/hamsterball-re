@@ -88,9 +88,11 @@ __declspec(dllexport) int __stdcall BASS_Stop(void) {
 
 /* ── Mod: Neon Green Glow ─────────────────────────────────────────── */
 
-/* 8 R-channel push immediates in Scene_SetupLevelDark (0x416270).
- * Each is at file offset (vaddr - 0x400000) in the .text section.
- * We write 0x00000000 (0.0f) over the original 0x3F800000 (1.0f).
+/* 10 R-channel push immediates in Scene_SetupLevelDark (0x416270).
+ * 8 push 1.0f (0x3F800000) for material colors. We zero them.
+ * 2 push 10.0f (0x41200000) for the emitter light Diffuse R. We zero those too.
+ * Result: RGBA changes from (1,1,0,1) = yellow to (0,1,0,1) = green.
+ * Emitter light goes from (10,10,0) = yellow to (0,10,0) = green.
  *
  * The PUSH instruction is: 68 XX XX XX XX (5 bytes)
  * The immediate starts at offset+1. We patch the 4-byte immediate only.
@@ -101,9 +103,11 @@ static const struct {
 } patches[] = {
     { 0x00016360, "Loop block 1 (platforms R)" },
     { 0x000163D4, "Loop block 2 (platforms R)" },
+    { 0x000164A4, "P1 Emitter Light R (Diffuse R=10.0 -> 0.0)" },
     { 0x00016568, "P1 Ambient R (phys+0x1CC)" },
     { 0x000165D5, "P1 Diffuse R (phys+0x1BC)" },
     { 0x0001663F, "P1 Emissive R (phys+0x1EC)" },
+    { 0x00016846, "P2 Emitter Light R (Diffuse R=10.0 -> 0.0)" },
     { 0x000166C0, "P2 Ambient R (phys2+0x1CC)" },
     { 0x0001672D, "P2 Diffuse R (phys2+0x1BC)" },
     { 0x00016797, "P2 Emissive R (phys2+0x1EC)" },
@@ -116,7 +120,7 @@ static void apply_patches(void) {
     DWORD oldProt;
     int i;
 
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < 10; i++) {
         /* The immediate is at base + rva (which is already imm offset, not opcode) */
         DWORD addr = base + patches[i].rva;
         if (VirtualProtect((void*)addr, 4, PAGE_READWRITE, &oldProt)) {
