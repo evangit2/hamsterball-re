@@ -1,4 +1,4 @@
-# Deep-Dive: Ball+0x2E9 (impact_shatter)
+# Deep-Dive: Ball+0x2E9 (dizzy_lock)
 
 ## Overview
 
@@ -6,7 +6,7 @@
 
 ## Naming History
 
-Previous documentation labeled this field as `on_ramp`, `on_surface`, `flag2`, or `is_teleporting`. **All of these labels are wrong.** The correct name is `impact_shatter` because it limits trajectory application and can trigger ball shatter.
+Previous documentation labeled this field as `on_ramp`, `on_surface`, `flag2`, `is_teleporting`, or `impact_shatter`. **All of these labels are wrong.** The correct name is `dizzy_lock` because it prevents `Ball_ApplyTrajectory` from re-firing the dizzy/trajectory effect.
 
 ## Initialization
 
@@ -16,7 +16,7 @@ Previous documentation labeled this field as `on_ramp`, `on_surface`, `flag2`, o
 
 ## Setting
 
-**Only set in `Ball_Update` (0x00405E00), at L798:**
+**Set in `Ball_Update` (0x00405E00), at L798 (collision type 5, speed > 1.0):**
 
 ```c
 // Inside collision type 5 (floor) handler:
@@ -28,7 +28,17 @@ if (piVar16[0x15] > 1.0  &&  is_shrunk == 0) {
 }
 ```
 
-**Trigger conditions:**
+**Also set by the following events in `DispatchCollisionEvents` (0x0040C5D0):**
+- `E:LIMIT` — sets `ball+0x2E9 = 1`
+- `E:LIMITX` — sets `ball+0x2E9 = 1`
+- `E:LIMITZ` — sets `ball+0x2E9 = 1`
+- `E:LIMITPIPE1` — sets `ball+0x2E9 = 1`
+- `E:LIMITPIPE2` — sets `ball+0x2E9 = 1`
+- `E:SWALLOW` — sets `ball+0x2E9 = 1`
+
+**Also set by `Ball_ApplyTrajectory` (0x00403750) itself:** when the dizzy effect fires, it sets `dizzy_lock=1` to prevent itself from re-firing on subsequent frames.
+
+**Trigger conditions (Ball_Update L798):**
 1. Ball is colliding with a type-5 (floor) surface
 2. Surface speed (`piVar16[0x15]`, collision_obj+0x54) > 1.0
 3. `is_shrunk` (ball+0xC4C) == 0 (ball is NOT in shrunk state)
@@ -40,7 +50,7 @@ When these conditions are met, the flag is set AND:
 
 ## Clearing
 
-`Ball_FindClosestRespawnPoint` (0x00405190) clears the flag at address 0x00405262:
+`Ball_InitPhysicsDefaults` (0x00405100) clears the flag at address 0x00405262:
 
 ```asm
 00405262: C6 86 E9 02 00 00 00    MOV byte [ESI+0x2E9], 0
@@ -54,9 +64,9 @@ The Ghidra decompilation shows `*(undefined1 *)(param_1 + 0x2e9) = 0` without an
 ; At ctor2+0x1FE: 88 9E E9 02 00 00 = MOV [ESI+0x2E9], BL  (BL pre-loaded with 0)
 ```
 
-**Result: `impact_shatter` is cleared both on respawn (`Ball_FindClosestRespawnPoint`) and on full reconstruction (`Ball_ctor2`).** It is NOT sticky — the previous "sticky flag" claim was based on an incorrect `int*` arithmetic assumption that the disassembly disproves.
+**Result: `dizzy_lock` is cleared both on respawn (`Ball_InitPhysicsDefaults`) and on full reconstruction (`Ball_ctor2`).** It is NOT sticky — the previous "sticky flag" claim was based on an incorrect `int*` arithmetic assumption that the disassembly disproves.
 
-## Effects When Set (impact_shatter = 1)
+## Effects When Set (dizzy_lock = 1)
 
 ### 1. Skip Ball_ApplyTrajectory (L498)
 
@@ -68,7 +78,7 @@ if (piVar16[0] == 1) {   // type 1 = surface/wall collision
         }
 ```
 
-When `impact_shatter = 1`: `Ball_ApplyTrajectory` is **skipped**. The ball does not bounce off walls. This means the ball slides along surfaces instead of reflecting.
+When `dizzy_lock = 1`: `Ball_ApplyTrajectory` is **skipped**. The ball does not bounce off walls. This means the ball slides along surfaces instead of reflecting.
 
 ### 2. Trigger Ball_Shatter on Wall Hit (L502)
 
@@ -98,7 +108,7 @@ If the ball is moving in the "wrong" direction for the current axis AND hits a w
 ### 3. Dead Code: Position-Match Shatter (L642)
 
 ```c
-if (impact_shatter != 0 && param_1[0xC9] == 0) {
+if (dizzy_lock != 0 && param_1[0xC9] == 0) {
     if (ABS(ball_pos - ramp_entry_pos) < _DAT_004cf4f8) {   // threshold = 0.0
         (*vtable[8])();   // Ball_Shatter
     }
@@ -109,7 +119,7 @@ if (impact_shatter != 0 && param_1[0xC9] == 0) {
 
 ## Interaction with is_shrunk (0xC4C)
 
-The `impact_shatter` is only SET when `is_shrunk == 0`. If the ball is in shrunk state (our half-size mod), `impact_shatter` cannot be set by type-5 floor collisions. This means:
+The `dizzy_lock` is only SET when `is_shrunk == 0`. If the ball is in shrunk state (our half-size mod), `dizzy_lock` cannot be set by type-5 floor collisions. This means:
 
 - Shrunk balls never get their trajectory limited
 - Shrunk balls never trigger the shatter-on-wall-hit behavior
@@ -122,12 +132,12 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | Aspect | Detail |
 |--------|--------|
 | **Field** | `Ball+0x2E9` (byte) |
-| **Name** | `impact_shatter` |
+| **Name** | `dizzy_lock` |
 | **Init** | 0 (by `Ball_ctor2`) |
-| **Set by** | Type-5 floor collision, speed > 1.0, `is_shrunk == 0` |
-| **Cleared by** | `Ball_FindClosestRespawnPoint` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x004039E0+0x1FE: `MOV [ESI+0x2E9],BL`) |
+| **Set by** | Type-5 floor collision, speed > 1.0, `is_shrunk == 0`; also by E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW, and Ball_ApplyTrajectory itself |
+| **Cleared by** | `Ball_InitPhysicsDefaults` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x004039E0+0x1FE: `MOV [ESI+0x2E9],BL`) |
 | **Effect 1** | Skip `Ball_ApplyTrajectory` — no wall bouncing |
 | **Effect 2** | Trigger `Ball_Shatter` on wall hit if moving in "wrong" direction |
 | **Effect 3** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
 | **vtable[8]** | `Ball_OnRampEvent` (0x00409480) — shatter function called from this path |
-| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `impact_shatter` from being set |
+| **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `dizzy_lock` from being set |
