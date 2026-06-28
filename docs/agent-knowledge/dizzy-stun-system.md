@@ -280,19 +280,102 @@ In `Ball_RenderAI` (0x403DC0):
 | 0x405D5B | (inside above) | Sets is_stunned=1, stun_timer=150 |
 | 0x408D70 | Ball_Shatter | Sets is_falling, respawn_state |
 | 0x409480 | Ball_Shatter_OnRamp | Ramp variant of shatter |
-| 0x405E00 | Ball_Update | Stun recovery (alpha+0.01/frame, clear at 1.0) |
+| 0x405E00 | Ball_Update | Two-pass collision: Pass 1 checks bounce_count, Pass 2 increments. Also stun recovery |
+| 0x403750 | Ball_ApplyTrajectory | The dizzy effect: halves speed, sets impact_count=100, increments dizzy counter |
 | 0x402650 | Ball_ApplyForceWithMultipliers | Input guard (checks is_stunned first) |
 | 0x4016F0 | Ball_ApplyForceV2 | Alternate input guard (same checks) |
 | 0x41B5CF | Scene_UpdateBallsAndState | Detects is_falling → calls respawn |
 | 0x403DC0 | Ball_RenderAI | Renders star effect + alpha |
-| 0x40C5D0 | DispatchCollisionEvents | E:NODIZZY (records best time, NOT dizzy cure) |
+| 0x40C5D0 | DispatchCollisionEvents | E:NODIZZY handler (clears TIME checkpoints, NOT dizzy cure) |
+| 0x402400 | Ball_RecordBest | Clears bounce_count(+0x2EC)=0, updates max streak(+0x2F4) |
+| 0x405100 | Ball_InitPhysicsDefaults | Resets dizzy_lock(+0x2E9)=0, bounce_count(+0x2EC)=0, all physics defaults |
+| 0x4039E0 | Ball_ctor2 | Init: sets dizzy_lock=0, bounce_count=0 |
+| 0x419030 | Board_ctor | Initializes per-player data blocks at App+0x5CC, adds to board+0x362C list |
+| 0x44DF70 | RaceGoalReached_Render | Draws end screen: reads App+pIdx×0xA0+0x5F8 (dizzy), +0x5F4 (broken) |
+
+## End Screen String Locations
+
+| VA | String |
+|----|--------|
+| 0x4D6DC0 | "DIZZIED BALLS:" |
+| 0x4D6DD0 | "BROKEN BALLS:" |
+| 0x4D6DE0 | "WEASEL'S TIME:" |
+| 0x4D6DF0 | "BEST RACE TIME:" |
+| 0x4D6E00 | "FINAL SCORE: %.0f" |
+| 0x4D6E14 | "YOUR NEMESIS: %s" |
+| 0x4D6E28 | "RACES FINISHED: %d" |
+
+## Physics Constants
+
+| VA | Value | Role |
+|----|-------|------|
+| 0x4CF418 | 3.0 (float) | Radius multiplier for bounce speed threshold |
+| 0x4CF3F0 | 0.5 (float) | Trajectory velocity scale (halves speed) |
+| 0x4CF434 | 1.25 (float) | Y velocity damping factor |
+| 0x4CF4E8 | 0.03 (double) | First bounce threshold: speed ≥ 0.03 → bounce_count 0→1 |
+| 0x4CF308 | 0.1 (double) | Second bounce threshold: speed ≥ 0.1 → bounce_count 1→2 |
+| 0x4CF310 | 1.0 (float) | Speed > 1.0 → sets dizzy_lock (blocks trajectory) |
+| 0x4CF368 | ~0.0 (float) | Epsilon for zero-velocity checks |
+
+## Ball_Update Two-Pass Collision Flow
+
+```
+Frame N — First qualifying bounce:
+  Pass 1 (line 495): bounce_count == 0 → skip trajectory check
+  Pass 2 (line 686):
+    speed >= 0.03 AND bounce_count == 0 → bounce_count = 1
+    bounce_count != 0 AND speed >= 0.1 → bounce_count = 2
+    (if speed > 1.0: dizzy_lock = 1, camera change)
+
+Frame N+1 — Next collision:
+  Pass 1 (line 495):
+    bounce_count > 1 (is 2) AND dizzy_lock == 0
+    → Ball_ApplyTrajectory(ball)
+      → impact_count = 100 (0.8s full lockout + 3.2s quarter power)
+      → speed halved (trajectory scale 0.5)
+      → dizzy_lock = 1 (prevents re-trigger)
+      → App + pIdx*0xA0 + 0x5F8 += 1  (DIZZY COUNTER INCREMENTED)
+      → trail particles + boost sound
+
+Frame N+2:
+  Pass 2: has_trajectory (ball+0x14D) set → bounce_count reset to 0
+  dizzy_lock stays 1 until Ball_InitPhysicsDefaults (respawn)
+```
+
+## E:NODIZZY vs Dizzy System — Not Related
+
+| Feature | E:NODIZZY | Bounce Dizzy |
+|---------|-----------|-------------|
+| String VA | 0x4CF8B8 | (no string — physics-based) |
+| Handler | DispatchCollisionEvents 0x40C64B | Ball_ApplyTrajectory 0x403750 |
+| Sets ball+0x2E9? | NO | YES |
+| Sets ball+0x2EC? | NO | YES (via Ball_Update) |
+| Increments App+0x5F8? | NO | YES |
+| Touches TIME entries? | YES (removes them) | NO |
+| Calls Ball_RecordBest? | YES | NO |
+| End screen counter? | NO | YES (DIZZIED BALLS) |
+
+## Events That Set dizzy_lock (ball+0x2E9 = 1)
+
+| Source | Address | Context |
+|--------|---------|---------|
+| Ball_ApplyTrajectory | 0x403750+0x87 | After applying trajectory effect |
+| Ball_Update speed>1.0 | 0x407391 | When collision speed exceeds 1.0 |
+| DispatchCollision E:LIMIT | 0x40C767 | Level boundary hit |
+| E:LIMITX | ~0x40F242 | X-axis boundary |
+| E:LIMITZ | ~0x40F27D | Z-axis boundary |
+| E:LIMITPIPE1 | ~0x40F2B5 | Pipe limit variant 1 |
+| E:LIMITPIPE2 | ~0x40F2F7 | Pipe limit variant 2 |
+| E:SWALLOW | ~0x40F317 | Fall off edge / pipe swallow |
 
 ## Field Summary
 
 | Offset | Name | Type | Default | Description |
 |--------|------|------|---------|-------------|
 | +0x2E8 | is_falling | byte | 0 | Set by Ball_Shatter etc. Triggers respawn |
-| +0x2F0 | impact_count | int32 | 0 | Set to 100 by trajectory. ≥81 blocks input |
+| +0x2E9 | dizzy_lock | byte | 0 | Sticky flag: prevents Ball_ApplyTrajectory re-firing. Set by trajectory, E:LIMIT*, E:SWALLOW, speed>1.0. Reset only by Ball_InitPhysicsDefaults |
+| +0x2EC | bounce_count | int32 | 0 | Bounce counter for dizzy system. Double-increments 0→1→2 in one frame when speed ≥ 0.03/0.1. Triggers trajectory when > 1 |
+| +0x2F0 | impact_count | int32 | 0 | Set to 100 by trajectory. ≥81 blocks input. Decays by 1/frame |
 | +0x2F8 | show_stars | byte | 0 | 1 = render 8-star circling effect |
 | +0x2F9 | is_stunned | byte | 0 | 1 = blocks ALL force application |
 | +0x2FC | alpha | float | 1.0 | 0=transparent, 1=opaque. Fades in on respawn |
@@ -300,3 +383,16 @@ In `Ball_RenderAI` (0x403DC0):
 | +0x324 | respawn_state | byte | 0 | 1 = ball in respawn sequence |
 | +0x808 | no_control_timer | int32 | 0 | Non-zero = input blocked |
 | +0xC60 | ground_contact | float | 1.0 | Decays by 0.02/frame when airborne → triggers fall |
+| +0x14D | has_trajectory | byte | 0 | Set by Ball_ApplyTrajectory. Triggers bounce_count reset next frame |
+
+## App Per-Player Data Block (at App + 0x5CC + pIdx × 0xA0)
+
+| Offset from block start | App offset (pIdx=0) | Type | Field |
+|--------------------------|---------------------|------|-------|
+| +0x00 | App+0x5CC | — | Block base (added to board+0x362C AthenaList) |
+| +0x0A | App+0x5D6 | byte | finished flag |
+| +0x0B | App+0x5D7 | byte | active flag (0=active, checked in Board_ctor) |
+| +0x1C | App+0x5E8 | int32 | race_time |
+| +0x28 | App+0x5F4 | int32 | broken_balls_count (end screen "BROKEN BALLS:") |
+| +0x2C | App+0x5F8 | int32 | dizzied_balls_count (end screen "DIZZIED BALLS:") |
+| +0x30 | App+0x5FC | int32 | (cleared to 0 in Board_ctor) |
