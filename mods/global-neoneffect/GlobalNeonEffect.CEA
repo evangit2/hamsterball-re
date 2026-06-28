@@ -1,115 +1,89 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v17 — Pitch-black scene + glowing ball
+// GLOBAL NEON EFFECT v18 — Pitch-black scene via proven hook + fog fix
 //
-// FULL TRACE OF NEON RACE LIGHTING:
+// v16: Hook at 0x405E22 (Ball_Update) WORKED — background went black.
+//      BUG: gfx+0x734=0 DISABLED FOG. Scene geometry stayed fully lit.
+//      User saw: "only changes the background color."
 //
-// 1. Scene_SetupLevelDark (0x416270): loads "levels\leveldark" MESHWORLD
-//    - Darkness comes from dark TEXTURES in the MESHWORLD file, NOT code
-//    - No special "neon" code path — treats it identically to other levels
+// v17: Moved hook to 0x454C97 (Graphics_RenderScene). HOOK DIDN'T FIRE.
+//      User saw: "nothing changes at all, literally nothing."
 //
-// 2. Level_InitScene (0x40B090): picks RANDOM ambient + fog colors
-//    - Gfx_SetVTable8B(gfx, Color_RandomRGBA()) → gfx+0x730 = random ambient
-//    - Gfx_SetVTable22(gfx, Color_RandomRGBA()) → gfx+0x738 = random fog color
-//    - Fog enable (gfx+0x734) is set elsewhere
+// v18: Back to v16's PROVEN hook point (0x405E22). Fix the ONE bug:
+//      gfx+0x734=1 (FOG ENABLED) instead of 0 (FOG DISABLED).
+//      With fog enabled + black fog color, distant geometry fades to
+//      black. Ball appears bright by contrast = NEON GLOW.
 //
-// 3. Graphics_RenderScene (0x454BC0) — runs EVERY FRAME:
-//    0x454C97: MOV ESI, [EBP+0x730] → SetRenderState(0x8B=AMBIENT, ESI)
-//    0x454CB2: MOV BL, [EBP+0x734]  → SetRenderState(0x1C=FOGENABLE, BL)
-//    0x454CEE: MOV ESI, [EBP+0x738] → SetRenderState(0x22=FOGCOLOR, ESI)
+// HOW NEON RACE WORKS (traced from binary):
+//   - Scene_SetupLevelDark (0x416270) loads LevelDark.MESHWORLD (dark textures)
+//   - Level_InitScene (0x40B090) picks RANDOM ambient + fog via Color_RandomRGBA()
+//   - Graphics_RenderScene (0x454BC0) calls SetRenderState every frame:
+//       0x454C97: SetRenderState(AMBIENT=0x8B, gfx+0x730)
+//       0x454CB2: SetRenderState(FOGENABLE=0x1C, gfx+0x734)
+//       0x454CEE: SetRenderState(FOGCOLOR=0x22, gfx+0x738)
+//   - Ball_InitRenderState (0x402860) sets LIGHTING=TRUE for ball
+//   - Ball "glows" by contrast: lit by directional lights against dark scene
+//   - Game description: "YOUR HAMSTER GIVES OFF SOME GLOW OF HIS OWN"
 //
-// 4. Ball_InitRenderState (0x402860) — called during ball render:
-//    SetRenderState(0x89=LIGHTING, 1)     → D3D lighting ON for ball
-//    SetRenderState(0x1D=SPECULARENABLE, 1) → specular ON for ball
-//    SetRenderState(0x89=COLORVERTEX... wait, 0x89=137=LIGHTING
-//    Actually: 0x89=137=D3DRS_LIGHTING, 0x8D=141=D3DRS_COLORVERTEX
-//    Ball_InitRenderState sets LIGHTING=TRUE, SPECULARENABLE=TRUE
-//
-// 5. Ball "glow" = visual contrast: ball lit by directional lights against
-//    dark scene. Game description: "YOUR HAMSTER GIVES OFF SOME GLOW"
-//
-// v16 BUG (FIXED IN v17):
-//   v16 wrote gfx+0x734=0 → FOG DISABLED! With fog off, only the background
-//   clear color changed to black. Scene geometry stayed fully lit by
-//   directional lights. User saw: "It only changes the background color."
-//
-// v17 FIX:
-//   1. gfx+0x730=0 (ambient=BLACK) — removes ambient light from all objects
-//   2. gfx+0x738=0xFF000000 (fog=BLACK) — fog color is black
-//   3. gfx+0x734=1 (fog ENABLED) — CRITICAL: enables fog so distant
-//      geometry fades to black (was 0 in v16!)
-//   4. SetRenderState(0x93, 1) — D3DRS_EMISSIVEMATERIALSOURCE=D3DMCS_COLOR1
-//      Makes ball emit its vertex diffuse color as emissive glow.
-//      Only affects objects with COLORVERTEX=1 (which Ball_InitRenderState
-//      sets for the ball). Scene geometry is unaffected.
-//
-// HOOK POINT: 0x454C97 (inside Graphics_RenderScene)
-//   - EBP = gfx pointer (callee-preserved, survives stdcall)
-//   - SEH is set up by caller
-//   - D3D device is valid (function calls SetRenderState 3× right after)
-//   - EAX/ECX/EDX get reloaded by code at 0x454C9D-0x454CA3
-//   - Original instruction: MOV ESI, [EBP+0x730] (6 bytes)
+// v18 writes to cached gfx values in Ball_Update (runs per-frame before
+// RenderScene). RenderScene picks up our values via its own SetRenderState
+// calls. NO stdcall from our cave = NO freeze risk.
 //
 // REGISTER SAFETY:
-//   EBP = callee-preserved (gfx pointer survives stdcall) ✓
-//   ESI = callee-preserved (set by original instruction after our code) ✓
-//   EAX/ECX/EDX = clobbered by stdcall, but reloaded at 0x454C9D ✓
-//   Stack: 3 PUSHes + stdcall CALL (callee cleans 12 bytes) = ESP unchanged ✓
+//   ESI = callee-preserved (ball pointer survives)
+//   EAX = saved/restored (push/pop)
+//   NO call instructions → NO register clobbering
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(neon_cave, 256)
+alloc(neon_dark, 128)
 
-neon_cave:
-  // ── Force dark scene (memory writes, no stdcall) ──────────────────
-  // gfx+0x730 = 0 (AMBIENT = BLACK — no ambient light contribution)
-  mov dword ptr [ebp+0x730], 0
+label(skip_dark)
 
-  // gfx+0x738 = 0xFF000000 (FOGCOLOR = BLACK — also used as clear color)
-  mov dword ptr [ebp+0x738], 0FF000000h
+// ═══════════════════════════════════════════════════════════════════════
+// HOOK: Ball_Update (0x405E22) — ESI = ball (PROVEN in v16)
+// Original: mov eax, [esi+0x00000C5C] (6 bytes: 8B 86 5C 0C 00 00)
+// ═══════════════════════════════════════════════════════════════════════
+neon_dark:
+  push eax
 
-  // gfx+0x734 = 1 (FOGENABLE = TRUE — CRITICAL: was 0 in v16!)
-  // With fog enabled + black fog color, distant geometry fades to black
-  // Fog start/end are already set by Graphics_SetViewportZ from viewport Z range
-  mov byte ptr [ebp+0x734], 1
+  // ball+0x10 = App
+  mov eax, [esi+0x10]
+  test eax, eax
+  jz skip_dark
 
-  // ── Set EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1 ───────────────────
-  // D3DRS_EMISSIVEMATERIALSOURCE = 0x93 (147)
-  // D3DMCS_COLOR1 = 1 (use diffuse vertex color as emissive)
-  //
-  // This makes the ball EMIT its vertex color as glow.
-  // Only affects objects with D3DRS_COLORVERTEX=TRUE (0x8D=141),
-  // which Ball_InitRenderState (0x402860) sets during ball render.
-  // Scene geometry (COLORVERTEX=FALSE) is unaffected — stays dark.
-  //
-  // Ball vertex colors (from board+0x3AB0):
-  //   P1=white(1,1,1), P2=blue(0,0.5,1), P3=salmon(1,0.25,0.25), P4=yellow(1,1,0)
-  //
-  // EAX/ECX/EDX will be clobbered by stdcall, but the code at
-  // 0x454C9D reloads EAX=[EBP+0x154] and ECX=[EAX], so this is safe.
-  mov eax, [ebp+0x154]                   // EAX = device wrapper
-  mov ecx, [eax]                         // ECX = vtable
-  push 1                                 // value = D3DMCS_COLOR1
-  push 93h                               // state = D3DRS_EMISSIVEMATERIALSOURCE
-  push eax                               // this = device wrapper
-  call dword ptr [ecx+0xc8]             // vtable[0x32] = SetRenderState
+  // App+0x174 = gfx
+  mov eax, [eax+0x174]
+  test eax, eax
+  jz skip_dark
 
-  // ── Original instruction ──────────────────────────────────────────
-  // MOV ESI, [EBP+0x730] — reads ambient (now 0 = black)
-  // ESI is callee-preserved, so it survives the stdcall above
-  mov esi, [ebp+0x730]
-  jmp 00454C9D
+  // gfx+0x730 = 0 (AMBIENT = BLACK)
+  // Game calls SetRenderState(0x8B, [gfx+0x730]) at 0x454CAC
+  mov dword ptr [eax+0x730], 0
 
-// ── Install hook at Graphics_RenderScene ─────────────────────────────
-// Original: 8B B5 30 07 00 00 = MOV ESI, [EBP+0x730] (6 bytes)
-// Replace:  E9 XX XX XX XX 90 = JMP neon_cave + NOP (6 bytes)
-00454C97:
-  jmp neon_cave
+  // gfx+0x738 = 0xFF000000 (FOG COLOR = BLACK)
+  // Game calls SetRenderState(0x22, [gfx+0x738]) at 0x454D00
+  mov dword ptr [eax+0x738], 0FF000000h
+
+  // gfx+0x734 = 1 (FOG ENABLE = TRUE) *** v16 BUG FIX ***
+  // v16 wrote 0 here → FOG DISABLED → scene stayed fully lit
+  // Game calls SetRenderState(0x1C, [gfx+0x734]) at 0x454CCD
+  // With fog=TRUE + fogcolor=BLACK, distant geometry fades to black
+  mov byte ptr [eax+0x734], 1
+
+skip_dark:
+  pop eax
+  mov eax, [esi+0x00000C5C]    // original instruction
+  jmp 00405E28
+
+// ── Install hook ─────────────────────────────────────────────────────
+00405E22:
+  jmp neon_dark
   nop
 
 [DISABLE]
 
-00454C97:
-  db 8B B5 30 07 00 00
+00405E22:
+  db 8B 86 5C 0C 00 00
 
-dealloc(neon_cave)
+dealloc(neon_dark)
