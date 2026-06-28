@@ -119,7 +119,7 @@ The second condition (`ball+0x268 != 0`) is the **ToggleTimer.active** toggle fl
 
 | Offset | Field | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| +0x264 | vtable | dword | — | ArenaBoard vtable pointer |
+| +0x264 | vtable | dword | — | ToggleTimer vtable pointer |
 | +0x268 | active | byte | 0 | Toggles 0↔1 every period ticks |
 | +0x26C | period | int | 20 | Toggle interval (~0.8s at 25fps) |
 | +0x270 | counter | int | 0 | Increments each tick, resets at period |
