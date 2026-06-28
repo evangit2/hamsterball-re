@@ -1,46 +1,55 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v15 — Pitch dark scene + glowing player balls
+// GLOBAL NEON EFFECT v16 — Dark scene + bright ball via cached render values
 //
-// v14 BUG (FREEZE ROOT CAUSE):
-// Hook 2 called LightEnable(device, 0..7, FALSE) 8 times per frame.
-// The game NEVER calls LightEnable itself (verified: zero matches for
-// call [edx+0xB4] in the entire binary). The game manages lighting through
-// SetRenderState(LIGHTING, TRUE/FALSE) + SetLight + SetMaterial.
-// Calling LightEnable 8x/frame on a D3D device that never expects these
-// calls causes driver-level synchronization stalls → FREEZE on level load.
+// ROOT CAUSE OF v15 FREEZE:
+//   Hooks 3 and 4 called SetRenderState(LIGHTING, FALSE/TRUE) at Ball_RenderAI
+//   entry/exit. Two fatal problems:
+//   1. Hook 3 fires BEFORE Ball_RenderAI's SEH frame (push -1; mov eax, fs:[0]).
+//      If SetRenderState faults during level load → no exception handler → FREEZE.
+//   2. Ball_RenderAI has MULTIPLE exit paths (exceptions, early returns from
+//      star-circling, impact wobble, alpha, mesh-swap branches). Hook 4 at
+//      0x4050D9 only covers ONE exit. If function exits elsewhere, LIGHTING
+//      stays FALSE → pipeline stall → FREEZE.
 //
-// v15 FIX:
-// Removed Hook 2 entirely. No LightEnable calls at all.
-// The neon effect now uses 3 hooks instead of 4:
-//   Hook 1: gfx+0x730=0 (ambient=black) during Ball_Update — NO stdcall
-//   Hook 3: SetRenderState(LIGHTING=0x89, FALSE=0) at Ball_RenderAI entry
-//   Hook 4: SetRenderState(LIGHTING=0x89, TRUE=1) + gfx+0x730=0 at exit
+// v16 APPROACH (ZERO stdcall calls):
+//   The game ITSELF calls SetRenderState every frame in Graphics_RenderScene:
+//     0x454C97: MOV ESI, [gfx+0x730]  → SetRenderState(AMBIENT=0x8B, ESI)
+//     0x454CEE: MOV ESI, [gfx+0x738]  → SetRenderState(FOGCOLOR=0x22, ESI)
+//   We just write 0 (black) to gfx+0x730 AND gfx+0x738 in Ball_Update.
+//   The game's own SetRenderState calls will use our values.
 //
-// With ambient=0, unlit areas (backfaces, shadows, distant geometry) are
-// pitch black. Directional lights still illuminate facing surfaces, but
-// the overall scene is much darker. The ball renders at full vertex/texture
-// brightness with LIGHTING=FALSE → glowing effect.
+//   With ambient=0 and fog=black:
+//   - Unlit areas (backfaces, shadows, distant geometry) are pitch black
+//   - Directional lights still illuminate facing surfaces of the ball
+//   - The ball appears bright against the dark scene = NEON GLOW effect
+//   - This is EXACTLY how Neon Race works — dark scene, bright ball by contrast
 //
-// REGISTER SAFETY (stdcall clobbering rule):
-// After EVERY stdcall (call dword ptr [...]), EAX/ECX/EDX are DESTROYED.
-// Only EBX/ESI/EDI/EBP survive. Must reload from callee-preserved registers
-// or global addresses.
+//   Also writing gfx+0x734=0 to disable specular highlights (cleaner dark look).
+//
+// TRACE: How Neon Race lighting actually works:
+//   - Scene_SetupLevelDark (0x416270) loads "levels\leveldark" MeshWorld
+//   - Level_InitScene (0x40B090) calls Color_RandomRGBA() for fog + ambient
+//   - The DARKNESS comes from the MESHWORLD file (dark textures), NOT code
+//   - The ball "glows" only by contrast — it's lit by directional lights
+//   - There is NO special "neon glow" code path for the ball
+//   - Replicating globally = set ambient=0 + fog=black on ALL levels
+//
+// REGISTER SAFETY:
+//   ESI = callee-preserved (ball pointer survives)
+//   EAX = saved/restored (push/pop)
+//   NO stdcall calls → NO register clobbering → NO freeze risk
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(neon_dark, 64)
-alloc(neon_ball_lit, 64)
-alloc(neon_ball_dark, 64)
+alloc(neon_dark, 128)
 
 label(skip_dark)
-label(skip_ball_lit)
-label(skip_ball_dark)
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK 1: Ball_Update (0x405E22) — ESI = ball
-// Writes gfx+0x730=0 (dark ambient). NO stdcall, NO fog changes.
-// ESI is callee-preserved, so ball pointer survives.
+// HOOK: Ball_Update (0x405E22) — ESI = ball
+// Writes ambient=0, fog=black, specular=0 to gfx cached values.
+// The game's own SetRenderState calls in Graphics_RenderScene will use these.
 // Original: mov eax, [esi+0x00000C5C] (6 bytes)
 // ═══════════════════════════════════════════════════════════════════════
 neon_dark:
@@ -53,106 +62,21 @@ neon_dark:
   test eax, eax
   jz skip_dark
 
-  mov dword ptr [eax+0x730], 0       // gfx+0x730 = 0 (ambient = black)
+  // gfx+0x730 = 0 (ambient = BLACK — game calls SetRenderState(0x8B, 0) at 0x454CAC)
+  mov dword ptr [eax+0x730], 0
+  // gfx+0x738 = 0xFF000000 (fog color = BLACK — game calls SetRenderState(0x22, black) at 0x454D00)
+  mov dword ptr [eax+0x738], 0FF000000h
+  // gfx+0x734 = 0 (specular flag = disabled — game calls SetRenderState(0x1C, 0) at 0x454CCD)
+  mov byte ptr [eax+0x734], 0
 
 skip_dark:
   pop eax
   mov eax, [esi+0x00000C5C]    // original instruction
   jmp 00405E28
 
-// ═══════════════════════════════════════════════════════════════════════
-// HOOK 3: Ball_RenderAI entry (0x403DC0) — ECX = ball
-// Sets D3DRS_LIGHTING=FALSE so ball renders with vertex/texture colors
-// directly (no D3D lighting calculations). Ball appears fully lit against
-// the dark scene = GLOWING effect.
-// Original: push -1; mov eax, fs:[0] (8 bytes)
-// ═══════════════════════════════════════════════════════════════════════
-neon_ball_lit:
-  push eax
-  push ecx
-  push edx
-
-  mov eax, [ecx+0x10]          // ball+0x10 = App
-  test eax, eax
-  jz skip_ball_lit
-  mov eax, [eax+0x174]         // gfx
-  test eax, eax
-  jz skip_ball_lit
-  mov edx, [eax+0x154]         // D3D device
-  test edx, edx
-  jz skip_ball_lit
-  mov eax, [edx]               // vtable
-
-  // SetRenderState(LIGHTING=0x89, FALSE=0)
-  push 0                        // value = 0 (LIGHTING disabled)
-  push 0x89                     // state = D3DRS_LIGHTING
-  push edx                      // device (this)
-  call dword ptr [eax+0xC8]    // SetRenderState = vtable[50]
-
-skip_ball_lit:
-  pop edx
-  pop ecx
-  pop eax
-  push -1
-  mov eax, fs:[0]
-  jmp 00403DC8
-
-// ═══════════════════════════════════════════════════════════════════════
-// HOOK 4: Ball_RenderAI exit (0x4050D9) — restore dark scene
-// Sets D3DRS_LIGHTING=TRUE so remaining scene objects use D3D lighting
-// (with ambient=0 → dark).
-// Also writes gfx+0x730=0 to ensure dark ambient for next frame.
-// Re-reads App from global 0x5341E0 after stdcall (EAX clobbered).
-// Original: mov ecx, [esp+0x12C] (7 bytes)
-// ═══════════════════════════════════════════════════════════════════════
-neon_ball_dark:
-  push eax
-  push ecx
-  push edx
-
-  mov eax, [005341E0]           // App (global, always safe)
-  test eax, eax
-  jz skip_ball_dark
-  mov eax, [eax+0x174]         // gfx
-  test eax, eax
-  jz skip_ball_dark
-  mov edx, [eax+0x154]         // D3D device
-  test edx, edx
-  jz skip_ball_dark
-  mov eax, [edx]               // vtable
-
-  // SetRenderState(LIGHTING=0x89, TRUE=1)
-  push 1                        // value = 1 (LIGHTING enabled)
-  push 0x89                     // state = D3DRS_LIGHTING
-  push edx                      // device (this)
-  call dword ptr [eax+0xC8]    // SetRenderState — clobbers EAX/ECX/EDX
-
-  // Write gfx+0x730=0 (re-read from global, EAX was clobbered)
-  mov eax, [005341E0]           // App (re-read)
-  mov eax, [eax+0x174]         // gfx
-  mov dword ptr [eax+0x730], 0
-
-skip_ball_dark:
-  pop edx
-  pop ecx
-  pop eax
-  mov ecx, [esp+0x0000012C]    // original instruction
-  jmp 004050E0
-
-// ── Install hooks ─────────────────────────────────────────────────────
+// ── Install hook ─────────────────────────────────────────────────────
 00405E22:
   jmp neon_dark
-  nop
-
-00403DC0:
-  jmp neon_ball_lit
-  nop
-  nop
-  nop
-
-004050D9:
-  jmp neon_ball_dark
-  nop
   nop
 
 [DISABLE]
@@ -160,12 +84,4 @@ skip_ball_dark:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-00403DC0:
-  db 6A FF 64 A1 00 00 00 00
-
-004050D9:
-  db 8B 8C 24 2C 01 00 00
-
-dealloc(neon_ball_dark)
-dealloc(neon_ball_lit)
 dealloc(neon_dark)
