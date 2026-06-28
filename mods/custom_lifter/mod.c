@@ -188,7 +188,6 @@ static RenderFn_t g_OriginalRender = NULL;
 __attribute__((used, noinline))
 int __thiscall CustomLifter_Render(void *thisptr)
 {
-    int   *obj    = (int *)thisptr;
     BYTE  *bytes  = (BYTE *)thisptr;
 
     /* ── Save our real state/timer/pos_y ────────────────────────── */
