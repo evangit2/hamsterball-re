@@ -23,8 +23,8 @@
 004165D5: dd 00000000        // P1 Diffuse R (phys+0x1BC)
 0041663F: dd 00000000        // P1 Emissive R (phys+0x1EC)
 004166C0: dd 00000000        // P2 Ambient R (phys2+0x1CC)
-0041672E: dd 00000000        // P2 Diffuse R (phys2+0x1BC)
-00416798: dd 00000000        // P2 Emissive R (phys2+0x1EC)
+0041672D: dd 00000000        // P2 Diffuse R (phys2+0x1BC)
+00416797: dd 00000000        // P2 Emissive R (phys2+0x1EC)
 
 [DISABLE]
 
@@ -35,5 +35,5 @@
 004165D5: dd 3F800000
 0041663F: dd 3F800000
 004166C0: dd 3F800000
-0041672E: dd 3F800000
-00416798: dd 3F800000
+0041672D: dd 3F800000
+00416797: dd 3F800000
