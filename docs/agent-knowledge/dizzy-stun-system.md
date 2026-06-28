@@ -204,7 +204,7 @@ same collision list (physics_body+0x424):
 
 ### Can You Get Dizzied on Your First Fall? — YES
 
-The bounce counter is **double-incremented in a single frame** during Pass 2:
+The bounce counter is **double-incremented in a single frame** (0→1→2) during Pass 2:
 1. First increment: speed ≥ 0.03 AND bounce_count == 0 → bounce_count = 1
 2. Second increment: bounce_count != 0 (now 1) AND speed ≥ 0.1 → bounce_count = 2
 
