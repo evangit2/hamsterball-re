@@ -15,7 +15,7 @@ void __fastcall RaceResults_DtorPhase1(undefined4 *param_1)
     (*(code *)**(undefined4 **)param_1[0x23])(1);
   }
   local_4 = local_4 & 0xffffff00;
-  RumbleBoard_CleanupTimer(param_1 + 0x1d);
+  ToggleTimer_Cleanup(param_1 + 0x1d);
   *param_1 = &PTR_LAB_004d6c00;
   ExceptionList = pvStack_c;
   return;

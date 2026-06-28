@@ -47,7 +47,7 @@ typedef struct {
     char field_258[8];            // +0x258 padding
     char boost_hit_flag;         // +0x260 set 0 in ctor
     char pad_261[3];             // +0x261
-    RumbleBoard rumble_timer;     // +0x264 RumbleBoard_InitTimer (0x14 bytes per RumbleBoard)
+    ToggleTimer rumble_timer;     // +0x264 ToggleTimer_Init (0x14 bytes per ToggleTimer)
     char pad_278_pad[4];         // +0x278 0x3DCCCCCD = 0.1f
     float gravity_rumble_val;    // +0x27C set 0
     int field_280;                // +0x280 (0 in ctor)
@@ -57,7 +57,7 @@ typedef struct {
     char pad_288[4];             // +0x288 set 0
     char field_28c;               // +0x28C set 0
     char pad_28d[3];             // +0x28D
-    RumbleBoard rumble_timer2;   // +0x290 pad
+    ToggleTimer rumble_timer2;   // +0x290 pad
     int spin_timer;               // +0x2A0 (param_1[0xa8]/0xa0 in different context)
     float speed_modifier;         // +0x2A4 0x3F800000 = 1.0f (decays to 1.0)
     Vec3 some_vec;               // +0x2A8 Vec3_Init

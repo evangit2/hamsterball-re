@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Expert_Init
+ * Function: ArenaLevel_Expert_Init
  * Address: 0x00414b10
- * Signature: void __fastcall RumbleBoard_Expert_Init(int *param_1)
+ * Signature: void __fastcall ArenaLevel_Expert_Init(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: RumbleBoard_Expert_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 36
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: ArenaLevel_Expert_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 36
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Expert_Init(int *param_1)
+void __fastcall ArenaLevel_Expert_Init(int *param_1)
 
 {
   void *pvVar1;

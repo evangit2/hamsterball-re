@@ -1,6 +1,6 @@
 # Level Object System
 
-Interactive objects in race levels and RumbleBoard arenas. Created by the
+Interactive objects in race levels and Arena board arenas. Created by the
 level parser and triggered by collision events.
 
 ## Level Object Factory Hierarchy
@@ -145,7 +145,7 @@ CollisionLevel *cl = CollisionLevel_ctorWithLevel(new(0x10D0), parent_level);
 
 The CollisionLevel wraps a MeshWorld with collision data for ray-casting
 against that specific hazard's geometry. Multiple CollisionLevels can exist
-simultaneously — the Catapult creates one, the RumbleBoard creates one for
+simultaneously — the Catapult creates one, the ArenaBoard creates one for
 the main arena, and some levels have additional sub-levels.
 
 ## Related Functions

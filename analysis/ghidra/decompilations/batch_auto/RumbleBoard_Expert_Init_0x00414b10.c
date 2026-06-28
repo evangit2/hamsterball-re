@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_Expert_Init
+ * Function: ArenaLevel_Expert_Init
  * Address: 0x00414b10
  *
  * Description:

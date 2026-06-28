@@ -29,7 +29,7 @@
  *   - Scene_RenderAllObjects — iterating renderable objects
  *   - FollowBall_Update (3 calls) — AI ball iteration
  *   - BoardLevel3_ctor — Dizzy Race level construction
- *   - RumbleObject_Update — rumble object iteration
+ *   - ArenaObject_Update — rumble object iteration
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

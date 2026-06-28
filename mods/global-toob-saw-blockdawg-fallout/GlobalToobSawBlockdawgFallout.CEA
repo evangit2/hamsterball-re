@@ -80,7 +80,7 @@
 //   (this, board, X, Y, Z, mesh, pathId)
 //   vtable = 0x4D5638 (RumbleObject)
 //   CollLevel at +0x10D4, pathId at +0x10F0
-//   Update at 0x43C4E0 (RumbleObject_Update):
+//   Update at 0x43C4E0 (ArenaObject_Update):
 //     If +0x1150 == 0 (awake): follows path via Path_GetPosition(+0x10F0) → CRASH if 0
 //     If +0x1150 != 0 (sleeping): plays sound + particles → SAFE
 //   FIX: Set +0x1150 = 1 after construction (sleeping mode)

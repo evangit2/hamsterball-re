@@ -176,10 +176,10 @@ Round goal variants: goal-round*.png
 
 ## Timer System
 
-### RumbleBoard Timer (Ball+0x264)
-Each ball has a `RumbleBoard` timer component (16 bytes):
+### ToggleTimer (Ball+0x264)
+Each ball has a `ArenaBoard` timer component (16 bytes):
 - Used in rumble/arena mode for round timing
-- `RumbleBoard_InitTimer` resets the timer
+- `ToggleTimer_Init` resets the timer
 - Timer counts down during gameplay
 - When timer reaches zero: round ends
 
@@ -220,7 +220,7 @@ Each ball has a `RumbleBoard` timer component (16 bytes):
 | Address | Function | Description |
 |---------|----------|-------------|
 | 0x42A8C0 | App_ResourceLoader | Load ALL game assets |
-| 0x458E60 | RumbleBoard_InitTimer | Reset round timer |
+| 0x458E60 | ToggleTimer_Init | Reset round timer |
 
 ## Reimplementation Notes (SDL2)
 

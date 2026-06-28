@@ -23,7 +23,7 @@ void __fastcall ScoreDisplay_dtor(undefined4 *param_1)
   param_1[0x44e] = 0xf;
   param_1[0x44d] = 0;
   *(undefined1 *)(param_1 + 0x449) = 0;
-  RumbleBoard_CleanupTimer(param_1 + 0x443);
+  ToggleTimer_Cleanup(param_1 + 0x443);
   iStack_4._0_1_ = 4;
   BaseObject_Init(param_1 + 0x43b);
   iStack_4._0_1_ = 3;

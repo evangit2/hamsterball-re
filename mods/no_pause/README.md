@@ -51,7 +51,7 @@ All three convert conditional jumps to unconditional jumps, causing the pause cr
 
 ## How Pause Works (for reference)
 
-1. `Scene_CreateGameOverMenu` (0x40a920) creates a `PauseMenu` or `PauseRumbleMenu` overlay and sets `scene+0x874 = 1`
+1. `Scene_CreateGameOverMenu` (0x40a920) creates a `PauseMenu` or `PauseArenaMenu` overlay and sets `scene+0x874 = 1`
 2. `GameUpdate` (0x469cf0) iterates scene objects each frame. For each object, it checks `obj[0x21d]` (byte at scene+0x874). When the flag is 1, it **skips calling `Scene_Update`** (vtable[1]) — freezing all game logic
 3. When the player clicks "RESUME" in the pause menu, `PauseMenu_HandleButtonClick` sets `scene+0x874 = 0` — unfreezing the game
 

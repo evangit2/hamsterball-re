@@ -197,7 +197,7 @@ Hamsterball has **TWO independent Board systems**: one for Race mode and one for
 
 ### RACE Board System (0x41Cxxx constructors)
 
-**CORRECTED (June 2026):** Previous version of this section swapped race and arena constructors. The 0x41Cxxx constructors create RACE boards (verified by decompiling all 30 constructors and reading board name strings: "Board (X)" + "X RACE"). The 0x422xxx constructors create ARENA boards ("RumbleBoard (X)" + "X ARENA").
+**CORRECTED (June 2026):** Previous version of this section swapped race and arena constructors. The 0x41Cxxx constructors create RACE boards (verified by decompiling all 30 constructors and reading board name strings: "Board (X)" + "X RACE"). The 0x422xxx constructors create ARENA boards ("ArenaBoard (X)" + "X ARENA").
 
 Race Board constructors are at `0x41CA40`–`0x424C20`. Each is called from a jump table at `0x42761C` (15 entries, indexed by `level_number - 1`). The jump table is reached via `JMP [EAX*4 + 0x42761C]` at `0x427080`.
 
@@ -287,7 +287,7 @@ Verified against the actual MESHWORLD binary data (46 unique object types). Numb
 | BRIDGE | (returns pre-loaded mesh) | 0 | No | Intermediate, Expert, Master |
 | CATAPULT | Catapult_ctor | 0x1108 | No | Tower, Master |
 | CHOMPER | (position update only) | 0 | No | Tower |
-| DFLOOR | RumbleBoard_Stands_ctor | 0x1104 | No | Neon |
+| DFLOOR | ArenaStands_ctor | 0x1104 | No | Neon |
 | DRAWBRIDGE | Glass_Level_ctor | 0x113C | No | Tower |
 | FALLOUT1 | Stands_CtorCollisionV2 | 0x10E8 | No | Toob |
 | FAN | (FAN + FANSLOW + FAN(SUPER)(UP) variants) | varies | varies | Expert |
@@ -318,7 +318,7 @@ Verified against the actual MESHWORLD binary data (46 unique object types). Numb
 | TIMEBUTTON | Rotator_ctor_nosound | 0x10E8 | No | Up |
 | TIPPER | Tipper_ctor | 0x1104 | Yes | Dizzy, Master |
 | TRAPDOOR | GlassStands_Ctor / Rotator_ctor | 0x10F8 / 0x10F4 | No | Tower, Sky |
-| TRODE | RumbleBoard_Stands_ctor | 0x1104 | No | Neon |
+| TRODE | ArenaStands_ctor | 0x1104 | No | Neon |
 | TURRET | Stands_ctor + CollisionLevel | 0x10D0 | No | Tower |
 | WATERWHEEL | (returns pre-loaded mesh) | 0 | No | Dizzy |
 | WAVY | Stands_CtorWithCollisionLevel | 0x1AE7C | No | Wobbly |

@@ -288,7 +288,7 @@ In the original, this doesn't happen because:
 Ball_Update (0x405E00)
 ├── Sound_Play3DAtPosition (0x458EE0) ×2
 ├── operator_new (0x4BA57B) ×4
-│   ├── RumbleScore_ctor (0x44AD50)
+│   ├── ArenaScoreParticle_ctor (0x44AD50)
 │   ├── SpatialTree_ctor (0x463330)
 │   └── CollisionNode_ctor (0x466CF0)
 ├── RNG_Rand (0x45DD60) ×4

@@ -85,7 +85,7 @@ Old docs correctly had:
 **WRONG:** The doc labelled 0x422xxx constructors as "Race Board System" and 0x41Cxxx as "Arena Board System".
 **CORRECT:** It's the OPPOSITE:
 - 0x41Cxxx constructors (0x41CA40–0x41F930) create RACE boards ("Board (X)" + "X RACE")
-- 0x422xxx constructors (0x4224A0–0x424EC0) create ARENA boards ("RumbleBoard (X)" + "X ARENA")
+- 0x422xxx constructors (0x4224A0–0x424EC0) create ARENA boards ("ArenaBoard (X)" + "X ARENA")
 Verified by decompiling all 30 constructors and reading the board name strings.
 
 ## 4 Newly Discovered Handlers — Event Details
@@ -180,7 +180,7 @@ DispatchCollisionEvents as expected.
 ## Verification Methodology
 
 1. Decompiled all 30 board constructors (15 race + 15 arena) to extract vtable addresses
-2. Read board name strings ("Board (X)" / "RumbleBoard (X)" + "X RACE" / "X ARENA") to verify race vs arena
+2. Read board name strings ("Board (X)" / "ArenaBoard (X)" + "X RACE" / "X ARENA") to verify race vs arena
 3. Read vtable[0x1D] (offset +0x74) for all 30 vtables via GhidraMCP read_memory
 4. Created functions for 4 unknown addresses via create_function API
 5. Decompiled all 4 new handlers via GhidraMCP

@@ -1,8 +1,8 @@
 
-void * __thiscall RumbleBoard_dtor(void *this,byte param_1)
+void * __thiscall ArenaBoard_dtor(void *this,byte param_1)
 
 {
-  RumbleBoard_dtor(this);
+  ArenaBoard_dtor(this);
   if ((param_1 & 1) != 0) {
     _free(this);
   }

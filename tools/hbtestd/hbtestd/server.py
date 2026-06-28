@@ -987,7 +987,7 @@ def list_known_addresses() -> dict[str, Any]:
     """Return all known Hamsterball addresses, offsets, and symbols.
 
     Includes: globals (g_App, g_Scene), struct layouts (App, Ball, Scene,
-    RumbleBoard, SceneObject, Gadget), function addresses, and vtable addresses.
+    ArenaBoard, SceneObject, Gadget), function addresses, and vtable addresses.
     """
     return success(**list_known_symbols())
 
@@ -997,7 +997,7 @@ def list_known_addresses() -> dict[str, Any]:
 def get_struct_info(struct_name: str) -> dict[str, Any]:
     """Return the field layout for a known struct.
 
-    Valid struct_name: App | Ball | Scene | RumbleBoard | SceneObject | Gadget
+    Valid struct_name: App | Ball | Scene | ArenaBoard | SceneObject | Gadget
     """
     layout = get_struct_layout(struct_name)
     if layout is None:

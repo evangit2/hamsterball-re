@@ -105,7 +105,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x254 | uint8 | uses_alpha | 0 | True if color_a != 1.0 |
 | 0x25C | float | unknown_25C | 0.0 | Unknown (modified in Ball_Update spin friction) |
 | 0x260 | uint8 | boost_hit_flag | 0 | Set on boost pad contact |
-| 0x264 | uint8[0x14] | rumble_timer1 | — | RumbleBoard timer sub-object |
+| 0x264 | uint8[0x14] | toggle_timer1 | — | ArenaBoard timer sub-object |
 | 0x26C | int32 | unknown_26C | 20 | Unknown int (0x14) |
 | **0x278** | **float** | **gravity_scale** | **0.5** | **Gravity multiplier (ctor2=0.1, overridden to 0.5)** |
 | 0x27C | float | unknown_27C | 0.2 | Unknown (ctor2=0.0, overridden to 0.2) |
@@ -113,7 +113,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x281 | uint8 | unused_init_flag | 1 | DEAD: set to 1 in ctor, 0 on spawn; never read by any function |
 | **0x284** | **float** | **radius** | **35.0** | **Ball radius (ctor2=27.0, overridden to 35.0; shrunk to 13.0 on Odd Race shrink)** |
 | 0x288 | float | unknown_288 | 0.0 | Unknown |
-| 0x290 | uint8[0x14] | rumble_timer2 | — | Second RumbleBoard timer |
+| 0x290 | uint8[0x14] | toggle_timer2 | — | Second ArenaBoard timer |
 | 0x29C | float | unknown_29C | 1.0 | Unknown (modified in Ball_Update) |
 | **0x2A4** | **float** | **spin_rate** | **5.0** | **Angular spin factor** |
 | 0x2A8 | float[3] | speed_modifier | (0,0,0) | Vec3 speed modifier (init by Vec3_Init) |
@@ -330,7 +330,7 @@ string_timer decrements (frees display_string at 0xC28 when it hits 0)
 ```
 
 **Phase 2 — Trail Particles:**
-If trail timer active, spawn RumbleScore particle at ball position + random offset.
+If trail timer active, spawn ArenaScoreParticle particle at ball position + random offset.
 
 **Phase 3 — Force Accumulator Save & Clear:**
 ```
@@ -556,7 +556,7 @@ Used for 3D text (Font_DrawGlyph3D). Renders ball mesh with a custom material ov
 ### Ball_CreateTrailParticles (0x401DD0)
 
 Spawns **9 trail particles** in a ring around the ball:
-- Each particle is a `RumbleScore` object (0x28 bytes)
+- Each particle is a `ArenaScoreParticle` object (0x28 bytes)
 - Position = ball_pos + (radius × camera-right × sinθ) − (radius × camera-up × cosθ)
 - Velocity = offset × random_scale
 - Appended to scene particle list at `scene+0x3B00`
@@ -603,7 +603,7 @@ Resets from fallen state:
 |----------|---------|--------------|
 | Ball_Split_ctor | 0x408D10 | Constructor for split ball (vtable 0x4CF560) |
 | Ball_Shatter | 0x408D70 | Arena 8-ball mechanic: marks parent ball for despawn, spawns 3 AI split balls (called from FollowBall_Update 0x43ECC0) |
-| Ball_SplitAndExplode | 0x409480 | Creates 2 split balls + circular RumbleScore explosion (0–360°) |
+| Ball_SplitAndExplode | 0x409480 | Creates 2 split balls + circular ArenaScoreParticle explosion (0–360°) |
 
 Split balls are temporary physics objects that scatter from the original ball position and expire after a timer.
 
@@ -745,7 +745,7 @@ gravity[2] = 0.0f;   // Z
 | 0x408830 | Ball_FallUpdate | 40 | Fall animation + respawn |
 | 0x408D10 | Ball_Split_ctor | 14 | Split ball constructor |
 | 0x408D70 | Ball_Shatter | 50 | Arena: split parent ball into 3 AI balls |
-| 0x409480 | Ball_SplitAndExplode | 70 | Split + RumbleScore ring |
+| 0x409480 | Ball_SplitAndExplode | 70 | Split + ArenaScoreParticle ring |
 | 0x40AFE0 | Ball_ctor | 30 | Primary allocator + base init |
 | 0x40AF90 | Ball_GetTransform | — | Read transform into struct |
 | 0x4564C0 | Ball_AdvancePositionOrCollision | — | 6-phase physics pipeline |

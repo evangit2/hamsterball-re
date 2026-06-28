@@ -1,5 +1,5 @@
 
-void __fastcall RumbleObject_Level_Dtor(undefined4 *param_1)
+void __fastcall ArenaObject_Level_Dtor(undefined4 *param_1)
 
 {
   void *local_c;
@@ -9,7 +9,7 @@ void __fastcall RumbleObject_Level_Dtor(undefined4 *param_1)
   puStack_8 = &LAB_004cba48;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  *param_1 = &PTR_RumbleObject_DeletingDtor_004d5638;
+  *param_1 = &PTR_ArenaObject_DeletingDtor_004d5638;
   local_4 = 0;
   Timer_Cleanup(param_1 + 0x43d);
   local_4 = 0xffffffff;

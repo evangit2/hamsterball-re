@@ -1,5 +1,5 @@
 
-void __fastcall RumbleBoard_TickDown(int *param_1)
+void __fastcall ArenaBoard_TickDown(int *param_1)
 
 {
   int iVar1;

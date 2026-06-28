@@ -525,7 +525,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 ## Score / GameState Objects
 
 ### RumbleScore
-- **Constructor:** `RumbleScore_ctor` (0x44AD50)
+- **Constructor:** `ArenaScoreParticle_ctor` (0x44AD50)
 - **Description:** Floating score popup in Rumble mode. Difficulty scale: 0.02/0.03/0.04.
 
 ### ScoreObject
@@ -533,10 +533,10 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Used by:** `Rotator_AddBall` called from `ImpossibleCollisionEvents` (N:ONROTATOR), `ToobCollisionEvents` (N:SPINNY), `DizzyArenaCollisionEvents` (N:SWIRL)
 
 ### RumbleBoard
-- **Constructor:** `RumbleBoard_ctor` (0x4217B0)
+- **Constructor:** `ArenaBoard_ctor` (0x4217B0)
 - **Size:** ~0x47D4 bytes
 - **Description:** Rumble mode game board. Inherits from Board. Timer-based scoring.
-- **Embedded timer:** `RumbleBoard_InitTimer` / `RumbleBoard_CleanupTimer`
+- **Embedded timer:** `ToggleTimer_Init` / `ToggleTimer_Cleanup`
 
 ---
 

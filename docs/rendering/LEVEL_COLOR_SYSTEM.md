@@ -145,7 +145,7 @@ Related textures also loaded but used elsewhere:
 ## Color Table — Arena Levels
 
 Arena levels use the same mechanism (same struct offset, same `Vec3_Init` pattern).
-Each RumbleBoard constructor sets the color identically to its race counterpart.
+Each ArenaBoard constructor sets the color identically to its race counterpart.
 
 | Arena | Ctor Address | R | G | B | RGB255 | Color |
 |-------|-------------|---|---|---|--------|-------|

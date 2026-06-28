@@ -67,8 +67,8 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x4652E0 | CollisionLevel_ctor | Collision-only level (.meshcollision format) |
 | 0x465260 | Level_LoadCollision | Load binary collision mesh (planes, objects, AABB) |
 | 0x4624C0 | Level_Cleanup | Level destructor (free objects, VBs, textures) |
-| 0x413C20 | RumbleBoard_WarmUp_Init | Initialize Warm-Up arena (levels\arena-WarmUp) |
-| 0x416F40 | RumbleBoard_Neon_Init | Initialize Neon arena (levels\arena-neon) |
+| 0x413C20 | ArenaLevel_WarmUp_Init | Initialize Warm-Up arena (levels\arena-WarmUp) |
+| 0x416F40 | ArenaLevel_Neon_Init | Initialize Neon arena (levels\arena-neon) |
 | 0x456E20 | Font_MeasureText | Measure text string width for centering |
 | 0x457440 | Font_DrawGlyph | Core glyph rendering (1 call = 1 glyph quad) |
 | 0x4013A0 | UI_DrawTextCenteredAbsolute | Draw centered text (x - width/2) |
@@ -297,8 +297,8 @@ Pattern: Each Board constructor calls Board_ctor, sets vtable, name strings ("Bo
 | 0x414a20 | CreateLifter | Factory: matches "LIFTER" → Lifter_ctor (0x436920, 0x10f4 bytes), falls through to CreatePlatformOrStands |
 | 0x415460 | CreateWobbly1 | Factory: matches "WOBBLY1" → GameLevel_ctor (0x1524 bytes), falls through to CreatePlatformOrStands |
 | 0x436920 | Lifter_ctor | Lifter object constructor (0x10f4 bytes) |
-| 0x413fc0 | RumbleBoard_RenderMultiView | Render 4 dynamic objects with zoom step adjustment |
-| 0x4151e0 | RumbleBoard_RenderMultiView5 | Render 5 dynamic objects with zoom step adjustment |
+| 0x413fc0 | ArenaBoard_RenderMultiView | Render 4 dynamic objects with zoom step adjustment |
+| 0x4151e0 | ArenaBoard_RenderMultiView5 | Render 5 dynamic objects with zoom step adjustment |
 | 0x4155d0 | RumbleBoard_InitScene4 | Init scene objects for 4-player split, assign materials + Level_SetObjectTransform |
 | 0x415d90 | RumbleBoard_InitScene5 | Init scene objects for 5-player split, assign materials + Level_SetObjectTransform |
 
@@ -578,20 +578,20 @@ Returns time bonus multiplier based on difficulty level.
 
 | Arena | Init Function | Level Path | Special Logic |
 |-------|---------------|------------|---------------|
-| WarmUp | RumbleBoard_WarmUp_Init (0x413C20) | levels\arena-WarmUp | — |
+| WarmUp | ArenaLevel_WarmUp_Init (0x413C20) | levels\arena-WarmUp | — |
 | Beginner | RumbleBoard_Beginner_Init (0x414180) | levels\arena-intermediate | — |
-| Intermediate | RumbleBoard_Intermediate_Init (0x414180) | levels\arena-Intermediate | — |
-| Dizzy | RumbleBoard_Dizzy_Init (0x414240) | levels\arena-dizzy | Loads bonus level Levels\Level3-Swirl |
-| Tower | RumbleBoard_Tower_Init | levels\arena-Tower | — |
-| Up | RumbleBoard_Up_Init | levels\arena-Up | — |
-| Expert | RumbleBoard_Expert_Init (0x414B10) | levels\arena-expert | — |
-| Odd | RumbleBoard_Odd_Init (0x414CE0) | levels\arena-Odd | — |
-| Sky | RumbleBoard_Sky_Init (0x4158C0) | levels\arena-Sky | "PILLAR" object collection |
-| Neon | RumbleBoard_Neon_Init (0x416F40) | levels\arena-neon | 2x AthenaList transforms + boundary sphere |
-| Glass | RumbleBoard_Glass_Init (0x417DF0) | levels\arena-Glass | — |
-| Master | RumbleBoard_Master_Init (0x416080) | levels\arena-Master | — |
+| Intermediate | ArenaLevel_Intermediate_Init (0x414180) | levels\arena-Intermediate | — |
+| Dizzy | ArenaLevel_Dizzy_Init (0x414240) | levels\arena-dizzy | Loads bonus level Levels\Level3-Swirl |
+| Tower | ArenaLevel_Tower_Init | levels\arena-Tower | — |
+| Up | ArenaLevel_Up_Init | levels\arena-Up | — |
+| Expert | ArenaLevel_Expert_Init (0x414B10) | levels\arena-expert | — |
+| Odd | ArenaLevel_Odd_Init (0x414CE0) | levels\arena-Odd | — |
+| Sky | ArenaLevel_Sky_Init (0x4158C0) | levels\arena-Sky | "PILLAR" object collection |
+| Neon | ArenaLevel_Neon_Init (0x416F40) | levels\arena-neon | 2x AthenaList transforms + boundary sphere |
+| Glass | ArenaLevel_Glass_Init (0x417DF0) | levels\arena-Glass | — |
+| Master | ArenaLevel_Master_Init (0x416080) | levels\arena-Master | — |
 | Race of Ages | (Cascade) | levels\arena-Cascade | — |
-| Impossible | RumbleBoard_Impossible_Init (0x418540) | levels\arena-impossible | — |
+| Impossible | ArenaLevel_Impossible_Init (0x418540) | levels\arena-impossible | — |
 
 ### Scene Vtable Discovery Technique
 Scene vtable at 0x4D0260 has 36 entries (144 bytes). Read memory at the vtable address, decode as 36 little-endian 32-bit pointers. Some entries may be 3-byte nop stubs (0x409D90) — these are unused slots. Plate comments can ONLY be set at function addresses, not data addresses (failed at 0x4D0260 and 0x4D934C).
@@ -789,14 +789,14 @@ UIListItem (0x444 bytes): +0x00=display_text, +0x04=subtext, +0x0C-0x0F=RGBA, +0
 
 | Address | Name | Xrefs | Description |
 |---------|------|-------|-------------|
-| 0x4217B0 | RumbleBoard_ctor | 15 | Init with "RumbleBoard", timer, base score=6000 |
-| 0x421880 | RumbleBoard_dtor | 24 | Cleanup timer, release SceneObjects, Scene_dtor |
-| 0x421910 | RumbleBoard_Render | 16 | Timer bar, round ".%d", "TIE BREAKER!" |
-| 0x421FE0 | RumbleBoard_Update | 16 | Check round end, resolve ties, "Game Over" music |
-| 0x458E60 | RumbleBoard_InitTimer | 12 | Initialize round timer |
-| 0x458E80 | RumbleBoard_CleanupTimer | 32 | Cleanup round timer |
-| 0x458E90 | RumbleBoard_TickTimer | 12 | Tick countdown |
-| 0x44AD50 | RumbleScore_ctor | 12 | Init vtable + difficulty scale [0.02, 0.03, 0.04] |
+| 0x4217B0 | ArenaBoard_ctor | 15 | Init with "RumbleBoard", timer, base score=6000 |
+| 0x421880 | ArenaBoard_dtor | 24 | Cleanup timer, release SceneObjects, Scene_dtor |
+| 0x421910 | ArenaBoard_Render | 16 | Timer bar, round ".%d", "TIE BREAKER!" |
+| 0x421FE0 | ArenaBoard_Update | 16 | Check round end, resolve ties, "Game Over" music |
+| 0x458E60 | ToggleTimer_Init | 12 | Initialize round timer |
+| 0x458E80 | ToggleTimer_Cleanup | 32 | Cleanup round timer |
+| 0x458E90 | ToggleTimer_Tick | 12 | Tick countdown |
+| 0x44AD50 | ArenaScoreParticle_ctor | 12 | Init vtable + difficulty scale [0.02, 0.03, 0.04] |
 
 Key RumbleBoard offsets: +0x47AC=base_score(6000), +0x47C5=is_tie_breaker, +0x47CC=tie_active, +0x47D0=max_rounds(25), +0x11EB=round_end_timer, +0x11F1=game_over_flag, +0x11ED-0x11F0=4 player scores
 

@@ -16,7 +16,7 @@
  * suggests.
  *
  * Cross-references (38 call sites — heavily used):
- *   - RumbleBoard_Render — arena score display
+ *   - ArenaBoard_Render — arena score display
  *   - HighScoreMenu_Render — high score table entries
  *   - RaceResults_Render — race results screen
  *   - Many HUD and menu functions

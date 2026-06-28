@@ -27,7 +27,7 @@
 // PHASE 1: TRAIL PARTICLES
 // -----------------------------------
 // - If param_1[200] != 0: create RumbleScore trail particle
-//   - Alloc 0x28 bytes, RumbleScore_ctor
+//   - Alloc 0x28 bytes, ArenaScoreParticle_ctor
 //   - Random XYZ offset from ball position (RNG_Rand range 0x19=25)
 //   - Set velocity=(0,0,0), timer=0, append to trail list
 //   - Particle type ID stored at param_1[0x3B00] (AthenaList)
@@ -173,7 +173,7 @@
 // - If velocity ptr != 0: call velocity callback (vtable[0x00] of velocity obj)
 // - Sound_CalculateDistanceAttenuation at ball position
 // - If sound ID (param_1[0x96]) != 0: play sound at position
-// - RumbleBoard_TickTimer for this ball's rumble channel
+// - ToggleTimer_Tick for this ball's rumble channel
 //
 // PHASE 16: DISPLAY POSITION LERP
 // -----------------------------------

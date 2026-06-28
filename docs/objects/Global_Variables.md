@@ -75,7 +75,7 @@ These are the primary game state variables used by the Hamsterball engine.
   - `Scene_ComputeArenaLighting+0x202` — arena lighting
   - `Board_Master_Update+0x42` — master board update
   - `CreateBumper+0x7F3`, `HandleArenaCollisionEvents+0x3C0`, `DispatchCollisionEvents+0x7AC` — object creation
-  - `RumbleBoard_Update+0x331` — arena mode update
+  - `ArenaBoard_Update+0x331` — arena mode update
   - `Sound_InitChannels+0x90` — audio system init
   - `LoadingScreenGadget_Ctor+0x2E2` — loading screen
   - `ScoreDisplay_SetTime+0x09` — score display
@@ -112,7 +112,7 @@ These are the primary game state variables used by the Hamsterball engine.
 - **Used in** (99 locations, key ones):
   - `TimeTrialMenu_ctor+0x6E` — `AthenaString_Format(0x4f7448, ...)` for level textures
   - `HighScoreMenu_Render+0x291` — high score display textures
-  - `RumbleBoard_Render+0x218` — arena rendering
+  - `ArenaBoard_Render+0x218` — arena rendering
   - `DifficultyMenu_Render+0x252` — difficulty selection
   - `RaceGoalReached_Tick+0x297` — race completion
   - `Scene_SetupLevel10+0xBB` — Master level setup

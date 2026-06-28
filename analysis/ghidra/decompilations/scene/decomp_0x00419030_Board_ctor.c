@@ -37,9 +37,9 @@ void * __thiscall Board_ctor(void *this,int param_1)
   Gadget_ctor(this,param_1);
   local_4 = 0;
   *(undefined ***)this = &PTR_Scene_DeletingDtor_004d0260;
-  RumbleBoard_InitTimer((undefined4 *)((int)this + 0x884));
+  ToggleTimer_Init((undefined4 *)((int)this + 0x884));
   local_4._0_1_ = 1;
-  RumbleBoard_InitTimer((undefined4 *)((int)this + 0x898));
+  ToggleTimer_Init((undefined4 *)((int)this + 0x898));
   local_4._0_1_ = 2;
   AthenaList_Init((void *)((int)this + 0x8b8),0);
   local_4._0_1_ = 3;

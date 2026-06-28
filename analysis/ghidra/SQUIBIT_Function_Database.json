@@ -1,31 +1,31 @@
 {
   "functions": [
     {
-      "name": "RumbleBoard_Tower_Dtor",
+      "name": "ArenaBoard_Tower_Dtor",
       "address": "0x00422a60",
-      "signature": "void __fastcall RumbleBoard_Tower_Dtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_Tower_Dtor(undefined4 *param_1)",
       "parameters": "param_1: RumbleBoard* this \u2014 the Tower Arena board object to destroy",
-      "description": "Destructor for Tower Arena board. Sets vtable to PTR_RumbleBoard_OddArena_DeletingDtor, frees 2 sub-mesh objects at +0x11F8 and +0x12FF via vtable delete, then calls Scene_dtor for base cleanup.",
+      "description": "Destructor for Tower Arena board. Sets vtable to PTR_ArenaBoard_Odd_DeletingDtor, frees 2 sub-mesh objects at +0x11F8 and +0x12FF via vtable delete, then calls Scene_dtor for base cleanup.",
       "struct_offsets": "+0x11F8 (sub-mesh 1), +0x12FF (sub-mesh 2)",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
     },
     {
-      "name": "RumbleBoard_UpArena_Ctor",
+      "name": "ArenaBoard_Up_Ctor",
       "address": "0x00422b10",
-      "signature": "void * __thiscall RumbleBoard_UpArena_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Up_Ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* \u2014 arena board to construct | param_1: int \u2014 parent App/Scene pointer",
-      "description": "Constructor for Up Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Up Arena)' / 'UP ARENA'. Creates MeshWorld 'levels\\\\arena-up' and CollisionLevel. Initializes Vec3 (1,0,1).",
+      "description": "Constructor for Up Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Up Arena)' / 'UP ARENA'. Creates MeshWorld 'levels\\\\arena-up' and CollisionLevel. Initializes Vec3 (1,0,1).",
       "struct_offsets": "+0x868 (board name), +0x4344 (game mode), +0x29B4 (display name)",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
     },
     {
-      "name": "RumbleBoard_UpArena_Dtor",
+      "name": "ArenaBoard_Up_Dtor",
       "address": "0x00422c00",
-      "signature": "void __fastcall RumbleBoard_UpArena_Dtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_Up_Dtor(undefined4 *param_1)",
       "parameters": "param_1: RumbleBoard* this \u2014 the Up Arena board to destroy",
-      "description": "Destructor for Up Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls RumbleBoard_dtor for base cleanup.",
+      "description": "Destructor for Up Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls ArenaBoard_dtor for base cleanup.",
       "struct_offsets": "+0x11F8 (sub-mesh)",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
@@ -41,31 +41,31 @@
       "batch": 14
     },
     {
-      "name": "RumbleBoard_ExpertArena_ctor",
+      "name": "ArenaBoard_Expert_Ctor",
       "address": "0x00423060",
-      "signature": "void * __thiscall RumbleBoard_ExpertArena_ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Expert_Ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
-      "description": "Constructor for Expert Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Expert Arena)' / 'Fight!'. Initializes AthenaList at +0x47E0. Vec3 init.",
+      "description": "Constructor for Expert Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Expert Arena)' / 'Fight!'. Initializes AthenaList at +0x47E0. Vec3 init.",
       "struct_offsets": "+0x47E0 (AthenaList), +0x868, +0x4344, +0x29B4",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
     },
     {
-      "name": "RumbleBoard_OddArena_ctor",
+      "name": "ArenaBoard_Odd_Ctor",
       "address": "0x00423220",
-      "signature": "void * __thiscall RumbleBoard_OddArena_ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Odd_Ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
-      "description": "Constructor for Odd Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Odd Arena)' / 'ODD ARENA'. Clears flag at +0x4348. Vec3 init (1,0.5,0).",
+      "description": "Constructor for Odd Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Odd Arena)' / 'ODD ARENA'. Clears flag at +0x4348. Vec3 init (1,0.5,0).",
       "struct_offsets": "+0x4348 (flag), +0x868, +0x29B4",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
     },
     {
-      "name": "RumbleBoard_ToobArena_ctor",
+      "name": "ArenaBoard_Toob_Ctor",
       "address": "0x004234e0",
-      "signature": "void * __thiscall RumbleBoard_ToobArena_ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Toob_Ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
-      "description": "Constructor for Toob Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Toob Arena)' / 'Rodenthood'. Initializes 5-element array at +0x47E0 (0x418 bytes each) via _eh_vector_constructor_iterator.",
+      "description": "Constructor for Toob Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Toob Arena)' / 'Rodenthood'. Initializes 5-element array at +0x47E0 (0x418 bytes each) via _eh_vector_constructor_iterator.",
       "struct_offsets": "+0x47E0 (5-element array, 0x418 each), +0x868, +0x4344, +0x29B4",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
@@ -81,21 +81,21 @@
       "batch": 14
     },
     {
-      "name": "RumbleBoard_WobblyArena_ctor",
+      "name": "ArenaBoard_Wobbly_Ctor",
       "address": "0x00423690",
-      "signature": "void * __thiscall RumbleBoard_WobblyArena_ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Wobbly_Ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
-      "description": "Constructor for Wobbly Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Wobbly Arena)' / 'Hamster Chase' / 'WOBBLY ARENA'. Creates MeshWorld 'levels\\\\arena-wobbly'. Vec3 init.",
+      "description": "Constructor for Wobbly Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Wobbly Arena)' / 'Hamster Chase' / 'WOBBLY ARENA'. Creates MeshWorld 'levels\\\\arena-wobbly'. Vec3 init.",
       "struct_offsets": "+0x868, +0x4344, +0x29B4",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
     },
     {
-      "name": "RumbleBoard_WobblyArena_DeletingDtor",
+      "name": "ArenaBoard_Wobbly_DeletingDtor",
       "address": "0x00423790",
-      "signature": "void __fastcall RumbleBoard_WobblyArena_DeletingDtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_Wobbly_DeletingDtor(undefined4 *param_1)",
       "parameters": "param_1: RumbleBoard* this \u2014 the Wobbly Arena board to destroy",
-      "description": "Scalar deleting destructor for Wobbly Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls RumbleBoard_dtor for base cleanup.",
+      "description": "Scalar deleting destructor for Wobbly Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls ArenaBoard_dtor for base cleanup.",
       "struct_offsets": "+0x11F8 (sub-mesh)",
       "xrefs": "1 call, 0 data refs",
       "batch": 14
@@ -111,9 +111,9 @@
       "batch": 15
     },
     {
-      "name": "RumbleBoard_DeletingDtor",
+      "name": "ArenaBoard_DeletingDtor",
       "address": "0x00424c10",
-      "signature": "void __fastcall RumbleBoard_DeletingDtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_DeletingDtor(undefined4 *param_1)",
       "parameters": "param_1: RumbleBoard* this \u2014 the arena board to destroy",
       "description": "Simple scalar deleting destructor for base RumbleBoard. Sets vtable and calls Scene_dtor.",
       "struct_offsets": "vtable pointer at +0x00",
@@ -141,21 +141,21 @@
       "batch": 15
     },
     {
-      "name": "RumbleBoard_Impossible_ctor",
+      "name": "ArenaBoard_Impossible_Ctor",
       "address": "0x00424ec0",
-      "signature": "void * __thiscall RumbleBoard_Impossible_ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Impossible_Ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
-      "description": "Constructor for Impossible Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Impossible Arena)' / 'IMPOSSIBLE ARENA'. Creates MeshWorld 'levels\\\\arena-impossible'.",
+      "description": "Constructor for Impossible Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Impossible Arena)' / 'IMPOSSIBLE ARENA'. Creates MeshWorld 'levels\\\\arena-impossible'.",
       "struct_offsets": "+0x868, +0x4344, +0x29B4",
       "xrefs": "1 call, 0 data refs",
       "batch": 15
     },
     {
-      "name": "RumbleBoard_Impossible_dtor",
+      "name": "ArenaBoard_Impossible_dtor",
       "address": "0x00424fb0",
-      "signature": "void __fastcall RumbleBoard_Impossible_dtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_Impossible_dtor(undefined4 *param_1)",
       "parameters": "param_1: RumbleBoard* this",
-      "description": "Destructor for Impossible Arena board. Frees sub-mesh at +0x11F8, calls RumbleBoard_dtor.",
+      "description": "Destructor for Impossible Arena board. Frees sub-mesh at +0x11F8, calls ArenaBoard_dtor.",
       "struct_offsets": "+0x11F8",
       "xrefs": "1 call, 0 data refs",
       "batch": 15
@@ -201,9 +201,9 @@
       "batch": 15
     },
     {
-      "name": "RumbleBoard_dtor",
+      "name": "ArenaBoard_dtor",
       "address": "0x004251e0",
-      "signature": "void __fastcall RumbleBoard_dtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_dtor(undefined4 *param_1)",
       "parameters": "See signature",
       "description": "Decompiled function. 735 chars. 1 call xrefs, 0 data refs. First code lines: void *pvStack_c;; undefined1 *puStack_8;; int iStack_4;",
       "struct_offsets": "See decompilation",
@@ -216,16 +216,16 @@
       "address": "0x004251f0",
       "signature": "void * __thiscall BoardLevel_Generic_dtor5(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 189 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlices_DeletingDtorVdtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 189 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_CollSlices_DeletingDtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 1 data refs",
       "batch": 16,
       "decompilation_length": 189
     },
     {
-      "name": "RumbleBoard_CollSlices_DeletingDtorVdtor",
+      "name": "ArenaBoard_CollSlices_DeletingDtor",
       "address": "0x00425210",
-      "signature": "void __fastcall RumbleBoard_CollSlices_DeletingDtorVdtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_CollSlices_DeletingDtor(undefined4 *param_1)",
       "parameters": "See signature",
       "description": "Decompiled function. 416 chars. 1 call xrefs, 0 data refs. First code lines: void *local_c;; undefined1 *puStack_8;; undefined4 local_4;",
       "struct_offsets": "See decompilation",
@@ -234,53 +234,53 @@
       "decompilation_length": 416
     },
     {
-      "name": "RumbleBoard_ExpertArena_DeletingDtor",
+      "name": "ArenaBoard_Expert_DeletingDtor",
       "address": "0x00425270",
-      "signature": "void * __thiscall RumbleBoard_ExpertArena_DeletingDtor(void *this,byte param_1)",
+      "signature": "void * __thiscall ArenaBoard_Expert_DeletingDtor(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 183 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_Dizzy_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 183 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_Dizzy_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 1 data refs",
       "batch": 16,
       "decompilation_length": 183
     },
     {
-      "name": "RumbleBoard_OddArena_DeletingDtor",
+      "name": "ArenaBoard_Odd_DeletingDtor",
       "address": "0x00425290",
-      "signature": "void * __thiscall RumbleBoard_OddArena_DeletingDtor(void *this,byte param_1)",
+      "signature": "void * __thiscall ArenaBoard_Odd_DeletingDtor(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 180 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_Tower_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 180 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_Tower_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 1 data refs",
       "batch": 16,
       "decompilation_length": 180
     },
     {
-      "name": "RumbleBoard_ToobArena_DeletingDtor",
+      "name": "ArenaBoard_Toob_DeletingDtor",
       "address": "0x004252b0",
-      "signature": "void * __thiscall RumbleBoard_ToobArena_DeletingDtor(void *this,byte param_1)",
+      "signature": "void * __thiscall ArenaBoard_Toob_DeletingDtor(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 183 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_UpArena_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 183 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_Up_Dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 1 data refs",
       "batch": 16,
       "decompilation_length": 183
     },
     {
-      "name": "RumbleBoard_CollSlicesArena_DeletingDtor",
+      "name": "ArenaBoard_CollSlicesArena_DeletingDtor",
       "address": "0x004252d0",
-      "signature": "void * __thiscall RumbleBoard_CollSlicesArena_DeletingDtor(void *this,byte param_1)",
+      "signature": "void * __thiscall ArenaBoard_CollSlicesArena_DeletingDtor(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 203 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlicesArena_ScalarDtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 203 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_CollSlicesArena_ScalarDtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 1 data refs",
       "batch": 16,
       "decompilation_length": 203
     },
     {
-      "name": "RumbleBoard_CollSlicesArena_ScalarDtor",
+      "name": "ArenaBoard_CollSlicesArena_ScalarDtor",
       "address": "0x004252f0",
-      "signature": "void __fastcall RumbleBoard_CollSlicesArena_ScalarDtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaBoard_CollSlicesArena_ScalarDtor(undefined4 *param_1)",
       "parameters": "See signature",
       "description": "Decompiled function. 374 chars. 1 call xrefs, 0 data refs. First code lines: void *local_c;; undefined1 *puStack_8;; undefined4 local_4;",
       "struct_offsets": "See decompilation",
@@ -289,22 +289,22 @@
       "decompilation_length": 374
     },
     {
-      "name": "RumbleBoard_DeletingDtor",
+      "name": "ArenaBoard_DeletingDtor",
       "address": "0x00425340",
-      "signature": "void * __thiscall RumbleBoard_DeletingDtor(void *this,byte param_1)",
+      "signature": "void * __thiscall ArenaBoard_DeletingDtor(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 165 chars. 0 call xrefs, 4 data refs. First code lines: RumbleBoard_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 165 chars. 0 call xrefs, 4 data refs. First code lines: ArenaBoard_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 4 data refs",
       "batch": 16,
       "decompilation_length": 165
     },
     {
-      "name": "RumbleBoard_CollSlices_scalar_dtor",
+      "name": "ArenaBoard_CollSlices_scalar_dtor",
       "address": "0x00425360",
-      "signature": "void * __thiscall RumbleBoard_CollSlices_scalar_dtor(void *this,byte param_1)",
+      "signature": "void * __thiscall ArenaBoard_CollSlices_scalar_dtor(void *this,byte param_1)",
       "parameters": "See signature",
-      "description": "Decompiled function. 186 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlices_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
+      "description": "Decompiled function. 186 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_CollSlices_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);",
       "struct_offsets": "See decompilation",
       "xrefs": "0 calls, 1 data refs",
       "batch": 16,
@@ -718,9 +718,9 @@
       "decompilation_length": 1904
     },
     {
-      "name": "RumbleBoard_Object_dtor",
+      "name": "ArenaSceneObj_dtor",
       "address": "0x0042b5d0",
-      "signature": "void __fastcall RumbleBoard_Object_dtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaSceneObj_dtor(undefined4 *param_1)",
       "parameters": "See signature for parameter types",
       "description": "Decompiled function (619 chars). Code body: void *local_c;; undefined1 *puStack_8;; int local_4;",
       "struct_offsets": "See decompilation",
@@ -729,9 +729,9 @@
       "decompilation_length": 619
     },
     {
-      "name": "RumbleBoard_Object_Tick",
+      "name": "ArenaSceneObj_Tick",
       "address": "0x0042b660",
-      "signature": "void __fastcall RumbleBoard_Object_Tick(int param_1)",
+      "signature": "void __fastcall ArenaSceneObj_Tick(int param_1)",
       "parameters": "See signature for parameter types",
       "description": "Decompiled function (626 chars). Code body: float fVar1;; NoOp();; fVar1 = *(float *)(param_1 + 0x880) + _DAT_004cf524;",
       "struct_offsets": "See decompilation",
@@ -916,9 +916,9 @@
       "decompilation_length": 8138
     },
     {
-      "name": "PauseRumbleMenu_ctor",
+      "name": "PauseArenaMenu_ctor",
       "address": "0x00430330",
-      "signature": "void * __thiscall PauseRumbleMenu_ctor(void *this,int param_1)",
+      "signature": "void * __thiscall PauseArenaMenu_ctor(void *this,int param_1)",
       "parameters": "See signature for parameter types",
       "description": "Decompiled function (1408 chars). Code body: undefined4 in_stack_ffffffd4;; undefined4 in_stack_ffffffd8;; undefined4 in_stack_ffffffdc;",
       "struct_offsets": "See decompilation",
@@ -1481,13 +1481,13 @@
       "batch": 27
     },
     {
-      "name": "RumbleCollision_Level_Dtor",
+      "name": "ArenaCollisionLevel_Dtor",
       "address": "0x00437380",
-      "signature": "void __fastcall RumbleCollision_Level_Dtor(undefined4 *param_1)",
+      "signature": "void __fastcall ArenaCollisionLevel_Dtor(undefined4 *param_1)",
       "parameters": "param_1: RumbleCollision* this \u2014 arena collision object to destroy",
-      "description": "Destructor for RumbleCollision (arena mode collision). Sets vtable (0x4D5A70), cleans up timer at +0x43B via RumbleBoard_CleanupTimer, calls Level_Cleanup. Used in Arena knockoff/respawn cycle.",
+      "description": "Destructor for RumbleCollision (arena mode collision). Sets vtable (0x4D5A70), cleans up timer at +0x43B via ToggleTimer_Cleanup, calls Level_Cleanup. Used in Arena knockoff/respawn cycle.",
       "struct_offsets": "+0x00 (vtable=0x4D5A70), +0x43B (RumbleBoard timer)",
-      "xrefs": "1 call from RumbleCollision_DeletingDtor (0x43E5C3)",
+      "xrefs": "1 call from ArenaCollisionLevel_DeletingDtor (0x43E5C3)",
       "batch": 27
     },
     {
@@ -1711,17 +1711,17 @@
       "batch": 30
     },
     {
-      "name": "RumbleObject_DeletingDtor",
+      "name": "ArenaObject_DeletingDtor",
       "address": "0x0043c4c0",
       "signature": "void * __thiscall ...(void *this, byte param_1)",
       "parameters": "this: RumbleObject* | param_1: scalar delete flag",
-      "description": "Scalar deleting dtor for RumbleObject. Calls RumbleObject_Level_Dtor then _free. Referenced from vtable 0x4D5638 used by Blockdawg_ctor.",
+      "description": "Scalar deleting dtor for RumbleObject. Calls ArenaObject_Level_Dtor then _free. Referenced from vtable 0x4D5638 used by Blockdawg_ctor.",
       "struct_offsets": "N/A (dispatcher)",
       "xrefs": "1 DATA ref from vtable 0x4D5638",
       "batch": 30
     },
     {
-      "name": "RumbleObject_Update",
+      "name": "ArenaObject_Update",
       "address": "0x0043c4e0",
       "signature": "undefined4 __fastcall ...(int *param_1)",
       "parameters": "param_1: RumbleObject* this (as int*)",
@@ -2091,11 +2091,11 @@
       "batch": 33
     },
     {
-      "name": "RumbleBoard_TickTimerWrapper",
+      "name": "ToggleTimer_TickWrapper",
       "address": "0x004468c0",
       "signature": "void __fastcall ...(int param_1)",
       "parameters": "param_1: RumbleBoard* this",
-      "description": "Wrapper: calls RumbleBoard_TickTimer on +0x110C, then NoOp. Used as generic per-frame tick callback for multiple board types.",
+      "description": "Wrapper: calls ToggleTimer_Tick on +0x110C, then NoOp. Used as generic per-frame tick callback for multiple board types.",
       "struct_offsets": "+0x110C (Timer)",
       "xrefs": "4 DATA refs from vtables 0x4D67EC, 0x4D691C, 0x4D6974, 0x4D69CC",
       "batch": 34
@@ -2155,7 +2155,7 @@
       "address": "0x004470d0",
       "signature": "void __fastcall ...(undefined4 *param_1)",
       "parameters": "param_1: ScoreDisplay* this",
-      "description": "Dtor for ScoreDisplay: frees 2 SSO strings (+0x449, +0x450), RumbleBoard_CleanupTimer on +0x443, BaseObject_Init on 5 sub-objects, SceneObject_dtor.",
+      "description": "Dtor for ScoreDisplay: frees 2 SSO strings (+0x449, +0x450), ToggleTimer_Cleanup on +0x443, BaseObject_Init on 5 sub-objects, SceneObject_dtor.",
       "struct_offsets": "+0x41F/+0x426/+0x42D/+0x434/+0x43B (BaseObjects), +0x443 (Timer), +0x449 (serial SSO), +0x450 (affiliate SSO)",
       "xrefs": "2 calls from scalar_dtor and jump",
       "batch": 34
@@ -2257,7 +2257,7 @@
       "parameters": "this: SimpleMenu* (vtable=0x4D6A70) | param_1: App pointer",
       "description": "Base constructor for all menus. Inherits Gadget_ctor. Initializes AthenaList at +0x88C, stores App at +0x878, copies Font from App+0x318 to +0x87C. Sets default position (0,0,800,600). Creates 2 AthenaString objects (0x1C bytes each) at +0xCA4/+0xCA8 with pos/scale data. 7+ call sites.",
       "struct_offsets": "+0x868 (name='Simple Menu'), +0x878 (App), +0x87C (Font from App+0x318), +0x88C (AthenaList), +0xCAC (spacing=0), +0xCB0/+0xCB4 (scroll), +0xCBC (dirty=1), +0xCA4/+0xCA8 (AthenaStrings)",
-      "xrefs": "7+ calls from ConfirmMenu_ctor, PauseMenu_Ctor, QuitRaceMenu, PauseRumbleMenu_ctor, PracticeMenu_ctor, etc.",
+      "xrefs": "7+ calls from ConfirmMenu_ctor, PauseMenu_Ctor, QuitRaceMenu, PauseArenaMenu_ctor, PracticeMenu_ctor, etc.",
       "batch": 35
     },
     {
@@ -2351,31 +2351,31 @@
       "batch": 36
     },
     {
-      "name": "RumbleScore_ctor",
+      "name": "ArenaScoreParticle_ctor",
       "address": "0x0044ad50",
       "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
       "parameters": "this: RumbleScore* (vtable=0x4D6AEC) | param_1: undefined4 (stored at +4)",
       "description": "Constructor for RumbleScore (arena score display). Stores param_1 at +4, sets vtable 0x4D6AEC. Initializes SSO string at +0x14. Sets scale=1.0f (+0x20). Randomly selects one of 3 scale multipliers (0.02, 0.03, 0.04) via RNG_Rand(0-2). 4+ calls.",
       "struct_offsets": "+0x04 (param_1), +0x14 (SSO string), +0x20 (scale=1.0), +0x24 (random scale mult: 0.02/0.03/0.04)",
-      "xrefs": "4+ calls from Ball_CreateTrailParticles, HandleArenaCollisionEvents, RumbleObject_Update, RaceResults",
+      "xrefs": "4+ calls from Ball_CreateTrailParticles, HandleArenaCollisionEvents, ArenaObject_Update, RaceResults",
       "batch": 36
     },
     {
-      "name": "RumbleScoreListA_Ctor",
+      "name": "ArenaScoreParticle_ListA_Ctor",
       "address": "0x0044ae60",
       "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
       "parameters": "this: RumbleScoreListA* (vtable=0x4D6AF8) | param_1: undefined4 (score data)",
-      "description": "Constructor for RumbleScoreListA variant. Calls RumbleScore_ctor, overrides vtable to 0x4D6AF8. Multiplies scale (+0x24) by _DAT_004CF468. 1 call.",
+      "description": "Constructor for RumbleScoreListA variant. Calls ArenaScoreParticle_ctor, overrides vtable to 0x4D6AF8. Multiplies scale (+0x24) by _DAT_004CF468. 1 call.",
       "struct_offsets": "+0x24 (scale \u00d7 _DAT_004CF468)",
       "xrefs": "1 call from 0x439CA4",
       "batch": 36
     },
     {
-      "name": "RumbleScoreListB_Ctor",
+      "name": "ArenaScoreParticle_ListB_Ctor",
       "address": "0x0044ae90",
       "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
       "parameters": "this: RumbleScoreListB* (vtable=0x4D6B04) | param_1: undefined4 (score data)",
-      "description": "Constructor for RumbleScoreListB variant. Calls RumbleScore_ctor, overrides vtable to 0x4D6B04. Multiplies scale (+0x24) by _DAT_004CF468. 1 call.",
+      "description": "Constructor for RumbleScoreListB variant. Calls ArenaScoreParticle_ctor, overrides vtable to 0x4D6B04. Multiplies scale (+0x24) by _DAT_004CF468. 1 call.",
       "struct_offsets": "+0x24 (scale \u00d7 _DAT_004CF468)",
       "xrefs": "1 call from 0x43CF3C",
       "batch": 36
@@ -2385,7 +2385,7 @@
       "address": "0x0044aec0",
       "signature": "void * __thiscall ...(void *this, undefined4 param_1)",
       "parameters": "this: RaceResults* (vtable=0x4D6B10) | param_1: undefined4 (stored at +4)",
-      "description": "Constructor for RaceResults display. Calls RumbleScore_ctor, overrides vtable to 0x4D6B10. Initializes Vec3 at +0x28. Calls Matrix_Scale4x4 (0.5,0.5,0.5,1.0), stores result at +0x2C through +0x38. Calls Matrix_Identity. 1 call.",
+      "description": "Constructor for RaceResults display. Calls ArenaScoreParticle_ctor, overrides vtable to 0x4D6B10. Initializes Vec3 at +0x28. Calls Matrix_Scale4x4 (0.5,0.5,0.5,1.0), stores result at +0x2C through +0x38. Calls Matrix_Identity. 1 call.",
       "struct_offsets": "+0x28 (Vec3), +0x2C/+0x30/+0x34/+0x38 (scale matrix: 0.5,0.5,0.5,1.0)",
       "xrefs": "1 call from 0x43CDAF",
       "batch": 36
@@ -2395,7 +2395,7 @@
       "address": "0x0044c450",
       "signature": "void __fastcall ...(undefined4 *param_1)",
       "parameters": "param_1: RaceResults* this",
-      "description": "Resets RaceResults. Sets vtable to PTR_RaceGoalReached_ScalarDtor (0x4D6CA0). Frees sub-object at +0x15 (0x54 offset) if non-NULL. Calls RumbleBoard_CleanupTimer on +0xF (0x3C offset). Sets vtable to 0x4D6C00. 1 call.",
+      "description": "Resets RaceResults. Sets vtable to PTR_RaceGoalReached_ScalarDtor (0x4D6CA0). Frees sub-object at +0x15 (0x54 offset) if non-NULL. Calls ToggleTimer_Cleanup on +0xF (0x3C offset). Sets vtable to 0x4D6C00. 1 call.",
       "struct_offsets": "+0x00 (vtable), +0x15 (sub-object ptr\u21920x54), +0xF (timer\u21920x3C)",
       "xrefs": "1 call from RaceGoalReached_ScalarDtor (0x44D643)",
       "batch": 37
@@ -2405,7 +2405,7 @@
       "address": "0x0044c4b0",
       "signature": "void __fastcall ...(int param_1)",
       "parameters": "param_1: RaceResults* this",
-      "description": "Per-frame tick for race results display. Increments frame counter at +0x10. If past max (+0x14) and active (+0x19), decrements counter at parent+0x8B4. Handles key input: Input_CheckKeyCombo sets +0x58/+0x59 flags. Calls RumbleBoard_TickTimer on +0x3C. Decrements timer at +0x28 by _DAT_004D6CB0.",
+      "description": "Per-frame tick for race results display. Increments frame counter at +0x10. If past max (+0x14) and active (+0x19), decrements counter at parent+0x8B4. Handles key input: Input_CheckKeyCombo sets +0x58/+0x59 flags. Calls ToggleTimer_Tick on +0x3C. Decrements timer at +0x28 by _DAT_004D6CB0.",
       "struct_offsets": "+0x04 (parent), +0x0C (input handler), +0x10 (frame count), +0x14 (max frames), +0x19 (active flag), +0x28 (timer), +0x3C (RumbleBoard timer), +0x58/+0x59 (key flags), parent+0x8B4 (active count)",
       "xrefs": "1 DATA ref from vtable 0x4D6CA4",
       "batch": 37
@@ -2435,7 +2435,7 @@
       "address": "0x0044c880",
       "signature": "void * __thiscall ...(void *this, int param_1, undefined4 param_2)",
       "parameters": "this: RaceGoalReached* (vtable=0x4D6CF0) | param_1: parent | param_2: undefined4 (stored at +8)",
-      "description": "Constructor for 'GOAL REACHED!' display. Stores parent at +4, param_2 at +8, App at +0xC. Increments active count at parent+0x8B4. Sets max frames=100 (+0x14). Vtable\u21920x4D6CF0. Initializes SceneObject_EmptyListCtor at +0x90, RumbleBoard_InitTimer at +0x4C4. Sets 'GOAL REACHED!' text at +0x24. Width=800 (+0x20/+0x4C0). 1 call.",
+      "description": "Constructor for 'GOAL REACHED!' display. Stores parent at +4, param_2 at +8, App at +0xC. Increments active count at parent+0x8B4. Sets max frames=100 (+0x14). Vtable\u21920x4D6CF0. Initializes SceneObject_EmptyListCtor at +0x90, ToggleTimer_Init at +0x4C4. Sets 'GOAL REACHED!' text at +0x24. Width=800 (+0x20/+0x4C0). 1 call.",
       "struct_offsets": "+0x04 (parent), +0x08 (param_2), +0x0C (App), +0x10 (frame=0), +0x14 (max=100), +0x18 (flag=0), +0x19 (active=1), +0x20 (width=800), +0x24 ('GOAL REACHED!'), +0x90 (SceneObject list), +0x4AC-0x4BC (zeros), +0x4C0 (width=800), +0x4C4 (timer)",
       "xrefs": "1 call from 0x409F51",
       "batch": 37
@@ -2445,7 +2445,7 @@
       "address": "0x0044ca80",
       "signature": "void __fastcall ...(undefined4 *param_1)",
       "parameters": "param_1: RaceResultsMenu* this",
-      "description": "Scalar dtor for RaceResultsMenu. Sets vtable to 0x4D6CF0. Frees 2 sub-objects at +0x137 and +0x138 (0x4DC/+0x4E0 offsets) if non-NULL. Calls RumbleBoard_CleanupTimer on +0x131 (0x4C4 offset). Calls SceneObject_BaseDtor on +0x24. Sets vtable to 0x4D6C00. 1 call.",
+      "description": "Scalar dtor for RaceResultsMenu. Sets vtable to 0x4D6CF0. Frees 2 sub-objects at +0x137 and +0x138 (0x4DC/+0x4E0 offsets) if non-NULL. Calls ToggleTimer_Cleanup on +0x131 (0x4C4 offset). Calls SceneObject_BaseDtor on +0x24. Sets vtable to 0x4D6C00. 1 call.",
       "struct_offsets": "+0x137/+0x138 (sub-objects\u21920x4DC/0x4E0), +0x131 (timer\u21920x4C4), +0x24 (SceneObject)",
       "xrefs": "1 call from RaceGoalReached_DeletingDtor (0x44D743)",
       "batch": 37
@@ -2455,9 +2455,9 @@
       "address": "0x0044cb10",
       "signature": "void __thiscall ...(void *this, int param_1, undefined4 param_2)",
       "parameters": "this: RaceResultsMenu* (vtable=0x4D6CFC) | param_1: parent | param_2: undefined4 (stored at +8)",
-      "description": "Constructor for RaceResultsMenu. Stores parent at +4, param_2 at +8, App at +0xC. Increments active count at parent+0x8B4. Sets max frames=500 (+0x14), width=800 (+0x1C). Vtable\u21920x4D6CFC. Sets scale=1.0f at +0x20. 1 call from RumbleBoard_Update.",
+      "description": "Constructor for RaceResultsMenu. Stores parent at +4, param_2 at +8, App at +0xC. Increments active count at parent+0x8B4. Sets max frames=500 (+0x14), width=800 (+0x1C). Vtable\u21920x4D6CFC. Sets scale=1.0f at +0x20. 1 call from ArenaBoard_Update.",
       "struct_offsets": "+0x04 (parent), +0x08 (param_2), +0x0C (App), +0x10 (frame=0), +0x14 (max=500), +0x18 (flag=0), +0x19 (active=1), +0x1C (width=800), +0x20 (scale=1.0f), +0x24 (flag=0), +0x25 (flag=0)",
-      "xrefs": "1 call from RumbleBoard_Update (0x422240)",
+      "xrefs": "1 call from ArenaBoard_Update (0x422240)",
       "batch": 37
     },
     {
@@ -2555,17 +2555,17 @@
       "address": "0x0044fda0",
       "signature": "void * __thiscall ...(void *this, int param_1, char param_2)",
       "parameters": "this: TourneyMenu* (vtable=0x4D83F0) | param_1: App | param_2: char (mode flag)",
-      "description": "Constructor for TourneyMenu. Calls SimpleMenu_ctor, overrides vtable to 0x4D83F0. RumbleBoard_InitTimer at +0xCDC. Name 'Tourney Menu'. Calls Scene_UpdateChildren, UIList_AddItem for 'PLAY!' button. Checks tournament state at App+0x220 (+0x90=loss, +0x95=lost flag, +0x96=won flag). 4+ calls.",
+      "description": "Constructor for TourneyMenu. Calls SimpleMenu_ctor, overrides vtable to 0x4D83F0. ToggleTimer_Init at +0xCDC. Name 'Tourney Menu'. Calls Scene_UpdateChildren, UIList_AddItem for 'PLAY!' button. Checks tournament state at App+0x220 (+0x90=loss, +0x95=lost flag, +0x96=won flag). 4+ calls.",
       "struct_offsets": "+0x868 ('Tourney Menu'), +0x878 (App\u2192+0x220), +0xCDC (timer), +0xCF4 (flag), +0xCF8/+0xD00/+0xD04 (zeros), +0xCFC (level index)",
       "xrefs": "4+ calls from Tournament_AdvanceRace, TourneyMenu_Advance, TourneyMenu_LoadSaveAndShow",
       "batch": 38
     },
     {
-      "name": "RumbleBoard_Menu_dtor",
+      "name": "ArenaBoard_Menu_dtor",
       "address": "0x004502f0",
       "signature": "void __fastcall ...(undefined4 *param_1)",
       "parameters": "param_1: RumbleBoard_Menu* this",
-      "description": "Dtor for RumbleBoard_Menu. Sets vtable to 0x4D83F0. Frees sub-object at +0xD04 (0x341 DWORDs). RumbleBoard_CleanupTimer on +0xCDC (0x337 DWORDs). Calls UIList_Cleanup. 1 call.",
+      "description": "Dtor for RumbleBoard_Menu. Sets vtable to 0x4D83F0. Frees sub-object at +0xD04 (0x341 DWORDs). ToggleTimer_Cleanup on +0xCDC (0x337 DWORDs). Calls UIList_Cleanup. 1 call.",
       "struct_offsets": "+0xD04 (sub-object), +0xCDC (timer), vtable=0x4D83F0",
       "xrefs": "1 call from TourneyBoard_MenuScalarDtor (0x450AD3)",
       "batch": 38
@@ -3077,7 +3077,7 @@
       "parameters": "param_1-3: float (rotation center x, y, z)",
       "description": "Rotates around Y axis. Builds LookAt matrix with up=(0,1,0), eye=(-x,-y,-z). Calls D3D_Thunk_5 and Graphics_SetRenderState. 6+ refs.",
       "struct_offsets": "N/A (stack-local matrix)",
-      "xrefs": "6+ refs from RumbleObject_Update, vtables, Ball_Update",
+      "xrefs": "6+ refs from ArenaObject_Update, vtables, Ball_Update",
       "batch": 43
     },
     {

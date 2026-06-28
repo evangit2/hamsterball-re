@@ -13,7 +13,7 @@
  * SEH frame.
  *
  * Cross-references (26 call sites):
- *   - RumbleBoard_Render — arena score display
+ *   - ArenaBoard_Render — arena score display
  *   - HighScoreMenu_Render (2 calls) — high score table
  *   - Many HUD and menu rendering functions
  *

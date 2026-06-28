@@ -34,7 +34,7 @@ Objects already documented in depth elsewhere are referenced rather than duplica
 SceneObject (vtable 0x4D934C, size 0xD4)
   └─ Gadget (vtable 0x4D9170, size 0x870)
        ├─ Board (vtable 0x4D0260, size ~0x4368)
-       │    └─ RumbleBoard (vtable 0x4D1358, size ~0x47D4)
+       │    └─ ArenaBoard (vtable 0x4D1358, size ~0x47D4)
        │    └─ GameLevel (vtable varies, size ~0x4368)
        │         ├─ Glass_Level
        │         ├─ Spinner_Level
@@ -81,7 +81,7 @@ UI / Menu hierarchy:
   OkayDialog
   QuitDialog
   RegisterDialog
-  RumbleScore
+  ArenaScoreParticle
   Sprite
   ScoreObject
 ```
@@ -224,7 +224,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Deep documentation:** See [`SCENE_STRUCT.md`](SCENE_STRUCT.md) and [`SCENE_OBJECT_MODDING.md`](SCENE_OBJECT_MODDING.md)
 - **Key fields:**
   - `+0x000` Gadget base (0x870 bytes)
-  - `+0x221` RumbleBoard timer data
+  - `+0x221` ArenaBoard timer data
   - `+0x335` Ball list (AthenaList)
   - `+0x43B` Effect list (AthenaList)
   - `+0x361C` Ball pointer (first player ball)
@@ -496,19 +496,19 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 
 ## Score / GameState Objects
 
-### RumbleScore
-- **Constructor:** `RumbleScore_ctor` (0x44AD50)
+### ArenaScoreParticle
+- **Constructor:** `ArenaScoreParticle_ctor` (0x44AD50)
 - **Description:** Floating score popup in Rumble mode. Difficulty scale: 0.02/0.03/0.04.
 
 ### ScoreObject
 - **Description:** SceneObject subclass. Despite the name, its `SetScore` method (now renamed `Rotator_AddBall` at 0x43B6F0) does NOT set a score — it registers balls on a rotator's tracking list for physical rotation. The `ScoreObject_ctor` (0x44BE80) creates a SceneObject with vtable `PTR_RaceGoalReached_Render` (0x4D6C70), used for race goal rendering.
 - **Used by:** `Rotator_AddBall` called from `ImpossibleCollisionEvents` (N:ONROTATOR), `ToobCollisionEvents` (N:SPINNY), `DizzyArenaCollisionEvents` (N:SWIRL)
 
-### RumbleBoard
-- **Constructor:** `RumbleBoard_ctor` (0x4217B0)
+### ArenaBoard
+- **Constructor:** `ArenaBoard_ctor` (0x4217B0)
 - **Size:** ~0x47D4 bytes
 - **Description:** Rumble mode game board. Inherits from Board. Timer-based scoring.
-- **Embedded timer:** `RumbleBoard_InitTimer` / `RumbleBoard_CleanupTimer`
+- **Embedded timer:** `ToggleTimer_Init` / `ToggleTimer_Cleanup`
 
 ---
 

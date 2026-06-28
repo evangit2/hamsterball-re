@@ -5,7 +5,7 @@
  * Batch: 16
  *
  * Description:
- * Decompiled function. 189 chars. 0 call xrefs, 1 data refs. First code lines: RumbleBoard_CollSlices_DeletingDtorVdtor(this);; if ((param_1 & 1) != 0) {; _free(this);
+ * Decompiled function. 189 chars. 0 call xrefs, 1 data refs. First code lines: ArenaBoard_CollSlices_DeletingDtor(this);; if ((param_1 & 1) != 0) {; _free(this);
  *
  * Cross-references: 0 calls, 1 data refs
  *

@@ -1,4 +1,4 @@
-// Function: Ball_DrawRumbleScoreText
+// Function: Ball_DrawArenaScoreText
 // Address: 0x402A70
 // Decompiled: 2026-06-21
 // Source: GhidraMCP (create_function + decompile)
@@ -6,7 +6,7 @@
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __fastcall Ball_DrawRumbleScoreText(int param_1)
+void __fastcall Ball_DrawArenaScoreText(int param_1)
 
 {
   int iVar1;

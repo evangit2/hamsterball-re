@@ -359,7 +359,7 @@ Key identified slots:
 
 ### Rumble/Arena Board System
 
-15 arena init functions (RumbleBoard_*_Init) follow this pattern:
+15 arena init functions (ArenaBoard_*_Init) follow this pattern:
 1. Level_ctor(arena_level_path) → store at scene+0x22B
 2. Level_Clone(source) → store at scene+0x22C
 3. CameraLookAt(scene)
@@ -451,16 +451,16 @@ Difficulty_GetTimeModifier (0x428ED0) returns multiplier based on +0x23C:
 
 ## 14. Rumble Board System (vtable PTR 0x4D1358)
 
-- RumbleBoard extends Board (which extends Scene)
+- ArenaBoard extends Board (which extends Scene)
 - Base score: 6000 per round
 - 25 rounds per game (offset +0x47D0 = 0x19 = 25)
-- Timer: RumbleBoard_InitTimer / TickTimer / CleanupTimer manage round time
-- RumbleBoard_Render draws timer bar, round number ".%d", and "TIE BREAKER!" text
-- RumbleBoard_Update checks round end: finds max score, handles ties
+- Timer: ToggleTimer_Init / TickTimer / CleanupTimer manage round time
+- ArenaBoard_Render draws timer bar, round number ".%d", and "TIE BREAKER!" text
+- ArenaBoard_Update checks round end: finds max score, handles ties
 - Tie detection: counts how many players share max score; if ≥2, sets tie breaker flag
-- On game over: spawns RumbleScore object (FUN_4CB10), plays "Game Over" music
-- RumbleScore_ctor uses difficulty index [0,1,2] → scale [0.02, 0.03, 0.04]
-- RumbleBoard vtable at PTR_FUN_004d1358
+- On game over: spawns ArenaScoreParticle object (FUN_4CB10), plays "Game Over" music
+- ArenaScoreParticle_ctor uses difficulty index [0,1,2] → scale [0.02, 0.03, 0.04]
+- ArenaBoard vtable at PTR_FUN_004d1358
 
 ## 15. Scene Rendering Pipeline (0x45E0E0)
 

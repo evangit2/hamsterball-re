@@ -13,8 +13,8 @@ as Ghidra data types for improved decompilation.
 | App | 2328 bytes | 22 fields | App_Initialize_Full, App_Run |
 | Gadget | 2156 bytes | 16 fields | Gadget_ctor |
 | SceneObject | 212 bytes | 15 fields | SceneObject_ctor |
-| RumbleBoard | 16 bytes | 4 fields | RumbleBoard_InitTimer |
-| RumbleBoardObj | 18380 bytes | 6 fields | RumbleBoard_ctor |
+| RumbleBoard | 16 bytes | 4 fields | ToggleTimer_Init |
+| RumbleBoardObj | 18380 bytes | 6 fields | ArenaBoard_ctor |
 
 ## C Header Files
 
@@ -47,7 +47,7 @@ Ball (vtable 0x4CF3A0, size 0xC98) - player ball (NOT in Gadget hierarchy)
 | Scene/Board | 0x4D0260 | Scene_DeletingDtor |
 | SceneObject | 0x4D9170 | SceneObject_ScalarDtor (Gadget base) |
 | SceneObject | 0x4D934C | SceneObject_dtor (standalone) |
-| RumbleBoard | 0x4D1358 | RumbleBoard_dtor |
+| RumbleBoard | 0x4D1358 | ArenaBoard_dtor |
 | GameObject | 0x4CF314 | sub2_dtor (Ball ctor initial vtable) |
 
 ## Ball Field Map (Key Offsets)

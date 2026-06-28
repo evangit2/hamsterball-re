@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_ExpertArena_ctor
+ * Function: ArenaBoard_Expert_Ctor
  * Address: 0x00423060
- * Signature: void * __thiscall RumbleBoard_ExpertArena_ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Expert_Ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: RumbleBoard_ExpertArena_ctor, RumbleBoard_ctor, AthenaList_Init, CONCAT31, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 12, Lines: 31
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Expert_Ctor, ArenaBoard_ctor, AthenaList_Init, CONCAT31, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 12, Lines: 31
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_ExpertArena_ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Expert_Ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -21,9 +21,9 @@ void * __thiscall RumbleBoard_ExpertArena_ctor(void *this,int param_1)
   puStack_8 = &LAB_004ca9e6;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_CollSlicesArena_DeletingDtor_004d18c8;
+  *(undefined ***)this = &PTR_ArenaBoard_CollSlicesArena_DeletingDtor_004d18c8;
   AthenaList_Init((void *)((int)this + 0x47e0),0);
   local_4 = CONCAT31(local_4._1_3_,1);
   *(char **)((int)this + 0x868) = "RumbleBoard (Expert Arena)";

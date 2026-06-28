@@ -1,5 +1,5 @@
 
-void __fastcall RumbleBoard_TickTimer(int param_1)
+void __fastcall ToggleTimer_Tick(int param_1)
 
 {
   int iVar1;

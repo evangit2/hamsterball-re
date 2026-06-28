@@ -1247,7 +1247,7 @@ calculate the text width and compute the X position yourself. See
 - `docs/BALL_OBJECT.md` — Ball struct field reference
 - `docs/BALL_UPDATE_DECOMP.md` — Ball_Update decompilation annotations
 - `docs/RAYCASTING_FOR_DLL_MODS.md` — Raycast pattern for ground/wall detection
-- `docs/ARENA_SCORING.md` — Arena scoring system (RumbleBoard, score overflow)
+- `docs/ARENA_SCORING.md` — Arena scoring system (ArenaBoard, score overflow)
 - Skill `hamsterball-re` reference `ball-ai-clone-system.md` — Vtable patching for AI clones
 - Skill `hamsterball-re` reference `ball-ball-collision-hook.md` — Collision hook addresses
 - Skill `hamsterball-re` reference `hamsterball-dll-modding.md` — DLL mod build patterns

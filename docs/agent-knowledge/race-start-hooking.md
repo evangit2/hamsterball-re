@@ -74,13 +74,13 @@ App_Start*Race (0x4288B0 / 0x4289F0 / 0x428B20 / 0x428C50 / 0x429230)
 
 [Next frame: game loop begins]
 
-Scene_Update (0x419C00) / RumbleBoard_Update (0x421FE0)  ← vtable[1]
+Scene_Update (0x419C00) / ArenaBoard_Update (0x421FE0)  ← vtable[1]
   ├─ Frame counter increment (Scene+0xD88)
   ├─ Demo timer check
   ├─ ESC / pause check
   ├─ Ball position propagation (Ball_SetTargetPos)
   ├─ Gear path follow
-  ├─ RumbleBoard_TickTimer
+  ├─ ToggleTimer_Tick
   ├─ Camera shake decay
   ├─ Scene object update + render (vtable[4] / vtable[0])
   └─ Physics pipeline (gated by ball+0x14C):
@@ -162,7 +162,7 @@ player input path in Ball_Update.
 - **Ball_ctor2** (0x403D1D): Sets to 0 (enabled) at ball creation
 - **Scene_StartCountdown** (0x43717B): Sets to 1 (disabled) on SinkPlatform touch
 - **Scene_HandleRaceEnd** (0x41B40D): Sets to 1 (disabled) when race timer expires
-- **RumbleBoard_Update** (0x421FE0): Sets to 1 (disabled) for all balls at arena end
+- **ArenaBoard_Update** (0x421FE0): Sets to 1 (disabled) for all balls at arena end
 
 **Nobody clears ball+0x14C back to 0 after it's set to 1.** The ball is
 frozen permanently until respawn (which creates a new ball via Ball_ctor2).
@@ -674,7 +674,7 @@ previous frame to detect level changes.
 **Why Scene_Update (0x419C00) and NOT Ball_Update (0x405E00):**
 - Scene_Update is called for ALL levels, ALL modes, EVERY frame
 - vtable[1] is overridden by some levels (Intermediate=0x41CC90, Dizzy=0x41D510,
-  RumbleBoard=0x421FE0), but ALL overrides `CALL 0x419C00` directly — so the
+  ArenaBoard=0x421FE0), but ALL overrides `CALL 0x419C00` directly — so the
   MinHook at 0x419C00 fires for every level
 - Ball_Update (0x405E00) is NOT called for player balls in race mode!
   vtable[4] (Ball_AI_ChaseNearest, 0x408390) checks `ball+0xC74` (AI flag)
@@ -797,7 +797,7 @@ The 3-2-1 countdown does NOT set ball+0x14C. The ball is free to move during
 the countdown. Ball+0x14C is only set by:
 - SinkPlatform collision (Scene_StartCountdown)
 - Race timer expiry (Scene_HandleRaceEnd post-countdown)
-- Arena end (RumbleBoard_Update)
+- Arena end (ArenaBoard_Update)
 
 ### 3. Scene+0x10F4 Timer Is Dead Code
 
@@ -818,8 +818,8 @@ than per-level functions.
 
 ### 5. Arena vs Race Initialization
 
-Arena levels use `RumbleBoard_*_Init` functions (e.g.
-RumbleBoard_WarmUp_Init at 0x413C20) instead of `Scene_LoadLevel*`.
+Arena levels use `ArenaBoard_*_Init` functions (e.g.
+ArenaLevel_WarmUp_Init at 0x413C20) instead of `Scene_LoadLevel*`.
 These also call vtable[32] = Scene_SpawnBallsAndObjects, so the same
 hook works for both arenas and races.
 

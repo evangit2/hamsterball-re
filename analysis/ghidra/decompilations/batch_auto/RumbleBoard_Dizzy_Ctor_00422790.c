@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Dizzy_Ctor
+ * Function: ArenaBoard_Dizzy_Ctor
  * Address: 0x00422790
- * Signature: void * __thiscall RumbleBoard_Dizzy_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Dizzy_Ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: RumbleBoard_Dizzy_Ctor, RumbleBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 29
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Dizzy_Ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 29
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_Dizzy_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Dizzy_Ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -21,9 +21,9 @@ void * __thiscall RumbleBoard_Dizzy_Ctor(void *this,int param_1)
   puStack_8 = &LAB_004ca8e8;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_ExpertArena_DeletingDtor_004d1680;
+  *(undefined ***)this = &PTR_ArenaBoard_Expert_DeletingDtor_004d1680;
   *(char **)((int)this + 0x868) = "RumbleBoard (Dizzy Arena)";
   *(char **)((int)this + 0x4344) = "Dizzy!";
   *(char **)((int)this + 0x29b4) = "DIZZY ARENA";
