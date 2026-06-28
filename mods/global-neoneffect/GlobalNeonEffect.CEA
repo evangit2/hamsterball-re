@@ -1,104 +1,177 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v21 — Dark ambient, NO fog, ball visible via lights
+// GLOBAL NEON EFFECT v22 — Dark scene, NO directional lights, ball glows
 //
 // ═══════════════════════════════════════════════════════════════════════
-// ROOT CAUSE OF v19/v20 FAILURE: FOG WAS THE PROBLEM!
+// ROOT CAUSE OF v21 FAILURE: ambient black ≠ dark scene!
 //
-// v19/v20 enabled fog with FOGSTART=0, FOGEND=500. In Hamsterball levels,
-// the camera is typically 800-1200 units from geometry. With FOGEND=500,
-// EVERYTHING beyond 500 units is pure black. This caused most of the
-// scene to disappear into black void, leaving only nearby flat geometry.
+// D3D8 lighting formula:
+//   vertex_color = ambient × material.ambient
+//                + Σ(light[i].diffuse × material.diffuse × NdotL)
+//                + material.emissive
 //
-// The actual Neon Race does NOT use fog! Its dark look comes from:
-//   - Dark ambient color (MESHWORLD Section 4 background)
-//   - Directional lights still illuminating geometry
-//   - Ball visible because it's lit by scene lights
+// v21 zeroed the ambient (gfx+0x730 = 0xFF000000) but directional lights
+// (gfx+0x710 array, 8 object pointers) still fully illuminated geometry.
+// The light loop at 0x454C7B-0x454C95 in Graphics_RenderScene iterates
+// these pointers and calls each light object's vtable[3] method, which
+// internally calls SetLight + LightEnable on the D3D device.
 //
-// v21 approach:
-//   1. gfx+0x730 = 0xFF000000 (AMBIENT = pure black, alpha=255)
-//      → Removes ambient light, making the scene dark
-//      → Directional lights still work (set by Graphics_SetupLights)
-//   2. gfx+0x734 = 0 (FOGENABLE = FALSE) ← KEY FIX: disable fog!
-//   3. gfx+0x738 = 0xFF000000 (FOGCOLOR = black, irrelevant if fog off)
-//   4. Remove ALL direct SetRenderState calls — not needed!
-//      The game applies gfx+0x730/734/738 via Graphics_RenderScene.
-//      No need for FOGVERTEXMODE, FOGTABLEMODE, FOGSTART, FOGEND.
-//      No need for EMISSIVEMATERIALSOURCE or COLORVERTEX.
-//      The ball will be visible because LIGHTING=TRUE (set by
-//      Ball_InitRenderState) and directional lights still illuminate it.
+// Result: black background/void but bright geometry — "lighting still bright."
 //
-// D3D8 render state IDs (verified against d3d8types.h):
-//   0x8B = 139 = D3DRS_AMBIENT (gfx+0x730, applied by Graphics_RenderScene)
-//   0x1C = 28  = D3DRS_FOGENABLE (gfx+0x734)
-//   0x22 = 34  = D3DRS_FOGCOLOR (gfx+0x738)
+// THE FIX (v22):
+// 1. Disable ALL 8 D3D lights via LightEnable(i, FALSE) at function entry
+//    → No directional light contribution at all
+// 2. Set ambient to DIM GRAY (0xFF202020) instead of pure black
+//    → Geometry barely visible (~12% brightness), like Neon Race
+//    → Adjust this value up (0xFF303030) or down (0xFF101010) as needed
+// 3. Patch light loop JZ→JMP (1 byte at 0x454C8A: 74→EB)
+//    → Prevents light objects from re-applying per-frame
+// 4. Fog disabled (same as v21)
 //
-// Graphics_RenderScene (0x454BC0) at 0x454CAC:
-//   SetRenderState(0x8B, [gfx+0x730])  → AMBIENT
-//   SetRenderState(0x1C, [gfx+0x734])  → FOGENABLE
-//   SetRenderState(0x22, [gfx+0x738])  → FOGCOLOR
+// BALL VISIBILITY (why ball still glows):
+//   Ball_Render (0x402DE0) checks ball+0xC80 (glow flag). When set:
+//   - Graphics_SetViewportClip applies ball's custom glow color (0xC88/C8C/C90)
+//   - Gfx_PackColorRGB(1,1,1) sets emissive material = white
+//   - Ball sprite rendering (shadow, aura, stars) bypasses D3D lighting
+//   So the ball is fully visible even with no directional lights.
 //
-// ═══════════════════════════════════════════════════════════════════════
-// HOOK SAFETY: Ball_Update (0x405E22) — SEH frame installed at 0x405E0E,
-// BEFORE our hook. ECX/EDX clobbered after hook (XOR at 0x405E35/0x405E42).
-// EAX saved with PUSH/POP. ESI=callee-preserved (ball pointer).
-// No stdcall calls needed — just memory writes to gfx struct!
+// HOOK POINT: Graphics_RenderScene (0x454BC0) — FUNCTION ENTRY
+//   ECX = gfx (this pointer). Safe to call D3D __stdcall methods here
+//   because we save/restore ALL registers via PUSHFD/PUSHAD/POPAD/POPFD.
+//   Original prologue (6+4+2 = 12 bytes):
+//     SUB ESP,0C0h        (81 EC C0 00 00 00 — 6 bytes)
+//     PUSH EBX            (53 — 1 byte)
+//     PUSH EBP            (55 — 1 byte)
+//     PUSH ESI            (56 — 1 byte)
+//     PUSH EDI            (57 — 1 byte)
+//     MOV EBP,ECX         (8B EA — 2 bytes)
+//   JMP (5 bytes) + NOP (1 byte) = 6 bytes to cover SUB ESP.
+//
+// LIGHT LOOP PATCH: 0x454C8A (74→EB)
+//   Original loop at 0x454C86-0x454C95:
+//     MOV ECX,[ESI]       ; load light pointer
+//     TEST ECX,ECX        ; null check
+//     JZ skip             ; 74 05 — skip if null
+//     MOV EAX,[ECX]       ; vtable
+//     CALL [EAX+0x0C]     ; light->Apply() → SetLight + LightEnable
+//   skip:
+//     ADD ESI,4; DEC EDI; JNZ loop
+//   Patch: JZ→JMP (74→EB) — ALWAYS skip, even for non-null pointers.
+//   This prevents light objects from re-enabling themselves per-frame.
+//
+// D3D vtable offsets (verified against d3d8types.h):
+//   LightEnable      = vtable[0xB4] (method 45, __stdcall, 3 args)
+//   SetRenderState   = vtable[0xC8] (method 50)
+//
+// gfx struct layout (verified via Graphics_ctor 0x454390):
+//   gfx+0x154 = D3D device wrapper (vtable mirrors IDirect3DDevice8)
+//   gfx+0x710 = light pointer array (8 × 4 bytes = 32 bytes)
+//   gfx+0x730 = cached D3DRS_AMBIENT (applied at 0x454CAC)
+//   gfx+0x734 = cached D3DRS_FOGENABLE (applied at 0x454CCD)
+//   gfx+0x738 = cached D3DRS_FOGCOLOR (applied at 0x454D00)
+//   gfx+0x700 = cached D3DRS_LIGHTING flag (set by Gfx_ApplyLightingState)
+//
+// CEA __stdcall CRASH RULE (from prior v3-v6/v4-v5 crashes):
+//   LightEnable is __stdcall — CLOBBERS EAX/ECX/EDX.
+//   After EVERY D3D call, MUST reload vtable from device pointer.
+//   Store persistent values in EBX/ESI/EDI (callee-preserved).
+//   This is a FUNCTION-ENTRY hook, so PUSHAD/POPAD is safe.
+//
 // ═══════════════════════════════════════════════════════════════════════
 
 [ENABLE]
 
-alloc(neon_cave, 128)
+alloc(neon_cave, 256)
 
-label(neon_skip)
-label(neon_done)
+label(neon_skip_lights)
+label(neon_light_loop)
 
 // ═══════════════════════════════════════════════════════════════════════
-// HOOK: Ball_Update (0x405E22) — ESI = ball, SEH already set up
-// Original: MOV EAX, [ESI+0x00000C5C] (6 bytes: 8B 86 5C 0C 00 00)
+// CODE CAVE: Hook at Graphics_RenderScene entry (0x454BC0)
+// ECX = gfx (this pointer) at function entry
 // ═══════════════════════════════════════════════════════════════════════
 neon_cave:
-  push eax                    // save EAX (original instruction's target)
+  pushfd
+  pushad
 
-  // ── Resolve gfx pointer ──────────────────────────────────────────
-  mov eax, [esi+0x10]         // ball+0x10 = App
+  // ── EBX = gfx (callee-preserved, saved by PUSHAD) ──────────────
+  mov ebx, ecx
+
+  // ── Get D3D device wrapper ──────────────────────────────────────
+  mov eax, [ebx+0x154]       // gfx+0x154 = D3D device wrapper
   test eax, eax
-  jz neon_skip
-  mov eax, [eax+0x174]        // App+0x174 = gfx
-  test eax, eax
-  jz neon_skip
+  jz neon_skip_lights
+  mov edi, eax               // EDI = device (callee-preserved)
 
-  // ── Write cached values (Graphics_RenderScene applies these) ────
-  // gfx+0x730 = 0xFF000000 (AMBIENT = pure black, alpha=255)
-  // This removes ambient light → scene becomes dark
-  // Directional lights still work (set by Graphics_SetupLights)
-  mov dword ptr [eax+0x730], 0FF000000h
+  // ── Disable all 8 D3D lights ────────────────────────────────────
+  // LightEnable(index, FALSE) via vtable[0xB4]
+  // __stdcall: callee cleans 12 bytes (3 args × 4)
+  // Clobbers EAX/ECX/EDX — reload vtable each iteration
+  xor esi, esi               // ESI = light index (0..7)
+neon_light_loop:
+  push 0                     // Enable = FALSE
+  push esi                   // Index (0..7)
+  push edi                   // device (this)
+  mov eax, [edi]             // vtable (reload after __stdcall clobber)
+  call dword ptr [eax+0xB4]  // LightEnable(Index, FALSE)
+  inc esi
+  cmp esi, 8
+  jl neon_light_loop
 
-  // gfx+0x734 = 0 (FOGENABLE = FALSE) ← KEY: NO fog!
-  // v19/v20 had fog enabled with FOGEND=500, which fogged out
-  // everything beyond 500 units. Camera is typically 800-1200
-  // units away, so entire scene was black. Disabling fog fixes this.
-  mov byte ptr [eax+0x734], 0
+neon_skip_lights:
+  // ── Set cached render state values ──────────────────────────────
+  // These are read by Graphics_RenderScene at 0x454C97/0x454CB2
+  // and applied via SetRenderState at 0x454CAC/0x454CCD.
 
-  // gfx+0x738 = 0xFF000000 (FOGCOLOR = black, irrelevant with fog off)
-  mov dword ptr [eax+0x738], 0FF000000h
+  // gfx+0x730 = D3DRS_AMBIENT = dim gray (geometry barely visible)
+  // 0xFF202020 = Alpha=255, R=32, G=32, B=32 (~12% brightness)
+  // Adjust: 0xFF000000=pure black, 0xFF101010=darker, 0xFF303030=brighter
+  mov dword ptr [ebx+0x730], 0FF202020h
 
-  jmp neon_done
+  // gfx+0x734 = D3DRS_FOGENABLE = FALSE (NO fog!)
+  // Fog with FOGEND<1000 fogs out entire scene (camera 800-1200 units)
+  mov byte ptr [ebx+0x734], 0
 
-neon_skip:
-  // Null pointer path — just restore EAX
+  // gfx+0x738 = D3DRS_FOGCOLOR = black (irrelevant with fog off)
+  mov dword ptr [ebx+0x738], 0FF000000h
 
-neon_done:
-  pop eax                     // restore EAX
-  mov eax, [esi+0x00000C5C]  // original instruction
-  jmp 00405E28
+  popad
+  popfd
 
-// ── Install hook ─────────────────────────────────────────────────────
-00405E22:
+  // ── Original Graphics_RenderScene prologue ──────────────────────
+  // ECX still = gfx (restored by POPAD)
+  sub esp, 0C0h
+  push ebx
+  push ebp
+  push esi
+  push edi
+  mov ebp, ecx               // EBP = gfx (original instruction)
+
+  jmp 00454BCC               // return after prologue
+
+// ═══════════════════════════════════════════════════════════════════════
+// INSTALL HOOKS
+// ═══════════════════════════════════════════════════════════════════════
+
+// Hook Graphics_RenderScene entry
+// Original: 81 EC C0 00 00 00 (SUB ESP,0C0h) — 6 bytes
+// Replace:  E9 xx xx xx xx 90 (JMP neon_cave + NOP) — 6 bytes
+00454BC0:
   jmp neon_cave
   nop
 
+// Patch light loop: JZ → JMP (always skip light Apply calls)
+// At 0x454C8A: original 74 05 (JZ +5) → patched EB 05 (JMP +5)
+00454C8A:
+  db EB
+
 [DISABLE]
 
-00405E22:
-  db 8B 86 5C 0C 00 00
+// Restore Graphics_RenderScene entry (SUB ESP,0C0h)
+00454BC0:
+  db 81 EC C0 00 00 00
+
+// Restore light loop JZ
+00454C8A:
+  db 74
 
 dealloc(neon_cave)
