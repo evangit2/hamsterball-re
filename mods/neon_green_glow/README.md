@@ -20,8 +20,8 @@ This patch zeroes all 8 R-channel push immediates, changing the color from:
 | 0x004165D5 | 3F800000 | 00000000 | P1 Diffuse R (phys+0x1BC) |
 | 0x0041663F | 3F800000 | 00000000 | P1 Emissive R (phys+0x1EC) |
 | 0x004166C0 | 3F800000 | 00000000 | P2 Ambient R (phys2+0x1CC) |
-| 0x0041672E | 3F800000 | 00000000 | P2 Diffuse R (phys2+0x1BC) |
-| 0x00416798 | 3F800000 | 00000000 | P2 Emissive R (phys2+0x1EC) |
+| 0x0041672D | 3F800000 | 00000000 | P2 Diffuse R (phys2+0x1BC) |
+| 0x00416797 | 3F800000 | 00000000 | P2 Emissive R (phys2+0x1EC) |
 
 ## Usage
 
