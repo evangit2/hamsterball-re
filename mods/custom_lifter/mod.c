@@ -171,7 +171,7 @@ static RenderFn_t g_OriginalRender = NULL;
 #define T_BOTTOM_PAUSE_2  400
 
 /* Movement per sub-step */
-#define RISE_STEP  0.1f
+#define RISE_STEP  0.2f
 #define FALL_STEP  0.2f
 #define SUB_STEPS  3
 
