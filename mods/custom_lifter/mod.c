@@ -103,6 +103,13 @@ __declspec(dllexport) int __stdcall BASS_Stop(void) {
     return 1;
 }
 
+typedef int  (__stdcall *BASS_Start_t)(void);
+static BASS_Start_t real_BASS_Start = NULL;
+__declspec(dllexport) int __stdcall BASS_Start(void) {
+    if (real_BASS_Start) return real_BASS_Start();
+    return 1;
+}
+
 typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
 static BASS_SetConfig_t real_BASS_SetConfig = NULL;
 __declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
@@ -326,6 +333,8 @@ static void load_real_bass(void)
         GetProcAddress(g_hRealBass, "BASS_Free");
     real_BASS_Stop = (BASS_Stop_t)
         GetProcAddress(g_hRealBass, "BASS_Stop");
+    real_BASS_Start = (BASS_Start_t)
+        GetProcAddress(g_hRealBass, "BASS_Start");
     real_BASS_SetConfig = (BASS_SetConfig_t)
         GetProcAddress(g_hRealBass, "BASS_SetConfig");
     real_BASS_ErrorGetCode = (BASS_ErrorGetCode_t)
