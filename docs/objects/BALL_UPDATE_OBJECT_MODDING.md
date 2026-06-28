@@ -73,7 +73,7 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x24C | `uint8_t[8]` | pad_24c | | |
 | 0x254 | `bool` | uses_alpha | ctor2 | `color_a != 1.0f` |
 | 0x255 | `uint8_t[0xB]` | pad_255 | | |
-| 0x260 | `uint8_t` | boost_flag | ctor2 | Set `0` |
+| 0x260 | `uint8_t` | sweat_flag | ctor2 | Set `0` | Grip-climbing flag: 1 when airborne on slope |
 | 0x261 | `uint8_t[3]` | pad_261 | | |
 | 0x264 | `ArenaBoard` | toggle_timer1 | ctor2 | `ToggleTimer_Init` target (20 bytes) |
 | 0x278 | `float` | **gravity_scale** | ctor2, Update | Default `0.1f`. **Scale gravity strength.** |

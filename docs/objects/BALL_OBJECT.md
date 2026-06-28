@@ -104,7 +104,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x248 | float | render2_a | 1.0 | Render context #2 RGBA |
 | 0x254 | uint8 | uses_alpha | 0 | True if color_a != 1.0 |
 | 0x25C | float | unknown_25C | 0.0 | Unknown (modified in Ball_Update spin friction) |
-| 0x260 | uint8 | boost_hit_flag | 0 | Set on boost pad contact |
+| 0x260 | uint8 | sweat_flag | 0 | Grip-climbing flag: 1 when airborne on slope (sweat mode), 0 at high speed |
 | 0x264 | uint8[0x14] | toggle_timer1 | — | ArenaBoard timer sub-object |
 | 0x26C | int32 | unknown_26C | 20 | Unknown int (0x14) |
 | **0x278** | **float** | **gravity_scale** | **0.5** | **Gravity multiplier (ctor2=0.1, overridden to 0.5)** |
