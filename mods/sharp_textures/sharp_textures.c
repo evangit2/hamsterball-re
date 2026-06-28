@@ -224,9 +224,8 @@ static void __fastcall begin_frame_hook(void* this_, void* edx, int param_1) {
     if (!vtable || IsBadReadPtr(vtable, (VTBL_SET_TEX_STAGE_STATE + 1) * 4)) return;
 
     /* SetTextureStageState is vtable[63] (offset 0xFC) */
-    /* typedef HRESULT (__stdcall *SetTSS_t)(IDirect3DDevice8*, DWORD stage, DWORD type, DWORD value) */
-    /* In the vtable, the this pointer is passed implicitly via ECX (thiscall) */
-    typedef int (__thiscall *SetTSS_t)(void*, DWORD, DWORD, DWORD);
+    /* D3D8 COM methods use __stdcall: this pointer pushed on stack as first param */
+    typedef int (__stdcall *SetTSS_t)(void*, DWORD, DWORD, DWORD);
     SetTSS_t pSetTSS = (SetTSS_t)vtable[VTBL_SET_TEX_STAGE_STATE];
     if (!pSetTSS) return;
 
