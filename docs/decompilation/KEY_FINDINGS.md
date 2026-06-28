@@ -72,8 +72,8 @@ void App::Run(App* this);  // ECX = App* (0x4FD680)
 | +0x284 | float | radius | **35.0** (ball radius) |
 | +0x2CC | char | no_input | No player input |
 | +0x2E8 | char | flag1 | Reset to 0 each frame |
-| +0x2E9 | char | impact_shatter | ⚠ **NOT "reset to 0 each frame"!** Sticky flag, only cleared by Ball_ctor2. See docs/agent-knowledge/ball-ground-detection.md |
-| +0x2EC | uint32 | ??? | Reset to 0 each frame |
+| +0x2E9 | byte | dizzy_lock | ⚠ **NOT "reset to 0 each frame"!** Sticky flag that prevents Ball_ApplyTrajectory from re-firing. Set by E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1/2, E:SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory itself. Reset to 0 ONLY by Ball_InitPhysicsDefaults(0x405100) at 0x405262, and Ball_ctor2(0x4039E0) at 0x403BDE. See docs/agent-knowledge/limit-flag-deep-dive.md |
+| +0x2EC | int32 | bounce_count | Dizzy system bounce counter. Double-incremented (0→1→2) when collision speed exceeds thresholds 0.03 and 0.1. When bounce_count > 1 AND dizzy_lock==0 → Ball_ApplyTrajectory fires. Reset by Ball_RecordBest, Ball_InitPhysicsDefaults, and when has_trajectory(+0x14D) is set |
 | +0x2F0 | uint32 | force_counter | Forces applied this frame |
 | +0x2F8 | char | update_in_progress | Set to 1 during update |
 | +0x2F9 | char | frozen | Ball frozen (on surface) |
@@ -164,7 +164,7 @@ The main per-frame physics update:
 - SAFESPOT (safe zones)
 - PLATFORM, N:SINKPLATFORM (platforms)
 - N:BUMPER1-4 (bumpers)
-- E:NODIZZY<TIME>N</TIME> (dizzy zones)
+- E:NODIZZY<TIME>N</TIME> (TIME checkpoint clearer — NOT dizzy-related; clears TIME checkpoint entries and calls Ball_RecordBest)
 - E:LIMIT (boundaries)
 - CAMERALOOKAT (camera points)
 - BADBALL (enemies)

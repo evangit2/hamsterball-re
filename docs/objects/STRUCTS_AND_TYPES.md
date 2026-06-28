@@ -81,7 +81,7 @@ typedef struct {
 
 // Object types with embedded XML properties:
 // N:SINKPLATFORM = platform that sinks after player steps on it
-// E:NODIZZY<TIME>N</TIME> = disables dizzy effect for N seconds
+// E:NODIZZY<TIME>N</TIME> = clears TIME checkpoints (NOT dizzy-related); calls Ball_RecordBest
 // E:GROWSOUND = sound trigger for growth effect
 ```
 

@@ -35,7 +35,7 @@ All created objects are appended to **Scene+0x2578** (AthenaList, the master obj
 | 0x40C0F0 | Scene_CreateFlags | Finish flags | Race completion markers |
 | 0x40C270 | Scene_CreateSigns | Direction signs | Arrow signposts |
 | 0x40C430 | Scene_CreateDynamicObjects | Dynamic objects | Moving platforms, etc. |
-| 0x40C5D0 | DispatchCollisionEvents | No-dizzy pickup | 27 xrefs — common collectible |
+| 0x40C5D0 | DispatchCollisionEvents | TIME checkpoint clearer (E:NODIZZY) | 27 xrefs — common collectible |
 | 0x40E250 | CreateExpertLevelObjects | BONK/TOWER/SAWBLADE/BRIDGE/JUDGE/BELL | Multi-factory for arena |
 | 0x40FA20 | CreateBumper | Bumper | Standard collision bumper |
 | 0x410D00 | NeonCollisionEvents | Level boundary | Invisible wall/limit |

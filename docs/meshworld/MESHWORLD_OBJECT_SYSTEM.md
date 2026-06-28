@@ -223,7 +223,7 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 | `E:POPOUT` | Pipe pop-out sound + score (30 instances, 11 files) |
 | `E:PIPEBONK` | Pipe collision sound (random of 3) (22 instances, 4 files) |
 | `E:SAFESWITCH(A)`–`(H)` | Track which checkpoint/safe zone was hit |
-| `E:NODIZZY<TIME>N</TIME>` | Anti-dizzy zone with duration (50-600) |
+| `E:NODIZZY<TIME>N</TIME>` | TIME checkpoint clear zone with duration (50-600) — NOT dizzy-related |
 | `E:JUMP` | Jump pad: upward velocity + sound + score |
 | `E:CATAPULTBOTTOM` | Launch catapult |
 | `E:OPENSESAME` | Open first trapdoor |

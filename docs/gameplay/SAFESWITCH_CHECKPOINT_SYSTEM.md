@@ -52,7 +52,7 @@ if (stricmp(event_string, "E:SAFESWITCH") == 0) {
     // FALL THROUGH to E:LIMIT handler (no return/jump past it)
     // This means SAFESWITCH ALSO deactivates the ball:
     ball->is_active = 0;         // +0x768 = 0
-    ball->flag_2E9 = 1;          // +0x2E9 = 1
+    ball->dizzy_lock = 1;        // +0x2E9 = 1
     // ... arena scoring logic if applicable ...
 }
 ```
@@ -188,7 +188,7 @@ behavior than the standard mode 0.
 
 When a ball falls off the track:
 
-1. **E:LIMIT or E:SAFESWITCH collision** → `ball+0x768 = 0` (deactivate), `ball+0x2E9 = 1`
+1. **E:LIMIT or E:SAFESWITCH collision** → `ball+0x768 = 0` (deactivate), `ball+0x2E9 = 1` (dizzy_lock)
 2. **Ball_FallUpdate (0x408830)** countdown: `ball+0xC60 -= 0.02` per frame
 3. **Timer expires** (`ball+0xC60 < 0.0`) → `ball+0x2E8 = 1` (needs_respawn)
 4. **Ball_FindClosestRespawnPoint (0x405190)** runs:
