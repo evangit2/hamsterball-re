@@ -130,7 +130,7 @@ Documented: 3781/3781 (100%)
 | 0x00403100 | Ball_SetTiltedGravity | Set gravity plane to tilted (value 1, normal -1,0,0) |
 | 0x00403150 | Ball_SetFlatGravity | Set gravity plane to flat (value 2, normal 0,0,1) |
 | 0x00403850 | Ball_SetTrajectory | Set ball trajectory direction + force scale |
-| 0x00403750 | Ball_ApplyTrajectory | Apply trajectory force (normalize+scale direction, play sound, frame counter=100) |
+| 0x00403750 | Ball_ApplyTrajectory | The "dizzy" effect: normalize+scale velocity by 0.5, damp Y by 1.25, set impact_count(+0x2F0)=100, set dizzy_lock(+0x2E9)=1, set has_trajectory(+0x14D)=1, create trail particles, play boost sound. If player_index≠-1: increment *(App+pIdx×0xA0+0x5F8) (dizzy counter shown on end screen). Called when bounce_count(+0x2EC) > 1 AND dizzy_lock==0 in Ball_Update Pass 1. |
 | 0x00403980 | Ball_FindMeshCollision | Wrapper for Mesh_FindClosestCollision |
 | 0x00401DD0 | Ball_CreateTrailParticles | Create trail particles (10 iterations, spawn 0x28 byte objects) |
 | 0x00401920 | Ball_RenderShadow | Render ball shadow (scale by radius*constant, position at ball XYZ) |
@@ -816,7 +816,7 @@ Offset | Field | Description
 | 0x00472c70 | Math_Lerp | 9 | Linear interpolation: a + (b-a)*t |
 | 0x0042c870 | Font_DrawCentered | 8 | Draw text centered at (x,y) position |
 | 0x004351f0 | GameLevel_ctor | 8 | Game level constructor (Stands_ctor, Level_Clone, sound channel) |
-| 0x00402400 | Ball_RecordBest | 7 | Reset +0x2EC, update max at +0x2F4 if param exceeds current |
+| 0x00402400 | Ball_RecordBest | 7 | Reset bounce_count(+0x2EC)=0, update max streak(+0x2F4) if param exceeds current. Called by E:NODIZZY handler (clears TIME checkpoints) and trajectory system. |
 | 0x00425f90 | App_CompleteRace | 7 | Complete race - increment counter, trigger state transitions, clear flag |
 | 0x00426b30 | String_AllocBuffer | 7 | Allocate string buffer with size | 0xF rounding |
 | 0x0042b190 | ConfirmMenu_ctor | 6 | Confirmation menu (BACK/BACK2TOURNAMENT, DONE), vtable 0x4d39d0 |
@@ -874,7 +874,7 @@ Offset | Field | Description
 | 0x00405100 | Ball_InitPhysicsDefaults | 14 | Set ball physics defaults: radius=0.5, friction=0.2, max_speed=35.0, gravity=6.0 |
 | 0x00405d90 | GameObject_sub_ctor | 14 | GameObject subclass constructor: vtable 0x4CF494, scale=1.0, visibility flag, +0x80c=0x32 |
 | 0x00405dd0 | GameObject_sub_dtor | 12 | GameObject deleting destructor variant 1 |
-| 0x00405e00 | Ball_Update | 400+ | Main ball physics tick: timer, collision, velocity integration, reflection, sound, camera tilt, spin. Core function! |
+| 0x00405e00 | Ball_Update | 400+ | Main ball physics tick: two-pass collision architecture (Pass 1: check bounce_count>1 → Ball_ApplyTrajectory; Pass 2: increment bounce_count, set dizzy_lock if speed>1.0). Also: stun recovery, timer, velocity integration, reflection, sound, camera tilt, spin. Core function! |
 | 0x00408390 | Ball_AI_ChaseNearest | 60 | AI steering: finds nearest opponent ball, applies force toward it, sine wave wandering fallback |
 | 0x00408830 | Ball_FallUpdate | 40 | Ball update when fallen: shrinks ball, handles scale change, trail cleanup |
 | 0x00408d10 | Ball_Split_ctor | 14 | Split ball constructor: vtable 0x4CF560, +0xc60=5, calls scene function |
