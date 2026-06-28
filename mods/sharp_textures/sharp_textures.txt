@@ -1,0 +1,12 @@
+# Sharp Textures config
+# Values: 0=none, 1=point(sharp), 2=linear(smooth), 3=anisotropic
+
+# Default filter for ALL textures:
+MAGFILTER = 2
+MINFILTER = 2
+MIPFILTER = 2
+
+# Override for textures containing 'checker' or 'brick' in filename:
+CHECKER_MAGFILTER = 1
+CHECKER_MINFILTER = 1
+CHECKER_MIPFILTER = 1
