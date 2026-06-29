@@ -360,17 +360,125 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     return 0;
 }
 
-/* ========== BASS proxy exports (stubs - never called by game code) ========== */
-__declspec(dllexport) BOOL __stdcall BASS_Init(int a, int b, int c, HWND d, void* e) { return TRUE; }
-__declspec(dllexport) void __stdcall BASS_Free(void) {}
-__declspec(dllexport) BOOL __stdcall BASS_Stop(void) { return TRUE; }
-__declspec(dllexport) BOOL __stdcall BASS_Start(void) { return TRUE; }
-__declspec(dllexport) BOOL __stdcall BASS_SetConfig(int a, int b) { return TRUE; }
-__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) { return 0; }
-__declspec(dllexport) void* __stdcall BASS_MusicLoad(void* a, void* b, void* c, DWORD d, DWORD e, DWORD f) { return NULL; }
-__declspec(dllexport) BOOL __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) { return TRUE; }
-__declspec(dllexport) BOOL __stdcall BASS_ChannelStop(DWORD a) { return TRUE; }
-__declspec(dllexport) BOOL __stdcall BASS_ChannelSetAttributes(DWORD a, float b, float c, int d) { return TRUE; }
+/* ========== BASS proxy: lazy-load real bass.dll ========== */
+/* User must rename original bass.dll to bass_real.dll before installing this mod. */
+/* If bass_real.dll is missing, all BASS functions return failure values — */
+/* the game shows a "music not available" message but doesn't crash. */
+
+static HMODULE g_real_bass = NULL;
+
+static void load_real_bass(void) {
+    if (g_real_bass) return;
+    /* Try bass_real.dll in the system search path (same dir as our DLL) */
+    g_real_bass = LoadLibraryA("bass_real.dll");
+    if (g_real_bass) return;
+    /* Try loading from the same directory as our DLL explicitly */
+    {
+        char path[MAX_PATH];
+        HMODULE hMod = NULL;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                           (LPCSTR)&load_real_bass, &hMod);
+        if (GetModuleFileNameA(hMod, path, MAX_PATH)) {
+            char* p = strrchr(path, '\\');
+            if (p) {
+                lstrcpyA(p + 1, "bass_real.dll");
+                g_real_bass = LoadLibraryA(path);
+            }
+        }
+    }
+}
+
+typedef BOOL  (__stdcall *BASS_Init_t)(int, int, int, HWND, void*);
+typedef void  (__stdcall *BASS_Free_t)(void);
+typedef BOOL  (__stdcall *BASS_Stop_t)(void);
+typedef BOOL  (__stdcall *BASS_Start_t)(void);
+typedef BOOL  (__stdcall *BASS_SetConfig_t)(int, int);
+typedef int   (__stdcall *BASS_ErrorGetCode_t)(void);
+typedef void* (__stdcall *BASS_MusicLoad_t)(void*, void*, void*, DWORD, DWORD, DWORD);
+typedef BOOL  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
+typedef BOOL  (__stdcall *BASS_ChannelStop_t)(DWORD);
+typedef BOOL  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, float, int);
+
+/* Forward to real bass.dll if available, otherwise return failure */
+__declspec(dllexport) BOOL __stdcall BASS_Init(int a, int b, int c, HWND d, void* e) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_Init_t real = (BASS_Init_t)GetProcAddress(g_real_bass, "BASS_Init");
+        if (real) return real(a, b, c, d, e);
+    }
+    return FALSE;  /* Tell game: audio init failed, continue without music */
+}
+__declspec(dllexport) void __stdcall BASS_Free(void) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_Free_t real = (BASS_Free_t)GetProcAddress(g_real_bass, "BASS_Free");
+        if (real) real();
+    }
+}
+__declspec(dllexport) BOOL __stdcall BASS_Stop(void) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_Stop_t real = (BASS_Stop_t)GetProcAddress(g_real_bass, "BASS_Stop");
+        if (real) return real();
+    }
+    return TRUE;
+}
+__declspec(dllexport) BOOL __stdcall BASS_Start(void) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_Start_t real = (BASS_Start_t)GetProcAddress(g_real_bass, "BASS_Start");
+        if (real) return real();
+    }
+    return TRUE;
+}
+__declspec(dllexport) BOOL __stdcall BASS_SetConfig(int a, int b) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_SetConfig_t real = (BASS_SetConfig_t)GetProcAddress(g_real_bass, "BASS_SetConfig");
+        if (real) return real(a, b);
+    }
+    return TRUE;
+}
+__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_ErrorGetCode_t real = (BASS_ErrorGetCode_t)GetProcAddress(g_real_bass, "BASS_ErrorGetCode");
+        if (real) return real();
+    }
+    return 0;
+}
+__declspec(dllexport) void* __stdcall BASS_MusicLoad(void* a, void* b, void* c, DWORD d, DWORD e, DWORD f) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_MusicLoad_t real = (BASS_MusicLoad_t)GetProcAddress(g_real_bass, "BASS_MusicLoad");
+        if (real) return real(a, b, c, d, e, f);
+    }
+    return NULL;
+}
+__declspec(dllexport) BOOL __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_MusicPlayEx_t real = (BASS_MusicPlayEx_t)GetProcAddress(g_real_bass, "BASS_MusicPlayEx");
+        if (real) return real(a, b, c);
+    }
+    return TRUE;
+}
+__declspec(dllexport) BOOL __stdcall BASS_ChannelStop(DWORD a) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_ChannelStop_t real = (BASS_ChannelStop_t)GetProcAddress(g_real_bass, "BASS_ChannelStop");
+        if (real) return real(a);
+    }
+    return TRUE;
+}
+__declspec(dllexport) BOOL __stdcall BASS_ChannelSetAttributes(DWORD a, float b, float c, int d) {
+    load_real_bass();
+    if (g_real_bass) {
+        BASS_ChannelSetAttributes_t real = (BASS_ChannelSetAttributes_t)GetProcAddress(g_real_bass, "BASS_ChannelSetAttributes");
+        if (real) return real(a, b, c, d);
+    }
+    return TRUE;
+}
 
 /* ========== DllMain ========== */
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
