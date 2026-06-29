@@ -165,14 +165,14 @@ static RenderFn_t g_OriginalRender = NULL;
 
 /* Timer durations (frames) */
 #define T_BOTTOM_PAUSE_1  300
-#define T_RISE            1500
+#define T_RISE            1000
 #define T_TOP_PAUSE       300
-#define T_FALL            1500
+#define T_FALL            1000
 #define T_BOTTOM_PAUSE_2  400
 
 /* Movement per sub-step */
-#define RISE_STEP  0.2f
-#define FALL_STEP  0.2f
+#define RISE_STEP  0.25f
+#define FALL_STEP  0.25f
 #define SUB_STEPS  3
 
 /* Ball-carry constants (from original decompilation at 0x0043D420) */
