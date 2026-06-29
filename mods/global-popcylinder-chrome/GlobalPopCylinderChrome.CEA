@@ -1,214 +1,271 @@
 [ENABLE]
  
 // =====================================================
-// Global PopCylinder Spawner with Chrome Release v5 (DEBUG)
+// Global PopCylinder Spawner with Chrome Release v6
 // =====================================================
+// Based on the WORKING SpeedCylinderSpawn.CEA pattern.
+//
 // HOOK: Ball_Update at 0x405E22
 //   Original: 8B 86 5C 0C 00 00 = mov eax, [esi+0x0C5C]
-//   ESI = ball pointer (ECX from __fastcall Ball_Update)
+//   ESI = ball pointer
 //
-// HOTKEY: Set [SpawnPopCylinder] to 1 via CE to spawn
+// HOTKEY: Set [SpawnFlag] to 1 via CE to spawn
 //
-// DEBUG: Check [DebugFrame] (should count up rapidly),
-//        [DebugSpawnAttempt] (should be 1 after setting flag),
-//        [DebugError] (0=success, see below)
+// Uses CreateLevelObjects (0x004121D0) with "POPCYLINDER" string,
+// then does full post-processing (SpatialTree, render list, collision
+// list, vtable inits) — same pattern as the working SpeedCylinder script.
 //
-// Error codes:
-//   0 = success, 1 = board NULL, 2 = App NULL,
-//   3 = mesh alloc failed, 4 = gfx_device NULL,
-//   5 = mesh ctor failed, 6 = mesh still NULL,
-//   7 = popcyl alloc failed, 8 = ctor failed
+// Key differences from SpeedCylinder:
+//   - String: "POPCYLINDER" at 0x004CFDB8 (vs "SPEEDCYLINDER" at 0x004CFE4C)
+//   - Creation fn: 0x004121D0 (CreateLevelObjects, vs 0x004117B0 CreateUpLevelObjects)
+//   - Mesh string: 0x004D0F5C "levels\level9-popcylinder1" (vs 0x004D1140)
+//   - Board mesh slot: board+0x5420 (vs board+0x4788)
+//   - Alloc size: 0x10E8 (same as game's PopCylinder allocation)
 // =====================================================
  
-alloc(SpawnCode, 2048)
-alloc(SpawnPopCylinder, 4)
+alloc(SpawnCode, 4096)
+alloc(SpawnFlag, 4)
 alloc(saved_board, 4)
+alloc(param_block, 32)
+alloc(out_obj, 4)
+alloc(out_col, 4)
+alloc(temp_mesh, 4)
 alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
-alloc(DebugFrame, 4)
-alloc(DebugSpawnAttempt, 4)
-alloc(DebugError, 4)
+alloc(last_board, 4)
  
-registersymbol(SpawnPopCylinder)
-registersymbol(DebugFrame)
-registersymbol(DebugSpawnAttempt)
-registersymbol(DebugError)
+registersymbol(SpawnFlag)
  
-SpawnPopCylinder:
- dd 0
+SpawnFlag:
+  dd 0
 saved_board:
- dd 0
+  dd 0
+param_block:
+  dd 0 0 0 0 0 0 0 0
+out_obj:
+  dd 0
+out_col:
+  dd 0
+temp_mesh:
+  dd 0
 playerX:
- dd 0
+  dd 0
 playerY:
- dd 0
+  dd 0
 playerZ:
- dd 0
-DebugFrame:
- dd 0
-DebugSpawnAttempt:
- dd 0
-DebugError:
- dd 0
+  dd 0
+last_board:
+  dd 0
  
 label(original_code)
 label(check_spawn)
+label(do_spawn)
+label(post_spawn)
+label(skip_post_spawn)
+label(register_collision)
+label(skip_collision)
 label(done_spawn)
-label(mesh_done)
-label(mesh_create)
+label(skip_mesh)
  
 SpawnCode:
+  // Track board changes (for potential cleanup)
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz original_code
  
-// === FRAME COUNTER (proves hook is running) ===
-inc dword [DebugFrame]
+  // Save player position
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
  
-// === SAVE PLAYER POSITION ===
-mov eax, [esi+0x164]
-mov [playerX], eax
-mov eax, [esi+0x168]
-mov [playerY], eax
-mov eax, [esi+0x16C]
-mov [playerZ], eax
- 
-// === SPAWN CHECK ===
 check_spawn:
-cmp dword [SpawnPopCylinder], 0
-je original_code
-mov dword [SpawnPopCylinder], 0
-inc dword [DebugSpawnAttempt]
-mov dword [DebugError], 0
+  cmp dword [SpawnFlag], 0
+  je original_code
+  mov dword [SpawnFlag], 0
  
-pushad
+  pushad
  
-// Get board from ball+0x14
-mov eax, [esi+0x14]
-mov [saved_board], eax
-test eax, eax
-jz fail_1
+  // Get board
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
  
-// Verify board has App pointer (board+0x878)
-mov edx, [eax+0x878]
-test edx, edx
-jz fail_2
+  // Verify board has scene pointer (board+0x8AC)
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
  
-// === MESH LOADING ===
-mov edx, [saved_board]
-cmp dword [edx+0x5420], 0
-jne mesh_done
+  // Verify App pointer (board+0x878)
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  // Verify gfx_device (App+0x174)
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
  
-mesh_create:
-push 0x10D0
-call 004BA57B
-add esp, 4
-test eax, eax
-jz fail_3
+  // === MESH CREATION (only if board+0x5420 is NULL) ===
+  mov edx, [saved_board]
+  cmp dword [edx+0x5420], 0
+  jne skip_mesh
  
-// Get D3D device: board+0x878 (App) -> +0x174 (gfx_device)
-mov edx, [saved_board]
-mov edx, [edx+0x878]
-mov edx, [edx+0x174]
-test edx, edx
-jz fail_4
+  // Allocate mesh/level object (0x10D0 bytes)
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov ebx, eax
  
-push 004D0F5C
-push edx
-mov ecx, eax
-call 00461510
-test eax, eax
-jz fail_5
+  // Get gfx_device again
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
  
-mov edx, [saved_board]
-mov [edx+0x5420], eax
+  // FUN_00461510(this=mesh, param_1=gfx, param_2=filename)
+  // __thiscall: ECX=this, push [filename] then [gfx]
+  push 004D0F5C               // "levels\level9-popcylinder1"
+  push edx                    // gfx_device
+  mov ecx, ebx               // this = new mesh
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
  
-mesh_done:
-mov edx, [saved_board]
-mov edx, [edx+0x5420]
-test edx, edx
-jz fail_6
+  // Store mesh in board+0x5420 (PopCylinder's mesh slot)
+  mov edx, [saved_board]
+  mov [edx+0x5420], eax
  
-// === ALLOCATE POPCYLINDER ===
-push 0x10E8
-call 004BA57B
-add esp, 4
-test eax, eax
-jz fail_7
-mov edi, eax
+skip_mesh:
+  // === BUILD PARAM BLOCK ===
+  mov edx, [playerX]
+  mov [param_block+4], edx
+  mov edx, [playerY]
+  mov [param_block+8], edx
+  mov edx, [playerZ]
+  mov [param_block+0xC], edx
  
-mov edx, [saved_board]
-mov ecx, [edx+0x5420]
-push ecx
-mov edx, [playerZ]
-push edx
-mov edx, [playerY]
-push edx
-mov edx, [playerX]
-push edx
-mov edx, [saved_board]
-push edx
-mov ecx, edi
-call 00436EE0
-test eax, eax
-jz fail_8
-mov edi, eax
+do_spawn:
+  mov dword [param_block], 0
+  mov dword [param_block+0x10], 0
+  mov dword [param_block+0x14], 0
+  mov dword [param_block+0x18], 0
  
-// === REGISTER IN ACTIVE OBJECTS LIST ===
-push edi
-mov ecx, [saved_board]
-add ecx, 0x2578
-call 00453810
+  mov dword [out_obj], 0
+  mov dword [out_col], 0
  
-jmp done_spawn
+  // CreateLevelObjects(this=board, param_1=string, param_2=&out_obj, param_3=&out_col, param_4=&param_block)
+  // __thiscall: ECX=board, push [param_block] [out_col] [out_obj] [string]
+  push param_block
+  push out_col
+  push out_obj
+  push 004CFDB8               // "POPCYLINDER"
+  mov ecx, [saved_board]
+  call 004121D0
  
-fail_1:
-mov dword [DebugError], 1
-jmp done_spawn
-fail_2:
-mov dword [DebugError], 2
-jmp done_spawn
-fail_3:
-mov dword [DebugError], 3
-jmp done_spawn
-fail_4:
-mov dword [DebugError], 4
-jmp done_spawn
-fail_5:
-mov dword [DebugError], 5
-jmp done_spawn
-fail_6:
-mov dword [DebugError], 6
-jmp done_spawn
-fail_7:
-mov dword [DebugError], 7
-jmp done_spawn
-fail_8:
-mov dword [DebugError], 8
+post_spawn:
+  // Get the spawned object
+  mov eax, [out_obj]
+  test eax, eax
+  jz skip_post_spawn
+  mov esi, eax               // esi = spawned PopCylinder
+ 
+  // === CREATE SPATIAL TREE (for rendering) ===
+  sub esp, 68
+  mov ebx, esp
+ 
+  mov ecx, ebx
+  call 00457AD0               // SpatialTree_ctor
+ 
+  // Register in board+0xCD4 (render/update list)
+  push esi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810               // AthenaList_Append
+ 
+  // Register in scene's SpatialTree (board+0x8AC -> +0x480 -> +0x1C)
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_collision
+ 
+  push esi
+  lea ecx, [edx+0x1C]
+  call 00453810               // AthenaList_Append
+ 
+  // Call vtable[0x58/4=0x16] (init/update method)
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x58]
+ 
+  // Call vtable[0x54/4=0x15] (render init method)
+  push ebx
+  mov ecx, esi
+  mov eax, [esi]
+  call dword [eax+0x54]
+ 
+register_collision:
+  // Register collision object in board+0x10EC
+  mov eax, [out_col]
+  test eax, eax
+  jz skip_collision
+ 
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810               // AthenaList_Append
+ 
+  // Register in scene's collision tree (board+0x8B0 -> +0x18)
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_collision
+ 
+  mov eax, [out_col]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810               // AthenaList_Append
+ 
+skip_collision:
+  // Cleanup SpatialTree temp
+  mov ecx, ebx
+  call 00457A40               // SpatialTree_dtor
+  add esp, 68
+ 
+skip_post_spawn:
+  mov dword [temp_mesh], 0
  
 done_spawn:
-popad
+  popad
  
 original_code:
-mov eax, [esi+0x0c5c]
-jmp 00405E28
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
  
 00405E22:
-jmp SpawnCode
-nop
+  jmp SpawnCode
+  nop
  
 [DISABLE]
 00405E22:
-db 8B 86 5C 0C 00 00
+  db 8B 86 5C 0C 00 00
  
 dealloc(SpawnCode)
-dealloc(SpawnPopCylinder)
+dealloc(SpawnFlag)
 dealloc(saved_board)
+dealloc(param_block)
+dealloc(out_obj)
+dealloc(out_col)
+dealloc(temp_mesh)
 dealloc(playerX)
 dealloc(playerY)
 dealloc(playerZ)
-dealloc(DebugFrame)
-dealloc(DebugSpawnAttempt)
-dealloc(DebugError)
-unregistersymbol(SpawnPopCylinder)
-unregistersymbol(DebugFrame)
-unregistersymbol(DebugSpawnAttempt)
-unregistersymbol(DebugError)
+dealloc(last_board)
+unregistersymbol(SpawnFlag)
