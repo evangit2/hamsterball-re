@@ -140,7 +140,7 @@ check_spawn:
   mov [temp_mesh], eax
 
   // === CREATE STANDS OBJECT (clones mesh, includes bumper geometry) ===
-  // Stands_ctor: thiscall(this, mesh) — RET 0x4
+  // SceneObject_ctor: thiscall(this, mesh) — RET 0x4
   // Alloc size 0x10D0 (same as level objects)
   push 0x10D0
   call 004BA57B
@@ -149,7 +149,7 @@ check_spawn:
   jz done_spawn
   mov edi, eax
 
-  // Stands_ctor(alloc, mesh)
+  // SceneObject_ctor(alloc, mesh)
   mov edx, [temp_mesh]
   push edx
   mov ecx, edi
@@ -197,7 +197,7 @@ skip_mesh_list:
 
   // === REGISTER COLLISION ===
   // The bumper collision is embedded in the mesh geometry.
-  // The CollisionLevel (created by Stands_ctor internally) contains
+  // The CollisionLevel (created by SceneObject_ctor internally) contains
   // the "N:BUMPER%d" event names. Register it in:
   //   Board+0x10EC (collision level list)
   //   Board+0x8B0->+0x18 (spatial tree collision list)

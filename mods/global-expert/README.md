@@ -22,7 +22,7 @@ Spawns all 6 Expert Race objects on any level with a hotkey.
 
 Only BRIDGE needs a mesh: `Levels\Level5-Bridge` loaded via MeshWorld_ctor (cached on first spawn).
 
-All other objects (BONK, FAN, SAWBLADE, JUDGE, BELL) create their geometry internally via Stands_ctor(0x461740) using the D3D device — no external mesh needed.
+All other objects (BONK, FAN, SAWBLADE, JUDGE, BELL) create their geometry internally via SceneObject_ctor(0x462850) using the D3D device — no external mesh needed.
 
 ## AthenaList Initialization
 
