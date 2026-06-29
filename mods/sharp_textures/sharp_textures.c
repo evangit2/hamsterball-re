@@ -1,28 +1,26 @@
 /*
- * sharp_textures — Force custom texture filtering with per-texture override.
+ * sharp_textures — Force custom texture filtering by hooking
+ *                  SetTextureStageState on the D3D8 device vtable.
  *
- * D3D8 texture filtering via SetTextureStageState:
- *   D3DTSS_MAGFILTER = 16, D3DTSS_MINFILTER = 17, D3DTSS_MIPFILTER = 18
- * Values: 0=NONE, 1=POINT(sharp), 2=LINEAR(smooth), 3=ANISOTROPIC
+ * v5: Instead of setting filters once per frame at BeginFrame (which the game
+ * overrides during rendering), this version patches the D3D8 device's vtable
+ * to intercept EVERY SetTextureStageState call. When the game sets
+ * MAGFILTER/MINFILTER/MIPFILTER, we override the value in real-time.
  *
- * Two filter profiles:
- *   1. Default — applied to all textures
- *   2. Checker/Brick override — applied only to textures whose filename
- *      contains "checker" or "brick"
- *
- * Approach:
- *   - Hook Graphics_BeginFrame (0x453B50), called every frame
- *   - After original runs, scan the texture cache (Graphics+0x2E8 count,
- *     Graphics+0x6F0 array) to find checker/brick D3D texture pointers
- *   - For each of 8 stages, call GetTexture (vtable[60]) to get the bound
- *     texture, check if it's tracked, apply the matching filter, then
- *     Release() the ref that GetTexture added
- *
- * Texture object layout (0x74 bytes, vtable 0x4DA648):
- *   +0x00 = vtable, +0x04 = IDirect3DTexture8*, +0x08 = char* filename
- *   +0x0C = parent graphics, +0x10 = refcount, +0x14 = width, +0x18 = height
+ * For checker/brick textures, a SEPARATE filter profile is applied.
+ * Texture identification: when the game calls SetTexture (vtable[61]),
+ * we check if the texture pointer is in our tracked set (built by scanning
+ * the texture cache for filenames containing "checker" or "brick").
  *
  * Config: sharp_textures.txt (next to bass.dll)
+ *   MAGFILTER = 2          (default for all textures)
+ *   MINFILTER = 2
+ *   MIPFILTER = 2
+ *   CHECKER_MAGFILTER = 1  (override for checker/brick textures)
+ *   CHECKER_MINFILTER = 1
+ *   CHECKER_MIPFILTER = 1
+ *
+ * Values: 0=none, 1=point(sharp), 2=linear(smooth), 3=anisotropic
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -101,29 +99,26 @@ __declspec(dllexport) int __stdcall BASS_Stop(void) {
 #define D3DTEXF_POINT      1
 #define D3DTEXF_LINEAR     2
 
-/* D3D8 device vtable indices (verified from d3d8.h STDMETHOD counting):
- *   0=QueryInterface, 1=AddRef, 2=Release
+/* D3D8 device vtable indices (verified from d3d8.h):
  *   60=GetTexture (0xF0), 61=SetTexture (0xF4)
- *   62=GetTextureStageState (0xF8), 63=SetTextureStageState (0xFC) */
-#define VTBL_GET_TEXTURE           60
-#define VTBL_SET_TEX_STAGE_STATE   63
-#define VTBL_RELEASE                2
+ *   63=SetTextureStageState (0xFC) */
+#define VTBL_GET_TEXTURE    60
+#define VTBL_SET_TEXTURE    61
+#define VTBL_SET_TSS        63
 
 /* ── Config ─────────────────────────────────────────────────────────── */
-static DWORD g_mag_filter = D3DTEXF_POINT;
-static DWORD g_min_filter = D3DTEXF_POINT;
-static DWORD g_mip_filter = D3DTEXF_POINT;
-static DWORD g_checker_mag = D3DTEXF_LINEAR;
-static DWORD g_checker_min = D3DTEXF_LINEAR;
-static DWORD g_checker_mip = D3DTEXF_LINEAR;
+static DWORD g_mag_filter = D3DTEXF_LINEAR;
+static DWORD g_min_filter = D3DTEXF_LINEAR;
+static DWORD g_mip_filter = D3DTEXF_LINEAR;
+static DWORD g_checker_mag = D3DTEXF_POINT;
+static DWORD g_checker_min = D3DTEXF_POINT;
+static DWORD g_checker_mip = D3DTEXF_POINT;
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved);
 
 static void get_config_path(char* out, DWORD len) {
-    HMODULE hSelf = NULL;
-    char dll_path[MAX_PATH];
-    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-                           (LPCSTR)&DllMain, &hSelf) && hSelf) {
+    HMODULE hSelf = NULL; char dll_path[MAX_PATH];
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCSTR)&DllMain, &hSelf) && hSelf) {
         GetModuleFileNameA(hSelf, dll_path, MAX_PATH);
         char* slash = strrchr(dll_path, '\\');
         if (slash) { slash[1] = '\0'; _snprintf(out, len, "%ssharp_textures.txt", dll_path); return; }
@@ -132,37 +127,25 @@ static void get_config_path(char* out, DWORD len) {
 }
 
 static void generate_default_config(const char* path) {
-    FILE* f = NULL;
-    if (fopen_s(&f, path, "w") != 0 || !f) return;
+    FILE* f = NULL; if (fopen_s(&f, path, "w") != 0 || !f) return;
     fprintf(f, "# Sharp Textures config\n");
     fprintf(f, "# Values: 0=none, 1=point(sharp), 2=linear(smooth), 3=anisotropic\n\n");
-    fprintf(f, "# Default filter for ALL textures:\n");
-    fprintf(f, "MAGFILTER = 2\n");
-    fprintf(f, "MINFILTER = 2\n");
-    fprintf(f, "MIPFILTER = 2\n\n");
+    fprintf(f, "# Default filter for ALL textures:\nMAGFILTER = 2\nMINFILTER = 2\nMIPFILTER = 2\n\n");
     fprintf(f, "# Override for textures containing 'checker' or 'brick' in filename:\n");
-    fprintf(f, "CHECKER_MAGFILTER = 1\n");
-    fprintf(f, "CHECKER_MINFILTER = 1\n");
-    fprintf(f, "CHECKER_MIPFILTER = 1\n");
+    fprintf(f, "CHECKER_MAGFILTER = 1\nCHECKER_MINFILTER = 1\nCHECKER_MIPFILTER = 1\n");
     fclose(f);
 }
 
 static void read_config(void) {
-    char path[MAX_PATH];
-    FILE* f = NULL;
-    char line[256];
-
+    char path[MAX_PATH]; FILE* f = NULL; char line[256];
     g_mag_filter = D3DTEXF_LINEAR; g_min_filter = D3DTEXF_LINEAR; g_mip_filter = D3DTEXF_LINEAR;
     g_checker_mag = D3DTEXF_POINT; g_checker_min = D3DTEXF_POINT; g_checker_mip = D3DTEXF_POINT;
-
     get_config_path(path, MAX_PATH);
     if (fopen_s(&f, path, "r") != 0 || !f) { generate_default_config(path); return; }
-
     while (fgets(line, sizeof(line), f)) {
         char* p = line; while (*p == ' ' || *p == '\t') p++;
         if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
-        char* eq = strchr(p, '=');
-        if (!eq) continue;
+        char* eq = strchr(p, '='); if (!eq) continue;
         long val = strtol(eq + 1, NULL, 10);
         if (_strnicmp(p, "CHECKER_MAGFILTER", 17) == 0) g_checker_mag = (DWORD)val;
         else if (_strnicmp(p, "CHECKER_MINFILTER", 17) == 0) g_checker_min = (DWORD)val;
@@ -177,12 +160,10 @@ static void read_config(void) {
 /* ── Game offsets ── */
 #define GRAPHICS_BEGIN_FRAME  0x00453B50
 #define OFF_D3D_DEVICE        0x154
-/* Texture cache: count at +0x2E8, array ptr at +0x6F0 */
 #define GFX_TEX_COUNT         0x2E8
-#define GFX_TEX_ARRAY         0x6F0
-/* Texture object fields (byte offsets from object base): */
-#define TEX_OBJ_D3D           0x04   /* IDirect3DTexture8* */
-#define TEX_OBJ_NAME          0x08   /* char* filename */
+#define GFX_TEX_ARRAY          0x6F0
+#define TEX_OBJ_D3D            0x04
+#define TEX_OBJ_NAME           0x08
 
 /* ── Tracked checker/brick texture pointers ── */
 #define MAX_TRACKED_TEX  64
@@ -190,9 +171,11 @@ static void* g_tracked_tex[MAX_TRACKED_TEX];
 static int g_tracked_count = 0;
 static int g_last_tex_count = -1;
 
+/* Currently bound texture per stage (updated by SetTexture hook) */
+static void* g_current_tex[8] = {0};
+
 static int is_checker_or_brick(const char* name) {
-    char lower[260];
-    int i;
+    char lower[260]; int i;
     if (!name || IsBadReadPtr(name, 1)) return 0;
     for (i = 0; i < 259 && name[i]; i++)
         lower[i] = (name[i] >= 'A' && name[i] <= 'Z') ? (char)(name[i] + 32) : name[i];
@@ -207,7 +190,6 @@ static int is_tracked(void* tex) {
     return 0;
 }
 
-/* Scan Graphics texture cache for checker/brick D3D texture pointers */
 static void scan_textures(char* gfx) {
     g_tracked_count = 0;
     if (IsBadReadPtr(gfx + GFX_TEX_COUNT, 4)) return;
@@ -216,15 +198,12 @@ static void scan_textures(char* gfx) {
     if (IsBadReadPtr(gfx + GFX_TEX_ARRAY, 4)) return;
     int** tex_array = *(int***)(gfx + GFX_TEX_ARRAY);
     if (!tex_array || IsBadReadPtr(tex_array, count * sizeof(int*))) return;
-
     int i;
     for (i = 0; i < count && g_tracked_count < MAX_TRACKED_TEX; i++) {
         char* tex_obj = (char*)tex_array[i];
         if (!tex_obj || IsBadReadPtr(tex_obj, 0x20)) continue;
-        /* Filename at byte offset +0x08 (verified from decompilation) */
         char* name = *(char**)(tex_obj + TEX_OBJ_NAME);
         if (is_checker_or_brick(name)) {
-            /* D3D texture at byte offset +0x04 */
             void* d3d_tex = *(void**)(tex_obj + TEX_OBJ_D3D);
             if (d3d_tex && !IsBadReadPtr(d3d_tex, 4))
                 g_tracked_tex[g_tracked_count++] = d3d_tex;
@@ -232,70 +211,92 @@ static void scan_textures(char* gfx) {
     }
 }
 
-/* ── D3D8 COM method typedefs — all __stdcall (this on stack) ── */
+/* ── D3D8 vtable hook ── */
+/* Original function pointers (saved before patching vtable) */
 typedef int (__stdcall *SetTSS_t)(void*, DWORD, DWORD, DWORD);
-typedef int (__stdcall *GetTexture_t)(void*, DWORD, void**);
-typedef unsigned long (__stdcall *Release_t)(void*);
+typedef int (__stdcall *SetTexture_t)(void*, DWORD, void*);
+static SetTSS_t   g_orig_SetTSS = NULL;
+static SetTexture_t g_orig_SetTexture = NULL;
+static int g_vtable_hooked = 0;
 
-/* ── Detour infrastructure ── */
+/* Hook for SetTexture: track which texture is bound to which stage */
+static int __stdcall hook_SetTexture(void* device, DWORD stage, void* tex) {
+    if (stage < 8) g_current_tex[stage] = tex;
+    return g_orig_SetTexture(device, stage, tex);
+}
+
+/* Hook for SetTextureStageState: override filter values */
+static int __stdcall hook_SetTSS(void* device, DWORD stage, DWORD type, DWORD value) {
+    if (stage < 8 && (type == D3DTSS_MAGFILTER || type == D3DTSS_MINFILTER || type == D3DTSS_MIPFILTER)) {
+        /* Check if current texture on this stage is a tracked checker/brick */
+        int tracked = g_current_tex[stage] && is_tracked(g_current_tex[stage]);
+
+        if (type == D3DTSS_MAGFILTER)
+            value = tracked ? g_checker_mag : g_mag_filter;
+        else if (type == D3DTSS_MINFILTER)
+            value = tracked ? g_checker_min : g_min_filter;
+        else /* MIPFILTER */
+            value = tracked ? g_checker_mip : g_mip_filter;
+    }
+    return g_orig_SetTSS(device, stage, type, value);
+}
+
+/* Patch the D3D8 device vtable to intercept SetTexture and SetTextureStageState */
+static void hook_d3d_vtable(int* device) {
+    if (!device || IsBadReadPtr(device, 4)) return;
+    int* vtable = *(int**)device;
+    if (!vtable || IsBadReadPtr(vtable, (VTBL_SET_TSS + 1) * 4)) return;
+
+    DWORD old_prot;
+
+    /* Save originals */
+    g_orig_SetTSS = (SetTSS_t)vtable[VTBL_SET_TSS];
+    g_orig_SetTexture = (SetTexture_t)vtable[VTBL_SET_TEXTURE];
+    if (!g_orig_SetTSS || !g_orig_SetTexture) return;
+
+    /* Patch SetTextureStageState (vtable[63]) */
+    if (VirtualProtect(&vtable[VTBL_SET_TSS], 4, PAGE_READWRITE, &old_prot)) {
+        vtable[VTBL_SET_TSS] = (int)&hook_SetTSS;
+        VirtualProtect(&vtable[VTBL_SET_TSS], 4, old_prot, &old_prot);
+    }
+
+    /* Patch SetTexture (vtable[61]) */
+    if (VirtualProtect(&vtable[VTBL_SET_TEXTURE], 4, PAGE_READWRITE, &old_prot)) {
+        vtable[VTBL_SET_TEXTURE] = (int)&hook_SetTexture;
+        VirtualProtect(&vtable[VTBL_SET_TEXTURE], 4, old_prot, &old_prot);
+    }
+
+    g_vtable_hooked = 1;
+}
+
+/* ── BeginFrame detour (installs vtable hook on first call) ── */
 static unsigned char* g_tramp = NULL;
 static const int TRAMP_SIZE = 16;
-
 static const unsigned char ORIG_PROLOGUE[7] = {
     0x53, 0x8B, 0xD9, 0x8B, 0x4C, 0x24, 0x08
 };
 
 static void __fastcall begin_frame_hook(void* this_, void* edx, int param_1) {
-    /* Call original via trampoline */
     typedef void (__fastcall *orig_fn_t)(void*, void*, int);
     ((orig_fn_t)g_tramp)(this_, edx, param_1);
 
+    /* On first frame, hook the D3D8 vtable */
+    if (!g_vtable_hooked) {
+        char* gfx = (char*)this_;
+        if (!IsBadReadPtr(gfx, 0x200)) {
+            int* device = *(int**)(gfx + OFF_D3D_DEVICE);
+            if (device && !IsBadReadPtr(device, 4))
+                hook_d3d_vtable(device);
+        }
+    }
+
+    /* Rescan texture cache when count changes */
     char* gfx = (char*)this_;
-    if (IsBadReadPtr(gfx, 0x200)) return;
-
-    int* device = *(int**)(gfx + OFF_D3D_DEVICE);
-    if (!device || IsBadReadPtr(device, 4)) return;
-
-    int* vtable = *(int**)device;
-    if (!vtable || IsBadReadPtr(vtable, (VTBL_SET_TEX_STAGE_STATE + 1) * 4)) return;
-
-    SetTSS_t pSetTSS = (SetTSS_t)vtable[VTBL_SET_TEX_STAGE_STATE];
-    GetTexture_t pGetTex = (GetTexture_t)vtable[VTBL_GET_TEXTURE];
-    if (!pSetTSS || !pGetTex) return;
-
-    /* Rescan texture cache when count changes (level load) */
     if (!IsBadReadPtr(gfx + GFX_TEX_COUNT, 4)) {
         int current_count = *(int*)(gfx + GFX_TEX_COUNT);
         if (current_count != g_last_tex_count) {
             scan_textures(gfx);
             g_last_tex_count = current_count;
-        }
-    }
-
-    /* For each stage: GetTexture → check if tracked → apply filter → Release */
-    int stage;
-    for (stage = 0; stage < 8; stage++) {
-        void* current_tex = NULL;
-        pGetTex(device, stage, &current_tex);
-
-        DWORD mag, min, mip;
-        if (current_tex && is_tracked(current_tex)) {
-            mag = g_checker_mag; min = g_checker_min; mip = g_checker_mip;
-        } else {
-            mag = g_mag_filter; min = g_min_filter; mip = g_mip_filter;
-        }
-
-        pSetTSS(device, stage, D3DTSS_MAGFILTER, mag);
-        pSetTSS(device, stage, D3DTSS_MINFILTER, min);
-        pSetTSS(device, stage, D3DTSS_MIPFILTER, mip);
-
-        /* Release the ref that GetTexture added */
-        if (current_tex && !IsBadReadPtr(current_tex, 4)) {
-            int* tex_vtable = *(int**)current_tex;
-            if (tex_vtable && !IsBadReadPtr(tex_vtable, 12)) {
-                Release_t pRelease = (Release_t)tex_vtable[VTBL_RELEASE];
-                if (pRelease) pRelease(current_tex);
-            }
         }
     }
 }

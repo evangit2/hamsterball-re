@@ -5,21 +5,32 @@ Checker and Brick textures.
 
 ## What It Does
 
-D3D8's default texture filtering is LINEAR (smooth/blurry). This mod hooks
-`Graphics_BeginFrame` (called every frame) and overrides the filtering on all
-8 texture stages using `SetTextureStageState`.
+D3D8's default texture filtering is LINEAR (smooth/blurry). This mod hooks the
+D3D8 device's vtable to intercept **every** `SetTextureStageState` call the
+game makes, overriding the filter values in real-time.
 
 **Two filter profiles:**
 
 1. **Default** — Applied to all textures.
 2. **Checker/Brick override** — Applied only to textures whose filename
-   contains "checker" or "brick" (e.g. `purplechecker.bmp`, `bluebrick.png`).
+   contains "checker" or "brick" (e.g. `BlueChecker.bmp`, `redbrick.png`).
    This override takes priority over the default.
 
-The mod scans the game's texture cache each frame (rescanning when the texture
-count changes, e.g. on level load) to identify checker/brick textures by
-filename. It then uses `GetTexture` (vtable[60]) per stage to check which
-texture is currently bound and applies the appropriate filter.
+The mod also hooks `SetTexture` (vtable[61]) to track which texture is bound
+to each stage. This allows per-stage filter selection: if the bound texture is
+a tracked checker/brick texture, the checker filter profile is used; otherwise
+the default profile applies.
+
+## Why v5 (vtable hook)?
+
+v4 set filters once per frame at `Graphics_BeginFrame`. However, the game's own
+render code calls `SetTextureStageState` **after** `BeginFrame`, overriding the
+mod's settings. This caused some textures (flags, goal pads, small objects)
+to remain blurry even though they used the same checker texture file.
+
+v5 patches the D3D8 device vtable directly, intercepting **every** call to
+`SetTextureStageState`. This ensures the mod's filter values persist regardless
+of what the game sets during rendering.
 
 ## Config File
 
@@ -49,11 +60,6 @@ CHECKER_MIPFILTER = 1
 | 2 | LINEAR | Smooth / bilinear (blurry) |
 | 3 | ANISOTROPIC | High quality (GPU-dependent) |
 
-### Default Config
-
-The default config makes everything smooth (LINEAR=2) except checker/brick
-textures, which are sharp (POINT=1). Adjust to taste.
-
 ## Installation
 
 1. Rename the original `bass.dll` to `bass_real.dll`
@@ -62,11 +68,12 @@ textures, which are sharp (POINT=1). Adjust to taste.
 
 ## Technical Details
 
-- **Hook target:** `Graphics_BeginFrame` (0x00453B50), 7-byte JMP detour
-- **D3D8 device:** Graphics+0x154
-- **Texture cache:** Graphics+0x2E8 (count), Graphics+0x6F0 (array)
-- **Texture object:** 0x74 bytes — D3D texture at +0x04, filename at +0x08
-- **GetTexture:** vtable[60] (0xF0), **SetTextureStageState:** vtable[63] (0xFC)
-- **Calling convention:** D3D8 COM methods use `__stdcall` (this on stack)
+- **Hook target:** D3D8 device vtable — `SetTextureStageState` (vtable[63]) and
+  `SetTexture` (vtable[61])
+- **Vtable hook installed on:** First `Graphics_BeginFrame` call (when D3D8
+  device is available)
+- **Texture cache scan:** Graphics+0x2E8 (count), Graphics+0x6F0 (array)
+- **Texture object:** D3D texture at +0x04, filename at +0x08
+- **Calling convention:** D3D8 COM methods use `__stdcall`
 - **Android/Wine safe:** No IAT hooks, no threads
-- **Crash-tested:** 38.6s hbtestd + 45s manual game run with Warm-Up navigation
+- **Crash-tested:** 38.6s hbtestd
