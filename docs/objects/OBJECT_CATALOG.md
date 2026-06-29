@@ -265,7 +265,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Created by:** `CreatePlatformOrStands` factory
 
 ### Stands
-- **Constructor:** `Stands_ctor` (0x462850)
+- **Constructor:** `SceneObject_ctor` (0x462850)
 - **Size:** 0x10D0 bytes
 - **Description:** Audience / stadium stands geometry
 

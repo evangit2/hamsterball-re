@@ -30,7 +30,7 @@
 //   Gear_ctor(this, board, X, Y, Z, X2, Y2, Z2, mesh)          RET 0x20 (8 stack params)
 //   Blockdawg_ctor(this, board, X, Y, Z, mesh, pathId)         RET 0x18 (6 stack params)
 //
-// All constructors call Stands_ctor(this, mesh) which clones the SpatialTree.
+// All constructors call SceneObject_ctor(this, mesh) which clones the SpatialTree.
 // The mesh param is always the LAST stack parameter.
 // We pass our own MeshWorld directly — no board slot injection needed.
 //

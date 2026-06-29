@@ -34,7 +34,7 @@ The original game creates lifters through this chain:
 `__thiscall: ECX=this, push board, push x, push y, push z (ret 0x10)`
 
 1. Gets lifter mesh from `board→[board+0x878]→[App+0x5C8]`
-2. Calls `Stands_ctor(0x462850)` — clones SpatialTree from the lifter mesh for rendering
+2. Calls `SceneObject_ctor(0x462850)` — clones SpatialTree from the lifter mesh for rendering
 3. Sets vtable = `0x4D5390` (Lifter vtable)
 4. Copies position to `+0x10D8` (x, y, z as 3 floats)
 5. Creates `CollisionLevel` (0x10D0 bytes) via `CollisionLevel_ctorWithLevel(0x465080)`
@@ -86,7 +86,7 @@ This makes the Lifter factory accept ANY mesh object name, causing lifters to be
 | 0x434E60 | Lifter_ctor | ECX=this, stack=[board, x, y, z], RET 0x10 |
 | 0x434F60 | Lifter_Update (vtable[0x2C]) | ECX=this |
 | 0x435170 | Lifter_TriggerDrop | ECX=lifter |
-| 0x462850 | Stands_ctor | ECX=this, push source_mesh |
+| 0x462850 | SceneObject_ctor | ECX=this, push source_mesh |
 | 0x465080 | CollisionLevel_ctorWithLevel | ECX=new, push source_mesh |
 | 0x4BA57B | operator_new | push size, RET |
 | 0x453810 | AthenaList_Append | ECX=list, push item, RET 0x4 |

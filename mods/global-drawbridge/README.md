@@ -33,7 +33,7 @@ This is the same pattern as the universal ref loader (see skill `hamsterball-dll
 |---------|------|-------------|
 | 0x4396F0 | Spinner_Level_ctor | `__thiscall`, RET 0x14 (5 params). Reads board+0x4378 for mesh. |
 | 0x461510 | MeshWorld_ctor | `__thiscall`, RET 0x8. Loads MESHWORLD file. |
-| 0x462850 | Stands_ctor | Clones SpatialTree from mesh source. |
+| 0x462850 | SceneObject_ctor | Clones SpatialTree from mesh source. |
 | 0x453810 | AthenaList_Append | `__thiscall`, RET 4. Adds to list. |
 | 0x439870 | Impossible_Level_Update | vtable[0x2C]. Drawbridge animation: timer, rotation, sound. |
 | 0x4BA57B | operator_new | `__cdecl`. Allocates memory. |

@@ -20,7 +20,7 @@ The blue ball that pops up near the goal in Sky Race.
 - **RET**: 0x14 (5 params: board, X, Y, Z, mesh)
 - **vtable**: 0x4D58F0
 - **Mesh**: `"levels\level9-popcylinder1"` (string at 0x4D0F5C)
-- **Stands_ctor** → renders automatically
+- **SceneObject_ctor** → renders automatically
 - **Update** (vtable[0x0B/+0x2C] = 0x43DED0): if `+0x10E4` flag set → position update, then clear flag. SAFE.
 - **Fields**: +0x10D0=board, +0x10D4=X, +0x10D8=Y, +0x10DC=Z, +0x10E0=CollisionLevel, +0x10E4=1(active)
 
@@ -34,7 +34,7 @@ The pillars that suddenly pop up and block your path in Sky Race and Sky Arena.
 - **RET**: 0x14 (5 params: board, X, Y, Z, mesh)
 - **vtable**: 0x4D56A8
 - **Mesh**: `"levels\level9-popcylinder1"` (string at 0x4D0F5C)
-- **Stands_ctor** → renders automatically
+- **SceneObject_ctor** → renders automatically
 - **Update** (vtable[0x0B/+0x2C] = 0x436540): state machine (0=idle, 1=descending, 2=waiting, 3=ascending)
   - Pops up/down using `Gfx_SetPosition` for vertical movement
   - Timer at +0x10F0, state at +0x10EC. SAFE.

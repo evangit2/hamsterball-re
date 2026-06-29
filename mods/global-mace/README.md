@@ -51,7 +51,7 @@ Spawns Tower Race swinging maces on any level with a hotkey.
 
 - Position offset is +0x10D8 (not +0x10D4 like most other objects)
 - Constructor takes 2 params (board + mesh), unlike Bonk/Sawblade which take position params
-- CascadeStands_Ctor internally calls Stands_ctor + allocates CollisionLevel
+- CascadeStands_Ctor internally calls SceneObject_ctor + allocates CollisionLevel
 - Swing animation uses amplitude 80.0 and 0.05/frame angle increment (~71.5°/sec at 25fps)
 
 ## Full Analysis

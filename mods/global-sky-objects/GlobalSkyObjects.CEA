@@ -58,7 +58,7 @@
 // FUNBALL: PopCylinder_ctor (0x436EE0), alloc 0x10E8, RET 0x14
 //   (this, board, X, Y, Z, mesh)
 //   vtable = 0x4D58F0
-//   Stands_ctor → renders automatically
+//   SceneObject_ctor → renders automatically
 //   Update (0x43DED0): if +0x10E4 flag set → position update, clear flag. SAFE.
 //   +0x10D0 = board, +0x10D4 = X, +0x10D8 = Y, +0x10DC = Z
 //   +0x10E0 = CollisionLevel, +0x10E4 = 1 (active flag)
@@ -66,7 +66,7 @@
 // PILLAR: Platform_ctor (0x4363F0), alloc 0x10F4, RET 0x14
 //   (this, board, X, Y, Z, mesh)
 //   vtable = 0x4D56A8
-//   Stands_ctor → renders automatically
+//   SceneObject_ctor → renders automatically
 //   Update (0x436540): state machine (0=idle, 1=descend, 2=wait, 3=ascend)
 //     Pops up/down using Gfx_SetPosition. Timer at +0x10F0. SAFE.
 //   +0x10D0 = board, +0x10D4 = X, +0x10D8 = Y, +0x10DC = Z

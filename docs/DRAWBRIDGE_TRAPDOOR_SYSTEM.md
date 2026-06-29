@@ -34,7 +34,7 @@ call AthenaList_Append (0x453810)  ; Board+0x4BE8 (drawbridge list)
 **Calling convention:** `__thiscall` — `ecx=alloc`, push Board, push mesh_ptr → `ret 8`
 
 **Steps:**
-1. Calls `Stands_ctor(this, mesh_ptr)` @ 0x462850 — base class init
+1. Calls `SceneObject_ctor(this, mesh_ptr)` @ 0x462850 — base class init
    - Sets vtable to 0x4D8FB0 (Stands base)
    - Inits AthenaLists at +0x18, +0x488, +0x8A0, +0xCB8
    - Copies mesh data (vertices, spatial tree) from mesh_ptr
@@ -59,11 +59,11 @@ call AthenaList_Append (0x453810)  ; Board+0x4BE8 (drawbridge list)
 | Offset | Size | Description |
 |--------|------|-------------|
 | +0x000 | 4 | vtable ptr (0x4D5060) |
-| +0x004 | 4 | mesh data ptr (from Stands_ctor) |
+| +0x004 | 4 | mesh data ptr (from SceneObject_ctor) |
 | +0x018 | 0x420 | AthenaList (inline objects) |
 | +0x438 | 0x50 | AthenaList |
 | +0x434 | 4 | Timer ptr (0x44 bytes, owned) |
-| +0x480 | 4 | mesh field (from Stands_ctor) |
+| +0x480 | 4 | mesh field (from SceneObject_ctor) |
 | +0x488 | 0x418 | AthenaList |
 | +0x8A0 | 0x418 | AthenaList |
 | +0xCB8 | 0x418 | AthenaList |
@@ -156,7 +156,7 @@ call AthenaList_Append
 
 **Steps:**
 1. Reads App from Board+0x878
-2. Calls `Stands_ctor(this, App+0x594)` @ 0x462850 — base class init with Trapdoor1 mesh
+2. Calls `SceneObject_ctor(this, App+0x594)` @ 0x462850 — base class init with Trapdoor1 mesh
    - App+0x594 = MeshWorld("Levels\Level4-Trapdoor1") — globally pre-loaded!
 3. Sets vtable to `0x4D4FF8` (GlassStands vtable)
 4. Stores Board at +0x10D0
@@ -165,7 +165,7 @@ call AthenaList_Append
    - Stores at +0x10D4
    - Calls `Level_LoadMeshes(+0x10D4, this)` @ 0x465200
 6. Allocates Stands (0x10D0 bytes) using App+0x598 (MeshWorld of Trapdoor2)
-   - Calls `Stands_ctor(alloc, App+0x598)` @ 0x462850
+   - Calls `SceneObject_ctor(alloc, App+0x598)` @ 0x462850
    - Stores at +0x10D8
 7. Allocates TipperVisual (0x10D0 bytes) using App+0x5A0 (CollisionLevel of Trapdoor2)
    - Calls `0x4661A0` (TipperVisual_ctor) with App+0x5A0 as mesh
@@ -179,7 +179,7 @@ call AthenaList_Append
 | Offset | Size | Description |
 |--------|------|-------------|
 | +0x000 | 4 | vtable ptr (0x4D4FF8) |
-| +0x004 | 4 | mesh data ptr (from Stands_ctor) |
+| +0x004 | 4 | mesh data ptr (from SceneObject_ctor) |
 | +0x018 | 0x420 | AthenaList (inline objects) |
 | +0x434 | 4 | Timer ptr (0x44 bytes, owned) |
 | +0x480 | 4 | mesh field |
@@ -291,7 +291,7 @@ if (obj+0x10E4 == threshold):
 | 0x453810 | AthenaList_Append | ecx=list, push obj, call (ret 4) |
 | 0x453210 | AthenaList_Init | ecx=list, push 0, call (ret 4) |
 | 0x461510 | MeshWorld_ctor | ecx=alloc, push App+0x174, push path, call (ret 8) |
-| 0x462850 | Stands_ctor | ecx=alloc, push mesh_ptr, call (ret 4) |
+| 0x462850 | SceneObject_ctor | ecx=alloc, push mesh_ptr, call (ret 4) |
 | 0x465080 | CollisionLevel_ctorWithLevel | ecx=alloc, push source_level, call (ret 4) |
 | 0x465200 | Level_LoadMeshes | ecx=dest, push source, call (ret 4) |
 | 0x4661A0 | TipperVisual_ctor | ecx=alloc, push mesh_ptr, call (ret 4) |

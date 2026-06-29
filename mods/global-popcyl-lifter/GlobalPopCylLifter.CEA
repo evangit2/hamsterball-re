@@ -5,7 +5,7 @@
 // =============================================================
 // PopCylinder: the launch cylinder from Odd Race (level9-popcylinder1 mesh)
 // Lifter: the drop-lift platform from Up Race (levelup-lifter mesh)
-// Both clone their mesh via Stands_ctor → have real geometry → render properly.
+// Both clone their mesh via SceneObject_ctor → have real geometry → render properly.
 //
 // Usage: Set SpawnPopCylinder or SpawnLifter to 1 via CE address list,
 //       then advance one frame (or just wait). Object spawns at P1 position.

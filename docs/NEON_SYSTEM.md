@@ -66,14 +66,14 @@ sub-object = [obj+0x10E8]  ; CollisionLevel (created internally)
 - **Calling convention:** `ecx=this`, ret 0x14 (5 stack params)
 - **Params:** Board, pos_X, pos_Y, pos_Z, mesh
 - **Vtable:** 0x4D5A10
-- **Internal:** Calls Stands_ctor(0x462850) with mesh as source → creates CollisionLevel at obj+0x10D4 via CollisionLevel_ctorWithLevel(0x465080)
+- **Internal:** Calls SceneObject_ctor(0x462850) with mesh as source → creates CollisionLevel at obj+0x10D4 via CollisionLevel_ctorWithLevel(0x465080)
 - **Position stored at:** obj+0x10D8/X/DC/E0
 
 ### DFloor/Trode ctor @ 0x43E450
 - **Calling convention:** `ecx=this`, ret 0x14 (5 stack params)
 - **Params:** Board, pos_X, pos_Y, pos_Z, mesh
 - **Vtable:** 0x4D5A70
-- **Internal:** Calls Stands_ctor(0x462850) with mesh as source → creates CollisionLevel at obj+0x10E8 via CollisionLevel_ctorWithLevel(0x465080)
+- **Internal:** Calls SceneObject_ctor(0x462850) with mesh as source → creates CollisionLevel at obj+0x10E8 via CollisionLevel_ctorWithLevel(0x465080)
 - **Position stored at:** obj+0x10D0/D4/D8
 - **Board stored at:** obj+0x10E4
 
@@ -100,7 +100,7 @@ Finally calls `DispatchCollisionEvents` (0x40C5D0) at the end.
 
 1. **Load meshes** via `MeshWorld_ctor(0x461510)` into Board+0x4374..+0x4388 (cached, load once)
 2. **No AthenaList init needed** — Board+0x2578 is initialized by Board_ctor on all levels
-3. **No mesh+0x878 fix needed** — Neon constructors call Stands_ctor directly, which does NOT read mesh+0x878 (unlike Glass_Level_ctor for Drawbridge)
+3. **No mesh+0x878 fix needed** — Neon constructors call SceneObject_ctor directly, which does NOT read mesh+0x878 (unlike Glass_Level_ctor for Drawbridge)
 4. **Constructor call:** `push mesh; sub esp,0xC; fill pos; push Board; mov ecx,alloc; call ctor; push obj; Append(Board+0x2578)`
 
 ## Addresses Summary

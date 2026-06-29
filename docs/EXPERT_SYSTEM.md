@@ -37,7 +37,7 @@ sub esp, 0xC      ; pos XYZ (3 floats from refEntry+4)
 call 0x438850     ; ret 0x10
 ```
 - Reads Board+0x878 → App → App+0x174 (D3D device)
-- Calls Stands_ctor(0x461740) with D3D device — creates geometry internally
+- Calls SceneObject_ctor(0x461740) with D3D device — creates geometry internally
 - Sets vtable 0x4D5120
 - Stores Board at obj+0x10D0
 - After factory: stored at Board+0x436C, collision sub-object at obj+0x10F8
@@ -51,7 +51,7 @@ push Board           ; param_1
 call 0x438C20        ; ret 0x14
 ```
 - Reads Board+0x878 → App → App+0x174 (D3D device)
-- Calls Stands_ctor(0x461740) with D3D device
+- Calls SceneObject_ctor(0x461740) with D3D device
 - Sets vtable 0x4D5180
 - Sets obj+0x10E8=0.5, obj+0x10EE=1, obj+0x10F0=500.0
 - Factory post-checks: "SLOW" → obj+0x10EC=1, "SUPER" → obj+0x10ED=1, "UP" → call 0x434580
@@ -77,7 +77,7 @@ sub esp, 0xC        ; pos XYZ
 push Board           ; param_1
 call 0x4396F0        ; ret 0x14
 ```
-- **READS Board+0x4378** (bridge mesh) — calls Stands_ctor(0x462850) with it
+- **READS Board+0x4378** (bridge mesh) — calls SceneObject_ctor(0x462850) with it
 - Sets vtable 0x4D51E0
 - After factory: "1" → Append(Board+0x4380, obj), "2" → Append(Board+0x4798, obj)
 - After factory: "NEG" → obj+0x10F8 = -1.0f (0xBF800000)
@@ -101,7 +101,7 @@ sub esp, 0xC      ; pos XYZ
 call 0x434D70     ; ret 0x10
 ```
 - Reads Board+0x878 → App → App+0x174 (D3D device)
-- Calls Stands_ctor(0x461740) with D3D device
+- Calls SceneObject_ctor(0x461740) with D3D device
 - Sets vtable 0x4D5330
 - After factory: stored at Board+0x4FD4, Append(Board+0x2578, obj)
 

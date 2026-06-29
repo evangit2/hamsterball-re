@@ -22,11 +22,11 @@ All three are created inline in `Scene_LoadLevel4` (0x40D6D0), not via a standal
 
 | Function | Address | Calling Convention | Purpose |
 |----------|---------|-------------------|---------|
-| CascadeStands_Ctor | 0x438750 | thiscall(obj, board, mesh) ret 8 | Constructor — calls Stands_ctor + allocates CollisionLevel |
+| CascadeStands_Ctor | 0x438750 | thiscall(obj, board, mesh) ret 8 | Constructor — calls SceneObject_ctor + allocates CollisionLevel |
 | Pendulum_Update | 0x43F3C0 | thiscall(obj) | vtable[11] — swing animation + collision |
 | Pendulum_Render | 0x45E0E0 | thiscall(obj) | vtable[18] — shared base render |
 | Pendulum_scalar_dtor | 0x438830 | thiscall(obj) | vtable[0] — destructor |
-| Stands_ctor | 0x462850 | thiscall(obj, mesh) ret 4 | Base class constructor — sets vtable 0x4D8FB0 |
+| SceneObject_ctor | 0x462850 | thiscall(obj, mesh) ret 4 | Base class constructor — sets vtable 0x4D8FB0 |
 | SceneObject_SpawnWithSound | 0x4536A0 | — | Spawns scene object with sound |
 | Level_FindObjectByName | 0x4C7677 | cdecl ret 12 | Finds mesh ref by name in loaded level |
 
@@ -70,7 +70,7 @@ obj = operator_new(0x110C);
 
 // 3. Construct
 // CascadeStands_Ctor(this=obj, board, *(board+0x4378))
-//   → Stands_ctor(obj, mesh) → sets vtable = 0x4D50C0
+//   → SceneObject_ctor(obj, mesh) → sets vtable = 0x4D50C0
 //   → operator_new(0x10D0) → CollisionLevel_ctorWithLevel(coll, obj)
 mesh_ptr = *(board + 0x4378);   // pre-loaded Level4-Mace mesh
 CascadeStands_Ctor(obj, board, mesh_ptr);  // thiscall, ret 8
@@ -286,7 +286,7 @@ The Turret is a separate game object that uses `Level4-Turret` mesh:
 board+0x43B4 = MeshWorld_ctor("Levels\\Level4-Turret");
 // Turret creation in Scene_LoadLevel4:
 obj = operator_new(0x10D0);
-Stands_ctor(obj, mesh);  // sets vtable = 0x4D8FB0
+SceneObject_ctor(obj, mesh);  // sets vtable = 0x4D8FB0
 ```
 
 ### Mesh Pre-loading (Tower Constructor)

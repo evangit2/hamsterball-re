@@ -23,7 +23,7 @@ Tower Race level-specific factory. Handles 7 object types.
 | WINDMILL | "WINDMILL", 8 | 0x4CF97C | 0x10D0 | CollisionLevel_ctorWithLevel @ 0x465080 | +0x437C | NO | NO |
 | TRAPDOOR | "TRAPDOOR", 8 | 0x4CF970 | 0x10F8 | 0x438290 | N/A | +0x2578 (×6) | NO |
 | CHOMPER | "CHOMPER", 7 | 0x4CF968 | NONE | NONE (Board fields) | +0x4390 | NO | NO |
-| TURRET | "TURRET", 6 | 0x4CF960 | 0x10D0 | Stands_ctor @ 0x462850 | +0x43B4 | NO (vtable) | NO |
+| TURRET | "TURRET", 6 | 0x4CF960 | 0x10D0 | SceneObject_ctor @ 0x462850 | +0x43B4 | NO (vtable) | NO |
 
 ## Mesh Path Strings
 
@@ -57,13 +57,13 @@ Tower Race level-specific factory. Handles 7 object types.
 | Mace | YES | Alloc 0x110C, ctor 0x438750, appended to +0x2578. Needs Board+0x4378 mesh. |
 | Windmill | PARTIAL | CollisionLevel only (collision, no game object/render). Not in +0x2578. |
 | Trapdoor | YES | Alloc 0x10F8, ctor 0x438290, appended to +0x2578. No mesh dependency. |
-| Turret | PARTIAL | Stands_ctor but no AthenaList_Append. Uses vtable dispatch for rendering. |
+| Turret | PARTIAL | SceneObject_ctor but no AthenaList_Append. Uses vtable dispatch for rendering. |
 
 ## Key Functions
 
 - MeshWorld_ctor: 0x00461510 — alloc(0x10D0, App+0x174, "path")
 - CollisionLevel_ctorWithLevel: 0x00465080
-- Stands_ctor: 0x462850
+- SceneObject_ctor: 0x462850
 - AthenaList_Append: 0x00453810
 - operator_new: 0x4BA57B (jmp to malloc)
 - __strnicmp: 0x4C7677

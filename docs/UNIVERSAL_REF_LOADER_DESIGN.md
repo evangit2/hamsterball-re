@@ -275,7 +275,7 @@ The factory allocates a new object each time, calls a constructor, and appends i
 | DRAWBRIDGE | 0x113C | Glass_Level_ctor | +0x4370 | +0x2578 | No |
 | MACE | 0x110C | (0x438750) | +0x4378 | +0x2578 | No |
 | TRAPDOOR | 0x10F8 | (0x438290) | *(none)* | +0x2578 | No |
-| TURRET | 0x10D0 | Stands_ctor | +0x43B4 | *(vtable dispatch)* | No |
+| TURRET | 0x10D0 | SceneObject_ctor | +0x43B4 | *(vtable dispatch)* | No |
 | SPINNY | 0x1508 | Rotator_ctor | +0x47E0 | +0x2578 | No |
 | SMASHER1 | — | — | — | +0x2578 | No |
 | SMASHER2 | — | — | — | +0x2578 | No |
@@ -377,10 +377,10 @@ MeshWorld_ctor(mesh, *(int*)(*(int*)(board + 0x878) + 0x174), "Levels\\Level3-Wa
 ```
 Slower (re-parses file) but fully independent. Works even if board slot is empty (useful for cross-level loading).
 
-**Option C — Use Stands_ctor pattern:**
+**Option C — Use SceneObject_ctor pattern:**
 ```c
 void* obj = operator_new(0x10D0);
-Stands_ctor(obj, *(void**)(board + 0x4BA8));  // clones spatial tree from parent
+SceneObject_ctor(obj, *(void**)(board + 0x4BA8));  // clones spatial tree from parent
 *outObj = (int)obj;
 ```
 This is what the game itself uses for TURRET, MACE, DRAWBRIDGE — objects that need independent instances sharing a mesh.
@@ -666,7 +666,7 @@ bool is_static_mesh_object(const char* refName) {
 | DRAWBRIDGE | CreateTowerObjects | 0x113C | Glass_Level_ctor | +0x4370 | +0x2578 | No | YES | No |
 | MACE | CreateTowerObjects | 0x110C | (0x438750) | +0x4378 | +0x2578 | No | YES | No |
 | TRAPDOOR | CreateTowerObjects | 0x10F8 | (0x438290) | *(none)* | +0x2578 | No | YES | No |
-| TURRET | CreateTowerObjects | 0x10D0 | Stands_ctor | +0x43B4 | *(vtable)* | No | PARTIAL | No |
+| TURRET | CreateTowerObjects | 0x10D0 | SceneObject_ctor | +0x43B4 | *(vtable)* | No | PARTIAL | No |
 | CHOMPER | CreateTowerObjects | NONE | NONE (static) | +0x4390 | — | No | NO | YES |
 | WINDMILL | CreateTowerObjects | N/A | CollisionLevel only | +0x437C | — | No | NO | YES |
 | WATERWHEEL | CreateDizzyObjects | NONE | NONE (static) | +0x4BA8 | — | No | NO | YES |
@@ -785,7 +785,7 @@ See [Section 4](#4-factory-dispatch-via-vtable33) above for the full Race and Ar
 | 0x466060 | Level_CloneTree | Clones a Level/MeshWorld object (thiscall) |
 | 0x461510 | MeshWorld_ctor | Creates MeshWorld from file (alloc + parse) |
 | 0x465080 | CollisionLevel_ctorWithLevel | Creates CollisionLevel from MeshWorld |
-| 0x462850 | Stands_ctor | Base constructor — clones SpatialTree from parent |
+| 0x462850 | SceneObject_ctor | Base constructor — clones SpatialTree from parent |
 | 0x453810 | AthenaList_Append | Append object to AthenaList |
 | 0x453210 | AthenaList_Init | Initialize an AthenaList |
 | 0x4BA57B | operator_new | Jump to malloc (0x10D0 = MeshWorld size) |
@@ -873,5 +873,5 @@ DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 timeout 35 wine Hamsterball.exe
 | `analysis/factory_objects_comprehensive.md` | Comprehensive factory object analysis with all board offsets |
 | `analysis/ghidra/decompilations/scene/Scene_CreateDynamicObjects_0040c430.c` | Full decompilation of the dispatch loop |
 | `analysis/ghidra/decompilations/batch_auto/Level_CloneTree_0x00466060.c` | Full decompilation of the clone function |
-| `analysis/ghidra/decompilations/batch_auto/Stands_ctor_0x00462850.c` | Stands_ctor (base constructor with SpatialTree clone) |
+| `analysis/ghidra/decompilations/batch_auto/SceneObject_ctor_0x00462850.c` | SceneObject_ctor (base constructor with SpatialTree clone) |
 | `mods/universal-ref-loader/` | Existing universal ref loader mod (needs rebuild with new design) |

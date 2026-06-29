@@ -213,7 +213,7 @@ skip_scene:
   mov eax, [edi+0x10F4]
   // Wait - Sawblade stores collision level at different offset!
   // Sawblade_Level_Ctor doesn't store collision at +0x10F8 like Bonk
-  // It uses Stands_ctor which stores at +0x10F4
+  // It uses SceneObject_ctor which stores at +0x10F4
   // Actually, looking at the ctor: no explicit collision level creation
   // The Level_ctor base class handles mesh loading internally
   // Skip collision registration for now
