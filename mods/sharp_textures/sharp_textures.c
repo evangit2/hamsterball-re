@@ -219,25 +219,46 @@ static SetTSS_t   g_orig_SetTSS = NULL;
 static SetTexture_t g_orig_SetTexture = NULL;
 static int g_vtable_hooked = 0;
 
-/* Hook for SetTexture: track which texture is bound to which stage */
+/* Hook for SetTexture: when a texture is bound, immediately set the filter.
+ * If the texture is a tracked checker/brick → set POINT (sharp).
+ * If it's any other texture (including NULL) → set LINEAR (normal).
+ * This ensures the filter is always correct regardless of call order. */
 static int __stdcall hook_SetTexture(void* device, DWORD stage, void* tex) {
-    if (stage < 8) g_current_tex[stage] = tex;
-    return g_orig_SetTexture(device, stage, tex);
+    int result = g_orig_SetTexture(device, stage, tex);
+
+    if (stage < 8) {
+        g_current_tex[stage] = tex;
+
+        /* Set filter immediately based on the texture just bound */
+        DWORD mag, minf, mip;
+        if (tex && is_tracked(tex)) {
+            mag = g_checker_mag;
+            minf = g_checker_min;
+            mip = g_checker_mip;
+        } else {
+            mag = g_mag_filter;
+            minf = g_min_filter;
+            mip = g_mip_filter;
+        }
+        g_orig_SetTSS(device, stage, D3DTSS_MAGFILTER, mag);
+        g_orig_SetTSS(device, stage, D3DTSS_MINFILTER, minf);
+        g_orig_SetTSS(device, stage, D3DTSS_MIPFILTER, mip);
+    }
+    return result;
 }
 
-/* Hook for SetTextureStageState: override filter values */
+/* Hook for SetTextureStageState: still intercept filter calls as a safety net.
+ * If the game sets a filter AFTER SetTexture, we override it to match
+ * the currently bound texture. */
 static int __stdcall hook_SetTSS(void* device, DWORD stage, DWORD type, DWORD value) {
     if (stage < 8 && (type == D3DTSS_MAGFILTER || type == D3DTSS_MINFILTER || type == D3DTSS_MIPFILTER)) {
-        /* Only override for tracked checker/brick textures.
-         * For everything else, pass through the game's original value. */
-        int tracked = g_current_tex[stage] && is_tracked(g_current_tex[stage]);
-
-        if (tracked) {
+        void* tex = g_current_tex[stage];
+        if (tex && is_tracked(tex)) {
             if (type == D3DTSS_MAGFILTER)
                 value = g_checker_mag;
             else if (type == D3DTSS_MINFILTER)
                 value = g_checker_min;
-            else /* MIPFILTER */
+            else
                 value = g_checker_mip;
         }
     }
