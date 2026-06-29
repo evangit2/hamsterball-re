@@ -23,29 +23,14 @@ Embeds a Lua 5.1.5 interpreter into the game via the bass.dll proxy pattern, all
 In your `.meshworld` file, name a reference point with the `L:` prefix:
 
 ```
-L:myobj
+L:move
+L:rotate
+L:scale
 ```
 
-### 3. Write a Lua script
+### 3. Write or use Lua scripts
 
-Create `Lua/myobj.lua` in the game directory:
-
-```lua
-local time = 0
-
-function update(entity_id, dt)
-    time = time + dt
-    
-    -- Get current position
-    local x, y, z = hamsterball.get_position(entity_id)
-    
-    -- Float up and down
-    if not _base_y then _base_y = y end
-    local new_y = _base_y + math.sin(time * 2.0) * 50.0
-    
-    hamsterball.set_position(entity_id, x, new_y, z)
-end
-```
+Create scripts in the `Lua/` folder matching the entity names (without the `L:` prefix). See the example scripts below.
 
 ### 4. Play
 
@@ -61,6 +46,8 @@ All functions are in the `hamsterball` table:
 | `hamsterball.set_position(id, x, y, z)` | — | Set entity position |
 | `hamsterball.get_rotation(id)` | x, y, z | Get entity rotation (radians) |
 | `hamsterball.set_rotation(id, x, y, z)` | — | Set entity rotation |
+| `hamsterball.get_scale(id)` | sx, sy, sz | Get entity scale (default 1.0) |
+| `hamsterball.set_scale(id, sx, sy, sz)` | — | Set entity scale |
 | `hamsterball.get_ball_pos(index)` | x, y, z | Get ball position (0=player 1) |
 | `hamsterball.get_delta_time()` | float | Seconds since last frame |
 | `hamsterball.get_frame_count()` | int | Current scene frame number |
@@ -75,11 +62,29 @@ Entity IDs are 1-indexed integers assigned during the SpatialTree scan. They per
 
 ## Example Scripts
 
-### `Lua/myobj.lua` — Floating object
-Makes the object float up and down in a sine wave.
+### `Lua/move.lua` — Dynamic Position
+Moves an object along a configurable path. Supports four movement modes:
+- `"x"` — back and forth along X axis
+- `"y"` — up and down along Y axis
+- `"z"` — back and forth along Z axis
+- `"circle"` — circular movement in the XZ plane
 
-### `Lua/spinner.lua` — Rotating object
-Rotates the object at 90°/second, spinning 3x faster when the ball is within 200 units.
+Configurable distance and speed. Default: circle pattern, 200 unit radius, 0.5 Hz.
+
+### `Lua/rotate.lua` — Dynamic Rotation
+Continuously rotates an object around configurable axes (X=pitch, Y=yaw, Z=roll).
+Spins faster (3x) when the ball is within 300 units. Configurable per-axis speeds.
+
+### `Lua/scale.lua` — Dynamic Scaling
+Pulses the object's scale in a sine wave pattern. Grows larger when the ball
+approaches (proximity-based scaling up to 2x). Configurable base scale, pulse
+amplitude, pulse speed, and proximity range.
+
+### `Lua/myobj.lua` — Floating Object (basic example)
+Simple sine-wave floating up and down.
+
+### `Lua/spinner.lua` — Rotating Object (basic example)
+Rotates at 90°/sec, spinning 3x faster when the ball is within 200 units.
 
 ## Technical Details
 
@@ -87,8 +92,9 @@ Rotates the object at 90°/second, spinning 3x faster when the ball is within 20
 - **Hook target**: `Scene_Update` at 0x419C00 (7-byte entry detour)
 - **Entity scan**: Reads SpatialTree object list at `root+0xCB0` (count) / `root+0x10B8` (data)
 - **Object name**: At `obj+0x50` (char pointer)
-- **Object position**: At `obj+0x164/0x168/0x16C` (float x/y/z)
-- **Object rotation**: At `obj+0x170/0x174/0x178` (float x/y/z)
+- **Object position**: At `obj+0x454/0x458/0x45C` (Vec3 floats, verified from SceneObject_BaseInit)
+- **Object rotation**: At `obj+0x468/0x46C/0x470` (Vec3 floats)
+- **Object scale**: At `obj+0x460` (position w-component) and `obj+0x474` (rotation w-component)
 - **Rescan interval**: Every 60 frames (~1 second at 60fps) to catch level changes
 - **Max entities**: 64 concurrent Lua-scripted objects
 
@@ -109,4 +115,4 @@ Requires `i686-w64-mingw32-gcc` (MinGW cross-compiler). Lua source is included i
 
 ## Crash Test
 
-Tested via hbtestd: 18.65s runtime, no crash. ✓
+Tested via hbtestd: 18.7s runtime, no crash. ✓
