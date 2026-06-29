@@ -78,6 +78,7 @@
 #define BALL_RADIUS        0x284
 #define BALL_PLAYER_IDX    0x18         /* int, 0=P1, -1=AI */
 #define BALL_VTABLE_ADDR   0x4CF3A0
+#define BALL_IS_FALLING    0x2E8        /* byte: set to 1 to kill/respawn the ball */
 
 /* App struct offsets */
 #define APP_SCENE_MGR      0x184        /* App+0x184 = scene manager (MeshWorld) */
@@ -494,6 +495,89 @@ static int lua_set_scale(lua_State *L)
     return 0;
 }
 
+/* ── Lua API: hamsterball.kill_ball(ball_index) — kill/respawn ball ──── */
+static int lua_kill_ball(lua_State *L)
+{
+    int ball_idx = luaL_optint(L, 1, 0);  /* default player 1 */
+
+    int app = safe_read_ptr(APP_ADDR);
+    if (!app) return 0;
+    int profile = safe_read_ptr(app + 0x220);
+    if (!profile) return 0;
+    int board = safe_read_ptr(profile + 0x0C);
+    if (!board) return 0;
+
+    /* Use game's AthenaList functions to find the ball */
+    typedef int (__fastcall *AthenaList_GetSize_t)(int);
+    typedef int (__fastcall *AthenaList_GetAt_t)(int, int);
+    static AthenaList_GetSize_t pGetSize = NULL;
+    static AthenaList_GetAt_t pGetAt = NULL;
+    if (!pGetSize) pGetSize = (AthenaList_GetSize_t)0x004536A0;
+    if (!pGetAt) pGetAt = (AthenaList_GetAt_t)0x0040A020;
+
+    int list_addr = board + 0x29D4;
+    int count = pGetSize(list_addr);
+    if (ball_idx < 0 || ball_idx >= count) return 0;
+
+    int ball = pGetAt(list_addr, ball_idx);
+    if (!ball) return 0;
+
+    /* Set ball+0x2E8 = 1 (is_falling flag → triggers kill/respawn) */
+    if (!IsBadWritePtr((void*)(ball + BALL_IS_FALLING), 1)) {
+        *(BYTE*)(ball + BALL_IS_FALLING) = 1;
+    }
+    return 0;
+}
+
+/* ── Lua API: hamsterball.distance_to_ball(entity_id, ball_index) ──── */
+static int lua_distance_to_ball(lua_State *L)
+{
+    int idx = luaL_checkint(L, 1) - 1;
+    int ball_idx = luaL_optint(L, 2, 0);
+
+    if (idx < 0 || idx >= g_entity_count || !g_entities[idx].obj_addr) {
+        lua_pushnumber(L, -1.0);
+        return 1;
+    }
+
+    /* Get entity position */
+    DWORD obj = g_entities[idx].obj_addr;
+    float ex = safe_read_float(obj + OBJ_POS_X);
+    float ey = safe_read_float(obj + OBJ_POS_Y);
+    float ez = safe_read_float(obj + OBJ_POS_Z);
+
+    /* Get ball position */
+    int app = safe_read_ptr(APP_ADDR);
+    if (!app) { lua_pushnumber(L, -1.0); return 1; }
+    int profile = safe_read_ptr(app + 0x220);
+    if (!profile) { lua_pushnumber(L, -1.0); return 1; }
+    int board = safe_read_ptr(profile + 0x0C);
+    if (!board) { lua_pushnumber(L, -1.0); return 1; }
+
+    typedef int (__fastcall *AthenaList_GetSize_t)(int);
+    typedef int (__fastcall *AthenaList_GetAt_t)(int, int);
+    static AthenaList_GetSize_t pGetSize = NULL;
+    static AthenaList_GetAt_t pGetAt = NULL;
+    if (!pGetSize) pGetSize = (AthenaList_GetSize_t)0x004536A0;
+    if (!pGetAt) pGetAt = (AthenaList_GetAt_t)0x0040A020;
+
+    int list_addr = board + 0x29D4;
+    int count = pGetSize(list_addr);
+    if (ball_idx < 0 || ball_idx >= count) { lua_pushnumber(L, -1.0); return 1; }
+
+    int ball = pGetAt(list_addr, ball_idx);
+    if (!ball) { lua_pushnumber(L, -1.0); return 1; }
+
+    float bx = safe_read_float(ball + BALL_POS_X);
+    float by = safe_read_float(ball + BALL_POS_Y);
+    float bz = safe_read_float(ball + BALL_POS_Z);
+
+    float dx = bx - ex, dy = by - ey, dz = bz - ez;
+    float dist = (float)sqrt(dx*dx + dy*dy + dz*dz);
+    lua_pushnumber(L, dist);
+    return 1;
+}
+
 /* ── Lua API: hamsterball.get_frame_count() -> int ───────────────────── */
 static int lua_get_frame_count(lua_State *L)
 {
@@ -517,6 +601,8 @@ static const luaL_Reg hamsterball_funcs[] = {
     {"set_rotation",     lua_set_rotation},
     {"get_scale",        lua_get_scale},
     {"set_scale",        lua_set_scale},
+    {"kill_ball",        lua_kill_ball},
+    {"distance_to_ball", lua_distance_to_ball},
     {"get_ball_pos",     lua_get_ball_pos},
     {"get_delta_time",   lua_get_delta_time},
     {"get_entity_count", lua_get_entity_count},
