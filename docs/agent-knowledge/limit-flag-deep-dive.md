@@ -34,7 +34,7 @@ if (piVar16[0x15] > 1.0  &&  is_shrunk == 0) {
 - `E:LIMITZ` — sets `ball+0x2E9 = 1`
 - `E:LIMITPIPE1` — sets `ball+0x2E9 = 1`
 - `E:LIMITPIPE2` — sets `ball+0x2E9 = 1`
-- `E:SWALLOW` — sets `ball+0x2E9 = 1`
+- `E:SWALLOW` — sets `ball+0x2E8 = 1` (is_falling/shattered flag)
 
 **Also set by `Ball_ApplyTrajectory` (0x00403750) itself:** when the dizzy effect fires, it sets `dizzy_lock=1` to prevent itself from re-firing on subsequent frames.
 
@@ -134,11 +134,11 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | **Field** | `Ball+0x2E9` (byte) |
 | **Name** | `dizzy_lock` |
 | **Init** | 0 (by `Ball_ctor2` at 0x4039E0+0x1FE) |
-| **Set by** | Ball_ApplyTrajectory (0x403750), speed>1.0 collision (0x407391), E:LIMIT (0x40C767), E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2, E:SWALLOW |
+| **Set by** | Ball_ApplyTrajectory (0x403750), speed>1.0 collision (0x407391), E:LIMIT (0x40C767), E:LIMITX, E:LIMITZ, E:LIMITPIPE1, E:LIMITPIPE2 |
 | **Cleared by** | `Ball_InitPhysicsDefaults` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x404039E0+0x1FE) |
 | **Effect 1** | Blocks `Ball_ApplyTrajectory` from firing (Pass 1 checks `dizzy_lock == 0`) |
 | **Effect 2** | When set by speed>1.0: camera change + viewport setup |
-| **Effect 3** | When set by E:LIMIT/E:SWALLOW: enables wall-hit shatter path (vtable[8] = Ball_OnRampEvent) |
+| **Effect 3** | When set by E:LIMIT: enables wall-hit shatter path (vtable[8] = Ball_OnRampEvent). E:SWALLOW sets ball+0x2E8 (is_falling) instead — different flag |
 | **Effect 4** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
 | **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `dizzy_lock` from being set by speed>1.0 collision |
 | **Related fields** | `ball+0x2EC` (bounce_count), `ball+0x14D` (has_trajectory), `ball+0x2F0` (impact_count) |

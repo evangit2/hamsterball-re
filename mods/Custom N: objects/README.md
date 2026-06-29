@@ -299,7 +299,7 @@ These events are ONLY processed by specific board types. If the ball touches geo
 | `E:LIMITZ` | Same as LIMIT but checks `ball[0x1D2] == 2` |
 | `E:LIMITPIPE1` | If `ball[0x1] != 0` (pipe 1 flag): qualifies for limit |
 | `E:LIMITPIPE2` | If `ball[0x5] != 0` (pipe 2 flag): qualifies for limit |
-| `E:SWALLOW` | Sets `ball+0xBA = 1` (swallow/pipe entry flag) |
+| `E:SWALLOW` | Sets `ball+0x2E8 = 1` (is_falling/shattered flag — NOT dizzy_lock +0x2E9) |
 
 #### Beginner (0x004111E0)
 

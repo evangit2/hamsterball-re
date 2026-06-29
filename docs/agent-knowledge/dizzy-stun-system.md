@@ -231,9 +231,10 @@ Set to 1 by:
 - Speed > 1.0 collision check (Ball_Update line 806)
 - `E:LIMIT` / `E:LIMITX` / `E:LIMITZ` — level boundary events
 - `E:LIMITPIPE1` / `E:LIMITPIPE2` — pipe limit events
-- `E:SWALLOW` — fall off edge
 
 Reset to 0 ONLY by `Ball_InitPhysicsDefaults` (0x405100) — called on respawn/new race.
+
+**NOT set by E:SWALLOW** — E:SWALLOW sets `ball+0x2E8` (is_falling/shattered flag) instead, which is a different field.
 
 ### Ball_ApplyTrajectory (0x403750) — The Dizzy Effect
 
@@ -366,14 +367,14 @@ Frame N+2:
 | E:LIMITZ | ~0x40F27D | Z-axis boundary |
 | E:LIMITPIPE1 | ~0x40F2B5 | Pipe limit variant 1 |
 | E:LIMITPIPE2 | ~0x40F2F7 | Pipe limit variant 2 |
-| E:SWALLOW | ~0x40F317 | Fall off edge / pipe swallow |
+| E:SWALLOW | ~0x40F2D5 | Pipe swallow (sets ball+0x2E8, NOT dizzy_lock) |
 
 ## Field Summary
 
 | Offset | Name | Type | Default | Description |
 |--------|------|------|---------|-------------|
-| +0x2E8 | is_falling | byte | 0 | Set by Ball_Shatter etc. Triggers respawn |
-| +0x2E9 | dizzy_lock | byte | 0 | Sticky flag: prevents Ball_ApplyTrajectory re-firing. Set by trajectory, E:LIMIT*, E:SWALLOW, speed>1.0. Reset only by Ball_InitPhysicsDefaults |
+| +0x2E8 | is_falling | byte | 0 | Set by Ball_Shatter, Ball_FallUpdate, E:SWALLOW (pipe swallow). Triggers respawn |
+| +0x2E9 | dizzy_lock | byte | 0 | Sticky flag: prevents Ball_ApplyTrajectory re-firing. Set by trajectory, E:LIMIT*, speed>1.0. Reset only by Ball_InitPhysicsDefaults. E:SWALLOW sets +0x2E8 instead |
 | +0x2EC | bounce_count | int32 | 0 | Bounce counter for dizzy system. Double-increments 0→1→2 in one frame when speed ≥ 0.03/0.1. Triggers trajectory when > 1 |
 | +0x2F0 | impact_count | int32 | 0 | Set to 100 by trajectory. ≥81 blocks input. Decays by 1/frame |
 | +0x2F8 | show_stars | byte | 0 | 1 = render 8-star circling effect |
