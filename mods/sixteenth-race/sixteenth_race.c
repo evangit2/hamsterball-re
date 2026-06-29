@@ -244,12 +244,23 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     /* MOV EDX, [ESI+0x29B4] (race name pointer) */
     c_byte(&c, 0x8B); c_byte(&c, 0x96);
     c_dword(&c, 0x29B4);
+    /* TEST EDX, EDX (NULL check - race name not set during startup) */
+    c_byte(&c, 0x85); c_byte(&c, 0xD2);
+    /* JZ .original (NULL → use original path, don't dereference) */
+    DWORD jz_null = c.off;
+    c_byte(&c, 0x74); c_byte(&c, 0x00);
+    /* CMP EDX, 0x10000 (reject pointers below 64KB - always invalid on Windows) */
+    c_byte(&c, 0x81); c_byte(&c, 0xFA);
+    c_dword(&c, 0x10000);
+    /* JB .original (too low → use original path) */
+    DWORD jb_low = c.off;
+    c_byte(&c, 0x72); c_byte(&c, 0x00);
     /* CMP DWORD [EDX], 0x54534554 ("TEST" in little-endian) */
     c_byte(&c, 0x81); c_byte(&c, 0x3A);
     c_dword(&c, 0x54534554);
-    /* POP EDX (restore gfx) */
+    /* POP EDX (restore gfx — taken before JNE, so .original_nopop skips POP) */
     c_byte(&c, 0x5A);
-    /* JNE .original (placeholder) */
+    /* JNE .original_nopop (placeholder — EDX already popped, skip POP) */
     DWORD jnz = c.off;
     c_byte(&c, 0x0F); c_byte(&c, 0x85); c_dword(&c, 0);
     /* PUSH STR_LEVELTEST ("levels\\leveltest") */
@@ -257,11 +268,18 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     /* JMP .done (placeholder) */
     DWORD jmp_done = c.off;
     c_byte(&c, 0xE9); c_dword(&c, 0);
-    /* .original: PUSH 0x004CF8E0 ("levels\\level1") */
-    DWORD orig_pos = (DWORD)(c.p + c.off);
+    /* .original_pop: POP EDX (for NULL/low paths that haven't popped yet) */
+    DWORD orig_pop_pos = (DWORD)(c.p + c.off);
+    c_byte(&c, 0x5A);  /* POP EDX */
+    /* .original_nopop: PUSH 0x004CF8E0 ("levels\\level1") */
+    DWORD orig_nopop_pos = (DWORD)(c.p + c.off);
     c_push32(&c, STR_LEVEL1_PATH);
-    /* Fix JNZ target */
-    *(DWORD*)(c.p + jnz + 2) = orig_pos - ((DWORD)(c.p + jnz) + 6);
+    /* Fix JZ null target → .original_pop */
+    *(c.p + jz_null + 1) = (BYTE)(orig_pop_pos - ((DWORD)(c.p + jz_null) + 2));
+    /* Fix JB low target → .original_pop */
+    *(c.p + jb_low + 1) = (BYTE)(orig_pop_pos - ((DWORD)(c.p + jb_low) + 2));
+    /* Fix JNZ target → .original_nopop (EDX already popped, skip POP) */
+    *(DWORD*)(c.p + jnz + 2) = orig_nopop_pos - ((DWORD)(c.p + jnz) + 6);
     /* Fix JMP .done target */
     *(DWORD*)(c.p + jmp_done + 1) = (DWORD)(c.p + c.off) - ((DWORD)(c.p + jmp_done) + 5);
     /* .done: PUSH EDX (original instruction at 0x0040D207) */
