@@ -1,30 +1,21 @@
 [ENABLE]
  
 // =====================================================
-// Global PopCylinder Spawner with Chrome Release v6
+// Global PopCylinder Spawner with Chrome Release v7
 // =====================================================
-// Based on the WORKING SpeedCylinderSpawn.CEA pattern.
+// v7: Instant chrome release! Calls PopCylinder_Update (vtable[0x0B])
+//     immediately after spawn. This triggers the Timer_Init + chrome
+//     effect that v3-v6 were missing.
 //
 // HOOK: Ball_Update at 0x405E22
 //   Original: 8B 86 5C 0C 00 00 = mov eax, [esi+0x0C5C]
 //   ESI = ball pointer
 //
-// HOTKEY: Set [SpawnFlag] to 1 via CE to spawn
-//
-// Uses CreateLevelObjects (0x004121D0) with "POPCYLINDER" string,
-// then does full post-processing (SpatialTree, render list, collision
-// list, vtable inits) — same pattern as the working SpeedCylinder script.
-//
-// Key differences from SpeedCylinder:
-//   - String: "POPCYLINDER" at 0x004CFDB8 (vs "SPEEDCYLINDER" at 0x004CFE4C)
-//   - Creation fn: 0x004121D0 (CreateLevelObjects, vs 0x004117B0 CreateUpLevelObjects)
-//   - Mesh string: 0x004D0F5C "levels\level9-popcylinder1" (vs 0x004D1140)
-//   - Board mesh slot: board+0x5420 (vs board+0x4788)
-//   - Alloc size: 0x10E8 (same as game's PopCylinder allocation)
+// HOTKEY: Set [SpawnPopCyl] to 1 via CE to spawn
 // =====================================================
  
 alloc(SpawnCode, 4096)
-alloc(SpawnFlag, 4)
+alloc(SpawnPopCyl, 4)
 alloc(saved_board, 4)
 alloc(param_block, 32)
 alloc(out_obj, 4)
@@ -35,9 +26,9 @@ alloc(playerY, 4)
 alloc(playerZ, 4)
 alloc(last_board, 4)
  
-registersymbol(SpawnFlag)
+registersymbol(SpawnPopCyl)
  
-SpawnFlag:
+SpawnPopCyl:
   dd 0
 saved_board:
   dd 0
@@ -69,24 +60,22 @@ label(done_spawn)
 label(skip_mesh)
  
 SpawnCode:
-  // Track board changes (for potential cleanup)
-  mov eax, [esi+0x14]
+  mov eax, [esi+14]
   mov [saved_board], eax
   test eax, eax
   jz original_code
  
-  // Save player position
-  mov eax, [esi+0x164]
+  mov eax, [esi+164]
   mov [playerX], eax
-  mov eax, [esi+0x168]
+  mov eax, [esi+168]
   mov [playerY], eax
-  mov eax, [esi+0x16C]
+  mov eax, [esi+16C]
   mov [playerZ], eax
  
 check_spawn:
-  cmp dword [SpawnFlag], 0
+  cmp dword [SpawnPopCyl], 0
   je original_code
-  mov dword [SpawnFlag], 0
+  mov dword [SpawnPopCyl], 0
  
   pushad
  
@@ -143,14 +132,21 @@ check_spawn:
   mov [edx+0x5420], eax
  
 skip_mesh:
-  // === BUILD PARAM BLOCK ===
-  mov edx, [playerX]
-  mov [param_block+4], edx
-  mov edx, [playerY]
-  mov [param_block+8], edx
+  fld dword [playerX]
+  fadd dword [float_30]
+  fstp dword [param_block+4]
+  fld dword [playerY]
+  fsub dword [float_10]
+  fstp dword [param_block+8]
   mov edx, [playerZ]
-  mov [param_block+0xC], edx
- 
+  mov [param_block+C], edx
+  jmp do_spawn
+
+float_30:
+  dd 41F00000
+float_10:
+  dd 41200000
+
 do_spawn:
   mov dword [param_block], 0
   mov dword [param_block+0x10], 0
@@ -200,16 +196,13 @@ post_spawn:
   lea ecx, [edx+0x1C]
   call 00453810               // AthenaList_Append
  
-  // Call vtable[0x58/4=0x16] (init/update method)
+  // Call vtable[0x0B] = PopCylinder_Update — triggers chrome release!
+  // This does: Timer_Init + chrome effect + vtable[0x16] (update)
+  //   + vtable[0x15] (render) + clears +0x10E4 flag.
+  // __fastcall: ECX=this, no stack params.
   mov ecx, esi
   mov eax, [esi]
-  call dword [eax+0x58]
- 
-  // Call vtable[0x54/4=0x15] (render init method)
-  push ebx
-  mov ecx, esi
-  mov eax, [esi]
-  call dword [eax+0x54]
+  call dword [eax+0x2C]
  
 register_collision:
   // Register collision object in board+0x10EC
@@ -258,7 +251,7 @@ original_code:
   db 8B 86 5C 0C 00 00
  
 dealloc(SpawnCode)
-dealloc(SpawnFlag)
+dealloc(SpawnPopCyl)
 dealloc(saved_board)
 dealloc(param_block)
 dealloc(out_obj)
@@ -268,4 +261,4 @@ dealloc(playerX)
 dealloc(playerY)
 dealloc(playerZ)
 dealloc(last_board)
-unregistersymbol(SpawnFlag)
+unregistersymbol(SpawnPopCyl)
