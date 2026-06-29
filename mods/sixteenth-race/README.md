@@ -24,6 +24,7 @@ Adds a 16th race to Hamsterball by cloning the Warm-Up Race board constructor an
 | 0x00426AEC | 90909090 | cave addr | TourneyMenu jump table entry 15 |
 | 0x0040D202 | 68 E0 F8 4C 00 | E9 rel32 | GetLevelPath string push redirect |
 | 0x0042F4F7 | 6A 0A 8B CE E8 | E9 rel32 | Practice menu separator hook |
+| 0x0041A619 | 0F 85 9D 00 00 00 | 90×6 | Race-end JNZ→NOP: tournament falls through to TourneyMenu |
 
 ## Installation
 
@@ -51,8 +52,8 @@ i686-w64-mingw32-gcc -shared -o bass.dll sixteenth_race.c \
 - **MESHWORLD path**: `levels\leveltest` (loaded via GetLevelPath hook)
 - **Menu entry**: "Test Race" with ID "15", using Warm-Up preview image
 - **No new unlock flag needed**: Test Race appears always unlocked in the practice menu
-- **Tournament progression**: After Test Race (index 15), the tournament ends naturally (default case handles index 16+)
+- **Tournament progression**: After winning Impossible (race 15), the NOP at 0x41A619 makes tournament mode fall through to the TourneyMenu (between-races screen) instead of ending. PLAY! calls Tournament_AdvanceRace → case 15 → Test Race board. After Test Race, the tournament ends naturally (Test Race board does not set the "last race" flag at +0x4348).
 
 ## Crash Test
 
-Passed hbtestd crash test: 38.5s runtime, no crash, process alive.
+Passed hbtestd crash test: 38.8s runtime, no crash, process alive.
