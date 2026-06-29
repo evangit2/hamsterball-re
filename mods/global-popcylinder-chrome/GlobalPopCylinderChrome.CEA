@@ -1,40 +1,23 @@
 [ENABLE]
  
 // =====================================================
-// Global PopCylinder Spawner with Chrome Release v4
+// Global PopCylinder Spawner with Chrome Release v5 (DEBUG)
 // =====================================================
-// Spawns PopCylinders at Player 1's position in any level.
-// PopCylinders immediately play their pop animation (chrome release)
-// via the +0x10E4 active flag set by the ctor.
-//
 // HOOK: Ball_Update at 0x405E22
 //   Original: 8B 86 5C 0C 00 00 = mov eax, [esi+0x0C5C]
-//   ESI = ball pointer (Ball_Update ECX, __fastcall)
+//   ESI = ball pointer (ECX from __fastcall Ball_Update)
 //
 // HOTKEY: Set [SpawnPopCylinder] to 1 via CE to spawn
 //
-// FIXES from v3:
-//   - REMOVED ball+0x18 check — it was unverified and blocked ALL spawns
-//   - REMOVED board+0x5428 AthenaList_Append — only Master Race inits that list
-//     (appending to uninitialized list on other levels = silent failure/crash)
-//   - Removed proximity re-trigger (kept simple: each spawn = one chrome pop)
-//   - Removed dead code labels (skip_mesh, skip_col, etc.)
+// DEBUG: Check [DebugFrame] (should count up rapidly),
+//        [DebugSpawnAttempt] (should be 1 after setting flag),
+//        [DebugError] (0=success, see below)
 //
-// VERIFIED via Ghidra decompilation:
-//   PopCylinder_ctor (0x436EE0): __thiscall(this, board, X, Y, Z, mesh_source)
-//     - Sets vtable = 0x4D58F0, stores board at +0x10D0, pos at +0x10D4/8/C
-//     - Sets +0x10E4 = 1 (active flag for chrome pop animation)
-//   PopCylinder_Update (0x43DED0): checks +0x10E4, if set:
-//     - Copies position, calls vtable[0x16] (inner update) + vtable[0x15] (render)
-//     - Clears +0x10E4 (one-shot effect)
-//   CreateLevelObjects (0x4121D0): only appends to board+0x2578 (NOT board+0x5428)
-//     for PopCylinders. board+0x5428 append is Master-Race-specific.
-//   board+0x5420 = mesh source, set by Master Race ctor (FUN_004206d0) and
-//     Sky Race ctor (but at board+0x4384, NOT 0x5420).
-//     On other levels, board+0x5420 is NULL → CEA creates mesh at runtime.
-//   operator_new (0x4BA57B): __cdecl, 1 param
-//   FUN_00461510 (0x461510): __thiscall(this, gfx_device, filename) — mesh loader
-//   AthenaList_Append (0x453810): __thiscall(this=list, param_1=item)
+// Error codes:
+//   0 = success, 1 = board NULL, 2 = App NULL,
+//   3 = mesh alloc failed, 4 = gfx_device NULL,
+//   5 = mesh ctor failed, 6 = mesh still NULL,
+//   7 = popcyl alloc failed, 8 = ctor failed
 // =====================================================
  
 alloc(SpawnCode, 2048)
@@ -43,20 +26,30 @@ alloc(saved_board, 4)
 alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
+alloc(DebugFrame, 4)
+alloc(DebugSpawnAttempt, 4)
+alloc(DebugError, 4)
  
 registersymbol(SpawnPopCylinder)
+registersymbol(DebugFrame)
+registersymbol(DebugSpawnAttempt)
+registersymbol(DebugError)
  
 SpawnPopCylinder:
  dd 0
- 
 saved_board:
  dd 0
- 
 playerX:
  dd 0
 playerY:
  dd 0
 playerZ:
+ dd 0
+DebugFrame:
+ dd 0
+DebugSpawnAttempt:
+ dd 0
+DebugError:
  dd 0
  
 label(original_code)
@@ -66,6 +59,9 @@ label(mesh_done)
 label(mesh_create)
  
 SpawnCode:
+ 
+// === FRAME COUNTER (proves hook is running) ===
+inc dword [DebugFrame]
  
 // === SAVE PLAYER POSITION ===
 mov eax, [esi+0x164]
@@ -80,6 +76,8 @@ check_spawn:
 cmp dword [SpawnPopCylinder], 0
 je original_code
 mov dword [SpawnPopCylinder], 0
+inc dword [DebugSpawnAttempt]
+mov dword [DebugError], 0
  
 pushad
  
@@ -87,89 +85,104 @@ pushad
 mov eax, [esi+0x14]
 mov [saved_board], eax
 test eax, eax
-jz done_spawn
+jz fail_1
  
 // Verify board has App pointer (board+0x878)
 mov edx, [eax+0x878]
 test edx, edx
-jz done_spawn
+jz fail_2
  
 // === MESH LOADING ===
-// Check if board+0x5420 (popcylinder mesh source) is NULL
 mov edx, [saved_board]
 cmp dword [edx+0x5420], 0
 jne mesh_done
  
 mesh_create:
-// Allocate Level/SceneObject (0x10D0 bytes) for mesh
 push 0x10D0
 call 004BA57B
 add esp, 4
 test eax, eax
-jz done_spawn
+jz fail_3
  
 // Get D3D device: board+0x878 (App) -> +0x174 (gfx_device)
 mov edx, [saved_board]
 mov edx, [edx+0x878]
 mov edx, [edx+0x174]
 test edx, edx
-jz done_spawn
+jz fail_4
  
-// FUN_00461510(this, gfx_device, filename)
-// __thiscall: ECX=this, push param_2(filename) then param_1(gfx)
-push 004D0F5C               // "levels\level9-popcylinder1"
-push edx                    // gfx_device
-mov ecx, eax               // this = new mesh object
+push 004D0F5C
+push edx
+mov ecx, eax
 call 00461510
 test eax, eax
-jz done_spawn
+jz fail_5
  
-// Store mesh in board+0x5420
 mov edx, [saved_board]
 mov [edx+0x5420], eax
  
 mesh_done:
-// Verify mesh source exists
 mov edx, [saved_board]
 mov edx, [edx+0x5420]
 test edx, edx
-jz done_spawn
+jz fail_6
  
 // === ALLOCATE POPCYLINDER ===
 push 0x10E8
 call 004BA57B
 add esp, 4
 test eax, eax
-jz done_spawn
+jz fail_7
 mov edi, eax
  
-// PopCylinder_ctor(this, board, X, Y, Z, mesh_source)
-// __thiscall: ECX=this, 5 stack params (callee cleans RET 0x14)
-// Push order (right-to-left): mesh, Z, Y, X, board
 mov edx, [saved_board]
 mov ecx, [edx+0x5420]
-push ecx                    // param_5 = mesh_source
+push ecx
 mov edx, [playerZ]
-push edx                    // param_4 = Z
+push edx
 mov edx, [playerY]
-push edx                    // param_3 = Y
+push edx
 mov edx, [playerX]
-push edx                    // param_2 = X
+push edx
 mov edx, [saved_board]
-push edx                    // param_1 = board
-mov ecx, edi               // this = new PopCylinder
+push edx
+mov ecx, edi
 call 00436EE0
 test eax, eax
-jz done_spawn
+jz fail_8
 mov edi, eax
  
 // === REGISTER IN ACTIVE OBJECTS LIST ===
-// board+0x2578 = AthenaList of all active objects (update/render loop)
-// This is the ONLY list CreateLevelObjects appends PopCylinders to.
 push edi
 mov ecx, [saved_board]
 add ecx, 0x2578
 call 00453810
+ 
+jmp done_spawn
+ 
+fail_1:
+mov dword [DebugError], 1
+jmp done_spawn
+fail_2:
+mov dword [DebugError], 2
+jmp done_spawn
+fail_3:
+mov dword [DebugError], 3
+jmp done_spawn
+fail_4:
+mov dword [DebugError], 4
+jmp done_spawn
+fail_5:
+mov dword [DebugError], 5
+jmp done_spawn
+fail_6:
+mov dword [DebugError], 6
+jmp done_spawn
+fail_7:
+mov dword [DebugError], 7
+jmp done_spawn
+fail_8:
+mov dword [DebugError], 8
  
 done_spawn:
 popad
@@ -192,4 +205,10 @@ dealloc(saved_board)
 dealloc(playerX)
 dealloc(playerY)
 dealloc(playerZ)
+dealloc(DebugFrame)
+dealloc(DebugSpawnAttempt)
+dealloc(DebugError)
 unregistersymbol(SpawnPopCylinder)
+unregistersymbol(DebugFrame)
+unregistersymbol(DebugSpawnAttempt)
+unregistersymbol(DebugError)
