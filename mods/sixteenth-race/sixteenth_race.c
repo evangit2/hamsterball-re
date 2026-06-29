@@ -45,6 +45,10 @@
 #define PRACTICE_MENU_PATCH      0x0042F4F7  /* PUSH 0xA -> JMP cave */
 #define PRACTICE_MENU_RETURN     0x0042F500
 
+/* Race-end handler: JNZ at 0x41A619 sends tournament mode to timer path */
+/* NOP it so tournament mode falls through to TourneyMenu (like Time Trial) */
+#define RACE_END_TOURNAMENT_JNZ  0x0041A619  /* 6 bytes: 0F 85 9D 00 00 00 -> 90x6 */
+
 /* Game string addresses */
 #define STR_LEVEL1_PATH          0x004CF8E0  /* "levels\\level1" */
 
@@ -354,7 +358,23 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     /* 4. Practice menu: inject 16th entry before separator */
     patch_jmp(PRACTICE_MENU_PATCH, practice_cave);
 
-    /* 5. Copy Level1.MESHWORLD -> LevelTest.MESHWORLD */
+    /* 5. Race-end handler: NOP the JNZ at 0x41A619 so tournament mode */
+    /*    falls through to TourneyMenu instead of going to timer/end. */
+    /*    This makes tournament behave like Time Trial after Impossible. */
+    {
+        DWORD old;
+        VirtualProtect((void*)RACE_END_TOURNAMENT_JNZ, 6, PAGE_EXECUTE_READWRITE, &old);
+        /* NOP 6 bytes: 0F 85 xx xx xx xx -> 90 90 90 90 90 90 */
+        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 0) = 0x90;
+        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 1) = 0x90;
+        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 2) = 0x90;
+        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 3) = 0x90;
+        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 4) = 0x90;
+        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 5) = 0x90;
+        VirtualProtect((void*)RACE_END_TOURNAMENT_JNZ, 6, old, &old);
+    }
+
+    /* 6. Copy Level1.MESHWORLD -> LevelTest.MESHWORLD */
     copy_level_file();
 
     return 0;
