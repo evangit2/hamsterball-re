@@ -149,7 +149,7 @@ static void apply_patches(void) {
     /*
      * Patch 2: App_Run render condition — always render
      *
-     * At 0x46BF6F in App_Run (0x46BD80):
+     * At 0x46BF73 in App_Run (0x46BD80):
      *   The code checks: if (fullscreen && !active) → skip rendering
      *   Original: 75 39   jnz +0x39  (skip render when fullscreen && !active)
      *   Patched:  90 90   nop nop   (always fall through → always render)
@@ -159,7 +159,7 @@ static void apply_patches(void) {
      * other code path sets active=0.
      */
     {
-        DWORD addr = base + 0x2BF6F;  /* RVA = 0x46BF6F - 0x400000 = 0x2BF6F */
+        DWORD addr = base + 0x2BF73;  /* RVA = 0x46BF73 - 0x400000 = 0x2BF73 */
         if (VirtualProtect((void*)addr, 2, PAGE_READWRITE, &oldProt)) {
             *((BYTE*)addr)     = 0x90;  /* nop */
             *((BYTE*)(addr+1)) = 0x90;  /* nop */
