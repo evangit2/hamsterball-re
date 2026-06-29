@@ -228,15 +228,18 @@ static int __stdcall hook_SetTexture(void* device, DWORD stage, void* tex) {
 /* Hook for SetTextureStageState: override filter values */
 static int __stdcall hook_SetTSS(void* device, DWORD stage, DWORD type, DWORD value) {
     if (stage < 8 && (type == D3DTSS_MAGFILTER || type == D3DTSS_MINFILTER || type == D3DTSS_MIPFILTER)) {
-        /* Check if current texture on this stage is a tracked checker/brick */
+        /* Only override for tracked checker/brick textures.
+         * For everything else, pass through the game's original value. */
         int tracked = g_current_tex[stage] && is_tracked(g_current_tex[stage]);
 
-        if (type == D3DTSS_MAGFILTER)
-            value = tracked ? g_checker_mag : g_mag_filter;
-        else if (type == D3DTSS_MINFILTER)
-            value = tracked ? g_checker_min : g_min_filter;
-        else /* MIPFILTER */
-            value = tracked ? g_checker_mip : g_mip_filter;
+        if (tracked) {
+            if (type == D3DTSS_MAGFILTER)
+                value = g_checker_mag;
+            else if (type == D3DTSS_MINFILTER)
+                value = g_checker_min;
+            else /* MIPFILTER */
+                value = g_checker_mip;
+        }
     }
     return g_orig_SetTSS(device, stage, type, value);
 }
