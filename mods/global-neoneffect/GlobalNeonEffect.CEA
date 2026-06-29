@@ -1,56 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GLOBAL NEON EFFECT v25 — Black background + high fog
+// GLOBAL NEON EFFECT v26 — Distance fog only (no ambient kill)
 // ═══════════════════════════════════════════════════════════════════════
 //
-// ROOT CAUSE OF v23/v24 FAILURE:
-//   Graphics_RenderScene (0x454BC0) is NOT called per-frame!
-//   It's only called on D3D device loss/recovery (D3DERR_DEVICELOST).
-//   PresentOrEnd checks Present() return value:
-//     CMP EAX, 0x88760868 (D3DERR_DEVICELOST)
-//     JNZ skip → normally SKIPS RenderScene entirely.
-//   So hooking inside RenderScene = hook never executes during gameplay.
+// v25 PROBLEM: Ambient=black killed ALL geometry lighting → pure black
+// silhouettes. Fog end=300 too short → everything fully fogged.
 //
-// THE REAL PER-FRAME PATH (from App_Run 0x46BD80):
-//   Graphics_BeginFrame(gfx, timer)   ← called EVERY frame
-//   (*App->vtable[0x20])()           ← Scene update
-//   (*App->vtable[0x24])()           ← Scene_Render
-//   (*App->vtable[0x28])()           ← 2D overlay
-//   (*App->vtable[0x2C])()           ← UI
-//   Graphics_PresentOrEnd(gfx, 1)   ← Present
+// v26 FIX: Remove ambient override. Use fog start=500, end=2000 so only
+// distant geometry fades to black. Near geometry stays normally lit.
 //
-// v25 HOOK: Graphics_BeginFrame (0x453B50) — called every frame
-//   ECX = gfx (this pointer)
-//   Original prologue: PUSH EBX / MOV EBX,ECX (2+2 = 4 bytes)
-//   Need 5 bytes for JMP → use 5-byte JMP + 0 NOPs? No:
-//     PUSH EBX = 53 (1 byte)
-//     MOV EBX,ECX = 8B D9 (2 bytes)
-//     MOV ECX,[ESP+8] = 8B 4C 24 08 (4 bytes)
-//   Total first 3 instructions = 7 bytes. We can safely overwrite
-//   the first 5 bytes (PUSH EBX + MOV EBX,ECX + first byte of next)
-//   No — need clean instruction boundary.
-//
-//   Better: hook at 0x453B63 (after the branch)
-//     MOV EAX,[EBX+0x154] = 8B 83 54 01 00 00 (6 bytes) ← perfect!
-//   EBP is NOT set here, but EBX = gfx (from MOV EBX,ECX at entry).
-//
-//   Actually simplest: hook function ENTRY with 5-byte JMP.
-//   PUSH EBX (53) = 1 byte. MOV EBX,ECX (8B D9) = 2 bytes.
-//   Need 5 bytes: overwrite PUSH EBX + MOV EBX,ECX + 2 bytes of
-//   next instruction = messy. Instead use a 6-byte pattern.
-//
-//   At 0x453B63: MOV EAX,[EBX+0x154]
-//   Bytes: 8B 83 54 01 00 00 (6 bytes)
-//   Replace: JMP neon_cave (5) + NOP (1) = 6 bytes
-//   EBX = gfx at this point (set at function entry).
-//
-// APPROACH: Black background + high fog (user's insight)
-//   1. Enable fog (D3DRS_FOGENABLE = TRUE)
-//   2. Fog table mode = LINEAR
-//   3. Fog start = 0.0, fog end = 300.0 (dense)
-//   4. Fog color = black (0xFF000000)
-//   5. Ambient = black
-//   Lights still illuminate geometry, but fog fades to black at distance.
-//   Ball stays visible via emissive material + sprite rendering.
+// HOOK: Graphics_BeginFrame (0x453B50) — called every frame
+// Hook at 0x453B63: MOV EAX,[EBX+0x154] (6 bytes: 8B 83 54 01 00 00)
+// EBX = gfx (set at 0x453B51: MOV EBX,ECX)
 //
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -90,7 +50,7 @@ neon_cave:
   mov eax, [edi]
   call dword ptr [eax+0xC8]
 
-  // ── Disable vertex fog ─────────────────────────────────────────
+  // ── Disable vertex fog (use table fog only) ────────────────────
   // SetRenderState(D3DRS_FOGVERTEXMODE=0x8C, D3DFOG_NONE=0)
   push 0
   push 8C
@@ -98,18 +58,18 @@ neon_cave:
   mov eax, [edi]
   call dword ptr [eax+0xC8]
 
-  // ── Fog start = 0.0 ─────────────────────────────────────────────
-  // SetRenderState(D3DRS_FOGSTART=0x24, 0.0f=0x00000000)
-  push 0
+  // ── Fog start = 500.0 (near geometry unaffected) ───────────────
+  // SetRenderState(D3DRS_FOGSTART=0x24, 500.0f=0x43FA0000)
+  push 43FA0000
   push 24
   push edi
   mov eax, [edi]
   call dword ptr [eax+0xC8]
 
-  // ── Fog end = 300.0 (geometry fully fogged at 300 units) ────────
-  // SetRenderState(D3DRS_FOGEND=0x25, 300.0f=0x43960000)
-  // ADJUST: 43FA0000=500, 44480000=800, 447A0000=1000
-  push 43960000
+  // ── Fog end = 2000.0 (distant geometry fully fogged) ───────────
+  // SetRenderState(D3DRS_FOGEND=0x25, 2000.0f=0x44FA0000)
+  // ADJUST: 447A0000=1000(near), 44FA0000=2000(default), 457A0000=4000(far)
+  push 44FA0000
   push 25
   push edi
   mov eax, [edi]
@@ -123,13 +83,8 @@ neon_cave:
   mov eax, [edi]
   call dword ptr [eax+0xC8]
 
-  // ── Ambient = black ────────────────────────────────────────────
-  // SetRenderState(D3DRS_AMBIENT=0x8B, 0xFF000000)
-  push 0FF000000
-  push 8B
-  push edi
-  mov eax, [edi]
-  call dword ptr [eax+0xC8]
+  // NOTE: No ambient override — let the game's normal lighting work.
+  // v25 set ambient=black which killed ALL geometry → pure black.
 
 neon_skip:
   popad
