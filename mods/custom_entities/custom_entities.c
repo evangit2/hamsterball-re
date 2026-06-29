@@ -41,15 +41,21 @@
 /* Board struct offsets */
 #define BOARD_APP_PTR      0x878        /* board+0x878 = App* */
 
-/* SceneObject offsets (from Level_FindObjectByName decomp) */
+/* SceneObject offsets (verified from SceneObject_BaseInit + Level_FindObjectByName decomp)
+ * SceneObject has Vec3 structs at +0x450 (position) and +0x464 (rotation):
+ *   Vec3 layout: +0x00 vtable, +0x04 x, +0x08 y, +0x0C z, +0x10 w(scale, default 1.0)
+ * So position floats are at base+0x454/0x458/0x45C, scale at +0x460
+ * Rotation floats at base+0x468/0x46C/0x470, scale2 at +0x474
+ */
 #define OBJ_NAME           0x50         /* char* name at obj+0x50 */
-#define OBJ_POS_X          0x164        /* float pos.x */
-#define OBJ_POS_Y          0x168        /* float pos.y */
-#define OBJ_POS_Z          0x16C        /* float pos.z */
-#define OBJ_VTABLE         0x00         /* vtable ptr at offset 0 */
-#define OBJ_ROT_X          0x170        /* float rot.x */
-#define OBJ_ROT_Y          0x174        /* float rot.y */
-#define OBJ_ROT_Z          0x178        /* float rot.z */
+#define OBJ_POS_X          0x454        /* float pos.x (Vec3+0x04) */
+#define OBJ_POS_Y          0x458        /* float pos.y (Vec3+0x08) */
+#define OBJ_POS_Z          0x45C        /* float pos.z (Vec3+0x0C) */
+#define OBJ_SCALE          0x460        /* float scale (Vec3+0x10, default 1.0) */
+#define OBJ_ROT_X          0x468        /* float rot.x (Vec3+0x04) */
+#define OBJ_ROT_Y          0x46C        /* float rot.y (Vec3+0x08) */
+#define OBJ_ROT_Z          0x470        /* float rot.z (Vec3+0x0C) */
+#define OBJ_SCALE2         0x474        /* float scale2 (Vec3+0x10, default 1.0) */
 
 /* SpatialTree iteration offsets (from Scene_UpdateChildren decomp) */
 /* param_1+0x08 = count, param_1+0x04 = thread index fn, param_1+0x0C+idx*4 = iter index */
@@ -452,6 +458,42 @@ static int lua_log(lua_State *L)
     return 0;
 }
 
+/* ── Lua API: hamsterball.get_scale(entity_id) -> sx, sy, sz ────────── */
+static int lua_get_scale(lua_State *L)
+{
+    int idx = luaL_checkint(L, 1) - 1;
+    if (idx < 0 || idx >= g_entity_count || !g_entities[idx].obj_addr) {
+        lua_pushnumber(L, 1.0);
+        lua_pushnumber(L, 1.0);
+        lua_pushnumber(L, 1.0);
+        return 3;
+    }
+    DWORD obj = g_entities[idx].obj_addr;
+    /* Scale is stored as w-component in position Vec3 (+0x460) and rotation Vec3 (+0x474) */
+    /* We return both as x and y, with z=1 for uniformity */
+    float sx = safe_read_float(obj + OBJ_SCALE);
+    float sy = safe_read_float(obj + OBJ_SCALE2);
+    lua_pushnumber(L, sx);
+    lua_pushnumber(L, sy);
+    lua_pushnumber(L, 1.0);
+    return 3;
+}
+
+/* ── Lua API: hamsterball.set_scale(entity_id, sx, sy, sz) ─────────── */
+static int lua_set_scale(lua_State *L)
+{
+    int idx = luaL_checkint(L, 1) - 1;
+    if (idx < 0 || idx >= g_entity_count || !g_entities[idx].obj_addr)
+        return 0;
+    float sx = (float)luaL_optnumber(L, 2, 1.0);
+    float sy = (float)luaL_optnumber(L, 3, 1.0);
+    /* sz ignored — only 2 scale fields available */
+    DWORD obj = g_entities[idx].obj_addr;
+    safe_write_float(obj + OBJ_SCALE, sx);
+    safe_write_float(obj + OBJ_SCALE2, sy);
+    return 0;
+}
+
 /* ── Lua API: hamsterball.get_frame_count() -> int ───────────────────── */
 static int lua_get_frame_count(lua_State *L)
 {
@@ -473,6 +515,8 @@ static const luaL_Reg hamsterball_funcs[] = {
     {"set_position",     lua_set_position},
     {"get_rotation",     lua_get_rotation},
     {"set_rotation",     lua_set_rotation},
+    {"get_scale",        lua_get_scale},
+    {"set_scale",        lua_set_scale},
     {"get_ball_pos",     lua_get_ball_pos},
     {"get_delta_time",   lua_get_delta_time},
     {"get_entity_count", lua_get_entity_count},
