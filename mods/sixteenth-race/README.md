@@ -27,9 +27,12 @@ Adds a 16th race to Hamsterball by cloning the Warm-Up Race board constructor an
 
 ## Installation
 
-1. Copy `bass.dll` to the Hamsterball game directory (replacing the original).
-2. The mod auto-creates `Levels\LevelTest.MESHWORLD` from `Level1.MESHWORLD` on first launch.
-3. To use a custom level, replace `LevelTest.MESHWORLD` with your own file.
+1. Rename the original `bass.dll` to `bass_real.dll` in the game directory.
+2. Copy the modded `bass.dll` to the game directory.
+3. The mod auto-creates `Levels\LevelTest.MESHWORLD` from `Level1.MESHWORLD` on first launch.
+4. To use a custom level, replace `LevelTest.MESHWORLD` with your own file.
+
+**Why rename?** The modded `bass.dll` is a proxy — it loads `bass_real.dll` (the original) on first call and forwards all audio functions to it. Without the real BASS library, the game crashes during startup because `BASS_MusicLoad` returns NULL and the game dereferences the invalid music handle.
 
 ## Build
 
