@@ -85,11 +85,11 @@
 //
 // REGISTRATION:
 //   Factory adds each object to board+0x2578 via AthenaList_Append.
-//   Stands_ctor clones SpatialTree → board renders automatically.
+//   SceneObject_ctor clones SpatialTree → board renders automatically.
 //   No manual render list registration needed.
 //
 // RENDERING:
-//   Both constructors call Stands_ctor or MeshWorld_ctor internally,
+//   Both constructors call SceneObject_ctor or MeshWorld_ctor internally,
 //   which clones/creates the SpatialTree. The board's render pipeline
 //   picks it up automatically through normal opaque/translucent passes.
 // =====================================================

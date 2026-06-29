@@ -181,7 +181,7 @@ load_mesh:
   test eax, eax
   jz done_spawn
 
-  // Force-set mesh+0x878 = App (needed by Stands_ctor)
+  // Force-set mesh+0x878 = App (needed by SceneObject_ctor)
   mov edx, [saved_board]
   mov edx, [edx+0x878]
   mov [ebx+0x878], edx

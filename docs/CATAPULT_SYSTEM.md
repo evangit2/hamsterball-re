@@ -13,7 +13,7 @@ Catapults are level objects that launch the ball when it touches a specific coll
 ```
 SpriteAnim (base)
   └─ Level (Level_ctor @ 0x00461740, size ~0x10D0)
-       └─ Stands (Stands_ctor @ 0x00462850)
+       └─ Stands (SceneObject_ctor @ 0x00462850)
             └─ Catapult (Catapult_ctor @ 0x00437E10, alloc size = 0x1108 bytes)
 ```
 
@@ -44,11 +44,11 @@ All offsets are byte offsets from the catapult object pointer.
 | +0x000 | void** | vtable | Points to Catapult vtable |
 | +0x008 | void* | mesh_ptr | MeshWorld/SceneObject mesh data (set by Level_ctor → SceneObject_BaseInit) |
 | +0x00D | byte | has_mesh_flag | Set to 0 by Level_ctor |
-| +0x018 | AthenaList | spatial_list | SpatialTree clone list (from Stands_ctor) |
+| +0x018 | AthenaList | spatial_list | SpatialTree clone list (from SceneObject_ctor) |
 | +0x430 | byte | flag_430 | Collision flag (copied from parent) |
-| +0x431 | byte | flag_431 | Set to 1 in Stands_ctor (marks as "stands" type) |
-| +0x434 | void* | timer_obj | Timer object (allocated in Stands_ctor) |
-| +0x47C | void* | parent_level | Pointer back to the parent level/scene (set in Stands_ctor) |
+| +0x431 | byte | flag_431 | Set to 1 in SceneObject_ctor (marks as "stands" type) |
+| +0x434 | void* | timer_obj | Timer object (allocated in SceneObject_ctor) |
+| +0x47C | void* | parent_level | Pointer back to the parent level/scene (set in SceneObject_ctor) |
 | +0x488 | AthenaList | list_488 | Initialized in Level_ctor |
 | +0x8A0 | AthenaList | list_8A0 | Initialized in Level_ctor |
 | +0xCB8 | AthenaList | list_CB8 | Initialized in Level_ctor |
@@ -137,11 +137,11 @@ if (__strnicmp(param_1, "CATAPULT", 8) == 0) {
 
 ```c
 void* Catapult_ctor(void* this, void* scene_ptr, int mesh_source) {
-    // 1. Call parent: Stands_ctor(this, mesh_source)
+    // 1. Call parent: SceneObject_ctor(this, mesh_source)
     //    - Calls SpriteAnim_Ctor (base)
     //    - Calls Level_ctor → sets up AthenaLists, SceneObject
     //    - Clones SpatialTree nodes from mesh_source
-    Stands_ctor(this, mesh_source);
+    SceneObject_ctor(this, mesh_source);
     
     // 2. Set Catapult vtable
     *(void***)this = &PTR_MeshNode_Level_DeleteDtor3_004D4F98;
@@ -440,7 +440,7 @@ AthenaList_Append((void*)((int)scene + 0x584C), (int)cat);
 
 ### The Missing Piece: Collision Registration
 
-The `CollisionLevel` at `cat+0x10D4` has its own SpatialTree (cloned from the parent in `Stands_ctor`). However, for the ball's collision system to detect intersections with the catapult's mesh, the catapult's collision triangles must be registered in the scene's main SpatialTree.
+The `CollisionLevel` at `cat+0x10D4` has its own SpatialTree (cloned from the parent in `SceneObject_ctor`). However, for the ball's collision system to detect intersections with the catapult's mesh, the catapult's collision triangles must be registered in the scene's main SpatialTree.
 
 In the normal level loading flow, this happens because:
 1. `Level_LoadMeshes` creates MeshBuffers with entity names and collision triangles
@@ -470,7 +470,7 @@ The simplest approach: call `CreateLevelObjects` with a mesh named "CATAPULT" �
 | 0x00412711 | CreateLevelObjects | Factory: matches "CATAPULT" mesh name |
 | 0x0040DCD0 | TowerCollisionEvents | Race collision dispatcher (E:CATAPULTBOTTOM) |
 | 0x00412D57 | HandleArenaCollisionEvents | Arena collision dispatcher (E:CATAPULTBOTTOM) |
-| 0x00462850 | Stands_ctor | Parent constructor |
+| 0x00462850 | SceneObject_ctor | Parent constructor |
 | 0x00465080 | CollisionLevel_ctorWithLevel | Creates CollisionLevel + loads meshes |
 | 0x00461740 | Level_ctor | Grandparent constructor |
 | 0x00465860 | Level_LoadMeshes | Loads meshes + registers entity names |

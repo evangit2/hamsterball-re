@@ -220,7 +220,7 @@ In Tower RACE mode, bridges are pre-placed (configured via `CreateLevelObjects`)
 
 **Constructor** (`Spinner_Level_ctor` @ 0x4396F0):
 ```c
-Stands_ctor(this, board+0x4378);                  // uses pre-loaded mesh at board+0x4378
+SceneObject_ctor(this, board+0x4378);                  // uses pre-loaded mesh at board+0x4378
 vtable = 0x4D51E0;                                // Spinner vtable
 board = param_1;                                   // +0x10D0
 pos = {x, y, z};                                   // +0x10D4
@@ -232,7 +232,7 @@ direction = 1.0;                                   // +0x10F8
 collision_level = CollisionLevel_ctorWithLevel(operator_new(0x10D0), this);
 ```
 
-**Mesh Dependency**: `Stands_ctor` reads from `board+0x4378`. The Tower constructor loads `Levels\Level4-Drawbridge` at `board+0x4370` and `Levels\Level4-Mace` at `board+0x4378`. For global spawn, use JIT mesh injection: save `board+0x4378`, load drawbridge mesh there, call ctor, restore.
+**Mesh Dependency**: `SceneObject_ctor` reads from `board+0x4378`. The Tower constructor loads `Levels\Level4-Drawbridge` at `board+0x4370` and `Levels\Level4-Mace` at `board+0x4378`. For global spawn, use JIT mesh injection: save `board+0x4378`, load drawbridge mesh there, call ctor, restore.
 
 ### Type 2: BBRIDGE (Breakable Bridge Sections)
 
@@ -264,7 +264,7 @@ Created by `CreateLevelObjects` (0x4121D0) for "BBRIDGE1" / "BBRIDGE2" refs.
 
 **Constructor** (`BreakBridge_ctor` @ 0x436D70):
 ```c
-Stands_ctor(this, mesh_ptr);                      // uses pre-loaded mesh (board+0x5410 or +0x5414)
+SceneObject_ctor(this, mesh_ptr);                      // uses pre-loaded mesh (board+0x5410 or +0x5414)
 vtable = 0x4D5890;                                // Pendulum/BreakBridge vtable
 board = param_1;
 pos = {x, y, z};

@@ -186,7 +186,7 @@ AthenaList_Append(board+0x2578, obj);
 
 All 5 ctors follow the same pattern:
 ```c
-// 1. Call Stands_ctor(this, mesh)
+// 1. Call SceneObject_ctor(this, mesh)
 //    → SpriteAnim_Ctor, sets vtable=Level_DeletingDtor, Timer_Init
 //    → Clones SpatialTree from mesh (geometry + collision)
 //    → AthenaList_Init on +0x18, +0x488, +0x8A0, +0xCB8
@@ -296,7 +296,7 @@ Ball_Update @ 0x00405E22 (original: mov eax, [esi+0x0C5C])
 | 0x004BA57B | operator_new |
 | 0x00461510 | MeshWorld_ctor (RET 0x8) |
 | 0x00465080 | CollisionLevel_ctorWithLevel (RET 0x4) |
-| 0x00462850 | Stands_ctor (RET 0x4) |
+| 0x00462850 | SceneObject_ctor (RET 0x4) |
 | 0x00453810 | AthenaList_Append |
 | 0x00453210 | AthenaList_Init (RET 0x4) |
 | 0x00457AD0 | Timer_Init |
@@ -320,5 +320,5 @@ Ball_Update @ 0x00405E22 (original: mov eax, [esi+0x0C5C])
 | Gear_ctor (0x437590) | 0x20 | 8 | (this, board, posX, posY, posZ, dirX, dirY, dirZ, mesh) |
 | Rotator_ctor (0x435940) | 0x14 | 5 | (this, board, posX, posY, posZ, mesh) |
 | Pendulum_ctor (0x436A20) | 0x18 | 6 | (this, board, posX, posY, posZ, phase, mesh) |
-| Stands_ctor (0x462850) | 0x4 | 1 | (this, mesh) |
+| SceneObject_ctor (0x462850) | 0x4 | 1 | (this, mesh) |
 | MeshWorld_ctor (0x461510) | 0x8 | 2 | (this, D3D, filename) |

@@ -82,9 +82,9 @@ All Toob Race mechanical objects are created by a single unlabeled factory funct
 
 ## Rendering
 
-All constructors call `Stands_ctor(this, mesh)` which clones the SpatialTree from the mesh. The mesh is added to the board's SpatialTree automatically. The board's render pipeline renders it through normal opaque/translucent passes — **no manual render list registration needed**.
+All constructors call `SceneObject_ctor(this, mesh)` which clones the SpatialTree from the mesh. The mesh is added to the board's SpatialTree automatically. The board's render pipeline renders it through normal opaque/translucent passes — **no manual render list registration needed**.
 
-This is why the user's Judge script (using `Gear_Level_ctor` → `Level_ctor` → empty mesh) showed nothing: Level_ctor doesn't clone a SpatialTree, so the board has no mesh to render. The Toob objects use Stands_ctor which properly sets up the mesh.
+This is why the user's Judge script (using `Gear_Level_ctor` → `Level_ctor` → empty mesh) showed nothing: Level_ctor doesn't clone a SpatialTree, so the board has no mesh to render. The Toob objects use SceneObject_ctor which properly sets up the mesh.
 
 ## Registration
 

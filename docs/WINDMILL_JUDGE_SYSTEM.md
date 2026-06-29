@@ -19,7 +19,7 @@ The Windmill is a **CollisionLevel + static visual mesh**. It has no game object
 | CollisionLevel_ctorWithLevel | 0x465080 | Creates collision level from mesh |
 | Level_LoadMeshes | 0x465200 | Loads mesh vertex/index data |
 | SceneObject_SetupCallback | 0x45DD60 | Registers collision with scene manager (stdcall, ret 8) |
-| Stands_ctor | 0x462850 | Creates visual mesh object (thiscall, ret 4) |
+| SceneObject_ctor | 0x462850 | Creates visual mesh object (thiscall, ret 4) |
 | Rotator_AddBall | 0x43B6F0 | N:SWIRL handler — applies rotation to ball |
 
 ### Creation Flow (Scene_LoadLevel4 @ 0x40D6D0)
@@ -76,7 +76,7 @@ board+0x437C = MeshWorld_ctor("Levels\\Level4-Windmill");  // VA 0x4D095C
 ### Why It Needs Both Collision + Visual
 
 - **CollisionLevel**: Provides N:SWIRL collision events that spin the ball
-- **Visual mesh**: The windmill mesh is normally part of the level's static geometry (spatial octree). When spawned globally, a separate Stands_ctor object is needed to render it.
+- **Visual mesh**: The windmill mesh is normally part of the level's static geometry (spatial octree). When spawned globally, a separate SceneObject_ctor object is needed to render it.
 
 ---
 
@@ -216,7 +216,7 @@ No JIT mesh injection needed — Level_ctor loads the mesh internally.
 
 Requires spawning BOTH collision + visual mesh:
 1. Load `Levels\Level4-Windmill` mesh via `MeshWorld_ctor`
-2. Create visual: `operator_new(0x10D0)` → `Stands_ctor(obj, mesh)` → visible mesh
+2. Create visual: `operator_new(0x10D0)` → `SceneObject_ctor(obj, mesh)` → visible mesh
 3. Set position, register to `board+0x2578`
 4. Create collision: `operator_new(0x10D0)` → `CollisionLevel_ctorWithLevel(coll, mesh)`
 5. `Level_LoadMeshes(coll)` — load collision data

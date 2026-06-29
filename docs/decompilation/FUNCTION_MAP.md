@@ -88,7 +88,7 @@ Documented: 3781/3781 (100%)
 | 0x004133E0 | CreatePlatformOrStands | Create PLATFORM and STANDS objects |
 | 0x00417FE0 | CreateMechanicalObjects | Multi-factory: LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
 | 0x00437040 | Platform_ctor | Platform object constructor (0x10FC bytes) |
-| 0x00462850 | Stands_ctor | Stands/Audience constructor (0x10D0 bytes) |
+| 0x00462850 | SceneObject_ctor | Stands/Audience constructor (0x10D0 bytes) |
 | 0x00435800 | Looper_ctor | Looper (loop-de-loop) constructor (0x1500 bytes) |
 | 0x00437590 | Gear_ctor | Gear/BigGear constructor (0x1514 bytes) |
 | 0x00435940 | Rotator_ctor | Rotator constructor (0x1508 bytes) |
@@ -815,7 +815,7 @@ Offset | Field | Description
 | 0x00471c20 | MeshNode_ctor | 9 | Load mesh file into scene graph node (vtable 0x4d9c48) |
 | 0x00472c70 | Math_Lerp | 9 | Linear interpolation: a + (b-a)*t |
 | 0x0042c870 | Font_DrawCentered | 8 | Draw text centered at (x,y) position |
-| 0x004351f0 | GameLevel_ctor | 8 | Game level constructor (Stands_ctor, Level_Clone, sound channel) |
+| 0x004351f0 | GameLevel_ctor | 8 | Game level constructor (SceneObject_ctor, Level_Clone, sound channel) |
 | 0x00402400 | Ball_RecordBest | 7 | Reset bounce_count(+0x2EC)=0, update max streak(+0x2F4) if param exceeds current. Called by E:NODIZZY handler (clears TIME checkpoints) and trajectory system. |
 | 0x00425f90 | App_CompleteRace | 7 | Complete race - increment counter, trigger state transitions, clear flag |
 | 0x00426b30 | String_AllocBuffer | 7 | Allocate string buffer with size | 0xF rounding |

@@ -87,7 +87,7 @@
 //   BLOCKDAWG2 also sets +0x1152 = 1 (is_blockdawg2 flag)
 //
 // RENDERING:
-//   All constructors call Stands_ctor(this, mesh) which clones the SpatialTree.
+//   All constructors call SceneObject_ctor(this, mesh) which clones the SpatialTree.
 //   The mesh is added to the board's SpatialTree automatically.
 //   The board's render pipeline renders it through normal opaque/translucent passes.
 //   No manual render list registration needed!

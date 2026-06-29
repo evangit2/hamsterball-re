@@ -5,7 +5,7 @@
 // =============================================================
 // Bridge: the bridge platform from Intermediate Race (Level2-Bridge mesh)
 // Drawbridge: the drawbridge from Tower Race (Level4-Drawbridge mesh)
-// Both use BreakBridge_ctor which calls Stands_ctor → clones SpatialTree
+// Both use BreakBridge_ctor which calls SceneObject_ctor → clones SpatialTree
 // → has real 3D geometry → renders through normal SceneObject path.
 //
 // Usage: Set SpawnBridge or SpawnDrawbridge to 1 via CE address list.

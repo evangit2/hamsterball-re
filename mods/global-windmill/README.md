@@ -14,7 +14,7 @@ Spawns Tower Race windmills on any level with a hotkey. Creates BOTH a visual me
 This mod creates **two objects** per spawn:
 
 ### Part A: Visual Mesh (for rendering)
-- `operator_new(0x10D0)` → `Stands_ctor` (0x462850) with windmill mesh
+- `operator_new(0x10D0)` → `SceneObject_ctor` (0x462850) with windmill mesh
 - Sets vtable to 0x4D8FB0 (renderable mesh)
 - Position at `obj+0x10D4/+0x10D8/+0x10DC`
 - Registered to `board+0x2578` (general list) + `board+0xCD4` + scene tree
@@ -47,7 +47,7 @@ This applies a rotation matrix to the ball's position and velocity, spinning it 
 
 | Component | Alloc | Constructor | Vtable |
 |-----------|-------|-------------|--------|
-| Visual | 0x10D0 | Stands_ctor (0x462850) | 0x4D8FB0 |
+| Visual | 0x10D0 | SceneObject_ctor (0x462850) | 0x4D8FB0 |
 | Collision | 0x10D0 | CollisionLevel_ctorWithLevel (0x465080) | N/A (collision-only) |
 
 ## Full Analysis

@@ -16,7 +16,7 @@ Level data → Named objects parsed from MESHWORLD
   │    └─ Falls through to CreatePlatformOrStands
   ├─ CreatePlatformOrStands (0x4133E0)
   │    ├─ PLATFORM → Platform_ctor (0x371040, 0x10FC bytes)
-  │    └─ STANDS → Stands_ctor (0x462850, 0x10D0 bytes)
+  │    └─ STANDS → SceneObject_ctor (0x462850, 0x10D0 bytes)
   ├─ CreateSpinny (0x4143D0) — ROTATOR → Rotator_ctor
   ├─ CreateLifter (0x414A20) — LIFTER → Lifter_ctor + falls through
   ├─ CreateWobbly1 (0x415460) — WOBBLY1-8 → GameLevel_ctor + falls through

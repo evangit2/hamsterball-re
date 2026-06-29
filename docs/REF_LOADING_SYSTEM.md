@@ -287,7 +287,7 @@ Verified against the actual MESHWORLD binary data (46 unique object types). Numb
 | BRIDGE | (returns pre-loaded mesh) | 0 | No | Intermediate, Expert, Master |
 | CATAPULT | Catapult_ctor | 0x1108 | No | Tower, Master |
 | CHOMPER | (position update only) | 0 | No | Tower |
-| DFLOOR | ArenaStands_ctor | 0x1104 | No | Neon |
+| DFLOOR | ArenaSceneObject_ctor | 0x1104 | No | Neon |
 | DRAWBRIDGE | Glass_Level_ctor | 0x113C | No | Tower |
 | FALLOUT1 | Stands_CtorCollisionV2 | 0x10E8 | No | Toob |
 | FAN | (FAN + FANSLOW + FAN(SUPER)(UP) variants) | varies | varies | Expert |
@@ -318,8 +318,8 @@ Verified against the actual MESHWORLD binary data (46 unique object types). Numb
 | TIMEBUTTON | Rotator_ctor_nosound | 0x10E8 | No | Up |
 | TIPPER | Tipper_ctor | 0x1104 | Yes | Dizzy, Master |
 | TRAPDOOR | GlassStands_Ctor / Rotator_ctor | 0x10F8 / 0x10F4 | No | Tower, Sky |
-| TRODE | ArenaStands_ctor | 0x1104 | No | Neon |
-| TURRET | Stands_ctor + CollisionLevel | 0x10D0 | No | Tower |
+| TRODE | ArenaSceneObject_ctor | 0x1104 | No | Neon |
+| TURRET | SceneObject_ctor + CollisionLevel | 0x10D0 | No | Tower |
 | WATERWHEEL | (returns pre-loaded mesh) | 0 | No | Dizzy |
 | WAVY | Stands_CtorWithCollisionLevel | 0x1AE7C | No | Wobbly |
 | WINDMILL | (returns pre-loaded mesh + collision) | 0 | No | Tower |

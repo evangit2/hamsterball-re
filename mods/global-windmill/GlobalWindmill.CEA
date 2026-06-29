@@ -132,7 +132,7 @@ load_fresh:
   test eax, eax
   jz done_spawn
 
-  // Force-set mesh+0x878 = App (needed by Stands_ctor)
+  // Force-set mesh+0x878 = App (needed by SceneObject_ctor)
   mov edx, [saved_board]
   mov edx, [edx+0x878]
   mov [ebx+0x878], edx
@@ -152,7 +152,7 @@ do_spawn:
   jz done_spawn
   mov edi, eax             // edi = visual object
 
-  // Stands_ctor(this=visual, mesh)
+  // SceneObject_ctor(this=visual, mesh)
   // thiscall: ECX=visual, PUSH mesh → ret 4
   // Sets vtable = 0x4D8FB0 (renders the windmill mesh)
   mov edx, [saved_board]
@@ -162,7 +162,7 @@ do_spawn:
 
   push edx                 // param: mesh
   mov ecx, edi             // this = visual obj
-  call 00462850            // Stands_ctor — ret 4
+  call 00462850            // SceneObject_ctor — ret 4
   test eax, eax
   jz spawn_fail
 
