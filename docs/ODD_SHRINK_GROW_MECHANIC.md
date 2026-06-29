@@ -150,7 +150,7 @@ The Odd board's collision dispatch handler is at `0x0040ED30` (vtable[0x1D], `+0
 | `E:LIMITZ` | Qualify for limit gate (axis 2) |
 | `E:LIMITPIPE1` | Qualify for limit (pipe 1 flag) |
 | `E:LIMITPIPE2` | Qualify for limit (pipe 2 flag) |
-| `E:SWALLOW` | Set swallow flag (`ball+0xBA = 1`) |
+| `E:SWALLOW` | Set swallow flag (`ball+0x2E8 = 1`, is_falling/shattered flag — NOT dizzy_lock) |
 
 ## Related Functions
 
