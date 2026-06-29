@@ -85,6 +85,9 @@ static void *g_swirl_collision = NULL;  /* cached SWIRL CollisionLevel* */
 static int  g_swirl_spawned = 0;        /* flag: SWIRL already spawned this level */
 static int  g_hooked = 0;
 
+/* Forward declaration — debug_log is defined at bottom of file */
+static void debug_log(const char *msg);
+
 /* Default SWIRL position (configurable via global_objects_mkn.txt) */
 static float g_swirl_x = 0.0f;
 static float g_swirl_y = 0.0f;
