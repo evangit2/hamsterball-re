@@ -635,6 +635,418 @@ static int lua_get_frame_count(lua_State *L)
     return 1;
 }
 
+/* ════════════════════════════════════════════════════════════════════ */
+/*  SOUND EFFECTS API                                                   */
+/* ════════════════════════════════════════════════════════════════════ */
+
+/* Sound name → Board offset lookup table (from TimerDisplay 0x4298C0) */
+typedef struct {
+    const char *name;
+    int offset;
+} SoundEntry;
+
+static const SoundEntry sound_table[] = {
+    {"collide",        0x43C},
+    {"roll",           0x440},
+    {"whistle",        0x444},
+    {"bumper",         0x448},
+    {"ballbreak",      0x44C},
+    {"ballbreaksmall", 0x450},
+    {"thwomp",         0x454},
+    {"snap",           0x458},
+    {"popup",          0x45C},
+    {"dropin",         0x460},
+    {"dropinshort",    0x464},
+    {"popout",         0x468},
+    {"pipebump1",      0x46C},
+    {"pipebump2",      0x470},
+    {"pipebump3",      0x474},
+    {"gearclank",      0x478},
+    {"bridgeslam",     0x47C},
+    {"platformtick",   0x480},
+    {"gluestuck",      0x484},
+    {"bubble1",        0x488},
+    {"bubble2",        0x48C},
+    {"wheelcreak",     0x490},
+    {"catapult",       0x494},
+    {"trapdoor",       0x498},
+    {"fwing",          0x49C},
+    {"clink",          0x4A0},
+    {"whoosh",         0x4A4},
+    {"chomp",          0x4A8},
+    {"fan-start",      0x4AC},
+    {"fan-blow",       0x4B0},
+    {"crack",          0x4B4},
+    {"crumble",        0x4B8},
+    {"sawstartup",     0x4BC},
+    {"sawcut",         0x4C0},
+    {"minipop",        0x4C4},
+    {"bell",           0x4C8},
+    {"zip",            0x4CC},
+    {"ting",           0x4D0},
+    {"shrink",         0x4D4},
+    {"grow",           0x4D8},
+    {"tweet",          0x4DC},
+    {"creakyplatform", 0x4E0},
+    {"wubba",          0x4E4},
+    {"saw",            0x4E8},
+    {"sawspeedy",      0x4EC},
+    {"dawgstep1",      0x4F0},
+    {"dawgstep2",      0x4F4},
+    {"dawgsmash",      0x4F8},
+    {"sizzle",         0x4FC},
+    {"explode",        0x500},
+    {"vac-o-sux",      0x504},
+    {"speedcylinder",  0x508},
+    {"bonuspop",       0x50C},
+    {"buzzbonus",      0x510},
+    {"breakbridge",    0x514},
+    {"unlock",         0x518},
+    {"NeonRide",       0x51C},
+    {"NeonFlicker",    0x520},
+    {"ZoopDown",       0x524},
+    {"LightsOff",      0x528},
+    {"GlassBonus",     0x52C},
+    {NULL, 0}
+};
+
+/* DSBPLAY_LOOPING flag */
+#define DSBPLAY_LOOPING 0x00000001
+
+/* Game function pointers */
+typedef void (__fastcall *Sound_PlayChannel_t)(int channel);
+typedef void (__fastcall *Sound_Play3D_t)(int channel, int dummy, float x, float y, float z);
+static Sound_PlayChannel_t pPlayChannel = (Sound_PlayChannel_t)0x004597B0;
+static Sound_Play3D_t    pPlay3D      = (Sound_Play3D_t)0x00459860;
+
+/* DSound COM vtable method types (__fastcall with dummy EDX = __thiscall) */
+typedef int  (__fastcall *dsb_getlong_t)(int dsb, int dummy, int *out);
+typedef int  (__fastcall *dsb_setlong_t)(int dsb, int dummy, int val);
+typedef int  (__fastcall *dsb_play_t)(int dsb, int dummy, int pri, int flags, int reserved);
+typedef int  (__fastcall *dsb_stop_t)(int dsb);
+
+/* Helper: find sound offset by name (case-insensitive) */
+static int find_sound_offset(const char *name)
+{
+    for (int i = 0; sound_table[i].name; i++) {
+        if (_stricmp(sound_table[i].name, name) == 0)
+            return sound_table[i].offset;
+    }
+    return -1;
+}
+
+/* Helper: get the current Board pointer */
+static int get_board_ptr(void)
+{
+    int app = safe_read_ptr(APP_ADDR);
+    if (!app) return 0;
+    int profile = safe_read_ptr(app + 0x220);
+    if (!profile) return 0;
+    return safe_read_ptr(profile + 0x0C);
+}
+
+/* Helper: get SoundChannel* from board + sound name.
+   Returns 0 on failure. */
+static int get_sound_channel(const char *name)
+{
+    int offset = find_sound_offset(name);
+    if (offset < 0) return 0;
+    int board = get_board_ptr();
+    if (!board) return 0;
+    return safe_read_ptr(board + offset);
+}
+
+/* Helper: get IDirectSoundBuffer8* from a SoundChannel (first buffer).
+   Access chain: channel+0x414 = data ptr → [0] = SoundBuffer* → +0x04 = DSB */
+static int get_dsound_buffer(int channel)
+{
+    if (!channel || channel < 0x10000) return 0;
+    int count = safe_read_ptr(channel + 0x0C);
+    if (count < 1) return 0;
+    int data_ptr = safe_read_ptr(channel + 0x414);
+    if (!data_ptr) return 0;
+    int buffer = safe_read_ptr(data_ptr);
+    if (!buffer || buffer < 0x10000) return 0;
+    int dsb = safe_read_ptr(buffer + 0x04);
+    if (!dsb || dsb < 0x10000) return 0;
+    return dsb;
+}
+
+/* Helper: call a DSound vtable method on a buffer.
+   vtable_offset is the byte offset into the COM vtable (e.g. 0x3C for SetVolume). */
+static int get_dsb_method(int dsb, int vtable_offset)
+{
+    if (!dsb || dsb < 0x10000) return 0;
+    int vtable = safe_read_ptr(dsb);
+    if (!vtable || vtable < 0x10000) return 0;
+    return safe_read_ptr(vtable + vtable_offset);
+}
+
+/* ── Lua API: hamsterball.play_sound(name [, opts]) ─────────────────── */
+/* opts is a table with optional keys:
+ *   volume  (float)   0.0=silence, 1.0=full (default: 1.0)
+ *   pitch   (float)    frequency multiplier, 1.0=normal, 0.5=half, 2.0=double
+ *   pan     (float)    -1.0=left, 0.0=center, 1.0=right
+ *   loop    (bool)     true = loop continuously, false = play once
+ *   x, y, z (float)    3D position — if provided, uses Sound_Play3D
+ * Returns: true on success, false on failure
+ */
+static int lua_play_sound(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+
+    int channel = get_sound_channel(name);
+    if (!channel) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    /* Check for options table */
+    int has_opts = lua_istable(L, 2);
+    float volume = 1.0f;
+    float pitch  = 1.0f;
+    float pan    = 0.0f;
+    int   loop   = 0;
+    int   has_3d = 0;
+    float x = 0, y = 0, z = 0;
+
+    if (has_opts) {
+        lua_getfield(L, 2, "volume");
+        if (!lua_isnil(L, -1)) volume = (float)luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "pitch");
+        if (!lua_isnil(L, -1)) pitch = (float)luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "pan");
+        if (!lua_isnil(L, -1)) pan = (float)luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "loop");
+        if (!lua_isnil(L, -1)) loop = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "x");
+        if (!lua_isnil(L, -1)) {
+            x = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+            lua_getfield(L, 2, "y");
+            y = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+            lua_getfield(L, 2, "z");
+            z = (float)luaL_checknumber(L, -1);
+            lua_pop(L, 1);
+            has_3d = 1;
+        } else {
+            lua_pop(L, 1);
+        }
+    }
+
+    /* Apply volume/pitch/pan directly to the DSound buffer before playing */
+    int dsb = get_dsound_buffer(channel);
+    if (dsb) {
+        /* Set volume: Lua 0.0-1.0 → DSound -10000 to 0 (hundredths of dB) */
+        if (volume < 0.0f) volume = 0.0f;
+        if (volume > 1.0f) volume = 1.0f;
+        int ds_vol = (int)((volume - 1.0f) * 10000.0f);
+        int fn = get_dsb_method(dsb, 0x3C); /* SetVolume */
+        if (fn) ((dsb_setlong_t)fn)(dsb, 0, ds_vol);
+
+        /* Set pan: Lua -1.0 to 1.0 → DSound -10000 to 10000 */
+        if (pan < -1.0f) pan = -1.0f;
+        if (pan > 1.0f) pan = 1.0f;
+        int ds_pan = (int)(pan * 10000.0f);
+        fn = get_dsb_method(dsb, 0x40); /* SetPan */
+        if (fn) ((dsb_setlong_t)fn)(dsb, 0, ds_pan);
+
+        /* Set frequency (pitch): multiply original freq by pitch factor */
+        if (pitch != 1.0f) {
+            if (pitch < 0.0f) pitch = 0.0f;
+            /* Get original frequency */
+            int orig_freq = 0;
+            fn = get_dsb_method(dsb, 0x20); /* GetFrequency */
+            if (fn) ((dsb_getlong_t)fn)(dsb, 0, &orig_freq);
+            if (orig_freq > 0) {
+                int new_freq = (int)(orig_freq * pitch);
+                if (new_freq < 100) new_freq = 100;     /* DSBFREQUENCY_MIN */
+                if (new_freq > 200000) new_freq = 200000; /* DSBFREQUENCY_MAX */
+                fn = get_dsb_method(dsb, 0x44); /* SetFrequency */
+                if (fn) ((dsb_setlong_t)fn)(dsb, 0, new_freq);
+            }
+        }
+
+        /* If looping, play directly via DSound Play with DSBPLAY_LOOPING */
+        if (loop) {
+            /* Stop first to restart from beginning */
+            fn = get_dsb_method(dsb, 0x48); /* Stop */
+            if (fn) ((dsb_stop_t)fn)(dsb);
+            /* Set position to 0 */
+            fn = get_dsb_method(dsb, 0x34); /* SetCurrentPosition */
+            if (fn) ((dsb_setlong_t)fn)(dsb, 0, 0);
+            /* Play with looping flag */
+            fn = get_dsb_method(dsb, 0x30); /* Play */
+            if (fn) ((dsb_play_t)fn)(dsb, 0, 0, DSBPLAY_LOOPING, 0);
+        }
+    }
+
+    /* If not looping, use the game's own play function (handles round-robin) */
+    if (!loop) {
+        if (has_3d) {
+            /* Sound_Play3D is __thiscall(channel, x, y, z) */
+            pPlay3D(channel, 0, x, y, z);
+        } else {
+            /* Sound_PlayChannel is __fastcall(channel) */
+            pPlayChannel(channel);
+        }
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* ── Lua API: hamsterball.stop_sound(name) ──────────────────────────── */
+/* Stops all buffer clones of the named sound. */
+static int lua_stop_sound(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    int channel = get_sound_channel(name);
+    if (!channel) { lua_pushboolean(L, 0); return 1; }
+
+    /* Stop all buffer clones */
+    int count = safe_read_ptr(channel + 0x0C);
+    int data_ptr = safe_read_ptr(channel + 0x414);
+    if (!data_ptr || count < 1) { lua_pushboolean(L, 0); return 1; }
+
+    for (int i = 0; i < count && i < 64; i++) {
+        int buffer = safe_read_ptr(data_ptr + i * 4);
+        if (!buffer || buffer < 0x10000) continue;
+        int dsb = safe_read_ptr(buffer + 0x04);
+        if (!dsb || dsb < 0x10000) continue;
+        int fn = get_dsb_method(dsb, 0x48); /* Stop */
+        if (fn) ((dsb_stop_t)fn)(dsb);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* ── Lua API: hamsterball.set_sound_volume(name, volume) ─────────────── */
+/* volume: 0.0 = silence, 1.0 = full volume */
+static int lua_set_sound_volume(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    float volume = (float)luaL_checknumber(L, 2);
+
+    int channel = get_sound_channel(name);
+    if (!channel) { lua_pushboolean(L, 0); return 1; }
+
+    if (volume < 0.0f) volume = 0.0f;
+    if (volume > 1.0f) volume = 1.0f;
+    int ds_vol = (int)((volume - 1.0f) * 10000.0f);
+
+    int count = safe_read_ptr(channel + 0x0C);
+    int data_ptr = safe_read_ptr(channel + 0x414);
+    if (!data_ptr || count < 1) { lua_pushboolean(L, 0); return 1; }
+
+    for (int i = 0; i < count && i < 64; i++) {
+        int buffer = safe_read_ptr(data_ptr + i * 4);
+        if (!buffer || buffer < 0x10000) continue;
+        int dsb = safe_read_ptr(buffer + 0x04);
+        if (!dsb || dsb < 0x10000) continue;
+        int fn = get_dsb_method(dsb, 0x3C); /* SetVolume */
+        if (fn) ((dsb_setlong_t)fn)(dsb, 0, ds_vol);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* ── Lua API: hamsterball.set_sound_pitch(name, pitch) ───────────────── */
+/* pitch: 1.0 = normal, 0.5 = half speed, 2.0 = double speed */
+static int lua_set_sound_pitch(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    float pitch = (float)luaL_checknumber(L, 2);
+
+    int channel = get_sound_channel(name);
+    if (!channel) { lua_pushboolean(L, 0); return 1; }
+
+    if (pitch < 0.0f) pitch = 0.0f;
+
+    int count = safe_read_ptr(channel + 0x0C);
+    int data_ptr = safe_read_ptr(channel + 0x414);
+    if (!data_ptr || count < 1) { lua_pushboolean(L, 0); return 1; }
+
+    for (int i = 0; i < count && i < 64; i++) {
+        int buffer = safe_read_ptr(data_ptr + i * 4);
+        if (!buffer || buffer < 0x10000) continue;
+        int dsb = safe_read_ptr(buffer + 0x04);
+        if (!dsb || dsb < 0x10000) continue;
+
+        /* Get original frequency */
+        int orig_freq = 0;
+        int fn = get_dsb_method(dsb, 0x20); /* GetFrequency */
+        if (fn) ((dsb_getlong_t)fn)(dsb, 0, &orig_freq);
+        if (orig_freq > 0) {
+            int new_freq = (int)(orig_freq * pitch);
+            if (new_freq < 100) new_freq = 100;
+            if (new_freq > 200000) new_freq = 200000;
+            fn = get_dsb_method(dsb, 0x44); /* SetFrequency */
+            if (fn) ((dsb_setlong_t)fn)(dsb, 0, new_freq);
+        }
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* ── Lua API: hamsterball.set_sound_pan(name, pan) ───────────────────── */
+/* pan: -1.0 = full left, 0.0 = center, 1.0 = full right */
+static int lua_set_sound_pan(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    float pan = (float)luaL_checknumber(L, 2);
+
+    int channel = get_sound_channel(name);
+    if (!channel) { lua_pushboolean(L, 0); return 1; }
+
+    if (pan < -1.0f) pan = -1.0f;
+    if (pan > 1.0f) pan = 1.0f;
+    int ds_pan = (int)(pan * 10000.0f);
+
+    int count = safe_read_ptr(channel + 0x0C);
+    int data_ptr = safe_read_ptr(channel + 0x414);
+    if (!data_ptr || count < 1) { lua_pushboolean(L, 0); return 1; }
+
+    for (int i = 0; i < count && i < 64; i++) {
+        int buffer = safe_read_ptr(data_ptr + i * 4);
+        if (!buffer || buffer < 0x10000) continue;
+        int dsb = safe_read_ptr(buffer + 0x04);
+        if (!dsb || dsb < 0x10000) continue;
+        int fn = get_dsb_method(dsb, 0x40); /* SetPan */
+        if (fn) ((dsb_setlong_t)fn)(dsb, 0, ds_pan);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* ── Lua API: hamsterball.list_sounds() -> table ─────────────────────── */
+/* Returns a table of all available sound names. */
+static int lua_list_sounds(lua_State *L)
+{
+    int count = 0;
+    for (int i = 0; sound_table[i].name; i++) count++;
+
+    lua_createtable(L, count, 0);
+    for (int i = 0; sound_table[i].name; i++) {
+        lua_pushstring(L, sound_table[i].name);
+        lua_rawseti(L, -2, i + 1);
+    }
+    return 1;
+}
+
 /* ── Register Lua API ────────────────────────────────────────────────── */
 static const luaL_Reg hamsterball_funcs[] = {
     {"get_position",     lua_get_position},
@@ -653,6 +1065,12 @@ static const luaL_Reg hamsterball_funcs[] = {
     {"find_entity",      lua_find_entity},
     {"log",              lua_log},
     {"get_frame_count",  lua_get_frame_count},
+    {"play_sound",       lua_play_sound},
+    {"stop_sound",       lua_stop_sound},
+    {"set_sound_volume", lua_set_sound_volume},
+    {"set_sound_pitch",  lua_set_sound_pitch},
+    {"set_sound_pan",    lua_set_sound_pan},
+    {"list_sounds",      lua_list_sounds},
     {NULL, NULL}
 };
 
