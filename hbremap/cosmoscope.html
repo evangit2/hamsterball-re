@@ -67103,7 +67103,7 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x0042E060</td>
-<td>TournamentScreen_ctor</td>
+<td>GameSelectionScreen_ctor</td>
 <td>Tournament difficulty selector</td>
 </tr>
 <tr>
@@ -67367,7 +67367,7 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x00433AC0</td>
-<td>TournamentManager</td>
+<td>GameSelectionManager</td>
 <td>Tournament save/load (TOURNAMENT.SAV)</td>
 </tr>
 </tbody>
@@ -79631,8 +79631,8 @@ default: Mirror races (reverse direction)
 <p>Hamsterball's game flow is a menu-driven state machine where each &quot;screen&quot; is a SceneObject added to the active scene. Menu transitions work by deleting the old menu object and creating a new one — there is no explicit state enum. Instead, game mode is tracked via boolean flags in <a href="#76662292320299" title="The App Object" class="record-link ">the app object</a>.</p>
 <h2>Menu Hierarchy (State Machine)</h2>
 <pre><code>MainMenu (0x42DE50, vtable 0x4D3F30)
-  ├── LET'S PLAY! → TournamentScreen (0x42E0C0, vtable 0x4D4010)
-  │     ├── TOURNAMENT → TournamentManager (0x433C00) &quot;1PT&quot;
+  ├── LET'S PLAY! → GameSelectionScreen (0x42E0C0, vtable 0x4D4010)
+  │     ├── TOURNAMENT → GameSelectionManager (0x433C00) &quot;1PT&quot;
   │     │     ├── DifficultyMenu → Normal/Frenzied selection
   │     │     ├── TourneyContinueDialog → Resume saved tournament
   │     │     ├── Start → App_StartTourneyRace (0x428A40)
@@ -79728,9 +79728,9 @@ default: Mirror races (reverse direction)
 <h2>Tournament System</h2>
 <h3>Tournament Flow</h3>
 <ol>
-<li><strong>Main Menu</strong> → &quot;LET'S PLAY!&quot; → <strong>Game Menu (TournamentScreen)</strong></li>
-<li><strong>Game Menu</strong> → &quot;TOURNAMENT&quot; (button code &quot;1PT&quot;) → <strong>TournamentManager</strong></li>
-<li><strong>TournamentManager</strong> checks for <code>DATA\TOURNAMENT.SAV</code></li>
+<li><strong>Main Menu</strong> → &quot;LET'S PLAY!&quot; → <strong>Game Menu (GameSelectionScreen)</strong></li>
+<li><strong>Game Menu</strong> → &quot;TOURNAMENT&quot; (button code &quot;1PT&quot;) → <strong>GameSelectionManager</strong></li>
+<li><strong>GameSelectionManager</strong> checks for <code>DATA\TOURNAMENT.SAV</code></li>
 <li>If save exists: <strong>TourneyContinueDialog</strong> — Continue or New?</li>
 <li>If no save or New: <strong>DifficultyMenu</strong> — Normal or Frenzied?</li>
 <li>Difficulty selected → <strong>App_StartTourneyRace</strong> (0x428A40)</li>
@@ -79738,7 +79738,7 @@ default: Mirror races (reverse direction)
 <li>TourneyMenu → &quot;PLAY!&quot; → <strong>Tournament_AdvanceRace</strong> → next race</li>
 <li>After all 14 races: &quot;TOURNAMENT WINNER!&quot; or &quot;LOST TOURNAMENT&quot;</li>
 </ol>
-<h3>TournamentManager (0x433C00)</h3>
+<h3>GameSelectionManager (0x433C00)</h3>
 <p>Central button handler for game mode selection. Receives button codes as strings:</p>
 <table>
 <thead>
@@ -80039,12 +80039,12 @@ default: Mirror races (reverse direction)
 </tr>
 <tr>
 <td>0x42E0C0</td>
-<td>TournamentScreen_ctor</td>
+<td>GameSelectionScreen_ctor</td>
 <td>Game menu (Tourney/TT/Mirror/Party/Back)</td>
 </tr>
 <tr>
 <td>0x433C00</td>
-<td>TournamentManager</td>
+<td>GameSelectionManager</td>
 <td>Mode selection button handler</td>
 </tr>
 <tr>
@@ -110504,7 +110504,7 @@ UI / Menu hierarchy:
        ├─ OptionsMenu
        ├─ PracticeMenu
        ├─ ConfirmMenu
-       ├─ TournamentScreen
+       ├─ GameSelectionScreen
        ├─ HighScoreEntry
        ├─ RaceResultsMenu
        └─ SaveTourneyDialog
@@ -110874,9 +110874,9 @@ UI / Menu hierarchy:
 <li><strong>Constructor:</strong> <code>ConfirmMenu_ctor</code> (0x42B190)</li>
 <li><strong>Description:</strong> BACK / BACK2TOURNAMENT / DONE confirmation dialog</li>
 </ul>
-<h3>TournamentScreen</h3>
+<h3>GameSelectionScreen</h3>
 <ul>
-<li><strong>Constructor:</strong> <code>TournamentScreen_ctor</code> (0x42E060)</li>
+<li><strong>Constructor:</strong> <code>GameSelectionScreen_ctor</code> (0x42E060)</li>
 <li><strong>Description:</strong> Difficulty selector for tournament mode</li>
 </ul>
 <h3>HighScoreEntry</h3>
@@ -133635,7 +133635,7 @@ and modding capabilities through Ghidra decompilation, DLL proxy mods, and custo
 </tr>
 <tr>
 <td>0x42E060</td>
-<td>TournamentScreen_ctor</td>
+<td>GameSelectionScreen_ctor</td>
 <td>Tournament difficulty selector screen</td>
 </tr>
 <tr>
@@ -133990,7 +133990,7 @@ and modding capabilities through Ghidra decompilation, DLL proxy mods, and custo
 </tr>
 <tr>
 <td>0x433AC0</td>
-<td>TournamentManager</td>
+<td>GameSelectionManager</td>
 <td>Tournament save/load</td>
 </tr>
 <tr>
@@ -139249,7 +139249,7 @@ When it reaches &lt; 1, calls <code>vtable[0x4C]</code> (cleanup) and <code>vtab
 </tr>
 </tbody>
 </table>
-<h2>Menu Command System (from TournamentManager 0x433AC0)</h2>
+<h2>Menu Command System (from GameSelectionManager 0x433AC0)</h2>
 <p>The title screen dispatches menu commands as string comparisons:</p>
 <table>
 <thead>
@@ -139495,7 +139495,7 @@ For races 3+: <code>extra_time = base_time</code> (adds to existing accumulated 
 </tr>
 <tr>
 <td>0x433AC0</td>
-<td>TournamentManager</td>
+<td>GameSelectionManager</td>
 <td>Title screen command dispatcher</td>
 </tr>
 <tr>
@@ -139590,7 +139590,7 @@ For races 3+: <code>extra_time = base_time</code> (adds to existing accumulated 
 </tr>
 <tr>
 <td>0x42E060</td>
-<td>TournamentScreen_ctor</td>
+<td>GameSelectionScreen_ctor</td>
 <td>Tournament results screen</td>
 </tr>
 </tbody>
@@ -158957,7 +158957,7 @@ a SimpleMenu base class with UIList widget for vertical scrolling lists.</p>
     ├── OptionsMenu — graphics/sound/controls
     ├── KeyRemapMenu (0x4D4340) — key binding screen
     ├── GraphicsOptionsMenu (0x441E70) — quality settings
-    └── TournamentScreen (0x42E060) — tournament results
+    └── GameSelectionScreen (0x42E060) — tournament results
 </code></pre>
 <h2>Dialog Classes</h2>
 <pre><code>SceneObject (base)
@@ -159092,7 +159092,7 @@ a SimpleMenu base class with UIList widget for vertical scrolling lists.</p>
 <tr>
 <td>&quot;LET'S PLAY!&quot;</td>
 <td>&quot;PLAY&quot;</td>
-<td>TournamentManager_ctor</td>
+<td>GameSelectionManager_ctor</td>
 </tr>
 <tr>
 <td>&quot;HIGH SCORES&quot;</td>
@@ -159197,9 +159197,9 @@ a SimpleMenu base class with UIList widget for vertical scrolling lists.</p>
 </tbody>
 </table>
 <p>Title: &quot;Pause Menu&quot;</p>
-<h3>ArenaBoard Menu (0x433AC0 — TournamentManager)</h3>
+<h3>ArenaBoard Menu (0x433AC0 — GameSelectionManager)</h3>
 <p>See <a href="RUMBLEBOARD_SYSTEM.md">RUMBLEBOARD_SYSTEM.md</a> for full dispatch table.</p>
-<h3>Play Mode Selection (from TournamentManager)</h3>
+<h3>Play Mode Selection (from GameSelectionManager)</h3>
 <table>
 <thead>
 <tr>
@@ -159441,7 +159441,7 @@ a SimpleMenu base class with UIList widget for vertical scrolling lists.</p>
 </tr>
 <tr>
 <td>0x433AC0</td>
-<td>TournamentManager</td>
+<td>GameSelectionManager</td>
 <td>Title screen dispatcher</td>
 </tr>
 <tr>
@@ -160873,7 +160873,7 @@ with a 5-byte JMP to a code cave. The code cave:</p>
 <li><strong>Strings:</strong> <code>&quot;MIRROR TOURNAMENT&quot;</code>, <code>&quot;MirrorTournament&quot;</code>, <code>&quot;THE MIRROR TOURNAMENT ISN'T UNLOCKED YET! TO UNLOCK THE MIRROR TOURNAMENT, YOU NEED TO WIN A TOURNAMENT AT NORMAL OR FRENZIED DIFFICULTY!&quot;</code></li>
 <li><strong>Mirror textures:</strong> <code>arrow1-mirrored.png</code>, <code>goal-lit-mirrored.png</code>, <code>goal-mirrored.png</code>, <code>goal-round-lit-mirrored.png</code>, <code>goal-round-mirrored.png</code>, <code>mirror.png</code>, <code>sign-bewarethetar-mirrored.png</code></li>
 <li><strong>Render functions:</strong> <code>Level_RenderWithMirror4</code> (0x00413fc0), <code>Level_RenderWithMirror5</code> (0x004151e0) — render scenes with mirrored projection matrices (flips projection on one axis then restores)</li>
-<li><strong>Unlock check:</strong> <code>TournamentManager</code> (0x00433ac0) checks for <code>&quot;LOCKED&quot;</code> string to show the unlock dialog</li>
+<li><strong>Unlock check:</strong> <code>GameSelectionManager</code> (0x00433ac0) checks for <code>&quot;LOCKED&quot;</code> string to show the unlock dialog</li>
 </ul>
 <p>The mirror rendering works by adjusting projection matrix offsets (<code>+0x790</code>/<code>+0x794</code>) by a delta value, rendering 4 mirror planes, then restoring.</p>
 <hr>
@@ -160922,7 +160922,7 @@ with a 5-byte JMP to a code cave. The code cave:</p>
 <p><strong>Status: Fully implemented, retail feature</strong></p>
 <p>A complete tournament mode with progression, saving, and multiple difficulty levels:</p>
 <ul>
-<li><strong>Manager:</strong> <code>TournamentManager</code> (0x00433ac0) — handles menu routing: BACK → MainMenu, LOCKED → unlock dialog, 1PT → single player tournament</li>
+<li><strong>Manager:</strong> <code>GameSelectionManager</code> (0x00433ac0) — handles menu routing: BACK → MainMenu, LOCKED → unlock dialog, 1PT → single player tournament</li>
 <li><strong>Save file:</strong> <code>DATA\TOURNAMENT.SAV</code> / <code>DATA\tournament.sav</code></li>
 <li><strong>Save/Load:</strong> <code>TourneyMenu_LoadSaveAndShow</code> (0x004265a0), <code>TourneyMenu_WriteSave</code> (0x004264b0), <code>Tourney_SaveTournament</code> (0x00446730)</li>
 <li><strong>Continue dialog:</strong> <code>TourneyContinueDialog_Ctor</code> (0x00445e60) — &quot;CONTINUE TOURNAMENT?&quot; prompt</li>

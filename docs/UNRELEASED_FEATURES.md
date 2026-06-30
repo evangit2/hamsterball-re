@@ -31,7 +31,7 @@ A mirrored (reversed) version of the tournament mode:
 - **Strings:** `"MIRROR TOURNAMENT"`, `"MirrorTournament"`, `"THE MIRROR TOURNAMENT ISN'T UNLOCKED YET! TO UNLOCK THE MIRROR TOURNAMENT, YOU NEED TO WIN A TOURNAMENT AT NORMAL OR FRENZIED DIFFICULTY!"`
 - **Mirror textures:** `arrow1-mirrored.png`, `goal-lit-mirrored.png`, `goal-mirrored.png`, `goal-round-lit-mirrored.png`, `goal-round-mirrored.png`, `mirror.png`, `sign-bewarethetar-mirrored.png`
 - **Render functions:** `Level_RenderWithMirror4` (0x00413fc0), `Level_RenderWithMirror5` (0x004151e0) — render scenes with mirrored projection matrices (flips projection on one axis then restores)
-- **Unlock check:** `TournamentManager` (0x00433ac0) checks for `"LOCKED"` string to show the unlock dialog
+- **Unlock check:** `GameSelectionManager` (0x00433ac0) checks for `"LOCKED"` string to show the unlock dialog
 
 The mirror rendering works by adjusting projection matrix offsets (`+0x790`/`+0x794`) by a delta value, rendering 4 mirror planes, then restoring.
 
@@ -84,7 +84,7 @@ Hidden collectibles in race levels that unlock arenas:
 
 A complete tournament mode with progression, saving, and multiple difficulty levels:
 
-- **Manager:** `TournamentManager` (0x00433ac0) — handles menu routing: BACK → MainMenu, LOCKED → unlock dialog, 1PT → single player tournament
+- **Manager:** `GameSelectionManager` (0x00433ac0) — handles menu routing: BACK → MainMenu, LOCKED → unlock dialog, 1PT → single player tournament
 - **Save file:** `DATA\TOURNAMENT.SAV` / `DATA\tournament.sav`
 - **Save/Load:** `TourneyMenu_LoadSaveAndShow` (0x004265a0), `TourneyMenu_WriteSave` (0x004264b0), `Tourney_SaveTournament` (0x00446730)
 - **Continue dialog:** `TourneyContinueDialog_Ctor` (0x00445e60) — "CONTINUE TOURNAMENT?" prompt

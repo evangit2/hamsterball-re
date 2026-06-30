@@ -197,7 +197,7 @@ Object offsets:
 | +0x717 | p3_hidden | Hide P3 quadrant |
 | +0x7B7 | p4_hidden | Hide P4 quadrant |
 
-## Menu Command System (from TournamentManager 0x433AC0)
+## Menu Command System (from GameSelectionManager 0x433AC0)
 
 The title screen dispatches menu commands as string comparisons:
 
@@ -278,7 +278,7 @@ For races 3+: `extra_time = base_time` (adds to existing accumulated time)
 | Address | Name | Purpose |
 |---------|------|---------|
 | 0x427080 | Tournament_AdvanceRace | Create next race in tournament |
-| 0x433AC0 | TournamentManager | Title screen command dispatcher |
+| 0x433AC0 | GameSelectionManager | Title screen command dispatcher |
 | 0x422550 | ArenaBoard_Beginner_Ctor | Beginner arena constructor |
 | 0x4226E0 | ArenaBoard_Intermediate_Ctor | Intermediate arena ctor |
 | 0x422790 | ArenaBoard_Dizzy_Ctor | Dizzy arena ctor |
@@ -297,4 +297,4 @@ For races 3+: `extra_time = base_time` (adds to existing accumulated time)
 | 0x4288B0 | App_StartTournamentRace | Tournament launch entry |
 | 0x445230 | Scene_StartTournament | Scene tournament setup |
 | 0x446730 | Tourney_SaveTournament | Save tournament state |
-| 0x42E060 | TournamentScreen_ctor | Tournament results screen |
+| 0x42E060 | GameSelectionScreen_ctor | Tournament results screen |

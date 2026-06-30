@@ -8,8 +8,8 @@ Hamsterball's game flow is a menu-driven state machine where each "screen" is a 
 
 ```
 MainMenu (0x42DE50, vtable 0x4D3F30)
-  ├── LET'S PLAY! → TournamentScreen (0x42E0C0, vtable 0x4D4010)
-  │     ├── TOURNAMENT → TournamentManager (0x433C00) "1PT"
+  ├── LET'S PLAY! → GameSelectionScreen (0x42E0C0, vtable 0x4D4010)
+  │     ├── TOURNAMENT → GameSelectionManager (0x433C00) "1PT"
   │     │     ├── DifficultyMenu → Normal/Frenzied selection
   │     │     ├── TourneyContinueDialog → Resume saved tournament
   │     │     ├── Start → App_StartTourneyRace (0x428A40)
@@ -48,9 +48,9 @@ MainMenu (0x42DE50, vtable 0x4D3F30)
 
 ### Tournament Flow
 
-1. **Main Menu** → "LET'S PLAY!" → **Game Menu (TournamentScreen)**
-2. **Game Menu** → "TOURNAMENT" (button code "1PT") → **TournamentManager**
-3. **TournamentManager** checks for `DATA\TOURNAMENT.SAV`
+1. **Main Menu** → "LET'S PLAY!" → **Game Menu (GameSelectionScreen)**
+2. **Game Menu** → "TOURNAMENT" (button code "1PT") → **GameSelectionManager**
+3. **GameSelectionManager** checks for `DATA\TOURNAMENT.SAV`
 4. If save exists: **TourneyContinueDialog** — Continue or New?
 5. If no save or New: **DifficultyMenu** — Normal or Frenzied?
 6. Difficulty selected → **App_StartTourneyRace** (0x428A40)
@@ -58,7 +58,7 @@ MainMenu (0x42DE50, vtable 0x4D3F30)
 8. TourneyMenu → "PLAY!" → **Tournament_AdvanceRace** → next race
 9. After all 14 races: "TOURNAMENT WINNER!" or "LOST TOURNAMENT"
 
-### TournamentManager (0x433C00)
+### GameSelectionManager (0x433C00)
 Central button handler for game mode selection. Receives button codes as strings:
 
 | Button Code | Action | Target Menu |
@@ -216,8 +216,8 @@ Created during tournament/race init:
 | Address | Function | Description |
 |---------|----------|-------------|
 | 0x42DE50 | MainMenu_ctor | Main menu (PLAY/HS/OP/CR/RG/MG/EXIT) |
-| 0x42E0C0 | TournamentScreen_ctor | Game menu (Tourney/TT/Mirror/Party/Back) |
-| 0x433C00 | TournamentManager | Mode selection button handler |
+| 0x42E0C0 | GameSelectionScreen_ctor | Game menu (Tourney/TT/Mirror/Party/Back) |
+| 0x433C00 | GameSelectionManager | Mode selection button handler |
 | 0x428A40 | App_StartTourneyRace | Tournament race init + save load |
 | 0x428B20 | App_StartMPRace | Multiplayer race init |
 | 0x450070 | TourneyMenu_ctor | Post-race tournament results menu |

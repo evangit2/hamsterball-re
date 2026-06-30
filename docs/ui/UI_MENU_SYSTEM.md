@@ -21,7 +21,7 @@ SceneObject (base)
     ├── OptionsMenu — graphics/sound/controls
     ├── KeyRemapMenu (0x4D4340) — key binding screen
     ├── GraphicsOptionsMenu (0x441E70) — quality settings
-    └── TournamentScreen (0x42E060) — tournament results
+    └── GameSelectionScreen (0x42E060) — tournament results
 ```
 
 ## Dialog Classes
@@ -89,7 +89,7 @@ Each item in the list stores:
 
 | Display | Command | Handler |
 |---------|---------|---------|
-| "LET'S PLAY!" | "PLAY" | TournamentManager_ctor |
+| "LET'S PLAY!" | "PLAY" | GameSelectionManager_ctor |
 | "HIGH SCORES" | "HS" | HighScoreMenu_ctor |
 | "OPTIONS" | "OP" | OptionsMenu |
 | "CREDITS" | "CR" | Credits screen |
@@ -120,11 +120,11 @@ Title: "CHOOSE A DIFFICULTY!"
 
 Title: "Pause Menu"
 
-### ArenaBoard Menu (0x433AC0 — TournamentManager)
+### ArenaBoard Menu (0x433AC0 — GameSelectionManager)
 
 See [ARENA_BOARD_SYSTEM.md](ARENA_BOARD_SYSTEM.md) for full dispatch table.
 
-### Play Mode Selection (from TournamentManager)
+### Play Mode Selection (from GameSelectionManager)
 
 | Display | Command | Mode |
 |---------|---------|------|
@@ -227,7 +227,7 @@ Appears when tournament save file exists (`DATA\TOURNAMENT.SAV`):
 | 0x42DE50 | MainMenu_ctor | Main menu setup |
 | 0x42E220 | DifficultyMenu_ctor | Difficulty selection |
 | 0x42E4B0 | PauseMenu_Ctor | In-game pause |
-| 0x433AC0 | TournamentManager | Title screen dispatcher |
+| 0x433AC0 | GameSelectionManager | Title screen dispatcher |
 | 0x4492D0 | UIList_AddItem | Add menu item |
 | 0x449430 | UIList_AddSpacer | Add vertical gap |
 | 0x449C20 | UIList_HandleKeyNav | Input navigation |

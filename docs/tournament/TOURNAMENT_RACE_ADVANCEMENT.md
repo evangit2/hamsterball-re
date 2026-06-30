@@ -12,7 +12,7 @@ Tournament mode flows through 15 races in a fixed order. The game uses a **Playe
 
 | Function | Address | Purpose |
 |----------|---------|---------|
-| `TournamentManager` | `0x433AC0` | Main menu command dispatcher (handles "1PT", "1PMT", "1PP", etc.) |
+| `GameSelectionManager` | `0x433AC0` | Main menu command dispatcher (handles "1PT", "1PMT", "1PP", etc.) |
 | `App_StartTournamentRace` | `0x4288B0` | Sets up App flags, creates PlayerProfile, calls AdvanceRace |
 | `Tournament_AdvanceRace` | `0x427080` | **Core function**: increments race index, creates next board via switch |
 | `Scene_HandleCountdown` | `0x41A540` | Race-end logic: checks timer, last-race flag, routes to advance/menu |
@@ -103,7 +103,7 @@ Offset  Size  Field
 ### Phase 1: Starting a Tournament
 
 1. **Main menu** → User selects "1PT" (1-Player Tournament) or "1PMT" (Mirror)
-2. `TournamentManager` (0x433AC0) sets App flags:
+2. `GameSelectionManager` (0x433AC0) sets App flags:
    - `App+0x5D4 = 1` (tournament active)
    - `App+0x235 = 1` (is tournament mode)
    - `App+0x236 = 0 or 1` (mirror mode flag)

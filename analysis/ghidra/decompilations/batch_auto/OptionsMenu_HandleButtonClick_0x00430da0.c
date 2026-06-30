@@ -244,7 +244,7 @@ void __thiscall OptionsMenu_HandleButtonClick(void *this,char *param_1)
       piVar2 = (int *)0x0;
     }
     else {
-      piVar2 = TournamentScreen_ctor(pvVar1,*(int *)((int)this + 0x878));
+      piVar2 = GameSelectionScreen_ctor(pvVar1,*(int *)((int)this + 0x878));
     }
     local_4 = 0xffffffff;
     Scene_AddObject(*(void **)(*(int *)((int)this + 0x878) + 0x184),piVar2);

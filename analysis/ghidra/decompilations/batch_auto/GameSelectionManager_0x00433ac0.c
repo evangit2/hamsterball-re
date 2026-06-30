@@ -1,5 +1,5 @@
 
-void __thiscall TournamentManager(void *this,char *param_1)
+void __thiscall GameSelectionManager(void *this,char *param_1)
 
 {
   char cVar1;

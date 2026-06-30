@@ -100,7 +100,7 @@ UI / Menu hierarchy:
        ├─ OptionsMenu
        ├─ PracticeMenu
        ├─ ConfirmMenu
-       ├─ TournamentScreen
+       ├─ GameSelectionScreen
        ├─ HighScoreEntry
        ├─ RaceResultsMenu
        └─ SaveTourneyDialog
@@ -432,8 +432,8 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Constructor:** `ConfirmMenu_ctor` (0x42B190)
 - **Description:** BACK / BACK2TOURNAMENT / DONE confirmation dialog
 
-### TournamentScreen
-- **Constructor:** `TournamentScreen_ctor` (0x42E060)
+### GameSelectionScreen
+- **Constructor:** `GameSelectionScreen_ctor` (0x42E060)
 - **Description:** Difficulty selector for tournament mode
 
 ### HighScoreEntry

@@ -118,7 +118,7 @@ Documented: 3781/3781 (100%)
 | 0x004254E0 | CreditsScreen_ctor | Credits scrolling screen (formerly Physics_Init) |
 | 0x0042B470 | HighScoreEntry_ctor | High score entry screen (name input + score display) |
 | 0x0042BD40 | HighScoreEntry_Render | Render high score entry UI |
-| 0x0042E060 | TournamentScreen_ctor | Tournament difficulty selector |
+| 0x0042E060 | GameSelectionScreen_ctor | Tournament difficulty selector |
 | 0x0044FD60 | SaveTourneyDialog_ctor | Save tournament dialog |
 | 0x004476B0 | RegisterDialog_ctor | Register/purchase dialog |
 | 0x0042E6F0 | QuitRaceMenu | Race quit confirmation menu |
@@ -189,7 +189,7 @@ Documented: 3781/3781 (100%)
 | 0x004279F0 | LoadOrSaveConfig | Config load/save dispatcher |
 | 0x0042AE80 | LoadConfig | Load HS.CFG |
 | 0x0042B6E0 | SaveConfig | Save HS.CFG |
-| 0x00433AC0 | TournamentManager | Tournament save/load (TOURNAMENT.SAV) |
+| 0x00433AC0 | GameSelectionManager | Tournament save/load (TOURNAMENT.SAV) |
 
 ## Font/Text Rendering
 
