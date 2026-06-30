@@ -1,0 +1,219 @@
+[ENABLE]
+
+alloc(SpawnCode, 4096)
+alloc(SpawnTrapdoor, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20, 4)
+alloc(list_inited, 4)
+
+registersymbol(SpawnTrapdoor)
+
+SpawnTrapdoor:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20:
+  dd 0x41A00000
+
+list_inited:
+  dd 0
+
+label(original_code)
+label(check_spawn)
+label(init_list)
+label(do_spawn)
+label(append_collision)
+label(skip_collision1)
+label(skip_collision2)
+label(done_spawn)
+
+SpawnCode:
+  cmp dword [esi+0x18], 0
+  jne check_spawn
+
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  fld dword [esi+0x168]
+  fsub dword [float_20]
+  fstp dword [playerY]
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  cmp dword [SpawnTrapdoor], 0
+  je original_code
+
+  cmp dword [esi+0x18], 0
+  jne original_code
+
+  mov dword [SpawnTrapdoor], 0
+
+  pushad
+
+  // Get Board from ball+0x14
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+
+  // Safety: Board+0x8AC must be valid
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz done_spawn
+
+  // Safety: Board+0x878 → App must be valid
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+
+  // Safety: App+0x594 must be valid (trapdoor mesh pre-loaded)
+  mov edx, [edx+0x594]
+  test edx, edx
+  jz done_spawn
+
+  // === STEP 1: Init AthenaList at Board+0x47D0 if needed ===
+init_list:
+  cmp dword [list_inited], 0
+  jne do_spawn
+
+  // Check if already initialized (vtable == 0x4D875C)
+  mov edx, [saved_board]
+  mov edx, [edx+0x47D0]
+  cmp edx, 0x4D875C
+  je do_spawn
+
+  // AthenaList_Init(Board+0x47D0, 0)
+  mov edx, [saved_board]
+  lea ecx, [edx+0x47D0]
+  push 0
+  call 00453210            // ret 4
+
+  mov dword [list_inited], 1
+
+  // === STEP 2: Allocate and construct Trapdoor ===
+do_spawn:
+  // Allocate 0x10F8 bytes
+  push 0x10F8
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+
+  mov ebx, eax             // ebx = new object
+
+  // GlassStands_Ctor(this=alloc, Board) — thiscall ret 4
+  // ecx=alloc, push Board
+  mov edx, [saved_board]
+  push edx
+  mov ecx, ebx
+  call 00438290            // GlassStands_Ctor — ret 4
+
+  // Set position at obj+0x10E0 (X), +0x10E4 (Y), +0x10E8 (Z)
+  mov edx, [playerX]
+  mov [ebx+0x10E0], edx
+  mov edx, [playerY]
+  mov [ebx+0x10E4], edx
+  mov edx, [playerZ]
+  mov [ebx+0x10E8], edx
+
+  // AthenaList_Append(Board+0x2578, obj) — general list
+  push ebx
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810            // ret 4
+
+  // AthenaList_Append(Board+0x47D0, obj) — trapdoor list
+  push ebx
+  mov ecx, [saved_board]
+  add ecx, 0x47D0
+  call 00453810            // ret 4
+
+  // === STEP 3: Append sub-objects to collision lists ===
+append_collision:
+
+  // sub_obj_1 = [ebx+0x10D8] (Stands/Trapdoor2 mesh)
+  mov edi, [ebx+0x10D8]
+  test edi, edi
+  jz skip_collision1
+
+  // AthenaList_Append(Board+0xCD4, sub_obj_1)
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810            // ret 4
+
+  // AthenaList_Append(Board+0x8AC→+0x480→+0x1C, sub_obj_1)
+  mov ecx, [saved_board]
+  mov ecx, [ecx+0x8AC]     // primary CollisionLevel
+  test ecx, ecx
+  jz skip_collision1
+  mov ecx, [ecx+0x480]     // collision list
+  test ecx, ecx
+  jz skip_collision1
+  push edi
+  lea ecx, [ecx+0x1C]
+  call 00453810            // ret 4
+
+skip_collision1:
+  // sub_obj_2 = [ebx+0x10DC] (TipperVisual/Trapdoor2 collision)
+  mov edi, [ebx+0x10DC]
+  test edi, edi
+  jz skip_collision2
+
+  // AthenaList_Append(Board+0x10EC, sub_obj_2)
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810            // ret 4
+
+  // AthenaList_Append(Board+0x8B0→+0x18, sub_obj_2)
+  mov ecx, [saved_board]
+  mov ecx, [ecx+0x8B0]     // secondary CollisionLevel
+  test ecx, ecx
+  jz skip_collision2
+  push edi
+  lea ecx, [ecx+0x18]
+  call 00453810            // ret 4
+
+skip_collision2:
+  // Done — Board main loop will handle update/render via Board+0x2578
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnTrapdoor)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20)
+dealloc(list_inited)
+unregistersymbol(SpawnTrapdoor)

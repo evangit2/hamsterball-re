@@ -88,13 +88,13 @@ not the function itself).
 
 ---
 
-## 2. CreateNoDizzy (0x0040C5D0) — Actually: LevelCollisionEventHandler
+## 2. DispatchCollisionEvents (0x0040C5D0) — Actually: LevelCollisionEventHandler
 
 ### Misnomer Summary
 
 | Field | Value |
 |---|---|
-| **Current name** | `CreateNoDizzy` |
+| **Current name** | `DispatchCollisionEvents` |
 | **Correct name** | `LevelCollisionEventHandler` (or `HandleCollisionEvent`) |
 | **Severity** | CRITICAL — name describes 1 of 18 event types handled |
 | **Evidence** | 28 call sites, 18 event branches, 0 allocations (doesn't "create" anything) |
@@ -102,17 +102,17 @@ not the function itself).
 ### Calling Convention
 
 ```c
-void __thiscall CreateNoDizzy(void *this, int *param_1, int *param_2);
+void __thiscall DispatchCollisionEvents(void *this, int *param_1, int *param_2);
 ```
 
-Verified by decompiling `Level_HandleCollision` (0x0040DCD0), which calls
-`CreateNoDizzy` with the same parameters it receives:
+Verified by decompiling `TowerCollisionEvents` (0x0040DCD0), which calls
+`DispatchCollisionEvents` with the same parameters it receives:
 
 ```c
-// In Level_HandleCollision(this, ball, collObj):
+// In TowerCollisionEvents(this, ball, collObj):
 //   ... handles E:CATAPULTBOTTOM, E:OPENSESAME, N:TRAPDOOR, E:BITE, E:MACETRIGGER, N:MACE ...
 //   ... then falls through to:
-CreateNoDizzy(this, ball, collObj);
+DispatchCollisionEvents(this, ball, collObj);
 ```
 
 ### Parameters
@@ -149,7 +149,7 @@ CreateNoDizzy(this, ball, collObj);
 | +0x1F4 (param_1[499]) | int | ball.popout_cooldown | READ/WRITE | POPOUT (=50) |
 | +0x202 (param_1[0x202]) | int | ball.impact_timer | WRITE | E:JUMP, N:NOCONTROL (=10) |
 | +0x2D5 (param_1+0x2D5) | byte | ball.in_water | WRITE | N:WATER (=1) |
-| +0x2E9 (param_1+0x2E9) | byte | ball.limit_flag | WRITE | E:LIMIT (=1) |
+| +0x2E9 (param_1+0x2E9) | byte | ball.impact_shatter | WRITE | E:LIMIT (=1) |
 | +0x30B (param_1+0x30B) | byte | ball.safe_switch_flag | WRITE | E:SAFESWITCH (=0 if no paren) |
 | +0xC2C (param_1+0xC2C) | char[] | ball.switch_data | WRITE | E:SAFESWITCH (copies parenthesized data) |
 
@@ -210,19 +210,19 @@ so they match any `X:` prefix (e.g., `E:DROPIN`, `N:DROPIN`, etc.).
 ### Call Sites (28 total)
 
 ```
-Level_HandleCollision     (0x0040DCD0) — primary level collision dispatcher
-Arena_HandleCollision     (0x0040EA6B) — arena mode collision dispatcher
-CreateSpinner             (0x00412850) — spinner/bumper/launch collision
-CreateLimit               (0x00410E6F) — arena limit collision
-SinkPlatform_OnCollision  (0x00413C09) — sinking platform collision
+TowerCollisionEvents     (0x0040DCD0) — primary level collision dispatcher
+ExpertCollisionEvents     (0x0040EA6B) — arena mode collision dispatcher
+HandleArenaCollisionEvents             (0x00412850) — spinner/bumper/launch collision
+NeonCollisionEvents               (0x00410E6F) — arena limit collision
+SinkPlatformArenaCollisionEvents  (0x00413C09) — sinking platform collision
 + 23 other Create* and collision handler functions
 + 2 DATA references (vtable entries)
 ```
 
 ### Summary
 
-`CreateNoDizzy` is the **universal level collision event handler**. It is called
-as a fall-through from `Level_HandleCollision` and `Arena_HandleCollision` after
+`DispatchCollisionEvents` is the **universal level collision event handler**. It is called
+as a fall-through from `TowerCollisionEvents` and `ExpertCollisionEvents` after
 those functions handle their own specific events. It dispatches 18 different event
 types based on the collision event string:
 
@@ -235,7 +235,7 @@ types based on the collision event string:
 - **Scoring/tracking:** E:ACTION (once-gated score), E:NODIZZY (time record)
 - **Switches:** E:SAFESWITCH (copy switch data to ball)
 
-The name `CreateNoDizzy` describes only the `E:NODIZZY` branch (branch #3), which
+The name `DispatchCollisionEvents` describes only the `E:NODIZZY` branch (branch #3), which
 is one of 18. The function creates nothing — it is a pure event handler that reads
 the collision event string and dispatches side effects to the ball, App, and
 scene structs.

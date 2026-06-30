@@ -1,8 +1,8 @@
-// TournamentManager (0x433ac0)
+// GameSelectionManager (0x433ac0)
 // Main menu command dispatcher for the title screen
 // param_1 = command string from button click
 
-void __thiscall TournamentManager(void *this, char *cmd)
+void __thiscall GameSelectionManager(void *this, char *cmd)
 {
   App *app = *(App **)(this + 0x878);
   app->flags0x234 = 0;

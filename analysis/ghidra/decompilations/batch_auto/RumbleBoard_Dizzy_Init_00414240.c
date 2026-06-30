@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Dizzy_Init
+ * Function: ArenaLevel_Dizzy_Init
  * Address: 0x00414240
- * Signature: void __fastcall RumbleBoard_Dizzy_Init(int *param_1)
+ * Signature: void __fastcall ArenaLevel_Dizzy_Init(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: RumbleBoard_Dizzy_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 46
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: ArenaLevel_Dizzy_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 46
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Dizzy_Init(int *param_1)
+void __fastcall ArenaLevel_Dizzy_Init(int *param_1)
 
 {
   void *pvVar1;

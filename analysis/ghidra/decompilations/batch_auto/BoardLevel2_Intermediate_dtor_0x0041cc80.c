@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel2_Intermediate_dtor
+ * Function: LevelBoard_Intermediate_dtor
  * Address: 0x0041cc80
  *
  * Description:

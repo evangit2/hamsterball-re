@@ -15,7 +15,7 @@
  *   +0x10E4: triggered flag (set to 1)
  *
  * Cross-references:
- *   Called from CreateNoDizzy (0x40C617) — UNCONDITIONAL_CALL
+ *   Called from DispatchCollisionEvents (0x40C617) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

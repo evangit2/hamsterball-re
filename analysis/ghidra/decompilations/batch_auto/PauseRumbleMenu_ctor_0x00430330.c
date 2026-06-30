@@ -1,7 +1,7 @@
 /*
- * Function: PauseRumbleMenu_ctor
+ * Function: PauseArenaMenu_ctor
  * Address: 0x00430330
- * Signature: void * __thiscall PauseRumbleMenu_ctor(void *this,int param_1)
+ * Signature: void * __thiscall PauseArenaMenu_ctor(void *this,int param_1)
  * Batch: 22
  *
  * Description:

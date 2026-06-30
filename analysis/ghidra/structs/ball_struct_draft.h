@@ -47,17 +47,17 @@ typedef struct {
     char field_258[8];            // +0x258 padding
     char boost_hit_flag;         // +0x260 set 0 in ctor
     char pad_261[3];             // +0x261
-    RumbleBoard rumble_timer;     // +0x264 RumbleBoard_InitTimer (0x14 bytes per RumbleBoard)
+    ToggleTimer rumble_timer;     // +0x264 ToggleTimer_Init (0x14 bytes per ToggleTimer)
     char pad_278_pad[4];         // +0x278 0x3DCCCCCD = 0.1f
     float gravity_rumble_val;    // +0x27C set 0
     int field_280;                // +0x280 (0 in ctor)
-    char is_falling;             // +0x281 set 1 in ctor (ball falling state)
+    char unused_init_flag;          // +0x281 set 1 in ctor, NEVER READ (dead code)
     char pad_282[2];             // +0x282
     float radius;                 // +0x284 0x41D80000 = 27.0f
     char pad_288[4];             // +0x288 set 0
     char field_28c;               // +0x28C set 0
     char pad_28d[3];             // +0x28D
-    RumbleBoard rumble_timer2;   // +0x290 pad
+    ToggleTimer rumble_timer2;   // +0x290 pad
     int spin_timer;               // +0x2A0 (param_1[0xa8]/0xa0 in different context)
     float speed_modifier;         // +0x2A4 0x3F800000 = 1.0f (decays to 1.0)
     Vec3 some_vec;               // +0x2A8 Vec3_Init
@@ -70,16 +70,16 @@ typedef struct {
     char field_2d4;               // +0x2D4 set 0
     char field_2d5;               // +0x2D5 set 0
     int bump_timer;               // +0x2D8 set 0
-    float checkpoint_x;           // +0x2DC (param_1[0xb7])
-    float checkpoint_y;           // +0x2E0 (param_1[0xb8])
-    float checkpoint_z;           // +0x2E4 (param_1[0xb9])
+    float lgp_x;                  // +0x2DC Last Grounded Position X (param_1[0xb7])
+    float lgp_y;                  // +0x2E0 Last Grounded Position Y (param_1[0xb8])
+    float lgp_z;                  // +0x2E4 Last Grounded Position Z (param_1[0xb9])
     char event_flag;              // +0x2E8 (param_1[0xba])
     /* ⚠ DO NOT USE as ground/on_surface flag! See docs/agent-knowledge/ball-ground-detection.md
      * Sticky limit/trajectory flag (E:LIMIT arena events + type-5 deep collision).
      * NEVER cleared within Ball_Update(0x405E00) — the `param_1 + 0x2e9 = 0`
      * clears in decompiled code use int* arithmetic (= byte 0xBA4), NOT byte 0x2E9.
      * Once set to 1, stays 1 until full Ball_ctor2 respawn. */
-    char limit_flag;              // +0x2E9 (param_1[0x2e9]) sticky limit/trajectory flag
+    char impact_shatter;              // +0x2E9 (param_1[0x2e9]) sticky limit/trajectory flag
     char pad_2ea[2];              // +0x2EA
     char spinning;                // +0x2EC (param_1[0xbb]) collision counter
     int collision_count_bc;       // +0x2F0 (param_1[0xbc])

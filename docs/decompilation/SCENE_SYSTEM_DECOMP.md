@@ -63,8 +63,8 @@ Offsets in hex (byte addresses), computed from Ghidra int-indexed fields.
 
 ### Object Lists
 ```
-+0x0884  rumble_timer_1    (RumbleBoard)
-+0x0898  rumble_timer_2    (RumbleBoard)
++0x0884  toggle_timer_1    (ToggleTimer)
++0x0898  toggle_timer_2    (ToggleTimer)
 +0x08B8  scene_object_list  (AthenaList<SceneObject*>)
 +0x08BC  scene_object_count
 +0x0CC4  scene_object_array
@@ -183,7 +183,7 @@ Finally dynamic_object->vtable[8]() callback.
      - Read camera position from app->camera_obj
      - Call Gear_AdvanceAlongPath(gear, camX, camY, camZ)
 6. Rumble board timers:
-   - Tick both RumbleBoard instances
+   - Tick both ArenaBoard instances
 7. Rumble intensity decay:
    - If rumble_active: decay intensity from -800 toward 0 by 10/frame
 8. SceneObject update+render loop:

@@ -20,7 +20,7 @@
 //
 // Key constants: _DAT_004cf368=0.0, _DAT_004cf310=1.0, _DAT_004d03b8=0.12 (human scale)
 //
-// Callers: RumbleBoard_Update (0x421FE0), Scene_ComputeArenaLighting (0x422C70),
+// Callers: ArenaBoard_Update (0x421FE0), Scene_ComputeArenaLighting (0x422C70),
 //          Scene_ComputeArenaLighting2 (0x423800) — all via vtable dispatch
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */

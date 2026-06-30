@@ -3,7 +3,7 @@
 ## Overview
 Hamsterball uses a simple particle system for trail effects behind the ball.
 The only particle emitter is `Ball_CreateTrailParticles` (0x401DD0), which spawns
-small `RumbleScore` objects in a circular pattern around the ball.
+small `ArenaScoreParticle` objects in a circular pattern around the ball.
 
 ## Ball_CreateTrailParticles (0x401DD0)
 
@@ -23,8 +23,8 @@ for each of 9 positions (angle_step = 0x28 in local_50):
      offset_right = radius * cam_right * sin_angle
      offset_up    = radius * cam_up * cos_angle
   
-  4. Create RumbleScore particle (0x28 bytes):
-     RumbleScore_ctor(ball_scene)
+  4. Create ArenaScoreParticle particle (0x28 bytes):
+     ArenaScoreParticle_ctor(ball_scene)
      
   5. Particle position = ball_pos + offset_right - offset_up
      position[0] = offset_right.x + ball.pos.x - offset_up.x
@@ -48,8 +48,8 @@ for each of 9 positions (angle_step = 0x28 in local_50):
 | scene+0x3b00 | AthenaList | Particle list head |
 | graphics+0x744 | void* | Camera matrix base |
 
-### RumbleScore Particle Struct (0x28 bytes)
-Used for both RumbleBoard score popup effect and ball trail particles.
+### ArenaScoreParticle Particle Struct (0x28 bytes)
+Used for both ArenaBoard score popup effect and ball trail particles.
 
 | Offset | Type | Field |
 |--------|------|-------|

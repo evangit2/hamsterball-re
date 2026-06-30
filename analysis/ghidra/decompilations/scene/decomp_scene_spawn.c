@@ -57,7 +57,7 @@ void Scene_SpawnBallsAndObjects(Scene *scene) {
         ball->field_0x1A0 = 1.05f;  // (0x3F866666)
         ball->max_speed = 5.0f;     // (0x40A00000)
         ball->pos_x = start_pos.x;
-        ball->is_falling = 0;
+        ball->is_stunned = 0;
         ball->field_0x769 = 1;
         
         AthenaList_Append(&scene->ball_list, ball);

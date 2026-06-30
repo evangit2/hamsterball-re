@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Toob_Init
+ * Function: ArenaLevel_Toob_Init
  * Address: 0x00414f00
- * Signature: void __fastcall RumbleBoard_Toob_Init(int *param_1)
+ * Signature: void __fastcall ArenaLevel_Toob_Init(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, scene, board, level. Calls: RumbleBoard_Toob_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt, AthenaString_Format, Scene_CollectByNameFilter. Offsets: 5, Lines: 53
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, scene, board, level. Calls: ArenaLevel_Toob_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt, AthenaString_Format, Scene_CollectByNameFilter. Offsets: 5, Lines: 53
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Toob_Init(int *param_1)
+void __fastcall ArenaLevel_Toob_Init(int *param_1)
 
 {
   void *pvVar1;

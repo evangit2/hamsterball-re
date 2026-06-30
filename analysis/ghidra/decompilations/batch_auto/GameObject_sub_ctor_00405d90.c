@@ -13,7 +13,7 @@
  *   4. Sets +0x80C = 0x32 (50 decimal) — likely a type or category ID
  *
  * Cross-references:
- *   - 0x41EFAA: BoardLevel9_Odd_ctor — constructing Odd Race level objects
+ *   - 0x41EFAA: LevelBoard_Odd_ctor — constructing Odd Race level objects
  *
  * Struct offsets:
  *   ball+0x80C: Type/category ID (set to 50)

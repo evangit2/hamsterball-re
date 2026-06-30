@@ -1,21 +1,29 @@
 /*
- * Hamsterball FPS Unlock DLL
+ * Hamsterball FPS Unlock DLL v2 — Fixed Rotation Speed
  *
- * Removes the game's built-in frame rate caps:
- *   1. App+0x16C (target_fps=100)  → set to 1000 (unlimited update rate)
- *   2. App+0x170 (render_fps=75)    → set to 1000 (unlimited render rate)
- *   3. Render-skip conditional at 0x46BF55 → NOP'd (always render)
+ * Removes the game's built-in RENDER frame rate cap while preserving
+ * the original PHYSICS update rate. This decouples rendering from
+ * physics, giving smooth high-FPS visuals without accelerating
+ * ball rotation or other physics-driven animations.
  *
- * The game normally caps updates at 100 Hz and rendering at 75 Hz.
- * This DLL patches the values at runtime after the game initializes,
- * allowing uncapped frame rates up to 1000 FPS (limited only by
- * hardware + vsync driver setting).
+ * Root cause of v1 rotation bug:
+ *   v1 set BOTH target_fps (physics) and render_fps to 1000.
+ *   Ball_Update advances rotation by a FIXED increment per tick
+ *   (not scaled by dt), so running physics at 1000Hz made the ball
+ *   spin 10x faster.
  *
- * Build: i686-w64-mingw32-gcc -shared -o fps_unlock.dll fps_unlock.c \
- *          -Wl,--enable-stdcall-fixup
+ * v2 fix: Only unlock render_fps. Keep target_fps at 100 (original).
+ *   - App+0x16C (target_fps=100)  → LEFT UNCHANGED (physics stays 100Hz)
+ *   - App+0x170 (render_fps=75)   → set to 1000 (unlimited render rate)
+ *   - Render-skip JBE at 0x46BF55 → NOP'd (always render when possible)
  *
- * Usage: Inject into Hamsterball.exe using any DLL injector.
- *        Or rename to dinput8.dll for auto-load (proxy stub).
+ * Build: i686-w64-mingw32-gcc -shared -o bass.dll fps_unlock.c \
+ *          -lwinmm -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
+ *          -Wl,--add-stdcall-alias
+ *
+ * Usage: Rename to bass.dll and place in Hamsterball game directory.
+ *        (Original bass.dll must be renamed to bass_real.dll first.)
+ *        Or inject into Hamsterball.exe using any DLL injector.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -27,8 +35,8 @@
 #define GAME_BASE_REAL 0x00400000
 
 /* App struct offsets (from App_Ctor at 0x46DC40) */
-#define APP_TARGET_FPS_OFFSET  0x16C   /* int32, default 100 */
-#define APP_RENDER_FPS_OFFSET  0x170   /* int32, default 75  */
+#define APP_TARGET_FPS_OFFSET  0x16C   /* int32, default 100 — PHYSICS tick rate */
+#define APP_RENDER_FPS_OFFSET  0x170   /* int32, default 75  — RENDER frame rate */
 
 /* Address of the render-skip JBE in App_Run (0x46BF55) */
 #define RENDER_SKIP_JBE_ADDR   0x0046BF55
@@ -37,9 +45,11 @@
 /* App_Ctor address — we hook AFTER App_Run starts to ensure App is fully initialized */
 #define APP_RUN_ADDR 0x0046BD80
 
-/* New FPS values */
-#define NEW_TARGET_FPS  1000
-#define NEW_RENDER_FPS  1000
+/* v2: Only unlock RENDER FPS. Keep PHYSICS (target_fps) at original 100Hz
+ * to prevent ball rotation speed-up. Ball_Update uses fixed-delta rotation
+ * increments, so increasing the tick rate directly speeds up rotation. */
+#define NEW_TARGET_FPS  100    /* KEEP ORIGINAL — physics stays at 100Hz */
+#define NEW_RENDER_FPS  1000   /* Unlock render rate to 1000 FPS max */
 
 /* ── Globals ─────────────────────────────────────────────────────────── */
 
@@ -64,11 +74,11 @@ static DWORD WINAPI unlock_thread(LPVOID lpParam) {
     DWORD base = (DWORD)(uintptr_t)hExe;
     DWORD offset = base - GAME_BASE_REAL;
 
-    /* ── Patch 1: App+0x16C (target FPS) ──────────────────────────── */
-    /* App_Ctor sets param_1[0x5b]=100 (App+0x16C) and param_1[0x5c]=0x4b (App+0x170).
-     * param_1 is int*, so param_1[0x5b] = byte offset 0x5b*4 = 0x16C. Correct.
-     * g_App pointer is stored at DAT_005341E0 (set in App_Ctor).
-     */
+    /* ── Patch 1: App+0x16C (target FPS) — KEEP AT 100 ──────────── */
+    /* v2 FIX: Do NOT change target_fps. Ball_Update advances rotation
+     * by a fixed increment per tick (no dt scaling). Setting target_fps
+     * to 1000 caused the ball to spin 10x faster.
+     * We only unlock render_fps below. */
 
     DWORD appAddr = 0;
     DWORD *pAppPtr = (DWORD *)(0x005341E0 + offset);
@@ -78,13 +88,10 @@ static DWORD WINAPI unlock_thread(LPVOID lpParam) {
 
     DWORD oldProtect;
     if (appAddr != 0 && !IsBadWritePtr((void *)appAddr, 0x200)) {
-        DWORD *pTargetFPS = (DWORD *)(appAddr + APP_TARGET_FPS_OFFSET);
+        /* v2: Do NOT modify target_fps — leave it at the original 100Hz */
         DWORD *pRenderFPS = (DWORD *)(appAddr + APP_RENDER_FPS_OFFSET);
 
-        if (VirtualProtect(pTargetFPS, 4, PAGE_READWRITE, &oldProtect)) {
-            *pTargetFPS = NEW_TARGET_FPS;
-            VirtualProtect(pTargetFPS, 4, oldProtect, &oldProtect);
-        }
+        /* Only unlock render_fps */
         if (VirtualProtect(pRenderFPS, 4, PAGE_READWRITE, &oldProtect)) {
             *pRenderFPS = NEW_RENDER_FPS;
             VirtualProtect(pRenderFPS, 4, oldProtect, &oldProtect);
@@ -112,14 +119,14 @@ static DWORD WINAPI unlock_thread(LPVOID lpParam) {
     {
         FILE *f = fopen("fps_unlock.log", "w");
         if (f) {
-            fprintf(f, "Hamsterball FPS Unlock v1.0\n");
-            fprintf(f, "==========================\n");
+            fprintf(f, "Hamsterball FPS Unlock v2.0 — Fixed Rotation\n");
+            fprintf(f, "=============================================\n");
             fprintf(f, "Module base: 0x%08lX (offset 0x%08lX)\n", (unsigned long)base, (unsigned long)offset);
             fprintf(f, "App pointer: 0x%08lX\n", (unsigned long)appAddr);
-            fprintf(f, "Target FPS: 100 -> %d (App+0x16C)\n", NEW_TARGET_FPS);
-            fprintf(f, "Render FPS: 75  -> %d (App+0x170)\n", NEW_RENDER_FPS);
+            fprintf(f, "Target FPS: 100 (UNCHANGED — physics stays 100Hz)\n");
+            fprintf(f, "Render FPS: 75 -> %d (App+0x170)\n", NEW_RENDER_FPS);
             fprintf(f, "Render-skip JBE at 0x%08lX: NOP'd\n", (unsigned long)(RENDER_SKIP_JBE_ADDR + offset));
-            fprintf(f, "Status: ACTIVE - FPS cap removed\n");
+            fprintf(f, "Status: ACTIVE — render cap removed, physics preserved\n");
             fclose(f);
         }
     }

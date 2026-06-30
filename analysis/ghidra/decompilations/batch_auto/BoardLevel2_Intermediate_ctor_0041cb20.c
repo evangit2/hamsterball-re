@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel2_Intermediate_ctor
+ * Function: LevelBoard_Intermediate_ctor
  * Address: 0x0041cb20
- * Signature: void * __thiscall BoardLevel2_Intermediate_ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Intermediate_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, collision, board, level. Calls: BoardLevel2_Intermediate_ctor, Board_ctor, Board, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, TipperVisual_Attach, Vec3_Init. Offsets: 16, Lines: 54
+ * Patterns: allocates, SEH frame, matrix math, collision, board, level. Calls: LevelBoard_Intermediate_ctor, Board_ctor, Board, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, TipperVisual_Attach, Vec3_Init. Offsets: 16, Lines: 54
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel2_Intermediate_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Intermediate_ctor(void *this,int param_1)
 
 {
   void *pvVar1;
@@ -24,7 +24,7 @@ void * __thiscall BoardLevel2_Intermediate_ctor(void *this,int param_1)
   ExceptionList = &local_c;
   Board_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_BoardLevel2_Intermediate_dtor_004d05a0;
+  *(undefined ***)this = &PTR_LevelBoard_Intermediate_dtor_004d05a0;
   *(char **)((int)this + 0x868) = "Board (Intermediate)";
   *(char **)((int)this + 0x29b4) = "INTERMEDIATE RACE";
   pvVar1 = operator_new(0x10d0);

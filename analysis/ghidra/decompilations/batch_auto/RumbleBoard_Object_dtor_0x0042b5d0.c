@@ -1,7 +1,7 @@
 /*
- * Function: RumbleBoard_Object_dtor
+ * Function: ArenaSceneObj_dtor
  * Address: 0x0042b5d0
- * Signature: void __fastcall RumbleBoard_Object_dtor(undefined4 *param_1)
+ * Signature: void __fastcall ArenaSceneObj_dtor(undefined4 *param_1)
  * Batch: 20
  *
  * Description:

@@ -27,7 +27,7 @@
  *     respawn, resets collision before repositioning
  *   - Scene_SetupLevel6 (0x40EA90) — Up Race level setup, resets collision
  *     for balls at the start
- *   - RumbleBoard_Odd_Init (0x414CE0) — Odd Race arena init
+ *   - ArenaLevel_Odd_Init (0x414CE0) — Odd Race arena init
  *
  * Struct offsets:
  *   ball+0x1A4: CollisionMesh pointer (size 0xCB0)

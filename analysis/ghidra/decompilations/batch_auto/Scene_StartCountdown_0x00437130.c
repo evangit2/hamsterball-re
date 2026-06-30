@@ -34,7 +34,7 @@
  *
  * Cross-references:
  *   10+ calls from various collision handlers and level setup functions:
- *   SinkPlatform_OnCollision (0x413C00), and others at 0x413FA0, 0x4143AE,
+ *   SinkPlatformArenaCollisionEvents (0x413C00), and others at 0x413FA0, 0x4143AE,
  *   0x414660, 0x414ED9, 0x4151C0, 0x4155B6, 0x41624F, etc.
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

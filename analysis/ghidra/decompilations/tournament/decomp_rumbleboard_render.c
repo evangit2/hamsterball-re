@@ -1,8 +1,8 @@
-// RumbleBoard_Render (0x421910)
+// ArenaBoard_Render (0x421910)
 // The RumbleBoard HUD and timer rendering system
 // Draws countdown timer, 4-player split HUD, tie-breaker indicator
 
-void __thiscall RumbleBoard_Render(void *this, undefined4 param_1)
+void __thiscall ArenaBoard_Render(void *this, undefined4 param_1)
 {
   // Create background scene object for timer display
   int screen_center = screen_width / 2;

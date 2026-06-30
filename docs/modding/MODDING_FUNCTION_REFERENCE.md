@@ -125,7 +125,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 - **Address:** `0x00405E00`
 - **Convention:** `__fastcall` (ECX = `param_1`)
 - **Parameters:** `param_1` (int*): `Ball*` instance
-- **Description:** Per-frame ball update. Returns early if `ball+0x324` (dead/eliminated). Clears per-frame flags, runs AI if `ball+0x31D` (is_8ball) or `scene+0x237` (battle mode), then calls physics (`Ball_AdvancePositionOrCollision`). After physics: proximity checks, trail recording, falling state machine.
+- **Description:** Per-frame ball update. Returns early if `ball+0x324` (dead/eliminated). Clears per-frame flags, runs AI if `ball+0x31D` (is_8ball) or `scene+0x237` (battle mode), then calls physics (`Ball_AdvancePositionOrCollision`). After physics: proximity checks, trail recording, respawn state machine.
 - **Key offsets:**
   - `ball+0x324` = dead/eliminated flag
   - `ball+0x31D` = `is_8ball` / AI enable flag
@@ -159,19 +159,19 @@ A comprehensive reference of every useful function for modders, extracted from G
 - **Parameters:** `this` (Ball*), `x`, `y`, `z` (floats)
 - **Description:** Sets `ball+0x758/75C/760` — camera orbit center point (smoothed display position).
 
-### `Ball_StartFall`
+### `Ball_Shrink`
 - **Address:** `0x402200`
-- **Description:** Triggered when ball falls off board. Sets `ball+0xC4C = 1` (airborne), `ball+0x284 = 13.0` (shrunk radius), plays fall sound.
+- **Description:** Odd Race E:SHRINK collision handler. Sets `ball+0xC4C = 1` (is_shrunk), `ball+0x284 = 13.0` (shrunk radius), plays fall sound.
 
 ### `Ball_FallUpdate`
 - **Address:** `0x408830`
-- **Description:** Physics update while falling. Decrements `fall_timer` (`ball+0x80C`). When timer expires, calls `Ball_FindClosestRespawnPoint`.
+- **Description:** Physics update while falling. Decrements `alpha` (`ball+0x80C`). When timer expires, calls `Ball_FindClosestRespawnPoint`.
 
 ### `Ball_FindClosestRespawnPoint`
 - **Address:** `0x405190`
 - **Description:** Scans `scene+0x546` (SAFESPOT/SAFEPOS list) for nearest valid respawn position. Writes new position to `ball+0x164..16C`.
 
-### `Ball_SplitIntoThree`
+### `Ball_Shatter`
 - **Address:** `0x408D70`
 - **Convention:** `__thiscall` (ECX = Ball* — the parent ball being replaced)
 - **Called from:** `FollowBall_Update` (0x43ECC0) — NOT from E:JUMP or any collision handler
@@ -314,7 +314,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 ## 8. Collision Event System
 
-### `CreateNoDizzy` / `CreateNoDizzy`
+### `DispatchCollisionEvents` / `DispatchCollisionEvents`
 - **Address:** `0x0040C5D0`
 - **Convention:** `__thiscall` (ECX = this)
 - **Parameters:** `this` (Level*), `ball` (Ball*), `collider` (CollisionObject*)
@@ -326,7 +326,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 | `N:UNLOCKSECRET` | — | `CheckArenaUnlock(scene)` |
 | `E:NODIZZY<TIME>N</TIME>` | — | `Ball_RecordBest(ball, duration)` |
 | `E:SAFESWITCH(data)` | — | Copy data to `ball+0xC2C` |
-| `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1` |
+| `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1` (dizzy_lock — prevents Ball_ApplyTrajectory re-firing) |
 | `E:BREAK` | — | `ball->vtable[0x20]()` bounce callback |
 | `E:JUMP` | `impactCounter < 1` | Sound, force 0.025, freeze 10 frames, `Ball_RecordBest(+200)` |
 | `E:ACTION<ONCE>TRUE</ONCE><SCORE>N</SCORE>` | — | Check duplicate at `ball+0xCB`, award score |
@@ -340,16 +340,16 @@ A comprehensive reference of every useful function for modders, extracted from G
 | `N:GOAL` | `!finished && active` | Set `goalReached=1`, play music, mark finished |
 | `N:MOUSETRAP` | — | Randomize RNG, deflect direction × trap speed |
 
-### `Level_HandleCollision`
+### `TowerCollisionEvents`
 - **Address:** `0x40DCD0`
-- **Description:** Level-specific events, then delegates to `CreateNoDizzy`:
+- **Description:** Level-specific events, then delegates to `DispatchCollisionEvents`:
   - `E:CATAPULTBOTTOM` → launch catapult
   - `E:OPENSESAME` → open all trapdoors
   - `N:TRAPDOOR` → activate trapdoor
   - `E:BITE` → `scene+0x43A0 = 25.0`
   - `E:MACETRIGGER` → activate maces
 
-### `Arena_HandleCollision`
+### `ExpertCollisionEvents`
 - **Address:** `0x40E6A0`
 - **Description:** Arena-specific events (see `docs/ARENA_SCORING.md` for full table):
   - `E:CALLHAMMER` → `CreateBonkPopup`
@@ -565,22 +565,24 @@ A comprehensive reference of every useful function for modders, extracted from G
 
 > **Full documentation:** See `docs/ARENA_SCORING.md`
 
-### `RumbleBoard_Update`
+### `ArenaBoard_Update`
 - **Address:** `0x421FE0`
 - **Description:** Per-frame arena update. Checks timer expiration, computes winner, handles tie-breaker.
 
-### `RumbleBoard_Render`
+### `ArenaBoard_Render`
 - **Address:** `0x421910`
 - **Description:** Draws countdown timer, 4-player HUD, tie-breaker overlay.
 
-### `ScoreObject_SetScore`
+### `Rotator_AddBall`
 - **Address:** `0x43B6F0`
-- **Description:** Manages score entry linked list. Always sets score value to 10 per entry.
+- **Signature:** `__thiscall Rotator_AddBall(Scene* scene, Ball* ball)`
+- **Description:** Registers ball on rotator's ball-tracking AthenaList (at `scene+0x10F0`). Allocates 8-byte entry `[ball_ptr, tick_counter=10]`. If ball already in list, resets tick to 10. Called from collision handlers on `N:ONROTATOR` (Impossible), `N:SPINNY` (Toob), `N:SWIRL` (Dizzy arena). Tick counter decremented each frame by `Catapult_Update` (0x43E600); resets to 10 on every frame of continued contact (10-frame grace period after leaving). Formerly misnamed `ScoreObject_SetScore` — has nothing to do with scoring.
 
 ### `ScoreObject_ctor`
 - **Address:** `0x44BE80`
 - **Parameters:** `this`, `App*`, `playerData*`, `label` (char*)
 - **Size:** `0x30` bytes
+- **Description:** Creates a SceneObject with vtable `PTR_RaceGoalReached_Render` (0x4D6C70). Used for race goal rendering and as the container type for rotator ball tracking.
 
 ### `ScoreDisplay_SetTime`
 - **Address:** `0x434C80`
@@ -593,72 +595,72 @@ A comprehensive reference of every useful function for modders, extracted from G
 Each level has a custom `BoardLevel` subclass with constructor and destructor:
 
 ### WarmUp (Level 1)
-- **Ctor:** `BoardLevel1_WarmUp_ctor` @ `0x41CA40`
-- **Dtor:** `BoardLevel1_WarmUp_dtor` @ `0x41CB10`
+- **Ctor:** `LevelBoard_WarmUp_ctor` @ `0x41CA40`
+- **Dtor:** `LevelBoard_WarmUp_dtor` @ `0x41CB10`
 
 ### Intermediate (Level 2)
-- **Ctor:** `BoardLevel2_Intermediate_ctor` @ `0x41CB20`
-- **Dtor:** `BoardLevel2_Intermediate_dtor` @ `0x41CC80`
+- **Ctor:** `LevelBoard_Intermediate_ctor` @ `0x41CB20`
+- **Dtor:** `LevelBoard_Intermediate_dtor` @ `0x41CC80`
 
 ### Dizzy (Level 4)
-- **Ctor:** `BoardLevel3_Dizzy_ctor` @ `0x41D060` (note: named Level3 in code)
-- **Dtor:** `BoardLevel3_Dizzy_dtor` @ `0x41D450`
+- **Ctor:** `LevelBoard_Dizzy_ctor` @ `0x41D060` (note: named Level3 in code)
+- **Dtor:** `LevelBoard_Dizzy_dtor` @ `0x41D450`
 
 ### Tower (Level 5)
-- **Ctor:** `BoardLevel5_Tower_ctor` @ `0x41E340`
-- **Dtor:** `BoardLevel5_Tower_dtor` @ `0x41E640`
+- **Ctor:** `LevelBoard_Tower_ctor` @ `0x41E340`
+- **Dtor:** `LevelBoard_Tower_dtor` @ `0x41E640`
 
 ### Expert (Level 8)
-- **Ctor:** `BoardLevel8_Expert_ctor` @ `0x41EA40`
-- **Dtor:** `BoardLevel8_Expert_dtor` @ `0x41EC90`
+- **Ctor:** `LevelBoard_Expert_ctor` @ `0x41EA40`
+- **Dtor:** `LevelBoard_Expert_dtor` @ `0x41EC90`
 
 ### Odd (Level 9)
-- **Ctor:** `BoardLevel9_Odd_ctor` @ `0x41ED80`
-- **Dtor:** `BoardLevel9_Odd_dtor` @ `0x41EE70`
+- **Ctor:** `LevelBoard_Odd_ctor` @ `0x41ED80`
+- **Dtor:** `LevelBoard_Odd_dtor` @ `0x41EE70`
 
 ### Wobbly (Level 12)
-- **Ctor:** `BoardLevel12_Wobbly_ctor` @ `0x41F110`
+- **Ctor:** `LevelBoard_Wobbly_ctor` @ `0x41F110`
 - **Dtor:** `BoardLevel12_Wobbly_dtor` @ `0x41F3C0`
 
 ### Toob
-- **Ctor:** `BoardLevel_Toob_Ctor` @ `0x41F4B0`
+- **Ctor:** `LevelBoard_Toob_ctor` @ `0x41F4B0`
 - **Dtor:** `BoardLevel_Toob_dtor` @ `0x41F720`
 
 ### Sky
-- **Ctor:** `BoardLevel_Sky_Ctor` @ `0x41F930`
+- **Ctor:** `LevelBoard_Sky_ctor` @ `0x41F930`
 - **Dtor:** `BoardLevel_Sky_Dtor` @ `0x41FBC0`
 
 ### Beginner
-- **Ctor:** `BoardLevel_Beginner_Ctor` @ `0x4200E0`
+- **Ctor:** `LevelBoard_Beginner_ctor` @ `0x4200E0`
 - **Dtor:** `BoardLevel_Beginner_Dtor` @ `0x4201D0`
 - **HandleRaceEnd:** `Board_Beginner_HandleRaceEnd` @ `0x420240`
 
 ### Up
-- **Ctor:** `BoardLevel_Up_Ctor` @ `0x420390`
+- **Ctor:** `LevelBoard_Up_ctor` @ `0x420390`
 - **Dtor:** `BoardLevel_Up_Dtor` @ `0x420550`
 
 ### Arena Level Constructors (via `TourneyMenu_CreateBoard`)
 | ID | Arena | Ctor Name | Size |
 |----|-------|-----------|------|
-| 1 | WarmUp | `RumbleBoard_Warmup_Ctor` | `0x47E0` |
-| 2 | Beginner | `RumbleBoard_Beginner_Ctor` | `0x5850` |
-| 3 | Intermediate | `RumbleBoard_Intermediate_Ctor` | `0x47E0` |
-| 4 | Dizzy | `RumbleBoard_Dizzy_Ctor` | `0x47E4` |
-| 5 | Tower | `RumbleBoard_Tower_Ctor` | `0x501C` |
-| 6 | UpArena | `RumbleBoard_UpArena_Ctor` | `0x47E4` |
-| 7 | NeonArena | `RumbleBoard_NeonArena_ctor` | `0x47E8` |
-| 8 | ExpertArena | `RumbleBoard_ExpertArena_ctor` | `0x4BFC` |
-| 9 | OddArena | `RumbleBoard_OddArena_ctor` | `0x47E0` |
-| 10 | ToobArena | `RumbleBoard_ToobArena_ctor` | `0x5C6C` |
-| 11 | WobblyArena | `RumbleBoard_WobblyArena_ctor` | `0x47E4` |
+| 1 | WarmUp | `ArenaBoard_WarmUp_ctor` | `0x47E0` |
+| 2 | Beginner | `ArenaBoard_Beginner_ctor` | `0x5850` |
+| 3 | Intermediate | `ArenaBoard_Intermediate_ctor` | `0x47E0` |
+| 4 | Dizzy | `ArenaBoard_Dizzy_ctor` | `0x47E4` |
+| 5 | Tower | `ArenaBoard_Tower_ctor` | `0x501C` |
+| 6 | UpArena | `ArenaBoard_Up_ctor` | `0x47E4` |
+| 7 | NeonArena | `ArenaBoard_Neon_ctor` | `0x47E8` |
+| 8 | ExpertArena | `ArenaBoard_Expert_ctor` | `0x4BFC` |
+| 9 | OddArena | `ArenaBoard_Odd_ctor` | `0x47E0` |
+| 10 | ToobArena | `ArenaBoard_Toob_ctor` | `0x5C6C` |
+| 11 | WobblyArena | `ArenaBoard_Wobbly_ctor` | `0x47E4` |
 | 12 | Glass | `BoardLevel_Glass_ctor` | `0x47E0` |
-| 13 | SkyArena | `RumbleBoard_SkyArena_ctor` | `0x4CFC` |
-| 14 | WarmupArena | `RumbleBoard_WarmupArena_ctor` | `0x47E0` |
-| 15 | Impossible | `RumbleBoard_Impossible_ctor` | `0x47E4` |
+| 13 | SkyArena | `ArenaBoard_Sky_ctor` | `0x4CFC` |
+| 14 | WarmupArena | `ArenaBoard_Master_ctor` | `0x47E0` |
+| 15 | Impossible | `ArenaBoard_Impossible_ctor` | `0x47E4` |
 
 ### `TourneyMenu_CreateBoard`
 - **Address:** `0x426780`
-- **Description:** Giant switch statement (cases 1–15) that allocates and constructs the correct `RumbleBoard` subclass for the selected arena level.
+- **Description:** Giant switch statement (cases 1–15) that allocates and constructs the correct `ArenaBoard` subclass for the selected arena level.
 
 ---
 
@@ -706,7 +708,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | 5 | `0x14` | `ApplyForceWithMultipliers` | Force with scale |
 | 7 | `0x1C` | `CollisionHandler` | Custom collision response |
 | 8 | `0x20` | `BounceCallback` | Called on `E:BREAK` events |
-| 30 | `0x78` | `PreSplitCallback` | Before `Ball_SplitIntoThree` |
+| 30 | `0x78` | `PreSplitCallback` | Before `Ball_Shatter` |
 | 32 | `0x80` | `PostFactoryInit` | After bumper/sawblade creation |
 
 ### Scene/Board Vtable (`0x4D0260`)
@@ -756,7 +758,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x00` | void** | vtable | `0x4CF3A0` |
 | `+0x04` | void* | scene | Parent Scene* |
 | `+0x14` | int32 | player_index | -1=AI, 0=P1, 1=P2 |
-| `+0x18` | char[0x14] | rumble_timer1 | RumbleBoard timer sub-object |
+| `+0x18` | char[0x14] | toggle_timer1 | ArenaBoard timer sub-object |
 | `+0x60` | float[3] | position | Physics position (X, Y, Z) |
 | `+0x150` | float | accumulated_time | Delta-time accumulator |
 | `+0x158` | float[3] | prev_pos | Previous frame position |
@@ -772,13 +774,13 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x254` | uint8 | uses_alpha | True if color_a != 1.0 |
 | `+0x260` | uint8 | boost_hit_flag | Set on boost pad contact |
 | `+0x278` | float | gravity_scale | Gravity multiplier (default 0.1) |
-| `+0x281` | uint8 | is_falling | 1 when airborne |
+| `+0x281` | uint8 | unused_init_flag | DEAD: set to 1 in ctor, never read |
 | `+0x284` | float | radius | Collision + render size (default 26.0) |
 | `+0x2A4` | float | spin_rate | Angular spin factor (5.0) |
 | `+0x2BC` | float[3] | force | Accumulated input force |
 | `+0x2CC` | uint8 | force_disable | 1 = skip Ball_ApplyForce |
 | `+0x2DC` | float[3] | checkpoint | Last safe position |
-| `+0x2E8` | uint8 | splitting | Set during Ball_SplitIntoThree |
+| `+0x2E8` | uint8 | splitting | Set during Ball_Shatter |
 | `+0x2F0` | uint32 | force_count | Forces applied this frame |
 | `+0x2F9` | uint8 | frozen | Stuck on surface |
 | `+0x2FC` | uint32 | freeze_timer | Countdown while frozen |
@@ -792,7 +794,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0xC28` | char** | display_string | Floating text above ball |
 | `+0xC3C` | uint8 | teleport_active | Teleport in progress |
 | `+0xC40` | float[3] | teleport_dest | Destination coordinates |
-| `+0xC4C` | uint8 | airborne | Airborne state |
+| `+0xC4C` | uint8 | is_shrunk | Odd Race shrunk state (E:SHRINK=1, E:GROW=0) |
 | `+0xC60` | int32 | battle_mode | 3=battle, 5=split |
 | `+0xC68` | float | friction | 0.55 in battle mode |
 | `+0xC6C` | float | bounciness | 1.0 in battle mode |
@@ -933,7 +935,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | UI menus | `docs/UI_MENU_SYSTEM.md` |
 | MESHWORLD format | `docs/MESHWORLD_FORMAT.md` |
 | Key decompilations | `docs/KEY_DECOMPILATIONS.md` |
-| RumbleBoard system | `docs/RUMBLEBOARD_SYSTEM.md` |
+| ArenaBoard system | `docs/ARENA_BOARD_SYSTEM.md` |
 | Game state lifecycle | `docs/GAME_STATE_RACE_LIFECYCLE.md` |
 
 ---

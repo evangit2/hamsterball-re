@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel_Sky_Ctor
+ * Function: LevelBoard_Sky_ctor
  * Address: 0x0041f930
- * Signature: void * __thiscall BoardLevel_Sky_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Sky_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: BoardLevel_Sky_Ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 27, Lines: 104
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: LevelBoard_Sky_ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 27, Lines: 104
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel_Sky_Ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Sky_ctor(void *this,int param_1)
 
 {
   int iVar1;

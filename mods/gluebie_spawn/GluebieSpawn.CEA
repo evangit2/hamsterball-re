@@ -11,7 +11,7 @@
 //      -> set position -> AthenaList_Append to gluebie list + general list
 //   2. Per-frame proximity check: iterate board's Gluebie list.
 //      When ball is within 30 units AND ball+0x2CC==0:
-//      Call CreateNoDizzy(board, ball, fake_entry) with fake N:TARPIT name.
+//      Call DispatchCollisionEvents(board, ball, fake_entry) with fake N:TARPIT name.
 //      This triggers EXACT original tar logic: 0x2CC=1, 0x768=0, tar sound.
 //
 // HOTKEY: Numpad 7 spawns Gluebie at player position
@@ -226,16 +226,16 @@ TarCode_ProxLoop:
   fstp st(0)                          // pop distance
   jae TarCode_ProxNext                 // too far
 
-  // --- Ball is near! Call CreateNoDizzy ---
-  // CreateNoDizzy(board, ball, entry): ECX=board, push entry, push ball
+  // --- Ball is near! Call DispatchCollisionEvents ---
+  // DispatchCollisionEvents(board, ball, entry): ECX=board, push entry, push ball
   mov edx,[ebp+0x14]                  // board
   push fake_coll_entry                 // collision_entry
   push ebp                            // ball
   mov ecx,edx                        // board
-  call 0040C5D0                      // CreateNoDizzy (RET 0x8)
+  call 0040C5D0                      // DispatchCollisionEvents (RET 0x8)
   // Callee cleans 8 bytes — no add esp needed
 
-  // --- CreateNoDizzy set 0x2CC=1, 0x768=0, played sound ---
+  // --- DispatchCollisionEvents set 0x2CC=1, 0x768=0, played sound ---
   jmp TarCode_End
 
 TarCode_ProxNext:

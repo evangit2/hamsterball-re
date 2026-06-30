@@ -186,7 +186,7 @@ void __fastcall Ball_SplitAndExplode(int param_1)
       pvVar13 = operator_new(0x28);
       uStack_4 = 1;
       if (pvVar13 != (void *)0x0) {
-        pvVar14 = RumbleScore_ctor(pvVar13,*(undefined4 *)(*(int *)(param_1 + 0x14) + 0x878));
+        pvVar14 = ArenaScoreParticle_ctor(pvVar13,*(undefined4 *)(*(int *)(param_1 + 0x14) + 0x878));
       }
       uStack_4 = 0xffffffff;
       if ((float *)((int)pvVar14 + 8) != afStack_18) {

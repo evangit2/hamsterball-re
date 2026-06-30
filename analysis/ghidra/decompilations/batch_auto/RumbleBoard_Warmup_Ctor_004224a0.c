@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Warmup_Ctor
+ * Function: ArenaBoard_WarmUp_ctor
  * Address: 0x004224a0
- * Signature: void * __thiscall RumbleBoard_Warmup_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_WarmUp_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: RumbleBoard_Warmup_Ctor, RumbleBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 10, Lines: 28
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_WarmUp_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 10, Lines: 28
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_Warmup_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_WarmUp_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -21,9 +21,9 @@ void * __thiscall RumbleBoard_Warmup_Ctor(void *this,int param_1)
   puStack_8 = &LAB_004ca8e8;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_DeletingDtor_004d1428;
+  *(undefined ***)this = &PTR_ArenaBoard_DeletingDtor_004d1428;
   *(char **)((int)this + 0x868) = "RumbleBoard (Warmup Arena)";
   *(char **)((int)this + 0x4344) = "Hamster Nation";
   *(char **)((int)this + 0x29b4) = "WARM-UP ARENA";

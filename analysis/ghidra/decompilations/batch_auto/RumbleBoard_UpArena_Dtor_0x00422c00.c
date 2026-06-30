@@ -1,11 +1,11 @@
 /*
- * Function: RumbleBoard_UpArena_Dtor
+ * Function: ArenaBoard_Up_Dtor
  * Address: 0x00422c00
- * Signature: void __fastcall RumbleBoard_UpArena_Dtor(undefined4 *param_1)
+ * Signature: void __fastcall ArenaBoard_Up_Dtor(undefined4 *param_1)
  * Parameters: param_1: RumbleBoard* this — the Up Arena board to destroy
  *
  * Description:
- * Destructor for Up Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls RumbleBoard_dtor for base cleanup.
+ * Destructor for Up Arena board. Sets vtable, frees sub-mesh at +0x11F8 via vtable delete, then calls ArenaBoard_dtor for base cleanup.
  *
  * Struct offsets: +0x11F8 (sub-mesh)
  * Cross-references: 1 call, 0 data refs

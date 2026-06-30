@@ -4,7 +4,7 @@
  * Signature: void * __thiscall Ball_Split_ctor(void *this, int param_1)
  *
  * Description:
- * Constructor for split balls (created when Ball_SplitIntoThree divides a ball
+ * Constructor for split balls (created when Ball_Shatter divides a ball
  * into three smaller copies). Calls Ball_ctor2 for full initialization, then
  * applies split-specific settings:
  *   1. Sets vtable to PTR_GameObject_sub_dtor_004cf560 (split ball vtable)
@@ -16,10 +16,10 @@
  *      radius, ensuring split balls move at an appropriate speed for their size.
  *   4. Sets scale (+0xC60) = 5 (visual scale — split balls are scaled down)
  *
- * Cross-references (3 call sites, all from Ball_SplitIntoThree):
+ * Cross-references (3 call sites, all from Ball_Shatter):
  *   - 0x409151: first split ball creation
  *   - 0x40951F: second split ball creation
- *   - 0x408E68: third split ball creation (within Ball_SplitIntoThree itself)
+ *   - 0x408E68: third split ball creation (within Ball_Shatter itself)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

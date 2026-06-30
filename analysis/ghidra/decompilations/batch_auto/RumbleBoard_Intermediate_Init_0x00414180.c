@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_Intermediate_Init
+ * Function: ArenaLevel_Intermediate_Init
  * Address: 0x00414180
  *
  * Description:

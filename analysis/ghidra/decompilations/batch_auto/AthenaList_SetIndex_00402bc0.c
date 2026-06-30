@@ -28,8 +28,8 @@
  *   - Sound_PlayChannel — selecting audio channels
  *   - Scene_RenderAllObjects — iterating renderable objects
  *   - FollowBall_Update (3 calls) — AI ball iteration
- *   - BoardLevel3_ctor — Dizzy Race level construction
- *   - RumbleObject_Update — rumble object iteration
+ *   - LevelBoard_Dizzy_ctor — Dizzy Race level construction
+ *   - ArenaObject_Update — rumble object iteration
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

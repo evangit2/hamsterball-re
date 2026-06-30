@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Tower_Ctor
+ * Function: ArenaBoard_Tower_ctor
  * Address: 0x004228c0
- * Signature: void * __thiscall RumbleBoard_Tower_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Tower_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: RumbleBoard_Tower_Ctor, RumbleBoard_ctor, AthenaList_Init, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, MeshWorld_ctor. Offsets: 17, Lines: 65
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: ArenaBoard_Tower_ctor, ArenaBoard_ctor, AthenaList_Init, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, MeshWorld_ctor. Offsets: 17, Lines: 65
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_Tower_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Tower_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -22,9 +22,9 @@ void * __thiscall RumbleBoard_Tower_Ctor(void *this,int param_1)
   puStack_8 = &LAB_004ca975;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_OddArena_DeletingDtor_004d1740;
+  *(undefined ***)this = &PTR_ArenaBoard_Odd_DeletingDtor_004d1740;
   AthenaList_Init((void *)((int)this + 0x47e4),0);
   local_4._0_1_ = 1;
   AthenaList_Init((void *)((int)this + 0x4c00),0);

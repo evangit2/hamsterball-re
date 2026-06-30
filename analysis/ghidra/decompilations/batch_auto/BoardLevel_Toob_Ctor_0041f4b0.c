@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel_Toob_Ctor
+ * Function: LevelBoard_Toob_ctor
  * Address: 0x0041f4b0
- * Signature: void * __thiscall BoardLevel_Toob_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Toob_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: BoardLevel_Toob_Ctor, Board_ctor, _eh_vector_constructor_iterator_, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 26, Lines: 93
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: LevelBoard_Toob_ctor, Board_ctor, _eh_vector_constructor_iterator_, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 26, Lines: 93
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel_Toob_Ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Toob_ctor(void *this,int param_1)
 
 {
   int iVar1;

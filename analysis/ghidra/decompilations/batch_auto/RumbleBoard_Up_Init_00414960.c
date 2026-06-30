@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Up_Init
+ * Function: ArenaLevel_Up_Init
  * Address: 0x00414960
- * Signature: void __fastcall RumbleBoard_Up_Init(int *param_1)
+ * Signature: void __fastcall ArenaLevel_Up_Init(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: RumbleBoard_Up_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 36
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: ArenaLevel_Up_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 36
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Up_Init(int *param_1)
+void __fastcall ArenaLevel_Up_Init(int *param_1)
 
 {
   void *pvVar1;

@@ -1,6 +1,6 @@
 /* water_physics.c - E:Water event plane physics implementation
  *
- * Based on Ball_Update (0x405E00) and CreateNoDizzy (0x40C5D0) from docs.
+ * Based on Ball_Update (0x405E00) and DispatchCollisionEvents (0x40C5D0) from docs.
  *
  * Water physics rules (user-requested behavior):
  *   1. On ENTER: If falling (vel_y < 0), multiply Y velocity by 0.7 (lose 30%)

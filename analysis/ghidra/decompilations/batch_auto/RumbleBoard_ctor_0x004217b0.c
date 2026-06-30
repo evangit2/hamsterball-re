@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_ctor
+ * Function: ArenaBoard_ctor
  * Address: 0x004217b0
  *
  * Description:

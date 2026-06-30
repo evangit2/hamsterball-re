@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_WarmUp_Init
+ * Function: ArenaLevel_WarmUp_Init
  * Address: 0x00413c20
  *
  * Description:

@@ -36,7 +36,7 @@
 //   gravity = 0.5
 //   speed_scale = 0.1 (3DCCCCCDh)
 //   gravity_multiplier = 1.00625 (3F866666h)
-//   is_falling = 0
+//   is_stunned = 0
 //   active_flag (+0x769) = 1
 
 void Scene_SpawnBallsAndObjects(Scene *scene)
@@ -78,7 +78,7 @@ void Scene_SpawnBallsAndObjects(Scene *scene)
     ball->radius = 26.0f;
     ball->gravity_mult = 1.00625f;
     ball->max_speed = 5.0f;
-    ball->is_falling = false;
+    ball->is_stunned = false;
     ball->active = true;
     
     AthenaList_Append(scene->balls, ball);

@@ -12,7 +12,7 @@
  *      - +0x450 (affiliate key, capacity at +0x455): if capacity > 0xF, _free heap
  *      - +0x449 (serial key, capacity at +0x44E): if capacity > 0xF, _free heap
  *      Reset both to SSO mode (capacity=0xF, length=0)
- *   3. Calls RumbleBoard_CleanupTimer on +0x443
+ *   3. Calls ToggleTimer_Cleanup on +0x443
  *   4. Calls BaseObject_Init on 5 sub-objects: +0x43B, +0x434, +0x42D, +0x426, +0x41F
  *   5. Calls SceneObject_dtor (base class cleanup)
  *

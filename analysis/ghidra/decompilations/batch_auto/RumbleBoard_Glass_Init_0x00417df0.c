@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_Glass_Init
+ * Function: ArenaLevel_Glass_Init
  * Address: 0x00417df0
  *
  * Description:

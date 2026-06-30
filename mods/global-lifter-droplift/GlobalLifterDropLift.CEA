@@ -1,0 +1,294 @@
+[ENABLE]
+ 
+// =====================================================
+// Global Lifter (DropLift) Spawner
+// =====================================================
+// Spawns a Lifter at Player 1's position in any level.
+// The lifter rises when the ball approaches (like the Up Race lifter).
+// Uses the same Lifter_ctor (0x434E60) as the original game.
+//
+// The lifter mesh is loaded from "Levels\Level6-Lifter" into App+0x5C8
+// (the global lifter mesh slot) if not already loaded.
+//
+// When ball is within proximity radius, Lifter_TriggerDrop (0x435170)
+// is called to make the lifter rise.
+//
+// Based on the SpeedCylinder global spawner pattern.
+// =====================================================
+ 
+alloc(SpawnCode, 4096)
+alloc(SpawnLifter, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_30, 4)
+alloc(lifter_ptr, 4)
+alloc(lifter_mesh_loaded, 4)
+alloc(lifter_cooldown, 4)
+alloc(float_proximity, 4)
+ 
+registersymbol(SpawnLifter)
+ 
+SpawnLifter:
+ dd 0
+ 
+saved_board:
+ dd 0
+ 
+playerX:
+ dd 0
+ 
+playerY:
+ dd 0
+ 
+playerZ:
+ dd 0
+ 
+float_30:
+ dd 0x41F00000  // 30.0 Y offset
+ 
+lifter_ptr:
+ dd 0
+ 
+lifter_mesh_loaded:
+ dd 0
+ 
+lifter_cooldown:
+ dd 0
+ 
+float_proximity:
+ dd 0x42C80000  // 100.0 proximity radius
+ 
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(skip_mesh_load)
+label(skip_prox)
+label(prox_far_x)
+label(prox_far_z)
+label(do_trigger)
+label(trigger_done)
+ 
+SpawnCode:
+ 
+save_pos:
+ // Save player 1 position every frame (when not falling)
+ cmp dword [esi+0x18], 0
+ jne check_spawn
+ mov eax, [esi+0x164]
+ mov [playerX], eax
+ mov eax, [esi+0x168]
+ mov [playerY], eax
+ mov eax, [esi+0x16C]
+ mov [playerZ], eax
+ 
+ // === PROXIMITY CHECK: trigger lifter when ball is near ===
+ mov eax, [lifter_ptr]
+ test eax, eax
+ jz check_spawn
+ mov ecx, [eax]
+ test ecx, ecx
+ jz check_spawn
+ 
+ // Check cooldown
+ cmp dword [lifter_cooldown], 0
+ jne check_spawn
+ dec dword [lifter_cooldown]
+ 
+ // Check if ball is near the lifter (XZ plane)
+ // Lifter position at +0x10D8 (x), +0x10DC (y), +0x10E0 (z)
+ fld dword [eax+0x10D8]
+ fsub dword [esi+0x164]
+ fabs
+ fcom dword [float_proximity]
+ fnstsw ax
+ test ah, 41h
+ jnz prox_far_x
+ 
+ fld dword [eax+0x10E0]
+ fsub dword [esi+0x16C]
+ fabs
+ fcom dword [float_proximity]
+ fnstsw ax
+ test ah, 41h
+ jnz prox_far_z
+ fcomp st(1)
+ 
+ // Ball is near — trigger the lifter!
+ jmp do_trigger
+ 
+prox_far_x:
+ fcomp st(0)
+ jmp skip_prox
+ 
+prox_far_z:
+ fcomp st(0)
+ jmp skip_prox
+ 
+do_trigger:
+ // Call Lifter_TriggerDrop (0x435170)
+ // __thiscall: ECX = lifter ptr
+ mov ecx, [lifter_ptr]
+ call 00435170
+ 
+ // Set cooldown (60 frames = 1 second)
+ mov dword [lifter_cooldown], 60
+ 
+trigger_done:
+ 
+skip_prox:
+ 
+check_spawn:
+ cmp dword [SpawnLifter], 0
+ je original_code
+ cmp dword [esi+0x18], 0
+ jne original_code
+ mov dword [SpawnLifter], 0
+ 
+ pushad
+ mov eax, [esi+0x14]
+ mov [saved_board], eax
+ test eax, eax
+ jz done_spawn
+ mov edx, [eax+0x878]
+ test edx, edx
+ jz done_spawn
+ mov edx, [edx+0x174]
+ test edx, edx
+ jz done_spawn
+ 
+ // === LOAD LIFTER MESH IF NEEDED ===
+ // Check if App+0x5C8 already has a lifter mesh
+ mov edx, [esi+0x14]       // board
+ mov edx, [edx+0x878]      // App
+ test edx, edx
+ jz done_spawn
+ mov eax, [edx+0x5C8]     // App+0x5C8 = lifter mesh
+ test eax, eax
+ jnz skip_mesh_load
+ 
+ // Load mesh: MeshWorld_ctor(new, d3d_device, "Levels\Level6-Lifter")
+ push 0x10D0
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ 
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]      // App
+ mov edx, [edx+0x174]      // D3D device
+ push 004D3308              // "Levels\Level6-Lifter" string
+ push edx                   // D3D device
+ mov ecx, eax              // this = new allocation
+ call 00461510              // MeshWorld_ctor
+ 
+ // Store at App+0x5C8
+ mov edx, [saved_board]
+ mov edx, [edx+0x878]      // App
+ mov [edx+0x5C8], eax      // App+0x5C8 = lifter mesh
+ 
+skip_mesh_load:
+ 
+ // === CREATE LIFTER ===
+ // Allocate 0x10FC bytes for Lifter struct
+ push 0x10FC
+ call 004BA57B
+ add esp, 4
+ test eax, eax
+ jz done_spawn
+ mov edi, eax
+ 
+ // Add Y offset (spawn 30 units above ball position)
+ fld dword [playerY]
+ fadd dword [float_30]
+ fstp dword [playerY]
+ 
+ // Call Lifter_ctor(this, board, x, y, z)
+ // __thiscall: ECX = this, push board, push x, push y, push z (ret 0x10)
+ sub esp, 0xC
+ mov edx, [playerX]
+ mov [esp], edx
+ mov edx, [playerY]
+ mov [esp+4], edx
+ mov edx, [playerZ]
+ mov [esp+8], edx
+ mov edx, [saved_board]
+ push edx
+ mov ecx, edi
+ call 00434E60
+ 
+ // Store lifter ptr
+ mov [lifter_ptr], edi
+ 
+ // === REGISTER IN LISTS ===
+ 
+ // 1. Active objects list (board+0x2578)
+ push edi
+ mov ecx, [saved_board]
+ add ecx, 0x2578
+ call 00453810
+ 
+ // 2. Collision list (board+0x10EC)
+ mov eax, [edi+0x10D4]     // collision mesh (CollisionLevel)
+ test eax, eax
+ jz done_spawn
+ push eax
+ mov ecx, [saved_board]
+ add ecx, 0x10EC
+ call 00453810
+ 
+ // 3. Collision board list (board+0x8B0→+0x18)
+ mov edx, [saved_board]
+ mov edx, [edx+0x8B0]
+ test edx, edx
+ jz done_spawn
+ mov eax, [edi+0x10D4]
+ push eax
+ lea ecx, [edx+0x18]
+ call 00453810
+ 
+ // 4. Render list (board+0x8AC→+0x480→+0x1C)
+ mov edx, [saved_board]
+ mov edx, [edx+0x8AC]
+ test edx, edx
+ jz done_spawn
+ mov edx, [edx+0x480]
+ test edx, edx
+ jz done_spawn
+ push edi
+ lea ecx, [edx+0x1C]
+ call 00453810
+ 
+ // 5. Store at board+0x436C (for E:DROPLIFT handler)
+ mov edx, [saved_board]
+ mov [edx+0x436C], edi
+ 
+done_spawn:
+ popad
+ 
+original_code:
+ mov eax, [esi+0x0c5c]
+ jmp 00405E28
+ 
+00405E22:
+ jmp SpawnCode
+ nop
+ 
+[DISABLE]
+00405E22:
+ db 8B 86 5C 0C 00 00
+ 
+dealloc(SpawnCode)
+dealloc(SpawnLifter)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_30)
+dealloc(lifter_ptr)
+dealloc(lifter_mesh_loaded)
+dealloc(lifter_cooldown)
+dealloc(float_proximity)
+unregistersymbol(SpawnLifter)

@@ -10,6 +10,8 @@ and modding capabilities through Ghidra decompilation, DLL proxy mods, and custo
 
 ## What's in this repo
 
+> 🗺️ **[Interactive Knowledge Map](https://evangit2.github.io/hamsterball-re/)** — browse all 183 documents as an interactive graph with full-text search (Ctrl+K).
+
 ### 📖 Documentation (81 files across 11 categories)
 
 Comprehensive reverse-engineering documentation generated from Ghidra decompilation of the

@@ -1,7 +1,7 @@
 /*
- * Function: BoardLevel3_Dizzy_dtor
+ * Function: LevelBoard_Dizzy_dtor
  * Address: 0x00425080
- * Signature: void * __thiscall BoardLevel3_Dizzy_dtor(void *this, byte param_1)
+ * Signature: void * __thiscall LevelBoard_Dizzy_dtor(void *this, byte param_1)
  * Parameters: this: BoardLevel3* | param_1: byte — delete flag
  *
  * Description:

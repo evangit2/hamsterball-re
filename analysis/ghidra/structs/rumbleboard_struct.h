@@ -1,10 +1,10 @@
 // Hamsterball RumbleBoard Struct Definition
 // RumbleBoard is embedded in Scene (+0x221, +0x226) and Board (+0x884, +0x898)
-// Size: 0x14 bytes (20 bytes) - from RumbleBoard_InitTimer calls
+// Size: 0x14 bytes (20 bytes) - from ToggleTimer_Init calls
 //
 // Used for haptic feedback timing when the ball hits surfaces.
-// The game calls RumbleBoard_InitTimer at construction and 
-// RumbleBoard_CleanupTimer at destruction.
+// The game calls ToggleTimer_Init at construction and 
+// ToggleTimer_Cleanup at destruction.
 
 #ifndef GAME_RUMBLEBOARD_H
 #define GAME_RUMBLEBOARD_H

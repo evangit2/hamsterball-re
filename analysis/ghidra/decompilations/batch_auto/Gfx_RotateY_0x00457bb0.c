@@ -12,7 +12,7 @@
  *   N/A (stack-local matrix)
  *
  * Cross-references:
- *   6+ refs from RumbleObject_Update, vtables, Ball_Update
+ *   6+ refs from ArenaObject_Update, vtables, Ball_Update
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

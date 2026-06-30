@@ -4,9 +4,9 @@
 
 Hooks three collision dispatch functions in Hamsterball.exe to log all collision events:
 
-1. **CreateNoDizzy** (0x0040C5D0) — shared base handler, processes ALL event types
-2. **Level_HandleCollision** (0x0040DCD0) — race level events (catapults, trapdoors, maces)
-3. **Arena_HandleCollision** (0x0040E6A0) — arena events (hammers, saws, judges, bells)
+1. **DispatchCollisionEvents** (0x0040C5D0) — shared base handler, processes ALL event types
+2. **TowerCollisionEvents** (0x0040DCD0) — Tower board events (catapults, trapdoors, maces)
+3. **ExpertCollisionEvents** (0x0040E6A0) — Expert board events (hammers, saws, judges, bells)
 
 ## Files
 
@@ -29,7 +29,7 @@ Hooks three collision dispatch functions in Hamsterball.exe to log all collision
 
 ```ini
 # Enable/disable individual hooks (1=on, 0=off)
-hook_CreateNoDizzy=1
+hook_DispatchCollisionEvents=1
 hook_Level=1
 hook_Arena=1
 
@@ -50,7 +50,7 @@ timestamp_ms,handler,scene_ptr,ball_ptr,collobj_ptr,event_name,x,y,z
 ```
 
 - `timestamp_ms` — milliseconds since Windows boot (GetTickCount)
-- `handler` — which function was called (CreateNoDizzy/Level_HandleCollision/Arena_HandleCollision)
+- `handler` — which function was called (DispatchCollisionEvents/TowerCollisionEvents/ExpertCollisionEvents)
 - `scene_ptr` — pointer to the Scene/BoardLevel object (ECX/this)
 - `ball_ptr` — pointer to the Ball object
 - `collobj_ptr` — pointer to the collision pair array
@@ -64,20 +64,20 @@ function. When the game calls a collision handler, our hook intercepts the call,
 logs the event details, then forwards to the original function via a trampoline.
 
 ```
-Hamsterball.exe calls CreateNoDizzy(this, ball, collObj)
-  → jmp to hook_CreateNoDizzy
+Hamsterball.exe calls DispatchCollisionEvents(this, ball, collObj)
+  → jmp to hook_DispatchCollisionEvents
     → log event to CSV
     → call original via trampoline
       → execute relocated original bytes
-      → jmp back to CreateNoDizzy+5
+      → jmp back to DispatchCollisionEvents+5
 ```
 
 ## Technical Details
 
 - **Target addresses** (image base 0x400000):
-  - CreateNoDizzy: VA 0x0040C5D0
-  - Level_HandleCollision: VA 0x0040DCD0
-  - Arena_HandleCollision: VA 0x0040E6A0
+  - DispatchCollisionEvents: VA 0x0040C5D0
+  - TowerCollisionEvents: VA 0x0040DCD0
+  - ExpertCollisionEvents: VA 0x0040E6A0
 - **Calling convention**: `__thiscall` (ECX = this/Scene pointer, stack = ball, collObj)
 - **ASLR**: The DLL computes the actual address by adding the module base offset
 - **Trampoline**: 5-byte original prologue + jmp back to original+5
@@ -103,7 +103,7 @@ i686-w64-mingw32-gcc -o injector.exe injector.c
 ## Limitations
 
 - Does not modify game behavior (logging only). For actual modding, extend
-  `my_CreateNoDizzy_handler` etc. to modify parameters or return values.
+  `my_DispatchCollisionEvents_handler` etc. to modify parameters or return values.
 - Inline hook assumes first 5 bytes of target function are complete instructions
   (no instruction boundary split at byte 5). Verified for Hamsterball.exe.
 - Requires Windows (32-bit process). Won't work under Wine (needs SEH + inline hooks).

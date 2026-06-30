@@ -38,8 +38,8 @@
  *   Gear_AdvanceAlongPath(this+0xFC8, X, Y, Z)
  *
  * STEP 6: Rumble timer ticks
- *   RumbleBoard_TickTimer(this+0x221)
- *   RumbleBoard_TickTimer(this+0x226)
+ *   ToggleTimer_Tick(this+0x221)
+ *   ToggleTimer_Tick(this+0x226)
  *
  * STEP 7: Rumble camera shake decay
  *   this+0xE93 = shake_active flag

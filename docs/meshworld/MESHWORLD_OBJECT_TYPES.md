@@ -60,7 +60,7 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 | E:LIGHTSOFF/LIGHTSON | Neon lights toggle |
 | E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2 | Boundary limits |
 | E:MACETRIGGER | Trigger mace swing |
-| E:NODIZZY | Disable dizzy effect (with `<TIME>`) |
+| E:NODIZZY | Clear TIME checkpoints (NOT dizzy-related; with `<TIME>`) |
 | E:NOPEGS | Remove pegs |
 | E:OPENSESAME | Open door/gate |
 | E:PEGS | Add pegs |
@@ -191,18 +191,18 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 |---|-------------|---------|-----------|------------|
 | 1 | Warm-up Race | BEGINNERRACE | Level1.MESHWORLD | Pink |
 | 2 | Beginner Race | CASCADERACE | LevelCascade.MESHWORLD | Blue |
-| 3 | Intermediate Race | INTERMEDIATERACE | Level3.MESHWORLD | Green |
-| 4 | Dizzy Race | DIZZYRACE | Level4.MESHWORLD | — |
-| 5 | Tower Race | TOWERRACE | Level5.MESHWORLD | — |
+| 3 | Intermediate Race | INTERMEDIATERACE | Level2.MESHWORLD | Green |
+| 4 | Dizzy Race | DIZZYRACE | Level3.MESHWORLD | — |
+| 5 | Tower Race | TOWERRACE | Level4.MESHWORLD | — |
 | 6 | Up Race | UPRACE | LevelUp.MESHWORLD | Red |
 | 7 | Neon Race | NEONRACE | LevelDark.MESHWORLD | Orange |
-| 8 | Expert Race | EXPERTRACE | Level8.MESHWORLD | — |
-| 9 | Odd Race | ODDRACE | Level9.MESHWORLD | — |
-| 10 | Toob Race | TOOBRACE | Level10.MESHWORLD | — |
+| 8 | Expert Race | EXPERTRACE | Level5.MESHWORLD | — |
+| 9 | Odd Race | ODDRACE | Level6.MESHWORLD | — |
+| 10 | Toob Race | TOOBRACE | Level8.MESHWORLD | — |
 | 11 | Wobbly Race | WOBBLYRACE | Level7.MESHWORLD | — |
 | 12 | Glass Race | GLASSRACE | LevelGlass.MESHWORLD | — |
-| 13 | Sky Race | SKYRACE | Level6.MESHWORLD | — |
-| 14 | Master Race | MASTERRACE | Level5-Bonk.MESHWORLD | — |
+| 13 | Sky Race | SKYRACE | Level9.MESHWORLD | — |
+| 14 | Master Race | MASTERRACE | Level10.MESHWORLD | — |
 | 15 | Impossible Race | IMPOSSIBLERACE | LevelImpossible.MESHWORLD | — |
 
 ### Arena Levels (15 arenas — one per race level)

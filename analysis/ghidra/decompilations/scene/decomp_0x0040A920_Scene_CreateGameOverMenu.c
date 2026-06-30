@@ -53,7 +53,7 @@ LAB_0040aa14:
     pvVar2 = operator_new(0xcdc);
     local_4 = 0;
     if (pvVar2 == (void *)0x0) goto LAB_0040aa14;
-    piVar3 = PauseRumbleMenu_ctor(pvVar2,*(int *)((int)this + 0x878));
+    piVar3 = PauseArenaMenu_ctor(pvVar2,*(int *)((int)this + 0x878));
   }
   local_4 = 0xffffffff;
   Scene_AddObject(*(void **)(*(int *)((int)this + 0x878) + 0x184),piVar3);

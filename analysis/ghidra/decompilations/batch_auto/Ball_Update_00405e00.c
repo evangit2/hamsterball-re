@@ -11,7 +11,7 @@
  * 23-phase physics tick:
  *   Phase 1:  Decay timers (frame counter at +0x314, sound timer +0x317, etc.)
  *   Phase 2:  Play ambient sound (Sound_Play3DAtPosition if +0x315 active)
- *   Phase 3:  Spawn ambient trail particles (RumbleScore_ctor + AthenaList_Append)
+ *   Phase 3:  Spawn ambient trail particles (ArenaScoreParticle_ctor + AthenaList_Append)
  *   Phase 4:  Decay acceleration modifiers (+0x1D3, +0x1D4)
  *   Phase 5:  Decay counters (+0x1D1, +0xC0, +0xA8, +0x3)
  *   Phase 6:  Free display string if timer expired

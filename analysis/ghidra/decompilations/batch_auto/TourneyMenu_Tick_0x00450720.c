@@ -10,7 +10,7 @@ void __fastcall TourneyMenu_Tick(int *param_1)
   int iVar4;
   int iVar5;
   
-  RumbleBoard_TickTimer((int)(param_1 + 0x337));
+  ToggleTimer_Tick((int)(param_1 + 0x337));
   if ((char)param_1[0x442] != '\0') {
     iVar4 = param_1[0x443];
     if (iVar4 == 0) {

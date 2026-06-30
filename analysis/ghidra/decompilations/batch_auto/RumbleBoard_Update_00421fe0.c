@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Update
+ * Function: ArenaBoard_Update
  * Address: 0x00421fe0
- * Signature: void __fastcall RumbleBoard_Update(int *param_1)
+ * Signature: void __fastcall ArenaBoard_Update(int *param_1)
  *
- * Patterns: allocates, SEH frame, audio, scene, board, menu. Calls: RumbleBoard_Update, Scene_Update, RumbleBoard_TickTimer, AthenaList_NextIndex, operator_new, RaceResultsMenu_ctor, AthenaList_Append, Scene_UpdateChildren. Offsets: 15, Lines: 133
+ * Patterns: allocates, SEH frame, audio, scene, board, menu. Calls: ArenaBoard_Update, Scene_Update, ToggleTimer_Tick, AthenaList_NextIndex, operator_new, RaceResultsMenu_ctor, AthenaList_Append, Scene_UpdateChildren. Offsets: 15, Lines: 133
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Update(int *param_1)
+void __fastcall ArenaBoard_Update(int *param_1)
 
 {
   int iVar1;
@@ -29,7 +29,7 @@ void __fastcall RumbleBoard_Update(int *param_1)
   local_c = ExceptionList;
   ExceptionList = &local_c;
   Scene_Update(param_1);
-  RumbleBoard_TickTimer((int)(param_1 + 0x11f2));
+  ToggleTimer_Tick((int)(param_1 + 0x11f2));
   if ((((char)param_1[0xe93] != '\0') &&
       (bVar8 = (char)param_1[0x11ec] == '\0', *(bool *)(param_1 + 0x11ec) = bVar8, bVar8)) &&
      (iVar7 = param_1[0x11eb], param_1[0x11eb] = iVar7 + -1, iVar7 + -1 < 1)) {

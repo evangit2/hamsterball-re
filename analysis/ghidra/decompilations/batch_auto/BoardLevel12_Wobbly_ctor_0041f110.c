@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel12_Wobbly_ctor
+ * Function: LevelBoard_Wobbly_ctor
  * Address: 0x0041f110
- * Signature: void * __thiscall BoardLevel12_Wobbly_ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Wobbly_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: BoardLevel12_Wobbly_ctor, Board_ctor, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new, MeshWorld_ctor. Offsets: 24, Lines: 110
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: LevelBoard_Wobbly_ctor, Board_ctor, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new, MeshWorld_ctor. Offsets: 24, Lines: 110
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel12_Wobbly_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Wobbly_ctor(void *this,int param_1)
 
 {
   int iVar1;

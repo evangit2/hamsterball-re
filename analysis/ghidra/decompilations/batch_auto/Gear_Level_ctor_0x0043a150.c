@@ -38,7 +38,7 @@
  *   +0x10FC: rotation speed (random 100-150)
  *
  * Cross-references:
- *   Called from CreateSawblade (0x40E5E2) — UNCONDITIONAL_CALL
+ *   Called from CreateExpertLevelObjects (0x40E5E2) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

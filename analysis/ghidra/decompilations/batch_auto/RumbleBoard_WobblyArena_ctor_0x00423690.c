@@ -1,11 +1,11 @@
 /*
- * Function: RumbleBoard_WobblyArena_ctor
+ * Function: ArenaBoard_Wobbly_ctor
  * Address: 0x00423690
- * Signature: void * __thiscall RumbleBoard_WobblyArena_ctor(void *this, int param_1)
+ * Signature: void * __thiscall ArenaBoard_Wobbly_ctor(void *this, int param_1)
  * Parameters: this: RumbleBoard* | param_1: int — parent App/Scene
  *
  * Description:
- * Constructor for Wobbly Arena. Calls RumbleBoard_ctor, sets vtable, names 'RumbleBoard (Wobbly Arena)' / 'Hamster Chase' / 'WOBBLY ARENA'. Creates MeshWorld 'levels\\arena-wobbly'. Vec3 init.
+ * Constructor for Wobbly Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Wobbly Arena)' / 'Hamster Chase' / 'WOBBLY ARENA'. Creates MeshWorld 'levels\\arena-wobbly'. Vec3 init.
  *
  * Struct offsets: +0x868, +0x4344, +0x29B4
  * Cross-references: 1 call, 0 data refs

@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_UpArena_Ctor
+ * Function: ArenaBoard_Up_ctor
  * Address: 0x00422b10
- * Signature: void * __thiscall RumbleBoard_UpArena_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Up_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board. Calls: RumbleBoard_UpArena_Ctor, RumbleBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, CONCAT31, MeshWorld_ctor. Offsets: 13, Lines: 39
+ * Patterns: allocates, SEH frame, matrix math, board. Calls: ArenaBoard_Up_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, CONCAT31, MeshWorld_ctor. Offsets: 13, Lines: 39
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_UpArena_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Up_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -22,9 +22,9 @@ void * __thiscall RumbleBoard_UpArena_Ctor(void *this,int param_1)
   puStack_8 = &LAB_004cab53;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_ToobArena_DeletingDtor_004d17f8;
+  *(undefined ***)this = &PTR_ArenaBoard_Toob_DeletingDtor_004d17f8;
   *(char **)((int)this + 0x868) = "RumbleBoard (Up Arena)";
   *(char **)((int)this + 0x4344) = "Up Race";
   *(char **)((int)this + 0x29b4) = "UP ARENA";

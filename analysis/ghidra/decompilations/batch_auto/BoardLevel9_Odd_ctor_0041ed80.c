@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel9_Odd_ctor
+ * Function: LevelBoard_Odd_ctor
  * Address: 0x0041ed80
- * Signature: void * __thiscall BoardLevel9_Odd_ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Odd_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board, level. Calls: BoardLevel9_Odd_ctor, Board_ctor, Board, Vec3_Init, Matrix_Identity, LoadRaceData. Offsets: 16, Lines: 33
+ * Patterns: SEH frame, matrix math, board, level. Calls: LevelBoard_Odd_ctor, Board_ctor, Board, Vec3_Init, Matrix_Identity, LoadRaceData. Offsets: 16, Lines: 33
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel9_Odd_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Odd_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -23,7 +23,7 @@ void * __thiscall BoardLevel9_Odd_ctor(void *this,int param_1)
   ExceptionList = &local_c;
   Board_ctor(this,param_1);
   iVar1 = *(int *)((int)this + 0x878);
-  *(undefined ***)this = &PTR_BoardLevel9_Odd_dtor_004d0bc0;
+  *(undefined ***)this = &PTR_LevelBoard_Odd_dtor_004d0bc0;
   *(char **)((int)this + 0x868) = "Board (Odd)";
   *(char **)((int)this + 0x29b4) = "ODD RACE";
   local_4 = 0;

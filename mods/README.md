@@ -1,99 +1,23 @@
-# Hamsterball DLL Mods
+# Hamsterball Mods Catalog
 
-This folder contains every finished DLL mod for the original Hamsterball.exe.
-Each subfolder has the C source, compiled DLL, and (where available) a zip package.
-
-## Catalog
-
-| # | Mod | Description | Proxy Type |
-|---|-----|-------------|------------|
-| 1 | [jump_mod](jump_mod/) | Press SPACE to jump (Player 1 only, raycast ground check, Phase 15 hook) | bass.dll |
-| 2 | [half_size_p1](half_size_p1/) | Halves Player 1's ball size only | bass.dll |
-| 3 | [half_size_all](half_size_all/) | Halves ALL balls' size | bass.dll |
-| 4 | [player_clones](player_clones/) | Spawns AI clone balls (P1-P4) that chase all entities everywhere (v13 CE script) | CE script |
-| 5 | [ai_8ball_fix](ai_8ball_fix/) | Fixes 8-ball AI so it moves in races | bass.dll |
-| 6 | [unlimited_tris](unlimited_tris/) | Removes triangle count limit on custom levels | bass.dll |
-| 7 | [water_mod](water_mod/) | Water visual effect mod | bass.dll |
-| 8 | [fps_unlock_v9](fps_unlock_v9/) | Uncaps FPS (v9, QPC timer + vsync disable) | bass.dll |
-| 9 | [fps_mod_custom](fps_mod_custom/) | Custom FPS mod (writes App+0x16C/0x170) | bass.dll |
-| 10 | [fps_unlock_standalone](fps_unlock_standalone/) | Standalone FPS unlock DLL (injector) | standalone |
-| 11 | [collision_hook](collision_hook/) | Hooks collision detection for debugging | standalone |
-| 12 | [8ball_hit_detect](8ball_hit_detect/) | Detects player→8-ball collisions + 1.5x knockback | bass.dll |
-| 13 | [entity-limit-fixer](entity-limit-fixer/) | Prevents freeze+crash with many entities (v5: skips Mesh_FindClosestCollision + throttles respawn + AI loops) | bass.dll |
-| 14 | [direction_detect](direction_detect/) | Detects ball facing direction, shows compass + heading angle on-screen (press D to toggle) | bass.dll |
-| 15 | [wall_bumpers](wall_bumpers/) | ALL walls act as pinball bumpers — launches ball on every wall collision (F8 toggle, F9 force) | bass.dll |
-
-
-## Installation (bass.dll proxy mods)
-
-All mods marked `bass.dll` follow the same installation procedure:
-
-1. **Rename** the original `bass.dll` to `bass_real.dll` in your Hamsterball game folder
-2. **Copy** the mod's compiled DLL into the game folder, renamed to `bass.dll`
-3. **Launch** Hamsterball — the mod activates automatically
-
-To uninstall: delete the mod `bass.dll` and rename `bass_real.dll` back to `bass.dll`.
-
-## Installation (standalone DLLs)
-
-Standalone mods require a DLL injector. Load the DLL into the `Hamsterball.exe`
-process after launch.
-
-## Build
-
-All mods are cross-compiled with MinGW on Linux:
-
-```bash
-i686-w64-mingw32-gcc -shared -o bass.dll mod_source.c \
-  -lwinmm -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
-  -Wl,--add-stdcall-alias
-```
-
-## Key Struct Offsets (reference)
-
-### Ball struct
-| Offset | Type | Field |
-|--------|------|-------|
-| 0x000 | DWORD* | vtable pointer (0x4CF3A0 for player, 0x4CF540 for 8-ball) |
-| 0x010 | void* | App pointer |
-| 0x014 | void* | Scene/Board pointer |
-| 0x018 | int | player_index (-1=NPC, 0=Player 1) |
-| 0x164 | float | display X |
-| 0x168 | float | display Y |
-| 0x16C | float | display Z |
-| 0x170 | float | velocity X |
-| 0x174 | float | velocity Y (up = positive) |
-| 0x178 | float | velocity Z |
-| 0x188 | float | max_speed |
-| 0x281 | byte | is_falling (1=falling off level) |
-| 0x284 | float | radius (default 26.0) |
-| 0x748 | int | gravity_plane_axis (0=X, 1=Y, 2=Z) |
-| 0xC4C | int | fall_mode (0=normal, 1=fall-off-level) |
-
-### Scene/Board struct
-| Offset | Type | Field |
-|--------|------|-------|
-| 0x29D4 | AthenaList | bad_balls_list (8-balls + AI balls) |
-| 0x2DEC | AthenaList | all_balls_list (all balls including players) |
-
-### AthenaList struct
-| Offset | Type | Field |
-|--------|------|-------|
-| 0x004 | int | element count |
-| 0x40C | int* | heap-allocated array of pointers |
-
-### App global
-| Address | Type | Field |
-|---------|------|-------|
-| 0x005341E0 | App* | g_App global pointer |
-
-### Key function addresses
-| Address | Name |
-|---------|------|
-| 0x00405E00 | Ball_Update (player physics tick) |
-| 0x00408390 | 8-ball AI tick |
-| 0x0041B540 | Scene_UpdateBallsAndState |
-| 0x00402200 | Ball_StartFall |
-| 0x00402270 | Ball_EndFall |
-| 0x0046EC30 | Ball_GetInputForce |
-| 0x0046E0B0 | Input_IsKeyDown |
+| Mod | Description | Files |
+|-----|-------------|-------|
+| universal-ref-loader | v3: Loads any ref type into any level via vtable[33] hook. JIT mesh injection from disk, clone-on-return for static-mesh objects, difficulty gate bypass, board slot safety checks | [universal-ref-loader/](universal-ref-loader/) |
+| global-lifters | Spawns Up Race lifters (Rotators) on any level with a hotkey | [global-lifters/](global-lifters/) |
+| global-drawbridge | Spawns Tower Race drawbridges on any level with a hotkey | [global-drawbridge/](global-drawbridge/) |
+| global-trapdoor | Spawns Tower Race trapdoors on any level with a hotkey | [global-trapdoor/](global-trapdoor/) |
+| global-neon | Spawns all 6 Neon Race objects on any level + neon lighting mode (dark scene with ball-emitted point light). Toggle via NeonLighting/NeonAmbient symbols | [global-neon/](global-neon/) |
+| global-expert | Spawns all 6 Expert Race objects (Bonk/Hammer, Fan, Sawblade, Bridge, Judge, Bell) on any level with a hotkey | [global-expert/](global-expert/) |
+| global-bonk | Spawns Bonk the Hammer from Expert Race on any level — standalone, constructor loads its own mesh internally | [global-bonk/](global-bonk/) |
+| wall-bumpers | All walls act as pinball bumpers — velocity-reversal detection amplifies wall bounces. F8 toggle, F9 force cycle | [wall_bumpers/](wall_bumpers/) |
+| ball-break | Press X to shatter your ball and respawn at nearest checkpoint. Calls the game's own Ball_Shatter function | [ball_break/](ball_break/) |
+| half-size-all | Shrinks player ball to half size by inlining Ball_Shrink's physics fields (radius=13.0, physics_scale=2.5). No sound, player index 0 only | [half_size_all/](half_size_all/) |
+| raptisoft-live-log | Passive logger — taps Raptisoft's hidden in-memory status tracking system (App+0x208/0x20C/0x210) and writes live updates to live_status.txt. No gameplay changes | [raptisoft_live_log/](raptisoft_live_log/) |
+| level-colors | Changes per-level base colors (timer oval, timer text, race selection menu text) from a colors.txt config file. Edit at runtime | [level_colors/](level_colors/) |
+| custom-name-strips | Custom per-level RGBA colors for the horizontal strip behind the Race/Arena name at the start of each race. Reads from name_strips.txt, 30 entries (15 races + 15 arenas) | [custom_name_strips/](custom_name_strips/) |
+| universal-safespots | Adds SAFESPOT(*) universal checkpoint — always accepted as respawn candidate regardless of active SAFESWITCH filter. Competes on distance with lettered SAFESPOTs | [universal-safespots/](universal-safespots/) |
+| 8ball-spawn | Press B to spawn an 8-ball in front of the player's hamster ball. Uses mesh index 9 (8Ball), spawns as physics debris (player_index=-1) | [8ball_spawn/](8ball_spawn/) |
+| 8ball-goal-fix | Prevents crash when 8-ball (BadBall) touches N:GOAL or E:ACTION(SCORE) triggers. Adds player_index<0 guard (same pattern Raptisoft used for E:LIMIT) to 3 patch points in DispatchCollisionEvents | [8ball_goal_fix/](8ball_goal_fix/) |
+| ball-tint | v2: Tints player 1's ball by writing RGBA floats to the board's player color table (board+0x3AB0), the same entries Board_ctor initializes via Vec3_Init. Reads hex color from ball_tint.txt at runtime | [ball_tint/](ball_tint/) |
+| global-objects-mkn | Spawns SWIRL (Dizzy Race) on any level via global object spawning hook. JIT mesh loading + collision registration | [global_objects_mkn/](global_objects_mkn/) |
+| custom-race-descriptions | Customizes the 15 tournament race description texts on the Tourney Menu. Reads from race_descriptions.txt, auto-generates default config with original descriptions | [custom_race_descriptions/](custom_race_descriptions/) |

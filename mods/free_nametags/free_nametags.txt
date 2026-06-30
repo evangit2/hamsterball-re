@@ -1,0 +1,42 @@
+# Free Nametags — Custom Race & Arena Level Configuration
+# ============================================================
+# Lines starting with # are comments. Blank lines are ignored.
+# Format: <slot>=<level filename>
+# The game will load "levels\<filename>.meshworld" for each slot.
+# Rearrange entries to change the tournament/arena order.
+# Use custom filenames to load custom MESHWORLD files.
+# Delete or comment out a line to use the game's default for that slot.
+
+RACES:
+1=level1
+2=levelcascade
+3=level2
+4=level3
+5=level4
+6=levelup
+7=leveldark
+8=level5
+9=level6
+10=level8
+11=level7
+12=levelglass
+13=level9
+14=level10
+15=levelimpossible
+
+ARENAS:
+1=arena-WarmUp
+2=arena-beginner
+3=arena-intermediate
+4=arena-dizzy
+5=arena-tower
+6=arena-up
+7=arena-neon
+8=arena-expert
+9=arena-Odd
+10=arena-Toob
+11=arena-Wobbly
+12=arena-glass
+13=arena-Sky
+14=arena-Master
+15=arena-impossible

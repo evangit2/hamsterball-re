@@ -108,8 +108,8 @@ Scene inherits from Gadget. The Gadget base contains:
 | `+0x874` | `byte` | `is_skydome` | 0 = skybox, 1 = skydome | ✅
 | `+0x878` | `App*` | `scene_manager` | D3D device / render container (also resolves as App* in some contexts) | ✅
 | `+0x87C` | `void*` | `viewport_obj` | D3D viewport interface | ✅
-| `+0x884` | `RumbleBoard` | `rumble_timer_1` | First rumble/haptics timer (0x14 bytes) | ✅
-| `+0x898` | `RumbleBoard` | `rumble_timer_2` | Second rumble/haptics timer (0x14 bytes) | ✅
+| `+0x884` | `ArenaBoard` | `toggle_timer_1` | First rumble/haptics timer (0x14 bytes) | ✅
+| `+0x898` | `ArenaBoard` | `toggle_timer_2` | Second rumble/haptics timer (0x14 bytes) | ✅
 | `+0x8AC` | `Level*` | `level_ptr` | Level geometry / collision data | ✅
 | `+0x8B0` | `Level*` | `skydome_ptr` | Skydome level (alternative sky rendering) | ✅
 | `+0x8B8` | `AthenaList` | `scene_object_list` | All scene objects (update + render pass) | ✅
@@ -198,7 +198,7 @@ Scene inherits from Gadget. The Gadget base contains:
 | `[0x4C]` | `0x41B130` | `Scene_HandleRaceEnd` | Check finish condition | `__thiscall` |
 | `[0x50]` | `0x41B540` | **`Scene_UpdateBallsAndState`** | **Ball physics + respawn** | `__thiscall` |
 | `[0x54]` | `0x40A040` | `Scene_NoOp_Collision` | Stub | — |
-| `[0x58]` | `0x41A540` | `Scene_ProcessRaceEnd` | Race countdown | `__thiscall` |
+| `[0x58]` | `0x41A540` | `Scene_HandleCountdown` | Race countdown | `__thiscall` |
 | `[0x5C]` | `0x409DE0` | `Scene_??` | Unknown | — |
 | `[0x60]` | `0x40B420` | `Level_RenderDynamicObjects` | Sky/ripples/dynamic | `__thiscall` |
 | `[0x64]` | `0x40B600` | `Level_UpdateAndRender` | Main level render | `__thiscall` |
@@ -409,8 +409,8 @@ void IterateAthenaList(void* scene_list_ptr, void (*callback)(void*)) {
 | `Scene_CreateGameOverMenu` | `0x40A920` | `Scene*, int` | Pause/quit menu |
 | `Scene_CheckPath` | `0x457EC0` | `int start, int target` | 359-cell ring pathfinder |
 | `Gear_AdvanceAlongPath` | `0x418930` | `Gear*, float, float, float` | Spline path follower |
-| `Level_HandleCollision` | `0x40DCD0` | `Scene*, Ball*, Collider*` | Level collision events |
-| `Arena_HandleCollision` | `0x40E6A0` | `Scene*, Ball*, Collider*` | Arena collision events |
+| `TowerCollisionEvents` | `0x40DCD0` | `Scene*, Ball*, Collider*` | Level collision events |
+| `ExpertCollisionEvents | `0x40E6A0` | `Scene*, Ball*, Collider*` | Expert board collision events |
 
 ---
 
@@ -435,23 +435,23 @@ The decompilations in `decomp_scene_update.c` use **int-indexed notation** in co
 Automated verification via GhidraMCP REST API decompilation of these functions:
 `Scene_Update`, `Scene_dtor`, `Scene_SetCamera`, `Scene_Render`, `Scene_UpdateBallsAndState`,
 `Scene_SpawnBallsAndObjects`, `Scene_LevelObjUpdate`, `Level_UpdateAndRender`, `Level_RenderDynamicObjects`,
-`Level_RenderObjects`, `Level_HandleCollision`, `Arena_HandleCollision`, `Ball_Update`, `Ball_ctor`,
-`Scene_StartRace`, `Scene_HandleRaceEnd`, `Scene_ProcessRaceEnd`, `Scene_CreateGameOverMenu`, `Scene_CheckPath`.
+`Level_RenderObjects`, `TowerCollisionEvents`, `ExpertCollisionEvents`, `Ball_Update`, `Ball_ctor`,
+`Scene_StartRace`, `Scene_HandleRaceEnd`, `Scene_HandleCountdown`, `Scene_CreateGameOverMenu`, `Scene_CheckPath`.
 
 **Result:** 56 offsets verified in raw C. 11 offsets not found in any decompiled function body.
 
 | Offset | Field | Verified In | Count |
 |--------|-------|-------------|-------|
-| `0x0874` | `is_skydome` | `Scene_CreateGameOverMenu`, `Scene_ProcessRaceEnd`, `Scene_Update` | 3 |
-| `0x0878` | `scene_manager` | `Arena_HandleCollision`, `Level_HandleCollision`, `Level_UpdateAndRender` | 3+ |
+| `0x0874` | `is_skydome` | `Scene_CreateGameOverMenu`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
+| `0x0878` | `scene_manager` | `ExpertCollisionEvents`, `TowerCollisionEvents`, `Level_UpdateAndRender` | 3+ |
 | `0x087C` | `viewport_obj` | `Scene_Render`, `Scene_SetCamera`, `Scene_dtor` | 3 |
-| `0x0884` | `rumble_timer_1` | `Scene_Update`, `Scene_dtor` | 2 |
-| `0x0898` | `rumble_timer_2` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x0884` | `toggle_timer_1` | `Scene_Update`, `Scene_dtor` | 2 |
+| `0x0898` | `toggle_timer_2` | `Scene_Update`, `Scene_dtor` | 2 |
 | `0x08AC` | `level_ptr` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_SpawnBallsAndObjects` | 3 |
 | `0x08B0` | `skydome_ptr` | `Scene_dtor` | 1 |
-| `0x08B8` | `scene_object_list` | `Arena_HandleCollision`, `Scene_ProcessRaceEnd`, `Scene_Update` | 3 |
-| `0x08BC` | `scene_object_count` | `Scene_ProcessRaceEnd`, `Scene_Update`, `Scene_dtor` | 3 |
-| `0x0CC4` | `scene_object_array` | `Scene_ProcessRaceEnd`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x08B8` | `scene_object_list` | `ExpertCollisionEvents`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
+| `0x08BC` | `scene_object_count` | `Scene_HandleCountdown`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x0CC4` | `scene_object_array` | `Scene_HandleCountdown`, `Scene_Update`, `Scene_dtor` | 3 |
 | `0x1518` | `collision_list` | `Scene_SpawnBallsAndObjects`, `Scene_dtor` | 2 |
 | `0x2160` | `ripple_list` | `Scene_dtor` | 1 |
 | `0x29B0` | `ball_positions_dirty` | `Scene_Update` | 1 |
@@ -467,9 +467,9 @@ Automated verification via GhidraMCP REST API decompilation of these functions:
 | `0x3610` | `ball_list_2_array` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
 | `0x361C` | `waypoint_arrow` | `Level_UpdateAndRender`, `Scene_dtor` | 2 |
 | `0x3620` | `frame_counter` | `Scene_Update` | 1 |
-| `0x362C` | `player_list` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
-| `0x3630` | `player_count` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
-| `0x3A38` | `player_ball_array` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x362C` | `player_list` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3630` | `player_count` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3A38` | `player_ball_array` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
 | `0x3A48` | `visible_object_list` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_dtor` | 3 |
 | `0x3A4C` | `shake_active` | `Scene_Update` | 1 |
 | `0x3AFC` | `dynamic_object` | `Scene_Update`, `Scene_dtor` | 2 |
@@ -486,16 +486,16 @@ Automated verification via GhidraMCP REST API decompilation of these functions:
 | `0x4360` | `demo_accumulator` | `Scene_Update` | 1 |
 | `0x4364` | `demo_frame_counter` | `Scene_Update` | 1 |
 | `0x4368` | `demo_menu_suppressed` | `Scene_Update` | 1 |
-| `0x436C` | `hammer_obj` | `Arena_HandleCollision` | 1 |
-| `0x4370` | `saw1_obj` | `Arena_HandleCollision` | 1 |
-| `0x4374` | `saw2_obj` | `Arena_HandleCollision` | 1 |
-| `0x43A0` | `damage_amount` | `Level_HandleCollision` | 1 |
-| `0x43A8` | `damage_timer` | `Level_HandleCollision` | 1 |
-| `0x43B8` | `catapult_list` | `Level_HandleCollision` | 1 |
-| `0x47D0` | `door_list` | `Level_HandleCollision` | 1 |
-| `0x4BBC` | `judge_list` | `Arena_HandleCollision` | 1 |
-| `0x4BEC` | `door_list_alt` | `Level_HandleCollision` | 1 |
-| `0x4FD4` | `bell_obj` | `Arena_HandleCollision` | 1 |
+| `0x436C` | `hammer_obj` | `ExpertCollisionEvents` | 1 |
+| `0x4370` | `saw1_obj` | `ExpertCollisionEvents` | 1 |
+| `0x4374` | `saw2_obj` | `ExpertCollisionEvents` | 1 |
+| `0x43A0` | `damage_amount` | `TowerCollisionEvents` | 1 |
+| `0x43A8` | `damage_timer` | `TowerCollisionEvents` | 1 |
+| `0x43B8` | `catapult_list` | `TowerCollisionEvents` | 1 |
+| `0x47D0` | `door_list` | `TowerCollisionEvents` | 1 |
+| `0x4BBC` | `judge_list` | `ExpertCollisionEvents` | 1 |
+| `0x4BEC` | `door_list_alt` | `TowerCollisionEvents` | 1 |
+| `0x4FD4` | `bell_obj` | `ExpertCollisionEvents` | 1 |
 
 ### Unverified Offsets (NOT found in raw decompiled C)
 
@@ -538,8 +538,8 @@ All data verified via **live GhidraMCP headless decompilation** on Hamsterball.e
 - `decomp_level_render.c` — rendering pipeline with ball lists (comment-only header)
 - `decomp_scene_spawnballs.c` (0x41C5B0) — level startup + ball creation (comment-only header)
 - `decomp_collision_events.c` (0x40C5D0) — collision handler with scene offsets ✅ raw C
-- `decomp_level_handlecollision.c` (0x40DCD0) — level events ✅ raw C
-- `decomp_arena_handlecollision.c` (0x40E6A0) — arena events ✅ raw C
+- `decomp_tower_collisionevents.c` (0x40DCD0) — Tower board events ✅ raw C
+- `decomp_expert_collisionevents.c` (0x40E6A0) — Expert board events ✅ raw C
 - `decomp_scene_setcamera.c` (0x419FA0) — camera system ✅ raw C
 - `decomp_scene_render.c` (0x41A2E0) — render dispatch (comment-only header)
 - `decomp_ball_vtable_0x408390.c` — ball list iteration ✅ raw C

@@ -1,0 +1,363 @@
+[ENABLE]
+
+alloc(SpawnCode, 8192)
+alloc(SpawnExpert, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20, 4)
+alloc(lists_inited, 4)
+alloc(mesh_bridge, 4)
+alloc(mesh_loaded, 4)
+
+registersymbol(SpawnExpert)
+
+SpawnExpert:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20:
+  dd 0x41A00000
+
+lists_inited:
+  dd 0
+
+mesh_bridge:
+  dd 0
+
+mesh_loaded:
+  dd 0
+
+label(original_code)
+label(done_spawn)
+label(skip_bonk)
+label(skip_fan)
+label(skip_saw)
+label(skip_bridge)
+label(skip_judge)
+label(skip_bell)
+label(init_lists)
+
+SpawnCode:
+  cmp dword [SpawnExpert], 0
+  je original_code
+
+  mov dword [SpawnExpert], 0
+
+  pushad
+
+  // esi = ball pointer (from Ball_Update context)
+  // Get Board from ball+0x14
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz done_spawn
+  mov [saved_board], eax
+
+  // Get player position
+  mov ecx, [esi+0x164]
+  mov [playerX], ecx
+  mov ecx, [esi+0x168]
+  mov [playerY], ecx
+  mov ecx, [esi+0x16C]
+  mov [playerZ], ecx
+
+  // Get Board pointer
+  mov ebx, [saved_board]
+  test ebx, ebx
+  jz done_spawn
+
+  // Check App is valid
+  mov edx, [ebx+0x878]
+  test edx, edx
+  jz done_spawn
+
+  // ==========================================
+  // INIT ATHENALISTS (only once)
+  // ==========================================
+  cmp dword [lists_inited], 1
+  je init_lists_done
+
+init_lists:
+  // Board+0x4380 (bridge saw1 list)
+  lea ecx, [ebx+0x4380]
+  cmp dword [ecx], 0x004D875C
+  je skip_list1
+  push 0
+  call 00453210
+skip_list1:
+
+  // Board+0x4798 (bridge saw2 list)
+  lea ecx, [ebx+0x4798]
+  cmp dword [ecx], 0x004D875C
+  je skip_list2
+  push 0
+  call 00453210
+skip_list2:
+
+  // Board+0x4BBC (judge list)
+  lea ecx, [ebx+0x4BBC]
+  cmp dword [ecx], 0x004D875C
+  je skip_list3
+  push 0
+  call 00453210
+skip_list3:
+
+  mov dword [lists_inited], 1
+
+init_lists_done:
+
+  // ==========================================
+  // LOAD BRIDGE MESH (only once)
+  // ==========================================
+  cmp dword [mesh_loaded], 1
+  je mesh_done
+
+  mov edx, [ebx+0x878]
+  mov edx, [edx+0x174]
+  push 004D0ABC               // "Levels\Level5-Bridge"
+  push edx                    // D3D device
+  push 10D0                   // alloc size
+  call 004BA57B               // operator_new
+  add esp, 4
+  mov ecx, eax
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D0ABC
+  mov ecx, eax
+  call 00461510               // MeshWorld_ctor  ret 8
+  mov [mesh_bridge], eax
+  mov dword [mesh_loaded], 1
+
+mesh_done:
+  mov ebx, [saved_board]
+  test ebx, ebx
+  jz done_spawn
+
+  // ==========================================
+  // SPAWN BONK (Hammer) — alloc 0x1200, ctor 0x438850, ret 0x10
+  // ==========================================
+  push 1200
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_bonk
+
+  sub esp, 0C                 // pos XYZ
+  mov ecx, [playerX]
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx                    // Board
+  mov ecx, eax                // this
+  call 00438850               // BONK_ctor  ret 0x10
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810               // AthenaList_Append  ret 4
+
+  // Store at Board+0x436C (for E:CALLHAMMER event)
+  mov [ebx+0x436C], eax
+
+skip_bonk:
+
+  // ==========================================
+  // SPAWN FAN — alloc 0x1188, ctor 0x438C20, ret 0x14
+  // ==========================================
+  push 1188
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_fan
+
+  push 0                      // param_5 (ext_flag = 0)
+  sub esp, 0C                 // pos XYZ
+  mov ecx, [playerX]
+  add ecx, [float_20]         // X + 20
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx                    // Board
+  mov ecx, eax                // this
+  call 00438C20               // FAN_ctor  ret 0x14
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+skip_fan:
+
+  // ==========================================
+  // SPAWN SAWBLADE — alloc 0x111C, ctor 0x434660, ret 0x10
+  // ==========================================
+  push 111C
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_saw
+
+  sub esp, 0C                 // pos XYZ
+  mov ecx, [playerX]
+  add ecx, [float_20]
+  add ecx, [float_20]         // X + 40
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx                    // Board
+  mov ecx, eax                // this
+  call 00434660               // SAWBLADE_ctor  ret 0x10
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+  // Store at Board+0x4370 (saw1)
+  mov [ebx+0x4370], eax
+
+skip_saw:
+
+  // ==========================================
+  // SPAWN BRIDGE — alloc 0x10FC, ctor 0x4396F0, ret 0x14
+  // ==========================================
+  push 10FC
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_bridge
+
+  push 0                      // param_5 (ext_flag = 0)
+  sub esp, 0C                 // pos XYZ
+  mov ecx, [playerX]
+  mov [esp], ecx
+  mov ecx, [playerY]
+  add ecx, [float_20]         // Y + 20
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  add ecx, [float_20]         // Z + 20
+  mov [esp+8], ecx
+  push ebx                    // Board
+  mov ecx, eax                // this
+  call 004396F0               // BRIDGE_ctor  ret 0x14
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+  // Also append to Board+0x4380 (bridge list)
+  push eax
+  lea ecx, [ebx+0x4380]
+  call 00453810
+
+skip_bridge:
+
+  // ==========================================
+  // SPAWN JUDGE — alloc 0x1100, ctor 0x43A150, ret 0x10
+  // ==========================================
+  push 1100
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_judge
+
+  sub esp, 0C                 // pos XYZ
+  mov ecx, [playerX]
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  add ecx, [float_20]
+  add ecx, [float_20]         // Z + 40
+  mov [esp+8], ecx
+  push ebx                    // Board
+  mov ecx, eax                // this
+  call 0043A150               // JUDGE_ctor  ret 0x10
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+  // Append to Board+0x4BBC (judge list)
+  push eax
+  lea ecx, [ebx+0x4BBC]
+  call 00453810
+
+skip_judge:
+
+  // ==========================================
+  // SPAWN BELL — alloc 0x10E8, ctor 0x434D70, ret 0x10
+  // ==========================================
+  push 10E8
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_bell
+
+  sub esp, 0C                 // pos XYZ
+  mov ecx, [playerX]
+  mov [esp], ecx
+  mov ecx, [playerY]
+  add ecx, [float_20]         // Y + 20
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  add ecx, [float_20]
+  add ecx, [float_20]         // Z + 40
+  mov [esp+8], ecx
+  push ebx                    // Board
+  mov ecx, eax                // this
+  call 00434D70               // BELL_ctor  ret 0x10
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+  // Store at Board+0x4FD4 (for bell ring event)
+  mov [ebx+0x4FD4], eax
+
+skip_bell:
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnExpert)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20)
+dealloc(lists_inited)
+dealloc(mesh_bridge)
+dealloc(mesh_loaded)
+unregistersymbol(SpawnExpert)

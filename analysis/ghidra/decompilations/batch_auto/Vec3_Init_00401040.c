@@ -15,7 +15,7 @@
  * its first entry (scalar deleting destructor), confirming this is a proper C++ class.
  *
  * Cross-references:
- *   - Called from BoardLevel9_Odd_dtor (0x41EE70) at address 0x41EFD4
+ *   - Called from LevelBoard_Odd_dtor (0x41EE70) at address 0x41EFD4
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

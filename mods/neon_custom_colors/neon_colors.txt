@@ -1,0 +1,19 @@
+NEON PLAYER1 OUTLINE:
+* R = 1.0
+* G = 1.0
+* B = 0.0
+
+NEON PLAYER1 GLOW:
+* R = 10.0
+* G = 10.0
+* B = 0.0
+
+NEON PLAYER2 OUTLINE:
+* R = 1.0
+* G = 1.0
+* B = 0.0
+
+NEON PLAYER2 GLOW:
+* R = 10.0
+* G = 10.0
+* B = 0.0
