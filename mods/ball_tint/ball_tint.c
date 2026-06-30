@@ -1,42 +1,38 @@
 /*
- * ball_tint.c — BASS.dll proxy mod (v3 — multi-mode color support)
+ * ball_tint.c — BASS.dll proxy mod (v4 — P1+P2 colors, reliable reapply, crash fix)
  *
- * Tints player 1's ball to a hex color read from ball_tint.txt.
- * Supports THREE separate color settings for different player counts:
+ * Tints player balls to hex colors read from ball_tint.txt.
+ * Supports custom colors for Player 1 (1P/2P/4P modes) and Player 2 (2P/4P modes).
  *
- *   1-player mode color  (line 1)
- *   2-player mode color  (line 2)
- *   4-player mode color  (line 3)
- *
- * The mod detects how many player slots are active by reading the
- * App struct's player_data array. Each player slot occupies 0xA0 bytes
- * starting at App+0x5CC. A slot is "active" when App+0x5D7+slot*0xA0
- * is non-zero (byte set by App_StartTournamentRace / App_StartRace).
+ * Config file (ball_tint.txt), 5 lines:
+ *   Line 1: Player 1 color in 1-player mode
+ *   Line 2: Player 1 color in 2-player mode
+ *   Line 3: Player 1 color in 4-player mode (Arena/Rumble)
+ *   Line 4: Player 2 color in 2-player mode
+ *   Line 5: Player 2 color in 4-player mode (Arena/Rumble)
  *
  * How it works:
  *   1. On load: creates ball_tint.txt next to the DLL (if missing)
  *   2. Background thread polls every ~60ms
- *   3. Reads 3 hex colors from ball_tint.txt (lines 1/2/3)
+ *   3. Re-reads 5 hex colors from ball_tint.txt each poll
  *   4. Finds the board via App+0x220 → PlayerProfile+0xC → board
- *   5. Counts active players
- *   6. Selects the appropriate color (1P / 2P / 4P)
- *   7. Writes RGBA floats directly into the board's player ball color
- *      table at board+0x3AB0 (player 1).
+ *   5. Validates board by checking vtable pointer is in game's .rdata range
+ *   6. Counts active players (flag at App+0x5D7+slot*0xA0, ZERO = active)
+ *   7. Selects P1 color based on player count, P2 color for 2P/4P
+ *   8. Writes RGBA floats to board color table EVERY poll (no skip optimization)
  *
- * Board color table (set by Board_ctor's four Vec3_Init calls):
- *   board+0x3AB0 = (1.0, 1.0, 1.0, 1.0) white   (Player 1) ← we write here
+ * Board color table (set by Board_ctor's Vec3_Init calls):
+ *   board+0x3AB0 = (1.0, 1.0, 1.0, 1.0) white   (Player 1)
  *   board+0x3AC4 = (0.0, 0.5, 1.0, 1.0) blue      (Player 2)
  *   board+0x3AD8 = (1.0, 0.25, 0.25, 1.0) salmon   (Player 3)
  *   board+0x3AEC = (1.0, 1.0, 0.0, 1.0) yellow    (Player 4)
  * Each entry is 4 floats (R, G, B, A) = 16 bytes, spaced 0x14 apart.
  *
- * Color file format:
- *   Line 1: hex color for 1-player mode  (e.g. "FF6B35")
- *   Line 2: hex color for 2-player mode  (e.g. "4A90D9")
- *   Line 3: hex color for 4-player mode  (e.g. "2ECC71")
- *   Lines starting with # are comments
- *   Invalid/missing: defaults to white (FFFFFF)
- *   Re-reads every poll, so you can change colors at runtime
+ * v4 changes:
+ *   - Fixed 1P/4P player count detection (was inverted: 0=active, not non-zero)
+ *   - Added Player 2 custom colors for 2P and 4P modes
+ *   - Tint applied EVERY poll (fixes random loss on race restart)
+ *   - Board vtable validation + DLL_PROCESS_DETACH shutdown (fixes Quit crash)
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll ball_tint.c -lwinmm \
@@ -113,7 +109,6 @@ __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
     if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
     return 1;
 }
-/* Forwarded (was previously a no-op stub — caused per-channel volume/pan to silently fail) */
 typedef int  (__stdcall *BASS_ChannelSetAttribute_t)(DWORD, DWORD, float);
 static BASS_ChannelSetAttribute_t real_BASS_ChannelSetAttribute = NULL;
 __declspec(dllexport) int __stdcall BASS_ChannelSetAttribute(DWORD a, DWORD b, float c) {
@@ -177,7 +172,7 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Ball Tint Mod v3 — Multi-Mode Color Support
+ * Ball Tint Mod v4 — P1+P2 Multi-Mode Color Support + Crash Fix
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Game addresses */
@@ -196,7 +191,12 @@ static void load_real_bass(void)
 /* App struct — player data slots for counting active players */
 #define APP_PLAYER_DATA_BASE 0x5CC     /* App+0x5CC = first player_data slot */
 #define APP_PLAYER_STRIDE     0xA0     /* 160 bytes per player slot */
-#define APP_PLAYER_ACTIVE_OFF 0x0B    /* slot+0x0B = active flag byte (App+0x5D7 for P1) */
+#define APP_PLAYER_ACTIVE_OFF 0x0B    /* slot+0x0B = active flag (ZERO = active, per Board_ctor) */
+
+/* Board vtable range for validation (prevents use-after-free crash) */
+/* Board base vtable = 0x4D0260, derived board vtables up to ~0x4D0BC0 */
+#define BOARD_VTABLE_MIN  0x4D0200
+#define BOARD_VTABLE_MAX  0x4D0C00
 
 /* Fallback: ball list for board-scanning method */
 #define SCENE_BALL_LIST     0x29D4     /* Board+0x29D4 = AthenaList of balls */
@@ -205,10 +205,19 @@ static void load_real_bass(void)
 
 static char g_config_path[MAX_PATH] = {0};
 
-/* Three colors: [0]=1P, [1]=2P, [4]=4P. We store by player-count index. */
-static DWORD g_colors[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
-static DWORD g_last_applied = 0xFFFFFFFF;  /* Force initial write */
-static DWORD g_last_board = 0;
+/* Five colors:
+ * [0] = P1 color in 1P mode
+ * [1] = P1 color in 2P mode
+ * [2] = P1 color in 4P mode
+ * [3] = P2 color in 2P mode
+ * [4] = P2 color in 4P mode
+ */
+#define NUM_COLORS 5
+static DWORD g_colors[NUM_COLORS] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+
+/* Shutdown flag — set by DLL_PROCESS_DETACH to stop the background thread */
+static volatile LONG g_shutdown = 0;
+static HANDLE g_thread_handle = NULL;
 
 /* Get DLL directory path and build config file path */
 static void init_config_path(void)
@@ -236,10 +245,14 @@ static void create_default_config(void)
             "FFFFFF\n"
             "4A90D9\n"
             "2ECC71\n"
+            "FF6B35\n"
+            "E74C3C\n"
             "# Ball Tint Colors — one per line\n"
             "# Line 1: Player 1 color in SINGLE-PLAYER mode\n"
             "# Line 2: Player 1 color in 2-PLAYER mode\n"
             "# Line 3: Player 1 color in 4-PLAYER mode (Arena/Rumble)\n"
+            "# Line 4: Player 2 color in 2-PLAYER mode\n"
+            "# Line 5: Player 2 color in 4-PLAYER mode (Arena/Rumble)\n"
             "# Hex RGB: FF6B35 (orange), 4A90D9 (blue), 2ECC71 (green)\n"
             "# Lines starting with # are ignored\n"
             "# Change values at runtime — mod re-reads every 60ms\n";
@@ -295,7 +308,7 @@ static DWORD parse_hex_color(const char *text)
     return 0xFFFFFF;
 }
 
-/* Read up to 3 hex colors from config file (first 3 non-comment lines). */
+/* Read up to 5 hex colors from config file (first 5 non-comment lines). */
 static void read_colors_from_file(void)
 {
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -309,11 +322,11 @@ static void read_colors_from_file(void)
 
     if (bytesRead == 0) return;
 
-    DWORD colors[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+    DWORD colors[NUM_COLORS] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
     int color_idx = 0;
 
     char *line = buf;
-    while (*line && color_idx < 3) {
+    while (*line && color_idx < NUM_COLORS) {
         /* Skip whitespace */
         while (*line == ' ' || *line == '\t') line++;
         /* Skip comment/empty lines */
@@ -330,15 +343,14 @@ static void read_colors_from_file(void)
         if (*line == '\n') line++;
     }
 
-    g_colors[0] = colors[0];
-    g_colors[1] = colors[1];
-    g_colors[2] = colors[2];
+    /* Atomic copy to g_colors */
+    memcpy(g_colors, colors, sizeof(colors));
 }
 
 /*
  * Count active players by scanning App's player_data slots.
  * Each slot is 0xA0 bytes. A slot is active when the byte at
- * slot+0x0B (App+0x5D7 for player 1) is non-zero.
+ * slot+0x0B (App+0x5D7 for player 1) is ZERO (per Board_ctor).
  * Returns 1, 2, 3, or 4.
  */
 static int count_active_players(DWORD app)
@@ -348,10 +360,25 @@ static int count_active_players(DWORD app)
         DWORD slot_addr = app + APP_PLAYER_DATA_BASE + (i * APP_PLAYER_STRIDE);
         if (IsBadReadPtr((void*)slot_addr, APP_PLAYER_STRIDE)) break;
         BYTE active = *(BYTE*)(slot_addr + APP_PLAYER_ACTIVE_OFF);
-        if (active != 0) count++;
+        if (active == 0) count++;  /* ZERO = active (verified from Board_ctor) */
     }
     if (count < 1) count = 1;  /* Safety: at least player 1 */
     return count;
+}
+
+/*
+ * Validate that a board pointer is still a live Board object.
+ * Checks that the vtable pointer (first 4 bytes) is in the expected
+ * range for Board vtables. When the board is freed, the vtable pointer
+ * becomes garbage — this prevents writing to freed memory.
+ */
+static int validate_board(DWORD board)
+{
+    if (!board || board < 0x10000) return 0;
+    if (IsBadReadPtr((void*)board, 4)) return 0;
+    DWORD vtable = *(DWORD*)board;
+    if (vtable < BOARD_VTABLE_MIN || vtable > BOARD_VTABLE_MAX) return 0;
+    return 1;
 }
 
 /*
@@ -366,7 +393,7 @@ static DWORD find_board(DWORD app)
         DWORD profile = *(DWORD*)(app + APP_PROFILE_OFFSET);
         if (profile && profile > 0x10000 && !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
             DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
-            if (board && board > 0x10000 && !IsBadReadPtr((void*)board, 0x4000)) {
+            if (board && board > 0x10000 && validate_board(board)) {
                 return board;
             }
         }
@@ -376,6 +403,7 @@ static DWORD find_board(DWORD app)
     for (int off = 0x100; off < 0xA00; off += 4) {
         DWORD candidate = *(DWORD*)((BYTE*)app + off);
         if (candidate == 0 || candidate < 0x10000) continue;
+        if (!validate_board(candidate)) continue;
         if (IsBadReadPtr((void*)candidate, 0x4000)) continue;
         DWORD list_base = candidate + SCENE_BALL_LIST;
         if (IsBadReadPtr((void*)list_base, 0x10)) continue;
@@ -414,6 +442,9 @@ static DWORD WINAPI tint_thread(LPVOID param)
     for (;;) {
         Sleep(60);
 
+        /* Check shutdown flag */
+        if (g_shutdown) break;
+
         /* Find App */
         DWORD app = *(DWORD*)APP_PTR_ADDR;
         if (!app || app < 0x10000) continue;
@@ -423,37 +454,46 @@ static DWORD WINAPI tint_thread(LPVOID param)
         DWORD board = find_board(app);
         if (!board) continue;
 
+        /* Re-check shutdown after potentially slow operations */
+        if (g_shutdown) break;
+
         /* Re-read colors from file every poll */
         read_colors_from_file();
 
         /* Count active players to select which color to use */
         int num_players = count_active_players(app);
 
-        /* Select color index: 1→0, 2→1, 3+→2 (4P mode) */
-        int color_idx;
-        if (num_players <= 1) color_idx = 0;      /* 1P */
-        else if (num_players == 2) color_idx = 1;   /* 2P */
-        else color_idx = 2;                          /* 3P or 4P (Arena/Rumble) */
+        /* Select P1 color index: 1→0, 2→1, 3+→2 (4P mode) */
+        int p1_color_idx;
+        if (num_players <= 1) p1_color_idx = 0;      /* 1P */
+        else if (num_players == 2) p1_color_idx = 1;   /* 2P */
+        else p1_color_idx = 2;                          /* 3P or 4P (Arena/Rumble) */
 
-        DWORD color = g_colors[color_idx];
-
-        /*
-         * Re-apply tint if EITHER the color changed OR the board changed.
-         * A new board (new race / restart) is initialized with default white
-         * by Board_ctor, so we must re-write our tint even if the file color
-         * is the same as last time.
-         */
-        if (color == g_last_applied && board == g_last_board) continue;
-        g_last_applied = color;
-        g_last_board = board;
+        DWORD p1_color = g_colors[p1_color_idx];
 
         /* Convert hex to floats */
-        float r = ((color >> 16) & 0xFF) / 255.0f;
-        float g = ((color >> 8)  & 0xFF) / 255.0f;
-        float b = ( color        & 0xFF) / 255.0f;
+        float p1_r = ((p1_color >> 16) & 0xFF) / 255.0f;
+        float p1_g = ((p1_color >> 8)  & 0xFF) / 255.0f;
+        float p1_b = ( p1_color        & 0xFF) / 255.0f;
 
-        /* Write color into board's player 1 ball color slot */
-        set_board_ball_color(board, 0, r, g, b);
+        /* Write P1 color into board's player 1 ball color slot.
+         * We ALWAYS write — this fixes the "random tint" issue where
+         * race restarts would sometimes lose the tint because malloc
+         * reused the same board address (g_last_board matched). */
+        set_board_ball_color(board, 0, p1_r, p1_g, p1_b);
+
+        /* Write P2 color if in 2P or 4P mode */
+        if (num_players >= 2) {
+            /* P2 color: [3]=2P mode, [4]=4P mode */
+            int p2_color_idx = (num_players >= 3) ? 4 : 3;
+            DWORD p2_color = g_colors[p2_color_idx];
+
+            float p2_r = ((p2_color >> 16) & 0xFF) / 255.0f;
+            float p2_g = ((p2_color >> 8)  & 0xFF) / 255.0f;
+            float p2_b = ( p2_color        & 0xFF) / 255.0f;
+
+            set_board_ball_color(board, 1, p2_r, p2_g, p2_b);
+        }
     }
 
     return 0;
@@ -470,8 +510,23 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         load_real_bass();
         init_config_path();
         create_default_config();
-        HANDLE hThread = CreateThread(NULL, 0, tint_thread, NULL, 0, NULL);
-        if (hThread) CloseHandle(hThread);
+        g_thread_handle = CreateThread(NULL, 0, tint_thread, NULL, 0, NULL);
+        if (g_thread_handle) {
+            /* Prevent DLL from being unloaded while thread is running */
+            /* (not strictly necessary for bass.dll but good practice) */
+        }
+        break;
+
+    case DLL_PROCESS_DETACH:
+        /* Signal the background thread to stop and wait briefly.
+         * This prevents the thread from accessing freed board memory
+         * during game shutdown (fixes 0001:00057DD4 crash on Quit). */
+        InterlockedExchange(&g_shutdown, 1);
+        if (g_thread_handle) {
+            WaitForSingleObject(g_thread_handle, 2000);
+            CloseHandle(g_thread_handle);
+            g_thread_handle = NULL;
+        }
         break;
     }
     return TRUE;
