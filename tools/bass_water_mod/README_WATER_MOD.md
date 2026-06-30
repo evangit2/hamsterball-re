@@ -1,6 +1,19 @@
-# Hamsterball Water Physics Mod
+# Hamsterball Water Physics Mod v2
 
 Custom water physics for Hamsterball via bass.dll proxy.
+
+## What's New in v2
+
+v2 is a complete rewrite that fixes fundamental physics issues in v1:
+
+| Problem in v1 | Fix in v2 |
+|---|---|
+| Modified position delta, not velocity → drag/buoyancy didn't actually affect momentum | Modifies velocity directly in physics struct (phys+0xCA4/CA8/CAC) |
+| Buoyancy was a position offset → ball oscillated, never floated stable | Buoyancy is now acceleration (added to velocity) → ball decelerates, stops, floats |
+| Entry damping was a one-frame teleport → visual stutter | Entry damping reduces velocity → smooth deceleration that persists |
+| ball+0x14 mislabeled as Scene → wrong pointer reads | Correctly identified as Board (verified via Ghidra) |
+| Vtable hook with save-call-modify pattern | Phase 15 code cave (proven approach from jump mod + power bounce mod) |
+| Per-frame constants with no FPS independence | Same issue remains (per-frame constants), but velocity modification means the effect is more stable across framerates |
 
 ## Installation
 
@@ -16,7 +29,41 @@ Custom water physics for Hamsterball via bass.dll proxy.
 
 Or run `uninstall_water_mod.bat`.
 
-## How Water Planes Work
+## How It Works
+
+### Hook Architecture
+
+Uses a **Phase 15 code cave** at `0x407BB4` in Ball_Update — the same proven hook point used by the jump mod and power bounce mod. The cave:
+
+1. Saves all registers (PUSHAD + PUSHFD)
+2. Calls a C function `apply_water_physics(ball)` that modifies velocity
+3. Restores all registers (POPFD + POPAD)
+4. Executes the original 6 bytes
+5. Jumps back
+
+### Velocity-Based Physics
+
+The C function reads the ball's **velocity** from the physics struct (ball+0x1A4 → +0xCA4/CA8/CAC) and modifies it directly:
+
+1. **Entry Damping**: On first contact while falling, `vel_y *= 0.70` (30% velocity reduction). This persists — the ball actually slows down.
+
+2. **Drag**: All velocity axes scaled by `(1 - drag)` per frame. The ball decelerates over time.
+
+3. **Horizontal Drag**: Extra scaling on X/Z velocity, making horizontal movement sluggish.
+
+4. **Buoyancy**: Upward acceleration `= buoyancy_strength × submersion × 2.0`, added to `vel_y`. At half-submerged, it roughly cancels gravity. At full submersion, net upward force. The ball decelerates going down, stops, then accelerates upward — reaching a stable float.
+
+### Water Plane Discovery
+
+Scans the Board's collision mesh for objects named `E:WATER`:
+- Board is at ball+0x14 (NOT Scene — v1 had this wrong)
+- CollisionLevel is at Board+0x8B0 → +0x08 for the MeshWorld
+- Iterates AthenaList at MeshWorld+0x2C
+- For each MeshBuffer, reads name at +0x864
+- If name starts with `E:WATER`, reads Y from first collision face vertex
+- A background thread re-scans on board/level changes
+
+**Fallback**: If no E:WATER objects found, uses Y coordinates from the INI file.
 
 ### Level Setup
 
@@ -24,49 +71,10 @@ In the Raptisoft level editor, add a collision mesh object named `E:WATER`.
 The object needs at least one face (triangle). The Y coordinate of the first
 vertex of the first face determines the water surface height.
 
-The mod scans both the collision MeshWorld and visual MeshWorld for objects
-named `E:WATER` when a level loads.
-
-### Fallback: INI Water Planes
-
-If your level's collision data doesn't expose E:WATER objects (or you want
-to test without editing a level), you can specify water plane Y coordinates
-in `hamsterball_water.ini`:
-
-```ini
-[WaterPlanes]
-Count=1
-Y0=100.0
-```
-
-## Physics Behavior
-
-When the ball touches a water plane, the following physics apply:
-
-1. **Entry Damping**: On first contact while falling, vertical speed is
-   reduced by 30% (configurable via `EntryDamping`).
-
-2. **Drag**: A small per-frame velocity reduction on all axes (`Drag`).
-
-3. **Buoyancy**: An upward force proportional to how deep the ball is
-   submerged. The force increases linearly from 0 (just touching surface)
-   to 2× gravity (fully submerged).
-
-4. **Equilibrium**: At half-submerged, buoyancy exactly cancels gravity,
-   so the ball floats with zero net vertical force at the surface.
-
-5. **Horizontal Dampening**: Extra drag on X/Z axes, slightly lowering
-   the maximum horizontal speed in water (`HorizontalDrag`).
-
-6. **No Vertical Speed Cap**: The engine's own max velocity remains
-   unchanged — no artificial cap is added.
-
 ## Configuration
 
 See `hamsterball_water.ini` for all options with descriptions.
 
 ## Debug Log
 
-With `Debug=1` in the INI, the mod writes a log file (`water_mod.log` or
-`Hamsterball_water_mod.log`) showing water plane discovery and per-frame
-physics data.
+With `Debug=1` in the INI, the mod writes `water_mod_log.txt` next to bass.dll.
