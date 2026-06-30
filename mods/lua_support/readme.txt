@@ -1,5 +1,5 @@
 ===============================================================
- CUSTOM ENTITIES — Lua Scripting for Hamsterball
+ LUA SUPPORT — Lua Scripting for Hamsterball
  readme.txt
 ===============================================================
 

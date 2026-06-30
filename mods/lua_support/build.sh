@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for custom_entities mod
+# Build script for lua_support mod
 # Compiles Lua 5.1.5 source + mod code into bass.dll
 
 set -e
@@ -19,12 +19,12 @@ INCLUDES="-I lua/src"
 CFLAGS="-O2 -Wall -shared -DNO_LUA_STANDALONE"
 LDFLAGS="-lwinmm -Wl,--enable-stdcall-fixup -static -static-libgcc -Wl,--add-stdcall-alias -lm"
 
-echo "Building custom_entities mod..."
+echo "Building lua_support mod..."
 echo "  CC: $CC"
 echo "  Lua sources: $(echo $LUA_SRCS | wc -w) files"
 echo ""
 
-$CC $CFLAGS $INCLUDES -o $OUT custom_entities.c $LUA_SRCS $LDFLAGS
+$CC $CFLAGS $INCLUDES -o $OUT lua_support.c $LUA_SRCS $LDFLAGS
 
 echo ""
 echo "Build complete: $OUT ($(du -h $OUT | cut -f1))"

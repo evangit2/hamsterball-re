@@ -1,5 +1,5 @@
 /*
- * custom_entities — Lua Scripting for Hamsterball Scene Objects
+ * lua_support — Lua Scripting for Hamsterball Scene Objects
  *
  * Embeds Lua 5.1.5 into bass.dll proxy.  On game launch:
  *   1. Creates a "Lua" folder in the game directory if it doesn't exist.
@@ -14,7 +14,7 @@
  * If Lua/xxx.lua doesn't exist, the object stays static (no behaviour).
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll lua_support.c \
  *     lua/src/*.c -I lua/src -lwinmm -Wl,--enable-stdcall-fixup \
  *     -O2 -static -static-libgcc -Wl,--add-stdcall-alias \
  *     -lm -DNO_LUA_STANDALONE
