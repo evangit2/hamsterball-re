@@ -358,7 +358,7 @@ uses indirect calls through these pointers to support multiple code paths (e.g.,
 - **Description**: Pointer to the string "HAMSTER PELLET". Used in tournament/menu rendering
   for displaying hamster pellet-related UI elements (likely score or item display).
 - **Used in**:
-  - `TourneyMenu_Render+0xB07` (DATA)
+  - `ArenaLevelSelect_Render+0xB07` (DATA)
   - `ConfirmMenu_Render+0x75E` (DATA)
   - `TourneyMenu_TickWithRank+0x11F2` (DATA)
   - `HighScoreEntry_DeletingDtor+0x69E` (DATA)

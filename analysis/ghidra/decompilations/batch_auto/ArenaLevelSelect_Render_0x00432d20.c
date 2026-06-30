@@ -1,5 +1,10 @@
 
-void __thiscall TourneyMenu_Render(void *this,void *param_1)
+// Function: ArenaLevelSelect_Render (0x432D20)
+// Arena/Rodent Rumble level selection screen render function.
+// vtable[2] of 0x4D47B8 (set by ArenaMenu_ctor at 0x42FC40).
+// Previously misnamed TourneyMenu_Render.
+
+void __thiscall ArenaLevelSelect_Render(void *this,void *param_1)
 
 {
   undefined4 *puVar1;
