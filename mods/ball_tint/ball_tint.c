@@ -1,27 +1,42 @@
 /*
- * ball_tint.c — BASS.dll proxy mod (v2 — board color table method)
+ * ball_tint.c — BASS.dll proxy mod (v3 — multi-mode color support)
  *
  * Tints player 1's ball to a hex color read from ball_tint.txt.
+ * Supports THREE separate color settings for different player counts:
+ *
+ *   1-player mode color  (line 1)
+ *   2-player mode color  (line 2)
+ *   4-player mode color  (line 3)
+ *
+ * The mod detects how many player slots are active by reading the
+ * App struct's player_data array. Each player slot occupies 0xA0 bytes
+ * starting at App+0x5CC. A slot is "active" when App+0x5D7+slot*0xA0
+ * is non-zero (byte set by App_StartTournamentRace / App_StartRace).
  *
  * How it works:
  *   1. On load: creates ball_tint.txt next to the DLL (if missing)
  *   2. Background thread polls every ~60ms
- *   3. Reads hex color from ball_tint.txt (e.g. "FF6B35" or "#FF6B35")
+ *   3. Reads 3 hex colors from ball_tint.txt (lines 1/2/3)
  *   4. Finds the board via App+0x220 → PlayerProfile+0xC → board
- *   5. Writes RGBA floats directly into the board's player ball color
- *      table at board+0x3AB0 (player 1). These are the same color
- *      values initialized by Board_ctor's four Vec3_Init calls:
- *        board+0x3AB0 = (1.0, 1.0, 1.0) white   (Player 1) ← we write here
- *        board+0x3AC4 = (0.0, 0.5, 1.0) blue    (Player 2)
- *        board+0x3AD8 = (1.0, 0.25, 0.25) salmon (Player 3)
- *        board+0x3AEC = (1.0, 1.0, 0.0) yellow  (Player 4)
- *      Each entry is 4 floats (R, G, B, A) = 16 bytes, spaced 0x14 apart.
+ *   5. Counts active players
+ *   6. Selects the appropriate color (1P / 2P / 4P)
+ *   7. Writes RGBA floats directly into the board's player ball color
+ *      table at board+0x3AB0 (player 1).
+ *
+ * Board color table (set by Board_ctor's four Vec3_Init calls):
+ *   board+0x3AB0 = (1.0, 1.0, 1.0, 1.0) white   (Player 1) ← we write here
+ *   board+0x3AC4 = (0.0, 0.5, 1.0, 1.0) blue      (Player 2)
+ *   board+0x3AD8 = (1.0, 0.25, 0.25, 1.0) salmon   (Player 3)
+ *   board+0x3AEC = (1.0, 1.0, 0.0, 1.0) yellow    (Player 4)
+ * Each entry is 4 floats (R, G, B, A) = 16 bytes, spaced 0x14 apart.
  *
  * Color file format:
- *   - Plain text, one line
- *   - Hex color: "FF6B35", "#FF6B35", "0xFF6B35" (case-insensitive)
- *   - Invalid/missing: defaults to white (FFFFFF)
- *   - Re-reads every poll, so you can change colors at runtime
+ *   Line 1: hex color for 1-player mode  (e.g. "FF6B35")
+ *   Line 2: hex color for 2-player mode  (e.g. "4A90D9")
+ *   Line 3: hex color for 4-player mode  (e.g. "2ECC71")
+ *   Lines starting with # are comments
+ *   Invalid/missing: defaults to white (FFFFFF)
+ *   Re-reads every poll, so you can change colors at runtime
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll ball_tint.c -lwinmm \
@@ -162,7 +177,7 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Ball Tint Mod — Board Color Table Method
+ * Ball Tint Mod v3 — Multi-Mode Color Support
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Game addresses */
@@ -178,14 +193,22 @@ static void load_real_bass(void)
 #define BOARD_COLOR_BASE    0x3AB0     /* Player 1 color RGBA (4 floats) */
 #define BOARD_COLOR_STRIDE  0x14       /* 20 bytes per player entry (0x3AB0→0x3AC4→...) */
 
+/* App struct — player data slots for counting active players */
+#define APP_PLAYER_DATA_BASE 0x5CC     /* App+0x5CC = first player_data slot */
+#define APP_PLAYER_STRIDE     0xA0     /* 160 bytes per player slot */
+#define APP_PLAYER_ACTIVE_OFF 0x0B    /* slot+0x0B = active flag byte (App+0x5D7 for P1) */
+
 /* Fallback: ball list for board-scanning method */
 #define SCENE_BALL_LIST     0x29D4     /* Board+0x29D4 = AthenaList of balls */
 #define ATHENA_COUNT_OFFSET 0x004      /* count at list+0x04 */
 #define ATHENA_ARRAY_OFFSET 0x40C      /* array ptr at list+0x40C */
 
 static char g_config_path[MAX_PATH] = {0};
-static DWORD g_last_color = 0xFFFFFFFF;  /* Force initial read */
-static DWORD g_last_board = 0;           /* Track board to detect new race (re-apply tint) */
+
+/* Three colors: [0]=1P, [1]=2P, [4]=4P. We store by player-count index. */
+static DWORD g_colors[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+static DWORD g_last_applied = 0xFFFFFFFF;  /* Force initial write */
+static DWORD g_last_board = 0;
 
 /* Get DLL directory path and build config file path */
 static void init_config_path(void)
@@ -211,10 +234,15 @@ static void create_default_config(void)
     if (h == INVALID_HANDLE_VALUE) {
         const char *default_content =
             "FFFFFF\n"
-            "# Ball Tint Color (hex RGB, no alpha)\n"
-            "# Examples: FF6B35 (orange), 4A90D9 (blue), 2ECC71 (green)\n"
+            "4A90D9\n"
+            "2ECC71\n"
+            "# Ball Tint Colors — one per line\n"
+            "# Line 1: Player 1 color in SINGLE-PLAYER mode\n"
+            "# Line 2: Player 1 color in 2-PLAYER mode\n"
+            "# Line 3: Player 1 color in 4-PLAYER mode (Arena/Rumble)\n"
+            "# Hex RGB: FF6B35 (orange), 4A90D9 (blue), 2ECC71 (green)\n"
             "# Lines starting with # are ignored\n"
-            "# Change this value at runtime — mod re-reads every 60ms\n";
+            "# Change values at runtime — mod re-reads every 60ms\n";
         DWORD written;
         h = CreateFileA(g_config_path, GENERIC_WRITE, 0, NULL,
                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -267,32 +295,63 @@ static DWORD parse_hex_color(const char *text)
     return 0xFFFFFF;
 }
 
-/* Read color from config file. Returns 0xRRGGBB. */
-static DWORD read_color_from_file(void)
+/* Read up to 3 hex colors from config file (first 3 non-comment lines). */
+static void read_colors_from_file(void)
 {
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return 0xFFFFFF;
+    if (h == INVALID_HANDLE_VALUE) return;
 
-    char buf[256] = {0};
+    char buf[1024] = {0};
     DWORD bytesRead = 0;
     ReadFile(h, buf, sizeof(buf) - 1, &bytesRead, NULL);
     CloseHandle(h);
 
-    if (bytesRead == 0) return 0xFFFFFF;
+    if (bytesRead == 0) return;
+
+    DWORD colors[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+    int color_idx = 0;
 
     char *line = buf;
-    while (*line) {
+    while (*line && color_idx < 3) {
+        /* Skip whitespace */
         while (*line == ' ' || *line == '\t') line++;
+        /* Skip comment/empty lines */
         if (*line == '#' || *line == '\r' || *line == '\n' || *line == '\0') {
             while (*line && *line != '\n') line++;
             if (*line == '\n') line++;
             continue;
         }
-        return parse_hex_color(line);
+        /* Parse hex color from this line */
+        colors[color_idx] = parse_hex_color(line);
+        color_idx++;
+        /* Advance to next line */
+        while (*line && *line != '\n') line++;
+        if (*line == '\n') line++;
     }
 
-    return 0xFFFFFF;
+    g_colors[0] = colors[0];
+    g_colors[1] = colors[1];
+    g_colors[2] = colors[2];
+}
+
+/*
+ * Count active players by scanning App's player_data slots.
+ * Each slot is 0xA0 bytes. A slot is active when the byte at
+ * slot+0x0B (App+0x5D7 for player 1) is non-zero.
+ * Returns 1, 2, 3, or 4.
+ */
+static int count_active_players(DWORD app)
+{
+    int count = 0;
+    for (int i = 0; i < 4; i++) {
+        DWORD slot_addr = app + APP_PLAYER_DATA_BASE + (i * APP_PLAYER_STRIDE);
+        if (IsBadReadPtr((void*)slot_addr, APP_PLAYER_STRIDE)) break;
+        BYTE active = *(BYTE*)(slot_addr + APP_PLAYER_ACTIVE_OFF);
+        if (active != 0) count++;
+    }
+    if (count < 1) count = 1;  /* Safety: at least player 1 */
+    return count;
 }
 
 /*
@@ -364,8 +423,19 @@ static DWORD WINAPI tint_thread(LPVOID param)
         DWORD board = find_board(app);
         if (!board) continue;
 
-        /* Read color from file */
-        DWORD color = read_color_from_file();
+        /* Re-read colors from file every poll */
+        read_colors_from_file();
+
+        /* Count active players to select which color to use */
+        int num_players = count_active_players(app);
+
+        /* Select color index: 1→0, 2→1, 3+→2 (4P mode) */
+        int color_idx;
+        if (num_players <= 1) color_idx = 0;      /* 1P */
+        else if (num_players == 2) color_idx = 1;   /* 2P */
+        else color_idx = 2;                          /* 3P or 4P (Arena/Rumble) */
+
+        DWORD color = g_colors[color_idx];
 
         /*
          * Re-apply tint if EITHER the color changed OR the board changed.
@@ -373,8 +443,8 @@ static DWORD WINAPI tint_thread(LPVOID param)
          * by Board_ctor, so we must re-write our tint even if the file color
          * is the same as last time.
          */
-        if (color == g_last_color && board == g_last_board) continue;
-        g_last_color = color;
+        if (color == g_last_applied && board == g_last_board) continue;
+        g_last_applied = color;
         g_last_board = board;
 
         /* Convert hex to floats */
