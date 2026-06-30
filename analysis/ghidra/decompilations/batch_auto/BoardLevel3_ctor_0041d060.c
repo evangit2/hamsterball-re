@@ -1,18 +1,18 @@
 /*
- * Function: BoardLevel3_ctor
+ * Function: LevelBoard_Dizzy_ctor
  * Address: 0x0041d060
- * Signature: BoardLevel3_ctor(...)
+ * Signature: LevelBoard_Dizzy_ctor(...)
  *
- * Patterns: allocates, SEH frame, matrix math, audio, collision, rendering, scene, board, level. Calls: meshes, BoardLevel3_ctor, Board_ctor, AthenaList_Init, BoardLevel3, Board, operator_new, MeshWorld_ctor. Offsets: 31, Lines: 139
+ * Patterns: allocates, SEH frame, matrix math, audio, collision, rendering, scene, board, level. Calls: meshes, LevelBoard_Dizzy_ctor, Board_ctor, AthenaList_Init, BoardLevel3, Board, operator_new, MeshWorld_ctor. Offsets: 31, Lines: 139
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-/* BoardLevel3_ctor: "Dizzy Race" level. Loads sub-meshes (Tipper/WaterWheel/Swirl/Gluebie) as
+/* LevelBoard_Dizzy_ctor: "Dizzy Race" level. Loads sub-meshes (Tipper/WaterWheel/Swirl/Gluebie) as
    MeshWorld+CollisionLevel pairs. Race data="DIZZYRACE". See
    decompilations/scene/decomp_object_factory.c */
 
-void * __thiscall BoardLevel3_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Dizzy_ctor(void *this,int param_1)
 
 {
   void *pvVar1;
@@ -28,7 +28,7 @@ void * __thiscall BoardLevel3_ctor(void *this,int param_1)
   ExceptionList = &local_c;
   Board_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_BoardLevel3_Dizzy_dtor_004d0890;
+  *(undefined ***)this = &PTR_LevelBoard_Dizzy_dtor_004d0890;
   AthenaList_Init((void *)((int)this + 0x4378),0);
   local_4._0_1_ = 1;
   AthenaList_Init((void *)((int)this + 0x4790),0);

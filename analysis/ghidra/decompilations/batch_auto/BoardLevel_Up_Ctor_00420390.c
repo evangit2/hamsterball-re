@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel_Up_Ctor
+ * Function: LevelBoard_Up_ctor
  * Address: 0x00420390
- * Signature: void * __thiscall BoardLevel_Up_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Up_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: BoardLevel_Up_Ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 21, Lines: 68
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: LevelBoard_Up_ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 21, Lines: 68
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel_Up_Ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Up_ctor(void *this,int param_1)
 
 {
   int iVar1;

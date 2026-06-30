@@ -1,7 +1,7 @@
 /*
- * Function: ArenaBoard_Up_Ctor
+ * Function: ArenaBoard_Up_ctor
  * Address: 0x00422b10
- * Signature: void * __thiscall ArenaBoard_Up_Ctor(void *this, int param_1)
+ * Signature: void * __thiscall ArenaBoard_Up_ctor(void *this, int param_1)
  * Parameters: this: RumbleBoard* — arena board to construct | param_1: int — parent App/Scene pointer
  *
  * Description:

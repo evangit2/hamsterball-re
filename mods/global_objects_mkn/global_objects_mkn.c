@@ -208,11 +208,11 @@ static void spawn_swirl(void *board)
 
     debug_log("spawn_swirl: storing in board slots");
 
-    /* Store mesh and collision in board slots (same offsets as BoardLevel3_ctor) */
+    /* Store mesh and collision in board slots (same offsets as LevelBoard_Dizzy_ctor) */
     *(void **)((unsigned char *)board + BOARD_SWIRL_MESH) = g_swirl_mesh;
     *(void **)((unsigned char *)board + BOARD_SWIRL_COLLISION) = g_swirl_collision;
 
-    /* Set SWIRL position to origin (same as BoardLevel3_ctor: 0,0,0) */
+    /* Set SWIRL position to origin (same as LevelBoard_Dizzy_ctor: 0,0,0) */
     *(float *)((unsigned char *)board + BOARD_SWIRL_POS_X) = g_swirl_x;
     *(float *)((unsigned char *)board + BOARD_SWIRL_POS_Y) = g_swirl_y;
     *(float *)((unsigned char *)board + BOARD_SWIRL_POS_Z) = g_swirl_z;
@@ -235,7 +235,7 @@ static void spawn_swirl(void *board)
     }
 
     /* === Register collision data ===
-     * BoardLevel3_ctor stores the CollisionLevel at board+0x4BC8.
+     * LevelBoard_Dizzy_ctor stores the CollisionLevel at board+0x4BC8.
      * The board's own update loop handles rotating the SWIRL via board+0x4BC4 mesh.
      * We also need to register the collision level in the board's collision lists. */
     if (g_swirl_collision) {

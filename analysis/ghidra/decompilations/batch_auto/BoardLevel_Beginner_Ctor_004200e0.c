@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel_Beginner_Ctor
+ * Function: LevelBoard_Beginner_ctor
  * Address: 0x004200e0
- * Signature: void * __thiscall BoardLevel_Beginner_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Beginner_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board, level. Calls: BoardLevel_Beginner_Ctor, Board_ctor, _eh_vector_constructor_iterator_, Board, CONCAT31, Vec3_Init, Matrix_Identity, LoadRaceData. Offsets: 13, Lines: 31
+ * Patterns: SEH frame, matrix math, board, level. Calls: LevelBoard_Beginner_ctor, Board_ctor, _eh_vector_constructor_iterator_, Board, CONCAT31, Vec3_Init, Matrix_Identity, LoadRaceData. Offsets: 13, Lines: 31
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel_Beginner_Ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Beginner_ctor(void *this,int param_1)
 
 {
   int iVar1;

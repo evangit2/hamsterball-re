@@ -79,7 +79,7 @@ These are the primary game state variables used by the Hamsterball engine.
   - `Sound_InitChannels+0x90` — audio system init
   - `LoadingScreenGadget_Ctor+0x2E2` — loading screen
   - `ScoreDisplay_SetTime+0x09` — score display
-  - Many level dtor functions (BoardLevel3_Dizzy_dtor, BoardLevel5_Tower_dtor, etc.)
+  - Many level dtor functions (LevelBoard_Dizzy_dtor, LevelBoard_Tower_dtor, etc.)
 
 ### PTR_PTR_004f7188
 - **Address**: `0x004F7188` (.data)

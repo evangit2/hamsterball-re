@@ -10,7 +10,7 @@ Hammy Judges are floating, spinning score-display objects placed around the Expe
 
 | Function | Address | Purpose |
 |----------|---------|---------|
-| BoardLevel8_Expert_ctor | 0x41EA40 | Expert level constructor — pre-loads judge meshes |
+| LevelBoard_Expert_ctor | 0x41EA40 | Expert level constructor — pre-loads judge meshes |
 | CreateSawblade (Arena Factory) | 0x40E590 | Factory — creates JUDGE objects from level refs |
 | Gear_Level_ctor | 0x43A150 | Judge constructor |
 | Judge_Reset | 0x434C40 | Activates judge (called by E:ALERTJUDGES) |
@@ -57,7 +57,7 @@ Hammy Judges are floating, spinning score-display objects placed around the Expe
 
 ## Creation Flow
 
-### 1. Level Constructor — `BoardLevel8_Expert_ctor` (0x41EA40)
+### 1. Level Constructor — `LevelBoard_Expert_ctor` (0x41EA40)
 
 ```
 AthenaList_Init(board+0x4BBC, 0)           ← initialize judge list (empty)

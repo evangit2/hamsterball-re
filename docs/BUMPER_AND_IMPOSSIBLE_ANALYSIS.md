@@ -15,7 +15,7 @@ Bumpers are bouncy collision objects embedded in MESHWORLD geometry. They are NO
 
 #### Step 1: Board Initialization
 ```
-BoardLevel_Beginner_Ctor (0x004200E0)
+LevelBoard_Beginner_ctor (0x004200E0)
   → Board_ctor(this, param_1)
   → Sets vtable = 0x4D1098 (Beginner board)
   → LoadRaceData(this, "CASCADERACE")

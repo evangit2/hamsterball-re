@@ -206,7 +206,7 @@ Each Board constructor loads specific mesh files into `board+0x4xxx` slots BEFOR
 ### How It Works
 
 ```c
-// Inside BoardLevel3_ctor (Dizzy Race, 0x41D060):
+// Inside LevelBoard_Dizzy_ctor (Dizzy Race, 0x41D060):
 pvVar1 = operator_new(0x10D0);
 pvVar1 = MeshWorld_ctor(pvVar1, App+0x174, "Levels\\Level3-WaterWheel");
 *(void**)(board + 0x4BA8) = pvVar1;  // store mesh at board+0x4BA8

@@ -16,7 +16,7 @@
  * Cross-references (3 call sites):
  *   - Scene_ComputeLighting (0x41A9A0) — during scene lighting computation,
  *     likely setting a force direction for visual effects
- *   - BoardLevel9_Odd_dtor (0x41EE70) — during Odd Race level teardown
+ *   - LevelBoard_Odd_dtor (0x41EE70) — during Odd Race level teardown
  *   - MeshNode_Level_DeleteDtor3 (0x437EF0) — during mesh node destruction
  *
  * Struct offsets:

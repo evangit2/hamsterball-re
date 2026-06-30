@@ -81,7 +81,7 @@ Documented: 3781/3781 (100%)
 | 0x0040BF50 | CreateMouseTrap | Create MOUSETRAP |
 | 0x0040C5D0 | DispatchCollisionEvents | Create E:NODIZZY |
 | 0x00438B30 | CreateBonkPopup | Create BONKPOPUP feedback |
-| 0x0041D060 | BoardLevel3_ctor | BoardLevel3 constructor |
+| 0x0041D060 | LevelBoard_Dizzy_ctor | BoardLevel3 constructor |
 | 0x0040BAA0 | CreateSecretObjects | Create SECRET and SECRETUNLOCK objects |
 | 0x0043DFB0 | Secret_ctor | Secret object constructor (0x10EC bytes) |
 | 0x004121D0 | CreateLevelObjects | Multi-factory: BRIDGE, TIPPER, BONK, BBRIDGE1/2, POPCYLINDER, BLOCKDAWG1/2, CATAPULT, GLUEBIE |
@@ -545,7 +545,7 @@ Offset | Field | Description
 |---------|------|-----------|-----------|
 | 0x00419030 | Board_ctor | (base) | Base tournament board constructor |
 | 0x0041F4B0 | Board_ctor (Toob) | "Rodenthood" | Level8-Spinny, Level8-Saw, Level8-Fallout, Level8-Blockdawg1, Level8-Blockdawg2 |
-| 0x0041D060 | BoardLevel3_ctor | (tournament) | Tournament level 3 board |
+| 0x0041D060 | LevelBoard_Dizzy_ctor | (tournament) | Tournament level 3 board |
 
 ## Key SceneObject Methods
 
@@ -577,7 +577,7 @@ Offset | Field | Description
 | 1 | Warm-Up | FUN_41CA40 | 0x436C |
 | 2 | Beginner | FUN_4200E0 | 0x644C |
 | 3 | Intermediate | FUN_41CB20 | 0x438C |
-| 4 | Dizzy | BoardLevel3_ctor | 0x4BE0 |
+| 4 | Dizzy | LevelBoard_Dizzy_ctor | 0x4BE0 |
 | 5 | Tower | FUN_41E340 | 0x5418 |
 | 6 | Up | FUN_420390 | 0x4790 |
 | 7 | Expert | FUN_424440 | 0x4394 |
@@ -1040,18 +1040,18 @@ Offset | Field | Description
 
 | Address | Name | Xrefs | Description |
 |---------|------|-------|-------------|
-| 0x41CA40 | BoardLevel1_WarmUp_ctor | 1 | Board constructor for Warm-Up race (Level 1), calls Board_ctor, sets "Board (Warm-Up)", loads BEGINNERRACE data |
-| 0x41CB10 | BoardLevel1_WarmUp_dtor | 1 | Board destructor for Warm-Up race, sets vtable to 0x4D04A8, calls Scene_dtor |
-| 0x41CB20 | BoardLevel2_Intermediate_ctor | 1 | Board constructor for Intermediate race (Level 2), loads Level2-Bridge, creates level clone, TipperVisual_Attach |
-| 0x41CC80 | BoardLevel2_Intermediate_dtor | 1 | Board destructor for Intermediate race |
-| 0x41D450 | BoardLevel3_Dizzy_dtor | 1 | Board destructor for Dizzy race (Level 3), frees Vec3Lists at +0x11E4 and +0x10DE |
-| 0x41E340 | BoardLevel5_Tower_ctor | 1 | Board constructor for Tower race (Level4), loads 6 levels: Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, plus YellowLink and Chomper meshes |
-| 0x41E640 | BoardLevel5_Tower_dtor | 1 | Board destructor for Tower race, frees Vec3Lists at multiple offsets |
-| 0x41EA40 | BoardLevel8_Expert_ctor | 1 | Board constructor for Expert race (Level5), loads Level5-Bridge, creates clone, 3x hammyjudge meshes |
-| 0x41EC90 | BoardLevel8_Expert_dtor | 1 | Board destructor for Expert race |
-| 0x41ED80 | BoardLevel9_Odd_ctor | 1 | Board constructor for Odd race (Level6), sets "Board (Odd)", ODDRACE data |
-| 0x41EE70 | BoardLevel9_Odd_dtor | 1 | Board destructor for Odd race |
-| 0x41F110 | BoardLevel12_Wobbly_ctor | 1 | Board constructor for Wobbly race (Level 12), loads 7 levels: Level7-Wobbly1 through Level7-Wobbly7 |
+| 0x41CA40 | LevelBoard_WarmUp_ctor | 1 | Board constructor for Warm-Up race (Level 1), calls Board_ctor, sets "Board (Warm-Up)", loads BEGINNERRACE data |
+| 0x41CB10 | LevelBoard_WarmUp_dtor | 1 | Board destructor for Warm-Up race, sets vtable to 0x4D04A8, calls Scene_dtor |
+| 0x41CB20 | LevelBoard_Intermediate_ctor | 1 | Board constructor for Intermediate race (Level 2), loads Level2-Bridge, creates level clone, TipperVisual_Attach |
+| 0x41CC80 | LevelBoard_Intermediate_dtor | 1 | Board destructor for Intermediate race |
+| 0x41D450 | LevelBoard_Dizzy_dtor | 1 | Board destructor for Dizzy race (Level 3), frees Vec3Lists at +0x11E4 and +0x10DE |
+| 0x41E340 | LevelBoard_Tower_ctor | 1 | Board constructor for Tower race (Level4), loads 6 levels: Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, plus YellowLink and Chomper meshes |
+| 0x41E640 | LevelBoard_Tower_dtor | 1 | Board destructor for Tower race, frees Vec3Lists at multiple offsets |
+| 0x41EA40 | LevelBoard_Expert_ctor | 1 | Board constructor for Expert race (Level5), loads Level5-Bridge, creates clone, 3x hammyjudge meshes |
+| 0x41EC90 | LevelBoard_Expert_dtor | 1 | Board destructor for Expert race |
+| 0x41ED80 | LevelBoard_Odd_ctor | 1 | Board constructor for Odd race (Level6), sets "Board (Odd)", ODDRACE data |
+| 0x41EE70 | LevelBoard_Odd_dtor | 1 | Board destructor for Odd race |
+| 0x41F110 | LevelBoard_Wobbly_ctor | 1 | Board constructor for Wobbly race (Level 12), loads 7 levels: Level7-Wobbly1 through Level7-Wobbly7 |
 | 0x41F3C0 | BoardLevel12_Wobbly_dtor | 1 | Board destructor for Wobbly race |
 | 0x41F720 | BoardLevel_Toob_dtor | 1 | Board destructor for Toob race |
 

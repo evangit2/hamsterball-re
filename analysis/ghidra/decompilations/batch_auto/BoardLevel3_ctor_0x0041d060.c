@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel3_ctor
+ * Function: LevelBoard_Dizzy_ctor
  * Address: 0x0041d060
  *
  * Description:

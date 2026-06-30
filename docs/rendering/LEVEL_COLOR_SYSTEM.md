@@ -19,7 +19,7 @@ Each `BoardLevel*_ctor` function calls `Vec3_Init` with three float constants, t
 writes the result to the board struct:
 
 ```c
-// Example: BoardLevel1_WarmUp_ctor (0x0041CA40)
+// Example: LevelBoard_WarmUp_ctor (0x0041CA40)
 iVar1 = Vec3_Init(local_20, 0x3f800000, 0, 0x3f800000);  // R=1.0, G=0.0, B=1.0 = Magenta
 *(board + 0x1508) = *(iVar1 + 4);   // R
 *(board + 0x150C) = *(iVar1 + 8);   // G

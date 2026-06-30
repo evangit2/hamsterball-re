@@ -276,7 +276,7 @@ active_flag = 1;                                  // +0x10E4
 
 ### Tower Level Pre-loaded Meshes
 
-`BoardLevel5_Tower_ctor` (0x41E340) loads:
+`LevelBoard_Tower_ctor` (0x41E340) loads:
 
 | Board Offset | Mesh File | Purpose |
 |-------------|-----------|---------|

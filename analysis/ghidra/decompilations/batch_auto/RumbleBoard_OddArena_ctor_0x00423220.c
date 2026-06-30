@@ -1,7 +1,7 @@
 /*
- * Function: ArenaBoard_Odd_Ctor
+ * Function: ArenaBoard_Odd_ctor
  * Address: 0x00423220
- * Signature: void * __thiscall ArenaBoard_Odd_Ctor(void *this, int param_1)
+ * Signature: void * __thiscall ArenaBoard_Odd_ctor(void *this, int param_1)
  * Parameters: this: RumbleBoard* | param_1: int — parent App/Scene
  *
  * Description:

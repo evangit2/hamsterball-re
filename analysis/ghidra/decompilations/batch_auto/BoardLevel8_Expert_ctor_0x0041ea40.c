@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel8_Expert_ctor
+ * Function: LevelBoard_Expert_ctor
  * Address: 0x0041ea40
  *
  * Description:

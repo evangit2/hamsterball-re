@@ -74,7 +74,7 @@ The REF_LOADING_SYSTEM.md had Race/Arena constructor tables SWAPPED.
 
 ### 4. 0x410D00 was mislabelled
 **WRONG:** Called "NeonCollisionEvents" in old docs.
-**CORRECT:** It is the Sky Race handler (BoardLevel_Sky_Ctor at 0x41F930 sets vtable 0x4D0FC8, whose vtable[0x1D] = 0x410D00). Renamed to SkyCollisionEvents.
+**CORRECT:** It is the Sky Race handler (LevelBoard_Sky_ctor at 0x41F930 sets vtable 0x4D0FC8, whose vtable[0x1D] = 0x410D00). Renamed to SkyCollisionEvents.
 
 ### 5. Impossible Race/Arena were correct (no change needed)
 Old docs correctly had:

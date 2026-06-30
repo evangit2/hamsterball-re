@@ -59,21 +59,21 @@ The switch statement in `Tournament_AdvanceRace` (0x427080) defines the fixed ra
 
 | Race Idx | Switch Case | Board Constructor | Race Name | MESHWORLD File |
 |----------|-------------|-------------------|-----------|-----------------|
-| 1 | 1 | `BoardLevel1_WarmUp_ctor` | WARM-UP RACE | Level1 |
-| 2 | 2 | `FUN_004200e0` (Beginner) | BEGINNER RACE | LevelCascade |
-| 3 | 3 | `BoardLevel2_Intermediate_ctor` | INTERMEDIATE RACE | Level2 |
-| 4 | 4 | `BoardLevel3_ctor` (Dizzy) | DIZZY RACE | Level3 |
-| 5 | 5 | `BoardLevel5_Tower_ctor` | TOWER RACE | Level4 |
-| 6 | 6 | `FUN_00420390` (Up) | UP RACE | LevelUp |
-| 7 | 7 | `FUN_00424440` (Neon) | NEON RACE | LevelDark |
-| 8 | 8 | `BoardLevel8_Expert_ctor` | EXPERT RACE | Level5 |
-| 9 | 9 | `BoardLevel9_Odd_ctor` | ODD RACE | Level6 |
-| 10 | 10 | `FUN_0041f4b0` (Toob) | TOOB RACE | Level8 |
-| 11 | 0xB | `BoardLevel12_Wobbly_ctor` | WOBBLY RACE | Level7 |
-| 12 | 0xC | `FUN_00424a90` (Glass) | GLASS RACE | LevelGlass |
-| 13 | 0xD | `FUN_0041f930` (Sky) | SKY RACE | Level9 |
-| 14 | 0xE | `FUN_004206d0` (Master) | MASTER RACE | Level10 |
-| 15 | 0xF | `FUN_00424c20` (Impossible) | IMPOSSIBLE RACE | LevelImpossible |
+| 1 | 1 | `LevelBoard_WarmUp_ctor` | WARM-UP RACE | Level1 |
+| 2 | 2 | `LevelBoard_Beginner_ctor` (Beginner) | BEGINNER RACE | LevelCascade |
+| 3 | 3 | `LevelBoard_Intermediate_ctor` | INTERMEDIATE RACE | Level2 |
+| 4 | 4 | `LevelBoard_Dizzy_ctor` (Dizzy) | DIZZY RACE | Level3 |
+| 5 | 5 | `LevelBoard_Tower_ctor` | TOWER RACE | Level4 |
+| 6 | 6 | `LevelBoard_Up_ctor` (Up) | UP RACE | LevelUp |
+| 7 | 7 | `LevelBoard_Neon_ctor` (Neon) | NEON RACE | LevelDark |
+| 8 | 8 | `LevelBoard_Expert_ctor` | EXPERT RACE | Level5 |
+| 9 | 9 | `LevelBoard_Odd_ctor` | ODD RACE | Level6 |
+| 10 | 10 | `LevelBoard_Toob_ctor` (Toob) | TOOB RACE | Level8 |
+| 11 | 0xB | `LevelBoard_Wobbly_ctor` | WOBBLY RACE | Level7 |
+| 12 | 0xC | `LevelBoard_Glass_ctor` (Glass) | GLASS RACE | LevelGlass |
+| 13 | 0xD | `LevelBoard_Sky_ctor` (Sky) | SKY RACE | Level9 |
+| 14 | 0xE | `LevelBoard_Master_ctor` (Master) | MASTER RACE | Level10 |
+| 15 | 0xF | `LevelBoard_Impossible_ctor` (Impossible) | IMPOSSIBLE RACE | LevelImpossible |
 
 Race name strings are stored in a pointer table at `0x4F7080` (15 entries, 4 bytes each). `TourneyMenu_GetRaceName` indexes this table with the current race index to display the **upcoming** race name on the between-races screen.
 
@@ -331,7 +331,7 @@ Board+0x8B8    scene_object_AthenaList
 
 ## The "Last Race" Flag
 
-`board+0x4348` is the critical flag that determines tournament end behavior. It is set to `1` by the **Impossible Race constructor** (`FUN_00424c20` at `0x424C20`). No other board constructor sets this flag.
+`board+0x4348` is the critical flag that determines tournament end behavior. It is set to `1` by the **Impossible Race constructor** (`LevelBoard_Impossible_ctor` at `0x424C20`). No other board constructor sets this flag.
 
 When this flag is set and the race ends:
 - **Tournament mode**: Pauses the game and calls the **final win screen** constructor `0x00451B90` directly (NOT the between-races `0x0044FDA0`). This sets `profile+0x96 = 1` (won flag), deletes `DATA\TOURNAMENT.SAV`, plays victory music, and shows the win screen with rank badge. No "PLAY!" button — only "MAIN MENU". **Tournament is over.**

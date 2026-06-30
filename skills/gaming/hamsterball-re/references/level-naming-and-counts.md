@@ -108,8 +108,8 @@ which points to the Scene_SetupLevelN function that loads the actual `levels\lev
 - `LevelCascade` = Beginner Race (position #2), NOT Dizzy. The "Cascade" name comes from the `CASCADERACE` XML tag.
 - `Level2` = Intermediate Race (position #3), NOT Beginner. This was previously mislabeled across many docs.
 - `Level3` = Dizzy Race (position #4), NOT Intermediate.
-- `BoardLevel9_Odd_ctor` (0x0041ED80) → vtable[+0x48]=Scene_SetupLevel6 → loads `levels\level6` (Level6=Odd, NOT Sky)
-- `BoardLevel_Sky_Ctor` (0x0041F930) → vtable[+0x48]=Scene_SetupLevel9 → loads `levels\level9` (Level9=Sky, NOT Odd)
+- `LevelBoard_Odd_ctor` (0x0041ED80) → vtable[+0x48]=Scene_SetupLevel6 → loads `levels\level6` (Level6=Odd, NOT Sky)
+- `LevelBoard_Sky_ctor` (0x0041F930) → vtable[+0x48]=Scene_SetupLevel9 → loads `levels\level9` (Level9=Sky, NOT Odd)
 
 File numbers are internal asset IDs, not menu positions.
 

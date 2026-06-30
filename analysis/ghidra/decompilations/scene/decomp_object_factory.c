@@ -82,11 +82,11 @@
  */
 
 /*
- * BoardLevel3_ctor (0x41D060) - "Dizzy Race" level
+ * LevelBoard_Dizzy_ctor (0x41D060) - "Dizzy Race" level
  * 
  * Demonstrates the board construction pattern:
  *   1. Board_ctor(this, param_1) - base class init
- *   2. Set vtable to PTR_BoardLevel3_Dizzy_dtor_004d0890
+ *   2. Set vtable to PTR_LevelBoard_Dizzy_dtor_004d0890
  *   3. Init AthenaLists at +0x4378 and +0x4790
  *   4. Set title "Board (Dizzy)", race_name "DIZZY RACE"
  *   5. Load sub-levels as MeshWorld + CollisionLevel pairs:

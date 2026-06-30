@@ -15,20 +15,20 @@ The authoritative list of all 15 race tracks and 15 arenas in Hamsterball.
 
 | # | Display Name | XML Tag | Level File | Tier Color | Board Ctor |
 |---|-------------|---------|-----------|------------|------------|
-| 1 | Warm-up Race | `BEGINNERRACE` | `Level1.MESHWORLD` | Pink | `BoardLevel1_WarmUp_ctor` (0x41CA40) |
-| 2 | Beginner Race | `CASCADERACE` | `LevelCascade.MESHWORLD` | Blue | `BoardLevel_Beginner_Ctor` (0x4200E0) |
-| 3 | Intermediate Race | `INTERMEDIATERACE` | `Level2.MESHWORLD` | Green | `BoardLevel2_Intermediate_ctor` |
-| 4 | Dizzy Race | `DIZZYRACE` | `Level3.MESHWORLD` | — | `BoardLevel3_ctor` |
-| 5 | Tower Race | `TOWERRACE` | `Level4.MESHWORLD` | — | `BoardLevel5_Tower_ctor` |
-| 6 | Up Race | `UPRACE` | `LevelUp.MESHWORLD` | Red | `BoardLevel_Up_Ctor` (0x420390) |
+| 1 | Warm-up Race | `BEGINNERRACE` | `Level1.MESHWORLD` | Pink | `LevelBoard_WarmUp_ctor` (0x41CA40) |
+| 2 | Beginner Race | `CASCADERACE` | `LevelCascade.MESHWORLD` | Blue | `LevelBoard_Beginner_ctor` (0x4200E0) |
+| 3 | Intermediate Race | `INTERMEDIATERACE` | `Level2.MESHWORLD` | Green | `LevelBoard_Intermediate_ctor` |
+| 4 | Dizzy Race | `DIZZYRACE` | `Level3.MESHWORLD` | — | `LevelBoard_Dizzy_ctor` |
+| 5 | Tower Race | `TOWERRACE` | `Level4.MESHWORLD` | — | `LevelBoard_Tower_ctor` |
+| 6 | Up Race | `UPRACE` | `LevelUp.MESHWORLD` | Red | `LevelBoard_Up_ctor` (0x420390) |
 | 7 | Neon Race | `NEONRACE` | `LevelDark.MESHWORLD` | Orange | `Board_NeonRace_ctor` |
-| 8 | Expert Race | `EXPERTRACE` | `Level5.MESHWORLD` | — | `BoardLevel8_Expert_ctor` |
-| 9 | Odd Race | `ODDRACE` | `Level6.MESHWORLD` | — | `BoardLevel9_Odd_ctor` |
-| 10 | Toob Race | `TOOBRACE` | `Level8.MESHWORLD` | — | `BoardLevel_Toob_Ctor` (0x41F4B0) |
-| 11 | Wobbly Race | `WOBBLYRACE` | `Level7.MESHWORLD` | — | `BoardLevel12_Wobbly_ctor` |
+| 8 | Expert Race | `EXPERTRACE` | `Level5.MESHWORLD` | — | `LevelBoard_Expert_ctor` |
+| 9 | Odd Race | `ODDRACE` | `Level6.MESHWORLD` | — | `LevelBoard_Odd_ctor` |
+| 10 | Toob Race | `TOOBRACE` | `Level8.MESHWORLD` | — | `LevelBoard_Toob_ctor` (0x41F4B0) |
+| 11 | Wobbly Race | `WOBBLYRACE` | `Level7.MESHWORLD` | — | `LevelBoard_Wobbly_ctor` |
 | 12 | Glass Race | `GLASSRACE` | `LevelGlass.MESHWORLD` | — | `Board_Glass_ctor` |
-| 13 | Sky Race | `SKYRACE` | `Level9.MESHWORLD` | — | `BoardLevel_Sky_Ctor` |
-| 14 | Master Race | `MASTERRACE` | `Level10.MESHWORLD` | — | `BoardLevel_Master_Ctor` |
+| 13 | Sky Race | `SKYRACE` | `Level9.MESHWORLD` | — | `LevelBoard_Sky_ctor` |
+| 14 | Master Race | `MASTERRACE` | `Level10.MESHWORLD` | — | `LevelBoard_Master_ctor` |
 | 15 | Impossible Race | `IMPOSSIBLERACE` | `LevelImpossible.MESHWORLD` | — | `Board_Impossible_ctor` |
 
 ## Arenas (in tournament order)

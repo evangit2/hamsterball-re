@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel3_Dizzy_dtor
+ * Function: LevelBoard_Dizzy_dtor
  * Address: 0x0041d450
  *
  * Description:

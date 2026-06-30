@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel1_WarmUp_ctor
+ * Function: LevelBoard_WarmUp_ctor
  * Address: 0x0041ca40
  *
  * Description:

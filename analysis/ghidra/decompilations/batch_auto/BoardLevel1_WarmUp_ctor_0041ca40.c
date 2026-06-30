@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel1_WarmUp_ctor
+ * Function: LevelBoard_WarmUp_ctor
  * Address: 0x0041ca40
- * Signature: void * __thiscall BoardLevel1_WarmUp_ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_WarmUp_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board, level. Calls: BoardLevel1_WarmUp_ctor, Board_ctor, Board, Vec3_Init, Matrix_Identity, LoadRaceData. Offsets: 12, Lines: 29
+ * Patterns: SEH frame, matrix math, board, level. Calls: LevelBoard_WarmUp_ctor, Board_ctor, Board, Vec3_Init, Matrix_Identity, LoadRaceData. Offsets: 12, Lines: 29
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel1_WarmUp_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_WarmUp_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -22,7 +22,7 @@ void * __thiscall BoardLevel1_WarmUp_ctor(void *this,int param_1)
   local_c = ExceptionList;
   ExceptionList = &local_c;
   Board_ctor(this,param_1);
-  *(undefined ***)this = &PTR_BoardLevel1_WarmUp_dtor_004d04a8;
+  *(undefined ***)this = &PTR_LevelBoard_WarmUp_dtor_004d04a8;
   *(char **)((int)this + 0x868) = "Board (Warm-Up)";
   *(char **)((int)this + 0x29b4) = "WARM-UP RACE";
   local_4 = 0;

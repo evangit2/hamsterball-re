@@ -1,14 +1,14 @@
 /*
- * Function: ArenaBoard_Tower_Ctor
+ * Function: ArenaBoard_Tower_ctor
  * Address: 0x004228c0
- * Signature: void * __thiscall ArenaBoard_Tower_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Tower_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: ArenaBoard_Tower_Ctor, ArenaBoard_ctor, AthenaList_Init, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, MeshWorld_ctor. Offsets: 17, Lines: 65
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: ArenaBoard_Tower_ctor, ArenaBoard_ctor, AthenaList_Init, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, MeshWorld_ctor. Offsets: 17, Lines: 65
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall ArenaBoard_Tower_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Tower_ctor(void *this,int param_1)
 
 {
   int iVar1;

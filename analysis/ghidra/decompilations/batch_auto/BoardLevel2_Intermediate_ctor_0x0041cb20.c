@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel2_Intermediate_ctor
+ * Function: LevelBoard_Intermediate_ctor
  * Address: 0x0041cb20
  *
  * Description:

@@ -1,14 +1,14 @@
 /*
- * Function: ArenaBoard_Dizzy_Ctor
+ * Function: ArenaBoard_Dizzy_ctor
  * Address: 0x00422790
- * Signature: void * __thiscall ArenaBoard_Dizzy_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Dizzy_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Dizzy_Ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 29
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Dizzy_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 29
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall ArenaBoard_Dizzy_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Dizzy_ctor(void *this,int param_1)
 
 {
   int iVar1;

@@ -146,7 +146,7 @@ if (stricmp(eventName, "N:MACE") == 0) {
 
 ### Mesh Dependency
 
-Pre-loaded by `BoardLevel5_Tower_ctor` (0x41E340):
+Pre-loaded by `LevelBoard_Tower_ctor` (0x41E340):
 ```c
 board+0x4378 = MeshWorld_ctor("Levels\\Level4-Mace");  // VA 0x4D0974
 ```

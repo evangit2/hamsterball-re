@@ -1,7 +1,7 @@
 /*
- * Function: ArenaBoard_Expert_Ctor
+ * Function: ArenaBoard_Expert_ctor
  * Address: 0x00423060
- * Signature: void * __thiscall ArenaBoard_Expert_Ctor(void *this, int param_1)
+ * Signature: void * __thiscall ArenaBoard_Expert_ctor(void *this, int param_1)
  * Parameters: this: RumbleBoard* | param_1: int — parent App/Scene
  *
  * Description:

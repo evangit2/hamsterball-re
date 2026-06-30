@@ -1,7 +1,7 @@
 /*
- * Function: BoardLevel2_Intermediate_dtor
+ * Function: LevelBoard_Intermediate_dtor
  * Address: 0x00425060
- * Signature: void * __thiscall BoardLevel2_Intermediate_dtor(void *this, byte param_1)
+ * Signature: void * __thiscall LevelBoard_Intermediate_dtor(void *this, byte param_1)
  * Parameters: this: BoardLevel2* | param_1: byte — delete flag
  *
  * Description:

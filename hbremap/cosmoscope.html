@@ -10346,7 +10346,7 @@ and calls constructors directly with our own MeshWorld pointer.</p>
 All Toob constructors take the mesh pointer as the <strong>last stack parameter</strong>, so we pass<br>
 our own MeshWorld directly without touching any board+0x43xx slots.</p>
 <h2>Toob Race Board Mesh Slots</h2>
-<p>Set by <code>BoardLevel_Toob_Ctor</code> (0x41F4B0):</p>
+<p>Set by <code>LevelBoard_Toob_ctor</code> (0x41F4B0):</p>
 <table>
 <thead>
 <tr>
@@ -11674,7 +11674,7 @@ call [eax + 0x84]        ; call vtable[33] factory
 <h2>5. Board Constructor Mesh Pre-Loading</h2>
 <p>Each Board constructor loads specific mesh files into <code>board+0x4xxx</code> slots BEFORE the factory runs. The factory then reads these slots to get the mesh data needed by each object's constructor.</p>
 <h3>How It Works</h3>
-<pre><code class="language-c">// Inside BoardLevel3_ctor (Dizzy Race, 0x41D060):
+<pre><code class="language-c">// Inside LevelBoard_Dizzy_ctor (Dizzy Race, 0x41D060):
 pvVar1 = operator_new(0x10D0);
 pvVar1 = MeshWorld_ctor(pvVar1, App+0x174, &quot;Levels\\Level3-WaterWheel&quot;);
 *(void**)(board + 0x4BA8) = pvVar1;  // store mesh at board+0x4BA8
@@ -32409,7 +32409,7 @@ Initialized at startup by <code>FUN_004ce500</code>. Used extensively (193 xrefs
 <li><code>Sound_InitChannels+0x90</code> — <a href="#39687043557968" title="Audio System" class="record-link highlight">audio system</a> init</li>
 <li><code>LoadingScreenGadget_Ctor+0x2E2</code> — loading screen</li>
 <li><code>ScoreDisplay_SetTime+0x09</code> — score display</li>
-<li>Many level dtor functions (BoardLevel3_Dizzy_dtor, BoardLevel5_Tower_dtor, etc.)</li>
+<li>Many level dtor functions (LevelBoard_Dizzy_dtor, LevelBoard_Tower_dtor, etc.)</li>
 </ul>
 </li>
 </ul>
@@ -44591,7 +44591,7 @@ The REF_LOADING_SYSTEM.md had Race/Arena constructor tables SWAPPED.</p>
 </ul>
 <h3>4. 0x410D00 was mislabelled</h3>
 <p><strong>WRONG:</strong> Called &quot;NeonCollisionEvents&quot; in old docs.<br>
-<strong>CORRECT:</strong> It is the Sky Race handler (BoardLevel_Sky_Ctor at 0x41F930 sets vtable 0x4D0FC8, whose vtable[0x1D] = 0x410D00). Renamed to SkyCollisionEvents.</p>
+<strong>CORRECT:</strong> It is the Sky Race handler (LevelBoard_Sky_ctor at 0x41F930 sets vtable 0x4D0FC8, whose vtable[0x1D] = 0x410D00). Renamed to SkyCollisionEvents.</p>
 <h3>5. Impossible Race/Arena were correct (no change needed)</h3>
 <p>Old docs correctly had:</p>
 <ul>
@@ -58116,13 +58116,13 @@ call AthenaList_Append (0x453810)  ; Board+0x4BE8 (drawbridge list)
 <h3>Mesh Dependency</h3>
 <ul>
 <li><strong>Board+0x4370</strong> = MeshWorld(&quot;Levels\Level4-Drawbridge&quot;)</li>
-<li>Loaded by <code>BoardLevel5_Tower_ctor</code> (0x41E340) at line 72</li>
+<li>Loaded by <code>LevelBoard_Tower_ctor</code> (0x41E340) at line 72</li>
 <li>On non-Tower levels: must load manually via <code>MeshWorld_ctor(0x10D0, App+0x174, &quot;Levels\\Level4-Drawbridge&quot;)</code></li>
 </ul>
 <h3>AthenaList Dependencies</h3>
 <ul>
 <li><strong>Board+0x2578</strong> (general objects) — initialized by Board_ctor on ALL levels ✓</li>
-<li><strong>Board+0x4BE8</strong> (drawbridge list) — initialized by BoardLevel5_Tower_ctor ONLY</li>
+<li><strong>Board+0x4BE8</strong> (drawbridge list) — initialized by LevelBoard_Tower_ctor ONLY</li>
 </ul>
 <hr>
 <h2>2. TRAPDOOR (GlassStands)</h2>
@@ -58393,7 +58393,7 @@ The next vtable (Glass_Level at 0x4D5060) starts at [26].</p>
 <h3>AthenaList Dependencies</h3>
 <ul>
 <li><strong>Board+0x2578</strong> (general) — initialized by Board_ctor ✓</li>
-<li><strong>Board+0x47D0</strong> (trapdoor) — initialized by BoardLevel5_Tower_ctor ONLY</li>
+<li><strong>Board+0x47D0</strong> (trapdoor) — initialized by LevelBoard_Tower_ctor ONLY</li>
 <li><strong>Board+0xCD4</strong> — initialized by Board_ctor ✓ (or BoardLevel5)</li>
 <li><strong>Board+0x10EC</strong> — initialized by Board_ctor ✓ (or BoardLevel5)</li>
 <li><strong>Board+0x8AC→+0x480→+0x1C</strong> — collision list, exists on all levels</li>
@@ -58513,7 +58513,7 @@ The next vtable (Glass_Level at 0x4D5060) starts at [26].</p>
 </tr>
 <tr>
 <td>0x41E340</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>thiscall, loads Tower meshes + inits lists</td>
 </tr>
 </tbody>
@@ -58556,7 +58556,7 @@ App+0x598 = MeshWorld(&quot;Levels\\Level4-Trapdoor2&quot;)     // mesh
 App+0x59C = CollisionLevel(App+0x594)                   // collision from trapdoor1
 App+0x5A0 = CollisionLevel(App+0x598)                   // collision from trapdoor2
 </code></pre>
-<p>Drawbridge mesh is Tower-specific, loaded only by BoardLevel5_Tower_ctor.</p>
+<p>Drawbridge mesh is Tower-specific, loaded only by LevelBoard_Tower_ctor.</p>
 <hr>
 <h2>🔗 Related Documents</h2>
 <ul>
@@ -61564,7 +61564,7 @@ call 0x434D70     ; ret 0x10
 <li>After factory: stored at Board+0x4FD4, Append(Board+0x2578, obj)</li>
 </ul>
 <h2>Mesh Loading</h2>
-<p><strong>BoardLevel8_Expert_ctor</strong> @ <code>0x41EA40</code> loads:</p>
+<p><strong>LevelBoard_Expert_ctor</strong> @ <code>0x41EA40</code> loads:</p>
 <ul>
 <li><code>Board+0x4378</code> = <code>MeshWorld_ctor(0x10D0, App+0x174, &quot;Levels\Level5-Bridge&quot;)</code> @ <code>0x4D0ABC</code></li>
 <li><code>Board+0x437C</code> = <code>CollisionLevel_ctorWithLevel(0x10D0, Board+0x4378)</code> @ <code>0x465080</code></li>
@@ -61573,7 +61573,7 @@ call 0x434D70     ; ret 0x10
 </ul>
 <p><strong>Pre-loaded by resource loader (0x4298C0):</strong> NONE — all Expert meshes are level-specific.</p>
 <h2>AthenaList Initialization</h2>
-<p>BoardLevel8_Expert_ctor initializes:</p>
+<p>LevelBoard_Expert_ctor initializes:</p>
 <ul>
 <li><code>Board+0x4380</code> (saw1 bridge list)</li>
 <li><code>Board+0x4798</code> (saw2 bridge list)</li>
@@ -62518,9 +62518,9 @@ a <code>param_block</code>.</p>
 </table>
 <hr>
 <h2>8. Board Level Constructors — Mesh Loading &amp; Board Offsets</h2>
-<h3>BoardLevel3_ctor (0x0041D060) — &quot;Dizzy Race&quot;</h3>
+<h3>LevelBoard_Dizzy_ctor (0x0041D060) — &quot;Dizzy Race&quot;</h3>
 <ul>
-<li>Vtable: PTR_BoardLevel3_Dizzy_dtor_004d0890</li>
+<li>Vtable: PTR_LevelBoard_Dizzy_dtor_004d0890</li>
 <li>AthenaLists: +0x4378, +0x4790</li>
 <li>Race data: &quot;DIZZYRACE&quot;, Display: &quot;Dizzy!&quot;, Race name: &quot;DIZZY RACE&quot;</li>
 <li>Gravity: (0, 1.0, 0)</li>
@@ -62566,9 +62566,9 @@ a <code>param_block</code>.</p>
 </tr>
 </tbody>
 </table>
-<h3>BoardLevel5_Tower_ctor (0x0041E340) — &quot;Tower Race&quot;</h3>
+<h3>LevelBoard_Tower_ctor (0x0041E340) — &quot;Tower Race&quot;</h3>
 <ul>
-<li>Vtable: PTR_BoardLevel5_Tower_dtor_004d0a08</li>
+<li>Vtable: PTR_LevelBoard_Tower_dtor_004d0a08</li>
 <li>AthenaLists: +0x43B8, +0x47D0, +0x4BE8, +0x5000</li>
 <li>Race data: &quot;TOWERRACE&quot;, Display: &quot;Happy Rush&quot;, Race name: &quot;TOWER RACE&quot;</li>
 <li>Gravity: (1.0, 0.5, 0)</li>
@@ -62636,7 +62636,7 @@ a <code>param_block</code>.</p>
 </tbody>
 </table>
 <p>*Note: String at 0x4D0932 has a prefix byte &quot;pB&quot; before &quot;Levels\Level4-Turret&quot; (likely Ghidra parsing artifact; actual string starts at the &quot;L&quot;).</p>
-<h3>BoardLevel_Up_Ctor (0x00420390) — &quot;Up Race&quot;</h3>
+<h3>LevelBoard_Up_ctor (0x00420390) — &quot;Up Race&quot;</h3>
 <ul>
 <li>Vtable: PTR_BoardLevel_Generic_dtor3_004d11a0</li>
 <li>AthenaLists: +0x436C</li>
@@ -62673,9 +62673,9 @@ a <code>param_block</code>.</p>
 </tr>
 </tbody>
 </table>
-<h3>BoardLevel8_Expert_ctor (0x0041EA40) — &quot;Expert Race&quot;</h3>
+<h3>LevelBoard_Expert_ctor (0x0041EA40) — &quot;Expert Race&quot;</h3>
 <ul>
-<li>Vtable: PTR_BoardLevel8_Expert_dtor_004d0b00</li>
+<li>Vtable: PTR_LevelBoard_Expert_dtor_004d0b00</li>
 <li>AthenaLists: +0x4380, +0x4798, +0x4BBC</li>
 <li>Race data: &quot;EXPERTRACE&quot;, Display: &quot;Fight!&quot;, Race name: &quot;EXPERT RACE&quot;</li>
 <li>Gravity: (1.0, 0, 0)</li>
@@ -62721,7 +62721,7 @@ a <code>param_block</code>.</p>
 </tr>
 </tbody>
 </table>
-<h3>BoardLevel_Toob_Ctor (0x0041F4B0) — &quot;Toob Race&quot;</h3>
+<h3>LevelBoard_Toob_ctor (0x0041F4B0) — &quot;Toob Race&quot;</h3>
 <ul>
 <li>Vtable: PTR_BoardLevel_Toob_dtor_004d0e78</li>
 <li>Vec3 array at +0x438C (8 elements of 0x418 each)</li>
@@ -62868,7 +62868,7 @@ a <code>param_block</code>.</p>
 </tr>
 </tbody>
 </table>
-<h3>ArenaBoard_Tower_Ctor (0x004228C0) — &quot;Tower Arena&quot;</h3>
+<h3>ArenaBoard_Tower_ctor (0x004228C0) — &quot;Tower Arena&quot;</h3>
 <ul>
 <li>Vtable: PTR_ArenaBoard_Odd_DeletingDtor_004d1740</li>
 <li>AthenaLists: +0x47E4, +0x4C00</li>
@@ -66944,7 +66944,7 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x0041D060</td>
-<td>BoardLevel3_ctor</td>
+<td>LevelBoard_Dizzy_ctor</td>
 <td>BoardLevel3 constructor</td>
 </tr>
 <tr>
@@ -68866,7 +68866,7 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x0041D060</td>
-<td>BoardLevel3_ctor</td>
+<td>LevelBoard_Dizzy_ctor</td>
 <td>(tournament)</td>
 <td>Tournament level 3 board</td>
 </tr>
@@ -68993,7 +68993,7 @@ Documented: 3781/3781 (100%)<br>
 <tr>
 <td>4</td>
 <td>Dizzy</td>
-<td>BoardLevel3_ctor</td>
+<td>LevelBoard_Dizzy_ctor</td>
 <td>0x4BE0</td>
 </tr>
 <tr>
@@ -71319,73 +71319,73 @@ Documented: 3781/3781 (100%)<br>
 <tbody>
 <tr>
 <td>0x41CA40</td>
-<td>BoardLevel1_WarmUp_ctor</td>
+<td>LevelBoard_WarmUp_ctor</td>
 <td>1</td>
 <td>Board constructor for Warm-Up race (Level 1), calls Board_ctor, sets &quot;Board (Warm-Up)&quot;, loads BEGINNERRACE data</td>
 </tr>
 <tr>
 <td>0x41CB10</td>
-<td>BoardLevel1_WarmUp_dtor</td>
+<td>LevelBoard_WarmUp_dtor</td>
 <td>1</td>
 <td>Board destructor for Warm-Up race, sets vtable to 0x4D04A8, calls Scene_dtor</td>
 </tr>
 <tr>
 <td>0x41CB20</td>
-<td>BoardLevel2_Intermediate_ctor</td>
+<td>LevelBoard_Intermediate_ctor</td>
 <td>1</td>
 <td>Board constructor for Intermediate race (Level 2), loads Level2-Bridge, creates level clone, TipperVisual_Attach</td>
 </tr>
 <tr>
 <td>0x41CC80</td>
-<td>BoardLevel2_Intermediate_dtor</td>
+<td>LevelBoard_Intermediate_dtor</td>
 <td>1</td>
 <td>Board destructor for Intermediate race</td>
 </tr>
 <tr>
 <td>0x41D450</td>
-<td>BoardLevel3_Dizzy_dtor</td>
+<td>LevelBoard_Dizzy_dtor</td>
 <td>1</td>
 <td>Board destructor for Dizzy race (Level 3), frees Vec3Lists at +0x11E4 and +0x10DE</td>
 </tr>
 <tr>
 <td>0x41E340</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>1</td>
 <td>Board constructor for Tower race (Level4), loads 6 levels: Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret, plus YellowLink and Chomper meshes</td>
 </tr>
 <tr>
 <td>0x41E640</td>
-<td>BoardLevel5_Tower_dtor</td>
+<td>LevelBoard_Tower_dtor</td>
 <td>1</td>
 <td>Board destructor for Tower race, frees Vec3Lists at multiple offsets</td>
 </tr>
 <tr>
 <td>0x41EA40</td>
-<td>BoardLevel8_Expert_ctor</td>
+<td>LevelBoard_Expert_ctor</td>
 <td>1</td>
 <td>Board constructor for Expert race (Level5), loads Level5-Bridge, creates clone, 3x hammyjudge meshes</td>
 </tr>
 <tr>
 <td>0x41EC90</td>
-<td>BoardLevel8_Expert_dtor</td>
+<td>LevelBoard_Expert_dtor</td>
 <td>1</td>
 <td>Board destructor for Expert race</td>
 </tr>
 <tr>
 <td>0x41ED80</td>
-<td>BoardLevel9_Odd_ctor</td>
+<td>LevelBoard_Odd_ctor</td>
 <td>1</td>
 <td>Board constructor for <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> (Level6), sets &quot;Board (Odd)&quot;, ODDRACE data</td>
 </tr>
 <tr>
 <td>0x41EE70</td>
-<td>BoardLevel9_Odd_dtor</td>
+<td>LevelBoard_Odd_dtor</td>
 <td>1</td>
 <td>Board destructor for <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a></td>
 </tr>
 <tr>
 <td>0x41F110</td>
-<td>BoardLevel12_Wobbly_ctor</td>
+<td>LevelBoard_Wobbly_ctor</td>
 <td>1</td>
 <td>Board constructor for Wobbly race (Level 12), loads 7 levels: Level7-Wobbly1 through Level7-Wobbly7</td>
 </tr>
@@ -76022,62 +76022,62 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x41CA40</td>
-<td>BoardLevel1_WarmUp_ctor</td>
+<td>LevelBoard_WarmUp_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41CB10</td>
-<td>BoardLevel1_WarmUp_dtor</td>
+<td>LevelBoard_WarmUp_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41CB20</td>
-<td>BoardLevel2_Intermediate_ctor</td>
+<td>LevelBoard_Intermediate_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41CC80</td>
-<td>BoardLevel2_Intermediate_dtor</td>
+<td>LevelBoard_Intermediate_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41D450</td>
-<td>BoardLevel3_Dizzy_dtor</td>
+<td>LevelBoard_Dizzy_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41E340</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41E640</td>
-<td>BoardLevel5_Tower_dtor</td>
+<td>LevelBoard_Tower_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41EA40</td>
-<td>BoardLevel8_Expert_ctor</td>
+<td>LevelBoard_Expert_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41EC90</td>
-<td>BoardLevel8_Expert_dtor</td>
+<td>LevelBoard_Expert_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41ED80</td>
-<td>BoardLevel9_Odd_ctor</td>
+<td>LevelBoard_Odd_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41EE70</td>
-<td>BoardLevel9_Odd_dtor</td>
+<td>LevelBoard_Odd_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41F110</td>
-<td>BoardLevel12_Wobbly_ctor</td>
+<td>LevelBoard_Wobbly_ctor</td>
 <td>1</td>
 </tr>
 <tr>
@@ -80593,7 +80593,7 @@ Rendering (every frame):
 </ul>
 <h3>How Are Bumpers Created?</h3>
 <h4>Step 1: Board Initialization</h4>
-<pre><code>BoardLevel_Beginner_Ctor (0x004200E0)
+<pre><code>LevelBoard_Beginner_ctor (0x004200E0)
   → Board_ctor(this, param_1)
   → Sets vtable = 0x4D1098 (Beginner board)
   → LoadRaceData(this, &quot;CASCADERACE&quot;)
@@ -81382,7 +81382,7 @@ j. Track in array for board-change cleanup</li>
 </code></pre>
 <p>But <code>Board+0x43B8</code> and <code>Board+0x584C</code> are <strong>only</strong> initialized by level-specific ctors:</p>
 <ul>
-<li><code>BoardLevel5_Tower_ctor</code> (0x0041E340) → inits +0x43B8, +0x584C</li>
+<li><code>LevelBoard_Tower_ctor</code> (0x0041E340) → inits +0x43B8, +0x584C</li>
 <li><code>BoardLevel_Master_Ctor</code> (0x004206D0) → inits +0x584C</li>
 </ul>
 <p>On all other levels these offsets contain garbage from malloc. The fix checks the vtable pointer (first 4 bytes) against <code>0x4D875C</code> (the AthenaList vtable set by <code>AthenaList_Init</code>). If it doesn't match, the list is uninitialized and <code>AthenaList_Init</code> is called before appending.</p>
@@ -81972,7 +81972,7 @@ When the ball intersects these triangles, the game's <a href="#53892486924051" t
 <tbody>
 <tr>
 <td>Tower (Level4)</td>
-<td><code>Levels\Level4-Mace</code> mesh (set by BoardLevel5_Tower_ctor)</td>
+<td><code>Levels\Level4-Mace</code> mesh (set by LevelBoard_Tower_ctor)</td>
 </tr>
 <tr>
 <td>Beginner (LevelCascade)</td>
@@ -82039,7 +82039,7 @@ When the ball intersects these triangles, the game's <a href="#53892486924051" t
 </tr>
 <tr>
 <td>0x41E340</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>Tower board init. Loads meshes into board+0x43xx slots.</td>
 </tr>
 </tbody>
@@ -82057,37 +82057,37 @@ When the ball intersects these triangles, the game's <a href="#53892486924051" t
 <tr>
 <td>board+0x436C</td>
 <td>Levels\Level4-Catapult</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 <tr>
 <td>board+0x4370</td>
 <td>Levels\Level4-Drawbridge</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 <tr>
 <td>board+0x4374</td>
 <td>Meshes\YellowLink</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 <tr>
 <td>board+0x4378</td>
 <td>Levels\Level4-Mace</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 <tr>
 <td>board+0x437C</td>
 <td>Levels\Level4-Windmill</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 <tr>
 <td>board+0x4390</td>
 <td>Meshes\Chomper</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 <tr>
 <td>board+0x43B4</td>
 <td>Levels\Level4-Turret</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 </tr>
 </tbody>
 </table>
@@ -83739,7 +83739,7 @@ When the ball intersects these triangles, the game's <a href="#53892486924051" t
 <ul>
 <li>Hooks at <code>Ball_Update</code> (0x405E22) — same pattern as SpeedCylinder/Bonk</li>
 <li>On first spawn: loads <code>Levels\Level4-Mace</code> mesh via <code>MeshWorld_ctor</code> → stores at <code>board+0x4378</code></li>
-<li>On Tower Race, mesh is already loaded by <code>BoardLevel5_Tower_ctor</code> — reuses it</li>
+<li>On Tower Race, mesh is already loaded by <code>LevelBoard_Tower_ctor</code> — reuses it</li>
 <li>Allocates 0x110C bytes, calls <code>CascadeStands_Ctor</code> (0x438750)</li>
 <li>Sets position at <code>obj+0x10D8</code> (X), <code>+0x10DC</code> (Y), <code>+0x10E0</code> (Z)</li>
 <li>Sets swing amplitude (+0x10E8 = 80.0), active flag (+0x10F4 = 1), timer (+0x10F8 = 50)</li>
@@ -84542,7 +84542,7 @@ This script bypasses that check — saws spawn on ALL difficulty levels.</p>
 <li><strong>Fields</strong>: +0x04=board, +0x08=X, +0x0C=Y, +0x10=Z, +0x24=90.0, +0x28=90.0</li>
 </ul>
 <h2>Factory Chain</h2>
-<pre><code>BoardLevel_Sky_Ctor (0x41F930):
+<pre><code>LevelBoard_Sky_ctor (0x41F930):
   LoadRaceData(&quot;SKYRACE&quot;)
   board+0x436C = MeshNode(&quot;meshes\skypillar&quot;)
   board+0x4370 = MeshNode(&quot;meshes\magnifyingglass&quot;)
@@ -85512,7 +85512,7 @@ Initialized at startup by <code>FUN_004ce500</code>. Used extensively (193 xrefs
 <li><code>Sound_InitChannels+0x90</code> — <a href="#39687043557968" title="Audio System" class="record-link ">audio system</a> init</li>
 <li><code>LoadingScreenGadget_Ctor+0x2E2</code> — loading screen</li>
 <li><code>ScoreDisplay_SetTime+0x09</code> — score display</li>
-<li>Many level dtor functions (BoardLevel3_Dizzy_dtor, BoardLevel5_Tower_dtor, etc.)</li>
+<li>Many level dtor functions (LevelBoard_Dizzy_dtor, LevelBoard_Tower_dtor, etc.)</li>
 </ul>
 </li>
 </ul>
@@ -86953,7 +86953,7 @@ Initialized at startup by <code>FUN_004ce500</code>. Used extensively (193 xrefs
 <li><code>Sound_InitChannels+0x90</code> — <a href="#39687043557968" title="Audio System" class="record-link highlight">audio system</a> init</li>
 <li><code>LoadingScreenGadget_Ctor+0x2E2</code> — loading screen</li>
 <li><code>ScoreDisplay_SetTime+0x09</code> — score display</li>
-<li>Many level dtor functions (BoardLevel3_Dizzy_dtor, BoardLevel5_Tower_dtor, etc.)</li>
+<li>Many level dtor functions (LevelBoard_Dizzy_dtor, LevelBoard_Tower_dtor, etc.)</li>
 </ul>
 </li>
 </ul>
@@ -87496,7 +87496,7 @@ button across all menus and UI screens. 45 xrefs — appears in every menu const
 </ul>
 <p><strong>Key difference from WAVY1</strong>: Takes a MeshWorld <strong>pointer</strong> (not path string). Must create a <code>MeshWorld</code> first via <code>MeshWorld_ctor</code>, then pass the pointer.</p>
 <h2>Factory Chain</h2>
-<pre><code>BoardLevel12_Wobbly_ctor (0x41F110):
+<pre><code>LevelBoard_Wobbly_ctor (0x41F110):
   LoadRaceData(&quot;WOBBLYRACE&quot;)
   board+0x436C = MeshWorld(&quot;Levels\Level7-Wobbly1&quot;)
   board+0x4370 = MeshWorld(&quot;Levels\Level7-Wobbly2&quot;)
@@ -88619,7 +88619,7 @@ In C, <code>param_1[0xB3]</code> accesses byte offset <code>0xB3*4 = 0x2CC</code
 </thead>
 <tbody>
 <tr>
-<td>BoardLevel8_Expert_ctor</td>
+<td>LevelBoard_Expert_ctor</td>
 <td>0x41EA40</td>
 <td>Expert level constructor — pre-loads judge meshes</td>
 </tr>
@@ -88819,7 +88819,7 @@ In C, <code>param_1[0xB3]</code> accesses byte offset <code>0xB3*4 = 0x2CC</code
 </tbody>
 </table>
 <h2>Creation Flow</h2>
-<h3>1. Level Constructor — <code>BoardLevel8_Expert_ctor</code> (0x41EA40)</h3>
+<h3>1. Level Constructor — <code>LevelBoard_Expert_ctor</code> (0x41EA40)</h3>
 <pre><code>AthenaList_Init(board+0x4BBC, 0)           ← initialize judge list (empty)
 
 MeshNode(&quot;meshes\hammyjudge&quot;) → board+0x4BB0  ← pre-load judge mesh 1
@@ -93622,7 +93622,7 @@ making the timer turn <strong>red</strong> as a visual warning.</p>
 <h2>Where the Color Is Set</h2>
 <p>Each <code>BoardLevel*_ctor</code> function calls <code>Vec3_Init</code> with three float constants, then<br>
 writes the result to the board struct:</p>
-<pre><code class="language-c">// Example: BoardLevel1_WarmUp_ctor (0x0041CA40)
+<pre><code class="language-c">// Example: LevelBoard_WarmUp_ctor (0x0041CA40)
 iVar1 = Vec3_Init(local_20, 0x3f800000, 0, 0x3f800000);  // R=1.0, G=0.0, B=1.0 = Magenta
 *(board + 0x1508) = *(iVar1 + 4);   // R
 *(board + 0x150C) = *(iVar1 + 8);   // G
@@ -95217,8 +95217,8 @@ which points to the Scene_SetupLevelN function that loads the actual <code>level
 <li><code>LevelCascade</code> = Beginner Race (position #2), NOT Dizzy. The &quot;Cascade&quot; name comes from the <code>CASCADERACE</code> XML tag.</li>
 <li><code>Level2</code> = Intermediate Race (position #3), NOT Beginner. This was previously mislabeled across many docs.</li>
 <li><code>Level3</code> = Dizzy Race (position #4), NOT Intermediate.</li>
-<li><code>BoardLevel9_Odd_ctor</code> (0x0041ED80) → vtable[+0x48]=Scene_SetupLevel6 → loads <code>levels\level6</code> (Level6=Odd, NOT Sky)</li>
-<li><code>BoardLevel_Sky_Ctor</code> (0x0041F930) → vtable[+0x48]=Scene_SetupLevel9 → loads <code>levels\level9</code> (Level9=Sky, NOT Odd)</li>
+<li><code>LevelBoard_Odd_ctor</code> (0x0041ED80) → vtable[+0x48]=Scene_SetupLevel6 → loads <code>levels\level6</code> (Level6=Odd, NOT Sky)</li>
+<li><code>LevelBoard_Sky_ctor</code> (0x0041F930) → vtable[+0x48]=Scene_SetupLevel9 → loads <code>levels\level9</code> (Level9=Sky, NOT Odd)</li>
 </ul>
 <p>File numbers are internal asset IDs, not menu positions.</p>
 <table>
@@ -96963,7 +96963,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>BEGINNERRACE</code></td>
 <td><code>Level1.MESHWORLD</code></td>
 <td>Pink</td>
-<td><code>BoardLevel1_WarmUp_ctor</code> (0x41CA40)</td>
+<td><code>LevelBoard_WarmUp_ctor</code> (0x41CA40)</td>
 </tr>
 <tr>
 <td>2</td>
@@ -96971,7 +96971,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>CASCADERACE</code></td>
 <td><code>LevelCascade.MESHWORLD</code></td>
 <td>Blue</td>
-<td><code>BoardLevel_Beginner_Ctor</code> (0x4200E0)</td>
+<td><code>LevelBoard_Beginner_ctor</code> (0x4200E0)</td>
 </tr>
 <tr>
 <td>3</td>
@@ -96979,7 +96979,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>INTERMEDIATERACE</code></td>
 <td><code>Level2.MESHWORLD</code></td>
 <td>Green</td>
-<td><code>BoardLevel2_Intermediate_ctor</code></td>
+<td><code>LevelBoard_Intermediate_ctor</code></td>
 </tr>
 <tr>
 <td>4</td>
@@ -96987,7 +96987,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>DIZZYRACE</code></td>
 <td><code>Level3.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel3_ctor</code></td>
+<td><code>LevelBoard_Dizzy_ctor</code></td>
 </tr>
 <tr>
 <td>5</td>
@@ -96995,7 +96995,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>TOWERRACE</code></td>
 <td><code>Level4.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel5_Tower_ctor</code></td>
+<td><code>LevelBoard_Tower_ctor</code></td>
 </tr>
 <tr>
 <td>6</td>
@@ -97003,7 +97003,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>UPRACE</code></td>
 <td><code>LevelUp.MESHWORLD</code></td>
 <td>Red</td>
-<td><code>BoardLevel_Up_Ctor</code> (0x420390)</td>
+<td><code>LevelBoard_Up_ctor</code> (0x420390)</td>
 </tr>
 <tr>
 <td>7</td>
@@ -97019,7 +97019,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>EXPERTRACE</code></td>
 <td><code>Level5.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel8_Expert_ctor</code></td>
+<td><code>LevelBoard_Expert_ctor</code></td>
 </tr>
 <tr>
 <td>9</td>
@@ -97027,7 +97027,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>ODDRACE</code></td>
 <td><code>Level6.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel9_Odd_ctor</code></td>
+<td><code>LevelBoard_Odd_ctor</code></td>
 </tr>
 <tr>
 <td>10</td>
@@ -97035,7 +97035,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>TOOBRACE</code></td>
 <td><code>Level8.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel_Toob_Ctor</code> (0x41F4B0)</td>
+<td><code>LevelBoard_Toob_ctor</code> (0x41F4B0)</td>
 </tr>
 <tr>
 <td>11</td>
@@ -97043,7 +97043,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>WOBBLYRACE</code></td>
 <td><code>Level7.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel12_Wobbly_ctor</code></td>
+<td><code>LevelBoard_Wobbly_ctor</code></td>
 </tr>
 <tr>
 <td>12</td>
@@ -97059,7 +97059,7 @@ the main arena, and some levels have additional sub-levels.</p>
 <td><code>SKYRACE</code></td>
 <td><code>Level9.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel_Sky_Ctor</code></td>
+<td><code>LevelBoard_Sky_ctor</code></td>
 </tr>
 <tr>
 <td>14</td>
@@ -97559,7 +97559,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>BEGINNERRACE</code></td>
 <td><code>Level1.MESHWORLD</code></td>
 <td>Pink</td>
-<td><code>BoardLevel1_WarmUp_ctor</code> (0x41CA40)</td>
+<td><code>LevelBoard_WarmUp_ctor</code> (0x41CA40)</td>
 </tr>
 <tr>
 <td>2</td>
@@ -97567,7 +97567,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>CASCADERACE</code></td>
 <td><code>LevelCascade.MESHWORLD</code></td>
 <td>Blue</td>
-<td><code>BoardLevel_Beginner_Ctor</code> (0x4200E0)</td>
+<td><code>LevelBoard_Beginner_ctor</code> (0x4200E0)</td>
 </tr>
 <tr>
 <td>3</td>
@@ -97575,7 +97575,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>INTERMEDIATERACE</code></td>
 <td><code>Level2.MESHWORLD</code></td>
 <td>Green</td>
-<td><code>BoardLevel2_Intermediate_ctor</code></td>
+<td><code>LevelBoard_Intermediate_ctor</code></td>
 </tr>
 <tr>
 <td>4</td>
@@ -97583,7 +97583,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>DIZZYRACE</code></td>
 <td><code>Level3.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel3_ctor</code></td>
+<td><code>LevelBoard_Dizzy_ctor</code></td>
 </tr>
 <tr>
 <td>5</td>
@@ -97591,7 +97591,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>TOWERRACE</code></td>
 <td><code>Level4.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel5_Tower_ctor</code></td>
+<td><code>LevelBoard_Tower_ctor</code></td>
 </tr>
 <tr>
 <td>6</td>
@@ -97599,7 +97599,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>UPRACE</code></td>
 <td><code>LevelUp.MESHWORLD</code></td>
 <td>Red</td>
-<td><code>BoardLevel_Up_Ctor</code> (0x420390)</td>
+<td><code>LevelBoard_Up_ctor</code> (0x420390)</td>
 </tr>
 <tr>
 <td>7</td>
@@ -97615,7 +97615,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>EXPERTRACE</code></td>
 <td><code>Level5.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel8_Expert_ctor</code></td>
+<td><code>LevelBoard_Expert_ctor</code></td>
 </tr>
 <tr>
 <td>9</td>
@@ -97623,7 +97623,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>ODDRACE</code></td>
 <td><code>Level6.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel9_Odd_ctor</code></td>
+<td><code>LevelBoard_Odd_ctor</code></td>
 </tr>
 <tr>
 <td>10</td>
@@ -97631,7 +97631,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>TOOBRACE</code></td>
 <td><code>Level8.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel_Toob_Ctor</code> (0x41F4B0)</td>
+<td><code>LevelBoard_Toob_ctor</code> (0x41F4B0)</td>
 </tr>
 <tr>
 <td>11</td>
@@ -97639,7 +97639,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>WOBBLYRACE</code></td>
 <td><code>Level7.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel12_Wobbly_ctor</code></td>
+<td><code>LevelBoard_Wobbly_ctor</code></td>
 </tr>
 <tr>
 <td>12</td>
@@ -97655,7 +97655,7 @@ not what we'd call &quot;Beginner&quot; in the display.</p>
 <td><code>SKYRACE</code></td>
 <td><code>Level9.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel_Sky_Ctor</code></td>
+<td><code>LevelBoard_Sky_ctor</code></td>
 </tr>
 <tr>
 <td>14</td>
@@ -99531,7 +99531,7 @@ Collision_TraverseSpatialTree to find collision candidates.</p>
 <td><code>0x437960</code></td>
 <td><code>+0x4394</code> (mesh), <code>+0x4398</code> (visual)</td>
 <td><code>Levels\Level3-Tipper</code></td>
-<td><code>BoardLevel3_ctor</code> (<code>0x41D060</code>)</td>
+<td><code>LevelBoard_Dizzy_ctor</code> (<code>0x41D060</code>)</td>
 <td><code>app+0x23C != 0</code></td>
 </tr>
 <tr>
@@ -99541,7 +99541,7 @@ Collision_TraverseSpatialTree to find collision candidates.</p>
 <td><code>0x437CB0</code></td>
 <td><code>+0x607C</code> (mesh)</td>
 <td><code>Levels\Level3-Gluebie</code></td>
-<td><code>BoardLevel3_ctor</code> (<code>0x41D060</code>)</td>
+<td><code>LevelBoard_Dizzy_ctor</code> (<code>0x41D060</code>)</td>
 <td><code>app+0x23C != 0</code></td>
 </tr>
 <tr>
@@ -100079,7 +100079,7 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 <hr>
 <h2>Scene Mesh Dependency Reference</h2>
 <p>For scene-dependent objects, here is exactly what each level constructor loads and where it stores the mesh pointers:</p>
-<h3><code>BoardLevel3_ctor</code> (0x41D060) — Dizzy Race</h3>
+<h3><code>LevelBoard_Dizzy_ctor</code> (0x41D060) — Dizzy Race</h3>
 <p>Loads the most sub-meshes of any level:</p>
 <table>
 <thead>
@@ -100127,7 +100127,7 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 </tr>
 </tbody>
 </table>
-<h3><code>BoardLevel8_Expert_ctor</code> (0x41EA40)</h3>
+<h3><code>LevelBoard_Expert_ctor</code> (0x41EA40)</h3>
 <table>
 <thead>
 <tr>
@@ -100149,7 +100149,7 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 </tr>
 </tbody>
 </table>
-<h3><code>BoardLevel_Beginner_Ctor</code> (0x4200E0) — Beginner Race (Arena, internal name: Cascade)</h3>
+<h3><code>LevelBoard_Beginner_ctor</code> (0x4200E0) — Beginner Race (Arena, internal name: Cascade)</h3>
 <table>
 <thead>
 <tr>
@@ -100166,7 +100166,7 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 </tr>
 </tbody>
 </table>
-<h3><code>BoardLevel1_WarmUp_ctor</code> (0x41CA40) — Warm-Up</h3>
+<h3><code>LevelBoard_WarmUp_ctor</code> (0x41CA40) — Warm-Up</h3>
 <p><strong>No sub-meshes loaded.</strong> All scene mesh pointer offsets (<code>+0x4394</code>, <code>+0x5840</code>, <code>+0x607C</code>, etc.) are NULL/zero from the base <code>Board_ctor</code>.</p>
 <hr>
 <h2>How to Add Level-Locked Objects to Any Level</h2>
@@ -100182,7 +100182,7 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 <p><strong>Step 1:</strong> Patch <code>app+0x23C</code> to 1</p>
 <p><strong>Step 2:</strong> Patch the level's <code>BoardLevel*_ctor</code> to load the required sub-mesh files and store the MeshWorld/CollisionLevel pointers at the correct scene offsets. For example, to add TIPPER support to Level 1:</p>
 <ul>
-<li>Patch <code>BoardLevel1_WarmUp_ctor</code> at <code>0x41CA40</code> to add:<pre><code>MeshWorld_ctor(buf, graphics, &quot;Levels\\Level3-Tipper&quot;)
+<li>Patch <code>LevelBoard_WarmUp_ctor</code> at <code>0x41CA40</code> to add:<pre><code>MeshWorld_ctor(buf, graphics, &quot;Levels\\Level3-Tipper&quot;)
 store result → scene+0x4394
 CollisionLevel_ctorWithLevel(buf2, tipper_mesh)
 store result → scene+0x4398
@@ -100802,7 +100802,7 @@ if (stricmp(eventName, &quot;N:MACE&quot;) == 0) {
 }
 </code></pre>
 <h3>Mesh Dependency</h3>
-<p>Pre-loaded by <code>BoardLevel5_Tower_ctor</code> (0x41E340):</p>
+<p>Pre-loaded by <code>LevelBoard_Tower_ctor</code> (0x41E340):</p>
 <pre><code class="language-c">board+0x4378 = MeshWorld_ctor(&quot;Levels\\Level4-Mace&quot;);  // VA 0x4D0974
 </code></pre>
 <p>For global spawn: load mesh via <code>MeshWorld_ctor</code> with JIT mesh injection at <code>board+0x4378</code>.</p>
@@ -106861,58 +106861,58 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <p>Each level has a custom <code>BoardLevel</code> subclass with constructor and destructor:</p>
 <h3>WarmUp (Level 1)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel1_WarmUp_ctor</code> @ <code>0x41CA40</code></li>
-<li><strong>Dtor:</strong> <code>BoardLevel1_WarmUp_dtor</code> @ <code>0x41CB10</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_WarmUp_ctor</code> @ <code>0x41CA40</code></li>
+<li><strong>Dtor:</strong> <code>LevelBoard_WarmUp_dtor</code> @ <code>0x41CB10</code></li>
 </ul>
 <h3>Intermediate (Level 2)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel2_Intermediate_ctor</code> @ <code>0x41CB20</code></li>
-<li><strong>Dtor:</strong> <code>BoardLevel2_Intermediate_dtor</code> @ <code>0x41CC80</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Intermediate_ctor</code> @ <code>0x41CB20</code></li>
+<li><strong>Dtor:</strong> <code>LevelBoard_Intermediate_dtor</code> @ <code>0x41CC80</code></li>
 </ul>
 <h3>Dizzy (Level 4)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel3_Dizzy_ctor</code> @ <code>0x41D060</code> (note: named Level3 in code)</li>
-<li><strong>Dtor:</strong> <code>BoardLevel3_Dizzy_dtor</code> @ <code>0x41D450</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Dizzy_ctor</code> @ <code>0x41D060</code> (note: named Level3 in code)</li>
+<li><strong>Dtor:</strong> <code>LevelBoard_Dizzy_dtor</code> @ <code>0x41D450</code></li>
 </ul>
 <h3>Tower (Level 5)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel5_Tower_ctor</code> @ <code>0x41E340</code></li>
-<li><strong>Dtor:</strong> <code>BoardLevel5_Tower_dtor</code> @ <code>0x41E640</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Tower_ctor</code> @ <code>0x41E340</code></li>
+<li><strong>Dtor:</strong> <code>LevelBoard_Tower_dtor</code> @ <code>0x41E640</code></li>
 </ul>
 <h3>Expert (Level 8)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel8_Expert_ctor</code> @ <code>0x41EA40</code></li>
-<li><strong>Dtor:</strong> <code>BoardLevel8_Expert_dtor</code> @ <code>0x41EC90</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Expert_ctor</code> @ <code>0x41EA40</code></li>
+<li><strong>Dtor:</strong> <code>LevelBoard_Expert_dtor</code> @ <code>0x41EC90</code></li>
 </ul>
 <h3>Odd (Level 9)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel9_Odd_ctor</code> @ <code>0x41ED80</code></li>
-<li><strong>Dtor:</strong> <code>BoardLevel9_Odd_dtor</code> @ <code>0x41EE70</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Odd_ctor</code> @ <code>0x41ED80</code></li>
+<li><strong>Dtor:</strong> <code>LevelBoard_Odd_dtor</code> @ <code>0x41EE70</code></li>
 </ul>
 <h3>Wobbly (Level 12)</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel12_Wobbly_ctor</code> @ <code>0x41F110</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Wobbly_ctor</code> @ <code>0x41F110</code></li>
 <li><strong>Dtor:</strong> <code>BoardLevel12_Wobbly_dtor</code> @ <code>0x41F3C0</code></li>
 </ul>
 <h3>Toob</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel_Toob_Ctor</code> @ <code>0x41F4B0</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Toob_ctor</code> @ <code>0x41F4B0</code></li>
 <li><strong>Dtor:</strong> <code>BoardLevel_Toob_dtor</code> @ <code>0x41F720</code></li>
 </ul>
 <h3>Sky</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel_Sky_Ctor</code> @ <code>0x41F930</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Sky_ctor</code> @ <code>0x41F930</code></li>
 <li><strong>Dtor:</strong> <code>BoardLevel_Sky_Dtor</code> @ <code>0x41FBC0</code></li>
 </ul>
 <h3>Beginner</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel_Beginner_Ctor</code> @ <code>0x4200E0</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Beginner_ctor</code> @ <code>0x4200E0</code></li>
 <li><strong>Dtor:</strong> <code>BoardLevel_Beginner_Dtor</code> @ <code>0x4201D0</code></li>
 <li><strong>HandleRaceEnd:</strong> <code>Board_Beginner_HandleRaceEnd</code> @ <code>0x420240</code></li>
 </ul>
 <h3>Up</h3>
 <ul>
-<li><strong>Ctor:</strong> <code>BoardLevel_Up_Ctor</code> @ <code>0x420390</code></li>
+<li><strong>Ctor:</strong> <code>LevelBoard_Up_ctor</code> @ <code>0x420390</code></li>
 <li><strong>Dtor:</strong> <code>BoardLevel_Up_Dtor</code> @ <code>0x420550</code></li>
 </ul>
 <h3>Arena Level Constructors (via <code>TourneyMenu_CreateBoard</code>)</h3>
@@ -106929,67 +106929,67 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td>1</td>
 <td>WarmUp</td>
-<td><code>ArenaBoard_Warmup_Ctor</code></td>
+<td><code>ArenaBoard_WarmUp_ctor</code></td>
 <td><code>0x47E0</code></td>
 </tr>
 <tr>
 <td>2</td>
 <td>Beginner</td>
-<td><code>ArenaBoard_Beginner_Ctor</code></td>
+<td><code>ArenaBoard_Beginner_ctor</code></td>
 <td><code>0x5850</code></td>
 </tr>
 <tr>
 <td>3</td>
 <td>Intermediate</td>
-<td><code>ArenaBoard_Intermediate_Ctor</code></td>
+<td><code>ArenaBoard_Intermediate_ctor</code></td>
 <td><code>0x47E0</code></td>
 </tr>
 <tr>
 <td>4</td>
 <td>Dizzy</td>
-<td><code>ArenaBoard_Dizzy_Ctor</code></td>
+<td><code>ArenaBoard_Dizzy_ctor</code></td>
 <td><code>0x47E4</code></td>
 </tr>
 <tr>
 <td>5</td>
 <td>Tower</td>
-<td><code>ArenaBoard_Tower_Ctor</code></td>
+<td><code>ArenaBoard_Tower_ctor</code></td>
 <td><code>0x501C</code></td>
 </tr>
 <tr>
 <td>6</td>
 <td>UpArena</td>
-<td><code>ArenaBoard_Up_Ctor</code></td>
+<td><code>ArenaBoard_Up_ctor</code></td>
 <td><code>0x47E4</code></td>
 </tr>
 <tr>
 <td>7</td>
 <td>NeonArena</td>
-<td><code>ArenaBoard_Neon_Ctor</code></td>
+<td><code>ArenaBoard_Neon_ctor</code></td>
 <td><code>0x47E8</code></td>
 </tr>
 <tr>
 <td>8</td>
 <td>ExpertArena</td>
-<td><code>ArenaBoard_Expert_Ctor</code></td>
+<td><code>ArenaBoard_Expert_ctor</code></td>
 <td><code>0x4BFC</code></td>
 </tr>
 <tr>
 <td>9</td>
 <td>OddArena</td>
-<td><code>ArenaBoard_Odd_Ctor</code></td>
+<td><code>ArenaBoard_Odd_ctor</code></td>
 <td><code>0x47E0</code></td>
 </tr>
 <tr>
 <td>10</td>
 <td>ToobArena</td>
-<td><code>ArenaBoard_Toob_Ctor</code></td>
+<td><code>ArenaBoard_Toob_ctor</code></td>
 <td><code>0x5C6C</code></td>
 </tr>
 <tr>
 <td>11</td>
 <td>WobblyArena</td>
-<td><code>ArenaBoard_Wobbly_Ctor</code></td>
+<td><code>ArenaBoard_Wobbly_ctor</code></td>
 <td><code>0x47E4</code></td>
 </tr>
 <tr>
@@ -107001,19 +107001,19 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td>13</td>
 <td>SkyArena</td>
-<td><code>ArenaBoard_Sky_Ctor</code></td>
+<td><code>ArenaBoard_Sky_ctor</code></td>
 <td><code>0x4CFC</code></td>
 </tr>
 <tr>
 <td>14</td>
 <td>WarmupArena</td>
-<td><code>ArenaBoard_WarmupArena_Ctor</code></td>
+<td><code>ArenaBoard_Master_ctor</code></td>
 <td><code>0x47E0</code></td>
 </tr>
 <tr>
 <td>15</td>
 <td>Impossible</td>
-<td><code>ArenaBoard_Impossible_Ctor</code></td>
+<td><code>ArenaBoard_Impossible_ctor</code></td>
 <td><code>0x47E4</code></td>
 </tr>
 </tbody>
@@ -110844,7 +110844,7 @@ UI / Menu hierarchy:
 </ul>
 <h3>BoardLevel3</h3>
 <ul>
-<li><strong>Constructor:</strong> <code>BoardLevel3_ctor</code> (0x41D060)</li>
+<li><strong>Constructor:</strong> <code>LevelBoard_Dizzy_ctor</code> (0x41D060)</li>
 <li><strong>Description:</strong> Tournament level 3 board state</li>
 </ul>
 <hr>
@@ -111440,14 +111440,14 @@ else if (strcmp(type, &quot;BONK&quot;) == 0) {
 <tbody>
 <tr>
 <td>Odd Race</td>
-<td><code>BoardLevel9_Odd_ctor</code> @ <code>0x0041ED80</code></td>
+<td><code>LevelBoard_Odd_ctor</code> @ <code>0x0041ED80</code></td>
 <td><code>Level6.MESHWORLD</code></td>
 <td><code>Scene_SetupLevel6</code> @ <code>0x0040EA90</code></td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p><strong>Note:</strong> The file is named <code>Level6.MESHWORLD</code> but the board is <code>BoardLevel9_Odd</code>. The numbering schemes don't match — file numbers are internal, board numbers are menu order. The Odd board's vtable (<code>0x4D0BC0</code>, slot <code>+0x48</code>) points to <code>Scene_SetupLevel6</code> which loads <code>levels\level6</code>.</p>
+<p><strong>Note:</strong> The file is named <code>Level6.MESHWORLD</code> but the board is <code>LevelBoard_Odd</code>. The numbering schemes don't match — file numbers are internal, board numbers are menu order. The Odd board's vtable (<code>0x4D0BC0</code>, slot <code>+0x48</code>) points to <code>Scene_SetupLevel6</code> which loads <code>levels\level6</code>.</p>
 </blockquote>
 <h2>The Shrink/Grow Sequence</h2>
 <h3>Three collision events drive the mechanic</h3>
@@ -111729,7 +111729,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td>Event dispatch for Odd race</td>
 </tr>
 <tr>
-<td><code>BoardLevel9_Odd_ctor</code></td>
+<td><code>LevelBoard_Odd_ctor</code></td>
 <td><code>0x0041ED80</code></td>
 <td>Odd board constructor</td>
 </tr>
@@ -112240,62 +112240,62 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 </tr>
 <tr>
 <td>0x41CA40</td>
-<td>BoardLevel1_WarmUp_ctor</td>
+<td>LevelBoard_WarmUp_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41CB10</td>
-<td>BoardLevel1_WarmUp_dtor</td>
+<td>LevelBoard_WarmUp_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41CB20</td>
-<td>BoardLevel2_Intermediate_ctor</td>
+<td>LevelBoard_Intermediate_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41CC80</td>
-<td>BoardLevel2_Intermediate_dtor</td>
+<td>LevelBoard_Intermediate_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41D450</td>
-<td>BoardLevel3_Dizzy_dtor</td>
+<td>LevelBoard_Dizzy_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41E340</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41E640</td>
-<td>BoardLevel5_Tower_dtor</td>
+<td>LevelBoard_Tower_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41EA40</td>
-<td>BoardLevel8_Expert_ctor</td>
+<td>LevelBoard_Expert_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41EC90</td>
-<td>BoardLevel8_Expert_dtor</td>
+<td>LevelBoard_Expert_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41ED80</td>
-<td>BoardLevel9_Odd_ctor</td>
+<td>LevelBoard_Odd_ctor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41EE70</td>
-<td>BoardLevel9_Odd_dtor</td>
+<td>LevelBoard_Odd_dtor</td>
 <td>1</td>
 </tr>
 <tr>
 <td>0x41F110</td>
-<td>BoardLevel12_Wobbly_ctor</td>
+<td>LevelBoard_Wobbly_ctor</td>
 <td>1</td>
 </tr>
 <tr>
@@ -112747,7 +112747,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>BEGINNERRACE</code></td>
 <td><code>Level1.MESHWORLD</code></td>
 <td>Pink</td>
-<td><code>BoardLevel1_WarmUp_ctor</code> (0x41CA40)</td>
+<td><code>LevelBoard_WarmUp_ctor</code> (0x41CA40)</td>
 </tr>
 <tr>
 <td>2</td>
@@ -112755,7 +112755,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>CASCADERACE</code></td>
 <td><code>LevelCascade.MESHWORLD</code></td>
 <td>Blue</td>
-<td><code>BoardLevel_Beginner_Ctor</code> (0x4200E0)</td>
+<td><code>LevelBoard_Beginner_ctor</code> (0x4200E0)</td>
 </tr>
 <tr>
 <td>3</td>
@@ -112763,7 +112763,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>INTERMEDIATERACE</code></td>
 <td><code>Level2.MESHWORLD</code></td>
 <td>Green</td>
-<td><code>BoardLevel2_Intermediate_ctor</code></td>
+<td><code>LevelBoard_Intermediate_ctor</code></td>
 </tr>
 <tr>
 <td>4</td>
@@ -112771,7 +112771,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>DIZZYRACE</code></td>
 <td><code>Level3.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel3_ctor</code></td>
+<td><code>LevelBoard_Dizzy_ctor</code></td>
 </tr>
 <tr>
 <td>5</td>
@@ -112779,7 +112779,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>TOWERRACE</code></td>
 <td><code>Level4.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel5_Tower_ctor</code></td>
+<td><code>LevelBoard_Tower_ctor</code></td>
 </tr>
 <tr>
 <td>6</td>
@@ -112787,7 +112787,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>UPRACE</code></td>
 <td><code>LevelUp.MESHWORLD</code></td>
 <td>Red</td>
-<td><code>BoardLevel_Up_Ctor</code> (0x420390)</td>
+<td><code>LevelBoard_Up_ctor</code> (0x420390)</td>
 </tr>
 <tr>
 <td>7</td>
@@ -112803,7 +112803,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>EXPERTRACE</code></td>
 <td><code>Level5.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel8_Expert_ctor</code></td>
+<td><code>LevelBoard_Expert_ctor</code></td>
 </tr>
 <tr>
 <td>9</td>
@@ -112811,7 +112811,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>ODDRACE</code></td>
 <td><code>Level6.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel9_Odd_ctor</code></td>
+<td><code>LevelBoard_Odd_ctor</code></td>
 </tr>
 <tr>
 <td>10</td>
@@ -112819,7 +112819,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>TOOBRACE</code></td>
 <td><code>Level8.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel_Toob_Ctor</code> (0x41F4B0)</td>
+<td><code>LevelBoard_Toob_ctor</code> (0x41F4B0)</td>
 </tr>
 <tr>
 <td>11</td>
@@ -112827,7 +112827,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>WOBBLYRACE</code></td>
 <td><code>Level7.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel12_Wobbly_ctor</code></td>
+<td><code>LevelBoard_Wobbly_ctor</code></td>
 </tr>
 <tr>
 <td>12</td>
@@ -112843,7 +112843,7 @@ Sprite_RenderQuad(..., ball-&gt;radius * _DAT_004cf398 * _DAT_004cf390, ...);
 <td><code>SKYRACE</code></td>
 <td><code>Level9.MESHWORLD</code></td>
 <td>—</td>
-<td><code>BoardLevel_Sky_Ctor</code></td>
+<td><code>LevelBoard_Sky_ctor</code></td>
 </tr>
 <tr>
 <td>14</td>
@@ -121131,9 +121131,9 @@ GhidraMCP decompilation and disassembly of Hamsterball.exe (V3.6.c).</p>
             ├─ (*menu-&gt;vtable[16])()               ← Destroy menu
             └─ Tournament_AdvanceRace (0x427080)   ← param_1='\x00' = CREATE BOARD
                  ├─ switch(race_index):
-                 │    case 1: operator_new(0x436C) → BoardLevel1_WarmUp_ctor
-                 │    case 2: operator_new(0x644C) → BoardLevel_Beginner_Ctor
-                 │    case 3: operator_new(0x438C) → BoardLevel2_Intermediate_ctor
+                 │    case 1: operator_new(0x436C) → LevelBoard_WarmUp_ctor
+                 │    case 2: operator_new(0x644C) → LevelBoard_Beginner_ctor
+                 │    case 3: operator_new(0x438C) → LevelBoard_Intermediate_ctor
                  │    ... (15 cases total)
                  │
                  │  Each ctor:
@@ -133965,7 +133965,7 @@ and modding capabilities through Ghidra decompilation, DLL proxy mods, and custo
 </tr>
 <tr>
 <td>0x41D060</td>
-<td>BoardLevel3_ctor</td>
+<td>LevelBoard_Dizzy_ctor</td>
 <td>BoardLevel3 constructor, vtable at 0x4D0890</td>
 </tr>
 <tr>
@@ -135281,37 +135281,37 @@ state 4: done → wait for popup dismissal
 <tr>
 <td>1</td>
 <td>Warm-Up</td>
-<td>BoardLevel1_WarmUp_ctor</td>
+<td>LevelBoard_WarmUp_ctor</td>
 <td>0x436C</td>
 </tr>
 <tr>
 <td>2</td>
 <td>Beginner</td>
-<td>BoardLevel_Beginner_Ctor</td>
+<td>LevelBoard_Beginner_ctor</td>
 <td>0x644C</td>
 </tr>
 <tr>
 <td>3</td>
 <td>Intermediate</td>
-<td>BoardLevel2_Intermediate_ctor</td>
+<td>LevelBoard_Intermediate_ctor</td>
 <td>0x438C</td>
 </tr>
 <tr>
 <td>4</td>
 <td>Dizzy</td>
-<td>BoardLevel3_ctor</td>
+<td>LevelBoard_Dizzy_ctor</td>
 <td>0x4BE0</td>
 </tr>
 <tr>
 <td>5</td>
 <td>Tower</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>0x5418</td>
 </tr>
 <tr>
 <td>6</td>
 <td>Up</td>
-<td>BoardLevel_Up_Ctor</td>
+<td>LevelBoard_Up_ctor</td>
 <td>0x4790</td>
 </tr>
 <tr>
@@ -135323,25 +135323,25 @@ state 4: done → wait for popup dismissal
 <tr>
 <td>8</td>
 <td>Expert</td>
-<td>BoardLevel8_Expert_ctor</td>
+<td>LevelBoard_Expert_ctor</td>
 <td>0x4FD8</td>
 </tr>
 <tr>
 <td>9</td>
 <td>Odd</td>
-<td>BoardLevel9_Odd_ctor</td>
+<td>LevelBoard_Odd_ctor</td>
 <td>0x43B0</td>
 </tr>
 <tr>
 <td>10</td>
 <td>Toob Race</td>
-<td>BoardLevel_Toob_Ctor</td>
+<td>LevelBoard_Toob_ctor</td>
 <td>0x646C</td>
 </tr>
 <tr>
 <td>11</td>
 <td>Wobbly</td>
-<td>BoardLevel12_Wobbly_ctor</td>
+<td>LevelBoard_Wobbly_ctor</td>
 <td>0x4388</td>
 </tr>
 <tr>
@@ -135353,7 +135353,7 @@ state 4: done → wait for popup dismissal
 <tr>
 <td>13</td>
 <td>Sky</td>
-<td>BoardLevel_Sky_Ctor</td>
+<td>LevelBoard_Sky_ctor</td>
 <td>0x47F8</td>
 </tr>
 <tr>
@@ -136964,7 +136964,7 @@ wine Hamsterball.exe  # Needs X display for rendering
 <h3>Board/Screen Hierarchy</h3>
 <ul>
 <li>Board_ctor (0x419030): Base class, vtable at 0x4D0260</li>
-<li>BoardLevel3_ctor (0x41D060): &quot;Dizzy&quot; board, vtable at 0x4D0890</li>
+<li>LevelBoard_Dizzy_ctor (0x41D060): &quot;Dizzy&quot; board, vtable at 0x4D0890</li>
 <li>Board types: Beginner, Intermediate, Dizzy, Tower, Expert, Odd, Wobbly, Toob, Sky, Up, Master</li>
 <li>ArenaBoard: Arena variants (Warmup, Beginner, Intermediate, Dizzy, Tower, Up, Expert)</li>
 </ul>
@@ -138882,21 +138882,21 @@ platforms (&quot;boards&quot;) with hazards, trying to knock each other off or s
 the longest.</p>
 <h2>Architecture Overview</h2>
 <pre><code>ArenaBoard (base class)
-├── ArenaBoard_Warmup_Ctor        → Warm-up Arena (ID 1)
-├── ArenaBoard_Beginner_Ctor      → Beginner Arena (ID 2)
-├── ArenaBoard_Intermediate_Ctor  → Intermediate Arena (ID 3)
-├── ArenaBoard_Dizzy_Ctor         → Dizzy Arena (ID 4)
-├── ArenaBoard_Tower_Ctor         → Tower Arena (ID 5)
-├── ArenaBoard_Up_Ctor       → Up Arena (ID 6)
-├── ArenaBoard_Neon_Ctor     → Neon Arena (ID 7)
-├── ArenaBoard_Expert_Ctor   → Expert Arena (ID 8)
-├── ArenaBoard_Odd_Ctor      → Odd Arena (ID 9)
-├── ArenaBoard_Toob_Ctor     → Toob Arena (ID 10)
-├── ArenaBoard_Wobbly_Ctor   → Wobbly Arena (ID 11)
+├── ArenaBoard_WarmUp_ctor        → Warm-up Arena (ID 1)
+├── ArenaBoard_Beginner_ctor      → Beginner Arena (ID 2)
+├── ArenaBoard_Intermediate_ctor  → Intermediate Arena (ID 3)
+├── ArenaBoard_Dizzy_ctor         → Dizzy Arena (ID 4)
+├── ArenaBoard_Tower_ctor         → Tower Arena (ID 5)
+├── ArenaBoard_Up_ctor       → Up Arena (ID 6)
+├── ArenaBoard_Neon_ctor     → Neon Arena (ID 7)
+├── ArenaBoard_Expert_ctor   → Expert Arena (ID 8)
+├── ArenaBoard_Odd_ctor      → Odd Arena (ID 9)
+├── ArenaBoard_Toob_ctor     → Toob Arena (ID 10)
+├── ArenaBoard_Wobbly_ctor   → Wobbly Arena (ID 11)
 ├── BoardLevel_Glass_ctor          → Glass Arena (ID 12)
-├── ArenaBoard_Sky_Ctor      → Sky Arena (ID 13)
-├── ArenaBoard_WarmupArena_Ctor   → Master Arena (ID 14)
-├── ArenaBoard_Impossible_Ctor    → Impossible Arena (ID 15)
+├── ArenaBoard_Sky_ctor      → Sky Arena (ID 13)
+├── ArenaBoard_Master_ctor   → Master Arena (ID 14)
+├── ArenaBoard_Impossible_ctor    → Impossible Arena (ID 15)
 └── CollSlices variants (collision mesh slicing)
 </code></pre>
 <h2>Tournament Race Order (from Tournament_AdvanceRace 0x427080)</h2>
@@ -138914,42 +138914,42 @@ the longest.</p>
 <tbody>
 <tr>
 <td>1</td>
-<td>BoardLevel1_WarmUp_ctor</td>
+<td>LevelBoard_WarmUp_ctor</td>
 <td>Warm Up</td>
 <td>0x436C</td>
 <td>—</td>
 </tr>
 <tr>
 <td>2</td>
-<td>BoardLevel_Beginner_Ctor</td>
+<td>LevelBoard_Beginner_ctor</td>
 <td>Beginner</td>
 <td>0x644C</td>
 <td>—</td>
 </tr>
 <tr>
 <td>3</td>
-<td>BoardLevel2_Intermediate_ctor</td>
+<td>LevelBoard_Intermediate_ctor</td>
 <td>Intermediate</td>
 <td>0x438C</td>
 <td>—</td>
 </tr>
 <tr>
 <td>4</td>
-<td>BoardLevel3_ctor</td>
+<td>LevelBoard_Dizzy_ctor</td>
 <td>Dizzy</td>
 <td>0x4BE0</td>
 <td>—</td>
 </tr>
 <tr>
 <td>5</td>
-<td>BoardLevel5_Tower_ctor</td>
+<td>LevelBoard_Tower_ctor</td>
 <td>Tower</td>
 <td>0x5418</td>
 <td>—</td>
 </tr>
 <tr>
 <td>6</td>
-<td>BoardLevel_Up_Ctor</td>
+<td>LevelBoard_Up_ctor</td>
 <td>Up</td>
 <td>0x4790</td>
 <td>—</td>
@@ -138963,28 +138963,28 @@ the longest.</p>
 </tr>
 <tr>
 <td>8</td>
-<td>BoardLevel8_Expert_ctor</td>
+<td>LevelBoard_Expert_ctor</td>
 <td>Expert</td>
 <td>0x4FD8</td>
 <td>—</td>
 </tr>
 <tr>
 <td>9</td>
-<td>BoardLevel9_Odd_ctor</td>
+<td>LevelBoard_Odd_ctor</td>
 <td>Odd</td>
 <td>0x43B0</td>
 <td>—</td>
 </tr>
 <tr>
 <td>10</td>
-<td>BoardLevel_Toob_Ctor</td>
+<td>LevelBoard_Toob_ctor</td>
 <td>Toob</td>
 <td>0x646C</td>
 <td>—</td>
 </tr>
 <tr>
 <td>11</td>
-<td>BoardLevel12_Wobbly_ctor</td>
+<td>LevelBoard_Wobbly_ctor</td>
 <td>Wobbly</td>
 <td>0x4388</td>
 <td>—</td>
@@ -138998,7 +138998,7 @@ the longest.</p>
 </tr>
 <tr>
 <td>13</td>
-<td>BoardLevel_Sky_Ctor</td>
+<td>LevelBoard_Sky_ctor</td>
 <td>Sky</td>
 <td>0x47F8</td>
 <td>—</td>
@@ -139500,47 +139500,47 @@ For races 3+: <code>extra_time = base_time</code> (adds to existing accumulated 
 </tr>
 <tr>
 <td>0x422550</td>
-<td>ArenaBoard_Beginner_Ctor</td>
+<td>ArenaBoard_Beginner_ctor</td>
 <td>Beginner arena constructor</td>
 </tr>
 <tr>
 <td>0x4226E0</td>
-<td>ArenaBoard_Intermediate_Ctor</td>
+<td>ArenaBoard_Intermediate_ctor</td>
 <td>Intermediate arena ctor</td>
 </tr>
 <tr>
 <td>0x422790</td>
-<td>ArenaBoard_Dizzy_Ctor</td>
+<td>ArenaBoard_Dizzy_ctor</td>
 <td>Dizzy arena ctor</td>
 </tr>
 <tr>
 <td>0x423060</td>
-<td>ArenaBoard_Expert_Ctor</td>
+<td>ArenaBoard_Expert_ctor</td>
 <td>Expert arena ctor</td>
 </tr>
 <tr>
 <td>0x424860</td>
-<td>ArenaBoard_Neon_Ctor</td>
+<td>ArenaBoard_Neon_ctor</td>
 <td>Neon arena ctor</td>
 </tr>
 <tr>
 <td>0x423BF0</td>
-<td>ArenaBoard_Sky_Ctor</td>
+<td>ArenaBoard_Sky_ctor</td>
 <td>Sky arena ctor</td>
 </tr>
 <tr>
 <td>0x4234E0</td>
-<td>ArenaBoard_Toob_Ctor</td>
+<td>ArenaBoard_Toob_ctor</td>
 <td>Toob arena ctor</td>
 </tr>
 <tr>
 <td>0x423220</td>
-<td>ArenaBoard_Odd_Ctor</td>
+<td>ArenaBoard_Odd_ctor</td>
 <td>Odd arena ctor</td>
 </tr>
 <tr>
 <td>0x424EC0</td>
-<td>ArenaBoard_Impossible_Ctor</td>
+<td>ArenaBoard_Impossible_ctor</td>
 <td>Impossible arena ctor</td>
 </tr>
 <tr>
@@ -142343,7 +142343,7 @@ trigger_counter = 0;                              // +0x10F4
 active_flag = 1;                                  // +0x10E4
 </code></pre>
 <h3>Tower Level Pre-loaded Meshes</h3>
-<p><code>BoardLevel5_Tower_ctor</code> (0x41E340) loads:</p>
+<p><code>LevelBoard_Tower_ctor</code> (0x41E340) loads:</p>
 <table>
 <thead>
 <tr>
@@ -163033,7 +163033,7 @@ AthenaList_Append(board+0x4BBC, obj);  // judge list
 }
 </code></pre>
 <h3>Expert Constructor Mesh Loading</h3>
-<p><code>BoardLevel8_Expert_ctor</code> loads 3 copies of the HammyJudge mesh:</p>
+<p><code>LevelBoard_Expert_ctor</code> loads 3 copies of the HammyJudge mesh:</p>
 <pre><code class="language-c">board+0x4BB0 = MeshWorld_ctor(&quot;meshes\\hammyjudge&quot;);  // judge 1
 board+0x4BB4 = MeshWorld_ctor(&quot;meshes\\hammyjudge&quot;);  // judge 2
 board+0x4BB8 = MeshWorld_ctor(&quot;meshes\\hammyjudge&quot;);  // judge 3

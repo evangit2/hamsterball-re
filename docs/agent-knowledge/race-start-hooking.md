@@ -27,9 +27,9 @@ App_Start*Race (0x4288B0 / 0x4289F0 / 0x428B20 / 0x428C50 / 0x429230)
             ├─ (*menu->vtable[16])()               ← Destroy menu
             └─ Tournament_AdvanceRace (0x427080)   ← param_1='\x00' = CREATE BOARD
                  ├─ switch(race_index):
-                 │    case 1: operator_new(0x436C) → BoardLevel1_WarmUp_ctor
-                 │    case 2: operator_new(0x644C) → BoardLevel_Beginner_Ctor
-                 │    case 3: operator_new(0x438C) → BoardLevel2_Intermediate_ctor
+                 │    case 1: operator_new(0x436C) → LevelBoard_WarmUp_ctor
+                 │    case 2: operator_new(0x644C) → LevelBoard_Beginner_ctor
+                 │    case 3: operator_new(0x438C) → LevelBoard_Intermediate_ctor
                  │    ... (15 cases total)
                  │
                  │  Each ctor:
