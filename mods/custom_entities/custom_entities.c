@@ -84,6 +84,7 @@
 #define APP_SCENE_MGR      0x184        /* App+0x184 = scene manager (MeshWorld) */
 #define APP_PROFILE        0x220        /* App+0x220 = PlayerProfile* */
 #define APP_BALL_LIST      0x29D4       /* scene+0x29D4 = AthenaList of balls */
+#define APP_SCORE_BASE     0x5E4        /* App+0x5E4 + player_idx*0xA0 = score (float) */
 
 /* AthenaList offsets */
 #define AL_COUNT           0x08         /* count at list+0x08 (via GetSize) */
@@ -578,6 +579,47 @@ static int lua_distance_to_ball(lua_State *L)
     return 1;
 }
 
+/* ── Lua API: hamsterball.add_score(points, ball_index) — add to score ─ */
+static int lua_add_score(lua_State *L)
+{
+    float points = (float)luaL_checknumber(L, 1);
+    int ball_idx = luaL_optint(L, 2, 0);
+
+    int app = safe_read_ptr(APP_ADDR);
+    if (!app) return 0;
+
+    /* Get player index from ball */
+    typedef int (__fastcall *AthenaList_GetSize_t)(int);
+    typedef int (__fastcall *AthenaList_GetAt_t)(int, int);
+    static AthenaList_GetSize_t pGetSize = NULL;
+    static AthenaList_GetAt_t pGetAt = NULL;
+    if (!pGetSize) pGetSize = (AthenaList_GetSize_t)0x004536A0;
+    if (!pGetAt) pGetAt = (AthenaList_GetAt_t)0x0040A020;
+
+    int profile = safe_read_ptr(app + APP_PROFILE);
+    if (!profile) return 0;
+    int board = safe_read_ptr(profile + 0x0C);
+    if (!board) return 0;
+
+    int list_addr = board + APP_BALL_LIST;
+    int count = pGetSize(list_addr);
+    if (ball_idx < 0 || ball_idx >= count) return 0;
+
+    int ball = pGetAt(list_addr, ball_idx);
+    if (!ball) return 0;
+
+    /* ball+0x18 = player index (0=P1, 1=P2, -1=AI) */
+    int player_idx = safe_read_ptr(ball + BALL_PLAYER_IDX);
+    if (player_idx < 0 || player_idx > 3) return 0;
+
+    /* App+0x5E4 + player_idx*0xA0 = score (float) */
+    DWORD score_addr = app + APP_SCORE_BASE + player_idx * 0xA0;
+    float current = safe_read_float(score_addr);
+    safe_write_float(score_addr, current + points);
+
+    return 0;
+}
+
 /* ── Lua API: hamsterball.get_frame_count() -> int ───────────────────── */
 static int lua_get_frame_count(lua_State *L)
 {
@@ -603,6 +645,7 @@ static const luaL_Reg hamsterball_funcs[] = {
     {"set_scale",        lua_set_scale},
     {"kill_ball",        lua_kill_ball},
     {"distance_to_ball", lua_distance_to_ball},
+    {"add_score",        lua_add_score},
     {"get_ball_pos",     lua_get_ball_pos},
     {"get_delta_time",   lua_get_delta_time},
     {"get_entity_count", lua_get_entity_count},
