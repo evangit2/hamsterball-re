@@ -1213,7 +1213,8 @@ Offset | Field | Description
 | 0x426780 | TourneyMenu_CreateBoard | Create board for tournament race |
 | 0x426af0 | TourneyRaceEntry_scalar_dtor | TourneyRaceEntry scalar deleting destructor |
 | 0x431d00 | TourneyRaceEntry_scalar_dtor2 | TourneyRaceEntry alternate scalar deleting destructor |
-| 0x432d20 | TourneyMenu_Render | TourneyMenu render function |
+| 0x432d20 | ArenaLevelSelect_Render | Arena/Rodent Rumble level selection render |
+| 0x450af0 | TourneyMenu_Render | Between-races TourneyMenu render (vtable[2] of 0x4D83F0) |
 
 ## Session 18 - AthenaString
 
