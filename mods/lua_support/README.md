@@ -1,4 +1,4 @@
-# Custom Entities — Lua Scripting for Hamsterball
+# Lua Support — Lua Scripting for Hamsterball
 
 Embeds a Lua 5.1.5 interpreter into the game via the bass.dll proxy pattern, allowing custom scene objects in `.meshworld` files to have scripted behavior.
 
