@@ -487,7 +487,7 @@ Offset | Field | Description
 | 19 | +0x4C | 0x41B130 | Scene_HandleRaceEnd | Race timer decrement, lap 3->4 transition, Game Over, RaceResultPopup |
 | 20 | +0x50 | 0x41B540 | Scene_UpdateBallsAndState | Iterate ball lists, SetCamera, Ball_Update, destroy finished balls |
 | 21 | +0x54 | 0x40A040 | NoOp | Empty (58 xrefs) |
-| 22 | +0x58 | 0x41A540 | Scene_HandleCountdown | Countdown timer, check all balls finished, scene transition on expire |
+| 22 | +0x58 | 0x41A540 | Scene_ProcessRaceEnd | Countdown timer, check all balls finished, scene transition on expire |
 | 23 | +0x5C | 0x409DE0 | Scene_HandleBallFinish | Ball finish state machine: start→countdown(150f)→finish→result popup→done |
 | 24 | +0x60 | 0x40B420 | Level_RenderDynamicObjects_2 | Alternate dynamic render |
 | 25 | +0x64 | 0x40B600 | Level_UpdateAndRender | Combined update + render |

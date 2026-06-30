@@ -101,7 +101,7 @@
 - [x] Decompile Scene_RenderWithCamera (0x40DFA0) - two-pass render
 - [x] Decompile Scene_UpdateBallsAndState (0x41B540) - per-ball physics + respawn
 - [x] Decompile Scene_HandleRaceEnd (0x41B130) - race finish conditions
-- [x] Decompile Scene_HandleCountdown (0x41A540) - race countdown
+- [x] Decompile Scene_ProcessRaceEnd (0x41A540) - race countdown
 - [x] Decompile Gear_AdvanceAlongPath (0x418930) - 8-sample gradient descent path follower
 - [x] Document Ball_Update (0x405E00) - 23-step physics pipeline
 - [x] Document Ball vtable (0x4CF3A0, 9 entries) and App_Run loop (0x46BD80)

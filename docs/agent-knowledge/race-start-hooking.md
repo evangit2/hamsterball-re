@@ -79,7 +79,7 @@ Scene_Update (0x419C00) / RumbleBoard_Update (0x421FE0)  ← vtable[1]
            ├─ vtable[20] (0x50) = Scene_UpdateBallsAndState (0x41B540)
            │    └─ For each ball: Ball_SetCamera + Ball_Update (vtable[4])
            ├─ vtable[21] (0x54) = NoOp (0x40A040)
-           ├─ vtable[22] (0x58) = Scene_HandleCountdown (0x41A540) ← race-end handler
+           ├─ vtable[22] (0x58) = Scene_ProcessRaceEnd (0x41A540) ← race-end handler
            └─ For each object: vtable[31] (0x7C) = Scene_vmethod31 (camera setup)
 ```
 
@@ -459,7 +459,7 @@ Frame ~400: Phase 3: Scene+0x3A4C = 1 (countdown done)
 | 19 | 0x4C | 0x41B130 | Scene_HandleRaceEnd | **3-2-1 countdown + race-end handler** |
 | 20 | 0x50 | 0x41B540 | Scene_UpdateBallsAndState | Ball physics update |
 | 21 | 0x54 | 0x40A040 | NoOp | Unused slot |
-| 22 | 0x58 | 0x41A540 | Scene_HandleCountdown | **Race-end menu/results handler** |
+| 22 | 0x58 | 0x41A540 | Scene_ProcessRaceEnd | **Race-end menu/results handler** |
 | 27 | 0x6C | 0x41B710 | Scene_RenderScoreHUD | Render countdown numbers + HUD |
 | 28 | 0x70 | 0x41BFD0 | Scene_RenderTimerHUD | Render race timer |
 | 31 | 0x7C | 0x41AC70 | Scene_vmethod31 | Per-ball camera + render setup |
@@ -676,7 +676,7 @@ void __fastcall Hooked_AppStartRace(void* app) {
 
 - **Scene_HandleRaceEnd** (0x41B130, vtable[19]) = Pre-race **3-2-1 countdown**
   display, NOT just race-end. It also handles post-race results.
-- **Scene_HandleCountdown** (0x41A540, vtable[22]) = **Race-end** menu/results
+- **Scene_ProcessRaceEnd** (0x41A540, vtable[22]) = **Race-end** menu/results
   handler, NOT the pre-race countdown. Name is misleading.
 - **Scene_StartCountdown** (0x437130) = **SinkPlatform** freeze countdown,
   NOT the universal pre-race 3-2-1 countdown.
