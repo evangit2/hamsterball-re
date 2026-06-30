@@ -45,12 +45,9 @@
 #define PRACTICE_MENU_PATCH      0x0042F4F7  /* PUSH 0xA -> JMP cave */
 #define PRACTICE_MENU_RETURN     0x0042F500
 
-/* Race-end handler: TWO JNZ instructions send tournament/party mode to timer path */
-/* Both must be NOP'd so tournament mode falls through to TourneyMenu (like Time Trial) */
-/* JNZ #1 at 0x41A60E: checks profile+0x10 (tournament flag) — fires FIRST, before #2 */
-#define RACE_END_TOURNAMENT_JNZ  0x0041A60E  /* 6 bytes: 0F 85 A8 00 00 00 -> 90x6 */
-/* JNZ #2 at 0x41A619: checks profile+0x11 (party flag) — only reached if #1 doesn't fire */
-#define RACE_END_PARTY_JNZ       0x0041A619  /* 6 bytes: 0F 85 9D 00 00 00 -> 90x6 */
+/* Impossible race constructor: patch last-race flag byte from 1 to 0 */
+/* At 0x424C6B: MOV byte [ESI+0x4348], 0x01 — patch immediate to 0x00 */
+#define IMPOSSIBLE_LAST_RACE_BYTE 0x00424C71
 
 /* Game string addresses */
 #define STR_LEVEL1_PATH          0x004CF8E0  /* "levels\\level1" */
@@ -136,6 +133,15 @@ static void c_mov_eax_dword(Cave* c, DWORD offset, DWORD val) {
     c->off += 4;
 }
 
+/* Emit: MOV BYTE [EAX+offset], imm8 */
+static void c_mov_eax_byte(Cave* c, DWORD offset, BYTE val) {
+    c->p[c->off++] = 0xC6;  /* MOV r/m8, imm8 */
+    c->p[c->off++] = 0x80;  /* ModRM: [EAX+disp32] */
+    *(DWORD*)(c->p + c->off) = offset;
+    c->off += 4;
+    c->p[c->off++] = val;
+}
+
 /* ========== Copy level file ========== */
 static void copy_level_file(void) {
     char dir[MAX_PATH], src[MAX_PATH], dst[MAX_PATH];
@@ -200,6 +206,8 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     c_mov_eax_dword(&c, 0x868, (DWORD)STR_TEST_BOARD);
     /* MOV DWORD [EAX+0x29B4], STR_TEST_RACE */
     c_mov_eax_dword(&c, 0x29B4, (DWORD)STR_TEST_RACE);
+    /* MOV BYTE [EAX+0x4348], 0 (last race flag = 0) */
+    c_mov_eax_byte(&c, 0x4348, 0);
     /* JMP post-switch */
     c_jmp(&c, TOURNAMENT_POST_SWITCH);
     /* alloc_fail: (fix up JZ target) */
@@ -237,6 +245,8 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     c_mov_eax_dword(&c, 0x868, (DWORD)STR_TEST_ARENA_BD);
     /* MOV DWORD [EAX+0x29B4], STR_TEST_ARENA */
     c_mov_eax_dword(&c, 0x29B4, (DWORD)STR_TEST_ARENA);
+    /* MOV BYTE [EAX+0x4348], 0 (last race flag = 0) */
+    c_mov_eax_byte(&c, 0x4348, 0);
     /* JMP post-switch */
     c_jmp(&c, TOURNEY_POST_SWITCH);
     /* alloc_fail: (fix up JZ target) */
@@ -361,31 +371,9 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     /* 4. Practice menu: inject 16th entry before separator */
     patch_jmp(PRACTICE_MENU_PATCH, practice_cave);
 
-    /* 5. Race-end handler: NOP BOTH JNZ instructions so tournament AND party */
-    /*    mode fall through to TourneyMenu instead of going to timer/end. */
-    /*    JNZ #1 (0x41A60E) checks profile+0x10 (tournament) — fires first. */
-    /*    JNZ #2 (0x41A619) checks profile+0x11 (party) — only if #1 doesn't fire. */
-    {
-        DWORD old;
-        /* NOP JNZ #1: tournament flag check */
-        VirtualProtect((void*)RACE_END_TOURNAMENT_JNZ, 6, PAGE_EXECUTE_READWRITE, &old);
-        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 0) = 0x90;
-        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 1) = 0x90;
-        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 2) = 0x90;
-        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 3) = 0x90;
-        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 4) = 0x90;
-        *(BYTE*)(RACE_END_TOURNAMENT_JNZ + 5) = 0x90;
-        VirtualProtect((void*)RACE_END_TOURNAMENT_JNZ, 6, old, &old);
-        /* NOP JNZ #2: party flag check */
-        VirtualProtect((void*)RACE_END_PARTY_JNZ, 6, PAGE_EXECUTE_READWRITE, &old);
-        *(BYTE*)(RACE_END_PARTY_JNZ + 0) = 0x90;
-        *(BYTE*)(RACE_END_PARTY_JNZ + 1) = 0x90;
-        *(BYTE*)(RACE_END_PARTY_JNZ + 2) = 0x90;
-        *(BYTE*)(RACE_END_PARTY_JNZ + 3) = 0x90;
-        *(BYTE*)(RACE_END_PARTY_JNZ + 4) = 0x90;
-        *(BYTE*)(RACE_END_PARTY_JNZ + 5) = 0x90;
-        VirtualProtect((void*)RACE_END_PARTY_JNZ, 6, old, &old);
-    }
+    /* 5. Impossible race constructor: patch last-race flag from 1 to 0 */
+    /*    At 0x424C6B: MOV byte [ESI+0x4348], 0x01 — patch immediate byte to 0x00 */
+    patch_byte(IMPOSSIBLE_LAST_RACE_BYTE, 0x00);
 
     /* 6. Copy Level1.MESHWORLD -> LevelTest.MESHWORLD */
     copy_level_file();
