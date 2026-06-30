@@ -14,6 +14,7 @@
 | half-size-all | Shrinks player ball to half size by inlining Ball_Shrink's physics fields (radius=13.0, physics_scale=2.5). No sound, player index 0 only | [half_size_all/](half_size_all/) |
 | raptisoft-live-log | Passive logger — taps Raptisoft's hidden in-memory status tracking system (App+0x208/0x20C/0x210) and writes live updates to live_status.txt. No gameplay changes | [raptisoft_live_log/](raptisoft_live_log/) |
 | level-colors | Changes per-level base colors (timer oval, timer text, race selection menu text) from a colors.txt config file. Edit at runtime | [level_colors/](level_colors/) |
+| custom-name-strips | Custom per-level RGBA colors for the horizontal strip behind the Race/Arena name at the start of each race. Reads from name_strips.txt, 30 entries (15 races + 15 arenas) | [custom_name_strips/](custom_name_strips/) |
 | universal-safespots | Adds SAFESPOT(*) universal checkpoint — always accepted as respawn candidate regardless of active SAFESWITCH filter. Competes on distance with lettered SAFESPOTs | [universal-safespots/](universal-safespots/) |
 | 8ball-spawn | Press B to spawn an 8-ball in front of the player's hamster ball. Uses mesh index 9 (8Ball), spawns as physics debris (player_index=-1) | [8ball_spawn/](8ball_spawn/) |
 | 8ball-goal-fix | Prevents crash when 8-ball (BadBall) touches N:GOAL or E:ACTION(SCORE) triggers. Adds player_index<0 guard (same pattern Raptisoft used for E:LIMIT) to 3 patch points in DispatchCollisionEvents | [8ball_goal_fix/](8ball_goal_fix/) |
