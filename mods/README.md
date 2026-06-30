@@ -21,3 +21,4 @@
 | ball-tint | v2: Tints player 1's ball by writing RGBA floats to the board's player color table (board+0x3AB0), the same entries Board_ctor initializes via Vec3_Init. Reads hex color from ball_tint.txt at runtime | [ball_tint/](ball_tint/) |
 | global-objects-mkn | Spawns SWIRL (Dizzy Race) on any level via global object spawning hook. JIT mesh loading + collision registration | [global_objects_mkn/](global_objects_mkn/) |
 | custom-race-descriptions | Customizes the 15 tournament race description texts on the Tourney Menu. Reads from race_descriptions.txt, auto-generates default config with original descriptions | [custom_race_descriptions/](custom_race_descriptions/) |
+| mod_targets | Mod manager DLL — deactivates all mods in /mods/ by default, activates them via __mod_targets.txt config (GLOBAL, LEVEL 1-15, ARENA 1-15). Per-race/arena mod loading/unloading via memory polling | [mod_targets/](mod_targets/) |
