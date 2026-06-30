@@ -1,0 +1,37 @@
+# Lines starting with # are comments.
+# Mods not listed here are deactivated by default.
+# Separate multiple mods with commas.
+
+GLOBAL =
+
+LEVEL 1 =
+LEVEL 2 =
+LEVEL 3 =
+LEVEL 4 =
+LEVEL 5 =
+LEVEL 6 =
+LEVEL 7 =
+LEVEL 8 =
+LEVEL 9 =
+LEVEL 10 =
+LEVEL 11 =
+LEVEL 12 =
+LEVEL 13 =
+LEVEL 14 =
+LEVEL 15 =
+
+ARENA 1 =
+ARENA 2 =
+ARENA 3 =
+ARENA 4 =
+ARENA 5 =
+ARENA 6 =
+ARENA 7 =
+ARENA 8 =
+ARENA 9 =
+ARENA 10 =
+ARENA 11 =
+ARENA 12 =
+ARENA 13 =
+ARENA 14 =
+ARENA 15 =
