@@ -1,11 +1,11 @@
 /*
- * Function: RumbleBoard_DeletingDtor
+ * Function: ArenaBoard_DeletingDtor
  * Address: 0x00425340
- * Signature: void * __thiscall RumbleBoard_DeletingDtor(void *this,byte param_1)
+ * Signature: void * __thiscall ArenaBoard_DeletingDtor(void *this,byte param_1)
  * Batch: 16
  *
  * Description:
- * Decompiled function. 165 chars. 0 call xrefs, 4 data refs. First code lines: RumbleBoard_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);
+ * Decompiled function. 165 chars. 0 call xrefs, 4 data refs. First code lines: ArenaBoard_dtor(this);; if ((param_1 & 1) != 0) {; _free(this);
  *
  * Cross-references: 0 calls, 4 data refs
  *

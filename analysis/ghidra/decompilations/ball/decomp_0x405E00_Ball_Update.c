@@ -121,7 +121,7 @@ void __fastcall Ball_Update(int *param_1)
       pvVar8 = (void *)0x0;
     }
     else {
-      pvVar8 = RumbleScore_ctor(pvVar8,*(undefined4 *)(param_1[5] + 0x878));
+      pvVar8 = ArenaScoreParticle_ctor(pvVar8,*(undefined4 *)(param_1[5] + 0x878));
     }
     local_4 = 0xffffffff;
     iVar9 = RNG_Rand(&PTR_OBJ_VTABLE,0x19,'\x01');
@@ -899,7 +899,7 @@ LAB_00407bb4:
     if (param_1[0x96] != 0) {
       Sound_Play3DAtPosition(param_1[0x96]);
     }
-    RumbleBoard_TickTimer((int)(param_1 + 0x99));
+    ToggleTimer_Tick((int)(param_1 + 0x99));
     param_1[0x5f] = (int)(uStack_914 - (float)param_1[0x59]);
     pfVar12 = (float *)(param_1 + 0xb0);
     param_1[0x59] = (int)uStack_914;

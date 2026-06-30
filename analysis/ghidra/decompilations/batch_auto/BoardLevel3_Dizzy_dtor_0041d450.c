@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel3_Dizzy_dtor
+ * Function: LevelBoard_Dizzy_dtor
  * Address: 0x0041d450
- * Signature: void __fastcall BoardLevel3_Dizzy_dtor(undefined4 *param_1)
+ * Signature: void __fastcall LevelBoard_Dizzy_dtor(undefined4 *param_1)
  *
- * Patterns: SEH frame, scene, board, level. Calls: BoardLevel3_Dizzy_dtor, Vtable_CallOffset48, Vec3List_Free, Scene_dtor. Offsets: 2, Lines: 35
+ * Patterns: SEH frame, scene, board, level. Calls: LevelBoard_Dizzy_dtor, Vtable_CallOffset48, Vec3List_Free, Scene_dtor. Offsets: 2, Lines: 35
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall BoardLevel3_Dizzy_dtor(undefined4 *param_1)
+void __fastcall LevelBoard_Dizzy_dtor(undefined4 *param_1)
 
 {
   void *pvStack_c;
@@ -18,7 +18,7 @@ void __fastcall BoardLevel3_Dizzy_dtor(undefined4 *param_1)
   puStack_8 = &LAB_004ca234;
   pvStack_c = ExceptionList;
   ExceptionList = &pvStack_c;
-  *param_1 = &PTR_BoardLevel3_Dizzy_dtor_004d0890;
+  *param_1 = &PTR_LevelBoard_Dizzy_dtor_004d0890;
   local_4 = 2;
   if (param_1[0x12f7] != 0) {
     Vtable_CallOffset48(param_1[0x12f7]);

@@ -1,10 +1,10 @@
-# Arena Hazard System (RumbleBoard Objects)
+# Arena Hazard System (ArenaObjects)
 
-The RumbleBoard arenas contain interactive hazards created by the master factory
-function `CreateSawblade` (0x40E250). Despite its name, this function creates
+The Arena board arenas contain interactive hazards created by the master factory
+function `CreateExpertLevelObjects` (0x40E250). Despite its name, this function creates
 ALL arena object types, not just sawblades.
 
-## Object Factory: CreateSawblade (0x40E250)
+## Object Factory: CreateExpertLevelObjects (0x40E250)
 
 Dispatches on name prefix (case-insensitive `__strnicmp`). Only creates objects
 when `App+0x23C != 0` (Frenzied difficulty check for tournament-only objects).
@@ -41,7 +41,7 @@ Objects can be named with suffix modifiers that change behavior:
 
 | Offset | Type | Field | Default |
 |--------|------|-------|---------|
-| +0x10D0 | int | board_ptr | Parent RumbleBoard |
+| +0x10D0 | int | board_ptr | Parent ArenaBoard |
 | +0x10D4 | Vec3 | position | Creation position |
 | +0x10E0 | Vec3 | base_position | Copy of position |
 | +0x10EC | int | state | 0 (inactive) |
@@ -130,7 +130,7 @@ Has speed modifiers via name suffixes:
 - "SUPER": Enhanced mode (obj+0x10ED=1)
 - "UP": Initialize additional sound channel
 
-## Object Storage Map (RumbleBoard offsets)
+## Object Storage Map (ArenaBoard offsets)
 
 | Offset | Type | Purpose |
 |--------|------|---------|
@@ -145,7 +145,7 @@ Has speed modifiers via name suffixes:
 
 ## Collision-to-Action Dispatch
 
-See COLLISION_SYSTEM.md for the full Arena_HandleCollision dispatch table.
+See COLLISION_SYSTEM.md for the full ExpertCollisionEvents dispatch table.
 Summary of arena collision events:
 
 | Event Name | Action | Object |
@@ -178,7 +178,7 @@ and reduces time bonus from +1000 to +500.
 
 | Address | Name | Purpose |
 |---------|------|---------|
-| 0x40E250 | CreateSawblade | Master arena object factory |
+| 0x40E250 | CreateExpertLevelObjects | Master arena object factory |
 | 0x434660 | Sawblade_Level_Ctor | Sawblade constructor |
 | 0x434A50 | Saw_Activate | Full activation |
 | 0x434770 | Saw_AlertActivate | Warning phase |

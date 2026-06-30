@@ -73,19 +73,19 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x24C | `uint8_t[8]` | pad_24c | | |
 | 0x254 | `bool` | uses_alpha | ctor2 | `color_a != 1.0f` |
 | 0x255 | `uint8_t[0xB]` | pad_255 | | |
-| 0x260 | `uint8_t` | boost_flag | ctor2 | Set `0` |
+| 0x260 | `uint8_t` | sweat_flag | ctor2 | Set `0` | Grip-climbing flag: 1 when airborne on slope |
 | 0x261 | `uint8_t[3]` | pad_261 | | |
-| 0x264 | `RumbleBoard` | rumble_timer1 | ctor2 | `RumbleBoard_InitTimer` target (20 bytes) |
+| 0x264 | `ArenaBoard` | toggle_timer1 | ctor2 | `ToggleTimer_Init` target (20 bytes) |
 | 0x278 | `float` | **gravity_scale** | ctor2, Update | Default `0.1f`. **Scale gravity strength.** |
 | 0x27C | `uint32_t` | field_27c | ctor2 | `0` |
 | 0x280 | `uint8_t` | field_280 | ctor2 | `0` |
-| 0x281 | `bool` | **is_falling** | ctor2, Update | `1` in ctor; cleared when grounded |
+| 0x281 | `bool` | **unused_init_flag** | ctor2, Update | `1` in ctor; DEAD: never read by any function |
 | 0x282 | `uint8_t[2]` | pad_282 | | |
 | 0x284 | `float` | **radius** | ctor2, Update | Default `27.0f`. Hit-box size. |
 | 0x288 | `uint32_t` | field_288 | ctor2 | `0` |
 | 0x28C | `uint8_t` | field_28c | ctor2 | `0` |
 | 0x28D | `uint8_t[3]` | pad_28d | | |
-| 0x290 | `RumbleBoard` | rumble_timer2 | ctor2 | Second RumbleBoard timer |
+| 0x290 | `ArenaBoard` | toggle_timer2 | ctor2 | Second ArenaBoard timer |
 | 0x2A4 | `float` | field_2a4 | ctor2 | `5.0f` |
 | 0x2A8 | `Vec3` | speed_modifier | ctor2 | `Vec3_Init` target |
 | 0x2B4 | `uint8_t[4]` | pad_2b4 | | |
@@ -100,12 +100,12 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x2D5 | `uint8_t` | field_2d5 | ctor2, Update | `0` |
 | 0x2D6 | `uint8_t[2]` | pad_2d6 | | |
 | 0x2D8 | `uint32_t` | field_2d8 | ctor2 | `0` |
-| 0x2DC | `float` | **checkpoint_x** | Update | Last collision/bump position |
-| 0x2E0 | `float` | **checkpoint_y** | Update | " |
-| 0x2E4 | `float` | **checkpoint_z** | Update | " |
-| 0x2E8 | `bool` | **event_flag** | ctor2, Update | Checkpoint hit event |
-| 0x2E9 | `bool` | **limit_flag** | ctor2 | ⚠ NOT on_ramp! Sticky limit/trajectory flag (E:LIMIT + type-5 collision). Never cleared within Ball_Update. |
-| 0x2EC | `uint32_t` | field_2ec | ctor2 | Collision counter |
+| 0x2DC | `float` | **lgp_x** | Update | Last Grounded Position X (type-2 ground collision snapshot) |
+| 0x2E0 | `float` | **lgp_y** | Update | " |
+| 0x2E4 | `float` | **lgp_z** | Update | " |
+| 0x2E8 | `bool` | **event_flag** | ctor2, Update | Needs-respawn (shattered) flag |
+| 0x2E9 | `bool` | **dizzy_lock** | ctor2 | ⚠ NOT on_ramp! Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory itself. Reset by Ball_InitPhysicsDefaults(0x405100) at 0x405262 and Ball_ctor2(0x4039E0) at 0x403BDE. |
+| 0x2EC | `uint32_t` | bounce_count | ctor2 | Dizzy system bounce counter; double-incremented (0→1→2) when collision speed exceeds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND dizzy_lock==0 |
 | 0x2F0 | `uint32_t` | field_2f0 | ctor2 | `0` |
 | 0x2F4 | `uint32_t` | field_2f4 | ctor2 | `0` |
 | 0x2F8 | `uint8_t` | field_2f8 | Update | |
@@ -223,8 +223,8 @@ The function at **0x405E00** runs these phases every tick. Hook at the right pha
 | 0x401CC0 | `Ball_dtor2` | `(Ball*)` | Full destructor |
 | 0x401DD0 | `Ball_CreateTrailParticles` | `(Ball*, int, float, float, float)` | Spawn trail effect |
 | 0x402030 | `Ball_SetTargetPos` | `(Ball*, float, float, float)` | Set target position |
-| 0x402200 | `Ball_StartFall` | `(Ball*)` | Enter fall state |
-| 0x402270 | `Ball_EndFall` | `(Ball*)` | Exit fall state |
+| 0x402200 | `Ball_Shrink` | `(Ball*)` | Enter Odd Race shrink state |
+| 0x402270 | `Ball_Grow` | `(Ball*)` | Exit Odd Race shrink state |
 | 0x402400 | `Ball_RecordBest` | `(Ball*)` | Record best time |
 | 0x402650 | `Ball_ApplyForceWithMultipliers` | `(Ball*, float, float, float, float, float)` | Force with scale factors |
 | 0x4027F0 | `Ball_dtor` | `(Ball*)` | Light destructor |
@@ -305,8 +305,8 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 
 ### Recipe H: Disable Fall State
 ```cpp
-// Keep is_falling = false for permanent ground contact
-*(bool*)(ball + 0x281) = false;
+// Keep unused_init_flag = false (NOTE: this flag is DEAD code, never read by any function)
+*(bool*)(ball + 0x281) = false; // dead flag (never read) // dead flag (never read)
 ```
 
 ---

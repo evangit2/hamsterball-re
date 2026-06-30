@@ -5,7 +5,7 @@
  * Description:
  *
 Factory for FLICKRING objects. Matches "FLICKRING" (9 chars) prefix.
-Allocates 0x1104 bytes, calls RumbleBoard_Stands_ctor with scene's spatial
+Allocates 0x1104 bytes, calls ArenaStands_ctor with scene's spatial
 tree (this+0x47E0). Appends to Scene+0x2578 (rotator list). Returns object
 and type ID. Falls through to CreatePlatformOrStands if no match. 1 vtable ref.
 

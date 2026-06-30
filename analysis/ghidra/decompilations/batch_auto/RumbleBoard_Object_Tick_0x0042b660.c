@@ -1,7 +1,7 @@
 /*
- * Function: RumbleBoard_Object_Tick
+ * Function: ArenaSceneObj_Tick
  * Address: 0x0042b660
- * Signature: void __fastcall RumbleBoard_Object_Tick(int param_1)
+ * Signature: void __fastcall ArenaSceneObj_Tick(int param_1)
  * Batch: 20
  *
  * Description:

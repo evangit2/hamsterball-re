@@ -97,12 +97,12 @@ or by tracking collision IDs (`[EBP+0x64]`).
 | `+0x1A4` | `void*` | physics_body | CollisionMesh/PhysicsBody pointer |
 | `+0x284` | `float` | radius | Collision radius (default ~27.0) |
 | `+0x2E8` | `byte` | respawn_flag | Set during respawn handling |
-| `+0x2E9` | `byte` | limit_flag | Sticky flag (E:LIMIT collision) — NEVER use for ground check |
-| `+0x2EC` | `int32` | collision_state | Counter (0 = none, 1 = active, 2+ = depth) |
+| `+0x2E9` | `byte` | dizzy_lock | Sticky flag preventing Ball_ApplyTrajectory re-firing (E:LIMIT collision, speed>1.0) — NEVER use for ground check |
+| `+0x2EC` | `int32` | bounce_count | Dizzy system bounce counter (double-incremented 0→1→2 when collision speed exceeds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND dizzy_lock==0) |
 | `+0x2F0` | `int32` | force_count | Number of forces applied this frame |
 | `+0x2F4` | `int32` | best_streak | Per-ball best streak (int32) |
 | `+0x2F9` | `byte` | frozen | Ball is frozen/stuck |
-| `+0x2FC` | `int32` | fall_timer | Countdown when falling |
+| `+0x2FC` | `int32` | alpha | Countdown when falling |
 | `+0x324` | `byte` | in_tube | Skip collision processing when set |
 | `+0x748` | `int32` | gravity_axis | 0=Y, 1=X, 2=Z (gravity plane) |
 | `+0x808` | `int32` | teleport_active | Non-zero = teleport in progress |
@@ -526,8 +526,8 @@ static int install_detour(void *target, void *hook, unsigned char *trampoline) {
 ### Working Reference
 
 - **Pattern**: `tools/collision_hook/collision_hook.c` (hooks event dispatchers
-  using the same detour technique, but on `CreateNoDizzy`/`Level_HandleCollision`/
-  `Arena_HandleCollision` instead of `Ball_Update`)
+  using the same detour technique, but on `DispatchCollisionEvents`/`TowerCollisionEvents`/
+  `ExpertCollisionEvents` instead of `Ball_Update`)
 
 ---
 
@@ -872,9 +872,9 @@ ball-ball collisions, but for **level geometry** and **event trigger** collision
 
 | Address | Function | Domain |
 |---------|----------|--------|
-| `0x40C5D0` | `CreateNoDizzy` | Shared base handler (all events) |
-| `0x40DCD0` | `Level_HandleCollision` | Race level events |
-| `0x40E6A0` | `Arena_HandleCollision` | Arena events |
+| `0x40C5D0` | `DispatchCollisionEvents` | Shared base handler (all events) |
+| `0x40DCD0` | `TowerCollisionEvents` | Race level events |
+| `0x40E6A0` | `ExpertCollisionEvents` | Arena events |
 
 ### Important Distinction
 
@@ -1164,7 +1164,7 @@ collision list.
 
 ### 5. `ball+0x2E9` is NOT a Ground/On-Surface Flag
 
-**Problem**: The `limit_flag` at `ball+0x2E9` looks like it indicates
+**Problem**: The `dizzy_lock` at `ball+0x2E9` looks like it indicates
 surface contact, but it's actually a sticky flag set by `E:LIMIT` (arena
 boundary) collisions. It's never cleared within `Ball_Update`.
 
@@ -1247,7 +1247,7 @@ calculate the text width and compute the X position yourself. See
 - `docs/BALL_OBJECT.md` — Ball struct field reference
 - `docs/BALL_UPDATE_DECOMP.md` — Ball_Update decompilation annotations
 - `docs/RAYCASTING_FOR_DLL_MODS.md` — Raycast pattern for ground/wall detection
-- `docs/ARENA_SCORING.md` — Arena scoring system (RumbleBoard, score overflow)
+- `docs/ARENA_SCORING.md` — Arena scoring system (ArenaBoard, score overflow)
 - Skill `hamsterball-re` reference `ball-ai-clone-system.md` — Vtable patching for AI clones
 - Skill `hamsterball-re` reference `ball-ball-collision-hook.md` — Collision hook addresses
 - Skill `hamsterball-re` reference `hamsterball-dll-modding.md` — DLL mod build patterns

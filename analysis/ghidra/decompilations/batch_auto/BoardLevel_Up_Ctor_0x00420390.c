@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel_Up_Ctor
+ * Function: LevelBoard_Up_ctor
  * Address: 0x00420390
  *
  * Description:

@@ -1,0 +1,627 @@
+[ENABLE]
+
+// ==========================================
+// Global Neon Mod — Spawn Objects + Lighting
+// ==========================================
+// Feature 1: Spawn 6 Neon Race objects at ball position (SpawnNeon flag)
+// Feature 2: Neon lighting — dark scene + ball-emitted point light (NeonLighting flag)
+//
+// Hook 1: 0x405E22 (Ball_Update) — object spawning
+// Hook 2: 0x454BC0 (Graphics_RenderScene) — per-frame lighting override
+
+// ==========================================
+// ALLOCATIONS
+// ==========================================
+
+alloc(SpawnCode, 8192)
+alloc(SpawnNeon, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20, 4)
+alloc(meshes_loaded, 4)
+alloc(mesh_neonplatform, 4)
+alloc(mesh_dfloor1, 4)
+alloc(mesh_dfloor2, 4)
+alloc(mesh_dfloor3, 4)
+alloc(mesh_dfloor4, 4)
+alloc(mesh_trode, 4)
+
+alloc(NeonRenderCave, 1024)
+alloc(NeonLighting, 4)
+alloc(NeonAmbient, 4)
+alloc(light_data, 104)
+alloc(saved_gfx, 4)
+
+registersymbol(SpawnNeon)
+registersymbol(NeonLighting)
+registersymbol(NeonAmbient)
+
+// ==========================================
+// DATA INITIALIZATION
+// ==========================================
+
+SpawnNeon:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20:
+  dd 0x41A00000
+
+meshes_loaded:
+  dd 0
+
+mesh_neonplatform:
+  dd 0
+
+mesh_dfloor1:
+  dd 0
+
+mesh_dfloor2:
+  dd 0
+
+mesh_dfloor3:
+  dd 0
+
+mesh_dfloor4:
+  dd 0
+
+mesh_trode:
+  dd 0
+
+// --- Neon lighting flags ---
+NeonLighting:
+  dd 1
+
+// Ambient color applied to scene (default: very dark blue-gray)
+// Format: 0x00RRGGBB. Change in CE to adjust darkness.
+NeonAmbient:
+  dd 0x000C0C14
+
+saved_gfx:
+  dd 0
+
+// --- D3DLIGHT8 structure (104 bytes) ---
+// Pre-filled with a cool white-cyan point light.
+// Position (offset 52-60) is updated per-frame from ball coords.
+// Layout: Type(4) + Diffuse(16) + Specular(16) + Ambient(16) + Position(12) + Direction(12) + Range(4) + Falloff(4) + Att0(4) + Att1(4) + Att2(4) + Theta(4) + Phi(4) = 104
+light_data:
+  dd 00000001       //  0: Type = D3DLIGHT_POINT (1)
+  dd 3F4CCCCD       //  4: Diffuse.r = 0.8
+  dd 3F666666       //  8: Diffuse.g = 0.9
+  dd 3F800000       // 12: Diffuse.b = 1.0
+  dd 00000000       // 16: Diffuse.a = 0.0
+  dd 3E99999A       // 20: Specular.r = 0.3
+  dd 3ECCCCCD       // 24: Specular.g = 0.4
+  dd 3F000000       // 28: Specular.b = 0.5
+  dd 00000000       // 32: Specular.a = 0.0
+  dd 00000000       // 36: Ambient.r = 0.0
+  dd 00000000       // 40: Ambient.g = 0.0
+  dd 00000000       // 44: Ambient.b = 0.0
+  dd 00000000       // 48: Ambient.a = 0.0
+  dd 00000000       // 52: Position.x (updated per frame)
+  dd 00000000       // 56: Position.y (updated per frame)
+  dd 00000000       // 60: Position.z (updated per frame)
+  dd 00000000       // 64: Direction.x = 0.0 (unused for point light)
+  dd 00000000       // 68: Direction.y = 0.0
+  dd 00000000       // 72: Direction.z = 0.0
+  dd 43FA0000       // 76: Range = 500.0
+  dd 00000000       // 80: Falloff = 0.0 (unused for point light)
+  dd 00000000       // 84: Attenuation0 = 0.0 (no constant)
+  dd 3C23D70A       // 88: Attenuation1 = 0.02 (linear falloff)
+  dd 00000000       // 92: Attenuation2 = 0.0
+  dd 00000000       // 96: Theta = 0.0 (spot only)
+  dd 00000000       //100: Phi = 0.0 (spot only)
+
+// ==========================================
+// LABELS
+// ==========================================
+
+label(original_code)
+label(done_spawn)
+label(skip_neonplatform)
+label(skip_dfloor1)
+label(skip_dfloor2)
+label(skip_dfloor3)
+label(skip_dfloor4)
+label(skip_trode)
+label(load_meshes)
+label(load_meshes_done)
+
+label(neon_on)
+label(neon_off)
+label(neon_skip_light)
+label(neon_finish)
+
+// ==========================================
+// HOOK 1: OBJECT SPAWNING (Ball_Update)
+// ==========================================
+
+SpawnCode:
+  cmp dword [SpawnNeon], 0
+  je original_code
+
+  // Clear flag immediately
+  mov dword [SpawnNeon], 0
+
+  pushad
+
+  // esi = ball pointer (from Ball_Update context)
+  // Get Board from ball+0x14
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz done_spawn
+  mov [saved_board], eax
+
+  // Get player position
+  mov ecx, [esi+0x164]
+  mov [playerX], ecx
+  mov ecx, [esi+0x168]
+  mov [playerY], ecx
+  mov ecx, [esi+0x16C]
+  mov [playerZ], ecx
+
+  // Get App from Board+0x878
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+
+  // Get D3D device from App+0x174
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+  // ==========================================
+  // LOAD MESHES (only once, cached)
+  // ==========================================
+  cmp dword [meshes_loaded], 1
+  je load_meshes_done
+
+load_meshes:
+  // --- NEONPLATFORM ---
+  push 004D1D9C               // "Levels\LevelDark-NeonPlatform"
+  push edx                    // D3D device
+  push 10D0                   // alloc size
+  call 004BA57B               // operator_new
+  add esp, 4
+  push edx                    // D3D device (reload — operator_new may have clobbered it)
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D1D9C
+  mov ecx, eax               // ecx = alloc
+  call 00461510               // MeshWorld_ctor  ret 8
+  mov [mesh_neonplatform], eax
+
+  // --- DFLOOR1 ---
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D1D80
+  mov ecx, eax
+  call 00461510
+  mov [mesh_dfloor1], eax
+
+  // --- DFLOOR2 ---
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D1D64
+  mov ecx, eax
+  call 00461510
+  mov [mesh_dfloor2], eax
+
+  // --- DFLOOR3 ---
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D1D48
+  mov ecx, eax
+  call 00461510
+  mov [mesh_dfloor3], eax
+
+  // --- DFLOOR4 ---
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D1D2C
+  mov ecx, eax
+  call 00461510
+  mov [mesh_dfloor4], eax
+
+  // --- TRODE ---
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push edx
+  push 004D1D14
+  mov ecx, eax
+  call 00461510
+  mov [mesh_trode], eax
+
+  mov dword [meshes_loaded], 1
+
+load_meshes_done:
+  // Get Board pointer
+  mov ebx, [saved_board]
+  test ebx, ebx
+  jz done_spawn
+
+  // ==========================================
+  // SPAWN NEONPLATFORM (alloc 0x10EC, ctor 0x43E110)
+  // ==========================================
+  push 10EC
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_neonplatform
+
+  push [mesh_neonplatform]    // param_5: mesh
+  sub esp, 0C                 // allocate pos XYZ
+  mov ecx, [playerX]
+  mov [esp], ecx              // pos_X
+  mov ecx, [playerY]
+  mov [esp+4], ecx            // pos_Y
+  mov ecx, [playerZ]
+  mov [esp+8], ecx            // pos_Z
+  push ebx                    // param_1: Board
+  mov ecx, eax                // ecx = alloc (this)
+  call 0043E110               // Stands_CtorRotator  ret 0x14
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810               // AthenaList_Append  ret 4
+
+skip_neonplatform:
+
+  // ==========================================
+  // SPAWN DFLOOR1 (alloc 0x1104, ctor 0x43E450)
+  // ==========================================
+  push 1104
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_dfloor1
+
+  push [mesh_dfloor1]
+  sub esp, 0C
+  mov ecx, [playerX]
+  mov [esp], ecx
+  mov ecx, [playerY]
+  add ecx, [float_20]         // Y + 20
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx
+  mov ecx, eax
+  call 0043E450               // DFloor/Trode ctor  ret 0x14
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+skip_dfloor1:
+
+  // ==========================================
+  // SPAWN DFLOOR2
+  // ==========================================
+  push 1104
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_dfloor2
+
+  push [mesh_dfloor2]
+  sub esp, 0C
+  mov ecx, [playerX]
+  add ecx, [float_20]         // X + 20
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx
+  mov ecx, eax
+  call 0043E450
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+skip_dfloor2:
+
+  // ==========================================
+  // SPAWN DFLOOR3
+  // ==========================================
+  push 1104
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_dfloor3
+
+  push [mesh_dfloor3]
+  sub esp, 0C
+  mov ecx, [playerX]
+  add ecx, [float_20]
+  add ecx, [float_20]         // X + 40
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx
+  mov ecx, eax
+  call 0043E450
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+skip_dfloor3:
+
+  // ==========================================
+  // SPAWN DFLOOR4
+  // ==========================================
+  push 1104
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_dfloor4
+
+  push [mesh_dfloor4]
+  sub esp, 0C
+  mov ecx, [playerX]
+  add ecx, [float_20]
+  add ecx, [float_20]
+  add ecx, [float_20]         // X + 60
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  mov [esp+8], ecx
+  push ebx
+  mov ecx, eax
+  call 0043E450
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+skip_dfloor4:
+
+  // ==========================================
+  // SPAWN TRODE
+  // ==========================================
+  push 1104
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_trode
+
+  push [mesh_trode]
+  sub esp, 0C
+  mov ecx, [playerX]
+  mov [esp], ecx
+  mov ecx, [playerY]
+  mov [esp+4], ecx
+  mov ecx, [playerZ]
+  add ecx, [float_20]         // Z + 20
+  mov [esp+8], ecx
+  push ebx
+  mov ecx, eax
+  call 0043E450
+
+  push eax
+  lea ecx, [ebx+0x2578]
+  call 00453810
+
+skip_trode:
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+// ==========================================
+// HOOK 2: NEON LIGHTING (Graphics_RenderScene)
+// ==========================================
+// Entry: 0x454BC0, ECX = gfx (graphics object)
+// Original: SUB ESP, 0xC0 (81 EC C0 00 00 00, 6 bytes)
+//
+// gfx struct offsets:
+//   +0x154 = IDirect3DDevice8* (raw D3D device)
+//   +0x730 = D3DRS_AMBIENT value (DWORD color)
+//   +0x734 = fog enable (byte)
+//   +0x738 = fog color (DWORD)
+//   +0x854/858/85C = ball position X/Y/Z (set by Scene_Render)
+//
+// D3D8 vtable offsets (IDirect3DDevice8):
+//   +0xB0 = vtable[44] = SetLight(Index, D3DLIGHT8*)
+//   +0xB8 = vtable[46] = LightEnable(Index, BOOL)
+//   +0xC8 = vtable[50] = SetRenderState(State, Value)
+//
+// Render state IDs:
+//   0x89 = D3DRS_LIGHTING
+//   0x8B = D3DRS_AMBIENT
+
+NeonRenderCave:
+  // ECX = gfx (this pointer)
+  pushfd
+  pushad
+
+  // Check if neon lighting is enabled
+  cmp dword [NeonLighting], 0
+  je neon_off
+
+  // --- NEON LIGHTING ON ---
+  jmp neon_on
+
+neon_off:
+  // Disable our point light (index 7) when toggled off
+  mov eax, [saved_gfx]
+  test eax, eax
+  jz neon_finish
+  mov eax, [eax + 0x154]      // D3D device
+  test eax, eax
+  jz neon_finish
+  mov edx, [eax]              // vtable
+  push 0                      // bEnable = FALSE
+  push 7                      // Index
+  push eax                    // this (device)
+  call dword ptr [edx + 0xB8] // LightEnable(7, FALSE)
+  jmp neon_finish
+
+neon_on:
+  // Check gfx pointer validity
+  test ecx, ecx
+  jz neon_finish
+
+  // Save gfx pointer for later use
+  mov [saved_gfx], ecx
+
+  // Override ambient to dark (gfx+0x730)
+  mov eax, [NeonAmbient]
+  mov [ecx + 0x730], eax
+
+  // Disable fog (gfx+0x734)
+  mov byte [ecx + 0x734], 0
+
+  // Set fog color to black (gfx+0x738)
+  mov dword [ecx + 0x738], 0
+
+  // Get D3D device (gfx+0x154)
+  mov eax, [ecx + 0x154]
+  test eax, eax
+  jz neon_finish
+
+  mov edx, [eax]              // vtable
+
+  // Enable D3D lighting (D3DRS_LIGHTING = 0x89)
+  push 1                      // Value = TRUE
+  push 0x89                   // State = D3DRS_LIGHTING
+  push eax                    // this (device)
+  call dword ptr [edx + 0xC8] // SetRenderState(LIGHTING, 1)
+
+  // Read ball position from gfx+0x854/858/85C
+  // (set by Scene_Render; one-frame latency is imperceptible)
+  mov ecx, [saved_gfx]
+  mov eax, [ecx + 0x854]      // ball X
+  mov [light_data + 52], eax
+  mov eax, [ecx + 0x858]      // ball Y
+  mov [light_data + 56], eax
+  mov eax, [ecx + 0x85C]      // ball Z
+  mov [light_data + 60], eax
+
+  // Check if position is valid (not all zeros = no ball)
+  mov eax, [light_data + 52]
+  or eax, [light_data + 56]
+  or eax, [light_data + 60]
+  jz neon_skip_light
+
+  // --- Set up D3D point light at ball position ---
+  // device->SetLight(7, &light_data)
+  mov eax, [saved_gfx]
+  mov eax, [eax + 0x154]      // D3D device
+  mov edx, [eax]              // vtable
+  mov ebx, light_data
+  push ebx                    // pLight (D3DLIGHT8*)
+  push 7                      // Index
+  push eax                    // this (device)
+  call dword ptr [edx + 0xB0] // SetLight(7, &light)
+
+  // device->LightEnable(7, TRUE)
+  mov eax, [saved_gfx]
+  mov eax, [eax + 0x154]      // D3D device
+  mov edx, [eax]              // vtable
+  push 1                      // bEnable = TRUE
+  push 7                      // Index
+  push eax                    // this (device)
+  call dword ptr [edx + 0xB8] // LightEnable(7, TRUE)
+
+neon_skip_light:
+
+neon_finish:
+  popad
+  popfd
+
+  // Execute original instruction
+  sub esp, 0xC0
+
+  // Jump back to 0x454BC6 (after the 6-byte SUB ESP instruction)
+  jmp 00454BC6
+
+// Patch Graphics_RenderScene entry
+00454BC0:
+  jmp NeonRenderCave
+  nop
+
+[DISABLE]
+
+// Restore Hook 1 (Ball_Update)
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+// Restore Hook 2 (Graphics_RenderScene)
+00454BC0:
+  db 81 EC C0 00 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnNeon)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20)
+dealloc(meshes_loaded)
+dealloc(mesh_neonplatform)
+dealloc(mesh_dfloor1)
+dealloc(mesh_dfloor2)
+dealloc(mesh_dfloor3)
+dealloc(mesh_dfloor4)
+dealloc(mesh_trode)
+dealloc(NeonRenderCave)
+dealloc(NeonLighting)
+dealloc(NeonAmbient)
+dealloc(light_data)
+dealloc(saved_gfx)
+unregistersymbol(SpawnNeon)
+unregistersymbol(NeonLighting)
+unregistersymbol(NeonAmbient)

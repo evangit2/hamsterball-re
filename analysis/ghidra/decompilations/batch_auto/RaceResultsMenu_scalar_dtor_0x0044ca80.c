@@ -6,7 +6,7 @@
  *   param_1: RaceResultsMenu* this
  *
  * Description:
- * Scalar dtor for RaceResultsMenu. Sets vtable to 0x4D6CF0. Frees 2 sub-objects at +0x137 and +0x138 (0x4DC/+0x4E0 offsets) if non-NULL. Calls RumbleBoard_CleanupTimer on +0x131 (0x4C4 offset). Calls SceneObject_BaseDtor on +0x24. Sets vtable to 0x4D6C00. 1 call.
+ * Scalar dtor for RaceResultsMenu. Sets vtable to 0x4D6CF0. Frees 2 sub-objects at +0x137 and +0x138 (0x4DC/+0x4E0 offsets) if non-NULL. Calls ToggleTimer_Cleanup on +0x131 (0x4C4 offset). Calls SceneObject_BaseDtor on +0x24. Sets vtable to 0x4D6C00. 1 call.
  *
  * Struct offsets:
  *   +0x137/+0x138 (sub-objects→0x4DC/0x4E0), +0x131 (timer→0x4C4), +0x24 (SceneObject)

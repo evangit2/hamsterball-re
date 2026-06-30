@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_Impossible_Init
+ * Function: ArenaLevel_Impossible_Init
  * Address: 0x00418540
  *
  * Description:

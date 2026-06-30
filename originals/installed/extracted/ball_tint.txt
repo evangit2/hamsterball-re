@@ -1,0 +1,5 @@
+FFFFFF
+# Ball Tint Color (hex RGB, no alpha)
+# Examples: FF6B35 (orange), 4A90D9 (blue), 2ECC71 (green)
+# Lines starting with # are ignored
+# Change this value at runtime — mod re-reads every 60ms

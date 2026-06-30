@@ -4,10 +4,10 @@
 
 | Offset | Name | Reliable for ground check? | Notes |
 |--------|------|---------------------------|-------|
-| `Ball+0x281` | `is_falling` | ❌ NO | Legacy/init flag, NOT read during Ball_Update physics tick |
-| `Ball+0xC4C` | `fall_mode` | ⚠ Partial | Only tracks death/respawn (fall-off-level), NOT ground contact |
-| `Ball+0x2E9` | `limit_flag` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE.** |
-| `Ball+0x260` | `is_airborne` | ⚠ Partial | Set by speed/friction thresholds, not true ground contact |
+| `Ball+0x281` | `unused_init_flag` | ❌ NO | DEAD: set by ctor, NEVER read by any function |
+| `Ball+0xC4C` | `is_shrunk` | ⚠ Partial | Only set by Odd Race E:SHRINK/E:GROW, NOT ground contact |
+| `Ball+0x2E9` | `dizzy_lock` | ❌ **BROKEN** | Sticky flag, never cleared in Ball_Update. **DO NOT USE for ground detection.** |
+| `Ball+0x260` | `sweat_flag` | ⚠ Partial | Set when ball is airborne on a slope (grip-climbing mode), not a true ground-contact flag |
 
 **For jump mods:** Use a cooldown timer (60 frames). No ground flag needed.
 **For mods needing true ground contact:** Use the engine's raycast (`Mesh_FindClosestCollision`) from a background thread.
@@ -26,35 +26,24 @@ Previous versions of multiple docs (BALL_OBJECT.md, BALL_UPDATE_DECOMP.md, etc.)
 
 ### What 0x2E9 actually is
 
-`Ball+0x2E9` is a **sticky limit/trajectory flag**:
+`Ball+0x2E9` is a **limit/trajectory flag**:
 
 - **Set to 1** by:
   - `E:LIMIT` arena events (finish line reached)
   - Type-5 floor collision with deep penetration (`piVar16[0x15] > _DAT_004cf310`)
-- **NEVER cleared within `Ball_Update` (0x405E00)**
+- **Cleared to 0** by `Ball_FindClosestRespawnPoint` (at 0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2`
 
-### Why the "cleared each frame" myth exists
+### ⚠ CORRECTION: Previous "sticky flag" claim was wrong
 
-The clears in `Ball_FindClosestRespawnPoint` (0x405190) and decompiled `Ball_Update` appear as:
-```c
-*(undefined1 *)(param_1 + 0x2e9) = 0;
+Previous versions of this doc claimed `Ball_FindClosestRespawnPoint`'s clear was `int*` arithmetic writing to `+0xBA4` instead of `+0x2E9`, making the flag "sticky." **This was wrong.** The actual disassembly at 0x00405262 is:
+
+```asm
+00405262: C6 86 E9 02 00 00 00    MOV byte [ESI+0x2E9], 0
 ```
 
-But `param_1` is declared as `int*` (int pointer). `int* + 0x2e9` = **byte offset `0x2e9 * 4 = 0xBA4`**, NOT byte offset `0x2E9`.
+This is a direct byte write to offset `0x2E9` via the ModRM `9E` encoding (`[ESI+disp32]`). The Ghidra decompilation's `param_1 + 0x2e9` uses `param_1` declared as `int` (not `int*`), so the arithmetic IS byte offset `0x2E9`. The flag IS properly cleared on respawn.
 
-The actual byte at `Ball+0x2E9` is ONLY cleared by `Ball_ctor2` (full constructor, called on respawn). The `Ball_Update` code that writes to it:
-```c
-// In decomp_0x405E00_Ball_Update.c, line 804:
-*(undefined1 *)((int)param_1 + 0x2e9) = 1;  // SET: uses (int) cast = byte offset 0x2E9
-```
-
-Note the `(int)` cast — this IS a byte offset. But the clears do NOT use this cast:
-```c
-// In decomp_ball_update.c, line 81:
-*(undefined1 *)(param_1 + 0x2e9) = 0;  // CLEAR: uses int* arithmetic = byte offset 0xBA4
-```
-
-**This makes `0x2E9` a sticky flag** — once set to 1, it stays 1 until the ball is fully reconstructed by `Ball_ctor2`.
+However, the flag is still **not cleared per-frame within `Ball_Update`** — it persists between frames within a single life. It's only cleared on respawn/teleport, not every physics tick.
 
 ### Real-world bug caused by this
 
@@ -67,6 +56,41 @@ Fix: replaced with a 60-frame cooldown timer after each jump.
 ---
 
 ## What DOES work for ground detection
+
+### Ball+0x2DC/0x2E0/0x2E4 — Last Grounded Position (LGP) ✅ VERIFIED
+
+| Offset | Name | Type | Description |
+|--------|------|------|-------------|
+| `Ball+0x2DC` | `lgp_x` | float | X coordinate of last type-2 surface collision |
+| `Ball+0x2E0` | `lgp_y` | float | Y coordinate of last type-2 surface collision |
+| `Ball+0x2E4` | `lgp_z` | float | Z coordinate of last type-2 surface collision |
+
+The LGP is the ball's position **snapshot at the moment of its last type-2 surface collision**.
+It is written inside `Ball_Update` (0x405E00) whenever the ball's own collision mesh registers a
+type-2 surface hit. Type-2 entries are created by `SpatialTree_TestFace` (0x463E20), which has
+**no backface culling** — it uses an absolute distance check and a velocity gate (`dot <= 0`)
+that passes for wall slides (dot ≈ 0) and clip-throughs while falling (dot ≈ 0). See
+`docs/physics/BALL_RESPAWN_SYSTEM.md` for the full gate analysis.
+
+```c
+param_1[0xB7] = param_1[0x59];  // ball+0x2DC = ball+0x164 (current X → LGP X)
+param_1[0xB8] = param_1[0x5A];  // ball+0x2E0 = ball+0x168 (current Y → LGP Y)
+param_1[0xB9] = param_1[0x5B];  // ball+0x2E4 = ball+0x16C (current Z → LGP Z)
+```
+
+The respawn system (`Ball_FindClosestRespawnPoint` at 0x405190) uses the LGP — **not** the live
+position — for all its distance and height calculations. This is so the ball respawns near where
+it fell off the track, not wherever it landed in the void.
+
+**For mods:** LGP is a reliable indicator of where the ball was last grounded. If you need a "last
+safe position" for any custom respawn/teleport logic, read these fields. They are updated every
+frame the ball is touching ground via type-2 collision, and remain stale (holding the last grounded
+position) while the ball is airborne or falling.
+
+**Previous labels:** These fields were previously named `checkpoint_x/y/z` and described as
+"Last safe position" or "Last collision/bump position." The correct terminology is **Last Grounded
+Position (LGP)** — they are specifically the position from the last type-2 ground collision, not
+a checkpoint save or a generic bump position.
 
 ### Option 1: Cooldown timer (simplest, for jump mods)
 
@@ -110,16 +134,16 @@ find_collision(ball_ptr, &out);
 
 ---
 
-## ⚠ is_falling (Ball+0x281) is also NOT reliable
+## ⚠ unused_init_flag (Ball+0x281) is DEAD CODE
 
-- Documented as `is_falling` in BALL_OBJECT.md
+- Documented as `unused_init_flag` (formerly is_falling) in BALL_OBJECT.md
 - **NOT read during `Ball_Update` (0x405E00)** physics tick
 - Legacy/init flag only
 - Setting it to 0 in water mods works as a side effect (clears a stale state), but it does NOT reflect current ground contact
 
-## fall_mode (Ball+0xC4C) is death-state only
+## is_shrunk (Ball+0xC4C) is Odd Race shrink mechanic only
 
-- Set by `Ball_StartFall` (0x402200) when ball falls off the level edge
-- Cleared by `Ball_EndFall` (0x402270) after respawn animation
-- **Does NOT track per-frame ground contact** — ball can be midair (from a jump) with fall_mode=0
-- Safe to use as a **secondary gate** (don't allow jumping while dying), but NOT as a primary ground check
+- Set by `Ball_Shrink` (0x402200) during Odd Race E:SHRINK collision event
+- Cleared by `Ball_Grow` (0x402270) during Odd Race E:GROW collision event
+- **Does NOT track per-frame ground contact** — ball can be midair (from a jump) with is_shrunk=0
+- NOT related to falling off edges — Ball_Shatter (0x408D70) handles falling and never writes to 0xC4C

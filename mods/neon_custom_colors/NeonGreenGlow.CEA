@@ -1,0 +1,45 @@
+{ ===================================================================
+  Neon Green Glow - Changes Neon Race glow from yellow to green
+  Target: Hamsterball.exe V3.6.c
+  Function: Scene_SetupLevelDark (0x00416270)
+  
+  Patches 8 R-channel PUSH immediates from 1.0 (0x3F800000) to 0.0
+  G and B channels stay at 1.0 and 0.0 respectively
+  Result: RGBA changes from (1,1,0,1) = yellow to (0,1,0,1) = green
+  
+  Three material blocks are patched for BOTH player 1 and player 2:
+    - Ambient  (phys+0x1BC/1C0/1C4/1C8)
+    - Diffuse  (phys+0x1CC/1D0/1D4/1D8)
+    - Emissive (phys+0x1EC/1F0/1F4/1F8) <-- the actual glow
+  Plus the loop that sets neon platform colors.
+  =================================================================== }
+
+[ENABLE]
+
+// 10 R-channel push immediates -> 0x00000000 (0.0f)
+// 8 are 0x3F800000 (1.0f) for material colors
+// 2 are 0x41200000 (10.0f) for emitter light Diffuse R
+00416360: dd 00000000        // Loop block 1 (platforms R)
+004163D4: dd 00000000        // Loop block 2 (platforms R)
+004164A4: dd 00000000        // P1 Emitter Light Diffuse R (was 10.0f)
+00416568: dd 00000000        // P1 Ambient R (phys+0x1CC)
+004165D5: dd 00000000        // P1 Diffuse R (phys+0x1BC)
+0041663F: dd 00000000        // P1 Emissive R (phys+0x1EC)
+00416846: dd 00000000        // P2 Emitter Light Diffuse R (was 10.0f)
+004166C0: dd 00000000        // P2 Ambient R (phys2+0x1CC)
+0041672D: dd 00000000        // P2 Diffuse R (phys2+0x1BC)
+00416797: dd 00000000        // P2 Emissive R (phys2+0x1EC)
+
+[DISABLE]
+
+// Restore originals
+00416360: dd 3F800000        // platforms R = 1.0f
+004163D4: dd 3F800000
+004164A4: dd 41200000        // emitter R = 10.0f
+00416568: dd 3F800000
+004165D5: dd 3F800000
+0041663F: dd 3F800000
+00416846: dd 41200000        // emitter R = 10.0f
+004166C0: dd 3F800000
+0041672D: dd 3F800000
+00416797: dd 3F800000

@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel_Beginner_Ctor
+ * Function: LevelBoard_Beginner_ctor
  * Address: 0x004200e0
  *
  * Description:

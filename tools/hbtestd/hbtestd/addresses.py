@@ -75,9 +75,9 @@ SCENE = {
 }
 
 # ---------------------------------------------------------------------
-# RumbleBoard struct offsets (arena mode, ~18380 bytes)
+# ArenaBoard struct offsets (arena mode, ~18380 bytes)
 # ---------------------------------------------------------------------
-RUMBLE_BOARD = {
+ARENA_BOARD = {
     "knockoff_counts":  0x47B4,  # int32[4] - per-player fall count
     "knockoff_end":     0x47C0,  # end of array
     "board_state":      0x000,   # [unverified]
@@ -289,7 +289,7 @@ def get_struct_layout(struct_name: str) -> Optional[dict]:
         "App": APP,
         "Ball": BALL,
         "Scene": SCENE,
-        "RumbleBoard": RUMBLE_BOARD,
+        "ArenaBoard": ARENA_BOARD,
         "SceneObject": SCENE_OBJECT,
         "Gadget": GADGET,
     }
@@ -307,7 +307,7 @@ def list_known_symbols() -> dict[str, Any]:
             "App": {k: f"0x{v:X}" for k, v in APP.items()},
             "Ball": {k: f"0x{v:X}" for k, v in BALL.items()},
             "Scene": {k: f"0x{v:X}" for k, v in SCENE.items()},
-            "RumbleBoard": {k: f"0x{v:X}" for k, v in RUMBLE_BOARD.items()},
+            "ArenaBoard": {k: f"0x{v:X}" for k, v in ARENA_BOARD.items()},
             "SceneObject": {k: f"0x{v:X}" for k, v in SCENE_OBJECT.items()},
             "Gadget": {k: f"0x{v:X}" for k, v in GADGET.items()},
         },

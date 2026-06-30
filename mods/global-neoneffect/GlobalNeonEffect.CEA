@@ -1,0 +1,160 @@
+// ═══════════════════════════════════════════════════════════════════════
+// GLOBAL NEON EFFECT v27 — Dark fog + ball glow on ALL levels
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Two-part mod:
+//   PART 1: Distance fog (from v26, hooks BeginFrame per-frame)
+//   PART 2: Ball glow border on ALL balls (not just Neon Race)
+//
+// ═══════════════════════════════════════════════════════════════════════
+// PART 1: FOG
+// ═══════════════════════════════════════════════════════════════════════
+// Hook: Graphics_BeginFrame (0x453B50) — called every frame
+// Hook at 0x453B63: MOV EAX,[EBX+0x154] (6 bytes: 8B 83 54 01 00 00)
+// EBX = gfx (set at 0x453B51: MOV EBX,ECX)
+//
+// Sets: fog enable, fog table LINEAR, start=500, end=2000, color=black
+// ═══════════════════════════════════════════════════════════════════════
+// PART 2: BALL GLOW
+// ═══════════════════════════════════════════════════════════════════════
+// Ball render function: FUN_00402de0 (ECX = ball struct pointer, saved to EBP)
+//
+// At 0x402F0E: CMP byte ptr [EBP+0xC80], BL  (BL=0, checks glow flag)
+// At 0x402F14: JZ 0x402F5B                   (skip glow if flag=0)
+//
+// At 0x402FE5: CMP byte ptr [EBP+0xC80], BL  (check glow flag again)
+// At 0x402FEB: JZ 0x40300D                   (skip glow reset if flag=0)
+//
+// v26 PROBLEM: NOP'ing the JZ wasn't enough — ball+0xC80 was 0 so
+// the viewport clip values at ball+0xC88/C8C/C90 were never initialized
+// by the level setup code (only Scene_SetupLevelDark and
+// ArenaLevel_Neon_Init set ball+0xC80=1).
+//
+// v27 FIX: Code cave at 0x402F0E that:
+//   1. Forces ball+0xC80 = 1 (glow flag on)
+//   2. Falls through to original code which now takes the glow path
+//   3. The render function itself handles viewport clip + emissive
+//
+// Original bytes at 0x402F0E: 38 9D 80 0C 00 00 74 45 (8 bytes)
+//   CMP [EBP+0xC80], BL (6 bytes) + JZ (2 bytes) = 8 bytes
+//   Replace with: JMP cave (5 bytes) + NOP NOP NOP (3 bytes) = 8 bytes
+//
+// ═══════════════════════════════════════════════════════════════════════
+
+[ENABLE]
+
+alloc(fog_cave, 256)
+alloc(glow_cave, 64)
+
+label(neon_skip)
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 1: FOG CAVE
+// ═══════════════════════════════════════════════════════════════════════
+fog_cave:
+  pushfd
+  pushad
+
+  mov eax, [ebx+0x154]       // gfx+0x154 = D3D device wrapper
+  test eax, eax
+  jz neon_skip
+  mov edi, eax               // EDI = device (saved by PUSHAD)
+
+  // Enable fog
+  push 1
+  push 1C
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+  // Fog table mode = LINEAR
+  push 3
+  push 23
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+  // Disable vertex fog
+  push 0
+  push 8C
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+  // Fog start = 500.0
+  push 43FA0000
+  push 24
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+  // Fog end = 2000.0
+  push 44FA0000
+  push 25
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+  // Fog color = black
+  push 0FF000000
+  push 22
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+0xC8]
+
+neon_skip:
+  popad
+  popfd
+
+  mov eax, [ebx+0x154]
+  jmp 00453B69
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 2: BALL GLOW CAVE
+// Hooks at 0x402F0E (inside ball render function FUN_00402de0)
+// EBP = ball pointer (set at 0x402DFE: MOV EBP,ECX)
+// ═══════════════════════════════════════════════════════════════════════
+glow_cave:
+  // Force glow flag ON for this ball
+  mov byte ptr [ebp+0xC80], 1
+
+  // Original instruction: CMP byte ptr [EBP+0xC80], BL
+  // Now BL=0 but [EBP+0xC80]=1, so CMP sets NZ → JZ won't jump
+  // → game takes the glow path naturally
+  cmp byte ptr [ebp+0xC80], 0
+
+  // Return to 0x402F14 (the JZ instruction)
+  jmp 00402F14
+
+// ═══════════════════════════════════════════════════════════════════════
+// INSTALL HOOKS
+// ═══════════════════════════════════════════════════════════════════════
+
+// Part 1: Fog hook at BeginFrame
+00453B63:
+  jmp fog_cave
+  nop
+
+// Part 2: Ball glow hook at render function
+// Original: 38 9D 80 0C 00 00 (CMP [EBP+0xC80], BL) + 74 45 (JZ)
+// Replace 8 bytes: JMP glow_cave (5) + NOP NOP NOP (3)
+00402F0E:
+  jmp glow_cave
+  nop
+  nop
+  nop
+
+[DISABLE]
+
+// Restore fog hook
+00453B63:
+  db 8B 83 54 01 00 00
+
+// Restore ball glow hook
+// CMP byte ptr [EBP+0xC80], BL = 38 9D 80 0C 00 00
+// JZ = 74 45
+00402F0E:
+  db 38 9D 80 0C 00 00 74 45
+
+dealloc(fog_cave)
+dealloc(glow_cave)

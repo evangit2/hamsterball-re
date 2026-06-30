@@ -26,7 +26,7 @@
  *   param_1+0x10F8: decay timer (0.25 seconds)
  *
  * Cross-references:
- *   Called from 0x40F074 — UNCONDITIONAL_CALL (from Arena_HandleCollision)
+ *   Called from 0x40F074 — UNCONDITIONAL_CALL (from ExpertCollisionEvents)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

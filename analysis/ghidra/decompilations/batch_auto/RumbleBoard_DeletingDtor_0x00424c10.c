@@ -1,7 +1,7 @@
 /*
- * Function: RumbleBoard_DeletingDtor
+ * Function: ArenaBoard_DeletingDtor
  * Address: 0x00424c10
- * Signature: void __fastcall RumbleBoard_DeletingDtor(undefined4 *param_1)
+ * Signature: void __fastcall ArenaBoard_DeletingDtor(undefined4 *param_1)
  * Parameters: param_1: RumbleBoard* this — the arena board to destroy
  *
  * Description:

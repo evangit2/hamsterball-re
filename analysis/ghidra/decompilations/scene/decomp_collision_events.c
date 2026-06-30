@@ -1,9 +1,9 @@
-// CreateNoDizzy (0x40C5D0) — "CreateNoDizzy"
+// DispatchCollisionEvents (0x40C5D0) — "DispatchCollisionEvents"
 // BASE collision handler — dispatches ALL game events
-// Called by Level_HandleCollision and Arena_HandleCollision as final step
+// Called by TowerCollisionEvents and ExpertCollisionEvents as final step
 // Parameters: this=Level, param_1=Ball, param_2=CollisionObject
 
-void __thiscall CreateNoDizzy(void *this, int *ball, int *collObj) {
+void __thiscall DispatchCollisionEvents(void *this, int *ball, int *collObj) {
     char *eventName = *(char **)(collObj[1] + 0x864); // object type string
     int *app = *(int **)((int)this + 0x878);
     
@@ -179,8 +179,8 @@ void __thiscall CreateNoDizzy(void *this, int *ball, int *collObj) {
     }
 }
 
-// Level_HandleCollision (0x40DCD0) — Level-specific events + delegates to base
-void __thiscall Level_HandleCollision(void *this, int *ball, int *collObj) {
+// TowerCollisionEvents (0x40DCD0) — Level-specific events + delegates to base
+void __thiscall TowerCollisionEvents(void *this, int *ball, int *collObj) {
     char *eventName = *(char **)(collObj[1] + 0x864);
     
     // E:CATAPULTBOTTOM — Launch catapult if impact counter < 1
@@ -223,11 +223,11 @@ void __thiscall Level_HandleCollision(void *this, int *ball, int *collObj) {
     }
     
     // Delegate to base handler for all other events
-    CreateNoDizzy(this, ball, collObj); // CreateNoDizzy
+    DispatchCollisionEvents(this, ball, collObj); // DispatchCollisionEvents
 }
 
-// Arena_HandleCollision (0x40E6A0) — Rumble arena events + delegates to base
-void __thiscall Arena_HandleCollision(void *this, int *ball, int *collObj) {
+// ExpertCollisionEvents (0x40E6A0) — Rumble arena events + delegates to base
+void __thiscall ExpertCollisionEvents(void *this, int *ball, int *collObj) {
     char *eventName = *(char **)(collObj[1] + 0x864);
     int *app = *(int **)((int)this + 0x878);
     bool isMultiplayer = *(app + 0x23C) != 0;
@@ -287,5 +287,5 @@ void __thiscall Arena_HandleCollision(void *this, int *ball, int *collObj) {
     }
     
     // Delegate to base handler for all remaining events
-    CreateNoDizzy(this, ball, collObj); // CreateNoDizzy
+    DispatchCollisionEvents(this, ball, collObj); // DispatchCollisionEvents
 }

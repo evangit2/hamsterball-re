@@ -1,7 +1,7 @@
 /*
- * Function: RumbleBoard_CollSlices_DeletingDtorVdtor
+ * Function: ArenaBoard_CollSlices_DeletingDtor
  * Address: 0x00425210
- * Signature: void __fastcall RumbleBoard_CollSlices_DeletingDtorVdtor(undefined4 *param_1)
+ * Signature: void __fastcall ArenaBoard_CollSlices_DeletingDtor(undefined4 *param_1)
  * Batch: 16
  *
  * Description:

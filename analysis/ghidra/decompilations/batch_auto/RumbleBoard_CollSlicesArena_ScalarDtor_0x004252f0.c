@@ -1,7 +1,7 @@
 /*
- * Function: RumbleBoard_CollSlicesArena_ScalarDtor
+ * Function: ArenaBoard_CollSlicesArena_ScalarDtor
  * Address: 0x004252f0
- * Signature: void __fastcall RumbleBoard_CollSlicesArena_ScalarDtor(undefined4 *param_1)
+ * Signature: void __fastcall ArenaBoard_CollSlicesArena_ScalarDtor(undefined4 *param_1)
  * Batch: 16
  *
  * Description:

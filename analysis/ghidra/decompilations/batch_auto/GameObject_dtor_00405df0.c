@@ -3,7 +3,7 @@
  * Address: 0x00405df0
  * Signature: void __fastcall GameObject_dtor(undefined4 *param_1)
  *
- * Patterns: frees memory, SEH frame, matrix math, board. Calls: GameObject_dtor, Vtable_CallOffset48, _free, Vec3List_Free, Matrix_Identity, RumbleBoard_CleanupTimer, Matrix4_Identity, Timer_Cleanup. Offsets: 7, Lines: 44
+ * Patterns: frees memory, SEH frame, matrix math, board. Calls: GameObject_dtor, Vtable_CallOffset48, _free, Vec3List_Free, Matrix_Identity, ToggleTimer_Cleanup, Matrix4_Identity, Timer_Cleanup. Offsets: 7, Lines: 44
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -41,7 +41,7 @@ void __fastcall GameObject_dtor(undefined4 *param_1)
   iStack_4._0_1_ = 4;
   Matrix_Identity(param_1 + 0xaa);
   iStack_4._0_1_ = 3;
-  RumbleBoard_CleanupTimer(param_1 + 0x99);
+  ToggleTimer_Cleanup(param_1 + 0x99);
   iStack_4._0_1_ = 2;
   Matrix4_Identity(param_1 + 0x82);
   iStack_4._0_1_ = 1;

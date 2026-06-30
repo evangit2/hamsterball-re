@@ -68,18 +68,18 @@ These are the primary game state variables used by the Hamsterball engine.
 - **Used in** (193 locations, key ones):
   - `Ball_ctor2+0x126` — `RNG_Rand(&PTR_OBJ_VTABLE, 3, '\0')` for random ball properties
   - `Ball_Update+0xFF` — per-frame ball physics
-  - `Ball_SplitIntoThree+0x21F` — ball splitting mechanic
+  - `Ball_Shatter+0x21F` — ball splitting mechanic
   - `Scene_SetCamera+0x1EA` — camera setup
   - `Scene_SpawnBallsAndObjects+0x174` — level object spawning
   - `Scene_UpdateBallsAndState+0x3E4` — main game logic update
   - `Scene_ComputeArenaLighting+0x202` — arena lighting
   - `Board_Master_Update+0x42` — master board update
-  - `CreateBumper+0x7F3`, `CreateSpinner+0x3C0`, `CreateNoDizzy+0x7AC` — object creation
-  - `RumbleBoard_Update+0x331` — arena mode update
+  - `CreateBumper+0x7F3`, `HandleArenaCollisionEvents+0x3C0`, `DispatchCollisionEvents+0x7AC` — object creation
+  - `ArenaBoard_Update+0x331` — arena mode update
   - `Sound_InitChannels+0x90` — audio system init
   - `LoadingScreenGadget_Ctor+0x2E2` — loading screen
   - `ScoreDisplay_SetTime+0x09` — score display
-  - Many level dtor functions (BoardLevel3_Dizzy_dtor, BoardLevel5_Tower_dtor, etc.)
+  - Many level dtor functions (LevelBoard_Dizzy_dtor, LevelBoard_Tower_dtor, etc.)
 
 ### PTR_PTR_004f7188
 - **Address**: `0x004F7188` (.data)
@@ -112,10 +112,10 @@ These are the primary game state variables used by the Hamsterball engine.
 - **Used in** (99 locations, key ones):
   - `TimeTrialMenu_ctor+0x6E` — `AthenaString_Format(0x4f7448, ...)` for level textures
   - `HighScoreMenu_Render+0x291` — high score display textures
-  - `RumbleBoard_Render+0x218` — arena rendering
+  - `ArenaBoard_Render+0x218` — arena rendering
   - `DifficultyMenu_Render+0x252` — difficulty selection
   - `RaceGoalReached_Tick+0x297` — race completion
-  - `Scene_SetupLevel10+0xBB` — Toob level setup
+  - `Scene_SetupLevel10+0xBB` — Master level setup
   - `Scene_SetupLevelCascade+0xCA` — Beginner Race setup
   - `TourneyMenu_ctor+0x26F` — tournament menu construction
   - `MPMenu_ctor+0x356` — multiplayer menu
@@ -358,7 +358,7 @@ uses indirect calls through these pointers to support multiple code paths (e.g.,
 - **Description**: Pointer to the string "HAMSTER PELLET". Used in tournament/menu rendering
   for displaying hamster pellet-related UI elements (likely score or item display).
 - **Used in**:
-  - `TourneyMenu_Render+0xB07` (DATA)
+  - `ArenaLevelSelect_Render+0xB07` (DATA)
   - `ConfirmMenu_Render+0x75E` (DATA)
   - `TourneyMenu_TickWithRank+0x11F2` (DATA)
   - `HighScoreEntry_DeletingDtor+0x69E` (DATA)

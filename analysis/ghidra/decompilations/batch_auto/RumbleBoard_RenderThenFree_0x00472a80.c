@@ -1,5 +1,5 @@
 
-void __fastcall RumbleBoard_RenderThenFree(int *param_1)
+void __fastcall ArenaBoard_RenderThenFree(int *param_1)
 
 {
   (**(code **)(*param_1 + 0x48))();

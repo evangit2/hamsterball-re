@@ -17,7 +17,7 @@
  *   0x4083AC: TEST CL, CL
  *   0x4083AE: JZ 0x40882A             ; GATE 0: if BOTH zero → EXIT
  *
- * For CreateBadBall 8balls: ball+0xC74 == 0 (only SplitIntoThree sets it to 1)
+ * For CreateBadBall 8balls: ball+0xC74 == 0 (only Shatter sets it to 1)
  * In practice/countdown: App+0x237 == 0 (set to 1 by Game_SetInProgress)
  * → Both zero → JZ fires → Ball_Update + targeting + SetVelocity NEVER run.
  *

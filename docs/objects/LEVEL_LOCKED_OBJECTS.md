@@ -31,8 +31,8 @@ These constructors receive a pre-loaded mesh pointer as a parameter. That pointe
 
 | Object | Factory Match | Constructor | Address | Needs Scene Offset | Mesh File | Loaded By | Gate |
 |--------|--------------|-------------|---------|-------------------|-----------|-----------|------|
-| **Tipper** | `"TIPPER"` | `Tipper_ctor` | `0x437960` | `+0x4394` (mesh), `+0x4398` (visual) | `Levels\Level3-Tipper` | `BoardLevel3_ctor` (`0x41D060`) | `app+0x23C != 0` |
-| **Gluebie** | `"GLUEBIE"` | `Gluebie_ctor` | `0x437CB0` | `+0x607C` (mesh) | `Levels\Level3-Gluebie` | `BoardLevel3_ctor` (`0x41D060`) | `app+0x23C != 0` |
+| **Tipper** | `"TIPPER"` | `Tipper_ctor` | `0x437960` | `+0x4394` (mesh), `+0x4398` (visual) | `Levels\Level3-Tipper` | `LevelBoard_Dizzy_ctor` (`0x41D060`) | `app+0x23C != 0` |
+| **Gluebie** | `"GLUEBIE"` | `Gluebie_ctor` | `0x437CB0` | `+0x607C` (mesh) | `Levels\Level3-Gluebie` | `LevelBoard_Dizzy_ctor` (`0x41D060`) | `app+0x23C != 0` |
 | **BlockDawg1** | `"BLOCKDAWG1"` | `Blockdawg_ctor` | `0x43C310` | `+0x5840` (mesh) + `"DAWGPATH1"` named object | (dawg sub-mesh) | Level ctors | `app+0x23C != 0` |
 | **BlockDawg2** | `"BLOCKDAWG2"` | `Blockdawg_ctor` | `0x43C310` | `+0x5844` (mesh) + `"DAWGPATH2"` named object | (dawg sub-mesh) | Level ctors | `app+0x23C != 0` |
 | **Catapult** | `"CATAPULT"` | `Catapult_ctor` | `0x437E10` | `+0x5848` (mesh) | (catapult sub-mesh) | Level ctors | None |
@@ -65,7 +65,7 @@ BadBalls are spawned by `CreateBadBall` which is called from `Scene_SpawnBallsAn
   2. `Ball_ctor(this, scene)` — initialize ball with scene reference
   3. `vtable[1]()` — call Ball_Init (2nd virtual)
   4. Position from MESHWORLD object: `ball+0x164 = obj.x + radius`, `ball+0x168 = obj.y + ball.radius`, `ball+0x16C = obj.z + radius`
-  5. Clear `ball+0x281 = 0` (some flag)
+  5. Clear `ball+0x281 = 0` (dead flag, never read)
   6. Copy same position to home: `ball+0xC60/0xC64/0xC68 = obj.xyz` (spawn/return position)
   7. Parse `<CHASE>`, `<HOME>`, `<SIZE>`, `<SPINDISTANCE>` tags from name string via `MWParser_ReadTag`
   8. `AthenaList_Append(scene+0x29D4, ball)` — add to bad_balls list
@@ -103,7 +103,7 @@ Ball_ctor(ball, scene);  // 0x4087A0 (base Ball_ctor, NOT Ball_Split_ctor)
 *(float*)(ball + 0xC68) = spawn_z;
 
 // 6. Set AI flag
-*(byte*)(ball + 0x281) = 0;  // clear some flag
+*(byte*)(ball + 0x281) = 0;  // dead flag (never read by any function)
 
 // 7. Set chase distance (optional, default 25.0)
 *(float*)(ball + 0xC6C) = 25.0f;
@@ -130,13 +130,13 @@ AthenaList_Append(scene + 0x2DEC, ball);  // all_balls
 | Ball_Init | `vtable[1]()` | via vtable |
 | Display pos | `ball+0x164/0x168/0x16C` | — |
 | Home pos | `ball+0xC60/0xC64/0xC68` | — |
-| AI flag clear | `ball+0x281` | — |
+| AI flag clear | `ball+0x281` | DEAD: never read |
 | Chase dist | `ball+0xC6C` | — |
 | Home radius | `ball+0xC70` | — |
 | Add to bad_balls | `AthenaList_Append(scene+0x29D4, ball)` | — |
 | Add to all_balls | `AthenaList_Append(scene+0x2DEC, ball)` | — |
 
-**Alternatively, for split-ball 8-balls (from Ball_SplitIntoThree at 0x408D70):**
+**Alternatively, for split-ball 8-balls (from Ball_Shatter at 0x408D70):**
 - Uses `Ball_Split_ctor` at `0x408D10` (which calls `Ball_ctor2` then sets `ball+0xC60=5`)
 - Allocates 0xC64 bytes (slightly smaller than CreateBadBall's 0xC98)
 - Sets `ball+0x31D = 1` (is_8ball), `ball+0xC60 = 0x41200000` (30.0f, split timer)
@@ -180,9 +180,9 @@ AthenaList_Append(scene + 0x1930, trap);  // physics_objects
 
 ### Sawblades (and Arena Object Sub-Dispatcher)
 
-⚠️ **`CreateSawblade` is actually a multi-factory**, not just a sawblade creator. It handles 6 different arena objects based on the name prefix. It is called from `CreateLevelObjects` for each section-3 object whose name doesn't match any other prefix.
+⚠️ **`CreateExpertLevelObjects` is actually a multi-factory**, not just a sawblade creator. It handles 6 different arena objects based on the name prefix. It is called from `CreateLevelObjects` for each section-3 object whose name doesn't match any other prefix.
 
-**`CreateSawblade`** — Address: `0x0040E250`
+**`CreateExpertLevelObjects`** — Address: `0x0040E250`
 - **Convention:** `__thiscall` (ECX = Scene\*, param_1 = name string, param_2/3 = output ptrs, param_4 = transform)
 - **Called from:** `Scene_HandleCollisions` / `CreateLevelObjects`
 - **Gate:** All sub-objects with `app+0x23C != 0` check: BONK, TIP, SAWBLADE
@@ -254,7 +254,7 @@ To add Bonks:
 
 ### Ball Splits (8-ball arena mechanic)
 
-**`Ball_SplitIntoThree`** — Address: `0x00408D70`
+**`Ball_Shatter`** — Address: `0x00408D70`
 - **Convention:** `__thiscall` (ECX = Ball*)
 - **Prologue:** Standard SEH (`PUSH -1; MOV EAX, FS:[0]; PUSH handler`)
 - **Parameters:** `this` (Ball* — the parent ball), `param_1` (struct with target position table)
@@ -351,7 +351,7 @@ The single variable that gates most level-locked objects. Located at `App+0x23C`
 
 For scene-dependent objects, here is exactly what each level constructor loads and where it stores the mesh pointers:
 
-### `BoardLevel3_ctor` (0x41D060) — Dizzy Race
+### `LevelBoard_Dizzy_ctor` (0x41D060) — Dizzy Race
 Loads the most sub-meshes of any level:
 
 | Scene Offset | Mesh File | Used By |
@@ -364,18 +364,18 @@ Loads the most sub-meshes of any level:
 | `+0x4BC4` | `Levels\Level3-Swirl` (MeshWorld) | Level3-specific swirl |
 | `+0xBC8` | (CollisionLevel from Swirl) | Swirl collision |
 
-### `BoardLevel8_Expert_ctor` (0x41EA40)
+### `LevelBoard_Expert_ctor` (0x41EA40)
 | Scene Offset | Mesh File | Used By |
 |-------------|-----------|---------|
 | `+0x4378` | `Levels\Level5-Bridge` (MeshWorld) | BRIDGE collision mesh |
 | `+0x437C` | (CollisionLevel from Bridge) | Bridge collision |
 
-### `BoardLevel_Beginner_Ctor` (0x4200E0) — Beginner Race (Arena, internal name: Cascade)
+### `LevelBoard_Beginner_ctor` (0x4200E0) — Beginner Race (Arena, internal name: Cascade)
 | Scene Offset | Content | Used By |
 |-------------|---------|---------|
 | `+0x436C` | Vec3List array (0x418 bytes, 8 items) | Bumper creation data |
 
-### `BoardLevel1_WarmUp_ctor` (0x41CA40) — Warm-Up
+### `LevelBoard_WarmUp_ctor` (0x41CA40) — Warm-Up
 **No sub-meshes loaded.** All scene mesh pointer offsets (`+0x4394`, `+0x5840`, `+0x607C`, etc.) are NULL/zero from the base `Board_ctor`.
 
 ---
@@ -396,7 +396,7 @@ Loads the most sub-meshes of any level:
 **Step 1:** Patch `app+0x23C` to 1
 
 **Step 2:** Patch the level's `BoardLevel*_ctor` to load the required sub-mesh files and store the MeshWorld/CollisionLevel pointers at the correct scene offsets. For example, to add TIPPER support to Level 1:
-- Patch `BoardLevel1_WarmUp_ctor` at `0x41CA40` to add:
+- Patch `LevelBoard_WarmUp_ctor` at `0x41CA40` to add:
   ```
   MeshWorld_ctor(buf, graphics, "Levels\\Level3-Tipper")
   store result → scene+0x4394
@@ -421,11 +421,11 @@ In a reimplementation, bypass both gates entirely:
 | Function | Address | Purpose |
 |----------|---------|---------|
 | `CreateLevelObjects` | `0x4121D0` | Main factory dispatcher — matches MESHWORLD names to constructors |
-| `CreateSawblade` | `0x40E250` | Multi-factory: BONK, TIP, SAWBLADE, BRIDGE, JUDGE, BELL sub-dispatcher |
+| `CreateExpertLevelObjects` | `0x40E250` | Multi-factory: BONK, TIP, SAWBLADE, BRIDGE, JUDGE, BELL sub-dispatcher |
 | `Scene_SpawnBallsAndObjects` | `0x41C5B0` | Ball spawning on level load |
 | `CreateBadBall` | `0x40BCA0` | Spawn 8-ball AI opponent from MESHWORLD BADBALL tag |
 | `CreateMouseTrap` | `0x40BF50` | Spawn mouse trap from MESHWORLD MOUSETRAP objects |
-| `Ball_SplitIntoThree` | `0x408D70` | Arena 8-ball split: replaces parent ball with 3 AI split balls |
+| `Ball_Shatter` | `0x408D70` | Arena 8-ball split: replaces parent ball with 3 AI split balls |
 | `Ball_InitBattleMode` | `0x456CD0` | Set ball to battle/arena physics |
 | `Bonk_ctor` | `0x438850` | Bonk constructor (self-loads `levels\level5-bonk`) |
 | `CreateBumper` | `0x40FA20` | Bumper factory (self-loads `levels\level8`) — ⚠️ REPLACES scene mesh |
@@ -447,7 +447,7 @@ In a reimplementation, bypass both gates entirely:
 | `Scene_CreateSigns` | Unknown | Directional signs (called from `Scene_SpawnBallsAndObjects`) |
 | `Scene_CreateDynamicObjects` | Unknown | Moving platforms, etc. (called from `Scene_SpawnBallsAndObjects`) |
 | `Level_FindObjectByName` | `0x460530` | Find MESHWORLD object by name |
-| `Arena_HandleCollision` | `0x40E6A0` | Arena event dispatcher (HAMMERCHASE, ALERTSAW, etc.) |
+| `ExpertCollisionEvents` | `0x40E6A0` | Arena event dispatcher (HAMMERCHASE, ALERTSAW, etc.) |
 | `operator_new` | `0x4BA57B` | Game's CRT allocator (`__cdecl`, size on stack) |
 | `App singleton` | `0x4FD680` | Global App struct |
 | `app+0x23C` | `0x4FD8B4` | Tournament mode flag |

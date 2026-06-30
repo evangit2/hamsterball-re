@@ -1,0 +1,307 @@
+[ENABLE]
+
+alloc(SpawnCode, 4096)
+alloc(SpawnWindmill, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20, 4)
+alloc(mesh_loaded, 4)
+alloc(windmill_array, 68)
+alloc(last_board, 4)
+
+registersymbol(SpawnWindmill)
+
+SpawnWindmill:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20:
+  dd 0x41A00000
+
+mesh_loaded:
+  dd 0
+
+windmill_array:
+  dd 0
+  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+last_board:
+  dd 0
+
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(load_mesh)
+label(load_fresh)
+label(do_spawn)
+label(skip_scene)
+label(spawn_fail)
+label(visual_done)
+label(collision_done)
+
+SpawnCode:
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz no_clear
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+  mov dword [windmill_array], 0
+
+no_clear:
+  // No per-frame update needed for visual Stands object
+  // The base Stands vtable[11] handles rendering position
+  // N:SWIRL collision events fire automatically from mesh data
+
+save_pos:
+  cmp dword [esi+0x18], 0
+  jne check_spawn
+
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  cmp dword [SpawnWindmill], 0
+  je original_code
+  cmp dword [esi+0x18], 0
+  jne original_code
+  mov dword [SpawnWindmill], 0
+
+  pushad
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+  // === STEP 1: Load Level4-Windmill mesh if not already loaded ===
+load_mesh:
+  cmp dword [mesh_loaded], 0
+  jne do_spawn
+
+  // Check if board+0x437C already has a valid mesh (Tower Race)
+  mov edx, [saved_board]
+  mov edx, [edx+0x437C]
+  test edx, edx
+  jnz do_spawn
+
+load_fresh:
+  // Allocate 0x10D0 for MeshWorld
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+
+  mov ebx, eax
+
+  // Get D3D device from App
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+
+  // MeshWorld_ctor(this=alloc, D3D_device, "Levels\Level4-Windmill")
+  push 004D095C            // "Levels\Level4-Windmill"
+  push edx                // D3D device
+  mov ecx, ebx            // this = MeshWorld alloc
+  call 00461510           // MeshWorld_ctor — ret 8
+  test eax, eax
+  jz done_spawn
+
+  // Force-set mesh+0x878 = App (needed by SceneObject_ctor)
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov [ebx+0x878], edx
+
+  // Store mesh at board+0x437C
+  mov edx, [saved_board]
+  mov [edx+0x437C], eax
+  mov dword [mesh_loaded], 1
+
+  // === STEP 2: Create visual mesh (Stands) + collision (CollisionLevel) ===
+do_spawn:
+  // --- PART A: Visual mesh (for rendering) ---
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax             // edi = visual object
+
+  // SceneObject_ctor(this=visual, mesh)
+  // thiscall: ECX=visual, PUSH mesh → ret 4
+  // Sets vtable = 0x4D8FB0 (renders the windmill mesh)
+  mov edx, [saved_board]
+  mov edx, [edx+0x437C]    // windmill mesh ptr
+  test edx, edx
+  jz spawn_fail
+
+  push edx                 // param: mesh
+  mov ecx, edi             // this = visual obj
+  call 00462850            // SceneObject_ctor — ret 4
+  test eax, eax
+  jz spawn_fail
+
+  // Set visual position at obj+0x10D4 (X), +0x10D8 (Y), +0x10DC (Z)
+  mov edx, [playerX]
+  mov [edi+0x10D4], edx
+  mov edx, [playerY]
+  mov [edi+0x10D8], edx
+  mov edx, [playerZ]
+  mov [edi+0x10DC], edx
+
+  // Register visual to Board+0x2578 (general list)
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // Register visual to Board+0xCD4
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // Append visual to scene spatial tree (for rendering)
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz visual_done
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz visual_done
+  push edi
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+visual_done:
+  // --- PART B: CollisionLevel (for N:SWIRL ball spinning) ---
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax             // edi = collision level
+
+  // CollisionLevel_ctorWithLevel(this=coll, mesh)
+  // thiscall: ECX=coll, PUSH mesh → ret 4
+  mov edx, [saved_board]
+  mov edx, [edx+0x437C]    // windmill mesh ptr
+  test edx, edx
+  jz spawn_fail
+
+  push edx                 // param: mesh
+  mov ecx, edi             // this = collision level
+  call 00465080            // CollisionLevel_ctorWithLevel — ret 4
+  test eax, eax
+  jz spawn_fail
+
+  // Level_LoadMeshes — loads vertex/index data into collision level
+  push edi
+  mov ecx, edi
+  call 00465200            // Level_LoadMeshes
+  pop eax                  // cleanup
+
+  // Set collision position at coll+0x10D8 (X), +0x10DC (Y), +0x10E0 (Z)
+  mov edx, [playerX]
+  mov [edi+0x10D8], edx
+  mov edx, [playerY]
+  mov [edi+0x10DC], edx
+  mov edx, [playerZ]
+  mov [edi+0x10E0], edx
+
+  // Register collision to Board+0x2578 (general list)
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // Register collision to Board+0xCD4
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // Register collision with scene manager (0x4F7360) for collision detection
+  // SceneObject_SetupCallback(global_scene, 0x168, 0) — stdcall, ret 8
+  push 0
+  push 0x168
+  mov ecx, 004F7360       // global scene manager
+  call 0045DD60           // SceneObject_SetupCallback — ret 8
+
+  // Append collision to scene spatial tree
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz collision_done
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz collision_done
+  push edi
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+collision_done:
+  // Add to windmill_array (for tracking)
+  mov eax, edi
+  mov ecx, [windmill_array]
+  cmp ecx, 16
+  jae done_spawn
+  mov [windmill_array+4+ecx*4], eax
+  inc dword [windmill_array]
+
+  jmp done_spawn
+
+spawn_fail:
+  nop
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnWindmill)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20)
+dealloc(mesh_loaded)
+dealloc(windmill_array)
+dealloc(last_board)
+unregistersymbol(SpawnWindmill)

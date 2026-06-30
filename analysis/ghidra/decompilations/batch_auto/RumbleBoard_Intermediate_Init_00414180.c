@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Intermediate_Init
+ * Function: ArenaLevel_Intermediate_Init
  * Address: 0x00414180
- * Signature: void __fastcall RumbleBoard_Intermediate_Init(int *param_1)
+ * Signature: void __fastcall ArenaLevel_Intermediate_Init(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: RumbleBoard_Intermediate_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 37
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: ArenaLevel_Intermediate_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt. Offsets: 2, Lines: 37
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Intermediate_Init(int *param_1)
+void __fastcall ArenaLevel_Intermediate_Init(int *param_1)
 
 {
   void *pvVar1;

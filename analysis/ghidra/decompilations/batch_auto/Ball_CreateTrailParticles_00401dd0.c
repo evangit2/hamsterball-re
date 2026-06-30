@@ -21,7 +21,7 @@
  *         cos_component = forward_vector * cos(angle) * ball_radius
  *      c. Offsets the ring position by the ball's current position (+0x164/+0x168/+0x16C)
  *      d. Allocates a new RumbleScore particle (0x28=40 bytes) via operator_new
- *      e. Initializes it with RumbleScore_ctor, passing the parent object at ball+0x14→+0x878
+ *      e. Initializes it with ArenaScoreParticle_ctor, passing the parent object at ball+0x14→+0x878
  *      f. Sets position at particle+0x08/+0x0C/+0x10 (particle spawn position)
  *      g. Sets velocity direction at particle+0x14/+0x18/+0x1C
  *      h. Randomizes speed: speed = 1.0 / (RNG_Rand() + 20), then scales velocity
@@ -32,7 +32,7 @@
  * Cross-references:
  *   - Called from Ball_ApplyTrajectory (0x403750) — when ball is launched
  *   - Called from 0x409463 — likely in Ball_Update during high-speed movement
- *   - Called from Ball_SplitIntoThree (0x408D70) — when ball splits, each gets trail
+ *   - Called from Ball_Shatter (0x408D70) — when ball splits, each gets trail
  *   - Called from 0x440C77 — BounceBall area
  *
  * Struct offsets:

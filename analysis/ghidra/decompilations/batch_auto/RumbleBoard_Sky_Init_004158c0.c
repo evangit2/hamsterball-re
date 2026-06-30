@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Sky_Init
+ * Function: ArenaLevel_Sky_Init
  * Address: 0x004158c0
- * Signature: void __fastcall RumbleBoard_Sky_Init(int *param_1)
+ * Signature: void __fastcall ArenaLevel_Sky_Init(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: RumbleBoard_Sky_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt, AthenaList_NextIndex, __strnicmp, AthenaList_Append. Offsets: 8, Lines: 61
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, camera, board, level. Calls: ArenaLevel_Sky_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt, AthenaList_NextIndex, __strnicmp, AthenaList_Append. Offsets: 8, Lines: 61
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall RumbleBoard_Sky_Init(int *param_1)
+void __fastcall ArenaLevel_Sky_Init(int *param_1)
 
 {
   int iVar1;

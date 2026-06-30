@@ -56,40 +56,82 @@ CollisionMesh_ctor(this, scene):
   Ball_InitBattleMode(this)
 ```
 
-## Collision Event Dispatch (2-Tier, Parallel Handlers)
+## Collision Event Dispatch (Per-Board Handlers → Shared Base)
+
+**IMPORTANT:** There is no single "Level" or "Arena" handler. Almost every board type overrides vtable[0x1D] (+0x74) with its own unique collision handler. Each processes board-specific events, then falls through to `DispatchCollisionEvents` (0x40C5D0) as the shared base. Arena (Rumble) boards have their own separate vtables with separate handlers.
+
+### Race Board Handlers
+
+| Board | Handler Address | Handler Name |
+|-------|----------------|-------------|
+| WarmUp | 0x0040C5D0 | DispatchCollisionEvents (no override — uses base directly) |
+| Intermediate | 0x0040D340 | IntermediateCollisionEvents |
+| Dizzy | 0x0040D500 | DizzyCollisionEvents |
+| Tower | 0x0040DCD0 | TowerCollisionEvents |
+| Expert | 0x0040E6A0 | ExpertCollisionEvents |
+| Odd | 0x0040ED30 | OddCollisionEvents |
+| Wobbly | 0x0040F9A0 | WobblyCollisionEvents |
+| Toob | 0x00410020 | ToobCollisionEvents |
+| Sky/Neon | 0x00410D00 | NeonCollisionEvents |
+| Beginner | 0x004111E0 | BeginnerCollisionEvents |
+| Up | 0x004119B0 | UpCollisionEvents |
+| Master | 0x00412850 | MasterCollisionEvents |
+| Glass | 0x00417EB0 | GlassCollisionEvents |
+| Impossible | 0x00418360 | ImpossibleCollisionEvents |
+
+### Arena (Rumble) Board Handlers
+
+| Arena | Handler Address | Handler Name | Events |
+|-------|----------------|-------------|--------|
+| Beginner Arena | 0x00413DF0 | BeginnerArenaCollisionEvents | N:BUMPER, DN:SINKPLATFORM |
+| Intermediate Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Dizzy Arena | 0x00414350 | DizzyArenaCollisionEvents | N:SWIRL, DN:SINKPLATFORM |
+| Tower Arena | 0x00414570 | TowerArenaCollisionEvents | E:CATAPULTBOTTOM, DN:SINKPLATFORM |
+| Up Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Odd Arena | 0x00414DA0 | OddArenaCollisionEvents | E:GRAVITY, DN:SINKPLATFORM |
+| Expert Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Toob Arena | 0x00415010 | ToobArenaCollisionEvents | N:BUMPER, DN:SINKPLATFORM |
+| Wobbly Arena | 0x00415540 | WobblyArenaCollisionEvents | N:SQUAREWOBBLY, DN:SINKPLATFORM |
+| Sky/Neon Arena | 0x00413BD0 | SinkPlatformArenaCollisionEvents | DN:SINKPLATFORM only |
+| Warmup Arena | 0x00416140 | WarmupArenaCollisionEvents | E:LAUNCH, DN:SINKPLATFORM |
+| Impossible Arena | 0x00418600 | ImpossibleArenaCollisionEvents | N:BOUNCE, DN:SINKPLATFORM |
+| Master Arena | 0x00412850 | MasterCollisionEvents | (shared with race board) |
 
 ```
-Scene vtable determines which top-level handler runs:
-  ├─ Level_HandleCollision (0x40DCD0) — race levels
-  │    └─→ CreateNoDizzy (0x40C5D0)  ← shared base
-  └─ Arena_HandleCollision (0x40E6A0) — arenas
-       └─→ CreateNoDizzy (0x40C5D0)  ← shared base
+Board vtable[0x1D] (board-specific handler)
+  ├─ Process board-specific events (if event name matches)
+  │   └─ Return early (for some events) OR fall through
+  └─ DispatchCollisionEvents (0x40C5D0) — shared base handler
+      └─ Process universal events (N:GOAL, N:TARPIT, N:WATER, E:JUMP, etc.)
 ```
-Arena and Level handlers are **parallel** — neither calls the other. Both delegate to CreateNoDizzy for universal events.
 
-### Arena Events
-| Event Name | Objects Affected |
-|-----------|-----------------|
-| CALLHAMMER | Hammer chase activation |
-| HAMMERCHASE | Hammer movement |
-| ALERTSAW1 | Saw warning #1 |
-| ALERTSAW2 | Saw warning #2 |
-| ACTIVATESAW | Saw blade activation |
-
-### Level Events
+### Tower Events (TowerCollisionEvents)
 | Event Name | Description |
 |-----------|-------------|
-| CATAPULT | Launch pad activation |
-| MACE | Swinging mace collision |
-| TRAPDOOR | Trapdoor opening |
-| ROTATOR | Rotating platform collision |
+| E:CATAPULTBOTTOM | Launch pad activation |
+| N:TRAPDOOR | Trapdoor opening |
+| E:OPENSESAM | Open trapdoor |
+| E:BITE | Mace/Chomper bite damage |
+| E:MACETRIGGER | Trigger mace swing |
+| N:MACE | Mace ball bounce |
 
-### Base Events (CreateNoDizzy)
+### Expert Events (ExpertCollisionEvents)
+| Event Name | Description |
+|-----------|-------------|
+| E:CALLHAMMER | Hammer chase activation |
+| E:HAMMERCHASE | Hammer movement |
+| E:ALERTSAW1/2 | Saw warning |
+| E:ACTIVATESAW1/2 | Saw blade activation |
+| E:ALERTJUDGES | Reset all judges |
+| E:SCORE | Score display |
+| E:BELL | Bell + bonus time |
+
+### Base Events (DispatchCollisionEvents)
 | Event Name | Description |
 |-----------|-------------|
 | SECRET | Secret area discovered |
 | UNLOCKSECRET | Secret unlock reward |
-| NODIZZY | No-dizzy powerup |
+| NODIZZY | TIME checkpoint clearer (NOT dizzy-related) |
 
 Event strings can include `<TIME>` XML tags for timed events.
 
@@ -180,8 +222,64 @@ float positions[vertex_count * 3]        // 32-bit float positions
 | 0x4564C0 | Ball_AdvancePositionOrCollision | Main physics pipeline (6 phases) |
 | 0x465EF0 | Collision_TraverseSpatialTree | Octree traversal + AABB test |
 | 0x456D80 | CollisionMesh_ctor | Collision mesh constructor |
-| 0x40E6A0 | Arena_HandleCollision | Arena collision dispatcher |
-| 0x40DCD0 | Level_HandleCollision | Level collision dispatcher |
-| 0x40C5D0 | CreateNoDizzy | Base collision handler |
+| 0x40E6A0 | ExpertCollisionEvents | Expert board collision handler |
+| 0x418360 | ImpossibleCollisionEvents | Impossible board collision handler (N:BOUNCE, N:ONROTATOR, N:ONGEAR) |
+| 0x40DCD0 | TowerCollisionEvents | Tower board collision handler |
+| 0x40C5D0 | DispatchCollisionEvents | Base collision handler |
 | 0x46B070 | WaterRipple_Render | Water ripple collision (physics-based) |
 | 0x415480 | CreateWobbly1 | Wobbly bridge (baked vertex animation) |
+| 0x43B6F0 | Rotator_AddBall | Registers ball on rotator tracking list (formerly misnamed Rotator_AddBall) |
+| 0x43E600 | Catapult_Update | Per-frame rotation of tracked balls (applies rotation matrix to pos+vel) |
+| 0x43E9C0 | Catapult_AddObjectConditional | Registers ball on catapult/gear tracking list (guarded by +0x1510) |
+| 0x434290 | Catapult_Launch | Launch pad activation (sets catapult+0x10F0=1, +0x10F4=50 timer) |
+
+## Rotator System (Gears, Swirls, Spinny Objects)
+
+Spinning objects in Hamsterball physically carry the ball using a two-function system:
+
+1. **`Rotator_AddBall`** (0x43B6F0) — called on collision with `N:ONROTATOR`, `N:SPINNY`, or `N:SWIRL`
+2. **`Catapult_Update`** (0x43E600) — called every frame, applies rotation matrix to tracked balls
+
+### How it works
+
+When the ball touches a spinning object's collision surface, the collision handler calls `Rotator_AddBall(scene, ball)`. This function:
+
+1. Searches the rotator's AthenaList (at `scene+0x10F0`) for the ball pointer
+2. **If found**: resets the entry's tick counter to 10 (ball already tracked — keeps it on the rotator)
+3. **If not found**: allocates an 8-byte struct `[ball_ptr, tick_counter=10]` and appends it to the list
+
+Every frame, `Catapult_Update` iterates the ball-tracking list:
+- Decrements each entry's tick counter
+- If counter reaches 0: frees the entry (ball released from rotator)
+- Otherwise: applies the object's rotation matrix to the ball's position (`ball+0x164/+0x168/+0x16C`) and velocity (`ball+0xCA4/+0xCA8/+0xCAC`)
+
+### 10-frame grace period (not a carry limit)
+
+The counter **resets to 10 every frame** the ball remains in contact with the rotator surface, because `Ball_FallUpdate` fires the collision event every frame. The countdown only starts ticking down after the ball leaves the rotator. This means:
+- While on the rotator: ball stays tracked indefinitely (counter keeps resetting to 10)
+- After leaving: 10 more frames of rotation before release (smooth transition)
+
+### Rotator/Catapult struct offsets
+
+| Offset | Type | Field |
+|--------|------|-------|
+| +0x436 | float | centerX (pivot X) |
+| +0x437 | float | centerY (pivot Y) |
+| +0x438 | float | centerZ (pivot Z) |
+| +0x439 | float | rotSpeedZ |
+| +0x43A | float | rotSpeedX |
+| +0x43B | float | rotSpeedAngle |
+| +0x43C | float | rotAngle (accumulated, decremented by rotSpeed each frame) |
+| +0x43E | AthenaList | ballList (tracked balls with tick counters) |
+| +0x10F0 | AthenaList | rotatorList (Scene-level, used by Rotator_AddBall) |
+| +0x10F8 | AthenaList | catapultBallList (used by Catapult_AddObjectConditional) |
+| +0x1510 | byte | active flag (Catapult_AddObjectConditional guard) |
+
+### Event → collision handler mapping
+
+| Event | Collision Handler | Level |
+|-------|-------------------|-------|
+| N:ONROTATOR | ImpossibleCollisionEvents (0x418360) | Impossible race (gears) |
+| N:SPINNY | ToobCollisionEvents (0x410020) | Toob race |
+| N:SWIRL | DizzyArenaCollisionEvents (0x414350) | Dizzy arena |
+| N:ONGEAR | ImpossibleCollisionEvents (0x418360) | Impossible race (calls Catapult_AddObjectConditional) |

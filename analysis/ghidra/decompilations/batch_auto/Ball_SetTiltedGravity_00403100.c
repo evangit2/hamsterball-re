@@ -19,7 +19,7 @@
  * Cross-references (3 call sites):
  *   - 0x409270: likely in Ball_Update or init path for Up Race
  *   - 0x40EE08: Scene_SetupLevel6 (Up Race level)
- *   - 0x414E68: RumbleBoard_Up_Init (Up Race arena)
+ *   - 0x414E68: ArenaLevel_Up_Init (Up Race arena)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

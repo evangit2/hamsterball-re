@@ -8,12 +8,18 @@
 
 ## 1. Catapult_Update @ 0x0043E600
 
-**Category:** Arena Hazard Physics (Catapult object)
+**Category:** Arena Hazard Physics (Catapult + Rotator objects — shared update)
 **Called via:** vtable DATA ref at 0x004D5AFC
 **Signature:** `__fastcall Catapult_Update(int *this)`
 
 ### Summary
-Updates the Catapult arena hazard — a rotating platform that carries balls and launches them. The catapult has a rotation timer at `this+0x43C` that decreases by `this+0x43D` (rotation speed) each frame. It applies the rotation matrix to all attached balls (via `AthenaList` at `this+0x43E`), transforming both their positions (`ball+0x164/0x168/0x16C` = X/Y/Z) and their velocity vectors (`CollisionMesh+0xCA4/CA8/CAC`).
+Updates the Catapult/Rotator arena hazard — a rotating platform that carries balls and launches them. The catapult has a rotation timer at `this+0x43C` that decreases by `this+0x43D` (rotation speed) each frame. It applies the rotation matrix to all attached balls (via `AthenaList` at `this+0x43E`), transforming both their positions (`ball+0x164/0x168/0x16C` = X/Y/Z) and their velocity vectors (`CollisionMesh+0xCA4/CA8/CAC`).
+
+This function serves double duty:
+1. **Catapult launch system** — triggered by `E:CATAPULTBOTTOM`, launches ball via `Catapult_Launch` (0x434290)
+2. **Rotator/gear system** — triggered by `N:ONROTATOR`/`N:SPINNY`/`N:SWIRL`, attaches ball via `Rotator_AddBall` (0x43B6F0) or `Catapult_AddObjectConditional` (0x43E9C0)
+
+In both cases, the 8-byte ball tracking entry `[ball_ptr, tick_counter]` is decremented each frame. The tick counter starts at 10 and resets to 10 on every frame of continued collision contact (grace period, not carry limit). When it reaches 0 after the ball leaves the surface, the entry is freed.
 
 ### Key Struct Offsets
 | Offset | Type | Description |
@@ -121,18 +127,18 @@ Same matrix transform pattern as Catapult_Update — applies oscillation displac
 
 ---
 
-## 4. RumbleBoard_Object_Tick @ 0x0042B660
+## 4. ArenaSceneObj_Tick @ 0x0042B660
 
 **Category:** Arena Scoring System (RumbleBoard timer)
 **Called via:** vtable DATA ref at 0x004D3A5C
-**Signature:** `__fastcall RumbleBoard_Object_Tick(int param_1)`
+**Signature:** `__fastcall ArenaSceneObj_Tick(int param_1)`
 
 ### Summary
 Per-frame tick for RumbleBoard (arena mode) decorative timers. Manages two oscillating timer fields used for visual effects on the arena board (likely animated score displays or arena hazard timing):
 
 1. **Timer A (`this+0x880`):** Increments by 0.01 each frame. When it exceeds 0.75, resets to 0.75 (clamps at max).
 2. **Timer B (`this+0x884`):** Decrements by 20.0 each frame. When it drops below 0.0, resets to 0.0 (clamps at min).
-3. Calls `RumbleBoard_TickTimer` on two sub-timer fields at `this+0x888` and `this+0x89C`.
+3. Calls `ToggleTimer_Tick` on two sub-timer fields at `this+0x888` and `this+0x89C`.
 
 ### Key Struct Offsets
 | Offset | Type | Description |
@@ -385,7 +391,7 @@ The 256-byte keyboard state buffer is the standard DirectInput `IDirectInputDevi
 | 1 | Catapult_Update | 0x0043E600 | Arena Hazard | 141 |
 | 2 | BounceBall_Update | 0x00440840 | Arena Hazard (spawner) | 99 |
 | 3 | Lifter_Update | 0x0043B330 | Arena Hazard (elevator) | 149 |
-| 4 | RumbleBoard_Object_Tick | 0x0042B660 | Arena Scoring | 22 |
+| 4 | ArenaSceneObj_Tick | 0x0042B660 | Arena Scoring | 22 |
 | 5 | Scene_UpdateArenaPhysics | 0x00440390 | Arena Wave Physics | 182 |
 | 6 | FollowBall_Update | 0x0043ECC0 | Entity AI | 125 |
 | 7 | Scene_HandleRaceEnd_ClampZoom | 0x0041F7E0 | Race Camera | 50 |

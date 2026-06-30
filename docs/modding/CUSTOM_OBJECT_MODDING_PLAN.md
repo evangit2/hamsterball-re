@@ -23,7 +23,7 @@ collision events.
 
 1. **Add new E: event zones** with existing event names to any level
    - Insert named collision geometry (e.g., `E:JUMP`, `E:NODIZZY<TIME>300</TIME>`)
-   - The collision dispatcher (`CreateNoDizzy`) will process any `E:`/`N:` name it recognizes
+   - The collision dispatcher (`DispatchCollisionEvents`) will process any `E:`/`N:` name it recognizes
    - Unrecognized names are silently ignored (no crash, no effect)
 
 2. **Add new N: interactive collision objects** with existing names
@@ -55,10 +55,10 @@ The parser in this project's `docs/MESHWORLD_OBJECT_SYSTEM.md` documents the ful
 
 **What you can do with a proxy DLL (bass.dll or d3d8.dll):**
 
-1. **Hook the collision dispatch** to intercept `CreateNoDizzy` (0x40C5D0)
+1. **Hook the collision dispatch** to intercept `DispatchCollisionEvents` (0x40C5D0)
    - Intercept `collider->name` before the EXE processes it
    - Recognize custom `E:CUSTOM_*` names and execute custom logic
-   - Then call the original `CreateNoDizzy` for standard events
+   - Then call the original `DispatchCollisionEvents` for standard events
 
 2. **Hook the factory dispatcher** `CreateLevelObjects` (0x4121D0)
    - Intercept ref point names before the EXE matches them
@@ -75,11 +75,11 @@ The parser in this project's `docs/MESHWORLD_OBJECT_SYSTEM.md` documents the ful
 
 **Implementation pattern** (bass.dll proxy, proven to work for FPS mods):
 ```c
-// Hook CreateNoDizzy to intercept custom event names
-typedef void (__thiscall *CreateNoDizzy_t)(void* this, int* ball, int* collObj);
-CreateNoDizzy_t original_CreateNoDizzy = NULL;
+// Hook DispatchCollisionEvents to intercept custom event names
+typedef void (__thiscall *DispatchCollisionEvents_t)(void* this, int* ball, int* collObj);
+DispatchCollisionEvents_t original_DispatchCollisionEvents = NULL;
 
-void __thiscall Hooked_CreateNoDizzy(void* this, int* ball, int* collObj) {
+void __thiscall Hooked_DispatchCollisionEvents(void* this, int* ball, int* collObj) {
     char* eventName = *(char**)(collObj[1] + 0x864);
     
     // Check for custom event names
@@ -93,16 +93,16 @@ void __thiscall Hooked_CreateNoDizzy(void* this, int* ball, int* collObj) {
     }
     
     // Fall through to original handler for standard events
-    original_CreateNoDizzy(this, ball, collObj);
+    original_DispatchCollisionEvents(this, ball, collObj);
 }
 ```
 
 **Key addresses for hooking**:
-- `CreateNoDizzy` = 0x40C5D0 (base collision event handler)
-- `Level_HandleCollision` = 0x40DCD0 (race-specific events)
-- `Arena_HandleCollision` = 0x40E6A0 (arena-specific events)
+- `DispatchCollisionEvents` = 0x40C5D0 (base collision event handler)
+- `TowerCollisionEvents` = 0x40DCD0 (race-specific events)
+- `ExpertCollisionEvents` = 0x40E6A0 (arena-specific events)
 - `CreateLevelObjects` = 0x4121D0 (factory dispatcher)
-- `CreateSawblade` = 0x40E250 (arena factory sub-dispatcher)
+- `CreateExpertLevelObjects` = 0x40E250 (arena factory sub-dispatcher)
 - `Mesh_FindClosestCollision` = 0x465D90 (collision raycast)
 - `Scene_SpawnBallsAndObjects` = 0x41C5B0 (scene initialization)
 - `Scene_UpdateBallsAndState` — per-frame update (call via vtable)
@@ -122,7 +122,7 @@ void __thiscall Hooked_CreateNoDizzy(void* this, int* ball, int* collObj) {
    - Extend the `__strnicmp` chain to recognize new prefixes
    - Allocate and initialize custom game object structs
 
-2. **Add new collision event handlers** in `CreateNoDizzy`
+2. **Add new collision event handlers** in `DispatchCollisionEvents`
    - Extend the `__stricmp` chain to handle new `E:`/`N:` names
 
 3. **Modify physics constants** (gravity, friction, max speed, etc.)
@@ -154,7 +154,7 @@ This enables immediate modding with all existing object types.
 
 ### Phase 2: Custom Event DLL (Approach B)
 Build a bass.dll proxy that:
-1. Hooks `CreateNoDizzy` at 0x40C5D0
+1. Hooks `DispatchCollisionEvents` at 0x40C5D0
 2. Recognizes custom `E:CUSTOM_*` event names
 3. Implements a registry of custom event handlers (configurable via INI)
 4. Provides custom events: teleport, speed pad, gravity flip, ball size change, etc.
@@ -173,14 +173,14 @@ Given the engine architecture, feasible custom object types include:
 
 | Type | Implementation | Data Required |
 |------|---------------|---------------|
-| **Teleporter** | Hook CreateNoDizzy, `E:CUSTOM_TELEPORT` → move ball | Target ref point in Section 1 |
-| **Speed Pad** | Hook CreateNoDizzy, `E:CUSTOM_SPEED` → add velocity | Direction + magnitude in name |
-| **Gravity Zone** | Hook CreateNoDizzy, `E:CUSTOM_GRAVITY` → change gravity | Direction in XML tags |
-| **Size Changer** | Hook CreateNoDizzy, `E:CUSTOM_GROW/SHRINK` → change ball radius | New radius in name |
+| **Teleporter** | Hook DispatchCollisionEvents, `E:CUSTOM_TELEPORT` → move ball | Target ref point in Section 1 |
+| **Speed Pad** | Hook DispatchCollisionEvents, `E:CUSTOM_SPEED` → add velocity | Direction + magnitude in name |
+| **Gravity Zone** | Hook DispatchCollisionEvents, `E:CUSTOM_GRAVITY` → change gravity | Direction in XML tags |
+| **Size Changer** | Hook DispatchCollisionEvents, `E:CUSTOM_GROW/SHRINK` → change ball radius | New radius in name |
 | **Moving Platform** | Hook factory, custom prefix → animate mesh | Waypoints in Section 1 |
-| **Collectible** | Hook CreateNoDizzy, `N:CUSTOM_COIN` → score + disappear | Score value in name |
-| **Custom Hazard** | Hook CreateNoDizzy, `N:CUSTOM_HAZARD` → damage/respawn | Damage value in name |
-| **Checkpoints++** | Hook CreateNoDizzy, `E:CUSTOM_CHECKPOINT` → track progress | Order in name |
+| **Collectible** | Hook DispatchCollisionEvents, `N:CUSTOM_COIN` → score + disappear | Score value in name |
+| **Custom Hazard** | Hook DispatchCollisionEvents, `N:CUSTOM_HAZARD` → damage/respawn | Damage value in name |
+| **Checkpoints++** | Hook DispatchCollisionEvents, `E:CUSTOM_CHECKPOINT` → track progress | Order in name |
 | **Wind Zone** | Hook per-frame, apply force in region | Direction + strength |
 | **Ice Surface** | Hook per-frame, reduce friction in zone | Friction value |
 

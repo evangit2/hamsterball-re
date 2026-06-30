@@ -8,7 +8,7 @@
  *
  * Description:
  * Activates a bell object in the arena. When a ball collides with a bell
- * (dispatched from Arena_HandleCollision at 0x40E9DB), this function:
+ * (dispatched from ExpertCollisionEvents at 0x40E9DB), this function:
  *   1. Plays the bell sound effect via Sound_PlayChannel, using the sound
  *      channel stored at App→Scene→bell_object+0x10D0→+0x878→+0x4C8.
  *      The chain: param_1+0x10D0 (parent scene) → +0x878 (App ptr) → +0x4C8 (sound channel ID).
@@ -23,7 +23,7 @@
  *   param_1+0x10E4: bell timer/duration (float, set to 90.0)
  *
  * Cross-references:
- *   Called from Arena_HandleCollision (0x40E9DB) — UNCONDITIONAL_CALL
+ *   Called from ExpertCollisionEvents (0x40E9DB) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

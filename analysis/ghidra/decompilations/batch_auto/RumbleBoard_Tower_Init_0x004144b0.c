@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_Tower_Init
+ * Function: ArenaLevel_Tower_Init
  * Address: 0x004144b0
  *
  * Description:

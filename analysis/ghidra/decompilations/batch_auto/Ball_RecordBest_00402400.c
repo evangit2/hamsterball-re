@@ -15,9 +15,9 @@
  * collisions with game objects) to track the ball's best streak.
  *
  * Cross-references (7 call sites):
- *   - CreateNoDizzy (5 calls) — scoring events in the NoDizzy game mode
- *   - Arena_HandleCollision — arena collision scoring
- *   - CreateSpinner — spinner interaction scoring
+ *   - DispatchCollisionEvents (5 calls) — scoring events in the NoDizzy game mode
+ *   - ExpertCollisionEvents — arena collision scoring
+ *   - HandleArenaCollisionEvents — spinner interaction scoring
  *
  * Struct offsets:
  *   ball+0x2EC: Temporary counter (reset to 0 each call)

@@ -23,8 +23,8 @@ Ball_Update is the main per-frame physics update for the ball. It handles:
 | +0x2E0 | float | ??? | Used as Y/height for collision |
 | +0x2E4 | float | ??? | Used as Z position for collision |
 | +0x2E8 | char | flag1 | Reset to 0 each frame |
-| +0x2E9 | char | limit_flag | ⚠ **NOT "reset to 0 each frame"!** Sticky flag, only cleared by Ball_ctor2 (full respawn). The `param_1 + 0x2e9 = 0` in decompiled code uses int* arithmetic (= byte 0xBA4), NOT byte 0x2E9. |
-| +0x2EC | uint32 | ??? | Reset to 0 each frame |
+| +0x2E9 | char | dizzy_lock | ⚠ **NOT "reset to 0 each frame"!** Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory. Cleared by Ball_InitPhysicsDefaults(0x405100) at 0x405262 and Ball_ctor2(0x4039E0). |
+| +0x2EC | int32 | bounce_count | Dizzy system bounce counter. Double-incremented (0→1→2) when collision speed exceeds thresholds 0.03 and 0.1. When >1 AND dizzy_lock==0 → Ball_ApplyTrajectory fires. |
 | +0x2F0 | uint32 | force_count | Number of forces this frame |
 | +0x2F8 | char | update_in_progress | Set to 1 during update |
 | +0x2F9 | char | frozen | Ball is stuck/frozen on surface |

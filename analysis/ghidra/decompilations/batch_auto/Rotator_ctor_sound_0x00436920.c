@@ -39,7 +39,7 @@
  *   +0x10F0: active flag (1)
  *
  * Cross-references:
- *   Called from CreateSpeedCylinder (0x41183F) — UNCONDITIONAL_CALL
+ *   Called from CreateUpLevelObjects (0x41183F) — UNCONDITIONAL_CALL
  *   Called from CreateLifter (0x414AAB) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

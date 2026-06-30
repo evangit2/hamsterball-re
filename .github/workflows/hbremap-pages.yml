@@ -1,0 +1,56 @@
+name: Deploy hbremap to GitHub Pages
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'docs/**'
+      - 'mods/**'
+      - 'tools/**'
+      - 'analysis/**'
+      - 'skills/**'
+      - 'README.md'
+      - 'hbremap/**'
+      - '.github/workflows/hbremap-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "hbremap-pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Cosma
+        run: npm install @graphlab-fr/cosma --global
+
+      - name: Build cosmoscope
+        run: python3 hbremap/build_cosmoscope.py
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: hbremap/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

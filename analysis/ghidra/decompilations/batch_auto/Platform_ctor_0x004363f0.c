@@ -28,7 +28,7 @@
  *   9. Sets +0x10EC = 0 (inactive state), cleans up Timer
  *
  * Name verification: Vtable PTR_Rotator_DeletingDtor confirms Platform is a Rotator
- * subclass. Called from CreateLimit (0x410B96, 0x410BF8) and CreateWobbly1
+ * subclass. Called from NeonCollisionEvents (0x410B96, 0x410BF8) and CreateWobbly1
  * (0x415B02, 0x415B55, 0x415C1B) — these are obstacle factory functions.
  *
  * Struct offsets:
@@ -40,7 +40,7 @@
  *   +0x10EC: active state (0 = inactive)
  *
  * Cross-references:
- *   2 calls from CreateLimit (0x410B96, 0x410BF8)
+ *   2 calls from NeonCollisionEvents (0x410B96, 0x410BF8)
  *   3 calls from CreateWobbly1 (0x415B02, 0x415B55, 0x415C1B)
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

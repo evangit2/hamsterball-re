@@ -61,7 +61,7 @@
 - [ ] Render full MESHWORLD geometry (not just ball/objects)
 
 ## Phase 2 Deep Documentation (Complete)
-- PARTICLE_SYSTEM.md: Ball_CreateTrailParticles (9-particle ring, RumbleScore allocator)
+- PARTICLE_SYSTEM.md: Ball_CreateTrailParticles (9-particle ring, ArenaScoreParticle allocator)
 - CAMERA_SYSTEM.md: 5-mode camera (follow/path/shake/snap/orbit), Scene_SetCamera offsets
 - SAVE_CONFIG_REGISTRY_SYSTEM.md: 30+ registry fields, BestTime/Medals binary blobs, App struct
 - AUDIO_SYSTEM_SFX.md: BASS music + DirectSound 3D SFX, 55 sound effects with channel counts
@@ -110,7 +110,7 @@
 - [x] Document 8 level setup functions (leveldark through levelup)
 - [x] Document 3 reflection render passes
 - [x] Document scene object lists (6 lists at known offsets)
-- [x] Document all 15 RumbleBoard arena init functions
+- [x] Document all 15 Arena board arena init functions
 - [x] Document Board (Tournament) constructors (Toob/Rodenthood level8)
 - [x] Deep doc: SCENE_SYSTEM_DECOMP.md with full tick order, render pipeline, camera modes
 - [x] Document remaining level setup functions (if they exist as Scene_Setup)

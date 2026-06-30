@@ -1,5 +1,5 @@
 /*
- * Function: RumbleBoard_Dizzy_Init
+ * Function: ArenaLevel_Dizzy_Init
  * Address: 0x00414240
  *
  * Description:

@@ -2,9 +2,9 @@
  * Hamsterball Collision Hook DLL
  *
  * Hooks three collision dispatch functions:
- *   1. CreateNoDizzy          (0x0040C5D0) — shared base handler (all events)
- *   2. Level_HandleCollision   (0x0040DCD0) — race level events
- *   3. Arena_HandleCollision   (0x0040E6A0) — arena events
+ *   1. DispatchCollisionEvents          (0x0040C5D0) — shared base handler (all events)
+ *   2. TowerCollisionEvents   (0x0040DCD0) — Tower board events
+ *   3. ExpertCollisionEvents   (0x0040E6A0) — Expert board events
  *
  * Build: i686-w64-mingw32-gcc -shared -o collision_hook.dll collision_hook.c \
  *          -Wl,--enable-stdcall-fixup
@@ -23,9 +23,9 @@
 /* ── Constants ────────────────────────────────────────────────────────── */
 
 #define GAME_BASE        0x00400000
-#define ADDR_CreateNoDizzy          (GAME_BASE + 0x0000C5D0)
-#define ADDR_Level_HandleCollision   (GAME_BASE + 0x0000DCD0)
-#define ADDR_Arena_HandleCollision   (GAME_BASE + 0x0000E6A0)
+#define ADDR_DispatchCollisionEvents          (GAME_BASE + 0x0000C5D0)
+#define ADDR_TowerCollisionEvents   (GAME_BASE + 0x0000DCD0)
+#define ADDR_ExpertCollisionEvents   (GAME_BASE + 0x0000E6A0)
 
 #define LOG_FILE "collision_log.csv"
 #define CFG_FILE "collision_hook.cfg"
@@ -42,15 +42,15 @@ typedef void (__fastcall *handler_t)(void *this_, void *edx_dummy, void *ball, v
 static FILE *g_log = NULL;
 static CRITICAL_SECTION g_log_lock;
 
-static handler_t g_orig_CreateNoDizzy = NULL;
+static handler_t g_orig_DispatchCollisionEvents = NULL;
 static handler_t g_orig_Level = NULL;
 static handler_t g_orig_Arena = NULL;
 
-static unsigned char g_tramp_CreateNoDizzy[TRAMP_SIZE];
+static unsigned char g_tramp_DispatchCollisionEvents[TRAMP_SIZE];
 static unsigned char g_tramp_Level[TRAMP_SIZE];
 static unsigned char g_tramp_Arena[TRAMP_SIZE];
 
-static int g_hook_CreateNoDizzy = 1;
+static int g_hook_DispatchCollisionEvents = 1;
 static int g_hook_Level = 1;
 static int g_hook_Arena = 1;
 static int g_log_event_names = 1;
@@ -71,7 +71,7 @@ static void load_config(void) {
         if (!eq) continue;
         *eq = 0;
         char *key = line, *val = eq + 1;
-        if (!strcmp(key, "hook_CreateNoDizzy")) g_hook_CreateNoDizzy = atoi(val);
+        if (!strcmp(key, "hook_DispatchCollisionEvents")) g_hook_DispatchCollisionEvents = atoi(val);
         else if (!strcmp(key, "hook_Level")) g_hook_Level = atoi(val);
         else if (!strcmp(key, "hook_Arena")) g_hook_Arena = atoi(val);
         else if (!strcmp(key, "log_event_names")) g_log_event_names = atoi(val);
@@ -134,26 +134,26 @@ static void log_event(const char *handler, void *scene, void *ball, void *collOb
 
 /* ── Hook callbacks (__fastcall = __thiscall with dummy EDX) ──────────── */
 
-void __fastcall hook_CreateNoDizzy(void *this_, void *edx_dummy,
+void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
                                     void *ball, void *collObj) {
     (void)edx_dummy;
-    log_event("CreateNoDizzy", this_, ball, collObj);
-    if (g_orig_CreateNoDizzy)
-        g_orig_CreateNoDizzy(this_, NULL, ball, collObj);
+    log_event("DispatchCollisionEvents", this_, ball, collObj);
+    if (g_orig_DispatchCollisionEvents)
+        g_orig_DispatchCollisionEvents(this_, NULL, ball, collObj);
 }
 
-void __fastcall hook_Level_HandleCollision(void *this_, void *edx_dummy,
+void __fastcall hook_TowerCollisionEvents(void *this_, void *edx_dummy,
                                              void *ball, void *collObj) {
     (void)edx_dummy;
-    log_event("Level_HandleCollision", this_, ball, collObj);
+    log_event("TowerCollisionEvents", this_, ball, collObj);
     if (g_orig_Level)
         g_orig_Level(this_, NULL, ball, collObj);
 }
 
-void __fastcall hook_Arena_HandleCollision(void *this_, void *edx_dummy,
+void __fastcall hook_ExpertCollisionEvents(void *this_, void *edx_dummy,
                                             void *ball, void *collObj) {
     (void)edx_dummy;
-    log_event("Arena_HandleCollision", this_, ball, collObj);
+    log_event("ExpertCollisionEvents", this_, ball, collObj);
     if (g_orig_Arena)
         g_orig_Arena(this_, NULL, ball, collObj);
 }
@@ -216,21 +216,21 @@ static DWORD WINAPI hook_thread(LPVOID lpParam) {
     DWORD base = (DWORD)(uintptr_t)hExe;
     DWORD offset = base - GAME_BASE;
 
-    void *pCreateNoDizzy = (void *)(ADDR_CreateNoDizzy + offset);
-    void *pLevel = (void *)(ADDR_Level_HandleCollision + offset);
-    void *pArena = (void *)(ADDR_Arena_HandleCollision + offset);
+    void *pDispatchCollisionEvents = (void *)(ADDR_DispatchCollisionEvents + offset);
+    void *pLevel = (void *)(ADDR_TowerCollisionEvents + offset);
+    void *pArena = (void *)(ADDR_ExpertCollisionEvents + offset);
 
-    if (g_hook_CreateNoDizzy && install_hook(pCreateNoDizzy, hook_CreateNoDizzy, g_tramp_CreateNoDizzy)) {
-        g_orig_CreateNoDizzy = (handler_t)g_tramp_CreateNoDizzy;
-        if (g_log) { fprintf(g_log, "# Hooked CreateNoDizzy at 0x%08X\n", (unsigned int)(uintptr_t)pCreateNoDizzy); }
+    if (g_hook_DispatchCollisionEvents && install_hook(pDispatchCollisionEvents, hook_DispatchCollisionEvents, g_tramp_DispatchCollisionEvents)) {
+        g_orig_DispatchCollisionEvents = (handler_t)g_tramp_DispatchCollisionEvents;
+        if (g_log) { fprintf(g_log, "# Hooked DispatchCollisionEvents at 0x%08X\n", (unsigned int)(uintptr_t)pDispatchCollisionEvents); }
     }
-    if (g_hook_Level && install_hook(pLevel, hook_Level_HandleCollision, g_tramp_Level)) {
+    if (g_hook_Level && install_hook(pLevel, hook_TowerCollisionEvents, g_tramp_Level)) {
         g_orig_Level = (handler_t)g_tramp_Level;
-        if (g_log) { fprintf(g_log, "# Hooked Level_HandleCollision at 0x%08X\n", (unsigned int)(uintptr_t)pLevel); }
+        if (g_log) { fprintf(g_log, "# Hooked TowerCollisionEvents at 0x%08X\n", (unsigned int)(uintptr_t)pLevel); }
     }
-    if (g_hook_Arena && install_hook(pArena, hook_Arena_HandleCollision, g_tramp_Arena)) {
+    if (g_hook_Arena && install_hook(pArena, hook_ExpertCollisionEvents, g_tramp_Arena)) {
         g_orig_Arena = (handler_t)g_tramp_Arena;
-        if (g_log) { fprintf(g_log, "# Hooked Arena_HandleCollision at 0x%08X\n", (unsigned int)(uintptr_t)pArena); }
+        if (g_log) { fprintf(g_log, "# Hooked ExpertCollisionEvents at 0x%08X\n", (unsigned int)(uintptr_t)pArena); }
     }
 
     if (g_log) { fprintf(g_log, "# Hooks installed. Logging active.\n"); fflush(g_log); }
@@ -251,12 +251,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
             HMODULE hExe = GetModuleHandleA(NULL);
             DWORD base = (DWORD)(uintptr_t)hExe;
             DWORD offset = base - GAME_BASE;
-            if (g_hook_CreateNoDizzy && g_orig_CreateNoDizzy)
-                uninstall_hook((void *)(ADDR_CreateNoDizzy + offset), g_tramp_CreateNoDizzy);
+            if (g_hook_DispatchCollisionEvents && g_orig_DispatchCollisionEvents)
+                uninstall_hook((void *)(ADDR_DispatchCollisionEvents + offset), g_tramp_DispatchCollisionEvents);
             if (g_hook_Level && g_orig_Level)
-                uninstall_hook((void *)(ADDR_Level_HandleCollision + offset), g_tramp_Level);
+                uninstall_hook((void *)(ADDR_TowerCollisionEvents + offset), g_tramp_Level);
             if (g_hook_Arena && g_orig_Arena)
-                uninstall_hook((void *)(ADDR_Arena_HandleCollision + offset), g_tramp_Arena);
+                uninstall_hook((void *)(ADDR_ExpertCollisionEvents + offset), g_tramp_Arena);
             if (g_log) {
                 fprintf(g_log, "# Hooks uninstalled. DLL detaching.\n");
                 fclose(g_log);

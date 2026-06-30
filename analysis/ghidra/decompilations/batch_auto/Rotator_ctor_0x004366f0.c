@@ -40,7 +40,7 @@
  *   +0x10F0: CollisionLevel pointer (owned)
  *
  * Cross-references:
- *   Called from CreateLimit (0x410C98) — UNCONDITIONAL_CALL
+ *   Called from NeonCollisionEvents (0x410C98) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

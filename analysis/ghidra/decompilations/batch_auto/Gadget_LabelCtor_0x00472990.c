@@ -18,7 +18,7 @@ void * __thiscall Gadget_LabelCtor(void *this,int param_1,char *param_2,undefine
   *(undefined4 *)((int)this + 0xc) = 0x3f800000;
   *(undefined4 *)((int)this + 0x10) = 0x3f800000;
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_DeletingDtor_004d9e68;
+  *(undefined ***)this = &PTR_ArenaBoard_DeletingDtor_004d9e68;
   pcVar2 = param_2;
   do {
     cVar1 = *pcVar2;

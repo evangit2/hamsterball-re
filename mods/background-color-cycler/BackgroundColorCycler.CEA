@@ -1,0 +1,131 @@
+// BackgroundColorCycler v3 — Cycles the ACTUAL BACKGROUND color (Clear color)
+// 
+// ROOT CAUSE FIX (v2→v3):
+//   v2 hooked at 0x454CEE inside Graphics_RenderScene — AFTER Clear() already
+//   painted the background. It only updated D3DRS_FOGCOLOR (fog blending on
+//   distant geometry), NOT the actual background fill.
+//
+//   v3 hooks at 0x46C214 inside App_ResetFrame — BEFORE Clear() runs.
+//   The cycled color is written to gfx+0x738, then the game pushes EAX
+//   (our color) and calls Graphics_ClearViewport → Clear() paints the
+//   background with our cycled color.
+//
+// FRAME PIPELINE (traced from disassembly):
+//   1. App_ResetFrame (0x46C200):
+//      0x46C214: MOV EAX, [ECX+0x738]  ← OUR HOOK (inject cycled color)
+//      0x46C21A: PUSH EAX               ← pushes our color
+//      0x46C21B: CALL ClearViewport     ← Clear() paints background with our color
+//   2. Graphics_RenderScene (0x454BC0):
+//      0x454CEE: MOV ESI, [EBP+0x738]   ← reads our already-updated color
+//      0x454D00: SetRenderState(0x22, ESI) ← fog color matches background
+//
+// HOOK POINT: 0x46C214 (MOV EAX, [ECX+0x738]) — 6 bytes: 8B 81 38 07 00 00
+//   ECX = gfx pointer (MUST preserve — ClearViewport reads it as `this`)
+//   EAX = output (game pushes EAX as Clear color at 0x46C21A)
+//   EDX = clobbered (safe — reloaded inside ClearViewport)
+//
+// TIMER: bgcolor_timer (default 180 = ~3 seconds at 60fps)
+//   Edit this value in the CE address list to change cycle speed.
+
+[ENABLE]
+
+alloc(bgcolor_cave, 256)
+alloc(bgcolor_colors, 64)
+alloc(bgcolor_frame, 4)
+alloc(bgcolor_index, 4)
+alloc(bgcolor_timer, 4)
+
+registersymbol(bgcolor_frame)
+registersymbol(bgcolor_index)
+registersymbol(bgcolor_timer)
+
+// 15 background colors in D3DCOLOR format (0xAARRGGBB)
+bgcolor_colors:
+ dd FF000000  // 0  Black
+ dd FF0000FF  // 1  Blue
+ dd FF00FF00  // 2  Green
+ dd FFFFFF00  // 3  Yellow
+ dd FFFFFFFF  // 4  White
+ dd FFFF0000  // 5  Red
+ dd FF00FFFF  // 6  Cyan
+ dd FFFF00FF  // 7  Magenta
+ dd FF808080  // 8  Gray
+ dd FFFF8000  // 9  Orange
+ dd FF8000FF  // 10 Purple
+ dd FF0080FF  // 11 Light Blue
+ dd FF80FF00  // 12 Lime
+ dd FFFF0080  // 13 Pink
+ dd FF008080  // 14 Teal
+ dd 00000000  //    Terminator (wrap to 0)
+
+bgcolor_frame:
+ dd 0
+
+bgcolor_index:
+ dd 0
+
+bgcolor_timer:
+ dd 180           // ~3 seconds at 60fps
+
+label(bgcolor_write)
+label(bgcolor_store)
+
+bgcolor_cave:
+  // --- Frame counter ---
+  mov eax, [bgcolor_frame]
+  inc eax
+  mov [bgcolor_frame], eax
+  
+  cmp eax, [bgcolor_timer]
+  jl bgcolor_write           // not expired yet, keep current color
+  
+  // --- Timer expired: advance palette index ---
+  mov dword ptr [bgcolor_frame], 0
+  mov eax, [bgcolor_index]
+  inc eax
+  
+  // Check if next color is terminator (0)
+  mov edx, bgcolor_colors
+  mov edx, [edx + eax * 4]
+  test edx, edx
+  jnz bgcolor_store          // valid color, use this index
+  xor eax, eax               // terminator: wrap to index 0
+
+bgcolor_store:
+  mov [bgcolor_index], eax
+
+bgcolor_write:
+  // --- Load current color and write to gfx+0x738 ---
+  // ECX = gfx pointer (preserved through this hook)
+  mov eax, [bgcolor_index]
+  mov edx, bgcolor_colors
+  mov edx, [edx + eax * 4]
+  
+  // Write cycled color to fog/background color cache
+  mov [ecx + 0x738], edx
+  // Set EAX = our color (game pushes EAX at 0x46C21A for Clear())
+  mov eax, edx
+  
+  // Jump back to 0x46C21A (PUSH EAX → CALL ClearViewport)
+  jmp 0046C21A
+
+// --- Hook installation ---
+// Original: 8B 81 38 07 00 00 = MOV EAX, [ECX+0x738]
+// Replace:  E9 xx xx xx xx 90 = JMP bgcolor_cave + NOP (6 bytes)
+0046C214:
+  jmp bgcolor_cave
+  nop
+
+[DISABLE]
+
+0046C214:
+  db 8B 81 38 07 00 00
+
+dealloc(bgcolor_cave)
+dealloc(bgcolor_colors)
+dealloc(bgcolor_frame)
+dealloc(bgcolor_index)
+dealloc(bgcolor_timer)
+unregistersymbol(bgcolor_frame)
+unregistersymbol(bgcolor_index)
+unregistersymbol(bgcolor_timer)

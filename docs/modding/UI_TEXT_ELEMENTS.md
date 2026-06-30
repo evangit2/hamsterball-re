@@ -554,8 +554,8 @@ Font = *(App + 0x318)   // or 0x31C, 0x324, 0x328, 0x320
 ```
 
 Verified call sites:
-- `RumbleBoard_Render` (`0x421910`): `MOV ECX,[ESI+0x878]; MOV ECX,[ECX+0x328]`
-- `TourneyMenu_Render` (`0x00450AF0`): `UI_DrawTextShadow(*([this+0x878]+0x318), ...)`
+- `ArenaBoard_Render` (`0x421910`): `MOV ECX,[ESI+0x878]; MOV ECX,[ECX+0x328]`
+- `TourneyMenu_Render` (`0x00450AF0`): `UI_DrawTextShadow(*([this+0x878]+0x318), ...)` — between-races TourneyMenu render (vtable[2] of 0x4D83F0, set by TourneyMenu_ctor at 0x4FDA0). NOTE: was previously misidentified as 0x432D20 which is actually ArenaLevelSelect_Render (Arena/Rodent Rumble level selection screen).
 - `HighScoreEntry_Render` (`0x0042BD40`): `*([this+0x878]+0x318)`
 - `TourneyContinueDialog_Render` (`0x00445F50`): `*([this+0x878]+0x318)`
 - `OkayDialog_ctor` (`0x00440E70`): `*([this+0x878]+0x318)`

@@ -1,0 +1,13 @@
+[MOD] Raptisoft Live Status Logger loaded
+[MOD] Log file: Z:\home\evan\hamsterball-re\originals\installed\extracted\live_status.txt
+=======================================================================
+          HAMSTERBALL LIVE STATUS LOG - Raptisoft Debug Tap          
+=======================================================================
+
+Log started: 2026-06-25 02:23:53
+Process PID: 284
+
+--- Live Status (updates on change) ---
+[tick]     STATUS                          OBJECT              OPERATION
+-----------------------------------------------------------------------------
+[      0]  (null)                          (null)              (null)

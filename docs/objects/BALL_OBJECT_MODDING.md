@@ -110,10 +110,10 @@ Same pattern — writes to `+0x170/174/178` with identical guards.
 
 | Function | Address | What It Does |
 |----------|---------|-------------|
-| `Ball_StartFall` | `0x00402200` | Enter death-fall: radius=13.0, max_speed=2.5, play fall sound |
-| `Ball_EndFall` | `0x00402270` | Exit death-fall: radius=26.0, max_speed=5.0 |
+| `Ball_Shrink` | `0x00402200` | Odd Race E:SHRINK: radius=13.0, max_speed=2.5, play shrink sound |
+| `Ball_Grow` | `0x00402270` | Odd Race E:GROW: radius=26.0, max_speed=5.0 (restores from shrunk) |
 | `Ball_ResetCollisionMesh` | `0x004030B0` | Reset physics body orientation, zero velocity, reset timer |
-| `Ball_SplitIntoThree` | `0x00408D70` | **Arena: split ball into 3 AI balls** (called from FollowBall_Update, NOT E:JUMP) |
+| `Ball_Shatter` | `0x00408D70` | **Arena: split ball into 3 AI balls** (called from FollowBall_Update, NOT E:JUMP) |
 | `Ball_RecordBest` | `0x00402400` | Record best time/score at `+0x2F4` |
 
 ### Rendering
@@ -169,8 +169,8 @@ ball[0x16c/4] = 200.0f;   // Z position
 ### 3. Change Ball Radius
 
 ```c
-// Ball_StartFall sets radius = 13.0f (0x41500000)
-// Ball_EndFall sets radius = 26.0f (0x41D00000)
+// Ball_Shrink sets radius = 13.0f (0x41500000)
+// Ball_Grow sets radius = 26.0f (0x41D00000)
 // Normal radius = 27.0f (0x41D80000) — set in Ball_ctor2
 *(float*)(ball + 0x284) = 50.0f;  // Giant ball
 ```
@@ -179,22 +179,22 @@ ball[0x16c/4] = 200.0f;   // Z position
 
 ```c
 // Ball_ctor2 default: 0x459C4000 (~5000.0f)
-// Ball_StartFall: 0x40200000 (2.5f)
-// Ball_EndFall: 0x40A00000 (5.0f)
+// Ball_Shrink: 0x40200000 (2.5f)
+// Ball_Grow: 0x40A00000 (5.0f)
 *(float*)(ball + 0x188) = 10000.0f;  // Super speed
 ```
 
 ### 5. Force Death-Fall State
 
 ```c
-Ball_StartFall(ball_ptr);  // @ 0x00402200
-// Sets: +0xC4C = 1 (is_falling), radius=13.0, max_speed=2.5, plays sound
+Ball_Shrink(ball_ptr);  // @ 0x00402200
+// Sets: +0xC4C = 1 (is_shrunk), radius=13.0, max_speed=2.5, plays sound
 ```
 
 ### 6. Force Split Power-Up
 
 ```c
-Ball_SplitIntoThree(ball_ptr, some_param);  // @ 0x00408D70
+Ball_Shatter(ball_ptr, some_param);  // @ 0x00408D70
 // Guard: checks *(char*)(ball + 0x324) == 0 (not already split)
 ```
 
@@ -220,8 +220,8 @@ Ball_ResetCollisionMesh(ball); // Reset orientation        @ 0x004030B0
 ### 9. Check If Ball Is Falling
 
 ```c
-char is_falling = *(char*)(ball + 0xC4C);
-// Set by Ball_StartFall (→1), cleared by Ball_EndFall (→0)
+char is_shrunk = *(char*)(ball + 0xC4C);
+// Set by Ball_Shrink (→1), cleared by Ball_Grow (→0)
 ```
 
 ### 10. Read Ball Speed Scale
@@ -269,7 +269,7 @@ Patch `Ball_Update` to skip gravity accumulation. The gravity vector is at `+0x1
 
 ### Recipe 4: Invincibility (No Death-Fall)
 
-Hook `Ball_StartFall` (0x00402200) to return immediately:
+Hook `Ball_Shrink` (0x00402200) to return immediately:
 ```asm
 xor eax, eax
 retn 4
@@ -277,7 +277,7 @@ retn 4
 
 ### Recipe 5: Always-Split Power-Up
 
-Hook the guard check in `Ball_SplitIntoThree` (0x00408D70):
+Hook the guard check in `Ball_Shatter` (0x00408D70):
 ```asm
 ; NOP out the "if (*(char*)(this+0x324) == 0)" check
 nop
@@ -326,11 +326,11 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x1A8` | Vec3 | `0, 1.0, 0` | gravity vector |
 | `+0x1B8` | RenderContext | — | Primary render context |
 | `+0x208` | RenderContext | — | Secondary render context |
-| `+0x260` | byte | `0` | boost_active |
-| `+0x264` | RumbleBoard | — | Rumble timer (0x14 bytes) |
+| `+0x260` | byte | `0` | sweat_flag |
+| `+0x264` | ArenaBoard | — | Rumble timer (0x14 bytes) |
 | `+0x278` | float | `0x3DCCCCCD` | (0.1f) |
 | `+0x27C` | int | `0` | — |
-| `+0x281` | byte | `1` | is_falling (init: 1, set to 0 by Reset) |
+| `+0x281` | byte | `1` | unused_init_flag (DEAD: set by ctor, never read by any function) |
 | `+0x284` | float | `0x41D80000` | radius (27.0f) |
 | `+0x290` | int | `0` | spin_timer |
 | `+0x2A4` | float | `0x40A00000` | (5.0f) |
@@ -343,8 +343,8 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x2D8` | int | `0` | — |
 | `+0x2DC` | int | `0` | checkpoint index |
 | `+0x2E8` | byte | `0` | event_flag |
-| `+0x2E9` | byte | `0` | ⚠ limit_flag (NOT on_ramp! Sticky limit/trajectory, never cleared in Ball_Update) |
-| `+0x2EC` | int | `0` | current_score |
+| `+0x2E9` | byte | `0` | ⚠ dizzy_lock (NOT on_ramp! Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory. Reset by Ball_InitPhysicsDefaults and Ball_ctor2) |
+| `+0x2EC` | int | `0` | bounce_count (dizzy system bounce counter; double-incremented when collision speed exceeds thresholds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND dizzy_lock==0) |
 | `+0x2F0` | int | `0` | impact_counter (frames force is blocked) |
 | `+0x2F4` | int | `0` | best_score |
 | `+0x2F8` | byte | `1` | alive_flag (set 0 on death) |
@@ -367,11 +367,11 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x808` | int | `0` | freeze_timer |
 | `+0xC28` | char* | `0` | display_name string |
 | `+0xC3C` | byte | `0` | teleport_flag |
-| `+0xC4C` | byte | `0` | is_falling (runtime) |
+| `+0xC4C` | byte | `0` | is_shrunk (runtime) |
 | `+0xC50` | float | `0` | fall_depth |
 | `+0xC54` | int | `0` | sound_channel |
 | `+0xC58` | byte | `0` | — |
-| `+0xC5C` | int | `0` | dizzy_flag |
+| `+0xC5C` | int | `0` | dizzy_flag (NOTE: the actual dizzy system uses ball+0x2E9 (dizzy_lock) and ball+0x2EC (bounce_count), not this field) |
 | `+0xC60` | float | `1.0f` | scale_factor |
 | `+0xC64` | float | `0` | roll_friction (overwritten every frame by physics loop) |
 | `+0xC74` | int | `0` | render_alpha |
@@ -397,10 +397,10 @@ All data verified via **live GhidraMCP headless decompilation** (`http://127.0.0
 - `Ball_ctor2` @ `0x004039E0` — struct layout, initial values
 - `Ball_ApplyForceWithMultipliers` @ `0x00402650` — velocity write pattern
 - `Ball_ApplyForceV2` @ `0x004016F0` — velocity write pattern (alt)
-- `Ball_StartFall` @ `0x00402200` — death-fall state
-- `Ball_EndFall` @ `0x00402270` — death-fall recovery
+- `Ball_Shrink` @ `0x002200` — Odd Race shrink state (E:SHRINK)
+- `Ball_Grow` @ `0x00402270` — Odd Race grow recovery (E:GROW)
 - `Ball_Update` @ `0x00405E00` — main physics tick overview
-- `Ball_SplitIntoThree` @ `0x00408D70` — arena 8-ball split mechanic (called from FollowBall_Update)
+- `Ball_Shatter` @ `0x00408D70` — arena 8-ball split mechanic (called from FollowBall_Update)
 - `Ball_GetInputForce` @ `0x0046EC30` — input system integration
 - `Ball_SetTrajectory` / `Ball_ApplyTrajectory` — launch pad mechanics
 

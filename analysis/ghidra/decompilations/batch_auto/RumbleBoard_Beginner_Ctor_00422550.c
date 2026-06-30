@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_Beginner_Ctor
+ * Function: ArenaBoard_Beginner_ctor
  * Address: 0x00422550
- * Signature: void * __thiscall RumbleBoard_Beginner_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Beginner_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board, level. Calls: RumbleBoard_Beginner_Ctor, RumbleBoard_ctor, _eh_vector_constructor_iterator_, CONCAT31, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 30
+ * Patterns: SEH frame, matrix math, board, level. Calls: ArenaBoard_Beginner_ctor, ArenaBoard_ctor, _eh_vector_constructor_iterator_, CONCAT31, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 30
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_Beginner_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Beginner_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -21,7 +21,7 @@ void * __thiscall RumbleBoard_Beginner_Ctor(void *this,int param_1)
   puStack_8 = &LAB_004ca923;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
   *(undefined ***)this = &PTR_BoardLevel_Generic_dtor5_004d14f0;
   _eh_vector_constructor_iterator_((void *)((int)this + 0x47e0),0x418,4,FUN_0040a870,Vec3List_Free);

@@ -71,9 +71,9 @@ void App::Run(App* this);  // ECX = App* (0x4FD680)
 | +0x280 | char | ??? | Collision flag |
 | +0x284 | float | radius | **35.0** (ball radius) |
 | +0x2CC | char | no_input | No player input |
-| +0x2E8 | char | flag1 | Reset to 0 each frame |
-| +0x2E9 | char | limit_flag | ⚠ **NOT "reset to 0 each frame"!** Sticky flag, only cleared by Ball_ctor2. See docs/agent-knowledge/ball-ground-detection.md |
-| +0x2EC | uint32 | ??? | Reset to 0 each frame |
+| +0x2E8 | char | is_falling | Set by Ball_Shatter, Ball_FallUpdate, E:SWALLOW. Triggers respawn |
+| +0x2E9 | byte | dizzy_lock | ⚠ **NOT "reset to 0 each frame"!** Sticky flag that prevents Ball_ApplyTrajectory from re-firing. Set by E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1/2, speed>1.0 collision, and Ball_ApplyTrajectory itself. **NOT set by E:SWALLOW** (which sets +0x2E8 instead). Reset to 0 ONLY by Ball_InitPhysicsDefaults(0x405100) at 0x405262, and Ball_ctor2(0x4039E0) at 0x403BDE. See docs/agent-knowledge/limit-flag-deep-dive.md |
+| +0x2EC | int32 | bounce_count | Dizzy system bounce counter. Double-incremented (0→1→2) when collision speed exceeds thresholds 0.03 and 0.1. When bounce_count > 1 AND dizzy_lock==0 → Ball_ApplyTrajectory fires. Reset by Ball_RecordBest, Ball_InitPhysicsDefaults, and when has_trajectory(+0x14D) is set |
 | +0x2F0 | uint32 | force_counter | Forces applied this frame |
 | +0x2F8 | char | update_in_progress | Set to 1 during update |
 | +0x2F9 | char | frozen | Ball frozen (on surface) |
@@ -85,7 +85,7 @@ void App::Run(App* this);  // ECX = App* (0x4FD680)
 | +0x31D | char | ??? | Render flag |
 | +0x324 | char | in_tube | Ball is in tube/pipe |
 | +0x748 | int | gravity_plane | 0=XY, 1=Y-tilted, 2=XZ |
-| +0xC4C | char | is_dizzy | Dizzy effect |
+| +0xC4C | char | is_shrunk | Odd Race shrunk state (E:SHRINK/E:GROW) |
 | +0xC5C | int | on_ice | Ice surface |
 | +0xC74 | int | collision_count | Reset to 0 each frame |
 | +0xC78 | float | ??? | 0.0 (set by Update dispatcher) |
@@ -164,7 +164,7 @@ The main per-frame physics update:
 - SAFESPOT (safe zones)
 - PLATFORM, N:SINKPLATFORM (platforms)
 - N:BUMPER1-4 (bumpers)
-- E:NODIZZY<TIME>N</TIME> (dizzy zones)
+- E:NODIZZY<TIME>N</TIME> (TIME checkpoint clearer — NOT dizzy-related; clears TIME checkpoint entries and calls Ball_RecordBest)
 - E:LIMIT (boundaries)
 - CAMERALOOKAT (camera points)
 - BADBALL (enemies)
@@ -309,17 +309,17 @@ All level setups follow: Level_ctor → Level_Clone → Level_InitScene → vmet
 |-------|---------|------|----------------|
 | Level1 | 0x41CA40 | Warm-up Race | — |
 | levelcascade | 0x4110D0 | Beginner Race | 8 bumpers |
-| Level3 | (base) | Intermediate Race | — |
-| Level4 | 0x416270 | Dizzy Race | 2-player support |
-| Level5 | 0x40E190 | Tower Race | — |
-| Level6 | 0x40830 | Sky Race | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
+| Level2 | (base) | Intermediate Race | — |
+| Level3 | 0x416270 | Dizzy Race | 2-player support |
+| Level4 | 0x40E190 | Tower Race | — |
+| Level6 | 0x40830 | Odd Race | PILLAR, MAGNIFYER, CLOUDSCAPE, fog |
 | LevelDark | 0x40F360 | Neon Race | — |
-| Level8 | 0x40EA90 | Expert Race | LAUNCH01/02/03, CHROMESHADOW |
-| Level9 | (base) | Odd Race | — |
-| Level10 | 0x411F60 | Toob Race | 4 bumpers, TarBubble |
+| Level5 | 0x40EA90 | Expert Race | LAUNCH01/02/03, CHROMESHADOW |
+| Level8 | 0x411F60 | Toob Race | 4 bumpers, TarBubble |
 | Level7 | (base) | Wobbly Race | — |
 | LevelGlass | (base) | Glass Race | — |
-| Level5-Bonk | (base) | Master Race | — |
+| Level9 | (base) | Sky Race | — |
+| Level10 | (base) | Master Race | — |
 | LevelUp | 0x411540 | Up Race | VAC-IN/VAC-OUT vacuum tubes |
 | LevelImpossible | (base) | Impossible Race | — |
 
@@ -359,7 +359,7 @@ Key identified slots:
 
 ### Rumble/Arena Board System
 
-15 arena init functions (RumbleBoard_*_Init) follow this pattern:
+15 arena init functions (ArenaBoard_*_Init) follow this pattern:
 1. Level_ctor(arena_level_path) → store at scene+0x22B
 2. Level_Clone(source) → store at scene+0x22C
 3. CameraLookAt(scene)
@@ -451,16 +451,16 @@ Difficulty_GetTimeModifier (0x428ED0) returns multiplier based on +0x23C:
 
 ## 14. Rumble Board System (vtable PTR 0x4D1358)
 
-- RumbleBoard extends Board (which extends Scene)
+- ArenaBoard extends Board (which extends Scene)
 - Base score: 6000 per round
 - 25 rounds per game (offset +0x47D0 = 0x19 = 25)
-- Timer: RumbleBoard_InitTimer / TickTimer / CleanupTimer manage round time
-- RumbleBoard_Render draws timer bar, round number ".%d", and "TIE BREAKER!" text
-- RumbleBoard_Update checks round end: finds max score, handles ties
+- Timer: ToggleTimer_Init / TickTimer / CleanupTimer manage round time
+- ArenaBoard_Render draws timer bar, round number ".%d", and "TIE BREAKER!" text
+- ArenaBoard_Update checks round end: finds max score, handles ties
 - Tie detection: counts how many players share max score; if ≥2, sets tie breaker flag
-- On game over: spawns RumbleScore object (FUN_4CB10), plays "Game Over" music
-- RumbleScore_ctor uses difficulty index [0,1,2] → scale [0.02, 0.03, 0.04]
-- RumbleBoard vtable at PTR_FUN_004d1358
+- On game over: spawns ArenaScoreParticle object (FUN_4CB10), plays "Game Over" music
+- ArenaScoreParticle_ctor uses difficulty index [0,1,2] → scale [0.02, 0.03, 0.04]
+- ArenaBoard vtable at PTR_FUN_004d1358
 
 ## 15. Scene Rendering Pipeline (0x45E0E0)
 

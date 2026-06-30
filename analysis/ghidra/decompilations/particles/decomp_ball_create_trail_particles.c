@@ -41,7 +41,7 @@ void Ball_CreateTrailParticles(int ball_ptr) {
         
         // Create RumbleScore particle
         void* particle = operator_new(0x28);
-        RumbleScore_ctor(particle, *(int*)(*(int*)(ball_ptr + 0x14) + 0x878));
+        ArenaScoreParticle_ctor(particle, *(int*)(*(int*)(ball_ptr + 0x14) + 0x878));
         
         // Particle position = ball_pos + offset_right - offset_up
         float pos_x = offset_right_x + ball_x - offset_up_x;

@@ -30,19 +30,19 @@ The ball has three operational modes:
 | Mode | Flag | Effect |
 |------|------|--------|
 | **Normal** | `ball+0xC4C = 0` | Full physics, camera follow, boost, friction |
-| **Dizzy/Falling** | `ball+0xC4C = 1` | Reduced physics, no camera follow, 0.75× force, no boost |
+| **Odd Race Shrunk** | `ball+0xC4C = 1` | Reduced physics, no camera follow, 0.75× force, no boost |
 | **Launch** | `ball+0x2F0 ≥ 100` | Free trajectory for ~1.67s, no external forces |
 
-### Ball_StartFall (0x402200)
-Sets the falling/dizzy state:
-- `ball+0xC4C = 1` (dizzy flag)
+### Ball_Shrink (0x402200)
+Sets the Odd Race shrunk state:
+- `ball+0xC4C = 1` (is_shrunk flag)
 - `ball+0x284 = 13.0f` (shrink radius — was 26.0f)
 - `ball+0x188 = 2.5f` (reduce max speed — was 5.0f)
-- Plays fall sound from `Scene+0x4D4`
+- Plays shrink sound from `Scene+0x4D4`
 
-### Ball_EndFall (0x402270)
+### Ball_Grow (0x402270)
 Restores normal state:
-- `ball+0xC4C = 0` (clear dizzy)
+- `ball+0xC4C = 0` (clear is_shrunk)
 - `ball+0x284 = 26.0f` (restore radius)
 - `ball+0x188 = 5.0f` (restore max speed)
 
@@ -50,7 +50,7 @@ Restores normal state:
 Called when ball hits a boost ramp/launch surface:
 - Reads trajectory from `physics_body+0xCA4/CA8/CAC` (launch direction)
 - Normalizes trajectory, scales by `_DAT_004CF3F0 = 0.5`
-- Damps Y component: `body+0xCA8 *= _DAT_004CF434 = 1.25` (adds vertical boost)
+- Damps Y component: `body+0xCA8 *= _DAT_004CF434 = 1.25` (adds vertical boost; same constant as grounded min speed)
 - Sets `impact_counter = 100` at `ball+0x2F0` (prevents force application for ~1.67s)
 - Sets `ball+0x14D = 1` (rotation dirty)
 - Plays boost sound, creates trail particles
@@ -79,7 +79,7 @@ Secondary force applier — used for collision-derived forces. Adds tube check (
 
 | Condition | Offset | Multiplier | Value | Notes |
 |-----------|--------|------------|-------|-------|
-| Recent impact | `ball+0x2F0` | `×_DAT_004CF380` | ×0.25 | First few frames after hit |
+| Recent impact | `ball+0x2F0` | `×_DAT_004CF380` | ×0.25 | First few frames after hit (same constant as sweat min speed) |
 | In tube | `ball+0x324` | `×_DAT_004CF378` | ×0.0 | Complete freeze in tubes (V2 only) |
 | On ice | `ball+0xC5C` | `×_DAT_004CF374` | ×0.2 | Nearly zero on ice; also sets angular velocity `×6.0` |
 | Dizzy/falling | `ball+0xC4C` | `×_DAT_004CF36C` | ×0.75 | 25% reduction when falling |
@@ -137,7 +137,7 @@ When ball hits a wall surface:
 
 When ball touches floor geometry:
 1. Check floor depth (`[edi+0x54]`) against threshold (`_DAT_004CF420 ≈ 0.0`)
-2. If NOT dizzy (`ball+0xC4C == 0`):
+2. If NOT shrunk (`ball+0xC4C == 0`):
    - Set `ball+0x2E9 = 1` (on_ramp flag)
    - `Scene_SetCamera(ball, 1)` — camera follows ball
    - `Graphics_SetViewport` — update camera viewport
@@ -146,20 +146,20 @@ When ball touches floor geometry:
    - OOB detection: compare ball position against viewport bounds
    - If out of bounds: set `ball+0x2E8 = 1` (fell off flag)
 
-**When dizzy (`ball+0xC4C = 1`)**:
+**When shrunk (`ball+0xC4C = 1`)**:
 - SKIPS `Scene_SetCamera` call — camera doesn't follow falling ball
 - SKIPS `on_ramp` flag set — no ramp detection during fall
 - SKIPS boost counter increment — can't charge boost while falling
 - Jump target: `0x40743D` which goes to player_index check
 
-### How Dizzy Affects Collision Direction
+### How is_shrunk Affects Collision Direction
 
-**The collision normal is NOT modified when dizzy.** The collision tree is built and queried identically regardless of the dizzy flag. The direction vector flows through the same reflection/friction code. The dizzy flag only affects:
+**The collision normal is NOT modified when shrunk.** The collision tree is built and queried identically regardless of the is_shrunk flag. The direction vector flows through the same reflection/friction code. The is_shrunk flag only affects:
 
-1. **Camera**: No `Scene_SetCamera` call when dizzy (camera stays at last position)
-2. **Boost**: No boost counter accumulation when dizzy
-3. **Friction**: Different spin friction calculation (0.25× multiplier at 0x4CF380 when dizzy vs normal friction)
-4. **Force**: 0.75× multiplier on all applied forces when dizzy
+1. **Camera**: No `Scene_SetCamera` call when shrunk (camera stays at last position)
+2. **Boost**: No boost counter accumulation when shrunk
+3. **Friction**: Different spin friction calculation (0.25× multiplier at 0x4CF380 when shrunk vs normal friction)
+4. **Force**: 0.75× multiplier on all applied forces when shrunk
 
 ---
 
@@ -200,6 +200,43 @@ The reimpl uses standard semi-implicit Euler:
 
 ## 6. Airborne Physics
 
+### Two-Regime Climbing System
+
+The ball physics has **two distinct climbing modes** determined by ground contact:
+
+#### Regime 1: Speed Climbing (grounded, no sweat)
+- Ball has full surface contact (collision normal sums to zero → `_DAT_004cf368 == 0.0`)
+- Minimum force: **1.25** (float at 0x4CF434)
+- Pass 1 multiplier: **0.5** (double at 0x4CF3E0)
+- Pass 2 multiplier: **1.5** (double at 0x4CF458)
+- Works up to ~**37°** (tan⁻¹(0.75) = 36.87°, where 0.75 = 0.5 × 1.5)
+- Above 37°, the ball's gravity exceeds the driving force, ball starts to bounce
+
+#### Regime 2: Sweat/Grip Climbing (airborne on slope)
+- Ball loses full contact on steep slope (bounces slightly)
+- Sweat flag (`ball+0x260`) set → force drops to **0.25** (float at 0x4CF380)
+- Gentle force → ball doesn't launch off surface
+- Collision reflection keeps ball near surface
+- **Can climb any angle, including ~90° (vertical walls)**
+- Tradeoff: very slow speed, sweat visual appears
+
+#### Why sweat mode enables steep climbing
+
+The grounded force (1.25) produces violent collision reflections on steep surfaces, launching the ball off the surface. When the ball loses contact, there are no more collisions, and gravity pulls it down.
+
+Sweat mode's 0.25 force produces gentle reflections. Each frame:
+1. Gravity pulls ball into surface
+2. Collision reflects velocity along surface (upward on steep slopes)
+3. Gentle force (0.25) keeps reflection small → ball stays on surface
+4. Input direction drives ball up along the surface
+5. Ball crawls up slowly but can traverse any angle
+
+The collision loop breaks when `dot(reflected_velocity, up_vector) >= -0.01` (`_DAT_004cf4e0` at 0x4CF4E0), meaning velocity is now pointing upward or horizontal. This works at any slope angle.
+
+The sweat flag is cleared in the second collision pass when `computed_speed > max_speed` (6.0 at `ball+0x188`) — i.e., when the ball is going fast enough to not need grip assist.
+
+See `docs/SWEAT_MODE.md` for full details.
+
 ### How the Ball Goes Airborne
 
 In the original game, there is NO explicit "jump" mechanic. The ball goes airborne through:
@@ -232,21 +269,28 @@ In the original, this doesn't happen because:
 
 ## 7. Key Physics Constants (Verified from .rdata)
 
-| Address | Value | Name | Usage |
-|---------|-------|------|-------|
-| `0x4CF310` | 1.0 | `UNIT_VALUE` | General purpose 1.0 constant |
-| `0x4CF368` | 0.0 | `GROUND_THRESHOLD` | Floor detection threshold |
-| `0x4CF36C` | 0.75 | `DIZZY_MULT` | Force multiplier when dizzy/falling |
-| `0x4CF374` | 0.2 | `ON_ICE_MULT` | Force multiplier on ice surfaces |
-| `0x4CF378` | 0.0 | `IN_TUBE_MULT` | Force multiplier in tube sections |
-| `0x4CF380` | 0.25 | `FIRST_FRAME_MULT` | Force multiplier on first frame / after impact |
-| `0x4CF3E8` | 6.0 | `ICE_ANGULAR_SCALE` | Angular velocity scale on ice |
-| `0x4CF3F0` | 0.5 | `LAUNCH_TRAJECTORY_SCALE` | Launch direction normalization scale |
-| `0x4CF418` | 3.0 | `SPEED_ACCUM_WRAP` | Speed gauge wrap value |
-| `0x4CF434` | 1.25 | `Y_DAMP` | Vertical velocity damping on launch |
-| `0x4CF4C0` | 0.85 | `SPEED_FRICTION` | Per-frame velocity friction |
-| `0x4CF520` | 0.025 | `LAUNCH_DIR_SCALE` | Launch direction scaling |
-| `0x4CF540` | 0.98 | `SPIN_DECAY_MULT` | Per-frame spin timer decay |
+> **Float vs Double warning:** Addresses marked "double" store 8-byte IEEE 754 doubles. Ghidra shows them as `_DAT` (4-byte float) with `(float)` cast, but x86 instructions use `DC` opcodes (qword operations). Reading only 4 bytes gives 0.0 for all four doubles below (their low bytes are all `00 00 00 00`). Always read 8 bytes.
+
+| Address | Type | Value | Name | Usage |
+|---------|------|-------|------|-------|
+| `0x4CF310` | float | 1.0 | `UNIT_VALUE` | General purpose 1.0 constant |
+| `0x4CF368` | float | 0.0 | `GROUND_THRESHOLD` | Grounded check: collision normal sum == 0.0 |
+| `0x4CF36C` | float | 0.75 | `DIZZY_MULT` | Force multiplier when is_shrunk (Odd Race) |
+| `0x4CF374` | float | 0.2 | `ON_ICE_MULT` | Force multiplier on ice surfaces |
+| `0x4CF378` | float | 0.0 | `IN_TUBE_MULT` | Force multiplier in tube sections |
+| `0x4CF380` | float | 0.25 | `SWEAT_MIN_SPEED` | Minimum speed when airborne on slope (sweat mode) |
+| `0x4CF3E0` | **double** | **0.5** | `PASS1_FORCE_MULT` | First collision pass force multiplier (`DC 1D` = FCOMP qword) |
+| `0x4CF3E8` | float | 6.0 | `ICE_ANGULAR_SCALE` | Angular velocity scale on ice |
+| `0x4CF3F0` | float | 0.5 | `LAUNCH_TRAJECTORY_SCALE` | Launch direction normalization scale |
+| `0x4CF418` | float | 3.0 | `SPEED_ACCUM_WRAP` | Speed gauge wrap value |
+| `0x4CF434` | float | 1.25 | `GROUNDED_MIN_SPEED` | Minimum grounded speed |
+| `0x4CF440` | **double** | **0.25** | `AIRBORNE_THRESHOLD` | If force < 0.25 when airborne, set sweat flag |
+| `0x4CF458` | **double** | **1.5** | `PASS2_FORCE_MULT` | Second collision pass force multiplier (`DC 0D` = FMUL qword) |
+| `0x4CF4C0` | float | 0.85 | `SPEED_FRICTION` | Per-frame velocity friction |
+| `0x4CF4D0` | **double** | **1.25** | `GROUNDED_THRESHOLD` | If force < 1.25 when grounded, use grounded min |
+| `0x4CF4E0` | float | -0.01 | `COLLISION_RESOLVED` | dot(vel, up) ≥ -0.01 → collision resolved, break loop |
+| `0x4CF520` | float | 0.025 | `LAUNCH_DIR_SCALE` | Launch direction scaling |
+| `0x4CF540` | float | 0.98 | `SPIN_DECAY_MULT` | Per-frame spin timer decay |
 
 ---
 
@@ -261,11 +305,11 @@ In the original, this doesn't happen because:
 | +0x158 | param_1[0x56] | Vec3 | `prev_pos` | Previous frame position |
 | +0x164 | param_1[0x59] | Vec3 | `pos` | Current position |
 | +0x170 | param_1[0x5C] | Vec3 | `vel` | Velocity (cleared each frame, recomputed) |
-| +0x188 | param_1[0x62] | float | `max_speed` | 5000.0 (normal) / 2.5 (falling) |
+| +0x188 | param_1[0x62] | float | `max_speed` | 5000.0 (normal) / 2.5 (shrunk, Odd Race) |
 | +0x198 | param_1[0x66] | float | `facing_angle` | Target rotation angle |
 | +0x19C | param_1[0x67] | byte | `facing_dirty` | 1 = rotation needs update |
 | +0x1A4 | param_1[0x69] | ptr | `physics_body` | Scene physics body (trajectory, friction) |
-| +0x284 | param_1[0xA1] | float | `radius` | 26.0 (normal) / 13.0 (falling) |
+| +0x284 | param_1[0xA1] | float | `radius` | 26.0 (normal) / 13.0 (shrunk, Odd Race) |
 | +0x2E8 | | byte | `fell_off` | Ball fell off level edge |
 | +0x2E9 | | byte | `on_ramp` | Ball is on a ramp/slope surface |
 | +0x2F0 | param_1[0xBC] | int | `impact_counter` | ≥100 = in launch, ≥81 = no force |
@@ -274,7 +318,7 @@ In the original, this doesn't happen because:
 | +0x324 | param_1[0xC9] | byte | `in_tube` | In tube section (zeroes force) |
 | +0x748 | param_1[0x1D2] | int | `gravity_plane` | 0=XZ flat, 1=tilted, 2=XY vertical |
 | +0x808 | | int | `freeze_counter` | >0 = frozen, no force |
-| +0xC4C | | byte | `dizzy` | 1 = falling/dizzy state |
+| +0xC4C | | byte | `is_shrunk` | 1 = Odd Race shrunk state (E:SHRINK) |
 | +0xC50 | param_1[0x314] | float | `spin_timer` | Decayed by 0.98× per frame |
 | +0xC5C | param_1[0x317] | int | `momentum_transfer` | Flag for ice momentum |
 | +0xC3C | param_1[0x30F] | byte | `teleport_active` | 1 = teleport pending |
@@ -288,7 +332,7 @@ In the original, this doesn't happen because:
 Ball_Update (0x405E00)
 ├── Sound_Play3DAtPosition (0x458EE0) ×2
 ├── operator_new (0x4BA57B) ×4
-│   ├── RumbleScore_ctor (0x44AD50)
+│   ├── ArenaScoreParticle_ctor (0x44AD50)
 │   ├── SpatialTree_ctor (0x463330)
 │   └── CollisionNode_ctor (0x466CF0)
 ├── RNG_Rand (0x45DD60) ×4
@@ -329,7 +373,7 @@ Ball_Update (0x405E00)
 
 3. **Simple velocity reflection**: Reimpl reflects velocity with fixed bounce=0.3. Original uses the collision node's direction vector for smooth sliding along walls.
 
-4. **No dizzy/falling state**: Reimpl has no `ball+0xC4C` equivalent. Ball falling off edges doesn't shrink radius or reduce max speed.
+4. **No is_shrunk state**: Reimpl has no `ball+0xC4C` equivalent. The Odd Race shrink mechanic (Ball_Shrink/Ball_Grow) is not implemented.
 
 5. **No launch trajectory system**: Reimpl has no `Ball_ApplyTrajectory` equivalent. Boost ramps and launch surfaces are not implemented.
 

@@ -1,14 +1,14 @@
 /*
- * Function: RumbleBoard_WobblyArena_ctor
+ * Function: ArenaBoard_Wobbly_ctor
  * Address: 0x00423690
- * Signature: void * __thiscall RumbleBoard_WobblyArena_ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Wobbly_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: RumbleBoard_WobblyArena_ctor, RumbleBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, CONCAT31, MeshWorld_ctor. Offsets: 13, Lines: 39
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: ArenaBoard_Wobbly_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, CONCAT31, MeshWorld_ctor. Offsets: 13, Lines: 39
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall RumbleBoard_WobblyArena_ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Wobbly_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -22,9 +22,9 @@ void * __thiscall RumbleBoard_WobblyArena_ctor(void *this,int param_1)
   puStack_8 = &LAB_004cab53;
   local_c = ExceptionList;
   ExceptionList = &local_c;
-  RumbleBoard_ctor(this,param_1);
+  ArenaBoard_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_RumbleBoard_Expert_Arena_scalar_dtor_004d1b18;
+  *(undefined ***)this = &PTR_ArenaBoard_Expert_ScalarDtor_004d1b18;
   *(char **)((int)this + 0x868) = "RumbleBoard (Wobbly Arena)";
   *(char **)((int)this + 0x4344) = "Hamster Chase";
   *(char **)((int)this + 0x29b4) = "WOBBLY ARENA";

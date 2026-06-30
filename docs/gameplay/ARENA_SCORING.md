@@ -21,23 +21,23 @@
 
 ## Overview
 
-Hamsterball's multiplayer **Arena Mode** (RumbleBoard) uses a per-player scoring system where:
+Hamsterball's multiplayer **Arena Mode** (ToggleTimer) uses a per-player scoring system where:
 
-- Each player has a **score value** tracked inside the `RumbleBoard` object
+- Each player has a **score value** tracked inside the `ArenaBoard` object
 - A **countdown timer** limits round duration (default: 60 seconds)
 - When time expires, the player with the **highest score wins**
 - If multiple players tie for highest score, a **tie-breaker** round begins
 - Falling off the board typically awards points to surviving players
 
-The scoring system is completely separate from the single-player race timer system. Arena scores are stored in the `RumbleBoard` struct, while race times are stored in the `App` struct.
+The scoring system is completely separate from the single-player race timer system. Arena scores are stored in the `ArenaBoard` struct, while race times are stored in the `App` struct.
 
 ---
 
 ## Data Structures
 
-### RumbleBoard Scoring Fields
+### ArenaBoard Scoring Fields
 
-The `RumbleBoard` inherits from `Board` → `Gadget` → `Scene`. Within the RumbleBoard, these offsets control scoring:
+The `ArenaBoard` inherits from `Board` → `Gadget` → `Scene`. Within the ArenaBoard, these offsets control scoring:
 
 | Offset | Type | Field | Description |
 |--------|------|-------|-------------|
@@ -53,7 +53,7 @@ The `RumbleBoard` inherits from `Board` → `Gadget` → `Scene`. Within the Rum
 | `+0x11EC` | `byte` | `timer_toggle` | Internal timer flip-flop |
 | `+0x11F1` | `byte` | `results_shown` | 1 = RaceResultsMenu already created |
 
-> **Verified in:** `RumbleBoard_Update` (0x421FE0) and `RumbleBoard_Render` (0x421910)
+> **Verified in:** `ArenaBoard_Update` (0x421FE0) and `ArenaBoard_Render` (0x421910)
 
 ### App Player Slots
 
@@ -66,7 +66,7 @@ Each player's tournament/race data lives in the `App` struct with a stride of `0
 | P3 | `+0x718` | `+0x728` | `+0x72C` | `+0x76C` | `+0x770` |
 | P4 | `+0x7B8` | `+0x7C8` | `+0x7CC` | `+0x80C` | `+0x810` |
 
-In **arena mode**, the `+0x5E8` slot is repurposed as a **score accumulator** rather than a race time. The RumbleBoard copies scores into these slots at round end.
+In **arena mode**, the `+0x5E8` slot is repurposed as a **score accumulator** rather than a race time. The ArenaBoard copies scores into these slots at round end.
 
 > **Verified in:** `PlayerProfile_ctor` (0x426F30), `Tournament_AdvanceRace` (0x427080)
 
@@ -97,7 +97,7 @@ Pop-up score notifications (like "EXTRA TIME:") use this struct:
 
 ### 1. Score Initialization
 
-When a RumbleBoard arena is constructed (`RumbleBoard_ctor`, 0x4217B0):
+When a Arena board arena is constructed (`ArenaBoard_ctor`, 0x4217B0):
 
 - All four player scores (`+0x11ED`..`+0x11F0`) are initialized to **0**
 - `time_limit` (`+0x47AC`) is set to **6000** (60 seconds)
@@ -109,17 +109,17 @@ During gameplay, scores increase through these mechanisms:
 
 #### A. Ball Falls Off Board
 When a ball falls off the arena platform:
-1. `Ball_StartFall` (0x402200) triggers — sets airborne flag, plays sound
+1. `Ball_Shrink` (0x402200) triggers — sets airborne flag, plays sound
 2. `Ball_FallUpdate` (0x408830) runs physics until ball hits void
-3. The RumbleBoard detects the fallen player and awards **+10 points** to all surviving players via `ScoreObject_SetScore` (0x43B6F0)
+3. The ArenaBoard detects the fallen player and awards **+10 points** to all surviving players via `Rotator_AddBall` (0x43B6F0)
 
 #### B. Bell Collision Bonus
 When a ball hits an `E:BELL` event plane:
 1. `Bell_Activate` plays the bell sound
 2. If not in a race/demo: **+500 bonus time** added to the player's timer (`App+0x5EC`)
-3. A `ScoreObject` popup with `"EXTRA TIME:"` text is created and appended to the scene score list (`RumbleBoard+0x8B8`)
+3. A `ScoreObject` popup with `"EXTRA TIME:"` text is created and appended to the scene score list (`ArenaBoard+0x8B8`)
 
-> **Source:** `Arena_HandleCollision` (0x40E6A0), lines 90-108
+> **Source:** `ExpertCollisionEvents` (0x40E6A0), lines 90-108
 
 #### C. Direct ScoreObject Creation
 Any code can create a score popup:
@@ -132,7 +132,7 @@ AthenaList_Append(rumbleBoard + 0x8B8, scoreObj);
 
 ### 3. Score Storage
 
-`ScoreObject_SetScore` (0x43B6F0) manages a linked list of score entries:
+`Rotator_AddBall` (0x43B6F0) manages a linked list of score entries:
 
 ```c
 // Each entry in the list is 8 bytes:
@@ -153,7 +153,7 @@ struct ScoreEntry {
 
 ### Countdown Timer
 
-The RumbleBoard uses a **tick-based countdown** (not real-time seconds):
+The ArenaBoard uses a **tick-based countdown** (not real-time seconds):
 
 | Value | Meaning |
 |-------|---------|
@@ -164,7 +164,7 @@ The RumbleBoard uses a **tick-based countdown** (not real-time seconds):
 
 ### Timer Display
 
-`RumbleBoard_Render` (0x421910) draws the timer at screen center:
+`ArenaBoard_Render` (0x421910) draws the timer at screen center:
 
 1. Background quad at `(screen_center - 88, 10, 180, 105)`
 2. Main time string in `MM:SS` format (large font)
@@ -184,7 +184,7 @@ When `tie_breaker` flag (`+0x47C4`) is set:
 
 ### Round End Trigger
 
-`RumbleBoard_Update` (0x421FE0) checks every frame:
+`ArenaBoard_Update` (0x421FE0) checks every frame:
 
 ```c
 // Pseudocode from decompilation:
@@ -226,17 +226,17 @@ From the decompilation at 0x421FE0:
 
 ### Method 1: Direct Memory Patching (Recommended for Trainers)
 
-The simplest way to manipulate scores is writing directly to the RumbleBoard fields:
+The simplest way to manipulate scores is writing directly to the ArenaBoard fields:
 
 ```cpp
 // Get App pointer from global
 App* app = *(App**)0x004FD680;
 
-// Get current RumbleBoard from active scene
-// The RumbleBoard is the current Scene object in arena mode
+// Get current ArenaBoard from active scene
+// The ArenaBoard is the current Scene object in arena mode
 Scene* scene = app->currentScene;  // App+0x178
 
-// Verify we're in arena mode (RumbleBoard vtable = 0x4D1358)
+// Verify we're in arena mode (ArenaBoard vtable = 0x4D1358)
 if (*(uint32_t*)scene == 0x004D1358) {
     // Edit scores directly
     *(int32_t*)((char*)scene + 0x11ED) = 999;  // P1 score = 999
@@ -246,22 +246,22 @@ if (*(uint32_t*)scene == 0x004D1358) {
 }
 ```
 
-### Method 2: Hook ScoreObject_SetScore
+### Method 2: Hook Rotator_AddBall
 
 Intercept score changes as they happen:
 
 ```cpp
-// Original: 0x43B6F0 __thiscall ScoreObject_SetScore(void* this, int player_id)
-void __fastcall Hook_ScoreObject_SetScore(void* scoreObj, int player_id) {
+// Original: 0x43B6F0 __thiscall Rotator_AddBall(void* this, int player_id)
+void __fastcall Hook_Rotator_AddBall(void* scoreObj, int player_id) {
     // Force P1 to always get +100 instead of +10
     if (player_id == 0) {
         // Write directly to the score entry after original processes
-        Original_ScoreObject_SetScore(scoreObj, player_id);
+        Original_Rotator_AddBall(scoreObj, player_id);
         // Now patch the stored value from 10 to 100
         // (Requires walking the list at scoreObj+0x10F0)
         return;
     }
-    Original_ScoreObject_SetScore(scoreObj, player_id);
+    Original_Rotator_AddBall(scoreObj, player_id);
 }
 ```
 
@@ -272,7 +272,7 @@ Prevent round from ending:
 ```cpp
 // In your per-frame hook (e.g., App_FrameUpdate at 0x46C170):
 Scene* scene = app->currentScene;
-if (*(uint32_t*)scene == 0x004D1358) {  // RumbleBoard vtable
+if (*(uint32_t*)scene == 0x004D1358) {  // ArenaBoard vtable
     *(int32_t*)((char*)scene + 0x47AC) = 6000;  // Reset time_limit to max
     *(int32_t*)((char*)scene + 0x11EB) = 100;    // Reset countdown
 }
@@ -319,18 +319,18 @@ For tournament mode, scores are copied to App struct at round end:
 
 | Address | Name | Signature | Description |
 |---------|------|-----------|-------------|
-| `0x43B6F0` | `ScoreObject_SetScore` | `__thiscall (void* this, int player_id)` | Set/add score entry for a player |
+| `0x43B6F0` | `Rotator_AddBall` | `__thiscall (void* this, int player_id)` | Set/add score entry for a player |
 | `0x44BE80` | `ScoreObject_ctor` | `__thiscall (void* this, int app, int player_data, char* label)` | Create score popup object |
 | `0x434C80` | `ScoreDisplay_SetTime` | `__thiscall (void* this, int time)` | Set displayed time string |
-| `0x421FE0` | `RumbleBoard_Update` | `__fastcall (int* this)` | Per-frame update + win check |
-| `0x421910` | `RumbleBoard_Render` | `__thiscall (void* this, undefined4)` | Draw HUD/timer |
-| `0x4217B0` | `RumbleBoard_ctor` | `__thiscall (void* this, int app)` | Initialize arena with time_limit=6000 |
+| `0x421FE0` | `ArenaBoard_Update` | `__fastcall (int* this)` | Per-frame update + win check |
+| `0x421910` | `ArenaBoard_Render` | `__thiscall (void* this, undefined4)` | Draw HUD/timer |
+| `0x4217B0` | `ArenaBoard_ctor` | `__thiscall (void* this, int app)` | Initialize arena with time_limit=6000 |
 
 ### Ball / Death Functions
 
 | Address | Name | Description |
 |---------|------|-------------|
-| `0x402200` | `Ball_StartFall` | Ball begins falling off board |
+| `0x402200` | `Ball_Shrink` | Odd Race E:SHRINK collision — shrink ball |
 | `0x408830` | `Ball_FallUpdate` | Physics update while falling |
 | `0x405190` | `Ball_FindClosestRespawnPoint` | Find respawn after fall |
 
@@ -338,7 +338,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 | Address | Name | Description |
 |---------|------|-------------|
-| `0x40E6A0` | `Arena_HandleCollision` | Master collision dispatcher |
+| `0x40E6A0` | `ExpertCollisionEvents` | Master collision dispatcher |
 | `0x434E20` | `Bell_Activate` | Bell hit → bonus time |
 | `0x438BB0` | `Hammer_ChaseStart` | Start hammer chase sequence |
 | `0x434A50` | `Saw_Activate` | Activate saw blade |
@@ -357,7 +357,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 ## Offsets Quick Reference
 
-### RumbleBoard Scoring Offsets
+### ArenaBoard Scoring Offsets
 
 ```
 +0x11ED  int32  p1_score
@@ -404,7 +404,7 @@ For tournament mode, scores are copied to App struct at round end:
 ### Vtables for Type Checking
 
 ```
-0x004D1358  RumbleBoard vtable
+0x004D1358  ArenaBoard vtable
 0x004CE400  App vtable
 0x004D0260  Scene vtable
 0x004CF3A0  Ball vtable
@@ -416,23 +416,23 @@ For tournament mode, scores are copied to App struct at round end:
 
 ### Tip 1: Detect Arena Mode
 
-Check if current scene is a RumbleBoard:
+Check if current scene is a ArenaBoard:
 ```cpp
 Scene* scene = *(Scene**)(app + 0x178);
 uint32_t vtable = *(uint32_t*)scene;
 bool is_arena = (vtable == 0x004D1358);
 ```
 
-### Tip 2: Find RumbleBoard from App
+### Tip 2: Find ArenaBoard from App
 
-In arena mode, `App->currentScene` IS the RumbleBoard:
+In arena mode, `App->currentScene` IS the ArenaBoard:
 ```cpp
 void* rumbleBoard = *(void**)(app + 0x178);
 ```
 
 ### Tip 3: Score Multiplier
 
-Hook `ScoreObject_SetScore` and multiply all scores:
+Hook `Rotator_AddBall` and multiply all scores:
 ```cpp
 void __fastcall Hook_SetScore(void* this, int player_id) {
     Original_SetScore(this, player_id);
@@ -444,7 +444,7 @@ void __fastcall Hook_SetScore(void* this, int player_id) {
 
 Force instant win even on ties:
 ```cpp
-// In RumbleBoard_Update, nop out the tie_count check
+// In ArenaBoard_Update, nop out the tie_count check
 // Or simply never let timer expire:
 *(int32_t*)(rumbleBoard + 0x47AC) = 999999;
 ```
@@ -466,11 +466,11 @@ AthenaList_Append(rumbleBoard + 0x8B8, popup);
 
 | File | Description |
 |------|-------------|
-| `analysis/ghidra/decompilations/collision/decomp_arena_handlecollision.c` | Arena collision events |
+| `analysis/ghidra/decompilations/collision/decomp_expert_collisionevents.c` | Arena collision events |
 | `analysis/ghidra/decompilations/tournament/decomp_rumbleboard_render.c` | HUD rendering |
 | `analysis/ghidra/decompilations/scene/decomp_scene_updateballs.c` | Ball update logic |
-| `analysis/ghidra/structs/rumbleboard_struct.h` | RumbleBoard C struct |
-| `docs/RUMBLEBOARD_SYSTEM.md` | Arena architecture overview |
+| `analysis/ghidra/structs/rumbleboard_struct.h` | ArenaBoard C struct |
+| `docs/ARENA_BOARD_SYSTEM.md` | Arena architecture overview |
 | `docs/ARENA_HAZARD_SYSTEM.md` | Hazard object documentation |
 | `docs/APP_OBJECT.md` | App struct full reference |
 

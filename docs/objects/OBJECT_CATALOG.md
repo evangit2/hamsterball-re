@@ -34,7 +34,7 @@ Objects already documented in depth elsewhere are referenced rather than duplica
 SceneObject (vtable 0x4D934C, size 0xD4)
   └─ Gadget (vtable 0x4D9170, size 0x870)
        ├─ Board (vtable 0x4D0260, size ~0x4368)
-       │    └─ RumbleBoard (vtable 0x4D1358, size ~0x47D4)
+       │    └─ ArenaBoard (vtable 0x4D1358, size ~0x47D4)
        │    └─ GameLevel (vtable varies, size ~0x4368)
        │         ├─ Glass_Level
        │         ├─ Spinner_Level
@@ -72,7 +72,7 @@ UI / Menu hierarchy:
        ├─ OptionsMenu
        ├─ PracticeMenu
        ├─ ConfirmMenu
-       ├─ TournamentScreen
+       ├─ GameSelectionScreen
        ├─ HighScoreEntry
        ├─ RaceResultsMenu
        └─ SaveTourneyDialog
@@ -81,7 +81,7 @@ UI / Menu hierarchy:
   OkayDialog
   QuitDialog
   RegisterDialog
-  RumbleScore
+  ArenaScoreParticle
   Sprite
   ScoreObject
 ```
@@ -193,9 +193,9 @@ These are **abstract base classes** you don't typically instantiate directly, bu
   - `+0x18C` speed_scale (1.0f)
   - `+0x1A8` gravity vector
   - `+0x284` radius (27.0f)
-  - `+0x2DC` checkpoint_x/y/z
+  - `+0x2DC` lgp_x/y/z (Last Grounded Position)
   - `+0x768` cam_active
-  - `+0xC4C` airborne flag
+  - `+0xC4C` is_shrunk flag (Odd Race E:SHRINK/E:GROW)
   - `+0xC88` world transform matrix (4x4)
 - **Methods (vtable slots):**
   - `[0x10]` Ball_Update (0x405E00) — main tick
@@ -224,13 +224,13 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Deep documentation:** See [`SCENE_STRUCT.md`](SCENE_STRUCT.md) and [`SCENE_OBJECT_MODDING.md`](SCENE_OBJECT_MODDING.md)
 - **Key fields:**
   - `+0x000` Gadget base (0x870 bytes)
-  - `+0x221` RumbleBoard timer data
+  - `+0x221` ArenaBoard timer data
   - `+0x335` Ball list (AthenaList)
   - `+0x43B` Effect list (AthenaList)
   - `+0x361C` Ball pointer (first player ball)
   - `+0x29B0` Gravity parameter
   - `+0x29C0` Camera orbit distance
-  - `+0x3AAC` Camera Vec3+Matrix pairs (5 sets)
+  - `+0x3AAC` Player ball colors (4 RGB entries, 0x14 bytes each)
 
 ### Level
 - **Constructor:** `Level_ctor` (0x461740)
@@ -265,7 +265,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Created by:** `CreatePlatformOrStands` factory
 
 ### Stands
-- **Constructor:** `Stands_ctor` (0x462850)
+- **Constructor:** `SceneObject_ctor` (0x462850)
 - **Size:** 0x10D0 bytes
 - **Description:** Audience / stadium stands geometry
 
@@ -277,12 +277,12 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 ### Gear / BigGear
 - **Constructor:** `Gear_ctor` (0x437590)
 - **Size:** 0x1514 bytes
-- **Description:** Rotating gear obstacles
+- **Description:** Rotating gear obstacles. Uses `N:BOUNCE` (bounce off gear surface), `N:ONGEAR` (attach to gear rotation via `Catapult_AddObjectConditional`), and `N:ONROTATOR` (attach via `Rotator_AddBall`). Found in `LevelImpossible-Gear.MESHWORLD` (8 N:BOUNCE triggers). Gear rotation handled by `Catapult_Update` (0x43E600) which applies rotation matrix to tracked balls each frame. See [Rotator System](../physics/COLLISION_SYSTEM_DEEP.md#rotator-system) for mechanics.
 
 ### Rotator
 - **Constructor:** `Rotator_ctor` (0x435940)
 - **Size:** 0x1508 bytes
-- **Description:** Rotating platform / arm
+- **Description:** Rotating platform / arm. Uses `N:ONROTATOR` event to attach balls via `Rotator_AddBall` (0x43B6F0). Ball position and velocity rotated each frame by `Catapult_Update` (0x43E600). 10-frame grace period after ball leaves surface before release.
 
 ### Pendulum
 - **Constructor:** `Pendulum_ctor` (0x437700)
@@ -331,11 +331,11 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Glue blob that slows the ball
 
 ### Spinner
-- **Factory:** `CreateSpinner` (0x412850)
+- **Factory:** `HandleArenaCollisionEvents` (0x412850)
 - **Description:** Spinning blade / propeller hazard
 
 ### Sawblade
-- **Factory:** `CreateSawblade` (0x40E250)
+- **Factory:** `CreateExpertLevelObjects` (0x40E250)
 - **Description:** Rotating saw blade hazard
 
 ### MouseTrap
@@ -347,12 +347,12 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Pinball-style bumper that knocks ball away
 
 ### SpeedCylinder
-- **Factory:** `CreateSpeedCylinder` (0x4117B0)
+- **Factory:** `CreateUpLevelObjects` (0x4117B0)
 - **Description:** Cylinder that accelerates or decelerates ball
 
 ### NoDizzy
-- **Factory:** `CreateNoDizzy` (0x40C5D0)
-- **Description:** Power-up that prevents dizzy state
+- **Factory:** `DispatchCollisionEvents` (0x40C5D0)
+- **Description:** Clears TIME checkpoint entries and calls Ball_RecordBest — NOT dizzy-related
 
 ---
 
@@ -377,7 +377,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Level variant with gear obstacles
 
 ### BoardLevel3
-- **Constructor:** `BoardLevel3_ctor` (0x41D060)
+- **Constructor:** `LevelBoard_Dizzy_ctor` (0x41D060)
 - **Description:** Tournament level 3 board state
 
 ---
@@ -404,8 +404,8 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Constructor:** `ConfirmMenu_ctor` (0x42B190)
 - **Description:** BACK / BACK2TOURNAMENT / DONE confirmation dialog
 
-### TournamentScreen
-- **Constructor:** `TournamentScreen_ctor` (0x42E060)
+### GameSelectionScreen
+- **Constructor:** `GameSelectionScreen_ctor` (0x42E060)
 - **Description:** Difficulty selector for tournament mode
 
 ### HighScoreEntry
@@ -496,19 +496,19 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 
 ## Score / GameState Objects
 
-### RumbleScore
-- **Constructor:** `RumbleScore_ctor` (0x44AD50)
+### ArenaScoreParticle
+- **Constructor:** `ArenaScoreParticle_ctor` (0x44AD50)
 - **Description:** Floating score popup in Rumble mode. Difficulty scale: 0.02/0.03/0.04.
 
 ### ScoreObject
-- **Description:** Generic score display object. Created in collision events.
-- **Used by:** `CollisionEvents`, `Arena_HandleCollision`
+- **Description:** SceneObject subclass. Despite the name, its `SetScore` method (now renamed `Rotator_AddBall` at 0x43B6F0) does NOT set a score — it registers balls on a rotator's tracking list for physical rotation. The `ScoreObject_ctor` (0x44BE80) creates a SceneObject with vtable `PTR_RaceGoalReached_Render` (0x4D6C70), used for race goal rendering.
+- **Used by:** `Rotator_AddBall` called from `ImpossibleCollisionEvents` (N:ONROTATOR), `ToobCollisionEvents` (N:SPINNY), `DizzyArenaCollisionEvents` (N:SWIRL)
 
-### RumbleBoard
-- **Constructor:** `RumbleBoard_ctor` (0x4217B0)
+### ArenaBoard
+- **Constructor:** `ArenaBoard_ctor` (0x4217B0)
 - **Size:** ~0x47D4 bytes
 - **Description:** Rumble mode game board. Inherits from Board. Timer-based scoring.
-- **Embedded timer:** `RumbleBoard_InitTimer` / `RumbleBoard_CleanupTimer`
+- **Embedded timer:** `ToggleTimer_Init` / `ToggleTimer_Cleanup`
 
 ---
 
@@ -539,8 +539,8 @@ These objects have constructors or factories in the binary but lack deep reverse
 
 | Object | Constructor/Factory | Notes |
 |--------|---------------------|-------|
-| E:LIMIT boundary | `CreateLimit` (0x410D00) | Invisible race boundary |
-| E:NODIZZY power-up | `CreateNoDizzy` (0x40C5D0) | Prevents dizzy state |
+| E:LIMIT boundary | `NeonCollisionEvents` (0x410D00) | Invisible race boundary |
+| E:NODIZZY power-up | `DispatchCollisionEvents` (0x40C5D0) | Clears TIME checkpoint entries |
 | E:JUMP trigger | *(inline in collision)* | Launch pad trigger object |
 | SAFESPOT | *(inline in factory)* | Safe zone / checkpoint |
 | CAMERALOOKAT | `CameraLookAt` (0x413280) | Camera target marker |

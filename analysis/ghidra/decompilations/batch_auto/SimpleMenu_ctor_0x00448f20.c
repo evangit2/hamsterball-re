@@ -12,7 +12,7 @@
  *   +0x868 (name='Simple Menu'), +0x878 (App), +0x87C (Font from App+0x318), +0x88C (AthenaList), +0xCAC (spacing=0), +0xCB0/+0xCB4 (scroll), +0xCBC (dirty=1), +0xCA4/+0xCA8 (AthenaStrings)
  *
  * Cross-references:
- *   7+ calls from ConfirmMenu_ctor, PauseMenu_Ctor, QuitRaceMenu, PauseRumbleMenu_ctor, PracticeMenu_ctor, etc.
+ *   7+ calls from ConfirmMenu_ctor, PauseMenu_Ctor, QuitRaceMenu, PauseArenaMenu_ctor, PracticeMenu_ctor, etc.
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

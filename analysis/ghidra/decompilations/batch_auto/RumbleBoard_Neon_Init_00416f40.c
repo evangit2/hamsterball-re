@@ -1,16 +1,16 @@
 /*
- * Function: RumbleBoard_Neon_Init
+ * Function: ArenaLevel_Neon_Init
  * Address: 0x00416f40
- * Signature: RumbleBoard_Neon_Init(...)
+ * Signature: ArenaLevel_Neon_Init(...)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, matrix math, collision, camera, scene, board, level. Calls: RumbleBoard_Neon_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt, AthenaList_NextIndex, Matrix_Scale4x4, Matrix_Identity. Offsets: 26, Lines: 150
+ * Patterns: allocates, vtable dispatch, SEH frame, matrix math, collision, camera, scene, board, level. Calls: ArenaLevel_Neon_Init, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, CameraLookAt, AthenaList_NextIndex, Matrix_Scale4x4, Matrix_Identity. Offsets: 26, Lines: 150
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __fastcall RumbleBoard_Neon_Init(int *param_1)
+void __fastcall ArenaLevel_Neon_Init(int *param_1)
 
 {
   int iVar1;

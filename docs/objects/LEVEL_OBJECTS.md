@@ -1,6 +1,6 @@
 # Level Object System
 
-Interactive objects in race levels and RumbleBoard arenas. Created by the
+Interactive objects in race levels and Arena board arenas. Created by the
 level parser and triggered by collision events.
 
 ## Level Object Factory Hierarchy
@@ -111,7 +111,7 @@ high scores. Also may check for purchase/unlock status.
 
 ## Damage System
 
-From Level_HandleCollision (0x40DCD0):
+From TowerCollisionEvents (0x40DCD0):
 
 ### "E:BITE" Collision Event
 
@@ -124,7 +124,7 @@ and potentially affecting ball speed/handling temporarily.
 
 ## Jump Pad System
 
-From Arena_HandleCollision (0x40E6A0):
+From ExpertCollisionEvents (0x40E6A0):
 
 ### "E:JUMP" Collision Event
 
@@ -145,7 +145,7 @@ CollisionLevel *cl = CollisionLevel_ctorWithLevel(new(0x10D0), parent_level);
 
 The CollisionLevel wraps a MeshWorld with collision data for ray-casting
 against that specific hazard's geometry. Multiple CollisionLevels can exist
-simultaneously — the Catapult creates one, the RumbleBoard creates one for
+simultaneously — the Catapult creates one, the ArenaBoard creates one for
 the main arena, and some levels have additional sub-levels.
 
 ## Related Functions
@@ -163,4 +163,4 @@ the main arena, and some levels have additional sub-levels.
 | 0x46CB00 | App_CreateScoreDisplay | Create score display widget |
 | 0x446A60 | App_CreateHighScoreEntry | Create high score entry |
 | 0x40A420 | CheckPurchaseOrHighScore | Purchase/registration gate |
-| 0x40E250 | CreateSawblade | Master arena factory |
+| 0x40E250 | CreateExpertLevelObjects | Master arena factory |

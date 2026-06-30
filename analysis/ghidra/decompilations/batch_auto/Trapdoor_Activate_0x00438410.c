@@ -26,7 +26,7 @@
  *   +0x10F4: activation state (0 = closed, 10 = opening)
  *
  * Cross-references:
- *   Called from Level_HandleCollision (0x40DE37) — UNCONDITIONAL_CALL
+ *   Called from TowerCollisionEvents (0x40DE37) — UNCONDITIONAL_CALL
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

@@ -84,13 +84,13 @@ typedef struct {
     uint8_t pad_261[3];          // +0x261
 
     // === RumbleBoard Timer #1 (0x264, 0x14 bytes) ===
-    uint8_t rumble_timer1[0x14]; // +0x264 RumbleBoard_InitTimer
+    uint8_t rumble_timer1[0x14]; // +0x264 ToggleTimer_Init
 
     // === Gravity/Falling ===
     float gravity_scale;          // +0x278 0x3DCCCCCD = 0.1f
     uint32_t field_27c;           // +0x27C = 0
     uint8_t field_280;            // +0x280 = 0
-    uint8_t is_falling;           // +0x281 set to 1 in ctor
+    uint8_t unused_init_flag;      // +0x281 set to 1 in ctor, NEVER READ (dead code)
     uint8_t pad_282[2];          // +0x282
     float radius;                 // +0x284 0x41D80000 = 27.0f
     uint32_t field_288;           // +0x288 = 0
@@ -112,14 +112,14 @@ typedef struct {
     uint8_t pad_2d6[2];          // +0x2D6
     uint32_t field_2d8;           // +0x2D8 set 0
 
-    // === Checkpoint/Collision ===
-    float checkpoint_x;           // +0x2DC last collision/bump position
-    float checkpoint_y;           // +0x2E0
-    float checkpoint_z;           // +0x2E4
-    uint8_t event_flag;           // +0x2E8 checkpoint hit event
+    // === Last Grounded Position (LGP) ===
+    float lgp_x;                  // +0x2DC Last Grounded Position X — snapshot at last type-2 ground collision
+    float lgp_y;                  // +0x2E0 Last Grounded Position Y
+    float lgp_z;                  // +0x2E4 Last Grounded Position Z
+    uint8_t event_flag;           // +0x2E8 needs_respawn (shattered) flag
     /* ⚠ NOT a ground/on_surface flag! Sticky limit/trajectory flag.
      * See docs/agent-knowledge/ball-ground-detection.md */
-    uint8_t limit_flag;            // +0x2E9 sticky limit/trajectory (E:LIMIT + type-5 collision)
+    uint8_t impact_shatter;            // +0x2E9 sticky limit/trajectory (E:LIMIT + type-5 collision)
     uint8_t field_2f9;            // +0x2F9
     uint8_t field_2f8;            // +0x2F8
     uint32_t field_2ec;           // +0x2EC collision counter

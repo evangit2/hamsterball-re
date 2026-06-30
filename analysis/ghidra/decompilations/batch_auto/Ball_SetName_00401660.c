@@ -23,7 +23,7 @@
  * Cross-references:
  *   - Called from Ball_Update (0x405E00) — likely during name initialization or events
  *   - Called from CheckArenaUnlock (0x40ABA0) — when arena mode unlocks a new ball
- *   - Called from CreateNoDizzy (0x40C5D0) — when creating NoDizzy game objects
+ *   - Called from DispatchCollisionEvents (0x40C5D0) — when creating NoDizzy game objects
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */

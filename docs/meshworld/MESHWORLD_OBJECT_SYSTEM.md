@@ -134,7 +134,7 @@ Parsed into a hash table during scene construction. Looked up by name during `Sc
 | Race flags | `FLAG02`–`FLAG18` | `Scene_CreateFlags` — checkpoint flags |
 | Enemy balls | `BADBALL <CHASE>100</CHASE><HOME>400</HOME>` | `CreateBadBall` — XML-parameterized AI ball |
 | Factory objects | `BRIDGE`, `TIPPER`, `BONK`, `BBRIDGE1`, `BBRIDGE2`, `POPCYLINDER`, `BLOCKDAWG1/2`, `CATAPULT`, `GLUEBIE` | `CreateLevelObjects` (0x4121D0) — prefix-dispatched |
-| Arena objects | `BONK`, `TIP`, `SAWBLADE`, `BRIDGE`, `JUDGE`, `BELL` | `CreateSawblade` (0x40E250) — arena sub-factory |
+| Arena objects | `BONK`, `TIP`, `SAWBLADE`, `BRIDGE`, `JUDGE`, `BELL` | `CreateExpertLevelObjects` (0x40E250) — arena sub-factory |
 | Bumpers | `BUMPER1`–`BUMPER8` | `CreateBumper` (0x40FA20) — loads `levels\level8` |
 | Camera | `CAMERALOOKAT` | Camera target point (present in all 15 race levels) |
 | Secrets | `SECRET`, `SECRETUNLOCK`, `N:SECRET` | `CreateSecretObjects` — hidden collectibles |
@@ -223,7 +223,7 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 | `E:POPOUT` | Pipe pop-out sound + score (30 instances, 11 files) |
 | `E:PIPEBONK` | Pipe collision sound (random of 3) (22 instances, 4 files) |
 | `E:SAFESWITCH(A)`–`(H)` | Track which checkpoint/safe zone was hit |
-| `E:NODIZZY<TIME>N</TIME>` | Anti-dizzy zone with duration (50-600) |
+| `E:NODIZZY<TIME>N</TIME>` | TIME checkpoint clear zone with duration (50-600) — NOT dizzy-related |
 | `E:JUMP` | Jump pad: upward velocity + sound + score |
 | `E:CATAPULTBOTTOM` | Launch catapult |
 | `E:OPENSESAME` | Open first trapdoor |
@@ -272,12 +272,12 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 4. Scene construction:
    a. Scene_SpawnBallsAndObjects (0x41C5B0) — reads ref points by name
    b. CreateLevelObjects (0x4121D0) — factory dispatches by ref point name prefix
-   c. CreateSawblade (0x40E250) — arena object sub-factory
+   c. CreateExpertLevelObjects (0x40E250) — arena object sub-factory
    d. CreateBumper (0x40FA20) — bumper loader
    e. CreateMouseTrap (0x40BF50) — mouse trap spawner
 5. Per-frame: Ball_AdvancePositionOrCollision checks CollisionLevel
    → Mesh_FindClosestCollision (0x465D90) raycasts against named faces
-   → On hit: Level_HandleCollision or Arena_HandleCollision dispatches by name
+   → On hit: TowerCollisionEvents or ExpertCollisionEvents dispatches by name
 ```
 
 ### 4.2 Collision Dispatch Chain
@@ -285,14 +285,14 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 Ball physics update
   → Mesh_FindClosestCollision (0x465D90) — raycast against CollisionLevel
     → If hit named collision object:
-      → Level_HandleCollision (0x40DCD0) [race levels]
-         OR Arena_HandleCollision (0x40E6A0) [arenas]
+      → TowerCollisionEvents (0x40DCD0) [Tower board]
+         OR ExpertCollisionEvents (0x40E6A0) [arenas]
         → __stricmp / __strnicmp on object name (at collider+0x864)
         → Dispatch to specific handler (Catapult_Launch, Trapdoor_Open, etc.)
-        → Always ends with: CreateNoDizzy (0x40C5D0) — base event handler
+        → Always ends with: DispatchCollisionEvents (0x40C5D0) — base event handler
 ```
 
-### 4.3 CreateNoDizzy — The Base Event Handler (0x40C5D0)
+### 4.3 DispatchCollisionEvents — The Base Event Handler (0x40C5D0)
 Handles ALL events not consumed by level/arena-specific handlers. Uses `__strnicmp`/`__stricmp` on the event name string:
 
 - **N:SECRET** → `Rotator_MarkTriggered`
@@ -329,7 +329,7 @@ Ref point names are matched via `__strnicmp` to instantiate game objects:
 | `CATAPULT` | 8 | `Catapult_ctor` | 0x1108 | +0x584C |
 | `GLUEBIE` | 7 | `Gluebie_ctor` | 0x110C | +0x6080 |
 
-### 4.5 Arena Sub-Factory (CreateSawblade 0x40E250)
+### 4.5 Arena Sub-Factory (CreateExpertLevelObjects 0x40E250)
 Despite the name, this handles 6 arena object types:
 
 | Prefix | Match Length | Constructor | Size | Scene Offset |
@@ -395,6 +395,6 @@ Empty string = length 1, single `\x00` byte.
 - Official exporter: `reference/raptisoft-exporter/MeshWorldExport/`
 - Binary loader: `Level_LoadCollision` at 0x465260 (Ghidra decompilation)
 - ASE parser: `MeshWorld_Parse` at 0x470930 (Ghidra decompilation)
-- Collision dispatch: `Level_HandleCollision` at 0x40DCD0, `Arena_HandleCollision` at 0x40E6A0
-- Base event handler: `CreateNoDizzy` at 0x40C5D0
-- Object factory: `CreateLevelObjects` at 0x4121D0, `CreateSawblade` at 0x40E250
+- Collision dispatch: `TowerCollisionEvents` at 0x40DCD0, `ExpertCollisionEvents` at 0x40E6A0
+- Base event handler: `DispatchCollisionEvents` at 0x40C5D0
+- Object factory: `CreateLevelObjects` at 0x4121D0, `CreateExpertLevelObjects` at 0x40E250

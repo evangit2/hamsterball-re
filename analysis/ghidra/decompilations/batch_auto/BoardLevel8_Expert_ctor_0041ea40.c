@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel8_Expert_ctor
+ * Function: LevelBoard_Expert_ctor
  * Address: 0x0041ea40
- * Signature: void * __thiscall BoardLevel8_Expert_ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Expert_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, collision, board, level. Calls: BoardLevel8_Expert_ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 25, Lines: 93
+ * Patterns: allocates, SEH frame, matrix math, collision, board, level. Calls: LevelBoard_Expert_ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 25, Lines: 93
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel8_Expert_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Expert_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -24,7 +24,7 @@ void * __thiscall BoardLevel8_Expert_ctor(void *this,int param_1)
   ExceptionList = &local_c;
   Board_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_BoardLevel8_Expert_dtor_004d0b00;
+  *(undefined ***)this = &PTR_LevelBoard_Expert_dtor_004d0b00;
   AthenaList_Init((void *)((int)this + 0x4380),0);
   local_4._0_1_ = 1;
   AthenaList_Init((void *)((int)this + 0x4798),0);

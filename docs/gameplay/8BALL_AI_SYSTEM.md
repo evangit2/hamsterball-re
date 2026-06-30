@@ -79,7 +79,7 @@ float best_dist = 999999.0;
 Ball* target = nullptr;
 for (each ball in scene->ball_list) {
     if (ball->race_active &&               // [0x768] — ball is in active race
-        !ball->is_falling &&               // [0x2f9] — not currently falling/respawning
+        !ball->is_stunned &&               // [0x2f9] — not currently falling/respawning
         ball->player_index != -1 &&        // [0x18] — has a valid player
         !ball->is_teleporting &&           // [0x324] — not in teleport
         scene->some_mode_flag) {           // [0x3a4c]
@@ -96,7 +96,7 @@ for (each ball in scene->ball_list) {
 
 **Target validity check breakdown:**
 - `race_active (0x768)`: Ball is actively racing (not in menu, not finished)
-- `!is_falling (0x2f9)`: Ball is not in a fall/respawn state
+- `!is_stunned (0x2f9)`: Ball is not in a fall/respawn state
 - `player_index != -1 (0x18)`: Ball has a player/controller assigned
 - `!is_teleporting (0x324)`: Ball is not currently teleporting
 - `scene[0x3a4c]`: Some scene-level mode flag (possibly "race in progress")
@@ -204,7 +204,7 @@ ball->vtable[0x14](ball, dx, 0.0, dz);
 | +0x16C | [0x5B] | float | pos.z | Current Z position |
 | +0x284 | [0xA1] | float | radius | Ball collision radius |
 | +0x2F0 | [0xBC] | int | impact_counter | Frames since last impact (damps force) |
-| +0x2F9 | [0x7E] | bool | is_falling | Currently in fall/respawn |
+| +0x2F9 | [0x7E] | bool | is_stunned | Currently in fall/respawn |
 | +0x324 | [0xC9] | bool | is_teleporting | Currently teleporting |
 | +0x768 | [0x1DA] | bool | race_active | Ball is in active race |
 | +0xC28 | [0x30A] | char* | display_name | Ball name string (for score display) |

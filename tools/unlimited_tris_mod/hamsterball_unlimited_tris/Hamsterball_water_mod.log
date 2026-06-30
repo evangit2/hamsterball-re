@@ -4,5 +4,5 @@ bass_real.dll handle=0x10000000
 Config: debug=1 entry_damp=0.70 drag=0.030 hdrag=0.040 gravity_eq=0.450 timer=10
 Applying water hook patches...
 Ball_Update vtable[4] hook (orig=0x00408390): OK
-CreateNoDizzy CALL-site redirects: 25 patched
+DispatchCollisionEvents CALL-site redirects: 25 patched
 Config: entry_damping=0.70 drag=0.030 hdrag=0.040 gravity_eq=0.450 timer=10
