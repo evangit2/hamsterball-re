@@ -340,7 +340,7 @@ Key identified slots:
 - [18] Level_InitScene
 - [19] Scene_HandleRaceEnd - timer decrement, lap tracking, Game Over, RaceResultPopup ctor
 - [20] Scene_UpdateBallsAndState - ball list iteration, SetCamera, Ball_Update, destroy finished
-- [22] Scene_HandleCountdown - race countdown timer, scene transition on expire
+- [22] Scene_ProcessRaceEnd - race countdown timer, scene transition on expire
 - [23] Scene_HandleBallFinish - ball finish state machine (start→150f countdown→finish→popup→done)
 - [24-26] Level render methods
 - [27] Scene_RenderScoreHUD - tournament title, countdown bar, "Score", Player 2, timer

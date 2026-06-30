@@ -68557,7 +68557,7 @@ Documented: 3781/3781 (100%)<br>
 <td>22</td>
 <td>+0x58</td>
 <td>0x41A540</td>
-<td>Scene_HandleCountdown</td>
+<td>Scene_ProcessRaceEnd</td>
 <td>Countdown timer, check all balls finished, scene transition on expire</td>
 </tr>
 <tr>
@@ -107277,7 +107277,7 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td>22</td>
 <td><code>0x58</code></td>
-<td><code>Scene_HandleCountdown</code></td>
+<td><code>Scene_ProcessRaceEnd</code></td>
 <td>Countdown timer</td>
 </tr>
 <tr>
@@ -121206,7 +121206,7 @@ Scene_Update (0x419C00) / ArenaBoard_Update (0x421FE0)  ← vtable[1]
        ├─ vtable[20] (0x50) = Scene_UpdateBallsAndState (0x41B540)
        │    └─ For each ball: Ball_SetCamera + Ball_Update (vtable[4])
        ├─ vtable[21] (0x54) = NoOp (0x40A040)
-       ├─ vtable[22] (0x58) = Scene_HandleCountdown (0x41A540) ← race-end handler
+       ├─ vtable[22] (0x58) = Scene_ProcessRaceEnd (0x41A540) ← race-end handler
        └─ For each object: vtable[31] (0x7C) = Scene_vmethod31 (camera setup)
 </code></pre>
 <hr>
@@ -121388,7 +121388,7 @@ function entry and read profile+0x0C after calling the original.</p>
 <p><strong>Calling convention</strong>: <code>__thiscall</code> (ECX = App, <code>[ESP+4]</code> = int flag).<br>
 <code>RET 0x4</code> (callee cleans 1 stack param). The flag is always 1 in all<br>
 observed callers (App_StartTournamentRace, App_StartPracticeRace,<br>
-Scene_HandleCountdown).</p>
+Scene_ProcessRaceEnd).</p>
 <p><strong>Timing</strong>: Before scene reset. Old objects are still alive. The new level<br>
 hasn't been loaded yet.</p>
 <p><strong>Use case</strong>: When you need to run code BEFORE the old scene is destroyed<br>
@@ -121564,7 +121564,7 @@ Frame ~400: Phase 3: Scene+0x3A4C = 1 (countdown done)
 <li><strong>[19]</strong> (0x4C): 0x41B130 — Scene_HandleRaceEnd (3-2-1 countdown + race-end)</li>
 <li><strong>[20]</strong> (0x50): 0x41B540 — Scene_UpdateBallsAndState (ball physics update)</li>
 <li><strong>[21]</strong> (0x54): 0x40A040 — NoOp (unused slot)</li>
-<li><strong>[22]</strong> (0x58): 0x41A540 — Scene_HandleCountdown (race-end menu/results)</li>
+<li><strong>[22]</strong> (0x58): 0x41A540 — Scene_ProcessRaceEnd (race-end menu/results)</li>
 <li><strong>[27]</strong> (0x6C): 0x41B710 — Scene_RenderScoreHUD (render countdown numbers + HUD)</li>
 <li><strong>[28]</strong> (0x70): 0x41BFD0 — Scene_RenderTimerHUD (render race timer)</li>
 <li><strong>[31]</strong> (0x7C): 0x41AC70 — Scene_vmethod31 (per-ball camera + render setup)</li>
@@ -121971,7 +121971,7 @@ NOT stored at any single App field — see &quot;Getting the Scene Pointer&quot;
 <td>ECX=board</td>
 </tr>
 <tr>
-<td>Scene_HandleCountdown</td>
+<td>Scene_ProcessRaceEnd</td>
 <td>0x41A540</td>
 <td>__fastcall</td>
 <td>RET</td>
@@ -122152,7 +122152,7 @@ was misidentified as a scene function — it's actually a sound channel cleanup 
 <ul>
 <li><strong>Scene_HandleRaceEnd</strong> (0x41B130, vtable[19]) = Pre-race <strong>3-2-1 countdown</strong><br>
 display, NOT just race-end. It also handles post-race results.</li>
-<li><strong>Scene_HandleCountdown</strong> (0x41A540, vtable[22]) = <strong>Race-end</strong> menu/results<br>
+<li><strong>Scene_ProcessRaceEnd</strong> (0x41A540, vtable[22]) = <strong>Race-end</strong> menu/results<br>
 handler, NOT the pre-race countdown. Name is misleading.</li>
 <li><strong>Scene_StartCountdown</strong> (0x437130) = <strong>SinkPlatform</strong> freeze countdown,<br>
 NOT the universal pre-race 3-2-1 countdown.</li>
@@ -122169,7 +122169,7 @@ the countdown. Ball+0x14C is only set by:</p>
 <p>The SinkPlatform countdown timer (Scene+0x10F4=400) is set by<br>
 Scene_StartCountdown but no function in the analyzed codebase decrements it.<br>
 Verified by searching for 0x10F4 references in Scene_Update,<br>
-Scene_HandleRaceEnd, Scene_UpdateBallsAndState, and Scene_HandleCountdown —<br>
+Scene_HandleRaceEnd, Scene_UpdateBallsAndState, and Scene_ProcessRaceEnd —<br>
 none reference it. It may be a legacy feature replaced by the<br>
 Scene_HandleRaceEnd phase system.</p>
 <h3>4. Multiple Scene Vtables</h3>
@@ -123244,7 +123244,7 @@ timer.</p>
 <li>[x] Decompile Scene_RenderWithCamera (0x40DFA0) - two-pass render</li>
 <li>[x] Decompile Scene_UpdateBallsAndState (0x41B540) - per-ball physics + respawn</li>
 <li>[x] Decompile Scene_HandleRaceEnd (0x41B130) - race finish conditions</li>
-<li>[x] Decompile Scene_HandleCountdown (0x41A540) - race countdown</li>
+<li>[x] Decompile Scene_ProcessRaceEnd (0x41A540) - race countdown</li>
 <li>[x] Decompile Gear_AdvanceAlongPath (0x418930) - 8-sample gradient descent path follower</li>
 <li>[x] Document Ball_Update (0x405E00) - 23-step physics pipeline</li>
 <li>[x] Document Ball vtable (0x4CF3A0, 9 entries) and App_Run loop (0x46BD80)</li>
@@ -123424,7 +123424,7 @@ timer.</p>
 <li>[x] Decompile Scene_RenderWithCamera (0x40DFA0) - two-pass render</li>
 <li>[x] Decompile Scene_UpdateBallsAndState (0x41B540) - per-ball physics + respawn</li>
 <li>[x] Decompile Scene_HandleRaceEnd (0x41B130) - race finish conditions</li>
-<li>[x] Decompile Scene_HandleCountdown (0x41A540) - race countdown</li>
+<li>[x] Decompile Scene_ProcessRaceEnd (0x41A540) - race countdown</li>
 <li>[x] Decompile Gear_AdvanceAlongPath (0x418930) - 8-sample gradient descent path follower</li>
 <li>[x] Document Ball_Update (0x405E00) - 23-step physics pipeline</li>
 <li>[x] Document Ball vtable (0x4CF3A0, 9 entries) and App_Run loop (0x46BD80)</li>
@@ -124523,7 +124523,7 @@ timer.</p>
 <li>[18] Level_InitScene</li>
 <li>[19] Scene_HandleRaceEnd - timer decrement, lap tracking, Game Over, RaceResultPopup ctor</li>
 <li>[20] Scene_UpdateBallsAndState - ball list iteration, SetCamera, Ball_Update, destroy finished</li>
-<li>[22] Scene_HandleCountdown - race countdown timer, scene transition on expire</li>
+<li>[22] Scene_ProcessRaceEnd - race countdown timer, scene transition on expire</li>
 <li>[23] Scene_HandleBallFinish - ball finish state machine (start→150f countdown→finish→popup→done)</li>
 <li>[24-26] Level render methods</li>
 <li>[27] Scene_RenderScoreHUD - tournament title, countdown bar, &quot;Score&quot;, Player 2, timer</li>
@@ -135106,7 +135106,7 @@ and modding capabilities through Ghidra decompilation, DLL proxy mods, and custo
 <tr>
 <td>22</td>
 <td>0x41A050</td>
-<td>Scene_HandleCountdown</td>
+<td>Scene_ProcessRaceEnd</td>
 <td>3-2-1-GO countdown logic</td>
 </tr>
 <tr>
@@ -135194,7 +135194,7 @@ and modding capabilities through Ghidra decompilation, DLL proxy mods, and custo
 <tr>
 <td>9</td>
 <td>Per-frame update pipeline</td>
-<td>vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_HandleCountdown + physics objects at this+0xD8B</td>
+<td>vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_ProcessRaceEnd + physics objects at this+0xD8B</td>
 </tr>
 <tr>
 <td>10</td>
@@ -138124,7 +138124,7 @@ gcc -o build/level_viewer \
 <tr>
 <td>9</td>
 <td>Per-frame update pipeline</td>
-<td>vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_HandleCountdown + physics objects at this+0xD8B</td>
+<td>vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_ProcessRaceEnd + physics objects at this+0xD8B</td>
 </tr>
 <tr>
 <td>10</td>
@@ -143461,7 +143461,7 @@ void __fastcall MySceneUpdate(void* scene) {
 <tr>
 <td><code>[0x58]</code></td>
 <td><code>0x41A540</code></td>
-<td><code>Scene_HandleCountdown</code></td>
+<td><code>Scene_ProcessRaceEnd</code></td>
 <td>Race countdown</td>
 <td><code>__thiscall</code></td>
 </tr>
@@ -143817,7 +143817,7 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <code>Scene_Update</code>, <code>Scene_dtor</code>, <code>Scene_SetCamera</code>, <code>Scene_Render</code>, <code>Scene_UpdateBallsAndState</code>,<br>
 <code>Scene_SpawnBallsAndObjects</code>, <code>Scene_LevelObjUpdate</code>, <code>Level_UpdateAndRender</code>, <code>Level_RenderDynamicObjects</code>,<br>
 <code>Level_RenderObjects</code>, <code>TowerCollisionEvents</code>, <code>ExpertCollisionEvents</code>, <code>Ball_Update</code>, <code>Ball_ctor</code>,<br>
-<code>Scene_StartRace</code>, <code>Scene_HandleRaceEnd</code>, <code>Scene_HandleCountdown</code>, <code>Scene_CreateGameOverMenu</code>, <code>Scene_CheckPath</code>.</p>
+<code>Scene_StartRace</code>, <code>Scene_HandleRaceEnd</code>, <code>Scene_ProcessRaceEnd</code>, <code>Scene_CreateGameOverMenu</code>, <code>Scene_CheckPath</code>.</p>
 <p><strong>Result:</strong> 56 offsets verified in raw C. 11 offsets not found in any decompiled function body.</p>
 <table>
 <thead>
@@ -143832,7 +143832,7 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <tr>
 <td><code>0x0874</code></td>
 <td><code>is_skydome</code></td>
-<td><code>Scene_CreateGameOverMenu</code>, <code>Scene_HandleCountdown</code>, <code>Scene_Update</code></td>
+<td><code>Scene_CreateGameOverMenu</code>, <code>Scene_ProcessRaceEnd</code>, <code>Scene_Update</code></td>
 <td>3</td>
 </tr>
 <tr>
@@ -143874,19 +143874,19 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <tr>
 <td><code>0x08B8</code></td>
 <td><code>scene_object_list</code></td>
-<td><code>ExpertCollisionEvents</code>, <code>Scene_HandleCountdown</code>, <code>Scene_Update</code></td>
+<td><code>ExpertCollisionEvents</code>, <code>Scene_ProcessRaceEnd</code>, <code>Scene_Update</code></td>
 <td>3</td>
 </tr>
 <tr>
 <td><code>0x08BC</code></td>
 <td><code>scene_object_count</code></td>
-<td><code>Scene_HandleCountdown</code>, <code>Scene_Update</code>, <code>Scene_dtor</code></td>
+<td><code>Scene_ProcessRaceEnd</code>, <code>Scene_Update</code>, <code>Scene_dtor</code></td>
 <td>3</td>
 </tr>
 <tr>
 <td><code>0x0CC4</code></td>
 <td><code>scene_object_array</code></td>
-<td><code>Scene_HandleCountdown</code>, <code>Scene_Update</code>, <code>Scene_dtor</code></td>
+<td><code>Scene_ProcessRaceEnd</code>, <code>Scene_Update</code>, <code>Scene_dtor</code></td>
 <td>3</td>
 </tr>
 <tr>
@@ -143982,19 +143982,19 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <tr>
 <td><code>0x362C</code></td>
 <td><code>player_list</code></td>
-<td><code>Scene_HandleCountdown</code>, <code>Scene_Render</code>, <code>Scene_SpawnBallsAndObjects</code></td>
+<td><code>Scene_ProcessRaceEnd</code>, <code>Scene_Render</code>, <code>Scene_SpawnBallsAndObjects</code></td>
 <td>3</td>
 </tr>
 <tr>
 <td><code>0x3630</code></td>
 <td><code>player_count</code></td>
-<td><code>Scene_HandleCountdown</code>, <code>Scene_Render</code>, <code>Scene_SpawnBallsAndObjects</code></td>
+<td><code>Scene_ProcessRaceEnd</code>, <code>Scene_Render</code>, <code>Scene_SpawnBallsAndObjects</code></td>
 <td>3</td>
 </tr>
 <tr>
 <td><code>0x3A38</code></td>
 <td><code>player_ball_array</code></td>
-<td><code>Scene_HandleCountdown</code>, <code>Scene_Render</code>, <code>Scene_SpawnBallsAndObjects</code></td>
+<td><code>Scene_ProcessRaceEnd</code>, <code>Scene_Render</code>, <code>Scene_SpawnBallsAndObjects</code></td>
 <td>3</td>
 </tr>
 <tr>
@@ -145978,7 +145978,7 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <li>[x] Decompile Scene_RenderWithCamera (0x40DFA0) - two-pass render</li>
 <li>[x] Decompile Scene_UpdateBallsAndState (0x41B540) - per-ball physics + respawn</li>
 <li>[x] Decompile Scene_HandleRaceEnd (0x41B130) - race finish conditions</li>
-<li>[x] Decompile Scene_HandleCountdown (0x41A540) - race countdown</li>
+<li>[x] Decompile Scene_ProcessRaceEnd (0x41A540) - race countdown</li>
 <li>[x] Decompile Gear_AdvanceAlongPath (0x418930) - 8-sample gradient descent path follower</li>
 <li>[x] Document Ball_Update (0x405E00) - 23-step physics pipeline</li>
 <li>[x] Document Ball vtable (0x4CF3A0, 9 entries) and App_Run loop (0x46BD80)</li>
@@ -146266,7 +146266,7 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 <tr>
 <td>9</td>
 <td>Per-frame update pipeline</td>
-<td>vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_HandleCountdown + physics objects at this+0xD8B</td>
+<td>vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_ProcessRaceEnd + physics objects at this+0xD8B</td>
 </tr>
 <tr>
 <td>10</td>
@@ -147153,7 +147153,7 @@ Scene controls the game tick, rendering, camera, physics pipeline, and object li
 <pre><code>vtable[0x4C] = Scene_HandleRaceEnd    (0x41B130) - check race finish conditions
 vtable[0x50] = Scene_UpdateBallsAndState (0x41B540) - ball physics + respawn + waypoints
 vtable[0x54] = NoOp                   (0x40A040) - stubbed (collision handling is in Ball vtable)
-vtable[0x58] = Scene_HandleCountdown   (0x41A540) - race countdown timer
+vtable[0x58] = Scene_ProcessRaceEnd   (0x41A540) - race countdown timer
 vtable[0x7C] = Scene_LevelObjUpdate   (0x41AC70) - level object tick (traps, moving platforms)
 </code></pre>
 <h2>Level vtable Entries (from Scene vtable map)</h2>
@@ -147201,7 +147201,7 @@ Finally dynamic_object-&gt;vtable<a href="">8</a> callback.</p>
 [0x4C] 0x41B130  Scene_HandleRaceEnd
 [0x50] 0x41B540  Scene_UpdateBallsAndState
 [0x54] 0x40A040  Scene_NoOp_Collision (stub)
-[0x58] 0x41A540  Scene_HandleCountdown
+[0x58] 0x41A540  Scene_ProcessRaceEnd
 [0x5C] 0x409DE0  Scene_?? (0x409DE0)
 [0x60] 0x40B420  Level_RenderDynamicObjects
 [0x64] 0x40B600  Level_UpdateAndRender
@@ -147249,7 +147249,7 @@ Finally dynamic_object-&gt;vtable<a href="">8</a> callback.</p>
      - Call vtable[1]() = Update
      - If render_flag set: Gfx_SetRenderState, then vtable[0]() = Render
 9. Game state pipeline (4 vtable calls):
-   - Scene_HandleRaceEnd -&gt; Scene_UpdateBallsAndState -&gt; NoOp -&gt; Scene_HandleCountdown
+   - Scene_HandleRaceEnd -&gt; Scene_UpdateBallsAndState -&gt; NoOp -&gt; Scene_ProcessRaceEnd
    - HandleRaceEnd: check if race won/time expired
    - UpdateBallsAndState: per-ball physics tick + OOB respawn + waypoint progression
    - NoOp: collision stub (collision is in Ball vtable update)
