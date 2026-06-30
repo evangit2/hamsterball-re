@@ -52,6 +52,15 @@
 /* Game string addresses */
 #define STR_LEVEL1_PATH          0x004CF8E0  /* "levels\\level1" */
 
+/* Race name pointer table (15 entries of char*, used by TourneyMenu_GetRaceName) */
+#define RACE_NAME_TABLE          0x004F7080
+/* Tournament description pointer table (15 entries of char*, used by TourneyMenu_ctor) */
+#define DESC_TABLE               0x004F7148
+
+/* A description string for Test Race (reuses Warm-Up description) */
+static const char STR_TEST_DESC[] = "TAKE YOUR TIME ON THE WARM-UP RACE! THIS EASY LITTLE "
+    "RACE GIVES YOU A CHANCE TO LEARN HOW TO ROLL YOUR HAMSTERBALL.";
+
 /* ========== DLL string constants ========== */
 static const char STR_LEVELTEST[]      = "levels\\leveltest";
 static const char STR_TEST_RACE[]     = "TEST RACE";
@@ -375,7 +384,18 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     /*    At 0x424C6B: MOV byte [ESI+0x4348], 0x01 — patch immediate byte to 0x00 */
     patch_byte(IMPOSSIBLE_LAST_RACE_BYTE, 0x00);
 
-    /* 6. Copy Level1.MESHWORLD -> LevelTest.MESHWORLD */
+    /* 6. Patch race name table: add 16th entry at index 15 */
+    /*    TourneyMenu_GetRaceName reads 0x4F7080[race_idx] — without this,
+     *    race_idx=15 reads past the 15-entry table → garbage char* → crash
+     *    in Font_DrawGlyph when TourneyMenu_Render draws the race name. */
+    patch_dword(RACE_NAME_TABLE + 15 * 4, (DWORD)STR_TEST_RACE);
+
+    /* 7. Patch description table: add 16th entry at index 15 */
+    /*    TourneyMenu_ctor reads 0x4F7148[race_idx] for Font_WordWrap — without
+     *    this, race_idx=15 reads garbage → crash in Font_WordWrap/Font_DrawGlyph. */
+    patch_dword(DESC_TABLE + 15 * 4, (DWORD)STR_TEST_DESC);
+
+    /* 8. Copy Level1.MESHWORLD -> LevelTest.MESHWORLD */
     copy_level_file();
 
     return 0;
