@@ -1,16 +1,16 @@
 /*
- * Function: Scene_HandleCountdown
+ * Function: Scene_ProcessRaceEnd
  * Address: 0x0041a540
- * Signature: Scene_HandleCountdown(...)
+ * Signature: Scene_ProcessRaceEnd(...)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, audio, scene, menu. Calls: Scene_HandleCountdown, AthenaList_NextIndex, AthenaList_Free, operator_new, TourneyMenu_ctor, Scene_AddObject, MusicPlayer_SetTempoScale, App_ShowResults. Offsets: 22, Lines: 177
+ * Patterns: allocates, vtable dispatch, SEH frame, audio, scene, menu. Calls: Scene_ProcessRaceEnd, AthenaList_NextIndex, AthenaList_Free, operator_new, TourneyMenu_ctor, Scene_AddObject, MusicPlayer_SetTempoScale, App_ShowResults. Offsets: 22, Lines: 177
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __fastcall Scene_HandleCountdown(int *param_1)
+void __fastcall Scene_ProcessRaceEnd(int *param_1)
 
 {
   int iVar1;

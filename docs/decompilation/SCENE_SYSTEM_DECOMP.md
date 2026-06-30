@@ -86,7 +86,7 @@ Called from Scene_Update via vtable when not in single-gear mode:
 vtable[0x4C] = Scene_HandleRaceEnd    (0x41B130) - check race finish conditions
 vtable[0x50] = Scene_UpdateBallsAndState (0x41B540) - ball physics + respawn + waypoints
 vtable[0x54] = NoOp                   (0x40A040) - stubbed (collision handling is in Ball vtable)
-vtable[0x58] = Scene_HandleCountdown   (0x41A540) - race countdown timer
+vtable[0x58] = Scene_ProcessRaceEnd   (0x41A540) - race countdown timer
 vtable[0x7C] = Scene_LevelObjUpdate   (0x41AC70) - level object tick (traps, moving platforms)
 ```
 
@@ -138,7 +138,7 @@ Finally dynamic_object->vtable[8]() callback.
 [0x4C] 0x41B130  Scene_HandleRaceEnd
 [0x50] 0x41B540  Scene_UpdateBallsAndState
 [0x54] 0x40A040  Scene_NoOp_Collision (stub)
-[0x58] 0x41A540  Scene_HandleCountdown
+[0x58] 0x41A540  Scene_ProcessRaceEnd
 [0x5C] 0x409DE0  Scene_?? (0x409DE0)
 [0x60] 0x40B420  Level_RenderDynamicObjects
 [0x64] 0x40B600  Level_UpdateAndRender
@@ -191,7 +191,7 @@ Finally dynamic_object->vtable[8]() callback.
      - Call vtable[1]() = Update
      - If render_flag set: Gfx_SetRenderState, then vtable[0]() = Render
 9. Game state pipeline (4 vtable calls):
-   - Scene_HandleRaceEnd -> Scene_UpdateBallsAndState -> NoOp -> Scene_HandleCountdown
+   - Scene_HandleRaceEnd -> Scene_UpdateBallsAndState -> NoOp -> Scene_ProcessRaceEnd
    - HandleRaceEnd: check if race won/time expired
    - UpdateBallsAndState: per-ball physics tick + OOB respawn + waypoint progression
    - NoOp: collision stub (collision is in Ball vtable update)

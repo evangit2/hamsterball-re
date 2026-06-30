@@ -721,7 +721,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | 18 | `0x48` | `Scene_StartRace` | Race countdown start |
 | 19 | `0x4C` | `Scene_HandleRaceEnd` | Check finish |
 | 20 | `0x50` | `Scene_UpdateBallsAndState` | Ball physics |
-| 22 | `0x58` | `Scene_HandleCountdown` | Countdown timer |
+| 22 | `0x58` | `Scene_ProcessRaceEnd` | Countdown timer |
 | 24 | `0x60` | `RenderBackground` | Sky/dome |
 | 25 | `0x64` | `RenderOpaque` | Opaque geometry |
 | 26 | `0x68` | `RenderTransparent` | Glass/effects |

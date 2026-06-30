@@ -198,7 +198,7 @@ Scene inherits from Gadget. The Gadget base contains:
 | `[0x4C]` | `0x41B130` | `Scene_HandleRaceEnd` | Check finish condition | `__thiscall` |
 | `[0x50]` | `0x41B540` | **`Scene_UpdateBallsAndState`** | **Ball physics + respawn** | `__thiscall` |
 | `[0x54]` | `0x40A040` | `Scene_NoOp_Collision` | Stub | — |
-| `[0x58]` | `0x41A540` | `Scene_HandleCountdown` | Race countdown | `__thiscall` |
+| `[0x58]` | `0x41A540` | `Scene_ProcessRaceEnd` | Race countdown | `__thiscall` |
 | `[0x5C]` | `0x409DE0` | `Scene_??` | Unknown | — |
 | `[0x60]` | `0x40B420` | `Level_RenderDynamicObjects` | Sky/ripples/dynamic | `__thiscall` |
 | `[0x64]` | `0x40B600` | `Level_UpdateAndRender` | Main level render | `__thiscall` |
@@ -436,22 +436,22 @@ Automated verification via GhidraMCP REST API decompilation of these functions:
 `Scene_Update`, `Scene_dtor`, `Scene_SetCamera`, `Scene_Render`, `Scene_UpdateBallsAndState`,
 `Scene_SpawnBallsAndObjects`, `Scene_LevelObjUpdate`, `Level_UpdateAndRender`, `Level_RenderDynamicObjects`,
 `Level_RenderObjects`, `Level_HandleCollision`, `Arena_HandleCollision`, `Ball_Update`, `Ball_ctor`,
-`Scene_StartRace`, `Scene_HandleRaceEnd`, `Scene_HandleCountdown`, `Scene_CreateGameOverMenu`, `Scene_CheckPath`.
+`Scene_StartRace`, `Scene_HandleRaceEnd`, `Scene_ProcessRaceEnd`, `Scene_CreateGameOverMenu`, `Scene_CheckPath`.
 
 **Result:** 56 offsets verified in raw C. 11 offsets not found in any decompiled function body.
 
 | Offset | Field | Verified In | Count |
 |--------|-------|-------------|-------|
-| `0x0874` | `is_skydome` | `Scene_CreateGameOverMenu`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
+| `0x0874` | `is_skydome` | `Scene_CreateGameOverMenu`, `Scene_ProcessRaceEnd`, `Scene_Update` | 3 |
 | `0x0878` | `scene_manager` | `Arena_HandleCollision`, `Level_HandleCollision`, `Level_UpdateAndRender` | 3+ |
 | `0x087C` | `viewport_obj` | `Scene_Render`, `Scene_SetCamera`, `Scene_dtor` | 3 |
 | `0x0884` | `rumble_timer_1` | `Scene_Update`, `Scene_dtor` | 2 |
 | `0x0898` | `rumble_timer_2` | `Scene_Update`, `Scene_dtor` | 2 |
 | `0x08AC` | `level_ptr` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_SpawnBallsAndObjects` | 3 |
 | `0x08B0` | `skydome_ptr` | `Scene_dtor` | 1 |
-| `0x08B8` | `scene_object_list` | `Arena_HandleCollision`, `Scene_HandleCountdown`, `Scene_Update` | 3 |
-| `0x08BC` | `scene_object_count` | `Scene_HandleCountdown`, `Scene_Update`, `Scene_dtor` | 3 |
-| `0x0CC4` | `scene_object_array` | `Scene_HandleCountdown`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x08B8` | `scene_object_list` | `Arena_HandleCollision`, `Scene_ProcessRaceEnd`, `Scene_Update` | 3 |
+| `0x08BC` | `scene_object_count` | `Scene_ProcessRaceEnd`, `Scene_Update`, `Scene_dtor` | 3 |
+| `0x0CC4` | `scene_object_array` | `Scene_ProcessRaceEnd`, `Scene_Update`, `Scene_dtor` | 3 |
 | `0x1518` | `collision_list` | `Scene_SpawnBallsAndObjects`, `Scene_dtor` | 2 |
 | `0x2160` | `ripple_list` | `Scene_dtor` | 1 |
 | `0x29B0` | `ball_positions_dirty` | `Scene_Update` | 1 |
@@ -467,9 +467,9 @@ Automated verification via GhidraMCP REST API decompilation of these functions:
 | `0x3610` | `ball_list_2_array` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
 | `0x361C` | `waypoint_arrow` | `Level_UpdateAndRender`, `Scene_dtor` | 2 |
 | `0x3620` | `frame_counter` | `Scene_Update` | 1 |
-| `0x362C` | `player_list` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
-| `0x3630` | `player_count` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
-| `0x3A38` | `player_ball_array` | `Scene_HandleCountdown`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x362C` | `player_list` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3630` | `player_count` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
+| `0x3A38` | `player_ball_array` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
 | `0x3A48` | `visible_object_list` | `Level_RenderObjects`, `Level_UpdateAndRender`, `Scene_dtor` | 3 |
 | `0x3A4C` | `shake_active` | `Scene_Update` | 1 |
 | `0x3AFC` | `dynamic_object` | `Scene_Update`, `Scene_dtor` | 2 |
