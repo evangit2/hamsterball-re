@@ -280,8 +280,8 @@ static DWORD g_last_board = 0;
 
 typedef struct {
     DWORD ball;              /* ball pointer (key); 0 = unused */
-    int   in_water;          /* currently in water? */
-    int   entry_damped;      /* already applied entry damping this water session? */
+    int   in_water;          /* currently in water? (gates the physics code) */
+    float water_surface_y;   /* ball's Y at moment of contact — used as water height */
 } water_state_t;
 
 static water_state_t g_states[MAX_BALLS];
@@ -487,14 +487,30 @@ static void scan_for_water_planes(DWORD board)
  * Called from the Phase 15 code cave via C function pointer.
  * Receives the ball pointer (ESI at the hook point).
  *
- * Modifies velocity directly in the physics struct (phys+0xCA4/CA8/CAC).
- * These changes persist and affect next frame's position integration,
- * which is correct physics: forces modify velocity, velocity modifies position.
+ * TRIGGER MODEL:
+ *   The E:WATER mesh Y from the level is only a trigger threshold. When the
+ *   ball's position crosses below that Y, three things happen simultaneously:
+ *     1. in_water flag is set (gates the ongoing water physics)
+ *     2. ALL velocity axes are reduced by entry_damping factor (default 30% cut)
+ *     3. The ball's current Y is captured as water_surface_y for this session
+ *
+ *   From that point on, water_surface_y (not the mesh Y) is used for all
+ *   submersion/buoyancy calculations. This means the water height is wherever
+ *   the ball actually touched the surface, not a fixed geometric point.
+ *
+ *   The in_water flag clears when the ball rises above water_surface_y + radius
+ *   (ball fully exits the water).
+ *
+ * VELOCITY MODIFICATION (while in_water):
+ *   - Drag: all velocity axes scaled per frame
+ *   - Horizontal drag: extra scaling on X/Z
+ *   - Buoyancy: upward acceleration proportional to submersion depth,
+ *     relative to the captured water_surface_y
  *
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Compute submersion fraction: 0 = just touching, 0.5 = half, 1 = fully under.
- * Engine uses Y-up: positive Y is up, gravity pulls toward -Y.
+/* Compute submersion fraction relative to the captured water surface Y.
+ * 0 = just touching, 0.5 = half, 1 = fully under.
  * Bottom of ball (deepest) = ball_y - radius.
  * Top of ball (shallowest) = ball_y + radius. */
 static float compute_submersion(float ball_y, float radius, float surface_y)
@@ -511,23 +527,21 @@ static float compute_submersion(float ball_y, float radius, float surface_y)
     return submerged;
 }
 
-/* Check if ball is in water. Returns surface_y or -99999.0f if not in water. */
-static float check_in_water(float ball_y, float radius)
+/* Check if ball has crossed any E:WATER trigger threshold.
+ * Returns 1 if the ball's center is below at least one trigger plane. */
+static int check_water_trigger(float ball_y)
 {
-    float bottom_y = ball_y - radius;
     for (int i = 0; i < g_plane_count; i++) {
         if (!g_planes[i].found) continue;
-        if (bottom_y < g_planes[i].surface_y) {
-            return g_planes[i].surface_y;
+        if (ball_y < g_planes[i].surface_y) {
+            return 1;
         }
     }
-    return -99999.0f;
+    return 0;
 }
 
 /* Main water physics function — called from Phase 15 code cave.
- * Uses only integer math to check conditions, then float math to modify velocity.
- * Safe to call from code cave with PUSHAD/PUSHFD saved state (same pattern as
- * power_bounce mod's check_power_bounce). */
+ * Safe to call from code cave with PUSHAD/PUSHFD saved state. */
 static void __cdecl apply_water_physics(DWORD ball)
 {
     if (!ball || IsBadReadPtr((void*)ball, 0x300)) return;
@@ -536,25 +550,12 @@ static void __cdecl apply_water_physics(DWORD ball)
     /* Read ball position and radius */
     float ball_y = *(float*)(ball + BALL_POS_Y);
     float radius = *(float*)(ball + BALL_RADIUS);
-    if (radius <= 0.0f || radius > 1000.0f) return;  /* sanity check */
-
-    /* Check if ball is in water */
-    float surface_y = check_in_water(ball_y, radius);
-    if (surface_y < -99998.0f) {
-        /* Not in water — clear state if was previously in water */
-        water_state_t *st = get_ball_state(ball);
-        if (st && st->in_water) {
-            st->in_water = 0;
-            st->entry_damped = 0;
-        }
-        return;
-    }
+    if (radius <= 0.0f || radius > 1000.0f) return;
 
     /* Get physics struct */
     DWORD phys = *(DWORD*)(ball + BALL_PHYS_PTR);
     if (!phys || IsBadReadPtr((void*)phys, 0xCB0)) return;
 
-    /* Get velocity pointers */
     float *vel_x = (float*)(phys + PHYS_VEL_X);
     float *vel_y = (float*)(phys + PHYS_VEL_Y);
     float *vel_z = (float*)(phys + PHYS_VEL_Z);
@@ -563,52 +564,57 @@ static void __cdecl apply_water_physics(DWORD ball)
     water_state_t *st = get_ball_state(ball);
     if (!st) return;
 
-    /* Just entered water */
     if (!st->in_water) {
-        st->in_water = 1;
-        st->entry_damped = 0;
-    }
+        /* Ball is NOT currently in water.
+         * Check if it has crossed an E:WATER trigger threshold. */
+        if (check_water_trigger(ball_y)) {
+            /* ═══ TRIGGER: Ball just hit the water surface ═══
+             * 1. Set in_water flag (opens up water physics)
+             * 2. Reduce ALL velocity by entry_damping (default 30% cut)
+             * 3. Capture ball's Y as the water surface height */
+            st->in_water = 1;
+            st->water_surface_y = ball_y;
 
-    /* Compute submersion depth */
-    float submersion = compute_submersion(ball_y, radius, surface_y);
-    if (submersion <= 0.0f) {
-        if (st->in_water) {
-            st->in_water = 0;
-            st->entry_damped = 0;
+            float damp = g_cfg.entry_damping;
+            *vel_x *= damp;
+            *vel_y *= damp;
+            *vel_z *= damp;
         }
         return;
     }
 
-    /* 1. Entry damping: on first contact while falling (vel_y < 0 = downward in Y-up),
-     *    reduce vertical velocity by entry_damping factor.
-     *    This modifies VELOCITY (persists across frames), not position delta. */
-    if (!st->entry_damped && *vel_y < 0.0f) {
-        *vel_y *= g_cfg.entry_damping;
-        st->entry_damped = 1;
+    /* Ball IS in water — check if it has exited.
+     * Ball exits when its top (ball_y + radius) rises above the captured surface. */
+    if (ball_y - radius > st->water_surface_y) {
+        /* Ball fully above water — exit */
+        st->in_water = 0;
+        st->water_surface_y = 0.0f;
+        return;
     }
 
-    /* 2. Drag: reduce all velocity components per frame.
-     *    This is a velocity scale, so it accumulates — the ball actually slows down. */
+    /* ═══ Ongoing water physics (in_water = 1) ═══ */
+
+    /* Compute submersion relative to captured surface Y */
+    float submersion = compute_submersion(ball_y, radius, st->water_surface_y);
+    if (submersion <= 0.0f) {
+        /* Ball center is above surface but bottom hasn't cleared it yet.
+         * Keep in_water = 1 (ball is still partially submerged). */
+        submersion = 0.0f;
+    }
+
+    /* Drag: reduce all velocity per frame */
     float vscale = 1.0f - g_cfg.drag;
     float hscale = 1.0f - (g_cfg.drag + g_cfg.horizontal_drag);
     if (vscale < 0.0f) vscale = 0.0f;
     if (hscale < 0.0f) hscale = 0.0f;
 
-    /* 3. Horizontal drag: extra velocity reduction on X and Z axes.
-     *    Makes horizontal movement sluggish in water. */
     *vel_x *= hscale;
     *vel_z *= hscale;
+    *vel_y *= vscale;
 
-    /* 4. Buoyancy: upward acceleration proportional to submersion depth.
-     *    At submerged=0 (just touching): no buoyancy, full gravity.
-     *    At submerged=0.5 (half): buoyancy = buoyancy_strength, roughly cancels gravity.
-     *    At submerged=1.0 (fully under): buoyancy = 2*bouyancy_strength, net upward.
-     *
-     *    This is added to VELOCITY (acceleration), so the ball decelerates going down,
-     *    stops, then accelerates upward — reaching a stable float at the surface. */
+    /* Buoyancy: upward acceleration proportional to submersion depth */
     float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
-    *vel_y *= vscale;       /* apply drag to Y first */
-    *vel_y += buoyancy;      /* then add buoyancy as upward acceleration */
+    *vel_y += buoyancy;
 }
 
 /* Function pointer for code cave to call our C helper */
