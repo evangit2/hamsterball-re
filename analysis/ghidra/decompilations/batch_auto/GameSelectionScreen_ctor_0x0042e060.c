@@ -1,7 +1,7 @@
 /*
- * Function: TournamentScreen_ctor
+ * * Function: GameSelectionScreen_ctor
  * Address: 0x0042e060
- * Signature: void * __thiscall TournamentScreen_ctor(void *this,int param_1)
+ * Signature: void * __thiscall GameSelectionScreen_ctor(void *this,int param_1)
  * Batch: 21
  *
  * Description:

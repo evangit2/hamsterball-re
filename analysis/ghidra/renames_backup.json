@@ -990,7 +990,7 @@
     },
     {
       "address": "0x0042e060",
-      "name": "TournamentScreen_ctor"
+      "name": "GameSelectionScreen_ctor"
     },
     {
       "address": "0x0042e220",
@@ -1062,7 +1062,7 @@
     },
     {
       "address": "0x00433ac0",
-      "name": "TournamentManager"
+      "name": "GameSelectionManager"
     },
     {
       "address": "0x00433f00",

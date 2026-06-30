@@ -61,7 +61,7 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x442CE0 | OptionsMenu_ctor | Options screen (Resolution, Fullscreen, Color, Volume, Key Remap, Mouse) |
 | 0x42B470 | HighScoreEntry_ctor | High score entry screen (name input + score display) |
 | 0x42BD40 | HighScoreEntry_Render | Render high score entry UI |
-| 0x42E060 | TournamentScreen_ctor | Tournament difficulty selector screen |
+| 0x42E060 | GameSelectionScreen_ctor | Tournament difficulty selector screen |
 | 0x44FD60 | SaveTourneyDialog_ctor | Save tournament dialog |
 | 0x4476B0 | RegisterDialog_ctor | Register/purchase dialog |
 | 0x4652E0 | CollisionLevel_ctor | Collision-only level (.meshcollision format) |
@@ -132,7 +132,7 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x4279F0 | LoadOrSaveConfig | Config load/save dispatcher |
 | 0x42AE80 | LoadConfig | Load HS.CFG |
 | 0x42B6E0 | SaveConfig | Save HS.CFG |
-| 0x433AC0 | TournamentManager | Tournament save/load |
+| 0x433AC0 | GameSelectionManager | Tournament save/load |
 | 0x457130 | LoadFont | Load font.description + PNG glyphs |
 | 0x429450 | FinishLoad | Final setup after loading |
 | 0x46EE10 | Input_Init | DirectInput8 init (0x438 byte object), stored at App+0x180 |
