@@ -20,3 +20,4 @@
 | 8ball-goal-fix | Prevents crash when 8-ball (BadBall) touches N:GOAL or E:ACTION(SCORE) triggers. Adds player_index<0 guard (same pattern Raptisoft used for E:LIMIT) to 3 patch points in DispatchCollisionEvents | [8ball_goal_fix/](8ball_goal_fix/) |
 | ball-tint | v2: Tints player 1's ball by writing RGBA floats to the board's player color table (board+0x3AB0), the same entries Board_ctor initializes via Vec3_Init. Reads hex color from ball_tint.txt at runtime | [ball_tint/](ball_tint/) |
 | global-objects-mkn | Spawns SWIRL (Dizzy Race) on any level via global object spawning hook. JIT mesh loading + collision registration | [global_objects_mkn/](global_objects_mkn/) |
+| custom-race-descriptions | Customizes the 15 tournament race description texts on the Tourney Menu. Reads from race_descriptions.txt, auto-generates default config with original descriptions | [custom_race_descriptions/](custom_race_descriptions/) |
