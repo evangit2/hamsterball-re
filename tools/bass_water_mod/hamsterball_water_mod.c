@@ -194,9 +194,12 @@ static void diag_log(const char *msg)
 
 #define IMAGE_BASE              0x00400000
 
-/* Hook 1: DispatchCollisionEvents — trampoline hook */
+/* Hook 1: DispatchCollisionEvents — trampoline hook
+ * First 8 bytes: PUSH -1 (2) + MOV EAX,FS:[0] (6) = two complete instructions.
+ * Must copy 8 bytes to trampoline (not 5) to avoid splitting the FS:[0] read. */
 #define ADDR_DISPATCH_COLLISIONS  0x0040C5D0
 #define TRAMP_SIZE               16
+#define DISPATCH_PATCH_SIZE      8       /* 5-byte JMP + 3 NOPs */
 
 /* Hook 2: Phase 15 in Ball_Update — code cave */
 #define PHASE15_HOOK            0x00407BB4
@@ -406,37 +409,52 @@ void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
         g_orig_Dispatch(this_, NULL, ball, collObj);
 }
 
-/* Install trampoline hook on DispatchCollisionEvents */
+/* Install trampoline hook on DispatchCollisionEvents.
+ * First 8 bytes are: PUSH -1 (2B) + MOV EAX,FS:[0] (6B) — two complete instructions.
+ * We copy all 8 to the trampoline, then overwrite the target with 5-byte JMP + 3 NOPs. */
 static int install_dispatch_hook(void)
 {
     unsigned char *target = (unsigned char *)ADDR_DISPATCH_COLLISIONS;
     DWORD oldProtect;
 
-    if (!VirtualProtect(target, TRAMP_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect))
+    /* Verify expected bytes: 6A FF 64 A1 00 00 00 00 */
+    unsigned char expected[] = { 0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00 };
+    if (memcmp(target, expected, DISPATCH_PATCH_SIZE) != 0) {
+        char buf[256];
+        wsprintfA(buf, "DispatchCollisionEvents byte mismatch: %02X %02X %02X %02X %02X %02X %02X %02X",
+                  target[0], target[1], target[2], target[3], target[4], target[5], target[6], target[7]);
+        diag_log(buf);
+        return 0;
+    }
+
+    if (!VirtualProtect(target, DISPATCH_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect))
         return 0;
 
-    /* Copy original bytes to trampoline */
-    memcpy(g_tramp, target, TRAMP_SIZE);
+    /* Copy 8 original bytes to trampoline */
+    memcpy(g_tramp, target, DISPATCH_PATCH_SIZE);
 
-    /* Trampoline: original 5 bytes + JMP back to target+5 */
-    g_tramp[5] = 0xE9;
-    *(unsigned long *)(g_tramp + 6) =
-        (unsigned long)((char *)target + 5 - (char *)(g_tramp + 5) - 5);
+    /* Trampoline: original 8 bytes + JMP back to target+8 */
+    g_tramp[DISPATCH_PATCH_SIZE] = 0xE9;
+    *(unsigned long *)(g_tramp + DISPATCH_PATCH_SIZE + 1) =
+        (unsigned long)((char *)target + DISPATCH_PATCH_SIZE - (char *)(g_tramp + DISPATCH_PATCH_SIZE) - 5);
 
     /* Make trampoline executable */
     DWORD tp;
     VirtualProtect(g_tramp, TRAMP_SIZE, PAGE_EXECUTE_READWRITE, &tp);
 
-    /* Overwrite target: JMP to our hook */
+    /* Overwrite target: JMP to our hook (5 bytes) + 3 NOPs */
     unsigned long rel = (unsigned long)((char *)hook_DispatchCollisionEvents - (char *)target - 5);
     target[0] = 0xE9;
     *(unsigned long *)(target + 1) = rel;
+    target[5] = 0x90;  /* NOP */
+    target[6] = 0x90;  /* NOP */
+    target[7] = 0x90;  /* NOP */
 
-    FlushInstructionCache(GetCurrentProcess(), target, 5);
+    FlushInstructionCache(GetCurrentProcess(), target, DISPATCH_PATCH_SIZE);
 
     g_orig_Dispatch = (dispatch_t)g_tramp;
 
-    diag_log("DispatchCollisionEvents hook installed");
+    diag_log("DispatchCollisionEvents hook installed (8-byte trampoline)");
     return 1;
 }
 
