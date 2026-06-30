@@ -377,7 +377,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 - **Description:** Level variant with gear obstacles
 
 ### BoardLevel3
-- **Constructor:** `BoardLevel3_ctor` (0x41D060)
+- **Constructor:** `LevelBoard_Dizzy_ctor` (0x41D060)
 - **Description:** Tournament level 3 board state
 
 ---

@@ -1,14 +1,14 @@
 /*
- * Function: ArenaBoard_Toob_Ctor
+ * Function: ArenaBoard_Toob_ctor
  * Address: 0x004234e0
- * Signature: void * __thiscall ArenaBoard_Toob_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Toob_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Toob_Ctor, ArenaBoard_ctor, _eh_vector_constructor_iterator_, CONCAT31, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 30
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Toob_ctor, ArenaBoard_ctor, _eh_vector_constructor_iterator_, CONCAT31, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 11, Lines: 30
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall ArenaBoard_Toob_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Toob_ctor(void *this,int param_1)
 
 {
   int iVar1;

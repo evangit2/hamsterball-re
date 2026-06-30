@@ -1,5 +1,5 @@
 
-void * __thiscall ArenaBoard_WarmupArena_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Master_ctor(void *this,int param_1)
 
 {
   int iVar1;

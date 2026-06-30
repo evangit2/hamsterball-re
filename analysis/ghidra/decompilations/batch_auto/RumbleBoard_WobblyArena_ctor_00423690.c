@@ -1,14 +1,14 @@
 /*
- * Function: ArenaBoard_Wobbly_Ctor
+ * Function: ArenaBoard_Wobbly_ctor
  * Address: 0x00423690
- * Signature: void * __thiscall ArenaBoard_Wobbly_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Wobbly_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, board, level. Calls: ArenaBoard_Wobbly_Ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, CONCAT31, MeshWorld_ctor. Offsets: 13, Lines: 39
+ * Patterns: allocates, SEH frame, matrix math, board, level. Calls: ArenaBoard_Wobbly_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity, operator_new, CONCAT31, MeshWorld_ctor. Offsets: 13, Lines: 39
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall ArenaBoard_Wobbly_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Wobbly_ctor(void *this,int param_1)
 
 {
   int iVar1;

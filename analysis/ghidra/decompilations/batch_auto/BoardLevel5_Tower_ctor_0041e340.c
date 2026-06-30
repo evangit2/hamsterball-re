@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel5_Tower_ctor
+ * Function: LevelBoard_Tower_ctor
  * Address: 0x0041e340
- * Signature: void * __thiscall BoardLevel5_Tower_ctor(void *this,int param_1)
+ * Signature: void * __thiscall LevelBoard_Tower_ctor(void *this,int param_1)
  *
- * Patterns: allocates, SEH frame, matrix math, rendering, board, level. Calls: BoardLevel5_Tower_ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 31, Lines: 121
+ * Patterns: allocates, SEH frame, matrix math, rendering, board, level. Calls: LevelBoard_Tower_ctor, Board_ctor, AthenaList_Init, Board, Vec3_Init, Matrix_Identity, LoadRaceData, operator_new. Offsets: 31, Lines: 121
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall BoardLevel5_Tower_ctor(void *this,int param_1)
+void * __thiscall LevelBoard_Tower_ctor(void *this,int param_1)
 
 {
   int iVar1;
@@ -24,7 +24,7 @@ void * __thiscall BoardLevel5_Tower_ctor(void *this,int param_1)
   ExceptionList = &local_c;
   Board_ctor(this,param_1);
   local_4 = 0;
-  *(undefined ***)this = &PTR_BoardLevel5_Tower_dtor_004d0a08;
+  *(undefined ***)this = &PTR_LevelBoard_Tower_dtor_004d0a08;
   AthenaList_Init((void *)((int)this + 0x43b8),0);
   local_4._0_1_ = 1;
   AthenaList_Init((void *)((int)this + 0x47d0),0);

@@ -127,7 +127,7 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x43C310 | Blockdawg_ctor | Blockdawg constructor (0x1154 bytes) |
 | 0x437E10 | Catapult_ctor | Catapult constructor (0x1108 bytes) |
 | 0x437CB0 | Gluebie_ctor | Gluebie (glue blob) constructor (0x110C bytes) |
-| 0x41D060 | BoardLevel3_ctor | BoardLevel3 constructor, vtable at 0x4D0890 |
+| 0x41D060 | LevelBoard_Dizzy_ctor | BoardLevel3 constructor, vtable at 0x4D0890 |
 | 0x40ABA0 | CheckArenaUnlock | Check arena unlock conditions |
 | 0x4279F0 | LoadOrSaveConfig | Config load/save dispatcher |
 | 0x42AE80 | LoadConfig | Load HS.CFG |
@@ -524,19 +524,19 @@ state 4: done → wait for popup dismissal
 
 | Case | Level | Board Constructor | Size |
 |------|-------|-------------------|------|
-| 1 | Warm-Up | BoardLevel1_WarmUp_ctor | 0x436C |
-| 2 | Beginner | BoardLevel_Beginner_Ctor | 0x644C |
-| 3 | Intermediate | BoardLevel2_Intermediate_ctor | 0x438C |
-| 4 | Dizzy | BoardLevel3_ctor | 0x4BE0 |
-| 5 | Tower | BoardLevel5_Tower_ctor | 0x5418 |
-| 6 | Up | BoardLevel_Up_Ctor | 0x4790 |
+| 1 | Warm-Up | LevelBoard_WarmUp_ctor | 0x436C |
+| 2 | Beginner | LevelBoard_Beginner_ctor | 0x644C |
+| 3 | Intermediate | LevelBoard_Intermediate_ctor | 0x438C |
+| 4 | Dizzy | LevelBoard_Dizzy_ctor | 0x4BE0 |
+| 5 | Tower | LevelBoard_Tower_ctor | 0x5418 |
+| 6 | Up | LevelBoard_Up_ctor | 0x4790 |
 | 7 | Neon Race | Board_NeonRace_ctor | 0x4394 |
-| 8 | Expert | BoardLevel8_Expert_ctor | 0x4FD8 |
-| 9 | Odd | BoardLevel9_Odd_ctor | 0x43B0 |
-| 10 | Toob Race | BoardLevel_Toob_Ctor | 0x646C |
-| 11 | Wobbly | BoardLevel12_Wobbly_ctor | 0x4388 |
+| 8 | Expert | LevelBoard_Expert_ctor | 0x4FD8 |
+| 9 | Odd | LevelBoard_Odd_ctor | 0x43B0 |
+| 10 | Toob Race | LevelBoard_Toob_ctor | 0x646C |
+| 11 | Wobbly | LevelBoard_Wobbly_ctor | 0x4388 |
 | 12 | Glass | Board_Glass_ctor | 0x4390 |
-| 13 | Sky | BoardLevel_Sky_Ctor | 0x47F8 |
+| 13 | Sky | LevelBoard_Sky_ctor | 0x47F8 |
 | 14 | Master | BoardLevel_Master_Ctor | 0x6498 |
 | 15 | Impossible | Board_Impossible_ctor | 0x4380 |
 
@@ -1197,7 +1197,7 @@ The App global (0x4FD680) has few direct xrefs because the game typically passes
 
 ### Board/Screen Hierarchy
 - Board_ctor (0x419030): Base class, vtable at 0x4D0260
-- BoardLevel3_ctor (0x41D060): "Dizzy" board, vtable at 0x4D0890
+- LevelBoard_Dizzy_ctor (0x41D060): "Dizzy" board, vtable at 0x4D0890
 - Board types: Beginner, Intermediate, Dizzy, Tower, Expert, Odd, Wobbly, Toob, Sky, Up, Master
 - RumbleBoard: Arena variants (Warmup, Beginner, Intermediate, Dizzy, Tower, Up, Expert)
 

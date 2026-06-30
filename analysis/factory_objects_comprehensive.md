@@ -118,8 +118,8 @@ Used by: Impossible Race and other gear levels.
 
 ## 8. Board Level Constructors — Mesh Loading & Board Offsets
 
-### BoardLevel3_ctor (0x0041D060) — "Dizzy Race"
-- Vtable: PTR_BoardLevel3_Dizzy_dtor_004d0890
+### LevelBoard_Dizzy_ctor (0x0041D060) — "Dizzy Race"
+- Vtable: PTR_LevelBoard_Dizzy_dtor_004d0890
 - AthenaLists: +0x4378, +0x4790
 - Race data: "DIZZYRACE", Display: "Dizzy!", Race name: "DIZZY RACE"
 - Gravity: (0, 1.0, 0)
@@ -131,8 +131,8 @@ Used by: Impossible Race and other gear levels.
 | Levels\Level3-Swirl | 0x4CFFE0 | +0x4BC4 | +0x4BC8 | SWIRL mesh |
 | Levels\Level3-Gluebie | 0x4D0728 | +0x4374 | (no separate collision) | GLUEBIE mesh |
 
-### BoardLevel5_Tower_ctor (0x0041E340) — "Tower Race"
-- Vtable: PTR_BoardLevel5_Tower_dtor_004d0a08
+### LevelBoard_Tower_ctor (0x0041E340) — "Tower Race"
+- Vtable: PTR_LevelBoard_Tower_dtor_004d0a08
 - AthenaLists: +0x43B8, +0x47D0, +0x4BE8, +0x5000
 - Race data: "TOWERRACE", Display: "Happy Rush", Race name: "TOWER RACE"
 - Gravity: (1.0, 0.5, 0)
@@ -149,7 +149,7 @@ Used by: Impossible Race and other gear levels.
 
 *Note: String at 0x4D0932 has a prefix byte "pB" before "Levels\Level4-Turret" (likely Ghidra parsing artifact; actual string starts at the "L").
 
-### BoardLevel_Up_Ctor (0x00420390) — "Up Race"
+### LevelBoard_Up_ctor (0x00420390) — "Up Race"
 - Vtable: PTR_BoardLevel_Generic_dtor3_004d11a0
 - AthenaLists: +0x436C
 - Race data: "UPRACE", Display: "Up Race", Race name: "UP RACE"
@@ -161,8 +161,8 @@ Used by: Impossible Race and other gear levels.
 | levels\levelup-speedcylinder | 0x4D1140 | +0x4788 | SPEEDCYLINDER mesh |
 | levels\levelup-button | 0x4D1128 | +0x478C | TIMEBUTTON mesh |
 
-### BoardLevel8_Expert_ctor (0x0041EA40) — "Expert Race"
-- Vtable: PTR_BoardLevel8_Expert_dtor_004d0b00
+### LevelBoard_Expert_ctor (0x0041EA40) — "Expert Race"
+- Vtable: PTR_LevelBoard_Expert_dtor_004d0b00
 - AthenaLists: +0x4380, +0x4798, +0x4BBC
 - Race data: "EXPERTRACE", Display: "Fight!", Race name: "EXPERT RACE"
 - Gravity: (1.0, 0, 0)
@@ -174,7 +174,7 @@ Used by: Impossible Race and other gear levels.
 | meshes\hammyjudge | 0x4D0AA8 | +0x4BB4 | (MeshNode, 0x18 bytes) | JUDGE visual (2) |
 | meshes\hammyjudge | 0x4D0AA8 | +0x4BB8 | (MeshNode, 0x18 bytes) | JUDGE visual (3) |
 
-### BoardLevel_Toob_Ctor (0x0041F4B0) — "Toob Race"
+### LevelBoard_Toob_ctor (0x0041F4B0) — "Toob Race"
 - Vtable: PTR_BoardLevel_Toob_dtor_004d0e78
 - Vec3 array at +0x438C (8 elements of 0x418 each)
 - Race data: "TOOBRACE", Display: "Rodenthood", Race name: "TOOB RACE"
@@ -209,7 +209,7 @@ Used by: Impossible Race and other gear levels.
 | Levels\Level4-Catapult | 0x4D09B8 | +0x5848 | (none) | CATAPULT mesh |
 | Levels\Level3-Gluebie | 0x4D0728 | +0x607C | (none) | GLUEBIE mesh |
 
-### ArenaBoard_Tower_Ctor (0x004228C0) — "Tower Arena"
+### ArenaBoard_Tower_ctor (0x004228C0) — "Tower Arena"
 - Vtable: PTR_ArenaBoard_Odd_DeletingDtor_004d1740
 - AthenaLists: +0x47E4, +0x4C00
 - Race name: "TOWER ARENA", Display: "Happy Rush"

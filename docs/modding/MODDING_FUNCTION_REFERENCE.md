@@ -595,68 +595,68 @@ A comprehensive reference of every useful function for modders, extracted from G
 Each level has a custom `BoardLevel` subclass with constructor and destructor:
 
 ### WarmUp (Level 1)
-- **Ctor:** `BoardLevel1_WarmUp_ctor` @ `0x41CA40`
-- **Dtor:** `BoardLevel1_WarmUp_dtor` @ `0x41CB10`
+- **Ctor:** `LevelBoard_WarmUp_ctor` @ `0x41CA40`
+- **Dtor:** `LevelBoard_WarmUp_dtor` @ `0x41CB10`
 
 ### Intermediate (Level 2)
-- **Ctor:** `BoardLevel2_Intermediate_ctor` @ `0x41CB20`
-- **Dtor:** `BoardLevel2_Intermediate_dtor` @ `0x41CC80`
+- **Ctor:** `LevelBoard_Intermediate_ctor` @ `0x41CB20`
+- **Dtor:** `LevelBoard_Intermediate_dtor` @ `0x41CC80`
 
 ### Dizzy (Level 4)
-- **Ctor:** `BoardLevel3_Dizzy_ctor` @ `0x41D060` (note: named Level3 in code)
-- **Dtor:** `BoardLevel3_Dizzy_dtor` @ `0x41D450`
+- **Ctor:** `LevelBoard_Dizzy_ctor` @ `0x41D060` (note: named Level3 in code)
+- **Dtor:** `LevelBoard_Dizzy_dtor` @ `0x41D450`
 
 ### Tower (Level 5)
-- **Ctor:** `BoardLevel5_Tower_ctor` @ `0x41E340`
-- **Dtor:** `BoardLevel5_Tower_dtor` @ `0x41E640`
+- **Ctor:** `LevelBoard_Tower_ctor` @ `0x41E340`
+- **Dtor:** `LevelBoard_Tower_dtor` @ `0x41E640`
 
 ### Expert (Level 8)
-- **Ctor:** `BoardLevel8_Expert_ctor` @ `0x41EA40`
-- **Dtor:** `BoardLevel8_Expert_dtor` @ `0x41EC90`
+- **Ctor:** `LevelBoard_Expert_ctor` @ `0x41EA40`
+- **Dtor:** `LevelBoard_Expert_dtor` @ `0x41EC90`
 
 ### Odd (Level 9)
-- **Ctor:** `BoardLevel9_Odd_ctor` @ `0x41ED80`
-- **Dtor:** `BoardLevel9_Odd_dtor` @ `0x41EE70`
+- **Ctor:** `LevelBoard_Odd_ctor` @ `0x41ED80`
+- **Dtor:** `LevelBoard_Odd_dtor` @ `0x41EE70`
 
 ### Wobbly (Level 12)
-- **Ctor:** `BoardLevel12_Wobbly_ctor` @ `0x41F110`
+- **Ctor:** `LevelBoard_Wobbly_ctor` @ `0x41F110`
 - **Dtor:** `BoardLevel12_Wobbly_dtor` @ `0x41F3C0`
 
 ### Toob
-- **Ctor:** `BoardLevel_Toob_Ctor` @ `0x41F4B0`
+- **Ctor:** `LevelBoard_Toob_ctor` @ `0x41F4B0`
 - **Dtor:** `BoardLevel_Toob_dtor` @ `0x41F720`
 
 ### Sky
-- **Ctor:** `BoardLevel_Sky_Ctor` @ `0x41F930`
+- **Ctor:** `LevelBoard_Sky_ctor` @ `0x41F930`
 - **Dtor:** `BoardLevel_Sky_Dtor` @ `0x41FBC0`
 
 ### Beginner
-- **Ctor:** `BoardLevel_Beginner_Ctor` @ `0x4200E0`
+- **Ctor:** `LevelBoard_Beginner_ctor` @ `0x4200E0`
 - **Dtor:** `BoardLevel_Beginner_Dtor` @ `0x4201D0`
 - **HandleRaceEnd:** `Board_Beginner_HandleRaceEnd` @ `0x420240`
 
 ### Up
-- **Ctor:** `BoardLevel_Up_Ctor` @ `0x420390`
+- **Ctor:** `LevelBoard_Up_ctor` @ `0x420390`
 - **Dtor:** `BoardLevel_Up_Dtor` @ `0x420550`
 
 ### Arena Level Constructors (via `TourneyMenu_CreateBoard`)
 | ID | Arena | Ctor Name | Size |
 |----|-------|-----------|------|
-| 1 | WarmUp | `ArenaBoard_Warmup_Ctor` | `0x47E0` |
-| 2 | Beginner | `ArenaBoard_Beginner_Ctor` | `0x5850` |
-| 3 | Intermediate | `ArenaBoard_Intermediate_Ctor` | `0x47E0` |
-| 4 | Dizzy | `ArenaBoard_Dizzy_Ctor` | `0x47E4` |
-| 5 | Tower | `ArenaBoard_Tower_Ctor` | `0x501C` |
-| 6 | UpArena | `ArenaBoard_Up_Ctor` | `0x47E4` |
-| 7 | NeonArena | `ArenaBoard_Neon_Ctor` | `0x47E8` |
-| 8 | ExpertArena | `ArenaBoard_Expert_Ctor` | `0x4BFC` |
-| 9 | OddArena | `ArenaBoard_Odd_Ctor` | `0x47E0` |
-| 10 | ToobArena | `ArenaBoard_Toob_Ctor` | `0x5C6C` |
-| 11 | WobblyArena | `ArenaBoard_Wobbly_Ctor` | `0x47E4` |
+| 1 | WarmUp | `ArenaBoard_WarmUp_ctor` | `0x47E0` |
+| 2 | Beginner | `ArenaBoard_Beginner_ctor` | `0x5850` |
+| 3 | Intermediate | `ArenaBoard_Intermediate_ctor` | `0x47E0` |
+| 4 | Dizzy | `ArenaBoard_Dizzy_ctor` | `0x47E4` |
+| 5 | Tower | `ArenaBoard_Tower_ctor` | `0x501C` |
+| 6 | UpArena | `ArenaBoard_Up_ctor` | `0x47E4` |
+| 7 | NeonArena | `ArenaBoard_Neon_ctor` | `0x47E8` |
+| 8 | ExpertArena | `ArenaBoard_Expert_ctor` | `0x4BFC` |
+| 9 | OddArena | `ArenaBoard_Odd_ctor` | `0x47E0` |
+| 10 | ToobArena | `ArenaBoard_Toob_ctor` | `0x5C6C` |
+| 11 | WobblyArena | `ArenaBoard_Wobbly_ctor` | `0x47E4` |
 | 12 | Glass | `BoardLevel_Glass_ctor` | `0x47E0` |
-| 13 | SkyArena | `ArenaBoard_Sky_Ctor` | `0x4CFC` |
-| 14 | WarmupArena | `ArenaBoard_WarmupArena_Ctor` | `0x47E0` |
-| 15 | Impossible | `ArenaBoard_Impossible_Ctor` | `0x47E4` |
+| 13 | SkyArena | `ArenaBoard_Sky_ctor` | `0x4CFC` |
+| 14 | WarmupArena | `ArenaBoard_Master_ctor` | `0x47E0` |
+| 15 | Impossible | `ArenaBoard_Impossible_ctor` | `0x47E4` |
 
 ### `TourneyMenu_CreateBoard`
 - **Address:** `0x426780`

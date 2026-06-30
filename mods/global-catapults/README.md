@@ -39,7 +39,7 @@ Spawns functional catapults on any level/arena. Ball is launched via the game's 
 ```
 
 But `Board+0x43B8` and `Board+0x584C` are **only** initialized by level-specific ctors:
-- `BoardLevel5_Tower_ctor` (0x0041E340) → inits +0x43B8, +0x584C
+- `LevelBoard_Tower_ctor` (0x0041E340) → inits +0x43B8, +0x584C
 - `BoardLevel_Master_Ctor` (0x004206D0) → inits +0x584C
 
 On all other levels these offsets contain garbage from malloc. The fix checks the vtable pointer (first 4 bytes) against `0x4D875C` (the AthenaList vtable set by `AthenaList_Init`). If it doesn't match, the list is uninitialized and `AthenaList_Init` is called before appending.

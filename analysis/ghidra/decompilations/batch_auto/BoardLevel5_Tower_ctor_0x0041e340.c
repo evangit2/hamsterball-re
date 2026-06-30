@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel5_Tower_ctor
+ * Function: LevelBoard_Tower_ctor
  * Address: 0x0041e340
  *
  * Description:

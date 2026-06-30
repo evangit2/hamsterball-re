@@ -1,14 +1,14 @@
 /*
- * Function: ArenaBoard_Odd_Ctor
+ * Function: ArenaBoard_Odd_ctor
  * Address: 0x00423220
- * Signature: void * __thiscall ArenaBoard_Odd_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_Odd_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Odd_Ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 10, Lines: 28
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Odd_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 10, Lines: 28
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall ArenaBoard_Odd_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Odd_ctor(void *this,int param_1)
 
 {
   int iVar1;

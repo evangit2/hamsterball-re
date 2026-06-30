@@ -8,21 +8,21 @@ the longest.
 
 ```
 ArenaBoard (base class)
-├── ArenaBoard_Warmup_Ctor        → Warm-up Arena (ID 1)
-├── ArenaBoard_Beginner_Ctor      → Beginner Arena (ID 2)
-├── ArenaBoard_Intermediate_Ctor  → Intermediate Arena (ID 3)
-├── ArenaBoard_Dizzy_Ctor         → Dizzy Arena (ID 4)
-├── ArenaBoard_Tower_Ctor         → Tower Arena (ID 5)
-├── ArenaBoard_Up_Ctor       → Up Arena (ID 6)
-├── ArenaBoard_Neon_Ctor     → Neon Arena (ID 7)
-├── ArenaBoard_Expert_Ctor   → Expert Arena (ID 8)
-├── ArenaBoard_Odd_Ctor      → Odd Arena (ID 9)
-├── ArenaBoard_Toob_Ctor     → Toob Arena (ID 10)
-├── ArenaBoard_Wobbly_Ctor   → Wobbly Arena (ID 11)
+├── ArenaBoard_WarmUp_ctor        → Warm-up Arena (ID 1)
+├── ArenaBoard_Beginner_ctor      → Beginner Arena (ID 2)
+├── ArenaBoard_Intermediate_ctor  → Intermediate Arena (ID 3)
+├── ArenaBoard_Dizzy_ctor         → Dizzy Arena (ID 4)
+├── ArenaBoard_Tower_ctor         → Tower Arena (ID 5)
+├── ArenaBoard_Up_ctor       → Up Arena (ID 6)
+├── ArenaBoard_Neon_ctor     → Neon Arena (ID 7)
+├── ArenaBoard_Expert_ctor   → Expert Arena (ID 8)
+├── ArenaBoard_Odd_ctor      → Odd Arena (ID 9)
+├── ArenaBoard_Toob_ctor     → Toob Arena (ID 10)
+├── ArenaBoard_Wobbly_ctor   → Wobbly Arena (ID 11)
 ├── BoardLevel_Glass_ctor          → Glass Arena (ID 12)
-├── ArenaBoard_Sky_Ctor      → Sky Arena (ID 13)
-├── ArenaBoard_WarmupArena_Ctor   → Master Arena (ID 14)
-├── ArenaBoard_Impossible_Ctor    → Impossible Arena (ID 15)
+├── ArenaBoard_Sky_ctor      → Sky Arena (ID 13)
+├── ArenaBoard_Master_ctor   → Master Arena (ID 14)
+├── ArenaBoard_Impossible_ctor    → Impossible Arena (ID 15)
 └── CollSlices variants (collision mesh slicing)
 ```
 
@@ -32,20 +32,20 @@ The 15-race tournament sequence, revealed by the switch statement:
 
 | Race | Ctor | Level Name | Size (bytes) | Asset Path |
 |------|------|------------|-------------|------------|
-| 1 | BoardLevel1_WarmUp_ctor | Warm Up | 0x436C | — |
-| 2 | BoardLevel_Beginner_Ctor | Beginner | 0x644C | — |
-| 3 | BoardLevel2_Intermediate_ctor | Intermediate | 0x438C | — |
-| 4 | BoardLevel3_ctor | Dizzy | 0x4BE0 | — |
-| 5 | BoardLevel5_Tower_ctor | Tower | 0x5418 | — |
-| 6 | BoardLevel_Up_Ctor | Up | 0x4790 | — |
+| 1 | LevelBoard_WarmUp_ctor | Warm Up | 0x436C | — |
+| 2 | LevelBoard_Beginner_ctor | Beginner | 0x644C | — |
+| 3 | LevelBoard_Intermediate_ctor | Intermediate | 0x438C | — |
+| 4 | LevelBoard_Dizzy_ctor | Dizzy | 0x4BE0 | — |
+| 5 | LevelBoard_Tower_ctor | Tower | 0x5418 | — |
+| 6 | LevelBoard_Up_ctor | Up | 0x4790 | — |
 | 7 | Board_NeonRace_ctor | Neon Race | 0x4394 | — |
-| 8 | BoardLevel8_Expert_ctor | Expert | 0x4FD8 | — |
-| 9 | BoardLevel9_Odd_ctor | Odd | 0x43B0 | — |
-| 10 | BoardLevel_Toob_Ctor | Toob | 0x646C | — |
-| 11 | BoardLevel12_Wobbly_ctor | Wobbly | 0x4388 | — |
+| 8 | LevelBoard_Expert_ctor | Expert | 0x4FD8 | — |
+| 9 | LevelBoard_Odd_ctor | Odd | 0x43B0 | — |
+| 10 | LevelBoard_Toob_ctor | Toob | 0x646C | — |
+| 11 | LevelBoard_Wobbly_ctor | Wobbly | 0x4388 | — |
 | 12 | Board_Glass_ctor | Glass | 0x4390 | — |
-| 13 | BoardLevel_Sky_Ctor | Sky | 0x47F8 | — |
-| 14 | BoardLevel_Master_Ctor | Master | 0x6498 | — |
+| 13 | LevelBoard_Sky_ctor | Sky | 0x47F8 | — |
+| 14 | LevelBoard_Master_ctor | Master | 0x6498 | — |
 | 15 | Board_Impossible_ctor | Impossible | 0x4380 | — |
 
 ## ArenaBoard Arena Asset Paths
@@ -279,15 +279,15 @@ For races 3+: `extra_time = base_time` (adds to existing accumulated time)
 |---------|------|---------|
 | 0x427080 | Tournament_AdvanceRace | Create next race in tournament |
 | 0x433AC0 | GameSelectionManager | Title screen command dispatcher |
-| 0x422550 | ArenaBoard_Beginner_Ctor | Beginner arena constructor |
-| 0x4226E0 | ArenaBoard_Intermediate_Ctor | Intermediate arena ctor |
-| 0x422790 | ArenaBoard_Dizzy_Ctor | Dizzy arena ctor |
-| 0x423060 | ArenaBoard_Expert_Ctor | Expert arena ctor |
-| 0x424860 | ArenaBoard_Neon_Ctor | Neon arena ctor |
-| 0x423BF0 | ArenaBoard_Sky_Ctor | Sky arena ctor |
-| 0x4234E0 | ArenaBoard_Toob_Ctor | Toob arena ctor |
-| 0x423220 | ArenaBoard_Odd_Ctor | Odd arena ctor |
-| 0x424EC0 | ArenaBoard_Impossible_Ctor | Impossible arena ctor |
+| 0x422550 | ArenaBoard_Beginner_ctor | Beginner arena constructor |
+| 0x4226E0 | ArenaBoard_Intermediate_ctor | Intermediate arena ctor |
+| 0x422790 | ArenaBoard_Dizzy_ctor | Dizzy arena ctor |
+| 0x423060 | ArenaBoard_Expert_ctor | Expert arena ctor |
+| 0x424860 | ArenaBoard_Neon_ctor | Neon arena ctor |
+| 0x423BF0 | ArenaBoard_Sky_ctor | Sky arena ctor |
+| 0x4234E0 | ArenaBoard_Toob_ctor | Toob arena ctor |
+| 0x423220 | ArenaBoard_Odd_ctor | Odd arena ctor |
+| 0x424EC0 | ArenaBoard_Impossible_ctor | Impossible arena ctor |
 | 0x421910 | ArenaBoard_Render | HUD/timer rendering |
 | 0x42B660 | ArenaSceneObj_Tick | Arena hazard animation |
 | 0x458E60 | ToggleTimer_Init | Timer struct initializer |

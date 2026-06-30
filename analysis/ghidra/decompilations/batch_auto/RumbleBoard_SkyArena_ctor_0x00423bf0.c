@@ -1,5 +1,5 @@
 
-void * __thiscall ArenaBoard_Sky_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_Sky_ctor(void *this,int param_1)
 
 {
   int iVar1;

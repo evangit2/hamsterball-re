@@ -53,7 +53,7 @@ Wobbly platforms that create a wave-like motion for balls riding on them.
 ## Factory Chain
 
 ```
-BoardLevel12_Wobbly_ctor (0x41F110):
+LevelBoard_Wobbly_ctor (0x41F110):
   LoadRaceData("WOBBLYRACE")
   board+0x436C = MeshWorld("Levels\Level7-Wobbly1")
   board+0x4370 = MeshWorld("Levels\Level7-Wobbly2")

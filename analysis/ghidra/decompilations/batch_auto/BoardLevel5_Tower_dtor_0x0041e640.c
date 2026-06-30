@@ -1,5 +1,5 @@
 /*
- * Function: BoardLevel5_Tower_dtor
+ * Function: LevelBoard_Tower_dtor
  * Address: 0x0041e640
  *
  * Description:

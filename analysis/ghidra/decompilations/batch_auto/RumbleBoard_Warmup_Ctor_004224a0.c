@@ -1,14 +1,14 @@
 /*
- * Function: ArenaBoard_Warmup_Ctor
+ * Function: ArenaBoard_WarmUp_ctor
  * Address: 0x004224a0
- * Signature: void * __thiscall ArenaBoard_Warmup_Ctor(void *this,int param_1)
+ * Signature: void * __thiscall ArenaBoard_WarmUp_ctor(void *this,int param_1)
  *
- * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_Warmup_Ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 10, Lines: 28
+ * Patterns: SEH frame, matrix math, board. Calls: ArenaBoard_WarmUp_ctor, ArenaBoard_ctor, RumbleBoard, Vec3_Init, Matrix_Identity. Offsets: 10, Lines: 28
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void * __thiscall ArenaBoard_Warmup_Ctor(void *this,int param_1)
+void * __thiscall ArenaBoard_WarmUp_ctor(void *this,int param_1)
 
 {
   int iVar1;

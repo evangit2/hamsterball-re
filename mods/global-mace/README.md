@@ -14,7 +14,7 @@ Spawns Tower Race swinging maces on any level with a hotkey.
 
 - Hooks at `Ball_Update` (0x405E22) — same pattern as SpeedCylinder/Bonk
 - On first spawn: loads `Levels\Level4-Mace` mesh via `MeshWorld_ctor` → stores at `board+0x4378`
-- On Tower Race, mesh is already loaded by `BoardLevel5_Tower_ctor` — reuses it
+- On Tower Race, mesh is already loaded by `LevelBoard_Tower_ctor` — reuses it
 - Allocates 0x110C bytes, calls `CascadeStands_Ctor` (0x438750)
 - Sets position at `obj+0x10D8` (X), `+0x10DC` (Y), `+0x10E0` (Z)
 - Sets swing amplitude (+0x10E8 = 80.0), active flag (+0x10F4 = 1), timer (+0x10F8 = 50)

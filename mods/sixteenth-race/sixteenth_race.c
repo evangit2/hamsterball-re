@@ -194,7 +194,7 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     c_byte(&c, 0x52);
     /* MOV ECX, EAX (this = board) */
     c_byte(&c, 0x8B); c_byte(&c, 0xC8);
-    /* CALL BoardLevel1_WarmUp_Ctor */
+    /* CALL LevelBoard_WarmUp_Ctor */
     c_call(&c, ADDR_BOARD_WARMUP_CTOR);
     /* MOV DWORD [EAX+0x868], STR_TEST_BOARD */
     c_mov_eax_dword(&c, 0x868, (DWORD)STR_TEST_BOARD);
@@ -231,7 +231,7 @@ static DWORD WINAPI patch_thread(LPVOID unused) {
     c_byte(&c, 0x52);
     /* MOV ECX, EAX (this = board) */
     c_byte(&c, 0x8B); c_byte(&c, 0xC8);
-    /* CALL ArenaBoard_Warmup_Ctor */
+    /* CALL ArenaBoard_WarmUp_ctor */
     c_call(&c, ADDR_ARENA_WARMUP_CTOR);
     /* MOV DWORD [EAX+0x868], STR_TEST_ARENA_BD */
     c_mov_eax_dword(&c, 0x868, (DWORD)STR_TEST_ARENA_BD);

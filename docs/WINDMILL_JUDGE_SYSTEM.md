@@ -154,7 +154,7 @@ Judge_Ctor(this, board) {
 
 ### Expert Constructor Mesh Loading
 
-`BoardLevel8_Expert_ctor` loads 3 copies of the HammyJudge mesh:
+`LevelBoard_Expert_ctor` loads 3 copies of the HammyJudge mesh:
 ```c
 board+0x4BB0 = MeshWorld_ctor("meshes\\hammyjudge");  // judge 1
 board+0x4BB4 = MeshWorld_ctor("meshes\\hammyjudge");  // judge 2

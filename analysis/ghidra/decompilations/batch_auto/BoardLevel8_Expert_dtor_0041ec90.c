@@ -1,14 +1,14 @@
 /*
- * Function: BoardLevel8_Expert_dtor
+ * Function: LevelBoard_Expert_dtor
  * Address: 0x0041ec90
- * Signature: void __fastcall BoardLevel8_Expert_dtor(undefined4 *param_1)
+ * Signature: void __fastcall LevelBoard_Expert_dtor(undefined4 *param_1)
  *
- * Patterns: SEH frame, scene, board, level. Calls: BoardLevel8_Expert_dtor, Vec3List_Free, Scene_dtor. Offsets: 3, Lines: 42
+ * Patterns: SEH frame, scene, board, level. Calls: LevelBoard_Expert_dtor, Vec3List_Free, Scene_dtor. Offsets: 3, Lines: 42
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
 
-void __fastcall BoardLevel8_Expert_dtor(undefined4 *param_1)
+void __fastcall LevelBoard_Expert_dtor(undefined4 *param_1)
 
 {
   void *pvStack_c;
@@ -18,7 +18,7 @@ void __fastcall BoardLevel8_Expert_dtor(undefined4 *param_1)
   puStack_8 = &LAB_004ca432;
   pvStack_c = ExceptionList;
   ExceptionList = &pvStack_c;
-  *param_1 = &PTR_BoardLevel8_Expert_dtor_004d0b00;
+  *param_1 = &PTR_LevelBoard_Expert_dtor_004d0b00;
   local_4 = 3;
   if ((undefined4 *)param_1[0x10de] != (undefined4 *)0x0) {
     (*(code *)**(undefined4 **)param_1[0x10de])(1);

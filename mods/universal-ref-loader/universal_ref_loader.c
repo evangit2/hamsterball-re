@@ -116,9 +116,9 @@ static OperatorNewFn    g_operatorNew   = (OperatorNewFn)OPERATOR_NEW;
  * Meshes are cached so we only load each one once.
  *
  * Paths verified from decompiled board constructors:
- *   BoardLevel3_ctor (Dizzy): Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie
- *   BoardLevel4_ctor (Tower): Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret
- *   BoardLevel2_ctor (Intermediate): Level2-Bridge
+ *   LevelBoard_Dizzy_ctor (Dizzy): Level3-Tipper, Level3-WaterWheel, Level3-Swirl, Level3-Gluebie
+ *   LevelBoard_Tower_ctor (Tower): Level4-Catapult, Level4-Drawbridge, Level4-Mace, Level4-Windmill, Level4-Turret
+ *   LevelBoard_Intermediate_ctor (Intermediate): Level2-Bridge
  *   etc.
  * ============================================================ */
 

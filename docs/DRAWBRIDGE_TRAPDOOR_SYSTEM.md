@@ -100,12 +100,12 @@ call AthenaList_Append (0x453810)  ; Board+0x4BE8 (drawbridge list)
 
 ### Mesh Dependency
 - **Board+0x4370** = MeshWorld("Levels\Level4-Drawbridge")
-- Loaded by `BoardLevel5_Tower_ctor` (0x41E340) at line 72
+- Loaded by `LevelBoard_Tower_ctor` (0x41E340) at line 72
 - On non-Tower levels: must load manually via `MeshWorld_ctor(0x10D0, App+0x174, "Levels\\Level4-Drawbridge")`
 
 ### AthenaList Dependencies
 - **Board+0x2578** (general objects) — initialized by Board_ctor on ALL levels ✓
-- **Board+0x4BE8** (drawbridge list) — initialized by BoardLevel5_Tower_ctor ONLY
+- **Board+0x4BE8** (drawbridge list) — initialized by LevelBoard_Tower_ctor ONLY
 
 ---
 
@@ -248,7 +248,7 @@ if (obj+0x10E4 == threshold):
 
 ### AthenaList Dependencies
 - **Board+0x2578** (general) — initialized by Board_ctor ✓
-- **Board+0x47D0** (trapdoor) — initialized by BoardLevel5_Tower_ctor ONLY
+- **Board+0x47D0** (trapdoor) — initialized by LevelBoard_Tower_ctor ONLY
 - **Board+0xCD4** — initialized by Board_ctor ✓ (or BoardLevel5)
 - **Board+0x10EC** — initialized by Board_ctor ✓ (or BoardLevel5)
 - **Board+0x8AC→+0x480→+0x1C** — collision list, exists on all levels
@@ -301,7 +301,7 @@ if (obj+0x10E4 == threshold):
 | 0x4344D0 | Trapdoor_Open | ecx=trapdoor_obj, call |
 | 0x40DCD0 | TowerCollisionEvents | thiscall(Board, ball, collObj) |
 | 0x40D7C0 | CreateTowerObjects | thiscall, processes MESHWORLD objects |
-| 0x41E340 | BoardLevel5_Tower_ctor | thiscall, loads Tower meshes + inits lists |
+| 0x41E340 | LevelBoard_Tower_ctor | thiscall, loads Tower meshes + inits lists |
 
 ## Mesh Path Strings (in .rdata)
 
@@ -321,4 +321,4 @@ App+0x59C = CollisionLevel(App+0x594)                   // collision from trapdo
 App+0x5A0 = CollisionLevel(App+0x598)                   // collision from trapdoor2
 ```
 
-Drawbridge mesh is Tower-specific, loaded only by BoardLevel5_Tower_ctor.
+Drawbridge mesh is Tower-specific, loaded only by LevelBoard_Tower_ctor.

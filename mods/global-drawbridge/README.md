@@ -13,7 +13,7 @@ Spawns Tower Race drawbridges at Player 1's position in any level via hotkey.
 
 | Level | board+0x4378 contains |
 |-------|----------------------|
-| Tower (Level4) | `Levels\Level4-Mace` mesh (set by BoardLevel5_Tower_ctor) |
+| Tower (Level4) | `Levels\Level4-Mace` mesh (set by LevelBoard_Tower_ctor) |
 | Beginner (LevelCascade) | 0 (unused) |
 | Other races | varies — may contain other mesh data |
 
@@ -38,19 +38,19 @@ This is the same pattern as the universal ref loader (see skill `hamsterball-dll
 | 0x439870 | Impossible_Level_Update | vtable[0x2C]. Drawbridge animation: timer, rotation, sound. |
 | 0x4BA57B | operator_new | `__cdecl`. Allocates memory. |
 | 0x40E250 | CreateSawblade | Game factory. Creates BONK, TOWER, SAWBLADE, BRIDGE, JUDGE, BELL. |
-| 0x41E340 | BoardLevel5_Tower_ctor | Tower board init. Loads meshes into board+0x43xx slots. |
+| 0x41E340 | LevelBoard_Tower_ctor | Tower board init. Loads meshes into board+0x43xx slots. |
 
 ## Board Slot Layout (Tower Race)
 
 | Offset | Mesh | Set by |
 |--------|------|--------|
-| board+0x436C | Levels\Level4-Catapult | BoardLevel5_Tower_ctor |
-| board+0x4370 | Levels\Level4-Drawbridge | BoardLevel5_Tower_ctor |
-| board+0x4374 | Meshes\YellowLink | BoardLevel5_Tower_ctor |
-| board+0x4378 | Levels\Level4-Mace | BoardLevel5_Tower_ctor |
-| board+0x437C | Levels\Level4-Windmill | BoardLevel5_Tower_ctor |
-| board+0x4390 | Meshes\Chomper | BoardLevel5_Tower_ctor |
-| board+0x43B4 | Levels\Level4-Turret | BoardLevel5_Tower_ctor |
+| board+0x436C | Levels\Level4-Catapult | LevelBoard_Tower_ctor |
+| board+0x4370 | Levels\Level4-Drawbridge | LevelBoard_Tower_ctor |
+| board+0x4374 | Meshes\YellowLink | LevelBoard_Tower_ctor |
+| board+0x4378 | Levels\Level4-Mace | LevelBoard_Tower_ctor |
+| board+0x437C | Levels\Level4-Windmill | LevelBoard_Tower_ctor |
+| board+0x4390 | Meshes\Chomper | LevelBoard_Tower_ctor |
+| board+0x43B4 | Levels\Level4-Turret | LevelBoard_Tower_ctor |
 
 ## Object Registration
 

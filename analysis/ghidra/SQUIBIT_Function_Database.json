@@ -11,9 +11,9 @@
       "batch": 14
     },
     {
-      "name": "ArenaBoard_Up_Ctor",
+      "name": "ArenaBoard_Up_ctor",
       "address": "0x00422b10",
-      "signature": "void * __thiscall ArenaBoard_Up_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Up_ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* \u2014 arena board to construct | param_1: int \u2014 parent App/Scene pointer",
       "description": "Constructor for Up Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Up Arena)' / 'UP ARENA'. Creates MeshWorld 'levels\\\\arena-up' and CollisionLevel. Initializes Vec3 (1,0,1).",
       "struct_offsets": "+0x868 (board name), +0x4344 (game mode), +0x29B4 (display name)",
@@ -41,9 +41,9 @@
       "batch": 14
     },
     {
-      "name": "ArenaBoard_Expert_Ctor",
+      "name": "ArenaBoard_Expert_ctor",
       "address": "0x00423060",
-      "signature": "void * __thiscall ArenaBoard_Expert_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Expert_ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
       "description": "Constructor for Expert Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Expert Arena)' / 'Fight!'. Initializes AthenaList at +0x47E0. Vec3 init.",
       "struct_offsets": "+0x47E0 (AthenaList), +0x868, +0x4344, +0x29B4",
@@ -51,9 +51,9 @@
       "batch": 14
     },
     {
-      "name": "ArenaBoard_Odd_Ctor",
+      "name": "ArenaBoard_Odd_ctor",
       "address": "0x00423220",
-      "signature": "void * __thiscall ArenaBoard_Odd_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Odd_ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
       "description": "Constructor for Odd Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Odd Arena)' / 'ODD ARENA'. Clears flag at +0x4348. Vec3 init (1,0.5,0).",
       "struct_offsets": "+0x4348 (flag), +0x868, +0x29B4",
@@ -61,9 +61,9 @@
       "batch": 14
     },
     {
-      "name": "ArenaBoard_Toob_Ctor",
+      "name": "ArenaBoard_Toob_ctor",
       "address": "0x004234e0",
-      "signature": "void * __thiscall ArenaBoard_Toob_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Toob_ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
       "description": "Constructor for Toob Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Toob Arena)' / 'Rodenthood'. Initializes 5-element array at +0x47E0 (0x418 bytes each) via _eh_vector_constructor_iterator.",
       "struct_offsets": "+0x47E0 (5-element array, 0x418 each), +0x868, +0x4344, +0x29B4",
@@ -81,9 +81,9 @@
       "batch": 14
     },
     {
-      "name": "ArenaBoard_Wobbly_Ctor",
+      "name": "ArenaBoard_Wobbly_ctor",
       "address": "0x00423690",
-      "signature": "void * __thiscall ArenaBoard_Wobbly_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Wobbly_ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
       "description": "Constructor for Wobbly Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Wobbly Arena)' / 'Hamster Chase' / 'WOBBLY ARENA'. Creates MeshWorld 'levels\\\\arena-wobbly'. Vec3 init.",
       "struct_offsets": "+0x868, +0x4344, +0x29B4",
@@ -141,9 +141,9 @@
       "batch": 15
     },
     {
-      "name": "ArenaBoard_Impossible_Ctor",
+      "name": "ArenaBoard_Impossible_ctor",
       "address": "0x00424ec0",
-      "signature": "void * __thiscall ArenaBoard_Impossible_Ctor(void *this, int param_1)",
+      "signature": "void * __thiscall ArenaBoard_Impossible_ctor(void *this, int param_1)",
       "parameters": "this: RumbleBoard* | param_1: int \u2014 parent App/Scene",
       "description": "Constructor for Impossible Arena. Calls ArenaBoard_ctor, sets vtable, names 'RumbleBoard (Impossible Arena)' / 'IMPOSSIBLE ARENA'. Creates MeshWorld 'levels\\\\arena-impossible'.",
       "struct_offsets": "+0x868, +0x4344, +0x29B4",
@@ -171,19 +171,19 @@
       "batch": 15
     },
     {
-      "name": "BoardLevel1_WarmUp_dtor",
+      "name": "LevelBoard_WarmUp_dtor",
       "address": "0x00425040",
-      "signature": "void * __thiscall BoardLevel1_WarmUp_dtor(void *this, byte param_1)",
+      "signature": "void * __thiscall LevelBoard_WarmUp_dtor(void *this, byte param_1)",
       "parameters": "this: BoardLevel1* | param_1: byte \u2014 delete flag (bit 0 = free)",
-      "description": "Scalar deleting destructor for Warm-Up Race board. Calls BoardLevel1_WarmUp_dtor (non-deleting) then conditionally frees.",
+      "description": "Scalar deleting destructor for Warm-Up Race board. Calls LevelBoard_WarmUp_dtor (non-deleting) then conditionally frees.",
       "struct_offsets": "N/A (destructor)",
       "xrefs": "0 calls, 1 data ref (vtable)",
       "batch": 15
     },
     {
-      "name": "BoardLevel2_Intermediate_dtor",
+      "name": "LevelBoard_Intermediate_dtor",
       "address": "0x00425060",
-      "signature": "void * __thiscall BoardLevel2_Intermediate_dtor(void *this, byte param_1)",
+      "signature": "void * __thiscall LevelBoard_Intermediate_dtor(void *this, byte param_1)",
       "parameters": "this: BoardLevel2* | param_1: byte \u2014 delete flag",
       "description": "Scalar deleting destructor for Intermediate Race board. Calls the non-deleting dtor then conditionally frees.",
       "struct_offsets": "N/A (destructor)",
@@ -191,9 +191,9 @@
       "batch": 15
     },
     {
-      "name": "BoardLevel3_Dizzy_dtor",
+      "name": "LevelBoard_Dizzy_dtor",
       "address": "0x00425080",
-      "signature": "void * __thiscall BoardLevel3_Dizzy_dtor(void *this, byte param_1)",
+      "signature": "void * __thiscall LevelBoard_Dizzy_dtor(void *this, byte param_1)",
       "parameters": "this: BoardLevel3* | param_1: byte \u2014 delete flag",
       "description": "Scalar deleting destructor for Dizzy Race board. Calls the non-deleting dtor then conditionally frees.",
       "struct_offsets": "N/A (destructor)",

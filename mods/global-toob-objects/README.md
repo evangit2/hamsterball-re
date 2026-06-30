@@ -29,7 +29,7 @@ our own MeshWorld directly without touching any board+0x43xx slots.
 
 ## Toob Race Board Mesh Slots
 
-Set by `BoardLevel_Toob_Ctor` (0x41F4B0):
+Set by `LevelBoard_Toob_ctor` (0x41F4B0):
 
 | Offset | Mesh File | String Addr | Used By |
 |--------|-----------|-------------|---------|

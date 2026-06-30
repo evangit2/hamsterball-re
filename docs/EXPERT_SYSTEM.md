@@ -107,7 +107,7 @@ call 0x434D70     ; ret 0x10
 
 ## Mesh Loading
 
-**BoardLevel8_Expert_ctor** @ `0x41EA40` loads:
+**LevelBoard_Expert_ctor** @ `0x41EA40` loads:
 - `Board+0x4378` = `MeshWorld_ctor(0x10D0, App+0x174, "Levels\Level5-Bridge")` @ `0x4D0ABC`
 - `Board+0x437C` = `CollisionLevel_ctorWithLevel(0x10D0, Board+0x4378)` @ `0x465080`
 - `Board+0x4BB0/4BB4/4BB8` = 3× hammyjudge objects (0x18 bytes, ctor 0x471C20, mesh "meshes\hammyjudge")
@@ -117,7 +117,7 @@ call 0x434D70     ; ret 0x10
 
 ## AthenaList Initialization
 
-BoardLevel8_Expert_ctor initializes:
+LevelBoard_Expert_ctor initializes:
 - `Board+0x4380` (saw1 bridge list)
 - `Board+0x4798` (saw2 bridge list)
 - `Board+0x4BBC` (judge list)

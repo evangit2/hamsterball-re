@@ -8,9 +8,9 @@ The Odd Race (menu position 9) features a unique mechanic where the player's bal
 
 | Menu Name | Board Constructor | MESHWORLD File | Scene Setup Function |
 |-----------|-------------------|----------------|----------------------|
-| Odd Race | `BoardLevel9_Odd_ctor` @ `0x0041ED80` | `Level6.MESHWORLD` | `Scene_SetupLevel6` @ `0x0040EA90` |
+| Odd Race | `LevelBoard_Odd_ctor` @ `0x0041ED80` | `Level6.MESHWORLD` | `Scene_SetupLevel6` @ `0x0040EA90` |
 
-> **Note:** The file is named `Level6.MESHWORLD` but the board is `BoardLevel9_Odd`. The numbering schemes don't match — file numbers are internal, board numbers are menu order. The Odd board's vtable (`0x4D0BC0`, slot `+0x48`) points to `Scene_SetupLevel6` which loads `levels\level6`.
+> **Note:** The file is named `Level6.MESHWORLD` but the board is `LevelBoard_Odd`. The numbering schemes don't match — file numbers are internal, board numbers are menu order. The Odd board's vtable (`0x4D0BC0`, slot `+0x48`) points to `Scene_SetupLevel6` which loads `levels\level6`.
 
 ## The Shrink/Grow Sequence
 
@@ -162,5 +162,5 @@ The Odd board's collision dispatch handler is at `0x0040ED30` (vtable[0x1D], `+0
 | `Ball_Update` | `0x00405E00` | Normal physics (checks is_stunned flag) |
 | `Ball_Render` | `0x00402DE0` | Visual scaling from radius |
 | `OddCollisionEvents` | `0x0040ED30` | Event dispatch for Odd race |
-| `BoardLevel9_Odd_ctor` | `0x0041ED80` | Odd board constructor |
+| `LevelBoard_Odd_ctor` | `0x0041ED80` | Odd board constructor |
 | `Scene_SetupLevel6` | `0x0040EA90` | Loads `levels\level6` MESHWORLD for Odd |

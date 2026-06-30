@@ -1,7 +1,7 @@
 /*
- * Function: ArenaBoard_Impossible_Ctor
+ * Function: ArenaBoard_Impossible_ctor
  * Address: 0x00424ec0
- * Signature: void * __thiscall ArenaBoard_Impossible_Ctor(void *this, int param_1)
+ * Signature: void * __thiscall ArenaBoard_Impossible_ctor(void *this, int param_1)
  * Parameters: this: RumbleBoard* | param_1: int — parent App/Scene
  *
  * Description:

@@ -4,9 +4,9 @@ Adds a 16th race to Hamsterball by cloning the Warm-Up Race board constructor an
 
 ## What It Does
 
-1. **Tournament_AdvanceRace** (0x00427080): Extends the 15-case switch to 16 cases. Case 15 allocates a board (same size as Warm-Up: 0x436C bytes) and calls `BoardLevel1_WarmUp_Ctor` (0x0041CA40), then overwrites the board name strings to "TEST RACE" / "Board (Test)".
+1. **Tournament_AdvanceRace** (0x00427080): Extends the 15-case switch to 16 cases. Case 15 allocates a board (same size as Warm-Up: 0x436C bytes) and calls `LevelBoard_WarmUp_Ctor` (0x0041CA40), then overwrites the board name strings to "TEST RACE" / "Board (Test)".
 
-2. **TourneyMenu_CreateBoard** (0x00426780): Extends the 15-case arena switch to 16 cases. Case 15 allocates an arena board (0x47E0 bytes) and calls `ArenaBoard_Warmup_Ctor` (0x004224A0), then overwrites the name strings.
+2. **TourneyMenu_CreateBoard** (0x00426780): Extends the 15-case arena switch to 16 cases. Case 15 allocates an arena board (0x47E0 bytes) and calls `ArenaBoard_WarmUp_ctor` (0x004224A0), then overwrites the name strings.
 
 3. **GetLevelPath** (0x0040D1C0): Hooks the hardcoded `"levels\level1"` string push. When the board's race name starts with "TEST", redirects to `"levels\leveltest"` instead. This makes the Test Race load `LevelTest.MESHWORLD`.
 

@@ -55,7 +55,7 @@ The magnifying glass lens effect in Sky Race.
 ## Factory Chain
 
 ```
-BoardLevel_Sky_Ctor (0x41F930):
+LevelBoard_Sky_ctor (0x41F930):
   LoadRaceData("SKYRACE")
   board+0x436C = MeshNode("meshes\skypillar")
   board+0x4370 = MeshNode("meshes\magnifyingglass")

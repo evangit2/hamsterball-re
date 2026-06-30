@@ -31,8 +31,8 @@ These constructors receive a pre-loaded mesh pointer as a parameter. That pointe
 
 | Object | Factory Match | Constructor | Address | Needs Scene Offset | Mesh File | Loaded By | Gate |
 |--------|--------------|-------------|---------|-------------------|-----------|-----------|------|
-| **Tipper** | `"TIPPER"` | `Tipper_ctor` | `0x437960` | `+0x4394` (mesh), `+0x4398` (visual) | `Levels\Level3-Tipper` | `BoardLevel3_ctor` (`0x41D060`) | `app+0x23C != 0` |
-| **Gluebie** | `"GLUEBIE"` | `Gluebie_ctor` | `0x437CB0` | `+0x607C` (mesh) | `Levels\Level3-Gluebie` | `BoardLevel3_ctor` (`0x41D060`) | `app+0x23C != 0` |
+| **Tipper** | `"TIPPER"` | `Tipper_ctor` | `0x437960` | `+0x4394` (mesh), `+0x4398` (visual) | `Levels\Level3-Tipper` | `LevelBoard_Dizzy_ctor` (`0x41D060`) | `app+0x23C != 0` |
+| **Gluebie** | `"GLUEBIE"` | `Gluebie_ctor` | `0x437CB0` | `+0x607C` (mesh) | `Levels\Level3-Gluebie` | `LevelBoard_Dizzy_ctor` (`0x41D060`) | `app+0x23C != 0` |
 | **BlockDawg1** | `"BLOCKDAWG1"` | `Blockdawg_ctor` | `0x43C310` | `+0x5840` (mesh) + `"DAWGPATH1"` named object | (dawg sub-mesh) | Level ctors | `app+0x23C != 0` |
 | **BlockDawg2** | `"BLOCKDAWG2"` | `Blockdawg_ctor` | `0x43C310` | `+0x5844` (mesh) + `"DAWGPATH2"` named object | (dawg sub-mesh) | Level ctors | `app+0x23C != 0` |
 | **Catapult** | `"CATAPULT"` | `Catapult_ctor` | `0x437E10` | `+0x5848` (mesh) | (catapult sub-mesh) | Level ctors | None |
@@ -351,7 +351,7 @@ The single variable that gates most level-locked objects. Located at `App+0x23C`
 
 For scene-dependent objects, here is exactly what each level constructor loads and where it stores the mesh pointers:
 
-### `BoardLevel3_ctor` (0x41D060) — Dizzy Race
+### `LevelBoard_Dizzy_ctor` (0x41D060) — Dizzy Race
 Loads the most sub-meshes of any level:
 
 | Scene Offset | Mesh File | Used By |
@@ -364,18 +364,18 @@ Loads the most sub-meshes of any level:
 | `+0x4BC4` | `Levels\Level3-Swirl` (MeshWorld) | Level3-specific swirl |
 | `+0xBC8` | (CollisionLevel from Swirl) | Swirl collision |
 
-### `BoardLevel8_Expert_ctor` (0x41EA40)
+### `LevelBoard_Expert_ctor` (0x41EA40)
 | Scene Offset | Mesh File | Used By |
 |-------------|-----------|---------|
 | `+0x4378` | `Levels\Level5-Bridge` (MeshWorld) | BRIDGE collision mesh |
 | `+0x437C` | (CollisionLevel from Bridge) | Bridge collision |
 
-### `BoardLevel_Beginner_Ctor` (0x4200E0) — Beginner Race (Arena, internal name: Cascade)
+### `LevelBoard_Beginner_ctor` (0x4200E0) — Beginner Race (Arena, internal name: Cascade)
 | Scene Offset | Content | Used By |
 |-------------|---------|---------|
 | `+0x436C` | Vec3List array (0x418 bytes, 8 items) | Bumper creation data |
 
-### `BoardLevel1_WarmUp_ctor` (0x41CA40) — Warm-Up
+### `LevelBoard_WarmUp_ctor` (0x41CA40) — Warm-Up
 **No sub-meshes loaded.** All scene mesh pointer offsets (`+0x4394`, `+0x5840`, `+0x607C`, etc.) are NULL/zero from the base `Board_ctor`.
 
 ---
@@ -396,7 +396,7 @@ Loads the most sub-meshes of any level:
 **Step 1:** Patch `app+0x23C` to 1
 
 **Step 2:** Patch the level's `BoardLevel*_ctor` to load the required sub-mesh files and store the MeshWorld/CollisionLevel pointers at the correct scene offsets. For example, to add TIPPER support to Level 1:
-- Patch `BoardLevel1_WarmUp_ctor` at `0x41CA40` to add:
+- Patch `LevelBoard_WarmUp_ctor` at `0x41CA40` to add:
   ```
   MeshWorld_ctor(buf, graphics, "Levels\\Level3-Tipper")
   store result → scene+0x4394
