@@ -24,6 +24,35 @@ Tournament mode flows through 15 races in a fixed order. The game uses a **Playe
 | `App_StartRace` | `0x4287C0` | Cleanup: destroys old scene objects, resets gfx state |
 | `App_ShowResults` | `0x428060` | Creates MusicPlayer (results jingle) object |
 
+## The Two TourneyMenu Constructors
+
+There are two distinct TourneyMenu constructors that serve different roles:
+
+| Address | Signature | Purpose |
+|---------|-----------|---------|
+| `0x0044FDA0` | `TourneyMenu_ctor(this, app, mode_flag)` | Between-races menu (PLAY!, ROLLBACK, MAIN MENU) OR win screen |
+| `0x00451B90` | `TourneyMenu_ctor(this, app)` | Final win screen (after Impossible Race) |
+
+### Between-Races Menu (0x0044FDA0)
+
+Called by `Tournament_AdvanceRace`, `TourneyMenu_Advance`, and `TourneyMenu_LoadSaveAndShow`. Has a `param_2` mode flag (1 = play tournament music, 0 = don't).
+
+Checks `profile+0x96` (won flag):
+- **Won flag NOT set (normal between-races):** Shows "PLAY!" button, "ROLLBACK" button (label "ROLL" or "RXLL" depending on race index), "MAIN MENU" button, and a race description (word-wrapped text from the race name pointer table at 0x4F7148). Also calls `TourneyMenu_WriteSave` to save progress.
+- **Won flag IS set (win screen):** No "PLAY!" button. Instead, calculates the player's **rank** by comparing `App+0x5E4` (total score) against threshold values at `0x4F710C`. Loads a rank badge texture (`textures\ranks\%d.jpg` via `AthenaString_Format`). Shows only "MAIN MENU" button.
+
+### Final Win Screen (0x00451B90)
+
+Called directly from `Scene_HandleCountdown` when the Impossible Race ends in tournament mode. This is the actual win screen:
+1. Sets `profile+0x96 = 1` (won flag — marks tournament as won)
+2. Calls `CRT_remove("DATA\\tournament.sav")` — **deletes the save file** (tournament is over, can't resume)
+3. Plays "Main Theme - No Intro" music at 2x speed (victory fanfare)
+4. Sets up rank badge animations and timer fields
+5. Sets `App+0x850 = 1` (marks tournament completed on the App struct)
+6. Does NOT add any "PLAY!" button — only the win screen content is shown
+
+The user clicks "MAIN MENU" to return to the title screen. There is no separate "advance to next race" step — the tournament is over.
+
 ## The Race Order
 
 The switch statement in `Tournament_AdvanceRace` (0x427080) defines the fixed race order:
@@ -122,18 +151,19 @@ Tournament_AdvanceRace(profile, 1);
 6. **Switch on new race index** → create the appropriate board constructor
 7. If no case matches (raceIdx > 15) → tournament is over, return without creating a board
 8. If a board was created:
-   - Store it: `profile->board = newBoard`
-   - Call `board->vtable[0x12]()` (init/load function)
-   - Add board to scene via `Scene_AddObject`
-   - Set up score timers based on difficulty:
-     - Normal (difficulty 0): `targetTime += 1000`, score bonus `_DAT_004cf6f4`
-     - Frenzied (difficulty 1): `targetTime += 500`, score bonus `_DAT_004cf3d8`
-   - Initialize 4 player score slots (App+0x5E8/5EC, 0x688/68C, 0x728/72C, 0x7C8/7CC)
-     - Races 1-2 (idx < 3): set "current" score, clear "previous"
-     - Races 3+ (idx >= 3): only set "previous" score (accumulating)
-   - For each player slot (4 players, 0xA0 stride):
-     - Set race index: `playerData->0x60C = raceIdx - 1`
-     - Copy race name from `board->0x29B4` to `playerData->0x610`
+ - Store it: `profile->board = newBoard`
+ - Call `board->vtable[0x12]()` (init/load function)
+ - Add board to scene via `Scene_AddObject`
+ - Set up score timers based on difficulty:
+   - Normal (difficulty 0): `targetTime += 1000`, score bonus `_DAT_004cf6f4`
+   - Frenzied (difficulty 1): `targetTime += 500`, score bonus `_DAT_004cf3d8`
+ - Initialize 4 player score slots (App+0x5E8/5EC, 0x688/68C, 0x728/72C, 0x7C8/7CC)
+   - For races 1-2 (index < 3): both "current" and "previous" are set to the same value (starting the tournament fresh)
+   - For races 3+ (index >= 3): only "previous" is updated, while "current" carries forward from the previous race's end state
+ - **All race scores are saved identically to the profile's scores array** — the `index < 3` distinction only affects the App-level display slots, not the profile score array which is always written: `profile->scores[raceIdx] = App->0x5E8`
+ - For each player slot (4 players, 0xA0 stride):
+   - Set race index: `playerData->0x60C = raceIdx - 1`
+   - Copy race name from `board->0x29B4` to `playerData->0x610`
 
 ### Phase 4: Race Ends — Scene_HandleCountdown (0x41A540)
 
@@ -212,22 +242,22 @@ When "PLAY!" is clicked:
    - Creates the next board
    - The race begins
 
-### Phase 6: Tournament End
+### Phase 6: Tournament End — Win Screen
 
 After the Impossible Race (race 15, the last race):
 
 1. `Scene_HandleCountdown` detects `board+0x4348` (last race flag, set by Impossible's constructor at `0x424C20`)
 2. In tournament mode (profile+0x10=0, profile+0x11=0):
    - Sets pause flag (`board+0x874 = 1`)
-   - Creates a TourneyMenu via `0x00451B90` (the end-of-tournament variant)
-   - Game pauses, showing final results
-3. User clicks "PLAY!":
-   - `Tournament_AdvanceRace(profile, 0)` is called
-   - `raceIdx` increments from 15 to 16
-   - The switch statement has no case 16 → falls to default
-   - The default path checks `profile->board` — it's NULL (destroyed at function start)
-   - Returns immediately without creating a board
-   - **Tournament is over** — no special ending screen, just returns to whatever menu the TourneyMenu's button handler creates
+   - Calls the **win screen constructor** at `0x00451B90` (NOT the between-races `0x0044FDA0`)
+   - The win screen constructor:
+     - Sets `profile+0x96 = 1` (won flag)
+     - Deletes `DATA\TOURNAMENT.SAV` (tournament over, no resume)
+     - Plays "Main Theme - No Intro" at 2x speed (victory fanfare)
+     - Sets `App+0x850 = 1` (tournament completed)
+   - Game pauses showing the win screen with rank badge
+3. User clicks "MAIN MENU" → returns to title screen
+4. **Tournament is over.** No `Tournament_AdvanceRace` is called — there is no "PLAY!" button and no attempt to advance to race 16.
 
 ## Tournament Save File Format
 
@@ -304,9 +334,9 @@ Board+0x8B8    scene_object_AthenaList
 `board+0x4348` is the critical flag that determines tournament end behavior. It is set to `1` by the **Impossible Race constructor** (`FUN_00424c20` at `0x424C20`). No other board constructor sets this flag.
 
 When this flag is set and the race ends:
-- **Tournament mode**: Shows the final TourneyMenu (pause + results), then the tournament ends on the next "PLAY!" press (AdvanceRace increments past case 15, no board created)
-- **Practice mode** (`profile+0x10` set): Skips the TourneyMenu, goes through the normal timer/cleanup path
-- **Party mode** (`profile+0x11` set): Same — skips TourneyMenu, goes to party mode menu
+- **Tournament mode**: Pauses the game and calls the **final win screen** constructor `0x00451B90` directly (NOT the between-races `0x0044FDA0`). This sets `profile+0x96 = 1` (won flag), deletes `DATA\TOURNAMENT.SAV`, plays victory music, and shows the win screen with rank badge. No "PLAY!" button — only "MAIN MENU". **Tournament is over.**
+- **Practice mode** (`profile+0x10` set): Skips the win screen, goes through the normal timer/cleanup path
+- **Party mode** (`profile+0x11` set): Same — skips win screen, goes to party mode menu
 
 ## Difficulty Bonuses
 
@@ -320,5 +350,6 @@ After creating each board, `Tournament_AdvanceRace` adjusts the target time and 
 
 The time bonus is added to `board+0x2998` (the board's target time). The score bonus is added to `profile+0x14` (the overall tournament score float).
 
-For races 1-2 (index < 3): scores are set as "current" (App+0x5E8 etc.) with "previous" cleared to 0.
-For races 3+ (index >= 3): only "previous" is updated, allowing score accumulation across the tournament.
+For races 1-2 (index < 3): both "current" and "previous" display slots are set to the same value.
+For races 3+ (index >= 3): only "previous" is updated, while "current" carries forward.
+**All race scores are saved identically to the profile's scores array** regardless of race index — the `index < 3` check only affects the App-level display state, not the persistent profile score data.
