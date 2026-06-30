@@ -470,7 +470,7 @@ Opens file with _open(path, 0x8000), reads: material_count → materials (with e
 | 17 | 0x4198E0 | Scene_SaveAndCleanup | Save state + cleanup |
 | 19 | 0x419E20 | Scene_HandleRaceEnd | Handle race completion |
 | 20 | 0x41A180 | Scene_UpdateBallsAndState | Update ball physics + race state |
-| 22 | 0x41A050 | Scene_HandleCountdown | 3-2-1-GO countdown logic |
+| 22 | 0x41A050 | Scene_ProcessRaceEnd | 3-2-1-GO countdown logic |
 | 23 | 0x419E80 | Scene_HandleBallFinish | Ball finish state machine (5 states) |
 | 27 | 0x41A560 | Scene_RenderScoreHUD | Render score HUD overlay |
 | 28 | 0x41A680 | Scene_RenderTimerHUD | Render timer HUD overlay |
@@ -489,7 +489,7 @@ Opens file with _open(path, 0x8000), reads: material_count → materials (with e
 | 6 | RumbleBoard timer ticks | this+0x221, this+0x226 (two RumbleBoard timers) |
 | 7 | Camera shake decay | this+0xE93 (shake active), +0xA6E (magnitude, ±800, decay -10/frame) |
 | 8 | Scene object update+render | iterate this+0x22E, vtable[4]=Update, vtable[0]=Render |
-| 9 | Per-frame update pipeline | vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_HandleCountdown + physics objects at this+0xD8B |
+| 9 | Per-frame update pipeline | vtable[0x4C]=Scene_HandleRaceEnd, [0x50]=Scene_UpdateBallsAndState (ball update+respawn), [0x54]=NoOp, [0x58]=Scene_ProcessRaceEnd + physics objects at this+0xD8B |
 | 10 | Post-physics callback | this+0xEBF+0x04() |
 
 ### Scene_HandleBallFinish State Machine (5 states)

@@ -102,7 +102,7 @@ Scene_Update (0x419C00) / ArenaBoard_Update (0x421FE0)  ← vtable[1]
        ├─ vtable[20] (0x50) = Scene_UpdateBallsAndState (0x41B540)
        │    └─ For each ball: Ball_SetCamera + Ball_Update (vtable[4])
        ├─ vtable[21] (0x54) = NoOp (0x40A040)
-       ├─ vtable[22] (0x58) = Scene_HandleCountdown (0x41A540) ← race-end handler
+       ├─ vtable[22] (0x58) = Scene_ProcessRaceEnd (0x41A540) ← race-end handler
        └─ For each object: vtable[31] (0x7C) = Scene_vmethod31 (camera setup)
 ```
 
@@ -319,7 +319,7 @@ function entry and read profile+0x0C after calling the original.
 **Calling convention**: `__thiscall` (ECX = App, `[ESP+4]` = int flag).
 `RET 0x4` (callee cleans 1 stack param). The flag is always 1 in all
 observed callers (App_StartTournamentRace, App_StartPracticeRace,
-Scene_HandleCountdown).
+Scene_ProcessRaceEnd).
 
 **Timing**: Before scene reset. Old objects are still alive. The new level
 hasn't been loaded yet.
@@ -541,7 +541,7 @@ All entries verified by reading raw vtable bytes from memory.
 - **[19]** (0x4C): 0x41B130 — Scene_HandleRaceEnd (3-2-1 countdown + race-end)
 - **[20]** (0x50): 0x41B540 — Scene_UpdateBallsAndState (ball physics update)
 - **[21]** (0x54): 0x40A040 — NoOp (unused slot)
-- **[22]** (0x58): 0x41A540 — Scene_HandleCountdown (race-end menu/results)
+- **[22]** (0x58): 0x41A540 — Scene_ProcessRaceEnd (race-end menu/results)
 - **[27]** (0x6C): 0x41B710 — Scene_RenderScoreHUD (render countdown numbers + HUD)
 - **[28]** (0x70): 0x41BFD0 — Scene_RenderTimerHUD (render race timer)
 - **[31]** (0x7C): 0x41AC70 — Scene_vmethod31 (per-ball camera + render setup)
@@ -647,7 +647,7 @@ All verified via disassembly (RET instruction inspection).
 | Scene_Update | 0x419C00 | __fastcall | RET | ECX=board |
 | Scene_HandleRaceEnd | 0x41B130 | __fastcall | RET | ECX=board |
 | Scene_UpdateBallsAndState | 0x41B540 | __fastcall | RET | ECX=board |
-| Scene_HandleCountdown | 0x41A540 | __fastcall | RET | ECX=board |
+| Scene_ProcessRaceEnd | 0x41A540 | __fastcall | RET | ECX=board |
 | Scene_StartCountdown | 0x437130 | __thiscall | RET 0x4 | ECX=scene, [ESP+4]=ball |
 | Ball_Update | 0x405E00 | __thiscall | RET | ECX=ball |
 | Ball_ctor2 | 0x4039E0 | __thiscall | RET 0x4 | ECX=alloc, [ESP+4]=scene |
@@ -786,7 +786,7 @@ was misidentified as a scene function — it's actually a sound channel cleanup 
 
 - **Scene_HandleRaceEnd** (0x41B130, vtable[19]) = Pre-race **3-2-1 countdown**
   display, NOT just race-end. It also handles post-race results.
-- **Scene_HandleCountdown** (0x41A540, vtable[22]) = **Race-end** menu/results
+- **Scene_ProcessRaceEnd** (0x41A540, vtable[22]) = **Race-end** menu/results
   handler, NOT the pre-race countdown. Name is misleading.
 - **Scene_StartCountdown** (0x437130) = **SinkPlatform** freeze countdown,
   NOT the universal pre-race 3-2-1 countdown.
@@ -804,7 +804,7 @@ the countdown. Ball+0x14C is only set by:
 The SinkPlatform countdown timer (Scene+0x10F4=400) is set by
 Scene_StartCountdown but no function in the analyzed codebase decrements it.
 Verified by searching for 0x10F4 references in Scene_Update,
-Scene_HandleRaceEnd, Scene_UpdateBallsAndState, and Scene_HandleCountdown —
+Scene_HandleRaceEnd, Scene_UpdateBallsAndState, and Scene_ProcessRaceEnd —
 none reference it. It may be a legacy feature replaced by the
 Scene_HandleRaceEnd phase system.
 

@@ -6,7 +6,7 @@ All addresses verified via Ghidra decompilation of Hamsterball.exe V3.6.c.
 
 ## Overview
 
-Tournament mode flows through 15 races in a fixed order. The game uses a **PlayerProfile** struct to track race index and scores, a **TourneyMenu** screen between races, and a central `Tournament_AdvanceRace` function that creates each board. The race-end transition is handled by `Scene_HandleCountdown`, which checks a "last race" flag on the board to decide whether to end the tournament.
+Tournament mode flows through 15 races in a fixed order. The game uses a **PlayerProfile** struct to track race index and scores, a **TourneyMenu** screen between races, and a central `Tournament_AdvanceRace` function that creates each board. The race-end transition is handled by `Scene_ProcessRaceEnd`, which checks a "last race" flag on the board to decide whether to end the tournament.
 
 ## Key Functions
 
@@ -15,7 +15,7 @@ Tournament mode flows through 15 races in a fixed order. The game uses a **Playe
 | `GameSelectionManager` | `0x433AC0` | Main menu command dispatcher (handles "1PT", "1PMT", "1PP", etc.) |
 | `App_StartTournamentRace` | `0x4288B0` | Sets up App flags, creates PlayerProfile, calls AdvanceRace |
 | `Tournament_AdvanceRace` | `0x427080` | **Core function**: increments race index, creates next board via switch |
-| `Scene_HandleCountdown` | `0x41A540` | Race-end logic: checks timer, last-race flag, routes to advance/menu |
+| `Scene_ProcessRaceEnd` | `0x41A540` | Race-end logic: checks timer, last-race flag, routes to advance/menu |
 | `TourneyMenu_Advance` | `0x4266F0` | "PLAY!" button handler on between-races screen |
 | `TourneyMenu_CreateBoard` | `0x426780` | Arena mode variant of the board creation switch |
 | `TourneyMenu_WriteSave` | `0x4264B0` | Saves tournament state to `DATA\TOURNAMENT.SAV` |
@@ -43,7 +43,7 @@ Checks `profile+0x96` (won flag):
 
 ### Final Win Screen (0x00451B90)
 
-Called directly from `Scene_HandleCountdown` when the Impossible Race ends in tournament mode. This is the actual win screen:
+Called directly from `Scene_ProcessRaceEnd` when the Impossible Race ends in tournament mode. This is the actual win screen:
 1. Sets `profile+0x96 = 1` (won flag — marks tournament as won)
 2. Calls `CRT_remove("DATA\\tournament.sav")` — **deletes the save file** (tournament is over, can't resume)
 3. Plays "Main Theme - No Intro" music at 2x speed (victory fanfare)
@@ -165,7 +165,7 @@ Tournament_AdvanceRace(profile, 1);
    - Set race index: `playerData->0x60C = raceIdx - 1`
    - Copy race name from `board->0x29B4` to `playerData->0x610`
 
-### Phase 4: Race Ends — Scene_HandleCountdown (0x41A540)
+### Phase 4: Race Ends — Scene_ProcessRaceEnd (0x41A540)
 
 This function is called when a race ends (all balls finished or timer expires).
 
@@ -246,7 +246,7 @@ When "PLAY!" is clicked:
 
 After the Impossible Race (race 15, the last race):
 
-1. `Scene_HandleCountdown` detects `board+0x4348` (last race flag, set by Impossible's constructor at `0x424C20`)
+1. `Scene_ProcessRaceEnd` detects `board+0x4348` (last race flag, set by Impossible's constructor at `0x424C20`)
 2. In tournament mode (profile+0x10=0, profile+0x11=0):
    - Sets pause flag (`board+0x874 = 1`)
    - Calls the **win screen constructor** at `0x00451B90` (NOT the between-races `0x0044FDA0`)

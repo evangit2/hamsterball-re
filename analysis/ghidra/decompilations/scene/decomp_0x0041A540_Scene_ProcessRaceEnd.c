@@ -1,11 +1,11 @@
 // Decompiled via GhidraMCP
-// Function: Scene_HandleCountdown
+// Function: Scene_ProcessRaceEnd
 // Address: 0x0041A540
 // Category: scene
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __fastcall Scene_HandleCountdown(int *param_1)
+void __fastcall Scene_ProcessRaceEnd(int *param_1)
 
 {
   int iVar1;
