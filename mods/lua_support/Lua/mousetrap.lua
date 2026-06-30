@@ -189,7 +189,17 @@ function update(entity_id, dt)
         cooldown_timer = cooldown_timer - dt
     end
 
+    -- ── Collision detection ────────────────────────────────────────────
+    -- Only check when not on cooldown
+    if cooldown_timer <= 0 then
+        local dist = hamsterball.distance_to_ball(entity_id, BALL_INDEX)
+        if dist >= 0 and dist < TRIGGER_RADIUS then
+            trigger(entity_id, dist)
+        end
+    end
+
     -- ── Snap animation state machine ───────────────────────────────────
+    -- Runs AFTER collision check so a fresh trigger snaps on the same frame.
     -- Phase 1: Snap forward (fast)
     if snap_state == 1 then
         current_tilt = current_tilt + SNAP_SPEED * dt
@@ -207,17 +217,5 @@ function update(entity_id, dt)
             snap_state = 0  -- back to idle
         end
         apply_tilt(entity_id, current_tilt)
-    end
-
-    -- ── Collision detection ────────────────────────────────────────────
-    -- Only check when not on cooldown
-    if cooldown_timer > 0 then
-        return
-    end
-
-    local dist = hamsterball.distance_to_ball(entity_id, BALL_INDEX)
-
-    if dist >= 0 and dist < TRIGGER_RADIUS then
-        trigger(entity_id, dist)
     end
 end
