@@ -1,40 +1,38 @@
 /*
- * hamsterball_water_mod.c — v2: Velocity-based water physics via Phase 15 hook.
+ * hamsterball_water_mod.c — v3: Collision-triggered water physics
  *
- * BUILD (Linux -> Windows): make
+ * BUILD (Linux -> Windows):
+ *   i686-w64-mingw32-gcc -shared -o bass.dll hamsterball_water_mod.c -lwinmm \
+ *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
+ *     -Wl,--add-stdcall-alias
  *
  * INSTALLATION (Windows):
  *   1. In the Hamsterball game folder rename original bass.dll -> bass_real.dll
  *   2. Copy this proxy bass.dll + hamsterball_water.ini into the game folder
- *   3. Place invisible collision planes named "E:WATER" in custom levels, OR
- *      set water plane Y coordinates in the INI file
+ *   3. Place collision objects named "E:WATER" in custom levels
  *   4. Run Hamsterball.exe normally
  *
- * HOW IT WORKS (v2 — FIXED):
- *   - Forwards all BASS audio calls to bass_real.dll.
- *   - Hooks Ball_Update at Phase 15 (0x407BB4) via code cave — same proven
- *     approach as the jump mod and power bounce mod.
- *   - The code cave calls a C helper function that:
- *       1. Reads the ball's position and velocity from the physics struct
- *       2. Checks if the ball is touching/inside a water plane
- *       3. If in water, modifies VELOCITY directly:
- *          a. Entry damping (scale velocity_Y on first contact while falling)
- *          b. Drag (scale all velocity axes per frame)
- *          c. Horizontal drag (extra scaling on X/Z only)
- *          d. Buoyancy (add upward velocity proportional to submersion depth)
- *       4. Writes modified velocity back to the physics struct
- *   - The velocity changes persist and affect next frame's position integration,
- *     which is correct physics: forces modify velocity, velocity modifies position.
+ * HOW IT WORKS (v3):
+ *   Two hooks:
  *
- * FIXES FROM v1:
- *   - Modifies VELOCITY (phys+0xCA4/CA8/CAC) instead of position delta
- *     → drag/buoyancy actually affect the ball's momentum, not just visual position
- *   - Fixes ball+0x14 = Board (not Scene) — original mod mislabeled this
- *   - Uses Phase 15 code cave (proven approach from jump/power_bounce mods)
- *     instead of vtable hook with save-call-modify pattern
- *   - Buoyancy is now velocity-based (acceleration), not position offset
- *     → ball reaches stable float instead of oscillating
- *   - Entry damping reduces velocity (persists), not position delta (one-frame)
+ *   HOOK 1 — DispatchCollisionEvents (0x40C5D0) trampoline:
+ *     Intercepts all collision events. When the collision object's name starts
+ *     with "E:WATER", fires the 3-step trigger:
+ *       1. Sets in_water flag (gates ongoing water physics)
+ *       2. Reduces ALL velocity axes by entry_damping (default 30%)
+ *       3. Captures ball's Y as water_surface_y for this session
+ *     Then calls the original DispatchCollisionEvents so the game processes
+ *     the collision normally.
+ *
+ *   HOOK 2 — Phase 15 code cave (0x407BB4) in Ball_Update:
+ *     Runs every frame for every ball. If in_water is set, applies:
+ *       - Drag (all velocity axes scaled per frame)
+ *       - Horizontal drag (extra scaling on X/Z)
+ *       - Buoyancy (upward acceleration proportional to submersion)
+ *     If ball rises above captured surface, clears in_water.
+ *
+ *   No background scan thread. No MeshWorld parsing. No AthenaList iteration.
+ *   The game's own collision system tells us when the ball touches water.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll hamsterball_water_mod.c -lwinmm \
@@ -52,7 +50,7 @@
 #include <math.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports — forward all game imports to bass_real.dll
+ * BASS Proxy Exports
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static HMODULE g_hRealBass = NULL;
@@ -118,7 +116,7 @@ __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
     return 1;
 }
 
-/* Extra stubs for completeness */
+/* Extra stubs */
 __declspec(dllexport) void __stdcall BASS_Pause(void) {}
 __declspec(dllexport) void __stdcall BASS_SetVolume(DWORD a) {}
 __declspec(dllexport) DWORD __stdcall BASS_GetVolume(void) { return 0; }
@@ -191,119 +189,56 @@ static void diag_log(const char *msg)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Memory layout constants (verified against Hamsterball.exe via Ghidra)
+ * Memory layout constants
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define IMAGE_BASE              0x00400000
 
-/* Hook address — Phase 15 in Ball_Update, same as jump mod + power bounce */
+/* Hook 1: DispatchCollisionEvents — trampoline hook */
+#define ADDR_DISPATCH_COLLISIONS  0x0040C5D0
+#define TRAMP_SIZE               16
+
+/* Hook 2: Phase 15 in Ball_Update — code cave */
 #define PHASE15_HOOK            0x00407BB4
 #define PHASE15_ORIG_BYTES      6
-/* Original bytes: 8B 4C 24 1C 8B 11 = MOV ECX,[ESP+1C]; MOV EDX,[ECX] */
-/* At this point ESI = ball pointer */
 
 /* Ball struct offsets */
-#define BALL_BOARD              0x014   /* Board* (NOT Scene — ball+0x14 is the Board) */
 #define BALL_POS_X              0x164
 #define BALL_POS_Y              0x168
 #define BALL_POS_Z              0x16C
-#define BALL_FORCE_Y            0x174   /* Y force accumulator (used by jump mod) */
 #define BALL_PHYS_PTR           0x1A4   /* Physics struct pointer */
 #define BALL_RADIUS             0x284
-#define BALL_PLAYER_IDX         0x018   /* int: 0-3 = player, -1 = NPC */
 
-/* Physics struct offsets (at ball+0x1A4) */
+/* Physics struct offsets */
 #define PHYS_VEL_X              0xCA4
 #define PHYS_VEL_Y              0xCA8
 #define PHYS_VEL_Z              0xCAC
 
-/* Board struct offsets */
-#define BOARD_SCENE             0x878   /* Scene* back-pointer */
-#define BOARD_COLLISION_MESH    0x8B0   /* collision mesh data (for raycasting) */
-
-/* AthenaList layout */
-#define ATHENA_COUNT_OFFSET     0x04
-#define ATHENA_DATA_OFFSET      0x40C
-
-/* MeshBuffer struct offsets */
-#define OFF_MB_FACE_LIST        0x0C
-#define OFF_MB_NAME              0x864
-
-/* CollisionFace struct offsets */
-#define OFF_FACE_V0_Y           0x04
+/* Collision entry struct: pair of pointers
+ *   [0] = type/board ptr
+ *   [1] = MeshBuffer pointer (name at +0x864) */
+#define COLLOBJ_MESHBUFFER      1       /* index into the pair */
+#define MESHBUFFER_NAME_OFFSET  0x864
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Config
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define MAX_WATER_PLANES 16
-
 typedef struct {
-    float entry_damping;       /* velocity multiplier on first contact while falling (0-1) */
+    float entry_damping;       /* velocity multiplier on first contact (0-1) */
     float drag;                /* per-frame velocity drag on all axes (0-1) */
     float horizontal_drag;     /* extra drag on X/Z axes (0-1) */
-    float buoyancy_strength;   /* upward acceleration per frame at full submersion */
+    float buoyancy_strength;   /* upward acceleration at full submersion */
     int   debug;               /* write log file */
-    int   plane_count;         /* fallback water planes from INI */
-    float plane_y[MAX_WATER_PLANES];
 } water_cfg_t;
 
 static water_cfg_t g_cfg = {
-    0.70f,   /* entry_damping: velocity reduced to 70% on first contact */
-    0.03f,   /* drag: 3% velocity reduction per frame on all axes */
-    0.04f,   /* horizontal_drag: extra 4% on X/Z */
-    0.45f,   /* buoyancy_strength: upward acceleration at full submersion */
-    1,       /* debug */
-    0,       /* plane_count */
-    {0}      /* plane_y */
+    0.70f,   /* entry_damping */
+    0.03f,   /* drag */
+    0.04f,   /* horizontal_drag */
+    0.45f,   /* buoyancy_strength */
+    1        /* debug */
 };
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Water plane cache
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-typedef struct {
-    float surface_y;
-    int   found;
-} water_plane_t;
-
-static water_plane_t g_planes[MAX_WATER_PLANES];
-static int g_plane_count = 0;
-static int g_scan_done = 0;
-static DWORD g_last_board = 0;
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Per-ball water state
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-#define MAX_BALLS 32
-
-typedef struct {
-    DWORD ball;              /* ball pointer (key); 0 = unused */
-    int   in_water;          /* currently in water? (gates the physics code) */
-    float water_surface_y;   /* ball's Y at moment of contact — used as water height */
-} water_state_t;
-
-static water_state_t g_states[MAX_BALLS];
-
-static water_state_t *get_ball_state(DWORD ball)
-{
-    int free_idx = -1;
-    for (int i = 0; i < MAX_BALLS; i++) {
-        if (g_states[i].ball == ball) return &g_states[i];
-        if (free_idx == -1 && g_states[i].ball == 0) free_idx = i;
-    }
-    if (free_idx >= 0) {
-        memset(&g_states[free_idx], 0, sizeof(water_state_t));
-        g_states[free_idx].ball = ball;
-        return &g_states[free_idx];
-    }
-    return NULL;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * INI config loading
- * ═══════════════════════════════════════════════════════════════════════════ */
 
 static float read_ini_float(const char *path, const char *section, const char *key, float def)
 {
@@ -338,181 +273,181 @@ static void load_config(const char *ini_path)
     if (g_cfg.drag > 1.0f) g_cfg.drag = 1.0f;
     if (g_cfg.horizontal_drag < 0.0f) g_cfg.horizontal_drag = 0.0f;
     if (g_cfg.horizontal_drag > 1.0f) g_cfg.horizontal_drag = 1.0f;
-
-    g_cfg.plane_count = read_ini_int(ini_path, "WaterPlanes", "Count", 0);
-    if (g_cfg.plane_count < 0) g_cfg.plane_count = 0;
-    if (g_cfg.plane_count > MAX_WATER_PLANES) g_cfg.plane_count = MAX_WATER_PLANES;
-    for (int i = 0; i < g_cfg.plane_count; i++) {
-        char key[16];
-        wsprintfA(key, "Y%d", i);
-        g_cfg.plane_y[i] = read_ini_float(ini_path, "WaterPlanes", key, 0.0f);
-    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Water plane discovery
- *
- * Scans the Board's collision mesh for objects named "E:WATER".
- * Falls back to INI-configured Y coordinates if no E:WATER objects found.
- *
- * ball+0x14 = Board (NOT Scene — this was a bug in v1)
- * board+0x8B0 = collision mesh data (used by Mesh_FindClosestCollision)
+ * Per-ball water state
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int athena_get_count(void *list_ptr)
+#define MAX_BALLS 32
+
+typedef struct {
+    DWORD ball;              /* ball pointer (key); 0 = unused */
+    int   in_water;          /* currently in water? (gates physics) */
+    float water_surface_y;   /* ball's Y at moment of contact */
+} water_state_t;
+
+static water_state_t g_states[MAX_BALLS];
+
+static water_state_t *get_ball_state(DWORD ball)
 {
-    if (!list_ptr || IsBadReadPtr(list_ptr, 0x414)) return 0;
-    return *(int *)((char *)list_ptr + ATHENA_COUNT_OFFSET);
-}
-
-static void **athena_get_data(void *list_ptr)
-{
-    if (!list_ptr || IsBadReadPtr(list_ptr, 0x414)) return NULL;
-    void **data = *(void ***)((char *)list_ptr + ATHENA_DATA_OFFSET);
-    if (!data || IsBadReadPtr(data, sizeof(void*))) return NULL;
-    return data;
-}
-
-static float read_meshbuffer_face_y(void *meshbuf)
-{
-    if (!meshbuf || IsBadReadPtr(meshbuf, 0x874)) return 0.0f;
-
-    void *face_list = (char *)meshbuf + OFF_MB_FACE_LIST;
-    int face_count = athena_get_count(face_list);
-    if (face_count < 1) return 0.0f;
-
-    void **face_data = athena_get_data(face_list);
-    if (!face_data) return 0.0f;
-
-    void *first_face = face_data[0];
-    if (!first_face || IsBadReadPtr(first_face, 0x60)) return 0.0f;
-
-    return *(float *)((char *)first_face + OFF_FACE_V0_Y);
-}
-
-static const char *get_meshbuffer_name(void *meshbuf)
-{
-    if (!meshbuf || IsBadReadPtr(meshbuf, 0x874)) return NULL;
-    char *name = *(char **)((char *)meshbuf + OFF_MB_NAME);
-    if (!name || IsBadReadPtr(name, 1)) return NULL;
-    return name;
-}
-
-static int is_water_name(const char *name)
-{
-    if (!name) return 0;
-    return (_strnicmp(name, "E:WATER", 7) == 0);
-}
-
-/* Scan a MeshWorld's object list for E:WATER objects */
-static int scan_object_list(void *meshworld, const char *label)
-{
-    if (!meshworld || IsBadReadPtr(meshworld, 0x488)) {
-        diag_log("scan: meshworld is NULL or unreadable");
-        return 0;
+    int free_idx = -1;
+    for (int i = 0; i < MAX_BALLS; i++) {
+        if (g_states[i].ball == ball) return &g_states[i];
+        if (free_idx == -1 && g_states[i].ball == 0) free_idx = i;
     }
-
-    void *obj_list = (char *)meshworld + 0x2C;  /* AthenaList object_list */
-    int count = athena_get_count(obj_list);
-    void **data = athena_get_data(obj_list);
-
-    if (count < 1 || !data) return 0;
-
-    int found = 0;
-    for (int i = 0; i < count && found < MAX_WATER_PLANES; i++) {
-        if (IsBadReadPtr(&data[i], sizeof(void*))) break;
-        void *obj = data[i];
-        if (!obj || IsBadReadPtr(obj, 0x874)) continue;
-
-        const char *name = get_meshbuffer_name(obj);
-        if (!name) continue;
-
-        if (is_water_name(name)) {
-            float face_y = read_meshbuffer_face_y(obj);
-            if (found < MAX_WATER_PLANES) {
-                g_planes[found].surface_y = face_y;
-                g_planes[found].found = 1;
-                found++;
-            }
-        }
+    if (free_idx >= 0) {
+        memset(&g_states[free_idx], 0, sizeof(water_state_t));
+        g_states[free_idx].ball = ball;
+        return &g_states[free_idx];
     }
-    return found;
+    return NULL;
 }
 
-static void scan_for_water_planes(DWORD board)
+/* ═══════════════════════════════════════════════════════════════════════════
+ * HOOK 1: DispatchCollisionEvents trampoline
+ *
+ * __thiscall: ECX = this (board), stack params: ball, collObj, RET 0x8
+ * MinGW workaround: __fastcall with dummy EDX.
+ *   __fastcall(this, dummy_edx, ball, collObj) == __thiscall(this, ball, collObj)
+ *
+ * collObj is a pair of pointers: collObj[0]=type, collObj[1]=MeshBuffer
+ * MeshBuffer+0x864 = name string (e.g. "E:WATER")
+ *
+ * When name starts with "E:WATER", fire the 3-step trigger:
+ *   1. Set in_water = 1
+ *   2. Reduce all velocity by entry_damping
+ *   3. Capture ball Y as water_surface_y
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* __thiscall workaround: __fastcall with dummy EDX arg */
+typedef void (__fastcall *dispatch_t)(void *this_, void *edx_dummy,
+                                        void *ball, void *collObj);
+
+static dispatch_t g_orig_Dispatch = NULL;
+static unsigned char g_tramp[TRAMP_SIZE];
+static volatile DWORD g_trigger_count = 0;
+
+/* Get the event name from a collision object.
+ * collObj is int** — collObj[1] points to MeshBuffer, name at +0x864 */
+static const char *get_collision_name(void *collObj)
 {
-    memset(g_planes, 0, sizeof(g_planes));
-    g_plane_count = 0;
+    if (!collObj || IsBadReadPtr(collObj, 8)) return NULL;
+    int *pair = (int *)collObj;
+    int meshbuf = pair[COLLOBJ_MESHBUFFER];
+    if (!meshbuf || IsBadReadPtr((void*)meshbuf, 0x868)) return NULL;
+    int nameptr = *(int*)(meshbuf + MESHBUFFER_NAME_OFFSET);
+    if (!nameptr || IsBadReadPtr((void*)nameptr, 1)) return NULL;
+    return (const char*)nameptr;
+}
 
-    if (!board || IsBadReadPtr((void*)board, 0x1000)) {
-        diag_log("scan: board is NULL or unreadable");
-        g_scan_done = 1;
-        return;
-    }
+/* Trigger function — called from the hooked DispatchCollisionEvents.
+ * Does the 3-step trigger: set flag, damp velocity, capture Y. */
+static void trigger_water_contact(void *ball_ptr)
+{
+    DWORD ball = (DWORD)ball_ptr;
+    if (!ball || IsBadReadPtr((void*)ball, 0x300)) return;
 
-    /* Try CollisionLevel at Board+0x8B0 → +0x08 as collision MeshWorld */
-    int found = 0;
-    DWORD collision_level = *(DWORD*)(board + BOARD_COLLISION_MESH);
-    if (collision_level && !IsBadReadPtr((void*)collision_level, 0x10D0)) {
-        DWORD cl_mw = *(DWORD*)(collision_level + 0x08);
-        if (cl_mw && !IsBadReadPtr((void*)cl_mw, 0x488)) {
-            found = scan_object_list((void*)cl_mw, "collvl+0x08");
-        }
-    }
+    float ball_y = *(float*)(ball + BALL_POS_Y);
+    float radius = *(float*)(ball + BALL_RADIUS);
+    if (radius <= 0.0f || radius > 1000.0f) return;
 
-    g_plane_count = found;
+    DWORD phys = *(DWORD*)(ball + BALL_PHYS_PTR);
+    if (!phys || IsBadReadPtr((void*)phys, 0xCB0)) return;
 
-    /* Fallback to INI-configured planes */
-    if (g_plane_count == 0 && g_cfg.plane_count > 0) {
-        for (int i = 0; i < g_cfg.plane_count && g_plane_count < MAX_WATER_PLANES; i++) {
-            g_planes[g_plane_count].surface_y = g_cfg.plane_y[i];
-            g_planes[g_plane_count].found = 1;
-            g_plane_count++;
-        }
-    }
+    float *vel_x = (float*)(phys + PHYS_VEL_X);
+    float *vel_y = (float*)(phys + PHYS_VEL_Y);
+    float *vel_z = (float*)(phys + PHYS_VEL_Z);
 
-    {
+    water_state_t *st = get_ball_state(ball);
+    if (!st) return;
+
+    /* Only trigger if not already in water */
+    if (st->in_water) return;
+
+    /* Step 1: Set in_water flag */
+    st->in_water = 1;
+
+    /* Step 2: Reduce ALL velocity by entry_damping */
+    float damp = g_cfg.entry_damping;
+    *vel_x *= damp;
+    *vel_y *= damp;
+    *vel_z *= damp;
+
+    /* Step 3: Capture ball Y as water surface height */
+    st->water_surface_y = ball_y;
+
+    g_trigger_count++;
+
+    if (g_cfg.debug) {
         char buf[256];
-        wsprintfA(buf, "scan_for_water_planes: board=%08X found=%d (ini_fallback=%d)",
-                  board, g_plane_count, g_plane_count > 0 ? 0 : (g_cfg.plane_count > 0));
+        wsprintfA(buf, "WATER TRIGGER #%u: ball=%08X y=%.2f vel=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f)",
+                  g_trigger_count, ball, ball_y,
+                  *vel_x / damp, *vel_y / damp, *vel_z / damp,
+                  *vel_x, *vel_y, *vel_z);
         diag_log(buf);
     }
+}
 
-    g_scan_done = 1;
+/* The hooked DispatchCollisionEvents */
+void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
+                                              void *ball, void *collObj)
+{
+    (void)edx_dummy;
+
+    /* Check if this is an E:WATER collision */
+    const char *name = get_collision_name(collObj);
+    if (name && _strnicmp(name, "E:WATER", 7) == 0) {
+        trigger_water_contact(ball);
+    }
+
+    /* Call original */
+    if (g_orig_Dispatch)
+        g_orig_Dispatch(this_, NULL, ball, collObj);
+}
+
+/* Install trampoline hook on DispatchCollisionEvents */
+static int install_dispatch_hook(void)
+{
+    unsigned char *target = (unsigned char *)ADDR_DISPATCH_COLLISIONS;
+    DWORD oldProtect;
+
+    if (!VirtualProtect(target, TRAMP_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect))
+        return 0;
+
+    /* Copy original bytes to trampoline */
+    memcpy(g_tramp, target, TRAMP_SIZE);
+
+    /* Trampoline: original 5 bytes + JMP back to target+5 */
+    g_tramp[5] = 0xE9;
+    *(unsigned long *)(g_tramp + 6) =
+        (unsigned long)((char *)target + 5 - (char *)(g_tramp + 5) - 5);
+
+    /* Make trampoline executable */
+    DWORD tp;
+    VirtualProtect(g_tramp, TRAMP_SIZE, PAGE_EXECUTE_READWRITE, &tp);
+
+    /* Overwrite target: JMP to our hook */
+    unsigned long rel = (unsigned long)((char *)hook_DispatchCollisionEvents - (char *)target - 5);
+    target[0] = 0xE9;
+    *(unsigned long *)(target + 1) = rel;
+
+    FlushInstructionCache(GetCurrentProcess(), target, 5);
+
+    g_orig_Dispatch = (dispatch_t)g_tramp;
+
+    diag_log("DispatchCollisionEvents hook installed");
+    return 1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Water physics — velocity modification
+ * HOOK 2: Phase 15 Code Cave (0x407BB4)
  *
- * Called from the Phase 15 code cave via C function pointer.
- * Receives the ball pointer (ESI at the hook point).
- *
- * TRIGGER MODEL:
- *   The E:WATER mesh Y from the level is only a trigger threshold. When the
- *   ball's position crosses below that Y, three things happen simultaneously:
- *     1. in_water flag is set (gates the ongoing water physics)
- *     2. ALL velocity axes are reduced by entry_damping factor (default 30% cut)
- *     3. The ball's current Y is captured as water_surface_y for this session
- *
- *   From that point on, water_surface_y (not the mesh Y) is used for all
- *   submersion/buoyancy calculations. This means the water height is wherever
- *   the ball actually touched the surface, not a fixed geometric point.
- *
- *   The in_water flag clears when the ball rises above water_surface_y + radius
- *   (ball fully exits the water).
- *
- * VELOCITY MODIFICATION (while in_water):
- *   - Drag: all velocity axes scaled per frame
- *   - Horizontal drag: extra scaling on X/Z
- *   - Buoyancy: upward acceleration proportional to submersion depth,
- *     relative to the captured water_surface_y
- *
+ * Same as before — applies ongoing drag/buoyancy while in_water is set.
+ * Called every frame for every ball via PUSHAD/PUSHFD + C function call.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Compute submersion fraction relative to the captured water surface Y.
- * 0 = just touching, 0.5 = half, 1 = fully under.
- * Bottom of ball (deepest) = ball_y - radius.
- * Top of ball (shallowest) = ball_y + radius. */
+/* Compute submersion fraction relative to captured surface Y */
 static float compute_submersion(float ball_y, float radius, float surface_y)
 {
     float bottom_y = ball_y - radius;
@@ -527,32 +462,25 @@ static float compute_submersion(float ball_y, float radius, float surface_y)
     return submerged;
 }
 
-/* Check if ball has crossed any E:WATER trigger threshold.
- * Returns 1 if the ball's center is below at least one trigger plane. */
-static int check_water_trigger(float ball_y)
-{
-    for (int i = 0; i < g_plane_count; i++) {
-        if (!g_planes[i].found) continue;
-        if (ball_y < g_planes[i].surface_y) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* Main water physics function — called from Phase 15 code cave.
- * Safe to call from code cave with PUSHAD/PUSHFD saved state. */
+/* Ongoing water physics — called from Phase 15 code cave every frame */
 static void __cdecl apply_water_physics(DWORD ball)
 {
     if (!ball || IsBadReadPtr((void*)ball, 0x300)) return;
-    if (g_plane_count == 0) return;
 
-    /* Read ball position and radius */
+    water_state_t *st = get_ball_state(ball);
+    if (!st || !st->in_water) return;
+
     float ball_y = *(float*)(ball + BALL_POS_Y);
     float radius = *(float*)(ball + BALL_RADIUS);
     if (radius <= 0.0f || radius > 1000.0f) return;
 
-    /* Get physics struct */
+    /* Exit condition: ball bottom above captured surface */
+    if (ball_y - radius > st->water_surface_y) {
+        st->in_water = 0;
+        st->water_surface_y = 0.0f;
+        return;
+    }
+
     DWORD phys = *(DWORD*)(ball + BALL_PHYS_PTR);
     if (!phys || IsBadReadPtr((void*)phys, 0xCB0)) return;
 
@@ -560,49 +488,11 @@ static void __cdecl apply_water_physics(DWORD ball)
     float *vel_y = (float*)(phys + PHYS_VEL_Y);
     float *vel_z = (float*)(phys + PHYS_VEL_Z);
 
-    /* Get per-ball state */
-    water_state_t *st = get_ball_state(ball);
-    if (!st) return;
-
-    if (!st->in_water) {
-        /* Ball is NOT currently in water.
-         * Check if it has crossed an E:WATER trigger threshold. */
-        if (check_water_trigger(ball_y)) {
-            /* ═══ TRIGGER: Ball just hit the water surface ═══
-             * 1. Set in_water flag (opens up water physics)
-             * 2. Reduce ALL velocity by entry_damping (default 30% cut)
-             * 3. Capture ball's Y as the water surface height */
-            st->in_water = 1;
-            st->water_surface_y = ball_y;
-
-            float damp = g_cfg.entry_damping;
-            *vel_x *= damp;
-            *vel_y *= damp;
-            *vel_z *= damp;
-        }
-        return;
-    }
-
-    /* Ball IS in water — check if it has exited.
-     * Ball exits when its top (ball_y + radius) rises above the captured surface. */
-    if (ball_y - radius > st->water_surface_y) {
-        /* Ball fully above water — exit */
-        st->in_water = 0;
-        st->water_surface_y = 0.0f;
-        return;
-    }
-
-    /* ═══ Ongoing water physics (in_water = 1) ═══ */
-
-    /* Compute submersion relative to captured surface Y */
+    /* Submersion depth relative to captured surface */
     float submersion = compute_submersion(ball_y, radius, st->water_surface_y);
-    if (submersion <= 0.0f) {
-        /* Ball center is above surface but bottom hasn't cleared it yet.
-         * Keep in_water = 1 (ball is still partially submerged). */
-        submersion = 0.0f;
-    }
+    if (submersion < 0.0f) submersion = 0.0f;
 
-    /* Drag: reduce all velocity per frame */
+    /* Drag */
     float vscale = 1.0f - g_cfg.drag;
     float hscale = 1.0f - (g_cfg.drag + g_cfg.horizontal_drag);
     if (vscale < 0.0f) vscale = 0.0f;
@@ -612,34 +502,15 @@ static void __cdecl apply_water_physics(DWORD ball)
     *vel_z *= hscale;
     *vel_y *= vscale;
 
-    /* Buoyancy: upward acceleration proportional to submersion depth */
+    /* Buoyancy */
     float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
     *vel_y += buoyancy;
 }
 
-/* Function pointer for code cave to call our C helper */
+/* Function pointer for code cave to call */
 static void (__cdecl *g_water_fn_ptr)(DWORD) = NULL;
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Phase 15 Code Cave (0x407BB4)
- *
- * Original 6 bytes: 8B 4C 24 1C 8B 11 = MOV ECX,[ESP+1C]; MOV EDX,[ECX]
- * At this point: ESI = ball pointer
- *
- * The cave:
- *   1. Saves all registers (PUSHAD + PUSHFD)
- *   2. Stores ESI (ball) for water plane scanning
- *   3. Scans for water planes if not done or board changed
- *   4. Calls apply_water_physics(ESI) — modifies velocity in phys struct
- *   5. Restores all registers (POPFD + POPAD)
- *   6. Executes original 6 bytes
- *   7. Jumps back to hook_addr + 6
- *
- * Same pattern as power_bounce mod's collision cave.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
 static BYTE *g_phase15_cave = NULL;
-static volatile DWORD g_ball_ptr = 0;
 static volatile DWORD g_hook_calls = 0;
 
 static void install_phase15_hook(void)
@@ -664,102 +535,54 @@ static void install_phase15_hook(void)
 
     int p = 0;
 
-    /* PUSHAD (save all general-purpose registers) */
+    /* PUSHAD */
     g_phase15_cave[p++] = 0x60;
-
-    /* PUSHFD (save flags) */
+    /* PUSHFD */
     g_phase15_cave[p++] = 0x9C;
 
-    /* MOV [g_ball_ptr], ESI — save ball pointer for water plane scanning */
-    g_phase15_cave[p++] = 0x89; g_phase15_cave[p++] = 0x35;
-    *(DWORD*)(g_phase15_cave + p) = (DWORD)&g_ball_ptr; p += 4;
-
-    /* Check if we need to scan for water planes:
-     * CMP DWORD [g_scan_done], 0
-     * JNE .skip_scan
-     * (also check if board changed)
-     *
-     * Actually, let's just call scan every time the board changes.
-     * We check g_last_board vs current board. But reading ball+0x14
-     * requires the ball pointer which is in ESI. We already saved it.
-     * Let's just do the scan check in C. */
-
-    /* PUSH ESI (arg: ball pointer) */
+    /* PUSH ESI (ball pointer) */
     g_phase15_cave[p++] = 0x56;
 
-    /* CALL [g_water_fn_ptr] — calls apply_water_physics(ball) */
+    /* CALL [g_water_fn_ptr] */
     g_phase15_cave[p++] = 0xFF; g_phase15_cave[p++] = 0x15;
     *(DWORD*)(g_phase15_cave + p) = (DWORD)&g_water_fn_ptr; p += 4;
 
-    /* ADD ESP, 4 (cdecl cleanup: 1 DWORD arg) */
+    /* ADD ESP, 4 */
     g_phase15_cave[p++] = 0x83; g_phase15_cave[p++] = 0xC4;
     g_phase15_cave[p++] = 0x04;
 
-    /* INC DWORD [g_hook_calls] */
+    /* INC [g_hook_calls] */
     g_phase15_cave[p++] = 0xFF; g_phase15_cave[p++] = 0x05;
     *(DWORD*)(g_phase15_cave + p) = (DWORD)&g_hook_calls; p += 4;
 
-    /* POPFD (restore flags) */
+    /* POPFD */
     g_phase15_cave[p++] = 0x9D;
-
-    /* POPAD (restore all registers) */
+    /* POPAD */
     g_phase15_cave[p++] = 0x61;
 
-    /* Original 6 bytes: MOV ECX,[ESP+1C]; MOV EDX,[ECX] */
+    /* Original 6 bytes */
     g_phase15_cave[p++] = 0x8B; g_phase15_cave[p++] = 0x4C;
     g_phase15_cave[p++] = 0x24; g_phase15_cave[p++] = 0x1C;
     g_phase15_cave[p++] = 0x8B; g_phase15_cave[p++] = 0x11;
 
-    /* JMP back to hook_addr + PHASE15_ORIG_BYTES */
+    /* JMP back */
     g_phase15_cave[p++] = 0xE9;
     *(DWORD*)(g_phase15_cave + p) =
         (DWORD)(hook_addr + PHASE15_ORIG_BYTES) - (DWORD)(g_phase15_cave + p + 4);
     p += 4;
 
-    /* Patch the hook site */
+    /* Patch hook site */
     DWORD old_protect;
     VirtualProtect(hook_addr, PHASE15_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
-
     DWORD jmp_offset = (DWORD)(g_phase15_cave - hook_addr - 5);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_offset;
-    hook_addr[5] = 0x90;  /* NOP byte 6 */
-
+    hook_addr[5] = 0x90;
     VirtualProtect(hook_addr, PHASE15_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PHASE15_ORIG_BYTES);
 
     wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_phase15_cave);
     diag_log(buf);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Water plane scanning thread — runs in C context (not code cave)
- *
- * Periodically checks if we need to scan for water planes using the ball
- * pointer saved by the Phase 15 cave. This runs in a background thread so
- * the code cave doesn't need to do complex scanning.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static DWORD WINAPI scan_thread(LPVOID param)
-{
-    (void)param;
-    while (1) {
-        Sleep(100);  /* check every 100ms */
-
-        DWORD ball = g_ball_ptr;
-        if (!ball || IsBadReadPtr((void*)ball, 0x300)) continue;
-
-        /* Get board pointer (ball+0x14) */
-        DWORD board = *(DWORD*)(ball + BALL_BOARD);
-        if (!board || IsBadReadPtr((void*)board, 0x1000)) continue;
-
-        /* Re-scan if board changed or not yet scanned */
-        if (!g_scan_done || board != g_last_board) {
-            g_last_board = board;
-            scan_for_water_planes(board);
-        }
-    }
-    return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -771,30 +594,27 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v2 loaded (velocity-based, Phase 15 hook) ===");
-    Sleep(5000);  /* wait for game to finish loading */
+    diag_log("=== Water mod v3 loaded (collision-triggered) ===");
+    Sleep(5000);
 
-    /* Initialize the C helper function pointer */
     g_water_fn_ptr = apply_water_physics;
-    wsprintfA(buf, "water_fn = %08X", (DWORD)apply_water_physics);
-    diag_log(buf);
 
-    wsprintfA(buf, "Config: entry_damp=%.2f drag=%.3f hdrag=%.3f buoy=%.3f ini_planes=%d",
+    wsprintfA(buf, "Config: entry_damp=%.2f drag=%.3f hdrag=%.3f buoy=%.3f",
               g_cfg.entry_damping, g_cfg.drag, g_cfg.horizontal_drag,
-              g_cfg.buoyancy_strength, g_cfg.plane_count);
+              g_cfg.buoyancy_strength);
     diag_log(buf);
 
-    /* Install Phase 15 hook */
+    /* Install Hook 1: DispatchCollisionEvents trampoline */
+    install_dispatch_hook();
+
+    /* Install Hook 2: Phase 15 code cave */
     install_phase15_hook();
 
-    /* Start background scan thread */
-    CreateThread(NULL, 0, scan_thread, NULL, 0, NULL);
-    diag_log("scan_thread launched");
+    diag_log("All hooks installed");
 
-    /* Status check after 8 seconds */
     Sleep(8000);
-    wsprintfA(buf, "After 8s: hook_calls=%u planes=%d ball=%08X",
-              g_hook_calls, g_plane_count, g_ball_ptr);
+    wsprintfA(buf, "After 8s: hook_calls=%u triggers=%u",
+              g_hook_calls, g_trigger_count);
     diag_log(buf);
 
     return 0;
@@ -811,14 +631,13 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hInst);
 
-        /* Set up log path next to bass.dll */
         GetModuleFileNameA(hInst, g_logpath, MAX_PATH);
         {
             char *p = strrchr(g_logpath, '\\');
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v2 DLL attaching ===");
+        diag_log("=== Water mod v3 DLL attaching ===");
 
         load_real_bass();
         {
@@ -827,7 +646,6 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             diag_log(buf);
         }
 
-        /* Load INI config */
         {
             char ini_path[MAX_PATH];
             GetModuleFileNameA(hInst, ini_path, MAX_PATH);
