@@ -289,6 +289,19 @@ DawgCode:
   mov edx, [spline_z_hdr]
   mov [ecx+0x40], edx
 
+  // === Set spline constant terms to player position ===
+  // Spline vertex entry: [c3(0), c2(0), c1(0), c0(position)]
+  // c0 is at offset 0xC in each 16-byte entry.
+  // Setting c0 = playerX/Z makes Path_GetPosition return (playerX, 0, playerZ).
+  // This prevents the blockdawg from teleporting to (0,0,0) and causing
+  // direction=(0,0,0) → Gfx corruption over time.
+  mov edx, [spline_x_data]
+  mov eax, [pos_x]
+  mov [edx+0x0C], eax          // spline_x vertex[0].c0 = playerX
+  mov edx, [spline_z_data]
+  mov eax, [pos_z]
+  mov [edx+0x0C], eax          // spline_z vertex[0].c0 = playerZ
+
   // === Allocate Blockdawg object (0x1154 bytes) ===
   push 0x1154
   call 004BA57B
