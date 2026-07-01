@@ -26,7 +26,7 @@ void __thiscall DispatchCollisionEvents(void *this, int *ball, int *collObj) {
         while (tag != NULL) {
             if (__stricmp(tag.name, "TIME") == 0) {
                 duration = atol(tag.value);
-                Ball_RecordBest(ball, duration); // record anti-dizzy time
+                Ball_DizzyImmunity(ball, duration); // record anti-dizzy time
             }
             tag = MWParser_ReadTag(temp);
         }
@@ -70,7 +70,7 @@ void __thiscall DispatchCollisionEvents(void *this, int *ball, int *collObj) {
         ball.forceX = 0.025; // upward force (0x3B03126F)
         ball.forceMode = 1;
         ball.freezeCounter = 10;
-        Ball_RecordBest(ball, 200); // +200 score
+        Ball_DizzyImmunity(ball, 200); // +200 score
     }
     
     // E:ACTION — Action event with ONCE flag and SCORE
@@ -135,7 +135,7 @@ void __thiscall DispatchCollisionEvents(void *this, int *ball, int *collObj) {
         if (dist > threshold && ball.dropinCounter < 1) {
             Sound_PlayChannel(app->sound_dropin);
             ball.dropinCounter = 50;
-            Ball_RecordBest(ball, 200);
+            Ball_DizzyImmunity(ball, 200);
         }
     }
     
@@ -144,14 +144,14 @@ void __thiscall DispatchCollisionEvents(void *this, int *ball, int *collObj) {
         int snd = RNG_Rand(3); // random 0-2
         Sound_Play3D(app->pipe_bonk_sounds[snd], ball.x, ball.y, ball.z);
         ball.pipebonkCounter = 10;
-        Ball_RecordBest(ball, 100);
+        Ball_DizzyImmunity(ball, 100);
     }
     
     // POPOUT — Pop out of pipe
     if (__stricmp(eventName+2, "POPOUT") == 0 && ball.popoutCounter < 1) {
         Sound_PlayChannel(app->sound_popout);
         ball.popoutCounter = 50;
-        Ball_RecordBest(ball, 100);
+        Ball_DizzyImmunity(ball, 100);
     }
     
     // N:GOAL — Finish the race!
@@ -270,7 +270,7 @@ void __thiscall ExpertCollisionEvents(void *this, int *ball, int *collObj) {
         Sound_Play3D(app->sound_jump, ball.x, ball.y, ball.z);
         ball.impactCounter = 10;
         ball.freezeCounter = 10;
-        Ball_RecordBest(ball, 200);
+        Ball_DizzyImmunity(ball, 200);
     }
     
     // E:BELL — Extra time! +5 seconds and "EXTRA TIME:" popup

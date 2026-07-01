@@ -94,7 +94,7 @@ void __thiscall ExpertCollisionEvents(void *this,int *param_1,int *param_2)
     param_1[0xa7] = 0x3b03126f;
     param_1[0xa8] = 1;
     param_1[0x202] = 10;
-    Ball_RecordBest(param_1,200);
+    Ball_DizzyImmunity(param_1,200);
   }
   iVar2 = __strnicmp(*(char **)(param_2[1] + 0x864),"E:BELL",6);
   if (iVar2 == 0) {

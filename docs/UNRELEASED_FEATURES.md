@@ -251,7 +251,7 @@ Event triggers that fire gameplay effects. Some appear unused or very rare:
 | `E:ACTIVATESAW1` / `E:ACTIVATESAW2` | Activate saw blades |
 | `E:ALERTSAW1` / `E:ALERTSAW2` | Alert saw blades |
 | `E:PEGS` / `E:NOPEGS` | Show/hide pegs |
-| `E:NODIZZY` | Clear TIME checkpoints (NOT dizzy-related) |
+| `E:NODIZZY` | Dizzy immunity zone — grants TIME frames of dizzy protection |
 | `E:BRANCH` | Branch path selection |
 | `E:BREAK` | Break object |
 | `E:LIMIT` / `E:LIMITX` / `E:LIMITZ` / `E:LIMITPIPE1` / `E:LIMITPIPE2` | Movement limits |
@@ -302,7 +302,7 @@ Hamster character model meshes beyond the ball:
 
 - **Function:** `DispatchCollisionEvents` (0x0040c5d0) — dispatches collision events (N:GOAL, N:TARPIT, E:JUMP, E:NODIZZY, etc.)
 - **Event:** `E:NODIZZY` — triggered when ball enters this zone
-- Clears TIME checkpoint entries and calls Ball_RecordBest — NOT actually related to the dizzy system
+- Grants dizzy immunity for TIME frames and calls Ball_DizzyImmunity — NOT actually related to the dizzy system
 
 ---
 
@@ -354,7 +354,7 @@ Registry keys for persistent game state:
 | Glass Break Bonus | ✅ Implemented | Glass level time bonus |
 | BounceBall/FollowBall | ✅ Implemented | Timed ball spawner with chase AI |
 | Hamster Character Meshes | ⚠️ Referenced | Trot animation frames — may be unused |
-| NoDizzy Zone | ✅ Implemented | Clears TIME checkpoints |
+| NoDizzy Zone | ✅ Implemented | Grants dizzy immunity for TIME frames |
 | Safe Mode | ✅ Retail | Graphics fallback mode |
 
 ---

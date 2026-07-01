@@ -114,7 +114,7 @@ Same pattern — writes to `+0x170/174/178` with identical guards.
 | `Ball_Grow` | `0x00402270` | Odd Race E:GROW: radius=26.0, max_speed=5.0 (restores from shrunk) |
 | `Ball_ResetCollisionMesh` | `0x004030B0` | Reset physics body orientation, zero velocity, reset timer |
 | `Ball_Shatter` | `0x00408D70` | **Arena: split ball into 3 AI balls** (called from FollowBall_Update, NOT E:JUMP) |
-| `Ball_RecordBest` | `0x00402400` | Record best time/score at `+0x2F4` |
+| `Ball_DizzyImmunity` | `0x00402400` | Grant dizzy immunity (clear +0x2EC, set +0x2F4 to max) |
 
 ### Rendering
 

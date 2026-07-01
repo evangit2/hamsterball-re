@@ -352,7 +352,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 
 ### NoDizzy
 - **Factory:** `DispatchCollisionEvents` (0x40C5D0)
-- **Description:** Clears TIME checkpoint entries and calls Ball_RecordBest — NOT dizzy-related
+- **Description:** Grants dizzy immunity for TIME frames and calls Ball_DizzyImmunity — NOT dizzy-related
 
 ---
 
@@ -540,7 +540,7 @@ These objects have constructors or factories in the binary but lack deep reverse
 | Object | Constructor/Factory | Notes |
 |--------|---------------------|-------|
 | E:LIMIT boundary | `NeonCollisionEvents` (0x410D00) | Invisible race boundary |
-| E:NODIZZY power-up | `DispatchCollisionEvents` (0x40C5D0) | Clears TIME checkpoint entries |
+| E:NODIZZY dizzy immunity zone | `DispatchCollisionEvents` (0x40C5D0) | Grants dizzy immunity for TIME frames |
 | E:JUMP trigger | *(inline in collision)* | Launch pad trigger object |
 | SAFESPOT | *(inline in factory)* | Safe zone / checkpoint |
 | CAMERALOOKAT | `CameraLookAt` (0x413280) | Camera target marker |

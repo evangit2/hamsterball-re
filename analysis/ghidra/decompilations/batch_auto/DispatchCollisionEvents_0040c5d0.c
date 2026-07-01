@@ -11,7 +11,7 @@
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 /* DispatchCollisionEvents (shared collision handler): Dispatches ALL game events -
    N:SECRET→Rotator_MarkTriggered, N:UNLOCKSECRET→CheckArenaUnlock,
-   E:NODIZZY<TIME>N</TIME>→Ball_RecordBest, E:SAFESWITCH→copy parenthesized data to ball+0xC2C,
+   E:NODIZZY<TIME>N</TIME>→Ball_DizzyImmunity, E:SAFESWITCH→copy parenthesized data to ball+0xC2C,
    E:LIMIT→track arena completions per player, E:BREAK→vtable[0x20] callback,
    E:JUMP→play3D+SetForce(0.1,1)+impact=10, E:ACTION(ONCE/SCORE)→score+track,
    E:TRAJECTORY(X,Y,Z)→set trajectory, N:NOCONTROL→impact=10, N:WATER→water flag+timer=10,
@@ -68,7 +68,7 @@ void __thiscall DispatchCollisionEvents(void *this,int *param_1,int *param_2)
       iVar4 = __stricmp((char *)puVar5[1],"TIME");
       if (iVar4 == 0) {
         lVar6 = _atol((char *)puVar5[2]);
-        Ball_RecordBest(param_1,lVar6);
+        Ball_DizzyImmunity(param_1,lVar6);
       }
       (**(code **)*puVar5)(1);
       puVar5 = MWParser_ReadTag((int)&local_3c);
@@ -134,7 +134,7 @@ void __thiscall DispatchCollisionEvents(void *this,int *param_1,int *param_2)
     param_1[0xa7] = 0x3b03126f;
     param_1[0xa8] = 1;
     param_1[0x202] = 10;
-    Ball_RecordBest(param_1,200);
+    Ball_DizzyImmunity(param_1,200);
   }
   iVar4 = __strnicmp(*(char **)(param_2[1] + 0x864),"E:ACTION",8);
   if (iVar4 == 0) {
@@ -235,7 +235,7 @@ void __thiscall DispatchCollisionEvents(void *this,int *param_1,int *param_2)
        (param_1[0x1f2] < 1)) {
       Sound_PlayChannel(*(int *)(*(int *)((int)this + 0x878) + 0x460));
       param_1[0x1f2] = 0x32;
-      Ball_RecordBest(param_1,200);
+      Ball_DizzyImmunity(param_1,200);
     }
   }
   iVar4 = __stricmp((char *)(*(int *)(param_2[1] + 0x864) + 2),"PIPEBONK");
@@ -250,13 +250,13 @@ void __thiscall DispatchCollisionEvents(void *this,int *param_1,int *param_2)
     iVar4 = RNG_Rand(&PTR_OBJ_VTABLE,3,'\0');
     Sound_Play3D(*(void **)(*(int *)((int)this + 0x878) + 0x46c + iVar4 * 4),fVar9,fVar15,fVar16);
     param_1[500] = 10;
-    Ball_RecordBest(param_1,100);
+    Ball_DizzyImmunity(param_1,100);
   }
   iVar4 = __stricmp((char *)(*(int *)(param_2[1] + 0x864) + 2),"POPOUT");
   if ((iVar4 == 0) && (param_1[499] < 1)) {
     Sound_PlayChannel(*(int *)(*(int *)((int)this + 0x878) + 0x468));
     param_1[499] = 0x32;
-    Ball_RecordBest(param_1,100);
+    Ball_DizzyImmunity(param_1,100);
   }
   iVar4 = __stricmp((char *)(*(int *)(param_2[1] + 0x864) + 2),(char *)&PTR_DAT_004cf80c);
   if ((iVar4 == 0) && (param_1[0x1f5] < 1)) {

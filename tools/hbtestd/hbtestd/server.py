@@ -1297,7 +1297,7 @@ def read_ball_state(ball_index: int = 0) -> dict[str, Any]:
                 result[field] = round(mm.read_float(ball_ptr + offset), 4)
             elif field in ("is_8ball", "is_active"):
                 result[field] = mm.read_bool(ball_ptr + offset)
-            elif field == "best_streak":
+            elif field == "dizzy_immunity_timer":
                 result[field] = mm.read_i32(ball_ptr + offset)
             else:
                 result[field] = mm.read_u32(ball_ptr + offset)

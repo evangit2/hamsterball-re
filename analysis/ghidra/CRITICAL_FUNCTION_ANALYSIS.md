@@ -172,7 +172,7 @@ based on its content. All comparisons are case-insensitive.
 |---|---|---|---|---|---|---|
 | 1 | `N:SECRET` | strnicmp(8) | — | Calls `Rotator_MarkTriggered(rotator_id)` | none | 0 |
 | 2 | `N:UNLOCKSECRET` | strnicmp(14) | — | Calls `CheckArenaUnlock(this)` | none | 0 |
-| 3 | `E:NODIZZY` | strnicmp(9) | — | Parses `<TIME>N</TIME>` XML. Calls `Ball_RecordBest(ball, N)`. | Ball_RecordBest | 0 (records time) |
+| 3 | `E:NODIZZY` | strnicmp(9) | — | Parses `<TIME>N</TIME>` XML. Calls `Ball_DizzyImmunity(ball, N)`. | Ball_DizzyImmunity | 0 (records time) |
 | 4 | `E:SAFESWITCH` | strnicmp(12) | — | Finds `(` in string. Copies parenthesized data to `ball+0xC2C`. If no `(`, clears `ball+0x30B=0`. | +0xC2C, +0x30B | 0 |
 | 5 | `E:LIMIT` | stricmp | — | Clears `ball+0x1DA=0`, sets `ball+0x2E9=1`. Tracks arena knockoff counts for all 4 players at `RumbleBoard+0x47B4–0x47C0`. Checks each player's ball completion flags at `App+0x5D7/0x677/0x717/0x7B7` and ball validity at `App+0x5DC/0x67C/0x71C/0x7BC`. | +0x1DA, +0x2E9, RumbleBoard counters | 0 |
 | 6 | `E:BREAK` | stricmp | — | Calls `ball->vtable[0x20]()` — virtual break method. | vtable dispatch | 0 |

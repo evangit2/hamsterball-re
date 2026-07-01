@@ -816,7 +816,7 @@ Offset | Field | Description
 | 0x00472c70 | Math_Lerp | 9 | Linear interpolation: a + (b-a)*t |
 | 0x0042c870 | Font_DrawCentered | 8 | Draw text centered at (x,y) position |
 | 0x004351f0 | GameLevel_ctor | 8 | Game level constructor (SceneObject_ctor, Level_Clone, sound channel) |
-| 0x00402400 | Ball_RecordBest | 7 | Reset bounce_count(+0x2EC)=0, update max streak(+0x2F4) if param exceeds current. Called by E:NODIZZY handler (clears TIME checkpoints) and trajectory system. |
+| 0x00402400 | Ball_DizzyImmunity | 7 | Clears bounce_count(+0x2EC)=0, sets immunity timer(+0x2F4) to max(current, TIME). Called by E:NODIZZY handler (clears TIME checkpoints) and trajectory system. |
 | 0x00425f90 | App_CompleteRace | 7 | Complete race - increment counter, trigger state transitions, clear flag |
 | 0x00426b30 | String_AllocBuffer | 7 | Allocate string buffer with size | 0xF rounding |
 | 0x0042b190 | ConfirmMenu_ctor | 6 | Confirmation menu (BACK/BACK2TOURNAMENT, DONE), vtable 0x4d39d0 |

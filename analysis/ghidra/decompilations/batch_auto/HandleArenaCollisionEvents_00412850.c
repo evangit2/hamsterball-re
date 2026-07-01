@@ -95,7 +95,7 @@ void __thiscall HandleArenaCollisionEvents(void *this,int *param_1,int *param_2)
     param_1[0xa7] = 0x3b03126f;
     param_1[0xa8] = 5;
     param_1[0x202] = 0x32;
-    Ball_RecordBest(param_1,200);
+    Ball_DizzyImmunity(param_1,200);
     local_24 = local_30;
     local_20 = local_2c;
     local_1c = local_28;

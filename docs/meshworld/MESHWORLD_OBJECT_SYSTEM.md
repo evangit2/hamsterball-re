@@ -223,7 +223,7 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 | `E:POPOUT` | Pipe pop-out sound + score (30 instances, 11 files) |
 | `E:PIPEBONK` | Pipe collision sound (random of 3) (22 instances, 4 files) |
 | `E:SAFESWITCH(A)`–`(H)` | Track which checkpoint/safe zone was hit |
-| `E:NODIZZY<TIME>N</TIME>` | TIME checkpoint clear zone with duration (50-600) — NOT dizzy-related |
+| `E:NODIZZY<TIME>N</TIME>` | dizzy immunity zone: grants 50-600 frames of dizzy protection |
 | `E:JUMP` | Jump pad: upward velocity + sound + score |
 | `E:CATAPULTBOTTOM` | Launch catapult |
 | `E:OPENSESAME` | Open first trapdoor |
@@ -297,7 +297,7 @@ Handles ALL events not consumed by level/arena-specific handlers. Uses `__strnic
 
 - **N:SECRET** → `Rotator_MarkTriggered`
 - **N:UNLOCKSECRET** → `CheckArenaUnlock`
-- **E:NODIZZY\<TIME\>N\</TIME\>** → Parse XML tags, `Ball_RecordBest`
+- **E:NODIZZY\<TIME\>N\</TIME\>** → Parse XML tags, `Ball_DizzyImmunity`
 - **E:SAFESWITCH(data)** → Copy parenthesized data to ball state
 - **E:LIMIT** → Arena fall-off: increment other players' completion counts
 - **E:BREAK** → Call `ball->vtable[0x20]()` (bounce)

@@ -161,7 +161,7 @@ These event names were NOT in previous documentation:
 
 All 4 new handlers fall through to `DispatchCollisionEvents` (the master dispatcher at 0x40C5D0).
 DispatchCollisionEvents is the master collision event dispatcher — it parses
-`<TIME>value</TIME>` XML tags and calls Ball_RecordBest. This is a subset of
+`<TIME>value</TIME>` XML tags and calls Ball_DizzyImmunity. This is a subset of
 DispatchCollisionEvents that only handles the E:NODIZZY event.
 
 **Implication:** The 4 new handlers do NOT call DispatchCollisionEvents as fallthrough.

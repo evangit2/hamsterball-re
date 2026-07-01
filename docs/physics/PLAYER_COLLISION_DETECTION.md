@@ -100,7 +100,7 @@ or by tracking collision IDs (`[EBP+0x64]`).
 | `+0x2E9` | `byte` | dizzy_lock | Sticky flag preventing Ball_ApplyTrajectory re-firing (E:LIMIT collision, speed>1.0) — NEVER use for ground check |
 | `+0x2EC` | `int32` | bounce_count | Dizzy system bounce counter (double-incremented 0→1→2 when collision speed exceeds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND dizzy_lock==0) |
 | `+0x2F0` | `int32` | force_count | Number of forces applied this frame |
-| `+0x2F4` | `int32` | best_streak | Per-ball best streak (int32) |
+| `+0x2F4` | `int32` | dizzy_immunity_timer | Dizzy immunity timer (int32, frames remaining) |
 | `+0x2F9` | `byte` | frozen | Ball is frozen/stuck |
 | `+0x2FC` | `int32` | alpha | Countdown when falling |
 | `+0x324` | `byte` | in_tube | Skip collision processing when set |
