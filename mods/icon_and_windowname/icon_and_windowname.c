@@ -164,7 +164,6 @@ static void load_real_bass(void)
 /* Game addresses */
 #define GAME_BASE         0x00400000
 #define APP_PTR_ADDR      (GAME_BASE + 0x001341E0)  /* 0x005341E0 — global App pointer */
-#define WINDOWNAME_PATCH  (GAME_BASE + 0x0002AEE6)  /* mov dword [esi+0x20], 0x4D39A8 */
 #define ORIGINAL_NAME_STR 0x004D39A8                 /* "Hamsterball" */
 
 static char g_config_path[MAX_PATH] = {0};
@@ -265,31 +264,6 @@ static void init_config_path(void)
 }
 
 /*
- * Patch the window name pointer.
- *
- * At 0x42AEE6 the game does:
- *   mov dword [esi+0x20], 0x4D39A8   (C7 46 20 A8 39 4D 00)
- *
- * The immediate value 0x4D39A8 is the address of "Hamsterball" string.
- * We overwrite it with the address of our g_window_name buffer.
- *
- * But g_window_name is in our DLL's .data — we need its actual runtime address.
- * We use VirtualProtect to make the code page writable, then patch the
- * 4-byte immediate at offset 0x42AEE6 + 3 (after the C7 46 20 opcode).
- */
-static void patch_window_name(void)
-{
-    DWORD addr = WINDOWNAME_PATCH;
-    DWORD *imm = (DWORD *)(addr + 3); /* skip C7 46 20, point to the 4-byte immediate */
-
-    DWORD oldProtect;
-    if (VirtualProtect((void *)addr, 16, PAGE_READWRITE, &oldProtect)) {
-        *imm = (DWORD)g_window_name;
-        VirtualProtect((void *)addr, 16, oldProtect, &oldProtect);
-    }
-}
-
-/*
  * Apply custom icon.
  *
  * The game loads its icon via LoadIconA(hInstance, "MAINICON") during
@@ -335,22 +309,28 @@ static void apply_custom_icon(void)
     g_icon_applied = 1;
 }
 
+static void apply_window_name(HWND hwnd)
+{
+    if (hwnd == NULL || !IsWindow(hwnd))
+        return;
+    SetWindowTextA(hwnd, g_window_name);
+}
+
 static DWORD WINAPI mod_thread(LPVOID param)
 {
-    /* Wait a moment for the game to initialize */
-    Sleep(500);
-
-    /* Reload config (user may have edited it) */
-    load_config();
-
-    /* Patch the window name pointer */
-    patch_window_name();
-
-    /* Poll for window creation to apply icon */
-    for (int i = 0; i < 60; i++) {
-        apply_custom_icon();
-        if (g_icon_applied)
-            break;
+    /* Poll for window creation, then apply icon and set window text */
+    for (int i = 0; i < 120; i++) {
+        DWORD *appPtr = (DWORD *)APP_PTR_ADDR;
+        if (*appPtr) {
+            DWORD app = *appPtr;
+            HWND hwnd = (HWND)(*(DWORD *)(app + 0x08));
+            if (hwnd && IsWindow(hwnd)) {
+                apply_window_name(hwnd);
+                apply_custom_icon();
+                if (g_icon_applied)
+                    break;
+            }
+        }
         Sleep(250);
     }
 
