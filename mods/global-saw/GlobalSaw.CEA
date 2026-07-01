@@ -82,11 +82,12 @@ SawCode:
   fstp st(0)                   // pop dist_sq
   jb check_spawn               // if 10000.0 < dist_sq (ball is far), skip dizzy
 
-  // Ball is near saw → set dizzy timer
-  // Only set if not already dizzy (avoid resetting countdown)
-  cmp dword [esi+0x808], 0
+  // Ball is near saw → apply dizzy stun + knockback
+  // ball+0x7DC = stun timer (50 = shows dizzy stars + sound)
+  // (NOT ball+0x808 which only disables control, no visual)
+  cmp dword [esi+0x7DC], 0
   jne check_spawn
-  mov dword [esi+0x808], 10    // dizzy timer = 10 frames
+  mov dword [esi+0x7DC], 50    // stun/dizzy timer = 50 frames
 
 check_spawn:
   cmp dword [SpawnSaw], 0
