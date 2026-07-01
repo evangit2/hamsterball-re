@@ -4,7 +4,7 @@
 
 
 - MAIN MENU -
-soon.
+HBversion = #FFFFFF, 1.0
 
 
 - TOURNEY MENU -

@@ -14,30 +14,39 @@ Reads `menu_colors.txt` and applies custom colors to menu UI elements in Hamster
 - LOADING SCREEN -
 "Click here" button - Off = #FFFFFF
 "Click here" button - On = #FFFFFF
+
+- MAIN MENU -
+HBversion = #FFFFFF, 1.0
 ```
 
 - **Off** = dark/unhovered button state
 - **On** = highlighted/hovered button state
-- Colors are hex RGB: `#RRGGBB` (e.g. `#FF0000` = red, `#00FF00` = green)
+- **HBversion** = "HB" version text color + alpha
+- RGB colors are hex: `#RRGGBB` (e.g. `#FF0000` = red, `#00FF00` = green)
+- Alpha is a float: `1.0` = opaque, `0.5` = semi-transparent, `0.0` = invisible
 
 ## How It Works
 
-The mod patches two `Vec3_Init` call sites in the title screen renderer (`FUN_0042d270`) with code caves that read from global float variables updated by the config reader thread.
+The mod patches `Vec3_Init` and `Matrix_Scale4x4` call sites with code caves that read from global float variables updated by the config reader thread.
 
 ### Addresses
 
-| Element | State | Address | Original Value |
-|---------|-------|---------|----------------|
-| "Click here" button | Off (dark) | `0x0042d5fd` | Blue=1.0, Green=0.0, Red=0.0 |
-| "Click here" button | On (highlighted) | `0x0042d624` | Blue=0.5, Green=0.0, Red=0.0 |
+| Element | State | Address | Original Value | Args |
+|---------|-------|---------|----------------|------|
+| "Click here" button | Off (dark) | `0x0042d5fd` | B=1.0, G=0.0, R=0.0 | RGB (3) |
+| "Click here" button | On (highlighted) | `0x0042d624` | B=0.5, G=0.0, R=0.0 | RGB (3) |
+| HB version text | — | `0x00426433` | A=1.0, B=0.0, G=1.0, R=0.0 | RGBA (4) |
 
 ### Code Cave Structure
 
-Each original 9-byte PUSH sequence (3 consecutive PUSH instructions for R/G/B) is replaced with:
+Each original PUSH sequence is replaced with:
 - 5-byte `JMP` to code cave
-- 4× `NOP` padding
+- NOP padding to fill original instruction size
 
-The code cave pushes 3 float values from global variables (`PUSH dword ptr [addr]`) then jumps back.
+The code cave pushes float values from global variables (`PUSH dword ptr [addr]`) then jumps back.
+
+- 3-arg cave (RGB): 3× `PUSH [mem]` + `JMP` = 23 bytes
+- 4-arg cave (RGBA): 4× `PUSH [mem]` + `JMP` = 29 bytes
 
 ## Build
 
@@ -50,7 +59,7 @@ i686-w64-mingw32-gcc -shared -o bass.dll menu_colors.c -lwinmm \
 ## Current Sections
 
 - **LOADING SCREEN** — "Click here" button Off/On colors ✅
-- MAIN MENU — soon
+- **MAIN MENU** — HB version text color + alpha ✅
 - TOURNEY MENU — soon
 - MIRROR MENU — soon
 - TIME TRIALS MENU — soon
