@@ -531,16 +531,16 @@ static void init_config_path(void)
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char *p = strrchr(g_config_path, '\\');
     if (p) {
-        strcpy(p + 1, "icon_and_windowname.txt");
-        /* State file lives alongside config */
-        strcpy(g_config_path, g_config_path); /* keep dir */
+        /* Save directory prefix */
         char dir[MAX_PATH];
-        strncpy(dir, g_config_path, MAX_PATH);
-        char *d = strrchr(dir, '\\');
-        if (d) {
-            d[1] = '\0';
-            snprintf(g_state_path, MAX_PATH, "%s.icon_state.txt", dir);
-        }
+        strncpy(dir, g_config_path, p - g_config_path + 1);
+        dir[p - g_config_path + 1] = '\0';
+
+        /* Config file */
+        strcpy(p + 1, "icon_and_windowname.txt");
+
+        /* State file */
+        snprintf(g_state_path, MAX_PATH, "%s.icon_state.txt", dir);
     }
 }
 
@@ -557,12 +557,20 @@ static void init_config_path(void)
  * We poll for the window handle because DllMain runs before the window
  * is created.
  */
+/*
+ * Apply custom icon via runtime WM_SETICON.
+ *
+ * We use PrivateExtractIcons which handles both PNG and BMP-compressed
+ * .ico files better than LoadImageA. We request specific sizes (48x48
+ * for ICON_BIG, 16x16 for ICON_SMALL) since WM_SETICON needs separate
+ * handles for each.
+ */
 static void apply_custom_icon(void)
 {
     if (g_icon_applied || g_icon_path[0] == '\0')
         return;
 
-    /* Get App pointer */
+    /* Get App pointer → HWND */
     DWORD *appPtr = (DWORD *)APP_PTR_ADDR;
     if (*appPtr == 0)
         return;
@@ -572,22 +580,38 @@ static void apply_custom_icon(void)
     if (hwnd == NULL || !IsWindow(hwnd))
         return;
 
-    /* Load the custom icon */
-    HICON hIconBig = (HICON)LoadImageA(NULL, g_icon_path, IMAGE_ICON,
-                                       0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
-    if (hIconBig) {
-        HICON hIconSmall = (HICON)LoadImageA(NULL, g_icon_path, IMAGE_ICON,
-                                             16, 16, LR_LOADFROMFILE);
+    /* Try PrivateExtractIcons first (handles PNG-compressed .ico files) */
+    HICON hIconBig = NULL;
+    HICON hIconSmall = NULL;
+
+    /* Extract 48x48 for ICON_BIG (taskbar/titlebar) */
+    if (PrivateExtractIcons(g_icon_path, 0, 48, 48, &hIconBig, NULL, 1, 0) || hIconBig) {
+        /* Extract 16x16 for ICON_SMALL */
+        PrivateExtractIcons(g_icon_path, 0, 16, 16, &hIconSmall, NULL, 1, 0);
+
         SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconBig);
         if (hIconSmall)
             SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
 
-        /* Also set the taskbar icon via SetWindowLong */
-        /* GWL_WNDPROC is -4, but we just need the icon via WM_SETICON */
+        g_icon_applied = 1;
+        return;
     }
-    /* If LoadImageA failed (bad path), silently continue — game uses default icon */
 
-    g_icon_applied = 1;
+    /* Fallback: LoadImageA (works for BMP-format .ico files) */
+    hIconBig = (HICON)LoadImageA(NULL, g_icon_path, IMAGE_ICON,
+                                  48, 48, LR_LOADFROMFILE);
+    if (hIconBig) {
+        hIconSmall = (HICON)LoadImageA(NULL, g_icon_path, IMAGE_ICON,
+                                       16, 16, LR_LOADFROMFILE);
+        SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconBig);
+        if (hIconSmall)
+            SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+
+        g_icon_applied = 1;
+        return;
+    }
+
+    /* Both failed — don't set g_icon_applied so we retry next poll */
 }
 
 static void apply_window_name(HWND hwnd)
