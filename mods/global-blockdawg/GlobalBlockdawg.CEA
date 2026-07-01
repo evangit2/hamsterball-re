@@ -235,6 +235,14 @@ activate_dawg:
   mov dword [ecx+0x10E8], 0          // dir Y = 0.0
   mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0 (facing forward)
 
+  // === Prevent bark sound crash ===
+  // Blockdawg_Update decrements sound_timer (0x1148) each frame.
+  // When < 0, it calls Sound_Play3D(App+0x4F0+toggle*4, ...).
+  // App+0x4F0 bark sound pointer is NULL on non-Toob levels → crash
+  // in SoundDevice_Play3DAll (0x466B80).
+  // Set timer to max so bark sound never triggers.
+  mov dword [ecx+0x1148], 0x7FFFFFFF
+
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
   mov dword [vertex_arr], 0
