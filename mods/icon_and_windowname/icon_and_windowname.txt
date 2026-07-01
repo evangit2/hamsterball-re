@@ -5,7 +5,5 @@
 # Leave as Hamsterball for default
 window_name = Hamsterball
 
-# Path to a custom .ico file to replace the game icon
-# Use full path or relative path (relative to the game .exe)
-# Leave empty for default game icon
-icon_path =
+# To change the game icon, place a file named
+# icon.ico in the game root folder (next to Hamsterball.exe)
