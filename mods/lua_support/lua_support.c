@@ -1150,14 +1150,9 @@ static void scan_entities(void)
     int board = safe_read_ptr(profile + 0x0C);
     if (!board) return;
     
-    /* board+0x878 = App* — but we already have App */
-    /* Level_FindObjectByName uses this->+0x8AC = level object, then +0x480 = spatial tree */
-    /* this in that context is the board. So board+0x8AC = level/mesh object */
-    int level_obj = safe_read_ptr(board + 0x8AC);
-    if (!level_obj) return;
-    
-    /* level_obj+0x480 = SpatialTree root */
-    int spatial_root = safe_read_ptr(level_obj + 0x480);
+    /* Level_FindObjectByName (0x00460530) reads this+0x480 directly.
+     * 'this' is the board. So board+0x480 = SpatialTree pointer. */
+    int spatial_root = safe_read_ptr(board + SPATIALTREE_OFFSET);
     if (!spatial_root) return;
     
     /* SpatialTree root has named objects in a list: */
@@ -1221,7 +1216,7 @@ static void scan_entities(void)
 
 static const unsigned char ORIG_PROLOGUE[7] = {
     0x6A, 0xFF,           /* PUSH -1 (SEH frame) */
-    0x68, 0x5E, 0x9A, 0x4C, 0x00  /* PUSH 0x4C9A5E (error string) */
+    0x68, 0xFB, 0x9F, 0x4C, 0x00  /* PUSH 0x4C9FFB (SEH handler) */
 };
 
 static unsigned char *g_tramp = NULL;
