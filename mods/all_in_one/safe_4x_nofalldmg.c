@@ -4,7 +4,7 @@
  * 1. 4x Ball Size  — all balls 4x bigger (2 MOV patches + code cave)
  * 2. No Fall Damage — ball never shatters from ANY path:
  *    a) Ball_Shatter (0x408D70) → RET 0x4 (skip entirely)
- *    b) Ball_Shatter_OnRamp (0x409480) → RET (skip entirely)
+ *    b) Ball_FallDeath (0x409480) → RET (skip entirely)
  *    c) Ball_FallUpdate shatter flag write (0x408CD5) → NOP 7 bytes
  *       (this is the line: MOV byte [ESI+0x2E8], 1 — sets shattered flag
  *        when bad ball fall timer expires. NOTE: BAD BALL ONLY — vtable[65]
@@ -134,7 +134,7 @@ static int apply_4x(BYTE*base){
  * 2. ball+0x2E9 = 1 (E:LIMIT respawn flag) — 5 write sites, ALL NOPed
  * 3. ball+0x768 = 0 (is_active → deactivates ball) — 5 write sites, ALL NOPed
  * 4. ball+0x2FC = 0 (alpha → invisible) — 2 write sites, NOPed
- * Plus Ball_Shatter and Ball_Shatter_OnRamp function-entry RETs
+ * Plus Ball_Shatter and Ball_FallDeath function-entry RETs
  */
 static int apply_nofall(BYTE*base){
     int r=0;

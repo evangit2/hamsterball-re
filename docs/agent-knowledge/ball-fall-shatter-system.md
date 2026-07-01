@@ -77,7 +77,7 @@ mode), `Ball_Update` checks if the ball has stopped moving on its primary axis:
 ```c
 if (ball+0x2E9 != 0 && ball+0xC9 == 0) {
     if (ABS(ball_pos[axis] - prev_ball_pos[axis]) < threshold) {
-        (*vtable[8])();  // Ball_OnRampEvent → death/respawn
+        (*vtable[8])();  // Ball_FallDeath → death/respawn
     }
 }
 ```
@@ -95,7 +95,7 @@ The ball dies when motion on the primary axis stops. This happens when:
 **This is NOT a timer.** The ball can fall forever as long as it keeps moving. It only
 dies when motion on the primary axis ceases.
 
-### Step 3: vtable[8] → Ball_OnRampEvent (0x409480)
+### Step 3: vtable[8] → Ball_FallDeath (0x409480)
 
 Called from the stopped-moving check. This is the death/respawn handler that sets
 `ball+0x2E8 = 1` (needs_respawn) and triggers `Ball_FindClosestRespawnPoint`.
@@ -225,7 +225,7 @@ Cleared by `Ball_FindClosestRespawnPoint` (0x405190) at 0x40525B.
 | 0x405E00 | Ball_Update | Player ball physics/collision/death (vtable[1]) |
 | 0x408830 | Ball_FallUpdate | Bad ball physics/timer death (vtable[65] of bad ball) |
 | 0x408D70 | Ball_Shatter | Arena object crush death (Breaker/Bonkbash) |
-| 0x409480 | Ball_OnRampEvent | vtable[8] — death/respawn handler for stopped ball |
+| 0x409480 | Ball_FallDeath | vtable[8] — death/respawn handler for stopped ball |
 | 0x405D90 | BadBall_ctor | Bad ball constructor (sets 0xC60=1.0, 0x80C=50) |
 | 0x402390 | BadBall_StartFallCountdown | Nudges 0xC60 from 1.0 to 0.99 |
 | 0x405190 | Ball_FindClosestRespawnPoint | Respawn: teleports, clears 0x2E8/0x2E9, sets stun |

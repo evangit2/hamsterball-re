@@ -7,7 +7,7 @@
  *
  * No Fall Damage works by patching THREE shatter paths:
  *   a) Ball_Shatter (0x408D70)        → RET 0x4 (never executes)
- *   b) Ball_Shatter_OnRamp (0x409480)  → RET (never executes)
+ *   b) Ball_FallDeath (0x409480)  → RET (never executes)
  *   c) Ball_FallUpdate 0x00408CD5      → NOP the "ball+0x2E8 = 1" write
  *      NOTE: This path is BAD BALL ONLY (vtable[65] of bad ball vtable 0x4CF494).
  *      The player ball never calls Ball_FallUpdate. The bad ball fall timer (ball+0xC60,
@@ -240,7 +240,7 @@ static int apply_4x_size(BYTE *base)
  * Patch A: Ball_Shatter (0x408D70) → RET 0x4
  *   __thiscall, 1 stack param. Original: 6A FF 64 → C2 04 00
  *
- * Patch B: Ball_Shatter_OnRamp (0x409480) → RET
+ * Patch B: Ball_FallDeath (0x409480) → RET
  *   __thiscall, 0 stack params. Original: 6A FF 64 → C3 90 90
  *
  * Patch C: Ball_FallUpdate fall-timer shatter (0x00408CD5) → NOP

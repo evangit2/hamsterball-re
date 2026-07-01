@@ -5,7 +5,7 @@
  *
  * Patches 8 points in Hamsterball.exe:
  *   5x NOP (prevent shatter flag writes + active flag writes)
- *   3x RET (early-return from Ball_Shatter, Ball_Shatter_OnRamp, variant)
+ *   3x RET (early-return from Ball_Shatter, Ball_FallDeath, variant)
  *
  * Winlator/Android-safe:
  *   - No IAT hooks (GetTickCount hook crashes Android)
@@ -175,7 +175,7 @@ static patch_t g_patches[] = {
       { 0xC3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 },
       3, FALSE },
 
-    /* 3. Ball_Shatter_OnRamp — early RET */
+    /* 3. Ball_FallDeath — early RET */
     { 0x9480,
       { 0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00 },
       { 0xC3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 },

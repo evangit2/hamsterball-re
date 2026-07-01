@@ -57,7 +57,7 @@ Multiple triggers set `is_falling` (+0x2E8 = 1):
   `Bonkbash_Update` (0x43F930, vtable 0x4D5140 slot[3]). These are ARENA/LEVEL CRUSHER OBJECTS
   that shatter balls within range — Breaker iterates all balls, Bonkbash uses Collision_PointInTriangle.
   NOT called from FollowBall_Update. Sets +0x324=1, +0x2E8=1.
-- **Ball_Shatter_OnRamp** (0x409480) — vtable[8] death handler called when the player ball
+- **Ball_FallDeath** (0x409480) — vtable[8] death handler called when the player ball
   STOPS after falling (velocity reverses or ball lands). Sets +0x324=1, +0x2E8=1.
 - **E:SWALLOW** collision event — pipe mechanics swallow the ball. Sets +0x2E8=1.
 - **Ball_Update fall death** (0x405E00) — at 0x406244 and 0x407436, sets +0x2E8=1 for the player
@@ -167,7 +167,7 @@ void Ball_ApplyForce(ball* this, float dx, float dy, float dz, float multiplier)
 5. Creates trail particles
 6. Calls `Scene_ForEachBall_SetVelocity` to push other balls
 
-`Ball_Shatter_OnRamp` (0x409480) is a variant for ramp-based deaths that creates
+`Ball_FallDeath` (0x409480) is a variant for ramp-based deaths that creates
 2 fragments and spawns score particles in a circular pattern.
 
 ## E:NODIZZY — NOT Related to the Dizzy System
@@ -290,7 +290,7 @@ In `Ball_RenderAI` (0x403DC0):
 | 0x405190 | Ball_FindClosestRespawnPoint | Triggers stun (sets all stun fields) |
 | 0x405D5B | (inside above) | Sets is_stunned=1, stun_timer=150 |
 | 0x408D70 | Ball_Shatter | Sets is_falling (+0x2E8), respawn_state (+0x324). Called from Breaker_Update and Bonkbash_Update (arena crusher objects), NOT FollowBall_Update |
-| 0x409480 | Ball_Shatter_OnRamp | Ramp variant of shatter |
+| 0x409480 | Ball_FallDeath | Ramp variant of shatter |
 | 0x405E00 | Ball_Update | Two-pass collision: Pass 1 checks bounce_count, Pass 2 increments. Also stun recovery |
 | 0x403750 | Ball_ApplyTrajectory | The dizzy effect: halves speed, sets impact_count=100, increments dizzy counter |
 | 0x402650 | Ball_ApplyForceWithMultipliers | Input guard (checks is_stunned first) |

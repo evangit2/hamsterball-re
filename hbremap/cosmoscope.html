@@ -55397,7 +55397,7 @@ if (piVar16[0x15] &gt; 1.0  &amp;&amp;  is_shrunk == 0) {
 <h3>2. Trigger Ball_Shatter on Wall Hit (L502)</h3>
 <pre><code class="language-c">if (impact_shatter == 1) {
     if (velocity_check_based_on_axis) {
-        (*vtable[8])();   // calls Ball_OnRampEvent = Ball_Shatter!
+        (*vtable[8])();   // calls Ball_FallDeath = Ball_Shatter!
     }
 }
 </code></pre>
@@ -55408,7 +55408,7 @@ if (piVar16[0x15] &gt; 1.0  &amp;&amp;  is_shrunk == 0) {
 <li><strong>Axis 2 (Z):</strong> <code>board+0xCAC &gt;= 0.0</code> (ball moving in positive Z or stationary)</li>
 </ul>
 <p>If the ball is moving in the &quot;wrong&quot; direction for the current axis AND hits a wall, the ball <strong>shatters</strong> (breaks into debris pieces, plays sound, triggers respawn).</p>
-<p><strong><code>Ball_OnRampEvent</code> (0x00409480, vtable[8]):</strong></p>
+<p><strong><code>Ball_FallDeath</code> (0x00409480, vtable[8]):</strong></p>
 <ul>
 <li>Sets <code>ball+0x2E8 = 1</code> (shattered flag)</li>
 <li>Checks <code>is_shrunk</code> (0xC4C) to select which shatter sound to play</li>
@@ -55476,7 +55476,7 @@ if (piVar16[0x15] &gt; 1.0  &amp;&amp;  is_shrunk == 0) {
 </tr>
 <tr>
 <td><strong>vtable[8]</strong></td>
-<td><code>Ball_OnRampEvent</code> (0x00409480) — shatter function called from this path</td>
+<td><code>Ball_FallDeath</code> (0x00409480) — shatter function called from this path</td>
 </tr>
 <tr>
 <td><strong>Interaction with <code>is_shrunk</code></strong></td>
@@ -159811,7 +159811,7 @@ a SimpleMenu base class with UIList widget for vertical scrolling lists.</p>
 </ul>
 <h3>3. Unbreakable Ball (8 patches from XRow's CEA)</h3>
 <ul>
-<li>3× early RET (Ball_Shatter, variant, Ball_Shatter_OnRamp)</li>
+<li>3× early RET (Ball_Shatter, variant, Ball_FallDeath)</li>
 <li>5× NOP (prevent shatter flag + is_active + fall timer writes)</li>
 </ul>
 <h2>Winlator Safety</h2>
@@ -159972,7 +159972,7 @@ a SimpleMenu base class with UIList widget for vertical scrolling lists.</p>
 <td>0x409480</td>
 <td><code>6A FF 64 A1</code> (SEH frame)</td>
 <td><code>C3 90 90</code> (RET)</td>
-<td>Ball_Shatter_OnRamp early return</td>
+<td>Ball_FallDeath early return</td>
 </tr>
 <tr>
 <td>4</td>

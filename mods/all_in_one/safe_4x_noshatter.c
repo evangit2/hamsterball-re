@@ -3,7 +3,7 @@
  *
  * What this does:
  *   1. 4x Ball Size — all balls 4x bigger
- *   2. No Shatter — Ball_Shatter and Ball_Shatter_OnRamp are RETed at entry,
+ *   2. No Shatter — Ball_Shatter and Ball_FallDeath are RETed at entry,
  *      skipping the visual breaking animation AND the sound effect.
  *      But the RESPAWN SYSTEM is left untouched — if the ball falls off
  *      an edge, it still respawns at the last checkpoint normally.
@@ -129,7 +129,7 @@ static int apply_4x(BYTE*base){
  *   __thiscall, 1 stack param → RET 0x4 skips the entire function.
  *   The shatter visual, particle effects, and sound never play.
  *
- * Ball_Shatter_OnRamp (0x409480): Shatter when hitting ramps at wrong angle.
+ * Ball_FallDeath (0x409480): Shatter when hitting ramps at wrong angle.
  *   __thiscall, 0 stack params → RET skips the entire function.
  *
  * IMPORTANT: The respawn system (ball+0x2E8, +0x2E9, +0x768) is LEFT ALONE.

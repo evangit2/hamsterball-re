@@ -85,7 +85,7 @@ When `dizzy_lock = 1`: `Ball_ApplyTrajectory` is **skipped**. The ball does not 
 ```c
 if (dizzy_lock == 1) {
     if (velocity_check_based_on_axis) {
-        (*vtable[8])();   // calls Ball_OnRampEvent = Ball_Shatter!
+        (*vtable[8])();   // calls Ball_FallDeath = Ball_Shatter!
     }
 }
 ```
@@ -97,7 +97,7 @@ The velocity check depends on `ball+0x1D2` (axis selector):
 
 If the ball is moving in the "wrong" direction for the current axis AND hits a wall, the ball **shatters** (breaks into debris pieces, plays sound, triggers respawn).
 
-**`Ball_OnRampEvent` (0x00409480, vtable[8]):**
+**`Ball_FallDeath` (0x00409480, vtable[8]):**
 - This is the death/respawn handler called when the player ball STOPS after falling (velocity reverses or ball lands). NOT a "ramp variant" of Ball_Shatter.
 - Sets `ball+0x2E8 = 1` (shattered/needs_respawn flag)
 - Checks `is_shrunk` (0xC4C) to select which shatter sound to play
@@ -139,7 +139,7 @@ This is likely intentional game design: in Odd Race, when the ball is shrunk ins
 | **Cleared by** | `Ball_InitPhysicsDefaults` (0x00405262: `MOV byte [ESI+0x2E9],0`) and `Ball_ctor2` (0x404039E0+0x1FE) |
 | **Effect 1** | Blocks `Ball_ApplyTrajectory` from firing (Pass 1 checks `dizzy_lock == 0`) |
 | **Effect 2** | When set by speed>1.0: camera change + viewport setup |
-| **Effect 3** | When set by E:LIMIT: enables wall-hit shatter path (vtable[8] = Ball_OnRampEvent). E:SWALLOW sets ball+0x2E8 (is_falling) instead — different flag |
+| **Effect 3** | When set by E:LIMIT: enables wall-hit shatter path (vtable[8] = Ball_FallDeath). E:SWALLOW sets ball+0x2E8 (is_falling) instead — different flag |
 | **Effect 4** | Dead code: position-match shatter (threshold = 0.0, never triggers) |
 | **Interaction with `is_shrunk`** | `is_shrunk=1` prevents `dizzy_lock` from being set by speed>1.0 collision |
 | **Related fields** | `ball+0x2EC` (bounce_count), `ball+0x14D` (has_trajectory), `ball+0x2F0` (impact_count) |

@@ -352,7 +352,7 @@ static cea_patch_t g_cea_patches[] = {
       { 0x6A, 0xFF, 0x64, 0xA1, 0, 0, 0, 0 },
       { 0xC3, 0x90, 0x90, 0, 0, 0, 0, 0 },
       3 },
-    /* 3. Ball_Shatter_OnRamp — early RET */
+    /* 3. Ball_FallDeath — early RET */
     { 0x9480,
       { 0x6A, 0xFF, 0x64, 0xA1, 0, 0, 0, 0 },
       { 0xC3, 0x90, 0x90, 0, 0, 0, 0, 0 },

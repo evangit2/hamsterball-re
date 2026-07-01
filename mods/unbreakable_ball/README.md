@@ -13,7 +13,7 @@ Patches 8 points in Hamsterball.exe to prevent the ball from shattering:
 |---|---------|----------|-------|--------|
 | 1 | 0x408D70 | `6A FF 64 A1` (SEH frame) | `C3 90 90` (RET) | Ball_Shatter early return |
 | 2 | 0x409050 | `6A FF 64 A1` (SEH frame) | `C3 90 90` (RET) | Shatter variant early return |
-| 3 | 0x409480 | `6A FF 64 A1` (SEH frame) | `C3 90 90` (RET) | Ball_Shatter_OnRamp early return |
+| 3 | 0x409480 | `6A FF 64 A1` (SEH frame) | `C3 90 90` (RET) | Ball_FallDeath early return |
 | 4 | 0x40C761 | `88 85 68 07 00 00` | 6× NOP | Prevent is_active=0 write |
 | 5 | 0x40C767 | `C6 85 E9 02 00 00 01` | 7× NOP | Prevent shatter flag=1 write |
 | 6 | 0x40F226 | `C6 86 68 07 00 00 00` | 7× NOP | Prevent is_active=0 write |
