@@ -1,0 +1,11 @@
+# Icon & Window Name Mod Configuration
+# Lines starting with # are comments
+
+# Custom window title (shown in title bar)
+# Leave as Hamsterball for default
+window_name = Hamsterball
+
+# Path to a custom .ico file to replace the game icon
+# Use full path or relative path (relative to the game .exe)
+# Leave empty for default game icon
+icon_path =
