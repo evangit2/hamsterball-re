@@ -6,9 +6,9 @@
  *   2. Unbreakable  — ball never shatters (2 function-entry RET patches)
  *
  * Unbreakable works by patching the first bytes of Ball_Shatter (0x408D70)
- * and Ball_Shatter_OnRamp (0x409480) to immediately return, so the shatter
+ * and Ball_FallDeath (0x409480) to immediately return, so the shatter
  * code never executes. Ball_Shatter is __thiscall with 1 stack param (RET 0x4),
- * Ball_Shatter_OnRamp is __thiscall with 0 stack params (RET).
+ * Ball_FallDeath is __thiscall with 0 stack params (RET).
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll safe_4x_unbreakable.c \
@@ -236,7 +236,7 @@ static int apply_4x_size(BYTE *base)
  *   Original: 6A FF 64 (PUSH -1, FS: prefix)
  *   Patched:  C2 04 00 (RET 0x4)
  *
- * Ball_Shatter_OnRamp (0x409480): __thiscall, 0 stack params → RET
+ * Ball_FallDeath (0x409480): __thiscall, 0 stack params → RET
  *   Original: 6A FF 64 (PUSH -1, FS: prefix)
  *   Patched:  C3 90 90 (RET, NOP, NOP)
  * ═══════════════════════════════════════════════════════════════════════════ */

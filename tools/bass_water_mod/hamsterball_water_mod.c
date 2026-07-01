@@ -205,7 +205,7 @@ static void diag_log(const char *msg)
 #define PHASE15_HOOK            0x00407BB4
 #define PHASE15_ORIG_BYTES      6
 
-/* Hook 3: Ball vtable[8] — Ball_OnRampEvent (fall death) */
+/* Hook 3: Ball vtable[8] — Ball_FallDeath (fall death) */
 #define ADDR_BALL_VTABLE        0x004CF3A0
 #define VTABLE_SLOT_ONRAMP      8           /* slot 8 → 0x409480 = fall death/shatter */
 
@@ -610,15 +610,15 @@ static void install_phase15_hook(void)
 /* ═══════════════════════════════════════════════════════════════════════════
  * HOOK 3: Ball vtable[8] — suppress fall death while in water
  *
- * vtable[8] at 0x4CF3C0 → Ball_OnRampEvent (0x409480) is called when
+ * vtable[8] at 0x4CF3C0 → Ball_FallDeath (0x409480) is called when
  * the player ball should shatter from falling off an edge. If the
  * ball is currently in water, skip the death entirely.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-typedef void (__thiscall *ball_onramp_t)(void *ball);
-static ball_onramp_t orig_Ball_OnRamp = NULL;
+typedef void (__thiscall *ball_falldeath_t)(void *ball);
+static ball_falldeath_t orig_Ball_FallDeath = NULL;
 
-static void __thiscall Hook_Ball_OnRamp(void *ball)
+static void __thiscall Hook_Ball_FallDeath(void *ball)
 {
     if (ball) {
         water_state_t *st = get_ball_state((DWORD)ball);
@@ -631,32 +631,32 @@ static void __thiscall Hook_Ball_OnRamp(void *ball)
             return;  /* skip death — ball is in water */
         }
     }
-    if (orig_Ball_OnRamp) orig_Ball_OnRamp(ball);
+    if (orig_Ball_FallDeath) orig_Ball_FallDeath(ball);
 }
 
-static int install_onramp_hook(void)
+static int install_falldeath_hook(void)
 {
     void **slot = (void **)(ADDR_BALL_VTABLE + VTABLE_SLOT_ONRAMP * sizeof(void*));
     DWORD old_protect;
 
     if (IsBadReadPtr(slot, sizeof(void*))) {
-        diag_log("OnRamp: vtable slot unreadable");
+        diag_log("FallDeath: vtable slot unreadable");
         return 0;
     }
 
     if (!VirtualProtect(slot, sizeof(void*), PAGE_EXECUTE_READWRITE, &old_protect))
         return 0;
 
-    orig_Ball_OnRamp = (ball_onramp_t)*slot;
-    *slot = (void*)Hook_Ball_OnRamp;
+    orig_Ball_FallDeath = (ball_falldeath_t)*slot;
+    *slot = (void*)Hook_Ball_FallDeath;
 
     VirtualProtect(slot, sizeof(void*), old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), slot, sizeof(void*));
 
     {
         char buf[128];
-        wsprintfA(buf, "OnRamp hook installed: orig=%08X new=%08X",
-                  (DWORD)orig_Ball_OnRamp, (DWORD)Hook_Ball_OnRamp);
+        wsprintfA(buf, "FallDeath hook installed: orig=%08X new=%08X",
+                  (DWORD)orig_Ball_FallDeath, (DWORD)Hook_Ball_FallDeath);
         diag_log(buf);
     }
     return 1;
@@ -688,7 +688,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     install_phase15_hook();
 
     /* Install Hook 3: vtable[8] — suppress fall death in water */
-    install_onramp_hook();
+    install_falldeath_hook();
 
     diag_log("All hooks installed");
 

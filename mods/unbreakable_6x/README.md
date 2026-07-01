@@ -17,7 +17,7 @@ Disables ESC/right-click pause via 3 single-byte JZ→JMP patches.
 - CreateBadBall SIZE: code cave multiplies by 6.0f (pure FPU asm, no C calls)
 
 ### 3. Unbreakable Ball (8 patches from XRow's CEA)
-- 3× early RET (Ball_Shatter, variant, Ball_Shatter_OnRamp)
+- 3× early RET (Ball_Shatter, variant, Ball_FallDeath)
 - 5× NOP (prevent shatter flag + is_active + fall timer writes)
 
 ## Winlator Safety
