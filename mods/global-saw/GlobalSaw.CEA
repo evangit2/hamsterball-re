@@ -1,45 +1,41 @@
 [ENABLE]
  
 // =====================================================
-// Global Saw Spawner v1
+// Global Saw Spawner v2
 // =====================================================
 // Spawns a working Saw (from Toob Race / Level8) on any level.
 //
-// HOW THE SAW WORKS (traced via Ghidra):
-//   1. LevelBoard_Toob_ctor (0x41F4B0) loads the Saw mesh:
-//      "Levels\Level8-Saw" -> board+0x4370
-//   2. FUN_0040fc29 creates the Saw by calling:
-//      a. Level_FindObjectByName(scene, "SAWPATH") -> path
-//      b. Saw_ctor (0x43B780): calls Stands_ctor, sets vtable
-//         0x4D5578, stores board at +0x10D0, position at +0x10DC,
-//         path at +0x10D8, clones mesh, calls Update+Render once.
-//      c. AthenaList_Append(board+0x2578, saw)
-//      d. board+0x4380 = saw (Saw1 slot)
-//   3. Saw_Update (vtable[0x0B] = 0x43B8E0) — movement FSM:
-//      Checks saw+0x110C (active flag). If set, 4-state cycle:
-//        State 0: moving forward, decrement Y, when done -> state 1
-//        State 1: pause (countdown timer), when done -> state 2
-//        State 2: moving forward, increment Y, play sawsoundy, -> state 3
-//        State 3: pause (countdown timer), when done -> state 0
-//      Movement follows SAWPATH via Path_GetPosition (0x467BF0).
-//      Blade rotation via Gfx_ScaleZ(180.0) + Gfx_RotateY.
-//   4. Activation: Toob Race collision handler (0x410020) directly sets
-//      saw+0x110C = 1 (byte) via E:BRANCH(A) event. This is the flag
-//      Saw_Update checks. NOTE: Saw_Activate (0x434A50) sets a DIFFERENT
-//      flag (saw+0x1114) used by Expert Race — NOT Toob Race.
-//   5. Collision: N:SAWTEETH triggers knockback in ToobBoard's
-//      collision handler (0x410020). Knockback velocity from
-//      saw+0x1100 (break direction), magnitude 3.0.
+// v1 CRASH FIX: Saw_Update (0x43B8E0) dereferences saw+0x10D8
+// (path pointer) at 0x43B94B: MOV ECX,[ESI+0x10D8]; MOV EDX,[ECX+0x4]
+// If path is NULL (no SAWPATH on non-Toob levels) → NULL deref → crash.
 //
-// NOTE: The Saw needs a SAWPATH (path from MESHWORLD) to move.
-// Non-Toob levels don't have SAWPATH — the saw will still render
-// and spin, but won't move along a track.
+// v2 FIX: Build a minimal fake path object with 2 control points
+// at the player's position. The saw moves back and forth along
+// a short track. Path object format (from Spline_EvalCubic):
+//   +0x04 = vertex array start (pointer)
+//   +0x08 = vertex array end (pointer)
+//   +0x30 = X spline data (struct, +0x04 = pointer to 16-byte ctrl pts)
+//   +0x40 = Z spline data (struct, +0x04 = pointer to 16-byte ctrl pts)
+// Each spline control point = 4 floats (p0, p1, p2, p3) = 16 bytes.
+// Vertex array = array of int32 indices.
+//
+// HOW THE SAW WORKS IN TOOB RACE:
+//   1. LevelBoard_Toob_ctor (0x41F4B0) loads "Levels\Level8-Saw" mesh
+//   2. FUN_0040FC29 creates saw: Level_FindObjectByName("SAWPATH")
+//      then Saw_ctor(0x43B780)(saw, board, x,y,z, mesh, path)
+//   3. Saw_Update (vtable[0x0B] = 0x43B8E0): 4-state FSM
+//      Checks saw+0x110C (active byte). If set:
+//      State 0: descend (Y -= 2.75/frame), follow SAWPATH, spin blade
+//      State 1: pause (timer=2), then -> state 2
+//      State 2: ascend (Y += 3.75/frame), follow SAWPATH, play sawspeedy
+//      State 3: pause (timer=1), then -> state 0
+//   4. Toob Race activates saw by directly writing saw+0x110C = 1
+//      via E:BRANCH(A) collision event in ToobBoard_CollisionHandler
+//      (0x410020). NOT via Saw_Activate (0x434A50) — that's Expert Race.
+//   5. N:SAWTEETH collision: knockback ball using saw+0x1100 direction
 //
 // HOOK: Ball_Update at 0x405E22
-//   Original: 8B 86 5C 0C 00 00 = mov eax, [esi+0x0C5C]
-//   ESI = player ball pointer
-//
-// HOTKEY: Set [SpawnSaw] to 1 via CE to spawn a saw
+// HOTKEY: Set [SpawnSaw] to 1 via CE
 // =====================================================
  
 alloc(SawCode, 4096)
@@ -47,7 +43,10 @@ alloc(SpawnSaw, 4)
 alloc(saved_board, 4)
 alloc(saw_ptr, 4)
 alloc(mesh_ptr, 4)
-alloc(path_result, 4)
+alloc(path_obj, 4)
+alloc(vertex_arr, 4)
+alloc(spline_x, 4)
+alloc(spline_z, 4)
 alloc(pos_x, 4)
 alloc(pos_y, 4)
 alloc(pos_z, 4)
@@ -62,7 +61,13 @@ saw_ptr:
   dd 0
 mesh_ptr:
   dd 0
-path_result:
+path_obj:
+  dd 0
+vertex_arr:
+  dd 0
+spline_x:
+  dd 0
+spline_z:
   dd 0
 pos_x:
   dd 0
@@ -74,41 +79,34 @@ pos_z:
 label(original_code)
 label(saw_done)
 label(skip_mesh)
-label(no_path)
 label(have_path)
-label(mesh_resolved)
+label(no_path)
 label(spawn_complete)
  
 SawCode:
-  // Save board pointer from ball+0x14
   mov eax, [esi+0x14]
   mov [saved_board], eax
   test eax, eax
   jz original_code
  
-  // Check spawn flag
   cmp dword [SpawnSaw], 0
   je original_code
   mov dword [SpawnSaw], 0
  
   pushad
  
-  // Verify board
+  // Verify board + App + gfx
   mov eax, [saved_board]
   test eax, eax
   jz saw_done
- 
-  // Verify App pointer (board+0x878)
   mov edx, [eax+0x878]
   test edx, edx
   jz saw_done
- 
-  // Verify gfx_device (App+0x174)
   mov edx, [edx+0x174]
   test edx, edx
   jz saw_done
  
-  // === Get player position ===
+  // Get player position
   mov eax, [esi+0x164]
   mov [pos_x], eax
   mov eax, [esi+0x168]
@@ -122,7 +120,6 @@ SawCode:
   test eax, eax
   jnz skip_mesh
  
-  // Allocate mesh object (0x10D0 bytes)
   push 0x10D0
   call 004BA57B
   add esp, 4
@@ -130,38 +127,102 @@ SawCode:
   jz saw_done
  
   // FUN_00461510(mesh, gfx_device, filename)
-  // __thiscall: ECX=mesh, push filename then gfx_device
-  push 004D0E24               // "Levels\Level8-Saw"
+  // __thiscall: ECX=mesh, push param_2(filename), push param_1(gfx)
+  push 004D0E24               // param_2 = "Levels\Level8-Saw"
   mov ecx, [saved_board]
   mov ecx, [ecx+0x878]
   mov ecx, [ecx+0x174]       // gfx_device
-  push ecx
+  push ecx                    // param_1 = gfx_device
   mov ecx, eax               // this = new mesh
   call 00461510
   test eax, eax
   jz saw_done
  
-  // Store mesh in board+0x4370
   mov edx, [saved_board]
   mov [edx+0x4370], eax
  
 skip_mesh:
-  // === Find SAWPATH in scene ===
-  // Level_FindObjectByName(scene, "SAWPATH")
-  // __thiscall: ECX=scene, push name
+  // === Try to find SAWPATH in scene ===
   mov ecx, [saved_board]
   mov ecx, [ecx+0x8AC]
   test ecx, ecx
   jz no_path
   push 004CFD20               // "SAWPATH"
   call 00460530               // Level_FindObjectByName
-  mov [path_result], eax
   test eax, eax
   jz no_path
+  mov [path_obj], eax
   jmp have_path
  
 no_path:
-  mov dword [path_result], 0
+  // === Build a minimal fake path ===
+  // Allocate path object (0x48 bytes, zeroed)
+  push 0x48
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [path_obj], eax
+ 
+  // Zero the path object
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 0x12               // 0x48/4 = 18 dwords
+  rep stosd
+  pop edi
+ 
+  // Allocate vertex array (2 ints: 0 and 1)
+  push 8
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [vertex_arr], eax
+  mov dword [eax], 0          // index 0
+  mov dword [eax+4], 1       // index 1
+ 
+  // Set path+4 = vertex_start, path+8 = vertex_end
+  mov ecx, [path_obj]
+  mov edx, [vertex_arr]
+  mov [ecx+0x04], edx         // array start
+  lea edx, [edx+8]
+  mov [ecx+0x08], edx         // array end (start + 8 = 2 entries)
+ 
+  // Allocate X spline control points (16 bytes: p0, p1, p2, p3)
+  push 16
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [spline_x], eax
+  // p0 = player X, p1 = player X, p2 = player X, p3 = player X
+  // (saw stays at player X — no horizontal movement, just vertical)
+  mov edx, [pos_x]
+  mov [eax], edx
+  mov [eax+4], edx
+  mov [eax+8], edx
+  mov [eax+12], edx
+ 
+  // Allocate Z spline control points (16 bytes)
+  push 16
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [spline_z], eax
+  mov edx, [pos_z]
+  mov [eax], edx
+  mov [eax+4], edx
+  mov [eax+8], edx
+  mov [eax+12], edx
+ 
+  // Set path+0x30+4 = X spline ptr, path+0x40+4 = Z spline ptr
+  mov ecx, [path_obj]
+  mov edx, [spline_x]
+  mov [ecx+0x34], edx         // path+0x30 is a struct, +4 = data ptr
+  mov edx, [spline_z]
+  mov [ecx+0x44], edx         // path+0x40 is a struct, +4 = data ptr
  
 have_path:
   // === Allocate Saw object (0x1118 bytes) ===
@@ -172,49 +233,47 @@ have_path:
   jz saw_done
   mov [saw_ptr], eax
  
-  // === Resolve mesh pointer ===
-  // Use mesh_ptr if set, otherwise use board+0x4370
+  // === Resolve mesh ===
   mov edx, [saved_board]
   mov edx, [edx+0x4370]
   mov [mesh_ptr], edx
   test edx, edx
-  jz saw_done                 // can't spawn without mesh
+  jz saw_done
  
   // === Call Saw_ctor ===
-  // Saw_ctor(this=ECX, board, posX, posY, posZ, mesh, path)
-  // __thiscall: ECX=this, push params right-to-left:
-  //   push path, push mesh, push Z, push Y, push X, push board
-  push dword [path_result]    // param_6 = path (SAWPATH or 0)
-  push dword [mesh_ptr]       // param_5 = mesh
-  push dword [pos_z]          // param_4 = Z
-  push dword [pos_y]          // param_3 = Y
-  push dword [pos_x]          // param_2 = X
-  push dword [saved_board]    // param_1 = board
+  // __thiscall: ECX=this, push right-to-left:
+  // push param_6(path), param_5(mesh), param_4(Z), param_3(Y), param_2(X), param_1(board)
+  push dword [path_obj]       // param_6 = path
+  push dword [mesh_ptr]        // param_5 = mesh
+  push dword [pos_z]           // param_4 = Z
+  push dword [pos_y]           // param_3 = Y
+  push dword [pos_x]           // param_2 = X
+  push dword [saved_board]     // param_1 = board
   mov ecx, [saw_ptr]         // ECX = this
   call 0043B780               // Saw_ctor
  
-  // === Store saw in board+0x4380 (Saw1 slot) ===
+  // === Store saw in board+0x4380 ===
   mov edx, [saved_board]
   mov eax, [saw_ptr]
   mov [edx+0x4380], eax
  
-  // === Register in board's update list (board+0x2578) ===
+  // === Register in board+0x2578 (update list) ===
   push dword [saw_ptr]
   mov ecx, [saved_board]
   add ecx, 0x2578
   call 00453810               // AthenaList_Append
  
-  // === Activate the saw (Toob Race method) ===
-  // In Toob Race, the collision handler (0x410020) activates the saw
-  // by directly setting saw+0x110C = 1 (byte). This is the flag that
-  // Saw_Update (0x43B8E0) checks at the top of its function.
-  // NOTE: Saw_Activate (0x434A50) sets saw+0x1114 — a DIFFERENT flag
-  // used by Expert Race, NOT Toob Race. We set the correct flag.
+  // === Activate saw (Toob Race method) ===
+  // Set saw+0x110C = 1 (byte) — the flag Saw_Update checks
   mov ecx, [saw_ptr]
   mov byte [ecx+0x110C], 1
  
 spawn_complete:
   mov dword [mesh_ptr], 0
+  mov dword [path_obj], 0
+  mov dword [vertex_arr], 0
+  mov dword [spline_x], 0
+  mov dword [spline_z], 0
  
 saw_done:
   popad
@@ -236,7 +295,10 @@ dealloc(SpawnSaw)
 dealloc(saved_board)
 dealloc(saw_ptr)
 dealloc(mesh_ptr)
-dealloc(path_result)
+dealloc(path_obj)
+dealloc(vertex_arr)
+dealloc(spline_x)
+dealloc(spline_z)
 dealloc(pos_x)
 dealloc(pos_y)
 dealloc(pos_z)
