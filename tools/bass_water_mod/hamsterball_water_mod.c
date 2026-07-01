@@ -552,12 +552,13 @@ static void __cdecl apply_water_physics(DWORD ball)
     /* Decrement grace timer every frame, even if not in water */
     if (st->grace_frames > 0) st->grace_frames--;
 
-    /* Clear 0x2E9 every frame while in water or during grace period.
-     * Type 5 collision can re-set 0x2E9 even while submerged (if Hook 3
-     * misses a frame or E:LIMIT fires), and can set it AFTER exit (ball
-     * clipping through mesh on the way up). Clearing it here ensures it
-     * stays 0 throughout the water interaction + grace period. */
-    if (st->in_water || st->grace_frames > 0) {
+    /* Clear 0x2E9 during grace period only.
+     * While in_water, Hook 3 already prevents type 5 from setting it.
+     * After exit, Hook 3's grace check also suppresses type 5 — but
+     * as belt-and-suspenders, clear any 0x2E9 that snuck in during
+     * the transition frame between exit detection and the next type 5
+     * collision check. */
+    if (st->grace_frames > 0 && !st->in_water) {
         *(BYTE*)((DWORD)ball + BALL_FALLING_FLAG) = 0;
     }
 
