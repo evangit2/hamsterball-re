@@ -1,23 +1,17 @@
 [ENABLE]
 
 // =====================================================
-// Global Saw Spawner v9 — Simple Activated Saw
+// Global Saw Spawner v10 — Always at P1 + Dizzy Collision
 // =====================================================
-// Spawns a saw at player 1's position that:
-// - Does NOT move horizontally (stays in place)
-// - Does up/down motion (original descend/ascend FSM)
-// - Spins blade (Gfx_ScaleZ 180.0)
-// - Plays saw sound (sawspeedy on state 0→2 transition)
-// - Has collision (N:SAWTEETH → balls get dizzy)
-// - Renders properly (no position override, no path hacks)
+// v9b fixes:
+// 1. Always uses dummy path (no SAWPATH search)
+//    → Saw stays at player 1 position on ALL levels including Toob
+// 2. Per-frame proximity dizzy check
+//    → When any ball is near the saw, set ball dizzy timer
+//    → Works on ALL levels (bypasses per-board collision handlers)
 //
-// HOW IT WORKS:
-// - Dummy path has 1 vertex (count=1, count-1=0)
-// - Saw_Update: counter(0.02) < count-1(0) → FALSE
-// - Path_GetPosition SKIPPED → no horizontal movement
-// - FSM runs normally: Y descends -2.75/frame to -100,
-//   pauses, ascends +3.75/frame, pauses, repeats
-// - On Toob Race: real SAWPATH used (original behavior)
+// Dizzy mechanism: ball+0x808 = timer (10 = ~0.4s at 25fps)
+// When > 0, ball can't be controlled (same as N:NOCONTROL event).
 // =====================================================
 
 alloc(SawCode, 4096)
@@ -30,6 +24,7 @@ alloc(vertex_arr, 4)
 alloc(pos_x, 4)
 alloc(pos_y, 4)
 alloc(pos_z, 4)
+alloc(saw_radius_sq, 4)
 
 registersymbol(SpawnSaw)
 
@@ -51,13 +46,15 @@ pos_y:
   dd 0
 pos_z:
   dd 0
+saw_radius_sq:
+  dd 0x47200000       // 100.0^2 = 10000.0 (dizzy range)
 
 label(original_code)
 label(saw_done)
-label(have_path)
-label(no_path)
 label(skip_post)
 label(activate_saw)
+label(check_dizzy)
+label(dizzy_done)
 
 SawCode:
   mov eax, [esi+0x14]
@@ -65,6 +62,33 @@ SawCode:
   test eax, eax
   jz original_code
 
+  // === Per-frame: check if ball is near saw → make dizzy ===
+  mov ecx, [saw_ptr]
+  test ecx, ecx
+  jz check_spawn
+
+  // Read saw position
+  fld dword [ecx+0x10DC]       // saw X
+  fsub dword [esi+0x164]       // saw X - ball X
+  fmul st(0), st(0)             // (sawX - ballX)^2
+
+  fld dword [ecx+0x10E4]       // saw Z
+  fsub dword [esi+0x16C]       // saw Z - ball Z
+  fmul st(0), st(0)             // (sawZ - ballZ)^2
+
+  faddp                        // dist_sq = dx^2 + dz^2
+  fld dword [saw_radius_sq]    // 10000.0
+  fcomip st(1)                 // compare range with dist_sq
+  fstp st(0)                   // pop dist_sq
+  jae check_spawn              // if range >= dist_sq (ball is close), fall through
+
+  // Ball is near saw → set dizzy timer
+  // Only set if not already dizzy (avoid resetting countdown)
+  cmp dword [esi+0x808], 0
+  jne check_spawn
+  mov dword [esi+0x808], 10    // dizzy timer = 10 frames
+
+check_spawn:
   cmp dword [SpawnSaw], 0
   je original_code
   mov dword [SpawnSaw], 0
@@ -111,20 +135,8 @@ SawCode:
   jz saw_done
   mov [our_mesh], eax
 
-  // === Try to find SAWPATH (Toob Race) ===
-  mov ecx, [saved_board]
-  mov ecx, [ecx+0x8AC]
-  test ecx, ecx
-  jz no_path
-  push 004CFD20
-  call 00460530
-  test eax, eax
-  jz no_path
-  mov [path_obj], eax
-  jmp have_path
-
-no_path:
-  // === Build dummy path (1 vertex, no movement) ===
+  // === Always build dummy path (1 vertex, no movement) ===
+  // Never search for SAWPATH — saw stays at player 1 position on ALL levels
   push 0x48
   call 004BA57B
   add esp, 4
@@ -155,14 +167,6 @@ no_path:
   lea edx, [edx+4]
   mov [ecx+0x08], edx
 
-  // path+0x34 and path+0x44 need spline data pointers
-  // Even though Path_GetPosition is skipped, Spline_EvalCubic
-  // might still be called if count check passes.
-  // With count=1, count-1=0, counter(0.02) < 0 → FALSE.
-  // So Path_GetPosition is skipped. Splines never accessed.
-  // But set them to NULL just in case (already zeroed above).
-
-have_path:
   // === Allocate Saw object ===
   push 0x1118
   call 004BA57B
@@ -254,8 +258,7 @@ activate_saw:
   mov dword [ecx+0x10F0], 0     // Y offset = 0 (start at surface)
   mov dword [ecx+0x10EC], 0     // path counter = 0
 
-  // Initialize direction vector (saw+0x1100/1104/1108)
-  // Without this, Gfx_RotateY uses garbage values → huge stretched triangle
+  // Initialize direction vector
   mov dword [ecx+0x1100], 0          // dir X = 0.0
   mov dword [ecx+0x1104], 0          // dir Y = 0.0
   mov dword [ecx+0x1108], 0x3F800000  // dir Z = 1.0 (facing forward)
@@ -289,4 +292,5 @@ dealloc(vertex_arr)
 dealloc(pos_x)
 dealloc(pos_y)
 dealloc(pos_z)
+dealloc(saw_radius_sq)
 unregistersymbol(SpawnSaw)
