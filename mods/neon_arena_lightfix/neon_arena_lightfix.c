@@ -1,21 +1,19 @@
 /*
  * neon_arena_lightfix — Fix missing yellow diffuse light on Neon Arena.
  *
- * Root cause: The ball glow render path (0x402F0E in Ball_Render) hardcodes
- * WHITE emissive (1,1,1) via three PUSH 0x3F800000 calls to Gfx_PackColorRGB.
- * It ignores the ball's material colors entirely. In Neon Race, the ball
- * appears yellow due to the emitter D3D light positioned at the ball. In
- * Neon Arena, ArenaLevel_Neon_Init (0x416F40) loop 1 forgets to set the glow
- * flag (+0xC80=1), AND 8-balls spawn dynamically during gameplay after init
- * has already run — so they never get the glow flag at all.
+ * Root cause: ArenaLevel_Neon_Init (0x416F40) creates a yellow D3D emitter
+ * light (Vec3 R=10, G=10, B=0) but places it at (0,0,0) — world origin —
+ * and never moves it to follow the ball. In Neon Race, Scene_SetupLevelDark
+ * positions the emitter at the ball's location (ball.x, ball.y+30, ball.z).
+ * Additionally, loop 1 forgets to set glow flag (+0xC80=1) on P1 balls, and
+ * 8-balls spawn dynamically during gameplay so they never get the flag.
  *
- * Fix (two parts):
- * 1. Byte-patch the B-channel PUSH at 0x402F51 from 0x3F800000 (1.0) to
- *    0x00000000 (0.0), making the hardcoded emissive yellow (1,1,0) instead
- *    of white (1,1,1). Affects ALL glowing balls (Neon Race + Neon Arena).
- * 2. Background polling thread sets +0xC80=1 on all balls in both AthenaLists
- *    when Neon Arena is detected (board+0x47E4 non-zero). Catches dynamically
- *    spawned 8-balls that miss init's material writes.
+ * Fix (three parts):
+ * 1. Byte-patch the glow B-channel at 0x402F51 from 1.0→0.0, making the
+ *    hardcoded emissive yellow (1,1,0) instead of white (1,1,1).
+ * 2. Background thread sets +0xC80=1 on all balls in both AthenaLists.
+ * 3. Background thread continuously moves the emitter (board+0x47E4) to
+ *    follow the P1 ball: writes ball position to emitter+0x08/+0x0C/+0x10.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll neon_arena_lightfix.c \
@@ -228,7 +226,37 @@ static DWORD WINAPI neon_fix_thread(LPVOID param) {
         /* 8-balls/badballs (board+0x2DEC) */
         apply_neon_to_list(board + 0x2DEC);
 
-        Sleep(500);  /* re-apply twice per second to catch new 8-balls */
+        /* Move the emitter to follow the P1 ball.
+         * Neon Race places emitter at (ball.x, ball.y+30, ball.z).
+         * Neon Arena left it at (0,0,0) — that's why the light never
+         * illuminates the ball surface.
+         * Emitter position is at emitter+0x08 (X), +0x0C (Y), +0x10 (Z).
+         * Ball position is at ball+0x164 (X), +0x168 (Y), +0x16C (Z). */
+        if (!IsBadReadPtr((void*)emitter, 0x100)) {
+            /* Get P1 ball from the P1 AthenaList */
+            char *ball_list = board + 0x29D4;
+            if (!IsBadReadPtr(ball_list, 0x410)) {
+                int count = *(int*)(ball_list + 0x04);
+                if (count > 0 && count < 100) {
+                    int *array = *(int**)(ball_list + 0x40C);
+                    if (array && !IsBadReadPtr(array, count * 4)) {
+                        char *ball = (char*)array[0];  /* first ball = P1 */
+                        if (ball && !IsBadReadPtr(ball, 0x200) &&
+                            *(int*)ball == BALL_VTABLE) {
+                            /* Write ball position to emitter position */
+                            float bx = *(float*)(ball + 0x164);
+                            float by = *(float*)(ball + 0x168);
+                            float bz = *(float*)(ball + 0x16C);
+                            *(float*)(emitter + 0x08) = bx;
+                            *(float*)(emitter + 0x0C) = by + 30.0f;  /* 30 above ball */
+                            *(float*)(emitter + 0x10) = bz;
+                        }
+                    }
+                }
+            }
+        }
+
+        Sleep(100);  /* re-apply frequently for smooth emitter tracking */
     }
     return 0;
 }

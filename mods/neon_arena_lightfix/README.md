@@ -4,16 +4,15 @@ Fixes the missing yellow diffuse light effect on Neon Arena.
 
 ## Problem
 
-The ball glow render path at 0x402F0E in `Ball_Render` hardcodes **white** emissive (1,1,1) via three `PUSH 0x3F800000` calls to `Gfx_PackColorRGB`. It ignores the ball's material colors entirely. In Neon Race, the ball appears yellow because of the emitter D3D light positioned at the ball's location. In Neon Arena:
+`ArenaLevel_Neon_Init` (0x416F40) creates a yellow D3D emitter light (Vec3 R=10, G=10, B=0) but places it at `(0,0,0)` — world origin — and never moves it to follow the ball. In Neon Race, `Scene_SetupLevelDark` positions the emitter at the ball's location `(ball.x, ball.y+30, ball.z)`. Additionally, loop 1 forgets to set the glow flag (`+0xC80=1`) on P1 balls, and 8-balls spawn dynamically during gameplay so they never get the flag.
 
-1. `ArenaLevel_Neon_Init` loop 1 forgets to set `+0xC80 = 1` (glow flag) on P1 balls
-2. 8-balls spawn dynamically during gameplay after init has run — they never get the glow flag
+## Fix (three parts)
 
-## Fix (two parts)
+1. **Byte-patch glow B-channel** (0x402F51): Change `PUSH 0x3F800000` → `PUSH 0x00000000`, making the hardcoded emissive yellow (1,1,0) instead of white (1,1,1).
 
-**1. Byte-patch glow emissive B-channel** (0x402F51): Change `PUSH 0x3F800000` (1.0f) to `PUSH 0x00000000` (0.0f), making the hardcoded emissive yellow (R=1, G=1, B=0) instead of white (R=1, G=1, B=1). This affects all glowing balls — both Neon Race and Neon Arena.
+2. **Glow flag polling**: Background thread sets `+0xC80=1` on all balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 100ms to catch dynamically spawned 8-balls.
 
-**2. Background polling thread**: Detects Neon Arena (board+0x47E4 non-zero) and sets `+0xC80 = 1` on all balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 500ms to catch dynamically spawned 8-balls.
+3. **Emitter follow**: Background thread continuously moves the emitter (board+0x47E4) to the P1 ball's position: writes `(ball.x, ball.y+30, ball.z)` to `emitter+0x08/+0x0C/+0x10`. This is what actually casts the yellow D3D light onto the ball surface.
 
 ## Installation
 
