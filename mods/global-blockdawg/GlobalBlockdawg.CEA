@@ -1,0 +1,267 @@
+[ENABLE]
+
+// =====================================================
+// Global Blockdawg Spawner v1
+// =====================================================
+// Spawns a Blockdawg at player 1's position on any level.
+// Based on the working Global Saw v9 pattern.
+//
+// HOW BLOCKDAWGS WORK IN TOOB RACE:
+//   LevelBoard_Toob_ctor (0x41F4B0): loads "Levels\Level8-Blockdawg1" mesh
+//   FUN_0040FC29: finds DAWGPATH1, calls Blockdawg_ctor(0x43C310)
+//   Blockdawg_ctor: Stands_ctor(mesh) + vtable 0x4D5638 + mesh clone
+//   Blockdawg_Update (vtable[0x0B] = 0x43C4E0):
+//     State 0: follows path, spins blade, checks ball proximity
+//     When ball within range → state changes to 1 (activate!)
+//     State 1: falls/explodes, spawns particles, plays sound
+//   Post: AthenaList_Append(board+0x2578, blockdawg)
+//
+// GLOBAL SPAWN:
+//   - Dummy DAWGPATH (1 vertex) → no horizontal movement
+//   - Direction vector initialized to prevent render corruption
+//   - SpeedCylinder post-processing pattern for render+collision
+// =====================================================
+
+alloc(DawgCode, 4096)
+alloc(SpawnDawg, 4)
+alloc(saved_board, 4)
+alloc(dawg_ptr, 4)
+alloc(our_mesh, 4)
+alloc(path_obj, 4)
+alloc(vertex_arr, 4)
+alloc(pos_x, 4)
+alloc(pos_y, 4)
+alloc(pos_z, 4)
+
+registersymbol(SpawnDawg)
+
+SpawnDawg:
+  dd 0
+saved_board:
+  dd 0
+dawg_ptr:
+  dd 0
+our_mesh:
+  dd 0
+path_obj:
+  dd 0
+vertex_arr:
+  dd 0
+pos_x:
+  dd 0
+pos_y:
+  dd 0
+pos_z:
+  dd 0
+
+label(original_code)
+label(dawg_done)
+label(skip_post)
+label(activate_dawg)
+
+DawgCode:
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz original_code
+
+  cmp dword [SpawnDawg], 0
+  je original_code
+  mov dword [SpawnDawg], 0
+
+  pushad
+
+  // Verify board + App + gfx + scene
+  mov eax, [saved_board]
+  test eax, eax
+  jz dawg_done
+  mov edx, [eax+0x8AC]
+  test edx, edx
+  jz dawg_done
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz dawg_done
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz dawg_done
+
+  // Get player position
+  mov eax, [esi+0x164]
+  mov [pos_x], eax
+  mov eax, [esi+0x168]
+  mov [pos_y], eax
+  mov eax, [esi+0x16C]
+  mov [pos_z], eax
+
+  // === Load fresh Level8-Blockdawg1 mesh ===
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+
+  push 004D0DF0               // "Levels\Level8-Blockdawg1"
+  mov ecx, [saved_board]
+  mov ecx, [ecx+0x878]
+  mov ecx, [ecx+0x174]
+  push ecx
+  mov ecx, eax
+  call 00461510
+  test eax, eax
+  jz dawg_done
+  mov [our_mesh], eax
+
+  // === Build dummy DAWGPATH (1 vertex, no movement) ===
+  push 0x48
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [path_obj], eax
+
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 0x12
+  rep stosd
+  pop edi
+
+  // 1 vertex entry (4 bytes)
+  push 4
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [vertex_arr], eax
+  mov dword [eax], 0
+
+  // path+4 = vertex_start, path+8 = vertex_end (start+4)
+  mov ecx, [path_obj]
+  mov edx, [vertex_arr]
+  mov [ecx+0x04], edx
+  lea edx, [edx+4]
+  mov [ecx+0x08], edx
+
+  // === Allocate Blockdawg object (0x1154 bytes) ===
+  push 0x1154
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [dawg_ptr], eax
+
+  // === Call Blockdawg_ctor ===
+  // __thiscall: ECX=this, push right-to-left:
+  // push path, mesh, Z, Y, X, board
+  push dword [path_obj]
+  push dword [our_mesh]
+  push dword [pos_z]
+  push dword [pos_y]
+  push dword [pos_x]
+  push dword [saved_board]
+  mov ecx, [dawg_ptr]
+  call 0043C310
+
+  // === POST-PROCESSING (SpeedCylinder pattern) ===
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  push dword [dawg_ptr]
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_post
+
+  push dword [dawg_ptr]
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+  mov ecx, [dawg_ptr]
+  mov eax, [dawg_ptr]
+  mov eax, [eax]
+  call dword [eax+0x58]
+
+  push ebx
+  mov ecx, [dawg_ptr]
+  mov eax, [dawg_ptr]
+  mov eax, [eax]
+  call dword [eax+0x54]
+
+skip_post:
+  // Collision registration
+  mov ecx, [dawg_ptr]
+  mov ecx, [ecx+0x10D4]
+  test ecx, ecx
+  jz activate_dawg
+
+  push ecx
+  mov edx, [saved_board]
+  add edx, 0x10EC
+  mov ecx, edx
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz activate_dawg
+
+  mov ecx, [dawg_ptr]
+  mov ecx, [ecx+0x10D4]
+  push ecx
+  lea ecx, [edx+0x18]
+  call 00453810
+
+activate_dawg:
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
+  push dword [dawg_ptr]
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // === Initialize direction vector ===
+  // Prevents render corruption (same fix as Saw v9b)
+  mov ecx, [dawg_ptr]
+  mov dword [ecx+0x10E4], 0          // dir X = 0.0
+  mov dword [ecx+0x10E8], 0          // dir Y = 0.0
+  mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0 (facing forward)
+
+  mov dword [our_mesh], 0
+  mov dword [path_obj], 0
+  mov dword [vertex_arr], 0
+
+dawg_done:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp DawgCode
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(DawgCode)
+dealloc(SpawnDawg)
+dealloc(saved_board)
+dealloc(dawg_ptr)
+dealloc(our_mesh)
+dealloc(path_obj)
+dealloc(vertex_arr)
+dealloc(pos_x)
+dealloc(pos_y)
+dealloc(pos_z)
+unregistersymbol(SpawnDawg)
