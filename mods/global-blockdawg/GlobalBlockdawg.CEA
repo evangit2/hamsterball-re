@@ -372,7 +372,15 @@ activate_dawg:
   mov ecx, [dawg_ptr]
   mov dword [ecx+0x10E4], 0          // dir X = 0.0
   mov dword [ecx+0x10E8], 0          // dir Y = 0.0
-  mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0
+  mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0 (facing forward)
+
+  // === Fix path counter (CRITICAL) ===
+  // Blockdawg_ctor calls random(0, count-2) for starting path index.
+  // With dummy path (count=1): random(0, -1) → garbage value.
+  // Spline_EvalCubic reads spline vertex data at offset [counter*0x10].
+  // Garbage counter → negative index → buffer underflow → memory corruption.
+  // Set counter (0x1138) = 0.0 to start at vertex 0 (safe).
+  mov dword [ecx+0x1138], 0
 
   // === Prevent sound crashes on non-Toob levels ===
   mov dword [ecx+0x1148], 0x7FFFFFFF  // bark timer = max (never fires)
