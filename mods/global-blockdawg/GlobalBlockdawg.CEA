@@ -166,11 +166,14 @@ DawgCode:
 
   // === Build dummy DAWGPATH with proper spline data ===
   // Path structure:
-  //   +0x00: zeroed
-  //   +0x04: vertex_start pointer (1 vertex, 4 bytes)
-  //   +0x08: vertex_end pointer (start+4)
+  //   +0x04: vertex_start pointer (2 vertices, 8 bytes)
+  //   +0x08: vertex_end pointer (start+8)
   //   +0x30: X spline header (struct, +4 = ptr to spline vertex data)
   //   +0x40: Z spline header (struct, +4 = ptr to spline vertex data)
+  //
+  // Spline_EvalCubic needs count >= 2:
+  //   count-2 is used as array index. count=1 → index=-1 → buffer underflow!
+  //   count=2 → index=0 → valid. Reads from first spline entry.
   //
   // Spline_EvalCubic reads *(int*)(path+0x30+4) and *(int*)(path+0x40+4)
   // These MUST be valid pointers or crash with NULL deref!
@@ -190,26 +193,28 @@ DawgCode:
   rep stosd
   pop edi
 
-  // Allocate 1 vertex entry (4 bytes, value=0)
-  push 4
+  // Allocate 2 vertex entries (8 bytes, all zeros)
+  // count = (end-start)/4 = 8/4 = 2
+  push 8
   call 004BA57B
   add esp, 4
   test eax, eax
   jz dawg_done
   mov [vertex_arr], eax
   mov dword [eax], 0
+  mov dword [eax+4], 0
 
-  // path+4 = vertex_start, path+8 = vertex_end (start+4)
+  // path+4 = vertex_start, path+8 = vertex_end (start+8)
   mov ecx, [path_obj]
   mov edx, [vertex_arr]
   mov [ecx+0x04], edx
-  lea edx, [edx+4]
+  lea edx, [edx+8]
   mov [ecx+0x08], edx
 
-  // === Allocate X spline vertex data (16 bytes, all zeros) ===
+  // === Allocate X spline vertex data (32 bytes = 2 entries × 16 bytes) ===
   // Spline vertex = 4 floats: c3*t³ + c2*t² + c1*t + c0
   // All zeros → returns 0.0 → no X movement
-  push 0x10
+  push 0x20
   call 004BA57B
   add esp, 4
   test eax, eax
@@ -219,12 +224,12 @@ DawgCode:
   push edi
   mov edi, eax
   xor eax, eax
-  mov ecx, 4
+  mov ecx, 8
   rep stosd
   pop edi
 
-  // === Allocate Z spline vertex data (16 bytes, all zeros) ===
-  push 0x10
+  // === Allocate Z spline vertex data (32 bytes = 2 entries × 16 bytes) ===
+  push 0x20
   call 004BA57B
   add esp, 4
   test eax, eax
@@ -234,7 +239,7 @@ DawgCode:
   push edi
   mov edi, eax
   xor eax, eax
-  mov ecx, 4
+  mov ecx, 8
   rep stosd
   pop edi
 
