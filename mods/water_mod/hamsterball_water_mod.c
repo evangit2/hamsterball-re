@@ -6,13 +6,13 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
- * v6: Clear ball+0x2E9 (falling flag) when ball enters water.
- *     During a long fall, type 5 mesh-penetration sets 0x2E9=1 BEFORE
- *     the ball reaches water. Hook 3 prevents new type 5 sets while
- *     submerged, but the existing flag was never cleared. Death check #2
- *     at 0x40721F (0x2E9 set + ABS(position_delta) < 2.0) fires at the
- *     apex of the bounce-out, shattering the ball. The grace period only
- *     delayed the inevitable. Fix: clear 0x2E9 in trigger_water_contact().
+ * v6: Clear ball+0x2E9 (falling flag) when ball enters water AND every frame
+ *     while in water or during grace period. Extend Hook 3 to suppress type 5
+ *     during grace period too (not just while submerged).
+ *     Root cause: type 5 collision re-sets 0x2E9 after ball exits water
+ *     (ball clips through mesh on the way up). Hook 3 only checked in_water,
+ *     so after exit it fell through and 0x2E9 got set. Death check #2 then
+ *     fired at the apex (0x2E9==1 + position delta < 2.0 → vtable[8]).
  *
  * v5: Fix FPU state corruption crash at 0x407BC6.
  *     Phase 15 code cave now saves/restores full x87 FPU state via
@@ -552,6 +552,15 @@ static void __cdecl apply_water_physics(DWORD ball)
     /* Decrement grace timer every frame, even if not in water */
     if (st->grace_frames > 0) st->grace_frames--;
 
+    /* Clear 0x2E9 every frame while in water or during grace period.
+     * Type 5 collision can re-set 0x2E9 even while submerged (if Hook 3
+     * misses a frame or E:LIMIT fires), and can set it AFTER exit (ball
+     * clipping through mesh on the way up). Clearing it here ensures it
+     * stays 0 throughout the water interaction + grace period. */
+    if (st->in_water || st->grace_frames > 0) {
+        *(BYTE*)((DWORD)ball + BALL_FALLING_FLAG) = 0;
+    }
+
     if (!st->in_water) return;
 
     float ball_y = *(float*)(ball + BALL_POS_Y);
@@ -727,13 +736,15 @@ static void install_phase15_hook(void)
 
 static BYTE *g_type5_cave = NULL;
 
-/* Check if a ball pointer has the in_water flag set.
- * Called from assembly cave via __cdecl. Returns 1 if in water, 0 if not. */
+/* Check if a ball pointer should be protected from type 5 death.
+ * Returns 1 if ball is in water OR within the grace period after leaving water.
+ * This prevents type 5 mesh-penetration from setting 0x2E9 both while submerged
+ * AND during the bounce-out arc where the ball may clip through mesh. */
 static int __cdecl is_ball_in_water(DWORD ball)
 {
     if (!ball || IsBadReadPtr((void*)ball, 0x300)) return 0;
     water_state_t *st = get_ball_state(ball);
-    return (st && st->in_water) ? 1 : 0;
+    return (st && (st->in_water || st->grace_frames > 0)) ? 1 : 0;
 }
 
 static int (__cdecl *g_is_in_water_ptr)(DWORD) = NULL;
