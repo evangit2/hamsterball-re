@@ -181,30 +181,31 @@ ChromeCode:
  
   // 4 directions: +X+Z, -X+Z, +X-Z, -X-Z
   // velocity magnitude = 2.5f (from OddBoard_Update)
+  // 2.5f = 0x40200000, -2.5f = 0xC0200000
   cmp eax, 0
   jne dir1
   // +X, +Z
-  mov dword [vel_x], 4019999A    // 2.5f
-  mov dword [vel_z], 4019999A    // 2.5f
+  mov dword [vel_x], 40200000    // 2.5f
+  mov dword [vel_z], 40200000    // 2.5f
   jmp vel_done
 dir1:
   cmp eax, 1
   jne dir2
   // -X, +Z
-  mov dword [vel_x], C019999A    // -2.5f
-  mov dword [vel_z], 4019999A    // 2.5f
+  mov dword [vel_x], C0200000    // -2.5f
+  mov dword [vel_z], 40200000    // 2.5f
   jmp vel_done
 dir2:
   cmp eax, 2
   jne dir3
   // +X, -Z
-  mov dword [vel_x], 4019999A    // 2.5f
-  mov dword [vel_z], C019999A    // -2.5f
+  mov dword [vel_x], 40200000    // 2.5f
+  mov dword [vel_z], C0200000    // -2.5f
   jmp vel_done
 dir3:
   // -X, -Z
-  mov dword [vel_x], C019999A    // -2.5f
-  mov dword [vel_z], C019999A    // -2.5f
+  mov dword [vel_x], C0200000    // -2.5f
+  mov dword [vel_z], C0200000    // -2.5f
 vel_done:
   // Y velocity = 12.0f (upward launch, from OddBoard_Update)
   mov dword [vel_y], 41400000    // 12.0f
