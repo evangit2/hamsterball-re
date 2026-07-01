@@ -1,5 +1,5 @@
 /*
- * hamsterball_water_mod.c — v3: Collision-triggered water physics
+ * hamsterball_water_mod.c — v4: Type 5 suppress + grace period
  *
  * BUILD (Linux -> Windows):
  *   i686-w64-mingw32-gcc -shared -o bass.dll hamsterball_water_mod.c -lwinmm \
@@ -12,8 +12,8 @@
  *   3. Place collision objects named "E:WATER" in custom levels
  *   4. Run Hamsterball.exe normally
  *
- * HOW IT WORKS (v3):
- *   Two hooks:
+ * HOW IT WORKS (v4):
+ *   Four hooks:
  *
  *   HOOK 1 — DispatchCollisionEvents (0x40C5D0) trampoline:
  *     Intercepts all collision events. When the collision object's name starts
@@ -22,14 +22,30 @@
  *       2. Reduces ALL velocity axes by entry_damping (default 30%)
  *       3. Captures ball's Y as water_surface_y for this session
  *     Then calls the original DispatchCollisionEvents so the game processes
- *     the collision normally.
+ *     the collision normally. E:LIMIT events still set 0x2E9 normally.
  *
  *   HOOK 2 — Phase 15 code cave (0x407BB4) in Ball_Update:
  *     Runs every frame for every ball. If in_water is set, applies:
  *       - Drag (all velocity axes scaled per frame)
  *       - Horizontal drag (extra scaling on X/Z)
  *       - Buoyancy (upward acceleration proportional to submersion)
- *     If ball rises above captured surface, clears in_water.
+ *     If ball rises above captured surface, clears in_water and starts
+ *     a grace period (GRACE_PERIOD_FRAMES frames of death suppression).
+ *
+ *   HOOK 3 — Type 5 collision suppressor (0x407377) in Ball_Update:
+ *     Code cave at the JNZ that gates the type 5 death block. When the
+ *     ball is in water, skips the entire block (0x2E9 set + camera switch).
+ *     This prevents geometric mesh-penetration from setting the falling
+ *     flag while submerged. E:LIMIT events still set 0x2E9 through
+ *     DispatchCollisionEvents, so the ball can still die from level
+ *     boundaries while in water.
+ *
+ *   HOOK 4 — Ball vtable[8] (0x4CF3C0) — Ball_FallDeath suppression:
+ *     When Ball_FallDeath is called, checks if ball is in water OR within
+ *     the grace period after leaving water. If so, skips death entirely.
+ *     This covers the bounce-out scenario: ball exits water, flies through
+ *     the air, and the velocity-stop death check fires at the apex — the
+ *     grace period keeps the suppression active until the ball lands.
  *
  *   No background scan thread. No MeshWorld parsing. No AthenaList iteration.
  *   The game's own collision system tells us when the ball touches water.
@@ -205,9 +221,20 @@ static void diag_log(const char *msg)
 #define PHASE15_HOOK            0x00407BB4
 #define PHASE15_ORIG_BYTES      6
 
-/* Hook 3: Ball vtable[8] — Ball_FallDeath (fall death) */
+/* Hook 3: Type 5 collision suppressor — code cave at 0x407377 in Ball_Update
+ * When ball is in water, skip the entire type 5 death block (sets 0x2E9 +
+ * camera switch). This prevents geometric mesh-penetration detection from
+ * setting the falling flag while the ball is submerged, while still allowing
+ * E:LIMIT events to set it through DispatchCollisionEvents. */
+#define ADDR_TYPE5_JNZ          0x00407377  /* 6-byte JNZ at penetration check */
+#define TYPE5_SKIP_TARGET       0x0040743D  /* jump here to skip type 5 death block */
+#define TYPE5_NEXT_INSTR        0x0040737D  /* instruction after the JNZ */
+#define TYPE5_PATCH_SIZE        6           /* 5-byte JMP + 1 NOP */
+
+/* Hook 4: Ball vtable[8] — Ball_FallDeath (fall death) — grace period */
 #define ADDR_BALL_VTABLE        0x004CF3A0
 #define VTABLE_SLOT_ONRAMP      8           /* slot 8 → 0x409480 = fall death/shatter */
+#define GRACE_PERIOD_FRAMES     120         /* ~5 seconds at 25fps to suppress death after leaving water */
 
 /* Ball struct offsets */
 #define BALL_POS_X              0x164
@@ -292,6 +319,7 @@ typedef struct {
     DWORD ball;              /* ball pointer (key); 0 = unused */
     int   in_water;          /* currently in water? (gates physics) */
     float water_surface_y;   /* ball's Y at moment of contact */
+    int   grace_frames;      /* frames remaining of death suppression after leaving water */
 } water_state_t;
 
 static water_state_t g_states[MAX_BALLS];
@@ -484,55 +512,40 @@ static float compute_submersion(float ball_y, float radius, float surface_y)
     return submerged;
 }
 
-/* Ball+0x2E9: falling-mode flag (set by collision type 5 / edge detection).
- * When set, Ball_Update checks if the ball stopped on the primary axis
- * (ABS(delta) < 2.0, where 2.0 is the DOUBLE at 0x4CF4F8). If stopped,
- * it calls vtable[8] (Ball_FallDeath) → ball shatters.
- *
- * In water, drag slows the ball until its per-frame movement drops below
- * 2.0, triggering the death check. To prevent this, we clear 0x2E9 every
- * frame while in water. This stops the death check from firing at all.
- *
- * The vtable[8] hook (Hook 3) remains as a second line of defense. */
-#define BALL_FALLING_FLAG       0x2E9
-
 /* Ongoing water physics — called from Phase 15 code cave every frame */
 static void __cdecl apply_water_physics(DWORD ball)
 {
     if (!ball || IsBadReadPtr((void*)ball, 0x300)) return;
 
     water_state_t *st = get_ball_state(ball);
-    if (!st || !st->in_water) return;
+    if (!st) return;
+
+    /* Decrement grace timer every frame, even if not in water */
+    if (st->grace_frames > 0) st->grace_frames--;
+
+    if (!st->in_water) return;
 
     float ball_y = *(float*)(ball + BALL_POS_Y);
     float radius = *(float*)(ball + BALL_RADIUS);
     if (radius <= 0.0f || radius > 1000.0f) return;
 
     /* Exit condition: ball must be CLEARLY above the surface (by at least
-     * half its radius) before we consider it out of the water. The old
-     * check (ball_y - radius > surface_y) fired too eagerly — buoyancy
-     * pushes the ball up past the entry point, clearing in_water, then
-     * the death check kills the ball on the next frame. */
+     * half its radius) before we consider it out of the water. */
     if (ball_y - radius > st->water_surface_y + radius * 0.5f) {
         st->in_water = 0;
         st->water_surface_y = 0.0f;
-        /* Clear falling flag on exit so the ball doesn't immediately die
-         * after leaving the water. It will be re-set by collision type 5
-         * if the ball falls off another edge. */
-        *(unsigned char*)(ball + BALL_FALLING_FLAG) = 0;
+        /* Start grace period: suppress fall death for N more frames to
+         * cover the bounce arc after leaving water. The ball can still
+         * die from E:LIMIT events during this time. */
+        st->grace_frames = GRACE_PERIOD_FRAMES;
         if (g_cfg.debug) {
             char buf[128];
-            wsprintfA(buf, "WATER EXIT: ball=%08X y=%.2f surface=%.2f",
-                      ball, ball_y, st->water_surface_y);
+            wsprintfA(buf, "WATER EXIT: ball=%08X y=%.2f grace=%d",
+                      ball, ball_y, st->grace_frames);
             diag_log(buf);
         }
         return;
     }
-
-    /* Clear the falling-mode flag every frame while in water.
-     * This prevents Ball_Update's death check (ABS(delta) < 2.0 → vtable[8])
-     * from firing while the ball is floating in water. */
-    *(unsigned char*)(ball + BALL_FALLING_FLAG) = 0;
 
     DWORD phys = *(DWORD*)(ball + BALL_PHYS_PTR);
     if (!phys || IsBadReadPtr((void*)phys, 0xCB0)) return;
@@ -639,11 +652,157 @@ static void install_phase15_hook(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * HOOK 3: Ball vtable[8] — suppress fall death while in water
+ * HOOK 3: Type 5 collision suppressor — code cave at 0x407377 in Ball_Update
+ *
+ * The type 5 collision handler at 0x407377 checks if the ball has penetrated
+ * past the mesh edge > 1.0 units. If so, it sets ball+0x2E9 (falling flag)
+ * and switches the camera to falling mode.
+ *
+ * While the ball is in water, we skip the ENTIRE type 5 death block by
+ * jumping to 0x40743D (the instruction after the block). This prevents
+ * 0x2E9 from being set by geometric mesh penetration while submerged.
+ *
+ * E:LIMIT events still set 0x2E9 through DispatchCollisionEvents, so the
+ * ball can still die from level boundaries while in water.
+ *
+ * Context at hook site:
+ *   ESI = ball pointer
+ *   FPU state has FCOMIP result from penetration comparison
+ *   Original instruction: JNZ 0x40743D (6 bytes: 0F 85 C0 00 00 00)
+ *
+ * Cave logic:
+ *   1. Check if ball (ESI) has in_water flag set
+ *   2. If in_water → JMP 0x40743D (skip type 5 death block entirely)
+ *   3. If not in_water → reproduce original JNZ 0x40743D, then fall
+ *      through to 0x40737D (continue normal type 5 processing)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static BYTE *g_type5_cave = NULL;
+
+/* Check if a ball pointer has the in_water flag set.
+ * Called from assembly cave via __cdecl. Returns 1 if in water, 0 if not. */
+static int __cdecl is_ball_in_water(DWORD ball)
+{
+    if (!ball || IsBadReadPtr((void*)ball, 0x300)) return 0;
+    water_state_t *st = get_ball_state(ball);
+    return (st && st->in_water) ? 1 : 0;
+}
+
+static int (__cdecl *g_is_in_water_ptr)(DWORD) = NULL;
+
+static void install_type5_hook(void)
+{
+    BYTE *hook_addr = (BYTE*)ADDR_TYPE5_JNZ;
+    char buf[256];
+
+    /* Verify expected bytes: 0F 85 C0 00 00 00 (JNZ rel32) */
+    BYTE expected[] = { 0x0F, 0x85, 0xC0, 0x00, 0x00, 0x00 };
+    wsprintfA(buf, "Type5 bytes: %02X %02X %02X %02X %02X %02X",
+              hook_addr[0], hook_addr[1], hook_addr[2],
+              hook_addr[3], hook_addr[4], hook_addr[5]);
+    diag_log(buf);
+
+    if (memcmp(hook_addr, expected, TYPE5_PATCH_SIZE) != 0) {
+        diag_log("TYPE5 BYTE MISMATCH!");
+        return;
+    }
+
+    g_type5_cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
+                                         PAGE_EXECUTE_READWRITE);
+    if (!g_type5_cave) { diag_log("type5: VirtualAlloc FAILED"); return; }
+
+    g_is_in_water_ptr = is_ball_in_water;
+
+    int p = 0;
+
+    /* --- Cave entry ---
+     * ESI = ball pointer (preserved by __cdecl call)
+     * FPU state has FCOMIP result from the penetration comparison.
+     * We must preserve ESI and flags for the non-water path. */
+
+    /* PUSH ESI (ball pointer) — will be consumed by our C function */
+    g_type5_cave[p++] = 0x56;
+
+    /* PUSHFD — save flags (FCOMIP result is in AH via FNSTSW) */
+    g_type5_cave[p++] = 0x9C;
+
+    /* CALL [g_is_in_water_ptr] — __cdecl, arg = ESI on stack */
+    g_type5_cave[p++] = 0xFF; g_type5_cave[p++] = 0x15;
+    *(DWORD*)(g_type5_cave + p) = (DWORD)&g_is_in_water_ptr; p += 4;
+
+    /* ADD ESP, 4 — clean up __cdecl arg */
+    g_type5_cave[p++] = 0x83; g_type5_cave[p++] = 0xC4;
+    g_type5_cave[p++] = 0x04;
+
+    /* POPFD — restore flags (FCOMIP result) */
+    g_type5_cave[p++] = 0x9D;
+
+    /* POP ESI — restore ball pointer */
+    g_type5_cave[p++] = 0x5E;
+
+    /* TEST EAX, EAX — check is_in_water return */
+    g_type5_cave[p++] = 0x85; g_type5_cave[p++] = 0xC0;
+
+    /* JNZ skip_target — if in water, jump past entire type 5 death block */
+    g_type5_cave[p++] = 0x0F; g_type5_cave[p++] = 0x85;
+    {
+        DWORD src = (DWORD)(g_type5_cave + p + 4);
+        DWORD dst = (DWORD)TYPE5_SKIP_TARGET;
+        *(DWORD*)(g_type5_cave + p) = dst - src;
+    }
+    p += 4;
+
+    /* --- Not in water: reproduce original JNZ behavior ---
+     * The original instruction was: JNZ 0x40743D (skip if penetration <= 1.0)
+     * The FCOMIP flags are still in the FPU status word, but we need to
+     * re-check them. Actually, the original JNZ at 0x407377 tested the
+     * result of "FNSTSW AX / TEST AH, 0x41" which was already executed
+     * before the hook. The flags from that test are what we need.
+     *
+     * But we did POPFD to restore flags, so the ZF from the original
+     * TEST AH,0x41 is now in flags. We can just do JNZ to the same target. */
+
+    /* JNZ 0x40743D — reproduce original conditional jump */
+    g_type5_cave[p++] = 0x0F; g_type5_cave[p++] = 0x85;
+    {
+        DWORD src = (DWORD)(g_type5_cave + p + 4);
+        DWORD dst = (DWORD)TYPE5_SKIP_TARGET;
+        *(DWORD*)(g_type5_cave + p) = dst - src;
+    }
+    p += 4;
+
+    /* --- Fall through: penetration > 1.0 and not in water ---
+     * Continue to the next instruction at 0x40737D */
+    g_type5_cave[p++] = 0xE9;
+    *(DWORD*)(g_type5_cave + p) =
+        (DWORD)TYPE5_NEXT_INSTR - (DWORD)(g_type5_cave + p + 4);
+    p += 4;
+
+    /* --- Patch hook site: replace 6-byte JNZ with 5-byte JMP + 1 NOP --- */
+    DWORD old_protect;
+    VirtualProtect(hook_addr, TYPE5_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &old_protect);
+    DWORD jmp_offset = (DWORD)g_type5_cave - (DWORD)hook_addr - 5;
+    hook_addr[0] = 0xE9;
+    *(DWORD*)(hook_addr + 1) = jmp_offset;
+    hook_addr[5] = 0x90;  /* NOP */
+    VirtualProtect(hook_addr, TYPE5_PATCH_SIZE, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, TYPE5_PATCH_SIZE);
+
+    wsprintfA(buf, "TYPE5 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_type5_cave);
+    diag_log(buf);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * HOOK 4: Ball vtable[8] — suppress fall death while in water or grace period
  *
  * vtable[8] at 0x4CF3C0 → Ball_FallDeath (0x409480) is called when
  * the player ball should shatter from falling off an edge. If the
- * ball is currently in water, skip the death entirely.
+ * ball is currently in water OR within the grace period after leaving
+ * water, skip the death entirely. E:LIMIT deaths are NOT suppressed
+ * here — those go through DispatchCollisionEvents which sets 0x2E9,
+ * and the death check fires here, but we skip it during grace period
+ * too. That's acceptable because the grace period is short (5 seconds)
+ * and the ball should be landing on solid ground by then.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 typedef void (__thiscall *ball_falldeath_t)(void *ball);
@@ -653,13 +812,14 @@ static void __thiscall Hook_Ball_FallDeath(void *ball)
 {
     if (ball) {
         water_state_t *st = get_ball_state((DWORD)ball);
-        if (st && st->in_water) {
+        if (st && (st->in_water || st->grace_frames > 0)) {
             if (g_cfg.debug) {
                 char buf[128];
-                wsprintfA(buf, "SUPPRESSED fall death: ball=%08X (in_water=1)", (DWORD)ball);
+                wsprintfA(buf, "SUPPRESSED fall death: ball=%08X (in_water=%d grace=%d)",
+                          (DWORD)ball, st->in_water, st->grace_frames);
                 diag_log(buf);
             }
-            return;  /* skip death — ball is in water */
+            return;  /* skip death — ball is in water or within grace period */
         }
     }
     if (orig_Ball_FallDeath) orig_Ball_FallDeath(ball);
@@ -702,7 +862,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v3 loaded (collision-triggered) ===");
+    diag_log("=== Water mod v4 loaded (type5 suppress + grace period) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -715,10 +875,13 @@ static DWORD WINAPI patch_thread(LPVOID param)
     /* Install Hook 1: DispatchCollisionEvents trampoline */
     install_dispatch_hook();
 
-    /* Install Hook 2: Phase 15 code cave */
+    /* Install Hook 2: Phase 15 code cave (water physics) */
     install_phase15_hook();
 
-    /* Install Hook 3: vtable[8] — suppress fall death in water */
+    /* Install Hook 3: Type 5 collision suppressor (prevent 0x2E9 while in water) */
+    install_type5_hook();
+
+    /* Install Hook 4: vtable[8] — suppress fall death during grace period */
     install_falldeath_hook();
 
     diag_log("All hooks installed");
@@ -748,7 +911,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v3 DLL attaching ===");
+        diag_log("=== Water mod v4 DLL attaching ===");
 
         load_real_bass();
         {
