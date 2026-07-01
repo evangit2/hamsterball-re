@@ -4,16 +4,20 @@ Fixes the missing yellow diffuse light effect on Neon Arena.
 
 ## Problem
 
-Neon Arena should have a yellow glow effect on balls similar to Neon Race, but it doesn't render. The root cause is in `ArenaLevel_Neon_Init` (0x416F40):
+Neon Arena should have a yellow glow effect on balls (like Neon Race), but it doesn't work. Two bugs in `ArenaLevel_Neon_Init` (0x416F40):
 
-- **Loop 1** (P1 balls at board+0x29D4): writes yellow ambient/diffuse/emissive material colors, but **forgets to set `+0xC80 = 1`** (the glow render flag). Without this flag, the emissive material is written but the game never renders the glow.
-- **Loop 2** (P2/badballs at board+0x2DEC): correctly sets `+0xC80 = 1` — which is why only P1 balls lack the glow.
-
-Compare with `Scene_SetupLevelDark` (0x416270, Neon Race) where both loops set `+0xC80 = 1`.
+1. **Missing glow flag**: Loop 1 (P1 balls) writes yellow material colors but forgets `+0xC80 = 1` (glow render flag). Loop 2 (8-balls) sets it correctly.
+2. **Dynamic 8-ball spawns**: 8-balls are created during gameplay, AFTER `ArenaLevel_Neon_Init` has already run. New 8-balls never receive neon materials at all.
 
 ## Fix
 
-A background polling thread detects when Neon Arena is active (board+0x47E4 non-zero) and sets `+0xC80 = 1` on every ball in both AthenaLists. No material writes needed — the game already wrote the yellow materials; they just weren't being rendered.
+A background polling thread detects Neon Arena (board+0x47E4 non-zero) and continuously applies:
+- Glow flag (`+0xC80 = 1`)
+- Yellow ambient/diffuse/emissive materials (R=1.0, G=1.0, B=0.0, A=1.0)
+
+to ALL balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 500ms to catch dynamically spawned 8-balls.
+
+No phys struct pointer dereferencing — only direct ball struct writes with vtable verification (0x4CF3A0).
 
 ## Installation
 

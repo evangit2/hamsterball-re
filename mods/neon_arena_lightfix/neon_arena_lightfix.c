@@ -1,14 +1,15 @@
 /*
  * neon_arena_lightfix — Fix missing yellow diffuse light on Neon Arena.
  *
- * Root cause: ArenaLevel_Neon_Init (0x416F40) loop 1 writes yellow material
- * colors (ambient/diffuse/emissive) to P1 balls but FORGETS to set the glow
- * render flag (+0xC80 = 1). Loop 2 (P2/badballs) correctly sets +0xC80 = 1.
- * Without this flag, the emissive material is written but never rendered.
+ * Root cause: ArenaLevel_Neon_Init (0x416F40) writes yellow materials during
+ * init, but 8-balls spawn dynamically DURING gameplay — after init has already
+ * run. New 8-balls never get the neon materials. Additionally, loop 1 (P1 balls)
+ * forgets to set the glow render flag (+0xC80=1).
  *
  * Fix: A background thread detects Neon Arena (board+0x47E4 non-zero) and
- * sets +0xC80 = 1 on every ball in the P1 AthenaList (board+0x29D4).
- * No material writes needed — the game already wrote them.
+ * continuously applies yellow ambient/diffuse/emissive + glow flag to ALL balls
+ * in both AthenaLists (board+0x29D4 and board+0x2DEC). No phys struct pointer
+ * dereferencing — only direct ball struct writes with vtable verification.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll neon_arena_lightfix.c \
@@ -20,7 +21,7 @@
 #include <windows.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * BASS Proxy Exports (all 10 game imports + extras)
+ * BASS Proxy Exports
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static HMODULE g_hRealBass = NULL;
@@ -141,13 +142,73 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Neon Arena Light Fix — minimal: only set glow flag
+ * Neon Arena Light Fix
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define APP_PTR_ADDR    0x005341E0
 #define BALL_VTABLE     0x004CF3A0
 
+/* Yellow material: R=1.0, G=1.0, B=0.0, A=1.0 (matches Neon Race) */
+#define F1  0x3F800000  /* 1.0f */
+#define F0  0x00000000  /* 0.0f */
+
+/* Ball struct material offsets (verified from ArenaLevel_Neon_Init disasm) */
+/* Ambient:  +0x1CC(R) +0x1D0(G) +0x1D4(B) +0x1D8(A) */
+/* Diffuse:  +0x1BC(R) +0x1C0(G) +0x1C4(B) +0x1C8(A) */
+/* Emissive: +0x1EC(R) +0x1F0(G) +0x1F4(B) +0x1F8(A) */
+/* Glow flag: +0xC80 (byte, 1=render glow) */
+/* Has-material flag: +0x204 (byte) */
+
+/* Ball struct is at least 0x10D0 bytes (operator_new(0x10d0) in ArenaLevel_Neon_Init).
+ * We access up to 0xC80, so check 0xC90 bytes. */
+#define BALL_CHECK_SIZE  0xC90
+
 static volatile int g_running = 1;
+
+/* Apply yellow neon materials + glow flag to a single ball */
+static void apply_neon_to_ball(char *ball) {
+    if (!ball || IsBadReadPtr(ball, BALL_CHECK_SIZE)) return;
+    if (*(int*)ball != BALL_VTABLE) return;  /* verify it's a ball */
+
+    /* Glow flag — the key missing instruction from loop 1 */
+    *(BYTE*)(ball + 0xC80) = 1;
+
+    /* Ambient = yellow */
+    *(DWORD*)(ball + 0x1CC) = F1;
+    *(DWORD*)(ball + 0x1D0) = F1;
+    *(DWORD*)(ball + 0x1D4) = F0;
+    *(DWORD*)(ball + 0x1D8) = F1;
+
+    /* Diffuse = yellow */
+    *(DWORD*)(ball + 0x1BC) = F1;
+    *(DWORD*)(ball + 0x1C0) = F1;
+    *(DWORD*)(ball + 0x1C4) = F0;
+    *(DWORD*)(ball + 0x1C8) = F1;
+
+    /* Emissive = yellow */
+    *(DWORD*)(ball + 0x1EC) = F1;
+    *(DWORD*)(ball + 0x1F0) = F1;
+    *(DWORD*)(ball + 0x1F4) = F0;
+    *(DWORD*)(ball + 0x1F8) = F1;
+
+    /* Has-material flag */
+    *(BYTE*)(ball + 0x204) = 1;
+}
+
+/* Iterate an AthenaList and apply neon to each ball */
+static void apply_neon_to_list(char *list) {
+    if (!list || IsBadReadPtr(list, 0x410)) return;
+
+    int count = *(int*)(list + 0x04);
+    if (count <= 0 || count > 100) return;
+
+    int *array = *(int**)(list + 0x40C);
+    if (!array || IsBadReadPtr(array, count * 4)) return;
+
+    for (int i = 0; i < count; i++) {
+        apply_neon_to_ball((char*)array[i]);
+    }
+}
 
 static DWORD WINAPI neon_fix_thread(LPVOID param) {
     (void)param;
@@ -163,53 +224,17 @@ static DWORD WINAPI neon_fix_thread(LPVOID param) {
         char *board = *(char**)((char*)profile + 0x0C);
         if (!board || IsBadReadPtr(board, 0x4800)) { Sleep(1000); continue; }
 
-        /* Check board+0x47E4 (Neon Arena emitter SceneObject) */
+        /* Check board+0x47E4 — Neon Arena emitter SceneObject */
         int emitter = *(int*)(board + 0x47E4);
         if (!emitter) { Sleep(1000); continue; }
 
-        /* Neon Arena detected — set glow flag on P1 balls */
-        char *ball_list = board + 0x29D4;
-        if (!IsBadReadPtr(ball_list, 0x410)) {
-            int count = *(int*)(ball_list + 0x04);
-            if (count > 0 && count < 100) {
-                int *array = *(int**)(ball_list + 0x40C);
-                if (array && !IsBadReadPtr(array, count * 4)) {
-                    for (int i = 0; i < count; i++) {
-                        char *ball = (char*)array[i];
-                        if (ball && !IsBadReadPtr(ball, 0xC90)) {
-                            /* Verify it's a ball by vtable */
-                            if (*(int*)ball == BALL_VTABLE) {
-                                /* THE fix: set glow flag.
-                                 * Game already wrote yellow materials in loop 1,
-                                 * but forgot this flag. */
-                                *(BYTE*)(ball + 0xC80) = 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        /* Neon Arena active — apply to both ball lists */
+        /* P1 balls (board+0x29D4) */
+        apply_neon_to_list(board + 0x29D4);
+        /* 8-balls/badballs (board+0x2DEC) */
+        apply_neon_to_list(board + 0x2DEC);
 
-        /* Also set on P2/badballs list (board+0x2DEC) for completeness */
-        char *ball_list2 = board + 0x2DEC;
-        if (!IsBadReadPtr(ball_list2, 0x410)) {
-            int count2 = *(int*)(ball_list2 + 0x04);
-            if (count2 > 0 && count2 < 100) {
-                int *array2 = *(int**)(ball_list2 + 0x40C);
-                if (array2 && !IsBadReadPtr(array2, count2 * 4)) {
-                    for (int i = 0; i < count2; i++) {
-                        char *ball = (char*)array2[i];
-                        if (ball && !IsBadReadPtr(ball, 0xC90)) {
-                            if (*(int*)ball == BALL_VTABLE) {
-                                *(BYTE*)(ball + 0xC80) = 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Sleep(2000);
+        Sleep(500);  /* re-apply twice per second to catch new 8-balls */
     }
     return 0;
 }
