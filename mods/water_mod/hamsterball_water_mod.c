@@ -645,8 +645,12 @@ static void install_phase15_hook(void)
 
     /* FRSTOR [ESP] — restore complete x87 FPU state
      * Must be AFTER POPFD so interrupts are in correct state.
-     * FRSTOR restores: control word, status word, tag word, FPU registers */
-    g_phase15_cave[p++] = 0xDD; g_phase15_cave[p++] = 0x2C; g_phase15_cave[p++] = 0x24;
+     * FRSTOR restores: control word, status word, tag word, FPU registers
+     * DD /4 = FRSTOR m94byte. mod=00, reg=100, rm=100 (SIB, base=ESP)
+     * modrm = 0b00_100_100 = 0x24, SIB = 0x24 → DD 24 24
+     * BUG FIX: v5 had DD 2C 24 = DD /5 = FLD m80t (loaded one garbage
+     * float instead of restoring state → crash at race restart) */
+    g_phase15_cave[p++] = 0xDD; g_phase15_cave[p++] = 0x24; g_phase15_cave[p++] = 0x24;
 
     /* ADD ESP, 108 — free FNSAVE buffer */
     g_phase15_cave[p++] = 0x83; g_phase15_cave[p++] = 0xC4;
