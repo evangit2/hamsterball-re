@@ -716,31 +716,29 @@ static void install_type5_hook(void)
     int p = 0;
 
     /* --- Cave entry ---
-     * ESI = ball pointer (preserved by __cdecl call)
-     * FPU state has FCOMIP result from the penetration comparison.
-     * We must preserve ESI and flags for the non-water path. */
+     * ESI = ball pointer (preserved by __cdecl callee)
+     * Flags = result from TEST AH,0x41 (penetration comparison)
+     *
+     * Stack order MUST be: PUSHFD first, then PUSH ESI (argument).
+     * If reversed, the C function receives flags as its argument instead
+     * of the ball pointer, and POPFD loads garbage → crash. */
 
-    /* PUSH ESI (ball pointer) — will be consumed by our C function */
-    g_type5_cave[p++] = 0x56;
-
-    /* PUSHFD — save flags (FCOMIP result is in AH via FNSTSW) */
+    /* PUSHFD — save original flags (from TEST AH, 0x41 / penetration check) */
     g_type5_cave[p++] = 0x9C;
 
-    /* CALL [g_is_in_water_ptr] — __cdecl, arg = ESI on stack */
+    /* PUSH ESI — ball pointer, becomes __cdecl argument at [ESP] */
+    g_type5_cave[p++] = 0x56;
+
+    /* CALL [g_is_in_water_ptr] — __cdecl, reads arg from [ESP+4] after retaddr */
     g_type5_cave[p++] = 0xFF; g_type5_cave[p++] = 0x15;
     *(DWORD*)(g_type5_cave + p) = (DWORD)&g_is_in_water_ptr; p += 4;
 
-    /* ADD ESP, 4 — clean up __cdecl arg */
+    /* ADD ESP, 4 — clean up __cdecl arg (ESI still preserved by callee) */
     g_type5_cave[p++] = 0x83; g_type5_cave[p++] = 0xC4;
     g_type5_cave[p++] = 0x04;
 
-    /* POPFD — restore flags (FCOMIP result) */
-    g_type5_cave[p++] = 0x9D;
-
-    /* POP ESI — restore ball pointer */
-    g_type5_cave[p++] = 0x5E;
-
-    /* TEST EAX, EAX — check is_in_water return */
+    /* TEST EAX, EAX — check is_in_water return (clobbers flags, but
+     * original flags are still safe on the stack from PUSHFD) */
     g_type5_cave[p++] = 0x85; g_type5_cave[p++] = 0xC0;
 
     /* JNZ skip_target — if in water, jump past entire type 5 death block */
@@ -752,15 +750,11 @@ static void install_type5_hook(void)
     }
     p += 4;
 
-    /* --- Not in water: reproduce original JNZ behavior ---
-     * The original instruction was: JNZ 0x40743D (skip if penetration <= 1.0)
-     * The FCOMIP flags are still in the FPU status word, but we need to
-     * re-check them. Actually, the original JNZ at 0x407377 tested the
-     * result of "FNSTSW AX / TEST AH, 0x41" which was already executed
-     * before the hook. The flags from that test are what we need.
-     *
-     * But we did POPFD to restore flags, so the ZF from the original
-     * TEST AH,0x41 is now in flags. We can just do JNZ to the same target. */
+    /* --- Not in water: restore original flags and reproduce original JNZ ---
+     * POPFD restores the flags from TEST AH,0x41 that we saved at entry.
+     * The TEST EAX,EAX above clobbered flags, but POPFD brings back the
+     * original penetration comparison result. */
+    g_type5_cave[p++] = 0x9D;
 
     /* JNZ 0x40743D — reproduce original conditional jump */
     g_type5_cave[p++] = 0x0F; g_type5_cave[p++] = 0x85;
