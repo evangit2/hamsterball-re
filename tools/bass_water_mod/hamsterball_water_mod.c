@@ -205,6 +205,10 @@ static void diag_log(const char *msg)
 #define PHASE15_HOOK            0x00407BB4
 #define PHASE15_ORIG_BYTES      6
 
+/* Hook 3: Ball vtable[8] — Ball_OnRampEvent (fall death) */
+#define ADDR_BALL_VTABLE        0x004CF3A0
+#define VTABLE_SLOT_ONRAMP      8           /* slot 8 → 0x409480 = fall death/shatter */
+
 /* Ball struct offsets */
 #define BALL_POS_X              0x164
 #define BALL_POS_Y              0x168
@@ -604,6 +608,61 @@ static void install_phase15_hook(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * HOOK 3: Ball vtable[8] — suppress fall death while in water
+ *
+ * vtable[8] at 0x4CF3C0 → Ball_OnRampEvent (0x409480) is called when
+ * the player ball should shatter from falling off an edge. If the
+ * ball is currently in water, skip the death entirely.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef void (__thiscall *ball_onramp_t)(void *ball);
+static ball_onramp_t orig_Ball_OnRamp = NULL;
+
+static void __thiscall Hook_Ball_OnRamp(void *ball)
+{
+    if (ball) {
+        water_state_t *st = get_ball_state((DWORD)ball);
+        if (st && st->in_water) {
+            if (g_cfg.debug) {
+                char buf[128];
+                wsprintfA(buf, "SUPPRESSED fall death: ball=%08X (in_water=1)", (DWORD)ball);
+                diag_log(buf);
+            }
+            return;  /* skip death — ball is in water */
+        }
+    }
+    if (orig_Ball_OnRamp) orig_Ball_OnRamp(ball);
+}
+
+static int install_onramp_hook(void)
+{
+    void **slot = (void **)(ADDR_BALL_VTABLE + VTABLE_SLOT_ONRAMP * sizeof(void*));
+    DWORD old_protect;
+
+    if (IsBadReadPtr(slot, sizeof(void*))) {
+        diag_log("OnRamp: vtable slot unreadable");
+        return 0;
+    }
+
+    if (!VirtualProtect(slot, sizeof(void*), PAGE_EXECUTE_READWRITE, &old_protect))
+        return 0;
+
+    orig_Ball_OnRamp = (ball_onramp_t)*slot;
+    *slot = (void*)Hook_Ball_OnRamp;
+
+    VirtualProtect(slot, sizeof(void*), old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), slot, sizeof(void*));
+
+    {
+        char buf[128];
+        wsprintfA(buf, "OnRamp hook installed: orig=%08X new=%08X",
+                  (DWORD)orig_Ball_OnRamp, (DWORD)Hook_Ball_OnRamp);
+        diag_log(buf);
+    }
+    return 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Patch Thread
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -627,6 +686,9 @@ static DWORD WINAPI patch_thread(LPVOID param)
 
     /* Install Hook 2: Phase 15 code cave */
     install_phase15_hook();
+
+    /* Install Hook 3: vtable[8] — suppress fall death in water */
+    install_onramp_hook();
 
     diag_log("All hooks installed");
 
