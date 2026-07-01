@@ -61,47 +61,44 @@ Saw_ctor(this, board, posX, posY, posZ, mesh, path) {
 **States:**
 - **State 0** (moving forward, descending):
   - `Gfx_ScaleZ(180.0)` — scale the saw blade
-  - Increment path position counter (`saw+0x10EC += speed`)
+  - Increment path counter: `saw+0x10EC += 0.02f` (_DAT_004CF448)
   - `Path_GetPosition(path, &pos, counter)` — get position along SAWPATH
   - Calculate direction, normalize, set facing via `Gfx_RotateY`
-  - Decrement Y offset (`saw+0x10F0 -= _DAT_004D5C90`)
-  - When Y offset reaches threshold → **state 1** (pause)
+  - Decrement Y offset: `saw+0x10F0 -= 2.75` (double _DAT_004D5C90)
+  - When Y offset < -100.0 (float _DAT_004D0248) → **state 1** (pause, timer=2)
 
 - **State 1** (pausing at bottom):
   - Count down timer (`saw+0x10F8 -= 1`)
   - When timer expires → **state 2** (ascending)
-  - On entering state 2: plays "sawspeedy" sound
+  - On entering state 2: plays "sawspeedy" sound (App+0x4E8)
 
 - **State 2** (moving forward, ascending):
   - Same path following as state 0
-  - Increment Y offset (`saw+0x10F0 += _DAT_004D0178`)
-  - When Y offset reaches threshold → **state 3** (pause)
+  - Increment Y offset: `saw+0x10F0 += 3.75` (double _DAT_004D0178)
+  - When Y offset > 0.0 (_DAT_004CF368) → **state 3** (pause, timer=1)
 
 - **State 3** (pausing at top):
   - Count down timer
   - When timer expires → **state 0** (cycle repeats)
 
-### 5. Saw_Activate — 0x434A50
+### 5. Activation — Toob Race vs Expert Race
 
-```c
-void Saw_Activate(int saw) {
-    saw->field_1114 = 1;  // set active flag
-    Sound_Play3D(app->sounds[0x4C0], saw->posX, saw->posY, saw->posZ);
-    // plays "sawstartup" sound
-}
-```
+**Toob Race** does NOT use `Saw_Activate`. The ToobBoard collision handler
+(`0x410020`) activates the saw by **directly writing** `saw+0x110C = 1` (byte):
 
-### 6. Saw_AlertActivate — 0x434770
+- **E:BRANCH(A)**: Sets `board+0x4380->0x110C = 1` (activates Saw1)
+- **E:ALERTSAW2**: Sets `board+0x4384->0x110C = 1` (activates Saw2)
 
-```c
-void Saw_AlertActivate(int saw) {
-    if (saw->field_110D != 0) {  // if alerted
-        saw->field_110D = 0;    // clear alert
-        Sound_Play3D(app->sounds[0x4BC], saw->posX, saw->posY, saw->posZ);
-        // plays "saw" idle hum
-    }
-}
-```
+`Saw_Update` checks `saw+0x110C` at `0x43B8FB` (`MOV AL, byte [ESI+0x110C]`)
+— if non-zero, the 4-state FSM runs.
+
+**Expert Race** uses `Saw_Activate (0x434A50)` which sets `saw+0x1114` — a
+DIFFERENT flag. This is the wrong flag for Toob Race.
+
+### 6. Saw_AlertActivate — 0x434770 (Expert Race only)
+
+Clears alert flag `saw+0x110D` and plays idle hum. Used by Expert Race,
+NOT Toob Race.
 
 ### 7. Collision System — ToobBoard CollisionHandler (0x410020)
 

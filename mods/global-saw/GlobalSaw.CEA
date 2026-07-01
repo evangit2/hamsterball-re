@@ -23,7 +23,10 @@
 //        State 3: pause (countdown timer), when done -> state 0
 //      Movement follows SAWPATH via Path_GetPosition (0x467BF0).
 //      Blade rotation via Gfx_ScaleZ(180.0) + Gfx_RotateY.
-//   4. Saw_Activate (0x434A50): sets saw+0x1114 = 1, plays startup sound
+//   4. Activation: Toob Race collision handler (0x410020) directly sets
+//      saw+0x110C = 1 (byte) via E:BRANCH(A) event. This is the flag
+//      Saw_Update checks. NOTE: Saw_Activate (0x434A50) sets a DIFFERENT
+//      flag (saw+0x1114) used by Expert Race — NOT Toob Race.
 //   5. Collision: N:SAWTEETH triggers knockback in ToobBoard's
 //      collision handler (0x410020). Knockback velocity from
 //      saw+0x1100 (break direction), magnitude 3.0.
@@ -201,11 +204,14 @@ have_path:
   add ecx, 0x2578
   call 00453810               // AthenaList_Append
  
-  // === Activate the saw ===
-  // Saw_Activate sets saw+0x1114 = 1 and plays startup sound
-  // __fastcall: ECX = saw
+  // === Activate the saw (Toob Race method) ===
+  // In Toob Race, the collision handler (0x410020) activates the saw
+  // by directly setting saw+0x110C = 1 (byte). This is the flag that
+  // Saw_Update (0x43B8E0) checks at the top of its function.
+  // NOTE: Saw_Activate (0x434A50) sets saw+0x1114 — a DIFFERENT flag
+  // used by Expert Race, NOT Toob Race. We set the correct flag.
   mov ecx, [saw_ptr]
-  call 00434A50               // Saw_Activate
+  mov byte [ecx+0x110C], 1
  
 spawn_complete:
   mov dword [mesh_ptr], 0
