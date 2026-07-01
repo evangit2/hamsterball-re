@@ -1,32 +1,25 @@
 [ENABLE]
- 
+
 // =====================================================
-// Global Saw Spawner v3
+// Global Saw Spawner v4
 // =====================================================
-// v1: Crashed — NULL path pointer dereference in Saw_Update
-// v2: Crashed — reused board+0x4370 (wrong mesh on non-Toob levels)
-// v3: ALWAYS loads fresh Level8-Saw mesh into our own variable.
-//     NEVER touches board+0x4370. Builds fake path if no SAWPATH.
+// Based on working SpeedCylinderSpawn.CEA pattern.
+// Uses same post-processing: SpatialTree, render list,
+// scene tree, vtable update/render calls, collision list.
 //
-// HOW THE SAW WORKS IN TOOB RACE:
-//   LevelBoard_Toob_ctor (0x41F4B0) loads "Levels\Level8-Saw" mesh.
-//   FUN_0040FC29 creates saw: finds SAWPATH, calls Saw_ctor.
-//   Saw_ctor (0x43B780): Stands_ctor(mesh) + vtable 0x4D5578 +
-//     clone mesh via FUN_00465080. Stores board, pos, path.
-//   Saw_Update (vtable[0x0B] = 0x43B8E0): 4-state FSM.
-//     Checks saw+0x110C (active byte). If set:
-//     State 0: descend (Y-=2.75), follow SAWPATH, spin blade
-//     State 1: pause (timer=2), then -> state 2
-//     State 2: ascend (Y+=3.75), play sawspeedy
-//     State 3: pause (timer=1), then -> state 0
-//   Toob Race activates by directly setting saw+0x110C=1
-//     via E:BRANCH(A) in ToobBoard_CollisionHandler (0x410020).
-//   N:SAWTEETH collision: knockback using saw+0x1100 direction.
-//
-// HOOK: Ball_Update at 0x405E22
-// HOTKEY: Set [SpawnSaw] to 1 via CE
+// CREATION FLOW (traced from Toob Race):
+//   LevelBoard_Toob_ctor (0x41F4B0): loads "Levels\Level8-Saw" mesh
+//   FUN_0040FC29: finds SAWPATH, calls Saw_ctor(0x43B780)
+//   Saw_ctor: Stands_ctor(mesh) + vtable 0x4D5578 + mesh clone
+//   Post: AthenaList_Append(board+0x2578, saw), board+0x4380=saw
+//   Activation: saw+0x110C=1 (byte, Toob method via E:BRANCH(A))
+//   Saw_Update (0x43B8E0): 4-state FSM, checks saw+0x110C
+//     State 0: descend Y-=2.75, follow SAWPATH, spin blade
+//     State 1: pause timer=2, then -> state 2
+//     State 2: ascend Y+=3.75, play sawspeedy
+//     State 3: pause timer=1, then -> state 0
 // =====================================================
- 
+
 alloc(SawCode, 4096)
 alloc(SpawnSaw, 4)
 alloc(saved_board, 4)
@@ -39,9 +32,9 @@ alloc(spline_z, 4)
 alloc(pos_x, 4)
 alloc(pos_y, 4)
 alloc(pos_z, 4)
- 
+
 registersymbol(SpawnSaw)
- 
+
 SpawnSaw:
   dd 0
 saved_board:
@@ -64,29 +57,31 @@ pos_y:
   dd 0
 pos_z:
   dd 0
- 
+
 label(original_code)
 label(saw_done)
 label(have_path)
 label(no_path)
-label(spawn_complete)
-label(mesh_loaded)
- 
+label(skip_post)
+
 SawCode:
   mov eax, [esi+0x14]
   mov [saved_board], eax
   test eax, eax
   jz original_code
- 
+
   cmp dword [SpawnSaw], 0
   je original_code
   mov dword [SpawnSaw], 0
- 
+
   pushad
- 
+
   // Verify board + App + gfx
   mov eax, [saved_board]
   test eax, eax
+  jz saw_done
+  mov edx, [eax+0x8AC]
+  test edx, edx
   jz saw_done
   mov edx, [eax+0x878]
   test edx, edx
@@ -94,7 +89,7 @@ SawCode:
   mov edx, [edx+0x174]
   test edx, edx
   jz saw_done
- 
+
   // Get player position
   mov eax, [esi+0x164]
   mov [pos_x], eax
@@ -102,29 +97,25 @@ SawCode:
   mov [pos_y], eax
   mov eax, [esi+0x16C]
   mov [pos_z], eax
- 
-  // === ALWAYS load fresh Level8-Saw mesh ===
-  // NEVER use board+0x4370 — it contains a different mesh on non-Toob levels
+
+  // === Load fresh Level8-Saw mesh ===
   push 0x10D0
   call 004BA57B
   add esp, 4
   test eax, eax
   jz saw_done
- 
-  // FUN_00461510(mesh, gfx_device, filename)
-  // __thiscall: ECX=mesh, push param_2(filename), push param_1(gfx)
-  push 004D0E24               // param_2 = "Levels\Level8-Saw"
+
+  push 004D0E24               // "Levels\Level8-Saw"
   mov ecx, [saved_board]
   mov ecx, [ecx+0x878]
   mov ecx, [ecx+0x174]       // gfx_device
-  push ecx                    // param_1 = gfx_device
+  push ecx
   mov ecx, eax               // this = new mesh
   call 00461510
   test eax, eax
   jz saw_done
   mov [our_mesh], eax
- 
-mesh_loaded:
+
   // === Try to find SAWPATH in scene ===
   mov ecx, [saved_board]
   mov ecx, [ecx+0x8AC]
@@ -136,26 +127,23 @@ mesh_loaded:
   jz no_path
   mov [path_obj], eax
   jmp have_path
- 
+
 no_path:
-  // === Build minimal fake path (prevents NULL deref crash) ===
-  // Path object needs: +4=array_start, +8=array_end, +0x34=X spline, +0x44=Z spline
+  // === Build minimal fake path ===
   push 0x48
   call 004BA57B
   add esp, 4
   test eax, eax
   jz saw_done
   mov [path_obj], eax
- 
-  // Zero it
+
   push edi
   mov edi, eax
   xor eax, eax
   mov ecx, 0x12
   rep stosd
   pop edi
- 
-  // Vertex array: 2 int32 entries
+
   push 8
   call 004BA57B
   add esp, 4
@@ -164,15 +152,13 @@ no_path:
   mov [vertex_arr], eax
   mov dword [eax], 0
   mov dword [eax+4], 1
- 
-  // Set path+4=vertex_start, path+8=vertex_end
+
   mov ecx, [path_obj]
   mov edx, [vertex_arr]
   mov [ecx+0x04], edx
   lea edx, [edx+8]
   mov [ecx+0x08], edx
- 
-  // X spline (16 bytes = 4 floats, all = player X)
+
   push 16
   call 004BA57B
   add esp, 4
@@ -184,8 +170,7 @@ no_path:
   mov [eax+4], edx
   mov [eax+8], edx
   mov [eax+12], edx
- 
-  // Z spline (16 bytes = 4 floats, all = player Z)
+
   push 16
   call 004BA57B
   add esp, 4
@@ -197,14 +182,13 @@ no_path:
   mov [eax+4], edx
   mov [eax+8], edx
   mov [eax+12], edx
- 
-  // path+0x34 = X spline ptr, path+0x44 = Z spline ptr
+
   mov ecx, [path_obj]
   mov edx, [spline_x]
   mov [ecx+0x34], edx
   mov edx, [spline_z]
   mov [ecx+0x44], edx
- 
+
 have_path:
   // === Allocate Saw object (0x1118 bytes) ===
   push 0x1118
@@ -213,7 +197,7 @@ have_path:
   test eax, eax
   jz saw_done
   mov [saw_ptr], eax
- 
+
   // === Call Saw_ctor ===
   // __thiscall: ECX=this, push right-to-left:
   // push path, mesh, Z, Y, X, board
@@ -225,62 +209,109 @@ have_path:
   push dword [saved_board]
   mov ecx, [saw_ptr]
   call 0043B780
- 
-  // === Register in board+0x2578 (update/render list) ===
-  // Scene_UpdateChildren iterates this list, reads element+8 (MeshWorld)
-  // and renders SpatialTree children via vtable[0x12]
+
+  // === POST-PROCESSING (from SpeedCylinder pattern) ===
+
+  // SpatialTree_CloneToLevel — allocate on stack
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  // Add saw to board+0xCD4 (render list)
+  push dword [saw_ptr]
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // Add saw to scene spatial tree (scene+0x8AC+0x480+0x1C)
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_post
+
+  push dword [saw_ptr]
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+  // Call vtable[0x16] (offset 0x58 = update)
+  mov ecx, [saw_ptr]
+  mov eax, [saw_ptr]
+  mov eax, [eax]
+  call dword [eax+0x58]
+
+  // Call vtable[0x15] (offset 0x54 = render)
+  push ebx
+  mov ecx, [saw_ptr]
+  mov eax, [saw_ptr]
+  mov eax, [eax]
+  call dword [eax+0x54]
+
+skip_post:
+  // Collision object = saw+0x10D4 (mesh clone)
+  mov ecx, [saw_ptr]
+  mov ecx, [ecx+0x10D4]
+  test ecx, ecx
+  jz activate_saw
+
+  // Add collision to board+0x10EC
+  push ecx
+  mov edx, [saved_board]
+  add edx, 0x10EC
+  mov ecx, edx
+  call 00453810
+
+  // Add collision to board+0x8B0+0x18
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz activate_saw
+
+  mov ecx, [saw_ptr]
+  mov ecx, [ecx+0x10D4]
+  push ecx
+  lea ecx, [edx+0x18]
+  call 00453810
+
+activate_saw:
+  // SpatialTree cleanup
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
+  // Add saw to board+0x2578 (update list)
   push dword [saw_ptr]
   mov ecx, [saved_board]
   add ecx, 0x2578
   call 00453810
 
-  // === Also add to board+0xCD4 (render list) ===
-  push dword [saw_ptr]
-  mov ecx, [saved_board]
-  add ecx, 0xCD4
-  call 00453810
-
-  // === Also add mesh clone (saw+0x10D4) to render list ===
-  mov ecx, [saw_ptr]
-  mov ecx, [ecx+0x10D4]
-  test ecx, ecx
-  jz activate_saw
-  push ecx
-  mov ecx, [saved_board]
-  add ecx, 0xCD4
-  call 00453810
-
-activate_saw:
-  // === Activate saw (Toob Race method: saw+0x110C = 1) ===
+  // Activate saw (Toob Race method: saw+0x110C = 1)
   mov ecx, [saw_ptr]
   mov byte [ecx+0x110C], 1
- 
-spawn_complete:
-  // Don't dealloc mesh — saw's clone owns it now.
-  // Our_mesh was the source, saw's FUN_00465080 cloned from it.
-  // The clone is at saw+0x10D4. Our_mesh is the source Level object.
-  // Keep it alive (don't free) to prevent dangling refs.
+
+  // Clear temp pointers
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
   mov dword [vertex_arr], 0
   mov dword [spline_x], 0
   mov dword [spline_z], 0
- 
+
 saw_done:
   popad
- 
+
 original_code:
   mov eax, [esi+0x0c5c]
   jmp 00405E28
- 
+
 00405E22:
   jmp SawCode
   nop
- 
+
 [DISABLE]
 00405E22:
   db 8B 86 5C 0C 00 00
- 
+
 dealloc(SawCode)
 dealloc(SpawnSaw)
 dealloc(saved_board)
