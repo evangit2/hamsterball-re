@@ -78,9 +78,9 @@ SawCode:
 
   faddp                        // dist_sq = dx^2 + dz^2
   fld dword [saw_radius_sq]    // 10000.0
-  fcomip st(1)                 // compare range with dist_sq
+  fcomip st(1)                 // compare 10000.0 with dist_sq
   fstp st(0)                   // pop dist_sq
-  jae check_spawn              // if range >= dist_sq (ball is close), fall through
+  jb check_spawn               // if 10000.0 < dist_sq (ball is far), skip dizzy
 
   // Ball is near saw → set dizzy timer
   // Only set if not already dizzy (avoid resetting countdown)
