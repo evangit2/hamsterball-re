@@ -14969,7 +14969,7 @@ This document replaces / supplements <code>BALL_OBJECT.md</code> with authoritat
 <tr>
 <td><code>Ball_Shatter</code></td>
 <td><code>0x00408D70</code></td>
-<td><strong>Arena: split ball into 3 AI balls</strong> (called from FollowBall_Update, NOT E:JUMP)</td>
+<td><strong>Arena: split ball into 3 AI balls</strong> (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930), NOT E:JUMP)</td>
 </tr>
 <tr>
 <td><code>Ball_RecordBest</code></td>
@@ -15678,7 +15678,7 @@ nop
 <li><code>Ball_Shrink</code> @ <code>0x002200</code> — <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> shrink state (E:SHRINK)</li>
 <li><code>Ball_Grow</code> @ <code>0x00402270</code> — <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
-<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
+<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930))</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link ">input system</a> integration</li>
 <li><code>Ball_SetTrajectory</code> / <code>Ball_ApplyTrajectory</code> — launch pad mechanics</li>
 </ul>
@@ -15770,7 +15770,7 @@ nop
 <tr>
 <td><code>Ball_Shatter</code></td>
 <td><code>0x00408D70</code></td>
-<td><strong>Arena: split ball into 3 AI balls</strong> (called from FollowBall_Update, NOT E:JUMP)</td>
+<td><strong>Arena: split ball into 3 AI balls</strong> (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930), NOT E:JUMP)</td>
 </tr>
 <tr>
 <td><code>Ball_RecordBest</code></td>
@@ -15785,7 +15785,7 @@ nop
 <li><code>Ball_Shrink</code> @ <code>0x002200</code> — <a href="#64833895235269" title="Odd Race" class="record-link highlight">odd race</a> shrink state (E:SHRINK)</li>
 <li><code>Ball_Grow</code> @ <code>0x00402270</code> — <a href="#64833895235269" title="Odd Race" class="record-link highlight">odd race</a> grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
-<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
+<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930))</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link ">input system</a> integration</li>
 <li><code>Ball_SetTrajectory</code> / <code>Ball_ApplyTrajectory</code> — launch pad mechanics- <a href="#64833895235269" title="Odd Race" class="record-link highlight">Odd Race</a></li>
 <li><a href="#23586787617658" title="Custom Event Plane Implementat" class="record-link ">Custom Event Plane Implementat</a></li>
@@ -15814,7 +15814,7 @@ nop
 <li><code>Ball_Shrink</code> @ <code>0x002200</code> — <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> shrink state (E:SHRINK)</li>
 <li><code>Ball_Grow</code> @ <code>0x00402270</code> — <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
-<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
+<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930))</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link highlight">input system</a> integration</li>
 <li><code>Ball_SetTrajectory</code> / <code>Ball_ApplyTrajectory</code> — launch pad mechanics</li>
 </ul>
@@ -91324,7 +91324,7 @@ with different device types: 1=keyboard, 2=mouse, 4=joystick1, 5=joystick2.- <a 
 <li><code>Ball_Shrink</code> @ <code>0x002200</code> — <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> shrink state (E:SHRINK)</li>
 <li><code>Ball_Grow</code> @ <code>0x00402270</code> — <a href="#64833895235269" title="Odd Race" class="record-link ">odd race</a> grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
-<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
+<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930))</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link highlight">input system</a> integration</li>
 <li><code>Ball_SetTrajectory</code> / <code>Ball_ApplyTrajectory</code> — launch pad mechanics</li>
 </ul>
@@ -106272,7 +106272,7 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <h3><code>Ball_FallUpdate</code></h3>
 <ul>
 <li><strong>Address:</strong> <code>0x408830</code></li>
-<li><strong>Description:</strong> Physics update while falling. Decrements <code>alpha</code> (<code>ball+0x80C</code>). When timer expires, calls <code>Ball_FindClosestRespawnPoint</code>.</li>
+<td><strong>Bad ball only</strong> (vtable[65] of bad ball vtable 0x4CF494). NOT called for player ball. Decrements ball+0xC60 fall timer (0.02/frame) + ball+0x80C pre-fall counter. Player ball death is in Ball_Update (0x405E00) via collision type 5 edge detection + stopped-motion check → vtable[8]. See docs/agent-knowledge/ball-fall-shatter-system.md</td>
 </ul>
 <h3><code>Ball_FindClosestRespawnPoint</code></h3>
 <ul>
@@ -115178,7 +115178,7 @@ behavior than the standard mode 0.</li>
 <tr>
 <td><code>Ball_Shatter</code></td>
 <td><code>0x00408D70</code></td>
-<td><strong>Arena: split ball into 3 AI balls</strong> (called from FollowBall_Update, NOT E:JUMP)</td>
+<td><strong>Arena: split ball into 3 AI balls</strong> (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930), NOT E:JUMP)</td>
 </tr>
 <tr>
 <td><code>Ball_RecordBest</code></td>
@@ -115193,7 +115193,7 @@ behavior than the standard mode 0.</li>
 <li><code>Ball_Shrink</code> @ <code>0x002200</code> — <a href="#64833895235269" title="Odd Race" class="record-link highlight">odd race</a> shrink state (E:SHRINK)</li>
 <li><code>Ball_Grow</code> @ <code>0x00402270</code> — <a href="#64833895235269" title="Odd Race" class="record-link highlight">odd race</a> grow recovery (E:GROW)</li>
 <li><code>Ball_Update</code> @ <code>0x00405E00</code> — main physics tick overview</li>
-<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from FollowBall_Update)</li>
+<li><code>Ball_Shatter</code> @ <code>0x00408D70</code> — arena 8-ball split mechanic (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930))</li>
 <li><code>Ball_GetInputForce</code> @ <code>0x0046EC30</code> — <a href="#29216140194709" title="Input System" class="record-link ">input system</a> integration</li>
 <li><code>Ball_SetTrajectory</code> / <code>Ball_ApplyTrajectory</code> — launch pad mechanics- <a href="#64833895235269" title="Odd Race" class="record-link highlight">Odd Race</a></li>
 <li><a href="#23586787617658" title="Custom Event Plane Implementat" class="record-link ">Custom Event Plane Implementat</a></li>
@@ -151537,7 +151537,7 @@ DrawPrimitiveUP(triangle_list, vertices)
 <tr>
 <td>Ball_Shatter</td>
 <td>0x408D70</td>
-<td>Arena 8-ball mechanic: marks parent ball for despawn, spawns 3 AI split balls (called from FollowBall_Update 0x43ECC0)</td>
+<td>Arena 8-ball mechanic: marks parent ball for despawn, spawns 3 AI split balls (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930) 0x43ECC0)</td>
 </tr>
 <tr>
 <td>Ball_SplitAndExplode</td>
