@@ -1,15 +1,21 @@
 /*
  * neon_arena_lightfix — Fix missing yellow diffuse light on Neon Arena.
  *
- * Root cause: ArenaLevel_Neon_Init (0x416F40) writes yellow materials during
- * init, but 8-balls spawn dynamically DURING gameplay — after init has already
- * run. New 8-balls never get the neon materials. Additionally, loop 1 (P1 balls)
- * forgets to set the glow render flag (+0xC80=1).
+ * Root cause: The ball glow render path (0x402F0E in Ball_Render) hardcodes
+ * WHITE emissive (1,1,1) via three PUSH 0x3F800000 calls to Gfx_PackColorRGB.
+ * It ignores the ball's material colors entirely. In Neon Race, the ball
+ * appears yellow due to the emitter D3D light positioned at the ball. In
+ * Neon Arena, ArenaLevel_Neon_Init (0x416F40) loop 1 forgets to set the glow
+ * flag (+0xC80=1), AND 8-balls spawn dynamically during gameplay after init
+ * has already run — so they never get the glow flag at all.
  *
- * Fix: A background thread detects Neon Arena (board+0x47E4 non-zero) and
- * continuously applies yellow ambient/diffuse/emissive + glow flag to ALL balls
- * in both AthenaLists (board+0x29D4 and board+0x2DEC). No phys struct pointer
- * dereferencing — only direct ball struct writes with vtable verification.
+ * Fix (two parts):
+ * 1. Byte-patch the B-channel PUSH at 0x402F51 from 0x3F800000 (1.0) to
+ *    0x00000000 (0.0), making the hardcoded emissive yellow (1,1,0) instead
+ *    of white (1,1,1). Affects ALL glowing balls (Neon Race + Neon Arena).
+ * 2. Background polling thread sets +0xC80=1 on all balls in both AthenaLists
+ *    when Neon Arena is detected (board+0x47E4 non-zero). Catches dynamically
+ *    spawned 8-balls that miss init's material writes.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll neon_arena_lightfix.c \
@@ -148,51 +154,39 @@ static void load_real_bass(void)
 #define APP_PTR_ADDR    0x005341E0
 #define BALL_VTABLE     0x004CF3A0
 
-/* Yellow material: R=1.0, G=1.0, B=0.0, A=1.0 (matches Neon Race) */
-#define F1  0x3F800000  /* 1.0f */
-#define F0  0x00000000  /* 0.0f */
+/* Ball glow render path: 0x402F51 is the B-channel PUSH in Gfx_PackColorRGB.
+ * Original: PUSH 0x3F800000 (1.0f) → white emissive (R=1, G=1, B=1)
+ * Patched:  PUSH 0x00000000 (0.0f) → yellow emissive (R=1, G=1, B=0)
+ * 5-byte instruction: 68 00 00 80 3F → 68 00 00 00 00 */
+#define GLOW_B_CHANNEL_ADDR  0x00402F51
+#define GLOW_B_ORIG           0x3F800000  /* 1.0f */
+#define GLOW_B_PATCHED        0x00000000  /* 0.0f = yellow */
 
-/* Ball struct material offsets (verified from ArenaLevel_Neon_Init disasm) */
-/* Ambient:  +0x1CC(R) +0x1D0(G) +0x1D4(B) +0x1D8(A) */
-/* Diffuse:  +0x1BC(R) +0x1C0(G) +0x1C4(B) +0x1C8(A) */
-/* Emissive: +0x1EC(R) +0x1F0(G) +0x1F4(B) +0x1F8(A) */
+/* Ball struct offsets */
 /* Glow flag: +0xC80 (byte, 1=render glow) */
-/* Has-material flag: +0x204 (byte) */
-
-/* Ball struct is at least 0x10D0 bytes (operator_new(0x10d0) in ArenaLevel_Neon_Init).
- * We access up to 0xC80, so check 0xC90 bytes. */
 #define BALL_CHECK_SIZE  0xC90
 
 static volatile int g_running = 1;
 
-/* Apply yellow neon materials + glow flag to a single ball */
-static void apply_neon_to_ball(char *ball) {
+/* Patch the glow B-channel from white to yellow */
+static void patch_glow_color(void) {
+    DWORD old_prot;
+    DWORD *imm = (DWORD*)(GLOW_B_CHANNEL_ADDR + 1);  /* skip 0x68 opcode byte */
+
+    /* Verify the original value before patching */
+    if (*imm != GLOW_B_ORIG) return;
+
+    VirtualProtect((void*)GLOW_B_CHANNEL_ADDR, 5, PAGE_EXECUTE_READWRITE, &old_prot);
+    *imm = GLOW_B_PATCHED;
+    VirtualProtect((void*)GLOW_B_CHANNEL_ADDR, 5, old_prot, &old_prot);
+    FlushInstructionCache(GetCurrentProcess(), (void*)GLOW_B_CHANNEL_ADDR, 5);
+}
+
+/* Set glow flag on a single ball */
+static void set_glow_flag(char *ball) {
     if (!ball || IsBadReadPtr(ball, BALL_CHECK_SIZE)) return;
     if (*(int*)ball != BALL_VTABLE) return;  /* verify it's a ball */
-
-    /* Glow flag — the key missing instruction from loop 1 */
     *(BYTE*)(ball + 0xC80) = 1;
-
-    /* Ambient = yellow */
-    *(DWORD*)(ball + 0x1CC) = F1;
-    *(DWORD*)(ball + 0x1D0) = F1;
-    *(DWORD*)(ball + 0x1D4) = F0;
-    *(DWORD*)(ball + 0x1D8) = F1;
-
-    /* Diffuse = yellow */
-    *(DWORD*)(ball + 0x1BC) = F1;
-    *(DWORD*)(ball + 0x1C0) = F1;
-    *(DWORD*)(ball + 0x1C4) = F0;
-    *(DWORD*)(ball + 0x1C8) = F1;
-
-    /* Emissive = yellow */
-    *(DWORD*)(ball + 0x1EC) = F1;
-    *(DWORD*)(ball + 0x1F0) = F1;
-    *(DWORD*)(ball + 0x1F4) = F0;
-    *(DWORD*)(ball + 0x1F8) = F1;
-
-    /* Has-material flag */
-    *(BYTE*)(ball + 0x204) = 1;
 }
 
 /* Iterate an AthenaList and apply neon to each ball */
@@ -206,7 +200,7 @@ static void apply_neon_to_list(char *list) {
     if (!array || IsBadReadPtr(array, count * 4)) return;
 
     for (int i = 0; i < count; i++) {
-        apply_neon_to_ball((char*)array[i]);
+        set_glow_flag((char*)array[i]);
     }
 }
 
@@ -250,6 +244,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
     switch (reason) {
     case DLL_PROCESS_ATTACH:
         load_real_bass();
+        patch_glow_color();  /* Patch emissive B-channel: white → yellow */
         CreateThread(NULL, 0, neon_fix_thread, NULL, 0, NULL);
         break;
     case DLL_PROCESS_DETACH:
