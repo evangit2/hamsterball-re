@@ -552,13 +552,13 @@ static void __cdecl apply_water_physics(DWORD ball)
     /* Decrement grace timer every frame, even if not in water */
     if (st->grace_frames > 0) st->grace_frames--;
 
-    /* Clear 0x2E9 during grace period only.
-     * While in_water, Hook 3 already prevents type 5 from setting it.
-     * After exit, Hook 3's grace check also suppresses type 5 — but
-     * as belt-and-suspenders, clear any 0x2E9 that snuck in during
-     * the transition frame between exit detection and the next type 5
-     * collision check. */
-    if (st->grace_frames > 0 && !st->in_water) {
+    /* Clear 0x2E9 every frame while in water.
+     * Hook 3 prevents type 5 from setting it while submerged, but as
+     * belt-and-suspenders for edge cases (E:LIMIT via DispatchCollisionEvents,
+     * or a frame timing gap), clear it here too.
+     * During grace period, Hook 3 suppresses type 5 entirely — no need
+     * to clear 0x2E9 there since it was never re-set. */
+    if (st->in_water) {
         *(BYTE*)((DWORD)ball + BALL_FALLING_FLAG) = 0;
     }
 
