@@ -1,269 +1,237 @@
 [ENABLE]
-
-alloc(SpawnCode, 4096)
+ 
+// =====================================================
+// Global Saw Spawner v1
+// =====================================================
+// Spawns a working Saw (from Toob Race / Level8) on any level.
+//
+// HOW THE SAW WORKS (traced via Ghidra):
+//   1. LevelBoard_Toob_ctor (0x41F4B0) loads the Saw mesh:
+//      "Levels\Level8-Saw" -> board+0x4370
+//   2. FUN_0040fc29 creates the Saw by calling:
+//      a. Level_FindObjectByName(scene, "SAWPATH") -> path
+//      b. Saw_ctor (0x43B780): calls Stands_ctor, sets vtable
+//         0x4D5578, stores board at +0x10D0, position at +0x10DC,
+//         path at +0x10D8, clones mesh, calls Update+Render once.
+//      c. AthenaList_Append(board+0x2578, saw)
+//      d. board+0x4380 = saw (Saw1 slot)
+//   3. Saw_Update (vtable[0x0B] = 0x43B8E0) — movement FSM:
+//      Checks saw+0x110C (active flag). If set, 4-state cycle:
+//        State 0: moving forward, decrement Y, when done -> state 1
+//        State 1: pause (countdown timer), when done -> state 2
+//        State 2: moving forward, increment Y, play sawsoundy, -> state 3
+//        State 3: pause (countdown timer), when done -> state 0
+//      Movement follows SAWPATH via Path_GetPosition (0x467BF0).
+//      Blade rotation via Gfx_ScaleZ(180.0) + Gfx_RotateY.
+//   4. Saw_Activate (0x434A50): sets saw+0x1114 = 1, plays startup sound
+//   5. Collision: N:SAWTEETH triggers knockback in ToobBoard's
+//      collision handler (0x410020). Knockback velocity from
+//      saw+0x1100 (break direction), magnitude 3.0.
+//
+// NOTE: The Saw needs a SAWPATH (path from MESHWORLD) to move.
+// Non-Toob levels don't have SAWPATH — the saw will still render
+// and spin, but won't move along a track.
+//
+// HOOK: Ball_Update at 0x405E22
+//   Original: 8B 86 5C 0C 00 00 = mov eax, [esi+0x0C5C]
+//   ESI = player ball pointer
+//
+// HOTKEY: Set [SpawnSaw] to 1 via CE to spawn a saw
+// =====================================================
+ 
+alloc(SawCode, 4096)
 alloc(SpawnSaw, 4)
 alloc(saved_board, 4)
-alloc(playerX, 4)
-alloc(playerY, 4)
-alloc(playerZ, 4)
-alloc(float_20, 4)
-alloc(saw_array, 68)
-alloc(float_900, 4)
-alloc(last_board, 4)
-alloc(saved_4370, 4)
-alloc(saved_4374, 4)
-
+alloc(saw_ptr, 4)
+alloc(mesh_ptr, 4)
+alloc(path_result, 4)
+alloc(pos_x, 4)
+alloc(pos_y, 4)
+alloc(pos_z, 4)
+ 
 registersymbol(SpawnSaw)
-
+ 
 SpawnSaw:
   dd 0
-
 saved_board:
   dd 0
-
-playerX:
+saw_ptr:
   dd 0
-
-playerY:
+mesh_ptr:
   dd 0
-
-playerZ:
+path_result:
   dd 0
-
-float_20:
-  dd 0x41A00000
-
-saw_array:
+pos_x:
   dd 0
-  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-
-float_900:
-  dd 0x44610000
-
-last_board:
+pos_y:
   dd 0
-
-saved_4370:
+pos_z:
   dd 0
-
-saved_4374:
-  dd 0
-
+ 
 label(original_code)
-label(save_pos)
-label(check_spawn)
-label(done_spawn)
-label(no_clear)
-label(skip_col)
-label(skip_scene)
-label(prox_loop)
-label(prox_next)
-label(prox_done)
-label(do_update)
-label(restore_slots)
-
-SpawnCode:
-  mov eax, [esi+0x14]
-  test eax, eax
-  jz no_clear
-  cmp eax, [last_board]
-  je no_clear
-  mov [last_board], eax
-  mov dword [saw_array], 0
-
-no_clear:
-  mov eax, [saw_array]
-  test eax, eax
-  jz save_pos
-
-  pushad
-  xor ebx, ebx
-
-prox_loop:
-  cmp ebx, [saw_array]
-  jae prox_done
-
-  mov eax, [saw_array+4+ebx*4]
-  test eax, eax
-  jz prox_next
-
-  mov ecx, [eax]
-  test ecx, ecx
-  jz prox_next
-
-  // Auto-activate saw: set +0x1114 = 1 (activated)
-  // and +0x110D = 0 (clear alert so spin decay starts)
-  cmp byte [eax+0x1114], 0
-  jne do_update
-  mov byte [eax+0x110D], 0
-  mov byte [eax+0x1114], 1
-
-do_update:
-  // Call vtable[11] (Sawblade_Update) once per frame during player 1's update
-  cmp dword [esi+0x18], 0
-  jne prox_next
-
-  push eax
-  mov ecx, eax
-  mov edx, [eax]
-  call dword [edx+0x2C]
-  pop eax
-
-prox_next:
-  inc ebx
-  jmp prox_loop
-
-prox_done:
-  popad
-
-save_pos:
-  cmp dword [esi+0x18], 0
-  jne check_spawn
-
-  fld dword [esi+0x164]
-  fadd dword [float_20]
-  fstp dword [playerX]
-  mov eax, [esi+0x168]
-  mov [playerY], eax
-  mov eax, [esi+0x16C]
-  mov [playerZ], eax
-
-check_spawn:
-  cmp dword [SpawnSaw], 0
-  je original_code
-  cmp dword [esi+0x18], 0
-  jne original_code
-  mov dword [SpawnSaw], 0
-
-  pushad
+label(saw_done)
+label(skip_mesh)
+label(no_path)
+label(have_path)
+label(mesh_resolved)
+label(spawn_complete)
+ 
+SawCode:
+  // Save board pointer from ball+0x14
   mov eax, [esi+0x14]
   mov [saved_board], eax
   test eax, eax
-  jz done_spawn
+  jz original_code
+ 
+  // Check spawn flag
+  cmp dword [SpawnSaw], 0
+  je original_code
+  mov dword [SpawnSaw], 0
+ 
+  pushad
+ 
+  // Verify board
+  mov eax, [saved_board]
+  test eax, eax
+  jz saw_done
+ 
+  // Verify App pointer (board+0x878)
   mov edx, [eax+0x878]
   test edx, edx
-  jz done_spawn
+  jz saw_done
+ 
+  // Verify gfx_device (App+0x174)
   mov edx, [edx+0x174]
   test edx, edx
-  jz done_spawn
-
-  // Save board slots that we'll use temporarily
-  mov edx, [eax+0x4370]
-  mov [saved_4370], edx
-  mov edx, [eax+0x4374]
-  mov [saved_4374], edx
-
-  // Allocate and construct Sawblade
-  push 0x111C
+  jz saw_done
+ 
+  // === Get player position ===
+  mov eax, [esi+0x164]
+  mov [pos_x], eax
+  mov eax, [esi+0x168]
+  mov [pos_y], eax
+  mov eax, [esi+0x16C]
+  mov [pos_z], eax
+ 
+  // === Load Saw mesh if not already at board+0x4370 ===
+  mov edx, [saved_board]
+  mov eax, [edx+0x4370]
+  test eax, eax
+  jnz skip_mesh
+ 
+  // Allocate mesh object (0x10D0 bytes)
+  push 0x10D0
   call 004BA57B
   add esp, 4
   test eax, eax
-  jz restore_slots
-
-  // Sawblade_Level_Ctor(this=alloc, board, x, y, z)
-  // thiscall: ecx=alloc, push z, push y, push x, push board
-  sub esp, 0xC
-  mov edx, [playerX]
-  mov [esp], edx
-  mov edx, [playerY]
-  mov [esp+4], edx
-  mov edx, [playerZ]
-  mov [esp+8], edx
-  mov edx, [saved_board]
-  push edx
-  mov ecx, eax
-  call 00434660
+  jz saw_done
+ 
+  // FUN_00461510(mesh, gfx_device, filename)
+  // __thiscall: ECX=mesh, push filename then gfx_device
+  push 004D0E24               // "Levels\Level8-Saw"
+  mov ecx, [saved_board]
+  mov ecx, [ecx+0x878]
+  mov ecx, [ecx+0x174]       // gfx_device
+  push ecx
+  mov ecx, eax               // this = new mesh
+  call 00461510
   test eax, eax
-  jz restore_slots
-  mov edi, eax
-
-  // Set direction: 1 = Z-axis movement
-  mov dword [edi+0x10F8], 1
-
-  // Auto-activate
-  mov byte [edi+0x110D], 0
-  mov byte [edi+0x1114], 1
-
-  // Append to Board+0x2578 (general list)
-  push edi
+  jz saw_done
+ 
+  // Store mesh in board+0x4370
+  mov edx, [saved_board]
+  mov [edx+0x4370], eax
+ 
+skip_mesh:
+  // === Find SAWPATH in scene ===
+  // Level_FindObjectByName(scene, "SAWPATH")
+  // __thiscall: ECX=scene, push name
+  mov ecx, [saved_board]
+  mov ecx, [ecx+0x8AC]
+  test ecx, ecx
+  jz no_path
+  push 004CFD20               // "SAWPATH"
+  call 00460530               // Level_FindObjectByName
+  mov [path_result], eax
+  test eax, eax
+  jz no_path
+  jmp have_path
+ 
+no_path:
+  mov dword [path_result], 0
+ 
+have_path:
+  // === Allocate Saw object (0x1118 bytes) ===
+  push 0x1118
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [saw_ptr], eax
+ 
+  // === Resolve mesh pointer ===
+  // Use mesh_ptr if set, otherwise use board+0x4370
+  mov edx, [saved_board]
+  mov edx, [edx+0x4370]
+  mov [mesh_ptr], edx
+  test edx, edx
+  jz saw_done                 // can't spawn without mesh
+ 
+  // === Call Saw_ctor ===
+  // Saw_ctor(this=ECX, board, posX, posY, posZ, mesh, path)
+  // __thiscall: ECX=this, push params right-to-left:
+  //   push path, push mesh, push Z, push Y, push X, push board
+  push dword [path_result]    // param_6 = path (SAWPATH or 0)
+  push dword [mesh_ptr]       // param_5 = mesh
+  push dword [pos_z]          // param_4 = Z
+  push dword [pos_y]          // param_3 = Y
+  push dword [pos_x]          // param_2 = X
+  push dword [saved_board]    // param_1 = board
+  mov ecx, [saw_ptr]         // ECX = this
+  call 0043B780               // Saw_ctor
+ 
+  // === Store saw in board+0x4380 (Saw1 slot) ===
+  mov edx, [saved_board]
+  mov eax, [saw_ptr]
+  mov [edx+0x4380], eax
+ 
+  // === Register in board's update list (board+0x2578) ===
+  push dword [saw_ptr]
   mov ecx, [saved_board]
   add ecx, 0x2578
-  call 00453810
-
-  // Append to Board+0xCD4
-  push edi
-  mov ecx, [saved_board]
-  add ecx, 0xCD4
-  call 00453810
-
-  // Append collision level to scene
-  mov edx, [saved_board]
-  mov edx, [edx+0x8AC]
-  test edx, edx
-  jz skip_scene
-  mov edx, [edx+0x480]
-  test edx, edx
-  jz skip_scene
-  push edi
-  lea ecx, [edx+0x1C]
-  call 00453810
-
-skip_scene:
-  // Append collision level to Board+0x10EC
-  mov eax, [edi+0x10F4]
-  // Wait - Sawblade stores collision level at different offset!
-  // Sawblade_Level_Ctor doesn't store collision at +0x10F8 like Bonk
-  // It uses SceneObject_ctor which stores at +0x10F4
-  // Actually, looking at the ctor: no explicit collision level creation
-  // The Level_ctor base class handles mesh loading internally
-  // Skip collision registration for now
-
-skip_col:
-  // Store at Board+0x4370 (saw 1 slot)
-  mov edx, [saved_board]
-  mov [edx+0x4370], edi
-
-  // Add to saw_array
-  mov eax, edi
-  mov ecx, [saw_array]
-  cmp ecx, 16
-  jae restore_slots
-  mov [saw_array+4+ecx*4], eax
-  inc dword [saw_array]
-
-restore_slots:
-  // Restore board slots
-  mov edx, [saved_board]
-  mov eax, [saved_4370]
-  mov [edx+0x4370], eax
-  mov eax, [saved_4374]
-  mov [edx+0x4374], eax
-
-done_spawn:
+  call 00453810               // AthenaList_Append
+ 
+  // === Activate the saw ===
+  // Saw_Activate sets saw+0x1114 = 1 and plays startup sound
+  // __fastcall: ECX = saw
+  mov ecx, [saw_ptr]
+  call 00434A50               // Saw_Activate
+ 
+spawn_complete:
+  mov dword [mesh_ptr], 0
+ 
+saw_done:
   popad
-
+ 
 original_code:
   mov eax, [esi+0x0c5c]
   jmp 00405E28
-
+ 
 00405E22:
-  jmp SpawnCode
+  jmp SawCode
   nop
-
+ 
 [DISABLE]
 00405E22:
   db 8B 86 5C 0C 00 00
-
-dealloc(SpawnCode)
+ 
+dealloc(SawCode)
 dealloc(SpawnSaw)
 dealloc(saved_board)
-dealloc(playerX)
-dealloc(playerY)
-dealloc(playerZ)
-dealloc(float_20)
-dealloc(saw_array)
-dealloc(float_900)
-dealloc(last_board)
-dealloc(saved_4370)
-dealloc(saved_4374)
+dealloc(saw_ptr)
+dealloc(mesh_ptr)
+dealloc(path_result)
+dealloc(pos_x)
+dealloc(pos_y)
+dealloc(pos_z)
 unregistersymbol(SpawnSaw)
