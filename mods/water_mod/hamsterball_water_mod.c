@@ -536,14 +536,10 @@ static void __cdecl apply_water_physics(DWORD ball)
     float radius = *(float*)(ball + BALL_RADIUS);
     if (radius <= 0.0f || radius > 1000.0f) return;
 
-    /* Exit condition: ball must be CLEARLY above the surface (by at least
-     * half its radius) before we consider it out of the water. */
+    /* Exit condition: ball must be CLEARLY above the surface */
     if (ball_y - radius > st->water_surface_y + radius * 0.5f) {
         st->in_water = 0;
         st->water_surface_y = 0.0f;
-        /* Start grace period: suppress fall death for N more frames to
-         * cover the bounce arc after leaving water. The ball can still
-         * die from E:LIMIT events during this time. */
         st->grace_frames = GRACE_PERIOD_FRAMES;
         if (g_cfg.debug) {
             char buf[128];
@@ -561,11 +557,9 @@ static void __cdecl apply_water_physics(DWORD ball)
     float *vel_y = (float*)(phys + PHYS_VEL_Y);
     float *vel_z = (float*)(phys + PHYS_VEL_Z);
 
-    /* Submersion depth relative to captured surface */
     float submersion = compute_submersion(ball_y, radius, st->water_surface_y);
     if (submersion < 0.0f) submersion = 0.0f;
 
-    /* Drag */
     float vscale = 1.0f - g_cfg.drag;
     float hscale = 1.0f - (g_cfg.drag + g_cfg.horizontal_drag);
     if (vscale < 0.0f) vscale = 0.0f;
@@ -575,7 +569,6 @@ static void __cdecl apply_water_physics(DWORD ball)
     *vel_z *= hscale;
     *vel_y *= vscale;
 
-    /* Buoyancy */
     float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
     *vel_y += buoyancy;
 }
@@ -774,22 +767,21 @@ static void install_type5_hook(void)
      * original flags are still safe on the stack from PUSHFD) */
     g_type5_cave[p++] = 0x85; g_type5_cave[p++] = 0xC0;
 
-    /* JNZ skip_target — if in water, jump past entire type 5 death block */
+    /* JNZ to cleanup — if in water, we need to clean up PUSHFD before
+     * jumping to skip target. Jump to the ADD ESP,4 below, then
+     * skip POPFD (flags don't matter — we're skipping the type 5 block)
+     * and JMP to TYPE5_SKIP_TARGET. */
     g_type5_cave[p++] = 0x0F; g_type5_cave[p++] = 0x85;
-    {
-        DWORD src = (DWORD)(g_type5_cave + p + 4);
-        DWORD dst = (DWORD)TYPE5_SKIP_TARGET;
-        *(DWORD*)(g_type5_cave + p) = dst - src;
-    }
-    p += 4;
+    /* Target: the "in water cleanup" label below (we'll patch this) */
+    int jnz_inwater_offset = p;
+    p += 4;  /* placeholder for rel32 */
 
-    /* --- Not in water: restore original flags and reproduce original JNZ ---
-     * POPFD restores the flags from TEST AH,0x41 that we saved at entry.
-     * The TEST EAX,EAX above clobbered flags, but POPFD brings back the
-     * original penetration comparison result. */
+    /* --- Not in water path: --- */
+    /* POPFD — restore original flags from TEST AH,0x41 penetration check */
     g_type5_cave[p++] = 0x9D;
 
-    /* JNZ 0x40743D — reproduce original conditional jump */
+    /* JNZ 0x40743D — reproduce original conditional jump
+     * (penetration ≤ 1.0 → skip type 5 block) */
     g_type5_cave[p++] = 0x0F; g_type5_cave[p++] = 0x85;
     {
         DWORD src = (DWORD)(g_type5_cave + p + 4);
@@ -798,12 +790,34 @@ static void install_type5_hook(void)
     }
     p += 4;
 
-    /* --- Fall through: penetration > 1.0 and not in water ---
-     * Continue to the next instruction at 0x40737D */
+    /* Fall through: penetration > 1.0 and not in water → continue to 0x40737D */
     g_type5_cave[p++] = 0xE9;
     *(DWORD*)(g_type5_cave + p) =
         (DWORD)TYPE5_NEXT_INSTR - (DWORD)(g_type5_cave + p + 4);
     p += 4;
+
+    /* --- In water cleanup path: --- */
+    /* We reach here from the JNZ above. PUSHFD is still on stack.
+     * Clean it up, then jump to skip target. */
+    int inwater_cleanup_addr = p;
+    /* ADD ESP, 4 — remove the saved EFLAGS from stack */
+    g_type5_cave[p++] = 0x83; g_type5_cave[p++] = 0xC4;
+    g_type5_cave[p++] = 0x04;
+    /* JMP to TYPE5_SKIP_TARGET (0x40743D) — skip entire type 5 death block */
+    g_type5_cave[p++] = 0xE9;
+    {
+        DWORD src = (DWORD)(g_type5_cave + p + 4);
+        DWORD dst = (DWORD)TYPE5_SKIP_TARGET;
+        *(DWORD*)(g_type5_cave + p) = dst - src;
+    }
+    p += 4;
+
+    /* Now patch the in-water JNZ to target the cleanup path */
+    {
+        DWORD src = (DWORD)(g_type5_cave + jnz_inwater_offset + 4);
+        DWORD dst = (DWORD)(g_type5_cave + inwater_cleanup_addr);
+        *(DWORD*)(g_type5_cave + jnz_inwater_offset) = dst - src;
+    }
 
     /* --- Patch hook site: replace 6-byte JNZ with 5-byte JMP + 1 NOP --- */
     DWORD old_protect;
