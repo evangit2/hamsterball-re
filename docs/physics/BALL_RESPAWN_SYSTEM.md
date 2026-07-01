@@ -14,7 +14,7 @@ Previous docs had MULTIPLE errors. Original mislabels (now corrected everywhere)
 
 | Offset | Type | Name | Set by | Cleared by | Purpose |
 |--------|------|------|--------|------------|---------|
-| +0x2E8 | byte | needs_respawn (shattered) | Ball_Shatter, Ball_FallUpdate | FindClosestRespawnPoint (→0) | Triggers respawn search |
+| +0x2E8 | byte | needs_respawn (shattered) | Ball_Shatter (via Breaker/Bonkbash), Ball_Update (fall death), OddBoard_CollisionHandler, E:SWALLOW | FindClosestRespawnPoint (→0) | Triggers respawn search |
 | +0x2F8 | byte | show_stars | FindClosestRespawnPoint (→1) | Ball_Update when stun_timer=0 (→0) | Enables star-circling render effect |
 | +0x2F9 | byte | **is_stunned** | FindClosestRespawnPoint (→1) | Ball_Update when alpha≥1.0 (→0) | Blocks force, changes collision, excludes from AI |
 | +0x2FC | float | **alpha** | FindClosestRespawnPoint (→0) | Counts up to 1.0 in Ball_Update | Opacity: 0=invisible→1=opaque. Ball fades in |
@@ -22,7 +22,7 @@ Previous docs had MULTIPLE errors. Original mislabels (now corrected everywhere)
 
 ## Lifecycle
 
-1. **Ball falls off edge** → Ball_FallUpdate detects ball below threshold → sets +0x2E8=1 (needs respawn)
+1. **Ball falls off edge** → collision system generates type 5 entry with piVar17[0x15] (penetration depth) > 1.0 → Ball_Update (0x405E00) detects this → sets ball+0x2E9=1 (falling mode), calls Scene_SetCamera. Each frame while falling, Ball_Update checks if the ball has STOPPED MOVING (ABS(position_delta) < threshold). If stopped → calls vtable[8] → death/respawn → sets +0x2E8=1 (needs respawn). The player ball dies when it STOPS after falling, NOT after a timer.
 2. **Respawn triggered** → Ball_FindClosestRespawnPoint (0x405190) teleports ball, sets:
    - +0x2F9=1 (is_stunned), +0x2FC=0 (alpha=invisible), +0x300=150 (stun_timer), +0x2F8=1 (show_stars)
 3. **During stun** — Ball fading in (alpha 0→1 over ~150 frames), forces blocked, AI can't target,
@@ -38,7 +38,7 @@ Previous docs had MULTIPLE errors. Original mislabels (now corrected everywhere)
 | Ball_Update | 0x405E00 | 23-phase physics tick. Contains stun recovery (alpha increment, clear is_stunned when ≥1.0) |
 | Ball_ApplyForceWithMultipliers | 0x402650 | Force application. FIRST guard: +0x2F9 (is_stunned) — if set, NO force |
 | Ball_AI_ChaseNearest | 0x408390 | AI targeting. Filters out stunned balls (+0x2F9!=0, +0x300!=0) |
-| Ball_FallUpdate | 0x408830 | Active code — sets +0x2E8=1 at 0x408CD5 when fall timer (+0xC60) expires |
+| Ball_FallUpdate | 0x408830 | **BAD BALL ONLY** — vtable[65] of BAD BALL vtable (0x4CF494), NOT player ball vtable (0x4CF3A0). Sets +0x2E8=1 at 0x408CD5 when bad ball fall timer (+0xC60) expires. Never called for the player ball. |
 | Ball_RenderAI | 0x403DC0 | Ball render. Contains star-circling effect, alpha rendering, impact wobble |
 | SceneObj_SetAlpha | 0x4011C0 | MISNAMED "SceneObj_SetScale" by Ghidra. Sets alpha via W-component, NOT scale |
 | Scene_UpdateBallsAndState | 0x41B540 | Respawn dispatcher. Detects +0x2E8 flag, calls FindClosestRespawnPoint |
@@ -260,9 +260,9 @@ contact — it does NOT freeze. The wall-slide shortcut works because the LGP fo
 down the wall to a position *below* the track surface, giving a respawn point that's lower
 than where the ball originally fell from.
 
-**Ball_FallUpdate (0x408830) uses the SAME pipeline** — creates a temporary SpatialTree from
+**Ball_FallUpdate (0x408830) uses the SAME pipeline** — but ONLY for BAD BALLS (vtable[65] of bad ball vtable 0x4CF494). It creates a temporary SpatialTree from
 Scene+0x8B0 and calls Ball_AdvancePositionOrCollision (vtable[1]), running the same
-SpatialTree_TestFace. No separate LGP update path exists during falls.
+SpatialTree_TestFace. The player ball does NOT use Ball_FallUpdate — Ball_Update (0x405E00, vtable[1] of player ball vtable 0x4CF3A0) handles everything including fall death.
 
 **⚠ RE methodology lesson (3 iterations to get right):**
 1. First claimed a "backface culling gate" at 0x4640b4 blocks back-side hits — WRONG
@@ -282,5 +282,5 @@ not a checkpoint save. Renamed to `lgp_x/y/z` (Last Grounded Position) June 2026
 
 - **Ball+0xC4C** = is_shrunk (Odd Race only, set by Ball_Shrink/Ball_Grow)
 - **Ball+0x281** = init_flag (WRITE-ONLY dead field — set to 1 by ctor, never read)
-- **Ball+0xC60** = debris lifetime (5.0→0.0, counts down for debris fragments)
+- **Ball+0xC60** = bad-ball-only fall timer (1.0→0.0, decrements 0.02/frame). Set ONLY by BadBall_ctor (0x405D90, formerly GameObject_sub_ctor). The player ball constructor (Ball_ctor2 at 0x4039E0) does NOT set 0xC60. Ball_FallUpdate (vtable[65] of bad ball vtable 0x4CF494) decrements it. NOT applicable to the player ball.
 - **Ball+0x2EC** = fall counter (incremented by `INC dword [esi+0x2EC]` at 0x4075C9)

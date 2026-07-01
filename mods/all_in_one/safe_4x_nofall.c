@@ -9,8 +9,10 @@
  *   a) Ball_Shatter (0x408D70)        → RET 0x4 (never executes)
  *   b) Ball_Shatter_OnRamp (0x409480)  → RET (never executes)
  *   c) Ball_FallUpdate 0x00408CD5      → NOP the "ball+0x2E8 = 1" write
- *      This is the fall-timer expiry path: when ball+0xC60 (fall timer)
- *      drops below threshold, it sets the shatter flag directly.
+ *      NOTE: This path is BAD BALL ONLY (vtable[65] of bad ball vtable 0x4CF494).
+ *      The player ball never calls Ball_FallUpdate. The bad ball fall timer (ball+0xC60,
+ *      set only by BadBall_ctor 0x405D90) decrements by 0.02/frame; when < 0, sets the
+ *      shatter flag. This patch is a no-op for the player ball but harmless to keep.
  *      Instruction: C6 86 E8 02 00 00 01 (7 bytes) → 7x NOP
  *
  * Build:
@@ -259,7 +261,8 @@ static int apply_4x_size(BYTE *base)
 #define SHATTER_RAMP_PATCHED    "\xC3\x90\x90"
 #define SHATTER_RAMP_LEN         3
 
-/* Fall-timer shatter in Ball_FallUpdate */
+/* Fall-timer shatter in Ball_FallUpdate — BAD BALL ONLY (vtable[65] of bad ball vtable 0x4CF494) */
+/* The player ball never calls Ball_FallUpdate. This is a no-op for the player but harmless. */
 #define FALL_SHATTER_ADDR     0x00408CD5
 #define FALL_SHATTER_ORIGINAL "\xC6\x86\xE8\x02\x00\x00\x01"
 #define FALL_SHATTER_NOPS     "\x90\x90\x90\x90\x90\x90\x90"
