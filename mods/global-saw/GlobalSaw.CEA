@@ -1,36 +1,22 @@
 [ENABLE]
 
 // =====================================================
-// Global Saw Spawner v7 — Stable Circular Motion
+// Global Saw Spawner v8 — Direct Position Override
 // =====================================================
-// v6 problems:
-//   1. Saw disappeared/reappeared — Saw_Update FSM descends Y to -100
-//      (underground on non-Toob levels), then ascends back.
-//      States 1,3 don't call render → invisible during pause.
-//   2. Glitchy motion on non-Toob — counter wrap at 4.0 caused
-//      Path_GetPosition to skip for 1 frame → stutter/teleport.
+// v7 still glitchy because the game's path system fights
+// our counter wrap. Path_GetPosition stutters when the
+// counter is near count-1, causing teleporting.
 //
-// v7 FIXES:
-//   A. Patch Saw_Update: NOP the Y offset FSUB (0x43BA66) and
-//      FADD (0x43BA9D). Y stays at 0.0 forever. State stays 0
-//      (always moving, always visible). No descending, no pausing.
-//   B. Counter wrap at 3.98 → 0.0 (before +0.02 makes it 4.0).
-//      Path_GetPosition is always called → no stutter.
-//   C. Player-relative splines (px±R, pz±R) for circular motion.
-//   D. On Toob Race: real SAWPATH is used (perfect original motion).
-//      The Y patch makes Toob saws stay at surface level too.
+// v8 SOLUTION: Bypass the game's path system ENTIRELY.
+// - Dummy path has 0 vertices → Saw_Update skips Path_GetPosition
+// - Every frame, directly compute circular X/Z using FSINCOS
+// - Write to saw+0x10DC (X) and saw+0x10E4 (Z) directly
+// - Saw_Update still runs (spins blade, renders) but doesn't
+//   modify position because Path_GetPosition is skipped
+// - Y offset patches (NOP FSUB/FADD) keep Y at player level
 //
-// HOW SAW_UPDATE IS CALLED (traced from Scene_Update):
-//   Scene_Update → board->vtable[0x13] = 0x41F7E0
-//   → FUN_0041B130 (board update)
-//   → iterates board+0x2578
-//   → calls child->vtable[0x0B] (offset 0x2C) = Saw_Update (0x43B8E0)
-//   → if returns 0: remove from list; if returns 1: keep
-//
-// RENDER:
-//   Scene_UpdateChildren (0x466AC0) iterates board+0x2578
-//   → calls child->vtable[0x12] (offset 0x48) = D3DXSkinMesh_CopyStripData
-//   → renders mesh geometry with materials and transforms
+// MOTION: Perfect circle, radius 80, centered on player 1
+// Speed: 0.02 counter/frame = 200 frames/loop = 8s at 25fps
 // =====================================================
 
 alloc(SawCode, 4096)
@@ -39,13 +25,15 @@ alloc(saved_board, 4)
 alloc(saw_ptr, 4)
 alloc(our_mesh, 4)
 alloc(path_obj, 4)
-alloc(vertex_arr, 4)
-alloc(spline_x, 4)
-alloc(spline_z, 4)
 alloc(pos_x, 4)
 alloc(pos_y, 4)
 alloc(pos_z, 4)
+alloc(angle, 4)
+alloc(center_x, 4)
+alloc(center_z, 4)
 alloc(float_R, 4)
+alloc(float_speed, 4)
+alloc(float_4_0, 4)
 
 registersymbol(SpawnSaw)
 
@@ -59,20 +47,24 @@ our_mesh:
   dd 0
 path_obj:
   dd 0
-vertex_arr:
-  dd 0
-spline_x:
-  dd 0
-spline_z:
-  dd 0
 pos_x:
   dd 0
 pos_y:
   dd 0
 pos_z:
   dd 0
+angle:
+  dd 0
+center_x:
+  dd 0
+center_z:
+  dd 0
 float_R:
-  dd 0x42A00000       // +80.0
+  dd 0x42A00000       // 80.0
+float_speed:
+  dd 0x3CA3D70A       // 0.02
+float_4_0:
+  dd 0x40800000       // 4.0
 
 label(original_code)
 label(saw_done)
@@ -81,6 +73,7 @@ label(no_path)
 label(skip_post)
 label(activate_saw)
 label(do_spawn)
+label(update_saw)
 
 SawCode:
   mov eax, [esi+0x14]
@@ -88,21 +81,52 @@ SawCode:
   test eax, eax
   jz original_code
 
-  // === Per-frame counter wrap for circular motion ===
+  // === PER-FRAME SAW POSITION OVERRIDE ===
   mov ecx, [saw_ptr]
   test ecx, ecx
   jz check_spawn
 
-  // Wrap path counter at 3.98 → 0.0
-  // (3.98 + 0.02 = 4.0 which would skip Path_GetPosition)
-  fld dword [ecx+0x10EC]
-  fld dword [float_3_98]
+update_saw:
+  // Increment angle counter
+  fld dword [angle]
+  fadd dword [float_speed]
+  fstp dword [angle]
+
+  // Wrap at 4.0 → 0.0
+  fld dword [angle]
+  fld dword [float_4_0]
   fcomip st(1)
   fstp st(0)
-  jb check_spawn
-  mov dword [ecx+0x10EC], 0
+  jbe check_spawn
+  mov dword [angle], 0
 
 check_spawn:
+  // === Write saw position from angle ===
+  mov ecx, [saw_ptr]
+  test ecx, ecx
+  jz do_spawn_check
+
+  // Compute X = center_x + R * cos(angle * pi/2)
+  // Compute Z = center_z + R * sin(angle * pi/2)
+  fld dword [angle]          // ST(0) = angle counter
+  fldpi                      // ST(0) = pi, ST(1) = angle
+  fmulp st(1), st(0)         // ST(0) = angle * pi
+  fld1                       // ST(0) = 1.0, ST(1) = angle*pi
+  fadd st(0), st(0)          // ST(0) = 2.0, ST(1) = angle*pi
+  fdivp st(1), st(0)         // ST(0) = angle*pi/2 (radians)
+  fsincos                     // ST(0) = cos, ST(1) = sin
+  fmul dword [float_R]       // ST(0) = cos*R
+  fadd dword [center_x]     // ST(0) = center_x + cos*R = saw_x
+  fstp dword [ecx+0x10DC]   // saw->X = saw_x
+  fmul dword [float_R]       // ST(0) = sin*R
+  fadd dword [center_z]     // ST(0) = center_z + sin*R = saw_z
+  fstp dword [ecx+0x10E4]   // saw->Z = saw_z
+
+  // Force Y to player level
+  mov edx, [pos_y]
+  mov [ecx+0x10E0], edx
+
+do_spawn_check:
   cmp dword [SpawnSaw], 0
   je original_code
   mov dword [SpawnSaw], 0
@@ -124,13 +148,16 @@ check_spawn:
   jz saw_done
 
 do_spawn:
-  // Get player position
+  // Get player position as circle center
   mov eax, [esi+0x164]
   mov [pos_x], eax
+  mov [center_x], eax
   mov eax, [esi+0x168]
   mov [pos_y], eax
   mov eax, [esi+0x16C]
   mov [pos_z], eax
+  mov [center_z], eax
+  mov dword [angle], 0
 
   // === Load fresh Level8-Saw mesh ===
   push 0x10D0
@@ -150,7 +177,7 @@ do_spawn:
   jz saw_done
   mov [our_mesh], eax
 
-  // === Try to find SAWPATH ===
+  // === Try to find SAWPATH (for Toob Race compatibility) ===
   mov ecx, [saved_board]
   mov ecx, [ecx+0x8AC]
   test ecx, ecx
@@ -163,7 +190,7 @@ do_spawn:
   jmp have_path
 
 no_path:
-  // === Build circular path (player-relative) ===
+  // === Build dummy path (0 vertices, so Path_GetPosition is skipped) ===
   push 0x48
   call 004BA57B
   add esp, 4
@@ -177,123 +204,8 @@ no_path:
   mov ecx, 0x12
   rep stosd
   pop edi
-
-  // Vertex array: 5 entries (20 bytes)
-  push 20
-  call 004BA57B
-  add esp, 4
-  test eax, eax
-  jz saw_done
-  mov [vertex_arr], eax
-  mov dword [eax+0], 0
-  mov dword [eax+4], 1
-  mov dword [eax+8], 2
-  mov dword [eax+12], 3
-  mov dword [eax+16], 4
-
-  mov ecx, [path_obj]
-  mov edx, [vertex_arr]
-  mov [ecx+0x04], edx
-  lea edx, [edx+20]
-  mov [ecx+0x08], edx
-
-  // === X spline: 5 control points (80 bytes) ===
-  // d = px+R, px, px-R, px, px+R (player-relative circle)
-  // c = -R, -R, +R, +R, 0 (linear velocity per segment)
-  push 80
-  call 004BA57B
-  add esp, 4
-  test eax, eax
-  jz saw_done
-  mov [spline_x], eax
-  push edi
-  mov edi, eax
-  xor eax, eax
-  mov ecx, 20
-  rep stosd
-  pop edi
-
-  // Compute px+R and px-R
-  fld dword [pos_x]
-  fadd dword [float_R]
-  fstp dword [temp_pxR]
-  fld dword [pos_x]
-  fsub dword [float_R]
-  fstp dword [temp_pxR2]
-
-  mov eax, [spline_x]
-  // CP0: d=px+R, c=-R
-  mov dword [eax+8], 0xC2A00000
-  mov edx, [temp_pxR]
-  mov [eax+12], edx
-  // CP1: d=px, c=-R
-  mov dword [eax+24], 0xC2A00000
-  mov edx, [pos_x]
-  mov [eax+28], edx
-  // CP2: d=px-R, c=+R
-  mov dword [eax+40], 0x42A00000
-  mov edx, [temp_pxR2]
-  mov [eax+44], edx
-  // CP3: d=px, c=+R
-  mov dword [eax+56], 0x42A00000
-  mov edx, [pos_x]
-  mov [eax+60], edx
-  // CP4: d=px+R, c=0
-  mov dword [eax+72], 0x00000000
-  mov edx, [temp_pxR]
-  mov [eax+76], edx
-
-  // === Z spline: 5 control points (80 bytes) ===
-  // d = pz, pz+R, pz, pz-R, pz
-  // c = +R, -R, -R, +R, 0
-  push 80
-  call 004BA57B
-  add esp, 4
-  test eax, eax
-  jz saw_done
-  mov [spline_z], eax
-  push edi
-  mov edi, eax
-  xor eax, eax
-  mov ecx, 20
-  rep stosd
-  pop edi
-
-  fld dword [pos_z]
-  fadd dword [float_R]
-  fstp dword [temp_pzR]
-  fld dword [pos_z]
-  fsub dword [float_R]
-  fstp dword [temp_pzR2]
-
-  mov eax, [spline_z]
-  // CP0: d=pz, c=+R
-  mov dword [eax+8], 0x42A00000
-  mov edx, [pos_z]
-  mov [eax+12], edx
-  // CP1: d=pz+R, c=-R
-  mov dword [eax+24], 0xC2A00000
-  mov edx, [temp_pzR]
-  mov [eax+28], edx
-  // CP2: d=pz, c=-R
-  mov dword [eax+40], 0xC2A00000
-  mov edx, [pos_z]
-  mov [eax+44], edx
-  // CP3: d=pz-R, c=+R
-  mov dword [eax+56], 0x42A00000
-  mov edx, [temp_pzR2]
-  mov [eax+60], edx
-  // CP4: d=pz, c=0
-  mov dword [eax+72], 0x00000000
-  mov edx, [pos_z]
-  mov [eax+76], edx
-
-  // path+0x34 = X spline ptr, path+0x44 = Z spline ptr
-  mov ecx, [path_obj]
-  mov edx, [spline_x]
-  mov [ecx+0x34], edx
-  mov edx, [spline_z]
-  mov [ecx+0x44], edx
+  // path+4=0, path+8=0 → count=0, count-1=-1
+  // Saw_Update: fVar1 < -1 → FALSE → Path_GetPosition skipped
 
 have_path:
   // === Allocate Saw object ===
@@ -383,15 +295,20 @@ activate_saw:
   // === Initialize saw state ===
   mov ecx, [saw_ptr]
   mov byte [ecx+0x110C], 1      // active = 1
-  mov dword [ecx+0x10F4], 0     // FSM state = 0 (always moving)
+  mov dword [ecx+0x10F4], 0     // FSM state = 0
   mov dword [ecx+0x10F0], 0      // Y offset = 0
-  mov dword [ecx+0x10EC], 0      // path counter = 0.0
+  mov dword [ecx+0x10EC], 0      // path counter = 0
+
+  // Write initial position
+  fld dword [center_x]
+  fstp dword [ecx+0x10DC]       // saw X = center_x
+  mov edx, [pos_y]
+  mov [ecx+0x10E0], edx          // saw Y = player Y
+  fld dword [center_z]
+  fstp dword [ecx+0x10E4]       // saw Z = center_z
 
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
-  mov dword [vertex_arr], 0
-  mov dword [spline_x], 0
-  mov dword [spline_z], 0
 
 saw_done:
   popad
@@ -400,31 +317,15 @@ original_code:
   mov eax, [esi+0x0c5c]
   jmp 00405E28
 
-float_3_98:
-  dd 0x407F5C29       // 3.98f
-
-temp_pxR:
-  dd 0
-temp_pxR2:
-  dd 0
-temp_pzR:
-  dd 0
-temp_pzR2:
-  dd 0
-
 00405E22:
   jmp SawCode
   nop
 
 // === Patch Saw_Update: NOP Y offset FSUB and FADD ===
-// Prevents Y from descending to -100 (underground on non-Toob levels)
-// and keeps saw in state 0 (always visible, always moving)
-
-// NOP FSUB at 0x43BA66 (Y -= 2.75 in state 0)
+// Keeps Y at 0.0, prevents descending/ascending
 0043BA66:
   db 90 90 90 90 90 90
 
-// NOP FADD at 0x43BA9D (Y += 3.75 in state 2)
 0043BA9D:
   db 90 90 90 90 90 90
 
@@ -432,7 +333,6 @@ temp_pzR2:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-// Restore Saw_Update Y offset code
 0043BA66:
   db DC 25 90 5C 4D 00
 
@@ -445,11 +345,13 @@ dealloc(saved_board)
 dealloc(saw_ptr)
 dealloc(our_mesh)
 dealloc(path_obj)
-dealloc(vertex_arr)
-dealloc(spline_x)
-dealloc(spline_z)
 dealloc(pos_x)
 dealloc(pos_y)
 dealloc(pos_z)
+dealloc(angle)
+dealloc(center_x)
+dealloc(center_z)
 dealloc(float_R)
+dealloc(float_speed)
+dealloc(float_4_0)
 unregistersymbol(SpawnSaw)
