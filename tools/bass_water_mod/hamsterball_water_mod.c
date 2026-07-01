@@ -4,7 +4,14 @@
  * BUILD (Linux -> Windows):
  *   i686-w64-mingw32-gcc -shared -o bass.dll hamsterball_water_mod.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
- *     -Wl,--add-stdcall-alias
+ *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+ *
+ * v5: Fix FPU state corruption crash at 0x407BC6.
+ *     Phase 15 code cave now saves/restores full x87 FPU state via
+ *     FNSAVE/FRSTOR (108 bytes). Compiled with -mssse2 -mfpmath=sse
+ *     so the C function uses SSE instead of x87, avoiding stack overflow.
+ *     Without this, apply_water_physics() corrupts the FPU register stack
+ *     that Ball_Update depends on for collision/render math.
  *
  * INSTALLATION (Windows):
  *   1. In the Hamsterball game folder rename original bass.dll -> bass_real.dll
@@ -595,15 +602,27 @@ static void install_phase15_hook(void)
         return;
     }
 
-    g_phase15_cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
+    g_phase15_cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
                                            PAGE_EXECUTE_READWRITE);
     if (!g_phase15_cave) { diag_log("phase15: VirtualAlloc FAILED"); return; }
 
     int p = 0;
 
-    /* PUSHAD */
+    /* PUSHAD — save all general-purpose registers */
     g_phase15_cave[p++] = 0x60;
-    /* PUSHFD */
+
+    /* SUB ESP, 108 — make room for FNSAVE buffer (108 bytes = full x87 state) */
+    g_phase15_cave[p++] = 0x83; g_phase15_cave[p++] = 0xEC;
+    g_phase15_cave[p++] = 108;
+
+    /* FNSAVE [ESP] — save complete x87 FPU state (stack + control/status tags)
+     * This is the critical fix: PUSHFD does NOT save the FPU register stack.
+     * Without this, float operations in apply_water_physics() corrupt the FPU
+     * state that Ball_Update expects, causing crash at 0x407BC6.
+     * DD /6 = FNSAVE m94byte. mod=00, rm=100 (SIB), base=ESP → DD 34 24 */
+    g_phase15_cave[p++] = 0xDD; g_phase15_cave[p++] = 0x34; g_phase15_cave[p++] = 0x24;
+
+    /* PUSHFD — save EFLAGS */
     g_phase15_cave[p++] = 0x9C;
 
     /* PUSH ESI (ball pointer) */
@@ -613,7 +632,7 @@ static void install_phase15_hook(void)
     g_phase15_cave[p++] = 0xFF; g_phase15_cave[p++] = 0x15;
     *(DWORD*)(g_phase15_cave + p) = (DWORD)&g_water_fn_ptr; p += 4;
 
-    /* ADD ESP, 4 */
+    /* ADD ESP, 4 — clean up __cdecl arg */
     g_phase15_cave[p++] = 0x83; g_phase15_cave[p++] = 0xC4;
     g_phase15_cave[p++] = 0x04;
 
@@ -621,12 +640,22 @@ static void install_phase15_hook(void)
     g_phase15_cave[p++] = 0xFF; g_phase15_cave[p++] = 0x05;
     *(DWORD*)(g_phase15_cave + p) = (DWORD)&g_hook_calls; p += 4;
 
-    /* POPFD */
+    /* POPFD — restore EFLAGS */
     g_phase15_cave[p++] = 0x9D;
-    /* POPAD */
+
+    /* FRSTOR [ESP] — restore complete x87 FPU state
+     * Must be AFTER POPFD so interrupts are in correct state.
+     * FRSTOR restores: control word, status word, tag word, FPU registers */
+    g_phase15_cave[p++] = 0xDD; g_phase15_cave[p++] = 0x2C; g_phase15_cave[p++] = 0x24;
+
+    /* ADD ESP, 108 — free FNSAVE buffer */
+    g_phase15_cave[p++] = 0x83; g_phase15_cave[p++] = 0xC4;
+    g_phase15_cave[p++] = 108;
+
+    /* POPAD — restore all general-purpose registers */
     g_phase15_cave[p++] = 0x61;
 
-    /* Original 6 bytes */
+    /* Original 6 bytes: MOV ECX,[ESP+0x1C] ; MOV EDX,[ECX] */
     g_phase15_cave[p++] = 0x8B; g_phase15_cave[p++] = 0x4C;
     g_phase15_cave[p++] = 0x24; g_phase15_cave[p++] = 0x1C;
     g_phase15_cave[p++] = 0x8B; g_phase15_cave[p++] = 0x11;
@@ -647,7 +676,7 @@ static void install_phase15_hook(void)
     VirtualProtect(hook_addr, PHASE15_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PHASE15_ORIG_BYTES);
 
-    wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_phase15_cave);
+    wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X (with FNSAVE/FRSTOR)", p, (DWORD)g_phase15_cave);
     diag_log(buf);
 }
 
@@ -856,7 +885,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v4 loaded (type5 suppress + grace period) ===");
+    diag_log("=== Water mod v5 loaded (FPU save/restore + SSE math) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -905,7 +934,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v4 DLL attaching ===");
+        diag_log("=== Water mod v5 DLL attaching ===");
 
         load_real_bass();
         {

@@ -1,25 +1,43 @@
-# Hamsterball Water Physics Mod v2
+# Hamsterball Water Physics Mod v5
 
 Custom water physics for Hamsterball via bass.dll proxy.
 
-## What's New in v2
+## What's New in v5
 
-v2 is a complete rewrite that fixes fundamental physics issues in v1:
+**Fix: FPU state corruption crash at 0x407BC6.**
 
-| Problem in v1 | Fix in v2 |
-|---|---|
-| Modified position delta, not velocity → drag/buoyancy didn't actually affect momentum | Modifies velocity directly in physics struct (phys+0xCA4/CA8/CAC) |
-| Buoyancy was a position offset → ball oscillated, never floated stable | Buoyancy is now acceleration (added to velocity) → ball decelerates, stops, floats |
-| Entry damping was a one-frame teleport → visual stutter | Entry damping reduces velocity → smooth deceleration that persists |
-| ball+0x14 mislabeled as Scene → wrong pointer reads | Correctly identified as Board (verified via Ghidra) |
-| Vtable hook with save-call-modify pattern | Phase 15 code cave (proven approach from jump mod + power bounce mod) |
-| Per-frame constants with no FPS independence | Same issue remains (per-frame constants), but velocity modification means the effect is more stable across framerates |
+The Phase 15 code cave was calling `apply_water_physics()` without saving the x87 FPU register stack. The C function's float operations corrupted the FPU state that `Ball_Update` depends on for collision/render math. This caused a crash when entering water (the only time the full FPU-heavy physics path runs).
+
+v5 adds `FNSAVE`/`FRSTOR` (108-byte full x87 state save/restore) around the C function call in the code cave. Additionally, the mod is now compiled with `-msse2 -mfpmath=sse` so the C function uses SSE registers instead of x87, providing belt-and-suspenders protection.
+
+## Architecture (v4+)
+
+Four hooks working together:
+
+| Hook | Address | Type | Purpose |
+|------|---------|------|---------|
+| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — detect E:WATER, trigger 3-step (flag + damp + capture Y) |
+| 2 | 0x407BB4 | Code cave | Phase 15 — per-frame drag/buoyancy while in_water (with FPU save/restore) |
+| 3 | 0x407377 | Code cave | Type 5 suppressor — skip 0x2E9 death block while submerged |
+| 4 | 0x4CF3C0+8 | Vtable swap | Ball_FallDeath — suppress death during in_water + grace period |
+
+### Collision-Event-Driven Detection
+
+No MeshWorld scanning, no background threads. The game's own collision system tells the mod when the ball touches water:
+
+1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires a 3-step trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`.
+
+2. **Hook 2** (Phase 15 code cave) runs every frame. If `in_water` is set, applies drag (all velocity axes), horizontal drag (extra on X/Z), and buoyancy (upward acceleration proportional to submersion depth). Saves/restores full FPU state via FNSAVE/FRSTOR.
+
+3. **Hook 3** (Type 5 collision suppressor) prevents geometric mesh-penetration from setting ball+0x2E9 (falling flag) while submerged. E:LIMIT events still set 0x2E9 through DispatchCollisionEvents, so the ball can still die from level boundaries.
+
+4. **Hook 4** (vtable[8] Ball_FallDeath) suppresses death while in water or within the grace period (120 frames ~5s) after leaving water. Covers the bounce-out scenario.
 
 ## Installation
 
 1. In your Hamsterball game folder, rename the original `bass.dll` to `bass_real.dll`
 2. Copy the mod `bass.dll` and `hamsterball_water.ini` into the game folder
-3. Place `E:WATER` collision planes in custom levels (see below)
+3. Place `E:WATER` collision objects in custom levels
 4. Run Hamsterball.exe normally
 
 ## Uninstall
@@ -27,54 +45,32 @@ v2 is a complete rewrite that fixes fundamental physics issues in v1:
 1. Delete the mod `bass.dll`
 2. Rename `bass_real.dll` back to `bass.dll`
 
-Or run `uninstall_water_mod.bat`.
-
-## How It Works
-
-### Hook Architecture
-
-Uses a **Phase 15 code cave** at `0x407BB4` in Ball_Update — the same proven hook point used by the jump mod and power bounce mod. The cave:
-
-1. Saves all registers (PUSHAD + PUSHFD)
-2. Calls a C function `apply_water_physics(ball)` that modifies velocity
-3. Restores all registers (POPFD + POPAD)
-4. Executes the original 6 bytes
-5. Jumps back
-
-### Velocity-Based Physics
-
-The C function reads the ball's **velocity** from the physics struct (ball+0x1A4 → +0xCA4/CA8/CAC) and modifies it directly:
-
-1. **Entry Damping**: On first contact while falling, `vel_y *= 0.70` (30% velocity reduction). This persists — the ball actually slows down.
-
-2. **Drag**: All velocity axes scaled by `(1 - drag)` per frame. The ball decelerates over time.
-
-3. **Horizontal Drag**: Extra scaling on X/Z velocity, making horizontal movement sluggish.
-
-4. **Buoyancy**: Upward acceleration `= buoyancy_strength × submersion × 2.0`, added to `vel_y`. At half-submerged, it roughly cancels gravity. At full submersion, net upward force. The ball decelerates going down, stops, then accelerates upward — reaching a stable float.
-
-### Water Plane Discovery
-
-Scans the Board's collision mesh for objects named `E:WATER`:
-- Board is at ball+0x14 (NOT Scene — v1 had this wrong)
-- CollisionLevel is at Board+0x8B0 → +0x08 for the MeshWorld
-- Iterates AthenaList at MeshWorld+0x2C
-- For each MeshBuffer, reads name at +0x864
-- If name starts with `E:WATER`, reads Y from first collision face vertex
-- A background thread re-scans on board/level changes
-
-**Fallback**: If no E:WATER objects found, uses Y coordinates from the INI file.
-
-### Level Setup
+## Level Setup
 
 In the Raptisoft level editor, add a collision mesh object named `E:WATER`.
-The object needs at least one face (triangle). The Y coordinate of the first
-vertex of the first face determines the water surface height.
+The object needs at least one face (triangle). The Y coordinate of the ball
+at the moment of contact determines the water surface height.
 
 ## Configuration
 
-See `hamsterball_water.ini` for all options with descriptions.
+See `hamsterball_water.ini` for all options:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| EntryDamping | 0.70 | Velocity multiplier on first contact (0-1) |
+| Drag | 0.03 | Per-frame velocity drag on all axes (0-1) |
+| HorizontalDrag | 0.04 | Extra drag on X/Z axes (0-1) |
+| BuoyancyStrength | 0.45 | Upward acceleration at full submersion |
+| Debug | 1 | Write log file (water_mod_log.txt) |
 
 ## Debug Log
 
 With `Debug=1` in the INI, the mod writes `water_mod_log.txt` next to bass.dll.
+
+## Build
+
+```bash
+i686-w64-mingw32-gcc -shared -o bass.dll hamsterball_water_mod.c -lwinmm \
+  -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
+  -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+```
