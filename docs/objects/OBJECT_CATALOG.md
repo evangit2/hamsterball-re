@@ -352,7 +352,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 
 ### NoDizzy
 - **Factory:** `DispatchCollisionEvents` (0x40C5D0)
-- **Description:** Grants dizzy immunity for TIME frames and calls Ball_DizzyImmunity — NOT dizzy-related
+- **Description:** Grants dizzy immunity for TIME frames and calls Ball_DizzyImmunity — grants dizzy immunity
 
 ---
 

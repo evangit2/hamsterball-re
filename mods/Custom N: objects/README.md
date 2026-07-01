@@ -210,7 +210,7 @@ These events fire on ALL board types because every board handler calls DispatchC
 
 | Event Name | What It Does | Key Details |
 |-----------|-------------|-------------|
-| `E:NODIZZY<TIME>N</TIME>` | Records best time N via `Ball_RecordBest` | Parses XML tags with `MWParser_ReadTag` |
+| `E:NODIZZY<TIME>N</TIME>` | Grants N frames of dizzy immunity via `Ball_DizzyImmunity` | Parses XML tags with `MWParser_ReadTag` |
 | `E:SAFESWITCH` | Copies parenthesized data to `ball+0xC2C` | `strchr` for `(` char, copies string |
 | `E:LIMIT` | Tracks arena completions per player | Sets `ball+0x2E9=1`, increments counters at `board+0x47B4/B8/BC/C0` |
 | `E:BREAK` | Calls ball vtable[0x20] callback | `(**(code**)(*ball + 0x20))()` |

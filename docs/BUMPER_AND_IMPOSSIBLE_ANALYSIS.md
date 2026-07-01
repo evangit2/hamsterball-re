@@ -244,7 +244,7 @@ DispatchCollisionEvents(board, ball, collision);
 Processes ALL common collision events:
 - `N:SECRET` → Rotator_MarkTriggered
 - `N:UNLOCKSECRET` → CheckArenaUnlock
-- `E:NODIZZY<TIME>N</TIME>` → Ball_DizzyImmunity (TIME checkpoint clear — NOT dizzy-related)
+- `E:NODIZZY<TIME>N</TIME>` → Ball_DizzyImmunity (TIME checkpoint clear — dizzy immunity zone)
 - `E:SAFESWITCH` → copy switch data to ball+0xC2C
 - `E:LIMIT` → track arena completions
 - `E:JUMP` → play sound + SetForce(0.1, 1) + impact=10
