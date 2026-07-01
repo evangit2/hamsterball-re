@@ -120,6 +120,9 @@ DawgCode:
 
   cmp dword [SpawnDawg], 0
   je original_code
+  // Prevent double-spawn: if a blockdawg already exists, ignore
+  cmp dword [dawg_ptr], 0
+  jne original_code
   mov dword [SpawnDawg], 0
 
   pushad
