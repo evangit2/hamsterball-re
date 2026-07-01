@@ -1,0 +1,31 @@
+- LOADING SCREEN -
+"Click here" button - Off = #FFFFFF
+"Click here" button - On = #FFFFFF
+
+
+- MAIN MENU -
+soon.
+
+
+- TOURNEY MENU -
+soon.
+
+
+- MIRROR MENU -
+soon.
+
+
+- TIME TRIALS MENU -
+soon.
+
+
+- 2P MENU -
+soon.
+
+
+- 4P MENU -
+soon.
+
+
+- OTHER -
+soon.
