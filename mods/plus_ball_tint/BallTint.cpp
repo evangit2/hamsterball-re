@@ -11,6 +11,10 @@
 static constexpr DWORD BOARD_COLOR_BASE   = 0x3AB0;
 static constexpr DWORD BOARD_COLOR_STRIDE = 0x14;   // 20 bytes per player entry
 
+// Board vtable range for validation (covers all board types including Arena)
+static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
+static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
+
 class BallTintMod : public HamsterballAPI {
 private:
     IModAPI* api = nullptr;
@@ -31,6 +35,14 @@ private:
         *(float*)(addr + 0x04) = g;
         *(float*)(addr + 0x08) = b;
         *(float*)(addr + 0x0C) = 1.0f;
+    }
+
+    bool validateBoard(DWORD board) {
+        if (!board || board < 0x10000) return false;
+        if (IsBadReadPtr((void*)board, 4)) return false;
+        DWORD vtable = *(DWORD*)board;
+        if (vtable < BOARD_VTABLE_MIN || vtable > BOARD_VTABLE_MAX) return false;
+        return true;
     }
 
 public:
@@ -66,10 +78,23 @@ public:
     void onBallUpdate(Ball* ball) override {
         if (!api || !ball) return;
 
-        // Get board from ball->scene (ball+0x14 = Scene*, scene is the board)
-        // This is the same pointer the bass.dll version finds via App->Profile->Board
-        DWORD board = (DWORD)ball->scene;
+        App* app = api->GetApp();
+        if (!app) return;
+
+        DWORD appAddr = (DWORD)app;
+
+        // Find board via App -> PlayerProfile(+0x220) -> Board(+0x0C)
+        // This is the EXACT same path the working bass.dll mod uses
+        if (IsBadReadPtr((void*)(appAddr + 0x220), 4)) return;
+        DWORD profile = *(DWORD*)(appAddr + 0x220);
+        if (!profile || profile < 0x10000) return;
+
+        if (IsBadReadPtr((void*)(profile + 0x0C), 4)) return;
+        DWORD board = *(DWORD*)(profile + 0x0C);
         if (!board || board < 0x10000) return;
+
+        // Validate board via vtable range (same as bass.dll v5)
+        if (!validateBoard(board)) return;
         if (IsBadReadPtr((void*)board, BOARD_COLOR_BASE + 0x40)) return;
 
         // Apply all 4 player colors every frame
