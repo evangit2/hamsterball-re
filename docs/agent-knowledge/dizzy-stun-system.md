@@ -53,15 +53,22 @@ Set by collision events:
 
 Multiple triggers set `is_falling` (+0x2E8 = 1):
 
-- **Ball_Shatter** (0x408D70) — called from `FollowBall_Update` (0x43ECC0) when the ball
-  falls off edges or hits certain kill zones. Sets +0x324=1, +0x2E8=1.
-- **Ball_Shatter_OnRamp** (0x409480) — variant for ramp-based shatters.
-  Sets +0x324=1, +0x2E8=1.
+- **Ball_Shatter** (0x408D70) — called from `Breaker_Update` (0x43F3C0, vtable 0x4D50E0 slot[3]) and
+  `Bonkbash_Update` (0x43F930, vtable 0x4D5140 slot[3]). These are ARENA/LEVEL CRUSHER OBJECTS
+  that shatter balls within range — Breaker iterates all balls, Bonkbash uses Collision_PointInTriangle.
+  NOT called from FollowBall_Update. Sets +0x324=1, +0x2E8=1.
+- **Ball_Shatter_OnRamp** (0x409480) — vtable[8] death handler called when the player ball
+  STOPS after falling (velocity reverses or ball lands). Sets +0x324=1, +0x2E8=1.
 - **E:SWALLOW** collision event — pipe mechanics swallow the ball. Sets +0x2E8=1.
-- **Ground contact loss** — `ball+0xC60` (ground contact value) starts at 1.0, decrements
-  by 0.02/frame when airborne. After 50 frames (2 seconds at 25fps) of no ground contact,
-  it drops below 0, triggering `is_falling = 1`.
-  (Code in `FUN_004031b0` at 0x4031B0 and `Ball_Update` at 0x405E00.)
+- **Ball_Update fall death** (0x405E00) — at 0x406244 and 0x407436, sets +0x2E8=1 for the player
+  ball's fall death (post-shatter timer in ball+0x2FC, gated by ball+0x324 shatter flag).
+  NOT a timer-based death — the player ball dies when it STOPS after falling, not after a countdown.
+- **OddBoard_CollisionHandler** (0x40ED30) — at 0x40F2E7, sets +0x2E8=1 when ball goes off edge.
+- **ball+0xC60 is a BAD BALL ONLY fall timer** — set to 1.0f only by BadBall_ctor (0x405D90,
+  formerly GameObject_sub_ctor), called from Scene_SpawnBadBall (0x41EE86). The player ball
+  constructor (Ball_ctor2 at 0x4039E0) does NOT set 0xC60. In Ball_FallUpdate (vtable[65] of
+  BAD BALL vtable 0x4CF494), the condition `if (c60 != 0.0 OR ball+0x768 == 0)` decrements c60
+  by 0.02, and death occurs when c60 < 0.0. This ONLY applies to bad balls, NOT the player.
 
 ### Step 2: Scene detects falling ball → calls respawn
 
@@ -147,8 +154,11 @@ void Ball_ApplyForce(ball* this, float dx, float dy, float dz, float multiplier)
 
 ## Ball_Shatter — The "Hit a Wall Too Hard" Trigger
 
-`Ball_Shatter` (0x408D70) is called from `FollowBall_Update` (0x43ECC0) when the ball
-leaves the playable area. It:
+`Ball_Shatter` (0x408D70) is called from exactly 2 functions:
+- **Breaker_Update** (0x43F3C0, vtable 0x4D50E0 slot[3]) — a BREAKER crusher object that iterates all balls and shatters those within range. Uses "BREAKER" hash table lookup.
+- **Bonkbash_Update** (0x43F930, vtable 0x4D5140 slot[3]) — a BONKBASH hammer object that uses Collision_PointInTriangle to find targets, then shatters them with 3 trajectory points at 90.0 units spread. Uses "BONKBASH" string.
+
+**Ball_Shatter is NOT called from FollowBall_Update (0x43ECC0).** It is for arena/level objects that crush balls, NOT for fall-off-edge death.
 
 1. Sets `is_falling = 1` (+0x2E8)
 2. Sets `respawn_state = 1` (+0x324) — gates the respawn fade sequence
@@ -279,7 +289,7 @@ In `Ball_RenderAI` (0x403DC0):
 |---------|----------|------|
 | 0x405190 | Ball_FindClosestRespawnPoint | Triggers stun (sets all stun fields) |
 | 0x405D5B | (inside above) | Sets is_stunned=1, stun_timer=150 |
-| 0x408D70 | Ball_Shatter | Sets is_falling, respawn_state |
+| 0x408D70 | Ball_Shatter | Sets is_falling (+0x2E8), respawn_state (+0x324). Called from Breaker_Update and Bonkbash_Update (arena crusher objects), NOT FollowBall_Update |
 | 0x409480 | Ball_Shatter_OnRamp | Ramp variant of shatter |
 | 0x405E00 | Ball_Update | Two-pass collision: Pass 1 checks bounce_count, Pass 2 increments. Also stun recovery |
 | 0x403750 | Ball_ApplyTrajectory | The dizzy effect: halves speed, sets impact_count=100, increments dizzy counter |
@@ -373,7 +383,7 @@ Frame N+2:
 
 | Offset | Name | Type | Default | Description |
 |--------|------|------|---------|-------------|
-| +0x2E8 | is_falling | byte | 0 | Set by Ball_Shatter, Ball_FallUpdate, E:SWALLOW (pipe swallow). Triggers respawn |
+| +0x2E8 | is_falling | byte | 0 | Set by Ball_Shatter (via Breaker/Bonkbash crusher objects), Ball_Update (player fall death at 0x406244 & 0x407436), OddBoard_CollisionHandler (0x40F2E7), E:SWALLOW (pipe swallow). NOT set by Ball_FallUpdate for the player ball (that's bad-ball-only). Triggers respawn |
 | +0x2E9 | dizzy_lock | byte | 0 | Sticky flag: prevents Ball_ApplyTrajectory re-firing. Set by trajectory, E:LIMIT*, speed>1.0. Reset only by Ball_InitPhysicsDefaults. E:SWALLOW sets +0x2E8 instead |
 | +0x2EC | bounce_count | int32 | 0 | Bounce counter for dizzy system. Double-increments 0→1→2 in one frame when speed ≥ 0.03/0.1. Triggers trajectory when > 1 |
 | +0x2F0 | impact_count | int32 | 0 | Set to 100 by trajectory. ≥81 blocks input. Decays by 1/frame |
@@ -383,7 +393,7 @@ Frame N+2:
 | +0x300 | stun_timer | int32 | 0 | 150 on stun. Countdown controls star duration |
 | +0x324 | respawn_state | byte | 0 | 1 = ball in respawn sequence |
 | +0x808 | no_control_timer | int32 | 0 | Non-zero = input blocked |
-| +0xC60 | ground_contact | float | 1.0 | Decays by 0.02/frame when airborne → triggers fall |
+| +0xC60 | bad_ball_fall_timer | float | 1.0 (bad balls only) | BAD BALL ONLY. Set to 1.0 by BadBall_ctor (0x405D90). Decays by 0.02/frame in Ball_FallUpdate (vtable[65] of bad ball vtable 0x4CF494). Player ball never sets this. NOT a player ball field |
 | +0x14D | has_trajectory | byte | 0 | Set by Ball_ApplyTrajectory. Triggers bounce_count reset next frame |
 
 ## App Per-Player Data Block (at App + 0x5CC + pIdx × 0xA0)

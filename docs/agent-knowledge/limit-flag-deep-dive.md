@@ -98,12 +98,13 @@ The velocity check depends on `ball+0x1D2` (axis selector):
 If the ball is moving in the "wrong" direction for the current axis AND hits a wall, the ball **shatters** (breaks into debris pieces, plays sound, triggers respawn).
 
 **`Ball_OnRampEvent` (0x00409480, vtable[8]):**
-- Sets `ball+0x2E8 = 1` (shattered flag)
+- This is the death/respawn handler called when the player ball STOPS after falling (velocity reverses or ball lands). NOT a "ramp variant" of Ball_Shatter.
+- Sets `ball+0x2E8 = 1` (shattered/needs_respawn flag)
 - Checks `is_shrunk` (0xC4C) to select which shatter sound to play
 - Creates 3 `Ball_Split_ctor` debris pieces at the ball's position
 - Copies velocity, position, radius to each debris piece
 - Creates `ArenaScoreParticle` objects (score popup particles)
-- This is essentially the same as `Ball_Shatter` (0x00408D70) but called from a different path
+- Note: Ball_Shatter (0x00408D70) at 0x408CD5 also sets +0x2E8=1, but ONLY for balls hit by Breaker/Bonkbash crusher objects (arena/level objects), NOT for player fall death
 
 ### 3. Dead Code: Position-Match Shatter (L642)
 

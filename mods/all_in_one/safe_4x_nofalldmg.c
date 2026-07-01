@@ -7,7 +7,9 @@
  *    b) Ball_Shatter_OnRamp (0x409480) → RET (skip entirely)
  *    c) Ball_FallUpdate shatter flag write (0x408CD5) → NOP 7 bytes
  *       (this is the line: MOV byte [ESI+0x2E8], 1 — sets shattered flag
- *        when fall timer expires, was MISSED by previous unbreakable mod!)
+ *        when bad ball fall timer expires. NOTE: BAD BALL ONLY — vtable[65]
+ *        of bad ball vtable 0x4CF494. Player ball never calls Ball_FallUpdate.
+ *        This patch is a no-op for the player ball but harmless to keep.)
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll safe_4x_nofalldmg.c \
