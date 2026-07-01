@@ -484,6 +484,18 @@ static float compute_submersion(float ball_y, float radius, float surface_y)
     return submerged;
 }
 
+/* Ball+0x2E9: falling-mode flag (set by collision type 5 / edge detection).
+ * When set, Ball_Update checks if the ball stopped on the primary axis
+ * (ABS(delta) < 2.0, where 2.0 is the DOUBLE at 0x4CF4F8). If stopped,
+ * it calls vtable[8] (Ball_FallDeath) → ball shatters.
+ *
+ * In water, drag slows the ball until its per-frame movement drops below
+ * 2.0, triggering the death check. To prevent this, we clear 0x2E9 every
+ * frame while in water. This stops the death check from firing at all.
+ *
+ * The vtable[8] hook (Hook 3) remains as a second line of defense. */
+#define BALL_FALLING_FLAG       0x2E9
+
 /* Ongoing water physics — called from Phase 15 code cave every frame */
 static void __cdecl apply_water_physics(DWORD ball)
 {
@@ -496,12 +508,31 @@ static void __cdecl apply_water_physics(DWORD ball)
     float radius = *(float*)(ball + BALL_RADIUS);
     if (radius <= 0.0f || radius > 1000.0f) return;
 
-    /* Exit condition: ball bottom above captured surface */
-    if (ball_y - radius > st->water_surface_y) {
+    /* Exit condition: ball must be CLEARLY above the surface (by at least
+     * half its radius) before we consider it out of the water. The old
+     * check (ball_y - radius > surface_y) fired too eagerly — buoyancy
+     * pushes the ball up past the entry point, clearing in_water, then
+     * the death check kills the ball on the next frame. */
+    if (ball_y - radius > st->water_surface_y + radius * 0.5f) {
         st->in_water = 0;
         st->water_surface_y = 0.0f;
+        /* Clear falling flag on exit so the ball doesn't immediately die
+         * after leaving the water. It will be re-set by collision type 5
+         * if the ball falls off another edge. */
+        *(unsigned char*)(ball + BALL_FALLING_FLAG) = 0;
+        if (g_cfg.debug) {
+            char buf[128];
+            wsprintfA(buf, "WATER EXIT: ball=%08X y=%.2f surface=%.2f",
+                      ball, ball_y, st->water_surface_y);
+            diag_log(buf);
+        }
         return;
     }
+
+    /* Clear the falling-mode flag every frame while in water.
+     * This prevents Ball_Update's death check (ABS(delta) < 2.0 → vtable[8])
+     * from firing while the ball is floating in water. */
+    *(unsigned char*)(ball + BALL_FALLING_FLAG) = 0;
 
     DWORD phys = *(DWORD*)(ball + BALL_PHYS_PTR);
     if (!phys || IsBadReadPtr((void*)phys, 0xCB0)) return;
