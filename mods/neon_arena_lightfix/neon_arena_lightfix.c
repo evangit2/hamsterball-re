@@ -1,23 +1,14 @@
 /*
  * neon_arena_lightfix — Fix missing yellow diffuse light on Neon Arena.
  *
- * Root cause: ArenaLevel_Neon_Init (0x416F40) has two bugs vs Scene_SetupLevelDark
- * (0x416270, Neon Race):
+ * Root cause: ArenaLevel_Neon_Init (0x416F40) loop 1 writes yellow material
+ * colors (ambient/diffuse/emissive) to P1 balls but FORGETS to set the glow
+ * render flag (+0xC80 = 1). Loop 2 (P2/badballs) correctly sets +0xC80 = 1.
+ * Without this flag, the emissive material is written but never rendered.
  *
- *   1. First loop (P1 balls at board+0x29D4): writes 3 material blocks
- *      (ambient/diffuse/emissive) but FORGETS to set the glow flag (+0xC80 = 1).
- *      Without this flag, the emissive material is written but never rendered.
- *      The second loop (P2/badballs) correctly sets +0xC80 = 1.
- *
- *   2. After the loops, Scene_SetupLevelDark writes 3 material blocks directly
- *      to the global phys struct (App+0x5DC for P1, App+0x67C for P2).
- *      ArenaLevel_Neon_Init omits these writes entirely.
- *
- * Fix: A background thread polls the App struct. When Neon Arena is detected
- * (board+0x47E4 non-zero), it iterates the ball list (board+0x29D4) and:
- *   - Sets +0xC80 = 1 (glow flag) on each ball
- *   - Writes yellow material colors (R=1, G=1, B=0, A=1) to ambient/diffuse/emissive
- *   - Also writes to App+0x5DC and App+0x67C phys structs if valid
+ * Fix: A background thread detects Neon Arena (board+0x47E4 non-zero) and
+ * sets +0xC80 = 1 on every ball in the P1 AthenaList (board+0x29D4).
+ * No material writes needed — the game already wrote them.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll neon_arena_lightfix.c \
@@ -150,147 +141,75 @@ static void load_real_bass(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Neon Arena Light Fix
+ * Neon Arena Light Fix — minimal: only set glow flag
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Game addresses */
 #define APP_PTR_ADDR    0x005341E0
 #define BALL_VTABLE     0x004CF3A0
 
-/* Float constants */
-#define FLOAT_1_0   0x3F800000  /* 1.0f */
-#define FLOAT_0_0   0x00000000  /* 0.0f */
-
-/* Material color offsets on phys/ball struct (verified from Scene_SetupLevelDark) */
-/* Ambient:  +0x1CC (R), +0x1D0 (G), +0x1D4 (B), +0x1D8 (A) */
-/* Diffuse:  +0x1BC (R), +0x1C0 (G), +0x1C4 (B), +0x1C8 (A) */
-/* Emissive: +0x1EC (R), +0x1F0 (G), +0x1F4 (B), +0x1F8 (A) */
-/* Glow flag: +0xC80 (byte, set to 1 to enable glow rendering) */
-/* Has-material flag: +0x204 (byte) */
-
-/* AthenaList structure (at board+0x29D4 for P1 balls) */
-/* +0x00: vtable ptr, +0x04: count, +0x08: capacity, +0x0C: ... +0x40C: array ptr */
-
 static volatile int g_running = 1;
-static int g_applied = 0;  /* 0 = not yet applied, 1 = applied, reset on level change */
-
-/* Write yellow material colors + glow flag to a ball/phys struct */
-static void apply_yellow_glow(char *phys) {
-    if (!phys || IsBadReadPtr(phys, 0x210)) return;
-
-    /* Set glow flag (the missing instruction from ArenaLevel_Neon_Init loop 1) */
-    *(BYTE*)(phys + 0xC80) = 1;
-
-    /* Ambient = yellow (R=1, G=1, B=0, A=1) */
-    *(DWORD*)(phys + 0x1CC) = FLOAT_1_0;
-    *(DWORD*)(phys + 0x1D0) = FLOAT_1_0;
-    *(DWORD*)(phys + 0x1D4) = FLOAT_0_0;
-    *(DWORD*)(phys + 0x1D8) = FLOAT_1_0;
-
-    /* Diffuse = yellow */
-    *(DWORD*)(phys + 0x1BC) = FLOAT_1_0;
-    *(DWORD*)(phys + 0x1C0) = FLOAT_1_0;
-    *(DWORD*)(phys + 0x1C4) = FLOAT_0_0;
-    *(DWORD*)(phys + 0x1C8) = FLOAT_1_0;
-
-    /* Emissive = yellow (this is what makes the ball GLOW) */
-    *(DWORD*)(phys + 0x1EC) = FLOAT_1_0;
-    *(DWORD*)(phys + 0x1F0) = FLOAT_1_0;
-    *(DWORD*)(phys + 0x1F4) = FLOAT_0_0;
-    *(DWORD*)(phys + 0x1F8) = FLOAT_1_0;
-
-    /* Mark as having material */
-    *(BYTE*)(phys + 0x204) = 1;
-}
-
-/* Iterate the AthenaList at board+0x29D4 and apply glow to each ball */
-static void apply_glow_to_ball_list(char *board) {
-    char *ball_list = board + 0x29D4;
-    if (IsBadReadPtr(ball_list, 0x410)) return;
-
-    int count = *(int*)(ball_list + 0x04);
-    if (count <= 0 || count > 100) return;  /* sanity check */
-
-    int *array = *(int**)(ball_list + 0x40C);
-    if (!array || IsBadReadPtr(array, count * 4)) return;
-
-    for (int i = 0; i < count; i++) {
-        char *ball = (char*)array[i];
-        if (ball && !IsBadReadPtr(ball, 0x210)) {
-            /* Verify it's actually a ball by checking vtable */
-            if (*(int*)ball == BALL_VTABLE) {
-                apply_yellow_glow(ball);
-            }
-        }
-    }
-}
-
-/* Check if current level is Neon Arena */
-static int is_neon_arena(char *app) {
-    if (!app || IsBadReadPtr(app, 0x900)) return 0;
-
-    /* Follow: App → +0x220 (PlayerProfile*) → +0xC (Board*) */
-    int *profile = *(int**)(app + 0x220);
-    if (!profile || IsBadReadPtr(profile, 0x10)) return 0;
-    char *board = *(char**)((char*)profile + 0x0C);
-    if (!board || IsBadReadPtr(board, 0x4800)) return 0;
-
-    /* Check board+0x47E4 — Neon Arena stores its emitter SceneObject here.
-     * This field is set by ArenaLevel_Neon_Init and is non-zero only in Neon Arena. */
-    int emitter_obj = *(int*)(board + 0x47E4);
-    return (emitter_obj != 0);
-}
-
-/* Get the board pointer from App */
-static char* get_board(char *app) {
-    if (!app || IsBadReadPtr(app, 0x900)) return NULL;
-    int *profile = *(int**)(app + 0x220);
-    if (!profile || IsBadReadPtr(profile, 0x10)) return NULL;
-    char *board = *(char**)((char*)profile + 0x0C);
-    if (!board || IsBadReadPtr(board, 0x4800)) return NULL;
-    return board;
-}
 
 static DWORD WINAPI neon_fix_thread(LPVOID param) {
     (void)param;
-    /* Wait for game to fully load */
     Sleep(3000);
 
     while (g_running) {
         char *app = *(char**)APP_PTR_ADDR;
-        if (app && !IsBadReadPtr(app, 0x900)) {
-            if (is_neon_arena(app)) {
-                char *board = get_board(app);
-                if (board) {
-                    /* Apply glow to all balls in the P1 ball list */
-                    apply_glow_to_ball_list(board);
+        if (!app || IsBadReadPtr(app, 0x900)) { Sleep(1000); continue; }
 
-                    /* Also write to global phys structs (belt-and-suspenders) */
-                    /* App+0x5DC = P1 phys, App+0x67C = P2 phys */
-                    char *scene_mgr = *(char**)(board + 0x878);
-                    if (scene_mgr && !IsBadReadPtr(scene_mgr, 0x700)) {
-                        char *p1_phys = *(char**)(scene_mgr + 0x5DC);
-                        if (p1_phys && !IsBadReadPtr(p1_phys, 0x210))
-                            apply_yellow_glow(p1_phys);
+        /* App → +0x220 (PlayerProfile*) → +0xC (Board*) */
+        int *profile = *(int**)(app + 0x220);
+        if (!profile || IsBadReadPtr(profile, 0x10)) { Sleep(1000); continue; }
+        char *board = *(char**)((char*)profile + 0x0C);
+        if (!board || IsBadReadPtr(board, 0x4800)) { Sleep(1000); continue; }
 
-                        /* P2 only if not human (app+0x677 == 0, same as Neon Race) */
-                        BYTE p2_flag = *(BYTE*)(scene_mgr + 0x677);
-                        if (p2_flag == 0) {
-                            char *p2_phys = *(char**)(scene_mgr + 0x67C);
-                            if (p2_phys && !IsBadReadPtr(p2_phys, 0x210))
-                                apply_yellow_glow(p2_phys);
+        /* Check board+0x47E4 (Neon Arena emitter SceneObject) */
+        int emitter = *(int*)(board + 0x47E4);
+        if (!emitter) { Sleep(1000); continue; }
+
+        /* Neon Arena detected — set glow flag on P1 balls */
+        char *ball_list = board + 0x29D4;
+        if (!IsBadReadPtr(ball_list, 0x410)) {
+            int count = *(int*)(ball_list + 0x04);
+            if (count > 0 && count < 100) {
+                int *array = *(int**)(ball_list + 0x40C);
+                if (array && !IsBadReadPtr(array, count * 4)) {
+                    for (int i = 0; i < count; i++) {
+                        char *ball = (char*)array[i];
+                        if (ball && !IsBadReadPtr(ball, 0xC90)) {
+                            /* Verify it's a ball by vtable */
+                            if (*(int*)ball == BALL_VTABLE) {
+                                /* THE fix: set glow flag.
+                                 * Game already wrote yellow materials in loop 1,
+                                 * but forgot this flag. */
+                                *(BYTE*)(ball + 0xC80) = 1;
+                            }
                         }
                     }
                 }
-                /* Re-apply every 2 seconds while in Neon Arena */
-                Sleep(2000);
-            } else {
-                /* Not in Neon Arena — check every 1 second */
-                Sleep(1000);
             }
-        } else {
-            Sleep(1000);
         }
+
+        /* Also set on P2/badballs list (board+0x2DEC) for completeness */
+        char *ball_list2 = board + 0x2DEC;
+        if (!IsBadReadPtr(ball_list2, 0x410)) {
+            int count2 = *(int*)(ball_list2 + 0x04);
+            if (count2 > 0 && count2 < 100) {
+                int *array2 = *(int**)(ball_list2 + 0x40C);
+                if (array2 && !IsBadReadPtr(array2, count2 * 4)) {
+                    for (int i = 0; i < count2; i++) {
+                        char *ball = (char*)array2[i];
+                        if (ball && !IsBadReadPtr(ball, 0xC90)) {
+                            if (*(int*)ball == BALL_VTABLE) {
+                                *(BYTE*)(ball + 0xC80) = 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Sleep(2000);
     }
     return 0;
 }
@@ -308,7 +227,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         load_real_bass();
         CreateThread(NULL, 0, neon_fix_thread, NULL, 0, NULL);
         break;
-
     case DLL_PROCESS_DETACH:
         g_running = 0;
         break;
