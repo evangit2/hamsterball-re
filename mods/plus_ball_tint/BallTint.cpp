@@ -1,7 +1,7 @@
 // Ball Tint mod for Hamsterball Plus API
 // Adds RGB sliders in the options menu to customize player ball colors.
 // Sliders: P1 R/G/B, P2 R/G/B, P3 R/G/B, P4 R/G/B (0.0-1.0 each)
-// Uses onBallUpdate to write colors to board+0x3AB0 every frame.
+// Uses onTextRenderLoop to write colors AFTER all game logic (last possible moment before render).
 // Ported from bass.dll proxy ball_tint v5 (mods/ball_tint/).
 
 #include "HamsterballAPI.h"
@@ -75,29 +75,22 @@ public:
         createColorSlider("TINT_P4_B", "P4 Blue",  0.0f);
     }
 
-    void onBallUpdate(Ball* ball) override {
-        if (!api || !ball) return;
+    // Use onTextRenderLoop — it runs AFTER Original_RenderTextLoop,
+    // so all game logic (including Ball_Update which may reset colors)
+    // has already finished. This is the last chance before the frame
+    // is drawn, so our colors can't be overwritten.
+    void onTextRenderLoop() override {
+        if (!api) return;
 
-        App* app = api->GetApp();
-        if (!app) return;
+        // Get the scene (which IS the board) from the API
+        Scene* scene = api->GetScene();
+        if (!scene) return;
 
-        DWORD appAddr = (DWORD)app;
-
-        // Find board via App -> PlayerProfile(+0x220) -> Board(+0x0C)
-        // This is the EXACT same path the working bass.dll mod uses
-        if (IsBadReadPtr((void*)(appAddr + 0x220), 4)) return;
-        DWORD profile = *(DWORD*)(appAddr + 0x220);
-        if (!profile || profile < 0x10000) return;
-
-        if (IsBadReadPtr((void*)(profile + 0x0C), 4)) return;
-        DWORD board = *(DWORD*)(profile + 0x0C);
-        if (!board || board < 0x10000) return;
-
-        // Validate board via vtable range (same as bass.dll v5)
+        DWORD board = (DWORD)scene;
         if (!validateBoard(board)) return;
         if (IsBadReadPtr((void*)board, BOARD_COLOR_BASE + 0x40)) return;
 
-        // Apply all 4 player colors every frame
+        // Apply all 4 player colors
         applyColor(board, 0,
             api->GetSliderState("TINT_P1_R"),
             api->GetSliderState("TINT_P1_G"),
