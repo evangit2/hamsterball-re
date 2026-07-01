@@ -157,6 +157,24 @@ static void load_real_bass(void)
 /* Emitter position: +0x08 (X), +0x0C (Y), +0x10 (Z) */
 /* Neon Race uses Y+30 offset (from _DAT_004cf528 = 30.0f float) */
 
+/* SceneObject vtable[3] (offset +0x0C in vtable) re-submits the D3D light
+ * to the device with current position. Must be called after position changes
+ * or the light stays at its initial position forever. */
+static void update_emitter_light(void *emitter) {
+    if (!emitter || IsBadReadPtr(emitter, 0x100)) return;
+    int vtable = *(int*)emitter;
+    if (!vtable || IsBadReadPtr((void*)vtable, 0x10)) return;
+    int func = *(int*)(vtable + 0x0C);
+    if (!func || IsBadReadPtr((void*)func, 1)) return;
+    /* Call func with ECX = emitter (__fastcall) */
+    __asm__ volatile (
+        "call *%0"
+        :
+        : "r"(func), "c"(emitter)
+        : "eax", "edx", "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)", "memory"
+    );
+}
+
 static volatile int g_running = 1;
 
 /* Set glow flag on a single ball */
@@ -212,7 +230,7 @@ static DWORD WINAPI neon_fix_thread(LPVOID param) {
         apply_glow_to_list(board + 0x29D4);
         apply_glow_to_list(board + 0x2DEC);
 
-        /* 2. Move emitter to follow P1 ball */
+        /* 2. Move emitter to follow P1 ball and re-submit D3D light */
         if (!IsBadReadPtr((void*)emitter, 0x100)) {
             char *ball = get_p1_ball(board);
             if (ball) {
@@ -222,6 +240,8 @@ static DWORD WINAPI neon_fix_thread(LPVOID param) {
                 *(float*)(emitter + 0x08) = bx;
                 *(float*)(emitter + 0x0C) = by + 30.0f;
                 *(float*)(emitter + 0x10) = bz;
+                /* Re-call vtable[3] to submit updated light to D3D device */
+                update_emitter_light((void*)emitter);
             }
         }
 
