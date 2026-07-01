@@ -20,7 +20,8 @@ soon.
 
 
 - 2P MENU -
-soon.
+2PmenuSideBar = #FFFFFF, 1.0
+2PwinBar = #FFFFFF, 1.0
 
 
 - 4P MENU -
