@@ -194,9 +194,10 @@ static void load_real_bass(void)
 #define APP_PLAYER_ACTIVE_OFF 0x0B    /* slot+0x0B = active flag (ZERO = active, per Board_ctor) */
 
 /* Board vtable range for validation (prevents use-after-free crash) */
-/* Board base vtable = 0x4D0260, derived board vtables up to ~0x4D0BC0 */
+/* Board base vtable = 0x4D0260, LevelBoard vtables 0x4D04A8-0x4D0BC0,
+ * ArenaBoard vtable = 0x4D1358. All board vtables in 0x4D0200-0x4D1400. */
 #define BOARD_VTABLE_MIN  0x4D0200
-#define BOARD_VTABLE_MAX  0x4D0C00
+#define BOARD_VTABLE_MAX  0x4D1400
 
 /* Fallback: ball list for board-scanning method */
 #define SCENE_BALL_LIST     0x29D4     /* Board+0x29D4 = AthenaList of balls */
@@ -439,26 +440,49 @@ static DWORD WINAPI tint_thread(LPVOID param)
 {
     Sleep(3000);  /* Wait for game to fully load */
 
+    DWORD poll_count = 0;
+
     for (;;) {
-        Sleep(60);
+        Sleep(30);  /* Fast poll — 33fps, catches board changes quickly */
 
         /* Check shutdown flag */
         if (g_shutdown) break;
+
+        /* Re-read colors from file every ~2 seconds (66 polls at 30ms),
+         * not every poll. Frequent file I/O can fail intermittently and
+         * cause the tint to be lost. */
+        if ((poll_count % 66) == 0) {
+            read_colors_from_file();
+        }
+        poll_count++;
 
         /* Find App */
         DWORD app = *(DWORD*)APP_PTR_ADDR;
         if (!app || app < 0x10000) continue;
         if (IsBadReadPtr((void*)app, 0x300)) continue;
 
-        /* Find board */
-        DWORD board = find_board(app);
+        /* Find board — primary path only (no fallback scan).
+         * The fallback scan could find stale freed boards whose vtable
+         * hadn't been corrupted yet, leading to writes to wrong memory. */
+        DWORD board = 0;
+        if (!IsBadReadPtr((void*)(app + APP_PROFILE_OFFSET), 4)) {
+            DWORD profile = *(DWORD*)(app + APP_PROFILE_OFFSET);
+            if (profile && profile > 0x10000 &&
+                !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
+                board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+                if (board && board > 0x10000 && validate_board(board) &&
+                    !IsBadReadPtr((void*)board, 0x4000) &&
+                    !IsBadWritePtr((void*)(board + BOARD_COLOR_BASE), 16)) {
+                    /* Valid board — proceed */
+                } else {
+                    board = 0;
+                }
+            }
+        }
         if (!board) continue;
 
         /* Re-check shutdown after potentially slow operations */
         if (g_shutdown) break;
-
-        /* Re-read colors from file every poll */
-        read_colors_from_file();
 
         /* Count active players to select which color to use */
         int num_players = count_active_players(app);
@@ -476,10 +500,9 @@ static DWORD WINAPI tint_thread(LPVOID param)
         float p1_g = ((p1_color >> 8)  & 0xFF) / 255.0f;
         float p1_b = ( p1_color        & 0xFF) / 255.0f;
 
-        /* Write P1 color into board's player 1 ball color slot.
-         * We ALWAYS write — this fixes the "random tint" issue where
-         * race restarts would sometimes lose the tint because malloc
-         * reused the same board address (g_last_board matched). */
+        /* Write P1 color every poll — no skip optimization.
+         * Board_ctor resets colors to white on every new board, so we
+         * must re-write continuously to keep the tint active. */
         set_board_ball_color(board, 0, p1_r, p1_g, p1_b);
 
         /* Write P2 color if in 2P or 4P mode */
