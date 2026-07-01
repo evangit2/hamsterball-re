@@ -3,12 +3,16 @@ FFFFFF
 2ECC71
 FF6B35
 E74C3C
+9B59B6
+F1C40F
 # Ball Tint Colors — one per line
 # Line 1: Player 1 color in SINGLE-PLAYER mode
 # Line 2: Player 1 color in 2-PLAYER mode
 # Line 3: Player 1 color in 4-PLAYER mode (Arena/Rumble)
 # Line 4: Player 2 color in 2-PLAYER mode
 # Line 5: Player 2 color in 4-PLAYER mode (Arena/Rumble)
+# Line 6: Player 3 color in 4-PLAYER mode (Arena/Rumble)
+# Line 7: Player 4 color in 4-PLAYER mode (Arena/Rumble)
 # Hex RGB: FF6B35 (orange), 4A90D9 (blue), 2ECC71 (green)
 # Lines starting with # are ignored
-# Change values at runtime — mod re-reads every 60ms
+# Change values at runtime — mod re-reads every 2 seconds
