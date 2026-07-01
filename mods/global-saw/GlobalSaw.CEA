@@ -1,23 +1,22 @@
 [ENABLE]
 
 // =====================================================
-// Global Saw Spawner v4
+// Global Saw Spawner v5 — Circular Motion
 // =====================================================
-// Based on working SpeedCylinderSpawn.CEA pattern.
-// Uses same post-processing: SpatialTree, render list,
-// scene tree, vtable update/render calls, collision list.
+// v4 worked but saw moved erratically (random speed/distance).
+// v5: Builds a proper 4-segment circular path and wraps the
+//     path counter (saw+0x10EC) so the saw circles forever.
 //
-// CREATION FLOW (traced from Toob Race):
-//   LevelBoard_Toob_ctor (0x41F4B0): loads "Levels\Level8-Saw" mesh
-//   FUN_0040FC29: finds SAWPATH, calls Saw_ctor(0x43B780)
-//   Saw_ctor: Stands_ctor(mesh) + vtable 0x4D5578 + mesh clone
-//   Post: AthenaList_Append(board+0x2578, saw), board+0x4380=saw
-//   Activation: saw+0x110C=1 (byte, Toob method via E:BRANCH(A))
-//   Saw_Update (0x43B8E0): 4-state FSM, checks saw+0x110C
-//     State 0: descend Y-=2.75, follow SAWPATH, spin blade
-//     State 1: pause timer=2, then -> state 2
-//     State 2: ascend Y+=3.75, play sawspeedy
-//     State 3: pause timer=1, then -> state 0
+// CIRCULAR PATH:
+//   5 vertex entries → 4 segments → count-1 = 4
+//   Radius = 80 units around player position
+//   Speed = 0.02/frame (original Toob value)
+//   = 50 frames/segment × 4 = 200 frames/loop = 8s at 25fps
+//   Counter wraps at 4.0 → 0.0 for infinite loop
+//
+// POST-PROCESSING (from SpeedCylinder pattern):
+//   SpatialTree, render list, scene tree, vtable calls,
+//   collision list, collision tree, cleanup
 // =====================================================
 
 alloc(SawCode, 4096)
@@ -63,6 +62,7 @@ label(saw_done)
 label(have_path)
 label(no_path)
 label(skip_post)
+label(activate_saw)
 
 SawCode:
   mov eax, [esi+0x14]
@@ -70,6 +70,23 @@ SawCode:
   test eax, eax
   jz original_code
 
+  // === Counter wrap for circular motion ===
+  // Check if saw exists and wrap its path counter
+  mov ecx, [saw_ptr]
+  test ecx, ecx
+  jz check_spawn
+
+  // Read saw+0x10EC (path counter, float)
+  fld dword [ecx+0x10EC]
+  // Compare with 4.0 (0x40800000)
+  fld dword [float_4_0]
+  fcomip st(1)
+  fstp st(0)
+  jae check_spawn
+  // Counter >= 4.0 → reset to 0.0
+  mov dword [ecx+0x10EC], 0
+
+check_spawn:
   cmp dword [SpawnSaw], 0
   je original_code
   mov dword [SpawnSaw], 0
@@ -105,31 +122,31 @@ SawCode:
   test eax, eax
   jz saw_done
 
-  push 004D0E24               // "Levels\Level8-Saw"
+  push 004D0E24
   mov ecx, [saved_board]
   mov ecx, [ecx+0x878]
-  mov ecx, [ecx+0x174]       // gfx_device
+  mov ecx, [ecx+0x174]
   push ecx
-  mov ecx, eax               // this = new mesh
+  mov ecx, eax
   call 00461510
   test eax, eax
   jz saw_done
   mov [our_mesh], eax
 
-  // === Try to find SAWPATH in scene ===
+  // === Try to find SAWPATH ===
   mov ecx, [saved_board]
   mov ecx, [ecx+0x8AC]
   test ecx, ecx
   jz no_path
-  push 004CFD20               // "SAWPATH"
-  call 00460530               // Level_FindObjectByName
+  push 004CFD20
+  call 00460530
   test eax, eax
   jz no_path
   mov [path_obj], eax
   jmp have_path
 
 no_path:
-  // === Build minimal fake path ===
+  // === Build circular path (5 vertices, 4 segments) ===
   push 0x48
   call 004BA57B
   add esp, 4
@@ -144,45 +161,124 @@ no_path:
   rep stosd
   pop edi
 
-  push 8
+  // Vertex array: 5 int32 entries (indices 0-4)
+  push 20
   call 004BA57B
   add esp, 4
   test eax, eax
   jz saw_done
   mov [vertex_arr], eax
-  mov dword [eax], 0
+  mov dword [eax+0], 0
   mov dword [eax+4], 1
+  mov dword [eax+8], 2
+  mov dword [eax+12], 3
+  mov dword [eax+16], 4
 
+  // path+4 = vertex_start, path+8 = vertex_end (start + 20)
   mov ecx, [path_obj]
   mov edx, [vertex_arr]
   mov [ecx+0x04], edx
-  lea edx, [edx+8]
+  lea edx, [edx+20]
   mov [ecx+0x08], edx
 
-  push 16
+  // === X spline: 5 control points (80 bytes) ===
+  // Circular path around player X with radius 80:
+  // P0=+R, P1=0, P2=-R, P3=0, P4=+R
+  // Linear segments: c=delta per segment, d=start value
+  push 80
   call 004BA57B
   add esp, 4
   test eax, eax
   jz saw_done
   mov [spline_x], eax
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 20
+  rep stosd
+  pop edi
+  // Fill X control points: [b=0, a=0, c=delta, d=value] per segment
+  // Seg0: d=+R(px), c=-R  (from +R to 0)
+  // Seg1: d=0(px),  c=-R  (from 0 to -R)
+  // Seg2: d=-R(px), c=+R  (from -R to 0)
+  // Seg3: d=0(px),  c=+R  (from 0 to +R)
+  // Seg4: d=+R(px), c=0   (endpoint, no movement)
+  mov eax, [spline_x]
   mov edx, [pos_x]
-  mov [eax], edx
-  mov [eax+4], edx
-  mov [eax+8], edx
-  mov [eax+12], edx
+  // Seg0: d=pos_x+R, c=-R
+  mov [eax+12], edx        // d = pos_x (base offset, saw adds R via Gfx_SetPosition)
+  mov dword [eax+8], 0xBF42C800 // c = -80.0 wait no, let me use proper encoding
+  // Actually: pos_x is the player position. The saw's Path_GetPosition
+  // returns X/Z offsets. The saw adds these to its base position.
+  // So spline values should be RELATIVE to center (0-based).
+  // Seg0: d=+R, c=-R
+  mov dword [eax+0], 0     // b=0
+  mov dword [eax+4], 0     // a=0
+  mov dword [eax+8], 0xC2A00000  // c = -80.0
+  mov dword [eax+12], 0x42A00000 // d = +80.0
+  // Seg1: d=0, c=-R
+  mov dword [eax+16], 0
+  mov dword [eax+20], 0
+  mov dword [eax+24], 0xC2A00000 // c = -80.0
+  mov dword [eax+28], 0x00000000 // d = 0.0
+  // Seg2: d=-R, c=+R
+  mov dword [eax+32], 0
+  mov dword [eax+36], 0
+  mov dword [eax+40], 0x42A00000  // c = +80.0
+  mov dword [eax+44], 0xC2A00000  // d = -80.0
+  // Seg3: d=0, c=+R
+  mov dword [eax+48], 0
+  mov dword [eax+52], 0
+  mov dword [eax+56], 0x42A00000  // c = +80.0
+  mov dword [eax+60], 0x00000000 // d = 0.0
+  // Seg4: d=+R, c=0 (endpoint)
+  mov dword [eax+64], 0
+  mov dword [eax+68], 0
+  mov dword [eax+72], 0x00000000  // c = 0.0
+  mov dword [eax+76], 0x42A00000  // d = +80.0
 
-  push 16
+  // === Z spline: 5 control points (80 bytes) ===
+  // P0=0, P1=+R, P2=0, P3=-R, P4=0
+  push 80
   call 004BA57B
   add esp, 4
   test eax, eax
   jz saw_done
   mov [spline_z], eax
-  mov edx, [pos_z]
-  mov [eax], edx
-  mov [eax+4], edx
-  mov [eax+8], edx
-  mov [eax+12], edx
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 20
+  rep stosd
+  pop edi
+  mov eax, [spline_z]
+  // Seg0: d=0, c=+R
+  mov dword [eax+0], 0
+  mov dword [eax+4], 0
+  mov dword [eax+8], 0x42A00000  // c = +80.0
+  mov dword [eax+12], 0x00000000 // d = 0.0
+  // Seg1: d=+R, c=-R
+  mov dword [eax+16], 0
+  mov dword [eax+20], 0
+  mov dword [eax+24], 0xC2A00000 // c = -80.0
+  mov dword [eax+28], 0x42A00000 // d = +80.0
+  // Seg2: d=0, c=-R
+  mov dword [eax+32], 0
+  mov dword [eax+36], 0
+  mov dword [eax+40], 0xC2A00000 // c = -80.0
+  mov dword [eax+44], 0x00000000 // d = 0.0
+  // Seg3: d=-R, c=+R
+  mov dword [eax+48], 0
+  mov dword [eax+52], 0
+  mov dword [eax+56], 0x42A00000  // c = +80.0
+  mov dword [eax+60], 0xC2A00000 // d = -80.0
+  // Seg4: d=0, c=0 (endpoint)
+  mov dword [eax+64], 0
+  mov dword [eax+68], 0
+  mov dword [eax+72], 0x00000000  // c = 0.0
+  mov dword [eax+76], 0x00000000  // d = 0.0
 
+  // path+0x34 = X spline ptr, path+0x44 = Z spline ptr
   mov ecx, [path_obj]
   mov edx, [spline_x]
   mov [ecx+0x34], edx
@@ -190,7 +286,7 @@ no_path:
   mov [ecx+0x44], edx
 
 have_path:
-  // === Allocate Saw object (0x1118 bytes) ===
+  // === Allocate Saw object ===
   push 0x1118
   call 004BA57B
   add esp, 4
@@ -199,8 +295,6 @@ have_path:
   mov [saw_ptr], eax
 
   // === Call Saw_ctor ===
-  // __thiscall: ECX=this, push right-to-left:
-  // push path, mesh, Z, Y, X, board
   push dword [path_obj]
   push dword [our_mesh]
   push dword [pos_z]
@@ -210,21 +304,17 @@ have_path:
   mov ecx, [saw_ptr]
   call 0043B780
 
-  // === POST-PROCESSING (from SpeedCylinder pattern) ===
-
-  // SpatialTree_CloneToLevel — allocate on stack
+  // === POST-PROCESSING (SpeedCylinder pattern) ===
   sub esp, 68
   mov ebx, esp
   mov ecx, ebx
   call 00457AD0
 
-  // Add saw to board+0xCD4 (render list)
   push dword [saw_ptr]
   mov ecx, [saved_board]
   add ecx, 0xCD4
   call 00453810
 
-  // Add saw to scene spatial tree (scene+0x8AC+0x480+0x1C)
   mov edx, [saved_board]
   mov edx, [edx+0x8AC]
   mov edx, [edx+0x480]
@@ -235,13 +325,11 @@ have_path:
   lea ecx, [edx+0x1C]
   call 00453810
 
-  // Call vtable[0x16] (offset 0x58 = update)
   mov ecx, [saw_ptr]
   mov eax, [saw_ptr]
   mov eax, [eax]
   call dword [eax+0x58]
 
-  // Call vtable[0x15] (offset 0x54 = render)
   push ebx
   mov ecx, [saw_ptr]
   mov eax, [saw_ptr]
@@ -249,20 +337,18 @@ have_path:
   call dword [eax+0x54]
 
 skip_post:
-  // Collision object = saw+0x10D4 (mesh clone)
+  // Collision registration
   mov ecx, [saw_ptr]
   mov ecx, [ecx+0x10D4]
   test ecx, ecx
   jz activate_saw
 
-  // Add collision to board+0x10EC
   push ecx
   mov edx, [saved_board]
   add edx, 0x10EC
   mov ecx, edx
   call 00453810
 
-  // Add collision to board+0x8B0+0x18
   mov edx, [saved_board]
   mov edx, [edx+0x8B0]
   test edx, edx
@@ -275,22 +361,19 @@ skip_post:
   call 00453810
 
 activate_saw:
-  // SpatialTree cleanup
   mov ecx, ebx
   call 00457A40
   add esp, 68
 
-  // Add saw to board+0x2578 (update list)
   push dword [saw_ptr]
   mov ecx, [saved_board]
   add ecx, 0x2578
   call 00453810
 
-  // Activate saw (Toob Race method: saw+0x110C = 1)
+  // Activate saw
   mov ecx, [saw_ptr]
   mov byte [ecx+0x110C], 1
 
-  // Clear temp pointers
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
   mov dword [vertex_arr], 0
@@ -303,6 +386,9 @@ saw_done:
 original_code:
   mov eax, [esi+0x0c5c]
   jmp 00405E28
+
+float_4_0:
+  dd 0x40800000
 
 00405E22:
   jmp SawCode
