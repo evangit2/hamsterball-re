@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <stdarg.h>
 
 /* ── Lua includes ───────────────────────────────────────────────────── */
 #include "lua/src/lua.h"
@@ -269,6 +270,19 @@ static void safe_write_dword(DWORD addr, DWORD val)
     *(DWORD*)addr = val;
 }
 
+/* ── RenderContext offsets (for MeshBuffer position) ────────────────── */
+#define MESHBUFFER_NAME     0x864
+#define MESHBUFFER_RC_INDEX 0x004
+#define MESHWORLD_RC_COUNT  0x024
+#define MESHWORLD_RC_ARRAY  0x028
+#define MESHWORLD_MBLIST    0x02C
+#define AL_COUNT_OFFSET     0x004
+#define AL_DATA_OFFSET      0x40C
+#define RC_STRIDE           0x050
+#define RC_POS_X            0x030
+#define RC_POS_Y            0x034
+#define RC_POS_Z            0x038
+
 /* ── Lua entity tracking ─────────────────────────────────────────────── */
 typedef struct {
     DWORD obj_addr;       /* address of the SceneObject in game memory */
@@ -296,13 +310,17 @@ static int lua_get_position(lua_State *L)
         lua_pushnumber(L, 0);
         return 3;
     }
-    DWORD obj = g_entities[idx].obj_addr;
-    float x = safe_read_float(obj + OBJ_POS_X);
-    float y = safe_read_float(obj + OBJ_POS_Y);
-    float z = safe_read_float(obj + OBJ_POS_Z);
-    lua_pushnumber(L, x);
-    lua_pushnumber(L, y);
-    lua_pushnumber(L, z);
+    /* Get position from the render context stored in last_pos[0] (as int addr) */
+    int rc_addr = *((int*)(&g_entities[idx].last_pos[0]));
+    if (rc_addr) {
+        lua_pushnumber(L, safe_read_float(rc_addr + RC_POS_X));
+        lua_pushnumber(L, safe_read_float(rc_addr + RC_POS_Y));
+        lua_pushnumber(L, safe_read_float(rc_addr + RC_POS_Z));
+    } else {
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+    }
     return 3;
 }
 
@@ -315,10 +333,12 @@ static int lua_set_position(lua_State *L)
     float x = (float)luaL_checknumber(L, 2);
     float y = (float)luaL_checknumber(L, 3);
     float z = (float)luaL_checknumber(L, 4);
-    DWORD obj = g_entities[idx].obj_addr;
-    safe_write_float(obj + OBJ_POS_X, x);
-    safe_write_float(obj + OBJ_POS_Y, y);
-    safe_write_float(obj + OBJ_POS_Z, z);
+    int rc_addr = *((int*)(&g_entities[idx].last_pos[0]));
+    if (rc_addr) {
+        safe_write_float(rc_addr + RC_POS_X, x);
+        safe_write_float(rc_addr + RC_POS_Y, y);
+        safe_write_float(rc_addr + RC_POS_Z, z);
+    }
     return 0;
 }
 
@@ -1137,47 +1157,114 @@ static void call_entity_update(LuaEntity *ent, float dt)
     }
 }
 
-/* ── Scan SpatialTree for "L:" objects ───────────────────────────────── */
+/* ── Debug log to Lua/debug_log.txt ─────────────────────────────────── */
+static void debug_log(const char *fmt, ...)
+{
+    char path[MAX_PATH];
+    _snprintf(path, MAX_PATH, "%sLua\\debug_log.txt", g_lua_dir);
+    FILE *f = NULL;
+    if (fopen_s(&f, path, "a") != 0 || !f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fprintf(f, "\n");
+    fclose(f);
+}
+
+/* ── Scan MeshWorld's MeshBuffer list for "L:" objects ──────────────── */
+/* L: objects are MeshBuffers, NOT SceneObjects in the spatial tree.
+ * CreateLevelObjects only creates SceneObjects for known prefixes (BRIDGE,
+ * TIPPER, BONK, etc). L: objects remain as raw MeshBuffers in the
+ * MeshWorld's AthenaList at MeshWorld+0x2C.
+ *
+ * Data structures (verified from Ghidra decompilations):
+ *   board+0x08 = MeshWorld*
+ *   MeshWorld+0x24 = render_context_count
+ *   MeshWorld+0x28 = render_context_array (stride 0x50, 4x4 matrix each)
+ *   MeshWorld+0x2C = AthenaList of MeshBuffers
+ *
+ * AthenaList layout:
+ *   +0x04 = count
+ *   +0x40C = data ptr (array of DWORDs)
+ *
+ * MeshBuffer (0x874 bytes):
+ *   +0x00 = vtable (0x4D8E70)
+ *   +0x04 = render_context_index (int)
+ *   +0x864 = char* name
+ *
+ * RenderContext (0x50 bytes, 4x4 float matrix):
+ *   Position (translation) is at +0x30, +0x34, +0x38 (m[3][0], m[3][1], m[3][2])
+ *   Scale at +0x40 (m[3][3])
+ */
+/* (defines moved to file scope above) */
+
+static int g_scan_count = 0;
+
 static void scan_entities(void)
 {
     g_entity_count = 0;
-    
+    g_scan_count++;
+
     /* Get the current board via App->profile->board */
     int app = safe_read_ptr(APP_ADDR);
-    if (!app) return;
+    if (!app) {
+        debug_log("[scan %d] App is NULL", g_scan_count);
+        return;
+    }
     int profile = safe_read_ptr(app + 0x220);
-    if (!profile) return;
+    if (!profile) {
+        debug_log("[scan %d] Profile is NULL", g_scan_count);
+        return;
+    }
     int board = safe_read_ptr(profile + 0x0C);
-    if (!board) return;
-    
-    /* Level_FindObjectByName (0x00460530) reads this+0x480 directly.
-     * 'this' is the board. So board+0x480 = SpatialTree pointer. */
-    int spatial_root = safe_read_ptr(board + SPATIALTREE_OFFSET);
-    if (!spatial_root) return;
-    
-    /* SpatialTree root has named objects in a list: */
-    /* root+0xCB0 = count, root+0x10B8 = data ptr (from Level_FindObjectByName) */
-    int count = safe_read_ptr(spatial_root + ST_OBJ_COUNT);
-    if (count < 1) return;
-    
-    int data_ptr = safe_read_ptr(spatial_root + ST_OBJ_DATA);
-    if (!data_ptr) return;
-    
-    /* Iterate through the object array */
+    if (!board) {
+        debug_log("[scan %d] Board is NULL", g_scan_count);
+        return;
+    }
+
+    /* board+0x08 = MeshWorld* */
+    int meshworld = safe_read_ptr(board + 0x08);
+    if (!meshworld || meshworld < 0x10000) {
+        debug_log("[scan %d] MeshWorld is NULL (board=0x%X)", g_scan_count, board);
+        return;
+    }
+
+    /* MeshWorld+0x2C = AthenaList of MeshBuffers */
+    int list_addr = meshworld + MESHWORLD_MBLIST;
+    int count = safe_read_ptr(list_addr + AL_COUNT_OFFSET);
+    if (count < 1) {
+        debug_log("[scan %d] MeshBuffer list empty (count=%d, mw=0x%X)", g_scan_count, count, meshworld);
+        return;
+    }
+
+    int data_ptr = safe_read_ptr(list_addr + AL_DATA_OFFSET);
+    if (!data_ptr || data_ptr < 0x10000) {
+        debug_log("[scan %d] MeshBuffer data ptr NULL", g_scan_count);
+        return;
+    }
+
+    /* Render context array for position lookups */
+    int rc_array = safe_read_ptr(meshworld + MESHWORLD_RC_ARRAY);
+    int rc_count = safe_read_ptr(meshworld + MESHWORLD_RC_COUNT);
+
+    debug_log("[scan %d] board=0x%X mw=0x%X mb_count=%d rc_count=%d rc_array=0x%X",
+              g_scan_count, board, meshworld, count, rc_count, rc_array);
+
+    /* Iterate through the MeshBuffer array */
     for (int i = 0; i < count && g_entity_count < MAX_LUA_ENTITIES; i++) {
-        int obj_addr = safe_read_ptr(data_ptr + i * 4);
-        if (!obj_addr || obj_addr < 0x10000) continue;
-        if (IsBadReadPtr((void*)obj_addr, 0x100)) continue;
-        
-        /* Read the name pointer at obj+0x50 */
-        int name_ptr = safe_read_ptr(obj_addr + OBJ_NAME);
+        int meshbuf = safe_read_ptr(data_ptr + i * 4);
+        if (!meshbuf || meshbuf < 0x10000) continue;
+        if (IsBadReadPtr((void*)meshbuf, 0x900)) continue;
+
+        /* Read the name pointer at MeshBuffer+0x864 */
+        int name_ptr = safe_read_ptr(meshbuf + MESHBUFFER_NAME);
         if (!name_ptr || name_ptr < 0x10000) continue;
         if (IsBadReadPtr((void*)name_ptr, 64)) continue;
-        
-        /* Check if name starts with "L:" */
+
         char *name = (char*)name_ptr;
         if (name[0] != 'L' || name[1] != ':') continue;
-        
+
         /* Extract the entity name (after "L:") */
         char ent_name[64];
         const char *src = name + 2;
@@ -1186,25 +1273,44 @@ static void scan_entities(void)
             ent_name[j] = src[j];
         }
         ent_name[j] = '\0';
-        
+
+        /* Get the render context index for position */
+        int rc_idx = safe_read_ptr(meshbuf + MESHBUFFER_RC_INDEX);
+        int rc_addr = 0;
+        if (rc_array && rc_idx >= 0 && rc_idx < rc_count) {
+            rc_addr = rc_array + rc_idx * RC_STRIDE;
+        }
+
         /* Register the entity */
         LuaEntity *ent = &g_entities[g_entity_count];
         memset(ent, 0, sizeof(LuaEntity));
-        ent->obj_addr = obj_addr;
+        ent->obj_addr = meshbuf;  /* store MeshBuffer address */
         strncpy(ent->name, ent_name, 63);
         ent->name[63] = '\0';
         ent->loaded = 0;
-        
+
+        /* Store the render context address for position read/write */
+        /* We repurpose last_pos to store the rc_addr as raw ints */
+        *((int*)(&ent->last_pos[0])) = rc_addr;
+
         /* Try to load the Lua script */
         load_entity_script(ent);
-        
-        /* Store initial position */
-        ent->last_pos[0] = safe_read_float(obj_addr + OBJ_POS_X);
-        ent->last_pos[1] = safe_read_float(obj_addr + OBJ_POS_Y);
-        ent->last_pos[2] = safe_read_float(obj_addr + OBJ_POS_Z);
-        
+
+        /* Read initial position from render context */
+        if (rc_addr) {
+            ent->last_pos[0] = safe_read_float(rc_addr + RC_POS_X);
+            ent->last_pos[1] = safe_read_float(rc_addr + RC_POS_Y);
+            ent->last_pos[2] = safe_read_float(rc_addr + RC_POS_Z);
+        }
+
+        debug_log("[scan %d] Found L:%s at meshbuf=0x%X rc_idx=%d rc_addr=0x%X pos=(%.1f,%.1f,%.1f) loaded=%d",
+                  g_scan_count, ent_name, meshbuf, rc_idx, rc_addr,
+                  ent->last_pos[0], ent->last_pos[1], ent->last_pos[2], ent->loaded);
+
         g_entity_count++;
     }
+
+    debug_log("[scan %d] Total entities: %d", g_scan_count, g_entity_count);
 }
 
 /* ── Scene_Update hook ───────────────────────────────────────────────── */
