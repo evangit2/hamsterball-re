@@ -1223,28 +1223,56 @@ static void scan_entities(void)
         return;
     }
 
-    /* board+0x08 = MeshWorld* */
-    int meshworld = safe_read_ptr(board + 0x08);
+    /* board+0x8AC = MeshWorld/Level object (set during level loading).
+     * Verified from Level_InitScene, CreateLevelObjects, Level_FindObjectByName:
+     *   Level_FindObjectByName(*(board+0x8AC), name)
+     *   *(board+0x8AC)+0x480 = spatial tree
+     *   *(board+0x8AC)+0xCB8 = AthenaList (from Level_UpdateAndRender)
+     * MeshWorld_ctor initializes AthenaLists at +0x18, +0x488, +0x8A0, +0xCB8. */
+    int meshworld = safe_read_ptr(board + 0x8AC);
     if (!meshworld || meshworld < 0x10000) {
-        debug_log("[scan %d] MeshWorld is NULL (board=0x%X)", g_scan_count, board);
+        debug_log("[scan %d] MeshWorld(board+0x8AC) is NULL (board=0x%X, +8AC=0x%X, +08=0x%X, +436C=0x%X)",
+                  g_scan_count, board,
+                  safe_read_ptr(board + 0x8AC),
+                  safe_read_ptr(board + 0x08),
+                  safe_read_ptr(board + 0x436C));
         return;
     }
 
-    /* MeshWorld+0x2C = AthenaList of MeshBuffers */
-    int list_addr = meshworld + MESHWORLD_MBLIST;
+    /* Try multiple AthenaList offsets to find the MeshBuffer list.
+     * MeshWorld_ctor inits lists at +0x18, +0x488, +0x8A0, +0xCB8.
+     * Scene_LoadMeshWorld appends to +0x2C (inner MeshWorld).
+     * We scan all candidates and check vtable of first entry. */
+    int list_offsets[] = {0x2C, 0x18, 0x488, 0x8A0, 0xCB8};
+    int num_lists = 5;
+    int found_list = 0;
+
+    for (int li = 0; li < num_lists; li++) {
+        int la = meshworld + list_offsets[li];
+        int lc = safe_read_ptr(la + AL_COUNT_OFFSET);
+        int ld = safe_read_ptr(la + AL_DATA_OFFSET);
+        debug_log("[scan %d] List +0x%X: lc=%d data=0x%X",
+                  g_scan_count, list_offsets[li], lc, ld);
+        if (lc < 1 || !ld || ld < 0x10000) continue;
+        int first_obj = safe_read_ptr(ld);
+        if (first_obj && first_obj > 0x10000 && !IsBadReadPtr((void*)first_obj, 4)) {
+            int vtable = safe_read_ptr(first_obj);
+            debug_log("[scan %d]   vtable=0x%X (MeshBuf=0x4D8E70)", g_scan_count, vtable);
+            if (vtable == 0x4D8E70 || vtable == 0x4D8E6C) {
+                found_list = list_offsets[li];
+                break;
+            }
+        }
+    }
+
+    if (!found_list) {
+        debug_log("[scan %d] No MeshBuffer list found", g_scan_count);
+        return;
+    }
+
+    int list_addr = meshworld + found_list;
     int count = safe_read_ptr(list_addr + AL_COUNT_OFFSET);
-    if (count < 1) {
-        debug_log("[scan %d] MeshBuffer list empty (count=%d, mw=0x%X)", g_scan_count, count, meshworld);
-        return;
-    }
-
     int data_ptr = safe_read_ptr(list_addr + AL_DATA_OFFSET);
-    if (!data_ptr || data_ptr < 0x10000) {
-        debug_log("[scan %d] MeshBuffer data ptr NULL", g_scan_count);
-        return;
-    }
-
-    /* Render context array for position lookups */
     int rc_array = safe_read_ptr(meshworld + MESHWORLD_RC_ARRAY);
     int rc_count = safe_read_ptr(meshworld + MESHWORLD_RC_COUNT);
 
