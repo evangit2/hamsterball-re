@@ -247,12 +247,18 @@ activate_saw:
   add ecx, 0x2578
   call 00453810
 
-  // === Activate saw ===
+  // === Initialize saw state ===
   mov ecx, [saw_ptr]
   mov byte [ecx+0x110C], 1      // active = 1
   mov dword [ecx+0x10F4], 0     // FSM state = 0 (descend)
   mov dword [ecx+0x10F0], 0     // Y offset = 0 (start at surface)
   mov dword [ecx+0x10EC], 0     // path counter = 0
+
+  // Initialize direction vector (saw+0x1100/1104/1108)
+  // Without this, Gfx_RotateY uses garbage values → huge stretched triangle
+  mov dword [ecx+0x1100], 0          // dir X = 0.0
+  mov dword [ecx+0x1104], 0          // dir Y = 0.0
+  mov dword [ecx+0x1108], 0x3F800000  // dir Z = 1.0 (facing forward)
 
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
