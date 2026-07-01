@@ -5,7 +5,9 @@ Custom icon and window title mod for Hamsterball.
 ## Features
 
 - **Custom window title**: Replace the "Hamsterball" text in the window title bar with any custom name.
-- **Custom icon**: Load a custom `.ico` file to replace the game's default icon in the taskbar and title bar.
+- **Custom icon**: Load a custom `.ico` file to replace the game's default icon.
+  - **Runtime**: Icon appears immediately via `SendMessage(WM_SETICON)`
+  - **Permanent**: The `.exe` file's RT_ICON resources are rewritten using `UpdateResourceA`, so the new icon shows in Explorer/taskbar permanently. Only runs once per unique icon path.
 
 ## Installation
 
@@ -31,24 +33,26 @@ icon_path = C:\icons\my_icon.ico
 - **window_name**: Any text string. Default: `Hamsterball`
 - **icon_path**: Full or relative path to a `.ico` file. Leave empty to keep the default icon.
 
-## How It Works
+### How the permanent .exe icon update works
 
-### Window Name
-The game stores the window title string pointer at `App+0x20`. At address `0x42AEE6`, the code does:
-```
-mov dword [esi+0x20], 0x4D39A8  ; "Hamsterball"
-```
-This mod patches the 4-byte immediate value to point to a user-configurable string buffer, so when `CreateWindowExA` reads `App+0x20` as the `lpWindowName` parameter, it uses the custom name.
+1. On launch, the mod checks `.icon_state.txt` (next to `bass.dll`) for the last icon path written.
+2. If `icon_path` in the config differs from the state file (or no state file exists), the mod:
+   - Parses the `.ico` file (ICONDIR/ICONDIRENTRY format)
+   - Extracts each image size and writes it as RT_ICON resources (IDs 1..N) via `UpdateResourceA`
+   - Rebuilds the RT_GROUP_ICON "MAINICON" resource to reference them
+   - Commits the update via `EndUpdateResourceA`
+   - Saves the new path to `.icon_state.txt`
+3. If the `icon_path` hasn't changed since last run, the `.exe` update is skipped (already done).
+4. The runtime `WM_SETICON` call still happens for the current session.
 
-### Icon
-The game loads its icon via `LoadIconA(hInstance, "MAINICON")` during `RegisterClassA`. After the game window is created (detected by polling `App+0x08` for the HWND), the mod calls `SendMessage(hwnd, WM_SETICON, ICON_BIG/ICON_SMALL, hIcon)` with an icon loaded from the user-specified `.ico` file path via `LoadImageA`.
+**Note**: On Windows, `UpdateResourceA` requires write access to the `.exe` file. If the game is running from a read-only directory or under UAC protection, the permanent update will silently fail — the runtime `WM_SETICON` still works for the current session.
 
 ## RE Details
 
 | Component | Address | Description |
 |----------|---------|-------------|
 | Window name string | `0x4D39A8` | "Hamsterball" |
-| Window name store | `0x42AEE6` | `mov [esi+0x20], imm32` — patches the pointer |
+| Window name store | `0x42AEE6` | `mov [esi+0x20], imm32` — stores string pointer |
 | CreateWindowExA call | `0x46BA69` | Uses `[esi+0x20]` as lpWindowName |
 | LoadIconA call | `0x46D1FA` | Loads MAINICON during RegisterClassA |
 | RegisterClassA call | `0x46D224` | Registers "AthenaWindow" class |
@@ -58,7 +62,7 @@ The game loads its icon via `LoadIconA(hInstance, "MAINICON")` during `RegisterC
 
 ## Crash Test
 
-Passed: 38.9s, no crash (Wine/Xvfb, hbtestd).
+Passed: 38.8s, no crash (Wine/Xvfb, hbtestd).
 
 ## Files
 

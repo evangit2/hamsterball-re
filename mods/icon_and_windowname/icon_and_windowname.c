@@ -35,6 +35,7 @@
 #include <windows.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * BASS Proxy Exports
@@ -171,6 +172,213 @@ static char g_window_name[256] = "Hamsterball";
 static char g_icon_path[MAX_PATH] = {0};
 static int  g_icon_applied = 0;
 
+/* State file path — tracks the last icon written into the .exe */
+static char g_state_path[MAX_PATH] = {0};
+
+/*
+ * Read the last icon path we wrote into the .exe.
+ * Returns TRUE if state file exists and path matches current g_icon_path.
+ */
+static int icon_already_written(void)
+{
+    HANDLE hFile = CreateFileA(g_state_path, GENERIC_READ, FILE_SHARE_READ,
+                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE)
+        return 0;
+
+    char buf[MAX_PATH] = {0};
+    DWORD bytesRead = 0;
+    ReadFile(hFile, buf, sizeof(buf) - 1, &bytesRead, NULL);
+    CloseHandle(hFile);
+
+    if (bytesRead == 0)
+        return 0;
+
+    /* Trim trailing newlines */
+    while (bytesRead > 0 && (buf[bytesRead-1] == '\n' || buf[bytesRead-1] == '\r'))
+        buf[--bytesRead] = '\0';
+
+    return stricmp(buf, g_icon_path) == 0;
+}
+
+/*
+ * Save the icon path we just wrote into the .exe.
+ */
+static void save_icon_state(void)
+{
+    HANDLE hFile = CreateFileA(g_state_path, GENERIC_WRITE, 0,
+                               NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        WriteFile(hFile, g_icon_path, (DWORD)strlen(g_icon_path), &written, NULL);
+        CloseHandle(hFile);
+    }
+}
+
+/*
+ * Permanently update the RT_ICON resources inside Hamsterball.exe.
+ *
+ * A .ico file contains an ICONDIR header (6 bytes) + ICONDIRENTRY array
+ * (16 bytes each) + the raw PNG/BMP data for each size. We extract each
+ * image and write it as a separate RT_ICON resource, then rebuild the
+ * RT_GROUP_ICON to reference them.
+ *
+ * The .exe path is obtained from GetModuleFileNameA(NULL, ...).
+ *
+ * Returns TRUE on success.
+ */
+#pragma pack(push, 1)
+typedef struct {
+    WORD Reserved;
+    WORD Type;     /* 1 = icon */
+    WORD Count;    /* number of images */
+} ICONDIR;
+
+typedef struct {
+    BYTE  Width;
+    BYTE  Height;
+    BYTE  ColorCount;
+    BYTE  Reserved;
+    WORD  Planes;
+    WORD  BitCount;
+    DWORD BytesInRes;
+    DWORD ImageOffset;
+} ICONDIRENTRY;
+
+typedef struct {
+    WORD  ID;
+    BYTE  Width;
+    BYTE  Height;
+    BYTE  ColorCount;
+    BYTE  Reserved;
+    WORD  Planes;
+    WORD  BitCount;
+    DWORD BytesInRes;
+} GRPICONDIRENTRY;
+#pragma pack(pop)
+
+static int update_exe_icon(const char *exe_path)
+{
+    /* Read the .ico file */
+    HANDLE hIco = CreateFileA(g_icon_path, GENERIC_READ, FILE_SHARE_READ,
+                              NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hIco == INVALID_HANDLE_VALUE)
+        return 0;
+
+    DWORD icoSize = GetFileSize(hIco, NULL);
+    if (icoSize == 0 || icoSize > 1024 * 1024) { /* sanity: max 1MB */
+        CloseHandle(hIco);
+        return 0;
+    }
+
+    BYTE *icoBuf = (BYTE *)HeapAlloc(GetProcessHeap(), 0, icoSize);
+    if (!icoBuf) {
+        CloseHandle(hIco);
+        return 0;
+    }
+
+    DWORD bytesRead = 0;
+    ReadFile(hIco, icoBuf, icoSize, &bytesRead, NULL);
+    CloseHandle(hIco);
+    if (bytesRead != icoSize) {
+        HeapFree(GetProcessHeap(), 0, icoBuf);
+        return 0;
+    }
+
+    /* Parse the ICONDIR header */
+    ICONDIR *dir = (ICONDIR *)icoBuf;
+    if (dir->Reserved != 0 || dir->Type != 1 || dir->Count == 0 || dir->Count > 20) {
+        HeapFree(GetProcessHeap(), 0, icoBuf);
+        return 0;
+    }
+
+    int count = dir->Count;
+    ICONDIRENTRY *entries = (ICONDIRENTRY *)(icoBuf + sizeof(ICONDIR));
+
+    /* Build the RT_GROUP_ICON resource data:
+     *   WORD Reserved = 0
+     *   WORD Type = 1
+     *   WORD Count
+     *   GRPICONDIRENTRY[count]
+     */
+    DWORD groupSize = 6 + sizeof(GRPICONDIRENTRY) * count;
+    BYTE *groupData = (BYTE *)HeapAlloc(GetProcessHeap(), 0, groupSize);
+    if (!groupData) {
+        HeapFree(GetProcessHeap(), 0, icoBuf);
+        return 0;
+    }
+
+    /* Fill group header */
+    WORD *grp = (WORD *)groupData;
+    grp[0] = 0;       /* Reserved */
+    grp[1] = 1;       /* Type = icon */
+    grp[2] = (WORD)count;
+
+    GRPICONDIRENTRY *grpEntries = (GRPICONDIRENTRY *)(groupData + 6);
+
+    /* Begin resource update */
+    HANDLE hUpdate = BeginUpdateResourceA(exe_path, FALSE);
+    if (!hUpdate) {
+        HeapFree(GetProcessHeap(), 0, icoBuf);
+        HeapFree(GetProcessHeap(), 0, groupData);
+        return 0;
+    }
+
+    int success = 1;
+
+    /* Write each icon image as RT_ICON (resource IDs 1..count) */
+    for (int i = 0; i < count; i++) {
+        DWORD imgOffset = entries[i].ImageOffset;
+        DWORD imgSize = entries[i].BytesInRes;
+
+        if (imgOffset + imgSize > icoSize) {
+            success = 0;
+            break;
+        }
+
+        BYTE *imgData = icoBuf + imgOffset;
+
+        /* RT_ICON type = 3, name = MAKEINTRESOURCE(i+1) */
+        if (!UpdateResourceA(hUpdate, RT_ICON, MAKEINTRESOURCEA(i + 1),
+                            MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                            imgData, imgSize)) {
+            success = 0;
+            break;
+        }
+
+        /* Fill the group entry */
+        grpEntries[i].ID         = (WORD)(i + 1);
+        grpEntries[i].Width      = entries[i].Width;
+        grpEntries[i].Height     = entries[i].Height;
+        grpEntries[i].ColorCount = entries[i].ColorCount;
+        grpEntries[i].Reserved   = entries[i].Reserved;
+        grpEntries[i].Planes     = entries[i].Planes;
+        grpEntries[i].BitCount   = entries[i].BitCount;
+        grpEntries[i].BytesInRes = entries[i].BytesInRes;
+    }
+
+    /* Write the RT_GROUP_ICON (MAINICON) */
+    if (success) {
+        if (!UpdateResourceA(hUpdate, RT_GROUP_ICON, "MAINICON",
+                            MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                            groupData, groupSize)) {
+            success = 0;
+        }
+    }
+
+    /* Finish: if any step failed, discard changes */
+    if (!EndUpdateResourceA(hUpdate, !success)) {
+        /* EndUpdateResource returns FALSE on error */
+        if (success)
+            success = 0;
+    }
+
+    HeapFree(GetProcessHeap(), 0, icoBuf);
+    HeapFree(GetProcessHeap(), 0, groupData);
+
+    return success;
+}
+
 /* Read a key=value line from config file */
 static void parse_config_line(char *line)
 {
@@ -260,7 +468,18 @@ static void init_config_path(void)
                       (LPCSTR)&init_config_path, &hSelf);
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char *p = strrchr(g_config_path, '\\');
-    if (p) strcpy(p + 1, "icon_and_windowname.txt");
+    if (p) {
+        strcpy(p + 1, "icon_and_windowname.txt");
+        /* State file lives alongside config */
+        strcpy(g_config_path, g_config_path); /* keep dir */
+        char dir[MAX_PATH];
+        strncpy(dir, g_config_path, MAX_PATH);
+        char *d = strrchr(dir, '\\');
+        if (d) {
+            d[1] = '\0';
+            snprintf(g_state_path, MAX_PATH, "%s.icon_state.txt", dir);
+        }
+    }
 }
 
 /*
@@ -318,7 +537,25 @@ static void apply_window_name(HWND hwnd)
 
 static DWORD WINAPI mod_thread(LPVOID param)
 {
-    /* Poll for window creation, then apply icon and set window text */
+    /*
+     * Step 1: Permanently update the .exe icon if needed.
+     * This rewrites the RT_ICON resources inside Hamsterball.exe so
+     * the icon shows in Explorer/taskbar permanently. We only do this
+     * once per unique icon_path (tracked via .icon_state.txt).
+     */
+    if (g_icon_path[0] != '\0' && !icon_already_written()) {
+        char exe_path[MAX_PATH];
+        if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) > 0) {
+            if (update_exe_icon(exe_path)) {
+                save_icon_state();
+            }
+        }
+    }
+
+    /* Step 2: Poll for window creation, then apply runtime icon + window text.
+     * Runtime WM_SETICON makes the icon appear immediately (before next restart).
+     * The .exe update takes effect on the next launch.
+     */
     for (int i = 0; i < 120; i++) {
         DWORD *appPtr = (DWORD *)APP_PTR_ADDR;
         if (*appPtr) {
