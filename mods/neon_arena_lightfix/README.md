@@ -4,20 +4,16 @@ Fixes the missing yellow diffuse light effect on Neon Arena.
 
 ## Problem
 
-Neon Arena should have a yellow glow effect on balls (like Neon Race), but it doesn't work. Two bugs in `ArenaLevel_Neon_Init` (0x416F40):
+The ball glow render path at 0x402F0E in `Ball_Render` hardcodes **white** emissive (1,1,1) via three `PUSH 0x3F800000` calls to `Gfx_PackColorRGB`. It ignores the ball's material colors entirely. In Neon Race, the ball appears yellow because of the emitter D3D light positioned at the ball's location. In Neon Arena:
 
-1. **Missing glow flag**: Loop 1 (P1 balls) writes yellow material colors but forgets `+0xC80 = 1` (glow render flag). Loop 2 (8-balls) sets it correctly.
-2. **Dynamic 8-ball spawns**: 8-balls are created during gameplay, AFTER `ArenaLevel_Neon_Init` has already run. New 8-balls never receive neon materials at all.
+1. `ArenaLevel_Neon_Init` loop 1 forgets to set `+0xC80 = 1` (glow flag) on P1 balls
+2. 8-balls spawn dynamically during gameplay after init has run — they never get the glow flag
 
-## Fix
+## Fix (two parts)
 
-A background polling thread detects Neon Arena (board+0x47E4 non-zero) and continuously applies:
-- Glow flag (`+0xC80 = 1`)
-- Yellow ambient/diffuse/emissive materials (R=1.0, G=1.0, B=0.0, A=1.0)
+**1. Byte-patch glow emissive B-channel** (0x402F51): Change `PUSH 0x3F800000` (1.0f) to `PUSH 0x00000000` (0.0f), making the hardcoded emissive yellow (R=1, G=1, B=0) instead of white (R=1, G=1, B=1). This affects all glowing balls — both Neon Race and Neon Arena.
 
-to ALL balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 500ms to catch dynamically spawned 8-balls.
-
-No phys struct pointer dereferencing — only direct ball struct writes with vtable verification (0x4CF3A0).
+**2. Background polling thread**: Detects Neon Arena (board+0x47E4 non-zero) and sets `+0xC80 = 1` on all balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 500ms to catch dynamically spawned 8-balls.
 
 ## Installation
 
