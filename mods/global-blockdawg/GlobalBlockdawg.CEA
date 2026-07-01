@@ -1,25 +1,66 @@
 [ENABLE]
 
 // =====================================================
-// Global Blockdawg Spawner v1
+// Global Blockdawg Spawner v4
 // =====================================================
-// Spawns a Blockdawg at player 1's position on any level.
-// Based on the working Global Saw v9 pattern.
+// DEEP TRACE OF BLOCKDAWGS IN TOOB RACE:
 //
-// HOW BLOCKDAWGS WORK IN TOOB RACE:
-//   LevelBoard_Toob_ctor (0x41F4B0): loads "Levels\Level8-Blockdawg1" mesh
-//   FUN_0040FC29: finds DAWGPATH1, calls Blockdawg_ctor(0x43C310)
-//   Blockdawg_ctor: Stands_ctor(mesh) + vtable 0x4D5638 + mesh clone
-//   Blockdawg_Update (vtable[0x0B] = 0x43C4E0):
-//     State 0: follows path, spins blade, checks ball proximity
-//     When ball within range → state changes to 1 (activate!)
-//     State 1: falls/explodes, spawns particles, plays sound
+// CREATION (FUN_0040FC29 @ 0x40FC29):
+//   operator_new(0x1154) → Blockdawg_ctor(0x43C310)
+//   Mesh: "Levels\Level8-Blockdawg1" (0x4D0DF0)
+//   Path: Level_FindObjectByName(scene, "DAWGPATH1")
 //   Post: AthenaList_Append(board+0x2578, blockdawg)
 //
-// GLOBAL SPAWN:
-//   - Dummy DAWGPATH (1 vertex) → no horizontal movement
-//   - Direction vector initialized to prevent render corruption
-//   - SpeedCylinder post-processing pattern for render+collision
+// BLOCKDAWG_CTOR (0x43C310):
+//   __thiscall: ECX=this(0x1154), params: board, X, Y, Z, mesh, path
+//   1. Stands_ctor(this, mesh) — base constructor (SceneObject_ctor 0x462850)
+//      Sets vtable 0x4D8FB0, inits 4 AthenaLists, clones SpatialTree
+//   2. Sets vtable = 0x4D5638 (Blockdawg)
+//   3. Timer_Init(this+0x10F4)
+//   4. this+0x10D0 = board
+//   5. this+0x10D8/10DC/10E0 = X/Y/Z position
+//   6. this+0x10F0 = path
+//   7. operator_new(0x10D0) + FUN_00465080 → mesh clone at this+0x10D4
+//   8. Reads path+4/path+8 to count vertices → random(0, count-2)
+//      Sets this+0x1138 = random starting path index
+//   9. Sets: speed(0x113C)=1.0, Y_offset(0x114C)=25.0, state(0x1150)=0
+//
+// BLOCKDAWG_UPDATE (vtable[0x0B] = ArenaObject_Update @ 0x43C4E0):
+//   State 0 (active, 0x1150==0):
+//     counter(0x1138) += speed(0x113C) * frame_time
+//     if counter >= count-1: wrap counter
+//     Path_GetPosition(path, &pos, counter)
+//       → Spline_EvalCubic(path+0x30, counter) → X
+//       → Spline_EvalCubic(path+0x40, counter) → Z
+//       Reads *(int*)(path+0x30+4) and *(int*)(path+0x40+4)
+//       These are SPLINE DATA pointers — MUST be valid!
+//     Gfx_RotateY(dir) + Gfx_ScaleZ(3.0)
+//     Render via vtable[0x58]/[0x54]
+//     Ball proximity: Math_FastDistance2D to all balls
+//       If within range → state = 1 (activate!)
+//     Sound timer countdown → Sound_Play3D(App+0x4F0+toggle*4)
+//       App+0x4F0 NULL on non-Toob → CRASH!
+//
+//   State 1 (falling, 0x1150!=0):
+//     Y_offset(0x114C) decreases
+//     On first entry (0x1151==0):
+//       Sound_Play3D(App+0x4F8, ...) → NULL on non-Toob → CRASH!
+//       Spawn 20 particles via ArenaScoreParticle_ctor
+//       AthenaList_Append(board+0x3B00, particle)
+//     Gfx_RotateY + Gfx_SetPosition
+//     Render via vtable[0x58]/[0x54]
+//
+// CRASH ROOT CAUSES (3 issues):
+//   1. path+0x30 and path+0x40 = NULL → Spline_EvalCubic reads
+//      *(int*)(0x4) → ACCESS VIOLATION every frame in state 0
+//   2. App+0x4F0 bark sound NULL on non-Toob → crash in SoundDevice_Play3DAll
+//   3. App+0x4F8 falling sound NULL on non-Toob → crash when ball near
+//
+// FIXES:
+//   1. Allocate spline data structures for path+0x30 and path+0x40
+//      Each has +4 pointing to a 16-byte zeroed vertex array
+//   2. Set sound_timer (0x1148) = 0x7FFFFFFF (never fires)
+//   3. Set particle_flag (0x1151) = 1 (skip falling sound+particles)
 // =====================================================
 
 alloc(DawgCode, 4096)
@@ -29,6 +70,10 @@ alloc(dawg_ptr, 4)
 alloc(our_mesh, 4)
 alloc(path_obj, 4)
 alloc(vertex_arr, 4)
+alloc(spline_x_hdr, 4)
+alloc(spline_z_hdr, 4)
+alloc(spline_x_data, 4)
+alloc(spline_z_data, 4)
 alloc(pos_x, 4)
 alloc(pos_y, 4)
 alloc(pos_z, 4)
@@ -46,6 +91,14 @@ our_mesh:
 path_obj:
   dd 0
 vertex_arr:
+  dd 0
+spline_x_hdr:
+  dd 0
+spline_z_hdr:
+  dd 0
+spline_x_data:
+  dd 0
+spline_z_data:
   dd 0
 pos_x:
   dd 0
@@ -111,7 +164,18 @@ DawgCode:
   jz dawg_done
   mov [our_mesh], eax
 
-  // === Build dummy DAWGPATH (1 vertex, no movement) ===
+  // === Build dummy DAWGPATH with proper spline data ===
+  // Path structure:
+  //   +0x00: zeroed
+  //   +0x04: vertex_start pointer (1 vertex, 4 bytes)
+  //   +0x08: vertex_end pointer (start+4)
+  //   +0x30: X spline header (struct, +4 = ptr to spline vertex data)
+  //   +0x40: Z spline header (struct, +4 = ptr to spline vertex data)
+  //
+  // Spline_EvalCubic reads *(int*)(path+0x30+4) and *(int*)(path+0x40+4)
+  // These MUST be valid pointers or crash with NULL deref!
+
+  // Allocate path object (0x48 bytes, zeroed)
   push 0x48
   call 004BA57B
   add esp, 4
@@ -126,7 +190,7 @@ DawgCode:
   rep stosd
   pop edi
 
-  // 1 vertex entry (4 bytes)
+  // Allocate 1 vertex entry (4 bytes, value=0)
   push 4
   call 004BA57B
   add esp, 4
@@ -142,6 +206,84 @@ DawgCode:
   lea edx, [edx+4]
   mov [ecx+0x08], edx
 
+  // === Allocate X spline vertex data (16 bytes, all zeros) ===
+  // Spline vertex = 4 floats: c3*t³ + c2*t² + c1*t + c0
+  // All zeros → returns 0.0 → no X movement
+  push 0x10
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [spline_x_data], eax
+
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 4
+  rep stosd
+  pop edi
+
+  // === Allocate Z spline vertex data (16 bytes, all zeros) ===
+  push 0x10
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [spline_z_data], eax
+
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 4
+  rep stosd
+  pop edi
+
+  // === Allocate X spline header (16 bytes) ===
+  // +4 = pointer to spline_x_data
+  push 0x10
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [spline_x_hdr], eax
+
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 4
+  rep stosd
+  pop edi
+
+  mov edx, [spline_x_data]
+  mov [eax+0x04], edx
+
+  // === Allocate Z spline header (16 bytes) ===
+  // +4 = pointer to spline_z_data
+  push 0x10
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+  mov [spline_z_hdr], eax
+
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 4
+  rep stosd
+  pop edi
+
+  mov edx, [spline_z_data]
+  mov [eax+0x04], edx
+
+  // === Link spline headers into path ===
+  // path+0x30 = spline_x_hdr, path+0x40 = spline_z_hdr
+  mov ecx, [path_obj]
+  mov edx, [spline_x_hdr]
+  mov [ecx+0x30], edx
+  mov edx, [spline_z_hdr]
+  mov [ecx+0x40], edx
+
   // === Allocate Blockdawg object (0x1154 bytes) ===
   push 0x1154
   call 004BA57B
@@ -151,8 +293,6 @@ DawgCode:
   mov [dawg_ptr], eax
 
   // === Call Blockdawg_ctor ===
-  // __thiscall: ECX=this, push right-to-left:
-  // push path, mesh, Z, Y, X, board
   push dword [path_obj]
   push dword [our_mesh]
   push dword [pos_z]
@@ -229,23 +369,22 @@ activate_dawg:
   call 00453810
 
   // === Initialize direction vector ===
-  // Prevents render corruption (same fix as Saw v9b)
   mov ecx, [dawg_ptr]
   mov dword [ecx+0x10E4], 0          // dir X = 0.0
   mov dword [ecx+0x10E8], 0          // dir Y = 0.0
-  mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0 (facing forward)
+  mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0
 
-  // === Prevent bark sound crash ===
-  // Blockdawg_Update decrements sound_timer (0x1148) each frame.
-  // When < 0, it calls Sound_Play3D(App+0x4F0+toggle*4, ...).
-  // App+0x4F0 bark sound pointer is NULL on non-Toob levels → crash
-  // in SoundDevice_Play3DAll (0x466B80).
-  // Set timer to max so bark sound never triggers.
-  mov dword [ecx+0x1148], 0x7FFFFFFF
+  // === Prevent sound crashes on non-Toob levels ===
+  mov dword [ecx+0x1148], 0x7FFFFFFF  // bark timer = max (never fires)
+  mov byte [ecx+0x1151], 1             // particle_flag (skip falling sound)
 
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
   mov dword [vertex_arr], 0
+  mov dword [spline_x_hdr], 0
+  mov dword [spline_z_hdr], 0
+  mov dword [spline_x_data], 0
+  mov dword [spline_z_data], 0
 
 dawg_done:
   popad
@@ -269,6 +408,10 @@ dealloc(dawg_ptr)
 dealloc(our_mesh)
 dealloc(path_obj)
 dealloc(vertex_arr)
+dealloc(spline_x_hdr)
+dealloc(spline_z_hdr)
+dealloc(spline_x_data)
+dealloc(spline_z_data)
 dealloc(pos_x)
 dealloc(pos_y)
 dealloc(pos_z)
