@@ -1,6 +1,16 @@
-# Hamsterball Water Physics Mod v5
+# Hamsterball Water Physics Mod v6
 
 Custom water physics for Hamsterball via bass.dll proxy.
+
+## What's New in v6
+
+**Fix: Ball shatters at apex of bounce-out after a long fall.**
+
+During a long fall, type 5 mesh-penetration sets `ball+0x2E9` (falling flag) to 1 **before** the ball reaches water. Hook 3 prevents *new* type 5 sets while submerged, but the flag set during the fall was never cleared. Death check #2 at `0x40721F` (`0x2E9` set + `ABS(position_delta) < 2.0`) fires at the apex of the bounce-out — exactly when the ball's velocity drops to zero — shattering the ball.
+
+The v4 grace period (120 frames ≈ 5s of death suppression after leaving water) only delayed the inevitable. Any subsequent slowdown would trigger the death.
+
+**Fix:** Clear `ball+0x2E9` in `trigger_water_contact()` the moment the ball enters water. This eliminates the root cause — the grace period remains as a safety net.
 
 ## What's New in v5
 

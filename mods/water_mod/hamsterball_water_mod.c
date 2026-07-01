@@ -1,10 +1,18 @@
 /*
- * hamsterball_water_mod.c — v4: Type 5 suppress + grace period
+ * hamsterball_water_mod.c — v6: Clear 0x2E9 on water entry
  *
  * BUILD (Linux -> Windows):
  *   i686-w64-mingw32-gcc -shared -o bass.dll hamsterball_water_mod.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+ *
+ * v6: Clear ball+0x2E9 (falling flag) when ball enters water.
+ *     During a long fall, type 5 mesh-penetration sets 0x2E9=1 BEFORE
+ *     the ball reaches water. Hook 3 prevents new type 5 sets while
+ *     submerged, but the existing flag was never cleared. Death check #2
+ *     at 0x40721F (0x2E9 set + ABS(position_delta) < 2.0) fires at the
+ *     apex of the bounce-out, shattering the ball. The grace period only
+ *     delayed the inevitable. Fix: clear 0x2E9 in trigger_water_contact().
  *
  * v5: Fix FPU state corruption crash at 0x407BC6.
  *     Phase 15 code cave now saves/restores full x87 FPU state via
@@ -249,6 +257,10 @@ static void diag_log(const char *msg)
 #define BALL_POS_Z              0x16C
 #define BALL_PHYS_PTR           0x1A4   /* Physics struct pointer */
 #define BALL_RADIUS             0x284
+#define BALL_FALLING_FLAG        0x2E9   /* BYTE: set by type 5 collision, E:LIMIT, etc.
+                                          * Cleared only by Ball ctor + Ball_Respawn.
+                                          * Must clear here too, or death check #2
+                                          * at 0x40721F fires at apex of bounce-out. */
 
 /* Physics struct offsets */
 #define PHYS_VEL_X              0xCA4
@@ -410,6 +422,16 @@ static void trigger_water_contact(void *ball_ptr)
     /* Step 1: Set in_water flag */
     st->in_water = 1;
 
+    /* Step 1.5: Clear the falling flag (ball+0x2E9).
+     * During a long fall, type 5 mesh-penetration sets 0x2E9=1 before
+     * the ball reaches water. Hook 3 prevents NEW type 5 sets while
+     * submerged, but the flag set during the fall is never cleared.
+     * Death check #2 at 0x40721F fires when 0x2E9 is still set AND
+     * the ball's position delta drops below 2.0 — exactly what happens
+     * at the apex of the bounce-out. The grace period only delayed
+     * this; clearing the flag eliminates the root cause. */
+    *(BYTE*)((DWORD)ball_ptr + BALL_FALLING_FLAG) = 0;
+
     /* Step 2: Reduce ALL velocity by entry_damping */
     float damp = g_cfg.entry_damping;
     *vel_x *= damp;
@@ -423,7 +445,7 @@ static void trigger_water_contact(void *ball_ptr)
 
     if (g_cfg.debug) {
         char buf[256];
-        wsprintfA(buf, "WATER TRIGGER #%u: ball=%08X y=%.2f vel=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f)",
+        wsprintfA(buf, "WATER TRIGGER #%u: ball=%08X y=%.2f 0x2E9 cleared vel=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f)",
                   g_trigger_count, ball, ball_y,
                   *vel_x / damp, *vel_y / damp, *vel_z / damp,
                   *vel_x, *vel_y, *vel_z);
@@ -903,7 +925,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v5 loaded (FPU save/restore + SSE math) ===");
+    diag_log("=== Water mod v6 loaded (clear 0x2E9 on water entry) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -952,7 +974,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v5 DLL attaching ===");
+        diag_log("=== Water mod v6 DLL attaching ===");
 
         load_real_bass();
         {
