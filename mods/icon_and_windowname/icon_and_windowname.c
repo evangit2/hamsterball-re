@@ -295,12 +295,7 @@ static int update_exe_icon(const char *exe_path)
     int count = dir->Count;
     ICONDIRENTRY *entries = (ICONDIRENTRY *)(icoBuf + sizeof(ICONDIR));
 
-    /* Build the RT_GROUP_ICON resource data:
-     *   WORD Reserved = 0
-     *   WORD Type = 1
-     *   WORD Count
-     *   GRPICONDIRENTRY[count]
-     */
+    /* Build the RT_GROUP_ICON resource data */
     DWORD groupSize = 6 + sizeof(GRPICONDIRENTRY) * count;
     BYTE *groupData = (BYTE *)HeapAlloc(GetProcessHeap(), 0, groupSize);
     if (!groupData) {
@@ -308,7 +303,6 @@ static int update_exe_icon(const char *exe_path)
         return 0;
     }
 
-    /* Fill group header */
     WORD *grp = (WORD *)groupData;
     grp[0] = 0;       /* Reserved */
     grp[1] = 1;       /* Type = icon */
@@ -316,9 +310,25 @@ static int update_exe_icon(const char *exe_path)
 
     GRPICONDIRENTRY *grpEntries = (GRPICONDIRENTRY *)(groupData + 6);
 
-    /* Begin resource update */
-    HANDLE hUpdate = BeginUpdateResourceA(exe_path, FALSE);
+    /*
+     * The .exe is locked while the game is running — BeginUpdateResourceA
+     * will fail on the live .exe. We copy it to a temp file, update the
+     * copy's resources, then schedule it to replace the original on next
+     * reboot via MoveFileExA(MOVEFILE_DELAY_UNTIL_REBOOT).
+     */
+    char tmp_path[MAX_PATH];
+    snprintf(tmp_path, MAX_PATH, "%s.tmp", exe_path);
+
+    if (!CopyFileA(exe_path, tmp_path, FALSE)) {
+        HeapFree(GetProcessHeap(), 0, icoBuf);
+        HeapFree(GetProcessHeap(), 0, groupData);
+        return 0;
+    }
+
+    /* Begin resource update on the temp copy */
+    HANDLE hUpdate = BeginUpdateResourceA(tmp_path, FALSE);
     if (!hUpdate) {
+        DeleteFileA(tmp_path);
         HeapFree(GetProcessHeap(), 0, icoBuf);
         HeapFree(GetProcessHeap(), 0, groupData);
         return 0;
@@ -338,7 +348,6 @@ static int update_exe_icon(const char *exe_path)
 
         BYTE *imgData = icoBuf + imgOffset;
 
-        /* RT_ICON type = 3, name = MAKEINTRESOURCE(i+1) */
         if (!UpdateResourceA(hUpdate, RT_ICON, MAKEINTRESOURCEA(i + 1),
                             MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
                             imgData, imgSize)) {
@@ -346,7 +355,6 @@ static int update_exe_icon(const char *exe_path)
             break;
         }
 
-        /* Fill the group entry */
         grpEntries[i].ID         = (WORD)(i + 1);
         grpEntries[i].Width      = entries[i].Width;
         grpEntries[i].Height     = entries[i].Height;
@@ -366,9 +374,7 @@ static int update_exe_icon(const char *exe_path)
         }
     }
 
-    /* Finish: if any step failed, discard changes */
     if (!EndUpdateResourceA(hUpdate, !success)) {
-        /* EndUpdateResource returns FALSE on error */
         if (success)
             success = 0;
     }
@@ -376,7 +382,63 @@ static int update_exe_icon(const char *exe_path)
     HeapFree(GetProcessHeap(), 0, icoBuf);
     HeapFree(GetProcessHeap(), 0, groupData);
 
-    return success;
+    if (!success) {
+        DeleteFileA(tmp_path);
+        return 0;
+    }
+
+    /*
+     * Schedule the temp file to replace the original on next reboot.
+     * Windows will delete the old .exe and rename the temp in before
+     * any process opens it.
+     *
+     * MOVEFILE_REPLACE_EXISTING: overwrite the original
+     * MOVEFILE_DELAY_UNTIL_REBOOT: schedule for next restart (requires admin)
+     *
+     * If MoveFileEx fails (no admin), we fall back to writing a batch script
+     * that the user can run manually after closing the game.
+     */
+    if (!MoveFileExA(tmp_path, exe_path,
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_DELAY_UNTIL_REBOOT)) {
+        /*
+         * Fallback: write a .bat file next to the exe that the user can
+         * double-click after closing the game to apply the icon change.
+         */
+        char bat_path[MAX_PATH];
+        snprintf(bat_path, MAX_PATH, "%s_update_icon.bat", exe_path);
+        char *slash = strrchr(bat_path, '\\');
+        if (slash) slash[1] = '\0';
+        else bat_path[0] = '\0';
+
+        if (bat_path[0]) {
+            snprintf(bat_path + strlen(bat_path), MAX_PATH - strlen(bat_path),
+                     "update_icon.bat");
+
+            HANDLE hBat = CreateFileA(bat_path, GENERIC_WRITE, 0,
+                                     NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hBat != INVALID_HANDLE_VALUE) {
+                char bat_content[1024];
+                int len = snprintf(bat_content, sizeof(bat_content),
+                    "@echo off\r\n"
+                    "echo Updating Hamsterball icon...\r\n"
+                    "timeout /t 2 /nobreak >nul\r\n"
+                    "move /y \"%s\" \"%s\"\r\n"
+                    "if errorlevel 1 (\r\n"
+                    "  echo Failed to replace exe. Make sure the game is closed.\r\n"
+                    "  pause\r\n"
+                    ") else (\r\n"
+                    "  echo Icon updated successfully!\r\n"
+                    "  del \"%%~f0\"\r\n"
+                    ")\r\n",
+                    tmp_path, exe_path);
+                DWORD written;
+                WriteFile(hBat, bat_content, (DWORD)len, &written, NULL);
+                CloseHandle(hBat);
+            }
+        }
+    }
+
+    return 1;
 }
 
 /* Read a key=value line from config file */

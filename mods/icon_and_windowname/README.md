@@ -35,17 +35,18 @@ icon_path = C:\icons\my_icon.ico
 
 ### How the permanent .exe icon update works
 
-1. On launch, the mod checks `.icon_state.txt` (next to `bass.dll`) for the last icon path written.
-2. If `icon_path` in the config differs from the state file (or no state file exists), the mod:
-   - Parses the `.ico` file (ICONDIR/ICONDIRENTRY format)
-   - Extracts each image size and writes it as RT_ICON resources (IDs 1..N) via `UpdateResourceA`
-   - Rebuilds the RT_GROUP_ICON "MAINICON" resource to reference them
-   - Commits the update via `EndUpdateResourceA`
-   - Saves the new path to `.icon_state.txt`
-3. If the `icon_path` hasn't changed since last run, the `.exe` update is skipped (already done).
-4. The runtime `WM_SETICON` call still happens for the current session.
+The .exe is locked while the game is running, so `BeginUpdateResourceA` on the live .exe fails silently. The mod uses this approach instead:
 
-**Note**: On Windows, `UpdateResourceA` requires write access to the `.exe` file. If the game is running from a read-only directory or under UAC protection, the permanent update will silently fail — the runtime `WM_SETICON` still works for the current session.
+1. **Copy** `Hamsterball.exe` → `Hamsterball.exe.tmp`
+2. **Update resources** on the temp copy via `UpdateResourceA`
+3. **Schedule replacement** via `MoveFileExA(MOVEFILE_DELAY_UNTIL_REBOOT)` — Windows replaces the .exe on next restart (requires admin)
+4. **Fallback**: If `MoveFileEx` fails (no admin), writes `update_icon.bat` next to the game — double-click after closing the game to apply the icon change
+
+When you change `icon_path` in the config:
+- On next launch, the mod detects the path changed (via `.icon_state.txt`)
+- It creates the temp copy with updated resources
+- Schedules the swap (or writes the .bat)
+- On **restart**, the new icon appears in Explorer/taskbar permanently
 
 ## RE Details
 
