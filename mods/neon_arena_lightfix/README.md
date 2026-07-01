@@ -6,13 +6,11 @@ Fixes the missing yellow diffuse light effect on Neon Arena.
 
 `ArenaLevel_Neon_Init` (0x416F40) creates a yellow D3D emitter light (Vec3 R=10, G=10, B=0) but places it at `(0,0,0)` — world origin — and never moves it to follow the ball. In Neon Race, `Scene_SetupLevelDark` positions the emitter at the ball's location `(ball.x, ball.y+30, ball.z)`. Additionally, loop 1 forgets to set the glow flag (`+0xC80=1`) on P1 balls, and 8-balls spawn dynamically during gameplay so they never get the flag.
 
-## Fix (three parts)
+## Fix (two parts)
 
-1. **Byte-patch glow B-channel** (0x402F51): Change `PUSH 0x3F800000` → `PUSH 0x00000000`, making the hardcoded emissive yellow (1,1,0) instead of white (1,1,1).
+1. **Glow flag**: Background thread sets `+0xC80=1` on all balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 100ms to catch dynamically spawned 8-balls.
 
-2. **Glow flag polling**: Background thread sets `+0xC80=1` on all balls in both AthenaLists (board+0x29D4 for P1, board+0x2DEC for 8-balls). Re-applies every 100ms to catch dynamically spawned 8-balls.
-
-3. **Emitter follow**: Background thread continuously moves the emitter (board+0x47E4) to the P1 ball's position: writes `(ball.x, ball.y+30, ball.z)` to `emitter+0x08/+0x0C/+0x10`. This is what actually casts the yellow D3D light onto the ball surface.
+2. **Emitter follow**: Background thread continuously moves the emitter (board+0x47E4) to the P1 ball's position: writes `(ball.x, ball.y+30, ball.z)` to `emitter+0x08/+0x0C/+0x10`. This casts the yellow D3D point light onto the ball and surrounding floor, making the checker texture visible.
 
 ## Installation
 
