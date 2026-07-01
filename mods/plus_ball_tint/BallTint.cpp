@@ -1,7 +1,7 @@
 // Ball Tint mod for Hamsterball Plus API
 // Adds RGB sliders in the options menu to customize player ball colors.
 // Sliders: P1 R/G/B, P2 R/G/B, P3 R/G/B, P4 R/G/B (0.0-1.0 each)
-// Uses onGameUpdate to write colors to board+0x3AB0 every frame.
+// Uses onBallUpdate to write colors to board+0x3AB0 every frame.
 // Ported from bass.dll proxy ball_tint v5 (mods/ball_tint/).
 
 #include "HamsterballAPI.h"
@@ -63,19 +63,12 @@ public:
         createColorSlider("TINT_P4_B", "P4 Blue",  0.0f);
     }
 
-    void onGameUpdate() override {
-        if (!api) return;
+    void onBallUpdate(Ball* ball) override {
+        if (!api || !ball) return;
 
-        App* app = api->GetApp();
-        if (!app) return;
-
-        // Find board via App -> PlayerProfile(+0x220) -> Board(+0x0C)
-        DWORD appAddr = (DWORD)app;
-        DWORD profile = *(DWORD*)(appAddr + 0x220);
-        if (!profile || profile < 0x10000) return;
-        if (IsBadReadPtr((void*)(profile + 0x0C), 4)) return;
-
-        DWORD board = *(DWORD*)(profile + 0x0C);
+        // Get board from ball->scene (ball+0x14 = Scene*, scene is the board)
+        // This is the same pointer the bass.dll version finds via App->Profile->Board
+        DWORD board = (DWORD)ball->scene;
         if (!board || board < 0x10000) return;
         if (IsBadReadPtr((void*)board, BOARD_COLOR_BASE + 0x40)) return;
 
