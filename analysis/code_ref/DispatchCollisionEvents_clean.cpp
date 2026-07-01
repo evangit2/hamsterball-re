@@ -41,7 +41,7 @@ extern "C" {
     void Sound_Play3D(int soundId, float x, float y, float z);
     void Sound_PlayChannel(int soundId);
     void Audio_PlayMusic(int musicHandle, const char* name);
-    void Ball_RecordBest(Ball* ball, int value);
+    void Ball_DizzyImmunity(Ball* ball, int value);
     void Rotator_MarkTriggered(int rotatorId);
     void CheckArenaUnlock(int scene);
     int  RNG_Rand(int max);
@@ -163,7 +163,7 @@ void __thiscall DispatchCollisionEvents(Scene* this_, Ball* ball, int* collObj)
         // while (tag.name != nullptr) {
         //     if (__stricmp(tag.name, "TIME") == 0) {
         //         int duration = (int)atol(tag.value);
-        //         Ball_RecordBest(ball, duration);
+        //         Ball_DizzyImmunity(ball, duration);
         //     }
         //     tag = MWParser_ReadTag(tempString);
         // }
@@ -224,7 +224,7 @@ void __thiscall DispatchCollisionEvents(Scene* this_, Ball* ball, int* collObj)
         // WRITE_FLT(ball, ???, JUMP_UPWARD_FORCE);   // forceX = 0.025f
         // WRITE_U8(ball, BALL_FORCE_MODE, 1);
         // WRITE_U8(ball, BALL_FREEZE_CNTR, JUMP_FREEZE_FRAMES);
-        // Ball_RecordBest(ball, JUMP_SCORE);
+        // Ball_DizzyImmunity(ball, JUMP_SCORE);
     }
 
     // ======================================================================
@@ -309,7 +309,7 @@ void __thiscall DispatchCollisionEvents(Scene* this_, Ball* ball, int* collObj)
         // if (dist > threshold && ball->dropinCounter < 1) {
         //     Sound_PlayChannel(app->sound_dropin);
         //     ball->dropinCounter = DROPIN_COOLDOWN;
-        //     Ball_RecordBest(ball, DROPIN_SCORE);
+        //     Ball_DizzyImmunity(ball, DROPIN_SCORE);
         // }
     }
 
@@ -320,7 +320,7 @@ void __thiscall DispatchCollisionEvents(Scene* this_, Ball* ball, int* collObj)
         // int sndIdx = RNG_Rand(3);  // 0 .. 2
         // Sound_Play3D(app->pipe_bonk_sounds[sndIdx], ball->x, ball->y, ball->z);
         // ball->pipebonkCounter = PIPEBONK_COOLDOWN;
-        // Ball_RecordBest(ball, PIPEBONK_SCORE);
+        // Ball_DizzyImmunity(ball, PIPEBONK_SCORE);
     }
 
     // ======================================================================
@@ -329,7 +329,7 @@ void __thiscall DispatchCollisionEvents(Scene* this_, Ball* ball, int* collObj)
     if (__stricmp(eventName + 2, "POPOUT") == 0 /* && ball->popoutCounter < 1 */ ) {
         // Sound_PlayChannel(app->sound_popout);
         // ball->popoutCounter = POPOUT_COOLDOWN;
-        // Ball_RecordBest(ball, POPOUT_SCORE);
+        // Ball_DizzyImmunity(ball, POPOUT_SCORE);
     }
 
     // ======================================================================

@@ -60,7 +60,7 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 | E:LIGHTSOFF/LIGHTSON | Neon lights toggle |
 | E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2 | Boundary limits |
 | E:MACETRIGGER | Trigger mace swing |
-| E:NODIZZY | Clear TIME checkpoints (NOT dizzy-related; with `<TIME>`) |
+| E:NODIZZY | Dizzy immunity zone (grants TIME frames of protection via `<TIME>`) |
 | E:NOPEGS | Remove pegs |
 | E:OPENSESAME | Open door/gate |
 | E:PEGS | Add pegs |

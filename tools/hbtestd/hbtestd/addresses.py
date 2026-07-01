@@ -51,7 +51,7 @@ BALL = {
     "max_speed":        0x284,   # float (set by Ball_InitBattleMode, default 1000)
     "is_8ball":         0x31D,   # bool - true for AI 8-ball
     "is_active":        0x308,   # bool [unverified]
-    "best_streak":      0x2F4,   # i32 - best streak score (E:JUMP etc)
+    "dizzy_immunity_timer":      0x2F4,   # i32 - best streak score (E:JUMP etc)
     "friction":         0xC6C,   # float (set by InitBattleMode, default 0.555)
     "speed_scale":      0xC68,   # float (set by InitBattleMode, default 0.0)
     "gravity":          0xC74,   # Vec3 (default (0, -1, 0) but scale=0 kills gravity)
@@ -131,7 +131,7 @@ FUNCTIONS = {
     "OptionsMenu_RenderControls": 0x42E910,
     "OptionsMenu_ctor":     0x442CE0,
     "Difficulty_GetTimeModifier": 0x428ED0,
-    "Ball_RecordBest":      0x402400,
+    "Ball_DizzyImmunity":      0x402400,
     "DirectInput8Create":   0x47C7F0,
     "AABB_FromSphere":      0x477330,
 }
@@ -184,7 +184,7 @@ _SYMBOL_OFFSETS = {
     "ball.radius":      BALL["radius"],
     "ball.max_speed":   BALL["max_speed"],
     "ball.is_8ball":    BALL["is_8ball"],
-    "ball.best_streak": BALL["best_streak"],
+    "ball.dizzy_immunity_timer": BALL["dizzy_immunity_timer"],
     "ball.friction":    BALL["friction"],
     "ball.is_active":   BALL["is_active"],
     # Scene

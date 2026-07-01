@@ -144,7 +144,7 @@ The handler is called from 25 sites within the vtable[33] factory functions. Eac
 |------------|----------|
 | N:SECRET | Secret/unlock mechanics |
 | N:UNLOCKSECRET | Unlock secret areas |
-| E:NODIZZY | Clear TIME checkpoints (NOT dizzy-related) |
+| E:NODIZZY | Dizzy immunity zone — grants TIME frames of dizzy protection |
 | TIME | Timer object |
 | E:SAFESWITCH | Safe switch trigger |
 | E:LIMIT | Boundary kill plane |

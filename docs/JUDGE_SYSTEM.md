@@ -273,7 +273,7 @@ The Expert board collision handler (0x40E6A0) processes these events:
 | `E:ACTIVATESAW1/2` | Saw_Activate (Sawblade fires) |
 | `E:ALERTJUDGES` | Judge_Reset on all judges (activate countdown) |
 | `E:SCORE` | ScoreDisplay_SetTime on all judges (set score) |
-| `E:JUMP` | Jump boost (Ball_RecordBest +200) |
+| `E:JUMP` | Jump boost (Ball_DizzyImmunity +200) |
 | `E:BELL` | Bell_Activate + extra time bonus |
 
 ## Notes

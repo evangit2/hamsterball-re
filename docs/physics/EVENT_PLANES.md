@@ -109,7 +109,7 @@ Handles ALL common events. This is always called last regardless of level type.
 |---|---|---|---|---|
 | `N:SECRET` | `__strnicmp` 8 chars | — | Mark rotator as triggered | `*collObj + 0x47C` |
 | `N:UNLOCKSECRET` | `__strnicmp` 14 chars | — | Check arena unlock | — |
-| `E:NODIZZY` | `__strnicmp` 9 chars | — | TIME checkpoint clear zone (NOT dizzy-related). Parses `<TIME>value</TIME>` tags via MWParser_ReadTag. Duration passed to Ball_RecordBest | — |
+| `E:NODIZZY` | `__strnicmp` 9 chars | — | dizzy immunity zone (grants temporary dizzy protection). Parses `<TIME>value</TIME>` tags via MWParser_ReadTag. Duration passed to Ball_DizzyImmunity | — |
 | `E:SAFESWITCH` | `__strnicmp` 12 chars (0xC) | — | Switch state. If no `(` in name: clear `ball+0x30B=0`. If `(` found: `strcpy(ball+0xC2C, paren_content)` | ball+0x30B, ball+0xC2C |
 | `E:LIMIT` | `__stricmp` exact | — | Arena finish line. Clear velocity flag, set limit-hit | ball+0x1DA=0, ball+0x2E9=1, board+0x47B4-47C0 |
 | `E:BREAK` | `__stricmp` exact | — | Call ball bounce callback | `ball->vtable[0x20]()` |

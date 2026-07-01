@@ -129,7 +129,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | **0x2E4** | **float** | **lgp_z** | **0.0** | **Last Grounded Position Z (LGP)** |
 | 0x2E8 | uint8 | event_flag | 0 | Needs-respawn (shattered) flag. Set by Ball_Shatter, Ball_FallUpdate (ground contact timer expiry), Ball_Update (off-screen/viewport), and E:SWALLOW (Odd Race pipe swallow in OddBoard_CollisionHandler) |
 | 0x2E9 | uint8 | dizzy_lock | 0 | ⚠ **NOT on_ramp/ground flag!** Sticky flag that prevents Ball_ApplyTrajectory from re-firing. Set by E:LIMIT, E:LIMITX, E:LIMITZ, E:LIMITPIPE1/2, speed>1.0 collision, and Ball_ApplyTrajectory itself. **NOT set by E:SWALLOW** (which sets +0x2E8 instead). Reset to 0 ONLY by Ball_InitPhysicsDefaults(0x405100) at 0x405262 and Ball_ctor2(0x4039E0) at 0x403BDE. See docs/agent-knowledge/limit-flag-deep-dive.md |
-| 0x2EC | int32 | bounce_count | 0 | Dizzy system bounce counter. Double-incremented (0→1→2) when collision speed exceeds thresholds 0.03 and 0.1. When bounce_count > 1 AND dizzy_lock==0 → Ball_ApplyTrajectory fires. Reset by Ball_RecordBest, Ball_InitPhysicsDefaults, and when has_trajectory(+0x14D) is set |
+| 0x2EC | int32 | bounce_count | 0 | Dizzy system bounce counter. Double-incremented (0→1→2) when collision speed exceeds thresholds 0.03 and 0.1. When bounce_count > 1 AND dizzy_lock==0 → Ball_ApplyTrajectory fires. Reset by Ball_DizzyImmunity, Ball_InitPhysicsDefaults, and when has_trajectory(+0x14D) is set |
 | 0x2F0 | uint32 | force_count | 0 | Number of forces applied this frame |
 | 0x2F4 | int32 | unknown_2F4 | 0 | Unknown |
 | 0x2F8 | uint8 | update_in_progress | 0 | Set 1 during Ball_Update |

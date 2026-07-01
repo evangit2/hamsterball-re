@@ -27,7 +27,7 @@
 //   - Set ball vertical velocity = 0.008 (0x3B03126F) (+0xA7)
 //   - Enable vertical velocity flag (+0xA8 = 1)
 //   - Set general cooldown = 10 (+0x202)
-//   - Ball_RecordBest(ball, 200) - record proximity best
+//   - Ball_DizzyImmunity(ball, 200) - record proximity best
 //
 // "E:BELL<suffix>" → Bell_Activate
 //   - Activate bell object (+0x4FD4)
@@ -74,7 +74,7 @@ void __thiscall ExpertCollisionEvents(Scene *scene, Ball *ball, Collider *collid
     ball->vert_velocity = 0.008f;   // +0xA7 (0x3B03126F)
     ball->vert_velocity_on = 1;     // +0xA8
     ball->cooldown = 10;            // +0x202
-    Ball_RecordBest(ball, 200);
+    Ball_DizzyImmunity(ball, 200);
   }
   
   if (strnicmp(type, "E:BELL", 6) == 0) {

@@ -14972,9 +14972,9 @@ This document replaces / supplements <code>BALL_OBJECT.md</code> with authoritat
 <td><strong>Arena: split ball into 3 AI balls</strong> (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930), NOT E:JUMP)</td>
 </tr>
 <tr>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td><code>0x00402400</code></td>
-<td>Record best time/score at <code>+0x2F4</code></td>
+<td>Grant dizzy immunity/score at <code>+0x2F4</code></td>
 </tr>
 </tbody>
 </table>
@@ -15773,9 +15773,9 @@ nop
 <td><strong>Arena: split ball into 3 AI balls</strong> (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930), NOT E:JUMP)</td>
 </tr>
 <tr>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td><code>0x00402400</code></td>
-<td>Record best time/score at <code>+0x2F4</code></td>
+<td>Grant dizzy immunity/score at <code>+0x2F4</code></td>
 </tr>
 </tbody>
 </table>
@@ -35990,9 +35990,9 @@ find_collision(ball_ptr, &amp;out);
 </tr>
 <tr>
 <td>0x402400</td>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td><code>(Ball*)</code></td>
-<td>Record best time</td>
+<td>Grant dizzy immunity</td>
 </tr>
 <tr>
 <td>0x402650</td>
@@ -37199,9 +37199,9 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 </tr>
 <tr>
 <td>0x402400</td>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td><code>(Ball*)</code></td>
-<td>Record best time</td>
+<td>Grant dizzy immunity</td>
 </tr>
 <tr>
 <td>0x402650</td>
@@ -37597,7 +37597,7 @@ ball[0x170/4] = ball[0x174/4] = ball[0x178/4] = 0;
 <li><strong>Ball_CollisionCheck (0x402DE0)</strong>: Per-frame collision check against mesh, increments counter on hit.</li>
 <li><strong>Ball_Render (0x402860)</strong>: D3D8 render: SetRenderState calls, texture setup, DrawPrimitiveUP.</li>
 <li><strong>Ball_ResetCollisionMesh (0x4030B0)</strong>: Resets collision mesh and orientation.<br>
-| 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY (with TIME param), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays &quot;Goal!&quot; music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |</li>
+| 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY (grants TIME frames of dizzy immunity), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays &quot;Goal!&quot; music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |</li>
 <li><strong>Ball_ctor (0x40AFE0)</strong>: Calls GameObject_ctor, sets vtable to 0x4CF3A0, initializes quaternion to identity</li>
 </ul>
 <h3>Rendering Pipeline (CONFIRMED from Ghidra)</h3>
@@ -44782,7 +44782,7 @@ Verified by decompiling all 30 constructors and reading the board name strings.<
 <h2>DispatchCollisionEvents — Common Fallthrough</h2>
 <p>All 4 new handlers fall through to <code>DispatchCollisionEvents</code> (the master dispatcher at 0x40C5D0).<br>
 DispatchCollisionEvents is the master collision event dispatcher — it parses<br>
-<code>&lt;TIME&gt;value&lt;/TIME&gt;</code> XML tags and calls Ball_RecordBest. This is a subset of<br>
+<code>&lt;TIME&gt;value&lt;/TIME&gt;</code> XML tags and calls Ball_DizzyImmunity. This is a subset of<br>
 DispatchCollisionEvents that only handles the E:NODIZZY event.</p>
 <p><strong>Implication:</strong> The 4 new handlers do NOT call DispatchCollisionEvents as fallthrough.<br>
 They only call DispatchCollisionEvents. This means universal events (N:GOAL, N:TARPIT, E:JUMP,<br>
@@ -50523,8 +50523,8 @@ based on its content. All comparisons are case-insensitive.</p>
 <td><code>E:NODIZZY</code></td>
 <td>strnicmp(9)</td>
 <td>—</td>
-<td>Parses <code>&lt;TIME&gt;N&lt;/TIME&gt;</code> XML. Calls <code>Ball_RecordBest(ball, N)</code>.</td>
-<td>Ball_RecordBest</td>
+<td>Parses <code>&lt;TIME&gt;N&lt;/TIME&gt;</code> XML. Calls <code>Ball_DizzyImmunity(ball, N)</code>.</td>
+<td>Ball_DizzyImmunity</td>
 <td>0 (records time)</td>
 </tr>
 <tr>
@@ -51263,9 +51263,9 @@ static float parse_tag_float(const char *name, const char *tag_name) {
 </table>
 <h3>Calling Game Functions</h3>
 <p>To trigger existing game effects (sounds, scoring, etc.), call game functions directly:</p>
-<pre><code class="language-c">// Ball_RecordBest(ball, score) — awards points with difficulty modifier
-typedef void (__thiscall *Ball_RecordBest_t)(void *ball, long score);
-static Ball_RecordBest_t Ball_RecordBest = NULL;
+<pre><code class="language-c">// Ball_DizzyImmunity(ball, score) — awards points with difficulty modifier
+typedef void (__thiscall *Ball_DizzyImmunity_t)(void *ball, long score);
+static Ball_DizzyImmunity_t Ball_DizzyImmunity = NULL;
 
 // Sound_Play3D(sound_ptr, x, y, z) — positional audio
 typedef void (__cdecl *Sound_Play3D_t)(void *sound, float x, float y, float z);
@@ -51361,7 +51361,7 @@ typedef void (__fastcall *handler_t)(void *this_, void *edx_dummy,
                                       void *ball, void *coll_entry);
 
 /* Game function typedefs */
-typedef void (__thiscall *Ball_RecordBest_t)(void *ball, long score);
+typedef void (__thiscall *Ball_DizzyImmunity_t)(void *ball, long score);
 typedef void (__cdecl *Sound_Play3D_t)(void *sound, float x, float y, float z);
 
 /* ── Globals ─────────────────────────────────────────────────────────── */
@@ -51373,7 +51373,7 @@ static unsigned char g_tramp[TRAMP_SIZE];
 static int g_my_flag[4] = {0, 0, 0, 0};
 
 /* Game function pointers (resolved at init) */
-static Ball_RecordBest_t fn_Ball_RecordBest = NULL;
+static Ball_DizzyImmunity_t fn_Ball_DizzyImmunity = NULL;
 static Sound_Play3D_t fn_Sound_Play3D = NULL;
 
 /* ── Safe memory helpers ──────────────────────────────────────────────── */
@@ -51430,8 +51430,8 @@ static void handle_my_flag(void *board, void *ball, void *coll_entry) {
     }
 
     /* Award 100 points */
-    if (fn_Ball_RecordBest)
-        fn_Ball_RecordBest(ball, 100);
+    if (fn_Ball_DizzyImmunity)
+        fn_Ball_DizzyImmunity(ball, 100);
 
     /* Small upward bounce (same pattern as E:JUMP) */
     if (ball &amp;&amp; !IsBadReadPtr(ball, 0x210)) {
@@ -51522,7 +51522,7 @@ static DWORD WINAPI init_thread(LPVOID lpParam) {
     DWORD base = (DWORD)GetModuleHandleA(NULL);
     DWORD offset = base - GAME_BASE;
 
-    fn_Ball_RecordBest = (Ball_RecordBest_t)(0x00402400 + offset);
+    fn_Ball_DizzyImmunity = (Ball_DizzyImmunity_t)(0x00402400 + offset);
     fn_Sound_Play3D = (Sound_Play3D_t)(0x0040xxxx + offset);
     /* NOTE: Sound_Play3D address needs Ghidra verification before building.
        Search for &quot;Sound_Play3D&quot; in Ghidra function list. */
@@ -51940,7 +51940,7 @@ void handle_one_shot(void *board, void *ball, void *coll_entry) {
 </tr>
 <tr>
 <td><code>0x00402400</code></td>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td>Award score to ball</td>
 </tr>
 <tr>
@@ -52034,7 +52034,7 @@ void handle_one_shot(void *board, void *ball, void *coll_entry) {
 <li>Most common: calling convention mismatch. Verify <code>DispatchCollisionEvents</code> uses <code>__thiscall</code> (ECX = this, callee cleans 8 bytes). Your hook must match.</li>
 <li>Stack corruption: ensure your hook function doesn't push extra args or use wrong <code>RET N</code></li>
 <li>Writing to invalid ball offset: always <code>IsBadReadPtr</code> before writing</li>
-<li>Calling game functions with wrong calling convention: <code>Ball_RecordBest</code> is <code>__thiscall</code>, <code>Sound_Play3D</code> is <code>__cdecl</code></li>
+<li>Calling game functions with wrong calling convention: <code>Ball_DizzyImmunity</code> is <code>__thiscall</code>, <code>Sound_Play3D</code> is <code>__cdecl</code></li>
 </ul>
 <h3>Event fires but no effect</h3>
 <ul>
@@ -52837,7 +52837,7 @@ if (__strnicmp(eventName, &quot;N:SECRET&quot;, 8) == 0) { ... }
 <tbody>
 <tr>
 <td><code>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</code></td>
-<td>Records best time N via <code>Ball_RecordBest</code></td>
+<td>Records best time N via <code>Ball_DizzyImmunity</code></td>
 <td>Parses XML tags with <code>MWParser_ReadTag</code></td>
 </tr>
 <tr>
@@ -60519,7 +60519,7 @@ int32:   sublevel_count
 <td><code>E:NODIZZY</code></td>
 <td><code>__strnicmp</code> 9 chars</td>
 <td>—</td>
-<td>Anti-dizzy zone. Parses <code>&lt;TIME&gt;value&lt;/TIME&gt;</code> tags via MWParser_ReadTag. Duration passed to Ball_RecordBest</td>
+<td>Anti-dizzy zone. Parses <code>&lt;TIME&gt;value&lt;/TIME&gt;</code> tags via MWParser_ReadTag. Duration passed to Ball_DizzyImmunity</td>
 <td>—</td>
 </tr>
 <tr>
@@ -70126,7 +70126,7 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x00402400</td>
-<td>Ball_RecordBest</td>
+<td>Ball_DizzyImmunity</td>
 <td>7</td>
 <td>Reset +0x2EC, update max at +0x2F4 if param exceeds current</td>
 </tr>
@@ -80863,7 +80863,7 @@ DispatchCollisionEvents(board, ball, collision);
 <ul>
 <li><code>N:SECRET</code> → Rotator_MarkTriggered</li>
 <li><code>N:UNLOCKSECRET</code> → CheckArenaUnlock</li>
-<li><code>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</code> → Ball_RecordBest (no-dizzy timer)</li>
+<li><code>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</code> → Ball_DizzyImmunity (no-dizzy timer)</li>
 <li><code>E:SAFESWITCH</code> → copy switch data to ball+0xC2C</li>
 <li><code>E:LIMIT</code> → track arena completions</li>
 <li><code>E:JUMP</code> → play sound + SetForce(0.1, 1) + impact=10</li>
@@ -89120,7 +89120,7 @@ update_rotation:
 </tr>
 <tr>
 <td><code>E:JUMP</code></td>
-<td>Jump boost (Ball_RecordBest +200)</td>
+<td>Jump boost (Ball_DizzyImmunity +200)</td>
 </tr>
 <tr>
 <td><code>E:BELL</code></td>
@@ -103231,7 +103231,7 @@ if (strnicmp(name, &quot;E:&quot;, 2) == 0) { buf-&gt;interactive = 1; buf-&gt;n
 <ul>
 <li><strong>N:SECRET</strong> → <code>Rotator_MarkTriggered</code></li>
 <li><strong>N:UNLOCKSECRET</strong> → <code>CheckArenaUnlock</code></li>
-<li><strong>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</strong> → Parse XML tags, <code>Ball_RecordBest</code></li>
+<li><strong>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</strong> → Parse XML tags, <code>Ball_DizzyImmunity</code></li>
 <li><strong>E:SAFESWITCH(data)</strong> → Copy parenthesized data to ball state</li>
 <li><strong>E:LIMIT</strong> → Arena fall-off: increment other players' completion counts</li>
 <li><strong>E:BREAK</strong> → Call <code>ball-&gt;vtable[0x20]()</code> (bounce)</li>
@@ -106480,7 +106480,7 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td><code>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</code></td>
 <td>—</td>
-<td><code>Ball_RecordBest(ball, duration)</code></td>
+<td><code>Ball_DizzyImmunity(ball, duration)</code></td>
 </tr>
 <tr>
 <td><code>E:SAFESWITCH(data)</code></td>
@@ -106500,7 +106500,7 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td><code>E:JUMP</code></td>
 <td><code>impactCounter &lt; 1</code></td>
-<td>Sound, force 0.025, freeze 10 frames, <code>Ball_RecordBest(+200)</code></td>
+<td>Sound, force 0.025, freeze 10 frames, <code>Ball_DizzyImmunity(+200)</code></td>
 </tr>
 <tr>
 <td><code>E:ACTION&lt;ONCE&gt;TRUE&lt;/ONCE&gt;&lt;SCORE&gt;N&lt;/SCORE&gt;</code></td>
@@ -106530,17 +106530,17 @@ uint __thiscall FUN_00470930(void *this,char *param_1,char param_2)
 <tr>
 <td><code>DROPIN</code></td>
 <td><code>dist &gt; threshold</code></td>
-<td>Sound, <code>dropinCounter = 50</code>, <code>Ball_RecordBest(+200)</code></td>
+<td>Sound, <code>dropinCounter = 50</code>, <code>Ball_DizzyImmunity(+200)</code></td>
 </tr>
 <tr>
 <td><code>PIPEBONK</code></td>
 <td><code>counter &lt; 1</code></td>
-<td>Random sound, <code>counter = 10</code>, <code>Ball_RecordBest(+100)</code></td>
+<td>Random sound, <code>counter = 10</code>, <code>Ball_DizzyImmunity(+100)</code></td>
 </tr>
 <tr>
 <td><code>POPOUT</code></td>
 <td><code>counter &lt; 1</code></td>
-<td>Sound, <code>counter = 50</code>, <code>Ball_RecordBest(+100)</code></td>
+<td>Sound, <code>counter = 50</code>, <code>Ball_DizzyImmunity(+100)</code></td>
 </tr>
 <tr>
 <td><code>N:GOAL</code></td>
@@ -111036,7 +111036,7 @@ UI / Menu hierarchy:
 <td>Invisible race boundary</td>
 </tr>
 <tr>
-<td>E:NODIZZY power-up</td>
+<td>E:NODIZZY dizzy immunity zone</td>
 <td><code>DispatchCollisionEvents</code> (0x40C5D0)</td>
 <td>Prevents dizzy state</td>
 </tr>
@@ -115181,9 +115181,9 @@ behavior than the standard mode 0.</li>
 <td><strong>Arena: split ball into 3 AI balls</strong> (called from Breaker_Update (0x43F3C0) + Bonkbash_Update (0x43F930), NOT E:JUMP)</td>
 </tr>
 <tr>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td><code>0x00402400</code></td>
-<td>Record best time/score at <code>+0x2F4</code></td>
+<td>Grant dizzy immunity/score at <code>+0x2F4</code></td>
 </tr>
 </tbody>
 </table>
@@ -115281,9 +115281,9 @@ behavior than the standard mode 0.</li>
 </tr>
 <tr>
 <td>0x402400</td>
-<td><code>Ball_RecordBest</code></td>
+<td><code>Ball_DizzyImmunity</code></td>
 <td><code>(Ball*)</code></td>
-<td>Record best time</td>
+<td>Grant dizzy immunity</td>
 </tr>
 <tr>
 <td>0x402650</td>
@@ -119375,8 +119375,8 @@ or by tracking collision IDs (<code>[EBP+0x64]</code>).</p>
 <tr>
 <td><code>+0x2F4</code></td>
 <td><code>int32</code></td>
-<td>best_streak</td>
-<td>Per-ball best streak (int32)</td>
+<td>dizzy_immunity_timer</td>
+<td>Dizzy immunity timer (int32, frames remaining)</td>
 </tr>
 <tr>
 <td><code>+0x2F9</code></td>
@@ -137369,7 +137369,7 @@ wine Hamsterball.exe  # Needs X display for rendering
 <li><strong>Ball_CollisionCheck (0x402DE0)</strong>: Per-frame collision check against mesh, increments counter on hit.</li>
 <li><strong>Ball_Render (0x402860)</strong>: D3D8 render: SetRenderState calls, texture setup, DrawPrimitiveUP.</li>
 <li><strong>Ball_ResetCollisionMesh (0x4030B0)</strong>: Resets collision mesh and orientation.<br>
-| 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY (with TIME param), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays &quot;Goal!&quot; music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |</li>
+| 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY (grants TIME frames of dizzy immunity), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays &quot;Goal!&quot; music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |</li>
 <li><strong>Ball_ctor (0x40AFE0)</strong>: Calls GameObject_ctor, sets vtable to 0x4CF3A0, initializes quaternion to identity</li>
 </ul>
 <h3>Rendering Pipeline (CONFIRMED from Ghidra)</h3>
@@ -138534,7 +138534,7 @@ gcc -o build/level_viewer \
 <li><strong>Ball_CollisionCheck (0x402DE0)</strong>: Per-frame collision check against mesh, increments counter on hit.</li>
 <li><strong>Ball_Render (0x402860)</strong>: D3D8 render: SetRenderState calls, texture setup, DrawPrimitiveUP.</li>
 <li><strong>Ball_ResetCollisionMesh (0x4030B0)</strong>: Resets collision mesh and orientation.<br>
-| 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY (with TIME param), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays &quot;Goal!&quot; music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |</li>
+| 0x40C5D0 | DispatchCollisionEvents | Main collision event dispatcher — handles ALL object types: E:NODIZZY (grants TIME frames of dizzy immunity), E:SAFESWITCH (with parenthesized data), E:LIMIT (arena unlock tracking per player 0-3), E:BREAK (ball vtable[0x20] bounce), E:JUMP (plays 3D sound, freeze 10 frames, counter=200), E:ACTION (ONCE flag + SCORE award via Difficulty_GetTimeModifier), E:TRAJECTORY (X/Y/Z params set ball trajectory), N:NOCONTROL (disables input 10 frames), N:WATER (sets water flag + 10 frame counter), N:TARPIT (plays 3D sound, marks tar state, clears velocity), N:GOAL (reached goal! plays &quot;Goal!&quot; music, sets flags), N:MOUSETRAP (redirects ball with trap animation using trajectory dir + DAT_004CF370 speed), N:SECRET (marks Rotator triggered), N:UNLOCKSECRET (calls CheckArenaUnlock). DROPIN (checks trajectory magnitude, plays sound, counter=50), PIPEBONK (random sound from 3, counter=10), POPOUT (sound, counter=50) also handled |</li>
 <li><strong>Ball_ctor (0x40AFE0)</strong>: Calls GameObject_ctor, sets vtable to 0x4CF3A0, initializes quaternion to identity</li>
 </ul>
 <h3>Rendering Pipeline (CONFIRMED from Ghidra)</h3>

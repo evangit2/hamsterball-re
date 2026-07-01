@@ -131,7 +131,7 @@ Board vtable[0x1D] (board-specific handler)
 |-----------|-------------|
 | SECRET | Secret area discovered |
 | UNLOCKSECRET | Secret unlock reward |
-| NODIZZY | TIME checkpoint clearer (NOT dizzy-related) |
+| NODIZZY | dizzy immunity handler (E:NODIZZY) |
 
 Event strings can include `<TIME>` XML tags for timed events.
 

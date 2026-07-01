@@ -253,7 +253,7 @@ The function at **0x405E00** runs these phases every tick. Hook at the right pha
 | 0x402030 | `Ball_SetTargetPos` | `(Ball*, float, float, float)` | Set target position |
 | 0x402200 | `Ball_Shrink` | `(Ball*)` | Enter [[64833895235269|odd race]] shrink state |
 | 0x402270 | `Ball_Grow` | `(Ball*)` | Exit [[64833895235269|odd race]] shrink state |
-| 0x402400 | `Ball_RecordBest` | `(Ball*)` | Record best time |
+| 0x402400 | `Ball_DizzyImmunity` | `(Ball*)` | Grant dizzy immunity |
 | 0x402650 | `Ball_ApplyForceWithMultipliers` | `(Ball*, float, float, float, float, float)` | Force with scale factors |
 | 0x4027F0 | `Ball_dtor` | `(Ball*)` | Light destructor |
 | 0x402810 | `Ball_TestPlaneIntersection` | `(Ball*, float, float, float, float)` | Test plane collision |

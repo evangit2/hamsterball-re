@@ -170,18 +170,23 @@ void Ball_ApplyForce(ball* this, float dx, float dy, float dz, float multiplier)
 `Ball_FallDeath` (0x409480) is a variant for ramp-based deaths that creates
 2 fragments and spawns score particles in a circular pattern.
 
-## E:NODIZZY — NOT Related to the Dizzy System
+## E:NODIZZY — Dizzy Immunity Zone
 
 The `E:NODIZZY` collision event (string at 0x4CF8B8) is checked in
-`DispatchCollisionEvents` (0x40C5D0) at 0x40C64B. Its handler:
-1. Creates a `Sprite_DrawColoredRect` (0x4694F0) — visual effect
-2. Iterates a list via 0x469510/0x469600
-3. For each "TIME" entry: calls `Ball_RecordBest` (0x402400)
-4. Removes entries via vtable[0](1)
+`DispatchCollisionEvents` (0x40C5D0) at 0x40C64B. When the ball enters an E:NODIZZY
+collision volume, the handler:
+1. Parses the full event name string as XML via `MWParser_ReadTag`
+2. For each `<TIME>value</TIME>` tag found, calls `Ball_DizzyImmunity(ball, value)`
+3. Cleans up the parser
 
-**E:NODIZZY does NOT touch ball+0x2E9 (dizzy_lock) or ball+0x2EC (bounce_count).**
-It clears TIME checkpoint entries and records best times. The name likely means
-"this section doesn't make you dizzy" (a safe-zone checkpoint), not "cure dizziness."
+`Ball_DizzyImmunity` (0x402400) does two things:
+1. **Clears `ball+0x2EC` (bounce_count) to 0** — resets the accumulated bounce counter
+2. **Sets `ball+0x2F4` (dizzy_immunity_timer) to `max(current, TIME)`** — grants TIME
+   frames of dizzy immunity, but only extends (never shortens) an existing immunity
+
+**E:NODIZZY does NOT touch `ball+0x2E9` (dizzy_lock).** It clears bounce_count and
+grants a timed immunity window. The name is literal: rolling through this zone makes
+the ball immune to the dizzy effect for the specified duration.
 
 ## The Bounce-Induced "Dizzy" Counter (End Screen)
 
@@ -264,7 +269,7 @@ When triggered:
 
 `ball+0x2EC` (bounce_count) is reset to 0 when:
 - `ball+0x14D` (has_trajectory) is set (Ball_Update line 642-644) — next frame after trajectory
-- `Ball_RecordBest` (0x402400) — clears to 0
+- `Ball_DizzyImmunity` (0x402400) — clears to 0
 - `Ball_InitPhysicsDefaults` (0x405100) — full physics reset
 
 ## Visual Effects During Stun
@@ -297,8 +302,8 @@ In `Ball_RenderAI` (0x403DC0):
 | 0x4016F0 | Ball_ApplyForceV2 | Alternate input guard (same checks) |
 | 0x41B5CF | Scene_UpdateBallsAndState | Detects is_falling → calls respawn |
 | 0x403DC0 | Ball_RenderAI | Renders star effect + alpha |
-| 0x40C5D0 | DispatchCollisionEvents | E:NODIZZY handler (clears TIME checkpoints, NOT dizzy cure) |
-| 0x402400 | Ball_RecordBest | Clears bounce_count(+0x2EC)=0, updates max streak(+0x2F4) |
+| 0x40C5D0 | DispatchCollisionEvents | E:NODIZZY handler (grants dizzy immunity via Ball_DizzyImmunity) |
+| 0x402400 | Ball_DizzyImmunity | Clears bounce_count(+0x2EC)=0, sets immunity timer(+0x2F4) to max(current, TIME) |
 | 0x405100 | Ball_InitPhysicsDefaults | Resets dizzy_lock(+0x2E9)=0, bounce_count(+0x2EC)=0, all physics defaults |
 | 0x4039E0 | Ball_ctor2 | Init: sets dizzy_lock=0, bounce_count=0 |
 | 0x419030 | Board_ctor | Initializes per-player data blocks at App+0x5CC, adds to board+0x362C list |
@@ -353,17 +358,19 @@ Frame N+2:
   dizzy_lock stays 1 until Ball_InitPhysicsDefaults (respawn)
 ```
 
-## E:NODIZZY vs Dizzy System — Not Related
+## E:NODIZZY vs Bounce Dizzy — How They Interact
 
 | Feature | E:NODIZZY | Bounce Dizzy |
 |---------|-----------|-------------|
 | String VA | 0x4CF8B8 | (no string — physics-based) |
 | Handler | DispatchCollisionEvents 0x40C64B | Ball_ApplyTrajectory 0x403750 |
 | Sets ball+0x2E9? | NO | YES |
-| Sets ball+0x2EC? | NO | YES (via Ball_Update) |
+| Clears ball+0x2EC? | YES (via Ball_DizzyImmunity) | YES (after trajectory applied) |
+| Sets ball+0x2F4? | YES (immunity timer = max(current, TIME)) | NO |
 | Increments App+0x5F8? | NO | YES |
+| Purpose | Grants temporary immunity to dizzy | Applies dizzy effect |
 | Touches TIME entries? | YES (removes them) | NO |
-| Calls Ball_RecordBest? | YES | NO |
+| Calls Ball_DizzyImmunity? | YES | NO |
 | End screen counter? | NO | YES (DIZZIED BALLS) |
 
 ## Events That Set dizzy_lock (ball+0x2E9 = 1)

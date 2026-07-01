@@ -187,9 +187,9 @@ static float parse_tag_float(const char *name, const char *tag_name) {
 To trigger existing game effects (sounds, scoring, etc.), call game functions directly:
 
 ```c
-// Ball_RecordBest(ball, score) — awards points with difficulty modifier
-typedef void (__thiscall *Ball_RecordBest_t)(void *ball, long score);
-static Ball_RecordBest_t Ball_RecordBest = NULL;
+// Ball_DizzyImmunity(ball, score) — awards points with difficulty modifier
+typedef void (__thiscall *Ball_DizzyImmunity_t)(void *ball, long score);
+static Ball_DizzyImmunity_t Ball_DizzyImmunity = NULL;
 
 // Sound_Play3D(sound_ptr, x, y, z) — positional audio
 typedef void (__cdecl *Sound_Play3D_t)(void *sound, float x, float y, float z);
@@ -264,7 +264,7 @@ typedef void (__fastcall *handler_t)(void *this_, void *edx_dummy,
                                       void *ball, void *coll_entry);
 
 /* Game function typedefs */
-typedef void (__thiscall *Ball_RecordBest_t)(void *ball, long score);
+typedef void (__thiscall *Ball_DizzyImmunity_t)(void *ball, long score);
 typedef void (__cdecl *Sound_Play3D_t)(void *sound, float x, float y, float z);
 
 /* ── Globals ─────────────────────────────────────────────────────────── */
@@ -276,7 +276,7 @@ static unsigned char g_tramp[TRAMP_SIZE];
 static int g_my_flag[4] = {0, 0, 0, 0};
 
 /* Game function pointers (resolved at init) */
-static Ball_RecordBest_t fn_Ball_RecordBest = NULL;
+static Ball_DizzyImmunity_t fn_Ball_DizzyImmunity = NULL;
 static Sound_Play3D_t fn_Sound_Play3D = NULL;
 
 /* ── Safe memory helpers ──────────────────────────────────────────────── */
@@ -333,8 +333,8 @@ static void handle_my_flag(void *board, void *ball, void *coll_entry) {
     }
 
     /* Award 100 points */
-    if (fn_Ball_RecordBest)
-        fn_Ball_RecordBest(ball, 100);
+    if (fn_Ball_DizzyImmunity)
+        fn_Ball_DizzyImmunity(ball, 100);
 
     /* Small upward bounce (same pattern as E:JUMP) */
     if (ball && !IsBadReadPtr(ball, 0x210)) {
@@ -425,7 +425,7 @@ static DWORD WINAPI init_thread(LPVOID lpParam) {
     DWORD base = (DWORD)GetModuleHandleA(NULL);
     DWORD offset = base - GAME_BASE;
 
-    fn_Ball_RecordBest = (Ball_RecordBest_t)(0x00402400 + offset);
+    fn_Ball_DizzyImmunity = (Ball_DizzyImmunity_t)(0x00402400 + offset);
     fn_Sound_Play3D = (Sound_Play3D_t)(0x0040xxxx + offset);
     /* NOTE: Sound_Play3D address needs Ghidra verification before building.
        Search for "Sound_Play3D" in Ghidra function list. */
@@ -630,7 +630,7 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 
 | Event | Match | Effect |
 |-------|------|--------|
-| `E:NODIZZY<TIME>N</TIME>` | prefix | TIME checkpoint clear zone (NOT dizzy-related), duration in frames |
+| `E:NODIZZY<TIME>N</TIME>` | prefix | dizzy immunity zone (grants temporary dizzy protection), duration in frames |
 | `E:SAFESWITCH` or `E:SAFESWITCH(data)` | prefix | Copy data to ball+0xC2C |
 | `E:LIMIT` | exact | Arena finish line tracking |
 | `E:BREAK` | exact | Ball bounce callback (vtable[0x20]) |
@@ -692,7 +692,7 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 | `0x0040C5D0` | `DispatchCollisionEvents` | **Hook target** — universal event dispatcher |
 | `0x0040DCD0` | `TowerCollisionEvents` | Race-specific events (optional secondary hook) |
 | `0x0040E6A0` | `ExpertCollisionEvents` | Arena-specific events (optional secondary hook) |
-| `0x00402400` | `Ball_RecordBest` | Award score to ball |
+| `0x00402400` | `Ball_DizzyImmunity` | Award score to ball |
 | `0x00465D90` | `Mesh_FindClosestCollision` | Raycast collision (for custom collision checks) |
 | `0x00465260` | `Level_LoadCollision` | How event planes are loaded from MESHWORLD |
 | `0x00408830` | `Ball_FallUpdate` | Physics tick that triggers collision dispatch |
@@ -735,7 +735,7 @@ For reference, here are all existing `E:` and `N:` events the game recognizes. C
 - Most common: calling convention mismatch. Verify `DispatchCollisionEvents` uses `__thiscall` (ECX = this, callee cleans 8 bytes). Your hook must match.
 - Stack corruption: ensure your hook function doesn't push extra args or use wrong `RET N`
 - Writing to invalid ball offset: always `IsBadReadPtr` before writing
-- Calling game functions with wrong calling convention: `Ball_RecordBest` is `__thiscall`, `Sound_Play3D` is `__cdecl`
+- Calling game functions with wrong calling convention: `Ball_DizzyImmunity` is `__thiscall`, `Sound_Play3D` is `__cdecl`
 
 ### Event fires but no effect
 

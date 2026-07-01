@@ -324,19 +324,19 @@ A comprehensive reference of every useful function for modders, extracted from G
 |-------|-----------|--------|
 | `N:SECRET` | — | `Rotator_MarkTriggered` |
 | `N:UNLOCKSECRET` | — | `CheckArenaUnlock(scene)` |
-| `E:NODIZZY<TIME>N</TIME>` | — | `Ball_RecordBest(ball, duration)` |
+| `E:NODIZZY<TIME>N</TIME>` | — | `Ball_DizzyImmunity(ball, duration)` |
 | `E:SAFESWITCH(data)` | — | Copy data to `ball+0xC2C` |
 | `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1` (dizzy_lock — prevents Ball_ApplyTrajectory re-firing) |
 | `E:BREAK` | — | `ball->vtable[0x20]()` bounce callback |
-| `E:JUMP` | `impactCounter < 1` | Sound, force 0.025, freeze 10 frames, `Ball_RecordBest(+200)` |
+| `E:JUMP` | `impactCounter < 1` | Sound, force 0.025, freeze 10 frames, `Ball_DizzyImmunity(+200)` |
 | `E:ACTION<ONCE>TRUE</ONCE><SCORE>N</SCORE>` | — | Check duplicate at `ball+0xCB`, award score |
 | `E:TRAJECTORY<X>..</X>` | — | Set collision direction `ball+0xCA4/CA8/CAC` |
 | `N:NOCONTROL` | — | `ball+0x202 = 10` (disable input 10 frames) |
 | `N:WATER` | — | `ball+0x2D5 = 1`, `ball+0xB6 = 10` |
 | `N:TARPIT` | first time | Play tar sound, `ball+0xB3 = 1` |
-| `DROPIN` | `dist > threshold` | Sound, `dropinCounter = 50`, `Ball_RecordBest(+200)` |
-| `PIPEBONK` | `counter < 1` | Random sound, `counter = 10`, `Ball_RecordBest(+100)` |
-| `POPOUT` | `counter < 1` | Sound, `counter = 50`, `Ball_RecordBest(+100)` |
+| `DROPIN` | `dist > threshold` | Sound, `dropinCounter = 50`, `Ball_DizzyImmunity(+200)` |
+| `PIPEBONK` | `counter < 1` | Random sound, `counter = 10`, `Ball_DizzyImmunity(+100)` |
+| `POPOUT` | `counter < 1` | Sound, `counter = 50`, `Ball_DizzyImmunity(+100)` |
 | `N:GOAL` | `!finished && active` | Set `goalReached=1`, play music, mark finished |
 | `N:MOUSETRAP` | — | Randomize RNG, deflect direction × trap speed |
 
