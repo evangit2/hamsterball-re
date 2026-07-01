@@ -227,11 +227,30 @@ have_path:
   call 0043B780
  
   // === Register in board+0x2578 (update/render list) ===
+  // Scene_UpdateChildren iterates this list, reads element+8 (MeshWorld)
+  // and renders SpatialTree children via vtable[0x12]
   push dword [saw_ptr]
   mov ecx, [saved_board]
   add ecx, 0x2578
   call 00453810
- 
+
+  // === Also add to board+0xCD4 (render list) ===
+  push dword [saw_ptr]
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // === Also add mesh clone (saw+0x10D4) to render list ===
+  mov ecx, [saw_ptr]
+  mov ecx, [ecx+0x10D4]
+  test ecx, ecx
+  jz activate_saw
+  push ecx
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+activate_saw:
   // === Activate saw (Toob Race method: saw+0x110C = 1) ===
   mov ecx, [saw_ptr]
   mov byte [ecx+0x110C], 1
