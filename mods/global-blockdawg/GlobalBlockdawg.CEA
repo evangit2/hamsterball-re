@@ -1,14 +1,23 @@
 [ENABLE]
 
 // =====================================================
-// Global Blockdawg v8 — Minimal (debug version)
+// Global Blockdawg v9 — Replicate Saw_ctor pattern
 // =====================================================
-// Stripped down to find the crash:
-// - Only calls Blockdawg_ctor + AthenaList_Append(board+0x2578)
-// - NO SpeedCylinder post-processing
-// - NO render list, scene tree, collision registration
-// - If this crashes → Blockdawg_ctor itself is the problem
-// - If this doesn't crash → post-processing is the problem
+// Instead of calling Blockdawg_ctor (which has extra logic that
+// crashes), we replicate the EXACT pattern used by the working
+// Global Saw script:
+//   1. Stands_ctor (base constructor, same for both Saw and Blockdawg)
+//   2. Set Blockdawg vtable manually
+//   3. Create mesh clone via FUN_00465080
+//   4. Timer_Init(local) + vtable call (same as Saw)
+//   5. SceneObject_CallUpdate + SceneObject_CallRender
+//   6. Set all Blockdawg-specific fields manually
+//
+// SKIPPED from Blockdawg_ctor (these cause crashes):
+//   - Timer_Init(this+0x10F4) inline Timer → uses integer 0 instead
+//   - random(0, count-2) → set counter to 0 manually
+//
+// Based on the working SpeedCylinder spawn + Saw_ctor pattern.
 // =====================================================
 
 alloc(DawgCode, 4096)
@@ -57,6 +66,8 @@ pos_z:
 
 label(original_code)
 label(dawg_done)
+label(skip_post)
+label(activate_dawg)
 
 DawgCode:
   mov eax, [esi+0x14]
@@ -127,7 +138,6 @@ DawgCode:
   rep stosd
   pop edi
 
-  // 2 vertex entries
   push 8
   call 004BA57B
   add esp, 4
@@ -143,7 +153,7 @@ DawgCode:
   lea edx, [edx+8]
   mov [ecx+0x08], edx
 
-  // X spline data (32 bytes, 2 entries)
+  // X spline data (32 bytes)
   push 0x20
   call 004BA57B
   add esp, 4
@@ -158,7 +168,7 @@ DawgCode:
   rep stosd
   pop edi
 
-  // Z spline data
+  // Z spline data (32 bytes)
   push 0x20
   call 004BA57B
   add esp, 4
@@ -187,7 +197,6 @@ DawgCode:
   mov ecx, 4
   rep stosd
   pop edi
-
   mov edx, [spline_x_data]
   mov [eax+0x04], edx
 
@@ -205,7 +214,6 @@ DawgCode:
   mov ecx, 4
   rep stosd
   pop edi
-
   mov edx, [spline_z_data]
   mov [eax+0x04], edx
 
@@ -232,31 +240,161 @@ DawgCode:
   jz dawg_done
   mov [dawg_ptr], eax
 
-  // === Call Blockdawg_ctor ===
-  push dword [path_obj]
+  // === Call Stands_ctor (base constructor, same as Saw) ===
+  // Stands_ctor(this, mesh) — sets up vtable, lists, SpatialTree, Timer
   push dword [our_mesh]
+  mov ecx, [dawg_ptr]
+  call 00462850
+
+  // === Set Blockdawg vtable (override Stands' vtable) ===
+  mov ecx, [dawg_ptr]
+  mov dword [ecx], 004D5638
+
+  // === Store board, position, path ===
+  mov eax, [saved_board]
+  mov [ecx+0x10D0], eax          // board
+  mov edx, [pos_x]
+  mov [ecx+0x10D8], edx          // X
+  mov edx, [pos_y]
+  mov [ecx+0x10DC], edx          // Y
+  mov edx, [pos_z]
+  mov [ecx+0x10E0], edx          // Z
+  mov edx, [path_obj]
+  mov [ecx+0x10F0], edx          // path
+
+  // === Create mesh clone (same as Saw_ctor) ===
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz dawg_done
+
+  push dword [dawg_ptr]          // param_2 = this (source for cloning)
+  mov ecx, eax                   // param_1 = new mesh clone
+  call 00465080
+
+  mov ecx, [dawg_ptr]
+  mov [ecx+0x10D4], eax          // store mesh clone pointer
+  test eax, eax
+  jz dawg_done
+
+  // Copy SpatialTree ref (same as Saw_ctor/Blockdawg_ctor)
+  mov edx, [ecx+0x434]
+  mov [eax+0x434], edx           // mesh_clone[0x10D] = this+0x434
+  mov byte [eax+0x431], 0       // mesh_clone+0x431 = 0
+
+  // === Timer_Init(local) + vtable call (same as Saw_ctor) ===
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0                  // Timer_Init on stack
+
+  // Call through local Timer vtable with position
+  // (same as Saw_ctor and Blockdawg_ctor)
   push dword [pos_z]
   push dword [pos_y]
   push dword [pos_x]
-  push dword [saved_board]
-  mov ecx, [dawg_ptr]
-  call 0043C310
+  mov ecx, ebx
+  mov eax, [ebx]                // local Timer vtable
+  call dword [eax+0x08]         // vtable[2] = Gfx_SetPosition
 
-  // === MINIMAL registration (what the game does) ===
+  // === SceneObject_CallUpdate + SceneObject_CallRender ===
+  // (same as Saw_ctor and Blockdawg_ctor)
+  mov ecx, [dawg_ptr]
+  mov eax, [dawg_ptr]
+  mov eax, [eax]                // Blockdawg vtable
+  call dword [eax+0x58]         // vtable[0x16] = SceneObject_CallUpdate
+
+  push ebx                      // local Timer
+  mov ecx, [dawg_ptr]
+  mov eax, [dawg_ptr]
+  mov eax, [eax]
+  call dword [eax+0x54]         // vtable[0x15] = SceneObject_CallRender
+
+  // === AthenaList_Append(board+0xCD4, dawg) ===
+  push dword [dawg_ptr]
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // === Register in scene spatial tree ===
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_post
+
+  push dword [dawg_ptr]
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+skip_post:
+  // Timer_Cleanup
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
+  // === Collision registration ===
+  mov ecx, [dawg_ptr]
+  mov ecx, [ecx+0x10D4]
+  test ecx, ecx
+  jz activate_dawg
+
+  push ecx
+  mov edx, [saved_board]
+  add edx, 0x10EC
+  mov ecx, edx
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz activate_dawg
+
+  mov ecx, [dawg_ptr]
+  mov ecx, [ecx+0x10D4]
+  push ecx
+  lea ecx, [edx+0x18]
+  call 00453810
+
+activate_dawg:
+  // === AthenaList_Append(board+0x2578, dawg) ===
   push dword [dawg_ptr]
   mov ecx, [saved_board]
   add ecx, 0x2578
   call 00453810
 
-  // === Post-init fixes ===
+  // === Set Blockdawg-specific fields ===
+  // (replaces Blockdawg_ctor's field initialization)
   mov ecx, [dawg_ptr]
-  mov dword [ecx+0x10E4], 0
-  mov dword [ecx+0x10E8], 0
-  mov dword [ecx+0x10EC], 0x3F800000
-  mov dword [ecx+0x1138], 0
-  mov dword [ecx+0x1148], 0x7FFFFFFF
-  mov byte [ecx+0x1151], 1
 
+  // Direction vector
+  mov dword [ecx+0x10E4], 0          // dir X = 0.0
+  mov dword [ecx+0x10E8], 0          // dir Y = 0.0
+  mov dword [ecx+0x10EC], 0x3F800000  // dir Z = 1.0
+
+  // Timer at 0x10F4: use integer 0 (like Saw uses 2)
+  // Blockdawg_Update reads this as a Timer object with vtable.
+  // But Saw_Update uses it as an integer FSM state.
+  // Blockdawg_Update calls through it as a vtable!
+  // So we MUST initialize it as a Timer object.
+  // Timer_Init(this+0x10F4) — same as Blockdawg_ctor does
+  lea ecx, [ecx+0x10F4]
+  call 00457AD0
+
+  // Path counter and other fields
+  mov ecx, [dawg_ptr]
+  mov dword [ecx+0x1138], 0          // path counter = 0.0
+  mov dword [ecx+0x113C], 0x3F800000 // speed = 1.0f
+  mov dword [ecx+0x1140], 0          // unknown
+  mov dword [ecx+0x1148], 0x7FFFFFFF // bark sound timer (never fires)
+  mov dword [ecx+0x114C], 0x41C80000 // Y offset = 25.0f
+  mov byte [ecx+0x1150], 0          // state = 0 (active)
+  mov byte [ecx+0x1151], 1          // particle_flag = 1 (skip falling sound)
+  mov byte [ecx+0x1152], 0          // blockdawg3 flag = 0
+  mov byte [ecx+0x1144], 0          // sound toggle = 0
+
+  // Clear temp pointers
   mov dword [our_mesh], 0
   mov dword [path_obj], 0
   mov dword [vertex_arr], 0
