@@ -164,7 +164,7 @@ The main per-frame physics update:
 - SAFESPOT (safe zones)
 - PLATFORM, N:SINKPLATFORM (platforms)
 - N:BUMPER1-4 (bumpers)
-- E:NODIZZY<TIME>N</TIME> (TIME checkpoint clearer — NOT dizzy-related; grants dizzy immunity for TIME frames and calls Ball_DizzyImmunity)
+- E:NODIZZY<TIME>N</TIME> (TIME dizzy immunity zone — dizzy immunity zone; grants dizzy immunity for TIME frames and calls Ball_DizzyImmunity)
 - E:LIMIT (boundaries)
 - CAMERALOOKAT (camera points)
 - BADBALL (enemies)

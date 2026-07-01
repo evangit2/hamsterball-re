@@ -43661,7 +43661,7 @@ AthenaList_Append((void*)((int)scene + 0x584C), (int)cat);
 <tr>
 <td>E:NODIZZY</td>
 <td>Anti-dizzy zone</td>
-<td>Parses <code>&lt;TIME&gt;N&lt;/TIME&gt;</code> tags, records best time</td>
+<td>Parses <code>&lt;TIME&gt;N&lt;/TIME&gt;</code> tags, grants dizzy immunity</td>
 </tr>
 <tr>
 <td>E:SAFESWITCH</td>
@@ -52837,7 +52837,7 @@ if (__strnicmp(eventName, &quot;N:SECRET&quot;, 8) == 0) { ... }
 <tbody>
 <tr>
 <td><code>E:NODIZZY&lt;TIME&gt;N&lt;/TIME&gt;</code></td>
-<td>Records best time N via <code>Ball_DizzyImmunity</code></td>
+<td>Grants dizzy immunity N via <code>Ball_DizzyImmunity</code></td>
 <td>Parses XML tags with <code>MWParser_ReadTag</code></td>
 </tr>
 <tr>
