@@ -1,34 +1,38 @@
 /*
  * menu_colors.c — BASS.dll proxy mod
  *
- * Reads menu_colors.txt and patches the "Click here to play!" button
- * colors on the loading/title screen.
+ * Reads menu_colors.txt and patches menu UI colors in Hamsterball.
  *
  * Config format (menu_colors.txt):
  *   - LOADING SCREEN -
  *   "Click here" button - Off = #FFFFFF
  *   "Click here" button - On = #FFFFFF
  *
+ *   - MAIN MENU -
+ *   HBversion = #FFFFFF, 1.0
+ *
  * How it works:
  *   1. On load: creates menu_colors.txt next to the DLL (if missing)
- *   2. Patches two Vec3_Init call sites in FUN_0042d270 (title renderer)
- *      with code caves that PUSH custom float values from global variables
+ *   2. Patches Vec3_Init / Matrix_Scale4x4 call sites with code caves
+ *      that PUSH custom float values from global variables
  *   3. Background thread re-reads config every ~2 seconds
  *   4. When config changes, global floats update → next frame uses new colors
  *
- * Original code (Off button, 0x0042d5fd, 9 bytes):
- *   PUSH 0x3f800000  ; Blue = 1.0f  (5 bytes: 68 00 00 80 3F)
- *   PUSH 0x0          ; Green = 0.0f (2 bytes: 6A 00)
- *   PUSH 0x0          ; Red = 0.0f   (2 bytes: 6A 00)
- *   LEA ECX,[ESP+0x28]; CALL Vec3_Init
+ * Patches:
+ *   Loading screen "Click here" Off button (0x0042d5fd, 9 bytes):
+ *     PUSH 0x3f800000 ; Blue=1.0  PUSH 0x0 ; Green=0  PUSH 0x0 ; Red=0
+ *     → Vec3_Init(x=Red, y=Green, z=Blue), 3 args, cave=23 bytes
  *
- * Original code (On button, 0x0042d624, 9 bytes):
- *   PUSH 0x3f000000  ; Blue = 0.5f  (5 bytes: 68 00 00 00 3F)
- *   PUSH 0x0          ; Green = 0.0f (2 bytes: 6A 00)
- *   PUSH 0x0          ; Red = 0.0f   (2 bytes: 6A 00)
- *   LEA ECX,[ESP+0x64]; CALL Vec3_Init
+ *   Loading screen "Click here" On button (0x0042d624, 9 bytes):
+ *     PUSH 0x3f000000 ; Blue=0.5  PUSH 0x0 ; Green=0  PUSH 0x0 ; Red=0
+ *     → Vec3_Init, 3 args, cave=23 bytes
  *
- * Green/Red use PUSH imm8 (2 bytes) — can't hold arbitrary floats.
+ *   Main menu HB version text (0x00426433, 14 bytes):
+ *     PUSH 0x3f800000 ; Alpha=1.0  PUSH 0x0 ; Blue=0
+ *     PUSH 0x3f800000 ; Green=1.0   PUSH 0x0 ; Red=0
+ *     → Matrix_Scale4x4(x=Red, y=Green, z=Blue, w=Alpha), 4 args, cave=29 bytes
+ *
+ * Blue/Red use PUSH imm8 (2 bytes) — can't hold arbitrary floats.
  * Code caves redirect to: PUSH [global_float] (6 bytes each) + JMP back.
  *
  * Build:
@@ -165,22 +169,33 @@ static void load_real_bass(void)
  * Menu Colors Mod
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Original code addresses (Hamsterball.exe, base 0x400000) */
-#define OFF_PATCH_ADDR   0x0042d5fd   /* Start of 3 PUSHes for Off button */
-#define OFF_RETURN_ADDR  0x0042d606   /* LEA ECX after the 3 PUSHes */
+/* ── Patch addresses ─────────────────────────────────────────────────────── */
+
+/* Loading screen "Click here" Off button — Vec3_Init(R,G,B), 3 args */
+#define OFF_PATCH_ADDR   0x0042d5fd
+#define OFF_RETURN_ADDR  0x0042d606
 #define OFF_PATCH_SIZE   9            /* 5 + 2 + 2 bytes */
 
-#define ON_PATCH_ADDR    0x0042d624   /* Start of 3 PUSHes for On button */
-#define ON_RETURN_ADDR   0x0042d62d   /* LEA ECX after the 3 PUSHes */
+/* Loading screen "Click here" On button — Vec3_Init(R,G,B), 3 args */
+#define ON_PATCH_ADDR    0x0042d624
+#define ON_RETURN_ADDR   0x0042d62d
 #define ON_PATCH_SIZE    9            /* 5 + 2 + 2 bytes */
 
-/* Each code cave: 3 × PUSH [addr] (6 bytes each) + JMP rel32 (5 bytes) = 23 bytes */
-#define CAVE_SIZE        23
+/* Main menu HB version text — Matrix_Scale4x4(R,G,B,A), 4 args */
+#define HBVER_PATCH_ADDR 0x00426433
+#define HBVER_RETURN_ADDR 0x00426441
+#define HBVER_PATCH_SIZE 14           /* 5 + 2 + 5 + 2 bytes */
 
-/* Global color values — updated by config reader, read by code caves.
- * Defaults are #FFFFFF (white) to match the config file default. */
-static float g_off_r = 1.0f, g_off_g = 1.0f, g_off_b = 1.0f;
-static float g_on_r  = 1.0f, g_on_g  = 1.0f, g_on_b  = 1.0f;
+/* Cave sizes: 3-arg cave = 3×6+5 = 23, 4-arg cave = 4×6+5 = 29 */
+#define CAVE_SIZE_3      23
+#define CAVE_SIZE_4      29
+
+/* ── Global color variables ──────────────────────────────────────────────── */
+
+/* Defaults match original game values */
+static float g_off_r = 1.0f, g_off_g = 1.0f, g_off_b = 1.0f;  /* white */
+static float g_on_r  = 1.0f, g_on_g  = 1.0f, g_on_b  = 1.0f;  /* white */
+static float g_hbver_r = 0.0f, g_hbver_g = 1.0f, g_hbver_b = 0.0f, g_hbver_a = 1.0f; /* green, opaque */
 
 static char g_config_path[MAX_PATH] = {0};
 static volatile LONG g_shutdown = 0;
@@ -215,7 +230,7 @@ static void create_default_config(void)
             "\r\n"
             "\r\n"
             "- MAIN MENU -\r\n"
-            "soon.\r\n"
+            "HBversion = #FFFFFF, 1.0\r\n"
             "\r\n"
             "\r\n"
             "- TOURNEY MENU -\r\n"
@@ -281,12 +296,48 @@ static DWORD parse_hex_color(const char *text)
     return 0xFFFFFF;
 }
 
-/* Convert hex to float RGB and store in target variables */
+/* Convert hex to float RGB */
 static void hex_to_floats(DWORD hex, float *r, float *g, float *b)
 {
     *r = ((hex >> 16) & 0xFF) / 255.0f;
     *g = ((hex >> 8)  & 0xFF) / 255.0f;
     *b = ( hex        & 0xFF) / 255.0f;
+}
+
+/* Parse a float value from text. Returns 1 on success. */
+static int parse_float(const char *text, float *out)
+{
+    const char *p = text;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0' || *p == '\r' || *p == '\n') return 0;
+
+    /* Simple float parser */
+    float result = 0.0f;
+    int sign = 1;
+    int got_digit = 0;
+
+    if (*p == '-') { sign = -1; p++; }
+    else if (*p == '+') { p++; }
+
+    while (*p >= '0' && *p <= '9') {
+        result = result * 10.0f + (*p - '0');
+        got_digit = 1;
+        p++;
+    }
+    if (*p == '.') {
+        p++;
+        float divisor = 10.0f;
+        while (*p >= '0' && *p <= '9') {
+            result += (*p - '0') / divisor;
+            divisor *= 10.0f;
+            got_digit = 1;
+            p++;
+        }
+    }
+    if (!got_digit) return 0;
+
+    *out = sign * result;
+    return 1;
 }
 
 /* ── Config reader ───────────────────────────────────────────────────────── */
@@ -299,18 +350,37 @@ static int extract_color_from_line(const char *line, DWORD *out_hex)
     eq++;
     while (*eq == ' ' || *eq == '\t') eq++;
     if (*eq == '\0' || *eq == '\r' || *eq == '\n') return 0;
+    if (strnicmp(eq, "soon", 4) == 0) return 0;
+    *out_hex = parse_hex_color(eq);
+    return 1;
+}
 
-    /* Check if it looks like "soon" or empty */
+/* Extract hex color + optional float alpha from "HBversion = #RRGGBB, 1.0" */
+static int extract_color_and_alpha(const char *line, DWORD *out_hex, float *out_alpha)
+{
+    const char *eq = strchr(line, '=');
+    if (!eq) return 0;
+    eq++;
+    while (*eq == ' ' || *eq == '\t') eq++;
+    if (*eq == '\0' || *eq == '\r' || *eq == '\n') return 0;
     if (strnicmp(eq, "soon", 4) == 0) return 0;
 
     *out_hex = parse_hex_color(eq);
+
+    /* Look for comma after the hex color */
+    const char *comma = strchr(eq, ',');
+    if (comma) {
+        comma++;
+        if (!parse_float(comma, out_alpha)) *out_alpha = 1.0f;
+    } else {
+        *out_alpha = 1.0f;
+    }
     return 1;
 }
 
 /* Check if a line contains a case-insensitive substring */
 static int line_contains(const char *line, const char *needle)
 {
-    /* Simple case-insensitive search */
     int needle_len = lstrlenA(needle);
     int line_len = lstrlenA(line);
     int i, j;
@@ -343,28 +413,36 @@ static void read_config(void)
 
     float new_off_r = g_off_r, new_off_g = g_off_g, new_off_b = g_off_b;
     float new_on_r  = g_on_r,  new_on_g  = g_on_g,  new_on_b  = g_on_b;
+    float new_hbver_r = g_hbver_r, new_hbver_g = g_hbver_g, new_hbver_b = g_hbver_b, new_hbver_a = g_hbver_a;
 
     char *line = buf;
     while (*line) {
-        /* Get line length */
         char *nl = line;
         while (*nl && *nl != '\n') nl++;
         int len = nl - line;
-        /* Trim trailing \r */
         if (len > 0 && line[len-1] == '\r') len--;
 
-        /* Check for "Off" with a color */
-        if (line_contains(line, "off") && len < 200) {
-            DWORD hex;
-            if (extract_color_from_line(line, &hex)) {
-                hex_to_floats(hex, &new_off_r, &new_off_g, &new_off_b);
+        if (len < 200) {
+            if (line_contains(line, "hbversion") && line_contains(line, "=")) {
+                /* HB version text: "HBversion = #RRGGBB, alpha" */
+                DWORD hex;
+                float alpha;
+                if (extract_color_and_alpha(line, &hex, &alpha)) {
+                    hex_to_floats(hex, &new_hbver_r, &new_hbver_g, &new_hbver_b);
+                    new_hbver_a = alpha;
+                }
             }
-        }
-        /* Check for "On" with a color (but not "button" alone) */
-        else if (line_contains(line, "on") && line_contains(line, "=") && len < 200) {
-            DWORD hex;
-            if (extract_color_from_line(line, &hex)) {
-                hex_to_floats(hex, &new_on_r, &new_on_g, &new_on_b);
+            else if (line_contains(line, "off") && line_contains(line, "=")) {
+                DWORD hex;
+                if (extract_color_from_line(line, &hex)) {
+                    hex_to_floats(hex, &new_off_r, &new_off_g, &new_off_b);
+                }
+            }
+            else if (line_contains(line, "on") && line_contains(line, "=")) {
+                DWORD hex;
+                if (extract_color_from_line(line, &hex)) {
+                    hex_to_floats(hex, &new_on_r, &new_on_g, &new_on_b);
+                }
             }
         }
 
@@ -376,12 +454,14 @@ static void read_config(void)
     /* Atomically update globals */
     g_off_r = new_off_r; g_off_g = new_off_g; g_off_b = new_off_b;
     g_on_r  = new_on_r;  g_on_g  = new_on_g;  g_on_b  = new_on_b;
+    g_hbver_r = new_hbver_r; g_hbver_g = new_hbver_g;
+    g_hbver_b = new_hbver_b;  g_hbver_a = new_hbver_a;
 }
 
-/* ── Code cave builder ───────────────────────────────────────────────────── */
+/* ── Code cave builders ──────────────────────────────────────────────────── */
 
 /*
- * Build a code cave that replaces 3 consecutive PUSH instructions.
+ * Build a 3-arg code cave (RGB) — replaces 3 consecutive PUSH instructions.
  *
  * Original (9 bytes): PUSH imm32(blue); PUSH imm8(green); PUSH imm8(red)
  * Cave (23 bytes):
@@ -389,47 +469,72 @@ static void read_config(void)
  *   PUSH dword ptr [green_global]   ; FF 35 <addr32>  (6 bytes)
  *   PUSH dword ptr [red_global]     ; FF 35 <addr32>  (6 bytes)
  *   JMP return_addr                  ; E9 <rel32>      (5 bytes)
- *
- * The PUSH order matches the original: Blue (z) first, then Green (y), then Red (x).
- * Vec3_Init takes (x=Red, y=Green, z=Blue) as cdecl stack params, pushed in reverse.
  */
-static void build_cave(unsigned char *cave, float *r, float *g, float *b, DWORD ret_addr)
+static void build_cave3(unsigned char *cave, float *r, float *g, float *b, DWORD ret_addr)
 {
     int idx = 0;
 
-    /* PUSH dword ptr [blue] — pushed first (z argument, highest on stack) */
-    cave[idx++] = 0xFF;
-    cave[idx++] = 0x35;
-    *(DWORD*)(cave + idx) = (DWORD)b;
-    idx += 4;
+    /* PUSH [blue] — pushed first (z, highest on stack) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)b; idx += 4;
 
-    /* PUSH dword ptr [green] — pushed second (y argument) */
-    cave[idx++] = 0xFF;
-    cave[idx++] = 0x35;
-    *(DWORD*)(cave + idx) = (DWORD)g;
-    idx += 4;
+    /* PUSH [green] — pushed second (y) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)g; idx += 4;
 
-    /* PUSH dword ptr [red] — pushed third (x argument, lowest on stack) */
-    cave[idx++] = 0xFF;
-    cave[idx++] = 0x35;
-    *(DWORD*)(cave + idx) = (DWORD)r;
-    idx += 4;
+    /* PUSH [red] — pushed third (x, lowest on stack) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)r; idx += 4;
 
-    /* JMP ret_addr — relative jump back to original code */
+    /* JMP ret_addr */
     cave[idx++] = 0xE9;
-    DWORD cave_base = (DWORD)cave;
-    /* offset = target - address_of_next_instruction = ret_addr - (cave_base + idx + 4) */
-    *(DWORD*)(cave + idx) = ret_addr - (cave_base + idx + 4);
+    *(DWORD*)(cave + idx) = ret_addr - ((DWORD)cave + idx + 4);
     idx += 4;
-
     /* Total: 23 bytes */
+}
+
+/*
+ * Build a 4-arg code cave (RGBA) — replaces 4 consecutive PUSH instructions.
+ *
+ * Original (14 bytes): PUSH(Alpha,5) PUSH(Blue,2) PUSH(Green,5) PUSH(Red,2)
+ * Cave (29 bytes):
+ *   PUSH dword ptr [alpha_global]   ; FF 35 <addr32>  (6 bytes)
+ *   PUSH dword ptr [blue_global]    ; FF 35 <addr32>  (6 bytes)
+ *   PUSH dword ptr [green_global]   ; FF 35 <addr32>  (6 bytes)
+ *   PUSH dword ptr [red_global]     ; FF 35 <addr32>  (6 bytes)
+ *   JMP return_addr                  ; E9 <rel32>      (5 bytes)
+ */
+static void build_cave4(unsigned char *cave, float *r, float *g, float *b, float *a, DWORD ret_addr)
+{
+    int idx = 0;
+
+    /* PUSH [alpha] — pushed first (w, highest on stack) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)a; idx += 4;
+
+    /* PUSH [blue] — pushed second (z) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)b; idx += 4;
+
+    /* PUSH [green] — pushed third (y) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)g; idx += 4;
+
+    /* PUSH [red] — pushed fourth (x, lowest on stack) */
+    cave[idx++] = 0xFF; cave[idx++] = 0x35;
+    *(DWORD*)(cave + idx) = (DWORD)r; idx += 4;
+
+    /* JMP ret_addr */
+    cave[idx++] = 0xE9;
+    *(DWORD*)(cave + idx) = ret_addr - ((DWORD)cave + idx + 4);
+    idx += 4;
+    /* Total: 29 bytes */
 }
 
 /* ── Code patcher ────────────────────────────────────────────────────────── */
 
 /*
- * Patch original code: replace 9-byte PUSH sequence with JMP + NOPs.
- * 5-byte JMP (E9 rel32) + 4 NOPs (0x90) = 9 bytes total.
+ * Patch original code: replace N-byte PUSH sequence with JMP + NOPs.
  */
 static int patch_code(DWORD addr, int patch_size, DWORD cave_addr)
 {
@@ -437,11 +542,9 @@ static int patch_code(DWORD addr, int patch_size, DWORD cave_addr)
     if (!VirtualProtect((void*)addr, patch_size, PAGE_EXECUTE_READWRITE, &old_protect))
         return 0;
 
-    /* Write JMP to cave (5 bytes) */
     *(unsigned char*)addr = 0xE9;
     *(DWORD*)(addr + 1) = cave_addr - (addr + 5);
 
-    /* NOP remaining bytes */
     int i;
     for (i = 5; i < patch_size; i++)
         *(unsigned char*)(addr + i) = 0x90;
@@ -451,25 +554,26 @@ static int patch_code(DWORD addr, int patch_size, DWORD cave_addr)
     return 1;
 }
 
-/* Install both code caves (Off button + On button) */
+/* Install all code caves */
 static void install_patches(void)
 {
-    /* Allocate executable memory for both caves (23 bytes each, round up to 64) */
+    /* Allocate executable memory for 3 caves: 23 + 23 + 29 = 75 bytes, round to 128 */
     unsigned char *cave_mem = (unsigned char*)VirtualAlloc(
-        NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        NULL, 128, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!cave_mem) return;
 
-    /* Build Off button cave (reads from g_off_r/g/b) */
-    build_cave(cave_mem, &g_off_r, &g_off_g, &g_off_b, OFF_RETURN_ADDR);
-
-    /* Build On button cave (reads from g_on_r/g/b) */
-    build_cave(cave_mem + CAVE_SIZE, &g_on_r, &g_on_g, &g_on_b, ON_RETURN_ADDR);
-
-    /* Patch Off button code → redirect to cave */
+    /* Cave 0: Off button (3-arg RGB) */
+    build_cave3(cave_mem, &g_off_r, &g_off_g, &g_off_b, OFF_RETURN_ADDR);
     patch_code(OFF_PATCH_ADDR, OFF_PATCH_SIZE, (DWORD)cave_mem);
 
-    /* Patch On button code → redirect to cave */
-    patch_code(ON_PATCH_ADDR, ON_PATCH_SIZE, (DWORD)(cave_mem + CAVE_SIZE));
+    /* Cave 1: On button (3-arg RGB) */
+    build_cave3(cave_mem + CAVE_SIZE_3, &g_on_r, &g_on_g, &g_on_b, ON_RETURN_ADDR);
+    patch_code(ON_PATCH_ADDR, ON_PATCH_SIZE, (DWORD)(cave_mem + CAVE_SIZE_3));
+
+    /* Cave 2: HB version text (4-arg RGBA) */
+    build_cave4(cave_mem + CAVE_SIZE_3 * 2,
+                &g_hbver_r, &g_hbver_g, &g_hbver_b, &g_hbver_a, HBVER_RETURN_ADDR);
+    patch_code(HBVER_PATCH_ADDR, HBVER_PATCH_SIZE, (DWORD)(cave_mem + CAVE_SIZE_3 * 2));
 }
 
 /* ── Background thread ───────────────────────────────────────────────────── */
@@ -482,7 +586,6 @@ static DWORD WINAPI config_thread(LPVOID param)
         Sleep(30);
         if (g_shutdown) break;
 
-        /* Re-read config every ~2 seconds (66 polls × 30ms ≈ 2s) */
         static DWORD poll_count = 0;
         if ((poll_count % 66) == 0) {
             read_config();
@@ -504,8 +607,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         load_real_bass();
         init_config_path();
         create_default_config();
-        read_config();           /* Read config before first render */
-        install_patches();        /* Patch code caves */
+        read_config();
+        install_patches();
         g_thread_handle = CreateThread(NULL, 0, config_thread, NULL, 0, NULL);
         break;
 
