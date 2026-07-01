@@ -6,11 +6,16 @@ Custom water physics for Hamsterball via bass.dll proxy.
 
 **Fix: Ball shatters at apex of bounce-out after a long fall.**
 
-During a long fall, type 5 mesh-penetration sets `ball+0x2E9` (falling flag) to 1 **before** the ball reaches water. Hook 3 prevents *new* type 5 sets while submerged, but the flag set during the fall was never cleared. Death check #2 at `0x40721F` (`0x2E9` set + `ABS(position_delta) < 2.0`) fires at the apex of the bounce-out — exactly when the ball's velocity drops to zero — shattering the ball.
+Two-part root cause:
 
-The v4 grace period (120 frames ≈ 5s of death suppression after leaving water) only delayed the inevitable. Any subsequent slowdown would trigger the death.
+1. During the fall, type 5 mesh-penetration sets `ball+0x2E9` (falling flag) = 1 **before** the ball reaches water. The v4 grace period only delayed death — it didn't clear the flag.
 
-**Fix:** Clear `ball+0x2E9` in `trigger_water_contact()` the moment the ball enters water. This eliminates the root cause — the grace period remains as a safety net.
+2. After the ball exits water, type 5 collision **re-sets** `0x2E9` when the ball clips through the mesh on the way up. Hook 3 only checked `in_water` (now 0 after exit), so it fell through and the type 5 block set `0x2E9=1`. At the apex, death check #2 (`0x2E9==1 + ABS(position_delta) < 2.0`) fired through `vtable[8]`.
+
+**Three fixes applied:**
+- Clear `ball+0x2E9` on water entry (in `trigger_water_contact`)
+- Clear `ball+0x2E9` **every frame** in `apply_water_physics` while `in_water` or `grace_frames > 0`
+- Extend Hook 3's `is_ball_in_water` to also return true during grace period — suppresses type 5 collision entirely during the bounce-out arc
 
 ## What's New in v5
 
