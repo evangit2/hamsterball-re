@@ -297,7 +297,7 @@ static water_cfg_t g_cfg = {
     0.90f,   /* entry_damping (10% velocity reduction on contact) */
     0.02f,   /* drag (2% per frame) */
     0.04f,   /* horizontal_drag */
-    0.45f,   /* buoyancy_strength */
+    0.90f,   /* buoyancy_strength (0.9 * submersion_depth) */
     1        /* debug */
 };
 
@@ -626,18 +626,11 @@ static void __cdecl apply_water_physics(DWORD ball)
      * properly: the ball exits at roughly the speed it entered. */
     *vel_y *= vscale;
 
-    /* Buoyancy proportional to submersion depth (distance below surface).
-     * submersion is positive when below surface, negative when above.
-     * Only apply when ball is below surface (submersion > 0).
-     * When above surface, buoyancy is 0 — gravity pulls it back down.
-     *
-     * buoyancy = buoyancy_strength * submersion (no scaling multiplier).
-     * At 0.45 strength and 1 unit deep: 0.45/frame upward.
-     * At 0.45 strength and 10 units deep: 4.5/frame upward. */
-    if (submersion > 0.0f) {
-        float buoyancy = g_cfg.buoyancy_strength * submersion;
-        *vel_y += buoyancy;
-    }
+    /* Buoyancy = strength * submersion (always applied).
+     * submersion = surface_y - ball_y (positive below surface, negative above).
+     * Below surface → pushes up. Above surface → pulls down. Natural equilibrium. */
+    float buoyancy = g_cfg.buoyancy_strength * submersion;
+    *vel_y += buoyancy;
 }
 
 /* Function pointer for code cave to call */

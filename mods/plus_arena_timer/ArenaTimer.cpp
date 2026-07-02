@@ -51,8 +51,11 @@ private:
                 int timerVal = (int)api->GetSliderState("ARENA_TIMER");
                 if (timerVal < 100) timerVal = 100;
                 DWORD addr = board + TIMER_OFFSET;
-                if (!IsBadWritePtr((void*)addr, 4)) {
-                    *(int*)addr = timerVal;
+                if (!IsBadReadPtr((void*)addr, 4)) {
+                    int current = *(int*)addr;
+                    if (current == 6000) {
+                        *(int*)addr = timerVal;
+                    }
                 }
             }
         }
@@ -62,7 +65,7 @@ private:
 public:
     const char* GetModName() override    { return "Arena Timer"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v3: write board+0x47AC directly"; }
+    const char* GetContributors() override { return "v4: only set timer on round start"; }
     int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
