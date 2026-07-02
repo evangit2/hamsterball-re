@@ -1,7 +1,12 @@
 #include "HamsterballAPI.h"
 #include <windows.h>
 
-static constexpr DWORD TIMER_IMM_ADDR = 0x42185B;
+static constexpr DWORD APP_PROFILE_OFFSET  = 0x220;
+static constexpr DWORD PROFILE_BOARD_OFFSET = 0x0C;
+static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
+static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
+static constexpr DWORD GLOBAL_APP_PTR = 0x5341E0;
+static constexpr DWORD TIMER_OFFSET = 0x47AC;
 
 class ArenaTimerMod : public HamsterballAPI {
 private:
@@ -18,26 +23,38 @@ private:
         api->CreateSlider(s, this);
     }
 
-    static void patchInt(DWORD addr, int value) {
-        DWORD oldProtect;
-        if (VirtualProtect((void*)addr, 4, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-            memcpy((void*)addr, &value, sizeof(int));
-            VirtualProtect((void*)addr, 4, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), (void*)addr, 4);
-        }
+    static DWORD findBoard() {
+        DWORD appPtr = *(DWORD*)GLOBAL_APP_PTR;
+        if (!appPtr || appPtr < 0x10000) return 0;
+        if (IsBadReadPtr((void*)(appPtr + APP_PROFILE_OFFSET), 4)) return 0;
+        DWORD profile = *(DWORD*)(appPtr + APP_PROFILE_OFFSET);
+        if (!profile || profile < 0x10000) return 0;
+        if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) return 0;
+        DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+        if (!board || board < 0x10000) return 0;
+        if (IsBadReadPtr((void*)board, 4)) return 0;
+        DWORD vtable = *(DWORD*)board;
+        if (vtable < BOARD_VTABLE_MIN || vtable > BOARD_VTABLE_MAX) return 0;
+        return board;
     }
 
     static DWORD WINAPI timerThread(LPVOID param) {
         ArenaTimerMod* self = (ArenaTimerMod*)param;
         IModAPI* api = self->api;
 
-        Sleep(5000);
+        Sleep(3000);
 
         while (self->m_running) {
-            Sleep(500);
-            int timerVal = (int)api->GetSliderState("ARENA_TIMER");
-            if (timerVal < 100) timerVal = 100;
-            patchInt(TIMER_IMM_ADDR, timerVal);
+            Sleep(16);
+            DWORD board = findBoard();
+            if (board) {
+                int timerVal = (int)api->GetSliderState("ARENA_TIMER");
+                if (timerVal < 100) timerVal = 100;
+                DWORD addr = board + TIMER_OFFSET;
+                if (!IsBadWritePtr((void*)addr, 4)) {
+                    *(int*)addr = timerVal;
+                }
+            }
         }
         return 0;
     }
@@ -45,7 +62,7 @@ private:
 public:
     const char* GetModName() override    { return "Arena Timer"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v2: VirtualProtect code patching"; }
+    const char* GetContributors() override { return "v3: write board+0x47AC directly"; }
     int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
