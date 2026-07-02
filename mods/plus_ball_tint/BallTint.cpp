@@ -25,56 +25,72 @@ static constexpr DWORD DM_P2_G = 0x431B6E, DM_P2_B = 0x431B69, DM_P2_A = 0x431B6
 static float g_p2_red = 0.0f;
 static float g_p4_blue = 0.0f;
 
+enum SavedType { SAVED_CALL, SAVED_LEA, SAVED_PUSH_IMM };
 struct CodeCave {
-    DWORD patchSite;
-    int savedLen;
-    BYTE savedBytes[5];
-    DWORD returnAddr;
     void* caveAddr;
 };
 
 static CodeCave g_caves[5];
 
-static void installCave(int idx, DWORD patchSite, float* globalFloat, const BYTE* savedBytes, int savedLen, DWORD returnAddr) {
-    CodeCave& c = g_caves[idx];
-    c.patchSite = patchSite;
-    c.savedLen = savedLen;
-    c.returnAddr = returnAddr;
-    memcpy(c.savedBytes, savedBytes, savedLen);
-
+static void installCave(int idx, DWORD patchSite, float* globalFloat,
+                        SavedType savedType, DWORD callTarget, BYTE leaOffset,
+                        float pushImmValue, DWORD returnAddr) {
     BYTE caveCode[32];
     int p = 0;
+
     caveCode[p++] = 0xFF;
     caveCode[p++] = 0x35;
     *(DWORD*)(caveCode + p) = (DWORD)globalFloat;
     p += 4;
-    memcpy(caveCode + p, savedBytes, savedLen);
-    p += savedLen;
+
+    int savedLen;
+    if (savedType == SAVED_CALL) {
+        savedLen = 5;
+        caveCode[p++] = 0xE8;
+        *(DWORD*)(caveCode + p) = 0;
+        p += 4;
+    } else if (savedType == SAVED_LEA) {
+        savedLen = 4;
+        caveCode[p++] = 0x8D;
+        caveCode[p++] = 0x4C;
+        caveCode[p++] = 0x24;
+        caveCode[p++] = leaOffset;
+    } else {
+        savedLen = 5;
+        caveCode[p++] = 0x68;
+        *(float*)(caveCode + p) = pushImmValue;
+        p += 4;
+    }
+
+    int jmpOffset = p;
     caveCode[p++] = 0xE9;
     *(DWORD*)(caveCode + p) = 0;
     p += 4;
+    int totalLen = p;
 
-    c.caveAddr = VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!c.caveAddr) return;
-    memcpy(c.caveAddr, caveCode, p);
+    void* cave = VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    g_caves[idx].caveAddr = cave;
+    memcpy(cave, caveCode, totalLen);
 
-    DWORD jmpSrc = (DWORD)c.caveAddr + p - 4;
-    DWORD jmpRel = returnAddr - (jmpSrc + 4);
-    *(DWORD*)((BYTE*)c.caveAddr + p - 4) = jmpRel;
+    DWORD caveBase = (DWORD)cave;
 
-    DWORD oldProtect;
-    VirtualProtect((void*)patchSite, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
-    BYTE jmpPatch[6];
-    jmpPatch[0] = 0xE9;
-    *(DWORD*)(jmpPatch + 1) = (DWORD)c.caveAddr - (patchSite + 5);
-    if (savedLen == 4) {
-        memcpy((void*)patchSite, jmpPatch, 5);
-    } else {
-        memcpy((void*)patchSite, jmpPatch, 5);
-        *(BYTE*)(patchSite + 5) = 0x90;
+    if (savedType == SAVED_CALL) {
+        DWORD callAddr = caveBase + 6;
+        *(DWORD*)(caveBase + 7) = callTarget - (callAddr + 5);
     }
-    VirtualProtect((void*)patchSite, 6, oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), (void*)patchSite, 6);
+
+    DWORD jmpSrc = caveBase + jmpOffset;
+    *(DWORD*)(caveBase + jmpOffset + 1) = returnAddr - (jmpSrc + 5);
+
+    int patchLen = (savedLen == 4) ? 5 : 6;
+    DWORD oldProtect;
+    VirtualProtect((void*)patchSite, patchLen, PAGE_EXECUTE_READWRITE, &oldProtect);
+    *(BYTE*)(patchSite) = 0xE9;
+    *(DWORD*)(patchSite + 1) = caveBase - (patchSite + 5);
+    if (patchLen == 6) *(BYTE*)(patchSite + 5) = 0x90;
+    VirtualProtect((void*)patchSite, patchLen, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), (void*)patchSite, patchLen);
 }
 
 class BallTintMod : public HamsterballAPI {
@@ -129,16 +145,11 @@ private:
     void installCaves() {
         if (m_cavesInstalled) return;
 
-        installCave(0, 0x421CBF, &g_p2_red,
-            (const BYTE*)"\xE8\x8B\x14\x03\x00", 5, 0x421CC5);
-        installCave(1, 0x421E43, &g_p4_blue,
-            (const BYTE*)"\x68\x00\x00\x80\x3F", 5, 0x421E49);
-        installCave(2, 0x433029, &g_p2_red,
-            (const BYTE*)"\x8D\x4C\x24\x28", 4, 0x43302E);
-        installCave(3, 0x433095, &g_p4_blue,
-            (const BYTE*)"\x68\x00\x00\x80\x3F", 5, 0x43309B);
-        installCave(4, 0x431B72, &g_p2_red,
-            (const BYTE*)"\xE8\xD8\x15\x02\x00", 5, 0x431B78);
+        installCave(0, 0x421CBF, &g_p2_red,  SAVED_CALL,     0x453150, 0,    0.0f, 0x421CC5);
+        installCave(1, 0x421E43, &g_p4_blue, SAVED_PUSH_IMM, 0,        0,    1.0f, 0x421E49);
+        installCave(2, 0x433029, &g_p2_red,  SAVED_LEA,      0,        0x28, 0.0f, 0x43302E);
+        installCave(3, 0x433095, &g_p4_blue, SAVED_PUSH_IMM, 0,        0,    1.0f, 0x43309B);
+        installCave(4, 0x431B72, &g_p2_red,  SAVED_CALL,     0x453150, 0,    0.0f, 0x431B78);
 
         m_cavesInstalled = true;
     }
@@ -211,7 +222,7 @@ private:
 public:
     const char* GetModName() override    { return "Ball Tint"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v8: code caves for P2-R and P4-B"; }
+    const char* GetContributors() override { return "v9: relocated code caves"; }
     int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
