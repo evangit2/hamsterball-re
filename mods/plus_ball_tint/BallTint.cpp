@@ -1,8 +1,14 @@
 // Ball Tint mod for Hamsterball Plus API
 // Adds RGB sliders in the options menu to customize player ball colors.
 // Sliders: P1 R/G/B, P2 R/G/B, P3 R/G/B, P4 R/G/B (0.0-1.0 each)
-// Uses onTextRenderLoop to write colors AFTER all game logic (last possible moment before render).
+// Uses onTextRenderLoop to write colors AFTER all game logic.
 // Ported from bass.dll proxy ball_tint v5 (mods/ball_tint/).
+//
+// v2 fix: Uses GetApp() + App->+0x220->+0x0C board-finding path
+// (identical to the working bass.dll version) instead of GetScene().
+// GetScene() returns g_Scene which is only set during Ball_Update
+// and is cleared on SceneDtor — it can be null during transitions.
+// GetApp() returns the global App pointer which is always valid.
 
 #include "HamsterballAPI.h"
 #include <windows.h>
@@ -10,6 +16,10 @@
 // Board color table offsets (from original ball_tint mod)
 static constexpr DWORD BOARD_COLOR_BASE   = 0x3AB0;
 static constexpr DWORD BOARD_COLOR_STRIDE = 0x14;   // 20 bytes per player entry
+
+// App struct offsets (proven path from bass.dll version)
+static constexpr DWORD APP_PROFILE_OFFSET  = 0x220;  // App+0x220 = PlayerProfile*
+static constexpr DWORD PROFILE_BOARD_OFFSET = 0x0C; // profile+0x0C = Board*
 
 // Board vtable range for validation (covers all board types including Arena)
 static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
@@ -45,6 +55,29 @@ private:
         return true;
     }
 
+    // Find board via the proven App->+0x220->+0x0C path.
+    // This is the EXACT same method used by the working bass.dll version.
+    DWORD findBoard() {
+        if (!api) return 0;
+
+        App* app = api->GetApp();
+        if (!app) return 0;
+        DWORD appAddr = (DWORD)app;
+        if (appAddr < 0x10000) return 0;
+        if (IsBadReadPtr((void*)(appAddr + APP_PROFILE_OFFSET), 4)) return 0;
+
+        DWORD profile = *(DWORD*)(appAddr + APP_PROFILE_OFFSET);
+        if (!profile || profile < 0x10000) return 0;
+        if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) return 0;
+
+        DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+        if (!board || board < 0x10000) return 0;
+        if (!validateBoard(board)) return 0;
+        if (IsBadReadPtr((void*)board, BOARD_COLOR_BASE + 0x40)) return 0;
+
+        return board;
+    }
+
 public:
     const char* GetModName() override    { return "Ball Tint"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
@@ -75,20 +108,12 @@ public:
         createColorSlider("TINT_P4_B", "P4 Blue",  0.0f);
     }
 
-    // Use onTextRenderLoop — it runs AFTER Original_RenderTextLoop,
-    // so all game logic (including Ball_Update which may reset colors)
-    // has already finished. This is the last chance before the frame
-    // is drawn, so our colors can't be overwritten.
+    // Use onTextRenderLoop — runs after all game logic, right before render.
     void onTextRenderLoop() override {
         if (!api) return;
 
-        // Get the scene (which IS the board) from the API
-        Scene* scene = api->GetScene();
-        if (!scene) return;
-
-        DWORD board = (DWORD)scene;
-        if (!validateBoard(board)) return;
-        if (IsBadReadPtr((void*)board, BOARD_COLOR_BASE + 0x40)) return;
+        DWORD board = findBoard();
+        if (!board) return;
 
         // Apply all 4 player colors
         applyColor(board, 0,
