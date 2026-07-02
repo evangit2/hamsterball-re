@@ -294,7 +294,7 @@ typedef struct {
 } water_cfg_t;
 
 static water_cfg_t g_cfg = {
-    0.80f,   /* entry_damping (20% velocity reduction on contact) */
+    0.90f,   /* entry_damping (10% velocity reduction on contact) */
     0.02f,   /* drag (2% per frame) */
     0.04f,   /* horizontal_drag */
     0.45f,   /* buoyancy_strength */
