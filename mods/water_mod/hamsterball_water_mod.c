@@ -429,8 +429,8 @@ static void trigger_water_contact(void *ball_ptr)
     if (st->in_water) {
         if (g_cfg.debug) {
             char buf[256];
-            wsprintfA(buf, "WATER SKIP: ball=%08X already in_water=1 (vel=%.2f,%.2f,%.2f)",
-                      ball, *vel_x, *vel_y, *vel_z);
+            snprintf(buf, sizeof(buf), "WATER SKIP: ball=%08X already in_water=1 (vel=%.2f,%.2f,%.2f)",
+                     ball, *vel_x, *vel_y, *vel_z);
             diag_log(buf);
         }
         return;
@@ -467,10 +467,10 @@ static void trigger_water_contact(void *ball_ptr)
 
     if (g_cfg.debug) {
         char buf[256];
-        wsprintfA(buf, "WATER TRIGGER #%u: ball=%08X y=%.2f 0x2E9 cleared vel=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f)",
-                  g_trigger_count, ball, ball_y,
-                  *vel_x / damp, *vel_y / damp, *vel_z / damp,
-                  *vel_x, *vel_y, *vel_z);
+        snprintf(buf, sizeof(buf), "WATER TRIGGER #%u: ball=%08X y=%.2f 0x2E9 cleared vel=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f)",
+                 g_trigger_count, ball, ball_y,
+                 *vel_x / damp, *vel_y / damp, *vel_z / damp,
+                 *vel_x, *vel_y, *vel_z);
         diag_log(buf);
     }
 }
@@ -504,8 +504,8 @@ static int install_dispatch_hook(void)
     unsigned char expected[] = { 0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00 };
     if (memcmp(target, expected, DISPATCH_PATCH_SIZE) != 0) {
         char buf[256];
-        wsprintfA(buf, "DispatchCollisionEvents byte mismatch: %02X %02X %02X %02X %02X %02X %02X %02X",
-                  target[0], target[1], target[2], target[3], target[4], target[5], target[6], target[7]);
+        snprintf(buf, sizeof(buf), "DispatchCollisionEvents byte mismatch: %02X %02X %02X %02X %02X %02X %02X %02X",
+                 target[0], target[1], target[2], target[3], target[4], target[5], target[6], target[7]);
         diag_log(buf);
         return 0;
     }
@@ -609,8 +609,8 @@ static void __cdecl apply_water_physics(DWORD ball)
         st->grace_frames = GRACE_PERIOD_FRAMES;
         if (g_cfg.debug) {
             char buf[128];
-            wsprintfA(buf, "WATER EXIT: ball=%08X y=%.2f grace=%d",
-                      ball, ball_y, st->grace_frames);
+            snprintf(buf, sizeof(buf), "WATER EXIT: ball=%08X y=%.2f grace=%d",
+                     ball, ball_y, st->grace_frames);
             diag_log(buf);
         }
         return;
@@ -635,8 +635,8 @@ static void __cdecl apply_water_physics(DWORD ball)
         *vel_y *= g_cfg.entry_damping;
         if (g_cfg.debug) {
             char buf[256];
-            wsprintfA(buf, "SURFACE CROSS: ball=%08X sub %.2f->%.2f vy=%.2f->%.2f",
-                      ball, st->prev_submersion, submersion, old_vy, *vel_y);
+            snprintf(buf, sizeof(buf), "SURFACE CROSS: ball=%08X sub %.2f->%.2f vy=%.2f->%.2f",
+                     ball, st->prev_submersion, submersion, old_vy, *vel_y);
             diag_log(buf);
         }
     }
@@ -672,9 +672,9 @@ static void install_phase15_hook(void)
     char buf[256];
 
     BYTE expected[] = { 0x8B, 0x4C, 0x24, 0x1C, 0x8B, 0x11 };
-    wsprintfA(buf, "Phase15 bytes: %02X %02X %02X %02X %02X %02X",
-              hook_addr[0], hook_addr[1], hook_addr[2],
-              hook_addr[3], hook_addr[4], hook_addr[5]);
+    snprintf(buf, sizeof(buf), "Phase15 bytes: %02X %02X %02X %02X %02X %02X",
+             hook_addr[0], hook_addr[1], hook_addr[2],
+             hook_addr[3], hook_addr[4], hook_addr[5]);
     diag_log(buf);
 
     if (memcmp(hook_addr, expected, PHASE15_ORIG_BYTES) != 0) {
@@ -760,7 +760,7 @@ static void install_phase15_hook(void)
     VirtualProtect(hook_addr, PHASE15_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PHASE15_ORIG_BYTES);
 
-    wsprintfA(buf, "PHASE15 HOOK installed: %d bytes, cave=%08X (with FNSAVE/FRSTOR)", p, (DWORD)g_phase15_cave);
+    snprintf(buf, sizeof(buf), "PHASE15 HOOK installed: %d bytes, cave=%08X (with FNSAVE/FRSTOR)", p, (DWORD)g_phase15_cave);
     diag_log(buf);
 }
 
@@ -812,9 +812,9 @@ static void install_type5_hook(void)
 
     /* Verify expected bytes: 0F 85 C0 00 00 00 (JNZ rel32) */
     BYTE expected[] = { 0x0F, 0x85, 0xC0, 0x00, 0x00, 0x00 };
-    wsprintfA(buf, "Type5 bytes: %02X %02X %02X %02X %02X %02X",
-              hook_addr[0], hook_addr[1], hook_addr[2],
-              hook_addr[3], hook_addr[4], hook_addr[5]);
+    snprintf(buf, sizeof(buf), "Type5 bytes: %02X %02X %02X %02X %02X %02X",
+             hook_addr[0], hook_addr[1], hook_addr[2],
+             hook_addr[3], hook_addr[4], hook_addr[5]);
     diag_log(buf);
 
     if (memcmp(hook_addr, expected, TYPE5_PATCH_SIZE) != 0) {
@@ -918,7 +918,7 @@ static void install_type5_hook(void)
     VirtualProtect(hook_addr, TYPE5_PATCH_SIZE, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, TYPE5_PATCH_SIZE);
 
-    wsprintfA(buf, "TYPE5 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_type5_cave);
+    snprintf(buf, sizeof(buf), "TYPE5 HOOK installed: %d bytes, cave=%08X", p, (DWORD)g_type5_cave);
     diag_log(buf);
 }
 
@@ -945,8 +945,8 @@ static void __thiscall Hook_Ball_FallDeath(void *ball)
         if (st && (st->in_water || st->grace_frames > 0)) {
             if (g_cfg.debug) {
                 char buf[128];
-                wsprintfA(buf, "SUPPRESSED fall death: ball=%08X (in_water=%d grace=%d)",
-                          (DWORD)ball, st->in_water, st->grace_frames);
+                snprintf(buf, sizeof(buf), "SUPPRESSED fall death: ball=%08X (in_water=%d grace=%d)",
+                         (DWORD)ball, st->in_water, st->grace_frames);
                 diag_log(buf);
             }
             return;  /* skip death — ball is in water or within grace period */
@@ -976,8 +976,8 @@ static int install_falldeath_hook(void)
 
     {
         char buf[128];
-        wsprintfA(buf, "FallDeath hook installed: orig=%08X new=%08X",
-                  (DWORD)orig_Ball_FallDeath, (DWORD)Hook_Ball_FallDeath);
+        snprintf(buf, sizeof(buf), "FallDeath hook installed: orig=%08X new=%08X",
+                 (DWORD)orig_Ball_FallDeath, (DWORD)Hook_Ball_FallDeath);
         diag_log(buf);
     }
     return 1;
@@ -997,9 +997,9 @@ static DWORD WINAPI patch_thread(LPVOID param)
 
     g_water_fn_ptr = apply_water_physics;
 
-    wsprintfA(buf, "Config: entry_damp=%.2f drag=%.3f hdrag=%.3f buoy=%.3f",
-              g_cfg.entry_damping, g_cfg.drag, g_cfg.horizontal_drag,
-              g_cfg.buoyancy_strength);
+    snprintf(buf, sizeof(buf), "Config: entry_damp=%.2f drag=%.3f hdrag=%.3f buoy=%.3f",
+             g_cfg.entry_damping, g_cfg.drag, g_cfg.horizontal_drag,
+             g_cfg.buoyancy_strength);
     diag_log(buf);
 
     /* Install Hook 1: DispatchCollisionEvents trampoline */
@@ -1017,8 +1017,8 @@ static DWORD WINAPI patch_thread(LPVOID param)
     diag_log("All hooks installed");
 
     Sleep(8000);
-    wsprintfA(buf, "After 8s: hook_calls=%u triggers=%u",
-              g_hook_calls, g_trigger_count);
+    snprintf(buf, sizeof(buf), "After 8s: hook_calls=%u triggers=%u",
+             g_hook_calls, g_trigger_count);
     diag_log(buf);
 
     return 0;
@@ -1046,7 +1046,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
         load_real_bass();
         {
             char buf[128];
-            wsprintfA(buf, "bass_real = %08X", (DWORD)g_hRealBass);
+            snprintf(buf, sizeof(buf), "bass_real = %08X", (DWORD)g_hRealBass);
             diag_log(buf);
         }
 
