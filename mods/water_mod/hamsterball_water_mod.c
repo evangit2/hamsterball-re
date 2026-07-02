@@ -40,7 +40,7 @@
  *     Intercepts all collision events. When the collision object's name starts
  *     with "E:WATER", fires the 3-step trigger:
  *       1. Sets in_water flag (gates ongoing water physics)
- *       2. Reduces ALL velocity axes by entry_damping (default 30%)
+ *       2. Reduces ALL velocity axes by entry_damping (default 10% cut)
  *       3. Captures ball's Y as water_surface_y for this session
  *     Then calls the original DispatchCollisionEvents so the game processes
  *     the collision normally. E:LIMIT events still set 0x2E9 normally.
@@ -322,8 +322,8 @@ static void load_config(const char *ini_path)
     DWORD attr = GetFileAttributesA(ini_path);
     if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY)) return;
 
-    g_cfg.entry_damping     = read_ini_float(ini_path, "WaterPhysics", "EntryDamping", 0.70f);
-    g_cfg.drag              = read_ini_float(ini_path, "WaterPhysics", "Drag", 0.03f);
+    g_cfg.entry_damping     = read_ini_float(ini_path, "WaterPhysics", "EntryDamping", 0.90f);
+    g_cfg.drag              = read_ini_float(ini_path, "WaterPhysics", "Drag", 0.02f);
     g_cfg.horizontal_drag   = read_ini_float(ini_path, "WaterPhysics", "HorizontalDrag", 0.04f);
     g_cfg.buoyancy_strength = read_ini_float(ini_path, "WaterPhysics", "BuoyancyStrength", 0.45f);
     g_cfg.debug             = read_ini_int(ini_path, "WaterPhysics", "Debug", 1);
