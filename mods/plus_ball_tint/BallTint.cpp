@@ -12,12 +12,12 @@ static constexpr DWORD GLOBAL_APP_PTR = 0x5341E0;
 static constexpr DWORD AB_P1_R = 0x421BFD, AB_P1_G = 0x421BF8, AB_P1_B = 0x421BF3, AB_P1_A = 0x421BEE;
 static constexpr DWORD AB_P2_G = 0x421CBB, AB_P2_B = 0x421CB6, AB_P2_A = 0x421CB1;
 static constexpr DWORD AB_P3_R = 0x421D85, AB_P3_G = 0x421D80, AB_P3_B = 0x421D7B, AB_P3_A = 0x421D76;
-static constexpr DWORD AB_P4_R = 0x421E4A, AB_P4_G = 0x421E45, AB_P4_A = 0x421E3F;
+static constexpr DWORD AB_P4_R = 0x421E4A, AB_P4_A = 0x421E3F;
 
 static constexpr DWORD ALS_P1_R_2P = 0x433116, ALS_P1_G_2P = 0x433111, ALS_P1_B_2P = 0x43310C, ALS_P1_A_2P = 0x433107;
 static constexpr DWORD ALS_P2_G = 0x433025, ALS_P2_B = 0x433020;
 static constexpr DWORD ALS_P3_R = 0x433063, ALS_P3_G = 0x43305E, ALS_P3_B = 0x433059;
-static constexpr DWORD ALS_P4_R = 0x43309C, ALS_P4_G = 0x433097;
+static constexpr DWORD ALS_P4_R = 0x43309C;
 
 static constexpr DWORD DM_P1_R = 0x431B3C, DM_P1_G = 0x431B37, DM_P1_B = 0x431B32, DM_P1_A = 0x431B2D;
 static constexpr DWORD DM_P2_G = 0x431B6E, DM_P2_B = 0x431B69, DM_P2_A = 0x431B64;
@@ -165,7 +165,6 @@ private:
         float p3g = api->GetSliderState("TINT_P3_G");
         float p3b = api->GetSliderState("TINT_P3_B");
         float p4r = api->GetSliderState("TINT_P4_R");
-        float p4g = api->GetSliderState("TINT_P4_G");
         float p4b = api->GetSliderState("TINT_P4_B");
 
         g_p2_red = p2r;
@@ -174,12 +173,12 @@ private:
         patchFloat(AB_P1_R, p1r); patchFloat(AB_P1_G, p1g); patchFloat(AB_P1_B, p1b); patchFloat(AB_P1_A, 1.0f);
         patchFloat(AB_P2_G, p2g); patchFloat(AB_P2_B, p2b); patchFloat(AB_P2_A, 1.0f);
         patchFloat(AB_P3_R, p3r); patchFloat(AB_P3_G, p3g); patchFloat(AB_P3_B, p3b); patchFloat(AB_P3_A, 1.0f);
-        patchFloat(AB_P4_R, p4r); patchFloat(AB_P4_G, p4g); patchFloat(AB_P4_A, 1.0f);
+        patchFloat(AB_P4_R, p4r); patchFloat(AB_P4_A, 1.0f);
 
         patchFloat(ALS_P1_R_2P, p1r); patchFloat(ALS_P1_G_2P, p1g); patchFloat(ALS_P1_B_2P, p1b); patchFloat(ALS_P1_A_2P, 1.0f);
         patchFloat(ALS_P2_G, p2g); patchFloat(ALS_P2_B, p2b);
         patchFloat(ALS_P3_R, p3r); patchFloat(ALS_P3_G, p3g); patchFloat(ALS_P3_B, p3b);
-        patchFloat(ALS_P4_R, p4r); patchFloat(ALS_P4_G, p4g);
+        patchFloat(ALS_P4_R, p4r);
 
         patchFloat(DM_P1_R, p1r); patchFloat(DM_P1_G, p1g); patchFloat(DM_P1_B, p1b); patchFloat(DM_P1_A, 1.0f);
         patchFloat(DM_P2_G, p2g); patchFloat(DM_P2_B, p2b); patchFloat(DM_P2_A, 1.0f);
