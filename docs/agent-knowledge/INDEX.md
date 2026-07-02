@@ -22,7 +22,7 @@ Start here and read the numbered sections in order. Each file is designed to be 
 | File | Purpose |
 |------|---------|
 | [dizzy-stun-system.md](dizzy-stun-system.md) | Complete analysis of the dizzy/stun/trajectory system: respawn stun, bounce-induced dizzy counter, two-pass collision architecture, end-screen "DIZZIED BALLS:" counter, E:NODIZZY (unrelated), per-player data blocks, all physics constants |
-| [limit-flag-deep-dive.md](limit-flag-deep-dive.md) | Ball+0x2E9 (dizzy_lock) lifecycle: all 8 events that set it, reset paths, disassembly proof |
+| [death-pending-flag-deep-dive.md](death-pending-flag-deep-dive.md) | Ball+0x2E9 (death_pending) lifecycle: all 8 events that set it, reset paths, disassembly proof |
 | [ball-ground-detection.md](ball-ground-detection.md) | Ball ground contact, falling detection, respawn point selection |
 | [collision-system-analysis.md](collision-system-analysis.md) | Collision detection pipeline, SpatialTree, collision entry struct layout |
 | [race-start-hooking.md](race-start-hooking.md) | Race lifecycle: countdown, start, finish, scoring hooks |

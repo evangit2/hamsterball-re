@@ -326,7 +326,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 | `N:UNLOCKSECRET` | — | `CheckArenaUnlock(scene)` |
 | `E:NODIZZY<TIME>N</TIME>` | — | `Ball_DizzyImmunity(ball, duration)` |
 | `E:SAFESWITCH(data)` | — | Copy data to `ball+0xC2C` |
-| `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1` (dizzy_lock — prevents Ball_ApplyTrajectory re-firing) |
+| `E:LIMIT` | — | Clear `ball+0x1DA`, set `ball+0x2E9=1` (death_pending — prevents Ball_ApplyTrajectory re-firing) |
 | `E:BREAK` | — | `ball->vtable[0x20]()` bounce callback |
 | `E:JUMP` | `impactCounter < 1` | Sound, force 0.025, freeze 10 frames, `Ball_DizzyImmunity(+200)` |
 | `E:ACTION<ONCE>TRUE</ONCE><SCORE>N</SCORE>` | — | Check duplicate at `ball+0xCB`, award score |

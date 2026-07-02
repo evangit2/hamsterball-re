@@ -343,8 +343,8 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x2D8` | int | `0` | — |
 | `+0x2DC` | int | `0` | checkpoint index |
 | `+0x2E8` | byte | `0` | event_flag |
-| `+0x2E9` | byte | `0` | ⚠ dizzy_lock (NOT on_ramp! Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory. Reset by Ball_InitPhysicsDefaults and Ball_ctor2) |
-| `+0x2EC` | int | `0` | bounce_count (dizzy system bounce counter; double-incremented when collision speed exceeds thresholds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND dizzy_lock==0) |
+| `+0x2E9` | byte | `0` | ⚠ death_pending (NOT on_ramp! Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory. Reset by Ball_InitPhysicsDefaults and Ball_ctor2) |
+| `+0x2EC` | int | `0` | bounce_count (dizzy system bounce counter; double-incremented when collision speed exceeds thresholds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND death_pending==0) |
 | `+0x2F0` | int | `0` | impact_counter (frames force is blocked) |
 | `+0x2F4` | int | `0` | best_score |
 | `+0x2F8` | byte | `1` | alive_flag (set 0 on death) |
@@ -371,7 +371,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0xC50` | float | `0` | fall_depth |
 | `+0xC54` | int | `0` | sound_channel |
 | `+0xC58` | byte | `0` | — |
-| `+0xC5C` | int | `0` | dizzy_flag (NOTE: the actual dizzy system uses ball+0x2E9 (dizzy_lock) and ball+0x2EC (bounce_count), not this field) |
+| `+0xC5C` | int | `0` | dizzy_flag (NOTE: the actual dizzy system uses ball+0x2E9 (death_pending) and ball+0x2EC (bounce_count), not this field) |
 | `+0xC60` | float | `1.0f` | scale_factor |
 | `+0xC64` | float | `0` | roll_friction (overwritten every frame by physics loop) |
 | `+0xC74` | int | `0` | render_alpha |

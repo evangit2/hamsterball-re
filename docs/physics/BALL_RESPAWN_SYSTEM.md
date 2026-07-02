@@ -188,7 +188,7 @@ collision (`local_25 == 0`). The entry stores accumulated penetration time at `+
 Three sub-gates in `Ball_Update`'s entry processing handle different penetration depths:
 
 1. **`piVar16[0x15] > _DAT_004cf420`** (deep): Resets up-vector to (0,1,0), damps speed
-2. **`piVar16[0x15] > _DAT_004cf310`** (>1.0, AND not NPC): Sets `dizzy_lock` flag (ball+0x2E9=1),
+2. **`piVar16[0x15] > _DAT_004cf310`** (>1.0, AND not NPC): Sets `death_pending` flag (ball+0x2E9=1),
    calls `Scene_SetCamera`, checks out-of-bounds → sets `needs_respawn` (ball+0xBA=1)
 3. **`piVar16[0x15] >= _DAT_004cf4e8`** (moderate, AND player ball, AND no surface contact):
    Downward raycast via `Mesh_FindClosestCollision` — if distance exceeds `radius × _DAT_004cf418`,

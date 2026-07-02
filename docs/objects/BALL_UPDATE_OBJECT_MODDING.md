@@ -104,8 +104,8 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x2E0 | `float` | **lgp_y** | Update | " |
 | 0x2E4 | `float` | **lgp_z** | Update | " |
 | 0x2E8 | `bool` | **event_flag** | ctor2, Update | Needs-respawn (shattered) flag |
-| 0x2E9 | `bool` | **dizzy_lock** | ctor2 | ⚠ NOT on_ramp! Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory itself. Reset by Ball_InitPhysicsDefaults(0x405100) at 0x405262 and Ball_ctor2(0x4039E0) at 0x403BDE. |
-| 0x2EC | `uint32_t` | bounce_count | ctor2 | Dizzy system bounce counter; double-incremented (0→1→2) when collision speed exceeds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND dizzy_lock==0 |
+| 0x2E9 | `bool` | **death_pending** | ctor2 | ⚠ NOT on_ramp! Sticky flag preventing Ball_ApplyTrajectory re-firing. Set by E:LIMIT/LIMITX/LIMITZ/LIMITPIPE1/2/SWALLOW, speed>1.0 collision, and Ball_ApplyTrajectory itself. Reset by Ball_InitPhysicsDefaults(0x405100) at 0x405262 and Ball_ctor2(0x4039E0) at 0x403BDE. |
+| 0x2EC | `uint32_t` | bounce_count | ctor2 | Dizzy system bounce counter; double-incremented (0→1→2) when collision speed exceeds 0.03 and 0.1; triggers Ball_ApplyTrajectory when >1 AND death_pending==0 |
 | 0x2F0 | `uint32_t` | field_2f0 | ctor2 | `0` |
 | 0x2F4 | `uint32_t` | field_2f4 | ctor2 | `0` |
 | 0x2F8 | `uint8_t` | field_2f8 | Update | |

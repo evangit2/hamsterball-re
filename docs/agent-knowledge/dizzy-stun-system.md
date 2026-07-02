@@ -184,7 +184,7 @@ collision volume, the handler:
 2. **Sets `ball+0x2F4` (dizzy_immunity_timer) to `max(current, TIME)`** — grants TIME
    frames of dizzy immunity, but only extends (never shortens) an existing immunity
 
-**E:NODIZZY does NOT touch `ball+0x2E9` (dizzy_lock).** It clears bounce_count and
+**E:NODIZZY does NOT touch `ball+0x2E9` (death_pending).** It clears bounce_count and
 grants a timed immunity window. The name is literal: rolling through this zone makes
 the ball immune to the dizzy effect for the specified duration.
 
@@ -230,7 +230,7 @@ the ball from a single qualifying bounce**.
 ### Speed > 1.0 Blocks the Counter
 
 If collision speed > 1.0 (hard hits from long falls):
-- Pass 2 sets `ball+0x2E9 = 1` (dizzy_lock) BEFORE the bounce counter can trigger
+- Pass 2 sets `ball+0x2E9 = 1` (death_pending) BEFORE the bounce counter can trigger
   the trajectory on the next frame
 - This BLOCKS `Ball_ApplyTrajectory` from firing (Pass 1 checks `ball+0x2E9 == 0`)
 - The ball gets a camera change but NO dizzy counter increment, NO speed halving,
@@ -239,7 +239,7 @@ If collision speed > 1.0 (hard hits from long falls):
 So the end-screen "DIZZIED BALLS" counter only counts **medium-speed bounces**
 (0.1 ≤ speed ≤ 1.0), not hard impacts from long falls.
 
-### ball+0x2E9 (dizzy_lock) Lifecycle
+### ball+0x2E9 (death_pending) Lifecycle
 
 Set to 1 by:
 - `Ball_ApplyTrajectory` (0x403750) — after trajectory effect applied
@@ -260,7 +260,7 @@ When triggered:
 4. Plays boost sound
 5. Sets `ball+0x2F0 = 100` (impact_count → wobble + control loss)
 6. Creates trail particles
-7. Sets `ball+0x2E9 = 1` (dizzy_lock)
+7. Sets `ball+0x2E9 = 1` (death_pending)
 8. Sets `ball+0x14D = 1` (has_trajectory flag)
 9. If `ball+0x18 (player_index) != -1`:
    - Increments `*(App + pIdx * 0xA0 + 0x5F8)` — **THE DIZZY COUNTER**
@@ -304,8 +304,8 @@ In `Ball_RenderAI` (0x403DC0):
 | 0x403DC0 | Ball_RenderAI | Renders star effect + alpha |
 | 0x40C5D0 | DispatchCollisionEvents | E:NODIZZY handler (grants dizzy immunity via Ball_DizzyImmunity) |
 | 0x402400 | Ball_DizzyImmunity | Clears bounce_count(+0x2EC)=0, sets immunity timer(+0x2F4) to max(current, TIME) |
-| 0x405100 | Ball_InitPhysicsDefaults | Resets dizzy_lock(+0x2E9)=0, bounce_count(+0x2EC)=0, all physics defaults |
-| 0x4039E0 | Ball_ctor2 | Init: sets dizzy_lock=0, bounce_count=0 |
+| 0x405100 | Ball_InitPhysicsDefaults | Resets death_pending(+0x2E9)=0, bounce_count(+0x2EC)=0, all physics defaults |
+| 0x4039E0 | Ball_ctor2 | Init: sets death_pending=0, bounce_count=0 |
 | 0x419030 | Board_ctor | Initializes per-player data blocks at App+0x5CC, adds to board+0x362C list |
 | 0x44DF70 | RaceGoalReached_Render | Draws end screen: reads App+pIdx×0xA0+0x5F8 (dizzy), +0x5F4 (broken) |
 
@@ -330,7 +330,7 @@ In `Ball_RenderAI` (0x403DC0):
 | 0x4CF434 | 1.25 (float) | Y velocity damping factor |
 | 0x4CF4E8 | 0.03 (double) | First bounce threshold: speed ≥ 0.03 → bounce_count 0→1 |
 | 0x4CF308 | 0.1 (double) | Second bounce threshold: speed ≥ 0.1 → bounce_count 1→2 |
-| 0x4CF310 | 1.0 (float) | Speed > 1.0 → sets dizzy_lock (blocks trajectory) |
+| 0x4CF310 | 1.0 (float) | Speed > 1.0 → sets death_pending (blocks trajectory) |
 | 0x4CF368 | ~0.0 (float) | Epsilon for zero-velocity checks |
 
 ## Ball_Update Two-Pass Collision Flow
@@ -341,21 +341,21 @@ Frame N — First qualifying bounce:
   Pass 2 (line 686):
     speed >= 0.03 AND bounce_count == 0 → bounce_count = 1
     bounce_count != 0 AND speed >= 0.1 → bounce_count = 2
-    (if speed > 1.0: dizzy_lock = 1, camera change)
+    (if speed > 1.0: death_pending = 1, camera change)
 
 Frame N+1 — Next collision:
   Pass 1 (line 495):
-    bounce_count > 1 (is 2) AND dizzy_lock == 0
+    bounce_count > 1 (is 2) AND death_pending == 0
     → Ball_ApplyTrajectory(ball)
       → impact_count = 100 (0.8s full lockout + 3.2s quarter power)
       → speed halved (trajectory scale 0.5)
-      → dizzy_lock = 1 (prevents re-trigger)
+      → death_pending = 1 (prevents re-trigger)
       → App + pIdx*0xA0 + 0x5F8 += 1  (DIZZY COUNTER INCREMENTED)
       → trail particles + boost sound
 
 Frame N+2:
   Pass 2: has_trajectory (ball+0x14D) set → bounce_count reset to 0
-  dizzy_lock stays 1 until Ball_InitPhysicsDefaults (respawn)
+  death_pending stays 1 until Ball_InitPhysicsDefaults (respawn)
 ```
 
 ## E:NODIZZY vs Bounce Dizzy — How They Interact
@@ -373,7 +373,7 @@ Frame N+2:
 | Calls Ball_DizzyImmunity? | YES | NO |
 | End screen counter? | NO | YES (DIZZIED BALLS) |
 
-## Events That Set dizzy_lock (ball+0x2E9 = 1)
+## Events That Set death_pending (ball+0x2E9 = 1)
 
 | Source | Address | Context |
 |--------|---------|---------|
@@ -384,14 +384,14 @@ Frame N+2:
 | E:LIMITZ | ~0x40F27D | Z-axis boundary |
 | E:LIMITPIPE1 | ~0x40F2B5 | Pipe limit variant 1 |
 | E:LIMITPIPE2 | ~0x40F2F7 | Pipe limit variant 2 |
-| E:SWALLOW | ~0x40F2D5 | Pipe swallow (sets ball+0x2E8, NOT dizzy_lock) |
+| E:SWALLOW | ~0x40F2D5 | Pipe swallow (sets ball+0x2E8, NOT death_pending) |
 
 ## Field Summary
 
 | Offset | Name | Type | Default | Description |
 |--------|------|------|---------|-------------|
 | +0x2E8 | is_falling | byte | 0 | Set by Ball_Shatter (via Breaker/Bonkbash crusher objects), Ball_Update (player fall death at 0x406244 & 0x407436), OddBoard_CollisionHandler (0x40F2E7), E:SWALLOW (pipe swallow). NOT set by Ball_FallUpdate for the player ball (that's bad-ball-only). Triggers respawn |
-| +0x2E9 | dizzy_lock | byte | 0 | Sticky flag: prevents Ball_ApplyTrajectory re-firing. Set by trajectory, E:LIMIT*, speed>1.0. Reset only by Ball_InitPhysicsDefaults. E:SWALLOW sets +0x2E8 instead |
+| +0x2E9 | death_pending | byte | 0 | Sticky flag: prevents Ball_ApplyTrajectory re-firing. Set by trajectory, E:LIMIT*, speed>1.0. Reset only by Ball_InitPhysicsDefaults. E:SWALLOW sets +0x2E8 instead |
 | +0x2EC | bounce_count | int32 | 0 | Bounce counter for dizzy system. Double-increments 0→1→2 in one frame when speed ≥ 0.03/0.1. Triggers trajectory when > 1 |
 | +0x2F0 | impact_count | int32 | 0 | Set to 100 by trajectory. ≥81 blocks input. Decays by 1/frame |
 | +0x2F8 | show_stars | byte | 0 | 1 = render 8-star circling effect |
