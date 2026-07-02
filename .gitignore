@@ -17,6 +17,9 @@ releases/
 
 # Original game binaries (copyrighted - not ours to redistribute on public repo)
 originals/installed/extracted/Hamsterball.exe
+originals/installed/extracted/Hamsterball.exe.bak
+originals/installed/extracted/*.exe
+originals/installed/extracted/*.exe.bak
 originals/installed/extracted/bass.dll
 originals/installed/extracted/unins000.exe
 originals/installed/extracted/unins000.dat
