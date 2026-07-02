@@ -18,17 +18,26 @@ private:
         api->CreateSlider(s, this);
     }
 
+    static void patchInt(DWORD addr, int value) {
+        DWORD oldProtect;
+        if (VirtualProtect((void*)addr, 4, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy((void*)addr, &value, sizeof(int));
+            VirtualProtect((void*)addr, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), (void*)addr, 4);
+        }
+    }
+
     static DWORD WINAPI timerThread(LPVOID param) {
         ArenaTimerMod* self = (ArenaTimerMod*)param;
         IModAPI* api = self->api;
 
-        Sleep(3000);
+        Sleep(5000);
 
         while (self->m_running) {
-            Sleep(100);
+            Sleep(500);
             int timerVal = (int)api->GetSliderState("ARENA_TIMER");
             if (timerVal < 100) timerVal = 100;
-            api->PatchMemory(TIMER_IMM_ADDR, (const char*)&timerVal, sizeof(int));
+            patchInt(TIMER_IMM_ADDR, timerVal);
         }
         return 0;
     }
@@ -36,7 +45,7 @@ private:
 public:
     const char* GetModName() override    { return "Arena Timer"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v1: custom arena round timer"; }
+    const char* GetContributors() override { return "v2: VirtualProtect code patching"; }
     int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
