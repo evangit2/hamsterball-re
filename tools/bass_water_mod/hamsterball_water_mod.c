@@ -297,7 +297,7 @@ static water_cfg_t g_cfg = {
     0.90f,   /* entry_damping (10% velocity reduction on contact) */
     0.02f,   /* drag (2% per frame) */
     0.04f,   /* horizontal_drag */
-    0.45f,   /* buoyancy_strength */
+    0.90f,   /* buoyancy_strength (max upward accel at full submersion, 0-1 normalized) */
     1        /* debug */
 };
 
@@ -325,7 +325,7 @@ static void load_config(const char *ini_path)
     g_cfg.entry_damping     = read_ini_float(ini_path, "WaterPhysics", "EntryDamping", 0.90f);
     g_cfg.drag              = read_ini_float(ini_path, "WaterPhysics", "Drag", 0.02f);
     g_cfg.horizontal_drag   = read_ini_float(ini_path, "WaterPhysics", "HorizontalDrag", 0.04f);
-    g_cfg.buoyancy_strength = read_ini_float(ini_path, "WaterPhysics", "BuoyancyStrength", 0.45f);
+    g_cfg.buoyancy_strength = read_ini_float(ini_path, "WaterPhysics", "BuoyancyStrength", 0.90f);
     g_cfg.debug             = read_ini_int(ini_path, "WaterPhysics", "Debug", 1);
 
     if (g_cfg.entry_damping < 0.0f) g_cfg.entry_damping = 0.0f;
@@ -539,15 +539,19 @@ static int install_dispatch_hook(void)
  * Called every frame for every ball via PUSHAD/PUSHFD + C function call.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Compute submersion depth relative to captured surface Y.
- * Returns the distance from ball center to surface:
- *   - Positive when ball is below surface (submerged)
- *   - Negative when ball is above surface (in air)
- *   - Zero when ball center is exactly at surface
- * This is used for buoyancy — deeper submersion = stronger push. */
+/* Compute normalized submersion (0.0 to 1.0) relative to captured surface Y.
+ * Uses ball_y, radius, and surface_y:
+ *   - 0.0 when ball is completely out of water (bottom at surface)
+ *   - 0.5 when ball is half submerged (center at surface)
+ *   - 1.0 when ball is fully submerged (top at surface)
+ * Clamped to [0, 1] for above-surface and deep-underwater cases. */
 static float compute_submersion(float ball_y, float radius, float surface_y)
 {
-    return surface_y - ball_y;
+    if (radius <= 0.0f) return 0.0f;
+    float sub = (surface_y - ball_y + radius) / (2.0f * radius);
+    if (sub < 0.0f) sub = 0.0f;
+    if (sub > 1.0f) sub = 1.0f;
+    return sub;
 }
 
 /* Ongoing water physics — called from Phase 15 code cave every frame */
@@ -619,25 +623,18 @@ static void __cdecl apply_water_physics(DWORD ball)
     *vel_x *= hscale;
     *vel_z *= hscale;
 
-    /* Only apply Y drag when the ball is sinking (vel_y <= 0).
-     * When rising (vel_y > 0), skip Y drag entirely so buoyancy
-     * and momentum aren't fighting each other — the ball pops up
-     * freely without artificial deceleration on the way out. */
-    if (*vel_y <= 0.0f)
-        *vel_y *= vscale;
+    /* Apply Y drag in BOTH directions (sinking and rising).
+     * Asymmetric drag (only when sinking) causes energy accumulation
+     * — the ball loses speed on the way in but not on the way out,
+     * resulting in perpetual bobbing. Symmetric drag conserves energy
+     * properly: the ball exits at roughly the speed it entered. */
+    *vel_y *= vscale;
 
-    /* Buoyancy proportional to submersion depth (distance below surface).
-     * submersion is positive when below surface, negative when above.
-     * Only apply when ball is below surface (submersion > 0).
-     * When above surface, buoyancy is 0 — gravity pulls it back down.
-     *
-     * buoyancy_strength is per-unit-depth. At 0.45, being 1 unit below
-     * gives 0.45/frame upward. Being 10 units deep gives 4.5/frame.
-     * Scaled down by 0.1 multiplier so typical depths give reasonable force. */
-    if (submersion > 0.0f) {
-        float buoyancy = g_cfg.buoyancy_strength * submersion * 0.1f;
-        *vel_y += buoyancy;
-    }
+    /* Buoyancy = strength * submersion (0-1 normalized).
+     * submersion is 0 when ball is out of water, 0.5 when half submerged,
+     * 1.0 when fully submerged. Above surface → buoyancy is 0 (no force). */
+    float buoyancy = g_cfg.buoyancy_strength * submersion;
+    *vel_y += buoyancy;
 }
 
 /* Function pointer for code cave to call */
@@ -972,7 +969,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v6 loaded (clear 0x2E9 on water entry) ===");
+    diag_log("=== Water mod v7.1 loaded (normalized submersion 0-1) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
