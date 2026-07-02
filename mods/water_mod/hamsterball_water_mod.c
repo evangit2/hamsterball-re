@@ -6,6 +6,12 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7: Add dizzy immunity while submerged.
+ *     On water entry: clear bounce counter (ball+0x2EC) — same as E:NODIZZY.
+ *     Every frame in water: clear bounce counter + set dizzy_immunity_timer
+ *     (ball+0x2F4) to GRACE_PERIOD_FRAMES. Mirrors Ball_DizzyImmunity(0x402400):
+ *     only increases the timer, never shortens existing immunity.
+ *
  * v6: Clear ball+0x2E9 (falling flag) when ball enters water AND every frame
  *     while in water or during grace period. Extend Hook 3 to suppress type 5
  *     during grace period too (not just while submerged).
@@ -261,6 +267,8 @@ static void diag_log(const char *msg)
                                           * Cleared only by Ball ctor + Ball_Respawn.
                                           * Must clear here too, or death check #2
                                           * at 0x40721F fires at apex of bounce-out. */
+#define BALL_BOUNCE_COUNT       0x2EC   /* INT: dizzy bounce counter (0→1→2, >1 && !falling → dizzy) */
+#define BALL_DIZZY_IMMUNITY     0x2F4   /* INT: dizzy immunity timer in frames (while > 0, blocks 0→1 bounce) */
 
 /* Physics struct offsets */
 #define PHYS_VEL_X              0xCA4
@@ -432,6 +440,11 @@ static void trigger_water_contact(void *ball_ptr)
      * this; clearing the flag eliminates the root cause. */
     *(BYTE*)((DWORD)ball_ptr + BALL_FALLING_FLAG) = 0;
 
+    /* Step 1.6: Reset bounce counter (ball+0x2EC) on water entry.
+     * Same as E:NODIZZY calling Ball_DizzyImmunity — clears the 2-strike
+     * dizzy counter so the ball starts fresh when it hits water. */
+    *(int*)((DWORD)ball_ptr + BALL_BOUNCE_COUNT) = 0;
+
     /* Step 2: Reduce ALL velocity by entry_damping */
     float damp = g_cfg.entry_damping;
     *vel_x *= damp;
@@ -560,6 +573,17 @@ static void __cdecl apply_water_physics(DWORD ball)
      * to clear 0x2E9 there since it was never re-set. */
     if (st->in_water) {
         *(BYTE*)((DWORD)ball + BALL_FALLING_FLAG) = 0;
+
+        /* Grant dizzy immunity every frame while submerged.
+         * Mirrors Ball_DizzyImmunity(0x402400): clears bounce counter
+         * and sets dizzy_immunity_timer to GRACE_PERIOD_FRAMES (only
+         * increases, never shortens existing immunity). This means
+         * the ball can't go dizzy while in water, and when it exits,
+         * the remaining grace period also covers the bounce-out arc. */
+        *(int*)((DWORD)ball + BALL_BOUNCE_COUNT) = 0;
+        int cur = *(int*)((DWORD)ball + BALL_DIZZY_IMMUNITY);
+        if (cur < GRACE_PERIOD_FRAMES)
+            *(int*)((DWORD)ball + BALL_DIZZY_IMMUNITY) = GRACE_PERIOD_FRAMES;
     }
 
     if (!st->in_water) return;
