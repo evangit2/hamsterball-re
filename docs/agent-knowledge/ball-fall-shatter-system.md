@@ -202,7 +202,7 @@ Cleared by `Ball_FindClosestRespawnPoint` (0x405190) at 0x40525B.
 | Offset | Type | Name | Player Ball | Bad Ball |
 |--------|------|------|-------------|----------|
 | +0x2E8 | byte | needs_respawn | Set by Ball_Update (stopped after fall), Ball_Shatter, E:SWALLOW | Set by Ball_FallUpdate (timer expiry) |
-| +0x2E9 | byte | dizzy_lock / falling | Set by collision type 5 (edge detection) | Not used |
+| +0x2E9 | byte | death_pending / falling | Set by collision type 5 (edge detection) | Not used |
 | +0x324 | byte | shattered | Set by Ball_Shatter | Set by Ball_Shatter |
 | +0x768 | byte | on_ground | Set to 1 by ctor/respawn, cleared by OddBoard | Same |
 | +0x80C | int | pre_fall_counter | 0 (not used) | 50 (counts down to 0) |
