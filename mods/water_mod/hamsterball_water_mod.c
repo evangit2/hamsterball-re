@@ -619,23 +619,23 @@ static void __cdecl apply_water_physics(DWORD ball)
     *vel_x *= hscale;
     *vel_z *= hscale;
 
-    /* Only apply Y drag when the ball is sinking (vel_y <= 0).
-     * When rising (vel_y > 0), skip Y drag entirely so buoyancy
-     * and momentum aren't fighting each other — the ball pops up
-     * freely without artificial deceleration on the way out. */
-    if (*vel_y <= 0.0f)
-        *vel_y *= vscale;
+    /* Apply Y drag in BOTH directions (sinking and rising).
+     * Asymmetric drag (only when sinking) causes energy accumulation
+     * — the ball loses speed on the way in but not on the way out,
+     * resulting in perpetual bobbing. Symmetric drag conserves energy
+     * properly: the ball exits at roughly the speed it entered. */
+    *vel_y *= vscale;
 
     /* Buoyancy proportional to submersion depth (distance below surface).
      * submersion is positive when below surface, negative when above.
      * Only apply when ball is below surface (submersion > 0).
      * When above surface, buoyancy is 0 — gravity pulls it back down.
      *
-     * buoyancy_strength is per-unit-depth. At 0.45, being 1 unit below
-     * gives 0.45/frame upward. Being 10 units deep gives 4.5/frame.
-     * Scaled down by 0.1 multiplier so typical depths give reasonable force. */
+     * buoyancy = buoyancy_strength * submersion (no scaling multiplier).
+     * At 0.45 strength and 1 unit deep: 0.45/frame upward.
+     * At 0.45 strength and 10 units deep: 4.5/frame upward. */
     if (submersion > 0.0f) {
-        float buoyancy = g_cfg.buoyancy_strength * submersion * 0.1f;
+        float buoyancy = g_cfg.buoyancy_strength * submersion;
         *vel_y += buoyancy;
     }
 }
