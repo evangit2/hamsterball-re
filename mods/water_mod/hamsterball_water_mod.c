@@ -626,7 +626,13 @@ static void __cdecl apply_water_physics(DWORD ball)
 
     *vel_x *= hscale;
     *vel_z *= hscale;
-    *vel_y *= vscale;
+
+    /* Only apply Y drag when the ball is sinking (vel_y <= 0).
+     * When rising (vel_y > 0), skip Y drag entirely so buoyancy
+     * and momentum aren't fighting each other — the ball pops up
+     * freely without artificial deceleration on the way out. */
+    if (*vel_y <= 0.0f)
+        *vel_y *= vscale;
 
     float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
     *vel_y += buoyancy;
