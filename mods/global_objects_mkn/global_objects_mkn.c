@@ -483,6 +483,34 @@ __declspec(dllexport) int __stdcall BASS_MusicPlayEx(void *a, int b, int c)
     return 1;
 }
 
+/* Game imports BASS_ChannelSetAttributes and BASS_ChannelStop (NOT GetLength/Bytes2Seconds) */
+
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(int handle, float volume, int pan, int freq)
+{
+    (void)handle; (void)volume; (void)pan; (void)freq;
+    lazy_load_bass();
+    if (g_real_bass) {
+        typedef int (__stdcall *fn_t)(int, float, int, int);
+        fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_ChannelSetAttributes");
+        if (fn) return fn(handle, volume, pan, freq);
+    }
+    return 1; /* TRUE */
+}
+
+__declspec(dllexport) int __stdcall BASS_ChannelStop(int handle)
+{
+    (void)handle;
+    lazy_load_bass();
+    if (g_real_bass) {
+        typedef int (__stdcall *fn_t)(int);
+        fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_ChannelStop");
+        if (fn) return fn(handle);
+    }
+    return 1; /* TRUE */
+}
+
+/* Extra exports for HB+ compatibility (not imported by game directly) */
+
 __declspec(dllexport) int __stdcall BASS_ChannelGetLength(void *a, int b)
 {
     (void)a; (void)b;
