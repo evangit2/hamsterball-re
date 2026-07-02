@@ -425,7 +425,15 @@ static void trigger_water_contact(void *ball_ptr)
     if (!st) return;
 
     /* Only trigger if not already in water */
-    if (st->in_water) return;
+    if (st->in_water) {
+        if (g_cfg.debug) {
+            char buf[256];
+            wsprintfA(buf, "WATER SKIP: ball=%08X already in_water=1 (vel=%.2f,%.2f,%.2f)",
+                      ball, *vel_x, *vel_y, *vel_z);
+            diag_log(buf);
+        }
+        return;
+    }
 
     /* Step 1: Set in_water flag */
     st->in_water = 1;
