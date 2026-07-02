@@ -631,8 +631,15 @@ static void __cdecl apply_water_physics(DWORD ball)
     if (*vel_y <= 0.0f)
         *vel_y *= vscale;
 
-    float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
-    *vel_y += buoyancy;
+    /* Only apply buoyancy when the ball's center is at or below the
+     * water surface Y (the Y captured when the ball first hit E:WATER).
+     * When the ball bobs above that line, buoyancy is cut so gravity
+     * alone pulls it back down — this breaks the infinite oscillation
+     * where buoyancy keeps fighting gravity near the surface. */
+    if (ball_y <= st->water_surface_y) {
+        float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
+        *vel_y += buoyancy;
+    }
 }
 
 /* Function pointer for code cave to call */
