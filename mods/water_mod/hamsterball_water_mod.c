@@ -294,8 +294,8 @@ typedef struct {
 } water_cfg_t;
 
 static water_cfg_t g_cfg = {
-    0.90f,   /* entry_damping (10% velocity reduction on contact) */
-    0.01f,   /* drag (1% per frame) */
+    0.80f,   /* entry_damping (20% velocity reduction on contact) */
+    0.02f,   /* drag (2% per frame) */
     0.04f,   /* horizontal_drag */
     0.45f,   /* buoyancy_strength */
     1        /* debug */
@@ -452,10 +452,10 @@ static void trigger_water_contact(void *ball_ptr)
     *vel_z *= damp;
 
     /* Step 3: Capture ball Y as water surface height.
-     * Use 12 units below ball's current Y so the "surface" sits lower —
+     * Use 25 units below ball's current Y so the "surface" sits lower —
      * this gives the ball room to sit partially submerged rather than
      * immediately triggering the exit condition. */
-    st->water_surface_y = ball_y - 12.0f;
+    st->water_surface_y = ball_y - 25.0f;
 
     g_trigger_count++;
 
