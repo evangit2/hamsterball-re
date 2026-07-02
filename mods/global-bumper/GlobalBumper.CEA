@@ -1,252 +1,461 @@
 [ENABLE]
-// ============================================================
-//  Global Bumper Spawner
-//  Spawns bumper geometry from Level8.MESHWORLD (Toob Race)
-//  at Player 1's position on every hotkey press.
-//
-//  Bumpers are NOT separate game objects — they are scene geometry
-//  with "N:BUMPER%d" collision event names embedded in the
-//  MESHWORLD octree. The board's vtable[0x1D] (collision dispatch)
-//  checks for "N:BUMPER" prefix and applies knockback physics.
-//
-//  This script loads the Level8 mesh (which contains 8 bumpers),
-//  creates a Stands object from it, positions it at the player,
-//  and registers it in the board's collision/render lists.
-//
-//  Hook: Ball_Update @ 0x00405E22 (original: mov eax,[esi+0x0C5C])
-//  Hotkey: Set SpawnBumper to 1 via CE address list
-// ============================================================
 
-alloc(SpawnCode, 4096)
+// =====================================================
+// Global Bumper Spawner v10 — Exact N:BUMPER Physics
+// Traced from 3 native handlers:
+//   Warm-Up  (0x4111E0): scale=4.0, min=5.0, max=10.0, flag=board+N*4+0x6428
+//   Beg/Mstr (0x410020): scale=4.0, min=5.0, max=10.0, flag=board+N*4+0x6448
+//   Arena    (0x412850): scale=5.0, min=5.0, max=12.0, flag=board+(N-1)*4+0x53FC
+//
+// Bumper physics (all 3 handlers, identical except constants):
+//   1. Read ball pos (ball+0x164/168/16C) → Sound_Play3D(App+0x448, x,y,z)
+//   2. Read velocity from phys (ball+0x1A4): phys+0xCA4=X, +0xCA8=Y, +0xCAC=Z
+//   3. Scale XZ by multiplier (4.0 race / 5.0 arena)
+//   4. Zero Y velocity
+//   5. Clamp min: if speed < 5.0 → Vec3_NormalizeAndScale(vec, 5.0)
+//   6. Clamp max: if speed > max → Vec3_NormalizeAndScale(vec, max)
+//   7. Write back to phys+0xCA4/CA8/CAC
+//   8. Set hit flag: board + N*4 + offset = 1.0f (0x3F800000)
+//
+// PopCylinder position: +0x10D4=X, +0x10D8=Y, +0x10DC=Z
+// =====================================================
+
+alloc(BumperCode, 4096)
 alloc(SpawnBumper, 4)
 alloc(saved_board, 4)
-alloc(out_obj, 4)
+alloc(bumper_array, 68)
 alloc(temp_mesh, 4)
 alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
-alloc(bumper_array, 68)
+alloc(float_y_offset, 4)
+alloc(float_x_offset, 4)
 alloc(last_board, 4)
+alloc(bumper_radius_sq, 4)
+alloc(vel_x, 4)
+alloc(vel_y, 4)
+alloc(vel_z, 4)
+alloc(phys_ptr, 4)
+alloc(speed_sq, 4)
+alloc(is_arena, 4)
+alloc(bumper_num, 4)
 
 registersymbol(SpawnBumper)
 
 SpawnBumper:
   dd 0
-
 saved_board:
   dd 0
-
-out_obj:
-  dd 0
-
-temp_mesh:
-  dd 0
-
-playerX:
-  dd 0
-
-playerY:
-  dd 0
-
-playerZ:
-  dd 0
-
 bumper_array:
   dd 0
   dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-
+temp_mesh:
+  dd 0
+playerX:
+  dd 0
+playerY:
+  dd 0
+playerZ:
+  dd 0
+float_y_offset:
+  dd C0A00000      // -5.0
+float_x_offset:
+  dd 42480000      // 50.0
 last_board:
   dd 0
+bumper_radius_sq:
+  dd 43480000      // 200.0 (radius ~14 units, squared = 200)
+vel_x:
+  dd 0
+vel_y:
+  dd 0
+vel_z:
+  dd 0
+phys_ptr:
+  dd 0
+speed_sq:
+  dd 0
+is_arena:
+  dd 0
+bumper_num:
+  dd 1
 
 label(original_code)
 label(save_pos)
 label(check_spawn)
+label(do_spawn)
 label(done_spawn)
 label(no_clear)
-label(skip_mesh_list)
-label(skip_collision)
+label(skip_col)
+label(skip_render)
+label(check_prox)
+label(apply_bump)
+label(next_bumper)
+label(bump_done)
+label(skip_sound)
+label(skip_min_clamp)
+label(skip_max_clamp)
+label(arena_max)
 
-SpawnCode:
-  // === BOARD CHANGE DETECTION ===
-  mov eax, [esi+0x14]
+// =====================================================
+// Per-frame hook: Ball_Update at 0x00405E22
+// Original instruction: mov eax, [esi+0C5C] (6 bytes)
+// =====================================================
+
+BumperCode:
+  mov eax, [esi+14]       // ball+0x14 = board pointer
   test eax, eax
-  jz no_clear
+  jz original_code
   cmp eax, [last_board]
   je no_clear
   mov [last_board], eax
   mov dword [bumper_array], 0
 
 no_clear:
-  // === SAVE BALL POSITION ===
-  cmp dword [esi+0x18], 0
+  mov eax, [bumper_array]
+  test eax, eax
+  jz save_pos
+
+  // ---- Proximity-based bumper physics ----
+  pushad
+  xor ebx, ebx
+
+check_prox:
+  cmp ebx, [bumper_array]
+  jae bump_done
+
+  mov ecx, [bumper_array+4+ebx*4]
+  test ecx, ecx
+  jz next_bumper
+
+  // Read bumper position from PopCylinder: +0x10D4=X, +0x10DC=Z
+  // Ball position: esi+0x164=X, esi+0x16C=Z
+  fld dword [ecx+10D4]       // bumper X
+  fsub dword [esi+164]       // bumper X - ball X
+  fmul st(0), st(0)          // dx²
+  fld dword [ecx+10DC]       // bumper Z
+  fsub dword [esi+16C]       // bumper Z - ball Z
+  fmul st(0), st(0)          // dz²
+  faddp                      // dx² + dz²
+  fld dword [bumper_radius_sq]
+  fcomip st(1)
+  fstp st(0)
+  jb next_bumper             // if radius_sq < dist², skip (JB not JAE!)
+
+apply_bump:
+  // === EXACT N:BUMPER PHYSICS ===
+
+  // Step 1: Determine board type (arena vs race)
+  mov edx, [saved_board]
+  mov edx, [edx]             // vtable pointer
+  mov edx, [edx+74]          // vtable[0x1D] = collision handler
+  cmp edx, 00412850          // HandleArenaCollisionEvents?
+  jne skip_sound
+  mov dword [is_arena], 1
+  jmp skip_sound
+
+skip_sound:
+
+  // Step 2: Play bumper sound (Sound_Play3D at 0x459860)
+  // ECX = sound object (this), stack: x, y, z
+  // Sound ptr = App+0x448 (via board+0x878 → App)
+  mov eax, [saved_board]
+  mov eax, [eax+878]         // App pointer
+  test eax, eax
+  jz skip_sound_done
+  mov eax, [eax+448]         // bumper sound pointer
+  test eax, eax
+  jz skip_sound_done
+
+  // Push ball position as args (x, y, z)
+  push ecx                   // save bumper pointer
+  fld dword [esi+16C]         // ball Z
+  sub esp, 4
+  fstp dword [esp]
+  fld dword [esi+168]         // ball Y
+  sub esp, 4
+  fstp dword [esp]
+  fld dword [esi+164]         // ball X
+  sub esp, 4
+  fstp dword [esp]
+  mov ecx, eax                // ECX = sound object (this)
+  call 00459860              // Sound_Play3D(this, x, y, z)
+  pop ecx                    // restore bumper pointer
+
+skip_sound_done:
+
+  // Step 3: Read current velocity from physics object
+  // phys = ball+0x1A4, velocity at phys+0xCA4(X)/0xCA8(Y)/0xCAC(Z)
+  mov eax, [esi+1A4]         // physics pointer
+  test eax, eax
+  jz next_bumper
+  mov [phys_ptr], eax
+
+  fld dword [eax+CA4]         // vx
+  fstp dword [vel_x]
+  fld dword [eax+CA8]         // vy
+  fstp dword [vel_y]
+  fld dword [eax+CAC]         // vz
+  fstp dword [vel_z]
+
+  // Step 4: Scale XZ by multiplier (4.0 race, 5.0 arena)
+  cmp dword [is_arena], 0
+  jne arena_scale
+  fld dword [vel_x]
+  fmul dword [004CF41C]       // * 4.0
+  fstp dword [vel_x]
+  fld dword [vel_z]
+  fmul dword [004CF41C]       // * 4.0
+  fstp dword [vel_z]
+  jmp scale_done
+
+arena_scale:
+  fld dword [vel_x]
+  fmul dword [004CF55C]       // * 5.0 (arena uses 5.0 as scale)
+  fstp dword [vel_x]
+  fld dword [vel_z]
+  fmul dword [004CF55C]       // * 5.0
+  fstp dword [vel_z]
+
+scale_done:
+
+  // Step 5: Zero Y velocity
+  mov dword [vel_y], 0
+
+  // Step 6: Clamp MIN speed to 5.0
+  // speed = sqrt(vx² + vz²)
+  fld dword [vel_x]
+  fmul st(0), st(0)
+  fld dword [vel_z]
+  fmul st(0), st(0)
+  faddp                      // speed²
+  fst dword [speed_sq]
+  fcom dword [004CF368]       // compare with 0.0
+  fnstsw ax
+  test ah, 41
+  jnp skip_min_clamp         // if speed² <= 0.0, skip (zero vector)
+  fsqrt
+  fcomp dword [004CF55C]     // compare speed with 5.0
+  fnstsw ax
+  test ah, 05
+  jp skip_min_clamp          // if speed >= 5.0, skip min clamp
+  // speed < 5.0 → normalize and scale to 5.0
+  // Vec3_NormalizeAndScale(&vec, 5.0) at 0x401AA0
+  // ECX = &vel_x (this pointer = vec3 start)
+  lea ecx, [vel_x]
+  push 40A00000              // 5.0
+  call 00401AA0
+  jmp skip_min_clamp_done
+
+skip_min_clamp:
+  fstp st(0)                 // clean FPU stack
+
+skip_min_clamp_done:
+
+  // Step 7: Clamp MAX speed (10.0 race, 12.0 arena)
+  fld dword [vel_x]
+  fmul st(0), st(0)
+  fld dword [vel_z]
+  fmul st(0), st(0)
+  faddp
+  fld dword [vel_y]
+  fmul st(0), st(0)
+  faddp                      // total speed² (including Y=0, so same as XZ)
+  fcom dword [004CF368]       // compare with 0.0
+  fnstsw ax
+  test ah, 41
+  jnp skip_max_clamp
+  fsqrt
+  cmp dword [is_arena], 0
+  jne arena_max
+  fcomp dword [004CF9F8]     // compare with 10.0 (race max)
+  fnstsw ax
+  test ah, 41
+  jnz skip_max_clamp
+  push 41200000              // 10.0
+  jmp do_max_clamp
+
+arena_max:
+  fcomp dword [004CF3DC]     // compare with 12.0 (arena max)
+  fnstsw ax
+  test ah, 41
+  jnz skip_max_clamp
+  push 41400000              // 12.0 (0x41400000)
+
+do_max_clamp:
+  lea ecx, [vel_x]
+  call 00401AA0              // Vec3_NormalizeAndScale(&vec, max)
+  jmp skip_max_clamp_done
+
+skip_max_clamp:
+  fstp st(0)
+
+skip_max_clamp_done:
+
+  // Step 8: Write velocity back to physics object
+  mov eax, [phys_ptr]
+  fld dword [vel_x]
+  fstp dword [eax+CA4]
+  fld dword [vel_y]
+  fstp dword [eax+CA8]
+  fld dword [vel_z]
+  fstp dword [eax+CAC]
+
+  // Step 9: Set bumper hit flag on board
+  // Race:  board + N*4 + 0x6448
+  // Arena: board + (N-1)*4 + 0x53FC
+  // N = [bumper_num] (we use 1 for all spawned bumpers)
+  mov edx, [saved_board]
+  cmp dword [is_arena], 0
+  jne set_arena_flag
+  mov eax, [bumper_num]
+  imul eax, eax, 4
+  add eax, edx
+  mov dword [eax+6448], 3F800000   // 1.0f
+  jmp next_bumper
+
+set_arena_flag:
+  mov eax, [bumper_num]
+  dec eax
+  imul eax, eax, 4
+  add eax, edx
+  mov dword [eax+53FC], 3F800000   // 1.0f
+
+next_bumper:
+  inc ebx
+  jmp check_prox
+
+bump_done:
+  popad
+
+  // ---- Spawn new bumper on hotkey ----
+save_pos:
+  cmp dword [esi+18], 0       // check ball is active (ball+0x18)
   jne check_spawn
 
-  mov eax, [esi+0x164]
-  mov [playerX], eax
-  mov eax, [esi+0x168]
-  mov [playerY], eax
-  mov eax, [esi+0x16C]
+  // Save player position for spawn
+  fld dword [esi+164]
+  fadd dword [float_x_offset]
+  fstp dword [playerX]
+  fld dword [esi+168]
+  fadd dword [float_y_offset]
+  fstp dword [playerY]
+  mov eax, [esi+16C]
   mov [playerZ], eax
 
 check_spawn:
-  // === CHECK SPAWN FLAG ===
   cmp dword [SpawnBumper], 0
   je original_code
-
-  cmp dword [esi+0x18], 0
+  cmp dword [esi+18], 0
   jne original_code
-
   mov dword [SpawnBumper], 0
-  pushad
 
-  // === GET BOARD ===
-  mov eax, [esi+0x14]
+do_spawn:
+  pushad
+  mov dword [is_arena], 0    // reset arena flag
+  mov eax, [esi+14]
   mov [saved_board], eax
   test eax, eax
   jz done_spawn
-
-  // Validate Board+0x8AC (scene level mesh)
-  mov edx, [eax+0x8AC]
+  mov edx, [eax+878]         // App pointer
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+174]         // scene spatial tree source
   test edx, edx
   jz done_spawn
 
-  // Get App from Board+0x878, then App+0x174 (D3D device for MeshWorld_ctor)
-  mov edx, [eax+0x878]
-  test edx, edx
-  jz done_spawn
-  mov edx, [edx+0x174]
-  test edx, edx
-  jz done_spawn
-
-  // === CREATE MESHWORLD from Level8 (contains N:BUMPER1-8) ===
-  // String "levels\level8" is at 0x4CFCA4 in .rdata
-  push 0x10D0
-  call 004BA57B
+  // Allocate MeshWorld (0x10D0 bytes)
+  push 10D0
+  call 004BA57B              // malloc
   add esp, 4
   test eax, eax
   jz done_spawn
-  mov ebx, eax
 
-  // MeshWorld_ctor(mesh, App+0x174, "levels\level8")
+  // Initialize mesh: FUN_00461510(mesh, scene_tree, "levels\level9-popcylinder2")
   mov edx, [saved_board]
-  mov edx, [edx+0x878]
-  mov edx, [edx+0x174]
-  push 004CFCA4
+  mov edx, [edx+878]
+  mov edx, [edx+174]
+  push 004D0F40              // "levels\level9-popcylinder2"
   push edx
-  mov ecx, ebx
-  call 00461510
+  mov ecx, eax
+  call 00461510              // SceneObject ctor (mesh init)
   test eax, eax
   jz done_spawn
   mov [temp_mesh], eax
 
-  // === CREATE STANDS OBJECT (clones mesh, includes bumper geometry) ===
-  // SceneObject_ctor: thiscall(this, mesh) — RET 0x4
-  // Alloc size 0x10D0 (same as level objects)
-  push 0x10D0
+  // Allocate PopCylinder (0x10D0 bytes)
+  push 10D0
   call 004BA57B
   add esp, 4
   test eax, eax
   jz done_spawn
   mov edi, eax
 
-  // SceneObject_ctor(alloc, mesh)
+  // PopCylinder_ctor(this, mesh, x, y, z, board)
   mov edx, [temp_mesh]
-  push edx
+  push edx                   // param_5 = mesh
+  mov edx, [playerZ]
+  push edx                   // param_4 = Z
+  mov edx, [playerY]
+  push edx                   // param_3 = Y
+  mov edx, [playerX]
+  push edx                   // param_2 = X
+  mov edx, [saved_board]
+  push edx                   // param_1 = board (source for Stands_ctor)
   mov ecx, edi
-  call 00462850
+  call 00436EE0              // PopCylinder_ctor
   test eax, eax
   jz done_spawn
-  mov [out_obj], eax
-  mov esi, eax
+  mov edi, eax
 
-  // === SET POSITION (at player) ===
-  // Stands position: +0x10D8 (X), +0x10DC (Y), +0x10E0 (Z)
-  mov edx, [playerX]
-  mov [esi+0x10D8], edx
-  mov edx, [playerY]
-  mov [esi+0x10DC], edx
-  mov edx, [playerZ]
-  mov [esi+0x10E0], edx
-
-  // === REGISTER IN BOARD LISTS ===
-
-  // 1. Board+0x2578 — general objects list
-  push esi
+  // Register in board's AthenaLists (same as original script)
+  push edi
   mov ecx, [saved_board]
-  add ecx, 0x2578
-  call 00453810
+  add ecx, 2578
+  call 00453810              // AthenaList_Append (board+0x2578 = render list)
 
-  // 2. Board+0x0CD4 — objects list
-  push esi
+  push edi
   mov ecx, [saved_board]
-  add ecx, 0x0CD4
-  call 00453810
+  add ecx, CD4
+  call 00453810              // AthenaList_Append (board+0xCD4 = render list 2)
 
-  // 3. Board+0x8AC->+0x480->+0x1C — SceneObject mesh list
-  mov edx, [saved_board]
-  mov edx, [edx+0x8AC]
-  test edx, edx
-  jz skip_mesh_list
-  mov edx, [edx+0x480]
-  test edx, edx
-  jz skip_mesh_list
-  push esi
-  lea ecx, [edx+0x1C]
-  call 00453810
-skip_mesh_list:
-
-  // === REGISTER COLLISION ===
-  // The bumper collision is embedded in the mesh geometry.
-  // The CollisionLevel (created by SceneObject_ctor internally) contains
-  // the "N:BUMPER%d" event names. Register it in:
-  //   Board+0x10EC (collision level list)
-  //   Board+0x8B0->+0x18 (spatial tree collision list)
-  mov eax, [esi+0x10D4]
+  // Register collision data
+  mov eax, [edi+10E0]       // collision level data
   test eax, eax
-  jz skip_collision
-
+  jz skip_col
   push eax
   mov ecx, [saved_board]
-  add ecx, 0x10EC
-  call 00453810
+  add ecx, 10EC
+  call 00453810              // AthenaList_Append (board+0x10EC = collision list)
 
   mov edx, [saved_board]
-  mov edx, [edx+0x8B0]
+  mov edx, [edx+8B0]
   test edx, edx
-  jz skip_collision
-  mov eax, [esi+0x10D4]
+  jz skip_col
+  mov eax, [edi+10E0]
   push eax
-  lea ecx, [edx+0x18]
-  call 00453810
+  lea ecx, [edx+18]
+  call 00453810              // AthenaList_Append (scene spatial tree)
 
-skip_collision:
-  // === TIMER INIT + VTABLE CALLS ===
-  sub esp, 68
-  mov ebx, esp
-  mov ecx, ebx
-  call 00457AD0
+skip_col:
+  // Register in scene render tree
+  mov edx, [saved_board]
+  mov edx, [edx+8AC]
+  test edx, edx
+  jz skip_render
+  mov edx, [edx+480]
+  test edx, edx
+  jz skip_render
+  push edi
+  lea ecx, [edx+1C]
+  call 00453810              // AthenaList_Append (scene render list)
 
-  // vtable[0x58] = CallUpdate
-  mov ecx, esi
-  mov eax, [esi]
-  call dword [eax+0x58]
-
-  // vtable[0x54] = CallRender(timer)
-  push ebx
-  mov ecx, esi
-  mov eax, [esi]
-  call dword [eax+0x54]
-
-  mov ecx, ebx
-  call 00457A40
-  add esp, 68
-
-  // === TRACK FOR CLEANUP ===
-  mov eax, [out_obj]
-  mov ecx, [bumper_array]
-  cmp ecx, 16
+skip_render:
+  // Add to our bumper array (max 16)
+  mov eax, [bumper_array]
+  cmp eax, 16
   jae done_spawn
-  mov [bumper_array+4+ecx*4], eax
+  mov [bumper_array+4+eax*4], edi
   inc dword [bumper_array]
 
 done_spawn:
@@ -254,11 +463,11 @@ done_spawn:
   mov dword [temp_mesh], 0
 
 original_code:
-  mov eax, [esi+0x0c5c]
+  mov eax, [esi+0c5c]
   jmp 00405E28
 
 00405E22:
-  jmp SpawnCode
+  jmp BumperCode
   nop
 
 [DISABLE]
@@ -266,14 +475,23 @@ original_code:
 00405E22:
   db 8B 86 5C 0C 00 00
 
-dealloc(SpawnCode)
+dealloc(BumperCode)
 dealloc(SpawnBumper)
 dealloc(saved_board)
-dealloc(out_obj)
+dealloc(bumper_array)
 dealloc(temp_mesh)
 dealloc(playerX)
 dealloc(playerY)
 dealloc(playerZ)
-dealloc(bumper_array)
+dealloc(float_y_offset)
+dealloc(float_x_offset)
 dealloc(last_board)
+dealloc(bumper_radius_sq)
+dealloc(vel_x)
+dealloc(vel_y)
+dealloc(vel_z)
+dealloc(phys_ptr)
+dealloc(speed_sq)
+dealloc(is_arena)
+dealloc(bumper_num)
 unregistersymbol(SpawnBumper)
