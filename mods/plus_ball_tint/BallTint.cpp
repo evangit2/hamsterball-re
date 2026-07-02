@@ -1,10 +1,7 @@
-// Ball Tint mod for Hamsterball Plus API — DEBUG VERSION
-// Adds RGB sliders + tries every callback + prints debug info to console.
-//
-// Enable console via ModConfig.ini: [Config] ShowConsole=1
-//
-// v3: Heavy debug logging. Tries onBallUpdate, onGameUpdate, AND onTextRenderLoop.
-//     Tries both GetApp() path AND GetScene() path. Prints what works.
+// Ball Tint mod for Hamsterball Plus API — v4 DEBUG
+// Fixes v3's broken frame counter (chicken-and-egg: tryApplyColors never ran).
+// Now: ALL callbacks ALWAYS apply colors. Debug prints use separate counter.
+// Console output: first-fire confirmation + periodic state dump.
 
 #include "HamsterballAPI.h"
 #include <windows.h>
@@ -16,15 +13,15 @@ static constexpr DWORD APP_PROFILE_OFFSET  = 0x220;
 static constexpr DWORD PROFILE_BOARD_OFFSET = 0x0C;
 static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
 static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
-
-// The real global App pointer address (bass.dll reads from here)
 static constexpr DWORD GLOBAL_APP_PTR = 0x5341E0;
-
-static int g_frame_count = 0;
 
 class BallTintMod : public HamsterballAPI {
 private:
     IModAPI* api = nullptr;
+    int m_printCounter = 0;
+    bool m_seenBallUpdate = false;
+    bool m_seenGameUpdate = false;
+    bool m_seenTextRender = false;
 
     void createColorSlider(const char* id, const char* label, float defaultVal) {
         CustomSlider s(id, label, defaultVal);
@@ -52,126 +49,47 @@ private:
         return true;
     }
 
-    // Path 1: GetApp() → +0x220 → +0x0C
-    DWORD findBoardViaApp() {
+    DWORD findBoard() {
         if (!api) return 0;
+
+        // Path 1: GetApp() → +0x220 → +0x0C
         App* app = api->GetApp();
-        if (!app) {
-            return 0;
+        if (app) {
+            DWORD appAddr = (DWORD)app;
+            if (appAddr >= 0x10000 && !IsBadReadPtr((void*)(appAddr + APP_PROFILE_OFFSET), 4)) {
+                DWORD profile = *(DWORD*)(appAddr + APP_PROFILE_OFFSET);
+                if (profile && profile >= 0x10000 && !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
+                    DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+                    if (board && board >= 0x10000 && validateBoard(board)) return board;
+                }
+            }
         }
-        DWORD appAddr = (DWORD)app;
-        if (appAddr < 0x10000) return 0;
-        if (IsBadReadPtr((void*)(appAddr + APP_PROFILE_OFFSET), 4)) return 0;
-        DWORD profile = *(DWORD*)(appAddr + APP_PROFILE_OFFSET);
-        if (!profile || profile < 0x10000) return 0;
-        if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) return 0;
-        DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
-        if (!board || board < 0x10000) return 0;
-        if (!validateBoard(board)) return 0;
-        return board;
-    }
 
-    // Path 2: GetScene() (g_Scene from ball->scene)
-    DWORD findBoardViaScene() {
-        if (!api) return 0;
+        // Path 2: GetScene()
         Scene* scene = api->GetScene();
-        if (!scene) return 0;
-        DWORD board = (DWORD)scene;
-        if (!validateBoard(board)) return 0;
-        return board;
+        if (scene) {
+            DWORD board = (DWORD)scene;
+            if (validateBoard(board)) return board;
+        }
+
+        // Path 3: Direct global pointer (bass.dll method)
+        DWORD globalApp = *(DWORD*)GLOBAL_APP_PTR;
+        if (globalApp && globalApp >= 0x10000 && !IsBadReadPtr((void*)(globalApp + APP_PROFILE_OFFSET), 4)) {
+            DWORD profile = *(DWORD*)(globalApp + APP_PROFILE_OFFSET);
+            if (profile && profile >= 0x10000 && !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
+                DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+                if (board && board >= 0x10000 && validateBoard(board)) return board;
+            }
+        }
+
+        return 0;
     }
 
-    // Path 3: Direct global pointer at 0x5341E0 (bass.dll method)
-    DWORD findBoardViaGlobal() {
-        DWORD appPtr = *(DWORD*)GLOBAL_APP_PTR;
-        if (!appPtr || appPtr < 0x10000) return 0;
-        if (IsBadReadPtr((void*)(appPtr + APP_PROFILE_OFFSET), 4)) return 0;
-        DWORD profile = *(DWORD*)(appPtr + APP_PROFILE_OFFSET);
-        if (!profile || profile < 0x10000) return 0;
-        if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) return 0;
-        DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
-        if (!board || board < 0x10000) return 0;
-        if (!validateBoard(board)) return 0;
-        return board;
-    }
-
-    void tryApplyColors(const char* callbackName) {
-        if (!api) return;
-        g_frame_count++;
-
-        // Try all three paths
-        DWORD board = findBoardViaApp();
-        const char* method = "GetApp";
-        if (!board) {
-            board = findBoardViaScene();
-            method = "GetScene";
-        }
-        if (!board) {
-            board = findBoardViaGlobal();
-            method = "Global";
-        }
-
-        // Print debug info every 60 frames (~1 second)
-        if (g_frame_count % 60 == 1) {
-            App* app = api->GetApp();
-            Scene* scene = api->GetScene();
-            DWORD globalApp = *(DWORD*)GLOBAL_APP_PTR;
-
-            printf("[BallTint] %s frame=%d\n", callbackName, g_frame_count);
-            printf("  GetApp()=%p  GetScene()=%p  GlobalApp(0x5341E0)=%08X\n",
-                (void*)app, (void*)scene, globalApp);
-
-            if (app) {
-                DWORD appAddr = (DWORD)app;
-                if (!IsBadReadPtr((void*)(appAddr + APP_PROFILE_OFFSET), 4)) {
-                    DWORD profile = *(DWORD*)(appAddr + APP_PROFILE_OFFSET);
-                    printf("  App+0x220(profile)=%08X", profile);
-                    if (profile && profile > 0x10000 &&
-                        !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
-                        DWORD b = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
-                        printf(" profile+0xC(board)=%08X", b);
-                        if (b && b > 0x10000 && !IsBadReadPtr((void*)b, 4)) {
-                            printf(" board_vtable=%08X", *(DWORD*)b);
-                        }
-                    }
-                    printf("\n");
-                } else {
-                    printf("  App+0x220 unreadable\n");
-                }
-            }
-
-            if (globalApp) {
-                if (!IsBadReadPtr((void*)(globalApp + APP_PROFILE_OFFSET), 4)) {
-                    DWORD profile = *(DWORD*)(globalApp + APP_PROFILE_OFFSET);
-                    DWORD b = 0;
-                    if (profile && profile > 0x10000 &&
-                        !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
-                        b = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
-                    }
-                    printf("  GlobalApp: profile=%08X board=%08X\n", profile, b);
-                }
-            }
-
-            if (board) {
-                printf("  FOUND board=%08X via %s — applying colors\n", board, method);
-            } else {
-                printf("  NO BOARD FOUND via any method\n");
-            }
-        }
-
-        if (!board) return;
-
-        // Read current slider values
-        float p1r = api->GetSliderState("TINT_P1_R");
-        float p1g = api->GetSliderState("TINT_P1_G");
-        float p1b = api->GetSliderState("TINT_P1_B");
-
-        // Print slider values every 120 frames
-        if (g_frame_count % 120 == 1) {
-            printf("  Sliders: P1(%.2f,%.2f,%.2f)\n", p1r, p1g, p1b);
-        }
-
-        applyColor(board, 0, p1r, p1g, p1b);
+    void applyAllColors(DWORD board) {
+        applyColor(board, 0,
+            api->GetSliderState("TINT_P1_R"),
+            api->GetSliderState("TINT_P1_G"),
+            api->GetSliderState("TINT_P1_B"));
         applyColor(board, 1,
             api->GetSliderState("TINT_P2_R"),
             api->GetSliderState("TINT_P2_G"),
@@ -186,15 +104,80 @@ private:
             api->GetSliderState("TINT_P4_B"));
     }
 
+    void doDebugDump(const char* callbackName) {
+        m_printCounter++;
+
+        // Print first-fire confirmation for each callback
+        bool isFirst = false;
+        if (strcmp(callbackName, "BallUpdate") == 0 && !m_seenBallUpdate) {
+            m_seenBallUpdate = true;
+            isFirst = true;
+        } else if (strcmp(callbackName, "GameUpdate") == 0 && !m_seenGameUpdate) {
+            m_seenGameUpdate = true;
+            isFirst = true;
+        } else if (strcmp(callbackName, "TextRender") == 0 && !m_seenTextRender) {
+            m_seenTextRender = true;
+            isFirst = true;
+        }
+        if (isFirst) {
+            printf("[BallTint] *** %s first fire! ***\n", callbackName);
+        }
+
+        // Every 120 frames, dump state
+        if (m_printCounter % 120 != 0) return;
+
+        App* app = api->GetApp();
+        Scene* scene = api->GetScene();
+        DWORD globalApp = *(DWORD*)GLOBAL_APP_PTR;
+
+        printf("[BallTint] %s dump #%d\n", callbackName, m_printCounter);
+        printf("  GetApp=%p GetScene=%p GlobalPtr=%08lX\n",
+            (void*)app, (void*)scene, (unsigned long)globalApp);
+
+        // Try to trace App → Profile → Board
+        DWORD appAddr = 0;
+        if (app) appAddr = (DWORD)app;
+        else if (globalApp) appAddr = globalApp;
+
+        if (appAddr && !IsBadReadPtr((void*)(appAddr + APP_PROFILE_OFFSET), 4)) {
+            DWORD profile = *(DWORD*)(appAddr + APP_PROFILE_OFFSET);
+            printf("  App=%08lX +0x220 -> profile=%08lX\n",
+                (unsigned long)appAddr, (unsigned long)profile);
+            if (profile && profile >= 0x10000 &&
+                !IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) {
+                DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
+                printf("  profile+0xC -> board=%08lX\n", (unsigned long)board);
+                if (board && board >= 0x10000 && !IsBadReadPtr((void*)board, 4)) {
+                    DWORD vt = *(DWORD*)board;
+                    printf("  board vtable=%08lX (valid=%s)\n",
+                        (unsigned long)vt,
+                        (vt >= BOARD_VTABLE_MIN && vt <= BOARD_VTABLE_MAX) ? "YES" : "NO");
+                }
+            }
+        }
+
+        DWORD foundBoard = findBoard();
+        if (foundBoard) {
+            printf("  findBoard() -> %08lX SUCCESS\n", (unsigned long)foundBoard);
+            float p1r = api->GetSliderState("TINT_P1_R");
+            float p1g = api->GetSliderState("TINT_P1_G");
+            float p1b = api->GetSliderState("TINT_P1_B");
+            printf("  P1 sliders: R=%.2f G=%.2f B=%.2f\n", p1r, p1g, p1b);
+        } else {
+            printf("  findBoard() -> FAILED\n");
+        }
+    }
+
 public:
-    const char* GetModName() override    { return "Ball Tint (Debug)"; }
+    const char* GetModName() override    { return "Ball Tint (Debug v4)"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v3 debug build"; }
+    const char* GetContributors() override { return "v4: fixed frame counter"; }
     int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
         api = modApi;
-        printf("[BallTint] Initialize() called, api=%p\n", (void*)api);
+        printf("[BallTint] Initialize() api=%p GetApp=%p GetScene=%p\n",
+            (void*)modApi, (void*)modApi->GetApp(), (void*)modApi->GetScene());
 
         createColorSlider("TINT_P1_R", "P1 Red",   1.0f);
         createColorSlider("TINT_P1_G", "P1 Green", 1.0f);
@@ -208,55 +191,28 @@ public:
         createColorSlider("TINT_P4_R", "P4 Red",   1.0f);
         createColorSlider("TINT_P4_G", "P4 Green", 1.0f);
         createColorSlider("TINT_P4_B", "P4 Blue",  0.0f);
-
-        printf("[BallTint] Sliders registered. GetApp()=%p GetScene()=%p\n",
-            (void*)api->GetApp(), (void*)api->GetScene());
     }
 
     void onLevelStart() override {
-        printf("[BallTint] onLevelStart() called\n");
+        printf("[BallTint] onLevelStart()\n");
     }
 
     void onBallUpdate(Ball* ball) override {
-        // Only log occasionally — this fires every frame
-        if (g_frame_count % 60 == 1) {
-            tryApplyColors("onBallUpdate");
-        } else {
-            // Still apply colors silently
-            DWORD board = findBoardViaApp();
-            if (!board) board = findBoardViaScene();
-            if (!board) board = findBoardViaGlobal();
-            if (board) {
-                applyColor(board, 0,
-                    api->GetSliderState("TINT_P1_R"),
-                    api->GetSliderState("TINT_P1_G"),
-                    api->GetSliderState("TINT_P1_B"));
-                applyColor(board, 1,
-                    api->GetSliderState("TINT_P2_R"),
-                    api->GetSliderState("TINT_P2_G"),
-                    api->GetSliderState("TINT_P2_B"));
-                applyColor(board, 2,
-                    api->GetSliderState("TINT_P3_R"),
-                    api->GetSliderState("TINT_P3_G"),
-                    api->GetSliderState("TINT_P3_B"));
-                applyColor(board, 3,
-                    api->GetSliderState("TINT_P4_R"),
-                    api->GetSliderState("TINT_P4_G"),
-                    api->GetSliderState("TINT_P4_B"));
-            }
-        }
+        doDebugDump("BallUpdate");
+        DWORD board = findBoard();
+        if (board) applyAllColors(board);
     }
 
     void onGameUpdate() override {
-        if (g_frame_count % 60 == 1) {
-            tryApplyColors("onGameUpdate");
-        }
+        doDebugDump("GameUpdate");
+        DWORD board = findBoard();
+        if (board) applyAllColors(board);
     }
 
     void onTextRenderLoop() override {
-        if (g_frame_count % 60 == 1) {
-            tryApplyColors("onTextRenderLoop");
-        }
+        doDebugDump("TextRender");
+        DWORD board = findBoard();
+        if (board) applyAllColors(board);
     }
 };
 
