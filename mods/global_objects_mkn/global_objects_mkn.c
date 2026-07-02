@@ -1,12 +1,32 @@
 /*
- * global_objects_mkn.c — Global SWIRL Spawner for Hamsterball
+ * global_objects_mkn.c — Global BUMPER Mod for Hamsterball
  *
- * Spawns the Dizzy Race SWIRL object on ANY race/level.
- * Loads "Levels\Level3-Swirl" mesh, registers in render+collision lists,
- * and hooks collision dispatch to handle "N:SWIRL" events.
+ * Makes BUMPER objects work on ANY race/level, not just Beginner/Master/Toob.
+ *
+ * BUMPER objects are mesh-level collision objects named "N:BUMPER%d" (1-8).
+ * They exist in the MESHWORLD files of many levels but only have collision
+ * EFFECTS (velocity boost + sound + hit animation) on levels whose board
+ * vtable dispatches to a collision handler that recognizes "N:BUMPER".
+ *
+ * This mod hooks DispatchCollisionEvents (0x40C5D0) — the BASE collision
+ * dispatcher called by ALL board vtables. When an "N:BUMPER" collision event
+ * is detected on a level that doesn't natively handle it, we apply the same
+ * physics as the game's own bumper handlers:
+ *
+ *   1. Play bumper sound (Sound_Play3D at App+0x448)
+ *   2. Scale XZ velocity by 4.0x (_DAT_004cf41c)
+ *   3. Set Y velocity to 0 (flat bounce)
+ *   4. Clamp speed to [5.0, 10.0] (_DAT_004cf55c / _DAT_004cf9f8)
+ *   5. Set bumper hit flag = 1.0f for bumper animation
+ *
+ * The hit flag offset varies by board type:
+ *   Race boards:  board + atol(N) * 4 + 0x6448
+ *   Arena boards: board + (atol(N)-1) * 4 + 0x53FC
+ *
+ * We detect board type by checking the board vtable pointer.
  *
  * Build: i686-w64-mingw32-gcc -shared -o bass.dll global_objects_mkn.c -lwinmm \
- *        -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias
+ *        -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
  * Install: Rename original bass.dll to bass_real.dll, place this bass.dll in game folder.
  */
@@ -15,293 +35,267 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* ========== Game function addresses (VA, image base 0x400000) ========== */
-#define ADDR_OPERATOR_NEW       0x004BA57B  /* __cdecl: size → void* */
-#define ADDR_MESHWORLD_CTOR     0x00461510  /* __thiscall: ECX=mem, [graphics, filename], RET 8 */
-#define ADDR_COLLISIONLEVEL_CTOR 0x00465080  /* __thiscall: ECX=mem, [meshworld], RET 4 */
-#define ADDR_ATHENALIST_APPEND  0x00453810  /* __thiscall: ECX=list, [item], RET 4 */
-#define ADDR_TIMER_INIT         0x00457AD0  /* __fastcall: ECX=&timer, plain RET */
-#define ADDR_TIMER_CLEANUP      0x00457A40  /* __fastcall: ECX=&timer, plain RET */
 #define ADDR_DISPATCH_COLLISION 0x0040C5D0  /* __thiscall: ECX=board, [ball, entry], RET 8 */
-#define ADDR_MASTER_ORCHESTRATOR 0x0041C5B0 /* __thiscall: ECX=board, [app], RET 4 */
+#define ADDR_SOUND_PLAY_3D      0x00459860  /* __cdecl: (sound_ptr, x, y, z) */
+#define ADDR_VEC3_NORMALIZE_SCALE 0x00401AA0 /* __thiscall: ECX=&vec3, float scale */
+#define ADDR_ATHENASTRING_FORMAT 0x00466C70  /* __fastcall: ECX=buffer, EDX=format_str */
 
 /* ========== Struct offsets ========== */
-#define APP_GFX_DEVICE          0x174       /* App+0x174 = Graphics* (D3D device) */
-#define APP_BASE_ADDR           0x005341E0  /* Global App pointer address */
-
-/* Board offsets */
-#define BOARD_APP_PTR           0x878       /* board+0x878 = App* */
-#define BOARD_SWIRL_MESH        0x4BC4     /* board+0x4BC4 = SWIRL MeshWorld* (visual) */
-#define BOARD_SWIRL_COLLISION   0x4BC8     /* board+0x4BC8 = SWIRL Level* (collision) */
-#define BOARD_SWIRL_POS_X       0x4BCC     /* board+0x4BCC = SWIRL position X (float) */
-#define BOARD_SWIRL_POS_Y       0x4BD0     /* board+0x4BD0 = SWIRL position Y (float) */
-#define BOARD_SWIRL_POS_Z       0x4BD4     /* board+0x4BD4 = SWIRL position Z (float) */
-#define BOARD_RENDER_LIST       0x0CD4     /* board+0xCD4 = scene objects render list (AthenaList) */
-#define BOARD_COLLISION_LIST    0x10EC     /* board+0x10EC = collision levels master list */
-#define BOARD_LEVEL_COLLISION   0x08B0     /* board+0x8B0 = level CollisionLevel */
-#define LEVEL_MESH_PTR          0x08AC     /* board+0x8AC = level MeshWorld* */
-#define LEVEL_SCENE_OBJ         0x0480     /* MeshWorld+0x480 = SceneObject */
+#define APP_BASE_ADDR           0x005341E0   /* Global App pointer address */
+#define APP_GFX_DEVICE          0x174        /* App+0x174 = Graphics* (D3D device) */
+#define BOARD_APP_PTR           0x878        /* board+0x878 = App* */
 
 /* Ball offsets */
-#define BALL_SWIRLED_FLAG       0x779       /* ball+0x779 = swirled flag (byte, set by N:SWIRL) */
+#define BALL_POS_X              0x164        /* ball+0x164 = position X (float) */
+#define BALL_POS_Y              0x168        /* ball+0x168 = position Y (float) */
+#define BALL_POS_Z              0x16C        /* ball+0x16C = position Z (float) */
+#define BALL_PHYS_PTR           0x1A4        /* ball+0x1A4 = Physics* (param_2[0x69] in decomp) */
+#define PHYS_VEL_X              0xCA4        /* phys+0xCA4 = velocity X (float) */
+#define PHYS_VEL_Y              0xCA8        /* phys+0xCA8 = velocity Y (float) */
+#define PHYS_VEL_Z              0xCAC        /* phys+0xCAC = velocity Z (float) */
 
 /* Collision entry offsets */
-#define COLLISION_ENTRY_NAME    0x864       /* collision_data+0x864 = entity name string ptr */
+#define COLLISION_ENTRY_NAME    0x864        /* collision_data+0x864 = entity name string ptr */
 
-/* SWIRL mesh path */
-static const char *SWIRL_MESH_PATH = "Levels\\Level3-Swirl";
-static const char *N_SWIRL_STRING = "N:SWIRL";
+/* Sound slot for bumper SFX */
+#define APP_BUMPER_SOUND        0x448        /* App+0x448 = bumper sound pointer */
 
-/* vtable indices */
-#define VTABLE_CALLUPDATE       0x58        /* vtable[0x58] = SceneObject_CallUpdate */
-#define VTABLE_CALLRENDER        0x54        /* vtable[0x54] = SceneObject_CallRender */
+/* Bumper physics constants (verified from .rdata) */
+#define BUMPER_VEL_SCALE        4.0f        /* _DAT_004cf41c: velocity multiplier */
+#define BUMPER_MIN_SPEED        5.0f        /* _DAT_004cf55c: minimum launch speed */
+#define BUMPER_MAX_SPEED_RACE   10.0f       /* _DAT_004cf9f8: max speed for race boards */
+#define BUMPER_MAX_SPEED_ARENA  12.0f       /* _DAT_004cf3dc: max speed for arena boards */
+
+/* Bumper hit flag offsets per board type */
+#define BUMPER_HIT_RACE         0x6448      /* Race boards: board + N*4 + 0x6448 */
+#define BUMPER_HIT_ARENA        0x53FC      /* Arena boards: board + (N-1)*4 + 0x53FC */
+
+/* Known board vtables for type detection */
+#define VTABLE_LEVEL_CASCADE    0x004D10E0  /* Warm-Up Race */
+#define VTABLE_LEVEL8            0x004D0EC0  /* Beginner Race */
+#define VTABLE_LEVEL10           0x004D0F40  /* Master Race */
 
 /* ========== Function pointer types ========== */
-typedef void* (__cdecl *operator_new_t)(unsigned int size);
-typedef void* (__thiscall *meshworld_ctor_t)(void *mem, void *graphics, const char *filename);
-typedef void* (__thiscall *collisionlevel_ctor_t)(void *mem, void *meshworld);
-typedef void  (__thiscall *athenalist_append_t)(void *list, int item);
-typedef void  (__fastcall *timer_init_t)(void *timer);
-typedef void  (__fastcall *timer_cleanup_t)(void *timer);
-typedef void  (__thiscall *dispatch_collision_t)(void *board, void *ball, void *entry);
-typedef void  (__thiscall *master_orchestrator_t)(void *board, void *app);
+typedef void (__thiscall *dispatch_collision_t)(void *board, void *ball, void *entry);
+typedef void (__cdecl *sound_play_3d_t)(void *sound_ptr, float x, float y, float z);
+typedef void (__thiscall *vec3_normalize_scale_t)(float *vec, float scale);
 
 /* ========== Function pointers ========== */
-static operator_new_t        pfn_operator_new;
-static meshworld_ctor_t      pfn_meshworld_ctor;
-static collisionlevel_ctor_t pfn_collisionlevel_ctor;
-static athenalist_append_t   pfn_athenalist_append;
-static timer_init_t          pfn_timer_init;
-static timer_cleanup_t       pfn_timer_cleanup;
 static dispatch_collision_t  pfn_dispatch_collision;
-static master_orchestrator_t pfn_master_orchestrator;
+static sound_play_3d_t       pfn_sound_play_3d;
+static vec3_normalize_scale_t pfn_vec3_normalize_scale;
 
 /* ========== Hook state ========== */
-static unsigned char *g_orchestrator_tramp = NULL;
 static unsigned char *g_collision_tramp = NULL;
-static void *g_swirl_mesh = NULL;       /* cached SWIRL MeshWorld* */
-static void *g_swirl_collision = NULL;  /* cached SWIRL CollisionLevel* */
-static int  g_swirl_spawned = 0;        /* flag: SWIRL already spawned this level */
-static int  g_hooked = 0;
+static int g_hooked = 0;
 
-/* Forward declaration — debug_log is defined at bottom of file */
-static void debug_log(const char *msg);
-
-/* Default SWIRL position (configurable via global_objects_mkn.txt) */
-static float g_swirl_x = 0.0f;
-static float g_swirl_y = 0.0f;
-static float g_swirl_z = 0.0f;
-
-/* ========== Config file ========== */
-static void get_config_path(char *out, DWORD len)
-{
-    HMODULE hSelf = NULL;
-    char dll_path[MAX_PATH];
-    BOOL WINAPI DllMain(HINSTANCE, DWORD, LPVOID);
-    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-                           (LPCSTR)&DllMain, &hSelf) && hSelf) {
-        GetModuleFileNameA(hSelf, dll_path, MAX_PATH);
-        char *slash = strrchr(dll_path, '\\');
-        if (slash) { slash[1] = '\0'; _snprintf(out, len, "%sglobal_objects_mkn.txt", dll_path); return; }
-    }
-    _snprintf(out, len, "global_objects_mkn.txt");
-}
-
-static void read_config(void)
-{
-    char path[MAX_PATH];
-    get_config_path(path, MAX_PATH);
-
-    FILE *f = NULL;
-    if (fopen_s(&f, path, "r") != 0 || !f) {
-        /* Generate default config */
-        FILE *wf = NULL;
-        if (fopen_s(&wf, path, "w") != 0 || !wf) return;
-        fprintf(wf, "# SWIRL Spawner Configuration\n");
-        fprintf(wf, "# Position coordinates for the SWIRL object\n");
-        fprintf(wf, "X = 0.0\n");
-        fprintf(wf, "Y = 0.0\n");
-        fprintf(wf, "Z = 0.0\n");
-        fclose(wf);
-        return; /* defaults already 0.0 */
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        char *p = line;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
-
-        if (_strnicmp(p, "X", 1) == 0) {
-            char *eq = strchr(p, '=');
-            if (eq) g_swirl_x = (float)strtod(eq + 1, NULL);
-        } else if (_strnicmp(p, "Y", 1) == 0) {
-            char *eq = strchr(p, '=');
-            if (eq) g_swirl_y = (float)strtod(eq + 1, NULL);
-        } else if (_strnicmp(p, "Z", 1) == 0) {
-            char *eq = strchr(p, '=');
-            if (eq) g_swirl_z = (float)strtod(eq + 1, NULL);
-        }
-    }
-    fclose(f);
-}
-
-/* ========== Utility: check if address is safe to read ========== */
+/* ========== Utility ========== */
 static int safe_read(void *addr, unsigned int size)
 {
     return !IsBadReadPtr(addr, size);
 }
 
-/* ========== Spawn SWIRL on the current board ========== */
-static void spawn_swirl(void *board)
+/* Detect if board is an arena board by checking vtable.
+ * Arena boards use HandleArenaCollisionEvents (0x412850) as vtable[0x1D].
+ * Race boards use either FUN_00410020 or FUN_004111E0.
+ * We check the vtable[0x1D] slot (offset 0x74) to determine board type.
+ */
+static int is_arena_board(void *board)
 {
+    if (!board || !safe_read(board, 4)) return 0;
+    void **vt = *(void ***)board;
+    if (!vt || !safe_read(vt, 0x78)) return 0;
+
+    /* vtable[0x1D] = offset 0x74 = collision handler */
+    void *collision_handler = vt[0x1D];
+    if (!collision_handler) return 0;
+
+    /* HandleArenaCollisionEvents = 0x412850 (arena boards) */
+    if ((DWORD)collision_handler == 0x412850) return 1;
+
+    /* Also check some arena vtables directly by board vtable address */
+    if ((DWORD)vt == 0x4D11E0 || (DWORD)vt == 0x4D1200 ||
+        (DWORD)vt == 0x4D1220 || (DWORD)vt == 0x4D1240)
+        return 1;
+
+    return 0;
+}
+
+/* Check if the board's collision handler already handles N:BUMPER natively.
+ * If it does, we skip our injection to avoid double-processing.
+ *
+ * Boards with native BUMPER handling:
+ *   - Warm-Up (Cascade): vtable[0x1D] = FUN_004111E0 (0x4111E0)
+ *   - Beginner/Master:   vtable[0x1D] = FUN_00410020 (0x410020) 
+ *   - Arena-Beginner/Toob: vtable[0x1D] = HandleArenaCollisionEvents (0x412850)
+ *
+ * All other boards → DispatchCollisionEvents (0x40C5D0) which does NOT handle BUMPER.
+ */
+static int board_handles_bumper_natively(void *board)
+{
+    if (!board || !safe_read(board, 4)) return 0;
+    void **vt = *(void ***)board;
+    if (!vt || !safe_read(vt, 0x78)) return 0;
+
+    void *collision_handler = vt[0x1D];
+    if (!collision_handler) return 0;
+
+    /* FUN_004111E0 (Warm-Up), FUN_00410020 (Beginner/Master), HandleArenaCollisionEvents (Arena) */
+    if ((DWORD)collision_handler == 0x004111E0 ||
+        (DWORD)collision_handler == 0x00410020 ||
+        (DWORD)collision_handler == 0x00412850)
+        return 1;
+
+    return 0;
+}
+
+/* Apply bumper physics to ball.
+ * This replicates the exact logic from FUN_004111E0 and FUN_00410020.
+ *
+ * Physics flow:
+ * 1. Get ball position (for sound)
+ * 2. Get physics velocity (XZ plane)
+ * 3. Scale by BUMPER_VEL_SCALE (4.0)
+ * 4. Zero out Y velocity
+ * 5. If speed < min (5.0): normalize to min
+ * 6. If speed > max (10.0 race / 12.0 arena): normalize to max
+ * 7. Write back to physics velocity
+ * 8. Set bumper hit flag on board
+ */
+static void apply_bumper_physics(void *board, void *ball, const char *bumper_name)
+{
+    float pos_x, pos_y, pos_z;
+    float vel_x, vel_z, speed_sq, speed;
+    float max_speed, scale_factor;
+    int phys_ptr;
+    int arena;
+    long bumper_idx;
     void *app;
-    void *graphics;
+    void *sound_ptr;
 
-    debug_log("spawn_swirl: ENTRY");
+    if (!ball || !safe_read(ball, 0x200)) return;
+    if (!board || !safe_read(board, 0x6500)) return;
 
-    if (!board || !safe_read(board, 0x5000)) {
-        debug_log("spawn_swirl: bad board ptr");
-        return;
-    }
-    if (g_swirl_spawned) {
-        debug_log("spawn_swirl: already spawned");
-        return;
-    }
+    /* Get ball position */
+    pos_x = *(float *)((unsigned char *)ball + BALL_POS_X);
+    pos_y = *(float *)((unsigned char *)ball + BALL_POS_Y);
+    pos_z = *(float *)((unsigned char *)ball + BALL_POS_Z);
 
+    /* Get App and sound pointer */
     app = *(void **)((unsigned char *)board + BOARD_APP_PTR);
-    if (!app || !safe_read(app, 0x300)) {
-        debug_log("spawn_swirl: bad app ptr");
-        return;
+    if (!app || !safe_read(app, APP_BUMPER_SOUND + 4)) return;
+    sound_ptr = *(void **)((unsigned char *)app + APP_BUMPER_SOUND);
+
+    /* Play bumper sound at ball position */
+    if (sound_ptr && pfn_sound_play_3d) {
+        pfn_sound_play_3d(sound_ptr, pos_x, pos_y, pos_z);
     }
 
-    graphics = *(void **)((unsigned char *)app + APP_GFX_DEVICE);
-    if (!graphics) {
-        debug_log("spawn_swirl: bad graphics ptr");
-        return;
-    }
+    /* Get physics pointer */
+    phys_ptr = *(int *)((unsigned char *)ball + BALL_PHYS_PTR);
+    if (!phys_ptr || !safe_read((void *)phys_ptr, PHYS_VEL_Z + 4)) return;
 
-    debug_log("spawn_swirl: loading mesh");
+    /* Read current XZ velocity */
+    vel_x = *(float *)((unsigned char *)phys_ptr + PHYS_VEL_X);
+    vel_z = *(float *)((unsigned char *)phys_ptr + PHYS_VEL_Z);
 
-    /* Load SWIRL mesh (cached — only load once per game session) */
-    if (!g_swirl_mesh) {
-        void *mem = pfn_operator_new(0x10D0);
-        if (!mem) return;
-        g_swirl_mesh = pfn_meshworld_ctor(mem, graphics, SWIRL_MESH_PATH);
-        if (!g_swirl_mesh) {
-            debug_log("spawn_swirl: mesh ctor failed");
-            return;
-        }
+    /* Scale by bumper velocity multiplier */
+    vel_x *= BUMPER_VEL_SCALE;
+    vel_z *= BUMPER_VEL_SCALE;
 
-        debug_log("spawn_swirl: mesh loaded, creating collision");
+    /* Zero out Y velocity (flat bounce) */
+    *(float *)((unsigned char *)phys_ptr + PHYS_VEL_Y) = 0.0f;
 
-        /* Create collision data from mesh */
-        mem = pfn_operator_new(0x10D0);
-        if (!mem) return;
-        g_swirl_collision = pfn_collisionlevel_ctor(mem, g_swirl_mesh);
-        if (!g_swirl_collision) {
-            debug_log("spawn_swirl: collision ctor failed");
-            return;
-        }
-    }
-
-    debug_log("spawn_swirl: storing in board slots");
-
-    /* Store mesh and collision in board slots (same offsets as LevelBoard_Dizzy_ctor) */
-    *(void **)((unsigned char *)board + BOARD_SWIRL_MESH) = g_swirl_mesh;
-    *(void **)((unsigned char *)board + BOARD_SWIRL_COLLISION) = g_swirl_collision;
-
-    /* Set SWIRL position to origin (same as LevelBoard_Dizzy_ctor: 0,0,0) */
-    *(float *)((unsigned char *)board + BOARD_SWIRL_POS_X) = g_swirl_x;
-    *(float *)((unsigned char *)board + BOARD_SWIRL_POS_Y) = g_swirl_y;
-    *(float *)((unsigned char *)board + BOARD_SWIRL_POS_Z) = g_swirl_z;
-
-    /* === Register in board render list (board+0xCD4) ===
-     * CreateMouseTrap does: AthenaList_Append(board+0xCD4, object)
-     * For SWIRL, the MeshWorld itself is the renderable object */
-    pfn_athenalist_append((unsigned char *)board + BOARD_RENDER_LIST, (int)g_swirl_mesh);
-
-    /* === Register in scene render tree (board+0x8AC → MeshWorld → +0x480 → SceneObject+0x1C) ===
-     * CreateMouseTrap does: AthenaList_Append(board+0x8AC→MeshWorld→+0x480→SceneObject+0x1C, object) */
-    {
-        void *level_mesh = *(void **)((unsigned char *)board + LEVEL_MESH_PTR);
-        if (level_mesh && safe_read(level_mesh, 0x500)) {
-            void *scene_obj = *(void **)((unsigned char *)level_mesh + LEVEL_SCENE_OBJ);
-            if (scene_obj && safe_read(scene_obj, 0x30)) {
-                pfn_athenalist_append((unsigned char *)scene_obj + 0x1C, (int)g_swirl_mesh);
-            }
+    /* Clamp speed: min = 5.0 */
+    speed_sq = vel_x * vel_x + vel_z * vel_z;
+    if (speed_sq < BUMPER_MIN_SPEED * BUMPER_MIN_SPEED) {
+        /* Too slow — normalize to min speed */
+        if (speed_sq > 0.0f) {
+            float inv = BUMPER_MIN_SPEED / sqrtf(speed_sq);
+            vel_x *= inv;
+            vel_z *= inv;
+        } else {
+            /* Zero velocity — can't normalize, skip */
+            vel_x = 0.0f;
+            vel_z = 0.0f;
         }
     }
 
-    /* === Register collision data ===
-     * LevelBoard_Dizzy_ctor stores the CollisionLevel at board+0x4BC8.
-     * The board's own update loop handles rotating the SWIRL via board+0x4BC4 mesh.
-     * We also need to register the collision level in the board's collision lists. */
-    if (g_swirl_collision) {
-        /* Add to board collision master list (board+0x10EC) */
-        pfn_athenalist_append((unsigned char *)board + BOARD_COLLISION_LIST, (int)g_swirl_collision);
+    /* Clamp speed: max */
+    arena = is_arena_board(board);
+    max_speed = arena ? BUMPER_MAX_SPEED_ARENA : BUMPER_MAX_SPEED_RACE;
 
-        /* Add to level CollisionLevel's child list (board+0x8B0+0x18) */
-        {
-            void *level_col = *(void **)((unsigned char *)board + BOARD_LEVEL_COLLISION);
-            if (level_col && safe_read(level_col, 0x30)) {
-                pfn_athenalist_append((unsigned char *)level_col + 0x18, (int)g_swirl_collision);
-            }
+    speed_sq = vel_x * vel_x + vel_z * vel_z;
+    if (speed_sq > max_speed * max_speed) {
+        if (speed_sq > 0.0f) {
+            float inv = max_speed / sqrtf(speed_sq);
+            vel_x *= inv;
+            vel_z *= inv;
         }
     }
 
-    g_swirl_spawned = 1;
-    debug_log("spawn_swirl: SUCCESS");
-}
+    /* Write back scaled velocity */
+    *(float *)((unsigned char *)phys_ptr + PHYS_VEL_X) = vel_x;
+    *(float *)((unsigned char *)phys_ptr + PHYS_VEL_Z) = vel_z;
 
-/* ========== Detour: Master Orchestrator Hook ========== */
-/* Original prologue (7 bytes): 6A FF 68 2B A1 4C 00 */
-/* After original runs, spawn SWIRL on the board */
-
-/* Ghidra confirms: __fastcall, 1 param (ECX=board), RET 0.
- * Using __fastcall with 2 reg params so callee does RET 0 (EDX unused). */
-static void __fastcall orchestrator_hook(void *board, void *unused)
-{
-    debug_log("orchestrator_hook: ENTRY");
-
-    /* Call original function via trampoline */
-    typedef void (__fastcall *orig_t)(void *, void *);
-    ((orig_t)g_orchestrator_tramp)(board, unused);
-
-    debug_log("orchestrator_hook: original returned");
-
-    /* After original finishes, spawn SWIRL */
-    if (board && safe_read(board, 0x20)) {
-        /* Verify board vtable pointer is valid */
-        void **vt = *(void ***)board;
-        if (vt && safe_read(vt, 4)) {
-            debug_log("orchestrator_hook: calling spawn_swirl");
-            spawn_swirl(board);
-            debug_log("orchestrator_hook: spawn_swirl returned");
+    /* Set bumper hit flag for animation.
+     * The bumper name is "N:BUMPER%d" where %d is 1-8.
+     * Extract the number and compute the flag offset.
+     */
+    bumper_idx = atol(bumper_name + 8); /* skip "N:BUMPER" (8 chars) */
+    if (bumper_idx >= 1 && bumper_idx <= 8) {
+        DWORD flag_offset;
+        if (arena) {
+            /* Arena: board + (N-1)*4 + 0x53FC */
+            flag_offset = BUMPER_HIT_ARENA + (bumper_idx - 1) * 4;
+        } else {
+            /* Race: board + N*4 + 0x6448 */
+            flag_offset = BUMPER_HIT_RACE + bumper_idx * 4;
         }
+        /* Set hit flag to 1.0f (0x3F800000) */
+        *(unsigned int *)((unsigned char *)board + flag_offset) = 0x3F800000;
     }
 }
 
-/* ========== Detour: DispatchCollisionEvents Hook ========== */
-/* Original prologue (8 bytes): 6A FF 64 A1 00 00 00 00 */
-/* Intercept "N:SWIRL" collision events on non-Dizzy boards */
-
-/* DispatchCollisionEvents is __thiscall: ECX=board, [ESP+4]=ball, [ESP+8]=entry, RET 8.
- * Using __fastcall with 4 params (2 reg + 2 stack) so callee does RET 8. */
+/* ========== Detour: DispatchCollisionEvents Hook ==========
+ *
+ * DispatchCollisionEvents (0x40C5D0) is the BASE collision dispatcher.
+ * It's called by ALL board vtables (vtable[0x1D] = offset 0x74).
+ *
+ * Some boards override vtable[0x1D] with their own handler that:
+ *   1. Checks for specific collision names (N:BUMPER, N:SWIRL, etc.)
+ *   2. Applies physics effects
+ *   3. Falls through to DispatchCollisionEvents for common handling
+ *
+ * Other boards use DispatchCollisionEvents directly, which does NOT handle
+ * N:BUMPER — so bumpers exist as visual meshes but have no effect.
+ *
+ * Our hook intercepts the BASE DispatchCollisionEvents. If the board already
+ * has a native bumper handler, we let it pass through untouched. If not, we
+ * check for N:BUMPER collisions and apply the physics ourselves before calling
+ * the original.
+ *
+ * Original prologue (8 bytes): 6A FF 64 A1 00 00 00 00
+ *   PUSH -1; MOV EAX, FS:[0]
+ */
 static void __fastcall collision_hook(void *board, void *unused, void *ball, void *entry)
 {
-    /* Check for "N:SWIRL" collision event BEFORE calling original */
-    if (entry && safe_read(entry, 8)) {
-        int *pair = (int *)entry;
-        int collision_data_ptr = pair[1];
-        if (collision_data_ptr && safe_read((void *)collision_data_ptr, COLLISION_ENTRY_NAME + 4)) {
-            char *event_name = *(char **)((unsigned char *)collision_data_ptr + COLLISION_ENTRY_NAME);
-            if (event_name && safe_read(event_name, 8)) {
-                if (_stricmp(event_name, N_SWIRL_STRING) == 0) {
-                    /* Set swirled flag on ball */
-                    if (ball && safe_read(ball, BALL_SWIRLED_FLAG + 1)) {
-                        *(unsigned char *)((unsigned char *)ball + BALL_SWIRLED_FLAG) = 1;
+    /* Only process if this board doesn't handle bumpers natively */
+    if (!board_handles_bumper_natively(board)) {
+        /* Check collision entry for N:BUMPER */
+        if (entry && safe_read(entry, 8)) {
+            int *pair = (int *)entry;
+            int collision_data_ptr = pair[1];
+            if (collision_data_ptr && safe_read((void *)collision_data_ptr, COLLISION_ENTRY_NAME + 16)) {
+                char *event_name = *(char **)((unsigned char *)collision_data_ptr + COLLISION_ENTRY_NAME);
+                if (event_name && safe_read(event_name, 9)) {
+                    if (_strnicmp(event_name, "N:BUMPER", 8) == 0) {
+                        /* This is a bumper collision on a non-native board!
+                         * Apply bumper physics. */
+                        apply_bumper_physics(board, ball, event_name);
                     }
                 }
             }
@@ -309,8 +303,10 @@ static void __fastcall collision_hook(void *board, void *unused, void *ball, voi
     }
 
     /* Call original DispatchCollisionEvents */
-    typedef void (__fastcall *orig_t)(void *, void *, void *, void *);
-    ((orig_t)g_collision_tramp)(board, unused, ball, entry);
+    {
+        typedef void (__fastcall *orig_t)(void *, void *, void *, void *);
+        ((orig_t)g_collision_tramp)(board, unused, ball, entry);
+    }
 }
 
 /* ========== Detour installation ========== */
@@ -357,10 +353,6 @@ static void install_detour(DWORD target_addr, void *hook_fn,
 
 static void install_hooks(void)
 {
-    /* Verify original bytes at master orchestrator (0x41C5B0) */
-    static const unsigned char ORCH_PROLOGUE[7] = {
-        0x6A, 0xFF, 0x68, 0x2B, 0xA1, 0x4C, 0x00
-    };
     /* Verify original bytes at DispatchCollisionEvents (0x40C5D0) */
     static const unsigned char COLL_PROLOGUE[8] = {
         0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00
@@ -368,19 +360,10 @@ static void install_hooks(void)
 
     unsigned char *p;
 
-    /* Verify orchestrator prologue */
-    p = (unsigned char *)ADDR_MASTER_ORCHESTRATOR;
-    if (!safe_read(p, 7)) return;
-    if (memcmp(p, ORCH_PROLOGUE, 7) != 0) return;
-
     /* Verify collision dispatch prologue */
     p = (unsigned char *)ADDR_DISPATCH_COLLISION;
     if (!safe_read(p, 8)) return;
     if (memcmp(p, COLL_PROLOGUE, 8) != 0) return;
-
-    /* Install orchestrator detour (7-byte prologue) */
-    install_detour(ADDR_MASTER_ORCHESTRATOR, orchestrator_hook,
-                   ORCH_PROLOGUE, 7, &g_orchestrator_tramp);
 
     /* Install collision dispatch detour (8-byte prologue) */
     install_detour(ADDR_DISPATCH_COLLISION, collision_hook,
@@ -392,14 +375,9 @@ static void install_hooks(void)
 /* ========== Init function pointers ========== */
 static void init_function_pointers(void)
 {
-    pfn_operator_new       = (operator_new_t)ADDR_OPERATOR_NEW;
-    pfn_meshworld_ctor     = (meshworld_ctor_t)ADDR_MESHWORLD_CTOR;
-    pfn_collisionlevel_ctor = (collisionlevel_ctor_t)ADDR_COLLISIONLEVEL_CTOR;
-    pfn_athenalist_append  = (athenalist_append_t)ADDR_ATHENALIST_APPEND;
-    pfn_timer_init         = (timer_init_t)ADDR_TIMER_INIT;
-    pfn_timer_cleanup      = (timer_cleanup_t)ADDR_TIMER_CLEANUP;
-    pfn_dispatch_collision = (dispatch_collision_t)ADDR_DISPATCH_COLLISION;
-    pfn_master_orchestrator = (master_orchestrator_t)ADDR_MASTER_ORCHESTRATOR;
+    pfn_dispatch_collision   = (dispatch_collision_t)ADDR_DISPATCH_COLLISION;
+    pfn_sound_play_3d        = (sound_play_3d_t)ADDR_SOUND_PLAY_3D;
+    pfn_vec3_normalize_scale = (vec3_normalize_scale_t)ADDR_VEC3_NORMALIZE_SCALE;
 }
 
 /* ========== BASS Proxy Stubs ========== */
@@ -423,7 +401,7 @@ __declspec(dllexport) int __stdcall BASS_Init(int a, int b, int c, int d, void *
         fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_Init");
         if (fn) return fn(a, b, c, d, e);
     }
-    return 0; /* FALSE — no crash on missing bass_real */
+    return 1; /* TRUE — no crash on missing bass_real */
 }
 
 __declspec(dllexport) void __stdcall BASS_Free(void)
@@ -490,7 +468,7 @@ __declspec(dllexport) void * __stdcall BASS_MusicLoad(int a, void *b, int c, int
         fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_MusicLoad");
         if (fn) return fn(a, b, c, d, e, f);
     }
-    return NULL;
+    return (void *)1; /* non-zero — game crashes if NULL */
 }
 
 __declspec(dllexport) int __stdcall BASS_MusicPlayEx(void *a, int b, int c)
@@ -505,59 +483,41 @@ __declspec(dllexport) int __stdcall BASS_MusicPlayEx(void *a, int b, int c)
     return 1;
 }
 
-__declspec(dllexport) int __stdcall BASS_ChannelStop(void *a)
+__declspec(dllexport) int __stdcall BASS_ChannelGetLength(void *a, int b)
 {
-    (void)a;
+    (void)a; (void)b;
     lazy_load_bass();
     if (g_real_bass) {
-        typedef int (__stdcall *fn_t)(void *);
-        fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_ChannelStop");
-        if (fn) return fn(a);
+        typedef int (__stdcall *fn_t)(void *, int);
+        fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_ChannelGetLength");
+        if (fn) return fn(a, b);
     }
-    return 1;
+    return 0;
 }
 
-__declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(void *a, int b, float c, int d)
+__declspec(dllexport) int __stdcall BASS_ChannelBytes2Seconds(void *a, int b)
 {
-    (void)a; (void)b; (void)c; (void)d;
+    (void)a; (void)b;
     lazy_load_bass();
     if (g_real_bass) {
-        typedef int (__stdcall *fn_t)(void *, int, float, int);
-        fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_ChannelSetAttributes");
-        if (fn) return fn(a, b, c, d);
+        typedef int (__stdcall *fn_t)(void *, int);
+        fn_t fn = (fn_t)GetProcAddress(g_real_bass, "BASS_ChannelBytes2Seconds");
+        if (fn) return fn(a, b);
     }
-    return 1;
+    return 0;
 }
 
 /* ========== DllMain ========== */
-static void debug_log(const char *msg)
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)
 {
-    FILE *f = NULL;
-    if (fopen_s(&f, "swirl_debug.log", "a") == 0 && f) {
-        fprintf(f, "%s\n", msg);
-        fclose(f);
-    }
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-{
-    (void)hinstDLL; (void)lpvReserved;
-
-    switch (fdwReason) {
+    (void)hinst; (void)reserved;
+    switch (reason) {
     case DLL_PROCESS_ATTACH:
-        debug_log("DllMain: DLL_PROCESS_ATTACH start");
         init_function_pointers();
-        debug_log("DllMain: init_function_pointers done");
-        read_config();
-        debug_log("DllMain: read_config done");
         install_hooks();
-        debug_log("DllMain: install_hooks done");
         break;
-
     case DLL_PROCESS_DETACH:
-        /* Hooks are automatically removed when process exits */
         break;
     }
-
     return TRUE;
 }
