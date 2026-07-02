@@ -73,7 +73,7 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 | E:SWALLOW | Swallow/absorb ball |
 | E:TRAJECTORY | Ball trajectory change |
 | E:TRAPPOP | Trapdoor popup |
-| E:VACPOPOUT | Vacuum popout |
+| E:VACPOPOUT | Resets ball radius to 26.0 (normal) after vacuum tube exit |
 | E:ZOOP | Quick movement effect |
 
 ### N: Named Objects (Interactive)

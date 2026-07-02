@@ -228,7 +228,7 @@ Event triggers that fire gameplay effects. Some appear unused or very rare:
 |---|---|
 | `E:OPENSESAME` | Secret door opening (Sesame reference) |
 | `E:SAFESWITCH` | Safety switch toggle |
-| `E:VACPOPOUT` | Vacuum pop-out effect |
+| `E:VACPOPOUT` | Resets ball radius to 26.0 (normal) after vacuum tube exit |
 | `E:ZOOP` | Quick movement/teleport effect |
 | `E:SHRINK` | Shrink ball (Odd race gravity mechanics) |
 | `E:GROW` | Grow ball |

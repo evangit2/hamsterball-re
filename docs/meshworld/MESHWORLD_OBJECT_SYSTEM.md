@@ -243,7 +243,7 @@ These flags control how `Scene_RenderAllObjects` (0x45E0E0) classifies each geom
 | `E:SHRINK` | Shrink ball |
 | `E:SWALLOW` | Swallow/absorb ball |
 | `E:TRAPPOP` | Trapdoor pop |
-| `E:VACPOPOUT` | Vacuum pop-out |
+| `E:VACPOPOUT` | Resets ball radius to 26.0 (normal) after vacuum tube exit |
 | `E:ZOOP` | Speed boost |
 | `E:HEATON` / `E:HEATOFF` | Heat effect on/off |
 | `E:LIGHTSON` / `E:LIGHTSOFF` | Lights on/off |
