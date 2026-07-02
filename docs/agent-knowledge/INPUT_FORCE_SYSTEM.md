@@ -260,5 +260,8 @@ Known instances:
 | 0x4CF440 | ~0 | **0.01** | Ball_Update trail particle threshold |
 | 0x4CF528 | 0.0 | **0.5** | Ball_Update Y offset |
 | 0x4CF3C8 | 0.0 | **(varies)** | Ball constructor default check |
+| 0x4D03E0 | 89128.96 | **0.02** | Board_UpdateRaceState race timer decrement/frame |
+| 0x4CF538 | 89128.96 | **0.01** | Board_UpdateRaceState countdown timer increment/frame |
+| 0x4D03C8 | 0.0 | **3.0** | Board_UpdateRaceState countdown phase threshold (seconds) |
 
 **Rule**: When a physics constant from Ghidra's decompiler produces a nonsensical value (extremely large or tiny), ALWAYS check the x86 disassembly for `QWORD` vs `DWORD` qualifiers. Read 8 bytes and decode as `struct.unpack('<d', ...)` to get the true double value.
