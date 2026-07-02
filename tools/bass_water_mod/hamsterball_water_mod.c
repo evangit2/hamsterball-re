@@ -451,11 +451,8 @@ static void trigger_water_contact(void *ball_ptr)
     *vel_y *= damp;
     *vel_z *= damp;
 
-    /* Step 3: Capture ball Y as water surface height.
-     * Use 25 units below ball's current Y so the "surface" sits lower —
-     * this gives the ball room to sit partially submerged rather than
-     * immediately triggering the exit condition. */
-    st->water_surface_y = ball_y - 25.0f;
+    /* Step 3: Capture ball Y as water surface height */
+    st->water_surface_y = ball_y;
 
     g_trigger_count++;
 
