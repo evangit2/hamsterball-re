@@ -539,19 +539,15 @@ static int install_dispatch_hook(void)
  * Called every frame for every ball via PUSHAD/PUSHFD + C function call.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Compute submersion fraction relative to captured surface Y */
+/* Compute submersion depth relative to captured surface Y.
+ * Returns the distance from ball center to surface:
+ *   - Positive when ball is below surface (submerged)
+ *   - Negative when ball is above surface (in air)
+ *   - Zero when ball center is exactly at surface
+ * This is used for buoyancy — deeper submersion = stronger push. */
 static float compute_submersion(float ball_y, float radius, float surface_y)
 {
-    float bottom_y = ball_y - radius;
-    float top_y = ball_y + radius;
-
-    if (bottom_y >= surface_y) return 0.0f;
-    if (top_y <= surface_y) return 1.0f;
-
-    float submerged = (surface_y - bottom_y) / (2.0f * radius);
-    if (submerged < 0.0f) submerged = 0.0f;
-    if (submerged > 1.0f) submerged = 1.0f;
-    return submerged;
+    return surface_y - ball_y;
 }
 
 /* Ongoing water physics — called from Phase 15 code cave every frame */
@@ -614,7 +610,6 @@ static void __cdecl apply_water_physics(DWORD ball)
     float *vel_z = (float*)(phys + PHYS_VEL_Z);
 
     float submersion = compute_submersion(ball_y, radius, st->water_surface_y);
-    if (submersion < 0.0f) submersion = 0.0f;
 
     float vscale = 1.0f - g_cfg.drag;
     float hscale = 1.0f - (g_cfg.drag + g_cfg.horizontal_drag);
@@ -631,15 +626,16 @@ static void __cdecl apply_water_physics(DWORD ball)
     if (*vel_y <= 0.0f)
         *vel_y *= vscale;
 
-    /* Apply buoyancy when:
-     *   - Ball is at/below the surface Y (fully or partially submerged), OR
-     *   - Ball is above surface but still rising (vel_y > 0, exiting water)
+    /* Buoyancy proportional to submersion depth (distance below surface).
+     * submersion is positive when below surface, negative when above.
+     * Only apply when ball is below surface (submersion > 0).
+     * When above surface, buoyancy is 0 — gravity pulls it back down.
      *
-     * Cut buoyancy ONLY when ball is above surface AND sinking (vel_y <= 0) —
-     * i.e. re-entering from above. This lets gravity pull the ball back down
-     * without buoyancy fighting it, breaking the infinite bob cycle. */
-    if (ball_y <= st->water_surface_y || *vel_y > 0.0f) {
-        float buoyancy = g_cfg.buoyancy_strength * submersion * 2.0f;
+     * buoyancy_strength is per-unit-depth. At 0.45, being 1 unit below
+     * gives 0.45/frame upward. Being 10 units deep gives 4.5/frame.
+     * Scaled down by 0.1 multiplier so typical depths give reasonable force. */
+    if (submersion > 0.0f) {
+        float buoyancy = g_cfg.buoyancy_strength * submersion * 0.1f;
         *vel_y += buoyancy;
     }
 }
