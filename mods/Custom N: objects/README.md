@@ -334,7 +334,7 @@ These events are ONLY processed by specific board types. If the ball touches geo
 |-----------|-------------|
 | `E:HELPINERTIA` | Sets `ball[0xA9] = 2.5` (reduces inertia — easier to control) |
 | `E:UNHELPINERTIA` | Sets `ball[0xA9] = 5.0` (restores normal inertia) |
-| `E:VACPOPOUT` | Sets `ball[0xA1] = 20.0` (vacuum popout force), plays 3D sound |
+| `E:VACPOPOUT` | Resets `ball[0xA1]` (radius, +0x284) to 26.0 (normal player size) after exiting vacuum tube. Plays 3D sound. |
 | `N:SPEEDCYLINDER` | Calls `Pendulum_PlayCollisionSound` — speed boost sound from rotator |
 | `N:EXTRATIME` | Awards 500 bonus time: creates ScoreObject "EXTRA TIME:", calls `Timer_Decrement`, adds to board's score list at +0x8B8. Checks rotator+0x10E4 (once-only flag). |
 
