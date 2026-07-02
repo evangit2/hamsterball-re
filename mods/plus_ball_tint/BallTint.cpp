@@ -24,17 +24,15 @@ static constexpr DWORD DM_P2_G = 0x431B6E, DM_P2_B = 0x431B69, DM_P2_A = 0x431B6
 
 static float g_p2_red = 0.0f;
 static float g_p4_blue = 0.0f;
+static float g_p4_green = 1.0f;
 
-enum SavedType { SAVED_CALL, SAVED_LEA, SAVED_PUSH_IMM };
-struct CodeCave {
-    void* caveAddr;
-};
-
+enum SavedType { SAVED_CALL, SAVED_LEA, SAVED_PUSH_GLOBAL };
+struct CodeCave { void* caveAddr; };
 static CodeCave g_caves[5];
 
 static void installCave(int idx, DWORD patchSite, float* globalFloat,
                         SavedType savedType, DWORD callTarget, BYTE leaOffset,
-                        float pushImmValue, DWORD returnAddr) {
+                        float* secondGlobal, DWORD returnAddr) {
     BYTE caveCode[32];
     int p = 0;
 
@@ -57,8 +55,9 @@ static void installCave(int idx, DWORD patchSite, float* globalFloat,
         caveCode[p++] = leaOffset;
     } else {
         savedLen = 5;
-        caveCode[p++] = 0x68;
-        *(float*)(caveCode + p) = pushImmValue;
+        caveCode[p++] = 0xFF;
+        caveCode[p++] = 0x35;
+        *(DWORD*)(caveCode + p) = (DWORD)secondGlobal;
         p += 4;
     }
 
@@ -145,11 +144,11 @@ private:
     void installCaves() {
         if (m_cavesInstalled) return;
 
-        installCave(0, 0x421CBF, &g_p2_red,  SAVED_CALL,     0x453150, 0,    0.0f, 0x421CC5);
-        installCave(1, 0x421E43, &g_p4_blue, SAVED_PUSH_IMM, 0,        0,    1.0f, 0x421E49);
-        installCave(2, 0x433029, &g_p2_red,  SAVED_LEA,      0,        0x28, 0.0f, 0x43302E);
-        installCave(3, 0x433095, &g_p4_blue, SAVED_PUSH_IMM, 0,        0,    1.0f, 0x43309B);
-        installCave(4, 0x431B72, &g_p2_red,  SAVED_CALL,     0x453150, 0,    0.0f, 0x431B78);
+        installCave(0, 0x421CBF, &g_p2_red,   SAVED_CALL,       0x453150, 0,    nullptr,    0x421CC5);
+        installCave(1, 0x421E43, &g_p4_blue,  SAVED_PUSH_GLOBAL, 0,        0,    &g_p4_green, 0x421E49);
+        installCave(2, 0x433029, &g_p2_red,   SAVED_LEA,        0,        0x28, nullptr,    0x43302E);
+        installCave(3, 0x433095, &g_p4_blue,  SAVED_PUSH_GLOBAL, 0,        0,    &g_p4_green, 0x43309B);
+        installCave(4, 0x431B72, &g_p2_red,   SAVED_CALL,       0x453150, 0,    nullptr,    0x431B78);
 
         m_cavesInstalled = true;
     }
@@ -165,10 +164,12 @@ private:
         float p3g = api->GetSliderState("TINT_P3_G");
         float p3b = api->GetSliderState("TINT_P3_B");
         float p4r = api->GetSliderState("TINT_P4_R");
+        float p4g = api->GetSliderState("TINT_P4_G");
         float p4b = api->GetSliderState("TINT_P4_B");
 
         g_p2_red = p2r;
         g_p4_blue = p4b;
+        g_p4_green = p4g;
 
         patchFloat(AB_P1_R, p1r); patchFloat(AB_P1_G, p1g); patchFloat(AB_P1_B, p1b); patchFloat(AB_P1_A, 1.0f);
         patchFloat(AB_P2_G, p2g); patchFloat(AB_P2_B, p2b); patchFloat(AB_P2_A, 1.0f);
@@ -221,7 +222,7 @@ private:
 public:
     const char* GetModName() override    { return "Ball Tint"; }
     const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v9: relocated code caves"; }
+    const char* GetContributors() override { return "v10: dynamic P4 green via push [global]"; }
     int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
