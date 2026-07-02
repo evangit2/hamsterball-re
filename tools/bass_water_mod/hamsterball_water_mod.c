@@ -297,7 +297,7 @@ static water_cfg_t g_cfg = {
     0.90f,   /* entry_damping (10% velocity reduction on contact) */
     0.02f,   /* drag (2% per frame) */
     0.04f,   /* horizontal_drag */
-    0.90f,   /* buoyancy_strength (max upward accel at full submersion, 0-1 normalized) */
+    1.0f,    /* buoyancy_strength (max upward accel at full submersion, 0-1 normalized) */
     1        /* debug */
 };
 
@@ -325,7 +325,7 @@ static void load_config(const char *ini_path)
     g_cfg.entry_damping     = read_ini_float(ini_path, "WaterPhysics", "EntryDamping", 0.90f);
     g_cfg.drag              = read_ini_float(ini_path, "WaterPhysics", "Drag", 0.02f);
     g_cfg.horizontal_drag   = read_ini_float(ini_path, "WaterPhysics", "HorizontalDrag", 0.04f);
-    g_cfg.buoyancy_strength = read_ini_float(ini_path, "WaterPhysics", "BuoyancyStrength", 0.90f);
+    g_cfg.buoyancy_strength = read_ini_float(ini_path, "WaterPhysics", "BuoyancyStrength", 1.0f);
     g_cfg.debug             = read_ini_int(ini_path, "WaterPhysics", "Debug", 1);
 
     if (g_cfg.entry_damping < 0.0f) g_cfg.entry_damping = 0.0f;
@@ -347,6 +347,7 @@ typedef struct {
     int   in_water;          /* currently in water? (gates physics) */
     float water_surface_y;   /* ball's Y at moment of contact */
     int   grace_frames;      /* frames remaining of death suppression after leaving water */
+    float prev_submersion;   /* last frame's submersion (for surface crossing detection) */
 } water_state_t;
 
 static water_state_t g_states[MAX_BALLS];
@@ -604,6 +605,7 @@ static void __cdecl apply_water_physics(DWORD ball)
     if (ball_y - radius > st->water_surface_y + radius * 0.5f) {
         st->in_water = 0;
         st->water_surface_y = 0.0f;
+        st->prev_submersion = 0.0f;
         st->grace_frames = GRACE_PERIOD_FRAMES;
         if (g_cfg.debug) {
             char buf[128];
@@ -623,6 +625,23 @@ static void __cdecl apply_water_physics(DWORD ball)
 
     float submersion = compute_submersion(ball_y, radius, st->water_surface_y);
 
+    /* Surface crossing detection: when the ball goes from above the 50%
+     * submersion mark to below it (i.e. crosses the waterline downward),
+     * apply entry_damping to Y velocity only. This catches every re-entry
+     * into the water — bobbing, splashing, falling back in — without
+     * relying on collision events or the in_water flag. */
+    if (st->prev_submersion < 0.5f && submersion >= 0.5f) {
+        float old_vy = *vel_y;
+        *vel_y *= g_cfg.entry_damping;
+        if (g_cfg.debug) {
+            char buf[256];
+            wsprintfA(buf, "SURFACE CROSS: ball=%08X sub %.2f->%.2f vy=%.2f->%.2f",
+                      ball, st->prev_submersion, submersion, old_vy, *vel_y);
+            diag_log(buf);
+        }
+    }
+    st->prev_submersion = submersion;
+
     float vscale = 1.0f - g_cfg.drag;
     float hscale = 1.0f - (g_cfg.drag + g_cfg.horizontal_drag);
     if (vscale < 0.0f) vscale = 0.0f;
@@ -631,16 +650,12 @@ static void __cdecl apply_water_physics(DWORD ball)
     *vel_x *= hscale;
     *vel_z *= hscale;
 
-    /* Apply Y drag in BOTH directions (sinking and rising).
-     * Asymmetric drag (only when sinking) causes energy accumulation
-     * — the ball loses speed on the way in but not on the way out,
-     * resulting in perpetual bobbing. Symmetric drag conserves energy
-     * properly: the ball exits at roughly the speed it entered. */
+    /* Apply Y drag in BOTH directions (sinking and rising). */
     *vel_y *= vscale;
 
     /* Buoyancy = strength * submersion (0-1 normalized).
-     * submersion is 0 when ball is out of water, 0.5 when half submerged,
-     * 1.0 when fully submerged. Above surface → buoyancy is 0 (no force). */
+     * With strength=1.0 and gravity_scale=0.5, equilibrium is at
+     * submersion=0.5 (ball floats half-submerged at the surface). */
     float buoyancy = g_cfg.buoyancy_strength * submersion;
     *vel_y += buoyancy;
 }
