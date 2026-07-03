@@ -253,6 +253,14 @@ static void trySetupAnimations(void) {
         }
         if (already) continue;
 
+        /* Only animate if a .txt config file exists for this base name.
+         * This ensures only AT: prefixed objects (which have .txt configs)
+         * are treated as animated — not stock textures like Title02.png */
+        char configPath[MAX_PATH];
+        snprintf(configPath, MAX_PATH, "%sTextures\\%s.txt", g_gameDir, baseName);
+        DWORD attr = GetFileAttributesA(configPath);
+        if (attr == INVALID_FILE_ATTRIBUTES) continue; /* no .txt = not animated */
+
         int totalFrames = countFrames(baseName);
         if (totalFrames < 2) continue;
 
