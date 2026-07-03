@@ -428,22 +428,32 @@ static void inject_saved_ghost(const char *raceName) {
     strncpy(bttName, raceName, 127);
     bttName[127] = '\0';
 
-    /* Fill with snapshots — AthenaList starts at BTT+4.
-     * Instead of calling AthenaList_Append (which does malloc/realloc internally),
-     * we directly write to the AthenaList's internal array. This is safe because
-     * AthenaList's first 256 entries are inline (BTT+0x00C..0x40B). */
-    DWORD *alist = (DWORD*)((char*)btt + 4);
+    /* Allocate a dynamic array for snapshot pointers.
+     * AthenaList stores items in a separate malloc'd array at BTT+0x410,
+     * NOT in the inline array. PlaybackSnapshot reads from BTT+0x410. */
     int numToStore = savedCount;
-    if (numToStore > 0x100) numToStore = 0x100;  /* cap at 256 inline entries for now */
+    if (numToStore > MAX_SNAPSHOTS) numToStore = MAX_SNAPSHOTS;
+
+    DWORD *snapArray = (DWORD*)malloc(numToStore * sizeof(DWORD));
+    if (!snapArray) { free(savedSnaps); log_msg("ERROR: alloc snap array failed"); return; }
+
     for (int i = 0; i < numToStore; i++) {
         DWORD *snap = (DWORD*)op_new(SNAP_SIZE);
-        if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); continue; }
+        if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); snapArray[i] = 0; continue; }
         memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
-        /* Direct store in AthenaList internal array (alist+2 = BTT+0x00C, index i) */
-        alist[2 + i] = (DWORD)snap;
+        snapArray[i] = (DWORD)snap;
     }
-    alist[1] = numToStore;  /* list_count */
-    log_fmt("Stored %d/%d snapshots directly", numToStore, savedCount);
+
+    /* Write to AthenaList fields:
+     *   BTT+0x004 = AthenaList.vtable (already set by manually_init_btt)
+     *   BTT+0x008 = list_count
+     *   BTT+0x410 = list_array_ptr (the dynamic array)
+     *   BTT+0x414 = capacity (0 = not sorted) */
+    DWORD *alist = (DWORD*)((char*)btt + 4);
+    alist[1] = numToStore;              /* BTT+0x008: list_count */
+    *(DWORD**)((char*)btt + 0x410) = snapArray;  /* BTT+0x410: list_array_ptr */
+    alist[0x104] = 0;                   /* BTT+0x414: capacity = 0 */
+    log_fmt("Stored %d/%d snapshots (array at 0x%X)", numToStore, savedCount, (DWORD)snapArray);
 
     /* Free old playback buffer if exists */
     DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
