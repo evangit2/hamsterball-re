@@ -364,17 +364,15 @@ static void setWinState(void *board, int *ball) {
  * copies race name. This is the exact same function the game calls
  * when the player selects a practice race from the menu.
  *
- * App_StartPracticeRace is __thiscall: ECX = app, stack param = raceIndex.
- * We use a __fastcall typedef and pass app as first (ECX) arg.
+ * App_StartPracticeRace is __thiscall: ECX = app, [ESP+4] = raceIndex.
+ * We can't use __fastcall because the function reads the param from the
+ * stack, not EDX. We use inline asm to set ECX and push the param.
  * ============================================================ */
 
 #define APP_START_PRACTICE_RACE 0x00428C50
 
-typedef void (__fastcall *App_StartPracticeRace_t)(int app, int raceIndex);
-
 static void loadTargetLevel(int levelIndex) {
     int app;
-    App_StartPracticeRace_t startPractice;
 
     if (levelIndex < 1 || levelIndex > 15) return;
 
@@ -383,8 +381,29 @@ static void loadTargetLevel(int levelIndex) {
 
     diag_logf("[loadTargetLevel] levelIndex=%d app=0x%08X", levelIndex, app);
 
-    startPractice = (App_StartPracticeRace_t)APP_START_PRACTICE_RACE;
-    startPractice(app, levelIndex);
+    /* App_StartPracticeRace is __thiscall: ECX=app, stack: [raceIndex] RET 4
+     * MinGW C doesn't support __thiscall, so we use a naked wrapper
+     * that sets ECX and calls the function with the stack param. */
+    {
+        void *func = (void *)APP_START_PRACTICE_RACE;
+        int idx = levelIndex;
+        int appVal = app;
+        /* Use a function pointer with __fastcall which puts first 2 args
+         * in ECX/EDX, then manually push idx onto stack before calling.
+         * Actually simpler: just push idx, set ECX, call, add esp 4. */
+        __asm__ volatile (
+            "push %[idx]\n\t"
+            "movl %[appVal], %%ecx\n\t"
+            "call *%[func]\n\t"
+            : /* no outputs */
+            : [func] "r" (func),
+              [appVal] "r" (appVal),
+              [idx] "r" (idx)
+            : "eax", "edx", "ecx", "esp",
+              "st", "st(1)", "st(2)", "st(3)",
+              "st(4)", "st(5)", "st(6)", "st(7)", "memory"
+        );
+    }
 
     diag_log("[loadTargetLevel] App_StartPracticeRace returned OK");
 }
