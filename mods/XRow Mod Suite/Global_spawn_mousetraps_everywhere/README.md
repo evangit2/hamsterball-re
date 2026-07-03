@@ -1,0 +1,20 @@
+# "Global spawn mousetraps everywhere "
+
+**CT Entry ID:** 45
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+BFD2:
+db 90 90 90 90 90 90
+
+ 
+ 
+[DISABLE]
+Hamsterball.exe+BFD2:
+db 0F 85 C3 00 00 00
+
+```

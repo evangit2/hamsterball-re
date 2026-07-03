@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+E613:
+db 90 90
+
+
+[DISABLE]
+Hamsterball.exe+E613:
+db 75 65

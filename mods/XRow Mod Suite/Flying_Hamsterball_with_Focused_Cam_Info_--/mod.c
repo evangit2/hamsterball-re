@@ -1,0 +1,195 @@
+/*
+ * "Flying Hamsterball with Focused Cam                          [] Info -->"
+ * Auto-generated stub from XRow's Cheat Engine table (Hamsterball_3.6.C_MOD.CT)
+ * Type: Complex script (code caves, allocs, hotkeys)
+ * CT Entry ID: 481
+ * Script length: 2096 chars
+ *
+ * This mod uses advanced CEA features that require manual C translation:
+ *   - alloc() memory allocation for code caves
+ *
+ * The original CEA script is embedded below as reference.
+ * To build: translate the logic to C, then compile with:
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mod.c -Wl,--enable-stdcall-fixup -luser32
+ *
+ * Build: i686-w64-mingw32-gcc -shared -o bass.dll mod.c -Wl,--enable-stdcall-fixup -luser32
+ */
+
+#include <windows.h>
+
+static HANDLE g_Thread = NULL;
+
+/*
+ * Original CEA Script:
+ * ================================================================
+ * [ENABLE]
+ * 
+ * // =====================================================
+ * // Flying Mod v9 — Simple + Focus Camera
+ * {
+ * 
+ * Controls:
+ * 
+ * Q W = X movements
+ * A S = Y movements
+ * Z X = Z movements
+ * 
+ * }
+ * // =====================================================
+ * 
+ * alloc(FlyCode, 256)
+ * alloc(FlyX, 4)
+ * alloc(FlyY, 4)
+ * alloc(FlyZ, 4)
+ * 
+ * registersymbol(FlyX)
+ * registersymbol(FlyY)
+ * registersymbol(FlyZ)
+ * 
+ * FlyX:
+ *   dd 0
+ * FlyY:
+ *   dd 0
+ * FlyZ:
+ *   dd 0
+ * 
+ * label(original_code)
+ * label(skip_x)
+ * label(skip_y)
+ * label(skip_z)
+ * 
+ * FlyCode:
+ *   cmp dword [esi+18], 0
+ *   jne original_code
+ * 
+ *   cmp dword [FlyX], 0
+ *   je skip_x
+ *   fild dword [FlyX]
+ *   fadd dword [esi+164]
+ *   fstp dword [esi+164]
+ *   mov dword [FlyX], 0
+ * skip_x:
+ * 
+ *   cmp dword [FlyY], 0
+ *   je skip_y
+ *   fild dword [FlyY]
+ *   fadd dword [esi+168]
+ *   fstp dword [esi+168]
+ *   mov dword [FlyY], 0
+ * skip_y:
+ * 
+ *   cmp dword [FlyZ], 0
+ *   je skip_z
+ *   fild dword [FlyZ]
+ *   fadd dword [esi+16C]
+ *   fstp dword [esi+16C]
+ *   mov dword [FlyZ], 0
+ * skip_z:
+ * 
+ *   push eax
+ *   mov eax, [esi+1A4]
+ *   test eax, eax
+ *   jz vel_done
+ *   mov dword [eax+CA8], 0
+ * vel_done:
+ *   pop eax
+ * 
+ *   mov eax, [esi+0c5c]
+ *   jmp 00405E28
+ * 
+ * original_code:
+ *   mov eax, [esi+0c5c]
+ *   jmp 00405E28
+ * 
+ * 00405E22:
+ *   jmp FlyCode
+ *   nop
+ * 
+ * Hamsterball.exe+C767:
+ *   db 90 90 90 90 90 90 90
+ * Hamsterball.exe+F22D:
+ *   db 90 90 90 90 90 90 90
+ * Hamsterball.exe+75C9:
+ *   db 90 90 90 90 90 90
+ * Hamsterball.exe+C761:
+ *   db 90 90 90 90 90 90
+ * Hamsterball.exe+F226:
+ *   db 90 90 90 90 90 90 90
+ * Hamsterball.exe+8D70:
+ *   db C3 90 90
+ * Hamsterball.exe+9050:
+ *   db C3 90 90
+ * Hamsterball.exe+9480:
+ *   db C3 90 90
+ * Hamsterball.exe+1A1F6:
+ *   db 90 90 90 90
+ * 
+ * [DISABLE]
+ * 
+ * 00405E22:
+ *   db 8B 86 5C 0C 00 00
+ * 
+ * Hamsterball.exe+C767:
+ *   db C6 85 E9 02 00 00 01
+ * Hamsterball.exe+F22D:
+ *   db C6 86 E9 02 00 00 01
+ * Hamsterball.exe+75C9:
+ *   db FF 86 EC 02 00 00
+ * Hamsterball.exe+C761:
+ *   db 88 85 68 07 00 00
+ * Hamsterball.exe+F226:
+ *   db C6 86 68 07 00 00 00
+ * Hamsterball.exe+8D70:
+ *   db 6A FF 64 A1
+ * Hamsterball.exe+9050:
+ *   db 6A FF 64 A1
+ * Hamsterball.exe+9480:
+ *   db 6A FF 64 A1
+ * Hamsterball.exe+1A1F6:
+ *   db 85 C0 74 5A
+ * 
+ * dealloc(FlyCode)
+ * dealloc(FlyX)
+ * dealloc(FlyY)
+ * dealloc(FlyZ)
+ * unregistersymbol(FlyX)
+ * unregistersymbol(FlyY)
+ * unregistersymbol(FlyZ)
+ * 
+ * ================================================================
+ */
+
+static DWORD WINAPI PatchThread(LPVOID lpParam) {
+    Sleep(2000);
+    /* TODO: Translate CEA logic to C */
+    return 0;
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hModule);
+        g_Thread = CreateThread(NULL, 0, PatchThread, NULL, 0, NULL);
+    }
+    return TRUE;
+}
+
+/* BASS DLL proxy stubs */
+__declspec(dllexport) void __stdcall BASS_Init() {}
+__declspec(dllexport) void __stdcall BASS_Free() {}
+__declspec(dllexport) void __stdcall BASS_Start() {}
+__declspec(dllexport) void __stdcall BASS_Stop() {}
+__declspec(dllexport) void __stdcall BASS_Pause() {}
+__declspec(dllexport) void __stdcall BASS_SetVolume() {}
+__declspec(dllexport) void __stdcall BASS_GetVolume() {}
+__declspec(dllexport) void __stdcall BASS_SetConfig() {}
+__declspec(dllexport) void __stdcall BASS_GetConfig() {}
+__declspec(dllexport) void __stdcall BASS_MusicLoad() {}
+__declspec(dllexport) void __stdcall BASS_MusicFree() {}
+__declspec(dllexport) void __stdcall BASS_ChannelPlay() {}
+__declspec(dllexport) void __stdcall BASS_ChannelStop() {}
+__declspec(dllexport) void __stdcall BASS_ChannelSetAttribute() {}
+__declspec(dllexport) void __stdcall BASS_ChannelGetAttribute() {}
+__declspec(dllexport) void __stdcall BASS_ChannelGetPosition() {}
+__declspec(dllexport) void __stdcall BASS_ChannelSetPosition() {}
+__declspec(dllexport) void __stdcall BASS_ChannelIsActive() {}
+__declspec(dllexport) void __stdcall BASS_ChannelGetLevel() {}

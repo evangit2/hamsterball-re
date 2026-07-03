@@ -1,0 +1,80 @@
+# "Darker Lighting"
+
+**CT Entry ID:** 159
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+## Script
+
+```
+[ENABLE]
+
+alloc(neon_cave, 256)
+
+label(neon_skip)
+
+neon_cave:
+  pushfd
+  pushad
+
+  mov eax, [ebx+154]
+  test eax, eax
+  jz neon_skip
+  mov edi, eax
+
+  push 1
+  push 1C
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+C8]
+
+  push 3
+  push 23
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+C8]
+
+  push 0
+  push 8C
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+C8]
+
+  push 43FA0000
+  push 24
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+C8]
+
+  push 44FA0000
+  push 25
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+C8]
+
+  push FF000000
+  push 22
+  push edi
+  mov eax, [edi]
+  call dword ptr [eax+C8]
+
+neon_skip:
+  popad
+  popfd
+  mov eax, [ebx+154]
+  jmp 00453B69
+
+00453B63:
+  jmp neon_cave
+  nop
+
+[DISABLE]
+
+00453B63:
+  db 8B 83 54 01 00 00
+
+dealloc(neon_cave)
+
+```

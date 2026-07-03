@@ -1,0 +1,68 @@
+# "No fall damage"
+
+**CT Entry ID:** 10
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+{
+  No Fall Damage + No Air Break (Full)
+
+  Credits to BookwormKevin for upgrading the script!
+}
+
+[ENABLE]
+
+Hamsterball.exe+C767:
+db 90 90 90 90 90 90 90
+
+Hamsterball.exe+F22D:
+db 90 90 90 90 90 90 90
+
+Hamsterball.exe+75C9:
+db 90 90 90 90 90 90
+
+Hamsterball.exe+C761:
+db 90 90 90 90 90 90
+
+Hamsterball.exe+F226:
+db 90 90 90 90 90 90 90
+
+Hamsterball.exe+8D70:
+db C3 90 90
+
+Hamsterball.exe+9050:
+db C3 90 90
+
+Hamsterball.exe+9480:
+db C3 90 90
+
+[DISABLE]
+
+Hamsterball.exe+C767:
+db C6 85 E9 02 00 00 01
+
+Hamsterball.exe+F22D:
+db C6 86 E9 02 00 00 01
+
+Hamsterball.exe+75C9:
+db FF 86 EC 02 00 00
+
+Hamsterball.exe+C761:
+db 88 85 68 07 00 00
+
+Hamsterball.exe+F226:
+db C6 86 68 07 00 00 00
+
+Hamsterball.exe+8D70:
+db 6A FF 64 A1
+
+Hamsterball.exe+9050:
+db 6A FF 64 A1
+
+Hamsterball.exe+9480:
+db 6A FF 64 A1
+
+```

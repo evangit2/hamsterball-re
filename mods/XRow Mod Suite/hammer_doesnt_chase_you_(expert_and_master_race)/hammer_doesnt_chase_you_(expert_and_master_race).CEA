@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CFABA:
+db 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CFABA:
+db 48 41

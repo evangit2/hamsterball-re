@@ -1,0 +1,113 @@
+[ENABLE]
+
+alloc(newmem, 2000)
+alloc(sizeTimer, 4)
+alloc(sizeInterval, 4)
+alloc(processedThisFrame, 4)
+alloc(entityCount, 4)
+alloc(randSeed, 4)
+
+sizeTimer:
+  dd 0
+sizeInterval:
+  dd 180
+processedThisFrame:
+  dd 0
+entityCount:
+  dd 0
+randSeed:
+  dd 1234567
+
+sizeTable:
+  dd (float)7.0
+  dd (float)15.0
+  dd (float)27.0
+  dd (float)40.0
+  dd (float)55.0
+  dd (float)70.0
+  dd (float)85.0
+  dd (float)100.0
+
+newmem:
+  push eax
+  push ecx
+  push edx
+
+  mov eax, [esi+0x18]
+  cmp eax, 0
+  je check_size
+  cmp eax, 1
+  je check_size
+  cmp eax, 2
+  je check_size
+  cmp eax, 3
+  je check_size
+  cmp eax, -1
+  je check_size
+  jmp done
+
+check_size:
+  cmp dword ptr [processedThisFrame], 1
+  je apply_size
+
+  cmp dword ptr [sizeTimer], 0
+  jle trigger_now
+  dec dword ptr [sizeTimer]
+  jmp done
+
+trigger_now:
+  mov dword ptr [processedThisFrame], 1
+  mov dword ptr [entityCount], 0
+  mov eax, [sizeInterval]
+  mov [sizeTimer], eax
+
+apply_size:
+  push ebx
+  mov ebx, [randSeed]
+  mov ecx, ebx
+  shl ecx, 13
+  xor ebx, ecx
+  mov ecx, ebx
+  shr ecx, 17
+  xor ebx, ecx
+  mov ecx, ebx
+  shl ecx, 5
+  xor ebx, ecx
+  mov [randSeed], ebx
+  mov eax, ebx
+  shr eax, 1
+  mov ecx, 8
+  xor edx, edx
+  div ecx
+  mov ebx, edx
+  lea ecx, [sizeTable]
+  mov eax, [ecx+ebx*4]
+  mov [esi+0x284], eax
+  pop ebx
+
+  inc dword ptr [entityCount]
+  cmp dword ptr [entityCount], 5
+  jl done
+  mov dword ptr [processedThisFrame], 0
+
+done:
+  pop edx
+  pop ecx
+  pop eax
+  mov [esi+0x168], eax
+  jmp 00407C72
+
+00407C6C:
+  jmp newmem
+  nop
+
+[DISABLE]
+
+00407C6C:
+  db 89 86 68 01 00 00
+dealloc(newmem)
+dealloc(sizeTimer)
+dealloc(sizeInterval)
+dealloc(processedThisFrame)
+dealloc(entityCount)
+dealloc(randSeed)

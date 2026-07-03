@@ -1,0 +1,44 @@
+[ENABLE]
+alloc(newmem, 1000)
+alloc(iceBoost, 4)
+registersymbol(iceBoost)
+
+iceBoost:
+  dd (float)1.01   // Boost velocity frame to counter friction
+
+newmem:
+  // Zero friction
+  mov dword ptr [esi+0x0c5c], 0
+
+  // Boost velocity to overcome game friction
+  push eax
+  push ecx
+  mov eax, [esi+0x1A4]
+  test eax, eax
+  jz skip_ice
+
+  fld dword ptr [eax+0xCA4]
+  fmul dword ptr [iceBoost]
+  fstp dword ptr [eax+0xCA4]
+  fld dword ptr [eax+0xCAC]
+  fmul dword ptr [iceBoost]
+  fstp dword ptr [eax+0xCAC]
+
+skip_ice:
+  pop ecx
+  pop eax
+
+original:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp newmem
+  nop
+
+[DISABLE]
+00405E22:
+db 8B 86 5C 0C 00 00
+unregistersymbol(iceBoost)
+dealloc(newmem)
+dealloc(iceBoost)

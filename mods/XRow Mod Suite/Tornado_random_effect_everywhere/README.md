@@ -1,0 +1,101 @@
+# "Tornado random effect everywhere"
+
+**CT Entry ID:** 416
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+## Script
+
+```
+[ENABLE]
+alloc(newmem, 1000)
+alloc(tornTimer, 4)
+alloc(tornActive, 4)
+alloc(globalTimer, 4)
+alloc(angle, 4)
+
+tornTimer:
+  dd 300
+tornActive:
+  dd 0
+globalTimer:
+  dd 0
+angle:
+  dd (float)0.0
+
+newmem:
+  push eax
+  push ecx
+  push edx
+  push ebx
+
+  mov eax, [esi+0x18]
+  cmp eax, 0
+  jne check_tornado
+
+  dec dword ptr [tornTimer]
+  cmp dword ptr [tornTimer], 0
+  jg check_tornado
+  mov dword ptr [tornTimer], 300
+  mov dword ptr [tornActive], 1
+  mov dword ptr [globalTimer], 0
+  mov dword ptr [angle], 0
+
+check_tornado:
+  cmp dword ptr [tornActive], 0
+  je done
+
+  inc dword ptr [globalTimer]
+  cmp dword ptr [globalTimer], 180
+  jl apply_tornado
+  mov dword ptr [tornActive], 0
+  jmp done
+
+apply_tornado:
+  mov eax, [esi+0x1A4]
+  test eax, eax
+  jz done
+
+  fld dword ptr [angle]
+  fadd dword ptr [rotSpeed]
+  fst dword ptr [angle]
+  fcos
+  fmul dword ptr [circleForce]
+  fstp dword ptr [eax+0xCA4]
+
+  fld dword ptr [angle]
+  fsin
+  fmul dword ptr [circleForce]
+  fstp dword ptr [eax+0xCAC]
+
+  mov dword ptr [eax+0xCA8], 0x40400000  // 3.0
+
+done:
+  pop ebx
+  pop edx
+  pop ecx
+  pop eax
+  mov [esi+0x168], eax
+  jmp 00407C72
+
+rotSpeed:
+  dd (float)0.15
+circleForce:
+  dd (float)10.0
+
+00407C6C:
+  jmp newmem
+  nop
+
+[DISABLE]
+00407C6C:
+db 89 86 68 01 00 00
+dealloc(newmem)
+dealloc(tornTimer)
+dealloc(tornActive)
+dealloc(globalTimer)
+dealloc(angle)
+
+```

@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CFC00:
+db 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CFC00:
+db 4E 4F 52 4D 41

@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+FD5A:
+db 90 90
+
+
+[DISABLE]
+Hamsterball.exe+FD5A:
+db 75 76

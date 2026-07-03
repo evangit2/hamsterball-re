@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+182BF:
+db 90 90
+
+
+[DISABLE]
+Hamsterball.exe+182BF:
+db 75 7A

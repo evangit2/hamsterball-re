@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+EF7C:
+db 90 90
+ 
+ 
+[DISABLE]
+Hamsterball.exe+EF7C:
+db 75 6E

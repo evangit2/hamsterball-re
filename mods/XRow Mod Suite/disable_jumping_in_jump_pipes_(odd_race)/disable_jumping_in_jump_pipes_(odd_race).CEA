@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CFBDA:
+db 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CFBDA:
+db 4A 55 4D 50 53

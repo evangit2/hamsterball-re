@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CF92A:
+db 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CF92A:
+db 53 57 49 52 4C

@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+C886:
+db 90 90
+
+
+[DISABLE]
+Hamsterball.exe+C886:
+db 75 08

@@ -1,0 +1,15 @@
+[ENABLE]
+Hamsterball.exe+31121:
+  db EB
+Hamsterball.exe+31129:
+  db EB
+Hamsterball.exe+31131:
+  db EB
+
+[DISABLE]
+Hamsterball.exe+31121:
+  db 75
+Hamsterball.exe+31129:
+  db 75
+Hamsterball.exe+31131:
+  db 75

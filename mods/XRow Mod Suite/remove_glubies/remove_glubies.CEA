@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CF680:
+db 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CF680:
+db 47 4C 55 45 42

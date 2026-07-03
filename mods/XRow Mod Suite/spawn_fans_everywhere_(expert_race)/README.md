@@ -1,0 +1,19 @@
+# "spawn fans everywhere (expert race)"
+
+**CT Entry ID:** 260
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+E31C:
+db 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+E31C:
+db 0F 85 C1 00 00 00
+
+```

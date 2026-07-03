@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CF3F0:
+db 00 00 80 3F 00 00
+
+
+[DISABLE]
+Hamsterball.exe+CF3F0:
+db 00 00 00 3F 00 00

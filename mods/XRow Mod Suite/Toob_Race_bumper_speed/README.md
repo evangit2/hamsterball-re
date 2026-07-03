@@ -1,0 +1,68 @@
+# "Toob Race bumper speed"
+
+**CT Entry ID:** 4
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+{ Game   : Hamsterball.exe
+  Version:
+  Date   : 2026-05-25
+  Author : XRow
+
+  Bumper Speed Modifier - Toob Race
+}
+
+[ENABLE]
+
+aobscanmodule(BumperToob,Hamsterball.exe,D9 19 8B 54 24 18 89 41 04 89 51 08)
+alloc(newmem,$1000)
+alloc(SpeedMult,4)
+
+SpeedMult:
+  dd (float)3.5 // Speed
+
+label(code)
+label(return)
+
+newmem:
+  // Multiply X velocity (still on FPU stack - st(0))
+  fstp dword ptr [esp-4]
+  fld dword ptr [esp-4]
+  fmul dword ptr [SpeedMult]
+  // Multiply Z velocity ([esp+18])
+  push eax
+  fld dword ptr [esp+1C]
+  fmul dword ptr [SpeedMult]
+  fstp dword ptr [esp+1C]
+  pop eax
+
+code:
+  fstp dword ptr [ecx]
+  mov edx,[esp+18]
+  mov [ecx+04],eax
+  mov [ecx+08],edx
+  jmp return
+
+BumperToob:
+  jmp newmem
+  nop
+return:
+registersymbol(BumperToob)
+
+[DISABLE]
+
+BumperToob:
+  db D9 19 8B 54 24 18 89 41 04 89 51 08
+
+unregistersymbol(BumperToob)
+dealloc(newmem)
+dealloc(SpeedMult)
+
+```

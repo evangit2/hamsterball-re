@@ -1,0 +1,9 @@
+[ENABLE]
+Hamsterball.exe+16BF5:
+db 90 90
+
+ 
+ 
+[DISABLE]
+Hamsterball.exe+16BF5:
+db 75 7E

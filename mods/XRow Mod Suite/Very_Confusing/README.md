@@ -1,0 +1,19 @@
+# "Very Confusing"
+
+**CT Entry ID:** 304
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+CF304:
+db 00 00 00 00 9A 99 99 99 99 99 B9
+
+
+[DISABLE]
+Hamsterball.exe+CF304:
+db 00 00 7F 43 9A 99 99 99 99 99 B9
+
+```
