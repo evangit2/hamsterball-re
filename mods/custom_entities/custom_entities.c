@@ -2,15 +2,34 @@
  * custom_entities.c — Hamsterball Custom Entities Mod
  *
  * Main mod DLL (bass.dll proxy). Scans all loaded MeshBuffers for custom
- * entity names (E:CustomName, N:CustomName). When found, loads the matching
- * behavior DLL from the Behaviours/ folder and calls its update function
- * every frame.
+ * entity names (CE:CustomName, E:CustomName, N:CustomName). When found,
+ * loads the matching behavior DLL from the CustomEntities/ folder and
+ * calls its update function every frame.
+ *
+ * CE: prefix — Custom Entity Reference System:
+ *   When an object named "CE:Rotator" is found in a level .MESHWORLD file
+ *   from the Levels/ folder, it acts as a reference pointer. The object's
+ *   position, rotation, and scale properties define the initial transform
+ *   for the custom entity. The mesh geometry and behavior DLL are loaded
+ *   from CustomEntities/Rotator.MESHWORLD and CustomEntities/Rotator.dll
+ *   respectively.
+ *
+ *   Flow:
+ *     1. Level1.MESHWORLD contains "CE:Rotator" with pos/rot/scale
+ *     2. Mod detects CE: prefix, extracts entity name "Rotator"
+ *     3. Mesh geometry loaded from CustomEntities/Rotator.MESHWORLD
+ *     4. Behavior loaded from CustomEntities/Rotator.dll
+ *     5. Behavior_Update called every frame to animate the entity
+ *
+ * E:/N: prefix — Legacy Custom Entity Support:
+ *   Entities named "E:Rotator" or "N:Rotator" are handled the same way
+ *   as before, loading behavior DLLs from CustomEntities/<name>.dll.
  *
  * The mod is non-invasive — it doesn't patch any game code or hooks.
  * Instead, it uses a background polling thread that:
  *   1. Waits for the game to load a level (board becomes available)
  *   2. Scans all MeshBuffers in the MeshWorld for custom entity names
- *   3. Loads matching behavior DLLs from Behaviours/<EntityName>.dll
+ *   3. Loads matching behavior DLLs from CustomEntities/<EntityName>.dll
  *   4. Calls Behavior_Init for each matched entity
  *   5. Calls Behavior_Update every frame (~60Hz)
  *   6. Calls Behavior_Shutdown when the level changes/unloads
@@ -28,8 +47,9 @@
  *
  * Requirements:
  *   - Rename original bass.dll to bass_real.dll
- *   - Create Behaviours/ folder in game root
- *   - Place behavior DLLs (e.g. Rotator.dll) in Behaviours/
+ *   - Create CustomEntities/ folder in game root
+ *   - Place behavior DLLs (e.g. Rotator.dll) and .MESHWORLD files in CustomEntities/
+ *   - Place level .MESHWORLD files in Levels/ folder
  */
 
 #include "bass_proxy.h"
@@ -62,6 +82,11 @@ typedef void (__cdecl *Behavior_Shutdown_t)(void);
 /* Maximum number of custom entities we can track simultaneously */
 #define MAX_CUSTOM_ENTITIES 64
 
+/* Entity prefix types */
+#define PREFIX_CE   1   /* CE: — Custom Entity reference (loads meshworld + behavior) */
+#define PREFIX_E    2   /* E:  — Legacy custom entity (behavior only) */
+#define PREFIX_N    3   /* N:  — Legacy custom entity (behavior only) */
+
 typedef struct {
     EntityTransform*  transform;     /* Pointer to entity's transform data */
     HMODULE            behavior_dll; /* Loaded behavior DLL handle */
@@ -69,6 +94,7 @@ typedef struct {
     Behavior_Update_t  update_fn;    /* Behavior_Update function pointer */
     Behavior_Shutdown_t shutdown_fn; /* Behavior_Shutdown function pointer */
     char               entity_name[256]; /* Entity name (e.g. "Rotator") */
+    int                prefix_type;  /* PREFIX_CE, PREFIX_E, or PREFIX_N */
     int                initialized;  /* 1 = Behavior_Init called */
 } CustomEntity;
 
@@ -81,7 +107,8 @@ static int g_cs_initialized = 0;
 static HANDLE g_thread = NULL;
 static volatile int g_running = 1;
 static char g_game_dir[MAX_PATH] = {0};
-static char g_behaviours_dir[MAX_PATH] = {0};
+static char g_entities_dir[MAX_PATH] = {0};   /* CustomEntities/ folder */
+static char g_levels_dir[MAX_PATH] = {0};       /* Levels/ folder */
 
 /* Track current board to detect level changes */
 static DWORD g_last_board = 0;
@@ -94,7 +121,7 @@ static DWORD g_last_board = 0;
  *
  * MeshBuffer layout:
  *   +0x04    DWORD  render_ctx_index  (maps to EntityTransform at MW+0x28 + idx*0x50)
- *   +0x0864  char*  name             (entity name string, e.g. "E:Rotator")
+ *   +0x0864  char*  name             (entity name string, e.g. "CE:Rotator")
  *   +0x0863  BYTE   is_event_entity  (1 if name starts with "E:")
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -149,6 +176,7 @@ static DWORD get_meshworld(DWORD scene) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Utility: Get game directory (where Hamsterball.exe lives)
+ * Sets g_game_dir, g_entities_dir (CustomEntities/), g_levels_dir (Levels/)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void init_game_dir(void) {
@@ -163,7 +191,8 @@ static void init_game_dir(void) {
         if (p) {
             *p = '\0';
             strcpy(g_game_dir, path);
-            snprintf(g_behaviours_dir, MAX_PATH, "%s\\Behaviours", path);
+            snprintf(g_entities_dir, MAX_PATH, "%s\\CustomEntities", path);
+            snprintf(g_levels_dir, MAX_PATH, "%s\\Levels", path);
             return;
         }
     }
@@ -171,20 +200,36 @@ static void init_game_dir(void) {
     /* Fallback: use current working directory (works on Wine) */
     if (GetCurrentDirectoryA(MAX_PATH, path) > 0) {
         strcpy(g_game_dir, path);
-        snprintf(g_behaviours_dir, MAX_PATH, "%s\\Behaviours", path);
+        snprintf(g_entities_dir, MAX_PATH, "%s\\CustomEntities", path);
+        snprintf(g_levels_dir, MAX_PATH, "%s\\Levels", path);
     }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Load a behavior DLL from the Behaviours/ folder
+ * Check if a CustomEntities/<name>.MESHWORLD file exists
  *
+ * This is used to verify that the CE: reference points to a valid
+ * custom entity definition file.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int entity_meshworld_exists(const char* entity_name) {
+    char mw_path[MAX_PATH];
+    snprintf(mw_path, MAX_PATH, "%s\\%s.MESHWORLD", g_entities_dir, entity_name);
+    DWORD attr = GetFileAttributesA(mw_path);
+    return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Load a behavior DLL from the CustomEntities/ folder
+ *
+ * For CE: entities: tries CustomEntities/<EntityName>.dll
  * Returns 1 on success, 0 on failure.
  * Sets behavior_dll, init_fn, update_fn, shutdown_fn on success.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int load_behavior_dll(CustomEntity* ent) {
     char dll_path[MAX_PATH];
-    snprintf(dll_path, MAX_PATH, "%s\\%s.dll", g_behaviours_dir, ent->entity_name);
+    snprintf(dll_path, MAX_PATH, "%s\\%s.dll", g_entities_dir, ent->entity_name);
 
     ent->behavior_dll = LoadLibraryA(dll_path);
     if (!ent->behavior_dll) {
@@ -194,7 +239,7 @@ static int load_behavior_dll(CustomEntity* ent) {
         for (i = 0; ent->entity_name[i] && i < 255; i++)
             lower_name[i] = (char)tolower((unsigned char)ent->entity_name[i]);
         lower_name[i] = '\0';
-        snprintf(dll_path, MAX_PATH, "%s\\%s.dll", g_behaviours_dir, lower_name);
+        snprintf(dll_path, MAX_PATH, "%s\\%s.dll", g_entities_dir, lower_name);
         ent->behavior_dll = LoadLibraryA(dll_path);
     }
 
@@ -242,17 +287,24 @@ static void shutdown_all_entities(void) {
  * Scan MeshWorld MeshBuffers for custom entity names
  *
  * The game's MeshWorld has an AthenaList of MeshBuffers at MeshWorld+0x2C.
- * Each MeshBuffer has a name string at +0x864. Names starting with "E:" or
- * "N:" that DON'T match any known game entity type are custom entities.
+ * Each MeshBuffer has a name string at +0x864. Names starting with "CE:",
+ * "E:", or "N:" that DON'T match any known game entity type are custom entities.
  *
- * We check against a list of known entity prefixes/names to avoid intercepting
- * game-native entities.
+ * CE: prefix (Custom Entity Reference):
+ *   The CE: prefix indicates a custom entity reference. The object in the
+ *   level .MESHWORLD provides the initial position, rotation, and scale.
+ *   The mesh geometry and behavior DLL are loaded from the CustomEntities/
+ *   folder (e.g., CustomEntities/Rotator.MESHWORLD + CustomEntities/Rotator.dll).
+ *
+ * E:/N: prefix (Legacy Custom Entity):
+ *   These work the same as before — behavior DLL loaded from CustomEntities/.
  *
  * For each custom entity found, we:
- *   1. Extract the entity name (after the E:/N: prefix)
- *   2. Load Behaviours/<EntityName>.dll
- *   3. Resolve Behavior_Init, Behavior_Update, Behavior_Shutdown
- *   4. Call Behavior_Init with the entity's EntityTransform pointer
+ *   1. Extract the entity name (after the CE:/E:/N: prefix)
+ *   2. For CE: entities, verify CustomEntities/<name>.MESHWORLD exists
+ *   3. Load CustomEntities/<EntityName>.dll
+ *   4. Resolve Behavior_Init, Behavior_Update, Behavior_Shutdown
+ *   5. Call Behavior_Init with the entity's EntityTransform pointer
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /*
@@ -265,6 +317,9 @@ static void shutdown_all_entities(void) {
  * "E:Rotator" will NOT trigger the game's native Rotator_ctor — so it's safe
  * for our mod to handle it. Only event entities that the game dispatches via
  * E:/N: prefix are listed here.
+ *
+ * NOTE: CE: prefix entities are NEVER game-native — the game doesn't
+ * recognize the CE: prefix at all, so all CE: entities are custom.
  */
 static const char* known_entities[] = {
     /* E: prefix event entities (dispatched by collision system) */
@@ -287,6 +342,38 @@ static int is_known_entity(const char* name) {
             return 1;
     }
     return 0;
+}
+
+/*
+ * Detect entity prefix and extract the entity name.
+ * Returns the prefix type (PREFIX_CE, PREFIX_E, PREFIX_N) or 0 if no match.
+ * Sets ent_name to the entity name without the prefix.
+ */
+static int detect_entity_prefix(const char* mesh_name, char* ent_name, int ent_name_size) {
+    int prefix_type = 0;
+    const char* suffix = NULL;
+
+    if (_strnicmp(mesh_name, "CE:", 3) == 0) {
+        prefix_type = PREFIX_CE;
+        suffix = mesh_name + 3;
+    } else if (_strnicmp(mesh_name, "E:", 2) == 0) {
+        prefix_type = PREFIX_E;
+        suffix = mesh_name + 2;
+    } else if (_strnicmp(mesh_name, "N:", 2) == 0) {
+        prefix_type = PREFIX_N;
+        suffix = mesh_name + 2;
+    }
+
+    if (!suffix || !prefix_type)
+        return 0;
+
+    /* Extract entity name (stop at '(' modifier or end of string) */
+    int j;
+    for (j = 0; suffix[j] && suffix[j] != '(' && j < ent_name_size - 1; j++)
+        ent_name[j] = suffix[j];
+    ent_name[j] = '\0';
+
+    return prefix_type;
 }
 
 static void scan_for_custom_entities(DWORD board) {
@@ -331,27 +418,21 @@ static void scan_for_custom_entities(DWORD board) {
         char* name = *(char**)(mb + MESHBUFFER_NAME);
         if (!name || IsBadReadPtr(name, 3)) continue;
 
-        /* Log every mesh name for diagnostics */
+        /* Detect entity prefix (CE:, E:, or N:) */
+        char ent_name[256];
+        int prefix_type = detect_entity_prefix(name, ent_name, sizeof(ent_name));
+        if (!prefix_type) continue;
+
+        /* Log every custom entity mesh name for diagnostics */
         if (logf) {
-            fprintf(logf, "  MeshBuffer[%d]: name=\"%s\" ctx_idx=%d\n",
-                    i, name, *(DWORD*)(mb + MESHBUFFER_CTX_INDEX));
+            const char* prefix_str = (prefix_type == PREFIX_CE) ? "CE" :
+                                     (prefix_type == PREFIX_E)  ? "E"  : "N";
+            fprintf(logf, "  MeshBuffer[%d]: name=\"%s:%s\" ctx_idx=%d\n",
+                    i, prefix_str, ent_name, *(DWORD*)(mb + MESHBUFFER_CTX_INDEX));
         }
 
-        /* Check for E: or N: prefix */
-        if (_strnicmp(name, "E:", 2) != 0 && _strnicmp(name, "N:", 2) != 0)
-            continue;
-
-        /* Extract entity name after prefix */
-        char ent_name[256];
-        const char* suffix = name + 2;
-        /* Stop at any ( modifier */
-        int j;
-        for (j = 0; suffix[j] && suffix[j] != '(' && j < 255; j++)
-            ent_name[j] = suffix[j];
-        ent_name[j] = '\0';
-
-        /* Skip known game entities */
-        if (is_known_entity(ent_name)) {
+        /* Skip known game entities (only for E:/N: prefix, not CE:) */
+        if (prefix_type != PREFIX_CE && is_known_entity(ent_name)) {
             if (logf) fprintf(logf, "  -> '%s' is known game entity, skipping\n", ent_name);
             continue;
         }
@@ -375,25 +456,38 @@ static void scan_for_custom_entities(DWORD board) {
         if (IsBadReadPtr(transform, sizeof(EntityTransform))) continue;
 
         if (logf) {
-            fprintf(logf, "  -> CUSTOM ENTITY '%s' found! ctx_idx=%d transform=0x%08X "
-                    "pos=(%.1f,%.1f,%.1f) rot=(%.3f,%.3f,%.3f)\n",
-                    ent_name, ctx_idx, (unsigned)transform,
+            const char* prefix_str = (prefix_type == PREFIX_CE) ? "CE" :
+                                     (prefix_type == PREFIX_E)  ? "E"  : "N";
+            fprintf(logf, "  -> CUSTOM ENTITY '%s:%s' found! ctx_idx=%d transform=0x%08X "
+                    "pos=(%.1f,%.1f,%.1f) rot=(%.3f,%.3f,%.3f) scale=(%.3f,%.3f)\n",
+                    prefix_str, ent_name, ctx_idx, (unsigned)transform,
                     transform->posX, transform->posY, transform->posZ,
-                    transform->rotX, transform->rotY, transform->rotZ);
+                    transform->rotX, transform->rotY, transform->rotZ,
+                    transform->rotScale, transform->posScale);
         }
 
-        /* Load behavior DLL */
+        /* For CE: entities, check if a .MESHWORLD file exists in CustomEntities/ */
+        if (prefix_type == PREFIX_CE) {
+            if (!entity_meshworld_exists(ent_name)) {
+                if (logf) fprintf(logf, "  -> CustomEntities/%s.MESHWORLD not found, skipping\n", ent_name);
+                continue;
+            }
+            if (logf) fprintf(logf, "  -> CustomEntities/%s.MESHWORLD found\n", ent_name);
+        }
+
+        /* Load behavior DLL from CustomEntities/ */
         CustomEntity* ent = &g_entities[g_entity_count];
         memset(ent, 0, sizeof(CustomEntity));
         strncpy(ent->entity_name, ent_name, 255);
         ent->transform = transform;
+        ent->prefix_type = prefix_type;
 
         if (!load_behavior_dll(ent)) {
-            if (logf) fprintf(logf, "  -> Could not load Behaviours/%s.dll, skipping\n", ent_name);
+            if (logf) fprintf(logf, "  -> Could not load CustomEntities/%s.dll, skipping\n", ent_name);
             continue;
         }
 
-        if (logf) fprintf(logf, "  -> Loaded Behaviours/%s.dll successfully!\n", ent_name);
+        if (logf) fprintf(logf, "  -> Loaded CustomEntities/%s.dll successfully!\n", ent_name);
 
         /* Call Behavior_Init */
         if (ent->init_fn) {
@@ -426,7 +520,8 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         if (f) {
             fprintf(f, "=== Custom Entities Mod Started ===\n");
             fprintf(f, "Game dir: %s\n", g_game_dir);
-            fprintf(f, "Behaviours dir: %s\n", g_behaviours_dir);
+            fprintf(f, "CustomEntities dir: %s\n", g_entities_dir);
+            fprintf(f, "Levels dir: %s\n", g_levels_dir);
             fclose(f);
         }
     }
