@@ -193,7 +193,7 @@ static void load_real_bass(void)
 /* Function addresses */
 #define DISPATCH_COLLISION_EVENTS   0x0040C5D0
 #define APP_START_RACE              0x004287C0
-#define PLAYER_PROFILE_CTOR         0x00427660
+#define PLAYER_PROFILE_CTOR         0x00426F30
 #define TOURNAMENT_ADVANCE_RACE     0x00427080
 
 /* Board offsets */
