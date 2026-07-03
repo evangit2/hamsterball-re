@@ -1,0 +1,80 @@
+// ============================================================
+// Hamsterball Ignore Cache Mod v1.0
+// Forces the game to always parse .MESHWORLD and .MESH text
+// files, ignoring any existing .cached binary files.
+// Also prevents the game from ever generating .cached files.
+//
+// USE CASE: Level modders who swap .MESHWORLD files frequently
+// and don't want to manually delete .cached files each time.
+//
+// HOW IT WORKS:
+//
+// The game has two code paths for loading level/mesh data:
+//
+// 1. CACHED (binary) path: If a .cached file exists, load it
+//    directly via sequential binary reads (fast, no parsing).
+//
+// 2. MESHWORLD/MESH (text) path: Parse the text file from
+//    scratch (slower, but reflects any changes you made).
+//
+// The game also writes .cached files after parsing, so future
+// loads use the fast path.
+//
+// This mod patches 3 locations:
+//
+// PATCH 1: LoadMeshWorld (0x45DE30) at 0x45DE77
+//   JNZ -> JMP (75 30 -> EB 30)
+//   Forces the function to always take the MESHWORLD parse
+//   path, even if a .cached file exists.
+//
+// PATCH 2: LoadMesh (0x471750) at 0x4717DB
+//   JNZ -> JMP (75 15 -> EB 15)
+//   Same, but for .MESH files in the Meshes/ folder.
+//
+// PATCH 3: Mesh_SaveAndFree (0x46F670) at 0x46F67D
+//   JZ -> JMP (0F 84 -> E9) [5-byte near jump, adjust offset +1]
+//   Skips the entire save block, so no .cached file is written.
+//   The free/cleanup code still runs (jumps to the free section
+//   at 0x46F752). Original: 0F 84 CF 00 00 00 (JZ, 6-byte, +0xCF)
+//   Patched:  E9 D0 00 00 00 90 (JMP, 5-byte +0xD0, NOP pad)
+//   Note: JMP is 5 bytes, JZ was 6 — displacement must be +1
+//   to reach the same target: 0x46F67D+5+0xD0 = 0x46F67D+6+0xCF = 0x46F752
+//
+// AUTHOR: Hamsterbot
+// ============================================================
+
+[ENABLE]
+
+// Patch 1: LoadMeshWorld - always parse MESHWORLD text, skip .cached
+aobscanmodule(LoadMeshWorldPatch, Hamsterball.exe, 75 30 8B 16 8D 44 24 0C)
+LoadMeshWorldPatch:
+  db EB 30
+
+// Patch 2: LoadMesh - always parse MESH text, skip .cached
+aobscanmodule(LoadMeshPatch, Hamsterball.exe, 75 15 8B 11 8D 44 24 0C)
+LoadMeshPatch:
+  db EB 15
+
+// Patch 3: Mesh_SaveAndFree - never write .cached files
+// Original: 0F 84 CF 00 00 00 (JZ +0xCF)
+// Patched:  E9 D0 00 00 00 90 (JMP +0xD0, NOP)
+// AOB context: 33 DB 3B C3 0F 84 CF 00 00 00 38 5E 04
+aobscanmodule(MeshSaveAndFreePatch, Hamsterball.exe, 33 DB 3B C3 0F 84 CF 00 00 00 38 5E 04)
+MeshSaveAndFreePatch+04:
+  db E9 D0 00 00 00 90
+
+[DISABLE]
+
+// Restore original bytes
+LoadMeshWorldPatch:
+  db 75 30
+
+LoadMeshPatch:
+  db 75 15
+
+MeshSaveAndFreePatch+04:
+  db 0F 84 CF 00 00 00
+
+unregistersymbol(LoadMeshWorldPatch)
+unregistersymbol(LoadMeshPatch)
+unregistersymbol(MeshSaveAndFreePatch)
