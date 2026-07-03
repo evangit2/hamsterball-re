@@ -40,11 +40,12 @@ Also accepts `levelN` format: `E:TELEPORT(level3)` = same as `E:TELEPORT(3)`.
 
 ## How It Works
 
-- Hooks `DispatchCollisionEvents` (0x40C5D0) via 8-byte trampoline
+- Hooks `DispatchCollisionEvents` (0x40C5D0) via 8-byte trampoline to detect `E:TELEPORT(...)` collisions
+- Also hooks `App_FrameUpdate` (0x46C170) via 8-byte trampoline for main-thread deferred level loading
 - When `E:TELEPORT(...)` collision is detected:
   1. Sets the win state flags (same as N:GOAL but without music/popups)
-  2. Sets ball state to 5 (finished), player "reached goal" flags
-  3. After 2 frames (deferred for safety), loads the target level:
+  2. Sets a teleport flag + 1-frame delay
+  3. On the **next App_FrameUpdate call** (main thread), loads the target level:
      - Calls `App_StartRace(app)` to clean up current race
      - Creates a new `PlayerProfile` with race index set to `levelIndex - 1`
      - Calls `Tournament_AdvanceRace(profile, 0)` which creates the correct `LevelBoard_*_ctor`
@@ -52,17 +53,32 @@ Also accepts `levelN` format: `E:TELEPORT(level3)` = same as `E:TELEPORT(3)`.
 
 ## Technical Details
 
-- **Hook target**: `DispatchCollisionEvents` (0x40C5D0) — 8-byte trampoline (PUSH -1 + MOV EAX,FS:[0])
-- **Win state**: Sets board+0xCD0 (goal reached), ball+0x30=5 (finished), App+playerIdx*0xA0+0x5D6=1 (reached goal), +0x5FC=1 (scored), +0x5F0=1 (newly reached)
+- **Collision hook**: `DispatchCollisionEvents` (0x40C5D0) — 8-byte trampoline (PUSH -1 + MOV EAX,FS:[0])
+- **Frame update hook**: `App_FrameUpdate` (0x46C170) — 8-byte trampoline (SUB ESP,8 + PUSH ESI + LEA EAX,[ESP+4])
+- **Win state**: Sets board+0xCD0 (goal reached), App+playerIdx*0xA0+0x5D6=1 (reached goal), +0x5FC=1 (scored), +0x5F0=1 (newly reached)
 - **Level load**: Creates PlayerProfile (0x98 bytes via HeapAlloc), sets profile+0x08 = levelIndex-1, calls Tournament_AdvanceRace(profile, 0)
-- **No IAT hooks, no registry writes**
+- **No IAT hooks, no registry writes, no background threads**
+
+## v2 Fix — Thread Safety (July 2026)
+
+**Bug**: v1 used a background polling thread (Sleep(16) loop) to call `loadTargetLevel()`.
+The background thread called `App_StartRace()` which destroys the current board/scene
+while the main thread's Draw code was still iterating over those same scene objects.
+This caused a use-after-free crash inside `CreateMechanicalObjects` (crash address
+`0001:0001820B` = 0x41820B) when the ball touched the teleport plane.
+
+**Fix**: Replaced the background polling thread with a hook on `App_FrameUpdate`
+(0x46C170), which runs every frame on the **main thread**. The teleport flag is
+checked and `loadTargetLevel()` is called synchronously within the main thread's
+frame update, eliminating the race condition entirely.
 
 ## Build
 
 ```bash
-i686-w64-mingw32-g++ -shared -o bass.dll teleport_mod.cpp -static -lwinmm -Wl,--enable-stdcall-fixup
+i686-w64-mingw32-gcc -shared -o bass.dll teleport_mod.c -lwinmm \
+  -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias
 ```
 
 ## Crash Test
 
-Passed: 18.65s runtime, no crash (hbtestd Wine/Xvfb).
+Passed: 13.67s runtime, no crash (hbtestd Wine/Xvfb).
