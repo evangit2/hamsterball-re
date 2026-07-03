@@ -25,6 +25,38 @@
 #include <stdlib.h>
 
 /* ============================================================
+ * Diagnostic logging — writes to teleport_log.txt next to bass.dll
+ * ============================================================ */
+
+static char g_logPath[MAX_PATH] = "";
+
+static void diag_log(const char *msg) {
+    if (g_logPath[0] == '\0') return;
+    {
+        HANDLE hFile = CreateFileA(g_logPath,
+            FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile != INVALID_HANDLE_VALUE) {
+            DWORD written;
+            SetFilePointer(hFile, 0, NULL, FILE_END);
+            WriteFile(hFile, msg, (DWORD)strlen(msg), &written, NULL);
+            WriteFile(hFile, "\r\n", 2, &written, NULL);
+            CloseHandle(hFile);
+        }
+    }
+}
+
+static void diag_logf(const char *fmt, ...) {
+    char buf[512];
+    va_list args;
+    if (g_logPath[0] == '\0') return;
+    va_start(args, fmt);
+    wvsprintfA(buf, fmt, args);
+    va_end(args);
+    diag_log(buf);
+}
+
+/* ============================================================
  * BASS Proxy Exports — match jump_mod pattern exactly
  * ============================================================ */
 
@@ -346,6 +378,8 @@ static void loadTargetLevel(int levelIndex) {
     app = GetApp();
     if (!app) return;
 
+    diag_logf("[loadTargetLevel] levelIndex=%d app=0x%08X", levelIndex, app);
+
     /* Step 1: Call App_StartRace(app) to clean up current race state */
     startRace = (App_StartRace_t)APP_START_RACE;
     startRace(app);
@@ -381,7 +415,9 @@ static void loadTargetLevel(int levelIndex) {
 
     /* Step 6: Call Tournament_AdvanceRace(profile, 0) */
     advanceRace = (Tournament_AdvanceRace_t)TOURNAMENT_ADVANCE_RACE;
+    diag_logf("[loadTargetLevel] Calling AdvanceRace(profile=0x%08X, 0)", (unsigned)profileMem);
     advanceRace(profileMem, 0);
+    diag_log("[loadTargetLevel] AdvanceRace returned OK");
 }
 
 /* ============================================================
@@ -402,27 +438,53 @@ static volatile void *g_savedBoard = NULL;
 static volatile int *g_savedBall = NULL;
 static volatile int *g_savedCollObj = NULL;
 
+static volatile int g_hookFireCount = 0;
+static volatile int g_teleportMatchCount = 0;
+
 static void TeleportCollisionHandler(void) {
     void *board = (void *)g_savedBoard;
     int *ball = (int *)g_savedBall;
     int *collObj = (int *)g_savedCollObj;
 
+    g_hookFireCount++;
+
     if (collObj && collObj[1]) {
         const char *eventName = *(const char **)((char *)collObj[1] + COLL_OBJ_NAME_OFFSET);
-        if (eventName && isTeleportEvent(eventName)) {
-            char levelName[128];
-            if (parseTeleportLevel(eventName, levelName, sizeof(levelName))) {
-                int raceIndex = findRaceIndex(levelName);
-                if (raceIndex > 0) {
-                    if (*((char *)ball + BALL_ALREADY_GOAL) == 0 &&
-                        *((char *)ball + BALL_ALIVE_FLAG) != 0) {
-                        setWinState(board, ball);
-                        g_teleportLevelIndex = raceIndex;
-                        g_teleportActive = 1;
-                        g_teleportFrameDelay = 2;
+        if (eventName) {
+            /* Log every event name so we can see what the game sends */
+            if (g_hookFireCount <= 20 || (g_hookFireCount % 100) == 0) {
+                diag_logf("[hook #%d] event=\"%s\"", g_hookFireCount, eventName);
+            }
+            if (isTeleportEvent(eventName)) {
+                g_teleportMatchCount++;
+                {
+                    char levelName[128];
+                    if (parseTeleportLevel(eventName, levelName, sizeof(levelName))) {
+                        int raceIndex = findRaceIndex(levelName);
+                        diag_logf("[TELEPORT MATCH #%d] event=\"%s\" level=\"%s\" raceIndex=%d",
+                           g_teleportMatchCount, eventName, levelName, raceIndex);
+                        if (raceIndex > 0) {
+                            if (*((char *)ball + BALL_ALREADY_GOAL) == 0 &&
+                                *((char *)ball + BALL_ALIVE_FLAG) != 0) {
+                                setWinState(board, ball);
+                                g_teleportLevelIndex = raceIndex;
+                                g_teleportActive = 1;
+                                g_teleportFrameDelay = 2;
+                                diag_logf("[TELEPORT] Triggered! level=%d, deferred load in 2 frames", raceIndex);
+                            } else {
+                                diag_logf("[TELEPORT] SKIPPED: already_goal=%d alive=%d",
+                                   *((char *)ball + BALL_ALREADY_GOAL),
+                                   *((char *)ball + BALL_ALIVE_FLAG));
+                            }
+                        }
                     }
                 }
             }
+        }
+    } else {
+        if (g_hookFireCount <= 5) {
+            diag_logf("[hook #%d] collObj=%08X collObj[1]=%08X (null check failed)",
+               g_hookFireCount, (unsigned)collObj, collObj ? (unsigned)collObj[1] : 0);
         }
     }
 }
@@ -477,8 +539,10 @@ static void InstallHooks(void) {
     /* Verify signature */
     if (dispatchAddr[0] != 0x6A || dispatchAddr[1] != 0xFF ||
         dispatchAddr[2] != 0x64 || dispatchAddr[3] != 0xA1) {
+        diag_log("[FATAL] Signature mismatch at 0x40C5D0! Hook NOT installed.");
         return;
     }
+    diag_log("[InstallHooks] DispatchCollisionEvents signature OK at 0x40C5D0");
 
     /* Save original 8 bytes into trampoline */
     memcpy(g_trampoline, dispatchAddr, 8);
@@ -575,6 +639,8 @@ static void InstallHooks(void) {
 
     /* Start polling thread */
     CreateThread(NULL, 0, TeleportPollThread, NULL, 0, NULL);
+
+    diag_log("[InstallHooks] Hook installed OK. Polling thread started.");
 }
 
 /* ============================================================
@@ -597,7 +663,26 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
     switch (reason) {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hInst);
+
+        /* Set up log path next to bass.dll */
+        {
+            char mod_path[MAX_PATH];
+            if (GetModuleFileNameA(hInst, mod_path, MAX_PATH)) {
+                char *p = strrchr(mod_path, '\\');
+                if (p) {
+                    strcpy(p + 1, "teleport_log.txt");
+                    strncpy(g_logPath, mod_path, MAX_PATH - 1);
+                }
+            }
+        }
+
+        diag_log("=== TELEPORT MOD LOADED ===");
+        diag_logf("bass_real.dll load: %s", "starting...");
+
         load_real_bass();
+
+        diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
+
         CreateThread(NULL, 0, InitThread, NULL, 0, NULL);
         break;
     case DLL_PROCESS_DETACH:
