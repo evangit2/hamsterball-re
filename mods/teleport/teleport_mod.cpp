@@ -5,8 +5,10 @@
  * the race ends silently (no music, no popups, no results screen)
  * and immediately loads and starts the specified level.
  *
- * Format: E:TELEPORT(Level1)  → loads levels\level1.MESHWORLD
- *         E:TELEPORT(LevelNeon) → loads levels\level7.MESHWORLD
+ * Format: E:TELEPORT(3)       → loads levels\level3.MESHWORLD (Intermediate)
+ *         E:TELEPORT(7)       → loads levels\level7.MESHWORLD (Neon)
+ *         E:TELEPORT(neon)    → same as E:TELEPORT(7)
+ *         E:TELEPORT(level7)  → same as E:TELEPORT(7)
  *
  * Build: i686-w64-mingw32-g++ -shared -o bass.dll teleport_mod.cpp \
  *        -static -lwinmm -Wl,--enable-stdcall-fixup
@@ -28,8 +30,6 @@
 // Function addresses (RVAs = addr - EXE_BASE)
 #define DISPATCH_COLLISION_EVENTS_RVA  0x0000C5D0  // 0x40C5D0
 #define APP_START_RACE_RVA             0x000087C0  // 0x4287C0
-#define APP_START_PRACTICE_RACE_RVA    0x00008C50  // 0x428C50
-#define APP_START_TOURNAMENT_RACE_RVA  0x000088B0  // 0x4288B0
 
 // Board offsets
 #define BOARD_SCENE_PTR_OFFSET   0x878   // board+0x878 = scene ptr
@@ -75,59 +75,44 @@
 // ============================================================
 // Level name → race index mapping
 // Tournament_AdvanceRace switch cases (1-15)
+// Accepts: number ("1"-"15") or name ("level3", "neon", "dizzy", etc.)
+// Number maps directly: "3" → level3.MESHWORLD → race index 3
 // ============================================================
 
 typedef struct {
-    const char* meshName;   // e.g. "level1", "levelneon", "levelcascade"
-    int raceIndex;           // 1-15 (0 = warm-up, 14 = impossible)
+    const char* meshName;   // e.g. "level3", "neon", "dizzy"
+    int raceIndex;           // 1-15
 } LevelMapping;
 
 static LevelMapping levelMap[] = {
-    {"level1",        1},   // Warm-Up
-    {"levelwarmup",   1},
-    {"levelwarm-up",  1},
-    {"level2",        2},   // Beginner
-    {"levelbeginner", 2},
-    {"levelcascade",  2},   // Cascade = Beginner race
-    {"level3",        3},   // Intermediate
-    {"levelintermediate", 3},
-    {"level4",        4},   // Dizzy
-    {"leveldizzy",    4},
-    {"level5",        5},   // Tower
-    {"leveltower",    5},
-    {"level6",        6},   // Up
-    {"levelup",       6},
-    {"level7",        7},   // Neon
-    {"levelneon",     7},
-    {"level8",        8},   // Expert
-    {"levelexpert",   8},
-    {"level9",        9},   // Odd
-    {"levelodd",      9},
-    {"level10",       10},  // Toob
-    {"leveltoob",     10},
-    {"level11",       11},  // Wobbly
-    {"levelwobbly",   11},
-    {"level12",       12},  // Glass
-    {"levelglass",    12},
-    {"level13",       13},  // Sky
-    {"levelsky",      13},
-    {"level14",       14},  // Master
-    {"levelmaster",   14},
-    {"level15",       15},  // Impossible
-    {"levelimpossible", 15},
+    {"level1",        1},   {"warmup",         1},   {"warm-up",     1},
+    {"level2",        2},   {"beginner",       2},   {"cascade",     2},
+    {"level3",        3},   {"intermediate",   3},
+    {"level4",        4},   {"dizzy",          4},
+    {"level5",        5},   {"tower",          5},
+    {"level6",        6},   {"up",             6},
+    {"level7",        7},   {"neon",           7},
+    {"level8",        8},   {"expert",         8},
+    {"level9",        9},   {"odd",            9},
+    {"level10",       10},  {"toob",           10},
+    {"level11",       11},  {"wobbly",         11},
+    {"level12",       12},  {"glass",          12},
+    {"level13",       13},  {"sky",            13},
+    {"level14",       14},  {"master",         14},
+    {"level15",       15},  {"impossible",     15},
     {0, 0}
 };
 
 static int findRaceIndex(const char* levelName) {
-    char lower[128];
-    int i;
-    for (i = 0; i < 127 && levelName[i]; i++) {
-        lower[i] = (char)tolower((unsigned char)levelName[i]);
+    // First try: parse as a number (1-15)
+    if (levelName[0] >= '1' && levelName[0] <= '9') {
+        int num = atoi(levelName);
+        if (num >= 1 && num <= 15) return num;
     }
-    lower[i] = 0;
     
+    // Second try: match against name table (case-insensitive)
     for (int j = 0; levelMap[j].meshName; j++) {
-        if (_stricmp(lower, levelMap[j].meshName) == 0) {
+        if (_stricmp(levelName, levelMap[j].meshName) == 0) {
             return levelMap[j].raceIndex;
         }
     }
@@ -140,7 +125,6 @@ static int findRaceIndex(const char* levelName) {
 
 typedef void (__fastcall *DispatchCollisionEvents_t)(void* board, int* ball, int* collObj);
 typedef void (__fastcall *App_StartRace_t)(int app);
-typedef void (__thiscall *App_StartPracticeRace_t)(void* app, int levelIndex);
 
 // ============================================================
 // Globals
@@ -259,25 +243,76 @@ static void setWinState(void* board, int* ball) {
 
 // ============================================================
 // Load and start the target level
+//
+// Tournament_AdvanceRace does: raceIndex = profile+0x08 + 1, then switches on it.
+// Switch cases: 1=WarmUp(level1), 2=Beginner(level2), 3=Intermediate(level3), etc.
+// So to get case N (which loads levelN), we need profile+0x08 = N-1.
+//
+// We call App_StartRace first (cleanup), then manually create the profile
+// with the right index, then call Tournament_AdvanceRace(profile, 0).
+// We can't use App_StartPracticeRace because it sets profile+0x08 = param_1
+// and then AdvanceRace increments it, giving us the wrong level.
 // ============================================================
 
+// PlayerProfile struct: 0x98 bytes
+// +0x00: vtable
+// +0x04: App ptr
+// +0x08: race index (int)
+// +0x0C: board ptr (set by AdvanceRace)
+// +0x10: tournament flag (byte)
+// +0x11: time-trial flag (byte)
+typedef void (__thiscall *PlayerProfile_ctor_t)(void* profile, int app, unsigned char partyFlag);
+typedef void (__thiscall *Tournament_AdvanceRace_t)(void* profile, char param_1);
+typedef void (__thiscall *Scene_AddObject_t)(void* sceneList, void* obj);
+
+#define PLAYER_PROFILE_CTOR_RVA     0x00027660  // 0x427660 (FUN_00427660)
+#define TOURNAMENT_ADVANCE_RACE_RVA 0x00007080  // 0x427080
+
 static void loadTargetLevel(int levelIndex) {
+    // levelIndex is 1-based: 1=WarmUp, 2=Beginner, ..., 15=Impossible
+    // Tournament_AdvanceRace does: currentIndex = profile+0x08; then currentIndex+1; switch(currentIndex+1)
+    // So we need profile+0x08 = levelIndex - 1, so that +1 gives us levelIndex
     int app = GetApp();
     if (!app || levelIndex < 1 || levelIndex > 15) return;
     
-    // Call App_StartRace(app) to clean up current race state
-    // This destroys old board, profile, results, resets music
+    // Step 1: Call App_StartRace(app) to clean up current race state
     App_StartRace_t startRace = (App_StartRace_t)(EXE_BASE + APP_START_RACE_RVA);
     startRace(app);
     
-    // Call App_StartPracticeRace(app, levelIndex) to load the target level
-    // App_StartPracticeRace is __thiscall(this=app, param_1=levelIndex)
-    // It creates a new PlayerProfile, sets race index, and calls Tournament_AdvanceRace
-    // which creates the LevelBoard_*_ctor for the target level
-    // Tournament_AdvanceRace switches on raceIndex: case 1=WarmUp, case 2=Beginner, etc.
-    typedef void (__thiscall *StartPracticeFunc)(void*, int);
-    StartPracticeFunc startPractice = (StartPracticeFunc)(EXE_BASE + APP_START_PRACTICE_RACE_RVA);
-    startPractice((void*)app, levelIndex);
+    // Step 2: Clear arena flag
+    *((char*)app + APP_ARENA_FLAG) = 0;
+    
+    // Step 3: Set up player slots (same as App_StartPracticeRace does)
+    *((char*)app + 0x717) = 1;  // P3 active
+    *((char*)app + 0x7B7) = 1;  // P4 active
+    *((char*)app + 0x5D7) = 0;  // P1 inactive (set later by tournament)
+    *((char*)app + 0x677) = 1;  // P2 active
+    if (*((char*)app + 0x234) != 0) {  // party mode
+        *((char*)app + 0x677) = 0;
+    }
+    *((int*)app + 0x23C/4) = 1;  // difficulty = Normal
+    
+    // Step 4: Create PlayerProfile
+    void* profileMem = (void*)HeapAlloc(GetProcessHeap(), 0, 0x98);
+    if (!profileMem) return;
+    
+    PlayerProfile_ctor_t profileCtor = (PlayerProfile_ctor_t)(EXE_BASE + PLAYER_PROFILE_CTOR_RVA);
+    unsigned char partyFlag = *((char*)app + 0x234);
+    profileCtor(profileMem, app, partyFlag);
+    
+    // Store profile in App
+    *((void**)app + APP_PROFILE_PTR/4) = profileMem;
+    
+    // Step 5: Set race index to levelIndex - 1
+    // (AdvanceRace will add +1, landing on the correct switch case)
+    *((int*)profileMem + 2) = levelIndex - 1;  // profile+0x08 = race index
+    
+    // Set time-trial flag (same as practice mode)
+    *((char*)profileMem + 0x11) = 1;
+    
+    // Step 6: Call Tournament_AdvanceRace(profile, 0) to create the board
+    Tournament_AdvanceRace_t advanceRace = (Tournament_AdvanceRace_t)(EXE_BASE + TOURNAMENT_ADVANCE_RACE_RVA);
+    advanceRace(profileMem, 0);
 }
 
 // ============================================================
