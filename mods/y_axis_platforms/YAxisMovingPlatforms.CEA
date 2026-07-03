@@ -1,11 +1,26 @@
 [ENABLE]
 
 // =====================================================
-// Y-Axis Moving Platforms — Fixed Version
-// Spawns 6 platforms that oscillate up/down on Y axis
-// BUG FIX: Original script wrote to +0x10E0 (Level pointer)
-//          instead of +0x10D4 (Y position). Also fixed additive
-//          drift by storing baseY per platform.
+// Y-Axis Moving Platforms — Lifter-style movement
+// =====================================================
+// Spawns 6 platforms that move up/down using the SAME
+// mechanism as the Up Race Lifter:
+//   - Calls Gfx_SetPosition(gfx, baseY - offset, Z)
+//   - State machine: up → wait → down → wait → repeat
+//   - offset accumulates with velocity (0.5/frame)
+//   - Clamps at 0 (bottom) and 95.0 (top)
+//
+// Struct layout (PopCylinder, same as Lifter):
+//   +0x10D0 = board pointer
+//   +0x10D4 = Level sub-object pointer
+//   +0x10D8 = X position (gfx object for Gfx_SetPosition)
+//   +0x10DC = Y position (base Y)
+//   +0x10E0 = Z position
+//   +0x10E4 = state (0=up, 1=wait_top, 2=down, 3=wait_bot)
+//   +0x10E8 = velocity accumulator (float, += 0.5 each frame)
+//   +0x10EC = current Y offset
+//   +0x10F0 = last Y offset (for change detection)
+//   +0x10F4 = wait timer
 // =====================================================
 
 alloc(PlatCode, 4096)
@@ -17,7 +32,6 @@ alloc(SpawnLPlats5, 4)
 alloc(SpawnLPlats6, 4)
 alloc(saved_board, 4)
 alloc(plat_array, 68)
-alloc(baseY_array, 68)
 alloc(our_mesh, 4)
 alloc(temp_mesh, 4)
 alloc(mesh_select, 4)
@@ -27,6 +41,14 @@ alloc(playerZ, 4)
 alloc(float_40_sub, 4)
 alloc(angle, 4)
 alloc(last_board, 4)
+alloc(vel, 4)
+alloc(offset_val, 4)
+alloc(state_val, 4)
+alloc(wait_val, 4)
+alloc(frame_val, 4)
+alloc(last_off, 4)
+
+// Tunable parameters
 alloc(amplitude, 4)
 alloc(speed, 4)
 
@@ -56,9 +78,6 @@ saved_board:
 plat_array:
   dd 0
   dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-baseY_array:
-  dd 0
-  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 our_mesh:
   dd 0
 temp_mesh:
@@ -72,15 +91,25 @@ playerY:
 playerZ:
   dd 0
 float_40_sub:
-  dd C1C80000
+  dd C1C80000     // -25.0 (spawn below player)
 angle:
   dd 0
 last_board:
   dd 0
+
+// Per-platform state arrays (max 16 platforms)
+// Each is 68 bytes = 16 entries + count
+alloc(plat_state, 68)     // 0=up, 1=wait_top, 2=down, 3=wait_bot
+alloc(plat_offset, 68)    // current Y offset (float)
+alloc(plat_velocity, 68)  // velocity accumulator (float)
+alloc(plat_wait, 68)      // wait timer
+alloc(plat_frame, 68)     // frame counter (for state 2)
+alloc(plat_lastoff, 68)   // last offset (for change detection)
+
 amplitude:
-  dd 41200000    // 10.0 — how far up/down the platform moves
+  dd 41200000      // 10.0 — max travel distance
 speed:
-  dd 3BA3D70A   // 0.002 — oscillation speed (radians per frame)
+  dd 3F000000      // 0.5 — velocity increment per frame (same as Lifter)
 
 label(original_code)
 label(save_pos)
@@ -98,6 +127,11 @@ label(skip_render)
 label(update_loop)
 label(update_next)
 label(update_done)
+label(up_state)
+label(wait_top_state)
+label(down_state)
+label(wait_bot_state)
+label(do_move)
 
 PlatCode:
   cmp dword [esi+18], 0
@@ -112,11 +146,6 @@ PlatCode:
   mov dword [plat_array], 0
 
 no_clear:
-  // Increment the oscillation angle
-  fld dword [angle]
-  fadd dword [speed]
-  fstp dword [angle]
-
   // Update all spawned platforms
   mov eax, [plat_array]
   test eax, eax
@@ -133,17 +162,124 @@ update_loop:
   test ecx, ecx
   jz update_next
 
-  // Y = baseY + sin(angle) * amplitude
-  // Load baseY for this platform
-  fld dword [baseY_array+4+ebx*4]
-  // Push sin(angle) * amplitude onto FPU stack
-  fld dword [angle]
-  fsin
-  fmul dword [amplitude]
-  // ST(0) = sin(angle)*amp, ST(1) = baseY
-  faddp          // ST(0) = baseY + sin(angle)*amp
-  // Write to platform Y position at +0x10D4
-  fstp dword [ecx+10D4]
+  // Load platform state
+  mov edx, [plat_state+4+ebx*4]
+  // ecx = platform object
+  // ebx = platform index
+  // edx = state (0-3)
+
+  cmp edx, 0
+  je up_state
+  cmp edx, 1
+  je wait_top_state
+  cmp edx, 2
+  je down_state
+  // state 3 = wait_bot
+  jmp wait_bot_state
+
+up_state:
+  // Going UP: offset += velocity; velocity += speed
+  fld dword [plat_offset+4+ebx*4]
+  fadd dword [plat_velocity+4+ebx*4]
+  fstp dword [plat_offset+4+ebx*4]
+
+  fld dword [plat_velocity+4+ebx*4]
+  fadd dword [speed]
+  fstp dword [plat_velocity+4+ebx*4]
+
+  // Check if offset >= amplitude (max travel)
+  fld dword [plat_offset+4+ebx*4]
+  fcomp dword [amplitude]
+  fnstsw ax
+  test ah, 41h      // CF=0 and ZF=0 means offset >= amplitude
+  jnz do_move
+  // Clamp to amplitude, switch to wait_top
+  fld dword [amplitude]
+  fstp dword [plat_offset+4+ebx*4]
+  mov dword [plat_state+4+ebx*4], 1
+  mov dword [plat_wait+4+ebx*4], 4B   // 75 frames wait at top
+  jmp do_move
+
+wait_top_state:
+  // Wait at top: countdown
+  mov edx, [plat_wait+4+ebx*4]
+  dec edx
+  mov [plat_wait+4+ebx*4], edx
+  cmp edx, 0
+  jle do_move
+  // Switch to going down
+  mov dword [plat_state+4+ebx*4], 2
+  jmp do_move
+
+down_state:
+  // Going DOWN: offset -= velocity
+  fld dword [plat_offset+4+ebx*4]
+  fsub dword [plat_velocity+4+ebx*4]
+  fstp dword [plat_offset+4+ebx*4]
+
+  // Check if offset <= 0
+  fld dword [plat_offset+4+ebx*4]
+  fcomp dword [float_zero]
+  fnstsw ax
+  test ah, 41h      // CF=1 means offset < 0
+  jnz do_move       // not yet below 0, keep going down
+  // Actually: if CF=1, offset < 0 → clamp and switch
+  // fnstsw: AH bit 0 = CF, bit 6 = ZF
+  // If offset < 0: CF=1 → test ah,01 → nonzero
+  test ah, 01h
+  jz do_move
+  // Clamp to 0, switch to wait_bot
+  mov dword [plat_offset+4+ebx*4], 0
+  fldz
+  fstp dword [plat_offset+4+ebx*4]
+  mov dword [plat_state+4+ebx*4], 3
+  mov dword [plat_wait+4+ebx*4], 32   // 50 frames wait at bottom
+  jmp do_move
+
+wait_bot_state:
+  // Wait at bottom: countdown
+  mov edx, [plat_wait+4+ebx*4]
+  dec edx
+  mov [plat_wait+4+ebx*4], edx
+  cmp edx, 0
+  jle do_move
+  // Switch to going up
+  mov dword [plat_state+4+ebx*4], 0
+  // Reset velocity
+  mov dword [plat_velocity+4+ebx*4], 0
+  jmp do_move
+
+do_move:
+  // Call Gfx_SetPosition to move the platform
+  // Gfx_SetPosition(gfx_obj, Y, Z) — thiscall? No, it's cdecl with 3 float params
+  // From LifterRender: Gfx_SetPosition(param_1[0x436], baseY - offset, param_1[0x438])
+  // param_1[0x436] = +0x10D8 (X/gfx), param_1[0x437] = +0x10DC (base Y), param_1[0x438] = +0x10E0 (Z)
+  //
+  // But wait — Gfx_SetPosition takes (gfx_obj, Y, Z) where:
+  //   gfx_obj = [ecx+10D8] (the X position field stores the gfx object)
+  //   Y = [ecx+10DC] - offset  (base Y minus current offset)
+  //   Z = [ecx+10E0]
+
+  // Check if offset changed since last frame
+  mov eax, [plat_offset+4+ebx*4]
+  cmp eax, [plat_lastoff+4+ebx*4]
+  je update_next
+
+  // Update lastoff
+  mov [plat_lastoff+4+ebx*4], eax
+
+  // Push Z
+  push [ecx+10E0]
+  // Push Y = baseY - offset
+  fld dword [ecx+10DC]
+  fsub dword [plat_offset+4+ebx*4]
+  sub esp, 4
+  fstp dword [esp]
+  // Push gfx_obj (from +0x10D8)
+  push [ecx+10D8]
+  // Call Gfx_SetPosition
+  call 00457B50
+  add esp, 0C
 
 update_next:
   inc ebx
@@ -316,10 +452,13 @@ skip_render:
   jae done_spawn
   mov [plat_array+4+eax*4], edi
 
-  // Store base Y position for this platform
-  // baseY = playerY (the spawn Y position)
-  mov edx, [playerY]
-  mov [baseY_array+4+eax*4], edx
+  // Initialize per-platform state
+  mov dword [plat_state+4+eax*4], 0      // state = going up
+  mov dword [plat_offset+4+eax*4], 0     // offset = 0.0
+  mov dword [plat_velocity+4+eax*4], 0   // velocity = 0.0
+  mov dword [plat_wait+4+eax*4], 0       // wait timer = 0
+  mov dword [plat_frame+4+eax*4], 0      // frame counter = 0
+  mov dword [plat_lastoff+4+eax*4], 0    // last offset = 0.0
 
   inc dword [plat_array]
 
@@ -330,6 +469,9 @@ done_spawn:
 original_code:
   mov eax, [esi+0c5c]
   jmp 00405E28
+
+float_zero:
+  dd 00000000
 
 00405E22:
   jmp PlatCode
@@ -349,7 +491,6 @@ dealloc(SpawnLPlats5)
 dealloc(SpawnLPlats6)
 dealloc(saved_board)
 dealloc(plat_array)
-dealloc(baseY_array)
 dealloc(our_mesh)
 dealloc(temp_mesh)
 dealloc(mesh_select)
@@ -359,6 +500,18 @@ dealloc(playerZ)
 dealloc(float_40_sub)
 dealloc(angle)
 dealloc(last_board)
+dealloc(vel)
+dealloc(offset_val)
+dealloc(state_val)
+dealloc(wait_val)
+dealloc(frame_val)
+dealloc(last_off)
+dealloc(plat_state)
+dealloc(plat_offset)
+dealloc(plat_velocity)
+dealloc(plat_wait)
+dealloc(plat_frame)
+dealloc(plat_lastoff)
 dealloc(amplitude)
 dealloc(speed)
 unregistersymbol(SpawnLPlats)
