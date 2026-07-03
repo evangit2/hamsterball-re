@@ -440,17 +440,11 @@ static void inject_saved_ghost(const char *raceName) {
     /* BTT+0x41C: playback_index = 0 (already zeroed by memset, starts at first frame) */
     log_fmt("Stored %d/%d snapshots (array at 0x%X)", numToStore, savedCount, (DWORD)snapArray);
 
-    /* Free old playback buffer if exists */
-    DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
-    if (existingPlayback && existingPlayback > 0x10000) {
-        if (!IsBadReadPtr((void*)existingPlayback, 4)) {
-            DWORD vtable = *(DWORD*)existingPlayback;
-            if (vtable > 0x400000 && vtable < 0x500000) {
-                log_fmt("Freeing old playback BTT at 0x%X", existingPlayback);
-                call_btt_dtor(existingPlayback, 1);
-            }
-        }
-    }
+    /* Free old playback buffer if exists.
+     * WARNING: call_btt_dtor uses inline asm __thiscall which may crash.
+     * Skip the dtor — just leak the old BTT. It's a few KB, not worth crashing. */
+    /* DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK); */
+    /* Don't free — just overwrite. The old BTT will be leaked but that's OK. */
 
     /* Verify the list was actually populated */
     int listCount = *(int*)((char*)btt + 0x008);  /* BTT+0x008 = list_count (AL offset 0x004) */
