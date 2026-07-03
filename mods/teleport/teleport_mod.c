@@ -207,11 +207,12 @@ static void load_real_bass(void)
 #define PROFILE_RACE_INDEX       0x08
 #define PROFILE_BOARD_PTR        0x0C
 
-/* Ball offsets */
-#define BALL_STATE               0x30
-#define BALL_ALREADY_GOAL        0x53
-#define BALL_ALIVE_FLAG          0x1DA
+/* Ball offsets — verified from DispatchCollisionEvents disassembly:
+ *   EBP=ball, ball+0x14=board, ball+0x18=playerIdx
+ *   ball+0x2E9=death_pending (0=alive, 1=dying)
+ *   board+0xCD0=goal_reached (set by N:GOAL handler) */
 #define BALL_PLAYER_INDEX        0x18
+#define BALL_DEATH_PENDING       0x2E9
 
 /* Collision event pair offsets */
 #define COLL_OBJ_NAME_OFFSET     0x864
@@ -345,7 +346,7 @@ static void setWinState(void *board, int *ball) {
     playerIdx = ball[BALL_PLAYER_INDEX / 4];
 
     *((char *)board + BOARD_GOAL_REACHED) = 1;
-    ball[BALL_STATE / 4] = 5;
+    /* Don't set ball state — let the game's natural goal flow handle it */
     *((char *)app + APP_PLAYER_REACHED_GOAL_BASE + playerIdx * APP_PLAYER_STRIDE) = 1;
 
     if (*((char *)app + APP_PLAYER_SCORED_BASE + playerIdx * APP_PLAYER_STRIDE) == 0) {
@@ -464,17 +465,17 @@ static void TeleportCollisionHandler(void) {
                         diag_logf("[TELEPORT MATCH #%d] event=\"%s\" level=\"%s\" raceIndex=%d",
                            g_teleportMatchCount, eventName, levelName, raceIndex);
                         if (raceIndex > 0) {
-                            if (*((char *)ball + BALL_ALREADY_GOAL) == 0 &&
-                                *((char *)ball + BALL_ALIVE_FLAG) != 0) {
+                            if (*((char *)board + BOARD_GOAL_REACHED) == 0 &&
+                                *((char *)ball + BALL_DEATH_PENDING) == 0) {
                                 setWinState(board, ball);
                                 g_teleportLevelIndex = raceIndex;
                                 g_teleportActive = 1;
                                 g_teleportFrameDelay = 2;
                                 diag_logf("[TELEPORT] Triggered! level=%d, deferred load in 2 frames", raceIndex);
                             } else {
-                                diag_logf("[TELEPORT] SKIPPED: already_goal=%d alive=%d",
-                                   *((char *)ball + BALL_ALREADY_GOAL),
-                                   *((char *)ball + BALL_ALIVE_FLAG));
+                                diag_logf("[TELEPORT] SKIPPED: goal_reached=%d death_pending=%d",
+                                   *((char *)board + BOARD_GOAL_REACHED),
+                                   *((char *)ball + BALL_DEATH_PENDING));
                             }
                         }
                     }
