@@ -264,19 +264,13 @@ static void save_ghost_for_race(const char *raceName, int time,
  * MinGW __thiscall function pointers silently fail — must use asm.
  * ═════════════════════════════════════════════════════════════════ */
 
-/* operator_new is __cdecl — safe to call directly */
-typedef void* (__cdecl *operator_new_fn)(SIZE_T);
-static operator_new_fn op_new = (operator_new_fn)ADDR_OPERATOR_NEW;
+/* operator_new — use malloc(). Safe for game structs. */
+static void* op_new(SIZE_T size) { return malloc(size); }
 
-/* BestTimeTracker_ctor is __thiscall(ECX=btt) — no stack params, 1 reg param */
-static void call_btt_ctor(void *btt) {
-    register DWORD ecx_val asm("ecx") = (DWORD)btt;
-    __asm__ volatile(
-        "call *%0\n"
-        : : "r"((void*)ADDR_BTT_CTOR), "c"(ecx_val)
-        : "eax", "edx", "memory"
-    );
-}
+/* ═════════════════════════════════════════════════════════════════
+ * Inline asm wrappers for __thiscall game functions.
+ * MinGW __thiscall function pointers silently fail — must use asm.
+ * ═════════════════════════════════════════════════════════════════ */
 
 /* AthenaList_Append is __thiscall(ECX=list, stack=item) — 1 stack param */
 static void call_alist_append(DWORD *list, void *item) {
@@ -302,6 +296,48 @@ static void call_btt_dtor(DWORD btt, int free_flag) {
         : : "r"(free_flag), "r"((void*)dtor), "c"(ecx_val)
         : "eax", "edx", "memory"
     );
+}
+
+/* Manually construct a BestTimeTracker — replicate what BestTimeTracker_ctor
+ * (0x427660) and AthenaList_Init (0x453210) do, without calling them.
+ * This avoids the __thiscall problem entirely. */
+static DWORD vtable_BTT = 0x004D262C;  /* PTR_FUN_004d262c from ctor */
+static DWORD vtable_AthenaList = 0x004D875C;  /* PTR_FUN_004d875c from AthenaList_Init */
+
+static void manually_init_btt(void *btt) {
+    /* BestTimeTracker_ctor:
+     *   *this = &PTR_FUN_004d262c (vtable)
+     *   AthenaList_Init(this+4, 0)
+     *   this[0x149] = 9999999  (BTT+0x524 = best_time)
+     */
+    DWORD *p = (DWORD*)btt;
+    p[0] = vtable_BTT;           /* vtable */
+
+    /* AthenaList_Init(this+4, 0):
+     *   this+0x414 (BTT+0x418) = param (0 = capacity)
+     *   this+0x410 (BTT+0x414) = 0 (list_array_ptr)
+     *   this+0x004 (BTT+0x008) = 0 (list_count)  -- wait, AthenaList starts at BTT+4
+     *   Actually AthenaList_Init operates on (this+1) where this is undefined4*
+     *   So AthenaList starts at BTT+4 (byte offset 4).
+     *   AthenaList layout relative to BTT:
+     *     BTT+0x000: vtable
+     *     BTT+0x004: AthenaList.vtable
+     *     BTT+0x008: AthenaList.list_count
+     *     BTT+0x00C..0x40B: AthenaList internal array (0x100 entries)
+     *     BTT+0x40C: AthenaList.iterator_counter
+     *     BTT+0x410: AthenaList.list_array_ptr
+     *     BTT+0x414: AthenaList.capacity
+     */
+    DWORD *alist = (DWORD*)((char*)btt + 4);
+    alist[0] = vtable_AthenaList;   /* BTT+0x004: AthenaList vtable */
+    /* Zero the internal array (0x100 entries = 256 dwords starting at alist+2 = BTT+0x00C) */
+    memset(alist + 2, 0, 0x100 * sizeof(DWORD));  /* BTT+0x00C..0x40B */
+    alist[0x102] = 0;   /* BTT+0x40C: iterator_counter (0x408/4 = 0x102) */
+    alist[0x103] = 0;   /* BTT+0x410: list_array_ptr */
+    alist[0x104] = 0;   /* BTT+0x414: capacity */
+
+    /* BestTimeTracker best_time (BTT+0x524 = p[0x149]) */
+    p[0x149] = NO_TIME;  /* 9999999 = sentinel */
 }
 
 static void inject_saved_ghost(const char *raceName) {
@@ -377,13 +413,13 @@ static void inject_saved_ghost(const char *raceName) {
 
     log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
 
-    /* Create BestTimeTracker for playback via operator_new + ctor */
+    /* Create BestTimeTracker for playback — manually init without calling game functions */
     void *btt = op_new(BTT_SIZE);
     if (!btt) { free(savedSnaps); log_msg("ERROR: alloc BTT failed"); return; }
     log_fmt("BTT allocated at %p", btt);
 
-    call_btt_ctor(btt);
-    log_msg("BTT ctor called");
+    manually_init_btt(btt);
+    log_msg("BTT manually initialized");
 
     *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
 
@@ -392,17 +428,22 @@ static void inject_saved_ghost(const char *raceName) {
     strncpy(bttName, raceName, 127);
     bttName[127] = '\0';
 
-    /* Fill with snapshots — AthenaList starts at BTT+4 */
-    DWORD *listPtr = (DWORD*)((char*)btt + 4);
-    int injected = 0;
-    for (int i = 0; i < savedCount; i++) {
+    /* Fill with snapshots — AthenaList starts at BTT+4.
+     * Instead of calling AthenaList_Append (which does malloc/realloc internally),
+     * we directly write to the AthenaList's internal array. This is safe because
+     * AthenaList's first 256 entries are inline (BTT+0x00C..0x40B). */
+    DWORD *alist = (DWORD*)((char*)btt + 4);
+    int numToStore = savedCount;
+    if (numToStore > 0x100) numToStore = 0x100;  /* cap at 256 inline entries for now */
+    for (int i = 0; i < numToStore; i++) {
         DWORD *snap = (DWORD*)op_new(SNAP_SIZE);
         if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); continue; }
         memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
-        call_alist_append(listPtr, snap);
-        injected++;
+        /* Direct store in AthenaList internal array (alist+2 = BTT+0x00C, index i) */
+        alist[2 + i] = (DWORD)snap;
     }
-    log_fmt("Appended %d/%d snapshots", injected, savedCount);
+    alist[1] = numToStore;  /* list_count */
+    log_fmt("Stored %d/%d snapshots directly", numToStore, savedCount);
 
     /* Free old playback buffer if exists */
     DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
