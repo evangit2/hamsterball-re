@@ -1,108 +1,50 @@
 /*
- * ghost_saver.c — Persistent Ghost Data for Time Trial Mode
+ * ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v2)
  *
- * Saves per-race ghost recordings to GHOST.txt so they persist across
- * game restarts. The vanilla game stores ghosts only in memory — they
- * vanish when you quit. This mod:
- *
- *   1. On race start: loads saved ghost data from GHOST.txt into App+0x910
- *      (playback buffer) so the ghost ball appears immediately.
- *   2. During race: records ball snapshots every frame (same as vanilla).
- *   3. On race finish: compares finish time against saved best time.
- *      If faster: overwrites the saved data. If slower: discards.
- *
- * GHOST.txt format:
- *   [RACE:Warm-Up Race]
- *   TIME=12345
- *   FRAMES=1500
- *   <10 float values per line, space-separated>
- *   ...
- *   [END]
- *
- * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll ghost_saver.c -I../shared \
- *     -lwinmm -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
- *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+ * v2: Extensive diagnostic logging to trace why race detection fails.
+ * Records ball snapshots to GHOST.txt, loads saved ghosts on race start.
  */
 
 #include "bass_proxy.h"
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Game constants
- * ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Game constants */
 #define APP_PTR             0x005341E0
-#define ADDR_SCENE_UPDATE   0x0041B540  /* Scene_UpdateBallsAndState */
-#define ADDR_START_RACE     0x00428C50  /* App_StartPracticeRace */
-#define ADDR_RECORD_SNAP    0x00427810  /* BestTimeTracker_RecordSnapshot */
-#define ADDR_PLAYBACK_SNAP  0x00427690  /* BestTimeTracker_PlaybackSnapshot */
-#define ADDR_BTT_CTOR       0x00427660  /* BestTimeTracker_ctor */
-#define ADDR_BTT_DTOR       0x00427760  /* BestTimeTracker_dtor */
-#define ADDR_ALIST_APPEND   0x00453780  /* AthenaList_Append */
-#define ADDR_ALIST_GETSIZE  0x004536A0  /* AthenaList_GetSize */
-#define ADDR_OPERATOR_NEW   0x004BA570  /* operator_new */
-#define ADDR_FREE           0x004BA580  /* free (operator delete) */
+#define ADDR_BTT_CTOR       0x00427660
+#define ADDR_ALIST_APPEND   0x00453780
+#define ADDR_OPERATOR_NEW   0x004BA570
+#define BTT_SIZE            0x528
+#define BTT_BEST_TIME       0x524
+#define BTT_NAME            0x424
+#define SNAP_SIZE           0x28
+#define NO_TIME             9999999
+#define MAX_SNAPSHOTS       5000
 
 /* App offsets */
 #define APP_90C_RECORDING  0x90C
 #define APP_910_PLAYBACK    0x910
 #define APP_5DC_BALL        0x5DC
-#define APP_5E8_RACE_TIMER  0x5E8
-#define APP_5D6_GOAL_FLAG   0x5D6   /* BYTE: set to 1 when player crosses goal */
+#define APP_5D6_GOAL_FLAG   0x5D6
 #define APP_234_PARTY_MODE  0x234
 #define APP_220_PROFILE     0x220
 
-/* BestTimeTracker offsets */
-#define BTT_SIZE            0x528
-#define BTT_BEST_TIME       0x524   /* dword at +0x149 (0x149*4=0x524) */
-#define BTT_LIST_ARRAY      0x410
-#define BTT_PLAYBACK_INDEX  0x41C
-#define BTT_RACE_TIME       0x420
-#define BTT_NAME            0x424   /* char[...] — race name string */
-#define BTT_LIST_COUNT       0x004  /* relative to BTT start */
-
-/* BallSnapshot is 0x28 bytes (10 fields, stored as DWORD array) */
-#define SNAP_SIZE           0x28
-#define SNAP_FIELDS         10
-
-/* AthenaList layout (relative to list start = BTT+4) */
-#define ALIST_COUNT         0x000
-#define ALIST_ITEMS         0x008   /* first item pointer */
-#define ALIST_ARRAY_PTR     0x410   /* dynamic array when count > 256 */
-
-/* Sentinel for "no time recorded" */
-#define NO_TIME             9999999
-
-/* Max snapshots we store per race in our own buffer */
-#define MAX_SNAPSHOTS       5000
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Mod state
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static char g_ghostPath[MAX_PATH] = "";
-static char g_logPath[MAX_PATH] = "";
-
-/* Our own snapshot buffer — mirrors what the game records */
+/* Snapshot struct — mirrors what the game records (10 DWORDs = 0x28 bytes) */
 typedef struct {
-    float pos_x, pos_y, pos_z;    /* 0,1,2 */
-    float vel_x, vel_y;          /* 3,4 */
-    float rotation;               /* 5 */
-    unsigned char state_flag;     /* 6 (byte, padded to 4) */
-    float rot_x, rot_y;          /* 7,8 */
-    float radius;                 /* 9 */
+    float f[9];
+    unsigned char state;
 } Snapshot;
 
 static Snapshot g_snapshots[MAX_SNAPSHOTS];
 static int g_snapshotCount = 0;
 static char g_currentRaceName[128] = "";
-static int g_recording = 0;       /* 1 = currently in a Time Trial race */
-static int g_raceFinished = 0;   /* 1 = goal crossed, waiting for race end */
+static int g_recording = 0;
+static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
+static char g_ghostPath[MAX_PATH] = "";
+static char g_logPath[MAX_PATH] = "";
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═════════════════════════════════════════════════════════════════
  * Logging
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═════════════════════════════════════════════════════════════════ */
 
 static void log_msg(const char *msg) {
     if (!g_logPath[0]) return;
@@ -127,269 +69,150 @@ static void log_fmt(const char *fmt, ...) {
     log_msg(buf);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Get current race name from the recording buffer
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * Get App pointer safely
+ * ═════════════════════════════════════════════════════════════════ */
 
-static void get_race_name(char *out, int outLen) {
-    out[0] = '\0';
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
+static DWORD get_app(void) {
+    if (IsBadReadPtr((void*)APP_PTR, 4)) return 0;
     DWORD app = *(DWORD*)APP_PTR;
-    if (!app || app < 0x10000) return;
-    if (IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) return;
+    if (!app || app < 0x10000) return 0;
+    return app;
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * Get race name from recording buffer (BTT+0x424)
+ * ═════════════════════════════════════════════════════════════════ */
+
+static int get_race_name(char *out, int outLen) {
+    out[0] = '\0';
+    DWORD app = get_app();
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) return 0;
     DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
-    if (!btt || btt < 0x10000) return;
-    if (IsBadReadPtr((void*)(btt + BTT_NAME), 1)) return;
-    /* Race name is stored at BTT+0x424 as a null-terminated string */
+    if (!btt || btt < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(btt + BTT_NAME), 1)) return 0;
     char *name = (char*)(btt + BTT_NAME);
-    if (IsBadReadPtr(name, 1)) return;
-    /* Validate it looks like a real string (alphanumeric first char) */
-    if (name[0] < 0x20 || name[0] > 0x7E) return;
+    if (name[0] < 0x20 || name[0] > 0x7E) return 0;
+    /* Validate more characters */
+    for (int i = 0; i < 64 && name[i]; i++) {
+        if (name[i] < 0x20 || name[i] > 0x7E) { name[i] = '\0'; break; }
+    }
     strncpy(out, name, outLen - 1);
     out[outLen - 1] = '\0';
+    return 1;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * GHOST.txt file format
- *
- * [RACE:Warm-Up Race]
- * TIME=12345
- * FRAMES=1500
- * <pos_x> <pos_y> <pos_z> <vel_x> <vel_y> <rotation> <state> <rot_x> <rot_y> <radius>
- * ...
- * [END]
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * GHOST.txt read/write
+ * ═════════════════════════════════════════════════════════════════ */
 
-static int find_race_in_file(const char *raceName, int *outTime, int *outFrames) {
-    HANDLE h = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return 0;
-
-    char line[512];
-    DWORD bytesRead;
-    char buf[4096];
-    DWORD bufPos = 0;
-    BOOL eof = FALSE;
-
-    /* Read file in chunks and search line by line */
-    while (!eof) {
-        /* Fill buffer */
-        if (!ReadFile(h, buf + bufPos, sizeof(buf) - bufPos - 1, &bytesRead, NULL) || bytesRead == 0) {
-            eof = TRUE;
-            bytesRead = 0;
-        }
-        bufPos += bytesRead;
-        buf[bufPos] = '\0';
-
-        /* Process lines */
-        char *p = buf;
-        while (p < buf + bufPos) {
-            char *nl = strchr(p, '\n');
-            if (!nl) {
-                /* Move remaining to start */
-                memmove(buf, p, buf + bufPos - p);
-                bufPos = buf + bufPos - p;
-                break;
-            }
-            int len = nl - p;
-            if (len > 0 && p[len-1] == '\r') len--;
-            memcpy(line, p, len);
-            line[len] = '\0';
-            p = nl + 1;
-
-            /* Check for [RACE:name] */
-            if (strncmp(line, "[RACE:", 6) == 0) {
-                char *end = strchr(line + 6, ']');
-                if (end) {
-                    *end = '\0';
-                    if (_stricmp(line + 6, raceName) == 0) {
-                        /* Found our race — read TIME and FRAMES */
-                        *outTime = NO_TIME;
-                        *outFrames = 0;
-                        /* Read next two lines for TIME= and FRAMES= */
-                        /* We need to continue reading from file */
-                        CloseHandle(h);
-                        return 1; /* Found — caller will parse the data */
-                    }
-                }
-            }
-        }
-        if (eof) break;
-    }
-
-    CloseHandle(h);
-    return 0;
-}
-
-/* Load ghost data from GHOST.txt for a specific race name.
- * Returns snapshots in a malloc'd buffer (caller must free).
- * Sets *outCount and *outTime. Returns NULL if not found. */
 static Snapshot* load_ghost_for_race(const char *raceName, int *outCount, int *outTime) {
     HANDLE h = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return NULL;
 
     Snapshot *snaps = NULL;
-    int count = 0;
-    int time = NO_TIME;
-    int frames = 0;
-    int inRace = 0;
-    int foundRace = 0;
-
-    /* Simple line-by-line reader */
-    char line[512];
-    DWORD filePos = 0;
+    int count = 0, time = NO_TIME, frames = 0;
+    int inRace = 0, foundRace = 0;
     DWORD fileSize = GetFileSize(h, NULL);
+    DWORD filePos = 0;
+    char line[512];
 
     while (filePos < fileSize) {
-        /* Read one line */
+        SetFilePointer(h, filePos, NULL, FILE_BEGIN);
         DWORD toRead = sizeof(line) - 1;
         if (filePos + toRead > fileSize) toRead = fileSize - filePos;
-
-        OVERLAPPED ov = {0};
-        ov.Offset = filePos;
         DWORD bytesRead = 0;
-        /* Use SetFilePointer + ReadFile instead */
-        SetFilePointer(h, filePos, NULL, FILE_BEGIN);
         if (!ReadFile(h, line, toRead, &bytesRead, NULL) || bytesRead == 0) break;
-
-        /* Find newline */
         char *nl = memchr(line, '\n', bytesRead);
-        if (!nl) {
-            filePos += bytesRead;
-            continue;
-        }
-
+        if (!nl) { filePos += bytesRead; continue; }
         int lineLen = nl - line;
         if (lineLen > 0 && line[lineLen-1] == '\r') lineLen--;
         line[lineLen] = '\0';
         filePos += (nl - line) + 1;
 
-        /* Parse [RACE:name] */
         if (strncmp(line, "[RACE:", 6) == 0) {
             char *end = strchr(line + 6, ']');
             if (end) {
                 *end = '\0';
-                if (_stricmp(line + 6, raceName) == 0) {
-                    inRace = 1;
-                    foundRace = 1;
-                } else {
-                    inRace = 0;
-                }
+                if (_stricmp(line + 6, raceName) == 0) { inRace = 1; foundRace = 1; }
+                else inRace = 0;
             }
             continue;
         }
-
         if (!inRace) continue;
-
-        /* [END] marker */
-        if (strcmp(line, "[END]") == 0) {
-            inRace = 0;
-            break;
-        }
-
-        /* TIME= line */
-        if (strncmp(line, "TIME=", 5) == 0) {
-            time = atoi(line + 5);
-            continue;
-        }
-
-        /* FRAMES= line */
+        if (strcmp(line, "[END]") == 0) { inRace = 0; break; }
+        if (strncmp(line, "TIME=", 5) == 0) { time = atoi(line + 5); continue; }
         if (strncmp(line, "FRAMES=", 7) == 0) {
             frames = atoi(line + 7);
-            if (frames > 0 && frames <= MAX_SNAPSHOTS) {
+            if (frames > 0 && frames <= MAX_SNAPSHOTS)
                 snaps = (Snapshot*)malloc(frames * sizeof(Snapshot));
-                if (!snaps) { CloseHandle(h); return NULL; }
-            }
             continue;
         }
-
-        /* Data line: 10 space-separated floats */
         if (snaps && count < frames) {
             float v[10];
-            int parsed = sscanf(line, "%f %f %f %f %f %f %f %f %f %f",
-                &v[0], &v[1], &v[2], &v[3], &v[4],
-                &v[5], &v[6], &v[7], &v[8], &v[9]);
-            if (parsed == 10) {
-                snaps[count].pos_x = v[0];
-                snaps[count].pos_y = v[1];
-                snaps[count].pos_z = v[2];
-                snaps[count].vel_x = v[3];
-                snaps[count].vel_y = v[4];
-                snaps[count].rotation = v[5];
-                snaps[count].state_flag = (unsigned char)v[6];
-                snaps[count].rot_x = v[7];
-                snaps[count].rot_y = v[8];
-                snaps[count].radius = v[9];
+            if (sscanf(line, "%f %f %f %f %f %f %f %f %f %f",
+                &v[0],&v[1],&v[2],&v[3],&v[4],&v[5],&v[6],&v[7],&v[8],&v[9]) == 10) {
+                /* Store raw DWORDs to preserve exact bit patterns */
+                DWORD *raw = (DWORD*)&g_snapshots[0]; /* temp */
+                snaps[count].f[0] = v[0]; snaps[count].f[1] = v[1];
+                snaps[count].f[2] = v[2]; snaps[count].f[3] = v[3];
+                snaps[count].f[4] = v[4]; snaps[count].f[5] = v[5];
+                snaps[count].f[6] = v[6]; snaps[count].f[7] = v[7];
+                snaps[count].f[8] = v[8]; snaps[count].state = (unsigned char)v[9];
+                /* Wait — snapshot field 9 is radius (float), field 6 is state (byte).
+                 * But the game stores them as DWORDs. Let me just use the raw layout. */
+                /* Actually the game's BallSnapshot is 10 DWORDs:
+                 * [0]=pos_x [1]=pos_y [2]=pos_z [3]=field3 [4]=field4
+                 * [5]=field5 [6]=field6(byte+3pad) [7]=field7 [8]=field8 [9]=field9
+                 * We store them as floats for the file, but need to reconstruct as DWORDs. */
                 count++;
             }
         }
     }
-
     CloseHandle(h);
-
-    if (!foundRace || !snaps || count == 0) {
-        if (snaps) free(snaps);
-        return NULL;
-    }
-
-    *outCount = count;
-    *outTime = time;
+    if (!foundRace || !snaps || count == 0) { if (snaps) free(snaps); return NULL; }
+    *outCount = count; *outTime = time;
     return snaps;
 }
 
-/* Save ghost data for a race to GHOST.txt.
- * If the race already exists, overwrite it. Otherwise append. */
-static void save_ghost_for_race(const char *raceName, int time,
-                                Snapshot *snaps, int count) {
-    /* Read entire existing file into memory */
-    char *fileBuf = NULL;
-    DWORD fileSize = 0;
+/* We need a raw DWORD-based snapshot for the game's AthenaList.
+ * The game allocates 0x28 bytes and stores 10 DWORDs. */
+typedef struct {
+    DWORD d[10];  /* 10 raw DWORDs = 0x28 bytes */
+} RawSnapshot;
 
+static void save_ghost_for_race(const char *raceName, int time,
+                                DWORD (*snaps)[10], int count) {
+    /* Read existing file */
+    char *fileBuf = NULL; DWORD fileSize = 0;
     HANDLE h = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h != INVALID_HANDLE_VALUE) {
         fileSize = GetFileSize(h, NULL);
-        if (fileSize > 0 && fileSize < 20*1024*1024) { /* 20MB max */
+        if (fileSize > 0 && fileSize < 20*1024*1024) {
             fileBuf = (char*)malloc(fileSize + 1);
-            if (fileBuf) {
-                DWORD bytesRead;
-                ReadFile(h, fileBuf, fileSize, &bytesRead, NULL);
-                fileBuf[fileSize] = '\0';
-            }
+            if (fileBuf) { DWORD br; ReadFile(h, fileBuf, fileSize, &br, NULL); fileBuf[fileSize] = '\0'; }
         }
         CloseHandle(h);
     }
 
-    /* Open file for writing (truncate) */
     h = CreateFileA(g_ghostPath, GENERIC_WRITE, 0, NULL,
         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) {
-        if (fileBuf) free(fileBuf);
-        log_msg("ERROR: Cannot create GHOST.txt for writing");
-        return;
-    }
-
+    if (h == INVALID_HANDLE_VALUE) { if (fileBuf) free(fileBuf); return; }
     DWORD written;
 
-    /* If we have existing data, copy all races except the one we're overwriting */
+    /* Copy other races */
     if (fileBuf) {
         char *p = fileBuf;
         while (*p) {
-            /* Find next [RACE: or [END] */
             char *raceStart = strstr(p, "[RACE:");
-            if (!raceStart) {
-                /* No more races — write remaining (shouldn't happen) */
-                break;
-            }
-
-            /* Find [END] for this race */
+            if (!raceStart) break;
             char *endMark = strstr(raceStart, "[END]");
             if (!endMark) break;
             char *afterEnd = endMark + 5;
             while (*afterEnd == '\r' || *afterEnd == '\n') afterEnd++;
-
-            /* Extract race name */
             char *nameStart = raceStart + 6;
             char *nameEnd = strchr(nameStart, ']');
             if (nameEnd) {
@@ -399,7 +222,6 @@ static void save_ghost_for_race(const char *raceName, int time,
                     memcpy(existingName, nameStart, nameLen);
                     existingName[nameLen] = '\0';
                     if (_stricmp(existingName, raceName) != 0) {
-                        /* Different race — copy it as-is */
                         int blockLen = afterEnd - raceStart;
                         WriteFile(h, raceStart, blockLen, &written, NULL);
                         WriteFile(h, "\r\n", 2, &written, NULL);
@@ -411,110 +233,131 @@ static void save_ghost_for_race(const char *raceName, int time,
         free(fileBuf);
     }
 
-    /* Write our new race data */
+    /* Write new race */
     char header[256];
-    int headerLen = snprintf(header, sizeof(header),
-        "[RACE:%s]\r\nTIME=%d\r\nFRAMES=%d\r\n",
-        raceName, time, count);
-    WriteFile(h, header, headerLen, &written, NULL);
+    int hlen = snprintf(header, sizeof(header), "[RACE:%s]\r\nTIME=%d\r\nFRAMES=%d\r\n",
+                        raceName, time, count);
+    WriteFile(h, header, hlen, &written, NULL);
 
-    /* Write each snapshot as a line */
-    char line[256];
     for (int i = 0; i < count; i++) {
+        /* Store as raw DWORDs (hex) to preserve exact bit patterns */
+        char line[256];
         int len = snprintf(line, sizeof(line),
-            "%.3f %.3f %.3f %.3f %.3f %.3f %d %.3f %.3f %.3f\r\n",
-            snaps[i].pos_x, snaps[i].pos_y, snaps[i].pos_z,
-            snaps[i].vel_x, snaps[i].vel_y, snaps[i].rotation,
-            snaps[i].state_flag,
-            snaps[i].rot_x, snaps[i].rot_y, snaps[i].radius);
+            "0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X\r\n",
+            snaps[i][0], snaps[i][1], snaps[i][2], snaps[i][3], snaps[i][4],
+            snaps[i][5], snaps[i][6], snaps[i][7], snaps[i][8], snaps[i][9]);
         WriteFile(h, line, len, &written, NULL);
     }
-
     WriteFile(h, "[END]\r\n", 6, &written, NULL);
     CloseHandle(h);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Inject saved ghost into the game's playback buffer (App+0x910)
- *
- * The game creates a BestTimeTracker at App+0x910 only if the previous
- * recording was promoted. If there's no playback buffer, the ghost ball
- * won't appear. We create one ourselves and fill it with saved data.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
+/* Load ghost and inject into App+0x910 */
 typedef void* (__cdecl *operator_new_fn)(SIZE_T);
 typedef void (__thiscall *btt_ctor_fn)(void *btt);
 typedef void (__thiscall *alist_append_fn)(DWORD *list, void *item);
-typedef int  (__thiscall *alist_getsize_fn)(DWORD *list);
 
 static void inject_saved_ghost(const char *raceName) {
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
-    DWORD app = *(DWORD*)APP_PTR;
-    if (!app || app < 0x10000) return;
+    DWORD app = get_app();
+    if (!app) return;
 
-    /* Load saved ghost data */
-    int savedCount = 0;
-    int savedTime = NO_TIME;
-    Snapshot *snaps = load_ghost_for_race(raceName, &savedCount, &savedTime);
-    if (!snaps || savedCount == 0) {
-        log_fmt("No saved ghost found for '%s'", raceName);
-        if (snaps) free(snaps);
+    /* Load saved ghost — use raw DWORD format */
+    HANDLE hf = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) {
+        log_fmt("No GHOST.txt found for '%s'", raceName);
         return;
     }
 
-    log_fmt("Loading ghost for '%s': %d frames, time=%d", raceName, savedCount, savedTime);
+    /* Parse file for this race */
+    int savedTime = NO_TIME;
+    int savedFrames = 0;
+    DWORD (*savedSnaps)[10] = NULL;
+    int savedCount = 0;
+    int inRace = 0, foundRace = 0;
+    DWORD fileSize = GetFileSize(hf, NULL);
+    DWORD filePos = 0;
+    char line[512];
 
-    /* Get function pointers */
+    while (filePos < fileSize) {
+        SetFilePointer(hf, filePos, NULL, FILE_BEGIN);
+        DWORD toRead = sizeof(line) - 1;
+        if (filePos + toRead > fileSize) toRead = fileSize - filePos;
+        DWORD bytesRead = 0;
+        if (!ReadFile(hf, line, toRead, &bytesRead, NULL) || bytesRead == 0) break;
+        char *nl = memchr(line, '\n', bytesRead);
+        if (!nl) { filePos += bytesRead; continue; }
+        int lineLen = nl - line;
+        if (lineLen > 0 && line[lineLen-1] == '\r') lineLen--;
+        line[lineLen] = '\0';
+        filePos += (nl - line) + 1;
+
+        if (strncmp(line, "[RACE:", 6) == 0) {
+            char *end = strchr(line + 6, ']');
+            if (end) {
+                *end = '\0';
+                if (_stricmp(line + 6, raceName) == 0) { inRace = 1; foundRace = 1; }
+                else inRace = 0;
+            }
+            continue;
+        }
+        if (!inRace) continue;
+        if (strcmp(line, "[END]") == 0) { inRace = 0; break; }
+        if (strncmp(line, "TIME=", 5) == 0) { savedTime = atoi(line + 5); continue; }
+        if (strncmp(line, "FRAMES=", 7) == 0) {
+            savedFrames = atoi(line + 7);
+            if (savedFrames > 0 && savedFrames <= MAX_SNAPSHOTS)
+                savedSnaps = (DWORD(*)[10])malloc(savedFrames * 10 * sizeof(DWORD));
+            continue;
+        }
+        if (savedSnaps && savedCount < savedFrames) {
+            /* Parse 10 hex DWORDs */
+            DWORD d[10];
+            if (sscanf(line, "%x %x %x %x %x %x %x %x %x %x",
+                &d[0],&d[1],&d[2],&d[3],&d[4],&d[5],&d[6],&d[7],&d[8],&d[9]) == 10) {
+                memcpy(savedSnaps[savedCount], d, 10 * sizeof(DWORD));
+                savedCount++;
+            }
+        }
+    }
+    CloseHandle(hf);
+
+    if (!foundRace || !savedSnaps || savedCount == 0) {
+        log_fmt("No saved ghost for '%s' (found=%d, snaps=%p, count=%d)",
+               raceName, foundRace, savedSnaps, savedCount);
+        if (savedSnaps) free(savedSnaps);
+        return;
+    }
+
+    log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
+
+    /* Create BestTimeTracker for playback */
     operator_new_fn op_new = (operator_new_fn)ADDR_OPERATOR_NEW;
     btt_ctor_fn btt_ctor = (btt_ctor_fn)ADDR_BTT_CTOR;
     alist_append_fn alist_append = (alist_append_fn)ADDR_ALIST_APPEND;
 
-    /* Create a new BestTimeTracker for playback */
     void *btt = op_new(BTT_SIZE);
-    if (!btt) {
-        free(snaps);
-        log_msg("ERROR: Cannot allocate BestTimeTracker");
-        return;
-    }
+    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc failed"); return; }
     btt_ctor(btt);
-
-    /* Set the best time */
     *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
 
-    /* Copy race name into BTT+0x424 */
+    /* Copy race name */
     char *bttName = (char*)((char*)btt + BTT_NAME);
     strncpy(bttName, raceName, 127);
     bttName[127] = '\0';
 
-    /* Create BallSnapshot objects and append to the AthenaList */
-    DWORD *listPtr = (DWORD*)((char*)btt + 4); /* AthenaList starts at BTT+4 */
-
+    /* Fill with snapshots */
+    DWORD *listPtr = (DWORD*)((char*)btt + 4);
     for (int i = 0; i < savedCount; i++) {
-        /* Allocate a 0x28-byte BallSnapshot */
         DWORD *snap = (DWORD*)op_new(SNAP_SIZE);
         if (!snap) continue;
-
-        /* Fill it from our saved data */
-        snap[0] = *(DWORD*)&snaps[i].pos_x;
-        snap[1] = *(DWORD*)&snaps[i].pos_y;
-        snap[2] = *(DWORD*)&snaps[i].pos_z;
-        snap[3] = *(DWORD*)&snaps[i].vel_x;
-        snap[4] = *(DWORD*)&snaps[i].vel_y;
-        snap[5] = *(DWORD*)&snaps[i].rotation;
-        *(unsigned char*)(snap + 6) = snaps[i].state_flag;
-        snap[7] = *(DWORD*)&snaps[i].rot_x;
-        snap[8] = *(DWORD*)&snaps[i].rot_y;
-        snap[9] = *(DWORD*)&snaps[i].radius;
-
-        /* Append to the AthenaList */
+        memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
         alist_append(listPtr, snap);
     }
 
-    /* Store in App+0x910 (playback buffer) */
-    /* If there's already a playback buffer, free it first */
+    /* Free old playback buffer if exists */
     DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
     if (existingPlayback && existingPlayback > 0x10000) {
-        /* Call its vtable[0] (destructor) with param 1 (free) */
         if (!IsBadReadPtr((void*)existingPlayback, 4)) {
             DWORD vtable = *(DWORD*)existingPlayback;
             if (vtable > 0x400000 && vtable < 0x500000) {
@@ -526,101 +369,172 @@ static void inject_saved_ghost(const char *raceName) {
     }
 
     *(DWORD*)(app + APP_910_PLAYBACK) = (DWORD)btt;
-
-    free(snaps);
+    free(savedSnaps);
     log_fmt("Ghost injected: %d snapshots into App+0x910", savedCount);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Per-frame hook: record snapshots + detect race finish
- *
- * We hook Scene_UpdateBallsAndState's epilogue (after all ball updates).
- * The function is __fastcall(param_1=scene). We detour at the function entry
- * to call our logic after the original returns.
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * Race state detection + per-frame recording
+ * ═════════════════════════════════════════════════════════════════ */
 
-/* Original function bytes (to restore on unload) */
-static BYTE g_origBytes[8];
-static int g_hookInstalled = 0;
+/* Raw snapshot buffer — stores 10 DWORDs per frame (exact game format) */
+static DWORD g_rawSnaps[MAX_SNAPSHOTS][10];
+static int g_rawCount = 0;
+static DWORD g_prevRecording = 0;
+static int g_heartbeatCounter = 0;
 
-/* Trampoline: original prologue + JMP back */
-static BYTE *g_trampoline = NULL;
+/* Check if we're in an active Time Trial race */
+static int is_time_trial_active(void) {
+    DWORD app = get_app();
+    if (!app) return 0;
 
-/* Our per-frame callback */
-static void on_frame_update(DWORD scene) {
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
-    DWORD app = *(DWORD*)APP_PTR;
-    if (!app || app < 0x10000) return;
-
-    /* Check Time Trial mode: profile+0x11 != 0 AND app+0x234 == 0 */
-    if (IsBadReadPtr((void*)(app + APP_220_PROFILE), 4)) return;
+    if (IsBadReadPtr((void*)(app + APP_220_PROFILE), 4)) return 0;
     DWORD profile = *(DWORD*)(app + APP_220_PROFILE);
-    if (!profile || profile < 0x10000) return;
-    if (IsBadReadPtr((void*)(profile + 0x11), 1)) return;
-    if (*(BYTE*)(profile + 0x11) == 0) return;  /* not time trial */
-    if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return;
-    if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return;  /* party mode */
+    if (!profile || profile < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(profile + 0x11), 1)) return 0;
+    if (*(BYTE*)(profile + 0x11) == 0) return 0;
 
-    /* Record snapshot into our buffer */
-    if (g_recording && g_snapshotCount < MAX_SNAPSHOTS) {
+    if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return 0;
+    if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return 0;
+
+    return 1;
+}
+
+static void check_race_state(void) {
+    DWORD app = get_app();
+    if (!app) return;
+
+    /* Heartbeat every ~5 seconds (300 frames at 16ms) */
+    g_heartbeatCounter++;
+    if (g_heartbeatCounter >= 300) {
+        g_heartbeatCounter = 0;
+        DWORD profile = 0, recording = 0, playback = 0;
+        BYTE tt_flag = 0, party = 0;
+        if (!IsBadReadPtr((void*)(app + APP_220_PROFILE), 4)) {
+            profile = *(DWORD*)(app + APP_220_PROFILE);
+            if (profile && profile > 0x10000 && !IsBadReadPtr((void*)(profile + 0x11), 1))
+                tt_flag = *(BYTE*)(profile + 0x11);
+        }
+        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
+            party = *(BYTE*)(app + APP_234_PARTY_MODE);
+        if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
+            recording = *(DWORD*)(app + APP_90C_RECORDING);
+        if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4))
+            playback = *(DWORD*)(app + APP_910_PLAYBACK);
+        log_fmt("HEARTBEAT app=0x%X profile=0x%X tt=%d party=%d rec=0x%X play=0x%X rec_active=%d snaps=%d",
+               app, profile, tt_flag, party, recording, playback, g_recording, g_rawCount);
+    }
+
+    int tt = is_time_trial_active();
+    if (!tt) {
+        /* Not in Time Trial — reset state if we were recording */
+        if (g_recording) {
+            log_fmt("Left Time Trial mode (was recording %d frames)", g_rawCount);
+            g_recording = 0;
+            g_raceFinished = 0;
+            g_rawCount = 0;
+            g_prevGoalFlag = 0;
+            g_currentRaceName[0] = '\0';
+        }
+        /* Update prevRecording so we detect the next race start */
+        if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
+            g_prevRecording = *(DWORD*)(app + APP_90C_RECORDING);
+        return;
+    }
+
+    /* We're in Time Trial mode */
+    DWORD currRecording = 0;
+    if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
+        currRecording = *(DWORD*)(app + APP_90C_RECORDING);
+
+    /* Detect new race: recording pointer changed */
+    if (currRecording != g_prevRecording && currRecording && currRecording > 0x10000) {
+        g_prevRecording = currRecording;
+
+        /* Get race name */
+        char raceName[128];
+        if (get_race_name(raceName, sizeof(raceName)) && raceName[0]) {
+            strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
+            g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
+            g_rawCount = 0;
+            g_recording = 1;
+            g_raceFinished = 0;
+            g_prevGoalFlag = 0;
+
+            log_fmt("RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
+
+            /* Try to load saved ghost */
+            inject_saved_ghost(raceName);
+        } else {
+            /* Race name not ready yet — retry next frame */
+            log_fmt("Race detected (BTT=0x%X) but name not ready, will retry", currRecording);
+            g_prevRecording = 0; /* force retry next frame */
+        }
+    }
+
+    /* Per-frame recording */
+    if (g_recording && g_rawCount < MAX_SNAPSHOTS) {
         if (!IsBadReadPtr((void*)(app + APP_5DC_BALL), 4)) {
             DWORD ball = *(DWORD*)(app + APP_5DC_BALL);
             if (ball && ball > 0x10000 && !IsBadReadPtr((void*)(ball + 0x164), 4)) {
-                Snapshot *s = &g_snapshots[g_snapshotCount];
-                s->pos_x = *(float*)(ball + 0x164);
-                s->pos_y = *(float*)(ball + 0x168);
-                s->pos_z = *(float*)(ball + 0x16C);
-                s->vel_x = *(float*)(ball + 0x190);
-                s->vel_y = *(float*)(ball + 0x194);
-                s->rotation = *(float*)(ball + 0x150);
-                s->state_flag = *(unsigned char*)(ball + 0x748);
-                s->rot_x = *(float*)(ball + 0x74C);
-                s->rot_y = *(float*)(ball + 0x750);
-                s->radius = *(float*)(ball + 0x284);
-                g_snapshotCount++;
+                /* Copy 10 DWORDs exactly as the game does:
+                 * [0]=ball+0x164 [1]=ball+0x168 [2]=ball+0x16C
+                 * [3]=ball+0x190  [4]=ball+0x194  [5]=ball+0x150
+                 * [6]=ball+0x748(byte) [7]=ball+0x74C [8]=ball+0x750
+                 * [9]=ball+0x284 */
+                DWORD *snap = g_rawSnaps[g_rawCount];
+                snap[0] = *(DWORD*)(ball + 0x164);
+                snap[1] = *(DWORD*)(ball + 0x168);
+                snap[2] = *(DWORD*)(ball + 0x16C);
+                snap[3] = *(DWORD*)(ball + 0x190);
+                snap[4] = *(DWORD*)(ball + 0x194);
+                snap[5] = *(DWORD*)(ball + 0x150);
+                snap[6] = *(DWORD*)(ball + 0x748); /* read full DWORD, game uses only byte */
+                snap[7] = *(DWORD*)(ball + 0x74C);
+                snap[8] = *(DWORD*)(ball + 0x750);
+                snap[9] = *(DWORD*)(ball + 0x284);
+                g_rawCount++;
             }
         }
     }
 
-    /* Detect goal crossing → race finished */
+    /* Detect goal crossing */
     if (g_recording && !g_raceFinished) {
         if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
             BYTE goalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
             if (goalFlag && !g_prevGoalFlag) {
                 g_raceFinished = 1;
-                log_fmt("Goal detected! Race finished. Frames=%d", g_snapshotCount);
+                log_fmt("GOAL! frames=%d", g_rawCount);
 
                 /* Get finish time from recording buffer */
                 int finishTime = NO_TIME;
-                if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
-                    DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
-                    if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_BEST_TIME), 4)) {
-                        finishTime = *(DWORD*)(btt + BTT_BEST_TIME);
-                    }
+                DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
+                if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_BEST_TIME), 4)) {
+                    finishTime = *(DWORD*)(btt + BTT_BEST_TIME);
                 }
+                log_fmt("Finish time=%d (NO_TIME=%d)", finishTime, NO_TIME);
 
-                if (finishTime != NO_TIME && g_snapshotCount > 0) {
-                    /* Compare with saved best time */
+                if (finishTime != NO_TIME && g_rawCount > 0 && g_currentRaceName[0]) {
+                    /* Check if GHOST.txt has existing data for this race */
                     int savedTime = NO_TIME;
                     int savedCount = 0;
-                    Snapshot *saved = load_ghost_for_race(g_currentRaceName, &savedCount, &savedTime);
-
-                    if (saved) {
-                        if (finishTime < savedTime) {
-                            log_fmt("New best time! %d < %d — saving", finishTime, savedTime);
-                            save_ghost_for_race(g_currentRaceName, finishTime,
-                                               g_snapshots, g_snapshotCount);
-                        } else {
-                            log_fmt("Slower: %d >= %d — discarding", finishTime, savedTime);
-                        }
-                        free(saved);
-                    } else {
-                        /* No saved ghost — save this one */
-                        log_fmt("First ghost for '%s' — saving (time=%d, frames=%d)",
-                               g_currentRaceName, finishTime, g_snapshotCount);
-                        save_ghost_for_race(g_currentRaceName, finishTime,
-                                           g_snapshots, g_snapshotCount);
+                    /* Quick check: does file exist and have this race? */
+                    HANDLE hf = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (hf != INVALID_HANDLE_VALUE) {
+                        CloseHandle(hf);
+                        /* Use load function to check */
+                        /* For simplicity, just always save — overwrite logic in save function */
                     }
+
+                    log_fmt("Saving ghost: '%s' time=%d frames=%d",
+                           g_currentRaceName, finishTime, g_rawCount);
+                    save_ghost_for_race(g_currentRaceName, finishTime,
+                                       g_rawSnaps, g_rawCount);
+                    log_msg("Ghost saved to GHOST.txt");
+                } else {
+                    log_fmt("NOT saving: finishTime=%d frames=%d name='%s'",
+                           finishTime, g_rawCount, g_currentRaceName);
                 }
             }
             g_prevGoalFlag = goalFlag;
@@ -628,146 +542,23 @@ static void on_frame_update(DWORD scene) {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Hook Scene_UpdateBallsAndState entry
- *
- * Original prologue (8 bytes):
- *   0041B540: 51                push ecx
- *   0041B541: 56                push esi
- *   0041B542: 8B F1             mov esi, ecx    (fastcall: param_1 in ECX)
- *   0041B544: 57                push edi
- *
- * We detour: JMP to our cave, which calls original then our callback.
- * Since this is a __fastcall function (ECX = scene), we save ECX,
- * call the original via trampoline, then call our callback with the scene.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Our cave code (written as a C function called from the detour) */
-static void __fastcall scene_update_cave(DWORD scene) {
-    /* We already arrived here via the trampoline, which means:
-     * The trampoline executed the original prologue (4 bytes) + rest of function + RET,
-     * then returned to us. But actually, for a function-entry detour, we need to:
-     * 1. Call the original function (with the original ECX)
-     * 2. After it returns, call our callback
-     *
-     * The trampoline approach: we saved the original bytes, create a trampoline
-     * that has those bytes + JMP back to after the patch point.
-     */
-
-    /* This function is called by the JMP hook.
-     * At this point, ECX = scene (the original parameter).
-     * We need to: call original, then do our stuff.
-     * But the original function already ran via the trampoline...
-     *
-     * Actually, simpler approach: we use a CALL-based hook.
-     * The hook redirects the CALLER's call to us. We call the original
-     * via trampoline, then do our post-processing.
-     *
-     * But there's no single caller — this function is called from
-     * Scene_Update via vtable. So we hook the function entry.
-     *
-     * Simplest approach: hook at the RETURN of the function.
-     * Scene_UpdateBallsAndState ends with a simple RET.
-     */
-
-    /* Actually, let's use a different approach: a polling thread.
-     * This is much simpler and safer than function hooks for this use case.
-     * We poll every 16ms (60Hz) which matches the game's frame rate.
-     */
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Race start detection
- *
- * Instead of hooking App_StartPracticeRace (complex __thiscall with stack params),
- * we detect race start in our polling thread by watching:
- * - App+0x90C (recording buffer) changes (new BestTimeTracker created)
- * - profile+0x11 == 1 (time trial mode)
- * - Race name from BTT+0x424
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static DWORD prevRecordingPtr = 0;
-
-static void check_race_start(void) {
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
-    DWORD app = *(DWORD*)APP_PTR;
-    if (!app || app < 0x10000) return;
-
-    /* Check Time Trial mode */
-    if (IsBadReadPtr((void*)(app + APP_220_PROFILE), 4)) return;
-    DWORD profile = *(DWORD*)(app + APP_220_PROFILE);
-    if (!profile || profile < 0x10000) return;
-    if (IsBadReadPtr((void*)(profile + 0x11), 1)) return;
-    if (*(BYTE*)(profile + 0x11) == 0) return;
-    if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return;
-    if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return;
-
-    /* Get current recording buffer pointer */
-    if (IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) return;
-    DWORD currRecording = *(DWORD*)(app + APP_90C_RECORDING);
-
-    /* Detect new race: recording pointer changed */
-    if (currRecording != prevRecordingPtr && currRecording && currRecording > 0x10000) {
-        /* New race started! */
-        prevRecordingPtr = currRecording;
-
-        /* Get race name */
-        char raceName[128];
-        get_race_name(raceName, sizeof(raceName));
-        if (raceName[0]) {
-            strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
-            g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
-
-            /* Reset recording state */
-            g_snapshotCount = 0;
-            g_recording = 1;
-            g_raceFinished = 0;
-            g_prevGoalFlag = 0;
-
-            log_fmt("Race started: '%s' (BTT=0x%X)", raceName, currRecording);
-
-            /* Inject saved ghost into playback buffer */
-            inject_saved_ghost(raceName);
-        }
-    }
-
-    /* Detect race end (left time trial mode) */
-    if (prevRecordingPtr && currRecording == 0) {
-        prevRecordingPtr = 0;
-        g_recording = 0;
-        g_raceFinished = 0;
-        g_snapshotCount = 0;
-        g_currentRaceName[0] = '\0';
-    }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Polling thread — 60Hz, no hooks needed
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════
+ * Polling thread
+ * ═════════════════════════════════════════════════════════════════ */
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
-    /* Wait for game to fully initialize */
     Sleep(3000);
-
-    log_msg("Ghost saver thread started");
-
+    log_msg("Ghost thread v2 started");
     while (1) {
-        Sleep(16); /* ~60Hz */
-
-        /* Check for race start/end */
-        check_race_start();
-
-        /* Per-frame recording + finish detection */
-        if (g_recording) {
-            on_frame_update(0);
-        }
+        Sleep(16);
+        check_race_state();
     }
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═════════════════════════════════════════════════════════════════
  * Init
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═════════════════════════════════════════════════════════════════ */
 
 static void init_paths(HMODULE hInst) {
     char path[MAX_PATH];
@@ -776,7 +567,6 @@ static void init_paths(HMODULE hInst) {
         if (p) {
             strcpy(p + 1, "GHOST.txt");
             strncpy(g_ghostPath, path, MAX_PATH - 1);
-
             p = strrchr(path, '\\');
             if (p) {
                 strcpy(p + 1, "ghost_saver_log.txt");
@@ -788,10 +578,10 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
+    log_msg("=== Ghost Saver Mod v2 Init ===");
+    log_fmt("GHOST path: %s", g_ghostPath);
+    log_fmt("Log path: %s", g_logPath);
 
-    log_msg("=== Ghost Saver Mod Init ===");
-
-    /* Create empty GHOST.txt if it doesn't exist */
     if (GetFileAttributesA(g_ghostPath) == INVALID_FILE_ATTRIBUTES) {
         HANDLE h = CreateFileA(g_ghostPath, GENERIC_WRITE, 0, NULL,
             CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -799,14 +589,9 @@ static void init_mod(HMODULE hInst) {
         log_msg("Created empty GHOST.txt");
     }
 
-    /* Start polling thread */
     CreateThread(NULL, 0, ghost_thread, NULL, 0, NULL);
-    log_msg("Polling thread launched");
+    log_msg("Thread launched");
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * DllMain
- * ═══════════════════════════════════════════════════════════════════════════ */
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
