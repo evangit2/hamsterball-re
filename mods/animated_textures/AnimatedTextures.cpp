@@ -5,32 +5,25 @@
 #include <ctype.h>
 
 struct AnimTexture {
-    DWORD d3dTexObjAddr;          // address of the D3DTexture object in game memory
-    DWORD originalD3DTex;         // original IDirect3DTexture8* (frame 0)
-    DWORD frameTextures[32];      // IDirect3DTexture8* for each frame
+    DWORD d3dTexObjAddr;
+    DWORD originalD3DTex;
+    DWORD frameTextures[32];
     int frameCount;
-    float framerate;              // seconds between frame swaps
-    int looptype;                 // 0=once, 1=loop, 2=ping-pong
-    int currentFrame;
-    int direction;                // 1=forward, -1=backward (ping-pong)
-    double lastSwapTime;
-    char baseName[256];           // e.g. "arrowanim"
-};
-
-struct AnimConfig {
-    char baseName[256];
     float framerate;
     int looptype;
-    int frameCount;
-    char frameNames[32][256];     // full filenames e.g. "arrowanim_01.png"
+    int currentFrame;
+    int direction;
+    double lastSwapTime;
+    char baseName[256];
 };
 
-static AnimConfig g_configs[16];
-static int g_configCount = 0;
 static AnimTexture g_animTextures[16];
 static int g_animCount = 0;
 static bool g_running = true;
 static HANDLE g_thread = NULL;
+
+static float g_defaultFramerate = 0.5f;
+static int g_defaultLooptype = 1;
 
 static double GetTime() {
     LARGE_INTEGER freq, count;
@@ -39,14 +32,51 @@ static double GetTime() {
     return (double)count.QuadPart / (double)freq.QuadPart;
 }
 
-static void ParseConfigFile(const char* txtPath, const char* baseName) {
+// Extract base name and frame number from a texture filename like "arrowanim01.png"
+// Returns the frame number (1+), or 0 if the filename doesn't match the pattern
+static int ParseFrameName(const char* filename, char* outBase, int baseMaxLen) {
+    // Find last dot (extension)
+    const char* dot = strrchr(filename, '.');
+    if (!dot || dot == filename) return 0;
+
+    int nameLen = (int)(dot - filename);
+    if (nameLen < 3) return 0; // need at least 1 char base + 2 digits
+
+    // Find where digits start at the end of the name (before extension)
+    int digitStart = nameLen - 1;
+    while (digitStart >= 0 && isdigit((unsigned char)filename[digitStart])) {
+        digitStart--;
+    }
+    digitStart++; // first digit
+
+    int digitCount = nameLen - digitStart;
+    if (digitCount < 1 || digitCount > 4) return 0; // 1-4 digit frame number
+
+    int frameNum = atoi(filename + digitStart);
+    if (frameNum < 1) return 0;
+
+    int baseLen = digitStart;
+    if (baseLen == 0 || baseLen >= baseMaxLen) return 0;
+
+    strncpy_s(outBase, baseMaxLen, filename, baseLen);
+    outBase[baseLen] = 0;
+    return frameNum;
+}
+
+// Load framerate/looptype from <baseName>.txt in Textures/ folder, if it exists
+static void LoadConfigForBase(const char* baseName, float* outFramerate, int* outLooptype) {
+    *outFramerate = g_defaultFramerate;
+    *outLooptype = g_defaultLooptype;
+
+    char dir[512];
+    GetCurrentDirectoryA(512, dir);
+    char path[768];
+    snprintf(path, sizeof(path), "%s\\Textures\\%s.txt", dir, baseName);
+
     FILE* f = NULL;
-    if (fopen_s(&f, txtPath, "r") != 0 || !f) return;
+    if (fopen_s(&f, path, "r") != 0 || !f) return;
 
     char line[512];
-    float framerate = 0.5f;
-    int looptype = 1;
-
     while (fgets(line, sizeof(line), f)) {
         char key[128], val[128];
         if (sscanf(line, "%127[^=]=%127s", key, val) == 2) {
@@ -54,131 +84,71 @@ static void ParseConfigFile(const char* txtPath, const char* baseName) {
             while (*k == ' ' || *k == '\t') k++;
             char* end = k + strlen(k) - 1;
             while (end > k && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) *end-- = 0;
-            if (_stricmp(k, "framerate") == 0) framerate = (float)atof(val);
-            else if (_stricmp(k, "looptype") == 0) looptype = atoi(val);
+            if (_stricmp(k, "framerate") == 0) *outFramerate = (float)atof(val);
+            else if (_stricmp(k, "looptype") == 0) *outLooptype = atoi(val);
         }
     }
     fclose(f);
-
-    // Scan for frame files: baseName_XX.png
-    char searchDir[512];
-    char dir[512];
-    GetCurrentDirectoryA(512, dir);
-    snprintf(searchDir, sizeof(searchDir), "%s\\Textures\\%s_*.png", dir, baseName);
-
-    WIN32_FIND_DATAA fd;
-    HANDLE hFind = FindFirstFileA(searchDir, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
-
-    int frameCount = 0;
-    do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            if (frameCount < 32) {
-                snprintf(g_configs[g_configCount].frameNames[frameCount], 256, "%s", fd.cFileName);
-                frameCount++;
-            }
-        }
-    } while (FindNextFileA(hFind, &fd));
-    FindClose(hFind);
-
-    if (frameCount == 0) return;
-
-    // Sort frames by filename so _01 comes before _02 etc
-    for (int i = 0; i < frameCount - 1; i++) {
-        for (int j = i + 1; j < frameCount; j++) {
-            if (_stricmp(g_configs[g_configCount].frameNames[i], g_configs[g_configCount].frameNames[j]) > 0) {
-                char tmp[256];
-                strcpy_s(tmp, 256, g_configs[g_configCount].frameNames[i]);
-                strcpy_s(g_configs[g_configCount].frameNames[i], 256, g_configs[g_configCount].frameNames[j]);
-                strcpy_s(g_configs[g_configCount].frameNames[j], 256, tmp);
-            }
-        }
-    }
-
-    strcpy_s(g_configs[g_configCount].baseName, 256, baseName);
-    g_configs[g_configCount].framerate = framerate;
-    g_configs[g_configCount].looptype = looptype;
-    g_configs[g_configCount].frameCount = frameCount;
-    g_configCount++;
-
-    char dbg[256];
-    snprintf(dbg, sizeof(dbg), "[AnimTex] Config: %s, frames=%d, rate=%.2f, loop=%d\n", baseName, frameCount, framerate, looptype);
-    OutputDebugStringA(dbg);
 }
 
-static void LoadConfigs() {
-    g_configCount = 0;
+// Count how many frame files exist for a base name (e.g. arrowanim01.png, arrowanim02.png, ...)
+static int CountFrames(const char* baseName) {
     char dir[512];
     GetCurrentDirectoryA(512, dir);
-    char searchPath[512];
-    snprintf(searchPath, sizeof(searchPath), "%s\\Textures\\*.txt", dir);
+    char searchPath[768];
+    snprintf(searchPath, sizeof(searchPath), "%s\\Textures\\%s*.png", dir, baseName);
 
     WIN32_FIND_DATAA fd;
     HANDLE hFind = FindFirstFileA(searchPath, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
+    if (hFind == INVALID_HANDLE_VALUE) return 0;
 
+    int count = 0;
+    char frameFiles[32][256];
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        const char* fn = fd.cFileName;
-        size_t len = strlen(fn);
-        if (len < 5 || _stricmp(fn + len - 4, ".txt") != 0) continue;
-
-        // Check if it contains "framerate" 
-        char fullPath[512];
-        snprintf(fullPath, sizeof(fullPath), "%s\\Textures\\%s", dir, fn);
-
-        FILE* f = NULL;
-        if (fopen_s(&f, fullPath, "r") != 0 || !f) continue;
-        bool hasFramerate = false;
-        char line[512];
-        while (fgets(line, sizeof(line), f)) {
-            if (strstr(line, "framerate")) { hasFramerate = true; break; }
+        if (count < 32) {
+            strncpy_s(frameFiles[count], 256, fd.cFileName, 255);
+            count++;
         }
-        fclose(f);
-        if (!hasFramerate) continue;
-
-        // Extract base name (filename without .txt)
-        char baseName[256];
-        strncpy_s(baseName, 256, fn, len - 4);
-        baseName[len - 4] = 0;
-
-        ParseConfigFile(fullPath, baseName);
     } while (FindNextFileA(hFind, &fd));
     FindClose(hFind);
+
+    // Verify each file matches the pattern baseNN.png (has digits after base)
+    int validCount = 0;
+    for (int i = 0; i < count; i++) {
+        char dummyBase[256];
+        if (ParseFrameName(frameFiles[i], dummyBase, 256) > 0) {
+            if (_stricmp(dummyBase, baseName) == 0) validCount++;
+        }
+    }
+    return validCount;
 }
 
-// Find the D3DTexture object for a given texture name in the Graphics cache
 static DWORD FindTextureInCache(DWORD graphicsAddr, const char* name) {
-    if (!graphicsAddr || IsBadReadPtr((void*)graphicsAddr, 4)) return 0;
+    if (!graphicsAddr || IsBadReadPtr((void*)(size_t)graphicsAddr, 4)) return 0;
 
-    // Graphics+0x2E8 = texture cache count, Graphics+0x6F0 = array ptr
-    if (IsBadReadPtr((void*)(graphicsAddr + 0x2E8), 4)) return 0;
+    if (IsBadReadPtr((void*)(size_t)(graphicsAddr + 0x2E8), 4)) return 0;
     int count = *(int*)(graphicsAddr + 0x2E8);
     if (count < 1) return 0;
 
-    if (IsBadReadPtr((void*)(graphicsAddr + 0x6F0), 4)) return 0;
+    if (IsBadReadPtr((void*)(size_t)(graphicsAddr + 0x6F0), 4)) return 0;
     DWORD arrPtr = *(DWORD*)(graphicsAddr + 0x6F0);
-    if (!arrPtr || IsBadReadPtr((void*)arrPtr, count * 4)) return 0;
+    if (!arrPtr || IsBadReadPtr((void*)(size_t)arrPtr, count * 4)) return 0;
 
     for (int i = 0; i < count; i++) {
         DWORD entry = *(DWORD*)(arrPtr + i * 4);
-        if (!entry || IsBadReadPtr((void*)entry, 0x20)) continue;
+        if (!entry || IsBadReadPtr((void*)(size_t)entry, 0x20)) continue;
 
-        // D3DTexture+0x08 = name (char*)
         DWORD namePtr = *(DWORD*)(entry + 0x08);
-        if (!namePtr || IsBadReadPtr((void*)namePtr, 1)) continue;
+        if (!namePtr || IsBadReadPtr((void*)(size_t)namePtr, 1)) continue;
 
-        const char* texName = (const char*)namePtr;
+        const char* texName = (const char*)(size_t)namePtr;
         if (_stricmp(texName, name) == 0) return entry;
     }
     return 0;
 }
 
-// Load a texture using the game's texture loader
-// Returns the D3DTexture object address, or 0 on failure
 static DWORD LoadTextureViaGame(DWORD graphicsAddr, const char* filename) {
-    // Call FUN_00455C50: __thiscall(Graphics*, char* filename, char useCache)
-    // This allocates a D3DTexture (0x74 bytes), loads the file, caches it, returns ptr
     DWORD base = (DWORD)(DWORD_PTR)GetModuleHandleA(NULL);
     typedef DWORD(__thiscall *LoadTexFn)(DWORD, const char*, char);
     LoadTexFn fn = (LoadTexFn)(base + 0x55C50);
@@ -187,49 +157,59 @@ static DWORD LoadTextureViaGame(DWORD graphicsAddr, const char* filename) {
 
 static void SetupAnimations(DWORD appAddr) {
     g_animCount = 0;
-    if (!appAddr || IsBadReadPtr((void*)appAddr, 4)) return;
+    if (!appAddr || IsBadReadPtr((void*)(size_t)appAddr, 4)) return;
 
-    // Graphics at App+0x174
-    if (IsBadReadPtr((void*)(appAddr + 0x174), 4)) return;
+    if (IsBadReadPtr((void*)(size_t)(appAddr + 0x174), 4)) return;
     DWORD graphics = *(DWORD*)(appAddr + 0x174);
-    if (!graphics || IsBadReadPtr((void*)graphics, 4)) return;
+    if (!graphics || IsBadReadPtr((void*)(size_t)graphics, 4)) return;
 
-    for (int c = 0; c < g_configCount && g_animCount < 16; c++) {
-        AnimConfig* cfg = &g_configs[c];
+    if (IsBadReadPtr((void*)(size_t)(graphics + 0x2E8), 4)) return;
+    int cacheCount = *(int*)(graphics + 0x2E8);
+    if (cacheCount < 1) return;
 
-        // Find the first frame texture in the cache (already loaded by the game)
-        DWORD firstTexObj = FindTextureInCache(graphics, cfg->frameNames[0]);
-        if (!firstTexObj) {
-            // Try without extension
-            char nameNoExt[256];
-            strncpy_s(nameNoExt, 256, cfg->frameNames[0], 255);
-            char* dot = strrchr(nameNoExt, '.');
-            if (dot) *dot = 0;
-            firstTexObj = FindTextureInCache(graphics, nameNoExt);
-        }
-        if (!firstTexObj) continue;
+    if (IsBadReadPtr((void*)(size_t)(graphics + 0x6F0), 4)) return;
+    DWORD arrPtr = *(DWORD*)(graphics + 0x6F0);
+    if (!arrPtr || IsBadReadPtr((void*)(size_t)arrPtr, cacheCount * 4)) return;
 
-        // D3DTexture+0x04 = IDirect3DTexture8*
-        if (IsBadReadPtr((void*)(firstTexObj + 0x04), 4)) continue;
-        DWORD originalTex = *(DWORD*)(firstTexObj + 0x04);
+    for (int i = 0; i < cacheCount && g_animCount < 16; i++) {
+        DWORD entry = *(DWORD*)(arrPtr + i * 4);
+        if (!entry || IsBadReadPtr((void*)(size_t)entry, 0x20)) continue;
+
+        DWORD namePtr = *(DWORD*)(entry + 0x08);
+        if (!namePtr || IsBadReadPtr((void*)(size_t)namePtr, 1)) continue;
+        const char* texName = (const char*)(size_t)namePtr;
+
+        char baseName[256];
+        int frameNum = ParseFrameName(texName, baseName, 256);
+        if (frameNum != 1) continue; // Only start from frame 1
+
+        // Check if additional frames exist
+        int totalFrames = CountFrames(baseName);
+        if (totalFrames < 2) continue;
+
+        // Get the D3D texture pointer from this entry
+        if (IsBadReadPtr((void*)(size_t)(entry + 0x04), 4)) continue;
+        DWORD originalTex = *(DWORD*)(entry + 0x04);
         if (!originalTex) continue;
 
         AnimTexture* anim = &g_animTextures[g_animCount];
-        anim->d3dTexObjAddr = firstTexObj;
+        anim->d3dTexObjAddr = entry;
         anim->originalD3DTex = originalTex;
         anim->frameTextures[0] = originalTex;
         anim->frameCount = 1;
-        anim->framerate = cfg->framerate;
-        anim->looptype = cfg->looptype;
         anim->currentFrame = 0;
         anim->direction = 1;
         anim->lastSwapTime = GetTime();
-        strcpy_s(anim->baseName, 256, cfg->baseName);
+        strcpy_s(anim->baseName, 256, baseName);
 
-        // Load remaining frames
-        for (int i = 1; i < cfg->frameCount && i < 32; i++) {
-            DWORD texObj = LoadTextureViaGame(graphics, cfg->frameNames[i]);
-            if (texObj && !IsBadReadPtr((void*)(texObj + 0x04), 4)) {
+        LoadConfigForBase(baseName, &anim->framerate, &anim->looptype);
+
+        // Load frames 2, 3, ... via the game's texture loader
+        for (int f = 2; f <= totalFrames && f <= 32; f++) {
+            char frameName[256];
+            snprintf(frameName, sizeof(frameName), "%s%02d.png", baseName, f);
+            DWORD texObj = LoadTextureViaGame(graphics, frameName);
+            if (texObj && !IsBadReadPtr((void*)(size_t)(texObj + 0x04), 4)) {
                 DWORD d3dTex = *(DWORD*)(texObj + 0x04);
                 if (d3dTex) {
                     anim->frameTextures[anim->frameCount] = d3dTex;
@@ -241,9 +221,9 @@ static void SetupAnimations(DWORD appAddr) {
         if (anim->frameCount < 2) continue;
 
         char dbg[256];
-        snprintf(dbg, sizeof(dbg), "[AnimTex] Setup: %s, %d frames loaded\n", anim->baseName, anim->frameCount);
+        snprintf(dbg, sizeof(dbg), "[AnimTex] %s: %d frames, rate=%.2f, loop=%d\n",
+                 anim->baseName, anim->frameCount, anim->framerate, anim->looptype);
         OutputDebugStringA(dbg);
-
         g_animCount++;
     }
 }
@@ -251,7 +231,7 @@ static void SetupAnimations(DWORD appAddr) {
 static void RestoreTextures() {
     for (int i = 0; i < g_animCount; i++) {
         AnimTexture* anim = &g_animTextures[i];
-        if (anim->d3dTexObjAddr && !IsBadWritePtr((void*)(anim->d3dTexObjAddr + 0x04), 4)) {
+        if (anim->d3dTexObjAddr && !IsBadWritePtr((void*)(size_t)(anim->d3dTexObjAddr + 0x04), 4)) {
             *(DWORD*)(anim->d3dTexObjAddr + 0x04) = anim->originalD3DTex;
         }
     }
@@ -259,12 +239,9 @@ static void RestoreTextures() {
 }
 
 static DWORD WINAPI AnimThread(LPVOID param) {
-    IModAPI* api = (IModAPI*)param;
     Sleep(3000);
-
     while (g_running) {
         Sleep(16);
-
         if (g_animCount == 0) continue;
 
         double now = GetTime();
@@ -272,7 +249,7 @@ static DWORD WINAPI AnimThread(LPVOID param) {
             AnimTexture* anim = &g_animTextures[i];
             if (anim->frameCount < 2) continue;
             if (anim->d3dTexObjAddr == 0) continue;
-            if (IsBadReadPtr((void*)(anim->d3dTexObjAddr + 0x04), 4)) continue;
+            if (IsBadReadPtr((void*)(size_t)(anim->d3dTexObjAddr + 0x04), 4)) continue;
 
             double elapsed = now - anim->lastSwapTime;
             if (elapsed < (double)anim->framerate) continue;
@@ -282,15 +259,12 @@ static DWORD WINAPI AnimThread(LPVOID param) {
             int nextFrame = anim->currentFrame + anim->direction;
 
             if (anim->looptype == 0) {
-                // Once: stop on last frame
                 if (nextFrame >= anim->frameCount) nextFrame = anim->frameCount - 1;
                 else if (nextFrame < 0) nextFrame = 0;
             } else if (anim->looptype == 1) {
-                // Loop: wrap around
                 if (nextFrame >= anim->frameCount) nextFrame = 0;
                 else if (nextFrame < 0) nextFrame = anim->frameCount - 1;
             } else if (anim->looptype == 2) {
-                // Ping-pong: reverse direction at ends
                 if (nextFrame >= anim->frameCount) {
                     anim->direction = -1;
                     nextFrame = anim->frameCount - 2;
@@ -306,7 +280,7 @@ static DWORD WINAPI AnimThread(LPVOID param) {
 
             DWORD newTex = anim->frameTextures[nextFrame];
             if (newTex) {
-                if (!IsBadWritePtr((void*)(anim->d3dTexObjAddr + 0x04), 4)) {
+                if (!IsBadWritePtr((void*)(size_t)(anim->d3dTexObjAddr + 0x04), 4)) {
                     *(DWORD*)(anim->d3dTexObjAddr + 0x04) = newTex;
                 }
             }
@@ -325,7 +299,6 @@ public:
 
     void Initialize(IModAPI* modApi) override {
         api = modApi;
-        LoadConfigs();
         g_running = true;
         g_thread = CreateThread(NULL, 0, AnimThread, api, 0, NULL);
     }
