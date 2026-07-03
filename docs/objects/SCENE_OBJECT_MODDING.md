@@ -115,7 +115,7 @@ Scene inherits from Gadget. The Gadget base contains:
 | `+0x8B8` | `AthenaList` | `scene_object_list` | All scene objects (update + render pass) | ✅
 | `+0x8BC` | `int` | `scene_object_count` | Number of objects in above list | ✅
 | `+0x8C0` | `int` | `scene_object_iterator` | Current iteration index ❓ | ❓
-| `+0x910` | `WaypointList*` | `waypoint_list` | Race checkpoint tracking | ⚠️️
+| `+0x910` | `BestTimeTracker*` | `playback_buffer` | Time Trial ghost playback buffer (NOT waypoint list — see TIME_TRIAL_GHOST_SYSTEM.md) | ✅ |
 | `+0xCC4` | `SceneObject**` | `scene_object_array` | Direct pointer array to scene objects | ✅
 | `+0x1518` | `AthenaList` | `collision_list` | Collision surface list (planes, walls, floors) | ✅
 | `+0x151C` | `int` | `collision_count` | Number of collision entries | ❓
@@ -135,7 +135,7 @@ Scene inherits from Gadget. The Gadget base contains:
 | `+0x3208` | `int` | `ball_list_2_count` | Number of P2 balls | ✅
 | `+0x320C` | `int` | `ball_list_2_iterator` | P2 list iteration state ❓ | ❓
 | `+0x3610` | `Ball**` | `ball_list_2_array` | **P2 Ball pointer array** — direct read | ✅
-| `+0x361C` | `SceneObject*` | `waypoint_arrow` | Next-waypoint arrow | ✅
+| `+0x361C` | `Ball*` | `ghost_ball_ptr` | Time Trial ghost ball (NOT waypoint arrow — see TIME_TRIAL_GHOST_SYSTEM.md) | ✅ |
 | `+0x3620` | `int` | `frame_counter` | Total frames since scene start. Also called `tick_count` | ✅
 | `+0x362C` | `AthenaList` | `player_list` | Player viewport list. Decomp calls this `physics_objects` at int `+0x0D8B` | ✅
 | `+0x3630` | `int` | `player_count` | 0=none, 1=single player, 2=split-screen | ✅
@@ -465,7 +465,7 @@ Automated verification via GhidraMCP REST API decompilation of these functions:
 | `0x3204` | `ball_list_2` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
 | `0x3208` | `ball_list_2_count` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
 | `0x3610` | `ball_list_2_array` | `Level_UpdateAndRender`, `Scene_UpdateBallsAndState`, `Scene_dtor` | 3 |
-| `0x361C` | `waypoint_arrow` | `Level_UpdateAndRender`, `Scene_dtor` | 2 |
+| `0x361C` | `ghost_ball_ptr` | `Level_UpdateAndRender`, `Board_ctor`, `Scene_dtor` | 3 |
 | `0x3620` | `frame_counter` | `Scene_Update` | 1 |
 | `0x362C` | `player_list` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |
 | `0x3630` | `player_count` | `Scene_ProcessRaceEnd`, `Scene_Render`, `Scene_SpawnBallsAndObjects` | 3 |

@@ -101,7 +101,7 @@ Main level render: two-pass system (opaque + alpha).
 5. If race active: update waypoint arrow + render
 6. For each visible object: obj->vtable[0x08]() = Render
 7. Ball_RenderShadow for each ball (if shadow data exists)
-Scene offsets: +0x29D4=P1 balls, +0x3204=P2 balls, +0x3A48=visible objects, +0x361C=waypoint
+Scene offsets: +0x29D4=P1 balls, +0x3204=P2 balls, +0x3A48=visible objects, +0x361C=ghost_ball_ptr (Time Trial ghost ball — see TIME_TRIAL_GHOST_SYSTEM.md)
 
 ### Level_RenderObjects (0x40B570, vtable[0x68])
 Transparent pass. Graphics_BeginFrame, scene_manager->vtable[0x4C]

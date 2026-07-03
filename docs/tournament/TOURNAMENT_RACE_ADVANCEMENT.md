@@ -309,8 +309,8 @@ App+0x72C   player3_previous_score
 App+0x7B7   player2_active (byte)
 App+0x7C8   player4_current_score
 App+0x7CC   player4_previous_score
-App+0x90C   unknown object pointer (freed on tournament start)
-App+0x910   unknown object pointer (freed on tournament start)
+App+0x90C   BestTimeTracker* recording_buffer (Time Trial ghost recording — see TIME_TRIAL_GHOST_SYSTEM.md)
+App+0x910   BestTimeTracker* playback_buffer (Time Trial ghost playback — see TIME_TRIAL_GHOST_SYSTEM.md)
 ```
 
 ## Key Board Struct Offsets (Tournament-Related)

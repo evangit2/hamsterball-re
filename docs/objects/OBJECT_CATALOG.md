@@ -227,7 +227,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
   - `+0x221` ArenaBoard timer data
   - `+0x335` Ball list (AthenaList)
   - `+0x43B` Effect list (AthenaList)
-  - `+0x361C` Ball pointer (first player ball)
+  - `+0x361C` Ball* ghost_ball_ptr (Time Trial ghost ball — NOT "first player ball". See TIME_TRIAL_GHOST_SYSTEM.md)
   - `+0x29B0` Gravity parameter
   - `+0x29C0` Camera orbit distance
   - `+0x3AAC` Player ball colors (4 RGB entries, 0x14 bytes each)

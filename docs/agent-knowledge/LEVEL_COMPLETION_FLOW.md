@@ -60,10 +60,12 @@ This is the bridge between menu selection and level loading:
 
 1. `App+0x237 = 0` (clear arena flag)
 2. `App_StartRace(app)` — cleans up previous race state (see §2c)
-3. Manages linked list of previously-played race entries (App+0x90C / App+0x910)
-   - Each entry stores a race name at offset +0x109 (0x424 bytes in)
-   - Entries with `9999999` at offset +0x149 are end-of-list markers
-   - Compares current race name vs previous entry, destroys stale entries
+3. Manages BestTimeTracker recording/playback buffers (App+0x90C / App+0x910)
+   - These are 0x528-byte objects that store per-frame ball position snapshots
+   - App+0x90C = recording buffer (current race), App+0x910 = playback buffer (best run = ghost)
+   - If both exist, compares finish times: promotes recording to playback if better
+   - Entries with `9999999` at offset +0x149 (dword = +0x524) = never-finished sentinel
+   - See [TIME_TRIAL_GHOST_SYSTEM.md](TIME_TRIAL_GHOST_SYSTEM.md) for full details
 4. Sets up player slots:
    - `App+0x717 = 1` (P3 active)
    - `App+0x7B7 = 1` (P4 active)
@@ -79,8 +81,8 @@ This is the bridge between menu selection and level loading:
    - With `param_1=0`, AdvanceRace takes the "create next board" path
    - Switches on `profile+0x08` (race index) to create the right `LevelBoard_*_ctor`
    - The board constructor does the actual level loading
-8. Copies the race name from `board+0x29B4` into the race history entry at `App+0x90C+0x424`
-9. Checks if the new race name matches the previous race in history — if so, destroys old entry
+8. Copies the race name from `board+0x29B4` into the score-tracking object at `App+0x90C+0x424` (used to compare which level the recording was made on)
+9. Checks if the new race name matches the previous race's recording — if the level changed, may destroy old playback buffer
 
 ### 0d. `App_StartTournamentRace` (0x4288B0) — Tournament Level Start
 

@@ -206,8 +206,8 @@ wait_top_state:
   dec edx
   mov [plat_wait+4+ebx*4], edx
   cmp edx, 0
-  jle do_move
-  // Switch to going down
+  jg do_move
+  // Timer expired: switch to going down
   mov dword [plat_state+4+ebx*4], 2
   jmp do_move
 
@@ -242,8 +242,8 @@ wait_bot_state:
   dec edx
   mov [plat_wait+4+ebx*4], edx
   cmp edx, 0
-  jle do_move
-  // Switch to going up
+  jg do_move
+  // Timer expired: switch to going up
   mov dword [plat_state+4+ebx*4], 0
   // Reset velocity
   mov dword [plat_velocity+4+ebx*4], 0
