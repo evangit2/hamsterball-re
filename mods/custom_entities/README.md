@@ -1,29 +1,51 @@
 # Custom Entities Mod
 
-Adds new customizable `E:` and `N:` entity types to Hamsterball, with behaviours loaded from external DLL files.
+Adds new customizable entities to Hamsterball using `CE:`, `E:`, and `N:` prefixed entity names in MESHWORLD files, with meshes and behaviours loaded from external files.
 
 ## How It Works
 
-1. Place behavior DLLs in a `Behaviours/` folder in the game root directory
-2. Add entities with names like `E:Rotator` or `N:Rotator` to any `.MESHWORLD` file
-3. The mod scans all loaded MeshBuffers for unknown `E:`/`N:` prefixed names
-4. When a match is found, it loads `Behaviours/<EntityName>.dll` and calls its update function every frame
+### CE: Prefix — Custom Entity Reference System
+
+When an object named `CE:Rotator` is placed in a level `.MESHWORLD` file (from the `Levels/` folder), it acts as a **reference pointer**:
+
+1. The object's **position, rotation, and scale** in the level define the initial transform
+2. The **mesh geometry** is loaded from `CustomEntities/Rotator.MESHWORLD`
+3. The **behavior** is loaded from `CustomEntities/Rotator.dll`
+4. `Behavior_Update` is called every frame to animate the entity
+
+This means level designers can place `CE:` objects in their levels to summon custom entities with full geometry and behavior, without modifying the level's own mesh data.
+
+### E:/N: Prefix — Legacy Custom Entities
+
+Entities named `E:Rotator` or `N:Rotator` work the same as before — behavior DLLs are loaded from `CustomEntities/<name>.dll`, but no separate mesh file is loaded. These are useful for simpler entities that only need transform animation.
 
 ### Example
 
-An entity named `E:Rotator` in a MESHWORLD file → loads `Behaviours/Rotator.dll` → the DLL's `Behavior_Update` function rotates the entity's transform every frame.
+```
+Levels/Level1.MESHWORLD       → contains "CE:Rotator" at position (100, 50, 200)
+CustomEntities/Rotator.MESHWORLD → mesh geometry for the Rotator object
+CustomEntities/Rotator.dll    → behavior DLL that rotates on X axis
+```
+
+When the level loads, the mod:
+1. Detects `CE:Rotator` in the MeshBuffer scan
+2. Verifies `CustomEntities/Rotator.MESHWORLD` exists
+3. Loads `CustomEntities/Rotator.dll`
+4. Calls `Behavior_Init` with the entity's transform (position/rotation from the level)
+5. Calls `Behavior_Update` every frame (~60Hz) — the DLL rotates the entity on X axis
 
 ## Architecture
 
 ```
 Game Root/
 ├── Hamsterball.exe
-├── bass.dll              ← This mod (proxy DLL)
-├── bass_real.dll         ← Original BASS audio library (renamed)
-├── Behaviours/
-│   └── Rotator.dll       ← Behavior DLL for E:Rotator entities
-└── Levels/
-    └── Level1.MESHWORLD   ← Contains E:Rotator entity
+├── bass.dll                    ← This mod (proxy DLL)
+├── bass_real.dll               ← Original BASS audio library (renamed)
+├── CustomEntities/
+│   ├── Rotator.MESHWORLD       ← Mesh geometry for CE:Rotator
+│   └── Rotator.dll             ← Behavior DLL for CE:Rotator
+├── Levels/
+│   └── Level1.MESHWORLD        ← Level file containing CE:Rotator reference
 ```
 
 ### Main Mod (`bass.dll`)
@@ -31,6 +53,7 @@ Game Root/
 - **Non-invasive:** No code patches, no function hooks. Uses a background polling thread (`Sleep(16)` ≈ 60Hz).
 - **Safe:** All pointer access guarded by `IsBadReadPtr`. Validates vtable pointers before use.
 - **Automatic:** Detects level changes, scans for entities, loads DLLs, calls init/update/shutdown.
+- **CE: support:** Checks for `CustomEntities/<name>.MESHWORLD` file existence before loading behavior.
 
 ### Behavior DLL Interface
 
@@ -68,32 +91,43 @@ Located at `MeshWorld+0x28 + meshBufferIndex * 0x50`. Verified from `Scene_LoadM
 
 The game's `MeshWorld_CollectRenderLists` (0x460FCC0) reads these values every frame to build render lists — so modifying `rotX`, `rotY`, `rotZ`, `posX`, `posY`, or `posZ` from a behavior DLL will immediately affect rendering.
 
+### Entity Prefix Types
+
+| Prefix | Type | Behavior | MESHWORLD file required? |
+|--------|------|----------|--------------------------|
+| `CE:`  | Custom Entity Reference | Loads mesh from `CustomEntities/<name>.MESHWORLD` + behavior DLL | Yes |
+| `E:`   | Legacy custom entity | Loads behavior DLL only | No |
+| `N:`   | Legacy custom entity | Loads behavior DLL only | No |
+
 ### Known Game Entities (Not Intercepted)
 
-The mod skips these entity names to avoid conflicts with the game's native event/collision dispatch:
+The mod skips these `E:`/`N:` entity names to avoid conflicts with the game's native event/collision dispatch:
 
 **E: prefix events:** JUMP, NODIZZY, LIMIT, TELEPORT, WATER, DROPIN, PIPEBONK, POPOUT, VACPOPOUT, TARPIT, GOAL (1-6), BUMPER (1-8), FAN, SAWBLADE, JUDGE, BELL, LAUNCH, MOUSETRAP, TARBUBBLE, FALL, SWIRL, SPEEDPAD
 
 **N: prefix entities:** GLASS
 
-Any entity name NOT in this list will be treated as custom and loaded from `Behaviours/`.
+Any entity name NOT in this list will be treated as custom. **Note:** `CE:` prefix entities are NEVER checked against this list — the game doesn't recognize the `CE:` prefix at all, so all `CE:` entities are custom.
 
-**Note:** Mechanical objects like ROTATOR, GEAR, LOOPER, PENDULUM are only matched by the game's `CreateMechanicalObjects` (0x417FE0) when their name has NO `E:`/`N:` prefix. A mesh named `E:Rotator` does NOT trigger the native `Rotator_ctor` — so it's safe for our mod to handle it.
+**Note:** Mechanical objects like ROTATOR, GEAR, LOOPER, PENDULUM are only matched by the game's `CreateMechanicalObjects` (0x417FE0) when their name has NO `E:`/`N:`/`CE:` prefix. A mesh named `CE:Rotator` does NOT trigger the native `Rotator_ctor` — so it's safe for our mod to handle it.
 
 ## Included Behaviors
 
-### Rotator (`Behaviours/Rotator.dll`)
+### Rotator (`CustomEntities/Rotator.dll`)
 
-- **Entity name:** `E:Rotator` (or `N:Rotator`)
+- **Entity name:** `CE:Rotator` (or `E:Rotator`, `N:Rotator`)
 - **Effect:** Constantly rotates the entity on its X axis at ~0.02 radians/frame (~69°/sec at 60fps)
-- **Source:** `behaviours/rotator.c`
+- **Source:** `CustomEntities/rotator.c`
+- **MESHWORLD:** `CustomEntities/Rotator.MESHWORLD` (mesh geometry)
 
 ## Installation
 
 1. Rename original `bass.dll` to `bass_real.dll`
 2. Copy mod `bass.dll` to game root
-3. Create `Behaviours/` folder in game root
-4. Copy behavior DLLs (e.g. `Rotator.dll`) into `Behaviours/`
+3. Create `CustomEntities/` folder in game root
+4. Copy behavior DLLs (e.g. `Rotator.dll`) and `.MESHWORLD` files into `CustomEntities/`
+5. Create `Levels/` folder in game root (if using custom level files)
+6. Copy level `.MESHWORLD` files (e.g. `Level1.MESHWORLD`) into `Levels/`
 
 ## Building
 
@@ -117,8 +151,9 @@ i686-w64-mingw32-gcc -shared -o Rotator.dll rotator.c \
 1. Create a new `.c` file (e.g. `my_behavior.c`)
 2. Include `entity_api.h` (or define the `EntityTransform` struct manually)
 3. Implement `Behavior_Init`, `Behavior_Update`, `Behavior_Shutdown`
-4. Compile to `Behaviours/MyBehavior.dll`
-5. Add `E:MyBehavior` to a `.MESHWORLD` file
+4. Compile to `CustomEntities/MyBehavior.dll`
+5. Create `CustomEntities/MyBehavior.MESHWORLD` (mesh geometry)
+6. Add `CE:MyBehavior` to a `.MESHWORLD` file in `Levels/`
 
 ### Example: Simple Oscillator
 
@@ -149,9 +184,10 @@ __declspec(dllexport) void __cdecl Behavior_Shutdown(void) {}
 
 The mod writes a `custom_entities.log` file in the game root directory. This log shows:
 - Every MeshBuffer name found during scanning
-- Which entities were identified as custom
+- Which entities were identified as custom (with prefix type: CE/E/N)
+- Which .MESHWORLD files were found in CustomEntities/
 - Which behavior DLLs were loaded successfully
-- Transform pointer addresses and initial values
+- Transform pointer addresses and initial values (pos/rot/scale)
 
 ## Files
 
@@ -159,9 +195,10 @@ The mod writes a `custom_entities.log` file in the game root directory. This log
 |------|-------------|
 | `entity_api.h` | Shared header defining EntityTransform and behavior interface |
 | `custom_entities.c` | Main mod source (bass.dll proxy) |
-| `behaviours/rotator.c` | Rotator behavior DLL source |
-| `behaviours/Rotator.dll` | Compiled Rotator behavior |
-| `test/Level1-TestRotator.MESHWORLD` | Test level with E:Rotator entity |
+| `CustomEntities/rotator.c` | Rotator behavior DLL source |
+| `CustomEntities/Rotator.dll` | Compiled Rotator behavior |
+| `CustomEntities/Rotator.MESHWORLD` | Rotator mesh geometry |
+| `Levels/Level1.MESHWORLD` | Test level with CE:Rotator entity |
 | `bass.dll` | Compiled main mod |
 
 ## Technical Details
@@ -184,7 +221,7 @@ App (0x5341E0)
 |--------|-------|-----------------|---------------------------------|
 | +0x00  | DWORD | vtable          | MeshBuffer vtable               |
 | +0x04  | DWORD | ctx_index       | Index into EntityTransform[]    |
-| +0x860 | DWORD | name_length     | Length of name string           |
+| +0x860 | DWORD | name_length     | Length of name string               |
 | +0x862 | BYTE  | is_object       | 1 if name starts with "O:"     |
 | +0x863 | BYTE  | is_event        | 1 if name starts with "E:"      |
 | +0x864 | char* | name            | Entity name string              |
@@ -196,4 +233,5 @@ App (0x5341E0)
 - MeshBuffer count bounds check (1-10000)
 - EntityTransform pointer validated before each `Behavior_Update` call
 - Behavior DLL load failure is non-fatal (entity is simply skipped)
+- CE: entities require `CustomEntities/<name>.MESHWORLD` to exist
 - Level change detection: entities are shut down and re-scanned on board change

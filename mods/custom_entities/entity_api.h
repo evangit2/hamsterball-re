@@ -1,13 +1,13 @@
 /*
  * entity_api.h — Shared header for Hamsterball Custom Entities mod.
  *
- * Defines the interface that behavior DLLs in the Behaviours/ folder
+ * Defines the interface that behavior DLLs in the CustomEntities/ folder
  * must implement. Behavior DLLs are loaded by the main custom_entities
- * bass.dll proxy mod when it finds E:CustomName or N:CustomName entities
- * in a MESHWORLD file.
+ * bass.dll proxy mod when it finds CE:CustomName, E:CustomName, or
+ * N:CustomName entities in a MESHWORLD file.
  *
- * The DLL filename must match the entity name (minus the E:/N: prefix).
- * For example, E:Rotator → Behaviours/Rotator.dll
+ * The DLL filename must match the entity name (minus the CE:/E:/N: prefix).
+ * For example, CE:Rotator → CustomEntities/Rotator.dll
  *
  * Behavior DLLs are regular C DLLs (NOT bass.dll proxies). Compile with:
  *   i686-w64-mingw32-gcc -shared -o Rotator.dll rotator.c -O2 -static -static-libgcc

@@ -3,8 +3,8 @@
  *
  * Makes the target entity constantly rotate on its X axis at a slow speed.
  *
- * Entity name: E:Rotator (or N:Rotator)
- * DLL file:    Behaviours/Rotator.dll
+ * Entity name: CE:Rotator (or E:Rotator, N:Rotator)
+ * DLL file:    CustomEntities/Rotator.dll
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o Rotator.dll rotator.c \
