@@ -358,21 +358,23 @@ static void setWinState(void *board, int *ball) {
 /* ============================================================
  * Load and start the target level
  *
- * Tournament_AdvanceRace does: raceIndex = profile+0x08 + 1, then
- * switches on it. So to get case N, we need profile+0x08 = N-1.
+ * Simply calls App_StartPracticeRace(app, levelIndex) which does
+ * everything: destroys old board, creates score tracker, creates
+ * PlayerProfile, sets race index, calls Tournament_AdvanceRace,
+ * copies race name. This is the exact same function the game calls
+ * when the player selects a practice race from the menu.
+ *
+ * App_StartPracticeRace is __thiscall: ECX = app, stack param = raceIndex.
+ * We use a __fastcall typedef and pass app as first (ECX) arg.
  * ============================================================ */
 
-typedef void (__fastcall *App_StartRace_t)(int app);
-typedef void (__thiscall *PlayerProfile_ctor_t)(void *profile, int app, unsigned char partyFlag);
-typedef void (__thiscall *Tournament_AdvanceRace_t)(void *profile, char param_1);
+#define APP_START_PRACTICE_RACE 0x00428C50
+
+typedef void (__fastcall *App_StartPracticeRace_t)(int app, int raceIndex);
 
 static void loadTargetLevel(int levelIndex) {
     int app;
-    void *profileMem;
-    unsigned char partyFlag;
-    App_StartRace_t startRace;
-    PlayerProfile_ctor_t profileCtor;
-    Tournament_AdvanceRace_t advanceRace;
+    App_StartPracticeRace_t startPractice;
 
     if (levelIndex < 1 || levelIndex > 15) return;
 
@@ -381,44 +383,10 @@ static void loadTargetLevel(int levelIndex) {
 
     diag_logf("[loadTargetLevel] levelIndex=%d app=0x%08X", levelIndex, app);
 
-    /* Step 1: Call App_StartRace(app) to clean up current race state */
-    startRace = (App_StartRace_t)APP_START_RACE;
-    startRace(app);
+    startPractice = (App_StartPracticeRace_t)APP_START_PRACTICE_RACE;
+    startPractice(app, levelIndex);
 
-    /* Step 2: Clear arena flag */
-    *((char *)app + APP_ARENA_FLAG) = 0;
-
-    /* Step 3: Set up player slots (same as App_StartPracticeRace) */
-    *((char *)app + 0x717) = 1;
-    *((char *)app + 0x7B7) = 1;
-    *((char *)app + 0x5D7) = 0;
-    *((char *)app + 0x677) = 1;
-    if (*((char *)app + 0x234) != 0) {
-        *((char *)app + 0x677) = 0;
-    }
-    *((int *)app + 0x23C / 4) = 1;
-
-    /* Step 4: Create PlayerProfile */
-    profileMem = HeapAlloc(GetProcessHeap(), 0, 0x98);
-    if (!profileMem) return;
-
-    profileCtor = (PlayerProfile_ctor_t)PLAYER_PROFILE_CTOR;
-    partyFlag = *((char *)app + 0x234);
-    profileCtor(profileMem, app, partyFlag);
-
-    *(void **)((char *)app + APP_PROFILE_PTR) = profileMem;
-
-    /* Step 5: Set race index to levelIndex - 1 */
-    *(int *)((char *)profileMem + PROFILE_RACE_INDEX) = levelIndex - 1;
-
-    /* Set time-trial flag (same as practice mode) */
-    *((char *)profileMem + 0x11) = 1;
-
-    /* Step 6: Call Tournament_AdvanceRace(profile, 0) */
-    advanceRace = (Tournament_AdvanceRace_t)TOURNAMENT_ADVANCE_RACE;
-    diag_logf("[loadTargetLevel] Calling AdvanceRace(profile=0x%08X, 0)", (unsigned)profileMem);
-    advanceRace(profileMem, 0);
-    diag_log("[loadTargetLevel] AdvanceRace returned OK");
+    diag_log("[loadTargetLevel] App_StartPracticeRace returned OK");
 }
 
 /* ============================================================
