@@ -435,8 +435,8 @@ static void inject_saved_ghost(const char *raceName) {
      * dereferences BTT+0x414 (list_array_ptr)[index]. */
     DWORD *alist = (DWORD*)((char*)btt + 4);
     alist[1] = numToStore;              /* BTT+0x008: list_count */
-    *(DWORD**)((char*)btt + 0x414) = snapArray;  /* BTT+0x414: list_array_ptr (AL offset 0x410) */
-    /* BTT+0x418: capacity = 0 (already zeroed by memset) */
+    *(DWORD**)((char*)btt + 0x410) = snapArray;  /* BTT+0x410 = list_array_ptr (AL offset 0x40C) */
+    /* BTT+0x414: capacity/sorted flag = 0 (already zeroed by memset) */
     /* BTT+0x41C: playback_index = 0 (already zeroed by memset, starts at first frame) */
     log_fmt("Stored %d/%d snapshots (array at 0x%X)", numToStore, savedCount, (DWORD)snapArray);
 
@@ -454,7 +454,7 @@ static void inject_saved_ghost(const char *raceName) {
 
     /* Verify the list was actually populated */
     int listCount = *(int*)((char*)btt + 0x008);  /* BTT+0x008 = list_count (AL offset 0x004) */
-    DWORD listArray = *(DWORD*)((char*)btt + 0x414);  /* BTT+0x414 = list_array_ptr */
+    DWORD listArray = *(DWORD*)((char*)btt + 0x410);  /* BTT+0x410 = list_array_ptr (AL offset 0x40C) */
     int playIdx = *(int*)((char*)btt + 0x41C);  /* playback_index */
     log_fmt("BTT list count=%d array=0x%X playback_index=%d", listCount, listArray, playIdx);
 
