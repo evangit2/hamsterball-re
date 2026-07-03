@@ -466,13 +466,36 @@ static void scan_for_custom_entities(DWORD board) {
                     transform->rotScale, transform->posScale);
         }
 
-        /* For CE: entities, check if a .MESHWORLD file exists in CustomEntities/ */
+        /* For CE: entities:
+         *   1. Check that CustomEntities/<name>.MESHWORLD exists
+         *   2. Blank the MeshBuffer name string in memory (overwrite first
+         *      char with '\0') so the game treats it as unnamed static geometry
+         *      and renders it. The game doesn't recognize the CE: prefix, so
+         *      without this, the mesh data is loaded but never rendered.
+         *      After blanking, the game's render list builder includes it as
+         *      a regular unnamed mesh (like floors/walls).
+         *   3. The behavior DLL can still animate the EntityTransform to
+         *      rotate/move the rendered mesh.
+         */
         if (prefix_type == PREFIX_CE) {
             if (!entity_meshworld_exists(ent_name)) {
                 if (logf) fprintf(logf, "  -> CustomEntities/%s.MESHWORLD not found, skipping\n", ent_name);
                 continue;
             }
             if (logf) fprintf(logf, "  -> CustomEntities/%s.MESHWORLD found\n", ent_name);
+
+            /* Blank the MeshBuffer name so the game renders the geometry.
+             * The name string is in heap memory (allocated by Scene_LoadMeshWorld),
+             * so it's safe to write to. We already extracted the entity name
+             * above, so we don't need the original string anymore. */
+            DWORD old_protect;
+            if (VirtualProtect(name, 1, PAGE_READWRITE, &old_protect)) {
+                name[0] = '\0';
+                VirtualProtect(name, 1, old_protect, &old_protect);
+                if (logf) fprintf(logf, "  -> Blanked MeshBuffer name to enable rendering\n");
+            } else {
+                if (logf) fprintf(logf, "  -> WARNING: could not blank MeshBuffer name (VirtualProtect failed)\n");
+            }
         }
 
         /* Load behavior DLL from CustomEntities/ */
