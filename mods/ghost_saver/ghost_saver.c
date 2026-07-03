@@ -1,31 +1,38 @@
 /*
- * ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v2)
- *
- * v2: Extensive diagnostic logging to trace why race detection fails.
- * Records ball snapshots to GHOST.txt, loads saved ghosts on race start.
- */
+ /* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v3)
+  *
+  * v3: Fix __thiscall calls via inline asm — MinGW __thiscall function pointers
+  *     silently fail. Use raw push/mov ecx/call for BestTimeTracker_ctor and
+  *     AthenaList_Append. Also fixes: race name comparison uses board+0x29B4
+  *     (the actual race name source) instead of BTT+0x424 (which the game
+  *     copies FROM board+0x29B4 during App_StartPracticeRace).
+  *
+  * v2: Heartbeat logging, raw DWORD snapshot format.
+  * v1: Initial release.
+  */
 
-#include "bass_proxy.h"
+ #include "bass_proxy.h"
 
-/* Game constants */
-#define APP_PTR             0x005341E0
-#define ADDR_BTT_CTOR       0x00427660
-#define ADDR_ALIST_APPEND   0x00453780
-#define ADDR_OPERATOR_NEW   0x004BA570
-#define BTT_SIZE            0x528
-#define BTT_BEST_TIME       0x524
-#define BTT_NAME            0x424
-#define SNAP_SIZE           0x28
-#define NO_TIME             9999999
-#define MAX_SNAPSHOTS       5000
+ /* Game constants */
+ #define APP_PTR             0x005341E0
+ #define ADDR_BTT_CTOR       0x00427660
+ #define ADDR_ALIST_APPEND   0x00453780
+ #define ADDR_ALIST_INIT     0x00453210
+ #define ADDR_OPERATOR_NEW   0x004BA570
+ #define BTT_SIZE            0x528
+ #define BTT_BEST_TIME       0x524
+ #define BTT_NAME            0x424
+ #define SNAP_SIZE           0x28
+ #define NO_TIME             9999999
+ #define MAX_SNAPSHOTS       5000
 
-/* App offsets */
-#define APP_90C_RECORDING  0x90C
-#define APP_910_PLAYBACK    0x910
-#define APP_5DC_BALL        0x5DC
-#define APP_5D6_GOAL_FLAG   0x5D6
-#define APP_234_PARTY_MODE  0x234
-#define APP_220_PROFILE     0x220
+ /* App offsets */
+ #define APP_90C_RECORDING  0x90C
+ #define APP_910_PLAYBACK    0x910
+ #define APP_5DC_BALL        0x5DC
+ #define APP_5D6_GOAL_FLAG   0x5D6
+ #define APP_234_PARTY_MODE  0x234
+ #define APP_220_PROFILE     0x220
 
 /* Snapshot struct — mirrors what the game records (10 DWORDs = 0x28 bytes) */
 typedef struct {
@@ -252,10 +259,50 @@ static void save_ghost_for_race(const char *raceName, int time,
     CloseHandle(h);
 }
 
-/* Load ghost and inject into App+0x910 */
+/* ═════════════════════════════════════════════════════════════════
+ * Inline asm wrappers for __thiscall game functions.
+ * MinGW __thiscall function pointers silently fail — must use asm.
+ * ═════════════════════════════════════════════════════════════════ */
+
+/* operator_new is __cdecl — safe to call directly */
 typedef void* (__cdecl *operator_new_fn)(SIZE_T);
-typedef void (__thiscall *btt_ctor_fn)(void *btt);
-typedef void (__thiscall *alist_append_fn)(DWORD *list, void *item);
+static operator_new_fn op_new = (operator_new_fn)ADDR_OPERATOR_NEW;
+
+/* BestTimeTracker_ctor is __thiscall(ECX=btt) — no stack params, 1 reg param */
+static void call_btt_ctor(void *btt) {
+    register DWORD ecx_val asm("ecx") = (DWORD)btt;
+    __asm__ volatile(
+        "call *%0\n"
+        : : "r"((void*)ADDR_BTT_CTOR), "c"(ecx_val)
+        : "eax", "edx", "memory"
+    );
+}
+
+/* AthenaList_Append is __thiscall(ECX=list, stack=item) — 1 stack param */
+static void call_alist_append(DWORD *list, void *item) {
+    register DWORD ecx_val asm("ecx") = (DWORD)list;
+    __asm__ volatile(
+        "push %0\n"
+        "call *%1\n"
+        "add $4, %%esp\n"
+        : : "r"(item), "r"((void*)ADDR_ALIST_APPEND), "c"(ecx_val)
+        : "eax", "edx", "memory"
+    );
+}
+
+/* BestTimeTracker vtable[0] (destructor) is __thiscall(ECX=this, stack=freeFlag) */
+static void call_btt_dtor(DWORD btt, int free_flag) {
+    DWORD vtable = *(DWORD*)btt;
+    DWORD dtor = *(DWORD*)vtable; /* vtable[0] */
+    register DWORD ecx_val asm("ecx") = btt;
+    __asm__ volatile(
+        "push %0\n"
+        "call *%1\n"
+        "add $4, %%esp\n"
+        : : "r"(free_flag), "r"((void*)dtor), "c"(ecx_val)
+        : "eax", "edx", "memory"
+    );
+}
 
 static void inject_saved_ghost(const char *raceName) {
     DWORD app = get_app();
@@ -311,7 +358,6 @@ static void inject_saved_ghost(const char *raceName) {
             continue;
         }
         if (savedSnaps && savedCount < savedFrames) {
-            /* Parse 10 hex DWORDs */
             DWORD d[10];
             if (sscanf(line, "%x %x %x %x %x %x %x %x %x %x",
                 &d[0],&d[1],&d[2],&d[3],&d[4],&d[5],&d[6],&d[7],&d[8],&d[9]) == 10) {
@@ -331,29 +377,32 @@ static void inject_saved_ghost(const char *raceName) {
 
     log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
 
-    /* Create BestTimeTracker for playback */
-    operator_new_fn op_new = (operator_new_fn)ADDR_OPERATOR_NEW;
-    btt_ctor_fn btt_ctor = (btt_ctor_fn)ADDR_BTT_CTOR;
-    alist_append_fn alist_append = (alist_append_fn)ADDR_ALIST_APPEND;
-
+    /* Create BestTimeTracker for playback via operator_new + ctor */
     void *btt = op_new(BTT_SIZE);
-    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc failed"); return; }
-    btt_ctor(btt);
+    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc BTT failed"); return; }
+    log_fmt("BTT allocated at %p", btt);
+
+    call_btt_ctor(btt);
+    log_msg("BTT ctor called");
+
     *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
 
-    /* Copy race name */
+    /* Copy race name into BTT+0x424 */
     char *bttName = (char*)((char*)btt + BTT_NAME);
     strncpy(bttName, raceName, 127);
     bttName[127] = '\0';
 
-    /* Fill with snapshots */
+    /* Fill with snapshots — AthenaList starts at BTT+4 */
     DWORD *listPtr = (DWORD*)((char*)btt + 4);
+    int injected = 0;
     for (int i = 0; i < savedCount; i++) {
         DWORD *snap = (DWORD*)op_new(SNAP_SIZE);
-        if (!snap) continue;
+        if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); continue; }
         memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
-        alist_append(listPtr, snap);
+        call_alist_append(listPtr, snap);
+        injected++;
     }
+    log_fmt("Appended %d/%d snapshots", injected, savedCount);
 
     /* Free old playback buffer if exists */
     DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
@@ -361,16 +410,19 @@ static void inject_saved_ghost(const char *raceName) {
         if (!IsBadReadPtr((void*)existingPlayback, 4)) {
             DWORD vtable = *(DWORD*)existingPlayback;
             if (vtable > 0x400000 && vtable < 0x500000) {
-                void (__thiscall *dtor)(void*, int) =
-                    *(void (__thiscall **)(void*, int))vtable;
-                dtor((void*)existingPlayback, 1);
+                log_fmt("Freeing old playback BTT at 0x%X", existingPlayback);
+                call_btt_dtor(existingPlayback, 1);
             }
         }
     }
 
+    /* Verify the list was actually populated */
+    int listCount = *(int*)((char*)btt + 4);
+    log_fmt("BTT list count after fill: %d", listCount);
+
     *(DWORD*)(app + APP_910_PLAYBACK) = (DWORD)btt;
     free(savedSnaps);
-    log_fmt("Ghost injected: %d snapshots into App+0x910", savedCount);
+    log_fmt("Ghost injected: %d snapshots into App+0x910 (btt=0x%X)", savedCount, (DWORD)btt);
 }
 
 /* ═════════════════════════════════════════════════════════════════
