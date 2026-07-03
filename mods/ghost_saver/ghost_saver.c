@@ -305,38 +305,20 @@ static DWORD vtable_BTT = 0x004D262C;  /* PTR_FUN_004d262c from ctor */
 static DWORD vtable_AthenaList = 0x004D875C;  /* PTR_FUN_004d875c from AthenaList_Init */
 
 static void manually_init_btt(void *btt) {
-    /* BestTimeTracker_ctor:
-     *   *this = &PTR_FUN_004d262c (vtable)
-     *   AthenaList_Init(this+4, 0)
-     *   this[0x149] = 9999999  (BTT+0x524 = best_time)
-     */
-    DWORD *p = (DWORD*)btt;
-    p[0] = vtable_BTT;           /* vtable */
+    /* Zero entire struct first — malloc doesn't zero, and fields like
+     * BTT+0x41C (playback_index) must be 0 or PlaybackSnapshot crashes */
+    memset(btt, 0, BTT_SIZE);
 
-    /* AthenaList_Init(this+4, 0):
-     *   this+0x414 (BTT+0x418) = param (0 = capacity)
-     *   this+0x410 (BTT+0x414) = 0 (list_array_ptr)
-     *   this+0x004 (BTT+0x008) = 0 (list_count)  -- wait, AthenaList starts at BTT+4
-     *   Actually AthenaList_Init operates on (this+1) where this is undefined4*
-     *   So AthenaList starts at BTT+4 (byte offset 4).
-     *   AthenaList layout relative to BTT:
-     *     BTT+0x000: vtable
-     *     BTT+0x004: AthenaList.vtable
-     *     BTT+0x008: AthenaList.list_count
-     *     BTT+0x00C..0x40B: AthenaList internal array (0x100 entries)
-     *     BTT+0x40C: AthenaList.iterator_counter
-     *     BTT+0x410: AthenaList.list_array_ptr
-     *     BTT+0x414: AthenaList.capacity
-     */
+    DWORD *p = (DWORD*)btt;
+    p[0] = vtable_BTT;           /* BTT+0x000: vtable */
+
+    /* AthenaList embedded at BTT+0x004 */
     DWORD *alist = (DWORD*)((char*)btt + 4);
     alist[0] = vtable_AthenaList;   /* BTT+0x004: AthenaList vtable */
-    /* Zero the internal array (0x100 entries = 256 dwords starting at alist+2 = BTT+0x00C) */
-    memset(alist + 2, 0, 0x100 * sizeof(DWORD));  /* BTT+0x00C..0x40B */
-    alist[0x102] = 0;   /* BTT+0x40C: iterator_counter (0x408/4 = 0x102) */
-    alist[0x103] = 0;   /* BTT+0x410: list_array_ptr */
-    alist[0x104] = 0;   /* BTT+0x414: capacity */
+    /* Internal array already zeroed by memset above */
+    /* iterator_counter, list_array_ptr, capacity already 0 from memset */
 
-    /* BestTimeTracker best_time (BTT+0x524 = p[0x149]) */
+    /* best_time (BTT+0x524 = p[0x149]) */
     p[0x149] = NO_TIME;  /* 9999999 = sentinel */
 }
 
@@ -444,15 +426,18 @@ static void inject_saved_ghost(const char *raceName) {
         snapArray[i] = (DWORD)snap;
     }
 
-    /* Write to AthenaList fields:
-     *   BTT+0x004 = AthenaList.vtable (already set by manually_init_btt)
-     *   BTT+0x008 = list_count
-     *   BTT+0x410 = list_array_ptr (the dynamic array)
-     *   BTT+0x414 = capacity (0 = not sorted) */
+    /* Write to AthenaList fields.
+     * AthenaList is embedded at BTT+0x004, so its fields are:
+     *   BTT+0x008 = list_count (AL offset 0x004)
+     *   BTT+0x414 = list_array_ptr (AL offset 0x410)
+     *   BTT+0x418 = capacity (AL offset 0x414)
+     * PlaybackSnapshot reads BTT+0x41C (playback_index) and
+     * dereferences BTT+0x414 (list_array_ptr)[index]. */
     DWORD *alist = (DWORD*)((char*)btt + 4);
     alist[1] = numToStore;              /* BTT+0x008: list_count */
-    *(DWORD**)((char*)btt + 0x410) = snapArray;  /* BTT+0x410: list_array_ptr */
-    alist[0x104] = 0;                   /* BTT+0x414: capacity = 0 */
+    *(DWORD**)((char*)btt + 0x414) = snapArray;  /* BTT+0x414: list_array_ptr (AL offset 0x410) */
+    /* BTT+0x418: capacity = 0 (already zeroed by memset) */
+    /* BTT+0x41C: playback_index = 0 (already zeroed by memset, starts at first frame) */
     log_fmt("Stored %d/%d snapshots (array at 0x%X)", numToStore, savedCount, (DWORD)snapArray);
 
     /* Free old playback buffer if exists */
@@ -468,8 +453,10 @@ static void inject_saved_ghost(const char *raceName) {
     }
 
     /* Verify the list was actually populated */
-    int listCount = *(int*)((char*)btt + 4);
-    log_fmt("BTT list count after fill: %d", listCount);
+    int listCount = *(int*)((char*)btt + 0x008);  /* BTT+0x008 = list_count (AL offset 0x004) */
+    DWORD listArray = *(DWORD*)((char*)btt + 0x414);  /* BTT+0x414 = list_array_ptr */
+    int playIdx = *(int*)((char*)btt + 0x41C);  /* playback_index */
+    log_fmt("BTT list count=%d array=0x%X playback_index=%d", listCount, listArray, playIdx);
 
     *(DWORD*)(app + APP_910_PLAYBACK) = (DWORD)btt;
     free(savedSnaps);
