@@ -123,7 +123,9 @@ static int findRaceIndex(const char* levelName) {
 // Function pointer types
 // ============================================================
 
-typedef void (__fastcall *DispatchCollisionEvents_t)(void* board, int* ball, int* collObj);
+// DispatchCollisionEvents is __thiscall: ECX=board, params on stack (ball, collObj), RET 0x8
+// NOT __fastcall — __fastcall puts ball in EDX which gives us garbage
+typedef void (__thiscall *DispatchCollisionEvents_t)(void* board, int* ball, int* collObj);
 typedef void (__fastcall *App_StartRace_t)(int app);
 
 // ============================================================
@@ -323,7 +325,7 @@ static void loadTargetLevel(int levelIndex) {
 // 6A FF 64 A1 00 00 00 00 = 8 bytes (PUSH -1; MOV EAX, FS:[0])
 static BYTE g_trampoline[16];  // 8 bytes original + 5 bytes JMP + padding
 
-static void __fastcall HookedDispatchCollisionEvents(void* board, int* ball, int* collObj) {
+static void __thiscall HookedDispatchCollisionEvents(void* board, int* ball, int* collObj) {
     // Check collision event name
     if (collObj && collObj[1]) {
         const char* eventName = *(const char**)((char*)collObj[1] + COLL_OBJ_NAME_OFFSET);
