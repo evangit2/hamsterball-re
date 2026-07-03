@@ -1,0 +1,317 @@
+# "Press S to spawn toob saw GLOBALLY"
+
+**CT Entry ID:** 470
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+[ENABLE]
+
+// =====================================================
+// Global Saw Spawner v11 — Dizzy every 1.5s near saw
+// =====================================================
+
+alloc(SawCode, 4096)
+alloc(SpawnToobSaw, 4)
+alloc(saved_board, 4)
+alloc(saw_ptr, 4)
+alloc(our_mesh, 4)
+alloc(path_obj, 4)
+alloc(vertex_arr, 4)
+alloc(pos_x, 4)
+alloc(pos_y, 4)
+alloc(pos_z, 4)
+alloc(saw_radius_sq, 4)
+alloc(dizzy_timer, 4)
+alloc(dizzy_interval, 4)
+alloc(last_board, 4)
+
+registersymbol(SpawnToobSaw)
+
+SpawnToobSaw:
+  dd 0
+saved_board:
+  dd 0
+saw_ptr:
+  dd 0
+our_mesh:
+  dd 0
+path_obj:
+  dd 0
+vertex_arr:
+  dd 0
+pos_x:
+  dd 0
+pos_y:
+  dd 0
+pos_z:
+  dd 0
+saw_radius_sq:
+  dd 4A742400
+dizzy_timer:
+  dd 0
+dizzy_interval:
+  dd 90
+last_board:
+  dd 0
+
+label(original_code)
+label(saw_done)
+label(skip_post)
+label(activate_saw)
+label(check_spawn)
+label(skip_dizzy)
+label(no_dec)
+
+SawCode:
+  mov eax, [esi+14]
+  mov [saved_board], eax
+  test eax, eax
+  jz original_code
+
+  cmp eax, [last_board]
+  je no_reset
+  mov [last_board], eax
+  mov dword [saw_ptr], 0
+  mov dword [dizzy_timer], 0
+
+no_reset:
+  mov ecx, [saw_ptr]
+  test ecx, ecx
+  jz check_spawn
+
+  fld dword [ecx+10DC]
+  fsub dword [esi+164]
+  fmul st(0), st(0)
+
+  fld dword [ecx+10E4]
+  fsub dword [esi+16C]
+  fmul st(0), st(0)
+
+  faddp
+  fld dword [saw_radius_sq]
+  fcomip st(1)
+  fstp st(0)
+  jb check_spawn
+
+  cmp dword [dizzy_timer], 0
+  jg skip_dizzy
+  mov eax, [dizzy_interval]
+  mov [dizzy_timer], eax
+
+  cmp dword [esi+2F0], 0
+  jg skip_dizzy
+  mov ecx, esi
+  call 00403750
+
+skip_dizzy:
+
+check_spawn:
+  cmp dword [dizzy_timer], 0
+  jle no_dec
+  dec dword [dizzy_timer]
+no_dec:
+
+  cmp dword [SpawnToobSaw], 0
+  je original_code
+  mov dword [SpawnToobSaw], 0
+
+  pushad
+
+  mov eax, [saved_board]
+  test eax, eax
+  jz saw_done
+  mov edx, [eax+8AC]
+  test edx, edx
+  jz saw_done
+  mov edx, [eax+878]
+  test edx, edx
+  jz saw_done
+  mov edx, [edx+174]
+  test edx, edx
+  jz saw_done
+
+  mov eax, [esi+164]
+  mov [pos_x], eax
+  mov eax, [esi+168]
+  mov [pos_y], eax
+  mov eax, [esi+16C]
+  mov [pos_z], eax
+
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+
+  push 004D0E24
+  mov ecx, [saved_board]
+  mov ecx, [ecx+878]
+  mov ecx, [ecx+174]
+  push ecx
+  mov ecx, eax
+  call 00461510
+  test eax, eax
+  jz saw_done
+  mov [our_mesh], eax
+
+  push 48
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [path_obj], eax
+
+  push edi
+  mov edi, eax
+  xor eax, eax
+  mov ecx, 12
+  rep stosd
+  pop edi
+
+  push 4
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [vertex_arr], eax
+  mov dword [eax], 0
+
+  mov ecx, [path_obj]
+  mov edx, [vertex_arr]
+  mov [ecx+04], edx
+  lea edx, [edx+4]
+  mov [ecx+08], edx
+
+  push 1118
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz saw_done
+  mov [saw_ptr], eax
+
+  push dword [path_obj]
+  push dword [our_mesh]
+  push dword [pos_z]
+  push dword [pos_y]
+  push dword [pos_x]
+  push dword [saved_board]
+  mov ecx, [saw_ptr]
+  call 0043B780
+
+  sub esp, 68
+  mov ebx, esp
+  mov ecx, ebx
+  call 00457AD0
+
+  push dword [saw_ptr]
+  mov ecx, [saved_board]
+  add ecx, CD4
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+8AC]
+  mov edx, [edx+480]
+  test edx, edx
+  jz skip_post
+
+  push dword [saw_ptr]
+  lea ecx, [edx+1C]
+  call 00453810
+
+  mov ecx, [saw_ptr]
+  mov eax, [saw_ptr]
+  mov eax, [eax]
+  call dword [eax+58]
+
+  push ebx
+  mov ecx, [saw_ptr]
+  mov eax, [saw_ptr]
+  mov eax, [eax]
+  call dword [eax+54]
+
+skip_post:
+  mov ecx, [saw_ptr]
+  mov ecx, [ecx+10D4]
+  test ecx, ecx
+  jz activate_saw
+
+  push ecx
+  mov edx, [saved_board]
+  add edx, 10EC
+  mov ecx, edx
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+8B0]
+  test edx, edx
+  jz activate_saw
+
+  mov ecx, [saw_ptr]
+  mov ecx, [ecx+10D4]
+  push ecx
+  lea ecx, [edx+18]
+  call 00453810
+
+activate_saw:
+  mov ecx, ebx
+  call 00457A40
+  add esp, 68
+
+  push dword [saw_ptr]
+  mov ecx, [saved_board]
+  add ecx, 2578
+  call 00453810
+
+  mov ecx, [saw_ptr]
+  mov byte [ecx+110C], 1
+  mov dword [ecx+10F4], 0
+  mov dword [ecx+10F0], 0
+  mov dword [ecx+10EC], 0
+
+  mov dword [ecx+1100], 0
+  mov dword [ecx+1104], 0
+  mov dword [ecx+1108], 3F800000
+
+  mov dword [our_mesh], 0
+  mov dword [path_obj], 0
+  mov dword [vertex_arr], 0
+
+saw_done:
+  popad
+
+original_code:
+  mov eax, [esi+0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SawCode
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SawCode)
+dealloc(SpawnToobSaw)
+dealloc(saved_board)
+dealloc(saw_ptr)
+dealloc(our_mesh)
+dealloc(path_obj)
+dealloc(vertex_arr)
+dealloc(pos_x)
+dealloc(pos_y)
+dealloc(pos_z)
+dealloc(saw_radius_sq)
+dealloc(dizzy_timer)
+dealloc(dizzy_interval)
+dealloc(last_board)
+unregistersymbol(SpawnToobSaw)
+
+```

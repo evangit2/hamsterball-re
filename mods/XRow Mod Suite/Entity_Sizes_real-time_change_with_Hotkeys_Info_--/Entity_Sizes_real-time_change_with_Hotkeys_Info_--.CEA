@@ -1,0 +1,149 @@
+{
+
+QW for Player 1
+AS for Player 2
+ZX for Player 3
+ER for Player 4
+TY for Badballs
+
+}
+
+
+[ENABLE]
+alloc(newmem, 1000)
+alloc(sizeP1up, 4)
+alloc(sizeP1dn, 4)
+alloc(sizeP2up, 4)
+alloc(sizeP2dn, 4)
+alloc(sizeP3up, 4)
+alloc(sizeP3dn, 4)
+alloc(sizeP4up, 4)
+alloc(sizeP4dn, 4)
+alloc(sizeBadUp, 4)
+alloc(sizeBadDn, 4)
+alloc(SizeStep, 4)
+registersymbol(sizeP1up)
+registersymbol(sizeP1dn)
+registersymbol(sizeP2up)
+registersymbol(sizeP2dn)
+registersymbol(sizeP3up)
+registersymbol(sizeP3dn)
+registersymbol(sizeP4up)
+registersymbol(sizeP4dn)
+registersymbol(sizeBadUp)
+registersymbol(sizeBadDn)
+
+SizeStep:
+  dd (float)2.0   // Size change per press
+
+newmem:
+  mov eax, [esi+0x18]
+
+  cmp eax, 0
+  je check_p1
+  cmp eax, 1
+  je check_p2
+  cmp eax, 2
+  je check_p3
+  cmp eax, 3
+  je check_p4
+  cmp eax, -1
+  je check_bad
+  jmp original
+
+check_p1:
+  cmp dword ptr [sizeP1up], 0
+  jne size_up
+  cmp dword ptr [sizeP1dn], 0
+  jne size_down
+  jmp original
+
+check_p2:
+  cmp dword ptr [sizeP2up], 0
+  jne size_up
+  cmp dword ptr [sizeP2dn], 0
+  jne size_down
+  jmp original
+
+check_p3:
+  cmp dword ptr [sizeP3up], 0
+  jne size_up
+  cmp dword ptr [sizeP3dn], 0
+  jne size_down
+  jmp original
+
+check_p4:
+  cmp dword ptr [sizeP4up], 0
+  jne size_up
+  cmp dword ptr [sizeP4dn], 0
+  jne size_down
+  jmp original
+
+check_bad:
+  cmp dword ptr [sizeBadUp], 0
+  jne size_up
+  cmp dword ptr [sizeBadDn], 0
+  jne size_down
+  jmp original
+
+size_up:
+  // Reset flags for this entity
+  call reset_flags
+  fld dword ptr [esi+0x284]
+  fadd dword ptr [SizeStep]
+  fstp dword ptr [esi+0x284]
+  jmp original
+
+size_down:
+  call reset_flags
+  fld dword ptr [esi+0x284]
+  fsub dword ptr [SizeStep]
+  fstp dword ptr [esi+0x284]
+  jmp original
+
+reset_flags:
+  mov dword ptr [sizeP1up], 0
+  mov dword ptr [sizeP1dn], 0
+  mov dword ptr [sizeP2up], 0
+  mov dword ptr [sizeP2dn], 0
+  mov dword ptr [sizeP3up], 0
+  mov dword ptr [sizeP3dn], 0
+  mov dword ptr [sizeP4up], 0
+  mov dword ptr [sizeP4dn], 0
+  mov dword ptr [sizeBadUp], 0
+  mov dword ptr [sizeBadDn], 0
+  ret
+
+original:
+  mov eax, [esi+0x0c5c]
+  jmp Hamsterball.exe+5E28
+
+"Hamsterball.exe"+5E22:
+  jmp newmem
+  nop
+
+[DISABLE]
+"Hamsterball.exe"+5E22:
+  db 8B 86 5C 0C 00 00
+unregistersymbol(sizeP1up)
+unregistersymbol(sizeP1dn)
+unregistersymbol(sizeP2up)
+unregistersymbol(sizeP2dn)
+unregistersymbol(sizeP3up)
+unregistersymbol(sizeP3dn)
+unregistersymbol(sizeP4up)
+unregistersymbol(sizeP4dn)
+unregistersymbol(sizeBadUp)
+unregistersymbol(sizeBadDn)
+dealloc(newmem)
+dealloc(sizeP1up)
+dealloc(sizeP1dn)
+dealloc(sizeP2up)
+dealloc(sizeP2dn)
+dealloc(sizeP3up)
+dealloc(sizeP3dn)
+dealloc(sizeP4up)
+dealloc(sizeP4dn)
+dealloc(sizeBadUp)
+dealloc(sizeBadDn)
+dealloc(SizeStep)

@@ -1,0 +1,38 @@
+# "Slippery 8balls"
+
+**CT Entry ID:** 335
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+265B:
+  db 90 90 90 90 90 90
+Hamsterball.exe+2669:
+  db 90 90 90 90 90 90
+Hamsterball.exe+2677:
+  db 90 90 90 90 90 90
+Hamsterball.exe+2686:
+  db 90 90 90 90 90 90
+Hamsterball.exe+26B2:
+  db 90 90
+Hamsterball.exe+CF3E8:
+  db 00 00 48 42
+
+[DISABLE]
+Hamsterball.exe+265B:
+  db 0F 85 82 01 00 00
+Hamsterball.exe+2669:
+  db 0F 85 74 01 00 00
+Hamsterball.exe+2677:
+  db 0F 85 66 01 00 00
+Hamsterball.exe+2686:
+  db 0F 8F 57 01 00 00
+Hamsterball.exe+26B2:
+  db 74 36
+Hamsterball.exe+CF3E8:
+  db 00 00 C0 40
+
+```

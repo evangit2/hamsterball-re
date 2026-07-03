@@ -1,0 +1,11 @@
+[ENABLE]
+Hamsterball.exe+1A27B:
+  db 21 DB 03 00
+Hamsterball.exe+1A290:
+  db 2C DB 03 00
+
+[DISABLE]
+Hamsterball.exe+1A27B:
+  db 41 DB 03 00
+Hamsterball.exe+1A290:
+  db 0C DB 03 00

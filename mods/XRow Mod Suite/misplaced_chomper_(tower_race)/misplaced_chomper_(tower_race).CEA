@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CF968:
+db 90 90 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CF968:
+db 43 48 4f 4d 50 45 52 00

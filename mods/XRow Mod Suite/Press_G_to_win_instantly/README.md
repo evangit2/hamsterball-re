@@ -1,0 +1,68 @@
+# "Press G to win instantly"
+
+**CT Entry ID:** 58
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+[ENABLE]
+alloc(newmem, 1000)
+alloc(triggerGoal, 4)
+registersymbol(triggerGoal)
+
+newmem:
+  cmp dword ptr [esi+0x18], 0
+  jne original
+  cmp dword ptr [triggerGoal], 0
+  je original
+
+  mov dword ptr [triggerGoal], 0
+
+  push ecx
+  push edx
+  push eax
+
+  // Get app from scene
+  mov ecx, [esi+0x14]
+  test ecx, ecx
+  jz no_goal
+  mov ecx, [ecx+0x878]
+  test ecx, ecx
+  jz no_goal
+
+  // Set finish flag: app + playerIdx*0xA0 + 0x5D6
+  mov eax, [esi+0x18]
+  lea edx, [eax+eax*4]
+  shl edx, 5
+  mov byte ptr [ecx+edx+0x5D6], 1
+
+  // Also set race finished flag at +0x5FC
+  mov dword ptr [ecx+edx+0x5FC], 1
+
+no_goal:
+  pop eax
+  pop edx
+  pop ecx
+
+original:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp newmem
+  nop
+
+[DISABLE]
+00405E22:
+db 8B 86 5C 0C 00 00
+unregistersymbol(triggerGoal)
+dealloc(newmem)
+dealloc(triggerGoal)
+
+```

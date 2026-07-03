@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CEB6:
+db 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CEB6:
+db 0F 85 B2 01 00 00

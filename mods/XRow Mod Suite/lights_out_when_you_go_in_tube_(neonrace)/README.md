@@ -1,0 +1,20 @@
+# "lights out when you go in tube (neonrace)"
+
+**CT Entry ID:** 34
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+16D78:
+db 90 90 90 90 90 90
+
+ 
+ 
+[DISABLE]
+Hamsterball.exe+16D78:
+db 0F 85 B3 00 00 00
+
+```

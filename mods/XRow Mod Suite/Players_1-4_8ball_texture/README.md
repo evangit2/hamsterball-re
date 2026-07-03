@@ -1,0 +1,65 @@
+# "Players 1-4 8ball texture"
+
+**CT Entry ID:** 459
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+[ENABLE]
+
+alloc(shapeshift8ball_hook, 128)
+alloc(saved_sphere_mesh8ball, 4)
+
+registersymbol(saved_sphere_mesh8ball)
+
+label(shapeshift_skip)
+label(shapeshift_swap)
+
+saved_sphere_mesh8ball:
+  dd 0
+
+shapeshift8ball_hook:
+  mov eax, [esi+10]
+  test eax, eax
+  jz shapeshift_skip
+
+  mov ecx, [saved_sphere_mesh8ball]
+  test ecx, ecx
+  jnz shapeshift_swap
+
+  mov ecx, [eax+244]
+  test ecx, ecx
+  jz shapeshift_skip
+  mov [saved_sphere_mesh8ball], ecx
+
+shapeshift_swap:
+  mov ecx, [eax+268]
+  test ecx, ecx
+  jz shapeshift_skip
+  mov [eax+244], ecx
+
+shapeshift_skip:
+  mov eax, [esi+0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp shapeshift8ball_hook
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+unregistersymbol(saved_sphere_mesh8ball)
+
+dealloc(saved_sphere_mesh8ball)
+dealloc(shapeshift8ball_hook)
+
+```

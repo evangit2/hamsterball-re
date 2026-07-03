@@ -1,0 +1,34 @@
+{ Game   : Hamsterball.exe
+  Version:
+  Date   : 2026-05-28
+  Author : XRow
+
+  Mousetrap Force Modifier
+
+  Edit XZ launch force and Y launch force only
+}
+
+[ENABLE]
+
+// XZ Force
+"Hamsterball.exe"+CF370:
+  dd (float)0.0  // XZ launch force (default 20.0)
+
+// Redirect 12.12 from X to Y (makes you fly upward)
+"Hamsterball.exe"+D109:
+  db 04  // Change [esi+00] to [esi+04]
+
+// Upward Force
+"Hamsterball.exe"+D10A:
+  dd (float)30.0  // Y launch force (default 12.12)
+
+[DISABLE]
+
+"Hamsterball.exe"+CF370:
+  dd (float)20.0
+
+"Hamsterball.exe"+D109:
+  db 00  // Restore [esi+00]
+
+"Hamsterball.exe"+D10A:
+  dd (float)12.12

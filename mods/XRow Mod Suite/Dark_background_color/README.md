@@ -1,0 +1,48 @@
+# "Dark background color"
+
+**CT Entry ID:** 462
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+## Script
+
+```
+[ENABLE]
+
+alloc(neon_dark, 128)
+
+label(skip_dark)
+
+neon_dark:
+  push eax
+
+  mov eax, [esi+10]
+  test eax, eax
+  jz skip_dark
+  mov eax, [eax+174]
+  test eax, eax
+  jz skip_dark
+
+  mov dword ptr [eax+730], 0
+  mov dword ptr [eax+738], FF000000
+  mov byte ptr [eax+734], 0
+
+skip_dark:
+  pop eax
+  mov eax, [esi+0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp neon_dark
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(neon_dark)
+
+```

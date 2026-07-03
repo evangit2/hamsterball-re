@@ -1,0 +1,19 @@
+# "Global dropping sound effect"
+
+**CT Entry ID:** 284
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+CCC4:
+db 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CCC4:
+db 0F 85 7E 00 00 00
+
+```

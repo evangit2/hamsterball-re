@@ -1,0 +1,41 @@
+# "Disable badball on Goal crashing"
+
+**CT Entry ID:** 411
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+## Script
+
+```
+[ENABLE]
+
+alloc(newmem, 1000)
+
+newmem:
+  mov eax, [ebp+0x18]
+  cmp eax, -1
+  je skip_goal
+  lea edx, [eax+eax*4]
+  mov eax, [ebx+0x878]
+  shl edx, 5
+  mov byte ptr [edx+eax+0x5D6], 1
+  jmp 0040CFA0
+
+skip_goal:
+  jmp 0040CFA0
+
+"Hamsterball.exe"+CF64:
+  jmp newmem
+  nop
+  nop
+
+[DISABLE]
+
+"Hamsterball.exe"+CF64:
+  db 8B 45 18 8B 8B 78 08 00 00 8D 04 80 C1 E0 05 03 C1
+
+dealloc(newmem)
+
+```

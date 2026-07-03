@@ -1,0 +1,63 @@
+# "Toob Arena bumper speed"
+
+**CT Entry ID:** 6
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+## Script
+
+```
+{ Game   : Hamsterball.exe
+  Version:
+  Date   : 2026-05-25
+  Author : XRow
+
+  Bumper Speed Modifier - Toob Arena
+}
+
+[ENABLE]
+
+alloc(newmem,$1000)
+alloc(SpeedMult,4)
+
+SpeedMult:
+  dd (float)3.5 // Speed
+
+label(code)
+label(return)
+
+newmem:
+  sub esp,10
+  fld dword ptr [esp+20]
+  fmul dword ptr [SpeedMult]
+  fstp dword ptr [esp+20]
+  fld dword ptr [esp+28]
+  fmul dword ptr [SpeedMult]
+  fstp dword ptr [esp+28]
+  add esp,10
+
+code:
+  mov edx,[esp+10]
+  mov eax,[esp+14]
+  mov ecx,[esp+18]
+  mov [esi],edx
+  mov [esi+04],eax
+  mov [esi+08],ecx
+  jmp return
+
+"Hamsterball.exe"+15166:
+  jmp newmem
+  nop
+return:
+
+[DISABLE]
+
+"Hamsterball.exe"+15166:
+  db 8B 54 24 10 8B 44 24 14 8B 4C 24 18 89 16 89 46 04 89 4E 08
+
+dealloc(newmem)
+dealloc(SpeedMult)
+
+```

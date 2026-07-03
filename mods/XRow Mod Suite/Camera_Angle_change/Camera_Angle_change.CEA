@@ -1,0 +1,7 @@
+[ENABLE]
+Hamsterball.exe+1A270:
+  db C4 29
+
+[DISABLE]
+Hamsterball.exe+1A270:
+  db BC 29

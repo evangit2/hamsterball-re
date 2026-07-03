@@ -1,0 +1,30 @@
+# "remove neon bridges (neon race)"
+
+**CT Entry ID:** 183
+
+**Script Type:** Simple byte patches
+
+## Script
+
+```
+[ENABLE]
+Hamsterball.exe+D00E8:
+db 90 90 90 90 90
+Hamsterball.exe+D00E0:
+db 90 90 90 90 90
+Hamsterball.exe+D00D8:
+db 90 90 90 90 90
+Hamsterball.exe+D00D0:
+db 90 90 90 90 90
+
+[DISABLE]
+Hamsterball.exe+D00E8:
+db 44 46 4C 4F 4F
+Hamsterball.exe+D00E0:
+db 44 46 4C 4F 4F
+Hamsterball.exe+D00D8:
+db 44 46 4C 4F 4F
+Hamsterball.exe+D00D0:
+db 44 46 4C 4F 4F
+
+```

@@ -1,0 +1,32 @@
+[ENABLE]
+
+aobscanmodule(INJECT,Hamsterball.exe,FF 82 B4 47 00 00) // should be unique
+alloc(newmem,$1000)
+
+label(code)
+label(return)
+
+newmem:
+
+code:
+  add [edx+000047B4],#10 // Points that you get in the Arena every enemy falls
+  jmp return
+
+  {
+  Note: Restart the game or re-exit the arena after changing the value.
+  It might crash if you don't, for some reason...?
+  }
+
+INJECT:
+  jmp newmem
+  nop
+return:
+registersymbol(INJECT)
+
+[DISABLE]
+
+INJECT:
+  db FF 82 B4 47 00 00
+
+unregistersymbol(INJECT)
+dealloc(newmem)

@@ -1,0 +1,141 @@
+# "Press S to spawn BIG 8ball"
+
+**CT Entry ID:** 366
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+[ENABLE]
+alloc(newmem, 1000)
+alloc(spawnBig, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(ballCount, 4)
+alloc(spawnNow, 4)
+registersymbol(spawnBig)
+
+newmem:
+  cmp dword ptr [esi+0x18], 0
+  jne @f
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+@@:
+  cmp dword ptr [spawnBig], 0
+  je original
+  cmp dword ptr [esi+0x18], 0
+  jne original
+
+  mov dword ptr [spawnBig], 0
+  mov dword ptr [spawnNow], 1
+
+  push ecx
+  push edx
+  push ebx
+
+  mov ecx, [esi+0x14]
+  mov edx, [ecx+0x29d8]
+  mov [ballCount], edx
+
+  mov ecx, [esi+0x14]
+  call 0040BCA0
+
+  mov ecx, [esi+0x14]
+  mov edx, [ecx+0x29d8]
+  cmp edx, [ballCount]
+  jle no_new
+
+  mov ebx, [ecx+0x2DE0]
+  test ebx, ebx
+  jz no_new
+  mov ebx, [ebx+edx*4-4]
+  test ebx, ebx
+  jz no_new
+
+  cmp dword ptr [ebx+0x18], -1
+  jne no_new
+
+  mov eax, [playerX]
+  mov [ebx+0x164], eax
+  mov eax, [playerY]
+  mov [ebx+0x168], eax
+  mov eax, [playerZ]
+  mov [ebx+0x16C], eax
+  mov dword ptr [ebx+0x170], 0
+  mov dword ptr [ebx+0x174], 0
+  mov dword ptr [ebx+0x178], 0
+
+  // Big radius = 55.0
+  mov dword ptr [ebx+0x284], 0x425C0000
+
+  // Force chase behavior
+  mov dword ptr [ebx+0xC6C], 0x49742400
+  mov dword ptr [ebx+0xC70], 0x49742400
+  mov dword ptr [ebx+0xC7C], 0
+
+no_new:
+  mov dword ptr [spawnNow], 0
+  pop ebx
+  pop edx
+  pop ecx
+
+original:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+alloc(spawnHook, 1000)
+spawnHook:
+  cmp dword ptr [spawnNow], 0
+  je normal_check
+  cmp dword ptr [spawnNow], 2
+  je stop_spawn
+  inc dword ptr [spawnNow]
+  jmp 0040BD2D
+
+stop_spawn:
+  jmp 0040BEFE
+
+normal_check:
+  push 0x7
+  push 004CF74C
+  push dword ptr [edi]
+  call 004C7677
+  add esp, 0xC
+  test eax, eax
+  jnz 0040BEFE
+  jmp 0040BD2D
+
+0040BD27:
+  jmp spawnHook
+  nop
+
+00405E22:
+  jmp newmem
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+0040BD27:
+  db 0F 85 D1 01 00 00
+unregistersymbol(spawnBig)
+dealloc(newmem)
+dealloc(spawnHook)
+dealloc(spawnBig)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(ballCount)
+dealloc(spawnNow)
+
+```

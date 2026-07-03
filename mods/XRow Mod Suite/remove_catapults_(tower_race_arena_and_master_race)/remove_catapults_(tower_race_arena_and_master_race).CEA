@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CF99C:
+db 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CF99C:
+db 43 41 54 41 50

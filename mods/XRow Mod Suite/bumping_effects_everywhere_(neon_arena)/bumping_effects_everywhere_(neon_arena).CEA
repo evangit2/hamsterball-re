@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+174BC:
+db 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+174BC:
+db 0F 85 38 01 00 00

@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CCC4:
+db 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CCC4:
+db 0F 85 7E 00 00 00

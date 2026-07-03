@@ -1,0 +1,148 @@
+# "Flying Hamsterball with Focused Cam                          [] Info -->"
+
+**CT Entry ID:** 481
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+[ENABLE]
+
+// =====================================================
+// Flying Mod v9 — Simple + Focus Camera
+{
+
+Controls:
+
+Q W = X movements
+A S = Y movements
+Z X = Z movements
+
+}
+// =====================================================
+
+alloc(FlyCode, 256)
+alloc(FlyX, 4)
+alloc(FlyY, 4)
+alloc(FlyZ, 4)
+
+registersymbol(FlyX)
+registersymbol(FlyY)
+registersymbol(FlyZ)
+
+FlyX:
+  dd 0
+FlyY:
+  dd 0
+FlyZ:
+  dd 0
+
+label(original_code)
+label(skip_x)
+label(skip_y)
+label(skip_z)
+
+FlyCode:
+  cmp dword [esi+18], 0
+  jne original_code
+
+  cmp dword [FlyX], 0
+  je skip_x
+  fild dword [FlyX]
+  fadd dword [esi+164]
+  fstp dword [esi+164]
+  mov dword [FlyX], 0
+skip_x:
+
+  cmp dword [FlyY], 0
+  je skip_y
+  fild dword [FlyY]
+  fadd dword [esi+168]
+  fstp dword [esi+168]
+  mov dword [FlyY], 0
+skip_y:
+
+  cmp dword [FlyZ], 0
+  je skip_z
+  fild dword [FlyZ]
+  fadd dword [esi+16C]
+  fstp dword [esi+16C]
+  mov dword [FlyZ], 0
+skip_z:
+
+  push eax
+  mov eax, [esi+1A4]
+  test eax, eax
+  jz vel_done
+  mov dword [eax+CA8], 0
+vel_done:
+  pop eax
+
+  mov eax, [esi+0c5c]
+  jmp 00405E28
+
+original_code:
+  mov eax, [esi+0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp FlyCode
+  nop
+
+Hamsterball.exe+C767:
+  db 90 90 90 90 90 90 90
+Hamsterball.exe+F22D:
+  db 90 90 90 90 90 90 90
+Hamsterball.exe+75C9:
+  db 90 90 90 90 90 90
+Hamsterball.exe+C761:
+  db 90 90 90 90 90 90
+Hamsterball.exe+F226:
+  db 90 90 90 90 90 90 90
+Hamsterball.exe+8D70:
+  db C3 90 90
+Hamsterball.exe+9050:
+  db C3 90 90
+Hamsterball.exe+9480:
+  db C3 90 90
+Hamsterball.exe+1A1F6:
+  db 90 90 90 90
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+Hamsterball.exe+C767:
+  db C6 85 E9 02 00 00 01
+Hamsterball.exe+F22D:
+  db C6 86 E9 02 00 00 01
+Hamsterball.exe+75C9:
+  db FF 86 EC 02 00 00
+Hamsterball.exe+C761:
+  db 88 85 68 07 00 00
+Hamsterball.exe+F226:
+  db C6 86 68 07 00 00 00
+Hamsterball.exe+8D70:
+  db 6A FF 64 A1
+Hamsterball.exe+9050:
+  db 6A FF 64 A1
+Hamsterball.exe+9480:
+  db 6A FF 64 A1
+Hamsterball.exe+1A1F6:
+  db 85 C0 74 5A
+
+dealloc(FlyCode)
+dealloc(FlyX)
+dealloc(FlyY)
+dealloc(FlyZ)
+unregistersymbol(FlyX)
+unregistersymbol(FlyY)
+unregistersymbol(FlyZ)
+
+```

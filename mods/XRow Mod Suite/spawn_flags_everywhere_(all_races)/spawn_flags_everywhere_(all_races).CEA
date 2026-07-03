@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+C18A:
+db 90 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+C18A:
+db 0F 85 93 00 00 00

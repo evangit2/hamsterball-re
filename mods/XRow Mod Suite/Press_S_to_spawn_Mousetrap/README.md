@@ -1,0 +1,135 @@
+# "Press S to spawn Mousetrap"
+
+**CT Entry ID:** 383
+
+**Script Type:** Code cave / complex
+
+**Uses alloc:** Yes
+
+**Uses registersymbol:** Yes
+
+## Script
+
+```
+[ENABLE]
+alloc(newmem, 1000)
+alloc(spawnTrap, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(trapCount, 4)
+alloc(spawnNow, 4)
+registersymbol(spawnTrap)
+
+newmem:
+  cmp dword ptr [esi+0x18], 0
+  jne @f
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+@@:
+  cmp dword ptr [spawnTrap], 0
+  je original
+  cmp dword ptr [esi+0x18], 0
+  jne original
+
+  mov dword ptr [spawnTrap], 0
+  mov dword ptr [spawnNow], 1
+
+  push ecx
+  push edx
+  push ebx
+
+  mov ecx, [esi+0x14]
+  mov edx, [ecx+0xCD8]
+  mov [trapCount], edx
+
+  mov ecx, [esi+0x14]
+  call 0040BF50
+
+  mov ecx, [esi+0x14]
+  mov edx, [ecx+0xCD8]
+  cmp edx, [trapCount]
+  jle no_new
+
+  mov ebx, ecx
+  add ebx, 0xCD4
+  mov ebx, [ebx+0x40C]
+  test ebx, ebx
+  jz no_new
+  mov ebx, [ebx+edx*4-4]
+  test ebx, ebx
+  jz no_new
+
+  mov eax, [playerX]
+  mov [ebx+0x10DC], eax
+  mov eax, [playerY]
+  mov [ebx+0x10E0], eax
+  mov eax, [playerZ]
+  mov [ebx+0x10E4], eax
+
+  // Call vtable[0x2C] to update visual position
+  push ecx
+  mov ecx, ebx
+  mov eax, [ebx]
+  call dword ptr [eax+0x2C]
+  pop ecx
+
+no_new:
+  mov dword ptr [spawnNow], 0
+  pop ebx
+  pop edx
+  pop ecx
+
+original:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+alloc(spawnHook, 1000)
+spawnHook:
+  cmp dword ptr [spawnNow], 0
+  je normal_check
+  cmp dword ptr [spawnNow], 2
+  je stop_spawn
+  inc dword ptr [spawnNow]
+  jmp 0040BFD8
+
+stop_spawn:
+  jmp 0040C09B
+
+normal_check:
+  push 004CF754
+  push dword ptr [ebx]
+  call 004C760E
+  add esp, 0x8
+  test eax, eax
+  jnz 0040C09B
+  jmp 0040BFD8
+
+0040BFD2:
+  jmp spawnHook
+  nop
+
+00405E22:
+  jmp newmem
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+0040BFD2:
+  db 0F 85 C3 00 00 00
+unregistersymbol(spawnTrap)
+dealloc(newmem)
+dealloc(spawnHook)
+dealloc(spawnTrap)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(trapCount)
+dealloc(spawnNow)
+
+```

@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CFE40:
+db 90 90 90 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CFE40:
+db 54 49 4D 45 42

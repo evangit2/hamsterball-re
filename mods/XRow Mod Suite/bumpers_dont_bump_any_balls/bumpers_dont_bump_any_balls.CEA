@@ -1,0 +1,8 @@
+[ENABLE]
+Hamsterball.exe+CFD36:
+db 90 90
+
+
+[DISABLE]
+Hamsterball.exe+CFD36:
+db 42 55
