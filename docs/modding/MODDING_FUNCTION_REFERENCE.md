@@ -828,7 +828,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x3204` | AthenaList | ball_list_2 | Player 2 balls |
 | `+0x3208` | int | ball_list_2_count | P2 ball count |
 | `+0x3610` | Ball** | ball_list_2_array | P2 Ball pointer array |
-| `+0x361C` | SceneObject* | waypoint_arrow | Next checkpoint arrow |
+| `+0x361C` | Ball* | ghost_ball_ptr | Time Trial ghost ball (see TIME_TRIAL_GHOST_SYSTEM.md) |
 | `+0x3620` | int | frame_counter | Total frames |
 | `+0x362C` | AthenaList | player_list | Player viewport list |
 | `+0x3630` | int | player_count | 0=none, 1=SP, 2=split |

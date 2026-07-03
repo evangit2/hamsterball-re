@@ -693,6 +693,9 @@ Offset | Field | Description
 |---------|------|-------|-------------|
 | 0x004531e0 | Vec3_Init | 13 | Set Vec3 vtable + zero position + w=255.0 |
 | 0x00453250 | Vec3List_Free | 283 | Free Vec3List + member data at +0x103 |
+| 0x00453210 | AthenaList_Init | 2 | Initialize AthenaList: set vtable, zero 256 entries, reset count. Used by BestTimeTracker_ctor |
+| 0x004532b0 | AthenaList_GetIterator | 200+ | Return next iterator index (wraps 1-255) for safe reentrant iteration |
+| 0x00453280 | AthenaList_Clear | 10+ | Free dynamic array + reset count. Does NOT free individual items |
 | 0x004536a0 | AthenaList_GetSize | 60 | Return list count at +4 |
 | 0x00453640 | AthenaList_FindByValue | - | Linear search for value, returns index or -1 |
 | 0x00443990 | AthenaString_Clear | 14 | Free string buffer, reset to 15-char inline capacity |
@@ -1025,7 +1028,7 @@ Offset | Field | Description
 
 | Address | Name | Xrefs | Description |
 |---------|------|-------|-------------|
-| 0x428c50 | App_StartPracticeRace | 3 | Start practice/tournament race: calls App_StartRace, sets up PlayerProfile, calls Tournament_AdvanceRace |
+| 0x428c50 | App_StartPracticeRace | 3 | Start practice/tournament race: calls App_StartRace, sets up PlayerProfile, calls Tournament_AdvanceRace. Manages BestTimeTracker recording/playback buffers (App+0x90C/App+0x910) for Time Trial ghost system |
 | 0x434580 | Sound_InitChannels | 3 | Allocate sound channels for object, get next sample, play 3D positioned sound, set timer 0x140 |
 | 0x43b6f0 | Rotator_AddBall | 3 | Register ball on rotator tracking list (8-byte entry [ball_ptr, tick=10]). Resets tick to 10 if ball already tracked. Formerly misnamed ScoreObject_SetScore. Called from N:ONROTATOR, N:SPINNY, N:SWIRL. |
 | 0x43e600 | Catapult_Update | 4 | Per-frame update: decrements tick counters, applies rotation matrix to tracked balls' position (+0x164/+0x168/+0x16C) and velocity (+0xCA4/+0xCA8/+0xCAC). Frees entries when counter reaches 0. Shared by catapult launch and rotator/gear systems. |
@@ -1969,5 +1972,19 @@ Offset | Field | Description
 | 0x00420DA0 | Board_Master_Update | Custom Update for Master Race (L14) ONLY — all other levels use default Scene_Update (0x419C00). Handles: Scene_Update + vtable calls, random sparkle particle spawn (1/11, NOT a nag screen — Ghidra mislabeled the particle ctor as "RegisterDialog_Render"), ball-vs-mechanical-object collision (distance check → velocity normalize + 3D sound + 3 trail particles), falling ball gravity + respawn. Confirmed unique via binary search: 0x420DA0 appears exactly once in the binary (vtable 0x4D12B4). |
 | 0x00435B00 | CollisionLevel_PlayBreakSound | Plays 3D positional "break" sound at collision level position. Chains through parent→sound_mgr→sample. Sets 1.0f cooldown at +0x10E4. Called when breakable objects shatter. |
 | 0x004B3878 | Audio_DecodeOutputBuffer | MO3 audio codec: decodes compressed frame to PCM output buffer. Manages stream state (source ptr, frame size, consumed count), calls codec vtable for decode, output converter for format transform, post-processor for remaining samples. Accumulates decoded count. |
+
+## Time Trial Ghost System (Session 2026-07-03)
+
+See [docs/agent-knowledge/TIME_TRIAL_GHOST_SYSTEM.md](../agent-knowledge/TIME_TRIAL_GHOST_SYSTEM.md) for full analysis.
+
+| Address | Name | Xrefs | Description |
+|---------|------|-------|-------------|
+| 0x00427660 | BestTimeTracker_ctor | 1 | Construct 0x528-byte BestTimeTracker: init AthenaList, set best_time=9999999. Called from App_StartPracticeRace |
+| 0x00427760 | BestTimeTracker_dtor | 1 | Free all BallSnapshot entries in AthenaList, then free list array. Calls Vec3List_Free |
+| 0x00427810 | BestTimeTracker_RecordSnapshot | 1 | Allocate 0x28-byte BallSnapshot from ball state (pos/vel/rot/radius), append to AthenaList. Called every frame from Scene_UpdateBallsAndState |
+| 0x00427690 | BestTimeTracker_PlaybackSnapshot | 1 | Read next BallSnapshot from list, copy onto ghost ball. Called every render frame from Level_UpdateAndRender |
+| 0x0041B540 | Scene_UpdateBallsAndState | 3 | Per-frame: update all balls, then record snapshot (App+0x90C) and advance playback index (App+0x910) in Time Trial mode |
+| 0x00440840 | BounceBall_Update | 1 | Catapult/ball-launcher update — NOT the ghost system. References "BallPath" mesh string and "FOLLOWBALLSPOT" hash key for level mechanics |
+| 0x0043EBC0 | FollowBall_Ctor | 1 | Construct FollowBall (0xC68 bytes) for predefined path following — NOT the ghost ball. Used by BounceBall_Update for catapult-launched balls |
 | 0x0046C290 | App_OnMouseDown | Window message handler for mouse clicks. Calls SetCapture, sets button flags (L/R/M at +0x1C8/9/A), stores mouse X/Y, delegates to mouse interceptor if set (+0x1B0) or hit-tests UIWidget tree and dispatches click to widget vtable+0x14. |
 | 0x004912E4 | ComputeScanlineZBuffer | D3DX8 software rasterizer: pre-computes per-pixel Z-buffer for bilinear texture filtering. Allocates width×16 bytes, computes V coordinate + fractional weight + adjacent texel V for each scanline pixel. Clamp/wrap mode based on param_1. Used by D3DX_TransformTex_Bilinear and DDSurface_Blt3PointWBuffer. |

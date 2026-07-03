@@ -43,7 +43,7 @@ transparent overlays. Ball_Update also calls into rendering for score popups.
 +0x3F18  water_ripple_system (WaterRipple renderer)
 +0x3A44  is_skydome_enabled (bool: false=level mesh bg, true=sky dome)
 +0x3AFC  dynamic_object (vtable[8] callback after ripples)
-+0x361C  waypoint_display_obj (arrow/marker for next checkpoint)
++0x361C  ghost_ball_ptr (Time Trial ghost ball — NOT a waypoint arrow. See TIME_TRIAL_GHOST_SYSTEM.md)
 +0x070C  alpha_blend_state (0=opaque pass, 1=alpha pass)
 +0x07C8  render_pass_counter (incremented each state change)
 ```
@@ -57,7 +57,7 @@ app+0x234  = race_paused (bool)
 app+0x237  = is_demo_version (bool)
 app+0x23C  = tournament_active (int, non-zero = tournament)
 app+0x850   = player_count (updated from ball list size)
-app+0x910   = waypoint_list_ptr
+app+0x910   = best_time_playback_ptr (BestTimeTracker* for ghost playback. See TIME_TRIAL_GHOST_SYSTEM.md)
 ```
 
 ## Rendering Pipeline (per frame)

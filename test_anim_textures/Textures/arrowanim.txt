@@ -1,0 +1,2 @@
+framerate = 0.5
+looptype = 1
