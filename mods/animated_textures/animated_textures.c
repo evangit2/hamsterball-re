@@ -1,17 +1,18 @@
 /*
  * animated_textures — Cycle between numbered texture variants at a custom framerate.
  *
- * The user places .txt files in the Textures/ folder. Each .txt filename (without
- * extension) becomes the animation prefix. The mod scans for textures named
- * "prefix_01", "prefix_02", etc., loads any that aren't already cached, and
- * cycles between them when the game binds any frame from the sequence.
+ * Scans Textures/ for .txt config files containing "framerate". Each config's
+ * base name (filename without .txt) defines an animation prefix. The mod then
+ * scans the Graphics texture cache for textures named baseNN.png (e.g.
+ * arrowanim01.png), loads additional numbered frames, and swaps the D3D
+ * texture pointer at runtime.
  *
- * Config file format (e.g. Textures/exampleanimtex.txt):
- *   framerate = 1     (frames to advance per tick; 0.5 = every 2 ticks)
- *   looptype = 1      (0=play once, 1=loop forever, 3=ping-pong)
+ * Config format (e.g. Textures/arrowanim.txt):
+ *   framerate = 0.5    (seconds between frame swaps)
+ *   looptype = 1       (0=play once, 1=loop, 2=ping-pong)
  *
- * Texture naming: prefix_NN.ext (e.g. exampleanimtex_01.png, exampleanimtex_02.bmp)
- * The number after the last underscore determines the frame order.
+ * Texture naming: baseNN.png (e.g. arrowanim01.png, arrowanim02.png)
+ * NO underscore between base name and number.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -19,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 /* ── BASS proxy exports (forward to bass_real.dll) ─────────────────── */
 
@@ -102,379 +104,295 @@ static void init_bass_proxy(void) {
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
-#define GRAPHICS_BEGIN_FRAME  0x00453B50
-#define OFF_D3D_DEVICE        0x154
-#define GFX_TEX_COUNT         0x2E8
-#define GFX_TEX_ARRAY         0x6F0
-#define TEX_OBJ_D3D           0x04
-#define TEX_OBJ_NAME          0x08
+#define APP_PTR           0x005341E0
+#define OFF_APP_GRAPHICS  0x174
+#define GFX_TEX_COUNT     0x2E8
+#define GFX_TEX_ARRAY     0x6F0
+#define TEX_OBJ_D3D       0x04
+#define TEX_OBJ_NAME      0x08
 
-#define VTBL_SET_TEXTURE      61
-
-#define MAX_ANIMATIONS        16
-#define MAX_FRAMES            64
-#define MAX_TEX_LOOKUP        1024
+#define MAX_ANIMATIONS  16
+#define MAX_FRAMES      32
 
 /* LoadTexture: __thiscall(void* gfx, char* filename, char search_cache)
- * MinGW C lacks __thiscall, so use __fastcall with a dummy EDX param.
- * ECX=gfx, EDX=unused, stack=[filename, search_cache] — identical layout. */
+ * MinGW C lacks __thiscall, so use __fastcall with a dummy EDX param. */
 typedef void* (__fastcall *LoadTexture_t)(void* gfx, void* dummy, const char* name, int search_cache);
 static LoadTexture_t game_LoadTexture = (LoadTexture_t)0x00455C50;
 
 /* ── Data structures ───────────────────────────────────────────────── */
 
 typedef struct {
-    char prefix[64];
+    DWORD d3dTexObjAddr;
+    DWORD originalD3DTex;
+    DWORD frameTextures[MAX_FRAMES];
+    int frameCount;
     float framerate;
     int looptype;
-    void* frames[MAX_FRAMES];
-    int frame_count;
-    int current_frame;
-    float accumulator;
+    int currentFrame;
     int direction;
-    int built;
-} AnimSeq;
+    double lastSwapTime;
+    char baseName[64];
+} AnimTexture;
 
-typedef struct {
-    void* d3d_tex;
-    int anim_idx;
-} TexLookup;
+static AnimTexture g_anims[MAX_ANIMATIONS];
+static int g_animCount = 0;
+static int g_running = 1;
+static char g_gameDir[MAX_PATH] = "";
 
-static AnimSeq g_anims[MAX_ANIMATIONS];
-static int g_anim_count = 0;
-static TexLookup g_tex_lookup[MAX_TEX_LOOKUP];
-static int g_lookup_count = 0;
-static int g_last_tex_count = -1;
-static char g_game_dir[MAX_PATH] = "";
-
-/* ── D3D8 vtable hook ──────────────────────────────────────────────── */
-
-typedef int (__stdcall *SetTexture_t)(void*, DWORD, void*);
-static SetTexture_t g_orig_SetTexture = NULL;
-static int g_vtable_hooked = 0;
-
-static int __stdcall hook_SetTexture(void* device, DWORD stage, void* tex) {
-    if (tex) {
-        int i;
-        for (i = 0; i < g_lookup_count; i++) {
-            if (g_tex_lookup[i].d3d_tex == tex) {
-                AnimSeq* a = &g_anims[g_tex_lookup[i].anim_idx];
-                if (a->frame_count > 0 && a->current_frame >= 0 && a->current_frame < a->frame_count)
-                    if (a->frames[a->current_frame])
-                        tex = a->frames[a->current_frame];
-                break;
-            }
-        }
-    }
-    return g_orig_SetTexture(device, stage, tex);
+static double getTime(void) {
+    LARGE_INTEGER freq, count;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&count);
+    return (double)count.QuadPart / (double)freq.QuadPart;
 }
 
-static void hook_d3d_vtable(int* device) {
-    if (!device || IsBadReadPtr(device, 4)) return;
-    int* vtable = *(int**)device;
-    if (!vtable || IsBadReadPtr(vtable, (VTBL_SET_TEXTURE + 1) * 4)) return;
-
-    g_orig_SetTexture = (SetTexture_t)vtable[VTBL_SET_TEXTURE];
-    if (!g_orig_SetTexture) return;
-
-    DWORD old_prot;
-    if (VirtualProtect(&vtable[VTBL_SET_TEXTURE], 4, PAGE_READWRITE, &old_prot)) {
-        vtable[VTBL_SET_TEXTURE] = (int)&hook_SetTexture;
-        VirtualProtect(&vtable[VTBL_SET_TEXTURE], 4, old_prot, &old_prot);
-    }
-    g_vtable_hooked = 1;
-}
-
-/* ── Config loading ────────────────────────────────────────────────── */
-
-static void get_game_dir(void) {
+static void getGameDir(void) {
     HMODULE hSelf = NULL;
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
                           | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                          (LPCSTR)&get_game_dir, &hSelf) && hSelf) {
-        GetModuleFileNameA(hSelf, g_game_dir, MAX_PATH);
-        char* slash = strrchr(g_game_dir, '\\');
+                          (LPCSTR)&getGameDir, &hSelf) && hSelf) {
+        GetModuleFileNameA(hSelf, g_gameDir, MAX_PATH);
+        char* slash = strrchr(g_gameDir, '\\');
         if (slash) { slash[1] = '\0'; return; }
     }
-    GetCurrentDirectoryA(MAX_PATH, g_game_dir);
-    size_t len = strlen(g_game_dir);
-    if (len > 0 && g_game_dir[len - 1] != '\\') strcat(g_game_dir, "\\");
+    GetCurrentDirectoryA(MAX_PATH, g_gameDir);
+    size_t len = strlen(g_gameDir);
+    if (len > 0 && g_gameDir[len - 1] != '\\') strcat(g_gameDir, "\\");
 }
 
-static void parse_anim_config(const char* txt_path, const char* anim_name) {
-    if (g_anim_count >= MAX_ANIMATIONS) return;
-    AnimSeq* a = &g_anims[g_anim_count];
-    memset(a, 0, sizeof(AnimSeq));
-    strncpy(a->prefix, anim_name, 63);
-    a->prefix[63] = '\0';
-    a->framerate = 1.0f;
-    a->looptype = 1;
-    a->direction = 1;
+/* Extract base name and frame number from "arrowanim01.png"
+ * Returns frame number (1+), or 0 if not a frame name */
+static int parseFrameName(const char* filename, char* outBase, int baseMaxLen) {
+    const char* dot = strrchr(filename, '.');
+    if (!dot || dot == filename) return 0;
+    int nameLen = (int)(dot - filename);
+    if (nameLen < 3) return 0;
+    int digitStart = nameLen - 1;
+    while (digitStart >= 0 && isdigit((unsigned char)filename[digitStart])) digitStart--;
+    digitStart++;
+    int digitCount = nameLen - digitStart;
+    if (digitCount < 1 || digitCount > 4) return 0;
+    int frameNum = atoi(filename + digitStart);
+    if (frameNum < 1) return 0;
+    int baseLen = digitStart;
+    if (baseLen == 0 || baseLen >= baseMaxLen) return 0;
+    strncpy(outBase, filename, baseLen);
+    outBase[baseLen] = 0;
+    return frameNum;
+}
 
+static void loadConfig(const char* baseName, float* outFramerate, int* outLooptype) {
+    *outFramerate = 0.5f;
+    *outLooptype = 1;
+    char path[MAX_PATH];
+    snprintf(path, MAX_PATH, "%sTextures\\%s.txt", g_gameDir, baseName);
     FILE* f = NULL;
-    if (fopen_s(&f, txt_path, "r") != 0 || !f) {
-        g_anim_count++;
-        return;
-    }
+    if (fopen_s(&f, path, "r") != 0 || !f) return;
     char line[256];
     while (fgets(line, sizeof(line), f)) {
-        char* p = line;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
-        char* eq = strchr(p, '=');
-        if (!eq) continue;
-        *eq = '\0';
-        char* key = p;
-        char* val = eq + 1;
-        while (*val == ' ' || *val == '\t') val++;
-        char* k_end = key + strlen(key) - 1;
-        while (k_end > key && (*k_end == ' ' || *k_end == '\t' || *k_end == '\n' || *k_end == '\r'))
-            *k_end-- = '\0';
-        if (_stricmp(key, "framerate") == 0)
-            a->framerate = (float)atof(val);
-        else if (_stricmp(key, "looptype") == 0)
-            a->looptype = atoi(val);
+        char key[128], val[128];
+        if (sscanf(line, "%127[^=]=%127s", key, val) == 2) {
+            char* k = key;
+            while (*k == ' ' || *k == '\t') k++;
+            char* end = k + strlen(k) - 1;
+            while (end > k && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) *end-- = 0;
+            if (_stricmp(k, "framerate") == 0) *outFramerate = (float)atof(val);
+            else if (_stricmp(k, "looptype") == 0) *outLooptype = atoi(val);
+        }
     }
     fclose(f);
-    if (a->framerate < 0.0f) a->framerate = 0.0f;
-    if (a->looptype != 0 && a->looptype != 1 && a->looptype != 3) a->looptype = 1;
-    g_anim_count++;
 }
 
-static void load_configs(void) {
-    g_anim_count = 0;
-    char pattern[MAX_PATH];
-    snprintf(pattern, MAX_PATH, "%sTextures\\*.txt", g_game_dir);
+static int countFrames(const char* baseName) {
+    char searchPath[MAX_PATH];
+    snprintf(searchPath, MAX_PATH, "%sTextures\\%s*.png", g_gameDir, baseName);
     WIN32_FIND_DATAA fd;
-    HANDLE hFind = FindFirstFileA(pattern, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
+    HANDLE hFind = FindFirstFileA(searchPath, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return 0;
+    int validCount = 0;
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        char name[64];
-        strncpy(name, fd.cFileName, 63);
-        name[63] = '\0';
-        char* dot = strrchr(name, '.');
-        if (dot) *dot = '\0';
-        char full_path[MAX_PATH];
-        snprintf(full_path, MAX_PATH, "%sTextures\\%s", g_game_dir, fd.cFileName);
-        parse_anim_config(full_path, name);
+        char dummyBase[64];
+        if (parseFrameName(fd.cFileName, dummyBase, 64) > 0) {
+            if (_stricmp(dummyBase, baseName) == 0) validCount++;
+        }
     } while (FindNextFileA(hFind, &fd));
     FindClose(hFind);
+    return validCount;
 }
 
-/* ── Animation rebuilding (find + load frames, build lookup) ────────── */
+static void trySetupAnimations(void) {
+    DWORD appPtr = *(DWORD*)APP_PTR;
+    if (!appPtr || appPtr < 0x10000) return;
+    if (IsBadReadPtr((void*)appPtr, 4)) return;
+    if (IsBadReadPtr((void*)(appPtr + OFF_APP_GRAPHICS), 4)) return;
+    DWORD graphics = *(DWORD*)(appPtr + OFF_APP_GRAPHICS);
+    if (!graphics || IsBadReadPtr((void*)graphics, 4)) return;
+    if (IsBadReadPtr((void*)(graphics + GFX_TEX_COUNT), 4)) return;
+    int cacheCount = *(int*)(graphics + GFX_TEX_COUNT);
+    if (cacheCount < 1) return;
+    if (IsBadReadPtr((void*)(graphics + GFX_TEX_ARRAY), 4)) return;
+    DWORD arrPtr = *(DWORD*)(graphics + GFX_TEX_ARRAY);
+    if (!arrPtr || IsBadReadPtr((void*)arrPtr, cacheCount * 4)) return;
 
-static void rebuild_animations(char* gfx) {
-    int i;
-    for (i = 0; i < g_anim_count; i++) {
-        g_anims[i].frame_count = 0;
-        g_anims[i].current_frame = 0;
-        g_anims[i].accumulator = 0.0f;
-        g_anims[i].direction = 1;
-        g_anims[i].built = 0;
-    }
-    g_lookup_count = 0;
+    for (int i = 0; i < cacheCount && g_animCount < MAX_ANIMATIONS; i++) {
+        DWORD entry = *(DWORD*)(arrPtr + i * 4);
+        if (!entry || IsBadReadPtr((void*)entry, 0x20)) continue;
+        DWORD namePtr = *(DWORD*)(entry + TEX_OBJ_NAME);
+        if (!namePtr || IsBadReadPtr((void*)namePtr, 1)) continue;
+        const char* texName = (const char*)namePtr;
 
-    for (int ai = 0; ai < g_anim_count; ai++) {
-        AnimSeq* a = &g_anims[ai];
-        a->built = 1;
+        char baseName[64];
+        int frameNum = parseFrameName(texName, baseName, 64);
+        if (frameNum != 1) continue;
 
-        char file_pattern[MAX_PATH];
-        snprintf(file_pattern, MAX_PATH, "%sTextures\\%s_*", g_game_dir, a->prefix);
-
-        WIN32_FIND_DATAA fd;
-        HANDLE hFind = FindFirstFileA(file_pattern, &fd);
-        if (hFind == INVALID_HANDLE_VALUE) continue;
-
-        int frame_nums[MAX_FRAMES];
-        char frame_names[MAX_FRAMES][64];
-        int found = 0;
-
-        do {
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-            char* dot = strrchr(fd.cFileName, '.');
-            if (dot && (_stricmp(dot, ".txt") == 0)) continue;
-            char* uscore = strrchr(fd.cFileName, '_');
-            if (!uscore) continue;
-            int num = atoi(uscore + 1);
-            if (num < 1 || num > MAX_FRAMES) continue;
-            if (found >= MAX_FRAMES) continue;
-
-            char base[64];
-            if (dot) {
-                size_t len = (size_t)(dot - fd.cFileName);
-                if (len >= 64) len = 63;
-                strncpy(base, fd.cFileName, len);
-                base[len] = '\0';
-            } else {
-                strncpy(base, fd.cFileName, 63);
-                base[63] = '\0';
-            }
-            frame_nums[found] = num;
-            strcpy(frame_names[found], base);
-            found++;
-        } while (FindNextFileA(hFind, &fd));
-        FindClose(hFind);
-
-        /* Sort by frame number (simple insertion sort) */
-        for (i = 1; i < found; i++) {
-            int key_num = frame_nums[i];
-            char key_name[64];
-            strcpy(key_name, frame_names[i]);
-            int j = i - 1;
-            while (j >= 0 && frame_nums[j] > key_num) {
-                frame_nums[j + 1] = frame_nums[j];
-                strcpy(frame_names[j + 1], frame_names[j]);
-                j--;
-            }
-            frame_nums[j + 1] = key_num;
-            strcpy(frame_names[j + 1], key_name);
+        /* Dedup check */
+        int already = 0;
+        for (int j = 0; j < g_animCount; j++) {
+            if (_stricmp(g_anims[j].baseName, baseName) == 0) { already = 1; break; }
         }
+        if (already) continue;
 
-        /* Load each frame via the game's LoadTexture */
-        for (i = 0; i < found; i++) {
-            void* tex_obj = game_LoadTexture(gfx, NULL, frame_names[i], 1);
-            if (!tex_obj || IsBadReadPtr(tex_obj, 0x10)) continue;
-            void* d3d_tex = *(void**)((char*)tex_obj + TEX_OBJ_D3D);
-            if (!d3d_tex || IsBadReadPtr(d3d_tex, 4)) continue;
+        int totalFrames = countFrames(baseName);
+        if (totalFrames < 2) continue;
 
-            int idx = frame_nums[i] - 1;
-            if (idx < 0 || idx >= MAX_FRAMES) continue;
-            a->frames[idx] = d3d_tex;
-            if (idx + 1 > a->frame_count)
-                a->frame_count = idx + 1;
+        if (IsBadReadPtr((void*)(entry + TEX_OBJ_D3D), 4)) continue;
+        DWORD originalTex = *(DWORD*)(entry + TEX_OBJ_D3D);
+        if (!originalTex) continue;
 
-            if (g_lookup_count < MAX_TEX_LOOKUP) {
-                g_tex_lookup[g_lookup_count].d3d_tex = d3d_tex;
-                g_tex_lookup[g_lookup_count].anim_idx = ai;
-                g_lookup_count++;
-            }
-        }
+        AnimTexture* a = &g_anims[g_animCount];
+        a->d3dTexObjAddr = entry;
+        a->originalD3DTex = originalTex;
+        a->frameTextures[0] = originalTex;
+        a->frameCount = 1;
+        a->currentFrame = 0;
+        a->direction = 1;
+        a->lastSwapTime = getTime();
+        strncpy(a->baseName, baseName, 63);
+        a->baseName[63] = 0;
+        loadConfig(baseName, &a->framerate, &a->looptype);
 
-        /* Fill gaps: duplicate previous frame for any missing slots */
-        for (i = 0; i < a->frame_count; i++) {
-            if (!a->frames[i]) {
-                if (i > 0 && a->frames[i - 1])
-                    a->frames[i] = a->frames[i - 1];
-                else {
-                    int j;
-                    for (j = i + 1; j < a->frame_count; j++) {
-                        if (a->frames[j]) { a->frames[i] = a->frames[j]; break; }
-                    }
+        for (int f = 2; f <= totalFrames && f <= MAX_FRAMES; f++) {
+            char frameName[128];
+            snprintf(frameName, sizeof(frameName), "%s%02d.png", baseName, f);
+            void* texObj = game_LoadTexture((void*)graphics, NULL, frameName, 1);
+            if (texObj && !IsBadReadPtr(texObj, 0x10)) {
+                DWORD d3dTex = *(DWORD*)((char*)texObj + TEX_OBJ_D3D);
+                if (d3dTex) {
+                    a->frameTextures[a->frameCount] = d3dTex;
+                    a->frameCount++;
                 }
             }
         }
+
+        if (a->frameCount < 2) continue;
+        g_animCount++;
     }
 }
 
-/* ── Frame advancement ────────────────────────────────────────────── */
-
-static void advance_frame(AnimSeq* a) {
-    if (a->frame_count <= 1) return;
-    switch (a->looptype) {
-    case 0:
-        if (a->current_frame < a->frame_count - 1)
-            a->current_frame++;
-        break;
-    case 1:
-        a->current_frame = (a->current_frame + 1) % a->frame_count;
-        break;
-    case 3:
-        a->current_frame += a->direction;
-        if (a->current_frame >= a->frame_count) {
-            a->direction = -1;
-            a->current_frame = a->frame_count - 2;
-        } else if (a->current_frame < 0) {
-            a->direction = 1;
-            a->current_frame = 1;
-        }
-        break;
-    }
-    if (a->current_frame < 0) a->current_frame = 0;
-    if (a->current_frame >= a->frame_count) a->current_frame = a->frame_count - 1;
-}
-
-static void advance_animations(void) {
-    int i;
-    for (i = 0; i < g_anim_count; i++) {
-        AnimSeq* a = &g_anims[i];
-        if (a->frame_count <= 1 || a->framerate <= 0.0f) continue;
-        a->accumulator += a->framerate;
-        while (a->accumulator >= 1.0f) {
-            a->accumulator -= 1.0f;
-            advance_frame(a);
+static void restoreTextures(void) {
+    for (int i = 0; i < g_animCount; i++) {
+        AnimTexture* a = &g_anims[i];
+        if (a->d3dTexObjAddr && !IsBadWritePtr((void*)(a->d3dTexObjAddr + TEX_OBJ_D3D), 4)) {
+            *(DWORD*)(a->d3dTexObjAddr + TEX_OBJ_D3D) = a->originalD3DTex;
         }
     }
+    g_animCount = 0;
 }
 
-/* ── BeginFrame detour ─────────────────────────────────────────────── */
+/* ── Main thread ───────────────────────────────────────────────────── */
 
-static unsigned char* g_tramp = NULL;
-static const int TRAMP_SIZE = 16;
-static const unsigned char ORIG_PROLOGUE[7] = {
-    0x53, 0x8B, 0xD9, 0x8B, 0x4C, 0x24, 0x08
-};
+static DWORD WINAPI animThread(LPVOID param) {
+    (void)param;
+    Sleep(3000);
+    int scanTimer = 0;
+    /* Track whether we were in a level last frame */
+    int wasInLevel = 0;
 
-static void __fastcall begin_frame_hook(void* this_, void* edx, int param_1) {
-    typedef void (__fastcall *orig_fn_t)(void*, void*, int);
-    ((orig_fn_t)g_tramp)(this_, edx, param_1);
+    while (g_running) {
+        Sleep(16);
 
-    char* gfx = (char*)this_;
-    if (!gfx || IsBadReadPtr(gfx, 0x200)) return;
+        /* Check if we're in a level by reading App+0x178 (scene ptr) */
+        DWORD appPtr = *(DWORD*)APP_PTR;
+        int inLevel = 0;
+        if (appPtr && appPtr > 0x10000 && !IsBadReadPtr((void*)appPtr, 0x200)) {
+            DWORD scene = *(DWORD*)(appPtr + 0x178);
+            inLevel = (scene && scene > 0x10000) ? 1 : 0;
+        }
 
-    if (!g_vtable_hooked) {
-        int* device = *(int**)(gfx + OFF_D3D_DEVICE);
-        if (device && !IsBadReadPtr(device, 4))
-            hook_d3d_vtable(device);
-    }
+        if (!inLevel && wasInLevel) {
+            restoreTextures();
+            wasInLevel = 0;
+            scanTimer = 0;
+        }
+        if (inLevel && !wasInLevel) {
+            wasInLevel = 1;
+            scanTimer = 0;
+        }
 
-    if (!IsBadReadPtr(gfx + GFX_TEX_COUNT, 4)) {
-        int current_count = *(int*)(gfx + GFX_TEX_COUNT);
-        if (current_count != g_last_tex_count) {
-            rebuild_animations(gfx);
-            g_last_tex_count = *(int*)(gfx + GFX_TEX_COUNT);
+        /* Periodically try to set up animations after entering a level */
+        if (inLevel && g_animCount == 0) {
+            scanTimer++;
+            if (scanTimer >= 60) {
+                scanTimer = 0;
+                trySetupAnimations();
+            }
+        }
+
+        /* Animation swapping */
+        if (g_animCount == 0) continue;
+
+        double now = getTime();
+        for (int i = 0; i < g_animCount; i++) {
+            AnimTexture* a = &g_anims[i];
+            if (a->frameCount < 2) continue;
+            if (!a->d3dTexObjAddr) continue;
+            if (IsBadReadPtr((void*)(a->d3dTexObjAddr + TEX_OBJ_D3D), 4)) {
+                restoreTextures();
+                break;
+            }
+            double elapsed = now - a->lastSwapTime;
+            if (elapsed < (double)a->framerate) continue;
+
+            a->lastSwapTime = now;
+            int next = a->currentFrame + a->direction;
+
+            if (a->looptype == 0) {
+                if (next >= a->frameCount) next = a->frameCount - 1;
+                else if (next < 0) next = 0;
+            } else if (a->looptype == 1) {
+                if (next >= a->frameCount) next = 0;
+                else if (next < 0) next = a->frameCount - 1;
+            } else { /* ping-pong */
+                if (next >= a->frameCount) {
+                    a->direction = -1;
+                    next = a->frameCount - 2;
+                    if (next < 0) next = 0;
+                } else if (next < 0) {
+                    a->direction = 1;
+                    next = 1;
+                    if (next >= a->frameCount) next = a->frameCount - 1;
+                }
+            }
+
+            a->currentFrame = next;
+            DWORD newTex = a->frameTextures[next];
+            if (newTex && !IsBadWritePtr((void*)(a->d3dTexObjAddr + TEX_OBJ_D3D), 4)) {
+                *(DWORD*)(a->d3dTexObjAddr + TEX_OBJ_D3D) = newTex;
+            }
         }
     }
-
-    advance_animations();
+    return 0;
 }
 
-static void install_detour(void) {
-    DWORD target = GRAPHICS_BEGIN_FRAME;
-    DWORD old_prot;
-    unsigned char jmp_patch[7];
+/* ── DLL entry ─────────────────────────────────────────────────────── */
 
-    g_tramp = (unsigned char*)VirtualAlloc(NULL, TRAMP_SIZE,
-                  MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!g_tramp) return;
-
-    memcpy(g_tramp, ORIG_PROLOGUE, 7);
-    g_tramp[7] = 0xE9;
-    *(DWORD*)(g_tramp + 8) = (target + 7) - ((DWORD)g_tramp + 12);
-
-    if (!VirtualProtect((void*)target, 7, PAGE_EXECUTE_READWRITE, &old_prot))
-        return;
-
-    jmp_patch[0] = 0xE9;
-    *(DWORD*)(jmp_patch + 1) = (DWORD)&begin_frame_hook - (target + 5);
-    jmp_patch[5] = 0x90;
-    jmp_patch[6] = 0x90;
-
-    memcpy((void*)target, jmp_patch, 7);
-    VirtualProtect((void*)target, 7, old_prot, &old_prot);
-    FlushInstructionCache(GetCurrentProcess(), (void*)target, 7);
-}
-
-/* ── DllMain ───────────────────────────────────────────────────────── */
-
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
-    switch (fdwReason) {
-    case DLL_PROCESS_ATTACH:
-        get_game_dir();
-        load_configs();
+BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
+    (void)hInst; (void)reserved;
+    if (reason == DLL_PROCESS_ATTACH) {
+        getGameDir();
         init_bass_proxy();
-        install_detour();
-        break;
+        CreateThread(NULL, 0, animThread, NULL, 0, NULL);
     }
     return TRUE;
 }
