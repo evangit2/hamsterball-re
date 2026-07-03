@@ -432,6 +432,63 @@ static DWORD WINAPI InitThread(LPVOID param) {
 }
 
 // ============================================================
+// BASS Proxy — forward all 10 BASS functions to bass_real.dll
+// ============================================================
+
+typedef void (__stdcall *BASS_Stop_t)(void);
+typedef int  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, int, int);
+typedef int  (__stdcall *BASS_Free_t)(void);
+typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, HWND, void*);
+typedef int  (__stdcall *BASS_Start_t)(void);
+typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
+typedef int  (__stdcall *BASS_ChannelStop_t)(DWORD);
+typedef int  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
+typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
+typedef DWORD (__stdcall *BASS_MusicLoad_t)(int, void*, DWORD, DWORD, DWORD, DWORD);
+
+static HMODULE g_hRealBass = NULL;
+static BASS_Stop_t              real_BASS_Stop = NULL;
+static BASS_ChannelSetAttributes_t real_BASS_ChannelSetAttributes = NULL;
+static BASS_Free_t              real_BASS_Free = NULL;
+static BASS_Init_t              real_BASS_Init = NULL;
+static BASS_Start_t             real_BASS_Start = NULL;
+static BASS_SetConfig_t         real_BASS_SetConfig = NULL;
+static BASS_ChannelStop_t       real_BASS_ChannelStop = NULL;
+static BASS_MusicPlayEx_t       real_BASS_MusicPlayEx = NULL;
+static BASS_ErrorGetCode_t      real_BASS_ErrorGetCode = NULL;
+static BASS_MusicLoad_t         real_BASS_MusicLoad = NULL;
+
+extern "C" void __stdcall BASS_Stop(void)
+{ if (real_BASS_Stop) real_BASS_Stop(); }
+
+extern "C" int __stdcall BASS_ChannelSetAttributes(DWORD handle, float freq, int vol, int pan)
+{ if (real_BASS_ChannelSetAttributes) return real_BASS_ChannelSetAttributes(handle, freq, vol, pan); return 0; }
+
+extern "C" int __stdcall BASS_Free(void)
+{ if (real_BASS_Free) return real_BASS_Free(); return 0; }
+
+extern "C" int __stdcall BASS_Init(int device, DWORD freq, DWORD flags, HWND win, void *clsid)
+{ if (real_BASS_Init) return real_BASS_Init(device, freq, flags, win, clsid); return 0; }
+
+extern "C" int __stdcall BASS_Start(void)
+{ if (real_BASS_Start) return real_BASS_Start(); return 0; }
+
+extern "C" int __stdcall BASS_SetConfig(DWORD option, DWORD value)
+{ if (real_BASS_SetConfig) return real_BASS_SetConfig(option, value); return 0; }
+
+extern "C" int __stdcall BASS_ChannelStop(DWORD handle)
+{ if (real_BASS_ChannelStop) return real_BASS_ChannelStop(handle); return 0; }
+
+extern "C" int __stdcall BASS_MusicPlayEx(DWORD handle, DWORD pos, BOOL seek)
+{ if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(handle, pos, seek); return 0; }
+
+extern "C" int __stdcall BASS_ErrorGetCode(void)
+{ if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode(); return 0; }
+
+extern "C" DWORD __stdcall BASS_MusicLoad(int mem, void *file, DWORD offset, DWORD length, DWORD flags, DWORD freq)
+{ if (real_BASS_MusicLoad) return real_BASS_MusicLoad(mem, file, offset, length, flags, freq); return 0; }
+
+// ============================================================
 // DLL Entry Point
 // ============================================================
 
@@ -440,8 +497,33 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         g_hModule = hinstDLL;
         DisableThreadLibraryCalls(hinstDLL);
         
+        // Load real bass.dll for function forwarding
+        g_hRealBass = LoadLibraryA("bass_real.dll");
+        if (g_hRealBass == NULL) {
+            char path[MAX_PATH];
+            if (GetModuleFileNameA(hinstDLL, path, MAX_PATH)) {
+                char *p = strrchr(path, '\\');
+                if (p) { strcpy(p + 1, "bass_real.dll"); g_hRealBass = LoadLibraryA(path); }
+            }
+        }
+        
+        if (g_hRealBass != NULL) {
+            real_BASS_Stop              = (BASS_Stop_t)GetProcAddress(g_hRealBass, "BASS_Stop");
+            real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
+            real_BASS_Free              = (BASS_Free_t)GetProcAddress(g_hRealBass, "BASS_Free");
+            real_BASS_Init              = (BASS_Init_t)GetProcAddress(g_hRealBass, "BASS_Init");
+            real_BASS_Start             = (BASS_Start_t)GetProcAddress(g_hRealBass, "BASS_Start");
+            real_BASS_SetConfig         = (BASS_SetConfig_t)GetProcAddress(g_hRealBass, "BASS_SetConfig");
+            real_BASS_ChannelStop       = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
+            real_BASS_MusicPlayEx       = (BASS_MusicPlayEx_t)GetProcAddress(g_hRealBass, "BASS_MusicPlayEx");
+            real_BASS_ErrorGetCode      = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
+            real_BASS_MusicLoad         = (BASS_MusicLoad_t)GetProcAddress(g_hRealBass, "BASS_MusicLoad");
+        }
+        
         // Install hooks in a separate thread to avoid DllMain deadlock
         CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)InitThread, NULL, 0, NULL);
+    } else if (fdwReason == DLL_PROCESS_DETACH) {
+        if (g_hRealBass) { FreeLibrary(g_hRealBass); g_hRealBass = NULL; }
     }
     return TRUE;
 }
