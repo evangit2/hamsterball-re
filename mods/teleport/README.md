@@ -54,23 +54,33 @@ Also accepts `levelN` format: `E:TELEPORT(level3)` = same as `E:TELEPORT(3)`.
 ## Technical Details
 
 - **Collision hook**: `DispatchCollisionEvents` (0x40C5D0) — 8-byte trampoline (PUSH -1 + MOV EAX,FS:[0])
-- **Frame update hook**: `App_FrameUpdate` (0x46C170) — 8-byte trampoline (SUB ESP,8 + PUSH ESI + LEA EAX,[ESP+4])
+- **Frame update hook**: `App_FrameUpdate` epilogue (0x46C1F1) — 5-byte trampoline (POP ESI + ADD ESP,8 + RET)
 - **Win state**: Sets board+0xCD0 (goal reached), App+playerIdx*0xA0+0x5D6=1 (reached goal), +0x5FC=1 (scored), +0x5F0=1 (newly reached)
 - **Level load**: Creates PlayerProfile (0x98 bytes via HeapAlloc), sets profile+0x08 = levelIndex-1, calls Tournament_AdvanceRace(profile, 0)
 - **No IAT hooks, no registry writes, no background threads**
 
+## v3 Fix — Epilogue Hook (July 2026)
+
+**Bug (v2)**: Hooked the *entry* of `App_FrameUpdate` (0x46C170). `loadTargetLevel()`
+ran *before* `GameUpdate` was called in the same frame, modifying the scene graph
+(destroying old board, creating new board) while the frame was still in progress.
+`GameUpdate` then ran on the inconsistent scene state → same crash at 0x41820B.
+
+**Fix**: Hook the *epilogue* of `App_FrameUpdate` (0x46C1F1) — the 5-byte
+`POP ESI / ADD ESP,8 / RET` sequence. `loadTargetLevel()` now runs *after*
+`GameUpdate` returns, at the very end of the frame. The scene is in a stable
+state and the new board will be ready for the *next* frame's `GameUpdate`.
+
 ## v2 Fix — Thread Safety (July 2026)
 
-**Bug**: v1 used a background polling thread (Sleep(16) loop) to call `loadTargetLevel()`.
-The background thread called `App_StartRace()` which destroys the current board/scene
-while the main thread's Draw code was still iterating over those same scene objects.
-This caused a use-after-free crash inside `CreateMechanicalObjects` (crash address
-`0001:0001820B` = 0x41820B) when the ball touched the teleport plane.
+**Bug (v1)**: Used a background polling thread (Sleep(16) loop) to call
+`loadTargetLevel()`. The background thread called `App_StartRace()` which
+destroys the current board/scene while the main thread's Draw code was still
+iterating over those same scene objects → use-after-free crash inside
+`CreateMechanicalObjects` (crash address `0001:0001820B` = 0x41820B).
 
 **Fix**: Replaced the background polling thread with a hook on `App_FrameUpdate`
-(0x46C170), which runs every frame on the **main thread**. The teleport flag is
-checked and `loadTargetLevel()` is called synchronously within the main thread's
-frame update, eliminating the race condition entirely.
+which runs every frame on the main thread. Eliminated the race condition.
 
 ## Build
 

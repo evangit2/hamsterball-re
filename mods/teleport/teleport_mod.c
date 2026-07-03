@@ -493,26 +493,25 @@ static void TeleportCollisionHandler(void) {
 /* ============================================================
  * Main-thread per-frame hook for deferred level loading
  *
- * The original version used a background polling thread (Sleep(16) loop)
- * to call loadTargetLevel(). That caused a race condition: the background
- * thread called App_StartRace() which destroys the current board/scene
- * while the main thread's Draw code was still iterating over those same
- * scene objects → use-after-free crash inside CreateMechanicalObjects
- * (crash address 0001:0001820B = 0x41820B).
+ * v1: Used background thread → race condition crash (Draw vs destroy).
+ * v2: Hooked App_FrameUpdate ENTRY → loadTargetLevel ran BEFORE GameUpdate,
+ *     modifying the scene graph mid-frame → crash inside CreateMechanicalObjects
+ *     during the subsequent GameUpdate call (crash 0001:0001820B = 0x41820B).
+ * v3: Hook App_FrameUpdate EPILOGUE (after GameUpdate returns). This ensures
+ *     loadTargetLevel runs at the END of the frame, after all scene updates
+ *     are complete. The new board will be fully constructed and ready for
+ *     the NEXT frame's GameUpdate.
  *
- * Fix: hook App_FrameUpdate (0x46C170) which runs every frame ON THE
- * MAIN THREAD. We check the teleport flag there and call loadTargetLevel()
- * synchronously, so there is no concurrent access to scene objects.
+ * App_FrameUpdate epilogue at 0x46C1F1:
+ *   5E       POP ESI      (1 byte)
+ *   83 C4 08 ADD ESP, 0x8 (3 bytes)
+ *   C3       RET          (1 byte)
+ * Total: 5 bytes — perfect for a 5-byte JMP (no NOPs needed).
  * ============================================================ */
 
-#define APP_FRAME_UPDATE 0x0046C170
+#define APP_FRAME_UPDATE_EPILOGUE 0x0046C1F1
 
-static unsigned char g_frameUpdateTrampoline[16];
 static unsigned char *g_frameUpdateDetour = NULL;
-
-/* Called from the asm detour before the original App_FrameUpdate prologue.
- * ECX (app pointer) is saved in g_savedApp by the detour code. */
-static volatile int g_savedApp = 0;
 
 static void FrameUpdateHandler(void) {
     if (g_teleportActive && g_teleportFrameDelay > 0) {
@@ -655,97 +654,74 @@ static void InstallHooks(void) {
 
     diag_log("[InstallHooks] DispatchCollisionEvents hook installed OK.");
 
-    /* ---- Hook App_FrameUpdate (0x46C170) for main-thread level loading ----
+    /* ---- Hook App_FrameUpdate EPILOGUE (0x46C1F1) ----
      *
-     * Original prologue (8 bytes):
-     *   83 EC 08          SUB ESP, 0x8       (3 bytes)
-     *   56                PUSH ESI            (1 byte)
-     *   8D 44 24 04       LEA EAX, [ESP+0x4]  (4 bytes)
+     * The epilogue runs AFTER GameUpdate returns, so the scene is in a
+     * stable state. loadTargetLevel() can safely destroy the old board
+     * and create a new one without corrupting the current frame.
      *
-     * We patch with 5-byte JMP + 3 NOPs. The detour saves registers,
-     * calls FrameUpdateHandler(), restores, executes the original 8 bytes,
-     * then JMPs back to dispatchAddr+8.
+     * Original epilogue (5 bytes):
+     *   5E          POP ESI       (1 byte)
+     *   83 C4 08    ADD ESP, 0x8  (3 bytes)
+     *   C3          RET           (1 byte)
      *
-     * This is __thiscall: ECX = app pointer.
+     * We patch all 5 bytes with a JMP to our detour. The detour:
+     * 1. Calls FrameUpdateHandler() (checks teleport flag, loads level if needed)
+     * 2. Executes the original 5 bytes (POP ESI, ADD ESP, RET)
+     *
+     * No register preservation needed beyond what the callee requires.
+     * FrameUpdateHandler is __cdecl and only touches globals, so EAX/ECX/EDX
+     * are clobbered (fine — they're dead at function return anyway).
      */
 
     {
-        unsigned char *frameAddr = (unsigned char *)APP_FRAME_UPDATE;
+        unsigned char *epiAddr = (unsigned char *)APP_FRAME_UPDATE_EPILOGUE;
 
-        /* Verify signature: 83 EC 08 56 8D 44 24 04 */
-        if (frameAddr[0] != 0x83 || frameAddr[1] != 0xEC || frameAddr[2] != 0x08 ||
-            frameAddr[3] != 0x56 || frameAddr[4] != 0x8D) {
-            diag_log("[FATAL] Signature mismatch at App_FrameUpdate (0x46C170)! Hook NOT installed.");
+        /* Verify signature: 5E 83 C4 08 C3 */
+        if (epiAddr[0] != 0x5E || epiAddr[1] != 0x83 || epiAddr[2] != 0xC4 ||
+            epiAddr[3] != 0x08 || epiAddr[4] != 0xC3) {
+            diag_log("[FATAL] Signature mismatch at App_FrameUpdate epilogue (0x46C1F1)!");
             return;
         }
-        diag_log("[InstallHooks] App_FrameUpdate signature OK at 0x46C170");
+        diag_log("[InstallHooks] App_FrameUpdate epilogue signature OK at 0x46C1F1");
 
-        /* Save original 8 bytes */
-        memcpy(g_frameUpdateTrampoline, frameAddr, 8);
-
-        /* Allocate executable buffer for the frame update detour */
+        /* Allocate executable buffer for the epilogue detour */
         g_frameUpdateDetour = (unsigned char *)VirtualAlloc(NULL, 256, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
         if (!g_frameUpdateDetour) {
-            diag_log("[FATAL] Failed to allocate memory for FrameUpdate detour");
+            diag_log("[FATAL] Failed to allocate memory for FrameUpdate epilogue detour");
             return;
         }
 
         {
             unsigned char *p = g_frameUpdateDetour;
 
-            /* Save all registers we might clobber.
-             * App_FrameUpdate is __thiscall: ECX = app.
-             * The original prologue does SUB ESP,8 / PUSH ESI / LEA EAX,[ESP+4]
-             * which touches ESP, ESI, EAX. We must preserve all of those.
-             *
-             * Stack on entry: [return_addr]
-             * ECX = app
-             *
-             * After PUSH EAX/ECX/EDX (3 pushes), stack shifts by 12:
-             *   [return_addr] [+4] [+8] [+12]
-             * Original [ESP+0] = return_addr → now at [ESP+12]
-             */
+            /* Call FrameUpdateHandler() — no args, reads globals.
+             * At this point ESP still has the return address on top
+             * (we haven't executed POP ESI yet). ESI still holds the
+             * app pointer. We preserve ESI since we need it for the
+             * original POP ESI instruction. */
+            *p++ = 0x56;  /* PUSH ESI (preserve — FrameUpdateHandler might clobber it) */
 
-            /* PUSH EAX, ECX, EDX — preserve registers */
-            *p++ = 0x50;  /* PUSH EAX */
-            *p++ = 0x51;  /* PUSH ECX (app) */
-            *p++ = 0x52;  /* PUSH EDX */
-
-            /* Call FrameUpdateHandler() — no args, reads globals */
-            *p++ = 0xB8;  /* MOV EAX, FrameUpdateHandler */
+            /* MOV EAX, FrameUpdateHandler ; CALL EAX */
+            *p++ = 0xB8;
             *(DWORD *)p = (DWORD)&FrameUpdateHandler; p += 4;
             *p++ = 0xFF; *p++ = 0xD0;  /* CALL EAX */
 
-            /* Restore registers */
-            *p++ = 0x5A;  /* POP EDX */
-            *p++ = 0x59;  /* POP ECX (restore app) */
-            *p++ = 0x58;  /* POP EAX */
+            *p++ = 0x5E;  /* POP ESI (restore) */
 
-            /* Execute original 8 bytes:
-             *   83 EC 08       SUB ESP, 0x8
-             *   56             PUSH ESI
-             *   8D 44 24 04    LEA EAX, [ESP+0x4]
-             */
-            *p++ = 0x83; *p++ = 0xEC; *p++ = 0x08;  /* SUB ESP, 0x8 */
-            *p++ = 0x56;                                 /* PUSH ESI */
-            *p++ = 0x8D; *p++ = 0x44; *p++ = 0x24; *p++ = 0x04; /* LEA EAX,[ESP+4] */
-
-            /* JMP to frameAddr+8 */
-            *p++ = 0xE9;
-            *(DWORD *)p = (DWORD)(frameAddr + 8) - (DWORD)(p + 4);
-            p += 4;
+            /* Execute original epilogue: POP ESI, ADD ESP 8, RET */
+            *p++ = 0x5E;              /* POP ESI */
+            *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;  /* ADD ESP, 0x8 */
+            *p++ = 0xC3;              /* RET */
         }
 
-        /* Patch original function: JMP to detour + 3 NOPs */
-        VirtualProtect(frameAddr, 8, PAGE_EXECUTE_READWRITE, &oldProtect);
-        frameAddr[0] = 0xE9;  /* JMP rel32 */
-        *(DWORD *)(frameAddr + 1) = (DWORD)g_frameUpdateDetour - (DWORD)(frameAddr + 5);
-        frameAddr[5] = 0x90;
-        frameAddr[6] = 0x90;
-        frameAddr[7] = 0x90;
-        VirtualProtect(frameAddr, 8, oldProtect, &oldProtect);
+        /* Patch original epilogue: 5-byte JMP (exactly fits, no NOPs) */
+        VirtualProtect(epiAddr, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+        epiAddr[0] = 0xE9;  /* JMP rel32 */
+        *(DWORD *)(epiAddr + 1) = (DWORD)g_frameUpdateDetour - (DWORD)(epiAddr + 5);
+        VirtualProtect(epiAddr, 5, oldProtect, &oldProtect);
 
-        diag_log("[InstallHooks] App_FrameUpdate hook installed OK. Level loading now runs on main thread.");
+        diag_log("[InstallHooks] App_FrameUpdate epilogue hook installed OK. Level loading runs after GameUpdate.");
     }
 }
 
