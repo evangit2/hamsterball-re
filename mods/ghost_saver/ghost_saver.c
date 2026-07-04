@@ -433,63 +433,75 @@ static void check_race_state(void) {
         }
     }
 
-    if (g_recording && g_rawCount < MAX_SNAPSHOTS) {
-        DWORD ball = get_player_ball();
-        if (ball) {
-            DWORD *snap = g_rawSnaps[g_rawCount];
-            snap[0] = *(DWORD*)(ball + 0x164);  // pos_x
-            snap[1] = *(DWORD*)(ball + 0x168);  // pos_y
-            snap[2] = *(DWORD*)(ball + 0x16C);  // pos_z
-            snap[3] = *(DWORD*)(ball + 0x190);  // facing_x
-            snap[4] = *(DWORD*)(ball + 0x194);  // facing_z
-            snap[5] = *(DWORD*)(ball + 0x150);  // roll_angle
-            snap[6] = *(DWORD*)(ball + 0x748);  // gravity_plane
-            snap[7] = *(DWORD*)(ball + 0x74C);  // surface_blend_a
-            snap[8] = *(DWORD*)(ball + 0x750);  // surface_blend_b
-            snap[9] = *(DWORD*)(ball + 0x284);  // radius
-            g_rawCount++;
-            if (g_rawCount == 1)
-                log_fmt("First snapshot: ball=0x%X pos=(%.1f,%.1f,%.1f)",
-                        ball, *(float*)(ball+0x164), *(float*)(ball+0x168),
-                        *(float*)(ball+0x16C));
-        }
-    }
+    /* Recording is handled by the game itself (App+0x90C BTT). We read the
+     * game's own snapshots at goal time — no need to poll in our thread. */
 
     if (g_recording && !g_raceFinished) {
         if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
             BYTE goalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
             if (goalFlag && !g_prevGoalFlag) {
                 g_raceFinished = 1;
-                log_fmt("GOAL! frames=%d", g_rawCount);
 
                 int finishTime = NO_TIME;
+                DWORD btt = 0;
                 if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
-                    DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
+                    btt = *(DWORD*)(app + APP_90C_RECORDING);
                     if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_BEST_TIME), 4))
                         finishTime = *(DWORD*)(btt + BTT_BEST_TIME);
                 }
-                log_fmt("Finish time=%d (NO_TIME=%d)", finishTime, NO_TIME);
+                log_fmt("GOAL! finishTime=%d", finishTime);
 
-                if (finishTime != NO_TIME && g_rawCount > 0 && g_currentRaceName[0]) {
-                    int existingTime = get_saved_time(g_currentRaceName);
-                    if (existingTime == NO_TIME) {
-                        log_fmt("No existing ghost for '%s' — saving", g_currentRaceName);
-                        save_ghost_for_race(g_currentRaceName, finishTime,
-                                           g_rawSnaps, g_rawCount);
-                        log_msg("Ghost saved to GHOST.txt");
-                    } else if (finishTime < existingTime) {
-                        log_fmt("New time %d < saved time %d — overwriting",
-                               finishTime, existingTime);
-                        save_ghost_for_race(g_currentRaceName, finishTime,
-                                           g_rawSnaps, g_rawCount);
-                        log_msg("Ghost saved to GHOST.txt");
+                if (finishTime != NO_TIME && btt && g_currentRaceName[0]) {
+                    /* Read the game's own recording from App+0x90C's AthenaList.
+                     * The game records at its internal frame rate (matching
+                     * playback), so this avoids the 2x speed problem caused
+                     * by our 60Hz polling thread recording at double rate. */
+                    if (!IsBadReadPtr((void*)(btt + 4), 4)) {
+                        DWORD count = *(DWORD*)(btt + 4);  /* AthenaList count */
+                        if (!IsBadReadPtr((void*)(btt + 0x410), 4)) {
+                            DWORD *data = *(DWORD**)(btt + 0x410);  /* AthenaList data ptr */
+                            if (count > 0 && count <= MAX_SNAPSHOTS && data &&
+                                (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
+                                log_fmt("Reading %d frames from game's recording BTT", count);
+                                g_rawCount = 0;
+                                for (int i = 0; i < (int)count && i < MAX_SNAPSHOTS; i++) {
+                                    DWORD *snap = (DWORD*)data[i];
+                                    if (snap && (DWORD)snap > 0x10000 &&
+                                        !IsBadReadPtr(snap, 10 * sizeof(DWORD))) {
+                                        memcpy(g_rawSnaps[g_rawCount], snap, 10 * sizeof(DWORD));
+                                        g_rawCount++;
+                                    }
+                                }
+                                log_fmt("Read %d snapshots from game recording", g_rawCount);
+                            } else {
+                                log_fmt("ERROR: bad BTT list count=%d data=0x%X", count, (DWORD)data);
+                            }
+                        }
+                    }
+
+                    if (g_rawCount > 0) {
+                        int existingTime = get_saved_time(g_currentRaceName);
+                        if (existingTime == NO_TIME) {
+                            log_fmt("No existing ghost for '%s' — saving", g_currentRaceName);
+                            save_ghost_for_race(g_currentRaceName, finishTime,
+                                               g_rawSnaps, g_rawCount);
+                            log_msg("Ghost saved to GHOST.txt");
+                        } else if (finishTime < existingTime) {
+                            log_fmt("New time %d < saved time %d — overwriting",
+                                   finishTime, existingTime);
+                            save_ghost_for_race(g_currentRaceName, finishTime,
+                                               g_rawSnaps, g_rawCount);
+                            log_msg("Ghost saved to GHOST.txt");
+                        } else {
+                            log_fmt("New time %d >= saved time %d — discarding",
+                                   finishTime, existingTime);
+                        }
                     } else {
-                        log_fmt("New time %d >= saved time %d — discarding",
-                               finishTime, existingTime);
+                        log_msg("NOT saving: no snapshots read from game recording");
                     }
                 } else {
-                    log_fmt("NOT saving: finishTime=%d frames=%d name='%s'",
-                           finishTime, g_rawCount, g_currentRaceName);
+                    log_fmt("NOT saving: finishTime=%d btt=0x%X name='%s'",
+                           finishTime, btt, g_currentRaceName);
                 }
             }
             g_prevGoalFlag = goalFlag;
@@ -727,7 +739,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v19d started");
+    log_msg("Ghost thread v20 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -753,7 +765,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v19 Init ===");
+    log_msg("=== Ghost Saver Mod v20 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
