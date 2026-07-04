@@ -267,25 +267,27 @@ static void save_ghost_for_race(const char *raceName, int time,
 /* operator_new — use malloc(). Safe for game structs. */
 static void* op_new(SIZE_T size) { return malloc(size); }
 
-/* BestTimeTracker_ctor is __thiscall(ECX=btt) — no stack params */
+/* BestTimeTracker_ctor is __thiscall(ECX=btt) — no stack params.
+ * __thiscall preserves ebx, esi, edi, ebp (callee-saved).
+ * Only eax, ecx, edx are caller-saved. */
 static void call_btt_ctor(void *btt) {
-    register DWORD ecx_val asm("ecx") = (DWORD)btt;
     __asm__ volatile(
-        "call *%0\n"
-        : : "r"((void*)ADDR_BTT_CTOR), "c"(ecx_val)
-        : "eax", "edx", "memory"
+        "mov %0, %%ecx\n"
+        "call *%1\n"
+        : : "r"(btt), "r"((void*)ADDR_BTT_CTOR)
+        : "eax", "ecx", "edx", "memory"
     );
 }
 
 /* AthenaList_Append is __thiscall(ECX=list, stack=item) — 1 stack param */
 static void call_alist_append(DWORD *list, void *item) {
-    register DWORD ecx_val asm("ecx") = (DWORD)list;
     __asm__ volatile(
-        "push %0\n"
-        "call *%1\n"
+        "mov %0, %%ecx\n"
+        "push %1\n"
+        "call *%2\n"
         "add $4, %%esp\n"
-        : : "r"(item), "r"((void*)ADDR_ALIST_APPEND), "c"(ecx_val)
-        : "eax", "edx", "memory"
+        : : "r"(list), "r"(item), "r"((void*)ADDR_ALIST_APPEND)
+        : "eax", "ecx", "edx", "memory"
     );
 }
 
@@ -656,11 +658,21 @@ static int g_hookInstalled = 0;
  */
 
 /* C implementation of the hook (non-static for asm visibility) */
-void hook_impl(DWORD app, DWORD race_ptr) {
-    log_fmt("HOOK: entered hook_impl app=0x%X race_ptr=0x%X", app, race_ptr);
+void hook_impl(DWORD app) {
+    /* Call original App_StartPracticeRace FIRST.
+     * It's __thiscall(ECX=App) with NO stack params.
+     * The trampoline executes the original prologue and JMPs back. */
+    __asm__ volatile(
+        "mov %0, %%ecx\n"
+        "call *%1\n"
+        : : "r"(app), "r"((void*)g_trampoline)
+        : "eax", "ecx", "edx", "memory"
+    );
+
+    /* AFTER original returns, the recording BTT exists at App+0x90C.
+     * Read the race name and inject our ghost. */
     char raceName[128] = "";
 
-    /* Get race name from the recording BTT (App+0x90C) */
     if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
         DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
         if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
@@ -669,10 +681,10 @@ void hook_impl(DWORD app, DWORD race_ptr) {
         }
     }
 
-    /* Inject ghost BEFORE calling original */
     if (raceName[0]) {
-        log_fmt("HOOK: pre-App_StartPracticeRace race='%s'", raceName);
+        log_fmt("HOOK: post-App_StartPracticeRace race='%s'", raceName);
 
+        /* Only inject if App+0x910 is NULL (no ghost) */
         if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
             DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
             if (!existing || existing < 0x10000) {
@@ -682,34 +694,19 @@ void hook_impl(DWORD app, DWORD race_ptr) {
             }
         }
     }
-
-    /* Call original App_StartPracticeRace via trampoline.
-     * ECX = app (this), push race_ptr (param_1). */
-    register DWORD ecx_val asm("ecx") = app;
-    __asm__ volatile(
-        "push %0\n"
-        "call *%1\n"
-        "add $4, %%esp\n"
-        : : "r"(race_ptr), "r"((void*)g_trampoline), "c"(ecx_val)
-        : "eax", "edx", "memory"
-    );
 }
 
-/* Naked asm stub — extracts ECX (this) and [ESP+4] (param) from the
- * __thiscall calling convention and calls our C function */
-__attribute__((naked)) static void hook_App_StartPracticeRace(void) {
+/* Naked asm stub — extracts ECX (this) from __thiscall and calls hook_impl.
+ * App_StartPracticeRace is __thiscall(ECX=App) with NO stack parameters.
+ * Stack at entry: [ESP+0] = return address, ECX = App */
+__attribute__((naked, used)) static void hook_App_StartPracticeRace(void) {
     __asm__ volatile(
-        /* __thiscall: ECX = App, [ESP+0] = retaddr, [ESP+4] = race_ptr
-         * cdecl: push params right-to-left (param2 first, param1 second) */
-        "pushl %%eax\n"               /* save eax */
-        "pushl %%ecx\n"               /* save ecx (App) */
-        "pushl %%edx\n"               /* save edx */
-        /* After 3 pushes + return addr = 4 dwords, race_ptr is at [ESP+16] */
-        "movl 16(%%esp), %%eax\n"     /* load race_ptr */
-        "pushl %%eax\n"               /* push race_ptr (param 2, pushed first) */
-        "pushl %%ecx\n"               /* push App (param 1, pushed second) */
+        "pushl %%eax\n"
+        "pushl %%ecx\n"               /* save ECX (App) */
+        "pushl %%edx\n"
+        "pushl %%ecx\n"               /* push App as param 1 */
         "call _hook_impl\n"
-        "addl $8, %%esp\n"            /* clean up 2 params */
+        "addl $4, %%esp\n"            /* clean up 1 param */
         "popl %%edx\n"
         "popl %%ecx\n"
         "popl %%eax\n"
@@ -800,7 +797,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v16 Init ===");
+    log_msg("=== Ghost Saver Mod v17 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
