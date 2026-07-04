@@ -47,7 +47,7 @@ static int g_recording = 0;
 static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
 static DWORD g_prevRecording = 0;
-static char g_ghostPath[MAX_PATH] = "";
+static char g_ghostDir[MAX_PATH] = "";  /* .../Ghosts/ directory */
 static char g_logPath[MAX_PATH] = "";
 
 static void log_msg(const char *msg) {
@@ -146,9 +146,34 @@ static DWORD get_player_ball(void) {
     return ball;
 }
 
-/* Get saved time for a race from GHOST.txt (NO_TIME if not found) */
+/* Convert race name to ghost filename.
+ * "Warm-Up Race" -> "Warm-Up.ghost"
+ * "BEGINNER RACE" -> "Beginner.ghost"
+ * Strips " RACE" suffix, title-cases the rest. */
+static void race_name_to_filename(const char *raceName, char *out, int outLen) {
+    char base[128];
+    strncpy(base, raceName, sizeof(base) - 1);
+    base[sizeof(base) - 1] = '\0';
+
+    /* Strip " RACE" suffix (case-insensitive) */
+    int len = strlen(base);
+    if (len >= 5 && _stricmp(base + len - 5, " RACE") == 0) {
+        base[len - 5] = '\0';
+    }
+
+    /* Title-case first letter */
+    if (base[0] >= 'a' && base[0] <= 'z')
+        base[0] -= 32;
+
+    snprintf(out, outLen, "%s%s.ghost", g_ghostDir, base);
+}
+
+/* Get saved time for a race from its .ghost file (NO_TIME if not found) */
 static int get_saved_time(const char *raceName) {
-    HANDLE h = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+    char path[MAX_PATH];
+    race_name_to_filename(raceName, path, sizeof(path));
+
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return NO_TIME;
 
@@ -156,7 +181,6 @@ static int get_saved_time(const char *raceName) {
     DWORD fileSize = GetFileSize(h, NULL);
     DWORD filePos = 0;
     char line[512];
-    int inRace = 0;
 
     while (filePos < fileSize) {
         SetFilePointer(h, filePos, NULL, FILE_BEGIN);
@@ -171,16 +195,6 @@ static int get_saved_time(const char *raceName) {
         line[lineLen] = '\0';
         filePos += (nl - line) + 1;
 
-        if (strncmp(line, "[RACE:", 6) == 0) {
-            char *end = strchr(line + 6, ']');
-            if (end) {
-                *end = '\0';
-                inRace = (_stricmp(line + 6, raceName) == 0);
-            }
-            continue;
-        }
-        if (!inRace) continue;
-        if (strcmp(line, "[END]") == 0) break;
         if (strncmp(line, "TIME=", 5) == 0)
             result = atoi(line + 5);
     }
@@ -190,55 +204,20 @@ static int get_saved_time(const char *raceName) {
 
 static void save_ghost_for_race(const char *raceName, int time,
                                 DWORD (*snaps)[10], int count) {
-    char *fileBuf = NULL; DWORD fileSize = 0;
-    HANDLE h = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h != INVALID_HANDLE_VALUE) {
-        fileSize = GetFileSize(h, NULL);
-        if (fileSize > 0 && fileSize < 20*1024*1024) {
-            fileBuf = (char*)malloc(fileSize + 1);
-            if (fileBuf) { DWORD br; ReadFile(h, fileBuf, fileSize, &br, NULL); fileBuf[fileSize] = '\0'; }
-        }
-        CloseHandle(h);
-    }
+    char path[MAX_PATH];
+    race_name_to_filename(raceName, path, sizeof(path));
 
-    h = CreateFileA(g_ghostPath, GENERIC_WRITE, 0, NULL,
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL,
         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) { if (fileBuf) free(fileBuf); return; }
+    if (h == INVALID_HANDLE_VALUE) {
+        log_fmt("ERROR: cannot create %s", path);
+        return;
+    }
     DWORD written;
 
-    if (fileBuf) {
-        char *p = fileBuf;
-        while (*p) {
-            char *raceStart = strstr(p, "[RACE:");
-            if (!raceStart) break;
-            char *endMark = strstr(raceStart, "[END]");
-            if (!endMark) break;
-            char *afterEnd = endMark + 5;
-            while (*afterEnd == '\r' || *afterEnd == '\n') afterEnd++;
-            char *nameStart = raceStart + 6;
-            char *nameEnd = strchr(nameStart, ']');
-            if (nameEnd) {
-                int nameLen = nameEnd - nameStart;
-                char existingName[128];
-                if (nameLen < 128) {
-                    memcpy(existingName, nameStart, nameLen);
-                    existingName[nameLen] = '\0';
-                    if (_stricmp(existingName, raceName) != 0) {
-                        int blockLen = afterEnd - raceStart;
-                        WriteFile(h, raceStart, blockLen, &written, NULL);
-                        WriteFile(h, "\r\n", 2, &written, NULL);
-                    }
-                }
-            }
-            p = afterEnd;
-        }
-        free(fileBuf);
-    }
-
     char header[256];
-    int hlen = snprintf(header, sizeof(header), "[RACE:%s]\r\nTIME=%d\r\nFRAMES=%d\r\n",
-                        raceName, time, count);
+    int hlen = snprintf(header, sizeof(header), "TIME=%d\r\nFRAMES=%d\r\n",
+                        time, count);
     WriteFile(h, header, hlen, &written, NULL);
 
     for (int i = 0; i < count; i++) {
@@ -249,7 +228,6 @@ static void save_ghost_for_race(const char *raceName, int time,
             snaps[i][5], snaps[i][6], snaps[i][7], snaps[i][8], snaps[i][9]);
         WriteFile(h, line, len, &written, NULL);
     }
-    WriteFile(h, "[END]\r\n", 6, &written, NULL);
     CloseHandle(h);
 }
 
@@ -283,10 +261,13 @@ static void inject_saved_ghost(const char *raceName) {
     DWORD app = get_app();
     if (!app) return;
 
-    HANDLE hf = CreateFileA(g_ghostPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+    char path[MAX_PATH];
+    race_name_to_filename(raceName, path, sizeof(path));
+
+    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hf == INVALID_HANDLE_VALUE) {
-        log_fmt("No GHOST.txt found for '%s'", raceName);
+        log_fmt("No ghost file for '%s' (%s)", raceName, path);
         return;
     }
 
@@ -294,7 +275,6 @@ static void inject_saved_ghost(const char *raceName) {
     int savedFrames = 0;
     DWORD (*savedSnaps)[10] = NULL;
     int savedCount = 0;
-    int inRace = 0, foundRace = 0;
     DWORD fileSize = GetFileSize(hf, NULL);
     DWORD filePos = 0;
     char line[512];
@@ -312,17 +292,6 @@ static void inject_saved_ghost(const char *raceName) {
         line[lineLen] = '\0';
         filePos += (nl - line) + 1;
 
-        if (strncmp(line, "[RACE:", 6) == 0) {
-            char *end = strchr(line + 6, ']');
-            if (end) {
-                *end = '\0';
-                if (_stricmp(line + 6, raceName) == 0) { inRace = 1; foundRace = 1; }
-                else inRace = 0;
-            }
-            continue;
-        }
-        if (!inRace) continue;
-        if (strcmp(line, "[END]") == 0) { inRace = 0; break; }
         if (strncmp(line, "TIME=", 5) == 0) { savedTime = atoi(line + 5); continue; }
         if (strncmp(line, "FRAMES=", 7) == 0) {
             savedFrames = atoi(line + 7);
@@ -341,9 +310,9 @@ static void inject_saved_ghost(const char *raceName) {
     }
     CloseHandle(hf);
 
-    if (!foundRace || !savedSnaps || savedCount == 0) {
-        log_fmt("No saved ghost for '%s' (found=%d, snaps=%p, count=%d)",
-               raceName, foundRace, savedSnaps, savedCount);
+    if (!savedSnaps || savedCount == 0) {
+        log_fmt("No valid snapshots in ghost file for '%s' (snaps=%p count=%d)",
+               raceName, savedSnaps, savedCount);
         if (savedSnaps) free(savedSnaps);
         return;
     }
@@ -760,7 +729,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v20c started");
+    log_msg("Ghost thread v21 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -773,12 +742,18 @@ static void init_paths(HMODULE hInst) {
     if (GetModuleFileNameA(hInst, path, MAX_PATH)) {
         char *p = strrchr(path, '\\');
         if (p) {
-            strcpy(p + 1, "GHOST.txt");
-            strncpy(g_ghostPath, path, MAX_PATH - 1);
+            /* Create Ghosts/ directory next to bass.dll */
+            strcpy(p + 1, "Ghosts\\");
+            strncpy(g_ghostDir, path, MAX_PATH - 1);
+            g_ghostDir[MAX_PATH - 1] = '\0';
+            CreateDirectoryA(g_ghostDir, NULL);
+            /* Ignore error if dir already exists */
+
             p = strrchr(path, '\\');
             if (p) {
                 strcpy(p + 1, "ghost_saver_log.txt");
                 strncpy(g_logPath, path, MAX_PATH - 1);
+                g_logPath[MAX_PATH - 1] = '\0';
             }
         }
     }
@@ -786,16 +761,9 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v20 Init ===");
-    log_fmt("GHOST path: %s", g_ghostPath);
+    log_msg("=== Ghost Saver Mod v21 Init ===");
+    log_fmt("Ghost dir: %s", g_ghostDir);
     log_fmt("Log path: %s", g_logPath);
-
-    if (GetFileAttributesA(g_ghostPath) == INVALID_FILE_ATTRIBUTES) {
-        HANDLE h = CreateFileA(g_ghostPath, GENERIC_WRITE, 0, NULL,
-            CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
-        log_msg("Created empty GHOST.txt");
-    }
 
     install_hook();
     CreateThread(NULL, 0, ghost_thread, NULL, 0, NULL);
