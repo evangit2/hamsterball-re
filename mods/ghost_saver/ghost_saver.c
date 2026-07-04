@@ -455,9 +455,14 @@ static void check_race_state(void) {
                     /* Read the game's own recording from App+0x90C's AthenaList.
                      * The game records at its internal frame rate (matching
                      * playback), so this avoids the 2x speed problem caused
-                     * by our 60Hz polling thread recording at double rate. */
-                    if (!IsBadReadPtr((void*)(btt + 4), 4)) {
-                        DWORD count = *(DWORD*)(btt + 4);  /* AthenaList count */
+                     * by our 60Hz polling thread recording at double rate.
+                     *
+                     * BTT layout: vtable@+0, AthenaList starts at +0x004:
+                     *   BTT+0x004 = AthenaList vtable
+                     *   BTT+0x008 = AthenaList count
+                     *   BTT+0x410 = AthenaList data array pointer */
+                    if (!IsBadReadPtr((void*)(btt + 8), 4)) {
+                        DWORD count = *(DWORD*)(btt + 8);  /* AthenaList count */
                         if (!IsBadReadPtr((void*)(btt + 0x410), 4)) {
                             DWORD *data = *(DWORD**)(btt + 0x410);  /* AthenaList data ptr */
                             if (count > 0 && count <= MAX_SNAPSHOTS && data &&
@@ -739,7 +744,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v20 started");
+    log_msg("Ghost thread v20b started");
     while (1) {
         Sleep(16);
         check_race_state();
