@@ -1,10 +1,10 @@
-# Ghost Saver Mod (v18)
+# Ghost Saver Mod (v19)
 
 Saves Time Trial ghost data to `GHOST.txt` so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
 
 ## How It Works
 
-1. **On race start**: An `App_StartPracticeRace` detour hook fires after the game creates the recording buffer. If `GHOST.txt` contains saved data for the current race name, the mod loads it into the game's playback buffer (`App+0x910`) so the ghost ball appears immediately.
+1. **On race start**: An `App_StartPracticeRace` detour hook fires. BEFORE calling the original function, the mod pre-populates `App+0x910` (playback buffer) from `GHOST.txt` and creates a dummy `App+0x90C` (recording buffer) with NO_TIME. This ensures `Board_ctor` (called inside `App_StartPracticeRace`) sees `App+0x910 != NULL` and creates the ghost ball at `scene+0x361C`. The dummy recording protects the playback from being destroyed by the game's BTT management code.
 2. **During race**: A polling thread (60Hz) records ball position/velocity/rotation into an internal buffer, mirroring the game's own recording.
 3. **On race finish**: When the ball crosses the goal, the mod compares the finish time against the saved best time. If faster (or no saved ghost exists), it overwrites the saved data. If slower, it discards the new data.
 

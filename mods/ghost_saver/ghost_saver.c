@@ -1,5 +1,13 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v18)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v19)
  *
+ * v19: Fix crash at 0x4276B6 (BestTimeTracker_PlaybackSnapshot NULL deref).
+ *      Root cause: mod injected App+0x910 AFTER App_StartPracticeRace, but
+ *      Board_ctor (called inside it) creates the ghost ball at scene+0x361C
+ *      only if App+0x910 is non-NULL at ctor time. Fix: pre-inject App+0x910
+ *      and a dummy App+0x90C BEFORE calling the original, so Board_ctor sees
+ *      the playback buffer and creates the ghost ball. Also look up race name
+ *      by index (static table at 0x4F7080) since PlayerProfile doesn't exist
+ *      yet at hook entry.
  * v18: Fix heap allocator (use game's operator_new, not malloc), add time
  *      comparison before saving, add Time Trial check in hook path, fix ball
  *      pointer with fallback chain, remove dead code.
@@ -492,10 +500,106 @@ static unsigned char *g_trampoline = NULL;
 static unsigned char g_origBytes[HOOK_BYTES];
 static int g_hookInstalled = 0;
 
+/* Get race name from the static tournament name table by race index.
+ * Used pre-call (before PlayerProfile/BTT exist) to look up the name.
+ * Table at 0x4F7080: array of DWORD pointers to race name strings. */
+static int get_race_name_by_index(DWORD race_index, char *out, int outLen) {
+    if (race_index >= 16) return 0;
+    DWORD *nameTable = (DWORD*)0x004F7080;
+    if (IsBadReadPtr(nameTable + race_index, 4)) return 0;
+    char *name = (char*)nameTable[race_index];
+    if (!name || (DWORD)name < 0x400000) return 0;
+    if (IsBadReadPtr(name, 2)) return 0;
+    if (name[0] < 0x20 || name[0] > 0x7E) return 0;
+    strncpy(out, name, outLen - 1);
+    out[outLen - 1] = '\0';
+    return 1;
+}
+
+/* Check if this is a Time Trial race by looking at App+0x234 (party mode).
+ * Pre-call, we can't check profile+0x11 (profile doesn't exist yet), so we
+ * use party_mode==0 as a heuristic. The full check is done post-call. */
+static int is_time_trial_precheck(void) {
+    DWORD app = get_app();
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return 0;
+    if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return 0;
+    return 1;
+}
+
 /* hook_impl receives both App (ECX at entry) and race_index ([ESP+4] at entry).
- * It calls the original function via trampoline, passing race_index on stack
- * so the original's RET 0x4 can pop it correctly. Then it injects the ghost. */
+ *
+ * CRITICAL: We must set App+0x910 BEFORE calling the original function, not
+ * after. The original App_StartPracticeRace calls App_StartRace → Board_ctor,
+ * and Board_ctor checks App+0x910 to decide whether to create the ghost ball
+ * (stored at scene+0x361C). If App+0x910 is NULL when Board_ctor runs, no
+ * ghost ball is created. Then Level_UpdateAndRender sees App+0x910 != NULL
+ * (set by our post-hook injection) and calls BestTimeTracker_PlaybackSnapshot
+ * with a NULL ghost_ball_ptr → crash at 0x4276B6 (deref NULL+0x16C).
+ *
+ * But there's a catch: App_StartPracticeRace's BTT management code will
+ * DESTROY our injected App+0x910 if App+0x90C (recording) is NULL — it
+ * enters the "one is NULL" branch and frees the playback BTT. To survive
+ * this, we must ALSO pre-set App+0x90C with a dummy BTT so the game's
+ * BTT management enters the "both exist" branch and keeps our playback.
+ *
+ * After the original returns, we don't need to do anything — Board_ctor
+ * already created the ghost ball, and the game's BTT management preserved
+ * our playback BTT (or promoted the dummy recording to playback, replacing
+ * ours — but the dummy has NO_TIME so it won't replace). */
 void hook_impl(DWORD app, DWORD race_index) {
+    /* Pre-inject: set App+0x910 before calling original so Board_ctor creates
+     * the ghost ball. We need the race name, looked up by race index. */
+    if (is_time_trial_precheck()) {
+        char raceName[128] = "";
+        if (get_race_name_by_index(race_index, raceName, sizeof(raceName)) && raceName[0]) {
+            log_fmt("HOOK: pre-inject for race '%s' (index=%d)", raceName, race_index);
+
+            /* Check if we have a saved ghost for this race */
+            int savedTime = get_saved_time(raceName);
+            if (savedTime != NO_TIME) {
+                /* Pre-populate App+0x910 with our ghost BTT */
+                if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
+                    DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
+                    if (!existing || existing < 0x10000) {
+                        inject_saved_ghost(raceName);
+                    } else {
+                        log_fmt("App+0x910 already set (0x%X), keeping existing", existing);
+                    }
+                }
+
+                /* If App+0x90C (recording) is NULL, the game's BTT management
+                 * will destroy our App+0x910. Create a dummy recording BTT with
+                 * NO_TIME so the game enters the "both exist" branch and keeps
+                 * our playback (since NO_TIME will not beat savedTime). */
+                if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
+                    DWORD recording = *(DWORD*)(app + APP_90C_RECORDING);
+                    if (!recording || recording < 0x10000) {
+                        log_msg("Pre-creating dummy recording BTT to protect playback");
+                        void *dummyRec = game_operator_new(BTT_SIZE);
+                        if (dummyRec) {
+                            call_btt_ctor(dummyRec);
+                            DWORD vt = *(DWORD*)dummyRec;
+                            if (vt == 0x004D262C) {
+                                *(DWORD*)((char*)dummyRec + BTT_BEST_TIME) = NO_TIME;
+                                *(DWORD*)(app + APP_90C_RECORDING) = (DWORD)dummyRec;
+                                log_fmt("Dummy recording BTT at 0x%X (NO_TIME)", (DWORD)dummyRec);
+                            } else {
+                                log_fmt("ERROR: dummy BTT ctor vtable=0x%X", vt);
+                            }
+                        }
+                    }
+                }
+            } else {
+                log_fmt("No saved ghost for '%s', skipping pre-inject", raceName);
+            }
+        } else {
+            log_fmt("HOOK: could not resolve race name for index %d", race_index);
+        }
+    }
+
+    /* Call original App_StartPracticeRace via trampoline. Board_ctor will see
+     * App+0x910 (if we set it) and create the ghost ball at scene+0x361C. */
     __asm__ volatile(
         "mov %0, %%ecx\n"
         "push %2\n"
@@ -504,34 +608,7 @@ void hook_impl(DWORD app, DWORD race_index) {
         : "eax", "ecx", "edx", "memory"
     );
 
-    char raceName[128] = "";
-
-    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
-        DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
-        if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
-            strncpy(raceName, (char*)(btt + BTT_NAME), 127);
-            raceName[127] = '\0';
-        }
-    }
-
-    if (!raceName[0])
-        return;
-
-    log_fmt("HOOK: post-App_StartPracticeRace race='%s'", raceName);
-
-    if (!is_time_trial_active()) {
-        log_msg("Not in Time Trial mode — skipping ghost injection");
-        return;
-    }
-
-    if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
-        DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
-        if (!existing || existing < 0x10000) {
-            inject_saved_ghost(raceName);
-        } else {
-            log_fmt("App+0x910 already set (0x%X), keeping existing", existing);
-        }
-    }
+    log_msg("HOOK: App_StartPracticeRace returned");
 }
 
 /* Naked stub: extracts ECX (App) and [ESP+4] (race_index) from the
@@ -601,7 +678,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v18 started");
+    log_msg("Ghost thread v19 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -627,7 +704,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v18 Init ===");
+    log_msg("=== Ghost Saver Mod v19 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
