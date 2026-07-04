@@ -395,49 +395,56 @@ static void inject_saved_ghost(const char *raceName) {
 
     log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
 
-    /* Create BestTimeTracker for playback — manually init without calling game functions */
-    void *btt = op_new(BTT_SIZE);
-    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc BTT failed"); return; }
-    log_fmt("BTT allocated at %p", btt);
+    /* Clone the game's recording BTT instead of building one from scratch.
+     * This ensures ALL internal fields are correct (vtable, AthenaList state,
+     * etc.) — we only replace the snapshot data. */
+    DWORD recordingBTT = *(DWORD*)(app + APP_90C_RECORDING);
+    if (!recordingBTT || recordingBTT < 0x10000) {
+        log_msg("ERROR: No recording BTT at App+0x90C to clone");
+        free(savedSnaps);
+        return;
+    }
+    if (IsBadReadPtr((void*)recordingBTT, BTT_SIZE)) {
+        log_msg("ERROR: Recording BTT at 0x%X is not readable");
+        free(savedSnaps);
+        return;
+    }
+    log_fmt("Cloning recording BTT at 0x%X", recordingBTT);
 
-    manually_init_btt(btt);
-    log_msg("BTT manually initialized");
+    void *btt = malloc(BTT_SIZE);
+    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc BTT clone failed"); return; }
+    memcpy(btt, (void*)recordingBTT, BTT_SIZE);
+    log_fmt("BTT cloned at %p", btt);
 
+    /* Set best_time and race name */
     *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
-
-    /* Copy race name into BTT+0x424 */
     char *bttName = (char*)((char*)btt + BTT_NAME);
     strncpy(bttName, raceName, 127);
     bttName[127] = '\0';
 
+    /* Reset playback_index to 0 (start from first frame) */
+    *(int*)((char*)btt + 0x41C) = 0;
+
     /* Allocate a dynamic array for snapshot pointers.
-     * AthenaList stores items in a separate malloc'd array at BTT+0x410,
-     * NOT in the inline array. PlaybackSnapshot reads from BTT+0x410. */
+     * AthenaList stores the array pointer at BTT+0x410 (AL offset 0x40C). */
     int numToStore = savedCount;
     if (numToStore > MAX_SNAPSHOTS) numToStore = MAX_SNAPSHOTS;
 
     DWORD *snapArray = (DWORD*)malloc(numToStore * sizeof(DWORD));
-    if (!snapArray) { free(savedSnaps); log_msg("ERROR: alloc snap array failed"); return; }
+    if (!snapArray) { free(savedSnaps); free(btt); log_msg("ERROR: alloc snap array failed"); return; }
 
     for (int i = 0; i < numToStore; i++) {
-        DWORD *snap = (DWORD*)op_new(SNAP_SIZE);
+        DWORD *snap = (DWORD*)malloc(SNAP_SIZE);
         if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); snapArray[i] = 0; continue; }
         memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
         snapArray[i] = (DWORD)snap;
     }
 
-    /* Write to AthenaList fields.
-     * AthenaList is embedded at BTT+0x004, so its fields are:
-     *   BTT+0x008 = list_count (AL offset 0x004)
-     *   BTT+0x414 = list_array_ptr (AL offset 0x410)
-     *   BTT+0x418 = capacity (AL offset 0x414)
-     * PlaybackSnapshot reads BTT+0x41C (playback_index) and
-     * dereferences BTT+0x414 (list_array_ptr)[index]. */
-    DWORD *alist = (DWORD*)((char*)btt + 4);
-    alist[1] = numToStore;              /* BTT+0x008: list_count */
-    *(DWORD**)((char*)btt + 0x410) = snapArray;  /* BTT+0x410 = list_array_ptr (AL offset 0x40C) */
-    /* BTT+0x414: capacity/sorted flag = 0 (already zeroed by memset) */
-    /* BTT+0x41C: playback_index = 0 (already zeroed by memset, starts at first frame) */
+    /* Write snapshot array to the cloned BTT.
+     * The AthenaList count is at BTT+0x008 (AL offset 0x004).
+     * The array pointer is at BTT+0x410 (AL offset 0x40C). */
+    *(int*)((char*)btt + 0x008) = numToStore;  /* list_count */
+    *(DWORD**)((char*)btt + 0x410) = snapArray;  /* list_array_ptr */
     log_fmt("Stored %d/%d snapshots (array at 0x%X)", numToStore, savedCount, (DWORD)snapArray);
 
     /* Free old playback buffer if exists.
