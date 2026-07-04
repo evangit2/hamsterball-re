@@ -46,7 +46,6 @@ static int g_recording = 0;
 static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
 static DWORD g_prevRecording = 0;
-static int g_heartbeatCounter = 0;
 static char g_ghostPath[MAX_PATH] = "";
 static char g_logPath[MAX_PATH] = "";
 
@@ -364,26 +363,6 @@ static void inject_saved_ghost(const char *raceName) {
 static void check_race_state(void) {
     DWORD app = get_app();
     if (!app) return;
-
-    g_heartbeatCounter++;
-    if (g_heartbeatCounter >= 300) {
-        g_heartbeatCounter = 0;
-        DWORD profile = 0, recording = 0, playback = 0;
-        BYTE tt_flag = 0, party = 0;
-        if (!IsBadReadPtr((void*)(app + APP_220_PROFILE), 4)) {
-            profile = *(DWORD*)(app + APP_220_PROFILE);
-            if (profile && profile > 0x10000 && !IsBadReadPtr((void*)(profile + 0x11), 1))
-                tt_flag = *(BYTE*)(profile + 0x11);
-        }
-        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
-            party = *(BYTE*)(app + APP_234_PARTY_MODE);
-        if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
-            recording = *(DWORD*)(app + APP_90C_RECORDING);
-        if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4))
-            playback = *(DWORD*)(app + APP_910_PLAYBACK);
-        log_fmt("HEARTBEAT app=0x%X profile=0x%X tt=%d party=%d rec=0x%X play=0x%X rec_active=%d snaps=%d",
-               app, profile, tt_flag, party, recording, playback, g_recording, g_rawCount);
-    }
 
     int tt = is_time_trial_active();
     if (!tt) {
