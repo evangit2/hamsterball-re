@@ -646,16 +646,40 @@ static unsigned char g_origBytes[HOOK_BYTES];
 static int g_hookInstalled = 0;
 
 /* The hook function — called INSTEAD of App_StartPracticeRace.
- * We call the original function FIRST (via trampoline), then set App+0x910
- * AFTER it returns. This way the game's cleanup code doesn't try to destroy
- * our BTT. The ghost ball won't be created for this race, but on the NEXT
- * race start, App_StartPracticeRace will see App+0x910 and create it. */
+ * PRE-HOOK: Set App+0x910 BEFORE calling the original function.
+ * The original checks if App+0x910's race name matches — if it does,
+ * it keeps our BTT. The scene init then sees App+0x910 non-NULL and
+ * creates the ghost ball. Ghost appears on FIRST race selection. */
 static void __attribute__((cdecl)) hook_App_StartPracticeRace(DWORD app, DWORD race_ptr) {
-    /* Get race name BEFORE calling original (recording BTT is created by the
-     * caller, before App_StartPracticeRace runs) */
     char raceName[128] = "";
 
-    /* Call original App_StartPracticeRace via trampoline FIRST.
+    /* Get race name from the recording BTT (App+0x90C) which was
+     * created by the caller before App_StartPracticeRace runs */
+    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
+        DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
+        if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
+            strncpy(raceName, (char*)(btt + BTT_NAME), 127);
+            raceName[127] = '\0';
+        }
+    }
+
+    /* Inject ghost BEFORE calling original. App_StartPracticeRace will
+     * check if App+0x910's race name matches — if it does, it keeps it. */
+    if (raceName[0]) {
+        log_fmt("HOOK: pre-App_StartPracticeRace race='%s'", raceName);
+
+        /* Only inject if App+0x910 is currently NULL */
+        if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
+            DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
+            if (!existing || existing < 0x10000) {
+                inject_saved_ghost(raceName);
+            } else {
+                log_fmt("App+0x910 already set (0x%X), keeping existing", existing);
+            }
+        }
+    }
+
+    /* Call original App_StartPracticeRace via trampoline.
      * ECX = app (this), [ESP+4] = race_ptr (param_1). */
     register DWORD ecx_val asm("ecx") = app;
     __asm__ volatile(
@@ -665,33 +689,6 @@ static void __attribute__((cdecl)) hook_App_StartPracticeRace(DWORD app, DWORD r
         : : "r"(race_ptr), "r"((void*)g_trampoline), "c"(ecx_val)
         : "eax", "edx", "memory"
     );
-
-    /* AFTER original returns, get race name from the new recording BTT */
-    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
-        DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
-        if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
-            strncpy(raceName, (char*)(btt + BTT_NAME), 127);
-            raceName[127] = '\0';
-        }
-    }
-
-    /* Now inject our ghost data. The original function already ran,
-     * so it won't try to destroy our BTT. The ghost won't appear THIS
-     * race, but on the NEXT race start, App_StartPracticeRace will see
-     * App+0x910 and create the ghost ball. */
-    if (raceName[0]) {
-        log_fmt("HOOK: post-App_StartPracticeRace race='%s'", raceName);
-
-        /* Only inject if App+0x910 is currently NULL (no ghost) */
-        if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
-            DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
-            if (!existing || existing < 0x10000) {
-                inject_saved_ghost(raceName);
-            } else {
-                log_fmt("App+0x910 already set (0x%X), skipping injection", existing);
-            }
-        }
-    }
 }
 
 static void install_hook(void) {
@@ -776,7 +773,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v13 Init ===");
+    log_msg("=== Ghost Saver Mod v14 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
