@@ -414,7 +414,16 @@ static void inject_saved_ghost(const char *raceName) {
 
     /* Call game's BestTimeTracker_ctor via inline asm (__thiscall, ECX=btt) */
     call_btt_ctor(btt);
-    log_msg("BTT ctor called");
+    
+    /* Verify the ctor worked — check that the vtable was set correctly */
+    DWORD vtable = *(DWORD*)btt;
+    if (vtable != 0x004D262C) {
+        log_fmt("ERROR: BTT ctor failed — vtable=0x%X (expected 0x004D262C)", vtable);
+        free(btt);
+        free(savedSnaps);
+        return;
+    }
+    log_msg("BTT ctor OK (vtable verified)");
 
     *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
 
@@ -637,33 +646,17 @@ static unsigned char g_origBytes[HOOK_BYTES];
 static int g_hookInstalled = 0;
 
 /* The hook function — called INSTEAD of App_StartPracticeRace.
- * ECX = App (this), [ESP+4] = race_ptr (param_1).
- * We do our ghost injection, then call the trampoline which
- * executes the original prologue and jumps back into the original function. */
+ * We call the original function FIRST (via trampoline), then set App+0x910
+ * AFTER it returns. This way the game's cleanup code doesn't try to destroy
+ * our BTT. The ghost ball won't be created for this race, but on the NEXT
+ * race start, App_StartPracticeRace will see App+0x910 and create it. */
 static void __attribute__((cdecl)) hook_App_StartPracticeRace(DWORD app, DWORD race_ptr) {
-    /* Inject ghost data before the race starts.
-     * The game will see App+0x910 and create the ghost ball. */
-    if (app && app > 0x10000) {
-        /* Get race name from the recording BTT that was just created */
-        char raceName[128] = "";
-        if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
-            DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
-            if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
-                strncpy(raceName, (char*)(btt + BTT_NAME), 127);
-                raceName[127] = '\0';
-            }
-        }
-        if (raceName[0]) {
-            log_fmt("HOOK: App_StartPracticeRace race='%s'", raceName);
-            inject_saved_ghost(raceName);
-        }
-    }
+    /* Get race name BEFORE calling original (recording BTT is created by the
+     * caller, before App_StartPracticeRace runs) */
+    char raceName[128] = "";
 
-    /* Call original App_StartPracticeRace via trampoline.
-     * The trampoline executes the original 7 bytes (push 0xFFFFFFFF,
-     * push 0x004CAEB6) then JMPs to 0x428C57.
-     * We need to pass ECX=app and [ESP+4]=race_ptr (thiscall).
-     * The trampoline is just code, so we call it with the right convention. */
+    /* Call original App_StartPracticeRace via trampoline FIRST.
+     * ECX = app (this), [ESP+4] = race_ptr (param_1). */
     register DWORD ecx_val asm("ecx") = app;
     __asm__ volatile(
         "push %0\n"           /* push race_ptr (param_1) */
@@ -672,6 +665,33 @@ static void __attribute__((cdecl)) hook_App_StartPracticeRace(DWORD app, DWORD r
         : : "r"(race_ptr), "r"((void*)g_trampoline), "c"(ecx_val)
         : "eax", "edx", "memory"
     );
+
+    /* AFTER original returns, get race name from the new recording BTT */
+    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
+        DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
+        if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
+            strncpy(raceName, (char*)(btt + BTT_NAME), 127);
+            raceName[127] = '\0';
+        }
+    }
+
+    /* Now inject our ghost data. The original function already ran,
+     * so it won't try to destroy our BTT. The ghost won't appear THIS
+     * race, but on the NEXT race start, App_StartPracticeRace will see
+     * App+0x910 and create the ghost ball. */
+    if (raceName[0]) {
+        log_fmt("HOOK: post-App_StartPracticeRace race='%s'", raceName);
+
+        /* Only inject if App+0x910 is currently NULL (no ghost) */
+        if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
+            DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
+            if (!existing || existing < 0x10000) {
+                inject_saved_ghost(raceName);
+            } else {
+                log_fmt("App+0x910 already set (0x%X), skipping injection", existing);
+            }
+        }
+    }
 }
 
 static void install_hook(void) {
@@ -756,7 +776,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v12 Init ===");
+    log_msg("=== Ghost Saver Mod v13 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
