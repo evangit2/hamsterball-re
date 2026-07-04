@@ -470,13 +470,13 @@ static void check_race_state(void) {
                             log_fmt("No existing ghost for '%s' — saving", g_currentRaceName);
                             save_ghost_for_race(g_currentRaceName, finishTime,
                                                g_rawSnaps, g_rawCount);
-                            log_msg("Ghost saved to GHOST.txt");
+                            log_msg("Ghost saved");
                         } else if (finishTime < existingTime) {
                             log_fmt("New time %d < saved time %d — overwriting",
                                    finishTime, existingTime);
                             save_ghost_for_race(g_currentRaceName, finishTime,
                                                g_rawSnaps, g_rawCount);
-                            log_msg("Ghost saved to GHOST.txt");
+                            log_msg("Ghost saved");
                         } else {
                             log_fmt("New time %d >= saved time %d — discarding",
                                    finishTime, existingTime);
