@@ -19,8 +19,8 @@ struct SceneMapping {
 };
 
 static SceneMapping RACE_MAP[] = {
-    {"Board (Warm-Up)",      "Warm-Up Race",       "tournament"},
-    {"Board (Beginner)",     "Beginner Race",      "tourney-beginner"},
+    {"Board (Warm-Up)",      "Warm-Up Race",       "tourney-beginner"},
+    {"Board (Beginner)",     "Beginner Race",      "tourney-cascade"},
     {"Board (Intermediate)", "Intermediate Race",   "tourney-intermediate"},
     {"Board (Dizzy)",        "Dizzy Race",          "tourney-dizzy"},
     {"Board (Tower)",        "Tower Race",          "tourney-tower"},
