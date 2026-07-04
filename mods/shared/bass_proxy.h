@@ -219,7 +219,7 @@ static void install_jmp_hook_nop(DWORD patchAddr, DWORD caveAddr, int totalPatch
 
 /* Common game function typedefs */
 typedef void* (__cdecl *operator_new_t)(SIZE_T);
-static operator_new_t game_operator_new = (operator_new_t)0x004BA570;
+static operator_new_t game_operator_new = (operator_new_t)0x004BA57B;
 
 typedef void (__thiscall *AthenaList_Append_t)(DWORD* list, void* item);
 static AthenaList_Append_t AthenaList_Append = (AthenaList_Append_t)0x00453780;
