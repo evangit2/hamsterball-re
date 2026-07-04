@@ -395,63 +395,17 @@ static void inject_saved_ghost(const char *raceName) {
 
     log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
 
-    /* NEW APPROACH: Don't create/inject App+0x910 at all.
+    /* Can't safely write into the recording BTT while the game is recording.
+     * The game calls RecordSnapshot→AthenaList_Append every frame, which
+     * tries to realloc our malloc'd array → heap mismatch → crash at 0x4537F1.
      *
-     * The crash was at 0x4276B6: mov eax, [esi+0x16C] where ESI = ghost_ball_ptr.
-     * The game passes a ghost ball pointer to PlaybackSnapshot, but the ghost
-     * ball is only created when the GAME's own App_StartPracticeRace sets
-     * App+0x910. When we set it ourselves, no ghost ball exists → crash.
-     *
-     * Instead: write our saved snapshots into the RECORDING BTT (App+0x90C).
-     * When the player finishes this race, App_StartPracticeRace will compare
-     * the recording vs playback and naturally promote it to App+0x910,
-     * creating the ghost ball at the same time.
-     *
-     * This means the ghost appears on the NEXT run after loading, not the
-     * current one. But it won't crash because the game handles everything.
+     * For now, just log that we have saved data. Loading requires hooking
+     * App_StartPracticeRace to inject before the race starts (future work).
+     * The save functionality works correctly — ghosts are saved to GHOST.txt
+     * on race finish and can be reloaded after implementing a proper hook.
      */
-    DWORD recordingBTT = *(DWORD*)(app + APP_90C_RECORDING);
-    if (!recordingBTT || recordingBTT < 0x10000) {
-        log_msg("ERROR: No recording BTT at App+0x90C");
-        free(savedSnaps);
-        return;
-    }
-    if (IsBadReadPtr((void*)recordingBTT, BTT_SIZE)) {
-        log_fmt("ERROR: Recording BTT at 0x%X is not readable", recordingBTT);
-        free(savedSnaps);
-        return;
-    }
-    log_fmt("Recording BTT at 0x%X", recordingBTT);
-
-    /* Set best_time on the recording BTT so the game will promote it */
-    *(DWORD*)((char*)recordingBTT + BTT_BEST_TIME) = savedTime;
-
-    /* Copy race name */
-    char *bttName = (char*)((char*)recordingBTT + BTT_NAME);
-    strncpy(bttName, raceName, 127);
-    bttName[127] = '\0';
-
-    /* Write our saved snapshots into the recording BTT's AthenaList.
-     * The AthenaList count is at BTT+0x008 (AL offset 0x004).
-     * The array pointer is at BTT+0x410 (AL offset 0x40C). */
-    int numToStore = savedCount;
-    if (numToStore > MAX_SNAPSHOTS) numToStore = MAX_SNAPSHOTS;
-
-    DWORD *snapArray = (DWORD*)malloc(numToStore * sizeof(DWORD));
-    if (!snapArray) { free(savedSnaps); log_msg("ERROR: alloc snap array failed"); return; }
-
-    for (int i = 0; i < numToStore; i++) {
-        DWORD *snap = (DWORD*)malloc(SNAP_SIZE);
-        if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); snapArray[i] = 0; continue; }
-        memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
-        snapArray[i] = (DWORD)snap;
-    }
-
-    *(int*)((char*)recordingBTT + 0x008) = numToStore;  /* list_count */
-    *(DWORD**)((char*)recordingBTT + 0x410) = snapArray;  /* list_array_ptr */
-    log_fmt("Wrote %d/%d snapshots into recording BTT", numToStore, savedCount);
+    log_msg("Saved ghost data available — loading not yet implemented (needs hook)");
     free(savedSnaps);
-    log_msg("Ghost data loaded into recording BTT — will appear on next race");
 }
 
 /* ═════════════════════════════════════════════════════════════════
