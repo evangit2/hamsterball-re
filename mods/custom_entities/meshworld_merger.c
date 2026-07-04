@@ -314,10 +314,22 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
     int ce_count = scan_level_for_ce(level_data, file_size, ce_names, 32);
     if (ce_count == 0) { free(level_data); return 0; }
 
-    /* Load entity meshes */
+    /* Find S5 vertex count (needed to offset entity vertex references) */
+    MWReader lr_pre;
+    mw_init(&lr_pre, level_data, file_size);
+    mw_skip_s1(&lr_pre);
+    mw_skip_s2(&lr_pre);
+    mw_skip_s3(&lr_pre);
+    mw_skip(&lr_pre, 24);  /* S4 */
+    DWORD level_vtx_count = mw_u32(&lr_pre);
+
+    /* Load entity meshes.
+     * vtx_base starts at level_vtx_count so that entity vertex references
+     * (which are offsets into the global vertex buffer) point past the
+     * level's vertices into the entity's appended vertices. */
     EntMesh meshes[32];
     int valid = 0;
-    DWORD vtx_base = 0;
+    DWORD vtx_base = level_vtx_count;
 
     for (int i = 0; i < ce_count; i++) {
         char mw_path[MAX_PATH];
@@ -360,7 +372,8 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
         total_entity_geoms += meshes[i].geom_count;
     }
 
-    /* Find S5 count position and S6 start */
+    /* Find S5 count position and S6 start.
+     * level_vtx_count was already read above (before entity loading). */
     MWReader lr;
     mw_init(&lr, level_data, file_size);
     mw_skip_s1(&lr);
@@ -369,8 +382,8 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
     mw_skip(&lr, 24);  /* S4 */
 
     DWORD s5_count_pos = lr.pos;
-    DWORD level_vtx_count = mw_u32(&lr);
-    mw_skip(&lr, level_vtx_count * 32);
+    /* level_vtx_count already computed above */
+    mw_skip(&lr, 4 + level_vtx_count * 32);
     DWORD s6_start = lr.pos;
 
     int root_sub_count = *(int*)(level_data + s6_start + 24);
