@@ -395,43 +395,50 @@ static void inject_saved_ghost(const char *raceName) {
 
     log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
 
-    /* Clone the game's recording BTT instead of building one from scratch.
-     * This ensures ALL internal fields are correct (vtable, AthenaList state,
-     * etc.) — we only replace the snapshot data. */
+    /* NEW APPROACH: Don't create/inject App+0x910 at all.
+     *
+     * The crash was at 0x4276B6: mov eax, [esi+0x16C] where ESI = ghost_ball_ptr.
+     * The game passes a ghost ball pointer to PlaybackSnapshot, but the ghost
+     * ball is only created when the GAME's own App_StartPracticeRace sets
+     * App+0x910. When we set it ourselves, no ghost ball exists → crash.
+     *
+     * Instead: write our saved snapshots into the RECORDING BTT (App+0x90C).
+     * When the player finishes this race, App_StartPracticeRace will compare
+     * the recording vs playback and naturally promote it to App+0x910,
+     * creating the ghost ball at the same time.
+     *
+     * This means the ghost appears on the NEXT run after loading, not the
+     * current one. But it won't crash because the game handles everything.
+     */
     DWORD recordingBTT = *(DWORD*)(app + APP_90C_RECORDING);
     if (!recordingBTT || recordingBTT < 0x10000) {
-        log_msg("ERROR: No recording BTT at App+0x90C to clone");
+        log_msg("ERROR: No recording BTT at App+0x90C");
         free(savedSnaps);
         return;
     }
     if (IsBadReadPtr((void*)recordingBTT, BTT_SIZE)) {
-        log_msg("ERROR: Recording BTT at 0x%X is not readable");
+        log_fmt("ERROR: Recording BTT at 0x%X is not readable", recordingBTT);
         free(savedSnaps);
         return;
     }
-    log_fmt("Cloning recording BTT at 0x%X", recordingBTT);
+    log_fmt("Recording BTT at 0x%X", recordingBTT);
 
-    void *btt = malloc(BTT_SIZE);
-    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc BTT clone failed"); return; }
-    memcpy(btt, (void*)recordingBTT, BTT_SIZE);
-    log_fmt("BTT cloned at %p", btt);
+    /* Set best_time on the recording BTT so the game will promote it */
+    *(DWORD*)((char*)recordingBTT + BTT_BEST_TIME) = savedTime;
 
-    /* Set best_time and race name */
-    *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
-    char *bttName = (char*)((char*)btt + BTT_NAME);
+    /* Copy race name */
+    char *bttName = (char*)((char*)recordingBTT + BTT_NAME);
     strncpy(bttName, raceName, 127);
     bttName[127] = '\0';
 
-    /* Reset playback_index to 0 (start from first frame) */
-    *(int*)((char*)btt + 0x41C) = 0;
-
-    /* Allocate a dynamic array for snapshot pointers.
-     * AthenaList stores the array pointer at BTT+0x410 (AL offset 0x40C). */
+    /* Write our saved snapshots into the recording BTT's AthenaList.
+     * The AthenaList count is at BTT+0x008 (AL offset 0x004).
+     * The array pointer is at BTT+0x410 (AL offset 0x40C). */
     int numToStore = savedCount;
     if (numToStore > MAX_SNAPSHOTS) numToStore = MAX_SNAPSHOTS;
 
     DWORD *snapArray = (DWORD*)malloc(numToStore * sizeof(DWORD));
-    if (!snapArray) { free(savedSnaps); free(btt); log_msg("ERROR: alloc snap array failed"); return; }
+    if (!snapArray) { free(savedSnaps); log_msg("ERROR: alloc snap array failed"); return; }
 
     for (int i = 0; i < numToStore; i++) {
         DWORD *snap = (DWORD*)malloc(SNAP_SIZE);
@@ -440,28 +447,11 @@ static void inject_saved_ghost(const char *raceName) {
         snapArray[i] = (DWORD)snap;
     }
 
-    /* Write snapshot array to the cloned BTT.
-     * The AthenaList count is at BTT+0x008 (AL offset 0x004).
-     * The array pointer is at BTT+0x410 (AL offset 0x40C). */
-    *(int*)((char*)btt + 0x008) = numToStore;  /* list_count */
-    *(DWORD**)((char*)btt + 0x410) = snapArray;  /* list_array_ptr */
-    log_fmt("Stored %d/%d snapshots (array at 0x%X)", numToStore, savedCount, (DWORD)snapArray);
-
-    /* Free old playback buffer if exists.
-     * WARNING: call_btt_dtor uses inline asm __thiscall which may crash.
-     * Skip the dtor — just leak the old BTT. It's a few KB, not worth crashing. */
-    /* DWORD existingPlayback = *(DWORD*)(app + APP_910_PLAYBACK); */
-    /* Don't free — just overwrite. The old BTT will be leaked but that's OK. */
-
-    /* Verify the list was actually populated */
-    int listCount = *(int*)((char*)btt + 0x008);  /* BTT+0x008 = list_count (AL offset 0x004) */
-    DWORD listArray = *(DWORD*)((char*)btt + 0x410);  /* BTT+0x410 = list_array_ptr (AL offset 0x40C) */
-    int playIdx = *(int*)((char*)btt + 0x41C);  /* playback_index */
-    log_fmt("BTT list count=%d array=0x%X playback_index=%d", listCount, listArray, playIdx);
-
-    *(DWORD*)(app + APP_910_PLAYBACK) = (DWORD)btt;
+    *(int*)((char*)recordingBTT + 0x008) = numToStore;  /* list_count */
+    *(DWORD**)((char*)recordingBTT + 0x410) = snapArray;  /* list_array_ptr */
+    log_fmt("Wrote %d/%d snapshots into recording BTT", numToStore, savedCount);
     free(savedSnaps);
-    log_fmt("Ghost injected: %d snapshots into App+0x910 (btt=0x%X)", savedCount, (DWORD)btt);
+    log_msg("Ghost data loaded into recording BTT — will appear on next race");
 }
 
 /* ═════════════════════════════════════════════════════════════════
