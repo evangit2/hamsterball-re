@@ -657,6 +657,7 @@ static int g_hookInstalled = 0;
 
 /* C implementation of the hook (non-static for asm visibility) */
 void hook_impl(DWORD app, DWORD race_ptr) {
+    log_fmt("HOOK: entered hook_impl app=0x%X race_ptr=0x%X", app, race_ptr);
     char raceName[128] = "";
 
     /* Get race name from the recording BTT (App+0x90C) */
