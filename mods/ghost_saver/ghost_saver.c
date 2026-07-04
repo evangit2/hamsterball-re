@@ -226,11 +226,14 @@ static void call_btt_ctor(void *btt) {
 }
 
 static void call_alist_append(DWORD *list, void *item) {
+    /* AthenaList_Append is __thiscall(this, item) with RET 0x4 — callee
+     * cleans up the 4-byte stack param itself. Do NOT add $4 to ESP after
+     * the call; that double-pops and corrupts the stack by 4 bytes per
+     * call. 608 calls = 2432-byte stack corruption = crash. */
     __asm__ volatile(
         "mov %0, %%ecx\n"
         "push %1\n"
         "call *%2\n"
-        "add $4, %%esp\n"
         : : "r"(list), "r"(item), "r"((void*)ADDR_ALIST_APPEND)
         : "eax", "ecx", "edx", "memory"
     );
