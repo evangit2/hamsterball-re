@@ -50,7 +50,8 @@ Game Root/
 
 ### Main Mod (`bass.dll`)
 
-- **Non-invasive:** No code patches, no function hooks. Uses a background polling thread (`Sleep(16)` ≈ 60Hz).
+- **File-level mesh merging:** At DllMain time, scans `Levels/*.MESHWORLD` for `CE:` ref points in S1, loads matching `CustomEntities/<name>.MESHWORLD` files, and merges their vertices + octree geometry into the level file before the game loads it.
+- **Non-invasive:** No code patches, no function hooks. Uses a background polling thread (`Sleep(16)` ≈ 60Hz) for behavior animation only.
 - **Safe:** All pointer access guarded by `IsBadReadPtr`. Validates vtable pointers before use.
 - **Automatic:** Detects level changes, scans for entities, loads DLLs, calls init/update/shutdown.
 - **CE: support:** Checks for `CustomEntities/<name>.MESHWORLD` file existence before loading behavior.
@@ -134,9 +135,9 @@ Any entity name NOT in this list will be treated as custom. **Note:** `CE:` pref
 ### Main Mod (bass.dll)
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c \
+i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c meshworld_merger.c \
   -I../shared -lwinmm -Wl,--enable-stdcall-fixup -O2 -static \
-  -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+  -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse -lshlwapi
 ```
 
 ### Behavior DLLs
@@ -195,10 +196,11 @@ The mod writes a `custom_entities.log` file in the game root directory. This log
 |------|-------------|
 | `entity_api.h` | Shared header defining EntityTransform and behavior interface |
 | `custom_entities.c` | Main mod source (bass.dll proxy) |
+| `meshworld_merger.c` | Runtime file merger — injects CE: entity meshes into level files |
 | `CustomEntities/rotator.c` | Rotator behavior DLL source |
 | `CustomEntities/Rotator.dll` | Compiled Rotator behavior |
 | `CustomEntities/Rotator.MESHWORLD` | Rotator mesh geometry |
-| `Levels/Level1.MESHWORLD` | Test level with CE:Rotator entity |
+| `Levels/Level1.MESHWORLD` | Test level with CE:Rotator S1 ref point |
 | `bass.dll` | Compiled main mod |
 
 ## Technical Details

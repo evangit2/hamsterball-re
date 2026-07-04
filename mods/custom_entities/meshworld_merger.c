@@ -1,0 +1,518 @@
+/*
+ * meshworld_merger.c — Runtime MESHWORLD file merger for Custom Entities mod
+ *
+ * At DLL load time (DllMain), scans Levels/*.MESHWORLD for CE: ref points
+ * in Section 1, loads matching CustomEntities/<name>.MESHWORLD files, and
+ * merges their mesh geometry (vertices + octree leaves) into the level file
+ * before the game loads it.
+ *
+ * This is a file-level merge — happens once at DLL load, before the game
+ * loads any levels. The game then loads the merged file normally.
+ */
+
+#include <windows.h>
+#include <shlwapi.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * MESHWORLD binary format helpers
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    const BYTE* data;
+    DWORD size;
+    DWORD pos;
+    int error;
+} MWReader;
+
+static void mw_init(MWReader* r, const BYTE* data, DWORD size) {
+    r->data = data; r->size = size; r->pos = 0; r->error = 0;
+}
+
+static DWORD mw_u32(MWReader* r) {
+    if (r->error || r->pos + 4 > r->size) { r->error = 1; return 0; }
+    DWORD v = *(DWORD*)(r->data + r->pos);
+    r->pos += 4;
+    return v;
+}
+
+static void mw_skip(MWReader* r, DWORD len) {
+    if (r->error || r->pos + len > r->size) { r->error = 1; return; }
+    r->pos += len;
+}
+
+/* Read a length-prefixed string. Optionally copies to out_buf. */
+static void mw_string(MWReader* r, char* out_buf, int out_size) {
+    DWORD len = mw_u32(r);
+    if (r->error) return;
+    if (out_buf && out_size > 0) {
+        int cl = (int)len;
+        if (cl >= out_size) cl = out_size - 1;
+        if (cl > 0 && r->pos + cl <= r->size)
+            memcpy(out_buf, r->data + r->pos, cl);
+        out_buf[cl] = '\0';
+    }
+    mw_skip(r, len);
+}
+
+/* Skip material block */
+static void mw_skip_material(MWReader* r) {
+    mw_skip(r, 64);  /* 4x4f */
+    mw_skip(r, 4);   /* power */
+    mw_skip(r, 4);   /* has_refl */
+    DWORD has_tex = mw_u32(r);
+    if (has_tex) mw_string(r, NULL, 0);
+}
+
+/* Skip S1 (ref points). Returns count. */
+static int mw_skip_s1(MWReader* r) {
+    int count = (int)mw_u32(r);
+    int i;
+    for (i = 0; i < count; i++) {
+        mw_string(r, NULL, 0);
+        mw_skip(r, 24);
+        if (mw_u32(r)) mw_skip_material(r);
+    }
+    return count;
+}
+
+/* Skip S2 (splines) */
+static void mw_skip_s2(MWReader* r) {
+    int count = (int)mw_u32(r);
+    int i;
+    for (i = 0; i < count; i++) {
+        mw_string(r, NULL, 0);
+        mw_skip(r, mw_u32(r) * 12);
+    }
+}
+
+/* Skip S3 (lights) */
+static void mw_skip_s3(MWReader* r) {
+    int count = (int)mw_u32(r);
+    int i;
+    for (i = 0; i < count; i++) {
+        if (mw_u32(r) == 0) mw_skip(r, 36);
+    }
+}
+
+/* Walk octree to find end offset */
+static void mw_walk_octree(MWReader* r) {
+    mw_skip(r, 24);  /* cube */
+    int sub = (int)mw_u32(r);
+    if (sub > 0) {
+        int i;
+        for (i = 0; i < sub; i++) mw_walk_octree(r);
+    } else {
+        int gc = (int)mw_u32(r);
+        int j;
+        for (j = 0; j < gc; j++) {
+            mw_string(r, NULL, 0);
+            mw_skip_material(r);
+            int sc = (int)mw_u32(r);
+            mw_skip(r, sc * 8);
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Entity mesh collection (iterative, no nested functions)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    DWORD tri_count;
+    DWORD vtx_offset;
+} EntStrip;
+
+typedef struct {
+    /* Material raw bytes (pointer into a copy) */
+    DWORD mat_offset;   /* Offset into material buffer */
+    DWORD mat_size;
+    EntStrip* strips;
+    int strip_count;
+} EntGeom;
+
+typedef struct {
+    BYTE* vertex_data;
+    DWORD vertex_count;
+    EntGeom* geoms;
+    int geom_count;
+    BYTE* material_buf;   /* All materials stored contiguously */
+    DWORD material_buf_size;
+} EntMesh;
+
+/* Recursively collect geoms from entity octree (non-nested, passed context) */
+static void collect_geoms_rec(MWReader* r, EntMesh* mesh, DWORD vtx_off) {
+    mw_skip(r, 24);  /* cube */
+    int sub = (int)mw_u32(r);
+    if (sub > 0) {
+        int i;
+        for (i = 0; i < sub; i++)
+            collect_geoms_rec(r, mesh, vtx_off);
+    } else {
+        int gc = (int)mw_u32(r);
+        int j;
+        for (j = 0; j < gc; j++) {
+            mw_string(r, NULL, 0);  /* skip name */
+
+            /* Read material */
+            DWORD mat_start = r->pos;
+            mw_skip_material(r);
+            DWORD mat_size = r->pos - mat_start;
+
+            EntGeom* g = &mesh->geoms[mesh->geom_count++];
+            g->mat_offset = mesh->material_buf_size;
+            g->mat_size = mat_size;
+
+            /* Grow material buffer */
+            BYTE* new_buf = (BYTE*)realloc(mesh->material_buf,
+                                            mesh->material_buf_size + mat_size);
+            if (new_buf) {
+                memcpy(new_buf + mesh->material_buf_size,
+                       r->data + mat_start, mat_size);
+                mesh->material_buf = new_buf;
+                mesh->material_buf_size += mat_size;
+            }
+
+            int sc = (int)mw_u32(r);
+            g->strip_count = sc;
+            g->strips = (EntStrip*)malloc(sc * sizeof(EntStrip));
+            int k;
+            for (k = 0; k < sc; k++) {
+                g->strips[k].tri_count = mw_u32(r);
+                g->strips[k].vtx_offset = mw_u32(r) + vtx_off;
+            }
+        }
+    }
+}
+
+/* Count geoms in entity octree (recursive) */
+static int count_geoms_rec(MWReader* r) {
+    mw_skip(r, 24);
+    int sub = (int)mw_u32(r);
+    int total = 0;
+    if (sub > 0) {
+        int i;
+        for (i = 0; i < sub; i++)
+            total += count_geoms_rec(r);
+    } else {
+        int gc = (int)mw_u32(r);
+        total = gc;
+        int j;
+        for (j = 0; j < gc; j++) {
+            mw_string(r, NULL, 0);
+            mw_skip_material(r);
+            int sc = (int)mw_u32(r);
+            mw_skip(r, sc * 8);
+        }
+    }
+    return total;
+}
+
+static void collect_entity_mesh(const BYTE* ent_data, DWORD ent_size,
+                                  DWORD vtx_offset_base, EntMesh* mesh) {
+    memset(mesh, 0, sizeof(EntMesh));
+
+    MWReader r;
+    mw_init(&r, ent_data, ent_size);
+    mw_skip_s1(&r);
+    mw_skip_s2(&r);
+    mw_skip_s3(&r);
+    mw_skip(&r, 24);  /* S4 */
+
+    mesh->vertex_count = mw_u32(&r);
+    if (mesh->vertex_count == 0 || mesh->vertex_count > 100000) {
+        mesh->vertex_count = 0;
+        return;
+    }
+
+    const BYTE* vtx_ptr = ent_data + r.pos;
+    mw_skip(&r, mesh->vertex_count * 32);
+
+    /* Count geoms */
+    MWReader counter = r;
+    int gc = count_geoms_rec(&counter);
+
+    if (gc > 0) {
+        mesh->geoms = (EntGeom*)calloc(gc, sizeof(EntGeom));
+        collect_geoms_rec(&r, mesh, vtx_offset_base);
+    }
+
+    /* Copy vertex data */
+    mesh->vertex_data = (BYTE*)malloc(mesh->vertex_count * 32);
+    if (mesh->vertex_data)
+        memcpy(mesh->vertex_data, vtx_ptr, mesh->vertex_count * 32);
+}
+
+static void free_entity_mesh(EntMesh* mesh) {
+    int i;
+    for (i = 0; i < mesh->geom_count; i++)
+        free(mesh->geoms[i].strips);
+    free(mesh->geoms);
+    free(mesh->vertex_data);
+    free(mesh->material_buf);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Scan level for CE: ref points
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int scan_level_for_ce(const BYTE* data, DWORD size,
+                              char names[][256], int max_names) {
+    MWReader r;
+    mw_init(&r, data, size);
+
+    int s1_count = (int)mw_u32(&r);
+    int found = 0;
+    int i;
+    for (i = 0; i < s1_count && found < max_names; i++) {
+        char name[256] = {0};
+        mw_string(&r, name, sizeof(name));
+        mw_skip(&r, 24);
+        if (mw_u32(&r)) mw_skip_material(&r);
+
+        if (_strnicmp(name, "CE:", 3) == 0) {
+            const char* suffix = name + 3;
+            int j;
+            for (j = 0; suffix[j] && suffix[j] != '(' && j < 255; j++)
+                names[found][j] = suffix[j];
+            names[found][j] = '\0';
+            found++;
+        }
+    }
+    return found;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Merge one level file
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int merge_level_file(const char* level_path, const char* entities_dir) {
+    /* Read level file */
+    HANDLE hFile = CreateFileA(level_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                               OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return 0;
+
+    DWORD file_size = GetFileSize(hFile, NULL);
+    if (file_size == 0 || file_size > 50*1024*1024) {
+        CloseHandle(hFile);
+        return 0;
+    }
+
+    BYTE* level_data = (BYTE*)malloc(file_size);
+    if (!level_data) { CloseHandle(hFile); return 0; }
+
+    DWORD bytes_read = 0;
+    ReadFile(hFile, level_data, file_size, &bytes_read, NULL);
+    CloseHandle(hFile);
+    if (bytes_read != file_size) { free(level_data); return 0; }
+
+    /* Scan for CE: entities */
+    char ce_names[32][256];
+    int ce_count = scan_level_for_ce(level_data, file_size, ce_names, 32);
+    if (ce_count == 0) { free(level_data); return 0; }
+
+    /* Load entity meshes */
+    EntMesh meshes[32];
+    int valid = 0;
+    DWORD vtx_base = 0;
+
+    for (int i = 0; i < ce_count; i++) {
+        char mw_path[MAX_PATH];
+        snprintf(mw_path, MAX_PATH, "%s\\%s.MESHWORLD", entities_dir, ce_names[i]);
+
+        HANDLE hEnt = CreateFileA(mw_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                                   OPEN_EXISTING, 0, NULL);
+        if (hEnt == INVALID_HANDLE_VALUE) continue;
+
+        DWORD ent_size = GetFileSize(hEnt, NULL);
+        if (ent_size == 0 || ent_size > 50*1024*1024) {
+            CloseHandle(hEnt);
+            continue;
+        }
+
+        BYTE* ent_data = (BYTE*)malloc(ent_size);
+        if (!ent_data) { CloseHandle(hEnt); continue; }
+
+        DWORD ent_read = 0;
+        ReadFile(hEnt, ent_data, ent_size, &ent_read, NULL);
+        CloseHandle(hEnt);
+        if (ent_read != ent_size) { free(ent_data); continue; }
+
+        collect_entity_mesh(ent_data, ent_size, vtx_base, &meshes[valid]);
+        free(ent_data);
+
+        if (meshes[valid].vertex_count > 0) {
+            vtx_base += meshes[valid].vertex_count;
+            valid++;
+        }
+    }
+
+    if (valid == 0) { free(level_data); return 0; }
+
+    /* Calculate totals */
+    DWORD total_entity_vtx = 0;
+    DWORD total_entity_geoms = 0;
+    for (int i = 0; i < valid; i++) {
+        total_entity_vtx += meshes[i].vertex_count;
+        total_entity_geoms += meshes[i].geom_count;
+    }
+
+    /* Find S5 count position and S6 start */
+    MWReader lr;
+    mw_init(&lr, level_data, file_size);
+    mw_skip_s1(&lr);
+    mw_skip_s2(&lr);
+    mw_skip_s3(&lr);
+    mw_skip(&lr, 24);  /* S4 */
+
+    DWORD s5_count_pos = lr.pos;
+    DWORD level_vtx_count = mw_u32(&lr);
+    mw_skip(&lr, level_vtx_count * 32);
+    DWORD s6_start = lr.pos;
+
+    int root_sub_count = *(int*)(level_data + s6_start + 24);
+
+    /* Find octree end */
+    MWReader or_;
+    mw_init(&or_, level_data, file_size);
+    or_.pos = s6_start;
+    mw_walk_octree(&or_);
+    DWORD octree_end = or_.pos;
+
+    /* Build merged file */
+    DWORD merged_buf_size = file_size + total_entity_vtx * 32 + 65536;
+    BYTE* merged = (BYTE*)malloc(merged_buf_size);
+    if (!merged) {
+        for (int i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
+        free(level_data);
+        return 0;
+    }
+
+    DWORD mpos = 0;
+
+    /* Part 1: S1-S4 (before S5 count) */
+    memcpy(merged + mpos, level_data, s5_count_pos);
+    mpos += s5_count_pos;
+
+    /* Part 2: New vertex count */
+    *(DWORD*)(merged + mpos) = level_vtx_count + total_entity_vtx;
+    mpos += 4;
+
+    /* Part 3: Level vertices + entity vertices */
+    memcpy(merged + mpos, level_data + s5_count_pos + 4, level_vtx_count * 32);
+    mpos += level_vtx_count * 32;
+    for (int i = 0; i < valid; i++) {
+        memcpy(merged + mpos, meshes[i].vertex_data, meshes[i].vertex_count * 32);
+        mpos += meshes[i].vertex_count * 32;
+    }
+
+    /* Part 4: Octree with +1 root submesh */
+    memcpy(merged + mpos, level_data + s6_start, 24);  /* Root cube */
+    mpos += 24;
+    *(int*)(merged + mpos) = root_sub_count + 1;
+    mpos += 4;
+    DWORD children_size = octree_end - (s6_start + 28);
+    memcpy(merged + mpos, level_data + s6_start + 28, children_size);
+    mpos += children_size;
+
+    /* Part 5: New leaf */
+    float big_cube[6] = {-1000000.0f, -1000000.0f, -1000000.0f,
+                          1000000.0f, 1000000.0f, 1000000.0f};
+    memcpy(merged + mpos, big_cube, 24);
+    mpos += 24;
+    *(int*)(merged + mpos) = 0;  /* Leaf */
+    mpos += 4;
+    *(int*)(merged + mpos) = (int)total_entity_geoms;
+    mpos += 4;
+
+    for (int i = 0; i < valid; i++) {
+        for (int j = 0; j < meshes[i].geom_count; j++) {
+            EntGeom* g = &meshes[i].geoms[j];
+            *(DWORD*)(merged + mpos) = 1;  /* Empty name (NUL) */
+            mpos += 4;
+            merged[mpos++] = 0;
+            memcpy(merged + mpos,
+                   meshes[i].material_buf + g->mat_offset, g->mat_size);
+            mpos += g->mat_size;
+            *(DWORD*)(merged + mpos) = g->strip_count;
+            mpos += 4;
+            for (int k = 0; k < g->strip_count; k++) {
+                *(DWORD*)(merged + mpos) = g->strips[k].tri_count;
+                mpos += 4;
+                *(DWORD*)(merged + mpos) = g->strips[k].vtx_offset;
+                mpos += 4;
+            }
+        }
+    }
+
+    /* Part 6: Trailing data after octree */
+    DWORD trailing = file_size - octree_end;
+    if (trailing > 0) {
+        memcpy(merged + mpos, level_data + octree_end, trailing);
+        mpos += trailing;
+    }
+
+    /* Write merged file */
+    char tmp_path[MAX_PATH];
+    snprintf(tmp_path, MAX_PATH, "%s.tmp", level_path);
+
+    HANDLE hOut = CreateFileA(tmp_path, GENERIC_WRITE, 0, NULL,
+                               CREATE_ALWAYS, 0, NULL);
+    if (hOut == INVALID_HANDLE_VALUE) {
+        free(merged);
+        for (int i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
+        free(level_data);
+        return 0;
+    }
+
+    DWORD written = 0;
+    WriteFile(hOut, merged, mpos, &written, NULL);
+    CloseHandle(hOut);
+
+    /* Replace original */
+    DeleteFileA(level_path);
+    MoveFileA(tmp_path, level_path);
+
+    /* Delete .cached files */
+    {
+        char cached_path[MAX_PATH];
+        snprintf(cached_path, MAX_PATH, "%s.cached", level_path);
+        DeleteFileA(cached_path);
+    }
+
+    /* Cleanup */
+    free(merged);
+    for (int i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
+    free(level_data);
+
+    return 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Merge all level files in Levels/ directory
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void merge_all_levels(const char* game_dir) {
+    char levels_dir[MAX_PATH];
+    char search_path[MAX_PATH];
+    char entities_dir[MAX_PATH];
+
+    snprintf(levels_dir, MAX_PATH, "%s\\Levels", game_dir);
+    snprintf(entities_dir, MAX_PATH, "%s\\CustomEntities", game_dir);
+    snprintf(search_path, MAX_PATH, "%s\\*.MESHWORLD", levels_dir);
+
+    WIN32_FIND_DATAA fd;
+    HANDLE hFind = FindFirstFileA(search_path, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+
+    do {
+        char level_path[MAX_PATH];
+        snprintf(level_path, MAX_PATH, "%s\\%s", levels_dir, fd.cFileName);
+        merge_level_file(level_path, entities_dir);
+    } while (FindNextFileA(hFind, &fd));
+
+    FindClose(hFind);
+}
