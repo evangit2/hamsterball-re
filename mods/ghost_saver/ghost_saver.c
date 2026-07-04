@@ -573,14 +573,22 @@ void hook_impl(DWORD app, DWORD race_index) {
             /* Check if we have a saved ghost for this race */
             int savedTime = get_saved_time(raceName);
             if (savedTime != NO_TIME) {
-                /* Pre-populate App+0x910 with our ghost BTT */
+                /* Always replace App+0x910 with the saved best-time ghost.
+                 * The existing playback may be from a different race or an
+                 * in-session ghost with a worse time. We overwrite App+0x910
+                 * directly — the old BTT leaks (one 0x528 alloc per race,
+                 * negligible) but this is simpler and safer than calling the
+                 * game's destructor. The game's BTT management inside
+                 * App_StartPracticeRace will then compare our injected BTT
+                 * vs the dummy recording (NO_TIME) and keep ours. */
                 if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
                     DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
-                    if (!existing || existing < 0x10000) {
-                        inject_saved_ghost(raceName);
-                    } else {
-                        log_fmt("App+0x910 already set (0x%X), keeping existing", existing);
+                    if (existing && existing > 0x10000) {
+                        log_fmt("Replacing stale App+0x910 (0x%X) with saved ghost", existing);
                     }
+                    /* inject_saved_ghost sets App+0x910 to the new BTT,
+                     * overwriting whatever was there */
+                    inject_saved_ghost(raceName);
                 }
 
                 /* If App+0x90C (recording) is NULL, the game's BTT management
@@ -606,7 +614,18 @@ void hook_impl(DWORD app, DWORD race_index) {
                     }
                 }
             } else {
-                log_fmt("No saved ghost for '%s', skipping pre-inject", raceName);
+                log_fmt("No saved ghost for '%s', clearing stale playback", raceName);
+                /* No saved ghost for this race — clear App+0x910 so the
+                 * ghost ball from a previous race doesn't show up. The old
+                 * BTT leaks (negligible) but Board_ctor won't create a ghost
+                 * ball, which is correct. */
+                if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
+                    DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
+                    if (existing && existing > 0x10000) {
+                        log_fmt("Clearing stale App+0x910 (0x%X)", existing);
+                        *(DWORD*)(app + APP_910_PLAYBACK) = 0;
+                    }
+                }
             }
         } else {
             log_fmt("HOOK: could not resolve race name for index %d", race_index);
@@ -693,7 +712,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v19b started");
+    log_msg("Ghost thread v19c started");
     while (1) {
         Sleep(16);
         check_race_state();
