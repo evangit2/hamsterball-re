@@ -467,15 +467,21 @@ static void scan_for_custom_entities(DWORD board) {
         }
 
         /* For CE: entities:
-         *   1. Check that CustomEntities/<name>.MESHWORLD exists
-         *   2. Blank the MeshBuffer name string in memory (overwrite first
-         *      char with '\0') so the game treats it as unnamed static geometry
-         *      and renders it. The game doesn't recognize the CE: prefix, so
-         *      without this, the mesh data is loaded but never rendered.
-         *      After blanking, the game's render list builder includes it as
-         *      a regular unnamed mesh (like floors/walls).
-         *   3. The behavior DLL can still animate the EntityTransform to
-         *      rotate/move the rendered mesh.
+         *   The CE:Rotator S1 ref point provides the position/rotation.
+         *   The mesh geometry was merged into the level at DllMain time
+         *   (by merge_all_levels), so it's already in the vertex buffer
+         *   with empty-named geoms in the octree. The game renders these
+         *   as unnamed static geometry.
+         *
+         *   The EntityTransform at the CE: ref point's context index
+         *   controls the position/rotation of the mesh group.
+         *
+         *   We verify CustomEntities/<name>.MESHWORLD exists, then
+         *   load the behavior DLL to animate the transform.
+         *
+         *   Note: After the file merge, the MeshBuffer scan may find
+         *   these geoms with empty names (not CE: prefix). The S1 ref
+         *   point still has the CE: name, so we detect it here.
          */
         if (prefix_type == PREFIX_CE) {
             if (!entity_meshworld_exists(ent_name)) {
@@ -483,19 +489,6 @@ static void scan_for_custom_entities(DWORD board) {
                 continue;
             }
             if (logf) fprintf(logf, "  -> CustomEntities/%s.MESHWORLD found\n", ent_name);
-
-            /* Blank the MeshBuffer name so the game renders the geometry.
-             * The name string is in heap memory (allocated by Scene_LoadMeshWorld),
-             * so it's safe to write to. We already extracted the entity name
-             * above, so we don't need the original string anymore. */
-            DWORD old_protect;
-            if (VirtualProtect(name, 1, PAGE_READWRITE, &old_protect)) {
-                name[0] = '\0';
-                VirtualProtect(name, 1, old_protect, &old_protect);
-                if (logf) fprintf(logf, "  -> Blanked MeshBuffer name to enable rendering\n");
-            } else {
-                if (logf) fprintf(logf, "  -> WARNING: could not blank MeshBuffer name (VirtualProtect failed)\n");
-            }
         }
 
         /* Load behavior DLL from CustomEntities/ */
@@ -595,10 +588,18 @@ static DWORD WINAPI mod_thread(LPVOID param) {
  * DllMain — entry point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Merge CE: entity meshes into level files before game loads them */
+extern void merge_all_levels(const char* game_dir);
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         load_real_bass();
         init_game_dir();
+
+        /* Merge CustomEntities/*.MESHWORLD geometry into Levels/*.MESHWORLD
+         * files before the game loads them. This happens at DLL load time,
+         * which is before the game's level loader runs. */
+        merge_all_levels(g_game_dir);
 
         InitializeCriticalSection(&g_cs);
         g_cs_initialized = 1;
