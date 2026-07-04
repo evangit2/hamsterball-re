@@ -267,10 +267,15 @@ static void save_ghost_for_race(const char *raceName, int time,
 /* operator_new — use malloc(). Safe for game structs. */
 static void* op_new(SIZE_T size) { return malloc(size); }
 
-/* ═════════════════════════════════════════════════════════════════
- * Inline asm wrappers for __thiscall game functions.
- * MinGW __thiscall function pointers silently fail — must use asm.
- * ═════════════════════════════════════════════════════════════════ */
+/* BestTimeTracker_ctor is __thiscall(ECX=btt) — no stack params */
+static void call_btt_ctor(void *btt) {
+    register DWORD ecx_val asm("ecx") = (DWORD)btt;
+    __asm__ volatile(
+        "call *%0\n"
+        : : "r"((void*)ADDR_BTT_CTOR), "c"(ecx_val)
+        : "eax", "edx", "memory"
+    );
+}
 
 /* AthenaList_Append is __thiscall(ECX=list, stack=item) — 1 stack param */
 static void call_alist_append(DWORD *list, void *item) {
@@ -395,17 +400,49 @@ static void inject_saved_ghost(const char *raceName) {
 
     log_fmt("Loading ghost: '%s' time=%d frames=%d", raceName, savedTime, savedCount);
 
-    /* Can't safely write into the recording BTT while the game is recording.
-     * The game calls RecordSnapshot→AthenaList_Append every frame, which
-     * tries to realloc our malloc'd array → heap mismatch → crash at 0x4537F1.
+    /* Create a BestTimeTracker using the GAME'S OWN ctor + AthenaList_Append.
+     * This avoids heap mismatch — the game's functions use the same allocator
+     * internally, so the game can safely realloc/free the data later.
      *
-     * For now, just log that we have saved data. Loading requires hooking
-     * App_StartPracticeRace to inject before the race starts (future work).
-     * The save functionality works correctly — ghosts are saved to GHOST.txt
-     * on race finish and can be reloaded after implementing a proper hook.
-     */
-    log_msg("Saved ghost data available — loading not yet implemented (needs hook)");
+     * This is called from the App_StartPracticeRace hook, BEFORE the game
+     * checks App+0x910. When the game sees App+0x910 is non-NULL, it creates
+     * the ghost ball — which is why we can't do this from the polling thread
+     * (the ghost ball wouldn't exist). */
+    void *btt = malloc(BTT_SIZE);
+    if (!btt) { free(savedSnaps); log_msg("ERROR: alloc BTT failed"); return; }
+    log_fmt("BTT allocated at %p", btt);
+
+    /* Call game's BestTimeTracker_ctor via inline asm (__thiscall, ECX=btt) */
+    call_btt_ctor(btt);
+    log_msg("BTT ctor called");
+
+    *(DWORD*)((char*)btt + BTT_BEST_TIME) = savedTime;
+
+    char *bttName = (char*)((char*)btt + BTT_NAME);
+    strncpy(bttName, raceName, 127);
+    bttName[127] = '\0';
+
+    /* Fill with snapshots using the GAME'S OWN AthenaList_Append.
+     * AthenaList starts at BTT+0x004 (embedded). */
+    DWORD *alist = (DWORD*)((char*)btt + 4);
+    int numToStore = savedCount;
+    if (numToStore > MAX_SNAPSHOTS) numToStore = MAX_SNAPSHOTS;
+
+    for (int i = 0; i < numToStore; i++) {
+        DWORD *snap = (DWORD*)malloc(SNAP_SIZE);
+        if (!snap) { log_fmt("ERROR: alloc snap %d failed", i); continue; }
+        memcpy(snap, savedSnaps[i], 10 * sizeof(DWORD));
+        call_alist_append(alist, snap);
+    }
+    log_fmt("Appended %d snapshots via game's AthenaList_Append", numToStore);
+
+    /* Reset playback_index to 0 (start from first frame) */
+    *(int*)((char*)btt + 0x41C) = 0;
+
+    /* Set App+0x910 — the game will see this and create the ghost ball */
+    *(DWORD*)(app + APP_910_PLAYBACK) = (DWORD)btt;
     free(savedSnaps);
+    log_fmt("Ghost injected: %d snapshots into App+0x910 (btt=0x%X)", savedCount, (DWORD)btt);
 }
 
 /* ═════════════════════════════════════════════════════════════════
@@ -498,8 +535,8 @@ static void check_race_state(void) {
 
             log_fmt("RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
 
-            /* Try to load saved ghost */
-            inject_saved_ghost(raceName);
+            /* Ghost loading is handled by the App_StartPracticeRace hook.
+             * The polling thread only handles recording. */
         } else {
             /* Race name not ready yet — retry next frame */
             log_fmt("Race detected (BTT=0x%X) but name not ready, will retry", currRecording);
@@ -578,8 +615,114 @@ static void check_race_state(void) {
 }
 
 /* ═════════════════════════════════════════════════════════════════
- * Polling thread
+ * App_StartPracticeRace detour hook
+ *
+ * App_StartPracticeRace (0x428C50) is __thiscall(App*, race_ptr).
+ * It creates the ghost ball when App+0x910 is non-NULL.
+ * We hook it to set App+0x910 BEFORE the function runs, so the game
+ * creates the ghost ball for us.
+ *
+ * First bytes: 6A FF 68 B6 AE 4C 00 64 A1 00 00 00 00 50 64 89
+ *   push 0xFFFFFFFF           (2 bytes)
+ *   push 0x004CAEB6           (5 bytes)  = 7 bytes total (instruction boundary)
+ * We copy 7 bytes for the trampoline, write JMP+2NOPs.
  * ═════════════════════════════════════════════════════════════════ */
+
+#define ADDR_APP_START_PRACTICE  0x00428C50
+#define HOOK_BYTES               7   /* 5-byte JMP + 2 NOPs */
+#define TRAMPOLINE_SIZE          16  /* 7 original bytes + 5-byte JMP back */
+
+static unsigned char *g_trampoline = NULL;
+static unsigned char g_origBytes[HOOK_BYTES];
+static int g_hookInstalled = 0;
+
+/* The hook function — called INSTEAD of App_StartPracticeRace.
+ * ECX = App (this), [ESP+4] = race_ptr (param_1).
+ * We do our ghost injection, then call the trampoline which
+ * executes the original prologue and jumps back into the original function. */
+static void __attribute__((cdecl)) hook_App_StartPracticeRace(DWORD app, DWORD race_ptr) {
+    /* Inject ghost data before the race starts.
+     * The game will see App+0x910 and create the ghost ball. */
+    if (app && app > 0x10000) {
+        /* Get race name from the recording BTT that was just created */
+        char raceName[128] = "";
+        if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
+            DWORD btt = *(DWORD*)(app + APP_90C_RECORDING);
+            if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_NAME), 128)) {
+                strncpy(raceName, (char*)(btt + BTT_NAME), 127);
+                raceName[127] = '\0';
+            }
+        }
+        if (raceName[0]) {
+            log_fmt("HOOK: App_StartPracticeRace race='%s'", raceName);
+            inject_saved_ghost(raceName);
+        }
+    }
+
+    /* Call original App_StartPracticeRace via trampoline.
+     * The trampoline executes the original 7 bytes (push 0xFFFFFFFF,
+     * push 0x004CAEB6) then JMPs to 0x428C57.
+     * We need to pass ECX=app and [ESP+4]=race_ptr (thiscall).
+     * The trampoline is just code, so we call it with the right convention. */
+    register DWORD ecx_val asm("ecx") = app;
+    __asm__ volatile(
+        "push %0\n"           /* push race_ptr (param_1) */
+        "call *%1\n"           /* call trampoline */
+        "add $4, %%esp\n"     /* clean up param */
+        : : "r"(race_ptr), "r"((void*)g_trampoline), "c"(ecx_val)
+        : "eax", "edx", "memory"
+    );
+}
+
+static void install_hook(void) {
+    unsigned char *target = (unsigned char*)ADDR_APP_START_PRACTICE;
+
+    /* Save original bytes */
+    memcpy(g_origBytes, target, HOOK_BYTES);
+    log_fmt("Original bytes: %02X %02X %02X %02X %02X %02X %02X",
+            g_origBytes[0], g_origBytes[1], g_origBytes[2], g_origBytes[3],
+            g_origBytes[4], g_origBytes[5], g_origBytes[6]);
+
+    /* Allocate executable memory for trampoline */
+    g_trampoline = (unsigned char*)VirtualAlloc(NULL, TRAMPOLINE_SIZE,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_trampoline) {
+        log_msg("ERROR: VirtualAlloc for trampoline failed");
+        return;
+    }
+
+    /* Copy original 7 bytes to trampoline */
+    memcpy(g_trampoline, g_origBytes, HOOK_BYTES);
+
+    /* Add JMP back to original+7 (0x428C57) */
+    DWORD jmp_src = (DWORD)(g_trampoline + HOOK_BYTES + 5);
+    DWORD jmp_dst = ADDR_APP_START_PRACTICE + HOOK_BYTES;
+    g_trampoline[HOOK_BYTES + 0] = 0xE9;  /* JMP rel32 */
+    *(DWORD*)(g_trampoline + HOOK_BYTES + 1) = jmp_dst - jmp_src;
+
+    log_fmt("Trampoline at 0x%X, JMP target 0x%X", (DWORD)g_trampoline, jmp_dst);
+
+    /* Write hook: 5-byte JMP to hook function + 2 NOPs */
+    DWORD oldProtect;
+    if (!VirtualProtect(target, HOOK_BYTES, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        log_msg("ERROR: VirtualProtect failed");
+        return;
+    }
+
+    DWORD hookAddr = (DWORD)&hook_App_StartPracticeRace;
+    target[0] = 0xE9;  /* JMP rel32 */
+    *(DWORD*)(target + 1) = hookAddr - (DWORD)target - 5;
+    target[5] = 0x90;  /* NOP */
+    target[6] = 0x90;  /* NOP */
+
+    VirtualProtect(target, HOOK_BYTES, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), target, HOOK_BYTES);
+
+    g_hookInstalled = 1;
+    log_fmt("Hook installed: JMP 0x%X -> 0x%X", ADDR_APP_START_PRACTICE, hookAddr);
+}
+
+
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
@@ -613,7 +756,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v2 Init ===");
+    log_msg("=== Ghost Saver Mod v12 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
@@ -623,6 +766,9 @@ static void init_mod(HMODULE hInst) {
         if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
         log_msg("Created empty GHOST.txt");
     }
+
+    /* Install App_StartPracticeRace hook BEFORE launching the thread */
+    install_hook();
 
     CreateThread(NULL, 0, ghost_thread, NULL, 0, NULL);
     log_msg("Thread launched");
