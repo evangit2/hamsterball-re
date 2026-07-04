@@ -275,9 +275,9 @@ static void BuildPresence(char* outState, int stateLen, char* outDetails, int de
     if (g_currentState.playerCount > 1) {
         snprintf(outState, stateLen, "Arena - %dP", g_currentState.playerCount);
     } else {
-        int raceNum = g_currentState.raceIdx + 1;
-        if (raceNum >= 1 && raceNum <= 16) {
-            snprintf(outState, stateLen, "Race %d/16", raceNum);
+        int raceNum = g_currentState.raceIdx;
+        if (raceNum >= 0 && raceNum < 15) {
+            snprintf(outState, stateLen, "Race %d/15", raceNum);
         } else {
             strncpy_s(outState, stateLen, "Time Trial", _TRUNCATE);
         }
@@ -346,12 +346,7 @@ static DWORD WINAPI DiscordThread(LPVOID param) {
             }
 
             if (!g_currentState.inLevel && g_lastSentState.inLevel) {
-                ClearActivity();
-                g_lastSentState = g_currentState;
-                g_lastSendTime = now;
-                g_forceUpdate = false;
-                Sleep(2000);
-                continue;
+                g_forceUpdate = true;
             }
         }
 
