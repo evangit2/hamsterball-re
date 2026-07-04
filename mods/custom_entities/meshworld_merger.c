@@ -445,7 +445,8 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
     mw_walk_octree(&or_);
     DWORD octree_end = or_.pos;
 
-    /* Build merged file */
+    /* Build merged file. Extra 65536 bytes for octree overhead (LEAF wrapping,
+     * bounding cube, sub_count, geom_count, etc.) */
     DWORD merged_buf_size = file_size + total_entity_vtx * 32 + 65536;
     BYTE* merged = (BYTE*)malloc(merged_buf_size);
     if (!merged) {
@@ -472,19 +473,71 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
         mpos += meshes[i].vertex_count * 32;
     }
 
-    /* Part 4: Octree with +1 root submesh */
-    memcpy(merged + mpos, level_data + s6_start, 24);  /* Root cube */
-    mpos += 24;
-    *(int*)(merged + mpos) = root_sub_count + 1;
-    mpos += 4;
-    DWORD children_size = octree_end - (s6_start + 28);
-    memcpy(merged + mpos, level_data + s6_start + 28, children_size);
-    mpos += children_size;
+    /* Part 4: Octree with +1 root submesh
+     *
+     * There are two cases:
+     * A) Root is a BRANCH (sub_count > 0): simply add +1 to sub_count and
+     *    append a new child leaf after the existing children.
+     * B) Root is a LEAF (sub_count == 0): we cannot just change sub_count to 1
+     *    because the data after sub_count is geom_count + geoms, not a child node.
+     *    Instead, we must wrap the original LEAF as a child: write the original
+     *    cube + sub_count=0 + geom_count + original geoms as the first child,
+     *    then append our entity leaf as the second child.
+     */
+    /* (root cube is at level_data + s6_start, sub_count at +24) */
 
-    /* Part 5: New leaf */
-    float big_cube[6] = {-1000000.0f, -1000000.0f, -1000000.0f,
-                          1000000.0f, 1000000.0f, 1000000.0f};
-    memcpy(merged + mpos, big_cube, 24);
+    /* Compute the bounding cube for entity geoms from their translated vertices.
+     * The entity file's default octree has an infinitely large bounding cube
+     * (-1000000 to 1000000). If we copy that, the game's collision system will
+     * find entity geoms in EVERY collision query, causing broken collisions,
+     * spikes, and player ball burial.
+     * Instead, compute the tight AABB from the translated vertex data. */
+    float ent_min[3] = { 1e30f, 1e30f, 1e30f };
+    float ent_max[3] = { -1e30f, -1e30f, -1e30f };
+    for (int i = 0; i < valid; i++) {
+        for (DWORD v = 0; v < meshes[i].vertex_count; v++) {
+            float* vp = (float*)(meshes[i].vertex_data + v * 32);
+            for (int ax = 0; ax < 3; ax++) {
+                if (vp[ax] < ent_min[ax]) ent_min[ax] = vp[ax];
+                if (vp[ax] > ent_max[ax]) ent_max[ax] = vp[ax];
+            }
+        }
+    }
+    /* Add small margin to avoid floating-point edge cases */
+    for (int ax = 0; ax < 3; ax++) {
+        ent_min[ax] -= 1.0f;
+        ent_max[ax] += 1.0f;
+    }
+
+    if (root_sub_count > 0) {
+        /* Case A: Root is BRANCH — add +1 to sub_count, copy children, append leaf */
+        memcpy(merged + mpos, level_data + s6_start, 24);  /* Root cube */
+        mpos += 24;
+        *(int*)(merged + mpos) = root_sub_count + 1;
+        mpos += 4;
+        DWORD children_size = octree_end - (s6_start + 28);
+        memcpy(merged + mpos, level_data + s6_start + 28, children_size);
+        mpos += children_size;
+    } else {
+        /* Case B: Root is LEAF — wrap original leaf as child[0], entity leaf as child[1]
+         * Write root cube (copied from original, but we could also use the merged AABB).
+         * Use the original root cube since it already bounds the level geometry. */
+        memcpy(merged + mpos, level_data + s6_start, 24);  /* Root cube */
+        mpos += 24;
+        *(int*)(merged + mpos) = 2;  /* 2 children: original leaf + entity leaf */
+        mpos += 4;
+
+        /* Child 0: original leaf (cube + sub_count=0 + geom_count + geoms) */
+        DWORD orig_leaf_start = s6_start;  /* original root IS the leaf */
+        DWORD orig_leaf_size = octree_end - s6_start;
+        memcpy(merged + mpos, level_data + orig_leaf_start, orig_leaf_size);
+        mpos += orig_leaf_size;
+    }
+
+    /* Part 5: New entity leaf with correct bounding cube */
+    float ent_cube[6] = { ent_min[0], ent_min[1], ent_min[2],
+                          ent_max[0], ent_max[1], ent_max[2] };
+    memcpy(merged + mpos, ent_cube, 24);
     mpos += 24;
     *(int*)(merged + mpos) = 0;  /* Leaf */
     mpos += 4;
@@ -501,9 +554,44 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
             mpos += 4;
             memcpy(merged + mpos, g->name, name_len);
             mpos += name_len;
-            memcpy(merged + mpos,
-                   meshes[i].material_buf + g->mat_offset, g->mat_size);
-            mpos += g->mat_size;
+
+            /* Write material block with identity EntityTransform.
+             *
+             * The entity file's S6 geom material block stores RGBA colors
+             * (ambient, diffuse, specular, emissive). But the game's level
+             * loader interprets the first 8 floats as EntityTransform:
+             *   set1 = (posX, posY, posZ, posScale)
+             *   set2 = (rotX, rotY, rotZ, rotScale)
+             *
+             * If we copy the entity's material block verbatim (with ambient=
+             * diffuse=(1,1,1,1)), the game reads posX=1, posY=1, posZ=1,
+             * rotX=1 radian, rotY=1 radian, rotZ=1 radian — causing the mesh
+             * to be offset and rotated wildly.
+             *
+             * Fix: write identity EntityTransform (pos=0,0,0, rot=0,0,0) for
+             * the first two sets, then copy the original specular and emissive
+             * sets (which the game uses as extra material data, not transform). */
+            BYTE* mat_src = meshes[i].material_buf + g->mat_offset;
+            /* Read original material to extract specular + emissive */
+            float identity[8] = { 0.0f, 0.0f, 0.0f, 1.0f,   /* pos=(0,0,0) scale=1 */
+                                   0.0f, 0.0f, 0.0f, 0.0f }; /* rot=(0,0,0) scale=0=hasRot=FALSE */
+            /* Write identity position + rotation (first 8 floats = 32 bytes) */
+            memcpy(merged + mpos, identity, 32);
+            mpos += 32;
+            /* Copy specular (set3) + emissive (set4) from original (32 bytes) */
+            if (g->mat_size >= 64) {
+                memcpy(merged + mpos, mat_src + 32, 32);
+            } else {
+                memset(merged + mpos, 0, 32);
+            }
+            mpos += 32;
+            /* Copy power, has_refl, has_tex, [tex_str] from original */
+            DWORD remaining = g->mat_size - 64;  /* should be >= 12 */
+            if (remaining > 0) {
+                memcpy(merged + mpos, mat_src + 64, remaining);
+                mpos += remaining;
+            }
+
             *(DWORD*)(merged + mpos) = g->strip_count;
             mpos += 4;
             for (int k = 0; k < g->strip_count; k++) {
