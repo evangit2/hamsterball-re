@@ -698,14 +698,17 @@ void hook_impl(DWORD app, DWORD race_ptr) {
  * __thiscall calling convention and calls our C function */
 __attribute__((naked)) static void hook_App_StartPracticeRace(void) {
     __asm__ volatile(
-        "pushl %%eax\n"
-        "pushl %%ecx\n"
-        "pushl %%edx\n"
-        "pushl %%ecx\n"
-        "movl 20(%%esp), %%eax\n"
-        "pushl %%eax\n"
+        /* __thiscall: ECX = App, [ESP+0] = retaddr, [ESP+4] = race_ptr
+         * cdecl: push params right-to-left (param2 first, param1 second) */
+        "pushl %%eax\n"               /* save eax */
+        "pushl %%ecx\n"               /* save ecx (App) */
+        "pushl %%edx\n"               /* save edx */
+        /* After 3 pushes + return addr = 4 dwords, race_ptr is at [ESP+16] */
+        "movl 16(%%esp), %%eax\n"     /* load race_ptr */
+        "pushl %%eax\n"               /* push race_ptr (param 2, pushed first) */
+        "pushl %%ecx\n"               /* push App (param 1, pushed second) */
         "call _hook_impl\n"
-        "addl $8, %%esp\n"
+        "addl $8, %%esp\n"            /* clean up 2 params */
         "popl %%edx\n"
         "popl %%ecx\n"
         "popl %%eax\n"
@@ -796,7 +799,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v15 Init ===");
+    log_msg("=== Ghost Saver Mod v16 Init ===");
     log_fmt("GHOST path: %s", g_ghostPath);
     log_fmt("Log path: %s", g_logPath);
 
