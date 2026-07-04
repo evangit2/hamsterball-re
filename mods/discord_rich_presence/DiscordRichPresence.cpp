@@ -112,7 +112,7 @@ static bool Connect() {
             char json[256];
             snprintf(json, sizeof(json), "{\"v\":1,\"client_id\":\"%s\"}", g_appId);
             Log("Sending handshake: %s", json);
-            if (SendFrame(1, json)) {
+            if (SendFrame(0, json)) {
                 char response[4096];
                 if (ReadFrame(response, sizeof(response))) {
                     Log("Handshake response: %s", response);
@@ -173,7 +173,7 @@ static bool SendActivity(const char* state, const char* details, time_t startTim
             g_largeImage, (long long)time(NULL));
     }
     Log("Sending activity: state='%s' details='%s' start=%lld", state, details, (long long)startTime);
-    return SendFrame(2, json);
+    return SendFrame(1, json);
 }
 
 static bool ClearActivity() {
@@ -183,7 +183,7 @@ static bool ClearActivity() {
         "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d},\"nonce\":\"hb-%lld\"}",
         (int)GetCurrentProcessId(), (long long)time(NULL));
     Log("Clearing activity");
-    return SendFrame(2, json);
+    return SendFrame(1, json);
 }
 
 static void LoadConfig() {
