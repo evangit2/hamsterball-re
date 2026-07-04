@@ -39,6 +39,13 @@ static DWORD mw_u32(MWReader* r) {
     return v;
 }
 
+static float mw_read_f32(MWReader* r) {
+    if (r->error || r->pos + 4 > r->size) { r->error = 1; return 0.0f; }
+    float v = *(float*)(r->data + r->pos);
+    r->pos += 4;
+    return v;
+}
+
 static void mw_skip(MWReader* r, DWORD len) {
     if (r->error || r->pos + len > r->size) { r->error = 1; return; }
     r->pos += len;
@@ -213,7 +220,8 @@ static int count_geoms_rec(MWReader* r) {
 }
 
 static void collect_entity_mesh(const BYTE* ent_data, DWORD ent_size,
-                                  DWORD vtx_offset_base, EntMesh* mesh) {
+                                  DWORD vtx_offset_base, const float* pos,
+                                  EntMesh* mesh) {
     memset(mesh, 0, sizeof(EntMesh));
 
     MWReader r;
@@ -241,10 +249,21 @@ static void collect_entity_mesh(const BYTE* ent_data, DWORD ent_size,
         collect_geoms_rec(&r, mesh, vtx_offset_base);
     }
 
-    /* Copy vertex data */
+    /* Copy vertex data and translate each vertex by the S1 ref point position.
+     * The entity MESHWORLD has vertices at local coordinates (centered around
+     * origin). The game's level exporter puts ALL vertices in world space.
+     * We must do the same: translate each vertex by (pos_x, pos_y, pos_z). */
     mesh->vertex_data = (BYTE*)malloc(mesh->vertex_count * 32);
-    if (mesh->vertex_data)
+    if (mesh->vertex_data) {
         memcpy(mesh->vertex_data, vtx_ptr, mesh->vertex_count * 32);
+        /* Translate each vertex's position (first 3 floats = x, y, z) */
+        for (DWORD i = 0; i < mesh->vertex_count; i++) {
+            float* v = (float*)(mesh->vertex_data + i * 32);
+            v[0] += pos[0];  /* x */
+            v[1] += pos[1];  /* y */
+            v[2] += pos[2];  /* z */
+        }
+    }
 }
 
 static void free_entity_mesh(EntMesh* mesh) {
@@ -256,30 +275,38 @@ static void free_entity_mesh(EntMesh* mesh) {
     free(mesh->material_buf);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Scan level for CE: ref points
- * ═══════════════════════════════════════════════════════════════════════════ */
+typedef struct {
+    char name[256];
+    float pos[3];  /* World-space position from S1 ref point (x, y, z) */
+} CEEntityRef;
 
 static int scan_level_for_ce(const BYTE* data, DWORD size,
-                              char names[][256], int max_names) {
+                              CEEntityRef* refs, int max_refs) {
     MWReader r;
     mw_init(&r, data, size);
 
     int s1_count = (int)mw_u32(&r);
     int found = 0;
     int i;
-    for (i = 0; i < s1_count && found < max_names; i++) {
+    for (i = 0; i < s1_count && found < max_refs; i++) {
         char name[256] = {0};
         mw_string(&r, name, sizeof(name));
-        mw_skip(&r, 24);
+        /* S1 stores position as 3 floats: x, y, z (despite spec claiming x,z,y) */
+        float px = mw_read_f32(&r);
+        float py = mw_read_f32(&r);
+        float pz = mw_read_f32(&r);
+        mw_skip(&r, 12);  /* rotation (3 floats) */
         if (mw_u32(&r)) mw_skip_material(&r);
 
         if (_strnicmp(name, "CE:", 3) == 0) {
             const char* suffix = name + 3;
             int j;
             for (j = 0; suffix[j] && suffix[j] != '(' && j < 255; j++)
-                names[found][j] = suffix[j];
-            names[found][j] = '\0';
+                refs[found].name[j] = suffix[j];
+            refs[found].name[j] = '\0';
+            refs[found].pos[0] = px;
+            refs[found].pos[1] = py;
+            refs[found].pos[2] = pz;
             found++;
         }
     }
@@ -332,9 +359,9 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
         if (bytes_read != file_size) { free(level_data); return 0; }
     }
 
-    /* Scan for CE: entities */
-    char ce_names[32][256];
-    int ce_count = scan_level_for_ce(level_data, file_size, ce_names, 32);
+    /* Scan for CE: entities (now captures position too) */
+    CEEntityRef ce_refs[32];
+    int ce_count = scan_level_for_ce(level_data, file_size, ce_refs, 32);
     if (ce_count == 0) { free(level_data); return 0; }
 
     /* Find S5 vertex count (needed to offset entity vertex references) */
@@ -356,7 +383,7 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
 
     for (int i = 0; i < ce_count; i++) {
         char mw_path[MAX_PATH];
-        snprintf(mw_path, MAX_PATH, "%s\\%s.MESHWORLD", entities_dir, ce_names[i]);
+        snprintf(mw_path, MAX_PATH, "%s\\%s.MESHWORLD", entities_dir, ce_refs[i].name);
 
         HANDLE hEnt = CreateFileA(mw_path, GENERIC_READ, FILE_SHARE_READ, NULL,
                                    OPEN_EXISTING, 0, NULL);
@@ -376,7 +403,7 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
         CloseHandle(hEnt);
         if (ent_read != ent_size) { free(ent_data); continue; }
 
-        collect_entity_mesh(ent_data, ent_size, vtx_base, &meshes[valid]);
+        collect_entity_mesh(ent_data, ent_size, vtx_base, ce_refs[i].pos, &meshes[valid]);
         free(ent_data);
 
         if (meshes[valid].vertex_count > 0) {
