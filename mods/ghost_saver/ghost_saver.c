@@ -42,6 +42,7 @@
 static DWORD g_rawSnaps[MAX_SNAPSHOTS][10];
 static int g_rawCount = 0;
 static char g_currentRaceName[128] = "";
+static char g_hookRaceName[128] = "";  /* set by pre-inject hook from static table */
 static int g_recording = 0;
 static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
@@ -405,6 +406,7 @@ static void check_race_state(void) {
             g_rawCount = 0;
             g_prevGoalFlag = 0;
             g_currentRaceName[0] = '\0';
+            g_hookRaceName[0] = '\0';
         }
         if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
             g_prevRecording = *(DWORD*)(app + APP_90C_RECORDING);
@@ -419,7 +421,16 @@ static void check_race_state(void) {
         g_prevRecording = currRecording;
 
         char raceName[128];
-        if (get_race_name(raceName, sizeof(raceName)) && raceName[0]) {
+        /* Prefer the name from the pre-inject hook (from static table) —
+         * the BTT name at +0x424 can be partially written early in the
+         * race, causing garbled names like 'Y' instead of 'BEGINNER RACE'. */
+        if (g_hookRaceName[0]) {
+            strncpy(raceName, g_hookRaceName, sizeof(raceName) - 1);
+            raceName[sizeof(raceName) - 1] = '\0';
+        } else {
+            get_race_name(raceName, sizeof(raceName));
+        }
+        if (raceName[0]) {
             strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
             g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
             g_rawCount = 0;
@@ -586,6 +597,11 @@ void hook_impl(DWORD app, DWORD race_index) {
         char raceName[128] = "";
         if (get_race_name_by_index(race_index, raceName, sizeof(raceName)) && raceName[0]) {
             log_fmt("HOOK: pre-inject for race '%s' (index=%d)", raceName, race_index);
+            /* Store the authoritative race name from the static table so
+             * check_race_state() uses this instead of reading from the BTT
+             * (which can have a partially-written name early in the race). */
+            strncpy(g_hookRaceName, raceName, sizeof(g_hookRaceName) - 1);
+            g_hookRaceName[sizeof(g_hookRaceName) - 1] = '\0';
 
             /* Check if we have a saved ghost for this race */
             int savedTime = get_saved_time(raceName);
@@ -744,7 +760,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v20b started");
+    log_msg("Ghost thread v20c started");
     while (1) {
         Sleep(16);
         check_race_state();
