@@ -472,9 +472,9 @@ static void check_race_state(void) {
 }
 
 /* App_StartPracticeRace detour hook.
- * App_StartPracticeRace (0x428C50) is __thiscall(App*).
+ * App_StartPracticeRace (0x428C50) is __thiscall(App*, DWORD race_index).
+ * It takes 1 stack parameter (race_index) and ends with RET 0x4.
  * It creates the ghost ball when App+0x910 is non-NULL.
- * We hook it to set App+0x910 BEFORE the function runs.
  *
  * First bytes: 6A FF 68 B6 AE 4C 00 64 A1 00 00 00 00 50 64 89
  *   push 0xFFFFFFFF           (2 bytes)
@@ -489,11 +489,15 @@ static unsigned char *g_trampoline = NULL;
 static unsigned char g_origBytes[HOOK_BYTES];
 static int g_hookInstalled = 0;
 
-void hook_impl(DWORD app) {
+/* hook_impl receives both App (ECX at entry) and race_index ([ESP+4] at entry).
+ * It calls the original function via trampoline, passing race_index on stack
+ * so the original's RET 0x4 can pop it correctly. Then it injects the ghost. */
+void hook_impl(DWORD app, DWORD race_index) {
     __asm__ volatile(
         "mov %0, %%ecx\n"
+        "push %2\n"
         "call *%1\n"
-        : : "r"(app), "r"((void*)g_trampoline)
+        : : "r"(app), "r"((void*)g_trampoline), "r"(race_index)
         : "eax", "ecx", "edx", "memory"
     );
 
@@ -527,18 +531,24 @@ void hook_impl(DWORD app) {
     }
 }
 
+/* Naked stub: extracts ECX (App) and [ESP+4] (race_index) from the
+ * __thiscall entry, passes them to hook_impl, then returns with RET 4
+ * to clean up the caller's stack parameter. */
 __attribute__((naked, used)) static void hook_App_StartPracticeRace(void) {
     __asm__ volatile(
         "pushl %%eax\n"
         "pushl %%ecx\n"
         "pushl %%edx\n"
-        "pushl %%ecx\n"
+        /* Stack now: [0]=edx [4]=ecx [8]=eax [12]=ret_addr [16]=race_index */
+        "movl 16(%%esp), %%eax\n"   /* race_index */
+        "pushl %%eax\n"             /* 2nd param: race_index */
+        "pushl %%ecx\n"             /* 1st param: App */
         "call _hook_impl\n"
-        "addl $4, %%esp\n"
+        "addl $8, %%esp\n"          /* clean up 2 params */
         "popl %%edx\n"
         "popl %%ecx\n"
         "popl %%eax\n"
-        "ret\n"
+        "ret $4\n"                  /* clean up caller's race_index */
         : : : "memory"
     );
 }
