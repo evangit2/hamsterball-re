@@ -111,7 +111,39 @@ static int is_time_trial_active(void) {
     return 1;
 }
 
-/* get_player_ball is provided by bass_proxy.h (App→Profile→Board→ball_list) */
+/* get_player_ball override — bass_proxy.h version is broken (treats embedded
+ * AthenaList as a pointer). This version reads the embedded struct directly:
+ *   board+0x29D8 = count (struct+0x04)
+ *   board+0x2DE0 = data array pointer (struct+0x40C) */
+#define get_player_ball ghost_get_player_ball
+static DWORD get_player_ball(void) {
+    if (IsBadReadPtr((void*)GLOBAL_APP_PTR, 4)) return 0;
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (!app || app < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(app + 0x220), 4)) return 0;
+    DWORD profile = *(DWORD*)(app + 0x220);
+    if (!profile || profile < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(profile + 0x0C), 4)) return 0;
+    DWORD board = *(DWORD*)(profile + 0x0C);
+    if (!board || board < 0x10000) return 0;
+    if (IsBadReadPtr((void*)board, 4)) return 0;
+    DWORD vtable = *(DWORD*)board;
+    if (vtable < 0x4D0000 || vtable > 0x4D2000) return 0;
+    /* Embedded AthenaList at board+0x29D4:
+     *   +0x04 (board+0x29D8) = count
+     *   +0x40C (board+0x2DE0) = data array pointer */
+    if (IsBadReadPtr((void*)(board + 0x29D8), 4)) return 0;
+    DWORD count = *(DWORD*)(board + 0x29D8);
+    if (count == 0) return 0;
+    if (IsBadReadPtr((void*)(board + 0x2DE0), 4)) return 0;
+    DWORD *data = *(DWORD**)(board + 0x2DE0);
+    if (!data || (DWORD)data < 0x10000) return 0;
+    if (IsBadReadPtr(data, 4)) return 0;
+    DWORD ball = data[0];
+    if (!ball || ball < 0x10000) return 0;
+    if (IsBadReadPtr((void*)ball, 4)) return 0;
+    return ball;
+}
 
 /* Get saved time for a race from GHOST.txt (NO_TIME if not found) */
 static int get_saved_time(const char *raceName) {
@@ -416,6 +448,10 @@ static void check_race_state(void) {
             snap[8] = *(DWORD*)(ball + 0x750);  // surface_blend_b
             snap[9] = *(DWORD*)(ball + 0x284);  // radius
             g_rawCount++;
+            if (g_rawCount == 1)
+                log_fmt("First snapshot: ball=0x%X pos=(%.1f,%.1f,%.1f)",
+                        ball, *(float*)(ball+0x164), *(float*)(ball+0x168),
+                        *(float*)(ball+0x16C));
         }
     }
 
@@ -657,7 +693,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v19 started");
+    log_msg("Ghost thread v19b started");
     while (1) {
         Sleep(16);
         check_race_state();
