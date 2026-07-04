@@ -290,24 +290,46 @@ static int scan_level_for_ce(const BYTE* data, DWORD size,
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int merge_level_file(const char* level_path, const char* entities_dir) {
-    /* Read level file */
-    HANDLE hFile = CreateFileA(level_path, GENERIC_READ, FILE_SHARE_READ, NULL,
-                               OPEN_EXISTING, 0, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return 0;
+    /* Check if a backup of the original (un-merged) file exists.
+     * If so, always merge from the backup to prevent double-merging.
+     * If not, create the backup from the current file (first run). */
+    char backup_path[MAX_PATH];
+    snprintf(backup_path, MAX_PATH, "%s.orig", level_path);
 
-    DWORD file_size = GetFileSize(hFile, NULL);
-    if (file_size == 0 || file_size > 50*1024*1024) {
-        CloseHandle(hFile);
-        return 0;
+    const char* source_path = level_path;
+    BYTE* level_data = NULL;
+    DWORD file_size = 0;
+
+    if (GetFileAttributesA(backup_path) != INVALID_FILE_ATTRIBUTES) {
+        /* Backup exists — use it as the source (prevents re-merge) */
+        source_path = backup_path;
+    } else {
+        /* First run: create backup of the original file */
+        if (!CopyFileA(level_path, backup_path, FALSE)) {
+            /* Copy failed — proceed with the level file itself */
+        }
     }
 
-    BYTE* level_data = (BYTE*)malloc(file_size);
-    if (!level_data) { CloseHandle(hFile); return 0; }
+    /* Read source file */
+    {
+        HANDLE hFile = CreateFileA(source_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                                   OPEN_EXISTING, 0, NULL);
+        if (hFile == INVALID_HANDLE_VALUE) return 0;
 
-    DWORD bytes_read = 0;
-    ReadFile(hFile, level_data, file_size, &bytes_read, NULL);
-    CloseHandle(hFile);
-    if (bytes_read != file_size) { free(level_data); return 0; }
+        file_size = GetFileSize(hFile, NULL);
+        if (file_size == 0 || file_size > 50*1024*1024) {
+            CloseHandle(hFile);
+            return 0;
+        }
+
+        level_data = (BYTE*)malloc(file_size);
+        if (!level_data) { CloseHandle(hFile); return 0; }
+
+        DWORD bytes_read = 0;
+        ReadFile(hFile, level_data, file_size, &bytes_read, NULL);
+        CloseHandle(hFile);
+        if (bytes_read != file_size) { free(level_data); return 0; }
+    }
 
     /* Scan for CE: entities */
     char ce_names[32][256];
