@@ -594,9 +594,24 @@ void hook_impl(DWORD app, DWORD race_index) {
                 /* If App+0x90C (recording) is NULL, the game's BTT management
                  * will destroy our App+0x910. Create a dummy recording BTT with
                  * NO_TIME so the game enters the "both exist" branch and keeps
-                 * our playback (since NO_TIME will not beat savedTime). */
+                 * our playback (since NO_TIME will not beat savedTime).
+                 *
+                 * Also: if App+0x90C already has a recording from a PREVIOUS
+                 * race (e.g. Warm-Up time=373), its time could beat our
+                 * injected playback (e.g. Beginner time=1414), causing the
+                 * game to destroy our ghost and promote the wrong-race
+                 * recording. Fix: set the existing recording's time to
+                 * NO_TIME so it loses the comparison. */
                 if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
                     DWORD recording = *(DWORD*)(app + APP_90C_RECORDING);
+                    if (recording && recording > 0x10000 &&
+                        !IsBadReadPtr((void*)(recording + BTT_BEST_TIME), 4)) {
+                        int oldTime = *(int*)((char*)recording + BTT_BEST_TIME);
+                        if (oldTime != NO_TIME) {
+                            log_fmt("Neutralizing old recording time %d -> NO_TIME", oldTime);
+                            *(int*)((char*)recording + BTT_BEST_TIME) = NO_TIME;
+                        }
+                    }
                     if (!recording || recording < 0x10000) {
                         log_msg("Pre-creating dummy recording BTT to protect playback");
                         void *dummyRec = game_operator_new(BTT_SIZE);
@@ -712,7 +727,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v19c started");
+    log_msg("Ghost thread v19d started");
     while (1) {
         Sleep(16);
         check_race_state();
