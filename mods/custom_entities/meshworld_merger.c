@@ -127,7 +127,7 @@ typedef struct {
 } EntStrip;
 
 typedef struct {
-    /* Material raw bytes (pointer into a copy) */
+    char name[256];      /* Original geom name (e.g. "CE:Rotator") */
     DWORD mat_offset;   /* Offset into material buffer */
     DWORD mat_size;
     EntStrip* strips;
@@ -155,7 +155,8 @@ static void collect_geoms_rec(MWReader* r, EntMesh* mesh, DWORD vtx_off) {
         int gc = (int)mw_u32(r);
         int j;
         for (j = 0; j < gc; j++) {
-            mw_string(r, NULL, 0);  /* skip name */
+            /* Capture the original geom name (e.g. "CE:Rotator") */
+            mw_string(r, mesh->geoms[mesh->geom_count].name, 256);
 
             /* Read material */
             DWORD mat_start = r->pos;
@@ -466,9 +467,13 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
     for (int i = 0; i < valid; i++) {
         for (int j = 0; j < meshes[i].geom_count; j++) {
             EntGeom* g = &meshes[i].geoms[j];
-            *(DWORD*)(merged + mpos) = 1;  /* Empty name (NUL) */
+            /* Write the original geom name (e.g. "CE:Rotator") so the game
+             * links this mesh to the S1 EntityTransform for positioning */
+            DWORD name_len = (DWORD)strlen(g->name) + 1;  /* include NUL */
+            *(DWORD*)(merged + mpos) = name_len;
             mpos += 4;
-            merged[mpos++] = 0;
+            memcpy(merged + mpos, g->name, name_len);
+            mpos += name_len;
             memcpy(merged + mpos,
                    meshes[i].material_buf + g->mat_offset, g->mat_size);
             mpos += g->mat_size;
