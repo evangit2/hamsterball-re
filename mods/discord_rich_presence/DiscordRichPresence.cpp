@@ -6,27 +6,68 @@
 #include <stdlib.h>
 #include <time.h>
 
-static const char* CONFIG_FILE = "discord_rpc.txt";
+static const char* APP_ID = "1522782863135608884";
 static const char* LOG_FILE = "discord_rpc_log.txt";
-static char g_appId[64] = "";
-static char g_largeImage[64] = "hamsterball";
 
 static HANDLE g_pipe = INVALID_HANDLE_VALUE;
 static bool g_connected = false;
 
-static const char* RACE_NAMES[16] = {
-    "Warm-Up Race", "Beginner Race", "Intermediate Race", "Dizzy Race",
-    "Tower Race", "Up Race", "Neon Race", "Expert Race",
-    "Odd Race", "Toob Race", "Wobbly Race", "Glass Race",
-    "Sky Race", "Master Race", "Impossible Race", "Bug Race"
+struct SceneMapping {
+    const char* sceneName;
+    const char* displayName;
+    const char* imageKey;
 };
+
+static SceneMapping RACE_MAP[] = {
+    {"Board (Warm-Up)",      "Warm-Up Race",       "tournament"},
+    {"Board (Beginner)",     "Beginner Race",      "tourney-beginner"},
+    {"Board (Intermediate)", "Intermediate Race",   "tourney-intermediate"},
+    {"Board (Dizzy)",        "Dizzy Race",          "tourney-dizzy"},
+    {"Board (Tower)",        "Tower Race",          "tourney-tower"},
+    {"Board (Up)",           "Up Race",             "tourney-up"},
+    {"Board (Dark)",         "Neon Race",           "tourney-neon"},
+    {"Board (Expert)",       "Expert Race",         "tourney-expert"},
+    {"Board (Odd)",          "Odd Race",            "tourney-odd"},
+    {"Board (Toob)",         "Toob Race",           "tourney-toob"},
+    {"Board (Wobbly)",       "Wobbly Race",         "tourney-wobbly"},
+    {"Board (Glass)",        "Glass Race",          "tourney-glass"},
+    {"Board (Sky)",          "Sky Race",            "tourney-sky"},
+    {"Board (Master)",       "Master Race",         "tourney-master"},
+    {"Board (Impossible)",   "Impossible Race",     "tourney-impossible"},
+    {NULL, NULL, NULL}
+};
+
+static SceneMapping ARENA_MAP[] = {
+    {"RumbleBoard (Warmup Arena)",       "Warm-Up Arena",      NULL},
+    {"RumbleBoard (Beginner Arena)",     "Beginner Arena",     NULL},
+    {"RumbleBoard (Intermediate Arena)", "Intermediate Arena", NULL},
+    {"RumbleBoard (Dizzy Arena)",        "Dizzy Arena",        NULL},
+    {"RumbleBoard (Tower Arena)",        "Tower Arena",        NULL},
+    {"RumbleBoard (Up Arena)",           "Up Arena",           NULL},
+    {"RumbleBoard (Neon Arena)",         "Neon Arena",         NULL},
+    {"RumbleBoard (Expert Arena)",       "Expert Arena",       NULL},
+    {"RumbleBoard (Odd Arena)",          "Odd Arena",          NULL},
+    {"RumbleBoard (Toob Arena)",         "Toob Arena",         NULL},
+    {"RumbleBoard (Wobbly Arena)",       "Wobbly Arena",       NULL},
+    {"RumbleBoard (Sky Arena)",          "Sky Arena",          NULL},
+    {NULL, NULL, NULL}
+};
+
+static const SceneMapping* LookupScene(const char* name, SceneMapping* table) {
+    if (!name) return NULL;
+    for (int i = 0; table[i].sceneName; i++) {
+        if (strcmp(name, table[i].sceneName) == 0) return &table[i];
+    }
+    return NULL;
+}
 
 struct GameState {
     bool inLevel;
-    int raceIdx;
-    int playerCount;
+    bool isArena;
+    bool isPartyRace;
+    const char* displayName;
+    const char* imageKey;
     time_t levelStartTime;
-    char levelName[128];
 };
 
 static GameState g_currentState = {};
@@ -110,7 +151,7 @@ static bool Connect() {
         if (g_pipe != INVALID_HANDLE_VALUE) {
             Log("Connected to pipe: %s", path);
             char json[256];
-            snprintf(json, sizeof(json), "{\"v\":1,\"client_id\":\"%s\"}", g_appId);
+            snprintf(json, sizeof(json), "{\"v\":1,\"client_id\":\"%s\"}", APP_ID);
             Log("Sending handshake: %s", json);
             if (SendFrame(0, json)) {
                 char response[4096];
@@ -151,9 +192,10 @@ static void Disconnect() {
     g_connected = false;
 }
 
-static bool SendActivity(const char* state, const char* details, time_t startTime) {
+static bool SendActivity(const char* state, const char* details, time_t startTime, const char* imageKey) {
     if (!g_connected) return false;
     char json[1024];
+    const char* img = imageKey ? imageKey : "icon";
     if (startTime > 0) {
         snprintf(json, sizeof(json),
             "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d,\"activity\":{"
@@ -162,7 +204,7 @@ static bool SendActivity(const char* state, const char* details, time_t startTim
             "\"assets\":{\"large_image\":\"%s\",\"large_text\":\"Hamsterball\"}"
             "}},\"nonce\":\"hb-%lld\"}",
             (int)GetCurrentProcessId(), state, details,
-            (long long)startTime, g_largeImage, (long long)time(NULL));
+            (long long)startTime, img, (long long)time(NULL));
     } else {
         snprintf(json, sizeof(json),
             "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d,\"activity\":{"
@@ -170,9 +212,9 @@ static bool SendActivity(const char* state, const char* details, time_t startTim
             "\"assets\":{\"large_image\":\"%s\",\"large_text\":\"Hamsterball\"}"
             "}},\"nonce\":\"hb-%lld\"}",
             (int)GetCurrentProcessId(), state, details,
-            g_largeImage, (long long)time(NULL));
+            img, (long long)time(NULL));
     }
-    Log("Sending activity: state='%s' details='%s' start=%lld", state, details, (long long)startTime);
+    Log("Sending activity: state='%s' details='%s' image='%s' start=%lld", state, details, img, (long long)startTime);
     return SendFrame(1, json);
 }
 
@@ -186,83 +228,56 @@ static bool ClearActivity() {
     return SendFrame(1, json);
 }
 
-static void LoadConfig() {
-    char dir[512];
-    GetCurrentDirectoryA(512, dir);
-    char path[768];
-    snprintf(path, sizeof(path), "%s\\%s", dir, CONFIG_FILE);
-    FILE* f = NULL;
-    if (fopen_s(&f, path, "r") == 0 && f) {
-        char line[256];
-        while (fgets(line, sizeof(line), f)) {
-            char key[128], val[128];
-            if (sscanf(line, "%127[^=]=%127[^\n]", key, val) == 2) {
-                char* k = key;
-                while (*k == ' ' || *k == '\t') k++;
-                char* end = k + strlen(k) - 1;
-                while (end > k && (*end == ' ' || *end == '\t')) *end-- = 0;
-                char* v = val;
-                while (*v == ' ' || *v == '\t') v++;
-                if (_stricmp(k, "app_id") == 0) {
-                    strncpy_s(g_appId, sizeof(g_appId), v, _TRUNCATE);
-                } else if (_stricmp(k, "large_image") == 0) {
-                    strncpy_s(g_largeImage, sizeof(g_largeImage), v, _TRUNCATE);
-                }
-            }
-        }
-        fclose(f);
-        Log("Config loaded: app_id='%s' large_image='%s'", g_appId, g_largeImage);
-        return;
-    }
-    Log("Config file not found, generating defaults: %s", path);
-    if (fopen_s(&f, path, "w") == 0 && f) {
-        fprintf(f, "# Discord Rich Presence Configuration\n");
-        fprintf(f, "# Get your Application ID from https://discord.com/developers/applications\n");
-        fprintf(f, "app_id=YOUR_APP_ID_HERE\n");
-        fprintf(f, "# Art asset key name uploaded to Discord Developer Portal\n");
-        fprintf(f, "large_image=hamsterball\n");
-        fclose(f);
-    }
-}
-
 static void ReadGameState(IModAPI* api) {
     memset(&g_currentState, 0, sizeof(g_currentState));
 
     Scene* scene = api->GetScene();
     if (!scene) return;
 
+    const char* sceneName = NULL;
     if (scene->name && !IsBadReadPtr(scene->name, 1)) {
-        strncpy_s(g_currentState.levelName, sizeof(g_currentState.levelName), scene->name, _TRUNCATE);
+        sceneName = scene->name;
     }
+    if (!sceneName) return;
 
-    char* appBase = (char*)api->GetApp();
-    if (appBase && !IsBadReadPtr(appBase + 0x220, 4)) {
-        DWORD profile = *(DWORD*)(appBase + 0x220);
-        if (profile && profile > 0x10000 && !IsBadReadPtr((char*)profile + 0x08, 4)) {
-            g_currentState.raceIdx = *(int*)((char*)profile + 0x08);
-        }
+    const SceneMapping* race = LookupScene(sceneName, RACE_MAP);
+    const SceneMapping* arena = LookupScene(sceneName, ARENA_MAP);
+
+    if (race) {
+        g_currentState.inLevel = true;
+        g_currentState.isArena = false;
+        g_currentState.displayName = race->displayName;
+        g_currentState.imageKey = race->imageKey;
+        int pc = 1;
+        if (api->GetPlayer2()) pc++;
+        if (api->GetPlayer3()) pc++;
+        if (api->GetPlayer4()) pc++;
+        g_currentState.isPartyRace = (pc > 1);
+    } else if (arena) {
+        g_currentState.inLevel = true;
+        g_currentState.isArena = true;
+        g_currentState.displayName = arena->displayName;
+        g_currentState.imageKey = NULL;
+    } else {
+        g_currentState.inLevel = true;
+        g_currentState.displayName = sceneName;
+        g_currentState.imageKey = NULL;
     }
-
-    int pc = 1;
-    if (api->GetPlayer2()) pc++;
-    if (api->GetPlayer3()) pc++;
-    if (api->GetPlayer4()) pc++;
-    g_currentState.playerCount = pc;
-
-    g_currentState.inLevel = true;
 }
 
 static bool StateChanged() {
     if (g_forceUpdate) return true;
     if (g_currentState.inLevel != g_lastSentState.inLevel) return true;
-    if (g_currentState.raceIdx != g_lastSentState.raceIdx) return true;
-    if (g_currentState.playerCount != g_lastSentState.playerCount) return true;
-    if (strcmp(g_currentState.levelName, g_lastSentState.levelName) != 0) return true;
+    if (g_currentState.isArena != g_lastSentState.isArena) return true;
+    if (g_currentState.isPartyRace != g_lastSentState.isPartyRace) return true;
+    if (g_currentState.displayName != g_lastSentState.displayName) return true;
     return false;
 }
 
-static void BuildPresence(char* outState, int stateLen, char* outDetails, int detailsLen, time_t* outStartTime) {
+static void BuildPresence(char* outState, int stateLen, char* outDetails, int detailsLen,
+                          time_t* outStartTime, const char** outImage) {
     *outStartTime = 0;
+    *outImage = NULL;
 
     if (!g_currentState.inLevel) {
         strncpy_s(outState, stateLen, "In Menu", _TRUNCATE);
@@ -271,44 +286,25 @@ static void BuildPresence(char* outState, int stateLen, char* outDetails, int de
     }
 
     *outStartTime = g_currentState.levelStartTime;
+    *outImage = g_currentState.imageKey;
 
-    if (g_currentState.playerCount > 1) {
-        snprintf(outState, stateLen, "Arena - %dP", g_currentState.playerCount);
+    if (g_currentState.isArena) {
+        strncpy_s(outState, stateLen, "Rodent Rumble", _TRUNCATE);
+    } else if (g_currentState.isPartyRace) {
+        strncpy_s(outState, stateLen, "Party Race", _TRUNCATE);
     } else {
-        int raceNum = g_currentState.raceIdx;
-        if (raceNum >= 0 && raceNum < 15) {
-            snprintf(outState, stateLen, "Race %d/15", raceNum);
-        } else {
-            strncpy_s(outState, stateLen, "Time Trial", _TRUNCATE);
-        }
+        strncpy_s(outState, stateLen, "Single Race", _TRUNCATE);
     }
 
-    const char* raceName = "Custom Level";
-    if (g_currentState.raceIdx >= 0 && g_currentState.raceIdx < 16) {
-        raceName = RACE_NAMES[g_currentState.raceIdx];
-    }
-
-    if (g_currentState.levelName[0] != '\0' &&
-        strncmp(g_currentState.levelName, "Level", 5) != 0 &&
-        strncmp(g_currentState.levelName, "Arena", 5) != 0) {
-        snprintf(outDetails, detailsLen, "%s", g_currentState.levelName);
-    } else {
-        snprintf(outDetails, detailsLen, "%s", raceName);
-    }
+    strncpy_s(outDetails, detailsLen, g_currentState.displayName ? g_currentState.displayName : "Unknown", _TRUNCATE);
 }
 
 static DWORD WINAPI DiscordThread(LPVOID param) {
     IModAPI* api = (IModAPI*)param;
 
     Log("=== Discord Rich Presence mod starting ===");
-    LoadConfig();
+    Log("App ID: %s", APP_ID);
 
-    if (strlen(g_appId) == 0 || strcmp(g_appId, "YOUR_APP_ID_HERE") == 0) {
-        Log("ERROR: app_id not set in discord_rpc.txt — mod will not run");
-        return 0;
-    }
-
-    Log("App ID: %s", g_appId);
     time_t lastReconnectAttempt = 0;
     bool firstConnect = true;
 
@@ -353,9 +349,10 @@ static DWORD WINAPI DiscordThread(LPVOID param) {
         if (shouldUpdate && (now - g_lastSendTime >= 15 || g_lastSendTime == 0)) {
             char stateStr[128], detailsStr[128];
             time_t startTime = 0;
-            BuildPresence(stateStr, sizeof(stateStr), detailsStr, sizeof(detailsStr), &startTime);
+            const char* imageKey = NULL;
+            BuildPresence(stateStr, sizeof(stateStr), detailsStr, sizeof(detailsStr), &startTime, &imageKey);
 
-            SendActivity(stateStr, detailsStr, startTime);
+            SendActivity(stateStr, detailsStr, startTime, imageKey);
 
             g_lastSentState = g_currentState;
             g_lastSendTime = now;
