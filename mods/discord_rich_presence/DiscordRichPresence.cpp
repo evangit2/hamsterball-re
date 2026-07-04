@@ -7,6 +7,7 @@
 #include <time.h>
 
 static const char* CONFIG_FILE = "discord_rpc.txt";
+static const char* LOG_FILE = "discord_rpc_log.txt";
 static char g_appId[64] = "";
 static char g_largeImage[64] = "hamsterball";
 
@@ -35,6 +36,32 @@ static bool g_forceUpdate = false;
 static bool g_rpcEnabled = true;
 static bool g_running = true;
 
+static void Log(const char* fmt, ...) {
+    char buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    int len = vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    if (len < 0) return;
+    char dir[512];
+    GetCurrentDirectoryA(512, dir);
+    char path[768];
+    snprintf(path, sizeof(path), "%s\\%s", dir, LOG_FILE);
+    FILE* f = NULL;
+    if (fopen_s(&f, path, "a") == 0 && f) {
+        time_t now = time(NULL);
+        struct tm tmv;
+        localtime_s(&tmv, &now);
+        char ts[32];
+        strftime(ts, sizeof(ts), "%H:%M:%S", &tmv);
+        fprintf(f, "[%s] ", ts);
+        fputs(buf, f);
+        if (len > 0 && buf[len - 1] != '\n') fputc('\n', f);
+        fclose(f);
+    }
+    OutputDebugStringA(buf);
+}
+
 static bool SendFrame(DWORD opcode, const char* json) {
     if (g_pipe == INVALID_HANDLE_VALUE) return false;
     DWORD len = (DWORD)strlen(json);
@@ -47,7 +74,32 @@ static bool SendFrame(DWORD opcode, const char* json) {
     DWORD written;
     BOOL ok = WriteFile(g_pipe, buf, (DWORD)totalLen, &written, NULL);
     free(buf);
-    return ok && written == totalLen;
+    if (!ok || written != totalLen) {
+        Log("SendFrame FAILED (opcode=%lu, written=%lu, expected=%zu)", opcode, written, totalLen);
+        return false;
+    }
+    return true;
+}
+
+static bool ReadFrame(char* outBuf, int bufSize) {
+    if (g_pipe == INVALID_HANDLE_VALUE) return false;
+    char header[8];
+    DWORD bytesRead = 0;
+    if (!ReadFile(g_pipe, header, 8, &bytesRead, NULL) || bytesRead != 8) {
+        Log("ReadFrame: failed to read header (got %lu bytes)", bytesRead);
+        return false;
+    }
+    DWORD opcode, length;
+    memcpy(&opcode, header, 4);
+    memcpy(&length, header + 4, 4);
+    if (length > (DWORD)(bufSize - 1)) length = bufSize - 1;
+    DWORD read = 0;
+    if (!ReadFile(g_pipe, outBuf, length, &read, NULL) || read != length) {
+        Log("ReadFrame: failed to read body (got %lu/%lu)", read, length);
+        return false;
+    }
+    outBuf[read] = '\0';
+    return true;
 }
 
 static bool Connect() {
@@ -56,16 +108,38 @@ static bool Connect() {
         snprintf(path, sizeof(path), "\\\\.\\pipe\\discord-ipc-%d", i);
         g_pipe = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
         if (g_pipe != INVALID_HANDLE_VALUE) {
+            Log("Connected to pipe: %s", path);
             char json[256];
             snprintf(json, sizeof(json), "{\"v\":1,\"client_id\":\"%s\"}", g_appId);
+            Log("Sending handshake: %s", json);
             if (SendFrame(1, json)) {
-                g_connected = true;
-                return true;
+                char response[4096];
+                if (ReadFrame(response, sizeof(response))) {
+                    Log("Handshake response: %s", response);
+                    if (strstr(response, "\"code\"") && !strstr(response, "\"code\":0")) {
+                        Log("Handshake ERROR — check app_id is correct");
+                        CloseHandle(g_pipe);
+                        g_pipe = INVALID_HANDLE_VALUE;
+                        continue;
+                    }
+                    g_connected = true;
+                    g_forceUpdate = true;
+                    Log("Connected to Discord successfully!");
+                    return true;
+                } else {
+                    Log("Handshake: no response, assuming connected anyway");
+                    g_connected = true;
+                    g_forceUpdate = true;
+                    return true;
+                }
+            } else {
+                Log("Handshake send failed");
+                CloseHandle(g_pipe);
+                g_pipe = INVALID_HANDLE_VALUE;
             }
-            CloseHandle(g_pipe);
-            g_pipe = INVALID_HANDLE_VALUE;
         }
     }
+    Log("Could not connect to any Discord IPC pipe (0-9). Is Discord running?");
     return false;
 }
 
@@ -98,6 +172,7 @@ static bool SendActivity(const char* state, const char* details, time_t startTim
             (int)GetCurrentProcessId(), state, details,
             g_largeImage, (long long)time(NULL));
     }
+    Log("Sending activity: state='%s' details='%s' start=%lld", state, details, (long long)startTime);
     return SendFrame(2, json);
 }
 
@@ -107,6 +182,7 @@ static bool ClearActivity() {
     snprintf(json, sizeof(json),
         "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d},\"nonce\":\"hb-%lld\"}",
         (int)GetCurrentProcessId(), (long long)time(NULL));
+    Log("Clearing activity");
     return SendFrame(2, json);
 }
 
@@ -135,8 +211,10 @@ static void LoadConfig() {
             }
         }
         fclose(f);
+        Log("Config loaded: app_id='%s' large_image='%s'", g_appId, g_largeImage);
         return;
     }
+    Log("Config file not found, generating defaults: %s", path);
     if (fopen_s(&f, path, "w") == 0 && f) {
         fprintf(f, "# Discord Rich Presence Configuration\n");
         fprintf(f, "# Get your Application ID from https://discord.com/developers/applications\n");
@@ -222,13 +300,17 @@ static void BuildPresence(char* outState, int stateLen, char* outDetails, int de
 static DWORD WINAPI DiscordThread(LPVOID param) {
     IModAPI* api = (IModAPI*)param;
 
+    Log("=== Discord Rich Presence mod starting ===");
     LoadConfig();
 
     if (strlen(g_appId) == 0 || strcmp(g_appId, "YOUR_APP_ID_HERE") == 0) {
+        Log("ERROR: app_id not set in discord_rpc.txt — mod will not run");
         return 0;
     }
 
+    Log("App ID: %s", g_appId);
     time_t lastReconnectAttempt = 0;
+    bool firstConnect = true;
 
     while (g_running) {
         if (!g_rpcEnabled) {
@@ -242,7 +324,8 @@ static DWORD WINAPI DiscordThread(LPVOID param) {
 
         if (!g_connected) {
             time_t now = time(NULL);
-            if (now - lastReconnectAttempt >= 15) {
+            if (now - lastReconnectAttempt >= 15 || firstConnect) {
+                firstConnect = false;
                 lastReconnectAttempt = now;
                 Connect();
             }
@@ -288,12 +371,13 @@ static DWORD WINAPI DiscordThread(LPVOID param) {
         if (PeekNamedPipe(g_pipe, NULL, 0, NULL, &avail, NULL)) {
             if (avail > 0) {
                 char readBuf[4096];
-                DWORD read = 0;
-                if (!ReadFile(g_pipe, readBuf, sizeof(readBuf), &read, NULL)) {
+                if (!ReadFrame(readBuf, sizeof(readBuf))) {
+                    Log("Pipe read failed during poll — disconnecting");
                     Disconnect();
                 }
             }
         } else {
+            Log("PeekNamedPipe failed — Discord likely closed, disconnecting");
             Disconnect();
         }
 
