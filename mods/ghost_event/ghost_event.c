@@ -126,11 +126,11 @@ static void diag_logf(const char *fmt, ...) {
 /* ---- BASS proxy ---- */
 static HMODULE g_hRealBass = NULL;
 
-static void (__stdcall *real_BASS_Init)(int, int, DWORD, HWND, const void*);
+static BOOL (__stdcall *real_BASS_Init)(int, int, DWORD, HWND, const void*);
 static void (__stdcall *real_BASS_Free)(void);
 static HSTREAM (__stdcall *real_BASS_StreamCreateFile)(BOOL, const void*, QWORD, QWORD, DWORD);
 static BOOL (__stdcall *real_BASS_StreamFree)(HSTREAM);
-static HMUSIC (__stdcall *real_BASS_MusicLoad)(BOOL, const void*, QWORD, DWORD, DWORD, DWORD);
+static HMUSIC (__stdcall *real_BASS_MusicLoad)(BOOL, const void*, DWORD, DWORD, DWORD, DWORD);
 static BOOL (__stdcall *real_BASS_MusicFree)(HMUSIC);
 static BOOL (__stdcall *real_BASS_ChannelSetAttributes)(DWORD, int, float, int);
 static BOOL (__stdcall *real_BASS_ChannelPlay)(DWORD, BOOL);
@@ -142,8 +142,9 @@ static int  (__stdcall *real_BASS_SetConfig)(DWORD, DWORD);
 static int  (__stdcall *real_BASS_ErrorGetCode)(void);
 static int  (__stdcall *real_BASS_ChannelStop)(DWORD);
 
-void __stdcall BASS_Init(int device, int freq, DWORD flags, HWND win, const void *dsguid) {
-    if (real_BASS_Init) real_BASS_Init(device, freq, flags, win, dsguid);
+BOOL __stdcall BASS_Init(int device, int freq, DWORD flags, HWND win, const void *dsguid) {
+    if (real_BASS_Init) return real_BASS_Init(device, freq, flags, win, dsguid);
+    return TRUE;
 }
 void __stdcall BASS_Free(void) {
     if (real_BASS_Free) real_BASS_Free();
@@ -157,8 +158,8 @@ BOOL __stdcall BASS_StreamFree(HSTREAM handle) {
     return FALSE;
 }
 HMUSIC __stdcall BASS_MusicLoad(BOOL mem, const void *file, DWORD offset, DWORD length, DWORD flags, DWORD freq) {
-    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(mem, file, (QWORD)offset, length, flags, freq);
-    return 0;
+    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(mem, file, offset, length, flags, freq);
+    return (HMUSIC)1;  /* non-zero handle required or game crashes */
 }
 BOOL __stdcall BASS_MusicFree(HMUSIC handle) {
     if (real_BASS_MusicFree) return real_BASS_MusicFree(handle);
@@ -170,7 +171,7 @@ BOOL __stdcall BASS_ChannelSetAttributes(DWORD handle, int freq, float volume, i
 }
 BOOL __stdcall BASS_MusicPlayEx(DWORD handle, DWORD flags, DWORD freq, BOOL ramp) {
     if (real_BASS_ChannelPlay) return real_BASS_ChannelPlay(handle, ramp);
-    return FALSE;
+    return TRUE;
 }
 DWORD __stdcall BASS_ChannelGetData(DWORD handle, void *buffer, DWORD length) {
     if (real_BASS_ChannelGetData) return real_BASS_ChannelGetData(handle, buffer, length);
@@ -254,7 +255,7 @@ static BOOL  g_ghostBallCreated = FALSE;  /* TRUE if WE created the ghost ball (
 /* Ball vtable[0] = deleting destructor at 0x402A50
  * __thiscall(ball, flags), RET 0x4. flags=1: dtor + free struct */
 #define BALL_DELETING_DTOR 0x402A50
-#define OPERATOR_DELETE    0x004BA740
+#define OPERATOR_DELETE    0x004BA74D
 
 /* ---- DCE handler (called from raw byte stub) ----
  * DCE is __thiscall: ECX=board, stack: [ball, collEntry], RET 0x8
@@ -673,8 +674,8 @@ static void build_dce_stub(void) {
     code[i++] = 0x51;  /* push ecx (board) */
     /* push [esp+0x2C] (ball) */
     code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;
-    /* push [esp+0x30] (collEntry) */
-    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x30;
+    /* After pushing ball, ESP dropped by 4. collEntry was at 0x30, now at 0x34 */
+    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x34;
     /* call dce_handler (relative) */
     code[i++] = 0xE8;
     *(DWORD*)(code + i) = (DWORD)&dce_handler - (DWORD)(code + i + 4);
