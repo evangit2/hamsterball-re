@@ -25,9 +25,11 @@
  * We detect version by checking for BASS_ChannelSetAttribute (2.4-only).
  * ============================================================ */
 
-/* BASS_StreamCreateFile uses QWORD offset/length in BOTH 2.0 and 2.4.
- * Using DWORD here causes RET 28 to pop 28 bytes from a 20-byte stack → crash. */
-typedef DWORD (__stdcall *StreamCreateFile20_t)(BOOL, const char*, unsigned long long, unsigned long long, DWORD);
+/* BASS 2.0: BASS_StreamCreateFile(BOOL, char*, DWORD, DWORD, DWORD) — 20 bytes
+ * BASS 2.4: BASS_StreamCreateFile(BOOL, void*, QWORD, QWORD, DWORD) — 28 bytes
+ * QWORD offset/length was added in BASS 2.3, NOT 2.0.
+ * We detect version by checking for BASS_ChannelSetAttribute (2.4-only). */
+typedef DWORD (__stdcall *StreamCreateFile20_t)(BOOL, const char*, DWORD, DWORD, DWORD);
 typedef DWORD (__stdcall *StreamCreateFile24_t)(BOOL, const char*, unsigned long long, unsigned long long, DWORD);
 typedef int  (__stdcall *ChannelPlay_t)(DWORD, BOOL);
 typedef int  (__stdcall *StreamPlay20_t)(DWORD, BOOL);  /* BASS 2.0: BASS_StreamPlay */
@@ -244,6 +246,12 @@ static void SoundCollisionHandler(void) {
 
     g_soundMatchCount++;
 
+    /* Validate ball pointer before any access */
+    if (!ball || IsBadReadPtr(ball, 0x800)) {
+        diag_logf("[SOUND] ERROR: ball pointer invalid (0x%08X)", (unsigned int)ball);
+        return;
+    }
+
     /* Check cooldown (same as E:POPOUT: ball+0x7CC < 1) */
     if (*(int *)((char *)ball + BALL_POPOUT_COOLDOWN) >= 1) return;
 
@@ -258,16 +266,21 @@ static void SoundCollisionHandler(void) {
         diag_logf("[SOUND MATCH #%d] file=\"%s\"", g_soundMatchCount, fileName);
 
         /* Load or get cached stream */
+        diag_log("[SOUND] Before getOrLoadSound");
         DWORD stream = getOrLoadSound(fileName);
+        diag_logf("[SOUND] After getOrLoadSound: stream=0x%08X", (unsigned int)stream);
+
         if (stream) {
             /* Play with restart=TRUE (restart from beginning) */
             int playResult = 0;
+            diag_log("[SOUND] Before play call");
             if (g_bassIs24 && real_ChannelPlay) {
                 playResult = real_ChannelPlay(stream, TRUE);
             } else if (real_StreamPlay) {
                 /* BASS 2.0: BASS_StreamPlay(handle, restart) */
                 playResult = real_StreamPlay(stream, TRUE);
             }
+            diag_logf("[SOUND] After play call: result=%d", playResult);
             if (playResult) {
                 diag_logf("[SOUND] Playing: %s", fileName);
             } else {
@@ -278,10 +291,14 @@ static void SoundCollisionHandler(void) {
         }
 
         /* Set cooldown to 50 frames (same as POPOUT) */
+        diag_log("[SOUND] Before cooldown write");
         *(int *)((char *)ball + BALL_POPOUT_COOLDOWN) = 0x32;
+        diag_log("[SOUND] After cooldown write");
 
         /* Grant 100 frames of dizzy immunity (same as POPOUT) */
+        diag_log("[SOUND] Before Ball_DizzyImmunity");
         callBallDizzyImmunity(ball, 100);
+        diag_log("[SOUND] After Ball_DizzyImmunity");
     }
 }
 
