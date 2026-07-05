@@ -3,6 +3,8 @@
 #include <cmath>
 
 static bool g_hideUI = false;
+static bool g_hideBall = false;
+static float g_origBallRadius = 26.0f;
 
 // Font_DrawGlyph: RET 0x20 = 8 stack params → 10 total (ecx + edx + 8)
 typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
@@ -127,6 +129,7 @@ public:
         api = modApi;
         api->RegisterCustomControl("FREECAM_TOGGLE", CustomControl(DIK_F7));
         api->RegisterCustomControl("FREECAM_HIDEUI", CustomControl(DIK_F8));
+        api->RegisterCustomControl("FREECAM_HIDEBALL", CustomControl(DIK_F9));
         api->RegisterCustomHook(0x457440, (void*)hook_FontDrawGlyph, (void**)&orig_FontDrawGlyph);
         api->RegisterCustomHook(0x45D300, (void*)hook_SpriteDrawRect, (void**)&orig_SpriteDrawRect);
         api->RegisterCustomHook(0x45D660, (void*)hook_SpriteRenderQuad, (void**)&orig_SpriteRenderQuad);
@@ -158,6 +161,11 @@ public:
         if (api->WasControlPressed("FREECAM_HIDEUI")) {
             g_hideUI = !g_hideUI;
             printf("[FreeCam] UI: %s\n", g_hideUI ? "HIDDEN" : "VISIBLE");
+        }
+
+        if (api->WasControlPressed("FREECAM_HIDEBALL")) {
+            g_hideBall = !g_hideBall;
+            printf("[FreeCam] Ball: %s\n", g_hideBall ? "HIDDEN" : "VISIBLE");
         }
 
         if (!active || !initialized) return;
@@ -217,6 +225,20 @@ public:
         ct.text_color = Color(0.0f, 1.0f, 0.0f, 1.0f);
         ct.enable_shadow = true;
         api->DrawCustomText("FREECAM", ct);
+    }
+
+    void onBallUpdate(Ball* ball) override {
+        if (!ball || ball->playerID < 0) return;
+        if (g_hideBall) {
+            if (ball->radius > 0.1f) {
+                g_origBallRadius = ball->radius;
+                ball->radius = 0.0f;
+            }
+        } else {
+            if (g_origBallRadius > 0.1f && ball->radius < 0.1f) {
+                ball->radius = g_origBallRadius;
+            }
+        }
     }
 
     void onLevelStart() override {
