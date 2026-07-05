@@ -465,6 +465,12 @@ static void check_race_state(void) {
                     }
 
                     if (g_rawCount > 0) {
+                        /* Always save the most recent run as PreviousRun.ghost
+                         * so it's always available regardless of best time. */
+                        save_ghost_for_race("PreviousRun", finishTime,
+                                           g_rawSnaps, g_rawCount);
+                        log_msg("Previous run saved");
+
                         int existingTime = get_saved_time(g_currentRaceName);
                         if (existingTime == NO_TIME) {
                             log_fmt("No existing ghost for '%s' — saving", g_currentRaceName);
@@ -729,7 +735,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v21 started");
+    log_msg("Ghost thread v21b started");
     while (1) {
         Sleep(16);
         check_race_state();
