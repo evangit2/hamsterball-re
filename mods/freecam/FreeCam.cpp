@@ -164,15 +164,29 @@ public:
 
         if (api->WasControlPressed("FREECAM_HIDEBALL")) {
             g_hideBall = !g_hideBall;
+            if (!g_hideBall) {
+                // Toggling back to visible — force alpha to 1.0 once
+                // so the ball isn't stuck invisible
+                Ball* ball = api->GetPlayer();
+                if (ball && !IsBadReadPtr(ball, sizeof(Ball))) {
+                    *(float*)((uint8_t*)ball + 0x2FC) = 1.0f;
+                }
+            }
             printf("[FreeCam] Ball: %s\n", g_hideBall ? "HIDDEN" : "VISIBLE");
         }
 
-        // Only force alpha when hiding — when visible, let the game
-        // manage it naturally (respawn fade-in, ghost ball, etc.)
+        // When hidden, force alpha to 0.0 every frame — UNLESS the ball
+        // is in respawn fade-in (ball+0x2F9 set). During respawn, let
+        // alpha go to 1.0 so the respawn check passes and movement unlocks.
+        // The ball will be briefly visible during respawn fade-in, then
+        // re-hide once respawn completes.
         if (g_hideBall) {
             Ball* ball = api->GetPlayer();
             if (ball && !IsBadReadPtr(ball, sizeof(Ball))) {
-                *(float*)((uint8_t*)ball + 0x2FC) = 0.0f;
+                bool respawning = *((uint8_t*)ball + 0x2F9) != 0;
+                if (!respawning) {
+                    *(float*)((uint8_t*)ball + 0x2FC) = 0.0f;
+                }
             }
         }
 
