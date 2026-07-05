@@ -1,6 +1,18 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.1)
  *
- * v25: Three fixes:
+ * v25.1: Five fixes:
+ *        (1) Version string — log messages now say v25 (was v24).
+ *        (2) Log file location — init_paths now truncates the module path to
+ *            the directory and appends "ghost_saver_log.txt" directly, so the
+ *            log goes next to bass.dll instead of inside Ghosts/.
+ *        (3) PreviousRun filename — renamed to "Previous_Run" and added '_'
+ *            as a word boundary in the title-case converter, producing
+ *            "Previous_Run.ghost" (was "Previousrun.ghost").
+ *        (4) AthenaList_Init address in shared bass_proxy.h — was 0x453690
+ *            (AthenaList_Remove), now correctly 0x453210 (AthenaList_Init).
+ *        (5) Integer overflow guard — check_race_state now rejects BTT
+ *            AthenaList counts >= 200000, preventing potential crash on
+ *            corrupted BTT data (count*4 overflow bypasses IsBadReadPtr).
  *      (1) Dummy BTT ctor leak fix — if the dummy recording BTT constructor
  *          fails (vtable mismatch), the 528-byte struct was never freed.
  *          Now calls game_free (0x4BA74D) to release it, matching the
@@ -197,7 +209,7 @@ static void race_name_to_filename(const char *raceName, char *out, int outLen) {
     int newWord = 1;
     for (int i = 0; base[i]; i++) {
         char c = base[i];
-        if (c == ' ' || c == '-')
+        if (c == ' ' || c == '-' || c == '_')
             newWord = 1;
         else if (newWord) {
             if (c >= 'a' && c <= 'z') base[i] = c - 32;
@@ -549,7 +561,7 @@ static void check_race_state(void) {
                         DWORD count = *(DWORD*)(btt + 8);  /* AthenaList count */
                         if (!IsBadReadPtr((void*)(btt + 0x410), 4)) {
                             DWORD *data = *(DWORD**)(btt + 0x410);  /* AthenaList data ptr */
-                            if (count > 0 && data &&
+                            if (count > 0 && count < 200000 && data &&
                                 (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
                                 log_fmt("Reading %d frames from game's recording BTT", count);
 
@@ -578,7 +590,7 @@ static void check_race_state(void) {
                     if (g_rawCount > 0) {
                         /* Always save the most recent run as PreviousRun.ghost
                          * so it's always available regardless of best time. */
-                        save_ghost_for_race("PreviousRun", finishTime,
+                        save_ghost_for_race("Previous_Run", finishTime,
                                            g_rawSnaps, g_rawCount);
                         log_msg("Previous run saved");
 
@@ -900,7 +912,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v24 started");
+    log_msg("Ghost thread v25 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -914,18 +926,13 @@ static void init_paths(HMODULE hInst) {
         char *p = strrchr(path, '\\');
         if (p) {
             /* Create Ghosts/ directory next to bass.dll */
-            strcpy(p + 1, "Ghosts\\");
-            strncpy(g_ghostDir, path, MAX_PATH - 1);
-            g_ghostDir[MAX_PATH - 1] = '\0';
+            *p = '\0';  /* truncate to directory path */
+            snprintf(g_ghostDir, MAX_PATH, "%s\\Ghosts\\", path);
             CreateDirectoryA(g_ghostDir, NULL);
             /* Ignore error if dir already exists */
 
-            p = strrchr(path, '\\');
-            if (p) {
-                strcpy(p + 1, "ghost_saver_log.txt");
-                strncpy(g_logPath, path, MAX_PATH - 1);
-                g_logPath[MAX_PATH - 1] = '\0';
-            }
+            /* Log file goes next to bass.dll (NOT inside Ghosts/) */
+            snprintf(g_logPath, MAX_PATH, "%s\\ghost_saver_log.txt", path);
         }
     }
 }
@@ -933,7 +940,7 @@ static void init_paths(HMODULE hInst) {
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
     InitializeCriticalSection(&g_cs);
-    log_msg("=== Ghost Saver Mod v24 Init ===");
+    log_msg("=== Ghost Saver Mod v25 Init ===");
     log_fmt("Ghost dir: %s", g_ghostDir);
     log_fmt("Log path: %s", g_logPath);
 
