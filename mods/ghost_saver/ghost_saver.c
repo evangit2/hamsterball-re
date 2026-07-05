@@ -1,6 +1,19 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.1)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.2)
  *
- * v25.1: Five fixes:
+ * v25.2: Three robustness fixes from code review:
+ *        (1) Dummy BTT leak on quit-without-finishing — the dummy recording
+ *            BTT created at App+0x90C was never freed if the player ESC-quit
+ *            before the goal. Now tracked in g_dummyRecording and destroyed
+ *            when check_race_state detects we've left Time Trial mode, with
+ *            a double-free guard (only destroy if App+0x90C still points to it).
+ *        (2) Orphaned dummy on inject failure — if inject_saved_ghost failed
+ *            (corrupt body, alloc failure, etc.), we'd still create the dummy
+ *            recording at App+0x90C with no playback to protect. Now only
+ *            create the dummy if injection actually changed App+0x910.
+ *        (3) WriteFile atomic save — save_ghost_for_race now writes to a
+ *            .tmp file and renames via MoveFileEx, so a failed/interrupted
+ *            write never corrupts the existing ghost file. Also checks each
+ *            WriteFile for short writes.
  *        (1) Version string — log messages now say v25 (was v24).
  *        (2) Log file location — init_paths now truncates the module path to
  *            the directory and appends "ghost_saver_log.txt" directly, so the
@@ -110,6 +123,7 @@ static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
 static DWORD g_prevRecording = 0;
 static DWORD g_savedOldPlayback = 0;   /* old App+0x910 saved for post-trampoline destruction */
+static DWORD g_dummyRecording = 0;     /* dummy BTT we created at App+0x90C — tracked for cleanup */
 static char g_ghostDir[MAX_PATH] = "";  /* .../Ghosts/ directory */
 static char g_logPath[MAX_PATH] = "";
 
@@ -269,28 +283,57 @@ static void save_ghost_for_race(const char *raceName, int time,
     char path[MAX_PATH];
     race_name_to_filename(raceName, path, sizeof(path));
 
-    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL,
+    /* Issue 3 fix: Write to a temp file first, then rename to the final path.
+     * This prevents silently corrupting a good ghost file if the disk is full
+     * or the write is interrupted — CREATE_ALWAYS would truncate the existing
+     * file before we know if the new write will succeed. */
+    char tmpPath[MAX_PATH];
+    snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", path);
+
+    HANDLE h = CreateFileA(tmpPath, GENERIC_WRITE, 0, NULL,
         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        log_fmt("ERROR: cannot create %s", path);
+        log_fmt("ERROR: cannot create %s", tmpPath);
         return;
     }
     DWORD written;
+    int ok = 1;
 
     DWORD magic = GHOST_MAGIC;
     DWORD version = GHOST_VERSION;
     DWORD frameCount = (DWORD)count;
 
-    WriteFile(h, &magic, 4, &written, NULL);
-    WriteFile(h, &version, 4, &written, NULL);
-    WriteFile(h, (DWORD*)&time, 4, &written, NULL);
-    WriteFile(h, &frameCount, 4, &written, NULL);
+    /* Check each WriteFile for short writes */
+    if (!WriteFile(h, &magic, 4, &written, NULL) || written != 4) ok = 0;
+    if (ok && (!WriteFile(h, &version, 4, &written, NULL) || written != 4)) ok = 0;
+    if (ok && (!WriteFile(h, (DWORD*)&time, 4, &written, NULL) || written != 4)) ok = 0;
+    if (ok && (!WriteFile(h, &frameCount, 4, &written, NULL) || written != 4)) ok = 0;
 
     /* Write all snapshots as one contiguous block — 10 DWORDs = 40 bytes each */
-    if (count > 0)
-        WriteFile(h, snaps, count * 40, &written, NULL);
+    if (ok && count > 0) {
+        DWORD totalBytes = (DWORD)count * 40;
+        if (!WriteFile(h, snaps, totalBytes, &written, NULL) || written != totalBytes) {
+            log_fmt("ERROR: short write — expected %d bytes, got %d", totalBytes, written);
+            ok = 0;
+        }
+    }
 
+    /* Flush before rename to ensure data is on disk */
+    if (ok) FlushFileBuffers(h);
     CloseHandle(h);
+
+    if (ok) {
+        /* Replace the existing file via rename — atomic on NTFS */
+        if (MoveFileExA(tmpPath, path, MOVEFILE_REPLACE_EXISTING)) {
+            log_fmt("Saved %s (%d frames, time=%d)", path, count, time);
+        } else {
+            log_fmt("ERROR: MoveFileEx failed (err=%d), leaving temp file", GetLastError());
+            DeleteFileA(tmpPath);
+        }
+    } else {
+        log_fmt("ERROR: write failed for %s — keeping existing ghost file", path);
+        DeleteFileA(tmpPath);
+    }
 }
 
 /* Inline asm wrappers for __thiscall game functions.
@@ -482,6 +525,39 @@ static void check_race_state(void) {
             g_prevGoalFlag = 0;
             g_currentRaceName[0] = '\0';
             g_hookRaceName[0] = '\0';
+        }
+        /* Issue 1 fix: Clean up dummy recording BTT if the player quit
+         * without finishing. The game's BTT management only runs inside
+         * App_StartPracticeRace, so if the player ESC-quits to menu,
+         * the dummy we created at App+0x90C is never freed.
+         *
+         * Safety: Only destroy if App+0x90C STILL points to our dummy.
+         * If App+0x90C differs, the game already freed/replaced it
+         * (during a subsequent App_StartPracticeRace) — don't double-free. */
+        if (g_dummyRecording && g_dummyRecording > 0x10000) {
+            DWORD currRec = 0;
+            if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
+                currRec = *(DWORD*)(app + APP_90C_RECORDING);
+
+            if (currRec == g_dummyRecording) {
+                /* App+0x90C still points to our dummy — game didn't free it.
+                 * Verify vtable before calling destructor. */
+                if (!IsBadReadPtr((void*)g_dummyRecording, 4)) {
+                    DWORD vt = *(DWORD*)g_dummyRecording;
+                    if (vt == 0x004D262C) {
+                        log_fmt("Cleaning up dummy recording BTT at 0x%X (quit without finishing)", g_dummyRecording);
+                        call_btt_dtor((void*)g_dummyRecording);
+                    } else {
+                        log_fmt("WARNING: dummy recording vtable=0x%X (expected 0x4D262C) — skipping cleanup", vt);
+                    }
+                }
+            } else {
+                /* App+0x90C no longer points to our dummy — the game already
+                 * handled it (freed or replaced). Just clear tracking. */
+                log_fmt("Dummy recording BTT (0x%X) no longer at App+0x90C (now 0x%X) — game handled it",
+                        g_dummyRecording, currRec);
+            }
+            g_dummyRecording = 0;
         }
         if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
             g_prevRecording = *(DWORD*)(app + APP_90C_RECORDING);
@@ -699,6 +775,7 @@ static int is_time_trial_precheck(void) {
  *   ✅ Safe to call vtable[0](1) on the saved pointer (full delete) */
 void hook_impl(DWORD app, DWORD race_index) {
     g_savedOldPlayback = 0;
+    g_dummyRecording = 0;
 
     EnterCriticalSection(&g_cs);
 
@@ -743,18 +820,19 @@ void hook_impl(DWORD app, DWORD race_index) {
                     }
                 }
 
-                /* If App+0x90C (recording) is NULL, the game's BTT management
-                 * will destroy our App+0x910. Create a dummy recording BTT with
-                 * NO_TIME so the game enters the "both exist" branch and keeps
-                 * our playback (since NO_TIME will not beat savedTime).
-                 *
-                 * Also: if App+0x90C already has a recording from a PREVIOUS
-                 * race (e.g. Warm-Up time=373), its time could beat our
-                 * injected playback (e.g. Beginner time=1414), causing the
-                 * game to destroy our ghost and promote the wrong-race
-                 * recording. Fix: set the existing recording's time to
-                 * NO_TIME so it loses the comparison. */
-                if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
+                /* Issue 2 fix: Only create the dummy recording BTT if the
+                 * ghost injection actually succeeded (App+0x910 changed).
+                 * Previously, even if inject_saved_ghost failed (corrupt body,
+                 * alloc failure, etc.), we'd still create the dummy at
+                 * App+0x90C — leaving an orphaned dummy with no playback. */
+                DWORD newPlayback = 0;
+                if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4))
+                    newPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
+
+                int injectSucceeded = (newPlayback && newPlayback > 0x10000 &&
+                                       newPlayback != g_savedOldPlayback);
+
+                if (injectSucceeded && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
                     DWORD recording = *(DWORD*)(app + APP_90C_RECORDING);
                     if (recording && recording > 0x10000 &&
                         !IsBadReadPtr((void*)(recording + BTT_BEST_TIME), 4)) {
@@ -773,7 +851,12 @@ void hook_impl(DWORD app, DWORD race_index) {
                             if (vt == 0x004D262C) {
                                 *(DWORD*)((char*)dummyRec + BTT_BEST_TIME) = NO_TIME;
                                 *(DWORD*)(app + APP_90C_RECORDING) = (DWORD)dummyRec;
-                                log_fmt("Dummy recording BTT at 0x%X (NO_TIME)", (DWORD)dummyRec);
+                                /* Issue 1 fix: Track the dummy BTT so it can be
+                                 * cleaned up if the player quits without finishing.
+                                 * Without this, the 528-byte dummy leaks every time
+                                 * someone starts a race and ESC-quits before the goal. */
+                                g_dummyRecording = (DWORD)dummyRec;
+                                log_fmt("Dummy recording BTT at 0x%X (NO_TIME, tracked for cleanup)", (DWORD)dummyRec);
                             } else {
                                 log_fmt("ERROR: dummy BTT ctor vtable=0x%X", vt);
                                 /* Free failed ctor allocation via CRT _free — can't call
@@ -782,6 +865,8 @@ void hook_impl(DWORD app, DWORD race_index) {
                             }
                         }
                     }
+                } else if (!injectSucceeded) {
+                    log_msg("Skipping dummy recording — ghost injection failed");
                 }
             } else {
                 log_fmt("No saved ghost for '%s', clearing stale playback", raceName);

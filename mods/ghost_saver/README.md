@@ -1,6 +1,12 @@
-# Ghost Saver Mod (v25.1)
+# Ghost Saver Mod (v25.2)
 
 Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
+
+## v25.2 Changes
+
+- **Dummy BTT leak fix (quit-without-finishing)**: The dummy recording BTT created at `App+0x90C` was never freed if the player ESC-quit to menu before reaching the goal. Now tracked in `g_dummyRecording` and destroyed when `check_race_state` detects we've left Time Trial mode. Includes a double-free guard — only destroys if `App+0x90C` still points to the dummy (if the game already freed/replaced it during a subsequent race transition, we skip cleanup).
+- **Orphaned dummy on inject failure**: If `inject_saved_ghost` failed (corrupt file body, alloc failure, vtable mismatch), we'd still create the dummy recording at `App+0x90C` with no playback to protect — leaving an orphaned dummy. Now the dummy is only created if injection actually changed `App+0x910`.
+- **Atomic ghost file saves**: `save_ghost_for_race` now writes to a `.tmp` file and renames via `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`, so a failed or interrupted write never corrupts the existing ghost file. Also checks each `WriteFile` call for short writes and flushes before rename.
 
 ## v25.1 Changes
 
