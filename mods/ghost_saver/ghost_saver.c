@@ -12,6 +12,10 @@
  *      (3) Filename sanitization — race_name_to_filename now replaces invalid
  *          Windows filename characters (\ / : * ? " < > |) with underscores
  *          so custom levels with unusual names produce valid filenames.
+ *      (4) Title-case conversion — every word's first letter is uppercased
+ *          and all other letters lowercased. Words are delimited by spaces
+ *          and hyphens, so "RIDDLES IN THE DARK" -> "Riddles In The Dark",
+ *          "WARM-UP" -> "Warm-Up".
  * v24: Three fixes:
  *      (1) Dynamic snapshot buffer — replaces fixed 5000-frame static array
  *          with malloc/realloc so long races (>83s) are no longer truncated.
@@ -173,7 +177,9 @@ static int is_time_trial_active(void) {
 /* Convert race name to ghost filename.
  * "Warm-Up Race" -> "Warm-Up.ghost"
  * "BEGINNER RACE" -> "Beginner.ghost"
- * Strips " RACE" suffix, title-cases the rest. */
+ * "RIDDLES IN THE DARK" -> "Riddles In The Dark.ghost"
+ * Strips " RACE" suffix, converts to title-case (every word capitalized,
+ * all other letters lowercased), sanitizes invalid filename chars. */
 static void race_name_to_filename(const char *raceName, char *out, int outLen) {
     char base[128];
     strncpy(base, raceName, sizeof(base) - 1);
@@ -185,9 +191,21 @@ static void race_name_to_filename(const char *raceName, char *out, int outLen) {
         base[len - 5] = '\0';
     }
 
-    /* Title-case first letter */
-    if (base[0] >= 'a' && base[0] <= 'z')
-        base[0] -= 32;
+    /* Title-case every word: first letter of each word uppercase,
+     * all other letters lowercase. A "word" starts after a space, hyphen,
+     * or at the beginning of the string. */
+    int newWord = 1;
+    for (int i = 0; base[i]; i++) {
+        char c = base[i];
+        if (c == ' ' || c == '-')
+            newWord = 1;
+        else if (newWord) {
+            if (c >= 'a' && c <= 'z') base[i] = c - 32;
+            newWord = 0;
+        } else {
+            if (c >= 'A' && c <= 'Z') base[i] = c + 32;
+        }
+    }
 
     /* Sanitize characters that are invalid in Windows filenames.
      * Replace each with underscore so the file is always creatable/openable. */
