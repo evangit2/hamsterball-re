@@ -197,21 +197,26 @@ public:
             printf("[FreeCam] Fog: %s\n", g_disableFog ? "DISABLED" : "ENABLED");
         }
 
-        // Fog disable: overwrite fog start/end in gfx struct every frame.
-        // gfx = App+0x174. FOGSTART at gfx+0x73C, FOGEND at gfx+0x740.
-        // By setting start very far and end even farther, fog won't be
-        // visible within the level geometry. Safe — just struct writes.
-        // Also clear gfx+0xA4 fog flags to prevent fog codepath.
+        // Fog disable: call D3D device->SetRenderState(D3DRS_FOGENABLE, 0) every frame.
+        // D3D8 COM methods are __stdcall (device on stack, NOT __thiscall in ECX).
+        // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50] (offset 0xC8).
+        // D3DRS_FOGENABLE = 28 (0x1C). Game enables fog in Graphics_SetCullMode2 (0x453970)
+        // which pushes device, state, value on stack and calls [vtable+0xC8].
         if (g_disableFog) {
             App* app = api->GetApp();
             if (app && !IsBadReadPtr(app, sizeof(App))) {
                 void* gfx = app->graphics;
-                if (gfx && !IsBadReadPtr(gfx, 0x800)) {
-                    // Push fog start/end to extreme distances
-                    *(float*)((uint8_t*)gfx + 0x73C) = 99999.0f;  // FOGSTART
-                    *(float*)((uint8_t*)gfx + 0x740) = 100000.0f; // FOGEND
-                    // Clear fog flags
-                    *(uint32_t*)((uint8_t*)gfx + 0xA4) = 0;
+                if (gfx && !IsBadReadPtr(gfx, 0x200)) {
+                    void* device = *(void**)((uint8_t*)gfx + 0x154);
+                    if (device && !IsBadReadPtr(device, 4)) {
+                        void** vtable = *(void***)device;
+                        if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
+                            // D3D8 SetRenderState is __stdcall: (device, state, value)
+                            typedef long(__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
+                            D3DSetRenderState_t srs = (D3DSetRenderState_t)vtable[50];
+                            srs(device, 28, 0);  // FOGENABLE = FALSE
+                        }
+                    }
                 }
             }
         }
