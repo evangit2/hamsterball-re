@@ -1,5 +1,17 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v24)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25)
  *
+ * v25: Three fixes:
+ *      (1) Dummy BTT ctor leak fix — if the dummy recording BTT constructor
+ *          fails (vtable mismatch), the 528-byte struct was never freed.
+ *          Now calls game_free (0x4BA74D) to release it, matching the
+ *          existing fix in inject_saved_ghost.
+ *      (2) Frame count sanity check — inject_saved_ghost now rejects .ghost
+ *          files with frameCount >= 200000 to prevent huge allocations from
+ *          corrupted or crafted files (200000 frames = ~55 min, well beyond
+ *          any legit race).
+ *      (3) Filename sanitization — race_name_to_filename now replaces invalid
+ *          Windows filename characters (\ / : * ? " < > |) with underscores
+ *          so custom levels with unusual names produce valid filenames.
  * v24: Three fixes:
  *      (1) Dynamic snapshot buffer — replaces fixed 5000-frame static array
  *          with malloc/realloc so long races (>83s) are no longer truncated.
@@ -177,6 +189,15 @@ static void race_name_to_filename(const char *raceName, char *out, int outLen) {
     if (base[0] >= 'a' && base[0] <= 'z')
         base[0] -= 32;
 
+    /* Sanitize characters that are invalid in Windows filenames.
+     * Replace each with underscore so the file is always creatable/openable. */
+    for (int i = 0; base[i]; i++) {
+        char c = base[i];
+        if (c == '\\' || c == '/' || c == ':' || c == '*' ||
+            c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+            base[i] = '_';
+    }
+
     snprintf(out, outLen, "%s%s.ghost", g_ghostDir, base);
 }
 
@@ -305,7 +326,7 @@ static void inject_saved_ghost(const char *raceName) {
         ReadFile(hf, &version, 4, &(DWORD){0}, NULL) && version == GHOST_VERSION &&
         ReadFile(hf, &time, 4, &(DWORD){0}, NULL) &&
         ReadFile(hf, &frameCount, 4, &(DWORD){0}, NULL) &&
-        frameCount > 0) {
+        frameCount > 0 && frameCount < 200000) {
 
         savedTime = (int)time;
         savedSnaps = (DWORD(*)[10])malloc(frameCount * 10 * sizeof(DWORD));
@@ -714,6 +735,9 @@ void hook_impl(DWORD app, DWORD race_index) {
                                 log_fmt("Dummy recording BTT at 0x%X (NO_TIME)", (DWORD)dummyRec);
                             } else {
                                 log_fmt("ERROR: dummy BTT ctor vtable=0x%X", vt);
+                                /* Free failed ctor allocation via CRT _free — can't call
+                                 * destructor on uninitialized vtable/AthenaList state. */
+                                game_free(dummyRec);
                             }
                         }
                     }

@@ -1,12 +1,12 @@
-# Ghost Saver Mod (v24)
+# Ghost Saver Mod (v25)
 
 Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
 
-## v24 Changes
+## v25 Changes
 
-- **Dynamic snapshot buffer**: Replaces the fixed 5000-frame static array with `malloc`/`realloc`. Long races (>83 seconds) are no longer truncated — the ghost ball would previously freeze mid-track when it ran out of data.
-- **BTT ctor failure leak fix**: If the BTT constructor fails (vtable mismatch), the 528-byte struct is now freed via the game's CRT `_free` (0x4BA74D) instead of being leaked.
-- **Thread synchronization**: A `CRITICAL_SECTION` protects all shared state between the detour hook (main thread) and the background monitor thread. Prevents torn reads on race names, stale recording state, and corrupted snapshot buffers during race transitions.
+- **Dummy BTT ctor leak fix**: If the dummy recording BTT constructor fails (vtable mismatch), the 528-byte struct is now freed via `game_free` (CRT `_free` at 0x4BA74D) — same pattern as the existing fix in `inject_saved_ghost`.
+- **Frame count sanity check**: `inject_saved_ghost` now rejects .ghost files with `frameCount >= 200000` to prevent huge allocations from corrupted/crafted files.
+- **Filename sanitization**: `race_name_to_filename` now replaces invalid Windows filename characters (`\ / : * ? " < > |`) with underscores, so custom levels with unusual names don't produce un-openable files.
 
 ## How It Works
 
