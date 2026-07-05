@@ -1,0 +1,117 @@
+// Strong Ball — P1 knocks other balls with enormous force
+// Other balls still bump P1 with normal force
+//
+// How it works:
+// In Ball_Update (0x405E00), when two balls collide, the game calls
+// vtable[0x18] on EACH ball with a direction vector and a force multiplier.
+// Both calls use 1.0f (0x3F800000) as the force multiplier.
+//
+// At 0x406D87, the game pushes 1.0f for the OTHER ball's force.
+// At 0x406DAF, the game pushes 1.0f for the PLAYER ball's force.
+//
+// This script intercepts 0x406D87 and replaces the constant 1.0f with
+// a variable: STRONG_FORCE when the current ball is P1, NORMAL_FORCE otherwise.
+//
+// Ball+0x18 = playerID (DWORD): 0=P1, 1=P2, 2=P3, 3=P4, -1=AI/BadBall
+//
+// Toggle: set ENABLED to 0 to disable (restores original code)
+//
+// Tested on Hamsterball V3.6 (md5: 7d25019366b8d7f55906325bd630d7fe)
+
+alloc(ForceMult, 4)
+registersymbol(ForceMult)
+
+alloc(Cave, 128)
+registersymbol(Cave)
+
+label(ReturnOrig)
+label(IsStrong)
+label(Disabled)
+
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+ForceMult:
+  dd (float)20.0          // Force multiplier when P1 bumps another ball
+                          // 1.0 = normal, 10.0 = strong, 20.0 = extreme, 50.0 = insane
+
+// ============================================================
+// TOGGLE — change to 0 to disable the mod
+// ============================================================
+
+alloc(Enabled, 4)
+registersymbol(Enabled)
+Enabled:
+  dd 1
+
+// ============================================================
+// CODE CAVE
+// ============================================================
+// Original instruction at 0x406D87:
+//   68 00 00 80 3F    PUSH 0x3F800000  (1.0f)
+//
+// We replace with JMP to our cave.
+// Cave checks if current ball is P1 (ball+0x18 == 0) and Enabled.
+// If yes: push ForceMult value (e.g. 20.0f)
+// If no: push 0x3F800000 (1.0f = original)
+
+Cave:
+  // Check if mod is enabled
+  mov eax, [Enabled]
+  test eax, eax
+  jz Disabled
+
+  // Check if current ball is P1 (ball+0x18 == 0)
+  mov eax, [esi+0x18]
+  test eax, eax
+  jnz Disabled
+
+  // P1 is the current ball — apply strong force to OTHER ball
+IsStrong:
+  mov eax, [ForceMult]
+  push eax
+  jmp ReturnOrig
+
+  // Not P1 or disabled — apply normal force
+Disabled:
+  push 0x3F800000
+  jmp ReturnOrig
+
+ReturnOrig:
+  // Original next instruction: FCHS (0x406D8C)
+  db D9 E0
+  // SUB ESP, 0x0C (0x406D8E)
+  db 83 EC 0C
+  // FSTP [ESP+0x08] (0x406D91)
+  db D9 5C 24 08
+  // MOV ECX, EDI (0x406D95)
+  db 8B CF
+  // Return to 0x406D97
+  jmp 0x00406D97
+
+// ============================================================
+// HOOK — patch 0x406D87
+// ============================================================
+
+0x00406D87:
+  jmp Cave
+  nop
+
+// ============================================================
+// DISABLE — restore original code
+// ============================================================
+// To disable in CE: set Enabled to 0
+// To fully restore: replace 0x406D87 with original bytes:
+// 68 00 00 80 3F D9 E0 83 EC 0C D9 5C 24 08 8B CF
+
+[DISABLE]
+dealloc(ForceMult)
+dealloc(Cave)
+dealloc(Enabled)
+unregistersymbol(ForceMult)
+unregistersymbol(Cave)
+unregistersymbol(Enabled)
+
+0x00406D87:
+  db 68 00 00 80 3F
