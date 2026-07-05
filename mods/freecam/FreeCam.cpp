@@ -10,12 +10,6 @@ typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
     void*, void*, void*, void*, void*);
 static FontDrawGlyph_t orig_FontDrawGlyph = nullptr;
 
-// Ball_Render (vtable[2] @ 0x402DE0): __thiscall, plain RET (no stack params)
-// Renders the ball mesh + transforms. Skipping it makes ball invisible
-// without affecting physics (which runs in vtable[0x1C]/Ball_Update).
-typedef void(__fastcall *BallRender_t)(void*, void*);
-static BallRender_t orig_BallRender = nullptr;
-
 // Sprite_DrawRect: RET 0x1c = 7 stack params → 9 total
 typedef void(__fastcall *SpriteDrawRect_t)(void*, void*, void*, void*, void*, void*, void*, void*, void*);
 static SpriteDrawRect_t orig_SpriteDrawRect = nullptr;
@@ -37,11 +31,6 @@ static GraphicsDrawScreenRect_t orig_GraphicsDrawScreenRect = nullptr;
 // It calls DrawPrimitiveUP directly — NOT through Sprite_DrawRect/RenderQuad.
 typedef void(__fastcall *SpriteDrawExtended_t)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
 static SpriteDrawExtended_t orig_SpriteDrawExtended = nullptr;
-
-static void __fastcall hook_BallRender(void* thisPtr, void* edx) {
-    if (g_hideBall) return;
-    orig_BallRender(thisPtr, edx);
-}
 
 static void __fastcall hook_FontDrawGlyph(void* thisPtr, void* edx, const char* text, int x, int y,
     void* p4, void* p5, void* p6, void* p7, void* p8) {
@@ -146,7 +135,6 @@ public:
         api->RegisterCustomHook(0x45DAB0, (void*)hook_SpriteDrawRotatedQuad, (void**)&orig_SpriteDrawRotatedQuad);
         api->RegisterCustomHook(0x455D60, (void*)hook_GraphicsDrawScreenRect, (void**)&orig_GraphicsDrawScreenRect);
         api->RegisterCustomHook(0x45D450, (void*)hook_SpriteDrawExtended, (void**)&orig_SpriteDrawExtended);
-        api->RegisterCustomHook(0x402DE0, (void*)hook_BallRender, (void**)&orig_BallRender);
         printf("[FreeCam] Ready. F7=toggle cam, F8=toggle UI\n");
     }
 
@@ -176,6 +164,13 @@ public:
 
         if (api->WasControlPressed("FREECAM_HIDEBALL")) {
             g_hideBall = !g_hideBall;
+            // NOP the Sprite_RenderQuad call inside Ball_Render (0x402FE0)
+            // Original bytes: E8 7B A6 05 00 (CALL 0x0045D660)
+            if (g_hideBall) {
+                api->PatchMemory(0x402FE0, "\x90\x90\x90\x90\x90", 5);
+            } else {
+                api->PatchMemory(0x402FE0, "\xE8\x7B\xA6\x05\x00", 5);
+            }
             printf("[FreeCam] Ball: %s\n", g_hideBall ? "HIDDEN" : "VISIBLE");
         }
 
