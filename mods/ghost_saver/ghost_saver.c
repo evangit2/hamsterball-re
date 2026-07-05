@@ -50,7 +50,11 @@ static DWORD g_prevRecording = 0;
 static char g_ghostDir[MAX_PATH] = "";  /* .../Ghosts/ directory */
 static char g_logPath[MAX_PATH] = "";
 
+/* Logging disabled — set to 1 to re-enable */
+#define LOGGING_ENABLED 0
+
 static void log_msg(const char *msg) {
+#if LOGGING_ENABLED
     if (!g_logPath[0]) return;
     HANDLE h = CreateFileA(g_logPath, FILE_APPEND_DATA,
         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
@@ -62,6 +66,7 @@ static void log_msg(const char *msg) {
         WriteFile(h, "\r\n", 2, &w, NULL);
         CloseHandle(h);
     }
+#endif
 }
 
 static void log_fmt(const char *fmt, ...) {
@@ -735,7 +740,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v21b started");
+    log_msg("Ghost thread v21c started");
     while (1) {
         Sleep(16);
         check_race_state();
