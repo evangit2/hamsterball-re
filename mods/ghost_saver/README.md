@@ -1,6 +1,12 @@
-# Ghost Saver Mod (v23)
+# Ghost Saver Mod (v24)
 
 Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
+
+## v24 Changes
+
+- **Dynamic snapshot buffer**: Replaces the fixed 5000-frame static array with `malloc`/`realloc`. Long races (>83 seconds) are no longer truncated — the ghost ball would previously freeze mid-track when it ran out of data.
+- **BTT ctor failure leak fix**: If the BTT constructor fails (vtable mismatch), the 528-byte struct is now freed via the game's CRT `_free` (0x4BA74D) instead of being leaked.
+- **Thread synchronization**: A `CRITICAL_SECTION` protects all shared state between the detour hook (main thread) and the background monitor thread. Prevents torn reads on race names, stale recording state, and corrupted snapshot buffers during race transitions.
 
 ## How It Works
 
@@ -51,7 +57,7 @@ A 5000-frame ghost file is ~200KB binary (vs ~400KB with the old hex text format
 | Approach | Detour hook on `App_StartPracticeRace` (0x428C50) + background monitor thread |
 | Hook type | 7-byte code patch (5-byte JMP + 2 NOPs) with executable trampoline |
 | Thread rate | 60Hz (16ms sleep) — monitors goal flag only, does NOT record ball data |
-| Max snapshots per race | 5000 (~83 seconds at 60fps) |
+| Max snapshots per race | Unlimited (dynamic buffer, starts at 5000 and grows) |
 | File format | Binary (magic + version + time + count + raw DWORDs) |
 | Memory per race | ~200KB (5000 × 40 bytes) |
 | BTT allocation | Game's own `operator_new` (0x4BA57B) — ensures heap consistency with game's `operator_delete` |
