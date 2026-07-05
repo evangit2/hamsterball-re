@@ -716,8 +716,19 @@ void hook_impl(DWORD app, DWORD race_index) {
                         log_fmt("Saved old App+0x910 (0x%X) for post-hook destruction", existing);
                     }
                     /* inject_saved_ghost sets App+0x910 to the new BTT,
-                     * overwriting whatever was there */
+                     * overwriting whatever was there. If it fails (file
+                     * not found, bad header, alloc failure, ctor mismatch,
+                     * etc.) it returns WITHOUT touching App+0x910 — so we
+                     * must re-read and clear g_savedOldPlayback if the
+                     * value is unchanged, otherwise the post-hook cleanup
+                     * would destroy a BTT still referenced by the game. */
                     inject_saved_ghost(raceName);
+                    if (g_savedOldPlayback &&
+                        !IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4) &&
+                        *(DWORD*)(app + APP_910_PLAYBACK) == g_savedOldPlayback) {
+                        log_msg("inject_saved_ghost failed — keeping old App+0x910, clearing destroy flag");
+                        g_savedOldPlayback = 0;
+                    }
                 }
 
                 /* If App+0x90C (recording) is NULL, the game's BTT management
