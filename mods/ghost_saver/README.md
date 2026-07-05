@@ -7,6 +7,7 @@ Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persi
 - **Dummy BTT ctor leak fix**: If the dummy recording BTT constructor fails (vtable mismatch), the 528-byte struct is now freed via `game_free` (CRT `_free` at 0x4BA74D) — same pattern as the existing fix in `inject_saved_ghost`.
 - **Frame count sanity check**: `inject_saved_ghost` now rejects .ghost files with `frameCount >= 200000` to prevent huge allocations from corrupted/crafted files.
 - **Filename sanitization**: `race_name_to_filename` now replaces invalid Windows filename characters (`\ / : * ? " < > |`) with underscores, so custom levels with unusual names don't produce un-openable files.
+- **Title-case conversion**: Race names are now converted to proper title case — every word's first letter uppercase, all other letters lowercase. `BEGINNER RACE` → `Beginner.ghost`, `RIDDLES IN THE DARK` → `Riddles In The Dark.ghost`, `WARM-UP` → `Warm-Up.ghost`.
 
 ## How It Works
 
