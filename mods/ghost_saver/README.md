@@ -1,8 +1,14 @@
-# Ghost Saver Mod (v25)
+# Ghost Saver Mod (v25.1)
 
 Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
 
-## v25 Changes
+## v25.1 Changes
+
+- **Version string fix**: Log messages now correctly say v25 (was v24).
+- **Log file location fix**: `ghost_saver_log.txt` is now created next to `bass.dll` instead of inside the `Ghosts/` subdirectory.
+- **PreviousRun filename fix**: Renamed to `Previous_Run.ghost` so the title-case converter produces `Previous_Run.ghost` (underscore is now a word boundary).
+- **AthenaList_Init address fix**: The shared `bass_proxy.h` had the wrong address (0x453690 = `AthenaList_Remove` instead of 0x453210 = `AthenaList_Init`). Fixed in the shared header.
+- **Integer overflow guard**: Added `count < 200000` sanity check when reading the game's BTT AthenaList count, preventing potential crash on corrupted BTT data.
 
 - **Dummy BTT ctor leak fix**: If the dummy recording BTT constructor fails (vtable mismatch), the 528-byte struct is now freed via `game_free` (CRT `_free` at 0x4BA74D) — same pattern as the existing fix in `inject_saved_ghost`.
 - **Frame count sanity check**: `inject_saved_ghost` now rejects .ghost files with `frameCount >= 200000` to prevent huge allocations from corrupted/crafted files.
@@ -48,7 +54,7 @@ A 5000-frame ghost file is ~200KB binary (vs ~400KB with the old hex text format
 |------|---------|
 | `Ghosts/Warm-Up.ghost` | Best ghost for Warm-Up |
 | `Ghosts/Beginner.ghost` | Best ghost for Beginner |
-| `Ghosts/PreviousRun.ghost` | Always the most recent run (any race) |
+| `Ghosts/Previous_Run.ghost` | Always the most recent run (any race) |
 | `ghost_saver_log.txt` | Debug log (disabled by default, see `LOGGING_ENABLED`) |
 
 ## Technical Details

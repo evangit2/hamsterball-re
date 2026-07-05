@@ -1,0 +1,8 @@
+load_real_bass: trying 'Z:\home\evan\hamsterball-re\originals\installed\extracted\bass_real.dll'
+load_real_bass: bass_real.dll loaded at 0x10000000
+load_real_bass: Init=Y Free=Y MusicLoad=Y MusicPlayEx/ChannelPlay=N ChannelSetAttr=Y Start=Y Stop=Y
+DllMain: bass_real loaded=YES, log path set
+BASS_Init(dev=1 freq=44100 flags=0 win=0x0)
+BASS_Init -> 0 (err=23)
+BASS_Init(dev=0 freq=44100 flags=0 win=0x0)
+BASS_Init -> 1 (err=0)

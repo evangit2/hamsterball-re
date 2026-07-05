@@ -93,7 +93,7 @@ typedef DWORD HFX;
 #define GHOST_VERSION   1
 
 /* ---- Logging ---- */
-/* #define ENABLE_LOGGING */
+#define ENABLE_LOGGING
 
 #ifdef ENABLE_LOGGING
 static char g_logPath[MAX_PATH] = "";
@@ -143,7 +143,13 @@ static int  (__stdcall *real_BASS_ErrorGetCode)(void);
 static int  (__stdcall *real_BASS_ChannelStop)(DWORD);
 
 BOOL __stdcall BASS_Init(int device, int freq, DWORD flags, HWND win, const void *dsguid) {
-    if (real_BASS_Init) return real_BASS_Init(device, freq, flags, win, dsguid);
+    LOG("BASS_Init(dev=%d freq=%d flags=%u win=0x%X)", device, freq, flags, win);
+    if (real_BASS_Init) {
+        BOOL r = real_BASS_Init(device, freq, flags, win, dsguid);
+        LOG("BASS_Init -> %d (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
+        return r;
+    }
+    LOG("BASS_Init: no real_BASS_Init, returning TRUE");
     return TRUE;
 }
 void __stdcall BASS_Free(void) {
@@ -158,7 +164,13 @@ BOOL __stdcall BASS_StreamFree(HSTREAM handle) {
     return FALSE;
 }
 HMUSIC __stdcall BASS_MusicLoad(BOOL mem, const void *file, DWORD offset, DWORD length, DWORD flags, DWORD freq) {
-    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(mem, file, offset, length, flags, freq);
+    LOG("BASS_MusicLoad(mem=%d file=%s off=%u len=%u flags=%u freq=%u)", mem, file ? (char*)file : "(null)", offset, length, flags, freq);
+    if (real_BASS_MusicLoad) {
+        HMUSIC r = real_BASS_MusicLoad(mem, file, offset, length, flags, freq);
+        LOG("BASS_MusicLoad -> 0x%X (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
+        return r;
+    }
+    LOG("BASS_MusicLoad: no real, returning fake handle 1");
     return (HMUSIC)1;  /* non-zero handle required or game crashes */
 }
 BOOL __stdcall BASS_MusicFree(HMUSIC handle) {
@@ -170,7 +182,13 @@ BOOL __stdcall BASS_ChannelSetAttributes(DWORD handle, int freq, float volume, i
     return FALSE;
 }
 BOOL __stdcall BASS_MusicPlayEx(DWORD handle, DWORD flags, DWORD freq, BOOL ramp) {
-    if (real_BASS_ChannelPlay) return real_BASS_ChannelPlay(handle, ramp);
+    LOG("BASS_MusicPlayEx(handle=0x%X flags=%u freq=%u ramp=%d)", handle, flags, freq, ramp);
+    if (real_BASS_ChannelPlay) {
+        BOOL r = real_BASS_ChannelPlay(handle, ramp);
+        LOG("BASS_MusicPlayEx -> %d (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
+        return r;
+    }
+    LOG("BASS_MusicPlayEx: no real_BASS_ChannelPlay, returning TRUE");
     return TRUE;
 }
 DWORD __stdcall BASS_ChannelGetData(DWORD handle, void *buffer, DWORD length) {
@@ -206,8 +224,13 @@ static void load_real_bass(void) {
     char *p = strrchr(path, '\\');
     if (p) strcpy(p + 1, "bass_real.dll");
     else strcpy(path, "bass_real.dll");
+    LOG("load_real_bass: trying '%s'", path);
     g_hRealBass = LoadLibraryA(path);
-    if (!g_hRealBass) return;
+    if (!g_hRealBass) {
+        LOG("load_real_bass: FAILED to load bass_real.dll (err=%d)", GetLastError());
+        return;
+    }
+    LOG("load_real_bass: bass_real.dll loaded at 0x%08X", g_hRealBass);
     real_BASS_Init            = (void*)GetProcAddress(g_hRealBass, "BASS_Init");
     real_BASS_Free           = (void*)GetProcAddress(g_hRealBass, "BASS_Free");
     real_BASS_StreamCreateFile = (void*)GetProcAddress(g_hRealBass, "BASS_StreamCreateFile");
@@ -225,7 +248,14 @@ static void load_real_bass(void) {
     real_BASS_ChannelStop     = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
     if (!real_BASS_ChannelSetAttributes) {
         real_BASS_ChannelSetAttributes = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttribute");
+        LOG("load_real_bass: ChannelSetAttributes not found, using singular: %s",
+            real_BASS_ChannelSetAttributes ? "OK" : "FAIL");
     }
+    LOG("load_real_bass: Init=%c Free=%c MusicLoad=%c MusicPlayEx/ChannelPlay=%c ChannelSetAttr=%c Start=%c Stop=%c",
+        real_BASS_Init?'Y':'N', real_BASS_Free?'Y':'N',
+        real_BASS_MusicLoad?'Y':'N', real_BASS_ChannelPlay?'Y':'N',
+        real_BASS_ChannelSetAttributes?'Y':'N',
+        real_BASS_Start?'Y':'N', real_BASS_Stop?'Y':'N');
 }
 
 /* ---- Utility ---- */
@@ -262,15 +292,40 @@ static BOOL  g_ghostBallCreated = FALSE;  /* TRUE if WE created the ghost ball (
  * Collision entry pair: pair[0]=type/board, pair[1]=MeshBuffer
  * Event name at: MeshBuffer + 0x864
  */
+static int g_dceCallCount = 0;
+
 void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
-    if (!collEntry) return;
+    g_dceCallCount++;
+    if (!collEntry) {
+        if (g_dceCallCount <= 3) LOG("DCE[%d]: null collEntry (board=0x%X ball=0x%X)", g_dceCallCount, board, ball);
+        return;
+    }
     DWORD *pair = (DWORD*)collEntry;
-    if (IsBadReadPtr(pair, 8) || !pair[1]) return;
-    if (IsBadReadPtr((void*)pair[1], 0x868)) return;
+    if (IsBadReadPtr(pair, 8)) {
+        if (g_dceCallCount <= 3) LOG("DCE[%d]: bad pair ptr 0x%X", g_dceCallCount, collEntry);
+        return;
+    }
+    if (!pair[1]) {
+        if (g_dceCallCount <= 3) LOG("DCE[%d]: pair[1] null (pair[0]=0x%X)", g_dceCallCount, pair[0]);
+        return;
+    }
+    if (IsBadReadPtr((void*)pair[1], 0x868)) {
+        if (g_dceCallCount <= 3) LOG("DCE[%d]: bad meshbuf 0x%X", g_dceCallCount, pair[1]);
+        return;
+    }
     const char *eventName = (const char*)(pair[1] + 0x864);
-    if (IsBadReadPtr(eventName, 1) || !eventName[0]) return;
+    if (IsBadReadPtr(eventName, 1) || !eventName[0]) {
+        if (g_dceCallCount <= 3) LOG("DCE[%d]: empty event name (meshbuf=0x%X)", g_dceCallCount, pair[1]);
+        return;
+    }
+
+    /* Log first 20 events, then every 100th */
+    if (g_dceCallCount <= 20 || (g_dceCallCount % 100) == 0) {
+        LOG("DCE[%d]: event='%s' (board=0x%X ball=0x%X meshbuf=0x%X)", g_dceCallCount, eventName, board, ball, pair[1]);
+    }
 
     if (_strnicmp(eventName, "E:GHOST", 7) == 0) {
+        LOG("DCE: E:GHOST match found! full='%s'", eventName);
         const char *p1 = strchr(eventName, '(');
         if (p1) {
             const char *p2 = strchr(p1, ')');
@@ -279,8 +334,12 @@ void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
                 if (len > 250) len = 250;
                 memcpy(g_pendingGhostFile, p1 + 1, len);
                 g_pendingGhostFile[len] = '\0';
-                LOG("E:GHOST detected: file=%s", g_pendingGhostFile);
+                LOG("DCE: E:GHOST parsed filename='%s'", g_pendingGhostFile);
+            } else {
+                LOG("DCE: E:GHOST missing ')' or empty parens");
             }
+        } else {
+            LOG("DCE: E:GHOST missing '('");
         }
     }
 }
@@ -772,12 +831,13 @@ static DWORD WINAPI init_thread(LPVOID param) {
     Sleep(2000);
     HMODULE hExe = GetModuleHandleA(NULL);
     g_moduleBase = (DWORD)hExe;
+    LOG("init_thread: moduleBase=0x%X", g_moduleBase);
 
     patch_level_update_and_render();
     install_dce_hook();
     install_frame_hook();
 
-    LOGS("ghost_event mod initialized");
+    LOGS("ghost_event mod initialized — waiting for E:GHOST events");
     return 0;
 }
 
@@ -785,7 +845,6 @@ static DWORD WINAPI init_thread(LPVOID param) {
 BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hInst);
-        load_real_bass();
 
 #ifdef ENABLE_LOGGING
         char modPath[MAX_PATH];
@@ -796,6 +855,9 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
             strncpy(g_logPath, modPath, MAX_PATH - 1);
         }
 #endif
+
+        load_real_bass();
+        LOG("DllMain: bass_real loaded=%s, log path set", g_hRealBass ? "YES" : "NO");
         CreateThread(NULL, 0, init_thread, NULL, 0, NULL);
     }
     return TRUE;
