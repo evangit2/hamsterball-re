@@ -798,6 +798,7 @@ void hook_impl(DWORD app, DWORD race_index) {
                  * after the trampoline returns. The game never sees this old
                  * pointer (we replaced it before the trampoline runs), so it
                  * can't destroy it — that's the leak we're fixing. */
+                int injectFailed = 0;
                 if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
                     DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
                     if (existing && existing > 0x10000) {
@@ -807,66 +808,72 @@ void hook_impl(DWORD app, DWORD race_index) {
                     /* inject_saved_ghost sets App+0x910 to the new BTT,
                      * overwriting whatever was there. If it fails (file
                      * not found, bad header, alloc failure, ctor mismatch,
-                     * etc.) it returns WITHOUT touching App+0x910 — so we
-                     * must re-read and clear g_savedOldPlayback if the
-                     * value is unchanged, otherwise the post-hook cleanup
-                     * would destroy a BTT still referenced by the game. */
+                     * etc.) it returns WITHOUT touching App+0x910. */
                     inject_saved_ghost(raceName);
-                    if (g_savedOldPlayback &&
-                        !IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4) &&
-                        *(DWORD*)(app + APP_910_PLAYBACK) == g_savedOldPlayback) {
-                        log_msg("inject_saved_ghost failed — keeping old App+0x910, clearing destroy flag");
+
+                    /* Check if injection succeeded by comparing App+0x910
+                     * before and after. If unchanged, inject failed. */
+                    DWORD newPlayback = 0;
+                    if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4))
+                        newPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
+
+                    if (g_savedOldPlayback && newPlayback == g_savedOldPlayback) {
+                        /* inject_saved_ghost failed — App+0x910 is unchanged
+                         * (still points to the old BTT). Do NOT clear it or
+                         * destroy the old BTT ourselves.
+                         *
+                         * If we clear App+0x910 to NULL, the game's BTT
+                         * management sees "one is NULL" and frees the old BTT
+                         * during the trampoline. Then our post-hook code
+                         * would double-free it → crash.
+                         *
+                         * If we keep g_savedOldPlayback and destroy it
+                         * post-hook, same problem — the game already freed it.
+                         *
+                         * Instead: leave App+0x910 as-is (old BTT stays).
+                         * The game's BTT management enters "both exist" branch
+                         * (if App+0x90C also has a BTT) and handles it normally.
+                         * We just skip creating the dummy and skip post-hook
+                         * destruction of the old BTT. */
+                        log_msg("inject_saved_ghost failed — leaving App+0x910 unchanged, skipping dummy + post-hook destroy");
                         g_savedOldPlayback = 0;
+                        injectFailed = 1;
                     }
-                }
 
-                /* Issue 2 fix: Only create the dummy recording BTT if the
-                 * ghost injection actually succeeded (App+0x910 changed).
-                 * Previously, even if inject_saved_ghost failed (corrupt body,
-                 * alloc failure, etc.), we'd still create the dummy at
-                 * App+0x90C — leaving an orphaned dummy with no playback. */
-                DWORD newPlayback = 0;
-                if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4))
-                    newPlayback = *(DWORD*)(app + APP_910_PLAYBACK);
+                    /* Only create the dummy recording BTT if injection
+                     * succeeded (App+0x910 changed to a new BTT). */
+                    if (!injectFailed && newPlayback && newPlayback > 0x10000 &&
+                        !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
 
-                int injectSucceeded = (newPlayback && newPlayback > 0x10000 &&
-                                       newPlayback != g_savedOldPlayback);
-
-                if (injectSucceeded && !IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4)) {
-                    DWORD recording = *(DWORD*)(app + APP_90C_RECORDING);
-                    if (recording && recording > 0x10000 &&
-                        !IsBadReadPtr((void*)(recording + BTT_BEST_TIME), 4)) {
-                        int oldTime = *(int*)((char*)recording + BTT_BEST_TIME);
-                        if (oldTime != NO_TIME) {
-                            log_fmt("Neutralizing old recording time %d -> NO_TIME", oldTime);
-                            *(int*)((char*)recording + BTT_BEST_TIME) = NO_TIME;
+                        DWORD recording = *(DWORD*)(app + APP_90C_RECORDING);
+                        if (recording && recording > 0x10000 &&
+                            !IsBadReadPtr((void*)(recording + BTT_BEST_TIME), 4)) {
+                            int oldTime = *(int*)((char*)recording + BTT_BEST_TIME);
+                            if (oldTime != NO_TIME) {
+                                log_fmt("Neutralizing old recording time %d -> NO_TIME", oldTime);
+                                *(int*)((char*)recording + BTT_BEST_TIME) = NO_TIME;
+                            }
                         }
-                    }
-                    if (!recording || recording < 0x10000) {
-                        log_msg("Pre-creating dummy recording BTT to protect playback");
-                        void *dummyRec = game_operator_new(BTT_SIZE);
-                        if (dummyRec) {
-                            call_btt_ctor(dummyRec);
-                            DWORD vt = *(DWORD*)dummyRec;
-                            if (vt == 0x004D262C) {
-                                *(DWORD*)((char*)dummyRec + BTT_BEST_TIME) = NO_TIME;
-                                *(DWORD*)(app + APP_90C_RECORDING) = (DWORD)dummyRec;
-                                /* Issue 1 fix: Track the dummy BTT so it can be
-                                 * cleaned up if the player quits without finishing.
-                                 * Without this, the 528-byte dummy leaks every time
-                                 * someone starts a race and ESC-quits before the goal. */
-                                g_dummyRecording = (DWORD)dummyRec;
-                                log_fmt("Dummy recording BTT at 0x%X (NO_TIME, tracked for cleanup)", (DWORD)dummyRec);
-                            } else {
-                                log_fmt("ERROR: dummy BTT ctor vtable=0x%X", vt);
-                                /* Free failed ctor allocation via CRT _free — can't call
-                                 * destructor on uninitialized vtable/AthenaList state. */
-                                game_free(dummyRec);
+                        if (!recording || recording < 0x10000) {
+                            log_msg("Pre-creating dummy recording BTT to protect playback");
+                            void *dummyRec = game_operator_new(BTT_SIZE);
+                            if (dummyRec) {
+                                call_btt_ctor(dummyRec);
+                                DWORD vt = *(DWORD*)dummyRec;
+                                if (vt == 0x004D262C) {
+                                    *(DWORD*)((char*)dummyRec + BTT_BEST_TIME) = NO_TIME;
+                                    *(DWORD*)(app + APP_90C_RECORDING) = (DWORD)dummyRec;
+                                    /* Track the dummy BTT so it can be cleaned up
+                                     * if the player quits without finishing. */
+                                    g_dummyRecording = (DWORD)dummyRec;
+                                    log_fmt("Dummy recording BTT at 0x%X (NO_TIME, tracked for cleanup)", (DWORD)dummyRec);
+                                } else {
+                                    log_fmt("ERROR: dummy BTT ctor vtable=0x%X", vt);
+                                    game_free(dummyRec);
+                                }
                             }
                         }
                     }
-                } else if (!injectSucceeded) {
-                    log_msg("Skipping dummy recording — ghost injection failed");
                 }
             } else {
                 log_fmt("No saved ghost for '%s', clearing stale playback", raceName);
