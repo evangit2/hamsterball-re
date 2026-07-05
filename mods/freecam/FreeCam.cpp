@@ -197,34 +197,14 @@ public:
             printf("[FreeCam] Fog: %s\n", g_disableFog ? "DISABLED" : "ENABLED");
         }
 
-        // Fog disable: call D3D device->SetRenderState(D3DRS_FOGENABLE, 0) every frame.
-        // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50] (offset 0xC8).
-        // D3DRS_FOGENABLE = 28. Must use inline asm — __fastcall clobbers EDX
-        // which corrupts the __thiscall COM call.
+        // Fog disable: NOP the call to FUN_004539a0 (fog setup) at 0x40B2E5.
+        // This prevents FOGTABLEMODE, FOGSTART, FOGEND from being set.
+        // Original bytes: E8 B6 86 04 00 (CALL 0x004539A0)
+        // Calling D3D SetRenderState directly crashes (MinGW __thiscall issue).
         if (g_disableFog) {
-            App* app = api->GetApp();
-            if (app && !IsBadReadPtr(app, sizeof(App))) {
-                void* gfx = app->graphics;
-                if (gfx && !IsBadReadPtr(gfx, 0x200)) {
-                    void* device = *(void**)((uint8_t*)gfx + 0x154);
-                    if (device && !IsBadReadPtr(device, 4)) {
-                        void** vtable = *(void***)device;
-                        if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
-                            void* fn = vtable[50]; // SetRenderState
-                            DWORD state = 28;  // D3DRS_FOGENABLE
-                            DWORD value = 0;   // FALSE
-                            // Build a static __thiscall stub once, reuse it.
-                            // push value; push state; mov ecx,device; call fn; ret 8
-                            // Actually we don't need ret 8 since we're not using stdcall.
-                            // Use a function pointer with __thiscall typedef.
-                            // MinGW supports __thiscall for function pointers:
-                            typedef long(__thiscall *D3DSetRenderState_t)(void*, DWORD, DWORD);
-                            D3DSetRenderState_t srs = (D3DSetRenderState_t)fn;
-                            srs(device, state, value);
-                        }
-                    }
-                }
-            }
+            api->PatchMemory(0x40B2E5, "\x90\x90\x90\x90\x90", 5);
+        } else {
+            api->PatchMemory(0x40B2E5, "\xE8\xB6\x86\x04\x00", 5);
         }
 
         if (!active || !initialized) return;
