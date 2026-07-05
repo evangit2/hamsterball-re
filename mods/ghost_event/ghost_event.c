@@ -136,6 +136,11 @@ static BOOL (__stdcall *real_BASS_ChannelSetAttributes)(DWORD, int, float, int);
 static BOOL (__stdcall *real_BASS_ChannelPlay)(DWORD, BOOL);
 static DWORD (__stdcall *real_BASS_ChannelGetData)(DWORD, void*, DWORD);
 static HFX (__stdcall *real_BASS_ChannelSetFX)(DWORD, DWORD, int);
+static void (__stdcall *real_BASS_Start)(void);
+static void (__stdcall *real_BASS_Stop)(void);
+static int  (__stdcall *real_BASS_SetConfig)(DWORD, DWORD);
+static int  (__stdcall *real_BASS_ErrorGetCode)(void);
+static int  (__stdcall *real_BASS_ChannelStop)(DWORD);
 
 void __stdcall BASS_Init(int device, int freq, DWORD flags, HWND win, const void *dsguid) {
     if (real_BASS_Init) real_BASS_Init(device, freq, flags, win, dsguid);
@@ -175,6 +180,24 @@ HFX __stdcall BASS_ChannelSetFX(DWORD handle, DWORD type, int priority) {
     if (real_BASS_ChannelSetFX) return real_BASS_ChannelSetFX(handle, type, priority);
     return 0;
 }
+void __stdcall BASS_Start(void) {
+    if (real_BASS_Start) real_BASS_Start();
+}
+void __stdcall BASS_Stop(void) {
+    if (real_BASS_Stop) real_BASS_Stop();
+}
+int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
+    return 1;
+}
+int __stdcall BASS_ErrorGetCode(void) {
+    if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
+    return 0;
+}
+int __stdcall BASS_ChannelStop(DWORD handle) {
+    if (real_BASS_ChannelStop) return real_BASS_ChannelStop(handle);
+    return 1;
+}
 
 static void load_real_bass(void) {
     char path[MAX_PATH];
@@ -194,6 +217,11 @@ static void load_real_bass(void) {
     real_BASS_ChannelPlay     = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelPlay");
     real_BASS_ChannelGetData  = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelGetData");
     real_BASS_ChannelSetFX    = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelSetFX");
+    real_BASS_Start           = (void*)GetProcAddress(g_hRealBass, "BASS_Start");
+    real_BASS_Stop            = (void*)GetProcAddress(g_hRealBass, "BASS_Stop");
+    real_BASS_SetConfig       = (void*)GetProcAddress(g_hRealBass, "BASS_SetConfig");
+    real_BASS_ErrorGetCode    = (void*)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
+    real_BASS_ChannelStop     = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
     if (!real_BASS_ChannelSetAttributes) {
         real_BASS_ChannelSetAttributes = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttribute");
     }
