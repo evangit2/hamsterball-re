@@ -2,6 +2,18 @@
 #include "HamsterballAPI.h"
 #include <cmath>
 
+static bool g_hideUI = false;
+
+typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
+    void*, void*, void*, void*, void*);
+static FontDrawGlyph_t orig_FontDrawGlyph = nullptr;
+
+static void __fastcall hook_FontDrawGlyph(void* thisPtr, void* edx, const char* text, int x, int y,
+    void* p4, void* p5, void* p6, void* p7, void* p8) {
+    if (g_hideUI) return;
+    orig_FontDrawGlyph(thisPtr, edx, text, x, y, p4, p5, p6, p7, p8);
+}
+
 class FreeCamMod : public HamsterballAPI {
 private:
     IModAPI* api = nullptr;
@@ -60,7 +72,9 @@ public:
     void Initialize(IModAPI* modApi) override {
         api = modApi;
         api->RegisterCustomControl("FREECAM_TOGGLE", CustomControl(DIK_F7));
-        printf("[FreeCam] Ready. Press F7 to toggle.\n");
+        api->RegisterCustomControl("FREECAM_HIDEUI", CustomControl(DIK_F8));
+        api->RegisterCustomHook(0x57440, (void*)hook_FontDrawGlyph, (void**)&orig_FontDrawGlyph);
+        printf("[FreeCam] Ready. F7=toggle cam, F8=toggle UI\n");
     }
 
     void onGameUpdate() override {
@@ -75,11 +89,16 @@ public:
             active = !active;
             if (active) {
                 initCamera();
-                printf("[FreeCam] ON — WASD move, QE up/down, arrows look, shift=fast\n");
+                printf("[FreeCam] ON\n");
             } else {
                 initialized = false;
                 printf("[FreeCam] OFF\n");
             }
+        }
+
+        if (api->WasControlPressed("FREECAM_HIDEUI")) {
+            g_hideUI = !g_hideUI;
+            printf("[FreeCam] UI: %s\n", g_hideUI ? "HIDDEN" : "VISIBLE");
         }
 
         if (!active || !initialized) return;
@@ -106,8 +125,8 @@ public:
         if (api->IsKeyDown(DIK_E)) { eyeY += speed; }
         if (api->IsKeyDown(DIK_Q)) { eyeY -= speed; }
 
-        if (api->IsKeyDown(DIK_UP))    pitch -= LOOK_SPEED;
-        if (api->IsKeyDown(DIK_DOWN))  pitch += LOOK_SPEED;
+        if (api->IsKeyDown(DIK_UP))    pitch += LOOK_SPEED;
+        if (api->IsKeyDown(DIK_DOWN))  pitch -= LOOK_SPEED;
         if (api->IsKeyDown(DIK_LEFT))  yaw   -= LOOK_SPEED;
         if (api->IsKeyDown(DIK_RIGHT)) yaw   += LOOK_SPEED;
 
@@ -131,13 +150,19 @@ public:
         if (!active || !api) return;
         App* app = api->GetApp();
         if (!app || IsBadReadPtr(app, sizeof(App))) return;
+
+        bool wasHidden = g_hideUI;
+        if (wasHidden) g_hideUI = false;
+
         CustomText ct;
         ct.font = app->fonts.showcardGothic14;
-        ct.x = 10;
+        ct.x = 200;
         ct.y = 10;
         ct.text_color = Color(0.0f, 1.0f, 0.0f, 1.0f);
         ct.enable_shadow = true;
         api->DrawCustomText("FREECAM", ct);
+
+        if (wasHidden) g_hideUI = true;
     }
 
     void onLevelStart() override {
