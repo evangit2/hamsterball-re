@@ -167,13 +167,12 @@ public:
             printf("[FreeCam] Ball: %s\n", g_hideBall ? "HIDDEN" : "VISIBLE");
         }
 
-        // Apply/remove ball transparency every frame
-        Ball* ball = api->GetPlayer();
-        if (ball && !IsBadReadPtr(ball, sizeof(Ball))) {
-            if (g_hideBall) {
-                *(float*)((uint8_t*)ball + 0x2FC) = 0.0f;  // fully transparent
-            } else {
-                *(float*)((uint8_t*)ball + 0x2FC) = 1.0f;  // fully opaque (normal)
+        // Only force alpha when hiding — when visible, let the game
+        // manage it naturally (respawn fade-in, ghost ball, etc.)
+        if (g_hideBall) {
+            Ball* ball = api->GetPlayer();
+            if (ball && !IsBadReadPtr(ball, sizeof(Ball))) {
+                *(float*)((uint8_t*)ball + 0x2FC) = 0.0f;
             }
         }
 
