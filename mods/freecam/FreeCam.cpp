@@ -5,8 +5,6 @@
 static bool g_hideUI = false;
 static bool g_hideBall = false;
 static bool g_disableFog = false;
-static uint32_t g_origFogFlags = 0;
-static bool g_fogFlagsSaved = false;
 
 // Font_DrawGlyph: RET 0x20 = 8 stack params → 10 total (ecx + edx + 8)
 typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
@@ -199,33 +197,28 @@ public:
             printf("[FreeCam] Fog: %s\n", g_disableFog ? "DISABLED" : "ENABLED");
         }
 
-        // Fog disable: clear fog flags in gfx+0xA4 every frame.
-        // gfx = App+0x174. gfx+0xA4 contains fog config bits (0x100=fog enabled,
-        // 0x300000=fog mode, 0x80000000=vertex fog). Clearing all bits makes
-        // FUN_004539a0 skip fog setup entirely while keeping clip planes working.
+        // Fog disable: call D3D device->SetRenderState(D3DRS_FOGENABLE, 0) every frame.
+        // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50] (offset 0xC8).
+        // D3DRS_FOGENABLE = 0x1C = 28. The game set fog params at level load;
+        // clearing gfx+0xA4 flags doesn't undo already-set D3D states.
         if (g_disableFog) {
             App* app = api->GetApp();
             if (app && !IsBadReadPtr(app, sizeof(App))) {
                 void* gfx = app->graphics;
                 if (gfx && !IsBadReadPtr(gfx, 0x200)) {
-                    uint32_t* fogFlags = (uint32_t*)((uint8_t*)gfx + 0xA4);
-                    if (!g_fogFlagsSaved) {
-                        g_origFogFlags = *fogFlags;
-                        g_fogFlagsSaved = true;
+                    void* device = *(void**)((uint8_t*)gfx + 0x154);
+                    if (device && !IsBadReadPtr(device, 4)) {
+                        void** vtable = *(void***)device;
+                        if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
+                            // vtable[50] = SetRenderState (offset 0xC8)
+                            // __thiscall: HRESULT SetRenderState(D3DRENDERSTATETYPE, DWORD)
+                            typedef long(__fastcall *SetRenderState_t)(void*, void*, DWORD, DWORD);
+                            SetRenderState_t fn = (SetRenderState_t)vtable[50];
+                            fn(device, nullptr, 0x1C, 0);  // D3DRS_FOGENABLE = 0
+                        }
                     }
-                    *fogFlags = 0;
                 }
             }
-        } else if (g_fogFlagsSaved) {
-            App* app = api->GetApp();
-            if (app && !IsBadReadPtr(app, sizeof(App))) {
-                void* gfx = app->graphics;
-                if (gfx && !IsBadReadPtr(gfx, 0x200)) {
-                    uint32_t* fogFlags = (uint32_t*)((uint8_t*)gfx + 0xA4);
-                    *fogFlags = g_origFogFlags;
-                }
-            }
-            g_fogFlagsSaved = false;
         }
 
         if (!active || !initialized) return;
