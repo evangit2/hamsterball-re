@@ -214,7 +214,9 @@ public:
                             // D3D8 SetRenderState is __stdcall: (device, state, value)
                             typedef long(__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
                             D3DSetRenderState_t srs = (D3DSetRenderState_t)vtable[50];
-                            srs(device, 28, 0);  // FOGENABLE = FALSE
+                            srs(device, 28, 0);   // D3DRS_FOGENABLE = FALSE
+                            srs(device, 35, 0);   // D3DRS_FOGTABLEMODE = D3DFOG_NONE
+                            srs(device, 140, 0);  // D3DRS_FOGVERTEXMODE = D3DFOG_NONE
                         }
                     }
                 }
