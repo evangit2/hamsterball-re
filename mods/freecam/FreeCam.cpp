@@ -8,10 +8,28 @@ typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
     void*, void*, void*, void*, void*);
 static FontDrawGlyph_t orig_FontDrawGlyph = nullptr;
 
+typedef void(__fastcall *SpriteDrawRect_t)(void*, void*, void*, void*, void*, void*, void*, void*, void*);
+static SpriteDrawRect_t orig_SpriteDrawRect = nullptr;
+
+typedef void(__fastcall *GraphicsDrawScreenRect_t)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
+static GraphicsDrawScreenRect_t orig_GraphicsDrawScreenRect = nullptr;
+
 static void __fastcall hook_FontDrawGlyph(void* thisPtr, void* edx, const char* text, int x, int y,
     void* p4, void* p5, void* p6, void* p7, void* p8) {
     if (g_hideUI) return;
     orig_FontDrawGlyph(thisPtr, edx, text, x, y, p4, p5, p6, p7, p8);
+}
+
+static void __fastcall hook_SpriteDrawRect(void* thisPtr, void* edx,
+    void* p1, void* p2, void* p3, void* p4, void* p5, void* p6, void* p7) {
+    if (g_hideUI) return;
+    orig_SpriteDrawRect(thisPtr, edx, p1, p2, p3, p4, p5, p6, p7);
+}
+
+static void __fastcall hook_GraphicsDrawScreenRect(void* thisPtr, void* edx,
+    void* p1, void* p2, void* p3, void* p4, void* p5, void* p6, void* p7, void* p8, void* p9) {
+    if (g_hideUI) return;
+    orig_GraphicsDrawScreenRect(thisPtr, edx, p1, p2, p3, p4, p5, p6, p7, p8, p9);
 }
 
 class FreeCamMod : public HamsterballAPI {
@@ -74,6 +92,8 @@ public:
         api->RegisterCustomControl("FREECAM_TOGGLE", CustomControl(DIK_F7));
         api->RegisterCustomControl("FREECAM_HIDEUI", CustomControl(DIK_F8));
         api->RegisterCustomHook(0x457440, (void*)hook_FontDrawGlyph, (void**)&orig_FontDrawGlyph);
+        api->RegisterCustomHook(0x45D300, (void*)hook_SpriteDrawRect, (void**)&orig_SpriteDrawRect);
+        api->RegisterCustomHook(0x455D60, (void*)hook_GraphicsDrawScreenRect, (void**)&orig_GraphicsDrawScreenRect);
         printf("[FreeCam] Ready. F7=toggle cam, F8=toggle UI\n");
     }
 
