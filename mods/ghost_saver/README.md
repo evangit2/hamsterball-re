@@ -1,4 +1,4 @@
-# Ghost Saver Mod (v22)
+# Ghost Saver Mod (v23)
 
 Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
 
@@ -79,11 +79,11 @@ A 5000-frame ghost file is ~200KB binary (vs ~400KB with the old hex text format
 - **Pre-inject strategy**: The mod sets `App+0x910` BEFORE calling the original `App_StartPracticeRace`. This is critical — `Board_ctor` runs inside `App_StartPracticeRace` and only creates the ghost ball if `App+0x910` is non-NULL at ctor time.
 - **Dummy recording**: A BTT with `NO_TIME` is placed at `App+0x90C` to prevent the game's BTT management from destroying the injected playback (if `App+0x90C` is NULL, the game enters a "one is NULL" branch and frees the other).
 - **Wrong-race protection**: If `App+0x90C` already has a recording from a previous race, its time is neutralized to `NO_TIME` so it loses the comparison and doesn't replace the injected playback.
+- **Memory leak fix (v23)**: The old `App+0x910` BTT is saved before being overwritten, then destroyed after the trampoline returns. The BTT deleting destructor (`vtable[0]`=0x4278C0, `__thiscall(this, flags=1)`, `RET 0x4`) is called with `flags=1` for full destroy — it calls `BestTimeTracker_dtor` (0x427760) to free all snapshots + list, then `operator delete` (0x4BA740) to free the BTT struct itself. This is safe because after the trampoline returns: the old scene is torn down, the old ghost ball is gone, and the game's BTT management has already run on the new BTT (not the old one).
 - **Game's own recording**: The mod reads snapshots from the game's BTT at goal time, not via 60Hz polling. This avoids the 2x playback speed problem (polling at 60Hz when the game records at its internal rate produces double-speed playback).
 - **Race name from static table**: The race name is looked up by index from the static table at `0x4F7080` (in the pre-inject hook), not from `BTT+0x424` which can be partially-written early in the race.
 
 ## Limitations
 
 - Only activates in Time Trial mode (`profile+0x11 != 0` and `App+0x234 == 0`).
-- Old BTT allocations leak when replaced (~1.3KB per race transition). This is a conscious tradeoff — calling the game's destructor is riskier than the negligible leak.
 - Old hex-text `.ghost` files from v19 and earlier are NOT readable by v22+. Delete `GHOST.txt` and old `.ghost` files to start fresh.

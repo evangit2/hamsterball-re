@@ -1,5 +1,10 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v22)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v23)
  *
+ * v23: Fix memory leak — save old App+0x910 BTT before overwriting, then
+ *      destroy it after the trampoline returns. Calls the BTT deleting
+ *      destructor (vtable[0]=0x4278C0, __thiscall(this,flags=1), RET 0x4)
+ *      which frees all snapshots via BestTimeTracker_dtor (0x427760) then
+ *      frees the BTT struct via operator delete (0x4BA740).
  * v22: Remove dead get_player_ball override, convert ghost file format from
  *      hex text to binary (2x smaller, faster load/save), update README.
  * v21: Pre-inject App+0x910 BEFORE App_StartPracticeRace so Board_ctor
@@ -18,6 +23,7 @@
 
 #define APP_PTR             0x005341E0
 #define ADDR_BTT_CTOR       0x00427660
+#define ADDR_BTT_DTOR       0x004278C0  /* vtable[0] — deleting destructor: __thiscall(this, flags), RET 0x4 */
 #define ADDR_ALIST_APPEND   0x00453780
 #define ADDR_OPERATOR_NEW   0x004BA57B  /* REAL operator_new — NOT 0x4BA570 (zlib) */
 #define BTT_SIZE            0x528
@@ -44,6 +50,7 @@ static int g_recording = 0;
 static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
 static DWORD g_prevRecording = 0;
+static DWORD g_savedOldPlayback = 0;   /* old App+0x910 saved for post-trampoline destruction */
 static char g_ghostDir[MAX_PATH] = "";  /* .../Ghosts/ directory */
 static char g_logPath[MAX_PATH] = "";
 
@@ -206,6 +213,19 @@ static void call_btt_ctor(void *btt) {
         "mov %0, %%ecx\n"
         "call *%1\n"
         : : "r"(btt), "r"((void*)ADDR_BTT_CTOR)
+        : "eax", "ecx", "edx", "memory"
+    );
+}
+
+/* Call BTT deleting destructor: __thiscall(btt, flags=1) with RET 0x4.
+ * flags=1 calls internal dtor (frees snapshots+list) then operator delete
+ * (frees the BTT struct itself) — full destroy matching operator_new. */
+static void call_btt_dtor(void *btt) {
+    __asm__ volatile(
+        "mov %0, %%ecx\n"
+        "push $1\n"               /* flags=1 (full delete) */
+        "call *%1\n"
+        : : "r"(btt), "r"((void*)ADDR_BTT_DTOR)
         : "eax", "ecx", "edx", "memory"
     );
 }
@@ -520,11 +540,16 @@ static int is_time_trial_precheck(void) {
  * this, we must ALSO pre-set App+0x90C with a dummy BTT so the game's
  * BTT management enters the "both exist" branch and keeps our playback.
  *
- * After the original returns, we don't need to do anything — Board_ctor
- * already created the ghost ball, and the game's BTT management preserved
- * our playback BTT (or promoted the dummy recording to playback, replacing
- * ours — but the dummy has NO_TIME so it won't replace). */
+ * After the original returns, we destroy the old App+0x910 BTT that we
+ * replaced. At that point:
+ *   ✅ The old scene has been torn down (step 1 complete)
+ *   ✅ The game's BTT management has run (step 2 complete — it managed our
+ *      new BTT, not the old one)
+ *   ✅ No live references to the old BTT remain — the old ghost ball is gone
+ *   ✅ Safe to call vtable[0](1) on the saved pointer (full delete) */
 void hook_impl(DWORD app, DWORD race_index) {
+    g_savedOldPlayback = 0;
+
     /* Pre-inject: set App+0x910 before calling original so Board_ctor creates
      * the ghost ball. We need the race name, looked up by race index. */
     if (is_time_trial_precheck()) {
@@ -540,18 +565,15 @@ void hook_impl(DWORD app, DWORD race_index) {
             /* Check if we have a saved ghost for this race */
             int savedTime = get_saved_time(raceName);
             if (savedTime != NO_TIME) {
-                /* Always replace App+0x910 with the saved best-time ghost.
-                 * The existing playback may be from a different race or an
-                 * in-session ghost with a worse time. We overwrite App+0x910
-                 * directly — the old BTT leaks (one 0x528 alloc per race,
-                 * negligible) but this is simpler and safer than calling the
-                 * game's destructor. The game's BTT management inside
-                 * App_StartPracticeRace will then compare our injected BTT
-                 * vs the dummy recording (NO_TIME) and keep ours. */
+                /* Save old App+0x910 before overwriting so we can destroy it
+                 * after the trampoline returns. The game never sees this old
+                 * pointer (we replaced it before the trampoline runs), so it
+                 * can't destroy it — that's the leak we're fixing. */
                 if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
                     DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
                     if (existing && existing > 0x10000) {
-                        log_fmt("Replacing stale App+0x910 (0x%X) with saved ghost", existing);
+                        g_savedOldPlayback = existing;
+                        log_fmt("Saved old App+0x910 (0x%X) for post-hook destruction", existing);
                     }
                     /* inject_saved_ghost sets App+0x910 to the new BTT,
                      * overwriting whatever was there */
@@ -598,15 +620,15 @@ void hook_impl(DWORD app, DWORD race_index) {
             } else {
                 log_fmt("No saved ghost for '%s', clearing stale playback", raceName);
                 /* No saved ghost for this race — clear App+0x910 so the
-                 * ghost ball from a previous race doesn't show up. The old
-                 * BTT leaks (negligible) but Board_ctor won't create a ghost
-                 * ball, which is correct. */
+                 * ghost ball from a previous race doesn't show up.
+                 * Save old pointer for post-hook destruction (same leak fix). */
                 if (!IsBadReadPtr((void*)(app + APP_910_PLAYBACK), 4)) {
                     DWORD existing = *(DWORD*)(app + APP_910_PLAYBACK);
                     if (existing && existing > 0x10000) {
-                        log_fmt("Clearing stale App+0x910 (0x%X)", existing);
-                        *(DWORD*)(app + APP_910_PLAYBACK) = 0;
+                        g_savedOldPlayback = existing;
+                        log_fmt("Saved old App+0x910 (0x%X) for post-hook destruction", existing);
                     }
+                    *(DWORD*)(app + APP_910_PLAYBACK) = 0;
                 }
             }
         } else {
@@ -625,6 +647,25 @@ void hook_impl(DWORD app, DWORD race_index) {
     );
 
     log_msg("HOOK: App_StartPracticeRace returned");
+
+    /* Destroy the old App+0x910 BTT that we replaced before the trampoline.
+     * At this point the old scene is torn down, the old ghost ball is gone,
+     * and the game's BTT management has already run (on our new BTT, not the
+     * old one). No live references to the old BTT remain — safe to destroy. */
+    if (g_savedOldPlayback && g_savedOldPlayback > 0x10000) {
+        if (!IsBadReadPtr((void*)g_savedOldPlayback, 4)) {
+            DWORD vt = *(DWORD*)g_savedOldPlayback;
+            if (vt == 0x004D262C) {
+                log_fmt("Destroying old playback BTT at 0x%X", g_savedOldPlayback);
+                call_btt_dtor((void*)g_savedOldPlayback);
+                log_msg("Old playback BTT destroyed");
+            } else {
+                log_fmt("WARNING: old playback BTT vtable=0x%X (expected 0x4D262C) — skipping destroy",
+                        vt);
+            }
+        }
+        g_savedOldPlayback = 0;
+    }
 }
 
 /* Naked stub: extracts ECX (App) and [ESP+4] (race_index) from the
