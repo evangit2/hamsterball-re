@@ -199,8 +199,8 @@ public:
 
         // Fog disable: call D3D device->SetRenderState(D3DRS_FOGENABLE, 0) every frame.
         // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50] (offset 0xC8).
-        // D3DRS_FOGENABLE = 0x1C = 28. The game set fog params at level load;
-        // clearing gfx+0xA4 flags doesn't undo already-set D3D states.
+        // D3DRS_FOGENABLE = 28. Must use inline asm — __fastcall clobbers EDX
+        // which corrupts the __thiscall COM call.
         if (g_disableFog) {
             App* app = api->GetApp();
             if (app && !IsBadReadPtr(app, sizeof(App))) {
@@ -210,11 +210,17 @@ public:
                     if (device && !IsBadReadPtr(device, 4)) {
                         void** vtable = *(void***)device;
                         if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
-                            // vtable[50] = SetRenderState (offset 0xC8)
-                            // __thiscall: HRESULT SetRenderState(D3DRENDERSTATETYPE, DWORD)
-                            typedef long(__fastcall *SetRenderState_t)(void*, void*, DWORD, DWORD);
-                            SetRenderState_t fn = (SetRenderState_t)vtable[50];
-                            fn(device, nullptr, 0x1C, 0);  // D3DRS_FOGENABLE = 0
+                            void* fn = vtable[50]; // SetRenderState
+                            DWORD state = 28;  // D3DRS_FOGENABLE
+                            DWORD value = 0;   // FALSE
+                            // Build a static __thiscall stub once, reuse it.
+                            // push value; push state; mov ecx,device; call fn; ret 8
+                            // Actually we don't need ret 8 since we're not using stdcall.
+                            // Use a function pointer with __thiscall typedef.
+                            // MinGW supports __thiscall for function pointers:
+                            typedef long(__thiscall *D3DSetRenderState_t)(void*, DWORD, DWORD);
+                            D3DSetRenderState_t srs = (D3DSetRenderState_t)fn;
+                            srs(device, state, value);
                         }
                     }
                 }
