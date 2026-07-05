@@ -197,14 +197,23 @@ public:
             printf("[FreeCam] Fog: %s\n", g_disableFog ? "DISABLED" : "ENABLED");
         }
 
-        // Fog disable: NOP the call to FUN_004539a0 (fog setup) at 0x40B2E5.
-        // This prevents FOGTABLEMODE, FOGSTART, FOGEND from being set.
-        // Original bytes: E8 B6 86 04 00 (CALL 0x004539A0)
-        // Calling D3D SetRenderState directly crashes (MinGW __thiscall issue).
+        // Fog disable: overwrite fog start/end in gfx struct every frame.
+        // gfx = App+0x174. FOGSTART at gfx+0x73C, FOGEND at gfx+0x740.
+        // By setting start very far and end even farther, fog won't be
+        // visible within the level geometry. Safe — just struct writes.
+        // Also clear gfx+0xA4 fog flags to prevent fog codepath.
         if (g_disableFog) {
-            api->PatchMemory(0x40B2E5, "\x90\x90\x90\x90\x90", 5);
-        } else {
-            api->PatchMemory(0x40B2E5, "\xE8\xB6\x86\x04\x00", 5);
+            App* app = api->GetApp();
+            if (app && !IsBadReadPtr(app, sizeof(App))) {
+                void* gfx = app->graphics;
+                if (gfx && !IsBadReadPtr(gfx, 0x800)) {
+                    // Push fog start/end to extreme distances
+                    *(float*)((uint8_t*)gfx + 0x73C) = 99999.0f;  // FOGSTART
+                    *(float*)((uint8_t*)gfx + 0x740) = 100000.0f; // FOGEND
+                    // Clear fog flags
+                    *(uint32_t*)((uint8_t*)gfx + 0xA4) = 0;
+                }
+            }
         }
 
         if (!active || !initialized) return;
