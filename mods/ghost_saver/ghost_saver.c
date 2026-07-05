@@ -1,19 +1,16 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v19)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v22)
  *
+ * v22: Remove dead get_player_ball override, convert ghost file format from
+ *      hex text to binary (2x smaller, faster load/save), update README.
+ * v21: Pre-inject App+0x910 BEFORE App_StartPracticeRace so Board_ctor
+ *      creates ghost ball. Read game's own BTT recording at goal time
+ *      instead of 60Hz polling (fixes 2x playback speed). Per-race .ghost
+ *      files in Ghosts/ directory. PreviousRun.ghost = always latest.
  * v19: Fix crash at 0x4276B6 (BestTimeTracker_PlaybackSnapshot NULL deref).
- *      Root cause: mod injected App+0x910 AFTER App_StartPracticeRace, but
- *      Board_ctor (called inside it) creates the ghost ball at scene+0x361C
- *      only if App+0x910 is non-NULL at ctor time. Fix: pre-inject App+0x910
- *      and a dummy App+0x90C BEFORE calling the original, so Board_ctor sees
- *      the playback buffer and creates the ghost ball. Also look up race name
- *      by index (static table at 0x4F7080) since PlayerProfile doesn't exist
- *      yet at hook entry.
  * v18: Fix heap allocator (use game's operator_new, not malloc), add time
- *      comparison before saving, add Time Trial check in hook path, fix ball
- *      pointer with fallback chain, remove dead code.
+ *      comparison before saving, add Time Trial check in hook path.
  * v3:  Fix __thiscall calls via inline asm — MinGW __thiscall function
  *      pointers silently fail. Use raw push/mov ecx/call.
- * v2:  Heartbeat logging, raw DWORD snapshot format.
  * v1:  Initial release.
  */
 
@@ -117,40 +114,6 @@ static int is_time_trial_active(void) {
     return 1;
 }
 
-/* get_player_ball override — bass_proxy.h version is broken (treats embedded
- * AthenaList as a pointer). This version reads the embedded struct directly:
- *   board+0x29D8 = count (struct+0x04)
- *   board+0x2DE0 = data array pointer (struct+0x40C) */
-#define get_player_ball ghost_get_player_ball
-static DWORD get_player_ball(void) {
-    if (IsBadReadPtr((void*)GLOBAL_APP_PTR, 4)) return 0;
-    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
-    if (!app || app < 0x10000) return 0;
-    if (IsBadReadPtr((void*)(app + 0x220), 4)) return 0;
-    DWORD profile = *(DWORD*)(app + 0x220);
-    if (!profile || profile < 0x10000) return 0;
-    if (IsBadReadPtr((void*)(profile + 0x0C), 4)) return 0;
-    DWORD board = *(DWORD*)(profile + 0x0C);
-    if (!board || board < 0x10000) return 0;
-    if (IsBadReadPtr((void*)board, 4)) return 0;
-    DWORD vtable = *(DWORD*)board;
-    if (vtable < 0x4D0000 || vtable > 0x4D2000) return 0;
-    /* Embedded AthenaList at board+0x29D4:
-     *   +0x04 (board+0x29D8) = count
-     *   +0x40C (board+0x2DE0) = data array pointer */
-    if (IsBadReadPtr((void*)(board + 0x29D8), 4)) return 0;
-    DWORD count = *(DWORD*)(board + 0x29D8);
-    if (count == 0) return 0;
-    if (IsBadReadPtr((void*)(board + 0x2DE0), 4)) return 0;
-    DWORD *data = *(DWORD**)(board + 0x2DE0);
-    if (!data || (DWORD)data < 0x10000) return 0;
-    if (IsBadReadPtr(data, 4)) return 0;
-    DWORD ball = data[0];
-    if (!ball || ball < 0x10000) return 0;
-    if (IsBadReadPtr((void*)ball, 4)) return 0;
-    return ball;
-}
-
 /* Convert race name to ghost filename.
  * "Warm-Up Race" -> "Warm-Up.ghost"
  * "BEGINNER RACE" -> "Beginner.ghost"
@@ -173,6 +136,17 @@ static void race_name_to_filename(const char *raceName, char *out, int outLen) {
     snprintf(out, outLen, "%s%s.ghost", g_ghostDir, base);
 }
 
+/* Ghost binary file format:
+ *   [4 bytes] magic = 0x47485347 ("GHSG")
+ *   [4 bytes] version = 1
+ *   [4 bytes] time (game ticks, lower = better)
+ *   [4 bytes] frame_count
+ *   [frame_count * 40 bytes] snapshots (10 DWORDs each, raw memory copy)
+ * Total per frame: 40 bytes binary vs ~80 bytes hex text. */
+
+#define GHOST_MAGIC    0x47485347
+#define GHOST_VERSION  1
+
 /* Get saved time for a race from its .ghost file (NO_TIME if not found) */
 static int get_saved_time(const char *raceName) {
     char path[MAX_PATH];
@@ -183,26 +157,14 @@ static int get_saved_time(const char *raceName) {
     if (h == INVALID_HANDLE_VALUE) return NO_TIME;
 
     int result = NO_TIME;
-    DWORD fileSize = GetFileSize(h, NULL);
-    DWORD filePos = 0;
-    char line[512];
+    DWORD magic, version, time;
 
-    while (filePos < fileSize) {
-        SetFilePointer(h, filePos, NULL, FILE_BEGIN);
-        DWORD toRead = sizeof(line) - 1;
-        if (filePos + toRead > fileSize) toRead = fileSize - filePos;
-        DWORD bytesRead = 0;
-        if (!ReadFile(h, line, toRead, &bytesRead, NULL) || bytesRead == 0) break;
-        char *nl = memchr(line, '\n', bytesRead);
-        if (!nl) { filePos += bytesRead; continue; }
-        int lineLen = nl - line;
-        if (lineLen > 0 && line[lineLen-1] == '\r') lineLen--;
-        line[lineLen] = '\0';
-        filePos += (nl - line) + 1;
-
-        if (strncmp(line, "TIME=", 5) == 0)
-            result = atoi(line + 5);
+    if (ReadFile(h, &magic, 4, &(DWORD){0}, NULL) && magic == GHOST_MAGIC &&
+        ReadFile(h, &version, 4, &(DWORD){0}, NULL) && version == GHOST_VERSION &&
+        ReadFile(h, &time, 4, &(DWORD){0}, NULL)) {
+        result = (int)time;
     }
+
     CloseHandle(h);
     return result;
 }
@@ -220,19 +182,19 @@ static void save_ghost_for_race(const char *raceName, int time,
     }
     DWORD written;
 
-    char header[256];
-    int hlen = snprintf(header, sizeof(header), "TIME=%d\r\nFRAMES=%d\r\n",
-                        time, count);
-    WriteFile(h, header, hlen, &written, NULL);
+    DWORD magic = GHOST_MAGIC;
+    DWORD version = GHOST_VERSION;
+    DWORD frameCount = (DWORD)count;
 
-    for (int i = 0; i < count; i++) {
-        char line[256];
-        int len = snprintf(line, sizeof(line),
-            "0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X\r\n",
-            snaps[i][0], snaps[i][1], snaps[i][2], snaps[i][3], snaps[i][4],
-            snaps[i][5], snaps[i][6], snaps[i][7], snaps[i][8], snaps[i][9]);
-        WriteFile(h, line, len, &written, NULL);
-    }
+    WriteFile(h, &magic, 4, &written, NULL);
+    WriteFile(h, &version, 4, &written, NULL);
+    WriteFile(h, (DWORD*)&time, 4, &written, NULL);
+    WriteFile(h, &frameCount, 4, &written, NULL);
+
+    /* Write all snapshots as one contiguous block — 10 DWORDs = 40 bytes each */
+    if (count > 0)
+        WriteFile(h, snaps, count * 40, &written, NULL);
+
     CloseHandle(h);
 }
 
@@ -277,41 +239,33 @@ static void inject_saved_ghost(const char *raceName) {
     }
 
     int savedTime = NO_TIME;
-    int savedFrames = 0;
     DWORD (*savedSnaps)[10] = NULL;
     int savedCount = 0;
-    DWORD fileSize = GetFileSize(hf, NULL);
-    DWORD filePos = 0;
-    char line[512];
 
-    while (filePos < fileSize) {
-        SetFilePointer(hf, filePos, NULL, FILE_BEGIN);
-        DWORD toRead = sizeof(line) - 1;
-        if (filePos + toRead > fileSize) toRead = fileSize - filePos;
-        DWORD bytesRead = 0;
-        if (!ReadFile(hf, line, toRead, &bytesRead, NULL) || bytesRead == 0) break;
-        char *nl = memchr(line, '\n', bytesRead);
-        if (!nl) { filePos += bytesRead; continue; }
-        int lineLen = nl - line;
-        if (lineLen > 0 && line[lineLen-1] == '\r') lineLen--;
-        line[lineLen] = '\0';
-        filePos += (nl - line) + 1;
+    DWORD magic, version, time, frameCount;
 
-        if (strncmp(line, "TIME=", 5) == 0) { savedTime = atoi(line + 5); continue; }
-        if (strncmp(line, "FRAMES=", 7) == 0) {
-            savedFrames = atoi(line + 7);
-            if (savedFrames > 0 && savedFrames <= MAX_SNAPSHOTS)
-                savedSnaps = (DWORD(*)[10])malloc(savedFrames * 10 * sizeof(DWORD));
-            continue;
-        }
-        if (savedSnaps && savedCount < savedFrames) {
-            DWORD d[10];
-            if (sscanf(line, "%x %x %x %x %x %x %x %x %x %x",
-                &d[0],&d[1],&d[2],&d[3],&d[4],&d[5],&d[6],&d[7],&d[8],&d[9]) == 10) {
-                memcpy(savedSnaps[savedCount], d, 10 * sizeof(DWORD));
-                savedCount++;
+    if (ReadFile(hf, &magic, 4, &(DWORD){0}, NULL) && magic == GHOST_MAGIC &&
+        ReadFile(hf, &version, 4, &(DWORD){0}, NULL) && version == GHOST_VERSION &&
+        ReadFile(hf, &time, 4, &(DWORD){0}, NULL) &&
+        ReadFile(hf, &frameCount, 4, &(DWORD){0}, NULL) &&
+        frameCount > 0 && frameCount <= MAX_SNAPSHOTS) {
+
+        savedTime = (int)time;
+        savedSnaps = (DWORD(*)[10])malloc(frameCount * 10 * sizeof(DWORD));
+        if (savedSnaps) {
+            DWORD totalBytes = frameCount * 40;
+            DWORD bytesRead = 0;
+            if (ReadFile(hf, savedSnaps, totalBytes, &bytesRead, NULL) &&
+                bytesRead == totalBytes) {
+                savedCount = (int)frameCount;
+            } else {
+                log_fmt("ERROR: short read — expected %d bytes, got %d", totalBytes, bytesRead);
+                free(savedSnaps);
+                savedSnaps = NULL;
             }
         }
+    } else {
+        log_fmt("ERROR: bad ghost file header for '%s'", raceName);
     }
     CloseHandle(hf);
 
@@ -740,7 +694,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v21c started");
+    log_msg("Ghost thread v22 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -772,7 +726,7 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v21 Init ===");
+    log_msg("=== Ghost Saver Mod v22 Init ===");
     log_fmt("Ghost dir: %s", g_ghostDir);
     log_fmt("Log path: %s", g_logPath);
 
