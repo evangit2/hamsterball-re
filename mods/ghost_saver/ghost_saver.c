@@ -1,10 +1,23 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v23)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v24)
  *
+ * v24: Three fixes:
+ *      (1) Dynamic snapshot buffer — replaces fixed 5000-frame static array
+ *          with malloc/realloc so long races (>83s) are no longer truncated.
+ *          The old g_rawSnaps[5000][10] static BSS buffer capped ghosts at
+ *          ~83 seconds; longer races had their ghosts frozen mid-track.
+ *      (2) BTT ctor failure leak fix — if call_btt_ctor() produces a bad
+ *          vtable, the 528-byte BTT struct (allocated via game_operator_new)
+ *          was never freed. Now calls game_free (0x4BA74D, the same CRT _free
+ *          that operator_new's _malloc pairs with) to release it.
+ *      (3) Thread synchronization — added CRITICAL_SECTION around all shared
+ *          state between the detour hook (main thread) and the background
+ *          monitor thread. Prevents torn reads on g_hookRaceName, stale
+ *          g_recording state, and corrupted g_rawSnaps during race transitions.
  * v23: Fix memory leak — save old App+0x910 BTT before overwriting, then
  *      destroy it after the trampoline returns. Calls the BTT deleting
  *      destructor (vtable[0]=0x4278C0, __thiscall(this,flags=1), RET 0x4)
  *      which frees all snapshots via BestTimeTracker_dtor (0x427760) then
- *      frees the BTT struct via operator delete (0x4BA740).
+ *      frees the BTT struct via _free (0x4BA74D).
  *      Also fix ghost-not-saved bug: set g_prevGoalFlag to current value
  *      (not 0) on race start to prevent stale goal flag false-trigger, and
  *      reset g_raceFinished when 0 snapshots detected (stale flag recovery).
@@ -29,12 +42,15 @@
 #define ADDR_BTT_DTOR       0x004278C0  /* vtable[0] — deleting destructor: __thiscall(this, flags), RET 0x4 */
 #define ADDR_ALIST_APPEND   0x00453780
 #define ADDR_OPERATOR_NEW   0x004BA57B  /* REAL operator_new — NOT 0x4BA570 (zlib) */
+#define ADDR_GAME_FREE      0x004BA74D  /* CRT _free — pairs with operator_new's _malloc */
 #define BTT_SIZE            0x528
 #define BTT_BEST_TIME       0x524
 #define BTT_NAME            0x424
 #define SNAP_SIZE           0x28
 #define NO_TIME             9999999
-#define MAX_SNAPSHOTS       5000
+#define MAX_SNAPSHOTS       5000  /* initial capacity, grows dynamically */
+#define SNAP_DWORDS         10
+#define SNAP_BYTES          40
 
 #define APP_90C_RECORDING  0x90C
 #define APP_910_PLAYBACK    0x910
@@ -45,8 +61,20 @@
 
 /* game_operator_new is provided by bass_proxy.h (0x4BA57B — real operator_new) */
 
-static DWORD g_rawSnaps[MAX_SNAPSHOTS][10];
+/* --- Dynamic snapshot buffer (P1 fix) ---
+ * Replaces the old static g_rawSnaps[5000][10] which capped ghosts at ~83s.
+ * Now grows as needed via realloc to handle arbitrarily long races. */
+static DWORD (*g_rawSnaps)[SNAP_DWORDS] = NULL;
 static int g_rawCount = 0;
+static int g_rawCapacity = 0;
+
+/* --- Thread synchronization (P3 fix) ---
+ * Protects all shared state between the detour hook (main thread, runs
+ * hook_impl) and the background monitor thread (runs check_race_state).
+ * Without this, a race transition during goal processing could cause torn
+ * reads on g_hookRaceName, stale g_recording state, or corrupted g_rawSnaps. */
+static CRITICAL_SECTION g_cs;
+
 static char g_currentRaceName[128] = "";
 static char g_hookRaceName[128] = "";  /* set by pre-inject hook from static table */
 static int g_recording = 0;
@@ -56,6 +84,12 @@ static DWORD g_prevRecording = 0;
 static DWORD g_savedOldPlayback = 0;   /* old App+0x910 saved for post-trampoline destruction */
 static char g_ghostDir[MAX_PATH] = "";  /* .../Ghosts/ directory */
 static char g_logPath[MAX_PATH] = "";
+
+/* game_free — CRT _free that pairs with operator_new's _malloc.
+ * Used to free failed BTT allocations without calling the destructor
+ * (which would crash on uninitialized vtable/AthenaList state). */
+typedef void (__cdecl *game_free_t)(void*);
+static game_free_t game_free = (game_free_t)ADDR_GAME_FREE;
 
 /* Logging disabled — set to 1 to re-enable */
 #define LOGGING_ENABLED 0
@@ -271,7 +305,7 @@ static void inject_saved_ghost(const char *raceName) {
         ReadFile(hf, &version, 4, &(DWORD){0}, NULL) && version == GHOST_VERSION &&
         ReadFile(hf, &time, 4, &(DWORD){0}, NULL) &&
         ReadFile(hf, &frameCount, 4, &(DWORD){0}, NULL) &&
-        frameCount > 0 && frameCount <= MAX_SNAPSHOTS) {
+        frameCount > 0) {
 
         savedTime = (int)time;
         savedSnaps = (DWORD(*)[10])malloc(frameCount * 10 * sizeof(DWORD));
@@ -314,6 +348,13 @@ static void inject_saved_ghost(const char *raceName) {
     if (vtable != 0x004D262C) {
         log_fmt("ERROR: BTT ctor failed — vtable=0x%X (expected 0x004D262C)", vtable);
         free(savedSnaps);
+        /* P2 fix: btt was allocated via game_operator_new but the constructor
+         * failed — the vtable is wrong, so calling the BTT destructor would
+         * crash on uninitialized AthenaList state. Instead, call the game's
+         * CRT _free (0x4BA74D) directly, which is the same _free that
+         * operator_new's _malloc pairs with. This releases the 528-byte block
+         * without touching the uninitialized internals. */
+        game_free(btt);
         return;
     }
     log_msg("BTT ctor OK (vtable verified)");
@@ -326,7 +367,6 @@ static void inject_saved_ghost(const char *raceName) {
 
     DWORD *alist = (DWORD*)((char*)btt + 4);
     int numToStore = savedCount;
-    if (numToStore > MAX_SNAPSHOTS) numToStore = MAX_SNAPSHOTS;
 
     for (int i = 0; i < numToStore; i++) {
         /* Each snapshot also via game's operator_new for heap consistency */
@@ -344,9 +384,42 @@ static void inject_saved_ghost(const char *raceName) {
     log_fmt("Ghost injected: %d snapshots into App+0x910 (btt=0x%X)", savedCount, (DWORD)btt);
 }
 
+/* --- Dynamic snapshot buffer management (P1 fix) --- */
+
+/* Ensure g_rawSnaps can hold at least 'needed' entries. Grows in MAX_SNAPSHOTS
+ * increments to amortize realloc cost. Returns 1 on success, 0 on alloc failure
+ * (g_rawSnaps is left unchanged — existing data is preserved). */
+static int snaps_reserve(int needed) {
+    if (needed <= g_rawCapacity) return 1;
+    int newCap = g_rawCapacity ? g_rawCapacity : MAX_SNAPSHOTS;
+    while (newCap < needed)
+        newCap *= 2;
+    DWORD (*newBuf)[SNAP_DWORDS] = (DWORD(*)[SNAP_DWORDS])
+        realloc(g_rawSnaps, newCap * SNAP_BYTES);
+    if (!newBuf) {
+        log_fmt("ERROR: realloc failed for %d snaps (%d bytes)", newCap, newCap * SNAP_BYTES);
+        return 0;
+    }
+    g_rawSnaps = newBuf;
+    g_rawCapacity = newCap;
+    return 1;
+}
+
+/* Reset the snapshot buffer for a new race. Frees the old buffer entirely. */
+static void snaps_reset(void) {
+    if (g_rawSnaps) {
+        free(g_rawSnaps);
+        g_rawSnaps = NULL;
+    }
+    g_rawCount = 0;
+    g_rawCapacity = 0;
+}
+
 static void check_race_state(void) {
     DWORD app = get_app();
     if (!app) return;
+
+    EnterCriticalSection(&g_cs);
 
     int tt = is_time_trial_active();
     if (!tt) {
@@ -354,13 +427,14 @@ static void check_race_state(void) {
             log_fmt("Left Time Trial mode (was recording %d frames)", g_rawCount);
             g_recording = 0;
             g_raceFinished = 0;
-            g_rawCount = 0;
+            snaps_reset();
             g_prevGoalFlag = 0;
             g_currentRaceName[0] = '\0';
             g_hookRaceName[0] = '\0';
         }
         if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
             g_prevRecording = *(DWORD*)(app + APP_90C_RECORDING);
+        LeaveCriticalSection(&g_cs);
         return;
     }
 
@@ -384,7 +458,7 @@ static void check_race_state(void) {
         if (raceName[0]) {
             strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
             g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
-            g_rawCount = 0;
+            snaps_reset();
             g_recording = 1;
             g_raceFinished = 0;
             /* Set prevGoalFlag to CURRENT value, not 0. If the previous race's
@@ -436,19 +510,26 @@ static void check_race_state(void) {
                         DWORD count = *(DWORD*)(btt + 8);  /* AthenaList count */
                         if (!IsBadReadPtr((void*)(btt + 0x410), 4)) {
                             DWORD *data = *(DWORD**)(btt + 0x410);  /* AthenaList data ptr */
-                            if (count > 0 && count <= MAX_SNAPSHOTS && data &&
+                            if (count > 0 && data &&
                                 (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
                                 log_fmt("Reading %d frames from game's recording BTT", count);
-                                g_rawCount = 0;
-                                for (int i = 0; i < (int)count && i < MAX_SNAPSHOTS; i++) {
-                                    DWORD *snap = (DWORD*)data[i];
-                                    if (snap && (DWORD)snap > 0x10000 &&
-                                        !IsBadReadPtr(snap, 10 * sizeof(DWORD))) {
-                                        memcpy(g_rawSnaps[g_rawCount], snap, 10 * sizeof(DWORD));
-                                        g_rawCount++;
+
+                                /* P1 fix: dynamically grow buffer for long races.
+                                 * Old code truncated at MAX_SNAPSHOTS(5000) = ~83s. */
+                                if (!snaps_reserve((int)count)) {
+                                    log_msg("ERROR: cannot allocate snapshot buffer — skipping save");
+                                } else {
+                                    g_rawCount = 0;
+                                    for (int i = 0; i < (int)count; i++) {
+                                        DWORD *snap = (DWORD*)data[i];
+                                        if (snap && (DWORD)snap > 0x10000 &&
+                                            !IsBadReadPtr(snap, SNAP_BYTES)) {
+                                            memcpy(g_rawSnaps[g_rawCount], snap, SNAP_BYTES);
+                                            g_rawCount++;
+                                        }
                                     }
+                                    log_fmt("Read %d snapshots from game recording", g_rawCount);
                                 }
-                                log_fmt("Read %d snapshots from game recording", g_rawCount);
                             } else {
                                 log_fmt("ERROR: bad BTT list count=%d data=0x%X", count, (DWORD)data);
                             }
@@ -493,6 +574,8 @@ static void check_race_state(void) {
             g_prevGoalFlag = goalFlag;
         }
     }
+
+    LeaveCriticalSection(&g_cs);
 }
 
 /* App_StartPracticeRace detour hook.
@@ -565,6 +648,8 @@ static int is_time_trial_precheck(void) {
  *   ✅ Safe to call vtable[0](1) on the saved pointer (full delete) */
 void hook_impl(DWORD app, DWORD race_index) {
     g_savedOldPlayback = 0;
+
+    EnterCriticalSection(&g_cs);
 
     /* Pre-inject: set App+0x910 before calling original so Board_ctor creates
      * the ghost ball. We need the race name, looked up by race index. */
@@ -652,6 +737,13 @@ void hook_impl(DWORD app, DWORD race_index) {
         }
     }
 
+    /* Release the lock during the trampoline call — the original
+     * App_StartPracticeRace runs game code (Board_ctor, scene setup, etc.)
+     * for potentially hundreds of milliseconds. Holding the lock would
+     * stall the background thread unnecessarily. The post-trampoline
+     * cleanup re-acquires the lock. */
+    LeaveCriticalSection(&g_cs);
+
     /* Call original App_StartPracticeRace via trampoline. Board_ctor will see
      * App+0x910 (if we set it) and create the ghost ball at scene+0x361C. */
     __asm__ volatile(
@@ -663,6 +755,8 @@ void hook_impl(DWORD app, DWORD race_index) {
     );
 
     log_msg("HOOK: App_StartPracticeRace returned");
+
+    EnterCriticalSection(&g_cs);
 
     /* Destroy the old App+0x910 BTT that we replaced before the trampoline.
      * At this point the old scene is torn down, the old ghost ball is gone,
@@ -682,6 +776,8 @@ void hook_impl(DWORD app, DWORD race_index) {
         }
         g_savedOldPlayback = 0;
     }
+
+    LeaveCriticalSection(&g_cs);
 }
 
 /* Naked stub: extracts ECX (App) and [ESP+4] (race_index) from the
@@ -751,7 +847,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v22 started");
+    log_msg("Ghost thread v24 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -783,7 +879,8 @@ static void init_paths(HMODULE hInst) {
 
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
-    log_msg("=== Ghost Saver Mod v22 Init ===");
+    InitializeCriticalSection(&g_cs);
+    log_msg("=== Ghost Saver Mod v24 Init ===");
     log_fmt("Ghost dir: %s", g_ghostDir);
     log_fmt("Log path: %s", g_logPath);
 
