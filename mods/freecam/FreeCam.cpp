@@ -73,7 +73,7 @@ public:
         api = modApi;
         api->RegisterCustomControl("FREECAM_TOGGLE", CustomControl(DIK_F7));
         api->RegisterCustomControl("FREECAM_HIDEUI", CustomControl(DIK_F8));
-        api->RegisterCustomHook(0x57440, (void*)hook_FontDrawGlyph, (void**)&orig_FontDrawGlyph);
+        api->RegisterCustomHook(0x457440, (void*)hook_FontDrawGlyph, (void**)&orig_FontDrawGlyph);
         printf("[FreeCam] Ready. F7=toggle cam, F8=toggle UI\n");
     }
 
@@ -156,7 +156,7 @@ public:
 
         CustomText ct;
         ct.font = app->fonts.showcardGothic14;
-        ct.x = 200;
+        ct.x = 90;
         ct.y = 10;
         ct.text_color = Color(0.0f, 1.0f, 0.0f, 1.0f);
         ct.enable_shadow = true;
