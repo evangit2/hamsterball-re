@@ -25,7 +25,9 @@
  * We detect version by checking for BASS_ChannelSetAttribute (2.4-only).
  * ============================================================ */
 
-typedef DWORD (__stdcall *StreamCreateFile20_t)(BOOL, const char*, DWORD, DWORD, DWORD);
+/* BASS_StreamCreateFile uses QWORD offset/length in BOTH 2.0 and 2.4.
+ * Using DWORD here causes RET 28 to pop 28 bytes from a 20-byte stack → crash. */
+typedef DWORD (__stdcall *StreamCreateFile20_t)(BOOL, const char*, unsigned long long, unsigned long long, DWORD);
 typedef DWORD (__stdcall *StreamCreateFile24_t)(BOOL, const char*, unsigned long long, unsigned long long, DWORD);
 typedef int  (__stdcall *ChannelPlay_t)(DWORD, BOOL);
 typedef int  (__stdcall *StreamPlay20_t)(DWORD, BOOL);  /* BASS 2.0: BASS_StreamPlay */
