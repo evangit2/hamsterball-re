@@ -10,6 +10,12 @@ typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
     void*, void*, void*, void*, void*);
 static FontDrawGlyph_t orig_FontDrawGlyph = nullptr;
 
+// Ball_Render (vtable[2] @ 0x402DE0): __thiscall, plain RET (no stack params)
+// Renders the ball mesh + transforms. Skipping it makes ball invisible
+// without affecting physics (which runs in vtable[0x1C]/Ball_Update).
+typedef void(__fastcall *BallRender_t)(void*, void*);
+static BallRender_t orig_BallRender = nullptr;
+
 // Sprite_DrawRect: RET 0x1c = 7 stack params → 9 total
 typedef void(__fastcall *SpriteDrawRect_t)(void*, void*, void*, void*, void*, void*, void*, void*, void*);
 static SpriteDrawRect_t orig_SpriteDrawRect = nullptr;
@@ -31,6 +37,11 @@ static GraphicsDrawScreenRect_t orig_GraphicsDrawScreenRect = nullptr;
 // It calls DrawPrimitiveUP directly — NOT through Sprite_DrawRect/RenderQuad.
 typedef void(__fastcall *SpriteDrawExtended_t)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
 static SpriteDrawExtended_t orig_SpriteDrawExtended = nullptr;
+
+static void __fastcall hook_BallRender(void* thisPtr, void* edx) {
+    if (g_hideBall) return;
+    orig_BallRender(thisPtr, edx);
+}
 
 static void __fastcall hook_FontDrawGlyph(void* thisPtr, void* edx, const char* text, int x, int y,
     void* p4, void* p5, void* p6, void* p7, void* p8) {
@@ -135,6 +146,7 @@ public:
         api->RegisterCustomHook(0x45DAB0, (void*)hook_SpriteDrawRotatedQuad, (void**)&orig_SpriteDrawRotatedQuad);
         api->RegisterCustomHook(0x455D60, (void*)hook_GraphicsDrawScreenRect, (void**)&orig_GraphicsDrawScreenRect);
         api->RegisterCustomHook(0x45D450, (void*)hook_SpriteDrawExtended, (void**)&orig_SpriteDrawExtended);
+        api->RegisterCustomHook(0x402DE0, (void*)hook_BallRender, (void**)&orig_BallRender);
         printf("[FreeCam] Ready. F7=toggle cam, F8=toggle UI\n");
     }
 
@@ -224,18 +236,6 @@ public:
         ct.text_color = Color(0.0f, 1.0f, 0.0f, 1.0f);
         ct.enable_shadow = true;
         api->DrawCustomText("FREECAM", ct);
-    }
-
-    void onBallUpdate(Ball* ball) override {
-        if (!ball || ball->playerID < 0) return;
-        // ball+0x324 is the game's own "skip render" flag — when non-zero,
-        // the render function skips Sprite_RenderQuad but still does all
-        // physics/transform/camera setup. Perfect for hiding the ball.
-        if (g_hideBall) {
-            *((uint8_t*)ball + 0x324) = 1;
-        } else {
-            *((uint8_t*)ball + 0x324) = 0;
-        }
     }
 
     void onLevelStart() override {
