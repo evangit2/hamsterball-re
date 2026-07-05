@@ -5,6 +5,9 @@
  *      destructor (vtable[0]=0x4278C0, __thiscall(this,flags=1), RET 0x4)
  *      which frees all snapshots via BestTimeTracker_dtor (0x427760) then
  *      frees the BTT struct via operator delete (0x4BA740).
+ *      Also fix ghost-not-saved bug: set g_prevGoalFlag to current value
+ *      (not 0) on race start to prevent stale goal flag false-trigger, and
+ *      reset g_raceFinished when 0 snapshots detected (stale flag recovery).
  * v22: Remove dead get_player_ball override, convert ghost file format from
  *      hex text to binary (2x smaller, faster load/save), update README.
  * v21: Pre-inject App+0x910 BEFORE App_StartPracticeRace so Board_ctor
@@ -384,8 +387,17 @@ static void check_race_state(void) {
             g_rawCount = 0;
             g_recording = 1;
             g_raceFinished = 0;
-            g_prevGoalFlag = 0;
-            log_fmt("RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
+            /* Set prevGoalFlag to CURRENT value, not 0. If the previous race's
+             * goal flag (App+0x5D6) is still 1 when the new race starts, our
+             * 16ms thread could see goalFlag=1 && prevGoalFlag=0 → false goal
+             * detection with 0 snapshots, permanently blocking the real goal.
+             * By syncing to the current value, we require a 0→1 transition
+             * (the game clears it to 0 at race start, then sets it to 1 on goal). */
+            if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1))
+                g_prevGoalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
+            else
+                g_prevGoalFlag = 0;
+            log_fmt("RACE START: '%s' (BTT=0x%X, goalFlag=%d)", raceName, currRecording, g_prevGoalFlag);
         } else {
             log_fmt("Race detected (BTT=0x%X) but name not ready, will retry", currRecording);
             g_prevRecording = 0;
@@ -467,7 +479,11 @@ static void check_race_state(void) {
                                    finishTime, existingTime);
                         }
                     } else {
-                        log_msg("NOT saving: no snapshots read from game recording");
+                        /* 0 snapshots means we caught a stale goal flag from
+                         * the previous race. Don't treat as finished — reset
+                         * so the real goal crossing is detected later. */
+                        log_msg("0 snapshots — likely stale goal flag, resetting");
+                        g_raceFinished = 0;
                     }
                 } else {
                     log_fmt("NOT saving: finishTime=%d btt=0x%X name='%s'",
