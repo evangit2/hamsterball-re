@@ -2,6 +2,12 @@
 
 Custom E: collision events for Hamsterball — define your own event types with DLL-side handlers.
 
+## v1.1: E:SOUND (crash fix)
+
+**Fixed:** `BASS_StreamCreateFile` uses `QWORD` (8-byte) parameters for `offset` and `length` in **both BASS 2.0 and 2.4**. The v1.0 BASS 2.0 typedef incorrectly used `DWORD` (4-byte), causing an 8-byte stack corruption: the function's `RET 28` would pop 28 bytes from a 20-byte stack, corrupting the return address and crashing the game at a garbage address (`0x682CBD9A`).
+
+**Fix:** Changed `StreamCreateFile20_t` typedef to use `unsigned long long` for offset/length, matching the real BASS API.
+
 ## v1: E:SOUND
 
 Plays a custom sound file from the `Sounds/` folder when the ball touches an `E:SOUND` collision object in a MESHWORLD level file. Works exactly like `E:POPOUT` (cooldown timer + dizzy immunity) but with a user-specified sound instead of the hardcoded popout sound.
