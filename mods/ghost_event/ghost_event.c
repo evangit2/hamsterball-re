@@ -216,10 +216,17 @@ static void *alloc_executable(DWORD size) {
 /* ---- State ---- */
 static DWORD g_moduleBase = 0x00400000;
 static DWORD g_loadedBTT = 0;
+static DWORD g_loadedSnapshots = 0;   /* malloc'd snapshots buffer */
+static DWORD g_loadedListArray = 0;   /* malloc'd list_array of snapshot ptrs */
 static DWORD g_oldPlaybackBTT = 0;
 static BOOL  g_ghostActive = FALSE;
 static char  g_pendingGhostFile[256] = "";
-static BOOL  g_ghostBallCreated = FALSE;
+static BOOL  g_ghostBallCreated = FALSE;  /* TRUE if WE created the ghost ball (not the game) */
+
+/* Ball vtable[0] = deleting destructor at 0x402A50
+ * __thiscall(ball, flags), RET 0x4. flags=1: dtor + free struct */
+#define BALL_DELETING_DTOR 0x402A50
+#define OPERATOR_DELETE    0x004BA740
 
 /* ---- DCE handler (called from raw byte stub) ----
  * DCE is __thiscall: ECX=board, stack: [ball, collEntry], RET 0x8
@@ -364,6 +371,10 @@ static DWORD create_btt_from_ghost(DWORD *snapshots, DWORD count, DWORD finishTi
 
     *(DWORD*)(bttAddr + BTT_LIST_ARRAY) = (DWORD)listArray;
 
+    /* Track for cleanup */
+    g_loadedSnapshots = (DWORD)snapshots;
+    g_loadedListArray = (DWORD)listArray;
+
     LOG("BTT created at 0x%08X: count=%d, array=0x%08X", bttAddr, count, listArray);
     return bttAddr;
 }
@@ -427,6 +438,71 @@ static DWORD create_ghost_ball(DWORD sceneAddr) {
     return ballAddr;
 }
 
+/* ---- Cleanup previous ghost resources ----
+ * Destroys old ghost ball (if we created it) and frees old BTT/snapshots.
+ * Called before loading a new ghost to prevent memory leaks.
+ *
+ * Ball vtable[0] = 0x402A50 = deleting destructor:
+ *   __thiscall(ball, flags=1), RET 0x4
+ *   Calls GameObject_dtor (frees child objects, timers, etc.) then frees the struct.
+ *
+ * BTT cleanup is manual because our BTT was constructed non-standardly
+ * (snapshots are a single contiguous malloc buffer, not individually allocated).
+ * The game's BTT dtor tries to _free() each snapshot individually — would crash.
+ * So we manually: free the BTT struct (operator_delete), free list_array, free snapshots.
+ */
+static void cleanup_previous_ghost(DWORD app) {
+    /* 1. Destroy old ghost ball if we created it */
+    if (g_ghostBallCreated) {
+        DWORD scene = *(DWORD*)(app + APP_178);
+        if (scene && !IsBadReadPtr((void*)scene, 0x4000)) {
+            DWORD ghostBall = *(DWORD*)(scene + SCENE_GHOST_BALL);
+            if (ghostBall && !IsBadReadPtr((void*)ghostBall, 0x100)) {
+                /* Call ball->vtable[0](ball, 1) — deleting destructor */
+                DWORD dtorAddr = BALL_DELETING_DTOR;
+                DWORD flags = 1;
+                __asm__ volatile (
+                    "push %1\n\t"
+                    "movl %0, %%ecx\n\t"
+                    "call *%2\n\t"
+                    :
+                    : "r"(ghostBall), "r"(flags), "r"(dtorAddr)
+                    : "eax", "ecx", "edx", "memory"
+                );
+                *(DWORD*)(scene + SCENE_GHOST_BALL) = 0;
+                LOG("Old ghost ball destroyed at 0x%08X", ghostBall);
+            }
+        }
+        g_ghostBallCreated = FALSE;
+    }
+
+    /* 2. Free old BTT struct (allocated via operator_new, so use operator_delete) */
+    if (g_loadedBTT) {
+        /* If the BTT was allocated via operator_new, we should use operator_delete.
+         * But operator_new might have fallen back to malloc — either way,
+         * operator_delete and free both end up calling the CRT free. */
+        typedef void (__cdecl *operator_delete_t)(void*);
+        operator_delete_t game_operator_delete = (operator_delete_t)OPERATOR_DELETE;
+        game_operator_delete((void*)g_loadedBTT);
+        LOG("Old BTT freed at 0x%08X", g_loadedBTT);
+        g_loadedBTT = 0;
+    }
+
+    /* 3. Free old list_array (malloc'd by us) */
+    if (g_loadedListArray) {
+        free((void*)g_loadedListArray);
+        g_loadedListArray = 0;
+    }
+
+    /* 4. Free old snapshots buffer (malloc'd by us) */
+    if (g_loadedSnapshots) {
+        free((void*)g_loadedSnapshots);
+        g_loadedSnapshots = 0;
+    }
+
+    g_ghostActive = FALSE;
+}
+
 /* ---- Frame epilogue handler ---- */
 void __cdecl frame_epilogue_handler(void) {
     DWORD app = *(DWORD*)APP_PTR;
@@ -445,6 +521,11 @@ void __cdecl frame_epilogue_handler(void) {
         if (!scene || IsBadReadPtr((void*)scene, 0x4000)) {
             LOG("No valid scene");
             return;
+        }
+
+        /* Cleanup previous ghost resources (destroy old ghost ball + free old BTT) */
+        if (g_ghostActive || g_loadedBTT) {
+            cleanup_previous_ghost(app);
         }
 
         DWORD *snapshots = NULL;
@@ -469,7 +550,7 @@ void __cdecl frame_epilogue_handler(void) {
         *(DWORD*)(app + APP_910) = newBTT;
         g_loadedBTT = newBTT;
 
-        /* Create ghost ball if it doesn't exist */
+        /* Create ghost ball (old one was destroyed in cleanup if it existed) */
         DWORD ghostBall = *(DWORD*)(scene + SCENE_GHOST_BALL);
         if (!ghostBall || IsBadReadPtr((void*)ghostBall, 0x100)) {
             ghostBall = create_ghost_ball(scene);
@@ -479,8 +560,11 @@ void __cdecl frame_epilogue_handler(void) {
                 LOG("Failed to create ghost ball");
             }
         } else {
+            /* Ghost ball exists but we didn't destroy it (e.g. game created it in Time Trial
+             * and our cleanup didn't fire because g_ghostBallCreated was FALSE).
+             * Reuse it — just reset its position. */
             g_ghostBallCreated = FALSE;
-            LOG("Ghost ball already exists at 0x%08X", ghostBall);
+            LOG("Ghost ball already exists (game-created), reusing: 0x%08X", ghostBall);
         }
 
         /* Reset playback index to 0 */
