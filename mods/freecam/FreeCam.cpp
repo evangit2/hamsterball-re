@@ -164,17 +164,17 @@ public:
 
         if (api->WasControlPressed("FREECAM_HIDEBALL")) {
             g_hideBall = !g_hideBall;
-            // NOP two draw calls inside Ball_Render (0x402DE0):
-            // 1. 0x402F8A: FF 50 1C (CALL dword ptr [EAX+0x1C]) — 3D mesh render via vtable
-            // 2. 0x402FE0: E8 7B A6 05 00 (CALL Sprite_RenderQuad) — 2D overlay
-            if (g_hideBall) {
-                api->PatchMemory(0x402F8A, "\x90\x90\x90", 3);
-                api->PatchMemory(0x402FE0, "\x90\x90\x90\x90\x90", 5);
-            } else {
-                api->PatchMemory(0x402F8A, "\xFF\x50\x1C", 3);
-                api->PatchMemory(0x402FE0, "\xE8\x7B\xA6\x05\x00", 5);
-            }
             printf("[FreeCam] Ball: %s\n", g_hideBall ? "HIDDEN" : "VISIBLE");
+        }
+
+        // Apply/remove ball transparency every frame
+        Ball* ball = api->GetPlayer();
+        if (ball && !IsBadReadPtr(ball, sizeof(Ball))) {
+            if (g_hideBall) {
+                *(float*)((uint8_t*)ball + 0x2FC) = 0.0f;  // fully transparent
+            } else {
+                *(float*)((uint8_t*)ball + 0x2FC) = 1.0f;  // fully opaque (normal)
+            }
         }
 
         if (!active || !initialized) return;
