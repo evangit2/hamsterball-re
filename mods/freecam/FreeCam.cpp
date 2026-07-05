@@ -4,7 +4,6 @@
 
 static bool g_hideUI = false;
 static bool g_hideBall = false;
-static float g_origBallRadius = 26.0f;
 
 // Font_DrawGlyph: RET 0x20 = 8 stack params → 10 total (ecx + edx + 8)
 typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
@@ -229,15 +228,13 @@ public:
 
     void onBallUpdate(Ball* ball) override {
         if (!ball || ball->playerID < 0) return;
+        // ball+0x324 is the game's own "skip render" flag — when non-zero,
+        // the render function skips Sprite_RenderQuad but still does all
+        // physics/transform/camera setup. Perfect for hiding the ball.
         if (g_hideBall) {
-            if (ball->radius > 0.1f) {
-                g_origBallRadius = ball->radius;
-                ball->radius = 0.0f;
-            }
+            *((uint8_t*)ball + 0x324) = 1;
         } else {
-            if (g_origBallRadius > 0.1f && ball->radius < 0.1f) {
-                ball->radius = g_origBallRadius;
-            }
+            *((uint8_t*)ball + 0x324) = 0;
         }
     }
 
