@@ -96,7 +96,6 @@ ReturnOrig:
 
 0x00406D87:
   jmp Cave
-  nop
 
 // ============================================================
 // DISABLE — restore original code
