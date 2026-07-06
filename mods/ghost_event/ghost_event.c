@@ -47,8 +47,12 @@ typedef DWORD HFX;
 #define BALL_CTOR        0x004039E0
 #define BALL_SET_TRAJECTORY 0x00403850
 #define OPERATOR_NEW     0x004BA57B
+#define OPERATOR_DELETE  0x004BA74D  /* CRT _free — pairs with operator_new's _malloc */
 #define BTT_VTABLE_ADDR  0x004D262C
 #define ATHENALIST_VT    0x004D875C
+#define ADDR_BTT_CTOR    0x00427660
+#define ADDR_BTT_DTOR    0x004278C0  /* vtable[0] — deleting destructor: __thiscall(this, flags), RET 0x4 */
+#define ADDR_ALIST_APPEND 0x00453780
 
 /* ---- Struct sizes ---- */
 #define BTT_SIZE        0x528
@@ -80,6 +84,7 @@ typedef DWORD HFX;
 #define BTT_RACE_TIME   0x420
 #define BTT_RACE_NAME   0x424
 #define BTT_BEST_TIME   0x524
+#define BTT_NAME        0x424   /* same as BTT_RACE_NAME — char[128] race name */
 
 /* ---- Ball offsets ---- */
 #define BALL_VTABLE     0x00
@@ -250,6 +255,49 @@ static void *alloc_executable(DWORD size) {
     return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 }
 
+/* ---- Inline asm wrappers for __thiscall game functions ----
+ * MinGW __thiscall function pointers silently fail — must use asm.
+ * (Proven pattern from ghost_saver v3+)
+ */
+
+/* Call BTT constructor: __thiscall(btt), ECX=btt, RET 0 */
+static void call_btt_ctor(void *btt) {
+    DWORD ctorAddr = ADDR_BTT_CTOR;
+    __asm__ volatile(
+        "movl %0, %%ecx\n\t"
+        "call *%1\n\t"
+        : : "r"(btt), "r"(ctorAddr)
+        : "eax", "ecx", "edx", "memory"
+    );
+}
+
+/* Call BTT deleting destructor: __thiscall(btt, flags=1), RET 0x4.
+ * flags=1 calls internal dtor (frees snapshots+list) then operator delete
+ * (frees the BTT struct itself) — full destroy matching operator_new. */
+static void call_btt_dtor(void *btt) {
+    DWORD dtorAddr = ADDR_BTT_DTOR;
+    __asm__ volatile(
+        "push $1\n\t"
+        "movl %0, %%ecx\n\t"
+        "call *%1\n\t"
+        : : "r"(btt), "r"(dtorAddr)
+        : "eax", "ecx", "edx", "memory"
+    );
+}
+
+/* Call AthenaList_Append: __thiscall(list, item), RET 0x4.
+ * Callee cleans up the 4-byte stack param itself — do NOT add $4 to ESP. */
+static void call_alist_append(DWORD *list, void *item) {
+    DWORD appendAddr = ADDR_ALIST_APPEND;
+    __asm__ volatile(
+        "push %1\n\t"
+        "movl %0, %%ecx\n\t"
+        "call *%2\n\t"
+        : : "r"(list), "r"(item), "r"(appendAddr)
+        : "eax", "ecx", "edx", "memory"
+    );
+}
+
 /* ---- Utility: get board pointer ----
  * Verified chain: App(0x5341E0) -> +0x220 (PlayerProfile*) -> +0xC (Board*)
  * This is the same chain used by ghost_saver and confirmed in Board_ctor.
@@ -270,8 +318,6 @@ static DWORD get_board(DWORD app) {
 /* ---- State ---- */
 static DWORD g_moduleBase = 0x00400000;
 static DWORD g_loadedBTT = 0;
-static DWORD g_loadedSnapshots = 0;   /* malloc'd snapshots buffer */
-static DWORD g_loadedListArray = 0;   /* malloc'd list_array of snapshot ptrs */
 static BOOL  g_ghostActive = FALSE;
 static char  g_pendingGhostFile[256] = "";
 static BOOL  g_ghostBallCreated = FALSE;  /* TRUE if WE created the ghost ball (not the game) */
@@ -401,13 +447,17 @@ static int load_ghost_file(const char *filename, DWORD **outSnapshots, DWORD *ou
     }
 
     if (header.magic != GHOST_MAGIC) {
-        /* Legacy format: first 8 bytes = frameCount + finishTime (no magic/version)
-         * This is for hypothetical pre-v22 files. ghost_saver v22+ always writes magic. */
-        LOG("No magic, legacy format (magic=0x%X)", header.magic);
+        /* Legacy format: first 8 bytes = frameCount + finishTime (no magic/version).
+         * We read 16 bytes (sizeof GhostFileHeader) but legacy data only has
+         * 8 header bytes — the next 8 bytes we consumed are actually snapshot data.
+         * Seek back 8 bytes so snapshot reading starts at the right offset. */
+        LOG("No magic, legacy format (magic=0x%X) — seeking back 8 bytes", header.magic);
         DWORD count = header.magic;      /* first DWORD = frameCount */
         DWORD time = header.version;     /* second DWORD = finishTime */
         header.frameCount = count;
         header.time = time;
+        /* Seek to offset 8 (after the 2 DWORD legacy header) */
+        SetFilePointer(hFile, 8, NULL, FILE_BEGIN);
     } else {
         LOG("Magic OK: v%d time=%d frames=%d", header.version, header.time, header.frameCount);
     }
@@ -437,44 +487,70 @@ static int load_ghost_file(const char *filename, DWORD **outSnapshots, DWORD *ou
     return 1;
 }
 
-/* ---- BTT construction ---- */
-static DWORD create_btt_from_ghost(DWORD *snapshots, DWORD count, DWORD finishTime) {
-    /* Allocate BTT via operator_new (game heap) */
+/* ---- BTT construction ----
+ * Uses the game's own BTT constructor (0x427660) + operator_new for heap
+ * consistency. Each snapshot is individually allocated via operator_new and
+ * appended via AthenaList_Append — this way the game's BTT destructor can
+ * safely _free() each snapshot without heap corruption.
+ * (Pattern proven in ghost_saver v18+.)
+ */
+static DWORD create_btt_from_ghost(DWORD *snapshots, DWORD count, DWORD finishTime, const char *raceName) {
+    /* Allocate BTT via game's operator_new so the game can safely free it later */
     typedef void* (__cdecl *operator_new_t)(size_t);
     operator_new_t game_operator_new = (operator_new_t)OPERATOR_NEW;
     DWORD bttAddr = (DWORD)game_operator_new(BTT_SIZE);
     if (!bttAddr) {
-        bttAddr = (DWORD)malloc(BTT_SIZE);
-        if (!bttAddr) return 0;
+        LOG("operator_new failed for BTT");
+        return 0;
     }
+    LOG("BTT allocated at 0x%08X (via game operator_new)", bttAddr);
 
-    memset((void*)bttAddr, 0, BTT_SIZE);
+    /* Call the REAL BTT constructor — sets up vtable, AthenaList, internals */
+    call_btt_ctor((void*)bttAddr);
 
-    /* Set vtable */
-    *(DWORD*)bttAddr = BTT_VTABLE_ADDR;
+    /* Verify constructor succeeded (vtable must be 0x4D262C) */
+    DWORD vtable = *(DWORD*)bttAddr;
+    if (vtable != BTT_VTABLE_ADDR) {
+        LOG("ERROR: BTT ctor failed — vtable=0x%X (expected 0x%X)", vtable, BTT_VTABLE_ADDR);
+        /* Constructor failed — calling dtor would crash on uninitialized state.
+         * Free via CRT _free (0x4BA74D) which pairs with operator_new's _malloc. */
+        typedef void (__cdecl *game_free_t)(void*);
+        game_free_t game_free = (game_free_t)OPERATOR_DELETE;
+        game_free((void*)bttAddr);
+        return 0;
+    }
+    LOG("BTT ctor OK (vtable verified)");
 
-    /* Initialize embedded AthenaList */
-    *(DWORD*)(bttAddr + BTT_AL_VTABLE) = ATHENALIST_VT;
-    *(DWORD*)(bttAddr + BTT_AL_COUNT) = count;
-    *(DWORD*)(bttAddr + BTT_PLAYBACK_IDX) = 0;
-    *(DWORD*)(bttAddr + BTT_RACE_TIME) = finishTime;
+    /* Set best time and race name */
     *(DWORD*)(bttAddr + BTT_BEST_TIME) = finishTime;
-
-    /* Allocate list_array: array of DWORD pointers, one per snapshot */
-    DWORD *listArray = (DWORD*)malloc(count * 4);
-    if (!listArray) { free((void*)bttAddr); return 0; }
-
-    for (DWORD i = 0; i < count; i++) {
-        listArray[i] = (DWORD)((BYTE*)snapshots + i * SNAP_SIZE);
+    if (raceName && raceName[0]) {
+        char *bttName = (char*)(bttAddr + BTT_NAME);
+        strncpy(bttName, raceName, 127);
+        bttName[127] = '\0';
     }
 
-    *(DWORD*)(bttAddr + BTT_LIST_ARRAY) = (DWORD)listArray;
+    /* Append each snapshot individually via operator_new + AthenaList_Append.
+     * This ensures each snapshot is a separate heap allocation that the game's
+     * BTT destructor can safely _free() individually. */
+    DWORD *alist = (DWORD*)(bttAddr + 0x04);  /* embedded AthenaList at BTT+4 */
+    DWORD appended = 0;
+    for (DWORD i = 0; i < count; i++) {
+        DWORD *snap = (DWORD*)game_operator_new(SNAP_SIZE);
+        if (!snap) {
+            LOG("ERROR: operator_new failed for snapshot %d", i);
+            continue;
+        }
+        memcpy(snap, (BYTE*)snapshots + i * SNAP_SIZE, SNAP_SIZE);
+        call_alist_append(alist, snap);
+        appended++;
+    }
+    LOG("Appended %d snapshots via AthenaList_Append", appended);
 
-    /* Track for cleanup */
-    g_loadedSnapshots = (DWORD)snapshots;
-    g_loadedListArray = (DWORD)listArray;
+    /* Reset playback index to 0 */
+    *(DWORD*)(bttAddr + BTT_PLAYBACK_IDX) = 0;
 
-    LOG("BTT created at 0x%08X: count=%d, array=0x%08X", bttAddr, count, listArray);
+    LOG("BTT created at 0x%08X: count=%d, time=%d, name='%s'",
+        bttAddr, appended, finishTime, raceName ? raceName : "(none)");
     return bttAddr;
 }
 
@@ -514,10 +590,18 @@ static DWORD create_ghost_ball(DWORD board) {
     );
     LOG("Step 2: Ball_ctor returned OK");
 
+    /* Verify Ball_ctor succeeded — vtable must be set.
+     * Ball vtable is at 0x4CF3A0 (confirmed from Ball_Update decomp). */
+    DWORD ballVtable = *(DWORD*)ballAddr;
+    if (!ballVtable || IsBadReadPtr((void*)ballVtable, 4)) {
+        LOG("ERROR: Ball_ctor failed — vtable=0x%X (bad ptr)", ballVtable);
+        return 0;
+    }
+    LOG("Step 2: ball vtable=0x%08X (verified OK)", ballVtable);
+
     /* Step 3: ball->vtable[1]() — Ball_SetupCollisionRender */
-    DWORD vtable = *(DWORD*)ballAddr;
-    DWORD func1 = *(DWORD*)(vtable + 0x04);
-    LOG("Step 3: calling vtable[1]=0x%08X on ball 0x%08X...", func1);
+    DWORD func1 = *(DWORD*)(ballVtable + 0x04);
+    LOG("Step 3: calling vtable[1]=0x%08X on ball 0x%08X...", func1, ballAddr);
     __asm__ volatile (
         "movl %0, %%ecx\n\t"
         "call *%1\n\t"
@@ -560,17 +644,18 @@ static DWORD create_ghost_ball(DWORD board) {
 }
 
 /* ---- Cleanup previous ghost resources ----
- * Destroys old ghost ball (if we created it) and frees old BTT/snapshots.
- * Called before loading a new ghost to prevent memory leaks.
+ * Destroys old ghost ball (if we created it) and destroys old BTT via the
+ * game's own destructor (which safely frees all snapshots individually).
+ * Called before loading a new ghost, when the board is lost, and on DLL detach.
  *
  * Ball vtable[0] = 0x402A50 = deleting destructor:
  *   __thiscall(ball, flags=1), RET 0x4
  *   Calls GameObject_dtor (frees child objects, timers, etc.) then frees the struct.
  *
- * BTT cleanup is manual because our BTT was constructed non-standardly
- * (snapshots are a single contiguous malloc buffer, not individually allocated).
- * The game's BTT dtor tries to _free() each snapshot individually — would crash.
- * So we manually: free the BTT struct (operator_delete), free list_array, free snapshots.
+ * BTT cleanup: call BTT vtable[0] (0x4278C0) deleting destructor with flags=1.
+ * This iterates the AthenaList and _free()s each snapshot individually, then
+ * frees the BTT struct itself — all via the game's own heap. Safe because we
+ * allocated each snapshot individually via operator_new + AthenaList_Append.
  */
 static void cleanup_previous_ghost(DWORD app) {
     DWORD board = get_board(app);
@@ -580,15 +665,13 @@ static void cleanup_previous_ghost(DWORD app) {
         if (board) {
             DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
             if (ghostBall && !IsBadReadPtr((void*)ghostBall, 0x100)) {
-                /* Call ball->vtable[0](ball, 1) — deleting destructor */
                 DWORD dtorAddr = BALL_DELETING_DTOR;
                 DWORD flags = 1;
                 __asm__ volatile (
                     "push %1\n\t"
                     "movl %0, %%ecx\n\t"
                     "call *%2\n\t"
-                    :
-                    : "r"(ghostBall), "r"(flags), "r"(dtorAddr)
+                    : : "r"(ghostBall), "r"(flags), "r"(dtorAddr)
                     : "eax", "ecx", "edx", "memory"
                 );
                 *(DWORD*)(board + BOARD_GHOST_BALL) = 0;
@@ -606,25 +689,23 @@ static void cleanup_previous_ghost(DWORD app) {
         }
     }
 
-    /* 3. Free old BTT struct (allocated via operator_new, so use operator_delete) */
+    /* 3. Destroy old BTT via game's deleting destructor (flags=1).
+     * This safely frees all snapshots + list + BTT struct via the game's heap.
+     * Safe because snapshots were individually allocated via operator_new. */
     if (g_loadedBTT) {
-        typedef void (__cdecl *operator_delete_t)(void*);
-        operator_delete_t game_operator_delete = (operator_delete_t)OPERATOR_DELETE;
-        game_operator_delete((void*)g_loadedBTT);
-        LOG("Old BTT freed at 0x%08X", g_loadedBTT);
+        if (!IsBadReadPtr((void*)g_loadedBTT, 0x100)) {
+            DWORD vt = *(DWORD*)g_loadedBTT;
+            if (vt == BTT_VTABLE_ADDR) {
+                call_btt_dtor((void*)g_loadedBTT);
+                LOG("Old BTT destroyed via game dtor at 0x%08X", g_loadedBTT);
+            } else {
+                LOG("Old BTT vtable mismatch (0x%X) — freeing via CRT _free", vt);
+                typedef void (__cdecl *game_free_t)(void*);
+                game_free_t game_free = (game_free_t)OPERATOR_DELETE;
+                game_free((void*)g_loadedBTT);
+            }
+        }
         g_loadedBTT = 0;
-    }
-
-    /* 4. Free old list_array (malloc'd by us) */
-    if (g_loadedListArray) {
-        free((void*)g_loadedListArray);
-        g_loadedListArray = 0;
-    }
-
-    /* 5. Free old snapshots buffer (malloc'd by us) */
-    if (g_loadedSnapshots) {
-        free((void*)g_loadedSnapshots);
-        g_loadedSnapshots = 0;
     }
 
     g_ghostActive = FALSE;
@@ -663,7 +744,7 @@ void __cdecl frame_epilogue_handler(void) {
             return;
         }
 
-        DWORD newBTT = create_btt_from_ghost(snapshots, count, finishTime);
+        DWORD newBTT = create_btt_from_ghost(snapshots, count, finishTime, filename);
         if (!newBTT) {
             free(snapshots);
             LOG("Failed to create BTT");
@@ -696,25 +777,33 @@ void __cdecl frame_epilogue_handler(void) {
         LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X", newBTT, ghostBall);
     }
 
-    /* Advance playback index every frame — REMOVED.
-     * The game itself calls BestTimeTracker_PlaybackSnapshot (0x427690)
-     * every frame when App+0x910 is non-NULL. This function advances the
-     * playback index internally. Our manual advance was causing 2x speed.
-     * We only need to check if the ghost ball is still alive. */
+    /* Check if ghost is still active — clean up if board or ball is lost.
+     * This handles level transitions: when the board is destroyed and recreated,
+     * the old BTT must be cleaned up to prevent crashes on the new level. */
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
             DWORD board = get_board(app2);
-            if (board) {
+            if (!board) {
+                /* Board is gone — level transition or race end.
+                 * Must clear App+0x910 and destroy BTT before new level loads,
+                 * otherwise the game's own cleanup will try to _free() our
+                 * BTT snapshots and crash. */
+                LOG("Board lost — cleaning up ghost resources");
+                cleanup_previous_ghost(app2);
+            } else {
                 DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
                 if (!ghostBall || IsBadReadPtr((void*)ghostBall, 0x100)) {
-                    LOG("Ghost ball lost, deactivating");
-                    g_ghostActive = FALSE;
+                    /* Ghost ball was destroyed by the game but BTT remains.
+                     * Clear BTT to prevent dangling playback. */
+                    LOG("Ghost ball lost — cleaning up ghost resources");
+                    cleanup_previous_ghost(app2);
                 }
-            } else {
-                LOG("Board lost, deactivating");
-                g_ghostActive = FALSE;
             }
+        } else {
+            /* App itself is gone — shouldn't happen but be safe */
+            LOG("App lost — deactivating ghost");
+            g_ghostActive = FALSE;
         }
     }
 }
@@ -896,9 +985,9 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
     }
     else if (reason == DLL_PROCESS_DETACH) {
         /* Clean up our BTT before the game's shutdown destroys it.
-         * The game's BTT dtor calls _free() on each snapshot pointer,
-         * but our snapshots are a single contiguous malloc block — 
-         * individual frees crash. Null out App+0x910 so the game skips it. */
+         * Since snapshots are now individually allocated via operator_new
+         * and appended via AthenaList_Append, we can safely call the game's
+         * BTT destructor (which iterates and frees each snapshot). */
         if (g_loadedBTT) {
             DWORD app = *(DWORD*)APP_PTR;
             if (app && !IsBadReadPtr((void*)app, 0x1000)) {
@@ -908,10 +997,21 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
                     LOG("DLL_PROCESS_DETACH: cleared App+0x910 (was our BTT 0x%08X)", g_loadedBTT);
                 }
             }
-            /* Free our BTT struct (not via vtable dtor — would crash on contiguous snapshots) */
-            if (g_loadedListArray) { free((void*)g_loadedListArray); g_loadedListArray = 0; }
-            if (g_loadedSnapshots) { free((void*)g_loadedSnapshots); g_loadedSnapshots = 0; }
-            free((void*)g_loadedBTT);
+            /* Destroy BTT via game destructor — safe because snapshots are
+             * individually allocated via operator_new. Vtable check prevents
+             * crash on partially-initialized BTT. */
+            if (!IsBadReadPtr((void*)g_loadedBTT, 0x100)) {
+                DWORD vt = *(DWORD*)g_loadedBTT;
+                if (vt == BTT_VTABLE_ADDR) {
+                    call_btt_dtor((void*)g_loadedBTT);
+                    LOG("DLL_PROCESS_DETACH: BTT destroyed via game dtor at 0x%08X", g_loadedBTT);
+                } else {
+                    LOG("DLL_PROCESS_DETACH: BTT vtable mismatch (0x%X) — CRT _free", vt);
+                    typedef void (__cdecl *game_free_t)(void*);
+                    game_free_t game_free = (game_free_t)OPERATOR_DELETE;
+                    game_free((void*)g_loadedBTT);
+                }
+            }
             g_loadedBTT = 0;
         }
     }
