@@ -14,12 +14,20 @@
  *     -lws2_32 -lwinmm -Wl,--enable-stdcall-fixup
  */
 
+// Include nocrt.h BEFORE everything — provides malloc/free/snprintf/etc
+// without msvcrt.dll dependency. Must come before any other includes.
+#include "nocrt.h"
 #include "HamsterballAPI.h"
-#include <windows.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
+
+// Macro shims — redirect standard CRT calls to our nc_ implementations
+#define malloc nc_malloc
+#define free nc_free
+#define memcpy nc_memcpy
+#define memset nc_memset
+#define strlen nc_strlen
+#define strcmp nc_strcmp
+#define strncpy nc_strncpy
+#define snprintf nc_snprintf
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -631,8 +639,8 @@ public:
                  roleStr, connStr, g_port);
 
         snprintf(line2, sizeof(line2),
-                 "Local FPS:%.1f  Remote FPS:%.1f  Frame:%d",
-                 g_localFps, g_remoteFps, g_frameCount);
+                 "Local FPS:%d  Remote FPS:%d  Frame:%d",
+                 (int)g_localFps, (int)g_remoteFps, g_frameCount);
 
         if (g_role == ROLE_GUEST) {
             updateHostIPString();
