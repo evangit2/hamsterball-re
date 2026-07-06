@@ -1,8 +1,23 @@
-# Netplay Mod (PoC)
+# Netplay Mod (PoC v2)
 
-**Status: PROOF OF CONCEPT — untested in multiplayer. Awaits user verification.**
+**Status: PROOF OF CONCEPT — Polished framework, awaiting user verification.**
 
 HB+ API mod for Hamsterball online multiplayer using host-authority architecture.
+
+## What Changed in v2 (Polish Pass)
+
+- **Fixed duplicate FPS calculation**: Single source of truth in `onGameUpdate`
+- **Non-blocking pipe reads**: `PeekNamedPipe` + drain loop replaces blocking `ReadFile` that stalled the pipe thread
+- **Pipe error recovery**: Auto-disconnect on broken pipe, retry with backoff
+- **Host IP UI**: 4 octet sliders (0-255 each) replace hardcoded 127.0.0.1 — guest can target any IP
+- **Proper velocity serialization**: Reads from `PhysicsObject+0xCA4/CAC` instead of ball facing direction
+- **Full P2 input pipeline**: Now sends 3-axis force (X/Y/Z) from `ball+0x2BC/2C0/2C4`
+- **HB+ API ApplyForce**: Host uses `g_api->ApplyForce()` instead of raw memory write (proper guards in Ball_ApplyForceV2)
+- **Mutually exclusive roles**: HOST/GUEST can't both be active (internal state enforces this)
+- **Data flow indicators**: On-screen display shows "LIVE"/"STALE" with frame age for both ball data (guest) and input (host)
+- **Removed unused members**: `m_renderThread`, broken `onGameUpdate` FPS path
+- **Struct field names**: `facing` renamed from misleading `vel`, actual velocity now separate field
+- **Expanded BallStateMsg**: 3-axis velocity + 2-axis facing (was only 2-axis combined)
 
 ## Architecture
 
@@ -12,7 +27,7 @@ HOST (Client A)                          GUEST (Client B)
 │ Hamsterball 2P Party Mode│            │ Hamsterball (any mode)   │
 │  └ plus_netplay.dll      │            │  └ plus_netplay.dll      │
 │     streams ball state   │            │     injects ghost ball    │
-│     ← guest input        │            │     → sends P2 input     │
+│     ← guest input force  │            │     → sends P2 force     │
 └─────────┬────────────────┘            └─────────▲────────────────┘
           │ named pipe                            │ named pipe
 ┌─────────▼────────────────┐            ┌─────────┴────────────────┐
@@ -22,75 +37,79 @@ HOST (Client A)                          GUEST (Client B)
 └──────────────────────────┘            └──────────────────────────┘
 ```
 
-## Components
+## On-Screen Overlay
 
-### 1. DLL Mod (`plus_netplay.dll`)
-- HB+ API mod (exports `CreateModInstance`)
-- UI: Toggle buttons for HOST/GUEST mode, port slider
-- On-screen overlay: role, connection status, local/remote FPS
-- Named pipe IPC to Python relay
-- **HOST**: Reads P1+P2 ball state each frame, sends to relay
-- **GUEST**: Sends P2 input force to relay, receives P1 ball state for ghost ball
-- FPS measurement and comparison between clients
-
-### 2. Python Relay (`netplay_relay.py`)
-- Runs alongside Hamsterball on each client
-- Creates named pipe server, waits for DLL to connect
-- **HOST mode**: Opens TCP server on configured port, waits for guest
-- **GUEST mode**: Connects to host's TCP server
-- Bidirectional relay: pipe ↔ TCP for ball state and input
-- Connection status reporting back to DLL
+```
+NETPLAY [HOST] Connected!  Port:5029          (green)
+Local FPS:60.0  Remote FPS:59.8  Frame:1234    (yellow)
+Remote: Guest: 192.168.1.50                    (blue)
+Input: LIVE (last 2 frames ago)                (magenta)
+```
 
 ## Installation
 
 1. Copy `plus_netplay.dll` to HB+ mods folder
-2. Run `netplay_relay.py` BEFORE starting Hamsterball
+2. Run `python netplay_relay.py` BEFORE starting Hamsterball
 3. In HB+ Options menu:
-   - Toggle "HOST Mode" to host (opens TCP server)
-   - OR toggle "GUEST Mode" to connect (connects to host IP)
-   - Set port via "Netplay Port" slider
+   - **HOST**: Toggle "HOST Mode" → relay opens TCP server
+   - **GUEST**: Set 4 IP octet sliders, toggle "GUEST Mode" → relay connects to host
 
-## Current Status (PoC)
-
-- ✅ DLL compiles, loads, `CreateModInstance` works
-- ✅ Named pipe IPC framework (DLL ↔ Python)
-- ✅ TCP networking framework (Python ↔ Python)
-- ✅ HB+ menu UI (toggle buttons, port slider)
-- ✅ On-screen status display (role, connection, FPS)
-- ✅ Ball state serialization (P1+P2 pos/vel/rot)
-- ⚠️ Ghost ball injection (framework only — needs full ghost_event-style implementation)
-- ⚠️ Input injection to P2 (basic force accumulator write — needs full ApplyForceV2)
-- ❌ Actual multiplayer testing (needs 2 clients + relay running)
-
-## Next Steps
-
-1. **Test with 2 Hamsterball instances** on same machine (localhost)
-2. **Implement ghost ball creation** (reuse ghost_event mod pattern: Ball_ctor + scene+0x361C)
-3. **Implement proper input injection** (use Ball_ApplyForceV2 instead of raw force write)
-4. **Add frame synchronization** (ensure both clients on same frame)
-5. **Add position interpolation** (smooth ghost ball movement between updates)
-
-## Files
+## Components
 
 | File | Purpose |
 |------|---------|
-| `NetplayMod.cpp` | HB+ mod source code |
-| `HamsterballAPI.h` | HB+ API header (copy of docs/agent-knowledge/) |
-| `plus_netplay.dll` | Compiled mod (MinGW i686) |
-| `netplay_relay.py` | Python relay process |
+| `NetplayMod.cpp` | HB+ mod source (C++) |
+| `HamsterballAPI.h` | HB+ API header |
+| `plus_netplay.dll` | Compiled mod (MinGW i686, 2 imports) |
+| `netplay_relay.py` | Python TCP relay process |
+
+## Pipe Protocol
+
+Binary, little-endian: `[DWORD type][DWORD length][body]`
+
+| Type | Value | Direction | Body |
+|------|-------|-----------|------|
+| ROLE_SET | 5 | DLL→relay | DWORD role (0=off, 1=host, 2=guest) |
+| PORT_SET | 6 | DLL→relay | DWORD port |
+| HOST_IP | 8 | DLL→relay | char[] IP string |
+| BALL_STATE | 2 | host→guest | BallStateMsg (76 bytes) |
+| INPUT_STATE | 3 | guest→host | InputStateMsg (16 bytes) |
+| FPS_REPORT | 4 | both | FpsReportMsg (12 bytes) |
+| STATUS | 7 | relay→DLL | StatusMsg (72 bytes) |
+
+## BallStateMsg Layout (76 bytes)
+
+```
+DWORD  frame
+float  p1_pos[3]      // x, y, z (ball+0x164/168/16C)
+float  p1_vel[3]      // actual velocity from PhysicsObject+0xCA4/CA8/CAC
+float  p1_facing[2]   // facing vector (ball+0x190/194)
+float  p1_rot        // roll angle (ball+0x150)
+float  p1_radius      // ball+0x284
+float  p1_gravity     // gravity plane (ball+0x748)
+// P2 repeats same layout
+```
+
+## Current Status
+
+- ✅ DLL compiles, loads, `CreateModInstance` verified (7/7 ad-hoc checks)
+- ✅ Non-blocking pipe I/O with error recovery
+- ✅ TCP networking (host server + guest client)
+- ✅ HB+ menu UI (2 toggles + 5 sliders)
+- ✅ On-screen overlay (role, FPS, connection, data flow)
+- ✅ Full ball state serialization (pos + vel + facing + rot + radius + gravity)
+- ✅ 3-axis force input pipeline with HB+ API ApplyForce
+- ⚠️ Ghost ball injection (framework only — needs ghost_event-style Ball_ctor)
+- ❌ Actual multiplayer testing (needs 2 clients + relay running)
 
 ## Technical Details
 
 | Property | Value |
 |----------|-------|
 | Mod type | HB+ API (not bass.dll proxy) |
-| Export | `CreateModInstance` → `NetplayMod` class |
+| Export | `CreateModInstance` → `NetplayMod` |
 | Pipe name | `\\.\pipe\hamsterball_netplay` |
 | Default port | 5029 |
-| Pipe protocol | Binary: [DWORD type][DWORD len][data] |
-| TCP protocol | Binary: [uint16 total_len][DWORD type][DWORD data_len][data] |
-| Ball state msg | 44 bytes: frame + P1(10 floats) + P2(10 floats) |
-| Input state msg | 16 bytes: frame + dir_x + dir_y + force_mult |
-| FPS report msg | 16 bytes: local_fps + remote_fps + frame_count |
-| Pipe poll rate | ~120Hz (8ms sleep) |
-| Heartbeat interval | 300 frames |
+| Pipe poll rate | ~250Hz (4ms sleep) |
+| Heartbeat interval | 300 frames (~5s at 60fps) |
+| Imports | KERNEL32.dll, msvcrt.dll only |
