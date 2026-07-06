@@ -103,3 +103,4 @@ extern "C" void* __cdecl malloc(size_t size) {
 extern "C" void __cdecl free(void* ptr) {
     nc_free(ptr);
 }
+
