@@ -1,270 +1,62 @@
 // ============================================================
-// Arena Instant Respawn v1
+// Arena Instant Respawn v2
 // ============================================================
-// Replaces spawn platform respawn with instant teleport
-// to original spawn position for entity balls in arenas.
+// Makes ALL entity balls in arenas respawn the same way
+// player 1 respawns in races — via Ball_Respawn (0x405190)
+// which uses LGP (last grounded position) to find nearest
+// safespot and teleports ball there on the ground.
 //
-// When entity balls (BadBalls) fall or break, they instantly
-// respawn at their original spawn point instead of going
-// through the expensive SAFESPOT search (Mesh_FindClosestCollision)
-// that causes freezing when 5+ balls respawn simultaneously.
+// Original game behavior:
+//   Player balls (ball+0x18 != -1) → Ball_Respawn (safespot search)
+//   Entity balls (ball+0x18 == -1) → DESTROYED + new ball spawned
 //
-// Hook 1: Ball_FallDeath (0x409480) - vtable[8] for player balls
-//         Entity balls created by CreateBadBall use this vtable.
-//         Original spawn pos stored at ball+0xC60/0xC64/0xC68.
+// Patched behavior:
+//   ALL balls → Ball_Respawn (safespot search, same as races)
 //
-// Hook 2: BadBall_StartFallCountdown (0x402390) - vtable[8] for BadBalls
-//         Catches balls with the BadBall vtable (0x4CF494).
+// Patch 1: Scene_UpdateBallsAndState list 1 (scene+0x29D4)
+//   0x41B5A9: JNZ → JMP (entity balls go to Ball_Respawn)
 //
-// Ball layout:
-//   +0x18    = player slot (-1 = entity ball)
-//   +0x164   = pos X (float)
-//   +0x168   = pos Y (float)
-//   +0x16C   = pos Z (float)
-//   +0x170   = velocity X
-//   +0x174   = velocity Y
-//   +0x178   = velocity Z
-//   +0x17C   = force X
-//   +0x180   = force Y
-//   +0x184   = force Z
-//   +0x1A4   = physics ptr
-//   +0x284   = radius (float)
-//   +0x2E8   = death_pending (byte)
-//   +0x2E9   = falling flag (byte)
-//   +0x2EC   = bounce_count (dword)
-//   +0x2F9   = respawn invuln (byte)
-//   +0x2FC   = alpha (float, 0=opaque)
-//   +0x300   = invuln timer (dword)
-//   +0x310   = position update flag (byte)
-//   +0x314   = (dword)
-//   +0x31D   = (byte)
-//   +0x324   = split ball flag (byte, 1=skip respawn)
-//   +0xC60   = stored spawn X (float) / fall countdown timer (1.0f for BadBalls)
-//   +0xC64   = stored spawn Y (float)
-//   +0xC68   = stored spawn Z (float)
-//
-//   phys+0xCA4/CA8/CAC = velocity (3 floats)
-//   phys+0xC74         = (dword)
-//
-//   0x4CF55C = game's spawn offset constant (float, used in CreateBadBall)
+// Patch 2: Scene_UpdateBallsAndState list 2 (scene+0x3204)
+//   0x41B64E: JZ → NOP NOP (entity balls fall through to Ball_Respawn)
 // ============================================================
 
 [ENABLE]
 
-alloc(enabled, 1)
-registersymbol(enabled)
-mov byte [enabled], 1
+alloc(ArenaInstantRespawn_Orig1,2)
+alloc(ArenaInstantRespawn_Orig2,2)
 
-alloc(falldeath_cave, 512)
-alloc(badball_cave, 512)
+registersymbol(ArenaInstantRespawn_Orig1)
+registersymbol(ArenaInstantRespawn_Orig2)
 
-// ============================================================
-// Hook 1: Ball_FallDeath (0x409480)
-// Original 8 bytes: 6A FF 64 A1 00 00 00 00
-//   push -1
-//   mov eax, fs:[0]
-// Patched with: JMP falldeath_cave + 3 NOPs
-// ============================================================
+// Save original bytes
+ArenaInstantRespawn_Orig1:
+  readmem(0041B5A9,2)
 
-falldeath_cave:
-  // Check if mod is enabled
-  cmp byte [enabled], 1
-  jne falldeath_original
+ArenaInstantRespawn_Orig2:
+  readmem(0041B64E,2)
 
-  // Only intercept entity balls (ball+0x18 == -1, no player slot)
-  cmp [ecx+0x18], -1
-  jne falldeath_original
+// Patch 1: List 1 — entity balls use Ball_Respawn instead of being destroyed
+// Original: 75 22 (JNZ 0041B5CD) — only player balls go to Ball_Respawn
+// Patched:  EB 22 (JMP 0041B5CD) — ALL non-split balls go to Ball_Respawn
+0041B5A9:
+  db EB 22
 
-  // Skip split balls (ball+0x324 != 0)
-  cmp byte [ecx+0x324], 0
-  jne falldeath_original
-
-  // Check if spawn position is valid
-  // ball+0xC60 should be a position coordinate, not 0 or 1.0f (timer)
-  mov eax, [ecx+0xC60]
-  test eax, eax
-  jz falldeath_original
-  cmp eax, 3F800000       // 1.0f = BadBall timer, not a position
-  je falldeath_original
-
-  // === Instant respawn ===
-  push eax
-  push ebx
-  push edx
-
-  // Teleport to stored spawn position
-  // X = spawnX + game_offset
-  fld dword [ecx+0xC60]
-  fadd dword [004CF55C]
-  fstp dword [ecx+0x164]
-
-  // Y = spawnY + radius
-  fld dword [ecx+0xC64]
-  fadd dword [ecx+0x284]
-  fstp dword [ecx+0x168]
-
-  // Z = spawnZ + game_offset
-  fld dword [ecx+0xC68]
-  fadd dword [004CF55C]
-  fstp dword [ecx+0x16C]
-
-  // Zero velocity
-  mov dword [ecx+0x170], 0
-  mov dword [ecx+0x174], 0
-  mov dword [ecx+0x178], 0
-
-  // Zero force accumulators
-  mov dword [ecx+0x17C], 0
-  mov dword [ecx+0x180], 0
-  mov dword [ecx+0x184], 0
-
-  // Zero physics velocity
-  mov eax, [ecx+0x1A4]
-  test eax, eax
-  jz falldeath_skip_phys
-  mov dword [eax+0xCA4], 0
-  mov dword [eax+0xCA8], 0
-  mov dword [eax+0xCAC], 0
-  mov dword [eax+0xC74], 0
-falldeath_skip_phys:
-
-  // Clear fall/death flags
-  mov byte [ecx+0x2E8], 0       // death_pending
-  mov byte [ecx+0x2E9], 0       // falling
-  mov dword [ecx+0x2EC], 0      // bounce_count
-
-  // Set respawn invulnerability
-  mov byte [ecx+0x2F9], 1       // respawn flag
-  mov dword [ecx+0x2FC], 0      // alpha = 0 (opaque)
-  mov dword [ecx+0x300], 96     // invuln timer = 150 ticks (0x96)
-
-  // Position update flag
-  mov byte [ecx+0x310], 1
-  mov dword [ecx+0x314], 0
-  mov byte [ecx+0x31D], 0
-
-  pop edx
-  pop ebx
-  pop eax
-  ret
-
-falldeath_original:
-  // Execute original 8 bytes and continue
-  push -1
-  mov eax, fs:[0]
-  jmp 00409488
-
-// ============================================================
-// Hook 2: BadBall_StartFallCountdown (0x402390)
-// Original 10 bytes: 81 B9 60 0C 00 00 00 00 80 3F
-//   cmp dword [ecx+0xC60], 0x3F800000
-// Patched with: JMP badball_cave + 5 NOPs
-// ============================================================
-
-badball_cave:
-  // Check if mod is enabled
-  cmp byte [enabled], 1
-  jne badball_original
-
-  // For BadBall vtable balls, ball+0xC60 is the timer (1.0f)
-  // If it's 1.0f, the spawn position was overwritten - can't teleport
-  // Fall through to original countdown in that case
-  mov eax, [ecx+0xC60]
-  cmp eax, 3F800000
-  je badball_original
-
-  // Check if spawn position is valid
-  test eax, eax
-  jz badball_original
-
-  // === Instant respawn (same as falldeath) ===
-  push eax
-  push ebx
-  push edx
-
-  fld dword [ecx+0xC60]
-  fadd dword [004CF55C]
-  fstp dword [ecx+0x164]
-
-  fld dword [ecx+0xC64]
-  fadd dword [ecx+0x284]
-  fstp dword [ecx+0x168]
-
-  fld dword [ecx+0xC68]
-  fadd dword [004CF55C]
-  fstp dword [ecx+0x16C]
-
-  mov dword [ecx+0x170], 0
-  mov dword [ecx+0x174], 0
-  mov dword [ecx+0x178], 0
-  mov dword [ecx+0x17C], 0
-  mov dword [ecx+0x180], 0
-  mov dword [ecx+0x184], 0
-
-  mov eax, [ecx+0x1A4]
-  test eax, eax
-  jz badball_skip_phys
-  mov dword [eax+0xCA4], 0
-  mov dword [eax+0xCA8], 0
-  mov dword [eax+0xCAC], 0
-  mov dword [eax+0xC74], 0
-badball_skip_phys:
-
-  mov byte [ecx+0x2E8], 0
-  mov byte [ecx+0x2E9], 0
-  mov dword [ecx+0x2EC], 0
-  mov byte [ecx+0x2F9], 1
-  mov dword [ecx+0x2FC], 0
-  mov dword [ecx+0x300], 96
-  mov byte [ecx+0x310], 1
-  mov dword [ecx+0x314], 0
-  mov byte [ecx+0x31D], 0
-
-  pop edx
-  pop ebx
-  pop eax
-  ret
-
-badball_original:
-  // Execute original function
-  cmp dword [ecx+0xC60], 3F800000
-  jnz badball_skip_set
-  mov dword [ecx+0xC60], 3F7D70A4
-badball_skip_set:
-  ret
-
-// ============================================================
-// Apply patches
-// ============================================================
-
-// Ball_FallDeath at 0x409480 (8 bytes patched)
-00409480:
-  jmp falldeath_cave
-  nop
-  nop
-  nop
-
-// BadBall_StartFallCountdown at 0x402390 (10 bytes patched)
-00402390:
-  jmp badball_cave
-  nop
-  nop
-  nop
-  nop
-  nop
+// Patch 2: List 2 — entity balls fall through to Ball_Respawn
+// Original: 74 09 (JZ 0041B659) — entity balls jump to destroy path
+// Patched:  90 90 (NOP NOP)     — entity balls fall through to Ball_Respawn
+0041B64E:
+  db 90 90
 
 [DISABLE]
 
-// Restore Ball_FallDeath original bytes
-00409480:
-  db 6A FF 64 A1 00 00 00 00
+// Restore original bytes
+0041B5A9:
+  readmem(ArenaInstantRespawn_Orig1,2)
 
-// Restore BadBall_StartFallCountdown original bytes
-00402390:
-  db 81 B9 60 0C 00 00 00 00 80 3F
+0041B64E:
+  readmem(ArenaInstantRespawn_Orig2,2)
 
-// Cleanup
-dealloc(falldeath_cave)
-dealloc(badball_cave)
-dealloc(enabled)
-unregistersymbol(enabled)
+dealloc(ArenaInstantRespawn_Orig1)
+dealloc(ArenaInstantRespawn_Orig2)
+unregistersymbol(ArenaInstantRespawn_Orig1)
+unregistersymbol(ArenaInstantRespawn_Orig2)

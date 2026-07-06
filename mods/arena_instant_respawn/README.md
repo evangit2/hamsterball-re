@@ -1,49 +1,47 @@
-# Arena Instant Respawn v1
+# Arena Instant Respawn v2
 
-## What it does
-Replaces the spawn platform respawn system in arenas with instant teleport respawn for entity balls (BadBalls). When entity balls fall or break, they instantly teleport back to their original spawn position instead of going through the expensive SAFESPOT search via `Mesh_FindClosestCollision`.
+## What It Does
 
-## Problem
-In arenas, when 5+ entity balls fall/respawn simultaneously, the game freezes. This is because `Ball_Respawn` (0x405190) calls `Mesh_FindClosestCollision` for each ball, and doing 5+ collision searches in one frame causes a massive frame spike.
+Makes ALL entity balls in arenas (BadBalls, AI balls) respawn the same way player 1 respawns in races — via `Ball_Respawn` (0x405190), which uses the ball's LGP (last grounded position) to find the nearest safespot and teleports the ball there on the ground.
 
-## Solution
-Two hooks intercept the fall/death path for entity balls:
+**Original behavior:** Entity balls (ball+0x18 == -1) that fall off the arena are destroyed, then a new ball is spawned via CreateBadBall at the original spawn position. This causes freezes when 5+ balls trigger the expensive Mesh_FindClosestCollision simultaneously.
 
-1. **Ball_FallDeath (0x409480)** — vtable[8] for player-type balls (used by BADBALL entities). Instead of shattering the ball and setting death_pending, instantly teleports to stored spawn position at ball+0xC60/0xC64/0xC68.
+**Patched behavior:** ALL balls go through `Ball_Respawn`, which:
+1. Searches the safespot list (board+0x1518) for the nearest spawn point to the ball's LGP
+2. Teleports the ball to the safespot position on the ground (Y = safespot_y + radius)
+3. Zeroes all velocity
+4. Sets respawn timer (150 frames)
+5. Clears death flags, makes ball briefly invisible
 
-2. **BadBall_StartFallCountdown (0x402390)** — vtable[8] for BadBall vtable balls. Same instant teleport, but only if ball+0xC60 contains a valid position (not the 1.0f countdown timer).
+## How It Works
 
-## What gets skipped
-- Ball shattering (2 Ball_Split fragments + ArenaScoreParticle ring)
-- Ball_Respawn's expensive SAFESPOT search (Mesh_FindClosestCollision)
-- The freeze when 5+ balls respawn simultaneously
+`Scene_UpdateBallsAndState` (0x41B540) iterates two ball lists per frame:
 
-## What still works
-- Player balls (ball+0x18 != -1) use original Ball_FallDeath — unaffected
-- Split balls (ball+0x324 != 0) use original — unaffected
-- BadBall vtable balls with timer at +0xC60 fall through to original countdown
+**List 1 (scene+0x29D4)** — primary balls (players + arena entity balls):
+- At 0x41B5A9: `JNZ 0x41B5CD` — only player balls (ball+0x18 != -1) go to Ball_Respawn
+- Entity balls fall through to destroy path (unless App+0x237 arena flag is set)
 
-## Ball offsets used
-| Offset | Type | Description |
-|--------|------|-------------|
-| +0x18 | int | Player slot (-1 = entity ball) |
-| +0x164/168/16C | float | Position X/Y/Z |
-| +0x170/174/178 | float | Velocity X/Y/Z |
-| +0x17C/180/184 | float | Force X/Y/Z |
-| +0x1A4 | ptr | Physics object |
-| +0x284 | float | Radius |
-| +0x2E8 | byte | Death pending |
-| +0x2E9 | byte | Falling flag |
-| +0x2EC | dword | Bounce count |
-| +0x2F9 | byte | Respawn invuln |
-| +0x2FC | float | Alpha (0=opaque) |
-| +0x300 | dword | Invuln timer |
-| +0x310 | byte | Position update flag |
-| +0x324 | byte | Split ball flag |
-| +0xC60/0xC64/0xC68 | float | Stored spawn X/Y/Z (from CreateBadBall) |
+**List 2 (scene+0x3204)** — secondary balls:
+- At 0x41B64E: `JZ 0x41B659` — entity balls always jump to destroy path
 
-## Game constants
-- 0x4CF55C = float 5.0 (spawn position offset, used by CreateBadBall)
+### Patches
+
+| Address | Original | Patched | Effect |
+|---------|----------|---------|--------|
+| 0x41B5A9 | `75 22` (JNZ) | `EB 22` (JMP) | List 1: ALL non-split balls go to Ball_Respawn |
+| 0x41B64E | `74 09` (JZ) | `90 90` (NOP) | List 2: entity balls fall through to Ball_Respawn |
+
+## Why v1 Failed
+
+v1 hooked `Ball_FallDeath` (0x409480) and `BadBall_StartFallCountdown` (0x402390) — these are vtable[8] handlers called when balls fall. But the actual arena respawn flow doesn't go through these for the freeze issue. The real flow is:
+
+1. Ball falls off arena → death_pending flag (ball+0x2E8) set
+2. `Scene_UpdateBallsAndState` checks ball+0x2E8 next frame
+3. If entity ball: calls `AthenaList_Remove` + `ball_dtor` → ball destroyed
+4. `CreateBadBall` spawns new ball → expensive `Mesh_FindClosestCollision`
+
+v1 hooks never fired because the balls were destroyed before reaching the vtable[8] handlers. v2 patches the condition check directly in `Scene_UpdateBallsAndState` so entity balls take the Ball_Respawn path instead.
 
 ## Files
-- `ArenaInstantRespawn.CEA` — Pure CEA script, ENABLE/DISABLE, no debugs
+
+- `ArenaInstantRespawn.CEA` — CE Auto Assembler script (pure CEA, no Lua)
