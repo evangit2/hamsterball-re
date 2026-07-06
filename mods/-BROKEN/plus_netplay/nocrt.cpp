@@ -85,7 +85,7 @@ BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID) {
 extern "C" void* __cdecl memset(void* dst, int val, size_t count) {
     return nc_memset(dst, val, count);
 }
-extern "C" void* __cdecl memcpy(void* dst, const void* src, size_t count) {
+static void* __cdecl memcpy(void* dst, const void* src, size_t count) {
     return nc_memcpy(dst, src, count);
 }
 extern "C" size_t __cdecl strlen(const char* s) {
