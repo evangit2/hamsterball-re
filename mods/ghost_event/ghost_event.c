@@ -151,13 +151,7 @@ static int  (__stdcall *real_BASS_ErrorGetCode)(void);
 static int  (__stdcall *real_BASS_ChannelStop)(DWORD);
 
 BOOL __stdcall BASS_Init(int device, int freq, DWORD flags, HWND win, const void *dsguid) {
-    LOG("BASS_Init(dev=%d freq=%d flags=%u win=0x%X)", device, freq, flags, win);
-    if (real_BASS_Init) {
-        BOOL r = real_BASS_Init(device, freq, flags, win, dsguid);
-        LOG("BASS_Init -> %d (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
-        return r;
-    }
-    LOG("BASS_Init: no real_BASS_Init, returning TRUE");
+    if (real_BASS_Init) return real_BASS_Init(device, freq, flags, win, dsguid);
     return TRUE;
 }
 void __stdcall BASS_Free(void) {
@@ -172,14 +166,8 @@ BOOL __stdcall BASS_StreamFree(HSTREAM handle) {
     return FALSE;
 }
 HMUSIC __stdcall BASS_MusicLoad(BOOL mem, const void *file, DWORD offset, DWORD length, DWORD flags, DWORD freq) {
-    LOG("BASS_MusicLoad(mem=%d file=%s off=%u len=%u flags=%u freq=%u)", mem, file ? (char*)file : "(null)", offset, length, flags, freq);
-    if (real_BASS_MusicLoad) {
-        HMUSIC r = real_BASS_MusicLoad(mem, file, offset, length, flags, freq);
-        LOG("BASS_MusicLoad -> 0x%X (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
-        return r;
-    }
-    LOG("BASS_MusicLoad: no real, returning fake handle 1");
-    return (HMUSIC)1;  /* non-zero handle required or game crashes */
+    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(mem, file, offset, length, flags, freq);
+    return (HMUSIC)1;
 }
 BOOL __stdcall BASS_MusicFree(HMUSIC handle) {
     if (real_BASS_MusicFree) return real_BASS_MusicFree(handle);
@@ -190,13 +178,7 @@ BOOL __stdcall BASS_ChannelSetAttributes(DWORD handle, int freq, float volume, i
     return FALSE;
 }
 BOOL __stdcall BASS_MusicPlayEx(DWORD handle, DWORD flags, DWORD freq, BOOL ramp) {
-    LOG("BASS_MusicPlayEx(handle=0x%X flags=%u freq=%u ramp=%d)", handle, flags, freq, ramp);
-    if (real_BASS_MusicPlayEx) {
-        BOOL r = real_BASS_MusicPlayEx(handle, flags, (int)freq, ramp);
-        LOG("BASS_MusicPlayEx -> %d (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
-        return r;
-    }
-    LOG("BASS_MusicPlayEx: no real_BASS_MusicPlayEx, returning TRUE");
+    if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(handle, flags, (int)freq, ramp);
     return TRUE;
 }
 DWORD __stdcall BASS_ChannelGetData(DWORD handle, void *buffer, DWORD length) {
@@ -232,13 +214,8 @@ static void load_real_bass(void) {
     char *p = strrchr(path, '\\');
     if (p) strcpy(p + 1, "bass_real.dll");
     else strcpy(path, "bass_real.dll");
-    LOG("load_real_bass: trying '%s'", path);
     g_hRealBass = LoadLibraryA(path);
-    if (!g_hRealBass) {
-        LOG("load_real_bass: FAILED to load bass_real.dll (err=%d)", GetLastError());
-        return;
-    }
-    LOG("load_real_bass: bass_real.dll loaded at 0x%08X", g_hRealBass);
+    if (!g_hRealBass) return;
     real_BASS_Init            = (void*)GetProcAddress(g_hRealBass, "BASS_Init");
     real_BASS_Free           = (void*)GetProcAddress(g_hRealBass, "BASS_Free");
     real_BASS_StreamCreateFile = (void*)GetProcAddress(g_hRealBass, "BASS_StreamCreateFile");
@@ -256,14 +233,7 @@ static void load_real_bass(void) {
     real_BASS_ChannelStop     = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
     if (!real_BASS_ChannelSetAttributes) {
         real_BASS_ChannelSetAttributes = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttribute");
-        LOG("load_real_bass: ChannelSetAttributes not found, using singular: %s",
-            real_BASS_ChannelSetAttributes ? "OK" : "FAIL");
     }
-    LOG("load_real_bass: Init=%c Free=%c MusicLoad=%c MusicPlayEx=%c ChannelSetAttr=%c Start=%c Stop=%c",
-        real_BASS_Init?'Y':'N', real_BASS_Free?'Y':'N',
-        real_BASS_MusicLoad?'Y':'N', real_BASS_MusicPlayEx?'Y':'N',
-        real_BASS_ChannelSetAttributes?'Y':'N',
-        real_BASS_Start?'Y':'N', real_BASS_Stop?'Y':'N');
 }
 
 /* ---- Utility ---- */
@@ -406,8 +376,13 @@ static int load_ghost_file(const char *filename, DWORD **outSnapshots, DWORD *ou
     if (p) {
         strcpy(p + 1, "Ghosts\\");
         strncat(path, filename, MAX_PATH - strlen(path) - 1);
+        /* Append .ghost extension if not already present */
+        size_t plen = strlen(path);
+        if (plen < MAX_PATH - 7 && (plen < 6 || _stricmp(path + plen - 6, ".ghost") != 0)) {
+            strcat(path, ".ghost");
+        }
     } else {
-        snprintf(path, MAX_PATH, "Ghosts\\%s", filename);
+        snprintf(path, MAX_PATH, "Ghosts\\%s.ghost", filename);
     }
 
     LOG("Loading ghost file: %s", path);
@@ -925,7 +900,6 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
 #endif
 
         load_real_bass();
-        LOG("DllMain: bass_real loaded=%s, log path set", g_hRealBass ? "YES" : "NO");
         CreateThread(NULL, 0, init_thread, NULL, 0, NULL);
     }
     return TRUE;
