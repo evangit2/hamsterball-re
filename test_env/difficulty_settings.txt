@@ -1,0 +1,24 @@
+; difficulty_settings.txt
+; Map entity spawns to replacements based on difficulty.
+; NOTHING = skip spawning entirely.
+; Entity names are case-insensitive. "8ball" = BadBall.
+;
+; Difficulty: EASY=Pipsqueak, NORMAL=Normal, HARD=Frenzied!
+;
+; Entities (CreateLevelObjects): Bridge, Tipper, Bonk, Bbridge1,
+;   Bbridge2, PopCylinder, Blockdawg1, Blockdawg2, Catapult, Gluebie
+; Entities (CreateExpertLevelObjects): Bonk, Fan, Sawblade, Bridge,
+;   Judge, Bell
+; Entities (iterating): 8ball (BadBall), Mousetrap
+
+EASY
+8ball = 8ball
+Mousetrap = Mousetrap
+
+NORMAL
+8ball = 8ball
+Mousetrap = Mousetrap
+
+HARD
+8ball = 8ball
+Mousetrap = Mousetrap
