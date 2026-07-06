@@ -82,24 +82,24 @@ BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID) {
 // the game's own strcmp/strlen/etc calls get redirected to our
 // implementations, causing crashes when the game passes pointers
 // that are valid for msvcrt's heap but not ours.
-static void* __cdecl memset(void* dst, int val, size_t count) {
+extern "C" void* __cdecl memset(void* dst, int val, size_t count) {
     return nc_memset(dst, val, count);
 }
-static void* __cdecl memcpy(void* dst, const void* src, size_t count) {
+extern "C" void* __cdecl memcpy(void* dst, const void* src, size_t count) {
     return nc_memcpy(dst, src, count);
 }
-static size_t __cdecl strlen(const char* s) {
+extern "C" size_t __cdecl strlen(const char* s) {
     return nc_strlen(s);
 }
-static int __cdecl strcmp(const char* a, const char* b) {
+extern "C" int __cdecl strcmp(const char* a, const char* b) {
     return nc_strcmp(a, b);
 }
-static char* __cdecl strncpy(char* dst, const char* src, size_t n) {
+extern "C" char* __cdecl strncpy(char* dst, const char* src, size_t n) {
     return nc_strncpy(dst, src, n);
 }
-static void* __cdecl malloc(size_t size) {
+extern "C" void* __cdecl malloc(size_t size) {
     return nc_malloc(size);
 }
-static void __cdecl free(void* ptr) {
+extern "C" void __cdecl free(void* ptr) {
     nc_free(ptr);
 }
