@@ -1,6 +1,32 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.2)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.3)
  *
- * v25.2: Three robustness fixes from code review:
+ * v25.3: Fix crash-on-load-with-ghost-file.
+ *        Root cause: use-after-free race condition between the background thread
+ *        and the hook's trampoline call. The hook released the critical section
+ *        before calling the original App_StartPracticeRace, allowing the
+ *        background thread's check_race_state() to run during level loading.
+ *        On the first race start (no PlayerProfile yet), is_time_trial_active()
+ *        returns false, causing the "not time trial" branch to destroy the
+ *        dummy recording BTT at App+0x90C — the very BTT that
+ *        App_StartPracticeRace is about to access in its BTT management phase.
+ *        This produced use-after-free crashes at heap addresses (0x00820064 etc).
+ *
+ *        Two fixes applied:
+ *        (1) Hold the critical section DURING the trampoline call — prevents
+ *            the background thread from running any race-state cleanup while
+ *            App_StartPracticeRace is executing.
+ *        (2) Removed the dummy BTT cleanup code from check_race_state — the
+ *            game's own BTT management always handles the dummy (it has
+ *            NO_TIME=9999999 which loses every comparison, so the game frees
+ *            it via the standard path). Our cleanup was both unnecessary and
+ *            the direct cause of the crash.
+ *
+ *        Why it only crashed with a ghost file: the dummy recording BTT is
+ *        only created when inject_saved_ghost succeeds (ghost file exists).
+ *        No ghost → no dummy → no crash. "Win, switch, come back" worked
+ *        because after the first race, the PlayerProfile persists with
+ *        profile+0x11=1 (Time Trial flag), so is_time_trial_active() returns
+ *        true even during subsequent race loads.
  *        (1) Dummy BTT leak on quit-without-finishing — the dummy recording
  *            BTT created at App+0x90C was never freed if the player ESC-quit
  *            before the goal. Now tracked in g_dummyRecording and destroyed
@@ -526,37 +552,24 @@ static void check_race_state(void) {
             g_currentRaceName[0] = '\0';
             g_hookRaceName[0] = '\0';
         }
-        /* Issue 1 fix: Clean up dummy recording BTT if the player quit
-         * without finishing. The game's BTT management only runs inside
-         * App_StartPracticeRace, so if the player ESC-quits to menu,
-         * the dummy we created at App+0x90C is never freed.
+        /* NOTE: We do NOT clean up the dummy recording BTT here.
          *
-         * Safety: Only destroy if App+0x90C STILL points to our dummy.
-         * If App+0x90C differs, the game already freed/replaced it
-         * (during a subsequent App_StartPracticeRace) — don't double-free. */
-        if (g_dummyRecording && g_dummyRecording > 0x10000) {
-            DWORD currRec = 0;
-            if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
-                currRec = *(DWORD*)(app + APP_90C_RECORDING);
-
-            if (currRec == g_dummyRecording) {
-                /* App+0x90C still points to our dummy — game didn't free it.
-                 * Verify vtable before calling destructor. */
-                if (!IsBadReadPtr((void*)g_dummyRecording, 4)) {
-                    DWORD vt = *(DWORD*)g_dummyRecording;
-                    if (vt == 0x004D262C) {
-                        log_fmt("Cleaning up dummy recording BTT at 0x%X (quit without finishing)", g_dummyRecording);
-                        call_btt_dtor((void*)g_dummyRecording);
-                    } else {
-                        log_fmt("WARNING: dummy recording vtable=0x%X (expected 0x4D262C) — skipping cleanup", vt);
-                    }
-                }
-            } else {
-                /* App+0x90C no longer points to our dummy — the game already
-                 * handled it (freed or replaced). Just clear tracking. */
-                log_fmt("Dummy recording BTT (0x%X) no longer at App+0x90C (now 0x%X) — game handled it",
-                        g_dummyRecording, currRec);
-            }
+         * The game's own App_StartPracticeRace BTT management always
+         * handles the dummy: it has NO_TIME (9999999) which loses every
+         * time comparison, so the game frees it via the standard path.
+         *
+         * If we destroy it ourselves from this background thread, we race
+         * with App_StartPracticeRace which is accessing App+0x90C on the
+         * main thread — a use-after-free that crashes the game at a
+         * heap address (0x00820064 etc). The window is: the hook releases
+         * the CS, the trampoline starts loading the level, and this thread
+         * sees !is_time_trial_active (no profile yet) → destroys the dummy
+         * → the trampoline then reads freed memory.
+         *
+         * The dummy BTT is tracked in g_dummyRecording purely for
+         * informational purposes. It will be cleaned up by the game or
+         * simply go away when the player finishes/quits the race. */
+        if (g_dummyRecording) {
             g_dummyRecording = 0;
         }
         if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
@@ -894,12 +907,20 @@ void hook_impl(DWORD app, DWORD race_index) {
         }
     }
 
-    /* Release the lock during the trampoline call — the original
+    /* HOLD the lock during the trampoline call. The original
      * App_StartPracticeRace runs game code (Board_ctor, scene setup, etc.)
-     * for potentially hundreds of milliseconds. Holding the lock would
-     * stall the background thread unnecessarily. The post-trampoline
-     * cleanup re-acquires the lock. */
-    LeaveCriticalSection(&g_cs);
+     * for potentially hundreds of milliseconds. If we release the lock,
+     * the background thread's check_race_state() can run during this
+     * window. On the first race start (no PlayerProfile yet),
+     * is_time_trial_active() returns false, causing the "not time trial"
+     * branch to destroy g_dummyRecording — the very BTT that
+     * App_StartPracticeRace is about to access in its BTT management
+     * phase. This is a use-after-free race condition that crashes the game.
+     *
+     * The background thread only monitors goal flags and recording state —
+     * it doesn't need to run during race loading. Holding the lock here
+     * is safe (no recursion, no deadlock) and prevents all race conditions
+     * between the hook and the monitor thread. */
 
     /* Call original App_StartPracticeRace via trampoline. Board_ctor will see
      * App+0x910 (if we set it) and create the ghost ball at scene+0x361C. */
@@ -912,8 +933,6 @@ void hook_impl(DWORD app, DWORD race_index) {
     );
 
     log_msg("HOOK: App_StartPracticeRace returned");
-
-    EnterCriticalSection(&g_cs);
 
     /* Destroy the old App+0x910 BTT that we replaced before the trampoline.
      * At this point the old scene is torn down, the old ghost ball is gone,
