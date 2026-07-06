@@ -499,9 +499,10 @@ static DWORD create_ghost_ball(DWORD board) {
         LOG("operator_new failed for ghost ball");
         return 0;
     }
-    LOG("Ghost ball allocated at 0x%08X", ballAddr);
+    LOG("Ghost ball allocated at 0x%08X, board=0x%08X", ballAddr, board);
 
     /* Step 2: Ball_ctor(ball, board) — __thiscall with 1 stack param */
+    LOG("Step 2: calling Ball_ctor(0x%08X, 0x%08X)...", ballAddr, board);
     DWORD ctorAddr = BALL_CTOR;
     __asm__ volatile (
         "push %1\n\t"
@@ -511,10 +512,12 @@ static DWORD create_ghost_ball(DWORD board) {
         : "r"(ballAddr), "r"(board), "r"(ctorAddr)
         : "eax", "ecx", "edx", "memory"
     );
+    LOG("Step 2: Ball_ctor returned OK");
 
     /* Step 3: ball->vtable[1]() — Ball_SetupCollisionRender */
     DWORD vtable = *(DWORD*)ballAddr;
     DWORD func1 = *(DWORD*)(vtable + 0x04);
+    LOG("Step 3: calling vtable[1]=0x%08X on ball 0x%08X...", func1);
     __asm__ volatile (
         "movl %0, %%ecx\n\t"
         "call *%1\n\t"
@@ -522,27 +525,25 @@ static DWORD create_ghost_ball(DWORD board) {
         : "r"(ballAddr), "r"(func1)
         : "eax", "ecx", "edx", "memory"
     );
+    LOG("Step 3: vtable[1] returned OK");
 
-    /* Step 4: Ball_SetTrajectory(ball, board+0x3F20, 0,0,0,0)
-     * Board_ctor calls: Ball_SetTrajectory(ball, board+0x3F20, fVar7, fVar8, fVar9, fVar10)
-     * where fVar7..10 are uninitialized locals (effectively 0 for a ghost ball).
-     * The function signature is __thiscall(ball, param_1, float, float, float, float).
-     * param_1 = board+0x3F20 (trajectory source data, 16 bytes).
-     */
+    /* Step 4: Ball_SetTrajectory(ball, board+0x3F20, 0,0,0,0) */
     DWORD trajAddr = BALL_SET_TRAJECTORY;
     DWORD trajSrc = board + 0x3F20;
+    LOG("Step 4: calling Ball_SetTrajectory(0x%08X, 0x%08X)...", ballAddr, trajSrc);
     __asm__ volatile (
-        "push 0\n\t"           /* param_5 = 0.0f */
-        "push 0\n\t"           /* param_4 = 0.0f */
-        "push 0\n\t"           /* param_3 = 0.0f */
-        "push 0\n\t"           /* param_2 = 0.0f */
-        "push %1\n\t"          /* param_1 = board+0x3F20 */
-        "movl %0, %%ecx\n\t"   /* this = ball */
+        "push 0\n\t"
+        "push 0\n\t"
+        "push 0\n\t"
+        "push 0\n\t"
+        "push %1\n\t"
+        "movl %0, %%ecx\n\t"
         "call *%2\n\t"
         :
         : "r"(ballAddr), "r"(trajSrc), "r"(trajAddr)
         : "eax", "ecx", "edx", "memory"
     );
+    LOG("Step 4: Ball_SetTrajectory returned OK");
 
     /* Step 5: Set ghost-specific fields (matching Board_ctor exactly) */
     *(DWORD*)(ballAddr + BALL_PLAYER_ID) = 0xFFFFFFFF;   /* -1 */
