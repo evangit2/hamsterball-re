@@ -527,23 +527,17 @@ static DWORD create_ghost_ball(DWORD board) {
     );
     LOG("Step 3: vtable[1] returned OK");
 
-    /* Step 4: Ball_SetTrajectory(ball, board+0x3F20, 0,0,0,0) */
-    DWORD trajAddr = BALL_SET_TRAJECTORY;
-    DWORD trajSrc = board + 0x3F20;
-    LOG("Step 4: calling Ball_SetTrajectory(0x%08X, 0x%08X)...", ballAddr, trajSrc);
-    __asm__ volatile (
-        "push 0\n\t"
-        "push 0\n\t"
-        "push 0\n\t"
-        "push 0\n\t"
-        "push %1\n\t"
-        "movl %0, %%ecx\n\t"
-        "call *%2\n\t"
-        :
-        : "r"(ballAddr), "r"(trajSrc), "r"(trajAddr)
-        : "eax", "ecx", "edx", "memory"
-    );
-    LOG("Step 4: Ball_SetTrajectory returned OK");
+    /* Step 4: Ball_SetTrajectory — SKIP the call, write fields directly.
+     * Board_ctor creates a 4x4 scale matrix via Matrix_Scale4x4(1.0, 1.0, EBX, 0.35)
+     * then calls Ball_SetTrajectory(ball, matrix[0..3], matrix[4]).
+     * Ball_SetTrajectory just stores 5 DWORDs into ball+0x2AC..0x2BC.
+     * We can write them directly without the matrix call. */
+    *(float*)(ballAddr + 0x2AC) = 1.0f;    /* scale X (from Matrix_Scale4x4) */
+    *(float*)(ballAddr + 0x2B0) = 1.0f;    /* scale Y */
+    *(float*)(ballAddr + 0x2B4) = 0.35f;   /* scale Z */
+    *(DWORD*)(ballAddr + 0x2B8) = 0;       /* unused */
+    *(DWORD*)(ballAddr + 0x2BC) = 0;       /* unused */
+    LOG("Step 4: trajectory fields written directly (skipped Ball_SetTrajectory call)");
 
     /* Step 5: Set ghost-specific fields (matching Board_ctor exactly) */
     *(DWORD*)(ballAddr + BALL_PLAYER_ID) = 0xFFFFFFFF;   /* -1 */
