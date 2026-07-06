@@ -364,7 +364,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x769` | byte | `0` | — |
 | `+0x76A` | byte | `0` | has_target_pos (network sync) |
 | `+0x76C` | Vec3 | `0,0,0` | target_pos (network) |
-| `+0x808` | int | `0` | freeze_timer |
+| `+0x808` | int | `0` | impact_freeze_counter — if non-zero, Ball_ApplyForce is skipped. Counts down each frame. Set by N:NOCONTROL(=10), E:CATAPULTBOTTOM(=1000), vacuum(=1000). |
 | `+0xC28` | char* | `0` | display_name string |
 | `+0xC3C` | byte | `0` | teleport_flag |
 | `+0xC4C` | byte | `0` | is_shrunk (runtime) |
