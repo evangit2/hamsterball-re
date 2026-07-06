@@ -205,16 +205,14 @@ This stores the finish time on the recording buffer so it can be compared on the
 
 During rendering, if Time Trial mode and playback buffer exists:
 ```
-if (profile+0x11 != 0 && app+0x234 == 0 && app+0x90C != NULL) {
-    if (app+0x910 != NULL) {
-        BestTimeTracker_PlaybackSnapshot(app+0x910, scene+0x361C);
-        ghost_ball->field_2FC = 0x3EE66666;  // 0.45f — render alpha/visibility
-        ghost_ball->vtable[2]();             // Render the ghost ball
-    }
+if (profile+0x11 != 0 && app+0x234 == 0 && app+0x910 != NULL) {
+    BestTimeTracker_PlaybackSnapshot(app+0x910, scene+0x361C);
+    ghost_ball->field_2FC = 0x3EE66666;  // 0.45f — render alpha/visibility
+    ghost_ball->vtable[2]();             // Render the ghost ball
 }
 ```
 
-> **Recording gate:** `App+0x90C` (recording BTT pointer) acts as a gate — `PlaybackSnapshot` only runs if it's non-NULL. In Time Trial mode the game creates a recording BTT at race start, so this is naturally satisfied. In Tournament/Party modes `App+0x90C` is never set, so `PlaybackSnapshot` never fires even if a playback BTT is injected at `App+0x910`. Mods that inject ghosts in non-TT modes (e.g. `ghost_event`) must force `App+0x90C` to a truthy non-NULL value.
+> **Playback index advancement:** `PlaybackSnapshot` itself does NOT advance the index — `Scene_UpdateBallsAndState` does, but only in Time Trial mode. In Tournament/Party modes the index stays at 0 forever, so the ghost renders but never moves. Mods that inject ghosts in non-TT modes (e.g. `ghost_event`) must advance `BTT_PLAYBACK_IDX` themselves each frame.
 
 `BestTimeTracker_PlaybackSnapshot` (0x427690):
 ```

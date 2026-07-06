@@ -61,23 +61,10 @@ typedef DWORD HFX;
 #define NO_TIME         9999999
 
 /* ---- App offsets ---- */
-/* App+0x90C = BestTimeTracker* recording buffer. The game creates a fresh
- * BTT here at the start of each Time Trial race and records per-frame
- * BallSnapshots into it. Level_UpdateAndRender checks this != NULL before
- * calling PlaybackSnapshot — it means "recording is active, so show the
- * ghost for comparison." In Tournament/Party modes the game never creates
- * a recording BTT, so this stays NULL and PlaybackSnapshot is never called,
- * even after our mode-check NOPs. We force it to 1 (truthy non-NULL) to
- * make that gate pass without allocating a real BTT. */
-#define APP_90C_RECORDING  0x90C
-/* App+0x910 = BestTimeTracker* playback buffer. Holds the best previous
- * run's snapshots. PlaybackSnapshot reads from this each frame to animate
- * the ghost ball. Injected by the mod (replaces the game's own playback
- * BTT, which only exists in Time Trial mode). */
-#define APP_910_PLAYBACK   0x910
-#define APP_5DC_BALL       0x5DC
-#define APP_5D6_GOAL_FLAG  0x5D6
-#define APP_234_PARTY_MODE 0x234
+#define APP_910_PLAYBACK   0x910  /* BestTimeTracker* playback buffer (injected by mod) */
+#define APP_5DC_BALL       0x5DC  /* Ball* — player's ball */
+#define APP_5D6_GOAL_FLAG  0x5D6  /* goal-crossed flag */
+#define APP_234_PARTY_MODE 0x234  /* 0 = Time Trial, non-zero = Party */
 #define APP_220_PROFILE    0x220  /* PlayerProfile* */
 
 /* ---- PlayerProfile offsets ---- */
@@ -338,6 +325,9 @@ static BOOL  g_ghostFromEvent = FALSE;    /* TRUE if current ghost was loaded by
                                            * to avoid rebuilding 778 snapshots every frame.
                                            * Cleared when playback finishes (last frame reached) or
                                            * when the board is lost, so the ghost can be re-triggered. */
+static BOOL  g_needManualAdvance = FALSE; /* TRUE when game mode is non-Time-Trial and we must
+                                           * advance the playback index ourselves (the game only
+                                           * advances it in TT mode via Scene_UpdateBallsAndState). */
 
 /* Ball vtable[0] = deleting destructor at 0x402A50
  * __thiscall(ball, flags), RET 0x4. flags=1: dtor + free struct */
@@ -706,14 +696,13 @@ static void cleanup_previous_ghost(DWORD app) {
         g_ghostBallCreated = FALSE;
     }
 
-    /* 2. Clear App+0x910 (playback) and App+0x90C (recording) if they
-     * point to our BTT. We set App+0x90C=1 as a fake recording gate, so
-     * clear it back to NULL so the game doesn't dereference garbage. */
+    /* 2. Clear App+0x910 (playback) if it points to our BTT.
+     * We do NOT touch App+0x90C (recording) — in TT mode it's the game's
+     * own BTT, and in non-TT mode it's NULL (we never write to it). */
     if (g_loadedBTT && app) {
         if (*(DWORD*)(app + APP_910_PLAYBACK) == g_loadedBTT) {
             *(DWORD*)(app + APP_910_PLAYBACK) = 0;
-            *(DWORD*)(app + APP_90C_RECORDING) = 0;
-            LOG("Cleared App+0x910 (playback) + App+0x90C (recording gate) — was BTT 0x%08X", g_loadedBTT);
+            LOG("Cleared App+0x910 (playback) — was BTT 0x%08X", g_loadedBTT);
         }
     }
 
@@ -738,6 +727,7 @@ static void cleanup_previous_ghost(DWORD app) {
 
     g_ghostActive = FALSE;
     g_ghostFromEvent = FALSE;
+    g_needManualAdvance = FALSE;
 }
 
 /* ---- Frame epilogue handler ---- */
@@ -804,14 +794,18 @@ void __cdecl frame_epilogue_handler(void) {
 
         g_ghostActive = TRUE;
         g_ghostFromEvent = TRUE;  /* Mark as event-loaded so re-collisions skip reload */
-        /* Force App+0x90C (recording buffer) to non-NULL so the game calls
-         * PlaybackSnapshot every frame. In Tournament/Party modes the game
-         * never creates a recording BTT, so this stays NULL and the playback
-         * gate in Level_UpdateAndRender blocks ghost animation. We set it to
-         * 1 (truthy) — the game only checks != NULL, never dereferences it
-         * outside Time Trial mode (where it has a real BTT). */
-        *(DWORD*)(app + APP_90C_RECORDING) = 1;
-        LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X", newBTT, ghostBall);
+
+        /* Detect if we're in non-Time-Trial mode. In TT mode, the game's
+         * Scene_UpdateBallsAndState advances the playback index every frame.
+         * In Tournament/Party mode it doesn't, so we must advance it ourselves
+         * in the frame epilogue. We check App+0x234 (party mode flag) — if
+         * non-zero, we're not in TT mode. */
+        DWORD partyMode = 0;
+        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 4))
+            partyMode = *(DWORD*)(app + APP_234_PARTY_MODE);
+        g_needManualAdvance = (partyMode != 0);
+        LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X, manualAdvance=%d (partyMode=%d)",
+            newBTT, ghostBall, g_needManualAdvance, partyMode);
     }
 
     /* Check if ghost is still active — clean up if board or ball is lost,
@@ -820,10 +814,6 @@ void __cdecl frame_epilogue_handler(void) {
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
-            /* Force recording buffer non-NULL every frame — game may clear it
-             * in non-TT modes. Level_UpdateAndRender gates PlaybackSnapshot
-             * on App+0x90C != NULL. */
-            *(DWORD*)(app2 + APP_90C_RECORDING) = 1;
             DWORD board = get_board(app2);
             if (!board) {
                 /* Board is gone — level transition or race end.
@@ -839,17 +829,34 @@ void __cdecl frame_epilogue_handler(void) {
                      * Clear BTT to prevent dangling playback. */
                     LOG("Ghost ball lost — cleaning up ghost resources");
                     cleanup_previous_ghost(app2);
-                } else if (g_ghostFromEvent) {
-                    /* Check if playback has finished: the game's PlaybackSnapshot
-                     * advances the index every frame. When it reaches the count,
-                     * the ghost is done playing. Clear the flag and clean up so
-                     * the ghost can be re-triggered by hitting the plane again. */
-                    DWORD playIdx = *(DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX);
-                    DWORD count = *(DWORD*)(g_loadedBTT + BTT_AL_COUNT);
-                    if (count > 0 && playIdx >= count) {
-                        LOG("Ghost playback finished (idx=%d/%d) — cleaning up for re-trigger",
-                            playIdx, count);
-                        cleanup_previous_ghost(app2);
+                } else {
+                    /* In non-Time-Trial modes, the game doesn't advance the
+                     * playback index (Scene_UpdateBallsAndState only does it in
+                     * TT mode). We advance it ourselves here, clamping to the
+                     * last frame. The game's PlaybackSnapshot will then read
+                     * the correct snapshot.
+                     *
+                     * In TT mode we do NOT advance — the game already does it,
+                     * and double-advancing would play the ghost at 2x speed. */
+                    if (g_needManualAdvance) {
+                        DWORD playIdx = *(DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX);
+                        DWORD count   = *(DWORD*)(g_loadedBTT + BTT_AL_COUNT);
+                        if (count > 0 && playIdx < count - 1) {
+                            *(DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX) = playIdx + 1;
+                        }
+                    }
+
+                    /* Check if playback has finished: when the index reaches
+                     * the count, the ghost is done playing. Clean up so the
+                     * ghost can be re-triggered by hitting the plane again. */
+                    if (g_ghostFromEvent) {
+                        DWORD playIdx = *(DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX);
+                        DWORD count = *(DWORD*)(g_loadedBTT + BTT_AL_COUNT);
+                        if (count > 0 && playIdx >= count - 1) {
+                            LOG("Ghost playback finished (idx=%d/%d) — cleaning up for re-trigger",
+                                playIdx, count);
+                            cleanup_previous_ghost(app2);
+                        }
                     }
                 }
             }
@@ -858,6 +865,7 @@ void __cdecl frame_epilogue_handler(void) {
             LOG("App lost — deactivating ghost");
             g_ghostActive = FALSE;
             g_ghostFromEvent = FALSE;
+            g_needManualAdvance = FALSE;
         }
     }
 }
@@ -1048,8 +1056,7 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
                 DWORD curr910 = *(DWORD*)(app + APP_910_PLAYBACK);
                 if (curr910 == g_loadedBTT) {
                     *(DWORD*)(app + APP_910_PLAYBACK) = 0;
-                    *(DWORD*)(app + APP_90C_RECORDING) = 0;
-                    LOG("DLL_PROCESS_DETACH: cleared App+0x910 (playback) + App+0x90C (recording gate) — was BTT 0x%08X", g_loadedBTT);
+                    LOG("DLL_PROCESS_DETACH: cleared App+0x910 (playback) — was BTT 0x%08X", g_loadedBTT);
                 }
             }
             /* Destroy BTT via game destructor — safe because snapshots are
