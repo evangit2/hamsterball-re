@@ -1,7 +1,7 @@
 #include "HamsterballAPI.h"
 #include <windows.h>
 
-static constexpr DWORD APP_PROFILE_OFFSET  = 0x220;
+static constexpr DWORD APP_PROFILE_OFFSET = 0x220;
 static constexpr DWORD PROFILE_BOARD_OFFSET = 0x0C;
 static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
 static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
@@ -63,10 +63,10 @@ private:
     }
 
 public:
-    const char* GetModName() override    { return "Arena Timer"; }
-    const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v4: only set timer on round start"; }
-    int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
+    const char* GetModName() override { return "Arena Timer"; }
+    const char* GetAuthorName() override { return "BookwormKevin"; }
+    const char* GetContributors() override { return "Hamsterbot"; }
+    int GetApiVersion() override { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
         api = modApi;
