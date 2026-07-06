@@ -321,6 +321,11 @@ static DWORD g_loadedBTT = 0;
 static BOOL  g_ghostActive = FALSE;
 static char  g_pendingGhostFile[256] = "";
 static BOOL  g_ghostBallCreated = FALSE;  /* TRUE if WE created the ghost ball (not the game) */
+static BOOL  g_ghostFromEvent = FALSE;    /* TRUE if current ghost was loaded by an E:GHOST plane trigger.
+                                           * While TRUE, subsequent E:GHOST collisions skip the reload
+                                           * to avoid rebuilding 778 snapshots every frame.
+                                           * Cleared when playback finishes (last frame reached) or
+                                           * when the board is lost, so the ghost can be re-triggered. */
 
 /* Ball vtable[0] = deleting destructor at 0x402A50
  * __thiscall(ball, flags), RET 0x4. flags=1: dtor + free struct */
@@ -376,6 +381,14 @@ void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
     }
 
     if (_strnicmp(eventName, "E:GHOST", 7) == 0) {
+        /* Guard: if a ghost loaded by an E:GHOST plane is still playing,
+         * skip the reload to avoid rebuilding 778 snapshots every frame.
+         * The flag is cleared when playback finishes or the board is lost,
+         * so the ghost can be re-triggered by hitting the plane again. */
+        if (g_ghostFromEvent && g_ghostActive && g_loadedBTT) {
+            /* Still playing — skip reload */
+            return;
+        }
         LOG("DCE: E:GHOST match found! full='%s'", eventName);
         const char *p1 = strchr(eventName, '(');
         if (p1) {
@@ -709,6 +722,7 @@ static void cleanup_previous_ghost(DWORD app) {
     }
 
     g_ghostActive = FALSE;
+    g_ghostFromEvent = FALSE;
 }
 
 /* ---- Frame epilogue handler ---- */
@@ -774,12 +788,13 @@ void __cdecl frame_epilogue_handler(void) {
         *(DWORD*)(newBTT + BTT_PLAYBACK_IDX) = 0;
 
         g_ghostActive = TRUE;
+        g_ghostFromEvent = TRUE;  /* Mark as event-loaded so re-collisions skip reload */
         LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X", newBTT, ghostBall);
     }
 
-    /* Check if ghost is still active — clean up if board or ball is lost.
-     * This handles level transitions: when the board is destroyed and recreated,
-     * the old BTT must be cleaned up to prevent crashes on the new level. */
+    /* Check if ghost is still active — clean up if board or ball is lost,
+     * or if playback has finished (reached the last frame).
+     * This handles level transitions and allows re-triggering after playback ends. */
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
@@ -798,12 +813,25 @@ void __cdecl frame_epilogue_handler(void) {
                      * Clear BTT to prevent dangling playback. */
                     LOG("Ghost ball lost — cleaning up ghost resources");
                     cleanup_previous_ghost(app2);
+                } else if (g_ghostFromEvent) {
+                    /* Check if playback has finished: the game's PlaybackSnapshot
+                     * advances the index every frame. When it reaches the count,
+                     * the ghost is done playing. Clear the flag and clean up so
+                     * the ghost can be re-triggered by hitting the plane again. */
+                    DWORD playIdx = *(DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX);
+                    DWORD count = *(DWORD*)(g_loadedBTT + BTT_AL_COUNT);
+                    if (count > 0 && playIdx >= count) {
+                        LOG("Ghost playback finished (idx=%d/%d) — cleaning up for re-trigger",
+                            playIdx, count);
+                        cleanup_previous_ghost(app2);
+                    }
                 }
             }
         } else {
             /* App itself is gone — shouldn't happen but be safe */
             LOG("App lost — deactivating ghost");
             g_ghostActive = FALSE;
+            g_ghostFromEvent = FALSE;
         }
     }
 }
