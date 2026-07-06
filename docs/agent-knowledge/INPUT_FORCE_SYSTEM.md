@@ -155,8 +155,8 @@ Accumulates directional force into the ball's physics force accumulators.
 | Offset | Condition | Meaning |
 |--------|-----------|---------|
 | ball+0x2F9 | == 0 | Not drowning |
-| ball+0x2CC | == 0 | Not dizzy-locked |
-| ball+0x808 | == 0 | Not in water/other state |
+| ball+0x2CC | == 0 | Not force-disabled (set by N:TARPIT, vacuum) |
+| ball+0x808 | == 0 | Not impact-frozen (set by N:NOCONTROL, E:CATAPULTBOTTOM, vacuum) |
 | ball+0x2F0 | < 0x51 (81) | Timer state counter below threshold |
 
 ### State Multipliers

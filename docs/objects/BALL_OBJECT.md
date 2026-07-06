@@ -121,7 +121,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x2C0 | float | force_x_2C0 | 0.0 | Secondary force accumulator X |
 | 0x2C4 | float | force_y_2C4 | 0.0 | Secondary force accumulator Y |
 | 0x2C8 | float | force_z_2C8 | 0.0 | Secondary force accumulator Z |
-| 0x2CC | uint8 | force_disable | 0 | If 1, Ball_ApplyForce is skipped |
+| 0x2CC | uint8 | force_disable | 0 | If 1, Ball_ApplyForce is skipped. Set by N:TARPIT and vacuum capture. |
 | 0x2D5 | uint8 | unknown_2D5 | 0 | Unknown (cleared by timer decay) |
 | 0x2D8 | int32 | unknown_2D8 | 0 | Unknown |
 | **0x2DC** | **float** | **lgp_x** | **0.0** | **Last Grounded Position X (LGP)** |
@@ -159,7 +159,7 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0x778-0x784 | float[4] | unknown_778 | 0.0 | Unknown camera-related fields |
 | 0x788 | float[16] | matrix_2 | zeros | Second matrix (4×4, zeroed in ctor2) |
 | 0x7C8 | float[16] | matrix_1 | identity | 4×4 transform matrix |
-| 0x808 | float[2] | unknown_808 | (0,0) | Unknown (NOT freeze_counter — see freeze_timer at 0x2FC) |
+| 0x808 | int32 | impact_freeze_counter | 0 | If non-zero, Ball_ApplyForce is skipped. Counts down each frame via Ball_Update. Set by N:NOCONTROL (=10), E:CATAPULTBOTTOM (=1000), vacuum capture (=1000). |
 | 0x810 | AthenaList | list_810 | — | Unknown list |
 | **0xC28** | **char*** | **display_string** | **NULL** | **Floating text above ball** |
 | 0x0C38 | int32 | unknown_C38 | -1 | Unknown (set to 0xFFFFFFFF) |

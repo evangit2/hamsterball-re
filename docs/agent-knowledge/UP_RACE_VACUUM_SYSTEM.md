@@ -121,23 +121,44 @@ Every frame, scans the ball list (Scene+0x29D4) using AthenaList iteration:
 2. On capture:
    - Stores ball pointer at `CollisionFace+0x2C`
    - Plays `vac-o-sux` 3D sound (App+0x504, 3 channels)
-   - Sets `ball+0x808 = 1000` (input disable timer)
-   - Sets `ball+0x2D4 = 1` (no-control flag — same as `N:NOCONTROL`)
-   - Sets `ball+0x2CC = 1` (control flag)
+   - Sets `ball+0x808 = 1000` (impact/freeze counter — blocks `Ball_ApplyForce`)
+   - Sets `ball+0x2CC = 1` (in-tar flag — also blocks `Ball_ApplyForce`)
    - Sets phase = 0, timer = 116 (0x74)
+
+> **Correction (July 2026):** This doc previously claimed three fields were set:
+> `ball+0x808` (called "input disable timer"), `ball+0x2D4` (called "no-control
+> flag"), and `ball+0x2CC` (called "control flag"). Verification against decompiled
+> `Ball_ApplyForce` (0x402650) and `Ball_Update` (0x405E00) showed:
+>
+> - `ball+0x808` (`[0x202]` as int array): **impact/freeze counter**. Counts down
+>   each frame via `Ball_Update` (L223). When non-zero, `Ball_ApplyForce` skips
+>   force application. Also set by `N:NOCONTROL` (=10) and `E:CATAPULTBOTTOM` (=1000).
+> - `ball+0x2CC` (`[0xB3]` as byte): **in-tar flag**. Also set by `N:TARPIT`.
+>   Does NOT auto-decrement — must be manually cleared. Blocks `Ball_ApplyForce`.
+> - `ball+0x2D4`: **NOT a ball field.** Only appears in `TimerDisplay_0x004298c0`
+>   loading `greenchecker.bmp` texture. Does not appear in any ball-related
+>   decompilation. The prior claim was an error.
+>
+> Both `+0x808` and `+0x2CC` gate `Ball_ApplyForce` via an AND condition in the
+> guard clause at 0x402650:
+> ```c
+> if ((*(char*)(ball+0x2F9) == 0) &&     // not teleporting
+>     (*(char*)(ball+0x2CC) == 0) &&     // not in tar
+>     (*(int*)(ball+0x808) == 0) &&      // not frozen
+>     (*(int*)(ball+0x2F0) < 0x51))      // impact counter < 81
+> ```
 
 ### Phase 0: SUCK (phase == 0, timer counting down from 116)
 
 Each frame:
 - If timer > 45 frames remaining (timer >= 0x2D):
-  - Keeps `ball+0x2CC = 1` (disable control)
+  - Keeps `ball+0x2CC = 1` (in-tar flag — blocks force application)
   - Moves ball **upward**: `ball.Y += 0.25` (double at 0x4CF440)
 - If timer <= 45:
   - Stops moving the ball (just waits for timer to expire)
 - When timer hits 0:
   - Transitions to **Phase 1** with timer = 15 (0x0F)
-  - Clears `ball+0x2CC = 0`
-  - Clears `ball+0x2D4 = 0` (re-enable control, though ball is still being transported)
+  - Clears `ball+0x2CC = 0` (re-enable force application)
 
 ### Phase 1: SHOOT (phase == 1, timer counting down from 15)
 
@@ -145,9 +166,9 @@ Each frame:
 - **Teleports ball XZ** to VAC-IN position: `ball.X = VAC-IN.X`, `ball.Z = VAC-IN.Z`
 - Moves ball **upward**: `ball.Y += 6.0` (float at 0x4CF3E8)
 - When timer hits 0 (after 15 frames): **LAUNCH**
-  1. Clears `ball+0x808 = 0` (re-enable input)
+  1. Clears `ball+0x808 = 0` (clear freeze counter — re-enable force application)
   2. **Teleports ball to VAC-OUT position**: copies VAC-OUT X/Y/Z to ball+0x164/+0x168/+0x16C
-  3. Clears `ball+0x2CC = 0`
+  3. Clears `ball+0x2CC = 0` (clear in-tar flag)
   4. Sets `ball+0x284 = 20.0` (0x41A00000) — shrinks ball radius during launch
   5. **Sets exit velocity**: writes normalized direction × 10.0 to CollisionMesh+0xCA4/CA8/CAC
      (the ball's physics velocity vector)
