@@ -61,12 +61,24 @@ typedef DWORD HFX;
 #define NO_TIME         9999999
 
 /* ---- App offsets ---- */
-#define APP_90C         0x90C  /* playback active flag — game checks this to call PlaybackSnapshot */
-#define APP_910         0x910
-#define APP_5DC         0x5DC
-#define APP_5D6         0x5D6
-#define APP_234         0x234
-#define APP_220         0x220  /* PlayerProfile* */
+/* App+0x90C = BestTimeTracker* recording buffer. The game creates a fresh
+ * BTT here at the start of each Time Trial race and records per-frame
+ * BallSnapshots into it. Level_UpdateAndRender checks this != NULL before
+ * calling PlaybackSnapshot — it means "recording is active, so show the
+ * ghost for comparison." In Tournament/Party modes the game never creates
+ * a recording BTT, so this stays NULL and PlaybackSnapshot is never called,
+ * even after our mode-check NOPs. We force it to 1 (truthy non-NULL) to
+ * make that gate pass without allocating a real BTT. */
+#define APP_90C_RECORDING  0x90C
+/* App+0x910 = BestTimeTracker* playback buffer. Holds the best previous
+ * run's snapshots. PlaybackSnapshot reads from this each frame to animate
+ * the ghost ball. Injected by the mod (replaces the game's own playback
+ * BTT, which only exists in Time Trial mode). */
+#define APP_910_PLAYBACK   0x910
+#define APP_5DC_BALL       0x5DC
+#define APP_5D6_GOAL_FLAG  0x5D6
+#define APP_234_PARTY_MODE 0x234
+#define APP_220_PROFILE    0x220  /* PlayerProfile* */
 
 /* ---- PlayerProfile offsets ---- */
 #define PROFILE_BOARD   0x0C   /* Board* (verified: Board_ctor reads *(param_1+0x220)+0xC) */
@@ -76,30 +88,30 @@ typedef DWORD HFX;
 #define BOARD_GHOST_BALL 0x361C /* Board+0x361C = ghost Ball* */
 
 /* ---- BTT offsets ---- */
-#define BTT_VTABLE      0x00
-#define BTT_AL_VTABLE   0x04
-#define BTT_AL_COUNT    0x08
-#define BTT_LIST_ARRAY  0x410
-#define BTT_PLAYBACK_IDX 0x41C
-#define BTT_RACE_TIME   0x420
-#define BTT_RACE_NAME   0x424
-#define BTT_BEST_TIME   0x524
-#define BTT_NAME        0x424   /* same as BTT_RACE_NAME — char[128] race name */
+#define BTT_VTABLE       0x00   /* vtable ptr — must be 0x4D262C (verified) */
+#define BTT_AL_VTABLE    0x04   /* embedded AthenaList vtable */
+#define BTT_AL_COUNT     0x08   /* AthenaList item count */
+#define BTT_LIST_ARRAY   0x410  /* BallSnapshot** — array of snapshot ptrs */
+#define BTT_PLAYBACK_IDX 0x41C  /* current playback frame index (auto-advanced by PlaybackSnapshot) */
+#define BTT_RACE_TIME    0x420  /* race time at recording (copied to ghost ball+0x154) */
+#define BTT_RACE_NAME    0x424  /* char[128] race/level name */
+#define BTT_BEST_TIME    0x524  /* finish time in ticks (9999999 = never finished) */
+#define BTT_NAME         0x424  /* alias for BTT_RACE_NAME */
 
 /* ---- Ball offsets ---- */
-#define BALL_VTABLE     0x00
-#define BALL_BOARD      0x14
-#define BALL_PLAYER_ID  0x18
-#define BALL_POS_X      0x164
-#define BALL_POS_Y      0x168
-#define BALL_POS_Z      0x16C
-#define BALL_ALPHA      0x2FC
-#define BALL_GRAVITY    0x278
-#define BALL_GRAVITY_SCALE 0x27C  /* Board_ctor sets 0.1 (0x3DCCCCCD) */
-#define BALL_MAXSPEED   0x188
-#define BALL_RADIUS     0x284
-#define BALL_MASS       0x1A0  /* Board_ctor sets 0.8 (0x3F4CCCCD) */
-#define BALL_RESPAWN_FLAG 0x281  /* Board_ctor sets 0 */
+#define BALL_VTABLE         0x00
+#define BALL_BOARD          0x14   /* back-pointer to Board (set by Ball_ctor) */
+#define BALL_PLAYER_ID      0x18   /* -1 (0xFFFFFFFF) = ghost ball, 0+ = real player */
+#define BALL_POS_X          0x164
+#define BALL_POS_Y          0x168
+#define BALL_POS_Z          0x16C
+#define BALL_ALPHA          0x2FC  /* render alpha: 0.0=invisible, 0.45=ghost, 1.0=opaque */
+#define BALL_GRAVITY        0x278  /* gravity multiplier (Board_ctor sets 0.5 for ghost) */
+#define BALL_GRAVITY_SCALE  0x27C  /* gravity scale (Board_ctor sets 0.1 for ghost) */
+#define BALL_MAXSPEED       0x188  /* max roll speed (1000.0 for ghost = effectively unlimited) */
+#define BALL_RADIUS         0x284  /* collision radius (26.0 = player, 35.0 = 8-ball) */
+#define BALL_MASS           0x1A0  /* physics mass (Board_ctor sets 0.8 for ghost) */
+#define BALL_RESPAWN_FLAG   0x281  /* byte: 0 = normal, non-zero = respawning (skip hide) */
 
 /* ---- Ghost file magic ---- */
 #define GHOST_MAGIC     0x47485347  /* "GHSG" — matches ghost_saver v22+ */
@@ -306,7 +318,7 @@ static void call_alist_append(DWORD *list, void *item) {
  */
 static DWORD get_board(DWORD app) {
     if (!app || IsBadReadPtr((void*)app, 0x1000)) return 0;
-    DWORD profile = *(DWORD*)(app + APP_220);
+    DWORD profile = *(DWORD*)(app + APP_220_PROFILE);
     if (!profile || IsBadReadPtr((void*)profile, 0x100)) return 0;
     DWORD board = *(DWORD*)(profile + PROFILE_BOARD);
     if (!board || IsBadReadPtr((void*)board, 0x4000)) return 0;
@@ -694,12 +706,14 @@ static void cleanup_previous_ghost(DWORD app) {
         g_ghostBallCreated = FALSE;
     }
 
-    /* 2. Clear App+0x910 and App+0x90C if they point to our BTT */
+    /* 2. Clear App+0x910 (playback) and App+0x90C (recording) if they
+     * point to our BTT. We set App+0x90C=1 as a fake recording gate, so
+     * clear it back to NULL so the game doesn't dereference garbage. */
     if (g_loadedBTT && app) {
-        if (*(DWORD*)(app + APP_910) == g_loadedBTT) {
-            *(DWORD*)(app + APP_910) = 0;
-            *(DWORD*)(app + APP_90C) = 0;
-            LOG("Cleared App+0x910+0x90C (was our BTT 0x%08X)", g_loadedBTT);
+        if (*(DWORD*)(app + APP_910_PLAYBACK) == g_loadedBTT) {
+            *(DWORD*)(app + APP_910_PLAYBACK) = 0;
+            *(DWORD*)(app + APP_90C_RECORDING) = 0;
+            LOG("Cleared App+0x910 (playback) + App+0x90C (recording gate) — was BTT 0x%08X", g_loadedBTT);
         }
     }
 
@@ -767,7 +781,7 @@ void __cdecl frame_epilogue_handler(void) {
         }
 
         /* Inject new BTT into App+0x910 (playback buffer) */
-        *(DWORD*)(app + APP_910) = newBTT;
+        *(DWORD*)(app + APP_910_PLAYBACK) = newBTT;
         g_loadedBTT = newBTT;
 
         /* Create ghost ball (old one was destroyed in cleanup if it existed) */
@@ -790,10 +804,13 @@ void __cdecl frame_epilogue_handler(void) {
 
         g_ghostActive = TRUE;
         g_ghostFromEvent = TRUE;  /* Mark as event-loaded so re-collisions skip reload */
-        /* Force App+0x90C so the game calls PlaybackSnapshot every frame.
-         * In Tournament/Party modes the game never sets this flag, so without
-         * forcing it the ghost ball renders but never moves. */
-        *(DWORD*)(app + APP_90C) = 1;
+        /* Force App+0x90C (recording buffer) to non-NULL so the game calls
+         * PlaybackSnapshot every frame. In Tournament/Party modes the game
+         * never creates a recording BTT, so this stays NULL and the playback
+         * gate in Level_UpdateAndRender blocks ghost animation. We set it to
+         * 1 (truthy) — the game only checks != NULL, never dereferences it
+         * outside Time Trial mode (where it has a real BTT). */
+        *(DWORD*)(app + APP_90C_RECORDING) = 1;
         LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X", newBTT, ghostBall);
     }
 
@@ -803,8 +820,10 @@ void __cdecl frame_epilogue_handler(void) {
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
-            /* Force playback flag every frame — game may clear it in non-TT modes */
-            *(DWORD*)(app2 + APP_90C) = 1;
+            /* Force recording buffer non-NULL every frame — game may clear it
+             * in non-TT modes. Level_UpdateAndRender gates PlaybackSnapshot
+             * on App+0x90C != NULL. */
+            *(DWORD*)(app2 + APP_90C_RECORDING) = 1;
             DWORD board = get_board(app2);
             if (!board) {
                 /* Board is gone — level transition or race end.
@@ -1026,11 +1045,11 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         if (g_loadedBTT) {
             DWORD app = *(DWORD*)APP_PTR;
             if (app && !IsBadReadPtr((void*)app, 0x1000)) {
-                DWORD curr910 = *(DWORD*)(app + APP_910);
+                DWORD curr910 = *(DWORD*)(app + APP_910_PLAYBACK);
                 if (curr910 == g_loadedBTT) {
-                    *(DWORD*)(app + APP_910) = 0;
-                    *(DWORD*)(app + APP_90C) = 0;
-                    LOG("DLL_PROCESS_DETACH: cleared App+0x910+0x90C (was our BTT 0x%08X)", g_loadedBTT);
+                    *(DWORD*)(app + APP_910_PLAYBACK) = 0;
+                    *(DWORD*)(app + APP_90C_RECORDING) = 0;
+                    LOG("DLL_PROCESS_DETACH: cleared App+0x910 (playback) + App+0x90C (recording gate) — was BTT 0x%08X", g_loadedBTT);
                 }
             }
             /* Destroy BTT via game destructor — safe because snapshots are
