@@ -163,6 +163,10 @@ static DWORD g_lastHeartbeat = 0;
 // Status display
 static char g_remoteInfo[128] = "";
 
+// Init guard — don't touch rendering until game is past loading screen
+static volatile bool g_gameReady = false;
+static void* g_cachedFont = nullptr;
+
 // Latest ball state (guest receives from host)
 static BallStateMsg g_latestBallState = {};
 static CRITICAL_SECTION g_stateLock;
@@ -347,7 +351,7 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
         }
 
         // ── HOST: stream ball state every cycle ───────────────────
-        if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED) {
+        if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
             DWORD scene = getScene();
             if (scene) {
                 DWORD p1Ball = 0, p2Ball = 0;
@@ -395,7 +399,7 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
         }
 
         // ── GUEST: send P2 input state every cycle ─────────────────
-        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED) {
+        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
             Ball* p2 = g_api ? g_api->GetPlayer() : nullptr;
             if (p2 && !IsBadReadPtr(p2, 0x300)) {
                 InputStateMsg msg = {};
@@ -576,6 +580,11 @@ public:
     void onGameUpdate() override {
         g_frameCount++;
 
+        // Mark game as ready after ~60 frames (1 second) to skip loading screen
+        if (!g_gameReady && g_frameCount > 60) {
+            g_gameReady = true;
+        }
+
         // Single FPS calculation (1-second window)
         g_fpsFrameCounter++;
         DWORD tick = GetTickCount();
@@ -590,6 +599,8 @@ public:
 
     void onTextRenderLoop() override {
         if (!g_api) return;
+        // Don't render anything during loading screen or before game is ready
+        if (!g_gameReady) return;
 
         // Build status display
         const char* roleStr = "OFF";
@@ -647,7 +658,14 @@ public:
         CustomText params = {};
         App* app = g_api->GetApp();
         if (app && !IsBadReadPtr(app, sizeof(App))) {
-            params.font = app->fonts.showcardGothic14;
+            void* font = app->fonts.showcardGothic14;
+            // Font is nullptr during loading/menus — skip rendering if not ready
+            if (!font || IsBadReadPtr(font, 4)) return;
+            g_cachedFont = font;
+            params.font = font;
+        } else {
+            // No app yet — skip
+            return;
         }
 
         params.x = 10;
@@ -672,12 +690,12 @@ public:
         }
 
         // ── GUEST: Apply ball state from host to ghost ball ───────
-        if (g_role == ROLE_GUEST && g_connState == CONN_CONNECTED) {
+        if (g_role == ROLE_GUEST && g_connState == CONN_CONNECTED && g_gameReady) {
             applyGuestBallState();
         }
 
         // ── HOST: Apply guest input to P2 ball ────────────────────
-        if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) {
+        if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED && g_gameReady) {
             applyHostInput();
         }
     }
