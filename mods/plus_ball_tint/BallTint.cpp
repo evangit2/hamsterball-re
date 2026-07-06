@@ -1,9 +1,9 @@
-#include "HamsterballAPI.h"
+﻿#include "HamsterballAPI.h"
 #include <windows.h>
 
-static constexpr DWORD BOARD_COLOR_BASE    = 0x3AB0;
-static constexpr DWORD BOARD_COLOR_STRIDE  = 0x14;
-static constexpr DWORD APP_PROFILE_OFFSET  = 0x220;
+static constexpr DWORD BOARD_COLOR_BASE = 0x3AB0;
+static constexpr DWORD BOARD_COLOR_STRIDE = 0x14;
+static constexpr DWORD APP_PROFILE_OFFSET = 0x220;
 static constexpr DWORD PROFILE_BOARD_OFFSET = 0x0C;
 static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
 static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
@@ -36,8 +36,8 @@ struct CodeCave { void* caveAddr; };
 static CodeCave g_caves[7];
 
 static void installCave(int idx, DWORD patchSite, float* globalFloat,
-                        SavedType savedType, DWORD callTarget, BYTE leaOffset,
-                        float* secondGlobal, DWORD returnAddr) {
+    SavedType savedType, DWORD callTarget, BYTE leaOffset,
+    float* secondGlobal, DWORD returnAddr) {
     BYTE caveCode[32];
     int p = 0;
 
@@ -52,13 +52,15 @@ static void installCave(int idx, DWORD patchSite, float* globalFloat,
         caveCode[p++] = 0xE8;
         *(DWORD*)(caveCode + p) = 0;
         p += 4;
-    } else if (savedType == SAVED_LEA) {
+    }
+    else if (savedType == SAVED_LEA) {
         savedLen = 4;
         caveCode[p++] = 0x8D;
         caveCode[p++] = 0x4C;
         caveCode[p++] = 0x24;
         caveCode[p++] = leaOffset;
-    } else {
+    }
+    else {
         savedLen = 5;
         caveCode[p++] = 0xFF;
         caveCode[p++] = 0x35;
@@ -149,13 +151,13 @@ private:
     void installCaves() {
         if (m_cavesInstalled) return;
 
-        installCave(0, 0x421CBF, &g_p2_red,   SAVED_CALL,       0x453150, 0,    nullptr,    0x421CC5);
-        installCave(1, 0x421E43, &g_p4_blue,  SAVED_PUSH_GLOBAL, 0,        0,    &g_p4_green, 0x421E49);
-        installCave(2, 0x433029, &g_p2_red,   SAVED_LEA,        0,        0x28, nullptr,    0x43302E);
-        installCave(3, 0x433095, &g_p4_blue,  SAVED_PUSH_GLOBAL, 0,        0,    &g_p4_green, 0x43309B);
-        installCave(4, 0x431B72, &g_p2_red,   SAVED_CALL,       0x453150, 0,    nullptr,    0x431B78);
-        installCave(5, 0x44F120, &g_p2_red,   SAVED_LEA,        0,        0x30, nullptr,    0x44F126);
-        installCave(6, 0x44F1A9, &g_p4_blue,  SAVED_PUSH_GLOBAL, 0,        0,    &g_p4_green, 0x44F1B0);
+        installCave(0, 0x421CBF, &g_p2_red, SAVED_CALL, 0x453150, 0, nullptr, 0x421CC5);
+        installCave(1, 0x421E43, &g_p4_blue, SAVED_PUSH_GLOBAL, 0, 0, &g_p4_green, 0x421E49);
+        installCave(2, 0x433029, &g_p2_red, SAVED_LEA, 0, 0x28, nullptr, 0x43302E);
+        installCave(3, 0x433095, &g_p4_blue, SAVED_PUSH_GLOBAL, 0, 0, &g_p4_green, 0x43309B);
+        installCave(4, 0x431B72, &g_p2_red, SAVED_CALL, 0x453150, 0, nullptr, 0x431B78);
+        installCave(5, 0x44F120, &g_p2_red, SAVED_LEA, 0, 0x30, nullptr, 0x44F126);
+        installCave(6, 0x44F1A9, &g_p4_blue, SAVED_PUSH_GLOBAL, 0, 0, &g_p4_green, 0x44F1B0);
 
         m_cavesInstalled = true;
     }
@@ -232,26 +234,26 @@ private:
     }
 
 public:
-    const char* GetModName() override    { return "Ball Tint"; }
-    const char* GetAuthorName() override { return "Hamsterbot"; }
-    const char* GetContributors() override { return "v11: arena round-end winner display"; }
-    int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
+    const char* GetModName() override { return "Ball Tint"; }
+    const char* GetAuthorName() override { return "BookwormKevin"; }
+    const char* GetContributors() override { return "Hamsterbot"; }
+    int GetApiVersion() override { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
         api = modApi;
 
-        createColorSlider("TINT_P1_R", "P1 Red",   1.0f);
+        createColorSlider("TINT_P1_R", "P1 Red", 1.0f);
         createColorSlider("TINT_P1_G", "P1 Green", 1.0f);
-        createColorSlider("TINT_P1_B", "P1 Blue",  1.0f);
-        createColorSlider("TINT_P2_R", "P2 Red",   0.0f);
+        createColorSlider("TINT_P1_B", "P1 Blue", 1.0f);
+        createColorSlider("TINT_P2_R", "P2 Red", 0.0f);
         createColorSlider("TINT_P2_G", "P2 Green", 0.5f);
-        createColorSlider("TINT_P2_B", "P2 Blue",  1.0f);
-        createColorSlider("TINT_P3_R", "P3 Red",   1.0f);
+        createColorSlider("TINT_P2_B", "P2 Blue", 1.0f);
+        createColorSlider("TINT_P3_R", "P3 Red", 1.0f);
         createColorSlider("TINT_P3_G", "P3 Green", 0.25f);
-        createColorSlider("TINT_P3_B", "P3 Blue",  0.25f);
-        createColorSlider("TINT_P4_R", "P4 Red",   1.0f);
+        createColorSlider("TINT_P3_B", "P3 Blue", 0.25f);
+        createColorSlider("TINT_P4_R", "P4 Red", 1.0f);
         createColorSlider("TINT_P4_G", "P4 Green", 1.0f);
-        createColorSlider("TINT_P4_B", "P4 Blue",  0.0f);
+        createColorSlider("TINT_P4_B", "P4 Blue", 0.0f);
 
         m_thread = CreateThread(NULL, 0, tintThread, this, 0, NULL);
     }

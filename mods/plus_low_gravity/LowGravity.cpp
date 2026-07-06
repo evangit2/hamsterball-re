@@ -1,57 +1,75 @@
-// Low Gravity mod for Hamsterball Plus API
-// Adds a toggle button to reduce the player's gravity.
-// Uses PhysicsObject->gravity_y (the API-recommended way to modify gravity).
-// Default gravity_y = 0.5f; we reduce it to 0.125f (25%) when enabled.
-//
-// Build: Place in ModTemplate, replace MainModFile.cpp with this, build as DLL.
-
 #include "HamsterballAPI.h"
 #include <windows.h>
+#include <cmath>
 
 class LowGravityMod : public HamsterballAPI {
 private:
     IModAPI* api = nullptr;
 
-    static constexpr float LOW_GRAVITY = -0.125f;  // Y-up: negative = down. Default is ~-0.5f
+    static constexpr float NORMAL_GRAVITY = 0.5f;
+    static constexpr float LOW_GRAVITY = 0.125f;
 
 public:
-    const char* GetModName() override    { return "Low Gravity"; }
-    const char* GetAuthorName() override { return "Hamsterbot"; }
-    int GetApiVersion() override         { return HAMSTERBALL_API_VERSION; }
+    const char* GetModName() override { return "Gravity Mod"; }
+    const char* GetAuthorName() override { return "BookwormKevin"; }
+    const char* GetContributors() override { return "Hamsterbot"; }
+    int GetApiVersion() override { return HAMSTERBALL_API_VERSION; }
 
     void Initialize(IModAPI* modApi) override {
         api = modApi;
 
-        CustomButton gravityButton("CHEAT_LOWGRAV", "LOW GRAVITY");
-        api->CreateToggleButton(gravityButton, this);
-    }
-
-    void onButtonToggle(const char* buttonId, bool newState) override {
-        if (strcmp(buttonId, "CHEAT_LOWGRAV") == 0) {
-            CustomText params;
-            params.x = 400;
-            params.y = 100;
-
-            if (newState) {
-                api->DrawTimedMessage("Low Gravity: ON", params, 2.0f);
-            } else {
-                api->DrawTimedMessage("Low Gravity: OFF", params, 2.0f);
-            }
-        }
+        CustomSlider gravitySlider("CHEAT_GRAV", "GRAVITY", 5);
+        gravitySlider.stepSize = 0.5;
+        //gravitySlider.lowerBound = 0;
+        api->CreateSlider(gravitySlider, this);
     }
 
     void onBallUpdate(Ball* ball) override {
-        if (!api->GetButtonState("CHEAT_LOWGRAV")) return;
         if (!ball) return;
 
-        // Only apply to player balls, not badballs
-        if (ball->playerID < 0) return;
-
-        // Use PhysicsObject->gravity_y (API recommended approach)
         PhysicsObject* phys = ball->physics_object;
-        if (phys) {
-            phys->gravity_y = LOW_GRAVITY;
+        if (!phys) return;
+
+        float slider = api->GetSliderState("CHEAT_GRAV");
+
+        // Read current gravity direction (set by game's Ball_Set*Gravity functions)
+        // Game uses 3 unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat
+        float gx = phys->gravity_x;
+        float gy = phys->gravity_y;
+        float gz = phys->gravity_z;
+
+        float absX = fabsf(gx);
+        float absY = fabsf(gy);
+        float absZ = fabsf(gz);
+
+        // Clear all axes, then set only the dominant one
+        phys->gravity_x = 0;
+        phys->gravity_y = 0;
+        phys->gravity_z = 0;
+
+        if (absY > 0.001f && absY >= absX && absY >= absZ) {
+            // Y-axis gravity (normal levels — game uses -Y for down)
+            phys->gravity_y = (slider < 0) ? 1.0f : -1.0f;
         }
+        else if (absX > 0.001f && absX >= absZ) {
+            // X-axis gravity (Odd Race walls — game uses -X for down)
+            phys->gravity_x = (slider < 0) ? 1.0f : -1.0f;
+        }
+        else if (absZ > 0.001f) {
+            // Z-axis gravity (Odd Race flat — game uses +Z for down)
+            phys->gravity_z = (slider < 0) ? -1.0f : 1.0f;
+        }
+        else {
+            // No gravity set yet, default to Y-down
+            phys->gravity_y = (slider < 0) ? 1.0f : -1.0f;
+        }
+
+        // Yeah its called spin rate in the api for some reason,
+        // but it really is a gravity scale property.
+        // It doesn't behave well with negative values,
+        // but it works much better with large values than the physics object gravity.
+        // The default of it is 5.
+        ball->spin_rate = fabsf(slider);
     }
 };
 
