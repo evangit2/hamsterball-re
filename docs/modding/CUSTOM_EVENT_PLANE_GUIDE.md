@@ -373,9 +373,9 @@ void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
          *     handle_speed_pad(this_, ball, coll_entry, power);
          * }
          *
-         * if (_stricmp(name, "E:TELEPORT") == 0) {
-         *     handle_teleport(this_, ball, coll_entry);
-         *     return;  // skip original — teleport replaces all other events
+         * if (_stricmp(name, "E:WARP") == 0) {
+         *     handle_warp(this_, ball, coll_entry);
+         *     return;  // skip original — warp replaces all other events
          * }
          */
     }
@@ -585,10 +585,10 @@ void handle_speed_pad(void *board, void *ball, void *coll_entry,
 }
 ```
 
-### Teleporter
+### Warp Pad
 
 ```c
-static void handle_teleport(void *board, void *ball, void *coll_entry) {
+static void handle_warp(void *board, void *ball, void *coll_entry) {
     /* Parse <X>, <Y>, <Z> target from event name */
     const char *name = get_event_name(coll_entry);
     /* ... parse coordinates ... */
