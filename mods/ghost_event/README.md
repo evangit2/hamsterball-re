@@ -2,7 +2,7 @@
 
 ## What it does
 
-Creates a custom collision event `E:GHOST(filename)` that loads a `.ghost` file (binary format compatible with ghost_saver v22) and plays it back as a ghost ball — **in any game mode** (Time Trial, Tournament, or Party).
+Creates a custom collision event `E:GHOST(filename)` that loads a `.ghost` file (binary format compatible with ghost_saver v22+) and plays it back as a ghost ball — **in any game mode** (Time Trial, Tournament, or Party).
 
 When the ball touches a mesh surface tagged `E:GHOST(PreviousRun)`, the mod:
 1. Loads `Ghosts/PreviousRun.ghost` from disk
@@ -16,7 +16,7 @@ When the ball touches a mesh surface tagged `E:GHOST(PreviousRun)`, the mod:
 
 1. Place `.ghost` files in a `Ghosts/` directory next to `bass.dll`
    - Files can be created by the ghost_saver mod (Time Trial mode)
-   - Binary format: 4-byte frameCount + 4-byte finishTime + frameCount × 0x28-byte BallSnapshot structs
+   - Binary format: 4-byte magic ("GHSG") + 4-byte version + 4-byte time + 4-byte frameCount + frameCount × 0x28-byte BallSnapshot structs
 2. Add `E:GHOST(filename)` event tags to level MESHWORLD files (Section 1 entity names)
 3. When the ball touches the tagged surface, the ghost starts playing
 

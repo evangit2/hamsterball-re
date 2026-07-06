@@ -89,7 +89,7 @@ typedef DWORD HFX;
 #define BALL_RADIUS     0x284
 
 /* ---- Ghost file magic ---- */
-#define GHOST_MAGIC     0x47484F53  /* "GHOS" */
+#define GHOST_MAGIC     0x47485347  /* "GHSG" — matches ghost_saver v22+ */
 #define GHOST_VERSION   1
 
 /* ---- Logging ---- */
@@ -133,7 +133,7 @@ static BOOL (__stdcall *real_BASS_StreamFree)(HSTREAM);
 static HMUSIC (__stdcall *real_BASS_MusicLoad)(BOOL, const void*, DWORD, DWORD, DWORD, DWORD);
 static BOOL (__stdcall *real_BASS_MusicFree)(HMUSIC);
 static BOOL (__stdcall *real_BASS_ChannelSetAttributes)(DWORD, int, float, int);
-static BOOL (__stdcall *real_BASS_ChannelPlay)(DWORD, BOOL);
+static BOOL (__stdcall *real_BASS_MusicPlayEx)(DWORD, DWORD, int, DWORD);
 static DWORD (__stdcall *real_BASS_ChannelGetData)(DWORD, void*, DWORD);
 static HFX (__stdcall *real_BASS_ChannelSetFX)(DWORD, DWORD, int);
 static void (__stdcall *real_BASS_Start)(void);
@@ -183,12 +183,12 @@ BOOL __stdcall BASS_ChannelSetAttributes(DWORD handle, int freq, float volume, i
 }
 BOOL __stdcall BASS_MusicPlayEx(DWORD handle, DWORD flags, DWORD freq, BOOL ramp) {
     LOG("BASS_MusicPlayEx(handle=0x%X flags=%u freq=%u ramp=%d)", handle, flags, freq, ramp);
-    if (real_BASS_ChannelPlay) {
-        BOOL r = real_BASS_ChannelPlay(handle, ramp);
+    if (real_BASS_MusicPlayEx) {
+        BOOL r = real_BASS_MusicPlayEx(handle, flags, (int)freq, ramp);
         LOG("BASS_MusicPlayEx -> %d (err=%d)", r, real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1);
         return r;
     }
-    LOG("BASS_MusicPlayEx: no real_BASS_ChannelPlay, returning TRUE");
+    LOG("BASS_MusicPlayEx: no real_BASS_MusicPlayEx, returning TRUE");
     return TRUE;
 }
 DWORD __stdcall BASS_ChannelGetData(DWORD handle, void *buffer, DWORD length) {
@@ -238,7 +238,7 @@ static void load_real_bass(void) {
     real_BASS_MusicLoad       = (void*)GetProcAddress(g_hRealBass, "BASS_MusicLoad");
     real_BASS_MusicFree       = (void*)GetProcAddress(g_hRealBass, "BASS_MusicFree");
     real_BASS_ChannelSetAttributes = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
-    real_BASS_ChannelPlay     = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelPlay");
+    real_BASS_MusicPlayEx      = (void*)GetProcAddress(g_hRealBass, "BASS_MusicPlayEx");
     real_BASS_ChannelGetData  = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelGetData");
     real_BASS_ChannelSetFX    = (void*)GetProcAddress(g_hRealBass, "BASS_ChannelSetFX");
     real_BASS_Start           = (void*)GetProcAddress(g_hRealBass, "BASS_Start");
@@ -251,9 +251,9 @@ static void load_real_bass(void) {
         LOG("load_real_bass: ChannelSetAttributes not found, using singular: %s",
             real_BASS_ChannelSetAttributes ? "OK" : "FAIL");
     }
-    LOG("load_real_bass: Init=%c Free=%c MusicLoad=%c MusicPlayEx/ChannelPlay=%c ChannelSetAttr=%c Start=%c Stop=%c",
+    LOG("load_real_bass: Init=%c Free=%c MusicLoad=%c MusicPlayEx=%c ChannelSetAttr=%c Start=%c Stop=%c",
         real_BASS_Init?'Y':'N', real_BASS_Free?'Y':'N',
-        real_BASS_MusicLoad?'Y':'N', real_BASS_ChannelPlay?'Y':'N',
+        real_BASS_MusicLoad?'Y':'N', real_BASS_MusicPlayEx?'Y':'N',
         real_BASS_ChannelSetAttributes?'Y':'N',
         real_BASS_Start?'Y':'N', real_BASS_Stop?'Y':'N');
 }
@@ -352,8 +352,8 @@ void __cdecl frame_epilogue_handler(void);
 typedef struct {
     DWORD magic;
     DWORD version;
+    DWORD time;        /* game ticks (finishTime) — matches ghost_saver field order */
     DWORD frameCount;
-    DWORD finishTime;
 } GhostFileHeader;
 #pragma pack(pop)
 
@@ -396,9 +396,9 @@ static int load_ghost_file(const char *filename, DWORD **outSnapshots, DWORD *ou
         DWORD count = header.magic;
         DWORD time = header.version;
         header.frameCount = count;
-        header.finishTime = time;
+        header.time = time;
     } else {
-        LOG("Magic OK: v%d frames=%d time=%d", header.version, header.frameCount, header.finishTime);
+        LOG("Magic OK: v%d time=%d frames=%d", header.version, header.time, header.frameCount);
     }
 
     if (header.frameCount == 0 || header.frameCount > 50000) {
@@ -421,8 +421,8 @@ static int load_ghost_file(const char *filename, DWORD **outSnapshots, DWORD *ou
     CloseHandle(hFile);
     *outSnapshots = snapshots;
     *outCount = header.frameCount;
-    *outFinishTime = header.finishTime;
-    LOG("Ghost loaded: %d frames", header.frameCount);
+    *outFinishTime = header.time;
+    LOG("Ghost loaded: %d frames, time=%d", header.frameCount, header.time);
     return 1;
 }
 
@@ -713,28 +713,29 @@ static void build_dce_trampoline(void) {
 
 static void build_dce_stub(void) {
     /* Layout:
-     * 60           pushad
-     * 9C          pushfd
-     * 51           push ecx (board — still in ECX at entry)
-     * FF 74 24 28  push [esp+0x28]  (ball: pushad=32, pushfd=4, push ecx=4 → retaddr at 40=0x28, ball at 44=0x2C)
-     * Wait: after pushad(32)+pushfd(4)+push ecx(4) = 40 bytes on stack
-     *   [ESP+0]  = ecx (board)
-     *   [ESP+4]  = eflags
-     *   [ESP+8..36] = pushad regs (EDI..EAX)
-     *   [ESP+40] = return addr
-     *   [ESP+44] = ball
-     *   [ESP+48] = collEntry
-     * So ball is at [ESP+0x2C] (44), collEntry at [ESP+0x30] (48)
+     * At entry: ECX=board, [ESP+4]=ball, [ESP+8]=collEntry, RET 0x8
+     * pushad (32) + pushfd (4) = 36 bytes on stack
+     *   [ESP+36] = return addr (from JMP)
+     *   [ESP+40] = ball
+     *   [ESP+44] = collEntry
+     *
+     * dce_handler is __cdecl(board, ball, collEntry) — __cdecl expects
+     * arguments pushed right-to-left: collEntry, ball, board.
+     *
+     * We push in reverse order: collEntry, ball, board(ECX).
+     * After pushad(32)+pushfd(4) = 36 bytes:
+     *   [ESP+36] = return addr, [ESP+40] = ball, [ESP+44] = collEntry
      */
     BYTE *code = (BYTE*)alloc_executable(64);
     int i = 0;
     code[i++] = 0x60;  /* pushad */
     code[i++] = 0x9C;  /* pushfd */
-    code[i++] = 0x51;  /* push ecx (board) */
-    /* push [esp+0x2C] (ball) */
+    /* push [esp+0x2C] (collEntry at offset 44=0x2C) — push FIRST (rightmost arg) */
     code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;
-    /* After pushing ball, ESP dropped by 4. collEntry was at 0x30, now at 0x34 */
-    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x34;
+    /* After pushing collEntry, ESP dropped by 4. ball was at 0x28(40), now at 0x2C */
+    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;
+    /* push ecx (board — still in ECX at entry) — push LAST (leftmost arg) */
+    code[i++] = 0x51;
     /* call dce_handler (relative) */
     code[i++] = 0xE8;
     *(DWORD*)(code + i) = (DWORD)&dce_handler - (DWORD)(code + i + 4);
