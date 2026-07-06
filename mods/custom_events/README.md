@@ -2,6 +2,12 @@
 
 Custom E: collision events for Hamsterball — define your own event types with DLL-side handlers.
 
+## v1.2: E:SOUND (no sound fix)
+
+**Fixed:** Event name was read as a pointer (`*(char**)(meshbuf+0x864)`) but it's stored **inline** at `meshbuf+0x864`. The double-dereference read the first 4 bytes of the string "E:SO..." as a garbage pointer, which failed `IsBadReadPtr` and returned early — no crash, but no sound either. Changed to direct read: `(char*)(meshbuf+0x864)`, matching the working `ghost_event` mod.
+
+**Also fixed:** BASS 2.0 `BASS_StreamPlay` typedef was missing its third `DWORD flags` parameter, which would cause a 4-byte stack corruption on BASS 2.0.
+
 ## v1.1: E:SOUND (crash fix)
 
 **Fixed:** `BASS_StreamCreateFile` uses `QWORD` (8-byte) parameters for `offset` and `length` in **both BASS 2.0 and 2.4**. The v1.0 BASS 2.0 typedef incorrectly used `DWORD` (4-byte), causing an 8-byte stack corruption: the function's `RET 28` would pop 28 bytes from a 20-byte stack, corrupting the return address and crashing the game at a garbage address (`0x682CBD9A`).
