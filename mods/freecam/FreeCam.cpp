@@ -212,11 +212,17 @@ public:
                         void** vtable = *(void***)device;
                         if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
                             // D3D8 SetRenderState is __stdcall: (device, state, value)
+                            // The fog IS the level's distance shading — disabling it
+                            // makes everything invisible. Instead, push FOGSTART/FOGEND
+                            // to extreme distances so fog never kicks in within the level.
                             typedef long(__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
                             D3DSetRenderState_t srs = (D3DSetRenderState_t)vtable[50];
-                            srs(device, 28, 0);   // D3DRS_FOGENABLE = FALSE
-                            srs(device, 35, 0);   // D3DRS_FOGTABLEMODE = D3DFOG_NONE
-                            srs(device, 140, 0);  // D3DRS_FOGVERTEXMODE = D3DFOG_NONE
+                            float fogStart = 99999.0f;
+                            float fogEnd = 100000.0f;
+                            // D3DRS_FOGSTART = 36, value is float bits
+                            srs(device, 36, *(DWORD*)&fogStart);
+                            // D3DRS_FOGEND = 37
+                            srs(device, 37, *(DWORD*)&fogEnd);
                         }
                     }
                 }
