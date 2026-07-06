@@ -301,14 +301,14 @@ static void shutdown_all_entities(void) {
             FreeLibrary(ent->behavior_dll);
             ent->behavior_dll = NULL;
         }
-        /* Free S1-allocated transforms (MeshBuffer transforms are game-owned, don't free) */
+        /* Free S1-allocated transforms (game-owned transforms must NOT be freed).
+         * Game-owned transforms point into MeshWorld+0x28 (game heap, < 0x10000000).
+         * LocalAlloc'd fallback transforms are > 0x10000000 on Windows. */
         if (ent->transform) {
-            /* Heuristic: S1 transforms are LocalAlloc'd; MeshBuffer transforms point into MeshWorld+0x28.
-             * Game-owned transforms are in the 0x00400000-0x10000000 range (game heap).
-             * LocalAlloc'd pointers are typically > 0x10000000 on Windows. */
             if ((DWORD)ent->transform > 0x10000000) {
                 LocalFree(ent->transform);
             }
+            /* Game-owned transforms (<= 0x10000000) are freed by the game itself */
         }
         ent->initialized = 0;
         ent->transform = NULL;
@@ -443,23 +443,107 @@ static void scan_s1_ref_points(DWORD board, FILE* logf) {
                     prefix_str, ent_name, posX, posY, posZ, rotX, rotY, rotZ);
         }
 
+        /* Find the game's EntityTransform for this entity.
+         *
+         * The S1 ref point provides position/rotation, but the game's render
+         * system uses EntityTransform at MeshWorld+0x28 + ctx_idx * 0x50.
+         * We must find the MeshBuffer with matching name, get its ctx_idx,
+         * and use the GAME's EntityTransform — NOT a local copy.
+         *
+         * A local EntityTransform would be disconnected from the render system:
+         * the behavior DLL would modify it, but the game would never read it.
+         *
+         * Strategy: scan MeshBuffers at MeshWorld+0x2C for matching name.
+         * If found, use its ctx_idx to resolve the game EntityTransform.
+         * Then write the S1 position/rotation INTO the game's EntityTransform
+         * (overriding the identity transform that the file parser sets).
+         * If not found, fall back to local EntityTransform. */
+        EntityTransform* game_transform = NULL;
+
+        DWORD scene = get_scene(board);
+        if (scene) {
+            DWORD mw = get_meshworld(scene);
+            if (mw) {
+                if (!IsBadReadPtr((void*)(mw + MESHWORLD_MESHBUFFER_LIST), 4)) {
+                    DWORD mb_list = *(DWORD*)(mw + MESHWORLD_MESHBUFFER_LIST);
+                    if (mb_list && mb_list >= 0x10000) {
+                        if (!IsBadReadPtr((void*)(mb_list + ATHENALIST_COUNT), 4)) {
+                            int mb_count = *(int*)(mb_list + ATHENALIST_COUNT);
+                            if (mb_count >= 1 && mb_count <= 10000) {
+                                if (!IsBadReadPtr((void*)(mb_list + ATHENALIST_DATA), 4)) {
+                                    DWORD* mb_array = *(DWORD**)(mb_list + ATHENALIST_DATA);
+                                    if (mb_array && !IsBadReadPtr(mb_array, mb_count * 4)) {
+                                        if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
+                                            EntityTransform* transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
+                                            if (transforms) {
+                                                /* Search for MeshBuffer with matching name */
+                                                int mb_i;
+                                                for (mb_i = 0; mb_i < mb_count; mb_i++) {
+                                                    DWORD mb = mb_array[mb_i];
+                                                    if (!mb || mb < 0x10000) continue;
+                                                    if (IsBadReadPtr((void*)mb, 0x900)) continue;
+                                                    if (IsBadReadPtr((void*)(mb + MESHBUFFER_NAME), 4)) continue;
+                                                    char* mb_name = *(char**)(mb + MESHBUFFER_NAME);
+                                                    if (!mb_name || IsBadReadPtr(mb_name, 3)) continue;
+                                                    if (_stricmp(mb_name, effective_name) == 0) {
+                                                        DWORD ctx_idx = *(DWORD*)(mb + MESHBUFFER_CTX_INDEX);
+                                                        EntityTransform* t = &transforms[ctx_idx];
+                                                        if (!IsBadReadPtr(t, sizeof(EntityTransform))) {
+                                                            game_transform = t;
+                                                            if (logf) fprintf(logf, "    -> Found matching MeshBuffer[%d] ctx_idx=%d transform=0x%08X\n",
+                                                                    mb_i, ctx_idx, (unsigned)game_transform);
+                                                        }
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         /* Load behavior DLL */
         CustomEntity* ent = &g_entities[g_entity_count];
         memset(ent, 0, sizeof(CustomEntity));
         strncpy(ent->entity_name, ent_name, 255);
         ent->prefix_type = prefix_type;
-        /* No transform pointer from S1 — we store pos/rot in a local EntityTransform */
-        /* Allocate a persistent EntityTransform for this entity */
-        ent->transform = (EntityTransform*)LocalAlloc(LPTR, sizeof(EntityTransform));
-        if (!ent->transform) continue;
-        ent->transform->posX = posX;
-        ent->transform->posY = posY;
-        ent->transform->posZ = posZ;
-        ent->transform->rotX = rotX;
-        ent->transform->rotY = rotY;
-        ent->transform->rotZ = rotZ;
-        ent->transform->rotScale = 1.0f;
-        ent->transform->posScale = 1.0f;
+
+        if (game_transform) {
+            /* Use the GAME's EntityTransform — write S1 position/rotation into it.
+             * This connects the behavior DLL to the game's render system.
+             * The behavior DLL's Update will modify rotX/rotY/rotZ directly
+             * on the transform the game reads every frame for rendering. */
+            ent->transform = game_transform;
+            ent->transform->posX = posX;
+            ent->transform->posY = posY;
+            ent->transform->posZ = posZ;
+            ent->transform->rotX = rotX;
+            ent->transform->rotY = rotY;
+            ent->transform->rotZ = rotZ;
+            ent->transform->rotScale = 1.0f;
+            ent->transform->posScale = 1.0f;
+            if (logf) fprintf(logf, "    -> Using GAME EntityTransform (ctx_idx resolved from MeshBuffer)\n");
+        } else {
+            /* Fallback: no matching MeshBuffer found.
+             * Allocate a local EntityTransform. The behavior DLL will run,
+             * but the mesh won't be animated by the game (disconnected). */
+            ent->transform = (EntityTransform*)LocalAlloc(LPTR, sizeof(EntityTransform));
+            if (!ent->transform) continue;
+            ent->transform->posX = posX;
+            ent->transform->posY = posY;
+            ent->transform->posZ = posZ;
+            ent->transform->rotX = rotX;
+            ent->transform->rotY = rotY;
+            ent->transform->rotZ = rotZ;
+            ent->transform->rotScale = 1.0f;
+            ent->transform->posScale = 1.0f;
+            if (logf) fprintf(logf, "    -> WARNING: No matching MeshBuffer found, using local EntityTransform (disconnected)\n");
+        }
 
         if (!load_behavior_dll(ent)) {
             if (logf) fprintf(logf, "    -> Could not load CustomEntities/%s.dll, skipping\n", ent_name);
