@@ -337,8 +337,19 @@ void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
         if (g_dceCallCount <= 3) LOG("DCE[%d]: bad meshbuf 0x%X", g_dceCallCount, pair[1]);
         return;
     }
-    const char *eventName = (const char*)(pair[1] + 0x864);
-    if (IsBadReadPtr(eventName, 1) || !eventName[0]) {
+    const char *eventName = NULL;
+    {
+        /* MeshBuffer+0x864 stores a char* pointer to the name string,
+         * NOT an inline char array. Must dereference to get the actual string.
+         * (Verified from working water mod + collision_hook tool.) */
+        DWORD namePtr = *(DWORD*)((BYTE*)pair[1] + 0x864);
+        if (!namePtr || IsBadReadPtr((void*)namePtr, 1)) {
+            if (g_dceCallCount <= 3) LOG("DCE[%d]: bad name ptr (meshbuf=0x%X, val=0x%X)", g_dceCallCount, pair[1], namePtr);
+            return;
+        }
+        eventName = (const char*)namePtr;
+    }
+    if (!eventName[0]) {
         if (g_dceCallCount <= 3) LOG("DCE[%d]: empty event name (meshbuf=0x%X)", g_dceCallCount, pair[1]);
         return;
     }
