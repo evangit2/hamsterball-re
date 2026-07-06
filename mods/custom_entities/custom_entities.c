@@ -353,12 +353,15 @@ static void scan_s1_ref_points(DWORD board, FILE* logf) {
     DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
     if (!sceneobj || sceneobj < 0x10000) return;
 
-    /* SceneObject → S1 AthenaList (SceneObject+0x894) */
-    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_S1_LIST), 4)) return;
-    DWORD s1_list = *(DWORD*)(sceneobj + SCENEOBJ_S1_LIST);
-    if (!s1_list || s1_list < 0x10000) return;
+    /* SceneObject → S1 AthenaList (EMBEDDED at SceneObject+0x894, not a pointer)
+     * CreateMouseTrap uses: AthenaList_GetIterator(sceneobj + 0x894)
+     *   count = *(sceneobj + 0x894 + 0x04) = *(sceneobj + 0x898)
+     *   data  = *(sceneobj + 0x894 + 0x40C) = *(sceneobj + 0xCA0)
+     * The AthenaList is embedded inline, not a pointer to an external allocation. */
+    DWORD s1_list = sceneobj + SCENEOBJ_S1_LIST;  /* EMBEDDED, not dereferenced */
+    if (s1_list < 0x10000) return;
 
-    /* AthenaList: count at +0x04, data array at +0x40C */
+    /* AthenaList: count at +0x04, data array pointer at +0x40C */
     if (IsBadReadPtr((void*)(s1_list + ATHENALIST_COUNT), 4)) return;
     int s1_count = *(int*)(s1_list + ATHENALIST_COUNT);
     if (s1_count < 1 || s1_count > 10000) return;
