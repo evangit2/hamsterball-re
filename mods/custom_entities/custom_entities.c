@@ -140,6 +140,33 @@ static DWORD g_last_board = 0;
 
 /* Board offsets */
 #define BOARD_SCENE                 0x878     /* Board+0x878 → Scene* */
+#define BOARD_LEVEL                 0x8AC     /* Board+0x8AC → Level* (verified from CreateMouseTrap 0x40BF50) */
+
+/* Level offsets */
+#define LEVEL_SCENEOBJECT           0x480     /* Level+0x480 → SceneObject* (spatial tree base, 0x10d4 bytes) */
+
+/* SceneObject offsets — S1 ref point AthenaList (verified from CreateMouseTrap decompilation) */
+#define SCENEOBJ_S1_LIST            0x894     /* SceneObject+0x894 → AthenaList base for S1 ref points */
+/* AthenaList layout: base+0x04=count, base+0x40C=data array (DWORD* of S1 entry pointers) */
+
+/* S1 ref point entry layout in memory (verified from CreateMouseTrap decompilation):
+ *   +0x00: char* name      (puVar5[0] — passed to __stricmp)
+ *   +0x04: float  posX     (puVar5[1] — copied to obj+0x10DC)
+ *   +0x08: float  posY     (puVar5[2] — copied to obj+0x10E0)
+ *   +0x0C: float  posZ     (puVar5[3] — copied to obj+0x10E4)
+ *   +0x10: float  rotX      (puVar5[4])
+ *   +0x14: float  rotY      (puVar5[5] — used for facing direction: _DAT_004cf44c - rotY)
+ *   +0x18: float  rotZ      (puVar5[6])
+ * Each entry is accessed as undefined4* (DWORD array), so puVar5[N] = entry + N*4
+ */
+#define S1ENTRY_NAME                0x00      /* char* name */
+#define S1ENTRY_POS_X               0x04      /* float posX */
+#define S1ENTRY_POS_Y               0x08      /* float posY */
+#define S1ENTRY_POS_Z               0x0C      /* float posZ */
+#define S1ENTRY_ROT_X               0x10      /* float rotX */
+#define S1ENTRY_ROT_Y               0x14      /* float rotY */
+#define S1ENTRY_ROT_Z               0x18      /* float rotZ */
+#define S1ENTRY_SIZE                0x1C      /* minimum safe read size */
 
 /* Scene offsets */
 #define SCENE_BOARD                 0x47C     /* Scene+0x47C → Board* (param_2 in LoadMeshWorld) */
@@ -274,6 +301,15 @@ static void shutdown_all_entities(void) {
             FreeLibrary(ent->behavior_dll);
             ent->behavior_dll = NULL;
         }
+        /* Free S1-allocated transforms (MeshBuffer transforms are game-owned, don't free) */
+        if (ent->transform) {
+            /* Heuristic: S1 transforms are LocalAlloc'd; MeshBuffer transforms point into MeshWorld+0x28.
+             * Game-owned transforms are in the 0x00400000-0x10000000 range (game heap).
+             * LocalAlloc'd pointers are typically > 0x10000000 on Windows. */
+            if ((DWORD)ent->transform > 0x10000000) {
+                LocalFree(ent->transform);
+            }
+        }
         ent->initialized = 0;
         ent->transform = NULL;
         ent->init_fn = NULL;
@@ -281,6 +317,163 @@ static void shutdown_all_entities(void) {
         ent->shutdown_fn = NULL;
     }
     g_entity_count = 0;
+}
+
+/* Forward declarations — defined later in file, needed by scan_s1_ref_points */
+static int detect_entity_prefix(const char* mesh_name, char* ent_name, int ent_name_size);
+static int is_known_entity(const char* name);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Scan S1 ref points for custom entity names
+ *
+ * The game's entity spawning system (CreateMouseTrap at 0x40BF50, etc.)
+ * iterates S1 ref points via the pointer chain:
+ *   board+0x8AC → Level+0x480 → SceneObject+0x894 (AthenaList of S1 entries)
+ *
+ * Each S1 entry has: char* name at +0x00, float pos[3] at +0x04, float rot[3] at +0x10
+ *
+ * CE: entities in the level MESHWORLD's S1 section provide position/rotation
+ * but the merger may blank the MeshBuffer names. So we MUST scan S1 ref points
+ * to find CE: entities — the MeshBuffer scan alone is not sufficient.
+ *
+ * "REF:" prefix support: Some MESHWORLD files use "REF:CE:Rotator" instead
+ * of "CE:Rotator". We strip "REF:" before checking for CE:/E:/N:.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void scan_s1_ref_points(DWORD board, FILE* logf) {
+    if (!board) return;
+
+    /* board → Level (board+0x8AC) */
+    if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return;
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
+    if (!level || level < 0x10000) return;
+
+    /* Level → SceneObject (Level+0x480) */
+    if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return;
+    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+    if (!sceneobj || sceneobj < 0x10000) return;
+
+    /* SceneObject → S1 AthenaList (SceneObject+0x894) */
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_S1_LIST), 4)) return;
+    DWORD s1_list = *(DWORD*)(sceneobj + SCENEOBJ_S1_LIST);
+    if (!s1_list || s1_list < 0x10000) return;
+
+    /* AthenaList: count at +0x04, data array at +0x40C */
+    if (IsBadReadPtr((void*)(s1_list + ATHENALIST_COUNT), 4)) return;
+    int s1_count = *(int*)(s1_list + ATHENALIST_COUNT);
+    if (s1_count < 1 || s1_count > 10000) return;
+
+    if (IsBadReadPtr((void*)(s1_list + ATHENALIST_DATA), 4)) return;
+    DWORD* s1_array = *(DWORD**)(s1_list + ATHENALIST_DATA);
+    if (!s1_array || IsBadReadPtr(s1_array, s1_count * 4)) return;
+
+    if (logf) fprintf(logf, "  S1 ref point scan: %d entries (sceneobj=0x%08X s1_list=0x%08X)\n",
+                     s1_count, (unsigned)sceneobj, (unsigned)s1_list);
+
+    int i;
+    for (i = 0; i < s1_count && g_entity_count < MAX_CUSTOM_ENTITIES; i++) {
+        DWORD entry = s1_array[i];
+        if (!entry || entry < 0x10000) continue;
+        if (IsBadReadPtr((void*)entry, S1ENTRY_SIZE)) continue;
+
+        /* Read name pointer */
+        if (IsBadReadPtr((void*)(entry + S1ENTRY_NAME), 4)) continue;
+        char* name = *(char**)(entry + S1ENTRY_NAME);
+        if (!name || IsBadReadPtr(name, 3)) continue;
+
+        /* Strip "REF:" prefix if present (some MESHWORLD files use REF:CE:Name) */
+        const char* effective_name = name;
+        if (_strnicmp(name, "REF:", 4) == 0) {
+            effective_name = name + 4;
+        }
+
+        /* Detect entity prefix */
+        char ent_name[256];
+        int prefix_type = detect_entity_prefix(effective_name, ent_name, sizeof(ent_name));
+        if (!prefix_type) continue;
+
+        if (logf) {
+            const char* prefix_str = (prefix_type == PREFIX_CE) ? "CE" :
+                                     (prefix_type == PREFIX_E)  ? "E"  : "N";
+            fprintf(logf, "  S1[%d]: name=\"%s%s\" (effective=\"%s%s\")\n",
+                    i, (name != effective_name) ? "REF:" : "", name + (name != effective_name ? 4 : 0),
+                    prefix_str, ent_name);
+        }
+
+        /* Skip known game entities (only for E:/N: prefix, not CE:) */
+        if (prefix_type != PREFIX_CE && is_known_entity(ent_name)) {
+            if (logf) fprintf(logf, "    -> '%s' is known game entity, skipping\n", ent_name);
+            continue;
+        }
+
+        /* Skip if already tracked (by entity name) */
+        int k;
+        for (k = 0; k < g_entity_count; k++) {
+            if (_stricmp(g_entities[k].entity_name, ent_name) == 0)
+                break;
+        }
+        if (k < g_entity_count) {
+            if (logf) fprintf(logf, "    -> '%s' already tracked, skipping\n", ent_name);
+            continue;
+        }
+
+        /* For CE: entities, verify CustomEntities/<name>.MESHWORLD exists */
+        if (prefix_type == PREFIX_CE) {
+            if (!entity_meshworld_exists(ent_name)) {
+                if (logf) fprintf(logf, "    -> CustomEntities/%s.MESHWORLD not found, skipping\n", ent_name);
+                continue;
+            }
+        }
+
+        /* Read S1 position and rotation directly */
+        float posX = *(float*)(entry + S1ENTRY_POS_X);
+        float posY = *(float*)(entry + S1ENTRY_POS_Y);
+        float posZ = *(float*)(entry + S1ENTRY_POS_Z);
+        float rotX = *(float*)(entry + S1ENTRY_ROT_X);
+        float rotY = *(float*)(entry + S1ENTRY_ROT_Y);
+        float rotZ = *(float*)(entry + S1ENTRY_ROT_Z);
+
+        if (logf) {
+            const char* prefix_str = (prefix_type == PREFIX_CE) ? "CE" :
+                                     (prefix_type == PREFIX_E)  ? "E"  : "N";
+            fprintf(logf, "    -> CUSTOM ENTITY '%s:%s' from S1! pos=(%.1f,%.1f,%.1f) rot=(%.3f,%.3f,%.3f)\n",
+                    prefix_str, ent_name, posX, posY, posZ, rotX, rotY, rotZ);
+        }
+
+        /* Load behavior DLL */
+        CustomEntity* ent = &g_entities[g_entity_count];
+        memset(ent, 0, sizeof(CustomEntity));
+        strncpy(ent->entity_name, ent_name, 255);
+        ent->prefix_type = prefix_type;
+        /* No transform pointer from S1 — we store pos/rot in a local EntityTransform */
+        /* Allocate a persistent EntityTransform for this entity */
+        ent->transform = (EntityTransform*)LocalAlloc(LPTR, sizeof(EntityTransform));
+        if (!ent->transform) continue;
+        ent->transform->posX = posX;
+        ent->transform->posY = posY;
+        ent->transform->posZ = posZ;
+        ent->transform->rotX = rotX;
+        ent->transform->rotY = rotY;
+        ent->transform->rotZ = rotZ;
+        ent->transform->rotScale = 1.0f;
+        ent->transform->posScale = 1.0f;
+
+        if (!load_behavior_dll(ent)) {
+            if (logf) fprintf(logf, "    -> Could not load CustomEntities/%s.dll, skipping\n", ent_name);
+            LocalFree(ent->transform);
+            ent->transform = NULL;
+            continue;
+        }
+
+        if (logf) fprintf(logf, "    -> Loaded CustomEntities/%s.dll successfully!\n", ent_name);
+
+        /* Call Behavior_Init */
+        if (ent->init_fn) {
+            ent->init_fn(ent->transform, (void*)board);
+        }
+        ent->initialized = 1;
+        g_entity_count++;
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -514,7 +707,15 @@ static void scan_for_custom_entities(DWORD board) {
     }
 
     if (logf) {
-        fprintf(logf, "Scan complete: %d custom entities loaded\n\n", g_entity_count);
+        fprintf(logf, "MeshBuffer scan complete: %d custom entities loaded\n", g_entity_count);
+        fprintf(logf, "Now scanning S1 ref points...\n");
+    }
+
+    /* Also scan S1 ref points (CE: entities may only appear in S1, not MeshBuffers) */
+    scan_s1_ref_points(board, logf);
+
+    if (logf) {
+        fprintf(logf, "Scan complete: %d total custom entities loaded\n\n", g_entity_count);
         fclose(logf);
     }
 }

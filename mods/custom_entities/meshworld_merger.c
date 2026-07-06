@@ -298,8 +298,14 @@ static int scan_level_for_ce(const BYTE* data, DWORD size,
         mw_skip(&r, 12);  /* rotation (3 floats) */
         if (mw_u32(&r)) mw_skip_material(&r);
 
-        if (_strnicmp(name, "CE:", 3) == 0) {
-            const char* suffix = name + 3;
+        /* Strip "REF:" prefix if present (some MESHWORLD files use REF:CE:Name) */
+        const char* effective_name = name;
+        if (_strnicmp(name, "REF:", 4) == 0) {
+            effective_name = name + 4;
+        }
+
+        if (_strnicmp(effective_name, "CE:", 3) == 0) {
+            const char* suffix = effective_name + 3;
             int j;
             for (j = 0; suffix[j] && suffix[j] != '(' && j < 255; j++)
                 refs[found].name[j] = suffix[j];

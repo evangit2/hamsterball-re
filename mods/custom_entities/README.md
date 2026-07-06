@@ -28,11 +28,15 @@ CustomEntities/Rotator.dll    → behavior DLL that rotates on X axis
 ```
 
 When the level loads, the mod:
-1. Detects `CE:Rotator` in the MeshBuffer scan
+1. Detects `CE:Rotator` in the **S1 ref point scan** (same pointer chain as `CreateMouseTrap`)
 2. Verifies `CustomEntities/Rotator.MESHWORLD` exists
 3. Loads `CustomEntities/Rotator.dll`
-4. Calls `Behavior_Init` with the entity's transform (position/rotation from the level)
+4. Calls `Behavior_Init` with the entity's transform (position/rotation from the S1 ref point)
 5. Calls `Behavior_Update` every frame (~60Hz) — the DLL rotates the entity on X axis
+
+### REF: Prefix Support
+
+Some MESHWORLD files use `REF:CE:Rotator` instead of `CE:Rotator`. The mod automatically strips the `REF:` prefix before checking for `CE:`/`E:`/`N:` prefixes. This is handled in both the runtime S1 scanner and the DllMain-time meshworld merger.
 
 ## Architecture
 
