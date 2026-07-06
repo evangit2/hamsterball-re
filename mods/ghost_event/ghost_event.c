@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 /* BASS type definitions */
 typedef unsigned long long QWORD;
@@ -44,6 +45,7 @@ typedef DWORD HFX;
 #define LEVEL_UPDATE_AND_RENDER   0x0040B600
 #define APP_FRAME_UPDATE_EPILOGUE 0x0046C1F1
 #define BALL_CTOR        0x004039E0
+#define BALL_SET_TRAJECTORY 0x00403850
 #define OPERATOR_NEW     0x004BA57B
 #define BTT_VTABLE_ADDR  0x004D262C
 #define ATHENALIST_VT    0x004D875C
@@ -60,11 +62,14 @@ typedef DWORD HFX;
 #define APP_5DC         0x5DC
 #define APP_5D6         0x5D6
 #define APP_234         0x234
-#define APP_220         0x220
-#define APP_178         0x178
+#define APP_220         0x220  /* PlayerProfile* */
 
-/* ---- Scene offsets ---- */
-#define SCENE_GHOST_BALL 0x361C
+/* ---- PlayerProfile offsets ---- */
+#define PROFILE_BOARD   0x0C   /* Board* (verified: Board_ctor reads *(param_1+0x220)+0xC) */
+
+/* ---- Board/Scene offsets ---- */
+#define BOARD_APP       0x878  /* Board+0x878 = App* (set in Board_ctor) */
+#define BOARD_GHOST_BALL 0x361C /* Board+0x361C = ghost Ball* */
 
 /* ---- BTT offsets ---- */
 #define BTT_VTABLE      0x00
@@ -85,8 +90,11 @@ typedef DWORD HFX;
 #define BALL_POS_Z      0x16C
 #define BALL_ALPHA      0x2FC
 #define BALL_GRAVITY    0x278
+#define BALL_GRAVITY_SCALE 0x27C  /* Board_ctor sets 0.1 (0x3DCCCCCD) */
 #define BALL_MAXSPEED   0x188
 #define BALL_RADIUS     0x284
+#define BALL_MASS       0x1A0  /* Board_ctor sets 0.8 (0x3F4CCCCD) */
+#define BALL_RESPAWN_FLAG 0x281  /* Board_ctor sets 0 */
 
 /* ---- Ghost file magic ---- */
 #define GHOST_MAGIC     0x47485347  /* "GHSG" — matches ghost_saver v22+ */
@@ -272,12 +280,28 @@ static void *alloc_executable(DWORD size) {
     return VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 }
 
+/* ---- Utility: get board pointer ----
+ * Verified chain: App(0x5341E0) -> +0x220 (PlayerProfile*) -> +0xC (Board*)
+ * This is the same chain used by ghost_saver and confirmed in Board_ctor.
+ * Board+0x878 = App* (back-pointer, set in Board_ctor).
+ * App+0x178 is SoundDevice, NOT the scene — do not use it.
+ */
+static DWORD get_board(DWORD app) {
+    if (!app || IsBadReadPtr((void*)app, 0x1000)) return 0;
+    DWORD profile = *(DWORD*)(app + APP_220);
+    if (!profile || IsBadReadPtr((void*)profile, 0x100)) return 0;
+    DWORD board = *(DWORD*)(profile + PROFILE_BOARD);
+    if (!board || IsBadReadPtr((void*)board, 0x4000)) return 0;
+    /* Sanity: Board+0x878 should point back to App */
+    if (*(DWORD*)(board + BOARD_APP) != app) return 0;
+    return board;
+}
+
 /* ---- State ---- */
 static DWORD g_moduleBase = 0x00400000;
 static DWORD g_loadedBTT = 0;
 static DWORD g_loadedSnapshots = 0;   /* malloc'd snapshots buffer */
 static DWORD g_loadedListArray = 0;   /* malloc'd list_array of snapshot ptrs */
-static DWORD g_oldPlaybackBTT = 0;
 static BOOL  g_ghostActive = FALSE;
 static char  g_pendingGhostFile[256] = "";
 static BOOL  g_ghostBallCreated = FALSE;  /* TRUE if WE created the ghost ball (not the game) */
@@ -391,10 +415,11 @@ static int load_ghost_file(const char *filename, DWORD **outSnapshots, DWORD *ou
     }
 
     if (header.magic != GHOST_MAGIC) {
-        /* Legacy format: first 8 bytes = frameCount + finishTime (no magic) */
-        LOG("No magic, legacy format");
-        DWORD count = header.magic;
-        DWORD time = header.version;
+        /* Legacy format: first 8 bytes = frameCount + finishTime (no magic/version)
+         * This is for hypothetical pre-v22 files. ghost_saver v22+ always writes magic. */
+        LOG("No magic, legacy format (magic=0x%X)", header.magic);
+        DWORD count = header.magic;      /* first DWORD = frameCount */
+        DWORD time = header.version;     /* second DWORD = finishTime */
         header.frameCount = count;
         header.time = time;
     } else {
@@ -468,14 +493,18 @@ static DWORD create_btt_from_ghost(DWORD *snapshots, DWORD count, DWORD finishTi
 }
 
 /* ---- Ghost ball creation ----
- * Replicates Board_ctor's ghost ball init at 0x419636:
+ * Replicates Board_ctor's ghost ball init (at 0x419636):
  * 1. operator_new(0xC60)
- * 2. Ball_ctor(ball, scene) — __thiscall, ECX=ball, stack: scene, RET 0x4
+ * 2. Ball_ctor(ball, board) — __thiscall, ECX=ball, stack: board, RET 0x4
+ *    Ball_ctor sets ball+0x14=board, ball+0x10=board+0x878(App)
  * 3. ball->vtable[1]() — Ball_SetupCollisionRender, __thiscall, ECX=ball
- * 4. Set ghost fields: playerID=-1, gravity=0.5, radius=26.0, maxspeed=1000.0, alpha=0.45
- * 5. Store at scene+0x361C
+ * 4. Ball_SetTrajectory(ball, board+0x3F20, ...) — sets trajectory matrices
+ * 5. Set ghost fields matching Board_ctor:
+ *    playerID=-1, gravity=0.5, gravity_scale=0.1, radius=26.0,
+ *    mass=0.8, maxspeed=1000.0, respawn_flag=0
+ * 6. Store at board+0x361C
  */
-static DWORD create_ghost_ball(DWORD sceneAddr) {
+static DWORD create_ghost_ball(DWORD board) {
     /* Step 1: operator_new(0xC60) */
     typedef void* (__cdecl *operator_new_t)(size_t);
     operator_new_t game_operator_new = (operator_new_t)OPERATOR_NEW;
@@ -486,15 +515,14 @@ static DWORD create_ghost_ball(DWORD sceneAddr) {
     }
     LOG("Ghost ball allocated at 0x%08X", ballAddr);
 
-    /* Step 2: Ball_ctor(ball, scene) — __thiscall with 1 stack param
-     * Must use inline asm because __fastcall typedefs put 2nd arg in EDX */
+    /* Step 2: Ball_ctor(ball, board) — __thiscall with 1 stack param */
     DWORD ctorAddr = BALL_CTOR;
     __asm__ volatile (
         "push %1\n\t"
         "movl %0, %%ecx\n\t"
         "call *%2\n\t"
         :
-        : "r"(ballAddr), "r"(sceneAddr), "r"(ctorAddr)
+        : "r"(ballAddr), "r"(board), "r"(ctorAddr)
         : "eax", "ecx", "edx", "memory"
     );
 
@@ -509,20 +537,44 @@ static DWORD create_ghost_ball(DWORD sceneAddr) {
         : "eax", "ecx", "edx", "memory"
     );
 
-    /* Step 4: Set ghost-specific fields */
-    *(DWORD*)(ballAddr + BALL_PLAYER_ID) = 0xFFFFFFFF;
-    *(float*)(ballAddr + BALL_GRAVITY) = 0.5f;
-    *(float*)(ballAddr + BALL_RADIUS) = 26.0f;
-    *(float*)(ballAddr + BALL_MAXSPEED) = 1000.0f;
-    *(float*)(ballAddr + BALL_ALPHA) = 0.45f;
+    /* Step 4: Ball_SetTrajectory(ball, board+0x3F20, 0,0,0,0)
+     * Board_ctor calls: Ball_SetTrajectory(ball, board+0x3F20, fVar7, fVar8, fVar9, fVar10)
+     * where fVar7..10 are uninitialized locals (effectively 0 for a ghost ball).
+     * The function signature is __thiscall(ball, param_1, float, float, float, float).
+     * param_1 = board+0x3F20 (trajectory source data, 16 bytes).
+     */
+    DWORD trajAddr = BALL_SET_TRAJECTORY;
+    DWORD trajSrc = board + 0x3F20;
+    __asm__ volatile (
+        "push 0\n\t"           /* param_5 = 0.0f */
+        "push 0\n\t"           /* param_4 = 0.0f */
+        "push 0\n\t"           /* param_3 = 0.0f */
+        "push 0\n\t"           /* param_2 = 0.0f */
+        "push %1\n\t"          /* param_1 = board+0x3F20 */
+        "movl %0, %%ecx\n\t"   /* this = ball */
+        "call *%2\n\t"
+        :
+        : "r"(ballAddr), "r"(trajSrc), "r"(trajAddr)
+        : "eax", "ecx", "edx", "memory"
+    );
+
+    /* Step 5: Set ghost-specific fields (matching Board_ctor exactly) */
+    *(DWORD*)(ballAddr + BALL_PLAYER_ID) = 0xFFFFFFFF;   /* -1 */
+    *(float*)(ballAddr + BALL_GRAVITY) = 0.5f;           /* 0x3F000000 */
+    *(float*)(ballAddr + BALL_GRAVITY_SCALE) = 0.1f;    /* 0x3DCCCCCD */
+    *(float*)(ballAddr + BALL_RADIUS) = 26.0f;           /* 0x41D00000 */
+    *(float*)(ballAddr + BALL_MASS) = 0.8f;              /* 0x3F4CCCCD */
+    *(float*)(ballAddr + BALL_MAXSPEED) = 1000.0f;       /* 0x4479C000 */
+    *(BYTE*)(ballAddr + BALL_RESPAWN_FLAG) = 0;
+    *(float*)(ballAddr + BALL_ALPHA) = 0.45f;            /* set by Level_UpdateAndRender each frame */
     *(float*)(ballAddr + BALL_POS_X) = 0.0f;
     *(float*)(ballAddr + BALL_POS_Y) = 0.0f;
     *(float*)(ballAddr + BALL_POS_Z) = 0.0f;
 
-    /* Step 5: Store at scene+0x361C */
-    *(DWORD*)(sceneAddr + SCENE_GHOST_BALL) = ballAddr;
+    /* Step 6: Store at board+0x361C */
+    *(DWORD*)(board + BOARD_GHOST_BALL) = ballAddr;
 
-    LOG("Ghost ball created at 0x%08X in scene 0x%08X", ballAddr, sceneAddr);
+    LOG("Ghost ball created at 0x%08X in board 0x%08X", ballAddr, board);
     return ballAddr;
 }
 
@@ -540,11 +592,12 @@ static DWORD create_ghost_ball(DWORD sceneAddr) {
  * So we manually: free the BTT struct (operator_delete), free list_array, free snapshots.
  */
 static void cleanup_previous_ghost(DWORD app) {
+    DWORD board = get_board(app);
+
     /* 1. Destroy old ghost ball if we created it */
     if (g_ghostBallCreated) {
-        DWORD scene = *(DWORD*)(app + APP_178);
-        if (scene && !IsBadReadPtr((void*)scene, 0x4000)) {
-            DWORD ghostBall = *(DWORD*)(scene + SCENE_GHOST_BALL);
+        if (board) {
+            DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
             if (ghostBall && !IsBadReadPtr((void*)ghostBall, 0x100)) {
                 /* Call ball->vtable[0](ball, 1) — deleting destructor */
                 DWORD dtorAddr = BALL_DELETING_DTOR;
@@ -557,18 +610,23 @@ static void cleanup_previous_ghost(DWORD app) {
                     : "r"(ghostBall), "r"(flags), "r"(dtorAddr)
                     : "eax", "ecx", "edx", "memory"
                 );
-                *(DWORD*)(scene + SCENE_GHOST_BALL) = 0;
+                *(DWORD*)(board + BOARD_GHOST_BALL) = 0;
                 LOG("Old ghost ball destroyed at 0x%08X", ghostBall);
             }
         }
         g_ghostBallCreated = FALSE;
     }
 
-    /* 2. Free old BTT struct (allocated via operator_new, so use operator_delete) */
+    /* 2. Clear App+0x910 if it points to our BTT */
+    if (g_loadedBTT && app) {
+        if (*(DWORD*)(app + APP_910) == g_loadedBTT) {
+            *(DWORD*)(app + APP_910) = 0;
+            LOG("Cleared App+0x910 (was our BTT 0x%08X)", g_loadedBTT);
+        }
+    }
+
+    /* 3. Free old BTT struct (allocated via operator_new, so use operator_delete) */
     if (g_loadedBTT) {
-        /* If the BTT was allocated via operator_new, we should use operator_delete.
-         * But operator_new might have fallen back to malloc — either way,
-         * operator_delete and free both end up calling the CRT free. */
         typedef void (__cdecl *operator_delete_t)(void*);
         operator_delete_t game_operator_delete = (operator_delete_t)OPERATOR_DELETE;
         game_operator_delete((void*)g_loadedBTT);
@@ -576,13 +634,13 @@ static void cleanup_previous_ghost(DWORD app) {
         g_loadedBTT = 0;
     }
 
-    /* 3. Free old list_array (malloc'd by us) */
+    /* 4. Free old list_array (malloc'd by us) */
     if (g_loadedListArray) {
         free((void*)g_loadedListArray);
         g_loadedListArray = 0;
     }
 
-    /* 4. Free old snapshots buffer (malloc'd by us) */
+    /* 5. Free old snapshots buffer (malloc'd by us) */
     if (g_loadedSnapshots) {
         free((void*)g_loadedSnapshots);
         g_loadedSnapshots = 0;
@@ -605,9 +663,9 @@ void __cdecl frame_epilogue_handler(void) {
 
         LOG("Processing ghost file: %s", filename);
 
-        DWORD scene = *(DWORD*)(app + APP_178);
-        if (!scene || IsBadReadPtr((void*)scene, 0x4000)) {
-            LOG("No valid scene");
+        DWORD board = get_board(app);
+        if (!board) {
+            LOG("No valid board (get_board failed)");
             return;
         }
 
@@ -631,26 +689,21 @@ void __cdecl frame_epilogue_handler(void) {
             return;
         }
 
-        /* Save old App+0x910 for potential cleanup */
-        g_oldPlaybackBTT = *(DWORD*)(app + APP_910);
-
-        /* Inject new BTT */
+        /* Inject new BTT into App+0x910 (playback buffer) */
         *(DWORD*)(app + APP_910) = newBTT;
         g_loadedBTT = newBTT;
 
         /* Create ghost ball (old one was destroyed in cleanup if it existed) */
-        DWORD ghostBall = *(DWORD*)(scene + SCENE_GHOST_BALL);
+        DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
         if (!ghostBall || IsBadReadPtr((void*)ghostBall, 0x100)) {
-            ghostBall = create_ghost_ball(scene);
+            ghostBall = create_ghost_ball(board);
             if (ghostBall) {
                 g_ghostBallCreated = TRUE;
             } else {
                 LOG("Failed to create ghost ball");
             }
         } else {
-            /* Ghost ball exists but we didn't destroy it (e.g. game created it in Time Trial
-             * and our cleanup didn't fire because g_ghostBallCreated was FALSE).
-             * Reuse it — just reset its position. */
+            /* Ghost ball already exists (game-created in Time Trial), reuse it */
             g_ghostBallCreated = FALSE;
             LOG("Ghost ball already exists (game-created), reusing: 0x%08X", ghostBall);
         }
@@ -666,9 +719,9 @@ void __cdecl frame_epilogue_handler(void) {
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
-            DWORD scene = *(DWORD*)(app2 + APP_178);
-            if (scene && !IsBadReadPtr((void*)scene, 0x4000)) {
-                DWORD ghostBall = *(DWORD*)(scene + SCENE_GHOST_BALL);
+            DWORD board = get_board(app2);
+            if (board) {
+                DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
                 if (ghostBall && !IsBadReadPtr((void*)ghostBall, 0x100)) {
                     DWORD *playbackIdx = (DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX);
                     DWORD count = *(DWORD*)(g_loadedBTT + BTT_AL_COUNT);
@@ -681,7 +734,7 @@ void __cdecl frame_epilogue_handler(void) {
                     g_ghostActive = FALSE;
                 }
             } else {
-                LOG("Scene lost, deactivating");
+                LOG("Board lost, deactivating");
                 g_ghostActive = FALSE;
             }
         }
@@ -829,6 +882,7 @@ static void install_frame_hook(void) {
 
 /* ---- Init thread ---- */
 static DWORD WINAPI init_thread(LPVOID param) {
+    (void)param;
     Sleep(2000);
     HMODULE hExe = GetModuleHandleA(NULL);
     g_moduleBase = (DWORD)hExe;
@@ -844,6 +898,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
 
 /* ---- DllMain ---- */
 BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
+    (void)reserved;
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hInst);
 
@@ -853,7 +908,8 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         char *p = strrchr(modPath, '\\');
         if (p) {
             strcpy(p + 1, "ghost_event_log.txt");
-            strncpy(g_logPath, modPath, MAX_PATH - 1);
+            strncpy(g_logPath, modPath, sizeof(g_logPath) - 1);
+            g_logPath[sizeof(g_logPath) - 1] = '\0';
         }
 #endif
 
