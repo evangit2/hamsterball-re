@@ -61,7 +61,7 @@ typedef DWORD HFX;
 #define NO_TIME         9999999
 
 /* ---- App offsets ---- */
-#define APP_90C         0x90C
+#define APP_90C         0x90C  /* playback active flag — game checks this to call PlaybackSnapshot */
 #define APP_910         0x910
 #define APP_5DC         0x5DC
 #define APP_5D6         0x5D6
@@ -694,11 +694,12 @@ static void cleanup_previous_ghost(DWORD app) {
         g_ghostBallCreated = FALSE;
     }
 
-    /* 2. Clear App+0x910 if it points to our BTT */
+    /* 2. Clear App+0x910 and App+0x90C if they point to our BTT */
     if (g_loadedBTT && app) {
         if (*(DWORD*)(app + APP_910) == g_loadedBTT) {
             *(DWORD*)(app + APP_910) = 0;
-            LOG("Cleared App+0x910 (was our BTT 0x%08X)", g_loadedBTT);
+            *(DWORD*)(app + APP_90C) = 0;
+            LOG("Cleared App+0x910+0x90C (was our BTT 0x%08X)", g_loadedBTT);
         }
     }
 
@@ -789,6 +790,10 @@ void __cdecl frame_epilogue_handler(void) {
 
         g_ghostActive = TRUE;
         g_ghostFromEvent = TRUE;  /* Mark as event-loaded so re-collisions skip reload */
+        /* Force App+0x90C so the game calls PlaybackSnapshot every frame.
+         * In Tournament/Party modes the game never sets this flag, so without
+         * forcing it the ghost ball renders but never moves. */
+        *(DWORD*)(app + APP_90C) = 1;
         LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X", newBTT, ghostBall);
     }
 
@@ -798,6 +803,8 @@ void __cdecl frame_epilogue_handler(void) {
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
+            /* Force playback flag every frame — game may clear it in non-TT modes */
+            *(DWORD*)(app2 + APP_90C) = 1;
             DWORD board = get_board(app2);
             if (!board) {
                 /* Board is gone — level transition or race end.
@@ -1022,7 +1029,8 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
                 DWORD curr910 = *(DWORD*)(app + APP_910);
                 if (curr910 == g_loadedBTT) {
                     *(DWORD*)(app + APP_910) = 0;
-                    LOG("DLL_PROCESS_DETACH: cleared App+0x910 (was our BTT 0x%08X)", g_loadedBTT);
+                    *(DWORD*)(app + APP_90C) = 0;
+                    LOG("DLL_PROCESS_DETACH: cleared App+0x910+0x90C (was our BTT 0x%08X)", g_loadedBTT);
                 }
             }
             /* Destroy BTT via game destructor — safe because snapshots are
