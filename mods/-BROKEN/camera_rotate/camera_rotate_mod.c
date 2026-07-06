@@ -352,7 +352,7 @@ static DWORD WINAPI CameraRotatePollThread(LPVOID param) {
 }
 
 /* ============================================================
- * Install hooks — same detour pattern as teleport mod
+ * Install hooks — same detour pattern as level warp mod
  * ============================================================
  */
 

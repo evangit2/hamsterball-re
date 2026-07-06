@@ -1,17 +1,17 @@
 /*
- * E:TELEPORT Mod for Hamsterball
+ * E:WARP (Level Warp) Mod for Hamsterball
  *
- * When the ball touches a floor panel tagged E:TELEPORT(LevelName),
+ * When the ball touches a floor panel tagged E:WARP(LevelName),
  * the race ends silently (no music, no popups, no results screen)
  * and immediately loads and starts the specified level.
  *
- * Format: E:TELEPORT(3)       -> loads levels\level3.MESHWORLD (Intermediate)
- *         E:TELEPORT(7)       -> loads levels\level7.MESHWORLD (Neon)
- *         E:TELEPORT(neon)    -> same as E:TELEPORT(7)
- *         E:TELEPORT(level7)  -> same as E:TELEPORT(7)
+ * Format: E:WARP(3)       -> loads levels\level3.MESHWORLD (Intermediate)
+ *         E:WARP(7)       -> loads levels\level7.MESHWORLD (Neon)
+ *         E:WARP(neon)    -> same as E:WARP(7)
+ *         E:WARP(level7)  -> same as E:WARP(7)
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll teleport_mod.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll warp_mod.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
  *
@@ -25,7 +25,7 @@
 #include <stdlib.h>
 
 /* ============================================================
- * Diagnostic logging — writes to teleport_log.txt next to bass.dll
+ * Diagnostic logging — writes to warp_log.txt next to bass.dll
  * ============================================================ */
 
 static char g_logPath[MAX_PATH] = "";
@@ -273,9 +273,9 @@ static int findRaceIndex(const char *levelName) {
  * Globals
  * ============================================================ */
 
-static volatile int g_teleportActive = 0;
-static volatile int g_teleportLevelIndex = -1;
-static volatile int g_teleportFrameDelay = 0;
+static volatile int g_warpActive = 0;
+static volatile int g_warpLevelIndex = -1;
+static volatile int g_warpFrameDelay = 0;
 
 /* Original function bytes (8 bytes for DispatchCollisionEvents) */
 /* Signature: 6A FF 64 A1 00 00 00 00 */
@@ -307,15 +307,15 @@ static int GetApp(void) {
 }
 
 /* ============================================================
- * Parse level name from E:TELEPORT(LevelName)
+ * Parse level name from E:WARP(LevelName)
  * ============================================================ */
 
-static int isTeleportEvent(const char *eventName) {
+static int isWarpEvent(const char *eventName) {
     if (!eventName) return 0;
-    return _strnicmp(eventName, "E:TELEPORT", 10) == 0;
+    return _strnicmp(eventName, "E:WARP", 10) == 0;
 }
 
-static int parseTeleportLevel(const char *eventName, char *outLevelName, int outSize) {
+static int parseWarpLevel(const char *eventName, char *outLevelName, int outSize) {
     const char *start = strchr(eventName, '(');
     const char *end;
     int len;
@@ -427,9 +427,9 @@ static volatile int *g_savedBall = NULL;
 static volatile int *g_savedCollObj = NULL;
 
 static volatile int g_hookFireCount = 0;
-static volatile int g_teleportMatchCount = 0;
+static volatile int g_warpMatchCount = 0;
 
-static void TeleportCollisionHandler(void) {
+static void WarpCollisionHandler(void) {
     void *board = (void *)g_savedBoard;
     int *ball = (int *)g_savedBall;
     int *collObj = (int *)g_savedCollObj;
@@ -443,24 +443,24 @@ static void TeleportCollisionHandler(void) {
             if (g_hookFireCount <= 20 || (g_hookFireCount % 100) == 0) {
                 diag_logf("[hook #%d] event=\"%s\"", g_hookFireCount, eventName);
             }
-            if (isTeleportEvent(eventName)) {
-                g_teleportMatchCount++;
+            if (isWarpEvent(eventName)) {
+                g_warpMatchCount++;
                 {
                     char levelName[128];
-                    if (parseTeleportLevel(eventName, levelName, sizeof(levelName))) {
+                    if (parseWarpLevel(eventName, levelName, sizeof(levelName))) {
                         int raceIndex = findRaceIndex(levelName);
-                        diag_logf("[TELEPORT MATCH #%d] event=\"%s\" level=\"%s\" raceIndex=%d",
-                           g_teleportMatchCount, eventName, levelName, raceIndex);
+                        diag_logf("[WARP MATCH #%d] event=\"%s\" level=\"%s\" raceIndex=%d",
+                           g_warpMatchCount, eventName, levelName, raceIndex);
                         if (raceIndex > 0) {
                             if (*((char *)board + BOARD_GOAL_REACHED) == 0 &&
                                 *((char *)ball + BALL_DEATH_PENDING) == 0) {
                                 setWinState(board, ball);
-                                g_teleportLevelIndex = raceIndex;
-                                g_teleportActive = 1;
-                                g_teleportFrameDelay = 1;
-                                diag_logf("[TELEPORT] Triggered! level=%d, deferred load next frame (main thread)", raceIndex);
+                                g_warpLevelIndex = raceIndex;
+                                g_warpActive = 1;
+                                g_warpFrameDelay = 1;
+                                diag_logf("[WARP] Triggered! level=%d, deferred load next frame (main thread)", raceIndex);
                             } else {
-                                diag_logf("[TELEPORT] SKIPPED: goal_reached=%d death_pending=%d",
+                                diag_logf("[WARP] SKIPPED: goal_reached=%d death_pending=%d",
                                    *((char *)board + BOARD_GOAL_REACHED),
                                    *((char *)ball + BALL_DEATH_PENDING));
                             }
@@ -501,13 +501,13 @@ static void TeleportCollisionHandler(void) {
 static unsigned char *g_frameUpdateDetour = NULL;
 
 static void FrameUpdateHandler(void) {
-    if (g_teleportActive && g_teleportFrameDelay > 0) {
-        g_teleportFrameDelay--;
-        if (g_teleportFrameDelay <= 0) {
+    if (g_warpActive && g_warpFrameDelay > 0) {
+        g_warpFrameDelay--;
+        if (g_warpFrameDelay <= 0) {
             int levelIdx;
-            g_teleportActive = 0;
-            levelIdx = g_teleportLevelIndex;
-            g_teleportLevelIndex = -1;
+            g_warpActive = 0;
+            levelIdx = g_warpLevelIndex;
+            g_warpLevelIndex = -1;
             loadTargetLevel(levelIdx);
         }
     }
@@ -573,7 +573,7 @@ static void InstallHooks(void) {
      * We need to:
      * 1. Save ECX, EDX (fastcall uses them)
      * 2. Read [ESP+4]=ball, [ESP+8]=collObj from the stack
-     * 3. Call TeleportCollisionHandler (which reads globals)
+     * 3. Call WarpCollisionHandler (which reads globals)
      * 4. Restore registers
      * 5. Execute original 8 bytes (PUSH -1; MOV EAX,FS:[0])
      * 6. JMP to dispatchAddr+8
@@ -608,10 +608,10 @@ static void InstallHooks(void) {
         *p++ = 0xA3;
         *(DWORD *)p = (DWORD)&g_savedCollObj; p += 4;
 
-        /* Call TeleportCollisionHandler */
-        /* MOV EAX, TeleportCollisionHandler ; CALL EAX */
+        /* Call WarpCollisionHandler */
+        /* MOV EAX, WarpCollisionHandler ; CALL EAX */
         *p++ = 0xB8;
-        *(DWORD *)p = (DWORD)&TeleportCollisionHandler; p += 4;
+        *(DWORD *)p = (DWORD)&WarpCollisionHandler; p += 4;
         *p++ = 0xFF; *p++ = 0xD0;  /* CALL EAX */
 
         /* Restore registers */
@@ -739,13 +739,13 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             if (GetModuleFileNameA(hInst, mod_path, MAX_PATH)) {
                 char *p = strrchr(mod_path, '\\');
                 if (p) {
-                    strcpy(p + 1, "teleport_log.txt");
+                    strcpy(p + 1, "warp_log.txt");
                     strncpy(g_logPath, mod_path, MAX_PATH - 1);
                 }
             }
         }
 
-        diag_log("=== TELEPORT MOD LOADED ===");
+        diag_log("=== LEVEL WARP MOD LOADED ===");
         diag_logf("bass_real.dll load: %s", "starting...");
 
         load_real_bass();

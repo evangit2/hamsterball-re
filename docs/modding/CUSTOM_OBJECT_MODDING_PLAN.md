@@ -67,7 +67,7 @@ The parser in this project's `docs/MESHWORLD_OBJECT_SYSTEM.md` documents the ful
 
 3. **Hook `Mesh_FindClosestCollision`** (0x465D90)
    - Add custom collision response for custom named objects
-   - Could implement teleporters, speed pads, gravity wells, etc.
+   - Could implement warp pads, speed pads, gravity wells, etc.
 
 4. **Add per-frame update hooks** via the scene update loop
    - Hook `Scene_UpdateBallsAndState` to run custom object logic each frame
@@ -83,7 +83,7 @@ void __thiscall Hooked_DispatchCollisionEvents(void* this, int* ball, int* collO
     char* eventName = *(char**)(collObj[1] + 0x864);
     
     // Check for custom event names
-    if (strnicmp(eventName, "E:CUSTOM_TELEPORT", 17) == 0) {
+    if (strnicmp(eventName, "E:CUSTOM_WARP", 17) == 0) {
         // Custom teleport logic: move ball to a target ref point
         Vec3 target = HashTable_Lookup(scene_hashtable, "TELEPORT_TARGET");
         ball->pos_x = target.x;
@@ -173,7 +173,7 @@ Given the engine architecture, feasible custom object types include:
 
 | Type | Implementation | Data Required |
 |------|---------------|---------------|
-| **Teleporter** | Hook DispatchCollisionEvents, `E:CUSTOM_TELEPORT` → move ball | Target ref point in Section 1 |
+| **Warp Pad** | Hook DispatchCollisionEvents, `E:CUSTOM_WARP` → move ball | Target ref point in Section 1 |
 | **Speed Pad** | Hook DispatchCollisionEvents, `E:CUSTOM_SPEED` → add velocity | Direction + magnitude in name |
 | **Gravity Zone** | Hook DispatchCollisionEvents, `E:CUSTOM_GRAVITY` → change gravity | Direction in XML tags |
 | **Size Changer** | Hook DispatchCollisionEvents, `E:CUSTOM_GROW/SHRINK` → change ball radius | New radius in name |
