@@ -1,6 +1,11 @@
-# Ghost Saver Mod (v25.3)
+# Ghost Saver Mod (v25.4)
 
 Saves Time Trial ghost data to per-race `.ghost` files so ghost recordings persist across game restarts. The vanilla game stores ghost data only in memory — it vanishes when you quit. This mod makes ghosts permanent.
+
+## v25.4 Changes
+
+- **Dummy BTT cleanup implemented**: The v25.3 fix removed cleanup from `check_race_state` to fix the UAF crash, but the README still claimed cleanup happened. Now cleanup is actually implemented in both `check_race_state` (when leaving Time Trial mode) and `hook_impl` (on race transition). Both paths use a double-free guard — only destroy if `App+0x90C` still points to our dummy, then clear `App+0x90C` to NULL. If the game already freed/replaced the dummy, we skip destruction.
+- **Dynamic race name table extent**: `get_race_name_by_index` no longer hardcodes a 16-entry limit. A new `get_race_name_table_count()` walks the table at `0x4F7080` until it hits a NULL or invalid pointer, supporting tournament mods that extend the race count.
 
 ## v25.3 Changes
 

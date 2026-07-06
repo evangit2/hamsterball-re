@@ -1,4 +1,17 @@
-/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.3)
+/* ghost_saver.c — Persistent Ghost Data for Time Trial Mode (v25.4)
+ *
+ * v25.4: Two fixes:
+ *        (1) Dummy BTT cleanup implemented. v25.3 removed cleanup from
+ *            check_race_state to fix a UAF crash, but the README still
+ *            claimed cleanup happened. Now cleanup is actually performed
+ *            in both check_race_state (leaving TT mode) and hook_impl
+ *            (race transition), with a double-free guard: only destroy
+ *            if App+0x90C still points to our dummy, then clear App+0x90C.
+ *        (2) Dynamic race name table extent. get_race_name_by_index no
+ *            longer hardcodes a 16-entry limit. A new
+ *            get_race_name_table_count() walks the table at 0x4F7080
+ *            until it hits a NULL or invalid pointer, supporting
+ *            tournament mods that extend the race count beyond 16.
  *
  * v25.3: Fix crash-on-load-with-ghost-file.
  *        Root cause: use-after-free race condition between the background thread
@@ -552,24 +565,36 @@ static void check_race_state(void) {
             g_currentRaceName[0] = '\0';
             g_hookRaceName[0] = '\0';
         }
-        /* NOTE: We do NOT clean up the dummy recording BTT here.
+        /* Clean up the dummy recording BTT if it's still at App+0x90C.
          *
-         * The game's own App_StartPracticeRace BTT management always
-         * handles the dummy: it has NO_TIME (9999999) which loses every
-         * time comparison, so the game frees it via the standard path.
+         * This is safe because the v25.3 fix holds the critical section
+         * during the trampoline call — the background thread can only
+         * reach this point when the main thread is NOT inside
+         * App_StartPracticeRace, so there's no race with the trampoline.
          *
-         * If we destroy it ourselves from this background thread, we race
-         * with App_StartPracticeRace which is accessing App+0x90C on the
-         * main thread — a use-after-free that crashes the game at a
-         * heap address (0x00820064 etc). The window is: the hook releases
-         * the CS, the trampoline starts loading the level, and this thread
-         * sees !is_time_trial_active (no profile yet) → destroys the dummy
-         * → the trampoline then reads freed memory.
-         *
-         * The dummy BTT is tracked in g_dummyRecording purely for
-         * informational purposes. It will be cleaned up by the game or
-         * simply go away when the player finishes/quits the race. */
-        if (g_dummyRecording) {
+         * Double-free guard: only destroy if App+0x90C still points to
+         * our dummy. If the game already freed or replaced it during a
+         * race transition, we skip destruction and just clear tracking. */
+        if (g_dummyRecording && g_dummyRecording > 0x10000) {
+            DWORD curr90C = 0;
+            if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
+                curr90C = *(DWORD*)(app + APP_90C_RECORDING);
+            if (curr90C == g_dummyRecording) {
+                /* App+0x90C still points to our dummy — the game didn't
+                 * clean it up. Destroy it now to prevent a 528-byte leak. */
+                if (!IsBadReadPtr((void*)g_dummyRecording, 4)) {
+                    DWORD vt = *(DWORD*)g_dummyRecording;
+                    if (vt == 0x004D262C) {
+                        call_btt_dtor((void*)g_dummyRecording);
+                        log_fmt("Cleaned up dummy recording BTT at 0x%X (left TT mode)", g_dummyRecording);
+                    } else {
+                        game_free((void*)g_dummyRecording);
+                        log_fmt("Cleaned up dummy BTT at 0x%X via game_free (bad vtable 0x%X)", g_dummyRecording, vt);
+                    }
+                }
+                /* Clear App+0x90C so the game doesn't dereference freed memory */
+                *(DWORD*)(app + APP_90C_RECORDING) = 0;
+            }
             g_dummyRecording = 0;
         }
         if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
@@ -739,10 +764,28 @@ static int g_hookInstalled = 0;
 /* Get race name from the static tournament name table by race index.
  * Used pre-call (before PlayerProfile/BTT exist) to look up the name.
  * Table at 0x4F7080: array of DWORD pointers to race name strings. */
-static int get_race_name_by_index(DWORD race_index, char *out, int outLen) {
-    if (race_index >= 16) return 0;
+/* Check the actual extent of the race name table at 0x4F7080.
+ * The table is an array of DWORD pointers to strings. We walk it
+ * until we hit a NULL/invalid pointer, which marks the end.
+ * Vanilla game has 16 entries; tournament mods may extend it. */
+static int get_race_name_table_count(void) {
     DWORD *nameTable = (DWORD*)0x004F7080;
-    if (IsBadReadPtr(nameTable + race_index, 4)) return 0;
+    int i;
+    for (i = 0; i < 64; i++) {  /* sanity cap at 64 */
+        if (IsBadReadPtr(nameTable + i, 4)) return i;
+        DWORD namePtr = nameTable[i];
+        if (!namePtr || namePtr < 0x400000) return i;
+        if (IsBadReadPtr((void*)namePtr, 2)) return i;
+        char c = *(char*)namePtr;
+        if (c < 0x20 || c > 0x7E) return i;
+    }
+    return i;
+}
+
+static int get_race_name_by_index(DWORD race_index, char *out, int outLen) {
+    int tableCount = get_race_name_table_count();
+    if ((int)race_index >= tableCount) return 0;
+    DWORD *nameTable = (DWORD*)0x004F7080;
     char *name = (char*)nameTable[race_index];
     if (!name || (DWORD)name < 0x400000) return 0;
     if (IsBadReadPtr(name, 2)) return 0;
@@ -787,8 +830,32 @@ static int is_time_trial_precheck(void) {
  *   ✅ No live references to the old BTT remain — the old ghost ball is gone
  *   ✅ Safe to call vtable[0](1) on the saved pointer (full delete) */
 void hook_impl(DWORD app, DWORD race_index) {
+    /* If we still have a tracked dummy from a previous race that was
+     * never cleaned up (e.g. player started a new race without leaving
+     * Time Trial mode), destroy it now before we lose the pointer.
+     * The game's BTT management may or may not have freed it — use the
+     * double-free guard: only destroy if App+0x90C still points to it. */
+    if (g_dummyRecording && g_dummyRecording > 0x10000) {
+        DWORD curr90C = 0;
+        if (!IsBadReadPtr((void*)(app + APP_90C_RECORDING), 4))
+            curr90C = *(DWORD*)(app + APP_90C_RECORDING);
+        if (curr90C == g_dummyRecording) {
+            if (!IsBadReadPtr((void*)g_dummyRecording, 4)) {
+                DWORD vt = *(DWORD*)g_dummyRecording;
+                if (vt == 0x004D262C) {
+                    call_btt_dtor((void*)g_dummyRecording);
+                    log_fmt("Cleaned up stale dummy BTT at 0x%X (race transition)", g_dummyRecording);
+                } else {
+                    game_free((void*)g_dummyRecording);
+                    log_fmt("Cleaned up stale dummy BTT at 0x%X via game_free (bad vtable)", g_dummyRecording);
+                }
+            }
+            *(DWORD*)(app + APP_90C_RECORDING) = 0;
+        }
+        g_dummyRecording = 0;
+    }
+
     g_savedOldPlayback = 0;
-    g_dummyRecording = 0;
 
     EnterCriticalSection(&g_cs);
 
@@ -1023,7 +1090,7 @@ static void install_hook(void) {
 
 static DWORD WINAPI ghost_thread(LPVOID param) {
     Sleep(3000);
-    log_msg("Ghost thread v25 started");
+    log_msg("Ghost thread v25.4 started");
     while (1) {
         Sleep(16);
         check_race_state();
@@ -1051,7 +1118,7 @@ static void init_paths(HMODULE hInst) {
 static void init_mod(HMODULE hInst) {
     init_paths(hInst);
     InitializeCriticalSection(&g_cs);
-    log_msg("=== Ghost Saver Mod v25 Init ===");
+    log_msg("=== Ghost Saver Mod v25.4 Init ===");
     log_fmt("Ghost dir: %s", g_ghostDir);
     log_fmt("Log path: %s", g_logPath);
 
