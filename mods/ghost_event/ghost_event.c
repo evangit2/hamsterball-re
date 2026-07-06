@@ -696,21 +696,18 @@ void __cdecl frame_epilogue_handler(void) {
         LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X", newBTT, ghostBall);
     }
 
-    /* Advance playback index every frame */
+    /* Advance playback index every frame — REMOVED.
+     * The game itself calls BestTimeTracker_PlaybackSnapshot (0x427690)
+     * every frame when App+0x910 is non-NULL. This function advances the
+     * playback index internally. Our manual advance was causing 2x speed.
+     * We only need to check if the ghost ball is still alive. */
     if (g_ghostActive && g_loadedBTT) {
         DWORD app2 = *(DWORD*)APP_PTR;
         if (app2 && !IsBadReadPtr((void*)app2, 0x1000)) {
             DWORD board = get_board(app2);
             if (board) {
                 DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
-                if (ghostBall && !IsBadReadPtr((void*)ghostBall, 0x100)) {
-                    DWORD *playbackIdx = (DWORD*)(g_loadedBTT + BTT_PLAYBACK_IDX);
-                    DWORD count = *(DWORD*)(g_loadedBTT + BTT_AL_COUNT);
-                    (*playbackIdx)++;
-                    if (count > 0 && *playbackIdx >= count) {
-                        *playbackIdx = count - 1;
-                    }
-                } else {
+                if (!ghostBall || IsBadReadPtr((void*)ghostBall, 0x100)) {
                     LOG("Ghost ball lost, deactivating");
                     g_ghostActive = FALSE;
                 }
@@ -896,6 +893,27 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
 
         load_real_bass();
         CreateThread(NULL, 0, init_thread, NULL, 0, NULL);
+    }
+    else if (reason == DLL_PROCESS_DETACH) {
+        /* Clean up our BTT before the game's shutdown destroys it.
+         * The game's BTT dtor calls _free() on each snapshot pointer,
+         * but our snapshots are a single contiguous malloc block — 
+         * individual frees crash. Null out App+0x910 so the game skips it. */
+        if (g_loadedBTT) {
+            DWORD app = *(DWORD*)APP_PTR;
+            if (app && !IsBadReadPtr((void*)app, 0x1000)) {
+                DWORD curr910 = *(DWORD*)(app + APP_910);
+                if (curr910 == g_loadedBTT) {
+                    *(DWORD*)(app + APP_910) = 0;
+                    LOG("DLL_PROCESS_DETACH: cleared App+0x910 (was our BTT 0x%08X)", g_loadedBTT);
+                }
+            }
+            /* Free our BTT struct (not via vtable dtor — would crash on contiguous snapshots) */
+            if (g_loadedListArray) { free((void*)g_loadedListArray); g_loadedListArray = 0; }
+            if (g_loadedSnapshots) { free((void*)g_loadedSnapshots); g_loadedSnapshots = 0; }
+            free((void*)g_loadedBTT);
+            g_loadedBTT = 0;
+        }
     }
     return TRUE;
 }
