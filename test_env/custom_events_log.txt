@@ -1,0 +1,7 @@
+=== custom_events v1 starting ===
+[init] BASS version: 2.0
+[init] BASS stream functions loaded OK
+[init] WARNING: No BASS playback function found
+[InstallHooks] DispatchCollisionEvents signature OK at 0x40C5D0
+[InstallHooks] DispatchCollisionEvents hook installed OK.
+=== custom_events v1 ready ===
