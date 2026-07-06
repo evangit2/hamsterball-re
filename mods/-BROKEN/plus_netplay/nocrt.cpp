@@ -76,27 +76,30 @@ BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID) {
     return TRUE;
 }
 
-// Standard-named wrappers — GCC inserts calls to these for struct init
-extern "C" {
-    void* __cdecl memset(void* dst, int val, size_t count) {
-        return nc_memset(dst, val, count);
-    }
-    void* __cdecl memcpy(void* dst, const void* src, size_t count) {
-        return nc_memcpy(dst, src, count);
-    }
-    size_t __cdecl strlen(const char* s) {
-        return nc_strlen(s);
-    }
-    int __cdecl strcmp(const char* a, const char* b) {
-        return nc_strcmp(a, b);
-    }
-    char* __cdecl strncpy(char* dst, const char* src, size_t n) {
-        return nc_strncpy(dst, src, n);
-    }
-    void* __cdecl malloc(size_t size) {
-        return nc_malloc(size);
-    }
-    void __cdecl free(void* ptr) {
-        nc_free(ptr);
-    }
+// Standard-named wrappers — GCC inserts calls to these for struct init.
+// MUST be static to prevent them from becoming global symbols that
+// override msvcrt's versions in the host process. If they're global,
+// the game's own strcmp/strlen/etc calls get redirected to our
+// implementations, causing crashes when the game passes pointers
+// that are valid for msvcrt's heap but not ours.
+static void* __cdecl memset(void* dst, int val, size_t count) {
+    return nc_memset(dst, val, count);
+}
+static void* __cdecl memcpy(void* dst, const void* src, size_t count) {
+    return nc_memcpy(dst, src, count);
+}
+static size_t __cdecl strlen(const char* s) {
+    return nc_strlen(s);
+}
+static int __cdecl strcmp(const char* a, const char* b) {
+    return nc_strcmp(a, b);
+}
+static char* __cdecl strncpy(char* dst, const char* src, size_t n) {
+    return nc_strncpy(dst, src, n);
+}
+static void* __cdecl malloc(size_t size) {
+    return nc_malloc(size);
+}
+static void __cdecl free(void* ptr) {
+    nc_free(ptr);
 }
