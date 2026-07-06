@@ -365,13 +365,50 @@ static SceneCreateEntities_t g_origFunc = NULL;
 
 /* C wrapper — modifies entity names before calling original */
 void __fastcall hook_SceneCreateEntities(void *board) {
-    /* Modify entity names in the MeshWorld before any factory runs */
+    /* Modify entity names in the MeshWorld before any factory runs.
+     * This reads the ORIGINAL difficulty (App+0x23C) to select the
+     * correct replacement table. Must happen before we override it. */
     EnterCriticalSection(&g_configLock);
     modify_entity_names((DWORD)board);
     LeaveCriticalSection(&g_configLock);
 
+    /* ── Difficulty override ──────────────────────────────────────
+     * The game's entity factories (CreateBadBall, CreateMouseTrap,
+     * CreateLevelObjects, CreateExpertLevelObjects) all check
+     * App+0x23C != 0 before spawning entities. On Pipsqueak (0),
+     * factories are skipped entirely — so the mod's name replacements
+     * have no effect because the factories never run.
+     *
+     * Fix: temporarily set difficulty to 1 (Normal) so ALL factories
+     * execute. The mod's name replacement logic then controls which
+     * entities actually spawn (NOTHING = skip, replacement = different
+     * entity, unchanged = normal spawn). Restore the original value
+     * after entity creation completes.
+     * ──────────────────────────────────────────────────────────── */
+    DWORD app = 0;
+    int origDifficulty = 1;
+    BOOL overridden = FALSE;
+
+    if (!IsBadReadPtr((void*)GLOBAL_APP_PTR, 4)) {
+        app = *(DWORD*)GLOBAL_APP_PTR;
+        if (app && app >= 0x10000 &&
+            !IsBadReadPtr((void*)(app + APP_DIFFICULTY_OFFSET), 4)) {
+            origDifficulty = *(int*)(app + APP_DIFFICULTY_OFFSET);
+            if (origDifficulty == 0) {
+                /* Force Normal so factory difficulty gates pass */
+                *(int*)(app + APP_DIFFICULTY_OFFSET) = 1;
+                overridden = TRUE;
+            }
+        }
+    }
+
     /* Call original function via trampoline */
     g_origFunc(board);
+
+    /* Restore original difficulty */
+    if (overridden && app) {
+        *(int*)(app + APP_DIFFICULTY_OFFSET) = origDifficulty;
+    }
 }
 
 static void install_hook(void) {

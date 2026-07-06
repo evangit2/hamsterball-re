@@ -4,10 +4,15 @@ Difficulty-based entity replacement for Hamsterball. Reads a `difficulty_setting
 
 ## How It Works
 
-The mod hooks `Scene_CreateEntities` (0x0041C5B0) — the dispatch function that runs **before** all entity factories (CreateBadBall, CreateMouseTrap, CreateLevelObjects, CreateExpertLevelObjects). Before the original function runs, the mod iterates the MeshWorld entity list and replaces entity name pointers based on the config:
+The mod hooks `Scene_CreateEntities` (0x0041C5B0) — the dispatch function that runs **before** all entity factories (CreateBadBall, CreateMouseTrap, CreateLevelObjects, CreateExpertLevelObjects). Before the original function runs, the mod:
 
-- **NOTHING**: Entity name is replaced with `"REF:NOTHING"` — no factory matches it, so the entity is silently skipped.
-- **Replacement name** (e.g. `BONK`): Entity name is replaced — the original factory won't match, but the replacement's factory will create an object at the same position.
+1. **Reads the original difficulty** (`App+0x23C`, 0=Pipsqueak, 1=Normal, 2=Frenzied!) to select the correct replacement table.
+
+2. **Iterates the MeshWorld entity list** and replaces entity name pointers based on the config:
+   - **NOTHING**: Entity name is replaced with `"REF:NOTHING"` — no factory matches it, so the entity is silently skipped.
+   - **Replacement name** (e.g. `BONK`): Entity name is replaced — the original factory won't match, but the replacement's factory will create an object at the same position.
+
+3. **Temporarily overrides `App+0x23C` to 1 (Normal)** before calling the original function. This is necessary because the game's factory functions independently check `App+0x23C != 0` before spawning entities. On Pipsqueak, these gates would skip all factory calls entirely, making the mod's name replacements useless. The mod restores the original difficulty value immediately after entity creation completes.
 
 ## Config Format
 
