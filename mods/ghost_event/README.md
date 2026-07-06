@@ -45,11 +45,11 @@ E:GHOST(Warm-Up)        → loads Ghosts/Warm-Up.ghost
 | 0x40C5D0 | `6A FF 64 A1...` | `E9 ... 90 90 90` | JMP to DCE hook stub |
 | 0x46C1F1 | `5E 83 C4 08 C3` | `E9 ...` | JMP to frame epilogue hook stub |
 
-### App+0x90C recording buffer gate
+### Playback index advancement
 
-The game's `Level_UpdateAndRender` checks `App+0x90C` (recording BTT pointer) != NULL before calling `BestTimeTracker_PlaybackSnapshot`. In Time Trial mode the game creates a recording BTT at race start, so this is naturally non-NULL. In Tournament/Party modes the game never creates one, so even after NOP'ing the mode checks, `PlaybackSnapshot` is never called and the ghost ball renders but never moves.
+In Time Trial mode, the game's `Scene_UpdateBallsAndState` advances the playback index every frame. In Tournament/Party modes this code is gated on Time Trial mode and never runs, so the index stays at 0 and the ghost never moves.
 
-The mod forces `App+0x90C = 1` (truthy non-NULL) every frame while the ghost is active. The game only checks != NULL — it never dereferences this pointer outside Time Trial mode (where a real BTT exists). On cleanup and DLL_PROCESS_DETACH, it's cleared back to NULL.
+The mod detects non-TT mode (via `App+0x234 != 0`) and manually advances `BTT_PLAYBACK_IDX` by 1 each frame in the frame epilogue hook, clamping to the last frame. In TT mode this is skipped to avoid double-advancing (which would play the ghost at 2x speed).
 
 ### DCE hook
 
