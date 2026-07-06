@@ -32,7 +32,7 @@
 typedef DWORD (__stdcall *StreamCreateFile20_t)(BOOL, const char*, DWORD, DWORD, DWORD);
 typedef DWORD (__stdcall *StreamCreateFile24_t)(BOOL, const char*, unsigned long long, unsigned long long, DWORD);
 typedef int  (__stdcall *ChannelPlay_t)(DWORD, BOOL);
-typedef int  (__stdcall *StreamPlay20_t)(DWORD, BOOL);  /* BASS 2.0: BASS_StreamPlay */
+typedef int  (__stdcall *StreamPlay20_t)(DWORD, BOOL, DWORD);  /* BASS 2.0: BASS_StreamPlay(handle, restart, flags) */
 
 static StreamCreateFile20_t real_StreamCreate20 = NULL;
 static StreamCreateFile24_t real_StreamCreate24 = NULL;
@@ -233,8 +233,11 @@ static void SoundCollisionHandler(void) {
     if (!collObj || IsBadReadPtr(collObj, 8)) return;
     if (!collObj[1] || IsBadReadPtr((void*)collObj[1], 0x868)) return;
 
-    char *eventName = *(char **)((char *)collObj[1] + COLL_OBJ_NAME_OFFSET);
-    if (!eventName || IsBadReadPtr(eventName, 8)) return;
+    /* Event name is stored INLINE at MeshBuffer+0x864 (not a pointer to string).
+     * Confirmed via ghost_event mod which reads it the same way. */
+    char *eventName = (char *)((char *)collObj[1] + COLL_OBJ_NAME_OFFSET);
+    if (IsBadReadPtr(eventName, 8)) return;
+    if (!eventName[0]) return;
 
     /* Log first few events for debugging */
     if (g_hookFireCount <= 10) {
@@ -277,8 +280,8 @@ static void SoundCollisionHandler(void) {
             if (g_bassIs24 && real_ChannelPlay) {
                 playResult = real_ChannelPlay(stream, TRUE);
             } else if (real_StreamPlay) {
-                /* BASS 2.0: BASS_StreamPlay(handle, restart) */
-                playResult = real_StreamPlay(stream, TRUE);
+                /* BASS 2.0: BASS_StreamPlay(handle, restart, flags) */
+                playResult = real_StreamPlay(stream, TRUE, 0);
             }
             diag_logf("[SOUND] After play call: result=%d", playResult);
             if (playResult) {
