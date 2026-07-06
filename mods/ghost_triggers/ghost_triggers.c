@@ -48,11 +48,14 @@ typedef DWORD HFX;
 #define APP_FRAME_UPDATE_EPILOGUE 0x0046C1F1
 
 /* ---- App offsets ---- */
-#define APP_178         0x178    /* App+0x178 = scene ptr */
+#define APP_220         0x220    /* App+0x220 = PlayerProfile* */
 
-/* ---- Scene offsets ---- */
-#define SCENE_GHOST_BALL 0x361C   /* scene+0x361C = ghost Ball* */
-#define SCENE_8AC        0x8AC    /* scene+0x8AC = Level* (SceneObject) */
+/* ---- PlayerProfile offsets ---- */
+#define PROFILE_BOARD   0x0C     /* profile+0x0C = Board* (the scene object) */
+
+/* ---- Board/Scene offsets ---- */
+#define BOARD_GHOST_BALL 0x361C   /* board+0x361C = ghost Ball* */
+#define BOARD_8AC        0x8AC    /* board+0x8AC = Level* (SceneObject) */
 
 /* ---- Level/SceneObject offsets ---- */
 /* SceneObject+0x480 = pointer to the MESHWORLD data object */
@@ -251,12 +254,12 @@ static int g_frameCount = 0;
  * Each S1 entry is an array of DWORDs (see S1_* constants above).
  * The name at entry[0] is a char* — we strnicmp it for "GT:" prefix.
  */
-static void scan_s1_ref_points(DWORD scene) {
+static void scan_s1_ref_points(DWORD board) {
     g_triggerCount = 0;
 
-    if (!scene || IsBadReadPtr((void*)scene, 0x4000)) return;
+    if (!board || IsBadReadPtr((void*)board, 0x4000)) return;
 
-    DWORD level = *(DWORD*)(scene + SCENE_8AC);
+    DWORD level = *(DWORD*)(board + BOARD_8AC);
     if (!level || IsBadReadPtr((void*)level, 0x1000)) return;
 
     DWORD mwData = *(DWORD*)(level + 0x480);
@@ -266,8 +269,8 @@ static void scan_s1_ref_points(DWORD scene) {
     int s1Count = *(int*)(mwData + MW_S1_COUNT_OFFSET);
     DWORD s1Array = *(DWORD*)(mwData + MW_S1_ARRAY_OFFSET);
 
-    LOG("scan_s1: scene=0x%X level=0x%X mw=0x%X s1Count=%d s1Array=0x%X",
-        scene, level, mwData, s1Count, s1Array);
+    LOG("scan_s1: board=0x%X level=0x%X mw=0x%X s1Count=%d s1Array=0x%X",
+        board, level, mwData, s1Count, s1Array);
 
     if (s1Count <= 0 || s1Count > 1000) return;
     if (!s1Array || IsBadReadPtr((void*)s1Array, s1Count * 4)) return;
@@ -320,9 +323,12 @@ void __cdecl frame_epilogue_handler(void) {
     DWORD app = *(DWORD*)APP_PTR;
     if (!app || IsBadReadPtr((void*)app, 0x1000)) return;
 
-    DWORD scene = *(DWORD*)(app + APP_178);
-    if (!scene || IsBadReadPtr((void*)scene, 0x4000)) {
-        /* Scene not loaded — reset trigger scan */
+    /* Get board via App+0x220 (PlayerProfile) → +0xC (Board) */
+    DWORD profile = *(DWORD*)(app + APP_220);
+    if (!profile || IsBadReadPtr((void*)profile, 0x100)) return;
+    DWORD board = *(DWORD*)(profile + PROFILE_BOARD);
+    if (!board || IsBadReadPtr((void*)board, 0x4000)) {
+        /* No board loaded — reset trigger scan */
         if (g_currentLevel != -1) {
             g_currentLevel = -1;
             g_triggerCount = 0;
@@ -330,23 +336,36 @@ void __cdecl frame_epilogue_handler(void) {
         return;
     }
 
-    /* Detect level change by tracking scene pointer.
-     * When scene changes, re-scan S1 ref points. */
-    if ((int)scene != g_currentLevel) {
-        g_currentLevel = (int)scene;
-        scan_s1_ref_points(scene);
+    /* Detect level change by tracking board pointer.
+     * When board changes, re-scan S1 ref points. */
+    if ((int)board != g_currentLevel) {
+        g_currentLevel = (int)board;
+        scan_s1_ref_points(board);
     }
 
     if (g_triggerCount == 0) return;
 
     /* Get ghost ball */
-    DWORD ghostBall = *(DWORD*)(scene + SCENE_GHOST_BALL);
-    if (!ghostBall || IsBadReadPtr((void*)ghostBall, 0x200)) return;
+    DWORD ghostBall = *(DWORD*)(board + BOARD_GHOST_BALL);
+    if (!ghostBall || IsBadReadPtr((void*)ghostBall, 0x200)) {
+        /* Log every 300 frames (~5s) if no ghost ball */
+        if (g_frameCount % 300 == 0) {
+            LOG("heartbeat: frame=%d, triggers=%d, no ghost ball (board=0x%X)",
+                g_frameCount, g_triggerCount, board);
+        }
+        return;
+    }
 
     /* Read ghost ball position */
     float bx = *(float*)(ghostBall + BALL_POS_X);
     float by = *(float*)(ghostBall + BALL_POS_Y);
     float bz = *(float*)(ghostBall + BALL_POS_Z);
+
+    /* Heartbeat every 300 frames (~5s) when ghost ball is active */
+    if (g_frameCount % 300 == 0) {
+        LOG("heartbeat: frame=%d, triggers=%d, ghost ball at (%.1f, %.1f, %.1f)",
+            g_frameCount, g_triggerCount, bx, by, bz);
+    }
 
     /* Check each trigger */
     for (int i = 0; i < g_triggerCount; i++) {
