@@ -8,7 +8,6 @@ static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
 static constexpr DWORD GLOBAL_APP_PTR = 0x5341E0;
 static constexpr DWORD TIMER_OFFSET = 0x47AC;
 static constexpr int TICKS_PER_SECOND = 100;
-static constexpr int DEFAULT_TIMER_TICKS = 6000;
 
 class ArenaTimerMod : public HamsterballAPI {
 private:
@@ -47,41 +46,50 @@ private:
         Sleep(3000);
 
         int lastTimer = -1;
-        bool setThisRound = false;
+        DWORD lastBoard = 0;
+        int failCount = 0;
 
         while (self->m_running) {
             Sleep(16);
             DWORD board = findBoard();
-            if (board) {
-                // Slider is in seconds — convert to ticks for the game
-                int timerSeconds = (int)api->GetSliderState("ARENA_TIMER");
-                if (timerSeconds < 1) timerSeconds = 1;
-                int timerTicks = timerSeconds * TICKS_PER_SECOND;
-
-                DWORD addr = board + TIMER_OFFSET;
-                if (!IsBadReadPtr((void*)addr, 4)) {
-                    int current = *(int*)addr;
-
-                    // Detect new round: the game reset the timer upward
-                    // (during a round the timer only counts down)
-                    if (lastTimer != -1 && current > lastTimer) {
-                        setThisRound = false;
-                    }
-
-                    // Set the timer once per round, when the game has it at
-                    // the default 6000 ticks (60s) start value
-                    if (!setThisRound && current == DEFAULT_TIMER_TICKS) {
-                        *(int*)addr = timerTicks;
-                        setThisRound = true;
-                    }
-
-                    lastTimer = current;
+            if (!board) {
+                // Don't reset state on transient failures — just skip.
+                // After ~1s of no board (left arena), reset for next entry.
+                failCount++;
+                if (failCount > 60) {
+                    lastBoard = 0;
+                    lastTimer = -1;
+                    failCount = 0;
                 }
-            } else {
-                // No board — reset state so next round is detected
-                lastTimer = -1;
-                setThisRound = false;
+                continue;
             }
+            failCount = 0;
+
+            // New board instance (entered a different arena) — reset
+            if (board != lastBoard) {
+                lastBoard = board;
+                lastTimer = -1;
+            }
+
+            int timerSeconds = (int)api->GetSliderState("ARENA_TIMER");
+            if (timerSeconds < 1) timerSeconds = 1;
+            int timerTicks = timerSeconds * TICKS_PER_SECOND;
+
+            DWORD addr = board + TIMER_OFFSET;
+            if (IsBadReadPtr((void*)addr, 4)) continue;
+
+            int current = *(int*)addr;
+
+            // Set the timer when:
+            // 1. First frame for this board (lastTimer == -1)
+            // 2. Timer jumped upward = game reset it for a new round
+            //    (during a round the timer only counts down, so any
+            //    upward movement means a round reset)
+            if (lastTimer == -1 || current > lastTimer) {
+                *(int*)addr = timerTicks;
+            }
+
+            lastTimer = current;
         }
         return 0;
     }
