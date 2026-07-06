@@ -197,34 +197,37 @@ public:
             printf("[FreeCam] Fog: %s\n", g_disableFog ? "DISABLED" : "ENABLED");
         }
 
-        // Fog disable: call D3D device->SetRenderState(D3DRS_FOGENABLE, 0) every frame.
-        // D3D8 COM methods are __stdcall (device on stack, NOT __thiscall in ECX).
-        // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50] (offset 0xC8).
-        // D3DRS_FOGENABLE = 28 (0x1C). Game enables fog in Graphics_SetCullMode2 (0x453970)
-        // which pushes device, state, value on stack and calls [vtable+0xC8].
+        // Fog + draw distance: push FOGSTART/FOGEND to extreme distances,
+        // and rebuild projection matrix with large far clip plane.
+        // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50].
+        // FOGSTART = 36, FOGEND = 37 (values are float bits).
+        // Graphics_SetProjection at RVA 0x54AB0 = __thiscall(gfx, near, far).
+        // Original near=20.0, far=calculated. We push far to 100000.
         if (g_disableFog) {
             App* app = api->GetApp();
             if (app && !IsBadReadPtr(app, sizeof(App))) {
                 void* gfx = app->graphics;
-                if (gfx && !IsBadReadPtr(gfx, 0x200)) {
+                if (gfx && !IsBadReadPtr(gfx, 0x800)) {
+                    // Push fog start/end to extreme distances via D3D SetRenderState
                     void* device = *(void**)((uint8_t*)gfx + 0x154);
                     if (device && !IsBadReadPtr(device, 4)) {
                         void** vtable = *(void***)device;
                         if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
-                            // D3D8 SetRenderState is __stdcall: (device, state, value)
-                            // The fog IS the level's distance shading — disabling it
-                            // makes everything invisible. Instead, push FOGSTART/FOGEND
-                            // to extreme distances so fog never kicks in within the level.
                             typedef long(__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
                             D3DSetRenderState_t srs = (D3DSetRenderState_t)vtable[50];
                             float fogStart = 99999.0f;
                             float fogEnd = 100000.0f;
-                            // D3DRS_FOGSTART = 36, value is float bits
                             srs(device, 36, *(DWORD*)&fogStart);
-                            // D3DRS_FOGEND = 37
                             srs(device, 37, *(DWORD*)&fogEnd);
                         }
                     }
+                    // Rebuild projection matrix with large far clip plane
+                    // Graphics_SetProjection at RVA 0x54AB0, __thiscall(gfx, near, far)
+                    // CallMethod is a free template function, not a class member
+                    DWORD projAddr = (DWORD)GetModuleHandle(NULL) + 0x54AB0;
+                    typedef void(__thiscall *SetProj_t)(void*, float, float);
+                    SetProj_t setProj = (SetProj_t)projAddr;
+                    setProj((void*)gfx, 20.0f, 100000.0f);
                 }
             }
         }
