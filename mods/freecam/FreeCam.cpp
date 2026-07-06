@@ -5,6 +5,10 @@
 static bool g_hideUI = false;
 static bool g_hideBall = false;
 static bool g_disableFog = false;
+static bool g_fogSaved = false;
+static float g_origFogStart = 0.0f;
+static float g_origFogEnd = 0.0f;
+static float g_origFarPlane = 0.0f;
 
 // Font_DrawGlyph: RET 0x20 = 8 stack params → 10 total (ecx + edx + 8)
 typedef void(__fastcall *FontDrawGlyph_t)(void*, void*, const char*, int, int,
@@ -202,12 +206,23 @@ public:
         // gfx = App+0x174, D3D device = gfx+0x154, SetRenderState = vtable[50].
         // FOGSTART = 36, FOGEND = 37 (values are float bits).
         // Graphics_SetProjection at RVA 0x54AB0 = __thiscall(gfx, near, far).
-        // Original near=20.0, far=calculated. We push far to 100000.
+        // Original near=20.0, far=stored at gfx+0x794. We push far to 100000.
+        // On re-enable: restore original FOGSTART/FOGEND from gfx struct and
+        // rebuild projection with original far plane (gfx+0x794 was overwritten
+        // by our call, but gfx+0x790=near and gfx+0x184=screen dist still exist).
+        // Simplest: read original far from gfx+0x794 BEFORE first override.
         if (g_disableFog) {
             App* app = api->GetApp();
             if (app && !IsBadReadPtr(app, sizeof(App))) {
                 void* gfx = app->graphics;
                 if (gfx && !IsBadReadPtr(gfx, 0x800)) {
+                    // Save original fog/projection values on first use
+                    if (!g_fogSaved) {
+                        g_origFogStart = *(float*)((uint8_t*)gfx + 0x73C);
+                        g_origFogEnd = *(float*)((uint8_t*)gfx + 0x740);
+                        g_origFarPlane = *(float*)((uint8_t*)gfx + 0x794);
+                        g_fogSaved = true;
+                    }
                     // Push fog start/end to extreme distances via D3D SetRenderState
                     void* device = *(void**)((uint8_t*)gfx + 0x154);
                     if (device && !IsBadReadPtr(device, 4)) {
@@ -222,14 +237,35 @@ public:
                         }
                     }
                     // Rebuild projection matrix with large far clip plane
-                    // Graphics_SetProjection at RVA 0x54AB0, __thiscall(gfx, near, far)
-                    // CallMethod is a free template function, not a class member
                     DWORD projAddr = (DWORD)GetModuleHandle(NULL) + 0x54AB0;
                     typedef void(__thiscall *SetProj_t)(void*, float, float);
                     SetProj_t setProj = (SetProj_t)projAddr;
                     setProj((void*)gfx, 20.0f, 100000.0f);
                 }
             }
+        } else if (g_fogSaved) {
+            // Restore original fog and projection
+            App* app = api->GetApp();
+            if (app && !IsBadReadPtr(app, sizeof(App))) {
+                void* gfx = app->graphics;
+                if (gfx && !IsBadReadPtr(gfx, 0x800)) {
+                    void* device = *(void**)((uint8_t*)gfx + 0x154);
+                    if (device && !IsBadReadPtr(device, 4)) {
+                        void** vtable = *(void***)device;
+                        if (vtable && !IsBadReadPtr(vtable, 0xCC)) {
+                            typedef long(__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
+                            D3DSetRenderState_t srs = (D3DSetRenderState_t)vtable[50];
+                            srs(device, 36, *(DWORD*)&g_origFogStart);
+                            srs(device, 37, *(DWORD*)&g_origFogEnd);
+                        }
+                    }
+                    DWORD projAddr = (DWORD)GetModuleHandle(NULL) + 0x54AB0;
+                    typedef void(__thiscall *SetProj_t)(void*, float, float);
+                    SetProj_t setProj = (SetProj_t)projAddr;
+                    setProj((void*)gfx, 20.0f, g_origFarPlane);
+                }
+            }
+            g_fogSaved = false;
         }
 
         if (!active || !initialized) return;
