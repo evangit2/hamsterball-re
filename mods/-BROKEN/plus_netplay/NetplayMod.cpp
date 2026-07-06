@@ -531,9 +531,10 @@ public:
         createSlider("NETPLAY_IP3", "Host IP: Octet 3", 0, 0, 255, 1);
         createSlider("NETPLAY_IP4", "Host IP: Octet 4", 1, 0, 255, 1);
 
-        // Start pipe thread
-        g_pipeRunning = true;
-        g_pipeThread = CreateThread(NULL, 0, pipeThreadFunc, NULL, 0, NULL);
+        // NOTE: Do NOT start the pipe thread here — creating a thread during
+        // Initialize() (game init step 26, loading screen) causes msvcrt.dll
+        // heap corruption crashes. Thread is started lazily in onGameUpdate()
+        // once the game is past the loading screen.
     }
 
     ~NetplayMod() {
@@ -580,9 +581,15 @@ public:
     void onGameUpdate() override {
         g_frameCount++;
 
-        // Mark game as ready after ~60 frames (1 second) to skip loading screen
-        if (!g_gameReady && g_frameCount > 60) {
+        // Mark game as ready after ~120 frames (~2 seconds) to skip loading screen
+        if (!g_gameReady && g_frameCount > 120) {
             g_gameReady = true;
+        }
+
+        // Lazily start pipe thread once game is past loading screen
+        if (g_gameReady && !g_pipeThread) {
+            g_pipeRunning = true;
+            g_pipeThread = CreateThread(NULL, 0, pipeThreadFunc, NULL, 0, NULL);
         }
 
         // Single FPS calculation (1-second window)
