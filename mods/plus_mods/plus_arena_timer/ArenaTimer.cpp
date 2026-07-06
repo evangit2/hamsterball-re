@@ -7,6 +7,8 @@ static constexpr DWORD BOARD_VTABLE_MIN = 0x4D0000;
 static constexpr DWORD BOARD_VTABLE_MAX = 0x4D2000;
 static constexpr DWORD GLOBAL_APP_PTR = 0x5341E0;
 static constexpr DWORD TIMER_OFFSET = 0x47AC;
+static constexpr int TICKS_PER_SECOND = 100;
+static constexpr int DEFAULT_TIMER_TICKS = 6000;
 
 class ArenaTimerMod : public HamsterballAPI {
 private:
@@ -18,7 +20,7 @@ private:
         CustomSlider s(id, label, (float)defaultVal);
         s.lowerBound = (float)minVal;
         s.upperBound = (float)maxVal;
-        s.stepSize = 100.0f;
+        s.stepSize = 1.0f;
         s.decimalPlaces = 0;
         api->CreateSlider(s, this);
     }
@@ -44,19 +46,41 @@ private:
 
         Sleep(3000);
 
+        int lastTimer = -1;
+        bool setThisRound = false;
+
         while (self->m_running) {
             Sleep(16);
             DWORD board = findBoard();
             if (board) {
-                int timerVal = (int)api->GetSliderState("ARENA_TIMER");
-                if (timerVal < 100) timerVal = 100;
+                // Slider is in seconds — convert to ticks for the game
+                int timerSeconds = (int)api->GetSliderState("ARENA_TIMER");
+                if (timerSeconds < 1) timerSeconds = 1;
+                int timerTicks = timerSeconds * TICKS_PER_SECOND;
+
                 DWORD addr = board + TIMER_OFFSET;
                 if (!IsBadReadPtr((void*)addr, 4)) {
                     int current = *(int*)addr;
-                    if (current == 6000) {
-                        *(int*)addr = timerVal;
+
+                    // Detect new round: the game reset the timer upward
+                    // (during a round the timer only counts down)
+                    if (lastTimer != -1 && current > lastTimer) {
+                        setThisRound = false;
                     }
+
+                    // Set the timer once per round, when the game has it at
+                    // the default 6000 ticks (60s) start value
+                    if (!setThisRound && current == DEFAULT_TIMER_TICKS) {
+                        *(int*)addr = timerTicks;
+                        setThisRound = true;
+                    }
+
+                    lastTimer = current;
                 }
+            } else {
+                // No board — reset state so next round is detected
+                lastTimer = -1;
+                setThisRound = false;
             }
         }
         return 0;
@@ -71,7 +95,7 @@ public:
     void Initialize(IModAPI* modApi) override {
         api = modApi;
 
-        createSlider("ARENA_TIMER", "Arena Timer (ticks)", 6000, 100, 60000);
+        createSlider("ARENA_TIMER", "Arena Timer (seconds)", 60, 1, 600);
 
         m_thread = CreateThread(NULL, 0, timerThread, this, 0, NULL);
     }
