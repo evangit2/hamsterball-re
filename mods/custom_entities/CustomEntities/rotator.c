@@ -1,123 +1,143 @@
 /*
  * rotator.c — Rotator behavior DLL for Custom Entities mod
  *
- * Makes the target entity constantly rotate on its X axis at a slow speed.
+ * Rotates entity vertices directly in system memory each frame.
+ * The game's EntityTransform is read once during loading and cached —
+ * modifying it at runtime has no effect. Instead, we modify the actual
+ * vertex positions in the MeshWorld vertex array.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o Rotator.dll rotator.c \
- *     -O2 -static -static-libgcc -msse2 -mfpmath=sse -luser32
+ *     -O2 -static -static-libgcc -msse2 -mfpmath=sse
  */
 
 #include <windows.h>
-#include <stdio.h>
+#include <math.h>
 
-/* EntityTransform — 0x50 bytes (RenderContext in game memory) */
-typedef struct {
-    DWORD  vtable;      /* +0x00 */
-    float  rotX;        /* +0x04 — Rotation X (radians) */
-    float  rotY;        /* +0x08 — Rotation Y (radians) */
-    float  rotZ;        /* +0x0C — Rotation Z (radians) */
-    float  rotScale;    /* +0x10 — Also diffuse alpha; !=1.0 → hasTransform=TRUE */
-    float  posX;        /* +0x14 — Also ambient R */
-    float  posY;        /* +0x18 — Also ambient G */
-    float  posZ;        /* +0x1C — Also ambient B */
-    float  posScale;    /* +0x20 — Also ambient alpha */
-    float  specular[4]; /* +0x24 — Specular RGBA */
-    float  emissive[4]; /* +0x34 — Emissive RGBA */
-    float  power;       /* +0x44 — Material power/shininess */
-    DWORD  texture;     /* +0x48 — Texture pointer */
-    BYTE   hasTransform;/* +0x4C — TRUE = apply transform */
-    BYTE   has_refl;    /* +0x4D — Has reflection */
-    BYTE   pad[2];      /* +0x4E */
-} EntityTransform;
+/* Game struct offsets (verified via Ghidra decompilation) */
+#define BOARD_SCENE      0x878   /* Board+0x878 → Scene* */
+#define SCENE_MESHWORLD  0x08    /* Scene+0x08 → MeshWorld* */
+#define MW_VTX_COUNT     0x438   /* MeshWorld+0x438 → u32 vertex count */
+#define MW_VTX_ARRAY     0x440   /* MeshWorld+0x440 → float* vertex array */
 
-#define ROTATION_SPEED 0.02f
-static float g_accumulated_angle = 0.0f;
-static int g_update_count = 0;
-static EntityTransform* g_transform = NULL;
+/* Each vertex is 32 bytes: pos(3f=12) + normal(3f=12) + uv(2f=8) */
+#define VERTEX_SIZE      32
+
+/* Entity vertex count (from Rotator.MESHWORLD: 272 vertices) */
+#define ENTITY_VTX_COUNT 272
+
+/* Rotation speed: ~0.02 rad/frame ≈ 69°/sec at 60fps */
+#define ROTATION_SPEED   0.02f
+
+/* State */
+static float* g_vtx_array = NULL;      /* Pointer to MeshWorld vertex array */
+static int    g_entity_vtx_start = 0;  /* Index of first entity vertex */
+static float  g_center_y = 0.0f;       /* Rotation center Y (centroid) */
+static float  g_center_z = 0.0f;       /* Rotation center Z (centroid) */
+static float  g_angle = 0.0f;          /* Current rotation angle */
+static float* g_base_pos = NULL;        /* Saved base positions (x,y,z per vertex) */
+static int    g_initialized = 0;
+
+/* Safe read helper */
+static DWORD safe_read_dword(DWORD addr) {
+    if (!addr || addr < 0x10000) return 0;
+    if (IsBadReadPtr((void*)addr, 4)) return 0;
+    return *(DWORD*)addr;
+}
 
 /* Behavior_Init — called once when entity is detected */
-__declspec(dllexport) void __cdecl Behavior_Init(EntityTransform* transform, void* board) {
-    if (!transform) return;
-    g_transform = transform;
+__declspec(dllexport) void __cdecl Behavior_Init(void* transform, void* board_ptr) {
+    DWORD board = (DWORD)board_ptr;
+    if (!board) return;
 
-    char msg[256];
-    snprintf(msg, sizeof(msg),
-        "Rotator Behavior_Init\n\n"
-        "transform = 0x%08X\n"
-        "Before: rotX=%.3f rotY=%.3f rotZ=%.3f rotScale=%.3f\n"
-        "        posX=%.3f posY=%.3f posZ=%.3f posScale=%.3f\n"
-        "        hasTransform=%d  has_refl=%d\n"
-        "        texture=0x%08X",
-        (unsigned)transform,
-        transform->rotX, transform->rotY, transform->rotZ, transform->rotScale,
-        transform->posX, transform->posY, transform->posZ, transform->posScale,
-        transform->hasTransform, transform->has_refl,
-        transform->texture);
-    MessageBoxA(NULL, msg, "Rotator Behavior_Init", MB_OK | MB_ICONINFORMATION);
+    /* Navigate: board → scene → meshworld */
+    DWORD scene = safe_read_dword(board + BOARD_SCENE);
+    if (!scene) return;
+    DWORD mw = safe_read_dword(scene + SCENE_MESHWORLD);
+    if (!mw) return;
 
-    /* Force hasTransform=TRUE */
-    transform->hasTransform = 1;
+    /* Read vertex count and array pointer */
+    if (IsBadReadPtr((void*)(mw + MW_VTX_COUNT), 4)) return;
+    int total_vtx = *(int*)(mw + MW_VTX_COUNT);
+    if (total_vtx < ENTITY_VTX_COUNT) return;
 
-    /* Clear position and rotation */
-    transform->posX = 0.0f;
-    transform->posY = 0.0f;
-    transform->posZ = 0.0f;
-    transform->posScale = 1.0f;
-    transform->rotX = 0.0f;
-    transform->rotY = 0.0f;
-    transform->rotZ = 0.0f;
-    transform->rotScale = 1.0f;
+    if (IsBadReadPtr((void*)(mw + MW_VTX_ARRAY), 4)) return;
+    float* vtx = *(float**)(mw + MW_VTX_ARRAY);
+    if (!vtx || IsBadReadPtr(vtx, total_vtx * VERTEX_SIZE)) return;
 
-    g_accumulated_angle = 0.0f;
-    g_update_count = 0;
+    /* Entity vertices are the last ENTITY_VTX_COUNT in the array
+     * (the merger appends them after the level's original vertices) */
+    g_entity_vtx_start = total_vtx - ENTITY_VTX_COUNT;
+    g_vtx_array = vtx;
+
+    /* Calculate centroid of entity vertices (rotation center) */
+    float sum_y = 0.0f, sum_z = 0.0f;
+    int i;
+    for (i = 0; i < ENTITY_VTX_COUNT; i++) {
+        float* v = vtx + (g_entity_vtx_start + i) * (VERTEX_SIZE / 4);
+        sum_y += v[1];  /* Y at offset 4 (float index 1) */
+        sum_z += v[2];  /* Z at offset 8 (float index 2) */
+    }
+    g_center_y = sum_y / ENTITY_VTX_COUNT;
+    g_center_z = sum_z / ENTITY_VTX_COUNT;
+
+    /* Save base positions */
+    g_base_pos = (float*)malloc(ENTITY_VTX_COUNT * 3 * sizeof(float));
+    if (!g_base_pos) return;
+    for (i = 0; i < ENTITY_VTX_COUNT; i++) {
+        float* v = vtx + (g_entity_vtx_start + i) * (VERTEX_SIZE / 4);
+        g_base_pos[i * 3 + 0] = v[0];  /* X */
+        g_base_pos[i * 3 + 1] = v[1];  /* Y */
+        g_base_pos[i * 3 + 2] = v[2];  /* Z */
+    }
+
+    g_angle = 0.0f;
+    g_initialized = 1;
 }
 
 /* Behavior_Update — called every frame (~60Hz) */
-__declspec(dllexport) void __cdecl Behavior_Update(EntityTransform* transform, void* board) {
-    if (!transform) return;
+__declspec(dllexport) void __cdecl Behavior_Update(void* transform, void* board_ptr) {
+    if (!g_initialized || !g_vtx_array || !g_base_pos) return;
 
-    g_update_count++;
-
-    /* Show a MessageBox after ~60 updates (~1 second) to confirm it's being called */
-    if (g_update_count == 60) {
-        char msg[256];
-        snprintf(msg, sizeof(msg),
-            "Rotator Behavior_Update called %d times!\n\n"
-            "Current: rotX=%.3f hasTransform=%d\n"
-            "transform=0x%08X",
-            g_update_count, transform->rotX, transform->hasTransform,
-            (unsigned)transform);
-        MessageBoxA(NULL, msg, "Rotator Update OK", MB_OK | MB_ICONINFORMATION);
+    /* Validate vertex array is still accessible */
+    if (IsBadReadPtr(g_vtx_array, (g_entity_vtx_start + ENTITY_VTX_COUNT) * VERTEX_SIZE)) {
+        g_initialized = 0;
+        return;
     }
 
-    /* Ensure hasTransform stays TRUE */
-    transform->hasTransform = 1;
+    /* Increment rotation angle */
+    g_angle += ROTATION_SPEED;
+    if (g_angle > 6.283185f) g_angle -= 6.283185f;
 
-    /* Increment rotation */
-    g_accumulated_angle += ROTATION_SPEED;
-    if (g_accumulated_angle > 6.283185f) {
-        g_accumulated_angle -= 6.283185f;
+    float cos_a = cosf(g_angle);
+    float sin_a = sinf(g_angle);
+
+    /* Apply X-axis rotation around the entity center */
+    int i;
+    for (i = 0; i < ENTITY_VTX_COUNT; i++) {
+        float* v = g_vtx_array + (g_entity_vtx_start + i) * (VERTEX_SIZE / 4);
+
+        /* Base position relative to center */
+        float by = g_base_pos[i * 3 + 1] - g_center_y;
+        float bz = g_base_pos[i * 3 + 2] - g_center_z;
+
+        /* Rotated position */
+        v[1] = g_center_y + by * cos_a - bz * sin_a;  /* Y */
+        v[2] = g_center_z + by * sin_a + bz * cos_a;  /* Z */
+        /* X stays the same (rotation around X axis) */
     }
-
-    transform->rotX = g_accumulated_angle;
-    transform->rotY = 0.0f;
-    transform->rotZ = 0.0f;
-    transform->rotScale = 1.0f;
-    transform->posX = 0.0f;
-    transform->posY = 0.0f;
-    transform->posZ = 0.0f;
-    transform->posScale = 1.0f;
 }
 
 /* Behavior_Shutdown — called when level unloads */
 __declspec(dllexport) void __cdecl Behavior_Shutdown(void) {
-    MessageBoxA(NULL, "Rotator Behavior_Shutdown", "Rotator", MB_OK);
+    if (g_base_pos) {
+        free(g_base_pos);
+        g_base_pos = NULL;
+    }
+    g_initialized = 0;
+    g_vtx_array = NULL;
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        MessageBoxA(NULL, "Rotator.dll loaded!", "Rotator DLL", MB_OK | MB_ICONINFORMATION);
-    }
     return TRUE;
 }
