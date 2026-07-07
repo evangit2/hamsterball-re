@@ -808,167 +808,6 @@ static void scan_for_custom_entities(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Rotation hook — patches a per-frame game function to call Gfx_RotateY
- *
- * The behavior DLL approach (background thread) doesn't work because
- * Gfx_RotateY must be called from the game's render thread.
- * We hook Ball_Update (0x405E00) which runs every frame in the game thread.
- *
- * The hook is a 5-byte JMP detour:
- *   1. Save original 5 bytes
- *   2. Patch with JMP to our code cave
- *   3. Code cave: call Gfx_RotateY, increment angle, execute original bytes, JMP back
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-#define HOOK_TARGET     0x405E00   /* Ball_Update — runs every frame in game thread */
-#define GFX_ROTATEY_ADDR 0x457BB0  /* void Gfx_RotateY(float angle, float y, float z) */
-#define MW_VTX_COUNT_OFFSET  0x438   /* MeshWorld+0x438 → u32 vertex count */
-#define MW_VTX_ARRAY_OFFSET  0x440   /* MeshWorld+0x440 → float* vertex array */
-
-static BYTE g_orig_bytes[5];
-static int  g_hook_installed = 0;
-static float g_rot_angle = 0.0f;
-static float g_rot_center_y = 0.0f;
-static float g_rot_center_z = 0.0f;
-static int   g_rot_active = 0;
-
-/* MinGW doesn't support __asm {} blocks — use raw byte stubs instead.
- * The code cave is allocated at runtime with VirtualAlloc, then we write
- * the machine code bytes directly. */
-
-static BYTE* g_cave_mem = NULL;
-static int   g_cave_orig_offset = 0;
-static float g_rot_speed = 0.02f;
-
-/* Build the code cave at runtime using raw x86 opcodes */
-static void build_cave(void) {
-    /* Allocate executable memory */
-    g_cave_mem = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE,
-                                     PAGE_EXECUTE_READWRITE);
-    if (!g_cave_mem) return;
-
-    /* We'll build the cave using a simpler approach:
-     * Instead of complex asm, use a C function called from a minimal stub.
-     * The stub just: pushad, call C_func, popad, execute orig bytes, jmp back.
-     */
-
-    /* Actually, even simpler: use a C function (not naked) that does the
-     * rotation, and a tiny asm stub that calls it.
-     * But MinGW can't do inline asm either.
-     *
-     * Simplest approach: Just patch Ball_Update to call our C function
-     * directly. Ball_Update is __thiscall, but our function is __cdecl.
-     * We need a trampoline that converts the calling convention.
-     *
-     * Actually, the SIMPLEST approach of all:
-     * Don't use a code cave at all. Just patch the FIRST instruction of
-     * Ball_Update with a CALL to our C function, then have our function
-     * execute the original instruction and return.
-     *
-     * But that's complex too. Let me use raw bytes.
-     */
-
-    int p = 0;
-
-    /* pushad (save all registers) */
-    g_cave_mem[p++] = 0x60;
-
-    /* push g_rot_center_z (push dword ptr [addr]) */
-    g_cave_mem[p++] = 0xFF; g_cave_mem[p++] = 0x35;
-    *(DWORD*)(&g_cave_mem[p]) = (DWORD)&g_rot_center_z; p += 4;
-
-    /* push g_rot_center_y */
-    g_cave_mem[p++] = 0xFF; g_cave_mem[p++] = 0x35;
-    *(DWORD*)(&g_cave_mem[p]) = (DWORD)&g_rot_center_y; p += 4;
-
-    /* push g_rot_angle */
-    g_cave_mem[p++] = 0xFF; g_cave_mem[p++] = 0x35;
-    *(DWORD*)(&g_cave_mem[p]) = (DWORD)&g_rot_angle; p += 4;
-
-    /* mov eax, GFX_ROTATEY_ADDR */
-    g_cave_mem[p++] = 0xB8;
-    *(DWORD*)(&g_cave_mem[p]) = GFX_ROTATEY_ADDR; p += 4;
-
-    /* call eax */
-    g_cave_mem[p++] = 0xFF; g_cave_mem[p++] = 0xD0;
-
-    /* add esp, 12 (cleanup 3 float args) */
-    g_cave_mem[p++] = 0x83; g_cave_mem[p++] = 0xC4; g_cave_mem[p++] = 0x0C;
-
-    /* Increment angle: fld [g_rot_angle] */
-    g_cave_mem[p++] = 0xD9; g_cave_mem[p++] = 0x05;
-    *(DWORD*)(&g_cave_mem[p]) = (DWORD)&g_rot_angle; p += 4;
-    /* fadd [g_rot_speed] */
-    g_cave_mem[p++] = 0xD8; g_cave_mem[p++] = 0x05;
-    *(DWORD*)(&g_cave_mem[p]) = (DWORD)&g_rot_speed; p += 4;
-    /* fstp [g_rot_angle] */
-    g_cave_mem[p++] = 0xD9; g_cave_mem[p++] = 0x1D;
-    *(DWORD*)(&g_cave_mem[p]) = (DWORD)&g_rot_angle; p += 4;
-
-    /* popad (restore all registers) */
-    g_cave_mem[p++] = 0x61;
-
-    /* Execute original 5 bytes (copied here at install time) */
-    int orig_offset = p;
-    p += 5;  /* placeholder for original bytes */
-
-    /* JMP back to HOOK_TARGET+5 */
-    /* mov eax, HOOK_TARGET+5 */
-    g_cave_mem[p++] = 0xB8;
-    *(DWORD*)(&g_cave_mem[p]) = HOOK_TARGET + 5; p += 4;
-    /* jmp eax */
-    g_cave_mem[p++] = 0xFF; g_cave_mem[p++] = 0xE0;
-
-    /* Store the offset where original bytes should be copied */
-    g_cave_orig_offset = orig_offset;
-}
-
-/* Install the hook by patching Ball_Update with a JMP to our cave */
-static void install_rotation_hook(void) {
-    if (g_hook_installed) return;
-
-    /* Build the code cave */
-    build_cave();
-    if (!g_cave_mem) return;
-
-    /* Read original 5 bytes from Ball_Update */
-    memcpy(g_orig_bytes, (void*)HOOK_TARGET, 5);
-
-    /* Copy original bytes into the cave's placeholder area */
-    memcpy(&g_cave_mem[g_cave_orig_offset], g_orig_bytes, 5);
-
-    /* Patch Ball_Update with JMP to our cave */
-    DWORD old_protect;
-    if (!VirtualProtect((void*)HOOK_TARGET, 5, PAGE_EXECUTE_READWRITE, &old_protect))
-        return;
-
-    /* JMP rel32: E9 <offset> */
-    DWORD cave_addr = (DWORD)g_cave_mem;
-    DWORD rel32 = cave_addr - (HOOK_TARGET + 5);
-
-    BYTE patch[5];
-    patch[0] = 0xE9;
-    memcpy(&patch[1], &rel32, 4);
-    memcpy((void*)HOOK_TARGET, patch, 5);
-
-    VirtualProtect((void*)HOOK_TARGET, 5, old_protect, &old_protect);
-
-    g_hook_installed = 1;
-}
-
-/* Remove the hook by restoring original bytes */
-static void remove_rotation_hook(void) {
-    if (!g_hook_installed) return;
-
-    DWORD old_protect;
-    if (VirtualProtect((void*)HOOK_TARGET, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
-        memcpy((void*)HOOK_TARGET, g_orig_bytes, 5);
-        VirtualProtect((void*)HOOK_TARGET, 5, old_protect, &old_protect);
-    }
-    g_hook_installed = 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
  * Main mod thread — polls for level changes, scans entities, calls updates
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -999,7 +838,6 @@ static DWORD WINAPI mod_thread(LPVOID param) {
             /* Level changed — shutdown old entities */
             if (g_last_board != 0) {
                 shutdown_all_entities();
-                g_rot_active = 0;  /* Deactivate rotation */
             }
             g_last_board = board;
 
@@ -1009,40 +847,6 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 board = get_board(); /* Re-read in case it changed */
                 if (board) {
                     scan_for_custom_entities(board);
-
-                    /* If we found a CE:Rotator entity, set up rotation */
-                    if (g_entity_count > 0) {
-                        /* Compute rotation center from entity vertices */
-                        DWORD scene = get_scene(board);
-                        if (scene) {
-                            DWORD mw = get_meshworld(scene);
-                            if (mw) {
-                                if (!IsBadReadPtr((void*)(mw + MW_VTX_COUNT_OFFSET), 4)) {
-                                    int total_vtx = *(int*)(mw + MW_VTX_COUNT_OFFSET);
-                                    if (!IsBadReadPtr((void*)(mw + MW_VTX_ARRAY_OFFSET), 4)) {
-                                        float* vtx = *(float**)(mw + MW_VTX_ARRAY_OFFSET);
-                                        if (vtx && total_vtx >= 272 &&
-                                            !IsBadReadPtr(vtx, total_vtx * 32)) {
-                                            int start = total_vtx - 272;
-                                            float sy = 0, sz = 0;
-                                            int i;
-                                            for (i = 0; i < 272; i++) {
-                                                float* v = vtx + (start + i) * 8;
-                                                sy += v[1]; sz += v[2];
-                                            }
-                                            g_rot_center_y = sy / 272;
-                                            g_rot_center_z = sz / 272;
-                                            g_rot_angle = 0.0f;
-                                            g_rot_active = 1;
-
-                                            /* Install the Ball_Update hook */
-                                            install_rotation_hook();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -1063,8 +867,6 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         Sleep(16); /* ~60Hz update rate */
     }
 
-    /* Remove hook before shutting down */
-    remove_rotation_hook();
     shutdown_all_entities();
     return 0;
 }
@@ -1097,7 +899,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
             WaitForSingleObject(g_thread, 2000);
             CloseHandle(g_thread);
         }
-        remove_rotation_hook();
         shutdown_all_entities();
         if (g_cs_initialized) {
             DeleteCriticalSection(&g_cs);
