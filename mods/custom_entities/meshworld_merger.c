@@ -567,7 +567,7 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
              * material/shading properties, not transform data. */
             BYTE* mat_src = meshes[i].material_buf + g->mat_offset;
             float identity[8] = { 0.0f, 0.0f, 0.0f, 1.0f,   /* pos=(0,0,0) scale=1 */
-                                   0.0f, 0.0f, 0.0f, 0.0f }; /* rot=(0,0,0) rotScale=0 → hasRot=FALSE */
+                                   0.0f, 0.0f, 0.0f, 1.0f }; /* rot=(0,0,0) rotScale=1.0 → alpha=1.0 (opaque, hasTransform=FALSE) */
             memcpy(merged + mpos, identity, 32);
             mpos += 32;
             /* Copy specular + emissive (sets 3+4 = 32 bytes) from original */
