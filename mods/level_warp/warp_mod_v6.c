@@ -815,8 +815,10 @@ static void updateWarpStateMachine(void) {
             void *func = (void *)APP_START_PRACTICE_RACE;
             int appVal = app;
             int idx = levelIdx;
+            /* Save difficulty (App+0x23C) — App_StartPracticeRace forces it to 1 (Pipsqueak) */
+            char savedDifficulty = *((char *)app + 0x23C);
 
-            diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d)", appVal, idx);
+            diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d, difficulty=%d)", appVal, idx, (int)savedDifficulty);
 
             __asm__ volatile (
                 "push %[idx]\n\t"
@@ -830,6 +832,9 @@ static void updateWarpStateMachine(void) {
                   "st", "st(1)", "st(2)", "st(3)",
                   "st(4)", "st(5)", "st(6)", "st(7)", "memory"
             );
+
+            /* Restore difficulty so entity factories spawn correctly */
+            *((char *)app + 0x23C) = savedDifficulty;
 
             diag_log("[warp] Level loaded OK");
         } else {
