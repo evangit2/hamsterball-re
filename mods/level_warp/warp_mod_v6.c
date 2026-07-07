@@ -545,8 +545,6 @@ static void updateMusicFade(void) {
 typedef long (__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
 typedef long (__stdcall *D3DGetRenderState_t)(void*, DWORD, DWORD*);
 typedef long (__stdcall *D3DClear_t)(void*, DWORD, const void*, DWORD, DWORD, float, DWORD);
-typedef long (__stdcall *D3DBeginScene_t)(void*);
-typedef long (__stdcall *D3DEndScene_t)(void*);
 
 static void drawWhiteOverlay(void) {
     int app;
@@ -556,8 +554,6 @@ static void drawWhiteOverlay(void) {
     D3DSetRenderState_t pSetRenderState;
     D3DGetRenderState_t pGetRenderState;
     D3DClear_t pClear;
-    D3DBeginScene_t pBeginScene;
-    D3DEndScene_t pEndScene;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -573,11 +569,8 @@ static void drawWhiteOverlay(void) {
     pSetRenderState = (D3DSetRenderState_t)vtable[50];
     pGetRenderState = (D3DGetRenderState_t)vtable[51];
     pClear = (D3DClear_t)vtable[36];
-    pBeginScene = (D3DBeginScene_t)vtable[34];
-    pEndScene = (D3DEndScene_t)vtable[35];
 
-    if (!pSetRenderState || !pGetRenderState || !pClear ||
-        !pBeginScene || !pEndScene) return;
+    if (!pSetRenderState || !pGetRenderState || !pClear) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
@@ -587,13 +580,11 @@ static void drawWhiteOverlay(void) {
         /* Save alphablend state so we know if the game has blending on */
         pGetRenderState(device, D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
 
-        /* Clear the render target with our white color (alpha blended).
-         * Clear does NOT touch stream sources, texture stages, FVF, or
-         * any vertex-related state — it only writes to the color buffer.
-         * This is the safest possible D3D overlay operation. */
-        pBeginScene(device);
+        /* Clear the render target with our white color.
+         * In D3D8, Clear() can be called OUTSIDE BeginScene/EndScene —
+         * it's one of the few operations explicitly allowed without a scene.
+         * This avoids the nested-BeginScene crash. */
         pClear(device, 0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0);
-        pEndScene(device);
 
         /* Restore alphablend if we changed it (we didn't, but be safe) */
         pSetRenderState(device, D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
