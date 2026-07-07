@@ -543,6 +543,8 @@ typedef long (__stdcall *D3DSetTextureStageState_t)(void*, DWORD, DWORD, DWORD);
 typedef long (__stdcall *D3DGetTextureStageState_t)(void*, DWORD, DWORD, DWORD*);
 typedef long (__stdcall *D3DSetVertexShader_t)(void*, DWORD);
 typedef long (__stdcall *D3DGetVertexShader_t)(void*, DWORD*);
+typedef long (__stdcall *D3DSetTexture_t)(void*, DWORD, void*);
+
 static void drawWhiteOverlay(void) {
     int app;
     int gfx;
@@ -555,6 +557,7 @@ static void drawWhiteOverlay(void) {
     D3DGetTextureStageState_t pGetTextureStageState;
     D3DSetVertexShader_t pSetVertexShader;
     D3DGetVertexShader_t pGetVertexShader;
+    D3DSetTexture_t pSetTexture;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -574,10 +577,11 @@ static void drawWhiteOverlay(void) {
     pGetTextureStageState = (D3DGetTextureStageState_t)vtable[62];
     pGetVertexShader = (D3DGetVertexShader_t)vtable[77];
     pSetVertexShader = (D3DSetVertexShader_t)vtable[76];
+    pSetTexture = (D3DSetTexture_t)vtable[61];
 
     if (!pSetRenderState || !pGetRenderState || !pDrawPrimitiveUP ||
         !pSetTextureStageState || !pGetTextureStageState ||
-        !pSetVertexShader || !pGetVertexShader) return;
+        !pSetVertexShader || !pGetVertexShader || !pSetTexture) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
@@ -591,6 +595,7 @@ static void drawWhiteOverlay(void) {
         DWORD savedZWriteEnable = 0;
         DWORD savedColorOp = 0, savedColorArg1 = 0, savedColorArg2 = 0;
         DWORD savedAlphaOp = 0, savedAlphaArg1 = 0, savedAlphaArg2 = 0;
+        void *savedTexture = NULL;
 
         TLVertex verts[4] = {
             {    0.0f,    0.0f, 0.0f, 1.0f, color },
@@ -624,6 +629,9 @@ static void drawWhiteOverlay(void) {
         pSetRenderState(device, D3DRS_FOGENABLE, FALSE);
         pSetVertexShader(device, D3DFVF_TLVERTEX);
 
+        /* Unbind any game texture so it doesn't interfere with the overlay */
+        pSetTexture(device, 0, NULL);
+
         /* Texture stage: use diffuse color only (ignore textures) */
         pSetTextureStageState(device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
@@ -634,6 +642,7 @@ static void drawWhiteOverlay(void) {
         pDrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, verts, sizeof(TLVertex));
 
         /* --- Restore ALL states to saved game values --- */
+        pSetTexture(device, 0, savedTexture);
         pSetVertexShader(device, savedFVF);
         pSetTextureStageState(device, 0, D3DTSS_COLOROP, savedColorOp);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG1, savedColorArg1);
@@ -896,7 +905,6 @@ static void WarpCollisionHandler(void) {
                         if (raceIndex > 0) {
                             if (*((char *)board + BOARD_GOAL_REACHED) == 0 &&
                                 *((char *)ball + BALL_DEATH_PENDING) == 0) {
-                                setWinState(board, ball);
                                 /* App_StartPracticeRace expects 0-based index (0-14),
                                  * but findRaceIndex returns 1-based (1-15) */
                                 g_warpLevelIndex = raceIndex - 1;
@@ -1071,7 +1079,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     InstallPresentHook();
 
-    diag_log("[warp mod v6] All hooks installed. Ready for E:WARP events.");
+    diag_log("[warp mod v6b] All hooks installed. Ready for E:WARP events.");
     return 0;
 }
 
@@ -1096,8 +1104,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v6 LOADED ===");
-        diag_log("v6 fixes: BeginScene/EndScene, render state save/restore, FVF, off-by-one, TRIANGLESTRIP");
+        diag_log("=== LEVEL WARP MOD v6b LOADED ===");
+        diag_log("v6b fixes: removed setWinState (was triggering end-level screen + crash), added SetTexture(NULL)");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
