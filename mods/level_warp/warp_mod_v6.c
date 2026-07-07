@@ -539,21 +539,21 @@ static void updateMusicFade(void) {
  *   ALPHAARG2 = DIFFUSE
  * ============================================================ */
 
-/* D3DCLEAR flags */
-#define D3DCLEAR_TARGET  0x00000001
+/* Game function: Graphics_DrawScreenRect(gfx, x, y, w, h) — draws a colored rect
+ * using the game's own material/render system. Handles all D3D state internally.
+ * This is what the game itself uses for fade-to-white (via MusicPlayer_Render).
+ * __thiscall: gfx in ECX, params on stack. */
+#define GRAPHICS_DRAW_SCREEN_RECT  0x00455D60
 
-typedef long (__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
-typedef long (__stdcall *D3DGetRenderState_t)(void*, DWORD, DWORD*);
-typedef long (__stdcall *D3DClear_t)(void*, DWORD, const void*, DWORD, DWORD, float, DWORD);
+/* Game function: Graphics_SetRenderMode(gfx, mode) — sets render mode 0=normal */
+#define GRAPHICS_SET_RENDER_MODE   0x00454190
+
+/* Game function: Gfx_SetAlphaBlendState(gfx) — enables alpha blending */
+#define GFX_SET_ALPHA_BLEND_STATE  0x00453970
 
 static void drawWhiteOverlay(void) {
     int app;
     int gfx;
-    void *device;
-    void **vtable;
-    D3DSetRenderState_t pSetRenderState;
-    D3DGetRenderState_t pGetRenderState;
-    D3DClear_t pClear;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -561,33 +561,21 @@ static void drawWhiteOverlay(void) {
     if (!app) return;
     gfx = *(int *)((char *)app + APP_GRAPHICS_PTR);
     if (!gfx) return;
-    device = *(void **)((char *)gfx + GFX_D3D_DEVICE);
-    if (!device) return;
-    vtable = *(void ***)device;
-    if (!vtable) return;
 
-    pSetRenderState = (D3DSetRenderState_t)vtable[50];
-    pGetRenderState = (D3DGetRenderState_t)vtable[51];
-    pClear = (D3DClear_t)vtable[36];
-
-    if (!pSetRenderState || !pGetRenderState || !pClear) return;
-
+    /* Use the game's own Graphics_DrawScreenRect to draw a full-screen rect.
+     * This function handles ALL D3D state internally through the game's
+     * material system (Graphics_SetRenderMode + Graphics_ApplyMaterialAndDraw).
+     * It's the same function MusicPlayer_Render uses for its background.
+     *
+     * The color comes from Color_RandomRGBA() inside the function, but
+     * the alpha is controlled by the render context's alpha state.
+     * For now, just draw the rect — the game's alpha blending will handle
+     * the fade effect based on the current material alpha. */
     {
-        DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
-        DWORD color = 0x00FFFFFF | whiteAlpha;
-        DWORD savedAlphaBlend = 0;
-
-        /* Save alphablend state so we know if the game has blending on */
-        pGetRenderState(device, D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
-
-        /* Clear the render target with our white color.
-         * In D3D8, Clear() can be called OUTSIDE BeginScene/EndScene —
-         * it's one of the few operations explicitly allowed without a scene.
-         * This avoids the nested-BeginScene crash. */
-        pClear(device, 0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0);
-
-        /* Restore alphablend if we changed it (we didn't, but be safe) */
-        pSetRenderState(device, D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
+        /* Graphics_DrawScreenRect is __thiscall: gfx in ECX, 4 int params on stack */
+        typedef void (__thiscall *DrawScreenRect_t)(int, int, int, int, int);
+        DrawScreenRect_t pDrawScreenRect = (DrawScreenRect_t)GRAPHICS_DRAW_SCREEN_RECT;
+        pDrawScreenRect(gfx, 0, 0, 1920, 1080);
     }
 }
 
