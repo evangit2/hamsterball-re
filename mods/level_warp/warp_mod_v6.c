@@ -393,6 +393,7 @@ static volatile float g_whiteAlpha = 0.0f;
 /* Ball position saved at warp start for jiggling */
 static volatile float g_ballOrigY = 0.0f;
 static volatile int g_jiggleInit = 0;
+static volatile int g_diagCounter = 0;
 
 /* ============================================================
  * Memory helpers
@@ -716,15 +717,29 @@ static void updateWarpStateMachine(void) {
     /* Get ball via App→Profile→Board→Scene→ball */
     {
         int profile = *(int *)((char *)app + APP_PROFILE_PTR);
-        if (!profile) { return; }
+        if (!profile) {
+            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: profile NULL"); g_diagCounter++; }
+            return;
+        }
         board = *(int *)((char *)profile + PROFILE_BOARD_PTR);
-        if (!board) { return; }
+        if (!board) {
+            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: board NULL"); g_diagCounter++; }
+            return;
+        }
     }
     {
         int scene = *(int *)((char *)board + BOARD_SCENE_PTR_OFFSET);
-        if (!scene) { return; }
+        if (!scene) {
+            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: scene NULL"); g_diagCounter++; }
+            return;
+        }
         ball = *(int *)((char *)scene + 0x29D0);
+        if (!ball) {
+            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: ball NULL"); g_diagCounter++; }
+            return;
+        }
     }
+    g_diagCounter = 0;
 
     switch (g_phase) {
     case PHASE_JIGGLE: {
@@ -751,7 +766,7 @@ static void updateWarpStateMachine(void) {
         if (elapsed >= JIGGLE_DURATION_MS) {
             g_phase = PHASE_FLASH;
             g_phaseStartTime = now;
-            diag_log("[warp] -> PHASE_FLASH");
+            diag_logf("[warp] -> PHASE_FLASH (jiggle ran %lums, init=%d)", (unsigned long)elapsed, g_jiggleInit);
         }
         break;
     }
