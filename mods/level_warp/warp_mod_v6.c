@@ -539,17 +539,12 @@ static void updateMusicFade(void) {
  *   ALPHAARG2 = DIFFUSE
  * ============================================================ */
 
+/* D3DCLEAR flags */
+#define D3DCLEAR_TARGET  0x00000001
+
 typedef long (__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
 typedef long (__stdcall *D3DGetRenderState_t)(void*, DWORD, DWORD*);
-typedef long (__stdcall *D3DDrawPrimitiveUP_t)(void*, DWORD, UINT, const void*, UINT);
-typedef long (__stdcall *D3DSetTextureStageState_t)(void*, DWORD, DWORD, DWORD);
-typedef long (__stdcall *D3DGetTextureStageState_t)(void*, DWORD, DWORD, DWORD*);
-typedef long (__stdcall *D3DSetVertexShader_t)(void*, DWORD);
-typedef long (__stdcall *D3DGetVertexShader_t)(void*, DWORD*);
-typedef long (__stdcall *D3DGetTexture_t)(void*, DWORD, void**);
-typedef long (__stdcall *D3DSetTexture_t)(void*, DWORD, void*);
-typedef long (__stdcall *D3DGetStreamSource_t)(void*, UINT, void**, UINT*);
-typedef long (__stdcall *D3DSetStreamSource_t)(void*, UINT, void*, UINT);
+typedef long (__stdcall *D3DClear_t)(void*, DWORD, const void*, DWORD, DWORD, float, DWORD);
 typedef long (__stdcall *D3DBeginScene_t)(void*);
 typedef long (__stdcall *D3DEndScene_t)(void*);
 
@@ -560,15 +555,7 @@ static void drawWhiteOverlay(void) {
     void **vtable;
     D3DSetRenderState_t pSetRenderState;
     D3DGetRenderState_t pGetRenderState;
-    D3DDrawPrimitiveUP_t pDrawPrimitiveUP;
-    D3DSetTextureStageState_t pSetTextureStageState;
-    D3DGetTextureStageState_t pGetTextureStageState;
-    D3DSetVertexShader_t pSetVertexShader;
-    D3DGetVertexShader_t pGetVertexShader;
-    D3DGetTexture_t pGetTexture;
-    D3DSetTexture_t pSetTexture;
-    D3DGetStreamSource_t pGetStreamSource;
-    D3DSetStreamSource_t pSetStreamSource;
+    D3DClear_t pClear;
     D3DBeginScene_t pBeginScene;
     D3DEndScene_t pEndScene;
 
@@ -585,95 +572,31 @@ static void drawWhiteOverlay(void) {
 
     pSetRenderState = (D3DSetRenderState_t)vtable[50];
     pGetRenderState = (D3DGetRenderState_t)vtable[51];
-    pDrawPrimitiveUP = (D3DDrawPrimitiveUP_t)vtable[72];
-    pSetTextureStageState = (D3DSetTextureStageState_t)vtable[63];
-    pGetTextureStageState = (D3DGetTextureStageState_t)vtable[62];
-    pGetVertexShader = (D3DGetVertexShader_t)vtable[77];
-    pSetVertexShader = (D3DSetVertexShader_t)vtable[76];
-    pGetTexture = (D3DGetTexture_t)vtable[60];
-    pSetTexture = (D3DSetTexture_t)vtable[61];
-    pGetStreamSource = (D3DGetStreamSource_t)vtable[84];
-    pSetStreamSource = (D3DSetStreamSource_t)vtable[83];
+    pClear = (D3DClear_t)vtable[36];
     pBeginScene = (D3DBeginScene_t)vtable[34];
     pEndScene = (D3DEndScene_t)vtable[35];
 
-    if (!pSetRenderState || !pGetRenderState || !pDrawPrimitiveUP ||
-        !pSetTextureStageState || !pGetTextureStageState ||
-        !pSetVertexShader || !pGetVertexShader || !pSetTexture || !pGetTexture ||
-        !pGetStreamSource || !pSetStreamSource ||
+    if (!pSetRenderState || !pGetRenderState || !pClear ||
         !pBeginScene || !pEndScene) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
         DWORD color = 0x00FFFFFF | whiteAlpha;
-        DWORD savedFVF = 0;
-        DWORD savedAlphaBlend = 0, savedSrcBlend = 0, savedDestBlend = 0;
-        DWORD savedFogEnable = 0, savedZEnable = 0, savedZWriteEnable = 0;
-        DWORD savedColorOp = 0, savedColorArg1 = 0, savedColorArg2 = 0;
-        DWORD savedAlphaOp = 0, savedAlphaArg1 = 0, savedAlphaArg2 = 0;
-        void *savedTexture = NULL;
-        void *savedStreamVB = NULL;
-        UINT savedStreamStride = 0;
+        DWORD savedAlphaBlend = 0;
 
-        TLVertex verts[4] = {
-            {    0.0f,    0.0f, 0.0f, 1.0f, color },
-            { 1920.0f,    0.0f, 0.0f, 1.0f, color },
-            {    0.0f, 1080.0f, 0.0f, 1.0f, color },
-            { 1920.0f, 1080.0f, 0.0f, 1.0f, color },
-        };
-
-        /* --- Save ALL states we modify --- */
+        /* Save alphablend state so we know if the game has blending on */
         pGetRenderState(device, D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
-        pGetRenderState(device, D3DRS_SRCBLEND, &savedSrcBlend);
-        pGetRenderState(device, D3DRS_DESTBLEND, &savedDestBlend);
-        pGetRenderState(device, D3DRS_FOGENABLE, &savedFogEnable);
-        pGetRenderState(device, D3DRS_ZENABLE, &savedZEnable);
-        pGetRenderState(device, D3DRS_ZWRITEENABLE, &savedZWriteEnable);
-        pGetVertexShader(device, &savedFVF);
-        pGetTexture(device, 0, &savedTexture);
-        pGetStreamSource(device, 0, &savedStreamVB, &savedStreamStride);
-        pGetTextureStageState(device, 0, D3DTSS_COLOROP, &savedColorOp);
-        pGetTextureStageState(device, 0, D3DTSS_COLORARG1, &savedColorArg1);
-        pGetTextureStageState(device, 0, D3DTSS_COLORARG2, &savedColorArg2);
-        pGetTextureStageState(device, 0, D3DTSS_ALPHAOP, &savedAlphaOp);
-        pGetTextureStageState(device, 0, D3DTSS_ALPHAARG1, &savedAlphaArg1);
-        pGetTextureStageState(device, 0, D3DTSS_ALPHAARG2, &savedAlphaArg2);
 
-        /* --- Set overlay states --- */
-        pSetRenderState(device, D3DRS_ZENABLE, FALSE);
-        pSetRenderState(device, D3DRS_ZWRITEENABLE, FALSE);
-        pSetRenderState(device, D3DRS_ALPHABLENDENABLE, TRUE);
-        pSetRenderState(device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-        pSetRenderState(device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-        pSetRenderState(device, D3DRS_FOGENABLE, FALSE);
-        pSetVertexShader(device, D3DFVF_TLVERTEX);
-        pSetTexture(device, 0, NULL);
-        pSetTextureStageState(device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-
-        /* Draw inside BeginScene/EndScene — required on real Windows */
+        /* Clear the render target with our white color (alpha blended).
+         * Clear does NOT touch stream sources, texture stages, FVF, or
+         * any vertex-related state — it only writes to the color buffer.
+         * This is the safest possible D3D overlay operation. */
         pBeginScene(device);
-        pDrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, verts, sizeof(TLVertex));
+        pClear(device, 0, NULL, D3DCLEAR_TARGET, color, 1.0f, 0);
         pEndScene(device);
 
-        /* --- Restore ALL states to saved game values --- */
-        pSetStreamSource(device, 0, savedStreamVB, savedStreamStride);
-        pSetTexture(device, 0, savedTexture);
-        pSetVertexShader(device, savedFVF);
-        pSetTextureStageState(device, 0, D3DTSS_COLOROP, savedColorOp);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG1, savedColorArg1);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG2, savedColorArg2);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, savedAlphaOp);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG1, savedAlphaArg1);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, savedAlphaArg2);
+        /* Restore alphablend if we changed it (we didn't, but be safe) */
         pSetRenderState(device, D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
-        pSetRenderState(device, D3DRS_SRCBLEND, savedSrcBlend);
-        pSetRenderState(device, D3DRS_DESTBLEND, savedDestBlend);
-        pSetRenderState(device, D3DRS_FOGENABLE, savedFogEnable);
-        pSetRenderState(device, D3DRS_ZENABLE, savedZEnable);
-        pSetRenderState(device, D3DRS_ZWRITEENABLE, savedZWriteEnable);
     }
 }
 
@@ -753,12 +676,7 @@ static void updateWarpStateMachine(void) {
             diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
         }
 
-        /* Per-frame: oscillate ball around original Y position (rumble effect) */
-        if (ball) {
-            float phase = (float)elapsed / 200.0f;  /* ~5 cycles/sec */
-            float offset = sinf(phase) * 1.5f;       /* ±1.5 units */
-            *(float *)((char *)ball + BALL_POS_Y) = g_ballOrigY + offset;
-        }
+        /* Per-frame: ball movement disabled — user will specify rumble method later */
 
         updateMusicFade();
 
