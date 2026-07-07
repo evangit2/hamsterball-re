@@ -1,27 +1,28 @@
-# Arena Instant Respawn v8
+# Arena Instant Respawn v9
 
 ## What It Does
 
-Entity balls in arenas respawn directly on the arena ground — no respawn platform comes from above.
+ALL balls (players 1-4 + badballs) in arenas respawn instantly at the nearest safespot — no respawn platform, no crashes/freezes when many balls fall simultaneously.
 
-## How It Works
+## Problem
 
-Single patch: skip `Scene_StartCountdown` for entity balls.
+When 5+ balls fall simultaneously in arenas, the game crashes/freezes because:
+- `Scene_StartCountdown` only handles ONE ball at a time (`scene+0x10F8`)
+- `Ball_Respawn` arena path calls expensive `Mesh_FindClosestCollision` for each ball
+- Multiple balls compete for the shared respawn platform
 
-When an entity ball touches a SinkPlatform, `SinkPlatformArenaCollisionEvents` calls `Scene_StartCountdown(scene, ball)`. Our code cave checks if the ball is an entity ball (`ball+0x18 == -1`). If so, it returns immediately — the platform never activates.
+## Fix — Four Patches
 
-The ball continues falling. `ArenaBoard_Update` (0x420DA0) detects when the ball falls below the Y-threshold and calls `Ball_Respawn` directly using the original game code. No patches to Ball_Respawn needed.
+| # | Address | Type | Effect |
+|---|---------|------|--------|
+| 1 | 0x437130 | Code cave: `RET 4` | Skip Scene_StartCountdown for ALL balls (no platform) |
+| 2 | 0x40580B | JNZ→NOP | Force race-path search (no Mesh_FindClosestCollision) |
+| 3 | 0x405A3D | JNZ→NOP | Scan ALL safespots (not just first match) |
+| 4 | 0x405190 | Code cave | Copy ball pos→LGP (search from actual position) |
 
-## Patch
+## Why This Prevents Crashes
 
-| Address | Original | Patched | Effect |
-|---------|----------|---------|--------|
-| 0x437130 | `8A 81 F1 10 00 00` (MOV AL,[ECX+0x10F1]) | `JMP cave + NOP` | Skip platform for entity balls |
-
-## Version History
-
-| Version | Approach | Result |
-|---------|----------|--------|
-| v1-v4 | Various Ball_Respawn patches | Failed |
-| v5-v7 | Code caves + multiple patches | Failed |
-| v8 | Single patch: skip Scene_StartCountdown for entity balls | Simplest possible |
+- **No respawn platform** — no shared resource conflicts between balls
+- **Race-path search** — O(n) distance calculation, no expensive raycast per ball
+- **Independent respawn** — each ball finds its own nearest safespot without blocking
+- **5+ simultaneous respawns** — all complete in microseconds, no frame freeze
