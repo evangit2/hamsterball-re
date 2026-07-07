@@ -394,6 +394,7 @@ static volatile float g_whiteAlpha = 0.0f;
 static volatile float g_ballOrigY = 0.0f;
 static volatile int g_jiggleInit = 0;
 static volatile int g_diagCounter = 0;
+static volatile int g_warpBall = 0;  /* Ball pointer saved at warp trigger */
 
 /* ============================================================
  * Memory helpers
@@ -714,31 +715,21 @@ static void updateWarpStateMachine(void) {
         return;
     }
 
-    /* Get ball via App→Profile→Board→Scene→ball */
+    /* Use ball pointer saved from collision event — scene+0x29D0 is not always set */
+    ball = g_warpBall;
+    if (!ball) {
+        diag_log("[warp] g_warpBall NULL — running state machine without ball");
+    }
+
+    /* Still need board/scene for BOARD_GOAL_REACHED etc, but don't block on ball */
     {
         int profile = *(int *)((char *)app + APP_PROFILE_PTR);
-        if (!profile) {
-            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: profile NULL"); g_diagCounter++; }
-            return;
-        }
-        board = *(int *)((char *)profile + PROFILE_BOARD_PTR);
-        if (!board) {
-            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: board NULL"); g_diagCounter++; }
-            return;
+        if (profile) {
+            board = *(int *)((char *)profile + PROFILE_BOARD_PTR);
         }
     }
-    {
-        int scene = *(int *)((char *)board + BOARD_SCENE_PTR_OFFSET);
-        if (!scene) {
-            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: scene NULL"); g_diagCounter++; }
-            return;
-        }
-        ball = *(int *)((char *)scene + 0x29D0);
-        if (!ball) {
-            if (g_diagCounter < 3) { diag_log("[warp] ball lookup: ball NULL"); g_diagCounter++; }
-            return;
-        }
-    }
+    if (!board) board = 0;  /* May be null — phases that need it will skip */
+
     g_diagCounter = 0;
 
     switch (g_phase) {
@@ -935,6 +926,7 @@ static void WarpCollisionHandler(void) {
                                 g_warpLevelIndex = raceIndex - 1;
                                 g_phase = PHASE_JIGGLE;
                                 g_jiggleInit = 0;
+                                g_warpBall = (int)ball;  /* Save ball pointer from collision */
                                 /* Initialize timestamps NOW so elapsed=0 on first frame */
                                 {
                                     DWORD now = GetTickCount();
