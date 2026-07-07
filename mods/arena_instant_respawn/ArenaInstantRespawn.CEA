@@ -1,136 +1,55 @@
 // ============================================================
-// Arena Instant Respawn v7
+// Arena Instant Respawn v8
 // ============================================================
-// Makes entity balls in arenas respawn at nearest safespot
-// (like player 1 in races) instead of on respawn platforms.
+// Entity balls in arenas respawn directly on the arena ground
+// without the respawn platform coming from above.
 //
-// ROOT CAUSE (found after v1-v6):
-//   TWO callers invoke Ball_Respawn in arenas:
-//   1. ArenaBoard_Update (0x420DA0) — checks ball_Y < threshold (PRIMARY)
-//   2. Scene_UpdateBallsAndState (0x41B540) — checks death_pending (SECONDARY)
+// FIX: Simply skip Scene_StartCountdown for entity balls.
+// When a ball touches a SinkPlatform, SinkPlatformArenaCollisionEvents
+// calls Scene_StartCountdown(scene, ball). For entity balls, we RET
+// immediately — the platform never activates.
 //
-//   PLUS the SinkPlatform system calls Scene_StartCountdown which puts
-//   the ball on a respawn platform, conflicting with Ball_Respawn.
+// ArenaBoard_Update (0x420DA0) separately detects when a ball falls
+// below the Y-threshold and calls Ball_Respawn directly. This uses
+// the ORIGINAL game code with NO patches to Ball_Respawn.
 //
-//   Entity balls have LGP=(0,0,0) (never initialized) so Ball_Respawn's
-//   safespot search computes distance from origin → all balls pick
-//   the same nearest safespot.
-//
-//   Ball_Respawn's arena path uses random safespots instead of nearest.
-//   The arena early-break accepts the first match instead of scanning all.
-//
-// FOUR PATCHES — all needed:
-//   Patch 1 (v3): 0x40580B JNZ→NOP — force race path (not random)
-//   Patch 2 (v4): 0x405A3D JNZ→NOP — scan ALL safespots (not first)
-//   Patch 3 (v5): 0x405190 code cave — copy pos→LGP at Ball_Respawn entry
-//   Patch 4 (v6): 0x43716B code cave — intercept entity balls in Scene_StartCountdown
+// SINGLE PATCH: Code cave at Scene_StartCountdown entry (0x437130)
 // ============================================================
 
 [ENABLE]
 
-alloc(BallRespawn_Cave, 64)
-alloc(SinkCountdown_Cave, 128)
-alloc(Orig_40580B, 6)
-alloc(Orig_405A3D, 6)
-alloc(Orig_405190, 6)
-alloc(Orig_43716B, 10)
-registersymbol(BallRespawn_Cave)
-registersymbol(SinkCountdown_Cave)
-registersymbol(Orig_40580B)
-registersymbol(Orig_405A3D)
-registersymbol(Orig_405190)
-registersymbol(Orig_43716B)
+alloc(SinkSkip_Cave, 64)
+alloc(Orig_437130, 6)
+registersymbol(SinkSkip_Cave)
+registersymbol(Orig_437130)
 
-// Save original bytes
-Orig_40580B:
-  readmem(0040580B, 6)
+Orig_437130:
+  readmem(00437130, 6)
 
-Orig_405A3D:
-  readmem(00405A3D, 6)
-
-Orig_405190:
-  readmem(00405190, 6)
-
-Orig_43716B:
-  readmem(0043716B, 10)
-
-// Patch 1: Force race-path search (not arena random)
-0040580B:
-  db 90 90 90 90 90 90
-
-// Patch 2: Scan ALL safespots (not just first match)
-00405A3D:
-  db 90 90 90 90 90 90
-
-// Patch 3: Code cave at Ball_Respawn entry — copy pos to LGP
-// ECX = ball ptr (thiscall). Copy ball position to LGP before search.
-00405190:
-  jmp BallRespawn_Cave
+// Hook Scene_StartCountdown entry
+00437130:
+  jmp SinkSkip_Cave
   nop
 
-BallRespawn_Cave:
-  sub esp,84                  // Original: SUB ESP, 0x84
-  mov eax,[ecx+0x164]         // ball pos X
-  mov [ecx+0x2DC],eax         // LGP X = pos X
-  mov eax,[ecx+0x168]         // ball pos Y
-  mov [ecx+0x2E0],eax         // LGP Y = pos Y
-  mov eax,[ecx+0x16C]         // ball pos Z
-  mov [ecx+0x2E4],eax         // LGP Z = pos Z
-  jmp 00405196                // Return to PUSH EBX
-
-// Patch 4: Intercept entity balls in Scene_StartCountdown
-// At entity-ball path: instead of timer=50 + platform, call Ball_Respawn
-// ECX = scene, EAX = ball at this point
-0043716B:
-  jmp SinkCountdown_Cave
-  nop
-  nop
-  nop
-  nop
-  nop
-
-SinkCountdown_Cave:
-  // Clear countdown-active flag (was set just before this point)
-  mov byte [ecx+0x10F1], 00
-
-  // Copy ball current position to LGP
-  mov edx,[eax+0x164]
-  mov [eax+0x2DC],edx
-  mov edx,[eax+0x168]
-  mov [eax+0x2E0],edx
-  mov edx,[eax+0x16C]
-  mov [eax+0x2E4],edx
-
-  // Call Ball_Respawn(ball) — __fastcall: ECX = ball
-  mov ecx,eax
-  call 00405190
-
-  // Return from Scene_StartCountdown (__thiscall, 1 stack param)
+SinkSkip_Cave:
+  // Get ball ptr from stack param ([ESP+4])
+  mov eax,[esp+04]
+  // Check if entity ball (player_slot == -1)
+  cmp dword [eax+0x18],-1
+  jnz player_ball
+  // Entity ball: return immediately, no platform
   ret 0004
+player_ball:
+  // Player ball: execute original instruction and continue
+  mov al,[ecx+0x10F1]
+  jmp 00437136
 
 [DISABLE]
 
-0040580B:
-  readmem(Orig_40580B, 6)
+00437130:
+  readmem(Orig_437130, 6)
 
-00405A3D:
-  readmem(Orig_405A3D, 6)
-
-00405190:
-  readmem(Orig_405190, 6)
-
-0043716B:
-  readmem(Orig_43716B, 10)
-
-dealloc(BallRespawn_Cave)
-dealloc(SinkCountdown_Cave)
-dealloc(Orig_40580B)
-dealloc(Orig_405A3D)
-dealloc(Orig_405190)
-dealloc(Orig_43716B)
-unregistersymbol(BallRespawn_Cave)
-unregistersymbol(SinkCountdown_Cave)
-unregistersymbol(Orig_40580B)
-unregistersymbol(Orig_405A3D)
-unregistersymbol(Orig_405190)
-unregistersymbol(Orig_43716B)
+dealloc(SinkSkip_Cave)
+dealloc(Orig_437130)
+unregistersymbol(SinkSkip_Cave)
+unregistersymbol(Orig_437130)
