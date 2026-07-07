@@ -324,29 +324,12 @@ static int scan_level_for_ce(const BYTE* data, DWORD size,
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int merge_level_file(const char* level_path, const char* entities_dir) {
-    /* Check if a backup of the original (un-merged) file exists.
-     * If so, always merge from the backup to prevent double-merging.
-     * If not, create the backup from the current file (first run). */
-    char backup_path[MAX_PATH];
-    snprintf(backup_path, MAX_PATH, "%s.orig", level_path);
-
-    const char* source_path = level_path;
     BYTE* level_data = NULL;
     DWORD file_size = 0;
 
-    if (GetFileAttributesA(backup_path) != INVALID_FILE_ATTRIBUTES) {
-        /* Backup exists — use it as the source (prevents re-merge) */
-        source_path = backup_path;
-    } else {
-        /* First run: create backup of the original file */
-        if (!CopyFileA(level_path, backup_path, FALSE)) {
-            /* Copy failed — proceed with the level file itself */
-        }
-    }
-
-    /* Read source file */
+    /* Read source file (no .orig backup — merge from the level file directly) */
     {
-        HANDLE hFile = CreateFileA(source_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+        HANDLE hFile = CreateFileA(level_path, GENERIC_READ, FILE_SHARE_READ, NULL,
                                    OPEN_EXISTING, 0, NULL);
         if (hFile == INVALID_HANDLE_VALUE) return 0;
 
@@ -561,23 +544,45 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
             memcpy(merged + mpos, g->name, name_len);
             mpos += name_len;
 
-            /* Write material block VERBATIM from the entity file.
+            /* Write material block with identity EntityTransform for the first
+             * two sets, then copy the rest (specular, emissive, power, etc.)
+             * verbatim from the entity file.
              *
-             * The material block stores RGBA colors (ambient, diffuse, specular,
-             * emissive) + power + has_refl + has_tex + texture name. These are
-             * standard D3D material properties — the game reads them as colors,
-             * NOT as EntityTransform data.
+             * The game's binary loader (Scene_LoadMeshWorld, vtable[0x34])
+             * reads the first 8 floats of the material block as EntityTransform:
+             *   set1 (ambient in file) → posX, posY, posZ, posScale
+             *   set2 (diffuse in file) → rotX, rotY, rotZ, rotScale
              *
-             * The EntityTransform is a RUNTIME struct at MeshWorld+0x28+idx*0x50,
-             * populated by the game's binary loader AFTER parsing the material
-             * block. It is NOT stored in the MESHWORLD file's material data.
+             * The entity file stores ambient=(1,1,1,1) and diffuse=(1,1,1,1),
+             * which the game interprets as position offset (1,1,1) and rotation
+             * (1,1,1) radians ≈ 57° on each axis — causing the mesh to render
+             * rotated and offset.
              *
-             * Previous versions of this code overwrote ambient/diffuse with zeros
-             * ("identity EntityTransform"), which set diffuse alpha to 0.0 —
-             * making the mesh fully transparent and invisible. */
+             * We write identity transform (pos=0,0,0 scale=1; rot=0,0,0 scale=0)
+             * because the vertices are already translated to world space by the
+             * merger. rotScale=0 means hasRot=FALSE (no rotation applied).
+             *
+             * Specular, emissive, power, has_refl, has_tex, and texture name
+             * are copied verbatim from the entity file — these are genuine
+             * material/shading properties, not transform data. */
             BYTE* mat_src = meshes[i].material_buf + g->mat_offset;
-            memcpy(merged + mpos, mat_src, g->mat_size);
-            mpos += g->mat_size;
+            float identity[8] = { 0.0f, 0.0f, 0.0f, 1.0f,   /* pos=(0,0,0) scale=1 */
+                                   0.0f, 0.0f, 0.0f, 0.0f }; /* rot=(0,0,0) rotScale=0 → hasRot=FALSE */
+            memcpy(merged + mpos, identity, 32);
+            mpos += 32;
+            /* Copy specular + emissive (sets 3+4 = 32 bytes) from original */
+            if (g->mat_size >= 64) {
+                memcpy(merged + mpos, mat_src + 32, 32);
+            } else {
+                memset(merged + mpos, 0, 32);
+            }
+            mpos += 32;
+            /* Copy power, has_refl, has_tex, [tex_str] from original */
+            DWORD remaining = g->mat_size - 64;
+            if (remaining > 0) {
+                memcpy(merged + mpos, mat_src + 64, remaining);
+                mpos += remaining;
+            }
 
             *(DWORD*)(merged + mpos) = g->strip_count;
             mpos += 4;
