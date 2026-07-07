@@ -1,50 +1,48 @@
-# Arena Instant Respawn v3
+# Arena Instant Respawn v4
 
 ## What It Does
 
-Makes entity balls in arenas respawn the same way player 1 respawns in races — using the nearest safespot found via LGP (last grounded position).
+Makes entity balls in arenas respawn the same way player 1 respawns in races — finding the NEAREST safespot to the ball's LGP (last grounded position), not just the first one in the list.
 
-## Root Cause (why v1 and v2 failed)
+## Root Cause Analysis
 
-**Ball_Respawn (0x405190)** has TWO safespot search paths:
+**Ball_Respawn (0x405190)** has TWO arena-specific behaviors that break proper respawn:
 
-| Path | Address | Behavior |
-|------|---------|----------|
-| Race path | 0x405811 | Finds NEAREST safespot using LGP (ball+0x2DC/0x2E0/0x2E4) |
-| Arena path | 0x405A80 | Picks RANDOM safespot + validates with Mesh_FindClosestCollision |
+### Bug 1: Arena random-safespot path (found in v3)
+At `0x40580B`, `JNZ 0x405A80` branches to a random-safespot search when `App+0x237` (arena flag) is set. The arena random path picks a random safespot and validates it with `Mesh_FindClosestCollision` — which is expensive and often fails, causing the ball to not respawn at all.
 
-At **0x40580B**, Ball_Respawn checks `App+0x237` (arena flag). If arena mode, it takes the arena path (random + validation). The arena path:
-1. Picks a random safespot index via `CPUID_CheckProcessorFeature` (used as RNG)
-2. Validates it with `Mesh_FindClosestCollision` — expensive and can fail
-3. If validation fails, loops back to pick another random safespot
-4. If all fail, `local_84` stays NULL → falls through to `LAB_00405d1d` which just zeroes velocity **without moving the ball**
+**v3 fix:** NOP the `JNZ` at `0x40580B` → forces race-path search (nearest safespot via LGP).
 
-This is why entity balls "did nothing" — Ball_Respawn was called but the arena random-safespot path failed to find a valid spot, so the ball stayed where it was.
+### Bug 2: Arena early-break in race path (found in v4, the v3 glitch)
+Even after v3 forces the race path, there's a SECOND arena check at `0x405A3D` INSIDE the search loop. When `App+0x237` (arena flag) is set, the loop accepts the FIRST acceptable safespot and breaks immediately — it never scans the rest of the list to find the actually nearest one.
 
-### v1 (failed)
-Hooked `Ball_FallDeath` (0x409480) and `BadBall_StartFallCountdown` (0x402390) — wrong path. Entity balls are handled by `Scene_UpdateBallsAndState` before reaching vtable[8] handlers.
+This is why v3 caused "all balls respawn on just one platform" — every ball picked the same first safespot in the list.
 
-### v2 (failed)
-Patched `Scene_UpdateBallsAndState` conditions at 0x41B5A9 and 0x41B64E — redundant. Entity balls in arenas already go through Ball_Respawn via the `App+0x237` check at 0x41B5B9. The patches were no-ops.
+**v4 fix:** NOP the `JNZ` at `0x405A3D` → loop scans ALL safespots and picks the truly nearest one.
 
-### v3 (this version)
-Single patch inside Ball_Respawn itself: NOP out the `JNZ` at 0x40580B that branches to the arena random-safespot path. This forces Ball_Respawn to ALWAYS use the race path (nearest safespot via LGP), even in arena mode.
+## Patches
 
-Arena levels DO have SAFESPOT entries (verified by scanning MESHWORLD files — all 17 arena levels contain "SAFESPOT" string entries).
+| # | Address | Original | Patched | Effect |
+|---|---------|----------|---------|--------|
+| 1 | 0x40580B | `0F 85 6F 02 00 00` (JNZ) | `90 90 90 90 90 90` (NOP) | Use race-path search instead of arena random path |
+| 2 | 0x405A3D | `0F 85 89 02 00 00` (JNZ) | `90 90 90 90 90 90` (NOP) | Scan all safespots instead of breaking after first match |
 
-## Patch
-
-| Address | Original | Patched | Effect |
-|---------|----------|---------|--------|
-| 0x40580B | `0F 85 6F 02 00 00` (JNZ 0x405A80) | `90 90 90 90 90 90` (NOP×6) | Always use race-path safespot search |
-
-## How Race Respawn Works (the path now used)
+## How Race Respawn Works (the path now used fully)
 
 1. Ball_Respawn reads LGP from `ball+0x2DC` (X), `ball+0x2E0` (Y), `ball+0x2E4` (Z)
-2. Iterates safespot list (`scene+0x1518` AthenaList, populated from MESHWORLD "SAFESPOT" entries)
-3. For each safespot: calculates 3D distance from LGP to safespot
-4. Picks the nearest safespot (minimum distance)
-5. Teleports ball to safespot position: `pos = safespot_pos`, `Y = safespot_Y + radius`
+2. Iterates ALL safespots in `scene+0x1518` AthenaList (populated from MESHWORLD "SAFESPOT" entries)
+3. For each safespot: calculates 3D distance from LGP to safespot position
+4. Tracks the minimum-distance safespot across the ENTIRE list (no early break)
+5. Teleports ball to nearest safespot: `pos = safespot_pos`, `Y = safespot_Y + radius`
 6. Zeroes all velocity (X, Y, Z)
 7. Sets respawn timer (150 frames = 2.5 seconds at 60fps)
 8. Clears death flags, makes ball briefly invisible
+
+## Version History
+
+| Version | Approach | Result |
+|---------|----------|--------|
+| v1 | Hook Ball_FallDeath + BadBall_StartFallCountdown | Did nothing — wrong code path |
+| v2 | Patch Scene_UpdateBallsAndState conditions | Did nothing — redundant no-ops |
+| v3 | NOP JNZ at 0x40580B (arena random path) | Glitchy — all balls respawned on same platform |
+| v4 | Also NOP JNZ at 0x405A3D (arena early break) | Correct — scans all safespots for nearest |

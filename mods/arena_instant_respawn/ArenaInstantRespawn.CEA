@@ -1,54 +1,66 @@
 // ============================================================
-// Arena Instant Respawn v3
+// Arena Instant Respawn v4
 // ============================================================
 // Makes entity balls in arenas respawn the same way player 1
 // respawns in races — using nearest safespot via LGP.
 //
-// ROOT CAUSE (why v1 and v2 failed):
-//   Ball_Respawn (0x405190) has TWO safespot search paths:
-//     - Race path (0x405811): finds NEAREST safespot using LGP
-//     - Arena path (0x405A80): picks RANDOM safespot + validates
-//       with Mesh_FindClosestCollision (expensive, can fail)
+// ROOT CAUSE (why v3 was glitchy):
+//   Ball_Respawn (0x405190) has arena-specific behavior at TWO points:
 //
-//   At 0x40580B, Ball_Respawn checks App+0x237 (arena flag).
-//   If arena: takes the random path → often fails to find valid
-//   safespot → falls through to velocity-zero-only (ball stays
-//   in place, doesn't actually respawn).
+//   1. 0x40580B: JNZ → arena random-safespot path (0x405A80)
+//      v3 NOP'd this to use race path instead. CORRECT.
 //
-//   v1 hooked Ball_FallDeath/BadBall_StartFallCountdown — wrong path.
-//   v2 patched Scene_UpdateBallsAndState conditions — redundant,
-//   entity balls already go through Ball_Respawn via the arena
-//   flag check at 0x41B5B9.
+//   2. 0x405A3D: JNZ → break after first acceptable safespot (0x405CCC)
+//      INSIDE the race path! When arena flag (App+0x237) is set,
+//      the search loop accepts the FIRST safespot found and breaks
+//      instead of scanning ALL safespots to find the nearest one.
+//      This caused ALL entity balls to respawn on the SAME platform
+//      (the first safespot in the list).
 //
-// FIX:
-//   Patch 0x40580B: JNZ → NOP (6 bytes)
-//   Forces Ball_Respawn to ALWAYS use the race path (nearest
-//   safespot), even in arena mode.
+// FIX: NOP BOTH JNZ instructions so Ball_Respawn:
+//   - Uses the race-path search (not arena random path)
+//   - Scans ALL safespots to find the truly nearest one
 //
-//   Arena levels DO have SAFESPOT entries (verified in MESHWORLD
-//   files), so the race path will find valid respawns.
+// Patch 1: 0x40580B: JNZ → NOP (6 bytes) — use race path
+// Patch 2: 0x405A3D: JNZ → NOP (6 bytes) — scan all safespots
 // ============================================================
 
 [ENABLE]
 
-alloc(ArenaInstantRespawn_v3_Orig,6)
-registersymbol(ArenaInstantRespawn_v3_Orig)
+alloc(ArenaInstantRespawn_v4_Orig1,6)
+alloc(ArenaInstantRespawn_v4_Orig2,6)
+registersymbol(ArenaInstantRespawn_v4_Orig1)
+registersymbol(ArenaInstantRespawn_v4_Orig2)
 
 // Save original bytes
-ArenaInstantRespawn_v3_Orig:
+ArenaInstantRespawn_v4_Orig1:
   readmem(0040580B,6)
 
-// Patch: NOP out the JNZ that branches to arena random-safespot path
+ArenaInstantRespawn_v4_Orig2:
+  readmem(00405A3D,6)
+
+// Patch 1: Use race-path safespot search instead of arena random path
 // Original: 0F 85 6F 02 00 00 (JNZ 00405A80 — arena random search)
-// Patched:  90 90 90 90 90 90 (NOP NOP NOP NOP NOP NOP — fall through to race path)
+// Patched:  90 90 90 90 90 90 (NOP — fall through to race path)
 0040580B:
+  db 90 90 90 90 90 90
+
+// Patch 2: Scan ALL safespots instead of breaking after first match
+// Original: 0F 85 89 02 00 00 (JNZ 00405CCC — arena early break)
+// Patched:  90 90 90 90 90 90 (NOP — continue scanning for nearest)
+00405A3D:
   db 90 90 90 90 90 90
 
 [DISABLE]
 
 // Restore original bytes
 0040580B:
-  readmem(ArenaInstantRespawn_v3_Orig,6)
+  readmem(ArenaInstantRespawn_v4_Orig1,6)
 
-dealloc(ArenaInstantRespawn_v3_Orig)
-unregistersymbol(ArenaInstantRespawn_v3_Orig)
+00405A3D:
+  readmem(ArenaInstantRespawn_v4_Orig2,6)
+
+dealloc(ArenaInstantRespawn_v4_Orig1)
+dealloc(ArenaInstantRespawn_v4_Orig2)
+unregistersymbol(ArenaInstantRespawn_v4_Orig1)
+unregistersymbol(ArenaInstantRespawn_v4_Orig2)
