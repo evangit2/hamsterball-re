@@ -1,0 +1,59 @@
+// ============================================================
+// No Killplane Break for Entity Balls
+// ============================================================
+// Entity balls (badballs) no longer break when hitting killplanes
+// or falling from height. They still respawn when falling into the void.
+//
+// HOW IT WORKS:
+// Ball_FallDeath (vtable[8], 0x409480) is called when a ball hits a
+// killplane or falls. It creates Ball_Split fragments (ball breaks
+// visually) and ArenaScoreParticle ring effects.
+//
+// death_pending (ball+0x2E9) is set by the CALLER before vtable[8]
+// is called. So even if we skip Ball_FallDeath entirely, death_pending
+// is already 1. Scene_UpdateBallsAndState will see it and call
+// Ball_Respawn — the ball respawns without breaking.
+//
+// FIX: Hook Ball_FallDeath entry. For entity balls (ball+0x18 == -1),
+// RET immediately. No fragments, no breaking. Ball still respawns.
+// Player balls execute normally.
+// ============================================================
+
+[ENABLE]
+
+alloc(NoKill_Cave, 64)
+alloc(Orig_409480, 8)
+registersymbol(NoKill_Cave)
+registersymbol(Orig_409480)
+
+Orig_409480:
+  readmem(00409480, 8)
+
+// Hook Ball_FallDeath entry
+00409480:
+  jmp NoKill_Cave
+  nop
+  nop
+  nop
+
+NoKill_Cave:
+  // Check if entity ball (player_slot == -1)
+  cmp dword [ecx+0x18],-1
+  jnz player_ball
+  // Entity ball: return immediately — no breaking
+  ret
+player_ball:
+  // Player ball: execute original SEH setup
+  push -1
+  mov eax,fs:[0]
+  jmp 00409488
+
+[DISABLE]
+
+00409480:
+  readmem(Orig_409480, 8)
+
+dealloc(NoKill_Cave)
+dealloc(Orig_409480)
+unregistersymbol(NoKill_Cave)
+unregistersymbol(Orig_409480)
