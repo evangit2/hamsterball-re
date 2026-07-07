@@ -753,18 +753,17 @@ static void updateWarpStateMachine(void) {
     case PHASE_FLASH: {
         elapsed = now - g_phaseStartTime;
 
-        /* On first frame: make ball invisible */
-        if (elapsed < 50 && ball) {
-            float curAlpha = *(float *)((char *)ball + BALL_ALPHA);
-            if (curAlpha > 0.5f) {
-                *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
-                diag_log("[warp] Ball invisible, starting white flash");
-            }
-        }
-
-        /* Quick flash: ramp up to peak, then back down */
+ /* Quick flash: ramp up to peak, then back down */
         if (elapsed < FLASH_PEAK_MS) {
             g_whiteAlpha = (float)elapsed / (float)FLASH_PEAK_MS;
+            /* Make ball invisible the moment the flash hits its peak */
+            if (g_whiteAlpha >= 0.99f && ball) {
+                float curAlpha = *(float *)((char *)ball + BALL_ALPHA);
+                if (curAlpha > 0.5f) {
+                    *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
+                    diag_log("[warp] Ball invisible at flash peak");
+                }
+            }
         } else {
             DWORD remaining = FLASH_DURATION_MS - elapsed;
             g_whiteAlpha = (float)remaining / (float)(FLASH_DURATION_MS - FLASH_PEAK_MS);
