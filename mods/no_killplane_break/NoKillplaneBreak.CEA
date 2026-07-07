@@ -2,17 +2,27 @@
   No Fall Damage + No Air Break (Full) — with BadBall immunity
   Credits to BookwormKevin for the original script!
   Players 1-4 AND badballs immune to ground killplanes.
-  Badballs still attack players on ground (no falling flag set).
+  Badballs still attack players on ground (removed death_pending check).
   Balls respawn when falling into void (Ball_Update sets falling flag).
 }
 
 [ENABLE]
 
 alloc(Orig_402390,3)
+alloc(Orig_13926,6)
+alloc(Orig_13934,6)
 registersymbol(Orig_402390)
+registersymbol(Orig_13926)
+registersymbol(Orig_13934)
 
 Orig_402390:
   readmem(Hamsterball.exe+2390,3)
+
+Orig_13926:
+  readmem(Hamsterball.exe+13926,6)
+
+Orig_13934:
+  readmem(Hamsterball.exe+13934,6)
 
 Hamsterball.exe+75C9:
 db 90 90 90 90 90 90
@@ -28,6 +38,12 @@ db C3 90 90
 
 Hamsterball.exe+9480:
 db C3 90 90 90 90 90 90 90 90
+
+Hamsterball.exe+13926:
+db 90 90 90 90 90 90
+
+Hamsterball.exe+13934:
+db 90 90 90 90 90 90
 
 [DISABLE]
 
@@ -46,5 +62,15 @@ readmem(Orig_402390,3)
 Hamsterball.exe+9480:
 db 6A FF 64 A1 00 00 00 00
 
+Hamsterball.exe+13926:
+readmem(Orig_13926,6)
+
+Hamsterball.exe+13934:
+readmem(Orig_13934,6)
+
 dealloc(Orig_402390)
+dealloc(Orig_13926)
+dealloc(Orig_13934)
 unregistersymbol(Orig_402390)
+unregistersymbol(Orig_13926)
+unregistersymbol(Orig_13934)
