@@ -1,7 +1,10 @@
 {
   No Fall Damage + No Air Break (Full) — Fixed
   Credits to BookwormKevin for the original script!
-  Fix: Removed on_ground patches that prevented fall detection.
+  Fix: Ball_FallDeath sets flags only for entity balls.
+  Player balls get bare RET (camera follows, no instant teleport).
+  Players respawn via ArenaBoard_Update Y-threshold when in void.
+  Entity balls respawn via death_pending in Scene_UpdateBallsAndState.
 }
 
 [ENABLE]
@@ -23,6 +26,8 @@ jmp FallDeath_Cave
 db 90 90 90
 
 FallDeath_Cave:
+db 83 79 18 FF
+db 75 0E
 db C6 81 E8 02 00 00 01
 db C6 81 E9 02 00 00 01
 db C3
