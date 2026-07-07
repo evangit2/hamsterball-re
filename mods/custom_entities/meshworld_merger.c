@@ -561,42 +561,23 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
             memcpy(merged + mpos, g->name, name_len);
             mpos += name_len;
 
-            /* Write material block with identity EntityTransform.
+            /* Write material block VERBATIM from the entity file.
              *
-             * The entity file's S6 geom material block stores RGBA colors
-             * (ambient, diffuse, specular, emissive). But the game's level
-             * loader interprets the first 8 floats as EntityTransform:
-             *   set1 = (posX, posY, posZ, posScale)
-             *   set2 = (rotX, rotY, rotZ, rotScale)
+             * The material block stores RGBA colors (ambient, diffuse, specular,
+             * emissive) + power + has_refl + has_tex + texture name. These are
+             * standard D3D material properties — the game reads them as colors,
+             * NOT as EntityTransform data.
              *
-             * If we copy the entity's material block verbatim (with ambient=
-             * diffuse=(1,1,1,1)), the game reads posX=1, posY=1, posZ=1,
-             * rotX=1 radian, rotY=1 radian, rotZ=1 radian — causing the mesh
-             * to be offset and rotated wildly.
+             * The EntityTransform is a RUNTIME struct at MeshWorld+0x28+idx*0x50,
+             * populated by the game's binary loader AFTER parsing the material
+             * block. It is NOT stored in the MESHWORLD file's material data.
              *
-             * Fix: write identity EntityTransform (pos=0,0,0, rot=0,0,0) for
-             * the first two sets, then copy the original specular and emissive
-             * sets (which the game uses as extra material data, not transform). */
+             * Previous versions of this code overwrote ambient/diffuse with zeros
+             * ("identity EntityTransform"), which set diffuse alpha to 0.0 —
+             * making the mesh fully transparent and invisible. */
             BYTE* mat_src = meshes[i].material_buf + g->mat_offset;
-            /* Read original material to extract specular + emissive */
-            float identity[8] = { 0.0f, 0.0f, 0.0f, 1.0f,   /* pos=(0,0,0) scale=1 */
-                                   0.0f, 0.0f, 0.0f, 0.0f }; /* rot=(0,0,0) scale=0=hasRot=FALSE */
-            /* Write identity position + rotation (first 8 floats = 32 bytes) */
-            memcpy(merged + mpos, identity, 32);
-            mpos += 32;
-            /* Copy specular (set3) + emissive (set4) from original (32 bytes) */
-            if (g->mat_size >= 64) {
-                memcpy(merged + mpos, mat_src + 32, 32);
-            } else {
-                memset(merged + mpos, 0, 32);
-            }
-            mpos += 32;
-            /* Copy power, has_refl, has_tex, [tex_str] from original */
-            DWORD remaining = g->mat_size - 64;  /* should be >= 12 */
-            if (remaining > 0) {
-                memcpy(merged + mpos, mat_src + 64, remaining);
-                mpos += remaining;
-            }
+            memcpy(merged + mpos, mat_src, g->mat_size);
+            mpos += g->mat_size;
 
             *(DWORD*)(merged + mpos) = g->strip_count;
             mpos += 4;
