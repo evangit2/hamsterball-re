@@ -274,6 +274,8 @@ static void load_real_bass(void)
 #define D3DRS_SRCBLEND          19
 #define D3DRS_DESTBLEND         20
 #define D3DRS_FOGENABLE          8
+#define D3DRS_ZENABLE             7
+#define D3DRS_ZWRITEENABLE       14
 
 /* D3D8 Blend values */
 #define D3DBLEND_SRCALPHA        5
@@ -538,11 +540,9 @@ typedef long (__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
 typedef long (__stdcall *D3DGetRenderState_t)(void*, DWORD, DWORD*);
 typedef long (__stdcall *D3DDrawPrimitiveUP_t)(void*, DWORD, UINT, const void*, UINT);
 typedef long (__stdcall *D3DSetTextureStageState_t)(void*, DWORD, DWORD, DWORD);
+typedef long (__stdcall *D3DGetTextureStageState_t)(void*, DWORD, DWORD, DWORD*);
 typedef long (__stdcall *D3DSetVertexShader_t)(void*, DWORD);
 typedef long (__stdcall *D3DGetVertexShader_t)(void*, DWORD*);
-typedef long (__stdcall *D3DBeginScene_t)(void*);
-typedef long (__stdcall *D3DEndScene_t)(void*);
-
 static void drawWhiteOverlay(void) {
     int app;
     int gfx;
@@ -552,10 +552,9 @@ static void drawWhiteOverlay(void) {
     D3DGetRenderState_t pGetRenderState;
     D3DDrawPrimitiveUP_t pDrawPrimitiveUP;
     D3DSetTextureStageState_t pSetTextureStageState;
+    D3DGetTextureStageState_t pGetTextureStageState;
     D3DSetVertexShader_t pSetVertexShader;
     D3DGetVertexShader_t pGetVertexShader;
-    D3DBeginScene_t pBeginScene;
-    D3DEndScene_t pEndScene;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -572,15 +571,13 @@ static void drawWhiteOverlay(void) {
     pGetRenderState = (D3DGetRenderState_t)vtable[51];
     pDrawPrimitiveUP = (D3DDrawPrimitiveUP_t)vtable[72];
     pSetTextureStageState = (D3DSetTextureStageState_t)vtable[63];
+    pGetTextureStageState = (D3DGetTextureStageState_t)vtable[62];
     pGetVertexShader = (D3DGetVertexShader_t)vtable[77];
     pSetVertexShader = (D3DSetVertexShader_t)vtable[76];
-    /* vtable[34] = BeginScene, vtable[35] = EndScene */
-    pBeginScene = (D3DBeginScene_t)vtable[34];
-    pEndScene = (D3DEndScene_t)vtable[35];
 
     if (!pSetRenderState || !pGetRenderState || !pDrawPrimitiveUP ||
-        !pSetTextureStageState || !pSetVertexShader || !pGetVertexShader ||
-        !pBeginScene || !pEndScene) return;
+        !pSetTextureStageState || !pGetTextureStageState ||
+        !pSetVertexShader || !pGetVertexShader) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
@@ -590,6 +587,10 @@ static void drawWhiteOverlay(void) {
         DWORD savedSrcBlend = 0;
         DWORD savedDestBlend = 0;
         DWORD savedFogEnable = 0;
+        DWORD savedZEnable = 0;
+        DWORD savedZWriteEnable = 0;
+        DWORD savedColorOp = 0, savedColorArg1 = 0, savedColorArg2 = 0;
+        DWORD savedAlphaOp = 0, savedAlphaArg1 = 0, savedAlphaArg2 = 0;
 
         TLVertex verts[4] = {
             {    0.0f,    0.0f, 0.0f, 1.0f, color },
@@ -598,14 +599,25 @@ static void drawWhiteOverlay(void) {
             { 1920.0f, 1080.0f, 0.0f, 1.0f, color },
         };
 
-        /* --- Save current render states --- */
+        /* --- Save ALL render states we modify --- */
         pGetRenderState(device, D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
         pGetRenderState(device, D3DRS_SRCBLEND, &savedSrcBlend);
         pGetRenderState(device, D3DRS_DESTBLEND, &savedDestBlend);
         pGetRenderState(device, D3DRS_FOGENABLE, &savedFogEnable);
+        pGetRenderState(device, D3DRS_ZENABLE, &savedZEnable);
+        pGetRenderState(device, D3DRS_ZWRITEENABLE, &savedZWriteEnable);
         pGetVertexShader(device, &savedFVF);
+        pGetTextureStageState(device, 0, D3DTSS_COLOROP, &savedColorOp);
+        pGetTextureStageState(device, 0, D3DTSS_COLORARG1, &savedColorArg1);
+        pGetTextureStageState(device, 0, D3DTSS_COLORARG2, &savedColorArg2);
+        pGetTextureStageState(device, 0, D3DTSS_ALPHAOP, &savedAlphaOp);
+        pGetTextureStageState(device, 0, D3DTSS_ALPHAARG1, &savedAlphaArg1);
+        pGetTextureStageState(device, 0, D3DTSS_ALPHAARG2, &savedAlphaArg2);
 
         /* --- Set states for overlay draw --- */
+        /* Disable Z test + Z write so overlay doesn't clobber the depth buffer */
+        pSetRenderState(device, D3DRS_ZENABLE, FALSE);
+        pSetRenderState(device, D3DRS_ZWRITEENABLE, FALSE);
         pSetRenderState(device, D3DRS_ALPHABLENDENABLE, TRUE);
         pSetRenderState(device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
         pSetRenderState(device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
@@ -618,28 +630,23 @@ static void drawWhiteOverlay(void) {
         pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-        /* CRITICAL: Must call BeginScene before DrawPrimitiveUP.
-         * The game never calls BeginScene/EndScene — on Wine/llvmpipe
-         * DrawPrimitiveUP works without it, but real Windows D3D8 crashes. */
-        pBeginScene(device);
-
         /* Draw the white quad as a triangle strip (4 verts = 2 triangles) */
         pDrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, verts, sizeof(TLVertex));
 
-        pEndScene(device);
-
-        /* --- Restore ALL states to game values --- */
+        /* --- Restore ALL states to saved game values --- */
         pSetVertexShader(device, savedFVF);
-        pSetTextureStageState(device, 0, D3DTSS_COLOROP,   D3DTOP_MODULATE);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+        pSetTextureStageState(device, 0, D3DTSS_COLOROP, savedColorOp);
+        pSetTextureStageState(device, 0, D3DTSS_COLORARG1, savedColorArg1);
+        pSetTextureStageState(device, 0, D3DTSS_COLORARG2, savedColorArg2);
+        pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, savedAlphaOp);
+        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG1, savedAlphaArg1);
+        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, savedAlphaArg2);
         pSetRenderState(device, D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
         pSetRenderState(device, D3DRS_SRCBLEND, savedSrcBlend);
         pSetRenderState(device, D3DRS_DESTBLEND, savedDestBlend);
         pSetRenderState(device, D3DRS_FOGENABLE, savedFogEnable);
+        pSetRenderState(device, D3DRS_ZENABLE, savedZEnable);
+        pSetRenderState(device, D3DRS_ZWRITEENABLE, savedZWriteEnable);
     }
 }
 
