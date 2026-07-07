@@ -646,15 +646,55 @@ void merge_all_levels(const char* game_dir) {
     snprintf(entities_dir, MAX_PATH, "%s\\CustomEntities", game_dir);
     snprintf(search_path, MAX_PATH, "%s\\*.MESHWORLD", levels_dir);
 
+    /* Open a log file so we can verify the merger actually ran */
+    char log_path[MAX_PATH];
+    snprintf(log_path, MAX_PATH, "%s\\meshworld_merger.log", game_dir);
+    FILE* mlog = NULL;
+    fopen_s(&mlog, log_path, "a");
+    if (mlog) {
+        fprintf(mlog, "=== merge_all_levels ===\n");
+        fprintf(mlog, "game_dir: '%s'\n", game_dir);
+        fprintf(mlog, "levels_dir: '%s'\n", levels_dir);
+        fprintf(mlog, "entities_dir: '%s'\n", entities_dir);
+        fprintf(mlog, "search_path: '%s'\n", search_path);
+    }
+
+    /* Show a diagnostic MessageBox so the user KNOWS the merger ran */
+    char dbg_msg[512];
+    snprintf(dbg_msg, sizeof(dbg_msg),
+        "Custom Entities Merger\n\n"
+        "Game dir: %s\n"
+        "Levels dir: %s\n"
+        "Entities dir: %s\n\n"
+        "Check meshworld_merger.log for details.",
+        game_dir, levels_dir, entities_dir);
+    MessageBoxA(NULL, dbg_msg, "Custom Entities Merger", MB_OK | MB_ICONINFORMATION);
+
     WIN32_FIND_DATAA fd;
     HANDLE hFind = FindFirstFileA(search_path, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
+    if (hFind == INVALID_HANDLE_VALUE) {
+        if (mlog) {
+            fprintf(mlog, "ERROR: FindFirstFileA failed for '%s' (error %d)\n",
+                    search_path, GetLastError());
+            fclose(mlog);
+        }
+        return;
+    }
+
+    if (mlog) fprintf(mlog, "FindFirstFileA succeeded\n");
 
     do {
         char level_path[MAX_PATH];
         snprintf(level_path, MAX_PATH, "%s\\%s", levels_dir, fd.cFileName);
-        merge_level_file(level_path, entities_dir);
+        if (mlog) fprintf(mlog, "  Merging: %s\n", fd.cFileName);
+        int result = merge_level_file(level_path, entities_dir);
+        if (mlog) fprintf(mlog, "    result: %s\n", result ? "OK" : "SKIPPED/FAILED");
     } while (FindNextFileA(hFind, &fd));
 
     FindClose(hFind);
+
+    if (mlog) {
+        fprintf(mlog, "=== merge_all_levels done ===\n\n");
+        fclose(mlog);
+    }
 }
