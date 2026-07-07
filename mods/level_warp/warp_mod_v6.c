@@ -543,6 +543,7 @@ typedef long (__stdcall *D3DSetTextureStageState_t)(void*, DWORD, DWORD, DWORD);
 typedef long (__stdcall *D3DGetTextureStageState_t)(void*, DWORD, DWORD, DWORD*);
 typedef long (__stdcall *D3DSetVertexShader_t)(void*, DWORD);
 typedef long (__stdcall *D3DGetVertexShader_t)(void*, DWORD*);
+typedef long (__stdcall *D3DGetTexture_t)(void*, DWORD, void**);
 typedef long (__stdcall *D3DSetTexture_t)(void*, DWORD, void*);
 
 static void drawWhiteOverlay(void) {
@@ -557,6 +558,7 @@ static void drawWhiteOverlay(void) {
     D3DGetTextureStageState_t pGetTextureStageState;
     D3DSetVertexShader_t pSetVertexShader;
     D3DGetVertexShader_t pGetVertexShader;
+    D3DGetTexture_t pGetTexture;
     D3DSetTexture_t pSetTexture;
 
     if (g_whiteAlpha <= 0.001f) return;
@@ -577,11 +579,12 @@ static void drawWhiteOverlay(void) {
     pGetTextureStageState = (D3DGetTextureStageState_t)vtable[62];
     pGetVertexShader = (D3DGetVertexShader_t)vtable[77];
     pSetVertexShader = (D3DSetVertexShader_t)vtable[76];
+    pGetTexture = (D3DGetTexture_t)vtable[60];
     pSetTexture = (D3DSetTexture_t)vtable[61];
 
     if (!pSetRenderState || !pGetRenderState || !pDrawPrimitiveUP ||
         !pSetTextureStageState || !pGetTextureStageState ||
-        !pSetVertexShader || !pGetVertexShader || !pSetTexture) return;
+        !pSetVertexShader || !pGetVertexShader || !pSetTexture || !pGetTexture) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
@@ -612,6 +615,7 @@ static void drawWhiteOverlay(void) {
         pGetRenderState(device, D3DRS_ZENABLE, &savedZEnable);
         pGetRenderState(device, D3DRS_ZWRITEENABLE, &savedZWriteEnable);
         pGetVertexShader(device, &savedFVF);
+        pGetTexture(device, 0, &savedTexture);
         pGetTextureStageState(device, 0, D3DTSS_COLOROP, &savedColorOp);
         pGetTextureStageState(device, 0, D3DTSS_COLORARG1, &savedColorArg1);
         pGetTextureStageState(device, 0, D3DTSS_COLORARG2, &savedColorArg2);
