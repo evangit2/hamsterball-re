@@ -1,4 +1,4 @@
-# Free Nametags — Custom Race & Arena Level Loader
+# Custom Filenames — Custom Race & Arena Level Loader
 
 Customize which MESHWORLD file is loaded for each race and arena slot, and rearrange the tournament/arena order. Edit a simple text file — no code changes needed.
 
@@ -6,14 +6,14 @@ Customize which MESHWORLD file is loaded for each race and arena slot, and rearr
 
 The game has 30 `PUSH imm32` instructions (0x68 opcode) that push level path strings like `"levels\level1"` or `"levels\arena-WarmUp"` onto the stack before calling `LoadMeshWorld`. This mod:
 
-1. Reads `free_nametags.txt` from the game directory at startup
+1. Reads `custom_filenames.txt` from the game directory at startup
 2. Allocates new strings in DLL memory (e.g. `"levels\my_custom_level"`)
 3. Overwrites the 4-byte string pointer in each PUSH instruction to point to the new string
 
 ## Installation
 
 1. Rename the original `bass.dll` to `bass_real.dll`
-2. Copy this mod's `bass.dll` and `free_nametags.txt` to the game folder
+2. Copy this mod's `bass.dll` and `custom_filenames.txt` to the game folder
 3. Launch the game
 
 ## Uninstallation
@@ -23,10 +23,17 @@ The game has 30 `PUSH imm32` instructions (0x68 opcode) that push level path str
 
 ## Config File Format
 
-Edit `free_nametags.txt`:
+Edit `custom_filenames.txt`:
 
 ```
-RACES:
+TOURNAMENT_RACES:
+1=level1
+2=levelcascade
+3=level2
+...
+15=levelimpossible
+
+PRACTICE_RACES:
 1=level1
 2=levelcascade
 3=level2
@@ -58,23 +65,23 @@ Now Dizzy Race (level3) is the first race, Warm-up (level1) is second, Beginner 
 
 ### Default Level Mapping
 
-| Slot | Race (default file) | Arena (default file) |
-|------|---------------------|----------------------|
-| 1 | Warm-up (`level1`) | Warm-up (`arena-WarmUp`) |
-| 2 | Beginner (`levelcascade`) | Beginner (`arena-beginner`) |
-| 3 | Intermediate (`level2`) | Intermediate (`arena-intermediate`) |
-| 4 | Dizzy (`level3`) | Dizzy (`arena-dizzy`) |
-| 5 | Tower (`level4`) | Tower (`arena-tower`) |
-| 6 | Up (`levelup`) | Up (`arena-up`) |
-| 7 | Neon (`leveldark`) | Neon (`arena-neon`) |
-| 8 | Expert (`level5`) | Expert (`arena-expert`) |
-| 9 | Odd (`level6`) | Odd (`arena-Odd`) |
-| 10 | Toob (`level8`) | Toob (`arena-Toob`) |
-| 11 | Wobbly (`level7`) | Wobbly (`arena-Wobbly`) |
-| 12 | Glass (`levelglass`) | Glass (`arena-glass`) |
-| 13 | Sky (`level9`) | Sky (`arena-Sky`) |
-| 14 | Master (`level10`) | Master (`arena-Master`) |
-| 15 | Impossible (`levelimpossible`) | Impossible (`arena-impossible`) |
+| Slot | Tournament (default file) | Practice (default file) | Arena (default file) |
+|------|---------------------------|-------------------------|----------------------|
+| 1 | Warm-up (`level1`) | Warm-up (`level1`) | Warm-up (`arena-WarmUp`) |
+| 2 | Beginner (`levelcascade`) | Beginner (`levelcascade`) | Beginner (`arena-beginner`) |
+| 3 | Intermediate (`level2`) | Intermediate (`level2`) | Intermediate (`arena-intermediate`) |
+| 4 | Dizzy (`level3`) | Dizzy (`level3`) | Dizzy (`arena-dizzy`) |
+| 5 | Tower (`level4`) | Tower (`level4`) | Tower (`arena-tower`) |
+| 6 | Up (`levelup`) | Up (`levelup`) | Up (`arena-up`) |
+| 7 | Neon (`leveldark`) | Neon (`leveldark`) | Neon (`arena-neon`) |
+| 8 | Expert (`level5`) | Expert (`level5`) | Expert (`arena-expert`) |
+| 9 | Odd (`level6`) | Odd (`level6`) | Odd (`arena-Odd`) |
+| 10 | Toob (`level8`) | Toob (`level8`) | Toob (`arena-Toob`) |
+| 11 | Wobbly (`level7`) | Wobbly (`level7`) | Wobbly (`arena-Wobbly`) |
+| 12 | Glass (`levelglass`) | Glass (`levelglass`) | Glass (`arena-glass`) |
+| 13 | Sky (`level9`) | Sky (`level9`) | Sky (`arena-Sky`) |
+| 14 | Master (`level10`) | Master (`level10`) | Master (`arena-Master`) |
+| 15 | Impossible (`levelimpossible`) | Impossible (`levelimpossible`) | Impossible (`arena-impossible`) |
 
 ### Important Notes
 
@@ -87,10 +94,10 @@ Now Dizzy Race (level3) is the first race, Warm-up (level1) is second, Beginner 
 ## Technical Details
 
 - **Mod type**: BASS.dll proxy (lazy loader pattern)
-- **Patch count**: 30 PUSH instruction immediate overwrites (15 races + 15 arenas)
-- **Config parser**: Simple line-based text parser with `RACES:` / `ARENAS:` sections
+- **Patch count**: 30 PUSH instruction immediate overwrites (15 tournament races + 15 practice races + 15 arenas — but note: tournament and practice share the same 15 level files, so 30 total patches)
+- **Config parser**: Simple line-based text parser with `TOURNAMENT_RACES:` / `PRACTICE_RACES:` / `ARENAS:` sections
 - **Memory**: Custom strings allocated in DLL's static memory (persists for game lifetime)
-- **Logging**: Writes `free_nametags_log.txt` to the game directory on load
+- **Logging**: Writes `custom_filenames_log.txt` to the game directory on load
 - **Crash test**: Passed — game runs 87+ seconds on Wine/Xvfb with all 30 patches applied
 
 ### Patch Addresses (RVA)

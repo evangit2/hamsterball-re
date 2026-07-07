@@ -1,13 +1,34 @@
-# Free Nametags — Custom Race & Arena Level Configuration
-# ============================================================
+# Custom Filenames — Tournament & Practice & Arena Level Configuration
+# =================================================================
 # Lines starting with # are comments. Blank lines are ignored.
 # Format: <slot>=<level filename>
 # The game will load "levels\<filename>.meshworld" for each slot.
 # Rearrange entries to change the tournament/arena order.
 # Use custom filenames to load custom MESHWORLD files.
 # Delete or comment out a line to use the game's default for that slot.
+#
+# NOTE: Tournament and Practice modes share the same 15 level files.
+# Both sections below control the same underlying PUSH instructions.
+# Edit either section to change the level filename for that slot.
 
-RACES:
+TOURNAMENT_RACES:
+1=level1
+2=levelcascade
+3=level2
+4=level3
+5=level4
+6=levelup
+7=leveldark
+8=level5
+9=level6
+10=level8
+11=level7
+12=levelglass
+13=level9
+14=level10
+15=levelimpossible
+
+PRACTICE_RACES:
 1=level1
 2=levelcascade
 3=level2
