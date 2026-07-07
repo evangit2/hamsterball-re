@@ -1,8 +1,7 @@
 {
   No Fall Damage + No Air Break (Full) — Fixed
   Credits to BookwormKevin for the original script!
-  Fix: Ball_FallDeath sets falling+death_pending flags then RETs
-  instead of bare RET (which skipped flag setting for Players 1-4).
+  Fix: Removed on_ground patches that prevented fall detection.
 }
 
 [ENABLE]
@@ -12,12 +11,6 @@ registersymbol(FallDeath_Cave)
 
 Hamsterball.exe+75C9:
 db 90 90 90 90 90 90
-
-Hamsterball.exe+C761:
-db 90 90 90 90 90 90
-
-Hamsterball.exe+F226:
-db 90 90 90 90 90 90 90
 
 Hamsterball.exe+8D70:
 db C3 90 90
@@ -38,12 +31,6 @@ db C3
 
 Hamsterball.exe+75C9:
 db FF 86 EC 02 00 00
-
-Hamsterball.exe+C761:
-db 88 85 68 07 00 00
-
-Hamsterball.exe+F226:
-db C6 86 68 07 00 00 00
 
 Hamsterball.exe+8D70:
 db 6A FF 64
