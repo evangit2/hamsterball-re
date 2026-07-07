@@ -539,44 +539,16 @@ static void updateMusicFade(void) {
  *   ALPHAARG2 = DIFFUSE
  * ============================================================ */
 
-/* Game function: Graphics_DrawScreenRect(gfx, x, y, w, h) — draws a colored rect
- * using the game's own material/render system. Handles all D3D state internally.
- * This is what the game itself uses for fade-to-white (via MusicPlayer_Render).
- * __thiscall: gfx in ECX, params on stack. */
-#define GRAPHICS_DRAW_SCREEN_RECT  0x00455D60
-
-/* Game function: Graphics_SetRenderMode(gfx, mode) — sets render mode 0=normal */
-#define GRAPHICS_SET_RENDER_MODE   0x00454190
-
-/* Game function: Gfx_SetAlphaBlendState(gfx) — enables alpha blending */
-#define GFX_SET_ALPHA_BLEND_STATE  0x00453970
+/* Scene offset for the game's native fade alpha.
+ * The board render function (FUN_0041b710) reads scene+0x3624 and draws
+ * a fullscreen rect with that alpha via Graphics_DrawScreenRect.
+ * By writing our fade alpha here, the game draws the overlay itself —
+ * no D3D state corruption, no BeginScene/EndScene issues. */
+#define SCENE_FADE_ALPHA        0x3624
 
 static void drawWhiteOverlay(void) {
-    int app;
-    int gfx;
-
-    if (g_whiteAlpha <= 0.001f) return;
-
-    app = GetApp();
-    if (!app) return;
-    gfx = *(int *)((char *)app + APP_GRAPHICS_PTR);
-    if (!gfx) return;
-
-    /* Use the game's own Graphics_DrawScreenRect to draw a full-screen rect.
-     * This function handles ALL D3D state internally through the game's
-     * material system (Graphics_SetRenderMode + Graphics_ApplyMaterialAndDraw).
-     * It's the same function MusicPlayer_Render uses for its background.
-     *
-     * The color comes from Color_RandomRGBA() inside the function, but
-     * the alpha is controlled by the render context's alpha state.
-     * For now, just draw the rect — the game's alpha blending will handle
-     * the fade effect based on the current material alpha. */
-    {
-        /* Graphics_DrawScreenRect is __thiscall: gfx in ECX, 4 int params on stack */
-        typedef void (__thiscall *DrawScreenRect_t)(int, int, int, int, int);
-        DrawScreenRect_t pDrawScreenRect = (DrawScreenRect_t)GRAPHICS_DRAW_SCREEN_RECT;
-        pDrawScreenRect(gfx, 0, 0, 1920, 1080);
-    }
+    /* No-op: the game draws the overlay itself when we set scene+0x3624.
+     * This is now handled in updateWarpStateMachine(). */
 }
 
 /* ============================================================
@@ -640,6 +612,15 @@ static void updateWarpStateMachine(void) {
     if (!board) board = 0;  /* May be null — phases that need it will skip */
 
     g_diagCounter = 0;
+
+    /* Write fade alpha to scene+0x3624 so the game's own render loop
+     * draws the white overlay via Graphics_DrawScreenRect. No D3D calls. */
+    if (board) {
+        int scene = *(int *)((char *)board + BOARD_SCENE_PTR_OFFSET);
+        if (scene) {
+            *(float *)((char *)scene + SCENE_FADE_ALPHA) = g_whiteAlpha;
+        }
+    }
 
     switch (g_phase) {
     case PHASE_JIGGLE: {
