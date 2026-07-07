@@ -1,47 +1,50 @@
-# Arena Instant Respawn v2
+# Arena Instant Respawn v3
 
 ## What It Does
 
-Makes ALL entity balls in arenas (BadBalls, AI balls) respawn the same way player 1 respawns in races — via `Ball_Respawn` (0x405190), which uses the ball's LGP (last grounded position) to find the nearest safespot and teleports the ball there on the ground.
+Makes entity balls in arenas respawn the same way player 1 respawns in races — using the nearest safespot found via LGP (last grounded position).
 
-**Original behavior:** Entity balls (ball+0x18 == -1) that fall off the arena are destroyed, then a new ball is spawned via CreateBadBall at the original spawn position. This causes freezes when 5+ balls trigger the expensive Mesh_FindClosestCollision simultaneously.
+## Root Cause (why v1 and v2 failed)
 
-**Patched behavior:** ALL balls go through `Ball_Respawn`, which:
-1. Searches the safespot list (board+0x1518) for the nearest spawn point to the ball's LGP
-2. Teleports the ball to the safespot position on the ground (Y = safespot_y + radius)
-3. Zeroes all velocity
-4. Sets respawn timer (150 frames)
-5. Clears death flags, makes ball briefly invisible
+**Ball_Respawn (0x405190)** has TWO safespot search paths:
 
-## How It Works
+| Path | Address | Behavior |
+|------|---------|----------|
+| Race path | 0x405811 | Finds NEAREST safespot using LGP (ball+0x2DC/0x2E0/0x2E4) |
+| Arena path | 0x405A80 | Picks RANDOM safespot + validates with Mesh_FindClosestCollision |
 
-`Scene_UpdateBallsAndState` (0x41B540) iterates two ball lists per frame:
+At **0x40580B**, Ball_Respawn checks `App+0x237` (arena flag). If arena mode, it takes the arena path (random + validation). The arena path:
+1. Picks a random safespot index via `CPUID_CheckProcessorFeature` (used as RNG)
+2. Validates it with `Mesh_FindClosestCollision` — expensive and can fail
+3. If validation fails, loops back to pick another random safespot
+4. If all fail, `local_84` stays NULL → falls through to `LAB_00405d1d` which just zeroes velocity **without moving the ball**
 
-**List 1 (scene+0x29D4)** — primary balls (players + arena entity balls):
-- At 0x41B5A9: `JNZ 0x41B5CD` — only player balls (ball+0x18 != -1) go to Ball_Respawn
-- Entity balls fall through to destroy path (unless App+0x237 arena flag is set)
+This is why entity balls "did nothing" — Ball_Respawn was called but the arena random-safespot path failed to find a valid spot, so the ball stayed where it was.
 
-**List 2 (scene+0x3204)** — secondary balls:
-- At 0x41B64E: `JZ 0x41B659` — entity balls always jump to destroy path
+### v1 (failed)
+Hooked `Ball_FallDeath` (0x409480) and `BadBall_StartFallCountdown` (0x402390) — wrong path. Entity balls are handled by `Scene_UpdateBallsAndState` before reaching vtable[8] handlers.
 
-### Patches
+### v2 (failed)
+Patched `Scene_UpdateBallsAndState` conditions at 0x41B5A9 and 0x41B64E — redundant. Entity balls in arenas already go through Ball_Respawn via the `App+0x237` check at 0x41B5B9. The patches were no-ops.
+
+### v3 (this version)
+Single patch inside Ball_Respawn itself: NOP out the `JNZ` at 0x40580B that branches to the arena random-safespot path. This forces Ball_Respawn to ALWAYS use the race path (nearest safespot via LGP), even in arena mode.
+
+Arena levels DO have SAFESPOT entries (verified by scanning MESHWORLD files — all 17 arena levels contain "SAFESPOT" string entries).
+
+## Patch
 
 | Address | Original | Patched | Effect |
 |---------|----------|---------|--------|
-| 0x41B5A9 | `75 22` (JNZ) | `EB 22` (JMP) | List 1: ALL non-split balls go to Ball_Respawn |
-| 0x41B64E | `74 09` (JZ) | `90 90` (NOP) | List 2: entity balls fall through to Ball_Respawn |
+| 0x40580B | `0F 85 6F 02 00 00` (JNZ 0x405A80) | `90 90 90 90 90 90` (NOP×6) | Always use race-path safespot search |
 
-## Why v1 Failed
+## How Race Respawn Works (the path now used)
 
-v1 hooked `Ball_FallDeath` (0x409480) and `BadBall_StartFallCountdown` (0x402390) — these are vtable[8] handlers called when balls fall. But the actual arena respawn flow doesn't go through these for the freeze issue. The real flow is:
-
-1. Ball falls off arena → death_pending flag (ball+0x2E8) set
-2. `Scene_UpdateBallsAndState` checks ball+0x2E8 next frame
-3. If entity ball: calls `AthenaList_Remove` + `ball_dtor` → ball destroyed
-4. `CreateBadBall` spawns new ball → expensive `Mesh_FindClosestCollision`
-
-v1 hooks never fired because the balls were destroyed before reaching the vtable[8] handlers. v2 patches the condition check directly in `Scene_UpdateBallsAndState` so entity balls take the Ball_Respawn path instead.
-
-## Files
-
-- `ArenaInstantRespawn.CEA` — CE Auto Assembler script (pure CEA, no Lua)
+1. Ball_Respawn reads LGP from `ball+0x2DC` (X), `ball+0x2E0` (Y), `ball+0x2E4` (Z)
+2. Iterates safespot list (`scene+0x1518` AthenaList, populated from MESHWORLD "SAFESPOT" entries)
+3. For each safespot: calculates 3D distance from LGP to safespot
+4. Picks the nearest safespot (minimum distance)
+5. Teleports ball to safespot position: `pos = safespot_pos`, `Y = safespot_Y + radius`
+6. Zeroes all velocity (X, Y, Z)
+7. Sets respawn timer (150 frames = 2.5 seconds at 60fps)
+8. Clears death flags, makes ball briefly invisible
