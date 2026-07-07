@@ -2,24 +2,26 @@
   No Fall Damage + No Air Break (Full) — with BadBall immunity + AI fix
   Credits to BookwormKevin for the original script!
   Players 1-4 AND badballs immune to ground killplanes.
-  Badballs attack all balls — no death/falling checks anywhere.
+  Badballs attack all balls — states cleared every frame after Ball_Update.
   Balls respawn via Y-check script (ArenaInstantRespawn) when in void.
 }
 
 [ENABLE]
 
+alloc(ClearState_Cave,128)
 alloc(Orig_402390,3)
 alloc(Orig_13918,6)
 alloc(Orig_13926,6)
 alloc(Orig_13934,6)
-alloc(Orig_1B599,2)
-alloc(Orig_1B63E,2)
+alloc(Orig_1B591,10)
+alloc(Orig_1B636,10)
+registersymbol(ClearState_Cave)
 registersymbol(Orig_402390)
 registersymbol(Orig_13918)
 registersymbol(Orig_13926)
 registersymbol(Orig_13934)
-registersymbol(Orig_1B599)
-registersymbol(Orig_1B63E)
+registersymbol(Orig_1B591)
+registersymbol(Orig_1B636)
 
 Orig_402390:
   readmem(Hamsterball.exe+2390,3)
@@ -33,11 +35,11 @@ Orig_13926:
 Orig_13934:
   readmem(Hamsterball.exe+13934,6)
 
-Orig_1B599:
-  readmem(Hamsterball.exe+1B599,2)
+Orig_1B591:
+  readmem(Hamsterball.exe+1B591,10)
 
-Orig_1B63E:
-  readmem(Hamsterball.exe+1B63E,2)
+Orig_1B636:
+  readmem(Hamsterball.exe+1B636,10)
 
 Hamsterball.exe+75C9:
 db 90 90 90 90 90 90
@@ -63,11 +65,26 @@ db 90 90 90 90 90 90
 Hamsterball.exe+13934:
 db 90 90 90 90 90 90
 
-Hamsterball.exe+1B599:
-db 90 90
+Hamsterball.exe+1B591:
+jmp ClearState_Cave
+db 90 90 90 90 90
 
-Hamsterball.exe+1B63E:
-db 90 90
+Hamsterball.exe+1B636:
+jmp ClearState_Cave
+db 90 90 90 90 90
+
+ClearState_Cave:
+  { Clear falling flag (ball+0x2E8) }
+  mov byte ptr [esi+0x2E8],00
+  { Clear death_pending (ball+0x2E9) }
+  mov byte ptr [esi+0x2E9],00
+  { Clear respawn flag (ball+0x2F8) }
+  mov byte ptr [esi+0x2F8],00
+  { Clear snap flag (ball+0x2F9) }
+  mov byte ptr [esi+0x2F9],00
+  { Set alpha = 1.0 (visible, ball+0x2FC) }
+  mov dword ptr [esi+0x2FC],3F800000
+  ret
 
 [DISABLE]
 
@@ -95,21 +112,23 @@ readmem(Orig_13926,6)
 Hamsterball.exe+13934:
 readmem(Orig_13934,6)
 
-Hamsterball.exe+1B599:
-readmem(Orig_1B599,2)
+Hamsterball.exe+1B591:
+readmem(Orig_1B591,10)
 
-Hamsterball.exe+1B63E:
-readmem(Orig_1B63E,2)
+Hamsterball.exe+1B636:
+readmem(Orig_1B636,10)
 
+dealloc(ClearState_Cave)
 dealloc(Orig_402390)
 dealloc(Orig_13918)
 dealloc(Orig_13926)
 dealloc(Orig_13934)
-dealloc(Orig_1B599)
-dealloc(Orig_1B63E)
+dealloc(Orig_1B591)
+dealloc(Orig_1B636)
+unregistersymbol(ClearState_Cave)
 unregistersymbol(Orig_402390)
 unregistersymbol(Orig_13918)
 unregistersymbol(Orig_13926)
 unregistersymbol(Orig_13934)
-unregistersymbol(Orig_1B599)
-unregistersymbol(Orig_1B63E)
+unregistersymbol(Orig_1B591)
+unregistersymbol(Orig_1B636)
