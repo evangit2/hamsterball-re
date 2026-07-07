@@ -392,6 +392,7 @@ static volatile float g_whiteAlpha = 0.0f;
 
 /* Ball position saved at warp start for jiggling */
 static volatile float g_ballOrigY = 0.0f;
+static volatile int g_jiggleInit = 0;
 
 /* ============================================================
  * Memory helpers
@@ -547,6 +548,14 @@ typedef long (__stdcall *D3DGetTexture_t)(void*, DWORD, void**);
 typedef long (__stdcall *D3DSetTexture_t)(void*, DWORD, void*);
 typedef long (__stdcall *D3DGetStreamSource_t)(void*, UINT, void**, UINT*);
 typedef long (__stdcall *D3DSetStreamSource_t)(void*, UINT, void*, UINT);
+typedef long (__stdcall *D3DBeginScene_t)(void*);
+typedef long (__stdcall *D3DEndScene_t)(void*);
+typedef long (__stdcall *D3DBeginStateBlock_t)(void*);
+typedef long (__stdcall *D3DEndStateBlock_t)(void*, DWORD*);
+typedef long (__stdcall *D3DApplyStateBlock_t)(void*, DWORD);
+
+#define D3DRS_ALPHATESTENABLE   15
+#define D3DRS_DIFFUSEMATERIALSOURCE 3
 
 static void drawWhiteOverlay(void) {
     int app;
@@ -564,6 +573,11 @@ static void drawWhiteOverlay(void) {
     D3DSetTexture_t pSetTexture;
     D3DGetStreamSource_t pGetStreamSource;
     D3DSetStreamSource_t pSetStreamSource;
+    D3DBeginScene_t pBeginScene;
+    D3DEndScene_t pEndScene;
+    D3DBeginStateBlock_t pBeginStateBlock;
+    D3DEndStateBlock_t pEndStateBlock;
+    D3DApplyStateBlock_t pApplyStateBlock;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -587,25 +601,23 @@ static void drawWhiteOverlay(void) {
     pSetTexture = (D3DSetTexture_t)vtable[61];
     pGetStreamSource = (D3DGetStreamSource_t)vtable[84];
     pSetStreamSource = (D3DSetStreamSource_t)vtable[83];
+    pBeginScene = (D3DBeginScene_t)vtable[34];
+    pEndScene = (D3DEndScene_t)vtable[35];
+    pBeginStateBlock = (D3DBeginStateBlock_t)vtable[52];
+    pEndStateBlock = (D3DEndStateBlock_t)vtable[53];
+    pApplyStateBlock = (D3DApplyStateBlock_t)vtable[54];
 
     if (!pSetRenderState || !pGetRenderState || !pDrawPrimitiveUP ||
         !pSetTextureStageState || !pGetTextureStageState ||
         !pSetVertexShader || !pGetVertexShader || !pSetTexture || !pGetTexture ||
-        !pGetStreamSource || !pSetStreamSource) return;
+        !pGetStreamSource || !pSetStreamSource ||
+        !pBeginScene || !pEndScene ||
+        !pBeginStateBlock || !pEndStateBlock || !pApplyStateBlock) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
         DWORD color = 0x00FFFFFF | whiteAlpha;
-        DWORD savedFVF = 0;
-        DWORD savedAlphaBlend = 0;
-        DWORD savedSrcBlend = 0;
-        DWORD savedDestBlend = 0;
-        DWORD savedFogEnable = 0;
-        DWORD savedZEnable = 0;
-        DWORD savedZWriteEnable = 0;
-        DWORD savedColorOp = 0, savedColorArg1 = 0, savedColorArg2 = 0;
-        DWORD savedAlphaOp = 0, savedAlphaArg1 = 0, savedAlphaArg2 = 0;
-        void *savedTexture = NULL;
+        DWORD stateBlock = 0;
         void *savedStreamVB = NULL;
         UINT savedStreamStride = 0;
 
@@ -616,62 +628,43 @@ static void drawWhiteOverlay(void) {
             { 1920.0f, 1080.0f, 0.0f, 1.0f, color },
         };
 
-        /* --- Save ALL render states we modify --- */
-        pGetRenderState(device, D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
-        pGetRenderState(device, D3DRS_SRCBLEND, &savedSrcBlend);
-        pGetRenderState(device, D3DRS_DESTBLEND, &savedDestBlend);
-        pGetRenderState(device, D3DRS_FOGENABLE, &savedFogEnable);
-        pGetRenderState(device, D3DRS_ZENABLE, &savedZEnable);
-        pGetRenderState(device, D3DRS_ZWRITEENABLE, &savedZWriteEnable);
-        pGetVertexShader(device, &savedFVF);
-        pGetTexture(device, 0, &savedTexture);
+        /* Save stream source before DrawPrimitiveUP unbinds it */
         pGetStreamSource(device, 0, &savedStreamVB, &savedStreamStride);
-        pGetTextureStageState(device, 0, D3DTSS_COLOROP, &savedColorOp);
-        pGetTextureStageState(device, 0, D3DTSS_COLORARG1, &savedColorArg1);
-        pGetTextureStageState(device, 0, D3DTSS_COLORARG2, &savedColorArg2);
-        pGetTextureStageState(device, 0, D3DTSS_ALPHAOP, &savedAlphaOp);
-        pGetTextureStageState(device, 0, D3DTSS_ALPHAARG1, &savedAlphaArg1);
-        pGetTextureStageState(device, 0, D3DTSS_ALPHAARG2, &savedAlphaArg2);
 
-        /* --- Set states for overlay draw --- */
-        /* Disable Z test + Z write so overlay doesn't clobber the depth buffer */
+        /* Use StateBlock to capture ALL device state atomically */
+        pBeginStateBlock(device);
+        /* Record our state changes into the state block */
         pSetRenderState(device, D3DRS_ZENABLE, FALSE);
         pSetRenderState(device, D3DRS_ZWRITEENABLE, FALSE);
         pSetRenderState(device, D3DRS_ALPHABLENDENABLE, TRUE);
         pSetRenderState(device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
         pSetRenderState(device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         pSetRenderState(device, D3DRS_FOGENABLE, FALSE);
+        pSetRenderState(device, D3DRS_ALPHATESTENABLE, FALSE);
         pSetVertexShader(device, D3DFVF_TLVERTEX);
-
-        /* Unbind any game texture so it doesn't interfere with the overlay */
         pSetTexture(device, 0, NULL);
-
-        /* Texture stage: use diffuse color only (ignore textures) */
         pSetTextureStageState(device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+        {
+            DWORD sbToken;
+            pEndStateBlock(device, &sbToken);
+            stateBlock = sbToken;
+        }
 
-        /* Draw the white quad as a triangle strip (4 verts = 2 triangles) */
+        /* Draw the white quad — must be inside BeginScene/EndScene on real Windows */
+        pBeginScene(device);
         pDrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, verts, sizeof(TLVertex));
+        pEndScene(device);
 
-        /* --- Restore ALL states to saved game values --- */
-        /* Restore stream source FIRST — DrawPrimitiveUP unbinds it internally */
-        pSetStreamSource(device, 0, savedStreamVB, savedStreamStride);
-        pSetTexture(device, 0, savedTexture);
-        pSetVertexShader(device, savedFVF);
-        pSetTextureStageState(device, 0, D3DTSS_COLOROP, savedColorOp);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG1, savedColorArg1);
-        pSetTextureStageState(device, 0, D3DTSS_COLORARG2, savedColorArg2);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, savedAlphaOp);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG1, savedAlphaArg1);
-        pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, savedAlphaArg2);
-        pSetRenderState(device, D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
-        pSetRenderState(device, D3DRS_SRCBLEND, savedSrcBlend);
-        pSetRenderState(device, D3DRS_DESTBLEND, savedDestBlend);
-        pSetRenderState(device, D3DRS_FOGENABLE, savedFogEnable);
-        pSetRenderState(device, D3DRS_ZENABLE, savedZEnable);
-        pSetRenderState(device, D3DRS_ZWRITEENABLE, savedZWriteEnable);
+        /* Restore ALL device state atomically via ApplyStateBlock */
+        if (stateBlock) {
+            pApplyStateBlock(device, stateBlock);
+            /* State blocks don't restore stream source after DrawPrimitiveUP.
+             * Restore it manually. */
+            pSetStreamSource(device, 0, savedStreamVB, savedStreamStride);
+        }
     }
 }
 
@@ -738,16 +731,13 @@ static void updateWarpStateMachine(void) {
         elapsed = now - g_phaseStartTime;
 
         /* On first frame: freeze ball, start music fade */
-        if (elapsed < 50 && ball) {
-            float curAlpha = *(float *)((char *)ball + BALL_ALPHA);
-            if (curAlpha > 0.5f) {
-                /* First frame — save ball Y and freeze */
-                g_ballOrigY = *(float *)((char *)ball + BALL_POS_Y);
-                *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
-                *(char *)((char *)ball + BALL_IN_TAR) = 1;
-                startMusicFade();
-                diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
-            }
+        if (!g_jiggleInit && ball) {
+            g_jiggleInit = 1;
+            g_ballOrigY = *(float *)((char *)ball + BALL_POS_Y);
+            *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
+            *(char *)((char *)ball + BALL_IN_TAR) = 1;
+            startMusicFade();
+            diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
         }
 
         /* Per-frame: jiggle ball upward */
@@ -929,6 +919,7 @@ static void WarpCollisionHandler(void) {
                                  * but findRaceIndex returns 1-based (1-15) */
                                 g_warpLevelIndex = raceIndex - 1;
                                 g_phase = PHASE_JIGGLE;
+                                g_jiggleInit = 0;
                                 /* Initialize timestamps NOW so elapsed=0 on first frame */
                                 {
                                     DWORD now = GetTickCount();
@@ -1099,7 +1090,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     InstallPresentHook();
 
-    diag_log("[warp mod v6b] All hooks installed. Ready for E:WARP events.");
+    diag_log("[warp mod v6c] All hooks installed. Ready for E:WARP events.");
     return 0;
 }
 
@@ -1124,8 +1115,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v6b LOADED ===");
-        diag_log("v6b fixes: removed setWinState (was triggering end-level screen + crash), added SetTexture(NULL)");
+        diag_log("=== LEVEL WARP MOD v6c LOADED ===");
+        diag_log("v6c fixes: BeginScene/EndScene wrap, jiggle init flag, stream source save/restore");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
