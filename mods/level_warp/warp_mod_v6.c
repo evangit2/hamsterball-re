@@ -535,10 +535,13 @@ static void updateMusicFade(void) {
  * ============================================================ */
 
 typedef long (__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
+typedef long (__stdcall *D3DGetRenderState_t)(void*, DWORD, DWORD*);
 typedef long (__stdcall *D3DDrawPrimitiveUP_t)(void*, DWORD, UINT, const void*, UINT);
 typedef long (__stdcall *D3DSetTextureStageState_t)(void*, DWORD, DWORD, DWORD);
 typedef long (__stdcall *D3DSetVertexShader_t)(void*, DWORD);
 typedef long (__stdcall *D3DGetVertexShader_t)(void*, DWORD*);
+typedef long (__stdcall *D3DBeginScene_t)(void*);
+typedef long (__stdcall *D3DEndScene_t)(void*);
 
 static void drawWhiteOverlay(void) {
     int app;
@@ -546,10 +549,13 @@ static void drawWhiteOverlay(void) {
     void *device;
     void **vtable;
     D3DSetRenderState_t pSetRenderState;
+    D3DGetRenderState_t pGetRenderState;
     D3DDrawPrimitiveUP_t pDrawPrimitiveUP;
     D3DSetTextureStageState_t pSetTextureStageState;
     D3DSetVertexShader_t pSetVertexShader;
     D3DGetVertexShader_t pGetVertexShader;
+    D3DBeginScene_t pBeginScene;
+    D3DEndScene_t pEndScene;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -563,19 +569,27 @@ static void drawWhiteOverlay(void) {
     if (!vtable) return;
 
     pSetRenderState = (D3DSetRenderState_t)vtable[50];
+    pGetRenderState = (D3DGetRenderState_t)vtable[51];
     pDrawPrimitiveUP = (D3DDrawPrimitiveUP_t)vtable[72];
     pSetTextureStageState = (D3DSetTextureStageState_t)vtable[63];
-    /* vtable[76] = SetVertexShader — needed to set FVF before DrawPrimitiveUP */
     pGetVertexShader = (D3DGetVertexShader_t)vtable[77];
     pSetVertexShader = (D3DSetVertexShader_t)vtable[76];
+    /* vtable[34] = BeginScene, vtable[35] = EndScene */
+    pBeginScene = (D3DBeginScene_t)vtable[34];
+    pEndScene = (D3DEndScene_t)vtable[35];
 
-    if (!pSetRenderState || !pDrawPrimitiveUP || !pSetTextureStageState ||
-        !pSetVertexShader || !pGetVertexShader) return;
+    if (!pSetRenderState || !pGetRenderState || !pDrawPrimitiveUP ||
+        !pSetTextureStageState || !pSetVertexShader || !pGetVertexShader ||
+        !pBeginScene || !pEndScene) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
         DWORD color = 0x00FFFFFF | whiteAlpha;
         DWORD savedFVF = 0;
+        DWORD savedAlphaBlend = 0;
+        DWORD savedSrcBlend = 0;
+        DWORD savedDestBlend = 0;
+        DWORD savedFogEnable = 0;
 
         TLVertex verts[4] = {
             {    0.0f,    0.0f, 0.0f, 1.0f, color },
@@ -584,14 +598,18 @@ static void drawWhiteOverlay(void) {
             { 1920.0f, 1080.0f, 0.0f, 1.0f, color },
         };
 
+        /* --- Save current render states --- */
+        pGetRenderState(device, D3DRS_ALPHABLENDENABLE, &savedAlphaBlend);
+        pGetRenderState(device, D3DRS_SRCBLEND, &savedSrcBlend);
+        pGetRenderState(device, D3DRS_DESTBLEND, &savedDestBlend);
+        pGetRenderState(device, D3DRS_FOGENABLE, &savedFogEnable);
+        pGetVertexShader(device, &savedFVF);
+
         /* --- Set states for overlay draw --- */
         pSetRenderState(device, D3DRS_ALPHABLENDENABLE, TRUE);
         pSetRenderState(device, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
         pSetRenderState(device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         pSetRenderState(device, D3DRS_FOGENABLE, FALSE);
-
-        /* Save current FVF and set our TL vertex format */
-        pGetVertexShader(device, &savedFVF);
         pSetVertexShader(device, D3DFVF_TLVERTEX);
 
         /* Texture stage: use diffuse color only (ignore textures) */
@@ -600,20 +618,28 @@ static void drawWhiteOverlay(void) {
         pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
+        /* CRITICAL: Must call BeginScene before DrawPrimitiveUP.
+         * The game never calls BeginScene/EndScene — on Wine/llvmpipe
+         * DrawPrimitiveUP works without it, but real Windows D3D8 crashes. */
+        pBeginScene(device);
+
         /* Draw the white quad as a triangle strip (4 verts = 2 triangles) */
         pDrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, verts, sizeof(TLVertex));
 
-        /* --- CRITICAL: Restore texture stage states to game defaults! --- */
+        pEndScene(device);
+
+        /* --- Restore ALL states to game values --- */
+        pSetVertexShader(device, savedFVF);
         pSetTextureStageState(device, 0, D3DTSS_COLOROP,   D3DTOP_MODULATE);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-
-        /* Restore FVF and render states */
-        pSetVertexShader(device, savedFVF);
-        pSetRenderState(device, D3DRS_FOGENABLE, TRUE);
+        pSetRenderState(device, D3DRS_ALPHABLENDENABLE, savedAlphaBlend);
+        pSetRenderState(device, D3DRS_SRCBLEND, savedSrcBlend);
+        pSetRenderState(device, D3DRS_DESTBLEND, savedDestBlend);
+        pSetRenderState(device, D3DRS_FOGENABLE, savedFogEnable);
     }
 }
 
@@ -1038,7 +1064,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     InstallPresentHook();
 
-    diag_log("[warp mod v5] All hooks installed. Ready for E:WARP events.");
+    diag_log("[warp mod v6] All hooks installed. Ready for E:WARP events.");
     return 0;
 }
 
@@ -1063,8 +1089,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v5 LOADED ===");
-        diag_log("v5 fixes: texture stage restore, GetTickCount timing, vsnprintf, PHASE_REVEAL");
+        diag_log("=== LEVEL WARP MOD v6 LOADED ===");
+        diag_log("v6 fixes: BeginScene/EndScene, render state save/restore, FVF, off-by-one, TRIANGLESTRIP");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
