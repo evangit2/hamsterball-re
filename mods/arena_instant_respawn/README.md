@@ -1,46 +1,44 @@
-# Arena Instant Respawn v5
+# Arena Instant Respawn v6
 
 ## What It Does
 
-Makes entity balls in arenas respawn at the nearest safespot to where they actually died — exactly like player 1 respawns in races.
+Makes entity balls in arenas respawn at the nearest safespot (like player 1 in races) instead of on respawn platforms.
 
-## Root Cause (found after v1-v4)
+## Root Cause (found after v1-v5)
 
-Entity balls have LGP (last grounded position, ball+0x2DC/0x2E0/0x2E4) = **(0,0,0)** because it's never initialized by CreateBadBall or Ball_ctor. LGP is only updated in Ball_Update when the ball touches ground (type 2 collision + ball+0x768 flag). If a ball falls before touching ground, LGP stays (0,0,0).
+The SinkPlatform system catches entity balls BEFORE Ball_Respawn runs. `SinkPlatformArenaCollisionEvents` calls `Scene_StartCountdown`, which puts the ball on the respawn platform with a countdown timer. Ball_Respawn was being called later by `Scene_UpdateBallsAndState`, but by then the SinkPlatform countdown was already running — causing conflicts.
 
-Ball_Respawn searches for the nearest safespot using LGP as the search origin. With LGP=(0,0,0), ALL entity balls compute distance from (0,0,0) → ALL pick the SAME nearest safespot → all balls respawn on one platform.
+## Fix (v6)
 
-- **v1** (failed): Hooked Ball_FallDeath — wrong code path
-- **v2** (failed): Patched Scene_UpdateBallsAndState — redundant no-ops
-- **v3** (glitchy): Forced race path, but LGP was still (0,0,0)
-- **v4** (glitchy): Scanned all safespots, but LGP was still (0,0,0)
-- **v5** (this): Copies ball's current position to LGP at Ball_Respawn entry
+Intercept entity balls INSIDE `Scene_StartCountdown` (0x437130). At the entity-ball path (0x43716B), instead of setting timer=50 and putting ball on platform, redirect to a code cave that:
+1. Clears `scene+0x10F1` (undo countdown-active flag)
+2. Copies ball position → LGP (so search uses actual death position)
+3. Calls `Ball_Respawn(ball)` directly (teleport to nearest safespot)
+4. Returns immediately (skips all platform setup)
 
-## Three Patches
+## Patches
 
-| # | Address | Type | Effect |
-|---|---------|------|--------|
-| 1 | 0x40580B | JNZ→NOP (6 bytes) | Use race-path search instead of arena random path |
-| 2 | 0x405A3D | JNZ→NOP (6 bytes) | Scan ALL safespots, not just first match |
-| 3 | 0x405190 | Code cave | Copy ball pos (0x164/168/16C) → LGP (0x2DC/2E0/2E4) before search |
+| # | Address | Original | Patched | Effect |
+|---|---------|----------|---------|--------|
+| 1 | 0x40580B | `0F 85 6F 02 00 00` (JNZ) | `90×6` (NOP) | Force race-path search in Ball_Respawn |
+| 2 | 0x405A3D | `0F 85 89 02 00 00` (JNZ) | `90×6` (NOP) | Scan ALL safespots, not first match |
+| 3 | 0x43716B | `C7 81 F4 10 00 00 32 00 00 00` | `JMP cave + NOP×5` | Intercept entity balls in Scene_StartCountdown |
 
-### Code Cave Detail
+## Code Cave (Patch 3)
 
-At Ball_Respawn entry (0x405190), before the function body runs:
-1. Execute original `SUB ESP, 0x84`
-2. Copy `ball+0x164` (pos X) → `ball+0x2DC` (LGP X)
-3. Copy `ball+0x168` (pos Y) → `ball+0x2E0` (LGP Y)
-4. Copy `ball+0x16C` (pos Z) → `ball+0x2E4` (LGP Z)
-5. Jump back to 0x405196 (original second instruction)
+At `Scene_StartCountdown` entity-ball path, the code cave:
+- Clears the countdown-active flag that was just set
+- Copies ball position (0x164/168/16C) → LGP (0x2DC/2E0/2E4)
+- Calls Ball_Respawn(ball) which teleports to nearest safespot
+- Returns from Scene_StartCountdown immediately (RET 4)
 
-This ensures the safespot search uses the ball's actual death position as origin, so different balls at different positions pick different safespots.
+## Version History
 
-## How It Works (all three patches together)
-
-1. Entity ball falls off arena → Ball_FallDeath sets death_pending
-2. Scene_UpdateBallsAndState calls Ball_Respawn
-3. **Code cave** copies ball position to LGP
-4. **Patch 1** forces race-path search (nearest safespot, not random)
-5. **Patch 2** scans all safespots (not just first match)
-6. Ball teleports to nearest safespot, becomes invisible
-7. Respawn timer (150 frames), then ball fades back in
+| Version | Approach | Result |
+|---------|----------|--------|
+| v1 | Hook Ball_FallDeath | Wrong path |
+| v2 | Patch Scene_UpdateBallsAndState | Redundant |
+| v3 | NOP arena path in Ball_Respawn | Glitchy — all balls same platform |
+| v4 | Also NOP arena early-break | Still glitchy — same issue |
+| v5 | Code cave: copy pos→LGP at Ball_Respawn entry | Still on respawn platforms |
+| v6 | Intercept in Scene_StartCountdown before platform | Correct — bypasses platform entirely |
