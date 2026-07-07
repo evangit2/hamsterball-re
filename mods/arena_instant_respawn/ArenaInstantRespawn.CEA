@@ -1,62 +1,54 @@
 // ============================================================
-// Arena Instant Respawn v2
+// Arena Instant Respawn v3
 // ============================================================
-// Makes ALL entity balls in arenas respawn the same way
-// player 1 respawns in races — via Ball_Respawn (0x405190)
-// which uses LGP (last grounded position) to find nearest
-// safespot and teleports ball there on the ground.
+// Makes entity balls in arenas respawn the same way player 1
+// respawns in races — using nearest safespot via LGP.
 //
-// Original game behavior:
-//   Player balls (ball+0x18 != -1) → Ball_Respawn (safespot search)
-//   Entity balls (ball+0x18 == -1) → DESTROYED + new ball spawned
+// ROOT CAUSE (why v1 and v2 failed):
+//   Ball_Respawn (0x405190) has TWO safespot search paths:
+//     - Race path (0x405811): finds NEAREST safespot using LGP
+//     - Arena path (0x405A80): picks RANDOM safespot + validates
+//       with Mesh_FindClosestCollision (expensive, can fail)
 //
-// Patched behavior:
-//   ALL balls → Ball_Respawn (safespot search, same as races)
+//   At 0x40580B, Ball_Respawn checks App+0x237 (arena flag).
+//   If arena: takes the random path → often fails to find valid
+//   safespot → falls through to velocity-zero-only (ball stays
+//   in place, doesn't actually respawn).
 //
-// Patch 1: Scene_UpdateBallsAndState list 1 (scene+0x29D4)
-//   0x41B5A9: JNZ → JMP (entity balls go to Ball_Respawn)
+//   v1 hooked Ball_FallDeath/BadBall_StartFallCountdown — wrong path.
+//   v2 patched Scene_UpdateBallsAndState conditions — redundant,
+//   entity balls already go through Ball_Respawn via the arena
+//   flag check at 0x41B5B9.
 //
-// Patch 2: Scene_UpdateBallsAndState list 2 (scene+0x3204)
-//   0x41B64E: JZ → NOP NOP (entity balls fall through to Ball_Respawn)
+// FIX:
+//   Patch 0x40580B: JNZ → NOP (6 bytes)
+//   Forces Ball_Respawn to ALWAYS use the race path (nearest
+//   safespot), even in arena mode.
+//
+//   Arena levels DO have SAFESPOT entries (verified in MESHWORLD
+//   files), so the race path will find valid respawns.
 // ============================================================
 
 [ENABLE]
 
-alloc(ArenaInstantRespawn_Orig1,2)
-alloc(ArenaInstantRespawn_Orig2,2)
-
-registersymbol(ArenaInstantRespawn_Orig1)
-registersymbol(ArenaInstantRespawn_Orig2)
+alloc(ArenaInstantRespawn_v3_Orig,6)
+registersymbol(ArenaInstantRespawn_v3_Orig)
 
 // Save original bytes
-ArenaInstantRespawn_Orig1:
-  readmem(0041B5A9,2)
+ArenaInstantRespawn_v3_Orig:
+  readmem(0040580B,6)
 
-ArenaInstantRespawn_Orig2:
-  readmem(0041B64E,2)
-
-// Patch 1: List 1 — entity balls use Ball_Respawn instead of being destroyed
-// Original: 75 22 (JNZ 0041B5CD) — only player balls go to Ball_Respawn
-// Patched:  EB 22 (JMP 0041B5CD) — ALL non-split balls go to Ball_Respawn
-0041B5A9:
-  db EB 22
-
-// Patch 2: List 2 — entity balls fall through to Ball_Respawn
-// Original: 74 09 (JZ 0041B659) — entity balls jump to destroy path
-// Patched:  90 90 (NOP NOP)     — entity balls fall through to Ball_Respawn
-0041B64E:
-  db 90 90
+// Patch: NOP out the JNZ that branches to arena random-safespot path
+// Original: 0F 85 6F 02 00 00 (JNZ 00405A80 — arena random search)
+// Patched:  90 90 90 90 90 90 (NOP NOP NOP NOP NOP NOP — fall through to race path)
+0040580B:
+  db 90 90 90 90 90 90
 
 [DISABLE]
 
 // Restore original bytes
-0041B5A9:
-  readmem(ArenaInstantRespawn_Orig1,2)
+0040580B:
+  readmem(ArenaInstantRespawn_v3_Orig,6)
 
-0041B64E:
-  readmem(ArenaInstantRespawn_Orig2,2)
-
-dealloc(ArenaInstantRespawn_Orig1)
-dealloc(ArenaInstantRespawn_Orig2)
-unregistersymbol(ArenaInstantRespawn_Orig1)
-unregistersymbol(ArenaInstantRespawn_Orig2)
+dealloc(ArenaInstantRespawn_v3_Orig)
+unregistersymbol(ArenaInstantRespawn_v3_Orig)
