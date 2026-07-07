@@ -1,8 +1,8 @@
 /*
- * free_nametags — Custom Race & Arena Level Loader
- * ==================================================
+ * custom_filenames — Custom Race & Arena Level Loader
+ * ====================================================
  *
- * Reads "free_nametags.txt" from the game directory and replaces the
+ * Reads "custom_filenames.txt" from the game directory and replaces the
  * hard-coded level path strings that are PUSHed onto the stack before
  * LoadMeshWorld / Scene_SetupLevelN calls.
  *
@@ -14,11 +14,11 @@
  * We allocate our own strings (e.g. "levels\\custom_level") in this DLL's
  * memory and overwrite the 4-byte immediate in each PUSH to point to it.
  *
- * The user edits free_nametags.txt to:
+ * The user edits custom_filenames.txt to:
  *   1. Rename a level: change "level1" to "my_level" → loads "levels\\my_level.meshworld"
  *   2. Reorder levels: swap entries 3 and 7 → Intermediate takes Neon's slot and vice versa
  *
- * If free_nametags.txt is missing, the game runs with default level names — no changes.
+ * If custom_filenames.txt is missing, the game runs with default level names — no changes.
  *
  * The " A" prefix before "levels\level5" in the original binary is part of a
  * multi-purpose data block. Our patch points to the clean "levels\level5" string
@@ -36,7 +36,7 @@
  * Use file-based logging instead. */
 static void mod_log(const char *fmt, ...) {
     FILE *f = NULL;
-    if (fopen_s(&f, "free_nametags_log.txt", "a") != 0 || !f) return;
+    if (fopen_s(&f, "custom_filenames_log.txt", "a") != 0 || !f) return;
     va_list args;
     va_start(args, fmt);
     vfprintf(f, fmt, args);
@@ -117,7 +117,7 @@ __declspec(dllexport) int __stdcall BASS_Stop(void) {
     return 1;
 }
 
-/* ── Mod: Free Nametags ────────────────────────────────────────────── */
+/* ── Mod: Custom Filenames ─────────────────────────────────────────── */
 
 /* RVA addresses of the 30 PUSH instructions.
  * Each is: 68 XX XX XX 00 (PUSH imm32, 5 bytes).
@@ -169,7 +169,7 @@ static const DWORD g_arena_push_rvas[15] = {
 static char g_race_strings[15][MAX_LEVEL_NAME + 16];   /* "levels\" + name + "\0" */
 static char g_arena_strings[15][MAX_LEVEL_NAME + 16];
 
-/* ── Parse free_nametags.txt ───────────────────────────────────────── */
+/* ── Parse custom_filenames.txt ───────────────────────────────────── */
 
 static void trim(char *s) {
     /* Trim leading whitespace */
@@ -191,7 +191,7 @@ static int parse_config(const char *config_path,
     int parsed_races = 0, parsed_arenas = 0;
 
     if (fopen_s(&f, config_path, "r") != 0 || !f) {
-        mod_log("[free_nametags] Could not open config file: %s — using defaults", config_path);
+        mod_log("[custom_filenames] Could not open config file: %s — using defaults", config_path);
         return 0;
     }
 
@@ -205,7 +205,9 @@ static int parse_config(const char *config_path,
         if (line[0] == '\0' || line[0] == '#') continue;
 
         /* Check for section headers */
-        if (_stricmp(line, "RACES:") == 0) {
+        if (_stricmp(line, "RACES:") == 0 ||
+            _stricmp(line, "TOURNAMENT_RACES:") == 0 ||
+            _stricmp(line, "PRACTICE_RACES:") == 0) {
             section = 1;
             continue;
         }
@@ -246,7 +248,7 @@ static int parse_config(const char *config_path,
 
     fclose(f);
 
-    mod_log("[free_nametags] Parsed %d races, %d arenas", parsed_races, parsed_arenas);
+    mod_log("[custom_filenames] Parsed %d races, %d arenas", parsed_races, parsed_arenas);
     for (int i = 0; i < 15 && i < parsed_races; i++) {
         mod_log("  Race #%d: %s", i+1, race_names[i]);
     }
@@ -269,7 +271,7 @@ static void patch_push_instruction(DWORD push_rva, const char *new_string) {
 
     /* Verify it's a PUSH imm32 (0x68) */
     if (*((BYTE*)push_addr) != 0x68) {
-        mod_log("[free_nametags] WARNING: expected 0x68 at RVA 0x%05x, got 0x%02x — skipping",
+        mod_log("[custom_filenames] WARNING: expected 0x68 at RVA 0x%05x, got 0x%02x — skipping",
                  push_rva, *((BYTE*)push_addr));
         return;
     }
@@ -284,7 +286,7 @@ static void patch_push_instruction(DWORD push_rva, const char *new_string) {
     }
 }
 
-static void apply_free_nametags(void) {
+static void apply_custom_filenames(void) {
     char config_path[MAX_PATH];
 
     /* Get game directory from Hamsterball.exe module path */
@@ -296,15 +298,15 @@ static void apply_free_nametags(void) {
             char *last_slash = strrchr(exe_path, '\\');
             if (last_slash) {
                 *(last_slash + 1) = '\0';
-                snprintf(config_path, MAX_PATH, "%sfree_nametags.txt", exe_path);
+                snprintf(config_path, MAX_PATH, "%scustom_filenames.txt", exe_path);
             } else {
-                strcpy_s(config_path, MAX_PATH, "free_nametags.txt");
+                strcpy_s(config_path, MAX_PATH, "custom_filenames.txt");
             }
         } else {
-            strcpy_s(config_path, MAX_PATH, "free_nametags.txt");
+            strcpy_s(config_path, MAX_PATH, "custom_filenames.txt");
         }
     } else {
-        strcpy_s(config_path, MAX_PATH, "free_nametags.txt");
+        strcpy_s(config_path, MAX_PATH, "custom_filenames.txt");
     }
 
     /* Initialize with defaults (in case config is missing or incomplete) */
@@ -378,7 +380,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     switch (fdwReason) {
         case DLL_PROCESS_ATTACH:
             init_bass_proxy();
-            apply_free_nametags();
+            apply_custom_filenames();
             break;
     }
     return TRUE;
