@@ -1,26 +1,45 @@
-{ ============================================================
-  No Killplane Break — All Balls
-  ============================================================
-  ALL balls (Players 1-4 + badballs) no longer break when hitting
-  killplanes or falling from height. They still respawn when falling.
-  ============================================================
+{
+  No Fall Damage + No Air Break (Full) — Fixed
+  Credits to BookwormKevin for the original script!
+  Fix: Removed death_pending NOPs so balls still respawn in arenas.
 }
 
 [ENABLE]
 
-alloc(Orig_409480,8)
-registersymbol(Orig_409480)
+Hamsterball.exe+75C9:
+db 90 90 90 90 90 90
 
-Orig_409480:
-  readmem(00409480,8)
+Hamsterball.exe+C761:
+db 90 90 90 90 90 90
 
-00409480:
-  db C3 90 90 90 90 90 90 90
+Hamsterball.exe+F226:
+db 90 90 90 90 90 90 90
+
+Hamsterball.exe+8D70:
+db C3 90 90
+
+Hamsterball.exe+9050:
+db C3 90 90
+
+Hamsterball.exe+9480:
+db C3 90 90
 
 [DISABLE]
 
-00409480:
-  readmem(Orig_409480,8)
+Hamsterball.exe+75C9:
+db FF 86 EC 02 00 00
 
-dealloc(Orig_409480)
-unregistersymbol(Orig_409480)
+Hamsterball.exe+C761:
+db 88 85 68 07 00 00
+
+Hamsterball.exe+F226:
+db C6 86 68 07 00 00 00
+
+Hamsterball.exe+8D70:
+db 6A FF 64
+
+Hamsterball.exe+9050:
+db 6A FF 64
+
+Hamsterball.exe+9480:
+db 6A FF 64
