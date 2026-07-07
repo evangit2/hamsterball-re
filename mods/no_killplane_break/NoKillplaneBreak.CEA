@@ -2,13 +2,14 @@
   No Fall Damage + No Air Break (Full) — with BadBall immunity + AI fix
   Credits to BookwormKevin for the original script!
   Players 1-4 AND badballs immune to ground killplanes.
-  Badballs attack all balls — states cleared every frame after Ball_Update.
+  All entity balls forced to NORMAL STATE every frame.
+  Badballs attack all balls — no dead/falling/dizzy state possible.
   Balls respawn via Y-check script (ArenaInstantRespawn) when in void.
 }
 
 [ENABLE]
 
-alloc(ClearState_Cave,128)
+alloc(ClearState_Cave,256)
 alloc(Orig_402390,3)
 alloc(Orig_13918,6)
 alloc(Orig_13926,6)
@@ -74,16 +75,28 @@ jmp ClearState_Cave
 db 90 90 90 90 90
 
 ClearState_Cave:
-  { Clear falling flag (ball+0x2E8) }
+  { Clear in-tar (ball+0x2CC) }
+  mov byte ptr [esi+0x2CC],00
+  { Clear vacuum (ball+0x2D4) }
+  mov byte ptr [esi+0x2D4],00
+  { Clear falling (ball+0x2E8) }
   mov byte ptr [esi+0x2E8],00
   { Clear death_pending (ball+0x2E9) }
   mov byte ptr [esi+0x2E9],00
+  { Clear bounce_count (ball+0x2EC) }
+  mov byte ptr [esi+0x2EC],00
+  { Clear dizzy_immunity_timer (ball+0x2F4) }
+  mov dword ptr [esi+0x2F4],00000000
   { Clear respawn flag (ball+0x2F8) }
   mov byte ptr [esi+0x2F8],00
   { Clear snap flag (ball+0x2F9) }
   mov byte ptr [esi+0x2F9],00
-  { Set alpha = 1.0 (visible, ball+0x2FC) }
+  { Set alpha = 1.0 visible (ball+0x2FC) }
   mov dword ptr [esi+0x2FC],3F800000
+  { Clear respawn timer (ball+0x300) }
+  mov dword ptr [esi+0x300],00000000
+  { Clear impact (ball+0x808) }
+  mov dword ptr [esi+0x808],00000000
   ret
 
 [DISABLE]
