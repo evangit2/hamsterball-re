@@ -6,6 +6,7 @@
  * no inline asm — everything runs on the main thread via callbacks.
  */
 #pragma once
+#define _CRT_SECURE_NO_WARNINGS
 #include "HamsterballAPI.h"
 #include <windows.h>
 #include <stdio.h>
