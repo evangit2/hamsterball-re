@@ -1,28 +1,30 @@
-# Arena Instant Respawn v9
+# Arena Instant Respawn v10
 
 ## What It Does
 
-ALL balls (players 1-4 + badballs) in arenas respawn instantly at the nearest safespot — no respawn platform, no crashes/freezes when many balls fall simultaneously.
+ALL balls (Players 1-4 + badballs) in arenas respawn the same way player 1 respawns in races — nearest safespot via LGP, no respawn platform.
 
-## Problem
+## Race Respawn Flow (what we copy)
 
-When 5+ balls fall simultaneously in arenas, the game crashes/freezes because:
-- `Scene_StartCountdown` only handles ONE ball at a time (`scene+0x10F8`)
-- `Ball_Respawn` arena path calls expensive `Mesh_FindClosestCollision` for each ball
-- Multiple balls compete for the shared respawn platform
+1. Ball falls → Ball_Update sets falling flag → calls Ball_FallDeath
+2. Ball_FallDeath sets ball+0x2E8=1 (falling), creates visual fragments
+3. Next frame: Scene_UpdateBallsAndState sees 0x2E8=1 → calls Ball_Respawn
+4. Ball_Respawn searches safespot list using LGP (ball+0x2DC/2E0/2E4)
+5. Finds NEAREST safespot, teleports ball there
+6. Ball becomes invisible, respawns after 150 frames
 
-## Fix — Four Patches
+## Arena Differences (what we fix)
 
-| # | Address | Type | Effect |
-|---|---------|------|--------|
-| 1 | 0x437130 | Code cave: `RET 4` | Skip Scene_StartCountdown for ALL balls (no platform) |
-| 2 | 0x40580B | JNZ→NOP | Force race-path search (no Mesh_FindClosestCollision) |
-| 3 | 0x405A3D | JNZ→NOP | Scan ALL safespots (not just first match) |
-| 4 | 0x405190 | Code cave | Copy ball pos→LGP (search from actual position) |
+- **SinkPlatform**: catches balls, puts them on respawn platform → **skip entirely**
+- **Arena search**: picks RANDOM safespot + validates with expensive Mesh_FindClosestCollision → **force race path** (nearest, no raycast)
+- **Arena early-break**: accepts first match → **scan ALL safespots**
+- **Entity ball LGP**: uninitialized (0,0,0) → **copy ball position to LGP at Ball_Respawn entry**
 
-## Why This Prevents Crashes
+## Patches
 
-- **No respawn platform** — no shared resource conflicts between balls
-- **Race-path search** — O(n) distance calculation, no expensive raycast per ball
-- **Independent respawn** — each ball finds its own nearest safespot without blocking
-- **5+ simultaneous respawns** — all complete in microseconds, no frame freeze
+| # | Address | Effect |
+|---|---------|--------|
+| 1 | 0x40580B | NOP JNZ — force race-path search (not arena random) |
+| 2 | 0x405A3D | NOP JNZ — scan ALL safespots (not just first match) |
+| 3 | 0x405190 | Code cave — copy ball pos→LGP before search |
+| 4 | 0x437130 | RET 4 — skip Scene_StartCountdown for ALL balls (no platform) |
