@@ -1,66 +1,93 @@
 // ============================================================
-// Arena Instant Respawn v4
+// Arena Instant Respawn v5
 // ============================================================
 // Makes entity balls in arenas respawn the same way player 1
-// respawns in races — using nearest safespot via LGP.
+// respawns in races — finding the NEAREST safespot to where
+// the ball actually died.
 //
-// ROOT CAUSE (why v3 was glitchy):
-//   Ball_Respawn (0x405190) has arena-specific behavior at TWO points:
+// ROOT CAUSE (found after v1-v4):
+//   Entity balls have LGP (ball+0x2DC/0x2E0/0x2E4) = (0,0,0)
+//   because it's never initialized by CreateBadBall or Ball_ctor.
+//   LGP is only updated in Ball_Update when ball touches ground.
+//   If ball falls before touching ground, LGP stays (0,0,0).
 //
-//   1. 0x40580B: JNZ → arena random-safespot path (0x405A80)
-//      v3 NOP'd this to use race path instead. CORRECT.
+//   Ball_Respawn searches for nearest safespot using LGP as origin.
+//   With LGP=(0,0,0), ALL entity balls compute distance from (0,0,0)
+//   → ALL pick the SAME nearest safespot → all on one platform.
 //
-//   2. 0x405A3D: JNZ → break after first acceptable safespot (0x405CCC)
-//      INSIDE the race path! When arena flag (App+0x237) is set,
-//      the search loop accepts the FIRST safespot found and breaks
-//      instead of scanning ALL safespots to find the nearest one.
-//      This caused ALL entity balls to respawn on the SAME platform
-//      (the first safespot in the list).
+//   v3 forced race path (correct) but LGP was still (0,0,0).
+//   v4 scanned all safespots (correct) but LGP was still (0,0,0).
+//   v5 copies ball's CURRENT POSITION to LGP at Ball_Respawn entry.
 //
-// FIX: NOP BOTH JNZ instructions so Ball_Respawn:
-//   - Uses the race-path search (not arena random path)
-//   - Scans ALL safespots to find the truly nearest one
-//
-// Patch 1: 0x40580B: JNZ → NOP (6 bytes) — use race path
-// Patch 2: 0x405A3D: JNZ → NOP (6 bytes) — scan all safespots
+// THREE PATCHES:
+//   Patch 1 (v3): 0x40580B JNZ→NOP — use race path, not arena random
+//   Patch 2 (v4): 0x405A3D JNZ→NOP — scan all, not first match
+//   Patch 3 (v5): Code cave at 0x405190 — copy pos→LGP before search
 // ============================================================
 
 [ENABLE]
 
-alloc(ArenaInstantRespawn_v4_Orig1,6)
-alloc(ArenaInstantRespawn_v4_Orig2,6)
-registersymbol(ArenaInstantRespawn_v4_Orig1)
-registersymbol(ArenaInstantRespawn_v4_Orig2)
+alloc(ArenaRespawn_Cave, 64)
+alloc(ArenaRespawn_Orig1,6)
+alloc(ArenaRespawn_Orig2,6)
+alloc(ArenaRespawn_OrigEntry,6)
+registersymbol(ArenaRespawn_Cave)
+registersymbol(ArenaRespawn_Orig1)
+registersymbol(ArenaRespawn_Orig2)
+registersymbol(ArenaRespawn_OrigEntry)
 
 // Save original bytes
-ArenaInstantRespawn_v4_Orig1:
+ArenaRespawn_Orig1:
   readmem(0040580B,6)
 
-ArenaInstantRespawn_v4_Orig2:
+ArenaRespawn_Orig2:
   readmem(00405A3D,6)
 
+ArenaRespawn_OrigEntry:
+  readmem(00405190,6)
+
 // Patch 1: Use race-path safespot search instead of arena random path
-// Original: 0F 85 6F 02 00 00 (JNZ 00405A80 — arena random search)
-// Patched:  90 90 90 90 90 90 (NOP — fall through to race path)
 0040580B:
   db 90 90 90 90 90 90
 
 // Patch 2: Scan ALL safespots instead of breaking after first match
-// Original: 0F 85 89 02 00 00 (JNZ 00405CCC — arena early break)
-// Patched:  90 90 90 90 90 90 (NOP — continue scanning for nearest)
 00405A3D:
   db 90 90 90 90 90 90
 
+// Patch 3: Code cave at Ball_Respawn entry
+// Hook: replace first instruction with JMP to cave
+00405190:
+  jmp ArenaRespawn_Cave
+  nop
+
+// Code cave: execute original instruction + copy pos to LGP
+ArenaRespawn_Cave:
+  sub esp,84                 // Original: SUB ESP, 0x84
+  mov eax,[ecx+0x164]        // ball pos X
+  mov [ecx+0x2DC],eax        // LGP X = pos X
+  mov eax,[ecx+0x168]        // ball pos Y
+  mov [ecx+0x2E0],eax        // LGP Y = pos Y
+  mov eax,[ecx+0x16C]        // ball pos Z
+  mov [ecx+0x2E4],eax        // LGP Z = pos Z
+  jmp 00405196               // Return to PUSH EBX (next original instruction)
+
 [DISABLE]
 
-// Restore original bytes
+// Restore all original bytes
 0040580B:
-  readmem(ArenaInstantRespawn_v4_Orig1,6)
+  readmem(ArenaRespawn_Orig1,6)
 
 00405A3D:
-  readmem(ArenaInstantRespawn_v4_Orig2,6)
+  readmem(ArenaRespawn_Orig2,6)
 
-dealloc(ArenaInstantRespawn_v4_Orig1)
-dealloc(ArenaInstantRespawn_v4_Orig2)
-unregistersymbol(ArenaInstantRespawn_v4_Orig1)
-unregistersymbol(ArenaInstantRespawn_v4_Orig2)
+00405190:
+  readmem(ArenaRespawn_OrigEntry,6)
+
+dealloc(ArenaRespawn_Cave)
+dealloc(ArenaRespawn_Orig1)
+dealloc(ArenaRespawn_Orig2)
+dealloc(ArenaRespawn_OrigEntry)
+unregistersymbol(ArenaRespawn_Cave)
+unregistersymbol(ArenaRespawn_Orig1)
+unregistersymbol(ArenaRespawn_Orig2)
+unregistersymbol(ArenaRespawn_OrigEntry)
