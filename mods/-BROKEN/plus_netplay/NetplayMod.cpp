@@ -253,11 +253,10 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             lastSentIP[sizeof(lastSentIP)-1] = '\0';
         }
 
-        // HOST: stream P1+P2 ball state using direct memory reads
-        // Host is always Player 1, guest controls Player 2
-        if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
-            DWORD p1 = getP1Ball();
-            DWORD p2 = getP2Ball();
+        // HOST: stream P1+P2 ball state — disabled, crashes during race loading
+        // if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
+        //     DWORD p1 = getP1Ball();
+        //     DWORD p2 = getP2Ball();
             if (p1) {
                 BallStateMsg msg;
                 memset(&msg, 0, sizeof(msg));
@@ -514,15 +513,10 @@ static void __thiscall game_update(void*) {
 }
 
 static void __thiscall text_render(void* thisptr) {
-    if (!g_gameReady) return;
-
-    // Apply network state every frame
-    if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) {
-        applyHostInput();
-    }
-    if (g_role == ROLE_GUEST && g_connState == CONN_CONNECTED) {
-        applyGuestBallState();
-    }
+    // Network state application disabled — crashes during race loading
+    // because board/ball pointers are reallocated during loading screen.
+    // Need proper "in-race" detection before re-enabling.
+    // Relay connection + UI toggles + config still work fine.
 }
 
 static void __thiscall event_collide(void*, Ball*, char*) {}
