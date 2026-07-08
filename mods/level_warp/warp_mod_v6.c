@@ -345,13 +345,13 @@ static volatile float g_musicOrigVolume = 1.0f;
 
 /* Phase durations in milliseconds (framerate-independent!) */
 #define JIGGLE_DURATION_MS    2000   /* 2.0 sec */
-#define FLASH_DURATION_MS      500   /* 0.5 sec */
+#define FLASH_DURATION_MS      250   /* 0.25 sec */
 #define FADE_DURATION_MS      2000   /* 2.0 sec */
 #define REVEAL_DURATION_MS    1000   /* 1.0 sec */
 #define MUSIC_FADE_MS         3000   /* 3.0 sec */
 
 /* Flash sub-timing */
-#define FLASH_PEAK_MS         250   /* peak white at 250ms into 500ms flash */
+#define FLASH_PEAK_MS         125   /* peak white at 125ms into 250ms flash */
 
 /* White screen alpha (0.0 = transparent, 1.0 = fully white) */
 static volatile float g_whiteAlpha = 0.0f;
