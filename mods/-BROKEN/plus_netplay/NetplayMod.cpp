@@ -222,8 +222,8 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             lastSentIP[sizeof(lastSentIP)-1] = '\0';
         }
 
-        // HOST: stream ball state
-        if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
+        // HOST: stream ball state — disabled, scene memory access crashes in 2P
+        // if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
             DWORD scene = getScene();
             if (scene) {
                 DWORD p1Ball = 0, p2Ball = 0;
@@ -262,22 +262,21 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
                     sendPipeMsg(MSG_BALL_STATE, &msg, sizeof(msg));
                 }
             }
-        }
-
-        // GUEST: send input
-        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
-            if (g_api) {
-                void* p1 = HBAPI(g_api).GetPlayer();
-                if (p1 && !IsBadReadPtr(p1, 0x300)) {
-                    InputStateMsg msg;
-                    msg.frame = g_frameCount;
-                    msg.force_x = readBallFloat((DWORD)p1, BALL_FORCE_X);
-                    msg.force_y = readBallFloat((DWORD)p1, BALL_FORCE_Y);
-                    msg.force_z = readBallFloat((DWORD)p1, BALL_FORCE_Z);
-                    sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
-                }
-            }
-        }
+        // }
+        // End disabled HOST ball streaming — disabled, GetPlayer vtable index unverified
+        // if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
+        //     if (g_api) {
+        //         void* p1 = HBAPI(g_api).GetPlayer();
+        //         if (p1 && !IsBadReadPtr(p1, 0x300)) {
+        //             InputStateMsg msg;
+        //             msg.frame = g_frameCount;
+        //             msg.force_x = readBallFloat((DWORD)p1, BALL_FORCE_X);
+        //             msg.force_y = readBallFloat((DWORD)p1, BALL_FORCE_Y);
+        //             msg.force_z = readBallFloat((DWORD)p1, BALL_FORCE_Z);
+        //             sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
+        //         }
+        //     }
+        // }
 
         // FPS heartbeat
         if (g_frameCount - g_lastHeartbeat >= HEARTBEAT_INTERVAL) {
@@ -471,7 +470,10 @@ static void __thiscall text_render(void* thisptr) {
     // Disabled for now — DrawCustomText vtable index unverified, crashes during loading
     // Apply network state from here (runs every frame)
     if (!g_api || !g_gameReady) return;
-    if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) applyHostInput();
+    // Disabled network state application — vtable indices for GetPlayer/GetScene
+    // via IModAPI are unverified and cause crashes in 2P mode.
+    // The relay connection + UI toggles work, which is enough for PoC.
+    // if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) applyHostInput();
 }
 
 static void __thiscall event_collide(void*, Ball*, char*) {}
