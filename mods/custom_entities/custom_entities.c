@@ -808,6 +808,39 @@ static void scan_for_custom_entities(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Rotation state — written to shared memory for d3d8.dll proxy
+ *
+ * bass.dll writes the rotation angle + center to a memory-mapped file.
+ * d3d8.dll reads it in Hooked_SetTransform and applies the rotation
+ * when the world matrix matches the entity position.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define SHM_NAME "Hamsterball_Rotator"
+
+typedef struct {
+    int   active;
+    float angle;
+    float center_x;
+    float center_y;
+    float center_z;
+    int   frame_count;
+} RotatorState;
+
+static RotatorState* g_rot_state = NULL;
+static HANDLE g_rot_shm = NULL;
+
+static void init_rotator_shm(void) {
+    g_rot_shm = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+                                    0, sizeof(RotatorState), SHM_NAME);
+    if (!g_rot_shm) return;
+    g_rot_state = (RotatorState*)MapViewOfFile(g_rot_shm, FILE_MAP_ALL_ACCESS, 0, 0,
+                                                sizeof(RotatorState));
+    if (g_rot_state && GetLastError() != ERROR_ALREADY_EXISTS) {
+        ZeroMemory(g_rot_state, sizeof(RotatorState));
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Main mod thread — polls for level changes, scans entities, calls updates
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -838,6 +871,7 @@ static DWORD WINAPI mod_thread(LPVOID param) {
             /* Level changed — shutdown old entities */
             if (g_last_board != 0) {
                 shutdown_all_entities();
+                if (g_rot_state) g_rot_state->active = 0;
             }
             g_last_board = board;
 
@@ -847,6 +881,35 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 board = get_board(); /* Re-read in case it changed */
                 if (board) {
                     scan_for_custom_entities(board);
+
+                    /* If we found entities, compute rotation center and activate */
+                    if (g_entity_count > 0 && g_rot_state) {
+                        DWORD scene = get_scene(board);
+                        if (scene) {
+                            DWORD mw = get_meshworld(scene);
+                            if (mw && !IsBadReadPtr((void*)(mw + 0x438), 4)) {
+                                int total_vtx = *(int*)(mw + 0x438);
+                                if (!IsBadReadPtr((void*)(mw + 0x440), 4)) {
+                                    float* vtx = *(float**)(mw + 0x440);
+                                    if (vtx && total_vtx >= 272 &&
+                                        !IsBadReadPtr(vtx, total_vtx * 32)) {
+                                        int start = total_vtx - 272;
+                                        float sx=0, sy=0, sz=0;
+                                        int i;
+                                        for (i = 0; i < 272; i++) {
+                                            float* v = vtx + (start + i) * 8;
+                                            sx += v[0]; sy += v[1]; sz += v[2];
+                                        }
+                                        g_rot_state->center_x = sx / 272;
+                                        g_rot_state->center_y = sy / 272;
+                                        g_rot_state->center_z = sz / 272;
+                                        g_rot_state->angle = 0.0f;
+                                        g_rot_state->active = 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -862,6 +925,13 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                     }
                 }
             }
+        }
+
+        /* Update rotation angle in shared memory for d3d8.dll proxy */
+        if (g_rot_state && g_rot_state->active) {
+            g_rot_state->angle += 0.02f;
+            if (g_rot_state->angle > 6.283185f)
+                g_rot_state->angle -= 6.283185f;
         }
 
         Sleep(16); /* ~60Hz update rate */
@@ -882,6 +952,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         load_real_bass();
         init_game_dir();
+        init_rotator_shm();
 
         /* Merge CustomEntities/*.MESHWORLD geometry into Levels/*.MESHWORLD
          * files before the game loads them. This happens at DLL load time,
