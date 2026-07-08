@@ -391,15 +391,14 @@ static int GetApp(void) {
     return *(int *)APP_PTR;
 }
 
-/* Validate ball pointer via vtable check — prevents heap corruption
- * if the ball is destroyed during the warp sequence (~5 sec).
- * Ball vtable is at 0x4CF3A0 (verified via Ghidra + hbtestd).
- * NOTE: IsBadReadPtr removed — it can return TRUE on valid memory
- * with certain page protections on real Windows, causing false rejects. */
+/* Validate ball pointer — simple null + sanity check.
+ * The vtable check was rejecting valid balls on real Windows
+ * (cause unknown — possibly different vtable for player ball vs
+ * entity ball, or vtable gets swapped during collision processing).
+ * Removed vtable check to restore working behavior from v6e. */
 static int is_valid_ball(int ball) {
     if (!ball) return 0;
     if (ball < 0x10000) return 0;  /* Reject obviously bogus pointers */
-    if (*(int *)ball != BALL_VTABLE) return 0;
     return 1;
 }
 
@@ -777,23 +776,38 @@ static void updateWarpStateMachine(void) {
                  * App_StartTournamentRace does this:
                  *   if (App+0x90C) { (*(vtable[0])(App+0x90C))(1); App+0x90C=0; }
                  *   if (App+0x910) { (*(vtable[0])(App+0x910))(1); App+0x910=0; }
-                 * The param 1 tells the dtor to free internal resources. */
+                 * The dtor is __thiscall: ECX=this, param on stack, RET 0x4.
+                 * Using inline asm to ensure correct calling convention. */
                 {
                     int bttRec = *(int *)((char *)app + APP_BTT_RECORDING);
                     int bttPlay = *(int *)((char *)app + APP_BTT_PLAYBACK);
                     if (bttRec) {
                         int vtable = *(int *)bttRec;
                         int dtor = *(int *)vtable;
-                        typedef void (__fastcall *dtor_t)(int, int);
-                        ((dtor_t)dtor)(bttRec, 1);
+                        __asm__ volatile (
+                            "push 1\n\t"
+                            "movl %[btt], %%ecx\n\t"
+                            "call *%[dtor]\n\t"
+                            :
+                            : [dtor] "r" (dtor),
+                              [btt] "r" (bttRec)
+                            : "eax", "edx", "ecx", "memory"
+                        );
                         *(int *)((char *)app + APP_BTT_RECORDING) = 0;
                         diag_log("[warp] Freed BTT recording (tournament mode)");
                     }
                     if (bttPlay) {
                         int vtable = *(int *)bttPlay;
                         int dtor = *(int *)vtable;
-                        typedef void (__fastcall *dtor_t)(int, int);
-                        ((dtor_t)dtor)(bttPlay, 1);
+                        __asm__ volatile (
+                            "push 1\n\t"
+                            "movl %[btt], %%ecx\n\t"
+                            "call *%[dtor]\n\t"
+                            :
+                            : [dtor] "r" (dtor),
+                              [btt] "r" (bttPlay)
+                            : "eax", "edx", "ecx", "memory"
+                        );
                         *(int *)((char *)app + APP_BTT_PLAYBACK) = 0;
                         diag_log("[warp] Freed BTT playback (tournament mode)");
                     }
