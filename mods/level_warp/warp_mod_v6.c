@@ -393,10 +393,12 @@ static int GetApp(void) {
 
 /* Validate ball pointer via vtable check — prevents heap corruption
  * if the ball is destroyed during the warp sequence (~5 sec).
- * Ball vtable is at 0x4CF3A0 (verified via Ghidra). */
+ * Ball vtable is at 0x4CF3A0 (verified via Ghidra + hbtestd).
+ * NOTE: IsBadReadPtr removed — it can return TRUE on valid memory
+ * with certain page protections on real Windows, causing false rejects. */
 static int is_valid_ball(int ball) {
     if (!ball) return 0;
-    if (IsBadReadPtr((void *)ball, 0x300)) return 0;
+    if (ball < 0x10000) return 0;  /* Reject obviously bogus pointers */
     if (*(int *)ball != BALL_VTABLE) return 0;
     return 1;
 }
@@ -732,15 +734,19 @@ static void updateWarpStateMachine(void) {
             char savedDifficulty = *((char *)app + 0x23C);
             int oldProfile = *(int *)((char *)app + APP_PROFILE_PTR);
 
-            /* Save tournament state from old profile */
-            char oldIsTournament = 0;
+            /* Detect tournament mode: profile+0x11=0 means tournament,
+             * profile+0x11=1 means practice/TT. App_StartPracticeRace
+             * forces +0x11=1, which is what kicks us out of tournament.
+             * profile+0x10 is always 0 (unused flag). */
+            char wasInTournament = 0;
             float savedScores[16];
             int savedTimes[16];
             int hasTournamentData = 0;
 
             if (oldProfile) {
-                oldIsTournament = *((char *)oldProfile + PROFILE_IS_TOURNAMENT);
-                if (oldIsTournament) {
+                char isPractice = *((char *)oldProfile + PROFILE_IS_PRACTICE);
+                wasInTournament = (isPractice == 0) ? 1 : 0;
+                if (wasInTournament) {
                     hasTournamentData = 1;
                     memcpy(savedScores, (void *)((char *)oldProfile + PROFILE_SCORE_ARRAY), sizeof(savedScores));
                     memcpy(savedTimes, (void *)((char *)oldProfile + PROFILE_TIME_ARRAY), sizeof(savedTimes));
@@ -748,7 +754,7 @@ static void updateWarpStateMachine(void) {
             }
 
             diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d, difficulty=%d, tourney=%d)",
-                       appVal, idx, (int)savedDifficulty, (int)oldIsTournament);
+                       appVal, idx, (int)savedDifficulty, (int)wasInTournament);
 
             __asm__ volatile (
                 "push %[idx]\n\t"
@@ -766,7 +772,7 @@ static void updateWarpStateMachine(void) {
             /* Restore difficulty so entity factories spawn correctly */
             *((char *)app + 0x23C) = savedDifficulty;
 
-            if (oldIsTournament) {
+            if (wasInTournament) {
                 /* Free the BestTimeTrackers that App_StartPracticeRace created.
                  * App_StartTournamentRace does this:
                  *   if (App+0x90C) { (*(vtable[0])(App+0x90C))(1); App+0x90C=0; }
@@ -793,17 +799,18 @@ static void updateWarpStateMachine(void) {
                     }
                 }
 
-                /* Restore tournament flags + score/time arrays on new profile */
+                /* Restore tournament flags + score/time arrays on new profile.
+                 * Tournament mode = profile+0x11=0 (not practice).
+                 * profile+0x10 is always 0 — leave it alone. */
                 {
                     int newProfile = *(int *)((char *)app + APP_PROFILE_PTR);
                     if (newProfile) {
-                        *((char *)newProfile + PROFILE_IS_TOURNAMENT) = 1;
                         *((char *)newProfile + PROFILE_IS_PRACTICE) = 0;
                         if (hasTournamentData) {
                             memcpy((void *)((char *)newProfile + PROFILE_SCORE_ARRAY), savedScores, sizeof(savedScores));
                             memcpy((void *)((char *)newProfile + PROFILE_TIME_ARRAY), savedTimes, sizeof(savedTimes));
                         }
-                        diag_log("[warp] Tournament mode restored: flags + scores copied to new profile");
+                        diag_log("[warp] Tournament mode restored: practice=0, scores copied to new profile");
                     }
                 }
             }
