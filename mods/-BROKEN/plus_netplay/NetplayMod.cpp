@@ -159,10 +159,26 @@ static void updateHostIPString() {
              g_ip_octet[0], g_ip_octet[1], g_ip_octet[2], g_ip_octet[3]);
 }
 
-// Read netplay.txt config file: first line = host IP, optional :port suffix
-// e.g. "192.168.1.100" or "192.168.1.100:5029" or "100.64.0.1:3923"
+// Read netplay.txt config file from game directory
+// First line = host IP, optional :port suffix
+// e.g. "192.168.1.100" or "192.168.1.100:5029" or "100.71.119.98:5029"
 static void loadConfigFile() {
-    HANDLE h = CreateFileA("netplay.txt", GENERIC_READ, FILE_SHARE_READ, NULL,
+    // Get game directory from module handle
+    char path[MAX_PATH];
+    DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH);
+    if (len == 0) return;
+    // Strip filename, keep directory
+    for (DWORD i = len; i > 0; i--) {
+        if (path[i] == '\\') { path[i+1] = '\0'; break; }
+    }
+    // Append "netplay.txt"
+    char* p = path;
+    while (*p) p++;
+    const char* fname = "netplay.txt";
+    while (*fname) *p++ = *fname++;
+    *p = '\0';
+
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, 0, NULL);
     if (h == INVALID_HANDLE_VALUE) return;
     char buf[256];
@@ -172,11 +188,18 @@ static void loadConfigFile() {
     if (bytesRead == 0) return;
     buf[bytesRead] = '\0';
 
-    // Parse first line
+    // Skip BOM if present (UTF-8 BOM = 0xEF 0xBB 0xBF)
     char* line = buf;
-    char* newline = buf;
-    while (*newline && *newline != '\n' && *newline != '\r') newline++;
-    *newline = '\0';
+    if ((unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB && (unsigned char)line[2] == 0xBF)
+        line += 3;
+
+    // Find end of first line
+    char* end = line;
+    while (*end && *end != '\n' && *end != '\r') end++;
+    *end = '\0';
+
+    // Skip leading whitespace
+    while (*line == ' ' || *line == '\t') line++;
 
     // Check for :port suffix
     char* colon = line;
@@ -184,28 +207,29 @@ static void loadConfigFile() {
     if (*colon == ':') {
         *colon = '\0';
         int port = 0;
-        char* p = colon + 1;
-        while (*p >= '0' && *p <= '9') {
-            port = port * 10 + (*p - '0');
-            p++;
+        char* cp = colon + 1;
+        while (*cp >= '0' && *cp <= '9') {
+            port = port * 10 + (*cp - '0');
+            cp++;
         }
         if (port >= 1024 && port <= 65535) {
             g_port = port;
         }
     }
 
-    // Parse IP octets
+    // Parse IP octets: "100.71.119.98"
     int octets[4] = {0, 0, 0, 1};
     int idx = 0;
-    char* p = line;
-    while (*p && idx < 4) {
+    char* ip = line;
+    while (*ip && idx < 4) {
         int val = 0;
-        while (*p >= '0' && *p <= '9') {
-            val = val * 10 + (*p - '0');
-            p++;
+        while (*ip >= '0' && *ip <= '9') {
+            val = val * 10 + (*ip - '0');
+            ip++;
         }
+        if (val > 255) val = 255; // clamp
         octets[idx++] = val;
-        if (*p == '.') p++;
+        if (*ip == '.') ip++;
     }
     if (idx == 4) {
         g_ip_octet[0] = octets[0];
@@ -310,51 +334,50 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             lastSentIP[sizeof(lastSentIP)-1] = '\0';
         }
 
-        // HOST: stream P1+P2 ball state — disabled, crashes during race loading
-        // if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
-        //     DWORD p1 = getP1Ball();
-        //     DWORD p2 = getP2Ball();
-        //     if (p1) {
-        //         BallStateMsg msg;
-        //         memset(&msg, 0, sizeof(msg));
-        //         msg.frame = g_frameCount;
-        //         msg.p1_pos[0] = readF(p1, BALL_POS_X);
-        //         msg.p1_pos[1] = readF(p1, BALL_POS_Y);
-        //         msg.p1_pos[2] = readF(p1, BALL_POS_Z);
-        //         readVel(p1, &msg.p1_vel[0], &msg.p1_vel[1], &msg.p1_vel[2]);
-        //         msg.p1_facing[0] = readF(p1, BALL_FACING_X);
-        //         msg.p1_facing[1] = readF(p1, BALL_FACING_Z);
-        //         msg.p1_rot = readF(p1, BALL_ROT);
-        //         msg.p1_radius = readF(p1, BALL_RADIUS);
-        //         msg.p1_gravity = readF(p1, BALL_GRAVITY);
-        //         if (p2) {
-        //             msg.p2_pos[0] = readF(p2, BALL_POS_X);
-        //             msg.p2_pos[1] = readF(p2, BALL_POS_Y);
-        //             msg.p2_pos[2] = readF(p2, BALL_POS_Z);
-        //             readVel(p2, &msg.p2_vel[0], &msg.p2_vel[1], &msg.p2_vel[2]);
-        //             msg.p2_facing[0] = readF(p2, BALL_FACING_X);
-        //             msg.p2_facing[1] = readF(p2, BALL_FACING_Z);
-        //             msg.p2_rot = readF(p2, BALL_ROT);
-        //             msg.p2_radius = readF(p2, BALL_RADIUS);
-        //             msg.p2_gravity = readF(p2, BALL_GRAVITY);
-        //         }
-        //         sendPipeMsg(MSG_BALL_STATE, &msg, sizeof(msg));
-        //     }
-        // }
-        // End disabled HOST ball streaming
+        // HOST: stream P1+P2 ball state using direct memory reads
+        if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
+            DWORD p1 = getP1Ball();
+            DWORD p2 = getP2Ball();
+            if (p1) {
+                BallStateMsg msg;
+                memset(&msg, 0, sizeof(msg));
+                msg.frame = g_frameCount;
+                msg.p1_pos[0] = readF(p1, BALL_POS_X);
+                msg.p1_pos[1] = readF(p1, BALL_POS_Y);
+                msg.p1_pos[2] = readF(p1, BALL_POS_Z);
+                readVel(p1, &msg.p1_vel[0], &msg.p1_vel[1], &msg.p1_vel[2]);
+                msg.p1_facing[0] = readF(p1, BALL_FACING_X);
+                msg.p1_facing[1] = readF(p1, BALL_FACING_Z);
+                msg.p1_rot = readF(p1, BALL_ROT);
+                msg.p1_radius = readF(p1, BALL_RADIUS);
+                msg.p1_gravity = readF(p1, BALL_GRAVITY);
+                if (p2) {
+                    msg.p2_pos[0] = readF(p2, BALL_POS_X);
+                    msg.p2_pos[1] = readF(p2, BALL_POS_Y);
+                    msg.p2_pos[2] = readF(p2, BALL_POS_Z);
+                    readVel(p2, &msg.p2_vel[0], &msg.p2_vel[1], &msg.p2_vel[2]);
+                    msg.p2_facing[0] = readF(p2, BALL_FACING_X);
+                    msg.p2_facing[1] = readF(p2, BALL_FACING_Z);
+                    msg.p2_rot = readF(p2, BALL_ROT);
+                    msg.p2_radius = readF(p2, BALL_RADIUS);
+                    msg.p2_gravity = readF(p2, BALL_GRAVITY);
+                }
+                sendPipeMsg(MSG_BALL_STATE, &msg, sizeof(msg));
+            }
+        }
 
-        // GUEST: send P1 input — disabled, crashes during race loading
-        // if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
-        //     DWORD p1 = getP1Ball();
-        //     if (p1) {
-        //         InputStateMsg msg;
-        //         msg.frame = g_frameCount;
-        //         msg.force_x = readF(p1, BALL_FORCE_X);
-        //         msg.force_y = readF(p1, BALL_FORCE_Y);
-        //         msg.force_z = readF(p1, BALL_FORCE_Z);
-        //         sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
-        //     }
-        // }
+        // GUEST: send P1 input
+        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
+            DWORD p1 = getP1Ball();
+            if (p1) {
+                InputStateMsg msg;
+                msg.frame = g_frameCount;
+                msg.force_x = readF(p1, BALL_FORCE_X);
+                msg.force_y = readF(p1, BALL_FORCE_Y);
+                msg.force_z = readF(p1, BALL_FORCE_Z);
+                sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
+            }
+        }
 
         // FPS heartbeat
         if (g_frameCount - g_lastHeartbeat >= HEARTBEAT_INTERVAL) {
@@ -571,10 +594,14 @@ static void __thiscall game_update(void*) {
 }
 
 static void __thiscall text_render(void* thisptr) {
-    // Network state application disabled — crashes during race loading
-    // because board/ball pointers are reallocated during loading screen.
-    // Need proper "in-race" detection before re-enabling.
-    // Relay connection + UI toggles + config still work fine.
+    if (!g_gameReady) return;
+
+    if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) {
+        applyHostInput();
+    }
+    if (g_role == ROLE_GUEST && g_connState == CONN_CONNECTED) {
+        applyGuestBallState();
+    }
 }
 
 static void __thiscall event_collide(void*, Ball*, char*) {}
