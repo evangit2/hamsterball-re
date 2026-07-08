@@ -1,5 +1,5 @@
 /*
- * E:WARP (Level Warp) Mod v6d — Code Review Cleanup
+ * E:WARP (Level Warp) Mod v6e — NULL Ball Guard
  *
  * v6d fixes (found in code review):
  *   - Removed dead Graphics_PresentOrEnd hook — was patching 7 bytes of game
@@ -12,6 +12,11 @@
  *     (only used by deleted functions)
  *   - Fixed uninitialized 'board' variable — was UB if profile was null
  *   - Fixed misleading log messages referencing v6c features that don't exist
+ *
+ * v6e fix:
+ *   - Added NULL check for board/ball in WarpCollisionHandler — entity-entity
+ *     collisions pass a non-ball first arg, would crash on BALL_DEATH_PENDING
+ *     dereference without this guard.
  *
  * v6 fixes (found in prior code review):
  *   - CRITICAL: Race index off-by-one — findRaceIndex returns 1-based but
@@ -693,6 +698,8 @@ static void WarpCollisionHandler(void) {
     g_hookFireCount++;
 
     if (g_phase != PHASE_IDLE) return;  /* Already warping */
+
+    if (!board || !ball) return;  /* Entity-entity collision, no ball — skip */
 
     if (collObj && collObj[1]) {
         const char *eventName = *(const char **)((char *)collObj[1] + COLL_OBJ_NAME_OFFSET);
