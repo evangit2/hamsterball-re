@@ -14,15 +14,9 @@ class WidescreenUIFix : public HamsterballAPI {
 private:
 	IModAPI* api = nullptr;
 	static inline bool g_enabled = true;
-	static inline bool g_inSceneRender = false;
-	static inline bool g_seen3DFull = false;
-	static inline bool g_hadSplit = false;
 
 	typedef void(__fastcall *SetViewport_t)(void*, void*, int, int);
 	static inline SetViewport_t orig_SetViewport = nullptr;
-
-	typedef void(__fastcall *SceneRender_t)(void*, void*, void*);
-	static inline SceneRender_t orig_SceneRender = nullptr;
 
 	static void overrideTo43(void* gfx) {
 		DWORD gfxAddr = (DWORD)gfx;
@@ -38,8 +32,13 @@ private:
 		int bbHeight = *(int*)(presentParams + 0x160);
 		if (bbWidth <= 0 || bbHeight <= 0) return;
 
-		float aspect = 4.0f / 3.0f;
-		int vpWidth = (int)((float)bbHeight * aspect);
+		// Already 4:3 or taller — no pillarbox needed
+		float currentAspect = (float)bbWidth / (float)bbHeight;
+		if (currentAspect <= 1.34f) return;
+
+		// Compute centered 4:3 viewport
+		float targetAspect = 4.0f / 3.0f;
+		int vpWidth = (int)((float)bbHeight * targetAspect);
 		if (vpWidth > bbWidth) vpWidth = bbWidth;
 		int vpX = (bbWidth - vpWidth) / 2;
 
@@ -47,55 +46,46 @@ private:
 		float farPlane = *(float*)(gfxAddr + 0x794);
 		if (farPlane <= nearPlane) return;
 
-		float halfFov = 0.7853982f * 0.5f;
+		// Build 4:3 perspective matrix (same formula as game's Matrix_BuildPerspectiveFOV)
+		float halfFov = 0.7853982f * 0.5f;  // PI/4 * 0.5
 		float s = sinf(halfFov);
 		if (s == 0.0f) return;
 		float cot = cosf(halfFov) / s;
 
 		float matrix[16];
 		memset(matrix, 0, sizeof(matrix));
-		matrix[0] = cot / aspect;
+		matrix[0] = cot / targetAspect;
 		matrix[5] = cot;
 		matrix[10] = farPlane / (farPlane - nearPlane);
 		matrix[11] = 1.0f;
 		matrix[14] = -(matrix[10] * nearPlane);
 
+		// Override D3D projection matrix to 4:3
 		typedef long(__stdcall *SetTransform_t)(void*, DWORD, float*);
 		((SetTransform_t)(vtable[37]))((void*)device, 3, matrix);
 
+		// Override D3D viewport to centered 4:3 rectangle (pillarbox)
 		D3DVIEWPORT8 vp = { (DWORD)vpX, 0, (DWORD)vpWidth, (DWORD)bbHeight, 0.0f, 1.0f };
 		typedef long(__stdcall *SetViewportD3D_t)(void*, D3DVIEWPORT8*);
 		((SetViewportD3D_t)(vtable[40]))((void*)device, &vp);
+
+		// Also update the gfx struct's stored dimensions so the game's
+		// own rendering code uses the pillarboxed dimensions
+		*(int*)(gfxAddr + 0x798) = vpX;           // viewport X offset
+		*(float*)(gfxAddr + 0x7a0) = (float)vpWidth;  // render width
+		*(float*)(gfxAddr + 0x7a4) = (float)bbHeight; // render height (unchanged)
 	}
 
 	static void __fastcall hook_SetViewport(void* gfx, void* edx, int param1, int param2) {
+		// Always call original first — it sets up internal state
 		orig_SetViewport(gfx, edx, param1, param2);
-		if (!g_enabled || !g_inSceneRender) return;
 
-		if (param1 != 0 || param2 != 0) {
-			g_hadSplit = true;
-			return;
-		}
+		if (!g_enabled) return;
 
-		bool isUI;
-		if (g_hadSplit) {
-			isUI = true;
-		} else if (!g_seen3DFull) {
-			g_seen3DFull = true;
-			isUI = false;
-		} else {
-			isUI = true;
-		}
+		// Only override on full-screen (0,0) calls — leave split-screen alone
+		if (param1 != 0 || param2 != 0) return;
 
-		if (isUI) overrideTo43(gfx);
-	}
-
-	static void __fastcall hook_SceneRender(void* this_ptr, void* edx, void* param1) {
-		g_inSceneRender = true;
-		g_seen3DFull = false;
-		g_hadSplit = false;
-		orig_SceneRender(this_ptr, edx, param1);
-		g_inSceneRender = false;
+		overrideTo43(gfx);
 	}
 
 public:
@@ -111,7 +101,6 @@ public:
 		btn.defaultState = true;
 		api->CreateToggleButton(btn, this);
 		api->RegisterCustomHook(0x454f10, (void*)hook_SetViewport, (void**)&orig_SetViewport);
-		api->RegisterCustomHook(0x41a2e0, (void*)hook_SceneRender, (void**)&orig_SceneRender);
 	}
 
 	void onButtonToggle(const char* id, bool state) override {
