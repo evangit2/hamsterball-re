@@ -468,63 +468,9 @@ static void __thiscall game_update(void*) {
 }
 
 static void __thiscall text_render(void* thisptr) {
+    // Disabled for now — DrawCustomText vtable index unverified, crashes during loading
+    // Apply network state from here (runs every frame)
     if (!g_api || !g_gameReady) return;
-
-    HBPlusAPI hb = HBAPI(g_api);
-    void* app = hb.GetApp();
-    if (!app || IsBadReadPtr(app, 0x400)) return;
-    // App+0x318 = fonts struct, first font pointer at +0x318
-    void* font = *(void**)((char*)app + 0x318);
-    if (!font || IsBadReadPtr(font, 4)) return;
-
-    const char* roleStr = "OFF";
-    if (g_role == ROLE_HOST) roleStr = "HOST";
-    else if (g_role == ROLE_GUEST) roleStr = "GUEST";
-
-    const char* connStr = "Offline";
-    switch (g_connState) {
-        case CONN_OFFLINE: connStr = "Offline"; break;
-        case CONN_SEARCHING: connStr = "Searching..."; break;
-        case CONN_CONNECTING: connStr = "Connecting..."; break;
-        case CONN_CONNECTED: connStr = "Connected!"; break;
-        case CONN_ERROR: connStr = "ERROR (relay not running?)"; break;
-    }
-
-    char line1[128], line2[128], line3[128];
-    snprintf(line1, sizeof(line1), "NETPLAY [%s] %s  Port:%d", roleStr, connStr, g_port);
-    snprintf(line2, sizeof(line2), "Local FPS:%d  Remote FPS:%d  Frame:%d", (int)g_localFps, (int)g_remoteFps, g_frameCount);
-
-    if (g_role == ROLE_GUEST) {
-        updateHostIPString();
-        snprintf(line3, sizeof(line3), "Host: %s:%d", g_hostIP, g_port);
-    } else if (g_remoteInfo[0]) {
-        snprintf(line3, sizeof(line3), "Remote: %s", g_remoteInfo);
-    } else {
-        line3[0] = '\0';
-    }
-
-    // Draw text using DrawCustomText via manual vtable
-    // DrawCustomText is at vtable[40] in VS layout
-    typedef void (__attribute__((thiscall)) *DrawTextFn)(void*, const char*, CustomText*);
-    DrawTextFn drawText = (DrawTextFn)hbplus_vtable(g_api, 40);
-
-    CustomText params;
-    memset(&params, 0, sizeof(params));
-    params.font = font;
-    params.x = 10; params.y = 10; params.enable_shadow = true;
-
-    params.text_color = Color(0.0f, 1.0f, 0.0f, 1.0f);
-    if (drawText) drawText(g_api, line1, &params);
-
-    params.y = 28; params.text_color = Color(1.0f, 1.0f, 0.0f, 1.0f);
-    if (drawText) drawText(g_api, line2, &params);
-
-    if (line3[0]) {
-        params.y = 46; params.text_color = Color(0.5f, 0.8f, 1.0f, 1.0f);
-        if (drawText) drawText(g_api, line3, &params);
-    }
-
-    // Apply network state
     if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) applyHostInput();
 }
 
