@@ -536,6 +536,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         load_real_bass();
         init_game_dir();
 
+        /* Merge CE entity meshes from Levels/CustomEntities/ into Levels/*.MESHWORLD
+         * files before the game loads them. Scans S1 for names containing "CE". */
+        extern void merge_all_levels(const char* game_dir);
+        merge_all_levels(g_game_dir);
+
         InitializeCriticalSection(&g_cs);
         g_cs_initialized = 1;
 
