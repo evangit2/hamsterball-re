@@ -38,22 +38,23 @@ typedef struct {
     DWORD table_addr;    /* address in .data where the pointer is stored */
 } LevelEntry;
 
+/* Corrected mapping (race order → level file → setup function) */
 static const LevelEntry g_levels[15] = {
-    { 1,  "GetLevelPath",              0x0040D1C0, 0x004D04F0 },
-    { 2,  "Scene_LoadLevel2",          0x0040D280, 0x004D05E8 },
-    { 3,  "Scene_LoadLevel3",          0x0040D390, 0x004D08D8 },
-    { 4,  "Scene_LoadLevel4",          0x0040D6D0, 0x004D0A50 },
-    { 5,  "Scene_SetupLevel5",         0x0040E190, 0x004D0B48 },
-    { 6,  "Scene_SetupLevel6",          0x0040EA90, 0x004D0C08 },
-    { 7,  "Scene_SetupLevel7",          0x0040F360, 0x004D0D80 },
-    { 8,  "CreateBumper",              0x0040FA20, 0x004D0EC0 },
-    { 9,  "Scene_SetupLevel9",          0x00410830, 0x004D1010 },
-    { 10, "Scene_SetupLevelCascade",    0x004110D0, 0x004D10E0 },
-    { 11, "Scene_SetupLevelUp",         0x00411540, 0x004D11E8 },
-    { 12, "Scene_SetupLevel10",         0x00411F60, 0x004D12F8 },
-    { 13, "Scene_SetupLevelDark",       0x00416270, 0x004D1E38 },
-    { 14, "FUN_00417640",               0x00417640, 0x004D1FD8 },
-    { 15, "FUN_00417F20",               0x00417F20, 0x004D2208 },
+    { 1,  "GetLevelPath",              0x0040D1C0, 0x004D04F0 }, /* Warm-Up    -> level1         */
+    { 2,  "Scene_SetupLevelCascade",   0x004110D0, 0x004D10E0 }, /* Beginner    -> levelcascade   */
+    { 3,  "Scene_LoadLevel2",          0x0040D280, 0x004D05E8 }, /* Intermediate-> level2         */
+    { 4,  "Scene_LoadLevel3",          0x0040D390, 0x004D08D8 }, /* Dizzy       -> level3         */
+    { 5,  "Scene_LoadLevel4",          0x0040D6D0, 0x004D0A50 }, /* Tower       -> level4         */
+    { 6,  "Scene_SetupLevelUp",         0x00411540, 0x004D11E8 }, /* Up          -> levelup        */
+    { 7,  "Scene_SetupLevelDark",       0x00416270, 0x004D1E38 }, /* Neon        -> leveldark      */
+    { 8,  "Scene_SetupLevel5",          0x0040E190, 0x004D0B48 }, /* Expert      -> level5         */
+    { 9,  "Scene_SetupLevel6",          0x0040EA90, 0x004D0C08 }, /* Odd         -> level6         */
+    { 10, "CreateBumper",              0x0040FA20, 0x004D0EC0 }, /* Toob        -> level8         */
+    { 11, "Scene_SetupLevel7",          0x0040F360, 0x004D0D80 }, /* Wobbly      -> level7         */
+    { 12, "FUN_00417640",               0x00417640, 0x004D1FD8 }, /* Glass       -> levelglass     */
+    { 13, "Scene_SetupLevel9",          0x00410830, 0x004D1010 }, /* Sky         -> level9         */
+    { 14, "Scene_SetupLevel10",         0x00411F60, 0x004D12F8 }, /* Master      -> level10        */
+    { 15, "FUN_00417F20",               0x00417F20, 0x004D2208 }, /* Impossible  -> levelimpossible*/
 };
 
 /* Function name lookup — maps any setup function name to its address */
