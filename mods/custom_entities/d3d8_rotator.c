@@ -145,12 +145,32 @@ static HRESULT WINAPI Hooked_DrawPrimitive(
     return g_orig_DrawPrimitive(This, PrimitiveType, StartVertex, PrimitiveCount);
 }
 
-/* ===== Hooked SetTransform — pass through (no longer rotates everything) ===== */
+/* ===== Hooked SetTransform — rotate ONLY when world matrix has non-zero translation ===== */
+/* The level geometry uses identity world matrix (translation=0,0,0). */
+/* The entity geometry uses a translated world matrix (translation!=0,0,0). */
+/* By rotating only non-identity translations, we skip the level and rotate */
+/* only the entity mesh. */
 static HRESULT WINAPI Hooked_SetTransform(IDirect3DDevice8* This,
                                            D3DTRANSFORMSTATETYPE State,
                                            const D3DMATRIX* pMatrix) {
-    /* Just forward to the real SetTransform.
-     * Rotation is now applied in Hooked_DrawIndexedPrimitive instead. */
+    if (g_state && g_state->active && State == D3DTS_WORLD && pMatrix && g_orig_SetTransform) {
+        float tx = pMatrix->_41;
+        float ty = pMatrix->_42;
+        float tz = pMatrix->_43;
+
+        /* Skip identity world matrices (level geometry) — only rotate translated ones */
+        if (tx != 0.0f || ty != 0.0f || tz != 0.0f) {
+            D3DMATRIX rotX, transToCenter, transBack, tmp1, tmp2;
+            build_translate(&transToCenter, -g_state->center_x, -g_state->center_y, -g_state->center_z);
+            build_translate(&transBack, g_state->center_x, g_state->center_y, g_state->center_z);
+            build_rotX(&rotX, g_state->angle);
+            mat_mul(&tmp1, &transToCenter, pMatrix);
+            mat_mul(&tmp2, &rotX, &tmp1);
+            mat_mul(&tmp2, &transBack, &tmp2);
+            return g_orig_SetTransform(This, State, &tmp2);
+        }
+    }
+
     return g_orig_SetTransform(This, State, pMatrix);
 }
 
