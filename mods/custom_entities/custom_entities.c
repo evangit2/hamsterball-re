@@ -798,8 +798,109 @@ static void scan_for_custom_entities(DWORD board) {
         fprintf(logf, "Now scanning S1 ref points...\n");
     }
 
+    /* Vertex-count fallback: if we have CE: entities from S1 scan that
+     * didn't find a matching MeshBuffer by name, try matching by vertex count.
+     *
+     * After the meshworld merger injects entity geometry into the level,
+     * the merged MeshBuffers have BLANK names (the merger doesn't preserve
+     * the CE: prefix in the octree leaf names). So name-based matching fails.
+     *
+     * Strategy: for each CE: entity that has a known vertex count (stored in
+     * a config file or hardcoded), scan all MeshBuffers for one with a
+     * matching vertex count. The vertex count is read from the MeshBuffer's
+     * associated vertex data (stored at MeshBuffer+0x08 after the render
+     * path resolves it, or from the MeshWorld vertex buffer).
+     *
+     * For now, we use a simpler approach: scan MeshBuffers for ones whose
+     * EntityTransform position matches the S1 ref point position. */
+
     /* Also scan S1 ref points (CE: entities may only appear in S1, not MeshBuffers) */
     scan_s1_ref_points(board, logf);
+
+    /* Post-S1 fallback: for CE: entities that got a disconnected LocalAlloc
+     * transform (no matching MeshBuffer found), try to find the right
+     * EntityTransform by matching position. The merged geometry's
+     * EntityTransform should have the S1 ref point's position written into
+     * it by the file parser. */
+    {
+        int ei;
+        for (ei = 0; ei < g_entity_count; ei++) {
+            CustomEntity* ent = &g_entities[ei];
+            if (!ent->initialized || !ent->transform) continue;
+            /* Skip entities that already have a game transform (from MeshBuffer match) */
+            if ((DWORD)ent->transform <= 0x10000000) continue;
+
+            /* This entity has a LocalAlloc transform (disconnected).
+             * Try to find the real game EntityTransform by matching position. */
+            EntityTransform* local_t = ent->transform;
+            float target_x = local_t->posX;
+            float target_y = local_t->posY;
+            float target_z = local_t->posZ;
+
+            if (logf) fprintf(logf, "  [fallback] Entity '%s' has disconnected transform, "
+                    "searching by pos=(%.1f,%.1f,%.1f)\n",
+                    ent->entity_name, target_x, target_y, target_z);
+
+            /* Scan all MeshBuffers to find one whose EntityTransform position matches */
+            DWORD scene2 = get_scene(board);
+            if (scene2) {
+                DWORD mw2 = get_meshworld(scene2);
+                if (mw2 && !IsBadReadPtr((void*)(mw2 + MESHWORLD_RENDERCTX_PTR), 4)) {
+                    EntityTransform* transforms2 = *(EntityTransform**)(mw2 + MESHWORLD_RENDERCTX_PTR);
+                    if (transforms2 && !IsBadReadPtr((void*)(mw2 + MESHWORLD_MESHBUFFER_LIST), 4)) {
+                        DWORD mb_list2 = *(DWORD*)(mw2 + MESHWORLD_MESHBUFFER_LIST);
+                        if (mb_list2 && mb_list2 >= 0x10000 &&
+                            !IsBadReadPtr((void*)(mb_list2 + ATHENALIST_COUNT), 4)) {
+                            int mb_count2 = *(int*)(mb_list2 + ATHENALIST_COUNT);
+                            if (mb_count2 >= 1 && mb_count2 <= 10000 &&
+                                !IsBadReadPtr((void*)(mb_list2 + ATHENALIST_DATA), 4)) {
+                                DWORD* mb_array2 = *(DWORD**)(mb_list2 + ATHENALIST_DATA);
+                                if (mb_array2 && !IsBadReadPtr(mb_array2, mb_count2 * 4)) {
+                                    int mb_i;
+                                    for (mb_i = 0; mb_i < mb_count2; mb_i++) {
+                                        DWORD mb2 = mb_array2[mb_i];
+                                        if (!mb2 || mb2 < 0x10000) continue;
+                                        if (IsBadReadPtr((void*)mb2, 0x900)) continue;
+                                        /* Read ctx_idx from MeshBuffer+0x04 */
+                                        DWORD ctx_idx2 = *(DWORD*)(mb2 + MESHBUFFER_CTX_INDEX);
+                                        if (ctx_idx2 > 10000) continue;
+                                        EntityTransform* t2 = &transforms2[ctx_idx2];
+                                        if (IsBadReadPtr(t2, sizeof(EntityTransform))) continue;
+
+                                        /* Check if position matches (within tolerance) */
+                                        float dx = t2->posX - target_x;
+                                        float dy = t2->posY - target_y;
+                                        float dz = t2->posZ - target_z;
+                                        if (dx < 0) dx = -dx;
+                                        if (dy < 0) dy = -dy;
+                                        if (dz < 0) dz = -dz;
+                                        if (dx < 5.0f && dy < 5.0f && dz < 5.0f) {
+                                            /* Found matching transform! */
+                                            if (logf) fprintf(logf, "    -> FOUND game EntityTransform by position match! "
+                                                    "mb[%d] ctx_idx=%d transform=0x%08X pos=(%.1f,%.1f,%.1f)\n",
+                                                    mb_i, ctx_idx2, (unsigned)t2,
+                                                    t2->posX, t2->posY, t2->posZ);
+                                            /* Free the disconnected local transform */
+                                            LocalFree(ent->transform);
+                                            /* Use the game's transform */
+                                            ent->transform = t2;
+                                            /* Write S1 position/rotation into it */
+                                            ent->transform->posX = target_x;
+                                            ent->transform->posY = target_y;
+                                            ent->transform->posZ = target_z;
+                                            ent->transform->rotScale = 1.0f;
+                                            ent->transform->posScale = 1.0f;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (logf) {
         fprintf(logf, "Scan complete: %d total custom entities loaded\n\n", g_entity_count);
@@ -808,40 +909,13 @@ static void scan_for_custom_entities(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Rotation state — written to shared memory for d3d8.dll proxy
- *
- * bass.dll writes the rotation angle + center to a memory-mapped file.
- * d3d8.dll reads it in Hooked_SetTransform and applies the rotation
- * when the world matrix matches the entity position.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-#define SHM_NAME "Hamsterball_Rotator"
-
-typedef struct {
-    int   active;
-    float angle;
-    float center_x;
-    float center_y;
-    float center_z;
-    int   frame_count;
-} RotatorState;
-
-static RotatorState* g_rot_state = NULL;
-static HANDLE g_rot_shm = NULL;
-
-static void init_rotator_shm(void) {
-    g_rot_shm = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                                    0, sizeof(RotatorState), SHM_NAME);
-    if (!g_rot_shm) return;
-    g_rot_state = (RotatorState*)MapViewOfFile(g_rot_shm, FILE_MAP_ALL_ACCESS, 0, 0,
-                                                sizeof(RotatorState));
-    if (g_rot_state && GetLastError() != ERROR_ALREADY_EXISTS) {
-        ZeroMemory(g_rot_state, sizeof(RotatorState));
-    }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
  * Main mod thread — polls for level changes, scans entities, calls updates
+ *
+ * v2: No d3d8.dll proxy needed. The EntityTransform approach works when
+ * the correct ctx_idx is found (via position-matching fallback).
+ * The game's render path (D3DXSkinMesh_CopyStripData → SetTransform at
+ * 0x00453b50) reads EntityTransform.rotX/rotY/rotZ and applies them as
+ * D3D world matrix rotation.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static DWORD WINAPI mod_thread(LPVOID param) {
@@ -871,7 +945,6 @@ static DWORD WINAPI mod_thread(LPVOID param) {
             /* Level changed — shutdown old entities */
             if (g_last_board != 0) {
                 shutdown_all_entities();
-                if (g_rot_state) g_rot_state->active = 0;
             }
             g_last_board = board;
 
@@ -881,26 +954,6 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 board = get_board(); /* Re-read in case it changed */
                 if (board) {
                     scan_for_custom_entities(board);
-
-                    /* If we found entities, get rotation center from S1 ref point */
-                    if (g_entity_count > 0 && g_rot_state) {
-                        /* The entity transform contains the S1 ref point position */
-                        /* which is the world position where the entity was placed */
-                        int i;
-                        for (i = 0; i < g_entity_count; i++) {
-                            CustomEntity* ent = &g_entities[i];
-                            if (ent->initialized && ent->transform) {
-                                EntityTransform* t = (EntityTransform*)ent->transform;
-                                /* S1 ref point position is stored in the transform */
-                                g_rot_state->center_x = t->posX;
-                                g_rot_state->center_y = t->posY;
-                                g_rot_state->center_z = t->posZ;
-                                g_rot_state->angle = 0.0f;
-                                g_rot_state->active = 1;
-                                break;
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -919,11 +972,7 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         }
 
         /* Update rotation angle in shared memory for d3d8.dll proxy */
-        if (g_rot_state && g_rot_state->active) {
-            g_rot_state->angle += 0.02f;
-            if (g_rot_state->angle > 6.283185f)
-                g_rot_state->angle -= 6.283185f;
-        }
+        /* (removed — no longer using d3d8.dll proxy) */
 
         Sleep(16); /* ~60Hz update rate */
     }
@@ -943,7 +992,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         load_real_bass();
         init_game_dir();
-        init_rotator_shm();
 
         /* Merge CustomEntities/*.MESHWORLD geometry into Levels/*.MESHWORLD
          * files before the game loads them. This happens at DLL load time,
