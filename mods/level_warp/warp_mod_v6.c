@@ -53,11 +53,12 @@
  *
  * Phase timeline (real-time, not frame-based):
  *   JIGGLE: 2.0 sec — Ball frozen + jiggling + sound + music fade start
- *   FLASH:  0.5 sec — Ball invisible + quick white flash
- *   FADE:   2.0 sec — Screen fades to solid white
+ *   FLASH:  0.25 sec — Ball invisible + quick white flash
+ *   HOLD:   1.0 sec — Pause, screen clear, ball stays invisible
+ *   FADE:   6.0 sec — Screen fades to solid white
  *   LOAD:   instant — Load target level while screen stays white
  *   REVEAL: 1.0 sec — Fade from white to reveal new level
- *   Total:  ~5.5 sec
+ *   Total:  ~10.25 sec
  *
  * Music fade: 3.0 sec starting at JIGGLE start
  *
@@ -331,6 +332,7 @@ typedef enum {
     PHASE_IDLE = 0,
     PHASE_JIGGLE,
     PHASE_FLASH,
+    PHASE_HOLD,
     PHASE_FADE,
     PHASE_LOAD,
     PHASE_REVEAL
@@ -346,7 +348,8 @@ static volatile float g_musicOrigVolume = 1.0f;
 /* Phase durations in milliseconds (framerate-independent!) */
 #define JIGGLE_DURATION_MS    2000   /* 2.0 sec */
 #define FLASH_DURATION_MS      250   /* 0.25 sec */
-#define FADE_DURATION_MS      2000   /* 2.0 sec */
+#define HOLD_DURATION_MS      1000   /* 1.0 sec — pause between flash and fade */
+#define FADE_DURATION_MS      6000   /* 6.0 sec (3x original) */
 #define REVEAL_DURATION_MS    1000   /* 1.0 sec */
 #define MUSIC_FADE_MS         3000   /* 3.0 sec */
 
@@ -585,6 +588,30 @@ static void updateWarpStateMachine(void) {
         updateMusicFade();
 
         if (elapsed >= FLASH_DURATION_MS) {
+            g_whiteAlpha = 0.0f;
+            g_phase = PHASE_HOLD;
+            g_phaseStartTime = now;
+            diag_log("[warp] -> PHASE_HOLD");
+        }
+        break;
+    }
+
+    case PHASE_HOLD: {
+        elapsed = now - g_phaseStartTime;
+
+        /* Do nothing — just wait. Screen is clear, ball stays invisible. */
+        g_whiteAlpha = 0.0f;
+
+        if (ball) {
+            int respawning = *((unsigned char *)((char *)ball + 0x2F9));
+            if (!respawning) {
+                *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
+            }
+        }
+
+        updateMusicFade();
+
+        if (elapsed >= HOLD_DURATION_MS) {
             g_phase = PHASE_FADE;
             g_phaseStartTime = now;
             diag_log("[warp] -> PHASE_FADE");
