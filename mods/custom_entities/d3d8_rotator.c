@@ -239,7 +239,7 @@ IDirect3D8* WINAPI Direct3DCreate8(UINT SDKVersion) {
     void** d3d_vt = *(void***)d3d;
     DWORD old_protect;
     VirtualProtect(d3d_vt, 20 * sizeof(void*), PAGE_EXECUTE_READWRITE, &old_protect);
-    d3d_vt[1] = (void*)Hooked_CreateDevice; /* CreateDevice is vtable[1] */
+    d3d_vt[15] = (void*)Hooked_CreateDevice; /* CreateDevice is vtable[15] */
     VirtualProtect(d3d_vt, 20 * sizeof(void*), old_protect, &old_protect);
 
     return d3d;
