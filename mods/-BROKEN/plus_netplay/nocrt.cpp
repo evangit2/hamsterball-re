@@ -104,3 +104,13 @@ extern "C" void __cdecl free(void* ptr) {
     nc_free(ptr);
 }
 
+
+// C++ operator new/delete — already in nocrt.h as inline
+
+// Non-inline operator new/delete for manual vtable approach
+void* __cdecl operator new(unsigned int size) {
+    return nc_malloc(size);
+}
+void __cdecl operator delete(void* ptr) {
+    nc_free(ptr);
+}

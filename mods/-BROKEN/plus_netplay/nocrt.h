@@ -32,9 +32,6 @@ int nc_snprintf(char* buf, size_t size, const char* fmt, ...);
 
 #ifdef __cplusplus
 // C++ operator new/delete using our malloc
-inline void* operator new(size_t size) { return nc_malloc(size); }
-inline void operator delete(void* ptr) { nc_free(ptr); }
-inline void operator delete(void* ptr, size_t) { nc_free(ptr); }
 #endif
 
 #endif // NOCRT_H
