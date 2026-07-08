@@ -551,15 +551,39 @@ static void updateWarpStateMachine(void) {
         }
 
         /* Per-frame: vibrate ball — replicates Up Race VAC-IN visual effect.
-         * The vacuum applies +0.25 to Y each frame, then Ball_Update's collision
-         * response pushes the ball back, creating a rapid oscillation. We simulate
-         * this by alternating Y offset every frame using GetTickCount() as a
-         * pseudo-random toggle, same way the vacuum's 0.25 increment fights the
-         * collision system. */
+         *
+         * The vibration comes from FUN_00408390 (ball vtable[4] — render update).
+         * It runs every frame EVEN WHEN PAUSED (called from Level_UpdateAndRender
+         * via vtable[0x1C]). When the ball is close to a target (distance < 220.0),
+         * it applies a sin/cos oscillation to the render position:
+         *   renderX = baseX + sin(angle) * amplitude
+         *   renderZ = baseZ + cos(angle) * amplitude
+         *   angle += 2.0 per frame
+         *
+         * Fields (ball struct, int* indexed):
+         *   ball+0xC60 = base render X (float)
+         *   ball+0xC64 = base render Y (float)
+         *   ball+0xC68 = base render Z (float)
+         *   ball+0xC6C = search radius (float)
+         *   ball+0xC70 = SPINDIST (float, known = 50.0)
+         *   ball+0xC74 = in_motion flag (int, must be nonzero)
+         *   ball+0xC78 = oscillation angle (float, incremented by 2.0/frame)
+         *   ball+0xC7C = oscillation amplitude (float)
+         *
+         * The vacuum's CollisionFace_Update sets ball+0x2D4=1 (vacuum flag) and
+         * ball+0x808=1000 (impact freeze), then writes ball+0x168 += 0.25 each
+         * frame. But the VISUAL vibration is from this sin/cos render offset,
+         * not from the position writes. We replicate by setting the amplitude
+         * and angle directly. */
         if (ball) {
-            float origY = g_ballOrigY;
-            float offset = 0.25f * ((GetTickCount() & 1) ? 1.0f : -1.0f);
-            *(float *)((char *)ball + BALL_POS_Y) = origY + offset;
+            /* Set in_motion flag so the oscillation code runs */
+            *(int *)((char *)ball + 0xC74) = 1;
+            /* Set amplitude — controls how visible the vibration is */
+            *(float *)((char *)ball + 0xC7C) = 0.25f;
+            /* Advance the oscillation angle (game normally adds 2.0/frame) */
+            *(float *)((char *)ball + 0xC78) += 2.0f;
+            /* Set search distance large enough that the oscillation always applies */
+            *(float *)((char *)ball + 0xC70) = 10000.0f;
         }
 
         updateMusicFade();
