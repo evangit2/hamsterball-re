@@ -550,7 +550,10 @@ static void updateWarpStateMachine(void) {
             diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
         }
 
-        /* Per-frame: ball movement disabled — user will specify rumble method later */
+        /* Per-frame: jiggle ball upward 0.25 units (same as Up Race VAC-IN) */
+        if (ball) {
+            *(float *)((char *)ball + BALL_POS_Y) += 0.25f;
+        }
 
         updateMusicFade();
 
