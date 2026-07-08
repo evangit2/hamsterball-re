@@ -200,8 +200,8 @@ static HRESULT WINAPI Hooked_CreateDevice(
             /* Make the vtable writable */
             VirtualProtect(real_vt, 97 * sizeof(void*), PAGE_EXECUTE_READWRITE, &old_protect);
 
-            /* Replace SetTransform (index 44) */
-            real_vt[44] = (void*)Hooked_SetTransform;
+            /* Replace SetTransform (vtable index 37) */
+            real_vt[37] = (void*)Hooked_SetTransform;
 
             /* Restore protection */
             VirtualProtect(real_vt, 97 * sizeof(void*), old_protect, &old_protect);
