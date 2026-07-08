@@ -68,14 +68,14 @@ Found by searching for the magic multiplier byte pattern `B8 67 66 66 66` and cr
 | 2 | `0x41BE1C` | `0x41BE47` | `FUN_0041B710` (0x41B710) | Race HUD timer | ECX |
 | 3 | `0x41C229` | `0x41C250` | `FUN_0041BFD0` (0x41BFD0) | Split-screen timer #1 | EDI |
 | 4 | `0x41C4C5` | `0x41C4EC` | `FUN_0041BFD0` (0x41BFD0) | Split-screen timer #2 | EDI |
-| 5 | `0x44CF86` | `0x44CFB7` | `FUN_0044CD10` (0x44CD10) | TT results: time remaining | ECX |
-| 6 | `0x44D18A` | `0x44D1B8` | `FUN_0044CD10` (0x44CD10) | TT results: par time | ECX |
-| 7 | `0x44E25F` | `0x44E290` | `FUN_0044DF70` (0x44DF70) | Results: race time | ECX |
-| 8 | `0x44E448` | `0x44E479` | `FUN_0044DF70` (0x44DF70) | Results: best time | ECX |
-| 9 | `0x44E63C` | `0x44E66D` | `FUN_0044DF70` (0x44DF70) | Results: weasel time | ECX |
-| 10 | `0x44EB19` | `0x44EB4A` | `FUN_0044DF70` (0x44DF70) | Results: bronze time | ECX |
-| 11 | `0x44ECFF` | `0x44ED30` | `FUN_0044DF70` (0x44DF70) | Results: silver time | ECX |
-| 12 | `0x44EEE5` | `0x44EF16` | `FUN_0044DF70` (0x44DF70) | Results: gold time | ECX |
+| 5 | `0x44CF86` | `0x44CFB7` | `FUN_0044CD10` (0x44CD10) | Tournament results: time remaining | ECX |
+| 6 | `0x44D18A` | `0x44D1B8` | `FUN_0044CD10` (0x44CD10) | Tournament results: par time | ECX |
+| 7 | `0x44E25F` | `0x44E290` | `FUN_0044DF70` (0x44DF70) | TT results: race time | ECX |
+| 8 | `0x44E448` | `0x44E479` | `FUN_0044DF70` (0x44DF70) | TT results: best time | ECX |
+| 9 | `0x44E63C` | `0x44E66D` | `FUN_0044DF70` (0x44DF70) | TT results: weasel time | ECX |
+| 10 | `0x44EB19` | `0x44EB4A` | `FUN_0044DF70` (0x44DF70) | TT results: bronze time | ECX |
+| 11 | `0x44ECFF` | `0x44ED30` | `FUN_0044DF70` (0x44DF70) | TT results: silver time | ECX |
+| 12 | `0x44EEE5` | `0x44EF16` | `FUN_0044DF70` (0x44DF70) | TT results: gold time | ECX |
 | 13 | `0x451157` | `0x451185` | `TourneyMenu_Render` | Tournament menu #1 | ECX |
 | 14 | `0x451935` | `0x451963` | `TourneyMenu_Render` | Tournament menu #2 | EBP |
 

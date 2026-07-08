@@ -14,14 +14,14 @@ The game timer counts in ticks (100 ticks = 1 second). The original display show
 | 0x41BE1C | FUN_0041B710 | Race HUD timer |
 | 0x41C229 | FUN_0041BFD0 | Split-screen timer #1 |
 | 0x41C4C5 | FUN_0041BFD0 | Split-screen timer #2 |
-| 0x44CF86 | FUN_0044CD10 | TT results: time remaining |
-| 0x44D18A | FUN_0044CD10 | TT results: par time |
-| 0x44E25F | FUN_0044DF70 | Results: race time |
-| 0x44E448 | FUN_0044DF70 | Results: best time |
-| 0x44E63C | FUN_0044DF70 | Results: weasel time |
-| 0x44EB19 | FUN_0044DF70 | Results: bronze time |
-| 0x44ECFF | FUN_0044DF70 | Results: silver time |
-| 0x44EEE5 | FUN_0044DF70 | Results: gold time |
+| 0x44CF86 | FUN_0044CD10 | Tournament results: time remaining |
+| 0x44D18A | FUN_0044CD10 | Tournament results: par time |
+| 0x44E25F | FUN_0044DF70 | TT results: race time |
+| 0x44E448 | FUN_0044DF70 | TT results: best time |
+| 0x44E63C | FUN_0044DF70 | TT results: weasel time |
+| 0x44EB19 | FUN_0044DF70 | TT results: bronze time |
+| 0x44ECFF | FUN_0044DF70 | TT results: silver time |
+| 0x44EEE5 | FUN_0044DF70 | TT results: gold time |
 | 0x451157 | TourneyMenu_Render | Tournament menu #1 |
 | 0x451935 | TourneyMenu_Render | Tournament menu #2 |
 
