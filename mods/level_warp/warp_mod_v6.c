@@ -1,5 +1,5 @@
 /*
- * E:WARP (Level Warp) Mod v6e — NULL Ball Guard
+ * E:WARP (Level Warp) Mod v6f
  *
  * v6d fixes (found in code review):
  *   - Removed dead Graphics_PresentOrEnd hook — was patching 7 bytes of game
@@ -54,10 +54,10 @@
  *   RUMBLE: 2.0 sec — Ball frozen + CPUID jitter + sound + music fade start
  *   FLASH:  0.25 sec — Ball invisible + quick white flash
  *   HOLD:   1.0 sec — Pause, screen clear, ball stays invisible
- *   FADE:   3.0 sec — Screen fades to solid white
+ *   FADE:   2.0 sec — Screen fades to solid white
  *   LOAD:   instant — Load target level while screen stays white
  *   REVEAL: 1.0 sec — Fade from white to reveal new level
- *   Total:  ~7.25 sec
+ *   Total:  ~6.25 sec
  *
  * Music fade: 3.0 sec starting at RUMBLE start
  *
@@ -242,10 +242,13 @@ static void load_real_bass(void)
 /* Function addresses */
 #define DISPATCH_COLLISION_EVENTS   0x0040C5D0
 #define APP_START_PRACTICE_RACE     0x00428C50
+#define BTT_DTOR_VTABLE_OFFSET      0x00   /* vtable[0] = dtor (verified from Ghidra) */
 
 /* App offsets */
 #define APP_PROFILE_PTR          0x220
 #define APP_MUSIC_DEVICE_PTR     0x17C
+#define APP_BTT_RECORDING        0x90C  /* BestTimeTracker* — ghost recording (TT only) */
+#define APP_BTT_PLAYBACK         0x910  /* BestTimeTracker* — ghost playback (TT only) */
 
 /* Board offsets */
 #define BOARD_SCENE_PTR_OFFSET   0x878
@@ -253,6 +256,10 @@ static void load_real_bass(void)
 /* PlayerProfile offsets */
 #define PROFILE_RACE_INDEX       0x08
 #define PROFILE_BOARD_PTR        0x0C
+#define PROFILE_IS_TOURNAMENT    0x10  /* byte: 1=tournament, 0=practice */
+#define PROFILE_IS_PRACTICE      0x11  /* byte: 1=practice/TT, 0=tournament */
+#define PROFILE_SCORE_ARRAY      0x14  /* float[16] — per-race scores */
+#define PROFILE_TIME_ARRAY       0x50  /* int[16] — per-race times (ticks) */
 
 /* Ball offsets */
 #define BALL_DEATH_PENDING       0x2E9
@@ -262,6 +269,7 @@ static void load_real_bass(void)
 #define BALL_IMPACT_FREEZE       0x808
 #define BALL_IN_TAR              0x2CC
 #define BALL_ALPHA               0x2FC
+#define BALL_VTABLE              0x4CF3A0
 #define BALL_RENDER_JITTER       0x2D4   /* byte: set by vacuum (CollisionFace_Update
                                           * 0x43D160) to enable CPUID-based random
                                           * jitter in the ball render function
@@ -350,13 +358,18 @@ static volatile DWORD g_phaseStartTime = 0;   /* GetTickCount() when phase start
 static volatile DWORD g_warpStartTime = 0;     /* GetTickCount() when warp started */
 static volatile int g_warpLevelIndex = -1;
 static volatile int g_musicFadeStarted = 0;
-static volatile float g_musicOrigVolume = 1.0f;
+
+/* Per-channel original volumes — each channel fades from its own
+ * starting volume rather than all using a single value. */
+#define MAX_MUSIC_CHANNELS 8
+static float g_musicOrigVolumes[MAX_MUSIC_CHANNELS];
+static int g_musicChannelCount = 0;
 
 /* Phase durations in milliseconds (framerate-independent!) */
 #define RUMBLE_DURATION_MS    2000   /* 2.0 sec */
 #define FLASH_DURATION_MS      250   /* 0.25 sec */
 #define HOLD_DURATION_MS      1000   /* 1.0 sec — pause between flash and fade */
-#define FADE_DURATION_MS      3000   /* 3.0 sec */
+#define FADE_DURATION_MS      2000   /* 2.0 sec */
 #define REVEAL_DURATION_MS    1000   /* 1.0 sec */
 #define MUSIC_FADE_MS         3000   /* 3.0 sec */
 
@@ -376,6 +389,16 @@ static volatile int g_rumbleInit = 0;
 
 static int GetApp(void) {
     return *(int *)APP_PTR;
+}
+
+/* Validate ball pointer via vtable check — prevents heap corruption
+ * if the ball is destroyed during the warp sequence (~5 sec).
+ * Ball vtable is at 0x4CF3A0 (verified via Ghidra). */
+static int is_valid_ball(int ball) {
+    if (!ball) return 0;
+    if (IsBadReadPtr((void *)ball, 0x300)) return 0;
+    if (*(int *)ball != BALL_VTABLE) return 0;
+    return 1;
 }
 
 /* ============================================================
@@ -421,17 +444,19 @@ static void startMusicFade(void) {
     chanCount = *(int *)(musicDev + 0x10);
 
     if (chanCount > 0 && chanListData) {
-        for (i = 0; i < chanCount; i++) {
+        int count = (chanCount < MAX_MUSIC_CHANNELS) ? chanCount : MAX_MUSIC_CHANNELS;
+        g_musicChannelCount = count;
+        for (i = 0; i < count; i++) {
             int chan = *(int *)(chanListData + i * 4);
             if (chan) {
                 float vol = *(float *)(chan + MUSIC_CHAN_VOLUME);
-                if (vol > 0.01f) {
-                    g_musicOrigVolume = vol;
-                }
+                g_musicOrigVolumes[i] = vol;
                 /* Do NOT set fade_out flag — game's fade system cuts volume too fast.
                  * We manually control volume in updateMusicFade(). */
-                diag_logf("[music] Channel %d: origVol=%.3f, fadeRate=0.00000 (manual fade)",
-                          i, g_musicOrigVolume);
+                diag_logf("[music] Channel %d: origVol=%.3f (manual per-channel fade)",
+                          i, vol);
+            } else {
+                g_musicOrigVolumes[i] = 0.0f;
             }
         }
     }
@@ -444,17 +469,13 @@ static void updateMusicFade(void) {
     int app, musicDev;
     int chanListData, chanCount, i;
     DWORD elapsed;
-    float t, vol;
+    float t;
 
     if (!g_musicFadeStarted) return;
 
     elapsed = GetTickCount() - g_warpStartTime;
     t = (float)elapsed / (float)MUSIC_FADE_MS;
-    if (t >= 1.0f) {
-        vol = 0.0f;
-    } else {
-        vol = g_musicOrigVolume * (1.0f - t);
-    }
+    if (t > 1.0f) t = 1.0f;
 
     app = GetApp();
     if (!app) return;
@@ -465,14 +486,17 @@ static void updateMusicFade(void) {
     chanCount = *(int *)(musicDev + 0x10);
 
     if (chanCount > 0 && chanListData) {
-        for (i = 0; i < chanCount; i++) {
+        int count = (chanCount < MAX_MUSIC_CHANNELS) ? chanCount : MAX_MUSIC_CHANNELS;
+        for (i = 0; i < count; i++) {
             int chan = *(int *)(chanListData + i * 4);
             if (chan) {
-                *(float *)(chan + MUSIC_CHAN_VOLUME) = vol;
+                float origVol = g_musicOrigVolumes[i];
+                float chanVol = origVol * (1.0f - t);
+                *(float *)(chan + MUSIC_CHAN_VOLUME) = chanVol;
                 if (real_BASS_ChannelSetAttributes) {
                     int bassChan = *(int *)(chan + MUSIC_CHAN_BASS_CHANNEL);
                     if (bassChan) {
-                        real_BASS_ChannelSetAttributes(bassChan, -1.0f, (int)(vol * 100.0f), -1);
+                        real_BASS_ChannelSetAttributes(bassChan, -1.0f, (int)(chanVol * 100.0f), -1);
                     }
                 }
             }
@@ -517,10 +541,17 @@ static void updateWarpStateMachine(void) {
         return;
     }
 
-    /* Use ball pointer saved from collision event — scene+0x29D0 is not always set */
+    /* Use ball pointer saved from collision event — scene+0x29D0 is not always set.
+     * Validate via vtable check: if the ball was destroyed mid-warp (e.g. fell
+     * off the level despite freeze), the pointer is stale. Setting ball=0 lets
+     * the state machine continue advancing through phases without ball writes,
+     * so the level still loads. */
     ball = g_warpBall;
-    if (!ball) {
-        diag_log("[warp] g_warpBall NULL — running state machine without ball");
+    if (!is_valid_ball(ball)) {
+        if (ball) {
+            diag_logf("[warp] g_warpBall 0x%08X invalid (freed or vtable mismatch) — continuing without ball", ball);
+        }
+        ball = 0;
     }
 
     /* Still need board/scene for BOARD_GOAL_REACHED etc, but don't block on ball */
@@ -679,42 +710,45 @@ static void updateWarpStateMachine(void) {
             *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
         }
 
-        /* Save mode flags before calling App_StartPracticeRace.
+        /* Load the target level while screen stays white.
          *
-         * App_StartPracticeRace creates a new PlayerProfile with:
-         *   profile+0x10 = 0 (not tournament)
-         *   profile+0x11 = 1 (practice/time-trial)
-         * This is why tournament mode switched to time trial.
+         * TOURNAMENT MODE FIX (v6f):
+         * App_StartPracticeRace creates a new PlayerProfile with practice=1
+         * and a fresh BestTimeTracker for ghost recording. This breaks
+         * tournament mode in three ways:
+         *   1. profile+0x11=1 causes Tournament_AdvanceRace to skip scoring
+         *   2. A BTT at App+0x90C makes the game think it's in TT mode
+         *   3. The old profile's score/time arrays are lost
          *
-         * App_StartTournamentRace (0x4288B0) is the correct function for
-         * tournament mode, but it doesn't take a level index — it calls
-         * Tournament_AdvanceRace with param_1=1, which advances to the
-         * NEXT race in the tournament sequence (profile+0x08 + 1).
-         *
-         * Instead, we use App_StartPracticeRace but then fix the profile
-         * flags afterward to preserve tournament state. We save the old
-         * profile's flags and restore them on the new profile.
+         * Fix: Save the old profile's tournament flags + score/time arrays
+         * before the call. After the call, free the BTTs (matching
+         * App_StartTournamentRace behavior), copy scores to the new profile,
+         * and set the correct mode flags.
          */
         if (levelIdx >= 0 && levelIdx <= 14) {
             void *func = (void *)APP_START_PRACTICE_RACE;
             int appVal = app;
             int idx = levelIdx;
-            /* Save difficulty (App+0x23C) — App_StartPracticeRace forces it to 1 */
             char savedDifficulty = *((char *)app + 0x23C);
-            /* Save old profile's mode flags */
             int oldProfile = *(int *)((char *)app + APP_PROFILE_PTR);
+
+            /* Save tournament state from old profile */
             char oldIsTournament = 0;
-            char oldIsPractice = 0;
-            int savedRaceIdx = 0;
+            float savedScores[16];
+            int savedTimes[16];
+            int hasTournamentData = 0;
+
             if (oldProfile) {
-                oldIsTournament = *((char *)oldProfile + 0x10);
-                oldIsPractice = *((char *)oldProfile + 0x11);
-                savedRaceIdx = *(int *)((char *)oldProfile + PROFILE_RACE_INDEX);
-                (void)savedRaceIdx;
+                oldIsTournament = *((char *)oldProfile + PROFILE_IS_TOURNAMENT);
+                if (oldIsTournament) {
+                    hasTournamentData = 1;
+                    memcpy(savedScores, (void *)((char *)oldProfile + PROFILE_SCORE_ARRAY), sizeof(savedScores));
+                    memcpy(savedTimes, (void *)((char *)oldProfile + PROFILE_TIME_ARRAY), sizeof(savedTimes));
+                }
             }
 
-            diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d, difficulty=%d, oldTourney=%d, oldPractice=%d)",
-                       appVal, idx, (int)savedDifficulty, (int)oldIsTournament, (int)oldIsPractice);
+            diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d, difficulty=%d, tourney=%d)",
+                       appVal, idx, (int)savedDifficulty, (int)oldIsTournament);
 
             __asm__ volatile (
                 "push %[idx]\n\t"
@@ -732,19 +766,44 @@ static void updateWarpStateMachine(void) {
             /* Restore difficulty so entity factories spawn correctly */
             *((char *)app + 0x23C) = savedDifficulty;
 
-            /* Restore tournament mode flags on the new profile.
-             * App_StartPracticeRace created a new profile at App+0x220
-             * with profile+0x11=1 (practice). If we were in tournament
-             * mode, restore that flag so the game stays in tournament
-             * mode and the timer/progression works correctly. */
-            {
-                int newProfile = *(int *)((char *)app + APP_PROFILE_PTR);
-                if (newProfile) {
-                    *((char *)newProfile + 0x10) = oldIsTournament;
-                    /* Keep profile+0x11=1 for practice/TT, but set it to 0
-                     * for tournament so ghost recording doesn't interfere. */
-                    if (oldIsTournament) {
-                        *((char *)newProfile + 0x11) = 0;
+            if (oldIsTournament) {
+                /* Free the BestTimeTrackers that App_StartPracticeRace created.
+                 * App_StartTournamentRace does this:
+                 *   if (App+0x90C) { (*(vtable[0])(App+0x90C))(1); App+0x90C=0; }
+                 *   if (App+0x910) { (*(vtable[0])(App+0x910))(1); App+0x910=0; }
+                 * The param 1 tells the dtor to free internal resources. */
+                {
+                    int bttRec = *(int *)((char *)app + APP_BTT_RECORDING);
+                    int bttPlay = *(int *)((char *)app + APP_BTT_PLAYBACK);
+                    if (bttRec) {
+                        int vtable = *(int *)bttRec;
+                        int dtor = *(int *)vtable;
+                        typedef void (__fastcall *dtor_t)(int, int);
+                        ((dtor_t)dtor)(bttRec, 1);
+                        *(int *)((char *)app + APP_BTT_RECORDING) = 0;
+                        diag_log("[warp] Freed BTT recording (tournament mode)");
+                    }
+                    if (bttPlay) {
+                        int vtable = *(int *)bttPlay;
+                        int dtor = *(int *)vtable;
+                        typedef void (__fastcall *dtor_t)(int, int);
+                        ((dtor_t)dtor)(bttPlay, 1);
+                        *(int *)((char *)app + APP_BTT_PLAYBACK) = 0;
+                        diag_log("[warp] Freed BTT playback (tournament mode)");
+                    }
+                }
+
+                /* Restore tournament flags + score/time arrays on new profile */
+                {
+                    int newProfile = *(int *)((char *)app + APP_PROFILE_PTR);
+                    if (newProfile) {
+                        *((char *)newProfile + PROFILE_IS_TOURNAMENT) = 1;
+                        *((char *)newProfile + PROFILE_IS_PRACTICE) = 0;
+                        if (hasTournamentData) {
+                            memcpy((void *)((char *)newProfile + PROFILE_SCORE_ARRAY), savedScores, sizeof(savedScores));
+                            memcpy((void *)((char *)newProfile + PROFILE_TIME_ARRAY), savedTimes, sizeof(savedTimes));
+                        }
+                        diag_log("[warp] Tournament mode restored: flags + scores copied to new profile");
                     }
                 }
             }
