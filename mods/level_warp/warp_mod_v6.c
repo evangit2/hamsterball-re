@@ -1,7 +1,19 @@
 /*
- * E:WARP (Level Warp) Mod v6 — Bug Fix Edition
+ * E:WARP (Level Warp) Mod v6d — Code Review Cleanup
  *
- * v6 fixes (found in code review):
+ * v6d fixes (found in code review):
+ *   - Removed dead Graphics_PresentOrEnd hook — was patching 7 bytes of game
+ *     code + allocating detour buffer + executing per-frame detour for a no-op
+ *     function. Overlay is handled via scene+0x3624 native fade.
+ *   - Removed dead setWinState() function (never called)
+ *   - Removed dead g_trampoline buffer (filled but never referenced)
+ *   - Removed dead g_diagCounter variable
+ *   - Removed all dead D3D8 constants, TLVertex struct, player-state defines
+ *     (only used by deleted functions)
+ *   - Fixed uninitialized 'board' variable — was UB if profile was null
+ *   - Fixed misleading log messages referencing v6c features that don't exist
+ *
+ * v6 fixes (found in prior code review):
  *   - CRITICAL: Race index off-by-one — findRaceIndex returns 1-based but
  *     App_StartPracticeRace expects 0-based (0-14). Game subtracts 1 before
  *     calling. Now converts to 0-based. v5 loaded wrong level every time
@@ -38,7 +50,7 @@
  * Music fade: 3.0 sec starting at JIGGLE start
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v5.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v6.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
  */
@@ -219,16 +231,10 @@ static void load_real_bass(void)
 /* Function addresses */
 #define DISPATCH_COLLISION_EVENTS   0x0040C5D0
 #define APP_START_PRACTICE_RACE     0x00428C50
-#define GRAPHICS_PRESENT_OR_END     0x00455A90
 
 /* App offsets */
 #define APP_PROFILE_PTR          0x220
-#define APP_ARENA_FLAG           0x237
-#define APP_GRAPHICS_PTR         0x174
 #define APP_MUSIC_DEVICE_PTR     0x17C
-
-/* Graphics offsets */
-#define GFX_D3D_DEVICE           0x154
 
 /* Board offsets */
 #define BOARD_SCENE_PTR_OFFSET   0x878
@@ -238,7 +244,6 @@ static void load_real_bass(void)
 #define PROFILE_BOARD_PTR        0x0C
 
 /* Ball offsets */
-#define BALL_PLAYER_INDEX        0x18
 #define BALL_DEATH_PENDING       0x2E9
 #define BALL_POS_X               0x164
 #define BALL_POS_Y               0x168
@@ -253,12 +258,6 @@ static void load_real_bass(void)
 /* Board goal-reached flag */
 #define BOARD_GOAL_REACHED       0xCD0
 
-/* Per-player flags */
-#define APP_PLAYER_REACHED_GOAL_BASE   0x5D6
-#define APP_PLAYER_STRIDE              0xA0
-#define APP_PLAYER_SCORED_BASE         0x5FC
-#define APP_PLAYER_NEWLY_GOAL_BASE     0x5F0
-
 /* MusicChannel offsets */
 #define MUSIC_CHAN_BASS_CHANNEL  0x08
 #define MUSIC_CHAN_VOLUME       0x528
@@ -268,51 +267,6 @@ static void load_real_bass(void)
 
 /* MusicDevice offsets */
 #define MUSIC_DEV_CHANNEL_LIST  0x418
-
-/* D3D8 Render State values */
-#define D3DRS_ALPHABLENDENABLE   27
-#define D3DRS_SRCBLEND          19
-#define D3DRS_DESTBLEND         20
-#define D3DRS_FOGENABLE          8
-#define D3DRS_ZENABLE             7
-#define D3DRS_ZWRITEENABLE       14
-
-/* D3D8 Blend values */
-#define D3DBLEND_SRCALPHA        5
-#define D3DBLEND_INVSRCALPHA     6
-
-/* D3D8 Texture Stage values */
-#define D3DTSS_COLOROP           0
-#define D3DTSS_COLORARG1         1
-#define D3DTSS_COLORARG2         2
-#define D3DTSS_ALPHAOP           3
-#define D3DTSS_ALPHAARG1         4
-#define D3DTSS_ALPHAARG2         5
-
-/* D3D8 Texture Operation constants */
-#define D3DTOP_DISABLE           1
-#define D3DTOP_SELECTARG1        2
-#define D3DTOP_SELECTARG2        3
-#define D3DTOP_MODULATE          4
-
-/* D3D8 Texture Argument constants */
-#define D3DTA_DIFFUSE            0
-#define D3DTA_TEXTURE            2
-
-/* D3D8 Primitive Type constants */
-#define D3DPT_TRIANGLELIST       4
-#define D3DPT_TRIANGLESTRIP      5
-
-/* FVF for TL vertex (transformed, lit) */
-#define D3DFVF_XYZRHW           0x001
-#define D3DFVF_DIFFUSE          0x040
-#define D3DFVF_TLVERTEX         (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
-
-typedef struct {
-    float x, y, z;
-    float rhw;
-    DWORD color;
-} TLVertex;
 
 /* ============================================================
  * Level name -> race index mapping
@@ -393,7 +347,6 @@ static volatile float g_whiteAlpha = 0.0f;
 /* Ball position saved at warp start for jiggling */
 static volatile float g_ballOrigY = 0.0f;
 static volatile int g_jiggleInit = 0;
-static volatile int g_diagCounter = 0;
 static volatile int g_warpBall = 0;  /* Ball pointer saved at warp trigger */
 
 /* ============================================================
@@ -426,26 +379,6 @@ static int parseWarpLevel(const char *eventName, char *outLevelName, int outSize
     strncpy(outLevelName, start, len);
     outLevelName[len] = 0;
     return 1;
-}
-
-/* ============================================================
- * Set win state (replicate what N:GOAL does, minus audio/popups)
- * ============================================================ */
-
-static void setWinState(void *board, int *ball) {
-    int app = GetApp();
-    int playerIdx;
-    if (!app) return;
-
-    playerIdx = ball[BALL_PLAYER_INDEX / 4];
-
-    *((char *)board + BOARD_GOAL_REACHED) = 1;
-    *((char *)app + APP_PLAYER_REACHED_GOAL_BASE + playerIdx * APP_PLAYER_STRIDE) = 1;
-
-    if (*((char *)app + APP_PLAYER_SCORED_BASE + playerIdx * APP_PLAYER_STRIDE) == 0) {
-        *((int *)((char *)app + APP_PLAYER_SCORED_BASE + playerIdx * APP_PLAYER_STRIDE)) = 1;
-    }
-    *((char *)app + APP_PLAYER_NEWLY_GOAL_BASE + playerIdx * APP_PLAYER_STRIDE) = 1;
 }
 
 /* ============================================================
@@ -526,48 +459,12 @@ static void updateMusicFade(void) {
     }
 }
 
-/* ============================================================
- * D3D white screen overlay
- *
- * v5 FIX: Restores ALL modified texture stage states after draw!
- * v4 left COLOROP=SELECTARG2 which caused textures to be ignored
- * on the next frame, making the new level show only vertex points.
- *
- * After drawing, we restore texture stage 0 to the game defaults:
- *   COLOROP  = MODULATE (texture × diffuse)
- *   COLORARG1 = TEXTURE
- *   COLORARG2 = DIFFUSE
- *   ALPHAOP  = MODULATE
- *   ALPHAARG1 = TEXTURE
- *   ALPHAARG2 = DIFFUSE
- * ============================================================ */
-
 /* Scene offset for the game's native fade alpha.
  * The board render function (FUN_0041b710) reads scene+0x3624 and draws
  * a fullscreen rect with that alpha via Graphics_DrawScreenRect.
  * By writing our fade alpha here, the game draws the overlay itself —
  * no D3D state corruption, no BeginScene/EndScene issues. */
 #define SCENE_FADE_ALPHA        0x3624
-
-static void drawWhiteOverlay(void) {
-    /* No-op: the game draws the overlay itself when we set scene+0x3624.
-     * This is now handled in updateWarpStateMachine(). */
-}
-
-/* ============================================================
- * Graphics_PresentOrEnd hook
- *
- * Original prologue (7 bytes):
- *   8A 44 24 04    MOV AL, [ESP+4]    (4 bytes)
- *   83 EC 20       SUB ESP, 0x20     (3 bytes)
- *
- * Detour: save ECX (gfx), call drawWhiteOverlay, restore ECX,
- * execute original 7 bytes, JMP back.
- * ============================================================ */
-
-static unsigned char g_presentOrig[8];
-static unsigned char *g_presentDetour = NULL;
-static volatile void *g_savedGfx = NULL;
 
 /* ============================================================
  * App_FrameUpdate epilogue hook
@@ -583,7 +480,7 @@ static unsigned char *g_frameUpdateDetour = NULL;
 
 static void updateWarpStateMachine(void) {
     int app;
-    int board;
+    int board = 0;
     int ball;
     DWORD now;
     DWORD elapsed;
@@ -613,8 +510,6 @@ static void updateWarpStateMachine(void) {
         }
     }
     if (!board) board = 0;  /* May be null — phases that need it will skip */
-
-    g_diagCounter = 0;
 
     /* Write fade alpha to scene's native fade field (scene+0x3624).
      * The game's own board render function reads this every frame and
@@ -845,7 +740,6 @@ static void WarpCollisionHandler(void) {
  * ============================================================ */
 
 /* DispatchCollisionEvents detour */
-static unsigned char g_trampoline[16];
 static unsigned char *g_detourBuf = NULL;
 
 static void InstallCollisionHook(void) {
@@ -858,11 +752,6 @@ static void InstallCollisionHook(void) {
         return;
     }
     diag_log("[InstallHooks] DispatchCollisionEvents signature OK");
-
-    memcpy(g_trampoline, dispatchAddr, 8);
-    g_trampoline[8] = 0xE9;
-    *(DWORD *)(g_trampoline + 9) = (DWORD)(dispatchAddr + 8) - (DWORD)(g_trampoline + 13);
-    VirtualProtect(g_trampoline, sizeof(g_trampoline), PAGE_EXECUTE_READWRITE, &oldProtect);
 
     g_detourBuf = (unsigned char *)VirtualAlloc(NULL, 256, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
     if (!g_detourBuf) return;
@@ -933,49 +822,6 @@ static void InstallFrameUpdateHook(void) {
     diag_log("[InstallHooks] FrameUpdate epilogue hook installed");
 }
 
-/* Graphics_PresentOrEnd hook */
-static void InstallPresentHook(void) {
-    unsigned char *presentAddr = (unsigned char *)GRAPHICS_PRESENT_OR_END;
-    DWORD oldProtect;
-
-    if (presentAddr[0] != 0x8A || presentAddr[1] != 0x44 ||
-        presentAddr[2] != 0x24 || presentAddr[3] != 0x04 ||
-        presentAddr[4] != 0x83 || presentAddr[5] != 0xEC || presentAddr[6] != 0x20) {
-        diag_log("[FATAL] Graphics_PresentOrEnd signature mismatch!");
-        return;
-    }
-    diag_log("[InstallHooks] Graphics_PresentOrEnd signature OK");
-
-    memcpy(g_presentOrig, presentAddr, 7);
-
-    g_presentDetour = (unsigned char *)VirtualAlloc(NULL, 256, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    if (!g_presentDetour) return;
-
-    {
-        unsigned char *p = g_presentDetour;
-        *p++ = 0x51;  /* PUSH ECX */
-        *p++ = 0x52;  /* PUSH EDX */
-        *p++ = 0xB8; *(DWORD *)p = (DWORD)&drawWhiteOverlay; p += 4;
-        *p++ = 0xFF; *p++ = 0xD0;  /* CALL EAX */
-        *p++ = 0x5A;  /* POP EDX */
-        *p++ = 0x59;  /* POP ECX */
-        *p++ = 0x8A; *p++ = 0x44; *p++ = 0x24; *p++ = 0x04;  /* MOV AL, [ESP+4] */
-        *p++ = 0x83; *p++ = 0xEC; *p++ = 0x20;  /* SUB ESP, 0x20 */
-        *p++ = 0xE9;
-        *(DWORD *)p = (DWORD)(presentAddr + 7) - (DWORD)(p + 4);
-        p += 4;
-    }
-
-    VirtualProtect(presentAddr, 7, PAGE_EXECUTE_READWRITE, &oldProtect);
-    presentAddr[0] = 0xE9;
-    *(DWORD *)(presentAddr + 1) = (DWORD)g_presentDetour - (DWORD)(presentAddr + 5);
-    presentAddr[5] = 0x90;
-    presentAddr[6] = 0x90;
-    VirtualProtect(presentAddr, 7, oldProtect, &oldProtect);
-
-    diag_log("[InstallHooks] Graphics_PresentOrEnd hook installed");
-}
-
 /* ============================================================
  * Init thread
  * ============================================================ */
@@ -986,9 +832,8 @@ static DWORD WINAPI InitThread(LPVOID param) {
 
     InstallCollisionHook();
     InstallFrameUpdateHook();
-    InstallPresentHook();
 
-    diag_log("[warp mod v6c] All hooks installed. Ready for E:WARP events.");
+    diag_log("[warp mod v6d] All hooks installed. Ready for E:WARP events.");
     return 0;
 }
 
@@ -1013,8 +858,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v6c LOADED ===");
-        diag_log("v6c fixes: BeginScene/EndScene wrap, jiggle init flag, stream source save/restore");
+        diag_log("=== LEVEL WARP MOD v6d LOADED ===");
+        diag_log("v6d: removed dead PresentHook, dead setWinState, dead g_trampoline, fixed UB");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);

@@ -1,15 +1,31 @@
 /*
- * E:WARP (Level Warp) Mod v5 — Fixed Special Effects Edition
+ * E:WARP (Level Warp) Mod v6 — Bug Fix Edition
+ *
+ * v6 fixes (found in code review):
+ *   - CRITICAL: Race index off-by-one — findRaceIndex returns 1-based but
+ *     App_StartPracticeRace expects 0-based (0-14). Game subtracts 1 before
+ *     calling. Now converts to 0-based. v5 loaded wrong level every time
+ *     and crashed on level 15.
+ *   - CRITICAL: DrawPrimitiveUP used TRIANGLELIST(4) with 4 vertices for 2
+ *     primitives — needs 6 verts, only provided 4. Switched to TRIANGLESTRIP(5)
+ *     which correctly needs 4 verts for 2 triangles.
+ *   - CRITICAL: FVF never set before DrawPrimitiveUP — D3D used whatever FVF
+ *     the game had (likely includes texture coords not in TLVertex). Now saves
+ *     old FVF via GetVertexShader, sets D3DFVF_TLVERTEX, restores after.
+ *   - CRITICAL: JIGGLE phase skipped — g_phaseStartTime was 0 on first frame,
+ *     so elapsed=GetTickCount()-0=system uptime >> 2000ms. Phase ended in 1
+ *     frame. Now initializes timestamps in WarpCollisionHandler before setting
+ *     phase.
+ *   - Fixed: inline asm clobber list included "esp" — tells GCC stack pointer
+ *     is destroyed, can break prologue/epilogue. Removed.
+ *   - Cleaned: Removed dead first-frame block in PHASE_FLASH and TODO comments.
  *
  * v5 fixes:
- *   - CRITICAL: Restores D3D texture stage states after overlay draw
- *     (v4 left COLOROP=SELECTARG2, causing new level to render as vertex points only)
- *   - CRITICAL: Switched to GetTickCount()-based timing (framerate-independent)
- *     (v4 used frame counts which were too fast if game runs >25fps)
- *   - Fixed: vsnprintf replaces wvsprintfA (which doesn't support %f)
+ *   - Restores D3D texture stage states after overlay draw
+ *   - GetTickCount()-based timing (framerate-independent)
+ *   - vsnprintf replaces wvsprintfA (supports %f)
  *   - Added PHASE_REVEAL: fades FROM white after level loads
- *   - FADE duration increased to 2 seconds (was 1 second)
- *   - Screen stays white during PHASE_LOAD (was reset to 0 before loading)
+ *   - FADE duration increased to 2 seconds
  *
  * Phase timeline (real-time, not frame-based):
  *   JIGGLE: 2.0 sec — Ball frozen + jiggling + sound + music fade start
@@ -281,9 +297,14 @@ static void load_real_bass(void)
 #define D3DTA_DIFFUSE            0
 #define D3DTA_TEXTURE            2
 
+/* D3D8 Primitive Type constants */
+#define D3DPT_TRIANGLELIST       4
+#define D3DPT_TRIANGLESTRIP      5
+
 /* FVF for TL vertex (transformed, lit) */
 #define D3DFVF_XYZRHW           0x001
 #define D3DFVF_DIFFUSE          0x040
+#define D3DFVF_TLVERTEX         (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
 
 typedef struct {
     float x, y, z;
@@ -516,6 +537,8 @@ static void updateMusicFade(void) {
 typedef long (__stdcall *D3DSetRenderState_t)(void*, DWORD, DWORD);
 typedef long (__stdcall *D3DDrawPrimitiveUP_t)(void*, DWORD, UINT, const void*, UINT);
 typedef long (__stdcall *D3DSetTextureStageState_t)(void*, DWORD, DWORD, DWORD);
+typedef long (__stdcall *D3DSetVertexShader_t)(void*, DWORD);
+typedef long (__stdcall *D3DGetVertexShader_t)(void*, DWORD*);
 
 static void drawWhiteOverlay(void) {
     int app;
@@ -525,6 +548,8 @@ static void drawWhiteOverlay(void) {
     D3DSetRenderState_t pSetRenderState;
     D3DDrawPrimitiveUP_t pDrawPrimitiveUP;
     D3DSetTextureStageState_t pSetTextureStageState;
+    D3DSetVertexShader_t pSetVertexShader;
+    D3DGetVertexShader_t pGetVertexShader;
 
     if (g_whiteAlpha <= 0.001f) return;
 
@@ -540,12 +565,17 @@ static void drawWhiteOverlay(void) {
     pSetRenderState = (D3DSetRenderState_t)vtable[50];
     pDrawPrimitiveUP = (D3DDrawPrimitiveUP_t)vtable[72];
     pSetTextureStageState = (D3DSetTextureStageState_t)vtable[63];
+    /* vtable[76] = SetVertexShader — needed to set FVF before DrawPrimitiveUP */
+    pGetVertexShader = (D3DGetVertexShader_t)vtable[77];
+    pSetVertexShader = (D3DSetVertexShader_t)vtable[76];
 
-    if (!pSetRenderState || !pDrawPrimitiveUP || !pSetTextureStageState) return;
+    if (!pSetRenderState || !pDrawPrimitiveUP || !pSetTextureStageState ||
+        !pSetVertexShader || !pGetVertexShader) return;
 
     {
         DWORD whiteAlpha = (DWORD)(g_whiteAlpha * 255.0f) << 24;
         DWORD color = 0x00FFFFFF | whiteAlpha;
+        DWORD savedFVF = 0;
 
         TLVertex verts[4] = {
             {    0.0f,    0.0f, 0.0f, 1.0f, color },
@@ -560,17 +590,20 @@ static void drawWhiteOverlay(void) {
         pSetRenderState(device, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         pSetRenderState(device, D3DRS_FOGENABLE, FALSE);
 
+        /* Save current FVF and set our TL vertex format */
+        pGetVertexShader(device, &savedFVF);
+        pSetVertexShader(device, D3DFVF_TLVERTEX);
+
         /* Texture stage: use diffuse color only (ignore textures) */
         pSetTextureStageState(device, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-        /* Draw the white quad */
-        pDrawPrimitiveUP(device, 4, 2, verts, sizeof(TLVertex));
+        /* Draw the white quad as a triangle strip (4 verts = 2 triangles) */
+        pDrawPrimitiveUP(device, D3DPT_TRIANGLESTRIP, 2, verts, sizeof(TLVertex));
 
         /* --- CRITICAL: Restore texture stage states to game defaults! --- */
-        /* v4 forgot this, causing new level to render without textures */
         pSetTextureStageState(device, 0, D3DTSS_COLOROP,   D3DTOP_MODULATE);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
         pSetTextureStageState(device, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
@@ -578,7 +611,8 @@ static void drawWhiteOverlay(void) {
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
         pSetTextureStageState(device, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 
-        /* Restore render states */
+        /* Restore FVF and render states */
+        pSetVertexShader(device, savedFVF);
         pSetRenderState(device, D3DRS_FOGENABLE, TRUE);
     }
 }
@@ -645,19 +679,17 @@ static void updateWarpStateMachine(void) {
     case PHASE_JIGGLE: {
         elapsed = now - g_phaseStartTime;
 
-        if (g_phaseStartTime == g_warpStartTime) {
-            /* First frame of JIGGLE */
-            if (ball) {
+        /* On first frame: freeze ball, start music fade */
+        if (elapsed < 50 && ball) {
+            float curAlpha = *(float *)((char *)ball + BALL_ALPHA);
+            if (curAlpha > 0.5f) {
+                /* First frame — save ball Y and freeze */
                 g_ballOrigY = *(float *)((char *)ball + BALL_POS_Y);
                 *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
                 *(char *)((char *)ball + BALL_IN_TAR) = 1;
+                startMusicFade();
+                diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
             }
-            diag_log("[warp] TODO: Play warp_enter sound effect");
-            startMusicFade();
-            diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
-            /* Mark that we've done the init */
-            g_phaseStartTime = now;
-            g_warpStartTime = now;
         }
 
         /* Per-frame: jiggle ball upward */
@@ -679,18 +711,10 @@ static void updateWarpStateMachine(void) {
     case PHASE_FLASH: {
         elapsed = now - g_phaseStartTime;
 
-        if (elapsed == 0 || (g_phase == PHASE_FLASH && elapsed < 50)) {
-            /* First frame of FLASH */
-            /* Only do this once — check if we just transitioned */
-        }
-
-        /* On first entry: make ball invisible, play sound */
+        /* On first frame: make ball invisible */
         if (elapsed < 50 && ball) {
-            /* This runs on the first frame or two */
-            /* Check if ball alpha is still 1.0 (not yet made invisible) */
             float curAlpha = *(float *)((char *)ball + BALL_ALPHA);
             if (curAlpha > 0.5f) {
-                diag_log("[warp] TODO: Play warp_exit sound effect");
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
                 diag_log("[warp] Ball invisible, starting white flash");
             }
@@ -746,7 +770,7 @@ static void updateWarpStateMachine(void) {
         }
 
         /* Call App_StartPracticeRace(app, levelIndex) */
-        if (levelIdx >= 1 && levelIdx <= 15) {
+        if (levelIdx >= 0 && levelIdx <= 14) {
             void *func = (void *)APP_START_PRACTICE_RACE;
             int appVal = app;
             int idx = levelIdx;
@@ -761,7 +785,7 @@ static void updateWarpStateMachine(void) {
                 : [func] "r" (func),
                   [appVal] "r" (appVal),
                   [idx] "r" (idx)
-                : "eax", "edx", "ecx", "esp",
+                : "eax", "edx", "ecx",
                   "st", "st(1)", "st(2)", "st(3)",
                   "st(4)", "st(5)", "st(6)", "st(7)", "memory"
             );
@@ -840,10 +864,16 @@ static void WarpCollisionHandler(void) {
                             if (*((char *)board + BOARD_GOAL_REACHED) == 0 &&
                                 *((char *)ball + BALL_DEATH_PENDING) == 0) {
                                 setWinState(board, ball);
-                                g_warpLevelIndex = raceIndex;
+                                /* App_StartPracticeRace expects 0-based index (0-14),
+                                 * but findRaceIndex returns 1-based (1-15) */
+                                g_warpLevelIndex = raceIndex - 1;
                                 g_phase = PHASE_JIGGLE;
-                                g_phaseStartTime = 0;  /* 0 = not yet initialized */
-                                g_warpStartTime = 0;
+                                /* Initialize timestamps NOW so elapsed=0 on first frame */
+                                {
+                                    DWORD now = GetTickCount();
+                                    g_phaseStartTime = now;
+                                    g_warpStartTime = now;
+                                }
                                 g_whiteAlpha = 0.0f;
                                 g_musicFadeStarted = 0;
                                 diag_logf("[WARP] Triggered! Starting effect sequence, level=%d", raceIndex);
