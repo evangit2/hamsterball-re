@@ -944,14 +944,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         load_real_bass();
         init_game_dir();
         init_rotator_shm();
-        /* TEST: Set a fixed rotation to verify the hook works */
-        if (g_rot_state) {
-            g_rot_state->active = 1;
-            g_rot_state->angle = 1.0f;  /* ~57° fixed */
-            g_rot_state->center_x = 0.0f;
-            g_rot_state->center_y = 0.0f;
-            g_rot_state->center_z = 0.0f;
-        }
 
         /* Merge CustomEntities/*.MESHWORLD geometry into Levels/*.MESHWORLD
          * files before the game loads them. This happens at DLL load time,
