@@ -61,11 +61,11 @@ private:
 		matrix[14] = -(matrix[10] * nearPlane);
 
 		typedef long(__stdcall *SetTransform_t)(void*, DWORD, float*);
-		((SetTransform_t)(vtable[37]))(device, 3, matrix);
+		((SetTransform_t)(vtable[37]))((void*)device, 3, matrix);
 
 		D3DVIEWPORT8 vp = { (DWORD)vpX, 0, (DWORD)vpWidth, (DWORD)bbHeight, 0.0f, 1.0f };
 		typedef long(__stdcall *SetViewportD3D_t)(void*, D3DVIEWPORT8*);
-		((SetViewportD3D_t)(vtable[40]))(device, &vp);
+		((SetViewportD3D_t)(vtable[40]))((void*)device, &vp);
 	}
 
 	static void __fastcall hook_SetViewport(void* gfx, void* edx, int param1, int param2) {
