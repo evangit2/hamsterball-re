@@ -21,6 +21,9 @@
  *     frame in its render pass, so the single write at flash peak was immediately
  *     undone. Now forces alpha=0.0 every frame during PHASE_FLASH and PHASE_FADE
  *     (same pattern as freecam mod). Respects respawn flag (ball+0x2F9).
+ *   - Fixed screen fade: was writing to board+0x878 (App back-pointer) then
+ *     +0x3624, corrupting App memory instead of writing fade alpha. Board IS
+ *     the scene — write directly to board+0x3624.
  *
  * v6 fixes (found in prior code review):
  *   - CRITICAL: Race index off-by-one — findRaceIndex returns 1-based but
@@ -520,15 +523,14 @@ static void updateWarpStateMachine(void) {
     }
     if (!board) board = 0;  /* May be null — phases that need it will skip */
 
-    /* Write fade alpha to scene's native fade field (scene+0x3624).
-     * The game's own board render function reads this every frame and
-     * draws a fullscreen rect through its own material pipeline. */
-    {
-        int scene = 0;
-        if (board) scene = *(int *)((char *)board + BOARD_SCENE_PTR_OFFSET);
-        if (scene) {
-            *(float *)((char *)scene + SCENE_FADE_ALPHA) = g_whiteAlpha;
-        }
+    /* Write fade alpha to board's native fade field (board+0x3624).
+     * The game's own board render function (FUN_0041b710) reads this every
+     * frame and draws a fullscreen rect through its own material pipeline.
+     * NOTE: board IS the scene — they are the same object. board+0x878 is the
+     * App back-pointer, NOT a scene pointer. Writing to board+0x878+0x3624
+     * would corrupt App memory. Write directly to board+0x3624. */
+    if (board) {
+        *(float *)((char *)board + SCENE_FADE_ALPHA) = g_whiteAlpha;
     }
 
     switch (g_phase) {
