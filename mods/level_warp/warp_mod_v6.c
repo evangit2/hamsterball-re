@@ -13,10 +13,14 @@
  *   - Fixed uninitialized 'board' variable — was UB if profile was null
  *   - Fixed misleading log messages referencing v6c features that don't exist
  *
- * v6e fix:
+ * v6e fixes:
  *   - Added NULL check for board/ball in WarpCollisionHandler — entity-entity
  *     collisions pass a non-ball first arg, would crash on BALL_DEATH_PENDING
  *     dereference without this guard.
+ *   - Fixed ball invisibility: game overwrites ball+0x2FC (alpha) to 1.0 every
+ *     frame in its render pass, so the single write at flash peak was immediately
+ *     undone. Now forces alpha=0.0 every frame during PHASE_FLASH and PHASE_FADE
+ *     (same pattern as freecam mod). Respects respawn flag (ball+0x2F9).
  *
  * v6 fixes (found in prior code review):
  *   - CRITICAL: Race index off-by-one — findRaceIndex returns 1-based but
@@ -559,18 +563,21 @@ static void updateWarpStateMachine(void) {
  /* Quick flash: ramp up to peak, then back down */
         if (elapsed < FLASH_PEAK_MS) {
             g_whiteAlpha = (float)elapsed / (float)FLASH_PEAK_MS;
-            /* Make ball invisible the moment the flash hits its peak */
-            if (g_whiteAlpha >= 0.99f && ball) {
-                float curAlpha = *(float *)((char *)ball + BALL_ALPHA);
-                if (curAlpha > 0.5f) {
-                    *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
-                    diag_log("[warp] Ball invisible at flash peak");
-                }
-            }
         } else {
             DWORD remaining = FLASH_DURATION_MS - elapsed;
             g_whiteAlpha = (float)remaining / (float)(FLASH_DURATION_MS - FLASH_PEAK_MS);
             if (g_whiteAlpha < 0.0f) g_whiteAlpha = 0.0f;
+        }
+
+        /* Force ball invisible every frame — game overwrites alpha to 1.0
+         * each frame in its render pass, so a single write is immediately
+         * undone. Must continuously force 0.0 while flash is active.
+         * Skip during respawn fade-in (ball+0x2F9) like freecam does. */
+        if (ball) {
+            int respawning = *((unsigned char *)((char *)ball + 0x2F9));
+            if (!respawning) {
+                *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
+            }
         }
 
         updateMusicFade();
@@ -589,6 +596,14 @@ static void updateWarpStateMachine(void) {
         /* Screen fades from 0 to solid white over 2 seconds */
         g_whiteAlpha = (float)elapsed / (float)FADE_DURATION_MS;
         if (g_whiteAlpha > 1.0f) g_whiteAlpha = 1.0f;
+
+        /* Keep ball invisible during fade too */
+        if (ball) {
+            int respawning = *((unsigned char *)((char *)ball + 0x2F9));
+            if (!respawning) {
+                *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
+            }
+        }
 
         updateMusicFade();
 
