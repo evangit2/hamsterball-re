@@ -159,6 +159,63 @@ static void updateHostIPString() {
              g_ip_octet[0], g_ip_octet[1], g_ip_octet[2], g_ip_octet[3]);
 }
 
+// Read netplay.txt config file: first line = host IP, optional :port suffix
+// e.g. "192.168.1.100" or "192.168.1.100:5029" or "100.64.0.1:3923"
+static void loadConfigFile() {
+    HANDLE h = CreateFileA("netplay.txt", GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    char buf[256];
+    DWORD bytesRead = 0;
+    ReadFile(h, buf, sizeof(buf)-1, &bytesRead, NULL);
+    CloseHandle(h);
+    if (bytesRead == 0) return;
+    buf[bytesRead] = '\0';
+
+    // Parse first line
+    char* line = buf;
+    char* newline = buf;
+    while (*newline && *newline != '\n' && *newline != '\r') newline++;
+    *newline = '\0';
+
+    // Check for :port suffix
+    char* colon = line;
+    while (*colon && *colon != ':') colon++;
+    if (*colon == ':') {
+        *colon = '\0';
+        int port = 0;
+        char* p = colon + 1;
+        while (*p >= '0' && *p <= '9') {
+            port = port * 10 + (*p - '0');
+            p++;
+        }
+        if (port >= 1024 && port <= 65535) {
+            g_port = port;
+        }
+    }
+
+    // Parse IP octets
+    int octets[4] = {0, 0, 0, 1};
+    int idx = 0;
+    char* p = line;
+    while (*p && idx < 4) {
+        int val = 0;
+        while (*p >= '0' && *p <= '9') {
+            val = val * 10 + (*p - '0');
+            p++;
+        }
+        octets[idx++] = val;
+        if (*p == '.') p++;
+    }
+    if (idx == 4) {
+        g_ip_octet[0] = octets[0];
+        g_ip_octet[1] = octets[1];
+        g_ip_octet[2] = octets[2];
+        g_ip_octet[3] = octets[3];
+    }
+    updateHostIPString();
+}
+
 // ── Pipe Communication ────────────────────────────────────────────
 
 static bool connectToPipe() {
@@ -257,49 +314,47 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
         // if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
         //     DWORD p1 = getP1Ball();
         //     DWORD p2 = getP2Ball();
-            if (p1) {
-                BallStateMsg msg;
-                memset(&msg, 0, sizeof(msg));
-                msg.frame = g_frameCount;
-                // P1 = host's ball
-                msg.p1_pos[0] = readF(p1, BALL_POS_X);
-                msg.p1_pos[1] = readF(p1, BALL_POS_Y);
-                msg.p1_pos[2] = readF(p1, BALL_POS_Z);
-                readVel(p1, &msg.p1_vel[0], &msg.p1_vel[1], &msg.p1_vel[2]);
-                msg.p1_facing[0] = readF(p1, BALL_FACING_X);
-                msg.p1_facing[1] = readF(p1, BALL_FACING_Z);
-                msg.p1_rot = readF(p1, BALL_ROT);
-                msg.p1_radius = readF(p1, BALL_RADIUS);
-                msg.p1_gravity = readF(p1, BALL_GRAVITY);
-                // P2 = guest's ball (on host's screen)
-                if (p2) {
-                    msg.p2_pos[0] = readF(p2, BALL_POS_X);
-                    msg.p2_pos[1] = readF(p2, BALL_POS_Y);
-                    msg.p2_pos[2] = readF(p2, BALL_POS_Z);
-                    readVel(p2, &msg.p2_vel[0], &msg.p2_vel[1], &msg.p2_vel[2]);
-                    msg.p2_facing[0] = readF(p2, BALL_FACING_X);
-                    msg.p2_facing[1] = readF(p2, BALL_FACING_Z);
-                    msg.p2_rot = readF(p2, BALL_ROT);
-                    msg.p2_radius = readF(p2, BALL_RADIUS);
-                    msg.p2_gravity = readF(p2, BALL_GRAVITY);
-                }
-                sendPipeMsg(MSG_BALL_STATE, &msg, sizeof(msg));
-            }
-        }
+        //     if (p1) {
+        //         BallStateMsg msg;
+        //         memset(&msg, 0, sizeof(msg));
+        //         msg.frame = g_frameCount;
+        //         msg.p1_pos[0] = readF(p1, BALL_POS_X);
+        //         msg.p1_pos[1] = readF(p1, BALL_POS_Y);
+        //         msg.p1_pos[2] = readF(p1, BALL_POS_Z);
+        //         readVel(p1, &msg.p1_vel[0], &msg.p1_vel[1], &msg.p1_vel[2]);
+        //         msg.p1_facing[0] = readF(p1, BALL_FACING_X);
+        //         msg.p1_facing[1] = readF(p1, BALL_FACING_Z);
+        //         msg.p1_rot = readF(p1, BALL_ROT);
+        //         msg.p1_radius = readF(p1, BALL_RADIUS);
+        //         msg.p1_gravity = readF(p1, BALL_GRAVITY);
+        //         if (p2) {
+        //             msg.p2_pos[0] = readF(p2, BALL_POS_X);
+        //             msg.p2_pos[1] = readF(p2, BALL_POS_Y);
+        //             msg.p2_pos[2] = readF(p2, BALL_POS_Z);
+        //             readVel(p2, &msg.p2_vel[0], &msg.p2_vel[1], &msg.p2_vel[2]);
+        //             msg.p2_facing[0] = readF(p2, BALL_FACING_X);
+        //             msg.p2_facing[1] = readF(p2, BALL_FACING_Z);
+        //             msg.p2_rot = readF(p2, BALL_ROT);
+        //             msg.p2_radius = readF(p2, BALL_RADIUS);
+        //             msg.p2_gravity = readF(p2, BALL_GRAVITY);
+        //         }
+        //         sendPipeMsg(MSG_BALL_STATE, &msg, sizeof(msg));
+        //     }
+        // }
+        // End disabled HOST ball streaming
 
-        // GUEST: send P1 input (guest's local player 1 = remote player 2 on host)
-        // Guest plays as Player 1 locally, host sees them as Player 2
-        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
-            DWORD p1 = getP1Ball();
-            if (p1) {
-                InputStateMsg msg;
-                msg.frame = g_frameCount;
-                msg.force_x = readF(p1, BALL_FORCE_X);
-                msg.force_y = readF(p1, BALL_FORCE_Y);
-                msg.force_z = readF(p1, BALL_FORCE_Z);
-                sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
-            }
-        }
+        // GUEST: send P1 input — disabled, crashes during race loading
+        // if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
+        //     DWORD p1 = getP1Ball();
+        //     if (p1) {
+        //         InputStateMsg msg;
+        //         msg.frame = g_frameCount;
+        //         msg.force_x = readF(p1, BALL_FORCE_X);
+        //         msg.force_y = readF(p1, BALL_FORCE_Y);
+        //         msg.force_z = readF(p1, BALL_FORCE_Z);
+        //         sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
+        //     }
+        // }
 
         // FPS heartbeat
         if (g_frameCount - g_lastHeartbeat >= HEARTBEAT_INTERVAL) {
@@ -428,6 +483,9 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     InitializeCriticalSection(&g_stateLock);
     InitializeCriticalSection(&g_inputLock);
 
+    // Load netplay.txt config (host IP + optional port)
+    loadConfigFile();
+
     HBPlusAPI hb = HBAPI(api);
 
     // Role toggles
@@ -439,22 +497,22 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     btnGuest.defaultState = false; btnGuest.trueText = "ON"; btnGuest.falseText = "OFF";
     hb.CreateToggleButton(btnGuest, thisptr);
 
-    // Port
-    CustomSlider sPort("NETPLAY_PORT", "Netplay Port", 5029);
+    // Port — uses g_port (from netplay.txt or default 5029)
+    CustomSlider sPort("NETPLAY_PORT", "Netplay Port", (float)g_port);
     sPort.lowerBound = 1024; sPort.upperBound = 65535; sPort.stepSize = 1; sPort.decimalPlaces = 0;
     hb.CreateSlider(sPort, thisptr);
 
-    // Host IP (guest mode)
-    CustomSlider sIp1("NETPLAY_IP1", "Host IP: Octet 1", 127);
+    // Host IP — uses g_ip_octet (from netplay.txt or default 127.0.0.1)
+    CustomSlider sIp1("NETPLAY_IP1", "Host IP: Octet 1", (float)g_ip_octet[0]);
     sIp1.lowerBound = 0; sIp1.upperBound = 255; sIp1.stepSize = 1; sIp1.decimalPlaces = 0;
     hb.CreateSlider(sIp1, thisptr);
-    CustomSlider sIp2("NETPLAY_IP2", "Host IP: Octet 2", 0);
+    CustomSlider sIp2("NETPLAY_IP2", "Host IP: Octet 2", (float)g_ip_octet[1]);
     sIp2.lowerBound = 0; sIp2.upperBound = 255; sIp2.stepSize = 1; sIp2.decimalPlaces = 0;
     hb.CreateSlider(sIp2, thisptr);
-    CustomSlider sIp3("NETPLAY_IP3", "Host IP: Octet 3", 0);
+    CustomSlider sIp3("NETPLAY_IP3", "Host IP: Octet 3", (float)g_ip_octet[2]);
     sIp3.lowerBound = 0; sIp3.upperBound = 255; sIp3.stepSize = 1; sIp3.decimalPlaces = 0;
     hb.CreateSlider(sIp3, thisptr);
-    CustomSlider sIp4("NETPLAY_IP4", "Host IP: Octet 4", 1);
+    CustomSlider sIp4("NETPLAY_IP4", "Host IP: Octet 4", (float)g_ip_octet[3]);
     sIp4.lowerBound = 0; sIp4.upperBound = 255; sIp4.stepSize = 1; sIp4.decimalPlaces = 0;
     hb.CreateSlider(sIp4, thisptr);
 }
