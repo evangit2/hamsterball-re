@@ -550,10 +550,8 @@ static void updateWarpStateMachine(void) {
             diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
         }
 
-        /* Per-frame: jiggle ball upward 0.25 units (same as Up Race VAC-IN) */
-        if (ball) {
-            *(float *)((char *)ball + BALL_POS_Y) += 0.25f;
-        }
+        /* Per-frame: ball frozen (impact + in-tar), no movement — like
+         * Up Race VAC-IN phase 0 but without the upward drift */
 
         updateMusicFade();
 
