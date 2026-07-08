@@ -36,7 +36,7 @@
  *   - CRITICAL: FVF never set before DrawPrimitiveUP — D3D used whatever FVF
  *     the game had (likely includes texture coords not in TLVertex). Now saves
  *     old FVF via GetVertexShader, sets D3DFVF_TLVERTEX, restores after.
- *   - CRITICAL: JIGGLE phase skipped — g_phaseStartTime was 0 on first frame,
+ *   - CRITICAL: RUMBLE phase skipped — g_phaseStartTime was 0 on first frame,
  *     so elapsed=GetTickCount()-0=system uptime >> 2000ms. Phase ended in 1
  *     frame. Now initializes timestamps in WarpCollisionHandler before setting
  *     phase.
@@ -52,7 +52,7 @@
  *   - FADE duration increased to 2 seconds
  *
  * Phase timeline (real-time, not frame-based):
- *   JIGGLE: 2.0 sec — Ball frozen + jiggling + sound + music fade start
+ *   RUMBLE: 2.0 sec — Ball frozen + jiggling + sound + music fade start
  *   FLASH:  0.25 sec — Ball invisible + quick white flash
  *   HOLD:   1.0 sec — Pause, screen clear, ball stays invisible
  *   FADE:   6.0 sec — Screen fades to solid white
@@ -60,7 +60,7 @@
  *   REVEAL: 1.0 sec — Fade from white to reveal new level
  *   Total:  ~10.25 sec
  *
- * Music fade: 3.0 sec starting at JIGGLE start
+ * Music fade: 3.0 sec starting at RUMBLE start
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v6.c -lwinmm \
@@ -330,7 +330,7 @@ static int findRaceIndex(const char *levelName) {
 
 typedef enum {
     PHASE_IDLE = 0,
-    PHASE_JIGGLE,
+    PHASE_RUMBLE,
     PHASE_FLASH,
     PHASE_HOLD,
     PHASE_FADE,
@@ -346,7 +346,7 @@ static volatile int g_musicFadeStarted = 0;
 static volatile float g_musicOrigVolume = 1.0f;
 
 /* Phase durations in milliseconds (framerate-independent!) */
-#define JIGGLE_DURATION_MS    2000   /* 2.0 sec */
+#define RUMBLE_DURATION_MS    2000   /* 2.0 sec */
 #define FLASH_DURATION_MS      250   /* 0.25 sec */
 #define HOLD_DURATION_MS      1000   /* 1.0 sec — pause between flash and fade */
 #define FADE_DURATION_MS      6000   /* 6.0 sec (3x original) */
@@ -361,7 +361,7 @@ static volatile float g_whiteAlpha = 0.0f;
 
 /* Ball position saved at warp start for jiggling */
 static volatile float g_ballOrigY = 0.0f;
-static volatile int g_jiggleInit = 0;
+static volatile int g_rumbleInit = 0;
 static volatile int g_warpBall = 0;  /* Ball pointer saved at warp trigger */
 
 /* ============================================================
@@ -537,17 +537,17 @@ static void updateWarpStateMachine(void) {
     }
 
     switch (g_phase) {
-    case PHASE_JIGGLE: {
+    case PHASE_RUMBLE: {
         elapsed = now - g_phaseStartTime;
 
         /* On first frame: freeze ball, start music fade */
-        if (!g_jiggleInit && ball) {
-            g_jiggleInit = 1;
+        if (!g_rumbleInit && ball) {
+            g_rumbleInit = 1;
             g_ballOrigY = *(float *)((char *)ball + BALL_POS_Y);
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
             *(char *)((char *)ball + BALL_IN_TAR) = 1;
             startMusicFade();
-            diag_logf("[warp] PHASE_JIGGLE start: ballY=%.2f", g_ballOrigY);
+            diag_logf("[warp] PHASE_RUMBLE start: ballY=%.2f", g_ballOrigY);
         }
 
         /* Per-frame: ball frozen (impact + in-tar), no movement — like
@@ -555,10 +555,10 @@ static void updateWarpStateMachine(void) {
 
         updateMusicFade();
 
-        if (elapsed >= JIGGLE_DURATION_MS) {
+        if (elapsed >= RUMBLE_DURATION_MS) {
             g_phase = PHASE_FLASH;
             g_phaseStartTime = now;
-            diag_logf("[warp] -> PHASE_FLASH (jiggle ran %lums, init=%d)", (unsigned long)elapsed, g_jiggleInit);
+            diag_logf("[warp] -> PHASE_FLASH (rumble ran %lums, init=%d)", (unsigned long)elapsed, g_rumbleInit);
         }
         break;
     }
@@ -762,8 +762,8 @@ static void WarpCollisionHandler(void) {
                                 /* App_StartPracticeRace expects 0-based index (0-14),
                                  * but findRaceIndex returns 1-based (1-15) */
                                 g_warpLevelIndex = raceIndex - 1;
-                                g_phase = PHASE_JIGGLE;
-                                g_jiggleInit = 0;
+                                g_phase = PHASE_RUMBLE;
+                                g_rumbleInit = 0;
                                 g_warpBall = (int)ball;  /* Save ball pointer from collision */
                                 /* Initialize timestamps NOW so elapsed=0 on first frame */
                                 {
