@@ -882,31 +882,22 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 if (board) {
                     scan_for_custom_entities(board);
 
-                    /* If we found entities, compute rotation center and activate */
+                    /* If we found entities, get rotation center from S1 ref point */
                     if (g_entity_count > 0 && g_rot_state) {
-                        DWORD scene = get_scene(board);
-                        if (scene) {
-                            DWORD mw = get_meshworld(scene);
-                            if (mw && !IsBadReadPtr((void*)(mw + 0x438), 4)) {
-                                int total_vtx = *(int*)(mw + 0x438);
-                                if (!IsBadReadPtr((void*)(mw + 0x440), 4)) {
-                                    float* vtx = *(float**)(mw + 0x440);
-                                    if (vtx && total_vtx >= 272 &&
-                                        !IsBadReadPtr(vtx, total_vtx * 32)) {
-                                        int start = total_vtx - 272;
-                                        float sx=0, sy=0, sz=0;
-                                        int i;
-                                        for (i = 0; i < 272; i++) {
-                                            float* v = vtx + (start + i) * 8;
-                                            sx += v[0]; sy += v[1]; sz += v[2];
-                                        }
-                                        g_rot_state->center_x = sx / 272;
-                                        g_rot_state->center_y = sy / 272;
-                                        g_rot_state->center_z = sz / 272;
-                                        g_rot_state->angle = 0.0f;
-                                        g_rot_state->active = 1;
-                                    }
-                                }
+                        /* The entity transform contains the S1 ref point position */
+                        /* which is the world position where the entity was placed */
+                        int i;
+                        for (i = 0; i < g_entity_count; i++) {
+                            CustomEntity* ent = &g_entities[i];
+                            if (ent->initialized && ent->transform) {
+                                EntityTransform* t = (EntityTransform*)ent->transform;
+                                /* S1 ref point position is stored in the transform */
+                                g_rot_state->center_x = t->posX;
+                                g_rot_state->center_y = t->posY;
+                                g_rot_state->center_z = t->posZ;
+                                g_rot_state->angle = 0.0f;
+                                g_rot_state->active = 1;
+                                break;
                             }
                         }
                     }

@@ -74,26 +74,18 @@ static HRESULT WINAPI Hooked_SetTransform(IDirect3DDevice8* This,
                                            D3DTRANSFORMSTATETYPE State,
                                            const D3DMATRIX* pMatrix) {
     if (g_state && g_state->active && State == D3DTS_WORLD && pMatrix && g_orig_SetTransform) {
-        float tx = pMatrix->_41;
-        float ty = pMatrix->_42;
-        float tz = pMatrix->_43;
-
-        float dx = tx - g_state->center_x;
-        float dy = ty - g_state->center_y;
-        float dz = tz - g_state->center_z;
-        float dist_sq = dx*dx + dy*dy + dz*dz;
-
-        if (dist_sq < 100.0f) {
-            D3DMATRIX rotX, transToCenter, transBack, tmp1, tmp2;
-            build_translate(&transToCenter, -g_state->center_x, -g_state->center_y, -g_state->center_z);
-            build_translate(&transBack, g_state->center_x, g_state->center_y, g_state->center_z);
-            build_rotX(&rotX, g_state->angle);
-            mat_mul(&tmp1, &transToCenter, pMatrix);
-            mat_mul(&tmp2, &rotX, &tmp1);
-            mat_mul(&tmp2, &transBack, &tmp2);
-            return g_orig_SetTransform(This, State, &tmp2);
-        }
-        g_state->frame_count++;
+        /* Apply rotation to ALL world transforms — no position check.
+         * The entity vertices are in local space; the world matrix
+         * comes from the octree node, not the S1 ref point.
+         * We rotate around the entity's world center (from S1 ref point). */
+        D3DMATRIX rotX, transToCenter, transBack, tmp1, tmp2;
+        build_translate(&transToCenter, -g_state->center_x, -g_state->center_y, -g_state->center_z);
+        build_translate(&transBack, g_state->center_x, g_state->center_y, g_state->center_z);
+        build_rotX(&rotX, g_state->angle);
+        mat_mul(&tmp1, &transToCenter, pMatrix);
+        mat_mul(&tmp2, &rotX, &tmp1);
+        mat_mul(&tmp2, &transBack, &tmp2);
+        return g_orig_SetTransform(This, State, &tmp2);
     }
 
     return g_orig_SetTransform(This, State, pMatrix);
