@@ -13,23 +13,26 @@ The authoritative list of all 15 race tracks and 15 arenas in Hamsterball.
 
 ## Race Tracks (in tournament order)
 
-| # | Display Name | XML Tag | Level File | Tier Color | Board Ctor |
-|---|-------------|---------|-----------|------------|------------|
+| # | Display Name | XML Tag | Level File | Checker Color | Board Ctor |
+|---|-------------|---------|-----------|---------------|------------|
 | 1 | Warm-up Race | `BEGINNERRACE` | `Level1.MESHWORLD` | Pink | `LevelBoard_WarmUp_ctor` (0x41CA40) |
-| 2 | Beginner Race | `CASCADERACE` | `LevelCascade.MESHWORLD` | Blue | `LevelBoard_Beginner_ctor` (0x4200E0) |
-| 3 | Intermediate Race | `INTERMEDIATERACE` | `Level2.MESHWORLD` | Green | `LevelBoard_Intermediate_ctor` |
-| 4 | Dizzy Race | `DIZZYRACE` | `Level3.MESHWORLD` | — | `LevelBoard_Dizzy_ctor` |
-| 5 | Tower Race | `TOWERRACE` | `Level4.MESHWORLD` | — | `LevelBoard_Tower_ctor` |
-| 6 | Up Race | `UPRACE` | `LevelUp.MESHWORLD` | Red | `LevelBoard_Up_ctor` (0x420390) |
-| 7 | Neon Race | `NEONRACE` | `LevelDark.MESHWORLD` | Orange | `Board_NeonRace_ctor` |
-| 8 | Expert Race | `EXPERTRACE` | `Level5.MESHWORLD` | — | `LevelBoard_Expert_ctor` |
-| 9 | Odd Race | `ODDRACE` | `Level6.MESHWORLD` | — | `LevelBoard_Odd_ctor` |
-| 10 | Toob Race | `TOOBRACE` | `Level8.MESHWORLD` | — | `LevelBoard_Toob_ctor` (0x41F4B0) |
-| 11 | Wobbly Race | `WOBBLYRACE` | `Level7.MESHWORLD` | — | `LevelBoard_Wobbly_ctor` |
-| 12 | Glass Race | `GLASSRACE` | `LevelGlass.MESHWORLD` | — | `Board_Glass_ctor` |
-| 13 | Sky Race | `SKYRACE` | `Level9.MESHWORLD` | — | `LevelBoard_Sky_ctor` |
-| 14 | Master Race | `MASTERRACE` | `Level10.MESHWORLD` | — | `LevelBoard_Master_ctor` |
-| 15 | Impossible Race | `IMPOSSIBLERACE` | `LevelImpossible.MESHWORLD` | — | `Board_Impossible_ctor` |
+| 2 | Beginner Race | `CASCADERACE` | `LevelCascade.MESHWORLD` | Orange | `LevelBoard_Beginner_ctor` (0x4200E0) |
+| 3 | Intermediate Race | `INTERMEDIATERACE` | `Level2.MESHWORLD` | Blue | `LevelBoard_Intermediate_ctor` |
+| 4 | Dizzy Race | `DIZZYRACE` | `Level3.MESHWORLD` | Green | `LevelBoard_Dizzy_ctor` |
+| 5 | Tower Race | `TOWERRACE` | `Level4.MESHWORLD` | Yellow | `LevelBoard_Tower_ctor` |
+| 6 | Up Race | `UPRACE` | `LevelUp.MESHWORLD` | Purple | `LevelBoard_Up_ctor` (0x420390) |
+| 7 | Neon Race | `NEONRACE` | `LevelDark.MESHWORLD` | Yellow* | `Board_NeonRace_ctor` |
+| 8 | Expert Race | `EXPERTRACE` | `Level5.MESHWORLD` | Red | `LevelBoard_Expert_ctor` |
+| 9 | Odd Race | `ODDRACE` | `Level6.MESHWORLD` | Orange | `LevelBoard_Odd_ctor` |
+| 10 | Toob Race | `TOOBRACE` | `Level8.MESHWORLD` | Blue | `LevelBoard_Toob_ctor` (0x41F4B0) |
+| 11 | Wobbly Race | `WOBBLYRACE` | `Level7.MESHWORLD` | Green | `LevelBoard_Wobbly_ctor` |
+| 12 | Glass Race | `GLASSRACE` | `LevelGlass.MESHWORLD` | Pink | `Board_Glass_ctor` |
+| 13 | Sky Race | `SKYRACE` | `Level9.MESHWORLD` | Light Blue | `LevelBoard_Sky_ctor` |
+| 14 | Master Race | `MASTERRACE` | `Level10.MESHWORLD` | Gray** | `LevelBoard_Master_ctor` |
+| 15 | Impossible Race | `IMPOSSIBLERACE` | `LevelImpossible.MESHWORLD` | Red | `Board_Impossible_ctor` |
+
+\* Neon: Technically black and white textures, but yellow lighting makes it appear yellow.
+\** Master: Gray floor, brownish walls, black sky.
 
 ## Arenas (in tournament order)
 

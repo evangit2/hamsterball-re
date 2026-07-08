@@ -187,23 +187,26 @@ Object types follow a `PREFIX:NAME(MODIFIER)` pattern:
 > tags also differ from display names (e.g. `BEGINNERRACE` = Warm-up Race,
 > `CASCADERACE` = Beginner Race). Always cross-reference with RaceData.xml.
 
-| # | Display Name | XML Tag | Level File | Tier Color |
-|---|-------------|---------|-----------|------------|
+| # | Display Name | XML Tag | Level File | Checker Color |
+|---|-------------|---------|-----------|---------------|
 | 1 | Warm-up Race | BEGINNERRACE | Level1.MESHWORLD | Pink |
-| 2 | Beginner Race | CASCADERACE | LevelCascade.MESHWORLD | Blue |
-| 3 | Intermediate Race | INTERMEDIATERACE | Level2.MESHWORLD | Green |
-| 4 | Dizzy Race | DIZZYRACE | Level3.MESHWORLD | — |
-| 5 | Tower Race | TOWERRACE | Level4.MESHWORLD | — |
-| 6 | Up Race | UPRACE | LevelUp.MESHWORLD | Red |
-| 7 | Neon Race | NEONRACE | LevelDark.MESHWORLD | Orange |
-| 8 | Expert Race | EXPERTRACE | Level5.MESHWORLD | — |
-| 9 | Odd Race | ODDRACE | Level6.MESHWORLD | — |
-| 10 | Toob Race | TOOBRACE | Level8.MESHWORLD | — |
-| 11 | Wobbly Race | WOBBLYRACE | Level7.MESHWORLD | — |
-| 12 | Glass Race | GLASSRACE | LevelGlass.MESHWORLD | — |
-| 13 | Sky Race | SKYRACE | Level9.MESHWORLD | — |
-| 14 | Master Race | MASTERRACE | Level10.MESHWORLD | — |
-| 15 | Impossible Race | IMPOSSIBLERACE | LevelImpossible.MESHWORLD | — |
+| 2 | Beginner Race | CASCADERACE | LevelCascade.MESHWORLD | Orange |
+| 3 | Intermediate Race | INTERMEDIATERACE | Level2.MESHWORLD | Blue |
+| 4 | Dizzy Race | DIZZYRACE | Level3.MESHWORLD | Green |
+| 5 | Tower Race | TOWERRACE | Level4.MESHWORLD | Yellow |
+| 6 | Up Race | UPRACE | LevelUp.MESHWORLD | Purple |
+| 7 | Neon Race | NEONRACE | LevelDark.MESHWORLD | Yellow* |
+| 8 | Expert Race | EXPERTRACE | Level5.MESHWORLD | Red |
+| 9 | Odd Race | ODDRACE | Level6.MESHWORLD | Orange |
+| 10 | Toob Race | TOOBRACE | Level8.MESHWORLD | Blue |
+| 11 | Wobbly Race | WOBBLYRACE | Level7.MESHWORLD | Green |
+| 12 | Glass Race | GLASSRACE | LevelGlass.MESHWORLD | Pink |
+| 13 | Sky Race | SKYRACE | Level9.MESHWORLD | Light Blue |
+| 14 | Master Race | MASTERRACE | Level10.MESHWORLD | Gray** |
+| 15 | Impossible Race | IMPOSSIBLERACE | LevelImpossible.MESHWORLD | Red |
+
+\* Neon: Technically black/white textures, yellow lighting makes it appear yellow.
+\** Master: Gray floor, brownish walls, black sky.
 
 ### Arena Levels (15 arenas — one per race level)
 
