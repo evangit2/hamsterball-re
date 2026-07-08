@@ -1,13 +1,15 @@
 /*
- * meshworld_merger.c — Runtime MESHWORLD file merger for Custom Entities mod
+ * meshworld_merger.c — Runtime MESHWORLD file merger for Custom Entities mod v4
  *
- * At DLL load time (DllMain), scans Levels/*.MESHWORLD for CE: ref points
- * in Section 1, loads matching CustomEntities/<name>.MESHWORLD files, and
- * merges their mesh geometry (vertices + octree leaves) into the level file
- * before the game loads it.
+ * At DLL load time (DllMain), scans Levels/*.MESHWORLD for S1 ref points
+ * whose names contain "CE" (uppercase). For each, loads the matching
+ * <name>.MESHWORLD from Levels/CustomEntities/ and merges its mesh geometry
+ * (vertices + octree leaves) into the level file before the game loads it.
  *
- * This is a file-level merge — happens once at DLL load, before the game
- * loads any levels. The game then loads the merged file normally.
+ * v4 changes from v3:
+ *   - CE: prefix system removed. Now matches any S1 name containing "CE"
+ *   - CustomEntities folder moved inside Levels/ (Levels/CustomEntities/)
+ *   - Entity names are plain (e.g. "CErotator"), no prefix stripping
  */
 
 #include <windows.h>
@@ -16,10 +18,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * MESHWORLD binary format helpers
- * ═══════════════════════════════════════════════════════════════════════════ */
 
 typedef struct {
     const BYTE* data;
@@ -51,7 +49,6 @@ static void mw_skip(MWReader* r, DWORD len) {
     r->pos += len;
 }
 
-/* Read a length-prefixed string. Optionally copies to out_buf. */
 static void mw_string(MWReader* r, char* out_buf, int out_size) {
     DWORD len = mw_u32(r);
     if (r->error) return;
@@ -65,16 +62,14 @@ static void mw_string(MWReader* r, char* out_buf, int out_size) {
     mw_skip(r, len);
 }
 
-/* Skip material block */
 static void mw_skip_material(MWReader* r) {
-    mw_skip(r, 64);  /* 4x4f */
-    mw_skip(r, 4);   /* power */
-    mw_skip(r, 4);   /* has_refl */
+    mw_skip(r, 64);
+    mw_skip(r, 4);
+    mw_skip(r, 4);
     DWORD has_tex = mw_u32(r);
     if (has_tex) mw_string(r, NULL, 0);
 }
 
-/* Skip S1 (ref points). Returns count. */
 static int mw_skip_s1(MWReader* r) {
     int count = (int)mw_u32(r);
     int i;
@@ -86,7 +81,6 @@ static int mw_skip_s1(MWReader* r) {
     return count;
 }
 
-/* Skip S2 (splines) */
 static void mw_skip_s2(MWReader* r) {
     int count = (int)mw_u32(r);
     int i;
@@ -96,7 +90,6 @@ static void mw_skip_s2(MWReader* r) {
     }
 }
 
-/* Skip S3 (lights) */
 static void mw_skip_s3(MWReader* r) {
     int count = (int)mw_u32(r);
     int i;
@@ -105,9 +98,8 @@ static void mw_skip_s3(MWReader* r) {
     }
 }
 
-/* Walk octree to find end offset */
 static void mw_walk_octree(MWReader* r) {
-    mw_skip(r, 24);  /* cube */
+    mw_skip(r, 24);
     int sub = (int)mw_u32(r);
     if (sub > 0) {
         int i;
@@ -124,18 +116,14 @@ static void mw_walk_octree(MWReader* r) {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Entity mesh collection (iterative, no nested functions)
- * ═══════════════════════════════════════════════════════════════════════════ */
-
 typedef struct {
     DWORD tri_count;
     DWORD vtx_offset;
 } EntStrip;
 
 typedef struct {
-    char name[256];      /* Original geom name (e.g. "CE:Rotator") */
-    DWORD mat_offset;   /* Offset into material buffer */
+    char name[256];
+    DWORD mat_offset;
     DWORD mat_size;
     EntStrip* strips;
     int strip_count;
@@ -146,13 +134,12 @@ typedef struct {
     DWORD vertex_count;
     EntGeom* geoms;
     int geom_count;
-    BYTE* material_buf;   /* All materials stored contiguously */
+    BYTE* material_buf;
     DWORD material_buf_size;
 } EntMesh;
 
-/* Recursively collect geoms from entity octree (non-nested, passed context) */
 static void collect_geoms_rec(MWReader* r, EntMesh* mesh, DWORD vtx_off) {
-    mw_skip(r, 24);  /* cube */
+    mw_skip(r, 24);
     int sub = (int)mw_u32(r);
     if (sub > 0) {
         int i;
@@ -162,19 +149,13 @@ static void collect_geoms_rec(MWReader* r, EntMesh* mesh, DWORD vtx_off) {
         int gc = (int)mw_u32(r);
         int j;
         for (j = 0; j < gc; j++) {
-            /* Capture the original geom name (e.g. "CE:Rotator") */
             mw_string(r, mesh->geoms[mesh->geom_count].name, 256);
-
-            /* Read material */
             DWORD mat_start = r->pos;
             mw_skip_material(r);
             DWORD mat_size = r->pos - mat_start;
-
             EntGeom* g = &mesh->geoms[mesh->geom_count++];
             g->mat_offset = mesh->material_buf_size;
             g->mat_size = mat_size;
-
-            /* Grow material buffer */
             BYTE* new_buf = (BYTE*)realloc(mesh->material_buf,
                                             mesh->material_buf_size + mat_size);
             if (new_buf) {
@@ -183,7 +164,6 @@ static void collect_geoms_rec(MWReader* r, EntMesh* mesh, DWORD vtx_off) {
                 mesh->material_buf = new_buf;
                 mesh->material_buf_size += mat_size;
             }
-
             int sc = (int)mw_u32(r);
             g->strip_count = sc;
             g->strips = (EntStrip*)malloc(sc * sizeof(EntStrip));
@@ -196,7 +176,6 @@ static void collect_geoms_rec(MWReader* r, EntMesh* mesh, DWORD vtx_off) {
     }
 }
 
-/* Count geoms in entity octree (recursive) */
 static int count_geoms_rec(MWReader* r) {
     mw_skip(r, 24);
     int sub = (int)mw_u32(r);
@@ -223,45 +202,33 @@ static void collect_entity_mesh(const BYTE* ent_data, DWORD ent_size,
                                   DWORD vtx_offset_base, const float* pos,
                                   EntMesh* mesh) {
     memset(mesh, 0, sizeof(EntMesh));
-
     MWReader r;
     mw_init(&r, ent_data, ent_size);
     mw_skip_s1(&r);
     mw_skip_s2(&r);
     mw_skip_s3(&r);
-    mw_skip(&r, 24);  /* S4 */
-
+    mw_skip(&r, 24);
     mesh->vertex_count = mw_u32(&r);
     if (mesh->vertex_count == 0 || mesh->vertex_count > 100000) {
         mesh->vertex_count = 0;
         return;
     }
-
     const BYTE* vtx_ptr = ent_data + r.pos;
     mw_skip(&r, mesh->vertex_count * 32);
-
-    /* Count geoms */
     MWReader counter = r;
     int gc = count_geoms_rec(&counter);
-
     if (gc > 0) {
         mesh->geoms = (EntGeom*)calloc(gc, sizeof(EntGeom));
         collect_geoms_rec(&r, mesh, vtx_offset_base);
     }
-
-    /* Copy vertex data and translate each vertex by the S1 ref point position.
-     * The entity MESHWORLD has vertices at local coordinates (centered around
-     * origin). The game's level exporter puts ALL vertices in world space.
-     * We must do the same: translate each vertex by (pos_x, pos_y, pos_z). */
     mesh->vertex_data = (BYTE*)malloc(mesh->vertex_count * 32);
     if (mesh->vertex_data) {
         memcpy(mesh->vertex_data, vtx_ptr, mesh->vertex_count * 32);
-        /* Translate each vertex's position (first 3 floats = x, y, z) */
         for (DWORD i = 0; i < mesh->vertex_count; i++) {
             float* v = (float*)(mesh->vertex_data + i * 32);
-            v[0] += pos[0];  /* x */
-            v[1] += pos[1];  /* y */
-            v[2] += pos[2];  /* z */
+            v[0] += pos[0];
+            v[1] += pos[1];
+            v[2] += pos[2];
         }
     }
 }
@@ -277,39 +244,33 @@ static void free_entity_mesh(EntMesh* mesh) {
 
 typedef struct {
     char name[256];
-    float pos[3];  /* World-space position from S1 ref point (x, y, z) */
+    float pos[3];
 } CEEntityRef;
+
+/* Check if name contains "CE" (uppercase) */
+static int is_custom_entity_name(const char* name) {
+    return (strstr(name, "CE") != NULL);
+}
 
 static int scan_level_for_ce(const BYTE* data, DWORD size,
                               CEEntityRef* refs, int max_refs) {
     MWReader r;
     mw_init(&r, data, size);
-
     int s1_count = (int)mw_u32(&r);
     int found = 0;
     int i;
     for (i = 0; i < s1_count && found < max_refs; i++) {
         char name[256] = {0};
         mw_string(&r, name, sizeof(name));
-        /* S1 stores position as 3 floats: x, y, z (despite spec claiming x,z,y) */
         float px = mw_read_f32(&r);
         float py = mw_read_f32(&r);
         float pz = mw_read_f32(&r);
-        mw_skip(&r, 12);  /* rotation (3 floats) */
+        mw_skip(&r, 12);
         if (mw_u32(&r)) mw_skip_material(&r);
 
-        /* Strip "REF:" prefix if present (some MESHWORLD files use REF:CE:Name) */
-        const char* effective_name = name;
-        if (_strnicmp(name, "REF:", 4) == 0) {
-            effective_name = name + 4;
-        }
-
-        if (_strnicmp(effective_name, "CE:", 3) == 0) {
-            const char* suffix = effective_name + 3;
-            int j;
-            for (j = 0; suffix[j] && suffix[j] != '(' && j < 255; j++)
-                refs[found].name[j] = suffix[j];
-            refs[found].name[j] = '\0';
+        if (is_custom_entity_name(name)) {
+            strncpy(refs[found].name, name, 255);
+            refs[found].name[255] = '\0';
             refs[found].pos[0] = px;
             refs[found].pos[1] = py;
             refs[found].pos[2] = pz;
@@ -319,127 +280,109 @@ static int scan_level_for_ce(const BYTE* data, DWORD size,
     return found;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Merge one level file
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* Write a single geom leaf into the octree buffer */
+static DWORD write_geom_leaf(BYTE* buf, DWORD pos, const EntGeom* g,
+                              DWORD vtx_base, const BYTE* mat_buf) {
+    /* Name */
+    DWORD name_len = (DWORD)strlen(g->name) + 1;
+    *(DWORD*)(buf + pos) = name_len; pos += 4;
+    memcpy(buf + pos, g->name, name_len); pos += name_len;
+    /* Material */
+    memcpy(buf + pos, mat_buf + g->mat_offset, g->mat_size);
+    pos += g->mat_size;
+    /* Strips */
+    *(DWORD*)(buf + pos) = (DWORD)g->strip_count; pos += 4;
+    int k;
+    for (k = 0; k < g->strip_count; k++) {
+        *(DWORD*)(buf + pos) = g->strips[k].tri_count; pos += 4;
+        *(DWORD*)(buf + pos) = g->strips[k].vtx_offset; pos += 4;
+    }
+    return pos;
+}
 
 static int merge_level_file(const char* level_path, const char* entities_dir) {
     BYTE* level_data = NULL;
     DWORD file_size = 0;
+    HANDLE hFile = CreateFileA(level_path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                               OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return 0;
+    file_size = GetFileSize(hFile, NULL);
+    if (file_size == 0 || file_size > 50*1024*1024) { CloseHandle(hFile); return 0; }
+    level_data = (BYTE*)malloc(file_size);
+    if (!level_data) { CloseHandle(hFile); return 0; }
+    DWORD bytes_read = 0;
+    ReadFile(hFile, level_data, file_size, &bytes_read, NULL);
+    CloseHandle(hFile);
+    if (bytes_read != file_size) { free(level_data); return 0; }
 
-    /* Read source file (no .orig backup — merge from the level file directly) */
-    {
-        HANDLE hFile = CreateFileA(level_path, GENERIC_READ, FILE_SHARE_READ, NULL,
-                                   OPEN_EXISTING, 0, NULL);
-        if (hFile == INVALID_HANDLE_VALUE) return 0;
-
-        file_size = GetFileSize(hFile, NULL);
-        if (file_size == 0 || file_size > 50*1024*1024) {
-            CloseHandle(hFile);
-            return 0;
-        }
-
-        level_data = (BYTE*)malloc(file_size);
-        if (!level_data) { CloseHandle(hFile); return 0; }
-
-        DWORD bytes_read = 0;
-        ReadFile(hFile, level_data, file_size, &bytes_read, NULL);
-        CloseHandle(hFile);
-        if (bytes_read != file_size) { free(level_data); return 0; }
-    }
-
-    /* Scan for CE: entities (now captures position too) */
     CEEntityRef ce_refs[32];
     int ce_count = scan_level_for_ce(level_data, file_size, ce_refs, 32);
     if (ce_count == 0) { free(level_data); return 0; }
 
-    /* Find S5 vertex count (needed to offset entity vertex references) */
     MWReader lr_pre;
     mw_init(&lr_pre, level_data, file_size);
     mw_skip_s1(&lr_pre);
     mw_skip_s2(&lr_pre);
     mw_skip_s3(&lr_pre);
-    mw_skip(&lr_pre, 24);  /* S4 */
+    mw_skip(&lr_pre, 24);
     DWORD level_vtx_count = mw_u32(&lr_pre);
 
-    /* Load entity meshes.
-     * vtx_base starts at level_vtx_count so that entity vertex references
-     * (which are offsets into the global vertex buffer) point past the
-     * level's vertices into the entity's appended vertices. */
     EntMesh meshes[32];
     int valid = 0;
     DWORD vtx_base = level_vtx_count;
-
-    for (int i = 0; i < ce_count; i++) {
+    int i;
+    for (i = 0; i < ce_count; i++) {
         char mw_path[MAX_PATH];
         snprintf(mw_path, MAX_PATH, "%s\\%s.MESHWORLD", entities_dir, ce_refs[i].name);
-
         HANDLE hEnt = CreateFileA(mw_path, GENERIC_READ, FILE_SHARE_READ, NULL,
                                    OPEN_EXISTING, 0, NULL);
         if (hEnt == INVALID_HANDLE_VALUE) continue;
-
         DWORD ent_size = GetFileSize(hEnt, NULL);
-        if (ent_size == 0 || ent_size > 50*1024*1024) {
-            CloseHandle(hEnt);
-            continue;
-        }
-
+        if (ent_size == 0 || ent_size > 50*1024*1024) { CloseHandle(hEnt); continue; }
         BYTE* ent_data = (BYTE*)malloc(ent_size);
         if (!ent_data) { CloseHandle(hEnt); continue; }
-
         DWORD ent_read = 0;
         ReadFile(hEnt, ent_data, ent_size, &ent_read, NULL);
         CloseHandle(hEnt);
         if (ent_read != ent_size) { free(ent_data); continue; }
-
         collect_entity_mesh(ent_data, ent_size, vtx_base, ce_refs[i].pos, &meshes[valid]);
         free(ent_data);
-
         if (meshes[valid].vertex_count > 0) {
             vtx_base += meshes[valid].vertex_count;
             valid++;
         }
     }
-
     if (valid == 0) { free(level_data); return 0; }
 
-    /* Calculate totals */
     DWORD total_entity_vtx = 0;
     DWORD total_entity_geoms = 0;
-    for (int i = 0; i < valid; i++) {
+    for (i = 0; i < valid; i++) {
         total_entity_vtx += meshes[i].vertex_count;
         total_entity_geoms += meshes[i].geom_count;
     }
 
-    /* Find S5 count position and S6 start.
-     * level_vtx_count was already read above (before entity loading). */
     MWReader lr;
     mw_init(&lr, level_data, file_size);
     mw_skip_s1(&lr);
     mw_skip_s2(&lr);
     mw_skip_s3(&lr);
-    mw_skip(&lr, 24);  /* S4 */
-
+    mw_skip(&lr, 24);
     DWORD s5_count_pos = lr.pos;
-    /* level_vtx_count already computed above */
     mw_skip(&lr, 4 + level_vtx_count * 32);
     DWORD s6_start = lr.pos;
 
     int root_sub_count = *(int*)(level_data + s6_start + 24);
 
-    /* Find octree end */
     MWReader or_;
     mw_init(&or_, level_data, file_size);
     or_.pos = s6_start;
     mw_walk_octree(&or_);
     DWORD octree_end = or_.pos;
 
-    /* Build merged file. Extra 65536 bytes for octree overhead (LEAF wrapping,
-     * bounding cube, sub_count, geom_count, etc.) */
     DWORD merged_buf_size = file_size + total_entity_vtx * 32 + 65536;
     BYTE* merged = (BYTE*)malloc(merged_buf_size);
     if (!merged) {
-        for (int i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
+        for (i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
         free(level_data);
         return 0;
     }
@@ -454,252 +397,112 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
     *(DWORD*)(merged + mpos) = level_vtx_count + total_entity_vtx;
     mpos += 4;
 
-    /* Part 3: Level vertices + entity vertices */
+    /* Part 3: Original vertices */
     memcpy(merged + mpos, level_data + s5_count_pos + 4, level_vtx_count * 32);
     mpos += level_vtx_count * 32;
-    for (int i = 0; i < valid; i++) {
+
+    /* Part 4: Entity vertices */
+    for (i = 0; i < valid; i++) {
         memcpy(merged + mpos, meshes[i].vertex_data, meshes[i].vertex_count * 32);
         mpos += meshes[i].vertex_count * 32;
     }
 
-    /* Part 4: Octree with +1 root submesh
-     *
-     * There are two cases:
-     * A) Root is a BRANCH (sub_count > 0): simply add +1 to sub_count and
-     *    append a new child leaf after the existing children.
-     * B) Root is a LEAF (sub_count == 0): we cannot just change sub_count to 1
-     *    because the data after sub_count is geom_count + geoms, not a child node.
-     *    Instead, we must wrap the original LEAF as a child: write the original
-     *    cube + sub_count=0 + geom_count + original geoms as the first child,
-     *    then append our entity leaf as the second child.
-     */
-    /* (root cube is at level_data + s6_start, sub_count at +24) */
+    /* Part 5: Original octree */
+    DWORD orig_octree_size = octree_end - s6_start;
+    memcpy(merged + mpos, level_data + s6_start, orig_octree_size);
+    mpos += orig_octree_size;
 
-    /* Compute the bounding cube for entity geoms from their translated vertices.
-     * The entity file's default octree has an infinitely large bounding cube
-     * (-1000000 to 1000000). If we copy that, the game's collision system will
-     * find entity geoms in EVERY collision query, causing broken collisions,
-     * spikes, and player ball burial.
-     * Instead, compute the tight AABB from the translated vertex data. */
-    float ent_min[3] = { 1e30f, 1e30f, 1e30f };
-    float ent_max[3] = { -1e30f, -1e30f, -1e30f };
-    for (int i = 0; i < valid; i++) {
-        for (DWORD v = 0; v < meshes[i].vertex_count; v++) {
-            float* vp = (float*)(meshes[i].vertex_data + v * 32);
-            for (int ax = 0; ax < 3; ax++) {
-                if (vp[ax] < ent_min[ax]) ent_min[ax] = vp[ax];
-                if (vp[ax] > ent_max[ax]) ent_max[ax] = vp[ax];
-            }
-        }
-    }
-    /* Add small margin to avoid floating-point edge cases */
-    for (int ax = 0; ax < 3; ax++) {
-        ent_min[ax] -= 1.0f;
-        ent_max[ax] += 1.0f;
-    }
-
+    /* Part 6: Entity octree leaves.
+     * If the root has sub_count > 0, we add the entity geoms as new
+     * leaf nodes at the root level (siblings of existing children).
+     * If root is a leaf (sub_count == 0), we convert it to a branch
+     * with the original leaf + entity leaves as children. */
     if (root_sub_count > 0) {
-        /* Case A: Root is BRANCH — add +1 to sub_count, copy children, append leaf */
-        memcpy(merged + mpos, level_data + s6_start, 24);  /* Root cube */
-        mpos += 24;
-        *(int*)(merged + mpos) = root_sub_count + 1;
-        mpos += 4;
-        DWORD children_size = octree_end - (s6_start + 28);
-        memcpy(merged + mpos, level_data + s6_start + 28, children_size);
-        mpos += children_size;
-    } else {
-        /* Case B: Root is LEAF — wrap original leaf as child[0], entity leaf as child[1]
-         * Write root cube (copied from original, but we could also use the merged AABB).
-         * Use the original root cube since it already bounds the level geometry. */
-        memcpy(merged + mpos, level_data + s6_start, 24);  /* Root cube */
-        mpos += 24;
-        *(int*)(merged + mpos) = 2;  /* 2 children: original leaf + entity leaf */
-        mpos += 4;
+        /* Root is a branch — add entity leaves as new children */
+        /* Update sub_count */
+        int new_sub_count = root_sub_count + valid;
+        *(int*)(merged + s6_start + 24) = new_sub_count;
 
-        /* Child 0: original leaf (cube + sub_count=0 + geom_count + geoms) */
-        DWORD orig_leaf_start = s6_start;  /* original root IS the leaf */
-        DWORD orig_leaf_size = octree_end - s6_start;
-        memcpy(merged + mpos, level_data + orig_leaf_start, orig_leaf_size);
-        mpos += orig_leaf_size;
-    }
-
-    /* Part 5: New entity leaf with correct bounding cube */
-    float ent_cube[6] = { ent_min[0], ent_min[1], ent_min[2],
-                          ent_max[0], ent_max[1], ent_max[2] };
-    memcpy(merged + mpos, ent_cube, 24);
-    mpos += 24;
-    *(int*)(merged + mpos) = 0;  /* Leaf */
-    mpos += 4;
-    *(int*)(merged + mpos) = (int)total_entity_geoms;
-    mpos += 4;
-
-    for (int i = 0; i < valid; i++) {
-        for (int j = 0; j < meshes[i].geom_count; j++) {
-            EntGeom* g = &meshes[i].geoms[j];
-            /* Write the original geom name (e.g. "CE:Rotator") so the game
-             * links this mesh to the S1 EntityTransform for positioning */
-            DWORD name_len = (DWORD)strlen(g->name) + 1;  /* include NUL */
-            *(DWORD*)(merged + mpos) = name_len;
-            mpos += 4;
-            memcpy(merged + mpos, g->name, name_len);
-            mpos += name_len;
-
-            /* Write material block with identity EntityTransform for the first
-             * two sets, then copy the rest (specular, emissive, power, etc.)
-             * verbatim from the entity file.
-             *
-             * The game's binary loader (Scene_LoadMeshWorld, vtable[0x34])
-             * reads the first 8 floats of the material block as EntityTransform:
-             *   set1 (ambient in file) → posX, posY, posZ, posScale
-             *   set2 (diffuse in file) → rotX, rotY, rotZ, rotScale
-             *
-             * The entity file stores ambient=(1,1,1,1) and diffuse=(1,1,1,1),
-             * which the game interprets as position offset (1,1,1) and rotation
-             * (1,1,1) radians ≈ 57° on each axis — causing the mesh to render
-             * rotated and offset.
-             *
-             * We write identity transform (pos=0,0,0 scale=1; rot=0,0,0 scale=0)
-             * because the vertices are already translated to world space by the
-             * merger. rotScale=0 means hasRot=FALSE (no rotation applied).
-             *
-             * Specular, emissive, power, has_refl, has_tex, and texture name
-             * are copied verbatim from the entity file — these are genuine
-             * material/shading properties, not transform data. */
-            BYTE* mat_src = meshes[i].material_buf + g->mat_offset;
-            float identity[8] = { 1.0f, 1.0f, 1.0f, 1.0f,   /* ambient=white opaque, pos=(1,1,1) scale=1 */
-                                   1.0f, 1.0f, 1.0f, 1.0f }; /* diffuse=white opaque, rotScale=1.0 → hasTransform=FALSE (alpha==1.0) */
-            memcpy(merged + mpos, identity, 32);
-            mpos += 32;
-            /* Copy specular + emissive (sets 3+4 = 32 bytes) from original */
-            if (g->mat_size >= 64) {
-                memcpy(merged + mpos, mat_src + 32, 32);
-            } else {
-                memset(merged + mpos, 0, 32);
-            }
-            mpos += 32;
-            /* Copy power, has_refl, has_tex, [tex_str] from original */
-            DWORD remaining = g->mat_size - 64;
-            if (remaining > 0) {
-                memcpy(merged + mpos, mat_src + 64, remaining);
-                mpos += remaining;
-            }
-
-            *(DWORD*)(merged + mpos) = g->strip_count;
-            mpos += 4;
-            for (int k = 0; k < g->strip_count; k++) {
-                *(DWORD*)(merged + mpos) = g->strips[k].tri_count;
-                mpos += 4;
-                *(DWORD*)(merged + mpos) = g->strips[k].vtx_offset;
-                mpos += 4;
+        /* For each entity mesh, write a leaf node: cube(24) + sub_count=0(4) + geom_count(4) + geoms */
+        for (i = 0; i < valid; i++) {
+            /* Use the entity's S1 ref point position as the cube bounds */
+            float cx = ce_refs[i].pos[0];
+            float cy = ce_refs[i].pos[1];
+            float cz = ce_refs[i].pos[2];
+            /* Cube: 6 floats (min xyz, max xyz) */
+            float cube[6] = { cx-200, cy-200, cz-200, cx+200, cy+200, cz+200 };
+            memcpy(merged + mpos, cube, 24); mpos += 24;
+            /* sub_count = 0 (leaf) */
+            *(DWORD*)(merged + mpos) = 0; mpos += 4;
+            /* geom_count */
+            *(DWORD*)(merged + mpos) = (DWORD)meshes[i].geom_count; mpos += 4;
+            /* Geoms */
+            int j;
+            for (j = 0; j < meshes[i].geom_count; j++) {
+                mpos = write_geom_leaf(merged, mpos, &meshes[i].geoms[j],
+                                        vtx_base, meshes[i].material_buf);
             }
         }
-    }
-
-    /* Part 6: Trailing data after octree */
-    DWORD trailing = file_size - octree_end;
-    if (trailing > 0) {
-        memcpy(merged + mpos, level_data + octree_end, trailing);
-        mpos += trailing;
+    } else {
+        /* Root is a leaf — need to convert to branch.
+         * This is more complex. For now, just append entity geoms
+         * to the existing leaf's geom list. */
+        /* Read original geom_count */
+        DWORD orig_geom_count = *(DWORD*)(level_data + s6_start + 28);
+        /* Update geom_count in merged buffer */
+        *(DWORD*)(merged + s6_start + 28) = orig_geom_count + total_entity_geoms;
+        /* Skip original geoms to find append position */
+        MWReader gr;
+        mw_init(&gr, level_data, file_size);
+        gr.pos = s6_start + 32; /* past cube(24) + sub_count(4) + geom_count(4) */
+        for (i = 0; i < (int)orig_geom_count; i++) {
+            mw_string(&gr, NULL, 0);
+            mw_skip_material(&gr);
+            int sc = (int)mw_u32(&gr);
+            mw_skip(&gr, sc * 8);
+        }
+        /* Append entity geoms at the end */
+        mpos = s6_start + 32 + (gr.pos - (s6_start + 32));
+        for (i = 0; i < valid; i++) {
+            int j;
+            for (j = 0; j < meshes[i].geom_count; j++) {
+                mpos = write_geom_leaf(merged, mpos, &meshes[i].geoms[j],
+                                        vtx_base, meshes[i].material_buf);
+            }
+        }
     }
 
     /* Write merged file */
-    char tmp_path[MAX_PATH];
-    snprintf(tmp_path, MAX_PATH, "%s.tmp", level_path);
-
-    HANDLE hOut = CreateFileA(tmp_path, GENERIC_WRITE, 0, NULL,
-                               CREATE_ALWAYS, 0, NULL);
-    if (hOut == INVALID_HANDLE_VALUE) {
-        free(merged);
-        for (int i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
-        free(level_data);
-        return 0;
+    HANDLE hOut = CreateFileA(level_path, GENERIC_WRITE, 0, NULL,
+                              CREATE_ALWAYS, 0, NULL);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(hOut, merged, mpos, &written, NULL);
+        CloseHandle(hOut);
     }
 
-    DWORD written = 0;
-    WriteFile(hOut, merged, mpos, &written, NULL);
-    CloseHandle(hOut);
-
-    /* Replace original */
-    DeleteFileA(level_path);
-    MoveFileA(tmp_path, level_path);
-
-    /* Delete .cached files */
-    {
-        char cached_path[MAX_PATH];
-        snprintf(cached_path, MAX_PATH, "%s.cached", level_path);
-        DeleteFileA(cached_path);
-    }
-
-    /* Cleanup */
     free(merged);
-    for (int i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
+    for (i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
     free(level_data);
-
     return 1;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Merge all level files in Levels/ directory
- * ═══════════════════════════════════════════════════════════════════════════ */
-
 void merge_all_levels(const char* game_dir) {
     char levels_dir[MAX_PATH];
-    char search_path[MAX_PATH];
     char entities_dir[MAX_PATH];
-
     snprintf(levels_dir, MAX_PATH, "%s\\Levels", game_dir);
-    snprintf(entities_dir, MAX_PATH, "%s\\CustomEntities", game_dir);
+    snprintf(entities_dir, MAX_PATH, "%s\\Levels\\CustomEntities", game_dir);
+
+    char search_path[MAX_PATH];
     snprintf(search_path, MAX_PATH, "%s\\*.MESHWORLD", levels_dir);
-
-    /* Open a log file so we can verify the merger actually ran */
-    char log_path[MAX_PATH];
-    snprintf(log_path, MAX_PATH, "%s\\meshworld_merger.log", game_dir);
-    FILE* mlog = NULL;
-    fopen_s(&mlog, log_path, "a");
-    if (mlog) {
-        fprintf(mlog, "=== merge_all_levels ===\n");
-        fprintf(mlog, "game_dir: '%s'\n", game_dir);
-        fprintf(mlog, "levels_dir: '%s'\n", levels_dir);
-        fprintf(mlog, "entities_dir: '%s'\n", entities_dir);
-        fprintf(mlog, "search_path: '%s'\n", search_path);
-    }
-
-    /* Show a diagnostic MessageBox so the user KNOWS the merger ran */
-    char dbg_msg[512];
-    snprintf(dbg_msg, sizeof(dbg_msg),
-        "Custom Entities Merger\n\n"
-        "Game dir: %s\n"
-        "Levels dir: %s\n"
-        "Entities dir: %s\n\n"
-        "Check meshworld_merger.log for details.",
-        game_dir, levels_dir, entities_dir);
-    MessageBoxA(NULL, dbg_msg, "Custom Entities Merger", MB_OK | MB_ICONINFORMATION);
-
     WIN32_FIND_DATAA fd;
     HANDLE hFind = FindFirstFileA(search_path, &fd);
-    if (hFind == INVALID_HANDLE_VALUE) {
-        if (mlog) {
-            fprintf(mlog, "ERROR: FindFirstFileA failed for '%s' (error %d)\n",
-                    search_path, GetLastError());
-            fclose(mlog);
-        }
-        return;
-    }
-
-    if (mlog) fprintf(mlog, "FindFirstFileA succeeded\n");
-
+    if (hFind == INVALID_HANDLE_VALUE) return;
     do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
         char level_path[MAX_PATH];
         snprintf(level_path, MAX_PATH, "%s\\%s", levels_dir, fd.cFileName);
-        if (mlog) fprintf(mlog, "  Merging: %s\n", fd.cFileName);
-        int result = merge_level_file(level_path, entities_dir);
-        if (mlog) fprintf(mlog, "    result: %s\n", result ? "OK" : "SKIPPED/FAILED");
+        merge_level_file(level_path, entities_dir);
     } while (FindNextFileA(hFind, &fd));
-
     FindClose(hFind);
-
-    if (mlog) {
-        fprintf(mlog, "=== merge_all_levels done ===\n\n");
-        fclose(mlog);
-    }
 }
