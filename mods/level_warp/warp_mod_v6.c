@@ -745,9 +745,18 @@ static void updateWarpStateMachine(void) {
                 char isPractice = *((char *)oldProfile + PROFILE_IS_PRACTICE);
                 wasInTournament = (isPractice == 0) ? 1 : 0;
                 if (wasInTournament) {
+                    int raceIdx = *(int *)((char *)oldProfile + 0x08);  /* current race index */
                     hasTournamentData = 1;
                     memcpy(savedScores, (void *)((char *)oldProfile + PROFILE_SCORE_ARRAY), sizeof(savedScores));
                     memcpy(savedTimes, (void *)((char *)oldProfile + PROFILE_TIME_ARRAY), sizeof(savedTimes));
+                    /* Save current race score/time into the array slot,
+                     * matching what Tournament_AdvanceRace(profile, 1) does:
+                     *   profile[raceIdx*4 + 0x14] = App+0x5E8 (score)
+                     *   profile[raceIdx*4 + 0x50] = current time */
+                    if (raceIdx >= 0 && raceIdx < 16) {
+                        savedScores[raceIdx] = *(float *)((char *)app + 0x5E8);
+                        diag_logf("[warp] Saved current race score %f at index %d", savedScores[raceIdx], raceIdx);
+                    }
                 }
             }
 
@@ -803,6 +812,33 @@ static void updateWarpStateMachine(void) {
                             memcpy((void *)((char *)newProfile + PROFILE_TIME_ARRAY), savedTimes, sizeof(savedTimes));
                         }
                         diag_log("[warp] Tournament mode restored: practice=0, scores copied to new profile");
+
+                        /* Set up tournament timer. App_StartPracticeRace creates
+                         * the board but doesn't set the timer — that normally
+                         * happens in Tournament_AdvanceRace(profile, 0).
+                         * We replicate the key parts:
+                         *   board = profile+0xC
+                         *   baseTime = board+0x2998
+                         *   Add 1000 (Pipsqueak) or 500 (Intermediate)
+                         *   board+0x2994 = time_limit (float→int via __ftol2)
+                         *   board+0x2990 = time_remaining
+                         *   App+0x5E8 = timer for P1, App+0x5EC = 0
+                         */
+                        {
+                            int board = *(int *)((char *)newProfile + 0x0C);
+                            if (board) {
+                                int baseTime = *(int *)((char *)board + 0x2998);
+                                int diff = *(int *)((char *)app + 0x23C);
+                                int timeLimit = baseTime + ((diff == 0) ? 1000 : 500);
+                                *(int *)((char *)board + 0x2994) = timeLimit;
+                                *(int *)((char *)board + 0x2990) = timeLimit;
+                                /* App timer slots: P1=+0x5E8/+0x5EC */
+                                *(int *)((char *)app + 0x5E8) = timeLimit;
+                                *(int *)((char *)app + 0x5EC) = 0;
+                                diag_logf("[warp] Tournament timer set: limit=%d (base=%d, diff=%d)",
+                                          timeLimit, baseTime, diff);
+                            }
+                        }
                     }
                 }
             }
