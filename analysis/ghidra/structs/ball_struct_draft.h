@@ -67,7 +67,7 @@ typedef struct {
     float accel_z;                // +0x2C0
     char field_2cc;               // +0x2CC set 0
     char pad_2cd;                // +0x2CD
-    char field_2d4;               // +0x2D4 set 0
+    char render_jitter;           // +0x2D4 — set by vacuum (CollisionFace_Update) to enable CPUID-based render jitter
     char field_2d5;               // +0x2D5 set 0
     int bump_timer;               // +0x2D8 set 0
     float lgp_x;                  // +0x2DC Last Grounded Position X (param_1[0xb7])

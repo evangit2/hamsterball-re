@@ -14,16 +14,15 @@
  *   - Fixed misleading log messages referencing v6c features that don't exist
  *
  * v6e fixes:
- *   - Added NULL check for board/ball in WarpCollisionHandler — entity-entity
- *     collisions pass a non-ball first arg, would crash on BALL_DEATH_PENDING
- *     dereference without this guard.
- *   - Fixed ball invisibility: game overwrites ball+0x2FC (alpha) to 1.0 every
- *     frame in its render pass, so the single write at flash peak was immediately
- *     undone. Now forces alpha=0.0 every frame during PHASE_FLASH and PHASE_FADE
- *     (same pattern as freecam mod). Respects respawn flag (ball+0x2F9).
- *   - Fixed screen fade: was writing to board+0x878 (App back-pointer) then
- *     +0x3624, corrupting App memory instead of writing fade alpha. Board IS
- *     the scene — write directly to board+0x3624.
+ *   - Replaced sin/cos position oscillation + game pause with the game's
+ *     native render jitter system (ball+0x2D4=1). This is the EXACT same
+ *     mechanism the Up Race vacuum (CollisionFace_Update, 0x43D160) uses
+ *     to make the ball vibrate — CPUID-based random jitter applied in the
+ *     render function (FUN_00403DB8). No pausing, no manual position writes.
+ *   - Removed dead g_ballOrigX/Y/Z globals and #include <math.h>.
+ *   - Removed board+0x874 pause/unpause — no longer needed since we don't
+ *     need to freeze Ball_Update to write positions.
+ *   - Renamed ball+0x2D4 to BALL_RENDER_JITTER across all code/docs.
  *
  * v6 fixes (found in prior code review):
  *   - CRITICAL: Race index off-by-one — findRaceIndex returns 1-based but
@@ -52,13 +51,13 @@
  *   - FADE duration increased to 2 seconds
  *
  * Phase timeline (real-time, not frame-based):
- *   RUMBLE: 2.0 sec — Ball frozen + jiggling + sound + music fade start
+ *   RUMBLE: 2.0 sec — Ball frozen + CPUID jitter + sound + music fade start
  *   FLASH:  0.25 sec — Ball invisible + quick white flash
  *   HOLD:   1.0 sec — Pause, screen clear, ball stays invisible
- *   FADE:   6.0 sec — Screen fades to solid white
+ *   FADE:   3.0 sec — Screen fades to solid white
  *   LOAD:   instant — Load target level while screen stays white
  *   REVEAL: 1.0 sec — Fade from white to reveal new level
- *   Total:  ~10.25 sec
+ *   Total:  ~7.25 sec
  *
  * Music fade: 3.0 sec starting at RUMBLE start
  *
@@ -73,7 +72,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 
 /* ============================================================
  * Diagnostic logging — uses vsnprintf (supports %f, unlike wvsprintfA)
@@ -264,6 +262,15 @@ static void load_real_bass(void)
 #define BALL_IMPACT_FREEZE       0x808
 #define BALL_IN_TAR              0x2CC
 #define BALL_ALPHA               0x2FC
+#define BALL_RENDER_JITTER       0x2D4   /* byte: set by vacuum (CollisionFace_Update
+                                          * 0x43D160) to enable CPUID-based random
+                                          * jitter in the ball render function
+                                          * (FUN_00403DB8). When =1, the render
+                                          * function adds random offsets to both
+                                          * the animation pose and the render
+                                          * position, making the ball and hamster
+                                          * model visibly shake. Cleared on
+                                          * vacuum release. */
 
 /* Collision event pair offsets */
 #define COLL_OBJ_NAME_OFFSET     0x864
@@ -349,7 +356,7 @@ static volatile float g_musicOrigVolume = 1.0f;
 #define RUMBLE_DURATION_MS    2000   /* 2.0 sec */
 #define FLASH_DURATION_MS      250   /* 0.25 sec */
 #define HOLD_DURATION_MS      1000   /* 1.0 sec — pause between flash and fade */
-#define FADE_DURATION_MS      6000   /* 6.0 sec (3x original) */
+#define FADE_DURATION_MS      3000   /* 3.0 sec */
 #define REVEAL_DURATION_MS    1000   /* 1.0 sec */
 #define MUSIC_FADE_MS         3000   /* 3.0 sec */
 
@@ -359,12 +366,9 @@ static volatile float g_musicOrigVolume = 1.0f;
 /* White screen alpha (0.0 = transparent, 1.0 = fully white) */
 static volatile float g_whiteAlpha = 0.0f;
 
-/* Ball position saved at warp start for vibration */
-static volatile float g_ballOrigX = 0.0f;
-static volatile float g_ballOrigY = 0.0f;
-static volatile float g_ballOrigZ = 0.0f;
+/* Ball pointer saved at warp trigger */
+static volatile int g_warpBall = 0;
 static volatile int g_rumbleInit = 0;
-static volatile int g_warpBall = 0;  /* Ball pointer saved at warp trigger */
 
 /* ============================================================
  * Memory helpers
@@ -542,50 +546,31 @@ static void updateWarpStateMachine(void) {
     case PHASE_RUMBLE: {
         elapsed = now - g_phaseStartTime;
 
-        /* On first frame: pause game, freeze ball, start music fade.
+        /* On first frame: set ball+0x2D4=1 (render jitter flag), freeze ball,
+         * and start music fade.
          *
-         * Setting board+0x874=1 (pause flag) freezes ALL game logic including
-         * the race timer and Ball_Update. The render path (Level_UpdateAndRender)
-         * still runs, so visual effects continue. This is the same flag the game's
-         * own pause system uses (Scene_CreateGameOverMenu sets it).
+         * ball+0x2D4 is the vacuum's render jitter flag. When set to 1, the
+         * ball's render function (FUN_00403DB8 at vtable[1]) adds CPUID-based
+         * random offsets to both the animation pose and the render position
+         * every frame. This is the EXACT same mechanism the Up Race vacuum
+         * (CollisionFace_Update, 0x43D160) uses to make the ball shake.
          *
-         * With the game paused, Ball_Update no longer overwrites ball+0x164/0x168/0x16C,
-         * so we can oscillate the position directly from this per-frame hook to
-         * create the vibration effect. The render function reads these fields
-         * every frame. */
+         * We also set ball+0x808=1000 (impact_freeze) and ball+0x2CC=1
+         * (in_tar) to freeze the ball's physics, matching the vacuum's
+         * capture behavior. This prevents the ball from moving while it
+         * vibrates.
+         *
+         * Unlike the old approach (sin/cos position oscillation + game pause),
+         * this uses the game's OWN render jitter system — no pausing needed,
+         * no manual position writes, and the vibration is identical to what
+         * the vacuum produces. */
         if (!g_rumbleInit && ball) {
             g_rumbleInit = 1;
-            g_ballOrigX = *(float *)((char *)ball + BALL_POS_X);
-            g_ballOrigY = *(float *)((char *)ball + BALL_POS_Y);
-            g_ballOrigZ = *(float *)((char *)ball + BALL_POS_Z);
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
             *(char *)((char *)ball + BALL_IN_TAR) = 1;
-            /* Pause the game — stops timer + Ball_Update */
-            if (board) {
-                *((char *)board + 0x874) = 1;
-            }
+            *(char *)((char *)ball + BALL_RENDER_JITTER) = 1;
             startMusicFade();
-            diag_logf("[warp] PHASE_RUMBLE start: ballPos=(%.2f, %.2f, %.2f), game paused",
-                       g_ballOrigX, g_ballOrigY, g_ballOrigZ);
-        }
-
-        /* Per-frame: vibrate ball position.
-         *
-         * The game is paused (board+0x874=1), so Ball_Update doesn't run and
-         * doesn't overwrite ball+0x164/0x168/0x16C. We oscillate the position
-         * directly — the render function (vtable[2] and vtable[7]) reads these
-         * fields every frame. Using sin/cos for smooth vibration.
-         *
-         * This mimics the vacuum's visual effect: the ball appears to shake
-         * rapidly without its physics position actually changing. */
-        if (ball) {
-            DWORD tick = GetTickCount();
-            float angle = (float)(tick % 360) * 0.01745329f;  /* deg to rad */
-            float offX = 0.3f * sinf(angle * 3.0f);
-            float offZ = 0.3f * cosf(angle * 3.0f);
-            *(float *)((char *)ball + BALL_POS_X) = g_ballOrigX + offX;
-            *(float *)((char *)ball + BALL_POS_Y) = g_ballOrigY + 0.15f * sinf(angle * 5.0f);
-            *(float *)((char *)ball + BALL_POS_Z) = g_ballOrigZ + offZ;
+            diag_logf("[warp] PHASE_RUMBLE start: render jitter enabled (ball+0x2D4=1)");
         }
 
         updateMusicFade();
@@ -686,16 +671,12 @@ static void updateWarpStateMachine(void) {
         int levelIdx = g_warpLevelIndex;
         g_warpLevelIndex = -1;
 
-        /* Clear ball freeze flags before loading */
+        /* Clear ball freeze + jitter flags before loading */
         if (ball) {
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 0;
             *(char *)((char *)ball + BALL_IN_TAR) = 0;
+            *(char *)((char *)ball + BALL_RENDER_JITTER) = 0;
             *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
-        }
-
-        /* Unpause the game before loading the new level */
-        if (board) {
-            *((char *)board + 0x874) = 0;
         }
 
         /* Save mode flags before calling App_StartPracticeRace.
@@ -772,6 +753,9 @@ static void updateWarpStateMachine(void) {
         } else {
             diag_logf("[warp] Invalid level index %d, aborting", levelIdx);
         }
+
+        /* Clear saved ball pointer — old ball was freed by App_StartPracticeRace */
+        g_warpBall = 0;
 
         /* Screen stays white, transition to REVEAL */
         g_whiteAlpha = 1.0f;
@@ -969,7 +953,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallCollisionHook();
     InstallFrameUpdateHook();
 
-    diag_log("[warp mod v6d] All hooks installed. Ready for E:WARP events.");
+    diag_log("[warp mod v6f] All hooks installed. Ready for E:WARP events.");
     return 0;
 }
 
@@ -994,8 +978,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v6d LOADED ===");
-        diag_log("v6d: removed dead PresentHook, dead setWinState, dead g_trampoline, fixed UB");
+        diag_log("=== LEVEL WARP MOD v6f LOADED ===");
+        diag_log("v6f: native render jitter (ball+0x2D4), no pause, no sin/cos oscillation");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);

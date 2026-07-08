@@ -96,7 +96,7 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0x2C8 | `uint8_t[4]` | pad_2c8 | | |
 | 0x2CC | `uint8_t` | field_2cc | ctor2 | `0` |
 | 0x2CD | `uint8_t[7]` | pad_2cd | | |
-| 0x2D4 | `uint8_t` | field_2d4 | ctor2 | `0` |
+| 0x2D4 | `uint8_t` | render_jitter | ctor2 | `0` — set to 1 by vacuum to enable CPUID-based render jitter (FUN_00403DB8) |
 | 0x2D5 | `uint8_t` | field_2d5 | ctor2, Update | `0` |
 | 0x2D6 | `uint8_t[2]` | pad_2d6 | | |
 | 0x2D8 | `uint32_t` | field_2d8 | ctor2 | `0` |

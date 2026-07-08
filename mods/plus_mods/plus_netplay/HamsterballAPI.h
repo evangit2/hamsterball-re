@@ -598,7 +598,7 @@ struct Ball {
 	std::uint8_t pad_2C8[0x2CC - 0x2C8];
 	bool disable_ball; // +0x2CC
 	std::uint8_t pad_2CD[0x2D4 - 0x2CD];
-	bool ball_shake; // +0x2D4 not sure if this is intended or what 
+	bool render_jitter; // +0x2D4 — set by vacuum (CollisionFace_Update) to enable CPUID-based random jitter in render function (FUN_00403DB8) 
 	std::uint8_t pad_2D5[0x2DC - 0x2D5];
 	float checkpoint_x; // +0x2DC
 	float checkpoint_y; // +0x2E0
@@ -920,7 +920,7 @@ static_assert(offsetof(Ball, cam_active) == 0x768);
 static_assert(offsetof(Ball, low_gravity_mode) == 0xC4C);
 static_assert(offsetof(Ball, world_matrix) == 0xC88);
 static_assert(offsetof(Ball, facing_angle) == 0x190);
-static_assert(offsetof(Ball, ball_shake) == 0x2D4);
+static_assert(offsetof(Ball, render_jitter) == 0x2D4);
 static_assert(offsetof(Ball, gravity_type) == 0x748);
 static_assert(offsetof(Ball, burn_amount) == 0xC50);
 static_assert(offsetof(Ball, home_position_x) == 0xC60);

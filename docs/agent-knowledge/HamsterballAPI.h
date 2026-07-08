@@ -261,7 +261,7 @@ struct Ball {
 	std::uint8_t pad_2C8[0x2CC - 0x2C8];
 	bool disable_ball;
 	std::uint8_t pad_2CD[0x2D4 - 0x2CD];
-	bool ball_shake;
+	bool render_jitter; // +0x2D4 — set by vacuum (CollisionFace_Update) to enable CPUID-based random jitter in render function (FUN_00403DB8)
 	std::uint8_t pad_2D5[0x2DC - 0x2D5];
 	float checkpoint_x;
 	float checkpoint_y;
