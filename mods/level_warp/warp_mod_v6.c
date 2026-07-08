@@ -359,8 +359,10 @@ static volatile float g_musicOrigVolume = 1.0f;
 /* White screen alpha (0.0 = transparent, 1.0 = fully white) */
 static volatile float g_whiteAlpha = 0.0f;
 
-/* Ball position saved at warp start for jiggling */
+/* Ball position saved at warp start for vibration */
+static volatile float g_ballOrigX = 0.0f;
 static volatile float g_ballOrigY = 0.0f;
+static volatile float g_ballOrigZ = 0.0f;
 static volatile int g_rumbleInit = 0;
 static volatile int g_warpBall = 0;  /* Ball pointer saved at warp trigger */
 
@@ -540,50 +542,50 @@ static void updateWarpStateMachine(void) {
     case PHASE_RUMBLE: {
         elapsed = now - g_phaseStartTime;
 
-        /* On first frame: freeze ball, start music fade */
+        /* On first frame: pause game, freeze ball, start music fade.
+         *
+         * Setting board+0x874=1 (pause flag) freezes ALL game logic including
+         * the race timer and Ball_Update. The render path (Level_UpdateAndRender)
+         * still runs, so visual effects continue. This is the same flag the game's
+         * own pause system uses (Scene_CreateGameOverMenu sets it).
+         *
+         * With the game paused, Ball_Update no longer overwrites ball+0x164/0x168/0x16C,
+         * so we can oscillate the position directly from this per-frame hook to
+         * create the vibration effect. The render function reads these fields
+         * every frame. */
         if (!g_rumbleInit && ball) {
             g_rumbleInit = 1;
+            g_ballOrigX = *(float *)((char *)ball + BALL_POS_X);
             g_ballOrigY = *(float *)((char *)ball + BALL_POS_Y);
+            g_ballOrigZ = *(float *)((char *)ball + BALL_POS_Z);
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
             *(char *)((char *)ball + BALL_IN_TAR) = 1;
+            /* Pause the game — stops timer + Ball_Update */
+            if (board) {
+                *((char *)board + 0x874) = 1;
+            }
             startMusicFade();
-            diag_logf("[warp] PHASE_RUMBLE start: ballY=%.2f", g_ballOrigY);
+            diag_logf("[warp] PHASE_RUMBLE start: ballPos=(%.2f, %.2f, %.2f), game paused",
+                       g_ballOrigX, g_ballOrigY, g_ballOrigZ);
         }
 
-        /* Per-frame: vibrate ball — replicates Up Race VAC-IN visual effect.
+        /* Per-frame: vibrate ball position.
          *
-         * The vibration comes from FUN_00408390 (ball vtable[4] — render update).
-         * It runs every frame EVEN WHEN PAUSED (called from Level_UpdateAndRender
-         * via vtable[0x1C]). When the ball is close to a target (distance < 220.0),
-         * it applies a sin/cos oscillation to the render position:
-         *   renderX = baseX + sin(angle) * amplitude
-         *   renderZ = baseZ + cos(angle) * amplitude
-         *   angle += 2.0 per frame
+         * The game is paused (board+0x874=1), so Ball_Update doesn't run and
+         * doesn't overwrite ball+0x164/0x168/0x16C. We oscillate the position
+         * directly — the render function (vtable[2] and vtable[7]) reads these
+         * fields every frame. Using sin/cos for smooth vibration.
          *
-         * Fields (ball struct, int* indexed):
-         *   ball+0xC60 = base render X (float)
-         *   ball+0xC64 = base render Y (float)
-         *   ball+0xC68 = base render Z (float)
-         *   ball+0xC6C = search radius (float)
-         *   ball+0xC70 = SPINDIST (float, known = 50.0)
-         *   ball+0xC74 = in_motion flag (int, must be nonzero)
-         *   ball+0xC78 = oscillation angle (float, incremented by 2.0/frame)
-         *   ball+0xC7C = oscillation amplitude (float)
-         *
-         * The vacuum's CollisionFace_Update sets ball+0x2D4=1 (vacuum flag) and
-         * ball+0x808=1000 (impact freeze), then writes ball+0x168 += 0.25 each
-         * frame. But the VISUAL vibration is from this sin/cos render offset,
-         * not from the position writes. We replicate by setting the amplitude
-         * and angle directly. */
+         * This mimics the vacuum's visual effect: the ball appears to shake
+         * rapidly without its physics position actually changing. */
         if (ball) {
-            /* Set in_motion flag so the oscillation code runs */
-            *(int *)((char *)ball + 0xC74) = 1;
-            /* Set amplitude — controls how visible the vibration is */
-            *(float *)((char *)ball + 0xC7C) = 0.25f;
-            /* Advance the oscillation angle (game normally adds 2.0/frame) */
-            *(float *)((char *)ball + 0xC78) += 2.0f;
-            /* Set search distance large enough that the oscillation always applies */
-            *(float *)((char *)ball + 0xC70) = 10000.0f;
+            DWORD tick = GetTickCount();
+            float angle = (float)(tick % 360) * 0.01745329f;  /* deg to rad */
+            float offX = 0.3f * sinf(angle * 3.0f);
+            float offZ = 0.3f * cosf(angle * 3.0f);
+            *(float *)((char *)ball + BALL_POS_X) = g_ballOrigX + offX;
+            *(float *)((char *)ball + BALL_POS_Y) = g_ballOrigY + 0.15f * sinf(angle * 5.0f);
+            *(float *)((char *)ball + BALL_POS_Z) = g_ballOrigZ + offZ;
         }
 
         updateMusicFade();
@@ -691,15 +693,47 @@ static void updateWarpStateMachine(void) {
             *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
         }
 
-        /* Call App_StartPracticeRace(app, levelIndex) */
+        /* Unpause the game before loading the new level */
+        if (board) {
+            *((char *)board + 0x874) = 0;
+        }
+
+        /* Save mode flags before calling App_StartPracticeRace.
+         *
+         * App_StartPracticeRace creates a new PlayerProfile with:
+         *   profile+0x10 = 0 (not tournament)
+         *   profile+0x11 = 1 (practice/time-trial)
+         * This is why tournament mode switched to time trial.
+         *
+         * App_StartTournamentRace (0x4288B0) is the correct function for
+         * tournament mode, but it doesn't take a level index — it calls
+         * Tournament_AdvanceRace with param_1=1, which advances to the
+         * NEXT race in the tournament sequence (profile+0x08 + 1).
+         *
+         * Instead, we use App_StartPracticeRace but then fix the profile
+         * flags afterward to preserve tournament state. We save the old
+         * profile's flags and restore them on the new profile.
+         */
         if (levelIdx >= 0 && levelIdx <= 14) {
             void *func = (void *)APP_START_PRACTICE_RACE;
             int appVal = app;
             int idx = levelIdx;
-            /* Save difficulty (App+0x23C) — App_StartPracticeRace forces it to 1 (Pipsqueak) */
+            /* Save difficulty (App+0x23C) — App_StartPracticeRace forces it to 1 */
             char savedDifficulty = *((char *)app + 0x23C);
+            /* Save old profile's mode flags */
+            int oldProfile = *(int *)((char *)app + APP_PROFILE_PTR);
+            char oldIsTournament = 0;
+            char oldIsPractice = 0;
+            int savedRaceIdx = 0;
+            if (oldProfile) {
+                oldIsTournament = *((char *)oldProfile + 0x10);
+                oldIsPractice = *((char *)oldProfile + 0x11);
+                savedRaceIdx = *(int *)((char *)oldProfile + PROFILE_RACE_INDEX);
+                (void)savedRaceIdx;
+            }
 
-            diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d, difficulty=%d)", appVal, idx, (int)savedDifficulty);
+            diag_logf("[warp] App_StartPracticeRace(app=0x%08X, level=%d, difficulty=%d, oldTourney=%d, oldPractice=%d)",
+                       appVal, idx, (int)savedDifficulty, (int)oldIsTournament, (int)oldIsPractice);
 
             __asm__ volatile (
                 "push %[idx]\n\t"
@@ -716,6 +750,23 @@ static void updateWarpStateMachine(void) {
 
             /* Restore difficulty so entity factories spawn correctly */
             *((char *)app + 0x23C) = savedDifficulty;
+
+            /* Restore tournament mode flags on the new profile.
+             * App_StartPracticeRace created a new profile at App+0x220
+             * with profile+0x11=1 (practice). If we were in tournament
+             * mode, restore that flag so the game stays in tournament
+             * mode and the timer/progression works correctly. */
+            {
+                int newProfile = *(int *)((char *)app + APP_PROFILE_PTR);
+                if (newProfile) {
+                    *((char *)newProfile + 0x10) = oldIsTournament;
+                    /* Keep profile+0x11=1 for practice/TT, but set it to 0
+                     * for tournament so ghost recording doesn't interfere. */
+                    if (oldIsTournament) {
+                        *((char *)newProfile + 0x11) = 0;
+                    }
+                }
+            }
 
             diag_log("[warp] Level loaded OK");
         } else {
