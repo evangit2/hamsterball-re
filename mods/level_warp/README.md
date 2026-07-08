@@ -1,4 +1,4 @@
-# E:WARP (Level Warp) Mod v4 — Special Effects Edition
+# E:WARP (Level Warp) Mod v6e
 
 When the ball touches a floor panel tagged `E:WARP(X)`, a multi-phase special effect sequence plays before loading the target level.
 
@@ -6,27 +6,30 @@ When the ball touches a floor panel tagged `E:WARP(X)`, a multi-phase special ef
 
 | Phase | Duration | Description |
 |-------|----------|-------------|
-| **1. JIGGLE** | 2.0s (50 frames) | Ball is frozen (unmovable), jiggles upward slightly each frame (like Up Race vacuum suck). Music starts fading out. Sound effect `warp_enter.wav` plays (placeholder — not yet wired). |
-| **2. FLASH** | 0.5s (12 frames) | Ball jiggling stops. Ball becomes invisible. Screen flashes white (quick fade in to peak, then fade out). Second sound effect `warp_exit.wav` plays (placeholder). |
-| **3. FADE** | 1.0s (25 frames) | Screen fades from transparent to solid white. Music should be fully faded out by end of this phase. |
-| **4. LOAD** | instant | Target level loads via `App_StartPracticeRace(app, levelIndex)`. All ball state restored. |
+| **1. RUMBLE** | 2.0s | Ball is frozen (unmovable). Music starts fading out. |
+| **2. FLASH** | 0.25s | Ball becomes invisible. Screen flashes white (quick ramp up to peak, then back down). |
+| **3. HOLD** | 1.0s | Pause — screen is clear, ball stays invisible. |
+| **4. FADE** | 6.0s | Screen fades from transparent to solid white. Music should be fully faded out by mid-fade. |
+| **5. LOAD** | instant | Target level loads via `App_StartPracticeRace(app, levelIndex)`. All ball state restored. |
+| **6. REVEAL** | 1.0s | Screen fades from white to reveal the new level. |
 
-**Total sequence: ~3.5 seconds** (at 25fps)
+**Total sequence: ~10.25 seconds** (real-time, framerate-independent)
 
 ## How It Works
 
-### Hooks (3 total)
+### Hooks (2 total)
 1. **DispatchCollisionEvents** (0x40C5D0) — 8-byte trampoline. Detects `E:WARP(...)` collisions and starts the effect sequence.
-2. **App_FrameUpdate epilogue** (0x46C1F1) — 5-byte trampoline. Runs the warp state machine every frame (jiggle, flash, fade, load).
-3. **Graphics_PresentOrEnd** (0x455A90) — 7-byte trampoline. Draws the white screen overlay via D3D8 `DrawPrimitiveUP` before Present/Swap.
+2. **App_FrameUpdate epilogue** (0x46C1F1) — 5-byte trampoline. Runs the warp state machine every frame (rumble, flash, hold, fade, load, reveal).
 
 ### Game Systems Used
 - **Ball freeze**: `ball+0x808=1000` (impact/freeze counter) + `ball+0x2CC=1` (in-tar flag) — blocks `Ball_ApplyForce`
-- **Ball jiggle**: `ball+0x168 += 0.25` per frame (same rate as Up Race vacuum suck phase)
-- **Ball invisible**: `ball+0x2FC = 0.0` (alpha)
-- **Music fade**: Manipulates MusicChannel struct (`+0x528`=volume, `+0x530`=fade-out flag, `+0x52C`=fade rate) via MusicDevice at App+0x17C. Also calls `BASS_ChannelSetAttributes` directly as fallback.
-- **White screen**: D3D8 alpha-blended fullscreen quad via `DrawPrimitiveUP` (vtable[72]), `SetRenderState` (vtable[50]), `SetTextureStageState` (vtable[63]). Uses `D3DFVF_XYZRHW | D3DFVF_DIFFUSE` vertex format.
-- **Level load**: `App_StartPracticeRace(app, levelIndex)` — same as practice race menu selection
+- **Ball invisible**: `ball+0x2FC=0.0` (alpha) — forced every frame during FLASH, HOLD, and FADE (game overwrites it to 1.0 each frame, so continuous writes are required). Respects respawn flag (`ball+0x2F9`).
+- **Music fade**: Manual volume ramp over 3.0 seconds. Writes `MusicChannel+0x528` (volume) and calls `BASS_ChannelSetAttributes` directly. Does NOT use game's fade-out flag (cuts too fast).
+- **White screen**: Game's native fade at `board+0x3624` (float alpha). The board render function (`FUN_0041b710`) reads this every frame and draws a fullscreen rect through the game's own material pipeline — no D3D state corruption.
+- **Level load**: `App_StartPracticeRace(app, levelIndex)` — same as practice race menu selection. Difficulty is saved and restored around the call.
+
+### Phase Timing
+All timing uses `GetTickCount()` for framerate independence. Timestamps are initialized when the warp triggers (in the collision handler), so elapsed=0 on the first frame.
 
 ## Usage
 
@@ -46,21 +49,17 @@ When the ball touches a floor panel tagged `E:WARP(X)`, a multi-phase special ef
 
 Also accepts names: `E:WARP(neon)`, `E:WARP(dizzy)`, `E:WARP(warmup)`, etc.
 
-## Sound Effects (TODO)
-
-Two placeholder sound slots are defined:
-- `warp_enter.wav` — plays at start of jiggle phase
-- `warp_exit.wav` — plays at start of flash phase
-
-These are not yet implemented (DirectSound integration pending). Will be wired up once sound file names are confirmed.
-
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v4.c -lwinmm \
+i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v6.c -lwinmm \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias
 ```
 
-## Crash Test
+## Version History
 
-Passed: 11.6s runtime, no crash (hbtestd Wine/Xvfb).
+- **v6e**: Renamed JIGGLE → RUMBLE phase. Added HOLD phase (1s pause between flash and fade). Tripled FADE duration to 6s. Halved FLASH to 0.25s. Fixed ball invisibility (per-frame alpha force). Fixed screen fade (write to board+0x3624 not App+0x3624). NULL ball/board guard.
+- **v6d**: Code review cleanup — removed 155 lines of dead code (dead PresentHook, setWinState, g_trampoline, D3D8 constants). Fixed uninitialized board variable.
+- **v6**: Race index off-by-one fix. FVF set before DrawPrimitiveUP. Jiggle timestamp initialization. Inline asm clobber fix.
+- **v5**: D3D texture stage state restoration. GetTickCount-based timing. vsnprintf. PHASE_REVEAL.
+- **v4**: Initial special effects edition.
