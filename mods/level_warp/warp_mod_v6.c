@@ -470,11 +470,14 @@ static void startMusicFade(void) {
         for (i = 0; i < chanCount; i++) {
             int chan = *(int *)(chanListData + i * 4);
             if (chan) {
-                g_musicOrigVolume = *(float *)(chan + MUSIC_CHAN_VOLUME);
-                *(char *)(chan + MUSIC_CHAN_FADE_OUT) = 1;
-                *(float *)(chan + MUSIC_CHAN_FADE_RATE) = g_musicOrigVolume / (float)(MUSIC_FADE_MS / 40);  /* per-frame approx */
-                diag_logf("[music] Channel %d: origVol=%.3f, fadeRate=%.5f",
-                          i, g_musicOrigVolume, g_musicOrigVolume / (float)(MUSIC_FADE_MS / 40));
+                float vol = *(float *)(chan + MUSIC_CHAN_VOLUME);
+                if (vol > 0.01f) {
+                    g_musicOrigVolume = vol;
+                }
+                /* Do NOT set fade_out flag — game's fade system cuts volume too fast.
+                 * We manually control volume in updateMusicFade(). */
+                diag_logf("[music] Channel %d: origVol=%.3f, fadeRate=0.00000 (manual fade)",
+                          i, g_musicOrigVolume);
             }
         }
     }
@@ -613,10 +616,12 @@ static void updateWarpStateMachine(void) {
 
     g_diagCounter = 0;
 
-    /* Write fade alpha to scene+0x3624 so the game's own render loop
-     * draws the white overlay via Graphics_DrawScreenRect. No D3D calls. */
-    if (board) {
-        int scene = *(int *)((char *)board + BOARD_SCENE_PTR_OFFSET);
+    /* Write fade alpha to scene's native fade field (scene+0x3624).
+     * The game's own board render function reads this every frame and
+     * draws a fullscreen rect through its own material pipeline. */
+    {
+        int scene = 0;
+        if (board) scene = *(int *)((char *)board + BOARD_SCENE_PTR_OFFSET);
         if (scene) {
             *(float *)((char *)scene + SCENE_FADE_ALPHA) = g_whiteAlpha;
         }
