@@ -170,30 +170,50 @@ by name, and the game loads them all at startup into App struct slots:
 
 | App Offset | Texture File | Used By |
 |------------|-------------|---------|
-| +0x2C8 | pinkchecker.bmp | Warm-Up, Up |
-| +0x2CC | bluechecker.bmp | Intermediate |
-| +0x2D0 | bluebrick.png | Intermediate (brick variant) |
-| +0x2D4 | greenchecker.bmp | Dizzy |
-| +0x2D8 | greenbrick.png | Dizzy (brick variant) |
-| +0x2DC | yelllowchecker.png | Neon |
-| +0x2E0 | greyoutlinechecker.png | Master |
-| +0x2E4 | redchecker.bmp | Tower, Expert, Impossible |
-| +0x2E8 | redbrick.png | Tower/Expert (brick variant) |
-| +0x2EC | orangechecker.bmp | Odd, Beginner |
-| +0x2F0 | orangebrick.png | Odd/Beginner (brick variant) |
-| +0x2F4 | brightgreenchecker.bmp | Wobbly |
-| +0x2F8 | brightgreenbrick.png | Wobbly (brick variant) |
-| +0x2FC | toobchecker.png | Toob |
+| +0x2C8 | pinkchecker.bmp | Warm-Up, Glass |
+| +0x2CC | bluechecker.bmp | Intermediate, Toob |
+| +0x2D0 | bluebrick.png | Intermediate, Toob (brick variant) |
+| +0x2D4 | greenchecker.bmp | Dizzy, Wobbly |
+| +0x2D8 | greenbrick.png | Dizzy, Wobbly (brick variant) |
+| +0x2DC | yelllowchecker.png | Neon (level is black/white, but yellow lighting makes it appear yellow) |
+| +0x2E0 | greyoutlinechecker.png | Master (gray floor, brownish walls, black sky) |
+| +0x2E4 | redchecker.bmp | Expert, Impossible |
+| +0x2E8 | redbrick.png | Expert, Impossible (brick variant) |
+| +0x2EC | orangechecker.bmp | Beginner, Odd |
+| +0x2F0 | orangebrick.png | Beginner, Odd (brick variant) |
+| +0x2F4 | brightgreenchecker.bmp | (unused — Wobbly uses greenchecker.bmp) |
+| +0x2F8 | brightgreenbrick.png | (unused — Wobbly uses greenbrick.png) |
+| +0x2FC | toobchecker.png | Toob (alternate texture, may be used alongside bluechecker.bmp) |
 | +0x300 | toobbrick.png | Toob (brick variant) |
-| +0x304 | skychecker.png | Sky |
-| +0x308 | purplechecker.bmp | (unused?) |
-| +0x30C | purplebrick.png | (unused?) |
-| +0x310 | brownbrick.png | (unused?) |
-| +0x314 | blackchecker.png | (unused?) |
+| +0x304 | skychecker.png | Sky (light blue) |
+| +0x308 | purplechecker.bmp | Up (purple) |
+| +0x30C | purplebrick.png | Up (brick variant) |
+| +0x310 | brownbrick.png | Master (brownish walls) |
+| +0x314 | blackchecker.png | Master (black sky elements) |
 
 The MESHWORLD material section (`*BITMAP` entries in the ASCII format, or texture
 name strings in the binary format) references these textures by filename. The floor
 color comes from the texture itself, not from the board struct.
+
+### Definitive Level Checker Color Reference
+
+| Level | Checker Color | Texture File(s) |
+|-------|--------------|-----------------|
+| Warm-Up | Pink | pinkchecker.bmp |
+| Beginner | Orange | orangechecker.bmp |
+| Intermediate | Blue | bluechecker.bmp |
+| Dizzy | Green | greenchecker.bmp |
+| Tower | Yellow | yelllowchecker.png |
+| Up | Purple | purplechecker.bmp |
+| Neon | Yellow (technically black/white textures, yellow lighting effect) | yelllowchecker.png |
+| Expert | Red | redchecker.bmp |
+| Odd | Orange | orangechecker.bmp |
+| Toob | Blue | bluechecker.bmp / toobchecker.png |
+| Wobbly | Green | greenchecker.bmp |
+| Glass | Pink | pinkchecker.bmp |
+| Sky | Light Blue | skychecker.png |
+| Master | Gray (brownish walls, black sky) | greyoutlinechecker.png, brownbrick.png, blackchecker.png |
+| Impossible | Red | redchecker.bmp |
 
 ## MESHWORLD Colors (Section 4)
 
