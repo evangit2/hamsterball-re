@@ -550,8 +550,17 @@ static void updateWarpStateMachine(void) {
             diag_logf("[warp] PHASE_RUMBLE start: ballY=%.2f", g_ballOrigY);
         }
 
-        /* Per-frame: ball frozen (impact + in-tar), no movement — like
-         * Up Race VAC-IN phase 0 but without the upward drift */
+        /* Per-frame: vibrate ball — replicates Up Race VAC-IN visual effect.
+         * The vacuum applies +0.25 to Y each frame, then Ball_Update's collision
+         * response pushes the ball back, creating a rapid oscillation. We simulate
+         * this by alternating Y offset every frame using GetTickCount() as a
+         * pseudo-random toggle, same way the vacuum's 0.25 increment fights the
+         * collision system. */
+        if (ball) {
+            float origY = g_ballOrigY;
+            float offset = 0.25f * ((GetTickCount() & 1) ? 1.0f : -1.0f);
+            *(float *)((char *)ball + BALL_POS_Y) = origY + offset;
+        }
 
         updateMusicFade();
 
