@@ -82,6 +82,8 @@ static float g_remoteFps = 0.0f;
 static DWORD g_lastHeartbeat = 0;
 static char g_remoteInfo[128] = "";
 static volatile bool g_gameReady = false;
+static volatile bool g_localPaused = false; // local pause: stops input, game keeps running
+static DWORD g_lastPauseFlag = 0;
 static BallStateMsg g_latestBallState = {};
 static CRITICAL_SECTION g_stateLock;
 static InputStateMsg g_latestInput = {};
@@ -366,8 +368,8 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             }
         }
 
-        // GUEST: send P1 input
-        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady) {
+        // GUEST: send P1 input (skip when locally paused)
+        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady && !g_localPaused) {
             DWORD p1 = getP1Ball();
             if (p1) {
                 InputStateMsg msg;
@@ -573,9 +575,29 @@ static void __thiscall slider_change(void*, const char* sliderId, float newValue
     if (strcmp(sliderId, "NETPLAY_IP4") == 0) g_ip_octet[3] = (int)newValue;
 }
 
+// Scene/Board offset for pause flag
+static constexpr DWORD BOARD_PAUSE_FLAG = 0x874;
+
 static void __thiscall game_update(void*) {
     g_frameCount++;
     if (!g_gameReady && g_frameCount > 120) g_gameReady = true;
+
+    // Pause interception: when player presses ESC, game sets board+0x874=1.
+    // We intercept: set g_localPaused, clear the flag so game keeps running.
+    // This lets local player "pause" (stops their input) while the game
+    // stays live for the remote player.
+    DWORD board = findBoard();
+    if (board && !IsBadReadPtr((void*)(board + BOARD_PAUSE_FLAG), 1)) {
+        DWORD pauseFlag = *(DWORD*)(board + BOARD_PAUSE_FLAG);
+        if (pauseFlag != g_lastPauseFlag) {
+            if (pauseFlag == 1) {
+                g_localPaused = !g_localPaused; // toggle
+                // Clear the actual pause flag — game keeps running
+                *(DWORD*)(board + BOARD_PAUSE_FLAG) = 0;
+            }
+            g_lastPauseFlag = pauseFlag;
+        }
+    }
 
     if (g_gameReady && !g_pipeThread) {
         g_pipeRunning = true;
@@ -596,7 +618,7 @@ static void __thiscall game_update(void*) {
 static void __thiscall text_render(void* thisptr) {
     if (!g_gameReady) return;
 
-    if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED) {
+    if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED && !g_localPaused) {
         applyHostInput();
     }
     if (g_role == ROLE_GUEST && g_connState == CONN_CONNECTED) {
