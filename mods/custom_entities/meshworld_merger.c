@@ -379,7 +379,7 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
     mw_walk_octree(&or_);
     DWORD octree_end = or_.pos;
 
-    DWORD merged_buf_size = file_size + total_entity_vtx * 32 + 65536;
+    DWORD merged_buf_size = file_size + total_entity_vtx * 32 + 65536 + total_entity_geoms * 1024;
     BYTE* merged = (BYTE*)malloc(merged_buf_size);
     if (!merged) {
         for (i = 0; i < valid; i++) free_entity_mesh(&meshes[i]);
@@ -470,6 +470,15 @@ static int merge_level_file(const char* level_path, const char* entities_dir) {
                                         vtx_base, meshes[i].material_buf);
             }
         }
+    }
+
+    /* Part 7: Copy ALL remaining data after the original octree.
+     * The MESHWORLD format has additional data after the octree
+     * (per-vertex color, material data, etc.) that must be preserved. */
+    if (octree_end < file_size) {
+        DWORD remaining = file_size - octree_end;
+        memcpy(merged + mpos, level_data + octree_end, remaining);
+        mpos += remaining;
     }
 
     /* Write merged file */
