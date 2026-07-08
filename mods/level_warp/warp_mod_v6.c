@@ -771,44 +771,23 @@ static void updateWarpStateMachine(void) {
             *((char *)app + 0x23C) = savedDifficulty;
 
             if (wasInTournament) {
-                /* Free the BestTimeTrackers that App_StartPracticeRace created.
-                 * App_StartTournamentRace does this:
-                 *   if (App+0x90C) { (*(vtable[0])(App+0x90C))(1); App+0x90C=0; }
-                 *   if (App+0x910) { (*(vtable[0])(App+0x910))(1); App+0x910=0; }
-                 * The dtor is __thiscall: ECX=this, param on stack, RET 0x4.
-                 * Using inline asm to ensure correct calling convention. */
+                /* Clear the BestTimeTrackers that App_StartPracticeRace created.
+                 * App_StartTournamentRace frees them via dtor, but calling the
+                 * dtor from our DLL crashes (the BTT was just created by the game
+                 * and may not be safe to destroy from our context).
+                 * Instead: just NULL the pointers. The game checks
+                 * if (App+0x90C != 0) before using BTTs, so NULL is safe.
+                 * Memory leak is ~528 bytes per tournament warp — negligible. */
                 {
                     int bttRec = *(int *)((char *)app + APP_BTT_RECORDING);
                     int bttPlay = *(int *)((char *)app + APP_BTT_PLAYBACK);
                     if (bttRec) {
-                        int vtable = *(int *)bttRec;
-                        int dtor = *(int *)vtable;
-                        __asm__ volatile (
-                            "push 1\n\t"
-                            "movl %[btt], %%ecx\n\t"
-                            "call *%[dtor]\n\t"
-                            :
-                            : [dtor] "r" (dtor),
-                              [btt] "r" (bttRec)
-                            : "eax", "edx", "ecx", "memory"
-                        );
                         *(int *)((char *)app + APP_BTT_RECORDING) = 0;
-                        diag_log("[warp] Freed BTT recording (tournament mode)");
+                        diag_log("[warp] Cleared BTT recording pointer (tournament mode)");
                     }
                     if (bttPlay) {
-                        int vtable = *(int *)bttPlay;
-                        int dtor = *(int *)vtable;
-                        __asm__ volatile (
-                            "push 1\n\t"
-                            "movl %[btt], %%ecx\n\t"
-                            "call *%[dtor]\n\t"
-                            :
-                            : [dtor] "r" (dtor),
-                              [btt] "r" (bttPlay)
-                            : "eax", "edx", "ecx", "memory"
-                        );
                         *(int *)((char *)app + APP_BTT_PLAYBACK) = 0;
-                        diag_log("[warp] Freed BTT playback (tournament mode)");
+                        diag_log("[warp] Cleared BTT playback pointer (tournament mode)");
                     }
                 }
 
