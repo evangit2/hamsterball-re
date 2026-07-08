@@ -107,7 +107,7 @@ typedef struct {
     uint8_t pad_2c0[4];          // +0x2C0 accel Y
     uint8_t pad_2c4[4];          // +0x2C4 accel Z
     uint8_t field_2cc;            // +0x2CC set 0
-    uint8_t field_2d4;            // +0x2D4 set 0
+    uint8_t render_jitter;        // +0x2D4 — set by vacuum (CollisionFace_Update) to enable CPUID-based render jitter
     uint8_t field_2d5;            // +0x2D5 set 0
     uint8_t pad_2d6[2];          // +0x2D6
     uint32_t field_2d8;           // +0x2D8 set 0

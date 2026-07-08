@@ -1,0 +1,3 @@
+=== LEVEL WARP MOD v6c LOADED ===
+v6c fixes: BeginScene/EndScene wrap, jiggle init flag, stream source save/restore
+bass_real.dll handle: 0x10000000

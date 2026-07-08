@@ -135,9 +135,14 @@ Every frame, scans the ball list (Scene+0x29D4) using AthenaList iteration:
 >   force application. Also set by `N:NOCONTROL` (=10) and `E:CATAPULTBOTTOM` (=1000).
 > - `ball+0x2CC` (`[0xB3]` as byte): **in-tar flag**. Also set by `N:TARPIT`.
 >   Does NOT auto-decrement — must be manually cleared. Blocks `Ball_ApplyForce`.
-> - `ball+0x2D4`: **NOT a ball field.** Only appears in `TimerDisplay_0x004298c0`
->   loading `greenchecker.bmp` texture. Does not appear in any ball-related
->   decompilation. The prior claim was an error.
+> - `ball+0x2D4`: **render_jitter flag.** Set to 1 by `CollisionFace_Update`
+>   during capture. When non-zero, the ball's render function (`FUN_00403DB8`,
+>   vtable[1]) adds CPUID-based random offsets to both the animation pose and
+>   the render position every frame, making the ball and hamster model visibly
+>   shake. Cleared when the vacuum releases the ball. This is a real ball field
+>   — the prior claim that it was "NOT a ball field" was an error based on
+>   confusing it with `TimerDisplay`'s use of offset 0x2D4 on a different struct
+>   (the board, not the ball) to load `greenchecker.bmp`.
 >
 > Both `+0x808` and `+0x2CC` gate `Ball_ApplyForce` via an AND condition in the
 > guard clause at 0x402650:

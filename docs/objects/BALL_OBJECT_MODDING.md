@@ -338,7 +338,7 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0x2B8` | Vec3 | `0,0,0` | another vector (trajectory?) |
 | `+0x2C0` | Vec3 | `0,0,0` | checkpoint position |
 | `+0x2CC` | byte | `0` | block_input |
-| `+0x2D4` | byte | `0` | — |
+| `+0x2D4` | byte | `0` | render_jitter — set to 1 by vacuum (CollisionFace_Update) to enable CPUID-based random jitter in render function |
 | `+0x2D5` | byte | `0` | — |
 | `+0x2D8` | int | `0` | — |
 | `+0x2DC` | int | `0` | checkpoint index |
