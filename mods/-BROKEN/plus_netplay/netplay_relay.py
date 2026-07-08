@@ -371,11 +371,17 @@ class NetplayRelay:
             self.log("FATAL: Cannot create named pipe. Make sure you're on Windows.")
             return
 
-        pipe_thread = threading.Thread(target=self.wait_for_pipe_connection, daemon=True)
+        pipe_connected = threading.Event()
+
+        def wait_pipe():
+            if self.wait_for_pipe_connection():
+                pipe_connected.set()
+
+        pipe_thread = threading.Thread(target=wait_pipe, daemon=True)
         pipe_thread.start()
 
         self.log("Waiting for Hamsterball to start...")
-        if not pipe_thread.join(timeout=60):
+        if not pipe_connected.wait(timeout=60):
             self.log("Timeout: Hamsterball didn't connect within 60 seconds.")
             self.log("Make sure HB+ is installed and plus_netplay.dll is in Mods/")
             return
