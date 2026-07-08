@@ -269,7 +269,6 @@ static void load_real_bass(void)
 #define BALL_IMPACT_FREEZE       0x808
 #define BALL_IN_TAR              0x2CC
 #define BALL_ALPHA               0x2FC
-#define BALL_VTABLE              0x4CF3A0
 #define BALL_RENDER_JITTER       0x2D4   /* byte: set by vacuum (CollisionFace_Update
                                           * 0x43D160) to enable CPUID-based random
                                           * jitter in the ball render function
