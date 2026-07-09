@@ -269,6 +269,10 @@ static void load_real_bass(void)
 #define BALL_ALPHA               0x2FC
 #define BALL_RENDER_JITTER       0x2D4
 
+/* Board player ball color table (set by Board_ctor Vec3_Init calls) */
+#define BOARD_COLOR_BASE         0x3AB0   /* P1 RGBA (4 floats) */
+#define BOARD_COLOR_STRIDE      0x14     /* 20 bytes per player */
+
 /* Board goal-reached flag */
 #define BOARD_GOAL_REACHED       0xCD0
 
@@ -370,6 +374,10 @@ static volatile float g_whiteAlpha = 0.0f;
 
 static volatile int g_warpBall = 0;
 static volatile int g_rumbleInit = 0;
+
+/* Saved original ball color (P1) for restore after warp */
+static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
+static int g_colorSaved = 0;
 
 /* ============================================================
  * Memory helpers
@@ -594,6 +602,7 @@ static void scanWarpNodes(void) {
                         g_warpLevelIndex = raceIndex - 1;
                         g_phase = PHASE_RUMBLE;
                         g_rumbleInit = 0;
+                        g_colorSaved = 0;
                         g_warpBall = ball;
                         {
                             DWORD now = GetTickCount();
@@ -676,7 +685,38 @@ static void updateWarpStateMachine(void) {
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 1;
             startMusicFade();
+            /* Save original P1 ball color from board color table */
+            if (board && !IsBadReadPtr((void*)(board + BOARD_COLOR_BASE), 16)) {
+                g_origBallR = *(float*)(board + BOARD_COLOR_BASE);
+                g_origBallG = *(float*)(board + BOARD_COLOR_BASE + 4);
+                g_origBallB = *(float*)(board + BOARD_COLOR_BASE + 8);
+                g_colorSaved = 1;
+            }
             diag_logf("[warp] PHASE_RUMBLE start: steering disabled (ball+0x808=1000), jitter on");
+        }
+
+        /* Fade ball color from original to yellow over RUMBLE phase.
+         * Yellow = (1.0, 1.0, 0.0). By the time FLASH starts, ball is fully yellow. */
+        if (g_colorSaved && board && !IsBadWritePtr((void*)(board + BOARD_COLOR_BASE), 12)) {
+            float t = (float)elapsed / (float)RUMBLE_DURATION_MS;
+            if (t > 1.0f) t = 1.0f;
+            float r = g_origBallR + (1.0f - g_origBallR) * t;
+            float g = g_origBallG + (1.0f - g_origBallG) * t;
+            float b = g_origBallB + (0.0f - g_origBallB) * t;
+            *(float*)(board + BOARD_COLOR_BASE)     = r;
+            *(float*)(board + BOARD_COLOR_BASE + 4) = g;
+            *(float*)(board + BOARD_COLOR_BASE + 8) = b;
+        }
+
+        /* Fade ball alpha from 1.0 (opaque) to 0.5 (half transparent)
+         * over RUMBLE phase. The ball becomes progressively more ghostly. */
+        if (ball) {
+            int respawning = *((unsigned char *)((char *)ball + 0x2F9));
+            if (!respawning) {
+                float t = (float)elapsed / (float)RUMBLE_DURATION_MS;
+                if (t > 1.0f) t = 1.0f;
+                *(float *)((char *)ball + BALL_ALPHA) = 1.0f - (0.5f * t);
+            }
         }
 
         updateMusicFade();
