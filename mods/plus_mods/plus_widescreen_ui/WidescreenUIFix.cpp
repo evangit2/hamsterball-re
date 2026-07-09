@@ -54,7 +54,7 @@ private:
 		float* pScaleX = (float*)(config + 0x1f8);
 		float origScaleX = *pScaleX;
 
-		if (origScaleX <= 0.0f || origScaleX > 1.0f) {
+		if (!(origScaleX == origScaleX) || origScaleX <= 0.0f || origScaleX > 1.0f) {
 			orig_DrawScreenRect(gfx, edx, x, y, w, h);
 			return;
 		}
