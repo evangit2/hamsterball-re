@@ -669,11 +669,14 @@ static void updateWarpStateMachine(void) {
 
         if (!g_rumbleInit && ball) {
             g_rumbleInit = 1;
+            /* Only disable player steering — don't set in_tar (ball+0x2CC)
+             * which adds drag/stickiness. ball+0x808 alone blocks
+             * Ball_ApplyForce so the player can't steer, but physics
+             * (gravity, collisions, rolling) continue normally. */
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
-            *(char *)((char *)ball + BALL_IN_TAR) = 1;
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 1;
             startMusicFade();
-            diag_logf("[warp] PHASE_RUMBLE start: render jitter enabled (ball+0x2D4=1)");
+            diag_logf("[warp] PHASE_RUMBLE start: steering disabled (ball+0x808=1000), jitter on");
         }
 
         updateMusicFade();
@@ -768,7 +771,6 @@ static void updateWarpStateMachine(void) {
         /* Clear ball freeze + jitter flags before loading */
         if (ball) {
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 0;
-            *(char *)((char *)ball + BALL_IN_TAR) = 0;
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 0;
             *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
         }
