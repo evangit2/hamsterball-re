@@ -1,14 +1,19 @@
 ================================================================================
-MESHWORLD LEVEL SYSTEM v4 — Custom Vtables + Safe Struct Allocation
+MESHWORLD LEVEL SYSTEM v5 — Extended Vtables + Custom Dispatch
 ================================================================================
 
-v4 FIX:
-  ALL 15 levels are now allocated at the maximum struct size (0x6498 = Master).
-  This means you can freely mix-and-match vtable functions from different levels
-  using ONLY VTABLE commands — no SET/SWAP needed. The board is always big enough.
+v5 NEW:
+  Extended vtables from 36 to 128 entries (512 bytes each).
+  Slots 0-35: game-native dispatch (called by hardcoded game code).
+  Slots 36-127: custom dispatch (called by background thread ~60fps).
+  The dispatch thread reads the current board's vtable pointer, finds
+  which level's custom vtable it matches, then calls every non-zero
+  entry in slots 36-127 with __thiscall(board) convention.
+  This lets you add custom per-frame functions to any level.
 
-  Custom vtable allocation (from v3) is retained — each level gets its own
-  writable vtable copy, so VTABLE commands are fully independent per level.
+v4 FIX (retained):
+  ALL 15 levels allocated at max struct size (0x6498 = Master).
+  Custom vtable allocation: each level gets its own writable vtable copy.
 
 Level Numbers:
   1=WarmUp  2=Beginner  3=Intermediate  4=Dizzy     5=Tower
