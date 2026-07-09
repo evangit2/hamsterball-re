@@ -5,6 +5,7 @@
   Badballs immune to killplanes (don't disappear).
   Badballs always attack all balls (even falling/dead state).
   All entity balls forced to NORMAL STATE every frame.
+  Bumpers/objects always collide with all balls (no respawn/snap skip).
 
   Patches:
   1. Ball_Shatter (0x8D70): RET 4 — prevents shatter
@@ -12,8 +13,10 @@
   3. Ball_FallDeath (0x9480): cave sets 0x2E8+0x2E9=1 → triggers respawn
   4. bounce_count (0x75C9): NOP — prevents air break
   5. collision jnz (0x6C01): NOP — badballs always collide with falling balls
-  6. Hook1 (+1B591): clear player ball states every frame
-  7. Hook2 (+1B636): clear entity ball states + prevent destroy
+  6. bumper skip 0x2F8 (0x22DCB + 0x2395B): NOP — bumpers always bump
+  7. collision skip 0x2F9 (0x85A6 + 0x3FFA6): NOP — objects always collide
+  8. Hook1 (+1B591): clear player ball states every frame
+  9. Hook2 (+1B636): clear entity ball states + prevent destroy
 }
 
 [ENABLE]
@@ -26,6 +29,10 @@ alloc(Orig_9050,3)
 alloc(Orig_9480,12)
 alloc(Orig_75C9,6)
 alloc(Orig_6C01,2)
+alloc(Orig_22DCB,2)
+alloc(Orig_2395B,2)
+alloc(Orig_85A6,6)
+alloc(Orig_3FFA6,6)
 alloc(Orig_1B591,6)
 alloc(Orig_1B636,6)
 registersymbol(FallDeath_Cave)
@@ -36,6 +43,10 @@ registersymbol(Orig_9050)
 registersymbol(Orig_9480)
 registersymbol(Orig_75C9)
 registersymbol(Orig_6C01)
+registersymbol(Orig_22DCB)
+registersymbol(Orig_2395B)
+registersymbol(Orig_85A6)
+registersymbol(Orig_3FFA6)
 registersymbol(Orig_1B591)
 registersymbol(Orig_1B636)
 
@@ -53,6 +64,18 @@ Orig_75C9:
 
 Orig_6C01:
   readmem(Hamsterball.exe+6C01,2)
+
+Orig_22DCB:
+  readmem(Hamsterball.exe+22DCB,2)
+
+Orig_2395B:
+  readmem(Hamsterball.exe+2395B,2)
+
+Orig_85A6:
+  readmem(Hamsterball.exe+85A6,6)
+
+Orig_3FFA6:
+  readmem(Hamsterball.exe+3FFA6,6)
 
 Orig_1B591:
   readmem(Hamsterball.exe+1B591,6)
@@ -73,7 +96,6 @@ Hamsterball.exe+9050:
   db C3 90 90
 
 { Ball_FallDeath (0x409480) — set 0x2E8+0x2E9=1 then RET }
-{ This triggers respawn for player balls via Scene_UpdateBallsAndState }
 Hamsterball.exe+9480:
   jmp FallDeath_Cave
   db 90 90 90 90 90 90
@@ -83,10 +105,23 @@ FallDeath_Cave:
   db C6 81 E9 02 00 00 01
   db C3
 
-{ NOP collision skip jnz (0x406C01) — badballs always attack falling balls }
-{ Original: 75 07 = jnz +7 (skip collision if death_pending) }
+{ NOP ball-to-ball collision skip (0x6C01) — badballs attack falling balls }
 Hamsterball.exe+6C01:
   db 90 90
+
+{ NOP bumper collision skip on respawn flag (0x2F8) }
+Hamsterball.exe+22DCB:
+  db 90 90
+
+Hamsterball.exe+2395B:
+  db 90 90
+
+{ NOP object collision skip on snap flag (0x2F9) }
+Hamsterball.exe+85A6:
+  db 90 90 90 90 90 90
+
+Hamsterball.exe+3FFA6:
+  db 90 90 90 90 90 90
 
 { Hook 1: Scene_UpdateBallsAndState, list 1 (player balls) }
 Hamsterball.exe+1B591:
@@ -98,59 +133,41 @@ Hamsterball.exe+1B636:
   jmp ClearState_Cave2
   db 90
 
-{ Cave 1: Player balls — clear respawn flags so bumpers/badballs always collide }
-{ Keep 0x2E8 for respawn trigger (Scene_UpdateBallsAndState checks it) }
+{ Cave 1: Player balls — clear all flags every frame }
+{ Keep 0x2E8 for respawn trigger }
 ClearState_Cave1:
-  { Clear death_pending so badballs see NORMAL state }
   mov byte ptr [esi+0x2E9],00
-  { Clear respawn flag — bumpers check this at 0x422DC3/0x423953 }
   mov byte ptr [esi+0x2F8],00
-  { Clear snap flag — collision checked at 0x40859E/0x43FF9E }
   mov byte ptr [esi+0x2F9],00
-  { Set alpha=1.0 visible — FUN_00405190 sets 0=invisible }
   mov dword ptr [esi+0x2FC],3F800000
-  { Clear respawn timer }
   mov dword ptr [esi+0x300],00000000
-  { Clear in-tar }
   mov byte ptr [esi+0x2CC],00
-  { Clear vacuum }
   mov byte ptr [esi+0x2D4],00
-  { Clear bounce_count }
   mov byte ptr [esi+0x2EC],00
-  { Clear dizzy_immunity_timer }
   mov dword ptr [esi+0x2F4],00000000
-  { Clear impact }
   mov dword ptr [esi+0x808],00000000
-  { AL = ball+0x2E8 (original instruction, for test al,al) }
   mov al,[esi+0x2E8]
   jmp Hamsterball.exe+1B597
 
 { Cave 2: Entity balls — clear everything, prevent destroy, instant visible }
 ClearState_Cave2:
-  { Clear is_split_ball so respawn path, not destroy }
   mov byte ptr [esi+0x324],00
-  { Set player ID to 0 if -1 (entity balls need valid ID for respawn) }
   cmp dword ptr [esi+0x18],-1
   jne SkipPID2
   mov dword ptr [esi+0x18],00000000
 SkipPID2:
-  { Copy death_pending → falling (trigger respawn if entity fell) }
   mov al,[esi+0x2E9]
   mov [esi+0x2E8],al
-  { Clear death_pending }
   mov byte ptr [esi+0x2E9],00
-  { Clear all state flags }
   mov byte ptr [esi+0x2CC],00
   mov byte ptr [esi+0x2D4],00
   mov byte ptr [esi+0x2EC],00
   mov dword ptr [esi+0x2F4],00000000
   mov dword ptr [esi+0x808],00000000
-  { Instant visible: clear respawn sequence }
   mov byte ptr [esi+0x2F8],00
   mov byte ptr [esi+0x2F9],00
   mov dword ptr [esi+0x2FC],3F800000
   mov dword ptr [esi+0x300],00000000
-  { AL = ball+0x2E8 (for test al,al) }
   mov al,[esi+0x2E8]
   jmp Hamsterball.exe+1B63C
 
@@ -171,6 +188,18 @@ Hamsterball.exe+9480:
 Hamsterball.exe+6C01:
   readmem(Orig_6C01,2)
 
+Hamsterball.exe+22DCB:
+  readmem(Orig_22DCB,2)
+
+Hamsterball.exe+2395B:
+  readmem(Orig_2395B,2)
+
+Hamsterball.exe+85A6:
+  readmem(Orig_85A6,6)
+
+Hamsterball.exe+3FFA6:
+  readmem(Orig_3FFA6,6)
+
 Hamsterball.exe+1B591:
   readmem(Orig_1B591,6)
 
@@ -185,6 +214,10 @@ dealloc(Orig_9050)
 dealloc(Orig_9480)
 dealloc(Orig_75C9)
 dealloc(Orig_6C01)
+dealloc(Orig_22DCB)
+dealloc(Orig_2395B)
+dealloc(Orig_85A6)
+dealloc(Orig_3FFA6)
 dealloc(Orig_1B591)
 dealloc(Orig_1B636)
 unregistersymbol(FallDeath_Cave)
@@ -195,5 +228,9 @@ unregistersymbol(Orig_9050)
 unregistersymbol(Orig_9480)
 unregistersymbol(Orig_75C9)
 unregistersymbol(Orig_6C01)
+unregistersymbol(Orig_22DCB)
+unregistersymbol(Orig_2395B)
+unregistersymbol(Orig_85A6)
+unregistersymbol(Orig_3FFA6)
 unregistersymbol(Orig_1B591)
 unregistersymbol(Orig_1B636)
