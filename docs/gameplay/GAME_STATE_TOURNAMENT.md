@@ -177,7 +177,7 @@ Created during tournament/race init:
 | +0x90 | int | Accumulated time for save |
 | +0x95 | bool | has_rollback_available |
 | +0x96 | bool | tournament_completed |
-| +0x5E4 | float | Total accumulated time (for rank calculation) |
+| +0x5E4 | float | Score (accumulated by E:ACTION, determines rank via 0x4F710C threshold table) |
 
 ### Tournament Save File
 - Path: `DATA\TOURNAMENT.SAV`

@@ -198,7 +198,7 @@ Scene inherits from Gadget. The Gadget base contains:
 | `[0x4C]` | `0x41B130` | `Scene_HandleRaceEnd` | Check finish condition | `__thiscall` |
 | `[0x50]` | `0x41B540` | **`Scene_UpdateBallsAndState`** | **Ball physics + respawn** | `__thiscall` |
 | `[0x54]` | `0x40A040` | `Scene_NoOp_Collision` | Stub | — |
-| `[0x58]` | `0x41A540` | `Scene_ProcessRaceEnd` | Race countdown | `__thiscall` |
+| `0x58` | `0x41A540` | `Scene_ProcessRaceEnd` | Race-end transition (fade-out) | `__thiscall` |
 | `[0x5C]` | `0x409DE0` | `Scene_??` | Unknown | — |
 | `[0x60]` | `0x40B420` | `Level_RenderDynamicObjects` | Sky/ripples/dynamic | `__thiscall` |
 | `[0x64]` | `0x40B600` | `Level_UpdateAndRender` | Main level render | `__thiscall` |

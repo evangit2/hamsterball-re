@@ -350,7 +350,7 @@ struct SimpleMenu {          // extends Scene
     int         scroll_pos;     // +0xCCC
     SceneObject* up_scroller;    // +0xCA4
     SceneObject* dn_scroller;    // +0xCA8
-    int         can_scroll;     // +0xCD0
+    int         goal_reached;    // +0xCD0 (set to 1 by N:GOAL, prevents "Goal!" music replay)
     int         scroll_up_cooldown;  // +0xCD4
     int         scroll_dn_cooldown;  // +0xCD8
 };

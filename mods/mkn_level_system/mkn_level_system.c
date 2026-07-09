@@ -1,33 +1,23 @@
 /*
- * mkn_level_system v4 — Custom Vtables + Safe Struct Allocation
+ * mkn_level_system v5 — Extended Vtables + Custom Dispatch
  *
- * ROOT CAUSE OF v2/v3 CRASH:
- *   The crash at 0x452376 was heap corruption. When you put Beginner's
- *   setup function (Scene_SetupLevelCascade) into WarmUp's vtable[18],
- *   that function writes to board+0x436C (bumper meshes) and board+0x642C
- *   (bumper states). But WarmUp's struct is only 0x436C bytes — those
- *   writes are 8KB OUT OF BOUNDS, corrupting adjacent heap memory.
+ * v4 FIX (retained):
+ *   Patches ALL 15 level allocations to MAX_STRUCT_SIZE (0x6498) so any
+ *   vtable function from any level can safely access any board offset.
+ *   Custom vtable allocation: each level gets its own writable vtable copy.
  *
- *   v3's custom vtable allocation did NOT fix this — it only made VTABLE
- *   commands target the right vtable. The board was still allocated too small.
+ * v5 NEW:
+ *   Extended vtables from 36 to 128 entries (512 bytes each).
+ *   Slots 0-35: game-native dispatch (called by hardcoded game code).
+ *   Slots 36-127: custom dispatch (called by background thread ~60fps).
  *
- * v4 FIX:
- *   At init, patch ALL 15 level allocations in Tournament_AdvanceRace to use
- *   the maximum struct size (0x6498 = Master). Now any vtable function from
- *   any level can safely access any board offset without OOB writes.
+ *   The background thread reads the current board's vtable pointer, finds
+ *   which level's custom vtable it matches, then calls every non-zero entry
+ *   in slots 36-127 with __thiscall(board) convention.
  *
- *   This means you can freely use VTABLE commands to mix-and-match functions
- *   from different levels WITHOUT needing SET/SWAP. The board is always big
- *   enough for any function.
- *
- *   Custom vtable allocation (from v3) is retained — each level gets its own
- *   writable vtable copy, so VTABLE commands are fully independent per level.
- *
- * Usage example (VTABLE only, no SET/SWAP needed):
- *   VTABLE 1 18 Scene_SetupLevelCascade   ; Beginner geometry on WarmUp
- *   VTABLE 1 19 Beginner_InitScene          ; Beginner init
- *   VTABLE 1 24 Beginner_RenderDyn         ; Beginner render
- *   VTABLE 1 29 Beginner_DispatchColl      ; Beginner collision
+ *   This lets you add custom per-frame functions to any level via:
+ *     VTABLE 1 36 0x0041B130    ; custom per-frame function on Level 1
+ *     VTABLE 1 37 MyCustomFunc   ; etc.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_level_system.c \
@@ -78,8 +68,10 @@ static const LevelEntry g_levels[15] = {
     { 15, "Impossible",   0x00424C20, 0x4380, 0x004273A5, 0x004273C8, 0x004D21C0, 0x00424C5D },
 };
 
-#define VTABLE_SIZE         144    /* 36 entries × 4 bytes            */
-#define VTABLE_ENTRIES      36
+#define VTABLE_SIZE         512    /* 128 entries × 4 bytes             */
+#define VTABLE_ENTRIES      128
+#define VTABLE_NATIVE_SLOTS  36     /* slots 0-35: game-native dispatch   */
+#define VTABLE_EXT_SLOTS    92     /* slots 36-127: custom dispatch      */
 
 /* ============================================================
  * Custom vtable storage — 15 independent writable vtable copies
@@ -87,18 +79,26 @@ static const LevelEntry g_levels[15] = {
 
 static DWORD g_custom_vtables[15] = {0};
 static int   g_vtables_initialized = 0;
+static volatile int g_dispatch_running = 0;
+
+/* Original vtable entries (only 36 native slots saved for RESET) */
+static DWORD g_orig_vtable[15][36] = {{0}};
+static int   g_vtable_saved = 0;
 
 static void init_custom_vtables(void) {
     if (g_vtables_initialized) return;
 
     for (int i = 0; i < 15; i++) {
+        /* Allocate 512 bytes (128 entries) but only copy 144 bytes (36 native entries)
+         * from the original. Slots 36-127 are zeroed (available for custom use). */
         DWORD addr = (DWORD)VirtualAlloc(NULL, VTABLE_SIZE,
             MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (!addr) continue;
 
-        if (!IsBadReadPtr((void*)g_levels[i].vtable_addr, VTABLE_SIZE)) {
-            memcpy((void*)addr, (void*)g_levels[i].vtable_addr, VTABLE_SIZE);
+        if (!IsBadReadPtr((void*)g_levels[i].vtable_addr, 144)) {
+            memcpy((void*)addr, (void*)g_levels[i].vtable_addr, 144);
         }
+        /* Slots 36-127 are already zeroed by VirtualAlloc */
 
         g_custom_vtables[i] = addr;
 
@@ -245,14 +245,12 @@ typedef struct {
 } OrigEntry;
 
 static OrigEntry g_orig[15] = {0};
-static DWORD g_orig_vtable[15][VTABLE_ENTRIES] = {{0}};
-static int   g_vtable_saved = 0;
 
 static void save_originals(void) {
     if (g_vtable_saved) return;
     for (int i = 0; i < 15; i++) {
         DWORD vt = g_levels[i].vtable_addr;
-        for (int s = 0; s < VTABLE_ENTRIES; s++) {
+        for (int s = 0; s < 36; s++) {
             if (!IsBadReadPtr((void*)(vt + s*4), 4))
                 g_orig_vtable[i][s] = *(DWORD*)(vt + s*4);
         }

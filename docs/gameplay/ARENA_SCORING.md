@@ -66,7 +66,7 @@ Each player's tournament/race data lives in the `App` struct with a stride of `0
 | P3 | `+0x718` | `+0x728` | `+0x72C` | `+0x76C` | `+0x770` |
 | P4 | `+0x7B8` | `+0x7C8` | `+0x7CC` | `+0x80C` | `+0x810` |
 
-In **arena mode**, the `+0x5E8` slot is repurposed as a **score accumulator** rather than a race time. The ArenaBoard copies scores into these slots at round end.
+In **arena mode**, the `+0x5E8` slot is repurposed as a **score accumulator** rather than a time remaining counter. The ArenaBoard copies scores into these slots at round end. In race modes, `+0x5E4` (float) is the score accumulated by E:ACTION events, and `+0x5E8` (int) is the time remaining countdown.
 
 > **Verified in:** `PlayerProfile_ctor` (0x426F30), `Tournament_AdvanceRace` (0x427080)
 
@@ -304,7 +304,7 @@ For tournament mode, scores are copied to App struct at round end:
 
 ```cpp
 // App player data offsets (P1 example):
-// +0x5E8 = current_time (in arena: score)
+// +0x5E8 = time_remaining (in arena: repurposed as score)
 // +0x5EC = extra_time (bonus accumulates here)
 
 *(int32_t*)((char*)app + 0x5E8) = 0;      // P1 score = 0
@@ -379,8 +379,8 @@ For tournament mode, scores are copied to App struct at round end:
 ```
 // Player 1
 +0x5D8  byte   p1_active
-+0x5E4  int32  p1_score_aux
-+0x5E8  int32  p1_current_time
++0x5E4  float  p1_score (accumulated by E:ACTION, determines rank)
++0x5E8  int32  p1_time_remaining (countdown from par time, -1/frame)
 +0x5EC  int32  p1_extra_time
 +0x60C  int32  p1_race_index
 +0x610  char*  p1_level_name

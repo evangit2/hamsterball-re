@@ -220,7 +220,7 @@ Called every frame by 6 Board vtable methods. This is the master race state mach
 | Offset | Type | Purpose |
 |--------|------|---------|
 | +0x3620 | int | Race phase/state (0x19=25 = race in progress) |
-| +0x3624 | float | Race timer (decrements by 0.02/frame) |
+| +0x3624 | float | Fade alpha (1.0→0.0 fade-in at race start, 0.0→1.0 fade-out at race end; NOT the race timer) |
 | +0x3A38 | ptr | Finish-line trigger objects array |
 | +0x3A4C | byte | Countdown done (0=counting, 1=active) |
 | +0x3A50 | int | Countdown phase (0-3: GET READY→countdown→GO→start) |
@@ -238,17 +238,28 @@ Called every frame by 6 Board vtable methods. This is the master race state mach
 
 **Finish detection** (when `+0x3A4C != 0`, race active):
 - Iterates finish-line trigger objects at `+0x3A38`
-- For each trigger object:
-  - If `obj+0x0A == 0` (not yet finished):
-    - **Single-player**: decrements `obj+0x1C` (finish timer). When `< 0` AND `obj+0x20 < 1`:
+- For each trigger object (which are pointers into App player slots at `App+PID*0xA0+0x5CC`):
+  - If `obj+0x0A == 0` (not yet finished, = `App+PID*0xA0+0x5D6`):
+    - **Single-player**: decrements `obj+0x1C` (time remaining, = `App+PID*0xA0+0x5E8`). When `< 0` AND `obj+0x20 < 1`:
       - Sets `obj+0x1C = 0`, `obj+0x0A = 1` (finished)
       - Sets ball `+0x14C = 1` (ball finished flag)
       - Calls `Scene_UpdateChildren(scene+0x178)`
       - Sets `board+0x880 = 1` (race ended)
-      - Creates `RaceResultPopup` (0x60 bytes, ctor at 0x44C260)
+      - Creates `RaceResultPopup` (0x60 bytes, ctor at 0x44C260) — uses `obj+0x18` (= `App+PID*0xA0+0x5E4`, the **score**) to determine rank
       - Appends popup to `board+0x8B8` (UI objects list)
       - Stops current music channel, plays "Game Over" music
     - **Multiplayer**: increments `obj+0x1C` instead (counts up to threshold)
+
+**Timer stop mechanism**: The timer is stopped *passively* — no function actively stops it.
+`Board_UpdateRaceState` checks `obj+0x0A` (the finished flag at `App+PID*0xA0+0x5D6`) each frame.
+If set to 1 (by N:GOAL or by timer expiry), the `DEC obj+0x1C` instruction is skipped via `JNZ` at `0x41B3E5`.
+The flag is set by N:GOAL in `DispatchCollisionEvents` (0x40C5D0).
+
+**Score vs Time**: `obj+0x18` (= `App+PID*0xA0+0x5E4`) is the **score** (float, accumulated by E:ACTION
+collision events). `obj+0x1C` (= `App+PID*0xA0+0x5E8`) is the **time remaining** (int, countdown from
+par time). The rank threshold table at `0x4F710C` contains DWORD score thresholds (6000→350000),
+not time values. RaceResultPopup_ctor reads the score as a float and compares against these
+thresholds to pick the rank image (`textures\ranks\N.jpg`).
 
 ### 1b. `RaceResultPopup` (ctor at 0x44C260)
 
@@ -289,9 +300,10 @@ This is the **central transition function** — it determines what menu to show 
    - Adds to scene via `Scene_AddObject(scene+0x184, menu)`
    - **→ Shows tournament progression menu**
 
-4. **Non-tournament path** (timer-based delay):
-   - Increments `scene+0xD89` by 0.01/frame (+ extra if `profile+0x10 != 0`)
-   - When timer ≥ threshold (`_DAT_004CF310`):
+4. **Non-tournament path** (fade-based delay):
+   - If `board+0x3624 == 0.0` (fade complete) and music player exists: `MusicPlayer_SetTempoScale(2.0)` (slow down music)
+   - Increments `board+0x3624` (fade alpha) by 0.025/frame (+0.01 extra if `profile+0x10 != 0`, party mode)
+   - When `board+0x3624 >= 1.0` (fade-out complete, threshold `_DAT_004CF310` = 1.0):
      - Copies current scores to "best" slots:
        - `App+0x5E8 → App+0x5EC` (P1 current → P1 best)
        - `App+0x688 → App+0x68C` (P2)

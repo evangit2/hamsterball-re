@@ -338,9 +338,9 @@ Key identified slots:
 - [16] Scene_SetDestroyed - set +0x2C=1 flag
 - [17] Scene_SaveAndCleanup - delegates to FUN_469AC0
 - [18] Level_InitScene
-- [19] Scene_HandleRaceEnd - timer decrement, lap tracking, Game Over, RaceResultPopup ctor
+- [19] Scene_HandleRaceEnd - fade alpha decrement (board+0x3624), per-player timer countdown, Game Over, RaceResultPopup ctor
 - [20] Scene_UpdateBallsAndState - ball list iteration, SetCamera, Ball_Update, destroy finished
-- [22] Scene_ProcessRaceEnd - race countdown timer, scene transition on expire
+- [22] Scene_ProcessRaceEnd - race-end transition (fade-out via board+0x3624, scene change on fade complete)
 - [23] Scene_HandleBallFinish - ball finish state machine (start→150f countdown→finish→popup→done)
 - [24-26] Level render methods
 - [27] Scene_RenderScoreHUD - tournament title, countdown bar, "Score", Player 2, timer

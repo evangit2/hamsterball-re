@@ -484,10 +484,10 @@ Offset | Field | Description
 | 16 | +0x40 | 0x419740 | Scene_SetDestroyed | Set +0x2C=1 destroyed flag |
 | 17 | +0x44 | 0x4692B0 | Scene_SaveAndCleanup | Calls FUN_469AC0 (save + cleanup) |
 | 18 | +0x48 | 0x40B090 | Level_InitScene | Level scene initialization |
-| 19 | +0x4C | 0x41B130 | Scene_HandleRaceEnd | Race timer decrement, lap 3->4 transition, Game Over, RaceResultPopup |
+| 19 | +0x4C | 0x41B130 | Scene_HandleRaceEnd | Fade alpha decrement (board+0x3624 -0.02/frame), per-player timer countdown (App+PID*0xA0+0x5E8 -1/frame), Game Over popup, RaceResultPopup |
 | 20 | +0x50 | 0x41B540 | Scene_UpdateBallsAndState | Iterate ball lists, SetCamera, Ball_Update, destroy finished balls |
 | 21 | +0x54 | 0x40A040 | NoOp | Empty (58 xrefs) |
-| 22 | +0x58 | 0x41A540 | Scene_ProcessRaceEnd | Countdown timer, check all balls finished, scene transition on expire |
+| 22 | +0x58 | 0x41A540 | Scene_ProcessRaceEnd | Race-end transition: checks all players finished, fade-out via board+0x3624 (+0.025/frame), scene transition on fade complete |
 | 23 | +0x5C | 0x409DE0 | Scene_HandleBallFinish | Ball finish state machine: start→countdown(150f)→finish→result popup→done |
 | 24 | +0x60 | 0x40B420 | Level_RenderDynamicObjects_2 | Alternate dynamic render |
 | 25 | +0x64 | 0x40B600 | Level_UpdateAndRender | Combined update + render |
