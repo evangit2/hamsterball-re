@@ -277,6 +277,13 @@ static void load_real_bass(void)
 #define BOARD_GOAL_REACHED       0xCD0
 #define BOARD_TOURNAMENT_TIMER   0x2990  /* int, counts down in tournament */
 
+/* Pause-block patch addresses (RVA from exe base) */
+#define PAUSE_PATCH_PATH1        0x19D5B  /* Scene_Update ESC check: JZ→JMP */
+#define PAUSE_PATCH_PATH2        0x130B5  /* vtable[5] right-click: JZ→JMP */
+#define PAUSE_PATCH_PATH3        0x0B405  /* vtable[8] VK_ESCAPE: JNZ→JMP */
+static BYTE g_pauseOrigBytes[3] = {0, 0, 0};
+static int g_pauseBlocked = 0;
+
 /* MusicChannel offsets */
 #define MUSIC_CHAN_BASS_CHANNEL  0x08
 #define MUSIC_CHAN_VOLUME       0x528
@@ -387,6 +394,47 @@ static int g_savedTimer = 0;
 /* ============================================================
  * Memory helpers
  * ============================================================ */
+
+/* Save original byte and patch JZ/JNZ → JMP to block pausing */
+static void block_pause(void) {
+    if (g_pauseBlocked) return;
+    HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+    if (!hExe) hExe = GetModuleHandleA(NULL);
+    DWORD base = (DWORD)hExe;
+    DWORD oldProt;
+    DWORD addrs[3] = {PAUSE_PATCH_PATH1, PAUSE_PATCH_PATH2, PAUSE_PATCH_PATH3};
+    int i;
+    for (i = 0; i < 3; i++) {
+        DWORD addr = base + addrs[i];
+        if (VirtualProtect((void*)addr, 1, PAGE_READWRITE, &oldProt)) {
+            g_pauseOrigBytes[i] = *((BYTE*)addr);
+            *((BYTE*)addr) = 0xEB;  /* JZ/JNZ → JMP (always skip pause) */
+            VirtualProtect((void*)addr, 1, oldProt, &oldProt);
+        }
+    }
+    g_pauseBlocked = 1;
+    diag_log("[warp] Pause blocked (3 paths patched)");
+}
+
+/* Restore original bytes to re-enable pausing */
+static void unblock_pause(void) {
+    if (!g_pauseBlocked) return;
+    HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+    if (!hExe) hExe = GetModuleHandleA(NULL);
+    DWORD base = (DWORD)hExe;
+    DWORD oldProt;
+    DWORD addrs[3] = {PAUSE_PATCH_PATH1, PAUSE_PATCH_PATH2, PAUSE_PATCH_PATH3};
+    int i;
+    for (i = 0; i < 3; i++) {
+        DWORD addr = base + addrs[i];
+        if (VirtualProtect((void*)addr, 1, PAGE_READWRITE, &oldProt)) {
+            *((BYTE*)addr) = g_pauseOrigBytes[i];
+            VirtualProtect((void*)addr, 1, oldProt, &oldProt);
+        }
+    }
+    g_pauseBlocked = 0;
+    diag_log("[warp] Pause unblocked (originals restored)");
+}
 
 static int GetApp(void) {
     return *(int *)APP_PTR;
@@ -609,6 +657,7 @@ static void scanWarpNodes(void) {
                         g_rumbleInit = 0;
                         g_colorSaved = 0;
                         g_timerFrozen = 0;
+                        g_pauseBlocked = 0;  /* Will be set when ball vanishes */
                         g_warpBall = ball;
                         {
                             DWORD now = GetTickCount();
@@ -761,7 +810,8 @@ static void updateWarpStateMachine(void) {
             if (!g_timerFrozen && board) {
                 g_savedTimer = *(int *)((char *)board + BOARD_TOURNAMENT_TIMER);
                 g_timerFrozen = 1;
-                diag_logf("[warp] Timer frozen at %d", g_savedTimer);
+                block_pause();  /* Block pausing once ball vanishes */
+                diag_logf("[warp] Timer frozen at %d, pause blocked", g_savedTimer);
             }
         }
 
@@ -966,12 +1016,14 @@ static void updateWarpStateMachine(void) {
             g_whiteAlpha = 0.0f;
             g_phase = PHASE_IDLE;
             g_cooldownUntil = GetTickCount() + WARP_COOLDOWN_MS;
+            unblock_pause();  /* Re-enable pausing after warp completes */
             diag_log("[warp] -> PHASE_IDLE: warp complete (2s cooldown)");
         }
         break;
     }
 
     default:
+        unblock_pause();
         g_phase = PHASE_IDLE;
         break;
     }
