@@ -28,7 +28,7 @@ When the ball touches a `WARP(Name)` node point in a custom MESHWORLD level, a m
 - **Ball color fade**: Writes RGBA floats to `board+0x3AB0` (P1 color table, same as ball_tint mod). Original color saved on first frame, lerped to yellow `(1,1,0)` over the RUMBLE phase.
 - **Ball alpha fade**: `ball+0x2FC` (alpha float) lerped from 1.0 to 0.5 over RUMBLE. Game overwrites alpha to 1.0 each frame, so continuous writes are required.
 - **Ball invisible**: `ball+0x2FC=0.0` (alpha) — forced only when the screen reaches full white (`g_whiteAlpha >= 0.99`). Respects respawn flag (`ball+0x2F9`).
-- **Timer freeze**: `board+0x2990` (tournament timer, int) saved at flash peak and written back every frame through HOLD/FADE/LOAD. Also sets `board+0xCD0=1` (goal reached) and `App+playerID*0xA0+0x5D6=1` (player finished) to signal the race state machine that the race is over.
+- **Timer freeze**: `board+0x2990` (tournament timer, int) saved at flash peak and written back every frame through HOLD/FADE/LOAD phases. This purely freezes the timer value — does NOT set goal-reached or player-finished flags, so no race-end sequence (popup, music) is triggered.
 - **Music fade**: Manual volume ramp over 3.0 seconds. Writes `MusicChannel+0x528` (volume) and calls `BASS_ChannelSetAttributes` directly. Does NOT use game's fade-out flag (cuts too fast).
 - **White screen**: Game's native fade at `board+0x3624` (float alpha). The board render function reads this every frame and draws a fullscreen rect through the game's own material pipeline — no D3D state corruption.
 - **Level load**: `App_StartPracticeRace(app, levelIndex)` — same as practice race menu selection. Difficulty is saved and restored around the call. Tournament mode is preserved by saving/restoring profile flags, scores, and timer.
@@ -63,7 +63,7 @@ i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v7.c -lwinmm \
 
 ## Version History
 
-- **v7d**: Timer freeze — tournament timer (`board+0x2990`) freezes the moment the ball vanishes (flash peak). Sets goal reached (`board+0xCD0=1`) and player finished (`App+playerID*0xA0+0x5D6=1`). Timer stays frozen through HOLD/FADE/LOAD phases. Updated README.
+- **v7d**: Timer freeze — tournament timer (`board+0x2990`) freezes the moment the ball vanishes (flash peak). Purely freezes the value — no goal-reached or player-finished flags set, so no race-end sequence triggered. Timer stays frozen through HOLD/FADE/LOAD phases. Updated README.
 - **v7c**: Color fade to yellow + alpha fade to 50% during RUMBLE. Ball color lerps from original to `(1,1,0)` over 2s. Ball alpha lerps from 1.0 to 0.5 over 2s (progressive ghostly effect).
 - **v7b**: Ball invisible at flash peak — ball stays visible during flash ramp-up, turns invisible only when `g_whiteAlpha >= 0.99` (screen fully white).
 - **v7**: Node-point proximity trigger (no collision hook). Scans MeshWorld Section 1 for `WARP(Name)` entries. Native render jitter (`ball+0x2D4`). Removed `DispatchCollisionEvents` hook entirely.
