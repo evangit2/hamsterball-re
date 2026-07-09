@@ -396,12 +396,31 @@ static volatile int g_rumbleInit = 0;
 static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
 static int g_colorSaved = 0;
 
-/* Timer freeze — saved when ball vanishes, written back every frame */
+/* Timer freeze — saved when ball vanishes, written back every frame.
+ *
+ * The live race timer is board+0x3624 (float, -0.02/frame in
+ * Board_UpdateRaceState at 0x41B1BF). The mod also uses board+0x3624
+ * for the white screen fade effect (g_whiteAlpha). To freeze the timer
+ * without conflicting with the screen effect, we NOP the decrement
+ * instruction itself (FSUB at 0x41B1C5) while the warp is active. */
 static int g_timerFrozen = 0;
 static int g_savedTimer = 0;
 
 /* Board offset: scene+0x874 = paused flag (set by Scene_CreateGameOverMenu) */
 #define BOARD_PAUSED_FLAG      0x874
+
+/* Timer decrement instruction in Board_UpdateRaceState:
+ * 0x41B1BF: D9 86 24 36 00 00 = FLD float ptr [ESI+0x3624]  (6 bytes)
+ * 0x41B1C5: DC 25 E0 03 4D 00 = FSUB double ptr [0x4D03E0]  (6 bytes)
+ * 0x41B1CB: D9 96 24 36 00 00 = FST float ptr [ESI+0x3624]  (6 bytes)
+ * We NOP the FSUB+FST (12 bytes at 0x41B1C5) to prevent the decrement
+ * AND store-back, while leaving the FLD (harmless load on the FPU stack).
+ * The FLD leaves a value on the FPU stack, but the following FCOMP at
+ * 0x41B1D1 pops it, so the FPU stack stays balanced. */
+#define TIMER_DEC_ADDR        0x41B1C5
+#define TIMER_DEC_SIZE        12
+static unsigned char g_timerOrigBytes[TIMER_DEC_SIZE];
+static int g_timerBytesSaved = 0;
 
 /* ============================================================
  * Memory helpers
@@ -446,6 +465,48 @@ static void unblock_pause(void) {
     }
     g_pauseBlocked = 0;
     diag_log("[warp] Pause unblocked (originals restored)");
+}
+
+/* NOP the timer decrement instruction in Board_UpdateRaceState to freeze
+ * the race timer. The live timer is board+0x3624 (float, -0.02/frame).
+ * We NOP the FSUB+FST (12 bytes at 0x41B1C5) so the game loads the value
+ * but never subtracts from it or writes it back. */
+static void freeze_timer_decrement(void) {
+    if (g_timerBytesSaved) return;
+    HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+    if (!hExe) hExe = GetModuleHandleA(NULL);
+    DWORD base = (DWORD)hExe;
+    DWORD addr = base + TIMER_DEC_ADDR;
+    DWORD oldProt;
+    int i;
+    if (VirtualProtect((void*)addr, TIMER_DEC_SIZE, PAGE_READWRITE, &oldProt)) {
+        for (i = 0; i < TIMER_DEC_SIZE; i++) {
+            g_timerOrigBytes[i] = *((BYTE*)(addr + i));
+            *((BYTE*)(addr + i)) = 0x90;  /* NOP */
+        }
+        VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
+    }
+    g_timerBytesSaved = 1;
+    diag_log("[warp] Timer decrement NOP'd (12 bytes at 0x41B1C5)");
+}
+
+/* Restore the timer decrement instruction */
+static void restore_timer_decrement(void) {
+    if (!g_timerBytesSaved) return;
+    HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+    if (!hExe) hExe = GetModuleHandleA(NULL);
+    DWORD base = (DWORD)hExe;
+    DWORD addr = base + TIMER_DEC_ADDR;
+    DWORD oldProt;
+    int i;
+    if (VirtualProtect((void*)addr, TIMER_DEC_SIZE, PAGE_READWRITE, &oldProt)) {
+        for (i = 0; i < TIMER_DEC_SIZE; i++) {
+            *((BYTE*)(addr + i)) = g_timerOrigBytes[i];
+        }
+        VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
+    }
+    g_timerBytesSaved = 0;
+    diag_log("[warp] Timer decrement restored");
 }
 
 static int GetApp(void) {
@@ -762,6 +823,8 @@ static void updateWarpStateMachine(void) {
     app = GetApp();
     if (!app) {
         diag_log("[warp] App null during warp, aborting");
+        restore_timer_decrement();
+        unblock_pause();
         g_phase = PHASE_IDLE;
         return;
     }
@@ -864,20 +927,18 @@ static void updateWarpStateMachine(void) {
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
             }
-            /* Freeze the tournament timer the instant the ball vanishes.
-             * Just freeze the value — do NOT set goal-reached or player-finished
-             * flags, as those would trigger the race-end sequence (popup, music). */
-            if (!g_timerFrozen && board) {
-                g_savedTimer = *(int *)((char *)board + BOARD_TOURNAMENT_TIMER);
+            /* Freeze the race timer by NOP'ing the decrement instruction
+             * in Board_UpdateRaceState. The live timer is board+0x3624
+             * (float, -0.02/frame). We NOP the FSUB+FST so the game loads
+             * the value but never subtracts from it. This lets the mod
+             * freely write g_whiteAlpha to board+0x3624 for the screen
+             * effect without the game decrementing it. */
+            if (!g_timerFrozen) {
                 g_timerFrozen = 1;
+                freeze_timer_decrement();
                 block_pause();  /* Block pausing once ball vanishes */
-                diag_logf("[warp] Timer frozen at %d, pause blocked", g_savedTimer);
+                diag_log("[warp] Timer frozen (decrement NOP'd), pause blocked");
             }
-        }
-
-        /* Keep freezing timer every frame while active */
-        if (g_timerFrozen && board) {
-            *(int *)((char *)board + BOARD_TOURNAMENT_TIMER) = g_savedTimer;
         }
 
         updateMusicFade();
@@ -903,11 +964,6 @@ static void updateWarpStateMachine(void) {
             }
         }
 
-        /* Keep timer frozen */
-        if (g_timerFrozen && board) {
-            *(int *)((char *)board + BOARD_TOURNAMENT_TIMER) = g_savedTimer;
-        }
-
         updateMusicFade();
 
         if (elapsed >= HOLD_DURATION_MS) {
@@ -929,11 +985,6 @@ static void updateWarpStateMachine(void) {
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
             }
-        }
-
-        /* Keep timer frozen */
-        if (g_timerFrozen && board) {
-            *(int *)((char *)board + BOARD_TOURNAMENT_TIMER) = g_savedTimer;
         }
 
         updateMusicFade();
@@ -1094,6 +1145,7 @@ static void updateWarpStateMachine(void) {
             g_whiteAlpha = 0.0f;
             g_phase = PHASE_IDLE;
             g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
+            restore_timer_decrement();
             unblock_pause();  /* Re-enable pausing after warp completes */
             diag_log("[warp] -> PHASE_IDLE: warp complete (2s cooldown)");
         }
@@ -1101,6 +1153,7 @@ static void updateWarpStateMachine(void) {
     }
 
     default:
+        restore_timer_decrement();
         unblock_pause();
         g_phase = PHASE_IDLE;
         break;
