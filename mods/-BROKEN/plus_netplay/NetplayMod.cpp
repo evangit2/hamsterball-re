@@ -548,9 +548,9 @@ static void __thiscall game_update(void*) {
     g_frameCount++;
     if (!g_gameReady && g_frameCount > 120) g_gameReady = true;
 
-    // Pause interception
+    // Pause interception: only during races (not menus — ESC = quit/back in menus)
     DWORD board = findBoard();
-    if (board && !IsBadReadPtr((void*)(board + BOARD_PAUSE_FLAG), 1)) {
+    if (board && g_inRace && !IsBadReadPtr((void*)(board + BOARD_PAUSE_FLAG), 1)) {
         DWORD pauseFlag = *(DWORD*)(board + BOARD_PAUSE_FLAG);
         if (pauseFlag != g_lastPauseFlag) {
             if (pauseFlag == 1) {
@@ -559,6 +559,8 @@ static void __thiscall game_update(void*) {
             }
             g_lastPauseFlag = pauseFlag;
         }
+    } else {
+        g_lastPauseFlag = 0; // reset when not in race
     }
 
     // Race detection: in race if board exists and P1 ball exists
