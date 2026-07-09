@@ -700,7 +700,10 @@ static void updateWarpStateMachine(void) {
             if (g_whiteAlpha < 0.0f) g_whiteAlpha = 0.0f;
         }
 
-        if (ball) {
+        /* Turn ball invisible ONLY when the screen is fully white (at peak).
+         * Before that, the ball should still be visible — the flash ramps up
+         * over the ball, hiding the disappearance behind the white screen. */
+        if (g_whiteAlpha >= 0.99f && ball) {
             int respawning = *((unsigned char *)((char *)ball + 0x2F9));
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
