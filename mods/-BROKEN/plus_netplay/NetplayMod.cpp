@@ -15,12 +15,13 @@
 #define PIPE_POLL_MS 4
 #define HEARTBEAT_INTERVAL 300
 
-// Direct memory constants — no IModAPI vtable calls needed for game state
+// Direct memory constants
 static constexpr DWORD GLOBAL_APP_PTR       = 0x5341E0;
 static constexpr DWORD APP_PROFILE_OFFSET   = 0x220;
 static constexpr DWORD PROFILE_BOARD_OFFSET = 0x0C;
 static constexpr DWORD BOARD_VTABLE_MIN     = 0x4D0000;
 static constexpr DWORD BOARD_VTABLE_MAX     = 0x4D2000;
+static constexpr DWORD BALL_VTABLE           = 0x4CF3A0;
 
 // Ball offsets
 static constexpr DWORD BALL_POS_X     = 0x164;
@@ -31,11 +32,10 @@ static constexpr DWORD BALL_FACING_Z  = 0x194;
 static constexpr DWORD BALL_ROT       = 0x150;
 static constexpr DWORD BALL_RADIUS    = 0x284;
 static constexpr DWORD BALL_GRAVITY   = 0x748;
-static constexpr DWORD BALL_FORCE_X   = 0x2BC;
-static constexpr DWORD BALL_FORCE_Y   = 0x2C0;
-static constexpr DWORD BALL_FORCE_Z   = 0x2C4;
 static constexpr DWORD BALL_PHYS_PTR   = 0x1A4;
-static constexpr DWORD BALL_VTABLE     = 0x4CF3A0; // for validation
+static constexpr DWORD BALL_PLAYER_ID  = 0x018;
+
+// Physics velocity (persists — not consumed like force accumulators)
 static constexpr DWORD PHYS_VEL_X     = 0xCA4;
 static constexpr DWORD PHYS_VEL_Y     = 0xCA8;
 static constexpr DWORD PHYS_VEL_Z     = 0xCAC;
@@ -43,6 +43,12 @@ static constexpr DWORD PHYS_VEL_Z     = 0xCAC;
 // Scene ball pointers
 static constexpr DWORD SCENE_P1_BALL  = 0x29D0;
 static constexpr DWORD SCENE_P2_LIST  = 0x3204;
+
+// Input control slots
+static constexpr DWORD APP_CONTROL_SLOTS = 0xB28; // App+0xB28 + playerIndex*4
+
+// Pause flag
+static constexpr DWORD BOARD_PAUSE_FLAG = 0x874;
 
 enum NetRole { ROLE_DISABLED = 0, ROLE_HOST = 1, ROLE_GUEST = 2 };
 enum ConnState { CONN_OFFLINE = 0, CONN_SEARCHING = 1, CONN_CONNECTING = 2, CONN_CONNECTED = 3, CONN_ERROR = 4 };
@@ -55,10 +61,13 @@ enum MsgType {
 struct PipeHeader { DWORD type; DWORD length; };
 struct BallStateMsg {
     DWORD frame;
-    float p1_pos[3], p1_vel[3], p1_facing[2], p1_rot, p1_radius, p1_gravity;
-    float p2_pos[3], p2_vel[3], p2_facing[2], p2_rot, p2_radius, p2_gravity;
+    float pos[3];
+    float vel[3];
+    float facing[2];
+    float rot;
+    float radius;
+    float gravity;
 };
-struct InputStateMsg { DWORD frame; float force_x, force_y, force_z; };
 struct FpsReportMsg { float local_fps, remote_fps; DWORD frame_count; };
 struct StatusMsg { DWORD conn_state; DWORD remote_fps_raw; char remote_info[64]; };
 #pragma pack(pop)
@@ -82,22 +91,32 @@ static float g_remoteFps = 0.0f;
 static DWORD g_lastHeartbeat = 0;
 static char g_remoteInfo[128] = "";
 static volatile bool g_gameReady = false;
-static volatile bool g_localPaused = false; // local pause: stops input, game keeps running
+static volatile bool g_localPaused = false;
 static DWORD g_lastPauseFlag = 0;
-static BallStateMsg g_latestBallState = {};
+static volatile bool g_inRace = false;
+
+// Network state buffers
+static BallStateMsg g_remoteState = {};
 static CRITICAL_SECTION g_stateLock;
-static InputStateMsg g_latestInput = {};
-static CRITICAL_SECTION g_inputLock;
-static volatile DWORD g_lastBallStateFrame = 0;
-static volatile DWORD g_lastInputFrame = 0;
+static volatile DWORD g_remoteStateFrame = 0;
 
-// ── Direct Memory Access (no IModAPI vtable calls) ─────────────────
+// Control slot backup (for restoring on race exit)
+static int g_savedControlSlot = -1;
 
-static DWORD findBoard() {
+// ── Direct Memory Access ───────────────────────────────────────────
+
+static DWORD getApp() {
     DWORD appPtr = *(DWORD*)GLOBAL_APP_PTR;
     if (!appPtr || appPtr < 0x10000) return 0;
-    if (IsBadReadPtr((void*)(appPtr + APP_PROFILE_OFFSET), 4)) return 0;
-    DWORD profile = *(DWORD*)(appPtr + APP_PROFILE_OFFSET);
+    if (IsBadReadPtr((void*)appPtr, 0x1000)) return 0;
+    return appPtr;
+}
+
+static DWORD findBoard() {
+    DWORD app = getApp();
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + APP_PROFILE_OFFSET), 4)) return 0;
+    DWORD profile = *(DWORD*)(app + APP_PROFILE_OFFSET);
     if (!profile || profile < 0x10000) return 0;
     if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_OFFSET), 4)) return 0;
     DWORD board = *(DWORD*)(profile + PROFILE_BOARD_OFFSET);
@@ -108,22 +127,18 @@ static DWORD findBoard() {
     return board;
 }
 
-static DWORD getP1Ball() {
+static DWORD getBall(int playerIndex) {
     DWORD board = findBoard();
     if (!board) return 0;
-    if (IsBadReadPtr((void*)(board + SCENE_P1_BALL), 4)) return 0;
-    DWORD ball = *(DWORD*)(board + SCENE_P1_BALL);
-    if (!ball || ball < 0x10000) return 0;
-    if (IsBadReadPtr((void*)ball, 0x800)) return 0;
-    // Validate ball vtable
-    DWORD vt = *(DWORD*)ball;
-    if (vt != BALL_VTABLE) return 0;
-    return ball;
-}
-
-static DWORD getP2Ball() {
-    DWORD board = findBoard();
-    if (!board) return 0;
+    if (playerIndex == 0) {
+        if (IsBadReadPtr((void*)(board + SCENE_P1_BALL), 4)) return 0;
+        DWORD ball = *(DWORD*)(board + SCENE_P1_BALL);
+        if (!ball || ball < 0x10000) return 0;
+        if (IsBadReadPtr((void*)ball, 0x800)) return 0;
+        if (*(DWORD*)ball != BALL_VTABLE) return 0;
+        return ball;
+    }
+    // P2 from AthenaList
     if (IsBadReadPtr((void*)(board + SCENE_P2_LIST), 8)) return 0;
     DWORD listBase = board + SCENE_P2_LIST;
     DWORD count = *(DWORD*)(listBase + 4);
@@ -156,24 +171,59 @@ static void readVel(DWORD ball, float* vx, float* vy, float* vz) {
     *vz = *(float*)(phys + PHYS_VEL_Z);
 }
 
+static void writeVel(DWORD ball, float vx, float vy, float vz) {
+    if (!ball) return;
+    DWORD phys = readD(ball, BALL_PHYS_PTR);
+    if (!phys || phys < 0x10000) return;
+    if (IsBadWritePtr((void*)(phys + PHYS_VEL_X), 12)) return;
+    *(float*)(phys + PHYS_VEL_X) = vx;
+    *(float*)(phys + PHYS_VEL_Y) = vy;
+    *(float*)(phys + PHYS_VEL_Z) = vz;
+}
+
+static void writePos(DWORD ball, float x, float y, float z) {
+    if (!ball || IsBadWritePtr((void*)(ball + BALL_POS_X), 12)) return;
+    *(float*)(ball + BALL_POS_X) = x;
+    *(float*)(ball + BALL_POS_Y) = y;
+    *(float*)(ball + BALL_POS_Z) = z;
+}
+
+// ── Input Control Slot Management ─────────────────────────────────
+
+// Set player's control slot to 99 (OFF) to suppress local input
+static void suppressLocalInput(int playerIndex) {
+    DWORD app = getApp();
+    if (!app) return;
+    DWORD slotAddr = app + APP_CONTROL_SLOTS + playerIndex * 4;
+    if (IsBadReadPtr((void*)slotAddr, 4)) return;
+    g_savedControlSlot = *(int*)slotAddr;
+    *(int*)slotAddr = 99; // OFF — no local input
+}
+
+static void restoreLocalInput(int playerIndex) {
+    if (g_savedControlSlot < 0) return;
+    DWORD app = getApp();
+    if (!app) return;
+    DWORD slotAddr = app + APP_CONTROL_SLOTS + playerIndex * 4;
+    if (IsBadWritePtr((void*)slotAddr, 4)) return;
+    *(int*)slotAddr = g_savedControlSlot;
+    g_savedControlSlot = -1;
+}
+
+// ── Config File ───────────────────────────────────────────────────
+
 static void updateHostIPString() {
     snprintf(g_hostIP, sizeof(g_hostIP), "%d.%d.%d.%d",
              g_ip_octet[0], g_ip_octet[1], g_ip_octet[2], g_ip_octet[3]);
 }
 
-// Read netplay.txt config file from game directory
-// First line = host IP, optional :port suffix
-// e.g. "192.168.1.100" or "192.168.1.100:5029" or "100.71.119.98:5029"
 static void loadConfigFile() {
-    // Get game directory from module handle
     char path[MAX_PATH];
     DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH);
     if (len == 0) return;
-    // Strip filename, keep directory
     for (DWORD i = len; i > 0; i--) {
         if (path[i] == '\\') { path[i+1] = '\0'; break; }
     }
-    // Append "netplay.txt"
     char* p = path;
     while (*p) p++;
     const char* fname = "netplay.txt";
@@ -190,17 +240,12 @@ static void loadConfigFile() {
     if (bytesRead == 0) return;
     buf[bytesRead] = '\0';
 
-    // Skip BOM if present (UTF-8 BOM = 0xEF 0xBB 0xBF)
     char* line = buf;
     if ((unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB && (unsigned char)line[2] == 0xBF)
         line += 3;
-
-    // Find end of first line
     char* end = line;
     while (*end && *end != '\n' && *end != '\r') end++;
     *end = '\0';
-
-    // Skip leading whitespace
     while (*line == ' ' || *line == '\t') line++;
 
     // Check for :port suffix
@@ -210,26 +255,18 @@ static void loadConfigFile() {
         *colon = '\0';
         int port = 0;
         char* cp = colon + 1;
-        while (*cp >= '0' && *cp <= '9') {
-            port = port * 10 + (*cp - '0');
-            cp++;
-        }
-        if (port >= 1024 && port <= 65535) {
-            g_port = port;
-        }
+        while (*cp >= '0' && *cp <= '9') { port = port * 10 + (*cp - '0'); cp++; }
+        if (port >= 1024 && port <= 65535) g_port = port;
     }
 
-    // Parse IP octets: "100.71.119.98"
+    // Parse IP octets
     int octets[4] = {0, 0, 0, 1};
     int idx = 0;
     char* ip = line;
     while (*ip && idx < 4) {
         int val = 0;
-        while (*ip >= '0' && *ip <= '9') {
-            val = val * 10 + (*ip - '0');
-            ip++;
-        }
-        if (val > 255) val = 255; // clamp
+        while (*ip >= '0' && *ip <= '9') { val = val * 10 + (*ip - '0'); ip++; }
+        if (val > 255) val = 255;
         octets[idx++] = val;
         if (*ip == '.') ip++;
     }
@@ -318,7 +355,7 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
         }
         noPipeCount = 0;
 
-        // Send config changes to relay
+        // Send config
         if (g_role != lastSentRole) {
             DWORD roleVal = (DWORD)g_role;
             sendPipeMsg(MSG_ROLE_SET, &roleVal, sizeof(roleVal));
@@ -336,48 +373,24 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             lastSentIP[sizeof(lastSentIP)-1] = '\0';
         }
 
-        // HOST: stream P1+P2 ball state using direct memory reads
-        if (g_role == ROLE_HOST && g_connState >= CONN_CONNECTED && g_gameReady) {
-            DWORD p1 = getP1Ball();
-            DWORD p2 = getP2Ball();
-            if (p1) {
+        // Stream local player's ball state
+        if (g_connState >= CONN_CONNECTED && g_inRace) {
+            int localPlayer = (g_role == ROLE_HOST) ? 0 : 1; // Host=P1, Guest=P2
+            DWORD ball = getBall(localPlayer);
+            if (ball) {
                 BallStateMsg msg;
                 memset(&msg, 0, sizeof(msg));
                 msg.frame = g_frameCount;
-                msg.p1_pos[0] = readF(p1, BALL_POS_X);
-                msg.p1_pos[1] = readF(p1, BALL_POS_Y);
-                msg.p1_pos[2] = readF(p1, BALL_POS_Z);
-                readVel(p1, &msg.p1_vel[0], &msg.p1_vel[1], &msg.p1_vel[2]);
-                msg.p1_facing[0] = readF(p1, BALL_FACING_X);
-                msg.p1_facing[1] = readF(p1, BALL_FACING_Z);
-                msg.p1_rot = readF(p1, BALL_ROT);
-                msg.p1_radius = readF(p1, BALL_RADIUS);
-                msg.p1_gravity = readF(p1, BALL_GRAVITY);
-                if (p2) {
-                    msg.p2_pos[0] = readF(p2, BALL_POS_X);
-                    msg.p2_pos[1] = readF(p2, BALL_POS_Y);
-                    msg.p2_pos[2] = readF(p2, BALL_POS_Z);
-                    readVel(p2, &msg.p2_vel[0], &msg.p2_vel[1], &msg.p2_vel[2]);
-                    msg.p2_facing[0] = readF(p2, BALL_FACING_X);
-                    msg.p2_facing[1] = readF(p2, BALL_FACING_Z);
-                    msg.p2_rot = readF(p2, BALL_ROT);
-                    msg.p2_radius = readF(p2, BALL_RADIUS);
-                    msg.p2_gravity = readF(p2, BALL_GRAVITY);
-                }
+                msg.pos[0] = readF(ball, BALL_POS_X);
+                msg.pos[1] = readF(ball, BALL_POS_Y);
+                msg.pos[2] = readF(ball, BALL_POS_Z);
+                readVel(ball, &msg.vel[0], &msg.vel[1], &msg.vel[2]);
+                msg.facing[0] = readF(ball, BALL_FACING_X);
+                msg.facing[1] = readF(ball, BALL_FACING_Z);
+                msg.rot = readF(ball, BALL_ROT);
+                msg.radius = readF(ball, BALL_RADIUS);
+                msg.gravity = readF(ball, BALL_GRAVITY);
                 sendPipeMsg(MSG_BALL_STATE, &msg, sizeof(msg));
-            }
-        }
-
-        // GUEST: send P1 input (skip when locally paused)
-        if (g_role == ROLE_GUEST && g_connState >= CONN_CONNECTED && g_gameReady && !g_localPaused) {
-            DWORD p1 = getP1Ball();
-            if (p1) {
-                InputStateMsg msg;
-                msg.frame = g_frameCount;
-                msg.force_x = readF(p1, BALL_FORCE_X);
-                msg.force_y = readF(p1, BALL_FORCE_Y);
-                msg.force_z = readF(p1, BALL_FORCE_Z);
-                sendPipeMsg(MSG_INPUT_STATE, &msg, sizeof(msg));
             }
         }
 
@@ -391,26 +404,18 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             g_lastHeartbeat = g_frameCount;
         }
 
-        // Read incoming messages
+        // Read incoming
         DWORD type;
         char buf[512];
         DWORD len = 0;
         while (readPipeMsgNonBlocking(&type, buf, sizeof(buf), &len)) {
             switch (type) {
                 case MSG_BALL_STATE:
-                    if (g_role == ROLE_GUEST && len == sizeof(BallStateMsg)) {
+                    if (len == sizeof(BallStateMsg)) {
                         EnterCriticalSection(&g_stateLock);
-                        memcpy(&g_latestBallState, buf, sizeof(BallStateMsg));
-                        g_lastBallStateFrame = g_frameCount;
+                        memcpy(&g_remoteState, buf, sizeof(BallStateMsg));
+                        g_remoteStateFrame = g_frameCount;
                         LeaveCriticalSection(&g_stateLock);
-                    }
-                    break;
-                case MSG_INPUT_STATE:
-                    if (g_role == ROLE_HOST && len == sizeof(InputStateMsg)) {
-                        EnterCriticalSection(&g_inputLock);
-                        memcpy(&g_latestInput, buf, sizeof(InputStateMsg));
-                        g_lastInputFrame = g_frameCount;
-                        LeaveCriticalSection(&g_inputLock);
                     }
                     break;
                 case MSG_FPS_REPORT:
@@ -439,46 +444,31 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
     return 0;
 }
 
-// ── Host: apply guest input to P2 ball ────────────────────────────
+// ── Apply remote state to remote player's ball ────────────────────
 
-static void applyHostInput() {
-    InputStateMsg input;
-    EnterCriticalSection(&g_inputLock);
-    input = g_latestInput;
-    LeaveCriticalSection(&g_inputLock);
+static void applyRemoteState() {
+    if (g_remoteStateFrame == 0) return;
 
-    if (input.frame == 0) return;
-
-    DWORD p2 = getP2Ball();
-    if (!p2) return;
-
-    // Direct write to force accumulators — no IModAPI vtable call needed
-    *(float*)(p2 + BALL_FORCE_X) = input.force_x;
-    *(float*)(p2 + BALL_FORCE_Y) = input.force_y;
-    *(float*)(p2 + BALL_FORCE_Z) = input.force_z;
-}
-
-// ── Guest: apply host's P1 state to local P2 ball ──────────────────
-
-static void applyGuestBallState() {
     BallStateMsg state;
     EnterCriticalSection(&g_stateLock);
-    state = g_latestBallState;
+    state = g_remoteState;
     LeaveCriticalSection(&g_stateLock);
 
-    if (state.frame == 0) return;
+    int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0; // Host's remote=P2, Guest's remote=P1
+    DWORD ball = getBall(remotePlayer);
+    if (!ball) return;
 
-    // Write host's P1 position to local P2 ball
-    DWORD p2 = getP2Ball();
-    if (!p2) return;
+    // Write position + velocity directly (state sync, not input sync)
+    writePos(ball, state.pos[0], state.pos[1], state.pos[2]);
+    writeVel(ball, state.vel[0], state.vel[1], state.vel[2]);
 
-    // Direct position write — guest's P2 mirrors host's P1
-    *(float*)(p2 + BALL_POS_X) = state.p1_pos[0];
-    *(float*)(p2 + BALL_POS_Y) = state.p1_pos[1];
-    *(float*)(p2 + BALL_POS_Z) = state.p1_pos[2];
-    *(float*)(p2 + BALL_ROT) = state.p1_rot;
-    *(float*)(p2 + BALL_FACING_X) = state.p1_facing[0];
-    *(float*)(p2 + BALL_FACING_Z) = state.p1_facing[1];
+    // Write rotation + facing
+    if (!IsBadWritePtr((void*)(ball + BALL_ROT), 4))
+        *(float*)(ball + BALL_ROT) = state.rot;
+    if (!IsBadWritePtr((void*)(ball + BALL_FACING_X), 8)) {
+        *(float*)(ball + BALL_FACING_X) = state.facing[0];
+        *(float*)(ball + BALL_FACING_Z) = state.facing[1];
+    }
 }
 
 // ── Vtable callback implementations ───────────────────────────────
@@ -491,7 +481,6 @@ static void* __thiscall sc_dtor(void* thisptr, int flags) {
         g_pipeThread = NULL;
     }
     DeleteCriticalSection(&g_stateLock);
-    DeleteCriticalSection(&g_inputLock);
     if (flags & 1) operator delete(thisptr);
     return thisptr;
 }
@@ -499,21 +488,17 @@ static void* __thiscall sc_dtor(void* thisptr, int flags) {
 static const char* __thiscall get_mod_name(void*) { return "Netplay"; }
 static const char* __thiscall get_author(void*) { return "rsks + Hamsterbot"; }
 static const char* __thiscall get_contributors(void*) {
-    return "Host=P1, Guest=P2. Host streams ball state, guest mirrors P1 to P2.";
+    return "Distributed authority + state sync. Host=P1, Guest=P2.";
 }
 static int __thiscall get_version(void*) { return HAMSTERBALL_API_VERSION; }
 
 static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     g_api = api;
     InitializeCriticalSection(&g_stateLock);
-    InitializeCriticalSection(&g_inputLock);
-
-    // Load netplay.txt config (host IP + optional port)
     loadConfigFile();
 
     HBPlusAPI hb = HBAPI(api);
 
-    // Role toggles
     CustomButton btnHost("NETPLAY_HOST", "Netplay: HOST (Player 1)");
     btnHost.defaultState = false; btnHost.trueText = "ON"; btnHost.falseText = "OFF";
     hb.CreateToggleButton(btnHost, thisptr);
@@ -522,12 +507,10 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     btnGuest.defaultState = false; btnGuest.trueText = "ON"; btnGuest.falseText = "OFF";
     hb.CreateToggleButton(btnGuest, thisptr);
 
-    // Port — uses g_port (from netplay.txt or default 5029)
     CustomSlider sPort("NETPLAY_PORT", "Netplay Port", (float)g_port);
     sPort.lowerBound = 1024; sPort.upperBound = 65535; sPort.stepSize = 1; sPort.decimalPlaces = 0;
     hb.CreateSlider(sPort, thisptr);
 
-    // Host IP — uses g_ip_octet (from netplay.txt or default 127.0.0.1)
     CustomSlider sIp1("NETPLAY_IP1", "Host IP: Octet 1", (float)g_ip_octet[0]);
     sIp1.lowerBound = 0; sIp1.upperBound = 255; sIp1.stepSize = 1; sIp1.decimalPlaces = 0;
     hb.CreateSlider(sIp1, thisptr);
@@ -548,22 +531,12 @@ static void __thiscall render_apply(void*, void*, float*) {}
 
 static void __thiscall button_toggle(void* thisptr, const char* buttonId, bool newState) {
     if (strcmp(buttonId, "NETPLAY_HOST") == 0) {
-        if (newState) {
-            g_role = ROLE_HOST;
-            g_connState = CONN_SEARCHING;
-        } else if (g_role == ROLE_HOST) {
-            g_role = ROLE_DISABLED;
-            g_connState = CONN_OFFLINE;
-        }
+        if (newState) { g_role = ROLE_HOST; g_connState = CONN_SEARCHING; }
+        else if (g_role == ROLE_HOST) { g_role = ROLE_DISABLED; g_connState = CONN_OFFLINE; }
     }
     if (strcmp(buttonId, "NETPLAY_GUEST") == 0) {
-        if (newState) {
-            g_role = ROLE_GUEST;
-            g_connState = CONN_SEARCHING;
-        } else if (g_role == ROLE_GUEST) {
-            g_role = ROLE_DISABLED;
-            g_connState = CONN_OFFLINE;
-        }
+        if (newState) { g_role = ROLE_GUEST; g_connState = CONN_SEARCHING; }
+        else if (g_role == ROLE_GUEST) { g_role = ROLE_DISABLED; g_connState = CONN_OFFLINE; }
     }
 }
 
@@ -575,28 +548,41 @@ static void __thiscall slider_change(void*, const char* sliderId, float newValue
     if (strcmp(sliderId, "NETPLAY_IP4") == 0) g_ip_octet[3] = (int)newValue;
 }
 
-// Scene/Board offset for pause flag
-static constexpr DWORD BOARD_PAUSE_FLAG = 0x874;
-
 static void __thiscall game_update(void*) {
     g_frameCount++;
     if (!g_gameReady && g_frameCount > 120) g_gameReady = true;
 
-    // Pause interception: when player presses ESC, game sets board+0x874=1.
-    // We intercept: set g_localPaused, clear the flag so game keeps running.
-    // This lets local player "pause" (stops their input) while the game
-    // stays live for the remote player.
+    // Pause interception
     DWORD board = findBoard();
     if (board && !IsBadReadPtr((void*)(board + BOARD_PAUSE_FLAG), 1)) {
         DWORD pauseFlag = *(DWORD*)(board + BOARD_PAUSE_FLAG);
         if (pauseFlag != g_lastPauseFlag) {
             if (pauseFlag == 1) {
-                g_localPaused = !g_localPaused; // toggle
-                // Clear the actual pause flag — game keeps running
+                g_localPaused = !g_localPaused;
                 *(DWORD*)(board + BOARD_PAUSE_FLAG) = 0;
             }
             g_lastPauseFlag = pauseFlag;
         }
+    }
+
+    // Race detection: in race if board exists and P1 ball exists
+    bool wasInRace = g_inRace;
+    g_inRace = false;
+    if (g_gameReady && g_connState == CONN_CONNECTED) {
+        DWORD p1 = getBall(0);
+        if (p1) {
+            g_inRace = true;
+            // Just entered race: suppress input for remote player
+            if (!wasInRace) {
+                int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
+                suppressLocalInput(remotePlayer);
+            }
+        }
+    }
+    // Left race: restore input
+    if (wasInRace && !g_inRace) {
+        int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
+        restoreLocalInput(remotePlayer);
     }
 
     if (g_gameReady && !g_pipeThread) {
@@ -616,21 +602,27 @@ static void __thiscall game_update(void*) {
 }
 
 static void __thiscall text_render(void* thisptr) {
-    if (!g_gameReady) return;
+    if (!g_gameReady || !g_inRace) return;
+    if (g_connState != CONN_CONNECTED) return;
+    if (g_localPaused) return;
 
-    if (g_role == ROLE_HOST && g_connState == CONN_CONNECTED && !g_localPaused) {
-        applyHostInput();
-    }
-    if (g_role == ROLE_GUEST && g_connState == CONN_CONNECTED) {
-        applyGuestBallState();
-    }
+    // Apply remote player's state to their ball
+    applyRemoteState();
 }
 
 static void __thiscall event_collide(void*, Ball*, char*) {}
 static void __thiscall ball_bump(void*, Ball*, Ball*) {}
-static void __thiscall scene_end(void*) {}
+static void __thiscall scene_end(void*) {
+    // Restore input when leaving a level
+    if (g_inRace) {
+        int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
+        restoreLocalInput(remotePlayer);
+    }
+    g_inRace = false;
+}
 static void __thiscall level_start(void*) {
     g_frameCount = 0;
+    g_remoteStateFrame = 0;
 }
 
 // ── 16-entry vtable matching MSVC layout ───────────────────────────
