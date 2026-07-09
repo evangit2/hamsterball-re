@@ -78,7 +78,6 @@ public:
 		btn.defaultState = true;
 		api->CreateToggleButton(btn, this);
 		api->RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
-		api->RegisterCustomHook(0x455d60, (void*)hook_DrawScreenRect, (void**)&orig_DrawScreenRect);
 	}
 
 	void onButtonToggle(const char* id, bool state) override {
