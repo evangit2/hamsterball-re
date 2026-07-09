@@ -39,6 +39,12 @@ alloc(Orig_23965,2)
 alloc(Orig_8598,6)
 alloc(Orig_3FF98,6)
 alloc(Orig_18378,6)
+alloc(Orig_5ADC,6)
+alloc(Orig_6FFB,6)
+alloc(Orig_7441,6)
+alloc(Orig_70BE,6)
+alloc(Orig_8416,6)
+alloc(Orig_85D1,2)
 alloc(Orig_7391,7)
 alloc(Orig_F226,7)
 alloc(Orig_F261,7)
@@ -65,6 +71,12 @@ registersymbol(Orig_23965)
 registersymbol(Orig_8598)
 registersymbol(Orig_3FF98)
 registersymbol(Orig_18378)
+registersymbol(Orig_5ADC)
+registersymbol(Orig_6FFB)
+registersymbol(Orig_7441)
+registersymbol(Orig_70BE)
+registersymbol(Orig_8416)
+registersymbol(Orig_85D1)
 registersymbol(Orig_7391)
 registersymbol(Orig_F226)
 registersymbol(Orig_F261)
@@ -104,6 +116,18 @@ Orig_3FF98:
   readmem(Hamsterball.exe+3FF98,6)
 Orig_18378:
   readmem(Hamsterball.exe+18378,6)
+Orig_5ADC:
+  readmem(Hamsterball.exe+5ADC,6)
+Orig_6FFB:
+  readmem(Hamsterball.exe+6FFB,6)
+Orig_7441:
+  readmem(Hamsterball.exe+7441,6)
+Orig_70BE:
+  readmem(Hamsterball.exe+70BE,6)
+Orig_8416:
+  readmem(Hamsterball.exe+8416,6)
+Orig_85D1:
+  readmem(Hamsterball.exe+85D1,2)
 Orig_7391:
   readmem(Hamsterball.exe+7391,7)
 Orig_F226:
@@ -196,6 +220,20 @@ Hamsterball.exe+3FF98:
 Hamsterball.exe+18378:
   db 90 90 90 90 90 90
 
+{ NOP entity-skip jumps (ball+0x18==-1) — 6 locations }
+Hamsterball.exe+5ADC:
+  db 90 90 90 90 90 90
+Hamsterball.exe+6FFB:
+  db 90 90 90 90 90 90
+Hamsterball.exe+7441:
+  db 90 90 90 90 90 90
+Hamsterball.exe+70BE:
+  db 90 90 90 90 90 90
+Hamsterball.exe+8416:
+  db 90 90 90 90 90 90
+Hamsterball.exe+85D1:
+  db 90 90
+
 { Hook 2: Scene_UpdateBallsAndState, entity list (0x3204) }
 { Clear 0x2E8 so entity balls don't get destroyed }
 { Keep all other flags clear for normal state }
@@ -260,6 +298,18 @@ Hamsterball.exe+3FF98:
   readmem(Orig_3FF98,6)
 Hamsterball.exe+18378:
   readmem(Orig_18378,6)
+Hamsterball.exe+5ADC:
+  readmem(Orig_5ADC,6)
+Hamsterball.exe+6FFB:
+  readmem(Orig_6FFB,6)
+Hamsterball.exe+7441:
+  readmem(Orig_7441,6)
+Hamsterball.exe+70BE:
+  readmem(Orig_70BE,6)
+Hamsterball.exe+8416:
+  readmem(Orig_8416,6)
+Hamsterball.exe+85D1:
+  readmem(Orig_85D1,2)
 Hamsterball.exe+7391:
   readmem(Orig_7391,7)
 Hamsterball.exe+F22D:
@@ -297,6 +347,12 @@ dealloc(Orig_23965)
 dealloc(Orig_8598)
 dealloc(Orig_3FF98)
 dealloc(Orig_18378)
+dealloc(Orig_5ADC)
+dealloc(Orig_6FFB)
+dealloc(Orig_7441)
+dealloc(Orig_70BE)
+dealloc(Orig_8416)
+dealloc(Orig_85D1)
 dealloc(Orig_7391)
 dealloc(Orig_F226)
 dealloc(Orig_F261)
@@ -323,6 +379,12 @@ unregistersymbol(Orig_23965)
 unregistersymbol(Orig_8598)
 unregistersymbol(Orig_3FF98)
 unregistersymbol(Orig_18378)
+unregistersymbol(Orig_5ADC)
+unregistersymbol(Orig_6FFB)
+unregistersymbol(Orig_7441)
+unregistersymbol(Orig_70BE)
+unregistersymbol(Orig_8416)
+unregistersymbol(Orig_85D1)
 unregistersymbol(Orig_7391)
 unregistersymbol(Orig_F226)
 unregistersymbol(Orig_F261)
