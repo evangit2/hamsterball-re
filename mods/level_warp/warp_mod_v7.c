@@ -275,6 +275,9 @@ static void load_real_bass(void)
 
 /* Board goal-reached flag */
 #define BOARD_GOAL_REACHED       0xCD0
+#define BOARD_TOURNAMENT_TIMER   0x2990  /* int, counts down in tournament */
+#define APP_PLAYER_FINISHED      0x5D6   /* App + playerID*0xA0 + 0x5D6 = 1 when finished */
+#define BALL_PLAYER_ID           0x18    /* ball+0x18 = playerID (int) */
 
 /* MusicChannel offsets */
 #define MUSIC_CHAN_BASS_CHANNEL  0x08
@@ -378,6 +381,10 @@ static volatile int g_rumbleInit = 0;
 /* Saved original ball color (P1) for restore after warp */
 static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
 static int g_colorSaved = 0;
+
+/* Timer freeze — saved when ball vanishes, written back every frame */
+static int g_timerFrozen = 0;
+static int g_savedTimer = 0;
 
 /* ============================================================
  * Memory helpers
@@ -603,6 +610,7 @@ static void scanWarpNodes(void) {
                         g_phase = PHASE_RUMBLE;
                         g_rumbleInit = 0;
                         g_colorSaved = 0;
+                        g_timerFrozen = 0;
                         g_warpBall = ball;
                         {
                             DWORD now = GetTickCount();
@@ -742,12 +750,33 @@ static void updateWarpStateMachine(void) {
 
         /* Turn ball invisible ONLY when the screen is fully white (at peak).
          * Before that, the ball should still be visible — the flash ramps up
-         * over the ball, hiding the disappearance behind the white screen. */
+         * over the ball, hiding the disappearance behind the white screen.
+         * Also freeze the tournament timer and mark goal reached at this moment. */
         if (g_whiteAlpha >= 0.99f && ball) {
             int respawning = *((unsigned char *)((char *)ball + 0x2F9));
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
             }
+            /* Freeze the tournament timer the instant the ball vanishes */
+            if (!g_timerFrozen && board) {
+                g_savedTimer = *(int *)((char *)board + BOARD_TOURNAMENT_TIMER);
+                g_timerFrozen = 1;
+                /* Mark goal as reached — stops the race state machine */
+                *(char *)((char *)board + BOARD_GOAL_REACHED) = 1;
+                /* Set player finished flag in App */
+                {
+                    int playerID = *(int *)((char *)ball + BALL_PLAYER_ID);
+                    if (playerID >= 0 && playerID < 4) {
+                        *(char *)((char *)app + APP_PLAYER_FINISHED + playerID * 0xA0) = 1;
+                    }
+                }
+                diag_logf("[warp] Timer frozen at %d, goal reached + player finished", g_savedTimer);
+            }
+        }
+
+        /* Keep freezing timer every frame while active */
+        if (g_timerFrozen && board) {
+            *(int *)((char *)board + BOARD_TOURNAMENT_TIMER) = g_savedTimer;
         }
 
         updateMusicFade();
@@ -773,6 +802,11 @@ static void updateWarpStateMachine(void) {
             }
         }
 
+        /* Keep timer frozen */
+        if (g_timerFrozen && board) {
+            *(int *)((char *)board + BOARD_TOURNAMENT_TIMER) = g_savedTimer;
+        }
+
         updateMusicFade();
 
         if (elapsed >= HOLD_DURATION_MS) {
@@ -794,6 +828,11 @@ static void updateWarpStateMachine(void) {
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
             }
+        }
+
+        /* Keep timer frozen */
+        if (g_timerFrozen && board) {
+            *(int *)((char *)board + BOARD_TOURNAMENT_TIMER) = g_savedTimer;
         }
 
         updateMusicFade();
