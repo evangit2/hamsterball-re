@@ -89,6 +89,22 @@ static const LevelEntry g_levels[15] = {
 #define VTABLE_SIZE         144    /* 36 entries × 4 bytes            */
 
 /* ============================================================
+ * Vtable slot names — for documentation and VTABLE command
+ * ============================================================ */
+
+static const struct { int slot; const char* name; const char* desc; } g_vtableSlots[] = {
+    { 0,  "dtor",           "Scalar deleting destructor (per-level)" },
+    { 1,  "update",         "Board_Update (per-level variant)" },
+    { 18, "setup",           "Setup function — loads .MESHWORLD file" },
+    { 19, "initscene",       "InitScene — post-setup initialization" },
+    { 24, "renderdynamic",   "RenderDynamic — renders dynamic objects" },
+    { 29, "dispatchcollision","DispatchCollision — collision event handler" },
+    { 32, "boardsetup",      "Board_Setup — creates level objects (Catapult, etc.)" },
+    { 33, "levelspecific",   "Level-specific function (varies per level)" },
+    { -1, NULL, NULL }
+};
+
+/* ============================================================
  * Function name → address table (for SETUP and ADD commands)
  * ============================================================ */
 
@@ -114,13 +130,8 @@ static const FuncEntry g_functions[] = {
     { "CreateBumper",              0x0040FA20 },
     { "FUN_00417640",               0x00417640 },
     { "FUN_00417F20",               0x00417F20 },
-    /* Sub-functions (for ADD chaining) */
+    /* Sub-functions safe for ADD (all __thiscall with ECX=board*) */
     { "Level_InitScene",           0x0040B090 },
-    { "WaterRipple_AllocBuffers", 0x0046A8A0 },
-    { "AthenaList_Append",         0x00453780 },
-    { "SceneObject_ctor",          0x00462850 },
-    { "Vec3_Init",                 0x00453180 },
-    { "Scene_RegisterObject",      0x00453BD0 },
     { "Graphics_SetProjection",    0x00454AB0 },
     { NULL, 0 }
 };

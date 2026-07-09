@@ -49,8 +49,7 @@ Function names for SETUP and ADD:
     Scene_SetupLevelUp, Scene_SetupLevel10, Scene_SetupLevelDark,
     CreateBumper, FUN_00417640, FUN_00417F20
   Sub-functions:
-    Level_InitScene, WaterRipple_AllocBuffers, AthenaList_Append,
-    SceneObject_ctor, Vec3_Init, Scene_RegisterObject, Graphics_SetProjection
+    Level_InitScene, Graphics_SetProjection
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG SECTION — Edit lines below to swap levels
@@ -59,7 +58,7 @@ Function names for SETUP and ADD:
 #
 # Examples (uncomment to activate):
 #SETUP 3 Scene_LoadLevel4
-#ADD 3 WaterRipple_AllocBuffers
+#ADD 3 Level_InitScene
 #SWAP 1 4
 #SET 3 Dizzy
 #SWAPOBJ 5 6
