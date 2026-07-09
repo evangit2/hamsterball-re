@@ -51,18 +51,15 @@ private:
 		DWORD config = *(DWORD*)(gfxAddr + 0x5c);
 
 		float* pScaleX = (float*)(config + 0x1f8);
-		int* pOffsetX = (int*)(gfxAddr + 0x798);
-
 		float origScaleX = *pScaleX;
-		int origOffsetX = *pOffsetX;
+		float newScaleX = origScaleX * scaleFactor;
+		*pScaleX = newScaleX;
 
-		*pScaleX = origScaleX * scaleFactor;
-		*pOffsetX = (int)((float)origOffsetX * scaleFactor + margin);
+		int newX = x + (int)(margin / newScaleX);
 
-		orig_DrawScreenRect(gfx, edx, x, y, w, h);
+		orig_DrawScreenRect(gfx, edx, newX, y, w, h);
 
 		*pScaleX = origScaleX;
-		*pOffsetX = origOffsetX;
 	}
 
 public:
@@ -78,6 +75,7 @@ public:
 		btn.defaultState = true;
 		api->CreateToggleButton(btn, this);
 		api->RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
+		api->RegisterCustomHook(0x455d60, (void*)hook_DrawScreenRect, (void**)&orig_DrawScreenRect);
 	}
 
 	void onButtonToggle(const char* id, bool state) override {
