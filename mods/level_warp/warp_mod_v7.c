@@ -276,8 +276,6 @@ static void load_real_bass(void)
 /* Board goal-reached flag */
 #define BOARD_GOAL_REACHED       0xCD0
 #define BOARD_TOURNAMENT_TIMER   0x2990  /* int, counts down in tournament */
-#define APP_PLAYER_FINISHED      0x5D6   /* App + playerID*0xA0 + 0x5D6 = 1 when finished */
-#define BALL_PLAYER_ID           0x18    /* ball+0x18 = playerID (int) */
 
 /* MusicChannel offsets */
 #define MUSIC_CHAN_BASS_CHANNEL  0x08
@@ -757,20 +755,13 @@ static void updateWarpStateMachine(void) {
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
             }
-            /* Freeze the tournament timer the instant the ball vanishes */
+            /* Freeze the tournament timer the instant the ball vanishes.
+             * Just freeze the value — do NOT set goal-reached or player-finished
+             * flags, as those would trigger the race-end sequence (popup, music). */
             if (!g_timerFrozen && board) {
                 g_savedTimer = *(int *)((char *)board + BOARD_TOURNAMENT_TIMER);
                 g_timerFrozen = 1;
-                /* Mark goal as reached — stops the race state machine */
-                *(char *)((char *)board + BOARD_GOAL_REACHED) = 1;
-                /* Set player finished flag in App */
-                {
-                    int playerID = *(int *)((char *)ball + BALL_PLAYER_ID);
-                    if (playerID >= 0 && playerID < 4) {
-                        *(char *)((char *)app + APP_PLAYER_FINISHED + playerID * 0xA0) = 1;
-                    }
-                }
-                diag_logf("[warp] Timer frozen at %d, goal reached + player finished", g_savedTimer);
+                diag_logf("[warp] Timer frozen at %d", g_savedTimer);
             }
         }
 
