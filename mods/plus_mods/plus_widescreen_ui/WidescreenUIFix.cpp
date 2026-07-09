@@ -3,13 +3,6 @@
 #include <math.h>
 #include <string.h>
 
-#pragma pack(push, 1)
-struct D3DVIEWPORT8 {
-	DWORD X, Y, Width, Height;
-	float MinZ, MaxZ;
-};
-#pragma pack(pop)
-
 class WidescreenUIFix : public HamsterballAPI {
 private:
 	IModAPI* api = nullptr;
@@ -17,7 +10,12 @@ private:
 
 	// Render phase tracking
 	static inline bool g_inSceneRender = false;
-	static inline int g_viewportCallCount = 0;  // counts (0,0) calls within current Scene_Render
+	static inline int g_viewportCallCount = 0;
+
+	// Saved state for restore after UI pass
+	static inline bool g_scaleModified = false;
+	static inline float g_origScaleX = 0.0f;
+	static inline DWORD g_origScaleXAddr = 0;
 
 	typedef void(__fastcall *SetViewport_t)(void*, void*, int, int);
 	static inline SetViewport_t orig_SetViewport = nullptr;
@@ -25,15 +23,21 @@ private:
 	typedef void(__fastcall *SceneRender_t)(void*, void*, void*);
 	static inline SceneRender_t orig_SceneRender = nullptr;
 
-	// Override the projection matrix to 4:3 aspect ratio
-	// This makes UI elements render at correct proportions without stretching
-	static void overrideProjectionTo43(void* gfx) {
+	// On the UI pass, modify the X scale factor so UI elements render at 4:3
+	// proportions instead of being stretched to 16:9.
+	//
+	// The UI uses D3DFVF_XYZRHW (transformed) vertices. Gfx_TransformY converts
+	// pixel X to NDC via: result = pixel * scaleX + offsetX
+	// where scaleX is at presentParams+0x1f8.
+	//
+	// The UI coordinate system is centered at origin (0 = screen center).
+	// scaleX = 2/bbWidth, scaleY = 2/bbHeight.
+	// On 16:9, the X/Y ratio is bbHeight/bbWidth (0.5625) instead of 3/4 (0.75).
+	// Fix: set scaleX = 2/(bbHeight * 4/3) so X/Y ratio = 3/4 (4:3).
+	// This compresses UI horizontally to correct proportions, centered on screen.
+	static void fixUIScale(void* gfx) {
 		DWORD gfxAddr = (DWORD)gfx;
 		if (IsBadReadPtr(gfx, 0x800)) return;
-
-		DWORD device = *(DWORD*)(gfxAddr + 0x154);
-		if (!device || IsBadReadPtr((void*)device, 4)) return;
-		DWORD* vtable = *(DWORD**)device;
 
 		DWORD presentParams = *(DWORD*)(gfxAddr + 0x5c);
 		if (!presentParams || IsBadReadPtr((void*)presentParams, 0x200)) return;
@@ -45,42 +49,26 @@ private:
 		float currentAspect = (float)bbWidth / (float)bbHeight;
 		if (currentAspect <= 1.34f) return;
 
-		float targetAspect = 4.0f / 3.0f;
+		// Fix scaleX to 4:3 proportions
+		DWORD scaleXAddr = presentParams + 0x1f8;
+		float origScaleX = *(float*)scaleXAddr;
+		float newScaleX = 2.0f / ((float)bbHeight * (4.0f / 3.0f));
 
-		float nearPlane = *(float*)(gfxAddr + 0x790);
-		float farPlane = *(float*)(gfxAddr + 0x794);
-		if (farPlane <= nearPlane) return;
+		// Save original for restore
+		g_origScaleX = origScaleX;
+		g_origScaleXAddr = scaleXAddr;
+		g_scaleModified = true;
 
-		// Build 4:3 perspective matrix using the same formula as Matrix_BuildPerspectiveFOV
-		float halfFov = 0.7853982f * 0.5f;  // PI/4 * 0.5
-		float s = sinf(halfFov);
-		if (s == 0.0f) return;
-		float cot = cosf(halfFov) / s;
+		// Apply 4:3 scale
+		*(float*)scaleXAddr = newScaleX;
+	}
 
-		float matrix[16];
-		memset(matrix, 0, sizeof(matrix));
-		matrix[0] = cot / targetAspect;
-		matrix[5] = cot;
-		matrix[10] = farPlane / (farPlane - nearPlane);
-		matrix[11] = 1.0f;
-		matrix[14] = -(matrix[10] * nearPlane);
-
-		// Override D3D projection matrix to 4:3 aspect
-		typedef long(__stdcall *SetTransform_t)(void*, DWORD, float*);
-		((SetTransform_t)(vtable[37]))((void*)device, 3, matrix);
-
-		// Update gfx struct's stored projection matrix (gfx+0x2a4, 16 floats = 64 bytes)
-		// so the game's own code uses the corrected matrix
-		memcpy((void*)(gfxAddr + 0x2a4), matrix, 64);
-
-		// Update the stored aspect in gfx struct so Gfx_TransformY/Z use 4:3 dimensions
-		// gfx+0x7a0 = render width, gfx+0x7a4 = render height
-		// Set render width to what it would be at 4:3 — this fixes the UI scale factors
-		int vpWidth = (int)((float)bbHeight * targetAspect);
-		if (vpWidth > bbWidth) vpWidth = bbWidth;
-		*(float*)(gfxAddr + 0x7a0) = (float)vpWidth;
-		// Keep height the same, but set the X offset for centering
-		*(int*)(gfxAddr + 0x798) = (bbWidth - vpWidth) / 2;
+	static void restoreUIScale() {
+		if (g_scaleModified && g_origScaleXAddr) {
+			*(float*)g_origScaleXAddr = g_origScaleX;
+			g_scaleModified = false;
+			g_origScaleXAddr = 0;
+		}
 	}
 
 	static void __fastcall hook_SetViewport(void* gfx, void* edx, int param1, int param2) {
@@ -94,25 +82,26 @@ private:
 
 		g_viewportCallCount++;
 
-		// In Scene_Render, each mode (0 players, 1 player, 2 player) follows the same pattern:
-		//   Graphics_SetViewport(0,0)  ← 3D pass (first call)
-		//   vtable[0x60/0x64/0x68](gfx)  ← 3D world rendering
-		//   Graphics_SetViewport(0,0)  ← UI pass (second call)
-		//   vtable[0x70/0x6c](gfx)  ← UI overlay rendering
-		//
-		// The second (0,0) call is always the UI pass.
-		// For 2-player split-screen: the loop uses non-zero params for 3D,
-		// then the final (0,0) is the UI pass.
+		// In Scene_Render, each mode follows the same pattern:
+		//   1st (0,0) call = 3D pass → leave alone (widescreen 3D is fine)
+		//   2nd (0,0) call = UI pass → fix the X scale factor to 4:3
 		if (g_viewportCallCount == 2) {
-			overrideProjectionTo43(gfx);
+			fixUIScale(gfx);
 		}
 	}
 
 	static void __fastcall hook_SceneRender(void* this_ptr, void* edx, void* param1) {
+		// Restore scale from previous frame (in case it wasn't restored)
+		restoreUIScale();
+
 		g_inSceneRender = true;
 		g_viewportCallCount = 0;
 		orig_SceneRender(this_ptr, edx, param1);
 		g_inSceneRender = false;
+
+		// Restore scale after Scene_Render completes (3D pass of next frame
+		// needs the original widescreen scale)
+		restoreUIScale();
 	}
 
 public:
