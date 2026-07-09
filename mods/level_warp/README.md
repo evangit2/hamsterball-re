@@ -63,6 +63,7 @@ i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v7.c -lwinmm \
 
 ## Version History
 
+- **v7f**: Pause-aware timing — replaced all GetTickCount() calls in the warp state machine with a pause-aware game clock. When the game is paused (board+0x874 set by Scene_CreateGameOverMenu), the warp clock freezes, pausing the entire effect sequence (rumble, flash, fade, music fade) with the game. Resumes seamlessly when unpaused.
 - **v7e**: Three fixes: (1) Music fade — clear game's fade_out/fade_in/fade_rate flags on all music channels before starting manual volume ramp, preventing MusicChannel_FadeUpdate from fighting our writes. (2) 1-frame visual gap — immediately write white alpha to the new board after App_StartPracticeRace returns, before the next frame renders. (3) Score corruption — board+0x2994 is the score (int), not a timer; stopped writing savedTimeRemaining to it (only board+0x2990 = time limit is correct).
 - **v7d**: Timer freeze — tournament timer (`board+0x2990`) freezes the moment the ball vanishes (flash peak). Purely freezes the value — no goal-reached or player-finished flags set, so no race-end sequence triggered. Timer stays frozen through HOLD/FADE/LOAD phases. Updated README.
 - **v7c**: Color fade to yellow + alpha fade to 50% during RUMBLE. Ball color lerps from original to `(1,1,0)` over 2s. Ball alpha lerps from 1.0 to 0.5 over 2s (progressive ghostly effect).

@@ -345,7 +345,11 @@ static int findRaceIndex(const char *levelName) {
 }
 
 /* ============================================================
- * Warp state machine — time-based (GetTickCount), not frame-based
+ * Warp state machine — time-based (game clock), not frame-based
+ *
+ * Uses a pause-aware clock instead of GetTickCount(). When the game
+ * is paused (board+0x874 != 0), the warp clock freezes so the entire
+ * effect sequence pauses with the game.
  * ============================================================ */
 
 typedef enum {
@@ -364,6 +368,11 @@ static volatile DWORD g_warpStartTime = 0;
 static volatile int g_warpLevelIndex = -1;
 static volatile int g_musicFadeStarted = 0;
 static volatile DWORD g_cooldownUntil = 0;
+
+/* Pause-aware game clock: accumulates real time only when game is
+ * not paused. All phase timing uses this instead of GetTickCount(). */
+static volatile DWORD g_gameClock = 0;
+static volatile DWORD g_lastRealTime = 0;
 
 #define MAX_MUSIC_CHANNELS 8
 static float g_musicOrigVolumes[MAX_MUSIC_CHANNELS];
@@ -390,6 +399,9 @@ static int g_colorSaved = 0;
 /* Timer freeze — saved when ball vanishes, written back every frame */
 static int g_timerFrozen = 0;
 static int g_savedTimer = 0;
+
+/* Board offset: scene+0x874 = paused flag (set by Scene_CreateGameOverMenu) */
+#define BOARD_PAUSED_FLAG      0x874
 
 /* ============================================================
  * Memory helpers
@@ -450,6 +462,41 @@ static int is_valid_ptr(int ptr) {
     if (!ptr) return 0;
     if (ptr < 0x10000) return 0;
     return 1;
+}
+
+/* ============================================================
+ * Pause-aware game clock
+ *
+ * Returns a monotonically increasing time value that only advances
+ * when the game is not paused. When board+0x874 (paused flag) is set,
+ * the clock freezes — pausing the entire warp effect sequence.
+ *
+ * Must be called every frame from FrameUpdateHandler to update
+ * the internal accumulator.
+ * ============================================================ */
+
+static int is_game_paused(int board) {
+    if (!board) return 0;
+    if (IsBadReadPtr((void *)(board + BOARD_PAUSED_FLAG), 1)) return 0;
+    return *((unsigned char *)((char *)board + BOARD_PAUSED_FLAG)) != 0;
+}
+
+static DWORD getGameTime(void) {
+    return g_gameClock;
+}
+
+/* Called every frame to advance the game clock. Skips time accumulation
+ * while the game is paused. */
+static void updateGameClock(int board) {
+    DWORD now = GetTickCount();
+    if (g_lastRealTime == 0) {
+        g_lastRealTime = now;
+        return;
+    }
+    if (!is_game_paused(board)) {
+        g_gameClock += (now - g_lastRealTime);
+    }
+    g_lastRealTime = now;
 }
 
 /* ============================================================
@@ -532,7 +579,7 @@ static void updateMusicFade(void) {
 
     if (!g_musicFadeStarted) return;
 
-    elapsed = GetTickCount() - g_warpStartTime;
+    elapsed = getGameTime() - g_warpStartTime;
     t = (float)elapsed / (float)MUSIC_FADE_MS;
     if (t > 1.0f) t = 1.0f;
 
@@ -593,7 +640,7 @@ static void scanWarpNodes(void) {
     if (g_phase != PHASE_IDLE) return;
 
     /* Cooldown after warp completes */
-    if (GetTickCount() < g_cooldownUntil) return;
+    if (getGameTime() < g_cooldownUntil) return;
 
     app = GetApp();
     if (!app) return;
@@ -673,7 +720,7 @@ static void scanWarpNodes(void) {
                         g_pauseBlocked = 0;  /* Will be set when ball vanishes */
                         g_warpBall = ball;
                         {
-                            DWORD now = GetTickCount();
+                            DWORD now = getGameTime();
                             g_phaseStartTime = now;
                             g_warpStartTime = now;
                         }
@@ -710,7 +757,7 @@ static void updateWarpStateMachine(void) {
 
     if (g_phase == PHASE_IDLE) return;
 
-    now = GetTickCount();
+    now = getGameTime();
 
     app = GetApp();
     if (!app) {
@@ -1046,7 +1093,7 @@ static void updateWarpStateMachine(void) {
         if (elapsed >= REVEAL_DURATION_MS) {
             g_whiteAlpha = 0.0f;
             g_phase = PHASE_IDLE;
-            g_cooldownUntil = GetTickCount() + WARP_COOLDOWN_MS;
+            g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
             unblock_pause();  /* Re-enable pausing after warp completes */
             diag_log("[warp] -> PHASE_IDLE: warp complete (2s cooldown)");
         }
@@ -1065,6 +1112,22 @@ static void updateWarpStateMachine(void) {
  * ============================================================ */
 
 static void FrameUpdateHandler(void) {
+    /* Update the pause-aware game clock. Need board to check pause flag. */
+    {
+        int app = GetApp();
+        if (app) {
+            int profile = *(int *)((char *)app + APP_PROFILE_PTR);
+            if (profile) {
+                int board = *(int *)((char *)profile + PROFILE_BOARD_PTR);
+                updateGameClock(board);
+            } else {
+                updateGameClock(0);
+            }
+        } else {
+            updateGameClock(0);
+        }
+    }
+
     if (g_phase == PHASE_IDLE) {
         scanWarpNodes();
     }
