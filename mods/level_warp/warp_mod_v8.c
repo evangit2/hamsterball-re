@@ -999,13 +999,8 @@ static void updateWarpStateMachine(void) {
 
         if (!g_rumbleInit && ball) {
             g_rumbleInit = 1;
-            /* Freeze the race timer via code cave flag.
-             * This stops the per-player timer (App+PID*0xA0+0x5E8)
-             * from decrementing — same passive mechanism as N:GOAL,
-             * but without any N:GOAL side effects. */
-            g_freezeTimer = 1;
             block_pause();
-            diag_log("[warp] Timer frozen (g_freezeTimer=1), pause blocked");
+            diag_log("[warp] RUMBLE start: pause blocked");
 
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 1000;
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 1;
@@ -1067,6 +1062,14 @@ static void updateWarpStateMachine(void) {
             int respawning = *((unsigned char *)((char *)ball + 0x2F9));
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
+                /* Freeze the race timer at the moment the ball vanishes.
+                 * This stops the per-player timer (App+PID*0xA0+0x5E8)
+                 * from decrementing — same passive mechanism as N:GOAL,
+                 * but without any N:GOAL side effects. */
+                if (!g_freezeTimer) {
+                    g_freezeTimer = 1;
+                    diag_log("[warp] Ball vanished — timer frozen (g_freezeTimer=1)");
+                }
             }
         }
 
