@@ -18,7 +18,6 @@
 
 // ── State ──────────────────────────────────────────────────────────
 static bool g_enabled = true;
-static bool g_inSceneRender = false;
 static bool g_inUIPass = false;
 static float g_scaleFactor = 1.0f;
 static float g_margin = 0.0f;
@@ -43,7 +42,7 @@ static float __fastcall hook_TransformY(void* gfx, void* edx, float pixel_x) {
 static void __fastcall hook_SetViewport(void* gfx, void* edx, int param1, int param2) {
     orig_SetViewport(gfx, edx, param1, param2);
 
-    if (!g_enabled || !g_inSceneRender) return;
+    if (!g_enabled) return;
     if (param1 != 0 || param2 != 0) return;
 
     g_inUIPass = true;
@@ -68,9 +67,7 @@ static void __fastcall hook_SetViewport(void* gfx, void* edx, int param1, int pa
 
 static void __fastcall hook_SceneRender(void* this_ptr, void* edx, void* param1) {
     g_inUIPass = false;
-    g_inSceneRender = true;
     orig_SceneRender(this_ptr, edx, param1);
-    g_inSceneRender = false;
     g_inUIPass = false;
 }
 
