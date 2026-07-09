@@ -98,11 +98,19 @@ Hamsterball.exe+1B636:
   jmp ClearState_Cave2
   db 90
 
-{ Cave 1: Player balls — clear state but keep 0x2E8 for respawn trigger }
-{ Don't touch 0x2F8/0x2F9/0x2FC/0x300 (respawn sequence flags) }
+{ Cave 1: Player balls — clear respawn flags so bumpers/badballs always collide }
+{ Keep 0x2E8 for respawn trigger (Scene_UpdateBallsAndState checks it) }
 ClearState_Cave1:
   { Clear death_pending so badballs see NORMAL state }
   mov byte ptr [esi+0x2E9],00
+  { Clear respawn flag — bumpers check this at 0x422DC3/0x423953 }
+  mov byte ptr [esi+0x2F8],00
+  { Clear snap flag — collision checked at 0x40859E/0x43FF9E }
+  mov byte ptr [esi+0x2F9],00
+  { Set alpha=1.0 visible — FUN_00405190 sets 0=invisible }
+  mov dword ptr [esi+0x2FC],3F800000
+  { Clear respawn timer }
+  mov dword ptr [esi+0x300],00000000
   { Clear in-tar }
   mov byte ptr [esi+0x2CC],00
   { Clear vacuum }
