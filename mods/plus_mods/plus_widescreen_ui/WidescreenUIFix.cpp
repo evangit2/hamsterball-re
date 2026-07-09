@@ -71,9 +71,13 @@ private:
 		if (!g_enabled) return;
 		if (param1 != 0 || param2 != 0) return;
 
-		// Any (0,0) call inside Scene_Render = full-screen pass.
-		// Gfx_TransformY is only used by UI sprite functions, so
-		// enabling the transform here is safe for 3D too.
+		DWORD appPtr = *(DWORD*)0x5341E0;
+		if (!appPtr || IsBadReadPtr((void*)appPtr, 0x300)) return;
+		DWORD profile = *(DWORD*)(appPtr + 0x220);
+		if (!profile || IsBadReadPtr((void*)(profile + 0x10), 4)) return;
+		DWORD board = *(DWORD*)(profile + 0x0C);
+		if (!board || IsBadReadPtr((void*)board, 4)) return;
+
 		g_inUIPass = true;
 
 		DWORD gfxAddr = (DWORD)gfx;
