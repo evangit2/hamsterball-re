@@ -1,35 +1,33 @@
 /*
- * mkn_level_system v3 — Level Swapper with Custom Vtable Allocation
+ * mkn_level_system v4 — Custom Vtables + Safe Struct Allocation
  *
- * FIXES from v2:
- *   - v2's VTABLE commands wrote to the original .data vtable. When SET/SWAP
- *     redirected a level's ctor to another level's ctor, the ctor wrote the
- *     OTHER level's vtable pointer into the board — so VTABLE commands on
- *     the original level's vtable had NO EFFECT.
- *   - v2's SWAPGEO was dangerous: swapping only vtable[18] while keeping the
- *     original board ctor meant the struct was allocated at the wrong size.
- *     Beginner functions accessing board+0x642C crashed on WarmUp's 0x436C
- *     allocation (8KB out of bounds → heap corruption).
+ * ROOT CAUSE OF v2/v3 CRASH:
+ *   The crash at 0x452376 was heap corruption. When you put Beginner's
+ *   setup function (Scene_SetupLevelCascade) into WarmUp's vtable[18],
+ *   that function writes to board+0x436C (bumper meshes) and board+0x642C
+ *   (bumper states). But WarmUp's struct is only 0x436C bytes — those
+ *   writes are 8KB OUT OF BOUNDS, corrupting adjacent heap memory.
  *
- * v3 APPROACH:
- *   Custom vtable allocation. At init, we VirtualAlloc 15 independent vtable
- *   copies (144 bytes each), copy the originals, then patch each board ctor's
- *   vtable-write instruction to point to our custom copy. Now:
+ *   v3's custom vtable allocation did NOT fix this — it only made VTABLE
+ *   commands target the right vtable. The board was still allocated too small.
  *
- *   - VTABLE A slot func — writes to custom_vtable[A], ALWAYS works regardless
- *     of SET/SWAP, because the ctor always writes custom_vtable[A] into the
- *     board (even when redirected to another level's ctor+struct).
- *   - SET A B — patches both struct size AND ctor in Tournament_AdvanceRace.
- *     Level A gets B's ctor (correct struct size) but still uses
- *     custom_vtable[A] (which you can freely modify).
- *   - SWAP A B — full swap of ctor+struct, vtables stay independent.
- *   - SWAPGEO A B — swaps vtable[18] between custom copies (geometry only).
- *   - SWAPOBJ A B — swaps vtable[32] between custom copies (objects only).
- *   - COPYVT A B — copy ALL 36 entries from level B's custom vtable into
- *                  level A's custom vtable. Useful with SET: SET 1 2 gives
- *                  Level 1 Beginner's struct+ctor, then COPYVT 1 2 gives it
- *                  Beginner's vtable as a starting point to customize.
- *   - RESET — restore all custom vtables to originals + restore push/call.
+ * v4 FIX:
+ *   At init, patch ALL 15 level allocations in Tournament_AdvanceRace to use
+ *   the maximum struct size (0x6498 = Master). Now any vtable function from
+ *   any level can safely access any board offset without OOB writes.
+ *
+ *   This means you can freely use VTABLE commands to mix-and-match functions
+ *   from different levels WITHOUT needing SET/SWAP. The board is always big
+ *   enough for any function.
+ *
+ *   Custom vtable allocation (from v3) is retained — each level gets its own
+ *   writable vtable copy, so VTABLE commands are fully independent per level.
+ *
+ * Usage example (VTABLE only, no SET/SWAP needed):
+ *   VTABLE 1 18 Scene_SetupLevelCascade   ; Beginner geometry on WarmUp
+ *   VTABLE 1 19 Beginner_InitScene          ; Beginner init
+ *   VTABLE 1 24 Beginner_RenderDyn         ; Beginner render
+ *   VTABLE 1 29 Beginner_DispatchColl      ; Beginner collision
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_level_system.c \
@@ -47,36 +45,21 @@
 
 /* ============================================================
  * Level table — board ctors, struct sizes, and patch points
- * in Tournament_AdvanceRace (0x427080).
- *
- * The switch at 0x427102 does:
- *   JMP [EAX*4 + 0x42761C]
- * Each case does:
- *   PUSH <struct_size>    ; at push_addr
- *   CALL operator_new     ; 0x4BA57B
- *   ...
- *   CALL <board_ctor>     ; at call_addr (rel32)
- *
- * Vtable layout (36 entries, 144 bytes):
- *   [0]-[17]  = common Board virtuals (dtor, update, render, etc.)
- *   [18]      = setup function (loads .MESHWORLD, calls Board_Setup)
- *   [32]      = Board_Setup (creates level objects via CreateLevelObjects)
- *   [33]-[35] = level-specific virtuals
  * ============================================================ */
+
+#define MAX_STRUCT_SIZE 0x6498  /* Master level — largest board struct */
 
 typedef struct {
     int   level_num;
     const char* name;
     DWORD ctor_addr;      /* board constructor function address     */
-    DWORD struct_size;    /* size passed to operator_new            */
+    DWORD struct_size;    /* original size passed to operator_new   */
     DWORD push_addr;      /* address of PUSH imm32 (struct size)   */
     DWORD call_addr;      /* address of CALL rel32 (board ctor)     */
     DWORD vtable_addr;    /* original vtable start in .data (36 entries) */
     DWORD ctor_vt_patch;  /* address of vtable imm32 in ctor (C7 06 + 2) */
 } LevelEntry;
 
-/* Tournament_AdvanceRace switch cases + ctor vtable-write patch points
- * (verified from disassembly — each ctor does C7 06 <vtable_addr>) */
 static const LevelEntry g_levels[15] = {
     { 1,  "WarmUp",       0x0041CA40, 0x436C, 0x00427109, 0x0042712C, 0x004D04A8, 0x0041CA73 },
     { 2,  "Beginner",     0x004200E0, 0x644C, 0x00427136, 0x0042715D, 0x004D1098, 0x0042012B },
@@ -95,8 +78,6 @@ static const LevelEntry g_levels[15] = {
     { 15, "Impossible",   0x00424C20, 0x4380, 0x004273A5, 0x004273C8, 0x004D21C0, 0x00424C5D },
 };
 
-#define VTABLE_SETUP_OFFSET  0x48   /* vtable[18] = setup function   */
-#define VTABLE_OBJ_OFFSET   0x80   /* vtable[32] = Board_Setup       */
 #define VTABLE_SIZE         144    /* 36 entries × 4 bytes            */
 #define VTABLE_ENTRIES      36
 
@@ -104,30 +85,24 @@ static const LevelEntry g_levels[15] = {
  * Custom vtable storage — 15 independent writable vtable copies
  * ============================================================ */
 
-static DWORD g_custom_vtables[15] = {0};  /* pointers to VirtualAlloc'd vtables */
+static DWORD g_custom_vtables[15] = {0};
 static int   g_vtables_initialized = 0;
 
-/* Initialize custom vtables: allocate, copy originals, patch ctors */
 static void init_custom_vtables(void) {
     if (g_vtables_initialized) return;
 
     for (int i = 0; i < 15; i++) {
-        /* Allocate writable memory for vtable copy */
         DWORD addr = (DWORD)VirtualAlloc(NULL, VTABLE_SIZE,
             MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (!addr) continue;
 
-        /* Copy original vtable from .data */
         if (!IsBadReadPtr((void*)g_levels[i].vtable_addr, VTABLE_SIZE)) {
             memcpy((void*)addr, (void*)g_levels[i].vtable_addr, VTABLE_SIZE);
         }
 
         g_custom_vtables[i] = addr;
 
-        /* Patch the board ctor to write our custom vtable address
-         * instead of the original .data vtable address.
-         * The ctor does: C7 06 <vtable_addr_le>  (mov [esi], imm32)
-         * We patch the 4-byte immediate to our custom vtable. */
+        /* Patch the board ctor to write our custom vtable address */
         patch_dword(g_levels[i].ctor_vt_patch, addr);
     }
 
@@ -135,7 +110,22 @@ static void init_custom_vtables(void) {
 }
 
 /* ============================================================
- * Vtable slot names — for documentation and VTABLE command
+ * Patch ALL 15 level allocations to use MAX_STRUCT_SIZE.
+ * This ensures any vtable function from any level can safely
+ * access any board offset without heap corruption.
+ * ============================================================ */
+
+static void patch_all_struct_sizes(void) {
+    for (int i = 0; i < 15; i++) {
+        /* Only patch if the level's original size is smaller than max */
+        if (g_levels[i].struct_size < MAX_STRUCT_SIZE) {
+            patch_dword(g_levels[i].push_addr + 1, MAX_STRUCT_SIZE);
+        }
+    }
+}
+
+/* ============================================================
+ * Vtable slot names
  * ============================================================ */
 
 static const struct { int slot; const char* name; const char* desc; } g_vtableSlots[] = {
@@ -145,13 +135,13 @@ static const struct { int slot; const char* name; const char* desc; } g_vtableSl
     { 19, "initscene",       "InitScene — post-setup initialization" },
     { 24, "renderdynamic",   "RenderDynamic — renders dynamic objects" },
     { 29, "dispatchcollision","DispatchCollision — collision event handler" },
-    { 32, "boardsetup",      "Board_Setup — creates level objects (Catapult, etc.)" },
+    { 32, "boardsetup",      "Board_Setup — creates level objects" },
     { 33, "levelspecific",   "Level-specific function (varies per level)" },
     { -1, NULL, NULL }
 };
 
 /* ============================================================
- * Function name → address table (for SETUP and ADD commands)
+ * Function name → address table
  * ============================================================ */
 
 typedef struct {
@@ -160,7 +150,7 @@ typedef struct {
 } FuncEntry;
 
 static const FuncEntry g_functions[] = {
-    /* Setup functions (vtable[18]) — load .MESHWORLD files */
+    /* Setup functions (vtable[18]) */
     { "GetLevelPath",              0x0040D1C0 },
     { "Scene_SetupLevelCascade",   0x004110D0 },
     { "Scene_LoadLevel2",          0x0040D280 },
@@ -174,8 +164,8 @@ static const FuncEntry g_functions[] = {
     { "Scene_SetupLevel10",         0x00411F60 },
     { "Scene_SetupLevelDark",       0x00416270 },
     { "CreateBumper",              0x0040FA20 },
-    { "FUN_00417640",               0x00417640 },  /* Glass setup */
-    { "FUN_00417F20",               0x00417F20 },  /* Impossible setup */
+    { "FUN_00417640",               0x00417640 },
+    { "FUN_00417F20",               0x00417F20 },
     /* Destructors (vtable[0]) */
     { "WarmUp_dtor",               0x00425040 },
     { "Beginner_dtor",             0x00425160 },
@@ -218,11 +208,11 @@ static const FuncEntry g_functions[] = {
     { "Expert_DispatchColl",       0x0040E6A0 },
     { "Odd_DispatchColl",          0x0044B840 },
     { "Toob_DispatchColl",         0x00410020 },
-    /* Board_Setup (vtable[32]) — creates level objects */
+    /* Board_Setup (vtable[32]) */
     { "WarmUp_BoardSetup",         0x0041C5B0 },
-    { "Beginner_BoardSetup",       0x0041C5B0 },  /* shared with WarmUp */
-    { "Dizzy_BoardSetup",          0x0041C5B0 },  /* shared */
-    /* Sub-functions safe for ADD (all __thiscall with ECX=board*) */
+    { "Beginner_BoardSetup",       0x0041C5B0 },
+    { "Dizzy_BoardSetup",          0x0041C5B0 },
+    /* Other */
     { "Level_InitScene",           0x0040B090 },
     { "Graphics_SetProjection",    0x00454AB0 },
     { NULL, 0 }
@@ -236,7 +226,6 @@ static DWORD lookup_function_addr(const char* name) {
     return 0;
 }
 
-/* Look up a vtable slot index by name (returns -1 if not found) */
 static int lookup_vtable_slot(const char* name) {
     for (int i = 0; g_vtableSlots[i].name; i++) {
         if (_stricmp(g_vtableSlots[i].name, name) == 0)
@@ -251,13 +240,11 @@ static int lookup_vtable_slot(const char* name) {
 
 typedef struct {
     int   used;
-    DWORD push_orig;    /* original 4 bytes at push_addr+1 */
-    DWORD call_orig;    /* original 4 bytes at call_addr+1 */
+    DWORD push_orig;
+    DWORD call_orig;
 } OrigEntry;
 
 static OrigEntry g_orig[15] = {0};
-
-/* Original vtable entries (full 36 slots for RESET) */
 static DWORD g_orig_vtable[15][VTABLE_ENTRIES] = {{0}};
 static int   g_vtable_saved = 0;
 
@@ -293,7 +280,6 @@ static void write_custom_vtable_entry(int level_num, int slot, DWORD value) {
     *(DWORD*)(vt + slot * 4) = value;
 }
 
-/* Swap a single vtable entry between two levels' custom vtables */
 static void swap_custom_vtable_entry(int a, int b, int slot) {
     if (a < 1 || a > 15 || b < 1 || b > 15 || a == b) return;
     DWORD va = read_custom_vtable_entry(a, slot);
@@ -302,7 +288,6 @@ static void swap_custom_vtable_entry(int a, int b, int slot) {
     write_custom_vtable_entry(b, slot, va);
 }
 
-/* Copy all 36 entries from level B's custom vtable to level A's */
 static void copy_custom_vtable(int a, int b) {
     if (a < 1 || a > 15 || b < 1 || b > 15 || a == b) return;
     DWORD vt_src = g_custom_vtables[b - 1];
@@ -344,23 +329,18 @@ static void diag_logf(const char *fmt, ...) {
  * Patch helpers for Tournament_AdvanceRace switch cases
  * ============================================================ */
 
-/* Patch the PUSH imm32 (struct size) for a given level case */
 static void patch_push(int level_num, DWORD new_size) {
     if (level_num < 1 || level_num > 15) return;
-    DWORD addr = g_levels[level_num - 1].push_addr + 1; /* skip 0x68 opcode */
-    patch_dword(addr, new_size);
+    patch_dword(g_levels[level_num - 1].push_addr + 1, new_size);
 }
 
-/* Patch the CALL rel32 (board ctor) for a given level case */
 static void patch_call(int level_num, DWORD new_ctor) {
     if (level_num < 1 || level_num > 15) return;
     DWORD call_addr = g_levels[level_num - 1].call_addr;
-    /* CALL rel32: target = call_addr + 5 + offset */
     DWORD offset = new_ctor - (call_addr + 5);
-    patch_dword(call_addr + 1, offset); /* skip 0xE8 opcode */
+    patch_dword(call_addr + 1, offset);
 }
 
-/* Save original PUSH+CALL values for a level */
 static void save_push_call(int level_num) {
     if (level_num < 1 || level_num > 15) return;
     int idx = level_num - 1;
@@ -374,7 +354,6 @@ static void save_push_call(int level_num) {
     g_orig[idx].used = 1;
 }
 
-/* Restore original PUSH+CALL for a level */
 static void restore_push_call(int level_num) {
     if (level_num < 1 || level_num > 15) return;
     int idx = level_num - 1;
@@ -425,12 +404,9 @@ static void trim(char* s) {
     }
 }
 
-/* Lookup a level by number (1-15) or name (case-insensitive) */
 static int lookup_level(const char* token) {
-    /* Try number first */
     int num = atoi(token);
     if (num >= 1 && num <= 15) return num;
-    /* Try name */
     for (int i = 0; i < 15; i++) {
         if (_stricmp(g_levels[i].name, token) == 0)
             return g_levels[i].level_num;
@@ -443,7 +419,7 @@ static void apply_config(void) {
         GENERIC_READ, FILE_SHARE_READ, NULL,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
-        diag_log("[mkn_level_system v3] Config file not found, no changes applied");
+        diag_log("[mkn_level_system v4] Config file not found, no changes applied");
         return;
     }
 
@@ -454,36 +430,12 @@ static void apply_config(void) {
     buf[bytesRead] = '\0';
 
     diag_log("========================================");
-    diag_log("[mkn_level_system v3] Config loaded, parsing...");
+    diag_log("[mkn_level_system v4] Config loaded, parsing...");
     diag_logf("Config path: %s", g_configPath);
 
-    /* Save originals before any patches */
     save_originals();
     for (int i = 0; i < 15; i++)
         save_push_call(i + 1);
-
-    /* Dump current state */
-    diag_log("--- Current level assignments ---");
-    for (int i = 0; i < 15; i++) {
-        DWORD push_val = 0;
-        if (!IsBadReadPtr((void*)(g_levels[i].push_addr + 1), 4))
-            push_val = *(DWORD*)(g_levels[i].push_addr + 1);
-        DWORD call_target = 0;
-        if (!IsBadReadPtr((void*)(g_levels[i].call_addr + 1), 4)) {
-            DWORD call_off = *(DWORD*)(g_levels[i].call_addr + 1);
-            call_target = g_levels[i].call_addr + 5 + call_off;
-        }
-        const char* ctor_name = "???";
-        for (int j = 0; j < 15; j++) {
-            if (g_levels[j].ctor_addr == call_target) {
-                ctor_name = g_levels[j].name;
-                break;
-            }
-        }
-        diag_logf("  L%-2d: size=0x%04X ctor=0x%08X (%s)%s",
-            g_levels[i].level_num, push_val, call_target, ctor_name,
-            (call_target == g_levels[i].ctor_addr) ? "" : " *** CHANGED ***");
-    }
 
     char* line = strtok(buf, "\n");
     int in_config = 0;
@@ -491,7 +443,6 @@ static void apply_config(void) {
 
     while (line) {
         trim(line);
-        /* Check for CONFIG SECTION / END CONFIG markers (even in comments) */
         if (strstr(line, "CONFIG SECTION") && line[0] == '#') {
             in_config = 1;
             line = strtok(NULL, "\n");
@@ -507,39 +458,23 @@ static void apply_config(void) {
             continue;
         }
 
-        /* SWAP <A> <B>
-         * Full level swap: patches Tournament_AdvanceRace to redirect
-         * case A → B's ctor (with B's struct size) and vice versa.
-         * This is the SAFE way to swap — correct allocation, ctor,
-         * geometry, objects, physics, everything.
-         * Custom vtables stay independent — VTABLE commands still work
-         * per-level. */
+        /* SWAP <A> <B> */
         if (_strnicmp(line, "SWAP ", 5) == 0) {
             char tokA[64] = "", tokB[64] = "";
             if (sscanf(line + 5, "%63s %63s", tokA, tokB) == 2) {
                 int a = lookup_level(tokA);
                 int b = lookup_level(tokB);
                 if (a && b && a != b) {
-                    /* Swap PUSH (struct size) */
                     patch_push(a, g_levels[b - 1].struct_size);
                     patch_push(b, g_levels[a - 1].struct_size);
-                    /* Swap CALL (board ctor) */
                     patch_call(a, g_levels[b - 1].ctor_addr);
                     patch_call(b, g_levels[a - 1].ctor_addr);
                     changes += 2;
-                    diag_logf("SWAP L%d (%s) <-> L%d (%s) [full ctor redirect]",
-                        a, g_levels[a-1].name, b, g_levels[b-1].name);
-                } else {
-                    diag_logf("WARNING: SWAP invalid levels '%s' '%s'", tokA, tokB);
+                    diag_logf("SWAP L%d (%s) <-> L%d (%s)", a, g_levels[a-1].name, b, g_levels[b-1].name);
                 }
             }
         }
-
-        /* SWAPOBJ <A> <B>
-         * Swaps vtable[32] (Board_Setup) between two levels' custom vtables.
-         * Changes which objects appear on each level without changing geometry.
-         * The board ctor runs normally (correct struct size), but when it calls
-         * Board_Setup via vtable[32], it creates the OTHER level's objects. */
+        /* SWAPOBJ <A> <B> */
         else if (_strnicmp(line, "SWAPOBJ ", 8) == 0) {
             char tokA[64] = "", tokB[64] = "";
             if (sscanf(line + 8, "%63s %63s", tokA, tokB) == 2) {
@@ -548,21 +483,11 @@ static void apply_config(void) {
                 if (a && b && a != b) {
                     swap_custom_vtable_entry(a, b, 32);
                     changes++;
-                    diag_logf("SWAPOBJ L%d (%s) <-> L%d (%s) [vtable[32] Board_Setup]",
-                        a, g_levels[a-1].name, b, g_levels[b-1].name);
-                } else {
-                    diag_logf("WARNING: SWAPOBJ invalid levels '%s' '%s'", tokA, tokB);
+                    diag_logf("SWAPOBJ L%d <-> L%d [vtable[32]]", a, b);
                 }
             }
         }
-
-        /* SWAPGEO <A> <B>
-         * Swaps vtable[18] (setup function) between two levels' custom vtables.
-         * Changes which .MESHWORLD file loads without changing the board ctor
-         * or objects.
-         * WARNING: May crash if the swapped setup function writes to board
-         * offsets beyond the original level's struct size. Use SET instead
-         * for safe cross-struct-size swaps. */
+        /* SWAPGEO <A> <B> */
         else if (_strnicmp(line, "SWAPGEO ", 8) == 0) {
             char tokA[64] = "", tokB[64] = "";
             if (sscanf(line + 8, "%63s %63s", tokA, tokB) == 2) {
@@ -571,20 +496,11 @@ static void apply_config(void) {
                 if (a && b && a != b) {
                     swap_custom_vtable_entry(a, b, 18);
                     changes++;
-                    diag_logf("SWAPGEO L%d (%s) <-> L%d (%s) [vtable[18] setup]",
-                        a, g_levels[a-1].name, b, g_levels[b-1].name);
-                } else {
-                    diag_logf("WARNING: SWAPGEO invalid levels '%s' '%s'", tokA, tokB);
+                    diag_logf("SWAPGEO L%d <-> L%d [vtable[18]]", a, b);
                 }
             }
         }
-
-        /* SET <level> <target_level>
-         * One-way: makes level A use level B's board ctor + struct size.
-         * Patches PUSH (struct size) + CALL (board ctor) for case A.
-         * Level A gets B's struct allocation + B's ctor, but still uses
-         * custom_vtable[A] (which you can freely modify with VTABLE).
-         * Tip: use COPYVT A B after SET to start from B's vtable layout. */
+        /* SET <A> <B> */
         else if (_strnicmp(line, "SET ", 4) == 0) {
             char tokA[64] = "", tokB[64] = "";
             if (sscanf(line + 4, "%63s %63s", tokA, tokB) == 2) {
@@ -594,19 +510,11 @@ static void apply_config(void) {
                     patch_push(a, g_levels[b - 1].struct_size);
                     patch_call(a, g_levels[b - 1].ctor_addr);
                     changes++;
-                    diag_logf("SET L%d (%s) -> L%d (%s) [ctor+struct redirect]",
-                        a, g_levels[a-1].name, b, g_levels[b-1].name);
-                } else {
-                    diag_logf("WARNING: SET invalid levels '%s' '%s'", tokA, tokB);
+                    diag_logf("SET L%d (%s) -> L%d (%s)", a, g_levels[a-1].name, b, g_levels[b-1].name);
                 }
             }
         }
-
-        /* COPYVT <A> <B>
-         * Copy ALL 36 vtable entries from level B's custom vtable into
-         * level A's custom vtable. Useful with SET: SET 1 2 gives Level 1
-         * Beginner's struct+ctor, then COPYVT 1 2 gives it Beginner's
-         * vtable as a starting point to customize further. */
+        /* COPYVT <A> <B> */
         else if (_strnicmp(line, "COPYVT ", 7) == 0) {
             char tokA[64] = "", tokB[64] = "";
             if (sscanf(line + 7, "%63s %63s", tokA, tokB) == 2) {
@@ -615,18 +523,11 @@ static void apply_config(void) {
                 if (a && b && a != b) {
                     copy_custom_vtable(a, b);
                     changes++;
-                    diag_logf("COPYVT L%d (%s) <- L%d (%s) [all 36 entries]",
-                        a, g_levels[a-1].name, b, g_levels[b-1].name);
-                } else {
-                    diag_logf("WARNING: COPYVT invalid levels '%s' '%s'", tokA, tokB);
+                    diag_logf("COPYVT L%d <- L%d [all 36 entries]", a, b);
                 }
             }
         }
-
-        /* SETUP <level> <func_name>
-         * Replaces a level's vtable[18] (setup function) with a named function.
-         * The setup function loads the .MESHWORLD file and initializes geometry.
-         * Available function names are listed in mkn_level_system.txt. */
+        /* SETUP <level> <func_name> */
         else if (_strnicmp(line, "SETUP ", 6) == 0) {
             char tokA[64] = "", fname[128] = "";
             if (sscanf(line + 6, "%63s %127s", tokA, fname) == 2) {
@@ -635,103 +536,51 @@ static void apply_config(void) {
                 if (a && addr) {
                     write_custom_vtable_entry(a, 18, addr);
                     changes++;
-                    diag_logf("SETUP L%d (%s) -> %s (0x%08X) [vtable[18]]",
-                        a, g_levels[a-1].name, fname, addr);
-                } else {
-                    if (!a) diag_logf("WARNING: SETUP invalid level '%s'", tokA);
-                    if (!addr) diag_logf("WARNING: SETUP unknown function '%s'", fname);
+                    diag_logf("SETUP L%d -> %s (0x%08X)", a, fname, addr);
                 }
             }
         }
-
-        /* ADD <level> <func_name>
-         * Adds an extra function call after a level's setup function.
-         * Creates a trampoline via VirtualAlloc that chains:
-         *   call original_setup; call extra_func; ret
-         * Then patches vtable[18] to point to the trampoline. */
+        /* ADD <level> <func_name> */
         else if (_strnicmp(line, "ADD ", 4) == 0) {
             char tokA[64] = "", fname[128] = "";
             if (sscanf(line + 4, "%63s %127s", tokA, fname) == 2) {
                 int a = lookup_level(tokA);
                 DWORD extra_addr = lookup_function_addr(fname);
                 if (a && extra_addr) {
-                    /* Get current vtable[18] (might be original or already patched) */
                     DWORD current = read_custom_vtable_entry(a, 18);
-                    if (!current) {
-                        diag_logf("WARNING: ADD cannot read vtable[18] for L%d", a);
-                    } else {
-                        /* Build trampoline: call current_setup, call extra, ret
-                         * Layout (9 bytes per call + 1 ret):
-                         *   51           push ecx      ; save this (thiscall)
-                         *   B8 aa aa aa  mov eax, addr
-                         *   FF D0        call eax
-                         *   59           pop ecx       ; restore this
-                         *   51           push ecx      ; save for extra
-                         *   B8 bb bb bb  mov eax, extra
-                         *   FF D0        call eax
-                         *   59           pop ecx
-                         *   C3           ret
-                         */
-                        int total_size = 9 * 2 + 1;  /* 2 calls + ret */
+                    if (current) {
+                        int total_size = 9 * 2 + 1;
                         BYTE* mem = (BYTE*)VirtualAlloc(NULL, total_size,
                             MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
                         if (mem) {
                             int pos = 0;
-                            /* Call current setup */
-                            mem[pos++] = 0x51;  /* push ecx */
-                            mem[pos++] = 0xB8;  /* mov eax, imm32 */
+                            mem[pos++] = 0x51; mem[pos++] = 0xB8;
                             *(DWORD*)(mem + pos) = current; pos += 4;
-                            mem[pos++] = 0xFF; mem[pos++] = 0xD0;  /* call eax */
-                            mem[pos++] = 0x59;  /* pop ecx */
-                            /* Call extra function */
-                            mem[pos++] = 0x51;  /* push ecx */
-                            mem[pos++] = 0xB8;  /* mov eax, imm32 */
+                            mem[pos++] = 0xFF; mem[pos++] = 0xD0; mem[pos++] = 0x59;
+                            mem[pos++] = 0x51; mem[pos++] = 0xB8;
                             *(DWORD*)(mem + pos) = extra_addr; pos += 4;
-                            mem[pos++] = 0xFF; mem[pos++] = 0xD0;  /* call eax */
-                            mem[pos++] = 0x59;  /* pop ecx */
-                            /* Ret */
+                            mem[pos++] = 0xFF; mem[pos++] = 0xD0; mem[pos++] = 0x59;
                             mem[pos++] = 0xC3;
-                            /* Patch vtable[18] to trampoline */
                             write_custom_vtable_entry(a, 18, (DWORD)mem);
                             changes++;
-                            diag_logf("ADD L%d (%s) += %s (0x%08X) [trampoline at 0x%08X]",
-                                a, g_levels[a-1].name, fname, extra_addr, (DWORD)mem);
-                        } else {
-                            diag_logf("WARNING: ADD VirtualAlloc failed for L%d", a);
+                            diag_logf("ADD L%d += %s [trampoline at 0x%08X]", a, fname, (DWORD)mem);
                         }
                     }
-                } else {
-                    if (!a) diag_logf("WARNING: ADD invalid level '%s'", tokA);
-                    if (!extra_addr) diag_logf("WARNING: ADD unknown function '%s'", fname);
                 }
             }
         }
-
-        /* VTABLE <level> <slot> <func_name|0xHEXADDR>
-         * Write any function into any vtable slot for any level.
-         * Writes to the level's CUSTOM vtable — works regardless of SET/SWAP.
-         * <slot> can be a number (0-35) or a name (setup, boardsetup, etc.)
-         * <func_name> can be a name from the function table or a hex address.
-         * Use 0 or null to clear a slot (writes 0).
-         * Examples:
-         *   VTABLE 1 setup Scene_SetupLevelCascade
-         *   VTABLE 3 0 Beginner_dtor
-         *   VTABLE 5 boardsetup 0x0041C5B0
-         *   VTABLE 1 9 Odd_DispatchColl
-         *   VTABLE 1 2 0          ; clear slot 2 */
+        /* VTABLE <level> <slot> <func_name|0xHEXADDR|0> */
         else if (_strnicmp(line, "VTABLE ", 7) == 0) {
             char tokLevel[64] = "", tokSlot[64] = "", tokFunc[128] = "";
             if (sscanf(line + 7, "%63s %63s %127s", tokLevel, tokSlot, tokFunc) == 3) {
                 int a = lookup_level(tokLevel);
-                /* Parse slot: number or name */
                 int slot = atoi(tokSlot);
                 if (slot == 0 && tokSlot[0] != '0') {
                     slot = lookup_vtable_slot(tokSlot);
                 }
-                /* Parse func: name, hex address, or 0/null */
                 DWORD addr = 0;
                 if (_stricmp(tokFunc, "0") == 0 || _stricmp(tokFunc, "null") == 0) {
-                    addr = 0;  /* explicit clear */
+                    addr = 0;
                 } else {
                     addr = lookup_function_addr(tokFunc);
                     if (!addr && tokFunc[0] == '0' && (tokFunc[1] == 'x' || tokFunc[1] == 'X')) {
@@ -741,50 +590,39 @@ static void apply_config(void) {
                 if (a && slot >= 0 && slot < VTABLE_ENTRIES) {
                     write_custom_vtable_entry(a, slot, addr);
                     changes++;
-                    diag_logf("VTABLE L%d (%s) [%d] = 0x%08X",
-                        a, g_levels[a-1].name, slot, addr);
+                    diag_logf("VTABLE L%d [%d] = 0x%08X", a, slot, addr);
                 } else {
                     if (!a) diag_logf("WARNING: VTABLE invalid level '%s'", tokLevel);
                     if (slot < 0 || slot >= VTABLE_ENTRIES)
-                        diag_logf("WARNING: VTABLE invalid slot '%s' (use 0-35 or name)", tokSlot);
-                    if (!addr && _stricmp(tokFunc, "0") != 0 && _stricmp(tokFunc, "null") != 0)
-                        diag_logf("WARNING: VTABLE unknown function '%s'", tokFunc);
+                        diag_logf("WARNING: VTABLE invalid slot '%s'", tokSlot);
                 }
             }
         }
-
-        /* DUMP — log the full 36-entry vtable for every level */
+        /* DUMP */
         else if (_strnicmp(line, "DUMP", 4) == 0) {
-            diag_log("--- Full custom vtable dump (36 entries × 15 levels) ---");
             for (int i = 0; i < 15; i++) {
-                diag_logf("  L%d (%s) [custom vtable at 0x%08X]:",
-                    i+1, g_levels[i].name, g_custom_vtables[i]);
+                diag_logf("  L%d (%s) [vt=0x%08X]:", i+1, g_levels[i].name, g_custom_vtables[i]);
                 for (int s = 0; s < VTABLE_ENTRIES; s++) {
                     DWORD val = read_custom_vtable_entry(i+1, s);
-                    /* Find slot name */
                     const char* sname = "";
                     for (int k = 0; g_vtableSlots[k].name; k++) {
                         if (g_vtableSlots[k].slot == s) { sname = g_vtableSlots[k].name; break; }
                     }
-                    /* Find function name */
                     const char* fname = "";
                     for (int k = 0; g_functions[k].name; k++) {
                         if (g_functions[k].addr == val) { fname = g_functions[k].name; break; }
                     }
                     int changed = (g_vtable_saved && val != g_orig_vtable[i][s]);
                     diag_logf("    [%2d] 0x%08X %-16s %-20s%s",
-                        s, val, sname, fname, changed ? " *** CHANGED ***" : "");
+                        s, val, sname, fname, changed ? " ***" : "");
                 }
             }
             changes++;
         }
-
-        /* RESET
-         * Restores all custom vtables to original values + push/call. */
+        /* RESET */
         else if (_strnicmp(line, "RESET", 5) == 0) {
             for (int i = 0; i < 15; i++) {
                 restore_push_call(i + 1);
-                /* Restore custom vtable from saved originals */
                 DWORD vt = g_custom_vtables[i];
                 if (vt) {
                     for (int s = 0; s < VTABLE_ENTRIES; s++) {
@@ -793,48 +631,13 @@ static void apply_config(void) {
                 }
             }
             changes++;
-            diag_log("RESET: all levels restored (push+call+custom vtable[0-35])");
+            diag_log("RESET: all levels restored");
         }
 
         line = strtok(NULL, "\n");
     }
 
-    if (changes > 0) {
-        diag_logf("Applied %d config changes", changes);
-    } else {
-        diag_log("No config changes (defaults)");
-    }
-
-    /* Dump final state */
-    diag_log("--- Final level assignments ---");
-    for (int i = 0; i < 15; i++) {
-        DWORD push_val = 0;
-        if (!IsBadReadPtr((void*)(g_levels[i].push_addr + 1), 4))
-            push_val = *(DWORD*)(g_levels[i].push_addr + 1);
-        DWORD call_target = 0;
-        if (!IsBadReadPtr((void*)(g_levels[i].call_addr + 1), 4)) {
-            DWORD call_off = *(DWORD*)(g_levels[i].call_addr + 1);
-            call_target = g_levels[i].call_addr + 5 + call_off;
-        }
-        const char* ctor_name = "???";
-        for (int j = 0; j < 15; j++) {
-            if (g_levels[j].ctor_addr == call_target) {
-                ctor_name = g_levels[j].name;
-                break;
-            }
-        }
-        int changed = (call_target != g_levels[i].ctor_addr);
-        /* Check all 36 vtable slots for changes */
-        if (g_vtable_saved) {
-            for (int s = 0; s < VTABLE_ENTRIES && !changed; s++) {
-                if (read_custom_vtable_entry(i+1, s) != g_orig_vtable[i][s])
-                    changed = 1;
-            }
-        }
-        diag_logf("  L%-2d: size=0x%04X ctor=%s%s",
-            g_levels[i].level_num, push_val, ctor_name,
-            changed ? " *** CHANGED ***" : "");
-    }
+    diag_logf("Applied %d config changes", changes);
     diag_log("========================================");
 }
 
@@ -845,22 +648,21 @@ static void apply_config(void) {
 static void mkn_init(void) {
     find_config_path();
 
-    /* Initialize custom vtables BEFORE parsing config */
+    /* Step 1: Allocate custom vtables and patch ctors */
     init_custom_vtables();
-
     if (!g_vtables_initialized) {
-        diag_log("[mkn_level_system v3] FATAL: custom vtable init failed!");
+        diag_log("[mkn_level_system v4] FATAL: custom vtable init failed!");
         return;
     }
+    diag_log("[mkn_level_system v4] Custom vtables allocated and ctors patched");
 
-    diag_log("[mkn_level_system v3] Custom vtables allocated and ctors patched");
-    for (int i = 0; i < 15; i++) {
-        diag_logf("  L%d (%s): custom_vtable=0x%08X (orig=0x%08X, ctor_patch=0x%08X)",
-            g_levels[i].level_num, g_levels[i].name,
-            g_custom_vtables[i], g_levels[i].vtable_addr,
-            g_levels[i].ctor_vt_patch);
-    }
+    /* Step 2: Patch ALL level allocations to max struct size.
+     * This is the critical fix — ensures any vtable function from any
+     * level can safely access any board offset without heap corruption. */
+    patch_all_struct_sizes();
+    diag_logf("[mkn_level_system v4] All 15 levels patched to struct size 0x%X", MAX_STRUCT_SIZE);
 
+    /* Step 3: Parse config file for VTABLE/SET/SWAP/etc commands */
     apply_config();
 }
 
