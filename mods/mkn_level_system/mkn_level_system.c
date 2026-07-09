@@ -114,7 +114,7 @@ typedef struct {
 } FuncEntry;
 
 static const FuncEntry g_functions[] = {
-    /* Setup functions (load .MESHWORLD files) */
+    /* Setup functions (vtable[18]) — load .MESHWORLD files */
     { "GetLevelPath",              0x0040D1C0 },
     { "Scene_SetupLevelCascade",   0x004110D0 },
     { "Scene_LoadLevel2",          0x0040D280 },
@@ -128,8 +128,54 @@ static const FuncEntry g_functions[] = {
     { "Scene_SetupLevel10",         0x00411F60 },
     { "Scene_SetupLevelDark",       0x00416270 },
     { "CreateBumper",              0x0040FA20 },
-    { "FUN_00417640",               0x00417640 },
-    { "FUN_00417F20",               0x00417F20 },
+    { "FUN_00417640",               0x00417640 },  /* Glass setup */
+    { "FUN_00417F20",               0x00417F20 },  /* Impossible setup */
+    /* Destructors (vtable[0]) */
+    { "WarmUp_dtor",               0x00425040 },
+    { "Beginner_dtor",             0x00425160 },
+    { "Intermediate_dtor",         0x00425060 },
+    { "Dizzy_dtor",                0x00425080 },
+    { "Tower_dtor",                0x004250A0 },
+    { "Up_dtor",                   0x00425180 },
+    { "Neon_dtor",                 0x00425420 },
+    { "Expert_dtor",               0x004250C0 },
+    { "Odd_dtor",                  0x004250E0 },
+    { "Toob_dtor",                 0x00425120 },
+    { "Wobbly_dtor",               0x00425100 },
+    { "Glass_dtor",                0x00425460 },
+    { "Sky_dtor",                  0x00425140 },
+    { "Master_dtor",               0x004251A0 },
+    { "Impossible_dtor",           0x004254A0 },
+    /* InitScene (vtable[19]) */
+    { "WarmUp_InitScene",          0x0041B130 },
+    { "Beginner_InitScene",        0x00420240 },
+    { "Up_InitScene",              0x00420660 },
+    { "Neon_InitScene",            0x00424790 },
+    { "Odd_InitScene",             0x0041B540 },
+    { "Toob_InitScene",            0x0041F7E0 },
+    /* RenderDynamic (vtable[24]) */
+    { "WarmUp_RenderDyn",          0x0040B420 },
+    { "Beginner_RenderDyn",        0x00411380 },
+    { "Tower_RenderDyn",           0x0040DFA0 },
+    { "Odd_RenderDyn",             0x0040F350 },
+    { "Toob_RenderDyn",            0x00410670 },
+    { "Wobbly_RenderDyn",          0x0040B600 },
+    { "Sky_RenderDyn",             0x004110A0 },
+    /* DispatchCollision (vtable[29]) */
+    { "WarmUp_DispatchColl",       0x0040C5D0 },
+    { "Beginner_DispatchColl",     0x004111E0 },
+    { "Intermediate_DispatchColl", 0x0040D340 },
+    { "Dizzy_DispatchColl",        0x0040D500 },
+    { "Tower_DispatchColl",        0x0040DCD0 },
+    { "Up_DispatchColl",           0x004119B0 },
+    { "Neon_DispatchColl",         0x00416CA0 },
+    { "Expert_DispatchColl",       0x0040E6A0 },
+    { "Odd_DispatchColl",          0x0044B840 },
+    { "Toob_DispatchColl",         0x00410020 },
+    /* Board_Setup (vtable[32]) — creates level objects */
+    { "WarmUp_BoardSetup",         0x0041C5B0 },
+    { "Beginner_BoardSetup",       0x0041C5B0 },  /* shared with WarmUp */
+    { "Dizzy_BoardSetup",          0x0041C5B0 },  /* shared */
     /* Sub-functions safe for ADD (all __thiscall with ECX=board*) */
     { "Level_InitScene",           0x0040B090 },
     { "Graphics_SetProjection",    0x00454AB0 },
@@ -144,6 +190,15 @@ static DWORD lookup_function_addr(const char* name) {
     return 0;
 }
 
+/* Look up a vtable slot index by name (returns -1 if not found) */
+static int lookup_vtable_slot(const char* name) {
+    for (int i = 0; g_vtableSlots[i].name; i++) {
+        if (_stricmp(g_vtableSlots[i].name, name) == 0)
+            return g_vtableSlots[i].slot;
+    }
+    return -1;
+}
+
 /* ============================================================
  * Original value storage (for RESET)
  * ============================================================ */
@@ -156,19 +211,18 @@ typedef struct {
 
 static OrigEntry g_orig[15] = {0};
 
-/* Original vtable entries (for SWAPOBJ/SWAPGEO reset) */
-static DWORD g_orig_vtable18[15] = {0};
-static DWORD g_orig_vtable32[15] = {0};
+/* Original vtable entries (full 36 slots for RESET) */
+static DWORD g_orig_vtable[15][36] = {{0}};
 static int   g_vtable_saved = 0;
 
 static void save_originals(void) {
     if (g_vtable_saved) return;
     for (int i = 0; i < 15; i++) {
         DWORD vt = g_levels[i].vtable_addr;
-        if (!IsBadReadPtr((void*)(vt + VTABLE_SETUP_OFFSET), 4))
-            g_orig_vtable18[i] = *(DWORD*)(vt + VTABLE_SETUP_OFFSET);
-        if (!IsBadReadPtr((void*)(vt + VTABLE_OBJ_OFFSET), 4))
-            g_orig_vtable32[i] = *(DWORD*)(vt + VTABLE_OBJ_OFFSET);
+        for (int s = 0; s < 36; s++) {
+            if (!IsBadReadPtr((void*)(vt + s*4), 4))
+                g_orig_vtable[i][s] = *(DWORD*)(vt + s*4);
+        }
     }
     g_vtable_saved = 1;
 }
@@ -579,16 +633,78 @@ static void apply_config(void) {
             }
         }
 
+        /* VTABLE <level> <slot> <func_name|0xHEXADDR>
+         * Write any function into any vtable slot for any level.
+         * <slot> can be a number (0-35) or a name (setup, boardsetup, etc.)
+         * <func_name> can be a name from the function table or a hex address.
+         * Examples:
+         *   VTABLE 1 setup Scene_SetupLevelCascade
+         *   VTABLE 3 0 Beginner_dtor
+         *   VTABLE 5 boardsetup 0x0041C5B0 */
+        else if (_strnicmp(line, "VTABLE ", 7) == 0) {
+            char tokLevel[64] = "", tokSlot[64] = "", tokFunc[128] = "";
+            if (sscanf(line + 7, "%63s %63s %127s", tokLevel, tokSlot, tokFunc) == 3) {
+                int a = lookup_level(tokLevel);
+                /* Parse slot: number or name */
+                int slot = atoi(tokSlot);
+                if (slot == 0 && tokSlot[0] != '0') {
+                    slot = lookup_vtable_slot(tokSlot);
+                }
+                /* Parse func: name or hex address */
+                DWORD addr = lookup_function_addr(tokFunc);
+                if (!addr && tokFunc[0] == '0' && (tokFunc[1] == 'x' || tokFunc[1] == 'X')) {
+                    addr = (DWORD)strtoul(tokFunc + 2, NULL, 16);
+                }
+                if (a && slot >= 0 && slot < 36 && addr) {
+                    write_vtable_entry(a, slot * 4, addr);
+                    changes++;
+                    diag_logf("VTABLE L%d (%s) [%d] = 0x%08X",
+                        a, g_levels[a-1].name, slot, addr);
+                } else {
+                    if (!a) diag_logf("WARNING: VTABLE invalid level '%s'", tokLevel);
+                    if (slot < 0 || slot >= 36)
+                        diag_logf("WARNING: VTABLE invalid slot '%s' (use 0-35 or name)", tokSlot);
+                    if (!addr) diag_logf("WARNING: VTABLE unknown function '%s'", tokFunc);
+                }
+            }
+        }
+
+        /* DUMP — log the full 36-entry vtable for every level */
+        else if (_strnicmp(line, "DUMP", 4) == 0) {
+            diag_log("--- Full vtable dump (36 entries × 15 levels) ---");
+            for (int i = 0; i < 15; i++) {
+                diag_logf("  L%d (%s):", i+1, g_levels[i].name);
+                for (int s = 0; s < 36; s++) {
+                    DWORD val = read_vtable_entry(i+1, s*4);
+                    /* Find slot name */
+                    const char* sname = "";
+                    for (int k = 0; g_vtableSlots[k].name; k++) {
+                        if (g_vtableSlots[k].slot == s) { sname = g_vtableSlots[k].name; break; }
+                    }
+                    /* Find function name */
+                    const char* fname = "";
+                    for (int k = 0; g_functions[k].name; k++) {
+                        if (g_functions[k].addr == val) { fname = g_functions[k].name; break; }
+                    }
+                    int changed = (g_vtable_saved && val != g_orig_vtable[i][s]);
+                    diag_logf("    [%2d] 0x%08X %-16s %-20s%s",
+                        s, val, sname, fname, changed ? " *** CHANGED ***" : "");
+                }
+            }
+            changes++;
+        }
+
         /* RESET
          * Restores all original PUSH+CALL values and vtable entries. */
         else if (_strnicmp(line, "RESET", 5) == 0) {
             for (int i = 0; i < 15; i++) {
                 restore_push_call(i + 1);
-                write_vtable_entry(i + 1, VTABLE_SETUP_OFFSET, g_orig_vtable18[i]);
-                write_vtable_entry(i + 1, VTABLE_OBJ_OFFSET, g_orig_vtable32[i]);
+                for (int s = 0; s < 36; s++) {
+                    write_vtable_entry(i + 1, s * 4, g_orig_vtable[i][s]);
+                }
             }
             changes++;
-            diag_log("RESET: all levels restored to original values");
+            diag_log("RESET: all levels restored to original values (push+call+vtable[0-35])");
         }
 
         line = strtok(NULL, "\n");
@@ -618,13 +734,17 @@ static void apply_config(void) {
                 break;
             }
         }
-        DWORD vt18 = read_vtable_entry(i + 1, VTABLE_SETUP_OFFSET);
-        DWORD vt32 = read_vtable_entry(i + 1, VTABLE_OBJ_OFFSET);
-        diag_logf("  L%-2d: size=0x%04X ctor=%s vtable[18]=0x%08X vtable[32]=0x%08X%s",
-            g_levels[i].level_num, push_val, ctor_name, vt18, vt32,
-            (call_target == g_levels[i].ctor_addr &&
-             vt18 == g_orig_vtable18[i] &&
-             vt32 == g_orig_vtable32[i]) ? "" : " *** CHANGED ***");
+        int changed = (call_target != g_levels[i].ctor_addr);
+        /* Check all 36 vtable slots for changes */
+        if (g_vtable_saved) {
+            for (int s = 0; s < 36 && !changed; s++) {
+                if (read_vtable_entry(i+1, s*4) != g_orig_vtable[i][s])
+                    changed = 1;
+            }
+        }
+        diag_logf("  L%-2d: size=0x%04X ctor=%s%s",
+            g_levels[i].level_num, push_val, ctor_name,
+            changed ? " *** CHANGED ***" : "");
     }
     diag_log("========================================");
 }
