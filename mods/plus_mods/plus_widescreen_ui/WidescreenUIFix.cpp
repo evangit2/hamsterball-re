@@ -121,6 +121,10 @@ public:
 		api->RegisterCustomHook(0x41a2e0, (void*)hook_SceneRender, (void**)&orig_SceneRender);
 	}
 
+	void onGameUpdate() override {
+		g_inUIPass = false;
+	}
+
 	void onButtonToggle(const char* id, bool state) override {
 		if (strcmp(id, "ws_ui_fix") == 0) g_enabled = state;
 	}
