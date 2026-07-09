@@ -10,7 +10,7 @@
   2. Ball_SplitDeath (0x9050): RET
   3. Ball_FallDeath (0x9480): set 0x2E8=1 only (triggers respawn)
   4. bounce_count (0x75C9): NOP
-  5. Collision skip checks (35 locations): NOP — collision always runs
+  5. Collision skip checks (10 locations): NOP — collision always runs
   6. Hook1 (+1B591): clear 0x2E8 for entity balls in list 1 (prevent destroy)
   7. Hook2 (+1B636): clear 0x2E8 for entity balls in list 2 (prevent destroy)
 }
@@ -34,33 +34,8 @@ alloc(Orig_23965,2)
 alloc(Orig_8598,6)
 alloc(Orig_3FF98,6)
 alloc(Orig_18378,6)
-alloc(Orig_22D44,2)
-alloc(Orig_23394,2)
-alloc(Orig_238D4,2)
-alloc(Orig_22D4E,2)
-alloc(Orig_238DE,2)
 alloc(Orig_1B591,6)
 alloc(Orig_1B636,6)
-alloc(Orig_AAD9,2)
-alloc(Orig_AAE3,2)
-alloc(Orig_AB0F,2)
-alloc(Orig_AB19,2)
-alloc(Orig_AB45,2)
-alloc(Orig_AB4F,2)
-alloc(Orig_AB7B,2)
-alloc(Orig_AB85,2)
-alloc(Orig_C7B9,2)
-alloc(Orig_C7C3,2)
-alloc(Orig_C7EF,2)
-alloc(Orig_C7F9,2)
-alloc(Orig_C825,2)
-alloc(Orig_C82F,2)
-alloc(Orig_C85B,2)
-alloc(Orig_C865,2)
-alloc(Orig_13926,6)
-alloc(Orig_13934,6)
-alloc(Orig_1B0CF,2)
-alloc(Orig_1B0D9,2)
 registersymbol(FallDeath_Cave)
 registersymbol(ClearState_Cave1)
 registersymbol(ClearState_Cave2)
@@ -78,33 +53,8 @@ registersymbol(Orig_23965)
 registersymbol(Orig_8598)
 registersymbol(Orig_3FF98)
 registersymbol(Orig_18378)
-registersymbol(Orig_22D44)
-registersymbol(Orig_23394)
-registersymbol(Orig_238D4)
-registersymbol(Orig_22D4E)
-registersymbol(Orig_238DE)
 registersymbol(Orig_1B591)
 registersymbol(Orig_1B636)
-registersymbol(Orig_AAD9)
-registersymbol(Orig_AAE3)
-registersymbol(Orig_AB0F)
-registersymbol(Orig_AB19)
-registersymbol(Orig_AB45)
-registersymbol(Orig_AB4F)
-registersymbol(Orig_AB7B)
-registersymbol(Orig_AB85)
-registersymbol(Orig_C7B9)
-registersymbol(Orig_C7C3)
-registersymbol(Orig_C7EF)
-registersymbol(Orig_C7F9)
-registersymbol(Orig_C825)
-registersymbol(Orig_C82F)
-registersymbol(Orig_C85B)
-registersymbol(Orig_C865)
-registersymbol(Orig_13926)
-registersymbol(Orig_13934)
-registersymbol(Orig_1B0CF)
-registersymbol(Orig_1B0D9)
 
 Orig_8D70:
   readmem(Hamsterball.exe+8D70,3)
@@ -134,60 +84,10 @@ Orig_3FF98:
   readmem(Hamsterball.exe+3FF98,6)
 Orig_18378:
   readmem(Hamsterball.exe+18378,6)
-Orig_22D44:
-  readmem(Hamsterball.exe+22D44,2)
-Orig_23394:
-  readmem(Hamsterball.exe+23394,2)
-Orig_238D4:
-  readmem(Hamsterball.exe+238D4,2)
-Orig_22D4E:
-  readmem(Hamsterball.exe+22D4E,2)
-Orig_238DE:
-  readmem(Hamsterball.exe+238DE,2)
 Orig_1B591:
   readmem(Hamsterball.exe+1B591,6)
 Orig_1B636:
   readmem(Hamsterball.exe+1B636,6)
-Orig_AAD9:
-  readmem(Hamsterball.exe+AAD9,2)
-Orig_AAE3:
-  readmem(Hamsterball.exe+AAE3,2)
-Orig_AB0F:
-  readmem(Hamsterball.exe+AB0F,2)
-Orig_AB19:
-  readmem(Hamsterball.exe+AB19,2)
-Orig_AB45:
-  readmem(Hamsterball.exe+AB45,2)
-Orig_AB4F:
-  readmem(Hamsterball.exe+AB4F,2)
-Orig_AB7B:
-  readmem(Hamsterball.exe+AB7B,2)
-Orig_AB85:
-  readmem(Hamsterball.exe+AB85,2)
-Orig_C7B9:
-  readmem(Hamsterball.exe+C7B9,2)
-Orig_C7C3:
-  readmem(Hamsterball.exe+C7C3,2)
-Orig_C7EF:
-  readmem(Hamsterball.exe+C7EF,2)
-Orig_C7F9:
-  readmem(Hamsterball.exe+C7F9,2)
-Orig_C825:
-  readmem(Hamsterball.exe+C825,2)
-Orig_C82F:
-  readmem(Hamsterball.exe+C82F,2)
-Orig_C85B:
-  readmem(Hamsterball.exe+C85B,2)
-Orig_C865:
-  readmem(Hamsterball.exe+C865,2)
-Orig_13926:
-  readmem(Hamsterball.exe+13926,6)
-Orig_13934:
-  readmem(Hamsterball.exe+13934,6)
-Orig_1B0CF:
-  readmem(Hamsterball.exe+1B0CF,2)
-Orig_1B0D9:
-  readmem(Hamsterball.exe+1B0D9,2)
 
 { NOP bounce_count increment }
 Hamsterball.exe+75C9:
@@ -237,62 +137,6 @@ Hamsterball.exe+3FF98:
   db 90 90 90 90 90 90
 Hamsterball.exe+18378:
   db 90 90 90 90 90 90
-
-{ NOP [ecx+0x2F8] respawn skip — 3 locations }
-Hamsterball.exe+22D44:
-  db 90 90
-Hamsterball.exe+23394:
-  db 90 90
-Hamsterball.exe+238D4:
-  db 90 90
-
-{ NOP [ecx+0x768] active flag skip — 2 locations }
-Hamsterball.exe+22D4E:
-  db 90 90
-Hamsterball.exe+238DE:
-  db 90 90
-
-{ NOP [esi+0x768] and [eax+0x768/0x2F8/0x2F9/0x2E9] collision skips }
-Hamsterball.exe+AAD9:
-  db 90 90
-Hamsterball.exe+AAE3:
-  db 90 90
-Hamsterball.exe+AB0F:
-  db 90 90
-Hamsterball.exe+AB19:
-  db 90 90
-Hamsterball.exe+AB45:
-  db 90 90
-Hamsterball.exe+AB4F:
-  db 90 90
-Hamsterball.exe+AB7B:
-  db 90 90
-Hamsterball.exe+AB85:
-  db 90 90
-Hamsterball.exe+C7B9:
-  db 90 90
-Hamsterball.exe+C7C3:
-  db 90 90
-Hamsterball.exe+C7EF:
-  db 90 90
-Hamsterball.exe+C7F9:
-  db 90 90
-Hamsterball.exe+C825:
-  db 90 90
-Hamsterball.exe+C82F:
-  db 90 90
-Hamsterball.exe+C85B:
-  db 90 90
-Hamsterball.exe+C865:
-  db 90 90
-Hamsterball.exe+13926:
-  db 90 90 90 90 90 90
-Hamsterball.exe+13934:
-  db 90 90 90 90 90 90
-Hamsterball.exe+1B0CF:
-  db 90 90
-Hamsterball.exe+1B0D9:
-  db 90 90
 
 { Hook 1: Scene_UpdateBallsAndState, list 1 (player + maybe badballs) }
 { If entity ball (0x324!=0): clear 0x2E8 → prevent destroy }
@@ -372,60 +216,10 @@ Hamsterball.exe+3FF98:
   readmem(Orig_3FF98,6)
 Hamsterball.exe+18378:
   readmem(Orig_18378,6)
-Hamsterball.exe+22D44:
-  readmem(Orig_22D44,2)
-Hamsterball.exe+23394:
-  readmem(Orig_23394,2)
-Hamsterball.exe+238D4:
-  readmem(Orig_238D4,2)
-Hamsterball.exe+22D4E:
-  readmem(Orig_22D4E,2)
-Hamsterball.exe+238DE:
-  readmem(Orig_238DE,2)
 Hamsterball.exe+1B591:
   readmem(Orig_1B591,6)
 Hamsterball.exe+1B636:
   readmem(Orig_1B636,6)
-Hamsterball.exe+AAD9:
-  readmem(Orig_AAD9,2)
-Hamsterball.exe+AAE3:
-  readmem(Orig_AAE3,2)
-Hamsterball.exe+AB0F:
-  readmem(Orig_AB0F,2)
-Hamsterball.exe+AB19:
-  readmem(Orig_AB19,2)
-Hamsterball.exe+AB45:
-  readmem(Orig_AB45,2)
-Hamsterball.exe+AB4F:
-  readmem(Orig_AB4F,2)
-Hamsterball.exe+AB7B:
-  readmem(Orig_AB7B,2)
-Hamsterball.exe+AB85:
-  readmem(Orig_AB85,2)
-Hamsterball.exe+C7B9:
-  readmem(Orig_C7B9,2)
-Hamsterball.exe+C7C3:
-  readmem(Orig_C7C3,2)
-Hamsterball.exe+C7EF:
-  readmem(Orig_C7EF,2)
-Hamsterball.exe+C7F9:
-  readmem(Orig_C7F9,2)
-Hamsterball.exe+C825:
-  readmem(Orig_C825,2)
-Hamsterball.exe+C82F:
-  readmem(Orig_C82F,2)
-Hamsterball.exe+C85B:
-  readmem(Orig_C85B,2)
-Hamsterball.exe+C865:
-  readmem(Orig_C865,2)
-Hamsterball.exe+13926:
-  readmem(Orig_13926,6)
-Hamsterball.exe+13934:
-  readmem(Orig_13934,6)
-Hamsterball.exe+1B0CF:
-  readmem(Orig_1B0CF,2)
-Hamsterball.exe+1B0D9:
-  readmem(Orig_1B0D9,2)
 
 dealloc(FallDeath_Cave)
 dealloc(ClearState_Cave1)
@@ -444,33 +238,8 @@ dealloc(Orig_23965)
 dealloc(Orig_8598)
 dealloc(Orig_3FF98)
 dealloc(Orig_18378)
-dealloc(Orig_22D44)
-dealloc(Orig_23394)
-dealloc(Orig_238D4)
-dealloc(Orig_22D4E)
-dealloc(Orig_238DE)
 dealloc(Orig_1B591)
 dealloc(Orig_1B636)
-dealloc(Orig_AAD9)
-dealloc(Orig_AAE3)
-dealloc(Orig_AB0F)
-dealloc(Orig_AB19)
-dealloc(Orig_AB45)
-dealloc(Orig_AB4F)
-dealloc(Orig_AB7B)
-dealloc(Orig_AB85)
-dealloc(Orig_C7B9)
-dealloc(Orig_C7C3)
-dealloc(Orig_C7EF)
-dealloc(Orig_C7F9)
-dealloc(Orig_C825)
-dealloc(Orig_C82F)
-dealloc(Orig_C85B)
-dealloc(Orig_C865)
-dealloc(Orig_13926)
-dealloc(Orig_13934)
-dealloc(Orig_1B0CF)
-dealloc(Orig_1B0D9)
 unregistersymbol(FallDeath_Cave)
 unregistersymbol(ClearState_Cave1)
 unregistersymbol(ClearState_Cave2)
@@ -488,50 +257,5 @@ unregistersymbol(Orig_23965)
 unregistersymbol(Orig_8598)
 unregistersymbol(Orig_3FF98)
 unregistersymbol(Orig_18378)
-unregistersymbol(Orig_22D44)
-unregistersymbol(Orig_23394)
-unregistersymbol(Orig_238D4)
-unregistersymbol(Orig_22D4E)
-unregistersymbol(Orig_238DE)
 unregistersymbol(Orig_1B591)
 unregistersymbol(Orig_1B636)
-unregistersymbol(Orig_AAD9)
-unregistersymbol(Orig_AAE3)
-unregistersymbol(Orig_AB0F)
-unregistersymbol(Orig_AB19)
-unregistersymbol(Orig_AB45)
-unregistersymbol(Orig_AB4F)
-unregistersymbol(Orig_AB7B)
-unregistersymbol(Orig_AB85)
-unregistersymbol(Orig_C7B9)
-unregistersymbol(Orig_C7C3)
-unregistersymbol(Orig_C7EF)
-unregistersymbol(Orig_C7F9)
-unregistersymbol(Orig_C825)
-unregistersymbol(Orig_C82F)
-unregistersymbol(Orig_C85B)
-unregistersymbol(Orig_C865)
-unregistersymbol(Orig_13926)
-unregistersymbol(Orig_13934)
-unregistersymbol(Orig_1B0CF)
-unregistersymbol(Orig_1B0D9)
-registersymbol(Orig_AAD9)
-registersymbol(Orig_AAE3)
-registersymbol(Orig_AB0F)
-registersymbol(Orig_AB19)
-registersymbol(Orig_AB45)
-registersymbol(Orig_AB4F)
-registersymbol(Orig_AB7B)
-registersymbol(Orig_AB85)
-registersymbol(Orig_C7B9)
-registersymbol(Orig_C7C3)
-registersymbol(Orig_C7EF)
-registersymbol(Orig_C7F9)
-registersymbol(Orig_C825)
-registersymbol(Orig_C82F)
-registersymbol(Orig_C85B)
-registersymbol(Orig_C865)
-registersymbol(Orig_13926)
-registersymbol(Orig_13934)
-registersymbol(Orig_1B0CF)
-registersymbol(Orig_1B0D9)
