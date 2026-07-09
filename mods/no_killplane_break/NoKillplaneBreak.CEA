@@ -10,7 +10,7 @@
   2. Ball_SplitDeath (0x9050): RET
   3. Ball_FallDeath (0x9480): set 0x2E8=1 only (triggers respawn)
   4. bounce_count (0x75C9): NOP
-  5. Collision skip checks (38 locations): NOP — collision always runs
+  5. Collision skip checks (35 locations): NOP — collision always runs
   6. Hook1 (+1B591): clear 0x2E8 for entity balls in list 1 (prevent destroy)
   7. Hook2 (+1B636): clear 0x2E8 for entity balls in list 2 (prevent destroy)
 }
@@ -41,9 +41,6 @@ alloc(Orig_22D4E,2)
 alloc(Orig_238DE,2)
 alloc(Orig_1B591,6)
 alloc(Orig_1B636,6)
-alloc(Orig_81E1,2)
-alloc(Orig_830D,2)
-alloc(Orig_83CB,6)
 alloc(Orig_AAD9,2)
 alloc(Orig_AAE3,2)
 alloc(Orig_AB0F,2)
@@ -88,9 +85,6 @@ registersymbol(Orig_22D4E)
 registersymbol(Orig_238DE)
 registersymbol(Orig_1B591)
 registersymbol(Orig_1B636)
-registersymbol(Orig_81E1)
-registersymbol(Orig_830D)
-registersymbol(Orig_83CB)
 registersymbol(Orig_AAD9)
 registersymbol(Orig_AAE3)
 registersymbol(Orig_AB0F)
@@ -154,12 +148,6 @@ Orig_1B591:
   readmem(Hamsterball.exe+1B591,6)
 Orig_1B636:
   readmem(Hamsterball.exe+1B636,6)
-Orig_81E1:
-  readmem(Hamsterball.exe+81E1,2)
-Orig_830D:
-  readmem(Hamsterball.exe+830D,2)
-Orig_83CB:
-  readmem(Hamsterball.exe+83CB,6)
 Orig_AAD9:
   readmem(Hamsterball.exe+AAD9,2)
 Orig_AAE3:
@@ -265,12 +253,6 @@ Hamsterball.exe+238DE:
   db 90 90
 
 { NOP [esi+0x768] and [eax+0x768/0x2F8/0x2F9/0x2E9] collision skips }
-Hamsterball.exe+81E1:
-  db 90 90
-Hamsterball.exe+830D:
-  db 90 90
-Hamsterball.exe+83CB:
-  db 90 90 90 90 90 90
 Hamsterball.exe+AAD9:
   db 90 90
 Hamsterball.exe+AAE3:
@@ -404,12 +386,6 @@ Hamsterball.exe+1B591:
   readmem(Orig_1B591,6)
 Hamsterball.exe+1B636:
   readmem(Orig_1B636,6)
-Hamsterball.exe+81E1:
-  readmem(Orig_81E1,2)
-Hamsterball.exe+830D:
-  readmem(Orig_830D,2)
-Hamsterball.exe+83CB:
-  readmem(Orig_83CB,6)
 Hamsterball.exe+AAD9:
   readmem(Orig_AAD9,2)
 Hamsterball.exe+AAE3:
@@ -475,9 +451,6 @@ dealloc(Orig_22D4E)
 dealloc(Orig_238DE)
 dealloc(Orig_1B591)
 dealloc(Orig_1B636)
-dealloc(Orig_81E1)
-dealloc(Orig_830D)
-dealloc(Orig_83CB)
 dealloc(Orig_AAD9)
 dealloc(Orig_AAE3)
 dealloc(Orig_AB0F)
@@ -522,9 +495,6 @@ unregistersymbol(Orig_22D4E)
 unregistersymbol(Orig_238DE)
 unregistersymbol(Orig_1B591)
 unregistersymbol(Orig_1B636)
-unregistersymbol(Orig_81E1)
-unregistersymbol(Orig_830D)
-unregistersymbol(Orig_83CB)
 unregistersymbol(Orig_AAD9)
 unregistersymbol(Orig_AAE3)
 unregistersymbol(Orig_AB0F)
@@ -545,9 +515,6 @@ unregistersymbol(Orig_13926)
 unregistersymbol(Orig_13934)
 unregistersymbol(Orig_1B0CF)
 unregistersymbol(Orig_1B0D9)
-registersymbol(Orig_81E1)
-registersymbol(Orig_830D)
-registersymbol(Orig_83CB)
 registersymbol(Orig_AAD9)
 registersymbol(Orig_AAE3)
 registersymbol(Orig_AB0F)
