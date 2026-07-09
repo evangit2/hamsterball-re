@@ -48,6 +48,8 @@ static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
     return result * scaleFactor + margin;
 }
 
+static int g_rectCount = 0;
+
 static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, int w, int h) {
     if (!g_enabled) { orig_DrawScreenRect(gfx, edx, x, y, w, h); return; }
 
@@ -60,16 +62,20 @@ static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, i
     DWORD gfxAddr = (DWORD)gfx;
     DWORD config = *(DWORD*)(gfxAddr + 0x5c);
 
-    // Graphics_DrawScreenRect computes: vertex_x = pixel_x * scaleX
-    // (no offsetX). To match Gfx_TransformX's output:
-    //   desired = (pixel_x * scaleX) * scaleFactor + margin
-    //           = pixel_x * (scaleX * scaleFactor) + margin
-    // Modify scaleX and shift x by margin/(scaleX*scaleFactor):
-    //   new_x = x + margin / (scaleX * scaleFactor)
-    //   new_x * (scaleX * scaleFactor) = x*scaleX*scaleFactor + margin ✓
     float* pScaleX = (float*)(config + 0x1f8);
     float origScaleX = *pScaleX;
     float newScaleX = origScaleX * scaleFactor;
+
+    g_rectCount++;
+    if (g_rectCount <= 3) {
+        char buf[256];
+        nc_snprintf(buf, sizeof(buf), "[WSUI] rect #%d: x=%d y=%d w=%d h=%d scaleX=%f newScale=%f margin=%f newX_offset=%d",
+            g_rectCount, x, y, w, h, origScaleX, newScaleX, margin, (int)(margin / newScaleX));
+        MessageBoxA(NULL, buf, "WSUI Debug", MB_OK);
+    }
+
+    DWORD oldProtect;
+    VirtualProtect(pScaleX, 4, PAGE_READWRITE, &oldProtect);
     *pScaleX = newScaleX;
 
     int newX = x + (int)(margin / newScaleX);
@@ -77,6 +83,7 @@ static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, i
     orig_DrawScreenRect(gfx, edx, newX, y, w, h);
 
     *pScaleX = origScaleX;
+    VirtualProtect(pScaleX, 4, oldProtect, &oldProtect);
 }
 
 // ── Manual vtable (16 entries, MSVC layout) ────────────────────────
