@@ -626,11 +626,11 @@ static void updateWarpStateMachine(void) {
             if (g_whiteAlpha < 0.0f) g_whiteAlpha = 0.0f;
         }
 
-        /* Force ball invisible every frame — game overwrites alpha to 1.0
-         * each frame in its render pass, so a single write is immediately
-         * undone. Must continuously force 0.0 while flash is active.
-         * Skip during respawn fade-in (ball+0x2F9) like freecam does. */
-        if (ball) {
+        /* Turn ball invisible ONLY when the screen is fully white (at peak).
+         * Before that, the ball should still be visible — the flash ramps up
+         * over the ball, hiding the disappearance behind the white screen.
+         * After peak, keep forcing invisible through HOLD and FADE phases. */
+        if (g_whiteAlpha >= 0.99f && ball) {
             int respawning = *((unsigned char *)((char *)ball + 0x2F9));
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
