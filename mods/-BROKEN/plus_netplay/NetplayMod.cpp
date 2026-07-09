@@ -14,6 +14,8 @@
 #define PIPE_NAME "\\\\.\\pipe\\hamsterball_netplay"
 #define PIPE_POLL_MS 4
 #define HEARTBEAT_INTERVAL 300
+#define STREAM_INTERVAL_MS 33    // ~30Hz stream rate
+#define INTERP_SMOOTH 0.3f       // lerp factor for position smoothing
 
 // Direct memory constants
 static constexpr DWORD GLOBAL_APP_PTR       = 0x5341E0;
@@ -95,10 +97,13 @@ static volatile bool g_localPaused = false;
 static DWORD g_lastPauseFlag = 0;
 static volatile bool g_inRace = false;
 
-// Network state buffers
+// Network state buffers with interpolation
 static BallStateMsg g_remoteState = {};
+static BallStateMsg g_prevRemoteState = {};  // for interpolation
 static CRITICAL_SECTION g_stateLock;
 static volatile DWORD g_remoteStateFrame = 0;
+static volatile DWORD g_lastAppliedFrame = 0;
+static DWORD g_lastStreamTime = 0;
 
 // Control slot backup (for restoring on race exit)
 static int g_savedControlSlot = -1;
@@ -396,9 +401,11 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             lastSentIP[sizeof(lastSentIP)-1] = '\0';
         }
 
-        // Stream local player's ball state
-        if (g_connState >= CONN_CONNECTED && g_inRace) {
-            int localPlayer = (g_role == ROLE_HOST) ? 0 : 1; // Host=P1, Guest=P2
+        // Stream local player's ball state at 30Hz
+        DWORD now = GetTickCount();
+        if (g_connState >= CONN_CONNECTED && g_inRace && (now - g_lastStreamTime) >= STREAM_INTERVAL_MS) {
+            g_lastStreamTime = now;
+            int localPlayer = (g_role == ROLE_HOST) ? 0 : 1;
             DWORD ball = getBall(localPlayer);
             if (ball) {
                 BallStateMsg msg;
@@ -435,10 +442,15 @@ static DWORD WINAPI pipeThreadFunc(LPVOID param) {
             switch (type) {
                 case MSG_BALL_STATE:
                     if (len == sizeof(BallStateMsg)) {
-                        EnterCriticalSection(&g_stateLock);
-                        memcpy(&g_remoteState, buf, sizeof(BallStateMsg));
-                        g_remoteStateFrame = g_frameCount;
-                        LeaveCriticalSection(&g_stateLock);
+                        BallStateMsg* incoming = (BallStateMsg*)buf;
+                        // Frame sequencing: only accept newer frames
+                        if (incoming->frame > g_remoteStateFrame || g_remoteStateFrame == 0) {
+                            EnterCriticalSection(&g_stateLock);
+                            g_prevRemoteState = g_remoteState; // save old for interpolation
+                            memcpy(&g_remoteState, buf, sizeof(BallStateMsg));
+                            g_remoteStateFrame = incoming->frame;
+                            LeaveCriticalSection(&g_stateLock);
+                        }
                     }
                     break;
                 case MSG_FPS_REPORT:
@@ -473,16 +485,45 @@ static void applyRemoteState() {
     if (g_remoteStateFrame == 0) return;
 
     BallStateMsg state;
+    BallStateMsg prevState;
     EnterCriticalSection(&g_stateLock);
     state = g_remoteState;
+    prevState = g_prevRemoteState;
     LeaveCriticalSection(&g_stateLock);
 
-    int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0; // Host's remote=P2, Guest's remote=P1
+    int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
     DWORD ball = getBall(remotePlayer);
     if (!ball) return;
 
-    // Write position + velocity directly (state sync, not input sync)
-    writePos(ball, state.pos[0], state.pos[1], state.pos[2]);
+    // Interpolate position for smooth movement
+    // Lerp from previous received position toward current target
+    float curX = readF(ball, BALL_POS_X);
+    float curY = readF(ball, BALL_POS_Y);
+    float curZ = readF(ball, BALL_POS_Z);
+
+    // Smooth toward target position (reduces snapping)
+    float targetX = prevState.pos[0] + (state.pos[0] - prevState.pos[0]) * INTERP_SMOOTH;
+    float targetY = prevState.pos[1] + (state.pos[1] - prevState.pos[1]) * INTERP_SMOOTH;
+    float targetZ = prevState.pos[2] + (state.pos[2] - prevState.pos[2]) * INTERP_SMOOTH;
+
+    // If position delta is large (>500 units), snap instead of lerp (teleport)
+    float dx = state.pos[0] - curX;
+    float dy = state.pos[1] - curY;
+    float dz = state.pos[2] - curZ;
+    float distSq = dx*dx + dy*dy + dz*dz;
+
+    if (distSq > 250000.0f) {
+        // Large jump — snap directly
+        writePos(ball, state.pos[0], state.pos[1], state.pos[2]);
+    } else {
+        // Smooth lerp toward target
+        float lerpX = curX + (targetX - curX) * INTERP_SMOOTH;
+        float lerpY = curY + (targetY - curY) * INTERP_SMOOTH;
+        float lerpZ = curZ + (targetZ - curZ) * INTERP_SMOOTH;
+        writePos(ball, lerpX, lerpY, lerpZ);
+    }
+
+    // Always write velocity directly (no interpolation — velocity changes fast)
     writeVel(ball, state.vel[0], state.vel[1], state.vel[2]);
 
     // Write rotation + facing
@@ -656,6 +697,9 @@ static void __thiscall scene_end(void*) {
 static void __thiscall level_start(void*) {
     g_frameCount = 0;
     g_remoteStateFrame = 0;
+    g_lastAppliedFrame = 0;
+    memset(&g_remoteState, 0, sizeof(g_remoteState));
+    memset(&g_prevRemoteState, 0, sizeof(g_prevRemoteState));
 }
 
 // ── 16-entry vtable matching MSVC layout ───────────────────────────
