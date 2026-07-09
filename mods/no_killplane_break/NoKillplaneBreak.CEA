@@ -10,7 +10,7 @@
   2. Ball_SplitDeath (0x9050): RET
   3. Ball_FallDeath (0x9480): set 0x2E8=1 only (triggers respawn)
   4. bounce_count (0x75C9): NOP
-  5. Collision skip checks (10 locations): NOP — collision always runs
+  5. Collision skip checks (15 locations): NOP — collision always runs
   6. Hook1 (+1B591): clear 0x2E8 for entity balls in list 1 (prevent destroy)
   7. Hook2 (+1B636): clear 0x2E8 for entity balls in list 2 (prevent destroy)
 }
@@ -34,6 +34,11 @@ alloc(Orig_23965,2)
 alloc(Orig_8598,6)
 alloc(Orig_3FF98,6)
 alloc(Orig_18378,6)
+alloc(Orig_22D44,2)
+alloc(Orig_23394,2)
+alloc(Orig_238D4,2)
+alloc(Orig_22D4E,2)
+alloc(Orig_238DE,2)
 alloc(Orig_1B591,6)
 alloc(Orig_1B636,6)
 registersymbol(FallDeath_Cave)
@@ -53,6 +58,11 @@ registersymbol(Orig_23965)
 registersymbol(Orig_8598)
 registersymbol(Orig_3FF98)
 registersymbol(Orig_18378)
+registersymbol(Orig_22D44)
+registersymbol(Orig_23394)
+registersymbol(Orig_238D4)
+registersymbol(Orig_22D4E)
+registersymbol(Orig_238DE)
 registersymbol(Orig_1B591)
 registersymbol(Orig_1B636)
 
@@ -84,6 +94,16 @@ Orig_3FF98:
   readmem(Hamsterball.exe+3FF98,6)
 Orig_18378:
   readmem(Hamsterball.exe+18378,6)
+Orig_22D44:
+  readmem(Hamsterball.exe+22D44,2)
+Orig_23394:
+  readmem(Hamsterball.exe+23394,2)
+Orig_238D4:
+  readmem(Hamsterball.exe+238D4,2)
+Orig_22D4E:
+  readmem(Hamsterball.exe+22D4E,2)
+Orig_238DE:
+  readmem(Hamsterball.exe+238DE,2)
 Orig_1B591:
   readmem(Hamsterball.exe+1B591,6)
 Orig_1B636:
@@ -137,6 +157,20 @@ Hamsterball.exe+3FF98:
   db 90 90 90 90 90 90
 Hamsterball.exe+18378:
   db 90 90 90 90 90 90
+
+{ NOP [ecx+0x2F8] respawn skip — 3 locations }
+Hamsterball.exe+22D44:
+  db 90 90
+Hamsterball.exe+23394:
+  db 90 90
+Hamsterball.exe+238D4:
+  db 90 90
+
+{ NOP [ecx+0x768] active flag skip — 2 locations }
+Hamsterball.exe+22D4E:
+  db 90 90
+Hamsterball.exe+238DE:
+  db 90 90
 
 { Hook 1: Scene_UpdateBallsAndState, list 1 (player + maybe badballs) }
 { If entity ball (0x324!=0): clear 0x2E8 → prevent destroy }
@@ -216,6 +250,16 @@ Hamsterball.exe+3FF98:
   readmem(Orig_3FF98,6)
 Hamsterball.exe+18378:
   readmem(Orig_18378,6)
+Hamsterball.exe+22D44:
+  readmem(Orig_22D44,2)
+Hamsterball.exe+23394:
+  readmem(Orig_23394,2)
+Hamsterball.exe+238D4:
+  readmem(Orig_238D4,2)
+Hamsterball.exe+22D4E:
+  readmem(Orig_22D4E,2)
+Hamsterball.exe+238DE:
+  readmem(Orig_238DE,2)
 Hamsterball.exe+1B591:
   readmem(Orig_1B591,6)
 Hamsterball.exe+1B636:
@@ -238,6 +282,11 @@ dealloc(Orig_23965)
 dealloc(Orig_8598)
 dealloc(Orig_3FF98)
 dealloc(Orig_18378)
+dealloc(Orig_22D44)
+dealloc(Orig_23394)
+dealloc(Orig_238D4)
+dealloc(Orig_22D4E)
+dealloc(Orig_238DE)
 dealloc(Orig_1B591)
 dealloc(Orig_1B636)
 unregistersymbol(FallDeath_Cave)
@@ -257,5 +306,10 @@ unregistersymbol(Orig_23965)
 unregistersymbol(Orig_8598)
 unregistersymbol(Orig_3FF98)
 unregistersymbol(Orig_18378)
+unregistersymbol(Orig_22D44)
+unregistersymbol(Orig_23394)
+unregistersymbol(Orig_238D4)
+unregistersymbol(Orig_22D4E)
+unregistersymbol(Orig_238DE)
 unregistersymbol(Orig_1B591)
 unregistersymbol(Orig_1B636)
