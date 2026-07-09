@@ -898,8 +898,8 @@ Offset | Field | Description
 |---------|------|-------|-------------|
 | 0x4531b0 | Vec3_SetScalar | 6 | Set all 3 components to same value, w=1.0 |
 | 0x4536b0 | AthenaList_InsertAt | 7 | Insert value at index, reallocate array |
-| 0x453e90 | Gfx_TransformY | 7 | Screen Y transform: y * viewMatrix + viewport |
-| 0x453eb0 | Gfx_TransformZ | 7 | Screen Z transform: z * viewMatrix + viewport |
+| 0x453e90 | Gfx_TransformX | 7 | Screen Y transform: y * viewMatrix + viewport |
+| 0x453eb0 | Gfx_TransformY | 7 | Screen Z transform: z * viewMatrix + viewport |
 | 0x453970 | Graphics_SetCullMode2 | 5 | Set D3D cull mode via vtable call |
 | 0x44aca0 | SimpleList_vtbl_Init | 7 | SimpleList vtable pointer init |
 | 0x44b850 | UIListItem_vtbl_Init | 6 | UIListItem vtable pointer init |
@@ -955,8 +955,8 @@ Offset | Field | Description
 |---------|------|-------|-------------|
 | 0x4531b0 | Vec3_SetScalar | 6 | Set all 3 components to same value, w=1.0 |
 | 0x4536b0 | AthenaList_InsertAt | 7 | Insert value at index, reallocate array |
-| 0x453e90 | Gfx_TransformY | 7 | Screen Y transform: y * viewMatrix + viewport |
-| 0x453eb0 | Gfx_TransformZ | 7 | Screen Z transform: z * viewMatrix + viewport |
+| 0x453e90 | Gfx_TransformX | 7 | Screen Y transform: y * viewMatrix + viewport |
+| 0x453eb0 | Gfx_TransformY | 7 | Screen Z transform: z * viewMatrix + viewport |
 | 0x453970 | Graphics_SetCullMode2 | 5 | Set D3D cull mode via vtable call |
 | 0x44aca0 | SimpleList_vtbl_Init | 7 | SimpleList vtable pointer init |
 | 0x44b850 | UIListItem_vtbl_Init | 6 | UIListItem vtable pointer init |

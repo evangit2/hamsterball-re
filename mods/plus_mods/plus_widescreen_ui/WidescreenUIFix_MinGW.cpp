@@ -1,5 +1,5 @@
 // WidescreenUIFix_MinGW.cpp — MinGW build with manual vtable + nocrt
-// Hooks Gfx_TransformY to fix UI stretching in widescreen modes.
+// Hooks Gfx_TransformX to fix UI stretching in widescreen modes.
 
 #include "nocrt.h"
 #include "HamsterballAPI.h"
