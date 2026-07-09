@@ -86,7 +86,7 @@ Called from Scene_Update via vtable when not in single-gear mode:
 vtable[0x4C] = Scene_HandleRaceEnd    (0x41B130) - check race finish conditions
 vtable[0x50] = Scene_UpdateBallsAndState (0x41B540) - ball physics + respawn + waypoints
 vtable[0x54] = NoOp                   (0x40A040) - stubbed (collision handling is in Ball vtable)
-vtable[0x58] = Scene_ProcessRaceEnd   (0x41A540) - race countdown timer
+vtable[0x58] = Scene_ProcessRaceEnd   (0x41A540) - race-end transition (fade-out + scene change)
 vtable[0x7C] = Scene_LevelObjUpdate   (0x41AC70) - level object tick (traps, moving platforms)
 ```
 
@@ -156,7 +156,7 @@ Finally dynamic_object->vtable[8]() callback.
 
 ### Level Objects
 ```
-+0x3624  level_object_list  (AthenaList of level objects)
++0x3624  fade_alpha  (float, 1.0→0.0 fade-in, 0.0→1.0 fade-out; NOT a race timer)
 +0x362C  level_object_count
 +0x3630  level_object_iter
 +0x3A38  level_object_array_ptr

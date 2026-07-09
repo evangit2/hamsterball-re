@@ -337,7 +337,7 @@ A comprehensive reference of every useful function for modders, extracted from G
 | `DROPIN` | `dist > threshold` | Sound, `dropinCounter = 50`, `Ball_DizzyImmunity(+200)` |
 | `PIPEBONK` | `counter < 1` | Random sound, `counter = 10`, `Ball_DizzyImmunity(+100)` |
 | `POPOUT` | `counter < 1` | Sound, `counter = 50`, `Ball_DizzyImmunity(+100)` |
-| `N:GOAL` | `!finished && active` | Set `goalReached=1`, play music, mark finished |
+| `N:GOAL` | `!finished && active` | Set `board+0xCD0=1` (goal reached), play "Goal!" music, set `App+PID*0xA0+0x5D6=1` (finished), `+0x5FC=1` (just finished), `+0x5F0=1` (reached goal). Copy camera Y between race/goal camera slots. TT only: save `BTT+0x524 = App+0x5E8` (final time). Timer stops passively — `Board_UpdateRaceState` skips `DEC obj+0x1C` when `obj+0x0A` (finished flag) is set. |
 | `N:MOUSETRAP` | — | Randomize RNG, deflect direction × trap speed |
 
 ### `TowerCollisionEvents`
@@ -524,8 +524,8 @@ A comprehensive reference of every useful function for modders, extracted from G
   - `Profile+0x95` (1 byte) — rollback flag
   - `App+0x236` (1 byte) — mirror mode
   - `App+0x23C` (4 bytes) — race active
-  - `App+0x5E8` (4 bytes) — total time
-  - `App+0x5E4` (4 bytes) — ranking time
+  - `App+0x5E8` (4 bytes) — time remaining (int, countdown from par time, -1/frame)
+  - `App+0x5E4` (4 bytes) — score (float, accumulated by E:ACTION events, determines rank)
   - `App+0x5F4` (4 bytes)
 
 ### `TourneyMenu_LoadSaveAndShow`
@@ -889,7 +889,8 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x558` | void* | gameMode3 | 4-player mode |
 | `+0x55C` | void* | gameMode4 | Tournament mode |
 | `+0x5D8` | bool | p1_active | Player 1 active |
-| `+0x5E8` | int | p1_current_time | P1 time/score |
+| `+0x5E8` | int | p1_time_remaining | P1 time remaining (countdown from par) |
+| `+0x5E4` | float | p1_score | P1 score (accumulated by E:ACTION, determines rank) |
 | `+0x5EC` | int | p1_extra_time | P1 bonus time |
 | `+0x60C` | int | p1_race_index | P1 race slot |
 | `+0x678` | bool | p2_active | Player 2 active |
