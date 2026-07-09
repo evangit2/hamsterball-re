@@ -189,25 +189,19 @@ static void writePos(DWORD ball, float x, float y, float z) {
 }
 
 // ── Input Control Slot Management ─────────────────────────────────
+// NOTE: Setting control slot to 99 = CPU AI takes over (not "no input").
+// We DON'T touch control slots. Instead, we overwrite the remote player's
+// velocity every frame. Local input adds small force, but our velocity
+// overwrite dominates — the remote player's ball follows network state.
+// This is "state sync" — the authoritative client's state wins.
 
-// Set player's control slot to 99 (OFF) to suppress local input
 static void suppressLocalInput(int playerIndex) {
-    DWORD app = getApp();
-    if (!app) return;
-    DWORD slotAddr = app + APP_CONTROL_SLOTS + playerIndex * 4;
-    if (IsBadReadPtr((void*)slotAddr, 4)) return;
-    g_savedControlSlot = *(int*)slotAddr;
-    *(int*)slotAddr = 99; // OFF — no local input
+    // No-op: control slot manipulation causes AI takeover.
+    // State sync via velocity overwrite handles this instead.
 }
 
 static void restoreLocalInput(int playerIndex) {
-    if (g_savedControlSlot < 0) return;
-    DWORD app = getApp();
-    if (!app) return;
-    DWORD slotAddr = app + APP_CONTROL_SLOTS + playerIndex * 4;
-    if (IsBadWritePtr((void*)slotAddr, 4)) return;
-    *(int*)slotAddr = g_savedControlSlot;
-    g_savedControlSlot = -1;
+    // No-op
 }
 
 // ── Config File ───────────────────────────────────────────────────
@@ -570,21 +564,15 @@ static void __thiscall game_update(void*) {
     // Race detection: in race if board exists and P1 ball exists
     bool wasInRace = g_inRace;
     g_inRace = false;
-    if (g_gameReady && g_connState == CONN_CONNECTED) {
+    if (g_gameReady && g_role != ROLE_DISABLED) {
         DWORD p1 = getBall(0);
         if (p1) {
-            g_inRace = true;
-            // Just entered race: suppress input for remote player
-            if (!wasInRace) {
-                int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
-                suppressLocalInput(remotePlayer);
+            // Verify ball has valid position (not during loading)
+            float py = readF(p1, BALL_POS_Y);
+            if (py > -100000.0f && py < 100000.0f) {
+                g_inRace = true;
             }
         }
-    }
-    // Left race: restore input
-    if (wasInRace && !g_inRace) {
-        int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
-        restoreLocalInput(remotePlayer);
     }
 
     if (g_gameReady && !g_pipeThread) {
@@ -609,6 +597,9 @@ static void __thiscall text_render(void* thisptr) {
     if (g_localPaused) return;
 
     // Apply remote player's state to their ball
+    // This overwrites the remote player's velocity every frame.
+    // Local keyboard input adds small force, but our velocity
+    // overwrite dominates — remote ball follows network state.
     applyRemoteState();
 }
 

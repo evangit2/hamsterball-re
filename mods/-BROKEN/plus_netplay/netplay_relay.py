@@ -393,6 +393,7 @@ class NetplayRelay:
         self.log("")
 
         last_role = 0
+        active_role_thread = None
         while self.running:
             msg = self.read_pipe_msg()
             if msg:
@@ -404,12 +405,28 @@ class NetplayRelay:
                         self.log(f"Role changed: {role_name}")
                         last_role = new_role
                         self.role = new_role
+                        # Stop previous role's network thread
+                        self.running = False
+                        if active_role_thread and active_role_thread.is_alive():
+                            active_role_thread.join(timeout=3)
+                        # Close existing sockets
+                        if self.tcp_client:
+                            try: self.tcp_client.close()
+                            except: pass
+                            self.tcp_client = None
+                        if self.tcp_socket:
+                            try: self.tcp_socket.close()
+                            except: pass
+                            self.tcp_socket = None
+                        self.running = True
+                        self.connected_event.clear()
+                        # Start new role
                         if new_role == 1:
-                            self.connected_event.clear()
-                            threading.Thread(target=self.run_host, daemon=True).start()
+                            active_role_thread = threading.Thread(target=self.run_host, daemon=True)
+                            active_role_thread.start()
                         elif new_role == 2:
-                            self.connected_event.clear()
-                            threading.Thread(target=self.run_guest, daemon=True).start()
+                            active_role_thread = threading.Thread(target=self.run_guest, daemon=True)
+                            active_role_thread.start()
                 elif msg_type == MsgType.PORT_SET:
                     self.port = struct.unpack("<I", body[:4])[0] if len(body) >= 4 else DEFAULT_PORT
                     self.log(f"Port set to {self.port}")
