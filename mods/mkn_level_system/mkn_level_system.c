@@ -596,11 +596,11 @@ static void apply_config(void) {
                 }
             }
         }
-        /* DUMP */
+        /* DUMP — log only native slots 0-35 */
         else if (_strnicmp(line, "DUMP", 4) == 0) {
             for (int i = 0; i < 15; i++) {
                 diag_logf("  L%d (%s) [vt=0x%08X]:", i+1, g_levels[i].name, g_custom_vtables[i]);
-                for (int s = 0; s < VTABLE_ENTRIES; s++) {
+                for (int s = 0; s < 36; s++) {
                     DWORD val = read_custom_vtable_entry(i+1, s);
                     const char* sname = "";
                     for (int k = 0; g_vtableSlots[k].name; k++) {
@@ -614,6 +614,13 @@ static void apply_config(void) {
                     diag_logf("    [%2d] 0x%08X %-16s %-20s%s",
                         s, val, sname, fname, changed ? " ***" : "");
                 }
+                /* Also show extended slots that are non-zero */
+                for (int s = 36; s < VTABLE_ENTRIES; s++) {
+                    DWORD val = read_custom_vtable_entry(i+1, s);
+                    if (val) {
+                        diag_logf("    [%2d] 0x%08X (EXTENDED)", s, val);
+                    }
+                }
             }
             changes++;
         }
@@ -623,8 +630,13 @@ static void apply_config(void) {
                 restore_push_call(i + 1);
                 DWORD vt = g_custom_vtables[i];
                 if (vt) {
-                    for (int s = 0; s < VTABLE_ENTRIES; s++) {
+                    /* Restore native slots (0-35) from saved originals */
+                    for (int s = 0; s < 36; s++) {
                         *(DWORD*)(vt + s * 4) = g_orig_vtable[i][s];
+                    }
+                    /* Clear extended slots (36-127) */
+                    for (int s = 36; s < VTABLE_ENTRIES; s++) {
+                        *(DWORD*)(vt + s * 4) = 0;
                     }
                 }
             }
@@ -640,6 +652,80 @@ static void apply_config(void) {
 }
 
 /* ============================================================
+ * Extended vtable dispatch thread
+ *
+ * Background thread that calls extended vtable slots (36-127) every frame.
+ * It reads the current board's vtable pointer, finds which level's custom
+ * vtable it matches, then calls every non-zero entry in slots 36-127
+ * with __thiscall(board) convention.
+ *
+ * This lets you add custom per-frame functions to any level via:
+ *   VTABLE 1 36 0x0041B130    ; custom per-frame function on Level 1
+ * ============================================================ */
+
+typedef void (__thiscall *vtable_func_t)(DWORD this_ptr);
+
+static DWORD g_dispatch_thread_id = 0;
+static HANDLE g_dispatch_thread_handle = NULL;
+
+static DWORD WINAPI dispatch_thread(LPVOID param) {
+    /* Wait for game to fully initialize */
+    Sleep(3000);
+
+    while (g_dispatch_running) {
+        /* Get current board via App → PlayerProfile → Board */
+        if (IsBadReadPtr((void*)0x005341E0, 4)) { Sleep(16); continue; }
+        DWORD app = *(DWORD*)0x005341E0;
+        if (!app || app < 0x10000) { Sleep(16); continue; }
+        if (IsBadReadPtr((void*)(app + 0x220), 4)) { Sleep(16); continue; }
+        DWORD profile = *(DWORD*)(app + 0x220);
+        if (!profile || profile < 0x10000) { Sleep(16); continue; }
+        if (IsBadReadPtr((void*)(profile + 0x0C), 4)) { Sleep(16); continue; }
+        DWORD board = *(DWORD*)(profile + 0x0C);
+        if (!board || board < 0x10000) { Sleep(16); continue; }
+        if (IsBadReadPtr((void*)board, 4)) { Sleep(16); continue; }
+
+        /* Read the board's vtable pointer */
+        DWORD board_vt = *(DWORD*)board;
+        if (board_vt < 0x10000) { Sleep(16); continue; }
+
+        /* Find which level's custom vtable matches */
+        int level_idx = -1;
+        for (int i = 0; i < 15; i++) {
+            if (g_custom_vtables[i] == board_vt) {
+                level_idx = i;
+                break;
+            }
+        }
+
+        /* If we found a match, dispatch extended slots */
+        if (level_idx >= 0) {
+            DWORD vt = g_custom_vtables[level_idx];
+            for (int s = VTABLE_NATIVE_SLOTS; s < VTABLE_ENTRIES; s++) {
+                DWORD func_addr = *(DWORD*)(vt + s * 4);
+                if (func_addr && !IsBadReadPtr((void*)func_addr, 1)) {
+                    /* Call with __thiscall convention: ECX=board, no args.
+                     * MinGW __thiscall puts first arg in ECX automatically. */
+                    vtable_func_t func = (vtable_func_t)func_addr;
+                    func(board);
+                }
+            }
+        }
+
+        /* ~60fps */
+        Sleep(16);
+    }
+
+    return 0;
+}
+
+static void start_dispatch_thread(void) {
+    g_dispatch_running = 1;
+    g_dispatch_thread_handle = CreateThread(
+        NULL, 0, dispatch_thread, NULL, 0, &g_dispatch_thread_id);
+}
+
+/* ============================================================
  * DLL Entry Point
  * ============================================================ */
 
@@ -649,19 +735,21 @@ static void mkn_init(void) {
     /* Step 1: Allocate custom vtables and patch ctors */
     init_custom_vtables();
     if (!g_vtables_initialized) {
-        diag_log("[mkn_level_system v4] FATAL: custom vtable init failed!");
+        diag_log("[mkn_level_system v5] FATAL: custom vtable init failed!");
         return;
     }
-    diag_log("[mkn_level_system v4] Custom vtables allocated and ctors patched");
+    diag_log("[mkn_level_system v5] Custom vtables allocated (128 entries each) and ctors patched");
 
-    /* Step 2: Patch ALL level allocations to max struct size.
-     * This is the critical fix — ensures any vtable function from any
-     * level can safely access any board offset without heap corruption. */
+    /* Step 2: Patch ALL level allocations to max struct size */
     patch_all_struct_sizes();
-    diag_logf("[mkn_level_system v4] All 15 levels patched to struct size 0x%X", MAX_STRUCT_SIZE);
+    diag_logf("[mkn_level_system v5] All 15 levels patched to struct size 0x%X", MAX_STRUCT_SIZE);
 
     /* Step 3: Parse config file for VTABLE/SET/SWAP/etc commands */
     apply_config();
+
+    /* Step 4: Start extended vtable dispatch thread */
+    start_dispatch_thread();
+    diag_log("[mkn_level_system v5] Extended dispatch thread started (slots 36-127)");
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
