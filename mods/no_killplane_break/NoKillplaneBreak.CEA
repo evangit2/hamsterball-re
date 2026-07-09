@@ -1,25 +1,13 @@
 {
   No Fall Damage + No Air Break (Full) — with BadBall immunity + AI fix
   Credits to BookwormKevin for the original script!
-  Players 1-4 AND badballs immune to ground killplanes.
+  Players 1-4 respawn when falling into void (native Ball_Respawn).
   All entity balls forced to NORMAL STATE every frame.
   Badballs attack all balls — no dead/falling/dizzy state possible.
-  Balls respawn via Y-check script (ArenaInstantRespawn) when in void.
 
-  FIXES (v3):
-  1. CRASH FIX: Hook 2 was at +1B637 (ONE BYTE INTO mov al,[esi+0x2E8]).
-     The author thought +1B636 was the last byte of call [eax+0x10], but
-     +1B636 is the FIRST byte of the NEXT instruction (mov al,[esi+0x2E8]).
-     Patching at +1B637 split the instruction → CPU decoded garbage → crash.
-     FIX: Hook at +1B636 (correct instruction start), return to +1B63C.
-  2. ClearState_Cave2 return was +1B63D (one byte into test al,al).
-     FIX: return to +1B63C (correct instruction start).
-  3. NOP patches at +13918/+13926/+13934 verified CORRECT — each is the
-     exact start of a 6-byte JNZ instruction. No changes needed.
-  4. ClearState caves now run in BOTH ball loops (player + entity).
-     Previously Cave2 never ran because Hook 2 crashed the game.
-     This fixes: "Badballs still ignore other ball entities" and
-     "other ball states, like dead/is falling/respawning are not cleared".
+  v2: 6-byte patches, jmp back (not ret), Ball_Shatter RET 4
+  v5: Native respawn trigger: copy 0x2E9→0x2E8, let FUN_00405190 handle teleport
+       Don't touch 0x2F8/0x2F9/0x2FC/0x300 (respawn sequence flags)
 }
 
 [ENABLE]
@@ -100,8 +88,6 @@ Hamsterball.exe+9480:
   db C3 90 90 90 90 90 90 90 90
 
 { NOP three JNZ: skip player_active / death_pending / respawn checks }
-{ Forces ALL balls to be processed regardless of state }
-{ Each JNZ is exactly 6 bytes at these addresses — verified via disassembly }
 Hamsterball.exe+13918:
   db 90 90 90 90 90 90
 
@@ -111,74 +97,41 @@ Hamsterball.exe+13926:
 Hamsterball.exe+13934:
   db 90 90 90 90 90 90
 
-{ Hook 1: after vtable[4] call at 0x41B58E, clear ball state }
-{ Original: 8A 86 E8 02 00 00 = mov al,[esi+0x2E8] (6 bytes) }
+{ Hook 1: in Scene_UpdateBallsAndState, list 1 (player balls) }
 Hamsterball.exe+1B591:
   jmp ClearState_Cave1
   db 90
 
-{ Hook 2: after vtable[4] call at 0x41B633, clear ball state }
-{ Original: 8A 86 E8 02 00 00 = mov al,[esi+0x2E8] (6 bytes) }
-{ v3 FIX: was +1B637 (mid-instruction) → now +1B636 (correct start) }
+{ Hook 2: in Scene_UpdateBallsAndState, list 2 (entity balls) }
 Hamsterball.exe+1B636:
   jmp ClearState_Cave2
   db 90
 
 ClearState_Cave1:
-  { Clear in-tar (ball+0x2CC) }
-  mov byte ptr [esi+0x2CC],00
-  { Clear vacuum (ball+0x2D4) }
-  mov byte ptr [esi+0x2D4],00
-  { Clear falling (ball+0x2E8) }
-  mov byte ptr [esi+0x2E8],00
-  { Clear death_pending (ball+0x2E9) }
+  mov al,[esi+0x2E9]
+  mov [esi+0x2E8],al
   mov byte ptr [esi+0x2E9],00
-  { Clear bounce_count (ball+0x2EC) }
+  mov byte ptr [esi+0x2CC],00
+  mov byte ptr [esi+0x2D4],00
   mov byte ptr [esi+0x2EC],00
-  { Clear dizzy_immunity_timer (ball+0x2F4) }
   mov dword ptr [esi+0x2F4],00000000
-  { Clear respawn flag (ball+0x2F8) }
-  mov byte ptr [esi+0x2F8],00
-  { Clear snap/respawn flag (ball+0x2F9) }
-  mov byte ptr [esi+0x2F9],00
-  { Set alpha = 1.0 visible (ball+0x2FC) }
-  mov dword ptr [esi+0x2FC],3F800000
-  { Clear respawn timer (ball+0x300) }
-  mov dword ptr [esi+0x300],00000000
-  { Clear impact (ball+0x808) }
   mov dword ptr [esi+0x808],00000000
-  { AL = 0 (not falling) — original instruction loads AL from ball+0x2E8 }
-  xor al,al
-  { Return to test al,al at 0x41B597 }
+  mov al,[esi+0x2E8]
   jmp Hamsterball.exe+1B597
 
 ClearState_Cave2:
-  { Clear in-tar (ball+0x2CC) }
-  mov byte ptr [esi+0x2CC],00
-  { Clear vacuum (ball+0x2D4) }
-  mov byte ptr [esi+0x2D4],00
-  { Clear falling (ball+0x2E8) }
   mov byte ptr [esi+0x2E8],00
-  { Clear death_pending (ball+0x2E9) }
   mov byte ptr [esi+0x2E9],00
-  { Clear bounce_count (ball+0x2EC) }
+  mov byte ptr [esi+0x2CC],00
+  mov byte ptr [esi+0x2D4],00
   mov byte ptr [esi+0x2EC],00
-  { Clear dizzy_immunity_timer (ball+0x2F4) }
   mov dword ptr [esi+0x2F4],00000000
-  { Clear respawn flag (ball+0x2F8) }
   mov byte ptr [esi+0x2F8],00
-  { Clear snap/respawn flag (ball+0x2F9) }
   mov byte ptr [esi+0x2F9],00
-  { Set alpha = 1.0 visible (ball+0x2FC) }
   mov dword ptr [esi+0x2FC],3F800000
-  { Clear respawn timer (ball+0x300) }
   mov dword ptr [esi+0x300],00000000
-  { Clear impact (ball+0x808) }
   mov dword ptr [esi+0x808],00000000
-  { AL = 0 (not falling) — original instruction loads AL from ball+0x2E8 }
   xor al,al
-  { Return to test al,al at 0x41B63C }
-  { v3 FIX: was +1B63D (mid-instruction) → now +1B63C (correct start) }
   jmp Hamsterball.exe+1B63C
 
 [DISABLE]
