@@ -35,21 +35,51 @@ Commands (in CONFIG SECTION below):
                  WARNING: May crash if the board ctor initializes mesh
                  slots the swapped setup function doesn't expect.
 
-  RESET        — Restore all original values.
+  VTABLE A slot func — Write any function into any vtable slot for level A.
+                     <slot> can be a number (0-35) or a name:
+                       dtor(0) update(1) setup(18) initscene(19)
+                       renderdynamic(24) dispatchcollision(29)
+                       boardsetup(32) levelspecific(33)
+                     <func> can be a name from the function table or 0xHEXADDR
+                     Examples:
+                       VTABLE 1 setup Scene_SetupLevelCascade
+                       VTABLE 3 0 Beginner_dtor
+                       VTABLE 5 boardsetup 0x0041C5B0
+
+  DUMP        — Log the full 36-entry vtable for every level to the .log file.
+
+  RESET       — Restore all original values (push+call+vtable[0-35]).
 
 Level names can be used instead of numbers (case-insensitive):
   WarmUp, Beginner, Intermediate, Dizzy, Tower, Up, Neon, Expert,
   Odd, Toob, Wobbly, Glass, Sky, Master, Impossible
 
-Function names for SETUP and ADD:
-  Setup functions:
+Function names for SETUP, ADD, and VTABLE:
+  Setup functions (vtable[18]):
     GetLevelPath, Scene_SetupLevelCascade, Scene_LoadLevel2,
     Scene_LoadLevel3, Scene_LoadLevel4, Scene_SetupLevel5,
     Scene_SetupLevel6, Scene_SetupLevel7, Scene_SetupLevel9,
     Scene_SetupLevelUp, Scene_SetupLevel10, Scene_SetupLevelDark,
     CreateBumper, FUN_00417640, FUN_00417F20
-  Sub-functions:
+  Destructors (vtable[0]):
+    WarmUp_dtor, Beginner_dtor, Intermediate_dtor, Dizzy_dtor,
+    Tower_dtor, Up_dtor, Neon_dtor, Expert_dtor, Odd_dtor, Toob_dtor,
+    Wobbly_dtor, Glass_dtor, Sky_dtor, Master_dtor, Impossible_dtor
+  InitScene (vtable[19]):
+    WarmUp_InitScene, Beginner_InitScene, Up_InitScene,
+    Neon_InitScene, Odd_InitScene, Toob_InitScene
+  RenderDynamic (vtable[24]):
+    WarmUp_RenderDyn, Beginner_RenderDyn, Tower_RenderDyn,
+    Odd_RenderDyn, Toob_RenderDyn, Wobbly_RenderDyn, Sky_RenderDyn
+  DispatchCollision (vtable[29]):
+    WarmUp_DispatchColl, Beginner_DispatchColl, Intermediate_DispatchColl,
+    Dizzy_DispatchColl, Tower_DispatchColl, Up_DispatchColl,
+    Neon_DispatchColl, Expert_DispatchColl, Odd_DispatchColl, Toob_DispatchColl
+  Board_Setup (vtable[32]):
+    WarmUp_BoardSetup, Beginner_BoardSetup, Dizzy_BoardSetup
+  Other:
     Level_InitScene, Graphics_SetProjection
+  Or use hex: 0x0041B130, 0x00425040, etc.
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG SECTION — Edit lines below to swap levels
