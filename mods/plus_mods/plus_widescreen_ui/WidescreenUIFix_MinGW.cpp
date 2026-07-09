@@ -112,7 +112,14 @@ static void __thiscall button_toggle(void*, const char* id, bool state) {
     if (nc_strcmp(id, "ws_ui_fix") == 0) g_enabled = state;
 }
 static void __thiscall slider_change(void*, const char*, float) {}
-static void __thiscall game_update(void*) {}
+static void __thiscall game_update(void*) {
+    // Reset every frame so g_inUIPass doesn't persist across frames.
+    // In race modes, Scene_Render handles this. But ArenaBoard (Rodent
+    // Rumble) doesn't use Scene_Render, so without this reset, once
+    // g_inUIPass is set true it stays true forever — leaking into
+    // pause menus and post-match screens.
+    g_inUIPass = false;
+}
 static void __thiscall event_collide(void*, void*, const char*) {}
 static void __thiscall text_render(void*) {}
 static void __thiscall ball_bump(void*, void*, void*) {}
