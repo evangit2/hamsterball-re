@@ -1,58 +1,40 @@
-# WARP (Level Warp) Mod v7
+# E:WARP (Level Warp) Mod v7d
 
-When the player ball approaches a MESHWORLD Section 1 node named `WARP(levelname)`, a multi-phase special effect sequence plays before loading the target level. This replaces the old `E:WARP()` collision-event approach — no collision planes needed, just a node point.
-
-## How It Works
-
-The mod scans MeshWorld Section 1 nodes every frame (same access pattern as the Up Race vacuum system's `VAC-IN`/`VAC-OUT`/`VAC-VEC` markers). When the player ball gets within **30 units** (XZ plane) and **50 units** (Y axis) of a `WARP(...)` node, the warp sequence triggers.
-
-### Node Format
-
-Place a node in your MESHWORLD Section 1 with the name:
-
-```
-WARP(3)       → loads Intermediate
-WARP(neon)    → loads Neon Race
-WARP(15)      → loads Impossible
-WARP(warmup)  → loads Warm-Up
-```
-
-### Proximity Detection
-
-Matches the vacuum system's thresholds (from decompiled `CollisionFace_Update` @ 0x43D160):
-- **XZ distance** < 30.0 units (`Math_FastDistance2D < 0x1E`)
-- **|Y difference|** < 50.0 units (`_DAT_004d5d10 = 50.0`)
-
-A 2-second cooldown after each warp prevents immediate re-triggering.
+When the ball touches a `WARP(Name)` node point in a custom MESHWORLD level, a multi-phase special effect sequence plays before loading the target level.
 
 ## Effect Sequence
 
 | Phase | Duration | Description |
 |-------|----------|-------------|
-| **1. RUMBLE** | 2.0s | Ball frozen + vibrating (native render jitter). Music starts fading out. |
-| **2. FLASH** | 0.25s | Ball invisible. Screen flashes white (quick ramp up/down). |
-| **3. HOLD** | 1.0s | Pause — screen is clear, ball stays invisible. |
-| **4. FADE** | 2.0s | Screen fades from transparent to solid white. |
-| **5. LOAD** | instant | Target level loads via `App_StartPracticeRace(app, levelIndex)`. |
+| **1. RUMBLE** | 2.0s | Ball is frozen (steering disabled). Ball vibrates (native render jitter). Ball color fades from original to **yellow**. Ball alpha fades from 1.0 to **0.5** (becomes ghostly). Music starts fading out. |
+| **2. FLASH** | 0.25s | Screen flashes white (quick ramp up to peak, then back down). Ball becomes **invisible** exactly when the screen reaches full white. **Timer freezes** at this moment. |
+| **3. HOLD** | 1.0s | Pause — screen is clear, ball stays invisible, timer frozen. |
+| **4. FADE** | 2.0s | Screen fades from transparent to solid white. Music should be fully faded out by mid-fade. Timer stays frozen. |
+| **5. LOAD** | instant | Target level loads via `App_StartPracticeRace(app, levelIndex)`. All ball state restored. Tournament mode preserved. |
 | **6. REVEAL** | 1.0s | Screen fades from white to reveal the new level. |
 
 **Total sequence: ~6.25 seconds** (real-time, framerate-independent)
 
-## Hooks (1 total)
+## How It Works
 
-1. **App_FrameUpdate epilogue** (0x46C1F1) — 5-byte detour. Runs the node scanner + warp state machine every frame.
+### Hooks (2 total)
+1. **App_FrameUpdate epilogue** (0x46C1F1) — 5-byte trampoline. Runs the warp state machine every frame (rumble, flash, hold, fade, load, reveal).
+2. **Node-point proximity scanner** — scans MeshWorld Section 1 nodes for `WARP(Name)` entries each frame. No collision hook needed.
 
-No collision hook needed — the mod reads MeshWorld node positions directly and checks ball proximity.
+### Game Systems Used
 
-## Game Systems Used
+- **Ball freeze**: `ball+0x808=1000` (impact/freeze counter) — blocks `Ball_ApplyForce` so the player can't steer, but physics continues normally.
+- **Ball vibration**: `ball+0x2D4=1` (native render jitter flag) — same mechanism as the Up Race vacuum. CPUID-based random jitter applied in the render function.
+- **Ball color fade**: Writes RGBA floats to `board+0x3AB0` (P1 color table, same as ball_tint mod). Original color saved on first frame, lerped to yellow `(1,1,0)` over the RUMBLE phase.
+- **Ball alpha fade**: `ball+0x2FC` (alpha float) lerped from 1.0 to 0.5 over RUMBLE. Game overwrites alpha to 1.0 each frame, so continuous writes are required.
+- **Ball invisible**: `ball+0x2FC=0.0` (alpha) — forced only when the screen reaches full white (`g_whiteAlpha >= 0.99`). Respects respawn flag (`ball+0x2F9`).
+- **Timer freeze**: `board+0x2990` (tournament timer, int) saved at flash peak and written back every frame through HOLD/FADE/LOAD. Also sets `board+0xCD0=1` (goal reached) and `App+playerID*0xA0+0x5D6=1` (player finished) to signal the race state machine that the race is over.
+- **Music fade**: Manual volume ramp over 3.0 seconds. Writes `MusicChannel+0x528` (volume) and calls `BASS_ChannelSetAttributes` directly. Does NOT use game's fade-out flag (cuts too fast).
+- **White screen**: Game's native fade at `board+0x3624` (float alpha). The board render function reads this every frame and draws a fullscreen rect through the game's own material pipeline — no D3D state corruption.
+- **Level load**: `App_StartPracticeRace(app, levelIndex)` — same as practice race menu selection. Difficulty is saved and restored around the call. Tournament mode is preserved by saving/restoring profile flags, scores, and timer.
 
-- **Node access**: `board+0x8AC` → MeshWorld → `+0x480` → Section 3 data → `+0x898` count, `+0xCA0` data array. Each node: `[char* name, float x, float y, float z]`.
-- **Ball list**: `board+0x2DE0` → data array → first entry = player ball.
-- **Ball freeze**: `ball+0x808=1000` + `ball+0x2CC=1` + `ball+0x2D4=1` (render jitter).
-- **Ball invisible**: `ball+0x2FC=0.0` (alpha, forced every frame).
-- **Music fade**: Manual per-channel volume ramp over 3.0s.
-- **White screen**: Game's native fade at `board+0x3624`.
-- **Level load**: `App_StartPracticeRace(app, levelIndex)` with tournament mode preservation.
+### Phase Timing
+All timing uses `GetTickCount()` for framerate independence. Timestamps are initialized when the warp triggers (in the collision handler), so elapsed=0 on the first frame.
 
 ## Usage
 
@@ -81,10 +63,13 @@ i686-w64-mingw32-gcc -shared -o bass.dll warp_mod_v7.c -lwinmm \
 
 ## Version History
 
-- **v7**: Replaced collision-event trigger with MeshWorld node-point proximity scanner. Level designers place `WARP(Name)` nodes in MESHWORLD Section 1 (same pattern as Up Race `VAC-IN`/`VAC-OUT`/`VAC-VEC` markers). Removed DispatchCollisionEvents hook entirely. Added 2-second cooldown after warp. Removed all collision-related code.
-- **v6f**: Tournament mode preservation, per-channel music fade, ball vtable validation.
-- **v6e**: Native render jitter (ball+0x2D4), HOLD phase, board+0x3624 fade.
+- **v7d**: Timer freeze — tournament timer (`board+0x2990`) freezes the moment the ball vanishes (flash peak). Sets goal reached (`board+0xCD0=1`) and player finished (`App+playerID*0xA0+0x5D6=1`). Timer stays frozen through HOLD/FADE/LOAD phases. Updated README.
+- **v7c**: Color fade to yellow + alpha fade to 50% during RUMBLE. Ball color lerps from original to `(1,1,0)` over 2s. Ball alpha lerps from 1.0 to 0.5 over 2s (progressive ghostly effect).
+- **v7b**: Ball invisible at flash peak — ball stays visible during flash ramp-up, turns invisible only when `g_whiteAlpha >= 0.99` (screen fully white).
+- **v7**: Node-point proximity trigger (no collision hook). Scans MeshWorld Section 1 for `WARP(Name)` entries. Native render jitter (`ball+0x2D4`). Removed `DispatchCollisionEvents` hook entirely.
+- **v6f**: Native render jitter, no pause, no sin/cos oscillation.
+- **v6e**: Renamed JIGGLE → RUMBLE phase. Added HOLD phase. Tripled FADE duration. Halved FLASH. Fixed ball invisibility. Fixed screen fade.
 - **v6d**: Code review cleanup — removed 155 lines of dead code.
-- **v6**: Race index off-by-one fix, FVF fix, timestamp init fix.
-- **v5**: D3D texture stage state restoration, GetTickCount-based timing, vsnprintf, PHASE_REVEAL.
+- **v6**: Race index off-by-one fix. FVF set before DrawPrimitiveUP. Inline asm clobber fix.
+- **v5**: D3D texture stage state restoration. GetTickCount-based timing. vsnprintf. PHASE_REVEAL.
 - **v4**: Initial special effects edition.
