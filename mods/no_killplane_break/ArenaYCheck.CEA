@@ -1,0 +1,356 @@
+{
+  Arena Y-Check Respawn + NoKillplaneBreak v17 Combined
+  Credits to XRow for the Y-Check teleport + BookwormKevin for original script!
+
+  Features:
+  1. Teleports all ball entities to (0, 30, 0) when Y < -500
+  2. Clears ALL ball state flags on teleport (normal state restored)
+  3. Badballs immune to killplanes (Hook1 + Hook2 prevent destroy)
+  4. Bumpers/mousetraps/objects always collide (10 collision skip NOPs)
+  5. Ball_Shatter/SplitDeath RET (prevent shatter)
+  6. Ball_FallDeath sets 0x2E8 only (player respawn)
+  7. Bounce count NOP (no air break)
+
+  Patches:
+  - YCheck hook at Ball_Update entry (0x5E00): teleport + clear all flags
+  - Ball_Shatter (0x8D70): RET 4
+  - Ball_SplitDeath (0x9050): RET
+  - Ball_FallDeath (0x9480): set 0x2E8=1 only (triggers respawn)
+  - bounce_count (0x75C9): NOP
+  - Collision skip checks (10 locations): NOP — collision always runs
+  - Hook1 (+1B591): clear 0x2E8 for entity balls in list 1 (prevent destroy)
+  - Hook2 (+1B636): clear 0x2E8 for entity balls in list 2 (prevent destroy)
+}
+
+[ENABLE]
+
+// ============================================================
+// Caves
+// ============================================================
+alloc(YCheck_Cave, 512)
+alloc(FallDeath_Cave, 64)
+alloc(ClearState_Cave1, 256)
+alloc(ClearState_Cave2, 256)
+
+// ============================================================
+// Original byte backups
+// ============================================================
+alloc(Orig_5E00, 8)
+alloc(Orig_8D70, 3)
+alloc(Orig_9050, 3)
+alloc(Orig_9480, 12)
+alloc(Orig_75C9, 6)
+alloc(Orig_6C01, 2)
+alloc(Orig_22DCB, 2)
+alloc(Orig_2395B, 2)
+alloc(Orig_85A6, 6)
+alloc(Orig_3FFA6, 6)
+alloc(Orig_22DD5, 2)
+alloc(Orig_23965, 2)
+alloc(Orig_8598, 6)
+alloc(Orig_3FF98, 6)
+alloc(Orig_18378, 6)
+alloc(Orig_1B591, 6)
+alloc(Orig_1B636, 6)
+
+// ============================================================
+// Register symbols
+// ============================================================
+registersymbol(YCheck_Cave)
+registersymbol(FallDeath_Cave)
+registersymbol(ClearState_Cave1)
+registersymbol(ClearState_Cave2)
+registersymbol(Orig_5E00)
+registersymbol(Orig_8D70)
+registersymbol(Orig_9050)
+registersymbol(Orig_9480)
+registersymbol(Orig_75C9)
+registersymbol(Orig_6C01)
+registersymbol(Orig_22DCB)
+registersymbol(Orig_2395B)
+registersymbol(Orig_85A6)
+registersymbol(Orig_3FFA6)
+registersymbol(Orig_22DD5)
+registersymbol(Orig_23965)
+registersymbol(Orig_8598)
+registersymbol(Orig_3FF98)
+registersymbol(Orig_18378)
+registersymbol(Orig_1B591)
+registersymbol(Orig_1B636)
+
+// ============================================================
+// Save original bytes
+// ============================================================
+Orig_5E00:
+  readmem(Hamsterball.exe+5E00,8)
+Orig_8D70:
+  readmem(Hamsterball.exe+8D70,3)
+Orig_9050:
+  readmem(Hamsterball.exe+9050,3)
+Orig_9480:
+  readmem(Hamsterball.exe+9480,12)
+Orig_75C9:
+  readmem(Hamsterball.exe+75C9,6)
+Orig_6C01:
+  readmem(Hamsterball.exe+6C01,2)
+Orig_22DCB:
+  readmem(Hamsterball.exe+22DCB,2)
+Orig_2395B:
+  readmem(Hamsterball.exe+2395B,2)
+Orig_85A6:
+  readmem(Hamsterball.exe+85A6,6)
+Orig_3FFA6:
+  readmem(Hamsterball.exe+3FFA6,6)
+Orig_22DD5:
+  readmem(Hamsterball.exe+22DD5,2)
+Orig_23965:
+  readmem(Hamsterball.exe+23965,2)
+Orig_8598:
+  readmem(Hamsterball.exe+8598,6)
+Orig_3FF98:
+  readmem(Hamsterball.exe+3FF98,6)
+Orig_18378:
+  readmem(Hamsterball.exe+18378,6)
+Orig_1B591:
+  readmem(Hamsterball.exe+1B591,6)
+Orig_1B636:
+  readmem(Hamsterball.exe+1B636,6)
+
+// ============================================================
+// Y-Check Teleport Hook — at Ball_Update entry
+// ============================================================
+// When ball Y < -500: teleport to (0, 30, 0), zero velocity,
+// clear ALL state flags so ball is in NORMAL state
+Hamsterball.exe+5E00:
+  jmp YCheck_Cave
+  db 90 90 90
+
+YCheck_Cave:
+  // Read Y position (ball+0x168 as float, compare against -500.0f)
+  mov eax, [ecx+0x168]
+  cmp eax, C3FA0000       // -500.0f (as unsigned compare: below = higher = more negative)
+  jb YCheck_normal
+
+  // Ball is below -500 — teleport to (0, 30, 0)
+  xor eax, eax
+  mov [ecx+0x164], eax     // X = 0
+  mov dword [ecx+0x168], 41F00000  // Y = 30.0
+  mov [ecx+0x16C], eax     // Z = 0
+
+  // Zero velocity
+  mov [ecx+0x170], eax     // vel X
+  mov [ecx+0x174], eax     // vel Y
+  mov [ecx+0x178], eax     // vel Z
+
+  // Clear ALL ball state flags — restore to NORMAL state
+  mov byte [ecx+0x2E8], 0   // falling
+  mov byte [ecx+0x2E9], 0   // death_pending
+  mov byte [ecx+0x2CC], 0   // in_tar
+  mov byte [ecx+0x2D4], 0   // vacuum
+  mov byte [ecx+0x2EC], 0   // bounce_count
+  mov dword [ecx+0x2F4], 0   // dizzy_immunity
+  mov dword [ecx+0x808], 0   // impact
+  mov byte [ecx+0x2F8], 0   // respawn flag
+  mov byte [ecx+0x2F9], 0   // snap flag
+  mov dword [ecx+0x2FC], 3F800000  // alpha = 1.0 (visible)
+  mov dword [ecx+0x300], 0   // respawn timer
+  mov byte [ecx+0x768], 1   // active flag = ON
+
+YCheck_normal:
+  // Original Ball_Update prologue (8 bytes)
+  push -1
+  mov eax, fs:[0]
+  jmp Hamsterball.exe+5E08
+
+// ============================================================
+// Ball_Shatter — RET 4
+// ============================================================
+Hamsterball.exe+8D70:
+  db C2 04 00
+
+// ============================================================
+// Ball_SplitDeath — RET
+// ============================================================
+Hamsterball.exe+9050:
+  db C3 90 90
+
+// ============================================================
+// Ball_FallDeath — set 0x2E8=1 only (NOT 0x2E9), triggers respawn
+// ============================================================
+Hamsterball.exe+9480:
+  jmp FallDeath_Cave
+  db 90 90 90 90 90 90
+
+FallDeath_Cave:
+  db C6 81 E8 02 00 00 01    // mov byte [ecx+0x2E8], 1
+  db C3                       // ret
+
+// ============================================================
+// NOP bounce_count increment
+// ============================================================
+Hamsterball.exe+75C9:
+  db 90 90 90 90 90 90
+
+// ============================================================
+// Collision skip NOPs — 10 locations
+// Forces collision to ALWAYS run regardless of ball flags
+// ============================================================
+
+{ NOP ball-to-ball collision skip (death_pending 0x2E9) }
+Hamsterball.exe+6C01:
+  db 90 90
+
+{ NOP bumper skip on respawn flag (0x2F8) }
+Hamsterball.exe+22DCB:
+  db 90 90
+Hamsterball.exe+2395B:
+  db 90 90
+
+{ NOP object skip on snap flag (0x2F9) }
+Hamsterball.exe+85A6:
+  db 90 90 90 90 90 90
+Hamsterball.exe+3FFA6:
+  db 90 90 90 90 90 90
+
+{ NOP bumper/object skip on active flag (0x768) }
+Hamsterball.exe+22DD5:
+  db 90 90
+Hamsterball.exe+23965:
+  db 90 90
+Hamsterball.exe+8598:
+  db 90 90 90 90 90 90
+Hamsterball.exe+3FF98:
+  db 90 90 90 90 90 90
+Hamsterball.exe+18378:
+  db 90 90 90 90 90 90
+
+// ============================================================
+// Hook 1: Scene_UpdateBallsAndState, list 1
+// If entity ball (0x324!=0): clear 0x2E8 → prevent destroy
+// If player ball (0x324==0): keep 0x2E8 → respawn works
+// ============================================================
+Hamsterball.exe+1B591:
+  jmp ClearState_Cave1
+  db 90
+
+ClearState_Cave1:
+  mov al, [esi+0x324]
+  test al, al
+  jz PlayerBall1
+  // Entity ball: clear 0x2E8, clear respawn flags, return AL=0
+  mov byte [esi+0x2E8], 0
+  mov byte [esi+0x2E9], 0
+  mov byte [esi+0x2F8], 0
+  mov byte [esi+0x2F9], 0
+  mov dword [esi+0x2FC], 3F800000
+  mov dword [esi+0x300], 0
+  xor al, al
+  jmp Hamsterball.exe+1B597
+PlayerBall1:
+  // Player ball: keep 0x2E8 for respawn
+  mov byte [esi+0x2E9], 0
+  mov al, [esi+0x2E8]
+  jmp Hamsterball.exe+1B597
+
+// ============================================================
+// Hook 2: Scene_UpdateBallsAndState, list 2 (entity balls)
+// Clear 0x2E8 so entity balls don't get destroyed
+// ============================================================
+Hamsterball.exe+1B636:
+  jmp ClearState_Cave2
+  db 90
+
+ClearState_Cave2:
+  mov byte [esi+0x2E8], 0
+  mov byte [esi+0x2E9], 0
+  mov byte [esi+0x2CC], 0
+  mov byte [esi+0x2D4], 0
+  mov byte [esi+0x2EC], 0
+  mov dword [esi+0x2F4], 0
+  mov dword [esi+0x808], 0
+  mov byte [esi+0x2F8], 0
+  mov byte [esi+0x2F9], 0
+  mov dword [esi+0x2FC], 3F800000
+  mov dword [esi+0x300], 0
+  xor al, al
+  jmp Hamsterball.exe+1B63C
+
+[DISABLE]
+
+Hamsterball.exe+5E00:
+  readmem(Orig_5E00,8)
+Hamsterball.exe+75C9:
+  readmem(Orig_75C9,6)
+Hamsterball.exe+8D70:
+  readmem(Orig_8D70,3)
+Hamsterball.exe+9050:
+  readmem(Orig_9050,3)
+Hamsterball.exe+9480:
+  readmem(Orig_9480,12)
+Hamsterball.exe+6C01:
+  readmem(Orig_6C01,2)
+Hamsterball.exe+22DCB:
+  readmem(Orig_22DCB,2)
+Hamsterball.exe+2395B:
+  readmem(Orig_2395B,2)
+Hamsterball.exe+85A6:
+  readmem(Orig_85A6,6)
+Hamsterball.exe+3FFA6:
+  readmem(Orig_3FFA6,6)
+Hamsterball.exe+22DD5:
+  readmem(Orig_22DD5,2)
+Hamsterball.exe+23965:
+  readmem(Orig_23965,2)
+Hamsterball.exe+8598:
+  readmem(Orig_8598,6)
+Hamsterball.exe+3FF98:
+  readmem(Orig_3FF98,6)
+Hamsterball.exe+18378:
+  readmem(Orig_18378,6)
+Hamsterball.exe+1B591:
+  readmem(Orig_1B591,6)
+Hamsterball.exe+1B636:
+  readmem(Orig_1B636,6)
+
+dealloc(YCheck_Cave)
+dealloc(FallDeath_Cave)
+dealloc(ClearState_Cave1)
+dealloc(ClearState_Cave2)
+dealloc(Orig_5E00)
+dealloc(Orig_8D70)
+dealloc(Orig_9050)
+dealloc(Orig_9480)
+dealloc(Orig_75C9)
+dealloc(Orig_6C01)
+dealloc(Orig_22DCB)
+dealloc(Orig_2395B)
+dealloc(Orig_85A6)
+dealloc(Orig_3FFA6)
+dealloc(Orig_22DD5)
+dealloc(Orig_23965)
+dealloc(Orig_8598)
+dealloc(Orig_3FF98)
+dealloc(Orig_18378)
+dealloc(Orig_1B591)
+dealloc(Orig_1B636)
+unregistersymbol(YCheck_Cave)
+unregistersymbol(FallDeath_Cave)
+unregistersymbol(ClearState_Cave1)
+unregistersymbol(ClearState_Cave2)
+unregistersymbol(Orig_5E00)
+unregistersymbol(Orig_8D70)
+unregistersymbol(Orig_9050)
+unregistersymbol(Orig_9480)
+unregistersymbol(Orig_75C9)
+unregistersymbol(Orig_6C01)
+unregistersymbol(Orig_22DCB)
+unregistersymbol(Orig_2395B)
+unregistersymbol(Orig_85A6)
+unregistersymbol(Orig_3FFA6)
+unregistersymbol(Orig_22DD5)
+unregistersymbol(Orig_23965)
+unregistersymbol(Orig_8598)
+unregistersymbol(Orig_3FF98)
+unregistersymbol(Orig_18378)
+unregistersymbol(Orig_1B591)
+unregistersymbol(Orig_1B636)
