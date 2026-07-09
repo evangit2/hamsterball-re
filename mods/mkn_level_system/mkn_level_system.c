@@ -596,6 +596,192 @@ static void apply_config(void) {
                 }
             }
         }
+        /* PATCH <func_name|0xHEXADDR> <offset> <hex_bytes>
+         * Write raw bytes at an offset inside a function.
+         * <func_name> can be any name from the function table (e.g. Scene_SetupLevelCascade)
+         * <offset> is a decimal or 0x-prefixed hex offset from the function start
+         * <hex_bytes> is a space-separated list of hex bytes (e.g. 90 90 90 90 90)
+         * Examples:
+         *   PATCH Scene_SetupLevelCascade 0x10 90 90 90 90 90
+         *   PATCH Beginner_InitScene 5 90 90 90
+         *   PATCH 0x004110D0 0x20 E9 00 00 00 00
+         *   PATCH WarmUp_InitScene 0x1C C7 46 40 01 00 00 00
+         */
+        else if (_strnicmp(line, "PATCH ", 6) == 0) {
+            char tokFunc[128] = "", tokOffset[64] = "";
+            if (sscanf(line + 6, "%127s %63s", tokFunc, tokOffset) == 2) {
+                /* Resolve function address */
+                DWORD func_addr = lookup_function_addr(tokFunc);
+                if (!func_addr && tokFunc[0] == '0' && (tokFunc[1] == 'x' || tokFunc[1] == 'X')) {
+                    func_addr = (DWORD)strtoul(tokFunc + 2, NULL, 16);
+                }
+                /* Parse offset */
+                DWORD offset = (DWORD)strtoul(tokOffset, NULL, 0);
+                if (func_addr && offset < 0x10000) {
+                    DWORD target = func_addr + offset;
+                    /* Find the hex bytes part of the line */
+                    char* bytes_start = line + 6; /* skip "PATCH " */
+                    /* Skip func name */
+                    while (*bytes_start && *bytes_start != ' ') bytes_start++;
+                    while (*bytes_start == ' ') bytes_start++;
+                    /* Skip offset */
+                    while (*bytes_start && *bytes_start != ' ') bytes_start++;
+                    while (*bytes_start == ' ') bytes_start++;
+
+                    /* Parse hex bytes */
+                    int byte_count = 0;
+                    BYTE patch_bytes[256];
+                    char* p = bytes_start;
+                    while (*p && byte_count < 256) {
+                        /* Skip whitespace */
+                        while (*p == ' ' || *p == '\t') p++;
+                        if (!*p) break;
+                        /* Parse two hex digits */
+                        int hi = -1, lo = -1;
+                        if (*p >= '0' && *p <= '9') hi = *p - '0';
+                        else if (*p >= 'A' && *p <= 'F') hi = *p - 'A' + 10;
+                        else if (*p >= 'a' && *p <= 'f') hi = *p - 'a' + 10;
+                        if (hi >= 0) {
+                            p++;
+                            if (*p >= '0' && *p <= '9') lo = *p - '0';
+                            else if (*p >= 'A' && *p <= 'F') lo = *p - 'A' + 10;
+                            else if (*p >= 'a' && *p <= 'f') lo = *p - 'a' + 10;
+                            if (lo >= 0) {
+                                patch_bytes[byte_count++] = (BYTE)(hi * 16 + lo);
+                                p++;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    if (byte_count > 0) {
+                        /* Apply patch with VirtualProtect */
+                        DWORD oldProtect;
+                        if (VirtualProtect((void*)target, byte_count,
+                            PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                            memcpy((void*)target, patch_bytes, byte_count);
+                            VirtualProtect((void*)target, byte_count,
+                                oldProtect, &oldProtect);
+                            /* Flush instruction cache */
+                            FlushInstructionCache(GetCurrentProcess(),
+                                (void*)target, byte_count);
+                            changes++;
+                            /* Log it */
+                            char hexstr[256] = "";
+                            int pos = 0;
+                            for (int b = 0; b < byte_count && pos < 250; b++) {
+                                pos += snprintf(hexstr + pos, sizeof(hexstr) - pos,
+                                    "%02X ", patch_bytes[b]);
+                            }
+                            diag_logf("PATCH %s+0x%X (0x%08X) [%d bytes: %s]",
+                                tokFunc, offset, target, byte_count, hexstr);
+                        } else {
+                            diag_logf("WARNING: PATCH VirtualProtect failed at 0x%08X", target);
+                        }
+                    } else {
+                        diag_logf("WARNING: PATCH no hex bytes found");
+                    }
+                } else {
+                    if (!func_addr) diag_logf("WARNING: PATCH unknown function '%s'", tokFunc);
+                    if (offset >= 0x10000) diag_logf("WARNING: PATCH offset too large 0x%X", offset);
+                }
+            }
+        }
+        /* NOP <func_name|0xHEXADDR> <offset> <count>
+         * NOP <count> bytes starting at func+offset.
+         * Example:
+         *   NOP Scene_SetupLevelCascade 0x10 5
+         *   NOP Beginner_InitScene 5 3
+         */
+        else if (_strnicmp(line, "NOP ", 4) == 0) {
+            char tokFunc[128] = "", tokOffset[64] = "", tokCount[64] = "";
+            if (sscanf(line + 4, "%127s %63s %63s", tokFunc, tokOffset, tokCount) == 3) {
+                DWORD func_addr = lookup_function_addr(tokFunc);
+                if (!func_addr && tokFunc[0] == '0' && (tokFunc[1] == 'x' || tokFunc[1] == 'X')) {
+                    func_addr = (DWORD)strtoul(tokFunc + 2, NULL, 16);
+                }
+                DWORD offset = (DWORD)strtoul(tokOffset, NULL, 0);
+                int count = atoi(tokCount);
+                if (func_addr && offset < 0x10000 && count > 0 && count <= 256) {
+                    DWORD target = func_addr + offset;
+                    DWORD oldProtect;
+                    if (VirtualProtect((void*)target, count,
+                        PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                        memset((void*)target, 0x90, count);
+                        VirtualProtect((void*)target, count,
+                            oldProtect, &oldProtect);
+                        FlushInstructionCache(GetCurrentProcess(),
+                            (void*)target, count);
+                        changes++;
+                        diag_logf("NOP %s+0x%X (0x%08X) [%d bytes]",
+                            tokFunc, offset, target, count);
+                    } else {
+                        diag_logf("WARNING: NOP VirtualProtect failed at 0x%08X", target);
+                    }
+                } else {
+                    if (!func_addr) diag_logf("WARNING: NOP unknown function '%s'", tokFunc);
+                }
+            }
+        }
+        /* WRITE <0xHEXADDR> <hex_bytes>
+         * Write raw bytes at an absolute address.
+         * Example:
+         *   WRITE 0x004D04B0 00 00 00 00
+         */
+        else if (_strnicmp(line, "WRITE ", 6) == 0) {
+            char tokAddr[64] = "";
+            if (sscanf(line + 6, "%63s", tokAddr) == 1) {
+                DWORD target = (DWORD)strtoul(tokAddr, NULL, 0);
+                if (target > 0x400000) {
+                    /* Find hex bytes */
+                    char* bytes_start = line + 6;
+                    while (*bytes_start && *bytes_start != ' ') bytes_start++;
+                    while (*bytes_start == ' ') bytes_start++;
+                    int byte_count = 0;
+                    BYTE patch_bytes[256];
+                    char* p = bytes_start;
+                    while (*p && byte_count < 256) {
+                        while (*p == ' ' || *p == '\t') p++;
+                        if (!*p) break;
+                        int hi = -1, lo = -1;
+                        if (*p >= '0' && *p <= '9') hi = *p - '0';
+                        else if (*p >= 'A' && *p <= 'F') hi = *p - 'A' + 10;
+                        else if (*p >= 'a' && *p <= 'f') hi = *p - 'a' + 10;
+                        if (hi >= 0) {
+                            p++;
+                            if (*p >= '0' && *p <= '9') lo = *p - '0';
+                            else if (*p >= 'A' && *p <= 'F') lo = *p - 'A' + 10;
+                            else if (*p >= 'a' && *p <= 'f') lo = *p - 'a' + 10;
+                            if (lo >= 0) {
+                                patch_bytes[byte_count++] = (BYTE)(hi * 16 + lo);
+                                p++;
+                            }
+                        } else break;
+                    }
+                    if (byte_count > 0) {
+                        DWORD oldProtect;
+                        if (VirtualProtect((void*)target, byte_count,
+                            PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                            memcpy((void*)target, patch_bytes, byte_count);
+                            VirtualProtect((void*)target, byte_count,
+                                oldProtect, &oldProtect);
+                            FlushInstructionCache(GetCurrentProcess(),
+                                (void*)target, byte_count);
+                            changes++;
+                            char hexstr[256] = "";
+                            int pos = 0;
+                            for (int b = 0; b < byte_count && pos < 250; b++) {
+                                pos += snprintf(hexstr + pos, sizeof(hexstr) - pos,
+                                    "%02X ", patch_bytes[b]);
+                            }
+                            diag_logf("WRITE 0x%08X [%d bytes: %s]", target, byte_count, hexstr);
+                        } else {
+                            diag_logf("WARNING: WRITE VirtualProtect failed at 0x%08X", target);
+                        }
+                    }
+                }
+            }
+        }
         /* DUMP — log only native slots 0-35 */
         else if (_strnicmp(line, "DUMP", 4) == 0) {
             for (int i = 0; i < 15; i++) {

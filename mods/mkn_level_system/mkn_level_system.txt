@@ -48,6 +48,24 @@ Commands (in CONFIG SECTION below):
   DUMP        — Log full 36-entry vtable for every level.
   RESET       — Restore all original values.
 
+  PATCH func offset hex_bytes — Write raw bytes inside a function.
+    <func> = function name or 0xHEXADDR
+    <offset> = offset from function start (decimal or 0xHEX)
+    <hex_bytes> = space-separated hex bytes
+    Examples:
+      PATCH Scene_SetupLevelCascade 0x10 90 90 90 90 90
+      PATCH Beginner_InitScene 5 90 90 90
+      PATCH WarmUp_InitScene 0x1C C7 46 40 01 00 00 00
+
+  NOP func offset count — NOP <count> bytes inside a function.
+    Examples:
+      NOP Scene_SetupLevelCascade 0x10 5
+      NOP Beginner_InitScene 5 3
+
+  WRITE 0xHEXADDR hex_bytes — Write raw bytes at an absolute address.
+    Example:
+      WRITE 0x004D04B0 00 00 00 00
+
 Level names can be used instead of numbers (case-insensitive).
 
 Function names for VTABLE, SETUP, and ADD:
