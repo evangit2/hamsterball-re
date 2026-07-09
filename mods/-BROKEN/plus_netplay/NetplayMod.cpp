@@ -188,20 +188,49 @@ static void writePos(DWORD ball, float x, float y, float z) {
     *(float*)(ball + BALL_POS_Z) = z;
 }
 
-// ── Input Control Slot Management ─────────────────────────────────
-// NOTE: Setting control slot to 99 = CPU AI takes over (not "no input").
-// We DON'T touch control slots. Instead, we overwrite the remote player's
-// velocity every frame. Local input adds small force, but our velocity
-// overwrite dominates — the remote player's ball follows network state.
-// This is "state sync" — the authoritative client's state wins.
+// ── Input Suppression ─────────────────────────────────────────────
+// Zero the force_mult on the remote player's input handler so the game
+// reads zero local input for that player. Our velocity overwrite then
+// has full control of the remote ball.
+//
+// Input handler struct (at App+0x550 + controlSlot*4 → pointer):
+//   +0x00: vtable
+//   +0x04: App/Scene pointer
+//   +0x08: input mode (1=keyboard, 2=mouse, 4-7=gamepad)
+//   +0x0C: force_mult (float, scales raw input direction)
+//
+// Control slot table: App+0xB28 + playerIndex*4 = slot index (0-3)
+// App+0x550 + slotIndex*4 = pointer to input handler
+
+static float g_savedForceMult = -1.0f;
+static DWORD g_suppressedHandler = 0;
 
 static void suppressLocalInput(int playerIndex) {
-    // No-op: control slot manipulation causes AI takeover.
-    // State sync via velocity overwrite handles this instead.
+    DWORD app = getApp();
+    if (!app) return;
+    // Read control slot for this player
+    if (IsBadReadPtr((void*)(app + 0xB28 + playerIndex * 4), 4)) return;
+    DWORD slot = *(DWORD*)(app + 0xB28 + playerIndex * 4);
+    if (slot > 3) return; // 99=CPU, 100=CPU — skip
+    // Get input handler pointer
+    if (IsBadReadPtr((void*)(app + 0x550 + slot * 4), 4)) return;
+    DWORD handler = *(DWORD*)(app + 0x550 + slot * 4);
+    if (!handler || handler < 0x10000) return;
+    if (IsBadReadPtr((void*)(handler + 0x0C), 4)) return;
+    // Save original force_mult and zero it
+    g_savedForceMult = *(float*)(handler + 0x0C);
+    g_suppressedHandler = handler;
+    *(float*)(handler + 0x0C) = 0.0f;
 }
 
 static void restoreLocalInput(int playerIndex) {
-    // No-op
+    if (g_suppressedHandler && g_savedForceMult >= 0.0f) {
+        if (!IsBadWritePtr((void*)(g_suppressedHandler + 0x0C), 4)) {
+            *(float*)(g_suppressedHandler + 0x0C) = g_savedForceMult;
+        }
+    }
+    g_suppressedHandler = 0;
+    g_savedForceMult = -1.0f;
 }
 
 // ── Config File ───────────────────────────────────────────────────
@@ -569,12 +598,21 @@ static void __thiscall game_update(void*) {
     if (g_gameReady && g_role != ROLE_DISABLED) {
         DWORD p1 = getBall(0);
         if (p1) {
-            // Verify ball has valid position (not during loading)
             float py = readF(p1, BALL_POS_Y);
             if (py > -100000.0f && py < 100000.0f) {
                 g_inRace = true;
+                // Just entered race: suppress input for remote player
+                if (!wasInRace) {
+                    int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
+                    suppressLocalInput(remotePlayer);
+                }
             }
         }
+    }
+    // Left race: restore input
+    if (wasInRace && !g_inRace) {
+        int remotePlayer = (g_role == ROLE_HOST) ? 1 : 0;
+        restoreLocalInput(remotePlayer);
     }
 
     if (g_gameReady && !g_pipeThread) {

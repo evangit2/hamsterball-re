@@ -391,6 +391,9 @@ class NetplayRelay:
         self.log("  1 = Host (Player 1) — creates server, waits for guest")
         self.log("  2 = Guest (Player 2) — connects to host IP")
         self.log("")
+        self.log("Tip: Set netplay.txt next to Hamsterball.exe with host IP:port")
+        self.log("     e.g. '100.71.119.98:5029' for Tailscale/LAN play")
+        self.log("")
 
         last_role = 0
         active_role_thread = None
