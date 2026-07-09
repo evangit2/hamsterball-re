@@ -11,12 +11,9 @@ private:
 	static inline bool g_inSceneRender = false;
 	static inline int g_viewportCallCount = 0;
 
-	// Scale factor (presentParams+0x1f8) and X offset (gfx+0x798)
-	static inline bool g_uiModified = false;
+	static inline bool g_scaleModified = false;
 	static inline float g_origScaleX = 0.0f;
-	static inline int g_origOffsetX = 0;
 	static inline DWORD g_scaleXAddr = 0;
-	static inline DWORD g_offsetXAddr = 0;
 
 	typedef void(__fastcall *SetViewport_t)(void*, void*, int, int);
 	static inline SetViewport_t orig_SetViewport = nullptr;
@@ -31,20 +28,27 @@ private:
 	// Where:
 	//   scaleX = *(float*)(config + 0x1f8)   (config = *(gfx+0x5c))
 	//   scaleY = *(float*)(config + 0x1fc)
-	//   offsetX = *(int*)(gfx + 0x798)
-	//   offsetY = *(int*)(gfx + 0x79c)
+	//   offsetX = *(int*)(gfx + 0x798)  (set to 0 for full-screen)
+	//   offsetY = *(int*)(gfx + 0x79c)  (set to 0 for full-screen)
 	//   bbWidth = *(int*)(config + 0x15c)
 	//   bbHeight = *(int*)(config + 0x160)
 	//
-	// Graphics_SetViewport sets:
-	//   gfx+0x798 = 0  (offsetX, reset to 0 for full-screen)
-	//   gfx+0x79c = 0  (offsetY)
-	//   gfx+0x7a0 = (float)bbWidth  (render width)
-	//   gfx+0x7a4 = (float)bbHeight (render height)
-	//   Then builds the projection with aspect = renderW / renderH
+	// The game's UI pixel coordinate system is CENTERED AT 0:
+	//   pixel 0 → NDC 0 → screen center (bbWidth/2)
+	//   pixel range: [-bbHeight/2, +bbHeight/2] maps to NDC [-1, +1]
 	//
-	// On 16:9, scaleX is calibrated for the full width, so UI stretches.
-	// Fix: shrink scaleX proportionally and add X offset to center (pillarbox).
+	// The game sets scaleX = scaleY = 2/bbHeight (calibrated for height).
+	// On 4:3 this gives correct square pixels.
+	// On 16:9 the same scaleX stretches X by the aspect ratio.
+	//
+	// Fix: shrink scaleX so X/Y ratio = 4:3.
+	//   newScaleX = scaleX * (4/3) / screenAspect
+	//   = scaleX * (4.0 * bbHeight) / (3.0 * bbWidth)
+	//
+	// Do NOT modify offsetX — it must stay 0 for centering.
+	// The pixel coordinate system is symmetric around 0, so changing
+	// only scaleX automatically pillarboxes (compresses X range)
+	// while keeping everything centered.
 	static void fixUIScale(void* gfx) {
 		DWORD gfxAddr = (DWORD)gfx;
 		if (IsBadReadPtr(gfx, 0x800)) return;
@@ -61,46 +65,31 @@ private:
 		if (currentAspect <= 1.34f) return;
 
 		float scaleX = *(float*)(config + 0x1f8);
-		float scaleY = *(float*)(config + 0x1fc);
 
-		// The correct scaleX for 4:3 UI proportions:
-		//   On 4:3: scaleX/scaleY = 1.0 (already correct)
-		//   On 16:9: scaleX/scaleY = 16:9 / 4:3 = 4/3, so scaleX is 4/3 too large
-		//   Fix: newScaleX = scaleX * (4/3) / (screenAspect)
-		//   = scaleX * (4.0 * bbHeight) / (3.0 * bbWidth)
+		// Shrink scaleX to achieve 4:3 X/Y proportions.
+		// Screen aspect = bbWidth/bbHeight. On 16:9 = 1.778.
+		// 4:3 ratio = 1.333. Scale factor = 1.333/1.778 = 0.75.
+		// This compresses the X coordinate range so UI elements
+		// render at correct 4:3 proportions, automatically centered
+		// (because offsetX stays 0 and the coordinate system is
+		// symmetric around 0).
 		float aspectRatio = (float)bbWidth / (float)bbHeight;
 		float ratio43 = 4.0f / 3.0f;
 		float newScaleX = scaleX * ratio43 / aspectRatio;
 
-		// Center the UI: shift X offset so the compressed UI is centered.
-		// The UI's effective pixel width after compression = bbWidth * (newScaleX / scaleX)
-		// = bbWidth * (ratio43 / aspectRatio) = bbWidth * (4/3) / (bbWidth/bbHeight)
-		// = bbHeight * 4/3
-		// Pillarbox margin = (bbWidth - bbHeight*4/3) / 2
-		// Offset in NDC = margin * newScaleX
-		float uiWidth = (float)bbHeight * ratio43;
-		float marginPixels = ((float)bbWidth - uiWidth) / 2.0f;
-		int newOffsetX = (int)(marginPixels * newScaleX);
-
-		// Save originals
+		// Save and apply (only scaleX, NOT offsetX)
 		g_origScaleX = scaleX;
-		g_origOffsetX = *(int*)(gfxAddr + 0x798);
 		g_scaleXAddr = config + 0x1f8;
-		g_offsetXAddr = gfxAddr + 0x798;
-		g_uiModified = true;
+		g_scaleModified = true;
 
-		// Apply
 		*(float*)(config + 0x1f8) = newScaleX;
-		*(int*)(gfxAddr + 0x798) = newOffsetX;
 	}
 
 	static void restoreUIScale() {
-		if (g_uiModified) {
-			if (g_scaleXAddr) *(float*)g_scaleXAddr = g_origScaleX;
-			if (g_offsetXAddr) *(int*)g_offsetXAddr = g_origOffsetX;
-			g_uiModified = false;
+		if (g_scaleModified && g_scaleXAddr) {
+			*(float*)g_scaleXAddr = g_origScaleX;
+			g_scaleModified = false;
 			g_scaleXAddr = 0;
-			g_offsetXAddr = 0;
 		}
 	}
 
@@ -113,7 +102,7 @@ private:
 		g_viewportCallCount++;
 
 		// 1st (0,0) = 3D pass → leave alone
-		// 2nd (0,0) = UI pass → fix scale + center
+		// 2nd (0,0) = UI pass → fix scale
 		if (g_viewportCallCount == 2) {
 			fixUIScale(gfx);
 		}
