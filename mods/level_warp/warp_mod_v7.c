@@ -506,6 +506,19 @@ static void startMusicFade(void) {
                 g_musicOrigVolumes[i] = 0.0f;
             }
         }
+
+        /* Clear game's fade flags to prevent MusicChannel_FadeUpdate from
+         * fighting our manual volume ramp. If fade_out (0x530) or fade_in
+         * (0x531) is set from prior game state, the game's per-frame fade
+         * system will modify chan+0x528 independently of our writes. */
+        for (i = 0; i < count; i++) {
+            int chan = *(int *)(chanListData + i * 4);
+            if (chan) {
+                *(char *)((char *)chan + MUSIC_CHAN_FADE_OUT) = 0;
+                *(char *)((char *)chan + MUSIC_CHAN_FADE_IN) = 0;
+                *(float *)((char *)chan + MUSIC_CHAN_FADE_RATE) = 0.0f;
+            }
+        }
     }
 
     g_musicFadeStarted = 1;
@@ -979,8 +992,11 @@ static void updateWarpStateMachine(void) {
                         if (savedTimeRemaining > 0) {
                             int newBoard = *(int *)((char *)newProfile + 0x0C);
                             if (newBoard) {
+                                /* board+0x2990 = time limit (int), board+0x2994 = score (int).
+                                 * Only restore the timer — writing the timer value to 0x2994
+                                 * would corrupt the score. (Tournament_AdvanceRace sets
+                                 * 0x2994 from __ftol2 of the score float.) */
                                 *(int *)((char *)newBoard + 0x2990) = savedTimeRemaining;
-                                *(int *)((char *)newBoard + 0x2994) = savedTimeRemaining;
                                 *(int *)((char *)app + 0x5E8) = savedTimeRemaining;
                                 *(int *)((char *)app + 0x5EC) = 0;
                                 diag_logf("[warp] Timer carried over: %d ticks remaining", savedTimeRemaining);
@@ -995,6 +1011,21 @@ static void updateWarpStateMachine(void) {
             diag_log("[warp] Level loaded OK");
         } else {
             diag_logf("[warp] Invalid level index %d, aborting", levelIdx);
+        }
+
+        /* Immediately write white alpha to the NEW board to prevent a
+         * 1-frame visual gap where the new level renders uncovered before
+         * the next FrameUpdateHandler call. App_StartPracticeRace created
+         * a new board via Tournament_AdvanceRace; fetch it from the new
+         * profile. */
+        {
+            int newProfile = *(int *)((char *)app + APP_PROFILE_PTR);
+            if (newProfile) {
+                int newBoard = *(int *)((char *)newProfile + PROFILE_BOARD_PTR);
+                if (newBoard) {
+                    *(float *)((char *)newBoard + SCENE_FADE_ALPHA) = 1.0f;
+                }
+            }
         }
 
         g_warpBall = 0;
