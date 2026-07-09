@@ -937,11 +937,15 @@ static void updateWarpStateMachine(void) {
     if (!board) board = 0;
 
     /* Write to board+0x3624 (dual-use: timer + fade alpha).
-     * When timer is frozen, write the saved timer value back every frame
-     * to prevent ANY code path from changing it. During REVEAL (after new
-     * level loaded), use g_whiteAlpha for the fade-from-white effect. */
+     * Strategy: use g_whiteAlpha for fade phases (FLASH, FADE, REVEAL),
+     * use the saved timer value for non-fade phases (RUMBLE, HOLD).
+     * This keeps the timer frozen when no fade is needed, and lets the
+     * fade work when it is needed. The timer value is saved at RUMBLE
+     * start BEFORE any writes, so it's the real timer value. */
     if (board) {
-        if (g_timerFrozen && g_phase != PHASE_REVEAL) {
+        if (g_phase == PHASE_FLASH || g_phase == PHASE_FADE || g_phase == PHASE_REVEAL) {
+            *(float *)((char *)board + SCENE_FADE_ALPHA) = g_whiteAlpha;
+        } else if (g_timerFrozen) {
             *(float *)((char *)board + SCENE_FADE_ALPHA) = g_savedTimerValue;
         } else {
             *(float *)((char *)board + SCENE_FADE_ALPHA) = g_whiteAlpha;
@@ -954,6 +958,17 @@ static void updateWarpStateMachine(void) {
 
         if (!g_rumbleInit && ball) {
             g_rumbleInit = 1;
+            /* Save the timer value NOW, before any writes to board+0x3624.
+             * board+0x3624 is dual-use (timer + fade alpha). We'll write
+             * g_whiteAlpha to it during fade phases, but write the saved
+             * timer value back during non-fade phases to keep it frozen. */
+            if (board) {
+                g_savedTimerValue = *(float *)((char *)board + SCENE_FADE_ALPHA);
+                g_timerFrozen = 1;
+                freeze_timer_decrement();
+                block_pause();
+                diag_logf("[warp] Timer saved at RUMBLE start: %.3f, NOPs applied, pause blocked", g_savedTimerValue);
+            }
             /* Only disable player steering — don't set in_tar (ball+0x2CC)
              * which adds drag/stickiness. ball+0x808 alone blocks
              * Ball_ApplyForce so the player can't steer, but physics
@@ -1025,24 +1040,7 @@ static void updateWarpStateMachine(void) {
             if (!respawning) {
                 *(float *)((char *)ball + BALL_ALPHA) = 0.0f;
             }
-            /* Freeze the race timer by NOP'ing the decrement instruction
-             * in Board_UpdateRaceState. The live timer is board+0x3624
-             * (float, -0.02/frame). We NOP the FSUB+FST so the game loads
-             * the value but never subtracts from it. This lets the mod
-             * freely write g_whiteAlpha to board+0x3624 for the screen
-             * effect without the game decrementing it. */
-            if (!g_timerFrozen) {
-                g_timerFrozen = 1;
-                /* Save the current timer value so we can write it back
-                 * every frame, preventing ANY code path from changing it. */
-                if (board) {
-                    g_savedTimerValue = *(float *)((char *)board + SCENE_FADE_ALPHA);
-                    diag_logf("[warp] Timer value saved: %.3f", g_savedTimerValue);
-                }
-                freeze_timer_decrement();
-                block_pause();  /* Block pausing once ball vanishes */
-                diag_log("[warp] Timer frozen (NOP'd + value locked), pause blocked");
-            }
+            /* Timer was already frozen at RUMBLE start */
         }
 
         updateMusicFade();
