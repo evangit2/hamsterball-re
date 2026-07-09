@@ -82,6 +82,35 @@ static void set_table_ptr(int level_num, DWORD func_addr) {
 }
 
 /* ============================================================
+ * Diagnostic logging — writes to mkn_level_system.log next to DLL
+ * ============================================================ */
+
+static char g_logPath[MAX_PATH] = "";
+
+static void diag_log(const char *msg) {
+    if (g_logPath[0] == '\0') return;
+    HANDLE hFile = CreateFileA(g_logPath,
+        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD written;
+        SetFilePointer(hFile, 0, NULL, FILE_END);
+        WriteFile(hFile, msg, (DWORD)strlen(msg), &written, NULL);
+        WriteFile(hFile, "\r\n", 2, &written, NULL);
+        CloseHandle(hFile);
+    }
+}
+
+static void diag_logf(const char *fmt, ...) {
+    char buf[512];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    diag_log(buf);
+}
+
+/* ============================================================
  * Config file parser
  * ============================================================ */
 
@@ -93,7 +122,18 @@ static void find_config_path(void) {
                       | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                       (LPCSTR)&find_config_path, &hSelf);
     GetModuleFileNameA(hSelf, g_configPath, MAX_PATH);
-    char* p = strrchr(g_configPath, '\\');
+
+    /* Derive log path from DLL path */
+    strcpy(g_logPath, g_configPath);
+    char* p = strrchr(g_logPath, '\\');
+    if (p) {
+        strcpy(p + 1, "mkn_level_system.log");
+    } else {
+        strcpy(g_logPath, "mkn_level_system.log");
+    }
+
+    /* Derive config path from DLL path */
+    p = strrchr(g_configPath, '\\');
     if (p) {
         strcpy(p + 1, "mkn_level_system.txt");
     } else {
@@ -116,7 +156,10 @@ static void apply_config(void) {
     HANDLE hFile = CreateFileA(g_configPath,
         GENERIC_READ, FILE_SHARE_READ, NULL,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return;
+    if (hFile == INVALID_HANDLE_VALUE) {
+        diag_log("[mkn_level_system] Config file not found, no changes applied");
+        return;
+    }
 
     /* Read entire file (max 32KB) */
     char buf[32768];
@@ -124,6 +167,23 @@ static void apply_config(void) {
     ReadFile(hFile, buf, sizeof(buf) - 1, &bytesRead, NULL);
     CloseHandle(hFile);
     buf[bytesRead] = '\0';
+
+    diag_log("========================================");
+    diag_log("[mkn_level_system] Config file loaded, parsing...");
+    diag_logf("Config path: %s", g_configPath);
+
+    /* Dump current table state BEFORE changes */
+    diag_log("--- Table state BEFORE config ---");
+    for (int i = 0; i < 15; i++) {
+        DWORD table_addr = g_levels[i].table_addr;
+        DWORD current = 0;
+        if (!IsBadReadPtr((void*)table_addr, 4))
+            current = *(DWORD*)table_addr;
+        diag_logf("  Level %2d: table[0x%08X] = 0x%08X (expected 0x%08X %s)%s",
+            g_levels[i].level_num, table_addr, current,
+            g_levels[i].func_addr, g_levels[i].name,
+            (current == g_levels[i].func_addr) ? "" : " *** MISMATCH ***");
+    }
 
     /* Parse line by line */
     char* line = strtok(buf, "\n");
@@ -133,21 +193,20 @@ static void apply_config(void) {
     while (line) {
         trim(line);
 
-        /* Skip empty lines and comments */
-        if (line[0] == '\0' || line[0] == '#') {
-            line = strtok(NULL, "\n");
-            continue;
-        }
-
-        /* Look for CONFIG SECTION marker */
-        if (_strnicmp(line, "CONFIG SECTION", 14) == 0) {
+        /* Check for CONFIG SECTION / END CONFIG markers (even in comments) */
+        if (strstr(line, "CONFIG SECTION")) {
             in_config = 1;
             line = strtok(NULL, "\n");
             continue;
         }
-        /* Stop at END CONFIG */
-        if (_strnicmp(line, "END CONFIG", 10) == 0) {
+        if (strstr(line, "END CONFIG")) {
             break;
+        }
+
+        /* Skip empty lines and comments */
+        if (line[0] == '\0' || line[0] == '#') {
+            line = strtok(NULL, "\n");
+            continue;
         }
 
         if (!in_config) {
@@ -164,17 +223,9 @@ static void apply_config(void) {
                 if (addr && level_num >= 1 && level_num <= 15) {
                     set_table_ptr(level_num, addr);
                     changes++;
-                    char msg[256];
-                    snprintf(msg, sizeof(msg),
-                        "[mkn_level_system] SET level %d -> %s (0x%08X)\n",
-                        level_num, func_name, addr);
-                    OutputDebugStringA(msg);
+                    diag_logf("SET level %d -> %s (0x%08X)", level_num, func_name, addr);
                 } else if (!addr) {
-                    char msg[256];
-                    snprintf(msg, sizeof(msg),
-                        "[mkn_level_system] WARNING: unknown function '%s'\n",
-                        func_name);
-                    OutputDebugStringA(msg);
+                    diag_logf("WARNING: unknown function '%s'", func_name);
                 }
             }
         }
@@ -189,10 +240,7 @@ static void apply_config(void) {
                         set_table_ptr(a, ptr_b);
                         set_table_ptr(b, ptr_a);
                         changes += 2;
-                        char msg[256];
-                        snprintf(msg, sizeof(msg),
-                            "[mkn_level_system] SWAP level %d <-> level %d\n", a, b);
-                        OutputDebugStringA(msg);
+                        diag_logf("SWAP level %d <-> level %d (0x%08X <-> 0x%08X)", a, b, ptr_a, ptr_b);
                     }
                 }
             }
@@ -202,13 +250,30 @@ static void apply_config(void) {
     }
 
     if (changes > 0) {
-        char msg[128];
-        snprintf(msg, sizeof(msg),
-            "[mkn_level_system] Applied %d config changes\n", changes);
-        OutputDebugStringA(msg);
+        diag_logf("Applied %d config changes", changes);
     } else {
-        OutputDebugStringA("[mkn_level_system] No config changes (defaults)\n");
+        diag_log("No config changes (defaults)");
     }
+
+    /* Dump table state AFTER changes */
+    diag_log("--- Table state AFTER config ---");
+    for (int i = 0; i < 15; i++) {
+        DWORD table_addr = g_levels[i].table_addr;
+        DWORD current = 0;
+        if (!IsBadReadPtr((void*)table_addr, 4))
+            current = *(DWORD*)table_addr;
+        const char* match_name = "???";
+        for (int j = 0; j < 15; j++) {
+            if (g_levels[j].func_addr == current) {
+                match_name = g_levels[j].name;
+                break;
+            }
+        }
+        diag_logf("  Level %2d: table[0x%08X] = 0x%08X (%s)%s",
+            g_levels[i].level_num, table_addr, current, match_name,
+            (current == g_levels[i].func_addr) ? "" : " *** CHANGED ***");
+    }
+    diag_log("========================================");
 }
 
 /* ============================================================
