@@ -60,25 +60,23 @@ static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, i
     DWORD gfxAddr = (DWORD)gfx;
     DWORD config = *(DWORD*)(gfxAddr + 0x5c);
 
-    // Graphics_DrawScreenRect reads scale factors directly from presentParams
-    // instead of calling Gfx_TransformX. Temporarily modify the X scale
-    // and X offset so the rect gets pillarboxed the same way.
-    // Gfx_TransformX does: result = pixel_x * scaleX + offsetX
-    // We want: result = (pixel_x * scaleX + offsetX) * scaleFactor + margin
-    //        = pixel_x * (scaleX * scaleFactor) + (offsetX * scaleFactor + margin)
+    // Graphics_DrawScreenRect computes: vertex_x = pixel_x * scaleX
+    // (no offsetX). To match Gfx_TransformX's output:
+    //   desired = (pixel_x * scaleX) * scaleFactor + margin
+    //           = pixel_x * (scaleX * scaleFactor) + margin
+    // Modify scaleX and shift x by margin/(scaleX*scaleFactor):
+    //   new_x = x + margin / (scaleX * scaleFactor)
+    //   new_x * (scaleX * scaleFactor) = x*scaleX*scaleFactor + margin ✓
     float* pScaleX = (float*)(config + 0x1f8);
-    int* pOffsetX = (int*)(gfxAddr + 0x798);
-
     float origScaleX = *pScaleX;
-    int origOffsetX = *pOffsetX;
+    float newScaleX = origScaleX * scaleFactor;
+    *pScaleX = newScaleX;
 
-    *pScaleX = origScaleX * scaleFactor;
-    *pOffsetX = (int)((float)origOffsetX * scaleFactor + margin);
+    int newX = x + (int)(margin / newScaleX);
 
-    orig_DrawScreenRect(gfx, edx, x, y, w, h);
+    orig_DrawScreenRect(gfx, edx, newX, y, w, h);
 
     *pScaleX = origScaleX;
-    *pOffsetX = origOffsetX;
 }
 
 // ── Manual vtable (16 entries, MSVC layout) ────────────────────────
@@ -105,6 +103,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     HBAPI(api).CreateToggleButton(btn, thisptr);
     HBAPI(api).RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
+    HBAPI(api).RegisterCustomHook(0x455d60, (void*)hook_DrawScreenRect, (void**)&orig_DrawScreenRect);
 }
 
 static void __thiscall ball_update(void*, void*) {}
