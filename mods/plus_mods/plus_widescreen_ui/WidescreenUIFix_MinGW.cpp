@@ -105,7 +105,6 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     HBAPI(api).CreateToggleButton(btn, thisptr);
     HBAPI(api).RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
-    HBAPI(api).RegisterCustomHook(0x455d60, (void*)hook_DrawScreenRect, (void**)&orig_DrawScreenRect);
 }
 
 static void __thiscall ball_update(void*, void*) {}
