@@ -417,7 +417,7 @@ static int g_savedTimer = 0;
  * AND store-back, while leaving the FLD (harmless load on the FPU stack).
  * The FLD leaves a value on the FPU stack, but the following FCOMP at
  * 0x41B1D1 pops it, so the FPU stack stays balanced. */
-#define TIMER_DEC_ADDR        0x41B1C5
+#define TIMER_DEC_ADDR        0x1B1C5  /* RVA (base + 0x1B1C5 = 0x41B1C5) */
 #define TIMER_DEC_SIZE        12
 static unsigned char g_timerOrigBytes[TIMER_DEC_SIZE];
 static int g_timerBytesSaved = 0;
@@ -485,9 +485,11 @@ static void freeze_timer_decrement(void) {
             *((BYTE*)(addr + i)) = 0x90;  /* NOP */
         }
         VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
+        g_timerBytesSaved = 1;
+        diag_log("[warp] Timer decrement NOP'd (12 bytes at 0x41B1C5)");
+    } else {
+        diag_log("[warp] WARNING: VirtualProtect failed for timer decrement — timer NOT frozen");
     }
-    g_timerBytesSaved = 1;
-    diag_log("[warp] Timer decrement NOP'd (12 bytes at 0x41B1C5)");
 }
 
 /* Restore the timer decrement instruction */
