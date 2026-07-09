@@ -21,28 +21,64 @@ static bool g_enabled = true;
 typedef float (__fastcall *TransformX_t)(void*, void*, float);
 static TransformX_t orig_TransformX = NULL;
 
+typedef void (__fastcall *DrawScreenRect_t)(void*, void*, int, int, int, int);
+static DrawScreenRect_t orig_DrawScreenRect = NULL;
+
+static bool getWidescreenParams(void* gfx, float* outScale, float* outMargin) {
+    DWORD gfxAddr = (DWORD)gfx;
+    if (IsBadReadPtr(gfx, 0x800)) return false;
+    DWORD config = *(DWORD*)(gfxAddr + 0x5c);
+    if (!config || IsBadReadPtr((void*)config, 0x200)) return false;
+    DWORD bbWidth = *(DWORD*)(config + 0x15c);
+    DWORD bbHeight = *(DWORD*)(config + 0x160);
+    if (bbWidth <= 0 || bbHeight <= 0) return false;
+    float aspect = (float)bbWidth / (float)bbHeight;
+    if (aspect <= 1.34f) return false;
+    float ratio43 = 4.0f / 3.0f;
+    *outScale = ratio43 / aspect;
+    *outMargin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
+    return true;
+}
+
 static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
     float result = orig_TransformX(gfx, edx, pixel_x);
     if (!g_enabled) return result;
+    float scaleFactor, margin;
+    if (!getWidescreenParams(gfx, &scaleFactor, &margin)) return result;
+    return result * scaleFactor + margin;
+}
+
+static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, int w, int h) {
+    if (!g_enabled) { orig_DrawScreenRect(gfx, edx, x, y, w, h); return; }
+
+    float scaleFactor, margin;
+    if (!getWidescreenParams(gfx, &scaleFactor, &margin)) {
+        orig_DrawScreenRect(gfx, edx, x, y, w, h);
+        return;
+    }
 
     DWORD gfxAddr = (DWORD)gfx;
-    if (IsBadReadPtr(gfx, 0x800)) return result;
-
     DWORD config = *(DWORD*)(gfxAddr + 0x5c);
-    if (!config || IsBadReadPtr((void*)config, 0x200)) return result;
 
-    DWORD bbWidth = *(DWORD*)(config + 0x15c);
-    DWORD bbHeight = *(DWORD*)(config + 0x160);
-    if (bbWidth <= 0 || bbHeight <= 0) return result;
+    // Graphics_DrawScreenRect reads scale factors directly from presentParams
+    // instead of calling Gfx_TransformX. Temporarily modify the X scale
+    // and X offset so the rect gets pillarboxed the same way.
+    // Gfx_TransformX does: result = pixel_x * scaleX + offsetX
+    // We want: result = (pixel_x * scaleX + offsetX) * scaleFactor + margin
+    //        = pixel_x * (scaleX * scaleFactor) + (offsetX * scaleFactor + margin)
+    float* pScaleX = (float*)(config + 0x1f8);
+    int* pOffsetX = (int*)(gfxAddr + 0x798);
 
-    float aspect = (float)bbWidth / (float)bbHeight;
-    if (aspect <= 1.34f) return result;
+    float origScaleX = *pScaleX;
+    int origOffsetX = *pOffsetX;
 
-    float ratio43 = 4.0f / 3.0f;
-    float scaleFactor = ratio43 / aspect;
-    float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
+    *pScaleX = origScaleX * scaleFactor;
+    *pOffsetX = (int)((float)origOffsetX * scaleFactor + margin);
 
-    return result * scaleFactor + margin;
+    orig_DrawScreenRect(gfx, edx, x, y, w, h);
+
+    *pScaleX = origScaleX;
+    *pOffsetX = origOffsetX;
 }
 
 // ── Manual vtable (16 entries, MSVC layout) ────────────────────────
@@ -69,6 +105,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     HBAPI(api).CreateToggleButton(btn, thisptr);
     HBAPI(api).RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
+    HBAPI(api).RegisterCustomHook(0x455d60, (void*)hook_DrawScreenRect, (void**)&orig_DrawScreenRect);
 }
 
 static void __thiscall ball_update(void*, void*) {}
