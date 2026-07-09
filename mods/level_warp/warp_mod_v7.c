@@ -409,18 +409,37 @@ static int g_savedTimer = 0;
 /* Board offset: scene+0x874 = paused flag (set by Scene_CreateGameOverMenu) */
 #define BOARD_PAUSED_FLAG      0x874
 
-/* Timer decrement instruction in Board_UpdateRaceState:
+/* Timer decrement instruction in Board_UpdateRaceState (vtable slot 19):
  * 0x41B1BF: D9 86 24 36 00 00 = FLD float ptr [ESI+0x3624]  (6 bytes)
  * 0x41B1C5: DC 25 E0 03 4D 00 = FSUB double ptr [0x4D03E0]  (6 bytes)
  * 0x41B1CB: D9 96 24 36 00 00 = FST float ptr [ESI+0x3624]  (6 bytes)
  * We NOP the FSUB+FST (12 bytes at 0x41B1C5) to prevent the decrement
  * AND store-back, while leaving the FLD (harmless load on the FPU stack).
  * The FLD leaves a value on the FPU stack, but the following FCOMP at
- * 0x41B1D1 pops it, so the FPU stack stays balanced. */
+ * 0x41B1D1 pops it, so the FPU stack stays balanced.
+ *
+ * Timer INCREMENT instructions in board vtable slot 22 (function 0x41A540):
+ * This function ADDS to board+0x3624 every frame — it's the TT elapsed-time
+ * counter. Two FADD instructions:
+ *   0x41A6F5: D8 05 20 F5 4C 00 = FADD float [0x4CF520]  (+0.025, all modes)
+ *   0x41A70E: D8 05 24 F5 4C 00 = FADD float [0x4CF524]  (+0.01, TT mode only)
+ * We NOP just the FADD (6 bytes each), leaving the FST/FSTP intact so the
+ * FPU stack stays balanced (the unchanged value is stored back, which is a
+ * no-op since the mod overwrites board+0x3624 with g_whiteAlpha anyway). */
 #define TIMER_DEC_ADDR        0x1B1C5  /* RVA (base + 0x1B1C5 = 0x41B1C5) */
 #define TIMER_DEC_SIZE        12
 static unsigned char g_timerOrigBytes[TIMER_DEC_SIZE];
 static int g_timerBytesSaved = 0;
+
+#define TIMER_INC1_ADDR        0x1A6F5  /* RVA (base + 0x1A6F5 = 0x41A6F5) */
+#define TIMER_INC1_SIZE        6
+static unsigned char g_timerInc1OrigBytes[TIMER_INC1_SIZE];
+static int g_timerInc1Saved = 0;
+
+#define TIMER_INC2_ADDR        0x1A70E  /* RVA (base + 0x1A70E = 0x41A70E) */
+#define TIMER_INC2_SIZE        6
+static unsigned char g_timerInc2OrigBytes[TIMER_INC2_SIZE];
+static int g_timerInc2Saved = 0;
 
 /* ============================================================
  * Memory helpers
@@ -467,48 +486,109 @@ static void unblock_pause(void) {
     diag_log("[warp] Pause unblocked (originals restored)");
 }
 
-/* NOP the timer decrement instruction in Board_UpdateRaceState to freeze
- * the race timer. The live timer is board+0x3624 (float, -0.02/frame).
- * We NOP the FSUB+FST (12 bytes at 0x41B1C5) so the game loads the value
- * but never subtracts from it or writes it back. */
+/* NOP the timer modification instructions to freeze the race timer.
+ * board+0x3624 is modified by TWO functions per frame:
+ *   1. Board_UpdateRaceState (slot 19): FSUB 0.02 + FST (12 bytes at 0x41B1C5)
+ *   2. Board slot 22 (0x41A540): FADD 0.025 (6 bytes at 0x41A6F5) +
+ *      FADD 0.01 in TT mode (6 bytes at 0x41A70E)
+ * We NOP all three to fully freeze the timer. For the FADDs, we only NOP
+ * the FADD instruction itself (not the FST/FSTP after it) so the FPU
+ * stack stays balanced — the unchanged value is stored back harmlessly. */
 static void freeze_timer_decrement(void) {
-    if (g_timerBytesSaved) return;
     HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
     if (!hExe) hExe = GetModuleHandleA(NULL);
     DWORD base = (DWORD)hExe;
-    DWORD addr = base + TIMER_DEC_ADDR;
     DWORD oldProt;
     int i;
-    if (VirtualProtect((void*)addr, TIMER_DEC_SIZE, PAGE_READWRITE, &oldProt)) {
-        for (i = 0; i < TIMER_DEC_SIZE; i++) {
-            g_timerOrigBytes[i] = *((BYTE*)(addr + i));
-            *((BYTE*)(addr + i)) = 0x90;  /* NOP */
+
+    /* 1. NOP the FSUB+FST in Board_UpdateRaceState (12 bytes at 0x41B1C5) */
+    if (!g_timerBytesSaved) {
+        DWORD addr = base + TIMER_DEC_ADDR;
+        if (VirtualProtect((void*)addr, TIMER_DEC_SIZE, PAGE_READWRITE, &oldProt)) {
+            for (i = 0; i < TIMER_DEC_SIZE; i++) {
+                g_timerOrigBytes[i] = *((BYTE*)(addr + i));
+                *((BYTE*)(addr + i)) = 0x90;  /* NOP */
+            }
+            VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
+            g_timerBytesSaved = 1;
+            diag_log("[warp] Timer FSUB+FST NOP'd (12 bytes at 0x41B1C5)");
+        } else {
+            diag_log("[warp] WARNING: VirtualProtect failed for FSUB — timer NOT frozen");
         }
-        VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
-        g_timerBytesSaved = 1;
-        diag_log("[warp] Timer decrement NOP'd (12 bytes at 0x41B1C5)");
-    } else {
-        diag_log("[warp] WARNING: VirtualProtect failed for timer decrement — timer NOT frozen");
+    }
+
+    /* 2. NOP the FADD 0.025 in board slot 22 (6 bytes at 0x41A6F5) */
+    if (!g_timerInc1Saved) {
+        DWORD addr = base + TIMER_INC1_ADDR;
+        if (VirtualProtect((void*)addr, TIMER_INC1_SIZE, PAGE_READWRITE, &oldProt)) {
+            for (i = 0; i < TIMER_INC1_SIZE; i++) {
+                g_timerInc1OrigBytes[i] = *((BYTE*)(addr + i));
+                *((BYTE*)(addr + i)) = 0x90;  /* NOP */
+            }
+            VirtualProtect((void*)addr, TIMER_INC1_SIZE, oldProt, &oldProt);
+            g_timerInc1Saved = 1;
+            diag_log("[warp] Timer FADD 0.025 NOP'd (6 bytes at 0x41A6F5)");
+        } else {
+            diag_log("[warp] WARNING: VirtualProtect failed for FADD 0.025");
+        }
+    }
+
+    /* 3. NOP the FADD 0.01 in board slot 22 (6 bytes at 0x41A70E, TT mode only) */
+    if (!g_timerInc2Saved) {
+        DWORD addr = base + TIMER_INC2_ADDR;
+        if (VirtualProtect((void*)addr, TIMER_INC2_SIZE, PAGE_READWRITE, &oldProt)) {
+            for (i = 0; i < TIMER_INC2_SIZE; i++) {
+                g_timerInc2OrigBytes[i] = *((BYTE*)(addr + i));
+                *((BYTE*)(addr + i)) = 0x90;  /* NOP */
+            }
+            VirtualProtect((void*)addr, TIMER_INC2_SIZE, oldProt, &oldProt);
+            g_timerInc2Saved = 1;
+            diag_log("[warp] Timer FADD 0.01 NOP'd (6 bytes at 0x41A70E)");
+        } else {
+            diag_log("[warp] WARNING: VirtualProtect failed for FADD 0.01");
+        }
     }
 }
 
-/* Restore the timer decrement instruction */
+/* Restore all timer modification instructions */
 static void restore_timer_decrement(void) {
-    if (!g_timerBytesSaved) return;
     HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
     if (!hExe) hExe = GetModuleHandleA(NULL);
     DWORD base = (DWORD)hExe;
-    DWORD addr = base + TIMER_DEC_ADDR;
     DWORD oldProt;
     int i;
-    if (VirtualProtect((void*)addr, TIMER_DEC_SIZE, PAGE_READWRITE, &oldProt)) {
-        for (i = 0; i < TIMER_DEC_SIZE; i++) {
-            *((BYTE*)(addr + i)) = g_timerOrigBytes[i];
+
+    if (g_timerBytesSaved) {
+        DWORD addr = base + TIMER_DEC_ADDR;
+        if (VirtualProtect((void*)addr, TIMER_DEC_SIZE, PAGE_READWRITE, &oldProt)) {
+            for (i = 0; i < TIMER_DEC_SIZE; i++)
+                *((BYTE*)(addr + i)) = g_timerOrigBytes[i];
+            VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
         }
-        VirtualProtect((void*)addr, TIMER_DEC_SIZE, oldProt, &oldProt);
+        g_timerBytesSaved = 0;
     }
-    g_timerBytesSaved = 0;
-    diag_log("[warp] Timer decrement restored");
+
+    if (g_timerInc1Saved) {
+        DWORD addr = base + TIMER_INC1_ADDR;
+        if (VirtualProtect((void*)addr, TIMER_INC1_SIZE, PAGE_READWRITE, &oldProt)) {
+            for (i = 0; i < TIMER_INC1_SIZE; i++)
+                *((BYTE*)(addr + i)) = g_timerInc1OrigBytes[i];
+            VirtualProtect((void*)addr, TIMER_INC1_SIZE, oldProt, &oldProt);
+        }
+        g_timerInc1Saved = 0;
+    }
+
+    if (g_timerInc2Saved) {
+        DWORD addr = base + TIMER_INC2_ADDR;
+        if (VirtualProtect((void*)addr, TIMER_INC2_SIZE, PAGE_READWRITE, &oldProt)) {
+            for (i = 0; i < TIMER_INC2_SIZE; i++)
+                *((BYTE*)(addr + i)) = g_timerInc2OrigBytes[i];
+            VirtualProtect((void*)addr, TIMER_INC2_SIZE, oldProt, &oldProt);
+        }
+        g_timerInc2Saved = 0;
+    }
+
+    diag_log("[warp] Timer instructions restored (FSUB + 2x FADD)");
 }
 
 static int GetApp(void) {
