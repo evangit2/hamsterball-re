@@ -1,28 +1,21 @@
 {
   No Fall Damage + No Air Break (Full) — with BadBall immunity + AI fix
   Credits to BookwormKevin for the original script!
-  Players 1-4 AND badballs immune to ground killplanes.
+  Players 1-4 respawn when falling into void (native Ball_Respawn).
   All entity balls forced to NORMAL STATE every frame.
   Badballs attack all balls — no dead/falling/dizzy state possible.
-  Void respawn: balls below Y=-500 are teleported to (0,0,0) with zeroed velocity.
 
-  v2 fixes:
-  1. 10-byte patches → 6-byte (don't overwrite test al,al + jz)
-  2. ret in cave → jmp back (don't exit Scene_UpdateBallsAndState)
-  3. Ball_Shatter: RET 4 (__thiscall with 1 stack param)
-
-  v3 fixes:
-  4. Void respawn: Y<-500 → teleport to origin, zero velocity + angular
-
-  v4 fixes:
-  5. Float comparison: shr/cmp trick fails for negative floats (all negatives
-     have bit 31 set). Switched to FPU fcomip for correct Y<-500 comparison.
+  v2: 6-byte patches, jmp back (not ret), Ball_Shatter RET 4
+  v3: void respawn (Y<-500 teleport) — REMOVED, replaced with native respawn
+  v4: FPU comparison fix (ja not jb) — REMOVED, not needed with native respawn
+  v5: Native respawn trigger: copy 0x2E9→0x2E8, let FUN_00405190 handle teleport
+       Don't touch 0x2F8/0x2F9/0x2FC/0x300 (respawn sequence flags)
 }
 
 [ENABLE]
 
-alloc(ClearState_Cave1,512)
-alloc(ClearState_Cave2,512)
+alloc(ClearState_Cave1,256)
+alloc(ClearState_Cave2,256)
 alloc(Orig_402390,3)
 alloc(Orig_8D70,3)
 alloc(Orig_9050,3)
@@ -33,7 +26,6 @@ alloc(Orig_13934,6)
 alloc(Orig_1B591,6)
 alloc(Orig_1B636,6)
 alloc(Orig_75C9,6)
-alloc(Neg500,4)
 registersymbol(ClearState_Cave1)
 registersymbol(ClearState_Cave2)
 registersymbol(Orig_402390)
@@ -46,7 +38,6 @@ registersymbol(Orig_13934)
 registersymbol(Orig_1B591)
 registersymbol(Orig_1B636)
 registersymbol(Orig_75C9)
-registersymbol(Neg500)
 
 Orig_402390:
   readmem(Hamsterball.exe+2390,3)
@@ -77,10 +68,6 @@ Orig_1B636:
 
 Orig_75C9:
   readmem(Hamsterball.exe+75C9,6)
-
-{ -500.0f constant for FPU comparison }
-Neg500:
-  db 00 00 FA C3
 
 { NOP bounce_count increment (ball+0x2EC) }
 Hamsterball.exe+75C9:
@@ -122,73 +109,57 @@ Hamsterball.exe+1B636:
   jmp ClearState_Cave2
   db 90
 
+{ Cave 1: Player balls (scene+0x29D4 list)
+  Copy death_pending (0x2E9) → falling (0x2E8) to trigger native Ball_Respawn.
+  FUN_00405190 handles teleport to spawn point + velocity zeroing.
+  DO NOT touch 0x2F8/0x2F9/0x2FC/0x300 — respawn sequence flags. }
 ClearState_Cave1:
-  { Void respawn: if ball Y < -500.0, teleport to origin }
-  fld dword ptr [esi+0x168]
-  fld dword ptr [Neg500]
-  fcomip st(0),st(1)
-  fstp st(0)
-  ja DoRespawn1
-  jmp ClearStates1
-
-DoRespawn1:
-  { Teleport to (0,0,0) }
-  mov dword ptr [esi+0x164],00000000
-  mov dword ptr [esi+0x168],00000000
-  mov dword ptr [esi+0x16C],00000000
-  { Zero velocity (ball+0x174/0x178/0x17C) }
-  mov dword ptr [esi+0x174],00000000
-  mov dword ptr [esi+0x178],00000000
-  mov dword ptr [esi+0x17C],00000000
-  { Zero angular velocity (ball+0x180/0x184) }
-  mov dword ptr [esi+0x180],00000000
-  mov dword ptr [esi+0x184],00000000
-
-ClearStates1:
-  mov byte ptr [esi+0x2CC],00
-  mov byte ptr [esi+0x2D4],00
-  mov byte ptr [esi+0x2E8],00
+  { Copy 0x2E9 → 0x2E8 to trigger respawn }
+  mov al,[esi+0x2E9]
+  mov [esi+0x2E8],al
+  { Clear 0x2E9 (prevent re-trigger) }
   mov byte ptr [esi+0x2E9],00
+  { Clear in-tar }
+  mov byte ptr [esi+0x2CC],00
+  { Clear vacuum }
+  mov byte ptr [esi+0x2D4],00
+  { Clear bounce_count }
   mov byte ptr [esi+0x2EC],00
+  { Clear dizzy_immunity_timer }
   mov dword ptr [esi+0x2F4],00000000
-  mov byte ptr [esi+0x2F8],00
-  mov byte ptr [esi+0x2F9],00
-  mov dword ptr [esi+0x2FC],3F800000
-  mov dword ptr [esi+0x300],00000000
+  { Clear impact }
   mov dword ptr [esi+0x808],00000000
-  xor al,al
+  { AL = ball+0x2E8 (original instruction behavior) }
+  mov al,[esi+0x2E8]
   jmp Hamsterball.exe+1B597
 
+{ Cave 2: Entity balls (scene+0x3204 list)
+  Clear 0x2E8 to prevent destroy/remove.
+  Force all state flags to normal so badballs interact with them. }
 ClearState_Cave2:
-  fld dword ptr [esi+0x168]
-  fld dword ptr [Neg500]
-  fcomip st(0),st(1)
-  fstp st(0)
-  ja DoRespawn2
-  jmp ClearStates2
-
-DoRespawn2:
-  mov dword ptr [esi+0x164],00000000
-  mov dword ptr [esi+0x168],00000000
-  mov dword ptr [esi+0x16C],00000000
-  mov dword ptr [esi+0x174],00000000
-  mov dword ptr [esi+0x178],00000000
-  mov dword ptr [esi+0x17C],00000000
-  mov dword ptr [esi+0x180],00000000
-  mov dword ptr [esi+0x184],00000000
-
-ClearStates2:
-  mov byte ptr [esi+0x2CC],00
-  mov byte ptr [esi+0x2D4],00
+  { Clear falling (prevent destroy) }
   mov byte ptr [esi+0x2E8],00
+  { Clear death_pending }
   mov byte ptr [esi+0x2E9],00
+  { Clear in-tar }
+  mov byte ptr [esi+0x2CC],00
+  { Clear vacuum }
+  mov byte ptr [esi+0x2D4],00
+  { Clear bounce_count }
   mov byte ptr [esi+0x2EC],00
+  { Clear dizzy_immunity_timer }
   mov dword ptr [esi+0x2F4],00000000
+  { Clear respawn flag }
   mov byte ptr [esi+0x2F8],00
+  { Clear snap/respawn flag }
   mov byte ptr [esi+0x2F9],00
+  { Set alpha = 1.0 visible }
   mov dword ptr [esi+0x2FC],3F800000
+  { Clear respawn timer }
   mov dword ptr [esi+0x300],00000000
+  { Clear impact }
   mov dword ptr [esi+0x808],00000000
+  { AL = 0 (not falling — skip respawn/destroy path) }
   xor al,al
   jmp Hamsterball.exe+1B63C
 
@@ -236,7 +207,6 @@ dealloc(Orig_13934)
 dealloc(Orig_1B591)
 dealloc(Orig_1B636)
 dealloc(Orig_75C9)
-dealloc(Neg500)
 unregistersymbol(ClearState_Cave1)
 unregistersymbol(ClearState_Cave2)
 unregistersymbol(Orig_402390)
@@ -249,4 +219,3 @@ unregistersymbol(Orig_13934)
 unregistersymbol(Orig_1B591)
 unregistersymbol(Orig_1B636)
 unregistersymbol(Orig_75C9)
-unregistersymbol(Neg500)
