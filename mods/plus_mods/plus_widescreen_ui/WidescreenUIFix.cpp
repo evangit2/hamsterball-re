@@ -7,6 +7,7 @@ class WidescreenUIFix : public HamsterballAPI {
 private:
 	IModAPI* api = nullptr;
 	static inline bool g_enabled = true;
+	static inline int g_debugCount = 0;
 
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
@@ -52,13 +53,23 @@ private:
 
 		float* pScaleX = (float*)(config + 0x1f8);
 		float origScaleX = *pScaleX;
+
+		if (origScaleX <= 0.0f || origScaleX > 1.0f) {
+			orig_DrawScreenRect(gfx, edx, x, y, w, h);
+			return;
+		}
+
 		float newScaleX = origScaleX * scaleFactor;
+
+		g_debugCount++;
+		if (g_debugCount <= 5) {
+			printf("[WSUI] rect #%d: x=%d y=%d w=%d h=%d scaleX=%f newScale=%f margin=%f offset=%d\n",
+				g_debugCount, x, y, w, h, origScaleX, newScaleX, margin, (int)(margin / newScaleX));
+		}
+
 		*pScaleX = newScaleX;
-
 		int newX = x + (int)(margin / newScaleX);
-
 		orig_DrawScreenRect(gfx, edx, newX, y, w, h);
-
 		*pScaleX = origScaleX;
 	}
 
