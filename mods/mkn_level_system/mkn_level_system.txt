@@ -1,6 +1,15 @@
 ================================================================================
-MESHWORLD LEVEL SYSTEM v2 — Level Swapper with Per-Level Object Control
+MESHWORLD LEVEL SYSTEM v3 — Level Swapper with Custom Vtable Allocation
 ================================================================================
+
+v3 NEW FEATURES:
+  - Custom vtable allocation: each level gets its OWN writable vtable copy.
+    VTABLE commands now ALWAYS work per-level, even after SET/SWAP redirects
+    the board ctor to another level. The ctor writes the custom vtable, not
+    the original .data vtable.
+  - COPYVT A B — copy ALL 36 vtable entries from level B into level A's
+    custom vtable. Use with SET: SET 1 2 gives Level 1 Beginner's struct,
+    then COPYVT 1 2 gives it Beginner's vtable as a starting point.
 
 Level Numbers:
   1=WarmUp  2=Beginner  3=Intermediate  4=Dizzy     5=Tower
@@ -8,47 +17,56 @@ Level Numbers:
   11=Wobbly 12=Glass    13=Sky          14=Master   15=Impossible
 
 Commands (in CONFIG SECTION below):
-  SETUP A func — Replace level A's setup function (vtable[18]) with a named
-                 function. Changes which .MESHWORLD loads. See function list below.
+  SET A B      — One-way redirect. Level A gets level B's board ctor + struct
+                 size. Level A still uses its own custom vtable (modify with
+                 VTABLE). Tip: use COPYVT A B after SET to copy B's vtable.
+
+  COPYVT A B  — Copy ALL 36 vtable entries from level B's custom vtable into
+                 level A's custom vtable. Useful with SET to start from B's
+                 vtable layout, then customize individual slots with VTABLE.
+
+  SWAP A B    — Full level swap. Redirects the board constructor for level A
+                to level B's ctor (with B's struct size) and vice versa.
+                This swaps EVERYTHING: geometry, objects, physics, camera.
+                Custom vtables stay independent — VTABLE still works per-level.
+
+  SWAPOBJ A B — Swap only vtable[32] (Board_Setup) between two levels.
+                Changes which OBJECTS appear without changing the board ctor
+                or geometry.
+
+  SWAPGEO A B — Swap only vtable[18] (setup function) between two levels.
+                Changes which .MESHWORLD geometry loads without changing the
+                board ctor or objects.
+                WARNING: May crash if the swapped setup function writes to
+                board offsets beyond the original level's struct size.
+                Use SET instead for safe cross-struct-size swaps.
+
+  SETUP A func — Replace level A's vtable[18] (setup function) with a named
+                 function. Changes which .MESHWORLD loads.
 
   ADD A func   — Add an extra function call after level A's setup function.
                  Creates a trampoline via VirtualAlloc that chains the calls.
                  Use to run additional setup logic per level.
 
-  SWAP A B     — Full level swap. Redirects the board constructor for level A
-                 to level B's ctor (with B's struct size) and vice versa.
-                 This swaps EVERYTHING: geometry, objects, physics, camera.
-                 SAFE — no struct size mismatch, no vtable corruption.
-
-  SET A B      — One-way redirect. Level A gets level B's board ctor.
-                 Level B stays unchanged.
-
-  SWAPOBJ A B  — Swap only vtable[32] (Board_Setup) between two levels.
-                 Changes which OBJECTS appear (Tippers, Blockdawgs, etc.)
-                 without changing the board ctor or geometry.
-                 WARNING: May crash if Board_Setup expects mesh slots the
-                 source level's ctor didn't initialize.
-
-  SWAPGEO A B  — Swap only vtable[18] (setup function) between two levels.
-                 Changes which .MESHWORLD geometry loads without changing
-                 the board ctor or objects.
-                 WARNING: May crash if the board ctor initializes mesh
-                 slots the swapped setup function doesn't expect.
-
   VTABLE A slot func — Write any function into any vtable slot for level A.
+                     Writes to the level's CUSTOM vtable — always works,
+                     even after SET/SWAP.
                      <slot> can be a number (0-35) or a name:
                        dtor(0) update(1) setup(18) initscene(19)
                        renderdynamic(24) dispatchcollision(29)
                        boardsetup(32) levelspecific(33)
-                     <func> can be a name from the function table or 0xHEXADDR
+                     <func> can be a name from the function table, 0xHEXADDR,
+                     or 0/null to clear the slot.
                      Examples:
                        VTABLE 1 setup Scene_SetupLevelCascade
                        VTABLE 3 0 Beginner_dtor
                        VTABLE 5 boardsetup 0x0041C5B0
+                       VTABLE 1 9 Odd_DispatchColl
+                       VTABLE 1 2 0          ; clear slot 2
 
   DUMP        — Log the full 36-entry vtable for every level to the .log file.
 
-  RESET       — Restore all original values (push+call+vtable[0-35]).
+  RESET       — Restore all original values (push+call+custom vtable[0-35]).
 
 Level names can be used instead of numbers (case-insensitive):
   WarmUp, Beginner, Intermediate, Dizzy, Tower, Up, Neon, Expert,
@@ -86,12 +104,48 @@ Function names for SETUP, ADD, and VTABLE:
 # Lines starting with # are comments. Remove # to activate.
 # ════════════════════════════════════════════════════════════════════════════
 #
-# Examples (uncomment to activate):
-#SETUP 3 Scene_LoadLevel4
-#ADD 3 Level_InitScene
-#SWAP 1 4
-#SET 3 Dizzy
-#SWAPOBJ 5 6
-#SWAPGEO 1 7
+# Example: Make Level 1 (Warm-Up) use Beginner's geometry + objects + struct,
+# then customize its vtable:
+#
+# SET 1 2
+# COPYVT 1 2
+# VTABLE 1 9 Odd_DispatchColl
+# VTABLE 1 10 Odd_DispatchColl
+# VTABLE 1 13 Odd_DispatchColl
+# VTABLE 1 30 Odd_DispatchColl
+# VTABLE 1 34 Odd_DispatchColl
+#
+# Example: Swap geometry only (same struct size levels only!):
+# SWAPGEO 1 3
+#
+# Example: Full swap:
+# SWAP 1 4
+
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# LEVEL 1 │ WARM-UP RACE │ CUSTOM SETUP
+# ════════════════════════════════════════════════════════════════════════════
+
+# Safe way to give Level 1 Beginner's geometry + struct:
+SET 1 2
+COPYVT 1 2
+
+# Now customize Level 1's vtable (independent from Level 2):
+VTABLE 1 9 Odd_DispatchColl
+VTABLE 1 10 Odd_DispatchColl
+VTABLE 1 13 Odd_DispatchColl
+VTABLE 1 30 Odd_DispatchColl
+VTABLE 1 34 Odd_DispatchColl
+
+# ════════════════════════════════════════════════════════════════════════════
+
+
+
+
+
+
+
 
 END CONFIG
