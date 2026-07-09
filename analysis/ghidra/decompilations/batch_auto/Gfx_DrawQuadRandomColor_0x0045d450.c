@@ -48,10 +48,10 @@ Gfx_DrawQuadRandomColor
   pvStack_c = ExceptionList;
   local_4 = 2;
   ExceptionList = &pvStack_c;
-  fVar3 = Gfx_TransformZ(*(void **)((int)this + 4),param_5 + param_3);
-  fVar4 = Gfx_TransformY(*(void **)((int)this + 4),param_4 + param_2);
-  fVar5 = Gfx_TransformZ(*(void **)((int)this + 4),param_3);
-  fVar6 = Gfx_TransformY(*(void **)((int)this + 4),param_2);
+  fVar3 = Gfx_TransformY(*(void **)((int)this + 4),param_5 + param_3);
+  fVar4 = Gfx_TransformX(*(void **)((int)this + 4),param_4 + param_2);
+  fVar5 = Gfx_TransformY(*(void **)((int)this + 4),param_3);
+  fVar6 = Gfx_TransformX(*(void **)((int)this + 4),param_2);
   local_7c = (float)fVar6;
   local_44 = (float)fVar6;
   local_68 = param_7;

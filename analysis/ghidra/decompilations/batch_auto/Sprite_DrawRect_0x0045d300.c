@@ -21,10 +21,10 @@ void __thiscall Sprite_DrawRect(void *this,float param_1,float param_2)
   pvStack_c = ExceptionList;
   local_4 = 0;
   ExceptionList = &pvStack_c;
-  fVar4 = Gfx_TransformY(*(void **)((int)this + 4),param_1);
-  fVar5 = Gfx_TransformZ(*(void **)((int)this + 4),param_2);
-  fVar6 = Gfx_TransformY(*(void **)((int)this + 4),(float)*(int *)((int)this + 200) + param_1);
-  fVar7 = Gfx_TransformZ(*(void **)((int)this + 4),(float)*(int *)((int)this + 0xcc) + param_2);
+  fVar4 = Gfx_TransformX(*(void **)((int)this + 4),param_1);
+  fVar5 = Gfx_TransformY(*(void **)((int)this + 4),param_2);
+  fVar6 = Gfx_TransformX(*(void **)((int)this + 4),(float)*(int *)((int)this + 200) + param_1);
+  fVar7 = Gfx_TransformY(*(void **)((int)this + 4),(float)*(int *)((int)this + 0xcc) + param_2);
   uVar3 = Color_RandomRGBA();
   bVar2 = in_stack_0000001c != _DAT_004cf310;
   *(float *)((int)this + 0x58) = (float)fVar4;

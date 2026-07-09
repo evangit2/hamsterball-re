@@ -24,13 +24,13 @@ private:
 	static inline TransformY_t orig_TransformY = nullptr;
 
 	// UI coordinate system (from Ghidra decompilation):
-	//   Gfx_TransformY(gfx, pixel_x) = pixel_x * scaleX + offsetX
-	//   Gfx_TransformZ(gfx, pixel_y) = pixel_y * scaleY + offsetY
+	//   Gfx_TransformX(gfx, pixel_x) = pixel_x * scaleX + offsetX
+	//   Gfx_TransformY(gfx, pixel_y) = pixel_y * scaleY + offsetY
 	//
 	// Returns screen-space pixel coordinates (used with D3DFVF_XYZRHW).
 	// On 16:9, scaleX stretches X coordinates → UI stretches.
 	//
-	// Fix: hook Gfx_TransformY and apply a linear transform to its output:
+	// Fix: hook Gfx_TransformX and apply a linear transform to its output:
 	//   corrected = result * scaleFactor + margin
 	//
 	// Where:
@@ -57,9 +57,9 @@ private:
 		return result * g_scaleFactor + g_margin;
 	}
 
-	// Gfx_TransformY is only called by Sprite_DrawRect and similar
+	// Gfx_TransformX is only called by Sprite_DrawRect and similar
 	// sprite functions — these are UI-only. The 3D pass uses the
-	// projection matrix and vertex shaders, NOT Gfx_TransformY.
+	// projection matrix and vertex shaders, NOT Gfx_TransformX.
 	// So we can safely apply the transform on ANY (0,0) viewport
 	// call inside Scene_Render, not just the 2nd one.
 	//

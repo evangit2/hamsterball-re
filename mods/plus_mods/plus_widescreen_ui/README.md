@@ -4,11 +4,11 @@ A Hamsterball Plus mod that corrects UI stretching when running the game in wide
 
 ## Problem
 
-Hamsterball's UI uses `D3DFVF_XYZRHW` (pre-transformed) vertices. The X coordinates are computed by `Gfx_TransformY` (0x453e90) using a scale factor derived from the backbuffer dimensions. On widescreen resolutions, this scale factor stretches all UI elements horizontally. The projection matrix is **not** involved — UI vertices bypass it entirely.
+Hamsterball's UI uses `D3DFVF_XYZRHW` (pre-transformed) vertices. The X coordinates are computed by `Gfx_TransformX` (0x453e90) using a scale factor derived from the backbuffer dimensions. On widescreen resolutions, this scale factor stretches all UI elements horizontally. The projection matrix is **not** involved — UI vertices bypass it entirely.
 
 ## Solution
 
-Hook `Gfx_TransformY` directly and apply a linear transform to its return value:
+Hook `Gfx_TransformX` directly and apply a linear transform to its return value:
 
 ```
 corrected = result * scaleFactor + margin
@@ -38,7 +38,7 @@ Three hooks work together:
 
 2. **`Graphics_SetViewport` (0x454f10) hook** — after the original runs, if params are `(0,0)` and an active game board exists (App→Profile→Board chain), sets `g_inUIPass = true` and computes the scale factor and margin from backbuffer dimensions. The board-existence check skips menus.
 
-3. **`Gfx_TransformY` (0x453e90) hook** — when `g_inUIPass` is true, transforms the return value to pillarbox the UI. Safe because `Gfx_TransformY` is only called by `Sprite_DrawRect` and similar UI-only functions — 3D rendering never goes through it.
+3. **`Gfx_TransformX` (0x453e90) hook** — when `g_inUIPass` is true, transforms the return value to pillarbox the UI. Safe because `Gfx_TransformX` is only called by `Sprite_DrawRect` and similar UI-only functions — 3D rendering never goes through it.
 
 4. **`Scene_Render` (0x41a2e0) hook** — resets `g_inUIPass` before and after the render call for race modes. Not strictly needed since `onGameUpdate` handles the reset, but kept as a safety net.
 
@@ -81,7 +81,7 @@ The MinGW build requires three fixes (all included):
 
 | Address | Function | Purpose |
 |---------|----------|---------|
-| 0x453e90 | Gfx_TransformY | UI X coordinate transform (hooked) |
+| 0x453e90 | Gfx_TransformX | UI X coordinate transform (hooked) |
 | 0x454f10 | Graphics_SetViewport | Viewport + projection setup (hooked) |
 | 0x41a2e0 | Scene_Render | Race mode render dispatcher (hooked) |
 | 0x421910 | ArenaBoard_Render | Arena UI render (called by arena vtable[28]) |
@@ -94,7 +94,7 @@ The MinGW build requires three fixes (all included):
 - **v11** — Board-existence check to skip menus (App→Profile→Board chain)
 - **v10** — Removed Scene_Render guard to fix Rodent Rumble (arena has separate vtable)
 - **v9** — Fixed Party Race/Rodent Rumble split-screen (any (0,0) call, not just 2nd)
-- **v8** — Hook Gfx_TransformY directly instead of modifying global scale factors
+- **v8** — Hook Gfx_TransformX directly instead of modifying global scale factors
 - **v1-v7** — Failed approaches: projection matrix override, scale factor writes, offset modification
 
 ## Author

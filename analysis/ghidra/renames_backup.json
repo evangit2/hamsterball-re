@@ -1794,11 +1794,11 @@
     },
     {
       "address": "0x00453e90",
-      "name": "Gfx_TransformY"
+      "name": "Gfx_TransformX"
     },
     {
       "address": "0x00453eb0",
-      "name": "Gfx_TransformZ"
+      "name": "Gfx_TransformY"
     },
     {
       "address": "0x00454000",

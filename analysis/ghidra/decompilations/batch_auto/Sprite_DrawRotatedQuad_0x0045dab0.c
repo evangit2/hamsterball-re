@@ -23,17 +23,17 @@ Sprite_DrawRotatedQuad(void *this,float param_1,float param_2,float param_3,floa
   pvStack_c = ExceptionList;
   local_4 = 0;
   ExceptionList = &pvStack_c;
-  fVar6 = Gfx_TransformY(*(void **)((int)this + 4),param_1 - (float)(*(int *)((int)this + 200) / 2))
+  fVar6 = Gfx_TransformX(*(void **)((int)this + 4),param_1 - (float)(*(int *)((int)this + 200) / 2))
   ;
-  fVar7 = Gfx_TransformZ(*(void **)((int)this + 4),param_2 - (float)(*(int *)((int)this + 0xcc) / 2)
+  fVar7 = Gfx_TransformY(*(void **)((int)this + 4),param_2 - (float)(*(int *)((int)this + 0xcc) / 2)
                         );
-  fVar8 = Gfx_TransformY(*(void **)((int)this + 4),(float)(*(int *)((int)this + 200) / 2) + param_1)
+  fVar8 = Gfx_TransformX(*(void **)((int)this + 4),(float)(*(int *)((int)this + 200) / 2) + param_1)
   ;
-  fVar9 = Gfx_TransformZ(*(void **)((int)this + 4),(float)(*(int *)((int)this + 0xcc) / 2) + param_2
+  fVar9 = Gfx_TransformY(*(void **)((int)this + 4),(float)(*(int *)((int)this + 0xcc) / 2) + param_2
                         );
-  fVar10 = Gfx_TransformY(*(void **)((int)this + 4),param_1);
+  fVar10 = Gfx_TransformX(*(void **)((int)this + 4),param_1);
   fVar1 = (float)fVar10;
-  fVar10 = Gfx_TransformZ(*(void **)((int)this + 4),param_2);
+  fVar10 = Gfx_TransformY(*(void **)((int)this + 4),param_2);
   fVar2 = (float)fVar10;
   uVar4 = Color_RandomRGBA();
   *(float *)((int)this + 0x58) = (float)fVar8;
