@@ -66,40 +66,41 @@ static DWORD lookup_func_addr(const char* name) {
     return 0;
 }
 
-/* Each level table entry starts with 18 function pointers (a level vtable).
- * Offset 0x00 = setup function, 0x04..0x44 = board ctor, update, render, etc.
- * Swapping just the first DWORD crashes because the game also calls the other
- * 17 functions from the entry. We must swap ALL 18 pointers (72 bytes). */
-#define LEVEL_VTABLE_SIZE 72  /* 18 DWORDs */
+/* ============================================================
+ * Level dispatch — the switch jump table in Tournament_AdvanceRace
+ *
+ * At 0x00427102: JMP [EAX*4 + 0x42761C]
+ * The jump table at 0x42761C has 15 entries (one per race index 0-14).
+ * Each entry points to the case body that calls operator_new + LevelBoard_*_ctor.
+ *
+ * Swapping entries in THIS table swaps which board class gets created,
+ * which swaps EVERYTHING: setup function, objects, collision, render, etc.
+ * ============================================================ */
 
-/* Read the full 18-pointer vtable from a level's data table entry */
-static void get_level_vtable(int level_num, DWORD* out_ptrs) {
-    if (level_num < 1 || level_num > 15) return;
-    DWORD addr = g_levels[level_num - 1].table_addr;
-    if (IsBadReadPtr((void*)addr, LEVEL_VTABLE_SIZE)) return;
-    memcpy(out_ptrs, (void*)addr, LEVEL_VTABLE_SIZE);
+#define SWITCH_JUMPTABLE_ADDR 0x0042761C
+#define NUM_LEVELS 15
+
+/* Swap two 4-byte entries in the switch jump table */
+static void swap_switch_entries(int idx_a, int idx_b) {
+    if (idx_a < 0 || idx_a >= NUM_LEVELS) return;
+    if (idx_b < 0 || idx_b >= NUM_LEVELS) return;
+    DWORD addr_a = SWITCH_JUMPTABLE_ADDR + idx_a * 4;
+    DWORD addr_b = SWITCH_JUMPTABLE_ADDR + idx_b * 4;
+    DWORD val_a = 0, val_b = 0;
+    if (IsBadReadPtr((void*)addr_a, 4)) return;
+    if (IsBadReadPtr((void*)addr_b, 4)) return;
+    val_a = *(DWORD*)addr_a;
+    val_b = *(DWORD*)addr_b;
+    patch_dword(addr_a, val_b);
+    patch_dword(addr_b, val_a);
 }
 
-/* Write the full 18-pointer vtable into a level's data table entry */
-static void set_level_vtable(int level_num, const DWORD* in_ptrs) {
-    if (level_num < 1 || level_num > 15) return;
-    DWORD addr = g_levels[level_num - 1].table_addr;
-    patch_bytes(addr, in_ptrs, LEVEL_VTABLE_SIZE);
-}
-
-/* Get just the setup function pointer (first DWORD) */
-static DWORD get_table_ptr(int level_num) {
-    if (level_num < 1 || level_num > 15) return 0;
-    DWORD addr = g_levels[level_num - 1].table_addr;
+/* Get current jump table entry */
+static DWORD get_switch_entry(int idx) {
+    if (idx < 0 || idx >= NUM_LEVELS) return 0;
+    DWORD addr = SWITCH_JUMPTABLE_ADDR + idx * 4;
     if (IsBadReadPtr((void*)addr, 4)) return 0;
     return *(DWORD*)addr;
-}
-
-/* Write just the setup function pointer (first DWORD) */
-static void set_table_ptr(int level_num, DWORD func_addr) {
-    if (level_num < 1 || level_num > 15) return;
-    DWORD addr = g_levels[level_num - 1].table_addr;
-    patch_dword(addr, func_addr);
 }
 
 /* ============================================================
@@ -193,17 +194,11 @@ static void apply_config(void) {
     diag_log("[mkn_level_system] Config file loaded, parsing...");
     diag_logf("Config path: %s", g_configPath);
 
-    /* Dump current table state BEFORE changes */
-    diag_log("--- Table state BEFORE config ---");
-    for (int i = 0; i < 15; i++) {
-        DWORD table_addr = g_levels[i].table_addr;
-        DWORD current = 0;
-        if (!IsBadReadPtr((void*)table_addr, 4))
-            current = *(DWORD*)table_addr;
-        diag_logf("  Level %2d: table[0x%08X] = 0x%08X (expected 0x%08X %s)%s",
-            g_levels[i].level_num, table_addr, current,
-            g_levels[i].func_addr, g_levels[i].name,
-            (current == g_levels[i].func_addr) ? "" : " *** MISMATCH ***");
+    /* Dump current switch jump table state BEFORE changes */
+    diag_log("--- Switch jump table BEFORE config ---");
+    for (int i = 0; i < NUM_LEVELS; i++) {
+        DWORD val = get_switch_entry(i);
+        diag_logf("  [%2d] 0x%08X", i, val);
     }
 
     /* Parse line by line */
@@ -236,41 +231,30 @@ static void apply_config(void) {
         }
 
         /* Parse SET <level_num> <func_name>
-         * SET replaces a level's setup function (first DWORD only).
-         * This changes which level file loads but keeps the original
-         * board class/collision/render/etc. Use SWAP for full swaps. */
+         * SET is not supported with the switch table approach — use SWAP instead.
+         * (SET would require patching the jump table to point to arbitrary code,
+         *  which is unsafe without a code cave.) */
         if (_strnicmp(line, "SET ", 4) == 0) {
-            int level_num = 0;
-            char func_name[128] = "";
-            if (sscanf(line + 4, "%d %127s", &level_num, func_name) == 2) {
-                DWORD addr = lookup_func_addr(func_name);
-                if (addr && level_num >= 1 && level_num <= 15) {
-                    set_table_ptr(level_num, addr);
-                    changes++;
-                    diag_logf("SET level %d setup -> %s (0x%08X)", level_num, func_name, addr);
-                } else if (!addr) {
-                    diag_logf("WARNING: unknown function '%s'", func_name);
-                }
-            }
+            diag_log("SET is not supported in switch-table mode. Use SWAP instead.");
         }
         /* Parse SWAP <levelA> <levelB>
-         * SWAP exchanges the FULL 18-pointer vtable (72 bytes) between
-         * two levels — setup, board ctor, update, render, collision, etc.
-         * This is the correct way to swap levels without crashing. */
+         * Swaps two entries in the switch jump table at 0x42761C.
+         * This swaps which LevelBoard_*_ctor runs for each race index,
+         * which swaps the ENTIRE level: board class, objects, collision, etc. */
         else if (_strnicmp(line, "SWAP ", 5) == 0) {
             int a = 0, b = 0;
             if (sscanf(line + 5, "%d %d", &a, &b) == 2) {
-                if (a >= 1 && a <= 15 && b >= 1 && b <= 15) {
-                    DWORD vtable_a[18];
-                    DWORD vtable_b[18];
-                    get_level_vtable(a, vtable_a);
-                    get_level_vtable(b, vtable_b);
-                    set_level_vtable(a, vtable_b);
-                    set_level_vtable(b, vtable_a);
+                /* Convert 1-based to 0-based */
+                int idx_a = a - 1;
+                int idx_b = b - 1;
+                if (idx_a >= 0 && idx_a < NUM_LEVELS && idx_b >= 0 && idx_b < NUM_LEVELS) {
+                    DWORD before_a = get_switch_entry(idx_a);
+                    DWORD before_b = get_switch_entry(idx_b);
+                    swap_switch_entries(idx_a, idx_b);
                     changes += 2;
-                    diag_logf("SWAP level %d <-> level %d (full 72-byte vtable)", a, b);
-                    diag_logf("  L%d setup: 0x%08X -> 0x%08X", a, vtable_a[0], vtable_b[0]);
-                    diag_logf("  L%d setup: 0x%08X -> 0x%08X", b, vtable_b[0], vtable_a[0]);
+                    diag_logf("SWAP level %d <-> level %d (switch jump table)", a, b);
+                    diag_logf("  [%d] 0x%08X -> 0x%08X", idx_a, before_a, before_b);
+                    diag_logf("  [%d] 0x%08X -> 0x%08X", idx_b, before_b, before_a);
                 }
             }
         }
@@ -284,23 +268,11 @@ static void apply_config(void) {
         diag_log("No config changes (defaults)");
     }
 
-    /* Dump table state AFTER changes */
-    diag_log("--- Table state AFTER config ---");
-    for (int i = 0; i < 15; i++) {
-        DWORD table_addr = g_levels[i].table_addr;
-        DWORD current = 0;
-        if (!IsBadReadPtr((void*)table_addr, 4))
-            current = *(DWORD*)table_addr;
-        const char* match_name = "???";
-        for (int j = 0; j < 15; j++) {
-            if (g_levels[j].func_addr == current) {
-                match_name = g_levels[j].name;
-                break;
-            }
-        }
-        diag_logf("  Level %2d: table[0x%08X] = 0x%08X (%s)%s",
-            g_levels[i].level_num, table_addr, current, match_name,
-            (current == g_levels[i].func_addr) ? "" : " *** CHANGED ***");
+    /* Dump switch jump table state AFTER changes */
+    diag_log("--- Switch jump table AFTER config ---");
+    for (int i = 0; i < NUM_LEVELS; i++) {
+        DWORD val = get_switch_entry(i);
+        diag_logf("  [%2d] 0x%08X", i, val);
     }
     diag_log("========================================");
 }

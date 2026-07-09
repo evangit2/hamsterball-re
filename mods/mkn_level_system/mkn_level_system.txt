@@ -248,19 +248,15 @@ LEVEL 15: IMPOSSIBLE
 # Lines starting with # are comments. Remove # to activate.
 # ════════════════════════════════════════════════════════════════════════════
 #
-# SET <level_number> <setup_function_name>
-#   Replaces the setup function for the given level with another.
-#   Level numbers: 1=Warm-Up, 2=Beginner, 3=Intermediate, 4=Dizzy, 5=Tower,
-#   6=Up, 7=Neon, 8=Expert, 9=Odd, 10=Toob, 11=Wobbly, 12=Glass,
-#   13=Sky, 14=Master, 15=Impossible
+# Commands:
+#   SWAP <level_A> <level_B>  — Swap two levels' board classes entirely
 #
-# SWAP <level_A> <level_B>
-#   Swaps the setup functions between two levels (both directions).
+# Level numbers: 1=Warm-Up, 2=Beginner, 3=Intermediate, 4=Dizzy, 5=Tower,
+# 6=Up, 7=Neon, 8=Expert, 9=Odd, 10=Toob, 11=Wobbly, 12=Glass,
+# 13=Sky, 14=Master, 15=Impossible
 #
 # Examples (uncomment to activate):
-#SET 3 Scene_LoadLevel4
 #SWAP 5 6
-#SET 1 Scene_SetupLevelDark
-#SET 4 Scene_SetupLevel9
+#SWAP 1 7
 
 END CONFIG
