@@ -45,13 +45,6 @@ static void __fastcall hook_SetViewport(void* gfx, void* edx, int param1, int pa
     if (!g_enabled) return;
     if (param1 != 0 || param2 != 0) return;
 
-    DWORD appPtr = *(DWORD*)0x5341E0;
-    if (!appPtr || IsBadReadPtr((void*)appPtr, 0x300)) return;
-    DWORD profile = *(DWORD*)(appPtr + 0x220);
-    if (!profile || IsBadReadPtr((void*)(profile + 0x10), 4)) return;
-    DWORD board = *(DWORD*)(profile + 0x0C);
-    if (!board || IsBadReadPtr((void*)board, 4)) return;
-
     g_inUIPass = true;
 
     DWORD gfxAddr = (DWORD)gfx;
