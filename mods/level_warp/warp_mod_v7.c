@@ -398,13 +398,21 @@ static int g_colorSaved = 0;
 
 /* Timer freeze — saved when ball vanishes, written back every frame.
  *
- * The live race timer is board+0x3624 (float, -0.02/frame in
- * Board_UpdateRaceState at 0x41B1BF). The mod also uses board+0x3624
- * for the white screen fade effect (g_whiteAlpha). To freeze the timer
- * without conflicting with the screen effect, we NOP the decrement
- * instruction itself (FSUB at 0x41B1C5) while the warp is active. */
+ * board+0x3624 is BOTH the race timer (float seconds) AND the native fade
+ * alpha. The game modifies it via multiple code paths per frame:
+ *   - Board_UpdateRaceState (slot 19): FSUB 0.02
+ *   - Board slot 22 (0x41A540): FADD 0.025 + FADD 0.01 (TT)
+ *   - Board slot 22 also has FST/FSTP that write back
+ * We NOP the FSUB and FADDs, but the FST/FSTP still write the (unchanged)
+ * value back. To be absolutely sure the timer freezes, we ALSO save the
+ * value when the ball disappears and write it back every frame.
+ *
+ * This creates a conflict with the fade effect: if we write the saved timer
+ * value, the fade alpha is wrong. Solution: use the saved timer value during
+ * RUMBLE/FLASH/HOLD/FADE (timer frozen, no white flash), and g_whiteAlpha
+ * only during REVEAL (after new level loads, timer not needed). */
 static int g_timerFrozen = 0;
-static int g_savedTimer = 0;
+static float g_savedTimerValue = 0.0f;
 
 /* Board offset: scene+0x874 = paused flag (set by Scene_CreateGameOverMenu) */
 #define BOARD_PAUSED_FLAG      0x874
@@ -907,6 +915,7 @@ static void updateWarpStateMachine(void) {
         diag_log("[warp] App null during warp, aborting");
         restore_timer_decrement();
         unblock_pause();
+        g_timerFrozen = 0;
         g_phase = PHASE_IDLE;
         return;
     }
@@ -927,9 +936,16 @@ static void updateWarpStateMachine(void) {
     }
     if (!board) board = 0;
 
-    /* Write fade alpha to board's native fade field */
+    /* Write to board+0x3624 (dual-use: timer + fade alpha).
+     * When timer is frozen, write the saved timer value back every frame
+     * to prevent ANY code path from changing it. During REVEAL (after new
+     * level loaded), use g_whiteAlpha for the fade-from-white effect. */
     if (board) {
-        *(float *)((char *)board + SCENE_FADE_ALPHA) = g_whiteAlpha;
+        if (g_timerFrozen && g_phase != PHASE_REVEAL) {
+            *(float *)((char *)board + SCENE_FADE_ALPHA) = g_savedTimerValue;
+        } else {
+            *(float *)((char *)board + SCENE_FADE_ALPHA) = g_whiteAlpha;
+        }
     }
 
     switch (g_phase) {
@@ -1017,9 +1033,15 @@ static void updateWarpStateMachine(void) {
              * effect without the game decrementing it. */
             if (!g_timerFrozen) {
                 g_timerFrozen = 1;
+                /* Save the current timer value so we can write it back
+                 * every frame, preventing ANY code path from changing it. */
+                if (board) {
+                    g_savedTimerValue = *(float *)((char *)board + SCENE_FADE_ALPHA);
+                    diag_logf("[warp] Timer value saved: %.3f", g_savedTimerValue);
+                }
                 freeze_timer_decrement();
                 block_pause();  /* Block pausing once ball vanishes */
-                diag_log("[warp] Timer frozen (decrement NOP'd), pause blocked");
+                diag_log("[warp] Timer frozen (NOP'd + value locked), pause blocked");
             }
         }
 
@@ -1226,6 +1248,7 @@ static void updateWarpStateMachine(void) {
         if (elapsed >= REVEAL_DURATION_MS) {
             g_whiteAlpha = 0.0f;
             g_phase = PHASE_IDLE;
+            g_timerFrozen = 0;
             g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
             restore_timer_decrement();
             unblock_pause();  /* Re-enable pausing after warp completes */
@@ -1237,6 +1260,7 @@ static void updateWarpStateMachine(void) {
     default:
         restore_timer_decrement();
         unblock_pause();
+        g_timerFrozen = 0;
         g_phase = PHASE_IDLE;
         break;
     }
