@@ -6,25 +6,25 @@
   All balls always in NORMAL STATE — no flags that cause collision skip.
   Bumpers, mousetraps, badballs always collide with all balls.
 
-  APPROACH: Instead of clearing flags in caves (too late — collision
-  already happened), PREVENT flags from being set/cleared at all.
-  NOP the SET instructions so flags never change, then NOP the
-  collision skip checks so collision always runs regardless.
+  APPROACH: Prevent death_pending (0x2E9) and active flag (0x768) from
+  being set/cleared. NOP all collision skip checks so collision always
+  runs. Only hook entity list to clear 0x2E8 (prevent badball destroy).
 
   Patches:
   1. Ball_Shatter (0x8D70): RET 4
   2. Ball_SplitDeath (0x9050): RET
   3. Ball_FallDeath (0x9480): set 0x2E8=1 only (triggers respawn)
   4. bounce_count (0x75C9): NOP
-  5. 0x2E8 sets (5 locations): NOP — falling flag never set by Ball_Update
-  6. 0x2E9 sets (5 locations): NOP — death_pending never set
-  7. 0x768 clears (4 locations): NOP — active flag never cleared
-  8. Collision skips (10 locations): NOP — collision always runs
+  5. 0x2E9 sets (5 locations): NOP — death_pending never set
+  6. 0x768 clears (4 locations): NOP — active flag never cleared
+  7. Collision skips (10 locations): NOP — collision always runs
+  8. Hook2 (+1B636): clear 0x2E8 on entity list only (prevent destroy)
 }
 
 [ENABLE]
 
 alloc(FallDeath_Cave,64)
+alloc(ClearState_Cave2,256)
 alloc(Orig_8D70,3)
 alloc(Orig_9050,3)
 alloc(Orig_9480,12)
@@ -38,12 +38,8 @@ alloc(Orig_22DD5,2)
 alloc(Orig_23965,2)
 alloc(Orig_8598,6)
 alloc(Orig_3FF98,6)
+alloc(Orig_18378,6)
 alloc(Orig_7391,7)
-alloc(Orig_31F8,7)
-alloc(Orig_6244,7)
-alloc(Orig_7436,7)
-alloc(Orig_8CD5,7)
-alloc(Orig_F2E7,7)
 alloc(Orig_F226,7)
 alloc(Orig_F261,7)
 alloc(Orig_F29C,7)
@@ -52,8 +48,9 @@ alloc(Orig_F22D,7)
 alloc(Orig_F268,7)
 alloc(Orig_F2A3,7)
 alloc(Orig_F317,7)
-alloc(Orig_18378,6)
+alloc(Orig_1B636,6)
 registersymbol(FallDeath_Cave)
+registersymbol(ClearState_Cave2)
 registersymbol(Orig_8D70)
 registersymbol(Orig_9050)
 registersymbol(Orig_9480)
@@ -67,12 +64,8 @@ registersymbol(Orig_22DD5)
 registersymbol(Orig_23965)
 registersymbol(Orig_8598)
 registersymbol(Orig_3FF98)
+registersymbol(Orig_18378)
 registersymbol(Orig_7391)
-registersymbol(Orig_31F8)
-registersymbol(Orig_6244)
-registersymbol(Orig_7436)
-registersymbol(Orig_8CD5)
-registersymbol(Orig_F2E7)
 registersymbol(Orig_F226)
 registersymbol(Orig_F261)
 registersymbol(Orig_F29C)
@@ -81,7 +74,7 @@ registersymbol(Orig_F22D)
 registersymbol(Orig_F268)
 registersymbol(Orig_F2A3)
 registersymbol(Orig_F317)
-registersymbol(Orig_18378)
+registersymbol(Orig_1B636)
 
 Orig_8D70:
   readmem(Hamsterball.exe+8D70,3)
@@ -109,18 +102,10 @@ Orig_8598:
   readmem(Hamsterball.exe+8598,6)
 Orig_3FF98:
   readmem(Hamsterball.exe+3FF98,6)
+Orig_18378:
+  readmem(Hamsterball.exe+18378,6)
 Orig_7391:
   readmem(Hamsterball.exe+7391,7)
-Orig_31F8:
-  readmem(Hamsterball.exe+31F8,7)
-Orig_6244:
-  readmem(Hamsterball.exe+6244,7)
-Orig_7436:
-  readmem(Hamsterball.exe+7436,7)
-Orig_8CD5:
-  readmem(Hamsterball.exe+8CD5,7)
-Orig_F2E7:
-  readmem(Hamsterball.exe+F2E7,7)
 Orig_F226:
   readmem(Hamsterball.exe+F226,7)
 Orig_F261:
@@ -137,8 +122,8 @@ Orig_F2A3:
   readmem(Hamsterball.exe+F2A3,7)
 Orig_F317:
   readmem(Hamsterball.exe+F317,7)
-Orig_18378:
-  readmem(Hamsterball.exe+18378,6)
+Orig_1B636:
+  readmem(Hamsterball.exe+1B636,6)
 
 { NOP bounce_count increment }
 Hamsterball.exe+75C9:
@@ -160,19 +145,6 @@ Hamsterball.exe+9480:
 FallDeath_Cave:
   db C6 81 E8 02 00 00 01
   db C3 90 90 90 90 90 90
-
-{ NOP falling flag (0x2E8) sets — 5 locations, 7 bytes each }
-{ These SET 0x2E8=1 in Ball_Update → causes badball destroy in Scene_Update }
-Hamsterball.exe+31F8:
-  db 90 90 90 90 90 90 90
-Hamsterball.exe+6244:
-  db 90 90 90 90 90 90 90
-Hamsterball.exe+7436:
-  db 90 90 90 90 90 90 90
-Hamsterball.exe+8CD5:
-  db 90 90 90 90 90 90 90
-Hamsterball.exe+F2E7:
-  db 90 90 90 90 90 90 90
 
 { NOP death_pending (0x2E9) sets — 5 locations, 7 bytes each }
 Hamsterball.exe+7391:
@@ -221,10 +193,42 @@ Hamsterball.exe+8598:
   db 90 90 90 90 90 90
 Hamsterball.exe+3FF98:
   db 90 90 90 90 90 90
-
-{ NOP mousetrap/object skip on active flag (0x768) — 5th location }
 Hamsterball.exe+18378:
   db 90 90 90 90 90 90
+
+{ Hook 2: Scene_UpdateBallsAndState, entity list (0x3204) }
+{ Clear 0x2E8 so entity balls don't get destroyed }
+{ Keep all other flags clear for normal state }
+Hamsterball.exe+1B636:
+  jmp ClearState_Cave2
+  db 90
+
+ClearState_Cave2:
+  { Clear falling flag — prevents destroy in Scene_UpdateBallsAndState }
+  mov byte ptr [esi+0x2E8],00
+  { Clear death_pending }
+  mov byte ptr [esi+0x2E9],00
+  { Clear is_split_ball so respawn path if needed }
+  mov byte ptr [esi+0x324],00
+  { Set player ID to 0 if -1 }
+  cmp dword ptr [esi+0x18],-1
+  jne SkipPID2
+  mov dword ptr [esi+0x18],00000000
+SkipPID2:
+  { Clear all state flags }
+  mov byte ptr [esi+0x2CC],00
+  mov byte ptr [esi+0x2D4],00
+  mov byte ptr [esi+0x2EC],00
+  mov dword ptr [esi+0x2F4],00000000
+  mov dword ptr [esi+0x808],00000000
+  { Clear respawn sequence }
+  mov byte ptr [esi+0x2F8],00
+  mov byte ptr [esi+0x2F9],00
+  mov dword ptr [esi+0x2FC],3F800000
+  mov dword ptr [esi+0x300],00000000
+  { AL = 0 (not falling) }
+  xor al,al
+  jmp Hamsterball.exe+1B63C
 
 [DISABLE]
 
@@ -258,16 +262,6 @@ Hamsterball.exe+18378:
   readmem(Orig_18378,6)
 Hamsterball.exe+7391:
   readmem(Orig_7391,7)
-Hamsterball.exe+31F8:
-  readmem(Orig_31F8,7)
-Hamsterball.exe+6244:
-  readmem(Orig_6244,7)
-Hamsterball.exe+7436:
-  readmem(Orig_7436,7)
-Hamsterball.exe+8CD5:
-  readmem(Orig_8CD5,7)
-Hamsterball.exe+F2E7:
-  readmem(Orig_F2E7,7)
 Hamsterball.exe+F22D:
   readmem(Orig_F22D,7)
 Hamsterball.exe+F268:
@@ -284,8 +278,11 @@ Hamsterball.exe+F29C:
   readmem(Orig_F29C,7)
 Hamsterball.exe+F310:
   readmem(Orig_F310,7)
+Hamsterball.exe+1B636:
+  readmem(Orig_1B636,6)
 
 dealloc(FallDeath_Cave)
+dealloc(ClearState_Cave2)
 dealloc(Orig_8D70)
 dealloc(Orig_9050)
 dealloc(Orig_9480)
@@ -299,12 +296,8 @@ dealloc(Orig_22DD5)
 dealloc(Orig_23965)
 dealloc(Orig_8598)
 dealloc(Orig_3FF98)
+dealloc(Orig_18378)
 dealloc(Orig_7391)
-dealloc(Orig_31F8)
-dealloc(Orig_6244)
-dealloc(Orig_7436)
-dealloc(Orig_8CD5)
-dealloc(Orig_F2E7)
 dealloc(Orig_F226)
 dealloc(Orig_F261)
 dealloc(Orig_F29C)
@@ -313,8 +306,9 @@ dealloc(Orig_F22D)
 dealloc(Orig_F268)
 dealloc(Orig_F2A3)
 dealloc(Orig_F317)
-dealloc(Orig_18378)
+dealloc(Orig_1B636)
 unregistersymbol(FallDeath_Cave)
+unregistersymbol(ClearState_Cave2)
 unregistersymbol(Orig_8D70)
 unregistersymbol(Orig_9050)
 unregistersymbol(Orig_9480)
@@ -328,12 +322,8 @@ unregistersymbol(Orig_22DD5)
 unregistersymbol(Orig_23965)
 unregistersymbol(Orig_8598)
 unregistersymbol(Orig_3FF98)
+unregistersymbol(Orig_18378)
 unregistersymbol(Orig_7391)
-unregistersymbol(Orig_31F8)
-unregistersymbol(Orig_6244)
-unregistersymbol(Orig_7436)
-unregistersymbol(Orig_8CD5)
-unregistersymbol(Orig_F2E7)
 unregistersymbol(Orig_F226)
 unregistersymbol(Orig_F261)
 unregistersymbol(Orig_F29C)
@@ -342,4 +332,4 @@ unregistersymbol(Orig_F22D)
 unregistersymbol(Orig_F268)
 unregistersymbol(Orig_F2A3)
 unregistersymbol(Orig_F317)
-unregistersymbol(Orig_18378)
+unregistersymbol(Orig_1B636)
