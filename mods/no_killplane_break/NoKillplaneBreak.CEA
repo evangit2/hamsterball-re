@@ -10,7 +10,7 @@
   2. Ball_SplitDeath (0x9050): RET
   3. Ball_FallDeath (0x9480): set 0x2E8=1 only (triggers respawn)
   4. bounce_count (0x75C9): NOP
-  5. Collision skip checks (13 locations): NOP — collision always runs
+  5. Collision skip checks (10 locations): NOP — collision always runs
   6. Hook2 (+1B636): clear 0x2E8 on entity list (prevent badball destroy)
 }
 
@@ -32,9 +32,6 @@ alloc(Orig_23965,2)
 alloc(Orig_8598,6)
 alloc(Orig_3FF98,6)
 alloc(Orig_18378,6)
-alloc(Orig_70BE,6)
-alloc(Orig_8416,6)
-alloc(Orig_85D1,2)
 alloc(Orig_1B636,6)
 registersymbol(FallDeath_Cave)
 registersymbol(ClearState_Cave2)
@@ -52,9 +49,6 @@ registersymbol(Orig_23965)
 registersymbol(Orig_8598)
 registersymbol(Orig_3FF98)
 registersymbol(Orig_18378)
-registersymbol(Orig_70BE)
-registersymbol(Orig_8416)
-registersymbol(Orig_85D1)
 registersymbol(Orig_1B636)
 
 Orig_8D70:
@@ -85,12 +79,6 @@ Orig_3FF98:
   readmem(Hamsterball.exe+3FF98,6)
 Orig_18378:
   readmem(Hamsterball.exe+18378,6)
-Orig_70BE:
-  readmem(Hamsterball.exe+70BE,6)
-Orig_8416:
-  readmem(Hamsterball.exe+8416,6)
-Orig_85D1:
-  readmem(Hamsterball.exe+85D1,2)
 Orig_1B636:
   readmem(Hamsterball.exe+1B636,6)
 
@@ -142,14 +130,6 @@ Hamsterball.exe+3FF98:
   db 90 90 90 90 90 90
 Hamsterball.exe+18378:
   db 90 90 90 90 90 90
-
-{ NOP collision partner entity skip — [edi+0x18]==-1 }
-Hamsterball.exe+70BE:
-  db 90 90 90 90 90 90
-Hamsterball.exe+8416:
-  db 90 90 90 90 90 90
-Hamsterball.exe+85D1:
-  db 90 90
 
 { Hook 2: Scene_UpdateBallsAndState, entity list }
 { Clear 0x2E8 so entity balls don't get destroyed }
@@ -203,12 +183,6 @@ Hamsterball.exe+3FF98:
   readmem(Orig_3FF98,6)
 Hamsterball.exe+18378:
   readmem(Orig_18378,6)
-Hamsterball.exe+70BE:
-  readmem(Orig_70BE,6)
-Hamsterball.exe+8416:
-  readmem(Orig_8416,6)
-Hamsterball.exe+85D1:
-  readmem(Orig_85D1,2)
 Hamsterball.exe+1B636:
   readmem(Orig_1B636,6)
 
@@ -228,9 +202,6 @@ dealloc(Orig_23965)
 dealloc(Orig_8598)
 dealloc(Orig_3FF98)
 dealloc(Orig_18378)
-dealloc(Orig_70BE)
-dealloc(Orig_8416)
-dealloc(Orig_85D1)
 dealloc(Orig_1B636)
 unregistersymbol(FallDeath_Cave)
 unregistersymbol(ClearState_Cave2)
@@ -248,7 +219,4 @@ unregistersymbol(Orig_23965)
 unregistersymbol(Orig_8598)
 unregistersymbol(Orig_3FF98)
 unregistersymbol(Orig_18378)
-unregistersymbol(Orig_70BE)
-unregistersymbol(Orig_8416)
-unregistersymbol(Orig_85D1)
 unregistersymbol(Orig_1B636)
