@@ -499,13 +499,15 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     HBPlusAPI hb = HBAPI(api);
 
-    CustomButton btnHost("NETPLAY_HOST", "Netplay: HOST (Player 1)");
-    btnHost.defaultState = false; btnHost.trueText = "ON"; btnHost.falseText = "OFF";
-    hb.CreateToggleButton(btnHost, thisptr);
+    // Single mode slider: 0=Disabled, 1=Host (P1), 2=Guest (P2)
+    CustomSlider sMode("NETPLAY_MODE", "Netplay Mode (0=Off, 1=Host, 2=Guest)", 0.0f);
+    sMode.lowerBound = 0; sMode.upperBound = 2; sMode.stepSize = 1; sMode.decimalPlaces = 0;
+    hb.CreateSlider(sMode, thisptr);
 
-    CustomButton btnGuest("NETPLAY_GUEST", "Netplay: GUEST (Player 2)");
-    btnGuest.defaultState = false; btnGuest.trueText = "ON"; btnGuest.falseText = "OFF";
-    hb.CreateToggleButton(btnGuest, thisptr);
+    // Status slider: shows connection state (read-only display)
+    CustomSlider sStatus("NETPLAY_STATUS", "Netplay Status (3=Connected)", 0.0f);
+    sStatus.lowerBound = 0; sStatus.upperBound = 4; sStatus.stepSize = 1; sStatus.decimalPlaces = 0;
+    hb.CreateSlider(sStatus, thisptr);
 
     CustomSlider sPort("NETPLAY_PORT", "Netplay Port", (float)g_port);
     sPort.lowerBound = 1024; sPort.upperBound = 65535; sPort.stepSize = 1; sPort.decimalPlaces = 0;
@@ -530,22 +532,22 @@ static void __thiscall ball_update(void*, Ball*) {}
 static void __thiscall render_apply(void*, void*, float*) {}
 
 static void __thiscall button_toggle(void* thisptr, const char* buttonId, bool newState) {
-    if (strcmp(buttonId, "NETPLAY_HOST") == 0) {
-        if (newState) { g_role = ROLE_HOST; g_connState = CONN_SEARCHING; }
-        else if (g_role == ROLE_HOST) { g_role = ROLE_DISABLED; g_connState = CONN_OFFLINE; }
-    }
-    if (strcmp(buttonId, "NETPLAY_GUEST") == 0) {
-        if (newState) { g_role = ROLE_GUEST; g_connState = CONN_SEARCHING; }
-        else if (g_role == ROLE_GUEST) { g_role = ROLE_DISABLED; g_connState = CONN_OFFLINE; }
-    }
+    // No toggle buttons in v7 — mode is a slider
 }
 
-static void __thiscall slider_change(void*, const char* sliderId, float newValue) {
+static void __thiscall slider_change(void* thisptr, const char* sliderId, float newValue) {
+    if (strcmp(sliderId, "NETPLAY_MODE") == 0) {
+        int mode = (int)newValue;
+        if (mode == 1) { g_role = ROLE_HOST; g_connState = CONN_SEARCHING; }
+        else if (mode == 2) { g_role = ROLE_GUEST; g_connState = CONN_SEARCHING; }
+        else { g_role = ROLE_DISABLED; g_connState = CONN_OFFLINE; }
+    }
     if (strcmp(sliderId, "NETPLAY_PORT") == 0) g_port = (int)newValue;
     if (strcmp(sliderId, "NETPLAY_IP1") == 0) g_ip_octet[0] = (int)newValue;
     if (strcmp(sliderId, "NETPLAY_IP2") == 0) g_ip_octet[1] = (int)newValue;
     if (strcmp(sliderId, "NETPLAY_IP3") == 0) g_ip_octet[2] = (int)newValue;
     if (strcmp(sliderId, "NETPLAY_IP4") == 0) g_ip_octet[3] = (int)newValue;
+    // NETPLAY_STATUS is read-only — ignore user changes
 }
 
 static void __thiscall game_update(void*) {

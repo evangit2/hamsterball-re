@@ -386,8 +386,11 @@ class NetplayRelay:
             self.log("Make sure HB+ is installed and plus_netplay.dll is in Mods/")
             return
 
-        self.log("Connected! Waiting for role selection in Options menu...")
-        self.log("(Toggle 'Netplay: HOST' or 'Netplay: GUEST' in the game's Options menu)")
+        self.log("Connected! Set Netplay Mode slider in Options:")
+        self.log("  0 = Disabled (default)")
+        self.log("  1 = Host (Player 1) — creates server, waits for guest")
+        self.log("  2 = Guest (Player 2) — connects to host IP")
+        self.log("")
 
         last_role = 0
         while self.running:
