@@ -4,21 +4,22 @@
   Players 1-4 AND badballs immune to ground killplanes.
   All entity balls forced to NORMAL STATE every frame.
   Badballs attack all balls — no dead/falling/dizzy state possible.
-  Balls respawn via Y-check script (ArenaInstantRespawn) when in void.
+  Void respawn: balls below Y=-500 are teleported to (0,0,0) with zeroed velocity.
 
-  FIXES (v2):
-  1. CRASH FIX: Patches were 10 bytes (jmp+5 NOPs) — overwrote test al,al+jz after hooks
-     Reduced to 6 bytes (jmp+1 NOP) to exactly cover mov al,[esi+0x2E8]
-  2. CRASH FIX: ClearState_Cave used ret (exited function early) — now jmp back
-  3. Two separate caves for two hook points (correct return addresses)
-  4. AL=0 set in cave (original instruction loads AL from ball+0x2E8)
-  5. Ball_Shatter: ret 4 instead of ret (correct __thiscall stack cleanup)
+  v2 fixes:
+  1. 10-byte patches → 6-byte (don't overwrite test al,al + jz)
+  2. ret in cave → jmp back (don't exit Scene_UpdateBallsAndState)
+  3. Ball_Shatter: RET 4 (__thiscall with 1 stack param)
+
+  v3 fixes:
+  4. Void respawn: Y<-500 → teleport to origin, zero velocity + angular
+  5. Zero ball+0x178/0x17C/0x180 (angular velocity) on respawn
 }
 
 [ENABLE]
 
-alloc(ClearState_Cave1,256)
-alloc(ClearState_Cave2,256)
+alloc(ClearState_Cave1,512)
+alloc(ClearState_Cave2,512)
 alloc(Orig_402390,3)
 alloc(Orig_8D70,3)
 alloc(Orig_9050,3)
@@ -93,7 +94,6 @@ Hamsterball.exe+9480:
   db C3 90 90 90 90 90 90 90 90
 
 { NOP three JNZ: skip player_active / death_pending / respawn checks }
-{ Forces ALL balls to be processed regardless of state }
 Hamsterball.exe+13918:
   db 90 90 90 90 90 90
 
@@ -103,19 +103,43 @@ Hamsterball.exe+13926:
 Hamsterball.exe+13934:
   db 90 90 90 90 90 90
 
-{ Hook 1: after vtable[4] call at 0x41B58E, clear ball state }
-{ Original: 8A 86 E8 02 00 00 = mov al,[esi+0x2E8] (6 bytes) }
+{ Hook 1: in Scene_UpdateBallsAndState, list 1 (player balls) }
+{ After vtable[4] call, original: mov al,[esi+0x2E8] (6 bytes) }
 Hamsterball.exe+1B591:
   jmp ClearState_Cave1
   db 90
 
-{ Hook 2: after vtable[4] call at 0x41B634, clear ball state }
-{ Original: 8A 86 E8 02 00 00 = mov al,[esi+0x2E8] (6 bytes) }
+{ Hook 2: in Scene_UpdateBallsAndState, list 2 (entity balls) }
 Hamsterball.exe+1B636:
   jmp ClearState_Cave2
   db 90
 
 ClearState_Cave1:
+  { Void respawn: if ball Y < -500.0, teleport to origin }
+  { ball+0x168 = Y position (float) }
+  mov eax,[esi+0x168]
+  shr eax,1
+  jc DoRespawn1
+  jz SkipRespawn1
+  cmp eax,1F7D0000
+  jae DoRespawn1
+SkipRespawn1:
+  jmp ClearStates1
+
+DoRespawn1:
+  { Teleport to (0,0,0) }
+  mov dword ptr [esi+0x164],00000000
+  mov dword ptr [esi+0x168],00000000
+  mov dword ptr [esi+0x16C],00000000
+  { Zero velocity (ball+0x5D/0x5E/0x5C = 0x174/0x178/0x17C) }
+  mov dword ptr [esi+0x174],00000000
+  mov dword ptr [esi+0x178],00000000
+  mov dword ptr [esi+0x17C],00000000
+  { Zero angular velocity (ball+0x184/0x180/0x17C) }
+  mov dword ptr [esi+0x180],00000000
+  mov dword ptr [esi+0x184],00000000
+
+ClearStates1:
   { Clear in-tar (ball+0x2CC) }
   mov byte ptr [esi+0x2CC],00
   { Clear vacuum (ball+0x2D4) }
@@ -144,6 +168,27 @@ ClearState_Cave1:
   jmp Hamsterball.exe+1B597
 
 ClearState_Cave2:
+  { Void respawn: if ball Y < -500.0, teleport to origin }
+  mov eax,[esi+0x168]
+  shr eax,1
+  jc DoRespawn2
+  jz SkipRespawn2
+  cmp eax,1F7D0000
+  jae DoRespawn2
+SkipRespawn2:
+  jmp ClearStates2
+
+DoRespawn2:
+  mov dword ptr [esi+0x164],00000000
+  mov dword ptr [esi+0x168],00000000
+  mov dword ptr [esi+0x16C],00000000
+  mov dword ptr [esi+0x174],00000000
+  mov dword ptr [esi+0x178],00000000
+  mov dword ptr [esi+0x17C],00000000
+  mov dword ptr [esi+0x180],00000000
+  mov dword ptr [esi+0x184],00000000
+
+ClearStates2:
   mov byte ptr [esi+0x2CC],00
   mov byte ptr [esi+0x2D4],00
   mov byte ptr [esi+0x2E8],00
