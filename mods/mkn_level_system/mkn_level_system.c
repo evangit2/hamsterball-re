@@ -89,6 +89,51 @@ static const LevelEntry g_levels[15] = {
 #define VTABLE_SIZE         144    /* 36 entries × 4 bytes            */
 
 /* ============================================================
+ * Function name → address table (for SETUP and ADD commands)
+ * ============================================================ */
+
+typedef struct {
+    const char* name;
+    DWORD addr;
+} FuncEntry;
+
+static const FuncEntry g_functions[] = {
+    /* Setup functions (load .MESHWORLD files) */
+    { "GetLevelPath",              0x0040D1C0 },
+    { "Scene_SetupLevelCascade",   0x004110D0 },
+    { "Scene_LoadLevel2",          0x0040D280 },
+    { "Scene_LoadLevel3",          0x0040D390 },
+    { "Scene_LoadLevel4",          0x0040D6D0 },
+    { "Scene_SetupLevel5",         0x0040E190 },
+    { "Scene_SetupLevel6",          0x0040EA90 },
+    { "Scene_SetupLevel7",          0x0040F360 },
+    { "Scene_SetupLevel9",          0x00410830 },
+    { "Scene_SetupLevelUp",         0x00411540 },
+    { "Scene_SetupLevel10",         0x00411F60 },
+    { "Scene_SetupLevelDark",       0x00416270 },
+    { "CreateBumper",              0x0040FA20 },
+    { "FUN_00417640",               0x00417640 },
+    { "FUN_00417F20",               0x00417F20 },
+    /* Sub-functions (for ADD chaining) */
+    { "Level_InitScene",           0x0040B090 },
+    { "WaterRipple_AllocBuffers", 0x0046A8A0 },
+    { "AthenaList_Append",         0x00453780 },
+    { "SceneObject_ctor",          0x00462850 },
+    { "Vec3_Init",                 0x00453180 },
+    { "Scene_RegisterObject",      0x00453BD0 },
+    { "Graphics_SetProjection",    0x00454AB0 },
+    { NULL, 0 }
+};
+
+static DWORD lookup_function_addr(const char* name) {
+    for (int i = 0; g_functions[i].name; i++) {
+        if (_stricmp(g_functions[i].name, name) == 0)
+            return g_functions[i].addr;
+    }
+    return 0;
+}
+
+/* ============================================================
  * Original value storage (for RESET)
  * ============================================================ */
 
@@ -325,8 +370,8 @@ static void apply_config(void) {
 
     while (line) {
         trim(line);
-
-        if (strstr(line, "CONFIG SECTION")) {
+        /* Check for CONFIG SECTION / END CONFIG markers (even in comments) */
+        if (strstr(line, "CONFIG SECTION") && line[0] == '#') {
             in_config = 1;
             line = strtok(NULL, "\n");
             continue;

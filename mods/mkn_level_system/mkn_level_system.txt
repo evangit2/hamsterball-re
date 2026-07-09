@@ -8,31 +8,49 @@ Level Numbers:
   11=Wobbly 12=Glass    13=Sky          14=Master   15=Impossible
 
 Commands (in CONFIG SECTION below):
-  SWAP A B    — Full level swap. Redirects the board constructor for level A
-                to level B's ctor (with B's struct size) and vice versa.
-                This swaps EVERYTHING: geometry, objects, physics, camera.
-                SAFE — no struct size mismatch, no vtable corruption.
+  SETUP A func — Replace level A's setup function (vtable[18]) with a named
+                 function. Changes which .MESHWORLD loads. See function list below.
 
-  SET A B     — One-way redirect. Level A gets level B's board ctor.
-                Level B stays unchanged.
+  ADD A func   — Add an extra function call after level A's setup function.
+                 Creates a trampoline via VirtualAlloc that chains the calls.
+                 Use to run additional setup logic per level.
 
-  SWAPOBJ A B — Swap only vtable[32] (Board_Setup) between two levels.
-                Changes which OBJECTS appear (Tippers, Blockdawgs, etc.)
-                without changing the board ctor or geometry.
-                WARNING: May crash if Board_Setup expects mesh slots the
-                source level's ctor didn't initialize.
+  SWAP A B     — Full level swap. Redirects the board constructor for level A
+                 to level B's ctor (with B's struct size) and vice versa.
+                 This swaps EVERYTHING: geometry, objects, physics, camera.
+                 SAFE — no struct size mismatch, no vtable corruption.
 
-  SWAPGEO A B — Swap only vtable[18] (setup function) between two levels.
-                Changes which .MESHWORLD geometry loads without changing
-                the board ctor or objects.
-                WARNING: May crash if the board ctor initializes mesh
-                slots the swapped setup function doesn't expect.
+  SET A B      — One-way redirect. Level A gets level B's board ctor.
+                 Level B stays unchanged.
 
-  RESET       — Restore all original values.
+  SWAPOBJ A B  — Swap only vtable[32] (Board_Setup) between two levels.
+                 Changes which OBJECTS appear (Tippers, Blockdawgs, etc.)
+                 without changing the board ctor or geometry.
+                 WARNING: May crash if Board_Setup expects mesh slots the
+                 source level's ctor didn't initialize.
+
+  SWAPGEO A B  — Swap only vtable[18] (setup function) between two levels.
+                 Changes which .MESHWORLD geometry loads without changing
+                 the board ctor or objects.
+                 WARNING: May crash if the board ctor initializes mesh
+                 slots the swapped setup function doesn't expect.
+
+  RESET        — Restore all original values.
 
 Level names can be used instead of numbers (case-insensitive):
   WarmUp, Beginner, Intermediate, Dizzy, Tower, Up, Neon, Expert,
   Odd, Toob, Wobbly, Glass, Sky, Master, Impossible
+
+Function names for SETUP and ADD:
+  Setup functions:
+    GetLevelPath, Scene_SetupLevelCascade, Scene_LoadLevel2,
+    Scene_LoadLevel3, Scene_LoadLevel4, Scene_SetupLevel5,
+    Scene_SetupLevel6, Scene_SetupLevel7, Scene_SetupLevel9,
+    Scene_SetupLevelUp, Scene_SetupLevel10, Scene_SetupLevelDark,
+    CreateBumper, FUN_00417640, FUN_00417F20
+  Sub-functions:
+    Level_InitScene, WaterRipple_AllocBuffers, AthenaList_Append,
+    SceneObject_ctor, Vec3_Init, Scene_RegisterObject, Graphics_SetProjection
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG SECTION — Edit lines below to swap levels
@@ -40,6 +58,8 @@ Level names can be used instead of numbers (case-insensitive):
 # ════════════════════════════════════════════════════════════════════════════
 #
 # Examples (uncomment to activate):
+#SETUP 3 Scene_LoadLevel4
+#ADD 3 WaterRipple_AllocBuffers
 #SWAP 1 4
 #SET 3 Dizzy
 #SWAPOBJ 5 6
