@@ -1,262 +1,48 @@
 ================================================================================
-MESHWORLD LEVEL SYSTEM - Scene_SetupLevel Functions & Subfunctions
+MESHWORLD LEVEL SYSTEM v2 — Level Swapper with Per-Level Object Control
 ================================================================================
 
-COMMON SUBFUNCTIONS (called by all 15 Scene_SetupLevel functions):
---------------------------------------------------------------------------------
+Level Numbers:
+  1=WarmUp  2=Beginner  3=Intermediate  4=Dizzy     5=Tower
+  6=Up      7=Neon      8=Expert        9=Odd       10=Toob
+  11=Wobbly 12=Glass    13=Sky          14=Master   15=Impossible
 
-  operator_new                    @ 0x004BA57B  - Allocate MeshWorld (0x10D0 bytes)
-  FUN_00461510 (LoadMeshWorld)    @ 0x00461510  - Load .MESHWORLD file from disk
-  FUN_00465080 (ProcessMeshWorld) @ 0x00465080  - Process/collision mesh data
-  Level_InitScene                 @ 0x0040B090  - Initialize scene (camera, sound, etc)
-  vtable[0x80] (Board_Setup)      @ -           - Board-specific object creation
+Commands (in CONFIG SECTION below):
+  SWAP A B    — Full level swap. Redirects the board constructor for level A
+                to level B's ctor (with B's struct size) and vice versa.
+                This swaps EVERYTHING: geometry, objects, physics, camera.
+                SAFE — no struct size mismatch, no vtable corruption.
 
-  Level_InitScene subfunctions:
-    SoundChannel_Ctor              @ 0x00466320
-    Color_RandomRGBA               @ 0x0040A050
-    FUN_00453b20 (SetRandomColor1) @ 0x00453B20
-    FUN_00453ba0 (SetRandomColor2) @ 0x00453BA0
-    Scene_ResetObjectSlots         @ 0x00460220
-    Level_FindObjectByName         @ 0x00460530
-    Level_SelectCameraProfile      @ 0x0040ACA0
-    Graphics_SetCullMode2          @ 0x00453970
-    Graphics_SetProjection         @ 0x00454AB0
-    FUN_004539a0 (SetCameraDist)   @ 0x004539A0
-    Audio_PlayMusicAtSpeed         @ 0x0046A440
-    Window_Notify                  @ 0x0046A750
-    operator_new                   @ 0x004BA57B
+  SET A B     — One-way redirect. Level A gets level B's board ctor.
+                Level B stays unchanged.
 
-================================================================================
+  SWAPOBJ A B — Swap only vtable[32] (Board_Setup) between two levels.
+                Changes which OBJECTS appear (Tippers, Blockdawgs, etc.)
+                without changing the board ctor or geometry.
+                WARNING: May crash if Board_Setup expects mesh slots the
+                source level's ctor didn't initialize.
 
---------------------------------------------------------------------------------
-LEVEL  1: WARM-UP
-  Level file:       levels\level1
-  Setup function:   GetLevelPath @ 0x0040D1C0
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-  Notes:            No additional subfunctions
+  SWAPGEO A B — Swap only vtable[18] (setup function) between two levels.
+                Changes which .MESHWORLD geometry loads without changing
+                the board ctor or objects.
+                WARNING: May crash if the board ctor initializes mesh
+                slots the swapped setup function doesn't expect.
 
---------------------------------------------------------------------------------
-LEVEL  2: BEGINNER
-  Level file:       levels\levelcascade
-  Setup function:   Scene_SetupLevelCascade @ 0x004110D0
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaString_Format                        @ 0x00466C70
-    Scene_CollectByNameFilter                  @ 0x004602F0
-  Notes:            Collects 8 BUMPER entities (N:BUMPER%d, 1-8) via name filter. Bumper flags at Scene+0x190B
+  RESET       — Restore all original values.
 
---------------------------------------------------------------------------------
-LEVEL  3: INTERMEDIATE
-  Level file:       levels\level2
-  Setup function:   Scene_LoadLevel2 @ 0x0040D280
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-  Notes:            No additional subfunctions
-
---------------------------------------------------------------------------------
-LEVEL  4: DIZZY
-  Level file:       levels\level3
-  Setup function:   Scene_LoadLevel3 @ 0x0040D390
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaList_GetIterator                     @ 0x004532B0
-    __strnicmp                                 @ 0x004C7677
-    AthenaList_Append                          @ 0x00453810
-  Notes:            Scans MeshBuffer list for 'TarBubble' entities, appends to AthenaList at Scene+0x11E4
-
---------------------------------------------------------------------------------
-LEVEL  5: TOWER
-  Level file:       levels\level4
-  Setup function:   Scene_LoadLevel4 @ 0x0040D6D0
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    WaterRipple_AllocBuffers                   @ 0x0046A8A0
-  Notes:            Initializes water ripple system (Scene+0xFC6: enables water, sets dimensions 125.0x75.0)
-
---------------------------------------------------------------------------------
-LEVEL  6: UP
-  Level file:       levels\levelup
-  Setup function:   Scene_SetupLevelUp @ 0x00411540
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaList_GetIterator                     @ 0x004532B0
-    __strnicmp                                 @ 0x004C7677
-    AthenaHashTable_Lookup                     @ 0x004605E0
-    AthenaString_SprintfToBuffer               @ 0x004BAE43
-    CollisionFace_ctor                         @ 0x00436860
-    AthenaList_Append                          @ 0x00453810
-  Notes:            Scans for 'VAC-IN' entities. For each, looks up 'VAC-OUT%s' and 'VAC-VEC%s' positions, creates CollisionFace objects (0x38 bytes) for vacuum tube system. Sets gravity plane (Scene+0x10D3=0, +0x10D4=50.0f, +0xA70=900.0f)
-
---------------------------------------------------------------------------------
-LEVEL  7: NEON
-  Level file:       levels\leveldark
-  Setup function:   Scene_SetupLevelDark @ 0x00416270
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaList_GetIterator                     @ 0x004532B0
-    Matrix_Scale4x4                            @ 0x00453150
-    Matrix_Identity                            @ 0x00453200
-    SceneObject_ctor                           @ 0x0046B4F0
-    Vec3_Init                                  @ 0x00453180
-    Scene_RegisterObject                       @ 0x00453BD0
-  Notes:            Sets flag 0xC80=1 on all scene objects (dark mode). Creates 1-2 SceneObject light emitters (0xD4 bytes each) at player ball positions. Light color: (10.0, 10.0, 0) yellow. Light range: 400.0f. If 2P: creates second emitter for P2
-
---------------------------------------------------------------------------------
-LEVEL  8: EXPERT
-  Level file:       levels\level5
-  Setup function:   Scene_SetupLevel5 @ 0x0040E190
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-  Notes:            No additional subfunctions
-
---------------------------------------------------------------------------------
-LEVEL  9: ODD
-  Level file:       levels\level6
-  Setup function:   Scene_SetupLevel6 @ 0x0040EA90
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaHashTable_Lookup                     @ 0x004605E0
-  Notes:            Loads LAUNCH01/02/03 positions and CHROMESHADOW from hash table. Sets launch config (Scene+0x10DC=0, +0x10E8=-1, +0x10DD=200)
-
---------------------------------------------------------------------------------
-LEVEL 10: TOOB
-  Level file:       levels\level8
-  Setup function:   CreateBumper @ 0x0040FA20
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    AthenaString_Format                        @ 0x00466C70
-    Scene_CollectByNameFilter                  @ 0x004602F0
-    vtable[0x80] (Board_Setup)                 @ -
-  Notes:            Collects 8 BUMPER entities (N:BUMPER%d, 1-8) via name filter. Bumper flags at Scene+0x1913
-
---------------------------------------------------------------------------------
-LEVEL 11: WOBBLY
-  Level file:       levels\level7
-  Setup function:   Scene_SetupLevel7 @ 0x0040F360
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-  Notes:            No additional subfunctions
-
---------------------------------------------------------------------------------
-LEVEL 12: GLASS
-  Level file:       levels\levelglass
-  Setup function:   FUN_00417640 (Scene_SetupLevelGlass) @ 0x00417640
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaList_GetIterator                     @ 0x004532B0
-  Notes:            Sets flag 0x280=1 on all scene objects (glass/breakable mode). Iterates Scene+0xA75 AthenaList
-
---------------------------------------------------------------------------------
-LEVEL 13: SKY
-  Level file:       levels\level9
-  Setup function:   Scene_SetupLevel9 @ 0x00410830
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-    AthenaList_GetIterator                     @ 0x004532B0
-    __strnicmp                                 @ 0x004C7677
-    AthenaList_Append                          @ 0x00453810
-    AthenaHashTable_Lookup                     @ 0x004605E0
-    FUN_00436250 (Magnifyer_ctor)              @ 0x00436250
-    FUN_004539a0 (SetCameraDistance)           @ 0x004539A0
-    Graphics_SetProjection                     @ 0x00454AB0
-  Notes:            Scans for 'PILLAR' and 'MAGNIFYER' entities. Creates Magnifyer object (0x444 bytes) if difficulty != Pipsqueak. Loads 'CLOUDSCAPE' position. Adjusts camera projection (far clip scaled)
-
---------------------------------------------------------------------------------
-LEVEL 14: MASTER
-  Level file:       levels\level10
-  Setup function:   Scene_SetupLevel10 @ 0x00411F60
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    AthenaString_Format                        @ 0x00466C70
-    Scene_CollectByNameFilter                  @ 0x004602F0
-    vtable[0x80] (Board_Setup)                 @ -
-    Rotator_RemoveAndFree                      @ 0x00436FC0
-    AthenaList_GetIterator                     @ 0x004532B0
-    __strnicmp                                 @ 0x004C7677
-    AthenaList_Append                          @ 0x00453810
-  Notes:            Collects 4 BUMPER entities (N:BUMPER%d, 1-4). On Pipsqueak difficulty: removes all Rotator entities. Scans for 'TarBubble' entities, appends to Scene+0x1719. If multiplayer: appends objects to render lists
-
---------------------------------------------------------------------------------
-LEVEL 15: IMPOSSIBLE
-  Level file:       levels\levelimpossible
-  Setup function:   FUN_00417F20 (Scene_SetupLevelImpossible) @ 0x00417F20
-  Subfunctions:
-    operator_new                               @ 0x004BA57B
-    FUN_00461510 (LoadMeshWorld)               @ 0x00461510
-    FUN_00465080 (ProcessMeshWorld)            @ 0x00465080
-    Level_InitScene                            @ 0x0040B090
-    vtable[0x80] (Board_Setup)                 @ -
-  Notes:            No additional subfunctions
+Level names can be used instead of numbers (case-insensitive):
+  WarmUp, Beginner, Intermediate, Dizzy, Tower, Up, Neon, Expert,
+  Odd, Toob, Wobbly, Glass, Sky, Master, Impossible
 
 # ════════════════════════════════════════════════════════════════════════════
-# CONFIG SECTION — Edit lines below to swap/insert per-level special logic
+# CONFIG SECTION — Edit lines below to swap levels
 # Lines starting with # are comments. Remove # to activate.
 # ════════════════════════════════════════════════════════════════════════════
 #
-# Commands:
-#   SWAP <level_A> <level_B>  — Swap two levels' board classes entirely
-#
-# Level numbers: 1=Warm-Up, 2=Beginner, 3=Intermediate, 4=Dizzy, 5=Tower,
-# 6=Up, 7=Neon, 8=Expert, 9=Odd, 10=Toob, 11=Wobbly, 12=Glass,
-# 13=Sky, 14=Master, 15=Impossible
-#
 # Examples (uncomment to activate):
-#SWAP 5 6
-#SWAP 1 7
+#SWAP 1 4
+#SET 3 Dizzy
+#SWAPOBJ 5 6
+#SWAPGEO 1 7
 
 END CONFIG
