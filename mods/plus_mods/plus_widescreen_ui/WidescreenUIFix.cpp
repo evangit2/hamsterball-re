@@ -2,13 +2,11 @@
 #include "HamsterballAPI.h"
 #include <math.h>
 #include <string.h>
-#include <stdio.h>
 
 class WidescreenUIFix : public HamsterballAPI {
 private:
 	IModAPI* api = nullptr;
 	static inline bool g_enabled = true;
-	static inline int g_callCount = 0;
 
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
@@ -29,25 +27,9 @@ private:
 		float aspect = (float)bbWidth / (float)bbHeight;
 		if (aspect <= 1.34f) return result;
 
-		float* pScaleX = (float*)(config + 0x1f8);
-		int* pOffsetX = (int*)(gfxAddr + 0x798);
-
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
-
-		// Also modify memory for DrawScreenRect
-		float curScaleX = *pScaleX;
-		int curOffsetX = *pOffsetX;
-		*pScaleX = curScaleX * scaleFactor;
-		*pOffsetX = (int)((float)curOffsetX * scaleFactor + margin);
-
-		g_callCount++;
-		if (g_callCount <= 5) {
-			printf("[WSUI] call %d: pixel_x=%f scaleX=%f offsetX=%d bbW=%d bbH=%d aspect=%f scaleFactor=%f margin=%f result=%f transformed=%f\n",
-				g_callCount, pixel_x, curScaleX, curOffsetX, bbWidth, bbHeight, aspect, scaleFactor, margin,
-				result, result * scaleFactor + margin);
-		}
 
 		return result * scaleFactor + margin;
 	}
