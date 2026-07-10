@@ -220,14 +220,27 @@ static void __fastcall Summon_Bumpers(DWORD board) {
  * Extracted from Scene_SetupLevelDark (0x00416270).
  * Creates a SceneObject with yellow light (10.0f, 10.0f, 0.0f) at the
  * player's ball position, then applies R-channel material scales.
- * Safe to call from extended vtable slots. */
+ *
+ * CRASH FIX (v6.1): Two bugs were causing the crash at 0x00461971:
+ *   1. Material writes used *(DWORD*)(player1 + 0x5DC) as a "mesh pointer"
+ *      but 0x5DC is an App offset, not a ball offset. The original game
+ *      writes material values DIRECTLY to the ball struct (ball+0x1D0 etc).
+ *   2. The dispatch thread runs this during level loading, before the ball
+ *      is fully initialized. Now we check that the ball has valid position
+ *      data (ball+0x164 != 0) before proceeding.
+ *   3. The light_vec and Matrix_Scale4x4 calls from the original were
+ *      missing — the original uses Vec3_Init to set the light color at
+ *      obj+0x94, and Matrix_Scale4x4 + Matrix_Identity for materials.
+ *      We now replicate this exactly.
+ *
+ * Safe to call from extended vtable slots (36-127). */
 static void __fastcall Summon_NeonEffect(DWORD board) {
     if (!board || board < 0x10000) return;
     if (IsBadReadPtr((void*)board, 0x6500)) return;
 
     int* param_1 = (int*)board;
 
-    /* Get App pointer (param_1[0x21e]) */
+    /* Get App pointer (param_1[0x21e] = board+0x878) */
     DWORD app = (DWORD)param_1[0x21e];
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x700)) return;
@@ -236,59 +249,72 @@ static void __fastcall Summon_NeonEffect(DWORD board) {
     DWORD gfx_ctx = *(DWORD*)(app + 0x174);
     if (!gfx_ctx || gfx_ctx < 0x10000) return;
 
-    /* Get player 1 data (App+0x5DC) */
-    DWORD player1 = *(DWORD*)(app + 0x5DC);
-    if (!player1 || player1 < 0x10000) return;
-    if (IsBadReadPtr((void*)player1, 0x200)) return;
+    /* Get ball pointer (App+0x5DC) — this is the BALL, not a "player profile" */
+    DWORD ball = *(DWORD*)(app + 0x5DC);
+    if (!ball || ball < 0x10000) return;
+    if (IsBadReadPtr((void*)ball, 0x600)) return;
+
+    /* CRASH FIX: Verify ball has valid position data before proceeding.
+     * During level loading, the ball may not be fully initialized yet.
+     * ball+0x164/0x168/0x16C = ball X/Y/Z position (floats). */
+    float ball_x = *(float*)(ball + 0x164);
+    float ball_y = *(float*)(ball + 0x168);
+    float ball_z = *(float*)(ball + 0x16C);
+    if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;  /* Ball not ready */
 
     /* Check if neon object already created using a sentinel value */
     if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;  /* "NEON" sentinel */
 
-    /* Create SceneObject for the light */
+    /* Create SceneObject for the light (same as original: operator_new(0xD4) + ctor) */
     void* mem = game_operator_new(0xD4);
     if (!mem) return;
 
     DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
     if (!obj) return;
 
-    /* Store in board+0x10db */
+    /* Store in board+0x10db (same as original) */
     param_1[0x10db] = (int)obj;
 
-    /* Set light color: Vec3_Init(out, 10.0f, 10.0f, 0.0f) */
-    /* 0x41200000 = 10.0f */
-    float light_vec[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
+    /* Set obj[0x34] = 1 (light type flag, same as original) */
+    obj[0x34] = 1;
 
-    /* Set position to ball location: player1+0x164/0x168/0x16C + 0.5 (DAT_004cf528) */
-    float ball_x = *(float*)(player1 + 0x164);
-    float ball_y = *(float*)(player1 + 0x168) + 0.5f;  /* _DAT_004cf528 = 0.5 */
-    float ball_z = *(float*)(player1 + 0x16C);
+    /* Set light color at obj+0x94.
+     * Original: Vec3_Init(&uStack_20, 0x41200000, 0x41200000, 0) then copies
+     * 4 DWORDs (16 bytes) from the Vec3 result to obj+0x94..0xA0.
+     * We just memcpy the float values directly. */
+    float light_color[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
+    memcpy((void*)((DWORD)obj + 0x94), light_color, 16);
 
-    /* Set range: obj[0x33] = 400.0f (0x43C80000) */
-    obj[0x33] = 0x43C80000;
-
-    /* Call vtable[1] (SetTransform) with position */
+    /* Set position via vtable[1] (SetTransform).
+     * Original: (**(code **)(*(int *)param_1[0x10db] + 4))(ball_x, ball_y + 0.5, ball_z)
+     * _DAT_004cf528 = 0.5f */
     typedef void (__thiscall *SetTransform_t)(DWORD obj, float x, float y, float z);
     SetTransform_t set_transform = (SetTransform_t)(*(DWORD*)(*obj + 4));
-    set_transform((DWORD)obj, ball_x, ball_y, ball_z);
+    set_transform((DWORD)obj, ball_x, ball_y + 0.5f, ball_z);
 
-    /* Call vtable[3] (Init) */
+    /* Set range: obj[0x33] = 400.0f (0x43C80000) — same as original */
+    obj[0x33] = 0x43C80000;
+
+    /* Call vtable[3] (Init) — same as original */
     typedef void (__thiscall *Init_t)(DWORD obj);
     Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
     init_fn((DWORD)obj);
 
-    /* Register the object */
+    /* Register the object — same as original */
     game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
 
-    /* Apply material scale matrices to the ball mesh for the glow effect.
-     * This sets R-channel to 1.0 (0x3F800000) on the mesh materials,
-     * which makes the ball appear to glow yellow under the neon light. */
-    DWORD mesh = *(DWORD*)(player1 + 0x5DC);  /* Actually player1's mesh pointer */
-    if (mesh && mesh > 0x10000 && !IsBadReadPtr((void*)mesh, 0x300)) {
-        /* Material 0: mesh+0x1CC/0x1D0/0x1D4 (ambient), mesh+0x1BC/0x1C0/0x1C4 (diffuse), mesh+0x1EC/0x1F0/0x1F4 (specular) */
-        /* Set R=1.0 (0x3F800000) on all three materials */
-        *(float*)(mesh + 0x1D0) = 1.0f;  /* ambient R */
-        *(float*)(mesh + 0x1C0) = 1.0f;  /* diffuse R */
-        *(float*)(mesh + 0x1F0) = 1.0f;  /* specular R */
+    /* Apply material scales DIRECTLY to the ball struct (NOT via a mesh pointer!).
+     * CRASH FIX: The original game writes to ball+0x1D0, ball+0x1C0, ball+0x1F0
+     * directly. The old code incorrectly did *(DWORD*)(ball + 0x5DC) to get a
+     * "mesh pointer" — but 0x5DC is an App offset, not a ball offset.
+     *
+     * Original uses Matrix_Scale4x4 + Matrix_Identity to compute the values,
+     * but the net effect is: set R-channel to 1.0 on ambient/diffuse/specular.
+     * We write 1.0f directly, which is what the matrix operations produce. */
+    if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
+        *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  (was mesh+0x1D0) */
+        *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  (was mesh+0x1C0) */
+        *(float*)(ball + 0x1F0) = 1.0f;  /* specular R (was mesh+0x1F0) */
     }
 
     /* Mark as created */
