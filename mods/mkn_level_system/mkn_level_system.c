@@ -216,67 +216,219 @@ static void __fastcall Summon_Bumpers(DWORD board) {
     diag_log("[summon] Summon_Bumpers: collected 8 bumpers");
 }
 
-/* Summon_NeonEffect — applies the neon glow material effect to the ball.
- * Extracted from Scene_SetupLevelDark (0x00416270).
+/* Summon_NeonOutline — applies the neon glow material effect to the ball.
+ * This is the material-only version (safe for extended vtable slots 36-127).
+ * Sets ambient/diffuse/specular R-channel to 1.0 on the ball struct.
  *
- * CRASH FIX (v6.2): The previous version created a SceneObject (D3D8 light)
- * from the dispatch thread. D3D8 is single-threaded — objects created from
- * a background thread have invalid device state, causing a crash in the
- * render loop (VertexDecl_WriteBlendWeights at 0x45EC30) when the game
- * tries to draw them.
- *
- * Fix: Remove SceneObject creation entirely. Only apply the material color
- * writes (ball+0x1D0/0x1C0/0x1F0) which are safe memory writes that work
- * from any thread. The ball will get the yellow glow effect without a
- * dynamic light source.
- *
- * To get the full neon light effect, assign Summon_NeonEffect to a NATIVE
- * vtable slot (e.g. slot 19 = InitScene) instead of an extended slot.
- * Native slots run on the main thread during level setup, where D3D8
- * object creation is safe.
- *
- * Safe to call from extended vtable slots (36-127). */
-static void __fastcall Summon_NeonEffect(DWORD board) {
+ * Idempotent: skips if board+0x642C == "NEON" sentinel.
+ * Safe from any thread (only memory writes, no D3D8 calls). */
+static void __fastcall Summon_NeonOutline(DWORD board) {
     if (!board || board < 0x10000) return;
     if (IsBadReadPtr((void*)board, 0x6500)) return;
 
     int* param_1 = (int*)board;
 
-    /* Get App pointer (param_1[0x21e] = board+0x878) */
     DWORD app = (DWORD)param_1[0x21e];
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x700)) return;
 
-    /* Get ball pointer (App+0x5DC) */
     DWORD ball = *(DWORD*)(app + 0x5DC);
     if (!ball || ball < 0x10000) return;
     if (IsBadReadPtr((void*)ball, 0x600)) return;
 
-    /* Verify ball has valid position data (not still initializing) */
     float ball_x = *(float*)(ball + 0x164);
     float ball_y = *(float*)(ball + 0x168);
     float ball_z = *(float*)(ball + 0x16C);
     if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;
 
-    /* Check if already applied using sentinel value */
-    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;  /* "NEON" sentinel */
+    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;
 
-    /* Apply material scales directly to the ball struct.
-     * The original Scene_SetupLevelDark uses Matrix_Scale4x4 + Matrix_Identity
-     * to compute these, but the net effect is: set R-channel to 1.0 on
-     * ambient/diffuse/specular materials. We write 1.0f directly.
-     *
-     * These are plain memory writes — safe from any thread. */
     if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
         *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  */
         *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  */
         *(float*)(ball + 0x1F0) = 1.0f;  /* specular R */
     }
 
-    /* Mark as applied */
-    *(DWORD*)(board + 0x642C) = 0x4E454F4E;  /* "NEON" sentinel */
+    *(DWORD*)(board + 0x642C) = 0x4E454F4E;
 
-    diag_log("[summon] Summon_NeonEffect: applied neon glow materials to ball");
+    diag_log("[summon] Summon_NeonOutline: applied neon glow materials to ball");
+}
+
+/* ============================================================
+ * Main-thread neon light creation system
+ *
+ * Summon_NeonEffect (below) sets a pending flag from the dispatch
+ * thread. A code cave hooked at App_FrameUpdate epilogue (0x0046C1F1)
+ * runs on the main thread and creates the D3D8 SceneObject (light)
+ * when the flag is set. This is required because D3D8 is
+ * single-threaded — objects created from a background thread crash
+ * the render loop.
+ * ============================================================ */
+
+static volatile DWORD g_neon_pending_board = 0;  /* board ptr awaiting neon light */
+static volatile DWORD g_neon_pending_level = 0;   /* level index (0-14) */
+
+/* Create the neon light SceneObject on the main thread.
+ * Called from the FrameUpdate code cave. */
+static void __fastcall create_neon_light_on_main_thread(DWORD app) {
+    if (!g_neon_pending_board) return;
+    if (!app || app < 0x10000) return;
+    if (IsBadReadPtr((void*)app, 0x700)) return;
+
+    DWORD board = g_neon_pending_board;
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 0x6500)) { g_neon_pending_board = 0; return; }
+
+    /* Check sentinel — if already done, clear and skip */
+    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) { g_neon_pending_board = 0; return; }
+
+    int* param_1 = (int*)board;
+
+    DWORD gfx_ctx = *(DWORD*)(app + 0x174);
+    if (!gfx_ctx || gfx_ctx < 0x10000) { g_neon_pending_board = 0; return; }
+
+    DWORD ball = *(DWORD*)(app + 0x5DC);
+    if (!ball || ball < 0x10000) { g_neon_pending_board = 0; return; }
+    if (IsBadReadPtr((void*)ball, 0x600)) { g_neon_pending_board = 0; return; }
+
+    float ball_x = *(float*)(ball + 0x164);
+    float ball_y = *(float*)(ball + 0x168);
+    float ball_z = *(float*)(ball + 0x16C);
+    if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) { return; } /* try again next frame */
+
+    /* Create SceneObject for the light (same as Scene_SetupLevelDark) */
+    void* mem = game_operator_new(0xD4);
+    if (!mem) { g_neon_pending_board = 0; return; }
+
+    DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
+    if (!obj) { g_neon_pending_board = 0; return; }
+
+    param_1[0x10db] = (int)obj;
+    obj[0x34] = 1;  /* light type flag */
+
+    /* Set light color at obj+0x94: (10.0, 10.0, 0.0, 0.0) */
+    float light_color[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
+    memcpy((void*)((DWORD)obj + 0x94), light_color, 16);
+
+    /* Set position via vtable[1] (SetTransform) */
+    typedef void (__thiscall *SetTransform_t)(DWORD obj, float x, float y, float z);
+    SetTransform_t set_transform = (SetTransform_t)(*(DWORD*)(*obj + 4));
+    set_transform((DWORD)obj, ball_x, ball_y + 0.5f, ball_z);
+
+    /* Set range: obj[0x33] = 400.0f */
+    obj[0x33] = 0x43C80000;
+
+    /* Call vtable[3] (Init) */
+    typedef void (__thiscall *Init_t)(DWORD obj);
+    Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
+    init_fn((DWORD)obj);
+
+    /* Register the object */
+    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
+
+    /* Apply material scales to ball */
+    if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
+        *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  */
+        *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  */
+        *(float*)(ball + 0x1F0) = 1.0f;  /* specular R */
+    }
+
+    /* Mark as done */
+    *(DWORD*)(board + 0x642C) = 0x4E454F4E;
+    g_neon_pending_board = 0;
+
+    diag_log("[summon] Summon_NeonEffect: created neon light + glow on main thread");
+}
+
+/* App_FrameUpdate epilogue hook address */
+#define APP_FRAME_UPDATE_EPILOGUE 0x0046C1F1
+/* Original bytes at epilogue: POP ESI / ADD ESP,8 / RET */
+/* POP ESI = 5E (1 byte), ADD ESP,8 = 83 C4 08 (3 bytes), RET = C3 (1 byte) = 5 bytes total */
+
+static void install_frameupdate_hook(void) {
+    DWORD old_protect;
+    BYTE* patch_addr = (BYTE*)APP_FRAME_UPDATE_EPILOGUE;
+
+    /* Allocate code cave for our hook */
+    BYTE* cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+
+    int pos = 0;
+
+    /* Call create_neon_light_on_main_thread(app)
+     * At this point in App_FrameUpdate, ESI = App pointer (MOV ESI,ECX at 0x46C179)
+     * We need to pass app as ECX (fastcall param_1) */
+    cave[pos++] = 0x51;              /* PUSH ECX (save) */
+    cave[pos++] = 0x56;              /* PUSH ESI (save) */
+    /* MOV ECX, ESI  (app = ESI from FrameUpdate) */
+    cave[pos++] = 0x8B; cave[pos++] = 0xCE;
+    /* MOV EAX, create_neon_light_on_main_thread */
+    cave[pos++] = 0xB8;
+    *(DWORD*)(cave + pos) = (DWORD)create_neon_light_on_main_thread; pos += 4;
+    /* CALL EAX */
+    cave[pos++] = 0xFF; cave[pos++] = 0xD0;
+    /* POP ESI */
+    cave[pos++] = 0x5E;
+    /* POP ECX */
+    cave[pos++] = 0x59;
+
+    /* Execute original bytes: POP ESI / ADD ESP,8 / RET */
+    cave[pos++] = 0x5E;              /* POP ESI */
+    cave[pos++] = 0x83; cave[pos++] = 0xC4; cave[pos++] = 0x08;  /* ADD ESP,8 */
+    cave[pos++] = 0xC3;              /* RET */
+
+    /* Patch the epilogue: JMP to our cave */
+    VirtualProtect(patch_addr, 5, PAGE_READWRITE, &old_protect);
+    patch_addr[0] = 0xE9;  /* JMP rel32 */
+    *(DWORD*)(patch_addr + 1) = (DWORD)cave - (DWORD)patch_addr - 5;
+    VirtualProtect(patch_addr, 5, old_protect, &old_protect);
+
+    diag_log("[mkn_level_system] FrameUpdate epilogue hook installed at 0x0046C1F1");
+}
+
+/* Summon_NeonEffect — full neon effect: yellow light + glow materials.
+ * Extracted from Scene_SetupLevelDark (0x00416270).
+ *
+ * Creates a SceneObject (D3D8 light) at the ball's position with yellow
+ * color (10,10,0), range 400, plus applies R=1.0 material scales.
+ *
+ * THREAD SAFETY: The dispatch thread (extended slots 36-127) sets a
+ * pending flag. The actual D3D8 SceneObject creation happens on the
+ * main thread via the App_FrameUpdate epilogue hook. This prevents
+ * the D3D8 single-threaded crash that occurred in v6.1.
+ *
+ * Idempotent: skips if board+0x642C == "NEON" sentinel. */
+static void __fastcall Summon_NeonEffect(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 0x6500)) return;
+
+    int* param_1 = (int*)board;
+
+    /* Get App pointer */
+    DWORD app = (DWORD)param_1[0x21e];
+    if (!app || app < 0x10000) return;
+    if (IsBadReadPtr((void*)app, 0x700)) return;
+
+    /* Check sentinel */
+    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;
+
+    /* Check if a previous request is still pending */
+    if (g_neon_pending_board == board) return;
+
+    /* Verify ball is initialized */
+    DWORD ball = *(DWORD*)(app + 0x5DC);
+    if (!ball || ball < 0x10000) return;
+    if (IsBadReadPtr((void*)ball, 0x600)) return;
+
+    float ball_x = *(float*)(ball + 0x164);
+    float ball_y = *(float*)(ball + 0x168);
+    float ball_z = *(float*)(ball + 0x16C);
+    if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;
+
+    /* Set pending flag — main-thread hook will create the light next frame */
+    g_neon_pending_board = board;
+
+    diag_log("[summon] Summon_NeonEffect: light creation queued for main thread");
 }
 
 /* Summon_BoardSetup — calls the full Board_Setup function (vtable[32]).
@@ -320,6 +472,7 @@ static const FuncEntry g_functions[] = {
     /* Summon functions (callable from any vtable slot) */
     { "Summon_Bumpers",       (DWORD)Summon_Bumpers },
     { "Summon_NeonEffect",    (DWORD)Summon_NeonEffect },
+    { "Summon_NeonOutline",   (DWORD)Summon_NeonOutline },
     { "Summon_BoardSetup",    (DWORD)Summon_BoardSetup },
     { "Summon_LevelObjects",  (DWORD)Summon_LevelObjects },
     { "Summon_InitScene",     (DWORD)Summon_InitScene },
@@ -1500,7 +1653,10 @@ static void mkn_init(void) {
     /* Step 4: Parse config file for VTABLE/SET/SWAP/etc commands */
     apply_config();
 
-    /* Step 5: Start extended vtable dispatch thread */
+    /* Step 5: Install FrameUpdate epilogue hook for main-thread D3D8 ops */
+    install_frameupdate_hook();
+
+    /* Step 6: Start extended vtable dispatch thread */
     start_dispatch_thread();
     diag_log("[mkn_level_system v5] Extended dispatch thread started (slots 36-127)");
 }
