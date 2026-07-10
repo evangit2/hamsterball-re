@@ -99,7 +99,7 @@ private:
 
 		// On first call, save the original values
 		if (!g_haveOriginals) {
-			if ((curScaleX == curScaleX) && curScaleX > 0.0f && curScaleX <= 1.0f) {
+			if ((curScaleX == curScaleX) && curScaleX > 0.0f) {
 				g_origScaleX = curScaleX;
 				g_origOffsetX = curOffsetX;
 				g_haveOriginals = true;
