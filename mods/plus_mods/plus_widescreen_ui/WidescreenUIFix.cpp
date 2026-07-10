@@ -11,13 +11,13 @@ private:
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
 
-	// Whether we've already patched scaleX/offsetX this frame
-	static inline bool g_patchedThisFrame = false;
+	// Track what we last wrote to detect frame boundaries
+	static inline float g_lastModifiedScaleX = -1.0f;
 	static inline float g_origScaleX = 0.0f;
 	static inline int g_origOffsetX = 0;
 
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
-		// Call original first — it reads scaleX/offsetX and computes the result
+		// Call original FIRST — before any memory modification
 		float result = orig_TransformX(gfx, edx, pixel_x);
 
 		if (!g_enabled) return result;
@@ -37,44 +37,40 @@ private:
 		int* pOffsetX = (int*)(gfxAddr + 0x798);
 
 		float curScaleX = *pScaleX;
-
-		// Validate scaleX
 		if (!(curScaleX == curScaleX) || curScaleX <= 0.0f || curScaleX > 1.0f) return result;
 
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
 
-		// If not yet patched this frame, save originals and apply
-		if (!g_patchedThisFrame) {
-			g_origScaleX = curScaleX;
-			g_origOffsetX = *pOffsetX;
-			g_patchedThisFrame = true;
+		// Check if memory still has our modified values from last call
+		// (same frame) or has been reset by the game (new frame)
+		if (curScaleX == g_lastModifiedScaleX) {
+			// Memory has our modified values — orig_TransformX already
+			// used them, so result is already correct. No transform needed.
+			return result;
 		}
 
-		// Apply widescreen correction to global memory
-		*pScaleX = g_origScaleX * scaleFactor;
-		*pOffsetX = (int)((float)g_origOffsetX * scaleFactor + margin);
+		// New frame (or first call) — game set fresh original values
+		g_origScaleX = curScaleX;
+		g_origOffsetX = *pOffsetX;
 
-		// The original already computed result with the OLD scaleX/offsetX.
-		// Re-compute with the NEW values to get the correct result.
-		result = pixel_x * (*pScaleX) + (float)(*pOffsetX);
+		// Modify global memory so DrawScreenRect also gets the fix
+		float newScaleX = g_origScaleX * scaleFactor;
+		int newOffsetX = (int)((float)g_origOffsetX * scaleFactor + margin);
+		*pScaleX = newScaleX;
+		*pOffsetX = newOffsetX;
+		g_lastModifiedScaleX = newScaleX;
 
-		return result;
+		// result was computed with ORIGINAL values (before our modification)
+		// so we need to transform it
+		return result * scaleFactor + margin;
 	}
 
 public:
 	const char* GetModName() override { return "Widescreen UI Fix"; }
 	const char* GetAuthorName() override { return "BookwormKevin"; }
 	int GetApiVersion() override { return HAMSTERBALL_API_VERSION; }
-
-	void onGameUpdate() override {
-		// Reset the per-frame flag so the first Gfx_TransformX call next frame
-		// saves fresh originals
-		g_patchedThisFrame = false;
-
-		// If disabled, restore originals on next frame's first call
-	}
 
 	void Initialize(IModAPI* modApi) override {
 		api = modApi;
