@@ -1157,10 +1157,22 @@ static void updateWarpStateMachine(void) {
             int hasTournamentData = 0;
             int savedTimeRemaining = 0;
             float savedPlayerScore = 0.0f;
+            int isSameLevel = 0;
 
             if (oldProfile) {
                 char isPractice = *((char *)oldProfile + PROFILE_IS_PRACTICE);
                 wasInTournament = (isPractice == 0) ? 1 : 0;
+
+                /* Detect same-level warp: compare target with current race index.
+                 * Both g_warpLevelIndex and profile+0x08 are 0-based (0-14). */
+                {
+                    int currentRaceIdx = *(int *)((char *)oldProfile + 0x08);
+                    if (levelIdx == currentRaceIdx) {
+                        isSameLevel = 1;
+                        diag_logf("[warp] Same-level warp detected (raceIdx=%d)", currentRaceIdx);
+                    }
+                }
+
                 if (wasInTournament) {
                     int raceIdx = *(int *)((char *)oldProfile + 0x08);
                     hasTournamentData = 1;
@@ -1171,12 +1183,28 @@ static void updateWarpStateMachine(void) {
                         savedScores[raceIdx] = *(float *)((char *)app + 0x5E4);
                         diag_logf("[warp] Saved race score %f at index %d", savedScores[raceIdx], raceIdx);
                     }
-                    /* Race timer is at App+0x5E8 (int), NOT board+0x2990 (which is a
-                     * score accumulator initialized to 100). */
-                    savedTimeRemaining = *(int *)((char *)app + 0x5E8);
-                    diag_logf("[warp] Saved time remaining: %d", savedTimeRemaining);
+                    if (isSameLevel) {
+                        /* Same-level tournament: reset timer to the level's starting value.
+                         * The starting timer is stored at profile+0x18+raceIdx*4 and is
+                         * only overwritten with the final timer when the race finishes. */
+                        if (raceIdx >= 0 && raceIdx < 16) {
+                            savedTimeRemaining = *(int *)((char *)oldProfile + 0x18 + raceIdx * 4);
+                            diag_logf("[warp] Same-level: saved starting timer %d from profile+0x18+raceIdx*4",
+                                      savedTimeRemaining);
+                        }
+                    } else {
+                        /* Different-level tournament: carry over current timer. */
+                        savedTimeRemaining = *(int *)((char *)app + 0x5E8);
+                        diag_logf("[warp] Saved time remaining (carry-over): %d", savedTimeRemaining);
+                    }
                     savedPlayerScore = *(float *)((char *)app + 0x5E4);
                     diag_logf("[warp] Saved player score: %f", savedPlayerScore);
+                } else if (isSameLevel) {
+                    /* Same-level time trial: save the current counted-up timer
+                     * so we can resume counting from where we left off.
+                     * In TT, App+0x5E8 counts UP (INC path), starting from 0. */
+                    savedTimeRemaining = *(int *)((char *)app + 0x5E8);
+                    diag_logf("[warp] Same-level TT: saved current timer %d for resume", savedTimeRemaining);
                 }
             }
 
@@ -1224,16 +1252,24 @@ static void updateWarpStateMachine(void) {
 
                         if (savedTimeRemaining > 0) {
                             /* Restore the race timer to App+0x5E8 (int).
-                             * Do NOT write to board+0x2990 (that's a score accumulator,
-                             * not the timer) or App+0x5EC (that's a timer snapshot
-                             * the game manages internally). */
+                             * For same-level tournament: this is the starting timer (reset).
+                             * For different-level tournament: this is the carry-over timer.
+                             * Do NOT write to board+0x2990 (score accumulator) or
+                             * App+0x5EC (timer snapshot managed by the game). */
                             *(int *)((char *)app + 0x5E8) = savedTimeRemaining;
-                            diag_logf("[warp] Timer carried over: %d ticks remaining", savedTimeRemaining);
+                            diag_logf("[warp] Timer set: %d ticks", savedTimeRemaining);
                         }
                         *(float *)((char *)app + 0x5E4) = savedPlayerScore;
                         diag_logf("[warp] Player score restored: %f", savedPlayerScore);
                     }
                 }
+            } else if (isSameLevel && savedTimeRemaining > 0) {
+                /* Same-level time trial: resume timer from where we left off.
+                 * App_StartPracticeRace starts TT timer at 0; we overwrite with
+                 * the saved counted-up value so the timer continues from the
+                 * point of the warp. */
+                *(int *)((char *)app + 0x5E8) = savedTimeRemaining;
+                diag_logf("[warp] Same-level TT: timer resumed at %d", savedTimeRemaining);
             }
 
             diag_log("[warp] Level loaded OK");
