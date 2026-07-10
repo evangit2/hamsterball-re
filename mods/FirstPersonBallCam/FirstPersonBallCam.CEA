@@ -1,37 +1,31 @@
 { ============================================================
-  First-Person Ball Cam for Hamsterball — v2 (Fixed)
+  First-Person Ball Cam for Hamsterball — v3
   ============================================================
-  
+
   HOOK: Scene_SetCamera epilogue at 0x41A254
   JUMP-BACK: 0x41A2BF (ApplyCamera)
   Original bytes: 8B 44 24 14 8B
-  
-  CAMERA SYSTEM (orbit camera, NOT free-position):
-  - Scene+0x87C = camera object pointer
-  - vtable[2] (+0x8) = SetPosition(X, Y, Z) → sets LOOK-AT TARGET (not eye!)
-  - vtable[3] (+0xC) = SetDirection(&vec3 dir, float dist) → direction FROM eye TO target + orbit distance
-  - Actual eye position = target - direction * distance
-  
-  ORIGINAL camera:
-  - Target = ball_pos + scene offsets + path follow + shake
-  - Direction = (sin(orbit_angle), 0.9, cos(orbit_angle)) — slightly downward
-  - Distance = ~700 (far back, high up)
-  
+
+  CAMERA MODEL (corrected — v2 had sign backwards!):
+  - vtable[2] (+0x8) = SetPosition(X, Y, Z) → sets LOOK-AT TARGET
+  - vtable[3] (+0xC) = SetDirection(&vec3, float dist) → direction + orbit distance
+  - EYE = TARGET + DIRECTION × DISTANCE  (PLUS, not minus!)
+  - Original: target=ball, dir={sin,0.9,cos}, dist=700
+    → eye = ball + {sin*700, 630, cos*700} = high up & far back ✓
+
   FIRST-PERSON BALL CAM:
-  - Target = ball_pos + (vel_dir.xz * lookAhead, 0, vel_dir.xz * lookAhead)
-    → look ahead in the horizontal travel direction
-  - Direction = (vel_dir.x * lookAhead, -height, vel_dir.z * lookAhead)
-    → from eye (above ball) to target (ahead of ball)
-  - Distance = 1.0 (direction encodes full offset)
-  
-  Result: eye = target - direction = ball_pos + (0, height, 0)
-  → Camera is directly above the ball, looking forward in travel direction
-  
-  Uses XZ velocity only (ignores Y) to prevent camera looking up/down when falling.
-  
+  - target = ball + (velDir.x * lookAhead, 0, velDir.z * lookAhead)
+  - direction = (-velDir.x * lookAhead, height, -velDir.z * lookAhead)
+  - distance = 1.0
+  - eye = target + direction = ball + (0, height, 0) = directly above ball ✓
+
+  SMOOTHING: velocity direction is lerped (20% per frame) to prevent
+  sideways wiggling from frame-to-frame velocity oscillation.
+
   Adjustable via CE address table:
-  - fpCamHeight: height above ball (default 40.0, radius ~26 so just above surface)
-  - fpCamLookAhead: how far ahead to look (default 150.0)
+  - fpCamHeight: height above ball center (default 40.0, radius ~26)
+  - fpCamLookAhead: how far ahead to look (default 300.0)
+  - fpCamSmoothing: lerp factor 0.0-1.0 (default 0.2 = 20% per frame)
   ============================================================ }
 
 [ENABLE]
@@ -41,28 +35,30 @@ alloc(newmem, 512)
 label(dirX)
 label(dirY)
 label(dirZ)
-label(camX)
-label(camY)
-label(camZ)
+label(prevDirX)
+label(prevDirZ)
 label(fpCamHeight)
 label(fpCamLookAhead)
+label(fpCamSmoothing)
 label(minVel)
 label(useDefaultDir)
-label(computeTarget)
+label(computeCamera)
+label(skipCamera)
 
 registersymbol(fpCamHeight)
 registersymbol(fpCamLookAhead)
+registersymbol(fpCamSmoothing)
 
 // --- Data section ---
 fpCamData:
   dirX: dd 0
   dirY: dd 0
   dirZ: dd 0
-  camX: dd 0
-  camY: dd 0
-  camZ: dd 0
-  fpCamHeight: dd 42200000      // 40.0f (just above ball surface, radius ~26)
-  fpCamLookAhead: dd 43160000   // 150.0f (how far ahead to look)
+  prevDirX: dd 0
+  prevDirZ: dd 3F800000       // init prevDirZ = 1.0 (facing +Z)
+  fpCamHeight: dd 42200000     // 40.0f (ball radius ~26, so ~14 above surface)
+  fpCamLookAhead: dd 43960000  // 300.0f
+  fpCamSmoothing: dd 3E4CCCCD  // 0.2f (20% lerp per frame)
   minVel: dd 3A83126F          // 0.001f
 
 // --- Code cave ---
@@ -72,7 +68,11 @@ newmem:
   push ecx
   push edx
 
-  // --- Compute horizontal velocity direction (XZ only, ignore Y) ---
+  // --- Null check ---
+  test edi, edi
+  jz skipCamera
+
+  // --- Compute horizontal velocity direction (XZ only) ---
   // len = sqrt(vx*vx + vz*vz)
   fld dword ptr [edi+0x20]     // st0 = vx
   fmul st(0), st(0)            // st0 = vx*vx
@@ -81,86 +81,139 @@ newmem:
   faddp                        // st0 = vx*vx + vz*vz
   fsqrt                        // st0 = horizontal speed
 
-  // If speed <= minVel, use default direction (0, 0, 1)
-  fcom dword ptr [minVel]      // compare st(0) with 0.001
+  // If speed <= minVel, use previous direction
+  fcom dword ptr [minVel]
   fstsw ax
-  test ah, 0x41                // C0 (less than) or C3 (equal/unordered)
+  test ah, 0x41
   jnz useDefaultDir
 
   // Normalize: dx = vx/speed, dz = vz/speed
   fld dword ptr [edi+0x20]     // st0 = vx, st1 = speed
-  fdiv st(0), st(1)            // st0 = vx/speed = dx
+  fdiv st(0), st(1)            // st0 = dx = vx/speed
   fstp dword ptr [dirX]        // store dx, pop → st0 = speed
   fld dword ptr [edi+0x28]     // st0 = vz, st1 = speed
-  fdiv st(0), st(1)            // st0 = vz/speed = dz
+  fdiv st(0), st(1)            // st0 = dz = vz/speed
   fstp dword ptr [dirZ]        // store dz, pop → st0 = speed
   fstp st(0)                   // pop speed, FPU empty
-  jmp computeTarget
+  jmp computeCamera
 
 useDefaultDir:
   fstp st(0)                   // pop speed, FPU empty
-  mov dword ptr [dirX], 0      // dx = 0
-  mov dword ptr [dirZ], 3F800000  // dz = 1.0 (look forward +Z)
+  // Keep previous frame's direction (don't update dirX/dirZ)
+  mov eax, [prevDirX]
+  mov [dirX], eax
+  mov eax, [prevDirZ]
+  mov [dirZ], eax
 
-computeTarget:
-  // --- Compute camera target (look-at point) ---
-  // target = ball_pos + (dirX * lookAhead, 0, dirZ * lookAhead)
-  // target.y = ball.y (no Y offset — look at ball's height level)
-  
+computeCamera:
+  // --- Apply smoothing: lerp prevDir → dir by fpCamSmoothing ---
+  // smoothed = prev + (dir - prev) * smoothing
+
+  // Smooth X
+  fld dword ptr [dirX]          // st0 = dirX (new target)
+  fsub dword ptr [prevDirX]     // st0 = dirX - prevX
+  fmul dword ptr [fpCamSmoothing] // st0 = delta * smoothing
+  fadd dword ptr [prevDirX]     // st0 = smoothedX
+  fstp dword ptr [dirX]         // dirX = smoothedX
+
+  // Smooth Z
+  fld dword ptr [dirZ]          // st0 = dirZ (new target)
+  fsub dword ptr [prevDirZ]     // st0 = dirZ - prevZ
+  fmul dword ptr [fpCamSmoothing] // st0 = delta * smoothing
+  fadd dword ptr [prevDirZ]     // st0 = smoothedZ
+  fstp dword ptr [dirZ]         // dirZ = smoothedZ
+
+  // --- Re-normalize smoothed direction (XZ only) ---
+  fld dword ptr [dirX]
+  fmul st(0), st(0)            // st0 = dirX²
+  fld dword ptr [dirZ]
+  fmul st(0), st(0)            // st0 = dirZ², st1 = dirX²
+  faddp                        // st0 = dirX² + dirZ²
+  fsqrt                        // st0 = |dirXZ|
+
+  // Check for near-zero magnitude
+  fcom dword ptr [minVel]
+  fstsw ax
+  test ah, 0x41
+  jnz reNormZero               // too small, pop and skip
+
+  fld dword ptr [dirX]
+  fdiv st(0), st(1)            // st0 = dirX / |dirXZ| (normalized)
+  fstp dword ptr [dirX]         // store normalized
+  fld dword ptr [dirZ]
+  fdiv st(0), st(1)            // st0 = dirZ / |dirXZ| (normalized)
+  fstp dword ptr [dirZ]         // store normalized
+  fstp st(0)                   // pop |dirXZ|, FPU empty
+
+  // --- Update prevDir for next frame ---
+  mov eax, [dirX]
+  mov [prevDirX], eax
+  mov eax, [dirZ]
+  mov [prevDirZ], eax
+
+  // --- SetPosition: TARGET = ball + (dirX*la, 0, dirZ*la) ---
   // target.x = ball.x + dirX * lookAhead
-  fld dword ptr [dirX]          // st0 = dirX
-  fmul dword ptr [fpCamLookAhead]  // st0 = dirX * lookAhead
-  fadd dword ptr [edi+0x14]    // st0 = ball.x + dirX * lookAhead
-  fstp dword ptr [camX]        // store target.x
+  fld dword ptr [dirX]
+  fmul dword ptr [fpCamLookAhead]
+  fadd dword ptr [edi+0x14]    // ball.x
+  fstp dword ptr [dirX]         // reuse dirX slot as targetX (dirX no longer needed)
 
-  // target.y = ball.y
+  // target.y = ball.y (look at ball height, no Y offset)
   mov eax, [edi+0x18]          // ball.y
-  mov [camY], eax
+  mov [dirY], eax               // reuse dirY as targetY
 
   // target.z = ball.z + dirZ * lookAhead
-  fld dword ptr [dirZ]          // st0 = dirZ
-  fmul dword ptr [fpCamLookAhead]  // st0 = dirZ * lookAhead
-  fadd dword ptr [edi+0x1C]    // st0 = ball.z + dirZ * lookAhead
-  fstp dword ptr [camZ]        // store target.z
+  fld dword ptr [dirZ]
+  fmul dword ptr [fpCamLookAhead]
+  fadd dword ptr [edi+0x1C]    // ball.z
+  fstp dword ptr [dirZ]         // reuse dirZ as targetZ
 
-  // --- Compute direction vector (from eye to target) ---
-  // eye = ball_pos + (0, height, 0)
-  // direction = target - eye = (dirX*la, -height, dirZ*la)
-  
-  // dir.x = dirX * lookAhead (already computed in camX - ball.x, but recompute for clarity)
-  fld dword ptr [dirX]          // st0 = dirX
-  fmul dword ptr [fpCamLookAhead]  // st0 = dirX * lookAhead
-  fstp dword ptr [dirX]         // overwrite dirX with dirX * lookAhead
+  // Call camera->SetPosition(targetX, targetY, targetZ)
+  // __thiscall: ECX=camera, push Z, Y, X, RET 0xC
+  mov ecx, [esi+0x87C]
+  mov edx, [ecx]               // vtable
+  push dword ptr [dirZ]         // push targetZ
+  push dword ptr [dirY]         // push targetY
+  push dword ptr [dirX]         // push targetX
+  call dword ptr [edx+0x8]      // SetPosition(X, Y, Z)
 
-  // dir.y = -height
-  fld dword ptr [fpCamHeight]   // st0 = height
-  fchs                         // st0 = -height
-  fstp dword ptr [dirY]         // dir.y = -height
+  // --- SetDirection: direction = (-dirX*la, height, -dirZ*la) ---
+  // Remember: dirX/dirZ are now targetX/targetZ (ball + dir*la)
+  // We need: dirVec = (ball.x - targetX, height, ball.z - targetZ)
+  //         = (-origDirX * la, height, -origDirZ * la)
+  // But we overwrote dirX/dirZ. Recompute from target - ball:
+  // dirVec.x = ball.x - targetX = ball.x - dirX(new)
+  // dirVec.y = height (POSITIVE — eye is above target)
+  // dirVec.z = ball.z - targetZ = ball.z - dirZ(new)
 
-  // dir.z = dirZ * lookAhead
-  fld dword ptr [dirZ]          // st0 = dirZ (original normalized, not yet scaled)
-  fmul dword ptr [fpCamLookAhead]  // st0 = dirZ * lookAhead
-  fstp dword ptr [dirZ]         // overwrite dirZ with dirZ * lookAhead
+  // dirVec.x = ball.x - targetX
+  fld dword ptr [edi+0x14]      // ball.x
+  fsub dword ptr [dirX]         // ball.x - targetX = -origDir*la
+  fstp dword ptr [dirX]
 
-  // --- Call camera->SetPosition(targetX, targetY, targetZ) ---
-  // __thiscall: ECX = camera, push Z, Y, X, RET 0xC
-  mov ecx, [esi+0x87C]          // camera object
-  mov edx, [ecx]                // vtable
-  push dword ptr [camZ]         // push Z (target.z)
-  push dword ptr [camY]         // push Y (target.y = ball.y)
-  push dword ptr [camX]         // push X (target.x)
-  call dword ptr [edx+0x8]      // SetPosition(X, Y, Z) — sets look-at target
+  // dirVec.y = height (positive! eye is above ball, looking down/forward)
+  fld dword ptr [fpCamHeight]
+  fstp dword ptr [dirY]
 
-  // --- Call camera->SetDirection(&dir_vec, 1.0) ---
-  // __thiscall: ECX = camera, push distance, push &vec, RET 0x8
-  // distance = 1.0 so eye = target - direction * 1.0 = ball + (0, height, 0)
-  mov ecx, [esi+0x87C]          // camera object
-  mov edx, [ecx]                // vtable
-  push 3F800000                 // push distance = 1.0f
-  lea eax, [dirX]               // &direction_vec
-  push eax                      // push &dir_vec
-  call dword ptr [edx+0xC]      // SetDirection(&dir, dist) — sets view direction + orbit distance
+  // dirVec.z = ball.z - targetZ
+  fld dword ptr [edi+0x1C]      // ball.z
+  fsub dword ptr [dirZ]         // ball.z - targetZ = -origDir*la
+  fstp dword ptr [dirZ]
 
+  // Call camera->SetDirection(&dirVec, 1.0)
+  // __thiscall: ECX=camera, push distance, push &vec, RET 0x8
+  mov ecx, [esi+0x87C]
+  mov edx, [ecx]               // vtable
+  push 3F800000                 // distance = 1.0f
+  lea eax, [dirX]               // &dirVec
+  push eax
+  call dword ptr [edx+0xC]      // SetDirection(&dir, 1.0)
+  jmp skipCamera
+
+reNormZero:
+  fstp st(0)                   // pop |dirXZ|, FPU empty
+
+skipCamera:
   pop edx
   pop ecx
   pop eax
@@ -180,3 +233,4 @@ dealloc(newmem)
 dealloc(fpCamData)
 unregistersymbol(fpCamHeight)
 unregistersymbol(fpCamLookAhead)
+unregistersymbol(fpCamSmoothing)
