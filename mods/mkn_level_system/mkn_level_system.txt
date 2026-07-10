@@ -1,6 +1,12 @@
 ================================================================================
-MESHWORLD LEVEL SYSTEM v5 — Extended Vtables + Custom Dispatch
+MESHWORLD LEVEL SYSTEM v6 — Extended Vtables + Custom Dispatch + Summon Functions
 ================================================================================
+
+v6 NEW:
+  Summon Functions — self-contained level behaviors callable from any vtable slot.
+    Summon_Bumpers, Summon_NeonEffect, Summon_BoardSetup,
+    Summon_LevelObjects, Summon_InitScene
+  See "Summon Functions (v6)" section below for full documentation.
 
 v5 NEW:
   Extended vtables from 36 to 128 entries (512 bytes each).
@@ -94,6 +100,45 @@ Function names for VTABLE, SETUP, and ADD:
   Other:
     Level_InitScene, Graphics_SetProjection
   Or use hex: 0x0041B130, 0x00425040, etc.
+
+Summon Functions (v6):
+  These are self-contained functions that call game functions directly.
+  They can be assigned to any vtable slot (0-35 native, 36-127 extended).
+  All take DWORD board as __thiscall ECX=board.
+  All include IsBadReadPtr guards and sentinel checks to prevent double-execution.
+
+  Summon_Bumpers      — Collect 8 bumper objects from loaded MeshWorld.
+                         Replicates bumper loop from Scene_SetupLevelCascade (0x4110D0).
+                         Uses board+0x22b (MeshWorld ptr), board+0x10db (bumper slot array).
+                         Idempotent: skips if board+0x10db != 0 (already collected).
+
+  Summon_NeonEffect   — Create yellow neon light + glow at ball position.
+                         Extracted from Scene_SetupLevelDark (0x416270).
+                         Creates SceneObject with light color (10,10,0), range 400.
+                         Applies R=1.0 to ball mesh materials for glow effect.
+                         Idempotent: skips if board+0x642C == "NEON" sentinel.
+
+  Summon_BoardSetup    — Call full Board_Setup (FUN_0041C5B0).
+                         Creates ALL level objects: balls, bumpers, safespots,
+                         flags, signs — everything the level needs.
+                         NOT idempotent — calling every frame will create duplicates.
+                         Best used in vtable[32] (boardsetup slot) or called once.
+
+  Summon_LevelObjects — Call CreateLevelObjects (0x4121D0).
+                         Creates mechanical objects: Tippers, Catapults, Gears, etc.
+                         NOT idempotent — will create duplicates if called repeatedly.
+                         Best used once during level setup.
+
+  Summon_InitScene    — Call Level_InitScene (0x40B090).
+                         Initializes scene after geometry is loaded.
+                         NOT idempotent.
+                         Best used once during level setup.
+
+  Usage examples:
+    VTABLE 1 36 Summon_Bumpers          ; Add bumpers to Level 1 (per-frame, safe)
+    VTABLE 7 36 Summon_NeonEffect       ; Add neon glow to Neon level (per-frame, safe)
+    VTABLE 3 32 Summon_BoardSetup        ; Replace Board_Setup on Intermediate
+    VTABLE 1 19 Summon_InitScene         ; Replace InitScene on Level 1
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG SECTION — Edit lines below to customize levels
