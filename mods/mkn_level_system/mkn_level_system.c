@@ -864,9 +864,27 @@ typedef void (__thiscall *vtable_func_t)(DWORD this_ptr);
 static DWORD g_dispatch_thread_id = 0;
 static HANDLE g_dispatch_thread_handle = NULL;
 
+/* Custom function system globals (declared early for dispatch_thread access) */
+#define MAX_CUSTOM_FUNCS 64
+#define MAX_FUNC_LINES 64
+#define MAX_FUNC_VARS 16
+#define MAX_FUNC_NAME 64
+
+typedef struct {
+    char lines[MAX_FUNC_LINES][256];
+    int  num_lines;
+} CustomFunc;
+
+static CustomFunc g_custom_funcs[MAX_CUSTOM_FUNCS];
+static char g_custom_func_names[MAX_CUSTOM_FUNCS][MAX_FUNC_NAME];
+static int  g_num_custom_funcs = 0;
+
 static DWORD WINAPI dispatch_thread(LPVOID param) {
     /* Wait for game to fully initialize */
     Sleep(3000);
+
+    int diag_counter = 0;
+    DWORD last_board = 0;
 
     while (g_dispatch_running) {
         /* Get current board via App → PlayerProfile → Board */
@@ -884,6 +902,31 @@ static DWORD WINAPI dispatch_thread(LPVOID param) {
         /* Read the board's vtable pointer */
         DWORD board_vt = *(DWORD*)board;
         if (board_vt < 0x10000) { Sleep(16); continue; }
+
+        /* Log when board changes (for debugging) */
+        if (board != last_board) {
+            diag_logf("[dispatch] Board changed: 0x%08X, vtable=0x%08X", board, board_vt);
+            last_board = board;
+            /* Log which level's custom vtable matches (or doesn't) */
+            int found = 0;
+            for (int i = 0; i < 15; i++) {
+                if (g_custom_vtables[i] == board_vt) {
+                    diag_logf("[dispatch] Matched custom vtable for L%d (%s)", i+1, g_levels[i].name);
+                    /* Count non-zero extended slots */
+                    int ext_count = 0;
+                    for (int s = VTABLE_NATIVE_SLOTS; s < VTABLE_ENTRIES; s++) {
+                        DWORD fa = *(DWORD*)(g_custom_vtables[i] + s * 4);
+                        if (fa) ext_count++;
+                    }
+                    diag_logf("[dispatch] Level %d has %d extended slots active", i+1, ext_count);
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                diag_logf("[dispatch] Board vtable 0x%08X does NOT match any custom vtable!", board_vt);
+            }
+        }
 
         /* Find which level's custom vtable matches */
         int level_idx = -1;
@@ -903,6 +946,13 @@ static DWORD WINAPI dispatch_thread(LPVOID param) {
                 /* Check if this is a custom script function */
                 if (is_custom_func_addr(func_addr)) {
                     int func_idx = func_addr - 0x10000000;
+                    /* Periodic log for custom func execution */
+                    if (diag_counter % 300 == 0) {
+                        diag_logf("[dispatch] Calling custom func %d (%s) on slot %d",
+                            func_idx,
+                            (func_idx < g_num_custom_funcs) ? g_custom_func_names[func_idx] : "?",
+                            s);
+                    }
                     execute_custom_func(func_idx, board);
                 } else if (!IsBadReadPtr((void*)func_addr, 1)) {
                     /* Native game function — call with __thiscall(board) */
@@ -912,6 +962,7 @@ static DWORD WINAPI dispatch_thread(LPVOID param) {
             }
         }
 
+        diag_counter++;
         /* ~60fps */
         Sleep(16);
     }
@@ -959,19 +1010,7 @@ static void start_dispatch_thread(void) {
  *   LOG "message"                — write to log file
  * ============================================================ */
 
-#define MAX_CUSTOM_FUNCS 64
-#define MAX_FUNC_LINES 64
-#define MAX_FUNC_VARS 16
-#define MAX_FUNC_NAME 64
-
-typedef struct {
-    char lines[MAX_FUNC_LINES][256];
-    int  num_lines;
-} CustomFunc;
-
-static CustomFunc g_custom_funcs[MAX_CUSTOM_FUNCS];
-static char g_custom_func_names[MAX_CUSTOM_FUNCS][MAX_FUNC_NAME];
-static int  g_num_custom_funcs = 0;
+/* Custom function system globals moved earlier — see dispatch_thread section */
 
 static int lookup_custom_func(const char* name) {
     for (int i = 0; i < g_num_custom_funcs; i++) {
@@ -1186,6 +1225,8 @@ static void load_custom_functions(void) {
     } else {
         strcpy(func_path, "mkn_level_functions.txt");
     }
+
+    diag_logf("[mkn_level_system v5] Looking for custom functions: %s", func_path);
 
     HANDLE hFile = CreateFileA(func_path,
         GENERIC_READ, FILE_SHARE_READ, NULL,
