@@ -112,12 +112,19 @@ Summon Functions (v6):
                          Uses board+0x22b (MeshWorld ptr), board+0x10db (bumper slot array).
                          Idempotent: skips if board+0x10db != 0 (already collected).
 
-  Summon_NeonEffect   — Apply yellow glow material to ball (ambient/diffuse/specular R=1.0).
+  Summon_NeonEffect   — Full neon effect: yellow D3D8 light + glow materials.
                          Extracted from Scene_SetupLevelDark (0x416270).
-                         Safe for extended slots: only does memory writes (no D3D8 calls).
+                         Creates SceneObject with light color (10,10,0), range 400.
+                         Applies R=1.0 to ball ambient/diffuse/specular.
+                         THREAD SAFE: dispatch thread sets a pending flag, the
+                         actual D3D8 creation runs on the main thread via
+                         App_FrameUpdate hook. Safe for extended slots (36-127).
                          Idempotent: skips if board+0x642C == "NEON" sentinel.
-                         Note: Does NOT create a dynamic light source (that requires
-                         main-thread D3D8 access via native vtable slot 19=InitScene).
+
+  Summon_NeonOutline  — Material-only neon glow (no D3D8 light).
+                         Sets ball ambient/diffuse/specular R=1.0.
+                         Safe from any thread (memory writes only).
+                         Idempotent: skips if board+0x642C == "NEON" sentinel.
 
   Summon_BoardSetup    — Call full Board_Setup (FUN_0041C5B0).
                          Creates ALL level objects: balls, bumpers, safespots,
