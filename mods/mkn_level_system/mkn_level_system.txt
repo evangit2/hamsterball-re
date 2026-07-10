@@ -112,11 +112,12 @@ Summon Functions (v6):
                          Uses board+0x22b (MeshWorld ptr), board+0x10db (bumper slot array).
                          Idempotent: skips if board+0x10db != 0 (already collected).
 
-  Summon_NeonEffect   — Create yellow neon light + glow at ball position.
+  Summon_NeonEffect   — Apply yellow glow material to ball (ambient/diffuse/specular R=1.0).
                          Extracted from Scene_SetupLevelDark (0x416270).
-                         Creates SceneObject with light color (10,10,0), range 400.
-                         Applies R=1.0 to ball mesh materials for glow effect.
+                         Safe for extended slots: only does memory writes (no D3D8 calls).
                          Idempotent: skips if board+0x642C == "NEON" sentinel.
+                         Note: Does NOT create a dynamic light source (that requires
+                         main-thread D3D8 access via native vtable slot 19=InitScene).
 
   Summon_BoardSetup    — Call full Board_Setup (FUN_0041C5B0).
                          Creates ALL level objects: balls, bumpers, safespots,
