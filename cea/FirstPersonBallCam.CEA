@@ -1,31 +1,41 @@
 { ============================================================
-  First-Person Ball Cam for Hamsterball
+  First-Person Ball Cam for Hamsterball — v2 (Fixed)
   ============================================================
   
-  Hook: Scene_SetCamera epilogue (0x41A254)
+  HOOK: Scene_SetCamera epilogue at 0x41A254
+  JUMP-BACK: 0x41A2BF (ApplyCamera)
+  Original bytes: 8B 44 24 14 8B
   
-  Camera system overview:
+  CAMERA SYSTEM (orbit camera, NOT free-position):
   - Scene+0x87C = camera object pointer
-  - Camera vtable[2] (+0x8) = SetPosition(x, y, z) — target position
-  - Camera vtable[3] (+0xC) = SetDirection(&vec3, dist) — look dir + distance
-  - Ball+0x14 = position (vec3: X,Y,Z at +0x14,+0x18,+0x1C)
-  - Ball+0x20 = velocity (vec3: X,Y,Z at +0x20,+0x24,+0x28)
-  - Ball+0x3C = radius (float)
+  - vtable[2] (+0x8) = SetPosition(X, Y, Z) → sets LOOK-AT TARGET (not eye!)
+  - vtable[3] (+0xC) = SetDirection(&vec3 dir, float dist) → direction FROM eye TO target + orbit distance
+  - Actual eye position = target - direction * distance
   
-  This mod replaces the camera position/direction setup with:
-  - Camera position: ball_pos + (0, radius + height, 0) — above the ball
-  - Camera direction: normalized velocity — where ball is going
-  - Camera distance: adjustable (default 1.0, lower = more first-person)
+  ORIGINAL camera:
+  - Target = ball_pos + scene offsets + path follow + shake
+  - Direction = (sin(orbit_angle), 0.9, cos(orbit_angle)) — slightly downward
+  - Distance = ~700 (far back, high up)
   
-  When ball is nearly stationary, direction defaults to (0, 0, 1) — forward.
+  FIRST-PERSON BALL CAM:
+  - Target = ball_pos + (vel_dir.xz * lookAhead, 0, vel_dir.xz * lookAhead)
+    → look ahead in the horizontal travel direction
+  - Direction = (vel_dir.x * lookAhead, -height, vel_dir.z * lookAhead)
+    → from eye (above ball) to target (ahead of ball)
+  - Distance = 1.0 (direction encodes full offset)
   
-  Adjustable via CE address table (registered symbols):
-  - fpCamHeight: height above ball surface (default 10.0)
-  - fpCamDist: camera distance from target (default 1.0)
+  Result: eye = target - direction = ball_pos + (0, height, 0)
+  → Camera is directly above the ball, looking forward in travel direction
+  
+  Uses XZ velocity only (ignores Y) to prevent camera looking up/down when falling.
+  
+  Adjustable via CE address table:
+  - fpCamHeight: height above ball (default 40.0, radius ~26 so just above surface)
+  - fpCamLookAhead: how far ahead to look (default 150.0)
   ============================================================ }
 
 [ENABLE]
-alloc(fpCamData, 64)
+alloc(fpCamData, 128)
 alloc(newmem, 512)
 
 label(dirX)
@@ -35,13 +45,13 @@ label(camX)
 label(camY)
 label(camZ)
 label(fpCamHeight)
-label(fpCamDist)
+label(fpCamLookAhead)
 label(minVel)
 label(useDefaultDir)
-label(computeCamPos)
+label(computeTarget)
 
 registersymbol(fpCamHeight)
-registersymbol(fpCamDist)
+registersymbol(fpCamLookAhead)
 
 // --- Data section ---
 fpCamData:
@@ -51,9 +61,9 @@ fpCamData:
   camX: dd 0
   camY: dd 0
   camZ: dd 0
-  fpCamHeight: dd 41200000   // 10.0f
-  fpCamDist: dd 3F800000     // 1.0f
-  minVel: dd 3A83126F       // 0.001f
+  fpCamHeight: dd 42200000      // 40.0f (just above ball surface, radius ~26)
+  fpCamLookAhead: dd 43160000   // 150.0f (how far ahead to look)
+  minVel: dd 3A83126F          // 0.001f
 
 // --- Code cave ---
 // At entry: ESI = Scene*, EDI = Ball*
@@ -62,69 +72,94 @@ newmem:
   push ecx
   push edx
 
-  // --- Compute look direction from ball velocity ---
-  // len = sqrt(vx*vx + vy*vy + vz*vz)
-  fld dword ptr [edi+0x20]    // vx
-  fmul st(0), st(0)           // vx*vx
-  fld dword ptr [edi+0x24]    // vy
-  fmul st(0), st(0)           // vy*vy
-  faddp                       // vx*vx + vy*vy
-  fld dword ptr [edi+0x28]    // vz
-  fmul st(0), st(0)           // vz*vz
-  faddp                       // vx*vx + vy*vy + vz*vz
-  fsqrt                       // st(0) = len
+  // --- Compute horizontal velocity direction (XZ only, ignore Y) ---
+  // len = sqrt(vx*vx + vz*vz)
+  fld dword ptr [edi+0x20]     // st0 = vx
+  fmul st(0), st(0)            // st0 = vx*vx
+  fld dword ptr [edi+0x28]     // st0 = vz, st1 = vx*vx
+  fmul st(0), st(0)            // st0 = vz*vz, st1 = vx*vx
+  faddp                        // st0 = vx*vx + vz*vz
+  fsqrt                        // st0 = horizontal speed
 
-  // If len <= minVel or unordered, use default direction
-  fcom dword ptr [minVel]     // compare st(0) with 0.001 (no pop)
+  // If speed <= minVel, use default direction (0, 0, 1)
+  fcom dword ptr [minVel]      // compare st(0) with 0.001
   fstsw ax
-  test ah, 0x41               // C0 (less than) or C3 (equal/unordered)
+  test ah, 0x41                // C0 (less than) or C3 (equal/unordered)
   jnz useDefaultDir
 
-  // Normalize: dir = velocity / len
-  fld dword ptr [edi+0x20]    // st(0)=vx, st(1)=len
-  fdiv st(0), st(1)           // vx/len
-  fstp dword ptr [dirX]       // dir.x, pop -> st(0)=len
-  fld dword ptr [edi+0x24]    // st(0)=vy, st(1)=len
-  fdiv st(0), st(1)           // vy/len
-  fstp dword ptr [dirY]       // dir.y, pop -> st(0)=len
-  fld dword ptr [edi+0x28]    // st(0)=vz, st(1)=len
-  fdiv st(0), st(1)           // vz/len
-  fstp dword ptr [dirZ]       // dir.z, pop -> st(0)=len
-  fstp st(0)                  // pop len, FPU empty
-  jmp computeCamPos
+  // Normalize: dx = vx/speed, dz = vz/speed
+  fld dword ptr [edi+0x20]     // st0 = vx, st1 = speed
+  fdiv st(0), st(1)            // st0 = vx/speed = dx
+  fstp dword ptr [dirX]        // store dx, pop → st0 = speed
+  fld dword ptr [edi+0x28]     // st0 = vz, st1 = speed
+  fdiv st(0), st(1)            // st0 = vz/speed = dz
+  fstp dword ptr [dirZ]        // store dz, pop → st0 = speed
+  fstp st(0)                   // pop speed, FPU empty
+  jmp computeTarget
 
 useDefaultDir:
-  fstp st(0)                  // pop len, FPU empty
-  mov dword ptr [dirX], 0
-  mov dword ptr [dirY], 0
-  mov dword ptr [dirZ], 3F800000  // 1.0f (look forward +Z)
+  fstp st(0)                   // pop speed, FPU empty
+  mov dword ptr [dirX], 0      // dx = 0
+  mov dword ptr [dirZ], 3F800000  // dz = 1.0 (look forward +Z)
 
-computeCamPos:
-  // Camera position = ball_pos + (0, radius + height, 0)
-  mov eax, [edi+0x14]         // ball.x
-  mov [camX], eax
-  fld dword ptr [edi+0x18]     // ball.y
-  fadd dword ptr [edi+0x3C]   // + radius
-  fadd dword ptr [fpCamHeight] // + height offset
-  fstp dword ptr [camY]        // cam.y
-  mov eax, [edi+0x1C]         // ball.z
-  mov [camZ], eax
+computeTarget:
+  // --- Compute camera target (look-at point) ---
+  // target = ball_pos + (dirX * lookAhead, 0, dirZ * lookAhead)
+  // target.y = ball.y (no Y offset — look at ball's height level)
+  
+  // target.x = ball.x + dirX * lookAhead
+  fld dword ptr [dirX]          // st0 = dirX
+  fmul dword ptr [fpCamLookAhead]  // st0 = dirX * lookAhead
+  fadd dword ptr [edi+0x14]    // st0 = ball.x + dirX * lookAhead
+  fstp dword ptr [camX]        // store target.x
 
-  // camera->SetPosition(camX, camY, camZ)  [vtable+0x8, __thiscall]
-  mov ecx, [esi+0x87C]         // camera object
-  mov edx, [ecx]               // vtable
-  push dword ptr [camZ]        // push Z
-  push dword ptr [camY]        // push Y
-  push dword ptr [camX]        // push X
-  call dword ptr [edx+0x8]     // SetPosition (callee cleanup RET 0xC)
+  // target.y = ball.y
+  mov eax, [edi+0x18]          // ball.y
+  mov [camY], eax
 
-  // camera->SetDirection(&dir_vec, dist)  [vtable+0xC, __thiscall]
-  mov ecx, [esi+0x87C]         // camera object
-  mov edx, [ecx]               // vtable
-  push dword ptr [fpCamDist]   // push distance
-  lea eax, [dirX]              // &dir_vec
-  push eax                     // push &dir_vec
-  call dword ptr [edx+0xC]     // SetDirection (callee cleanup RET 0x8)
+  // target.z = ball.z + dirZ * lookAhead
+  fld dword ptr [dirZ]          // st0 = dirZ
+  fmul dword ptr [fpCamLookAhead]  // st0 = dirZ * lookAhead
+  fadd dword ptr [edi+0x1C]    // st0 = ball.z + dirZ * lookAhead
+  fstp dword ptr [camZ]        // store target.z
+
+  // --- Compute direction vector (from eye to target) ---
+  // eye = ball_pos + (0, height, 0)
+  // direction = target - eye = (dirX*la, -height, dirZ*la)
+  
+  // dir.x = dirX * lookAhead (already computed in camX - ball.x, but recompute for clarity)
+  fld dword ptr [dirX]          // st0 = dirX
+  fmul dword ptr [fpCamLookAhead]  // st0 = dirX * lookAhead
+  fstp dword ptr [dirX]         // overwrite dirX with dirX * lookAhead
+
+  // dir.y = -height
+  fld dword ptr [fpCamHeight]   // st0 = height
+  fchs                         // st0 = -height
+  fstp dword ptr [dirY]         // dir.y = -height
+
+  // dir.z = dirZ * lookAhead
+  fld dword ptr [dirZ]          // st0 = dirZ (original normalized, not yet scaled)
+  fmul dword ptr [fpCamLookAhead]  // st0 = dirZ * lookAhead
+  fstp dword ptr [dirZ]         // overwrite dirZ with dirZ * lookAhead
+
+  // --- Call camera->SetPosition(targetX, targetY, targetZ) ---
+  // __thiscall: ECX = camera, push Z, Y, X, RET 0xC
+  mov ecx, [esi+0x87C]          // camera object
+  mov edx, [ecx]                // vtable
+  push dword ptr [camZ]         // push Z (target.z)
+  push dword ptr [camY]         // push Y (target.y = ball.y)
+  push dword ptr [camX]         // push X (target.x)
+  call dword ptr [edx+0x8]      // SetPosition(X, Y, Z) — sets look-at target
+
+  // --- Call camera->SetDirection(&dir_vec, 1.0) ---
+  // __thiscall: ECX = camera, push distance, push &vec, RET 0x8
+  // distance = 1.0 so eye = target - direction * 1.0 = ball + (0, height, 0)
+  mov ecx, [esi+0x87C]          // camera object
+  mov edx, [ecx]                // vtable
+  push 3F800000                 // push distance = 1.0f
+  lea eax, [dirX]               // &direction_vec
+  push eax                      // push &dir_vec
+  call dword ptr [edx+0xC]      // SetDirection(&dir, dist) — sets view direction + orbit distance
 
   pop edx
   pop ecx
@@ -134,16 +169,14 @@ computeCamPos:
   jmp 0041A2BF
 
 // --- Hook: 5-byte JMP at Scene_SetCamera epilogue ---
-// Original bytes: 8B 44 24 14 8B (MOV EAX,[ESP+0x14]; first byte of MOV ECX)
 0041A254:
   jmp newmem
 
 [DISABLE]
-// Restore original 5 bytes
 0041A254:
   db 8B 44 24 14 8B
 
 dealloc(newmem)
 dealloc(fpCamData)
 unregistersymbol(fpCamHeight)
-unregistersymbol(fpCamDist)
+unregistersymbol(fpCamLookAhead)
