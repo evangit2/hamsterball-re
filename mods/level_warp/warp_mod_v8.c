@@ -1187,12 +1187,13 @@ static void updateWarpStateMachine(void) {
                         diag_logf("[warp] Saved race score %f at index %d", savedScores[raceIdx], raceIdx);
                     }
                     if (isSameLevel) {
-                        /* Same-level tournament: reset timer to the level's starting value.
-                         * The starting timer is stored at profile+0x18+raceIdx*4 and is
-                         * only overwritten with the final timer when the race finishes. */
+                        /* Same-level tournament: read carry-over time from previous race.
+                         * Tournament_AdvanceRace stores App+0x5E8 (remaining time) at
+                         * profile+0x14+raceIdx*4 when a new race starts.
+                         * (0x14 is the base of the per-race time array; raceIdx is 1-based.) */
                         if (raceIdx >= 0 && raceIdx < 16) {
-                            savedTimeRemaining = *(int *)((char *)oldProfile + 0x18 + raceIdx * 4);
-                            diag_logf("[warp] Same-level: saved starting timer %d from profile+0x18+raceIdx*4",
+                            savedTimeRemaining = *(int *)((char *)oldProfile + 0x14 + raceIdx * 4);
+                            diag_logf("[warp] Same-level: saved carry-over timer %d from profile+0x14+raceIdx*4",
                                       savedTimeRemaining);
                         }
                     } else {
@@ -1253,14 +1254,42 @@ static void updateWarpStateMachine(void) {
                         }
                         diag_log("[warp] Tournament mode restored: practice=0, scores copied to new profile");
 
-                        if (savedTimeRemaining > 0) {
-                            /* Restore the race timer to App+0x5E8 (int).
-                             * For same-level tournament: this is the starting timer (reset).
-                             * For different-level tournament: this is the carry-over timer.
-                             * Do NOT write to board+0x2990 (score accumulator) or
-                             * App+0x5EC (timer snapshot managed by the game). */
-                            *(int *)((char *)app + 0x5E8) = savedTimeRemaining;
-                            diag_logf("[warp] Timer set: %d ticks", savedTimeRemaining);
+                        {
+                            /* The game's Tournament_AdvanceRace sets App+0x5E8 = board+0x2998
+                             * + difficulty_bonus (1000 normal, 500 easy) for tournament mode.
+                             * But we forced practice mode (profile+0x11=1) so it set timer=0.
+                             * We need to compute: carryOver + newLevelBaseTime + difficultyBonus.
+                             * board+0x2998 is the <TIME> value from racedata.xml (in seconds).
+                             * The game multiplies by 100 (ticks per second) — but actually
+                             * racedata.xml TIME is already in ticks (e.g. 60 = 60 seconds).
+                             * The +1000/+500 is a per-level time bonus added on top. */
+                            int newProfile2 = *(int *)((char *)app + APP_PROFILE_PTR);
+                            int newBoard2 = 0;
+                            int levelBaseTime = 0;
+                            int difficultyBonus = 0;
+                            int finalTimer = savedTimeRemaining;
+
+                            if (newProfile2) {
+                                newBoard2 = *(int *)((char *)newProfile2 + PROFILE_BOARD_PTR);
+                            }
+                            if (newBoard2 && !IsBadReadPtr((void *)(newBoard2 + 0x2998), 4)) {
+                                levelBaseTime = *(int *)((char *)newBoard2 + 0x2998);
+                            }
+
+                            /* Difficulty bonus: 0=normal(+1000), 1=easy(+500).
+                             * savedDifficulty was saved before App_StartPracticeRace
+                             * which sets App+0x23C=1. We restored savedDifficulty
+                             * already, so read the current value. */
+                            {
+                                int diff = (int)*((unsigned char *)((char *)app + 0x23C));
+                                if (diff == 0) difficultyBonus = 1000;
+                                else if (diff == 1) difficultyBonus = 500;
+                            }
+
+                            finalTimer = savedTimeRemaining + levelBaseTime + difficultyBonus;
+                            *(int *)((char *)app + 0x5E8) = finalTimer;
+                            diag_logf("[warp] Timer set: carryOver=%d + levelBase=%d + diffBonus=%d = %d ticks",
+                                      savedTimeRemaining, levelBaseTime, difficultyBonus, finalTimer);
                         }
                         *(float *)((char *)app + 0x5E4) = savedPlayerScore;
                         diag_logf("[warp] Player score restored: %f", savedPlayerScore);
@@ -1397,7 +1426,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     install_timer_caves();
 
-    diag_log("[warp mod v8] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
+    diag_log("[warp mod v8.1] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
     return 0;
 }
 
@@ -1422,8 +1451,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v8 LOADED ===");
-        diag_log("v8: Code-cave timer freeze (no NOP patches). WARP(Name) in MESHWORLD Section 1.");
+        diag_log("=== LEVEL WARP MOD v8.1 LOADED ===");
+        diag_log("v8.1: Fixed tournament timer — adds new level's base time + difficulty bonus on warp.");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
