@@ -78,7 +78,13 @@ private:
 		}
 
 		g_rectsPatched = true;
-		printf("[WSUI] DrawScreenRect patched with 4 code caves for margin\n");
+		printf("[WSUI] DrawScreenRect patched: cave=%p margin_addr=%p\n", cave, &g_margin);
+		for (int i = 0; i < 4; i++) {
+			DWORD patchAddr = base + fmulAddrs[i];
+			BYTE* p = (BYTE*)patchAddr;
+			printf("[WSUI]   patch %d at %p: %02x %02x %02x %02x %02x %02x\n",
+				i, (void*)patchAddr, p[0], p[1], p[2], p[3], p[4], p[5]);
+		}
 	}
 
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
