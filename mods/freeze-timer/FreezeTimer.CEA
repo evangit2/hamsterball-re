@@ -1,0 +1,73 @@
+{ ============================================================
+  Freeze Race Timer v1
+  ============================================================
+  Adds a custom flag check to Board_UpdateRaceState (0x41B130).
+  When [freeze_timer_flag] == 1, the per-player timer stops
+  decrementing (or incrementing in practice/TT/party) WITHOUT
+  triggering any N:GOAL side effects (no music, no camera change,
+  no BTT save, no RaceResultPopup).
+
+  Patch point 1: 0x41B3E5 (JNZ + DEC = 5 bytes) — tournament countdown path
+  Patch point 2: 0x41B50C (JNZ + INC = 5 bytes) — practice/TT/party elapsed path
+
+  Usage:
+    Set [freeze_timer_flag] to 1 to freeze the timer
+    Set [freeze_timer_flag] to 0 to resume normally
+  ============================================================ }
+
+[ENABLE]
+
+alloc(freeze_timer_flag, 4)
+registersymbol(freeze_timer_flag)
+alloc(timer_cave, 128)
+alloc(timer_cave_mp, 128)
+
+freeze_timer_flag:
+  dd 0
+
+{ Tournament/countdown path — DEC timer
+  AL has result of TEST AL,AL from 0x41B3E3 (flags preserved across JMP)
+  EDI = trigger object (App+PID*0xA0+0x5CC) }
+timer_cave:
+  jnz skip_dec
+  cmp byte ptr [freeze_timer_flag], 0
+  jne skip_dec
+  dec dword ptr [edi+0x1C]
+  jmp Hamsterball.exe+1B3EE
+
+skip_dec:
+  jmp Hamsterball.exe+1B49D
+
+{ Practice/TT/party path — INC timer (counts up)
+  CL has result of TEST CL,CL from 0x41B50A (flags preserved across JMP)
+  EDX = trigger object }
+timer_cave_mp:
+  jnz skip_inc
+  cmp byte ptr [freeze_timer_flag], 0
+  jne skip_inc
+  inc dword ptr [edx+0x1C]
+
+skip_inc:
+  jmp Hamsterball.exe+1B511
+
+{ Patch 1: Replace JNZ+DEC (5 bytes) with JMP to cave }
+Hamsterball.exe+1B3E5:
+  jmp timer_cave
+
+{ Patch 2: Replace JNZ+INC (5 bytes) with JMP to cave }
+Hamsterball.exe+1B50C:
+  jmp timer_cave_mp
+
+[DISABLE]
+
+{ Restore original bytes }
+Hamsterball.exe+1B3E5:
+  db 75 16 FF 4F 1C
+
+Hamsterball.exe+1B50C:
+  db 75 03 FF 47 1C
+
+dealloc(timer_cave)
+dealloc(timer_cave_mp)
+dealloc(freeze_timer_flag)
+unregistersymbol(freeze_timer_flag)
