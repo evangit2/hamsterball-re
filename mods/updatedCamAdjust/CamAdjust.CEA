@@ -1,0 +1,107 @@
+{ ============================================================
+  Camera Adjust for Hamsterball — v1
+  ============================================================
+
+  Two hooks in Scene_SetCamera (0x00419FA0):
+
+  HOOK 1: 0x41A254 — Camera target + orbit distance + orbit angle
+    - Overwrites camera target (stack locals) with ball position
+    - Sets orbit distance (scene+0x29C0) to fpCamDist
+    - Sets orbit angle (scene+0x29BC) to fpCamAngle
+    - Jump-back: 0x41A25E
+
+  HOOK 2: 0x41A2B1 — Vertical angle (direction Y component)
+    - Original: MOV dword ptr [ESP+0x2C], 0x3f666666 (hardcoded 0.9f)
+    - Replaced with: MOV EAX,[fpCamAngleY]; MOV [ESP+0x2C],EAX
+    - This controls the camera's vertical tilt.
+      0.9 = slightly looking down (default)
+      0.0 = looking straight horizontal
+      1.0 = looking straight down
+    - Jump-back: 0x41A2B9
+
+  Adjustable via CE address table:
+  - fpCamDist: orbit distance (default 130.0)
+  - fpCamAngle: horizontal angle in radians (default 0.0 = facing +Z)
+  - fpCamAngleY: vertical tilt (default 0.9 = original behavior)
+
+  Ball position: edi+0x164/0x168/0x16C
+  Orbit angle: scene+0x29BC (sin/cos used for direction XZ)
+  Orbit distance: scene+0x29C0
+  Direction Y (vertical): hardcoded 0.9f at 0x41A2B1 → now adjustable
+  ============================================================ }
+
+[ENABLE]
+alloc(fpCamDist, 4)
+alloc(fpCamAngle, 4)
+alloc(fpCamAngleY, 4)
+alloc(newmem1, 256)
+alloc(newmem2, 64)
+
+registersymbol(fpCamDist)
+registersymbol(fpCamAngle)
+registersymbol(fpCamAngleY)
+
+fpCamDist:
+  dd 43020000    // 130.0
+fpCamAngle:
+  dd 0           // 0.0 radians (facing +Z)
+fpCamAngleY:
+  dd 3f666666    // 0.9f (original vertical tilt)
+
+// --- HOOK 1: Camera target + orbit distance + orbit angle ---
+newmem1:
+  push eax
+
+  mov eax, [edi+164]
+  mov [esp+10], eax
+  mov eax, [edi+168]
+  mov [esp+14], eax
+  mov eax, [edi+16C]
+  mov [esp+18], eax
+
+  mov eax, [fpCamDist]
+  mov [esi+29C0], eax
+
+  mov eax, [fpCamAngle]
+  mov [esi+29BC], eax
+
+  pop eax
+
+  mov eax, [esp+14]
+  mov ecx, [esi+87C]
+
+  jmp 0041A25E
+
+// --- HOOK 2: Vertical angle (direction Y component) ---
+// Original at 0x41A2B1: MOV dword ptr [ESP+0x2C], 0x3f666666
+// We replace with reading fpCamAngleY instead of hardcoded 0.9f
+newmem2:
+  mov eax, [fpCamAngleY]
+  mov [esp+0x2C], eax
+  jmp 0041A2B9
+
+// --- Hook points ---
+0041A254:
+  jmp newmem1
+
+0041A2B1:
+  jmp newmem2
+  nop
+  nop
+  nop
+
+[DISABLE]
+0041A254:
+  db 8B 44 24 14 8B 8E 7C 08 00 00
+
+0041A2B1:
+  db C7 44 24 2C 66 66 66 3F
+
+dealloc(newmem1)
+dealloc(newmem2)
+dealloc(fpCamDist)
+dealloc(fpCamAngle)
+dealloc(fpCamAngleY)
+unregistersymbol(fpCamDist)
+unregistersymbol(fpCamAngle)
+unregistersymbol(fpCamAngleY)
