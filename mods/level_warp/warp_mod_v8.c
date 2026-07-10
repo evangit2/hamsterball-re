@@ -1187,17 +1187,16 @@ static void updateWarpStateMachine(void) {
                         diag_logf("[warp] Saved race score %f at index %d", savedScores[raceIdx], raceIdx);
                     }
                     if (isSameLevel) {
-                        /* Same-level tournament: read carry-over time from previous race.
-                         * Tournament_AdvanceRace stores App+0x5E8 (remaining time) at
-                         * profile+0x14+raceIdx*4 when a new race starts.
-                         * (0x14 is the base of the per-race time array; raceIdx is 1-based.) */
+                        /* Same-level tournament: use the carry-over time from the previous
+                         * race (stored when this race started). This gives a "fresh restart"
+                         * of the level — same starting time as when you first entered it. */
                         if (raceIdx >= 0 && raceIdx < 16) {
                             savedTimeRemaining = *(int *)((char *)oldProfile + 0x14 + raceIdx * 4);
                             diag_logf("[warp] Same-level: saved carry-over timer %d from profile+0x14+raceIdx*4",
                                       savedTimeRemaining);
                         }
                     } else {
-                        /* Different-level tournament: carry over current timer. */
+                        /* Different-level tournament: carry over current remaining timer. */
                         savedTimeRemaining = *(int *)((char *)app + 0x5E8);
                         diag_logf("[warp] Saved time remaining (carry-over): %d", savedTimeRemaining);
                     }
