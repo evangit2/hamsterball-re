@@ -44,11 +44,13 @@ private:
 			DWORD retAddr = patchAddr + 6;
 
 			// Cave: FMUL [ECX+0x1f8] + FADD [g_margin] + JMP back
+			// D8 89 = FMUL m32fp [ECX+disp32]  (32-bit float multiply)
+			// D8 05 = FADD m32fp [imm32]       (32-bit float add — NOT DC=double!)
 			cave[caveOffset + 0] = 0xD8;
 			cave[caveOffset + 1] = 0x89;
 			*(DWORD*)(cave + caveOffset + 2) = 0x1f8;
 
-			cave[caveOffset + 6] = 0xDC;
+			cave[caveOffset + 6] = 0xD8;
 			cave[caveOffset + 7] = 0x05;
 			*(DWORD*)(cave + caveOffset + 8) = (DWORD)&g_margin;
 
