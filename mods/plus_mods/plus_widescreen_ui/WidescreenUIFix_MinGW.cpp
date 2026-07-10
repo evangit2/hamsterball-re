@@ -67,12 +67,6 @@ static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, i
     float newScaleX = origScaleX * scaleFactor;
 
     g_rectCount++;
-    if (g_rectCount <= 3) {
-        char buf[256];
-        nc_snprintf(buf, sizeof(buf), "[WSUI] rect #%d: x=%d y=%d w=%d h=%d scaleX=%f newScale=%f margin=%f newX_offset=%d",
-            g_rectCount, x, y, w, h, origScaleX, newScaleX, margin, (int)(margin / newScaleX));
-        MessageBoxA(NULL, buf, "WSUI Debug", MB_OK);
-    }
 
     DWORD oldProtect;
     VirtualProtect(pScaleX, 4, PAGE_READWRITE, &oldProtect);
