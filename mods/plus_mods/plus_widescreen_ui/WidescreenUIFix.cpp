@@ -11,8 +11,15 @@ private:
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
 
+	// Whether we've already patched scaleX/offsetX this frame
+	static inline bool g_patchedThisFrame = false;
+	static inline float g_origScaleX = 0.0f;
+	static inline int g_origOffsetX = 0;
+
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
+		// Call original first — it reads scaleX/offsetX and computes the result
 		float result = orig_TransformX(gfx, edx, pixel_x);
+
 		if (!g_enabled) return result;
 
 		DWORD gfxAddr = (DWORD)gfx;
@@ -26,11 +33,34 @@ private:
 		float aspect = (float)bbWidth / (float)bbHeight;
 		if (aspect <= 1.34f) return result;
 
+		float* pScaleX = (float*)(config + 0x1f8);
+		int* pOffsetX = (int*)(gfxAddr + 0x798);
+
+		float curScaleX = *pScaleX;
+
+		// Validate scaleX
+		if (!(curScaleX == curScaleX) || curScaleX <= 0.0f || curScaleX > 1.0f) return result;
+
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
 
-		return result * scaleFactor + margin;
+		// If not yet patched this frame, save originals and apply
+		if (!g_patchedThisFrame) {
+			g_origScaleX = curScaleX;
+			g_origOffsetX = *pOffsetX;
+			g_patchedThisFrame = true;
+		}
+
+		// Apply widescreen correction to global memory
+		*pScaleX = g_origScaleX * scaleFactor;
+		*pOffsetX = (int)((float)g_origOffsetX * scaleFactor + margin);
+
+		// The original already computed result with the OLD scaleX/offsetX.
+		// Re-compute with the NEW values to get the correct result.
+		result = pixel_x * (*pScaleX) + (float)(*pOffsetX);
+
+		return result;
 	}
 
 public:
@@ -38,14 +68,12 @@ public:
 	const char* GetAuthorName() override { return "BookwormKevin"; }
 	int GetApiVersion() override { return HAMSTERBALL_API_VERSION; }
 
-	void Initialize(IModAPI* modApi) override {
-		api = modApi;
-		CustomButton btn;
-		btn.id = "ws_ui_fix";
-		btn.displayText = "Widescreen UI Fix";
-		btn.defaultState = true;
-		api->CreateToggleButton(btn, this);
-		api->RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
+	void onGameUpdate() override {
+		// Reset the per-frame flag so the first Gfx_TransformX call next frame
+		// saves fresh originals
+		g_patchedThisFrame = false;
+
+		// If disabled, restore originals on next frame's first call
 	}
 
 	void onButtonToggle(const char* id, bool state) override {
