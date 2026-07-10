@@ -2,65 +2,54 @@
 #include "HamsterballAPI.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 
 class WidescreenUIFix : public HamsterballAPI {
 private:
 	IModAPI* api = nullptr;
 	static inline bool g_enabled = true;
+	static inline int g_callCount = 0;
 
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
 
-	// Save original values once
-	static inline float g_savedScaleX = -1.0f;
-	static inline int g_savedOffsetX = 0;
-
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
-		if (!g_enabled) return orig_TransformX(gfx, edx, pixel_x);
+		float result = orig_TransformX(gfx, edx, pixel_x);
+
+		if (!g_enabled) return result;
 
 		DWORD gfxAddr = (DWORD)gfx;
-		if (IsBadReadPtr(gfx, 0x800)) return orig_TransformX(gfx, edx, pixel_x);
+		if (IsBadReadPtr(gfx, 0x800)) return result;
 		DWORD config = *(DWORD*)(gfxAddr + 0x5c);
-		if (!config || IsBadReadPtr((void*)config, 0x200)) return orig_TransformX(gfx, edx, pixel_x);
+		if (!config || IsBadReadPtr((void*)config, 0x200)) return result;
 		DWORD bbWidth = *(DWORD*)(config + 0x15c);
 		DWORD bbHeight = *(DWORD*)(config + 0x160);
-		if (bbWidth <= 0 || bbHeight <= 0) return orig_TransformX(gfx, edx, pixel_x);
+		if (bbWidth <= 0 || bbHeight <= 0) return result;
 
 		float aspect = (float)bbWidth / (float)bbHeight;
-		if (aspect <= 1.34f) return orig_TransformX(gfx, edx, pixel_x);
+		if (aspect <= 1.34f) return result;
 
 		float* pScaleX = (float*)(config + 0x1f8);
 		int* pOffsetX = (int*)(gfxAddr + 0x798);
-
-		float curScaleX = *pScaleX;
-		if (!(curScaleX == curScaleX) || curScaleX <= 0.0f || curScaleX > 1.0f)
-			return orig_TransformX(gfx, edx, pixel_x);
 
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
 
-		// Detect frame boundary
-		float expectedModified = g_savedScaleX * scaleFactor;
-		if (g_savedScaleX <= 0.0f ||
-			(curScaleX != expectedModified && curScaleX != g_savedScaleX)) {
-			// New frame or first call — save fresh originals
-			g_savedScaleX = curScaleX;
-			g_savedOffsetX = *pOffsetX;
+		// Also modify memory for DrawScreenRect
+		float curScaleX = *pScaleX;
+		int curOffsetX = *pOffsetX;
+		*pScaleX = curScaleX * scaleFactor;
+		*pOffsetX = (int)((float)curOffsetX * scaleFactor + margin);
+
+		g_callCount++;
+		if (g_callCount <= 5) {
+			printf("[WSUI] call %d: pixel_x=%f scaleX=%f offsetX=%d bbW=%d bbH=%d aspect=%f scaleFactor=%f margin=%f result=%f transformed=%f\n",
+				g_callCount, pixel_x, curScaleX, curOffsetX, bbWidth, bbHeight, aspect, scaleFactor, margin,
+				result, result * scaleFactor + margin);
 		}
 
-		// Compute result manually using saved originals (no call to orig)
-		// This is exactly what orig_TransformX does: pixel_x * scaleX + offsetX
-		// but we use our corrected values
-		float newScaleX = g_savedScaleX * scaleFactor;
-		float newOffsetX = (float)g_savedOffsetX * scaleFactor + margin;
-		float result = pixel_x * newScaleX + newOffsetX;
-
-		// Also modify global memory for DrawScreenRect
-		*pScaleX = newScaleX;
-		*pOffsetX = (int)newOffsetX;
-
-		return result;
+		return result * scaleFactor + margin;
 	}
 
 public:
