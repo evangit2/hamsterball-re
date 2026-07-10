@@ -13,18 +13,17 @@ private:
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
 
-	// One-time-per-frame memory modification
-	static inline float g_lastModifiedScaleX = -999.0f;
-	static inline int g_lastModifiedOffsetX = -999;
+	// Saved original values (captured on first valid call)
 	static inline float g_origScaleX = 0.0f;
 	static inline int g_origOffsetX = 0;
+	static inline bool g_haveOriginals = false;
 
 	// Global margin value for DrawScreenRect code caves
 	static inline float g_margin = 0.0f;
 	static inline bool g_rectsPatched = false;
 
 	// Addresses of the 4 FMUL [ECX+0x1f8] instructions in DrawScreenRect
-	static constexpr DWORD FMUL_ADDR_1 = 0x55dc8;  // RVA
+	static constexpr DWORD FMUL_ADDR_1 = 0x55dc8;
 	static constexpr DWORD FMUL_ADDR_2 = 0x55e1b;
 	static constexpr DWORD FMUL_ADDR_3 = 0x55e43;
 	static constexpr DWORD FMUL_ADDR_4 = 0x55e75;
@@ -34,7 +33,6 @@ private:
 
 		DWORD base = (DWORD)GetModuleHandle(NULL);
 
-		// Allocate executable memory for code caves
 		BYTE* cave = (BYTE*)VirtualAlloc(NULL, 256, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 		if (!cave) return;
 
@@ -43,35 +41,27 @@ private:
 
 		for (int i = 0; i < 4; i++) {
 			DWORD patchAddr = base + fmulAddrs[i];
-			DWORD retAddr = patchAddr + 6; // skip 6-byte FMUL
+			DWORD retAddr = patchAddr + 6;
 
-			// Cave code:
-			// FMUL [ECX + 0x1f8]     ; D8 89 F8 01 00 00 (6 bytes)
-			// FADD [g_margin]          ; DC 05 XX XX XX XX (6 bytes)
-			// JMP retAddr             ; E9 XX XX XX XX (5 bytes)
-			// Total: 17 bytes
-
-			cave[caveOffset + 0] = 0xD8; // FMUL [ECX + 0x1f8]
+			// Cave: FMUL [ECX+0x1f8] + FADD [g_margin] + JMP back
+			cave[caveOffset + 0] = 0xD8;
 			cave[caveOffset + 1] = 0x89;
 			*(DWORD*)(cave + caveOffset + 2) = 0x1f8;
 
-			cave[caveOffset + 6] = 0xDC; // FADD dword ptr [addr]
+			cave[caveOffset + 6] = 0xDC;
 			cave[caveOffset + 7] = 0x05;
 			*(DWORD*)(cave + caveOffset + 8) = (DWORD)&g_margin;
 
-			cave[caveOffset + 12] = 0xE9; // JMP rel32
+			cave[caveOffset + 12] = 0xE9;
 			DWORD jmpTarget = retAddr - ((DWORD)(cave + caveOffset + 17));
 			*(DWORD*)(cave + caveOffset + 13) = jmpTarget;
 
-			// Patch the FMUL instruction: JMP to cave + NOP
 			DWORD oldProtect;
 			VirtualProtect((void*)patchAddr, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
-
-			*(BYTE*)(patchAddr + 0) = 0xE9; // JMP rel32
+			*(BYTE*)(patchAddr + 0) = 0xE9;
 			DWORD caveTarget = (DWORD)(cave + caveOffset) - (patchAddr + 5);
 			*(DWORD*)(patchAddr + 1) = caveTarget;
-			*(BYTE*)(patchAddr + 5) = 0x90; // NOP
-
+			*(BYTE*)(patchAddr + 5) = 0x90;
 			VirtualProtect((void*)patchAddr, 6, oldProtect, &oldProtect);
 			FlushInstructionCache(GetCurrentProcess(), (void*)patchAddr, 6);
 
@@ -80,12 +70,6 @@ private:
 
 		g_rectsPatched = true;
 		printf("[WSUI] DrawScreenRect patched: cave=%p margin_addr=%p\n", cave, &g_margin);
-		for (int i = 0; i < 4; i++) {
-			DWORD patchAddr = base + fmulAddrs[i];
-			BYTE* p = (BYTE*)patchAddr;
-			printf("[WSUI]   patch %d at %p: %02x %02x %02x %02x %02x %02x\n",
-				i, (void*)patchAddr, p[0], p[1], p[2], p[3], p[4], p[5]);
-		}
 	}
 
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
@@ -106,47 +90,45 @@ private:
 		int* pOffsetX = (int*)(gfxAddr + 0x798);
 
 		float curScaleX = *pScaleX;
+		int curOffsetX = *pOffsetX;
+
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
-
-		// Update global margin for code caves
 		g_margin = margin;
 
-		// Check if this is the first call this frame
-		// Game resets offsetX (via SetViewport) without changing scaleX,
-		// so we must check BOTH values
-		if (curScaleX == g_lastModifiedScaleX && *pOffsetX == g_lastModifiedOffsetX && g_lastModifiedScaleX != -999.0f) {
-			// Same frame — memory already modified, orig reads correct values
-			float result = orig_TransformX(gfx, edx, pixel_x);
-
-			g_callCount++;
-			if (g_callCount <= 20) {
-				printf("[WSUI] sub call %d: pixel_x=%f scaleX=%f offsetX=%d result=%f\n",
-					g_callCount, pixel_x, curScaleX, *pOffsetX, result);
+		// On first call, save the original values
+		if (!g_haveOriginals) {
+			if ((curScaleX == curScaleX) && curScaleX > 0.0f && curScaleX <= 1.0f) {
+				g_origScaleX = curScaleX;
+				g_origOffsetX = curOffsetX;
+				g_haveOriginals = true;
+			} else {
+				return orig_TransformX(gfx, edx, pixel_x);
 			}
-
-			return result;
 		}
 
-		// First call this frame
-		g_origScaleX = curScaleX;
-		g_origOffsetX = *pOffsetX;
+		// ALWAYS restore originals before calling orig
+		// This prevents exponential multiplication when SetViewport
+		// resets offsetX but leaves our modified scaleX
+		*pScaleX = g_origScaleX;
+		*pOffsetX = g_origOffsetX;
 
+		// Call orig with ORIGINAL values → correct result
 		float result = orig_TransformX(gfx, edx, pixel_x);
+
+		// Transform return value (computed from original values)
 		float transformed = result * scaleFactor + margin;
 
-		float newScaleX = g_origScaleX * scaleFactor;
-		int newOffsetX = (int)((float)g_origOffsetX * scaleFactor + margin);
-		*pScaleX = newScaleX;
-		*pOffsetX = newOffsetX;
-		g_lastModifiedScaleX = newScaleX;
-		g_lastModifiedOffsetX = newOffsetX;
+		// Write modified values for DrawScreenRect
+		*pScaleX = g_origScaleX * scaleFactor;
+		*pOffsetX = (int)((float)g_origOffsetX * scaleFactor + margin);
 
 		g_callCount++;
-		if (g_callCount <= 20) {
-			printf("[WSUI] first call %d: pixel_x=%f origScale=%f origOffset=%d newScale=%f newOffset=%d margin=%f bbW=%d bbH=%d result=%f transformed=%f\n",
-				g_callCount, pixel_x, g_origScaleX, g_origOffsetX, newScaleX, newOffsetX, margin, bbWidth, bbHeight, result, transformed);
+		if (g_callCount <= 10) {
+			printf("[WSUI] call %d: pixel_x=%f origScale=%f origOffset=%d curScale=%f curOffset=%d newScale=%f newOffset=%d margin=%f result=%f transformed=%f\n",
+				g_callCount, pixel_x, g_origScaleX, g_origOffsetX, curScaleX, curOffsetX,
+				*pScaleX, *pOffsetX, margin, result, transformed);
 		}
 
 		return transformed;
@@ -165,13 +147,27 @@ public:
 		btn.defaultState = true;
 		api->CreateToggleButton(btn, this);
 		api->RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
-
-		// Patch DrawScreenRect to add margin to rectangle X coordinates
 		patchRects();
 	}
 
 	void onButtonToggle(const char* id, bool state) override {
-		if (strcmp(id, "ws_ui_fix") == 0) g_enabled = state;
+		if (strcmp(id, "ws_ui_fix") == 0) {
+			g_enabled = state;
+			if (!state && g_haveOriginals) {
+				// Restore originals when disabled
+				App* app = api->GetApp();
+				if (app) {
+					DWORD gfx = *(DWORD*)((DWORD)app + 0x174);
+					if (gfx && !IsBadReadPtr((void*)gfx, 0x800)) {
+						DWORD config = *(DWORD*)((DWORD)gfx + 0x5c);
+						if (config && !IsBadReadPtr((void*)config, 0x200)) {
+							*((float*)(config + 0x1f8)) = g_origScaleX;
+							*((int*)((DWORD)gfx + 0x798)) = g_origOffsetX;
+						}
+					}
+				}
+			}
+		}
 	}
 };
 
