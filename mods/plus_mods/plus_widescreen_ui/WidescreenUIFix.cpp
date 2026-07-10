@@ -12,25 +12,9 @@ private:
 	static inline TransformX_t orig_TransformX = nullptr;
 
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
-		float result = orig_TransformX(gfx, edx, pixel_x);
-		if (!g_enabled) return result;
-
-		DWORD gfxAddr = (DWORD)gfx;
-		if (IsBadReadPtr(gfx, 0x800)) return result;
-		DWORD config = *(DWORD*)(gfxAddr + 0x5c);
-		if (!config || IsBadReadPtr((void*)config, 0x200)) return result;
-		DWORD bbWidth = *(DWORD*)(config + 0x15c);
-		DWORD bbHeight = *(DWORD*)(config + 0x160);
-		if (bbWidth <= 0 || bbHeight <= 0) return result;
-
-		float aspect = (float)bbWidth / (float)bbHeight;
-		if (aspect <= 1.34f) return result;
-
-		float ratio43 = 4.0f / 3.0f;
-		float scaleFactor = ratio43 / aspect;
-		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
-
-		return result * scaleFactor + margin;
+		// Global scaleX/offsetX modification in onGameUpdate handles the transform.
+		// This hook is pass-through — don't double-apply.
+		return orig_TransformX(gfx, edx, pixel_x);
 	}
 
 	// Graphics_DrawScreenRect (0x455d60) can't be hooked via MinHook
