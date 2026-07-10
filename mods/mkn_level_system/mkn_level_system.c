@@ -218,11 +218,21 @@ static const FuncEntry g_functions[] = {
     { NULL, 0 }
 };
 
+/* Forward declarations for custom function system */
+static int   lookup_custom_func(const char* name);
+static DWORD get_custom_func_addr(const char* name);
+static int   is_custom_func_addr(DWORD addr);
+static void  execute_custom_func(int func_idx, DWORD board);
+static void  load_custom_functions(void);
+
 static DWORD lookup_function_addr(const char* name) {
     for (int i = 0; g_functions[i].name; i++) {
         if (_stricmp(g_functions[i].name, name) == 0)
             return g_functions[i].addr;
     }
+    /* Check custom script functions */
+    DWORD custom_addr = get_custom_func_addr(name);
+    if (custom_addr) return custom_addr;
     return 0;
 }
 
@@ -889,9 +899,13 @@ static DWORD WINAPI dispatch_thread(LPVOID param) {
             DWORD vt = g_custom_vtables[level_idx];
             for (int s = VTABLE_NATIVE_SLOTS; s < VTABLE_ENTRIES; s++) {
                 DWORD func_addr = *(DWORD*)(vt + s * 4);
-                if (func_addr && !IsBadReadPtr((void*)func_addr, 1)) {
-                    /* Call with __thiscall convention: ECX=board, no args.
-                     * MinGW __thiscall puts first arg in ECX automatically. */
+                if (!func_addr) continue;
+                /* Check if this is a custom script function */
+                if (is_custom_func_addr(func_addr)) {
+                    int func_idx = func_addr - 0x10000000;
+                    execute_custom_func(func_idx, board);
+                } else if (!IsBadReadPtr((void*)func_addr, 1)) {
+                    /* Native game function — call with __thiscall(board) */
                     vtable_func_t func = (vtable_func_t)func_addr;
                     func(board);
                 }
@@ -909,6 +923,342 @@ static void start_dispatch_thread(void) {
     g_dispatch_running = 1;
     g_dispatch_thread_handle = CreateThread(
         NULL, 0, dispatch_thread, NULL, 0, &g_dispatch_thread_id);
+}
+
+/* ============================================================
+ * Custom script functions — read from mkn_level_functions.txt
+ *
+ * Syntax:
+ *   FUNCTION MyFuncName
+ *     CALL GameFuncName arg1 arg2 ...
+ *     SET board+0x1A4 = 5.0
+ *     SET board+0x168 = 0.0
+ *     IF board+0x14C == 0
+ *       CALL Scene_Update
+ *     ENDIF
+ *     READ board+0x3624 -> $var1
+ *     SET board+0x3624 = $var1 + 0.025
+ *   ENDFUNC
+ *
+ * Supported expressions:
+ *   - board+0xOFFSET (dereference board pointer + offset)
+ *   - 0xHEXADDR (absolute address)
+ *   - $var (local variable)
+ *   - Float literals: 5.0, 0.025, -1.0
+ *   - Int literals: 42, 0x100
+ *   - Arithmetic: +, -, *, /
+ *   - Comparison: ==, !=, <, >, <=, >=
+ *
+ * Statements:
+ *   CALL FuncName arg1 arg2 ...  — call a game function by name
+ *   SET dest = expr              — write value to memory
+ *   READ src -> $var             — read memory into variable
+ *   IF expr                      — conditional block
+ *   ENDIF
+ *   NOP                          — do nothing
+ *   LOG "message"                — write to log file
+ * ============================================================ */
+
+#define MAX_CUSTOM_FUNCS 64
+#define MAX_FUNC_LINES 64
+#define MAX_FUNC_VARS 16
+#define MAX_FUNC_NAME 64
+
+typedef struct {
+    char lines[MAX_FUNC_LINES][256];
+    int  num_lines;
+} CustomFunc;
+
+static CustomFunc g_custom_funcs[MAX_CUSTOM_FUNCS];
+static char g_custom_func_names[MAX_CUSTOM_FUNCS][MAX_FUNC_NAME];
+static int  g_num_custom_funcs = 0;
+
+static int lookup_custom_func(const char* name) {
+    for (int i = 0; i < g_num_custom_funcs; i++) {
+        if (_stricmp(g_custom_func_names[i], name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+/* Get custom func address (returns a fake address that encodes the index) */
+static DWORD get_custom_func_addr(const char* name) {
+    int idx = lookup_custom_func(name);
+    if (idx < 0) return 0;
+    /* Use 0x10000000+idx as a sentinel address for custom functions */
+    return 0x10000000 + idx;
+}
+
+static int is_custom_func_addr(DWORD addr) {
+    return (addr >= 0x10000000 && addr < 0x10000000 + MAX_CUSTOM_FUNCS);
+}
+
+/* Helper: get or create variable index by name */
+static int get_var_idx(const char* name, float* vars, char var_names[][32], int* num_vars) {
+    int i;
+    for (i = 0; i < *num_vars; i++) {
+        if (_stricmp(var_names[i], name) == 0) return i;
+    }
+    if (*num_vars < MAX_FUNC_VARS) {
+        int vi = (*num_vars)++;
+        strncpy(var_names[vi], name, 31);
+        var_names[vi][31] = '\0';
+        vars[vi] = 0.0f;
+        return vi;
+    }
+    return -1;
+}
+
+/* Execute a custom function with __thiscall(board) convention */
+static void execute_custom_func(int func_idx, DWORD board) {
+    if (func_idx < 0 || func_idx >= g_num_custom_funcs) return;
+    CustomFunc* fn = &g_custom_funcs[func_idx];
+
+    /* Local variables */
+    float vars[MAX_FUNC_VARS];
+    char var_names[MAX_FUNC_VARS][32];
+    int num_vars = 0;
+    int i;
+    for (i = 0; i < MAX_FUNC_VARS; i++) { vars[i] = 0.0f; var_names[i][0] = '\0'; }
+
+    int if_depth = 0;
+    int if_active[MAX_FUNC_LINES];
+    memset(if_active, 0, sizeof(if_active));
+    if_active[0] = 1; /* start active */
+
+    for (int li = 0; li < fn->num_lines; li++) {
+        char* line = fn->lines[li];
+        /* Skip if inside inactive IF block */
+        if (!if_active[if_depth]) {
+            /* But track IF/ENDIF nesting */
+            if (_strnicmp(line, "IF ", 3) == 0) {
+                if_depth++;
+                if (if_depth < MAX_FUNC_LINES) if_active[if_depth] = 0;
+            } else if (_strnicmp(line, "ENDIF", 5) == 0) {
+                if_depth--;
+                if (if_depth < 0) if_depth = 0;
+            }
+            continue;
+        }
+
+        /* CALL GameFuncName arg1 arg2 ... */
+        if (_strnicmp(line, "CALL ", 5) == 0) {
+            char fname[128] = "";
+            char args_str[256] = "";
+            int nargs = sscanf(line + 5, "%127s %255[^\n]", fname, args_str);
+            if (nargs >= 1) {
+                DWORD func_addr = lookup_function_addr(fname);
+                if (!func_addr) func_addr = get_custom_func_addr(fname);
+                if (func_addr && !IsBadReadPtr((void*)func_addr, 1)) {
+                    /* Call with __thiscall convention: ECX=board, no args.
+                     * MinGW doesn't support Intel syntax __asm blocks,
+                     * so use a function pointer typedef. */
+                    vtable_func_t func = (vtable_func_t)func_addr;
+                    func(board);
+                }
+            }
+        }
+        /* SET dest = expr */
+        else if (_strnicmp(line, "SET ", 4) == 0) {
+            char dest[128] = "";
+            char expr[256] = "";
+            if (sscanf(line + 4, "%127[^=]= %255[^\n]", dest, expr) == 2 ||
+                sscanf(line + 4, "%127s = %255[^\n]", dest, expr) == 2) {
+                /* Trim dest */
+                char* p = dest; while (*p == ' ') p++; memmove(dest, p, strlen(p)+1);
+                p = dest + strlen(dest) - 1; while (p > dest && *p == ' ') *p-- = '\0';
+
+                /* Evaluate expression (simple: just float literal or $var for now) */
+                float val = 0.0f;
+                if (expr[0] == '$') {
+                    int vi = get_var_idx(expr + 1, vars, var_names, &num_vars);
+                    if (vi >= 0) val = vars[vi];
+                } else {
+                    val = (float)atof(expr);
+                }
+
+                /* Write to destination */
+                if (_strnicmp(dest, "board+", 6) == 0) {
+                    DWORD offset = (DWORD)strtoul(dest + 6, NULL, 0);
+                    if (!IsBadReadPtr((void*)(board + offset), 4)) {
+                        *(float*)(board + offset) = val;
+                    }
+                } else if (dest[0] == '0' && dest[1] == 'x') {
+                    DWORD addr = (DWORD)strtoul(dest, NULL, 16);
+                    if (addr > 0x400000 && !IsBadReadPtr((void*)addr, 4)) {
+                        *(float*)addr = val;
+                    }
+                } else if (dest[0] == '$') {
+                    int vi = get_var_idx(dest + 1, vars, var_names, &num_vars);
+                    if (vi >= 0) vars[vi] = val;
+                }
+            }
+        }
+        /* READ src -> $var */
+        else if (_strnicmp(line, "READ ", 5) == 0) {
+            char src[128] = "";
+            char varname[64] = "";
+            if (sscanf(line + 5, "%127s -> %63s", src, varname) == 2 ||
+                sscanf(line + 5, "%127s %63s", src, varname) == 2) {
+                float val = 0.0f;
+                if (_strnicmp(src, "board+", 6) == 0) {
+                    DWORD offset = (DWORD)strtoul(src + 6, NULL, 0);
+                    if (!IsBadReadPtr((void*)(board + offset), 4)) {
+                        val = *(float*)(board + offset);
+                    }
+                } else if (src[0] == '0' && src[1] == 'x') {
+                    DWORD addr = (DWORD)strtoul(src, NULL, 16);
+                    if (addr > 0x400000 && !IsBadReadPtr((void*)addr, 4)) {
+                        val = *(float*)addr;
+                    }
+                }
+                int vi = get_var_idx(varname + 1, vars, var_names, &num_vars); /* skip $ */
+                if (vi >= 0) vars[vi] = val;
+            }
+        }
+        /* IF expr */
+        else if (_strnicmp(line, "IF ", 3) == 0) {
+            if_depth++;
+            if (if_depth < MAX_FUNC_LINES) {
+                /* Simple condition: board+OFFSET == VALUE */
+                char lhs[128] = "";
+                char op[8] = "";
+                char rhs[128] = "";
+                if (sscanf(line + 3, "%127s %7s %127s", lhs, op, rhs) == 3) {
+                    float lval = 0.0f, rval = 0.0f;
+                    if (_strnicmp(lhs, "board+", 6) == 0) {
+                        DWORD offset = (DWORD)strtoul(lhs + 6, NULL, 0);
+                        if (!IsBadReadPtr((void*)(board + offset), 4))
+                            lval = *(float*)(board + offset);
+                    } else if (lhs[0] == '$') {
+                        int vi = get_var_idx(lhs + 1, vars, var_names, &num_vars);
+                        if (vi >= 0) lval = vars[vi];
+                    } else {
+                        lval = (float)atof(lhs);
+                    }
+                    if (rhs[0] == '$') {
+                        int vi = get_var_idx(rhs + 1, vars, var_names, &num_vars);
+                        if (vi >= 0) rval = vars[vi];
+                    } else {
+                        rval = (float)atof(rhs);
+                    }
+                    int result = 0;
+                    if (_stricmp(op, "==") == 0) result = (lval == rval);
+                    else if (_stricmp(op, "!=") == 0) result = (lval != rval);
+                    else if (_stricmp(op, "<") == 0) result = (lval < rval);
+                    else if (_stricmp(op, ">") == 0) result = (lval > rval);
+                    else if (_stricmp(op, "<=") == 0) result = (lval <= rval);
+                    else if (_stricmp(op, ">=") == 0) result = (lval >= rval);
+                    if_active[if_depth] = result;
+                } else {
+                    if_active[if_depth] = 0;
+                }
+            }
+        }
+        /* ENDIF */
+        else if (_strnicmp(line, "ENDIF", 5) == 0) {
+            if_depth--;
+            if (if_depth < 0) if_depth = 0;
+        }
+        /* LOG "message" */
+        else if (_strnicmp(line, "LOG ", 4) == 0) {
+            char* msg = line + 4;
+            /* Remove quotes if present */
+            if (*msg == '"') msg++;
+            char* end = msg + strlen(msg) - 1;
+            if (*end == '"') *end = '\0';
+            diag_logf("[custom] %s", msg);
+        }
+        /* NOP — do nothing */
+        else if (_strnicmp(line, "NOP", 3) == 0) {
+            /* nothing */
+        }
+    }
+}
+
+/* Load custom functions from mkn_level_functions.txt */
+static void load_custom_functions(void) {
+    char func_path[MAX_PATH];
+    strcpy(func_path, g_configPath);
+    char* p = strrchr(func_path, '\\');
+    if (p) {
+        strcpy(p + 1, "mkn_level_functions.txt");
+    } else {
+        strcpy(func_path, "mkn_level_functions.txt");
+    }
+
+    HANDLE hFile = CreateFileA(func_path,
+        GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        diag_log("[mkn_level_system v5] No mkn_level_functions.txt found (custom functions disabled)");
+        return;
+    }
+
+    char buf[65536];
+    DWORD bytesRead = 0;
+    ReadFile(hFile, buf, sizeof(buf) - 1, &bytesRead, NULL);
+    CloseHandle(hFile);
+    buf[bytesRead] = '\0';
+
+    diag_logf("[mkn_level_system v5] Loading custom functions from %s", func_path);
+
+    char* line = strtok(buf, "\n");
+    int in_func = 0;
+    int cur_func = -1;
+
+    while (line) {
+        /* Trim */
+        while (*line == ' ' || *line == '\t') line++;
+        int len = (int)strlen(line);
+        while (len > 0 && (line[len-1] == '\r' || line[len-1] == '\n' ||
+              line[len-1] == ' ' || line[len-1] == '\t')) {
+            line[--len] = '\0';
+        }
+        /* Skip comments and empty lines */
+        if (line[0] == '#' || line[0] == '\0') {
+            line = strtok(NULL, "\n");
+            continue;
+        }
+
+        /* FUNCTION name */
+        if (_strnicmp(line, "FUNCTION ", 9) == 0) {
+            if (g_num_custom_funcs >= MAX_CUSTOM_FUNCS) {
+                diag_logf("WARNING: too many custom functions (max %d)", MAX_CUSTOM_FUNCS);
+                break;
+            }
+            char fname[MAX_FUNC_NAME] = "";
+            sscanf(line + 9, "%63s", fname);
+            strncpy(g_custom_func_names[g_num_custom_funcs], fname, MAX_FUNC_NAME - 1);
+            g_custom_funcs[g_num_custom_funcs].num_lines = 0;
+            cur_func = g_num_custom_funcs;
+            g_num_custom_funcs++;
+            in_func = 1;
+            diag_logf("  Custom function: %s (addr=0x%08X)", fname, get_custom_func_addr(fname));
+        }
+        /* ENDFUNC */
+        else if (_strnicmp(line, "ENDFUNC", 7) == 0) {
+            if (in_func && cur_func >= 0) {
+                diag_logf("  %s: %d lines", g_custom_func_names[cur_func],
+                          g_custom_funcs[cur_func].num_lines);
+            }
+            in_func = 0;
+            cur_func = -1;
+        }
+        /* Function body line */
+        else if (in_func && cur_func >= 0) {
+            if (g_custom_funcs[cur_func].num_lines < MAX_FUNC_LINES) {
+                strncpy(g_custom_funcs[cur_func].lines[g_custom_funcs[cur_func].num_lines],
+                        line, 255);
+                g_custom_funcs[cur_func].lines[g_custom_funcs[cur_func].num_lines][255] = '\0';
+                g_custom_funcs[cur_func].num_lines++;
+            }
+        }
+
+        line = strtok(NULL, "\n");
+    }
+
+    diag_logf("[mkn_level_system v5] Loaded %d custom functions", g_num_custom_funcs);
 }
 
 /* ============================================================
@@ -930,10 +1280,13 @@ static void mkn_init(void) {
     patch_all_struct_sizes();
     diag_logf("[mkn_level_system v5] All 15 levels patched to struct size 0x%X", MAX_STRUCT_SIZE);
 
-    /* Step 3: Parse config file for VTABLE/SET/SWAP/etc commands */
+    /* Step 3: Load custom script functions from mkn_level_functions.txt */
+    load_custom_functions();
+
+    /* Step 4: Parse config file for VTABLE/SET/SWAP/etc commands */
     apply_config();
 
-    /* Step 4: Start extended vtable dispatch thread */
+    /* Step 5: Start extended vtable dispatch thread */
     start_dispatch_thread();
     diag_log("[mkn_level_system v5] Extended dispatch thread started (slots 36-127)");
 }
