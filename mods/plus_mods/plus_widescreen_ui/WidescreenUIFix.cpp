@@ -76,6 +76,16 @@ public:
 		// If disabled, restore originals on next frame's first call
 	}
 
+	void Initialize(IModAPI* modApi) override {
+		api = modApi;
+		CustomButton btn;
+		btn.id = "ws_ui_fix";
+		btn.displayText = "Widescreen UI Fix";
+		btn.defaultState = true;
+		api->CreateToggleButton(btn, this);
+		api->RegisterCustomHook(0x453e90, (void*)hook_TransformX, (void**)&orig_TransformX);
+	}
+
 	void onButtonToggle(const char* id, bool state) override {
 		if (strcmp(id, "ws_ui_fix") == 0) g_enabled = state;
 	}
