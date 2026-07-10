@@ -838,6 +838,57 @@ static void updateMusicFade(void) {
     }
 }
 
+/* Restore music channel volumes and re-enable the game's native fade-in
+ * system after a warp. startMusicFade() zeroed the fade flags and fade_rate
+ * on each channel and manually drove volume to 0. Without this restore,
+ * channels are left at volume 0 with fades disabled — music stays silent
+ * on the destination level.
+ *
+ * We restore the saved original volume and set fade_in=1 so the game's
+ * own MusicChannel_FadeUpdate brings the volume back naturally. */
+static void restoreMusicFade(void) {
+    int app, musicDev;
+    int chanListData, chanCount, i;
+
+    if (!g_musicFadeStarted) return;
+
+    app = GetApp();
+    if (!app) return;
+    musicDev = *(int *)((char *)app + APP_MUSIC_DEVICE_PTR);
+    if (!musicDev) return;
+
+    chanListData = *(int *)(musicDev + MUSIC_DEV_CHANNEL_LIST);
+    chanCount = *(int *)(musicDev + 0x10);
+
+    if (chanCount > 0 && chanListData) {
+        int count = (chanCount < MAX_MUSIC_CHANNELS) ? chanCount : MAX_MUSIC_CHANNELS;
+        for (i = 0; i < count; i++) {
+            int chan = *(int *)(chanListData + i * 4);
+            if (chan) {
+                /* Restore original volume */
+                *(float *)(chan + MUSIC_CHAN_VOLUME) = g_musicOrigVolumes[i];
+                /* Re-enable fade-in so the game's native system can manage it */
+                *(char *)((char *)chan + MUSIC_CHAN_FADE_OUT) = 0;
+                *(char *)((char *)chan + MUSIC_CHAN_FADE_IN) = 1;
+                /* Leave fade_rate at 0 — the game sets it when it starts
+                 * a new song via Audio_PlayMusic. fade_in=1 with rate=0
+                 * means FadeUpdate will add 0 each frame (no-op), but
+                 * the flag being set prevents us from clobbering it again. */
+                if (real_BASS_ChannelSetAttributes) {
+                    int bassChan = *(int *)(chan + MUSIC_CHAN_BASS_CHANNEL);
+                    if (bassChan) {
+                        real_BASS_ChannelSetAttributes(bassChan, -1.0f,
+                            (int)(g_musicOrigVolumes[i] * 100.0f), -1);
+                    }
+                }
+            }
+        }
+    }
+
+    g_musicFadeStarted = 0;
+    diag_log("[warp] Music channels restored (volumes + fade_in re-enabled)");
+}
+
 /* ============================================================
  * Node proximity scanner
  * ============================================================ */
@@ -1324,11 +1375,16 @@ static void updateWarpStateMachine(void) {
             }
         }
 
+        /* Restore music channel volumes before entering REVEAL.
+         * This undoes the fade-out from startMusicFade/updateMusicFade:
+         * restores saved volumes, re-enables fade_in, and pushes the
+         * volume to BASS so music is audible on the new level. */
+        restoreMusicFade();
+
         g_warpBall = 0;
         g_whiteAlpha = 1.0f;
         g_phase = PHASE_REVEAL;
         g_phaseStartTime = now;
-        g_musicFadeStarted = 0;
         diag_log("[warp] -> PHASE_REVEAL: fading from white");
         break;
     }
@@ -1430,7 +1486,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     install_timer_caves();
 
-    diag_log("[warp mod v8.1] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
+    diag_log("[warp mod v8.2] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
     return 0;
 }
 
@@ -1455,8 +1511,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v8.1 LOADED ===");
-        diag_log("v8.1: Fixed tournament timer — adds new level's base time + difficulty bonus on warp.");
+        diag_log("=== LEVEL WARP MOD v8.2 LOADED ===");
+        diag_log("v8.2: Fixed music not restoring after warp — restoreMusicFade() saves volumes, re-enables fade_in.");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
