@@ -1,40 +1,36 @@
 # First-Person Ball Cam (CEA)
 
-## Version 3 — Orbit Camera Fix + Smoothing
+## Version 4 — Simple Approach (Don't fight the engine, feed it)
 
 ### What it does
-Places the camera directly above the ball and faces the direction the ball is moving. Works in both arenas and race modes.
+Places the camera at the ball's exact position by modifying the INPUTS the original camera code uses, then letting the game's own SetPosition + SetDirection calls run unmodified.
 
-### v3 Fixes (from v2)
-1. **EYE = TARGET + DIRECTION × DISTANCE (not minus!)** — v2 had the orbit formula backwards. The original game uses `eye = target + direction × distance`, meaning positive Y in direction = eye ABOVE target. v2 negated Y, putting the eye underground.
-2. **Added frame-to-frame smoothing** — velocity direction changes every frame, causing sideways wiggling. v3 lerps the direction (20% per frame) to stabilize.
-3. **Re-normalization after smoothing** — lerping can denormalize the vector, so v3 re-normalizes after smoothing.
-4. **FPU stack bug fixed** — re-norm zero-magnitude path now properly pops the FPU stack before jumping to skipCamera.
+### Why v2/v3 failed
+v2 and v3 tried to call `camera->vtable[2](X,Y,Z)` and `camera->vtable[3](&dir, dist)` ourselves. But we kept getting the orbit math wrong — the sign of `eye = target ± direction × distance` was never confirmed, and the direction vector's normalization behavior inside vtable[3] was unknown. Result: camera placed at random positions, swinging wildly.
 
-### Camera model
-```
-SetPosition(X, Y, Z) = look-at TARGET (where camera looks toward)
-SetDirection(&vec, dist) = direction + orbit distance
-EYE = TARGET + DIRECTION × DISTANCE
+### v4 approach: Modify inputs, not calls
+Instead of calling vtable functions ourselves, v4:
+1. **Overwrites the camera target** (stack locals at ESP+0xC/0x10/0x14) with the ball's exact position (edi+0x14/0x18/0x1C)
+2. **Sets orbit distance** (Scene+0x29C0) to 1.0 — so the camera is essentially AT the target
+3. **Sets orbit angle** (Scene+0x29BC) to 0 — sin(0)=0, cos(0)=1, direction = {0, 0.9, 1}
+4. Then **lets the original code run** — it calls SetPosition and SetDirection with our modified values
 
-Target = ball + (velDir.x × lookAhead, 0, velDir.z × lookAhead)
-Direction = (ball.x - targetX, height, ball.z - targetZ)
-           = (-velDir.x × lookAhead, height, -velDir.z × lookAhead)
-Distance = 1.0
-EYE = target + direction = ball + (0, height, 0)  ← directly above ball ✓
-```
+No vtable calls, no FPU operations, no orbit math. The game does it all.
+
+### Result
+Camera should be at the ball's exact position, looking forward (+Z). Not a true first-person ball cam yet (no velocity-facing direction), but should be STABLE and at the RIGHT POSITION.
 
 ### Tunable parameters (CE address table)
 | Symbol | Default | Description |
 |--------|---------|-------------|
-| fpCamHeight | 40.0 | Height above ball center (radius ~26) |
-| fpCamLookAhead | 300.0 | How far ahead to look |
-| fpCamSmoothing | 0.2 | Lerp factor (0=instant, 1=no movement) |
-
-### Installation
-Load `FirstPersonBallCam.CEA` in Cheat Engine, enable it.
+| fpCamHeight | 0.0 | Extra height above ball center (not yet wired) |
+| fpCamDist | 1.0 | Orbit distance (1.0 = at ball, lower = closer) |
 
 ### Hook point
 - **Address:** 0x41A254 (Scene_SetCamera epilogue)
 - **Original bytes:** `8B 44 24 14 8B`
-- **Jump-back:** 0x41A2BF (ApplyCamera)
+- **Jump-back:** 0x41A25E (original SetPosition + SetDirection + ApplyCamera)
+
+### Next steps
+- If position is correct: add velocity-based angle (atan2) to Scene+0x29BC
+- If position is wrong: verify ESP offsets match original code's stack layout

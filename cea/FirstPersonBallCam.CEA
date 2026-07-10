@@ -1,225 +1,74 @@
 { ============================================================
-  First-Person Ball Cam for Hamsterball — v3
+  First-Person Ball Cam for Hamsterball — v4 (Simple)
   ============================================================
 
   HOOK: Scene_SetCamera epilogue at 0x41A254
-  JUMP-BACK: 0x41A2BF (ApplyCamera)
-  Original bytes: 8B 44 24 14 8B
+  JUMP-BACK: 0x41A25E (let original SetPosition/SetDirection run)
 
-  CAMERA MODEL (corrected — v2 had sign backwards!):
-  - vtable[2] (+0x8) = SetPosition(X, Y, Z) → sets LOOK-AT TARGET
-  - vtable[3] (+0xC) = SetDirection(&vec3, float dist) → direction + orbit distance
-  - EYE = TARGET + DIRECTION × DISTANCE  (PLUS, not minus!)
-  - Original: target=ball, dir={sin,0.9,cos}, dist=700
-    → eye = ball + {sin*700, 630, cos*700} = high up & far back ✓
+  APPROACH: Don't call vtable functions ourselves.
+  Instead, modify the INPUTS the original camera code uses:
+  1. Overwrite camera target (stack locals) with ball position
+  2. Set orbit distance (scene+0x29C0) to 1.0 (camera at ball)
+  3. Set orbit angle (scene+0x29BC) to 0 (facing +Z, sin=0, cos=1)
+  Then let the original SetPosition + SetDirection calls run unmodified.
 
-  FIRST-PERSON BALL CAM:
-  - target = ball + (velDir.x * lookAhead, 0, velDir.z * lookAhead)
-  - direction = (-velDir.x * lookAhead, height, -velDir.z * lookAhead)
-  - distance = 1.0
-  - eye = target + direction = ball + (0, height, 0) = directly above ball ✓
-
-  SMOOTHING: velocity direction is lerped (20% per frame) to prevent
-  sideways wiggling from frame-to-frame velocity oscillation.
+  This is much safer than calling vtable functions ourselves.
 
   Adjustable via CE address table:
-  - fpCamHeight: height above ball center (default 40.0, radius ~26)
-  - fpCamLookAhead: how far ahead to look (default 300.0)
-  - fpCamSmoothing: lerp factor 0.0-1.0 (default 0.2 = 20% per frame)
+  - fpCamHeight: extra height above ball (default 0.0 = at ball center)
+  - fpCamDist: orbit distance (default 1.0 = essentially at ball)
   ============================================================ }
 
 [ENABLE]
-alloc(fpCamData, 128)
-alloc(newmem, 512)
+alloc(fpCamData, 64)
+alloc(newmem, 256)
 
-label(dirX)
-label(dirY)
-label(dirZ)
-label(prevDirX)
-label(prevDirZ)
 label(fpCamHeight)
-label(fpCamLookAhead)
-label(fpCamSmoothing)
-label(minVel)
-label(useDefaultDir)
-label(computeCamera)
-label(skipCamera)
+label(fpCamDist)
 
 registersymbol(fpCamHeight)
-registersymbol(fpCamLookAhead)
-registersymbol(fpCamSmoothing)
+registersymbol(fpCamDist)
 
 // --- Data section ---
 fpCamData:
-  dirX: dd 0
-  dirY: dd 0
-  dirZ: dd 0
-  prevDirX: dd 0
-  prevDirZ: dd 3F800000       // init prevDirZ = 1.0 (facing +Z)
-  fpCamHeight: dd 42200000     // 40.0f (ball radius ~26, so ~14 above surface)
-  fpCamLookAhead: dd 43960000  // 300.0f
-  fpCamSmoothing: dd 3E4CCCCD  // 0.2f (20% lerp per frame)
-  minVel: dd 3A83126F          // 0.001f
+  fpCamHeight: dd 00000000     // 0.0f (extra height above ball center)
+  fpCamDist: dd 3F800000       // 1.0f (orbit distance, ~0 = at ball)
 
 // --- Code cave ---
 // At entry: ESI = Scene*, EDI = Ball*
+// Stack: [ESP+0xC]=local_24(X), [ESP+0x10]=local_20(Y), [ESP+0x14]=local_1c(Z)
+// These are the camera target values that original code pushes to SetPosition.
 newmem:
   push eax
-  push ecx
-  push edx
 
-  // --- Null check ---
-  test edi, edi
-  jz skipCamera
-
-  // --- Compute horizontal velocity direction (XZ only) ---
-  // len = sqrt(vx*vx + vz*vz)
-  fld dword ptr [edi+0x20]     // st0 = vx
-  fmul st(0), st(0)            // st0 = vx*vx
-  fld dword ptr [edi+0x28]     // st0 = vz, st1 = vx*vx
-  fmul st(0), st(0)            // st0 = vz*vz, st1 = vx*vx
-  faddp                        // st0 = vx*vx + vz*vz
-  fsqrt                        // st0 = horizontal speed
-
-  // If speed <= minVel, use previous direction
-  fcom dword ptr [minVel]
-  fstsw ax
-  test ah, 0x41
-  jnz useDefaultDir
-
-  // Normalize: dx = vx/speed, dz = vz/speed
-  fld dword ptr [edi+0x20]     // st0 = vx, st1 = speed
-  fdiv st(0), st(1)            // st0 = dx = vx/speed
-  fstp dword ptr [dirX]        // store dx, pop → st0 = speed
-  fld dword ptr [edi+0x28]     // st0 = vz, st1 = speed
-  fdiv st(0), st(1)            // st0 = dz = vz/speed
-  fstp dword ptr [dirZ]        // store dz, pop → st0 = speed
-  fstp st(0)                   // pop speed, FPU empty
-  jmp computeCamera
-
-useDefaultDir:
-  fstp st(0)                   // pop speed, FPU empty
-  // Keep previous frame's direction (don't update dirX/dirZ)
-  mov eax, [prevDirX]
-  mov [dirX], eax
-  mov eax, [prevDirZ]
-  mov [dirZ], eax
-
-computeCamera:
-  // --- Apply smoothing: lerp prevDir → dir by fpCamSmoothing ---
-  // smoothed = prev + (dir - prev) * smoothing
-
-  // Smooth X
-  fld dword ptr [dirX]          // st0 = dirX (new target)
-  fsub dword ptr [prevDirX]     // st0 = dirX - prevX
-  fmul dword ptr [fpCamSmoothing] // st0 = delta * smoothing
-  fadd dword ptr [prevDirX]     // st0 = smoothedX
-  fstp dword ptr [dirX]         // dirX = smoothedX
-
-  // Smooth Z
-  fld dword ptr [dirZ]          // st0 = dirZ (new target)
-  fsub dword ptr [prevDirZ]     // st0 = dirZ - prevZ
-  fmul dword ptr [fpCamSmoothing] // st0 = delta * smoothing
-  fadd dword ptr [prevDirZ]     // st0 = smoothedZ
-  fstp dword ptr [dirZ]         // dirZ = smoothedZ
-
-  // --- Re-normalize smoothed direction (XZ only) ---
-  fld dword ptr [dirX]
-  fmul st(0), st(0)            // st0 = dirX²
-  fld dword ptr [dirZ]
-  fmul st(0), st(0)            // st0 = dirZ², st1 = dirX²
-  faddp                        // st0 = dirX² + dirZ²
-  fsqrt                        // st0 = |dirXZ|
-
-  // Check for near-zero magnitude
-  fcom dword ptr [minVel]
-  fstsw ax
-  test ah, 0x41
-  jnz reNormZero               // too small, pop and skip
-
-  fld dword ptr [dirX]
-  fdiv st(0), st(1)            // st0 = dirX / |dirXZ| (normalized)
-  fstp dword ptr [dirX]         // store normalized
-  fld dword ptr [dirZ]
-  fdiv st(0), st(1)            // st0 = dirZ / |dirXZ| (normalized)
-  fstp dword ptr [dirZ]         // store normalized
-  fstp st(0)                   // pop |dirXZ|, FPU empty
-
-  // --- Update prevDir for next frame ---
-  mov eax, [dirX]
-  mov [prevDirX], eax
-  mov eax, [dirZ]
-  mov [prevDirZ], eax
-
-  // --- SetPosition: TARGET = ball + (dirX*la, 0, dirZ*la) ---
-  // target.x = ball.x + dirX * lookAhead
-  fld dword ptr [dirX]
-  fmul dword ptr [fpCamLookAhead]
-  fadd dword ptr [edi+0x14]    // ball.x
-  fstp dword ptr [dirX]         // reuse dirX slot as targetX (dirX no longer needed)
-
-  // target.y = ball.y (look at ball height, no Y offset)
+  // --- Overwrite camera target with exact ball position ---
+  // After push eax, ESP shifts by 4. Original ESP+0xC is now ESP+0x10, etc.
+  mov eax, [edi+0x14]          // ball.x
+  mov [esp+0x10], eax           // overwrite local_24 (target X)
   mov eax, [edi+0x18]          // ball.y
-  mov [dirY], eax               // reuse dirY as targetY
+  mov [esp+0x14], eax           // overwrite local_20 (target Y)
+  mov eax, [edi+0x1C]          // ball.z
+  mov [esp+0x18], eax           // overwrite local_1c (target Z)
 
-  // target.z = ball.z + dirZ * lookAhead
-  fld dword ptr [dirZ]
-  fmul dword ptr [fpCamLookAhead]
-  fadd dword ptr [edi+0x1C]    // ball.z
-  fstp dword ptr [dirZ]         // reuse dirZ as targetZ
+  // --- Set orbit distance to fpCamDist (default 1.0 = at ball) ---
+  mov eax, [fpCamDist]
+  mov [esi+0x29C0], eax
 
-  // Call camera->SetPosition(targetX, targetY, targetZ)
-  // __thiscall: ECX=camera, push Z, Y, X, RET 0xC
-  mov ecx, [esi+0x87C]
-  mov edx, [ecx]               // vtable
-  push dword ptr [dirZ]         // push targetZ
-  push dword ptr [dirY]         // push targetY
-  push dword ptr [dirX]         // push targetX
-  call dword ptr [edx+0x8]      // SetPosition(X, Y, Z)
+  // --- Set orbit angle to 0 (sin=0, cos=1, looking +Z) ---
+  // This makes direction = {0, 0.9, 1}, so camera is directly behind ball on Z axis.
+  // TODO: Replace with atan2(vx, vz) for velocity-facing camera.
+  mov dword ptr [esi+0x29BC], 0
 
-  // --- SetDirection: direction = (-dirX*la, height, -dirZ*la) ---
-  // Remember: dirX/dirZ are now targetX/targetZ (ball + dir*la)
-  // We need: dirVec = (ball.x - targetX, height, ball.z - targetZ)
-  //         = (-origDirX * la, height, -origDirZ * la)
-  // But we overwrote dirX/dirZ. Recompute from target - ball:
-  // dirVec.x = ball.x - targetX = ball.x - dirX(new)
-  // dirVec.y = height (POSITIVE — eye is above target)
-  // dirVec.z = ball.z - targetZ = ball.z - dirZ(new)
-
-  // dirVec.x = ball.x - targetX
-  fld dword ptr [edi+0x14]      // ball.x
-  fsub dword ptr [dirX]         // ball.x - targetX = -origDir*la
-  fstp dword ptr [dirX]
-
-  // dirVec.y = height (positive! eye is above ball, looking down/forward)
-  fld dword ptr [fpCamHeight]
-  fstp dword ptr [dirY]
-
-  // dirVec.z = ball.z - targetZ
-  fld dword ptr [edi+0x1C]      // ball.z
-  fsub dword ptr [dirZ]         // ball.z - targetZ = -origDir*la
-  fstp dword ptr [dirZ]
-
-  // Call camera->SetDirection(&dirVec, 1.0)
-  // __thiscall: ECX=camera, push distance, push &vec, RET 0x8
-  mov ecx, [esi+0x87C]
-  mov edx, [ecx]               // vtable
-  push 3F800000                 // distance = 1.0f
-  lea eax, [dirX]               // &dirVec
-  push eax
-  call dword ptr [edx+0xC]      // SetDirection(&dir, 1.0)
-  jmp skipCamera
-
-reNormZero:
-  fstp st(0)                   // pop |dirXZ|, FPU empty
-
-skipCamera:
-  pop edx
-  pop ecx
   pop eax
 
-  // Continue to ApplyCamera: graphics->vtable[1](camera)
-  jmp 0041A2BF
+  // Execute the original instructions we overwrote (2 bytes at 0x41A254)
+  // Original: MOV EAX, [ESP+0x14]  (8B 44 24 14)
+  //           MOV ECX, [ESI+0x87C] (8B 8E 7C 08 00 00)
+  mov eax, [esp+0x14]
+  mov ecx, [esi+0x87C]
+
+  // Continue with original SetPosition + SetDirection + ApplyCamera
+  jmp 0041A25E
 
 // --- Hook: 5-byte JMP at Scene_SetCamera epilogue ---
 0041A254:
@@ -232,5 +81,4 @@ skipCamera:
 dealloc(newmem)
 dealloc(fpCamData)
 unregistersymbol(fpCamHeight)
-unregistersymbol(fpCamLookAhead)
-unregistersymbol(fpCamSmoothing)
+unregistersymbol(fpCamDist)
