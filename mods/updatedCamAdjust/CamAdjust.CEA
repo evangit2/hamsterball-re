@@ -76,8 +76,10 @@ newmem1:
 // Original at 0x41A2B1: MOV dword ptr [ESP+0x2C], 0x3f666666
 // We replace with reading fpCamAngleY instead of hardcoded 0.9f
 newmem2:
+  push eax
   mov eax, [fpCamAngleY]
-  mov [esp+0x2C], eax
+  mov [esp+0x30], eax
+  pop eax
   jmp 0041A2B9
 
 // --- Hook points ---
