@@ -1164,12 +1164,15 @@ static void updateWarpStateMachine(void) {
                 wasInTournament = (isPractice == 0) ? 1 : 0;
 
                 /* Detect same-level warp: compare target with current race index.
-                 * Both g_warpLevelIndex and profile+0x08 are 0-based (0-14). */
+                 * g_warpLevelIndex is 0-based (0-14), but profile+0x08 is 1-based (1-15).
+                 * The game stores raceIdx as 1-based and passes raceIdx-1 to
+                 * App_StartPracticeRace (verified from caller at 0x4315BD). */
                 {
                     int currentRaceIdx = *(int *)((char *)oldProfile + 0x08);
-                    if (levelIdx == currentRaceIdx) {
+                    if (levelIdx == currentRaceIdx - 1) {
                         isSameLevel = 1;
-                        diag_logf("[warp] Same-level warp detected (raceIdx=%d)", currentRaceIdx);
+                        diag_logf("[warp] Same-level warp detected (levelIdx=%d, profile raceIdx=%d)",
+                                  levelIdx, currentRaceIdx);
                     }
                 }
 
