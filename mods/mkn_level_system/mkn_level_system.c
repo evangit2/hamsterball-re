@@ -303,6 +303,7 @@ static void __fastcall create_neon_light_on_main_thread(DWORD app) {
     DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
     if (!obj) { g_neon_pending_board = 0; return; }
 
+    /* Store in board+0x10db (same as original) */
     param_1[0x10db] = (int)obj;
     obj[0x34] = 1;  /* light type flag */
 
@@ -318,13 +319,20 @@ static void __fastcall create_neon_light_on_main_thread(DWORD app) {
     /* Set range: obj[0x33] = 400.0f */
     obj[0x33] = 0x43C80000;
 
-    /* Call vtable[3] (Init) */
+    /* Call vtable[3] (Init) — this sets up the D3D8 light */
     typedef void (__thiscall *Init_t)(DWORD obj);
     Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
     init_fn((DWORD)obj);
 
-    /* Register the object */
-    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
+    /* NOTE: Do NOT call Scene_RegisterObject. The render loop
+     * (VertexDecl_WriteBlendWeights at 0x45EC30) iterates registered
+     * objects and tries to access mesh vertex data at offsets our
+     * light object doesn't have. The original game registers it
+     * during Scene_SetupLevelDark where the scene render state is
+     * properly configured for lights. Calling it from FrameUpdate
+     * causes a crash at 0x45F6FA (FNSTSW after FCOMP on invalid data).
+     * The D3D8 light still emits without registration — Init() sets
+     * the light on the device directly. */
 
     /* Apply material scales to ball */
     if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
