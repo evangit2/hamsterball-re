@@ -16,61 +16,49 @@ private:
 	static inline int g_savedOffsetX = 0;
 
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
-		if (!g_enabled) {
-			// Restore originals if we had modified them
-			if (g_savedScaleX > 0.0f) {
-				DWORD gfxAddr = (DWORD)gfx;
-				if (!IsBadReadPtr(gfx, 0x800)) {
-					DWORD config = *(DWORD*)(gfxAddr + 0x5c);
-					if (config && !IsBadReadPtr((void*)config, 0x200)) {
-						*((float*)(config + 0x1f8)) = g_savedScaleX;
-						*((int*)(gfxAddr + 0x798)) = g_savedOffsetX;
-					}
-				}
-				g_savedScaleX = -1.0f;
-			}
-			return orig_TransformX(gfx, edx, pixel_x);
-		}
+		// Call original first (reads unmodified memory, gets correct result for original scaling)
+		float result = orig_TransformX(gfx, edx, pixel_x);
+
+		if (!g_enabled) return result;
 
 		DWORD gfxAddr = (DWORD)gfx;
-		if (IsBadReadPtr(gfx, 0x800)) return orig_TransformX(gfx, edx, pixel_x);
+		if (IsBadReadPtr(gfx, 0x800)) return result;
 		DWORD config = *(DWORD*)(gfxAddr + 0x5c);
-		if (!config || IsBadReadPtr((void*)config, 0x200)) return orig_TransformX(gfx, edx, pixel_x);
+		if (!config || IsBadReadPtr((void*)config, 0x200)) return result;
 		DWORD bbWidth = *(DWORD*)(config + 0x15c);
 		DWORD bbHeight = *(DWORD*)(config + 0x160);
-		if (bbWidth <= 0 || bbHeight <= 0) return orig_TransformX(gfx, edx, pixel_x);
+		if (bbWidth <= 0 || bbHeight <= 0) return result;
 
 		float aspect = (float)bbWidth / (float)bbHeight;
-		if (aspect <= 1.34f) return orig_TransformX(gfx, edx, pixel_x);
+		if (aspect <= 1.34f) return result;
 
 		float* pScaleX = (float*)(config + 0x1f8);
 		int* pOffsetX = (int*)(gfxAddr + 0x798);
 
 		float curScaleX = *pScaleX;
-		if (!(curScaleX == curScaleX) || curScaleX <= 0.0f || curScaleX > 1.0f)
-			return orig_TransformX(gfx, edx, pixel_x);
+		if (!(curScaleX == curScaleX) || curScaleX <= 0.0f || curScaleX > 1.0f) return result;
 
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
 
-		// Check if this is first call or if game reset the values
+		// Detect frame boundary: if curScaleX is our modified value from last
+		// call, we're in the same frame. If it's the original, game reset it.
 		float expectedModified = g_savedScaleX * scaleFactor;
 		if (g_savedScaleX <= 0.0f ||
 			(curScaleX != expectedModified && curScaleX != g_savedScaleX)) {
-			// Game set fresh values — save as new originals
+			// New frame or first call — save fresh originals
 			g_savedScaleX = curScaleX;
 			g_savedOffsetX = *pOffsetX;
 		}
 
-		// Modify global memory. This fixes BOTH:
-		// - Gfx_TransformX (reads modified scaleX/offsetX → correct result)
-		// - Graphics_DrawScreenRect (reads modified scaleX → compressed correctly)
+		// Modify memory for DrawScreenRect (uses saved originals, no exponential)
 		*pScaleX = g_savedScaleX * scaleFactor;
 		*pOffsetX = (int)((float)g_savedOffsetX * scaleFactor + margin);
 
-		// Call original with modified memory — it computes the correct result
-		return orig_TransformX(gfx, edx, pixel_x);
+		// Transform return value for Gfx_TransformX callers
+		// (result was computed with ORIGINAL values, so this is safe — no double application)
+		return result * scaleFactor + margin;
 	}
 
 public:
