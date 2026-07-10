@@ -15,6 +15,7 @@ private:
 
 	// One-time-per-frame memory modification
 	static inline float g_lastModifiedScaleX = -999.0f;
+	static inline int g_lastModifiedOffsetX = -999;
 	static inline float g_origScaleX = 0.0f;
 	static inline int g_origOffsetX = 0;
 
@@ -113,7 +114,9 @@ private:
 		g_margin = margin;
 
 		// Check if this is the first call this frame
-		if (curScaleX == g_lastModifiedScaleX && g_lastModifiedScaleX != -999.0f) {
+		// Game resets offsetX (via SetViewport) without changing scaleX,
+		// so we must check BOTH values
+		if (curScaleX == g_lastModifiedScaleX && *pOffsetX == g_lastModifiedOffsetX && g_lastModifiedScaleX != -999.0f) {
 			// Same frame — memory already modified, orig reads correct values
 			float result = orig_TransformX(gfx, edx, pixel_x);
 
@@ -138,6 +141,7 @@ private:
 		*pScaleX = newScaleX;
 		*pOffsetX = newOffsetX;
 		g_lastModifiedScaleX = newScaleX;
+		g_lastModifiedOffsetX = newOffsetX;
 
 		g_callCount++;
 		if (g_callCount <= 20) {
