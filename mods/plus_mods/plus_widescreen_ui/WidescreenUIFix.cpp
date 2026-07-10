@@ -118,9 +118,9 @@ private:
 			float result = orig_TransformX(gfx, edx, pixel_x);
 
 			g_callCount++;
-			if (g_callCount <= 5) {
-				printf("[WSUI] sub call %d: pixel_x=%f scaleX=%f result=%f\n",
-					g_callCount, pixel_x, curScaleX, result);
+			if (g_callCount <= 20) {
+				printf("[WSUI] sub call %d: pixel_x=%f scaleX=%f offsetX=%d result=%f\n",
+					g_callCount, pixel_x, curScaleX, *pOffsetX, result);
 			}
 
 			return result;
@@ -140,9 +140,9 @@ private:
 		g_lastModifiedScaleX = newScaleX;
 
 		g_callCount++;
-		if (g_callCount <= 5) {
-			printf("[WSUI] first call %d: pixel_x=%f origScale=%f newScale=%f margin=%f result=%f transformed=%f\n",
-				g_callCount, pixel_x, g_origScaleX, newScaleX, margin, result, transformed);
+		if (g_callCount <= 20) {
+			printf("[WSUI] first call %d: pixel_x=%f origScale=%f origOffset=%d newScale=%f newOffset=%d margin=%f bbW=%d bbH=%d result=%f transformed=%f\n",
+				g_callCount, pixel_x, g_origScaleX, g_origOffsetX, newScaleX, newOffsetX, margin, bbWidth, bbHeight, result, transformed);
 		}
 
 		return transformed;
