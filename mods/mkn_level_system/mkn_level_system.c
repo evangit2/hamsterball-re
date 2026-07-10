@@ -216,22 +216,24 @@ static void __fastcall Summon_Bumpers(DWORD board) {
     diag_log("[summon] Summon_Bumpers: collected 8 bumpers");
 }
 
-/* Summon_NeonEffect — creates the neon glow light + material effect.
+/* Summon_NeonEffect — applies the neon glow material effect to the ball.
  * Extracted from Scene_SetupLevelDark (0x00416270).
- * Creates a SceneObject with yellow light (10.0f, 10.0f, 0.0f) at the
- * player's ball position, then applies R-channel material scales.
  *
- * CRASH FIX (v6.1): Two bugs were causing the crash at 0x00461971:
- *   1. Material writes used *(DWORD*)(player1 + 0x5DC) as a "mesh pointer"
- *      but 0x5DC is an App offset, not a ball offset. The original game
- *      writes material values DIRECTLY to the ball struct (ball+0x1D0 etc).
- *   2. The dispatch thread runs this during level loading, before the ball
- *      is fully initialized. Now we check that the ball has valid position
- *      data (ball+0x164 != 0) before proceeding.
- *   3. The light_vec and Matrix_Scale4x4 calls from the original were
- *      missing — the original uses Vec3_Init to set the light color at
- *      obj+0x94, and Matrix_Scale4x4 + Matrix_Identity for materials.
- *      We now replicate this exactly.
+ * CRASH FIX (v6.2): The previous version created a SceneObject (D3D8 light)
+ * from the dispatch thread. D3D8 is single-threaded — objects created from
+ * a background thread have invalid device state, causing a crash in the
+ * render loop (VertexDecl_WriteBlendWeights at 0x45EC30) when the game
+ * tries to draw them.
+ *
+ * Fix: Remove SceneObject creation entirely. Only apply the material color
+ * writes (ball+0x1D0/0x1C0/0x1F0) which are safe memory writes that work
+ * from any thread. The ball will get the yellow glow effect without a
+ * dynamic light source.
+ *
+ * To get the full neon light effect, assign Summon_NeonEffect to a NATIVE
+ * vtable slot (e.g. slot 19 = InitScene) instead of an extended slot.
+ * Native slots run on the main thread during level setup, where D3D8
+ * object creation is safe.
  *
  * Safe to call from extended vtable slots (36-127). */
 static void __fastcall Summon_NeonEffect(DWORD board) {
@@ -245,82 +247,36 @@ static void __fastcall Summon_NeonEffect(DWORD board) {
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x700)) return;
 
-    /* Get graphics context (App+0x174) */
-    DWORD gfx_ctx = *(DWORD*)(app + 0x174);
-    if (!gfx_ctx || gfx_ctx < 0x10000) return;
-
-    /* Get ball pointer (App+0x5DC) — this is the BALL, not a "player profile" */
+    /* Get ball pointer (App+0x5DC) */
     DWORD ball = *(DWORD*)(app + 0x5DC);
     if (!ball || ball < 0x10000) return;
     if (IsBadReadPtr((void*)ball, 0x600)) return;
 
-    /* CRASH FIX: Verify ball has valid position data before proceeding.
-     * During level loading, the ball may not be fully initialized yet.
-     * ball+0x164/0x168/0x16C = ball X/Y/Z position (floats). */
+    /* Verify ball has valid position data (not still initializing) */
     float ball_x = *(float*)(ball + 0x164);
     float ball_y = *(float*)(ball + 0x168);
     float ball_z = *(float*)(ball + 0x16C);
-    if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;  /* Ball not ready */
+    if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;
 
-    /* Check if neon object already created using a sentinel value */
+    /* Check if already applied using sentinel value */
     if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;  /* "NEON" sentinel */
 
-    /* Create SceneObject for the light (same as original: operator_new(0xD4) + ctor) */
-    void* mem = game_operator_new(0xD4);
-    if (!mem) return;
-
-    DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
-    if (!obj) return;
-
-    /* Store in board+0x10db (same as original) */
-    param_1[0x10db] = (int)obj;
-
-    /* Set obj[0x34] = 1 (light type flag, same as original) */
-    obj[0x34] = 1;
-
-    /* Set light color at obj+0x94.
-     * Original: Vec3_Init(&uStack_20, 0x41200000, 0x41200000, 0) then copies
-     * 4 DWORDs (16 bytes) from the Vec3 result to obj+0x94..0xA0.
-     * We just memcpy the float values directly. */
-    float light_color[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
-    memcpy((void*)((DWORD)obj + 0x94), light_color, 16);
-
-    /* Set position via vtable[1] (SetTransform).
-     * Original: (**(code **)(*(int *)param_1[0x10db] + 4))(ball_x, ball_y + 0.5, ball_z)
-     * _DAT_004cf528 = 0.5f */
-    typedef void (__thiscall *SetTransform_t)(DWORD obj, float x, float y, float z);
-    SetTransform_t set_transform = (SetTransform_t)(*(DWORD*)(*obj + 4));
-    set_transform((DWORD)obj, ball_x, ball_y + 0.5f, ball_z);
-
-    /* Set range: obj[0x33] = 400.0f (0x43C80000) — same as original */
-    obj[0x33] = 0x43C80000;
-
-    /* Call vtable[3] (Init) — same as original */
-    typedef void (__thiscall *Init_t)(DWORD obj);
-    Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
-    init_fn((DWORD)obj);
-
-    /* Register the object — same as original */
-    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
-
-    /* Apply material scales DIRECTLY to the ball struct (NOT via a mesh pointer!).
-     * CRASH FIX: The original game writes to ball+0x1D0, ball+0x1C0, ball+0x1F0
-     * directly. The old code incorrectly did *(DWORD*)(ball + 0x5DC) to get a
-     * "mesh pointer" — but 0x5DC is an App offset, not a ball offset.
+    /* Apply material scales directly to the ball struct.
+     * The original Scene_SetupLevelDark uses Matrix_Scale4x4 + Matrix_Identity
+     * to compute these, but the net effect is: set R-channel to 1.0 on
+     * ambient/diffuse/specular materials. We write 1.0f directly.
      *
-     * Original uses Matrix_Scale4x4 + Matrix_Identity to compute the values,
-     * but the net effect is: set R-channel to 1.0 on ambient/diffuse/specular.
-     * We write 1.0f directly, which is what the matrix operations produce. */
+     * These are plain memory writes — safe from any thread. */
     if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
-        *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  (was mesh+0x1D0) */
-        *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  (was mesh+0x1C0) */
-        *(float*)(ball + 0x1F0) = 1.0f;  /* specular R (was mesh+0x1F0) */
+        *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  */
+        *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  */
+        *(float*)(ball + 0x1F0) = 1.0f;  /* specular R */
     }
 
-    /* Mark as created */
+    /* Mark as applied */
     *(DWORD*)(board + 0x642C) = 0x4E454F4E;  /* "NEON" sentinel */
 
-    diag_log("[summon] Summon_NeonEffect: created neon light + glow");
+    diag_log("[summon] Summon_NeonEffect: applied neon glow materials to ball");
 }
 
 /* Summon_BoardSetup — calls the full Board_Setup function (vtable[32]).
