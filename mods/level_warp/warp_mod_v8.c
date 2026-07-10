@@ -426,7 +426,7 @@ static void install_timer_caves(void) {
 
         /* JNZ skip_target (near, 6 bytes) — flags from TEST AL,AL */
         p[0] = 0x0F; p[1] = 0x85;
-        *(DWORD*)(p + 2) = (DWORD)(p + 6 + 5 + 7 + 6 + 3 + 5) - (DWORD)(p + 2 + 4); /* skip_target offset */
+        *(DWORD*)(p + 2) = (DWORD)(p + 6 + 7 + 6 + 3 + 5) - (DWORD)(p + 2 + 4); /* skip_target offset */
         p += 6;
 
         /* CMP byte [g_freezeTimer], 0 (7 bytes) */
@@ -1156,27 +1156,27 @@ static void updateWarpStateMachine(void) {
             int savedTimes[16];
             int hasTournamentData = 0;
             int savedTimeRemaining = 0;
-            int savedPlayerScore = 0;
+            float savedPlayerScore = 0.0f;
 
             if (oldProfile) {
                 char isPractice = *((char *)oldProfile + PROFILE_IS_PRACTICE);
                 wasInTournament = (isPractice == 0) ? 1 : 0;
                 if (wasInTournament) {
                     int raceIdx = *(int *)((char *)oldProfile + 0x08);
-                    int oldBoard = *(int *)((char *)oldProfile + 0x0C);
                     hasTournamentData = 1;
                     memcpy(savedScores, (void *)((char *)oldProfile + PROFILE_SCORE_ARRAY), sizeof(savedScores));
                     memcpy(savedTimes, (void *)((char *)oldProfile + PROFILE_TIME_ARRAY), sizeof(savedTimes));
                     if (raceIdx >= 0 && raceIdx < 16) {
-                        savedScores[raceIdx] = *(float *)((char *)app + 0x5E8);
+                        /* App+0x5E4 = SCORE (float), App+0x5E8 = TIME REMAINING (int) */
+                        savedScores[raceIdx] = *(float *)((char *)app + 0x5E4);
                         diag_logf("[warp] Saved race score %f at index %d", savedScores[raceIdx], raceIdx);
                     }
-                    if (oldBoard) {
-                        savedTimeRemaining = *(int *)((char *)oldBoard + 0x2990);
-                        diag_logf("[warp] Saved time remaining: %d", savedTimeRemaining);
-                    }
-                    savedPlayerScore = *(int *)((char *)app + 0x5E4);
-                    diag_logf("[warp] Saved player score: %d", savedPlayerScore);
+                    /* Race timer is at App+0x5E8 (int), NOT board+0x2990 (which is a
+                     * score accumulator initialized to 100). */
+                    savedTimeRemaining = *(int *)((char *)app + 0x5E8);
+                    diag_logf("[warp] Saved time remaining: %d", savedTimeRemaining);
+                    savedPlayerScore = *(float *)((char *)app + 0x5E4);
+                    diag_logf("[warp] Saved player score: %f", savedPlayerScore);
                 }
             }
 
@@ -1223,16 +1223,15 @@ static void updateWarpStateMachine(void) {
                         diag_log("[warp] Tournament mode restored: practice=0, scores copied to new profile");
 
                         if (savedTimeRemaining > 0) {
-                            int newBoard = *(int *)((char *)newProfile + 0x0C);
-                            if (newBoard) {
-                                *(int *)((char *)newBoard + 0x2990) = savedTimeRemaining;
-                                *(int *)((char *)app + 0x5E8) = savedTimeRemaining;
-                                *(int *)((char *)app + 0x5EC) = 0;
-                                diag_logf("[warp] Timer carried over: %d ticks remaining", savedTimeRemaining);
-                            }
+                            /* Restore the race timer to App+0x5E8 (int).
+                             * Do NOT write to board+0x2990 (that's a score accumulator,
+                             * not the timer) or App+0x5EC (that's a timer snapshot
+                             * the game manages internally). */
+                            *(int *)((char *)app + 0x5E8) = savedTimeRemaining;
+                            diag_logf("[warp] Timer carried over: %d ticks remaining", savedTimeRemaining);
                         }
-                        *(int *)((char *)app + 0x5E4) = savedPlayerScore;
-                        diag_logf("[warp] Player score restored: %d", savedPlayerScore);
+                        *(float *)((char *)app + 0x5E4) = savedPlayerScore;
+                        diag_logf("[warp] Player score restored: %f", savedPlayerScore);
                     }
                 }
             }
