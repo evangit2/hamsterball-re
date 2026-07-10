@@ -1006,25 +1006,30 @@ static void updateWarpStateMachine(void) {
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 1;
             startMusicFade();
 
-            if (board && !IsBadReadPtr((void*)(board + BOARD_COLOR_BASE), 16)) {
-                g_origBallR = *(float*)(board + BOARD_COLOR_BASE);
-                g_origBallG = *(float*)(board + BOARD_COLOR_BASE + 4);
-                g_origBallB = *(float*)(board + BOARD_COLOR_BASE + 8);
+            /* Save the ball's diffuse color (ball+0x20C..0x218 = RGBA floats).
+             * board+0x3AB0 is only the init table — not read after Board_ctor.
+             * The 3D ball reads from ball+0x20C (R), +0x210 (G), +0x214 (B). */
+            if (!IsBadReadPtr((void*)(ball + 0x20C), 16)) {
+                g_origBallR = *(float*)(ball + 0x20C);
+                g_origBallG = *(float*)(ball + 0x210);
+                g_origBallB = *(float*)(ball + 0x214);
                 g_colorSaved = 1;
             }
             diag_logf("[warp] PHASE_RUMBLE start: steering disabled (ball+0x808=1000), jitter on");
         }
 
-        /* Fade ball color from original to yellow over RUMBLE phase */
-        if (g_colorSaved && board && !IsBadWritePtr((void*)(board + BOARD_COLOR_BASE), 12)) {
+        /* Fade ball diffuse color from original to yellow over RUMBLE phase.
+         * Write directly to the ball's material (ball+0x20C/0x210/0x214),
+         * NOT to board+0x3AB0 (init table, not read after Board_ctor). */
+        if (g_colorSaved && ball && !IsBadWritePtr((void*)(ball + 0x20C), 12)) {
             float t = (float)elapsed / (float)RUMBLE_DURATION_MS;
             if (t > 1.0f) t = 1.0f;
             float r = g_origBallR + (1.0f - g_origBallR) * t;
             float g = g_origBallG + (1.0f - g_origBallG) * t;
             float b = g_origBallB + (0.0f - g_origBallB) * t;
-            *(float*)(board + BOARD_COLOR_BASE)     = r;
-            *(float*)(board + BOARD_COLOR_BASE + 4) = g;
-            *(float*)(board + BOARD_COLOR_BASE + 8) = b;
+            *(float*)(ball + 0x20C) = r;
+            *(float*)(ball + 0x210) = g;
+            *(float*)(ball + 0x214) = b;
         }
 
         /* Fade ball alpha from 1.0 to 0.5 over RUMBLE */
