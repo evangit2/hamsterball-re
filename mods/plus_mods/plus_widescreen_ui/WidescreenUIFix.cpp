@@ -11,13 +11,8 @@ private:
 	typedef float(__fastcall *TransformX_t)(void*, void*, float);
 	static inline TransformX_t orig_TransformX = nullptr;
 
-	// Track what we last wrote to detect frame boundaries
-	static inline float g_lastModifiedScaleX = -1.0f;
-	static inline float g_origScaleX = 0.0f;
-	static inline int g_origOffsetX = 0;
-
 	static float __fastcall hook_TransformX(void* gfx, void* edx, float pixel_x) {
-		// Call original FIRST — before any memory modification
+		// Call original first
 		float result = orig_TransformX(gfx, edx, pixel_x);
 
 		if (!g_enabled) return result;
@@ -37,34 +32,20 @@ private:
 		int* pOffsetX = (int*)(gfxAddr + 0x798);
 
 		float curScaleX = *pScaleX;
-		if (!(curScaleX == curScaleX) || curScaleX <= 0.0f || curScaleX > 1.0f) return result;
-
 		float ratio43 = 4.0f / 3.0f;
 		float scaleFactor = ratio43 / aspect;
 		float margin = ((float)bbWidth - (float)bbHeight * ratio43) / 2.0f;
 
-		// Check if memory still has our modified values from last call
-		// (same frame) or has been reset by the game (new frame)
-		if (curScaleX == g_lastModifiedScaleX) {
-			// Memory has our modified values — orig_TransformX already
-			// used them, so result is already correct. No transform needed.
-			return result;
+		// Always transform the return value (this is what v14/v17 did and it worked)
+		float transformed = result * scaleFactor + margin;
+
+		// ALSO modify global memory for DrawScreenRect (bonus fix for rectangles)
+		if ((curScaleX == curScaleX) && curScaleX > 0.0f && curScaleX <= 1.0f) {
+			*pScaleX = curScaleX * scaleFactor;
+			*pOffsetX = (int)((float)(*pOffsetX) * scaleFactor + margin);
 		}
 
-		// New frame (or first call) — game set fresh original values
-		g_origScaleX = curScaleX;
-		g_origOffsetX = *pOffsetX;
-
-		// Modify global memory so DrawScreenRect also gets the fix
-		float newScaleX = g_origScaleX * scaleFactor;
-		int newOffsetX = (int)((float)g_origOffsetX * scaleFactor + margin);
-		*pScaleX = newScaleX;
-		*pOffsetX = newOffsetX;
-		g_lastModifiedScaleX = newScaleX;
-
-		// result was computed with ORIGINAL values (before our modification)
-		// so we need to transform it
-		return result * scaleFactor + margin;
+		return transformed;
 	}
 
 public:
