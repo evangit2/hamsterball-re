@@ -56,7 +56,7 @@ private:
 
 			cave[caveOffset + 6] = 0xDC; // FADD dword ptr [addr]
 			cave[caveOffset + 7] = 0x05;
-			*(DWORD**)(cave + caveOffset + 8) = &g_margin;
+			*(DWORD*)(cave + caveOffset + 8) = (DWORD)&g_margin;
 
 			cave[caveOffset + 12] = 0xE9; // JMP rel32
 			DWORD jmpTarget = retAddr - ((DWORD)(cave + caveOffset + 17));
