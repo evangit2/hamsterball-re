@@ -157,15 +157,16 @@ Summon Functions (v6):
 # using ONLY VTABLE commands — no SET/SWAP needed!
 # v4 patches all levels to max struct size, so this is safe.
 
-VTABLE 1 setup Scene_SetupLevelCascade
-VTABLE 1 initscene Beginner_InitScene
-VTABLE 1 renderdynamic Beginner_RenderDyn
-VTABLE 1 dispatchcollision Beginner_DispatchColl
-VTABLE 1 9 Odd_DispatchColl
-VTABLE 1 10 Odd_DispatchColl
-VTABLE 1 13 Odd_DispatchColl
-VTABLE 1 30 Odd_DispatchColl
-VTABLE 1 34 Odd_DispatchColl
+#VTABLE 1 setup Scene_SetupLevelCascade
+#VTABLE 1 initscene Beginner_InitScene
+#VTABLE 1 renderdynamic Beginner_RenderDyn
+#VTABLE 1 dispatchcollision Beginner_DispatchColl
+#VTABLE 1 9 Odd_DispatchColl
+#VTABLE 1 10 Odd_DispatchColl
+##VTABLE 1 13 Odd_DispatchColl
+#VTABLE 1 30 Odd_DispatchColl
+#VTABLE 1 34 Odd_DispatchColl
+VTABLE 1 36 Summon_NeonEffect
 
 # ════════════════════════════════════════════════════════════════════════════
 

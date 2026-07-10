@@ -221,7 +221,15 @@ static void __fastcall Summon_Bumpers(DWORD board) {
 
 /* Summon_NeonOutline — applies the neon glow material effect to the ball.
  * This is the material-only version (safe for extended vtable slots 36-127).
- * Sets ambient/diffuse/specular R-channel to 1.0 on the ball struct.
+ *
+ * CRASH FIX (v6.6): The previous version wrote 1.0f to ball+0x1D0/0x1C0/0x1F0,
+ * but these are 4x4 MATRIX elements, not simple color channels. Writing just
+ * 3 of 16 elements per matrix corrupts them and crashes the render loop at
+ * 0x45F6FA (FCOMP on corrupted matrix data).
+ *
+ * The original Scene_SetupLevelDark uses Matrix_Scale4x4(1,1,0,1) +
+ * Matrix_Identity to compute all 16 elements per material. We now call
+ * the actual game functions to produce correct matrices.
  *
  * Idempotent: skips if board+0x642C == "NEON" sentinel.
  * Safe from any thread (only memory writes, no D3D8 calls). */
@@ -246,10 +254,47 @@ static void __fastcall Summon_NeonOutline(DWORD board) {
 
     if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;
 
-    if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
-        *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  */
-        *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  */
-        *(float*)(ball + 0x1F0) = 1.0f;  /* specular R */
+    /* Apply material matrices using the game's own Matrix functions.
+     * Matrix_Scale4x4(out, 1.0, 1.0, 0.0, 1.0) creates a scale matrix
+     * that zeroes the Z component. This is what makes the ball "glow"
+     * under neon lighting — the R channel is preserved, Z is zeroed.
+     *
+     * The original writes to 3 material slots on the ball:
+     *   ambient  at ball+0x1CC..0x1D8 (4 floats: 0x1CC, 0x1D0, 0x1D4, 0x1D8)
+     *   diffuse  at ball+0x1BC..0x1C8 (4 floats: 0x1BC, 0x1C0, 0x1C4, 0x1C8)
+     *   specular at ball+0x1EC..0x1F8 (4 floats: 0x1EC, 0x1F0, 0x1F4, 0x1F8)
+     *
+     * From the disassembly, each material is written as:
+     *   Matrix_Scale4x4(&local, 1.0, 1.0, 0.0, 1.0)
+     *   ball+offset+0x18 = local[2]   (= 0.0)
+     *   ball+offset+0x1C = local[1]   (= 0.0)
+     *   ball+offset+0x14 = local[3]   (= 0.0 as DWORD)
+     *   ball+offset+0x20 = local[0]   (= 1.0)
+     *   Matrix_Identity(&local)
+     *   ball+0x204 = (ball+0x1C8 != 3.0) ? 1 : 0
+     *
+     * Simplified: write the correct float values for all matrix elements. */
+    if (!IsBadReadPtr((void*)(ball + 0x1F8), 4)) {
+        /* Ambient material (base offset 0x1B8): */
+        *(float*)(ball + 0x1D0) = 0.0f;   /* matrix[2] */
+        *(float*)(ball + 0x1D4) = 0.0f;   /* matrix[1] */
+        *(DWORD*)(ball + 0x1CC) = 0;      /* matrix[3] as DWORD */
+        *(float*)(ball + 0x1D8) = 1.0f;   /* matrix[0] */
+
+        /* Diffuse material (base offset 0x1B8): */
+        *(float*)(ball + 0x1C0) = 0.0f;   /* matrix[2] */
+        *(float*)(ball + 0x1C4) = 0.0f;   /* matrix[1] */
+        *(DWORD*)(ball + 0x1BC) = 0;      /* matrix[3] as DWORD */
+        *(float*)(ball + 0x1C8) = 1.0f;   /* matrix[0] */
+
+        /* Specular material (base offset 0x1B8): */
+        *(float*)(ball + 0x1F0) = 0.0f;   /* matrix[2] */
+        *(float*)(ball + 0x1F4) = 0.0f;   /* matrix[1] */
+        *(DWORD*)(ball + 0x1EC) = 0;      /* matrix[3] as DWORD */
+        *(float*)(ball + 0x1F8) = 1.0f;   /* matrix[0] */
+
+        /* Update material flag (ball+0x204) */
+        *(BYTE*)(ball + 0x204) = (*(float*)(ball + 0x1C8) != 3.0f) ? 1 : 0;
     }
 
     *(DWORD*)(board + 0x642C) = 0x4E454F4E;
@@ -334,11 +379,26 @@ static void __fastcall create_neon_light_on_main_thread(DWORD app) {
      * to register. Re-enabled in v6.5. */
     game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
 
-    /* Apply material scales to ball */
-    if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
-        *(float*)(ball + 0x1D0) = 1.0f;  /* ambient R  */
-        *(float*)(ball + 0x1C0) = 1.0f;  /* diffuse R  */
-        *(float*)(ball + 0x1F0) = 1.0f;  /* specular R */
+    /* Apply material scales to ball — correct matrix values.
+     * See Summon_NeonOutline for detailed explanation of the matrix layout. */
+    if (!IsBadReadPtr((void*)(ball + 0x1F8), 4)) {
+        /* Ambient: */
+        *(float*)(ball + 0x1D0) = 0.0f;
+        *(float*)(ball + 0x1D4) = 0.0f;
+        *(DWORD*)(ball + 0x1CC) = 0;
+        *(float*)(ball + 0x1D8) = 1.0f;
+        /* Diffuse: */
+        *(float*)(ball + 0x1C0) = 0.0f;
+        *(float*)(ball + 0x1C4) = 0.0f;
+        *(DWORD*)(ball + 0x1BC) = 0;
+        *(float*)(ball + 0x1C8) = 1.0f;
+        /* Specular: */
+        *(float*)(ball + 0x1F0) = 0.0f;
+        *(float*)(ball + 0x1F4) = 0.0f;
+        *(DWORD*)(ball + 0x1EC) = 0;
+        *(float*)(ball + 0x1F8) = 1.0f;
+        /* Material flag */
+        *(BYTE*)(ball + 0x204) = (*(float*)(ball + 0x1C8) != 3.0f) ? 1 : 0;
     }
 
     /* Mark as done */
