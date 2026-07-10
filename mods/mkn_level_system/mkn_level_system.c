@@ -149,7 +149,198 @@ typedef struct {
     DWORD addr;
 } FuncEntry;
 
+/* ============================================================
+ * Summon functions — self-contained level behaviors
+ * that can be assigned to any vtable slot.
+ *
+ * Each function takes DWORD board (__thiscall ECX=board).
+ * They call game functions directly via function pointers.
+ * ============================================================ */
+
+/* Game function typedefs (not already in bass_proxy.h) */
+typedef void* (__thiscall *SceneObject_ctor_t)(void* mem, DWORD gfx_ctx);
+typedef int*  (__thiscall *Vec3_Init_t)(void* out, float x, float y, float z);
+typedef void  (__thiscall *Matrix_Scale4x4_t)(void* out, float x, float y, float z, float w);
+typedef void  (__thiscall *Matrix_Identity_t)(void* out);
+typedef void  (__fastcall *Scene_RegisterObject_t)(DWORD gfx_ctx, int layer, int* obj);
+typedef void  (__fastcall *Scene_CollectByNameFilter_t)(DWORD meshworld, char* name, void* dest);
+typedef char* (__fastcall *AthenaString_Format_t)(DWORD pool, char* fmt);
+typedef void  (__fastcall *CreateLevelObjects_t)(DWORD board);
+typedef void  (__fastcall *Level_InitScene_t)(DWORD board);
+
+/* Forward declaration for diag_log (defined later) */
+static void diag_log(const char *msg);
+static void diag_logf(const char *fmt, ...);
+
+/* Game function addresses (operator_new and game_operator_new from bass_proxy.h) */
+static SceneObject_ctor_t         game_SceneObject_ctor = (SceneObject_ctor_t)0x00462850;
+static Scene_RegisterObject_t     game_SceneRegisterObject = (Scene_RegisterObject_t)0x00454020;
+static Scene_CollectByNameFilter_t game_SceneCollectByNameFilter = (Scene_CollectByNameFilter_t)0x00460F80;
+static AthenaString_Format_t      game_AthenaString_Format = (AthenaString_Format_t)0x004F7448;
+static CreateLevelObjects_t       game_CreateLevelObjects = (CreateLevelObjects_t)0x004121D0;
+static Level_InitScene_t          game_Level_InitScene = (Level_InitScene_t)0x0040B090;
+
+/* Summon_Bumpers — collect N:BUMPER1-8 from the loaded MeshWorld.
+ * This is the bumper loop from Scene_SetupLevelCascade (0x004110D0).
+ * Requires: board+0x22b must point to a valid MeshWorld that contains N:BUMPER objects.
+ * Safe to call from vtable slots 36-127 (runs once per frame, but only creates
+ * if bumpers aren't already collected). */
+static void __fastcall Summon_Bumpers(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 0x6500)) return;
+
+    /* board is accessed as int* (param_1) in the game's code */
+    int* param_1 = (int*)board;
+
+    /* Get MeshWorld pointer (param_1[0x22b]) */
+    DWORD meshworld = (DWORD)param_1[0x22b];
+    if (!meshworld || meshworld < 0x10000) return;
+    if (IsBadReadPtr((void*)meshworld, 4)) return;
+
+    /* Check if bumpers already collected (board+0x10db != 0) */
+    if (param_1[0x10db] != 0) return;
+
+    /* Bumper collection loop — same as Scene_SetupLevelCascade */
+    int iVar3 = 0;
+    int* piVar5 = param_1 + 0x190b;  /* bumper state array */
+    int* piVar6 = param_1 + 0x10db;  /* first bumper slot */
+    do {
+        iVar3 = iVar3 + 1;
+        char* name = game_AthenaString_Format(0x4F7448, "N:BUMPER%d");
+        game_SceneCollectByNameFilter(meshworld, name, piVar6);
+        *piVar5 = 0;
+        piVar5 = piVar5 + 1;
+        piVar6 = piVar6 + 0x106;  /* stride 0x106 ints = 0x418 bytes */
+    } while (iVar3 < 8);
+
+    diag_log("[summon] Summon_Bumpers: collected 8 bumpers");
+}
+
+/* Summon_NeonEffect — creates the neon glow light + material effect.
+ * Extracted from Scene_SetupLevelDark (0x00416270).
+ * Creates a SceneObject with yellow light (10.0f, 10.0f, 0.0f) at the
+ * player's ball position, then applies R-channel material scales.
+ * Safe to call from extended vtable slots. */
+static void __fastcall Summon_NeonEffect(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 0x6500)) return;
+
+    int* param_1 = (int*)board;
+
+    /* Get App pointer (param_1[0x21e]) */
+    DWORD app = (DWORD)param_1[0x21e];
+    if (!app || app < 0x10000) return;
+    if (IsBadReadPtr((void*)app, 0x700)) return;
+
+    /* Get graphics context (App+0x174) */
+    DWORD gfx_ctx = *(DWORD*)(app + 0x174);
+    if (!gfx_ctx || gfx_ctx < 0x10000) return;
+
+    /* Get player 1 data (App+0x5DC) */
+    DWORD player1 = *(DWORD*)(app + 0x5DC);
+    if (!player1 || player1 < 0x10000) return;
+    if (IsBadReadPtr((void*)player1, 0x200)) return;
+
+    /* Check if neon object already created using a sentinel value */
+    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;  /* "NEON" sentinel */
+
+    /* Create SceneObject for the light */
+    void* mem = game_operator_new(0xD4);
+    if (!mem) return;
+
+    DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
+    if (!obj) return;
+
+    /* Store in board+0x10db */
+    param_1[0x10db] = (int)obj;
+
+    /* Set light color: Vec3_Init(out, 10.0f, 10.0f, 0.0f) */
+    /* 0x41200000 = 10.0f */
+    float light_vec[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
+
+    /* Set position to ball location: player1+0x164/0x168/0x16C + 0.5 (DAT_004cf528) */
+    float ball_x = *(float*)(player1 + 0x164);
+    float ball_y = *(float*)(player1 + 0x168) + 0.5f;  /* _DAT_004cf528 = 0.5 */
+    float ball_z = *(float*)(player1 + 0x16C);
+
+    /* Set range: obj[0x33] = 400.0f (0x43C80000) */
+    obj[0x33] = 0x43C80000;
+
+    /* Call vtable[1] (SetTransform) with position */
+    typedef void (__thiscall *SetTransform_t)(DWORD obj, float x, float y, float z);
+    SetTransform_t set_transform = (SetTransform_t)(*(DWORD*)(*obj + 4));
+    set_transform((DWORD)obj, ball_x, ball_y, ball_z);
+
+    /* Call vtable[3] (Init) */
+    typedef void (__thiscall *Init_t)(DWORD obj);
+    Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
+    init_fn((DWORD)obj);
+
+    /* Register the object */
+    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
+
+    /* Apply material scale matrices to the ball mesh for the glow effect.
+     * This sets R-channel to 1.0 (0x3F800000) on the mesh materials,
+     * which makes the ball appear to glow yellow under the neon light. */
+    DWORD mesh = *(DWORD*)(player1 + 0x5DC);  /* Actually player1's mesh pointer */
+    if (mesh && mesh > 0x10000 && !IsBadReadPtr((void*)mesh, 0x300)) {
+        /* Material 0: mesh+0x1CC/0x1D0/0x1D4 (ambient), mesh+0x1BC/0x1C0/0x1C4 (diffuse), mesh+0x1EC/0x1F0/0x1F4 (specular) */
+        /* Set R=1.0 (0x3F800000) on all three materials */
+        *(float*)(mesh + 0x1D0) = 1.0f;  /* ambient R */
+        *(float*)(mesh + 0x1C0) = 1.0f;  /* diffuse R */
+        *(float*)(mesh + 0x1F0) = 1.0f;  /* specular R */
+    }
+
+    /* Mark as created */
+    *(DWORD*)(board + 0x642C) = 0x4E454F4E;  /* "NEON" sentinel */
+
+    diag_log("[summon] Summon_NeonEffect: created neon light + glow");
+}
+
+/* Summon_BoardSetup — calls the full Board_Setup function (vtable[32]).
+ * This creates ALL level objects: balls, bumpers, safespots, flags, signs, etc.
+ * It's equivalent to calling the game's FUN_0041C5B0. */
+static void __fastcall Summon_BoardSetup(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 4)) return;
+
+    /* Call FUN_0041C5B0 directly (the shared Board_Setup function) */
+    typedef void (__fastcall *BoardSetup_t)(DWORD board);
+    BoardSetup_t setup = (BoardSetup_t)0x0041C5B0;
+    setup(board);
+
+    diag_log("[summon] Summon_BoardSetup: created all level objects");
+}
+
+/* Summon_LevelObjects — calls CreateLevelObjects (0x004121D0).
+ * This creates mechanical objects like Tippers, Catapults, Gears, etc. */
+static void __fastcall Summon_LevelObjects(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 0x6500)) return;
+
+    game_CreateLevelObjects(board);
+
+    diag_log("[summon] Summon_LevelObjects: created mechanical objects");
+}
+
+/* Summon_InitScene — calls Level_InitScene (0x0040B090).
+ * This initializes the scene after geometry is loaded. */
+static void __fastcall Summon_InitScene(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 4)) return;
+
+    game_Level_InitScene(board);
+
+    diag_log("[summon] Summon_InitScene: initialized scene");
+}
+
 static const FuncEntry g_functions[] = {
+    /* Summon functions (callable from any vtable slot) */
+    { "Summon_Bumpers",       (DWORD)Summon_Bumpers },
+    { "Summon_NeonEffect",    (DWORD)Summon_NeonEffect },
+    { "Summon_BoardSetup",    (DWORD)Summon_BoardSetup },
+    { "Summon_LevelObjects",  (DWORD)Summon_LevelObjects },
+    { "Summon_InitScene",     (DWORD)Summon_InitScene },
     /* Setup functions (vtable[18]) */
     { "GetLevelPath",              0x0040D1C0 },
     { "Scene_SetupLevelCascade",   0x004110D0 },
