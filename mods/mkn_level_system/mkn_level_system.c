@@ -172,9 +172,12 @@ typedef void  (__fastcall *Level_InitScene_t)(DWORD board);
 static void diag_log(const char *msg);
 static void diag_logf(const char *fmt, ...);
 
-/* Game function addresses (operator_new and game_operator_new from bass_proxy.h) */
-static SceneObject_ctor_t         game_SceneObject_ctor = (SceneObject_ctor_t)0x00462850;
-static Scene_RegisterObject_t     game_SceneRegisterObject = (Scene_RegisterObject_t)0x00454020;
+/* Game function addresses (operator_new and game_operator_new from bass_proxy.h)
+ * CORRECTED v6.5: Addresses verified from Scene_SetupLevelDark disassembly.
+ * Previous versions used wrong addresses (Stands_ctor instead of SceneObject_ctor,
+ * wrong Scene_RegisterObject) which caused crashes at 0x45F6FA. */
+static SceneObject_ctor_t         game_SceneObject_ctor = (SceneObject_ctor_t)0x0046B4F0;
+static Scene_RegisterObject_t     game_SceneRegisterObject = (Scene_RegisterObject_t)0x00453BD0;
 static Scene_CollectByNameFilter_t game_SceneCollectByNameFilter = (Scene_CollectByNameFilter_t)0x00460F80;
 static AthenaString_Format_t      game_AthenaString_Format = (AthenaString_Format_t)0x004F7448;
 static CreateLevelObjects_t       game_CreateLevelObjects = (CreateLevelObjects_t)0x004121D0;
@@ -324,15 +327,12 @@ static void __fastcall create_neon_light_on_main_thread(DWORD app) {
     Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
     init_fn((DWORD)obj);
 
-    /* NOTE: Do NOT call Scene_RegisterObject. The render loop
-     * (VertexDecl_WriteBlendWeights at 0x45EC30) iterates registered
-     * objects and tries to access mesh vertex data at offsets our
-     * light object doesn't have. The original game registers it
-     * during Scene_SetupLevelDark where the scene render state is
-     * properly configured for lights. Calling it from FrameUpdate
-     * causes a crash at 0x45F6FA (FNSTSW after FCOMP on invalid data).
-     * The D3D8 light still emits without registration — Init() sets
-     * the light on the device directly. */
+    /* NOTE: Scene_RegisterObject was previously removed (v6.4) because we
+     * thought it caused the render crash. The REAL cause was calling
+     * Stands_ctor (0x00462850) instead of SceneObject_ctor (0x0046B4F0).
+     * With the correct ctor, the object is properly initialized and safe
+     * to register. Re-enabled in v6.5. */
+    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
 
     /* Apply material scales to ball */
     if (!IsBadReadPtr((void*)(ball + 0x1F4), 4)) {
