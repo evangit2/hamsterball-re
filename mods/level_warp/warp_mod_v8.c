@@ -261,8 +261,8 @@ static void load_real_bass(void)
 #define PROFILE_RACE_INDEX       0x08
 #define PROFILE_BOARD_PTR        0x0C
 #define PROFILE_IS_PRACTICE      0x11
-#define PROFILE_SCORE_ARRAY      0x14
-#define PROFILE_TIME_ARRAY       0x50
+#define PROFILE_SCORE_ARRAY      0x50
+#define PROFILE_TIME_ARRAY       0x14
 
 /* Ball offsets */
 #define BALL_DEATH_PENDING       0x2E9
@@ -1208,7 +1208,7 @@ static void updateWarpStateMachine(void) {
             int oldProfile = *(int *)((char *)app + APP_PROFILE_PTR);
 
             char wasInTournament = 0;
-            float savedScores[16];
+            int savedScores[16];
             int savedTimes[16];
             int hasTournamentData = 0;
             int savedTimeRemaining = 0;
@@ -1239,16 +1239,16 @@ static void updateWarpStateMachine(void) {
                     memcpy(savedTimes, (void *)((char *)oldProfile + PROFILE_TIME_ARRAY), sizeof(savedTimes));
                     if (raceIdx >= 0 && raceIdx < 16) {
                         /* App+0x5E4 = SCORE (float), App+0x5E8 = TIME REMAINING (int) */
-                        savedScores[raceIdx] = *(float *)((char *)app + 0x5E4);
-                        diag_logf("[warp] Saved race score %f at index %d", savedScores[raceIdx], raceIdx);
+                        savedScores[raceIdx] = (int)*(float *)((char *)app + 0x5E4);
+                        diag_logf("[warp] Saved race score %d (from float %f) at index %d", savedScores[raceIdx], *(float *)((char *)app + 0x5E4), raceIdx);
                     }
                     if (isSameLevel) {
                         /* Same-level tournament: use the carry-over time from the previous
                          * race (stored when this race started). This gives a "fresh restart"
                          * of the level — same starting time as when you first entered it. */
                         if (raceIdx >= 0 && raceIdx < 16) {
-                            savedTimeRemaining = *(int *)((char *)oldProfile + 0x14 + raceIdx * 4);
-                            diag_logf("[warp] Same-level: saved carry-over timer %d from profile+0x14+raceIdx*4",
+                            savedTimeRemaining = *(int *)((char *)oldProfile + PROFILE_TIME_ARRAY + raceIdx * 4);
+                            diag_logf("[warp] Same-level: saved carry-over timer %d from profile+TIME_ARRAY+raceIdx*4",
                                       savedTimeRemaining);
                         }
                     } else {
@@ -1486,7 +1486,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     install_timer_caves();
 
-    diag_log("[warp mod v8.2] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
+    diag_log("[warp mod v8.3] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
     return 0;
 }
 
@@ -1511,8 +1511,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v8.2 LOADED ===");
-        diag_log("v8.2: Fixed music not restoring after warp — restoreMusicFade() saves volumes, re-enables fade_in.");
+        diag_log("=== LEVEL WARP MOD v8.3 LOADED ===");
+        diag_log("v8.3: Fixed swapped PROFILE_SCORE_ARRAY/PROFILE_TIME_ARRAY — same-level tournament timer no longer reads garbage.");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
