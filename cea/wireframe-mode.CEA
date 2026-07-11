@@ -1,95 +1,91 @@
-// ============================================================
-// Hamsterball Wireframe Mode Toggle v2
-// ============================================================
-// Hooks Graphics_BeginFrame (0x453B50) to set D3DRS_FILLMODE
-// every frame before 3D rendering. 2D sprites/text render solid.
-//
-// v2 FIX: The game resets FILLMODE to 1 (POINT) DURING 3D rendering
-// in Ball_Render (0x40433E) and FUN_00402860 (0x004028F5). Both
-// check a cache byte at graphics+0x70d — if it's already 1, they
-// skip the SetRenderState(7, 1) call. Our hook writes 1 to the
-// cache so the game thinks FILLMODE is already POINT and doesn't
-// override our wireframe setting.
-//
-// D3D device chain:
-//   Graphics object (ECX at entry) -> +0x154 = IDirect3DDevice8*
-//   D3D device vtable + 0xC8 = SetRenderState
-//
-// D3DRS_FILLMODE = 7
-// D3DFILL_POINT     = 1 (game default — never actually visible as points)
-// D3DFILL_WIREFRAME = 2
-// D3DFILL_SOLID     = 3
-//
-// Toggle: set g_WireframeEnabled to 1 (ON) or 0 (OFF) in CE
-// ============================================================
-
+[ENABLE]
 alloc(WireframeCave, 512)
 alloc(g_WireframeEnabled, 4)
 registersymbol(g_WireframeEnabled)
 
 g_WireframeEnabled:
-  dd 0
+  dd 1
 
 WireframeCave:
-  // ---- Execute original 7 bytes from Graphics_BeginFrame ----
-  // 00453B50: 53           push ebx
-  // 00453B51: 8B D9        mov ebx,ecx
-  // 00453B53: 8B 4C 24 08  mov ecx,[esp+08]
+  // ---- Original 7 bytes from Graphics_BeginFrame ----
   push ebx
   mov ebx,ecx
   mov ecx,[esp+08]
 
-  // ---- Check if wireframe is enabled ----
-  cmp [g_WireframeEnabled],0
-  jz WireframeCave_done
-
-  // ---- Wireframe ON: set FILLMODE=2 and trick the cache ----
-  // EBX = Graphics object (this)
-  // Graphics+0x154 = IDirect3DDevice8*
-  // Graphics+0x70d = fillmode cache byte
+  // ---- Set FILLMODE + update cache ----
+  // EBX = Graphics object, +0x154 = D3D device, +0x70D = fillmode cache
   push eax
   push edx
-  push ecx
 
-  mov eax,[ebx+00000154]    // EAX = D3D device
+  mov eax,[ebx+154]
   test eax,eax
-  jz WireframeCave_skip      // null safety check
+  jz WireframeCave_skip
 
-  mov edx,[eax]              // EDX = device vtable
+  mov edx,[eax]
 
-  // SetRenderState(D3DRS_FILLMODE=7, D3DFILL_WIREFRAME=2)
+  cmp [g_WireframeEnabled],0
+  jz WireframeCave_solid
+
+  // Wireframe ON: FILLMODE=2, cache=1 (tricks game into skipping its own FILLMODE=1 sets)
   push 2
+  mov byte ptr [ebx+70D], 1
+  jmp WireframeCave_call
+
+WireframeCave_solid:
+  // Wireframe OFF: FILLMODE=3, cache=3
+  push 3
+  mov byte ptr [ebx+70D], 3
+
+WireframeCave_call:
   push 7
   push eax
-  call dword ptr [edx+0xC8]
-
-  // CRITICAL FIX: Write 1 to the fillmode cache (graphics+0x70d)
-  // This tricks Ball_Render and FUN_00402860 into thinking FILLMODE
-  // is already 1 (POINT), so they skip their SetRenderState(7, 1) calls.
-  // Our wireframe setting (2) persists through 3D mesh rendering.
-  mov byte ptr [ebx+0x70d], 1
+  call dword ptr [edx+C8]
 
 WireframeCave_skip:
-  pop ecx
   pop edx
   pop eax
 
-WireframeCave_done:
-  // ---- Return to Graphics_BeginFrame+7 ----
   jmp 00453B57
 
-// ---- Install hook ----
-// Overwrite 7 bytes: 5-byte JMP + 2 NOPs
+// ---- Hook Graphics_BeginFrame ----
 00453B50:
   jmp WireframeCave
   nop
   nop
 
+// ================================================================
+// Patch 3 direct SetRenderState(FILLMODE=7, POINT=1) calls that
+// bypass the cache check. Change state byte from 07 to FE (invalid
+// state = harmless no-op, stack stays balanced).
+// ================================================================
+
+// Site 1: Ball_Render at 0x404340 — 6A 07 50 FF 91 C8
+// 0x404340=6A(push 1), 0x404341=07(FILLMODE), patch 07→FE
+00404341:
+  db FE
+
+// Site 2: Graphics_SetupLights Defaults(17) at 0x45497F — 6A 07 50 FF 91 C8
+// 0x45497F=6A(push ???), 0x454980=07(FILLMODE), patch 07→FE
+00454980:
+  db FE
+
+// Site 3: D3DXSkinMesh_CopyStripData at 0x45E05D — 6A 01 6A 07 50 FF 91 C8
+// 0x45E05D=6A(push 1), 0x45E05E=07(FILLMODE), patch 07→FE
+0045E05E:
+  db FE
+
 [DISABLE]
 00453B50:
-  push ebx
-  mov ebx,ecx
-  mov ecx,[esp+08]
+  db 53 8B D9 8B 4C 24 08
+
+00404341:
+  db 07
+
+00454980:
+  db 07
+
+0045E05E:
+  db 07
 
 dealloc(WireframeCave)
 dealloc(g_WireframeEnabled)
