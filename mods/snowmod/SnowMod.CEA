@@ -1,0 +1,153 @@
+// ============================================================
+// SnowMod — "Snow Storm" visibility mod for Hamsterball
+// ============================================================
+// Makes all races look like a blinding snow storm:
+//   1. Heavy fog = reduced visibility (adjustable)
+//   2. White background color (snow)
+//
+// FOG SYSTEM (traced from Ghidra disassembly):
+//
+//   Frame pipeline order:
+//     1. App_ResetFrame (0x46C200) — clears background
+//     2. Graphics_RenderScene (0x454BC0) — renders 3D + sets fog
+//
+//   App_ResetFrame (0x46C200):
+//     0x46C20E: MOV ECX,[ESI+0x174]  ← ECX = gfx pointer
+//     0x46C214: MOV EAX,[ECX+0x738]  ← read bg/fog color (6 bytes)
+//     0x46C21A: PUSH EAX
+//     0x46C21B: CALL ClearViewport   ← paints background with that color
+//
+//   Graphics_SetupLights (0x454630):
+//     0x4546C6: PUSH 0x8 (D3DRS_FOGENABLE)
+//     0x4546C9: CALL SetRenderState → enables fog (mode=3=linear)
+//
+//   Graphics_RenderScene (0x454BC0) — per-frame fog config:
+//     0x454CD3: MOV EDX,[EBP+0x740]  ← fog END (gfx+0x740) (6 bytes)
+//     0x454CD9: MOV EAX,[EBP+0x73C]  ← fog START (gfx+0x73C)
+//     0x454CE9: CALL 0x004539A0      ← applies FOGSTART/FOGEND/FOGMODE
+//     0x454CEE: MOV ESI,[EBP+0x738]  ← fog COLOR (gfx+0x738) (6 bytes)
+//     0x454D00: CALL SetRenderState(0x22, ESI) ← FOGCOLOR
+//
+//   FUN_004539A0 (fog params applier):
+//     Sets RANGEFOGENABLE(0x30)=0, FOGVERTEXMODE(0x23),
+//     FOGTABLEMODE(0x8C), FOGSTART(0x24), FOGEND(0x25)
+//
+// HOOK STRATEGY (two hooks):
+//
+//   HOOK 1: 0x46C214 in App_ResetFrame (6-byte MOV EAX,[ECX+0x738])
+//     Write white to gfx+0x738 BEFORE the background clear.
+//     This sets BOTH the background clear color AND the fog color
+//     (fog color is re-read from gfx+0x738 at 0x454CEE).
+//     ECX = gfx pointer (must preserve for ClearViewport).
+//
+//   HOOK 2: 0x454CD3 in Graphics_RenderScene (6-byte MOV EDX,[EBP+0x740])
+//     Override gfx+0x73C (fog start) and gfx+0x740 (fog end) with
+//     our snowstorm values BEFORE the CALL to FUN_004539A0.
+//     EBP = gfx pointer (must preserve).
+//
+// ADJUSTABLE PARAMETERS (CE address list):
+//   snow_fog_start  — distance where fog BEGINS (default 50.0)
+//   snow_fog_end    — distance where fog is TOTAL (default 300.0)
+//   snow_fog_color  — fog+background color (default FFFFFFFF = white)
+//
+//   Lower snow_fog_end = less visibility (denser storm)
+//   Higher snow_fog_end = more visibility (lighter snow)
+//   Set snow_fog_start to 0 for fog right at the camera
+// ============================================================
+
+[ENABLE]
+
+alloc(snow_bg_cave, 64)
+alloc(snow_fog_cave, 128)
+alloc(snow_fog_start, 4)
+alloc(snow_fog_end, 4)
+alloc(snow_fog_color, 4)
+
+registersymbol(snow_fog_start)
+registersymbol(snow_fog_end)
+registersymbol(snow_fog_color)
+
+// Default values — adjust these in CE address list!
+// Fog start: 50.0 world units from camera (very close)
+snow_fog_start:
+  dd 42480000   // float 50.0
+
+// Fog end: 300.0 world units (tight visibility — reduce for blizzard)
+snow_fog_end:
+  dd 43960000   // float 300.0
+
+// Fog + background color: WHITE (0xAARRGGBB, AA=FF opaque)
+snow_fog_color:
+  dd FFFFFFFF
+
+// ============================================================
+// HOOK 1: Background + fog color override (App_ResetFrame)
+// ============================================================
+// Hook point: 0x46C214 (6 bytes: 8B 81 38 07 00 00)
+//   Original: MOV EAX, [ECX+0x738]
+//   ECX = gfx pointer (MUST preserve — ClearViewport uses it as `this`)
+//   EAX = output (game pushes EAX as Clear color at 0x46C21A)
+
+snow_bg_cave:
+  // Write our color to gfx+0x738 (background + fog color)
+  mov edx, [snow_fog_color]
+  mov [ecx+0x738], edx
+
+  // Execute original instruction: MOV EAX,[ECX+0x738]
+  // (now reads our overridden color)
+  mov eax, [ecx+0x738]
+
+  // Jump back to 0x46C21A (PUSH EAX → CALL ClearViewport)
+  jmp 0046C21A
+
+// --- Hook 1 installation ---
+0046C214:
+  jmp snow_bg_cave
+  nop
+
+// ============================================================
+// HOOK 2: Fog start/end override (Graphics_RenderScene)
+// ============================================================
+// Hook point: 0x454CD3 (6 bytes: 8B 95 40 07 00 00)
+//   Original: MOV EDX, [EBP+0x740]
+//   EBP = gfx pointer (must preserve)
+
+snow_fog_cave:
+  // Write our fog START to gfx+0x73C
+  mov edx, [snow_fog_start]
+  mov [ebp+0x73C], edx
+
+  // Write our fog END to gfx+0x740
+  mov edx, [snow_fog_end]
+  mov [ebp+0x740], edx
+
+  // Execute original instruction: MOV EDX,[EBP+0x740]
+  // (now reads our overridden fog end)
+  mov edx, [ebp+0x740]
+
+  // Jump back to 0x454CD9
+  jmp 00454CD9
+
+// --- Hook 2 installation ---
+00454CD3:
+  jmp snow_fog_cave
+  nop
+
+[DISABLE]
+
+// Restore Hook 1: 8B 81 38 07 00 00 = MOV EAX,[ECX+0x738]
+0046C214:
+  db 8B 81 38 07 00 00
+
+// Restore Hook 2: 8B 95 40 07 00 00 = MOV EDX,[EBP+0x740]
+00454CD3:
+  db 8B 95 40 07 00 00
+
+dealloc(snow_bg_cave)
+dealloc(snow_fog_cave)
+dealloc(snow_fog_start)
+dealloc(snow_fog_end)
+dealloc(snow_fog_color)
+unregistersymbol(snow_fog_start)
+unregistersymbol(snow_fog_end)
+unregistersymbol(snow_fog_color)
