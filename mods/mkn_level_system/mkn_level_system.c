@@ -305,12 +305,12 @@ static void __fastcall Summon_NeonOutline(DWORD board) {
 /* Summon_NeonLight — creates the D3D8 neon light SceneObject.
  * Replicates light creation from Scene_SetupLevelDark (0x416270).
  *
- * Designed for vtable[32] (Board_Setup) slot. Calls the ORIGINAL
- * Board_Setup first, then creates the light. This avoids the ADD
- * trampoline which crashes on real Windows.
+ * Designed for vtable[33] (level-specific function) slot.
+ * vtable[33] runs AFTER Board_Setup, so the board and ball are
+ * fully initialized. No need to call original Board_Setup.
  *
  * Usage:
- *   VTABLE 1 32 Summon_NeonLight   (replaces Board_Setup on Level 1)
+ *   VTABLE 1 33 Summon_NeonLight   (replaces level-specific on Level 1)
  *
  * NOT safe for extended slots (36-127) — D3D8 object creation
  * requires native vtable slot execution during level setup.
@@ -322,12 +322,6 @@ static void __fastcall Summon_NeonLight(DWORD board) {
 
     int* param_1 = (int*)board;
 
-    /* Call original Board_Setup (WarmUp's Board_Setup at 0x0041C5B0) */
-    typedef void (__fastcall *BoardSetup_t)(DWORD board);
-    BoardSetup_t orig_boardsetup = (BoardSetup_t)0x0041C5B0;
-    orig_boardsetup(board);
-
-    /* Now create the neon light */
     DWORD app = (DWORD)param_1[0x21e];
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x700)) return;
