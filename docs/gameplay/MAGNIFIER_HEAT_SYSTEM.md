@@ -117,7 +117,7 @@ at full. This creates the white→red gradient seen when the ball is being burne
 
 ### Important Misconception Corrected
 
-`Graphics_SetColorMultiplier` (originally named `Graphics_SetViewportClip` in Ghidra)
+`Graphics_SetColorMultiplier` (formerly named `Graphics_SetViewportClip` in Ghidra)
 does **NOT** set viewport clipping bounds. It sets a 4-component color multiplier
 matrix. The 4 parameters are RGBA color multipliers (0.0–1.0), not XYZ geometry
 scale + viewport dimensions. The ball never shrinks during heating — only its color
