@@ -174,7 +174,12 @@ Summon Functions (v6):
 ##VTABLE 1 13 Odd_DispatchColl
 #VTABLE 1 30 Odd_DispatchColl
 #VTABLE 1 34 Odd_DispatchColl
-VTABLE 1 36 Summon_NeonEffect
+
+# NOTE: Summon_NeonEffect (material-only) and Summon_Bumpers are safe from slot 36.
+# Summon_NeonEffect with D3D8 light is BROKEN — causes race condition with render loop.
+# Summon_Bumpers is BROKEN — same race condition (modifies object list during Draw).
+# VTABLE 1 36 Summon_NeonEffect    ; material glow only (safe)
+# VTABLE 1 36 Summon_Bumpers       ; BROKEN — crashes during Draw
 
 # ════════════════════════════════════════════════════════════════════════════
 
