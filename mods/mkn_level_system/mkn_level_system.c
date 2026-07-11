@@ -543,21 +543,20 @@ static void install_frameupdate_hook(void) {
     diag_log("[mkn_level_system] FrameUpdate epilogue hook installed at 0x0046C1F1");
 }
 
-/* Summon_NeonEffect — neon glow effect on the ball.
- * Extracted from Scene_SetupLevelDark (0x00416270).
+/* Summon_NeonEffect — full neon effect: D3D8 light + glow materials.
+ * Extracted from Scene_SetupLevelDark (0x416270).
  *
- * Applies the neon material matrices to the ball (ambient/diffuse/specular)
- * using Matrix_Scale4x4(1,1,0,1) values. This gives the ball the yellow
- * glow effect seen in the Neon Race.
+ * Creates a SceneObject (D3D8 light) at the ball's position with yellow
+ * color, plus applies neon material matrices to the ball.
  *
- * v6.7: SceneObject (D3D8 light) creation removed. It caused crashes at
- * 0x452BDA (CALL [EAX] on invalid vtable) when created from the FrameUpdate
- * hook. The material glow alone provides the visible neon effect.
- * For the full D3D8 light, assign this to native vtable slot 19 (InitScene)
- * which runs during level setup where the scene state is correct.
+ * Runs from extended vtable slot 36 (dispatch thread, ~60fps).
+ * Idempotent: creates the light only once per board (sentinel at board+0x642C).
+ * After the first frame, subsequent calls are a no-op (just return).
  *
- * Idempotent: skips if board+0x642C == "NEON" sentinel.
- * Safe for extended vtable slots (36-127). */
+ * v6.10: Merged Summon_NeonLight into Summon_NeonEffect.
+ * Previous native slot approaches (vtable[32], vtable[33]) crashed on
+ * real Windows during menu navigation. Slot 36 only runs when the
+ * dispatch thread finds a matching level board — never during menus. */
 static void __fastcall Summon_NeonEffect(DWORD board) {
     if (!board || board < 0x10000) return;
     if (IsBadReadPtr((void*)board, 0x6500)) return;
@@ -577,11 +576,50 @@ static void __fastcall Summon_NeonEffect(DWORD board) {
     float ball_z = *(float*)(ball + 0x16C);
     if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;
 
+    /* Idempotent: skip if already done */
     if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;
 
-    /* Apply material matrices — same as Summon_NeonOutline.
-     * Matrix_Scale4x4(1,1,0,1) values written to all 16 elements
-     * per material slot. See Summon_NeonOutline for details. */
+    /* Also skip if light already created */
+    if (param_1[0x10db] != 0) {
+        *(DWORD*)(board + 0x642C) = 0x4E454F4E;
+        return;
+    }
+
+    DWORD gfx_ctx = *(DWORD*)(app + 0x174);
+    if (!gfx_ctx || gfx_ctx < 0x10000) return;
+
+    /* Create SceneObject for the light — same as Scene_SetupLevelDark */
+    void* mem = game_operator_new(0xD4);
+    if (!mem) return;
+
+    DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
+    if (!obj) return;
+
+    /* Store in board+0x436C (same offset as original) */
+    param_1[0x10db] = (int)obj;
+    obj[0x34] = 1;  /* obj+0xD0 = type flag (1 = light) */
+
+    /* Set position offset */
+    float pos_offset[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
+    memcpy((void*)((DWORD)obj + 0x94), pos_offset, 16);
+
+    /* Set position via vtable[1] (SetPosition) — at ball pos + 0.5 Y */
+    typedef void (__thiscall *SetTransform_t)(DWORD obj, float x, float y, float z);
+    SetTransform_t set_transform = (SetTransform_t)(*(DWORD*)(*obj + 4));
+    set_transform((DWORD)obj, ball_x, ball_y + 0.5f, ball_z);
+
+    /* Set range: obj+0xCC = 400.0f */
+    obj[0x33] = 0x43C80000;
+
+    /* Call vtable[3] (Init) — binds light to D3D8 device */
+    typedef void (__thiscall *Init_t)(DWORD obj);
+    Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
+    init_fn((DWORD)obj);
+
+    /* Register with scene */
+    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
+
+    /* Apply material matrices — all 16 elements per material */
     if (!IsBadReadPtr((void*)(ball + 0x1F8), 4)) {
         *(float*)(ball + 0x1D0) = 0.0f;
         *(float*)(ball + 0x1D4) = 0.0f;
@@ -598,9 +636,10 @@ static void __fastcall Summon_NeonEffect(DWORD board) {
         *(BYTE*)(ball + 0x204) = (*(float*)(ball + 0x1C8) != 3.0f) ? 1 : 0;
     }
 
+    /* Set sentinel */
     *(DWORD*)(board + 0x642C) = 0x4E454F4E;
 
-    diag_log("[summon] Summon_NeonEffect: applied neon glow materials to ball");
+    diag_log("[summon] Summon_NeonEffect: created D3D8 neon light + glow materials");
 }
 
 /* Summon_BoardSetup — calls the full Board_Setup function (vtable[32]).
