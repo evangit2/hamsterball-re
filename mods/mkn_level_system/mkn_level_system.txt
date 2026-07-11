@@ -174,7 +174,7 @@ Summon Functions (v6):
 ##VTABLE 1 13 Odd_DispatchColl
 #VTABLE 1 30 Odd_DispatchColl
 #VTABLE 1 34 Odd_DispatchColl
-ADD 1 Summon_NeonLight
+VTABLE 1 32 Summon_NeonLight
 VTABLE 1 36 Summon_NeonEffect
 
 # ════════════════════════════════════════════════════════════════════════════

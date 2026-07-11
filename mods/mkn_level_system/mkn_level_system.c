@@ -303,15 +303,17 @@ static void __fastcall Summon_NeonOutline(DWORD board) {
 }
 
 /* Summon_NeonLight — creates the D3D8 neon light SceneObject.
- * Replicates the light creation from Scene_SetupLevelDark (0x416270).
+ * Replicates light creation from Scene_SetupLevelDark (0x416270).
  *
- * MUST be called from a NATIVE vtable slot (0-35) during level setup,
- * NOT from extended slots (36-127). D3D8 object creation is only safe
- * during level setup on the main thread.
+ * Designed for vtable[32] (Board_Setup) slot. Calls the ORIGINAL
+ * Board_Setup first, then creates the light. This avoids the ADD
+ * trampoline which crashes on real Windows.
  *
  * Usage:
- *   ADD 1 Summon_NeonLight       (adds after level 1's normal setup)
- *   VTABLE 1 19 Summon_NeonLight  (replaces InitScene — not recommended)
+ *   VTABLE 1 32 Summon_NeonLight   (replaces Board_Setup on Level 1)
+ *
+ * NOT safe for extended slots (36-127) — D3D8 object creation
+ * requires native vtable slot execution during level setup.
  *
  * Idempotent: skips if board+0x436C already has a light object. */
 static void __fastcall Summon_NeonLight(DWORD board) {
@@ -320,6 +322,12 @@ static void __fastcall Summon_NeonLight(DWORD board) {
 
     int* param_1 = (int*)board;
 
+    /* Call original Board_Setup (WarmUp's Board_Setup at 0x0041C5B0) */
+    typedef void (__fastcall *BoardSetup_t)(DWORD board);
+    BoardSetup_t orig_boardsetup = (BoardSetup_t)0x0041C5B0;
+    orig_boardsetup(board);
+
+    /* Now create the neon light */
     DWORD app = (DWORD)param_1[0x21e];
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x700)) return;
@@ -330,7 +338,7 @@ static void __fastcall Summon_NeonLight(DWORD board) {
     /* Check if light already created (idempotent) */
     if (param_1[0x10db] != 0) return;
 
-    /* Get ball position (ball is created by Board_Setup which runs before us) */
+    /* Get ball position (ball is created by original Board_Setup above) */
     DWORD ball = *(DWORD*)(app + 0x5DC);
     if (!ball || ball < 0x10000) return;
     if (IsBadReadPtr((void*)ball, 0x600)) return;
@@ -350,9 +358,7 @@ static void __fastcall Summon_NeonLight(DWORD board) {
     param_1[0x10db] = (int)obj;
     obj[0x34] = 1;  /* obj+0xD0 = type flag (1 = light) */
 
-    /* Set position offset: Vec3_Init(&local, 10.0, 10.0) then copy to obj+0x94
-     * This is the light's offset from the ball — gives it a yellow tint.
-     * The original pushes 0x41200000 (10.0f) twice to Vec3_Init. */
+    /* Set position offset: Vec3_Init(&local, 10.0, 10.0) then copy to obj+0x94 */
     float pos_offset[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
     memcpy((void*)((DWORD)obj + 0x94), pos_offset, 16);
 
