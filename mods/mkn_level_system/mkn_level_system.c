@@ -1408,6 +1408,13 @@ static DWORD WINAPI dispatch_thread(LPVOID param) {
         DWORD board_vt = *(DWORD*)board;
         if (board_vt < 0x10000) { Sleep(16); continue; }
 
+        /* SAFETY CHECK: verify this is actually a level board, not a menu object.
+         * board+0x878 should contain the App pointer (g_App at 0x5341E0).
+         * If it doesn't match, this is not a real board — skip it. */
+        if (IsBadReadPtr((void*)(board + 0x878), 4)) { Sleep(16); continue; }
+        DWORD board_app = *(DWORD*)(board + 0x878);
+        if (board_app != app) { Sleep(16); continue; }
+
         /* Log when board changes (for debugging) */
         if (board != last_board) {
             diag_logf("[dispatch] Board changed: 0x%08X, vtable=0x%08X", board, board_vt);
