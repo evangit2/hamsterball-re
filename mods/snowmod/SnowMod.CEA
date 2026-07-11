@@ -1,153 +1,212 @@
 // ============================================================
-// SnowMod — "Snow Storm" visibility mod for Hamsterball
+// SnowMod v2 — "Snow Storm" visibility mod for Hamsterball
 // ============================================================
 // Makes all races look like a blinding snow storm:
 //   1. Heavy fog = reduced visibility (adjustable)
-//   2. White background color (snow)
+//   2. White-grayish background color (snow clouds)
+//   3. White-grayish ambient lighting (overcast sky)
 //
 // FOG SYSTEM (traced from Ghidra disassembly):
 //
-//   Frame pipeline order:
-//     1. App_ResetFrame (0x46C200) — clears background
-//     2. Graphics_RenderScene (0x454BC0) — renders 3D + sets fog
-//
-//   App_ResetFrame (0x46C200):
-//     0x46C20E: MOV ECX,[ESI+0x174]  ← ECX = gfx pointer
-//     0x46C214: MOV EAX,[ECX+0x738]  ← read bg/fog color (6 bytes)
-//     0x46C21A: PUSH EAX
-//     0x46C21B: CALL ClearViewport   ← paints background with that color
-//
 //   Graphics_SetupLights (0x454630):
-//     0x4546C6: PUSH 0x8 (D3DRS_FOGENABLE)
-//     0x4546C9: CALL SetRenderState → enables fog (mode=3=linear)
+//     0x4546C6: PUSH 0x8, CALL SetRenderState → FOGENABLE=3
 //
-//   Graphics_RenderScene (0x454BC0) — per-frame fog config:
-//     0x454CD3: MOV EDX,[EBP+0x740]  ← fog END (gfx+0x740) (6 bytes)
-//     0x454CD9: MOV EAX,[EBP+0x73C]  ← fog START (gfx+0x73C)
-//     0x454CE9: CALL 0x004539A0      ← applies FOGSTART/FOGEND/FOGMODE
-//     0x454CEE: MOV ESI,[EBP+0x738]  ← fog COLOR (gfx+0x738) (6 bytes)
+//   Graphics_RenderScene (0x454BC0) — per-frame:
+//     0x454CD3: MOV EDX,[EBP+0x740]  ← fog END
+//     0x454CD9: MOV EAX,[EBP+0x73C]  ← fog START
+//     0x454CE9: CALL 0x004539A0      ← applies fog params (CONDITIONAL!)
+//     0x454CEE: MOV ESI,[EBP+0x738]  ← fog COLOR
 //     0x454D00: CALL SetRenderState(0x22, ESI) ← FOGCOLOR
+//     0x454D06: MOV ECX,[EBP+0x5C]
+//     0x454D09: MOV [EBP+0x738],ESI  ← store color back (6 bytes)
+//     0x454D0F: MOV EDX,[ECX]
+//     0x454D11: CALL [EDX+0x88]
+//     ...then render calls...
 //
-//   FUN_004539A0 (fog params applier):
-//     Sets RANGEFOGENABLE(0x30)=0, FOGVERTEXMODE(0x23),
-//     FOGTABLEMODE(0x8C), FOGSTART(0x24), FOGEND(0x25)
+//   FUN_004539A0 (fog params applier) — THREE conditional paths:
+//     Path A (gfx+0xA4 & 0x100, & 0x300000, +0x7D7==0):
+//       FOGVERTEXMODE=3(LINEAR), FOGTABLEMODE=0(NONE), sets START/END
+//     Path B (gfx+0xA4 sign bit set):
+//       FOGVERTEXMODE=0(NONE), FOGTABLEMODE=3(LINEAR), sets START/END
+//     Path C (neither): NOTHING SET — fog enabled but no mode = INVISIBLE!
+//
+//   PROBLEM: On most hardware, Path C is hit. Fog is "enabled" but
+//   FOGVERTEXMODE=0 and FOGTABLEMODE=0, so D3D8 applies no fog at all.
+//
+//   FIX: Hook AFTER all game fog calls (at 0x454D09) and directly
+//   call SetRenderState to force FOGVERTEXMODE=LINEAR, FOGSTART,
+//   FOGEND, FOGCOLOR, and AMBIENT — bypassing all conditionals.
+//
+// AMBIENT LIGHTING:
+//   gfx+0x730 = ambient color (set by game at 0x454CAC via state 0x8B)
+//   We override it in our hook cave to white-grayish.
 //
 // HOOK STRATEGY (two hooks):
 //
 //   HOOK 1: 0x46C214 in App_ResetFrame (6-byte MOV EAX,[ECX+0x738])
-//     Write white to gfx+0x738 BEFORE the background clear.
-//     This sets BOTH the background clear color AND the fog color
-//     (fog color is re-read from gfx+0x738 at 0x454CEE).
-//     ECX = gfx pointer (must preserve for ClearViewport).
+//     Write snow color to gfx+0x738 BEFORE background clear.
+//     Sets both background clear color AND fog color.
 //
-//   HOOK 2: 0x454CD3 in Graphics_RenderScene (6-byte MOV EDX,[EBP+0x740])
-//     Override gfx+0x73C (fog start) and gfx+0x740 (fog end) with
-//     our snowstorm values BEFORE the CALL to FUN_004539A0.
+//   HOOK 2: 0x454D09 in Graphics_RenderScene (6-byte MOV [EBP+0x738],ESI)
+//     After all game fog/ambient calls. Directly call SetRenderState to
+//     force fog params + ambient color, bypassing FUN_004539A0 conditionals.
 //     EBP = gfx pointer (must preserve).
 //
 // ADJUSTABLE PARAMETERS (CE address list):
-//   snow_fog_start  — distance where fog BEGINS (default 50.0)
-//   snow_fog_end    — distance where fog is TOTAL (default 300.0)
-//   snow_fog_color  — fog+background color (default FFFFFFFF = white)
-//
-//   Lower snow_fog_end = less visibility (denser storm)
-//   Higher snow_fog_end = more visibility (lighter snow)
-//   Set snow_fog_start to 0 for fog right at the camera
+//   snow_fog_start    — fog begins at this distance (default 10.0)
+//   snow_fog_end      — fog total at this distance (default 200.0)
+//   snow_fog_color    — fog + background color (default FFE0E0E0 = white-gray)
+//   snow_ambient_color — ambient light color (default FFE0E0E0 = white-gray)
 // ============================================================
 
 [ENABLE]
 
 alloc(snow_bg_cave, 64)
-alloc(snow_fog_cave, 128)
+alloc(snow_fog_cave, 512)
 alloc(snow_fog_start, 4)
 alloc(snow_fog_end, 4)
 alloc(snow_fog_color, 4)
+alloc(snow_ambient_color, 4)
 
 registersymbol(snow_fog_start)
 registersymbol(snow_fog_end)
 registersymbol(snow_fog_color)
+registersymbol(snow_ambient_color)
 
-// Default values — adjust these in CE address list!
-// Fog start: 50.0 world units from camera (very close)
+// Default values — adjust in CE address list!
+// Fog start: 10.0 world units (fog begins very close to camera)
 snow_fog_start:
-  dd 42480000   // float 50.0
+  dd 41200000   // float 10.0
 
-// Fog end: 300.0 world units (tight visibility — reduce for blizzard)
+// Fog end: 200.0 world units (tight visibility — reduce for blizzard)
 snow_fog_end:
-  dd 43960000   // float 300.0
+  dd 43480000   // float 200.0
 
-// Fog + background color: WHITE (0xAARRGGBB, AA=FF opaque)
+// Fog + background color: white-grayish (0xAARRGGBB)
 snow_fog_color:
-  dd FFFFFFFF
+  dd FFE0E0E0   // RGB 224,224,224 = light gray (snow clouds)
+
+// Ambient light color: white-grayish
+snow_ambient_color:
+  dd FFE0E0E0   // RGB 224,224,224 = light gray (overcast)
 
 // ============================================================
-// HOOK 1: Background + fog color override (App_ResetFrame)
+// HOOK 1: Background color override (App_ResetFrame)
 // ============================================================
-// Hook point: 0x46C214 (6 bytes: 8B 81 38 07 00 00)
-//   Original: MOV EAX, [ECX+0x738]
-//   ECX = gfx pointer (MUST preserve — ClearViewport uses it as `this`)
-//   EAX = output (game pushes EAX as Clear color at 0x46C21A)
+// 0x46C214: 8B 81 38 07 00 00 = MOV EAX,[ECX+0x738] (6 bytes)
+// ECX = gfx pointer (MUST preserve for ClearViewport)
 
 snow_bg_cave:
-  // Write our color to gfx+0x738 (background + fog color)
+  // Write our color to gfx+0x738
   mov edx, [snow_fog_color]
   mov [ecx+0x738], edx
 
-  // Execute original instruction: MOV EAX,[ECX+0x738]
-  // (now reads our overridden color)
+  // Execute original instruction (reads our color back)
   mov eax, [ecx+0x738]
 
   // Jump back to 0x46C21A (PUSH EAX → CALL ClearViewport)
   jmp 0046C21A
 
-// --- Hook 1 installation ---
 0046C214:
   jmp snow_bg_cave
   nop
 
 // ============================================================
-// HOOK 2: Fog start/end override (Graphics_RenderScene)
+// HOOK 2: Force fog params + ambient (Graphics_RenderScene)
 // ============================================================
-// Hook point: 0x454CD3 (6 bytes: 8B 95 40 07 00 00)
-//   Original: MOV EDX, [EBP+0x740]
-//   EBP = gfx pointer (must preserve)
+// 0x454D09: 89 B5 38 07 00 00 = MOV [EBP+0x738],ESI (6 bytes)
+// EBP = gfx pointer (must preserve)
+// At this point, game already called FUN_004539A0 (which may have
+// skipped setting fog modes) and SetRenderState(FOGCOLOR).
+// We now force all fog states ourselves.
 
 snow_fog_cave:
-  // Write our fog START to gfx+0x73C
-  mov edx, [snow_fog_start]
-  mov [ebp+0x73C], edx
+  // --- Execute original instruction ---
+  mov [ebp+0x738], esi
 
-  // Write our fog END to gfx+0x740
-  mov edx, [snow_fog_end]
-  mov [ebp+0x740], edx
+  // --- Override fog color in gfx struct ---
+  mov edx, [snow_fog_color]
+  mov [ebp+0x738], edx
 
-  // Execute original instruction: MOV EDX,[EBP+0x740]
-  // (now reads our overridden fog end)
-  mov edx, [ebp+0x740]
+  // --- Override ambient color in gfx struct ---
+  mov edx, [snow_ambient_color]
+  mov [ebp+0x730], edx
 
-  // Jump back to 0x454CD9
-  jmp 00454CD9
+  // --- Get D3D device ---
+  // gfx+0x154 = D3D device pointer
+  // vtable = [device], SetRenderState = [vtable+0xC8]
+  // stdcall: push value, push state, push device, call [vtable+0xC8]
+  // After each call: stack is clean (callee-clean), but EAX/ECX/EDX trashed
 
-// --- Hook 2 installation ---
-00454CD3:
+  // --- Force FOGVERTEXMODE = D3DFOG_LINEAR (3) ---
+  // This is the key fix — game may have left it at 0 (NONE)
+  mov eax, [ebp+0x154]
+  mov ecx, [eax]
+  push 3
+  push 0x23
+  push eax
+  call dword ptr [ecx+0xC8]
+
+  // --- Force FOGSTART = our value ---
+  mov eax, [ebp+0x154]
+  mov ecx, [eax]
+  push [snow_fog_start]
+  push 0x24
+  push eax
+  call dword ptr [ecx+0xC8]
+
+  // --- Force FOGEND = our value ---
+  mov eax, [ebp+0x154]
+  mov ecx, [eax]
+  push [snow_fog_end]
+  push 0x25
+  push eax
+  call dword ptr [ecx+0xC8]
+
+  // --- Force FOGCOLOR = our color ---
+  mov eax, [ebp+0x154]
+  mov ecx, [eax]
+  push [snow_fog_color]
+  push 0x22
+  push eax
+  call dword ptr [ecx+0xC8]
+
+  // --- Force AMBIENT = our color ---
+  mov eax, [ebp+0x154]
+  mov ecx, [eax]
+  push [snow_ambient_color]
+  push 0x8B
+  push eax
+  call dword ptr [ecx+0xC8]
+
+  // --- Jump back to 0x454D0F ---
+  // Original next instruction: MOV EDX,[ECX] (where ECX=[EBP+0x5C])
+  // We need to restore ECX from EBP+0x5C like the original code
+  mov ecx, [ebp+0x5C]
+  mov edx, [ecx]
+  jmp 00454D11
+
+00454D09:
   jmp snow_fog_cave
   nop
 
 [DISABLE]
 
-// Restore Hook 1: 8B 81 38 07 00 00 = MOV EAX,[ECX+0x738]
+// Restore Hook 1: 8B 81 38 07 00 00
 0046C214:
   db 8B 81 38 07 00 00
 
-// Restore Hook 2: 8B 95 40 07 00 00 = MOV EDX,[EBP+0x740]
-00454CD3:
-  db 8B 95 40 07 00 00
+// Restore Hook 2: 89 B5 38 07 00 00
+00454D09:
+  db 89 B5 38 07 00 00
 
 dealloc(snow_bg_cave)
 dealloc(snow_fog_cave)
 dealloc(snow_fog_start)
 dealloc(snow_fog_end)
 dealloc(snow_fog_color)
+dealloc(snow_ambient_color)
 unregistersymbol(snow_fog_start)
 unregistersymbol(snow_fog_end)
 unregistersymbol(snow_fog_color)
+unregistersymbol(snow_ambient_color)
