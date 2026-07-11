@@ -176,6 +176,15 @@ extern "C" char* __cdecl strcat(char* dst, const char* src) {
 extern "C" char* __cdecl strtok(char* str, const char* delim) {
     return nc_strtok(str, delim);
 }
+extern "C" int __cdecl memcmp(const void* a, const void* b, size_t count) {
+    const unsigned char* pa = (const unsigned char*)a;
+    const unsigned char* pb = (const unsigned char*)b;
+    while (count--) {
+        if (*pa != *pb) return (int)*pa - (int)*pb;
+        pa++; pb++;
+    }
+    return 0;
+}
 extern "C" char* __cdecl strchr(const char* s, int c) {
     while (*s) {
         if (*s == (char)c) return (char*)s;

@@ -1,12 +1,10 @@
 #!/bin/bash
-# build.sh — Cross-compile LocalMods mod with MinGW
+# build_half_size.sh — Cross-compile HalfSize HB+ mod with MinGW
 set -e
-
 cd "$(dirname "$0")"
 
-i686-w64-mingw32-g++ -shared -o local_mods.dll LocalMods.cpp nocrt.cpp \
-  -I. -I../../../../docs/agent-knowledge \
-  -O2 -msse2 -mfpmath=sse -mwindows \
+i686-w64-mingw32-g++ -shared -o HalfSize.dll HalfSize.cpp nocrt.cpp \
+  -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \
   -nostdlib -nostartfiles \
@@ -22,6 +20,6 @@ i686-w64-mingw32-g++ -shared -o local_mods.dll LocalMods.cpp nocrt.cpp \
   -Wl,--exclude-symbols,_strcpy -Wl,--exclude-symbols,_strcat \
   -Wl,--exclude-symbols,_strtok -Wl,--exclude-symbols,_realloc \
   -Wl,--exclude-symbols,_strchr -Wl,--exclude-symbols,_strstr \
-  -Wl,--exclude-symbols,_strrchr -Wl,--exclude-symbols,_stricmp -Wl,--exclude-symbols,_memcmp
+  -Wl,--exclude-symbols,_strrchr -Wl,--exclude-symbols,_memcmp
 
-echo "Build complete: local_mods.dll"
+echo "Build complete: HalfSize.dll"
