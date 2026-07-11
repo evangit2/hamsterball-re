@@ -317,6 +317,98 @@ static void parseConfigFile() {
 }
 
 // ============================================================================
+// Manual vtable dispatch helpers (MSVC indices)
+// ============================================================================
+// MinGW's C++ virtual dispatch uses shifted vtable indices (+1 from MSVC).
+// Sub-mods use manual MSVC-layout vtables, so we MUST index them manually.
+
+// MSVC vtable slot indices for HamsterballAPI:
+#define VT_INIT          5
+#define VT_ONBALLUPDATE  6
+#define VT_ONRENDERAPPLY 7
+#define VT_ONBUTTONTOG   8
+#define VT_ONSLIDERCHG   9
+#define VT_ONCYCLEOPT   10
+#define VT_ONGAMEUPDATE 11
+#define VT_ONEVENTCOLL  12
+#define VT_ONTEXTRENDER 13
+#define VT_ONBALLBUMP   14
+#define VT_ONSCENEEND   15
+#define VT_ONLEVELSTART 16
+
+static inline void call_init(void* obj, IModAPI* api) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, IModAPI*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_INIT])(obj, api);
+}
+
+static inline void call_onLevelStart(void* obj) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONLEVELSTART])(obj);
+}
+
+static inline void call_onSceneEnd(void* obj) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONSCENEEND])(obj);
+}
+
+static inline void call_onBallUpdate(void* obj, Ball* ball) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, Ball*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONBALLUPDATE])(obj, ball);
+}
+
+static inline void call_onGameUpdate(void* obj) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONGAMEUPDATE])(obj);
+}
+
+static inline void call_onTextRenderLoop(void* obj) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONTEXTRENDER])(obj);
+}
+
+static inline void call_onButtonToggle(void* obj, const char* id, bool state) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, const char*, bool);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONBUTTONTOG])(obj, id, state);
+}
+
+static inline void call_onSliderChange(void* obj, const char* id, float val) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, const char*, float);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONSLIDERCHG])(obj, id, val);
+}
+
+static inline void call_onEventPlaneCollide(void* obj, Ball* ball, char* id) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, Ball*, char*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONEVENTCOLL])(obj, ball, id);
+}
+
+static inline void call_onBallBump(void* obj, Ball* b1, Ball* b2) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, Ball*, Ball*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONBALLBUMP])(obj, b1, b2);
+}
+
+static inline void call_onRenderApply(void* obj, void* this_ptr, float* viewMatrix) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, void*, float*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONRENDERAPPLY])(obj, this_ptr, viewMatrix);
+}
+
+static inline void call_onCycleOptionChange(void* obj, const char* id, const char* opt) {
+    typedef void (__attribute__((thiscall)) *fn_t)(void*, const char*, const char*);
+    void** vt = *(void***)obj;
+    ((fn_t)vt[VT_ONCYCLEOPT])(obj, id, opt);
+}
+
+// ============================================================================
 // DLL Loading / Unloading
 // ============================================================================
 
@@ -359,8 +451,8 @@ static bool loadMod(const char* dllName) {
         return false;
     }
 
-    // Initialize the mod (pass g_api from HB+)
-    instance->Initialize(g_api);
+    // Initialize the mod — MUST use manual vtable dispatch (MinGW +1 offset bug)
+    call_init(instance, g_api);
 
     LoadedMod* lm = &g_loadedMods[g_loadedCount];
     lm->dllHandle = h;
@@ -380,11 +472,12 @@ static void unloadMod(int index) {
     LoadedMod* lm = &g_loadedMods[index];
 
     if (lm->active && lm->instance) {
-        lm->instance->onSceneEnd();
+        call_onSceneEnd(lm->instance);
     }
 
     if (lm->instance) {
-        delete lm->instance;
+        // Don't use C++ delete (vtable mismatch) — just free the memory
+        operator delete(lm->instance);
         lm->instance = NULL;
     }
 
@@ -466,7 +559,7 @@ static void __thiscall level_start_impl(void* thisptr) {
     // Call onLevelStart on all active loaded mods
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onLevelStart();
+            call_onLevelStart(g_loadedMods[i].instance);
         }
     }
 }
@@ -474,7 +567,7 @@ static void __thiscall level_start_impl(void* thisptr) {
 static void __thiscall scene_end_impl(void* thisptr) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onSceneEnd();
+            call_onSceneEnd(g_loadedMods[i].instance);
         }
     }
     unloadAllMods();
@@ -484,7 +577,7 @@ static void __thiscall scene_end_impl(void* thisptr) {
 static void __thiscall ball_update_impl(void* thisptr, Ball* ball) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onBallUpdate(ball);
+            call_onBallUpdate(g_loadedMods[i].instance, ball);
         }
     }
 }
@@ -492,7 +585,7 @@ static void __thiscall ball_update_impl(void* thisptr, Ball* ball) {
 static void __thiscall game_update_impl(void* thisptr) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onGameUpdate();
+            call_onGameUpdate(g_loadedMods[i].instance);
         }
     }
 }
@@ -500,7 +593,7 @@ static void __thiscall game_update_impl(void* thisptr) {
 static void __thiscall text_render_impl(void* thisptr) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onTextRenderLoop();
+            call_onTextRenderLoop(g_loadedMods[i].instance);
         }
     }
 }
@@ -508,7 +601,7 @@ static void __thiscall text_render_impl(void* thisptr) {
 static void __thiscall button_toggle_impl(void* thisptr, const char* buttonId, bool newState) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onButtonToggle(buttonId, newState);
+            call_onButtonToggle(g_loadedMods[i].instance, buttonId, newState);
         }
     }
 }
@@ -516,7 +609,7 @@ static void __thiscall button_toggle_impl(void* thisptr, const char* buttonId, b
 static void __thiscall slider_change_impl(void* thisptr, const char* sliderId, float newValue) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onSliderChange(sliderId, newValue);
+            call_onSliderChange(g_loadedMods[i].instance, sliderId, newValue);
         }
     }
 }
@@ -524,7 +617,7 @@ static void __thiscall slider_change_impl(void* thisptr, const char* sliderId, f
 static void __thiscall event_collide_impl(void* thisptr, Ball* ball, char* eventPlaneID) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onEventPlaneCollide(ball, eventPlaneID);
+            call_onEventPlaneCollide(g_loadedMods[i].instance, ball, eventPlaneID);
         }
     }
 }
@@ -532,7 +625,7 @@ static void __thiscall event_collide_impl(void* thisptr, Ball* ball, char* event
 static void __thiscall ball_bump_impl(void* thisptr, Ball* ball1, Ball* ball2) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onBallBump(ball1, ball2);
+            call_onBallBump(g_loadedMods[i].instance, ball1, ball2);
         }
     }
 }
@@ -540,7 +633,7 @@ static void __thiscall ball_bump_impl(void* thisptr, Ball* ball1, Ball* ball2) {
 static void __thiscall render_apply_impl(void* thisptr, void* this_ptr, float* viewMatrix) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onRenderApply(this_ptr, viewMatrix);
+            call_onRenderApply(g_loadedMods[i].instance, this_ptr, viewMatrix);
         }
     }
 }
@@ -548,7 +641,7 @@ static void __thiscall render_apply_impl(void* thisptr, void* this_ptr, float* v
 static void __thiscall cycle_option_impl(void* thisptr, const char* cycleId, const char* newOption) {
     for (int i = 0; i < g_loadedCount; i++) {
         if (g_loadedMods[i].active && g_loadedMods[i].instance) {
-            g_loadedMods[i].instance->onCycleOptionChange(cycleId, newOption);
+            call_onCycleOptionChange(g_loadedMods[i].instance, cycleId, newOption);
         }
     }
 }
