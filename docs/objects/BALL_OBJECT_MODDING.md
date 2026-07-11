@@ -368,9 +368,9 @@ Extracted directly from `Ball_ctor2` decompilation @ `0x004039E0`:
 | `+0xC28` | char* | `0` | display_name string |
 | `+0xC3C` | byte | `0` | teleport_flag |
 | `+0xC4C` | byte | `0` | is_shrunk (runtime) |
-| `+0xC50` | float | `0` | fall_depth |
+| `+0xC50` | float | `0` | heat_counter (Sky Race magnifying glass, +0.025/frame in beam, 1.1=death) |
 | `+0xC54` | int | `0` | sound_channel |
-| `+0xC58` | byte | `0` | — |
+| `+0xC58` | byte | `0` | burning_flag (set per-frame by Magnifier_Update when zapping the ball) |
 | `+0xC5C` | int | `0` | dizzy_flag (NOTE: the actual dizzy system uses ball+0x2E9 (death_pending) and ball+0x2EC (bounce_count), not this field) |
 | `+0xC60` | float | `1.0f` | scale_factor |
 | `+0xC64` | float | `0` | roll_friction (overwritten every frame by physics loop) |

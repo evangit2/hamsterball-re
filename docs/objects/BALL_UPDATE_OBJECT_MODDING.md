@@ -149,9 +149,9 @@ Offsets below are **byte addresses** (not `int[0xNN]` array indices). All types 
 | 0xC48 | `float` | **teleport_z** | Update | " |
 | 0xC4C | `uint8_t` | field_c4c | ctor2, Update | `0` |
 | 0xC4D | `uint8_t[3]` | pad_c4d | | |
-| 0xC50 | `float` | field_c50 | Update | Decayed each frame (`*= 0.998` approx) |
+| 0xC50 | `float` | heat_counter | Magnifier_Update | Magnifying glass heat (Sky Race). +0.025/frame in beam, 1.1=death. NOT decayed by Ball_Update — only Magnifier_Update writes it. |
 | 0xC54 | `uint32_t` | field_c54 | Update | |
-| 0xC58 | `uint8_t` | field_c58 | Update | `0` |
+| 0xC58 | `uint8_t` | burning_flag | Magnifier_Update | Set to 1 each frame magnifier is zapping (within 60 units 2D). Cleared to 0 at start of Magnifier_Update pass. |
 | 0xC59 | `uint8_t[3]` | pad_c59 | | |
 | 0xC5C | `uint32_t` | field_c5c | Update | Decayed each frame |
 

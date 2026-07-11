@@ -713,8 +713,9 @@ struct Ball {
 	std::uint8_t pad_769[0xC4C - 0x769];
 	bool low_gravity_mode; // +0xC4C This is not exactly what it seems, I would recommend altering gravity_y instead of using this. 
 	std::uint8_t pad_C4D[0xC50 - 0xC4D];
-	float burn_amount; // +0xC50 how burnt the ball is (from the magnifying glass), 1 kills the player normally, but setting manually doesn't seem to do this
-	std::uint8_t pad_C54[0xC60 - 0xC54];
+	float burn_amount; // +0xC50 heat counter (Sky Race magnifying glass). +0.025/frame while in beam. At 1.1 → ball explodes (death triggered by Magnifier_Update, NOT Ball_Update). Also used by Ball_Render to shift ballborder.png color white→red via Graphics_SetColorMultiplier. Setting manually only changes the visual color, not the death trigger.
+	std::uint8_t burning_flag; // +0xC58 set to 1 each frame the magnifier is actively zapping the ball (within 60 units 2D). Cleared at start of each Magnifier_Update pass. When 1, Ball_Render draws ballburner.png overlay.
+	std::uint8_t pad_C59[0xC60 - 0xC59];
 	float home_position_x; // +0xC60 only valid for badball, where the ball stays when not in chase
 	float home_position_y; // +0xC64
 	float home_position_z; // +0xC68

@@ -59,7 +59,7 @@ When `show_stars` (+0x2F8) is set, the ball's render function draws:
 
 When `alpha` (+0x2FC) != 1.0:
 - `SceneObj_SetAlpha(0x4011C0)` sets `gfx+0x7A8=1` (custom alpha flag)
-- `Graphics_SetViewportClip` receives +0x2FC as W-component of 4x4 matrix
+- `Graphics_SetColorMultiplier` (formerly Graphics_SetViewportClip) receives +0x2FC as W-component (alpha) of color multiplier matrix
 - X/Y/Z components are all 1.0 — ball NEVER changes size, only transparency
 - After render: `gfx+0x7A8=0` (reset to opaque)
 

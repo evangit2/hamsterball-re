@@ -152,8 +152,13 @@ typedef struct {
     float teleport_z;            // +0xC48
     uint8_t airborne;            // +0xC4C airborne flag
 
+    // === Heat System (Sky Race magnifying glass) ===
+    float heat_counter;          // +0xC50 magnifier heat (0.025/frame in beam, 1.1=death)
+    uint8_t pad_c54[0xC58-0xC54]; // +0xC54
+    uint8_t burning_flag;        // +0xC58 set per-frame by Magnifier_Update when zapping
+    uint8_t pad_c59[0xC88-0xC59]; // +0xC59
+
     // === Matrix/Transform ===
-    uint8_t pad_c50[0xC88-0xC50]; // +0xC50
     float matrix_4x4[16];        // +0xC88 4x4 world transform matrix
 } Ball;
 

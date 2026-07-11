@@ -168,9 +168,9 @@ Always reference the InitPhysicsDefaults column for actual in-game defaults.
 | 0xC44 | float | teleport_y | 0.0 | Teleport destination Y |
 | 0xC48 | float | teleport_z | 0.0 | Teleport destination Z |
 | 0xC4C | uint8 | is_shrunk | 0 | Odd Race shrunk state (E:SHRINK=1, E:GROW=0) |
-| 0xC50 | int32 | unknown_C50 | 0 | Unknown |
+| **0xC50** | **float** | **heat_counter** | **0.0** | **Magnifying glass heat counter (Sky Race). Incremented by 0.025/frame while in the magnifier beam. At 1.1 → ball explodes. Used by Ball_Render to shift ballborder.png color from white→red via Graphics_SetColorMultiplier. The 3D ball mesh itself is NOT affected.** |
 | 0xC54 | int32 | unknown_C54 | 0 | Unknown (AthenaList data pointer) |
-| 0xC58 | uint8 | unknown_C58 | 0 | Unknown |
+| **0xC58** | **uint8** | **burning_flag** | **0** | **Set to 1 each frame the magnifier is actively zapping the ball (within 60 units 2D distance). Cleared to 0 at the start of each Magnifier_Update pass. When 1, Ball_Render draws ballburner.png overlay sprite.** |
 | 0xC5C | int32 | unknown_C5C | 0 | Unknown (alternate_state flag used by ApplyForce) |
 | 0xC88 | float[16] | world_matrix | identity | 4×4 world transform for rendering |
 

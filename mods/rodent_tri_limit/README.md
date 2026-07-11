@@ -4,7 +4,7 @@ Removes the 65,534 combined vertex limit in Hamsterball MESHWORLD level loading.
 
 ## Problem
 
-Hamsterball concatenates ALL MeshBuffers' submesh vertex data into ONE combined D3D8 vertex buffer (`MeshWorld_BuildVertexBuffer` @ `0x0046f8d0`). If the total exceeds 65,534 vertices, the combined VB creation fails. Worse, the original function **frees the per-submesh CPU vertex data before attempting VB creation** — so when it fails, the data is lost and the level can't render at all (shows "Optimize requested, but failed!" or crashes).
+Hamsterball concatenates ALL MeshBuffers' submesh vertex data into ONE combined D3D8 vertex buffer (`MeshWorld_BuildVertexBuffer` @ `0x0046f8d0`). If the total exceeds 65,534 vertices, the combined VB can be created but rendering breaks because 16-bit indices cannot reference vertices past 65,534. Worse, the original function **frees the per-submesh CPU vertex data before attempting VB creation** — so when rendering fails, the data is lost and the level can't render at all.
 
 ## Solution
 

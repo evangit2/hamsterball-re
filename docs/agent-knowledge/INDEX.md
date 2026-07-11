@@ -30,6 +30,7 @@ Start here and read the numbered sections in order. Each file is designed to be 
 | [A2-OBJECT-SPAWNING.md](A2-OBJECT-SPAWNING.md) | Runtime object spawning: operator_new, ctor, AthenaList_Append patterns |
 | [A3-CAMERA-PITFALLS.md](A3-CAMERA-PITFALLS.md) | Camera system: 5 modes, pitch hardcode, smooth distance per-frame override |
 | [../SWEAT_MODE.md](../SWEAT_MODE.md) | Sweat bubble physics assist: ball+0x260 flag, ArenaBoard toggle timer, min slope speed 0.25, flashing visual |
+| [../gameplay/MAGNIFIER_HEAT_SYSTEM.md](../gameplay/MAGNIFIER_HEAT_SYSTEM.md) | Sky Race magnifying glass: heat counter (ball+0xC50), burning flag (ball+0xC58), white→red color shift via Graphics_SetColorMultiplier (0x00401160, NOT a viewport clip) |
 | [TIME_TRIAL_GHOST_SYSTEM.md](TIME_TRIAL_GHOST_SYSTEM.md) | Time Trial ghost: per-frame BallSnapshot recording/playback, BestTimeTracker struct, ghost ball creation in Board_ctor, why ghost disappears on quit |
 
 ## External Authorities

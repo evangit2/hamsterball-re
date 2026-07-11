@@ -1,16 +1,15 @@
 /*
  * LocalMods.cpp — Per-Level/Arena DLL Mod Loader for Hamsterball (HB+ API v2.0)
  *
- * Uses manual vtable construction (16-entry MSVC layout) for MinGW compatibility.
+ * Uses manual vtable construction (17-entry MSVC layout) for MinGW compatibility.
  * See skill: hamsterball-plus-modding references/mingw-vtable-fix.md
  *
  * Author: Hamsterbot
  */
-#include "nocrt.h"
-#include "HamsterballAPI.h"
-#include "hbplus_api.h"
-
 #include <windows.h>
+#include "HamsterballAPI.h"
+#include "nocrt.h"
+#include "hbplus_api.h"
 
 #define malloc nc_malloc
 #define free nc_free
@@ -555,7 +554,7 @@ static void __thiscall cycle_option_impl(void* thisptr, const char* cycleId, con
 }
 
 // ============================================================================
-// Manual Vtable (16-entry MSVC layout)
+// Manual Vtable (17-entry MSVC layout — v2.0 adds onCycleOptionChange at slot 10)
 // ============================================================================
 
 static void* __thiscall sc_dtor(void* thisptr, int flags) {
@@ -570,23 +569,24 @@ static const char* __thiscall get_author(void*) { return "Hamsterbot"; }
 static int __thiscall get_version(void*) { return HAMSTERBALL_API_VERSION; }
 static const char* __thiscall get_contributors(void*) { return ""; }
 
-static void* g_vtable[16] = {
-    (void*)sc_dtor,           // [0] scalar deleting destructor
-    (void*)get_mod_name,      // [1] GetModName
-    (void*)get_author,        // [2] GetAuthorName
-    (void*)get_version,       // [3] GetApiVersion
-    (void*)get_contributors,  // [4] GetContributors
-    (void*)init_impl,         // [5] Initialize
-    (void*)ball_update_impl,  // [6] onBallUpdate
-    (void*)render_apply_impl, // [7] onRenderApply
-    (void*)button_toggle_impl,// [8] onButtonToggle
-    (void*)slider_change_impl,// [9] onSliderChange
-    (void*)game_update_impl,  // [10] onGameUpdate
-    (void*)event_collide_impl,// [11] onEventPlaneCollide
-    (void*)text_render_impl,  // [12] onTextRenderLoop
-    (void*)ball_bump_impl,    // [13] onBallBump
-    (void*)scene_end_impl,    // [14] onSceneEnd
-    (void*)level_start_impl,  // [15] onLevelStart
+static void* g_vtable[17] = {
+    (void*)sc_dtor,             // [0]  scalar deleting destructor
+    (void*)get_mod_name,        // [1]  GetModName
+    (void*)get_author,          // [2]  GetAuthorName
+    (void*)get_version,         // [3]  GetApiVersion
+    (void*)get_contributors,    // [4]  GetContributors
+    (void*)init_impl,           // [5]  Initialize
+    (void*)ball_update_impl,    // [6]  onBallUpdate
+    (void*)render_apply_impl,   // [7]  onRenderApply
+    (void*)button_toggle_impl,  // [8]  onButtonToggle
+    (void*)slider_change_impl,  // [9]  onSliderChange
+    (void*)cycle_option_impl,   // [10] onCycleOptionChange (v2.0)
+    (void*)game_update_impl,    // [11] onGameUpdate
+    (void*)event_collide_impl,  // [12] onEventPlaneCollide
+    (void*)text_render_impl,    // [13] onTextRenderLoop
+    (void*)ball_bump_impl,      // [14] onBallBump
+    (void*)scene_end_impl,      // [15] onSceneEnd
+    (void*)level_start_impl,    // [16] onLevelStart
 };
 
 // ============================================================================

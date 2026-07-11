@@ -36,7 +36,7 @@ Documented: 3781/3781 (100%)
 | 0x00454190 | Graphics_SetRenderMode | Set shading mode, reset vertex shader, re-apply render states |
 | 0x00455B80 | Graphics_SetStreamBuffers | Set vertex buffer stream sources for rendering |
 | 0x00457FA0 | RenderContext_Init | Initialize render context struct (0x50 bytes, vtable 0x4D8E68) |
-| 0x00401160 | Graphics_SetViewportClip | Set viewport clipping bounds from 4x4 matrix |
+| 0x00401160 | Graphics_SetColorMultiplier | Set 4-component RGBA color multiplier matrix (gfx+0x7A8=1, stores Matrix_Scale4x4(R,G,B,A) at gfx+0x7B0). Formerly misnamed Graphics_SetViewportClip — NOT a viewport clip. Used by Ball_Render for heat-based color shifting (white→red as heat increases). |
 
 ## Audio Subsystem (BASS)
 
@@ -74,7 +74,7 @@ Documented: 3781/3781 (100%)
 |---------|------|-------------|
 | 0x0040FA20 | CreateBumper | Create BUMPER1/2/3/4 objects |
 | 0x00413CE0 | CreateBumper2 | Create bumper variant |
-| 0x00410D00 | NeonCollisionEvents | Create E:LIMIT boundary |
+| 0x00410D00 | NeonCollisionEvents | Collision dispatcher for Neon/Sky: E:HEATON/E:HEATOFF/E:PEGS/E:NOPEGS/E:TRAPPOP/E:LIMIT. Adds/removes balls from magnifier heated list. |
 | 0x004117B0 | CreateUpLevelObjects | Create SPEEDCYLINDER |
 | 0x00412850 | HandleArenaCollisionEvents | Create N:SPINNER |
 | 0x0040E250 | CreateExpertLevelObjects | Create SAWBLADE |
@@ -409,6 +409,10 @@ Offset | Field | Description
 | 0x0040EA90 | Scene_SetupLevel6 | levels\level6 | LAUNCH01/02/03 + CHROMESHADOW positions, launcher timer +0x10DD=200 |
 | 0x0040F360 | Scene_SetupLevel7 | levels\level7 | Simple load (no extras) |
 | 0x00410830 | Scene_SetupLevel9 | levels\level9 | PILLAR list, MAGNIFYER on hard, CLOUDSCAPE, fog + projection setup |
+| 0x0043CB70 | Magnifier_Update | Magnifier per-frame update | Homes toward heated balls, increments ball+0xC50 (heat), sets ball+0xC58 (burning flag), spawns sparks, triggers death at heat>1.1 |
+| 0x00436250 | Magnifier_ctor | Magnifier constructor | Init vtable 0x4D569C, position, scale 90.0, AthenaList for heated balls |
+| 0x0041FC90 | SkyBoard_Update | Sky board per-frame update | Calls Magnifier_Update, Board_UpdateRaceState, pillar animation |
+| 0x00410E80 | SkyBoard_RenderDynamic | Sky board render dynamic | Cloud sprite, pillar rendering, magnifier glass mesh |
 | 0x00411F60 | Scene_SetupLevel10 | levels\level10 | 4 bumpers, FUN_436FC0 removal on easy, TarBubble list, multiplayer append |
 | 0x004110D0 | Scene_SetupLevelCascade | levels\levelcascade | 8 bumpers (N:BUMPER%d 0-7) — Beginner Race (internal name: Cascade) |
 | 0x00411540 | Scene_SetupLevelUp | levels\levelup | Initial ball pos (0,50,0), VAC-IN/VAC-OUT vacuum tubes |
