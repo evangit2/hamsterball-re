@@ -1,9 +1,12 @@
 /*
  * LocalGravity_MinGW.cpp — MinGW cross-compile version of LocalGravity mod.
  *
- * Uses manual 16-entry vtable to match MSVC ABI.
+ * Uses manual 17-entry vtable to match MSVC ABI (HB+ v2.0 added
+ * onCycleOptionChange callback, shifting all callbacks after onSliderChange
+ * by +1).
+ *
  * Uses nocrt functions (no msvcrt.dll dependency).
- * Uses hbplus_api.h wrapper for IModAPI vtable dispatch.
+ * Uses hbplus_api.h wrapper for IModAPI vtable dispatch (v2.0 indices).
  *
  * Compile: see build.sh
  */
@@ -14,6 +17,10 @@
 #define NUM_LEVELS 30
 #define NUM_RACES 15
 #define DEFAULT_GRAVITY 0.5f
+
+/* Global pointers for direct memory access */
+#define GLOBAL_APP_PTR   0x005341E0
+#define GLOBAL_SCENE_PTR 0x005341E4
 
 static const char* RACE_NAMES[NUM_RACES] = {
     "Board (Warm-Up)",
@@ -56,6 +63,7 @@ static float g_gravityValues[NUM_LEVELS];
 static int g_currentLevelIndex = -1;
 static char g_configPath[MAX_PATH] = "";
 static bool g_enabled = true;
+static bool g_configLoaded = false;
 
 /* Function pointer typedefs for vtable */
 typedef void* (__thiscall *dtor_t)(void* thisptr, int flags);
@@ -64,6 +72,8 @@ typedef int (__thiscall *get_int_t)(void*);
 typedef void (__thiscall *init_t)(void* thisptr, void* modApi);
 typedef void (__thiscall *ball_update_t)(void* thisptr, void* ball);
 typedef void (__thiscall *button_toggle_t)(void* thisptr, const char* id, bool state);
+typedef void (__thiscall *slider_change_t)(void* thisptr, const char*, float);
+typedef void (__thiscall *cycle_change_t)(void* thisptr, const char*, const char*);
 typedef void (__thiscall *level_start_t)(void* thisptr);
 typedef void (__thiscall *scene_end_t)(void* thisptr);
 
@@ -78,18 +88,27 @@ static const char* __thiscall get_author(void*) { return "BookwormKevin"; }
 static int __thiscall get_version(void*) { return HAMSTERBALL_API_VERSION; }
 static const char* __thiscall get_contributors(void*) { return "Hamsterbot"; }
 
-static int identifyLevel(void* api) {
-    if (!api) return -1;
-    HBPlusAPI hb = { api };
-    Scene* scene = hb.GetScene();
-    if (!scene) return -1;
-    if (!scene->name || IsBadReadPtr(scene->name, 1)) return -1;
+/* Direct memory access to scene name — bypasses IModAPI vtable entirely */
+static const char* getSceneNameDirect(void) {
+    if (IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) return NULL;
+    DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
+    if (!scene || scene < 0x10000) return NULL;
+    if (IsBadReadPtr((void*)(scene + 0x868), 4)) return NULL;
+    const char* name = *(const char**)(scene + 0x868);
+    if (!name || IsBadReadPtr((void*)name, 2)) return NULL;
+    if ((unsigned char)name[0] < 0x20 || (unsigned char)name[0] > 0x7E) return NULL;
+    return name;
+}
+
+static int identifyLevel(void) {
+    const char* sceneName = getSceneNameDirect();
+    if (!sceneName) return -1;
 
     for (int i = 0; i < NUM_RACES; i++) {
-        if (nc_strcmp(scene->name, RACE_NAMES[i]) == 0) return i;
+        if (nc_strcmp(sceneName, RACE_NAMES[i]) == 0) return i;
     }
     for (int i = 0; i < NUM_RACES; i++) {
-        if (nc_strcmp(scene->name, ARENA_NAMES[i]) == 0) return NUM_RACES + i;
+        if (nc_strcmp(sceneName, ARENA_NAMES[i]) == 0) return NUM_RACES + i;
     }
     return -1;
 }
@@ -99,7 +118,14 @@ static void loadConfig(void) {
 
     HANDLE h = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return;
+    if (h == INVALID_HANDLE_VALUE) {
+        /* Try alternate locations */
+        /* 1. Try current working directory */
+        HANDLE h2 = CreateFileA("local_gravity_set.txt", GENERIC_READ, FILE_SHARE_READ, NULL,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h2 == INVALID_HANDLE_VALUE) return;
+        h = h2;
+    }
 
     char buf[8192];
     DWORD bytesRead = 0;
@@ -129,10 +155,8 @@ static void loadConfig(void) {
         if (*p == '-') { negative = 1; p++; }
         else if (*p == '+') { p++; }
         int integerPart = 0;
-        int hasInteger = 0;
         while (*p >= '0' && *p <= '9') {
             integerPart = integerPart * 10 + (*p - '0');
-            hasInteger = 1;
             p++;
         }
         float frac = 0.0f;
@@ -153,6 +177,8 @@ static void loadConfig(void) {
         g_gravityValues[index] = val;
         index++;
     }
+
+    g_configLoaded = true;
 }
 
 static void createDefaultConfig(void) {
@@ -176,10 +202,8 @@ static void createDefaultConfig(void) {
 
     char lineBuf[32];
     for (int i = 0; i < NUM_RACES; i++) {
-        /* Manual float-to-string: 0.5 -> "0.5\r\n" */
-        int intPart = (int)DEFAULT_GRAVITY;
-        int fracPart = (int)((DEFAULT_GRAVITY - intPart) * 10.0f + 0.5f);
-        nc_snprintf(lineBuf, sizeof(lineBuf), "%d.%d\r\n", intPart, fracPart);
+        nc_snprintf(lineBuf, sizeof(lineBuf), "%d.%d\r\n", (int)DEFAULT_GRAVITY,
+                    (int)((DEFAULT_GRAVITY - (int)DEFAULT_GRAVITY) * 10.0f + 0.5f));
         WriteFile(h, lineBuf, (DWORD)nc_strlen(lineBuf), &written, NULL);
     }
 
@@ -195,6 +219,31 @@ static void createDefaultConfig(void) {
     CloseHandle(h);
 }
 
+static void buildConfigPath(void) {
+    /* Try GetModuleFileNameA first (game exe directory) */
+    char exePath[MAX_PATH];
+    DWORD len = GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    if (len > 0) {
+        char* last = NULL;
+        char* p = exePath;
+        while (*p) {
+            if (*p == '\\' || *p == '/') last = p;
+            p++;
+        }
+        if (last) {
+            *(last + 1) = '\0';
+            nc_strncpy(g_configPath, exePath, MAX_PATH - 1);
+            nc_strncpy(g_configPath + nc_strlen(g_configPath),
+                       "local_gravity_set.txt", MAX_PATH - nc_strlen(g_configPath) - 1);
+            g_configPath[MAX_PATH - 1] = '\0';
+            return;
+        }
+    }
+    /* Fallback: just use the filename in CWD */
+    nc_strncpy(g_configPath, "local_gravity_set.txt", MAX_PATH - 1);
+    g_configPath[MAX_PATH - 1] = '\0';
+}
+
 static void __thiscall init_impl(void* thisptr, void* modApi) {
     /* Store api pointer in object */
     *(void**)((char*)thisptr + 4) = modApi;
@@ -202,25 +251,8 @@ static void __thiscall init_impl(void* thisptr, void* modApi) {
     /* Initialize gravity values */
     for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
 
-    /* Build config path next to game exe */
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    char* lastSlash = nc_strncpy(g_configPath, exePath, MAX_PATH);
-    /* Find last backslash */
-    char* bs = g_configPath;
-    char* last = NULL;
-    while (*bs) {
-        if (*bs == '\\') last = bs;
-        bs++;
-    }
-    if (last) {
-        *(last + 1) = '\0';
-        nc_strncpy(g_configPath + nc_strlen(g_configPath), "local_gravity_set.txt",
-                   MAX_PATH - nc_strlen(g_configPath) - 1);
-    } else {
-        nc_strncpy(g_configPath, "local_gravity_set.txt", MAX_PATH - 1);
-    }
-    g_configPath[MAX_PATH - 1] = '\0';
+    /* Build config path */
+    buildConfigPath();
 
     /* Create default config if it doesn't exist */
     DWORD attr = GetFileAttributesA(g_configPath);
@@ -247,14 +279,9 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     if (!ball) return;
     if (!g_enabled) return;
 
-    void* api = *(void**)((char*)thisptr + 4);
-    if (!api) return;
-
-    HBPlusAPI hb = { api };
-
-    /* Identify level if not cached */
+    /* Identify level if not cached — uses direct memory, no IModAPI call */
     if (g_currentLevelIndex == -1) {
-        g_currentLevelIndex = identifyLevel(api);
+        g_currentLevelIndex = identifyLevel();
     }
     if (g_currentLevelIndex < 0 || g_currentLevelIndex >= NUM_LEVELS) return;
 
@@ -290,8 +317,8 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
         phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
     }
 
-    /* spin_rate = gravity scale (default 5.0 in game) */
-    b->spin_rate = (gravityValue < 0) ? -gravityValue : gravityValue;
+    /* gravity_magnitude = gravity scale (default 5.0 in game) */
+    b->gravity_magnitude = (gravityValue < 0) ? -gravityValue : gravityValue;
 }
 
 static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool state) {
@@ -312,29 +339,52 @@ static void __thiscall scene_end_impl(void* thisptr) {
 /* No-op implementations for unused callbacks */
 static void __thiscall render_apply_impl(void*, void*, float*) {}
 static void __thiscall slider_change_impl(void*, const char*, float) {}
+static void __thiscall cycle_change_impl(void*, const char*, const char*) {}
 static void __thiscall game_update_impl(void*) {}
 static void __thiscall event_collide_impl(void*, void*, char*) {}
 static void __thiscall text_render_impl(void*) {}
 static void __thiscall ball_bump_impl(void*, void*, void*) {}
 
-/* 16-entry vtable matching MSVC layout */
-static void* g_vtable[16] = {
-    (void*)sc_dtor,              // [0]  scalar deleting destructor
-    (void*)get_mod_name,         // [1]  GetModName
-    (void*)get_author,           // [2]  GetAuthorName
-    (void*)get_version,          // [3]  GetApiVersion
-    (void*)get_contributors,     // [4]  GetContributors
-    (void*)init_impl,            // [5]  Initialize
-    (void*)ball_update_impl,     // [6]  onBallUpdate
-    (void*)render_apply_impl,    // [7]  onRenderApply
-    (void*)button_toggle_impl,   // [8]  onButtonToggle
-    (void*)slider_change_impl,   // [9]  onSliderChange
-    (void*)game_update_impl,     // [10] onGameUpdate
-    (void*)event_collide_impl,   // [11] onEventPlaneCollide
-    (void*)text_render_impl,     // [12] onTextRenderLoop
-    (void*)ball_bump_impl,       // [13] onBallBump
-    (void*)scene_end_impl,       // [14] onSceneEnd
-    (void*)level_start_impl,     // [15] onLevelStart
+/*
+ * 17-entry vtable matching MSVC ABI for HB+ v2.0.
+ * v2.0 added onCycleOptionChange at index 10, shifting everything after by +1.
+ *
+ * [0]  scalar deleting destructor
+ * [1]  GetModName
+ * [2]  GetAuthorName
+ * [3]  GetApiVersion
+ * [4]  GetContributors
+ * [5]  Initialize
+ * [6]  onBallUpdate
+ * [7]  onRenderApply
+ * [8]  onButtonToggle
+ * [9]  onSliderChange
+ * [10] onCycleOptionChange  (NEW in v2.0)
+ * [11] onGameUpdate
+ * [12] onEventPlaneCollide
+ * [13] onTextRenderLoop
+ * [14] onBallBump
+ * [15] onSceneEnd
+ * [16] onLevelStart
+ */
+static void* g_vtable[17] = {
+    (void*)sc_dtor,              // [0]
+    (void*)get_mod_name,         // [1]
+    (void*)get_author,           // [2]
+    (void*)get_version,          // [3]
+    (void*)get_contributors,     // [4]
+    (void*)init_impl,            // [5]
+    (void*)ball_update_impl,     // [6]
+    (void*)render_apply_impl,    // [7]
+    (void*)button_toggle_impl,   // [8]
+    (void*)slider_change_impl,   // [9]
+    (void*)cycle_change_impl,    // [10] NEW in v2.0
+    (void*)game_update_impl,     // [11]
+    (void*)event_collide_impl,   // [12]
+    (void*)text_render_impl,     // [13]
+    (void*)ball_bump_impl,       // [14]
+    (void*)scene_end_impl,       // [15]
+    (void*)level_start_impl,     // [16]
 };
 
 extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
