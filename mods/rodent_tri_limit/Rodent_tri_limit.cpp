@@ -7,9 +7,10 @@
  * The original game concatenates ALL MeshBuffers' submesh vertex data into ONE
  * combined D3D8 vertex buffer (MeshWorld_BuildVertexBuffer @ 0x0046f8d0).
  * This creates a hard ceiling: if the total exceeds 65534 vertices, the combined
- * VB creation fails, and the game shows "Optimize requested, but failed!" or
- * crashes because BuildVertexBuffer FREES the per-submesh CPU data before
- * attempting VB creation.
+ * VB can be created but rendering breaks because 16-bit indices cannot reference
+ * vertices past 65534. Worse, BuildVertexBuffer FREES the per-submesh CPU data
+ * before attempting VB creation — so when rendering fails, the data is lost and
+ * the level cannot render at all.
  *
  * This mod hooks MeshWorld_BuildVertexBuffer to:
  *   1. Count total vertices across all submeshes (without freeing anything)
@@ -72,10 +73,9 @@ static constexpr DWORD IMAGE_BASE = 0x00400000;
 static constexpr DWORD ADDR_BuildVertexBuffer = 0x0046f8d0;
 
 // MeshWorld struct offsets (verified from Ghidra decompilation):
+// AthenaList at meshworld+0x2C: count at +0x30, items array at +0x40C (absolute 0x438).
 static constexpr DWORD MW_MB_ARRAY_PTR  = 0x438;  // MeshBuffer** — array of MeshBuffer pointers
-static constexpr DWORD MW_MB_COUNT      = 0x43C;  // Not directly — count is at +0x30 (AthenaList)
-// AthenaList iteration: meshworld+0x2C is the iterator list, +0x30 is count
-static constexpr DWORD MW_MB_LIST_COUNT = 0x30;   // int — number of MeshBuffers
+static constexpr DWORD MW_MB_LIST_COUNT = 0x30;   // int — number of MeshBuffers (AthenaList count)
 static constexpr DWORD MW_TOTAL_VERTS   = 0x444;  // int — total vertex count (set by BuildVB)
 static constexpr DWORD MW_CPU_BUFFER     = 0x448;  // void* — CPU combined buffer (set by BuildVB)
 static constexpr DWORD MW_COMBINED_VB    = 0x44C;  // IDirect3DVertexBuffer8* — combined VB
@@ -202,7 +202,6 @@ static void __fastcall Hooked_BuildVB(DWORD* meshworld, void* edx) {
     *(BYTE*)((BYTE*)meshworld + MW_OPTIMIZED_FLAG) = 0;
     *(void**)((BYTE*)meshworld + MW_CPU_BUFFER) = NULL;
     *(void**)((BYTE*)meshworld + MW_COMBINED_VB) = NULL;
-    *(int*)((BYTE*)meshworld + MW_TOTAL_VERTS) = totalVerts;
 
     // Write log
     char logPath[MAX_PATH];
