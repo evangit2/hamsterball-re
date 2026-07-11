@@ -454,36 +454,31 @@ static void install_frameupdate_hook(void) {
     diag_log("[mkn_level_system] FrameUpdate epilogue hook installed at 0x0046C1F1");
 }
 
-/* Summon_NeonEffect — full neon effect: yellow light + glow materials.
+/* Summon_NeonEffect — neon glow effect on the ball.
  * Extracted from Scene_SetupLevelDark (0x00416270).
  *
- * Creates a SceneObject (D3D8 light) at the ball's position with yellow
- * color (10,10,0), range 400, plus applies R=1.0 material scales.
+ * Applies the neon material matrices to the ball (ambient/diffuse/specular)
+ * using Matrix_Scale4x4(1,1,0,1) values. This gives the ball the yellow
+ * glow effect seen in the Neon Race.
  *
- * THREAD SAFETY: The dispatch thread (extended slots 36-127) sets a
- * pending flag. The actual D3D8 SceneObject creation happens on the
- * main thread via the App_FrameUpdate epilogue hook. This prevents
- * the D3D8 single-threaded crash that occurred in v6.1.
+ * v6.7: SceneObject (D3D8 light) creation removed. It caused crashes at
+ * 0x452BDA (CALL [EAX] on invalid vtable) when created from the FrameUpdate
+ * hook. The material glow alone provides the visible neon effect.
+ * For the full D3D8 light, assign this to native vtable slot 19 (InitScene)
+ * which runs during level setup where the scene state is correct.
  *
- * Idempotent: skips if board+0x642C == "NEON" sentinel. */
+ * Idempotent: skips if board+0x642C == "NEON" sentinel.
+ * Safe for extended vtable slots (36-127). */
 static void __fastcall Summon_NeonEffect(DWORD board) {
     if (!board || board < 0x10000) return;
     if (IsBadReadPtr((void*)board, 0x6500)) return;
 
     int* param_1 = (int*)board;
 
-    /* Get App pointer */
     DWORD app = (DWORD)param_1[0x21e];
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x700)) return;
 
-    /* Check sentinel */
-    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;
-
-    /* Check if a previous request is still pending */
-    if (g_neon_pending_board == board) return;
-
-    /* Verify ball is initialized */
     DWORD ball = *(DWORD*)(app + 0x5DC);
     if (!ball || ball < 0x10000) return;
     if (IsBadReadPtr((void*)ball, 0x600)) return;
@@ -493,10 +488,30 @@ static void __fastcall Summon_NeonEffect(DWORD board) {
     float ball_z = *(float*)(ball + 0x16C);
     if (ball_x == 0.0f && ball_y == 0.0f && ball_z == 0.0f) return;
 
-    /* Set pending flag — main-thread hook will create the light next frame */
-    g_neon_pending_board = board;
+    if (*(DWORD*)(board + 0x642C) == 0x4E454F4E) return;
 
-    diag_log("[summon] Summon_NeonEffect: light creation queued for main thread");
+    /* Apply material matrices — same as Summon_NeonOutline.
+     * Matrix_Scale4x4(1,1,0,1) values written to all 16 elements
+     * per material slot. See Summon_NeonOutline for details. */
+    if (!IsBadReadPtr((void*)(ball + 0x1F8), 4)) {
+        *(float*)(ball + 0x1D0) = 0.0f;
+        *(float*)(ball + 0x1D4) = 0.0f;
+        *(DWORD*)(ball + 0x1CC) = 0;
+        *(float*)(ball + 0x1D8) = 1.0f;
+        *(float*)(ball + 0x1C0) = 0.0f;
+        *(float*)(ball + 0x1C4) = 0.0f;
+        *(DWORD*)(ball + 0x1BC) = 0;
+        *(float*)(ball + 0x1C8) = 1.0f;
+        *(float*)(ball + 0x1F0) = 0.0f;
+        *(float*)(ball + 0x1F4) = 0.0f;
+        *(DWORD*)(ball + 0x1EC) = 0;
+        *(float*)(ball + 0x1F8) = 1.0f;
+        *(BYTE*)(ball + 0x204) = (*(float*)(ball + 0x1C8) != 3.0f) ? 1 : 0;
+    }
+
+    *(DWORD*)(board + 0x642C) = 0x4E454F4E;
+
+    diag_log("[summon] Summon_NeonEffect: applied neon glow materials to ball");
 }
 
 /* Summon_BoardSetup — calls the full Board_Setup function (vtable[32]).
