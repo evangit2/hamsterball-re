@@ -1,38 +1,27 @@
 /*
  * LocalMods.cpp — Per-Level/Arena DLL Mod Loader for Hamsterball (HB+ API v2.0)
  *
- * LoadOrder: This mod must be FIRST in the Mods\ folder load order so it can
- * load other mods before their Initialize() runs. Name the file so it sorts
- * first alphabetically, or ensure it's the first DLL HB+ picks up.
- *
- * HOW IT WORKS:
- *   1. On startup, reads local_mods.txt from the game root folder.
- *   2. Parses LEVELS (1-15) and ARENAS (1-15) sections, each listing
- *      mod DLL names to activate for that level/arena slot.
- *   3. On onLevelStart(), identifies the current level/arena via scene name.
- *   4. Loads (LoadLibraryA) the appropriate DLLs from \Localmods\ folder.
- *      Unloads any DLLs from the previous level that aren't needed.
- *   5. Each loaded DLL exports CreateModInstance() returning a HamsterballAPI*.
- *      The loader calls Initialize() on each, then onLevelStart().
- *   6. Forwards onBallUpdate(), onGameUpdate(), onSceneEnd() to loaded mods.
- *
- * LEVEL INDEX MAPPING:
- *   Races:  1=Warm-Up, 2=Beginner, 3=Intermediate, 4=Dizzy, 5=Tower,
- *           6=Up, 7=Neon(Dark), 8=Expert, 9=Odd, 10=Toob,
- *           11=Wobbly, 12=Glass, 13=Sky, 14=Master, 15=Impossible
- *   Arenas: 1=Warm-Up, 2=Beginner, 3=Intermediate, 4=Dizzy, 5=Tower,
- *           6=Up, 7=Neon, 8=Expert, 9=Odd, 10=Toob,
- *           11=Wobbly, 12=Sky, 13=Master, 14=Glass, 15=Impossible
- *
- * Build (MinGW): see build.sh
- * Build (VS): compile as 32-bit DLL, place in Mods\ folder.
+ * Uses manual vtable construction (16-entry MSVC layout) for MinGW compatibility.
+ * See skill: hamsterball-plus-modding references/mingw-vtable-fix.md
  *
  * Author: Hamsterbot
  */
-#define _CRT_SECURE_NO_WARNINGS
-#include "HamsterballAPI.h"
 #include "nocrt.h"
+#include "HamsterballAPI.h"
+#include "hbplus_api.h"
+
 #include <windows.h>
+
+#define malloc nc_malloc
+#define free nc_free
+#define memcpy nc_memcpy
+#define memset nc_memset
+#define strlen nc_strlen
+#define strcmp nc_strcmp
+#define strncpy nc_strncpy
+#define strcpy nc_strcpy
+#define strcat nc_strcat
+#define snprintf nc_snprintf
 
 // ============================================================================
 // Constants
@@ -43,13 +32,9 @@ static constexpr int MAX_MODS_PER_SLOT = 16;
 static constexpr int MAX_MOD_NAME_LEN = 128;
 static constexpr int MAX_LOADED_MODS = 64;
 
-// Global scene pointer address (direct memory access, bypasses IModAPI vtable)
 static constexpr DWORD GLOBAL_SCENE_PTR = 0x005341E4;
-
-// Scene struct offsets
 static constexpr DWORD SCENE_NAME_OFFSET = 0x868;
 
-// Race scene names (as stored in Scene->name)
 static const char* RACE_NAMES[NUM_SLOTS] = {
     "Board (Warm-Up)",
     "Board (Beginner)",
@@ -68,7 +53,6 @@ static const char* RACE_NAMES[NUM_SLOTS] = {
     "Board (Impossible)"
 };
 
-// Arena scene names
 static const char* ARENA_NAMES[NUM_SLOTS] = {
     "RumbleBoard (Warmup Arena)",
     "RumbleBoard (Beginner Arena)",
@@ -92,7 +76,7 @@ static const char* ARENA_NAMES[NUM_SLOTS] = {
 // ============================================================================
 
 struct ModEntry {
-    char name[MAX_MOD_NAME_LEN];  // DLL filename (e.g. "mymod.dll")
+    char name[MAX_MOD_NAME_LEN];
 };
 
 struct SlotConfig {
@@ -109,543 +93,500 @@ struct LoadedMod {
 };
 
 // ============================================================================
-// Mod Class
+// State
 // ============================================================================
 
-class LocalModsLoader : public HamsterballAPI {
-private:
-    IModAPI* api = nullptr;
-    char gameDir[MAX_PATH];
-    char localModsPath[MAX_PATH];   // gameDir/Localmods/
-    char configPath[MAX_PATH];      // gameDir/local_mods.txt
+static IModAPI* g_api = NULL;
+static void* g_modObj = NULL;
 
+static char g_gameDir[MAX_PATH];
+static char g_localModsPath[MAX_PATH];
+static char g_configPath[MAX_PATH];
 
-    // Parsed config: [0..14] = races, [15..29] = arenas
-    SlotConfig levelConfigs[NUM_SLOTS * 2];
+static SlotConfig g_levelConfigs[NUM_SLOTS * 2];
+static LoadedMod g_loadedMods[MAX_LOADED_MODS];
+static int g_loadedCount = 0;
+static int g_currentLevelIndex = -1;
 
-    // Currently loaded mods
-    LoadedMod loadedMods[MAX_LOADED_MODS];
-    int loadedCount;
+// ============================================================================
+// Path Setup
+// ============================================================================
 
-    // Current level identification
-    int currentLevelIndex;   // 0-14 = race, 15-29 = arena, -1 = unknown/menu
-    bool initialized;
+static void buildPaths() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    char* lastSlash = strrchr(exePath, '\\');
+    if (!lastSlash) lastSlash = strrchr(exePath, '/');
 
-public:
-    const char* GetModName() override    { return "Local Mods"; }
-    const char* GetAuthorName() override  { return "Hamsterbot"; }
-    int GetApiVersion() override          { return HAMSTERBALL_API_VERSION; }
+    if (lastSlash) {
+        *(lastSlash + 1) = '\0';
+        strcpy(g_gameDir, exePath);
+        snprintf(g_localModsPath, MAX_PATH, "%sLocalmods\\", exePath);
+        snprintf(g_configPath, MAX_PATH, "%slocal_mods.txt", exePath);
+    } else {
+        strcpy(g_gameDir, ".\\");
+        strcpy(g_localModsPath, "Localmods\\");
+        strcpy(g_configPath, "local_mods.txt");
+    }
+}
 
-    void Initialize(IModAPI* modApi) override {
-        api = modApi;
-        loadedCount = 0;
-        currentLevelIndex = -1;
-        initialized = false;
+// ============================================================================
+// Level Identification
+// ============================================================================
 
-        // Zero out configs
-        nc_memset(levelConfigs, 0, sizeof(levelConfigs));
-        nc_memset(loadedMods, 0, sizeof(loadedMods));
+static int identifyLevel() {
+    if (IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) return -1;
+    DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
+    if (!scene || scene < 0x10000) return -1;
+    if (IsBadReadPtr((void*)(scene + SCENE_NAME_OFFSET), 4)) return -1;
+    const char* name = *(const char**)(scene + SCENE_NAME_OFFSET);
+    if (!name || IsBadReadPtr(name, 2)) return -1;
+    if ((unsigned char)name[0] < 0x20 || (unsigned char)name[0] > 0x7E) return -1;
 
-        // Build paths
-        buildPaths();
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        if (strcmp(name, RACE_NAMES[i]) == 0) return i;
+    }
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        if (strcmp(name, ARENA_NAMES[i]) == 0) return NUM_SLOTS + i;
+    }
+    return -1;
+}
 
-        // Parse config file
-        parseConfigFile();
+// ============================================================================
+// Config File Parsing
+// ============================================================================
 
-        initialized = true;
+static void createDefaultConfig() {
+    HANDLE hFile = CreateFileA(g_configPath, GENERIC_WRITE, 0, NULL,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+
+    DWORD written;
+    const char* header =
+        "==================== HB+  |  LOCAL MODS ====================\r\n"
+        "\r\n"
+        "LEVELS\r\n";
+    WriteFile(hFile, header, (DWORD)strlen(header), &written, NULL);
+
+    for (int i = 1; i <= NUM_SLOTS; i++) {
+        char line[32];
+        snprintf(line, sizeof(line), "%d = \r\n", i);
+        WriteFile(hFile, line, (DWORD)strlen(line), &written, NULL);
     }
 
-    void onLevelStart() override {
-        // Re-read config in case user edited it
-        parseConfigFile();
+    const char* arenaHeader = "\r\nARENAS\r\n";
+    WriteFile(hFile, arenaHeader, (DWORD)strlen(arenaHeader), &written, NULL);
 
-        // Identify level
-        currentLevelIndex = identifyLevel();
-
-        if (currentLevelIndex < 0) return;
-
-        // Determine which mods should be active for this slot
-        int slot = currentLevelIndex;
-        SlotConfig* cfg = &levelConfigs[slot];
-
-        // Unload mods that are no longer needed
-        unloadInactiveMods(slot);
-
-        // Load new mods for this slot
-        for (int i = 0; i < cfg->count; i++) {
-            const char* modName = cfg->mods[i].name;
-            if (!modName[0]) continue;
-
-            // Check if already loaded
-            if (findLoadedMod(modName) >= 0) continue;
-
-            // Load it
-            loadMod(modName);
-        }
-
-        // Call onLevelStart on all active loaded mods
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onLevelStart();
-            }
-        }
+    for (int i = 1; i <= NUM_SLOTS; i++) {
+        char line[32];
+        snprintf(line, sizeof(line), "%d = \r\n", i);
+        WriteFile(hFile, line, (DWORD)strlen(line), &written, NULL);
     }
 
-    void onSceneEnd() override {
-        // Notify all loaded mods
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onSceneEnd();
-            }
+    const char* footer = "\r\n============================================================\r\n";
+    WriteFile(hFile, footer, (DWORD)strlen(footer), &written, NULL);
+    CloseHandle(hFile);
+}
+
+static void parseSlotLine(char* line, int section) {
+    char* eq = strchr(line, '=');
+    if (!eq) return;
+
+    // Parse slot number
+    char numBuf[16];
+    char* p = line;
+    int numIdx = 0;
+    while (p < eq && *p && numIdx < 15) {
+        if (*p >= '0' && *p <= '9') {
+            numBuf[numIdx++] = *p;
         }
+        p++;
+    }
+    numBuf[numIdx] = '\0';
 
-        // Unload all mods when scene ends
-        unloadAllMods();
-
-        currentLevelIndex = -1;
+    int slotNum = 0;
+    for (int i = 0; numBuf[i]; i++) {
+        slotNum = slotNum * 10 + (numBuf[i] - '0');
     }
 
-    void onBallUpdate(Ball* ball) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onBallUpdate(ball);
-            }
+    if (slotNum < 1 || slotNum > NUM_SLOTS) return;
+
+    int slotIdx = (section == 1) ? (slotNum - 1) : (NUM_SLOTS + slotNum - 1);
+    SlotConfig* cfg = &g_levelConfigs[slotIdx];
+    cfg->count = 0;
+
+    // Parse content after '='
+    char* content = eq + 1;
+    while (*content == ' ' || *content == '\t') content++;
+
+    if (*content == '(') content++;
+    char* endParen = strrchr(content, ')');
+    if (endParen) *endParen = '\0';
+
+    if (!*content) return;
+
+    // Tokenize by comma — use nc_strtok here (safe: outer loop uses manual split)
+    char* tok = nc_strtok(content, ",");
+    while (tok && cfg->count < MAX_MODS_PER_SLOT) {
+        while (*tok == ' ' || *tok == '\t') tok++;
+        char* end = tok + strlen(tok);
+        while (end > tok && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) {
+            end--;
         }
+        *end = '\0';
+
+        if (*tok) {
+            strncpy(cfg->mods[cfg->count].name, tok, MAX_MOD_NAME_LEN - 1);
+            cfg->mods[cfg->count].name[MAX_MOD_NAME_LEN - 1] = '\0';
+            cfg->count++;
+        }
+        tok = nc_strtok(NULL, ",");
     }
+}
 
-    void onGameUpdate() override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onGameUpdate();
-            }
-        }
-    }
+static void parseConfigBuffer(char* buffer) {
+    int section = 0;
 
-    void onTextRenderLoop() override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onTextRenderLoop();
-            }
-        }
-    }
+    // Manual line splitter — do NOT use nc_strtok here because
+    // parseSlotLine also calls nc_strtok (single static pointer).
+    char* pos = buffer;
+    while (pos && *pos) {
+        char* lineEnd = pos;
+        while (*lineEnd && *lineEnd != '\r' && *lineEnd != '\n') lineEnd++;
+        char saved = *lineEnd;
+        *lineEnd = '\0';
+        char* line = pos;
 
-    void onButtonToggle(const char* buttonId, bool newState) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onButtonToggle(buttonId, newState);
-            }
-        }
-    }
+        while (*line == ' ' || *line == '\t') line++;
 
-    void onSliderChange(const char* sliderId, float newValue) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onSliderChange(sliderId, newValue);
-            }
-        }
-    }
-
-    void onEventPlaneCollide(Ball* ball, char* eventPlaneID) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onEventPlaneCollide(ball, eventPlaneID);
-            }
-        }
-    }
-
-    void onBallBump(Ball* ball1, Ball* ball2) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onBallBump(ball1, ball2);
-            }
-        }
-    }
-
-    void onRenderApply(void* this_ptr, float* viewMatrix) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onRenderApply(this_ptr, viewMatrix);
-            }
-        }
-    }
-
-    void onCycleOptionChange(const char* cycleId, const char* newOption) override {
-        for (int i = 0; i < loadedCount; i++) {
-            if (loadedMods[i].active && loadedMods[i].instance) {
-                loadedMods[i].instance->onCycleOptionChange(cycleId, newOption);
-            }
-        }
-    }
-
-private:
-    // ========================================================================
-    // Path Setup
-    // ========================================================================
-
-    void buildPaths() {
-        char exePath[MAX_PATH];
-        GetModuleFileNameA(NULL, exePath, MAX_PATH);
-        char* lastSlash = strrchr(exePath, '\\');
-        if (!lastSlash) lastSlash = strrchr(exePath, '/');
-
-        if (lastSlash) {
-            *(lastSlash + 1) = '\0';
-            nc_strcpy(gameDir, exePath);
-            nc_snprintf(localModsPath, MAX_PATH, "%sLocalmods\\", exePath);
-            nc_snprintf(configPath, MAX_PATH, "%slocal_mods.txt", exePath);
-        } else {
-            nc_strcpy(gameDir, ".\\");
-            nc_strcpy(localModsPath, "Localmods\\");
-            nc_strcpy(configPath, "local_mods.txt");
-        }
-    }
-
-    // ========================================================================
-    // Level Identification
-    // ========================================================================
-
-    int identifyLevel() {
-        if (IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) return -1;
-        DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
-        if (!scene || scene < 0x10000) return -1;
-        if (IsBadReadPtr((void*)(scene + SCENE_NAME_OFFSET), 4)) return -1;
-        const char* name = *(const char**)(scene + SCENE_NAME_OFFSET);
-        if (!name || IsBadReadPtr(name, 2)) return -1;
-        if ((unsigned char)name[0] < 0x20 || (unsigned char)name[0] > 0x7E) return -1;
-
-        // Check races (index 0-14)
-        for (int i = 0; i < NUM_SLOTS; i++) {
-            if (strcmp(name, RACE_NAMES[i]) == 0) return i;
-        }
-        // Check arenas (index 15-29)
-        for (int i = 0; i < NUM_SLOTS; i++) {
-            if (strcmp(name, ARENA_NAMES[i]) == 0) return NUM_SLOTS + i;
-        }
-        return -1;
-    }
-
-    // ========================================================================
-    // Config File Parsing
-    // ========================================================================
-
-    void parseConfigFile() {
-        // Reset all configs
-        for (int i = 0; i < NUM_SLOTS * 2; i++) {
-            levelConfigs[i].count = 0;
-            nc_memset(levelConfigs[i].mods, 0, sizeof(levelConfigs[i].mods));
-        }
-
-        HANDLE hFile = CreateFileA(configPath, GENERIC_READ, FILE_SHARE_READ,
-                                   NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hFile == INVALID_HANDLE_VALUE) {
-            // Config not found — create default
-            createDefaultConfig();
-            return;
-        }
-
-        // Read entire file into buffer
-        DWORD fileSize = GetFileSize(hFile, NULL);
-        if (fileSize == INVALID_FILE_SIZE || fileSize > 65536) {
-            CloseHandle(hFile);
-            return;
-        }
-
-        char* buffer = (char*)nc_malloc(fileSize + 1);
-        if (!buffer) {
-            CloseHandle(hFile);
-            return;
-        }
-
-        DWORD bytesRead = 0;
-        if (!ReadFile(hFile, buffer, fileSize, &bytesRead, NULL) || bytesRead == 0) {
-            nc_free(buffer);
-            CloseHandle(hFile);
-            return;
-        }
-        buffer[bytesRead] = '\0';
-        CloseHandle(hFile);
-
-        // Parse the config
-        parseConfigBuffer(buffer);
-        nc_free(buffer);
-    }
-
-    void parseConfigBuffer(char* buffer) {
-        // State machine: 0 = looking for section, 1 = in LEVELS, 2 = in ARENAS
-        int section = 0;
-        char* line = nc_strtok(buffer, "\r\n");
-
-        while (line) {
-            // Trim leading whitespace
-            while (*line == ' ' || *line == '\t') line++;
-
-            // Skip empty lines, comments, header
-            if (*line == '\0' || *line == '#' || *line == '=') {
-                line = nc_strtok(NULL, "\r\n");
-                continue;
-            }
-
-            // Check for section headers
+        if (*line != '\0' && *line != '#' && *line != '=') {
             if (nc_stricmp(line, "LEVELS") == 0) {
                 section = 1;
-                line = nc_strtok(NULL, "\r\n");
-                continue;
-            }
-            if (nc_stricmp(line, "ARENAS") == 0) {
+            } else if (nc_stricmp(line, "ARENAS") == 0) {
                 section = 2;
-                line = nc_strtok(NULL, "\r\n");
-                continue;
-            }
-            if (nc_stricmp(line, "============================================================") == 0) {
-                line = nc_strtok(NULL, "\r\n");
-                continue;
-            }
-            if (strstr(line, "HB+") && strstr(line, "LOCAL MODS")) {
-                line = nc_strtok(NULL, "\r\n");
-                continue;
-            }
-
-            // Parse "N = (mod1, mod2, mod3)" lines
-            if (section == 1 || section == 2) {
+            } else if (nc_stricmp(line, "============================================================") == 0) {
+                // footer
+            } else if (strstr(line, "HB+") && strstr(line, "LOCAL MODS")) {
+                // header
+            } else if (section == 1 || section == 2) {
                 parseSlotLine(line, section);
             }
-
-            line = nc_strtok(NULL, "\r\n");
         }
+
+        if (saved == '\0') break;
+        pos = lineEnd + 1;
+        if (*pos == '\n') pos++;
+    }
+}
+
+static void parseConfigFile() {
+    for (int i = 0; i < NUM_SLOTS * 2; i++) {
+        g_levelConfigs[i].count = 0;
+        memset(g_levelConfigs[i].mods, 0, sizeof(g_levelConfigs[i].mods));
     }
 
-    void parseSlotLine(char* line, int section) {
-        // Find the '=' sign
-        char* eq = strchr(line, '=');
-        if (!eq) return;
-
-        // Parse slot number
-        // Trim whitespace before '='
-        char numBuf[16];
-        char* p = line;
-        int numIdx = 0;
-        while (p < eq && *p && numIdx < 15) {
-            if (*p >= '0' && *p <= '9') {
-                numBuf[numIdx++] = *p;
-            }
-            p++;
-        }
-        numBuf[numIdx] = '\0';
-
-        int slotNum = 0;
-        for (int i = 0; numBuf[i]; i++) {
-            slotNum = slotNum * 10 + (numBuf[i] - '0');
-        }
-
-        if (slotNum < 1 || slotNum > NUM_SLOTS) return;
-
-        // Slot index: section 1 (races) = slotNum-1, section 2 (arenas) = NUM_SLOTS + slotNum-1
-        int slotIdx = (section == 1) ? (slotNum - 1) : (NUM_SLOTS + slotNum - 1);
-        SlotConfig* cfg = &levelConfigs[slotIdx];
-
-        // Parse content after '=' — may be wrapped in ( )
-        char* content = eq + 1;
-        while (*content == ' ' || *content == '\t') content++;
-
-        // Remove outer parentheses if present
-        if (*content == '(') content++;
-        // Trim trailing ')'
-        char* endParen = strrchr(content, ')');
-        if (endParen) *endParen = '\0';
-
-        // If nothing after =, slot is empty (default)
-        if (!*content) return;
-
-        // Tokenize by comma
-        char* tok = nc_strtok(content, ",");
-        while (tok && cfg->count < MAX_MODS_PER_SLOT) {
-            // Trim whitespace
-            while (*tok == ' ' || *tok == '\t') tok++;
-            // Trim trailing whitespace
-            char* end = tok + nc_strlen(tok);
-            while (end > tok && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) {
-                end--;
-            }
-            *end = '\0';
-
-            if (*tok) {
-                nc_strncpy(cfg->mods[cfg->count].name, tok, MAX_MOD_NAME_LEN - 1);
-                cfg->mods[cfg->count].name[MAX_MOD_NAME_LEN - 1] = '\0';
-                cfg->count++;
-            }
-
-            tok = nc_strtok(NULL, ",");
-        }
+    HANDLE hFile = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ,
+                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        createDefaultConfig();
+        return;
     }
 
-    void createDefaultConfig() {
-        HANDLE hFile = CreateFileA(configPath, GENERIC_WRITE, 0, NULL,
-                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hFile == INVALID_HANDLE_VALUE) return;
-
-        DWORD written;
-
-        // Header
-        const char* header =
-            "==================== HB+  |  LOCAL MODS ====================\r\n"
-            "\r\n"
-            "LEVELS\r\n";
-        WriteFile(hFile, header, (DWORD)nc_strlen(header), &written, NULL);
-
-        // Level slots 1-15
-        for (int i = 1; i <= NUM_SLOTS; i++) {
-            char line[32];
-            nc_snprintf(line, sizeof(line), "%d = \r\n", i);
-            WriteFile(hFile, line, (DWORD)nc_strlen(line), &written, NULL);
-        }
-
-        // Arena section
-        const char* arenaHeader =
-            "\r\n"
-            "ARENAS\r\n";
-        WriteFile(hFile, arenaHeader, (DWORD)nc_strlen(arenaHeader), &written, NULL);
-
-        // Arena slots 1-15
-        for (int i = 1; i <= NUM_SLOTS; i++) {
-            char line[32];
-            nc_snprintf(line, sizeof(line), "%d = \r\n", i);
-            WriteFile(hFile, line, (DWORD)nc_strlen(line), &written, NULL);
-        }
-
-        // Footer
-        const char* footer =
-            "\r\n"
-            "============================================================\r\n";
-        WriteFile(hFile, footer, (DWORD)nc_strlen(footer), &written, NULL);
-
+    DWORD fileSize = GetFileSize(hFile, NULL);
+    if (fileSize == INVALID_FILE_SIZE || fileSize > 65536) {
         CloseHandle(hFile);
+        return;
     }
 
-    // ========================================================================
-    // DLL Loading / Unloading
-    // ========================================================================
-
-    int findLoadedMod(const char* name) {
-        for (int i = 0; i < loadedCount; i++) {
-            if (strcmp(loadedMods[i].name, name) == 0) return i;
-        }
-        return -1;
+    char* buffer = (char*)nc_malloc(fileSize + 1);
+    if (!buffer) {
+        CloseHandle(hFile);
+        return;
     }
 
-    bool loadMod(const char* dllName) {
-        if (loadedCount >= MAX_LOADED_MODS) return false;
+    DWORD bytesRead = 0;
+    if (!ReadFile(hFile, buffer, fileSize, &bytesRead, NULL) || bytesRead == 0) {
+        nc_free(buffer);
+        CloseHandle(hFile);
+        return;
+    }
+    buffer[bytesRead] = '\0';
+    CloseHandle(hFile);
 
-        // Build full path: <gameDir>\Localmods\<dllName>
-        char fullPath[MAX_PATH * 2];
-        nc_snprintf(fullPath, sizeof(fullPath), "%s%s", localModsPath, dllName);
+    parseConfigBuffer(buffer);
+    nc_free(buffer);
+}
 
-        HMODULE h = LoadLibraryA(fullPath);
-        if (!h) return false;
+// ============================================================================
+// DLL Loading / Unloading
+// ============================================================================
 
-        // Get CreateModInstance export
-        CreateModFunct createFunc = (CreateModFunct)GetProcAddress(h, "CreateModInstance");
-        if (!createFunc) {
-            FreeLibrary(h);
-            return false;
-        }
+static int findLoadedMod(const char* name) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (strcmp(g_loadedMods[i].name, name) == 0) return i;
+    }
+    return -1;
+}
 
-        // Create mod instance
-        HamsterballAPI* instance = createFunc();
-        if (!instance) {
-            FreeLibrary(h);
-            return false;
-        }
+static bool loadMod(const char* dllName) {
+    if (g_loadedCount >= MAX_LOADED_MODS) return false;
 
-        // Check API version compatibility
-        if (instance->GetApiVersion() != HAMSTERBALL_API_VERSION) {
-            // Version mismatch — still try to load, but could be problematic
-        }
-
-        // Initialize the mod
-        instance->Initialize(api);
-
-        // Register in loaded mods array
-        LoadedMod* lm = &loadedMods[loadedCount];
-        lm->dllHandle = h;
-        lm->instance = instance;
-        lm->createFunc = createFunc;
-        lm->active = true;
-        nc_strncpy(lm->name, dllName, MAX_MOD_NAME_LEN);
-        loadedCount++;
-
-        return true;
+    // Append .dll if missing
+    char fileName[MAX_MOD_NAME_LEN + 8];
+    strncpy(fileName, dllName, MAX_MOD_NAME_LEN);
+    fileName[MAX_MOD_NAME_LEN - 1] = '\0';
+    size_t nameLen = strlen(fileName);
+    if (nameLen >= 4 && nc_stricmp(fileName + nameLen - 4, ".dll") == 0) {
+        // already has .dll
+    } else {
+        strcat(fileName, ".dll");
     }
 
-    void unloadMod(int index) {
-        if (index < 0 || index >= loadedCount) return;
+    char fullPath[MAX_PATH * 2];
+    snprintf(fullPath, sizeof(fullPath), "%s%s", g_localModsPath, fileName);
 
-        LoadedMod* lm = &loadedMods[index];
+    HMODULE h = LoadLibraryA(fullPath);
+    if (!h) return false;
 
-        // Notify mod of scene end if active
-        if (lm->active && lm->instance) {
-            lm->instance->onSceneEnd();
-        }
-
-        // Free the mod instance (let its destructor clean up)
-        if (lm->instance) {
-            delete lm->instance;
-            lm->instance = NULL;
-        }
-
-        // Unload the DLL
-        if (lm->dllHandle) {
-            FreeLibrary(lm->dllHandle);
-            lm->dllHandle = NULL;
-        }
-
-        lm->active = false;
-        lm->name[0] = '\0';
-
-        // Shift array down
-        for (int i = index; i < loadedCount - 1; i++) {
-            loadedMods[i] = loadedMods[i + 1];
-        }
-        loadedCount--;
-
-        // Zero the vacated slot
-        loadedMods[loadedCount].dllHandle = NULL;
-        loadedMods[loadedCount].instance = NULL;
-        loadedMods[loadedCount].createFunc = NULL;
-        loadedMods[loadedCount].active = false;
-        loadedMods[loadedCount].name[0] = '\0';
+    CreateModFunct createFunc = (CreateModFunct)GetProcAddress(h, "CreateModInstance");
+    if (!createFunc) {
+        FreeLibrary(h);
+        return false;
     }
 
-    void unloadInactiveMods(int currentSlot) {
-        // Build list of mod names needed for current slot
-        SlotConfig* cfg = &levelConfigs[currentSlot];
-        bool needed[MAX_LOADED_MODS];
-        for (int i = 0; i < MAX_LOADED_MODS; i++) needed[i] = false;
+    HamsterballAPI* instance = createFunc();
+    if (!instance) {
+        FreeLibrary(h);
+        return false;
+    }
 
-        // For each loaded mod, check if it's in the current slot's config
-        for (int i = 0; i < loadedCount; i++) {
-            bool isNeeded = false;
-            for (int j = 0; j < cfg->count; j++) {
-                if (strcmp(loadedMods[i].name, cfg->mods[j].name) == 0) {
-                    isNeeded = true;
-                    break;
-                }
+    // Initialize the mod (pass g_api from HB+)
+    instance->Initialize(g_api);
+
+    LoadedMod* lm = &g_loadedMods[g_loadedCount];
+    lm->dllHandle = h;
+    lm->instance = instance;
+    lm->createFunc = createFunc;
+    lm->active = true;
+    strncpy(lm->name, dllName, MAX_MOD_NAME_LEN);
+    lm->name[MAX_MOD_NAME_LEN - 1] = '\0';
+    g_loadedCount++;
+
+    return true;
+}
+
+static void unloadMod(int index) {
+    if (index < 0 || index >= g_loadedCount) return;
+
+    LoadedMod* lm = &g_loadedMods[index];
+
+    if (lm->active && lm->instance) {
+        lm->instance->onSceneEnd();
+    }
+
+    if (lm->instance) {
+        delete lm->instance;
+        lm->instance = NULL;
+    }
+
+    if (lm->dllHandle) {
+        FreeLibrary(lm->dllHandle);
+        lm->dllHandle = NULL;
+    }
+
+    lm->active = false;
+    lm->name[0] = '\0';
+
+    for (int i = index; i < g_loadedCount - 1; i++) {
+        g_loadedMods[i] = g_loadedMods[i + 1];
+    }
+    g_loadedCount--;
+}
+
+static void unloadInactiveMods(int currentSlot) {
+    SlotConfig* cfg = &g_levelConfigs[currentSlot];
+    bool needed[MAX_LOADED_MODS];
+    for (int i = 0; i < MAX_LOADED_MODS; i++) needed[i] = false;
+
+    for (int i = 0; i < g_loadedCount; i++) {
+        bool isNeeded = false;
+        for (int j = 0; j < cfg->count; j++) {
+            if (strcmp(g_loadedMods[i].name, cfg->mods[j].name) == 0) {
+                isNeeded = true;
+                break;
             }
-            needed[i] = isNeeded;
         }
-
-        // Unload mods that are no longer needed (iterate backwards)
-        for (int i = loadedCount - 1; i >= 0; i--) {
-            if (!needed[i]) {
-                unloadMod(i);
-            }
-        }
+        needed[i] = isNeeded;
     }
 
-    void unloadAllMods() {
-        for (int i = loadedCount - 1; i >= 0; i--) {
-            unloadMod(i);
+    for (int i = g_loadedCount - 1; i >= 0; i--) {
+        if (!needed[i]) unloadMod(i);
+    }
+}
+
+static void unloadAllMods() {
+    for (int i = g_loadedCount - 1; i >= 0; i--) {
+        unloadMod(i);
+    }
+}
+
+// ============================================================================
+// Callback implementations (free functions, referenced by manual vtable)
+// ============================================================================
+
+static void __thiscall init_impl(void* thisptr, IModAPI* api) {
+    g_api = api;
+    g_modObj = thisptr;
+
+    g_loadedCount = 0;
+    g_currentLevelIndex = -1;
+    memset(g_loadedMods, 0, sizeof(g_loadedMods));
+
+    buildPaths();
+    parseConfigFile();
+}
+
+static void __thiscall level_start_impl(void* thisptr) {
+    parseConfigFile();
+    g_currentLevelIndex = identifyLevel();
+
+    if (g_currentLevelIndex < 0) return;
+
+    int slot = g_currentLevelIndex;
+    SlotConfig* cfg = &g_levelConfigs[slot];
+
+    unloadInactiveMods(slot);
+
+    for (int i = 0; i < cfg->count; i++) {
+        const char* modName = cfg->mods[i].name;
+        if (!modName[0]) continue;
+        if (findLoadedMod(modName) >= 0) continue;
+        loadMod(modName);
+    }
+
+    // Call onLevelStart on all active loaded mods
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onLevelStart();
         }
     }
+}
+
+static void __thiscall scene_end_impl(void* thisptr) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onSceneEnd();
+        }
+    }
+    unloadAllMods();
+    g_currentLevelIndex = -1;
+}
+
+static void __thiscall ball_update_impl(void* thisptr, Ball* ball) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onBallUpdate(ball);
+        }
+    }
+}
+
+static void __thiscall game_update_impl(void* thisptr) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onGameUpdate();
+        }
+    }
+}
+
+static void __thiscall text_render_impl(void* thisptr) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onTextRenderLoop();
+        }
+    }
+}
+
+static void __thiscall button_toggle_impl(void* thisptr, const char* buttonId, bool newState) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onButtonToggle(buttonId, newState);
+        }
+    }
+}
+
+static void __thiscall slider_change_impl(void* thisptr, const char* sliderId, float newValue) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onSliderChange(sliderId, newValue);
+        }
+    }
+}
+
+static void __thiscall event_collide_impl(void* thisptr, Ball* ball, char* eventPlaneID) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onEventPlaneCollide(ball, eventPlaneID);
+        }
+    }
+}
+
+static void __thiscall ball_bump_impl(void* thisptr, Ball* ball1, Ball* ball2) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onBallBump(ball1, ball2);
+        }
+    }
+}
+
+static void __thiscall render_apply_impl(void* thisptr, void* this_ptr, float* viewMatrix) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onRenderApply(this_ptr, viewMatrix);
+        }
+    }
+}
+
+static void __thiscall cycle_option_impl(void* thisptr, const char* cycleId, const char* newOption) {
+    for (int i = 0; i < g_loadedCount; i++) {
+        if (g_loadedMods[i].active && g_loadedMods[i].instance) {
+            g_loadedMods[i].instance->onCycleOptionChange(cycleId, newOption);
+        }
+    }
+}
+
+// ============================================================================
+// Manual Vtable (16-entry MSVC layout)
+// ============================================================================
+
+static void* __thiscall sc_dtor(void* thisptr, int flags) {
+    // Cleanup on unload
+    unloadAllMods();
+    if (flags & 1) operator delete(thisptr);
+    return thisptr;
+}
+
+static const char* __thiscall get_mod_name(void*) { return "Local Mods"; }
+static const char* __thiscall get_author(void*) { return "Hamsterbot"; }
+static int __thiscall get_version(void*) { return HAMSTERBALL_API_VERSION; }
+static const char* __thiscall get_contributors(void*) { return ""; }
+
+static void* g_vtable[16] = {
+    (void*)sc_dtor,           // [0] scalar deleting destructor
+    (void*)get_mod_name,      // [1] GetModName
+    (void*)get_author,        // [2] GetAuthorName
+    (void*)get_version,       // [3] GetApiVersion
+    (void*)get_contributors,  // [4] GetContributors
+    (void*)init_impl,         // [5] Initialize
+    (void*)ball_update_impl,  // [6] onBallUpdate
+    (void*)render_apply_impl, // [7] onRenderApply
+    (void*)button_toggle_impl,// [8] onButtonToggle
+    (void*)slider_change_impl,// [9] onSliderChange
+    (void*)game_update_impl,  // [10] onGameUpdate
+    (void*)event_collide_impl,// [11] onEventPlaneCollide
+    (void*)text_render_impl,  // [12] onTextRenderLoop
+    (void*)ball_bump_impl,    // [13] onBallBump
+    (void*)scene_end_impl,    // [14] onSceneEnd
+    (void*)level_start_impl,  // [15] onLevelStart
 };
 
 // ============================================================================
@@ -653,5 +594,8 @@ private:
 // ============================================================================
 
 extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
-    return new LocalModsLoader();
+    void* obj = operator new(8);  // 8 bytes: vtable ptr + IModAPI* member
+    *(void**)obj = g_vtable;
+    *(void**)((char*)obj + 4) = NULL;
+    return (HamsterballAPI*)obj;
 }
