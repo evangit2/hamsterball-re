@@ -1,0 +1,40 @@
+# Local Gravity Configuration
+# Each line is a float value for gravity on that level/arena.
+# 0.5 = normal gravity (game default)
+# 0.125 = low gravity (25% of normal)
+# 2.0 = double gravity
+# Negative values reverse gravity direction.
+# Lines 1-15: Race levels | Lines 16-30: Arena levels
+
+# --- Races ---
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+# --- Arenas ---
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
+0.5
