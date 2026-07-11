@@ -22,6 +22,6 @@ i686-w64-mingw32-g++ -shared -o local_mods.dll LocalMods.cpp nocrt.cpp \
   -Wl,--exclude-symbols,_strcpy -Wl,--exclude-symbols,_strcat \
   -Wl,--exclude-symbols,_strtok -Wl,--exclude-symbols,_realloc \
   -Wl,--exclude-symbols,_strchr -Wl,--exclude-symbols,_strstr \
-  -Wl,--exclude-symbols,_strrchr -Wl,--exclude-symbols,_stricmp
+  -Wl,--exclude-symbols,_strrchr -Wl,--exclude-symbols,_stricmp -Wl,--exclude-symbols,_memcmp
 
 echo "Build complete: local_mods.dll"
