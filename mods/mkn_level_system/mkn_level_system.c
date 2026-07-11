@@ -1826,8 +1826,12 @@ static void mkn_init(void) {
     /* Step 4: Parse config file for VTABLE/SET/SWAP/etc commands */
     apply_config();
 
-    /* Step 5: Install FrameUpdate epilogue hook for main-thread D3D8 ops */
-    install_frameupdate_hook();
+    /* Step 5: FrameUpdate hook REMOVED in v6.8.
+     * The hook caused crashes at 0x452BDA during menu navigation (MouseDown)
+     * because it patched App_FrameUpdate's epilogue and corrupted execution
+     * during non-level screens. Summon_NeonLight now runs via ADD (vtable[18])
+     * during level setup, and Summon_NeonEffect (slot 36) only does material
+     * writes — neither needs the FrameUpdate hook. */
 
     /* Step 6: Start extended vtable dispatch thread */
     start_dispatch_thread();
