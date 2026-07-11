@@ -1,0 +1,37 @@
+[ENABLE]
+// ============================================================
+// Hamsterball No-Fog Toggle
+// ============================================================
+// Patches the single SetRenderState(D3DRS_FOGENABLE=8, ...)
+// call in Graphics_SetupLights Defaults(4) at 0x4546C6.
+//
+// The call pattern at 0x4546C6 is:
+//   6A 08          push 8        (D3DRS_FOGENABLE)
+//   50             push eax      (device)
+//   FF 92 C8...    call [edx+0xC8]  (SetRenderState)
+//
+// Changing the state byte from 08 to FE makes it set
+// an invalid render state — D3D8 ignores it, fog never
+// gets enabled. Stack stays balanced (stdcall callee-clean).
+//
+// The game still sets fog start/end/color/vertex-mode in
+// FUN_004539A0, but with FOGENABLE=0 those have no effect.
+// ============================================================
+
+alloc(g_NoFogEnabled, 4)
+registersymbol(g_NoFogEnabled)
+
+g_NoFogEnabled:
+  dd 1
+
+// Patch: change D3DRS_FOGENABLE (8) to invalid state (0xFE)
+// Byte at 0x4546C7: 08 → FE
+00456C7:
+  db FE
+
+[DISABLE]
+00456C7:
+  db 08
+
+dealloc(g_NoFogEnabled)
+unregistersymbol(g_NoFogEnabled)
