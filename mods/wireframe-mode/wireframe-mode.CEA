@@ -1,0 +1,87 @@
+// ============================================================
+// Hamsterball Wireframe Mode Toggle
+// ============================================================
+// Hooks Graphics_BeginFrame (0x453B50) to set D3DRS_FILLMODE
+// every frame before 3D rendering. 2D sprites/text render solid.
+//
+// D3D device chain:
+//   Graphics object (ECX at entry) -> +0x154 = IDirect3DDevice8*
+//   D3D device vtable + 0xC8 = SetRenderState
+//
+// D3DRS_FILLMODE = 7
+// D3DFILL_SOLID     = 3
+// D3DFILL_WIREFRAME  = 2
+//
+// Toggle: set g_WireframeEnabled to 1 (ON) or 0 (OFF) in CE
+// Hotkey: F8 to toggle wireframe on/off
+// ============================================================
+
+alloc(WireframeCave, 512)
+alloc(g_WireframeEnabled, 4)
+registersymbol(g_WireframeEnabled)
+
+g_WireframeEnabled:
+  dd 0
+
+WireframeCave:
+  // ---- Execute original 7 bytes from Graphics_BeginFrame ----
+  // 00453B50: 53           push ebx
+  // 00453B51: 8B D9        mov ebx,ecx
+  // 00453B53: 8B 4C 24 08  mov ecx,[esp+08]
+  push ebx
+  mov ebx,ecx
+  mov ecx,[esp+08]
+
+  // ---- Apply wireframe render state ----
+  // EBX = Graphics object (this)
+  // Graphics+0x154 = IDirect3DDevice8*
+  push eax
+  push edx
+  push ecx
+
+  mov eax,[ebx+00000154]    // EAX = D3D device
+  test eax,eax
+  jz WireframeCave_skip      // null safety check
+
+  mov edx,[eax]              // EDX = device vtable
+
+  cmp [g_WireframeEnabled],0
+  jz WireframeCave_solid
+
+  // Wireframe ON: SetRenderState(D3DRS_FILLMODE=7, D3DFILL_WIREFRAME=2)
+  push 2
+  jmp WireframeCave_call
+
+WireframeCave_solid:
+  // Wireframe OFF: SetRenderState(D3DRS_FILLMODE=7, D3DFILL_SOLID=3)
+  push 3
+
+WireframeCave_call:
+  push 7                     // D3DRS_FILLMODE
+  push eax                   // this (D3D device)
+  call dword ptr [edx+0xC8]  // device->SetRenderState(7, value)
+
+WireframeCave_skip:
+  pop ecx
+  pop edx
+  pop eax
+
+  // ---- Return to Graphics_BeginFrame+7 ----
+  jmp 00453B57
+
+// ---- Install hook ----
+// Overwrite 7 bytes: 5-byte JMP + 2 NOPs
+00453B50:
+  jmp WireframeCave
+  nop
+  nop
+
+[DISABLE]
+00453B50:
+  push ebx
+  mov ebx,ecx
+  mov ecx,[esp+08]
+
+dealloc(WireframeCave)
+dealloc(g_WireframeEnabled)
+unregistersymbol(g_WireframeEnabled)
