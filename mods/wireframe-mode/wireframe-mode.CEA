@@ -1,19 +1,26 @@
 // ============================================================
-// Hamsterball Wireframe Mode Toggle
+// Hamsterball Wireframe Mode Toggle v2
 // ============================================================
 // Hooks Graphics_BeginFrame (0x453B50) to set D3DRS_FILLMODE
 // every frame before 3D rendering. 2D sprites/text render solid.
+//
+// v2 FIX: The game resets FILLMODE to 1 (POINT) DURING 3D rendering
+// in Ball_Render (0x40433E) and FUN_00402860 (0x004028F5). Both
+// check a cache byte at graphics+0x70d — if it's already 1, they
+// skip the SetRenderState(7, 1) call. Our hook writes 1 to the
+// cache so the game thinks FILLMODE is already POINT and doesn't
+// override our wireframe setting.
 //
 // D3D device chain:
 //   Graphics object (ECX at entry) -> +0x154 = IDirect3DDevice8*
 //   D3D device vtable + 0xC8 = SetRenderState
 //
 // D3DRS_FILLMODE = 7
+// D3DFILL_POINT     = 1 (game default — never actually visible as points)
+// D3DFILL_WIREFRAME = 2
 // D3DFILL_SOLID     = 3
-// D3DFILL_WIREFRAME  = 2
 //
 // Toggle: set g_WireframeEnabled to 1 (ON) or 0 (OFF) in CE
-// Hotkey: F8 to toggle wireframe on/off
 // ============================================================
 
 alloc(WireframeCave, 512)
@@ -32,9 +39,14 @@ WireframeCave:
   mov ebx,ecx
   mov ecx,[esp+08]
 
-  // ---- Apply wireframe render state ----
+  // ---- Check if wireframe is enabled ----
+  cmp [g_WireframeEnabled],0
+  jz WireframeCave_done
+
+  // ---- Wireframe ON: set FILLMODE=2 and trick the cache ----
   // EBX = Graphics object (this)
   // Graphics+0x154 = IDirect3DDevice8*
+  // Graphics+0x70d = fillmode cache byte
   push eax
   push edx
   push ecx
@@ -45,27 +57,24 @@ WireframeCave:
 
   mov edx,[eax]              // EDX = device vtable
 
-  cmp [g_WireframeEnabled],0
-  jz WireframeCave_solid
-
-  // Wireframe ON: SetRenderState(D3DRS_FILLMODE=7, D3DFILL_WIREFRAME=2)
+  // SetRenderState(D3DRS_FILLMODE=7, D3DFILL_WIREFRAME=2)
   push 2
-  jmp WireframeCave_call
+  push 7
+  push eax
+  call dword ptr [edx+0xC8]
 
-WireframeCave_solid:
-  // Wireframe OFF: SetRenderState(D3DRS_FILLMODE=7, D3DFILL_SOLID=3)
-  push 3
-
-WireframeCave_call:
-  push 7                     // D3DRS_FILLMODE
-  push eax                   // this (D3D device)
-  call dword ptr [edx+0xC8]  // device->SetRenderState(7, value)
+  // CRITICAL FIX: Write 1 to the fillmode cache (graphics+0x70d)
+  // This tricks Ball_Render and FUN_00402860 into thinking FILLMODE
+  // is already 1 (POINT), so they skip their SetRenderState(7, 1) calls.
+  // Our wireframe setting (2) persists through 3D mesh rendering.
+  mov byte ptr [ebx+0x70d], 1
 
 WireframeCave_skip:
   pop ecx
   pop edx
   pop eax
 
+WireframeCave_done:
   // ---- Return to Graphics_BeginFrame+7 ----
   jmp 00453B57
 
