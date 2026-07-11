@@ -112,15 +112,20 @@ Summon Functions (v6):
                          Uses board+0x22b (MeshWorld ptr), board+0x10db (bumper slot array).
                          Idempotent: skips if board+0x10db != 0 (already collected).
 
-  Summon_NeonEffect   — Neon glow material effect on the ball.
-                         Extracted from Scene_SetupLevelDark (0x416270).
+  Summon_NeonLight    — Creates the D3D8 neon light SceneObject.
+                         Replicates light creation from Scene_SetupLevelDark.
+                         MUST be used with ADD command or native vtable slots
+                         (0-35). NOT safe for extended slots (36-127).
+                         Creates: SceneObject + light color + position + range
+                         + Init + Scene_RegisterObject + material matrices.
+                         Idempotent: skips if light already created.
+
+  Summon_NeonEffect   — Neon glow material effect on the ball (no D3D8 light).
                          Applies Matrix_Scale4x4(1,1,0,1) material values
                          to ball ambient/diffuse/specular (all 16 elements
                          per material, not just 3).
-                         v6.7: D3D8 SceneObject light removed (caused crashes
-                         from FrameUpdate hook). Material glow only.
-                         Idempotent: skips if board+0x642C == "NEON" sentinel.
                          Safe for extended slots (36-127).
+                         Idempotent: skips if board+0x642C == "NEON" sentinel.
 
   Summon_NeonOutline  — Material-only neon glow (no D3D8 light).
                          Sets ball ambient/diffuse/specular R=1.0.
@@ -144,6 +149,8 @@ Summon Functions (v6):
                          Best used once during level setup.
 
   Usage examples:
+    ADD 1 Summon_NeonLight               ; Add neon light to Level 1 (runs after setup)
+    VTABLE 1 36 Summon_NeonEffect        ; Refresh materials every frame (slot 36)
     VTABLE 1 36 Summon_Bumpers          ; Add bumpers to Level 1 (per-frame, safe)
     VTABLE 7 36 Summon_NeonEffect       ; Add neon glow to Neon level (per-frame, safe)
     VTABLE 3 32 Summon_BoardSetup        ; Replace Board_Setup on Intermediate
@@ -167,6 +174,7 @@ Summon Functions (v6):
 ##VTABLE 1 13 Odd_DispatchColl
 #VTABLE 1 30 Odd_DispatchColl
 #VTABLE 1 34 Odd_DispatchColl
+ADD 1 Summon_NeonLight
 VTABLE 1 36 Summon_NeonEffect
 
 # ════════════════════════════════════════════════════════════════════════════

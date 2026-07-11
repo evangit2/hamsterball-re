@@ -302,15 +302,104 @@ static void __fastcall Summon_NeonOutline(DWORD board) {
     diag_log("[summon] Summon_NeonOutline: applied neon glow materials to ball");
 }
 
-/* ============================================================
- * Main-thread neon light creation system
+/* Summon_NeonLight — creates the D3D8 neon light SceneObject.
+ * Replicates the light creation from Scene_SetupLevelDark (0x416270).
  *
- * Summon_NeonEffect (below) sets a pending flag from the dispatch
- * thread. A code cave hooked at App_FrameUpdate epilogue (0x0046C1F1)
- * runs on the main thread and creates the D3D8 SceneObject (light)
- * when the flag is set. This is required because D3D8 is
- * single-threaded — objects created from a background thread crash
- * the render loop.
+ * MUST be called from a NATIVE vtable slot (0-35) during level setup,
+ * NOT from extended slots (36-127). D3D8 object creation is only safe
+ * during level setup on the main thread.
+ *
+ * Usage:
+ *   ADD 1 Summon_NeonLight       (adds after level 1's normal setup)
+ *   VTABLE 1 19 Summon_NeonLight  (replaces InitScene — not recommended)
+ *
+ * Idempotent: skips if board+0x436C already has a light object. */
+static void __fastcall Summon_NeonLight(DWORD board) {
+    if (!board || board < 0x10000) return;
+    if (IsBadReadPtr((void*)board, 0x6500)) return;
+
+    int* param_1 = (int*)board;
+
+    DWORD app = (DWORD)param_1[0x21e];
+    if (!app || app < 0x10000) return;
+    if (IsBadReadPtr((void*)app, 0x700)) return;
+
+    DWORD gfx_ctx = *(DWORD*)(app + 0x174);
+    if (!gfx_ctx || gfx_ctx < 0x10000) return;
+
+    /* Check if light already created (idempotent) */
+    if (param_1[0x10db] != 0) return;
+
+    /* Get ball position (ball is created by Board_Setup which runs before us) */
+    DWORD ball = *(DWORD*)(app + 0x5DC);
+    if (!ball || ball < 0x10000) return;
+    if (IsBadReadPtr((void*)ball, 0x600)) return;
+
+    float ball_x = *(float*)(ball + 0x164);
+    float ball_y = *(float*)(ball + 0x168);
+    float ball_z = *(float*)(ball + 0x16C);
+
+    /* Create SceneObject for the light — same as Scene_SetupLevelDark */
+    void* mem = game_operator_new(0xD4);
+    if (!mem) return;
+
+    DWORD* obj = (DWORD*)game_SceneObject_ctor(mem, gfx_ctx);
+    if (!obj) return;
+
+    /* Store in board+0x436C (same offset as original) */
+    param_1[0x10db] = (int)obj;
+    obj[0x34] = 1;  /* obj+0xD0 = type flag (1 = light) */
+
+    /* Set position offset: Vec3_Init(&local, 10.0, 10.0) then copy to obj+0x94
+     * This is the light's offset from the ball — gives it a yellow tint.
+     * The original pushes 0x41200000 (10.0f) twice to Vec3_Init. */
+    float pos_offset[4] = { 10.0f, 10.0f, 0.0f, 0.0f };
+    memcpy((void*)((DWORD)obj + 0x94), pos_offset, 16);
+
+    /* Set position via vtable[1] (SetPosition/SetTransform) — at ball pos + 0.5 Y */
+    typedef void (__thiscall *SetTransform_t)(DWORD obj, float x, float y, float z);
+    SetTransform_t set_transform = (SetTransform_t)(*(DWORD*)(*obj + 4));
+    set_transform((DWORD)obj, ball_x, ball_y + 0.5f, ball_z);
+
+    /* Set range: obj+0xCC = 400.0f (0x43C80000) */
+    obj[0x33] = 0x43C80000;
+
+    /* Call vtable[3] (Init) — binds light to D3D8 device */
+    typedef void (__thiscall *Init_t)(DWORD obj);
+    Init_t init_fn = (Init_t)(*(DWORD*)(*obj + 0xC));
+    init_fn((DWORD)obj);
+
+    /* Register with scene so it's in the render list */
+    game_SceneRegisterObject(gfx_ctx, 0, (int*)obj);
+
+    /* Apply material matrices (same as Summon_NeonOutline) */
+    if (!IsBadReadPtr((void*)(ball + 0x1F8), 4)) {
+        *(float*)(ball + 0x1D0) = 0.0f;
+        *(float*)(ball + 0x1D4) = 0.0f;
+        *(DWORD*)(ball + 0x1CC) = 0;
+        *(float*)(ball + 0x1D8) = 1.0f;
+        *(float*)(ball + 0x1C0) = 0.0f;
+        *(float*)(ball + 0x1C4) = 0.0f;
+        *(DWORD*)(ball + 0x1BC) = 0;
+        *(float*)(ball + 0x1C8) = 1.0f;
+        *(float*)(ball + 0x1F0) = 0.0f;
+        *(float*)(ball + 0x1F4) = 0.0f;
+        *(DWORD*)(ball + 0x1EC) = 0;
+        *(float*)(ball + 0x1F8) = 1.0f;
+        *(BYTE*)(ball + 0x204) = (*(float*)(ball + 0x1C8) != 3.0f) ? 1 : 0;
+    }
+
+    /* Set sentinel so Summon_NeonEffect/Outline don't redo materials */
+    *(DWORD*)(board + 0x642C) = 0x4E454F4E;
+
+    diag_log("[summon] Summon_NeonLight: created D3D8 neon light + glow materials");
+}
+
+/* ============================================================
+ * Main-thread neon light creation system (FrameUpdate hook)
+ *
+ * This system is kept for backward compatibility but is no longer
+ * needed since Summon_NeonLight runs from native vtable slots.
  * ============================================================ */
 
 static volatile DWORD g_neon_pending_board = 0;  /* board ptr awaiting neon light */
@@ -556,6 +645,7 @@ static const FuncEntry g_functions[] = {
     { "Summon_Bumpers",       (DWORD)Summon_Bumpers },
     { "Summon_NeonEffect",    (DWORD)Summon_NeonEffect },
     { "Summon_NeonOutline",   (DWORD)Summon_NeonOutline },
+    { "Summon_NeonLight",     (DWORD)Summon_NeonLight },
     { "Summon_BoardSetup",    (DWORD)Summon_BoardSetup },
     { "Summon_LevelObjects",  (DWORD)Summon_LevelObjects },
     { "Summon_InitScene",     (DWORD)Summon_InitScene },
