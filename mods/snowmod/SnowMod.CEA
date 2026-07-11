@@ -1,78 +1,57 @@
 // ============================================================
-// SnowMod v3 — "Snow Storm" visibility mod for Hamsterball
+// SnowMod v4 — "Snow Storm" visibility mod for Hamsterball
 // ============================================================
 // Makes all races look like a blinding snow storm:
 //   1. Heavy fog = reduced visibility (adjustable)
 //   2. White-grayish background color (snow clouds)
 //   3. White-grayish ambient lighting (overcast sky)
 //
+// v3 BUG: Hook 2 was at 0x454D09 inside Graphics_RenderScene.
+//   Graphics_RenderScene (0x454BC0) is ONLY called from
+//   Graphics_PresentOrEnd (0x455A90) when Present() returns
+//   D3DERR_DEVICELOST (0x88760868) — i.e. on device reset.
+//   During normal gameplay, Present() returns S_OK, the JNZ at
+//   0x455AB7 skips to 0x455B70, and Graphics_RenderScene is
+//   NEVER reached. Hook 2's SetRenderState calls never executed.
+//
+// v4 FIX: Single hook at 0x46C214 (App_ResetFrame, vtable[9]).
+//   App_ResetFrame is called EVERY FRAME in the render path:
+//     Graphics_BeginFrame → vtable[9]=App_ResetFrame → vtable[10]=Draw → vtable[11]=DrawUI → Present
+//   At 0x46C214: ECX = gfx, ESI = App, gfx+0x154 = D3D device.
+//   ALL SetRenderState calls moved here. No Hook 2 needed.
+//
 // D3D8 RENDER STATE NUMBERS (verified from disassembly):
-//   0x1C (28)  = D3DRS_FOGENABLE        ← v2 was MISSING THIS!
+//   0x1C (28)  = D3DRS_FOGENABLE
 //   0x22 (34)  = D3DRS_FOGCOLOR
-//   0x23 (35)  = D3DRS_FOGTABLEMODE     ← v2 mislabeled as FOGVERTEXMODE!
+//   0x23 (35)  = D3DRS_FOGTABLEMODE
 //   0x24 (36)  = D3DRS_FOGSTART
 //   0x25 (37)  = D3DRS_FOGEND
 //   0x8B (139) = D3DRS_AMBIENT
-//   0x8C (140) = D3DRS_FOGVERTEXMODE    ← v2 never set this!
+//   0x8C (140) = D3DRS_FOGVERTEXMODE
 //
-// FOG SYSTEM PIPELINE (traced from Ghidra disassembly):
+// gfx struct offsets:
+//   gfx+0x154 = D3D device pointer
+//   gfx+0x730 = ambient color (game reads at 0x454C97)
+//   gfx+0x734 = fog enable byte (game reads at 0x454CB2)
+//   gfx+0x738 = fog/bg color (game reads at 0x454CEE, Clear uses it)
+//   gfx+0x73C = fog start (game reads at 0x454CD9)
+//   gfx+0x740 = fog end (game reads at 0x454CD3)
 //
-//   Graphics_SetupLights (0x454630):
-//     0x4546C6: SetRenderState(0x8=FILLMODE, 3)  ← not fog related
-//
-//   Graphics_RenderScene (0x454BC0) — per-frame fog sequence:
-//     0x454C97: MOV ESI,[EBP+0x730]     ← load ambient from gfx+0x730
-//     0x454CA5: PUSH ESI (ambient val)
-//     0x454CA6: PUSH 0x8B (AMBIENT)
-//     0x454CAC: CALL SetRenderState      ← sets AMBIENT from gfx+0x730
-//     0x454CB2: MOV BL,[EBP+0x734]       ← load fog enable flag (BYTE)
-//     0x454CC1: PUSH ECX (fog enable val)
-//     0x454CC2: PUSH 0x1C (FOGENABLE)
-//     0x454CCD: CALL SetRenderState      ← enables/disables fog from gfx+0x734!
-//     0x454CE9: CALL FUN_004539A0        ← conditional fog modes (may skip!)
-//     0x454CF4: MOV EAX,[EBP+0x154]     ← device
-//     0x454CFC: PUSH ESI (fog color val)
-//     0x454CFD: PUSH 0x22 (FOGCOLOR)
-//     0x454D00: CALL SetRenderState      ← sets FOGCOLOR from gfx+0x738
-//     0x454D06: MOV ECX,[EBP+0x5C]      ← load scene object
-//     0x454D09: MOV [EBP+0x738],ESI     ← HOOK 2 POINT (6 bytes)
-//     0x454D0F: MOV EDX,[ECX]            ← vtable of scene object
-//     0x454D11: CALL [EDX+0x88]         ← render scene
-//     0x454D1C: CALL [EAX+0x78]         ← render UI
-//
-//   FUN_004539A0 (fog params applier) — THREE conditional paths:
-//     First: SetRenderState(0x30=RANGEFOGENABLE, 0)  ← always
-//     Then checks gfx+0xA4 flags:
-//     Path A (bit 8 set, bits 20/21 set, +0x7D7==0):
-//       FOGTABLEMODE(0x23)=3(LINEAR), FOGVERTEXMODE(0x8C)=0(NONE), sets START/END
-//     Path B (bit 7 set, i.e. sign bit):
-//       FOGTABLEMODE(0x23)=0(NONE), FOGVERTEXMODE(0x8C)=3(LINEAR), sets START/END
-//     Path C (neither): NOTHING SET — both modes stay at 0 = NONE = INVISIBLE FOG
-//
-//   v2 BUGS:
-//     1. Never forced FOGENABLE(0x1C)=1. If gfx+0x734=0, fog is disabled entirely.
-//     2. Pushed 0x23 and labeled it "FOGVERTEXMODE" — 0x23 is FOGTABLEMODE!
-//     3. Never set 0x8C (real FOGVERTEXMODE) at all.
-//     4. Wrote gfx+0x730 (ambient) AFTER the game already read it at 0x454C97.
-//
-//   v3 FIX:
-//     HOOK 1 (0x46C214): Write fog enable=1 + ambient + fog params to gfx struct
-//       BEFORE the game reads them in Graphics_RenderScene.
-//     HOOK 2 (0x454D09): Force ALL fog render states via direct SetRenderState
-//       calls AFTER the game's conditional fog logic. Order matters:
-//       FOGENABLE first, then modes, then params, then color/ambient.
+// SetRenderState calling convention (stdcall, callee-clean):
+//   push value, push state, push device, call [vtable+0xC8]
+//   After call: EAX/ECX/EDX trashed, 12 bytes cleaned.
+//   ESI = App (preserved by App_ResetFrame), gfx = [ESI+0x174]
 //
 // ADJUSTABLE PARAMETERS (CE address list):
 //   snow_fog_start     — fog begins at this distance (default 10.0)
 //   snow_fog_end       — fog total at this distance (default 200.0)
-//   snow_fog_color     — fog + background color (default FFE0E0E0 = white-gray)
-//   snow_ambient_color — ambient light color (default FFE0E0E0 = white-gray)
+//   snow_fog_color     — fog + background color (default FFE0E0E0)
+//   snow_ambient_color — ambient light color (default FFE0E0E0)
 // ============================================================
 
 [ENABLE]
 
-alloc(snow_bg_cave, 256)
-alloc(snow_fog_cave, 512)
+alloc(snow_cave, 512)
 alloc(snow_fog_start, 4)
 alloc(snow_fog_end, 4)
 alloc(snow_fog_color, 4)
@@ -84,176 +63,130 @@ registersymbol(snow_fog_color)
 registersymbol(snow_ambient_color)
 
 // Default values — adjust in CE address list!
-// Fog start: 10.0 world units (fog begins very close to camera)
 snow_fog_start:
   dd 41200000   // float 10.0
 
-// Fog end: 200.0 world units (tight visibility — reduce for blizzard)
 snow_fog_end:
   dd 43480000   // float 200.0
 
-// Fog + background color: white-grayish (0xAARRGGBB)
 snow_fog_color:
-  dd FFE0E0E0   // RGB 224,224,224 = light gray (snow clouds)
+  dd FFE0E0E0   // RGB 224,224,224 = white-grayish
 
-// Ambient light color: white-grayish
 snow_ambient_color:
-  dd FFE0E0E0   // RGB 224,224,224 = light gray (overcast)
+  dd FFE0E0E0   // RGB 224,224,224 = white-grayish
 
 // ============================================================
-// HOOK 1: Background color + fog enable + ambient (App_ResetFrame)
+// SINGLE HOOK: 0x46C214 in App_ResetFrame (called every frame)
 // ============================================================
-// 0x46C214: 8B 81 38 07 00 00 = MOV EAX,[ECX+0x738] (6 bytes)
-// ECX = gfx pointer (MUST preserve for ClearViewport)
-// This runs BEFORE Graphics_RenderScene, so writing to gfx struct
-// fields here means the game's own SetRenderState calls will use
-// our values when it reads them.
+// Original: 8B 81 38 07 00 00 = MOV EAX,[ECX+0x738] (6 bytes)
+// ECX = gfx pointer, ESI = App pointer (both available)
+// After our cave: EAX = fog/bg color for Clear call at 0x46C21B
 
-snow_bg_cave:
-  // Write fog enable = 1 to gfx+0x734 (BYTE)
-  // Without this, game calls SetRenderState(FOGENABLE, 0) = fog OFF
+snow_cave:
+  // --- Write gfx struct fields (for game's own calls) ---
+  // Fog enable = 1 (byte at gfx+0x734)
   mov byte ptr [ecx+0x734], 1
 
-  // Write ambient color to gfx+0x730 (DWORD)
-  // Game reads this at 0x454C97 and calls SetRenderState(AMBIENT, ...)
+  // Ambient color (gfx+0x730)
   mov edx, [snow_ambient_color]
   mov [ecx+0x730], edx
 
-  // Write fog start to gfx+0x73C and fog end to gfx+0x740
-  // Game reads these at 0x454CD3/0x454CD9 and passes to FUN_004539A0
+  // Fog start (gfx+0x73C) and fog end (gfx+0x740)
   mov edx, [snow_fog_start]
   mov [ecx+0x73C], edx
   mov edx, [snow_fog_end]
   mov [ecx+0x740], edx
 
-  // Write background/fog color to gfx+0x738
+  // Fog/bg color (gfx+0x738)
   mov edx, [snow_fog_color]
   mov [ecx+0x738], edx
 
-  // Execute original instruction (reads our color back)
-  mov eax, [ecx+0x738]
-
-  // Jump back to 0x46C21A (PUSH EAX -> CALL ClearViewport)
-  jmp 0046C21A
-
-0046C214:
-  jmp snow_bg_cave
-  nop
-
-// ============================================================
-// HOOK 2: Force all fog render states (Graphics_RenderScene)
-// ============================================================
-// 0x454D09: 89 B5 38 07 00 00 = MOV [EBP+0x738],ESI (6 bytes)
-// EBP = gfx pointer (must preserve)
-// At this point, game already called:
-//   SetRenderState(AMBIENT, gfx+0x730)     ← from Hook 1's value
-//   SetRenderState(FOGENABLE, gfx+0x734)   ← from Hook 1's value (=1)
-//   FUN_004539A0 (conditional fog modes)   ← may have skipped modes!
-//   SetRenderState(FOGCOLOR, gfx+0x738)    ← from Hook 1's value
-// We now force ALL fog states directly, bypassing all conditionals.
-//
-// SetRenderState calling convention (stdcall, callee-clean, 3 args = 12 bytes):
-//   push value   (DWORD)
-//   push state   (DWORD)
-//   push device  (this pointer)
-//   call [vtable+0xC8]
-// After call: EAX/ECX/EDX trashed, stack balanced.
-
-snow_fog_cave:
-  // --- Execute original instruction ---
-  mov [ebp+0x738], esi
-
-  // --- Get D3D device pointer ---
-  // gfx+0x154 = D3D device pointer
+  // --- Force D3D render states via direct SetRenderState ---
+  // ESI = App, gfx = [ESI+0x174], device = [gfx+0x154]
   // vtable = [device], SetRenderState = [vtable+0xC8]
 
-  // --- 1. Force FOGENABLE = 1 (state 0x1C) ---
-  // THE CRITICAL FIX: without fog enabled, ALL other fog states are ignored.
-  // Hook 1 writes gfx+0x734=1 so the game's own call should enable it,
-  // but we force it here too for belt-and-suspenders safety.
-  mov eax, [ebp+0x154]
+  // 1. FOGENABLE = 1 (state 0x1C)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push 1
   push 0x1C
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- 2. Force FOGTABLEMODE = LINEAR (state 0x23, value 3) ---
-  // Pixel fog — works on hardware with pixel fog support.
-  mov eax, [ebp+0x154]
+  // 2. FOGTABLEMODE = LINEAR (state 0x23, value 3)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push 3
   push 0x23
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- 3. Force FOGVERTEXMODE = LINEAR (state 0x8C, value 3) ---
-  // Vertex fog — works on ALL hardware. v2 was MISSING THIS entirely!
-  // 0x8C = 140 = D3DRS_FOGVERTEXMODE (not 0x23 which is FOGTABLEMODE)
-  mov eax, [ebp+0x154]
+  // 3. FOGVERTEXMODE = LINEAR (state 0x8C, value 3)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push 3
   push 0x8C
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- 4. Force FOGSTART = our value (state 0x24) ---
-  mov eax, [ebp+0x154]
+  // 4. FOGSTART (state 0x24)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push [snow_fog_start]
   push 0x24
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- 5. Force FOGEND = our value (state 0x25) ---
-  mov eax, [ebp+0x154]
+  // 5. FOGEND (state 0x25)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push [snow_fog_end]
   push 0x25
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- 6. Force FOGCOLOR = our color (state 0x22) ---
-  mov eax, [ebp+0x154]
+  // 6. FOGCOLOR (state 0x22)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push [snow_fog_color]
   push 0x22
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- 7. Force AMBIENT = our color (state 0x8B) ---
-  // Override the game's ambient (which used our gfx+0x730 value from Hook 1).
-  // This direct call ensures it takes effect even if game's call was overridden.
-  mov eax, [ebp+0x154]
+  // 7. AMBIENT (state 0x8B)
+  mov eax, [esi+0x174]
+  mov eax, [eax+0x154]
   mov ecx, [eax]
   push [snow_ambient_color]
   push 0x8B
   push eax
   call dword ptr [ecx+0xC8]
 
-  // --- Restore ECX and EDX for return path ---
-  // Original code at 0x454D0F: MOV EDX,[ECX] where ECX=[EBP+0x5C]
-  // We jump to 0x454D11 (CALL [EDX+0x88]) after setting up EDX ourselves.
-  mov ecx, [ebp+0x5C]
-  mov edx, [ecx]
-  jmp 00454D11
+  // --- Execute original instruction ---
+  // ECX was trashed by SetRenderState calls. Reload from ESI.
+  mov ecx, [esi+0x174]
+  mov eax, [ecx+0x738]
 
-00454D09:
-  jmp snow_fog_cave
+  // --- Jump back to 0x46C21A (PUSH EAX → CALL Clear) ---
+  jmp 0046C21A
+
+0046C214:
+  jmp snow_cave
   nop
 
 [DISABLE]
 
-// Restore Hook 1: 8B 81 38 07 00 00
+// Restore: 8B 81 38 07 00 00 = MOV EAX,[ECX+0x738]
 0046C214:
   db 8B 81 38 07 00 00
 
-// Restore Hook 2: 89 B5 38 07 00 00
-00454D09:
-  db 89 B5 38 07 00 00
-
-dealloc(snow_bg_cave)
-dealloc(snow_fog_cave)
+dealloc(snow_cave)
 dealloc(snow_fog_start)
 dealloc(snow_fog_end)
 dealloc(snow_fog_color)
