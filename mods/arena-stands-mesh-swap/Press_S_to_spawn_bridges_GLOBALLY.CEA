@@ -51,6 +51,7 @@ BridgeStr:
   db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 32 2D 42 72 69 64 67 65 31 30 78 00
   // "Levels\Level2-Bridge10x\0"
 
+
 label(original_code)
 label(save_pos)
 label(check_spawn)

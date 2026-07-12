@@ -1,0 +1,343 @@
+[ENABLE]
+
+// Press S to spawn Level-BridgeColored globally with collision + custom color
+// Based on XRow's fallout floors spawn script
+// Hooks Ball_Update at 0x405E22
+// Spawns at player 1 position, writes custom RGBA color to materials
+
+alloc(SpawnCode, 4096)
+alloc(SpawnBridge, 4)
+alloc(saved_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(float_20_sub, 4)
+alloc(temp_mesh, 4)
+alloc(bridge_array, 68)
+alloc(last_board, 4)
+alloc(BridgeStr, 32)
+alloc(colorR, 4)
+alloc(colorG, 4)
+alloc(colorB, 4)
+alloc(colorA, 4)
+alloc(float_half, 4)
+
+registersymbol(SpawnBridge)
+registersymbol(colorR)
+registersymbol(colorG)
+registersymbol(colorB)
+registersymbol(colorA)
+
+SpawnBridge:
+  dd 0
+
+saved_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+float_20_sub:
+  dd 0xC1A00000
+
+temp_mesh:
+  dd 0
+
+bridge_array:
+  dd 0
+  dd 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+last_board:
+  dd 0
+
+BridgeStr:
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 42 72 69 64 67 65 43 6F 6C 6F 72 65 64 00
+  // "Levels\Level-BridgeColored\0"
+
+// Default color: warm orange (0.8, 0.5, 0.2, 1.0)
+colorR:
+  dd 3F4CCCCD   // 0.8f
+colorG:
+  dd 3F000000   // 0.5f
+colorB:
+  dd 3E4CCCCD   // 0.2f
+colorA:
+  dd 3F800000   // 1.0f
+float_half:
+  dd 3F000000   // 0.5f
+
+label(original_code)
+label(save_pos)
+label(check_spawn)
+label(done_spawn)
+label(no_clear)
+label(do_mesh)
+label(skip_col)
+label(skip_render)
+label(skip_color)
+label(color_loop)
+label(prox_loop)
+label(prox_next)
+label(prox_done)
+
+SpawnCode:
+  cmp dword [esi+0x18], 0
+  jne original_code
+
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz original_code
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+  mov dword [bridge_array], 0
+
+no_clear:
+  mov eax, [bridge_array]
+  test eax, eax
+  jz save_pos
+  pushad
+  xor ebx, ebx
+
+prox_loop:
+  cmp ebx, [bridge_array]
+  jae prox_done
+  mov eax, [bridge_array+4+ebx*4]
+  test eax, eax
+  jz prox_next
+  mov ecx, [eax]
+  test ecx, ecx
+  jz prox_next
+  cmp dword [esi+0x18], 0
+  jne prox_next
+  mov edx, [eax+0x10D0]
+  cmp edx, [last_board]
+  jne prox_next
+
+  mov ecx, eax
+  mov edx, [eax]
+  call dword [edx+0x2C]
+
+prox_next:
+  inc ebx
+  jmp prox_loop
+prox_done:
+  popad
+
+save_pos:
+  cmp dword [esi+0x18], 0
+  jne check_spawn
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  fld dword [esi+0x168]
+  fadd dword [float_20_sub]
+  fstp dword [playerY]
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+check_spawn:
+  cmp dword [SpawnBridge], 0
+  je original_code
+  cmp dword [esi+0x18], 0
+  jne original_code
+  mov dword [SpawnBridge], 0
+
+  pushad
+  mov eax, [esi+0x14]
+  mov [saved_board], eax
+  test eax, eax
+  jz done_spawn
+  mov edx, [eax+0x878]
+  test edx, edx
+  jz done_spawn
+  mov edx, [edx+0x174]
+  test edx, edx
+  jz done_spawn
+
+do_mesh:
+  push 0x10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x878]
+  mov edx, [edx+0x174]
+  push BridgeStr
+  push edx
+  mov ecx, eax
+  call 00461510
+  test eax, eax
+  jz done_spawn
+  mov [temp_mesh], eax
+
+  push 0x10E8
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  mov edx, [temp_mesh]
+  push edx
+  mov edx, [playerZ]
+  push edx
+  mov edx, [playerY]
+  push edx
+  mov edx, [playerX]
+  push edx
+  mov edx, [saved_board]
+  push edx
+  mov ecx, edi
+  call 0043BBC0
+
+  test eax, eax
+  jz done_spawn
+  mov edi, eax
+
+  // Register in board render lists
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  push edi
+  mov ecx, [saved_board]
+  add ecx, 0xCD4
+  call 00453810
+
+  // Register collision
+  mov eax, [edi+0x10D4]
+  test eax, eax
+  jz skip_col
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_col
+  mov eax, [edi+0x10D4]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+
+skip_col:
+  // Register render
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz skip_render
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz skip_render
+  push edi
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+skip_render:
+  // Write custom color to material array in spawned mesh
+  // temp_mesh+0x08 = MeshWorld ptr
+  // MeshWorld+0x24 = material count
+  // MeshWorld+0x28 = material array ptr
+  // Each material is 0x50 bytes
+  // Material layout in memory:
+  //   +0x04: diffuse R,G,B,A (4 floats)
+  //   +0x14: ambient R,G,B,A (4 floats)
+  mov edx, [temp_mesh]
+  test edx, edx
+  jz skip_color
+  mov edx, [edx+0x08]       // MeshWorld ptr
+  test edx, edx
+  jz skip_color
+  mov ecx, [edx+0x24]       // material count
+  test ecx, ecx
+  jz skip_color
+  mov edx, [edx+0x28]       // material array ptr
+  test edx, edx
+  jz skip_color
+  xor ebx, ebx
+
+color_loop:
+  cmp ebx, ecx
+  jae skip_color
+  // eax = &material[ebx] = edx + ebx * 0x50
+  mov eax, ebx
+  imul eax, 0x50
+  add eax, edx
+  // Diffuse at material+0x04 (4 floats)
+  fld dword [colorR]
+  fstp dword [eax+0x04]
+  fld dword [colorG]
+  fstp dword [eax+0x08]
+  fld dword [colorB]
+  fstp dword [eax+0x0C]
+  fld dword [colorA]
+  fstp dword [eax+0x10]
+  // Ambient at material+0x14 (4 floats)
+  fld dword [colorR]
+  fmul dword [float_half]
+  fstp dword [eax+0x14]
+  fld dword [colorG]
+  fmul dword [float_half]
+  fstp dword [eax+0x18]
+  fld dword [colorB]
+  fmul dword [float_half]
+  fstp dword [eax+0x1C]
+  fld dword [colorA]
+  fstp dword [eax+0x20]
+  inc ebx
+  jmp color_loop
+
+skip_color:
+  mov eax, [bridge_array]
+  cmp eax, 16
+  jae done_spawn
+  mov [bridge_array+4+eax*4], edi
+  inc dword [bridge_array]
+
+done_spawn:
+  popad
+
+original_code:
+  mov eax, [esi+0x0c5c]
+  jmp 00405E28
+
+00405E22:
+  jmp SpawnCode
+  nop
+
+[DISABLE]
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(SpawnCode)
+dealloc(SpawnBridge)
+dealloc(saved_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(float_20_sub)
+dealloc(temp_mesh)
+dealloc(bridge_array)
+dealloc(last_board)
+dealloc(BridgeStr)
+dealloc(colorR)
+dealloc(colorG)
+dealloc(colorB)
+dealloc(colorA)
+dealloc(float_half)
+unregistersymbol(SpawnBridge)
+unregistersymbol(colorR)
+unregistersymbol(colorG)
+unregistersymbol(colorB)
+unregistersymbol(colorA)
