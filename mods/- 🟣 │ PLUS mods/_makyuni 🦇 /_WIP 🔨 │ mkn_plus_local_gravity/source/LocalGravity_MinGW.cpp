@@ -1,16 +1,15 @@
 /*
- * LocalGravity_MinGW.cpp — Config-driven gravity test
- *
- * Reads a single float from mkn_plus_local_gravity_set.txt (next to the DLL).
- * Writes that value to ball+0x278 (gravity_scale) and physics+0x1C0.
- * No UI, always on. Re-reads config every onBallUpdate for live editing.
+ * LocalGravity_MinGW.cpp — Port of working LowGravity mod.
+ * Reads gravity value from mkn_plus_local_gravity_set.txt instead of a slider.
+ * Config file is next to the DLL in the Mods\ folder.
+ * Re-reads every onBallUpdate for live editing.
  *
  * Uses nocrt + manual 17-entry vtable for HB+ v2.0.
  */
 #include "nocrt.h"
 #include "HamsterballAPI.h"
 
-static float g_gravityValue = 0.125f;
+static float g_gravityValue = 5.0f;  /* default matches game default spin_rate */
 static char g_configPath[MAX_PATH] = "";
 static bool g_pathReady = false;
 
@@ -104,7 +103,8 @@ static void reloadConfig(void) {
     val = (float)integerPart + frac;
     if (negative) val = -val;
 
-    if (val > 0.0f || integerPart == 0) {
+    /* Only update if we parsed something meaningful */
+    if (bytesRead > 0) {
         g_gravityValue = val;
     }
 }
@@ -121,15 +121,40 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     /* Re-read config every frame for live editing */
     reloadConfig();
 
-    Ball* b = (Ball*)ball;
-    PhysicsObject* phys = b->physics_object;
+    PhysicsObject* phys = ((Ball*)ball)->physics_object;
     if (!phys) return;
 
-    /* Write config value to ball+0x278 (gravity_scale) */
-    *(float*)((char*)ball + 0x278) = g_gravityValue;
+    float slider = g_gravityValue;
 
-    /* Copy same value to physics+0x1C0 (gravity Y accumulator) */
-    *(float*)((char*)phys + 0x1C0) = g_gravityValue;
+    /* Read current gravity direction (set by game's Ball_Set*Gravity functions)
+       Game uses 3 unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
+    float gx = phys->gravity_x;
+    float gy = phys->gravity_y;
+    float gz = phys->gravity_z;
+
+    float absX = gx < 0 ? -gx : gx;
+    float absY = gy < 0 ? -gy : gy;
+    float absZ = gz < 0 ? -gz : gz;
+
+    /* Clear all axes, then set only the dominant one */
+    phys->gravity_x = 0;
+    phys->gravity_y = 0;
+    phys->gravity_z = 0;
+
+    if (absY > 0.001f && absY >= absX && absY >= absZ) {
+        phys->gravity_y = (slider < 0) ? 1.0f : -1.0f;
+    } else if (absX > 0.001f && absX >= absZ) {
+        phys->gravity_x = (slider < 0) ? 1.0f : -1.0f;
+    } else if (absZ > 0.001f) {
+        phys->gravity_z = (slider < 0) ? -1.0f : 1.0f;
+    } else {
+        phys->gravity_y = (slider < 0) ? 1.0f : -1.0f;
+    }
+
+    /* This doesn't behave well with negative values,
+       but it works much better with large values than the physics object gravity.
+       The default of it is 5. */
+    ((Ball*)ball)->gravity_magnitude = (slider < 0) ? -slider : slider;
 }
 
 /* No-op implementations for unused callbacks */
