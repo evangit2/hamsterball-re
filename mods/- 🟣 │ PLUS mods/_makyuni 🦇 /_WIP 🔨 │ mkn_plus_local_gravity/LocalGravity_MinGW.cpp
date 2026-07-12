@@ -121,7 +121,7 @@ static void loadConfig(void) {
     if (h == INVALID_HANDLE_VALUE) {
         /* Try alternate locations */
         /* 1. Try current working directory */
-        HANDLE h2 = CreateFileA("local_gravity_set.txt", GENERIC_READ, FILE_SHARE_READ, NULL,
+        HANDLE h2 = CreateFileA("mkn_plus_local_gravity_set.txt", GENERIC_READ, FILE_SHARE_READ, NULL,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (h2 == INVALID_HANDLE_VALUE) return;
         h = h2;
@@ -234,13 +234,13 @@ static void buildConfigPath(void) {
             *(last + 1) = '\0';
             nc_strncpy(g_configPath, exePath, MAX_PATH - 1);
             nc_strncpy(g_configPath + nc_strlen(g_configPath),
-                       "local_gravity_set.txt", MAX_PATH - nc_strlen(g_configPath) - 1);
+                       "mkn_plus_local_gravity_set.txt", MAX_PATH - nc_strlen(g_configPath) - 1);
             g_configPath[MAX_PATH - 1] = '\0';
             return;
         }
     }
     /* Fallback: just use the filename in CWD */
-    nc_strncpy(g_configPath, "local_gravity_set.txt", MAX_PATH - 1);
+    nc_strncpy(g_configPath, "mkn_plus_local_gravity_set.txt", MAX_PATH - 1);
     g_configPath[MAX_PATH - 1] = '\0';
 }
 
