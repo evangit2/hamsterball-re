@@ -1,21 +1,22 @@
 [ENABLE]
 
-// Redirect arena-WarmUp mesh to our merged file (arena + 10 bridges with collision)
+// Reverted to simple stands string swap (not used for bridge spawning)
+// Use Press_S_to_spawn_bridges_GLOBALLY.CEA for bridge spawning instead
+
 alloc(BridgeStr, 64)
 registersymbol(BridgeStr)
 
 BridgeStr:
-  db 4C 65 76 65 6C 73 5C 41 72 65 6E 61 2D 57 61 72 6D 55 70 2D 42 72 69 64 67 65 31 30 78 00
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 32 2D 42 72 69 64 67 65 31 30 78 00
 
-// Patch: PUSH "levels\arena-WarmUp" → PUSH "levels\Arena-WarmUp-Bridge10x"
-00413C62:
+0041330C:
   db 68
   dd BridgeStr
 
 [DISABLE]
 
-00413C62:
-  db 68 98 FF 4C 00
+0041330C:
+  db 68 2C FF 4C 00
 
 dealloc(BridgeStr)
 unregistersymbol(BridgeStr)
