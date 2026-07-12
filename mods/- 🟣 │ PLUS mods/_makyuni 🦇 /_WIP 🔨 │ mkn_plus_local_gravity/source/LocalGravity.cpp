@@ -128,7 +128,8 @@ public:
         }
         if (currentLevelIndex < 0 || currentLevelIndex >= NUM_LEVELS) return;
 
-        float gravityValue = gravityValues[currentLevelIndex];
+        /* Set the gravity multiplier from config */
+        float mkn_gravity_multiplier = gravityValues[currentLevelIndex];
 
         /* Read current gravity direction (set by game)
            Game uses unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
@@ -146,18 +147,18 @@ public:
         phys->gravity_z = 0;
 
         if (absY > 0.001f && absY >= absX && absY >= absZ) {
-            phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
+            phys->gravity_y = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
         } else if (absX > 0.001f && absX >= absZ) {
-            phys->gravity_x = (gravityValue < 0) ? 1.0f : -1.0f;
+            phys->gravity_x = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
         } else if (absZ > 0.001f) {
-            phys->gravity_z = (gravityValue < 0) ? -1.0f : 1.0f;
+            phys->gravity_z = (mkn_gravity_multiplier < 0) ? -1.0f : 1.0f;
         } else {
-            phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
+            phys->gravity_y = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
         }
 
-        /* Set gravity scale — ball+0x2A4 (spin_rate / gravity_magnitude).
-           Default is 5.0 in the game. */
-        ball->gravity_magnitude = fabsf(gravityValue);
+        /* Multiply the game's default spin_rate (gravity scale) by our multiplier.
+           Default spin_rate is 5.0. So multiplier 1.0 = 5.0, 0.5 = 2.5, 2.0 = 10.0 */
+        ball->gravity_magnitude = 5.0f * fabsf(mkn_gravity_multiplier);
     }
 
 private:
