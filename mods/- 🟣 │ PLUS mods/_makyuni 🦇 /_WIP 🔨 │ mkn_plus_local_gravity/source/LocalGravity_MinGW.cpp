@@ -1,13 +1,18 @@
 /*
- * LocalGravity_MinGW.cpp — Minimal test: override gravity_scale (ball+0x278)
+ * LocalGravity_MinGW.cpp — Config-driven gravity test
  *
- * Always on, no UI button. Writes 0.125f to ball+0x278 (gravity_scale, default 0.5f)
- * and copies the same value to physics+0x1C0 (gravity Y accumulator).
+ * Reads a single float from mkn_plus_local_gravity_set.txt (next to the DLL).
+ * Writes that value to ball+0x278 (gravity_scale) and physics+0x1C0.
+ * No UI, always on. Re-reads config every onBallUpdate for live editing.
  *
  * Uses nocrt + manual 17-entry vtable for HB+ v2.0.
  */
 #include "nocrt.h"
 #include "HamsterballAPI.h"
+
+static float g_gravityValue = 0.125f;
+static char g_configPath[MAX_PATH] = "";
+static bool g_pathReady = false;
 
 static void* __thiscall sc_dtor(void* thisptr, int flags) {
     if (flags & 1) nc_free(thisptr);
@@ -19,23 +24,112 @@ static const char* __thiscall get_author(void*) { return "BookwormKevin"; }
 static int __thiscall get_version(void*) { return HAMSTERBALL_API_VERSION; }
 static const char* __thiscall get_contributors(void*) { return "Hamsterbot"; }
 
+/* Build config path relative to THIS DLL's folder */
+static void buildConfigPath(void) {
+    MEMORY_BASIC_INFORMATION mbi;
+    char dllPath[MAX_PATH];
+    if (VirtualQuery((void*)sc_dtor, &mbi, sizeof(mbi)) > 0) {
+        HMODULE hMod = (HMODULE)mbi.AllocationBase;
+        if (hMod && GetModuleFileNameA(hMod, dllPath, MAX_PATH) > 0) {
+            char* last = NULL;
+            char* p = dllPath;
+            while (*p) {
+                if (*p == '\\' || *p == '/') last = p;
+                p++;
+            }
+            if (last) {
+                *(last + 1) = '\0';
+                nc_strncpy(g_configPath, dllPath, MAX_PATH - 1);
+                nc_strncpy(g_configPath + nc_strlen(g_configPath),
+                           "mkn_plus_local_gravity_set.txt",
+                           MAX_PATH - nc_strlen(g_configPath) - 1);
+                g_configPath[MAX_PATH - 1] = '\0';
+                g_pathReady = true;
+                return;
+            }
+        }
+    }
+    nc_strncpy(g_configPath, "mkn_plus_local_gravity_set.txt", MAX_PATH - 1);
+    g_configPath[MAX_PATH - 1] = '\0';
+    g_pathReady = true;
+}
+
+/* Read a single float from the config file */
+static void reloadConfig(void) {
+    if (!g_pathReady) return;
+
+    HANDLE h = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    char buf[256];
+    DWORD bytesRead = 0;
+    ReadFile(h, buf, sizeof(buf) - 1, &bytesRead, NULL);
+    CloseHandle(h);
+    buf[bytesRead] = '\0';
+
+    /* Skip BOM */
+    char* p = buf;
+    if ((unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF) {
+        p += 3;
+    }
+
+    /* Skip whitespace and comments */
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (*p == '#') {
+        while (*p && *p != '\n') p++;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    }
+
+    /* Parse float manually */
+    float val = 0.0f;
+    int negative = 0;
+    if (*p == '-') { negative = 1; p++; }
+    else if (*p == '+') { p++; }
+    int integerPart = 0;
+    while (*p >= '0' && *p <= '9') {
+        integerPart = integerPart * 10 + (*p - '0');
+        p++;
+    }
+    float frac = 0.0f;
+    if (*p == '.') {
+        p++;
+        float div = 10.0f;
+        while (*p >= '0' && *p <= '9') {
+            frac += (*p - '0') / div;
+            div *= 10.0f;
+            p++;
+        }
+    }
+    val = (float)integerPart + frac;
+    if (negative) val = -val;
+
+    if (val > 0.0f || integerPart == 0) {
+        g_gravityValue = val;
+    }
+}
+
 static void __thiscall init_impl(void* thisptr, void* modApi) {
     *(void**)((char*)thisptr + 4) = modApi;
-    /* No UI — always on */
+    buildConfigPath();
+    reloadConfig();
 }
 
 static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     if (!ball) return;
 
+    /* Re-read config every frame for live editing */
+    reloadConfig();
+
     Ball* b = (Ball*)ball;
     PhysicsObject* phys = b->physics_object;
     if (!phys) return;
 
-    /* Write 0.125f to ball+0x278 (gravity_scale, default 0.5f) */
-    *(float*)((char*)ball + 0x278) = 0.125f;
+    /* Write config value to ball+0x278 (gravity_scale) */
+    *(float*)((char*)ball + 0x278) = g_gravityValue;
 
     /* Copy same value to physics+0x1C0 (gravity Y accumulator) */
-    *(float*)((char*)phys + 0x1C0) = 0.125f;
+    *(float*)((char*)phys + 0x1C0) = g_gravityValue;
 }
 
 /* No-op implementations for unused callbacks */
