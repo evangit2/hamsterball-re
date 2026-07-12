@@ -1,9 +1,9 @@
 [ENABLE]
 
-// Press S to spawn Level2-Bridge10x globally with collision
+// Press S to spawn Level-BridgeColored globally with collision + custom color
 // Based on XRow's fallout floors spawn script
 // Hooks Ball_Update at 0x405E22
-// Spawns at player 1 position, assigns level textures
+// Spawns at player 1 position, writes custom RGBA color to materials
 
 alloc(SpawnCode, 4096)
 alloc(SpawnBridge, 4)
@@ -16,8 +16,17 @@ alloc(temp_mesh, 4)
 alloc(bridge_array, 68)
 alloc(last_board, 4)
 alloc(BridgeStr, 32)
+alloc(colorR, 4)
+alloc(colorG, 4)
+alloc(colorB, 4)
+alloc(colorA, 4)
+alloc(float_half, 4)
 
 registersymbol(SpawnBridge)
+registersymbol(colorR)
+registersymbol(colorG)
+registersymbol(colorB)
+registersymbol(colorA)
 
 SpawnBridge:
   dd 0
@@ -48,9 +57,20 @@ last_board:
   dd 0
 
 BridgeStr:
-  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 32 2D 42 72 69 64 67 65 31 30 78 00
-  // "Levels\Level2-Bridge10x\0"
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 42 72 69 64 67 65 43 6F 6C 6F 72 65 64 00
+  // "Levels\Level-BridgeColored\0"
 
+// Default color: warm orange (0.8, 0.5, 0.2, 1.0)
+colorR:
+  dd 3F4CCCCD   // 0.8f
+colorG:
+  dd 3F000000   // 0.5f
+colorB:
+  dd 3E4CCCCD   // 0.2f
+colorA:
+  dd 3F800000   // 1.0f
+float_half:
+  dd 3F000000   // 0.5f
 
 label(original_code)
 label(save_pos)
@@ -60,6 +80,8 @@ label(no_clear)
 label(do_mesh)
 label(skip_col)
 label(skip_render)
+label(skip_color)
+label(color_loop)
 label(prox_loop)
 label(prox_next)
 label(prox_done)
@@ -223,6 +245,60 @@ skip_col:
   call 00453810
 
 skip_render:
+  // Write custom color to material array in spawned mesh
+  // temp_mesh+0x08 = MeshWorld ptr
+  // MeshWorld+0x24 = material count
+  // MeshWorld+0x28 = material array ptr
+  // Each material is 0x50 bytes
+  // Material layout in memory:
+  //   +0x04: diffuse R,G,B,A (4 floats)
+  //   +0x14: ambient R,G,B,A (4 floats)
+  mov edx, [temp_mesh]
+  test edx, edx
+  jz skip_color
+  mov edx, [edx+0x08]       // MeshWorld ptr
+  test edx, edx
+  jz skip_color
+  mov ecx, [edx+0x24]       // material count
+  test ecx, ecx
+  jz skip_color
+  mov edx, [edx+0x28]       // material array ptr
+  test edx, edx
+  jz skip_color
+  xor ebx, ebx
+
+color_loop:
+  cmp ebx, ecx
+  jae skip_color
+  // eax = &material[ebx] = edx + ebx * 0x50
+  mov eax, ebx
+  imul eax, 0x50
+  add eax, edx
+  // Diffuse at material+0x04 (4 floats)
+  fld dword [colorR]
+  fstp dword [eax+0x04]
+  fld dword [colorG]
+  fstp dword [eax+0x08]
+  fld dword [colorB]
+  fstp dword [eax+0x0C]
+  fld dword [colorA]
+  fstp dword [eax+0x10]
+  // Ambient at material+0x14 (4 floats)
+  fld dword [colorR]
+  fmul dword [float_half]
+  fstp dword [eax+0x14]
+  fld dword [colorG]
+  fmul dword [float_half]
+  fstp dword [eax+0x18]
+  fld dword [colorB]
+  fmul dword [float_half]
+  fstp dword [eax+0x1C]
+  fld dword [colorA]
+  fstp dword [eax+0x20]
+  inc ebx
+  jmp color_loop
+
+skip_color:
   mov eax, [bridge_array]
   cmp eax, 16
   jae done_spawn
@@ -255,4 +331,13 @@ dealloc(temp_mesh)
 dealloc(bridge_array)
 dealloc(last_board)
 dealloc(BridgeStr)
+dealloc(colorR)
+dealloc(colorG)
+dealloc(colorB)
+dealloc(colorA)
+dealloc(float_half)
 unregistersymbol(SpawnBridge)
+unregistersymbol(colorR)
+unregistersymbol(colorG)
+unregistersymbol(colorB)
+unregistersymbol(colorA)
