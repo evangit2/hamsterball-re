@@ -130,6 +130,8 @@ public:
 
         float gravityValue = gravityValues[currentLevelIndex];
 
+        /* Read current gravity direction (set by game)
+           Game uses unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
         float gx = phys->gravity_x;
         float gy = phys->gravity_y;
         float gz = phys->gravity_z;
@@ -138,23 +140,24 @@ public:
         float absY = fabsf(gy);
         float absZ = fabsf(gz);
 
-        /* Determine the sign of the dominant axis */
-        float dirX = 0.0f, dirY = 0.0f, dirZ = 0.0f;
+        /* Clear all axes, then set only the dominant one (same as plus_low_gravity) */
+        phys->gravity_x = 0;
+        phys->gravity_y = 0;
+        phys->gravity_z = 0;
+
         if (absY > 0.001f && absY >= absX && absY >= absZ) {
-            dirY = (gy > 0) ? 1.0f : -1.0f;
+            phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
         } else if (absX > 0.001f && absX >= absZ) {
-            dirX = (gx > 0) ? 1.0f : -1.0f;
+            phys->gravity_x = (gravityValue < 0) ? 1.0f : -1.0f;
         } else if (absZ > 0.001f) {
-            dirZ = (gz > 0) ? 1.0f : -1.0f;
+            phys->gravity_z = (gravityValue < 0) ? -1.0f : 1.0f;
         } else {
-            dirY = -1.0f;
+            phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
         }
 
-        /* Scale the gravity direction vector by the config value */
-        float scale = gravityValue;
-        phys->gravity_x = dirX * scale;
-        phys->gravity_y = dirY * scale;
-        phys->gravity_z = dirZ * scale;
+        /* Set gravity scale — ball+0x2A4 (spin_rate / gravity_magnitude).
+           Default is 5.0 in the game. */
+        ball->gravity_magnitude = fabsf(gravityValue);
     }
 
 private:
