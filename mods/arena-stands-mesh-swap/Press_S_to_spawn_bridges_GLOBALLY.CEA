@@ -16,6 +16,9 @@ alloc(temp_mesh, 4)
 alloc(bridge_array, 68)
 alloc(last_board, 4)
 alloc(BridgeStr, 32)
+alloc(src_mb, 4)
+alloc(dst_list, 4)
+alloc(tex_ptr, 4)
 
 registersymbol(SpawnBridge)
 
@@ -59,6 +62,11 @@ label(no_clear)
 label(do_mesh)
 label(skip_col)
 label(skip_render)
+label(copy_tex)
+label(tex_done)
+label(src_mb)
+label(dst_list)
+label(tex_ptr)
 label(prox_loop)
 label(prox_next)
 label(prox_done)
@@ -222,6 +230,73 @@ skip_col:
   call 00453810
 
 skip_render:
+  // Copy level textures: get texture ptr from main level mesh's first MeshBuffer
+  // board+0x8AC = main level mesh (Level object)
+  // mesh+0x08 = MeshWorld ptr
+  // MeshWorld+0x2C = AthenaList of MeshBuffers
+  // MeshBuffer+0x48 = texture ptr
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz copy_tex_done
+  mov edx, [edx+0x08]      // MeshWorld ptr
+  test edx, edx
+  jz copy_tex_done
+  // AthenaList at MeshWorld+0x2C: count at +0x00, items at +0x08
+  mov ecx, [edx+0x2C]      // count
+  test ecx, ecx
+  jz copy_tex_done
+  mov edx, [edx+0x34]      // items array ptr (AthenaList+0x08 = +0x2C+0x08=+0x34)
+  test edx, edx
+  jz copy_tex_done
+  mov eax, [edx]            // first MeshBuffer
+  test eax, eax
+  jz copy_tex_done
+  mov eax, [eax+0x48]      // texture ptr
+  test eax, eax
+  jz copy_tex_done
+  mov [tex_ptr], eax
+
+  // Now apply this texture to ALL MeshBuffers in our spawned mesh
+  // temp_mesh = our mesh Level
+  // mesh+0x08 = MeshWorld ptr
+  // MeshWorld+0x2C = AthenaList
+  mov edx, [temp_mesh]
+  mov edx, [edx+0x08]      // MeshWorld ptr
+  test edx, edx
+  jz copy_tex_done
+  mov ecx, [edx+0x2C]      // count
+  test ecx, ecx
+  jz copy_tex_done
+  mov edx, [edx+0x34]      // items array
+  test edx, edx
+  jz copy_tex_done
+  xor ebx, ebx
+
+copy_tex_loop:
+  cmp ebx, ecx
+  jae copy_tex_done
+  mov eax, [edx+ebx*4]    // MeshBuffer
+  test eax, eax
+  jz copy_tex_next
+  push ecx                 // save count
+  push edx                 // save items ptr
+  mov edx, [tex_ptr]
+  mov [eax+0x48], edx      // set texture ptr
+  // Increment texture ref count (texture+0x10)
+  mov edx, [eax+0x48]      // re-read texture ptr
+  mov edx, [edx+0x10]      // get ref count
+  inc edx
+  mov edx, [tex_ptr]       // re-read texture ptr
+  inc dword [edx+0x10]     // increment ref count
+  pop edx                  // restore items ptr
+  pop ecx                  // restore count
+
+copy_tex_next:
+  inc ebx
+  jmp copy_tex_loop
+
+copy_tex_done:
   mov eax, [bridge_array]
   cmp eax, 16
   jae done_spawn
@@ -254,4 +329,7 @@ dealloc(temp_mesh)
 dealloc(bridge_array)
 dealloc(last_board)
 dealloc(BridgeStr)
+dealloc(src_mb)
+dealloc(dst_list)
+dealloc(tex_ptr)
 unregistersymbol(SpawnBridge)
