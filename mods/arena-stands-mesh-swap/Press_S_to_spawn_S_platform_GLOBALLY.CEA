@@ -16,8 +16,12 @@ alloc(temp_mesh, 4)
 alloc(bridge_array, 68)
 alloc(last_board, 4)
 alloc(BridgeStr, 32)
+alloc(colorIndex, 4)
+alloc(colorTable, 120)
+alloc(float_half, 4)
 
 registersymbol(SpawnBridge)
+registersymbol(colorIndex)
 
 SpawnBridge:
   dd 0
@@ -51,6 +55,28 @@ BridgeStr:
   db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 53 50 6C 61 74 66 6F 72 6D 00
   // "Levels\Level-SPlatform\0"
 
+// Color index (0-9): change this in CE to select tile color
+colorIndex:
+  dd 0
+
+// Color table: 10 colors × 3 floats (R,G,B) = 120 bytes
+// Index 0=Red, 1=Orange, 2=Yellow, 3=Green, 4=Cyan,
+// 5=Blue, 6=Purple, 7=Pink, 8=Black, 9=Dark Gray
+colorTable:
+  dd 3F4CCCCD 3E000000 3E000000  // 0: Red   (0.8, 0.125, 0.125)
+  dd 3F4CCCCD 3F000000 3E4CCCCD  // 1: Orange (0.8, 0.5, 0.2)
+  dd 3F4CCCCD 3F4CCCCD 3E000000  // 2: Yellow (0.8, 0.8, 0.125)
+  dd 3E000000 3F4CCCCD 3E000000  // 3: Green  (0.125, 0.8, 0.125)
+  dd 3E000000 3F4CCCCD 3F4CCCCD  // 4: Cyan   (0.125, 0.8, 0.8)
+  dd 3E000000 3E4CCCCD 3F4CCCCD  // 5: Blue   (0.125, 0.2, 0.8)
+  dd 3F000000 3E000000 3F4CCCCD  // 6: Purple (0.5, 0.125, 0.8)
+  dd 3F4CCCCD 3E4CCCCD 3F4CCCCD  // 7: Pink   (0.8, 0.2, 0.8)
+  dd 00000000 00000000 00000000  // 8: Black  (0.0, 0.0, 0.0)
+  dd 3E800000 3E800000 3E800000  // 9: DkGray (0.25, 0.25, 0.25)
+
+float_half:
+  dd 3F000000   // 0.5f
+
 
 label(original_code)
 label(save_pos)
@@ -60,6 +86,9 @@ label(no_clear)
 label(do_mesh)
 label(skip_col)
 label(skip_render)
+label(skip_color)
+label(color_loop)
+label(color_next)
 label(prox_loop)
 label(prox_next)
 label(prox_done)
@@ -223,6 +252,88 @@ skip_col:
   call 00453810
 
 skip_render:
+  // Write checker colors to material array
+  // temp_mesh+0x08 = MeshWorld ptr
+  // MeshWorld+0x24 = material count
+  // MeshWorld+0x28 = material array ptr (each entry 0x50 bytes)
+  // Material layout: +0x04=diffuse(4f), +0x14=ambient(4f)
+  //
+  // In our file: color 0 = white tile, color 1 = colored tile
+  // White tiles (geom index even) keep white diffuse (0.9,0.9,0.9)
+  // Colored tiles (geom index odd) get color from colorTable[colorIndex]
+  mov edx, [temp_mesh]
+  test edx, edx
+  jz skip_color
+  mov edx, [edx+0x08]       // MeshWorld ptr
+  test edx, edx
+  jz skip_color
+  mov ecx, [edx+0x24]       // material count
+  test ecx, ecx
+  jz skip_color
+  mov edx, [edx+0x28]       // material array ptr
+  test edx, edx
+  jz skip_color
+
+  // Get color from table: colorTable + colorIndex*12
+  mov eax, [colorIndex]
+  cmp eax, 9
+  jbe color_idx_ok
+  mov eax, 0                 // clamp to 0 if > 9
+color_idx_ok:
+  imul eax, 12               // each color = 3 floats × 4 bytes = 12 bytes
+  add eax, colorTable         // eax = &colorTable[colorIndex].R
+
+  // Store color base in esi (we can clobber esi, we're in pushad)
+  mov esi, eax               // esi = &color.R
+
+  xor ebx, ebx              // geom index
+
+color_loop:
+  cmp ebx, ecx
+  jae skip_color
+  // material = array + ebx * 0x50
+  mov eax, ebx
+  imul eax, 0x50
+  add eax, edx               // eax = &material[ebx]
+
+  // Check if this is a colored tile (odd index) or white tile (even index)
+  test ebx, 1
+  jz color_next              // even = white tile, skip
+
+  // Colored tile: write color from table
+  // Diffuse at material+0x04
+  fld dword [esi]            // R
+  fstp dword [eax+0x04]
+  fld dword [esi+4]          // G
+  fstp dword [eax+0x08]
+  fld dword [esi+8]          // B
+  fstp dword [eax+0x0C]
+  fld dword [float_half]    // A = 1.0... no, 0.5
+  // Actually alpha should be 1.0
+  push 0x3F800000
+  fld dword [esp]
+  add esp, 4
+  fstp dword [eax+0x10]
+  // Ambient at material+0x14 = diffuse * 0.5
+  fld dword [esi]
+  fmul dword [float_half]
+  fstp dword [eax+0x14]
+  fld dword [esi+4]
+  fmul dword [float_half]
+  fstp dword [eax+0x18]
+  fld dword [esi+8]
+  fmul dword [float_half]
+  fstp dword [eax+0x1C]
+  push 0x3F800000
+  fld dword [esp]
+  add esp, 4
+  fstp dword [eax+0x20]
+
+color_next:
+  inc ebx
+  jmp color_loop
+
+skip_color:
   mov eax, [bridge_array]
   cmp eax, 16
   jae done_spawn
@@ -255,4 +366,8 @@ dealloc(temp_mesh)
 dealloc(bridge_array)
 dealloc(last_board)
 dealloc(BridgeStr)
+dealloc(colorIndex)
+dealloc(colorTable)
+dealloc(float_half)
 unregistersymbol(SpawnBridge)
+unregistersymbol(colorIndex)
