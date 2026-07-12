@@ -288,23 +288,17 @@ static int g_dbgLevelShown = 0;
 static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     if (!ball) return;
 
-    /* Debug: count ball_update calls */
-    g_dbgBallUpdateCount++;
-    if (g_dbgBallUpdateCount == 10) {
-        char dbg[256];
-        nc_snprintf(dbg, sizeof(dbg), "LocalGravity: ball_update#10, enabled=%d, levelIdx=%d", g_enabled, g_currentLevelIndex);
-        MessageBoxA(NULL, dbg, "MKN_DEBUG", MB_OK);
-    }
+    Ball* b = (Ball*)ball;
+    PhysicsObject* phys = b->physics_object;
+    if (!phys) return;
 
-    if (!g_enabled) return;
-
-    /* Identify level if not cached — uses direct memory, no IModAPI call */
+    /* Identify level if not cached */
     if (g_currentLevelIndex == -1) {
         g_currentLevelIndex = identifyLevel();
         if (g_currentLevelIndex >= 0 && !g_dbgLevelShown) {
             g_dbgLevelShown = 1;
             char dbg[256];
-            nc_snprintf(dbg, sizeof(dbg), "LocalGravity: identified level=%d, gravity=%.3f", g_currentLevelIndex, g_gravityValues[g_currentLevelIndex]);
+            nc_snprintf(dbg, sizeof(dbg), "LocalGravity: level=%d grav=%.3f", g_currentLevelIndex, g_gravityValues[g_currentLevelIndex]);
             MessageBoxA(NULL, dbg, "MKN_DEBUG", MB_OK);
         }
     }
@@ -312,12 +306,8 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
 
     float gravityValue = g_gravityValues[g_currentLevelIndex];
 
-    /* Get physics object from ball */
-    Ball* b = (Ball*)ball;
-    PhysicsObject* phys = b->physics_object;
-    if (!phys) return;
-
-    /* Read current gravity direction (unit vector, ±1.0 on dominant axis) */
+    /* Read current gravity direction (set by game's Ball_Set*Gravity functions)
+       Game uses unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
     float gx = phys->gravity_x;
     float gy = phys->gravity_y;
     float gz = phys->gravity_z;
@@ -326,26 +316,25 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     float absY = gy < 0 ? -gy : gy;
     float absZ = gz < 0 ? -gz : gz;
 
-    /* Determine the sign of the dominant axis */
-    float dirX = 0.0f, dirY = 0.0f, dirZ = 0.0f;
+    /* Clear all axes, then set only the dominant one (same as plus_low_gravity) */
+    phys->gravity_x = 0;
+    phys->gravity_y = 0;
+    phys->gravity_z = 0;
+
     if (absY > 0.001f && absY >= absX && absY >= absZ) {
-        dirY = (gy > 0) ? 1.0f : -1.0f;
+        phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
     } else if (absX > 0.001f && absX >= absZ) {
-        dirX = (gx > 0) ? 1.0f : -1.0f;
+        phys->gravity_x = (gravityValue < 0) ? 1.0f : -1.0f;
     } else if (absZ > 0.001f) {
-        dirZ = (gz > 0) ? 1.0f : -1.0f;
+        phys->gravity_z = (gravityValue < 0) ? -1.0f : 1.0f;
     } else {
-        dirY = -1.0f;  /* default: gravity pulls down */
+        phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
     }
 
-    /* Scale the gravity direction vector by the config value.
-       Ball_Update computes velocity = speed_scalar * gravity_direction,
-       so scaling the direction vector directly changes gravity strength.
-       Negative values reverse direction. */
-    float scale = gravityValue;
-    phys->gravity_x = dirX * scale;
-    phys->gravity_y = dirY * scale;
-    phys->gravity_z = dirZ * scale;
+    /* Set gravity scale — ball+0x2A4 (spin_rate / gravity_magnitude).
+       This is the field Ball_Update actually reads as gravity strength.
+       Default is 5.0 in the game. Negative values don't work well, so use abs. */
+    b->gravity_magnitude = (gravityValue < 0) ? -gravityValue : gravityValue;
 }
 
 static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool state) {
