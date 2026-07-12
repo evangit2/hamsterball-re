@@ -24,7 +24,7 @@
 
 static constexpr int NUM_LEVELS = 30;
 static constexpr int NUM_RACES = 15;
-static constexpr float DEFAULT_GRAVITY = 0.5f;
+static constexpr float DEFAULT_GRAVITY = 5.0f;
 
 /* Global pointers for direct memory access */
 static constexpr DWORD GLOBAL_SCENE_PTR = 0x005341E4;
@@ -85,15 +85,27 @@ public:
             gravityValues[i] = DEFAULT_GRAVITY;
         }
 
-        /* Build config file path next to the game exe */
-        char exePath[MAX_PATH];
-        GetModuleFileNameA(NULL, exePath, MAX_PATH);
-        char* lastSlash = strrchr(exePath, '\\');
-        if (!lastSlash) lastSlash = strrchr(exePath, '/');
-        if (lastSlash) {
-            *(lastSlash + 1) = '\0';
-            snprintf(configPath, MAX_PATH, "%smkn_plus_local_gravity_set.txt", exePath);
-        } else {
+        /* Build config file path relative to THIS DLL's location, not game exe */
+        HMODULE hSelf = NULL;
+        char dllPath[MAX_PATH];
+        MEMORY_BASIC_INFORMATION mbi;
+        bool foundPath = false;
+        /* Get our own module handle via VirtualQuery on a function pointer */
+        extern void* CreateModInstance();
+        void* fnPtr = (void*)&CreateModInstance;
+        if (VirtualQuery(fnPtr, &mbi, sizeof(mbi)) > 0) {
+            hSelf = (HMODULE)mbi.AllocationBase;
+            if (hSelf && GetModuleFileNameA(hSelf, dllPath, MAX_PATH) > 0) {
+                char* lastSlash = strrchr(dllPath, '\\');
+                if (!lastSlash) lastSlash = strrchr(dllPath, '/');
+                if (lastSlash) {
+                    *(lastSlash + 1) = '\0';
+                    snprintf(configPath, MAX_PATH, "%smkn_plus_local_gravity_set.txt", dllPath);
+                    foundPath = true;
+                }
+            }
+        }
+        if (!foundPath) {
             strncpy(configPath, "mkn_plus_local_gravity_set.txt", MAX_PATH - 1);
         }
         configPath[MAX_PATH - 1] = '\0';
@@ -128,8 +140,7 @@ public:
         }
         if (currentLevelIndex < 0 || currentLevelIndex >= NUM_LEVELS) return;
 
-        /* Set the gravity multiplier from config */
-        float mkn_gravity_multiplier = gravityValues[currentLevelIndex];
+        float gravityValue = gravityValues[currentLevelIndex];
 
         /* Read current gravity direction (set by game)
            Game uses unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
@@ -147,18 +158,18 @@ public:
         phys->gravity_z = 0;
 
         if (absY > 0.001f && absY >= absX && absY >= absZ) {
-            phys->gravity_y = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
+            phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
         } else if (absX > 0.001f && absX >= absZ) {
-            phys->gravity_x = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
+            phys->gravity_x = (gravityValue < 0) ? 1.0f : -1.0f;
         } else if (absZ > 0.001f) {
-            phys->gravity_z = (mkn_gravity_multiplier < 0) ? -1.0f : 1.0f;
+            phys->gravity_z = (gravityValue < 0) ? -1.0f : 1.0f;
         } else {
-            phys->gravity_y = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
+            phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
         }
 
-        /* Multiply the game's default spin_rate (gravity scale) by our multiplier.
-           Default spin_rate is 5.0. So multiplier 1.0 = 5.0, 0.5 = 2.5, 2.0 = 10.0 */
-        ball->gravity_magnitude = 5.0f * fabsf(mkn_gravity_multiplier);
+        /* Override spin_rate (gravity_magnitude) with the config value.
+           Default is 5.0 for all levels in the game. */
+        ball->gravity_magnitude = fabsf(gravityValue);
     }
 
 private:
