@@ -1,69 +1,124 @@
-// ============================================================================
-// Arena Stands Mesh Swap - CEA Script
-// ============================================================================
-// Replaces the "levels\arena-stands" mesh with a different mesh file.
-//
-// ROOT CAUSE of bridge "disappearing":
-//   1. STRING OVERFLOW: "levels\arena-stands" = 20 bytes (incl NUL) at 0x4CFF2C
-//      "Levels\Level2-Bridge" = 21 bytes. Patching in-place overwrites 1 byte
-//      of the adjacent "levels\arena-spawnplatform" string at 0x4CFF40,
-//      corrupting it to an empty string -> spawn platform fails to load.
-//
-//   2. SCALE MISMATCH: Arena-Stands is 1750×1760×3110 units (arena-sized).
-//      Level2-Bridge is 506×238×249 units (tiny race-level object).
-//      The bridge renders but is invisible at arena camera distance (800 units).
-//
-// FIX: Use a code cave to store the replacement string. Patch the PUSH
-//      instruction at 0x41330C to point to the cave string instead of
-//      patching .rdata bytes in-place.
-//
-// The PUSH at 0x41330C is inside CameraLookAt (0x413280):
-//   0x41330C: 68 2C FF 4C 00  =  PUSH 0x004CFF2C  ("levels\arena-stands")
-//
-// Mesh options (change the db line in the cave below):
-//   "Levels\Level2-Bridge"    - 1054 verts, N:BRIDGE collision, TINY (506×238) - INVISIBLE AT ARENA SCALE
-//   "levels\arena-Toob"       - 8442 verts, N:BUMPER1-5 + O:TOOBY translucent (arena-scale, LOTS of collision)
-//   "levels\arena-Beginner"   - 4214 verts, N:BUMPER1-4 collision (arena-scale)
-//   "levels\arena-Glass"      - 2752 verts, N:GLASS collision (arena-scale, translucent platforms)
-//   "levels\arena-WarmUp"     - 2320 verts, E:LIMIT only (arena-scale, NO visible collision)
-//   "levels\arena-Neon"       - 1036 verts, T:LIGHTS decal + E:LIMIT (arena-scale, NO visible collision)
-//   "levels\arena-Dizzy"      -  900 verts, E:LIMIT only (arena-scale, NO visible collision)
-//   "levels\arena-Sky"        -  424 verts, E:LIMIT only (arena-scale, NO visible collision)
-//   "levels\arena-Wobbly"     -   40 verts, E:LIMIT only (arena-scale, minimal mesh)
-//
-// For visible collision geometry, use arena-Toob, arena-Beginner, or arena-Glass.
-// arena-Toob has the most collision objects (5 N:BUMPER + 4 O:TOOBY translucent).
-// ============================================================================
-
 [ENABLE]
 
-// Allocate code cave: 64 bytes for string + 4 bytes padding
-alloc(StandsStringCave, 64)
+alloc(BridgeCave, 4096)
 
-// Write the replacement mesh path string here
-// Default: "Levels\Level2-Bridge" (21 bytes incl NUL)
-// Change this to try different meshes!
-StandsStringCave:
-  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 32 2D 42 72 69 64 67 65 00
-  // "Levels\Level2-Bridge\0"
-  // To use arena-Toob instead, replace with:
-  // db 6C 65 76 65 6C 73 5C 61 72 65 6E 61 2D 54 6F 6F 62 00
-  // "levels\arena-Toob\0"
+0041330C:
+db 68 5C 05 4D 00
 
-registersymbol(StandsStringCave)
+0041334B:
+jmp BridgeCave
 
-// Patch the PUSH 0x004CFF2C at 0x41330C to PUSH StandsStringCave
-// Original: 68 2C FF 4C 00  (PUSH 0x004CFF2C)
-// Patched:  68 <cave_addr_lo> <cave_addr_hi>  (PUSH StandsStringCave)
-StandsSwapPatch:
-  0041330C:
-    push StandsStringCave
+BridgeCave:
+// Only run if App is initialized
+cmp dword [005341E0], 0
+je just_return
+
+pushad
+mov edi,esi
+
+lea ebx,[PositionTable]
+mov ecx,9
+
+SpawnLoop:
+push ecx
+push ebx
+
+push 10D0
+call 004BA57B
+add esp,4
+test eax,eax
+jz SkipBridge
+
+mov ecx,eax
+mov edx,[edi+878]
+mov edx,[edx+174]
+push 004D055C
+push edx
+call 00461510
+
+// EAX = mesh object
+// Store mesh ptr on stack for position patching
+mov esi,eax
+
+// Patch MeshBuffer positions directly (skip Level_AssignTextures)
+// mesh+0x08 = MeshWorld
+// MeshWorld+0x2C = AthenaList (MeshBuffer list)
+mov edx,[esi+08]
+test edx,edx
+jz SkipBridge
+
+mov edx,[edx+2C]
+test edx,edx
+jz SkipBridge
+
+mov ecx,[edx+04]
+test ecx,ecx
+jz SkipBridge
+
+mov eax,[edx+40C]
+test eax,eax
+jz SkipBridge
+
+pop ebx
+push ebx
+
+mov edx,0
+
+PatchLoop:
+mov esi,[eax+edx*4]
+test esi,esi
+jz NextMB
+
+fld dword [esi+04]
+fadd dword [ebx]
+fstp dword [esi+04]
+
+fld dword [esi+08]
+fadd dword [ebx+4]
+fstp dword [esi+08]
+
+fld dword [esi+0C]
+fadd dword [ebx+8]
+fstp dword [esi+0C]
+
+NextMB:
+inc edx
+cmp edx,ecx
+jb PatchLoop
+
+mov esi,edi
+
+SkipBridge:
+pop ebx
+add ebx,12
+pop ecx
+dec ecx
+jnz SpawnLoop
+
+popad
+
+just_return:
+call 0040B090
+jmp 00413350
+
+PositionTable:
+dd 43FA0000 42C80000 00000000
+dd 43CA8000 42C80000 43930000
+dd 431B0000 42C80000 43EE0000
+dd C31B0000 42C80000 43EE0000
+dd C3CA8000 42C80000 43930000
+dd C3FA0000 42C80000 00000000
+dd C3CA8000 42C80000 C3930000
+dd C31B0000 42C80000 C3EE0000
+dd 431B0000 42C80000 C3EE0000
+dd 43CA8000 42C80000 C3930000
 
 [DISABLE]
 
-// Restore original PUSH 0x004CFF2C
 0041330C:
-    push 004CFF2C
+db 68 2C FF 4C 00
 
-dealloc(StandsStringCave)
-unregistersymbol(StandsStringCave)
+0041334B:
+db E8 40 7D FF FF
+
+dealloc(BridgeCave)
