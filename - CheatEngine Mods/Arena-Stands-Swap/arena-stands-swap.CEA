@@ -1,14 +1,5 @@
-// Arena Stands -> 10 Bridges
-// Replaces arena-stands mesh with Level2-Bridge10x (10 bridge copies in a circle).
-// The 10 bridges are positioned at radius=500, Y=100, 36-degree spacing.
-//
-// Requires: Level2-Bridge10x.MESHWORLD in the game's Levels/ folder.
-//
-// This is a DATA-ONLY approach — no code cave, no mesh spawning, no D3D8 lifecycle issues.
-// The custom MESHWORLD file contains 10 copies of the bridge geometry with different
-// vertex positions baked in. The game loads it as a single mesh, no crashes.
-
 [ENABLE]
+
 alloc(BridgeStr, 64)
 registersymbol(BridgeStr)
 
@@ -20,6 +11,7 @@ BridgeStr:
   dd BridgeStr
 
 [DISABLE]
+
 0041330C:
   db 68 2C FF 4C 00
 
