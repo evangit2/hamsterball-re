@@ -231,44 +231,42 @@ skip_col:
 
 skip_render:
   // Copy level textures: get texture ptr from main level mesh's first MeshBuffer
-  // board+0x8AC = main level mesh (Level object)
-  // mesh+0x08 = MeshWorld ptr
-  // MeshWorld+0x2C = AthenaList of MeshBuffers
+  // Binary loader stores MeshBuffers at mesh_level+0x480 → +0x894 (AthenaList)
+  // NOT at MeshWorld+0x2C (that's the ASE parser path)
   // MeshBuffer+0x48 = texture ptr
   mov edx, [saved_board]
-  mov edx, [edx+0x8AC]
+  mov edx, [edx+0x8AC]       // main level mesh (Level object)
   test edx, edx
   jz copy_tex_done
-  mov edx, [edx+0x08]      // MeshWorld ptr
+  mov edx, [edx+0x480]       // SceneObject ptr
   test edx, edx
   jz copy_tex_done
-  // AthenaList at MeshWorld+0x2C: count at +0x00, items at +0x08
-  mov ecx, [edx+0x2C]      // count
+  // AthenaList at SceneObject+0x894: count at +0x00, items at +0x08
+  mov ecx, [edx+0x894]       // count
   test ecx, ecx
   jz copy_tex_done
-  mov edx, [edx+0x34]      // items array ptr (AthenaList+0x08 = +0x2C+0x08=+0x34)
+  mov edx, [edx+0x89C]       // items array ptr (+0x894+0x08)
   test edx, edx
   jz copy_tex_done
-  mov eax, [edx]            // first MeshBuffer
+  mov eax, [edx]              // first MeshBuffer
   test eax, eax
   jz copy_tex_done
-  mov eax, [eax+0x48]      // texture ptr
+  mov eax, [eax+0x48]        // texture ptr
   test eax, eax
   jz copy_tex_done
   mov [tex_ptr], eax
 
-  // Now apply this texture to ALL MeshBuffers in our spawned mesh
-  // temp_mesh = our mesh Level
-  // mesh+0x08 = MeshWorld ptr
-  // MeshWorld+0x2C = AthenaList
+  // Apply this texture to ALL MeshBuffers in our spawned mesh
+  // temp_mesh+0x480 = SceneObject ptr
+  // SceneObject+0x894 = AthenaList of MeshBuffers
   mov edx, [temp_mesh]
-  mov edx, [edx+0x08]      // MeshWorld ptr
+  mov edx, [edx+0x480]       // SceneObject ptr
   test edx, edx
   jz copy_tex_done
-  mov ecx, [edx+0x2C]      // count
+  mov ecx, [edx+0x894]       // count
   test ecx, ecx
   jz copy_tex_done
-  mov edx, [edx+0x34]      // items array
+  mov edx, [edx+0x89C]       // items array ptr
   test edx, edx
   jz copy_tex_done
   xor ebx, ebx
@@ -276,21 +274,17 @@ skip_render:
 copy_tex_loop:
   cmp ebx, ecx
   jae copy_tex_done
-  mov eax, [edx+ebx*4]    // MeshBuffer
+  mov eax, [edx+ebx*4]       // MeshBuffer
   test eax, eax
   jz copy_tex_next
-  push ecx                 // save count
-  push edx                 // save items ptr
+  push ecx                    // save count
+  push edx                    // save items ptr
   mov edx, [tex_ptr]
-  mov [eax+0x48], edx      // set texture ptr
+  mov [eax+0x48], edx         // set texture ptr
   // Increment texture ref count (texture+0x10)
-  mov edx, [eax+0x48]      // re-read texture ptr
-  mov edx, [edx+0x10]      // get ref count
-  inc edx
-  mov edx, [tex_ptr]       // re-read texture ptr
-  inc dword [edx+0x10]     // increment ref count
-  pop edx                  // restore items ptr
-  pop ecx                  // restore count
+  inc dword [edx+0x10]        // increment ref count
+  pop edx                     // restore items ptr
+  pop ecx                     // restore count
 
 copy_tex_next:
   inc ebx
