@@ -1,0 +1,25 @@
+// ============================================================================
+// Arena Stands Mesh Swap - BEGINNER variant
+// Swaps arena stands with arena-Beginner (4214 verts, N:BUMPER1-4 collision)
+// ============================================================================
+
+[ENABLE]
+
+alloc(StandsStringCave, 64)
+
+StandsStringCave:
+  // "levels\arena-Beginner\0" (21 bytes)
+  db 6C 65 76 65 6C 73 5C 61 72 65 6E 61 2D 42 65 67 69 6E 6E 65 72 00
+
+registersymbol(StandsStringCave)
+
+0041330C:
+    push StandsStringCave
+
+[DISABLE]
+
+0041330C:
+    push 004CFF2C
+
+dealloc(StandsStringCave)
+unregistersymbol(StandsStringCave)
