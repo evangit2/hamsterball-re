@@ -1,16 +1,227 @@
-// Arena Stands Mesh Swap
-// Replaces "levels\arena-stands" mesh with "Levels\Level2-Bridge" mesh.
+// ============================================================================
+// Arena Stands -> 10 Bridges Mesh Swap
+// ============================================================================
+// Replaces arena-stands with Level2-Bridge mesh, then spawns 9 more copies
+// positioned in a circle around the arena.
 //
-// The bridge string already exists in the binary at 0x4D055C.
-// We just redirect the PUSH at 0x41330C from 0x4CFF2C to 0x4D055C.
+// Hook point: 0x41334B (CALL Level_InitScene inside CameraLookAt)
+// At this point: ESI = board, bridge mesh already loaded at board+0x4390
 //
-// Original: 68 2C FF 4C 00  =  PUSH 0x004CFF2C ("levels\arena-stands")
-// Patched:  68 5C 05 4D 00  =  PUSH 0x004D055C ("Levels\Level2-Bridge")
+// Position table: 10 bridges in a circle, radius=500, Y=100, 36° spacing
+// ============================================================================
 
 [ENABLE]
+
+// --- Part 1: String swap (stands -> bridge) ---
 0041330C:
     push 004D055C
 
+// --- Part 2: Hook Level_InitScene call ---
+// Original at 0x41334B: E8 40 7D FF FF  (CALL 0x0040B090)
+// Replace with JMP to code cave
+0041334B:
+    jmp BridgeCave
+
+// --- Code cave ---
+alloc(BridgeCave, 4096)
+registersymbol(BridgeCave)
+
+BridgeCave:
+    // Call original Level_InitScene(ECX=board)
+    // ECX is already set to ESI (board) by the original code at 0x413349
+    call 0040B090
+
+    // Save registers
+    pushad
+
+    // ESI = board (from CameraLookAt context)
+    // We need ESI preserved across function calls
+    mov edi,esi          // EDI = board (save)
+
+    // Load position table address
+    lea ebx,[PositionTable]
+
+    // Counter: 9 more bridges (bridge 0 already loaded as stands)
+    mov ecx,9
+
+SpawnLoop:
+    push ecx             // save counter
+    push ebx             // save position table ptr
+
+    // --- operator_new(0x10D0) ---
+    push 0x10D0
+    call 004BA57B        // operator_new
+    add esp,4
+    test eax,eax
+    jz SkipBridge
+
+    // --- FUN_00461510(mesh_obj, gfx_device, "Levels\Level2-Bridge") ---
+    mov ecx,eax          // ECX = this (new mesh obj)
+    mov edx,[edi+0x878]  // EDX = scene (board+0x878)
+    mov edx,[edx+0x174]  // EDX = gfx device (scene+0x174)
+    push 004D055C        // "Levels\Level2-Bridge"
+    push edx             // gfx device
+    call 00461510        // FUN_00461510
+
+    // EAX = mesh object (Level/MeshWorld)
+    // Store mesh ptr for later position patching
+    mov esi,eax          // ESI = mesh object
+
+    // --- Level_AssignTextures(board, mesh) ---
+    push eax             // push mesh ptr
+    mov ecx,edi          // ECX = board (this)
+    mov edx,[edi]        // EDX = vtable
+    call [edx+0x90]      // vtable[0x90] = Level_AssignTextures
+
+    // --- Patch mesh position ---
+    // Mesh object+0x08 = MeshWorld
+    // MeshWorld+0x2C = AthenaList (MeshBuffer list)
+    // AthenaList+0x04 = count
+    // AthenaList+0x0C = current iterator
+    // AthenaList+0x40C = data array ptr
+
+    mov edx,[esi+0x08]   // EDX = MeshWorld
+    test edx,edx
+    jz SkipBridge
+
+    // Get MeshBuffer list at MeshWorld+0x2C
+    // Actually MeshWorld is at mesh+0x08, but mesh IS the Level obj.
+    // The MeshBuffer AthenaList might be at a different offset.
+    // From LoadMeshWorld: this+0x08 = MeshWorld, MeshWorld+0x2C = list
+    // But "this" in LoadMeshWorld is the mesh obj (ESI here).
+    // So: mesh+0x08 = MeshWorld, MeshWorld+0x2C = AthenaList
+    mov edx,[esi+0x08]   // EDX = MeshWorld
+    mov edx,[edx+0x2C]   // EDX = AthenaList (MeshBuffer list)
+    test edx,edx
+    jz SkipBridge
+
+    // Get count and data array
+    mov ecx,[edx+0x04]   // ECX = MeshBuffer count
+    test ecx,ecx
+    jz SkipBridge
+
+    mov eax,[edx+0x40C]  // EAX = data array pointer
+    test eax,eax
+    jz SkipBridge
+
+    // EBX (saved on stack) = position table entry
+    // Position table entry: X(float), Y(float), Z(float) = 12 bytes
+    pop ebx              // restore position table ptr
+    push ebx             // save again
+
+    // Iterate MeshBuffers
+    mov edx,0            // index = 0
+
+PatchLoop:
+    // Get MeshBuffer pointer
+    mov esi,[eax+edx*4]  // ESI = MeshBuffer[index]
+    test esi,esi
+    jz NextMB
+
+    // Add position offset to MeshBuffer position
+    // MeshBuffer+0x04 = pos X (float)
+    // MeshBuffer+0x08 = pos Y (float)
+    // MeshBuffer+0x0C = pos Z (float)
+    movss xmm0,[esi+0x04]    // current X
+    addss xmm0,[ebx]         // + offset X
+    movss [esi+0x04],xmm0
+
+    movss xmm0,[esi+0x08]    // current Y
+    addss xmm0,[ebx+4]       // + offset Y
+    movss [esi+0x08],xmm0
+
+    movss xmm0,[esi+0x0C]    // current Z
+    addss xmm0,[ebx+8]       // + offset Z
+    movss [esi+0x0C],xmm0
+
+NextMB:
+    inc edx
+    cmp edx,ecx
+    jb PatchLoop
+
+    // Restore ESI = board
+    mov esi,edi
+
+SkipBridge:
+    pop ebx              // restore position table ptr
+    // Advance position table to next entry (12 bytes: X,Y,Z floats)
+    add ebx,12
+
+    pop ecx              // restore counter
+    dec ecx
+    jnz SpawnLoop
+
+    // Restore registers
+    popad
+
+    // Jump back to 0x413350 (after original CALL Level_InitScene)
+    jmp 00413350
+
+// --- Position table ---
+// 10 positions (bridge 0 uses the default loaded position)
+// Only 9 are used (bridges 1-9), but 10 entries for clarity
+// Format: X(float), Y(float), Z(float) — 12 bytes each
+// Radius=500, Y=100, 36-degree spacing around arena center
+PositionTable:
+    // Bridge 0: (500, 100, 0) — not used (bridge 0 is the stands replacement)
+    dd 1140457472    ; X=500.0
+    dd 1120403456    ; Y=100.0
+    dd 0             ; Z=0.0
+
+    // Bridge 1: (405, 100, 294)
+    dd 1137328406    ; X=404.5
+    dd 1120403456    ; Y=100.0
+    dd 1133703746    ; Z=293.9
+
+    // Bridge 2: (155, 100, 476)
+    dd 1125810733    ; X=154.5
+    dd 1120403456    ; Y=100.0
+    dd 1139655582    ; Z=475.5
+
+    // Bridge 3: (-155, 100, 476)
+    dd 3273294381    ; X=-154.5
+    dd 1120403456    ; Y=100.0
+    dd 1139655582    ; Z=475.5
+
+    // Bridge 4: (-405, 100, 294)
+    dd 3284812054    ; X=-404.5
+    dd 1120403456    ; Y=100.0
+    dd 1133703746    ; Z=293.9
+
+    // Bridge 5: (-500, 100, 0)
+    dd 3287941120    ; X=-500.0
+    dd 1120403456    ; Y=100.0
+    dd 0             ; Z=0.0
+
+    // Bridge 6: (-405, 100, -294)
+    dd 3284812054    ; X=-404.5
+    dd 1120403456    ; Y=100.0
+    dd 3281187394    ; Z=-293.9
+
+    // Bridge 7: (-155, 100, -476)
+    dd 3273294381    ; X=-154.5
+    dd 1120403456    ; Y=100.0
+    dd 3287139230    ; Z=-475.5
+
+    // Bridge 8: (155, 100, -476)
+    dd 1125810733    ; X=154.5
+    dd 1120403456    ; Y=100.0
+    dd 3287139230    ; Z=-475.5
+
+    // Bridge 9: (405, 100, -294)
+    dd 1137328406    ; X=404.5
+    dd 1120403456    ; Y=100.0
+    dd 3281187394    ; Z=-293.9
+
 [DISABLE]
+
+// Restore string push
 0041330C:
     push 004CFF2C
+
+// Restore Level_InitScene call
+0041334B:
+    call 0040B090
+
+dealloc(BridgeCave)
+unregistersymbol(BridgeCave)
