@@ -215,9 +215,16 @@ They are completely different object types.
 2. **Ghidra auto-names are often wrong** — always verify via xrefs and decompilation
 3. **The Dizzy Swirl uses matrix transforms** (render-only), while Toob Spinny and
    Impossible Rotator use **vertex buffer deformation** (physically modifies mesh)
-4. **For a global rotating ref mod**, the Dizzy approach (matrix transforms) is
-   simpler and more performant — avoid vertex buffer deformation unless collision
-   must follow the visual rotation
+4. **Matrix transform vs vertex deformation — the deciding factor is object shape:**
+   - **Cylindrical/symmetric objects** (Dizzy Swirl): matrix transform is sufficient
+     because the collision surface is identical at every rotation angle. The game
+     cheats: rotates the visual mesh but never touches the collision geometry.
+   - **Non-cylindrical/asymmetric objects**: vertex buffer deformation is REQUIRED
+     because the collision surface changes as the object rotates. Without it, the
+     visual spins while the ball stands on an invisible flat surface.
+5. **For a global rotating ref mod**: use the vertex buffer deformation approach
+   (Rotator_Update 0x4606D0) for a general-purpose solution that works for ANY
+   shape. The matrix transform shortcut only works for symmetric objects.
 
 ## Global Pre-Load System
 
