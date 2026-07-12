@@ -292,7 +292,7 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     PhysicsObject* phys = b->physics_object;
     if (!phys) return;
 
-    /* Read current gravity direction */
+    /* Read current gravity direction (unit vector, ±1.0 on dominant axis) */
     float gx = phys->gravity_x;
     float gy = phys->gravity_y;
     float gz = phys->gravity_z;
@@ -301,24 +301,26 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     float absY = gy < 0 ? -gy : gy;
     float absZ = gz < 0 ? -gz : gz;
 
-    /* Clear all axes */
-    phys->gravity_x = 0;
-    phys->gravity_y = 0;
-    phys->gravity_z = 0;
-
-    /* Set only the dominant axis */
+    /* Determine the sign of the dominant axis */
+    float dirX = 0.0f, dirY = 0.0f, dirZ = 0.0f;
     if (absY > 0.001f && absY >= absX && absY >= absZ) {
-        phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
+        dirY = (gy > 0) ? 1.0f : -1.0f;
     } else if (absX > 0.001f && absX >= absZ) {
-        phys->gravity_x = (gravityValue < 0) ? 1.0f : -1.0f;
+        dirX = (gx > 0) ? 1.0f : -1.0f;
     } else if (absZ > 0.001f) {
-        phys->gravity_z = (gravityValue < 0) ? -1.0f : 1.0f;
+        dirZ = (gz > 0) ? 1.0f : -1.0f;
     } else {
-        phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
+        dirY = -1.0f;  /* default: gravity pulls down */
     }
 
-    /* gravity_magnitude = gravity scale (default 5.0 in game) */
-    b->gravity_magnitude = (gravityValue < 0) ? -gravityValue : gravityValue;
+    /* Scale the gravity direction vector by the config value.
+       Ball_Update computes velocity = speed_scalar * gravity_direction,
+       so scaling the direction vector directly changes gravity strength.
+       Negative values reverse direction. */
+    float scale = gravityValue;
+    phys->gravity_x = dirX * scale;
+    phys->gravity_y = dirY * scale;
+    phys->gravity_z = dirZ * scale;
 }
 
 static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool state) {
