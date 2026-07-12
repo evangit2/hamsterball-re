@@ -230,68 +230,6 @@ skip_col:
   call 00453810
 
 skip_render:
-  // Copy level textures via MATERIAL array (not MeshBuffer)
-  // Textures are at: MeshWorld+0x28 (material array), each entry 0x50 bytes
-  // Texture ptr at: material[index*0x50 + 0x48]
-  // Material count at: MeshWorld+0x24
-
-  // 1. Get source texture from main level mesh
-  // board+0x8AC → +0x08 (MeshWorld) → +0x28 (material array) → +0x48 (tex)
-  mov edx, [saved_board]
-  mov edx, [edx+0x8AC]       // main level mesh (Level obj)
-  test edx, edx
-  jz copy_tex_done
-  mov edx, [edx+0x08]         // MeshWorld ptr
-  test edx, edx
-  jz copy_tex_done
-  mov ecx, [edx+0x24]         // material count
-  test ecx, ecx
-  jz copy_tex_done
-  mov edx, [edx+0x28]         // material array ptr
-  test edx, edx
-  jz copy_tex_done
-  // Read first material's texture: material[0].tex = [array + 0x48]
-  mov eax, [edx+0x48]         // texture ptr from first material
-  test eax, eax
-  jz copy_tex_done
-  mov [tex_ptr], eax
-
-  // 2. Apply to ALL materials in our spawned mesh
-  // temp_mesh+0x08 = MeshWorld → +0x24 (count) → +0x28 (array)
-  mov edx, [temp_mesh]
-  mov edx, [edx+0x08]         // MeshWorld ptr
-  test edx, edx
-  jz copy_tex_done
-  mov ecx, [edx+0x24]         // material count
-  test ecx, ecx
-  jz copy_tex_done
-  mov edx, [edx+0x28]         // material array ptr
-  test edx, edx
-  jz copy_tex_done
-  xor ebx, ebx
-
-copy_tex_loop:
-  cmp ebx, ecx
-  jae copy_tex_done
-  // material = array + ebx * 0x50
-  mov eax, ebx
-  imul eax, 0x50
-  add eax, edx                 // eax = &material[ebx]
-  // Set texture ptr: material+0x48 = tex_ptr
-  push edx                     // save array ptr
-  push ecx                     // save count
-  mov edx, [tex_ptr]
-  mov [eax+0x48], edx          // set texture ptr
-  // Increment texture ref count (texture+0x10)
-  inc dword [edx+0x10]
-  pop ecx                      // restore count
-  pop edx                      // restore array ptr
-
-copy_tex_next:
-  inc ebx
-  jmp copy_tex_loop
-
-copy_tex_done:
   mov eax, [bridge_array]
   cmp eax, 16
   jae done_spawn
