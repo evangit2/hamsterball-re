@@ -7,13 +7,13 @@
 
 ## What It Does
 
-Sets gravity **per level or arena** by reading values from `local_gravity_set.txt`. Each of the 30 lines corresponds to a specific level (15 races + 15 arenas). The file is re-read on every level start, so changes take effect without restarting the game.
+Sets gravity **per level or arena** by reading values from `mkn_plus_local_gravity_set.txt`. Each of the 30 lines corresponds to a specific level (15 races + 15 arenas). The file is re-read on every level start, so changes take effect without restarting the game.
 
 Unlike `plus_low_gravity` which uses a single global slider for all levels, this mod lets you customize gravity individually — e.g. low gravity on Warm-Up but heavy gravity on Dizzy.
 
 ## Config File
 
-The mod auto-creates `local_gravity_set.txt` next to `Hamsterball.exe` on first launch if it doesn't exist. The file has 30 lines:
+The mod auto-creates `mkn_plus_local_gravity_set.txt` next to `Hamsterball.exe` on first launch if it doesn't exist. The file has 30 lines:
 
 ```
 # --- Races (lines 1-15) ---
@@ -64,7 +64,7 @@ Note: The value is used as `ball->spin_rate` (gravity scale). The game's default
 
 ## How It Works
 
-1. On `onLevelStart`, re-reads `local_gravity_set.txt`
+1. On `onLevelStart`, re-reads `mkn_plus_local_gravity_set.txt`
 2. On `onBallUpdate`, identifies the current level by matching `scene->name` against the 30 known scene names
 3. Reads the per-level gravity value from the array
 4. Writes gravity direction vectors on `physics_object` (same as `plus_low_gravity`)
@@ -99,7 +99,7 @@ Scene names matched (case-sensitive):
 
 ### MinGW cross-compile (alternative)
 ```bash
-i686-w64-mingw32-g++ -shared -o plus_local_gravity.dll LocalGravity_MinGW.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mkn_plus_local_gravity.dll LocalGravity_MinGW.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \
@@ -116,7 +116,7 @@ i686-w64-mingw32-g++ -shared -o plus_local_gravity.dll LocalGravity_MinGW.cpp no
 
 The MinGW build requires three fixes (all included):
 1. **nocrt** (`nocrt.h`/`nocrt.cpp`) — eliminates msvcrt.dll dependency
-2. **Manual 16-entry vtable** — fixes MinGW/MSVC ABI mismatch
+2. **Manual 17-entry vtable** — fixes MinGW/MSVC ABI mismatch (HB+ v2.0)
 3. **`hbplus_api.h` wrapper** — fixes IModAPI vtable dispatch
 
 ## Controls
@@ -125,9 +125,9 @@ The MinGW build requires three fixes (all included):
 
 ## Difference from `plus_low_gravity`
 
-| Feature | `plus_low_gravity` | `plus_local_gravity` |
+| Feature | `plus_low_gravity` | `mkn_plus_local_gravity` |
 |---------|--------------------|-----------------------|
 | Scope | Global (all levels) | Per-level (30 entries) |
-| Config | In-game slider | `local_gravity_set.txt` file |
+| Config | In-game slider | `mkn_plus_local_gravity_set.txt` file |
 | Reload | N/A | Every level start |
 | Toggle | N/A (slider) | YES/NO button |

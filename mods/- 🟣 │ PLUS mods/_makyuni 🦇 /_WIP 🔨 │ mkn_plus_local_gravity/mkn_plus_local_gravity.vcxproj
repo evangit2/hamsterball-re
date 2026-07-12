@@ -25,9 +25,9 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{a3c5f4aa-0b21-4937-827f-d0a1f07b2c1e}</ProjectGuid>
-    <RootNamespace>LocalGravityMod</RootNamespace>
+    <RootNamespace>mkn_plus_local_gravity</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>LocalGravityMod</ProjectName>
+    <ProjectName>mkn_plus_local_gravity</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

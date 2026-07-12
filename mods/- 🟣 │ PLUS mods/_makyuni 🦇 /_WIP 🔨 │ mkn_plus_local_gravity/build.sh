@@ -4,7 +4,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-i686-w64-mingw32-g++ -shared -o plus_local_gravity.dll LocalGravity_MinGW.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mkn_plus_local_gravity.dll LocalGravity_MinGW.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \
@@ -18,4 +18,4 @@ i686-w64-mingw32-g++ -shared -o plus_local_gravity.dll LocalGravity_MinGW.cpp no
   -Wl,--exclude-symbols,_memcpy -Wl,--exclude-symbols,_memset \
   -Wl,--exclude-symbols,_malloc -Wl,--exclude-symbols,_free
 
-echo "Build complete: plus_local_gravity.dll"
+echo "Build complete: mkn_plus_local_gravity.dll"
