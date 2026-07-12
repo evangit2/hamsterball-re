@@ -274,9 +274,13 @@ static void load_real_bass(void)
 #define BALL_ALPHA               0x2FC
 #define BALL_RENDER_JITTER       0x2D4
 
-/* Board player ball color table (set by Board_ctor Vec3_Init calls) */
-#define BOARD_COLOR_BASE         0x3AB0
-#define BOARD_COLOR_STRIDE      0x14
+/* Ball runtime color multiplier — read by Ball_Render every frame and passed
+ * to Graphics_SetColorMultiplier(0x00401160). These are the SAME fields the
+ * magnifying glass heat system uses (ball+0xC50 subtracts from G and B).
+ * Writing here immediately affects the rendered ball color. */
+#define BALL_COLOR_R            0x2AC
+#define BALL_COLOR_G            0x2B0
+#define BALL_COLOR_B            0x2B4
 
 /* Board goal-reached flag */
 #define BOARD_GOAL_REACHED       0xCD0
@@ -636,9 +640,17 @@ static volatile float g_whiteAlpha = 0.0f;
 static volatile int g_warpBall = 0;
 static volatile int g_rumbleInit = 0;
 
-/* Saved original ball color (P1) for restore after warp */
+/* Saved original ball color multiplier (ball+0x2AC/0x2B0/0x2B4) for restore after warp.
+ * These are the runtime color fields read by Ball_Render every frame —
+ * the same fields the magnifying glass heat system subtracts from. */
 static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
 static int g_colorSaved = 0;
+
+/* Target electric blue (#03fff2) for the RUMBLE phase color transition.
+ * Hex #03fff2 → R=0x03/255=0.0118, G=0xFF/255=1.0, B=0xF2/255=0.9490 */
+#define TARGET_BLUE_R  (3.0f / 255.0f)    /* 0.0118 */
+#define TARGET_BLUE_G  (255.0f / 255.0f)  /* 1.0    */
+#define TARGET_BLUE_B  (242.0f / 255.0f)  /* 0.9490 */
 
 /* Board offset: scene+0x874 = paused flag */
 #define BOARD_PAUSED_FLAG      0x874
@@ -1057,30 +1069,37 @@ static void updateWarpStateMachine(void) {
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 1;
             startMusicFade();
 
-            /* Save the ball's diffuse color (ball+0x20C..0x218 = RGBA floats).
-             * board+0x3AB0 is only the init table — not read after Board_ctor.
-             * The 3D ball reads from ball+0x20C (R), +0x210 (G), +0x214 (B). */
-            if (!IsBadReadPtr((void*)(ball + 0x20C), 16)) {
-                g_origBallR = *(float*)(ball + 0x20C);
-                g_origBallG = *(float*)(ball + 0x210);
-                g_origBallB = *(float*)(ball + 0x214);
+            /* Save the ball's runtime color multiplier (ball+0x2AC/0x2B0/0x2B4).
+             * These are the SAME fields Ball_Render reads every frame and passes
+             * to Graphics_SetColorMultiplier — the magnifying glass heat system
+             * subtracts ball+0xC50 from G and B here. Writing to these fields
+             * immediately changes the rendered ball color.
+             * (OLD CODE used ball+0x20C/0x210/0x214 which are material diffuse
+             *  values — NOT read by the color multiplier path, so color changes
+             *  were invisible.) */
+            if (!IsBadReadPtr((void*)(ball + BALL_COLOR_R), 12)) {
+                g_origBallR = *(float*)(ball + BALL_COLOR_R);
+                g_origBallG = *(float*)(ball + BALL_COLOR_G);
+                g_origBallB = *(float*)(ball + BALL_COLOR_B);
                 g_colorSaved = 1;
             }
             diag_logf("[warp] PHASE_RUMBLE start: steering disabled (ball+0x808=1000), jitter on");
         }
 
-        /* Fade ball diffuse color from original to yellow over RUMBLE phase.
-         * Write directly to the ball's material (ball+0x20C/0x210/0x214),
-         * NOT to board+0x3AB0 (init table, not read after Board_ctor). */
-        if (g_colorSaved && ball && !IsBadWritePtr((void*)(ball + 0x20C), 12)) {
+        /* Fade ball color multiplier from original to electric blue (#03fff2)
+         * over RUMBLE phase. Writes to ball+0x2AC/0x2B0/0x2B4 — the exact
+         * fields Ball_Render reads and passes to Graphics_SetColorMultiplier
+         * every frame. This is the same mechanism the magnifying glass heat
+         * system uses (it subtracts ball+0xC50 from G and B at these offsets). */
+        if (g_colorSaved && ball && !IsBadWritePtr((void*)(ball + BALL_COLOR_R), 12)) {
             float t = (float)elapsed / (float)RUMBLE_DURATION_MS;
             if (t > 1.0f) t = 1.0f;
-            float r = g_origBallR + (1.0f - g_origBallR) * t;
-            float g = g_origBallG + (1.0f - g_origBallG) * t;
-            float b = g_origBallB + (0.0f - g_origBallB) * t;
-            *(float*)(ball + 0x20C) = r;
-            *(float*)(ball + 0x210) = g;
-            *(float*)(ball + 0x214) = b;
+            float r = g_origBallR + (TARGET_BLUE_R - g_origBallR) * t;
+            float g = g_origBallG + (TARGET_BLUE_G - g_origBallG) * t;
+            float b = g_origBallB + (TARGET_BLUE_B - g_origBallB) * t;
+            *(float*)(ball + BALL_COLOR_R) = r;
+            *(float*)(ball + BALL_COLOR_G) = g;
+            *(float*)(ball + BALL_COLOR_B) = b;
         }
 
         /* Fade ball alpha from 1.0 to 0.5 over RUMBLE */
@@ -1193,6 +1212,15 @@ static void updateWarpStateMachine(void) {
             *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 0;
             *(char *)((char *)ball + BALL_RENDER_JITTER) = 0;
             *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
+
+            /* Restore original ball color multiplier (ball+0x2AC/0x2B0/0x2B4)
+             * so the destination level shows the normal ball color, not blue. */
+            if (g_colorSaved && !IsBadWritePtr((void*)(ball + BALL_COLOR_R), 12)) {
+                *(float*)(ball + BALL_COLOR_R) = g_origBallR;
+                *(float*)(ball + BALL_COLOR_G) = g_origBallG;
+                *(float*)(ball + BALL_COLOR_B) = g_origBallB;
+                g_colorSaved = 0;
+            }
         }
 
         /* Unfreeze timer before loading new level — the new level
@@ -1486,7 +1514,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     install_timer_caves();
 
-    diag_log("[warp mod v8.3] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
+    diag_log("[warp mod v8.4] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
     return 0;
 }
 
@@ -1511,8 +1539,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v8.3 LOADED ===");
-        diag_log("v8.3: Fixed swapped PROFILE_SCORE_ARRAY/PROFILE_TIME_ARRAY — same-level tournament timer no longer reads garbage.");
+        diag_log("=== LEVEL WARP MOD v8.4 LOADED ===");
+        diag_log("v8.4: Fixed ball color change — now writes to ball+0x2AC/0x2B0/0x2B4 (runtime color multiplier read by Ball_Render), not ball+0x20C/0x210/0x214 (material diffuse, not read by color path). Target color: electric blue #03fff2.");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
