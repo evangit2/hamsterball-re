@@ -1071,20 +1071,16 @@ static void updateWarpStateMachine(void) {
                 diag_logf("[warp] ABORT: Tournament timer expired (App+0x5D6=1) during %s — letting game handle timeout",
                           g_phase == PHASE_RUMBLE ? "RUMBLE" : "FLASH");
 
-                /* Restore ball state */
+                /* Restore ball physics state but KEEP the blue color and alpha
+                 * fade — they persist as a visual effect during the game's
+                 * natural timeout sequence (RaceResultPopup + Game Over). */
                 if (ball) {
                     *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 0;
                     *(char *)((char *)ball + BALL_RENDER_JITTER) = 0;
                     *(char *)((char *)ball + BALL_IN_TAR) = 0;
-                    *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
-
-                    /* Restore original ball color */
-                    if (g_colorSaved && !IsBadWritePtr((void*)(ball + BALL_COLOR_R), 12)) {
-                        *(float*)(ball + BALL_COLOR_R) = g_origBallR;
-                        *(float*)(ball + BALL_COLOR_G) = g_origBallG;
-                        *(float*)(ball + BALL_COLOR_B) = g_origBallB;
-                        g_colorSaved = 0;
-                    }
+                    /* Ball alpha and color multiplier are intentionally NOT
+                     * restored — the partially-faded, electric-blue ball
+                     * remains visible during the timeout popup. */
                 }
 
                 /* Restore music, unfreeze timer, unblock pause */
