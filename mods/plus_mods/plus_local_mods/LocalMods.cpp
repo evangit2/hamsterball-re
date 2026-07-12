@@ -437,10 +437,18 @@ static bool loadMod(const char* dllName) {
     snprintf(fullPath, sizeof(fullPath), "%s%s", g_localModsPath, fileName);
 
     HMODULE h = LoadLibraryA(fullPath);
-    if (!h) return false;
+    if (!h) {
+        char dbg[256];
+        snprintf(dbg, sizeof(dbg), "local_mods: LoadLibrary failed\n%s", fullPath);
+        MessageBoxA(NULL, dbg, "LocalMods Debug", MB_OK | MB_TOPMOST);
+        return false;
+    }
 
     CreateModFunct createFunc = (CreateModFunct)GetProcAddress(h, "CreateModInstance");
     if (!createFunc) {
+        char dbg[256];
+        snprintf(dbg, sizeof(dbg), "local_mods: CreateModInstance not found in %s", fullPath);
+        MessageBoxA(NULL, dbg, "LocalMods Debug", MB_OK | MB_TOPMOST);
         FreeLibrary(h);
         return false;
     }
@@ -462,6 +470,21 @@ static bool loadMod(const char* dllName) {
     strncpy(lm->name, dllName, MAX_MOD_NAME_LEN);
     lm->name[MAX_MOD_NAME_LEN - 1] = '\0';
     g_loadedCount++;
+
+    // Diagnostic log
+    {
+        char logPath[MAX_PATH];
+        snprintf(logPath, MAX_PATH, "%slocal_mods_debug.log", g_gameDir);
+        HANDLE hf = CreateFileA(logPath, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hf != INVALID_HANDLE_VALUE) {
+            SetFilePointer(hf, 0, NULL, FILE_END);
+            char buf[512];
+            snprintf(buf, sizeof(buf), "loadMod: loaded %s from %s (count=%d)\r\n", dllName, fullPath, g_loadedCount);
+            DWORD written;
+            WriteFile(hf, buf, (DWORD)strlen(buf), &written, NULL);
+            CloseHandle(hf);
+        }
+    }
 
     return true;
 }
@@ -536,13 +559,82 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     buildPaths();
     parseConfigFile();
+
+    MessageBoxA(NULL, "local_mods: Initialize() called", "LocalMods Debug", MB_OK | MB_TOPMOST);
+
+    // Diagnostic log
+    {
+        char logPath[MAX_PATH];
+        snprintf(logPath, MAX_PATH, "%slocal_mods_debug.log", g_gameDir);
+        HANDLE h = CreateFileA(logPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            const char* msg = "local_mods: Initialize() called OK\r\n";
+            DWORD written;
+            WriteFile(h, msg, (DWORD)strlen(msg), &written, NULL);
+            char buf[512];
+            snprintf(buf, sizeof(buf), "configPath=%s\r\nlocalModsPath=%s\r\n", g_configPath, g_localModsPath);
+            WriteFile(h, buf, (DWORD)strlen(buf), &written, NULL);
+            for (int i = 0; i < NUM_SLOTS * 2; i++) {
+                if (g_levelConfigs[i].count > 0) {
+                    snprintf(buf, sizeof(buf), "slot[%d]: %d mods - first=%s\r\n",
+                        i, g_levelConfigs[i].count, g_levelConfigs[i].mods[0].name);
+                    WriteFile(h, buf, (DWORD)strlen(buf), &written, NULL);
+                }
+            }
+            CloseHandle(h);
+        }
+    }
 }
 
 static void __thiscall level_start_impl(void* thisptr) {
     parseConfigFile();
     g_currentLevelIndex = identifyLevel();
 
-    if (g_currentLevelIndex < 0) return;
+    // Diagnostic log
+    {
+        char logPath[MAX_PATH];
+        snprintf(logPath, MAX_PATH, "%slocal_mods_debug.log", g_gameDir);
+        HANDLE h = CreateFileA(logPath, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            SetFilePointer(h, 0, NULL, FILE_END);
+            char buf[512];
+            snprintf(buf, sizeof(buf), "onLevelStart: identifyLevel=%d loadedCount=%d\r\n", g_currentLevelIndex, g_loadedCount);
+            DWORD written;
+            WriteFile(h, buf, (DWORD)strlen(buf), &written, NULL);
+            // Write scene name if available
+            if (IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4) == 0) {
+                DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
+                if (scene && IsBadReadPtr((void*)(scene + SCENE_NAME_OFFSET), 4) == 0) {
+                    const char* name = *(const char**)(scene + SCENE_NAME_OFFSET);
+                    if (name && IsBadReadPtr(name, 2) == 0) {
+                        snprintf(buf, sizeof(buf), "  scene name=%s\r\n", name);
+                        WriteFile(h, buf, (DWORD)strlen(buf), &written, NULL);
+                    }
+                }
+            }
+            CloseHandle(h);
+        }
+    }
+
+    if (g_currentLevelIndex < 0) {
+        // Show what scene name we saw
+        char dbg[256];
+        const char* sname = "(null)";
+        if (!IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) {
+            DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
+            if (scene && !IsBadReadPtr((void*)(scene + SCENE_NAME_OFFSET), 4)) {
+                const char* nm = *(const char**)(scene + SCENE_NAME_OFFSET);
+                if (nm && !IsBadReadPtr(nm, 2)) sname = nm;
+            }
+        }
+        snprintf(dbg, sizeof(dbg), "local_mods: onLevelStart\nidentifyLevel returned -1\nscene name=%s", sname);
+        MessageBoxA(NULL, dbg, "LocalMods Debug", MB_OK | MB_TOPMOST);
+        return;
+    }
+
+    char dbg2[256];
+    snprintf(dbg2, sizeof(dbg2), "local_mods: onLevelStart\nlevelIndex=%d\nmods for this slot=%d", g_currentLevelIndex, g_levelConfigs[g_currentLevelIndex].count);
+    MessageBoxA(NULL, dbg2, "LocalMods Debug", MB_OK | MB_TOPMOST);
 
     int slot = g_currentLevelIndex;
     SlotConfig* cfg = &g_levelConfigs[slot];

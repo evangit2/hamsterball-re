@@ -148,6 +148,13 @@ static void applyPatches() {
             }
         }
     }
+
+    /* Diagnostic popup */
+    {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "HalfSize: applyPatches()\npatchesApplied=%d", g_patchesApplied);
+        MessageBoxA(NULL, msg, "HalfSize Debug", MB_OK | MB_TOPMOST);
+    }
 }
 
 // ============================================================================
