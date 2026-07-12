@@ -1,0 +1,26 @@
+// ============================================================================
+// Arena Stands Mesh Swap - GLASS variant
+// Swaps arena stands with arena-Glass (2752 verts, N:GLASS collision)
+// Glass platforms are alpha-tested transparency (see-through).
+// ============================================================================
+
+[ENABLE]
+
+alloc(StandsStringCave, 64)
+
+StandsStringCave:
+  // "levels\arena-Glass\0" (19 bytes)
+  db 6C 65 76 65 6C 73 5C 61 72 65 6E 61 2D 47 6C 61 73 73 00
+
+registersymbol(StandsStringCave)
+
+0041330C:
+    push StandsStringCave
+
+[DISABLE]
+
+0041330C:
+    push 004CFF2C
+
+dealloc(StandsStringCave)
+unregistersymbol(StandsStringCave)
