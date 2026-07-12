@@ -1,12 +1,16 @@
 /*
- * LocalGravity_MinGW.cpp — MinGW cross-compile version of mkn_plus_local_gravity.
+ * LocalGravity_MinGW.cpp — Per-level gravity override (HB+ v2.0, MinGW)
  *
- * Simple approach: multiply the game's default spin_rate (gravity scale, ball+0x2A4)
- * by a per-level multiplier read from mkn_plus_local_gravity_set.txt.
+ * Reads gravity values from mkn_plus_local_gravity_set.txt (30 lines).
+ * Each value directly overrides ball->gravity_magnitude (spin_rate, ball+0x2A4).
+ * Default game value is 5.0 for all levels.
  *
- * 1.0 = normal gravity (game default)
- * 0.5 = half gravity
- * 2.0 = double gravity
+ * Config file is read from the same folder as the DLL, not the game root.
+ *
+ * Values:
+ *   5.0 = normal gravity (game default)
+ *   2.5 = half gravity
+ *   10.0 = double gravity
  *
  * Uses nocrt + manual 17-entry vtable for HB+ v2.0.
  */
@@ -16,18 +20,16 @@
 
 #define NUM_LEVELS 30
 #define NUM_RACES 15
-#define DEFAULT_MULTIPLIER 1.0f
+#define DEFAULT_GRAVITY 5.0f
 
 /* Global pointers for direct memory access */
 #define GLOBAL_SCENE_PTR 0x005341E4
 
-/* The gravity multiplier — this is what the config file modifies */
-static float mkn_gravity_multiplier = 1.0f;
-
-/* Per-level multiplier values */
-static float g_multipliers[NUM_LEVELS];
+/* Per-level gravity values (spin_rate overrides) */
+static float g_gravityValues[NUM_LEVELS];
 static int g_currentLevelIndex = -1;
 static char g_configPath[MAX_PATH] = "";
+static void* g_storedApi = NULL;
 
 static const char* RACE_NAMES[NUM_RACES] = {
     "Board (Warm-Up)",
@@ -102,16 +104,11 @@ static int identifyLevel(void) {
 }
 
 static void loadConfig(void) {
-    for (int i = 0; i < NUM_LEVELS; i++) g_multipliers[i] = DEFAULT_MULTIPLIER;
+    for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
 
     HANDLE h = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) {
-        HANDLE h2 = CreateFileA("mkn_plus_local_gravity_set.txt", GENERIC_READ, FILE_SHARE_READ, NULL,
-                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (h2 == INVALID_HANDLE_VALUE) return;
-        h = h2;
-    }
+    if (h == INVALID_HANDLE_VALUE) return;
 
     char buf[8192];
     DWORD bytesRead = 0;
@@ -157,7 +154,7 @@ static void loadConfig(void) {
         if (negative) val = -val;
         while (*p && *p != '\n') p++;
 
-        g_multipliers[index] = val;
+        g_gravityValues[index] = val;
         index++;
     }
 }
@@ -169,10 +166,10 @@ static void createDefaultConfig(void) {
 
     const char* header =
         "# Local Gravity Configuration\r\n"
-        "# Multiplier for gravity on each level/arena.\r\n"
-        "# 1.0 = normal gravity (game default)\r\n"
-        "# 0.5 = half gravity\r\n"
-        "# 2.0 = double gravity\r\n"
+        "# Each line overrides ball->gravity_magnitude (spin_rate, ball+0x2A4)\r\n"
+        "# 5.0 = normal gravity (game default for ALL levels)\r\n"
+        "# 2.5 = half gravity\r\n"
+        "# 10.0 = double gravity\r\n"
         "# Lines 1-15: Race levels | Lines 16-30: Arena levels\r\n"
         "\r\n"
         "# --- Races ---\r\n";
@@ -182,8 +179,7 @@ static void createDefaultConfig(void) {
 
     char lineBuf[32];
     for (int i = 0; i < NUM_RACES; i++) {
-        nc_snprintf(lineBuf, sizeof(lineBuf), "%d.%d\r\n", (int)DEFAULT_MULTIPLIER,
-                    (int)((DEFAULT_MULTIPLIER - (int)DEFAULT_MULTIPLIER) * 10.0f + 0.5f));
+        nc_snprintf(lineBuf, sizeof(lineBuf), "%.1f\r\n", DEFAULT_GRAVITY);
         WriteFile(h, lineBuf, (DWORD)nc_strlen(lineBuf), &written, NULL);
     }
 
@@ -191,44 +187,60 @@ static void createDefaultConfig(void) {
     WriteFile(h, arenaHeader, (DWORD)nc_strlen(arenaHeader), &written, NULL);
 
     for (int i = 0; i < NUM_RACES; i++) {
-        nc_snprintf(lineBuf, sizeof(lineBuf), "%d.%d\r\n", (int)DEFAULT_MULTIPLIER,
-                    (int)((DEFAULT_MULTIPLIER - (int)DEFAULT_MULTIPLIER) * 10.0f + 0.5f));
+        nc_snprintf(lineBuf, sizeof(lineBuf), "%.1f\r\n", DEFAULT_GRAVITY);
         WriteFile(h, lineBuf, (DWORD)nc_strlen(lineBuf), &written, NULL);
     }
 
     CloseHandle(h);
 }
 
+/* Build config path relative to THIS DLL's location, not the game exe */
 static void buildConfigPath(void) {
-    char exePath[MAX_PATH];
-    DWORD len = GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    if (len > 0) {
-        char* last = NULL;
-        char* p = exePath;
-        while (*p) {
-            if (*p == '\\' || *p == '/') last = p;
-            p++;
-        }
-        if (last) {
-            *(last + 1) = '\0';
-            nc_strncpy(g_configPath, exePath, MAX_PATH - 1);
-            nc_strncpy(g_configPath + nc_strlen(g_configPath),
-                       "mkn_plus_local_gravity_set.txt", MAX_PATH - nc_strlen(g_configPath) - 1);
-            g_configPath[MAX_PATH - 1] = '\0';
-            return;
+    HMODULE hSelf = NULL;
+    /* GetModuleHandleA won't work for self — use GetModuleFileNameA with our DLL handle.
+       In HB+, the mod DLL is loaded via LoadLibrary, so we can find it. */
+    char dllPath[MAX_PATH];
+    DWORD len = GetModuleFileNameA(NULL, dllPath, MAX_PATH);  /* fallback: game exe */
+
+    /* Try to get our own DLL handle via the vtable pointer address.
+       Our DLL exports CreateModInstance — find our module by searching for it. */
+    /* Actually, use a simpler trick: GetModuleFileNameA(NULL,...) gives game exe path.
+     * For HB+ mods, the DLL is in Mods\ subfolder. So we append Mods\ + config filename.
+     * But that's fragile. Instead, use VirtualQuery to find our DLL's base from
+     * a function pointer in our own code. */
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((void*)sc_dtor, &mbi, sizeof(mbi)) > 0) {
+        HMODULE hMod = (HMODULE)mbi.AllocationBase;
+        if (hMod && GetModuleFileNameA(hMod, dllPath, MAX_PATH) > 0) {
+            /* Strip filename, keep directory */
+            char* last = NULL;
+            char* p = dllPath;
+            while (*p) {
+                if (*p == '\\' || *p == '/') last = p;
+                p++;
+            }
+            if (last) {
+                *(last + 1) = '\0';
+                nc_strncpy(g_configPath, dllPath, MAX_PATH - 1);
+                nc_strncpy(g_configPath + nc_strlen(g_configPath),
+                           "mkn_plus_local_gravity_set.txt",
+                           MAX_PATH - nc_strlen(g_configPath) - 1);
+                g_configPath[MAX_PATH - 1] = '\0';
+                return;
+            }
         }
     }
+
+    /* Fallback: use current working directory */
     nc_strncpy(g_configPath, "mkn_plus_local_gravity_set.txt", MAX_PATH - 1);
     g_configPath[MAX_PATH - 1] = '\0';
 }
-
-static void* g_storedApi = NULL;
 
 static void __thiscall init_impl(void* thisptr, void* modApi) {
     *(void**)((char*)thisptr + 4) = modApi;
     g_storedApi = modApi;
 
-    for (int i = 0; i < NUM_LEVELS; i++) g_multipliers[i] = DEFAULT_MULTIPLIER;
+    for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
 
     buildConfigPath();
 
@@ -258,7 +270,7 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     PhysicsObject* phys = b->physics_object;
     if (!phys) return;
 
-    /* Check toggle state via API every frame (don't rely on cached state) */
+    /* Check toggle state via API every frame */
     if (g_storedApi) {
         HBPlusAPI hb = { g_storedApi };
         if (!hb.GetButtonState("local_gravity_enabled")) return;
@@ -270,10 +282,9 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     }
     if (g_currentLevelIndex < 0 || g_currentLevelIndex >= NUM_LEVELS) return;
 
-    /* Set the gravity multiplier from config */
-    mkn_gravity_multiplier = g_multipliers[g_currentLevelIndex];
+    float gravityValue = g_gravityValues[g_currentLevelIndex];
 
-    /* Read current gravity direction (set by game each frame)
+    /* Read current gravity direction (set by game's Ball_Set*Gravity functions)
        Game uses unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
     float gx = phys->gravity_x;
     float gy = phys->gravity_y;
@@ -289,21 +300,18 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     phys->gravity_z = 0;
 
     if (absY > 0.001f && absY >= absX && absY >= absZ) {
-        phys->gravity_y = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
+        phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
     } else if (absX > 0.001f && absX >= absZ) {
-        phys->gravity_x = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
+        phys->gravity_x = (gravityValue < 0) ? 1.0f : -1.0f;
     } else if (absZ > 0.001f) {
-        phys->gravity_z = (mkn_gravity_multiplier < 0) ? -1.0f : 1.0f;
+        phys->gravity_z = (gravityValue < 0) ? -1.0f : 1.0f;
     } else {
-        phys->gravity_y = (mkn_gravity_multiplier < 0) ? 1.0f : -1.0f;
+        phys->gravity_y = (gravityValue < 0) ? 1.0f : -1.0f;
     }
 
-    /* Multiply the game's default spin_rate (gravity scale) by our multiplier.
-       Default spin_rate is 5.0. So multiplier 1.0 = 5.0, 0.5 = 2.5, 2.0 = 10.0 */
-    b->gravity_magnitude = 5.0f * mkn_gravity_multiplier;
-    if (mkn_gravity_multiplier < 0) {
-        b->gravity_magnitude = 5.0f * (-mkn_gravity_multiplier);
-    }
+    /* Override spin_rate (gravity_magnitude) with the config value.
+       Default is 5.0 for all levels in the game. */
+    b->gravity_magnitude = (gravityValue < 0) ? -gravityValue : gravityValue;
 }
 
 static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool state) {

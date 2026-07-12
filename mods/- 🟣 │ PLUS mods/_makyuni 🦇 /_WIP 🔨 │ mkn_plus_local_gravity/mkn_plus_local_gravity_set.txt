@@ -1,39 +1,39 @@
 # Local Gravity Configuration
-# Multiplier for gravity on each level/arena.
-# 1.0 = normal gravity (game default)
-# 0.5 = half gravity
-# 2.0 = double gravity
+# Each line overrides ball->gravity_magnitude (spin_rate, ball+0x2A4)
+# 5.0 = normal gravity (game default for ALL levels)
+# 2.5 = half gravity
+# 10.0 = double gravity
 # Lines 1-15: Race levels | Lines 16-30: Arena levels
 
 # --- Races ---
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
 # --- Arenas ---
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
-1.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
+5.0
