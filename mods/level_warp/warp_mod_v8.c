@@ -236,6 +236,7 @@ static void load_real_bass(void)
 #define APP_MUSIC_DEVICE_PTR     0x17C
 #define APP_BTT_RECORDING        0x90C
 #define APP_BTT_PLAYBACK         0x910
+#define APP_TIMER_FINISHED       0x5D6  /* obj+0x0A: finished flag (set on timeout or goal) */
 
 /* Board/Scene offsets */
 #define BOARD_SCENE_PTR_OFFSET   0x878
@@ -1056,6 +1057,56 @@ static void updateWarpStateMachine(void) {
         }
     }
 
+    /* Abort warp if tournament timer runs out during RUMBLE or early FLASH.
+     * Board_UpdateRaceState sets App+0x5D6 (obj+0x0A "finished" flag) when
+     * the timer goes below 0 — creating a RaceResultPopup and playing
+     * "Game Over". When this happens, we must cancel the warp and let the
+     * game's natural timeout sequence play out.
+     * We check this before the switch so it applies to all phases before
+     * the timer is frozen (which happens at FLASH peak via g_freezeTimer). */
+    if (g_phase == PHASE_RUMBLE || (g_phase == PHASE_FLASH && g_whiteAlpha < 0.99f)) {
+        if (app && !IsBadReadPtr((void*)(app + APP_TIMER_FINISHED), 1)) {
+            char finished = *((char *)app + APP_TIMER_FINISHED);
+            if (finished) {
+                diag_logf("[warp] ABORT: Tournament timer expired (App+0x5D6=1) during %s — letting game handle timeout",
+                          g_phase == PHASE_RUMBLE ? "RUMBLE" : "FLASH");
+
+                /* Restore ball state */
+                if (ball) {
+                    *(int *)((char *)ball + BALL_IMPACT_FREEZE) = 0;
+                    *(char *)((char *)ball + BALL_RENDER_JITTER) = 0;
+                    *(char *)((char *)ball + BALL_IN_TAR) = 0;
+                    *(float *)((char *)ball + BALL_ALPHA) = 1.0f;
+
+                    /* Restore original ball color */
+                    if (g_colorSaved && !IsBadWritePtr((void*)(ball + BALL_COLOR_R), 12)) {
+                        *(float*)(ball + BALL_COLOR_R) = g_origBallR;
+                        *(float*)(ball + BALL_COLOR_G) = g_origBallG;
+                        *(float*)(ball + BALL_COLOR_B) = g_origBallB;
+                        g_colorSaved = 0;
+                    }
+                }
+
+                /* Restore music, unfreeze timer, unblock pause */
+                restoreMusicFade();
+                g_freezeTimer = 0;
+                unblock_pause();
+
+                /* Clear fade alpha so it doesn't interfere with the game's popup */
+                if (board) {
+                    *(float *)((char *)board + SCENE_FADE_ALPHA) = 0.0f;
+                }
+
+                g_whiteAlpha = 0.0f;
+                g_phase = PHASE_IDLE;
+                g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
+                g_warpBall = 0;
+                diag_log("[warp] Warp aborted — returning to IDLE with game timeout intact");
+                return;
+            }
+        }
+    }
+
     switch (g_phase) {
     case PHASE_RUMBLE: {
         elapsed = now - g_phaseStartTime;
@@ -1520,7 +1571,7 @@ static DWORD WINAPI InitThread(LPVOID param) {
     InstallFrameUpdateHook();
     install_timer_caves();
 
-    diag_log("[warp mod v8.4] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
+    diag_log("[warp mod v8.5] Hooks + timer caves installed. Scanning MeshWorld nodes for WARP(Name) entries.");
     return 0;
 }
 
@@ -1545,8 +1596,8 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
             }
         }
 
-        diag_log("=== LEVEL WARP MOD v8.4 LOADED ===");
-        diag_log("v8.4: Fixed ball color change — now writes to ball+0x2AC/0x2B0/0x2B4 (runtime color multiplier read by Ball_Render), not ball+0x20C/0x210/0x214 (material diffuse, not read by color path). Target color: electric blue #03fff2.");
+        diag_log("=== LEVEL WARP MOD v8.5 LOADED ===");
+        diag_log("v8.5: Abort warp if tournament timer expires during RUMBLE/early FLASH. Checks App+0x5D6 (finished flag) — if set, restores ball state and lets game's timeout (RaceResultPopup + Game Over music) play out naturally.");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
