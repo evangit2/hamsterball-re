@@ -248,6 +248,8 @@ static void __thiscall init_impl(void* thisptr, void* modApi) {
     /* Store api pointer in object */
     *(void**)((char*)thisptr + 4) = modApi;
 
+    MessageBoxA(NULL, "LocalGravity: init_impl called", "MKN_DEBUG", MB_OK);
+
     /* Initialize gravity values */
     for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
 
@@ -263,6 +265,11 @@ static void __thiscall init_impl(void* thisptr, void* modApi) {
     /* Load config */
     loadConfig();
 
+    /* Debug: show first gravity value */
+    char dbg[128];
+    nc_snprintf(dbg, sizeof(dbg), "LocalGravity: loaded, val[0]=%.3f enabled=%d", g_gravityValues[0], g_enabled);
+    MessageBoxA(NULL, dbg, "MKN_DEBUG", MB_OK);
+
     /* Register toggle button */
     HBPlusAPI hb = { modApi };
     CustomButton btn;
@@ -275,13 +282,31 @@ static void __thiscall init_impl(void* thisptr, void* modApi) {
     hb.CreateToggleButton(btn, thisptr);
 }
 
+static int g_dbgBallUpdateCount = 0;
+static int g_dbgLevelShown = 0;
+
 static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     if (!ball) return;
+
+    /* Debug: count ball_update calls */
+    g_dbgBallUpdateCount++;
+    if (g_dbgBallUpdateCount == 10) {
+        char dbg[256];
+        nc_snprintf(dbg, sizeof(dbg), "LocalGravity: ball_update#10, enabled=%d, levelIdx=%d", g_enabled, g_currentLevelIndex);
+        MessageBoxA(NULL, dbg, "MKN_DEBUG", MB_OK);
+    }
+
     if (!g_enabled) return;
 
     /* Identify level if not cached — uses direct memory, no IModAPI call */
     if (g_currentLevelIndex == -1) {
         g_currentLevelIndex = identifyLevel();
+        if (g_currentLevelIndex >= 0 && !g_dbgLevelShown) {
+            g_dbgLevelShown = 1;
+            char dbg[256];
+            nc_snprintf(dbg, sizeof(dbg), "LocalGravity: identified level=%d, gravity=%.3f", g_currentLevelIndex, g_gravityValues[g_currentLevelIndex]);
+            MessageBoxA(NULL, dbg, "MKN_DEBUG", MB_OK);
+        }
     }
     if (g_currentLevelIndex < 0 || g_currentLevelIndex >= NUM_LEVELS) return;
 
