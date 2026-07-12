@@ -155,12 +155,6 @@ do_mesh:
   jz done_spawn
   mov [temp_mesh], eax
 
-  // Assign level textures to the mesh (same color as the level)
-  mov ecx, [saved_board]
-  mov eax, [ecx]
-  push [temp_mesh]
-  call dword [eax+0x90]
-
   push 0x10E8
   call 004BA57B
   add esp, 4
