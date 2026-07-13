@@ -1,0 +1,162 @@
+# mkn_plus_xtreme_organization.txt
+# Xtreme File Organization config file
+# Lines starting with # are comments. Format: key = value
+
+# Ignore cache: if true, the game will not read or write .cached files
+ignore_cache = true
+
+# ── Level MESHWORLD files (Tournament races 1-15) ──
+level01_file = levels\level1
+level02_file = levels\levelcascade
+level03_file = levels\level2
+level04_file = levels\level3
+level05_file = levels\level4
+level06_file = levels\levelup
+level07_file = levels\leveldark
+level08_file = levels\level5
+level09_file = levels\level6
+level10_file = levels\level8
+level11_file = levels\level7
+level12_file = levels\levelglass
+level13_file = levels\level9
+level14_file = levels\level10
+level15_file = levels\levelimpossible
+
+# ── Arena MESHWORLD files (Rumble mode 1-15) ──
+arena01_file = levels\arena-WarmUp
+arena02_file = levels\arena-beginner
+arena03_file = levels\arena-intermediate
+arena04_file = levels\arena-dizzy
+arena05_file = levels\arena-tower
+arena06_file = levels\arena-up
+arena07_file = levels\arena-neon
+arena08_file = levels\arena-expert
+arena09_file = levels\arena-Odd
+arena10_file = levels\arena-Toob
+arena11_file = levels\arena-Wobbly
+arena12_file = levels\arena-glass
+arena13_file = levels\arena-Sky
+arena14_file = levels\arena-Master
+arena15_file = levels\arena-impossible
+
+# ── Mesh files (.MESH) ──
+mesh_file_8ball = Meshes\8Ball
+mesh_file_funball = Meshes\FunBall
+mesh_file_sphere = Meshes\Sphere
+mesh_file_spherebreak1 = Meshes\SphereBreak1
+mesh_file_spherebreak2 = Meshes\SphereBreak2
+mesh_file_sphere_tar = Meshes\Sphere+Tar
+mesh_file_rbsglare = Meshes\RBGlare
+mesh_file_dizzy = Meshes\Dizzy
+mesh_file_bell = Meshes\Bell
+mesh_file_hammyjudge = meshes\hammyjudge
+mesh_file_hamster_trot1 = Meshes\Hamster-trot1
+mesh_file_hamster_trot2 = Meshes\Hamster-trot2
+mesh_file_hamster_trot3 = Meshes\Hamster-trot3
+mesh_file_hamster_waiting = Meshes\Hamster-Waiting
+mesh_file_glassbonus = Meshes\GlassBonus
+mesh_file_glassbonus_smashed = Meshes\GlassBonus-Smashed
+mesh_file_mousetrapshadow = Meshes\mousetrapshadow
+mesh_file_sawface2 = Meshes\sawface2
+mesh_file_sawface = Meshes\sawface
+mesh_file_dawgshadow = Meshes\dawgshadow
+mesh_file_dawgshoe2 = Meshes\dawgshoe2
+mesh_file_dawgshoe = Meshes\dawgshoe
+mesh_file_sawblade = Meshes\sawblade
+mesh_file_fanbody = Meshes\fanbody
+mesh_file_fanblades = Meshes\fanblades
+mesh_file_tarbubble = Meshes\tarbubble
+mesh_file_chomper = Meshes\Chomper
+mesh_file_yellowlink = Meshes\YellowLink
+mesh_file_magnifyingglass = meshes\magnifyingglass
+mesh_file_skypillar = meshes\skypillar
+
+# ── Level object files (MESHWORLD sub-objects) ──
+obj_file_bridge = Levels\Level2-Bridge
+obj_file_gluebie = Levels\Level3-Gluebie
+obj_file_waterwheel = Levels\Level3-WaterWheel
+obj_file_tipper = Levels\Level3-Tipper
+obj_file_swirl = Levels\Level3-Swirl
+obj_file_turret = Levels\Level4-Turret
+obj_file_windmill = Levels\Level4-Windmill
+obj_file_mace = Levels\Level4-Mace
+obj_file_drawbridge = Levels\Level4-Drawbridge
+obj_file_catapult = Levels\Level4-Catapult
+obj_file_trapdoor1 = Levels\Level4-Trapdoor1
+obj_file_trapdoor2 = Levels\Level4-Trapdoor2
+obj_file_expert_bridge = Levels\Level5-Bridge
+obj_file_bonk = levels\level5-bonk
+obj_file_lifter_odd = Levels\Level6-Lifter
+obj_file_wavy1 = Levels\Level7-Wavy1
+obj_file_wobbly1 = Levels\Level7-Wobbly1
+obj_file_wobbly2 = Levels\Level7-Wobbly2
+obj_file_wobbly3 = Levels\Level7-Wobbly3
+obj_file_wobbly4 = Levels\Level7-Wobbly4
+obj_file_wobbly5 = Levels\Level7-Wobbly5
+obj_file_wobbly6 = Levels\Level7-Wobbly6
+obj_file_wobbly7 = Levels\Level7-Wobbly7
+obj_file_wobbly8 = Levels\Level7-Wobbly8
+obj_file_blockdawg1 = Levels\Level8-Blockdawg1
+obj_file_blockdawg2 = Levels\Level8-Blockdawg2
+obj_file_fallout = Levels\Level8-Fallout
+obj_file_saw = Levels\Level8-Saw
+obj_file_spinny = Levels\Level8-Spinny
+obj_file_sky_trapdoor = levels\level9-trapdoor
+obj_file_popcylinder1 = levels\level9-popcylinder1
+obj_file_popcylinder2 = levels\level9-popcylinder2
+obj_file_up_button = levels\levelup-button
+obj_file_up_speedcyl = levels\levelup-speedcylinder
+obj_file_up_lifter = levels\levelup-lifter
+obj_file_master_bridge1 = Levels\Level10-Bridge1
+obj_file_master_bridge2 = Levels\Level10-Bridge2
+obj_file_2pbridge = Levels\Level10-2PBridge
+obj_file_trode = Levels\LevelDark-Trode
+obj_file_dfloor1 = Levels\LevelDark-DFloor1
+obj_file_dfloor2 = Levels\LevelDark-DFloor2
+obj_file_dfloor3 = Levels\LevelDark-DFloor3
+obj_file_dfloor4 = Levels\LevelDark-DFloor4
+obj_file_neonplatform = Levels\LevelDark-NeonPlatform
+obj_file_flickning = Levels\LevelDark-Flickning
+obj_file_pendulum = Levels\LevelImpossible-Pendulum
+obj_file_rotator = Levels\LevelImpossible-Rotator
+obj_file_biggear = Levels\LevelImpossible-BigGear
+obj_file_gear = Levels\LevelImpossible-Gear
+obj_file_looper = Levels\LevelImpossible-Looper
+obj_file_popupsign = Levels\PopupSign
+obj_file_secret_unlock = Levels\Secret-Unlock
+obj_file_secret = Levels\Secret
+obj_file_mousetrap = Levels\MouseTrap
+
+# ── Tournament menu thumbnails (1-15) ──
+img_file_tourneythumb01 = tourney-beginner.png
+img_file_tourneythumb02 = tourney-cascade.png
+img_file_tourneythumb03 = tourney-intermediate.png
+img_file_tourneythumb04 = tourney-dizzy.png
+img_file_tourneythumb05 = tourney-Tower.png
+img_file_tourneythumb06 = tourney-Up.png
+img_file_tourneythumb07 = tourney-Neon.png
+img_file_tourneythumb08 = tourney-Expert.png
+img_file_tourneythumb09 = tourney-Odd.png
+img_file_tourneythumb10 = tourney-Toob.png
+img_file_tourneythumb11 = tourney-Wobbly.png
+img_file_tourneythumb12 = tourney-Glass.png
+img_file_tourneythumb13 = tourney-Sky.png
+img_file_tourneythumb14 = tourney-Master.png
+img_file_tourneythumb15 = tourney-Impossible.png
+
+# ── Practice (Time Trials) menu thumbnails (1-15) ──
+img_file_practicethumb01 = Textures\practice-level1.png
+img_file_practicethumb02 = Textures\practice-cascade.png
+img_file_practicethumb03 = Textures\practice-level2.png
+img_file_practicethumb04 = Textures\practice-level3.png
+img_file_practicethumb05 = Textures\practice-level4.png
+img_file_practicethumb06 = Textures\practice-up.png
+img_file_practicethumb07 = Textures\practice-level5.png
+img_file_practicethumb08 = Textures\practice-level6.png
+img_file_practicethumb09 = Textures\practice-level7.png
+img_file_practicethumb10 = Textures\practice-level8.png
+img_file_practicethumb11 = Textures\practice-level9.png
+img_file_practicethumb12 = Textures\practice-level10.png
+img_file_practicethumb13 = Textures\practice-neon.png
+img_file_practicethumb14 = Textures\practice-glass.png
+img_file_practicethumb15 = Textures\practice-impossible.png
