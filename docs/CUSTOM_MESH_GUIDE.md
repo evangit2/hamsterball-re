@@ -300,6 +300,253 @@ with open('Level-MyMesh.MESHWORLD', 'wb') as f:
 
 ---
 
+## Blender Workflow
+
+You can use Blender to design your mesh visually, then export vertex data
+and convert it to MESHWORLD format via a Python script.
+
+### Step 1: Design in Blender
+
+1. **Create your geometry** — boxes, platforms, pipes, etc.
+2. **Make everything thick** — flat planes have unreliable collision. Give every
+   surface thickness (use Solidify modifier or model as solid boxes).
+3. **Triangulate** — Select all, then `Face > Triangulate Faces` (Ctrl+T).
+   The MESHWORLD format uses triangle lists, not quads or n-gons.
+4. **No UV maps needed** — colors come from materials, not textures.
+5. **No textures needed** — the MESHWORLD uses material colors only.
+
+### Step 2: Name Objects for Events
+
+If you want collision events (sounds, triggers), separate your mesh into
+named objects in Blender:
+
+| Blender Object Name | Effect in MESHWORLD |
+|---------------------|---------------------|
+| `Solid` (or any name without N:/E: prefix) | Normal solid + collision |
+| `E:DROPIN` | Pipe entry sound trigger (invisible) |
+| `E:POPOUT` | Pipe exit sound trigger (invisible) |
+| `E:JUMP` | Jump pad (sound + upward velocity) |
+| `E:PIPEBONK` | Pipe wall bonk sound |
+| `E:ZOOP` | Whoosh sound |
+| `N:BOUNCE` | Bounce pad |
+| `N:GOAL` | Race finish line |
+| `N:TARPIT` | Tar pit (slows ball) |
+| `N:WATER` | Water zone |
+| `N:NOCONTROL` | Disable ball control |
+| `N:SPEEDCYLINDER` | Speed boost |
+| `E:ACTION` | Custom action (with ONCE/SCORE tags) |
+| `E:TRAJECTORY` | Set ball trajectory (X/Y/Z tags) |
+
+Objects with N:/E: names become invisible trigger zones (no solid collision).
+Objects without N:/E: names become solid visible geometry with collision.
+
+### Step 3: Export from Blender
+
+In Blender, go to the Scripting workspace and run this export script:
+
+```python
+import bpy
+import struct
+import json
+
+def export_meshworld_json(filepath):
+    """Export all mesh objects to JSON with vertex data."""
+    geoms = []
+    
+    for obj in bpy.data.objects:
+        if obj.type != 'MESH':
+            continue
+        
+        name = obj.name
+        mesh = obj.data
+        
+        # Get world-space vertices
+        world_matrix = obj.matrix_world
+        
+        verts = []
+        for v in mesh.vertices:
+            co = world_matrix @ v.co
+            normal = world_matrix.to_3x3() @ v.normal
+            verts.append({
+                'x': co.x, 'y': co.z, 'z': co.y,  # NOTE: Z-up to Y-up
+                'nx': normal.x, 'ny': normal.z, 'nz': normal.y,
+                'u': 0.0, 'v': 0.0
+            })
+        
+        # Get triangles (triangulated faces)
+        tris = []
+        for poly in mesh.polygons:
+            if len(poly.vertices) == 3:
+                tris.append(list(poly.vertices))
+            elif len(poly.vertices) == 4:
+                # Split quad into 2 triangles
+                tris.append([poly.vertices[0], poly.vertices[1], poly.vertices[2]])
+                tris.append([poly.vertices[0], poly.vertices[2], poly.vertices[3]])
+        
+        geoms.append({
+            'name': name,
+            'vertices': verts,
+            'triangles': tris
+        })
+    
+    with open(filepath, 'w') as f:
+        json.dump(geoms, f, indent=2)
+    print(f"Exported {len(geoms)} objects to {filepath}")
+
+# Run this in Blender's Scripting tab
+export_meshworld_json('/tmp/blender_mesh_export.json')
+```
+
+### Step 4: Convert JSON to MESHWORLD
+
+Run this script (on your PC or the VM) to convert the JSON to a .MESHWORLD file:
+
+```python
+import struct, json
+
+def make_material(color_idx):
+    if color_idx == 0:  # white
+        d = (0.9, 0.9, 0.9, 1.0); a = (0.7, 0.7, 0.7, 1.0)
+    else:  # gray
+        d = (0.4, 0.4, 0.4, 1.0); a = (0.3, 0.3, 0.3, 1.0)
+    s = (0.1, 0.1, 0.1, 1.0); e = (0.0, 0.0, 0.0, 1.0)
+    return (struct.pack('<4f', *a) + struct.pack('<4f', *d) +
+            struct.pack('<4f', *s) + struct.pack('<4f', *e) +
+            struct.pack('<f', 10.0) + struct.pack('<i', 0) + struct.pack('<i', 0))
+
+def json_to_meshworld(json_path, output_path):
+    with open(json_path) as f:
+        geoms_data = json.load(f)
+    
+    all_verts = []
+    all_strips = []
+    geom_colors = []
+    geom_names = []
+    
+    for g in geoms_data:
+        name = g['name']
+        verts = g['vertices']
+        tris = g['triangles']
+        
+        # Determine if this is a trigger (N:/E:) or solid geom
+        is_trigger = name.startswith('E:') or name.startswith('N:')
+        
+        # Build vertex buffer for this geom
+        base = len(all_verts)
+        for tri in tris:
+            for vi in tri:
+                v = verts[vi]
+                all_verts.append((
+                    v['x'], v['y'], v['z'],
+                    v['nx'], v['ny'], v['nz'],
+                    v['u'], v['v']
+                ))
+        
+        # Build strips (1 strip per triangle)
+        strips = []
+        for i in range(len(tris)):
+            strips.append((1, base + i * 3))
+        
+        all_strips.append(strips)
+        geom_colors.append(0 if not is_trigger else 0)
+        
+        # Encode name
+        if is_trigger:
+            geom_names.append((name + '\x00').encode('ascii'))
+        else:
+            geom_names.append(b'\x00')  # empty = solid
+    
+    # Center the mesh
+    cx = sum(v[0] for v in all_verts) / len(all_verts)
+    cy = sum(v[1] for v in all_verts) / len(all_verts)
+    cz = sum(v[2] for v in all_verts) / len(all_verts)
+    all_verts = [(v[0]-cx, v[1]-cy, v[2]-cz,
+                  v[3], v[4], v[5], v[6], v[7])
+                 for v in all_verts]
+    
+    xs = [v[0] for v in all_verts]
+    ys = [v[1] for v in all_verts]
+    zs = [v[2] for v in all_verts]
+    bounds = (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+    
+    # Build MESHWORLD binary
+    s1 = struct.pack('<i', 0)
+    s2 = struct.pack('<i', 0)
+    s3 = struct.pack('<i', 0)
+    s4 = struct.pack('<6f', 0, 0, 0, 0, 0, 0)
+    
+    s5 = struct.pack('<i', len(all_verts))
+    for v in all_verts:
+        s5 += struct.pack('<ffffffff', *v)
+    
+    s6 = struct.pack('<6f', *bounds)
+    s6 += struct.pack('<i', 0)
+    s6 += struct.pack('<i', len(all_strips))
+    
+    for i, strips in enumerate(all_strips):
+        name = geom_names[i]
+        s6 += struct.pack('<i', len(name)) + name
+        s6 += make_material(geom_colors[i])
+        s6 += struct.pack('<i', len(strips))
+        for tc, vr in strips:
+            s6 += struct.pack('<ii', tc, vr)
+    
+    meshworld = s1 + s2 + s3 + s4 + s5 + s6
+    
+    with open(output_path, 'wb') as f:
+        f.write(meshworld)
+    
+    print(f"Created: {output_path}")
+    print(f"  Geoms: {len(all_strips)}")
+    print(f"  Vertices: {len(all_verts)}")
+    print(f"  Triangles: {sum(len(s) for s in all_strips)}")
+    print(f"  Size: {len(meshworld)} bytes")
+
+# Convert JSON to MESHWORLD
+json_to_meshworld('/tmp/blender_mesh_export.json', 'Level-MyMesh.MESHWORLD')
+```
+
+### Step 5: Create CEA Spawn Script
+
+Copy the CEA template (see CEA Spawn Script section above) and change the
+mesh filename string to match your new mesh:
+
+```
+BridgeStr:
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 4D 79 4D 65 73 68 00
+  // "Levels\Level-MyMesh\0"
+```
+
+The string must be hex-encoded ASCII. Use a converter:
+```python
+s = "Levels\\Level-MyMesh"
+hex_bytes = " ".join(f"{ord(c):02X}" for c in s) + " 00"
+print(hex_bytes)
+```
+
+### Blender Coordinate System
+
+Blender uses **Z-up** (Y is depth). Hamsterball uses **Y-up** (Z is depth).
+The Blender export script above handles this swap automatically:
+- Blender X -> MESHWORLD X
+- Blender Z -> MESHWORLD Y (up)
+- Blender Y -> MESHWORLD Z (forward)
+
+This is the ONLY place a coordinate swap happens — in the Blender export.
+The MESHWORLD format itself expects direct coordinates (no swap).
+
+### Blender Tips for Good Collision
+
+1. **Thick geometry only** — use Solidify modifier or model solid boxes
+2. **Triangulate all faces** (Ctrl+T in Edit mode)
+3. **Check normals** face outward (View > Face Orientation, blue = outside)
+4. **No overlapping geometry** — each surface should be clean
+5. **Keep under 65,534 vertices per object** (split large meshes)
+6. **Name trigger objects** with E:/N: prefix for events
+7. **Separate solid and trigger meshes** into different Blender objects
+
+---
+
 ## Pitfalls Summary
 
 1. **No Y/Z swap** -- write coordinates directly
