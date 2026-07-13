@@ -1510,7 +1510,7 @@ Offset | Field | Description
 | 0x0047e8f6 | Mesh_RemapVertexAttribute32 | Remap vertex attribute through lookup table (if flag bit 2 set at +0x0C) |
 | 0x0047e96b | Mesh_SwapVertices32 | Swap vertex data between two indices using alloca temp buffer (32-bit stride) |
 
-## Session 25 (continued 6) - Vec/Math, Level, Sound, WaterRipple, App, Input, Vector STL
+## Session 25 (continued 6) - Vec/Math, Level, Sound, FlagWaver, App, Input, Vector STL
 
 | Address | Name | Description |
 |---------|------|-------------|
@@ -1551,13 +1551,13 @@ Offset | Field | Description
 | 0x0046a3c0 | RegKeyList_CopyFromSibling | Iterate sibling list entries, call RegKeyList_AppendStr for each |
 | 0x0046a6e0 | RaptisoftUtil_Ctor | Constructor — FindWindowA("Raptisoft Utility"), set vtable |
 | 0x0046a7f0 | RaptisoftUtil_DeletingDtor | Destructor — Window_Notify "*** END RAPTISOFT SESSION ***" |
-| 0x0046a820 | WaterRipple_dtor | Free vertex buffer, release D3D resource, identity matrix |
-| 0x0046a8a0 | WaterRipple_AllocBuffers | Allocate vertex buffer array, create D3D vertex buffer |
-| 0x0046a930 | WaterRipple_AdvancePhase | Increment wave phase offset at +0x28 |
-| 0x0046a940 | WaterRipple_DeletingDtor | Scalar deleting destructor for WaterRipple |
-| 0x0046a960 | WaterRipple_UpdateVertices | Compute water wave positions (sin/cos), normals, vertex averaging for smooth surface |
-| 0x0046af30 | WaterRipple_Ctor | Constructor — vtable 0x4D9344, 10 segments, wave params, alloc buffers |
-| 0x0046b070 | WaterRipple_Render | Render water ripple — update vertices, test ball intersection, draw with vertex buffer |
+| 0x0046a820 | FlagWaver_dtor | Free vertex buffer, release D3D resource, identity matrix |
+| 0x0046a8a0 | FlagWaver_AllocBuffers | Allocate vertex buffer array, create D3D vertex buffer |
+| 0x0046a930 | FlagWaver_AdvancePhase | Increment wave phase offset at +0x28 |
+| 0x0046a940 | FlagWaver_DeletingDtor | Scalar deleting destructor for FlagWaver |
+| 0x0046a960 | FlagWaver_UpdateVertices | Compute water wave positions (sin/cos), normals, vertex averaging for smooth surface |
+| 0x0046af30 | FlagWaver_Ctor | Constructor — vtable 0x4D9344, 10 segments, wave params, alloc buffers |
+| 0x0046b070 | FlagWaver_Render | Render water ripple — update vertices, test ball intersection, draw with vertex buffer |
 | 0x0046b200 | RenderList_AppendCopy | Allocate new RenderContext and copy data, or append existing to list |
 | 0x0046b360 | RenderList_FreeAndClear | Iterate list calling dtor(1), then AthenaList_Free |
 | 0x0046b3d0 | MeshBuffer_DeletingDtor | Scalar deleting destructor for MeshBuffer |

@@ -18799,7 +18799,7 @@ float positions[vertex_count * 3]        // 32-bit float positions
 </tr>
 <tr>
 <td>0x46B070</td>
-<td>WaterRipple_Render</td>
+<td>FlagWaver_Render</td>
 <td>Water ripple collision (physics-based)</td>
 </tr>
 <tr>
@@ -73449,7 +73449,7 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 </tbody>
 </table>
-<h2>Session 25 (continued 6) - Vec/Math, Level, Sound, WaterRipple, App, Input, Vector STL</h2>
+<h2>Session 25 (continued 6) - Vec/Math, Level, Sound, FlagWaver, App, Input, Vector STL</h2>
 <table>
 <thead>
 <tr>
@@ -73646,37 +73646,37 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x0046a820</td>
-<td>WaterRipple_dtor</td>
+<td>FlagWaver_dtor</td>
 <td>Free vertex buffer, release D3D resource, identity matrix</td>
 </tr>
 <tr>
 <td>0x0046a8a0</td>
-<td>WaterRipple_AllocBuffers</td>
+<td>FlagWaver_AllocBuffers</td>
 <td>Allocate vertex buffer array, create D3D vertex buffer</td>
 </tr>
 <tr>
 <td>0x0046a930</td>
-<td>WaterRipple_AdvancePhase</td>
+<td>FlagWaver_AdvancePhase</td>
 <td>Increment wave phase offset at +0x28</td>
 </tr>
 <tr>
 <td>0x0046a940</td>
-<td>WaterRipple_DeletingDtor</td>
-<td>Scalar deleting destructor for WaterRipple</td>
+<td>FlagWaver_DeletingDtor</td>
+<td>Scalar deleting destructor for FlagWaver</td>
 </tr>
 <tr>
 <td>0x0046a960</td>
-<td>WaterRipple_UpdateVertices</td>
+<td>FlagWaver_UpdateVertices</td>
 <td>Compute water wave positions (sin/cos), normals, vertex averaging for smooth surface</td>
 </tr>
 <tr>
 <td>0x0046af30</td>
-<td>WaterRipple_Ctor</td>
+<td>FlagWaver_Ctor</td>
 <td>Constructor — vtable 0x4D9344, 10 segments, wave params, alloc buffers</td>
 </tr>
 <tr>
 <td>0x0046b070</td>
-<td>WaterRipple_Render</td>
+<td>FlagWaver_Render</td>
 <td>Render water ripple — update vertices, test ball intersection, draw with vertex buffer</td>
 </tr>
 <tr>
@@ -77108,43 +77108,43 @@ Documented: 3781/3781 (100%)<br>
 </tr>
 <tr>
 <td>0x0046a820</td>
-<td>WaterRipple_dtor</td>
+<td>FlagWaver_dtor</td>
 <td>Free vertex buffer, release D3D resource, identity matrix</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a8a0</td>
-<td>WaterRipple_AllocBuffers</td>
+<td>FlagWaver_AllocBuffers</td>
 <td>Allocate vertex buffer array, create D3D vertex buffer</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a930</td>
-<td>WaterRipple_AdvancePhase</td>
+<td>FlagWaver_AdvancePhase</td>
 <td>Increment wave phase offset at +0x28</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a940</td>
-<td>WaterRipple_DeletingDtor</td>
-<td>Scalar deleting destructor for WaterRipple</td>
+<td>FlagWaver_DeletingDtor</td>
+<td>Scalar deleting destructor for FlagWaver</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a960</td>
-<td>WaterRipple_UpdateVertices</td>
+<td>FlagWaver_UpdateVertices</td>
 <td>Compute water wave positions (sin/cos), normals, vertex averaging for smooth surface</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046af30</td>
-<td>WaterRipple_Ctor</td>
+<td>FlagWaver_Ctor</td>
 <td>Constructor — vtable 0x4D9344, 10 segments, wave params, alloc buffers</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046b070</td>
-<td>WaterRipple_Render</td>
+<td>FlagWaver_Render</td>
 <td>Render water ripple — update vertices, test ball intersection, draw with vertex buffer</td>
 <td></td>
 </tr>
@@ -85536,7 +85536,7 @@ performance (avoids FPU transcendental calls). 121 xrefs across physics, renderi
 <li><code>Scene_ComputeLighting+0xA5</code> — lighting calculation</li>
 <li><code>Sprite_DrawRotatedQuad+0x152</code> — sprite rotation</li>
 <li><code>Gear_AdvanceAlongPath+0x49A</code> — gear path following</li>
-<li><code>WaterRipple_UpdateVertices+0x48</code> — water effect</li>
+<li><code>FlagWaver_UpdateVertices+0x48</code> — flag wave effect</li>
 </ul>
 </li>
 </ul>
@@ -99091,7 +99091,7 @@ transparent overlays. Ball_Update also calls into rendering for score popups.</p
 +0x2164  ripple_count
 +0x2168  ripple_iterator
 +0x256C  ripple_array_ptr
-+0x3F18  water_ripple_system (WaterRipple renderer)
++0x3F18  flag_waver_system (FlagWaver renderer)
 +0x3A44  is_skydome_enabled (bool: false=level mesh bg, true=sky dome)
 +0x3AFC  dynamic_object (vtable[8] callback after ripples)
 +0x361C  waypoint_display_obj (arrow/marker for next checkpoint)
@@ -117843,7 +117843,7 @@ in steps of 0x28, giving 9 particles: 0x168/0x28 = 9).</p>
 </tr>
 </tbody>
 </table>
-<h2>WaterRipple System</h2>
+<h2>FlagWaver System</h2>
 <p>Water ripples are a mesh deformation system, not a particle system.</p>
 <h3>Functions</h3>
 <table>
@@ -117857,47 +117857,47 @@ in steps of 0x28, giving 9 particles: 0x168/0x28 = 9).</p>
 <tbody>
 <tr>
 <td>0x46A820</td>
-<td>WaterRipple_dtor</td>
+<td>FlagWaver_dtor</td>
 <td>Destructor</td>
 </tr>
 <tr>
 <td>0x46A8A0</td>
-<td>WaterRipple_AllocBuffers</td>
+<td>FlagWaver_AllocBuffers</td>
 <td>Allocate vertex buffers</td>
 </tr>
 <tr>
 <td>0x46A930</td>
-<td>WaterRipple_AdvancePhase</td>
+<td>FlagWaver_AdvancePhase</td>
 <td>Advance ripple phase</td>
 </tr>
 <tr>
 <td>0x46A940</td>
-<td>WaterRipple_DeletingDtor</td>
+<td>FlagWaver_DeletingDtor</td>
 <td>Deleting destructor</td>
 </tr>
 <tr>
 <td>0x46A960</td>
-<td>WaterRipple_UpdateVertices</td>
+<td>FlagWaver_UpdateVertices</td>
 <td>Deform mesh vertices based on ripple</td>
 </tr>
 <tr>
 <td>0x46AF30</td>
-<td>WaterRipple_Ctor</td>
+<td>FlagWaver_Ctor</td>
 <td>Constructor</td>
 </tr>
 <tr>
 <td>0x46B070</td>
-<td>WaterRipple_Render</td>
+<td>FlagWaver_Render</td>
 <td>Render ripple effect</td>
 </tr>
 </tbody>
 </table>
 <h3>How Water Ripples Work</h3>
 <ol>
-<li>WaterRipple_Ctor initializes phase=0, allocates vertex buffer copies</li>
-<li>Each frame: WaterRipple_AdvancePhase increments phase counter</li>
-<li>WaterRipple_UpdateVertices applies concentric sine wave displacement to mesh Y coordinates</li>
-<li>WaterRipple_Render draws the deformed water mesh with alpha blending</li>
+<li>FlagWaver_Ctor initializes phase=0, allocates vertex buffer copies</li>
+<li>Each frame: FlagWaver_AdvancePhase increments phase counter</li>
+<li>FlagWaver_UpdateVertices applies concentric sine wave displacement to mesh Y coordinates</li>
+<li>FlagWaver_Render draws the deformed water mesh with alpha blending</li>
 <li>Ball_TestPlaneIntersection checks if ball is touching water surface</li>
 </ol>
 <hr>
@@ -126288,7 +126288,7 @@ Master loading function (~0x0041C8xx)
 <li>Entity names stored WITH <code>N:</code> or <code>E:</code> prefix: <code>N:GOAL</code>, <code>N:TARPIT</code>, <code>E:JUMP</code>, <code>E:BREAK</code></li>
 <li>Entity name is stored at <code>mesh_entity+0x864</code> during <code>Level_LoadMeshes</code> / <code>CreateMeshBuffer</code></li>
 <li>Processed by the N:/E: handler at <code>0x0040C5D0</code>, which is called from within the vtable[33] factories</li>
-<li>Sets behavioral FLAGS on the board/scene (e.g. tar pit behavior, water effects, jump zones, breakable surfaces)</li>
+<li>Sets behavioral FLAGS on the board/scene (e.g. tar pit behavior, flag wave effects, jump zones, breakable surfaces)</li>
 <li>Does NOT create objects — modifies existing mesh entities</li>
 </ul>
 <p><strong>The N: handler (0x0040C5D0)</strong> processes these prefixes:</p>
@@ -145329,43 +145329,43 @@ void __fastcall Hook_UpdateBallsAndState(void* scene) {
 </tr>
 <tr>
 <td>0x0046a820</td>
-<td>WaterRipple_dtor</td>
+<td>FlagWaver_dtor</td>
 <td>Free vertex buffer, release D3D resource, identity matrix</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a8a0</td>
-<td>WaterRipple_AllocBuffers</td>
+<td>FlagWaver_AllocBuffers</td>
 <td>Allocate vertex buffer array, create D3D vertex buffer</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a930</td>
-<td>WaterRipple_AdvancePhase</td>
+<td>FlagWaver_AdvancePhase</td>
 <td>Increment wave phase offset at +0x28</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a940</td>
-<td>WaterRipple_DeletingDtor</td>
-<td>Scalar deleting destructor for WaterRipple</td>
+<td>FlagWaver_DeletingDtor</td>
+<td>Scalar deleting destructor for FlagWaver</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046a960</td>
-<td>WaterRipple_UpdateVertices</td>
+<td>FlagWaver_UpdateVertices</td>
 <td>Compute water wave positions (sin/cos), normals, vertex averaging for smooth surface</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046af30</td>
-<td>WaterRipple_Ctor</td>
+<td>FlagWaver_Ctor</td>
 <td>Constructor — vtable 0x4D9344, 10 segments, wave params, alloc buffers</td>
 <td></td>
 </tr>
 <tr>
 <td>0x0046b070</td>
-<td>WaterRipple_Render</td>
+<td>FlagWaver_Render</td>
 <td>Render water ripple — update vertices, test ball intersection, draw with vertex buffer</td>
 <td></td>
 </tr>
@@ -147176,7 +147176,7 @@ for level geometry, then obj-&gt;vtable<a href="">0x0C</a> = RenderTransparent p
 <p>Sky/dome + water ripples. If is_skydome_enabled (+0x3A44):<br>
 sky_dome_mesh-&gt;vtable<a href="1,1">0x48</a>, else level_mesh-&gt;vtable<a href="">0x48</a>.<br>
 Then iterate ripple_list (+0x2160), render each:<br>
-Gfx_SetPositionAndRender→ScaleX→ScaleZ→SetPosition→WaterRipple_Render.<br>
+Gfx_SetPositionAndRender→ScaleX→ScaleZ→SetPosition→FlagWaver_Render.<br>
 Finally dynamic_object-&gt;vtable<a href="">8</a> callback.</p>
 <h3>Scene vtable Full Map (0x4D0260)</h3>
 <pre><code>[0x00] 0x425020  Scene_ctor
@@ -161127,7 +161127,7 @@ with a 5-byte JMP to a code cave. The code cave:</p>
 <tr>
 <td><code>N:SWIRL</code></td>
 <td>Toob</td>
-<td>Swirling water effect</td>
+<td>Swirling flag wave effect</td>
 </tr>
 <tr>
 <td><code>N:TARPIT</code></td>

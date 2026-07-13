@@ -23,7 +23,7 @@
  *
  * Cross-references (4 call sites):
  *   - Ball_Render (0x402DE0) — clipping test during rendering
- *   - WaterRipple_Render — testing if water ripples intersect with ball
+ *   - FlagWaver_Render — testing if flag waves intersect with ball
  *   - SceneObject_ComputeCollisionSphere — collision sphere computation
  *   - 0x402C87 — likely another collision check
  *

@@ -10,7 +10,7 @@ If the scale value at +0x10 differs from _DAT_004CF3C8 (likely 0.0 or 1.0),
 sets the "has bounds" flag at +0x4C = 1; otherwise sets it to 0.
 Resets the transform matrix to identity after setting bounds.
 
-Cross-refs: 1 call — WaterRipple_Ctor.
+Cross-refs: 1 call — FlagWaver_Ctor.
 
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)

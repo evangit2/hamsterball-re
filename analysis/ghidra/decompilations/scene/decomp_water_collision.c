@@ -1,16 +1,16 @@
-/* Water Ripple & Level Collision Systems - Deep Documentation
+/* Flag Waver & Level Collision Systems - Deep Documentation
  *
- * WaterRipple_Render (0x46B070) - Water ripple rendering with mesh and alpha
+ * FlagWaver_Render (0x46B070) - Flag/banner rendering with wind wave deformation
  * TowerCollisionEvents (0x40DCD0) - Level collision event dispatcher
  *
  * ═══════════════════════════════════════════════════════════════
- * WaterRipple_Render (0x46B070)
+ * FlagWaver_Render (0x46B070)
  * ═══════════════════════════════════════════════════════════════
  *
- * Signature: void __thiscall WaterRipple_Render(WaterRipple* this, float height)
+ * Signature: void __thiscall FlagWaver_Render(FlagWaver* this, float height)
  *
  * RENDERING PIPELINE:
- *   1. WaterRipple_UpdateVertices(this) — animate ripple mesh
+ *   1. FlagWaver_UpdateVertices(this) — animate flag mesh with wind waves
  *   2. Graphics_BeginFrame — prepare rendering
  *   3. Compute water surface Y: max(this+0x10, this+0x14) for height
  *   4. Ball_TestPlaneIntersection(this+0x04->collision, 0,0,0, waterY)
@@ -29,7 +29,7 @@
  *      b. Else (no index buffer):
  *         - D3D DrawPrimitiveUP (vtable[0x120]) with vertex count*2, format 0x20
  *
- * WATER RIPPLE OFFSETS:
+ * FLAG WAVER OFFSETS:
  *   this+0x04 = Graphics* (D3D device wrapper)
  *   this+0x08 = vertex count / stride
  *   this+0x0C = vertex format flags

@@ -60,7 +60,7 @@
  *   +0x3A44  = use_skydome flag (bool)
  *   +0x3A48  = visible_object_list (AthenaList)
  *   +0x3AFC  = dynamic_object (has vtable[8])
- *   +0x3F18  = WaterRipple object
+ *   +0x3F18  = FlagWaver object
  *   +0x8AC   = Level* (contains collision/render data)
  *   +0x8B0   = Level* (secondary, for skydome vtable[48])
  *   +0x878   = App* back-pointer
@@ -106,7 +106,7 @@
  *     c. Gfx_ScaleX(DAT_004CF44C - ripple+0x14) (scale X from time)
  *     d. Gfx_ScaleZ(-ripple+0x10) (scale Z from time)
  *     e. Gfx_SetPosition(ripple+0x04, +0x08, +0x0C) (world position)
- *     f. WaterRipple_Render(this+0x3F18, &timer)
+ *     f. FlagWaver_Render(this+0x3F18, &timer)
  *
  * PHASE 3: Dynamic object vtable callback
  *   - Call this+0x3AFC->vtable[8]() (dynamic object render callback)

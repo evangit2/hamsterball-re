@@ -3,7 +3,7 @@
  * Address: 0x0040c0f0
  * Signature: Scene_CreateFlags(...)
  *
- * Patterns: allocates, SEH frame, scene. Calls: Scene_CreateFlags, AthenaList_NextIndex, __strnicmp, operator_new, WaterRipple_Ctor, AthenaList_Append. Offsets: 10, Lines: 63
+ * Patterns: allocates, SEH frame, scene. Calls: Scene_CreateFlags, AthenaList_NextIndex, __strnicmp, operator_new, FlagWaver_Ctor, AthenaList_Append. Offsets: 10, Lines: 63
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -50,7 +50,7 @@ void __fastcall Scene_CreateFlags(int param_1)
           pvVar4 = (void *)0x0;
         }
         else {
-          pvVar4 = WaterRipple_Ctor(pvVar4,*(undefined4 *)(*(int *)(param_1 + 0x878) + 0x174));
+          pvVar4 = FlagWaver_Ctor(pvVar4,*(undefined4 *)(*(int *)(param_1 + 0x878) + 0x174));
         }
         local_4 = 0xffffffff;
         *(void **)(param_1 + 0x3f18) = pvVar4;

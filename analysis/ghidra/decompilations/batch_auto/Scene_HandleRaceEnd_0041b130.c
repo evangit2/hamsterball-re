@@ -3,7 +3,7 @@
  * Address: 0x0041b130
  * Signature: Scene_HandleRaceEnd(...)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, audio, rendering, scene. Calls: Scene_HandleRaceEnd, WaterRipple_AdvancePhase, AthenaList_NextIndex, thunk_Gfx_SetRenderState, operator_new, ScoreObject_ctor, AthenaList_Append, Sound_PlayChannel. Offsets: 29, Lines: 177
+ * Patterns: allocates, vtable dispatch, SEH frame, audio, rendering, scene. Calls: Scene_HandleRaceEnd, FlagWaver_AdvancePhase, AthenaList_NextIndex, thunk_Gfx_SetRenderState, operator_new, ScoreObject_ctor, AthenaList_Append, Sound_PlayChannel. Offsets: 29, Lines: 177
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -31,7 +31,7 @@ void __fastcall Scene_HandleRaceEnd(int param_1)
   ExceptionList = &pvStack_c;
   if (*(int *)(param_1 + 0x3f18) != 0) {
     ExceptionList = &pvStack_c;
-    WaterRipple_AdvancePhase(*(int *)(param_1 + 0x3f18));
+    FlagWaver_AdvancePhase(*(int *)(param_1 + 0x3f18));
   }
   iVar4 = AthenaList_NextIndex(param_1 + 0x2578);
   *(undefined4 *)(param_1 + 0x2580 + iVar4 * 4) = 0;

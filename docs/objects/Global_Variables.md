@@ -99,7 +99,7 @@ These are the primary game state variables used by the Hamsterball engine.
   - `Scene_ComputeLighting+0xA5` — lighting calculation
   - `Sprite_DrawRotatedQuad+0x152` — sprite rotation
   - `Gear_AdvanceAlongPath+0x49A` — gear path following
-  - `WaterRipple_UpdateVertices+0x48` — water effect
+  - `FlagWaver_UpdateVertices+0x48` — flag wave effect
 
 ### PTR_PTR_004f7448
 - **Address**: `0x004F7448` (.data)

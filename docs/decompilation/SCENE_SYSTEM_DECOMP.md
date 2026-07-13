@@ -108,10 +108,10 @@ Transparent pass. Graphics_BeginFrame, scene_manager->vtable[0x4C]
 for level geometry, then obj->vtable[0x0C]() = RenderTransparent per visible object.
 
 ### Level_RenderDynamicObjects (0x40B420, vtable[0x60])
-Sky/dome + water ripples. If is_skydome_enabled (+0x3A44):
+Sky/dome + flag waves. If is_skydome_enabled (+0x3A44):
 sky_dome_mesh->vtable[0x48](1,1), else level_mesh->vtable[0x48]().
 Then iterate ripple_list (+0x2160), render each:
-Gfx_SetPositionAndRender→ScaleX→ScaleZ→SetPosition→WaterRipple_Render.
+Gfx_SetPositionAndRender→ScaleX→ScaleZ→SetPosition→FlagWaver_Render.
 Finally dynamic_object->vtable[8]() callback.
 
 ### Scene vtable Full Map (0x4D0260)
