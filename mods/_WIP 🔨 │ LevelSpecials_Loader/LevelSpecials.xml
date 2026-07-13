@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LevelSpecials.xml
+  ================
+  Configuration file for cross-level object injection.
+  
+  Level Numbers:
+    1  = Warm-Up       6  = Up          11 = Wobbly
+    2  = Beginner      7  = Neon        12 = Glass
+    3  = Intermediate  8  = Expert      13 = Sky
+    4  = Dizzy         9  = Odd         14 = Master
+    5  = Tower         10 = Toob        15 = Impossible
+
+  Usage:
+    Put level numbers inside the parentheses.
+    () = not loaded in any level
+    (4) = only in Dizzy
+    (1, 6, 14) = in Warm-Up, Up, and Master
+-->
+
+<LevelSpecials>
+
+  <!-- ============================================ -->
+  <!-- E: Event Planes (collision-triggered events) -->
+  <!-- ============================================ -->
+  <Events>
+    E:ACTION ()
+    E:ACTIVATESAW1 ()
+    E:ACTIVATESAW2 ()
+    E:ALERTJUDGES ()
+    E:ALERTSAW1 ()
+    E:ALERTSAW2 ()
+    E:BELL ()
+    E:BITE ()
+    E:BRANCH ()
+    E:BREAK ()
+    E:CALLHAMMER ()
+    E:CATAPULTBOTTOM ()
+    E:DROPIN ()
+    E:DROPIN01 ()
+    E:DROPLIFT ()
+    E:GRAVITY ()
+    E:GROW ()
+    E:GROWSOUND ()
+    E:HAMMERCHASE ()
+    E:HEATOFF ()
+    E:HEATON ()
+    E:HELPINERTIA ()
+    E:JUMP ()
+    E:LAUNCH ()
+    E:LIGHTSOFF ()
+    E:LIGHTSON ()
+    E:LIMIT ()
+    E:LIMITPIPE1 ()
+    E:LIMITPIPE2 ()
+    E:LIMITX ()
+    E:LIMITZ ()
+    E:MACETRIGGER ()
+    E:NODIZZY ()
+    E:NOPEGS ()
+    E:OPENSESAME ()
+    E:PEGS ()
+    E:PIPEBONK ()
+    E:PIPERANDOM ()
+    E:POPOUT ()
+    E:POPOUT01 ()
+    E:SAFESWITCH ()
+    E:SCORE ()
+    E:SCORE1 ()
+    E:SCORE5 ()
+    E:SCORE7 ()
+    E:SCORE9 ()
+    E:SHRINK ()
+    E:SWALLOW ()
+    E:TRAJECTORY ()
+    E:TRAPPOP ()
+    E:UNHELPINERTIA ()
+    E:VACPOPOUT ()
+    E:VX ()
+    E:ZOOP ()
+  </Events>
+
+  <!-- ============================================ -->
+  <!-- N: Named Objects (trigger zones, logic nodes) -->
+  <!-- ============================================ -->
+  <NamedObjects>
+    N:BOUNCE ()
+    N:BRIDGE ()
+    N:BUMP ()
+    N:BUMPER ()
+    N:BUMPER1 ()
+    N:BUMPER2 ()
+    N:BUMPER3 ()
+    N:BUMPER4 ()
+    N:BUMPER5 ()
+    N:BUMPER6 ()
+    N:BUMPER7 ()
+    N:BUMPER8 ()
+    N:DROPIN ()
+    N:EXTRATIME ()
+    N:GLASS ()
+    N:GOAL ()
+    N:JUMPFIRST ()
+    N:JUMPSECOND ()
+    N:LOOPER ()
+    N:MOUSETRAP ()
+    N:NEONPLATFORM ()
+    N:NOCONTROL ()
+    N:ONGEAR ()
+    N:ONPENDULUM ()
+    N:ONROTATOR ()
+    N:SAWTEETH ()
+    N:SECRET ()
+    N:SINKPLATFORM ()
+    N:SPEEDCYLINDER ()
+    N:SPINNY ()
+    N:SQUAREWOBBLY ()
+    N:SWIRL ()
+    N:TARPIT ()
+    N:TENBONUS1 ()
+    N:TENBONUS2 ()
+    N:TRAPDOOR ()
+    N:UNLOCKSECRET ()
+    N:WATERWHEEL ()
+    N:WAVY ()
+    N:WHEELEMBED ()
+  </NamedObjects>
+
+  <!-- ============================================ -->
+  <!-- REF: Object References (dynamic objects/meshes) -->
+  <!-- These are made-up prefixes for this mod.      -->
+  <!-- They represent named mesh objects loaded by    -->
+  <!-- the game's CreateDynamicObjects functions.     -->
+  <!-- ============================================ -->
+  <References>
+    REF:BADBALL ()
+    REF:BBRIDGE1 ()
+    REF:BBRIDGE2 ()
+    REF:BELL ()
+    REF:BIGGEAR ()
+    REF:BLOCKDAWG1 ()
+    REF:BLOCKDAWG2 ()
+    REF:BLOCKDAWG3 ()
+    REF:BONK ()
+    REF:BONKBASH ()
+    REF:BONKPOPUP ()
+    REF:BOUNCE ()
+    REF:BRIDGE ()
+    REF:BUMPER1 ()
+    REF:BUMPER2 ()
+    REF:BUMPER3 ()
+    REF:BUMPER4 ()
+    REF:BUMPER5 ()
+    REF:BUMPER6 ()
+    REF:BUMPER7 ()
+    REF:BUMPER8 ()
+    REF:CATAPULT ()
+    REF:CHOMPER ()
+    REF:DFLOOR1 ()
+    REF:DFLOOR2 ()
+    REF:DFLOOR3 ()
+    REF:DFLOOR4 ()
+    REF:DRAWBRIDGE ()
+    REF:DROPIN ()
+    REF:EXTRATIME ()
+    REF:FALLOUT1 ()
+    REF:FAN ()
+    REF:FLICKRING ()
+    REF:GEAR ()
+    REF:GLASS ()
+    REF:GLUEBIE ()
+    REF:GOAL ()
+    REF:JUDGE ()
+    REF:JUMPFIRST ()
+    REF:JUMPPIPE1 ()
+    REF:JUMPPIPE2 ()
+    REF:JUMPSECOND ()
+    REF:LIFTER ()
+    REF:LOOPER ()
+    REF:MACE ()
+    REF:MAGNIFYER ()
+    REF:MOUSETRAP ()
+    REF:NEONPLATFORM ()
+    REF:NOCONTROL ()
+    REF:ONGEAR ()
+    REF:ONPENDULUM ()
+    REF:ONROTATOR ()
+    REF:PENDULUM ()
+    REF:PIPEBONK ()
+    REF:PIPERANDOM1 ()
+    REF:PIPERANDOM2 ()
+    REF:POPCYLINDER ()
+    REF:ROTATOR ()
+    REF:SAW ()
+    REF:SAW2 ()
+    REF:SAWBLADE ()
+    REF:SAWPATH ()
+    REF:SAWTEETH ()
+    REF:SECRET ()
+    REF:SMALLSAWPATH ()
+    REF:SMASHER1 ()
+    REF:SMASHER2 ()
+    REF:SPEEDCYLINDER ()
+    REF:SPINNY ()
+    REF:SQUAREWOBBLY ()
+    REF:SWIRL ()
+    REF:TARPIT ()
+    REF:TENBONUS1 ()
+    REF:TENBONUS2 ()
+    REF:TIMEBUTTON ()
+    REF:TIPPER ()
+    REF:TRAPDOOR ()
+    REF:TRODE ()
+    REF:TURRET ()
+    REF:UNLOCKSECRET ()
+    REF:WATERWHEEL ()
+    REF:WAVY ()
+    REF:WHEELEMBED ()
+    REF:WINDMILL ()
+    REF:WOBBLY1 ()
+    REF:WOBBLY2 ()
+    REF:WOBBLY3 ()
+    REF:WOBBLY4 ()
+    REF:WOBBLY5 ()
+    REF:WOBBLY6 ()
+    REF:WOBBLY7 ()
+    REF:WOBBLY8 ()
+  </References>
+
+  <!-- ============================================ -->
+  <!-- Level-Specific Variables                     -->
+  <!-- Hardcoded visual/system features per level   -->
+  <!-- ============================================ -->
+  <LevelVariables>
+    NeonLights: ()
+    PennantFlags: ()
+  </LevelVariables>
+
+</LevelSpecials>
