@@ -1,9 +1,12 @@
 /*
- * LevelSpecials_Loader v2 — Universal Collision Handler
+ * LevelSpecials_Loader v3 — Universal Level Handler
  *
- * ONE hook on DispatchCollisionEvents (0x0040C5D0) that works for ALL levels.
- * Level is identified by reading board->vtable (board+0x0) and comparing
- * against the 15 known level vtable addresses.
+ * 1. ALLOCATION PATCH: Patches all 15 level allocation sites in
+ *    Tournament_AdvanceRace (0x00427080) to use the union size 0xA2F8,
+ *    so every level gets enough board memory for ALL possible objects.
+ *
+ * 2. COLLISION HOOK: Hooks DispatchCollisionEvents (0x0040C5D0) to
+ *    handle N:BUMPER collisions on any level, driven by config.
  *
  * Config file (LevelSpecials.txt) controls which features are active per level:
  *   [BUMPERS]
@@ -12,10 +15,6 @@
  *   ...
  *
  * If the current level number appears in the list, bumpers are active.
- *
- * The hook intercepts ALL collisions, checks if the object is N:BUMPER*,
- * and if bumpers are enabled for the current level, applies bounce physics.
- * Then it always calls the original DispatchCollisionEvents.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -355,7 +354,54 @@ __attribute__((naked)) static void Hook_DispatchCollisionEvents(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Install hook
+ * Allocation size patch — make all levels allocate the union size
+ *
+ * Tournament_AdvanceRace (0x00427080) has a switch with 15 cases.
+ * Each case does: PUSH <size>; CALL operator_new
+ * The PUSH imm32 instruction is 5 bytes: 68 XX XX XX XX
+ * We patch the 4-byte immediate at addr+1 to 0xA2F8 (union of all objects).
+ *
+ * Level 14 (Master) is already 0x6498, still needs patching to 0xA2F8.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define UNION_SIZE  0xA2F8
+
+/* RVA of each PUSH imm32 instruction (address of the 0x68 opcode) */
+static const DWORD g_allocPatchRVAs[15] = {
+    0x00027109,  /* 1=WarmUp    (was 0x436C) */
+    0x00027136,  /* 2=Beginner  (was 0x644C) */
+    0x00027167,  /* 3=Intermed  (was 0x438C) */
+    0x00027198,  /* 4=Dizzy     (was 0x4BE0) */
+    0x000271C9,  /* 5=Tower     (was 0x5418) */
+    0x000271FA,  /* 6=Up        (was 0x4790) */
+    0x0002722B,  /* 7=Neon      (was 0x4394) */
+    0x0002725C,  /* 8=Expert    (was 0x4FD8) */
+    0x0002728D,  /* 9=Odd       (was 0x43B0) */
+    0x000272BE,  /* 10=Toob     (was 0x646C) */
+    0x000272EF,  /* 11=Wobbly   (was 0x4388) */
+    0x00027320,  /* 12=Glass    (was 0x4390) */
+    0x00027351,  /* 13=Sky      (was 0x47F8) */
+    0x0002737B,  /* 14=Master   (was 0x6498) */
+    0x000273A5,  /* 15=Imposs   (was 0x4380) */
+};
+
+static void PatchAllocSizes(void) {
+    int i;
+    for (i = 0; i < 15; i++) {
+        unsigned char *site = (unsigned char *)(g_moduleBase + g_allocPatchRVAs[i]);
+        if (IsBadReadPtr(site, 5)) continue;
+        if (site[0] != 0x68) continue;  /* verify PUSH opcode */
+
+        DWORD oldProtect;
+        VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+        *(DWORD *)(site + 1) = UNION_SIZE;
+        VirtualProtect(site, 5, oldProtect, &oldProtect);
+        FlushInstructionCache(GetCurrentProcess(), site, 5);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Install collision hook
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void InstallHook(void) {
@@ -571,6 +617,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
 
     GetConfigPath();
     LoadConfig();
+    PatchAllocSizes();
     InstallHook();
     return 0;
 }
