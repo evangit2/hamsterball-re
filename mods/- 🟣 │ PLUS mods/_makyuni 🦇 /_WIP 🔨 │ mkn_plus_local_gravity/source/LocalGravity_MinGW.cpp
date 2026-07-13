@@ -1,17 +1,65 @@
 /*
- * LocalGravity_MinGW.cpp — Port of working LowGravity mod.
- * Reads gravity value from mkn_plus_local_gravity_set.txt instead of a slider.
+ * LocalGravity_MinGW.cpp — Per-level gravity override (HB+ v2.0, MinGW)
+ *
+ * Reads 30 gravity values from mkn_plus_local_gravity_set.txt:
+ *   Lines 1-15:  Race levels (Warm-Up through Impossible)
+ *   Lines 16-30: Arena levels (Warm-Up through Impossible)
+ *
  * Config file is next to the DLL in the Mods\ folder.
  * Re-reads every onBallUpdate for live editing.
+ * Uses the same gravity logic as the working plus_low_gravity mod.
  *
  * Uses nocrt + manual 17-entry vtable for HB+ v2.0.
  */
 #include "nocrt.h"
 #include "HamsterballAPI.h"
 
-static float g_gravityValue = 5.0f;  /* default matches game default spin_rate */
+#define NUM_LEVELS 30
+#define NUM_RACES 15
+#define DEFAULT_GRAVITY 5.0f
+
+#define GLOBAL_SCENE_PTR 0x005341E4
+
+static float g_gravityValues[NUM_LEVELS];
+static int g_currentLevelIndex = -1;
 static char g_configPath[MAX_PATH] = "";
 static bool g_pathReady = false;
+
+static const char* RACE_NAMES[NUM_RACES] = {
+    "Board (Warm-Up)",
+    "Board (Beginner)",
+    "Board (Intermediate)",
+    "Board (Dizzy)",
+    "Board (Tower)",
+    "Board (Up)",
+    "Board (Dark)",
+    "Board (Expert)",
+    "Board (Odd)",
+    "Board (Toob)",
+    "Board (Wobbly)",
+    "Board (Glass)",
+    "Board (Sky)",
+    "Board (Master)",
+    "Board (Impossible)"
+};
+
+static const char* ARENA_NAMES[NUM_RACES] = {
+    "RumbleBoard (Warmup Arena)",
+    "RumbleBoard (Beginner Arena)",
+    "RumbleBoard (Intermediate Arena)",
+    "RumbleBoard (Dizzy Arena)",
+    "RumbleBoard (Tower Arena)",
+    "RumbleBoard (Up Arena)",
+    "RumbleBoard (Neon Arena)",
+    "RumbleBoard (Expert Arena)",
+    "RumbleBoard (Odd Arena)",
+    "RumbleBoard (Toob Arena)",
+    "RumbleBoard (Wobbly Arena)",
+    "RumbleBoard (Sky Arena)",
+    "RumbleBoard (Master Arena)",
+    "RumbleBoard (Glass Arena)",
+    "RumbleBoard (Impossible Arena)"
+};
 
 static void* __thiscall sc_dtor(void* thisptr, int flags) {
     if (flags & 1) nc_free(thisptr);
@@ -53,15 +101,17 @@ static void buildConfigPath(void) {
     g_pathReady = true;
 }
 
-/* Read a single float from the config file */
+/* Read 30 float values from config file */
 static void reloadConfig(void) {
+    for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
+
     if (!g_pathReady) return;
 
     HANDLE h = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return;
 
-    char buf[256];
+    char buf[8192];
     DWORD bytesRead = 0;
     ReadFile(h, buf, sizeof(buf) - 1, &bytesRead, NULL);
     CloseHandle(h);
@@ -73,40 +123,69 @@ static void reloadConfig(void) {
         p += 3;
     }
 
-    /* Skip whitespace and comments */
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p == '#') {
-        while (*p && *p != '\n') p++;
+    int index = 0;
+    while (*p && index < NUM_LEVELS) {
+        /* Skip whitespace and newlines */
         while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    }
-
-    /* Parse float manually */
-    float val = 0.0f;
-    int negative = 0;
-    if (*p == '-') { negative = 1; p++; }
-    else if (*p == '+') { p++; }
-    int integerPart = 0;
-    while (*p >= '0' && *p <= '9') {
-        integerPart = integerPart * 10 + (*p - '0');
-        p++;
-    }
-    float frac = 0.0f;
-    if (*p == '.') {
-        p++;
-        float div = 10.0f;
+        if (*p == '\0') break;
+        /* Skip comment lines */
+        if (*p == '#') {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+        /* Parse float manually */
+        float val = 0.0f;
+        int negative = 0;
+        if (*p == '-') { negative = 1; p++; }
+        else if (*p == '+') { p++; }
+        int integerPart = 0;
         while (*p >= '0' && *p <= '9') {
-            frac += (*p - '0') / div;
-            div *= 10.0f;
+            integerPart = integerPart * 10 + (*p - '0');
             p++;
         }
-    }
-    val = (float)integerPart + frac;
-    if (negative) val = -val;
+        float frac = 0.0f;
+        if (*p == '.') {
+            p++;
+            float div = 10.0f;
+            while (*p >= '0' && *p <= '9') {
+                frac += (*p - '0') / div;
+                div *= 10.0f;
+                p++;
+            }
+        }
+        val = (float)integerPart + frac;
+        if (negative) val = -val;
+        /* Skip rest of line */
+        while (*p && *p != '\n') p++;
 
-    /* Only update if we parsed something meaningful */
-    if (bytesRead > 0) {
-        g_gravityValue = val;
+        g_gravityValues[index] = val;
+        index++;
     }
+}
+
+/* Direct memory access to scene name */
+static const char* getSceneNameDirect(void) {
+    if (IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) return NULL;
+    DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
+    if (!scene || scene < 0x10000) return NULL;
+    if (IsBadReadPtr((void*)(scene + 0x868), 4)) return NULL;
+    const char* name = *(const char**)(scene + 0x868);
+    if (!name || IsBadReadPtr((void*)name, 2)) return NULL;
+    if ((unsigned char)name[0] < 0x20 || (unsigned char)name[0] > 0x7E) return NULL;
+    return name;
+}
+
+static int identifyLevel(void) {
+    const char* sceneName = getSceneNameDirect();
+    if (!sceneName) return -1;
+
+    for (int i = 0; i < NUM_RACES; i++) {
+        if (nc_strcmp(sceneName, RACE_NAMES[i]) == 0) return i;
+    }
+    for (int i = 0; i < NUM_RACES; i++) {
+        if (nc_strcmp(sceneName, ARENA_NAMES[i]) == 0) return NUM_RACES + i;
+    }
+    return -1;
 }
 
 static void __thiscall init_impl(void* thisptr, void* modApi) {
@@ -121,10 +200,16 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     /* Re-read config every frame for live editing */
     reloadConfig();
 
+    /* Identify level if not cached */
+    if (g_currentLevelIndex == -1) {
+        g_currentLevelIndex = identifyLevel();
+    }
+    if (g_currentLevelIndex < 0 || g_currentLevelIndex >= NUM_LEVELS) return;
+
+    float slider = g_gravityValues[g_currentLevelIndex];
+
     PhysicsObject* phys = ((Ball*)ball)->physics_object;
     if (!phys) return;
-
-    float slider = g_gravityValue;
 
     /* Read current gravity direction (set by game's Ball_Set*Gravity functions)
        Game uses 3 unit vectors: (0,-1,0) normal, (-1,0,0) tilted, (0,0,1) flat */
@@ -151,9 +236,8 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
         phys->gravity_y = (slider < 0) ? 1.0f : -1.0f;
     }
 
-    /* This doesn't behave well with negative values,
-       but it works much better with large values than the physics object gravity.
-       The default of it is 5. */
+    /* Same as plus_low_gravity: spin_rate (gravity_magnitude).
+       Default is 5.0. Doesn't behave well with negative values. */
     ((Ball*)ball)->gravity_magnitude = (slider < 0) ? -slider : slider;
 }
 
@@ -166,8 +250,12 @@ static void __thiscall game_update_impl(void*) {}
 static void __thiscall event_collide_impl(void*, void*, char*) {}
 static void __thiscall text_render_impl(void*) {}
 static void __thiscall ball_bump_impl(void*, void*, void*) {}
-static void __thiscall level_start_impl(void*) {}
-static void __thiscall scene_end_impl(void*) {}
+static void __thiscall level_start_impl(void*) {
+    g_currentLevelIndex = -1;
+}
+static void __thiscall scene_end_impl(void*) {
+    g_currentLevelIndex = -1;
+}
 
 static void* g_vtable[17] = {
     (void*)sc_dtor,              // [0]
