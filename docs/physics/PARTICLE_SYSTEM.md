@@ -62,24 +62,24 @@ Used for both ArenaBoard score popup effect and ball trail particles.
 | 0x1C | float | velocity.z |
 | ... | ... | Additional fields (lifetime, color, etc.) |
 
-## WaterRipple System
+## FlagWaver System
 
 Water ripples are a mesh deformation system, not a particle system.
 
 ### Functions
 | Address | Name | Description |
 |---------|------|-------------|
-| 0x46A820 | WaterRipple_dtor | Destructor |
-| 0x46A8A0 | WaterRipple_AllocBuffers | Allocate vertex buffers |
-| 0x46A930 | WaterRipple_AdvancePhase | Advance ripple phase |
-| 0x46A940 | WaterRipple_DeletingDtor | Deleting destructor |
-| 0x46A960 | WaterRipple_UpdateVertices | Deform mesh vertices based on ripple |
-| 0x46AF30 | WaterRipple_Ctor | Constructor |
-| 0x46B070 | WaterRipple_Render | Render ripple effect |
+| 0x46A820 | FlagWaver_dtor | Destructor |
+| 0x46A8A0 | FlagWaver_AllocBuffers | Allocate vertex buffers |
+| 0x46A930 | FlagWaver_AdvancePhase | Advance ripple phase |
+| 0x46A940 | FlagWaver_DeletingDtor | Deleting destructor |
+| 0x46A960 | FlagWaver_UpdateVertices | Deform mesh vertices based on ripple |
+| 0x46AF30 | FlagWaver_Ctor | Constructor |
+| 0x46B070 | FlagWaver_Render | Render ripple effect |
 
 ### How Water Ripples Work
-1. WaterRipple_Ctor initializes phase=0, allocates vertex buffer copies
-2. Each frame: WaterRipple_AdvancePhase increments phase counter
-3. WaterRipple_UpdateVertices applies concentric sine wave displacement to mesh Y coordinates
-4. WaterRipple_Render draws the deformed water mesh with alpha blending
+1. FlagWaver_Ctor initializes phase=0, allocates vertex buffer copies
+2. Each frame: FlagWaver_AdvancePhase increments phase counter
+3. FlagWaver_UpdateVertices applies concentric sine wave displacement to mesh Y coordinates
+4. FlagWaver_Render draws the deformed water mesh with alpha blending
 5. Ball_TestPlaneIntersection checks if ball is touching water surface

@@ -26,7 +26,7 @@ void __fastcall Scene_HandleRaceEnd(int param_1)
   ExceptionList = &pvStack_c;
   if (*(int *)(param_1 + 0x3f18) != 0) {
     ExceptionList = &pvStack_c;
-    WaterRipple_AdvancePhase(*(int *)(param_1 + 0x3f18));
+    FlagWaver_AdvancePhase(*(int *)(param_1 + 0x3f18));
   }
   iVar4 = AthenaList_NextIndex(param_1 + 0x2578);
   *(undefined4 *)(param_1 + 0x2580 + iVar4 * 4) = 0;

@@ -18,7 +18,7 @@
  *
  * This is one of the most widely-used utility functions in the engine — it
  * appears in 50+ call sites including ball physics, camera, collision, rendering,
- * particle systems, water ripples, and AI.
+ * particle systems, flag waves, and AI.
  *
  * Cross-references (most significant):
  *   - Ball_FallUpdate, Ball_AdvancePositionOrCollision (physics)
@@ -27,7 +27,7 @@
  *   - Ball_ApplyTrajectory (trajectory setup)
  *   - HandleArenaCollisionEvents, DispatchCollisionEvents (object creation)
  *   - TowerLevel_Ctor, CollisionFace_ctor (level construction)
- *   - WaterRipple_UpdateVertices (water effects)
+ *   - FlagWaver_UpdateVertices (flag wave effects)
  *   - Mesh_FindClosestCollision (collision detection)
  *   - Font_DrawGlyph3D (3D text rendering)
  *   - FollowBall_Update (AI)

@@ -3,7 +3,7 @@
  * Address: 0x0040d6d0
  * Signature: void __fastcall Scene_LoadLevel4(int *param_1)
  *
- * Patterns: allocates, vtable dispatch, SEH frame, collision, scene, level. Calls: Scene_LoadLevel4, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, Level_InitScene, WaterRipple_AllocBuffers. Offsets: 4, Lines: 42
+ * Patterns: allocates, vtable dispatch, SEH frame, collision, scene, level. Calls: Scene_LoadLevel4, operator_new, MeshWorld_ctor, CollisionLevel_ctorWithLevel, Level_InitScene, FlagWaver_AllocBuffers. Offsets: 4, Lines: 42
  *
  * Decompiled from Hamsterball.exe (Athena Engine, PE32 i386)
  */
@@ -47,7 +47,7 @@ void __fastcall Scene_LoadLevel4(int *param_1)
   iVar1 = param_1[0xfc6];
   *(undefined4 *)(iVar1 + 0x10) = 0x42fa0000;
   *(undefined4 *)(iVar1 + 0x14) = 0x42960000;
-  WaterRipple_AllocBuffers(param_1[0xfc6]);
+  FlagWaver_AllocBuffers(param_1[0xfc6]);
   ExceptionList = pvStack_c;
   return;
 }

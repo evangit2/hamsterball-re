@@ -40,7 +40,7 @@ transparent overlays. Ball_Update also calls into rendering for score popups.
 +0x2164  ripple_count
 +0x2168  ripple_iterator
 +0x256C  ripple_array_ptr
-+0x3F18  water_ripple_system (WaterRipple renderer)
++0x3F18  flag_waver_system (FlagWaver renderer)
 +0x3A44  is_skydome_enabled (bool: false=level mesh bg, true=sky dome)
 +0x3AFC  dynamic_object (vtable[8] callback after ripples)
 +0x361C  ghost_ball_ptr (Time Trial ghost ball — NOT a waypoint arrow. See TIME_TRIAL_GHOST_SYSTEM.md)

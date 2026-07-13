@@ -1,5 +1,5 @@
 
-void __fastcall WaterRipple_AllocBuffers(int param_1)
+void __fastcall FlagWaver_AllocBuffers(int param_1)
 
 {
   int iVar1;

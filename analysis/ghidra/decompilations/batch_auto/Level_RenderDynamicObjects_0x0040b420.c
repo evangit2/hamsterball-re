@@ -9,7 +9,7 @@
    otherwise calls skydome vtable[48] with params (1,1).
 2. Water ripples: iterates the ripple list at Scene+0x2160. For each ripple:
    sets position, applies X/Z scaling (scaleXZ=_DAT_004CF44C-ripple+0x14, 
-   scaleZ=-ripple+0x10), sets render position, calls WaterRipple_Render.
+   scaleZ=-ripple+0x10), sets render position, calls FlagWaver_Render.
 3. Dynamic objects: calls the dynamic_object_list vtable[8] (offset 0x20) 
    to render each dynamic object.
 

@@ -1,9 +1,9 @@
 
-/* WaterRipple_Render(this, heightY): Render water ripple. UpdateVertices, plane test for ball,
+/* FlagWaver_Render(this, heightY): Render flag wave. UpdateVertices, plane test for ball,
    alpha blend ON, ApplyMaterialAndDraw, indexed or non-indexed DrawPrimitiveUP, sound trigger. See
    decomp_water_collision.c */
 
-void __thiscall WaterRipple_Render(void *this,float param_1)
+void __thiscall FlagWaver_Render(void *this,float param_1)
 
 {
   int iVar1;
@@ -13,7 +13,7 @@ void __thiscall WaterRipple_Render(void *this,float param_1)
   short sVar5;
   undefined4 *unaff_ESI;
   
-  WaterRipple_UpdateVertices((int)this);
+  FlagWaver_UpdateVertices((int)this);
   Graphics_BeginFrame(*(void **)((int)this + 4),(int)param_1);
   if (*(float *)((int)this + 0x10) <= *(float *)((int)this + 0x14)) {
     param_1 = *(float *)((int)this + 0x14);

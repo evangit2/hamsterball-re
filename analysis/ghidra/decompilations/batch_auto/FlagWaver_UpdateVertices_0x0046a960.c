@@ -1,7 +1,7 @@
 
 /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
 
-void __fastcall WaterRipple_UpdateVertices(int param_1)
+void __fastcall FlagWaver_UpdateVertices(int param_1)
 
 {
   int iVar1;

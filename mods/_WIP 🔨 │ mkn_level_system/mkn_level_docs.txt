@@ -554,7 +554,7 @@ LEVEL 1: WarmUp (Vtable: 0x4D04A8)
     ExceptionList = &pvStack_c;
     if (*(int *)(param_1 + 0x3f18) != 0) {
       ExceptionList = &pvStack_c;
-      WaterRipple_AdvancePhase(*(int *)(param_1 + 0x3f18));
+      FlagWaver_AdvancePhase(*(int *)(param_1 + 0x3f18));
     }
     iVar4 = AthenaList_GetIterator(param_1 + 0x2578);
     *(undefined4 *)(param_1 + 0x2580 + iVar4 * 4) = 0;
@@ -1064,7 +1064,7 @@ LEVEL 1: WarmUp (Vtable: 0x4D04A8)
       Gfx_ScaleZ(-*(float *)(iVar3 + 0x10));
       Gfx_SetPosition(*(undefined4 *)(iVar3 + 4),*(undefined4 *)(iVar3 + 8),
                       *(undefined4 *)(iVar3 + 0xc));
-      WaterRipple_Render(*(void **)(param_1 + 0x3f18),(float)&stack0xffffffa8);
+      FlagWaver_Render(*(void **)(param_1 + 0x3f18),(float)&stack0xffffffa8);
       pvStack_c = (void *)0xffffffff;
       Timer_Cleanup((undefined4 *)&stack0xffffffa8);
       iVar1 = *(int *)(param_1 + 0x2168 + iVar2 * 4);
@@ -3438,7 +3438,7 @@ LEVEL 5: Tower (Vtable: 0x4D0A08)
     iVar1 = param_1[0xfc6];
     *(undefined4 *)(iVar1 + 0x10) = 0x42fa0000;
     *(undefined4 *)(iVar1 + 0x14) = 0x42960000;
-    WaterRipple_AllocBuffers(param_1[0xfc6]);
+    FlagWaver_AllocBuffers(param_1[0xfc6]);
     ExceptionList = pvStack_c;
     return;
   }

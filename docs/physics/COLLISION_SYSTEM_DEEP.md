@@ -226,7 +226,7 @@ float positions[vertex_count * 3]        // 32-bit float positions
 | 0x418360 | ImpossibleCollisionEvents | Impossible board collision handler (N:BOUNCE, N:ONROTATOR, N:ONGEAR) |
 | 0x40DCD0 | TowerCollisionEvents | Tower board collision handler |
 | 0x40C5D0 | DispatchCollisionEvents | Base collision handler |
-| 0x46B070 | WaterRipple_Render | Water ripple collision (physics-based) |
+| 0x46B070 | FlagWaver_Render | Flag wave collision (physics-based) |
 | 0x415480 | CreateWobbly1 | Wobbly bridge (baked vertex animation) |
 | 0x43B6F0 | Rotator_AddBall | Registers ball on rotator tracking list (formerly misnamed Rotator_AddBall) |
 | 0x43E600 | Catapult_Update | Per-frame rotation of tracked balls (applies rotation matrix to pos+vel) |
