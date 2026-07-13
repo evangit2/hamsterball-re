@@ -37,7 +37,7 @@ struct ColorSite {
     int colorIdx;
 };
 
-#define NUM_COLOR_SITES 27
+#define NUM_COLOR_SITES 28
 static float g_colors[NUM_COLOR_SITES][4];
 
 static ColorSite g_sites[] = {
@@ -51,6 +51,7 @@ static ColorSite g_sites[] = {
     {"background",                   0x0042D2B4, 0x0042D2C8, 20, CAVE_RGBA,     7},
     {"raptisoft logo",               0x0042DA60, 0x0042DA74, 20, CAVE_RGBA,     8},
     {"hbversion",                    0x00426433, 0x00426441, 14, CAVE_RGBA,     9},
+    {"hbversion - shadow",           0x0042641A, 0x00426425, 11, CAVE_RGBA,    27},
     {"button #1",                    0x0042DE82, 0x0042DE96, 20, CAVE_RGBA,    10},
     {"button #2",                    0x0042DED8, 0x0042DEEC, 20, CAVE_RGBA,    11},
     {"button #3",                    0x0042DF0D, 0x0042DF21, 20, CAVE_RGBA,    12},
@@ -72,6 +73,38 @@ static ColorSite g_sites[] = {
 };
 
 #define NUM_SITES (sizeof(g_sites) / sizeof(g_sites[0]))
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * String Site Definitions
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+struct StringSite {
+    const char* key;
+    DWORD address;
+    int maxLength;
+};
+
+static StringSite g_string_sites[] = {
+    {"button - txt",            0x004D3EAC, 19},
+    {"string - let's play",     0x004D3F10, 11},
+    {"string - options",        0x004D3F00,  7},
+    {"string - credits",        0x004D3EF4,  7},
+    {"string - exit to desktop",0x004D3EC3, 16},
+    {"string - choose a game",  0x004D3FF0, 14},
+    {"string - tournament",     0x004D3FE0, 10},
+    {"string - time trials",    0x004D3FCC, 11},
+    {"string - locked",         0x004D3FBC,  6},
+    {"string - mirror tournament",0x004D3FA8,18},
+    {"string - party games",    0x004D3F94, 11},
+    {"string - previous",       0x004D3F88,  8},
+    {"string - choose a time trial", 0x004D4644, 25},
+    {"string - previous menu", 0x004D426C, 13},
+    {"string - pause - resume", 0x004D410C,  6},
+    {"string - pause - restart",0x004D4198, 12},
+    {"string - pause - quit",   0x004D4188, 14},
+};
+
+#define NUM_STRING_SITES (sizeof(g_string_sites) / sizeof(g_string_sites[0]))
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Config File Management
@@ -105,6 +138,7 @@ static const char* DEFAULT_CONFIG =
     "- LOADING SCREEN -\r\n"
     "\"Click here\" button - Off = #FFFFFF\r\n"
     "\"Click here\" button - On = #FFFFFF\r\n"
+    "\"Click here\" button - Txt = \"CLICK HERE TO PLAY!\"\r\n"
     "LoadingScreen HBLogo - L = #FFFFFFFF\r\n"
     "LoadingScreen HBLogo - R = #FFFFFFFF\r\n"
     "LoadingScreen Hamster - only = #FFFFFFFF\r\n"
@@ -115,6 +149,7 @@ static const char* DEFAULT_CONFIG =
     "\r\n\r\n"
     "- MAIN MENU -\r\n"
     "MainMenu Colors - HBversion = #FFFFFFFF\r\n"
+    "MainMenu Colors - HBversion - Shadow = #000000FF\r\n"
     "MainMenu Colors - Button #1 - Let's Play! = #FFFFFFFF\r\n"
     "MainMenu Colors - Button #2 - High Scores = #FFFFFFFF\r\n"
     "MainMenu Colors - Button #3 - Options = #FFFFFFFF\r\n"
@@ -126,6 +161,17 @@ static const char* DEFAULT_CONFIG =
     "MainMenu Colors - LP Button #3 - MirrorTourney = #FFFFFFFF\r\n"
     "MainMenu Colors - LP Button #4 - PartyGames = #FFFFFFFF\r\n"
     "MainMenu Colors - LP Button #5 - Previous = #FFFFFFFF\r\n"
+    "MainMenu String - Let's Play = \"LET'S PLAY!\"\r\n"
+    "MainMenu String - Options = \"OPTIONS\"\r\n"
+    "MainMenu String - Credits = \"CREDITS\"\r\n"
+    "MainMenu String - Exit to Desktop = \"DEXIT TO DESKTOP\"\r\n"
+    "MainMenu String - Choose a Game! = \"CHOOSE A GAME!\"\r\n"
+    "MainMenu String - Tournament = \"TOURNAMENT\"\r\n"
+    "MainMenu String - Time Trials = \"TIME TRIALS\"\r\n"
+    "MainMenu String - Locked = \"LOCKED\"\r\n"
+    "MainMenu String - Mirror Tournament = \"MIRROR TOURNAMENT\"\r\n"
+    "MainMenu String - Party Games = \"PARTY GAMES\"\r\n"
+    "MainMenu String - Previous = \"PREVIOUS\"\r\n"
     "\r\n\r\n"
     "- TOURNEY MENU -\r\n"
     "soon.\r\n"
@@ -138,6 +184,11 @@ static const char* DEFAULT_CONFIG =
     "TimeTrials Pause - Button #2 - Restart Race = #FFFFFFFF\r\n"
     "TimeTrials Pause - Button #3 - Options = #FFFFFFFF\r\n"
     "TimeTrials Pause - Button #4 - Quit Race = #FFFFFFFF\r\n"
+    "TimeTrials String - Choose a Time Trial Race = \"CHOOSE A TIME TRIAL RACE!\"\r\n"
+    "TimeTrials String - Pause - Previous Menu = \"PREVIOUS MENU\"\r\n"
+    "TimeTrials String - Pause - Resume = \"RESUME\"\r\n"
+    "TimeTrials String - Pause - Restart Race = \"RESTART RACE\"\r\n"
+    "TimeTrials String - Pause - Quit this Race = \"QUIT THIS RACE\"\r\n"
     "\r\n\r\n"
     "- 2P GAME -\r\n"
     "2Pmenu - Side Strip = #FFFFFFFF\r\n"
@@ -221,6 +272,40 @@ static void hex_to_floats(DWORD hex, float* r, float* g, float* b, float* a)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Quoted String Parser
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int extract_quoted_string(const char* line, char* out, int maxOut)
+{
+    const char* eq = strchr(line, '=');
+    if (!eq) return 0;
+    eq++;
+    while (*eq == ' ' || *eq == '\t') eq++;
+
+    const char* q1 = strchr(eq, '"');
+    if (!q1) return 0;
+    q1++;
+    const char* q2 = strchr(q1, '"');
+    if (!q2) return 0;
+
+    int len = (int)(q2 - q1);
+    if (len > maxOut) len = maxOut;
+
+    nc_memcpy(out, q1, len);
+    out[len] = '\0';
+    return 1;
+}
+
+static int line_has_quoted_string(const char* line)
+{
+    const char* eq = strchr(line, '=');
+    if (!eq) return 0;
+    eq++;
+    while (*eq == ' ' || *eq == '\t') eq++;
+    return (*eq == '"');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Config Reader
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -263,6 +348,17 @@ static int extract_color(const char* line, DWORD* out_hex)
     return parse_hex_color(eq, out_hex);
 }
 
+static void apply_string(const StringSite* site, const char* text)
+{
+    DWORD old_protect;
+    if (!VirtualProtect((void*)site->address, site->maxLength + 1,
+                        PAGE_READWRITE, &old_protect))
+        return;
+    nc_memcpy((void*)site->address, text, nc_strlen(text) + 1);
+    VirtualProtect((void*)site->address, site->maxLength + 1, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), (void*)site->address, site->maxLength + 1);
+}
+
 static void read_config(void)
 {
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -283,30 +379,42 @@ static void read_config(void)
         if (len > 0 && line[len-1] == '\r') len--;
 
         if (len >= 5 && len < 200 && strchr(line, '=') && !is_soon(line)) {
-            for (int i = 0; i < (int)NUM_SITES; i++) {
-                if (i == 26) continue; /* "side strip r" — handled by index 25 */
-
-                if (line_matches(line, g_sites[i].key)) {
-                    if (i == 25) {
-                        DWORD hex;
-                        if (extract_color(line, &hex)) {
-                            float r, g, b, a;
-                            hex_to_floats(hex, &r, &g, &b, &a);
-                            g_colors[25][0] = r; g_colors[25][1] = g;
-                            g_colors[25][2] = b; g_colors[25][3] = a;
+            if (line_has_quoted_string(line)) {
+                for (int i = 0; i < (int)NUM_STRING_SITES; i++) {
+                    if (line_matches(line, g_string_sites[i].key)) {
+                        char text[256];
+                        if (extract_quoted_string(line, text, g_string_sites[i].maxLength)) {
+                            apply_string(&g_string_sites[i], text);
                         }
                         break;
                     }
+                }
+            } else {
+                for (int i = 0; i < (int)NUM_SITES; i++) {
+                    if (i == 26) continue;
 
-                    DWORD hex;
-                    if (extract_color(line, &hex)) {
-                        int idx = g_sites[i].colorIdx;
-                        float r, g, b, a;
-                        hex_to_floats(hex, &r, &g, &b, &a);
-                        g_colors[idx][0] = r; g_colors[idx][1] = g;
-                        g_colors[idx][2] = b; g_colors[idx][3] = a;
+                    if (line_matches(line, g_sites[i].key)) {
+                        if (i == 25) {
+                            DWORD hex;
+                            if (extract_color(line, &hex)) {
+                                float r, g, b, a;
+                                hex_to_floats(hex, &r, &g, &b, &a);
+                                g_colors[25][0] = r; g_colors[25][1] = g;
+                                g_colors[25][2] = b; g_colors[25][3] = a;
+                            }
+                            break;
+                        }
+
+                        DWORD hex;
+                        if (extract_color(line, &hex)) {
+                            int idx = g_sites[i].colorIdx;
+                            float r, g, b, a;
+                            hex_to_floats(hex, &r, &g, &b, &a);
+                            g_colors[idx][0] = r; g_colors[idx][1] = g;
+                            g_colors[idx][2] = b; g_colors[idx][3] = a;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -464,6 +572,12 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
         g_colors[i][2] = 1.0f;
         g_colors[i][3] = 1.0f;
     }
+
+    /* Shadow default: black (0, 0, 0, 1.0) */
+    g_colors[27][0] = 0.0f;
+    g_colors[27][1] = 0.0f;
+    g_colors[27][2] = 0.0f;
+    g_colors[27][3] = 1.0f;
 
     init_config_path();
     create_default_config();
