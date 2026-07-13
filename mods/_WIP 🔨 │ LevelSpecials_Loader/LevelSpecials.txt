@@ -1,0 +1,17 @@
+# LevelSpecials Configuration
+# Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
+#   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
+#   14=Master 15=Impossible
+#
+# List level numbers after = to enable that feature for those levels.
+# Empty () means disabled everywhere.
+
+[BUMPERS]
+N:BUMPER1 = ()
+N:BUMPER2 = ()
+N:BUMPER3 = ()
+N:BUMPER4 = ()
+N:BUMPER5 = ()
+N:BUMPER6 = ()
+N:BUMPER7 = ()
+N:BUMPER8 = ()

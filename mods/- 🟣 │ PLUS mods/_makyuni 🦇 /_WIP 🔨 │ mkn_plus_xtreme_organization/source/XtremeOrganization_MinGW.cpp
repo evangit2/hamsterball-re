@@ -614,9 +614,23 @@ static void patchPush(DWORD pushRva, const char* newString) {
 /* ── Patch cache system: prevent reading and writing .cached files ───── */
 
 /* Pre-built byte sequences for patch/restore (no memcpy from live memory) */
+
+/* MeshWorld_ctor cache read skip (RVA 0x6F439): JZ short → JMP short */
 static const BYTE CACHE_READ_ORIG[1]  = { 0x74 };
 static const BYTE CACHE_READ_PATCH[1] = { 0xEB };
 
+/* LoadMeshWorld cache path skip (RVA 0x5DE77): JNZ short → JMP short
+ * Patches the file-exists check to always take the MeshArchive path,
+ * bypassing vtable[0x3C] which generates .cached files. */
+static const BYTE LOAD_MW_CACHE_ORIG[1]  = { 0x75 };
+static const BYTE LOAD_MW_CACHE_PATCH[1] = { 0xEB };
+
+/* LoadMesh cache path skip (RVA 0x717DB): JNZ short → JMP short
+ * Same as above but for mesh files (.MESH) instead of level files. */
+static const BYTE LOAD_MESH_CACHE_ORIG[1]  = { 0x75 };
+static const BYTE LOAD_MESH_CACHE_PATCH[1] = { 0xEB };
+
+/* Mesh_SaveAndFree cache write skips (3 conditional jumps → unconditional) */
 static const BYTE CACHE_WRITE1_ORIG[6]  = { 0x0F, 0x84, 0xCF, 0x00, 0x00, 0x00 };
 static const BYTE CACHE_WRITE1_PATCH[6] = { 0xE9, 0xD0, 0x00, 0x00, 0x00, 0x90 };
 
@@ -639,27 +653,30 @@ static void patchCacheSystem(DWORD base) {
     if (!g_ignoreCache) return;
 
     /*
-     * Cache READ skip — MeshWorld_ctor (0x0046F3D0):
-     *   RVA 0x6F439: JZ +0x70 (74 70) → JMP +0x70 (EB 70)
-     *   Forces game to always parse .MESHWORLD text files, never .cached.
+     * 1. MeshWorld_ctor cache read skip (RVA 0x6F439):
+     *    JZ short → JMP short. Skips reading existing .cached mesh data.
      */
     writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
 
     /*
-     * Cache WRITE skip — Mesh_SaveAndFree (0x0046F670):
-     *   Three conditional jumps guard the cache-write block. All three
-     *   jump to 0x0046F752 (the free/cleanup section) when their condition
-     *   is met. We patch ALL THREE to unconditional JMP so the write block
-     *   is never entered, regardless of filename/flag/cache state.
-     *
-     *   RVA 0x6F67D: JZ  rel32 (0F 84 CF 00 00 00) → JMP rel32+NOP
-     *     Checks if filename ptr is NULL. Patch to always skip.
-     *
-     *   RVA 0x6F686: JNZ rel32 (0F 85 C6 00 00 00) → JMP rel32+NOP
-     *     Checks a flag byte at mesh+0x4. Patch to always skip.
-     *
-     *   RVA 0x6F695: JZ  rel32 (0F 84 B7 00 00 00) → JMP rel32+NOP
-     *     Checks gfx+0x7D1 (cache enabled flag). Patch to always skip.
+     * 2. LoadMeshWorld cache path skip (RVA 0x5DE77):
+     *    JNZ short → JMP short. Forces the game to always use the
+     *    MeshArchive loader path instead of the text-parse-and-save
+     *    path (vtable[0x3C] which generates .cached files).
+     */
+    writeBytes(base + 0x5de77, LOAD_MW_CACHE_PATCH, 1);
+
+    /*
+     * 3. LoadMesh cache path skip (RVA 0x717DB):
+     *    Same as above but for .MESH files instead of level MESHWORLD files.
+     */
+    writeBytes(base + 0x717db, LOAD_MESH_CACHE_PATCH, 1);
+
+    /*
+     * 4-6. Mesh_SaveAndFree cache write skips (3 conditional jumps):
+     *   RVA 0x6F67D: JZ  rel32 → JMP (filename NULL check)
+     *   RVA 0x6F686: JNZ rel32 → JMP (mesh+0x4 flag check)
+     *   RVA 0x6F695: JZ  rel32 → JMP (gfx+0x7D1 cache flag check)
      */
     writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
     writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
@@ -758,14 +775,18 @@ static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool st
         if (hExe) {
             DWORD base = (DWORD)hExe;
             if (state) {
-                /* Enable cache skipping — patch all 4 sites */
+                /* Enable cache skipping — patch all 6 sites */
                 writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
+                writeBytes(base + 0x5de77, LOAD_MW_CACHE_PATCH, 1);
+                writeBytes(base + 0x717db, LOAD_MESH_CACHE_PATCH, 1);
                 writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
                 writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
                 writeBytes(base + 0x6f695, CACHE_WRITE3_PATCH, 6);
             } else {
                 /* Disable cache skipping — restore original bytes */
                 writeBytes(base + 0x6f439, CACHE_READ_ORIG, 1);
+                writeBytes(base + 0x5de77, LOAD_MW_CACHE_ORIG, 1);
+                writeBytes(base + 0x717db, LOAD_MESH_CACHE_ORIG, 1);
                 writeBytes(base + 0x6f67d, CACHE_WRITE1_ORIG, 6);
                 writeBytes(base + 0x6f686, CACHE_WRITE2_ORIG, 6);
                 writeBytes(base + 0x6f695, CACHE_WRITE3_ORIG, 6);
