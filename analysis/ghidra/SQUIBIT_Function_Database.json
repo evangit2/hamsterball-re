@@ -1291,9 +1291,9 @@
       "batch": 25
     },
     {
-      "name": "Platform_ctor",
+      "name": "Popcylinder_ctor",
       "address": "0x004363f0",
-      "signature": "void * __thiscall Platform_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "signature": "void * __thiscall Popcylinder_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
       "parameters": "this: Platform* (Rotator subclass, vtable=0x4D56A8) | param_1: parent Scene (+0x10D0) | param_2-4: position X/Y/Z (+0x10D4/+0x10D8/+0x10DC) | param_5: passed to Stands_ctor",
       "description": "Constructor for Platform obstacles (Rotator subclass). Inherits Stands_ctor, creates CollisionLevel, sets width=45.0f (+0x10E4), rotation direction=-1.0f (+0x10E8), active=0 (+0x10EC). Calls Gfx_SetPosition, SceneObject_CallUpdate/Render. Called from NeonCollisionEvents and CreateWobbly1.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0 (CollisionLevel), +0x10E4 (width=45.0), +0x10E8 (rotDir=-1.0), +0x10EC (active=0)",
@@ -1421,11 +1421,11 @@
       "batch": 27
     },
     {
-      "name": "Platform_ctor (v2)",
+      "name": "Popcylinder_ctor (v2)",
       "address": "0x00437040",
-      "signature": "void * __thiscall Platform_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
+      "signature": "void * __thiscall Popcylinder_ctor(void *this, undefined4 param_1, undefined4 param_2, undefined4 param_3, undefined4 param_4, void *param_5)",
       "parameters": "this: Platform* (vtable=0x4D5950, Level_Generic) | param_1: Scene (+0x10D0) | param_2-4: pos | param_5: Stands_ctor parent",
-      "description": "Second Platform_ctor variant using generic Level vtable (0x4D5950) instead of Rotator. Copies position to backup buffer (+0x10E0), creates CollisionLevel at +0x10EC, sets active=1, sink=0, timer=400. Called from CreatePlatformOrStands.",
+      "description": "Second Popcylinder_ctor variant using generic Level vtable (0x4D5950) instead of Rotator. Copies position to backup buffer (+0x10E0), creates CollisionLevel at +0x10EC, sets active=1, sink=0, timer=400. Called from CreatePlatformOrStands.",
       "struct_offsets": "+0x10D0 (Scene), +0x10D4/+0x10D8/+0x10DC (pos), +0x10E0/+0x10E4/+0x10E8 (backup pos), +0x10EC (CollisionLevel), +0x10F0 (active=1), +0x10F1 (sink=0), +0x10F4 (timer=400), +0x10F8 (counter=0)",
       "xrefs": "1 call from CreatePlatformOrStands (0x413464)",
       "batch": 27

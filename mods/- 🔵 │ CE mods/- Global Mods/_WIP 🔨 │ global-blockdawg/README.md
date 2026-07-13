@@ -11,10 +11,10 @@ Spawns a Blockdawg at player 1's position on any level. Based on the working Glo
 
 ### Blockdawg in Toob Race (traced from binary)
 
-**Creation** (`FUN_0040FC29`):
+**Creation** (`Toob_CreateDynamicObjects_Inner`):
 ```
 operator_new(0x1154) → Blockdawg_ctor(0x43C310)
-Mesh: "Levels\Level8-Blockdawg1" loaded via FUN_00461510
+Mesh: "Levels\Level8-Blockdawg1" loaded via Level_MeshWorldCtor
 Path: DAWGPATH1 found via Level_FindObjectByName
 Post: AthenaList_Append(board+0x2578, blockdawg)
 ```
@@ -23,7 +23,7 @@ Post: AthenaList_Append(board+0x2578, blockdawg)
 - `Stands_ctor(this, mesh)` — same base as Saw
 - Sets vtable = `0x4D5638`
 - Stores board, position, path
-- Creates mesh clone at `+0x10D4` via `FUN_00465080`
+- Creates mesh clone at `+0x10D4` via `Level_RenderCtor`
 - Initializes fields (speed=1.0, Y offset=25.0, state=0)
 
 **Blockdawg_Update** (`0x43C4E0` = `ArenaObject_Update`):

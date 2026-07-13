@@ -492,7 +492,7 @@ LEVEL 1: WarmUp (Vtable: 0x4D04A8)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level1");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level1");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -502,7 +502,7 @@ LEVEL 1: WarmUp (Vtable: 0x4D04A8)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -2581,7 +2581,7 @@ LEVEL 2: Beginner (Vtable: 0x4D1098)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelcascade");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelcascade");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -2591,7 +2591,7 @@ LEVEL 2: Beginner (Vtable: 0x4D1098)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -2975,7 +2975,7 @@ LEVEL 3: Intermediate (Vtable: 0x4D05A0)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level2");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level2");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -2985,7 +2985,7 @@ LEVEL 3: Intermediate (Vtable: 0x4D05A0)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -3185,7 +3185,7 @@ LEVEL 4: Dizzy (Vtable: 0x4D0890)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00461510(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level3");
+      puVar3 = Level_MeshWorldCtor(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level3");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar3;
@@ -3195,7 +3195,7 @@ LEVEL 4: Dizzy (Vtable: 0x4D0890)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00465080(pvVar2,param_1[0x22b]);
+      puVar3 = Level_RenderCtor(pvVar2,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar3;
@@ -3418,7 +3418,7 @@ LEVEL 5: Tower (Vtable: 0x4D0A08)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00461510(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level4");
+      puVar3 = Level_MeshWorldCtor(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level4");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar3;
@@ -3428,7 +3428,7 @@ LEVEL 5: Tower (Vtable: 0x4D0A08)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00465080(pvVar2,param_1[0x22b]);
+      puVar3 = Level_RenderCtor(pvVar2,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar3;
@@ -3833,7 +3833,7 @@ LEVEL 6: Up (Vtable: 0x4D11A0)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00461510(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelup");
+      puVar3 = Level_MeshWorldCtor(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelup");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar3;
@@ -3843,7 +3843,7 @@ LEVEL 6: Up (Vtable: 0x4D11A0)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00465080(pvVar2,param_1[0x22b]);
+      puVar3 = Level_RenderCtor(pvVar2,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar3;
@@ -4304,7 +4304,7 @@ LEVEL 7: Neon (Vtable: 0x4D1DF0)
       puVar5 = (undefined4 *)0x0;
     }
     else {
-      puVar5 = FUN_00461510(pvVar4,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\leveldark");
+      puVar5 = Level_MeshWorldCtor(pvVar4,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\leveldark");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar5;
@@ -4314,7 +4314,7 @@ LEVEL 7: Neon (Vtable: 0x4D1DF0)
       puVar5 = (undefined4 *)0x0;
     }
     else {
-      puVar5 = FUN_00465080(pvVar4,param_1[0x22b]);
+      puVar5 = Level_RenderCtor(pvVar4,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar5;
@@ -4645,7 +4645,7 @@ LEVEL 8: Expert (Vtable: 0x4D0B00)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level5");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level5");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -4655,7 +4655,7 @@ LEVEL 8: Expert (Vtable: 0x4D0B00)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -4915,7 +4915,7 @@ LEVEL 8: Expert (Vtable: 0x4D0B00)
           uVar5 = *(undefined4 *)(param_4 + 8);
           uVar6 = *(undefined4 *)(param_4 + 0xc);
         }
-        this_01 = FUN_00434660(pvVar2,(int)this,puVar3,uVar5,uVar6);
+        this_01 = SawBlade_ctor(pvVar2,(int)this,puVar3,uVar5,uVar6);
       }
       local_4 = 0xffffffff;
       AthenaList_Append((void *)((int)this + 0x2578),(int)this_01);
@@ -5255,7 +5255,7 @@ LEVEL 9: Odd (Vtable: 0x4D0BC0)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level6");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level6");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -5265,7 +5265,7 @@ LEVEL 9: Odd (Vtable: 0x4D0BC0)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -5773,7 +5773,7 @@ LEVEL 10: Toob (Vtable: 0x4D0E78)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level8");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level8");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -5783,7 +5783,7 @@ LEVEL 10: Toob (Vtable: 0x4D0E78)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -6329,7 +6329,7 @@ LEVEL 11: Wobbly (Vtable: 0x4D0D38)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level7");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level7");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -6339,7 +6339,7 @@ LEVEL 11: Wobbly (Vtable: 0x4D0D38)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;
@@ -6538,7 +6538,7 @@ LEVEL 12: Glass (Vtable: 0x4D1F90)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00461510(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelglass");
+      puVar3 = Level_MeshWorldCtor(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelglass");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar3;
@@ -6548,7 +6548,7 @@ LEVEL 12: Glass (Vtable: 0x4D1F90)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00465080(pvVar2,param_1[0x22b]);
+      puVar3 = Level_RenderCtor(pvVar2,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar3;
@@ -6778,7 +6778,7 @@ LEVEL 13: Sky (Vtable: 0x4D0FC8)
       puVar4 = (undefined4 *)0x0;
     }
     else {
-      puVar4 = FUN_00461510(pvVar3,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level9");
+      puVar4 = Level_MeshWorldCtor(pvVar3,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level9");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar4;
@@ -6788,7 +6788,7 @@ LEVEL 13: Sky (Vtable: 0x4D0FC8)
       puVar4 = (undefined4 *)0x0;
     }
     else {
-      puVar4 = FUN_00465080(pvVar3,param_1[0x22b]);
+      puVar4 = Level_RenderCtor(pvVar3,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar4;
@@ -7406,7 +7406,7 @@ LEVEL 14: Master (Vtable: 0x4D12B0)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00461510(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level10");
+      puVar3 = Level_MeshWorldCtor(pvVar2,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\level10");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar3;
@@ -7416,7 +7416,7 @@ LEVEL 14: Master (Vtable: 0x4D12B0)
       puVar3 = (undefined4 *)0x0;
     }
     else {
-      puVar3 = FUN_00465080(pvVar2,param_1[0x22b]);
+      puVar3 = Level_RenderCtor(pvVar2,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar3;
@@ -8181,7 +8181,7 @@ LEVEL 15: Impossible (Vtable: 0x4D21C0)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00461510(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelimpossible");
+      puVar2 = Level_MeshWorldCtor(pvVar1,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\levelimpossible");
     }
     local_4 = 0xffffffff;
     param_1[0x22b] = (int)puVar2;
@@ -8191,7 +8191,7 @@ LEVEL 15: Impossible (Vtable: 0x4D21C0)
       puVar2 = (undefined4 *)0x0;
     }
     else {
-      puVar2 = FUN_00465080(pvVar1,param_1[0x22b]);
+      puVar2 = Level_RenderCtor(pvVar1,param_1[0x22b]);
     }
     local_4 = 0xffffffff;
     param_1[0x22c] = (int)puVar2;

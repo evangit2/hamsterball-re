@@ -87,7 +87,7 @@ Documented: 3781/3781 (100%)
 | 0x004121D0 | CreateLevelObjects | Multi-factory: BRIDGE, TIPPER, BONK, BBRIDGE1/2, POPCYLINDER, BLOCKDAWG1/2, CATAPULT, GLUEBIE |
 | 0x004133E0 | CreatePlatformOrStands | Create PLATFORM and STANDS objects |
 | 0x00417FE0 | CreateMechanicalObjects | Multi-factory: LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
-| 0x00437040 | Platform_ctor | Platform object constructor (0x10FC bytes) |
+| 0x00437040 | Popcylinder_ctor | Platform object constructor (0x10FC bytes) |
 | 0x00462850 | SceneObject_ctor | Stands/Audience constructor (0x10D0 bytes) |
 | 0x00435800 | Looper_ctor | Looper (loop-de-loop) constructor (0x1500 bytes) |
 | 0x00437590 | Gear_ctor | Gear/BigGear constructor (0x1514 bytes) |
@@ -946,7 +946,7 @@ Offset | Field | Description
 | 0x42e220 | DifficultyMenu_ctor | 5 | Difficulty selection menu (Pipsqueak/Normal/Frenzied) |
 | 0x42e840 | OptionsMenu_RenderControls | 5 | Render control icons in options |
 | 0x42f550 | OptionsMenu_dtor | 5 | Options menu destructor |
-| 0x4363f0 | Platform_ctor | 5 | Platform object constructor |
+| 0x4363f0 | Popcylinder_ctor | 5 | Platform object constructor |
 | 0x465260 | Level_LoadCollision | 6 | Load binary .meshcollision file |
 | 0x465d90 | Mesh_FindClosestCollision | 10 | Ray-mesh collision via spatial tree |
 | 0x465ef0 | Collision_TraverseSpatialTree | 3 | Octree traversal for collision faces |

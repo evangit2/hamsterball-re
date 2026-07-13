@@ -654,7 +654,7 @@ void __fastcall CameraLookAt(int *param_1)
     puVar5 = (undefined4 *)0x0;
   }
   else {
-    puVar5 = FUN_00461510(pvVar4,*(undefined4 *)(param_1[0x21e] + 0x174),
+    puVar5 = Level_MeshWorldCtor(pvVar4,*(undefined4 *)(param_1[0x21e] + 0x174),
                           "levels\\arena-spawnplatform");
   }
   local_4 = 0xffffffff;
@@ -665,7 +665,7 @@ void __fastcall CameraLookAt(int *param_1)
     puVar5 = (undefined4 *)0x0;
   }
   else {
-    puVar5 = FUN_00461510(pvVar4,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\arena-stands");
+    puVar5 = Level_MeshWorldCtor(pvVar4,*(undefined4 *)(param_1[0x21e] + 0x174),"levels\\arena-stands");
   }
   param_1[0x10e4] = (int)puVar5;
   local_4 = 0xffffffff;

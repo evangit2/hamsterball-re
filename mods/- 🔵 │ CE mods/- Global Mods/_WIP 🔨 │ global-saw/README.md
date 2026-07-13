@@ -17,7 +17,7 @@ Loads five meshes for Toob Race:
 
 Sets board name to "TOOB RACE", vtable to 0x4D0E78.
 
-### 2. SAW Creation — FUN_0040FC29 (Toob Board Object Factory)
+### 2. SAW Creation — Toob_CreateDynamicObjects_Inner (Toob Board Object Factory)
 
 Part of the Toob board's object creation dispatch. When the engine encounters a "SAW1" object name in the MESHWORLD:
 
@@ -31,7 +31,7 @@ If the object is "SAW2" (hard difficulty only):
 2. Calls `SmallSaw_ctor (0x43BE20)` — same as Saw_ctor but sets different vtable (0x4D5CA0) and faster speed (0xC2C80000 = -100.0)
 3. Stores at `board+0x4384` (Saw2 slot)
 
-### 3. Saw_ctor — FUN_0043B780 (0x43B780)
+### 3. Saw_ctor — Saw_ctor (0x43B780)
 
 ```c
 Saw_ctor(this, board, posX, posY, posZ, mesh, path) {
@@ -115,7 +115,7 @@ The Toob board's collision handler processes saw-related events:
   Calls `Saw_Activate(board+0x4370)` — the mesh pointer, NOT the saw object.
   Wait — this is `board+0x4370` which is the saw *mesh*, but `Saw_Activate` takes the saw *object*. Looking more carefully at the code, `board+0x4370` on the Toob board stores the mesh, but on the Expert board (which shares the collision handler), `board+0x4370` stores the saw *object*. The Toob board uses `board+0x4380` for the saw object.
 
-### 8. Saw SetBreak — FUN_00434AB0 (0x434AB0)
+### 8. Saw SetBreak — SawBlade_SetVariant (0x434AB0)
 
 Sets the saw's break direction (knockback direction when ball touches teeth):
 ```c
@@ -151,7 +151,7 @@ void Saw_SetBreak(this, sawNumber) {
 | 0x460530 | Level_FindObjectByName | Finds named object in scene |
 | 0x4BA57B | operator_new | C++ malloc wrapper |
 | 0x453810 | AthenaList_Append | Add item to linked list |
-| 0x461510 | FUN_00461510 | Mesh loader (from file) |
+| 0x461510 | Level_MeshWorldCtor | Mesh loader (from file) |
 
 ## Saw Vtable (0x4D5578)
 

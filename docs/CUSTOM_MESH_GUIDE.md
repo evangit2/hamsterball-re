@@ -1,7 +1,7 @@
 # Custom MESHWORLD Mesh Guide for Hamsterball
 
 ## Overview
-This guide covers creating custom `.MESHWORLD` files containing arbitrary 3D geometry (solid platforms, pipes, staircases, etc.) with collision and optional collision events (E:/N: trigger zones). These meshes are spawned at runtime via Cheat Engine Assembly (CEA) scripts using `FUN_0043BBC0` (which builds collision automatically).
+This guide covers creating custom `.MESHWORLD` files containing arbitrary 3D geometry (solid platforms, pipes, staircases, etc.) with collision and optional collision events (E:/N: trigger zones). These meshes are spawned at runtime via Cheat Engine Assembly (CEA) scripts using `Fallout_ctor` (which builds collision automatically).
 
 You are NOT creating full levels — just mesh objects that get spawned into existing levels.
 
@@ -178,16 +178,16 @@ Hooks `Ball_Update` (0x00405E22) and spawns mesh at player position.
 
 ### Key addresses:
 - Hook: 0x00405E22 (original bytes: 8B 86 5C 0C 00 00)
-- FUN_00461510: LoadMeshWorld
-- FUN_0043BBC0: SceneObject constructor (builds collision + render)
+- Level_MeshWorldCtor: LoadMeshWorld
+- Fallout_ctor: SceneObject constructor (builds collision + render)
 - FUN_00453810: AthenaList_Append
 - FUN_004BA57B: operator_new
 
 ### Spawn flow:
 1. Allocate Level object (0x10D0 bytes)
-2. Load mesh: FUN_00461510(level, gfx, "Levels\Level-YourMesh")
+2. Load mesh: Level_MeshWorldCtor(level, gfx, "Levels\Level-YourMesh")
 3. Allocate SceneObject (0x10E8 bytes)
-4. Create: FUN_0043BBC0(sceneobj, board, x, y, z, level)
+4. Create: Fallout_ctor(sceneobj, board, x, y, z, level)
 5. Register render: AthenaList_Append(board+0x2578, sceneobj)
 6. Register render: AthenaList_Append(board+0xCD4, sceneobj)
 7. Register collision: AthenaList_Append(board+0x10EC, sceneobj+0x10D4)

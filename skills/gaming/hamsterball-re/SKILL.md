@@ -112,7 +112,7 @@ Reverse engineer and recreate the Hamsterball game (2000s Windows game by Raptis
 | 0x4121D0 | CreateLevelObjects | Factory: BRIDGE, TIPPER, BONK, BBRIDGE1/2, POPCYLINDER, BLOCKDAWG1/2, CATAPULT, GLUEBIE |
 | 0x4133E0 | CreatePlatformOrStands | Factory: PLATFORM, STANDS |
 | 0x417FE0 | CreateMechanicalObjects | Factory: LOOPER, GEAR, BIGGEAR, ROTATOR, PENDULUM |
-| 0x37040 | Platform_ctor | Platform constructor (0x10FC bytes) |
+| 0x37040 | Popcylinder_ctor | Platform constructor (0x10FC bytes) |
 | 0x462850 | Stands_ctor | Stands constructor (0x10D0 bytes) |
 | 0x435800 | Looper_ctor | Looper constructor (0x1500 bytes) |
 | 0x437590 | Gear_ctor | Gear/BigGear constructor (0x1514 bytes) |

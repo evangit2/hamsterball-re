@@ -15,7 +15,7 @@ Level data → Named objects parsed from MESHWORLD
   │    ├─ BLOCKDAWG1/2, CATAPULT, GLUEBIE
   │    └─ Falls through to CreatePlatformOrStands
   ├─ CreatePlatformOrStands (0x4133E0)
-  │    ├─ PLATFORM → Platform_ctor (0x371040, 0x10FC bytes)
+  │    ├─ PLATFORM → Popcylinder_ctor (0x371040, 0x10FC bytes)
   │    └─ STANDS → SceneObject_ctor (0x462850, 0x10D0 bytes)
   ├─ CreateSpinny (0x4143D0) — ROTATOR → Rotator_ctor
   ├─ CreateLifter (0x414A20) — LIFTER → Lifter_ctor + falls through

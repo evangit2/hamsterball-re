@@ -599,12 +599,12 @@ static void __fastcall Summon_NeonEffect(DWORD board) {
 
 /* Summon_BoardSetup — calls the full Board_Setup function (vtable[32]).
  * This creates ALL level objects: balls, bumpers, safespots, flags, signs, etc.
- * It's equivalent to calling the game's FUN_0041C5B0. */
+ * It's equivalent to calling the game's Board_Setup. */
 static void __fastcall Summon_BoardSetup(DWORD board) {
     if (!board || board < 0x10000) return;
     if (IsBadReadPtr((void*)board, 4)) return;
 
-    /* Call FUN_0041C5B0 directly (the shared Board_Setup function) */
+    /* Call Board_Setup directly (the shared Board_Setup function) */
     typedef void (__fastcall *BoardSetup_t)(DWORD board);
     BoardSetup_t setup = (BoardSetup_t)0x0041C5B0;
     setup(board);
