@@ -3,15 +3,9 @@
 #   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
 #   14=Master 15=Impossible
 #
-# List level numbers after = to enable that feature for those levels.
+# List level numbers after = to enable bumpers for those levels.
 # Empty () means disabled everywhere.
+# Example: BUMPERS = 2 5 8  (enables bumpers on Beginner, Tower, Expert)
 
 [BUMPERS]
-N:BUMPER1 = ()
-N:BUMPER2 = ()
-N:BUMPER3 = ()
-N:BUMPER4 = ()
-N:BUMPER5 = ()
-N:BUMPER6 = ()
-N:BUMPER7 = ()
-N:BUMPER8 = ()
+BUMPERS = ()

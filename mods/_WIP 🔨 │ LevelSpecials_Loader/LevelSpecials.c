@@ -101,7 +101,7 @@ static int g_bumpersEnabled[16] = {0};
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static DWORD g_moduleBase = 0;
-typedef void (__cdecl *Sound_Play3D_t)(void *soundList, float x, float y, float z, float volume);
+typedef void (__thiscall *Sound_Play3D_t)(void *soundChannel, float x, float y, float z);
 static Sound_Play3D_t g_SoundPlay3D = NULL;
 
 /* Must be non-static for asm reference */
@@ -146,10 +146,7 @@ static int GetCurrentLevel(void *board) {
  *
  * Format (LevelSpecials.txt):
  *   [BUMPERS]
- *   N:BUMPER1 = 2 5 8
- *   N:BUMPER2 = 1 3
- *   ...
- *   N:BUMPER8 = ()
+ *   BUMPERS = 2 5 8
  *
  * Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
  *   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
@@ -199,8 +196,8 @@ static void LoadConfig(void) {
             goto next_line;
         }
 
-        /* If in BUMPERS section, look for N:BUMPER lines */
-        if (inBumpersSection && my_strnicmp(p, "N:BUMPER", 8) == 0) {
+        /* If in BUMPERS section, look for BUMPERS = line */
+        if (inBumpersSection && my_strnicmp(p, "BUMPERS", 7) == 0) {
             /* Find '=' sign */
             char *eq = p;
             while (*eq && *eq != '=') eq++;
@@ -285,7 +282,7 @@ static void ApplyBumperBounce(void *board, void *ball, void *collPair) {
     if (app && !IsBadReadPtr(app, 0x500)) {
         DWORD soundList = app[APP_SOUNDFX_LIST / 4];
         if (soundList && g_SoundPlay3D) {
-            g_SoundPlay3D((void *)soundList, posX, posY, posZ, 1.0f);
+            g_SoundPlay3D((void *)soundList, posX, posY, posZ);
         }
     }
 
