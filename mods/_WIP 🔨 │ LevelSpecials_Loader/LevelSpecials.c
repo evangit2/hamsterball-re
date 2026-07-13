@@ -32,7 +32,6 @@ typedef unsigned long long QWORD;
 #define RVA_DispatchCollisionEvents  0x000CC5D0
 #define RVA_Sound_Play3D             0x00059860
 #define RVA_Scene_CollectByNameFilter 0x000602F0
-#define RVA_AthenaString_Format      0x00066C70
 #define RVA_AthenaList_Init          0x00053210
 #define RVA_operator_new              0x000BA57B
 #define RVA_Level_MeshWorldCtor       0x00061510
@@ -375,7 +374,6 @@ typedef void *(__thiscall *Level_MeshWorldCtor_t)(void *mem, void *gfx, const ch
 typedef void *(__thiscall *Level_RenderCtor_t)(void *mem, void *meshWorld);
 typedef void (__thiscall *Level_InitScene_t)(void *board);
 typedef void (__thiscall *Scene_CollectByNameFilter_t)(void *meshWorld, char *name, void *destList);
-typedef char *(__cdecl *AthenaString_Format_t)(char *dest, const char *fmt, ...);
 typedef void *(__thiscall *AthenaList_Init_t)(void *this, int capacity);
 
 static operator_new_t g_operatorNew = NULL;
@@ -383,7 +381,6 @@ static Level_MeshWorldCtor_t g_LevelMeshWorldCtor = NULL;
 static Level_RenderCtor_t g_LevelRenderCtor = NULL;
 static Level_InitScene_t g_LevelInitScene = NULL;
 static Scene_CollectByNameFilter_t g_CollectByNameFilter = NULL;
-static AthenaString_Format_t g_AthenaStringFormat = NULL;
 static AthenaList_Init_t g_AthenaListInit = NULL;
 
 /* Forward declaration — defined below */
@@ -488,25 +485,16 @@ static void UniversalPostSetup(void *board) {
 
         int i;
         for (i = 0; i < 8; i++) {
-            /* Format "N:BUMPER%d" with i+1 */
+            /* Format "N:BUMPER%d" with i+1 — manual formatter (AthenaString_Format
+             * expects an AthenaString object pointer, not a char buffer) */
             char nameBuf[16];
-            char *result;
-
-            if (g_AthenaStringFormat) {
-                static char globalBuf[256];
-                g_AthenaStringFormat(globalBuf, "N:BUMPER%d", i + 1);
-                result = globalBuf;
-            } else {
-                /* Fallback: manual format */
-                const char *prefix = "N:BUMPER";
-                int p = 0, j;
-                for (j = 0; prefix[j]; j++) nameBuf[p++] = prefix[j];
-                int num = i + 1;
-                if (num >= 10) { nameBuf[p++] = '0' + (num / 10); num %= 10; }
-                nameBuf[p++] = '0' + num;
-                nameBuf[p] = '\0';
-                result = nameBuf;
-            }
+            const char *prefix = "N:BUMPER";
+            int p = 0, j;
+            for (j = 0; prefix[j]; j++) nameBuf[p++] = prefix[j];
+            int num = i + 1;
+            if (num >= 10) { nameBuf[p++] = '0' + (num / 10); num %= 10; }
+            nameBuf[p++] = '0' + num;
+            nameBuf[p] = '\0';
 
             /* Destination: board + BUMPER_SLOT_BASE + i * BUMPER_SLOT_STRIDE */
             void *dest = (char *)board + BUMPER_SLOT_BASE + i * BUMPER_SLOT_STRIDE;
@@ -518,7 +506,7 @@ static void UniversalPostSetup(void *board) {
 
             /* Collect mesh objects matching "N:BUMPER%d" into the AthenaList */
             if (g_CollectByNameFilter) {
-                g_CollectByNameFilter((void *)meshWorld, result, dest);
+                g_CollectByNameFilter((void *)meshWorld, nameBuf, dest);
             }
 
             /* Initialize lit flag to 0 */
@@ -877,7 +865,6 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_LevelInitScene = (Level_InitScene_t)(g_moduleBase + RVA_Level_InitScene);
     g_SoundPlay3D = (Sound_Play3D_t)(g_moduleBase + RVA_Sound_Play3D);
     g_CollectByNameFilter = (Scene_CollectByNameFilter_t)(g_moduleBase + RVA_Scene_CollectByNameFilter);
-    g_AthenaStringFormat = (AthenaString_Format_t)(g_moduleBase + RVA_AthenaString_Format);
     g_AthenaListInit = (AthenaList_Init_t)(g_moduleBase + RVA_AthenaList_Init);
 
     GetConfigPath();
