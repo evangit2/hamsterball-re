@@ -46,12 +46,12 @@
 //   "CLOUDSCAPE" → position lookup via AthenaHashTable
 //
 // Sky Factory Dispatch (0x410AD0, vtable[0x21]/+0x84):
-//   "POPCYLINDER" → Platform_ctor(alloc 0x10F4, board, X, Y, Z, board+0x4384)
+//   "POPCYLINDER" → Popcylinder_ctor(alloc 0x10F4, board, X, Y, Z, board+0x4384)
 //   "TRAPDOOR"    → Rotator_ctor(alloc 0x10F4, board, X, Y, Z, board+0x438C)
 //
 // CreateLevelObjects (0x4121D0):
 //   "POPCYLINDER" → PopCylinder_ctor(alloc 0x10E8, board, X, Y, Z, mesh)
-//   (Different constructor than Sky factory — PopCylinder_ctor vs Platform_ctor)
+//   (Different constructor than Sky factory — PopCylinder_ctor vs Popcylinder_ctor)
 //
 // CONSTRUCTOR SIGNATURES:
 //
@@ -63,7 +63,7 @@
 //   +0x10D0 = board, +0x10D4 = X, +0x10D8 = Y, +0x10DC = Z
 //   +0x10E0 = CollisionLevel, +0x10E4 = 1 (active flag)
 //
-// PILLAR: Platform_ctor (0x4363F0), alloc 0x10F4, RET 0x14
+// PILLAR: Popcylinder_ctor (0x4363F0), alloc 0x10F4, RET 0x14
 //   (this, board, X, Y, Z, mesh)
 //   vtable = 0x4D56A8
 //   SceneObject_ctor → renders automatically
@@ -90,7 +90,7 @@
 //   1. Create MeshWorld via MeshWorld_ctor (alloc 0x10D0)
 //   2. Store mesh in board slot (e.g., board+0x4788)
 //   3. Call factory: CreateSpeedCylinder(0x4117B0) for FUNBALL
-//      or Platform_ctor(0x4363F0) for PILLAR
+//      or Popcylinder_ctor(0x4363F0) for PILLAR
 //   4. Register in board+0xCD4 (post-alpha render list)
 //   5. Register in board+0x10EC (collision list)
 //   6. Call vtable[0x16] (update) and vtable[0x15] (render) on new object
@@ -317,8 +317,8 @@ spawn_funball:
  call 004117B0             // CreateSpeedCylinder
  jmp post_spawn
  
-// === PILLAR (Platform_ctor) ===
-// Uses Platform_ctor (0x4363F0) with popcylinder1 mesh
+// === PILLAR (Popcylinder_ctor) ===
+// Uses Popcylinder_ctor (0x4363F0) with popcylinder1 mesh
 spawn_pillar:
  push 0x10D0
  call 004BA57B
@@ -360,7 +360,7 @@ spawn_pillar:
  mov edx, [saved_board]
  push edx               // param_1 = board
  mov ecx, edi           // this
- call 004363F0          // Platform_ctor
+ call 004363F0          // Popcylinder_ctor
  mov [out_obj], eax
  mov dword [out_col], 0
  jmp post_spawn

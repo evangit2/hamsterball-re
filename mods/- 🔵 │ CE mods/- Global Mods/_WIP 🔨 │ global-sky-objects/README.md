@@ -30,7 +30,7 @@ The blue ball that pops up near the goal in Sky Race.
 
 The pillars that suddenly pop up and block your path in Sky Race and Sky Arena.
 
-- **Constructor**: `Platform_ctor` (0x4363F0), alloc **0x10F4**
+- **Constructor**: `Popcylinder_ctor` (0x4363F0), alloc **0x10F4**
 - **RET**: 0x14 (5 params: board, X, Y, Z, mesh)
 - **vtable**: 0x4D56A8
 - **Mesh**: `"levels\level9-popcylinder1"` (string at 0x4D0F5C)
@@ -69,7 +69,7 @@ Scene_SetupLevel9 (0x410830):
   "CLOUDSCAPE" → position lookup via AthenaHashTable
 
 Sky Factory (0x410AD0, vtable[0x21]):
-  "POPCYLINDER" → Platform_ctor with board+0x4384 mesh
+  "POPCYLINDER" → Popcylinder_ctor with board+0x4384 mesh
   "TRAPDOOR"    → Rotator_ctor with board+0x438C mesh
 
 CreateLevelObjects (0x4121D0):

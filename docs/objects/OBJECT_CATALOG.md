@@ -259,7 +259,7 @@ These are **abstract base classes** you don't typically instantiate directly, bu
 ## Level Objects — Mechanical
 
 ### Platform
-- **Constructor:** `Platform_ctor` (0x437040)
+- **Constructor:** `Popcylinder_ctor` (0x437040)
 - **Size:** 0x10FC bytes
 - **Description:** Static or animated platform. Most common level object.
 - **Created by:** `CreatePlatformOrStands` factory

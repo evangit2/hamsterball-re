@@ -303,7 +303,7 @@ Verified against the actual MESHWORLD binary data (46 unique object types). Numb
 | NEONPLATFORM | Stands_CtorRotator | 0x10EC | No | Neon |
 | PENDULUM | Pendulum_ctor | 0x1504 | No | Impossible |
 | PILLAR | (static mesh + collision) | 0 | No | Sky |
-| POPCYLINDER | PopCylinder_ctor / Platform_ctor | 0x10E8 / 0x10F4 | Conditional | Sky, Master |
+| POPCYLINDER | PopCylinder_ctor / Popcylinder_ctor | 0x10E8 / 0x10F4 | Conditional | Sky, Master |
 | ROTATOR | Rotator_ctor | 0x1508 | No | Impossible |
 | SAW | Stands_CtorCollision | 0x1110 | Yes | Toob |
 | SAW-BREAK | (breakable saw marker) | 0 | No | Expert |
