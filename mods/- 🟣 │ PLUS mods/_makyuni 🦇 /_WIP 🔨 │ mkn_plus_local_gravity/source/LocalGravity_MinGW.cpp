@@ -13,12 +13,11 @@
  */
 #include "nocrt.h"
 #include "HamsterballAPI.h"
+#include "hbplus_api.h"
 
 #define NUM_LEVELS 30
 #define NUM_RACES 15
 #define DEFAULT_GRAVITY 5.0f
-
-#define GLOBAL_SCENE_PTR 0x005341E4
 
 static float g_gravityValues[NUM_LEVELS];
 static int g_currentLevelIndex = -1;
@@ -168,20 +167,22 @@ static void reloadConfig(void) {
     }
 }
 
-/* Direct memory access to scene name */
-static const char* getSceneNameDirect(void) {
-    if (IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) return NULL;
-    DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
-    if (!scene || scene < 0x10000) return NULL;
-    if (IsBadReadPtr((void*)(scene + 0x868), 4)) return NULL;
-    const char* name = *(const char**)(scene + 0x868);
-    if (!name || IsBadReadPtr((void*)name, 2)) return NULL;
-    if ((unsigned char)name[0] < 0x20 || (unsigned char)name[0] > 0x7E) return NULL;
-    return name;
+static void* g_storedApi = NULL;
+
+/* Get scene name via HB+ API */
+static const char* getSceneNameApi(void) {
+    if (!g_storedApi) return NULL;
+    HBPlusAPI hb = { g_storedApi };
+    Scene* scene = hb.GetScene();
+    if (!scene) return NULL;
+    if (!scene->name) return NULL;
+    if (IsBadReadPtr((void*)scene->name, 2)) return NULL;
+    if ((unsigned char)scene->name[0] < 0x20 || (unsigned char)scene->name[0] > 0x7E) return NULL;
+    return scene->name;
 }
 
 static int identifyLevel(void) {
-    const char* sceneName = getSceneNameDirect();
+    const char* sceneName = getSceneNameApi();
     if (!sceneName) return -1;
 
     for (int i = 0; i < NUM_RACES; i++) {
@@ -195,6 +196,7 @@ static int identifyLevel(void) {
 
 static void __thiscall init_impl(void* thisptr, void* modApi) {
     *(void**)((char*)thisptr + 4) = modApi;
+    g_storedApi = modApi;
     for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
     buildConfigPath();
     reloadConfig();
