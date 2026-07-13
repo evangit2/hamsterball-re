@@ -1,7 +1,7 @@
 /*
  * LocalGravity.cpp — Per-Level Gravity Override (HB+ API v2.0)
  *
- * Reads gravity values from mkn_plus_local_gravity_set.txt (30 lines):
+ * Reads gravity values from mkn_plus_local_gravity.txt (30 lines):
  *   Lines 1-15:  Race levels (Warm-Up through Impossible)
  *   Lines 16-30: Arena levels (Warm-Up through Sky)
  *
@@ -100,13 +100,13 @@ public:
                 if (!lastSlash) lastSlash = strrchr(dllPath, '/');
                 if (lastSlash) {
                     *(lastSlash + 1) = '\0';
-                    snprintf(configPath, MAX_PATH, "%smkn_plus_local_gravity_set.txt", dllPath);
+                    snprintf(configPath, MAX_PATH, "%smkn_plus_local_gravity.txt", dllPath);
                     foundPath = true;
                 }
             }
         }
         if (!foundPath) {
-            strncpy(configPath, "mkn_plus_local_gravity_set.txt", MAX_PATH - 1);
+            strncpy(configPath, "mkn_plus_local_gravity.txt", MAX_PATH - 1);
         }
         configPath[MAX_PATH - 1] = '\0';
 
@@ -202,7 +202,7 @@ private:
         FILE* f = nullptr;
         fopen_s(&f, configPath, "r");
         if (!f) {
-            fopen_s(&f, "mkn_plus_local_gravity_set.txt", "r");
+            fopen_s(&f, "mkn_plus_local_gravity.txt", "r");
         }
         if (!f) {
             createDefaultConfig();
