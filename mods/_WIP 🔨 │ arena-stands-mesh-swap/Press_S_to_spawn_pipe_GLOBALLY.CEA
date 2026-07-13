@@ -16,10 +16,15 @@ alloc(temp_mesh, 4)
 alloc(bridge_array, 68)
 alloc(last_board, 4)
 alloc(BridgeStr, 32)
+alloc(noKill, 4)
 
 registersymbol(SpawnBridge)
+registersymbol(noKill)
 
 SpawnBridge:
+  dd 0
+
+noKill:
   dd 0
 
 saved_board:
@@ -65,6 +70,13 @@ label(prox_next)
 label(prox_done)
 
 SpawnCode:
+  // No-kill: when noKill=1, set ball+0x324=1 (invincible to killplanes)
+  cmp dword [noKill], 0
+  je check_prox
+  mov byte [esi+0x324], 1
+  jmp check_prox
+
+check_prox:
   cmp dword [esi+0x18], 0
   jne original_code
 
@@ -256,5 +268,7 @@ dealloc(temp_mesh)
 dealloc(bridge_array)
 dealloc(last_board)
 dealloc(BridgeStr)
+dealloc(noKill)
 unregistersymbol(SpawnBridge)
+unregistersymbol(noKill)
 un
