@@ -2,6 +2,7 @@
 
 	"Click here" button - Off = 	  #FFFFFF
 	"Click here" button - On  = 	  #FFFFFF
+	"Click here" button - Txt = 	  "CLICK HERE TO PLAY!"
 
 	LoadingScreen HBLogo - L = 	  #FFFFFFFF
 	LoadingScreen HBLogo - R = 	  #FFFFFFFF
@@ -16,54 +17,66 @@
 	LoadingScreen Raptisoft Logo =  #FFFFFFFF
 
 
-
 - MAIN MENU -
-
 	MainMenu Colors - HBversion = 	  		#FFFFFFFF
+	MainMenu Colors - HBversion - Shadow = 	#000000FF
+
 	MainMenu Colors - Button #1 - Let's Play! = 	#FFFFFFFF
 	MainMenu Colors - Button #2 - High Scores =    	#FFFFFFFF
 	MainMenu Colors - Button #3 - Options =	    	#FFFFFFFF
 	MainMenu Colors - Button #4 - Credits =	    	#FFFFFFFF
 	MainMenu Colors - Button #5 - Exit to Desktop =  #FFFFFFFF
 
-	MainMenu Colors - LP Button #1  - Tournament =    	#FFFFFFFF
+	MainMenu Colors - LP Button #1  - Tournament =   	#FFFFFFFF
 	MainMenu Colors - LP Button #2  - TimeTrials =    	#FFFFFFFF
 	MainMenu Colors - LP Button #2b - Locked =	    	#FFFFFFFF
 	MainMenu Colors - LP Button #3  - MirrorTourney =  #FFFFFFFF
 	MainMenu Colors - LP Button #4  - PartyGames =   	#FFFFFFFF
 	MainMenu Colors - LP Button #5  - Previous =    	#FFFFFFFF
 
+	MainMenu String - Let's Play = 	"LET'S PLAY!"
+	MainMenu String - Options = 	"OPTIONS"
+	MainMenu String - Credits = 	"CREDITS"
+	MainMenu String - Exit to Desktop = 	"DEXIT TO DESKTOP"
+
+	MainMenu String - Choose a Game! = 	"CHOOSE A GAME!"
+	MainMenu String - Tournament = 	"TOURNAMENT"
+	MainMenu String - Time Trials = 	"TIME TRIALS"
+	MainMenu String - Locked = 	"LOCKED"
+	MainMenu String - Mirror Tournament = "MIRROR TOURNAMENT"
+	MainMenu String - Party Games = 	"PARTY GAMES"
+	MainMenu String - Previous = 	"PREVIOUS"
 
 
 - TOURNEY MENU -
 	soon.
 
 
-
 - MIRROR MENU -
 	soon.
 
 
-
 - TIME TRIALS MENU -
+	TimeTrials Pause - Button #1 - Resume = 	#FFFFFFFF
+	TimeTrials Pause - Button #2 - Restart Race =	#FFFFFFFF
+	TimeTrials Pause - Button #3 - Options = 	#FFFFFFFF
+	TimeTrials Pause - Button #4 - Quit Race = 	#FFFFFFFF
 
-	TimeTrials Pause - Button #1 - Resume = 	     	#FFFFFFFF
-	TimeTrials Pause - Button #2 - Restart Race =	     	#FFFFFFFF
-	TimeTrials Pause - Button #3 - Options = 	     	#FFFFFFFF
-	TimeTrials Pause - Button #4 - Quit Race = 	     	#FFFFFFFF
-
+	TimeTrials String - Choose a Time Trial Race =	"CHOOSE A TIME TRIAL RACE!"
+	TimeTrials String - Pause - Previous Menu =	"PREVIOUS MENU"
+	TimeTrials String - Pause - Resume =		"RESUME"
+	TimeTrials String - Pause - Restart Race =	"RESTART RACE"
+	TimeTrials String - Pause - Quit this Race =	"QUIT THIS RACE"
 
 
 - 2P GAME -
 
 	2Pmenu - Side Strip = 	#FFFFFFFF
-	2Pgame - Win Strip = 	#FFFFFFFF
-
+	2Pgame - Win  Strip = 	#FFFFFFFF
 
 
 - 4P GAME -
 	soon.
-
 
 
 - OTHER -
