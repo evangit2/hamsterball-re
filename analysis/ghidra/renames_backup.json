@@ -2954,27 +2954,27 @@
     },
     {
       "address": "0x0046a820",
-      "name": "WaterRipple_dtor"
+      "name": "FlagWaver_dtor"
     },
     {
       "address": "0x0046a8a0",
-      "name": "WaterRipple_AllocBuffers"
+      "name": "FlagWaver_AllocBuffers"
     },
     {
       "address": "0x0046a930",
-      "name": "WaterRipple_AdvancePhase"
+      "name": "FlagWaver_AdvancePhase"
     },
     {
       "address": "0x0046a940",
-      "name": "WaterRipple_DeletingDtor"
+      "name": "FlagWaver_DeletingDtor"
     },
     {
       "address": "0x0046a960",
-      "name": "WaterRipple_UpdateVertices"
+      "name": "FlagWaver_UpdateVertices"
     },
     {
       "address": "0x0046af30",
-      "name": "WaterRipple_Ctor"
+      "name": "FlagWaver_Ctor"
     },
     {
       "address": "0x0046b070",
