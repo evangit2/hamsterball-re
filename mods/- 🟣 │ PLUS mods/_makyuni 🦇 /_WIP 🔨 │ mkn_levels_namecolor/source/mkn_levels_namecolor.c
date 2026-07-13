@@ -444,9 +444,11 @@ static void read_config(void)
         char *line_start = p;
         while (*line_start == ' ' || *line_start == '\t') line_start++;
         if (*line_start == '#' || *line_start == ';') {
-            /* Only match section headers: comment content must START with keyword */
+            /* Section headers: skip comment marker, whitespace, and decoration
+             * chars (=, -, *) to find the first word, then check for LEVELS/ARENAS */
             char *content = line_start + 1;
-            while (*content == ' ' || *content == '\t') content++;
+            while (*content == ' ' || *content == '\t' || *content == '=' ||
+                   *content == '-' || *content == '*') content++;
             if (content[0]=='L' && content[1]=='E' && content[2]=='V' &&
                 content[3]=='E' && content[4]=='L' && content[5]=='S')
                 g_section = 0;
