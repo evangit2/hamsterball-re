@@ -613,61 +613,57 @@ static void patchPush(DWORD pushRva, const char* newString) {
 
 /* ── Patch cache system: prevent reading and writing .cached files ───── */
 
+/* Pre-built byte sequences for patch/restore (no memcpy from live memory) */
+static const BYTE CACHE_READ_ORIG[1]  = { 0x74 };
+static const BYTE CACHE_READ_PATCH[1] = { 0xEB };
+
+static const BYTE CACHE_WRITE1_ORIG[6]  = { 0x0F, 0x84, 0xCF, 0x00, 0x00, 0x00 };
+static const BYTE CACHE_WRITE1_PATCH[6] = { 0xE9, 0xD0, 0x00, 0x00, 0x00, 0x90 };
+
+static const BYTE CACHE_WRITE2_ORIG[6]  = { 0x0F, 0x85, 0xC6, 0x00, 0x00, 0x00 };
+static const BYTE CACHE_WRITE2_PATCH[6] = { 0xE9, 0xC7, 0x00, 0x00, 0x00, 0x90 };
+
+static const BYTE CACHE_WRITE3_ORIG[6]  = { 0x0F, 0x84, 0xB7, 0x00, 0x00, 0x00 };
+static const BYTE CACHE_WRITE3_PATCH[6] = { 0xE9, 0xB8, 0x00, 0x00, 0x00, 0x90 };
+
+static void writeBytes(DWORD addr, const BYTE* data, DWORD size) {
+    DWORD oldProt;
+    if (VirtualProtect((void*)addr, size, PAGE_READWRITE, &oldProt)) {
+        for (DWORD i = 0; i < size; i++)
+            *((BYTE*)(addr + i)) = data[i];
+        VirtualProtect((void*)addr, size, oldProt, &oldProt);
+    }
+}
+
 static void patchCacheSystem(DWORD base) {
     if (!g_ignoreCache) return;
 
     /*
-     * MeshWorld_ctor (0x0046f3d0):
-     *   At 0x0046f439 there's a JZ (74 70) that skips cache reading
-     *   when the .cached file doesn't exist. We patch it to JMP (EB 70)
-     *   so it ALWAYS skips reading the cache file.
-     *
-     *   Address: base + 0x6f439
-     *   Original: 74 70  (JZ +0x70)
-     *   Patched:  EB 70  (JMP +0x70)
+     * Cache READ skip — MeshWorld_ctor (0x0046F3D0):
+     *   RVA 0x6F439: JZ +0x70 (74 70) → JMP +0x70 (EB 70)
+     *   Forces game to always parse .MESHWORLD text files, never .cached.
      */
-    DWORD skipCacheRead = base + 0x6f439;
-    DWORD oldProt;
-    if (VirtualProtect((void*)skipCacheRead, 1, PAGE_READWRITE, &oldProt)) {
-        *((BYTE*)skipCacheRead) = 0xEB;
-        VirtualProtect((void*)skipCacheRead, 1, oldProt, &oldProt);
-    }
+    writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
 
     /*
-     * Mesh_SaveAndFree (0x0046f670):
-     *   At 0x0046f67e there's a JE (0f 84 cf 00 00 00) that skips
-     *   the cache write block if filename is NULL. We patch it to
-     *   always skip writing cache files.
+     * Cache WRITE skip — Mesh_SaveAndFree (0x0046F670):
+     *   Three conditional jumps guard the cache-write block. All three
+     *   jump to 0x0046F752 (the free/cleanup section) when their condition
+     *   is met. We patch ALL THREE to unconditional JMP so the write block
+     *   is never entered, regardless of filename/flag/cache state.
      *
-     *   Address: base + 0x6f67e
-     *   Original: 0f 84 cf 00 00 00  (JE +0xcf)
-     *   Patched:  e9 d0 00 00 00 90  (JMP +0xd0, NOP)
-     *   This is a 6-byte conditional jump → 5-byte JMP + 1 NOP
-     */
-    DWORD skipCacheWrite = base + 0x6f67e;
-    if (VirtualProtect((void*)skipCacheWrite, 6, PAGE_READWRITE, &oldProt)) {
-        *((BYTE*)skipCacheWrite) = 0xE9;
-        *((DWORD*)(skipCacheWrite + 1)) = 0x000000d0;
-        *((BYTE*)(skipCacheWrite + 5)) = 0x90;
-        VirtualProtect((void*)skipCacheWrite, 6, oldProt, &oldProt);
-    }
-
-    /*
-     * Also patch the graphics flag check that gates cache writing.
-     * At 0x0046f684 there's another conditional (0f 85 c6 00 00 00)
-     * that checks cache_flag==0. Patch to always jump (skip write).
+     *   RVA 0x6F67D: JZ  rel32 (0F 84 CF 00 00 00) → JMP rel32+NOP
+     *     Checks if filename ptr is NULL. Patch to always skip.
      *
-     *   Address: base + 0x6f684
-     *   Original: 0f 85 c6 00 00 00  (JNZ +0xc6)
-     *   Patched:  e9 c7 00 00 00 90  (JMP +0xc7, NOP)
+     *   RVA 0x6F686: JNZ rel32 (0F 85 C6 00 00 00) → JMP rel32+NOP
+     *     Checks a flag byte at mesh+0x4. Patch to always skip.
+     *
+     *   RVA 0x6F695: JZ  rel32 (0F 84 B7 00 00 00) → JMP rel32+NOP
+     *     Checks gfx+0x7D1 (cache enabled flag). Patch to always skip.
      */
-    DWORD skipCacheFlag = base + 0x6f684;
-    if (VirtualProtect((void*)skipCacheFlag, 6, PAGE_READWRITE, &oldProt)) {
-        *((BYTE*)skipCacheFlag) = 0xE9;
-        *((DWORD*)(skipCacheFlag + 1)) = 0x000000c7;
-        *((BYTE*)(skipCacheFlag + 5)) = 0x90;
-        VirtualProtect((void*)skipCacheFlag, 6, oldProt, &oldProt);
-    }
+    writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
+    writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
+    writeBytes(base + 0x6f695, CACHE_WRITE3_PATCH, 6);
 }
 
 /* ── Apply all patches ───────────────────────────────────────────────── */
@@ -757,27 +753,22 @@ static void __thiscall game_update_impl(void*) {
 static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool state) {
     if (nc_stricmp(id, "xtreme_org_ignore_cache") == 0) {
         g_ignoreCache = state;
-        /* Re-apply cache patches */
         HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
         if (!hExe) hExe = GetModuleHandleA(NULL);
         if (hExe) {
             DWORD base = (DWORD)hExe;
-            DWORD oldProt;
-
             if (state) {
-                /* Enable cache skipping */
-                DWORD skipCacheRead = base + 0x6f439;
-                if (VirtualProtect((void*)skipCacheRead, 1, PAGE_READWRITE, &oldProt)) {
-                    *((BYTE*)skipCacheRead) = 0xEB;
-                    VirtualProtect((void*)skipCacheRead, 1, oldProt, &oldProt);
-                }
+                /* Enable cache skipping — patch all 4 sites */
+                writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
+                writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
+                writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
+                writeBytes(base + 0x6f695, CACHE_WRITE3_PATCH, 6);
             } else {
-                /* Disable cache skipping (restore original) */
-                DWORD skipCacheRead = base + 0x6f439;
-                if (VirtualProtect((void*)skipCacheRead, 1, PAGE_READWRITE, &oldProt)) {
-                    *((BYTE*)skipCacheRead) = 0x74;
-                    VirtualProtect((void*)skipCacheRead, 1, oldProt, &oldProt);
-                }
+                /* Disable cache skipping — restore original bytes */
+                writeBytes(base + 0x6f439, CACHE_READ_ORIG, 1);
+                writeBytes(base + 0x6f67d, CACHE_WRITE1_ORIG, 6);
+                writeBytes(base + 0x6f686, CACHE_WRITE2_ORIG, 6);
+                writeBytes(base + 0x6f695, CACHE_WRITE3_ORIG, 6);
             }
         }
     }
