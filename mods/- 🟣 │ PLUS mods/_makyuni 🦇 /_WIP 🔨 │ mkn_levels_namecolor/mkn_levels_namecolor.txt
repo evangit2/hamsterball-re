@@ -1,0 +1,101 @@
+# Level Names and Colors Config File
+# Format1: LevelName= #RRGGBB  (hex RGB, like HTML colors)
+# Format2: LevelName= "string" (text string between " ")
+# Lines starting with ; or # are comments
+#
+# PREFIXES:
+# (Under the "LEVELS" section)
+#   LevelName=	     #RRGGBB  — applies to BOTH timer and menu
+#   board:LevelName= #RRGGBB  — only timer oval/text during gameplay
+#   menu:LevelName=  #RRGGBB  — only race selection menu text
+#   name:LevelName=  (string) — name of the Race.
+#
+# (Under the "ARENAS" section)
+#   ArenaName=	     #RRGGBB  — applies to BOTH timer and menu
+#   board:ArenaName= #RRGGBB  — only timer oval/text during gameplay
+#   menu:ArenaName=  #RRGGBB  — only arena selection menu text
+#   name:ArenaName=  (string) — name of the Arena.
+#
+# Re-reads every 2 seconds. Edit at runtime!
+
+
+# ============== LEVELS ==============
+
+# - NAMES - #
+name:WarmUp=		"WARM-UP RACE"
+name:Beginner=		"BEGINNER RACE"
+name:Intermediate=	"INTERMEDIATE RACE"
+name:Dizzy=		"DIZZY RACE"
+name:Tower=		"TOWER RACE"
+name:Up=		"UP RACE"
+name:Neon=		"NEON RACE"
+name:Expert=		"EXPERT RACE"
+name:Odd=		"ODD RACE"
+name:Toob=		"TOOB RACE"
+name:Wobbly=		"WOBBLY RACE"
+name:Glass=		"GLASS RACE"
+name:Sky=		"SKY RACE"
+name:Master=		"MASTER RACE"
+name:Impossible=	"IMPOSSIBLE RACE"
+
+# - COLORS - #
+WarmUp=			#FFFFFF
+Beginner=		#FFFFFF
+Intermediate=		#FFFFFF
+Dizzy=			#FFFFFF
+Tower=			#FFFFFF
+Up=			#FFFFFF
+Neon=			#FFFFFF
+Expert=			#FFFFFF
+Odd=			#FFFFFF
+Toob=			#FFFFFF
+Wobbly=			#FFFFFF
+Glass=			#FFFFFF
+Sky=			#FFFFFF
+Master=			#FFFFFF
+Impossible=		#FFFFFF
+
+# =====================================
+
+
+
+# ============== ARENAS ==============
+
+# - NAMES - #
+name:WarmUp=		"WARM-UP ARENA"
+name:Beginner=		"BEGINNER ARENA"
+name:Intermediate=	"INTERMEDIATE ARENA"
+name:Dizzy=		"DIZZY ARENA"
+name:Tower=		"TOWER ARENA"
+name:Up=		"UP ARENA"
+name:Neon=		"NEON ARENA"
+name:Expert=		"EXPERT ARENA"
+name:Odd=		"ODD ARENA"
+name:Toob=		"TOOB ARENA"
+name:Wobbly=		"WOBBLY ARENA"
+name:Glass=		"GLASS ARENA"
+name:Sky=		"SKY ARENA"
+name:Master=		"MASTER ARENA"
+name:Impossible=	"IMPOSSIBLE ARENA"
+
+# - COLORS - #
+WarmUp=			#FFFFFF
+Beginner=		#FFFFFF
+Intermediate=		#FFFFFF
+Dizzy=			#FFFFFF
+Tower=			#FFFFFF
+Up=			#FFFFFF
+Neon=			#FFFFFF
+Expert=			#FFFFFF
+Odd=			#FFFFFF
+Toob=			#FFFFFF
+Wobbly=			#FFFFFF
+Glass=			#FFFFFF
+Sky=			#FFFFFF
+Master=			#FFFFFF
+Impossible=		#FFFFFF
+
+# =====================================
+
+
+# ~ Script Made with help of BookwormKevin. Thank you!
