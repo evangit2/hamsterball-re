@@ -444,11 +444,15 @@ static void read_config(void)
         char *line_start = p;
         while (*line_start == ' ' || *line_start == '\t') line_start++;
         if (*line_start == '#' || *line_start == ';') {
-            /* Check for ARENAS keyword */
-            if (strstr(line_start, "ARENAS") || strstr(line_start, "Arenas") || strstr(line_start, "arenas"))
-                g_section = 1;
-            else if (strstr(line_start, "LEVELS") || strstr(line_start, "Levels") || strstr(line_start, "levels"))
+            /* Only match section headers: comment content must START with keyword */
+            char *content = line_start + 1;
+            while (*content == ' ' || *content == '\t') content++;
+            if (content[0]=='L' && content[1]=='E' && content[2]=='V' &&
+                content[3]=='E' && content[4]=='L' && content[5]=='S')
                 g_section = 0;
+            else if (content[0]=='A' && content[1]=='R' && content[2]=='E' &&
+                     content[3]=='N' && content[4]=='A' && content[5]=='S')
+                g_section = 1;
         }
 
         char saved = *nl;
