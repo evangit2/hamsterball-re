@@ -519,8 +519,8 @@ static int install_code_cave(EntryDef *e) {
 
     DWORD orig = e->push_seq_start;
     int sz = e->push_seq_size;
+    /* Write JMP rel32 in one shot: E9 + 4-byte displacement */
     patch_byte(orig, 0xE9);
-    *(DWORD*)((BYTE*)orig + 1) = 0;  /* placeholder */
     patch_dword(orig + 1, (DWORD)cave - (orig + 5));
     for (int i = 5; i < sz; i++) patch_byte(orig + i, 0x90);
 
