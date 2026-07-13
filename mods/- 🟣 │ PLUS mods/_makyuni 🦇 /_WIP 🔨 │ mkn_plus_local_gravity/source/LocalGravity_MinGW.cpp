@@ -101,10 +101,10 @@ static void buildConfigPath(void) {
     g_pathReady = true;
 }
 
-/* Read 30 float values from config file */
+/* Read 30 float values from config file.
+   Does NOT reset to defaults — only overwrites values that are actually parsed.
+   This way if parsing fails, previously-loaded values are preserved. */
 static void reloadConfig(void) {
-    for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
-
     if (!g_pathReady) return;
 
     HANDLE h = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ, NULL,
@@ -115,6 +115,7 @@ static void reloadConfig(void) {
     DWORD bytesRead = 0;
     ReadFile(h, buf, sizeof(buf) - 1, &bytesRead, NULL);
     CloseHandle(h);
+    if (bytesRead == 0) return;
     buf[bytesRead] = '\0';
 
     /* Skip BOM */
@@ -139,9 +140,11 @@ static void reloadConfig(void) {
         if (*p == '-') { negative = 1; p++; }
         else if (*p == '+') { p++; }
         int integerPart = 0;
+        int hadDigits = 0;
         while (*p >= '0' && *p <= '9') {
             integerPart = integerPart * 10 + (*p - '0');
             p++;
+            hadDigits = 1;
         }
         float frac = 0.0f;
         if (*p == '.') {
@@ -151,15 +154,17 @@ static void reloadConfig(void) {
                 frac += (*p - '0') / div;
                 div *= 10.0f;
                 p++;
+                hadDigits = 1;
             }
         }
-        val = (float)integerPart + frac;
-        if (negative) val = -val;
+        if (hadDigits) {
+            val = (float)integerPart + frac;
+            if (negative) val = -val;
+            g_gravityValues[index] = val;
+            index++;
+        }
         /* Skip rest of line */
         while (*p && *p != '\n') p++;
-
-        g_gravityValues[index] = val;
-        index++;
     }
 }
 
@@ -190,6 +195,7 @@ static int identifyLevel(void) {
 
 static void __thiscall init_impl(void* thisptr, void* modApi) {
     *(void**)((char*)thisptr + 4) = modApi;
+    for (int i = 0; i < NUM_LEVELS; i++) g_gravityValues[i] = DEFAULT_GRAVITY;
     buildConfigPath();
     reloadConfig();
 }
@@ -204,9 +210,11 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     if (g_currentLevelIndex == -1) {
         g_currentLevelIndex = identifyLevel();
     }
-    if (g_currentLevelIndex < 0 || g_currentLevelIndex >= NUM_LEVELS) return;
+    /* If level detection fails, use index 0 (Warm-Up) as fallback */
+    int levelIdx = g_currentLevelIndex;
+    if (levelIdx < 0 || levelIdx >= NUM_LEVELS) levelIdx = 0;
 
-    float slider = g_gravityValues[g_currentLevelIndex];
+    float slider = g_gravityValues[levelIdx];
 
     PhysicsObject* phys = ((Ball*)ball)->physics_object;
     if (!phys) return;
