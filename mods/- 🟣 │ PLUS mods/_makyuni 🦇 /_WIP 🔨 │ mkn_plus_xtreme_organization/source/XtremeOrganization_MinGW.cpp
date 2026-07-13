@@ -832,3 +832,32 @@ extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
     *(void**)((char*)obj + 4) = NULL;
     return (HamsterballAPI*)obj;
 }
+
+/* ── DllMain: apply cache patches immediately on DLL load ────────────── */
+/* The mod is loaded as bass.dll proxy. DllMain runs BEFORE HB+ calls
+ * Initialize(). We apply cache patches here so they're active before any
+ * level loads. This mirrors the standalone CE ignore_cache mod which uses
+ * a Sleep(2000) thread. VirtualProtect is safe from DllMain. */
+
+extern "C" BOOL WINAPI DllMain(HINSTANCE hModule, DWORD reason, LPVOID lpReserved) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hModule);
+
+        /* Apply cache patches immediately — don't wait for HB+ Initialize() */
+        HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+        if (!hExe) hExe = GetModuleHandleA(NULL);
+        if (hExe) {
+            DWORD base = (DWORD)hExe;
+            /* Only apply cache patches — file path patches need config which
+             * isn't loaded yet. Cache patches are safe to apply early since
+             * they just NOP out conditional jumps. */
+            writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
+            writeBytes(base + 0x5de77, LOAD_MW_CACHE_PATCH, 1);
+            writeBytes(base + 0x717db, LOAD_MESH_CACHE_PATCH, 1);
+            writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
+            writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
+            writeBytes(base + 0x6f695, CACHE_WRITE3_PATCH, 6);
+        }
+    }
+    return TRUE;
+}
