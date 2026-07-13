@@ -31,6 +31,13 @@ typedef unsigned long long QWORD;
 
 #define RVA_DispatchCollisionEvents  0x000CC5D0
 #define RVA_Sound_Play3D             0x00059860
+#define RVA_Scene_CollectByNameFilter 0x000602F0
+#define RVA_AthenaString_Format      0x00066C70
+#define RVA_AthenaList_Init          0x00053210
+#define RVA_operator_new              0x000BA57B
+#define RVA_Level_MeshWorldCtor       0x00061510
+#define RVA_Level_RenderCtor          0x00065080
+#define RVA_Level_InitScene           0x0000B090
 
 /* Bumper physics constants */
 #define BUMPER_VEL_SCALE  4.0f
@@ -49,6 +56,15 @@ typedef unsigned long long QWORD;
 #define COLL_MESHBUF      0x4
 #define MESHBUF_NAME      0x864
 #define BOARD_APP_PTR     0x878
+#define BOARD_MESHWORLD   0x8AC  /* board+0x8AC = MeshWorld ptr (set by constructor) */
+#define BOARD_RENDEROBJ   0x8B0  /* board+0x8B0 = RenderObj ptr (set by constructor) */
+
+/* Bumper slot layout in board struct (Beginner's pattern, int* arithmetic) */
+#define BUMPER_SLOT_BASE   0x436C  /* board + 0x10DB * 4 = first bumper AthenaList */
+#define BUMPER_SLOT_STRIDE 0x418   /* 0x106 * 4 = stride between bumper slots */
+#define BUMPER_LIT_BASE    0x642C  /* board + 0x190B * 4 = first lit flag DWORD */
+#define BUMPER_LIT_STRIDE  4       /* 1 * 4 = stride between lit flags */
+#define BUMPER_LIT_COLL     0x6428 /* collision handler writes idx*4 + this */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Level vtable addresses (absolute — module base 0x00400000)
@@ -354,6 +370,251 @@ __attribute__((naked)) static void Hook_DispatchCollisionEvents(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Game function typedefs
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef void *(__cdecl *operator_new_t)(unsigned int size);
+typedef void *(__thiscall *Level_MeshWorldCtor_t)(void *mem, void *gfx, const char *meshPath);
+typedef void *(__thiscall *Level_RenderCtor_t)(void *mem, void *meshWorld);
+typedef void (__thiscall *Level_InitScene_t)(void *board);
+typedef void (__thiscall *Scene_CollectByNameFilter_t)(void *meshWorld, char *name, void *destList);
+typedef char *(__cdecl *AthenaString_Format_t)(char *dest, const char *fmt, ...);
+typedef void *(__thiscall *AthenaList_Init_t)(void *this, int capacity);
+
+static operator_new_t g_operatorNew = NULL;
+static Level_MeshWorldCtor_t g_LevelMeshWorldCtor = NULL;
+static Level_RenderCtor_t g_LevelRenderCtor = NULL;
+static Level_InitScene_t g_LevelInitScene = NULL;
+static Scene_CollectByNameFilter_t g_CollectByNameFilter = NULL;
+static AthenaString_Format_t g_AthenaStringFormat = NULL;
+static AthenaList_Init_t g_AthenaListInit = NULL;
+
+/* Forward declaration — defined below */
+static void UniversalPostSetup(void *board);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Mesh path table — one per level
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static const char *g_meshPaths[16] = {
+    NULL,                          /* 0 unused */
+    "levels\\level1",              /* 1=WarmUp */
+    "levels\\levelcascade",        /* 2=Beginner */
+    "levels\\level2",              /* 3=Intermediate */
+    "levels\\level3",              /* 4=Dizzy */
+    "levels\\level4",              /* 5=Tower */
+    "levels\\levelup",             /* 6=Up */
+    "levels\\leveldark",           /* 7=Neon */
+    "levels\\level5",              /* 8=Expert */
+    "levels\\level6",              /* 9=Odd */
+    "levels\\level8",              /* 10=Toob */
+    "levels\\level7",              /* 11=Wobbly */
+    "levels\\levelglass",          /* 12=Glass */
+    "levels\\level9",              /* 13=Sky */
+    "levels\\level10",             /* 14=Master */
+    "levels\\levelimpossible",     /* 15=Impossible */
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Level Constructor — REPLACES all 15 per-level constructors
+ *
+ * Does the same 4 steps every Scene_LoadLevel* does:
+ *   1. operator_new(0x10D0) → Level_MeshWorldCtor(mem, gfx, meshPath)
+ *   2. operator_new(0x10D0) → Level_RenderCtor(mem, meshWorld)
+ *   3. Level_InitScene(board)
+ *   4. board->vtable[0x80]() = Board_Setup
+ * Then runs UniversalPostSetup for config-driven features (bumpers, etc.)
+ *
+ * The per-level Scene_LoadLevel* functions NEVER run.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void UniversalConstructor(void *board, int raceIndex) {
+    if (!board || raceIndex < 1 || raceIndex > 15) return;
+    if (!g_operatorNew || !g_LevelMeshWorldCtor || !g_LevelRenderCtor ||
+        !g_LevelInitScene) return;
+
+    const char *meshPath = g_meshPaths[raceIndex];
+    if (!meshPath) return;
+
+    /* board+0x878 = App, App+0x174 = gfx */
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x200)) return;
+    void *gfx = *(void **)((char *)app + 0x174);
+    if (!gfx) return;
+
+    /* Step 1: MeshWorld */
+    void *meshMem = g_operatorNew(0x10D0);
+    if (!meshMem) return;
+    void *meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, meshPath);
+    *(DWORD *)((char *)board + BOARD_MESHWORLD) = (DWORD)meshWorld;
+
+    /* Step 2: RenderObj */
+    void *renderMem = g_operatorNew(0x10D0);
+    void *renderObj = NULL;
+    if (renderMem) {
+        renderObj = g_LevelRenderCtor(renderMem, meshWorld);
+    }
+    *(DWORD *)((char *)board + BOARD_RENDEROBJ) = (DWORD)renderObj;
+
+    /* Step 3: InitScene */
+    g_LevelInitScene(board);
+
+    /* Step 4: Board_Setup via vtable[0x80] */
+    DWORD vtable = *(DWORD *)board;
+    if (vtable && !IsBadReadPtr((void *)vtable, 0x84)) {
+        void (__thiscall *boardSetup)(void *) = *(void (__thiscall **)(void *))((char *)vtable + 0x80);
+        if (boardSetup) boardSetup(board);
+    }
+
+    /* Step 5: Config-driven features */
+    UniversalPostSetup(board);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Post-Setup — config-driven feature initialization
+ *
+ * Called from UniversalConstructor after the base 4 steps.
+ * Currently handles: Bumpers (CollectByNameFilter + lit flags)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void UniversalPostSetup(void *board) {
+    int level = GetCurrentLevel(board);
+    if (level == 0) return;
+
+    /* Reload config in case it changed */
+    LoadConfig();
+
+    /* ── Bumpers ── */
+    if (g_bumpersEnabled[level]) {
+        DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+        if (!meshWorld || IsBadReadPtr((void *)meshWorld, 0x430)) return;
+
+        int i;
+        for (i = 0; i < 8; i++) {
+            /* Format "N:BUMPER%d" with i+1 */
+            char nameBuf[16];
+            char *result;
+
+            if (g_AthenaStringFormat) {
+                static char globalBuf[256];
+                g_AthenaStringFormat(globalBuf, "N:BUMPER%d", i + 1);
+                result = globalBuf;
+            } else {
+                /* Fallback: manual format */
+                const char *prefix = "N:BUMPER";
+                int p = 0, j;
+                for (j = 0; prefix[j]; j++) nameBuf[p++] = prefix[j];
+                int num = i + 1;
+                if (num >= 10) { nameBuf[p++] = '0' + (num / 10); num %= 10; }
+                nameBuf[p++] = '0' + num;
+                nameBuf[p] = '\0';
+                result = nameBuf;
+            }
+
+            /* Destination: board + BUMPER_SLOT_BASE + i * BUMPER_SLOT_STRIDE */
+            void *dest = (char *)board + BUMPER_SLOT_BASE + i * BUMPER_SLOT_STRIDE;
+
+            /* Initialize the AthenaList at this slot */
+            if (g_AthenaListInit) {
+                g_AthenaListInit(dest, 0);
+            }
+
+            /* Collect mesh objects matching "N:BUMPER%d" into the AthenaList */
+            if (g_CollectByNameFilter) {
+                g_CollectByNameFilter((void *)meshWorld, result, dest);
+            }
+
+            /* Initialize lit flag to 0 */
+            *(DWORD *)((char *)board + BUMPER_LIT_BASE + i * BUMPER_LIT_STRIDE) = 0;
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Tournament_AdvanceRace hook — replaces vtable[0x48] call
+ *
+ * Hooks at 0x004273E0 (RVA 0x000273E0).
+ * Original bytes: FF 52 48 8B 4E 04 (6 bytes)
+ *   FF 52 48     = CALL [EDX+0x48]  (vtable[18] = Scene_LoadLevel*)
+ *   8B 4E 04     = MOV ECX, [ESI+4] (next instruction)
+ *
+ * Patched with: E9 <rel32> 90 (JMP Hook_UniversalConstructor + NOP)
+ * Trampoline: only MOV ECX,[ESI+4] + JMP back to 0x004273E6
+ * (Skips CALL [EDX+0x48] — original per-level constructor NEVER runs)
+ *
+ * At hook point:
+ *   ECX = board (this, set by MOV ECX,EAX at 0x004273D6)
+ *   ESI = tournament struct
+ *   [ESI+0x8] = race index (1-based: 1=WarmUp ... 15=Impossible)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define RVA_TournamentVtableCall  0x000273E0
+
+/* Must be non-static for asm reference */
+unsigned char *g_ctorTrampoline = NULL;
+
+/* Must be non-static for asm reference */
+void __cdecl UniversalConstructorLogic(void *board, int raceIndex) {
+    UniversalConstructor(board, raceIndex);
+}
+
+__attribute__((naked)) static void Hook_UniversalConstructor(void) {
+    __asm__ __volatile__(
+        "pushl %%ebp\n\t"
+        "movl  %%esp, %%ebp\n\t"
+        "pushl %%edx\n\t"
+        "pushl %%ecx\n\t"
+
+        /* raceIndex = [ESI+0x8] */
+        "movl  0x08(%%esi), %%eax\n\t"
+        "pushl %%eax\n\t"
+
+        /* board = ECX (still valid — not clobbered yet) */
+        "pushl %%ecx\n\t"
+
+        "call  _UniversalConstructorLogic\n\t"
+        "addl  $8, %%esp\n\t"
+
+        "popl  %%ecx\n\t"
+        "popl  %%edx\n\t"
+        "popl  %%ebp\n\t"
+
+        /* JMP to trampoline (executes MOV ECX,[ESI+4] + JMP back to original+6) */
+        "jmpl  *_g_ctorTrampoline\n\t"
+        :: : "eax", "memory"
+    );
+}
+
+static void InstallUniversalConstructorHook(void) {
+    DWORD targetAddr = g_moduleBase + RVA_TournamentVtableCall;
+    unsigned char *orig = (unsigned char *)targetAddr;
+
+    /* Verify: FF 52 48 8B 4E 04 */
+    if (orig[0] != 0xFF || orig[1] != 0x52 || orig[2] != 0x48 ||
+        orig[3] != 0x8B || orig[4] != 0x4E || orig[5] != 0x04) return;
+
+    /* Trampoline: only MOV ECX,[ESI+4] + JMP back to original+6 */
+    g_ctorTrampoline = VirtualAlloc(NULL, 16,
+                        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_ctorTrampoline) return;
+
+    /* Trampoline: only MOV ECX,[ESI+4] (skip CALL [EDX+0x48] = original constructor) */
+    g_ctorTrampoline[0] = 0x8B;  /* MOV ECX, [ESI+4] */
+    g_ctorTrampoline[1] = 0x4E;
+    g_ctorTrampoline[2] = 0x04;
+    g_ctorTrampoline[3] = 0xE9;  /* JMP back to original+6 */
+    *(DWORD *)(g_ctorTrampoline + 4) = (targetAddr + 6) - ((DWORD)g_ctorTrampoline + 8);
+
+    /* Patch original: JMP rel32 + NOP (6 bytes total) */
+    DWORD oldProtect;
+    VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
+    orig[0] = 0xE9;  /* JMP rel32 */
+    *(DWORD *)(orig + 1) = (DWORD)&Hook_UniversalConstructor - (targetAddr + 5);
+    orig[5] = 0x90;   /* NOP */
+    VirtualProtect(orig, 6, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), orig, 6);
+}
+/* ═══════════════════════════════════════════════════════════════════════════
  * Allocation size patch — make all levels allocate the union size
  *
  * Tournament_AdvanceRace (0x00427080) has a switch with 15 cases.
@@ -613,11 +874,19 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     Sleep(2000);
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
     if (!g_moduleBase) g_moduleBase = 0x00400000;
+    g_operatorNew = (operator_new_t)(g_moduleBase + RVA_operator_new);
+    g_LevelMeshWorldCtor = (Level_MeshWorldCtor_t)(g_moduleBase + RVA_Level_MeshWorldCtor);
+    g_LevelRenderCtor = (Level_RenderCtor_t)(g_moduleBase + RVA_Level_RenderCtor);
+    g_LevelInitScene = (Level_InitScene_t)(g_moduleBase + RVA_Level_InitScene);
     g_SoundPlay3D = (Sound_Play3D_t)(g_moduleBase + RVA_Sound_Play3D);
+    g_CollectByNameFilter = (Scene_CollectByNameFilter_t)(g_moduleBase + RVA_Scene_CollectByNameFilter);
+    g_AthenaStringFormat = (AthenaString_Format_t)(g_moduleBase + RVA_AthenaString_Format);
+    g_AthenaListInit = (AthenaList_Init_t)(g_moduleBase + RVA_AthenaList_Init);
 
     GetConfigPath();
     LoadConfig();
     PatchAllocSizes();
+    InstallUniversalConstructorHook();
     InstallHook();
     return 0;
 }
