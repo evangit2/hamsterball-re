@@ -109,11 +109,14 @@ static DWORD get_sceneobj(DWORD board) {
     return sceneobj;
 }
 
+/* Get the MeshWorld from the Level object directly (board+0x8AC → level+0x08).
+ * This MeshWorld has MeshBuffers (count at +0x24) but may not have EntityTransforms (+0x28=NULL).
+ * We'll read transform pointers from MeshBuffer+0x08 instead. */
 static DWORD get_meshworld(DWORD board) {
-    DWORD sceneobj = get_sceneobj(board);
-    if (!sceneobj) return 0;
-    if (IsBadReadPtr((void*)(sceneobj + MESHWORLD_OFFSET), 4)) return 0;
-    DWORD mw = *(DWORD*)(sceneobj + MESHWORLD_OFFSET);
+    DWORD level = get_level(board);
+    if (!level) return 0;
+    if (IsBadReadPtr((void*)(level + MESHWORLD_OFFSET), 4)) return 0;
+    DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
     if (!mw || mw < 0x10000) return 0;
     return mw;
 }
@@ -277,40 +280,61 @@ static void match_meshbuffers_to_grid(DWORD board, FILE* logf) {
     }
     if (logf) fprintf(logf, "  GRID: meshworld=0x%08X\n", mw);
 
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) return;
-    int mb_count = *(int*)(mw + MESHWORLD_MB_COUNT);
-    if (logf) fprintf(logf, "  GRID: mb_count=%d\n", mb_count);
+    /* MeshBuffer count is at MeshWorld+0x24 (file count, always populated) */
+    if (IsBadReadPtr((void*)(mw + 0x24), 4)) return;
+    int mb_count = *(int*)(mw + 0x24);
+    if (logf) fprintf(logf, "  GRID: mb_count=%d (at MW+0x24)\n", mb_count);
     if (mb_count < 1 || mb_count > 10000) return;
 
+    /* MeshBuffer data array is at MeshWorld+0x438 (AthenaList embedded at +0x2C, data at +0x40C) */
     if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) return;
     DWORD* mb_array = *(DWORD**)(mw + MESHWORLD_MB_DATA);
-    if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) return;
-
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) return;
-    EntityTransform* transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
-    if (!transforms) {
-        if (logf) fprintf(logf, "  GRID: transforms NULL\n");
+    if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) {
+        if (logf) fprintf(logf, "  GRID: mb_array invalid, trying AthenaList at MW+0x2C\n");
+        /* AthenaList might not be populated yet. Try reading MeshBuffers directly
+         * from the MeshWorld struct. The MeshBuffer pointers are stored inline
+         * starting at MeshWorld+0x2C+0x0C (after AthenaList header). */
         return;
     }
+
+    /* EntityTransform array at MeshWorld+0x28 may be NULL on this MeshWorld.
+     * Instead, read each MeshBuffer's own transform pointer at +0x08. */
+    EntityTransform* transforms = NULL;
+    if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
+        transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
+    }
+    if (logf) fprintf(logf, "  GRID: transforms array=0x%08X\n", transforms ? (DWORD)transforms : 0);
 
     int i, j;
     for (i = 0; i < mb_count && g_grid_mesh_count < MAX_GRID_MESHES; i++) {
         DWORD mb = mb_array[i];
         if (!mb || mb < 0x10000) continue;
         if (IsBadReadPtr((void*)mb, 0x900)) continue;
-        if (IsBadReadPtr((void*)(mb + MESHBUFFER_CTX_INDEX), 4)) continue;
-        DWORD ctx_idx = *(DWORD*)(mb + MESHBUFFER_CTX_INDEX);
-        if (ctx_idx > 10000) continue;
 
-        EntityTransform* t = &transforms[ctx_idx];
-        if (IsBadReadPtr(t, sizeof(EntityTransform))) continue;
-
-        /* Read MeshBuffer name for logging */
+        /* Read MeshBuffer name */
         char* mb_name = NULL;
         if (!IsBadReadPtr((void*)(mb + MESHBUFFER_NAME), 4)) {
             mb_name = *(char**)(mb + MESHBUFFER_NAME);
             if (mb_name && IsBadReadPtr(mb_name, 4)) mb_name = NULL;
         }
+
+        /* Get EntityTransform: try shared array first, then per-MeshBuffer pointer */
+        EntityTransform* t = NULL;
+        if (transforms) {
+            if (!IsBadReadPtr((void*)(mb + MESHBUFFER_CTX_INDEX), 4)) {
+                DWORD ctx_idx = *(DWORD*)(mb + MESHBUFFER_CTX_INDEX);
+                if (ctx_idx <= 10000) {
+                    t = &transforms[ctx_idx];
+                }
+            }
+        }
+        if (!t) {
+            /* Try reading transform pointer directly from MeshBuffer+0x08 */
+            if (!IsBadReadPtr((void*)(mb + 0x08), 4)) {
+                t = *(EntityTransform**)(mb + 0x08);
+            }
+        }
+        if (!t || IsBadReadPtr(t, sizeof(EntityTransform))) continue;
 
         /* Match by position: find S1 ref with closest position */
         float best_dist = 1e9f;
@@ -338,8 +362,8 @@ static void match_meshbuffers_to_grid(DWORD board, FILE* logf) {
             g_grid_meshes[g_grid_mesh_count].src_z = g_s1_grid_refs[best_ref].posZ;
             g_grid_mesh_count++;
 
-            if (logf) fprintf(logf, "  GRID: MATCH mb[%d] name='%s' ctx=%d pos=(%.1f,%.1f,%.1f) -> grid=%d (dist=%.1f)\n",
-                    i, mb_name ? mb_name : "?", ctx_idx, t->posX, t->posY, t->posZ,
+            if (logf) fprintf(logf, "  GRID: MATCH mb[%d] name='%s' pos=(%.1f,%.1f,%.1f) -> grid=%d (dist=%.1f)\n",
+                    i, mb_name ? mb_name : "?", t->posX, t->posY, t->posZ,
                     g_s1_grid_refs[best_ref].grid_num, best_dist);
         } else if (logf && mb_name) {
             fprintf(logf, "  GRID: mb[%d] name='%s' pos=(%.1f,%.1f,%.1f) no match (best_dist=%.1f)\n",
@@ -411,14 +435,19 @@ static DWORD WINAPI mod_thread(LPVOID param) {
             g_last_board = board;
 
             if (board) {
-                /* Poll until MeshWorld is ready */
+                /* Poll until MeshWorld has MeshBuffers populated */
                 int poll;
                 for (poll = 0; poll < 120; poll++) {
-                    DWORD mw = get_meshworld(board);
-                    if (mw) {
-                        if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
-                            DWORD xform_ptr = *(DWORD*)(mw + MESHWORLD_RENDERCTX_PTR);
-                            if (xform_ptr != 0) break;
+                    DWORD level = get_level(board);
+                    if (level) {
+                        if (!IsBadReadPtr((void*)(level + MESHWORLD_OFFSET), 4)) {
+                            DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
+                            if (mw && mw > 0x10000) {
+                                if (!IsBadReadPtr((void*)(mw + 0x24), 4)) {
+                                    int cnt = *(int*)(mw + 0x24);
+                                    if (cnt > 0) break;  /* MeshBuffers loaded */
+                                }
+                            }
                         }
                     }
                     Sleep(50);
