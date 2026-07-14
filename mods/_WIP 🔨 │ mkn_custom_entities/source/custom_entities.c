@@ -704,33 +704,45 @@ static DWORD WINAPI mod_thread(LPVOID param) {
             g_last_board = board;
 
             if (board) {
-                Sleep(500);
-                board = get_board();
-                if (board) {
-                    char log_path[MAX_PATH];
-                    snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
-                    FILE* logf = NULL;
-                    fopen_s(&logf, log_path, "a");
-
-                    if (logf) fprintf(logf, "\n--- Level loaded, scanning... ---\n");
-
-                    /* GRID scan */
-                    scan_grid_meshes(board, logf);
-
-                    /* Apply initial grid visibility */
-                    if (g_grid_mesh_count > 0) {
-                        grid_apply_visibility();
+                /* Poll until MeshWorld is ready (EntityTransform array allocated) */
+                int poll;
+                for (poll = 0; poll < 60; poll++) {
+                    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
+                    if (level && level > 0x10000) {
+                        DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
+                        if (mw && mw > 0x10000) {
+                            if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
+                                DWORD xform_ptr = *(DWORD*)(mw + MESHWORLD_RENDERCTX_PTR);
+                                if (xform_ptr != 0) break;  /* ready! */
+                            }
+                        }
                     }
+                    Sleep(50);
+                }
 
-                    /* CE entity scan */
-                    scan_s1_ref_points(board, logf);
-                    hide_original_entity_mesh(board, logf);
+                char log_path[MAX_PATH];
+                snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
+                FILE* logf = NULL;
+                fopen_s(&logf, log_path, "a");
 
-                    if (logf) {
-                        fprintf(logf, "Scan complete: %d grid meshes, %d custom entities\n\n",
-                                g_grid_mesh_count, g_entity_count);
-                        fclose(logf);
-                    }
+                if (logf) fprintf(logf, "\n--- Level loaded, scanning (after %dms poll) ---\n", poll * 50);
+
+                /* GRID scan */
+                scan_grid_meshes(board, logf);
+
+                /* Apply initial grid visibility */
+                if (g_grid_mesh_count > 0) {
+                    grid_apply_visibility();
+                }
+
+                /* CE entity scan */
+                scan_s1_ref_points(board, logf);
+                hide_original_entity_mesh(board, logf);
+
+                if (logf) {
+                    fprintf(logf, "Scan complete: %d grid meshes, %d custom entities\n\n",
+                            g_grid_mesh_count, g_entity_count);
+                    fclose(logf);
                 }
             }
         }
