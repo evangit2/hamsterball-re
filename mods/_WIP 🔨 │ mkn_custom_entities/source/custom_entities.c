@@ -161,6 +161,24 @@ static DWORD get_meshworld(DWORD board) {
     return mw;
 }
 
+/* Diagnostic: dump DWORD values at an object to find where the MeshWorld pointer is */
+static void dump_object_dwords(DWORD obj, int max_offset, FILE* logf, const char* label) {
+    if (!logf || !obj) return;
+    fprintf(logf, "  DUMP %s at 0x%08X:\n", label, obj);
+    int off;
+    for (off = 0; off < max_offset; off += 4) {
+        if (IsBadReadPtr((void*)(obj + off), 4)) {
+            fprintf(logf, "    +0x%03X: <bad>\n", off);
+            continue;
+        }
+        DWORD val = *(DWORD*)(obj + off);
+        /* Only print non-zero values that look like heap pointers */
+        if (val > 0x00100000 && val < 0x10000000) {
+            fprintf(logf, "    +0x%03X: 0x%08X  <-- heap ptr?\n", off, val);
+        }
+    }
+}
+
 static void init_game_dir(void) {
     char path[MAX_PATH];
     HMODULE hSelf = NULL;
@@ -269,7 +287,70 @@ static void scan_grid_meshes(DWORD board, FILE* logf) {
     if (logf) fprintf(logf, "  GRID: scene=0x%08X\n", scene);
 
     DWORD mw = get_meshworld(board);
-    if (!mw) { if (logf) fprintf(logf, "  GRID: get_meshworld returned NULL\n"); return; }
+    if (!mw) {
+        if (logf) {
+            fprintf(logf, "  GRID: get_meshworld returned NULL — dumping to find it\n");
+            /* Dump board pointer chain */
+            if (!IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) {
+                DWORD level = *(DWORD*)(board + BOARD_LEVEL);
+                fprintf(logf, "  GRID: board+0x8AC (level) = 0x%08X\n", level);
+                if (level && level > 0x10000) {
+                    dump_object_dwords(level, 0x500, logf, "level");
+                    /* Also check if level+0x08 has a MeshWorld directly */
+                    if (!IsBadReadPtr((void*)(level + 0x08), 4)) {
+                        DWORD mw_at_8 = *(DWORD*)(level + 0x08);
+                        fprintf(logf, "  GRID: level+0x08 = 0x%08X\n", mw_at_8);
+                        if (mw_at_8 && mw_at_8 > 0x10000) {
+                            /* Check if this has mb data */
+                            if (!IsBadReadPtr((void*)(mw_at_8 + 0x24), 4)) {
+                                int cnt = *(int*)(mw_at_8 + 0x24);
+                                fprintf(logf, "  GRID: level+0x08 -> MeshWorld+0x24 = %d\n", cnt);
+                            }
+                            if (!IsBadReadPtr((void*)(mw_at_8 + 0x28), 4)) {
+                                DWORD xform = *(DWORD*)(mw_at_8 + 0x28);
+                                fprintf(logf, "  GRID: level+0x08 -> MeshWorld+0x28 = 0x%08X\n", xform);
+                            }
+                        }
+                    }
+                    /* Check sceneobj at level+0x480 */
+                    if (!IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) {
+                        DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+                        fprintf(logf, "  GRID: level+0x480 (sceneobj) = 0x%08X\n", sceneobj);
+                        if (sceneobj && sceneobj > 0x10000) {
+                            dump_object_dwords(sceneobj, 0x20, logf, "sceneobj");
+                            if (!IsBadReadPtr((void*)(sceneobj + 0x08), 4)) {
+                                DWORD mw2 = *(DWORD*)(sceneobj + 0x08);
+                                fprintf(logf, "  GRID: sceneobj+0x08 = 0x%08X\n", mw2);
+                            }
+                        }
+                    }
+                }
+            }
+            /* Also dump scene (board+0x878) which the old code used */
+            if (!IsBadReadPtr((void*)(board + BOARD_SCENE), 4)) {
+                DWORD scene = *(DWORD*)(board + BOARD_SCENE);
+                fprintf(logf, "  GRID: board+0x878 (scene) = 0x%08X\n", scene);
+                if (scene && scene > 0x10000) {
+                    if (!IsBadReadPtr((void*)(scene + 0x08), 4)) {
+                        DWORD mw3 = *(DWORD*)(scene + 0x08);
+                        fprintf(logf, "  GRID: scene+0x08 = 0x%08X\n", mw3);
+                        if (mw3 && mw3 > 0x10000) {
+                            if (!IsBadReadPtr((void*)(mw3 + 0x24), 4)) {
+                                int cnt = *(int*)(mw3 + 0x24);
+                                fprintf(logf, "  GRID: scene+0x08 -> MeshWorld+0x24 = %d\n", cnt);
+                            }
+                            if (!IsBadReadPtr((void*)(mw3 + 0x28), 4)) {
+                                DWORD xform = *(DWORD*)(mw3 + 0x28);
+                                fprintf(logf, "  GRID: scene+0x08 -> MeshWorld+0x28 = 0x%08X\n", xform);
+                            }
+                        }
+                    }
+                    dump_object_dwords(scene, 0x20, logf, "scene");
+                }
+            }
+        }
+        return;
+    }
     if (logf) fprintf(logf, "  GRID: meshworld=0x%08X\n", mw);
 
     /* Dump raw bytes at key offsets for debugging */
