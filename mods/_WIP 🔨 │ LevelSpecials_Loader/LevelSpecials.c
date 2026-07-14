@@ -178,7 +178,7 @@ static LevelData g_levelData[16] = {
     /* 13=Sky */
     {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x436C:MESH:meshes\\skypillar","0x4370:MESH:meshes\\magnifyingglass","0x4384:levels\\level9-popcylinder1","0x4388:levels\\level9-popcylinder2","0x438C:levels\\level9-trapdoor","0x4374:SPRITE:textures\\clouds.png"},6,0x858},
     /* 14=Master */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x4374:Levels\\Level10-2PBridge","0x4378:RENDER","0x4394:Levels\\Level3-Tipper","0x4398:RENDER","0x5410:Levels\\Level10-Bridge1","0x5414:Levels\\Level10-Bridge2","0x5420:levels\\level9-popcylinder1","0x5424:levels\\level9-popcylinder2","0x5840:Levels\\Level8-Blockdawg1","0x5844:Levels\\Level8-Blockdawg2","0x5848:Levels\\Level4-Catapult","0x607C:Levels\\Level3-Gluebie"},12,0x859},
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x436C:Levels\\Level2-Bridge","0x4370:TIPPER:","0x4374:Levels\\Level10-2PBridge","0x4378:RENDER","0x4394:Levels\\Level3-Tipper","0x4398:RENDER","0x5410:Levels\\Level10-Bridge1","0x5414:Levels\\Level10-Bridge2","0x5420:levels\\level9-popcylinder1","0x5424:levels\\level9-popcylinder2","0x5840:Levels\\Level8-Blockdawg1","0x5844:Levels\\Level8-Blockdawg2","0x5848:Levels\\Level4-Catapult","0x607C:Levels\\Level3-Gluebie"},14,0x859},
     /* 15=Impossible */
     {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x436C:Levels\\LevelImpossible-Looper","0x4370:Levels\\LevelImpossible-Gear","0x4374:Levels\\LevelImpossible-BigGear","0x4378:Levels\\LevelImpossible-Rotator","0x437C:Levels\\LevelImpossible-Pendulum"},5,0},
 };
@@ -281,7 +281,13 @@ static void LoadConfig(void) {
     CloseHandle(hFile);
     buf[bytesRead] = '\0';
 
-    char *line = buf;
+    /* Skip BOM if present */
+    char *start = buf;
+    if (bytesRead >= 3 && (unsigned char)start[0] == 0xEF &&
+        (unsigned char)start[1] == 0xBB && (unsigned char)start[2] == 0xBF)
+        start += 3;
+
+    char *line = start;
     int inObjectsSection = 0;
     while (line < buf + bytesRead) {
         char *eol = line;
@@ -464,6 +470,7 @@ static void GenerateLevelData(void) {
         "#   14=Master 15=Impossible\n"
         "# Meshes format: 0xOFFSET:PATH;0xOFFSET:PATH;...\n"
         "# Path types: bare=Level_MeshWorldCtor, RENDER=Level_RenderCtor(prev),\n"
+        "#   TIPPER:=Level_RenderCtor(prev)+TipperVisual_Attach (bridge visual),\n"
         "#   MESH:path=MeshNode_ctor, SPRITE:path=Sprite_ctor\n\n";
     DWORD written;
     WriteFile(hFile, header, strlen(header), &written, NULL);
@@ -711,10 +718,15 @@ static void LoadExtraMeshes(void *board, LevelData *ld) {
         void *result = NULL;
 
         if (my_strnicmp(path, "RENDER", 6) == 0) {
-            /* Level_RenderCtor on previous mesh */
+            /* Level_RenderCtor (= CollisionLevel_ctorWithLevel) on previous mesh */
             void *mem = g_operatorNew(0x10D0);
             if (mem) result = g_LevelRenderCtor(mem, prevMesh);
-            /* TipperVisual_Attach for bridge levels */
+            /* TipperVisual_Attach only for TIPPER: prefix, not all RENDER entries.
+             * Bridge uses TipperVisual_Attach; other render objects don't. */
+        } else if (my_strnicmp(path, "TIPPER:", 7) == 0) {
+            /* Level_RenderCtor + TipperVisual_Attach (bridge/tipper visual) */
+            void *mem = g_operatorNew(0x10D0);
+            if (mem) result = g_LevelRenderCtor(mem, prevMesh);
             if (result && prevMesh)
                 g_TipperVisualAttach(result, prevMesh);
         } else if (my_strnicmp(path, "MESH:", 5) == 0) {
@@ -747,7 +759,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("UniversalBoardCtorLogic: invalid params, returning");
         return;
     }
-    if (!g_BoardCtor || !g_LoadRaceData || !g_Vec3Init || !g_MatrixIdentity) {
+    if (!g_BoardCtor || !g_LoadRaceData) {
         DebugLog("UniversalBoardCtorLogic: function pointers not resolved");
         return;
     }
@@ -1057,15 +1069,20 @@ static void UniversalConstructor(void *board, int raceIndex) {
     /* Step 3: InitScene */
     g_LevelInitScene(board);
 
-    /* Step 4: Board_Setup via vtable[0x80] */
+    /* Step 4: Config-driven features (BEFORE Board_Setup)
+     * The original game loads sub-meshes (bridge, tipper, etc.) in the
+     * board ctor, BEFORE Board_Setup runs. Board_Setup calls
+     * Scene_CreateDynamicObjects -> vtable[33] which reads these mesh
+     * pointers. If we load them after Board_Setup, vtable[33] sees NULL
+     * pointers and the dynamic objects get no mesh. */
+    UniversalPostSetup(board);
+
+    /* Step 5: Board_Setup via vtable[0x80] */
     DWORD vtable = *(DWORD *)board;
     if (vtable && !IsBadReadPtr((void *)vtable, 0x84)) {
         void (__thiscall *boardSetup)(void *) = *(void (__thiscall **)(void *))((char *)vtable + 0x80);
         if (boardSetup) boardSetup(board);
     }
-
-    /* Step 5: Config-driven features */
-    UniversalPostSetup(board);
 }
 
 /* Must be non-static for asm reference */
