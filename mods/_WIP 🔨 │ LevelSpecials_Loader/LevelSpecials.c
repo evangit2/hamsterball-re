@@ -1,5 +1,5 @@
 /*
- * LevelSpecials_Loader v4 — Universal Level Handler
+ * LevelSpecials_Loader v5 — Universal Level Handler
  *
  * 1. ALLOCATION PATCH: Patches all 15 level allocation sites in
  *    Tournament_AdvanceRace (0x00427080) to use the union size 0xA2F8.
@@ -733,13 +733,16 @@ static void LoadExtraMeshes(void *board, LevelData *ld) {
         void *result = NULL;
 
         if (my_strnicmp(path, "RENDER", 6) == 0) {
-            /* Level_RenderCtor (= CollisionLevel_ctorWithLevel) on previous mesh */
+            /* Level_RenderCtor (= CollisionLevel_ctorWithLevel) on previous mesh.
+             * Guard against NULL prevMesh — RENDER without a preceding
+             * MeshWorld entry would pass NULL and likely crash. */
+            if (!prevMesh) continue;
             void *mem = g_operatorNew(0x10D0);
             if (mem) result = g_LevelRenderCtor(mem, prevMesh);
-            /* TipperVisual_Attach only for TIPPER: prefix, not all RENDER entries.
-             * Bridge uses TipperVisual_Attach; other render objects don't. */
         } else if (my_strnicmp(path, "TIPPER:", 7) == 0) {
-            /* Level_RenderCtor + TipperVisual_Attach (bridge/tipper visual) */
+            /* Level_RenderCtor + TipperVisual_Attach (bridge/tipper visual).
+             * Same NULL prevMesh guard as RENDER. */
+            if (!prevMesh) continue;
             void *mem = g_operatorNew(0x10D0);
             if (mem) result = g_LevelRenderCtor(mem, prevMesh);
             if (result && prevMesh)
@@ -987,6 +990,13 @@ static void InstallBoardCtorHooks(void) {
 static void InitBridge(void *board) {
     if (!g_operatorNew || !g_LevelMeshWorldCtor || !g_LevelRenderCtor ||
         !g_TipperVisualAttach) return;
+
+    /* Don't create a second bridge if one is already loaded at +0x436C.
+     * Master (14) has bridge in its mesh list — InitBridge would double-allocate. */
+    if (*(void **)((char *)board + BRIDGE_MESHWORLD) != NULL) {
+        DebugLog("InitBridge: bridge already exists at +0x436C, skipping");
+        return;
+    }
 
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x200)) return;
@@ -1319,7 +1329,17 @@ static void InstallHook(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void DebugLog(const char *msg) {
-    HANDLE hFile = CreateFileA("C:\\lsdebug.log", GENERIC_WRITE,
+    if (!g_configPath[0]) return;
+    /* Write next to the DLL — C:\ is not writable under UAC */
+    char logPath[MAX_PATH];
+    strcpy(logPath, g_configPath);
+    char *p = strrchr(logPath, '\\');
+    if (p) {
+        strcpy(p + 1, "lsdebug.log");
+    } else {
+        strcpy(logPath, "lsdebug.log");
+    }
+    HANDLE hFile = CreateFileA(logPath, GENERIC_WRITE,
                                FILE_SHARE_READ, NULL, OPEN_ALWAYS,
                                FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;

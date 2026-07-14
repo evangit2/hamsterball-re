@@ -9,8 +9,8 @@ The mod intercepts `Tournament_AdvanceRace` (0x00427080) at the point where it c
 1. `operator_new(0x10D0)` → `Level_MeshWorldCtor(mem, gfx, meshPath)` → `board+0x8AC`
 2. `operator_new(0x10D0)` → `Level_RenderCtor(mem, meshWorld)` → `board+0x8B0`
 3. `Level_InitScene(board)`
-4. `board->vtable[0x80]()` = `Board_Setup`
-5. `UniversalPostSetup(board)` — config-driven features
+4. `UniversalPostSetup(board)` — config-driven features (bumpers, bridge, etc.) — **before** Board_Setup so that sub-meshes are available when `vtable[33]` (CreateDynamicObjects) reads them
+5. `board->vtable[0x80]()` = `Board_Setup`
 
 The per-level `Scene_LoadLevel*` functions **never run**. The universal constructor reads the race index from `[ESI+0x8]` and looks up the correct mesh path from a table.
 
