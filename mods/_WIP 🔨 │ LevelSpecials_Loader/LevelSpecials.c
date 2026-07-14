@@ -50,6 +50,11 @@ void DebugLog(const char *msg);
 #define RVA_Sprite_ctor                0x0005D0C0
 #define RVA_TipperVisual_Attach       0x00065200
 #define RVA_Level_AssignTexAndScales  0x00011BA0
+#define RVA_Sound_GetNextChannel      0x00059810
+#define RVA_Scene_RenderIfVisible     0x00059610
+#define RVA_AthenaList_Append         0x00053100
+#define RVA_AthenaList_GetSize        0x00053080
+#define RVA_AthenaList_GetIterator    0x000530A0
 
 /* Bumper physics constants */
 #define BUMPER_VEL_SCALE  4.0f
@@ -638,6 +643,11 @@ typedef void *(__thiscall *MeshNode_ctor_t)(void *mem, void *gfx, const char *pa
 typedef void *(__thiscall *Sprite_ctor_t)(void *mem, void *gfx, const char *path);
 typedef void (__thiscall *TipperVisual_Attach_t)(void *renderObj, void *meshWorld);
 typedef void (__thiscall *Level_AssignTex_t)(void *board, void *meshWorld);
+typedef int (__thiscall *Sound_GetNextChannel_t)(void *soundDevice);
+typedef void (__thiscall *Scene_RenderIfVisible_t)(int obj);
+typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
+typedef int (__thiscall *AthenaList_GetSize_t)(void *list);
+typedef int (__thiscall *AthenaList_GetIterator_t)(void *list);
 
 static operator_new_t g_operatorNew = NULL;
 static Level_MeshWorldCtor_t g_LevelMeshWorldCtor = NULL;
@@ -653,6 +663,11 @@ static MeshNode_ctor_t g_MeshNodeCtor = NULL;
 static Sprite_ctor_t g_SpriteCtor = NULL;
 static TipperVisual_Attach_t g_TipperVisualAttach = NULL;
 static Level_AssignTex_t g_LevelAssignTex = NULL;
+static Sound_GetNextChannel_t g_SoundGetNextChannel = NULL;
+static Scene_RenderIfVisible_t g_SceneRenderIfVisible = NULL;
+static AthenaList_Append_t g_AthenaListAppend = NULL;
+static AthenaList_GetSize_t g_AthenaListGetSize = NULL;
+static AthenaList_GetIterator_t g_AthenaListGetIterator = NULL;
 
 /* Forward declaration */
 static void UniversalPostSetup(void *board);
@@ -833,6 +848,29 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     /* Special: Master sets board+0x29C0=0x449C4000 */
     if (raceIndex == 14) {
         *(DWORD *)((char *)mem + 0x29C0) = 0x449C4000;
+    }
+
+    /* Special: Dizzy (4) — AthenaList_Init, sound channel, swirl state */
+    if (raceIndex == 4) {
+        /* AthenaList_Init at board+0x4378 and board+0x4790 */
+        if (g_AthenaListInit) {
+            g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
+            g_AthenaListInit((void *)((char *)mem + 0x4790), 0);
+        }
+        /* Sound channel for waterwheel */
+        DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
+        if (appVal && !IsBadReadPtr((void *)appVal, 0x500) && g_SoundGetNextChannel) {
+            DWORD soundDevice = *(DWORD *)(appVal + 0x490);
+            if (soundDevice) {
+                int channel = g_SoundGetNextChannel((void *)soundDevice);
+                *(int *)((char *)mem + 0x4BDC) = channel;
+                if (channel && g_SceneRenderIfVisible)
+                    g_SceneRenderIfVisible(channel);
+            }
+        }
+        /* Swirl state init */
+        *(DWORD *)((char *)mem + 0x4BC0) = 0;
+        *(DWORD *)((char *)mem + 0x4BD8) = 0;
     }
 }
 
@@ -1083,6 +1121,48 @@ static void UniversalConstructor(void *board, int raceIndex) {
         void (__thiscall *boardSetup)(void *) = *(void (__thiscall **)(void *))((char *)vtable + 0x80);
         if (boardSetup) boardSetup(board);
     }
+
+    /* Step 6: Per-level post-Board_Setup extras.
+     * Dizzy's scene loader (0x40D390) scans MESHWORLD section 3 for
+     * "TarBubble" objects and appends them to board+0x11E4. This feeds
+     * the TarBubble particle effect system in DizzyBoard_Update. */
+    if (raceIndex == 4) {
+        DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+        if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&
+            g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize) {
+            /* Access the MESHWORLD's section 3 object list:
+             * meshWorld+0x480 = object database, +0x894 = iterator base,
+             * +0x898 = count, +0xCA0 = array pointer */
+            DWORD objDb = *(DWORD *)(meshWorldPtr + 0x480);
+            if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
+                int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+                *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                int count = *(int *)(objDb + 0x898);
+                if (count > 0) {
+                    DWORD *array = *(DWORD **)(objDb + 0xCA0);
+                    if (array && !IsBadReadPtr((void *)array, count * 4)) {
+                        *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
+                        int idx = 0;
+                        while (idx < count) {
+                            DWORD *obj = (DWORD *)array[idx];
+                            if (obj && !IsBadReadPtr((void *)obj, 4)) {
+                                char *name = *(char **)obj;
+                                if (name && !IsBadReadPtr(name, 9)) {
+                                    if (my_strnicmp(name, "TarBubble", 9) == 0) {
+                                        g_AthenaListAppend(
+                                            (void *)((char *)board + 0x11E4),
+                                            (int)obj);
+                                    }
+                                }
+                            }
+                            idx++;
+                            *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /* Must be non-static for asm reference */
@@ -1239,6 +1319,11 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_SpriteCtor = (Sprite_ctor_t)(g_moduleBase + RVA_Sprite_ctor);
     g_TipperVisualAttach = (TipperVisual_Attach_t)(g_moduleBase + RVA_TipperVisual_Attach);
     g_LevelAssignTex = (Level_AssignTex_t)(g_moduleBase + RVA_Level_AssignTexAndScales);
+    g_SoundGetNextChannel = (Sound_GetNextChannel_t)(g_moduleBase + RVA_Sound_GetNextChannel);
+    g_SceneRenderIfVisible = (Scene_RenderIfVisible_t)(g_moduleBase + RVA_Scene_RenderIfVisible);
+    g_AthenaListAppend = (AthenaList_Append_t)(g_moduleBase + RVA_AthenaList_Append);
+    g_AthenaListGetSize = (AthenaList_GetSize_t)(g_moduleBase + RVA_AthenaList_GetSize);
+    g_AthenaListGetIterator = (AthenaList_GetIterator_t)(g_moduleBase + RVA_AthenaList_GetIterator);
     DebugLog("Function pointers resolved");
 
     GetConfigPath();
