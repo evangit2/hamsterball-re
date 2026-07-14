@@ -71,17 +71,17 @@ last_board:
 
 // VAC-IN offset (bottom of vertical pipe, relative to spawn center)
 vacInX:
-  dd 0xC2F00000   // -120.0
+  dd 0xC36E0000   // -238.0
 vacInY:
-  dd 0xC38C0000   // -280.0
+  dd 0xC40C8000   // -562.0
 vacInZ:
   dd 0x00000000   // 0.0
 
 // VAC-OUT offset (end of horizontal exit, relative to spawn center)
 vacOutX:
-  dd 0x438C0000   // 280.0
+  dd 0x440C8000   // 562.0
 vacOutY:
-  dd 0x42F00000   // 120.0
+  dd 0x436E0000   // 238.0
 vacOutZ:
   dd 0x00000000   // 0.0
 
@@ -95,7 +95,7 @@ vacSpawnZ:
   dd 0
 
 float_vac_speed:
-  dd 0x43960000   // 300.0
+  dd 0x43FA0000   // 500.0 (faster for longer pipe)
 
 float_dist_check:
   dd 0x44200000   // 130.0
