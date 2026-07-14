@@ -52,9 +52,9 @@ void DebugLog(const char *msg);
 #define RVA_Level_AssignTexAndScales  0x00011BA0
 #define RVA_Sound_GetNextChannel      0x00059810
 #define RVA_Scene_RenderIfVisible     0x00059610
-#define RVA_AthenaList_Append         0x00053100
-#define RVA_AthenaList_GetSize        0x00053080
-#define RVA_AthenaList_GetIterator    0x000530A0
+#define RVA_AthenaList_Append         0x00053810
+#define RVA_AthenaList_GetSize        0x000536A0
+#define RVA_AthenaList_GetIterator    0x000532B0
 
 /* Bumper physics constants */
 #define BUMPER_VEL_SCALE  4.0f
@@ -1125,8 +1125,18 @@ static void UniversalConstructor(void *board, int raceIndex) {
     /* Step 6: Per-level post-Board_Setup extras.
      * Dizzy's scene loader (0x40D390) scans MESHWORLD section 3 for
      * "TarBubble" objects and appends them to board+0x11E4. This feeds
-     * the TarBubble particle effect system in DizzyBoard_Update. */
+     * the TarBubble particle effect system in DizzyBoard_Update.
+     *
+     * ORIGINAL GAME BUG: FUN_0044fa90 (called from DizzyBoard_Update) picks
+     * a random TarBubble from the list. If the list is empty, it falls
+     * through to iVar1=0 (NULL), then dereferences *(NULL+4) = crash at
+     * address 0x4. This happens when a modded Dizzy level has no TarBubbles.
+     *
+     * FIX: If no TarBubbles are found, create a dummy object with a valid
+     * name pointer and zero position so FUN_0044fa90 reads harmless data
+     * instead of crashing. */
     if (raceIndex == 4) {
+        int tarBubbleCount = 0;
         DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&
             g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize) {
@@ -1152,6 +1162,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
                                         g_AthenaListAppend(
                                             (void *)((char *)board + 0x11E4),
                                             (int)obj);
+                                        tarBubbleCount++;
                                     }
                                 }
                             }
@@ -1160,6 +1171,28 @@ static void UniversalConstructor(void *board, int raceIndex) {
                         }
                     }
                 }
+            }
+        }
+        /* If no TarBubbles were found, create a dummy entry to prevent
+         * FUN_0044fa90 from crashing on an empty list. The dummy needs:
+         * +0x00 = char* name (points to a valid string)
+         * +0x04 = float X position
+         * +0x08 = float Y position
+         * +0x0C = float Z position
+         * FUN_0044fa90 reads these 4 fields when picking a random entry. */
+        if (tarBubbleCount == 0 && g_AthenaListAppend && g_operatorNew) {
+            /* Allocate a 0x10-byte dummy object */
+            DWORD *dummy = (DWORD *)g_operatorNew(0x10);
+            if (dummy) {
+                memset(dummy, 0, 0x10);
+                /* Set name pointer to a static string */
+                static char dummyName[] = "TarBubble";
+                dummy[0] = (DWORD)dummyName;
+                /* Positions at +4, +8, +0xC are already 0 (memset above) */
+                g_AthenaListAppend(
+                    (void *)((char *)board + 0x11E4),
+                    (int)dummy);
+                DebugLog("TarBubble scan: no TarBubbles found, added dummy entry");
             }
         }
     }
