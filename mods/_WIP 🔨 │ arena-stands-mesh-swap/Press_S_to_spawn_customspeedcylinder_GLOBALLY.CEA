@@ -3,7 +3,7 @@
 // Press S to spawn Level-SpeedCylinder globally with N:SPEEDCYLINDER function
 // Based on XRow's fallout floors spawn script
 // Hooks Ball_Update at 0x405E22
-// Spawns at player 1 position, speedcylinder with built-in speed boost
+// Spawns at player 1 position, custom speedcylinder with built-in speed boost
 
 alloc(SpawnCode, 4096)
 alloc(SpawnBridge, 4)
@@ -53,8 +53,8 @@ last_board:
   dd 0
 
 BridgeStr:
-  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 53 70 65 65 64 43 79 6C 69 6E 64 65 72 00
-  // "Levels\Level-SpeedCylinder\0"
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 43 75 73 74 6F 6D 53 70 65 65 64 43 79 6C 69 6E 64 65 72 00
+  // "Levels\Level-CustomSpeedCylinder\0"
 
 
 label(original_code)
