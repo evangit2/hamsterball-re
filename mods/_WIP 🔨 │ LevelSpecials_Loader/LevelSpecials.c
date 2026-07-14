@@ -1252,6 +1252,8 @@ LOAD_FN(BASS_PluginLoad); LOAD_FN(BASS_PluginFree);
 #undef LOAD_FN
 #define LOAD_FN(name) real_##name = (name##_t)GetProcAddress(g_hRealBass, #name)
 
+static void load_missing_bass_fns(void);
+
 static void load_real_bass(void) {
     g_hRealBass = LoadLibraryA("bass_real.dll");
     if (!g_hRealBass) {
@@ -1283,6 +1285,7 @@ static void load_real_bass(void) {
     LOAD_FN(BASS_RecordFree); LOAD_FN(BASS_RecordGetDevice); LOAD_FN(BASS_RecordSetDevice);
     LOAD_FN(BASS_RecordGetInfo); LOAD_FN(BASS_RecordStart); LOAD_FN(BASS_ChannelGetLevel);
     LOAD_FN(BASS_PluginLoad); LOAD_FN(BASS_PluginFree);
+    load_missing_bass_fns();
 }
 
 #undef LOAD_FN
@@ -1342,6 +1345,196 @@ __declspec(dllexport) BOOL  __stdcall BASS_PluginLoad(const char*a,DWORD b){retu
 __declspec(dllexport) BOOL  __stdcall BASS_PluginFree(DWORD a){return real_BASS_PluginFree?real_BASS_PluginFree(a):FALSE;}
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Missing BASS exports — forward to bass_real.dll
+ * These are old BASS API names the game uses (BASS 2.x era)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef void  (__stdcall *void_t)(void);
+typedef BOOL  (__stdcall *BOOL_ret_t)(void);
+typedef DWORD (__stdcall *DWORD_ret_t)(void);
+typedef float (__stdcall *float_ret_t)(void);
+
+static void_t  r_BASS_Apply3D;
+static double  (__stdcall *r_BASS_ChannelBytes2Seconds)(DWORD,DWORD64);
+static BOOL    (__stdcall *r_BASS_ChannelGet3DAttributes)(DWORD,DWORD*,DWORD*,DWORD*,DWORD*,DWORD*);
+static BOOL    (__stdcall *r_BASS_ChannelGet3DPosition)(DWORD,DWORD*,DWORD*,DWORD*);
+static BOOL    (__stdcall *r_BASS_ChannelGetAttributes)(DWORD,DWORD*,float*,int*);
+static DWORD   (__stdcall *r_BASS_ChannelGetData)(DWORD,void*,DWORD);
+static DWORD   (__stdcall *r_BASS_ChannelGetDevice)(DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelGetEAXMix)(DWORD,float*);
+static DWORD   (__stdcall *r_BASS_ChannelIsActive)(DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelRemoveDSP)(DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelRemoveFX)(DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelRemoveLink)(DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelResume)(DWORD);
+static DWORD64 (__stdcall *r_BASS_ChannelSeconds2Bytes)(DWORD,double);
+static BOOL    (__stdcall *r_BASS_ChannelSet3DAttributes)(DWORD,DWORD,DWORD,DWORD,DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelSet3DPosition)(DWORD,DWORD,DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelSetAttributes)(DWORD,DWORD,float,int);
+static DWORD   (__stdcall *r_BASS_ChannelSetDSP)(DWORD,void*,DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelSetEAXMix)(DWORD,float);
+static DWORD   (__stdcall *r_BASS_ChannelSetFX)(DWORD,DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelSetLink)(DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_ChannelSlideAttributes)(DWORD,DWORD,float,int,DWORD);
+static void    (__stdcall *r_BASS_FXGetParameters)(DWORD,void*);
+static BOOL    (__stdcall *r_BASS_FXSetParameters)(DWORD,void*);
+static BOOL    (__stdcall *r_BASS_Get3DFactors)(float*,float*,float*);
+static BOOL    (__stdcall *r_BASS_Get3DPosition)(DWORD*,DWORD*,DWORD*);
+static float   (__stdcall *r_BASS_GetCPU)(void);
+static DWORD   (__stdcall *r_BASS_GetDSoundObject)(DWORD);
+static char*   (__stdcall *r_BASS_GetDeviceDescription)(DWORD);
+static BOOL    (__stdcall *r_BASS_GetEAXParameters)(DWORD*,float*,float*,float*,float*);
+static DWORD   (__stdcall *r_BASS_MusicGetLength)(DWORD,BOOL);
+static char*   (__stdcall *r_BASS_MusicGetName)(DWORD);
+static BOOL    (__stdcall *r_BASS_MusicGetVolume)(DWORD,int*);
+static DWORD   (__stdcall *r_BASS_MusicPlay)(DWORD);
+static DWORD   (__stdcall *r_BASS_MusicPlayEx)(DWORD,DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_MusicPreBuf)(DWORD);
+static BOOL    (__stdcall *r_BASS_MusicSetAmplify)(DWORD,int);
+static BOOL    (__stdcall *r_BASS_MusicSetPanSep)(DWORD,int);
+static BOOL    (__stdcall *r_BASS_MusicSetPositionScaler)(DWORD,int);
+static BOOL    (__stdcall *r_BASS_MusicSetVolume)(DWORD,int,int);
+static char*   (__stdcall *r_BASS_RecordGetDeviceDescription)(DWORD);
+static BOOL    (__stdcall *r_BASS_RecordGetInput)(DWORD,DWORD*,float*);
+static char*   (__stdcall *r_BASS_RecordGetInputName)(DWORD);
+static BOOL    (__stdcall *r_BASS_RecordSetInput)(DWORD,DWORD,float);
+static BOOL    (__stdcall *r_BASS_SampleCreateDone)(void);
+static DWORD   (__stdcall *r_BASS_SamplePlay)(DWORD);
+static DWORD   (__stdcall *r_BASS_SamplePlay3D)(DWORD,DWORD,DWORD,DWORD);
+static DWORD   (__stdcall *r_BASS_SamplePlay3DEx)(DWORD,BOOL,DWORD,DWORD,DWORD,DWORD);
+static DWORD   (__stdcall *r_BASS_SamplePlayEx)(DWORD,DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_SampleStop)(DWORD);
+static BOOL    (__stdcall *r_BASS_Set3DFactors)(float,float,float);
+static BOOL    (__stdcall *r_BASS_Set3DPosition)(DWORD*,DWORD*,DWORD*);
+static BOOL    (__stdcall *r_BASS_SetEAXParameters)(DWORD,float,float,float,float);
+static DWORD   (__stdcall *r_BASS_StreamCreateFileUser)(DWORD,DWORD,DWORD,void*,void*);
+static DWORD   (__stdcall *r_BASS_StreamGetLength)(DWORD);
+static char*   (__stdcall *r_BASS_StreamGetTags)(DWORD,DWORD);
+static BOOL    (__stdcall *r_BASS_StreamPlay)(DWORD,BOOL,DWORD);
+static BOOL    (__stdcall *r_BASS_StreamPreBuf)(DWORD);
+
+static void load_missing_bass_fns(void) {
+    if (!g_hRealBass) return;
+    r_BASS_Apply3D = (void_t)GetProcAddress(g_hRealBass, "BASS_Apply3D");
+    r_BASS_ChannelBytes2Seconds = GetProcAddress(g_hRealBass, "BASS_ChannelBytes2Seconds");
+    r_BASS_ChannelGet3DAttributes = GetProcAddress(g_hRealBass, "BASS_ChannelGet3DAttributes");
+    r_BASS_ChannelGet3DPosition = GetProcAddress(g_hRealBass, "BASS_ChannelGet3DPosition");
+    r_BASS_ChannelGetAttributes = GetProcAddress(g_hRealBass, "BASS_ChannelGetAttributes");
+    r_BASS_ChannelGetData = GetProcAddress(g_hRealBass, "BASS_ChannelGetData");
+    r_BASS_ChannelGetDevice = GetProcAddress(g_hRealBass, "BASS_ChannelGetDevice");
+    r_BASS_ChannelGetEAXMix = GetProcAddress(g_hRealBass, "BASS_ChannelGetEAXMix");
+    r_BASS_ChannelIsActive = GetProcAddress(g_hRealBass, "BASS_ChannelIsActive");
+    r_BASS_ChannelRemoveDSP = GetProcAddress(g_hRealBass, "BASS_ChannelRemoveDSP");
+    r_BASS_ChannelRemoveFX = GetProcAddress(g_hRealBass, "BASS_ChannelRemoveFX");
+    r_BASS_ChannelRemoveLink = GetProcAddress(g_hRealBass, "BASS_ChannelRemoveLink");
+    r_BASS_ChannelResume = GetProcAddress(g_hRealBass, "BASS_ChannelResume");
+    r_BASS_ChannelSeconds2Bytes = GetProcAddress(g_hRealBass, "BASS_ChannelSeconds2Bytes");
+    r_BASS_ChannelSet3DAttributes = GetProcAddress(g_hRealBass, "BASS_ChannelSet3DAttributes");
+    r_BASS_ChannelSet3DPosition = GetProcAddress(g_hRealBass, "BASS_ChannelSet3DPosition");
+    r_BASS_ChannelSetAttributes = GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
+    r_BASS_ChannelSetDSP = GetProcAddress(g_hRealBass, "BASS_ChannelSetDSP");
+    r_BASS_ChannelSetEAXMix = GetProcAddress(g_hRealBass, "BASS_ChannelSetEAXMix");
+    r_BASS_ChannelSetFX = GetProcAddress(g_hRealBass, "BASS_ChannelSetFX");
+    r_BASS_ChannelSetLink = GetProcAddress(g_hRealBass, "BASS_ChannelSetLink");
+    r_BASS_ChannelSlideAttributes = GetProcAddress(g_hRealBass, "BASS_ChannelSlideAttributes");
+    r_BASS_FXGetParameters = GetProcAddress(g_hRealBass, "BASS_FXGetParameters");
+    r_BASS_FXSetParameters = GetProcAddress(g_hRealBass, "BASS_FXSetParameters");
+    r_BASS_Get3DFactors = GetProcAddress(g_hRealBass, "BASS_Get3DFactors");
+    r_BASS_Get3DPosition = GetProcAddress(g_hRealBass, "BASS_Get3DPosition");
+    r_BASS_GetCPU = GetProcAddress(g_hRealBass, "BASS_GetCPU");
+    r_BASS_GetDSoundObject = GetProcAddress(g_hRealBass, "BASS_GetDSoundObject");
+    r_BASS_GetDeviceDescription = GetProcAddress(g_hRealBass, "BASS_GetDeviceDescription");
+    r_BASS_GetEAXParameters = GetProcAddress(g_hRealBass, "BASS_GetEAXParameters");
+    r_BASS_MusicGetLength = GetProcAddress(g_hRealBass, "BASS_MusicGetLength");
+    r_BASS_MusicGetName = GetProcAddress(g_hRealBass, "BASS_MusicGetName");
+    r_BASS_MusicGetVolume = GetProcAddress(g_hRealBass, "BASS_MusicGetVolume");
+    r_BASS_MusicPlay = GetProcAddress(g_hRealBass, "BASS_MusicPlay");
+    r_BASS_MusicPlayEx = GetProcAddress(g_hRealBass, "BASS_MusicPlayEx");
+    r_BASS_MusicPreBuf = GetProcAddress(g_hRealBass, "BASS_MusicPreBuf");
+    r_BASS_MusicSetAmplify = GetProcAddress(g_hRealBass, "BASS_MusicSetAmplify");
+    r_BASS_MusicSetPanSep = GetProcAddress(g_hRealBass, "BASS_MusicSetPanSep");
+    r_BASS_MusicSetPositionScaler = GetProcAddress(g_hRealBass, "BASS_MusicSetPositionScaler");
+    r_BASS_MusicSetVolume = GetProcAddress(g_hRealBass, "BASS_MusicSetVolume");
+    r_BASS_RecordGetDeviceDescription = GetProcAddress(g_hRealBass, "BASS_RecordGetDeviceDescription");
+    r_BASS_RecordGetInput = GetProcAddress(g_hRealBass, "BASS_RecordGetInput");
+    r_BASS_RecordGetInputName = GetProcAddress(g_hRealBass, "BASS_RecordGetInputName");
+    r_BASS_RecordSetInput = GetProcAddress(g_hRealBass, "BASS_RecordSetInput");
+    r_BASS_SampleCreateDone = GetProcAddress(g_hRealBass, "BASS_SampleCreateDone");
+    r_BASS_SamplePlay = GetProcAddress(g_hRealBass, "BASS_SamplePlay");
+    r_BASS_SamplePlay3D = GetProcAddress(g_hRealBass, "BASS_SamplePlay3D");
+    r_BASS_SamplePlay3DEx = GetProcAddress(g_hRealBass, "BASS_SamplePlay3DEx");
+    r_BASS_SamplePlayEx = GetProcAddress(g_hRealBass, "BASS_SamplePlayEx");
+    r_BASS_SampleStop = GetProcAddress(g_hRealBass, "BASS_SampleStop");
+    r_BASS_Set3DFactors = GetProcAddress(g_hRealBass, "BASS_Set3DFactors");
+    r_BASS_Set3DPosition = GetProcAddress(g_hRealBass, "BASS_Set3DPosition");
+    r_BASS_SetEAXParameters = GetProcAddress(g_hRealBass, "BASS_SetEAXParameters");
+    r_BASS_StreamCreateFileUser = GetProcAddress(g_hRealBass, "BASS_StreamCreateFileUser");
+    r_BASS_StreamGetLength = GetProcAddress(g_hRealBass, "BASS_StreamGetLength");
+    r_BASS_StreamGetTags = GetProcAddress(g_hRealBass, "BASS_StreamGetTags");
+    r_BASS_StreamPlay = GetProcAddress(g_hRealBass, "BASS_StreamPlay");
+    r_BASS_StreamPreBuf = GetProcAddress(g_hRealBass, "BASS_StreamPreBuf");
+}
+
+__declspec(dllexport) void  __stdcall BASS_Apply3D(void){if(r_BASS_Apply3D)r_BASS_Apply3D();}
+__declspec(dllexport) double __stdcall BASS_ChannelBytes2Seconds(DWORD a,DWORD64 b){return r_BASS_ChannelBytes2Seconds?r_BASS_ChannelBytes2Seconds(a,b):0.0;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelGet3DAttributes(DWORD a,DWORD*b,DWORD*c,DWORD*d,DWORD*e,DWORD*f){return r_BASS_ChannelGet3DAttributes?r_BASS_ChannelGet3DAttributes(a,b,c,d,e,f):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelGet3DPosition(DWORD a,DWORD*b,DWORD*c,DWORD*d){return r_BASS_ChannelGet3DPosition?r_BASS_ChannelGet3DPosition(a,b,c,d):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelGetAttributes(DWORD a,DWORD*b,float*c,int*d){return r_BASS_ChannelGetAttributes?r_BASS_ChannelGetAttributes(a,b,c,d):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetData(DWORD a,void*b,DWORD c){return r_BASS_ChannelGetData?r_BASS_ChannelGetData(a,b,c):0;}
+__declspec(dllexport) DWORD __stdcall BASS_ChannelGetDevice(DWORD a){return r_BASS_ChannelGetDevice?r_BASS_ChannelGetDevice(a):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelGetEAXMix(DWORD a,float*b){return r_BASS_ChannelGetEAXMix?r_BASS_ChannelGetEAXMix(a,b):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_ChannelIsActive(DWORD a){return r_BASS_ChannelIsActive?r_BASS_ChannelIsActive(a):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelRemoveDSP(DWORD a,DWORD b){return r_BASS_ChannelRemoveDSP?r_BASS_ChannelRemoveDSP(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelRemoveFX(DWORD a,DWORD b){return r_BASS_ChannelRemoveFX?r_BASS_ChannelRemoveFX(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelRemoveLink(DWORD a,DWORD b){return r_BASS_ChannelRemoveLink?r_BASS_ChannelRemoveLink(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelResume(DWORD a){return r_BASS_ChannelResume?r_BASS_ChannelResume(a):FALSE;}
+__declspec(dllexport) DWORD64 __stdcall BASS_ChannelSeconds2Bytes(DWORD a,double b){return r_BASS_ChannelSeconds2Bytes?r_BASS_ChannelSeconds2Bytes(a,b):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelSet3DAttributes(DWORD a,DWORD b,DWORD c,DWORD d,DWORD e,DWORD f){return r_BASS_ChannelSet3DAttributes?r_BASS_ChannelSet3DAttributes(a,b,c,d,e,f):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelSet3DPosition(DWORD a,DWORD b,DWORD c,DWORD d){return r_BASS_ChannelSet3DPosition?r_BASS_ChannelSet3DPosition(a,b,c,d):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelSetAttributes(DWORD a,DWORD b,float c,int d){return r_BASS_ChannelSetAttributes?r_BASS_ChannelSetAttributes(a,b,c,d):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_ChannelSetDSP(DWORD a,void*b,DWORD c,DWORD d){return r_BASS_ChannelSetDSP?r_BASS_ChannelSetDSP(a,b,c,d):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelSetEAXMix(DWORD a,float b){return r_BASS_ChannelSetEAXMix?r_BASS_ChannelSetEAXMix(a,b):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_ChannelSetFX(DWORD a,DWORD b,DWORD c){return r_BASS_ChannelSetFX?r_BASS_ChannelSetFX(a,b,c):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelSetLink(DWORD a,DWORD b){return r_BASS_ChannelSetLink?r_BASS_ChannelSetLink(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_ChannelSlideAttributes(DWORD a,DWORD b,float c,int d,DWORD e){return r_BASS_ChannelSlideAttributes?r_BASS_ChannelSlideAttributes(a,b,c,d,e):FALSE;}
+__declspec(dllexport) void  __stdcall BASS_FXGetParameters(DWORD a,void*b){if(r_BASS_FXGetParameters)r_BASS_FXGetParameters(a,b);}
+__declspec(dllexport) BOOL  __stdcall BASS_FXSetParameters(DWORD a,void*b){return r_BASS_FXSetParameters?r_BASS_FXSetParameters(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_Get3DFactors(float*a,float*b,float*c){return r_BASS_Get3DFactors?r_BASS_Get3DFactors(a,b,c):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_Get3DPosition(DWORD*a,DWORD*b,DWORD*c){return r_BASS_Get3DPosition?r_BASS_Get3DPosition(a,b,c):FALSE;}
+__declspec(dllexport) float __stdcall BASS_GetCPU(void){return r_BASS_GetCPU?r_BASS_GetCPU():0.0f;}
+__declspec(dllexport) DWORD __stdcall BASS_GetDSoundObject(DWORD a){return r_BASS_GetDSoundObject?r_BASS_GetDSoundObject(a):0;}
+__declspec(dllexport) char* __stdcall BASS_GetDeviceDescription(DWORD a){return r_BASS_GetDeviceDescription?r_BASS_GetDeviceDescription(a):NULL;}
+__declspec(dllexport) BOOL  __stdcall BASS_GetEAXParameters(DWORD*a,float*b,float*c,float*d,float*e){return r_BASS_GetEAXParameters?r_BASS_GetEAXParameters(a,b,c,d,e):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_MusicGetLength(DWORD a,BOOL b){return r_BASS_MusicGetLength?r_BASS_MusicGetLength(a,b):0;}
+__declspec(dllexport) char* __stdcall BASS_MusicGetName(DWORD a){return r_BASS_MusicGetName?r_BASS_MusicGetName(a):NULL;}
+__declspec(dllexport) BOOL  __stdcall BASS_MusicGetVolume(DWORD a,int*b){return r_BASS_MusicGetVolume?r_BASS_MusicGetVolume(a,b):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_MusicPlay(DWORD a){return r_BASS_MusicPlay?r_BASS_MusicPlay(a):0;}
+__declspec(dllexport) DWORD __stdcall BASS_MusicPlayEx(DWORD a,DWORD b,DWORD c){return r_BASS_MusicPlayEx?r_BASS_MusicPlayEx(a,b,c):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_MusicPreBuf(DWORD a){return r_BASS_MusicPreBuf?r_BASS_MusicPreBuf(a):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_MusicSetAmplify(DWORD a,int b){return r_BASS_MusicSetAmplify?r_BASS_MusicSetAmplify(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_MusicSetPanSep(DWORD a,int b){return r_BASS_MusicSetPanSep?r_BASS_MusicSetPanSep(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_MusicSetPositionScaler(DWORD a,int b){return r_BASS_MusicSetPositionScaler?r_BASS_MusicSetPositionScaler(a,b):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_MusicSetVolume(DWORD a,int b,int c){return r_BASS_MusicSetVolume?r_BASS_MusicSetVolume(a,b,c):FALSE;}
+__declspec(dllexport) char* __stdcall BASS_RecordGetDeviceDescription(DWORD a){return r_BASS_RecordGetDeviceDescription?r_BASS_RecordGetDeviceDescription(a):NULL;}
+__declspec(dllexport) BOOL  __stdcall BASS_RecordGetInput(DWORD a,DWORD*b,float*c){return r_BASS_RecordGetInput?r_BASS_RecordGetInput(a,b,c):FALSE;}
+__declspec(dllexport) char* __stdcall BASS_RecordGetInputName(DWORD a){return r_BASS_RecordGetInputName?r_BASS_RecordGetInputName(a):NULL;}
+__declspec(dllexport) BOOL  __stdcall BASS_RecordSetInput(DWORD a,DWORD b,float c){return r_BASS_RecordSetInput?r_BASS_RecordSetInput(a,b,c):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_SampleCreateDone(void){return r_BASS_SampleCreateDone?r_BASS_SampleCreateDone():FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_SamplePlay(DWORD a){return r_BASS_SamplePlay?r_BASS_SamplePlay(a):0;}
+__declspec(dllexport) DWORD __stdcall BASS_SamplePlay3D(DWORD a,DWORD b,DWORD c,DWORD d){return r_BASS_SamplePlay3D?r_BASS_SamplePlay3D(a,b,c,d):0;}
+__declspec(dllexport) DWORD __stdcall BASS_SamplePlay3DEx(DWORD a,BOOL b,DWORD c,DWORD d,DWORD e,DWORD f){return r_BASS_SamplePlay3DEx?r_BASS_SamplePlay3DEx(a,b,c,d,e,f):0;}
+__declspec(dllexport) DWORD __stdcall BASS_SamplePlayEx(DWORD a,DWORD b,DWORD c){return r_BASS_SamplePlayEx?r_BASS_SamplePlayEx(a,b,c):0;}
+__declspec(dllexport) BOOL  __stdcall BASS_SampleStop(DWORD a){return r_BASS_SampleStop?r_BASS_SampleStop(a):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_Set3DFactors(float a,float b,float c){return r_BASS_Set3DFactors?r_BASS_Set3DFactors(a,b,c):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_Set3DPosition(DWORD*a,DWORD*b,DWORD*c){return r_BASS_Set3DPosition?r_BASS_Set3DPosition(a,b,c):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_SetEAXParameters(DWORD a,float b,float c,float d,float e){return r_BASS_SetEAXParameters?r_BASS_SetEAXParameters(a,b,c,d,e):FALSE;}
+__declspec(dllexport) DWORD __stdcall BASS_StreamCreateFileUser(DWORD a,DWORD b,DWORD c,void*d,void*e){return r_BASS_StreamCreateFileUser?r_BASS_StreamCreateFileUser(a,b,c,d,e):0;}
+__declspec(dllexport) DWORD __stdcall BASS_StreamGetLength(DWORD a){return r_BASS_StreamGetLength?r_BASS_StreamGetLength(a):0;}
+__declspec(dllexport) char* __stdcall BASS_StreamGetTags(DWORD a,DWORD b){return r_BASS_StreamGetTags?r_BASS_StreamGetTags(a,b):NULL;}
+__declspec(dllexport) BOOL  __stdcall BASS_StreamPlay(DWORD a,BOOL b,DWORD c){return r_BASS_StreamPlay?r_BASS_StreamPlay(a,b,c):FALSE;}
+__declspec(dllexport) BOOL  __stdcall BASS_StreamPreBuf(DWORD a){return r_BASS_StreamPreBuf?r_BASS_StreamPreBuf(a):FALSE;}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Debug logging
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -1364,11 +1557,6 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
     if (!g_moduleBase) g_moduleBase = 0x00400000;
 
-    char buf[256];
-    wsprintfA(buf, "moduleBase=0x%08X", g_moduleBase);
-    DebugLog(buf);
-
-    DebugLog("Resolving function pointers...");
     g_operatorNew = (operator_new_t)(g_moduleBase + RVA_operator_new);
     g_LevelMeshWorldCtor = (Level_MeshWorldCtor_t)(g_moduleBase + RVA_Level_MeshWorldCtor);
     g_LevelRenderCtor = (Level_RenderCtor_t)(g_moduleBase + RVA_Level_RenderCtor);
@@ -1386,40 +1574,18 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_LevelAssignTex = (Level_AssignTex_t)(g_moduleBase + RVA_Level_AssignTexAndScales);
     DebugLog("Function pointers resolved");
 
-    DebugLog("Getting config path...");
     GetConfigPath();
-    wsprintfA(buf, "configPath=%s levelDataPath=%s", g_configPath, g_levelDataPath);
-    DebugLog(buf);
-
-    DebugLog("Loading config...");
     LoadConfig();
-    DebugLog("Config loaded");
 
-    DebugLog("Auto-generating LevelData.txt if missing...");
     if (GetFileAttributesA(g_levelDataPath) == INVALID_FILE_ATTRIBUTES) {
         GenerateLevelData();
-        DebugLog("LevelData.txt generated");
     }
-    DebugLog("Loading LevelData...");
     LoadLevelData();
-    DebugLog("LevelData loaded");
 
-    DebugLog("Patching alloc sizes...");
     PatchAllocSizes();
-    DebugLog("Alloc sizes patched");
-
-    DebugLog("Installing board ctor hooks...");
     InstallBoardCtorHooks();
-    DebugLog("Board ctor hooks installed");
-
-    DebugLog("Installing universal constructor hook...");
     InstallUniversalConstructorHook();
-    DebugLog("Universal constructor hook installed");
-
-    DebugLog("Installing collision hook...");
     InstallHook();
-    DebugLog("Collision hook installed");
-
     DebugLog("=== PatchThread complete ===");
     return 0;
 }
