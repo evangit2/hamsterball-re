@@ -143,16 +143,20 @@ static DWORD get_scene(DWORD board) {
     return scene;
 }
 
-/* Get the render MeshWorld from the Level object (board+0x8AC → level+0x08).
- * NOT from board+0x878 (App) — that points to a different/empty MeshWorld.
- * Verified from Level_LoadMeshes decompilation: creates MeshWorld at this+0x08. */
+/* Get the MeshWorld from the SceneObject (board+0x8AC → level+0x480 → sceneobj+0x08).
+ * Scene_LoadMeshWorld creates MeshWorld at sceneobj+0x08.
+ * Level_LoadMeshes creates a separate render MeshWorld at level+0x08, but that
+ * one doesn't get EntityTransforms or AthenaList populated. */
 static DWORD get_meshworld(DWORD board) {
     if (!board) return 0;
     if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return 0;
     DWORD level = *(DWORD*)(board + BOARD_LEVEL);
     if (!level || level < 0x10000) return 0;
-    if (IsBadReadPtr((void*)(level + MESHWORLD_OFFSET), 4)) return 0;
-    DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
+    if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return 0;
+    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+    if (!sceneobj || sceneobj < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(sceneobj + MESHWORLD_OFFSET), 4)) return 0;
+    DWORD mw = *(DWORD*)(sceneobj + MESHWORLD_OFFSET);
     if (!mw || mw < 0x10000) return 0;
     return mw;
 }
@@ -707,14 +711,11 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 /* Poll until MeshWorld is ready (EntityTransform array allocated) */
                 int poll;
                 for (poll = 0; poll < 60; poll++) {
-                    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
-                    if (level && level > 0x10000) {
-                        DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
-                        if (mw && mw > 0x10000) {
-                            if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
-                                DWORD xform_ptr = *(DWORD*)(mw + MESHWORLD_RENDERCTX_PTR);
-                                if (xform_ptr != 0) break;  /* ready! */
-                            }
+                    DWORD mw = get_meshworld(board);
+                    if (mw) {
+                        if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
+                            DWORD xform_ptr = *(DWORD*)(mw + MESHWORLD_RENDERCTX_PTR);
+                            if (xform_ptr != 0) break;  /* ready! */
                         }
                     }
                     Sleep(50);
