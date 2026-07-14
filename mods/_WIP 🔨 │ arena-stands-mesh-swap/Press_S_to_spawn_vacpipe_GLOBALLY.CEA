@@ -2,8 +2,8 @@
 
 // Press S to spawn Level-VacPipe globally with vacuum function
 // Hooks Ball_Update at 0x405E22
-// Spawns inverted L-shaped pipe (white/purple) at player position
-// VAC function: when ball enters top, sucks it through to horizontal exit
+// Inverted L pipe: ball enters at BOTTOM, gets sucked UP and out the TOP
+// VAC-IN at bottom entrance, VAC-OUT at end of horizontal exit
 
 alloc(SpawnCode, 8192)
 alloc(SpawnBridge, 4)
@@ -29,7 +29,6 @@ alloc(vacSpawnY, 4)
 alloc(vacSpawnZ, 4)
 alloc(float_vac_speed, 4)
 alloc(float_dist_check, 4)
-alloc(float_vac_cooldown, 4)
 
 registersymbol(SpawnBridge)
 registersymbol(noKill)
@@ -69,19 +68,19 @@ bridge_array:
 last_board:
   dd 0
 
-// VAC-IN offset (relative to spawn position): top of vertical pipe
-// VAC-OUT offset: end of horizontal pipe
+// VAC-IN offset: bottom of vertical pipe (relative to spawn center)
 vacInX:
-  dd 0xBFC00000   // -1.5 (relative, will be adjusted)
+  dd 0xC2F00000   // -120.0
 vacInY:
-  dd 0x42A00000   // 80.0
+  dd 0xC38C0000   // -280.0
 vacInZ:
   dd 0x00000000   // 0.0
 
+// VAC-OUT offset: end of horizontal exit (relative to spawn center)
 vacOutX:
   dd 0x438C0000   // 280.0
 vacOutY:
-  dd 0x42A00000   // 80.0
+  dd 0x42F00000   // 120.0
 vacOutZ:
   dd 0x00000000   // 0.0
 
@@ -95,13 +94,10 @@ vacSpawnZ:
   dd 0
 
 float_vac_speed:
-  dd 0x44160000   // 600.0 (vacuum pull speed)
+  dd 0x43960000   // 300.0 (vacuum pull speed per frame)
 
 float_dist_check:
   dd 0x44200000   // 130.0 (trigger distance)
-
-float_vac_cooldown:
-  dd 0x00000000   // cooldown counter
 
 BridgeStr:
   db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 56 61 63 50 69 70 65 00
@@ -119,11 +115,8 @@ label(prox_loop)
 label(prox_next)
 label(prox_done)
 label(check_prox)
-label(vac_check)
-label(vac_active)
-label(vac_pull)
-label(vac_arrived)
-label(vac_done)
+label(skip_vac)
+label(skip_vac_arrived)
 
 SpawnCode:
   // No-kill: when noKill=1, set ball+0x324=1
@@ -136,36 +129,26 @@ check_prox:
   jne original_code
 
   // === VACUUM FUNCTION ===
-  // Check if ball is near VAC-IN position
-  cmp dword [vacState], 0
-  jne vac_active
-
-  // Check if vac pipe is spawned (vacSpawnX != 0)
+  // Check if vac pipe is spawned
   mov eax, [vacSpawnX]
   test eax, eax
   jz skip_vac
 
-  // Calculate VAC-IN world position
-  mov eax, [vacSpawnX]
-  add eax, dword [vacInX]
-  // Compare with ball X (esi+0x164)
-  mov edx, [esi+0x164]
-  // edx = ball X (float bits)
-  // eax = vac-in X (float bits)
-  // Simple distance check: if |ballX - vacInX| < trigger_dist
-  // We'll do a rough check using integer comparison of float values
-  // Actually, use FPU for proper float math
+  cmp dword [vacState], 0
+  jne vac_pull
 
-  // FPU: check distance from ball to VAC-IN
+  // Check if ball is near VAC-IN (bottom entrance)
+  // Distance check on X
   fld dword [esi+0x164]        // ball X
-  fsub dword [vacSpawnX]       // ball X - spawn X
-  fsub dword [vacInX]          // - vacInX offset
-  fabs                          // |delta X|
-  fcom dword [float_dist_check] // compare with trigger distance
+  fsub dword [vacSpawnX]
+  fsub dword [vacInX]
+  fabs
+  fcom dword [float_dist_check]
   fnstsw ax
   sahf
-  ja skip_vac                   // if X too far, skip
+  ja skip_vac
 
+  // Distance check on Y
   fld dword [esi+0x168]        // ball Y
   fsub dword [vacSpawnY]
   fsub dword [vacInY]
@@ -173,8 +156,9 @@ check_prox:
   fcom dword [float_dist_check]
   fnstsw ax
   sahf
-  ja skip_vac                   // if Y too far, skip
+  ja skip_vac
 
+  // Distance check on Z
   fld dword [esi+0x16C]        // ball Z
   fsub dword [vacSpawnZ]
   fsub dword [vacInZ]
@@ -182,49 +166,129 @@ check_prox:
   fcom dword [float_dist_check]
   fnstsw ax
   sahf
-  ja skip_vac                   // if Z too far, skip
+  ja skip_vac
 
   // Ball is near VAC-IN! Activate vacuum
   mov dword [vacState], 1
 
-vac_active:
-  // Vacuum is active - pull ball toward VAC-OUT
-  // Calculate direction: VAC_OUT - ball position
-  // Set ball velocity toward VAC-OUT
+vac_pull:
+  // Vacuum active - move ball toward VAC-OUT
+  // Calculate step: direction = (VAC_OUT - ball_pos), normalize, multiply by speed
+  // For simplicity, just move ball toward VAC-OUT by float_vac_speed per frame
 
-  // X direction
+  // X: move toward VAC-OUT X
   fld dword [vacSpawnX]
   fadd dword [vacOutX]          // VAC-OUT world X
-  fsub dword [esi+0x164]        // - ball X
-  // Normalize later, for now just scale
-  fmul dword [float_vac_speed]  // multiply by speed
-  fstp dword [esi+0x168]        // set ball velocity X (reuse Y field temporarily)
-  // Actually, we should set the ball's velocity, not position.
-  // Ball velocity is at ball+0x1A4 (vx), +0x1A8 (vy), +0x1AC (vz)
-  // OR we can set the trajectory at ball->scene+0xCA4
-
-  // Better approach: set ball trajectory directly
-  // Ball dword[0x69] = byte offset 0x1A4 = scene/physics pointer
-  // scene+0xCA4 = trajectory X, +0xCA8 = Y, +0xCAC = Z
-  mov eax, [esi+0x1A4]          // scene/physics ptr (dword index 0x69 = byte 0x1A4)
-  test eax, eax
-  jz skip_vac
-
-  // Set trajectory toward VAC-OUT
+  fsub dword [esi+0x164]        // - ball X = direction
+  // Normalize: if direction > 0, add speed; if < 0, subtract speed
+  ftst
+  fnstsw ax
+  sahf
+  jb vac_pull_x_neg
+  // direction > 0: add speed (but don't overshoot)
+  fcom dword [float_vac_speed]
+  fnstsw ax
+  sahf
+  jbe vac_pull_x_done           // distance < speed, just set to target
+  ffree st(0)
+  fincstp
+  fld dword [esi+0x164]
+  fadd dword [float_vac_speed]
+  jmp vac_pull_x_done
+vac_pull_x_neg:
+  // direction < 0: subtract speed
+  fld dword [float_vac_speed]
+  fchs
+  fcom st(1)
+  fnstsw ax
+  sahf
+  jbe vac_pull_x_done2          // distance < speed, just set to target
+  ffree st(0)
+  fincstp
+  fld dword [esi+0x164]
+  fsub dword [float_vac_speed]
+  jmp vac_pull_x_done
+vac_pull_x_done2:
+  ffree st(0)
+  fincstp
   fld dword [vacSpawnX]
   fadd dword [vacOutX]
-  fsub dword [esi+0x164]        // direction X
-  fstp dword [eax+0xCA4]        // trajectory X
+vac_pull_x_done:
+  fstp dword [esi+0x164]        // set ball X
 
+  // Y: move toward VAC-OUT Y
   fld dword [vacSpawnY]
   fadd dword [vacOutY]
-  fsub dword [esi+0x168]        // direction Y
-  fstp dword [eax+0xCA8]        // trajectory Y
+  fsub dword [esi+0x168]
+  ftst
+  fnstsw ax
+  sahf
+  jb vac_pull_y_neg
+  fcom dword [float_vac_speed]
+  fnstsw ax
+  sahf
+  jbe vac_pull_y_done
+  ffree st(0)
+  fincstp
+  fld dword [esi+0x168]
+  fadd dword [float_vac_speed]
+  jmp vac_pull_y_done
+vac_pull_y_neg:
+  fld dword [float_vac_speed]
+  fchs
+  fcom st(1)
+  fnstsw ax
+  sahf
+  jbe vac_pull_y_done2
+  ffree st(0)
+  fincstp
+  fld dword [esi+0x168]
+  fsub dword [float_vac_speed]
+  jmp vac_pull_y_done
+vac_pull_y_done2:
+  ffree st(0)
+  fincstp
+  fld dword [vacSpawnY]
+  fadd dword [vacOutY]
+vac_pull_y_done:
+  fstp dword [esi+0x168]
 
+  // Z: move toward VAC-OUT Z
   fld dword [vacSpawnZ]
   fadd dword [vacOutZ]
-  fsub dword [esi+0x16C]        // direction Z
-  fstp dword [eax+0xCAC]        // trajectory Z
+  fsub dword [esi+0x16C]
+  ftst
+  fnstsw ax
+  sahf
+  jb vac_pull_z_neg
+  fcom dword [float_vac_speed]
+  fnstsw ax
+  sahf
+  jbe vac_pull_z_done
+  ffree st(0)
+  fincstp
+  fld dword [esi+0x16C]
+  fadd dword [float_vac_speed]
+  jmp vac_pull_z_done
+vac_pull_z_neg:
+  fld dword [float_vac_speed]
+  fchs
+  fcom st(1)
+  fnstsw ax
+  sahf
+  jbe vac_pull_z_done2
+  ffree st(0)
+  fincstp
+  fld dword [esi+0x16C]
+  fsub dword [float_vac_speed]
+  jmp vac_pull_z_done
+vac_pull_z_done2:
+  ffree st(0)
+  fincstp
+  fld dword [vacSpawnZ]
+  fadd dword [vacOutZ]
+vac_pull_z_done:
+  fstp dword [esi+0x16C]
 
   // Check if ball arrived at VAC-OUT
   fld dword [esi+0x164]
@@ -462,7 +526,6 @@ dealloc(vacSpawnY)
 dealloc(vacSpawnZ)
 dealloc(float_vac_speed)
 dealloc(float_dist_check)
-dealloc(float_vac_cooldown)
 unregistersymbol(SpawnBridge)
 unregistersymbol(noKill)
 unregistersymbol(vacState)
