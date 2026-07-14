@@ -33,10 +33,17 @@
 
 #define MESHWORLD_OFFSET            0x08
 #define MESHWORLD_RENDERCTX_PTR     0x28
-#define MESHWORLD_MESHBUFFER_LIST   0x2C
 
-#define ATHENALIST_COUNT            0x04
-#define ATHENALIST_DATA             0x40C
+/* AthenaList is EMBEDDED at MeshWorld+0x2C (not a pointer — inline struct).
+ * AthenaList+0x04 = count  → MeshWorld+0x30
+ * AthenaList+0x40C = data   → MeshWorld+0x438
+ * Verified from Level_LoadMeshes decompilation:
+ *   iVar5 = MeshWorld*
+ *   count = *(int*)(iVar5 + 0x30)
+ *   data  = *(int**)(iVar5 + 0x438)
+ */
+#define MESHWORLD_MB_COUNT          0x30
+#define MESHWORLD_MB_DATA           0x438
 
 #define MESHBUFFER_NAME             0x864
 #define MESHBUFFER_CTX_INDEX        0x04
@@ -250,17 +257,13 @@ static void scan_grid_meshes(DWORD board, FILE* logf) {
     DWORD mw = get_meshworld(scene);
     if (!mw) return;
 
-    /* Get MeshBuffer list */
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_MESHBUFFER_LIST), 4)) return;
-    DWORD mb_list = *(DWORD*)(mw + MESHWORLD_MESHBUFFER_LIST);
-    if (!mb_list || mb_list < 0x10000) return;
-
-    if (IsBadReadPtr((void*)(mb_list + ATHENALIST_COUNT), 4)) return;
-    int mb_count = *(int*)(mb_list + ATHENALIST_COUNT);
+    /* Get MeshBuffer count and data array directly from MeshWorld (AthenaList is embedded) */
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) return;
+    int mb_count = *(int*)(mw + MESHWORLD_MB_COUNT);
     if (mb_count < 1 || mb_count > 10000) return;
 
-    if (IsBadReadPtr((void*)(mb_list + ATHENALIST_DATA), 4)) return;
-    DWORD* mb_array = *(DWORD**)(mb_list + ATHENALIST_DATA);
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) return;
+    DWORD* mb_array = *(DWORD**)(mw + MESHWORLD_MB_DATA);
     if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) return;
 
     /* Get EntityTransform array */
@@ -297,13 +300,13 @@ static void scan_grid_meshes(DWORD board, FILE* logf) {
 
         if (grid_num > g_grid_max) g_grid_max = grid_num;
 
-        if (logf) fprintf(logf, "  GRID: mesh[%d] name='%s' grid=%d pos=(%.1f,%.1f,%.1f)\n",
-                i, name, grid_num, t->posX, t->posY, t->posZ);
+        if (logf) fprintf(logf, "  GRID: mesh[%d] name='%s' grid=%d pos=(%.1f,%.1f,%.1f) posScale=%.2f\n",
+                i, name, grid_num, t->posX, t->posY, t->posZ, t->posScale);
     }
 
-    if (logf && g_grid_mesh_count > 0) {
-        fprintf(logf, "  GRID: Found %d grid meshes, max grid = %d, speed = %.1f ticks\n",
-                g_grid_mesh_count, g_grid_max, g_grid_speed);
+    if (logf) {
+        fprintf(logf, "  GRID: Scanned %d MeshBuffers, found %d grid meshes, max grid = %d, speed = %.1f ticks\n",
+                mb_count, g_grid_mesh_count, g_grid_max, g_grid_speed);
     }
 }
 
@@ -414,15 +417,18 @@ static void scan_s1_ref_points(DWORD board, FILE* logf) {
     DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
     if (!sceneobj || sceneobj < 0x10000) return;
 
+    /* S1 list is an embedded AthenaList at sceneobj+0x894.
+     * AthenaList+0x04 = count, AthenaList+0x40C = data ptr.
+     * So count is at sceneobj+0x898, data at sceneobj+0xCA0. */
     DWORD s1_list = sceneobj + SCENEOBJ_S1_LIST;
     if (s1_list < 0x10000) return;
 
-    if (IsBadReadPtr((void*)(s1_list + ATHENALIST_COUNT), 4)) return;
-    int s1_count = *(int*)(s1_list + ATHENALIST_COUNT);
+    if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) return;
+    int s1_count = *(int*)(s1_list + 0x04);
     if (s1_count < 1 || s1_count > 10000) return;
 
-    if (IsBadReadPtr((void*)(s1_list + ATHENALIST_DATA), 4)) return;
-    DWORD* s1_array = *(DWORD**)(s1_list + ATHENALIST_DATA);
+    if (IsBadReadPtr((void*)(s1_list + 0x40C), 4)) return;
+    DWORD* s1_array = *(DWORD**)(s1_list + 0x40C);
     if (!s1_array || IsBadReadPtr(s1_array, s1_count * 4)) return;
 
     if (logf) fprintf(logf, "  S1 ref point scan: %d entries\n", s1_count);
@@ -463,42 +469,37 @@ static void scan_s1_ref_points(DWORD board, FILE* logf) {
         if (scene) {
             DWORD mw = get_meshworld(scene);
             if (mw) {
-                if (!IsBadReadPtr((void*)(mw + MESHWORLD_MESHBUFFER_LIST), 4)) {
-                    DWORD mb_list = *(DWORD*)(mw + MESHWORLD_MESHBUFFER_LIST);
-                    if (mb_list && mb_list >= 0x10000) {
-                        if (!IsBadReadPtr((void*)(mb_list + ATHENALIST_COUNT), 4)) {
-                            int mb_count = *(int*)(mb_list + ATHENALIST_COUNT);
-                            if (mb_count >= 1 && mb_count <= 10000) {
-                                if (!IsBadReadPtr((void*)(mb_list + ATHENALIST_DATA), 4)) {
-                                    DWORD* mb_array = *(DWORD**)(mb_list + ATHENALIST_DATA);
-                                    if (mb_array && !IsBadReadPtr(mb_array, mb_count * 4)) {
-                                        if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
-                                            EntityTransform* transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
-                                            if (transforms) {
-                                                int mb_i;
-                                                for (mb_i = 0; mb_i < mb_count; mb_i++) {
-                                                    DWORD mb = mb_array[mb_i];
-                                                    if (!mb || mb < 0x10000) continue;
-                                                    if (IsBadReadPtr((void*)mb, 0x900)) continue;
-                                                    if (IsBadReadPtr((void*)(mb + MESHBUFFER_CTX_INDEX), 4)) continue;
-                                                    DWORD ctx_idx = *(DWORD*)(mb + MESHBUFFER_CTX_INDEX);
-                                                    if (ctx_idx > 10000) continue;
-                                                    EntityTransform* t = &transforms[ctx_idx];
-                                                    if (IsBadReadPtr(t, sizeof(EntityTransform))) continue;
+                if (!IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) {
+                    int mb_count = *(int*)(mw + MESHWORLD_MB_COUNT);
+                    if (mb_count >= 1 && mb_count <= 10000) {
+                        if (!IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) {
+                            DWORD* mb_array = *(DWORD**)(mw + MESHWORLD_MB_DATA);
+                            if (mb_array && !IsBadReadPtr(mb_array, mb_count * 4)) {
+                                if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
+                                    EntityTransform* transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
+                                    if (transforms) {
+                                        int mb_i;
+                                        for (mb_i = 0; mb_i < mb_count; mb_i++) {
+                                            DWORD mb = mb_array[mb_i];
+                                            if (!mb || mb < 0x10000) continue;
+                                            if (IsBadReadPtr((void*)mb, 0x900)) continue;
+                                            if (IsBadReadPtr((void*)(mb + MESHBUFFER_CTX_INDEX), 4)) continue;
+                                            DWORD ctx_idx = *(DWORD*)(mb + MESHBUFFER_CTX_INDEX);
+                                            if (ctx_idx > 10000) continue;
+                                            EntityTransform* t = &transforms[ctx_idx];
+                                            if (IsBadReadPtr(t, sizeof(EntityTransform))) continue;
 
-                                                    float dx = t->posX - posX;
-                                                    float dy = t->posY - posY;
-                                                    float dz = t->posZ - posZ;
-                                                    if (dx < 0) dx = -dx;
-                                                    if (dy < 0) dy = -dy;
-                                                    if (dz < 0) dz = -dz;
-                                                    if (dx < 50.0f && dy < 50.0f && dz < 50.0f) {
-                                                        game_transform = t;
-                                                        if (logf) fprintf(logf, "    -> Found EntityTransform by pos match: mb[%d] ctx=%d\n",
-                                                                mb_i, ctx_idx);
-                                                        break;
-                                                    }
-                                                }
+                                            float dx = t->posX - posX;
+                                            float dy = t->posY - posY;
+                                            float dz = t->posZ - posZ;
+                                            if (dx < 0) dx = -dx;
+                                            if (dy < 0) dy = -dy;
+                                            if (dz < 0) dz = -dz;
+                                            if (dx < 50.0f && dy < 50.0f && dz < 50.0f) {
+                                                game_transform = t;
+                                                if (logf) fprintf(logf, "    -> Found EntityTransform by pos match: mb[%d] ctx=%d\n",
+                                                        mb_i, ctx_idx);
+                                                break;
                                             }
                                         }
                                     }
@@ -566,16 +567,12 @@ static void hide_original_entity_mesh(DWORD board, FILE* logf) {
     DWORD mw = get_meshworld(scene);
     if (!mw) return;
 
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_MESHBUFFER_LIST), 4)) return;
-    DWORD mb_list = *(DWORD*)(mw + MESHWORLD_MESHBUFFER_LIST);
-    if (!mb_list || mb_list < 0x10000) return;
-
-    if (IsBadReadPtr((void*)(mb_list + ATHENALIST_COUNT), 4)) return;
-    int mb_count = *(int*)(mb_list + ATHENALIST_COUNT);
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) return;
+    int mb_count = *(int*)(mw + MESHWORLD_MB_COUNT);
     if (mb_count < 1 || mb_count > 10000) return;
 
-    if (IsBadReadPtr((void*)(mb_list + ATHENALIST_DATA), 4)) return;
-    DWORD* mb_array = *(DWORD**)(mb_list + ATHENALIST_DATA);
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) return;
+    DWORD* mb_array = *(DWORD**)(mw + MESHWORLD_MB_DATA);
     if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) return;
 
     if (IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) return;
