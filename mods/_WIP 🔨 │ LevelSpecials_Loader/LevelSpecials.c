@@ -108,6 +108,200 @@ static const char *g_objectNames[OBJ_COUNT] = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Update feature system — per-level Board_Update feature blocks
+ * Driven by LevelData.txt "Features" key (semicolon-separated)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef enum {
+    FEAT_NONE          = 0,
+    FEAT_BRIDGE_ANIM   = 1 << 0,  /* Intermediate's 4-state bridge tilt */
+    FEAT_SWIRL         = 1 << 1,  /* Dizzy/Master swirl zones + tar bubbles */
+    FEAT_WINDMILL      = 1 << 2,  /* Tower windmill rotation */
+    FEAT_BADBALL       = 1 << 3,  /* Odd badball spawner */
+    FEAT_BUMPER_DECAY  = 1 << 4,  /* Beginner/Toob/Master bumper lit decay */
+    FEAT_NEON_CAM      = 1 << 5,  /* Neon ball-following camera */
+    FEAT_SKY_POPCYL    = 1 << 6,  /* Sky popcylinder activator */
+    FEAT_MASTER_EXTRA  = 1 << 7,  /* Master vtable[0x90]+[0x94] calls */
+} UpdateFeature;
+
+static DWORD g_updateFeatures[16] = {0};
+
+/* Default feature assignments per level (matching original game behavior) */
+static const DWORD g_defaultFeatures[16] = {
+    0,
+    /* 1=WarmUp */       0,
+    /* 2=Beginner */     FEAT_BUMPER_DECAY,
+    /* 3=Intermediate */ FEAT_BRIDGE_ANIM,
+    /* 4=Dizzy */        FEAT_SWIRL,
+    /* 5=Tower */        FEAT_WINDMILL,
+    /* 6=Up */           0,
+    /* 7=Neon */         FEAT_NEON_CAM,
+    /* 8=Expert */       0,
+    /* 9=Odd */          FEAT_BADBALL,
+    /* 10=Toob */        FEAT_BUMPER_DECAY,
+    /* 11=Wobbly */      0,
+    /* 12=Glass */       0,
+    /* 13=Sky */         FEAT_SKY_POPCYL,
+    /* 14=Master */      FEAT_SWIRL | FEAT_BUMPER_DECAY | FEAT_BRIDGE_ANIM | FEAT_MASTER_EXTRA,
+    /* 15=Impossible */  0,
+};
+
+/* Game function typedefs for Board_Update feature blocks */
+typedef void (__fastcall *Scene_Update_t)(void *board);
+typedef void (__fastcall *Board_UpdateRaceState_t)(void *board);
+typedef void (__fastcall *Gfx_ScaleFn_t)(float val);
+typedef void (__fastcall *Gfx_SetPosition_t)(float x, float y, float z);
+typedef void (__fastcall *Timer_Init_t)(void *out);
+typedef void (__fastcall *Timer_Cleanup_t)(void *out);
+typedef void (__fastcall *Matrix_TransformVec3_t)(float *out, float *in);
+typedef void (__fastcall *Matrix44_Zero_t)(int *out);
+typedef void (__thiscall *Scene_ForEachBall_SetVelocity_t)(void *board, float x, float y, float z);
+typedef int  (__thiscall *AthenaList_GetIterator_t)(void *list);
+typedef int  (__thiscall *AthenaList_GetSize_t)(void *list);
+typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
+typedef void *__cdecl  (*operator_new_t)(unsigned int size);
+typedef void (__fastcall *Sound_Play3D_Fn_t)(void *soundChannel, float x, float y, float z);
+typedef void *__fastcall (*FUN_0044fa90_t)(void *out, int app, int tarList);
+typedef void *__fastcall (*FUN_0044fb50_t)(void *out, int app, float x, int y, float z);
+typedef void (__fastcall *FUN_00405190_t)(int ball);
+typedef int  (__cdecl *CPUID_RNG_t)(void *ptr, int range, char flag);
+typedef void *__fastcall (*BadBall_ctor_t)(void *mem, int board);
+typedef void (__fastcall *Ball_SetTrajectory_t)(void *ball, int unk, float x, float y, float f1, float f2);
+typedef void (__fastcall *Ball_SetVec3AtOffset_t)(void *offset, float *vec);
+typedef void (__fastcall *Vec3_NormalizeAndScale_t)(float *vec, float scale);
+typedef void (__fastcall *Vec3_Copy_t)(float *dst, float *src);
+typedef int  (__cdecl *Sound_CalcDistAtten_t)(int soundDevice, float x, float y, float z);
+typedef void (__thiscall *Sound_Play3DAtPos_t)(int channel);
+typedef void (__thiscall *Scene_SetRaceActive_t)(int obj);
+typedef void (__fastcall *Scene_AddObject_t)(void *scene, void *obj);
+
+static Scene_Update_t             g_SceneUpdate = NULL;
+static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
+static Gfx_ScaleFn_t              g_GfxScaleZ = NULL;
+static Gfx_ScaleFn_t              g_GfxScaleY = NULL;
+static Gfx_ScaleFn_t              g_GfxScaleX = NULL;
+static Gfx_SetPosition_t          g_GfxSetPosition = NULL;
+static Timer_Init_t               g_TimerInit = NULL;
+static Timer_Cleanup_t            g_TimerCleanup = NULL;
+static Matrix_TransformVec3_t     g_MatrixTransformVec3 = NULL;
+static Matrix44_Zero_t            g_Matrix44Zero = NULL;
+static Scene_ForEachBall_SetVelocity_t g_SceneForEachBallSetVelocity = NULL;
+static AthenaList_GetIterator_t   g_AthenaListGetIteratorUpd = NULL;
+static AthenaList_GetSize_t       g_AthenaListGetSizeUpd = NULL;
+static AthenaList_Append_t        g_AthenaListAppendUpd = NULL;
+static operator_new_t            g_OperatorNewUpd = NULL;
+static Sound_Play3D_Fn_t          g_SoundPlay3DUpd = NULL;
+static FUN_0044fa90_t             g_CreateTarBubble = NULL;
+static FUN_0044fb50_t             g_CreateSplashParticle = NULL;
+static FUN_00405190_t             g_RemoveBall = NULL;
+static CPUID_RNG_t                g_RNG = NULL;
+static BadBall_ctor_t             g_BadBallCtor = NULL;
+static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
+static Ball_SetVec3AtOffset_t     g_BallSetVec3AtOffset = NULL;
+static Vec3_NormalizeAndScale_t   g_Vec3NormalizeAndScale = NULL;
+static Vec3_Copy_t                g_Vec3CopyUpd = NULL;
+static Sound_CalcDistAtten_t      g_SoundCalcDistAtten = NULL;
+static Sound_Play3DAtPos_t        g_SoundPlay3DAtPos = NULL;
+static Scene_SetRaceActive_t      g_SceneSetRaceActive = NULL;
+static Scene_AddObject_t          g_SceneAddObject = NULL;
+
+/* RVA constants for Board_Update functions */
+#define RVA_Scene_Update              0x00019C00
+#define RVA_Board_UpdateRaceState     0x0001B130
+#define RVA_Gfx_ScaleZ                0x00057CC0
+#define RVA_Gfx_ScaleY                0x00057C90
+#define RVA_Gfx_ScaleX                0x00057C60
+#define RVA_Gfx_SetPosition           0x00057B50
+#define RVA_Timer_Init                0x00057AD0
+#define RVA_Timer_Cleanup             0x00057A40
+#define RVA_Matrix_TransformVec3      0x0000A0B0
+#define RVA_Matrix44_Zero             0x00057B10
+#define RVA_Scene_ForEachBall_SetVel  0x00019B70
+#define RVA_FUN_0044fa90              0x0004FA90
+#define RVA_FUN_0044fb50              0x0004FB50
+#define RVA_FUN_00405190              0x00005190
+#define RVA_CPUID_RNG                 0x0005DD60
+#define RVA_BadBall_ctor              0x0000AFE0
+#define RVA_Ball_SetTrajectory        0x00003850
+#define RVA_Ball_SetVec3AtOffset      0x00002A20
+#define RVA_Vec3_NormalizeAndScale    0x00001AA0
+#define RVA_Vec3_Copy_Upd             0x00002BF0
+#define RVA_Sound_CalcDistAtten       0x00066750
+#define RVA_Sound_Play3DAtPos         0x00058EE0
+#define RVA_Scene_SetRaceActive       0x000366E0
+#define RVA_Scene_AddObject           0x00069990
+
+/* Board field offsets for feature blocks */
+/* Bridge animation (Intermediate) */
+#define BRD_BRIDGE_RENDER   0x10DB   /* render object ptr */
+#define BRD_BRIDGE_PIVOT_X  0x10DD
+#define BRD_BRIDGE_PIVOT_Y  0x10DE
+#define BRD_BRIDGE_PIVOT_Z  0x10DF
+#define BRD_BRIDGE_ANGLE    0x10E0
+#define BRD_BRIDGE_STATE    0x10E1
+#define BRD_BRIDGE_COUNTER  0x10E2
+
+/* Windmill (Tower) */
+#define BRD_WM_RENDER       0x10DF   /* reuses bridge pivot_Z slot; different levels use different offsets */
+#define BRD_WM_POS_X        0x10E0
+#define BRD_WM_POS_Y        0x10E1
+#define BRD_WM_POS_Z        0x10E2
+#define BRD_WM_ANGLE         0x10E3
+#define BRD_WM_SPEED         0x10E8
+#define BRD_WM_STATE         0x10EA
+#define BRD_WM_COUNTER       0x10EB
+#define BRD_WM_DECAY_VAL     0x10EC
+
+/* BadBall spawner (Odd) */
+#define BRD_BB_FLAG         0x10DC
+#define BRD_BB_COUNTER       0x10DD
+#define BRD_BB_TOTAL         0x10DE
+#define BRD_BB_LAST_IDX      0x10E8
+#define BRD_BB_POS_TABLE     0x10DF   /* 3×3 float table */
+
+/* Swirl (Dizzy) */
+#define BRD_SWIRL_LIST       0x10DE
+#define BRD_TARBUBBLE_LIST   0x11E4
+#define BRD_SWIRL_MESH1      0x12EA
+#define BRD_SWIRL_MESH2      0x12F1
+#define BRD_SWIRL1_POS_X     0x12EC
+#define BRD_SWIRL1_POS_Y     0x12ED
+#define BRD_SWIRL1_POS_Z     0x12EE
+#define BRD_SWIRL1_ANGLE     0x12EF
+#define BRD_SWIRL1_SPEED     0x12F0
+#define BRD_SWIRL2_POS_X     0x12F3
+#define BRD_SWIRL2_POS_Y     0x12F4
+#define BRD_SWIRL2_POS_Z     0x12F5
+#define BRD_SWIRL2_ANGLE     0x12F6
+
+/* Swirl (Master) — different offsets */
+#define BRD_SWIRL_LIST_M     0x1820
+#define BRD_TARBUBBLE_LIST_M 0x1719
+
+/* Bumper decay offsets */
+#define BRD_BUMPER_DECAY_BEG  0x642C
+#define BRD_BUMPER_DECAY_TOOB 0x644C
+#define BRD_BUMPER_DECAY_MAST 0x53FC
+
+/* Ball offsets */
+#define BALL_POS_X_OFS      0x164
+#define BALL_POS_Y_OFS      0x168
+#define BALL_POS_Z_OFS      0x16C
+#define BALL_PHYS_PTR_OFS   0x1A4
+#define BALL_PHYS_VEL_X     0xCA4
+#define BALL_PHYS_VEL_Y     0xCA8
+#define BALL_PHYS_VEL_Z     0xCAC
+#define BALL_IN_TAR_OFS     0x2CC
+#define BALL_TAR_SOUND_FLAG 0x2BC   /* +700 dec = 0x2BC */
+
+/* App offsets */
+#define APP_DIFFICULTY      0x23C
+#define APP_BALL_PTR         0x5DC
+#define APP_SOUNDFX_47C      0x47C
+#define APP_SOUNDFX_478      0x478
+#define APP_SOUNDFX_484      0x484
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Level vtable addresses (absolute — module base 0x00400000)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -1029,6 +1223,800 @@ static void InitBridge(void *board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Bridge Animation (Intermediate)
+ * 4-state machine: wait → tilt down → wait → tilt back
+ * Replicates FUN_0041CC90 (Intermediate Board_Update)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_BridgeAnimation(void *board, int level) {
+    if (!g_SceneUpdate) return;
+
+    /* Check ball list size — skip if race ending */
+    int ballCount = g_AthenaListGetSizeUpd((void *)((char *)board + 0xD8B));
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (ballCount == 1 && app && !IsBadReadPtr((void *)app, 0x600)) {
+        DWORD ball = *(DWORD *)(app + APP_BALL_PTR);
+        if (ball && !IsBadReadPtr((void *)ball, 0x200) && *(char *)(ball + 0x14C))
+            return;
+    }
+
+    /* Master uses different offsets for bridge (via vtable[0x90] = 0x421400) */
+    int base = (level == 14) ? 0x437C : 0x10DD;  /* pivot X offset */
+    int renderOfs = (level == 14) ? 0x10DB : 0x10DB;
+    int angleOfs = base + 3;    /* 0x10E0 or 0x4388 */
+    int stateOfs = base + 4;    /* 0x10E1 or 0x438C */
+    int counterOfs = base + 5; /* 0x10E2 or 0x4390 */
+
+    DWORD renderObj = *(DWORD *)((char *)board + renderOfs);
+    if (!renderObj) return;
+
+    int state = *(int *)((char *)board + stateOfs);
+
+    switch (state) {
+    case 0: /* Countdown */
+        {
+            int c = *(int *)((char *)board + counterOfs) - 1;
+            *(int *)((char *)board + counterOfs) = c;
+            if (c < 1)
+                *(int *)((char *)board + stateOfs) = 1;
+        }
+        break;
+
+    case 1: /* Tilt down */
+        {
+            float angle = *(float *)((char *)board + angleOfs) - 3.0f;
+            *(float *)((char *)board + angleOfs) = angle;
+            if (angle < 0.0f) {
+                *(float *)((char *)board + angleOfs) = 0.0f;
+                *(int *)((char *)board + counterOfs) = 0x7D; /* 125 */
+                *(int *)((char *)board + stateOfs) = 2;
+                /* Play sound + apply velocity to balls */
+                if (app && !IsBadReadPtr((void *)app, 0x500) && g_SoundPlay3DUpd) {
+                    DWORD snd = *(DWORD *)(app + APP_SOUNDFX_47C);
+                    if (snd) {
+                        float px = *(float *)((char *)board + base);
+                        float py = *(float *)((char *)board + base + 1);
+                        float pz = *(float *)((char *)board + base + 2);
+                        g_SoundPlay3DUpd((void *)snd, px, py, pz);
+                    }
+                }
+                if (g_SceneForEachBallSetVelocity && g_Vec3CopyUpd) {
+                    float pivot[3];
+                    g_Vec3CopyUpd(pivot, (float *)((char *)board + base));
+                    g_SceneForEachBallSetVelocity(board,
+                        pivot[1], pivot[2], 0.5f);
+                }
+            }
+        }
+        break;
+
+    case 2: /* Wait */
+        {
+            int c = *(int *)((char *)board + counterOfs) - 1;
+            *(int *)((char *)board + counterOfs) = c;
+            if (c < 1)
+                *(int *)((char *)board + stateOfs) = 3;
+        }
+        break;
+
+    case 3: /* Tilt back up */
+        {
+            float angle = *(float *)((char *)board + angleOfs) + 0.5f;
+            *(float *)((char *)board + angleOfs) = angle;
+            if (angle >= 45.0f) {
+                *(float *)((char *)board + angleOfs) = 45.0f;
+                *(int *)((char *)board + counterOfs) = 0x4B; /* 75 */
+                *(int *)((char *)board + stateOfs) = 0;
+            }
+            /* Play sound at intervals */
+            /* Transform ball positions through bridge rotation */
+            if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ &&
+                g_GfxSetPosition && g_MatrixTransformVec3) {
+                char timerBuf[68];
+                g_TimerInit(timerBuf);
+                g_GfxScaleZ(-*(float *)((char *)board + angleOfs));
+                g_GfxSetPosition(
+                    *(float *)((char *)board + base),
+                    *(float *)((char *)board + base + 1),
+                    *(float *)((char *)board + base + 2));
+                /* Call render object vtable[0x58] and [0x54] */
+                DWORD *renderVtbl = *(DWORD **)renderObj;
+                if (renderVtbl) {
+                    void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
+                    void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))renderVtbl[0x15];
+                    if (fn58) fn58((DWORD)renderObj);
+                    if (fn54) fn54(timerBuf);
+                }
+                g_TimerCleanup(timerBuf);
+            }
+        }
+        break;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Swirl Zones (Dizzy / Master)
+ * Proximity check → velocity scale + tar bubbles + mesh rotation
+ * Replicates DizzyBoard_Update (0x41D510) / Master Board_Update (0x420DA0)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_SwirlZones(void *board, int level) {
+    if (!g_AthenaListGetIteratorUpd || !g_OperatorNewUpd) return;
+
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+
+    /* Determine offsets based on level */
+    int swirlListOfs = (level == 14) ? BRD_SWIRL_LIST_M : BRD_SWIRL_LIST;
+    int tarListOfs = (level == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
+
+    /* TarBubble particle creation (every 10 frames via RNG==10 check) */
+    if (g_CreateTarBubble && g_AthenaListAppendUpd) {
+        if (g_RNG && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
+            void *tar = g_OperatorNewUpd(0x1C);
+            if (tar) {
+                g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
+                g_AthenaListAppendUpd((void *)((char *)board + 0xEC0), (int)tar);
+            }
+        }
+    }
+
+    /* Swirl zone processing: iterate ball list, check proximity to swirl zones */
+    int ballIter = g_AthenaListGetIteratorUpd((void *)((char *)board + 0xA75));
+    *(int *)((char *)board + 0xA77 + ballIter * 4) = 0;
+    int ballCount = *(int *)((char *)board + 0xA76);
+    int ballIdx = 0;
+    if (ballCount > 0) {
+        ballIdx = *(int *)(*(int *)((char *)board + 0xB78));
+        *(int *)((char *)board + 0xA77 + ballIter * 4) = 1;
+    }
+
+    while (ballIdx) {
+        /* Skip balls in tar (ball+0x2CC != 0) — they get sinking logic */
+        char inTar = *(char *)(ballIdx + BALL_IN_TAR_OFS);
+        if (!inTar) {
+            /* Check proximity to each swirl zone */
+            int zoneIter = g_AthenaListGetIteratorUpd((void *)((char *)board + swirlListOfs));
+            *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4) = 0;
+            int zoneCount = *(int *)((char *)board + swirlListOfs + 1);
+            int zoneIdx = 0;
+            if (zoneCount > 0) {
+                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x103));
+                *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4) = 1;
+            }
+
+            while (zoneIdx) {
+                if (*(int *)(ballIdx + 0x18) >= 0) {
+                    float ballX = *(float *)(ballIdx + BALL_POS_X_OFS);
+                    float ballY = *(float *)(ballIdx + BALL_POS_Y_OFS);
+                    float ballZ = *(float *)(ballIdx + BALL_POS_Z_OFS);
+                    float zoneX = *(float *)(zoneIdx + 0x10E0);
+                    float zoneY = *(float *)(zoneIdx + 0x10E4);
+                    float zoneZ = *(float *)(zoneIdx + 0x10E8);
+                    float radius = *(float *)(zoneIdx + 0x1100) * 60.0f;
+
+                    float dx = zoneX - ballX;
+                    float dy = zoneY - ballY;
+                    float dz = zoneZ - ballZ;
+                    float distSq = dx*dx + dy*dy + dz*dz;
+
+                    if (distSq < radius * radius) {
+                        /* Scale ball velocity */
+                        DWORD phys = *(DWORD *)(ballIdx + BALL_PHYS_PTR_OFS);
+                        if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
+                            float vx = *(float *)(phys + BALL_PHYS_VEL_X);
+                            float vy = *(float *)(phys + BALL_PHYS_VEL_Y);
+                            float vz = *(float *)(phys + BALL_PHYS_VEL_Z);
+                            float speedSq = vx*vx + vy*vy + vz*vz;
+                            float speed = 0.0f;
+                            if (speedSq > 0.0f) speed = sqrtf(speedSq);
+                            if (speed > 0.0f) {
+                                float scale = (speed * 0.95f) / speed;
+                                vx *= scale; vy *= scale; vz *= scale;
+                                *(float *)(phys + BALL_PHYS_VEL_X) = vx;
+                                *(float *)(phys + BALL_PHYS_VEL_Y) = vy;
+                                *(float *)(phys + BALL_PHYS_VEL_Z) = vz;
+                            }
+                            /* Play sound + spawn particles on first contact */
+                            if (!*(char *)(ballIdx + BALL_TAR_SOUND_FLAG)) {
+                                if (g_SoundPlay3DUpd) {
+                                    DWORD snd = *(DWORD *)(app + APP_SOUNDFX_484);
+                                    if (snd)
+                                        g_SoundPlay3DUpd((void *)snd, ballX, ballY, ballZ);
+                                }
+                                /* Spawn 3 particles */
+                                int p;
+                                for (p = 0; p < 3 && g_OperatorNewUpd && g_AthenaListAppendUpd; p++) {
+                                    float *part = (float *)g_OperatorNewUpd(0x14);
+                                    if (part) {
+                                        /* Random direction (normalized) */
+                                        if (g_RNG) {
+                                            part[0] = (float)g_RNG((void *)0x4F7360, 100, 1);
+                                            part[1] = (float)g_RNG((void *)0x4F7360, 100, 1);
+                                            part[2] = (float)g_RNG((void *)0x4F7360, 100, 1);
+                                            float lenSq = part[0]*part[0] + part[1]*part[1] + part[2]*part[2];
+                                            if (lenSq > 0.0f) {
+                                                float len = sqrtf(lenSq);
+                                                float s = 1.0f / len;
+                                                part[0] *= s; part[1] *= s; part[2] *= s;
+                                            }
+                                        }
+                                        int particleListSize = g_AthenaListGetSizeUpd(
+                                            (void *)(ballIdx + 0x810));
+                                        if (particleListSize < 30) {
+                                            g_AthenaListAppendUpd(
+                                                (void *)(ballIdx + 0x810), (int)part);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                int next = *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4);
+                if (*(int *)((char *)board + swirlListOfs + 1) <= next) break;
+                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x103) + next * 4);
+                *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4) = next + 1;
+            }
+        } else {
+            /* Ball is in tar — sink and potentially remove */
+            *(float *)(ballIdx + BALL_POS_Y_OFS) -= 0.25f;
+            /* Splash particle */
+            if (g_CreateSplashParticle && g_AthenaListAppendUpd && g_RNG) {
+                int rng1 = g_RNG((void *)0x4F7360, 0xF, 0);
+                if (rng1 == 1) {
+                    float rx = (float)g_RNG((void *)0x4F7360, 100, 1);
+                    float rz = (float)g_RNG((void *)0x4F7360, 100, 1);
+                    float lenSq = rx*rx + rz*rz;
+                    float len = (lenSq > 0.0f) ? sqrtf(lenSq) : 0.0f;
+                    float scale = (len > 0.0f) ?
+                        (10.0f + *(float *)(ballIdx + 0x284)) / len : 0.0f;
+                    rx *= scale; rz *= scale;
+                    void *splash = g_OperatorNewUpd(0x1C);
+                    if (splash) {
+                        g_CreateSplashParticle(splash, app,
+                            rz + *(float *)(ballIdx + BALL_POS_X_OFS),
+                            *(DWORD *)(ballIdx + 0x2D0),
+                            rx + *(float *)(ballIdx + BALL_POS_Z_OFS));
+                        g_AthenaListAppendUpd((void *)((char *)board + 0xEC0), (int)splash);
+                    }
+                }
+            }
+            /* Remove ball if below threshold */
+            float threshold = *(float *)(ballIdx + 0x2D0) -
+                *(float *)(ballIdx + 0x284) * 2.5f;
+            if (*(float *)(ballIdx + BALL_POS_Y_OFS) < threshold) {
+                if (g_RemoveBall) g_RemoveBall(ballIdx);
+            }
+        }
+        int nextBall = *(int *)((char *)board + 0xA77 + ballIter * 4);
+        if (*(int *)((char *)board + 0xA76) <= nextBall) break;
+        ballIdx = *(int *)(*(int *)((char *)board + 0xB78) + nextBall * 4);
+        *(int *)((char *)board + 0xA77 + ballIter * 4) = nextBall + 1;
+    }
+
+    /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) */
+    if (level != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
+        g_GfxSetPosition && g_Matrix44Zero) {
+        char timerBuf[68];
+        g_TimerInit(timerBuf);
+
+        /* Primary swirl mesh rotation (Gfx_ScaleY) */
+        float angle1 = *(float *)((char *)board + BRD_SWIRL1_ANGLE) - 0.5f;
+        *(float *)((char *)board + BRD_SWIRL1_SPEED) = 0.5f;
+        *(float *)((char *)board + BRD_SWIRL1_ANGLE) = angle1;
+        g_Matrix44Zero((int *)timerBuf);
+        g_GfxScaleY(angle1);
+        g_GfxSetPosition(
+            *(float *)((char *)board + BRD_SWIRL1_POS_X),
+            *(float *)((char *)board + BRD_SWIRL1_POS_Y),
+            *(float *)((char *)board + BRD_SWIRL1_POS_Z));
+        /* Call mesh vtable[0x58]+[0x54] */
+        DWORD mesh1 = *(DWORD *)((char *)board + BRD_SWIRL_MESH1);
+        if (mesh1) {
+            DWORD *vtbl = *(DWORD **)mesh1;
+            if (vtbl) {
+                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
+                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                if (fn58) fn58((DWORD)mesh1);
+                if (fn54) fn54(timerBuf);
+            }
+        }
+
+        g_TimerCleanup(timerBuf);
+    }
+
+    /* Dizzy: secondary swirl mesh rotation (Gfx_ScaleX) */
+    if (level != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleX &&
+        g_GfxSetPosition && g_Matrix44Zero) {
+        char timerBuf[68];
+        g_TimerInit(timerBuf);
+
+        float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
+        *(float *)((char *)board + BRD_SWIRL2_ANGLE) =
+            *(float *)((char *)board + BRD_SWIRL2_ANGLE) + swirlSpeed;
+        g_Matrix44Zero((int *)timerBuf);
+        g_GfxScaleX(*(float *)((char *)board + BRD_SWIRL2_ANGLE));
+        g_GfxSetPosition(
+            *(float *)((char *)board + BRD_SWIRL2_POS_X),
+            *(float *)((char *)board + BRD_SWIRL2_POS_Y),
+            *(float *)((char *)board + BRD_SWIRL2_POS_Z));
+        DWORD mesh2 = *(DWORD *)((char *)board + BRD_SWIRL_MESH2);
+        if (mesh2) {
+            DWORD *vtbl = *(DWORD **)mesh2;
+            if (vtbl) {
+                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
+                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                if (fn58) fn58((DWORD)mesh2);
+                if (fn54) fn54(timerBuf);
+            }
+        }
+
+        g_TimerCleanup(timerBuf);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Windmill (Tower)
+ * Rotation + 4-state machine (spin up → creak → spin down → pause)
+ * Replicates FUN_0041E760 (Tower Board_Update)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_Windmill(void *board, int level) {
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x500)) return;
+
+    /* Accumulate rotation */
+    float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
+    *(float *)((char *)board + BRD_WM_ANGLE) =
+        *(float *)((char *)board + BRD_WM_ANGLE) + rotSpeed;
+
+    /* Play creak sound every 90° (mod 0x5A == 0x2D) */
+    {
+        int angleInt = *(int *)((char *)board + BRD_WM_ANGLE);
+        if (angleInt % 0x5A == 0x2D) {
+            if (g_SoundPlay3DUpd) {
+                DWORD snd = *(DWORD *)(app + 0x4A4);
+                if (snd) {
+                    g_SoundPlay3DUpd((void *)snd,
+                        *(float *)((char *)board + BRD_WM_POS_X),
+                        *(float *)((char *)board + BRD_WM_POS_Y),
+                        *(float *)((char *)board + BRD_WM_POS_Z));
+                }
+            }
+        }
+    }
+
+    /* Render windmill mesh with rotation */
+    if (g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition) {
+        char timerBuf[68];
+        g_TimerInit(timerBuf);
+        g_GfxScaleY(*(float *)((char *)board + BRD_WM_ANGLE));
+        g_GfxSetPosition(
+            *(float *)((char *)board + BRD_WM_POS_X),
+            *(float *)((char *)board + BRD_WM_POS_Y),
+            *(float *)((char *)board + BRD_WM_POS_Z));
+        DWORD renderObj = *(DWORD *)((char *)board + BRD_WM_RENDER);
+        if (renderObj) {
+            DWORD *vtbl = *(DWORD **)renderObj;
+            if (vtbl) {
+                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
+                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                if (fn58) fn58((DWORD)renderObj);
+                if (fn54) fn54(timerBuf);
+            }
+        }
+        g_TimerCleanup(timerBuf);
+    }
+
+    /* 4-state machine for windmill speed control */
+    int wmState = *(int *)((char *)board + BRD_WM_STATE);
+    switch (wmState) {
+    case 0: /* Spin up (decelerate) */
+        {
+            float speed = *(float *)((char *)board + BRD_WM_SPEED);
+            if (speed == 0.0f) speed = 0.25f;  /* 0x3E800000 */
+            speed *= 1.2;  /* double constant */
+            *(float *)((char *)board + BRD_WM_SPEED) = speed;
+            if (speed > 25.0f) {
+                *(float *)((char *)board + BRD_WM_SPEED) = 25.0f;  /* 0x41C80000 */
+                *(int *)((char *)board + BRD_WM_STATE) = 1;
+                *(int *)((char *)board + BRD_WM_COUNTER) = 0x19;
+                *(float *)((char *)board + BRD_WM_DECAY_VAL) = 50.0f;  /* 0x42480000 */
+            }
+        }
+        break;
+    case 1: /* Countdown then play sound */
+        {
+            int c = *(int *)((char *)board + BRD_WM_COUNTER) - 1;
+            *(int *)((char *)board + BRD_WM_COUNTER) = c;
+            if (c < 1) {
+                *(int *)((char *)board + BRD_WM_STATE) = 2;
+                if (g_SoundPlay3DUpd) {
+                    DWORD snd = *(DWORD *)(app + 0x4A8);
+                    if (snd) {
+                        g_SoundPlay3DUpd((void *)snd,
+                            *(float *)((char *)board + 0x10E5),
+                            *(float *)((char *)board + 0x10E6),
+                            *(float *)((char *)board + 0x10E7));
+                    }
+                }
+            }
+        }
+        break;
+    case 2: /* Spin down */
+        {
+            float speed = *(float *)((char *)board + BRD_WM_SPEED) * 0.25f;
+            *(float *)((char *)board + BRD_WM_SPEED) = speed;
+            if (speed < 1.0f) {
+                *(float *)((char *)board + BRD_WM_SPEED) = 0.0f;
+                if (g_RNG) {
+                    int rng = g_RNG((void *)0x4F7360, 2, 0);
+                    if (rng != 0) {
+                        *(int *)((char *)board + BRD_WM_STATE) = 3;
+                        int rng2 = g_RNG((void *)0x4F7360, 100, 0);
+                        *(int *)((char *)board + BRD_WM_COUNTER) = rng2 + 100;
+                    } else {
+                        *(int *)((char *)board + BRD_WM_STATE) = 0;
+                    }
+                }
+            }
+        }
+        break;
+    case 3: /* Pause + decay */
+        {
+            float decay = *(float *)((char *)board + BRD_WM_DECAY_VAL) - 2.0f;
+            if (decay < 0.0f) decay = 0.0f;
+            *(float *)((char *)board + BRD_WM_DECAY_VAL) = decay;
+            int c = *(int *)((char *)board + BRD_WM_COUNTER) - 1;
+            *(int *)((char *)board + BRD_WM_COUNTER) = c;
+            if (c < 1)
+                *(int *)((char *)board + BRD_WM_STATE) = 0;
+        }
+        break;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: BadBall Spawner (Odd)
+ * Timer-based spawning of BadBall enemies
+ * Replicates FUN_0041EE80 (Odd Board_Update)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_BadBallSpawner(void *board, int level) {
+    if (!g_RNG || !g_BadBallCtor || !g_OperatorNewUpd || !g_AthenaListAppendUpd) return;
+
+    char spawnFlag = *(char *)((char *)board + BRD_BB_FLAG);
+    if (!spawnFlag) return;
+
+    int counter = *(int *)((char *)board + BRD_BB_COUNTER) - 1;
+    *(int *)((char *)board + BRD_BB_COUNTER) = counter;
+    if (counter >= 1) return;
+
+    /* Check limits */
+    int ballCount = g_AthenaListGetSizeUpd((void *)((char *)board + 0xA75));
+    int totalSpawned = *(int *)((char *)board + BRD_BB_TOTAL);
+    if (ballCount >= 10 || totalSpawned >= 100) return;
+
+    /* Set next spawn timer */
+    int nextDelay = g_RNG((void *)0x4F7360, 0x19, 0);
+    *(int *)((char *)board + BRD_BB_COUNTER) = nextDelay + 0x19;
+
+    /* Pick random spawn position (3-slot table) */
+    int posIdx;
+    do {
+        posIdx = g_RNG((void *)0x4F7360, 3, 0);
+    } while (posIdx == *(int *)((char *)board + BRD_BB_LAST_IDX));
+    *(int *)((char *)board + BRD_BB_LAST_IDX) = posIdx;
+
+    float *posTable = (float *)((char *)board + BRD_BB_POS_TABLE);
+    float spawnX = posTable[posIdx * 3];
+    float spawnY = posTable[posIdx * 3 + 1];
+    float spawnZ = posTable[posIdx * 3 + 2];
+
+    /* Play spawn sound */
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (app && !IsBadReadPtr((void *)app, 0x600) && g_SoundPlay3DUpd) {
+        DWORD snd = *(DWORD *)(app + 0x4D0);
+        if (snd) g_SoundPlay3DUpd((void *)snd, spawnX, spawnY, spawnZ);
+    }
+
+    /* Create BadBall */
+    void *mem = g_OperatorNewUpd(0xC64);
+    if (!mem) return;
+    void *badball = g_BadBallCtor(mem, (int)board);
+    if (!badball) return;
+
+    /* Set trajectory */
+    g_BallSetTrajectory(badball, 0x41EF8A, spawnX, spawnY, spawnZ, 0.0f);
+
+    /* Set badball fields */
+    int *bb = (int *)badball;
+    bb[0x5A] = (int)(spawnY + 24.0f);
+    bb[0x59] = (int)spawnX;
+    bb[0x5B] = (int)spawnZ;
+    bb[0x9E] = 0x3F000000;  /* 0.5f */
+    bb[0x9F] = 0x3DCCCCCD;  /* 0.1f */
+    bb[0xA1] = 0x41C00000;  /* 24.0f */
+    bb[0x62] = 0x40A00000;  /* 5.0f */
+    bb[6] = -1;
+
+    /* Random direction */
+    float dirX, dirZ, lenSq;
+    do {
+        dirX = (float)g_RNG((void *)0x4F7360, 0x19, 1);
+        dirZ = (float)g_RNG((void *)0x4F7360, 0x32, 1);
+        lenSq = dirX * dirX + dirZ * dirZ;
+    } while (lenSq <= 0.0f || sqrtf(lenSq) == 0.0f);
+
+    /* Normalize and scale to 2.5 */
+    float len = sqrtf(lenSq);
+    dirX = (dirX / len) * 2.5f;
+    dirZ = (dirZ / len) * 2.5f;
+
+    /* Set velocity via Ball_SetVec3AtOffset */
+    float velVec[3] = { dirX, 12.0f, dirZ };
+    if (g_BallSetVec3AtOffset) {
+        g_BallSetVec3AtOffset((void *)bb[0x69], velVec);
+        /* Call vtable[0x10] on the physics object */
+        DWORD physObj = bb[0x69];
+        if (physObj) {
+            DWORD *vtbl = *(DWORD **)physObj;
+            if (vtbl) {
+                void (__fastcall *fn10)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x4];
+                if (fn10) fn10((DWORD)physObj);
+            }
+        }
+    }
+
+    g_AthenaListAppendUpd((void *)((char *)board + 0xA75), (int)badball);
+    *(int *)((char *)board + BRD_BB_TOTAL) = totalSpawned + 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Bumper Lit Decay (Beginner / Toob / Master)
+ * Decays 4-8 float "lit" values by 0.05/frame, clamped to 0.0
+ * Replicates Beginner slot[19] / Toob slot[19] / Master vtable[0x94]
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_BumperDecay(void *board, int level) {
+    int baseOfs;
+    int count;
+
+    if (level == 2) {        /* Beginner */
+        baseOfs = BRD_BUMPER_DECAY_BEG;
+        count = 8;
+    } else if (level == 10) { /* Toob */
+        baseOfs = BRD_BUMPER_DECAY_TOOB;
+        count = 8;
+    } else if (level == 14) { /* Master */
+        baseOfs = BRD_BUMPER_DECAY_MAST;
+        count = 4;
+    } else {
+        return;
+    }
+
+    int i;
+    for (i = 0; i < count; i++) {
+        float val = *(float *)((char *)board + baseOfs + i * 4);
+        val -= 0.05;  /* double constant */
+        if (val <= 0.0) val = 0.0;  /* double constant */
+        *(float *)((char *)board + baseOfs + i * 4) = val;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Neon Camera (Neon)
+ * Positions render objects relative to ball
+ * Replicates FUN_00424790 (Neon slot[19])
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_NeonCamera(void *board, int level) {
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+
+    DWORD ball = *(DWORD *)(app + APP_BALL_PTR);
+    if (!ball || IsBadReadPtr((void *)ball, 0x200)) return;
+
+    float ballX = *(float *)(ball + BALL_POS_X_OFS);
+    float ballY = *(float *)(ball + BALL_POS_Y_OFS);
+    float ballZ = *(float *)(ball + BALL_POS_Z_OFS);
+
+    /* Position render object 1 (board+0x436C) */
+    DWORD render1 = *(DWORD *)((char *)board + 0x436C);
+    if (render1) {
+        DWORD *vtbl = *(DWORD **)render1;
+        if (vtbl) {
+            void (__fastcall *setPos)(DWORD, float, float, float) =
+                (void (__fastcall *)(DWORD, float, float, float))vtbl[0x1]; /* vtable[+4] */
+            if (setPos) setPos((DWORD)render1, ballX + 20.0f, ballY + 30.0f, ballZ - 20.0f);
+        }
+    }
+
+    /* Position render object 2 (board+0x4370) if App+0x677 is 0 */
+    if (!*(char *)(app + 0x677)) {
+        DWORD ball2 = *(DWORD *)(app + 0x67C);
+        if (ball2 && !IsBadReadPtr((void *)ball2, 0x200)) {
+            float b2X = *(float *)(ball2 + BALL_POS_X_OFS);
+            float b2Y = *(float *)(ball2 + BALL_POS_Y_OFS);
+            float b2Z = *(float *)(ball2 + BALL_POS_Z_OFS);
+            DWORD render2 = *(DWORD *)((char *)board + 0x4370);
+            if (render2) {
+                DWORD *vtbl2 = *(DWORD **)render2;
+                if (vtbl2) {
+                    void (__fastcall *setPos)(DWORD, float, float, float) =
+                        (void (__fastcall *)(DWORD, float, float, float))vtbl2[0x1];
+                    if (setPos) setPos((DWORD)render2, b2X + 20.0f, b2Y + 30.0f, b2Z - 20.0f);
+                }
+            }
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Sky Popcylinder Activator (Sky)
+ * Randomly activates popcylinders via Scene_SetRaceActive
+ * Replicates SkyBoard_Update (0x41FC90)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void Feature_SkyPopcylinder(void *board, int level) {
+    if (!g_RNG || !g_SceneSetRaceActive) return;
+
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+
+    /* Only activate when difficulty != 0 */
+    if (*(int *)(app + APP_DIFFICULTY) == 0) {
+        /* Still call vtable[+4] on the scene object at board+0x47AC */
+        DWORD sceneObj = *(DWORD *)((char *)board + 0x47AC);
+        if (sceneObj) {
+            DWORD *vtbl = *(DWORD **)sceneObj;
+            if (vtbl) {
+                void (__fastcall *fn4)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x1];
+                if (fn4) fn4((DWORD)sceneObj);
+            }
+        }
+    }
+
+    /* Check timer */
+    if (!*(int *)((char *)board + 0x47F4) || *(int *)(app + APP_DIFFICULTY) == 0) return;
+
+    int counter = *(int *)((char *)board + 0x47F0) - 1;
+    *(int *)((char *)board + 0x47F0) = counter;
+    if (counter >= 1) return;
+
+    /* Reset counter and activate random popcylinders */
+    *(int *)((char *)board + 0x47F0) = 0x4B; /* 75 */
+    int rngCase = g_RNG((void *)0x4F7360, 6, 0);
+
+    /* Play sound at rotator position */
+    DWORD rotator = *(DWORD *)((char *)board + 0x47D0);
+    if (rotator && g_SoundPlay3DUpd) {
+        DWORD snd = *(DWORD *)(app + 0x480);
+        if (snd) {
+            g_SoundPlay3DUpd((void *)snd,
+                *(float *)(rotator + 0x10D4),
+                *(float *)(rotator + 0x10D8),
+                *(float *)(rotator + 0x10DC));
+        }
+    }
+
+    /* Activate popcylinders based on RNG case */
+    switch (rngCase) {
+    case 0:
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47C4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47C8));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47D4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47D8));
+        break;
+    case 1: {
+        int n = g_RNG((void *)0x4F7360, 5, 0);
+        int i;
+        for (i = 0; i < n + 3; i++) {
+            int idx = g_RNG((void *)0x4F7360, 0x10, 0);
+            g_SceneSetRaceActive(*(int *)((char *)board + 0x47B0 + idx * 4));
+        }
+        break;
+    }
+    case 2: {
+        int i;
+        for (i = 0; i < 0x10; i++)
+            g_SceneSetRaceActive(*(int *)((char *)board + 0x47B0 + i * 4));
+        break;
+    }
+    case 3:
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B0));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B8));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47BC));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47C0));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47CC));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47D0));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47DC));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47E0));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47E4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47E8));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47EC));
+        break;
+    case 4: {
+        int idx = g_RNG((void *)0x4F7360, 4, 0);
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B0 + idx * 0x10));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B4 + idx * 0x10));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B8 + idx * 0x10));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47BC + idx * 0x10));
+        break;
+    }
+    case 5: {
+        int idx = g_RNG((void *)0x4F7360, 4, 0);
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47B0 + idx * 4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47C0 + idx * 4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47D0 + idx * 4));
+        g_SceneSetRaceActive(*(int *)((char *)board + 0x47E0 + idx * 4));
+        break;
+    }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Board_Update — replaces all 15 per-level Board_Update functions
+ *
+ * Calls Scene_Update first, then dispatches to feature blocks based on
+ * the per-level feature flags in g_updateFeatures[].
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void __fastcall UniversalBoardUpdate(void *board) {
+    if (!g_SceneUpdate || !board) return;
+
+    /* Call base Scene_Update */
+    g_SceneUpdate(board);
+
+    /* Get level and dispatch features */
+    int level = GetCurrentLevel(board);
+    if (level == 0) return;
+
+    DWORD features = g_updateFeatures[level];
+    if (!features) return;
+
+    /* Bridge animation (Intermediate + Master bridge) */
+    if (features & FEAT_BRIDGE_ANIM)
+        Feature_BridgeAnimation(board, level);
+
+    /* Swirl zones (Dizzy + Master) */
+    if (features & FEAT_SWIRL)
+        Feature_SwirlZones(board, level);
+
+    /* Windmill (Tower) */
+    if (features & FEAT_WINDMILL)
+        Feature_Windmill(board, level);
+
+    /* BadBall spawner (Odd) */
+    if (features & FEAT_BADBALL)
+        Feature_BadBallSpawner(board, level);
+
+    /* Bumper lit decay (Beginner + Toob + Master) */
+    if (features & FEAT_BUMPER_DECAY)
+        Feature_BumperDecay(board, level);
+
+    /* Neon camera follow (Neon) */
+    if (features & FEAT_NEON_CAM)
+        Feature_NeonCamera(board, level);
+
+    /* Sky popcylinder activator (Sky) */
+    if (features & FEAT_SKY_POPCYL)
+        Feature_SkyPopcylinder(board, level);
+
+    /* Master extra vtable calls — already covered by BRIDGE_ANIM + BUMPER_DECAY
+       but Master's Board_Update also calls them via vtable[0x90]+[0x94].
+       Since we handle bridge anim and bumper decay as feature blocks,
+       FEAT_MASTER_EXTRA is a no-op flag (the features are already dispatched above). */
+}
+
+/* Naked thunk for vtable slot 1 (Board_Update) */
+/* Replaces the original __fastcall Board_Update(board) with UniversalBoardUpdate */
+/* Must be callable via vtable indirect call: CALL [vtable+0x4] */
+/* We patch each level's vtable[1] to point to UniversalBoardUpdate */
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Universal Post-Setup — config-driven feature initialization
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -1350,6 +2338,29 @@ void DebugLog(const char *msg) {
     CloseHandle(hFile);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Vtable patching — replace slot[1] (Board_Update) in all 15 level vtables
+ * with UniversalBoardUpdate
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void InstallVtablePatches(void) {
+    int i;
+    for (i = 1; i <= 15; i++) {
+        DWORD vtableAddr = g_levelVtables[i];
+        if (!vtableAddr) continue;
+        if (IsBadReadPtr((void *)vtableAddr, 8)) continue;
+
+        /* Patch slot[1] (offset +4) to point to UniversalBoardUpdate */
+        DWORD *slot1 = (DWORD *)(vtableAddr + 4);
+        DWORD oldProtect;
+        VirtualProtect(slot1, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+        *slot1 = (DWORD)&UniversalBoardUpdate;
+        VirtualProtect(slot1, 4, oldProtect, &oldProtect);
+        FlushInstructionCache(GetCurrentProcess(), slot1, 4);
+    }
+    DebugLog("Vtable slot[1] patched for all 15 levels");
+}
+
 static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("=== PatchThread started ===");
     Sleep(2000);
@@ -1377,6 +2388,41 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_AthenaListAppend = (AthenaList_Append_t)(g_moduleBase + RVA_AthenaList_Append);
     g_AthenaListGetSize = (AthenaList_GetSize_t)(g_moduleBase + RVA_AthenaList_GetSize);
     g_AthenaListGetIterator = (AthenaList_GetIterator_t)(g_moduleBase + RVA_AthenaList_GetIterator);
+
+    /* Resolve Board_Update function pointers */
+    g_SceneUpdate = (Scene_Update_t)(g_moduleBase + RVA_Scene_Update);
+    g_BoardUpdateRaceState = (Board_UpdateRaceState_t)(g_moduleBase + RVA_Board_UpdateRaceState);
+    g_GfxScaleZ = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleZ);
+    g_GfxScaleY = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleY);
+    g_GfxScaleX = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleX);
+    g_GfxSetPosition = (Gfx_SetPosition_t)(g_moduleBase + RVA_Gfx_SetPosition);
+    g_TimerInit = (Timer_Init_t)(g_moduleBase + RVA_Timer_Init);
+    g_TimerCleanup = (Timer_Cleanup_t)(g_moduleBase + RVA_Timer_Cleanup);
+    g_MatrixTransformVec3 = (Matrix_TransformVec3_t)(g_moduleBase + RVA_Matrix_TransformVec3);
+    g_Matrix44Zero = (Matrix44_Zero_t)(g_moduleBase + RVA_Matrix44_Zero);
+    g_SceneForEachBallSetVelocity = (Scene_ForEachBall_SetVelocity_t)(g_moduleBase + RVA_Scene_ForEachBall_SetVel);
+    g_AthenaListGetIteratorUpd = (AthenaList_GetIterator_t)(g_moduleBase + RVA_AthenaList_GetIterator);
+    g_AthenaListGetSizeUpd = (AthenaList_GetSize_t)(g_moduleBase + RVA_AthenaList_GetSize);
+    g_AthenaListAppendUpd = (AthenaList_Append_t)(g_moduleBase + RVA_AthenaList_Append);
+    g_OperatorNewUpd = (operator_new_t)(g_moduleBase + RVA_operator_new);
+    g_SoundPlay3DUpd = (Sound_Play3D_Fn_t)(g_moduleBase + RVA_Sound_Play3D);
+    g_CreateTarBubble = (FUN_0044fa90_t)(g_moduleBase + RVA_FUN_0044fa90);
+    g_CreateSplashParticle = (FUN_0044fb50_t)(g_moduleBase + RVA_FUN_0044fb50);
+    g_RemoveBall = (FUN_00405190_t)(g_moduleBase + RVA_FUN_00405190);
+    g_RNG = (CPUID_RNG_t)(g_moduleBase + RVA_CPUID_RNG);
+    g_BadBallCtor = (BadBall_ctor_t)(g_moduleBase + RVA_BadBall_ctor);
+    g_BallSetTrajectory = (Ball_SetTrajectory_t)(g_moduleBase + RVA_Ball_SetTrajectory);
+    g_BallSetVec3AtOffset = (Ball_SetVec3AtOffset_t)(g_moduleBase + RVA_Ball_SetVec3AtOffset);
+    g_Vec3NormalizeAndScale = (Vec3_NormalizeAndScale_t)(g_moduleBase + RVA_Vec3_NormalizeAndScale);
+    g_Vec3CopyUpd = (Vec3_Copy_t)(g_moduleBase + RVA_Vec3_Copy_Upd);
+    g_SoundCalcDistAtten = (Sound_CalcDistAtten_t)(g_moduleBase + RVA_Sound_CalcDistAtten);
+    g_SoundPlay3DAtPos = (Sound_Play3DAtPos_t)(g_moduleBase + RVA_Sound_Play3DAtPos);
+    g_SceneSetRaceActive = (Scene_SetRaceActive_t)(g_moduleBase + RVA_Scene_SetRaceActive);
+    g_SceneAddObject = (Scene_AddObject_t)(g_moduleBase + RVA_Scene_AddObject);
+
+    /* Initialize feature flags from defaults */
+    memcpy(g_updateFeatures, g_defaultFeatures, sizeof(g_updateFeatures));
+
     DebugLog("Function pointers resolved");
 
     GetConfigPath();
@@ -1390,6 +2436,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     PatchAllocSizes();
     InstallBoardCtorHooks();
     InstallUniversalConstructorHook();
+    InstallVtablePatches();
     InstallHook();
     DebugLog("=== PatchThread complete ===");
     return 0;
