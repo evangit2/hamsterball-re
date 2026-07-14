@@ -31,7 +31,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "../shared/bass_proxy.h"
+#include "bass_proxy.h"
 
 /* ============================================================
  * Level table — board ctors, struct sizes, and patch points
