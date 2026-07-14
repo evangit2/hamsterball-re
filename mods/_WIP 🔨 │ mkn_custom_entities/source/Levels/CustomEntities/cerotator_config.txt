@@ -1,0 +1,11 @@
+# CErotator behavior configuration
+# Place this file in the Levels/CustomEntities/ folder next to CErotator.dll
+
+# Rotation speed in radians per frame (0.02 = ~69°/sec at 60fps)
+speed=0.02
+
+# Rotation axis: x, y, or z
+# y = Y-axis rotation (like the SWIRL in Dizzy Race)
+# x = X-axis rotation (tumbling)
+# z = Z-axis rotation (rolling)
+axis=y
