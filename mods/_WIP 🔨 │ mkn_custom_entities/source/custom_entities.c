@@ -320,12 +320,7 @@ static void grid_apply_visibility(void) {
         GridMesh* gm = &g_grid_meshes[i];
         if (!gm->transform || IsBadWritePtr(gm->transform, sizeof(EntityTransform)))
             continue;
-
-        if (gm->grid_num == g_grid_counter) {
-            gm->transform->posScale = 1.0f;  /* show */
-        } else {
-            gm->transform->posScale = 0.0f;  /* hide */
-        }
+        gm->transform->posScale = 0.0f;  /* TEST: hide ALL grid meshes */
     }
 }
 
