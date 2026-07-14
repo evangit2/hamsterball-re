@@ -73,7 +73,29 @@ typedef unsigned long long QWORD;
 #define BUMPER_LIT_STRIDE  4
 #define BUMPER_LIT_COLL     0x6428
 
+/* Bridge slot layout (board+0x436C..0x4388) */
+#define BRIDGE_MESHWORLD   0x436C
+#define BRIDGE_RENDEROBJ   0x4370
+#define BRIDGE_PARAM1      0x4380  /* float 45.0 in Intermediate */
+#define BRIDGE_PARAM2      0x4384  /* 0 */
+#define BRIDGE_PARAM3      0x4388  /* 0x32 = 50 */
+
 #define UNION_SIZE  0xA2F8
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Object type system — extensible per-level feature toggles
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef enum {
+    OBJ_BUMPERS = 0,
+    OBJ_BRIDGE,
+    OBJ_COUNT
+} ObjectType;
+
+static const char *g_objectNames[OBJ_COUNT] = {
+    "BUMPERS",
+    "BRIDGE",
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Level vtable addresses (absolute — module base 0x00400000)
@@ -129,7 +151,7 @@ static LevelData g_levelData[16] = {
     /* 2=Beginner */
     {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0},
     /* 3=Intermediate */
-    {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{"0x436C:Levels\\Level2-Bridge","0x4370:RENDER"},2,0},
+    {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0},
     /* 4=Dizzy */
     {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x436C:Levels\\Level3-Tipper","0x4370:RENDER","0x4BA8:Levels\\Level3-WaterWheel","0x4BAC:RENDER","0x4BC4:Levels\\Level3-Swirl","0x4BC8:RENDER","0x4374:Levels\\Level3-Gluebie"},7,0x851},
     /* 5=Tower */
@@ -151,16 +173,17 @@ static LevelData g_levelData[16] = {
     /* 13=Sky */
     {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x436C:MESH:meshes\\skypillar","0x4370:MESH:meshes\\magnifyingglass","0x4384:levels\\level9-popcylinder1","0x4388:levels\\level9-popcylinder2","0x438C:levels\\level9-trapdoor","0x4374:SPRITE:textures\\clouds.png"},6,0x858},
     /* 14=Master */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x436C:Levels\\Level2-Bridge","0x4370:RENDER","0x4374:Levels\\Level10-2PBridge","0x4378:RENDER","0x4394:Levels\\Level3-Tipper","0x4398:RENDER","0x5410:Levels\\Level10-Bridge1","0x5414:Levels\\Level10-Bridge2","0x5420:levels\\level9-popcylinder1","0x5424:levels\\level9-popcylinder2","0x5840:Levels\\Level8-Blockdawg1","0x5844:Levels\\Level8-Blockdawg2","0x5848:Levels\\Level4-Catapult","0x607C:Levels\\Level3-Gluebie"},14,0x859},
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x4374:Levels\\Level10-2PBridge","0x4378:RENDER","0x4394:Levels\\Level3-Tipper","0x4398:RENDER","0x5410:Levels\\Level10-Bridge1","0x5414:Levels\\Level10-Bridge2","0x5420:levels\\level9-popcylinder1","0x5424:levels\\level9-popcylinder2","0x5840:Levels\\Level8-Blockdawg1","0x5844:Levels\\Level8-Blockdawg2","0x5848:Levels\\Level4-Catapult","0x607C:Levels\\Level3-Gluebie"},12,0x859},
     /* 15=Impossible */
     {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x436C:Levels\\LevelImpossible-Looper","0x4370:Levels\\LevelImpossible-Gear","0x4374:Levels\\LevelImpossible-BigGear","0x4378:Levels\\LevelImpossible-Rotator","0x437C:Levels\\LevelImpossible-Pendulum"},5,0},
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Config: per-level feature flags
+ * g_objectEnabled[objType][level] = 1 if enabled
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int g_bumpersEnabled[16] = {0};
+static int g_objectEnabled[OBJ_COUNT][16] = {{0}};
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Globals
@@ -231,11 +254,17 @@ static int GetCurrentLevel(void *board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Bumpers config parser (LevelSpecials.txt)
+ * Config parser (LevelSpecials.txt)
+ * Format:
+ *   [OBJECTS]
+ *   BUMPERS = 2 5 8
+ *   BRIDGE = 3 14
+ *
+ * Object name = level numbers (1-15). Empty () = disabled.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void LoadConfig(void) {
-    memset(g_bumpersEnabled, 0, sizeof(g_bumpersEnabled));
+    memset(g_objectEnabled, 0, sizeof(g_objectEnabled));
     HANDLE hFile = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
@@ -248,7 +277,7 @@ static void LoadConfig(void) {
     buf[bytesRead] = '\0';
 
     char *line = buf;
-    int inBumpersSection = 0;
+    int inObjectsSection = 0;
     while (line < buf + bytesRead) {
         char *eol = line;
         while (*eol && *eol != '\n' && *eol != '\r') eol++;
@@ -258,10 +287,26 @@ static void LoadConfig(void) {
         while (*p == ' ' || *p == '\t') p++;
         if (*p == '\0' || *p == '#' || *p == ';') goto next_line;
         if (p[0] == '[') {
-            inBumpersSection = (my_strnicmp(p, "[BUMPERS", 8) == 0);
+            inObjectsSection = (my_strnicmp(p, "[OBJECTS", 8) == 0);
             goto next_line;
         }
-        if (inBumpersSection && my_strnicmp(p, "BUMPERS", 7) == 0) {
+        if (inObjectsSection) {
+            /* Find object name match */
+            int objType = -1;
+            int i;
+            for (i = 0; i < OBJ_COUNT; i++) {
+                int nameLen = strlen(g_objectNames[i]);
+                if (my_strnicmp(p, g_objectNames[i], nameLen) == 0) {
+                    /* Make sure next char is '=' or whitespace (not a prefix) */
+                    char after = p[nameLen];
+                    if (after == '=' || after == ' ' || after == '\t') {
+                        objType = i;
+                        break;
+                    }
+                }
+            }
+            if (objType < 0) goto next_line;
+
             char *eq = p;
             while (*eq && *eq != '=') eq++;
             if (*eq == '=') {
@@ -278,7 +323,7 @@ static void LoadConfig(void) {
                     if (*eq >= '0' && *eq <= '9') {
                         int levelNum = atoi(eq);
                         if (levelNum >= 1 && levelNum <= 15)
-                            g_bumpersEnabled[levelNum] = 1;
+                            g_objectEnabled[objType][levelNum] = 1;
                         while (*eq && *eq >= '0' && *eq <= '9') eq++;
                     } else {
                         eq++;
@@ -533,7 +578,7 @@ static void ApplyBumperBounce(void *board, void *ball, void *collPair) {
 void __cdecl BumperCollisionLogic(void *board, void *ball, void *collPair) {
     int level = GetCurrentLevel(board);
     if (level == 0) return;
-    if (!g_bumpersEnabled[level]) return;
+    if (!g_objectEnabled[OBJ_BUMPERS][level]) return;
     ApplyBumperBounce(board, ball, collPair);
 }
 
@@ -851,7 +896,53 @@ static void InstallBoardCtorHooks(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Universal Post-Setup — config-driven feature initialization (bumpers)
+ * InitBridge — replicates LevelBoard_Intermediate_ctor bridge setup
+ *
+ * Steps (from Ghidra decompilation of 0x0041cb20):
+ *   1. operator_new(0x10d0) → Level_MeshWorldCtor(mem, gfx, "Levels\\Level2-Bridge") → board+0x436C
+ *   2. operator_new(0x10d0) → Level_RenderCtor(mem, meshWorld) → board+0x4370
+ *   3. TipperVisual_Attach(renderObj, meshWorld)
+ *   4. board+0x4380 = 0x42340000 (float 45.0)
+ *   5. board+0x4384 = 0
+ *   6. board+0x4388 = 0x32 (50)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void InitBridge(void *board) {
+    if (!g_operatorNew || !g_LevelMeshWorldCtor || !g_LevelRenderCtor ||
+        !g_TipperVisualAttach) return;
+
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x200)) return;
+    void *gfx = *(void **)((char *)app + 0x174);
+    if (!gfx) return;
+
+    /* Step 1: MeshWorld */
+    void *meshMem = g_operatorNew(0x10D0);
+    if (!meshMem) return;
+    void *meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, "Levels\\Level2-Bridge");
+    *(void **)((char *)board + BRIDGE_MESHWORLD) = meshWorld;
+
+    /* Step 2: RenderObj */
+    void *renderMem = g_operatorNew(0x10D0);
+    void *renderObj = NULL;
+    if (renderMem) {
+        renderObj = g_LevelRenderCtor(renderMem, meshWorld);
+    }
+    *(void **)((char *)board + BRIDGE_RENDEROBJ) = renderObj;
+
+    /* Step 3: TipperVisual_Attach */
+    if (renderObj && meshWorld) {
+        g_TipperVisualAttach(renderObj, meshWorld);
+    }
+
+    /* Steps 4-6: Bridge config values */
+    *(DWORD *)((char *)board + BRIDGE_PARAM1) = 0x42340000;  /* 45.0f */
+    *(DWORD *)((char *)board + BRIDGE_PARAM2) = 0;
+    *(DWORD *)((char *)board + BRIDGE_PARAM3) = 0x32;       /* 50 */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Post-Setup — config-driven feature initialization
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void UniversalPostSetup(void *board) {
@@ -860,7 +951,13 @@ static void UniversalPostSetup(void *board) {
 
     LoadConfig();
 
-    if (g_bumpersEnabled[level]) {
+    /* Bridge */
+    if (g_objectEnabled[OBJ_BRIDGE][level]) {
+        InitBridge(board);
+    }
+
+    /* Bumpers */
+    if (g_objectEnabled[OBJ_BUMPERS][level]) {
         DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (!meshWorld || IsBadReadPtr((void *)meshWorld, 0x430)) return;
 

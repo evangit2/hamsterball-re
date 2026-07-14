@@ -1,10 +1,10 @@
-# LevelSpecials_Loader (v3)
+# LevelSpecials_Loader (v5)
 
-Universal cross-level object injection for Hamsterball. Replaces all 15 per-level constructors with a single universal constructor, then injects config-driven features (bumpers, etc.) into any level.
+Universal cross-level object injection for Hamsterball. Replaces all 15 per-level constructors with a single universal constructor, then injects config-driven objects (bumpers, bridges, etc.) into any level.
 
 ## How It Works
 
-The mod intercepts `Tournament_AdvanceRace` (0x00427080) at the point where it calls the per-level `Scene_LoadLevel*` function via `CALL [EDX+0x48]` (vtable[18]). Instead of letting the original per-level constructor run, a **universal constructor** takes over and performs the same 4 steps every level does:
+The mod intercepts `Tournament_AdvanceRace` (0x00427080) at the point where it calls the per-level `Scene_LoadLevel*` function via `CALL [EDX+0x48]` (vtable[18]). Instead of letting the original per-level constructor run, a **universal constructor** takes over and performs the same steps every level does:
 
 1. `operator_new(0x10D0)` → `Level_MeshWorldCtor(mem, gfx, meshPath)` → `board+0x8AC`
 2. `operator_new(0x10D0)` → `Level_RenderCtor(mem, meshWorld)` → `board+0x8B0`
@@ -14,38 +14,57 @@ The mod intercepts `Tournament_AdvanceRace` (0x00427080) at the point where it c
 
 The per-level `Scene_LoadLevel*` functions **never run**. The universal constructor reads the race index from `[ESI+0x8]` and looks up the correct mesh path from a table.
 
-### Three hooks
+### Hooks
 
 | Hook | Address | Description |
 |------|---------|-------------|
-| **Alloc size patch** | 15 sites in `Tournament_AdvanceRace` (0x27109–0x273A5) | Patches all 15 `PUSH imm32` allocation sizes to `0xA2F8` (union of all board struct sizes), so every level gets enough memory for all possible objects |
-| **Universal constructor** | 0x4273E0 (`CALL [EDX+0x48]`) | 6-byte JMP detour. Naked thunk reads race index from `[ESI+0x8]`, calls `UniversalConstructor(board, raceIndex)`. Trampoline executes only `MOV ECX,[ESI+4]` + JMP back — original constructor is skipped entirely |
-| **Collision hook** | 0x40C5D0 (`DispatchCollisionEvents`) | 8-byte trampoline. Intercepts all collision events, checks for `N:BUMPER` mesh names, applies bounce physics (vel×4.0, clamp 5.0–10.0, zero Y, 3D sound at ball position) |
+| **Alloc size patch** | 15 sites in `Tournament_AdvanceRace` (0x27109–0x273A5) | Patches all 15 `PUSH imm32` allocation sizes to `0xA2F8` (union of all board struct sizes) |
+| **Universal constructor** | 0x4273E0 (`CALL [EDX+0x48]`) | 6-byte JMP detour. Naked thunk reads race index from `[ESI+0x8]`, calls `UniversalConstructor(board, raceIndex)` |
+| **Board constructor hooks** | 15 `CALL LevelBoard_*_ctor` sites (0x2712C–0x273C8) | Patches to per-level naked thunks → `UniversalBoardCtorLogic` |
+| **Collision hook** | 0x40C5D0 (`DispatchCollisionEvents`) | 8-byte trampoline. Intercepts all collision events for bumper physics |
 
-### Level identification
+### Object system
 
-The mod identifies the current level by reading the board's vtable pointer (`*(DWORD*)board`) and matching it against a table of 15 known level vtable addresses. This is more reliable than string matching and works at any point during gameplay.
+Features are implemented as **objects** with per-level toggles. Each object type has:
+- An `Init` function that replicates the exact steps from the original per-level constructor
+- A config entry in `LevelSpecials.txt` listing which levels it's active on
+
+#### Implemented objects
+
+| Object | Init function | Source (Ghidra) | Description |
+|--------|---------------|-----------------|-------------|
+| `BUMPERS` | `UniversalPostSetup` | Beginner ctor (0x4111E0) | Collects N:BUMPER1-8 via `Scene_CollectByNameFilter`, applies bounce physics on collision |
+| `BRIDGE` | `InitBridge` | Intermediate ctor (0x411CB20) | Loads `Levels\Level2-Bridge` mesh+render, calls `TipperVisual_Attach`, sets bridge params (45.0, 0, 50) |
+
+#### Adding new objects
+
+1. Add entry to `ObjectType` enum and `g_objectNames[]` array
+2. Write an `Init<ObjectName>` function that replicates the original constructor steps
+3. Call it from `UniversalPostSetup` guarded by `g_objectEnabled[OBJ_XXX][level]`
+4. Add the object name to `LevelSpecials.txt`
 
 ## Config file
 
-`LevelSpecials.txt` (next to `bass.dll`) controls which features are active per level:
+`LevelSpecials.txt` (next to `bass.dll`) controls which objects are active per level:
 
 ```ini
 # Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
 #   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
 #   14=Master 15=Impossible
 
-[BUMPERS]
-N:BUMPER1 = 2 5 8
-N:BUMPER2 = 1 3
-N:BUMPER3 = ()
-...
-N:BUMPER8 = ()
+[OBJECTS]
+BUMPERS = 2 5 8
+BRIDGE = 3 14
 ```
 
-List level numbers after `=` to enable bumpers for those levels. Empty `()` means disabled. If any bumper line lists a level, all 8 bumper slots are initialized for that level via `Scene_CollectByNameFilter`.
+List level numbers after `=` to enable objects for those levels. Empty `()` means disabled everywhere. Config is re-read on every level load.
 
-The config is re-read every time a level loads (in `UniversalPostSetup`), so changes take effect on next race without restarting the game.
+## LevelData.txt
+
+Auto-generated on first run with Ghidra-extracted per-level defaults. Editable to customize:
+- Level names, vtable addresses, board names, race titles
+- Race data, music names, colors
+- Mesh paths and extra mesh loads (for non-object meshes)
 
 ## Installation
 
@@ -63,19 +82,13 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelSpecials.c \
 
 - `bass.dll` — compiled mod (rename original bass.dll to bass_real.dll)
 - `LevelSpecials.c` — source code
-- `LevelSpecials.txt` — config file
-- `LevelSpecials.xml` — reference catalog of all injectable objects (documentation only, not parsed)
+- `LevelSpecials.txt` — config file (object toggles per level)
+- `LevelData.txt` — auto-generated per-level data (created on first run)
+- `LevelSpecials.xml` — reference catalog of all injectable objects (documentation only)
 - `bass.def` — export definitions for bass.dll proxy
 
 ## Compatibility
 
 - Game version: V3.6.c
 - Load mechanism: bass.dll proxy
-- The mod patches 15 allocation sites, 1 constructor call, and 1 collision handler. All patches verify original bytes before applying.
-
-## Architecture notes
-
-- **Replacement, not augmentation** — the universal constructor fully replaces all 15 per-level `Scene_LoadLevel*` functions. The original constructors never execute.
-- **Union sizing** — all 15 allocation sites are patched to `0xA2F8` (the largest board struct size across all levels), so any level can hold any combination of objects without heap corruption.
-- **Config-driven** — features are controlled by `LevelSpecials.txt`, not hardcoded. Adding new feature types (beyond bumpers) means adding new config sections and handlers in `UniversalPostSetup`.
-- **Bumper physics** match native game behavior exactly: velocity ×4.0, clamped to 5.0–10.0, Y velocity zeroed, sound played at ball position via `Sound_Play3D`.
+- The mod patches 15 allocation sites, 15 board constructor calls, 1 scene constructor call, and 1 collision handler. All patches verify original bytes before applying.
