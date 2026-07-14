@@ -1,6 +1,6 @@
 [ENABLE]
 
-// Press S to spawn Level-JumpSlide globally (ramp + jump)
+// Press S to spawn Level-Slide globally (tilted checker platform)
 // Inverted L-shaped pipe with E:DROPIN at bottom, E:POPOUT at top
 // Mesh handles everything - CEA only spawns the mesh
 
@@ -52,8 +52,8 @@ last_board:
   dd 0
 
 BridgeStr:
-  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 4A 75 6D 70 53 6C 69 64 65 00
-  // "Levels\Level-JumpSlide\0"
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 2D 53 6C 69 64 65 00
+  // "Levels\Level-Slide\0"
 
 label(original_code)
 label(save_pos)
