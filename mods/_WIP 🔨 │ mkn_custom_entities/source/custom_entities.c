@@ -252,35 +252,94 @@ static void scan_grid_meshes(DWORD board, FILE* logf) {
     g_grid_max = 0;
     g_grid_tick_counter = 0;
 
+    if (logf) fprintf(logf, "  GRID: scan start, board=0x%08X\n", board);
+
     DWORD scene = get_scene(board);
-    if (!scene) return;
+    if (!scene) { if (logf) fprintf(logf, "  GRID: get_scene returned NULL\n"); return; }
+    if (logf) fprintf(logf, "  GRID: scene=0x%08X\n", scene);
+
     DWORD mw = get_meshworld(scene);
-    if (!mw) return;
+    if (!mw) { if (logf) fprintf(logf, "  GRID: get_meshworld returned NULL\n"); return; }
+    if (logf) fprintf(logf, "  GRID: meshworld=0x%08X\n", mw);
+
+    /* Dump raw bytes at key offsets for debugging */
+    if (logf) {
+        if (!IsBadReadPtr((void*)(mw + 0x24), 4)) {
+            int raw_count = *(int*)(mw + 0x24);
+            fprintf(logf, "  GRID: MeshWorld+0x24 (raw mb count from file) = %d\n", raw_count);
+        }
+        if (!IsBadReadPtr((void*)(mw + 0x28), 4)) {
+            DWORD raw_xform = *(DWORD*)(mw + 0x28);
+            fprintf(logf, "  GRID: MeshWorld+0x28 (EntityTransform array ptr) = 0x%08X\n", raw_xform);
+        }
+        if (!IsBadReadPtr((void*)(mw + 0x2C), 16)) {
+            fprintf(logf, "  GRID: MeshWorld+0x2C raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                ((BYTE*)mw)[0x2C], ((BYTE*)mw)[0x2D], ((BYTE*)mw)[0x2E], ((BYTE*)mw)[0x2F],
+                ((BYTE*)mw)[0x30], ((BYTE*)mw)[0x31], ((BYTE*)mw)[0x32], ((BYTE*)mw)[0x33],
+                ((BYTE*)mw)[0x34], ((BYTE*)mw)[0x35], ((BYTE*)mw)[0x36], ((BYTE*)mw)[0x37],
+                ((BYTE*)mw)[0x38], ((BYTE*)mw)[0x39], ((BYTE*)mw)[0x3A], ((BYTE*)mw)[0x3B]);
+        }
+    }
 
     /* Get MeshBuffer count and data array directly from MeshWorld (AthenaList is embedded) */
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) return;
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) {
+        if (logf) fprintf(logf, "  GRID: IsBadReadPtr at mw+0x%02X (MB_COUNT)\n", MESHWORLD_MB_COUNT);
+        return;
+    }
     int mb_count = *(int*)(mw + MESHWORLD_MB_COUNT);
-    if (mb_count < 1 || mb_count > 10000) return;
+    if (logf) fprintf(logf, "  GRID: mb_count=%d (at mw+0x%02X)\n", mb_count, MESHWORLD_MB_COUNT);
+    if (mb_count < 1 || mb_count > 10000) {
+        if (logf) fprintf(logf, "  GRID: mb_count out of range, aborting\n");
+        return;
+    }
 
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) return;
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) {
+        if (logf) fprintf(logf, "  GRID: IsBadReadPtr at mw+0x%02X (MB_DATA)\n", MESHWORLD_MB_DATA);
+        return;
+    }
     DWORD* mb_array = *(DWORD**)(mw + MESHWORLD_MB_DATA);
-    if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) return;
+    if (logf) fprintf(logf, "  GRID: mb_array=0x%08X\n", (DWORD)mb_array);
+    if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) {
+        if (logf) fprintf(logf, "  GRID: mb_array invalid\n");
+        return;
+    }
 
     /* Get EntityTransform array */
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) return;
+    if (IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
+        if (logf) fprintf(logf, "  GRID: IsBadReadPtr at mw+0x%02X (RENDERCTX_PTR)\n", MESHWORLD_RENDERCTX_PTR);
+        return;
+    }
     EntityTransform* transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
-    if (!transforms) return;
+    if (logf) fprintf(logf, "  GRID: transforms=0x%08X\n", (DWORD)transforms);
+    if (!transforms) {
+        if (logf) fprintf(logf, "  GRID: transforms NULL\n");
+        return;
+    }
 
     int i;
     for (i = 0; i < mb_count && g_grid_mesh_count < MAX_GRID_MESHES; i++) {
         DWORD mb = mb_array[i];
-        if (!mb || mb < 0x10000) continue;
-        if (IsBadReadPtr((void*)mb, 0x900)) continue;
+        if (!mb || mb < 0x10000) {
+            if (logf) fprintf(logf, "  GRID: mb[%d] skipped (ptr=0x%08X)\n", i, mb);
+            continue;
+        }
+        if (IsBadReadPtr((void*)mb, 0x900)) {
+            if (logf) fprintf(logf, "  GRID: mb[%d] skipped (bad read at 0x%08X)\n", i, mb);
+            continue;
+        }
 
         /* Read name */
-        if (IsBadReadPtr((void*)(mb + MESHBUFFER_NAME), 4)) continue;
+        if (IsBadReadPtr((void*)(mb + MESHBUFFER_NAME), 4)) {
+            if (logf) fprintf(logf, "  GRID: mb[%d] skipped (bad name ptr)\n", i);
+            continue;
+        }
         char* name = *(char**)(mb + MESHBUFFER_NAME);
-        if (!name || IsBadReadPtr(name, 4)) continue;
+        if (!name || IsBadReadPtr(name, 4)) {
+            if (logf) fprintf(logf, "  GRID: mb[%d] skipped (name invalid, ptr=0x%08X)\n", i, (DWORD)name);
+            continue;
+        }
+
+        if (logf) fprintf(logf, "  GRID: mb[%d] name='%s'\n", i, name);
 
         int grid_num = parse_grid_flag(name);
         if (grid_num == 0) continue;
@@ -300,7 +359,7 @@ static void scan_grid_meshes(DWORD board, FILE* logf) {
 
         if (grid_num > g_grid_max) g_grid_max = grid_num;
 
-        if (logf) fprintf(logf, "  GRID: mesh[%d] name='%s' grid=%d pos=(%.1f,%.1f,%.1f) posScale=%.2f\n",
+        if (logf) fprintf(logf, "  GRID: *** FOUND mesh[%d] name='%s' grid=%d pos=(%.1f,%.1f,%.1f) posScale=%.2f\n",
                 i, name, grid_num, t->posX, t->posY, t->posZ, t->posScale);
     }
 
