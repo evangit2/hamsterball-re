@@ -266,6 +266,38 @@ static void scan_s1_for_grid(DWORD board, FILE* logf) {
 
     if (logf) fprintf(logf, "  GRID: Found %d GRID ref points, max=%d\n",
             g_s1_grid_ref_count, g_grid_max);
+
+    /* Dump S1 entry structs for GRID refs to find runtime mesh pointers */
+    if (logf) {
+        int k;
+        for (k = 0; k < g_s1_grid_ref_count && k < 3; k++) {
+            /* Re-find the S1 entry to dump its full struct */
+            int i;
+            for (i = 0; i < s1_count; i++) {
+                DWORD entry = s1_array[i];
+                if (!entry || entry < 0x10000) continue;
+                if (IsBadReadPtr((void*)entry, 0x40)) continue;
+                char* name = *(char**)(entry + S1ENTRY_NAME);
+                if (!name || IsBadReadPtr(name, 4)) continue;
+                int gn = parse_grid_flag(name);
+                if (gn != g_s1_grid_refs[k].grid_num) continue;
+
+                fprintf(logf, "  GRID: S1 entry dump for grid=%d at 0x%08X (0x40 bytes):\n", gn, entry);
+                int off;
+                for (off = 0; off < 0x40; off += 4) {
+                    DWORD val = *(DWORD*)(entry + off);
+                    fprintf(logf, "    +0x%02X: 0x%08X (%d)", off, val, val);
+                    if (val > 0x00100000 && val < 0x10000000) fprintf(logf, " <-- heap ptr?");
+                    if (off == 0x00) fprintf(logf, " (name ptr)");
+                    if (off == 0x04) fprintf(logf, " (posX)");
+                    if (off == 0x08) fprintf(logf, " (posY)");
+                    if (off == 0x0C) fprintf(logf, " (posZ)");
+                    fprintf(logf, "\n");
+                }
+                break;
+            }
+        }
+    }
 }
 
 /* Step 2: Match S1 grid refs to MeshBuffers by position */
