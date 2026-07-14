@@ -69,19 +69,19 @@ bridge_array:
 last_board:
   dd 0
 
-// VAC-IN offset (bottom of vertical pipe, relative to spawn center)
+// VAC-IN offset (bottom hole of vertical pipe, relative to spawn center)
 vacInX:
-  dd 0xC36E0000   // -238.0
+  dd 0xC2700000   // -60.0
 vacInY:
-  dd 0xC40C8000   // -562.0
+  dd 0xC40C0000   // -560.0
 vacInZ:
   dd 0x00000000   // 0.0
 
-// VAC-OUT offset (end of horizontal exit, relative to spawn center)
+// VAC-OUT offset (top hole, end of short horizontal, relative to spawn center)
 vacOutX:
-  dd 0x440C8000   // 562.0
+  dd 0x430C0000   // 140.0
 vacOutY:
-  dd 0x436E0000   // 238.0
+  dd 0x43700000   // 240.0
 vacOutZ:
   dd 0x00000000   // 0.0
 
