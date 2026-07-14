@@ -270,28 +270,30 @@ static void scan_s1_for_grid(DWORD board, FILE* logf) {
     /* Dump S1 entry structs for GRID refs to find runtime mesh pointers */
     if (logf) {
         int k;
-        for (k = 0; k < g_s1_grid_ref_count && k < 3; k++) {
-            /* Re-find the S1 entry to dump its full struct */
+        for (k = 0; k < g_s1_grid_ref_count && k < 2; k++) {
             int i;
             for (i = 0; i < s1_count; i++) {
                 DWORD entry = s1_array[i];
                 if (!entry || entry < 0x10000) continue;
-                if (IsBadReadPtr((void*)entry, 0x40)) continue;
+                if (IsBadReadPtr((void*)entry, 0x80)) continue;
                 char* name = *(char**)(entry + S1ENTRY_NAME);
                 if (!name || IsBadReadPtr(name, 4)) continue;
                 int gn = parse_grid_flag(name);
                 if (gn != g_s1_grid_refs[k].grid_num) continue;
 
-                fprintf(logf, "  GRID: S1 entry dump for grid=%d at 0x%08X (0x40 bytes):\n", gn, entry);
+                fprintf(logf, "  GRID: S1 entry dump for grid=%d at 0x%08X (0x80 bytes):\n", gn, entry);
                 int off;
-                for (off = 0; off < 0x40; off += 4) {
+                for (off = 0; off < 0x80; off += 4) {
                     DWORD val = *(DWORD*)(entry + off);
-                    fprintf(logf, "    +0x%02X: 0x%08X (%d)", off, val, val);
-                    if (val > 0x00100000 && val < 0x10000000) fprintf(logf, " <-- heap ptr?");
-                    if (off == 0x00) fprintf(logf, " (name ptr)");
+                    float fval = *(float*)(entry + off);
+                    fprintf(logf, "    +0x%02X: 0x%08X (%.3f)", off, val, fval);
+                    if (val > 0x00100000 && val < 0x10000000) fprintf(logf, " <-- ptr?");
+                    if (off == 0x00) fprintf(logf, " (name)");
                     if (off == 0x04) fprintf(logf, " (posX)");
                     if (off == 0x08) fprintf(logf, " (posY)");
                     if (off == 0x0C) fprintf(logf, " (posZ)");
+                    if (off == 0x2C) fprintf(logf, " (vtable)");
+                    if (off == 0x4C) fprintf(logf, " (EntityTransform+0x20=posScale?)");
                     fprintf(logf, "\n");
                 }
                 break;
@@ -418,6 +420,50 @@ static void grid_apply_visibility(void) {
             continue;
         gm->transform->posScale = 0.0f;  /* TEST: hide ALL grid meshes */
     }
+    /* Also try hiding via S1 entry directly: zero the scale at S1+0x1C/+0x20/+0x24 */
+    /* This is a TEST to see if writing to the S1 entry itself affects visibility */
+}
+
+/* TEST: Directly hide S1 GRID entries by zeroing their scale values */
+static void grid_hide_all_s1_entries(DWORD board, FILE* logf) {
+    DWORD level = get_level(board);
+    if (!level) return;
+    if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return;
+    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+    if (!sceneobj || sceneobj < 0x10000) return;
+
+    DWORD s1_list = sceneobj + SCENEOBJ_S1_LIST;
+    if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) return;
+    int s1_count = *(int*)(s1_list + 0x04);
+    if (s1_count < 1 || s1_count > 10000) return;
+
+    if (IsBadReadPtr((void*)(s1_list + 0x40C), 4)) return;
+    DWORD* s1_array = *(DWORD**)(s1_list + 0x40C);
+    if (!s1_array || IsBadReadPtr(s1_array, s1_count * 4)) return;
+
+    int i;
+    for (i = 0; i < s1_count; i++) {
+        DWORD entry = s1_array[i];
+        if (!entry || entry < 0x10000) continue;
+        if (IsBadReadPtr((void*)entry, 0x30)) continue;
+        char* name = *(char**)(entry + S1ENTRY_NAME);
+        if (!name || IsBadReadPtr(name, 4)) continue;
+        int grid_num = parse_grid_flag(name);
+        if (grid_num == 0) continue;
+
+        /* Try zeroing scale at +0x1C, +0x20, +0x24 */
+        if (!IsBadWritePtr((void*)(entry + 0x1C), 4)) {
+            float prev = *(float*)(entry + 0x1C);
+            *(float*)(entry + 0x1C) = 0.0f;
+            if (logf) fprintf(logf, "  GRID: hid S1 entry grid=%d by zeroing +0x1C (was %.1f)\n", grid_num, prev);
+        }
+        if (!IsBadWritePtr((void*)(entry + 0x20), 4)) {
+            *(float*)(entry + 0x20) = 0.0f;
+        }
+        if (!IsBadWritePtr((void*)(entry + 0x24), 4)) {
+            *(float*)(entry + 0x24) = 0.0f;
+        }
+    }
 }
 
 static void grid_advance(void) {
@@ -502,6 +548,8 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 if (g_grid_mesh_count > 0) {
                     grid_apply_visibility();
                 }
+                /* TEST: Also try hiding directly via S1 entry scale values */
+                grid_hide_all_s1_entries(board, logf);
 
                 if (logf) {
                     fprintf(logf, "Scan complete: %d grid meshes\n\n", g_grid_mesh_count);
