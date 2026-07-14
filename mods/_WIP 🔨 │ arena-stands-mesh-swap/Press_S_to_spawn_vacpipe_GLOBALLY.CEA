@@ -204,8 +204,9 @@ vac_active:
   // OR we can set the trajectory at ball->scene+0xCA4
 
   // Better approach: set ball trajectory directly
-  // Ball+0x69 = scene pointer, scene+0xCA4 = trajectory X, +0xCA8 = Y, +0xCAC = Z
-  mov eax, [esi+0x69]           // scene/physics ptr
+  // Ball dword[0x69] = byte offset 0x1A4 = scene/physics pointer
+  // scene+0xCA4 = trajectory X, +0xCA8 = Y, +0xCAC = Z
+  mov eax, [esi+0x1A4]          // scene/physics ptr (dword index 0x69 = byte 0x1A4)
   test eax, eax
   jz skip_vac
 
