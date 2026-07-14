@@ -95,6 +95,8 @@ async def start_game(fps_mod: bool = False, target_fps: int = 144, render_fps: i
         cfg.fps_mod_enabled = True
         if target_fps or render_fps:
             fpsmod.write_mod_ini(cfg, target_fps=target_fps, render_fps=render_fps)
+    else:
+        cfg.fps_mod_enabled = False
     return success(**await mgr.start_game())
 
 
@@ -128,6 +130,8 @@ async def restart_game(fps_mod: bool = False, target_fps: int = 144, render_fps:
         cfg.fps_mod_enabled = True
         if target_fps or render_fps:
             fpsmod.write_mod_ini(cfg, target_fps=target_fps, render_fps=render_fps)
+    else:
+        cfg.fps_mod_enabled = False
     return success(**await mgr.start_game())
 
 
