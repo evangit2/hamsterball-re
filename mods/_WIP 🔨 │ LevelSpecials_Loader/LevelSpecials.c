@@ -26,6 +26,11 @@
 typedef unsigned long long QWORD;
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Debug logging (forward declaration — defined later, used by hook functions)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+void DebugLog(const char *msg);
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses (RVAs)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -735,8 +740,17 @@ static void LoadExtraMeshes(void *board, LevelData *ld) {
 
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
-    if (!mem || raceIndex < 1 || raceIndex > 15) return;
-    if (!g_BoardCtor || !g_LoadRaceData || !g_Vec3Init || !g_MatrixIdentity) return;
+    char buf[256];
+    wsprintfA(buf, "UniversalBoardCtorLogic called: mem=%p app=0x%X raceIndex=%d", mem, app, raceIndex);
+    DebugLog(buf);
+    if (!mem || raceIndex < 1 || raceIndex > 15) {
+        DebugLog("UniversalBoardCtorLogic: invalid params, returning");
+        return;
+    }
+    if (!g_BoardCtor || !g_LoadRaceData || !g_Vec3Init || !g_MatrixIdentity) {
+        DebugLog("UniversalBoardCtorLogic: function pointers not resolved");
+        return;
+    }
 
     LevelData *ld = &g_levelData[raceIndex];
 
@@ -990,9 +1004,18 @@ static void UniversalPostSetup(void *board) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void UniversalConstructor(void *board, int raceIndex) {
-    if (!board || raceIndex < 1 || raceIndex > 15) return;
+    char buf[256];
+    wsprintfA(buf, "UniversalConstructor called: board=%p raceIndex=%d", board, raceIndex);
+    DebugLog(buf);
+    if (!board || raceIndex < 1 || raceIndex > 15) {
+        DebugLog("UniversalConstructor: invalid params");
+        return;
+    }
     if (!g_operatorNew || !g_LevelMeshWorldCtor || !g_LevelRenderCtor ||
-        !g_LevelInitScene) return;
+        !g_LevelInitScene) {
+        DebugLog("UniversalConstructor: function pointers not resolved");
+        return;
+    }
 
     /* Use meshPath from LevelData if available, fallback to g_meshPaths */
     const char *meshPath = g_levelData[raceIndex].meshPath;
@@ -1319,13 +1342,33 @@ __declspec(dllexport) BOOL  __stdcall BASS_PluginLoad(const char*a,DWORD b){retu
 __declspec(dllexport) BOOL  __stdcall BASS_PluginFree(DWORD a){return real_BASS_PluginFree?real_BASS_PluginFree(a):FALSE;}
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Patch thread + DllMain
+ * Debug logging
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+void DebugLog(const char *msg) {
+    HANDLE hFile = CreateFileA("C:\\lsdebug.log", GENERIC_WRITE,
+                               FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+    SetFilePointer(hFile, 0, NULL, FILE_END);
+    DWORD written;
+    WriteFile(hFile, msg, strlen(msg), &written, NULL);
+    WriteFile(hFile, "\r\n", 2, &written, NULL);
+    CloseHandle(hFile);
+}
+
 static DWORD WINAPI PatchThread(LPVOID param) {
+    DebugLog("=== PatchThread started ===");
     Sleep(2000);
+    DebugLog("Sleep done, resolving module base");
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
     if (!g_moduleBase) g_moduleBase = 0x00400000;
+
+    char buf[256];
+    wsprintfA(buf, "moduleBase=0x%08X", g_moduleBase);
+    DebugLog(buf);
+
+    DebugLog("Resolving function pointers...");
     g_operatorNew = (operator_new_t)(g_moduleBase + RVA_operator_new);
     g_LevelMeshWorldCtor = (Level_MeshWorldCtor_t)(g_moduleBase + RVA_Level_MeshWorldCtor);
     g_LevelRenderCtor = (Level_RenderCtor_t)(g_moduleBase + RVA_Level_RenderCtor);
@@ -1341,20 +1384,43 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_SpriteCtor = (Sprite_ctor_t)(g_moduleBase + RVA_Sprite_ctor);
     g_TipperVisualAttach = (TipperVisual_Attach_t)(g_moduleBase + RVA_TipperVisual_Attach);
     g_LevelAssignTex = (Level_AssignTex_t)(g_moduleBase + RVA_Level_AssignTexAndScales);
+    DebugLog("Function pointers resolved");
 
+    DebugLog("Getting config path...");
     GetConfigPath();
-    LoadConfig();
+    wsprintfA(buf, "configPath=%s levelDataPath=%s", g_configPath, g_levelDataPath);
+    DebugLog(buf);
 
-    /* Auto-generate LevelData.txt if missing, then load it */
+    DebugLog("Loading config...");
+    LoadConfig();
+    DebugLog("Config loaded");
+
+    DebugLog("Auto-generating LevelData.txt if missing...");
     if (GetFileAttributesA(g_levelDataPath) == INVALID_FILE_ATTRIBUTES) {
         GenerateLevelData();
+        DebugLog("LevelData.txt generated");
     }
+    DebugLog("Loading LevelData...");
     LoadLevelData();
+    DebugLog("LevelData loaded");
 
+    DebugLog("Patching alloc sizes...");
     PatchAllocSizes();
+    DebugLog("Alloc sizes patched");
+
+    DebugLog("Installing board ctor hooks...");
     InstallBoardCtorHooks();
+    DebugLog("Board ctor hooks installed");
+
+    DebugLog("Installing universal constructor hook...");
     InstallUniversalConstructorHook();
+    DebugLog("Universal constructor hook installed");
+
+    DebugLog("Installing collision hook...");
     InstallHook();
+    DebugLog("Collision hook installed");
+
+    DebugLog("=== PatchThread complete ===");
     return 0;
 }
 
