@@ -3,9 +3,11 @@
 #   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
 #   14=Master 15=Impossible
 #
-# List level numbers after = to enable bumpers for those levels.
+# List level numbers after = to enable that object for those levels.
 # Empty () means disabled everywhere.
 # Example: BUMPERS = 2 5 8  (enables bumpers on Beginner, Tower, Expert)
+#          BRIDGE = 3 14   (enables bridge on Intermediate, Master)
 
-[BUMPERS]
+[OBJECTS]
 BUMPERS = ()
+BRIDGE = ()
