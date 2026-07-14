@@ -94,7 +94,9 @@ Function names for VTABLE, SETUP, and ADD:
   DispatchCollision (vtable[29]):
     WarmUp_DispatchColl, Beginner_DispatchColl, Intermediate_DispatchColl,
     Dizzy_DispatchColl, Tower_DispatchColl, Up_DispatchColl,
-    Neon_DispatchColl, Expert_DispatchColl, Odd_DispatchColl, Toob_DispatchColl
+    Neon_DispatchColl, Expert_DispatchColl, Odd_DispatchColl, Toob_DispatchColl,
+    Wobbly_DispatchColl, Glass_DispatchColl, Sky_DispatchColl,
+    Master_DispatchColl, Impossible_DispatchColl
   Board_Setup (vtable[32]):
     WarmUp_BoardSetup, Beginner_BoardSetup, Dizzy_BoardSetup
   Other:

@@ -690,17 +690,22 @@ static const FuncEntry g_functions[] = {
     { "Toob_RenderDyn",            0x00410670 },
     { "Wobbly_RenderDyn",          0x0040B600 },
     { "Sky_RenderDyn",             0x004110A0 },
-    /* DispatchCollision (vtable[29]) */
-    { "WarmUp_DispatchColl",       0x0040C5D0 },
+    /* DispatchCollision (vtable[29]) — verified from actual vtable reads */
+    { "WarmUp_DispatchColl",       0x0040C5D0 },  /* base DispatchCollisionEvents */
     { "Beginner_DispatchColl",     0x004111E0 },
     { "Intermediate_DispatchColl", 0x0040D340 },
-    { "Dizzy_DispatchColl",        0x0040D500 },
-    { "Tower_DispatchColl",        0x0040DCD0 },
-    { "Up_DispatchColl",           0x004119B0 },
+    { "Dizzy_DispatchColl",        0x0040D500 },  /* DizzyBoard_DispatchCollision */
+    { "Tower_DispatchColl",        0x0040DCD0 },  /* TowerCollisionEvents */
+    { "Up_DispatchColl",           0x004119B0 },  /* UpRaceCollisionEvents */
     { "Neon_DispatchColl",         0x00416CA0 },
-    { "Expert_DispatchColl",       0x0040E6A0 },
-    { "Odd_DispatchColl",          0x0044B840 },
+    { "Expert_DispatchColl",       0x0040E6A0 },  /* ExpertCollisionEvents */
+    { "Odd_DispatchColl",          0x0040ED30 },  /* OddBoard_CollisionHandler */
     { "Toob_DispatchColl",         0x00410020 },
+    { "Wobbly_DispatchColl",       0x0040F9A0 },
+    { "Glass_DispatchColl",        0x00417760 },
+    { "Sky_DispatchColl",          0x00410D00 },
+    { "Master_DispatchColl",       0x00412850 },
+    { "Impossible_DispatchColl",   0x00418360 },
     /* Board_Setup (vtable[32]) */
     { "WarmUp_BoardSetup",         0x0041C5B0 },
     { "Beginner_BoardSetup",       0x0041C5B0 },
