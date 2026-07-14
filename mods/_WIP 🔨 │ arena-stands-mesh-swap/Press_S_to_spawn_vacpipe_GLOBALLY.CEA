@@ -71,17 +71,17 @@ last_board:
 
 // VAC-IN offset (bottom hole of vertical pipe, relative to spawn center)
 vacInX:
-  dd 0xC2700000   // -60.0
+  dd 0xC2840000   // -66.0
 vacInY:
-  dd 0xC40C0000   // -560.0
+  dd 0xC40A8000   // -554.0
 vacInZ:
   dd 0x00000000   // 0.0
 
 // VAC-OUT offset (top hole, end of short horizontal, relative to spawn center)
 vacOutX:
-  dd 0x430C0000   // 140.0
+  dd 0x43060000   // 134.0
 vacOutY:
-  dd 0x43700000   // 240.0
+  dd 0x43760000   // 246.0
 vacOutZ:
   dd 0x00000000   // 0.0
 
