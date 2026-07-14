@@ -9,5 +9,5 @@
 #          BRIDGE = 3 14   (enables bridge on Intermediate, Master)
 
 [OBJECTS]
-BUMPERS = ()
-BRIDGE = ()
+BUMPERS = 1
+BRIDGE = 1

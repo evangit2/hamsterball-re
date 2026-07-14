@@ -755,33 +755,46 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     LevelData *ld = &g_levelData[raceIndex];
 
     /* Step 1: Board_ctor(mem, app) — base setup */
+    DebugLog("Calling Board_ctor...");
     g_BoardCtor(mem, app);
+    DebugLog("Board_ctor done");
 
     /* Step 2: Set vtable */
     *(DWORD *)mem = g_levelVtables[raceIndex];
+    DebugLog("Vtable set");
 
     /* Step 3: Set board name and race title */
     *(char **)((char *)mem + 0x868) = ld->boardName;
     *(char **)((char *)mem + 0x29B4) = ld->raceTitle;
+    DebugLog("Names set");
 
     /* Step 4: Set +0x870 from app+0x1DC */
     *(DWORD *)((char *)mem + 0x870) = *(DWORD *)(app + 0x1DC);
+    DebugLog("+0x870 set");
 
-    /* Step 5: Vec3_Init with per-level color, store at +0x1508 */
-    float vec3buf[5];
-    g_Vec3Init(vec3buf, ld->color[0], ld->color[1], ld->color[2]);
-    memcpy((char *)mem + 0x1508, (char *)vec3buf + 4, 16);
-    g_MatrixIdentity(vec3buf);
+    /* Step 5: Write per-level color directly to board+0x1508 */
+    /* Original game uses Vec3_Init+Matrix_Identity, but we write directly
+       to avoid calling convention issues. Board+0x1508 is a 4-float RGBA. */
+    *(float *)((char *)mem + 0x1508) = ld->color[0];
+    *(float *)((char *)mem + 0x150C) = ld->color[1];
+    *(float *)((char *)mem + 0x1510) = ld->color[2];
+    *(float *)((char *)mem + 0x1514) = 1.0f;  /* alpha */
+    DebugLog("Color set");
 
     /* Step 6: LoadRaceData(mem, raceName) */
+    DebugLog("Calling LoadRaceData...");
     g_LoadRaceData(mem, ld->raceData);
+    DebugLog("LoadRaceData done");
 
     /* Step 7: Set music name */
     *(char **)((char *)mem + 0x4344) = ld->musicName;
+    DebugLog("Music set");
 
     /* Step 8: Load extra meshes */
     if (g_operatorNew && g_LevelMeshWorldCtor) {
+        DebugLog("Loading extra meshes...");
         LoadExtraMeshes(mem, ld);
+        DebugLog("Extra meshes loaded");
     }
 
     /* Step 9: Set unlock flags */
