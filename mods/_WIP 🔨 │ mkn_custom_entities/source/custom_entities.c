@@ -143,10 +143,16 @@ static DWORD get_scene(DWORD board) {
     return scene;
 }
 
-static DWORD get_meshworld(DWORD scene) {
-    if (!scene) return 0;
-    if (IsBadReadPtr((void*)(scene + MESHWORLD_OFFSET), 4)) return 0;
-    DWORD mw = *(DWORD*)(scene + MESHWORLD_OFFSET);
+/* Get the render MeshWorld from the Level object (board+0x8AC → level+0x08).
+ * NOT from board+0x878 (App) — that points to a different/empty MeshWorld.
+ * Verified from Level_LoadMeshes decompilation: creates MeshWorld at this+0x08. */
+static DWORD get_meshworld(DWORD board) {
+    if (!board) return 0;
+    if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return 0;
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
+    if (!level || level < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(level + MESHWORLD_OFFSET), 4)) return 0;
+    DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
     if (!mw || mw < 0x10000) return 0;
     return mw;
 }
@@ -258,7 +264,7 @@ static void scan_grid_meshes(DWORD board, FILE* logf) {
     if (!scene) { if (logf) fprintf(logf, "  GRID: get_scene returned NULL\n"); return; }
     if (logf) fprintf(logf, "  GRID: scene=0x%08X\n", scene);
 
-    DWORD mw = get_meshworld(scene);
+    DWORD mw = get_meshworld(board);
     if (!mw) { if (logf) fprintf(logf, "  GRID: get_meshworld returned NULL\n"); return; }
     if (logf) fprintf(logf, "  GRID: meshworld=0x%08X\n", mw);
 
@@ -521,7 +527,7 @@ static void scan_s1_ref_points(DWORD board, FILE* logf) {
 
         DWORD scene = get_scene(board);
         if (scene) {
-            DWORD mw = get_meshworld(scene);
+            DWORD mw = get_meshworld(board);
             if (mw) {
                 if (!IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) {
                     int mb_count = *(int*)(mw + MESHWORLD_MB_COUNT);
@@ -618,7 +624,7 @@ static void scan_s1_ref_points(DWORD board, FILE* logf) {
 static void hide_original_entity_mesh(DWORD board, FILE* logf) {
     DWORD scene = get_scene(board);
     if (!scene) return;
-    DWORD mw = get_meshworld(scene);
+    DWORD mw = get_meshworld(board);
     if (!mw) return;
 
     if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_COUNT), 4)) return;
