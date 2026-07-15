@@ -106,9 +106,40 @@ static int parse_grid_flag(const char* name) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void apply_grid_visibility(DWORD app, FILE* logf) {
-    DWORD sceneobj = get_sceneobj(app);
-    if (!sceneobj) {
-        if (logf) fprintf(logf, "  GRID: no sceneobj\n");
+    DWORD level = get_level(app);
+    if (!level) {
+        if (logf) fprintf(logf, "  GRID: no level\n");
+        return;
+    }
+
+    /* Try level+0x480 for sceneobj */
+    DWORD sceneobj = 0;
+    if (!IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) {
+        sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+    }
+    
+    if (!sceneobj || sceneobj < 0x10000) {
+        if (logf) {
+            fprintf(logf, "  GRID: level+0x480 sceneobj invalid (0x%08X), scanning level struct for heap ptrs...\n", sceneobj);
+            /* Dump level struct to find sceneobj pointer */
+            int off;
+            for (off = 0; off < 0x600; off += 4) {
+                if (IsBadReadPtr((void*)(level + off), 4)) continue;
+                DWORD val = *(DWORD*)(level + off);
+                if (val > 0x00100000 && val < 0x10000000) {
+                    /* Check if this pointer leads to something with an S1 list */
+                    fprintf(logf, "    level+0x%03X: 0x%08X", off, val);
+                    /* Try reading val+0x894 (S1 list count) to see if it's a sceneobj */
+                    if (!IsBadReadPtr((void*)(val + 0x898), 4)) {
+                        int s1cnt = *(int*)(val + 0x898);
+                        if (s1cnt > 0 && s1cnt < 10000) {
+                            fprintf(logf, " -> +0x898 has S1 count=%d!", s1cnt);
+                        }
+                    }
+                    fprintf(logf, "\n");
+                }
+            }
+        }
         return;
     }
 
