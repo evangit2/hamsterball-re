@@ -1993,6 +1993,36 @@ void __fastcall UniversalBoardUpdate(void *board) {
     if (features & FEAT_BADBALL)
         Feature_BadBallSpawner(board, level);
 
+    /* Note: Bumper decay, neon camera, and sky popcylinder are handled in
+       UniversalRaceState (slot 19), NOT here. In the original game, these
+       are in the RaceState handler, not Board_Update. */
+}
+
+/* Naked thunk for vtable slot 1 (Board_Update) */
+/* Replaces the original __fastcall Board_Update(board) with UniversalBoardUpdate */
+/* Must be callable via vtable indirect call: CALL [vtable+0x4] */
+/* We patch each level's vtable[1] to point to UniversalBoardUpdate */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Race State (Slot 19) — replaces all 15 per-level RaceState handlers
+ *
+ * Calls Board_UpdateRaceState first, then dispatches to feature blocks
+ * that belong in RaceState (bumper decay, neon camera, sky popcylinders).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void __fastcall UniversalRaceState(void *board) {
+    if (!g_BoardUpdateRaceState || !board) return;
+
+    /* Call base Board_UpdateRaceState */
+    g_BoardUpdateRaceState(board);
+
+    /* Get level and dispatch features */
+    int level = GetCurrentLevel(board);
+    if (level == 0) return;
+
+    DWORD features = g_updateFeatures[level];
+    if (!features) return;
+
     /* Bumper lit decay (Beginner + Toob + Master) */
     if (features & FEAT_BUMPER_DECAY)
         Feature_BumperDecay(board, level);
@@ -2004,17 +2034,61 @@ void __fastcall UniversalBoardUpdate(void *board) {
     /* Sky popcylinder activator (Sky) */
     if (features & FEAT_SKY_POPCYL)
         Feature_SkyPopcylinder(board, level);
-
-    /* Master extra vtable calls — already covered by BRIDGE_ANIM + BUMPER_DECAY
-       but Master's Board_Update also calls them via vtable[0x90]+[0x94].
-       Since we handle bridge anim and bumper decay as feature blocks,
-       FEAT_MASTER_EXTRA is a no-op flag (the features are already dispatched above). */
 }
 
-/* Naked thunk for vtable slot 1 (Board_Update) */
-/* Replaces the original __fastcall Board_Update(board) with UniversalBoardUpdate */
-/* Must be callable via vtable indirect call: CALL [vtable+0x4] */
-/* We patch each level's vtable[1] to point to UniversalBoardUpdate */
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal CreateDynamicObjects (Slot 33) — replaces all 15 per-level handlers
+ *
+ * The game calls this for each named mesh object found in the MESHWORLD.
+ * Each per-level handler matches its own object names (BRIDGE, TIPPER, MACE, etc.)
+ * and creates the appropriate game object via its ctor.
+ *
+ * Since N:/E: names are unique per level's mesh, there are zero conflicts.
+ * We save the original per-level handlers and delegate to them, so each
+ * level's objects are created exactly as the original game intended.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Original per-level CreateDynamicObjects function pointers (saved before patching) */
+typedef void (__thiscall *CreateDynamicObjects_t)(void *board, char *name, void *out1, void *out2, int *meshData);
+static CreateDynamicObjects_t g_origCreateDynamicObjects[16] = {NULL};
+
+/* The universal handler: look up the level and delegate to original handler */
+void __fastcall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *meshData) {
+    int level = GetCurrentLevel(board);
+    if (level == 0 || level > 15) return;
+
+    /* Delegate to the original per-level handler */
+    CreateDynamicObjects_t orig = g_origCreateDynamicObjects[level];
+    if (orig) {
+        /* Call as __thiscall: ECX=board, stack params */
+        orig(board, name, out1, out2, meshData);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal DispatchCollision (Slot 29) — replaces all 15 per-level handlers
+ *
+ * Each per-level handler checks N:/E: collision partner names and does
+ * level-specific logic, then calls DispatchCollisionEvents.
+ *
+ * We save the original per-level handlers and delegate to them.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Original per-level DispatchCollision function pointers (saved before patching) */
+typedef void (__thiscall *DispatchCollision_t)(void *board, int *ball, int *collPair);
+static DispatchCollision_t g_origDispatchCollision[16] = {NULL};
+
+/* The universal handler: look up the level and delegate to original handler */
+void __fastcall UniversalDispatchCollision(void *board, int *ball, int *collPair) {
+    int level = GetCurrentLevel(board);
+    if (level == 0 || level > 15) return;
+
+    /* Delegate to the original per-level handler */
+    DispatchCollision_t orig = g_origDispatchCollision[level];
+    if (orig) {
+        orig(board, ball, collPair);
+    }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Universal Post-Setup — config-driven feature initialization
@@ -2339,8 +2413,8 @@ void DebugLog(const char *msg) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Vtable patching — replace slot[1] (Board_Update) in all 15 level vtables
- * with UniversalBoardUpdate
+ * Vtable patching — replace slots 1, 19, 29, 33 in all 15 level vtables
+ * with universal handlers. Saves original pointers for delegation.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void InstallVtablePatches(void) {
@@ -2348,17 +2422,54 @@ static void InstallVtablePatches(void) {
     for (i = 1; i <= 15; i++) {
         DWORD vtableAddr = g_levelVtables[i];
         if (!vtableAddr) continue;
-        if (IsBadReadPtr((void *)vtableAddr, 8)) continue;
+        if (IsBadReadPtr((void *)vtableAddr, 0x88)) continue;
 
-        /* Patch slot[1] (offset +4) to point to UniversalBoardUpdate */
-        DWORD *slot1 = (DWORD *)(vtableAddr + 4);
         DWORD oldProtect;
-        VirtualProtect(slot1, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
-        *slot1 = (DWORD)&UniversalBoardUpdate;
-        VirtualProtect(slot1, 4, oldProtect, &oldProtect);
-        FlushInstructionCache(GetCurrentProcess(), slot1, 4);
+
+        /* Slot 1 (offset +0x04): Board_Update → UniversalBoardUpdate */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x04);
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalBoardUpdate;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 19 (offset +0x4C): RaceState → UniversalRaceState
+         * Save original pointer for base handler delegation */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x4C);
+            g_origDispatchCollision[i] = NULL; /* init */
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            /* We don't save slot 19 — UniversalRaceState calls g_BoardUpdateRaceState directly */
+            *slot = (DWORD)&UniversalRaceState;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 29 (offset +0x74): DispatchCollision → UniversalDispatchCollision
+         * Save original pointer for delegation */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x74);
+            g_origDispatchCollision[i] = (DispatchCollision_t)*slot;
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalDispatchCollision;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 33 (offset +0x84): CreateDynamicObjects → UniversalCreateDynamicObjects
+         * Save original pointer for delegation */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x84);
+            g_origCreateDynamicObjects[i] = (CreateDynamicObjects_t)*slot;
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalCreateDynamicObjects;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
     }
-    DebugLog("Vtable slot[1] patched for all 15 levels");
+    DebugLog("Vtable slots [1,19,29,33] patched for all 15 levels");
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {

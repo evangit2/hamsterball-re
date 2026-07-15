@@ -244,15 +244,20 @@ static DWORD WINAPI mod_thread(LPVOID param) {
             g_last_board = level;
 
             if (level) {
-                /* Wait for level to fully load */
-                Sleep(2000);
+                /* Poll until sceneobj is ready (up to 10 seconds) */
+                int poll;
+                for (poll = 0; poll < 200; poll++) {
+                    DWORD so = get_sceneobj(app);
+                    if (so) break;
+                    Sleep(50);
+                }
 
                 char log_path[MAX_PATH];
                 snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
                 FILE* logf = NULL;
                 fopen_s(&logf, log_path, "a");
 
-                if (logf) fprintf(logf, "\n--- Level loaded (app=0x%08X, level=0x%08X) ---\n", app, level);
+                if (logf) fprintf(logf, "\n--- Level loaded (app=0x%08X, level=0x%08X, after %dms poll) ---\n", app, level, poll * 50);
 
                 /* Apply GRID visibility: GRID02 visible, others hidden */
                 apply_grid_visibility(app, logf);
@@ -269,7 +274,10 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         if (g_last_board) {
             DWORD app2 = *(DWORD*)0x005341E0;
             if (app2 && app2 >= 0x10000 && !IsBadReadPtr((void*)app2, 0x1000)) {
-                apply_grid_visibility(app2, NULL);
+                /* Only apply if sceneobj is valid */
+                if (get_sceneobj(app2)) {
+                    apply_grid_visibility(app2, NULL);
+                }
             }
         }
     }
