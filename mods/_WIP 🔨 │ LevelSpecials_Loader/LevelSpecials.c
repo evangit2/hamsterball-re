@@ -1,5 +1,5 @@
 /*
- * LevelSpecials_Loader v5 — Universal Level Handler
+ * LevelSpecials_Loader v6 — Universal Level Handler + Universal Vtable
  *
  * 1. ALLOCATION PATCH: Patches all 15 level allocation sites in
  *    Tournament_AdvanceRace (0x00427080) to use the union size 0xA2F8.
