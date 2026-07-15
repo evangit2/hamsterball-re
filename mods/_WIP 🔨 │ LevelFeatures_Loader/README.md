@@ -79,19 +79,31 @@ Features are implemented as **objects** with per-level toggles. Each object type
 
 ## Config file
 
-`LevelFeatures.txt` (next to `bass.dll`) controls which objects are active per level:
+`LevelFeatures.txt` (next to `bass.dll`) controls which objects and features are active per level:
+
+### [OBJECTS] — Object toggles
 
 ```ini
-# Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
-#   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
-#   14=Master 15=Impossible
-
 [OBJECTS]
 BUMPERS = 2 5 8
 BRIDGE = 3 14
 ```
 
-List level numbers after `=` to enable objects for those levels. Empty `()` means disabled everywhere. Config is re-read on every level load.
+List level numbers after `=` to enable objects for those levels. Empty `()` means disabled everywhere.
+
+### [FEATURES] — Update feature overrides
+
+```ini
+[FEATURES]
+# Levels not listed use built-in defaults.
+# Use () to clear all features for a level.
+2 = SWIRL BUMPER_DECAY   # Add swirl to Beginner!
+14 = SWIRL BUMPER_DECAY BRIDGE_ANIM MASTER_EXTRA
+```
+
+Available features: `BRIDGE_ANIM`, `SWIRL`, `WINDMILL`, `BADBALL`, `BUMPER_DECAY`, `NEON_CAM`, `SKY_POPCYL`, `MASTER_EXTRA`.
+
+Config is re-read on every level load.
 
 ## LevelData.txt
 
@@ -126,4 +138,4 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
 - Game version: V3.6.c
 - Load mechanism: bass.dll proxy
 - The mod patches 15 allocation sites, 15 board constructor calls, 1 scene constructor call, 1 collision handler, and 60 vtable slots (15 vtables × 4 slots). All patches verify original bytes before applying.
-- **Wine/llvmpipe crash test: PASSED** — all 15 levels survived 35+ seconds with content rendering.
+- **Wine/llvmpipe crash test: PASSED** — game survived 35+ seconds with offset fixes applied.
