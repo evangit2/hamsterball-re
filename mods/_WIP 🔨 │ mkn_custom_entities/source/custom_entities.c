@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v13c
+ * custom_entities.c — Hamsterball Custom Entities Mod v14
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -46,6 +46,11 @@ static PopCylinder_ctor_t pfn_PopCylinder_ctor = (PopCylinder_ctor_t)0x00436EE0;
 /* AthenaList_Append — declared in bass_proxy.h, reusing that typedef */
 static AthenaList_Append_t pfn_AthenaList_Append = (AthenaList_Append_t)0x00453810;
 
+/* AthenaList_RemoveByValue — removes item from list by pointer value
+ * __thiscall(list, item_value) — at 0x004534D0 */
+typedef void (__thiscall *AthenaList_Remove_t)(DWORD* list, int item);
+static AthenaList_Remove_t pfn_AthenaList_Remove = (AthenaList_Remove_t)0x004534D0;
+
 /* SpatialTree_CloneToLevel / SpatialTree_Cleanup */
 typedef void (__thiscall *SpatialTree_CloneToLevel_t)(void* this_);
 static SpatialTree_CloneToLevel_t pfn_SpatialTree_CloneToLevel = (SpatialTree_CloneToLevel_t)0x00457AD0;
@@ -88,7 +93,11 @@ static HANDLE g_thread = NULL;
 static volatile int g_running = 1;
 static char g_game_dir[MAX_PATH] = {0};
 
-/* Track spawned objects so we don't double-spawn */
+/* Track spawned objects so we can despawn them individually */
+#define MAX_SPAWNED 16
+static DWORD g_spawned_objs[MAX_SPAWNED];
+static char  g_spawned_names[MAX_SPAWNED][32];
+static int   g_spawned_count = 0;
 static DWORD g_spawned_board = 0;
 
 /* Mesh path string — we copy testcube.MESHWORLD to levels\ at startup */
@@ -272,6 +281,101 @@ static void spawn_testcube_at(DWORD board, float px, float py, float pz, int gri
                 grid_num, px, py, pz, (DWORD)obj);
         fflush(logf);
     }
+
+    /* Track spawned object for later despawn */
+    if (g_spawned_count < MAX_SPAWNED) {
+        g_spawned_objs[g_spawned_count] = (DWORD)obj;
+        snprintf(g_spawned_names[g_spawned_count], 32, "testcube(GRID%02d)", grid_num);
+        g_spawned_count++;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Despawn a specific testcube by GRID name
+ * Based on Rotator_RemoveAndFree (0x436FC0) pattern:
+ *   1. Remove collision obj from board+0x8B0+0x18 and board+0x10EC
+ *   2. Remove obj from board+0x2578 (update) and board+0xCD4 (render)
+ *   3. Remove obj from sceneobj+0x1C (scene tree)
+ *   4. Call collision obj destructor
+ *   5. Set flags to prevent double-free
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void despawn_object(DWORD board, DWORD obj, FILE* logf) {
+    if (!board || !obj) return;
+    if (IsBadReadPtr((void*)obj, 0x10D0)) return;
+
+    char* name = "(unknown)";
+    if (logf) fprintf(logf, "  DESPAWN: removing obj=0x%08X\n", obj);
+
+    /* 1. Mark as removed (prevents update/render from touching it) */
+    *(BYTE*)((char*)obj + 0x10E5) = 1;  /* removed flag */
+    *(BYTE*)((char*)obj + 0x10E4) = 1;  /* inactive flag */
+
+    /* 2. Remove collision object from board+0x10EC */
+    DWORD col_obj = *(DWORD*)((char*)obj + PC_COLLISION_OBJ);
+    if (col_obj) {
+        /* Remove from board+0x10EC (collision list) */
+        pfn_AthenaList_Remove((DWORD*)(board + BOARD_COLLISION_LIST), (int)col_obj);
+
+        /* Remove from board+0x8B0+0x18 (scene collision) */
+        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+        if (scene_col) {
+            pfn_AthenaList_Remove((DWORD*)(scene_col + 0x18), (int)col_obj);
+        }
+
+        /* Call collision object's destructor (vtable[0] with arg=1 to free) */
+        if (!IsBadReadPtr((void*)col_obj, 4)) {
+            DWORD col_vtable = *(DWORD*)col_obj;
+            if (col_vtable && !IsBadReadPtr((void*)col_vtable, 4)) {
+                DWORD dtor = *(DWORD*)col_vtable;
+                if (dtor && dtor > 0x400000) {
+                    typedef void (__thiscall *dtor_t)(void* this_, int free_mem);
+                    ((dtor_t)dtor)((void*)col_obj, 1);
+                }
+            }
+        }
+        *(DWORD*)((char*)obj + PC_COLLISION_OBJ) = 0;
+    }
+
+    /* 3. Remove obj from board+0x2578 (update list) */
+    pfn_AthenaList_Remove((DWORD*)(board + BOARD_UPDATE_LIST), (int)obj);
+
+    /* 4. Remove obj from board+0xCD4 (render list) */
+    pfn_AthenaList_Remove((DWORD*)(board + BOARD_RENDER_LIST), (int)obj);
+
+    /* 5. Remove obj from sceneobj+0x1C (scene tree) */
+    DWORD level = get_level(board);
+    if (level) {
+        DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+        if (sceneobj) {
+            pfn_AthenaList_Remove((DWORD*)(sceneobj + 0x1C), (int)obj);
+        }
+    }
+
+    if (logf) {
+        fprintf(logf, "  DESPAWN: obj=0x%08X removed from all lists\n", obj);
+        fflush(logf);
+    }
+}
+
+static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
+    int i;
+    for (i = 0; i < g_spawned_count; i++) {
+        if (strstr(g_spawned_names[i], target_name) != NULL) {
+            if (logf) fprintf(logf, "  DESPAWN: found '%s' at index %d, obj=0x%08X\n",
+                    g_spawned_names[i], i, g_spawned_objs[i]);
+            despawn_object(board, g_spawned_objs[i], logf);
+            /* Shift array down */
+            int j;
+            for (j = i; j < g_spawned_count - 1; j++) {
+                g_spawned_objs[j] = g_spawned_objs[j + 1];
+                strcpy(g_spawned_names[j], g_spawned_names[j + 1]);
+            }
+            g_spawned_count--;
+            return;
+        }
+    }
+    if (logf) fprintf(logf, "  DESPAWN: '%s' not found in spawned objects\n", target_name);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -320,7 +424,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v13c Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v14 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fclose(logf);
@@ -366,6 +470,11 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             }
             g_spawned_board = board;
             if (logf) fprintf(logf, "  Spawned %d testcubes\n", grid_count);
+
+            /* Despawn GRID02 as a test */
+            Sleep(2000);
+            despawn_by_name("GRID02", board, logf);
+
         } else {
             /* No GRID points — still mark board as processed */
             g_spawned_board = board;
