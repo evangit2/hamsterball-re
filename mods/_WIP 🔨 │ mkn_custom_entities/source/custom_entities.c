@@ -117,6 +117,52 @@ static DWORD get_meshworld(DWORD board) {
     return mw;
 }
 
+/* Find MeshWorld by scanning sceneobj struct for a valid pointer */
+static DWORD find_meshworld(DWORD board, FILE* logf) {
+    DWORD sceneobj = get_sceneobj(board);
+    if (!sceneobj) return 0;
+    
+    /* First try the standard offset */
+    DWORD mw = get_meshworld(board);
+    if (mw) return mw;
+    
+    /* Scan sceneobj for a valid MeshWorld pointer */
+    if (logf) {
+        fprintf(logf, "  GRID: sceneobj=0x%08X, +0x08=NULL, scanning for MeshWorld...\n", sceneobj);
+        int off;
+        for (off = 0; off < 0x20; off += 4) {
+            if (IsBadReadPtr((void*)(sceneobj + off), 4)) continue;
+            DWORD val = *(DWORD*)(sceneobj + off);
+            if (val > 0x00100000 && val < 0x10000000) {
+                /* Check if this looks like a MeshWorld (has count at +0x24) */
+                if (!IsBadReadPtr((void*)(val + 0x24), 4)) {
+                    int cnt = *(int*)(val + 0x24);
+                    if (cnt >= 0 && cnt < 10000) {
+                        fprintf(logf, "    sceneobj+0x%02X: 0x%08X -> MW+0x24 count=%d\n", off, val, cnt);
+                    }
+                }
+            }
+        }
+    }
+    
+    /* Also try level+0x08 (LoadMeshWorld stores at this+0x08 where this = sceneobj) */
+    DWORD level = get_level(board);
+    if (level && !IsBadReadPtr((void*)(level + 0x08), 4)) {
+        DWORD mw2 = *(DWORD*)(level + 0x08);
+        if (mw2 > 0x00100000 && mw2 < 0x10000000) {
+            if (!IsBadReadPtr((void*)(mw2 + 0x24), 4)) {
+                int cnt = *(int*)(mw2 + 0x24);
+                if (cnt >= 0 && cnt < 10000) {
+                    if (logf) fprintf(logf, "  GRID: Found MeshWorld at level+0x08 = 0x%08X (count=%d)\n", mw2, cnt);
+                    return mw2;
+                }
+            }
+        }
+    }
+    
+    return 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * GRID: Parse (GRIDxx) from name
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -437,9 +483,9 @@ static void apply_grid_visibility(DWORD board, FILE* logf) {
         return;
     }
 
-    DWORD meshworld = get_meshworld(board);
+    DWORD meshworld = find_meshworld(board, logf);
     if (!meshworld) {
-        if (logf) fprintf(logf, "  GRID: no meshworld\n");
+        if (logf) fprintf(logf, "  GRID: no meshworld found\n");
         return;
     }
 
