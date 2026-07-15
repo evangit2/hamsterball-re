@@ -240,17 +240,16 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         }
 
         DWORD level = get_level(app);
-        if (level != g_last_board) {
+        if (level != g_last_board && level) {
             g_last_board = level;
 
-            if (level) {
-                /* Poll until sceneobj is ready (up to 10 seconds) */
-                int poll;
-                for (poll = 0; poll < 200; poll++) {
-                    DWORD so = get_sceneobj(app);
-                    if (so) break;
-                    Sleep(50);
-                }
+            /* Poll until sceneobj is ready (up to 10 seconds) */
+            int poll;
+            for (poll = 0; poll < 200; poll++) {
+                DWORD so = get_sceneobj(app);
+                if (so) break;
+                Sleep(50);
+            }
 
                 char log_path[MAX_PATH];
                 snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
@@ -266,7 +265,6 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                     fprintf(logf, "Done.\n\n");
                     fclose(logf);
                 }
-            }
         }
 
         /* Re-apply every 2 seconds (in case game resets values) */

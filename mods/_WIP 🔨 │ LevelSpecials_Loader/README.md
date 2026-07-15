@@ -1,18 +1,51 @@
-# LevelSpecials_Loader (v5)
+# LevelSpecials_Loader (v6)
 
-Universal cross-level object injection for Hamsterball. Replaces all 15 per-level constructors with a single universal constructor, then injects config-driven objects (bumpers, bridges, etc.) into any level.
+Universal cross-level object injection and vtable replacement for Hamsterball. Replaces all 15 per-level constructors **and** 4 vtable slots (Board_Update, RaceState, DispatchCollision, CreateDynamicObjects) with universal handlers, enabling config-driven level features without recompilation.
+
+## What's New in v6
+
+- **Universal Board_Update (Slot 1)**: Replaces all 15 per-level `Board_Update` functions with a single `UniversalBoardUpdate` dispatcher. Calls `Scene_Update` then runs config-driven feature blocks (bridge animation, swirl zones, windmill, badball spawner).
+- **Universal RaceState (Slot 19)**: Replaces all 15 per-level `RaceState` handlers. Calls `Board_UpdateRaceState` then runs feature blocks (bumper decay, neon camera, sky popcylinder activator).
+- **Universal DispatchCollision (Slot 29)**: Replaces all 15 per-level `DispatchCollision` handlers. Delegates to original per-level handlers (preserved for correct collision logic).
+- **Universal CreateDynamicObjects (Slot 33)**: Replaces all 15 per-level object factories. Delegates to original per-level handlers (preserved for correct object creation).
+- **Feature flag system**: 8 bitflags (`FEAT_BRIDGE_ANIM`, `FEAT_SWIRL`, `FEAT_WINDMILL`, `FEAT_BADBALL`, `FEAT_BUMPER_DECAY`, `FEAT_NEON_CAM`, `FEAT_SKY_POPCYL`, `FEAT_MASTER_EXTRA`) with default assignments matching original game behavior.
 
 ## How It Works
 
-The mod intercepts `Tournament_AdvanceRace` (0x00427080) at the point where it calls the per-level `Scene_LoadLevel*` function via `CALL [EDX+0x48]` (vtable[18]). Instead of letting the original per-level constructor run, a **universal constructor** takes over and performs the same steps every level does:
+### Constructor Replacement
+
+The mod intercepts `Tournament_AdvanceRace` (0x00427080) at the point where it calls the per-level `Scene_LoadLevel*` function via `CALL [EDX+0x48]` (vtable[18]). Instead of letting the original per-level constructor run, a **universal constructor** takes over:
 
 1. `operator_new(0x10D0)` → `Level_MeshWorldCtor(mem, gfx, meshPath)` → `board+0x8AC`
 2. `operator_new(0x10D0)` → `Level_RenderCtor(mem, meshWorld)` → `board+0x8B0`
 3. `Level_InitScene(board)`
-4. `UniversalPostSetup(board)` — config-driven features (bumpers, bridge, etc.) — **before** Board_Setup so that sub-meshes are available when `vtable[33]` (CreateDynamicObjects) reads them
+4. `UniversalPostSetup(board)` — config-driven features (bumpers, bridge, etc.) — **before** Board_Setup
 5. `board->vtable[0x80]()` = `Board_Setup`
 
-The per-level `Scene_LoadLevel*` functions **never run**. The universal constructor reads the race index from `[ESI+0x8]` and looks up the correct mesh path from a table.
+### Vtable Slot Patching
+
+After construction, `InstallVtablePatches` overwrites 4 vtable slots in all 15 level vtables:
+
+| Slot | Offset | Original | Universal Handler | Strategy |
+|------|--------|----------|-------------------|----------|
+| 1 | +0x04 | Per-level Board_Update | `UniversalBoardUpdate` | Feature blocks (bridge, swirl, windmill, badball) |
+| 19 | +0x4C | Per-level RaceState | `UniversalRaceState` | Base `Board_UpdateRaceState` + feature blocks (bumper decay, neon cam, sky popcyl) |
+| 29 | +0x74 | Per-level DispatchCollision | `UniversalDispatchCollision` | Delegates to saved original pointer |
+| 33 | +0x84 | Per-level CreateDynamicObjects | `UniversalCreateDynamicObjects` | Delegates to saved original pointer |
+
+### Feature Blocks
+
+Each feature block replicates the exact logic from the original decompiled per-level handlers:
+
+| Feature | Levels | Source Function | Description |
+|---------|--------|-----------------|-------------|
+| `FEAT_BRIDGE_ANIM` | 3, 14 | Intermediate (0x41CC90), Master (0x421400) | 4-state bridge tilt machine (wait→tilt down→wait→tilt back) |
+| `FEAT_SWIRL` | 4, 14 | Dizzy (0x41D510), Master (0x420DA0) | Proximity check, velocity scale, tar bubbles, mesh rotation |
+| `FEAT_WINDMILL` | 5 | Tower (0x41E760) | Rotation + 4-state speed control (spin up→creak→spin down→pause) |
+| `FEAT_BADBALL` | 9 | Odd (0x41EE80) | Timer-based BadBall spawning with random position selection |
+| `FEAT_BUMPER_DECAY` | 2, 10, 14 | Beginner/Toob/Master | Decays 4-8 bumper "lit" float values by 0.05/frame |
+| `FEAT_NEON_CAM` | 7 | Neon (0x424790) | Positions render objects relative to ball position |
+| `FEAT_SKY_POPCYL` | 13 | Sky (0x41FC90) | Random popcylinder activation via 6-case switch |
 
 ### Hooks
 
@@ -22,6 +55,7 @@ The per-level `Scene_LoadLevel*` functions **never run**. The universal construc
 | **Universal constructor** | 0x4273E0 (`CALL [EDX+0x48]`) | 6-byte JMP detour. Naked thunk reads race index from `[ESI+0x8]`, calls `UniversalConstructor(board, raceIndex)` |
 | **Board constructor hooks** | 15 `CALL LevelBoard_*_ctor` sites (0x2712C–0x273C8) | Patches to per-level naked thunks → `UniversalBoardCtorLogic` |
 | **Collision hook** | 0x40C5D0 (`DispatchCollisionEvents`) | 8-byte trampoline. Intercepts all collision events for bumper physics |
+| **Vtable patches** | 15 vtables × 4 slots | Overwrites Board_Update, RaceState, DispatchCollision, CreateDynamicObjects slots |
 
 ### Object system
 
@@ -75,7 +109,7 @@ Auto-generated on first run with Ghidra-extracted per-level defaults. Editable t
 
 ```bash
 i686-w64-mingw32-gcc -shared -o bass.dll LevelSpecials.c \
-  -lwinmm -static-libgcc -Wl,--enable-stdcall-fixup -O2
+  bass.def -lwinmm -static-libgcc -Wl,--enable-stdcall-fixup -O2
 ```
 
 ## Files
@@ -85,10 +119,11 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelSpecials.c \
 - `LevelSpecials.txt` — config file (object toggles per level)
 - `LevelData.txt` — auto-generated per-level data (created on first run)
 - `LevelSpecials.xml` — reference catalog of all injectable objects (documentation only)
-- `bass.def` — export definitions for bass.dll proxy
+- `bass.def` — export definitions for bass.dll proxy (111 forwarded exports)
 
 ## Compatibility
 
 - Game version: V3.6.c
 - Load mechanism: bass.dll proxy
-- The mod patches 15 allocation sites, 15 board constructor calls, 1 scene constructor call, and 1 collision handler. All patches verify original bytes before applying.
+- The mod patches 15 allocation sites, 15 board constructor calls, 1 scene constructor call, 1 collision handler, and 60 vtable slots (15 vtables × 4 slots). All patches verify original bytes before applying.
+- **Wine/llvmpipe crash test: PASSED** — all 15 levels survived 35+ seconds with content rendering.
