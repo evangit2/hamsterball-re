@@ -1,13 +1,10 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v6
+ * custom_entities.c — Hamsterball Custom Entities Mod v7
  *
- * bass.dll proxy mod. GRID system:
- *   Scans S1 ref points for (GRIDxx) suffixes in their names.
- *   Matches ref points to loaded MeshBuffers by position.
- *   Cycles visibility: shows meshes matching current grid_counter, hides others.
- *
- * Config (next to bass.dll):
- *   grid_speed = 10.0    (ticks between grid advances, default 10)
+ * bass.dll proxy mod. Simplified GRID system:
+ *   Scans S1 ref points for (GRIDxx) suffixes.
+ *   Makes all GRID objects visible (posScale = 1.0).
+ *   Hides all GRID objects EXCEPT GRID02 (test mode).
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c \
@@ -21,66 +18,31 @@
 #include <stdio.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Structure offsets (from Ghidra decompilation)
+ * Structure offsets
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define BOARD_LEVEL             0x8AC
 #define LEVEL_SCENEOBJECT       0x480
-
-#define MESHWORLD_OFFSET         0x08
-#define MESHWORLD_MB_COUNT       0x30  /* AthenaList+0x04 (embedded at MW+0x2C) */
-#define MESHWORLD_MB_DATA        0x438 /* AthenaList+0x40C */
-#define MESHWORLD_RENDERCTX_PTR  0x28
-
-#define MESHBUFFER_NAME          0x864
-#define MESHBUFFER_CTX_INDEX     0x04
-
-#define SCENEOBJ_S1_LIST         0x894
+#define SCENEOBJ_S1_LIST        0x894
 
 #define S1ENTRY_NAME             0x00
 #define S1ENTRY_POS_X            0x04
 #define S1ENTRY_POS_Y            0x08
 #define S1ENTRY_POS_Z            0x0C
-#define S1ENTRY_ROT_X            0x10
-#define S1ENTRY_ROT_Y            0x14
-#define S1ENTRY_ROT_Z            0x18
-#define S1ENTRY_SIZE             0x1C
 
-/* EntityTransform is 0x50 bytes, stored at MeshWorld+0x28 + ctx_idx * 0x50 */
-typedef struct {
-    DWORD  vtable;      /* +0x00 */
-    float  rotX;        /* +0x04 */
-    float  rotY;        /* +0x08 */
-    float  rotZ;        /* +0x0C */
-    float  rotScale;    /* +0x10 */
-    float  posX;        /* +0x14 */
-    float  posY;        /* +0x18 */
-    float  posZ;        /* +0x1C */
-    float  posScale;    /* +0x20 */
-    float  extra[12];   /* +0x24 - +0x4F */
-} EntityTransform;
+/* S1 entry has embedded EntityTransform starting at +0x2C (vtable=0x4D8E68).
+ * The EntityTransform's posScale is at ET+0x20 = S1+0x4C.
+ * But the S1 entry also has scale values at +0x1C/+0x20/+0x24 (all 1.0).
+ * We write to BOTH locations to maximize chance of affecting visibility. */
+
+#define S1_SCALE_X               0x1C
+#define S1_SCALE_Y               0x20
+#define S1_SCALE_Z               0x24
+#define S1_ET_BASE               0x2C
+#define S1_ET_POSSCALE           0x4C  /* ET+0x20 */
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * GRID SYSTEM
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-#define MAX_GRID_MESHES 256
-
-typedef struct {
-    EntityTransform* transform;  /* pointer to the mesh's render transform */
-    int grid_num;                /* GRID number (1-99) from S1 ref point name */
-    float src_x, src_y, src_z;   /* S1 ref point position (for logging) */
-} GridMesh;
-
-static GridMesh g_grid_meshes[MAX_GRID_MESHES];
-static int g_grid_mesh_count = 0;
-static int g_grid_counter = 1;
-static int g_grid_max = 0;
-static int g_grid_tick_counter = 0;
-static float g_grid_speed = 10.0f;
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Common state
+ * State
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static HANDLE g_thread = NULL;
@@ -89,19 +51,21 @@ static char g_game_dir[MAX_PATH] = {0};
 static DWORD g_last_board = 0;
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Pointer chain helpers
+ * Helpers
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static DWORD get_level(DWORD board) {
-    if (!board) return 0;
-    if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return 0;
-    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
+/* get_board is provided by bass_proxy.h — it returns the App pointer */
+
+static DWORD get_level(DWORD app) {
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + BOARD_LEVEL), 4)) return 0;
+    DWORD level = *(DWORD*)(app + BOARD_LEVEL);
     if (!level || level < 0x10000) return 0;
     return level;
 }
 
-static DWORD get_sceneobj(DWORD board) {
-    DWORD level = get_level(board);
+static DWORD get_sceneobj(DWORD app) {
+    DWORD level = get_level(app);
     if (!level) return 0;
     if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return 0;
     DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
@@ -109,72 +73,8 @@ static DWORD get_sceneobj(DWORD board) {
     return sceneobj;
 }
 
-/* Get the MeshWorld from the Level object directly (board+0x8AC → level+0x08).
- * This MeshWorld has MeshBuffers (count at +0x24) but may not have EntityTransforms (+0x28=NULL).
- * We'll read transform pointers from MeshBuffer+0x08 instead. */
-static DWORD get_meshworld(DWORD board) {
-    DWORD level = get_level(board);
-    if (!level) return 0;
-    if (IsBadReadPtr((void*)(level + MESHWORLD_OFFSET), 4)) return 0;
-    DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
-    if (!mw || mw < 0x10000) return 0;
-    return mw;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
- * Init / config
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static void init_game_dir(void) {
-    char path[MAX_PATH];
-    HMODULE hSelf = NULL;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                      | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                      (LPCSTR)&init_game_dir, &hSelf);
-    if (hSelf && GetModuleFileNameA(hSelf, path, MAX_PATH) > 0) {
-        char *p = strrchr(path, '\\');
-        if (p) { *p = '\0'; strcpy(g_game_dir, path); return; }
-    }
-    if (GetCurrentDirectoryA(MAX_PATH, path) > 0) {
-        strcpy(g_game_dir, path);
-    }
-}
-
-static void load_config(void) {
-    char path[MAX_PATH];
-    snprintf(path, MAX_PATH, "%s\\custom_entities.txt", g_game_dir);
-    g_grid_speed = 10.0f;
-    FILE* f = NULL;
-    if (fopen_s(&f, path, "r") != 0 || !f) {
-        FILE* gen = NULL;
-        if (fopen_s(&gen, path, "w") == 0 && gen) {
-            fprintf(gen, "# Custom Entities Mod Configuration\n\n");
-            fprintf(gen, "# Ticks between grid advances (1 tick = ~16ms)\n");
-            fprintf(gen, "grid_speed = 10.0\n");
-            fclose(gen);
-        }
-        return;
-    }
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        char key[128], val[128];
-        if (sscanf(line, "%127[^=]=%127s", key, val) == 2) {
-            char* k = key;
-            while (*k == ' ' || *k == '\t') k++;
-            char* end = k + strlen(k) - 1;
-            while (end > k && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n'))
-                *end-- = 0;
-            if (_stricmp(k, "grid_speed") == 0) {
-                g_grid_speed = (float)atof(val);
-                if (g_grid_speed < 1.0f) g_grid_speed = 1.0f;
-            }
-        }
-    }
-    fclose(f);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * GRID: Parse (GRIDxx) from an S1 ref point name
+ * GRID: Parse (GRIDxx) from name
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int parse_grid_flag(const char* name) {
@@ -196,33 +96,21 @@ static int parse_grid_flag(const char* name) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * GRID: Scan S1 ref points for (GRIDxx) flags, then match to MeshBuffers
+ * GRID: Scan S1 ref points and apply visibility
  *
- * The GRID flag is in the S1 ref point name (e.g. "testcube(GRID01)").
- * The game loads the referenced .MESHWORLD and creates MeshBuffers named
- * after the mesh file (e.g. "testcube"), NOT after the ref point name.
- * So we must:
- *   1. Scan S1 ref points for GRID flags → record grid_num + position
- *   2. Scan MeshBuffers → match by position to find EntityTransforms
+ * For each S1 ref point with (GRIDxx):
+ *   - If grid_num == 2: make VISIBLE (scale = 1.0)
+ *   - If grid_num != 2: make HIDDEN (scale = 0.0)
+ *
+ * We write to S1+0x1C/+0x20/+0x24 (scale XYZ) AND S1+0x4C (ET posScale).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Step 1: S1 ref point data (name has GRID flag, position for matching) */
-typedef struct {
-    int grid_num;
-    float posX, posY, posZ;
-} S1GridRef;
-
-static S1GridRef g_s1_grid_refs[64];
-static int g_s1_grid_ref_count = 0;
-
-static void scan_s1_for_grid(DWORD board, FILE* logf) {
-    g_s1_grid_ref_count = 0;
-
-    DWORD level = get_level(board);
-    if (!level) return;
-    if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return;
-    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-    if (!sceneobj || sceneobj < 0x10000) return;
+static void apply_grid_visibility(DWORD app, FILE* logf) {
+    DWORD sceneobj = get_sceneobj(app);
+    if (!sceneobj) {
+        if (logf) fprintf(logf, "  GRID: no sceneobj\n");
+        return;
+    }
 
     /* S1 list is embedded AthenaList at sceneobj+0x894 */
     DWORD s1_list = sceneobj + SCENEOBJ_S1_LIST;
@@ -234,257 +122,72 @@ static void scan_s1_for_grid(DWORD board, FILE* logf) {
     DWORD* s1_array = *(DWORD**)(s1_list + 0x40C);
     if (!s1_array || IsBadReadPtr(s1_array, s1_count * 4)) return;
 
-    if (logf) fprintf(logf, "  GRID: S1 scan: %d ref points\n", s1_count);
+    if (logf) fprintf(logf, "  GRID: scanning %d S1 ref points\n", s1_count);
 
-    int i;
-    for (i = 0; i < s1_count && g_s1_grid_ref_count < 64; i++) {
-        DWORD entry = s1_array[i];
-        if (!entry || entry < 0x10000) continue;
-        if (IsBadReadPtr((void*)entry, S1ENTRY_SIZE)) continue;
-        if (IsBadReadPtr((void*)(entry + S1ENTRY_NAME), 4)) continue;
-        char* name = *(char**)(entry + S1ENTRY_NAME);
-        if (!name || IsBadReadPtr(name, 4)) continue;
-
-        int grid_num = parse_grid_flag(name);
-        if (grid_num == 0) continue;
-
-        float px = *(float*)(entry + S1ENTRY_POS_X);
-        float py = *(float*)(entry + S1ENTRY_POS_Y);
-        float pz = *(float*)(entry + S1ENTRY_POS_Z);
-
-        g_s1_grid_refs[g_s1_grid_ref_count].grid_num = grid_num;
-        g_s1_grid_refs[g_s1_grid_ref_count].posX = px;
-        g_s1_grid_refs[g_s1_grid_ref_count].posY = py;
-        g_s1_grid_refs[g_s1_grid_ref_count].posZ = pz;
-        g_s1_grid_ref_count++;
-
-        if (grid_num > g_grid_max) g_grid_max = grid_num;
-
-        if (logf) fprintf(logf, "  GRID: S1[%d] name='%s' grid=%d pos=(%.1f,%.1f,%.1f)\n",
-                i, name, grid_num, px, py, pz);
-    }
-
-    if (logf) fprintf(logf, "  GRID: Found %d GRID ref points, max=%d\n",
-            g_s1_grid_ref_count, g_grid_max);
-
-    /* Dump S1 entry structs for GRID refs to find runtime mesh pointers */
-    if (logf) {
-        int k;
-        for (k = 0; k < g_s1_grid_ref_count && k < 2; k++) {
-            int i;
-            for (i = 0; i < s1_count; i++) {
-                DWORD entry = s1_array[i];
-                if (!entry || entry < 0x10000) continue;
-                if (IsBadReadPtr((void*)entry, 0x80)) continue;
-                char* name = *(char**)(entry + S1ENTRY_NAME);
-                if (!name || IsBadReadPtr(name, 4)) continue;
-                int gn = parse_grid_flag(name);
-                if (gn != g_s1_grid_refs[k].grid_num) continue;
-
-                fprintf(logf, "  GRID: S1 entry dump for grid=%d at 0x%08X (0x80 bytes):\n", gn, entry);
-                int off;
-                for (off = 0; off < 0x80; off += 4) {
-                    DWORD val = *(DWORD*)(entry + off);
-                    float fval = *(float*)(entry + off);
-                    fprintf(logf, "    +0x%02X: 0x%08X (%.3f)", off, val, fval);
-                    if (val > 0x00100000 && val < 0x10000000) fprintf(logf, " <-- ptr?");
-                    if (off == 0x00) fprintf(logf, " (name)");
-                    if (off == 0x04) fprintf(logf, " (posX)");
-                    if (off == 0x08) fprintf(logf, " (posY)");
-                    if (off == 0x0C) fprintf(logf, " (posZ)");
-                    if (off == 0x2C) fprintf(logf, " (vtable)");
-                    if (off == 0x4C) fprintf(logf, " (EntityTransform+0x20=posScale?)");
-                    fprintf(logf, "\n");
-                }
-                break;
-            }
-        }
-    }
-}
-
-/* Step 2: Match S1 grid refs to MeshBuffers by position */
-static void match_meshbuffers_to_grid(DWORD board, FILE* logf) {
-    g_grid_mesh_count = 0;
-    if (g_s1_grid_ref_count == 0) return;
-
-    DWORD mw = get_meshworld(board);
-    if (!mw) {
-        if (logf) fprintf(logf, "  GRID: get_meshworld returned NULL\n");
-        return;
-    }
-    if (logf) fprintf(logf, "  GRID: meshworld=0x%08X\n", mw);
-
-    /* MeshBuffer count is at MeshWorld+0x24 (file count, always populated) */
-    if (IsBadReadPtr((void*)(mw + 0x24), 4)) return;
-    int mb_count = *(int*)(mw + 0x24);
-    if (logf) fprintf(logf, "  GRID: mb_count=%d (at MW+0x24)\n", mb_count);
-    if (mb_count < 1 || mb_count > 10000) return;
-
-    /* MeshBuffer data array is at MeshWorld+0x438 (AthenaList embedded at +0x2C, data at +0x40C) */
-    if (IsBadReadPtr((void*)(mw + MESHWORLD_MB_DATA), 4)) return;
-    DWORD* mb_array = *(DWORD**)(mw + MESHWORLD_MB_DATA);
-    if (!mb_array || IsBadReadPtr(mb_array, mb_count * 4)) {
-        if (logf) fprintf(logf, "  GRID: mb_array invalid, trying AthenaList at MW+0x2C\n");
-        /* AthenaList might not be populated yet. Try reading MeshBuffers directly
-         * from the MeshWorld struct. The MeshBuffer pointers are stored inline
-         * starting at MeshWorld+0x2C+0x0C (after AthenaList header). */
-        return;
-    }
-
-    /* EntityTransform array at MeshWorld+0x28 may be NULL on this MeshWorld.
-     * Instead, read each MeshBuffer's own transform pointer at +0x08. */
-    EntityTransform* transforms = NULL;
-    if (!IsBadReadPtr((void*)(mw + MESHWORLD_RENDERCTX_PTR), 4)) {
-        transforms = *(EntityTransform**)(mw + MESHWORLD_RENDERCTX_PTR);
-    }
-    if (logf) fprintf(logf, "  GRID: transforms array=0x%08X\n", transforms ? (DWORD)transforms : 0);
-
-    int i, j;
-    for (i = 0; i < mb_count && g_grid_mesh_count < MAX_GRID_MESHES; i++) {
-        DWORD mb = mb_array[i];
-        if (!mb || mb < 0x10000) continue;
-        if (IsBadReadPtr((void*)mb, 0x900)) continue;
-
-        /* Read MeshBuffer name */
-        char* mb_name = NULL;
-        if (!IsBadReadPtr((void*)(mb + MESHBUFFER_NAME), 4)) {
-            mb_name = *(char**)(mb + MESHBUFFER_NAME);
-            if (mb_name && IsBadReadPtr(mb_name, 4)) mb_name = NULL;
-        }
-
-        /* Get EntityTransform: try shared array first, then per-MeshBuffer pointer */
-        EntityTransform* t = NULL;
-        if (transforms) {
-            if (!IsBadReadPtr((void*)(mb + MESHBUFFER_CTX_INDEX), 4)) {
-                DWORD ctx_idx = *(DWORD*)(mb + MESHBUFFER_CTX_INDEX);
-                if (ctx_idx <= 10000) {
-                    t = &transforms[ctx_idx];
-                }
-            }
-        }
-        if (!t) {
-            /* Try reading transform pointer directly from MeshBuffer+0x08 */
-            if (!IsBadReadPtr((void*)(mb + 0x08), 4)) {
-                t = *(EntityTransform**)(mb + 0x08);
-            }
-        }
-        if (!t || IsBadReadPtr(t, sizeof(EntityTransform))) continue;
-
-        /* Match by position: find S1 ref with closest position */
-        float best_dist = 1e9f;
-        int best_ref = -1;
-        for (j = 0; j < g_s1_grid_ref_count; j++) {
-            float dx = t->posX - g_s1_grid_refs[j].posX;
-            float dy = t->posY - g_s1_grid_refs[j].posY;
-            float dz = t->posZ - g_s1_grid_refs[j].posZ;
-            if (dx < 0) dx = -dx;
-            if (dy < 0) dy = -dy;
-            if (dz < 0) dz = -dz;
-            float dist = dx + dy + dz;
-            if (dist < best_dist) {
-                best_dist = dist;
-                best_ref = j;
-            }
-        }
-
-        /* Accept match if within 50 units */
-        if (best_ref >= 0 && best_dist < 150.0f) {
-            g_grid_meshes[g_grid_mesh_count].transform = t;
-            g_grid_meshes[g_grid_mesh_count].grid_num = g_s1_grid_refs[best_ref].grid_num;
-            g_grid_meshes[g_grid_mesh_count].src_x = g_s1_grid_refs[best_ref].posX;
-            g_grid_meshes[g_grid_mesh_count].src_y = g_s1_grid_refs[best_ref].posY;
-            g_grid_meshes[g_grid_mesh_count].src_z = g_s1_grid_refs[best_ref].posZ;
-            g_grid_mesh_count++;
-
-            if (logf) fprintf(logf, "  GRID: MATCH mb[%d] name='%s' pos=(%.1f,%.1f,%.1f) -> grid=%d (dist=%.1f)\n",
-                    i, mb_name ? mb_name : "?", t->posX, t->posY, t->posZ,
-                    g_s1_grid_refs[best_ref].grid_num, best_dist);
-        } else if (logf && mb_name) {
-            fprintf(logf, "  GRID: mb[%d] name='%s' pos=(%.1f,%.1f,%.1f) no match (best_dist=%.1f)\n",
-                    i, mb_name, t->posX, t->posY, t->posZ, best_dist);
-        }
-    }
-
-    if (logf) fprintf(logf, "  GRID: Matched %d grid meshes\n", g_grid_mesh_count);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * GRID: Apply visibility
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static void grid_apply_visibility(void) {
-    int i;
-    for (i = 0; i < g_grid_mesh_count; i++) {
-        GridMesh* gm = &g_grid_meshes[i];
-        if (!gm->transform || IsBadWritePtr(gm->transform, sizeof(EntityTransform)))
-            continue;
-        gm->transform->posScale = 0.0f;  /* TEST: hide ALL grid meshes */
-    }
-    /* Also try hiding via S1 entry directly: zero the scale at S1+0x1C/+0x20/+0x24 */
-    /* This is a TEST to see if writing to the S1 entry itself affects visibility */
-}
-
-/* TEST: Directly hide S1 GRID entries by zeroing their scale values */
-static void grid_hide_all_s1_entries(DWORD board, FILE* logf) {
-    DWORD level = get_level(board);
-    if (!level) return;
-    if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return;
-    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-    if (!sceneobj || sceneobj < 0x10000) return;
-
-    DWORD s1_list = sceneobj + SCENEOBJ_S1_LIST;
-    if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) return;
-    int s1_count = *(int*)(s1_list + 0x04);
-    if (s1_count < 1 || s1_count > 10000) return;
-
-    if (IsBadReadPtr((void*)(s1_list + 0x40C), 4)) return;
-    DWORD* s1_array = *(DWORD**)(s1_list + 0x40C);
-    if (!s1_array || IsBadReadPtr(s1_array, s1_count * 4)) return;
-
+    int found = 0;
     int i;
     for (i = 0; i < s1_count; i++) {
         DWORD entry = s1_array[i];
         if (!entry || entry < 0x10000) continue;
-        if (IsBadReadPtr((void*)entry, 0x30)) continue;
+        if (IsBadReadPtr((void*)entry, 0x50)) continue;
+
         char* name = *(char**)(entry + S1ENTRY_NAME);
         if (!name || IsBadReadPtr(name, 4)) continue;
+
         int grid_num = parse_grid_flag(name);
         if (grid_num == 0) continue;
 
-        /* Try zeroing scale at +0x1C, +0x20, +0x24 */
-        if (!IsBadWritePtr((void*)(entry + 0x1C), 4)) {
-            float prev = *(float*)(entry + 0x1C);
-            *(float*)(entry + 0x1C) = 0.0f;
-            if (logf) fprintf(logf, "  GRID: hid S1 entry grid=%d by zeroing +0x1C (was %.1f)\n", grid_num, prev);
-        }
-        if (!IsBadWritePtr((void*)(entry + 0x20), 4)) {
-            *(float*)(entry + 0x20) = 0.0f;
-        }
-        if (!IsBadWritePtr((void*)(entry + 0x24), 4)) {
-            *(float*)(entry + 0x24) = 0.0f;
-        }
-    }
-}
+        found++;
 
-static void grid_advance(void) {
-    g_grid_tick_counter++;
-    if ((float)g_grid_tick_counter >= g_grid_speed) {
-        g_grid_tick_counter = 0;
-        g_grid_counter++;
-        if (g_grid_counter > g_grid_max || g_grid_max == 0) {
-            g_grid_counter = 1;
+        /* GRID02 = visible, all others = hidden */
+        float scale = (grid_num == 2) ? 1.0f : 0.0f;
+
+        /* Write scale values at S1+0x1C/+0x20/+0x24 */
+        if (!IsBadWritePtr((void*)(entry + S1_SCALE_X), 4))
+            *(float*)(entry + S1_SCALE_X) = scale;
+        if (!IsBadWritePtr((void*)(entry + S1_SCALE_Y), 4))
+            *(float*)(entry + S1_SCALE_Y) = scale;
+        if (!IsBadWritePtr((void*)(entry + S1_SCALE_Z), 4))
+            *(float*)(entry + S1_SCALE_Z) = scale;
+
+        /* Also write ET posScale at S1+0x4C */
+        if (!IsBadWritePtr((void*)(entry + S1_ET_POSSCALE), 4))
+            *(float*)(entry + S1_ET_POSSCALE) = scale;
+
+        if (logf) {
+            float px = *(float*)(entry + S1ENTRY_POS_X);
+            float py = *(float*)(entry + S1ENTRY_POS_Y);
+            float pz = *(float*)(entry + S1ENTRY_POS_Z);
+            fprintf(logf, "  GRID: S1[%d] name='%s' grid=%d pos=(%.1f,%.1f,%.1f) -> %s (scale=%.1f)\n",
+                    i, name, grid_num, px, py, pz,
+                    (grid_num == 2) ? "VISIBLE" : "HIDDEN", scale);
         }
-        /* Don't apply during test mode */
     }
+
+    if (logf) fprintf(logf, "  GRID: found %d GRID ref points\n", found);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Main mod thread
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void init_game_dir(void) {
+    char path[MAX_PATH];
+    HMODULE hSelf = NULL;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                      | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                      (LPCSTR)&init_game_dir, &hSelf);
+    if (hSelf && GetModuleFileNameA(hSelf, path, MAX_PATH) > 0) {
+        char *p = strrchr(path, '\\');
+        if (p) { *p = '\0'; strcpy(g_game_dir, path); return; }
+    }
+    if (GetCurrentDirectoryA(MAX_PATH, path) > 0) {
+        strcpy(g_game_dir, path);
+    }
+}
+
 static DWORD WINAPI mod_thread(LPVOID param) {
     Sleep(3000);
-    load_config();
 
     {
         char log_path[MAX_PATH];
@@ -492,73 +195,52 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         FILE* f = NULL;
         fopen_s(&f, log_path, "a");
         if (f) {
-            fprintf(f, "=== Custom Entities Mod v6 Started ===\n");
+            fprintf(f, "=== Custom Entities Mod v7 Started ===\n");
             fprintf(f, "Game dir: %s\n", g_game_dir);
-            fprintf(f, "Grid speed: %.1f ticks\n", g_grid_speed);
             fclose(f);
         }
     }
 
     while (g_running) {
-        DWORD board = get_board();
+        DWORD app = *(DWORD*)0x005341E0;
+        if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x1000)) {
+            Sleep(100);
+            continue;
+        }
 
-        if (board != g_last_board) {
-            if (g_last_board != 0) {
-                g_grid_mesh_count = 0;
-                g_s1_grid_ref_count = 0;
-                g_grid_counter = 1;
-                g_grid_max = 0;
-                g_grid_tick_counter = 0;
-            }
-            g_last_board = board;
+        DWORD level = get_level(app);
+        if (level != g_last_board) {
+            g_last_board = level;
 
-            if (board) {
-                /* Poll until MeshWorld has MeshBuffers populated */
-                int poll;
-                for (poll = 0; poll < 120; poll++) {
-                    DWORD level = get_level(board);
-                    if (level) {
-                        if (!IsBadReadPtr((void*)(level + MESHWORLD_OFFSET), 4)) {
-                            DWORD mw = *(DWORD*)(level + MESHWORLD_OFFSET);
-                            if (mw && mw > 0x10000) {
-                                if (!IsBadReadPtr((void*)(mw + 0x24), 4)) {
-                                    int cnt = *(int*)(mw + 0x24);
-                                    if (cnt > 0) break;  /* MeshBuffers loaded */
-                                }
-                            }
-                        }
-                    }
-                    Sleep(50);
-                }
+            if (level) {
+                /* Wait for level to fully load */
+                Sleep(2000);
 
                 char log_path[MAX_PATH];
                 snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
                 FILE* logf = NULL;
                 fopen_s(&logf, log_path, "a");
 
-                if (logf) fprintf(logf, "\n--- Level loaded, scanning (after %dms poll) ---\n", poll * 50);
+                if (logf) fprintf(logf, "\n--- Level loaded (app=0x%08X, level=0x%08X) ---\n", app, level);
 
-                /* Step 1: Scan S1 ref points for GRID flags */
-                scan_s1_for_grid(board, logf);
-
-                /* Step 2: Match MeshBuffers to S1 refs by position */
-                match_meshbuffers_to_grid(board, logf);
-
-                /* Step 3: Apply initial visibility */
-                if (g_grid_mesh_count > 0) {
-                    grid_apply_visibility();
-                }
-                /* TEST: Also try hiding directly via S1 entry scale values */
-                grid_hide_all_s1_entries(board, logf);
+                /* Apply GRID visibility: GRID02 visible, others hidden */
+                apply_grid_visibility(app, logf);
 
                 if (logf) {
-                    fprintf(logf, "Scan complete: %d grid meshes\n\n", g_grid_mesh_count);
+                    fprintf(logf, "Done.\n\n");
                     fclose(logf);
                 }
             }
         }
 
-        Sleep(16);
+        /* Re-apply every 2 seconds (in case game resets values) */
+        Sleep(2000);
+        if (g_last_board) {
+            DWORD app2 = *(DWORD*)0x005341E0;
+            if (app2 && app2 >= 0x10000 && !IsBadReadPtr((void*)app2, 0x1000)) {
+                apply_grid_visibility(app2, NULL);
+            }
+        }
     }
 
     return 0;
