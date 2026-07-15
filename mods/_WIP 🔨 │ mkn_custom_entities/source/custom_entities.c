@@ -56,16 +56,16 @@ static DWORD g_last_board = 0;
 
 /* get_board is provided by bass_proxy.h — it returns the App pointer */
 
-static DWORD get_level(DWORD app) {
-    if (!app) return 0;
-    if (IsBadReadPtr((void*)(app + BOARD_LEVEL), 4)) return 0;
-    DWORD level = *(DWORD*)(app + BOARD_LEVEL);
+static DWORD get_level(DWORD board) {
+    if (!board) return 0;
+    if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return 0;
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
     if (!level || level < 0x10000) return 0;
     return level;
 }
 
-static DWORD get_sceneobj(DWORD app) {
-    DWORD level = get_level(app);
+static DWORD get_sceneobj(DWORD board) {
+    DWORD level = get_level(board);
     if (!level) return 0;
     if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return 0;
     DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
@@ -105,8 +105,8 @@ static int parse_grid_flag(const char* name) {
  * We write to S1+0x1C/+0x20/+0x24 (scale XYZ) AND S1+0x4C (ET posScale).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void apply_grid_visibility(DWORD app, FILE* logf) {
-    DWORD level = get_level(app);
+static void apply_grid_visibility(DWORD board, FILE* logf) {
+    DWORD level = get_level(board);
     if (!level) {
         if (logf) fprintf(logf, "  GRID: no level\n");
         return;
@@ -233,20 +233,20 @@ static DWORD WINAPI mod_thread(LPVOID param) {
     }
 
     while (g_running) {
-        DWORD app = *(DWORD*)0x005341E0;
-        if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x1000)) {
+        DWORD board = get_board();
+        if (!board) {
             Sleep(100);
             continue;
         }
 
-        DWORD level = get_level(app);
+        DWORD level = get_level(board);
         if (level != g_last_board && level) {
             g_last_board = level;
 
             /* Poll until sceneobj is ready (up to 10 seconds) */
             int poll;
             for (poll = 0; poll < 200; poll++) {
-                DWORD so = get_sceneobj(app);
+                DWORD so = get_sceneobj(board);
                 if (so) break;
                 Sleep(50);
             }
@@ -256,10 +256,10 @@ static DWORD WINAPI mod_thread(LPVOID param) {
                 FILE* logf = NULL;
                 fopen_s(&logf, log_path, "a");
 
-                if (logf) fprintf(logf, "\n--- Level loaded (app=0x%08X, level=0x%08X, after %dms poll) ---\n", app, level, poll * 50);
+                if (logf) fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X, after %dms poll) ---\n", board, level, poll * 50);
 
                 /* Apply GRID visibility: GRID02 visible, others hidden */
-                apply_grid_visibility(app, logf);
+                apply_grid_visibility(board, logf);
 
                 if (logf) {
                     fprintf(logf, "Done.\n\n");
@@ -270,12 +270,9 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         /* Re-apply every 2 seconds (in case game resets values) */
         Sleep(2000);
         if (g_last_board) {
-            DWORD app2 = *(DWORD*)0x005341E0;
-            if (app2 && app2 >= 0x10000 && !IsBadReadPtr((void*)app2, 0x1000)) {
-                /* Only apply if sceneobj is valid */
-                if (get_sceneobj(app2)) {
-                    apply_grid_visibility(app2, NULL);
-                }
+            DWORD board2 = get_board();
+            if (board2 && get_sceneobj(board2)) {
+                    apply_grid_visibility(board2, NULL);
             }
         }
     }
