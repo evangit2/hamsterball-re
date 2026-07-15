@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v15
+ * custom_entities.c — Hamsterball Custom Entities Mod v16
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -99,6 +99,9 @@ static DWORD g_spawned_objs[MAX_SPAWNED];
 static char  g_spawned_names[MAX_SPAWNED][32];
 static int   g_spawned_count = 0;
 static DWORD g_spawned_board = 0;
+
+/* Config: seconds between GRID switches */
+static float g_grid_speed = 3.0f;
 
 /* Mesh path string — we copy testcube.MESHWORLD to levels\ at startup */
 static char g_mesh_path[] = "levels\\testcube";
@@ -411,12 +414,40 @@ static void init_game_dir(void) {
     }
 }
 
+/* Load config from custom_entities.txt */
+static void load_config(void) {
+    char config_path[MAX_PATH];
+    snprintf(config_path, MAX_PATH, "%s\\custom_entities.txt", g_game_dir);
+    FILE* f = NULL;
+    fopen_s(&f, config_path, "r");
+    if (!f) return;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        /* Skip comments and blank lines */
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
+
+        /* Parse grid_speed */
+        if (strncmp(p, "grid_speed", 10) == 0) {
+            char* eq = strchr(p, '=');
+            if (eq) {
+                float val = (float)atof(eq + 1);
+                if (val > 0.0f) g_grid_speed = val;
+            }
+        }
+    }
+    fclose(f);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
- * Main thread — hooks Ball_Update, spawns at GRID positions
+ * Main thread — GRID cycling: spawn current GRID, despawn all others
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static DWORD WINAPI entity_thread(LPVOID param) {
     init_game_dir();
+    load_config();
 
     /* Open log file */
     char log_path[MAX_PATH];
@@ -424,9 +455,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v15 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v16 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
+        fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
         fclose(logf);
     }
 
@@ -464,54 +496,55 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         int grid_count = find_grid_points(board, grid_x, grid_y, grid_z, 32, logf);
 
         if (grid_count > 0) {
-            int i;
-            /* Find GRID02's position */
-            int grid02_idx = -1;
-            for (i = 0; i < grid_count; i++) {
-                if (i + 1 == 2) {  /* GRID02 = grid_num 2 */
-                    grid02_idx = i;
-                    break;
-                }
+            g_spawned_board = board;
+            if (logf) fprintf(logf, "  Found %d GRID points, starting cycle (speed=%.1fs)\n", grid_count, g_grid_speed);
+
+            /* Start with GRID01 visible */
+            int current_grid = 1;
+            spawn_testcube_at(board, grid_x[0], grid_y[0], grid_z[0], 1, logf);
+            if (logf) {
+                fprintf(logf, "  Cycle: GRID01 spawned\n");
+                fflush(logf);
+                fclose(logf);
             }
 
-            if (grid02_idx >= 0) {
-                /* Spawn only GRID02 */
-                spawn_testcube_at(board, grid_x[grid02_idx], grid_y[grid02_idx], grid_z[grid02_idx], 2, logf);
-                g_spawned_board = board;
-                if (logf) fprintf(logf, "  Spawned GRID02, starting respawn loop\n");
-
-                /* Respawn loop: despawn → wait → respawn → wait → repeat */
-                while (g_running && board == get_board()) {
-                    Sleep(3000);
+            /* Cycling loop */
+            while (g_running && board == get_board()) {
+                /* Wait for grid_speed seconds (check every 100ms for board change) */
+                int wait_ms = (int)(g_grid_speed * 1000);
+                int waited = 0;
+                while (waited < wait_ms) {
+                    Sleep(100);
+                    waited += 100;
                     if (!g_running || board != get_board()) break;
-
-                    logf = NULL;
-                    fopen_s(&logf, log_path, "a");
-
-                    /* Despawn */
-                    despawn_by_name("GRID02", board, logf);
-
-                    Sleep(3000);
-                    if (!g_running || board != get_board()) {
-                        if (logf) { fflush(logf); fclose(logf); }
-                        break;
-                    }
-
-                    /* Respawn */
-                    spawn_testcube_at(board, grid_x[grid02_idx], grid_y[grid02_idx], grid_z[grid02_idx], 2, logf);
-                    if (logf) {
-                        fprintf(logf, "  GRID02 respawned\n");
-                        fflush(logf);
-                        fclose(logf);
-                    }
                 }
-            } else {
-                /* No GRID02 — spawn all and mark done */
-                for (i = 0; i < grid_count; i++) {
-                    spawn_testcube_at(board, grid_x[i], grid_y[i], grid_z[i], i + 1, logf);
+                if (!g_running || board != get_board()) break;
+
+                /* Advance to next GRID */
+                current_grid++;
+                if (current_grid > grid_count) current_grid = 1;
+
+                /* Despawn all spawned objects */
+                logf = NULL;
+                fopen_s(&logf, log_path, "a");
+                while (g_spawned_count > 0) {
+                    despawn_object(board, g_spawned_objs[0], logf);
+                    int j;
+                    for (j = 0; j < g_spawned_count - 1; j++) {
+                        g_spawned_objs[j] = g_spawned_objs[j + 1];
+                        strcpy(g_spawned_names[j], g_spawned_names[j + 1]);
+                    }
+                    g_spawned_count--;
                 }
-                g_spawned_board = board;
-                if (logf) fprintf(logf, "  Spawned %d testcubes (no GRID02 found)\n", grid_count);
+
+                /* Spawn the current GRID */
+                int idx = current_grid - 1;
+                spawn_testcube_at(board, grid_x[idx], grid_y[idx], grid_z[idx], current_grid, logf);
+                if (logf) {
+                    fprintf(logf, "  Cycle: GRID%02d spawned\n", current_grid);
+                    fflush(logf);
+                    fclose(logf);
+                }
             }
         } else {
             /* No GRID points — still mark board as processed */
