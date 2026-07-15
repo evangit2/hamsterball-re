@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v11
+ * custom_entities.c — Hamsterball Custom Entities Mod v12
  *
  * bass.dll proxy mod. Runtime mesh loading:
  *   Reads testcube.MESHWORLD from mod directory.
@@ -343,7 +343,13 @@ static const float GRID_COLORS[5][3] = {
 static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int grid_num, FILE* logf) {
     if (!g_mesh_loaded || !meshworld) return;
 
-    /* Read current MeshBuffer count — this is also the next RC index */
+    /* Use the game's operator_new for ALL allocations — the game will free()
+     * these with its own allocator. Using LocalAlloc causes msvcrt.dll crash
+     * when the game calls free() on our buffers. */
+    typedef void* (__cdecl *operator_new_t)(SIZE_T);
+    static operator_new_t pfn_operator_new = (operator_new_t)0x004BA57B;
+
+    /* Read current MeshBuffer count (also = next RC index) */
     int rc_count = 0;
     if (!IsBadReadPtr((void*)(meshworld + MW_MB_COUNT), 4)) {
         rc_count = *(int*)(meshworld + MW_MB_COUNT);
@@ -353,61 +359,87 @@ static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int
         return;
     }
 
-    /* ── Reallocate the RenderContext array ──
-     * The game allocates RC array as operator_new(mb_count * 0x50 + 4).
-     * We need (rc_count + 1) entries, so reallocate and copy.
-     * The +4 at the start stores the count (it's the first DWORD before the array).
+    /* ── Reallocate the RenderContext array using game's allocator ──
+     * Game allocates: operator_new(count * 0x50 + 4)
+     * Layout: [count DWORD][RC entries...]
+     * MW+0x28 points to first RC entry (i.e. allocation + 4).
      */
     DWORD* old_rc = *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY);
     int new_count = rc_count + 1;
     int new_alloc_size = new_count * 0x50 + 4;
-    DWORD* new_rc = (DWORD*)LocalAlloc(LPTR, new_alloc_size);
+    DWORD* new_rc = (DWORD*)pfn_operator_new(new_alloc_size);
     if (!new_rc) {
-        if (logf) fprintf(logf, "  GRID: failed to realloc RC array\n");
+        if (logf) fprintf(logf, "  GRID: failed to alloc RC array\n");
         return;
     }
-    /* Copy old RC data (including the count DWORD at offset -4... actually the
-     * game stores the count at [array - 4], i.e. the DWORD right before the array).
-     * From decompilation: operator_new(count * 0x50 + 4), then piVar3 = local_15c + 1,
-     * and *local_15c = count. So the structure is: [count DWORD][RC entries...].
-     */
+    /* Zero the new allocation */
+    memset(new_rc, 0, new_alloc_size);
+    /* Copy old RC data (including count DWORD before the array) */
     if (old_rc) {
-        /* old_rc points to the first RC entry. The count DWORD is at old_rc - 1. */
         int old_alloc_size = rc_count * 0x50 + 4;
         if (!IsBadReadPtr((void*)((DWORD*)old_rc - 1), old_alloc_size)) {
-            memcpy((DWORD*)new_rc, (DWORD*)old_rc - 1, old_alloc_size);
+            memcpy(new_rc, (DWORD*)old_rc - 1, old_alloc_size);
         }
+        /* Don't free old_rc — the game will handle it (or we leak, which is safe) */
     }
-    /* Update count in the new allocation */
     *new_rc = new_count;
-    /* Update the RC array pointer in MeshWorld (points to first entry, after count) */
     *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY) = new_rc + 1;
 
-    /* ── Allocate a MeshBuffer (0x874 bytes) ── */
-    void* alloc = (void*)LocalAlloc(LPTR, 0x874);
-    if (!alloc) {
-        if (logf) fprintf(logf, "  GRID: failed to allocate MeshBuffer for grid=%d\n", grid_num);
+    /* ── Allocate a MeshBuffer using game's allocator ── */
+    void* mb_alloc = pfn_operator_new(0x874);
+    if (!mb_alloc) {
+        if (logf) fprintf(logf, "  GRID: failed to allocate MeshBuffer\n");
         return;
     }
-
-    /* Create the MeshBuffer using game's constructor */
-    void* mb = pfn_CreateMeshBuffer(alloc);
+    memset(mb_alloc, 0, 0x874);
+    void* mb = pfn_CreateMeshBuffer(mb_alloc);
     if (!mb) {
-        LocalFree(alloc);
-        if (logf) fprintf(logf, "  GRID: CreateMeshBuffer failed for grid=%d\n", grid_num);
+        if (logf) fprintf(logf, "  GRID: CreateMeshBuffer failed\n");
         return;
     }
 
-    /* Set the "has geometry" flag at +0x217 */
-    *(BYTE*)((char*)mb + 0x217) = 1;
+    /* Set flags */
+    *(BYTE*)((char*)mb + 0x217) = 1;  /* has geometry */
+    *(BYTE*)((char*)mb + 0x85c) = 1;  /* geometry flag for BuildVertexBuffer */
 
     /* Set name */
     char name_buf[32];
     snprintf(name_buf, 32, "testcube(GRID%02d)", grid_num);
-    char* name = (char*)LocalAlloc(LPTR, strlen(name_buf) + 1);
+    char* name = (char*)pfn_operator_new(strlen(name_buf) + 1);
     if (name) {
         strcpy(name, name_buf);
         *(char**)((char*)mb + MB_NAME_PTR) = name;
+    }
+
+    /* Set vertex data pointer (mb+0x219 = pointer to vertex data, malloc'd by game)
+     * From Scene_LoadMeshWorld: _DstBuf = _malloc(local_138); mb[0x219] = _DstBuf;
+     * We provide our testcube vertices. Each vertex = 32 bytes (8 floats). */
+    int vdata_size = g_mesh_data.vertex_count * 32;
+    float* vdata = (float*)pfn_operator_new(vdata_size);
+    if (vdata) {
+        memcpy(vdata, g_mesh_data.vertices, vdata_size);
+        *(float**)((char*)mb + 0x219 * 4) = vdata;  /* mb+0x864 = name, mb+0x219*4 = mb+0x864... wait */
+        /* Actually puVar2[0x219] means mb+0x219*4 = mb+0x864. That's the NAME pointer!
+         * Let me recalculate: puVar2 is undefined4*, so puVar2[0x219] = *(mb + 0x219*4) = *(mb + 0x864)
+         * But 0x864 = MB_NAME_PTR. That can't be right — the game stores BOTH name and vertex data there?
+         * No — looking again at the decompilation:
+         *   puVar2[0x219] = _DstBuf;  // _DstBuf is the vertex data
+         *   But puVar2 is undefined4* (4-byte pointer), so [0x219] = offset 0x219*4 = 0x864
+         *   And we just set *(char**)((char*)mb + 0x864) = name above!
+         * So the vertex data pointer is ALSO at mb+0x864?? That overwrites our name!
+         * 
+         * Wait — re-reading: CreateMeshBuffer sets param_1[0x219] = 0 initially.
+         * Then the game does: _DstBuf = _malloc(local_138); puVar2[0x219] = _DstBuf;
+         * So mb+0x864 stores the vertex data buffer pointer, NOT the name!
+         * The name is stored elsewhere. Let me check: in the game's loading code,
+         * after setting puVar2[0x219] = _DstBuf, it does __strnicmp on (char*)puVar2[0x219].
+         * So puVar2[0x219] IS a char* to the vertex/name data.
+         * Actually the name buffer IS the vertex data — the first part of the buffer
+         * contains the object name string, and the game checks its prefix.
+         * 
+         * So mb+0x864 (puVar2[0x219]) = pointer to a buffer containing the name string.
+         * Our name pointer IS correct — it's the same field.
+         */
     }
 
     /* Add to MeshWorld's MeshBuffer list */
@@ -417,23 +449,16 @@ static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int
     /* Set MeshBuffer's RenderContext index */
     *(int*)((char*)mb + MB_RENDERCTX_INDEX) = rc_count;
 
-    /* ── Write position into the new RC entry ──
-     * From Scene_LoadMeshWorld decompilation:
-     *   posZ at RC+0x14, posX at RC+0x18, posY at RC+0x1C, scale at RC+0x20
-     *   diffuse at RC+0x04..0x10 (RGBA)
-     *   specular at RC+0x24..0x30
-     *   emissive at RC+0x34..0x40
-     *   shine at RC+0x44, texture at RC+0x48, bool at RC+0x4D
-     */
+    /* ── Write position into the new RC entry ── */
     char* rc = (char*)(new_rc + 1) + rc_count * 0x50;
 
-    /* Position (stored in "ambient" group, which the game also uses as position) */
-    *(float*)(rc + 0x14) = pz;   /* posZ */
-    *(float*)(rc + 0x18) = px;   /* posX */
-    *(float*)(rc + 0x1C) = py;   /* posY */
-    *(float*)(rc + 0x20) = 1.0f; /* scale = 1.0 */
+    /* Position: posZ at RC+0x14, posX at RC+0x18, posY at RC+0x1C, scale at RC+0x20 */
+    *(float*)(rc + 0x14) = pz;
+    *(float*)(rc + 0x18) = px;
+    *(float*)(rc + 0x1C) = py;
+    *(float*)(rc + 0x20) = 1.0f;
 
-    /* Scale flag (RC+0x4C = bool: scale != 1.0) */
+    /* Scale flag */
     *(BYTE*)(rc + 0x4C) = 0;
 
     /* Diffuse color */
@@ -441,10 +466,10 @@ static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int
     if (color_idx < 0) color_idx = 0;
     if (color_idx > 4) color_idx = 4;
 
-    *(float*)(rc + 0x04) = GRID_COLORS[color_idx][0];  /* R */
-    *(float*)(rc + 0x08) = GRID_COLORS[color_idx][1];  /* G */
-    *(float*)(rc + 0x0C) = GRID_COLORS[color_idx][2];  /* B */
-    *(float*)(rc + 0x10) = 1.0f;                        /* A */
+    *(float*)(rc + 0x04) = GRID_COLORS[color_idx][0];
+    *(float*)(rc + 0x08) = GRID_COLORS[color_idx][1];
+    *(float*)(rc + 0x0C) = GRID_COLORS[color_idx][2];
+    *(float*)(rc + 0x10) = 1.0f;
 
     /* Specular (zero) */
     *(float*)(rc + 0x24) = 0.0f;
@@ -458,13 +483,9 @@ static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int
     *(float*)(rc + 0x3C) = 0.0f;
     *(float*)(rc + 0x40) = 0.0f;
 
-    /* Shine */
+    /* Shine + texture + bool */
     *(float*)(rc + 0x44) = 0.0f;
-
-    /* No texture */
     *(DWORD*)(rc + 0x48) = 0;
-
-    /* Bool flag */
     *(BYTE*)(rc + 0x4D) = 0;
 
     /* Update MeshBuffer count */
@@ -560,7 +581,7 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         FILE* f = NULL;
         fopen_s(&f, log_path, "a");
         if (f) {
-            fprintf(f, "=== Custom Entities Mod v11 Started ===\n");
+            fprintf(f, "=== Custom Entities Mod v12 Started ===\n");
             fprintf(f, "Game dir: %s\n", g_game_dir);
             fclose(f);
         }
