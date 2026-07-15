@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v16
+ * custom_entities.c — Hamsterball Custom Entities Mod v16b
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -455,7 +455,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v16 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v16b Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -505,13 +505,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             if (logf) {
                 fprintf(logf, "  Cycle: GRID01 spawned\n");
                 fflush(logf);
-                fclose(logf);
             }
 
-            /* Cycling loop */
+            /* Cycling loop — keep log file open for entire cycle */
             while (g_running && board == get_board()) {
                 /* Wait for grid_speed seconds (check every 100ms for board change) */
                 int wait_ms = (int)(g_grid_speed * 1000);
+                if (wait_ms < 100) wait_ms = 100;
                 int waited = 0;
                 while (waited < wait_ms) {
                     Sleep(100);
@@ -520,13 +520,11 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 }
                 if (!g_running || board != get_board()) break;
 
-                /* Advance to next GRID */
+                /* Advance to next GRID (1→2→3→4→5→1→...) */
                 current_grid++;
                 if (current_grid > grid_count) current_grid = 1;
 
                 /* Despawn all spawned objects */
-                logf = NULL;
-                fopen_s(&logf, log_path, "a");
                 while (g_spawned_count > 0) {
                     despawn_object(board, g_spawned_objs[0], logf);
                     int j;
@@ -543,8 +541,18 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 if (logf) {
                     fprintf(logf, "  Cycle: GRID%02d spawned\n", current_grid);
                     fflush(logf);
-                    fclose(logf);
                 }
+            }
+
+            /* Clean up any remaining spawned objects on level exit */
+            while (g_spawned_count > 0) {
+                despawn_object(board, g_spawned_objs[0], logf);
+                int j;
+                for (j = 0; j < g_spawned_count - 1; j++) {
+                    g_spawned_objs[j] = g_spawned_objs[j + 1];
+                    strcpy(g_spawned_names[j], g_spawned_names[j + 1]);
+                }
+                g_spawned_count--;
             }
         } else {
             /* No GRID points — still mark board as processed */
