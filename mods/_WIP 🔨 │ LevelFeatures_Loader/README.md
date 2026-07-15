@@ -1,4 +1,4 @@
-# LevelSpecials_Loader (v6)
+# LevelFeatures_Loader (v6)
 
 Universal cross-level object injection and vtable replacement for Hamsterball. Replaces all 15 per-level constructors **and** 4 vtable slots (Board_Update, RaceState, DispatchCollision, CreateDynamicObjects) with universal handlers, enabling config-driven level features without recompilation.
 
@@ -61,7 +61,7 @@ Each feature block replicates the exact logic from the original decompiled per-l
 
 Features are implemented as **objects** with per-level toggles. Each object type has:
 - An `Init` function that replicates the exact steps from the original per-level constructor
-- A config entry in `LevelSpecials.txt` listing which levels it's active on
+- A config entry in `LevelFeatures.txt` listing which levels it's active on
 
 #### Implemented objects
 
@@ -75,11 +75,11 @@ Features are implemented as **objects** with per-level toggles. Each object type
 1. Add entry to `ObjectType` enum and `g_objectNames[]` array
 2. Write an `Init<ObjectName>` function that replicates the original constructor steps
 3. Call it from `UniversalPostSetup` guarded by `g_objectEnabled[OBJ_XXX][level]`
-4. Add the object name to `LevelSpecials.txt`
+4. Add the object name to `LevelFeatures.txt`
 
 ## Config file
 
-`LevelSpecials.txt` (next to `bass.dll`) controls which objects are active per level:
+`LevelFeatures.txt` (next to `bass.dll`) controls which objects are active per level:
 
 ```ini
 # Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
@@ -103,22 +103,22 @@ Auto-generated on first run with Ghidra-extracted per-level defaults. Editable t
 ## Installation
 
 1. Rename original `bass.dll` to `bass_real.dll`
-2. Copy `bass.dll` and `LevelSpecials.txt` from this mod into the game folder
+2. Copy `bass.dll` and `LevelFeatures.txt` from this mod into the game folder
 
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll LevelSpecials.c \
+i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
   bass.def -lwinmm -static-libgcc -Wl,--enable-stdcall-fixup -O2
 ```
 
 ## Files
 
 - `bass.dll` — compiled mod (rename original bass.dll to bass_real.dll)
-- `LevelSpecials.c` — source code
-- `LevelSpecials.txt` — config file (object toggles per level)
+- `LevelFeatures.c` — source code
+- `LevelFeatures.txt` — config file (object toggles per level)
 - `LevelData.txt` — auto-generated per-level data (created on first run)
-- `LevelSpecials.xml` — reference catalog of all injectable objects (documentation only)
+- `LevelFeatures.xml` — reference catalog of all injectable objects (documentation only)
 - `bass.def` — export definitions for bass.dll proxy (111 forwarded exports)
 
 ## Compatibility

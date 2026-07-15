@@ -170,8 +170,8 @@ static void apply_grid_visibility(DWORD board, FILE* logf) {
 
         found++;
 
-        /* GRID02 = visible, all others = hidden */
-        float scale = (grid_num == 2) ? 1.0f : 0.0f;
+        /* All GRID objects visible */
+        float scale = 1.0f;
 
         /* Write scale values at S1+0x1C/+0x20/+0x24 */
         if (!IsBadWritePtr((void*)(entry + S1_SCALE_X), 4))

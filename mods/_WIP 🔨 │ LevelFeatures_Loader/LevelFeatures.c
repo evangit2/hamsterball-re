@@ -1,5 +1,5 @@
 /*
- * LevelSpecials_Loader v6 — Universal Level Handler + Universal Vtable
+ * LevelFeatures_Loader v6 — Universal Level Handler + Universal Vtable
  *
  * 1. ALLOCATION PATCH: Patches all 15 level allocation sites in
  *    Tournament_AdvanceRace (0x00427080) to use the union size 0xA2F8.
@@ -13,7 +13,7 @@
  *    4-step scene loader (MeshWorldCtor, RenderCtor, InitScene, Board_Setup).
  *
  * 4. COLLISION HOOK: Hooks DispatchCollisionEvents (0x0040C5D0) to
- *    handle N:BUMPER collisions on any level, driven by LevelSpecials.txt.
+ *    handle N:BUMPER collisions on any level, driven by LevelFeatures.txt.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -458,7 +458,7 @@ static int GetCurrentLevel(void *board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Config parser (LevelSpecials.txt)
+ * Config parser (LevelFeatures.txt)
  * Format:
  *   [OBJECTS]
  *   BUMPERS = 2 5 8
@@ -663,7 +663,7 @@ static void GenerateLevelData(void) {
     if (hFile == INVALID_HANDLE_VALUE) return;
 
     const char *header =
-        "# LevelData.txt — Per-level configuration for LevelSpecials_Loader\n"
+        "# LevelData.txt — Per-level configuration for LevelFeatures_Loader\n"
         "# Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower\n"
         "#   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky\n"
         "#   14=Master 15=Impossible\n"
@@ -715,7 +715,7 @@ static void GetConfigPath(void) {
     if (hSelf && GetModuleFileNameA(hSelf, g_configPath, MAX_PATH)) {
         char *p = strrchr(g_configPath, '\\');
         if (p) {
-            strcpy(p + 1, "LevelSpecials.txt");
+            strcpy(p + 1, "LevelFeatures.txt");
             strcpy(g_levelDataPath, g_configPath);
             p = strrchr(g_levelDataPath, '\\');
             if (p) strcpy(p + 1, "LevelData.txt");
@@ -2397,9 +2397,9 @@ void DebugLog(const char *msg) {
     strcpy(logPath, g_configPath);
     char *p = strrchr(logPath, '\\');
     if (p) {
-        strcpy(p + 1, "lsdebug.log");
+        strcpy(p + 1, "lfdebug.log");
     } else {
-        strcpy(logPath, "lsdebug.log");
+        strcpy(logPath, "lfdebug.log");
     }
     HANDLE hFile = CreateFileA(logPath, GENERIC_WRITE,
                                FILE_SHARE_READ, NULL, OPEN_ALWAYS,
