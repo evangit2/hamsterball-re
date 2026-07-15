@@ -1,12 +1,13 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v12
+ * custom_entities.c — Hamsterball Custom Entities Mod v13
  *
- * bass.dll proxy mod. Runtime mesh loading:
- *   Reads testcube.MESHWORLD from mod directory.
- *   Parses vertices (24×32 bytes) and strips (6 strips).
- *   Creates MeshBuffer objects via game's CreateMeshBuffer.
- *   Adds them to the level's MeshWorld at S1 GRID positions.
- *   Colors each cube differently (Red, Orange, Yellow, Green, Blue).
+ * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
+ *
+ * v13 REWRITE: Uses the proven CEA spawning pattern instead of direct
+ * MeshBuffer injection. Loads testcube.MESHWORLD via the game's own
+ * MeshWorld_ctor, then creates PopCylinder objects that reference it.
+ * This is the same pattern used by XRow's "Press S to spawn red bridge"
+ * CEA script — load mesh + create object + register in board lists.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c \
@@ -23,50 +24,61 @@
  * Game function pointers
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* CreateMeshBuffer function pointer */
-typedef void* (__fastcall *CreateMeshBuffer_t)(void* alloc);
-static CreateMeshBuffer_t pfn_CreateMeshBuffer = (CreateMeshBuffer_t)0x00458600;
+/* operator_new — game's C++ allocator (malloc wrapper) */
+typedef void* (__cdecl *operator_new_t)(SIZE_T);
+static operator_new_t pfn_operator_new = (operator_new_t)0x004BA57B;
 
-/* AthenaList_Append is declared in bass_proxy.h */
-static AthenaList_Append_t  pfn_AthenaList_Append = (AthenaList_Append_t)0x00453810;
+/* MeshWorld_ctor — loads a .MESHWORLD file into a mesh object
+ * __thiscall(this, gfx_device, mesh_path_string)
+ * mesh_path_string = e.g. "levels\\testcube" (without .MESHWORLD extension)
+ * Returns the mesh object pointer (same as this) */
+typedef void* (__thiscall *MeshWorld_ctor_t)(void* this_, void* gfx_device, const char* mesh_path);
+static MeshWorld_ctor_t pfn_MeshWorld_ctor = (MeshWorld_ctor_t)0x00461510;
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Structure offsets
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* PopCylinder_ctor — creates a PopCylinder (bumper) object
+ * __thiscall(this, board, posX, posY, posZ, mesh)
+ * Stationary object, no path/spline needed */
+typedef void* (__thiscall *PopCylinder_ctor_t)(void* this_, void* board, float posX, float posY, float posZ, void* mesh);
+static PopCylinder_ctor_t pfn_PopCylinder_ctor = (PopCylinder_ctor_t)0x00436EE0;
 
+/* AthenaList_Append — adds item to an AthenaList
+ * __thiscall(list, item) */
+/* AthenaList_Append — declared in bass_proxy.h, reusing that typedef */
+static AthenaList_Append_t pfn_AthenaList_Append = (AthenaList_Append_t)0x00453810;
+
+/* SpatialTree_CloneToLevel / SpatialTree_Cleanup */
+typedef void (__thiscall *SpatialTree_CloneToLevel_t)(void* this_);
+static SpatialTree_CloneToLevel_t pfn_SpatialTree_CloneToLevel = (SpatialTree_CloneToLevel_t)0x00457AD0;
+typedef void (__thiscall *SpatialTree_Cleanup_t)(void* this_);
+static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x00457A40;
+
+/* Board layout */
+#define BOARD_APP               0x878
 #define BOARD_LEVEL             0x8AC
-#define SCENEOBJ_S1_LIST        0x894
-#define LEVEL_MESHWORLD_PTR     0x08   /* level+0x08 = MeshWorld pointer (NOT sceneobj+0x08!) */
+#define BOARD_UPDATE_LIST       0x2578
+#define BOARD_RENDER_LIST       0xCD4
+#define BOARD_COLLISION_LIST   0x10EC
+#define BOARD_SCENE_OBJ         0x8B0
 
+/* App layout */
+#define APP_GFX_DEVICE          0x174
+
+/* Level/SceneObject layout */
+#define LEVEL_SCENEOBJECT       0x480
+
+/* PopCylinder layout */
+#define PC_COLLISION_OBJ        0x10E0
+
+/* S1 entry layout */
 #define S1ENTRY_NAME             0x00
 #define S1ENTRY_POS_X            0x04
 #define S1ENTRY_POS_Y            0x08
 #define S1ENTRY_POS_Z            0x0C
-#define MW_MB_COUNT             0x24   /* MeshBuffer file count (RC array size) */
-#define MW_RENDERCTX_ARRAY      0x28   /* RenderContext array (allocated) */
-#define MW_MBLIST               0x2C   /* AthenaList of MeshBuffer objects */
-#define MW_MBLIST_COUNT         0x30   /* AthenaList count (= MW_MBLIST + 0x04) */
-#define MW_MBLIST_DATA          0x438  /* AthenaList data ptr (= MW_MBLIST + 0x40C) */
-#define MW_VERTEX_DATA          0x45C  /* Vertex data start (24 byte header + bbox) */
 
-/* Level layout */
-#define LEVEL_MESHWORLD_PTR     0x08   /* level+0x08 = MeshWorld pointer */
-#define LEVEL_SUBLIST           0x18   /* AthenaList of sub-levels (when S1 count >= 1) */
-#define LEVEL_SCENEOBJECT       0x480
-#define LEVEL_HAS_SUBLIST       0x430  /* byte: 1 = has sub-levels, 0 = direct mesh */
-
-/* MeshBuffer layout (0x874 bytes) */
-#define MB_NAME_PTR             0x864  /* char* name */
-#define MB_FLAG_NOSHADOW        0x85E  /* byte */
-#define MB_STRIP_LIST           0x424  /* AthenaList of strip entries (0x109*4) */
-#define MB_RENDERCTX_INDEX      0x04  /* DWORD index into MW_RENDERCTX_ARRAY */
-
-/* RenderContext layout (0x50 bytes) */
-#define RC_MATRIX_START         0x04   /* 4 matrices × 4 floats = 64 bytes */
-#define RC_SCALE_FLAGS          0x4C   /* bool: scale != 1.0 */
-#define RC_SHINE                0x44   /* float */
-#define RC_HAS_TEX              0x48   /* DWORD: texture pointer or 0 */
-#define RC_BOOL_FLAG            0x4D   /* byte */
+/* Object size constants */
+#define MESHWORLD_SIZE          0x10D0
+#define POPCYLINDER_SIZE        0x10D0
+#define SPATIALTREE_SIZE        68
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * State
@@ -75,601 +87,292 @@ static AthenaList_Append_t  pfn_AthenaList_Append = (AthenaList_Append_t)0x00453
 static HANDLE g_thread = NULL;
 static volatile int g_running = 1;
 static char g_game_dir[MAX_PATH] = {0};
-static DWORD g_last_level = 0;
 
-/* Parsed testcube mesh data */
-typedef struct {
-    float vertices[24 * 8];  /* 24 verts × 8 floats (pos3 + norm3 + uv2) */
-    int vertex_count;
-    float material[16];      /* 4 groups × 4 floats */
-    float shine;
-    int has_texture;
-    int bool_flag;
-    int strip_count;
-    int strips[12][2];       /* up to 12 strips, each (vref, count) */
-} MeshData;
+/* Track spawned objects so we don't double-spawn */
+static DWORD g_spawned_board = 0;
 
-static MeshData g_mesh_data;
-static int g_mesh_loaded = 0;
+/* Mesh path string — we copy testcube.MESHWORLD to levels\ at startup */
+static char g_mesh_path[] = "levels\\testcube";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Helpers
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* get_board is declared in bass_proxy.h */
+
 static DWORD get_level(DWORD board) {
     if (!board) return 0;
     if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return 0;
-    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
-    if (!level || level < 0x10000) return 0;
-    return level;
+    return *(DWORD*)(board + BOARD_LEVEL);
 }
 
+/* Get the SceneObject from the level */
 static DWORD get_sceneobj(DWORD board) {
     DWORD level = get_level(board);
     if (!level) return 0;
     if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return 0;
-    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-    if (!sceneobj || sceneobj < 0x10000) return 0;
-    return sceneobj;
+    return *(DWORD*)(level + LEVEL_SCENEOBJECT);
 }
 
-static DWORD get_meshworld(DWORD board) {
+/* Find S1 reference points by scanning the sceneobj's S1 list */
+static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_z, int max_points, FILE* logf) {
+    DWORD sceneobj = get_sceneobj(board);
+    if (!sceneobj) {
+        if (logf) fprintf(logf, "  GRID: sceneobj=NULL\n");
+        return 0;
+    }
+
+    /* S1 AthenaList is at sceneobj+0x894 */
+    DWORD s1_list = sceneobj + 0x894;
+    if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) {
+        if (logf) fprintf(logf, "  GRID: can't read S1 list count\n");
+        return 0;
+    }
+    int s1_count = *(int*)(s1_list + 0x04);
+    if (s1_count <= 0 || s1_count > 1000) {
+        if (logf) fprintf(logf, "  GRID: S1 count=%d (invalid)\n", s1_count);
+        return 0;
+    }
+
+    /* S1 data pointer is at s1_list+0x40C (AthenaList data) */
+    if (IsBadReadPtr((void*)(s1_list + 0x40C), 4)) {
+        if (logf) fprintf(logf, "  GRID: can't read S1 data ptr\n");
+        return 0;
+    }
+    DWORD* s1_data = *(DWORD**)(s1_list + 0x40C);
+    if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) {
+        if (logf) fprintf(logf, "  GRID: S1 data ptr invalid\n");
+        return 0;
+    }
+
+    int found = 0;
+    int i;
+    for (i = 0; i < s1_count && found < max_points; i++) {
+        DWORD entry = s1_data[i];
+        if (!entry || entry < 0x10000) continue;
+        if (IsBadReadPtr((void*)entry, 16)) continue;
+
+        char* name = *(char**)(entry + S1ENTRY_NAME);
+        if (!name || IsBadReadPtr(name, 5)) continue;
+
+        /* Check for "GRID" prefix in the S1 entry name */
+        if (strnicmp(name, "GRID", 4) != 0) continue;
+
+        float x = *(float*)(entry + S1ENTRY_POS_X);
+        float y = *(float*)(entry + S1ENTRY_POS_Y);
+        float z = *(float*)(entry + S1ENTRY_POS_Z);
+
+        out_x[found] = x;
+        out_y[found] = y;
+        out_z[found] = z;
+        found++;
+
+        if (logf) fprintf(logf, "  GRID: found %s at (%.1f, %.1f, %.1f)\n", name, x, y, z);
+    }
+
+    return found;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * CEA spawning pattern — load mesh + create object + register
+ * Based on XRow's "Press S to spawn red bridge GLOBALLY" CEA script
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void spawn_testcube_at(DWORD board, float px, float py, float pz, int grid_num, FILE* logf) {
+    if (!board) return;
+
+    /* 1. Get gfx_device from App */
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+    if (!app || IsBadReadPtr((void*)app, 4)) {
+        if (logf) fprintf(logf, "  GRID: app=NULL\n");
+        return;
+    }
+    DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
+    if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) {
+        if (logf) fprintf(logf, "  GRID: gfx_device=NULL\n");
+        return;
+    }
+
+    /* 2. Load mesh via MeshWorld_ctor */
+    void* mesh = pfn_operator_new(MESHWORLD_SIZE);
+    if (!mesh) {
+        if (logf) fprintf(logf, "  GRID: failed to allocate mesh\n");
+        return;
+    }
+    memset(mesh, 0, MESHWORLD_SIZE);
+
+    void* loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, g_mesh_path);
+    if (!loaded_mesh) {
+        if (logf) fprintf(logf, "  GRID: MeshWorld_ctor failed for '%s'\n", g_mesh_path);
+        return;
+    }
+
+    /* 3. Allocate PopCylinder object */
+    void* obj = pfn_operator_new(POPCYLINDER_SIZE);
+    if (!obj) {
+        if (logf) fprintf(logf, "  GRID: failed to allocate PopCylinder\n");
+        return;
+    }
+    memset(obj, 0, POPCYLINDER_SIZE);
+
+    /* 4. Call PopCylinder_ctor(this, board, X, Y, Z, mesh) */
+    void* result = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
+    if (!result) {
+        if (logf) fprintf(logf, "  GRID: PopCylinder_ctor failed\n");
+        return;
+    }
+
+    /* 5. Add to board+0x2578 (update list) */
+    pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+
+    /* 6. Add to board+0xCD4 (render list) */
+    pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
+
+    /* 7. Add collision object to board+0x10EC */
+    DWORD col_obj = *(DWORD*)((char*)obj + PC_COLLISION_OBJ);
+    if (col_obj) {
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
+
+        /* Also add to board+0x8B0+0x18 (scene collision) */
+        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+        if (scene_col) {
+            pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)col_obj);
+        }
+    }
+
+    /* 8. Add to scene spatial tree (board+0x8AC+0x480+0x1C) */
     DWORD level = get_level(board);
-    if (!level) return 0;
-    /* MeshWorld pointer is at LEVEL+0x08.
-     * Verified via Ghidra decompilation of Scene_LoadMeshWorld (0x461890):
-     *   *(undefined4 **)((int)this + 8) = puVar2;  // this = Level object
-     * Note: For levels with sub-levels (S1 count >= 1), this MeshWorld has
-     * MW+0x24 uninitialized. The actual mesh data is in sub-level MeshWorlds. */
-    if (IsBadReadPtr((void*)(level + LEVEL_MESHWORLD_PTR), 4)) return 0;
-    DWORD mw = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
-    if (!mw || mw < 0x10000) return 0;
-    return mw;
-}
-
-/* Find a usable MeshWorld — one with valid mb_count (MW+0x24).
- * For levels with sub-levels (S1 count >= 1 in the MESHWORLD file),
- * the parent level's MeshWorld has MW+0x24 uninitialized.
- * We scan the sub-levels at level+0x18 for one with valid mesh data. */
-static DWORD find_meshworld(DWORD board, FILE* logf) {
-    DWORD level = get_level(board);
-    if (!level) return 0;
-
-    DWORD mw = get_meshworld(board);
-    if (mw) {
-        /* Check if MW+0x24 is valid */
-        int mb_count = 0;
-        if (!IsBadReadPtr((void*)(mw + MW_MB_COUNT), 4))
-            mb_count = *(int*)(mw + MW_MB_COUNT);
-
-        if (mb_count >= 0 && mb_count < 10000) {
-            /* Direct mesh level — MW+0x24 is valid */
-            if (logf) fprintf(logf, "  GRID: Found MeshWorld at level+0x08 = 0x%08X (mb_count=%d)\n", mw, mb_count);
-            return mw;
-        }
-
-        /* MW+0x24 is garbage — this level has sub-levels.
-         * Scan the sub-level AthenaList at level+0x18 for a MeshWorld with valid mb_count. */
-        if (logf) fprintf(logf, "  GRID: level+0x08 MW=0x%08X has bad mb_count=%d (0x%08X), scanning sub-levels...\n",
-                mw, mb_count, mb_count);
-
-        /* AthenaList at level+0x18: count at +0x04, data at +0x40C */
-        if (!IsBadReadPtr((void*)(level + LEVEL_SUBLIST + 0x04), 4)) {
-            int sub_count = *(int*)(level + LEVEL_SUBLIST + 0x04);
-            if (sub_count > 0 && sub_count < 1000) {
-                if (!IsBadReadPtr((void*)(level + LEVEL_SUBLIST + 0x40C), 4)) {
-                    DWORD* sub_data = *(DWORD**)(level + LEVEL_SUBLIST + 0x40C);
-                    if (sub_data && !IsBadReadPtr(sub_data, sub_count * 4)) {
-                        int i;
-                        for (i = 0; i < sub_count; i++) {
-                            DWORD sub_level = sub_data[i];
-                            if (!sub_level || sub_level < 0x10000) continue;
-                            if (IsBadReadPtr((void*)(sub_level + LEVEL_MESHWORLD_PTR), 4)) continue;
-                            DWORD sub_mw = *(DWORD*)(sub_level + LEVEL_MESHWORLD_PTR);
-                            if (!sub_mw || sub_mw < 0x10000) continue;
-                            if (IsBadReadPtr((void*)(sub_mw + MW_MB_COUNT), 4)) continue;
-                            int sub_mb_count = *(int*)(sub_mw + MW_MB_COUNT);
-                            if (sub_mb_count >= 0 && sub_mb_count < 10000) {
-                                if (logf) fprintf(logf, "  GRID: Found valid MeshWorld in sub-level[%d] = 0x%08X (mb_count=%d)\n",
-                                        i, sub_mw, sub_mb_count);
-                                return sub_mw;
-                            }
-                        }
-                    }
-                }
-            }
+    if (level) {
+        DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+        if (sceneobj) {
+            pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), obj);
         }
     }
-
-    if (logf) fprintf(logf, "  GRID: no usable MeshWorld found\n");
-    return 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * GRID: Parse (GRIDxx) from name
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static int parse_grid_flag(const char* name) {
-    const char* p = name;
-    while ((p = strstr(p, "(GRID")) != NULL) {
-        const char* digits = p + 5;
-        if (isdigit((unsigned char)digits[0]) && isdigit((unsigned char)digits[1]) &&
-            digits[2] == ')') {
-            int num = (digits[0] - '0') * 10 + (digits[1] - '0');
-            if (num >= 1 && num <= 99) return num;
-        }
-        if (isdigit((unsigned char)digits[0]) && digits[1] == ')') {
-            int num = digits[0] - '0';
-            if (num >= 1 && num <= 9) return num;
-        }
-        p++;
-    }
-    return 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Load testcube.MESHWORLD from mod directory
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static int load_testcube_mesh(void) {
-    char path[MAX_PATH];
-    /* Try mod dir first, then Levels subdirectory */
-    snprintf(path, MAX_PATH, "%s\\testcube.MESHWORLD", g_game_dir);
-    FILE* f = NULL;
-    fopen_s(&f, path, "rb");
-    if (!f) {
-        snprintf(path, MAX_PATH, "%s\\Levels\\testcube.MESHWORLD", g_game_dir);
-        fopen_s(&f, path, "rb");
-    }
-    if (!f) return 0;
-
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (fsize < 100 || fsize > 100000) { fclose(f); return 0; }
-
-    unsigned char* data = (unsigned char*)malloc(fsize);
-    if (!data) { fclose(f); return 0; }
-    fread(data, 1, fsize, f);
-    fclose(f);
-
-    /* Parse: S1(4) + S2(4) + S3(4) + bbox(24) + vc(4) + vertices(vc*32) + octree */
-    int pos = 0;
-    /* S1/S2/S3 counts (all 0 for testcube) */
-    pos += 12;
-    /* bbox */
-    pos += 24;
-    /* vertex count */
-    int vc = *(int*)(data + pos);
-    pos += 4;
-    if (vc < 1 || vc > 1000) { free(data); return 0; }
-
-    g_mesh_data.vertex_count = vc;
-
-    /* Read vertices: each is 32 bytes (pos3 + norm3 + pad2 + uv2 = 8 floats) */
-    int v;
-    for (v = 0; v < vc && v < 24; v++) {
-        float* vdata = (float*)(data + pos + v * 32);
-        g_mesh_data.vertices[v * 8 + 0] = vdata[0];  /* posX */
-        g_mesh_data.vertices[v * 8 + 1] = vdata[1];  /* posY */
-        g_mesh_data.vertices[v * 8 + 2] = vdata[2];  /* posZ */
-        g_mesh_data.vertices[v * 8 + 3] = vdata[3];  /* normX */
-        g_mesh_data.vertices[v * 8 + 4] = vdata[4];  /* normY */
-        g_mesh_data.vertices[v * 8 + 5] = vdata[5];  /* normZ */
-        g_mesh_data.vertices[v * 8 + 6] = vdata[6];  /* uvU */
-        g_mesh_data.vertices[v * 8 + 7] = vdata[7];  /* uvV */
-    }
-    pos += vc * 32;
-
-    /* Parse octree: root(bbox24 + sc4) → if sc=1, child(bbox24 + sc4=0 + gc4=1) → mesh */
-    /* Root */
-    pos += 24;  /* bbox */
-    int root_sc = *(int*)(data + pos);
-    pos += 4;
-
-    if (root_sc > 0) {
-        /* Child */
-        pos += 24;  /* bbox */
-        int child_sc = *(int*)(data + pos);
-        pos += 4;
-
-        if (child_sc == 0) {
-            int gc = *(int*)(data + pos);
-            pos += 4;
-
-            if (gc >= 1) {
-                /* Parse mesh entry */
-                int nl = *(int*)(data + pos);
-                pos += 4;
-                /* Skip name */
-                pos += nl;
-
-                /* Material: 4 groups × 4 floats = 64 bytes */
-                memcpy(g_mesh_data.material, data + pos, 64);
-                pos += 64;
-
-                /* Shine */
-                g_mesh_data.shine = *(float*)(data + pos);
-                pos += 4;
-
-                /* has_texture */
-                g_mesh_data.has_texture = *(int*)(data + pos);
-                pos += 4;
-
-                /* Skip texture name if present */
-                if (g_mesh_data.has_texture) {
-                    int tl = *(int*)(data + pos);
-                    pos += 4 + tl;
-                }
-
-                /* bool_flag */
-                g_mesh_data.bool_flag = *(int*)(data + pos);
-                pos += 4;
-
-                /* strip_count */
-                g_mesh_data.strip_count = *(int*)(data + pos);
-                pos += 4;
-
-                /* Read strips */
-                int s;
-                for (s = 0; s < g_mesh_data.strip_count && s < 12; s++) {
-                    g_mesh_data.strips[s][0] = *(int*)(data + pos);      /* vref */
-                    g_mesh_data.strips[s][1] = *(int*)(data + pos + 4);  /* count */
-                    pos += 8;
-                }
-            }
-        }
-    }
-
-    free(data);
-    g_mesh_loaded = 1;
-    return 1;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Spawn a MeshBuffer at a given position with a given color
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Color presets for GRID01-05: Red, Orange, Yellow, Green, Blue */
-static const float GRID_COLORS[5][3] = {
-    {0.8f, 0.0f, 0.0f},   /* GRID01 = Red */
-    {1.0f, 0.5f, 0.0f},   /* GRID02 = Orange */
-    {1.0f, 1.0f, 0.0f},   /* GRID03 = Yellow */
-    {0.0f, 0.8f, 0.0f},   /* GRID04 = Green */
-    {0.0f, 0.0f, 0.8f},   /* GRID05 = Blue */
-};
-
-static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int grid_num, FILE* logf) {
-    if (!g_mesh_loaded || !meshworld) return;
-
-    /* Use the game's operator_new for ALL allocations — the game will free()
-     * these with its own allocator. Using LocalAlloc causes msvcrt.dll crash
-     * when the game calls free() on our buffers. */
-    typedef void* (__cdecl *operator_new_t)(SIZE_T);
-    static operator_new_t pfn_operator_new = (operator_new_t)0x004BA57B;
-
-    /* Read current MeshBuffer count (also = next RC index) */
-    int rc_count = 0;
-    if (!IsBadReadPtr((void*)(meshworld + MW_MB_COUNT), 4)) {
-        rc_count = *(int*)(meshworld + MW_MB_COUNT);
-    }
-    if (rc_count < 0 || rc_count > 10000) {
-        if (logf) fprintf(logf, "  GRID: bad rc_count=%d, skipping\n", rc_count);
-        return;
-    }
-
-    /* ── Reallocate the RenderContext array using game's allocator ──
-     * Game allocates: operator_new(count * 0x50 + 4)
-     * Layout: [count DWORD][RC entries...]
-     * MW+0x28 points to first RC entry (i.e. allocation + 4).
-     */
-    DWORD* old_rc = *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY);
-    int new_count = rc_count + 1;
-    int new_alloc_size = new_count * 0x50 + 4;
-    DWORD* new_rc = (DWORD*)pfn_operator_new(new_alloc_size);
-    if (!new_rc) {
-        if (logf) fprintf(logf, "  GRID: failed to alloc RC array\n");
-        return;
-    }
-    /* Zero the new allocation */
-    memset(new_rc, 0, new_alloc_size);
-    /* Copy old RC data (including count DWORD before the array) */
-    if (old_rc) {
-        int old_alloc_size = rc_count * 0x50 + 4;
-        if (!IsBadReadPtr((void*)((DWORD*)old_rc - 1), old_alloc_size)) {
-            memcpy(new_rc, (DWORD*)old_rc - 1, old_alloc_size);
-        }
-        /* Don't free old_rc — the game will handle it (or we leak, which is safe) */
-    }
-    *new_rc = new_count;
-    *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY) = new_rc + 1;
-
-    /* ── Allocate a MeshBuffer using game's allocator ── */
-    void* mb_alloc = pfn_operator_new(0x874);
-    if (!mb_alloc) {
-        if (logf) fprintf(logf, "  GRID: failed to allocate MeshBuffer\n");
-        return;
-    }
-    memset(mb_alloc, 0, 0x874);
-    void* mb = pfn_CreateMeshBuffer(mb_alloc);
-    if (!mb) {
-        if (logf) fprintf(logf, "  GRID: CreateMeshBuffer failed\n");
-        return;
-    }
-
-    /* Set flags */
-    *(BYTE*)((char*)mb + 0x217) = 1;  /* has geometry */
-    *(BYTE*)((char*)mb + 0x85c) = 1;  /* geometry flag for BuildVertexBuffer */
-
-    /* Set name */
-    char name_buf[32];
-    snprintf(name_buf, 32, "testcube(GRID%02d)", grid_num);
-    char* name = (char*)pfn_operator_new(strlen(name_buf) + 1);
-    if (name) {
-        strcpy(name, name_buf);
-        *(char**)((char*)mb + MB_NAME_PTR) = name;
-    }
-
-    /* Set vertex data pointer (mb+0x219 = pointer to vertex data, malloc'd by game)
-     * From Scene_LoadMeshWorld: _DstBuf = _malloc(local_138); mb[0x219] = _DstBuf;
-     * We provide our testcube vertices. Each vertex = 32 bytes (8 floats). */
-    int vdata_size = g_mesh_data.vertex_count * 32;
-    float* vdata = (float*)pfn_operator_new(vdata_size);
-    if (vdata) {
-        memcpy(vdata, g_mesh_data.vertices, vdata_size);
-        *(float**)((char*)mb + 0x219 * 4) = vdata;  /* mb+0x864 = name, mb+0x219*4 = mb+0x864... wait */
-        /* Actually puVar2[0x219] means mb+0x219*4 = mb+0x864. That's the NAME pointer!
-         * Let me recalculate: puVar2 is undefined4*, so puVar2[0x219] = *(mb + 0x219*4) = *(mb + 0x864)
-         * But 0x864 = MB_NAME_PTR. That can't be right — the game stores BOTH name and vertex data there?
-         * No — looking again at the decompilation:
-         *   puVar2[0x219] = _DstBuf;  // _DstBuf is the vertex data
-         *   But puVar2 is undefined4* (4-byte pointer), so [0x219] = offset 0x219*4 = 0x864
-         *   And we just set *(char**)((char*)mb + 0x864) = name above!
-         * So the vertex data pointer is ALSO at mb+0x864?? That overwrites our name!
-         * 
-         * Wait — re-reading: CreateMeshBuffer sets param_1[0x219] = 0 initially.
-         * Then the game does: _DstBuf = _malloc(local_138); puVar2[0x219] = _DstBuf;
-         * So mb+0x864 stores the vertex data buffer pointer, NOT the name!
-         * The name is stored elsewhere. Let me check: in the game's loading code,
-         * after setting puVar2[0x219] = _DstBuf, it does __strnicmp on (char*)puVar2[0x219].
-         * So puVar2[0x219] IS a char* to the vertex/name data.
-         * Actually the name buffer IS the vertex data — the first part of the buffer
-         * contains the object name string, and the game checks its prefix.
-         * 
-         * So mb+0x864 (puVar2[0x219]) = pointer to a buffer containing the name string.
-         * Our name pointer IS correct — it's the same field.
-         */
-    }
-
-    /* Add to MeshWorld's MeshBuffer list */
-    void* mblist = (void*)(meshworld + MW_MBLIST);
-    pfn_AthenaList_Append(mblist, mb);
-
-    /* Set MeshBuffer's RenderContext index */
-    *(int*)((char*)mb + MB_RENDERCTX_INDEX) = rc_count;
-
-    /* ── Write position into the new RC entry ── */
-    char* rc = (char*)(new_rc + 1) + rc_count * 0x50;
-
-    /* Position: posZ at RC+0x14, posX at RC+0x18, posY at RC+0x1C, scale at RC+0x20 */
-    *(float*)(rc + 0x14) = pz;
-    *(float*)(rc + 0x18) = px;
-    *(float*)(rc + 0x1C) = py;
-    *(float*)(rc + 0x20) = 1.0f;
-
-    /* Scale flag */
-    *(BYTE*)(rc + 0x4C) = 0;
-
-    /* Diffuse color */
-    int color_idx = grid_num - 1;
-    if (color_idx < 0) color_idx = 0;
-    if (color_idx > 4) color_idx = 4;
-
-    *(float*)(rc + 0x04) = GRID_COLORS[color_idx][0];
-    *(float*)(rc + 0x08) = GRID_COLORS[color_idx][1];
-    *(float*)(rc + 0x0C) = GRID_COLORS[color_idx][2];
-    *(float*)(rc + 0x10) = 1.0f;
-
-    /* Specular (zero) */
-    *(float*)(rc + 0x24) = 0.0f;
-    *(float*)(rc + 0x28) = 0.0f;
-    *(float*)(rc + 0x2C) = 0.0f;
-    *(float*)(rc + 0x30) = 0.0f;
-
-    /* Emissive (zero) */
-    *(float*)(rc + 0x34) = 0.0f;
-    *(float*)(rc + 0x38) = 0.0f;
-    *(float*)(rc + 0x3C) = 0.0f;
-    *(float*)(rc + 0x40) = 0.0f;
-
-    /* Shine + texture + bool */
-    *(float*)(rc + 0x44) = 0.0f;
-    *(DWORD*)(rc + 0x48) = 0;
-    *(BYTE*)(rc + 0x4D) = 0;
-
-    /* Update MeshBuffer count */
-    *(int*)(meshworld + MW_MB_COUNT) = new_count;
 
     if (logf) {
-        fprintf(logf, "  GRID: spawned testcube(GRID%02d) at (%.1f,%.1f,%.1f) mb=0x%08X rc_idx=%d\n",
-                grid_num, px, py, pz, (DWORD)mb, rc_count);
+        fprintf(logf, "  GRID: spawned testcube(GRID%02d) at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                grid_num, px, py, pz, (DWORD)obj);
         fflush(logf);
     }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Scan S1 ref points and spawn testcubes at GRID positions
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static void apply_grid_visibility(DWORD board, FILE* logf) {
-    DWORD sceneobj = get_sceneobj(board);
-    if (!sceneobj) {
-        if (logf) fprintf(logf, "  GRID: no sceneobj\n");
-        return;
-    }
-
-    DWORD meshworld = find_meshworld(board, logf);
-    if (!meshworld) {
-        if (logf) fprintf(logf, "  GRID: no meshworld found\n");
-        return;
-    }
-
-    /* S1 list is embedded AthenaList at sceneobj+0x894 */
-    DWORD s1_list = sceneobj + SCENEOBJ_S1_LIST;
-    if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) return;
-    int s1_count = *(int*)(s1_list + 0x04);
-    if (s1_count < 1 || s1_count > 10000) return;
-
-    if (IsBadReadPtr((void*)(s1_list + 0x40C), 4)) return;
-    DWORD* s1_array = *(DWORD**)(s1_list + 0x40C);
-    if (!s1_array || IsBadReadPtr(s1_array, s1_count * 4)) return;
-
-    if (logf) fprintf(logf, "  GRID: scanning %d S1 ref points, meshworld=0x%08X\n", s1_count, meshworld);
-
-    int found = 0;
-    int i;
-    for (i = 0; i < s1_count; i++) {
-        DWORD entry = s1_array[i];
-        if (!entry || entry < 0x10000) continue;
-        if (IsBadReadPtr((void*)entry, 0x20)) continue;
-
-        char* name = *(char**)(entry + S1ENTRY_NAME);
-        if (!name || IsBadReadPtr(name, 4)) continue;
-
-        int grid_num = parse_grid_flag(name);
-        if (grid_num == 0) continue;
-
-        found++;
-
-        float px = *(float*)(entry + S1ENTRY_POS_X);
-        float py = *(float*)(entry + S1ENTRY_POS_Y);
-        float pz = *(float*)(entry + S1ENTRY_POS_Z);
-
-        /* Spawn testcube at this position */
-        spawn_testcube_at(meshworld, px, py, pz, grid_num, logf);
-    }
-
-    if (logf) fprintf(logf, "  GRID: found %d GRID ref points\n", found);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Main mod thread
+ * Init: copy testcube.MESHWORLD to levels\ directory
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void init_game_dir(void) {
-    char path[MAX_PATH];
-    HMODULE hSelf = NULL;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                      | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                      (LPCSTR)&init_game_dir, &hSelf);
-    if (hSelf && GetModuleFileNameA(hSelf, path, MAX_PATH) > 0) {
-        char *p = strrchr(path, '\\');
-        if (p) { *p = '\0'; strcpy(g_game_dir, path); return; }
-    }
-    if (GetCurrentDirectoryA(MAX_PATH, path) > 0) {
-        strcpy(g_game_dir, path);
+    char dll_path[MAX_PATH] = {0};
+    HMODULE hMod = NULL;
+
+    /* Find our own module handle via VirtualQuery */
+    VirtualQuery((void*)&init_game_dir, (PMEMORY_BASIC_INFORMATION)&hMod, sizeof(hMod));
+    GetModuleFileNameA(hMod, dll_path, MAX_PATH);
+
+    /* Extract directory from DLL path */
+    char* p = strrchr(dll_path, '\\');
+    if (p) *p = 0;
+    strncpy(g_game_dir, dll_path, MAX_PATH - 1);
+
+    /* Copy testcube.MESHWORLD to levels\ directory */
+    char src[MAX_PATH], dst[MAX_PATH];
+    snprintf(src, MAX_PATH, "%s\\testcube.MESHWORLD", g_game_dir);
+    snprintf(dst, MAX_PATH, "%s\\levels\\testcube.MESHWORLD", g_game_dir);
+
+    /* Create levels\ dir if it doesn't exist */
+    char levels_dir[MAX_PATH];
+    snprintf(levels_dir, MAX_PATH, "%s\\levels", g_game_dir);
+    CreateDirectoryA(levels_dir, NULL);
+
+    /* Only copy if destination doesn't exist or source is newer */
+    if (!PathFileExistsA(dst) || GetFileAttributesA(src) != INVALID_FILE_ATTRIBUTES) {
+        CopyFileA(src, dst, FALSE);
     }
 }
 
-static DWORD WINAPI mod_thread(LPVOID param) {
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Main thread — hooks Ball_Update, spawns at GRID positions
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static DWORD WINAPI entity_thread(LPVOID param) {
+    init_game_dir();
+
+    /* Open log file */
+    char log_path[MAX_PATH];
+    snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
+    FILE* logf = NULL;
+    fopen_s(&logf, log_path, "a");
+    if (logf) {
+        fprintf(logf, "=== Custom Entities Mod v13 Started ===\n");
+        fprintf(logf, "Game dir: %s\n", g_game_dir);
+        fprintf(logf, "Mesh path: %s\n", g_mesh_path);
+        fclose(logf);
+    }
+
+    /* Wait for game to fully load */
     Sleep(3000);
 
-    {
-        char log_path[MAX_PATH];
-        snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
-        FILE* f = NULL;
-        fopen_s(&f, log_path, "a");
-        if (f) {
-            fprintf(f, "=== Custom Entities Mod v12 Started ===\n");
-            fprintf(f, "Game dir: %s\n", g_game_dir);
-            fclose(f);
-        }
-    }
-
-    /* Load testcube mesh data */
-    if (load_testcube_mesh()) {
-        char log_path[MAX_PATH];
-        snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
-        FILE* f = NULL;
-        fopen_s(&f, log_path, "a");
-        if (f) {
-            fprintf(f, "Loaded testcube.MESHWORLD: %d verts, %d strips\n",
-                    g_mesh_data.vertex_count, g_mesh_data.strip_count);
-            fclose(f);
-        }
-    } else {
-        char log_path[MAX_PATH];
-        snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
-        FILE* f = NULL;
-        fopen_s(&f, log_path, "a");
-        if (f) {
-            fprintf(f, "FAILED to load testcube.MESHWORLD from %s\n", g_game_dir);
-            fclose(f);
-        }
-    }
-
     while (g_running) {
+        Sleep(100);
+
         DWORD board = get_board();
-        if (!board) {
-            Sleep(100);
-            continue;
-        }
+        if (!board) continue;
 
+        /* Check if board changed (new level loaded) */
+        if (board == g_spawned_board) continue;
+
+        /* New board — wait for level to finish loading */
+        Sleep(500);
+
+        /* Re-read board in case it changed during sleep */
+        board = get_board();
+        if (!board) continue;
+
+        /* Verify level is loaded */
         DWORD level = get_level(board);
-        if (level != g_last_level && level) {
-            g_last_level = level;
+        if (!level) continue;
 
-            /* Poll until sceneobj is ready (up to 10 seconds) */
-            int poll;
-            for (poll = 0; poll < 200; poll++) {
-                DWORD so = get_sceneobj(board);
-                if (so) break;
-                Sleep(50);
-            }
-
-            char log_path[MAX_PATH];
-            snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
-            FILE* logf = NULL;
-            fopen_s(&logf, log_path, "a");
-
-            if (logf) fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X, after %dms poll) ---\n", board, level, poll * 50);
-
-            /* Apply GRID: spawn testcubes at GRID positions */
-            if (g_mesh_loaded) {
-                apply_grid_visibility(board, logf);
-            } else {
-                if (logf) fprintf(logf, "  GRID: testcube mesh not loaded\n");
-            }
-
-            if (logf) {
-                fprintf(logf, "Done.\n\n");
-                fclose(logf);
-            }
+        logf = NULL;
+        fopen_s(&logf, log_path, "a");
+        if (logf) {
+            fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
         }
 
-        Sleep(2000);
+        /* Find GRID reference points */
+        float grid_x[32], grid_y[32], grid_z[32];
+        int grid_count = find_grid_points(board, grid_x, grid_y, grid_z, 32, logf);
+
+        if (grid_count > 0) {
+            int i;
+            for (i = 0; i < grid_count; i++) {
+                spawn_testcube_at(board, grid_x[i], grid_y[i], grid_z[i], i + 1, logf);
+            }
+            g_spawned_board = board;
+            if (logf) fprintf(logf, "  Spawned %d testcubes\n", grid_count);
+        } else {
+            /* No GRID points — still mark board as processed */
+            g_spawned_board = board;
+            if (logf) fprintf(logf, "  No GRID points found\n");
+        }
+
+        if (logf) {
+            fflush(logf);
+            fclose(logf);
+        }
     }
 
     return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * DllMain
+ * DLL entry
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
-        load_real_bass();
-        init_game_dir();
-        g_thread = CreateThread(NULL, 0, mod_thread, NULL, 0, NULL);
-    }
-    else if (reason == DLL_PROCESS_DETACH) {
+        DisableThreadLibraryCalls(hModule);
+        g_thread = CreateThread(NULL, 0, entity_thread, NULL, 0, NULL);
+    } else if (reason == DLL_PROCESS_DETACH) {
         g_running = 0;
-        if (g_thread) {
-            WaitForSingleObject(g_thread, 2000);
-            CloseHandle(g_thread);
-        }
     }
     return TRUE;
 }
