@@ -146,7 +146,33 @@ static const DWORD g_defaultFeatures[16] = {
     /* 15=Impossible */  0,
 };
 
-/* Game function typedefs for Board_Update feature blocks */
+/* Feature names for config parsing — order must match UpdateFeature enum */
+static const char *g_featureNames[] = {
+    "BRIDGE_ANIM",
+    "SWIRL",
+    "WINDMILL",
+    "BADBALL",
+    "BUMPER_DECAY",
+    "NEON_CAM",
+    "SKY_POPCYL",
+    "MASTER_EXTRA",
+    NULL
+};
+
+static DWORD g_featureBits[] = {
+    FEAT_BRIDGE_ANIM,
+    FEAT_SWIRL,
+    FEAT_WINDMILL,
+    FEAT_BADBALL,
+    FEAT_BUMPER_DECAY,
+    FEAT_NEON_CAM,
+    FEAT_SKY_POPCYL,
+    FEAT_MASTER_EXTRA,
+};
+
+#define NUM_FEATURES (sizeof(g_featureNames) / sizeof(g_featureNames[0]) - 1)
+
+static int g_featuresParsed[16] = {0}; /* 1 if [FEATURES] section overrode defaults for this level */
 typedef void (__fastcall *Scene_Update_t)(void *board);
 typedef void (__fastcall *Board_UpdateRaceState_t)(void *board);
 typedef void (__fastcall *Gfx_ScaleFn_t)(float val);
@@ -231,54 +257,57 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_Scene_SetRaceActive       0x000366E0
 #define RVA_Scene_AddObject           0x00069990
 
-/* Board field offsets for feature blocks */
-/* Bridge animation (Intermediate) */
-#define BRD_BRIDGE_RENDER   0x10DB   /* render object ptr */
-#define BRD_BRIDGE_PIVOT_X  0x10DD
-#define BRD_BRIDGE_PIVOT_Y  0x10DE
-#define BRD_BRIDGE_PIVOT_Z  0x10DF
-#define BRD_BRIDGE_ANGLE    0x10E0
-#define BRD_BRIDGE_STATE    0x10E1
-#define BRD_BRIDGE_COUNTER  0x10E2
+/* Board field offsets for feature blocks — ALL ARE BYTE OFFSETS.
+ * (Previous versions used Ghidra DWORD array indices, which are offset/4.
+ * All values below have been corrected to actual byte offsets.) */
 
-/* Windmill (Tower) */
-#define BRD_WM_RENDER       0x10DF   /* reuses bridge pivot_Z slot; different levels use different offsets */
-#define BRD_WM_POS_X        0x10E0
-#define BRD_WM_POS_Y        0x10E1
-#define BRD_WM_POS_Z        0x10E2
-#define BRD_WM_ANGLE         0x10E3
-#define BRD_WM_SPEED         0x10E8
-#define BRD_WM_STATE         0x10EA
-#define BRD_WM_COUNTER       0x10EB
-#define BRD_WM_DECAY_VAL     0x10EC
+/* Bridge animation (Intermediate) — render obj + pivot point + state machine */
+#define BRD_BRIDGE_RENDER   0x436C   /* render object ptr (= board+0x436C, same as BRIDGE_MESHWORLD) */
+#define BRD_BRIDGE_PIVOT_X  0x4374   /* float: bridge pivot X */
+#define BRD_BRIDGE_PIVOT_Y  0x4378   /* float: bridge pivot Y */
+#define BRD_BRIDGE_PIVOT_Z  0x437C   /* float: bridge pivot Z */
+#define BRD_BRIDGE_ANGLE    0x4380   /* float: current tilt angle (starts 45.0) */
+#define BRD_BRIDGE_STATE    0x4384   /* int: 0=wait, 1=tilt down, 2=wait, 3=tilt back */
+#define BRD_BRIDGE_COUNTER  0x4388   /* int: frame counter for current state */
+
+/* Windmill (Tower) — same board region, different semantic meaning */
+#define BRD_WM_RENDER       0x437C   /* windmill render object ptr */
+#define BRD_WM_POS_X        0x4380   /* float: windmill X */
+#define BRD_WM_POS_Y        0x4384   /* float: windmill Y */
+#define BRD_WM_POS_Z        0x4388   /* float: windmill Z */
+#define BRD_WM_ANGLE         0x438C   /* float: current rotation angle */
+#define BRD_WM_SPEED         0x43A0   /* float: current spin speed */
+#define BRD_WM_STATE         0x43A8   /* int: 0=spin up, 1=creak, 2=spin down, 3=pause */
+#define BRD_WM_COUNTER       0x43AC   /* int: frame counter */
+#define BRD_WM_DECAY_VAL     0x43B0   /* float: decay value for pause state */
 
 /* BadBall spawner (Odd) */
-#define BRD_BB_FLAG         0x10DC
-#define BRD_BB_COUNTER       0x10DD
-#define BRD_BB_TOTAL         0x10DE
-#define BRD_BB_LAST_IDX      0x10E8
-#define BRD_BB_POS_TABLE     0x10DF   /* 3×3 float table */
+#define BRD_BB_FLAG         0x4370   /* byte: spawn enabled flag */
+#define BRD_BB_COUNTER       0x4374   /* int: frames until next spawn */
+#define BRD_BB_TOTAL         0x4378   /* int: total spawned so far */
+#define BRD_BB_LAST_IDX      0x43A0   /* int: last spawn position index (avoid repeats) */
+#define BRD_BB_POS_TABLE     0x437C   /* 3×3 float table (36 bytes) */
 
 /* Swirl (Dizzy) */
-#define BRD_SWIRL_LIST       0x10DE
-#define BRD_TARBUBBLE_LIST   0x11E4
-#define BRD_SWIRL_MESH1      0x12EA
-#define BRD_SWIRL_MESH2      0x12F1
-#define BRD_SWIRL1_POS_X     0x12EC
-#define BRD_SWIRL1_POS_Y     0x12ED
-#define BRD_SWIRL1_POS_Z     0x12EE
-#define BRD_SWIRL1_ANGLE     0x12EF
-#define BRD_SWIRL1_SPEED     0x12F0
-#define BRD_SWIRL2_POS_X     0x12F3
-#define BRD_SWIRL2_POS_Y     0x12F4
-#define BRD_SWIRL2_POS_Z     0x12F5
-#define BRD_SWIRL2_ANGLE     0x12F6
+#define BRD_SWIRL_LIST       0x4378   /* AthenaList of swirl zones */
+#define BRD_TARBUBBLE_LIST   0x4790   /* AthenaList of TarBubble objects */
+#define BRD_SWIRL_MESH1      0x4BA8   /* primary swirl mesh (WaterWheel) */
+#define BRD_SWIRL_MESH2      0x4BC4   /* secondary swirl mesh */
+#define BRD_SWIRL1_POS_X     0x4BB0
+#define BRD_SWIRL1_POS_Y     0x4BB4
+#define BRD_SWIRL1_POS_Z     0x4BB8
+#define BRD_SWIRL1_ANGLE     0x4BBC
+#define BRD_SWIRL1_SPEED     0x4BC0
+#define BRD_SWIRL2_POS_X     0x4BCC
+#define BRD_SWIRL2_POS_Y     0x4BD0
+#define BRD_SWIRL2_POS_Z     0x4BD4
+#define BRD_SWIRL2_ANGLE     0x4BD8
 
-/* Swirl (Master) — different offsets */
-#define BRD_SWIRL_LIST_M     0x1820
-#define BRD_TARBUBBLE_LIST_M 0x1719
+/* Swirl (Master) — different offsets than Dizzy */
+#define BRD_SWIRL_LIST_M     0x6080
+#define BRD_TARBUBBLE_LIST_M 0x5C64
 
-/* Bumper decay offsets */
+/* Bumper decay offsets — already byte offsets (verified) */
 #define BRD_BUMPER_DECAY_BEG  0x642C
 #define BRD_BUMPER_DECAY_TOOB 0x644C
 #define BRD_BUMPER_DECAY_MAST 0x53FC
@@ -469,6 +498,7 @@ static int GetCurrentLevel(void *board) {
 
 static void LoadConfig(void) {
     memset(g_objectEnabled, 0, sizeof(g_objectEnabled));
+    memset(g_featuresParsed, 0, sizeof(g_featuresParsed));
     HANDLE hFile = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
@@ -488,6 +518,7 @@ static void LoadConfig(void) {
 
     char *line = start;
     int inObjectsSection = 0;
+    int inFeaturesSection = 0;
     while (line < buf + bytesRead) {
         char *eol = line;
         while (*eol && *eol != '\n' && *eol != '\r') eol++;
@@ -498,6 +529,7 @@ static void LoadConfig(void) {
         if (*p == '\0' || *p == '#' || *p == ';') goto next_line;
         if (p[0] == '[') {
             inObjectsSection = (my_strnicmp(p, "[OBJECTS", 8) == 0);
+            inFeaturesSection = (my_strnicmp(p, "[FEATURES", 9) == 0);
             goto next_line;
         }
         if (inObjectsSection) {
@@ -537,6 +569,52 @@ static void LoadConfig(void) {
                         while (*eq && *eq >= '0' && *eq <= '9') eq++;
                     } else {
                         eq++;
+                    }
+                }
+            }
+        }
+        /* [FEATURES] section: "levelNum = FEATURE1 FEATURE2 ..." */
+        if (inFeaturesSection) {
+            /* Parse level number before '=' */
+            char *eq = p;
+            while (*eq && *eq != '=') eq++;
+            if (*eq == '=') {
+                *eq = '\0';
+                int levelNum = atoi(p);
+                *eq = '=';
+                if (levelNum >= 1 && levelNum <= 15) {
+                    char *val = eq + 1;
+                    while (*val == ' ' || *val == '\t') val++;
+                    /* Start from 0 features, build up from listed names */
+                    g_updateFeatures[levelNum] = 0;
+                    g_featuresParsed[levelNum] = 1;
+                    /* Handle empty or () value = no features */
+                    if (*val == '(') {
+                        /* Empty () = clear all features for this level */
+                        continue;
+                    }
+                    /* Parse space-separated feature names */
+                    char *tok = val;
+                    while (*tok) {
+                        while (*tok == ' ' || *tok == '\t') tok++;
+                        if (!*tok) break;
+                        /* Get token end */
+                        char *tokEnd = tok;
+                        while (*tokEnd && *tokEnd != ' ' && *tokEnd != '\t' &&
+                               *tokEnd != '\r' && *tokEnd != '\n') tokEnd++;
+                        char tokSaved = *tokEnd;
+                        *tokEnd = '\0';
+                        /* Match feature name */
+                        int fi;
+                        for (fi = 0; fi < (int)NUM_FEATURES; fi++) {
+                            if (my_strnicmp(tok, g_featureNames[fi],
+                                            strlen(g_featureNames[fi])) == 0) {
+                                g_updateFeatures[levelNum] |= g_featureBits[fi];
+                                break;
+                            }
+                        }
+                        *tokEnd = tokSaved;
+                        tok = tokEnd;
                     }
                 }
             }
@@ -1231,8 +1309,9 @@ static void InitBridge(void *board) {
 static void Feature_BridgeAnimation(void *board, int level) {
     if (!g_SceneUpdate) return;
 
-    /* Check ball list size — skip if race ending */
-    int ballCount = g_AthenaListGetSizeUpd((void *)((char *)board + 0xD8B));
+    /* Check ball list size — skip if race ending.
+     * board+0x362C is the race ball AthenaList (param_1+0xD8B in Ghidra = 0xD8B*4). */
+    int ballCount = g_AthenaListGetSizeUpd((void *)((char *)board + 0x362C));
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (ballCount == 1 && app && !IsBadReadPtr((void *)app, 0x600)) {
         DWORD ball = *(DWORD *)(app + APP_BALL_PTR);
@@ -1240,12 +1319,13 @@ static void Feature_BridgeAnimation(void *board, int level) {
             return;
     }
 
-    /* Master uses different offsets for bridge (via vtable[0x90] = 0x421400) */
-    int base = (level == 14) ? 0x437C : 0x10DD;  /* pivot X offset */
-    int renderOfs = (level == 14) ? 0x10DB : 0x10DB;
-    int angleOfs = base + 3;    /* 0x10E0 or 0x4388 */
-    int stateOfs = base + 4;    /* 0x10E1 or 0x438C */
-    int counterOfs = base + 5; /* 0x10E2 or 0x4390 */
+    /* All levels use Intermediate's bridge offsets. Master previously used
+     * different offsets via vtable[0x90], but now uses the same layout. */
+    int renderOfs = BRD_BRIDGE_RENDER;   /* 0x436C */
+    int base      = BRD_BRIDGE_PIVOT_X;  /* 0x4374 */
+    int angleOfs  = BRD_BRIDGE_ANGLE;    /* 0x4380 */
+    int stateOfs  = BRD_BRIDGE_STATE;    /* 0x4384 */
+    int counterOfs = BRD_BRIDGE_COUNTER; /* 0x4388 */
 
     DWORD renderObj = *(DWORD *)((char *)board + renderOfs);
     if (!renderObj) return;
@@ -1275,8 +1355,8 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     DWORD snd = *(DWORD *)(app + APP_SOUNDFX_47C);
                     if (snd) {
                         float px = *(float *)((char *)board + base);
-                        float py = *(float *)((char *)board + base + 1);
-                        float pz = *(float *)((char *)board + base + 2);
+                        float py = *(float *)((char *)board + base + 4);
+                        float pz = *(float *)((char *)board + base + 8);
                         g_SoundPlay3DUpd((void *)snd, px, py, pz);
                     }
                 }
@@ -1317,8 +1397,8 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 g_GfxScaleZ(-*(float *)((char *)board + angleOfs));
                 g_GfxSetPosition(
                     *(float *)((char *)board + base),
-                    *(float *)((char *)board + base + 1),
-                    *(float *)((char *)board + base + 2));
+                    *(float *)((char *)board + base + 4),
+                    *(float *)((char *)board + base + 8));
                 /* Call render object vtable[0x58] and [0x54] */
                 DWORD *renderVtbl = *(DWORD **)renderObj;
                 if (renderVtbl) {
@@ -1356,19 +1436,20 @@ static void Feature_SwirlZones(void *board, int level) {
             void *tar = g_OperatorNewUpd(0x1C);
             if (tar) {
                 g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
-                g_AthenaListAppendUpd((void *)((char *)board + 0xEC0), (int)tar);
+                g_AthenaListAppendUpd((void *)((char *)board + 0x3B00), (int)tar);
             }
         }
     }
 
-    /* Swirl zone processing: iterate ball list, check proximity to swirl zones */
-    int ballIter = g_AthenaListGetIteratorUpd((void *)((char *)board + 0xA75));
-    *(int *)((char *)board + 0xA77 + ballIter * 4) = 0;
-    int ballCount = *(int *)((char *)board + 0xA76);
+    /* Swirl zone processing: iterate ball list, check proximity to swirl zones
+     * Ball list at board+0x29D4 (AthenaList), array at board+0x2DE0 */
+    int ballIter = g_AthenaListGetIteratorUpd((void *)((char *)board + 0x29D4));
+    *(int *)((char *)board + 0x29DC + ballIter * 4) = 0;
+    int ballCount = *(int *)((char *)board + 0x29D8);
     int ballIdx = 0;
     if (ballCount > 0) {
-        ballIdx = *(int *)(*(int *)((char *)board + 0xB78));
-        *(int *)((char *)board + 0xA77 + ballIter * 4) = 1;
+        ballIdx = *(int *)(*(int *)((char *)board + 0x2DE0));
+        *(int *)((char *)board + 0x29DC + ballIter * 4) = 1;
     }
 
     while (ballIdx) {
@@ -1377,12 +1458,12 @@ static void Feature_SwirlZones(void *board, int level) {
         if (!inTar) {
             /* Check proximity to each swirl zone */
             int zoneIter = g_AthenaListGetIteratorUpd((void *)((char *)board + swirlListOfs));
-            *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4) = 0;
-            int zoneCount = *(int *)((char *)board + swirlListOfs + 1);
+            *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4) = 0;
+            int zoneCount = *(int *)((char *)board + swirlListOfs + 4);
             int zoneIdx = 0;
             if (zoneCount > 0) {
-                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x103));
-                *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4) = 1;
+                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x40C));
+                *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4) = 1;
             }
 
             while (zoneIdx) {
@@ -1453,10 +1534,10 @@ static void Feature_SwirlZones(void *board, int level) {
                         }
                     }
                 }
-                int next = *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4);
-                if (*(int *)((char *)board + swirlListOfs + 1) <= next) break;
-                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x103) + next * 4);
-                *(int *)((char *)board + swirlListOfs + 2 + zoneIter * 4) = next + 1;
+                int next = *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4);
+                if (*(int *)((char *)board + swirlListOfs + 4) <= next) break;
+                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x40C) + next * 4);
+                *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4) = next + 1;
             }
         } else {
             /* Ball is in tar — sink and potentially remove */
@@ -1478,7 +1559,7 @@ static void Feature_SwirlZones(void *board, int level) {
                             rz + *(float *)(ballIdx + BALL_POS_X_OFS),
                             *(DWORD *)(ballIdx + 0x2D0),
                             rx + *(float *)(ballIdx + BALL_POS_Z_OFS));
-                        g_AthenaListAppendUpd((void *)((char *)board + 0xEC0), (int)splash);
+                        g_AthenaListAppendUpd((void *)((char *)board + 0x3B00), (int)splash);
                     }
                 }
             }
@@ -1489,10 +1570,10 @@ static void Feature_SwirlZones(void *board, int level) {
                 if (g_RemoveBall) g_RemoveBall(ballIdx);
             }
         }
-        int nextBall = *(int *)((char *)board + 0xA77 + ballIter * 4);
-        if (*(int *)((char *)board + 0xA76) <= nextBall) break;
-        ballIdx = *(int *)(*(int *)((char *)board + 0xB78) + nextBall * 4);
-        *(int *)((char *)board + 0xA77 + ballIter * 4) = nextBall + 1;
+        int nextBall = *(int *)((char *)board + 0x29DC + ballIter * 4);
+        if (*(int *)((char *)board + 0x29D8) <= nextBall) break;
+        ballIdx = *(int *)(*(int *)((char *)board + 0x2DE0) + nextBall * 4);
+        *(int *)((char *)board + 0x29DC + ballIter * 4) = nextBall + 1;
     }
 
     /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) */
@@ -1566,14 +1647,18 @@ static void Feature_Windmill(void *board, int level) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x500)) return;
 
-    /* Accumulate rotation */
+    /* Accumulate rotation — angle is stored as float (confirmed via disasm:
+     * FLD float ptr [ESI+0x438c], FADD, FSTP float ptr [ESI+0x438c]).
+     * The int modulo check converts to int via __ftol2() only for the creak test. */
     float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
     *(float *)((char *)board + BRD_WM_ANGLE) =
         *(float *)((char *)board + BRD_WM_ANGLE) + rotSpeed;
 
-    /* Play creak sound every 90° (mod 0x5A == 0x2D) */
+    /* Play creak sound every 45° within each 90° cycle.
+     * Disasm: FLD angle → CALL __ftol2 → CDQ → IDIV 0x5A → CMP EDX,0x2D.
+     * The float angle is converted to int for the modulo check only. */
     {
-        int angleInt = *(int *)((char *)board + BRD_WM_ANGLE);
+        int angleInt = (int)*(float *)((char *)board + BRD_WM_ANGLE);
         if (angleInt % 0x5A == 0x2D) {
             if (g_SoundPlay3DUpd) {
                 DWORD snd = *(DWORD *)(app + 0x4A4);
@@ -1587,7 +1672,8 @@ static void Feature_Windmill(void *board, int level) {
         }
     }
 
-    /* Render windmill mesh with rotation */
+    /* Render windmill mesh with rotation.
+     * Disasm: Gfx_ScaleY called with angle as float (FLD + PUSH). */
     if (g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition) {
         char timerBuf[68];
         g_TimerInit(timerBuf);
@@ -1636,9 +1722,9 @@ static void Feature_Windmill(void *board, int level) {
                     DWORD snd = *(DWORD *)(app + 0x4A8);
                     if (snd) {
                         g_SoundPlay3DUpd((void *)snd,
-                            *(float *)((char *)board + 0x10E5),
-                            *(float *)((char *)board + 0x10E6),
-                            *(float *)((char *)board + 0x10E7));
+                            *(float *)((char *)board + BRD_WM_POS_X),
+                            *(float *)((char *)board + BRD_WM_POS_Y),
+                            *(float *)((char *)board + BRD_WM_POS_Z));
                     }
                 }
             }
@@ -1693,8 +1779,8 @@ static void Feature_BadBallSpawner(void *board, int level) {
     *(int *)((char *)board + BRD_BB_COUNTER) = counter;
     if (counter >= 1) return;
 
-    /* Check limits */
-    int ballCount = g_AthenaListGetSizeUpd((void *)((char *)board + 0xA75));
+    /* Check limits — ball list at board+0x29D4 (was 0xA75 in Ghidra DWORD index) */
+    int ballCount = g_AthenaListGetSizeUpd((void *)((char *)board + 0x29D4));
     int totalSpawned = *(int *)((char *)board + BRD_BB_TOTAL);
     if (ballCount >= 10 || totalSpawned >= 100) return;
 
@@ -1769,7 +1855,7 @@ static void Feature_BadBallSpawner(void *board, int level) {
         }
     }
 
-    g_AthenaListAppendUpd((void *)((char *)board + 0xA75), (int)badball);
+    g_AthenaListAppendUpd((void *)((char *)board + 0x29D4), (int)badball);
     *(int *)((char *)board + BRD_BB_TOTAL) = totalSpawned + 1;
 }
 

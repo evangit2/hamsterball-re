@@ -3,11 +3,47 @@
 #   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
 #   14=Master 15=Impossible
 #
-# List level numbers after = to enable that object for those levels.
-# Empty () means disabled everywhere.
-# Example: BUMPERS = 2 5 8  (enables bumpers on Beginner, Tower, Expert)
-#          BRIDGE = 3 14   (enables bridge on Intermediate, Master)
+# [OBJECTS] — List level numbers after = to enable that object for those levels.
+#   Empty () means disabled everywhere.
+#   Example: BUMPERS = 2 5 8  (enables bumpers on Beginner, Tower, Expert)
+#            BRIDGE = 3 14   (enables bridge on Intermediate, Master)
+#
+# [FEATURES] — Override which Board_Update feature blocks run per level.
+#   Format: levelNum = FEATURE1 FEATURE2 ...
+#   Available features:
+#     BRIDGE_ANIM   — 4-state bridge tilt (Intermediate, Master)
+#     SWIRL         — Swirl zones + tar bubbles (Dizzy, Master)
+#     WINDMILL      — Rotating windmill (Tower)
+#     BADBALL       — Enemy ball spawner (Odd)
+#     BUMPER_DECAY  — Bumper lit decay (Beginner, Toob, Master)
+#     NEON_CAM      — Ball-following camera (Neon)
+#     SKY_POPCYL    — Popcylinder activator (Sky)
+#     MASTER_EXTRA  — Master vtable[0x90]+[0x94] calls
+#   Levels NOT listed here use built-in defaults.
+#   Use () to clear all features for a level.
+#   Example: 2 = SWIRL BUMPER_DECAY  (adds swirl to Beginner while keeping bumper decay)
 
 [OBJECTS]
 BUMPERS = ()
 BRIDGE = 3
+
+[FEATURES]
+# Defaults (uncomment and edit to override):
+# 1 = ()
+# 2 = BUMPER_DECAY
+# 3 = BRIDGE_ANIM
+# 4 = SWIRL
+# 5 = WINDMILL
+# 6 = ()
+# 7 = NEON_CAM
+# 8 = ()
+# 9 = BADBALL
+# 10 = BUMPER_DECAY
+# 11 = ()
+# 12 = ()
+# 13 = SKY_POPCYL
+# 14 = SWIRL BUMPER_DECAY BRIDGE_ANIM MASTER_EXTRA
+# 15 = ()
+
+# Example: Add swirl to Beginner!
+# 2 = SWIRL BUMPER_DECAY
