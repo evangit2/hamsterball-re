@@ -1,4 +1,4 @@
 # Custom Entities Mod Configuration
 
-# Ticks between grid advances (1 tick = ~16ms, so 10.0 = ~160ms per step)
-grid_speed = 10.0
+# Seconds between GRID switches (e.g. 3.0 = 3 seconds per GRID)
+grid_speed = 3.0
