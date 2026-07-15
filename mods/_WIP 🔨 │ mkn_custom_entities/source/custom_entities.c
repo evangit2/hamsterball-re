@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v10
+ * custom_entities.c — Hamsterball Custom Entities Mod v11
  *
  * bass.dll proxy mod. Runtime mesh loading:
  *   Reads testcube.MESHWORLD from mod directory.
@@ -35,7 +35,6 @@ static AthenaList_Append_t  pfn_AthenaList_Append = (AthenaList_Append_t)0x00453
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define BOARD_LEVEL             0x8AC
-#define LEVEL_SCENEOBJECT       0x480
 #define SCENEOBJ_S1_LIST        0x894
 #define LEVEL_MESHWORLD_PTR     0x08   /* level+0x08 = MeshWorld pointer (NOT sceneobj+0x08!) */
 
@@ -43,12 +42,18 @@ static AthenaList_Append_t  pfn_AthenaList_Append = (AthenaList_Append_t)0x00453
 #define S1ENTRY_POS_X            0x04
 #define S1ENTRY_POS_Y            0x08
 #define S1ENTRY_POS_Z            0x0C
-
-/* MeshWorld layout */
-#define MW_MB_COUNT             0x24   /* MeshBuffer file count */
+#define MW_MB_COUNT             0x24   /* MeshBuffer file count (RC array size) */
 #define MW_RENDERCTX_ARRAY      0x28   /* RenderContext array (allocated) */
 #define MW_MBLIST               0x2C   /* AthenaList of MeshBuffer objects */
+#define MW_MBLIST_COUNT         0x30   /* AthenaList count (= MW_MBLIST + 0x04) */
+#define MW_MBLIST_DATA          0x438  /* AthenaList data ptr (= MW_MBLIST + 0x40C) */
 #define MW_VERTEX_DATA          0x45C  /* Vertex data start (24 byte header + bbox) */
+
+/* Level layout */
+#define LEVEL_MESHWORLD_PTR     0x08   /* level+0x08 = MeshWorld pointer */
+#define LEVEL_SUBLIST           0x18   /* AthenaList of sub-levels (when S1 count >= 1) */
+#define LEVEL_SCENEOBJECT       0x480
+#define LEVEL_HAS_SUBLIST       0x430  /* byte: 1 = has sub-levels, 0 = direct mesh */
 
 /* MeshBuffer layout (0x874 bytes) */
 #define MB_NAME_PTR             0x864  /* char* name */
@@ -111,52 +116,72 @@ static DWORD get_sceneobj(DWORD board) {
 static DWORD get_meshworld(DWORD board) {
     DWORD level = get_level(board);
     if (!level) return 0;
-    /* MeshWorld pointer is at LEVEL+0x08, NOT sceneobj+0x08!
+    /* MeshWorld pointer is at LEVEL+0x08.
      * Verified via Ghidra decompilation of Scene_LoadMeshWorld (0x461890):
      *   *(undefined4 **)((int)this + 8) = puVar2;  // this = Level object
-     * And Level_MeshWorldCtor (0x461510) calls LoadMeshWorld(this, param_2)
-     * where "this" is the Level. The Level is stored at board+0x8AC. */
+     * Note: For levels with sub-levels (S1 count >= 1), this MeshWorld has
+     * MW+0x24 uninitialized. The actual mesh data is in sub-level MeshWorlds. */
     if (IsBadReadPtr((void*)(level + LEVEL_MESHWORLD_PTR), 4)) return 0;
     DWORD mw = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
     if (!mw || mw < 0x10000) return 0;
     return mw;
 }
 
-/* Find MeshWorld — now uses level+0x08 directly (fixed v9) */
+/* Find a usable MeshWorld — one with valid mb_count (MW+0x24).
+ * For levels with sub-levels (S1 count >= 1 in the MESHWORLD file),
+ * the parent level's MeshWorld has MW+0x24 uninitialized.
+ * We scan the sub-levels at level+0x18 for one with valid mesh data. */
 static DWORD find_meshworld(DWORD board, FILE* logf) {
     DWORD level = get_level(board);
     if (!level) return 0;
-    
-    /* Primary: level+0x08 = MeshWorld pointer (verified via Ghidra) */
+
     DWORD mw = get_meshworld(board);
     if (mw) {
-        if (logf) {
-            int mb_count = 0;
-            if (!IsBadReadPtr((void*)(mw + 0x24), 4))
-                mb_count = *(int*)(mw + 0x24);
-            fprintf(logf, "  GRID: Found MeshWorld at level+0x08 = 0x%08X (mb_count=%d)\n", mw, mb_count);
+        /* Check if MW+0x24 is valid */
+        int mb_count = 0;
+        if (!IsBadReadPtr((void*)(mw + MW_MB_COUNT), 4))
+            mb_count = *(int*)(mw + MW_MB_COUNT);
+
+        if (mb_count >= 0 && mb_count < 10000) {
+            /* Direct mesh level — MW+0x24 is valid */
+            if (logf) fprintf(logf, "  GRID: Found MeshWorld at level+0x08 = 0x%08X (mb_count=%d)\n", mw, mb_count);
+            return mw;
         }
-        return mw;
-    }
-    
-    /* Fallback: scan level struct for a valid MeshWorld pointer */
-    if (logf) {
-        fprintf(logf, "  GRID: level+0x08=NULL, scanning level struct...\n");
-        int off;
-        for (off = 0; off < 0x480; off += 4) {
-            if (IsBadReadPtr((void*)(level + off), 4)) continue;
-            DWORD val = *(DWORD*)(level + off);
-            if (val > 0x00100000 && val < 0x10000000) {
-                if (!IsBadReadPtr((void*)(val + 0x24), 4)) {
-                    int cnt = *(int*)(val + 0x24);
-                    if (cnt >= 0 && cnt < 10000) {
-                        fprintf(logf, "    level+0x%02X: 0x%08X -> MW+0x24 count=%d\n", off, val, cnt);
+
+        /* MW+0x24 is garbage — this level has sub-levels.
+         * Scan the sub-level AthenaList at level+0x18 for a MeshWorld with valid mb_count. */
+        if (logf) fprintf(logf, "  GRID: level+0x08 MW=0x%08X has bad mb_count=%d (0x%08X), scanning sub-levels...\n",
+                mw, mb_count, mb_count);
+
+        /* AthenaList at level+0x18: count at +0x04, data at +0x40C */
+        if (!IsBadReadPtr((void*)(level + LEVEL_SUBLIST + 0x04), 4)) {
+            int sub_count = *(int*)(level + LEVEL_SUBLIST + 0x04);
+            if (sub_count > 0 && sub_count < 1000) {
+                if (!IsBadReadPtr((void*)(level + LEVEL_SUBLIST + 0x40C), 4)) {
+                    DWORD* sub_data = *(DWORD**)(level + LEVEL_SUBLIST + 0x40C);
+                    if (sub_data && !IsBadReadPtr(sub_data, sub_count * 4)) {
+                        int i;
+                        for (i = 0; i < sub_count; i++) {
+                            DWORD sub_level = sub_data[i];
+                            if (!sub_level || sub_level < 0x10000) continue;
+                            if (IsBadReadPtr((void*)(sub_level + LEVEL_MESHWORLD_PTR), 4)) continue;
+                            DWORD sub_mw = *(DWORD*)(sub_level + LEVEL_MESHWORLD_PTR);
+                            if (!sub_mw || sub_mw < 0x10000) continue;
+                            if (IsBadReadPtr((void*)(sub_mw + MW_MB_COUNT), 4)) continue;
+                            int sub_mb_count = *(int*)(sub_mw + MW_MB_COUNT);
+                            if (sub_mb_count >= 0 && sub_mb_count < 10000) {
+                                if (logf) fprintf(logf, "  GRID: Found valid MeshWorld in sub-level[%d] = 0x%08X (mb_count=%d)\n",
+                                        i, sub_mw, sub_mb_count);
+                                return sub_mw;
+                            }
+                        }
                     }
                 }
             }
         }
     }
-    
+
+    if (logf) fprintf(logf, "  GRID: no usable MeshWorld found\n");
     return 0;
 }
 
@@ -535,7 +560,7 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         FILE* f = NULL;
         fopen_s(&f, log_path, "a");
         if (f) {
-            fprintf(f, "=== Custom Entities Mod v10 Started ===\n");
+            fprintf(f, "=== Custom Entities Mod v11 Started ===\n");
             fprintf(f, "Game dir: %s\n", g_game_dir);
             fclose(f);
         }
