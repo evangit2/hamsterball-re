@@ -2498,6 +2498,9 @@ void DebugLog(const char *msg) {
     CloseHandle(hFile);
 }
 
+/* Forward declaration for auto-test */
+static void InstallAutoTestHook(void);
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Vtable patching — replace slots 1, 19, 29, 33 in all 15 level vtables
  * with universal handlers. Saves original pointers for delegation.
@@ -2635,8 +2638,148 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     InstallUniversalConstructorHook();
     InstallVtablePatches();
     InstallHook();
-    DebugLog("=== PatchThread complete ===");
+    DebugLog("=== PatchThread complete ===\n");
+
+    /* Auto-test: hook App_ResetFrame to run on main thread.
+     * This bypasses the DirectInput keyboard issue on Wine/Xvfb. */
+    if (GetEnvironmentVariableA("LF_AUTOTEST", NULL, 0) > 0) {
+        DebugLog("LF_AUTOTEST detected, installing main-thread hook");
+        InstallAutoTestHook();
+    }
     return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Auto-test: hooks App_ResetFrame to call App_StartPracticeRace from the
+ * main thread (D3D8 requires main-thread calls). Cycles through all 15
+ * levels with 15-second intervals.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define RVA_App_StartPracticeRace 0x00028C50
+#define RVA_App_ResetFrame        0x0006C200
+
+typedef void (__thiscall *App_StartPracticeRace_t)(void *app, int raceIndex);
+typedef void (__fastcall *App_ResetFrame_t)(void *app);
+
+static App_StartPracticeRace_t g_startPractice = NULL;
+static App_ResetFrame_t g_origResetFrame = NULL;
+static int g_autoTestLevel = 0;
+static int g_autoTestState = 0;  /* 0=waiting, 1=call function, 2=wait for load */
+static int g_autoTestFrameCount = 0;
+
+/* Called from the hook on the main thread */
+void AutoTestTick(void *app) {
+    if (g_autoTestState == 0) {
+        /* Wait 300 frames (~5 seconds at 60fps) for game to init */
+        g_autoTestFrameCount++;
+        if (g_autoTestFrameCount == 1) {
+            DebugLog("AutoTest: first tick received, counting frames...");
+        }
+        if (g_autoTestFrameCount > 300) {
+            DebugLog("AutoTest: 300 frames counted, starting level tests");
+            g_autoTestState = 1;
+        }
+        return;
+    }
+
+    if (g_autoTestState == 1 && g_autoTestLevel < 15) {
+        char buf[256];
+        wsprintfA(buf, "AutoTest: starting level %d (index %d)...", g_autoTestLevel + 1, g_autoTestLevel);
+        DebugLog(buf);
+
+        g_startPractice(app, g_autoTestLevel);
+        DebugLog("AutoTest: App_StartPracticeRace returned");
+
+        g_autoTestState = 2;
+        g_autoTestFrameCount = 0;
+        return;
+    }
+
+    if (g_autoTestState == 2) {
+        g_autoTestFrameCount++;
+        /* Wait 900 frames (~15 seconds at 60fps) for level to load and run */
+        if (g_autoTestFrameCount > 900) {
+            /* Level survived 15 seconds */
+            char buf[256];
+            wsprintfA(buf, "AutoTest: Level %d PASSED", g_autoTestLevel + 1);
+            DebugLog(buf);
+
+            g_autoTestLevel++;
+            g_autoTestState = 1;  /* Start next level */
+            g_autoTestFrameCount = 0;
+        }
+        return;
+    }
+
+    if (g_autoTestLevel >= 15 && g_autoTestState != 3) {
+        DebugLog("AutoTest: ALL 15 LEVELS PASSED!");
+        g_autoTestState = 3;  /* Done */
+    }
+}
+
+/* Trampoline for App_ResetFrame hook */
+void AutoTestTick(void *app);
+unsigned char *g_resetFrameTrampoline = NULL;
+
+__attribute__((naked)) static void Hook_AppResetFrame(void) {
+    /* At hook point: ECX=gfx, ESI=App. Pass ESI as the app pointer. */
+    __asm__ __volatile__(
+        "pushl %%ecx\n\t"           /* save ECX (gfx) */
+        "pushl %%edx\n\t"           /* save EDX */
+        "pushl %%esi\n\t"           /* arg: app (ESI = App) */
+        "call  _AutoTestTick\n\t"   /* call our tick function */
+        "addl  $4, %%esp\n\t"       /* clean up arg */
+        "popl  %%edx\n\t"           /* restore EDX */
+        "popl  %%ecx\n\t"           /* restore ECX */
+        "jmpl  *_g_resetFrameTrampoline\n\t"  /* jump to original */
+        :: : "eax", "memory"
+    );
+}
+
+static void InstallAutoTestHook(void) {
+    g_startPractice = (App_StartPracticeRace_t)(g_moduleBase + RVA_App_StartPracticeRace);
+
+    /* Hook App_ResetFrame at offset 0x14 inside the function (0x46C214).
+     * At this point ECX = gfx (from MOV ECX,[ESI+0x174] earlier in the function),
+     * and ESI = App. This runs every frame including the title screen.
+     * First instruction at hook point: MOV EAX,[ECX+0x738] (6 bytes). */
+    DWORD hookAddr = g_moduleBase + RVA_App_ResetFrame + 0x14;
+    unsigned char *orig = (unsigned char *)hookAddr;
+
+    if (IsBadReadPtr(orig, 12)) {
+        DebugLog("AutoTest: can't read App_ResetFrame+0x14");
+        return;
+    }
+
+    /* Log first bytes for verification */
+    char buf[128];
+    wsprintfA(buf, "AutoTest: App_ResetFrame+0x14 bytes: %02X %02X %02X %02X %02X %02X",
+             orig[0], orig[1], orig[2], orig[3], orig[4], orig[5]);
+    DebugLog(buf);
+
+    /* First instruction: MOV EAX,[ECX+0x738] = 8B 81 38 07 00 00 (6 bytes)
+     * Copy 6 bytes to trampoline, then JMP back to original+6 */
+    g_resetFrameTrampoline = VirtualAlloc(NULL, 16,
+                              MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_resetFrameTrampoline) {
+        DebugLog("AutoTest: VirtualAlloc failed");
+        return;
+    }
+
+    memcpy(g_resetFrameTrampoline, orig, 6);
+    g_resetFrameTrampoline[6] = 0xE9;  /* JMP */
+    *(DWORD *)(g_resetFrameTrampoline + 7) = (hookAddr + 6) - ((DWORD)g_resetFrameTrampoline + 11);
+
+    /* Patch original: JMP to our hook (5 bytes) + 1 NOP to fill 6 bytes */
+    DWORD oldProtect;
+    VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
+    orig[0] = 0xE9;
+    *(DWORD *)(orig + 1) = (DWORD)&Hook_AppResetFrame - (hookAddr + 5);
+    orig[5] = 0x90;
+    VirtualProtect(orig, 6, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), orig, 6);
+
+    DebugLog("AutoTest: App_ResetFrame hook installed");
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
