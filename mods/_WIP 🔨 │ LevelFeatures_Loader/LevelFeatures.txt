@@ -1,4 +1,4 @@
-# LevelSpecials Configuration
+# LevelFeatures Configuration
 # Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
 #   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
 #   14=Master 15=Impossible
