@@ -1,87 +1,70 @@
-# Custom Entities Mod v5
+# Custom Entities Mod v9
 
-Adds the **GRID system** to Hamsterball — cycle visibility of mesh objects in sequence, like an animated texture but for 3D geometry.
+Spawns testcube meshes at S1 ref point positions marked with `(GRIDxx)` in the level's MESHWORLD file.
 
-## GRID System
+## v9 Fix: MeshWorld Pointer Location
 
-### How It Works
+**Bug:** v8 looked for the MeshWorld pointer at `sceneobj+0x08` — wrong! The log showed `sceneobj+0x08=NULL, scanning for MeshWorld...` and then `no meshworld found`.
 
-MeshBuffer names in `.MESHWORLD` files can include a `(GRIDxx)` suffix (GRID01 through GRID99). The mod cycles through these groups in order, showing only the meshes matching the current grid counter and hiding all others.
-
-### Example
-
-A level with 3 mesh objects:
-```
-N:PlatformA(GRID01)
-N:PlatformB(GRID02)
-N:PlatformC(GRID03)
+**Root cause:** Verified via Ghidra decompilation of `Scene_LoadMeshWorld` (0x461890):
+```c
+// "this" is the LEVEL object (stored at board+0x8AC)
+*(undefined4 **)((int)this + 8) = puVar2;  // MeshWorld ptr at LEVEL+0x08
 ```
 
-The mod will:
-1. Show PlatformA, hide B and C (grid_counter = 1)
-2. After `grid_speed` ticks, show PlatformB, hide A and C (grid_counter = 2)
-3. After `grid_speed` ticks, show PlatformC, hide A and B (grid_counter = 3)
-4. After `grid_speed` ticks, loop back to step 1 (grid_counter = 1)
-
-### Configuration
-
-Create `custom_entities.txt` next to `bass.dll`:
-
-```ini
-# Ticks between grid advances (1 tick = ~16ms)
-grid_speed = 10.0
+And `Level_MeshWorldCtor` (0x461510):
+```c
+// this+0x480 = SceneObject (separate allocation)
+// LoadMeshWorld(this, param_2) — called with "this" = Level, NOT sceneobj
 ```
 
-- Default: `10.0` (≈160ms per step, ~6 steps/second)
-- Minimum: `1.0` (one tick per step, fastest)
-- The config file is auto-generated with defaults if it doesn't exist
+The MeshWorld pointer is at **level+0x08**, not sceneobj+0x08. The SceneObject (at level+0x480) contains the S1 ref point list at +0x894, but NOT the MeshWorld.
 
-### How Visibility Works
+**Fix:** `get_meshworld()` now reads from `level+0x08` instead of `sceneobj+0x08`.
 
-The mod sets `EntityTransform.posScale` to `1.0` (visible) or `0.0` (invisible) for each mesh. This is the same field the game uses for mesh scaling — setting it to 0 makes the mesh have zero size, effectively hiding it without removing collision data or affecting other systems.
+## How It Works
 
-### GRID Number Parsing
-
-- `(GRID01)` through `(GRID09)` — single and double digit both work
-- `(GRID1)` and `(GRID01)` are equivalent
-- The suffix can appear anywhere in the name: `N:Platform(GRID01)`, `(GRID01)N:Platform`, etc.
-- Multiple suffixes can be combined: `N:Platform(GRID01)(NOSHADOW)` — the game's native NOSHADOW still works alongside GRID
-- The highest GRID number found in the level determines the loop point
-
-### Combining with Native Suffixes
-
-GRID works alongside the game's built-in suffixes:
-- `(NOSHADOW)` — mesh casts no shadow (game-native)
-- `(NOCOLLIDE)` — mesh has no collision (game-native)
-- `(WANTZ)` — force Z-buffer rendering (game-native)
-- `(GRIDxx)` — grid visibility cycling (this mod)
-
-Example: `N:Platform(GRID01)(NOSHADOW)` = visible during grid step 1, no shadow when visible.
-
-## Legacy CE Entity System
-
-The mod also preserves the v4 custom entity system. See the v4 README for details on `CE:` prefixed entities and behavior DLLs.
+1. On level load, the mod reads S1 ref points from `sceneobj+0x894` (AthenaList)
+2. For each S1 entry whose name contains `(GRIDxx)`, it reads the position (X, Y, Z)
+3. It spawns a testcube mesh at that position by:
+   - Allocating a MeshBuffer (0x874 bytes) via `CreateMeshBuffer`
+   - Appending it to the MeshWorld's MeshBuffer list (MeshWorld+0x2C)
+   - Writing position into the RenderContext array (MeshWorld+0x28 + index × 0x50)
+   - Setting diffuse color based on GRID number (Red, Orange, Yellow, Green, Blue)
 
 ## Installation
 
 1. Rename original `bass.dll` to `bass_real.dll`
 2. Copy mod `bass.dll` to game root
-3. Copy `custom_entities.txt` to game root (or let the mod auto-generate it)
+3. Copy `testcube.MESHWORLD` to game root (or `Levels/` subfolder)
+4. Copy `custom_entities.txt` to game root (auto-generated if missing)
+
+## Configuration
+
+`custom_entities.txt`:
+```ini
+# Ticks between grid advances (1 tick = ~16ms)
+grid_speed = 10.0
+```
 
 ## Building
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c \
-  -I../shared -lwinmm -Wl,--enable-stdcall-fixup -O2 -static \
-  -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse -lshlwapi
+cd source/
+i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c bass.def \
+  -lwinmm -Wl,--enable-stdcall-fixup -O2 -static-libgcc \
+  -Wl,--add-stdcall-alias -msse2 -mfpmath=sse -lshlwapi
 ```
 
-## Files
+## Key Offsets (Verified via Ghidra)
 
-| File | Description |
-|------|-------------|
-| `bass.dll` | Compiled mod (proxy DLL) |
-| `custom_entities.txt` | Config file (grid_speed) |
-| `source/custom_entities.c` | Main mod source |
-| `source/entity_api.h` | Shared header for behavior DLLs |
-| `source/meshworld_merger.c` | Runtime file merger (legacy, unused in v5) |
+| Offset | Description |
+|--------|-------------|
+| board+0x8AC | Level pointer |
+| level+0x08 | **MeshWorld pointer** (v9 fix — was sceneobj+0x08) |
+| level+0x480 | SceneObject pointer |
+| sceneobj+0x894 | S1 ref point AthenaList |
+| MeshWorld+0x24 | MeshBuffer count |
+| MeshWorld+0x28 | RenderContext array |
+| MeshWorld+0x2C | MeshBuffer AthenaList |
+| MeshBuffer+0x864 | Name string pointer |

@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v8
+ * custom_entities.c — Hamsterball Custom Entities Mod v9
  *
  * bass.dll proxy mod. Runtime mesh loading:
  *   Reads testcube.MESHWORLD from mod directory.
@@ -37,7 +37,7 @@ static AthenaList_Append_t  pfn_AthenaList_Append = (AthenaList_Append_t)0x00453
 #define BOARD_LEVEL             0x8AC
 #define LEVEL_SCENEOBJECT       0x480
 #define SCENEOBJ_S1_LIST        0x894
-#define SCENEOBJ_MESHWORLD_PTR  0x08   /* sceneobj+0x08 = MeshWorld pointer */
+#define LEVEL_MESHWORLD_PTR     0x08   /* level+0x08 = MeshWorld pointer (NOT sceneobj+0x08!) */
 
 #define S1ENTRY_NAME             0x00
 #define S1ENTRY_POS_X            0x04
@@ -109,52 +109,49 @@ static DWORD get_sceneobj(DWORD board) {
 }
 
 static DWORD get_meshworld(DWORD board) {
-    DWORD sceneobj = get_sceneobj(board);
-    if (!sceneobj) return 0;
-    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_MESHWORLD_PTR), 4)) return 0;
-    DWORD mw = *(DWORD*)(sceneobj + SCENEOBJ_MESHWORLD_PTR);
+    DWORD level = get_level(board);
+    if (!level) return 0;
+    /* MeshWorld pointer is at LEVEL+0x08, NOT sceneobj+0x08!
+     * Verified via Ghidra decompilation of Scene_LoadMeshWorld (0x461890):
+     *   *(undefined4 **)((int)this + 8) = puVar2;  // this = Level object
+     * And Level_MeshWorldCtor (0x461510) calls LoadMeshWorld(this, param_2)
+     * where "this" is the Level. The Level is stored at board+0x8AC. */
+    if (IsBadReadPtr((void*)(level + LEVEL_MESHWORLD_PTR), 4)) return 0;
+    DWORD mw = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
     if (!mw || mw < 0x10000) return 0;
     return mw;
 }
 
-/* Find MeshWorld by scanning sceneobj struct for a valid pointer */
+/* Find MeshWorld — now uses level+0x08 directly (fixed v9) */
 static DWORD find_meshworld(DWORD board, FILE* logf) {
-    DWORD sceneobj = get_sceneobj(board);
-    if (!sceneobj) return 0;
+    DWORD level = get_level(board);
+    if (!level) return 0;
     
-    /* First try the standard offset */
+    /* Primary: level+0x08 = MeshWorld pointer (verified via Ghidra) */
     DWORD mw = get_meshworld(board);
-    if (mw) return mw;
+    if (mw) {
+        if (logf) {
+            int mb_count = 0;
+            if (!IsBadReadPtr((void*)(mw + 0x24), 4))
+                mb_count = *(int*)(mw + 0x24);
+            fprintf(logf, "  GRID: Found MeshWorld at level+0x08 = 0x%08X (mb_count=%d)\n", mw, mb_count);
+        }
+        return mw;
+    }
     
-    /* Scan sceneobj for a valid MeshWorld pointer */
+    /* Fallback: scan level struct for a valid MeshWorld pointer */
     if (logf) {
-        fprintf(logf, "  GRID: sceneobj=0x%08X, +0x08=NULL, scanning for MeshWorld...\n", sceneobj);
+        fprintf(logf, "  GRID: level+0x08=NULL, scanning level struct...\n");
         int off;
-        for (off = 0; off < 0x20; off += 4) {
-            if (IsBadReadPtr((void*)(sceneobj + off), 4)) continue;
-            DWORD val = *(DWORD*)(sceneobj + off);
+        for (off = 0; off < 0x480; off += 4) {
+            if (IsBadReadPtr((void*)(level + off), 4)) continue;
+            DWORD val = *(DWORD*)(level + off);
             if (val > 0x00100000 && val < 0x10000000) {
-                /* Check if this looks like a MeshWorld (has count at +0x24) */
                 if (!IsBadReadPtr((void*)(val + 0x24), 4)) {
                     int cnt = *(int*)(val + 0x24);
                     if (cnt >= 0 && cnt < 10000) {
-                        fprintf(logf, "    sceneobj+0x%02X: 0x%08X -> MW+0x24 count=%d\n", off, val, cnt);
+                        fprintf(logf, "    level+0x%02X: 0x%08X -> MW+0x24 count=%d\n", off, val, cnt);
                     }
-                }
-            }
-        }
-    }
-    
-    /* Also try level+0x08 (LoadMeshWorld stores at this+0x08 where this = sceneobj) */
-    DWORD level = get_level(board);
-    if (level && !IsBadReadPtr((void*)(level + 0x08), 4)) {
-        DWORD mw2 = *(DWORD*)(level + 0x08);
-        if (mw2 > 0x00100000 && mw2 < 0x10000000) {
-            if (!IsBadReadPtr((void*)(mw2 + 0x24), 4)) {
-                int cnt = *(int*)(mw2 + 0x24);
-                if (cnt >= 0 && cnt < 10000) {
-                    if (logf) fprintf(logf, "  GRID: Found MeshWorld at level+0x08 = 0x%08X (count=%d)\n", mw2, cnt);
-                    return mw2;
                 }
             }
         }
@@ -555,7 +552,7 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         FILE* f = NULL;
         fopen_s(&f, log_path, "a");
         if (f) {
-            fprintf(f, "=== Custom Entities Mod v8 Started ===\n");
+            fprintf(f, "=== Custom Entities Mod v9 Started ===\n");
             fprintf(f, "Game dir: %s\n", g_game_dir);
             fclose(f);
         }
