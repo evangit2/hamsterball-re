@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v13b
+ * custom_entities.c — Hamsterball Custom Entities Mod v13c
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -155,8 +155,9 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
         /* Try reading name as char* pointer at offset 0x00 */
         char* name = *(char**)(entry + S1ENTRY_NAME);
         if (name && !IsBadReadPtr(name, 5)) {
-            if (logf && i < 5) fprintf(logf, "  GRID: S1[%d] entry=0x%08X name='%s' nameptr=0x%08X\n", i, entry, name, (DWORD)name);
-            if (strnicmp(name, "GRID", 4) == 0) {
+            if (logf && i < 10) fprintf(logf, "  GRID: S1[%d] name='%s'\n", i, name);
+            /* Use strstr — name may be "testcube(GRID01)" not starting with GRID */
+            if (strstr(name, "GRID") != NULL) {
                 float x = *(float*)(entry + S1ENTRY_POS_X);
                 float y = *(float*)(entry + S1ENTRY_POS_Y);
                 float z = *(float*)(entry + S1ENTRY_POS_Z);
@@ -168,15 +169,13 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
             }
         } else {
             /* Name might be inline char array, not a pointer */
-            if (logf && i < 5) {
-                fprintf(logf, "  GRID: S1[%d] entry=0x%08X nameptr=0x%08X (invalid), raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+            if (logf && i < 10) {
+                fprintf(logf, "  GRID: S1[%d] entry=0x%08X (bad nameptr=0x%08X) raw: %02X%02X%02X%02X\n",
                     i, entry, (DWORD)name,
-                    *(BYTE*)entry, *((BYTE*)entry+1), *((BYTE*)entry+2), *((BYTE*)entry+3),
-                    *((BYTE*)entry+4), *((BYTE*)entry+5), *((BYTE*)entry+6), *((BYTE*)entry+7));
+                    *(BYTE*)entry, *((BYTE*)entry+1), *((BYTE*)entry+2), *((BYTE*)entry+3));
             }
-            /* Try reading as inline string */
             char* inline_name = (char*)entry;
-            if (strnicmp(inline_name, "GRID", 4) == 0) {
+            if (strstr(inline_name, "GRID") != NULL) {
                 float x = *(float*)(entry + S1ENTRY_POS_X);
                 float y = *(float*)(entry + S1ENTRY_POS_Y);
                 float z = *(float*)(entry + S1ENTRY_POS_Z);
@@ -321,7 +320,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v13b Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v13c Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fclose(logf);
