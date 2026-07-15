@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v13
+ * custom_entities.c — Hamsterball Custom Entities Mod v13b
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -125,12 +125,12 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
     /* S1 AthenaList is at sceneobj+0x894 */
     DWORD s1_list = sceneobj + 0x894;
     if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) {
-        if (logf) fprintf(logf, "  GRID: can't read S1 list count\n");
+        if (logf) fprintf(logf, "  GRID: can't read S1 list count (sceneobj=0x%08X)\n", sceneobj);
         return 0;
     }
     int s1_count = *(int*)(s1_list + 0x04);
+    if (logf) fprintf(logf, "  GRID: sceneobj=0x%08X, S1 count=%d\n", sceneobj, s1_count);
     if (s1_count <= 0 || s1_count > 1000) {
-        if (logf) fprintf(logf, "  GRID: S1 count=%d (invalid)\n", s1_count);
         return 0;
     }
 
@@ -141,7 +141,7 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
     }
     DWORD* s1_data = *(DWORD**)(s1_list + 0x40C);
     if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) {
-        if (logf) fprintf(logf, "  GRID: S1 data ptr invalid\n");
+        if (logf) fprintf(logf, "  GRID: S1 data ptr invalid (0x%08X)\n", (DWORD)s1_data);
         return 0;
     }
 
@@ -152,22 +152,41 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
         if (!entry || entry < 0x10000) continue;
         if (IsBadReadPtr((void*)entry, 16)) continue;
 
+        /* Try reading name as char* pointer at offset 0x00 */
         char* name = *(char**)(entry + S1ENTRY_NAME);
-        if (!name || IsBadReadPtr(name, 5)) continue;
-
-        /* Check for "GRID" prefix in the S1 entry name */
-        if (strnicmp(name, "GRID", 4) != 0) continue;
-
-        float x = *(float*)(entry + S1ENTRY_POS_X);
-        float y = *(float*)(entry + S1ENTRY_POS_Y);
-        float z = *(float*)(entry + S1ENTRY_POS_Z);
-
-        out_x[found] = x;
-        out_y[found] = y;
-        out_z[found] = z;
-        found++;
-
-        if (logf) fprintf(logf, "  GRID: found %s at (%.1f, %.1f, %.1f)\n", name, x, y, z);
+        if (name && !IsBadReadPtr(name, 5)) {
+            if (logf && i < 5) fprintf(logf, "  GRID: S1[%d] entry=0x%08X name='%s' nameptr=0x%08X\n", i, entry, name, (DWORD)name);
+            if (strnicmp(name, "GRID", 4) == 0) {
+                float x = *(float*)(entry + S1ENTRY_POS_X);
+                float y = *(float*)(entry + S1ENTRY_POS_Y);
+                float z = *(float*)(entry + S1ENTRY_POS_Z);
+                out_x[found] = x;
+                out_y[found] = y;
+                out_z[found] = z;
+                found++;
+                if (logf) fprintf(logf, "  GRID: found %s at (%.1f, %.1f, %.1f)\n", name, x, y, z);
+            }
+        } else {
+            /* Name might be inline char array, not a pointer */
+            if (logf && i < 5) {
+                fprintf(logf, "  GRID: S1[%d] entry=0x%08X nameptr=0x%08X (invalid), raw bytes: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                    i, entry, (DWORD)name,
+                    *(BYTE*)entry, *((BYTE*)entry+1), *((BYTE*)entry+2), *((BYTE*)entry+3),
+                    *((BYTE*)entry+4), *((BYTE*)entry+5), *((BYTE*)entry+6), *((BYTE*)entry+7));
+            }
+            /* Try reading as inline string */
+            char* inline_name = (char*)entry;
+            if (strnicmp(inline_name, "GRID", 4) == 0) {
+                float x = *(float*)(entry + S1ENTRY_POS_X);
+                float y = *(float*)(entry + S1ENTRY_POS_Y);
+                float z = *(float*)(entry + S1ENTRY_POS_Z);
+                out_x[found] = x;
+                out_y[found] = y;
+                out_z[found] = z;
+                found++;
+                if (logf) fprintf(logf, "  GRID: found (inline) %s at (%.1f, %.1f, %.1f)\n", inline_name, x, y, z);
+            }
+        }
     }
 
     return found;
@@ -302,7 +321,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v13 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v13b Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fclose(logf);
