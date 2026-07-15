@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v9
+ * custom_entities.c — Hamsterball Custom Entities Mod v10
  *
  * bass.dll proxy mod. Runtime mesh loading:
  *   Reads testcube.MESHWORLD from mod directory.
@@ -318,7 +318,47 @@ static const float GRID_COLORS[5][3] = {
 static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int grid_num, FILE* logf) {
     if (!g_mesh_loaded || !meshworld) return;
 
-    /* Allocate a MeshBuffer (0x874 bytes) */
+    /* Read current MeshBuffer count — this is also the next RC index */
+    int rc_count = 0;
+    if (!IsBadReadPtr((void*)(meshworld + MW_MB_COUNT), 4)) {
+        rc_count = *(int*)(meshworld + MW_MB_COUNT);
+    }
+    if (rc_count < 0 || rc_count > 10000) {
+        if (logf) fprintf(logf, "  GRID: bad rc_count=%d, skipping\n", rc_count);
+        return;
+    }
+
+    /* ── Reallocate the RenderContext array ──
+     * The game allocates RC array as operator_new(mb_count * 0x50 + 4).
+     * We need (rc_count + 1) entries, so reallocate and copy.
+     * The +4 at the start stores the count (it's the first DWORD before the array).
+     */
+    DWORD* old_rc = *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY);
+    int new_count = rc_count + 1;
+    int new_alloc_size = new_count * 0x50 + 4;
+    DWORD* new_rc = (DWORD*)LocalAlloc(LPTR, new_alloc_size);
+    if (!new_rc) {
+        if (logf) fprintf(logf, "  GRID: failed to realloc RC array\n");
+        return;
+    }
+    /* Copy old RC data (including the count DWORD at offset -4... actually the
+     * game stores the count at [array - 4], i.e. the DWORD right before the array).
+     * From decompilation: operator_new(count * 0x50 + 4), then piVar3 = local_15c + 1,
+     * and *local_15c = count. So the structure is: [count DWORD][RC entries...].
+     */
+    if (old_rc) {
+        /* old_rc points to the first RC entry. The count DWORD is at old_rc - 1. */
+        int old_alloc_size = rc_count * 0x50 + 4;
+        if (!IsBadReadPtr((void*)((DWORD*)old_rc - 1), old_alloc_size)) {
+            memcpy((DWORD*)new_rc, (DWORD*)old_rc - 1, old_alloc_size);
+        }
+    }
+    /* Update count in the new allocation */
+    *new_rc = new_count;
+    /* Update the RC array pointer in MeshWorld (points to first entry, after count) */
+    *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY) = new_rc + 1;
+
+    /* ── Allocate a MeshBuffer (0x874 bytes) ── */
     void* alloc = (void*)LocalAlloc(LPTR, 0x874);
     if (!alloc) {
         if (logf) fprintf(logf, "  GRID: failed to allocate MeshBuffer for grid=%d\n", grid_num);
@@ -339,7 +379,6 @@ static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int
     /* Set name */
     char name_buf[32];
     snprintf(name_buf, 32, "testcube(GRID%02d)", grid_num);
-    /* Allocate name string */
     char* name = (char*)LocalAlloc(LPTR, strlen(name_buf) + 1);
     if (name) {
         strcpy(name, name_buf);
@@ -350,122 +389,66 @@ static void spawn_testcube_at(DWORD meshworld, float px, float py, float pz, int
     void* mblist = (void*)(meshworld + MW_MBLIST);
     pfn_AthenaList_Append(mblist, mb);
 
-    /* Get the RenderContext index (use the next available index) */
-    int rc_count = 0;
-    if (!IsBadReadPtr((void*)(meshworld + MW_MB_COUNT), 4)) {
-        rc_count = *(int*)(meshworld + MW_MB_COUNT);
-    }
-
     /* Set MeshBuffer's RenderContext index */
     *(int*)((char*)mb + MB_RENDERCTX_INDEX) = rc_count;
 
-    /* Write position into the RenderContext array */
-    DWORD* rc_array = *(DWORD**)(meshworld + MW_RENDERCTX_ARRAY);
-    if (rc_array && !IsBadWritePtr(rc_array, (rc_count + 1) * 0x50)) {
-        char* rc = (char*)rc_array + rc_count * 0x50;
+    /* ── Write position into the new RC entry ──
+     * From Scene_LoadMeshWorld decompilation:
+     *   posZ at RC+0x14, posX at RC+0x18, posY at RC+0x1C, scale at RC+0x20
+     *   diffuse at RC+0x04..0x10 (RGBA)
+     *   specular at RC+0x24..0x30
+     *   emissive at RC+0x34..0x40
+     *   shine at RC+0x44, texture at RC+0x48, bool at RC+0x4D
+     */
+    char* rc = (char*)(new_rc + 1) + rc_count * 0x50;
 
-        /* Set position in the matrix (4th row of first matrix = translation) */
-        float* mat = (float*)(rc + RC_MATRIX_START + 0x0C * 4);  /* offset 0x30 in matrix = translation */
-        /* Actually the matrix layout is:
-         * mat[0..3] = row 0 (scale X)
-         * mat[4..7] = row 1
-         * mat[8..11] = row 2
-         * mat[12..15] = row 3 (translation)
-         * But RenderContext has 4 matrices of 16 bytes each (4 floats each, not 4x4)
-         * 
-         * From the decompilation, the material has 4 groups of 4 floats:
-         * Group 0 = diffuse (RGBA)
-         * Group 1 = ambient (RGBA)
-         * Group 2 = specular (RGBA)
-         * Group 3 = emissive/position (XYZ + flag)
-         *
-         * Actually, the RenderContext has 4 matrices:
-         * mat0 (offset 0x04): 4 floats = scale XYZ + pad
-         * mat1 (offset 0x14): 4 floats = rotation XYZ + pad
-         * mat2 (offset 0x24): 4 floats = position XYZ + pad
-         * mat3 (offset 0x34): 4 floats = ???
-         *
-         * Wait, from LoadMeshWorld:
-         * iVar4 = *(int*)(*(int *)((int)this + 8) + 0x28);  // RC array
-         * *(undefined4 *)(iVar4 + 0x18 + iVar7) = local_150;  // posX at RC+0x18
-         * *(undefined4 *)(iVar4 + 0x1c) = local_158;  // posY at RC+0x1C
-         * *(undefined4 *)(iVar4 + 0x14) = local_160;  // posZ at RC+0x14
-         * *(float *)(iVar4 + 0x20) = local_154;  // scale at RC+0x20
-         *
-         * So: posZ at RC+0x14, posX at RC+0x18, posY at RC+0x1C, scale at RC+0x20
-         */
+    /* Position (stored in "ambient" group, which the game also uses as position) */
+    *(float*)(rc + 0x14) = pz;   /* posZ */
+    *(float*)(rc + 0x18) = px;   /* posX */
+    *(float*)(rc + 0x1C) = py;   /* posY */
+    *(float*)(rc + 0x20) = 1.0f; /* scale = 1.0 */
 
-        /* Position */
-        *(float*)(rc + 0x14) = pz;   /* posZ */
-        *(float*)(rc + 0x18) = px;   /* posX */
-        *(float*)(rc + 0x1C) = py;   /* posY */
-        *(float*)(rc + 0x20) = 1.0f; /* scale = 1.0 (visible) */
+    /* Scale flag (RC+0x4C = bool: scale != 1.0) */
+    *(BYTE*)(rc + 0x4C) = 0;
 
-        /* Scale flag (RC+0x4C = bool: scale != 1.0) */
-        *(BYTE*)(rc + 0x4C) = 0;  /* scale = 1.0, so flag = 0 */
+    /* Diffuse color */
+    int color_idx = grid_num - 1;
+    if (color_idx < 0) color_idx = 0;
+    if (color_idx > 4) color_idx = 4;
 
-        /* Material colors: diffuse at RC+0x04, ambient at RC+0x14? No...
-         * Actually the RC layout from LoadMeshWorld is complex.
-         * The game writes 4 groups of 4 floats at offsets:
-         * Group 0: RC+0x04, +0x08, +0x0C, +0x10 (diffuse RGBA)
-         * Group 1: RC+0x14, +0x18, +0x1C, +0x20 (ambient RGBA = position+scale!)
-         * Group 2: RC+0x24, +0x28, +0x2C, +0x30 (specular RGBA)
-         * Group 3: RC+0x34, +0x38, +0x3C, +0x40 (emissive RGBA)
-         * Shine at RC+0x44
-         * Texture at RC+0x48
-         * Bool at RC+0x4D
-         *
-         * But the position writes to +0x14/+0x18/+0x1C which is AMBIENT group!
-         * That means position IS stored as ambient color RGB, and scale as ambient alpha.
-         * This makes sense: the RenderContext stores position in the "ambient" slot.
-         */
+    *(float*)(rc + 0x04) = GRID_COLORS[color_idx][0];  /* R */
+    *(float*)(rc + 0x08) = GRID_COLORS[color_idx][1];  /* G */
+    *(float*)(rc + 0x0C) = GRID_COLORS[color_idx][2];  /* B */
+    *(float*)(rc + 0x10) = 1.0f;                        /* A */
 
-        /* Set diffuse color from GRID_COLORS */
-        int color_idx = grid_num - 1;
-        if (color_idx < 0) color_idx = 0;
-        if (color_idx > 4) color_idx = 4;
+    /* Specular (zero) */
+    *(float*)(rc + 0x24) = 0.0f;
+    *(float*)(rc + 0x28) = 0.0f;
+    *(float*)(rc + 0x2C) = 0.0f;
+    *(float*)(rc + 0x30) = 0.0f;
 
-        *(float*)(rc + 0x04) = GRID_COLORS[color_idx][0];  /* diffuse R */
-        *(float*)(rc + 0x08) = GRID_COLORS[color_idx][1];  /* diffuse G */
-        *(float*)(rc + 0x0C) = GRID_COLORS[color_idx][2];  /* diffuse B */
-        *(float*)(rc + 0x10) = 1.0f;                        /* diffuse A */
+    /* Emissive (zero) */
+    *(float*)(rc + 0x34) = 0.0f;
+    *(float*)(rc + 0x38) = 0.0f;
+    *(float*)(rc + 0x3C) = 0.0f;
+    *(float*)(rc + 0x40) = 0.0f;
 
-        /* Ambient = same as diffuse */
-        /* These also serve as position + scale */
-        /* But wait — we already wrote position to +0x14/+0x18/+0x1C above! */
-        /* The position IS the ambient RGB. So we need to set position = color? */
-        /* No — the game uses ambient for BOTH color and position. This is a dual-use field. */
-        /* 
-         * Actually, looking more carefully at LoadMeshWorld:
-         * First it reads 4 floats for group 0 (diffuse) at RC+0x04..0x10
-         * Then 4 floats for group 1 at RC+0x14..0x20
-         * Then 4 floats for group 2 at RC+0x24..0x30
-         * Then 4 floats for group 3 at RC+0x34..0x40
-         *
-         * The position writes are to the SAME offsets as group 1 (ambient).
-         * This means the ambient color IS the position. The game stores
-         * position as ambient color values.
-         *
-         * So we should set:
-         * RC+0x04: diffuse R  (visible color)
-         * RC+0x08: diffuse G
-         * RC+0x0C: diffuse B
-         * RC+0x10: diffuse A
-         * RC+0x14: posX  (this IS ambient R, but used as position!)
-         * RC+0x18: posY
-         * RC+0x1C: posZ
-         * RC+0x20: scale (= ambient A)
-         */
-    }
+    /* Shine */
+    *(float*)(rc + 0x44) = 0.0f;
 
-    /* Increment MeshBuffer count */
-    if (!IsBadWritePtr((void*)(meshworld + MW_MB_COUNT), 4)) {
-        *(int*)(meshworld + MW_MB_COUNT) = rc_count + 1;
-    }
+    /* No texture */
+    *(DWORD*)(rc + 0x48) = 0;
+
+    /* Bool flag */
+    *(BYTE*)(rc + 0x4D) = 0;
+
+    /* Update MeshBuffer count */
+    *(int*)(meshworld + MW_MB_COUNT) = new_count;
 
     if (logf) {
         fprintf(logf, "  GRID: spawned testcube(GRID%02d) at (%.1f,%.1f,%.1f) mb=0x%08X rc_idx=%d\n",
                 grid_num, px, py, pz, (DWORD)mb, rc_count);
+        fflush(logf);
     }
 }
 
@@ -552,7 +535,7 @@ static DWORD WINAPI mod_thread(LPVOID param) {
         FILE* f = NULL;
         fopen_s(&f, log_path, "a");
         if (f) {
-            fprintf(f, "=== Custom Entities Mod v9 Started ===\n");
+            fprintf(f, "=== Custom Entities Mod v10 Started ===\n");
             fprintf(f, "Game dir: %s\n", g_game_dir);
             fclose(f);
         }
