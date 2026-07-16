@@ -1,4 +1,4 @@
-# Difficulty Settings Mod (v3)
+# Difficulty Settings Mod (v3.1)
 
 Difficulty-based **level file redirect** for Hamsterball. Instead of modifying entity names, this mod redirects which MESHWORLD file gets loaded based on tournament difficulty.
 
@@ -14,15 +14,14 @@ The mod hooks `LoadMeshWorld` (0x0045DE30) — the function that takes a level n
 
 3. **Redirect based on difficulty:**
 
-| Difficulty | Suffix | Example |
-|---|---|---|
-| 🟢 Pipsqueak | `-easy` | `levels\level1` → `levels\level1-easy` |
-| 🟡 Normal | `-normal` | `levels\level1` → `levels\level1-normal` |
-| 🔴 Frenzied! | *(none)* | `levels\level1` (default file) |
+| Mode | Difficulty | Suffix | Example |
+|---|---|---|---|
+| 🟢 Tournament | Pipsqueak | `-easy` | `levels\level1` → `levels\level1-easy` |
+| 🟡 Tournament | Normal | *(none)* | `levels\level1` (default file) |
+| 🔴 Tournament | Frenzied! | `-hard` | `levels\level1` → `levels\level1-hard` |
+| Practice/Party | — | `-hard` | `levels\level1` → `levels\level1-hard` (fallback to default if missing) |
 
-4. **Fallback**: If the `-easy` or `-normal` variant doesn't exist, the mod falls back to the default file (no suffix).
-
-**Non-tournament modes** (Practice/Time Trial, Party/2P) always use the default file (no suffix). This matches the vanilla game behavior.
+4. **Fallback**: If the `-easy` or `-hard` variant doesn't exist, the mod falls back to the default file (no suffix).
 
 ### Entity Spawn Fix
 
@@ -37,12 +36,12 @@ Create alternate versions of level files with the appropriate suffix:
 
 ```
 levels\
-  Level1.MESHWORLD          ← default (Frenzied!, Practice, Party)
+  Level1.MESHWORLD          ← default (Normal Tournament, fallback)
   Level1-easy.MESHWORLD     ← Pipsqueak Tournament
-  Level1-normal.MESHWORLD   ← Normal Tournament
+  Level1-hard.MESHWORLD     ← Frenzied Tournament / Practice / Party
   Level2.MESHWORLD
   Level2-easy.MESHWORLD
-  Level2-normal.MESHWORLD
+  Level2-hard.MESHWORLD
   ...
 ```
 
@@ -52,7 +51,7 @@ If a variant file doesn't exist, the mod falls back to the default file automati
 
 1. Rename the original `bass.dll` to `bass_real.dll`
 2. Copy `bass.dll` from this mod into the game folder
-3. Create `-easy` and/or `-normal` variants of level files as needed
+3. Create `-easy` and/or `-hard` variants of level files as needed
 
 ## Technical Details
 
