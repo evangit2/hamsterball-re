@@ -1,0 +1,174 @@
+# LevelData.txt — Per-level configuration for LevelFeatures_Loader
+# Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
+#   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
+#   14=Master 15=Impossible
+# Meshes format: 0xOFFSET:PATH;0xOFFSET:PATH;...
+# Path types: bare=Level_MeshWorldCtor, RENDER=Level_RenderCtor(prev),
+#   TIPPER:=Level_RenderCtor(prev)+TipperVisual_Attach (bridge visual),
+#   MESH:path=MeshNode_ctor, SPRITE:path=Sprite_ctor
+
+[1]
+Name=WarmUp
+Vtable=0x004D04A8
+BoardName=Board (Warm-Up)
+RaceTitle=WARM-UP RACE
+RaceData=BEGINNERRACE
+Music=Hamster Nation
+Color=1.000 0.000 1.000
+MeshPath=levels\level1
+Meshes=
+
+[2]
+Name=Beginner
+Vtable=0x004D1098
+BoardName=Board (Beginner)
+RaceTitle=BEGINNER RACE
+RaceData=CASCADERACE
+Music=Cascade Race
+Color=1.000 0.750 0.250
+MeshPath=levels\levelcascade
+Meshes=
+
+[3]
+Name=Intermediate
+Vtable=0x004D05A0
+BoardName=Board (Intermediate)
+RaceTitle=INTERMEDIATE RACE
+RaceData=INTERMEDIATERACE
+Music=Gerbil Groove
+Color=0.000 0.000 1.000
+MeshPath=levels\level2
+Meshes=
+
+[4]
+Name=Dizzy
+Vtable=0x004D0890
+BoardName=Board (Dizzy)
+RaceTitle=DIZZY RACE
+RaceData=DIZZYRACE
+Music=Dizzy!
+Color=0.000 1.000 0.000
+MeshPath=levels\level3
+Meshes=0x436C:Levels\Level3-Tipper;0x4370:RENDER;0x4BA8:Levels\Level3-WaterWheel;0x4BAC:RENDER;0x4BC4:Levels\Level3-Swirl;0x4BC8:RENDER;0x4374:Levels\Level3-Gluebie
+
+[5]
+Name=Tower
+Vtable=0x004D0A08
+BoardName=Board (Tower)
+RaceTitle=TOWER RACE
+RaceData=TOWERRACE
+Music=Happy Rush
+Color=1.000 0.750 0.000
+MeshPath=levels\level4
+Meshes=0x436C:Levels\Level4-Catapult;0x4370:Levels\Level4-Drawbridge;0x4374:MESH:Meshes\YellowLink;0x4378:Levels\Level4-Mace;0x437C:Levels\Level4-Windmill;0x4390:MESH:Meshes\Chomper;0x43B4:Levels\Level4-Turret
+
+[6]
+Name=Up
+Vtable=0x004D11A0
+BoardName=Board (Up)
+RaceTitle=UP RACE
+RaceData=UPRACE
+Music=Up Race
+Color=1.000 0.000 1.000
+MeshPath=levels\levelup
+Meshes=0x4784:levels\levelup-lifter;0x4788:levels\levelup-speedcylinder;0x478C:levels\levelup-button
+
+[7]
+Name=Neon
+Vtable=0x004D1DF0
+BoardName=Board (Dark)
+RaceTitle=NEON RACE
+RaceData=NEONRACE
+Music=Neon Theme
+Color=1.000 1.000 0.000
+MeshPath=levels\leveldark
+Meshes=0x4374:Levels\LevelDark-NeonPlatform;0x4378:Levels\LevelDark-DFloor1;0x437C:Levels\LevelDark-DFloor2;0x4380:Levels\LevelDark-DFloor3;0x4384:Levels\LevelDark-DFloor4;0x4388:Levels\LevelDark-Trode
+
+[8]
+Name=Expert
+Vtable=0x004D0B00
+BoardName=Board (Expert)
+RaceTitle=EXPERT RACE
+RaceData=EXPERTRACE
+Music=Fight!
+Color=1.000 0.000 0.000
+MeshPath=levels\level5
+Meshes=0x4378:Levels\Level5-Bridge;0x437C:RENDER;0x4BB0:MESH:meshes\hammyjudge;0x4BB4:MESH:meshes\hammyjudge;0x4BB8:MESH:meshes\hammyjudge
+
+[9]
+Name=Odd
+Vtable=0x004D0BC0
+BoardName=Board (Odd)
+RaceTitle=ODD RACE
+RaceData=ODDRACE
+Music=Ninja Hamster
+Color=1.000 0.500 0.000
+MeshPath=levels\level6
+Meshes=
+
+[10]
+Name=Toob
+Vtable=0x004D0E78
+BoardName=Board (Toob)
+RaceTitle=TOOB RACE
+RaceData=TOOBRACE
+Music=Rodenthood
+Color=0.500 0.500 1.000
+MeshPath=levels\level8
+Meshes=0x436C:Levels\Level8-Spinny;0x4370:Levels\Level8-Saw;0x4374:Levels\Level8-Fallout;0x4378:Levels\Level8-Blockdawg1;0x437C:Levels\Level8-Blockdawg2
+
+[11]
+Name=Wobbly
+Vtable=0x004D0D38
+BoardName=Board (Wobbly)
+RaceTitle=WOBBLY RACE
+RaceData=WOBBLYRACE
+Music=Hamster Chase
+Color=0.620 0.840 0.300
+MeshPath=levels\level7
+Meshes=0x436C:Levels\Level7-Wobbly1;0x4370:Levels\Level7-Wobbly2;0x4374:Levels\Level7-Wobbly3;0x4378:Levels\Level7-Wobbly4;0x437C:Levels\Level7-Wobbly5;0x4380:Levels\Level7-Wobbly6;0x4384:Levels\Level7-Wobbly7
+
+[12]
+Name=Glass
+Vtable=0x004D1F90
+BoardName=Board (Glass)
+RaceTitle=GLASS RACE
+RaceData=GLASSRACE
+Music=Glass Theme
+Color=1.000 0.000 1.000
+MeshPath=levels\levelglass
+Meshes=
+
+[13]
+Name=Sky
+Vtable=0x004D0FC8
+BoardName=Board (Sky)
+RaceTitle=SKY RACE
+RaceData=SKYRACE
+Music=Bucky Break
+Color=0.000 0.500 1.000
+MeshPath=levels\level9
+Meshes=0x436C:MESH:meshes\skypillar;0x4370:MESH:meshes\magnifyingglass;0x4384:levels\level9-popcylinder1;0x4388:levels\level9-popcylinder2;0x438C:levels\level9-trapdoor;0x4374:SPRITE:textures\clouds.png
+
+[14]
+Name=Master
+Vtable=0x004D12B0
+BoardName=Board (Master)
+RaceTitle=MASTER RACE
+RaceData=MASTERRACE
+Music=Master Theme
+Color=0.500 0.500 0.500
+MeshPath=levels\level10
+Meshes=0x436C:Levels\Level2-Bridge;0x4370:TIPPER:;0x4374:Levels\Level10-2PBridge;0x4378:RENDER;0x4394:Levels\Level3-Tipper;0x4398:RENDER;0x5410:Levels\Level10-Bridge1;0x5414:Levels\Level10-Bridge2;0x5420:levels\level9-popcylinder1;0x5424:levels\level9-popcylinder2;0x5840:Levels\Level8-Blockdawg1;0x5844:Levels\Level8-Blockdawg2;0x5848:Levels\Level4-Catapult;0x607C:Levels\Level3-Gluebie
+
+[15]
+Name=Impossible
+Vtable=0x004D21C0
+BoardName=Board (Impossible)
+RaceTitle=IMPOSSIBLE RACE
+RaceData=IMPOSSIBLERACE
+Music=Impossible Theme
+Color=1.000 0.000 0.000
+MeshPath=levels\levelimpossible
+Meshes=0x436C:Levels\LevelImpossible-Looper;0x4370:Levels\LevelImpossible-Gear;0x4374:Levels\LevelImpossible-BigGear;0x4378:Levels\LevelImpossible-Rotator;0x437C:Levels\LevelImpossible-Pendulum
+
