@@ -1,5 +1,17 @@
 /*
- * difficulty_settings.c — Difficulty-based entity replacement mod
+ * difficulty_settings.c — Difficulty-based entity replacement mod (v2)
+ *
+ * FIXES vs v1:
+ *   1. Prefix matching (strnicmp) instead of full string compare.
+ *      Entity names contain MW parser tags like "BADBALL(CHASE=1)(SIZE=35)".
+ *      The game uses __strnicmp with fixed length; v1 used ci_strcmp which
+ *      never matched because the full string included the tags.
+ *   2. Boundary check after prefix match: next char must be '(' or '\0'.
+ *      Prevents "BAD" from matching "BADBALL".
+ *   3. Removed g_lastBoard dedup — entity list is fresh per level, so
+ *      always modifying is safe and avoids stale-skip on board reuse.
+ *   4. Default config now sets NOTHING for EASY (Pipsqueak) to match
+ *      normal game behavior (no enemies on Pipsqueak).
  *
  * Reads difficulty_settings.txt next to bass.dll. Maps entity names to
  * replacements depending on tournament difficulty (Pipsqueak/Normal/Frenzied!).
@@ -22,18 +34,22 @@
  * Entity names are case-insensitive. "8ball" is an alias for "BadBall".
  *
  * HOW IT WORKS:
- *   Hooks the Scene_CreateEntities dispatch function (0x0041C5B0) which
- *   runs before ALL entity factories (CreateBadBall, CreateMouseTrap,
- *   CreateLevelObjects, CreateExpertLevelObjects). Before the original
- *   runs, we iterate the MeshWorld entity list and replace entity name
- *   pointers with replacement names from the config. This ensures ALL
- *   factories see the modified names.
+ *   Hooks Board_Setup (0x0041C5B0) which runs before ALL entity factories.
+ *   Before the original runs, we iterate the MeshWorld entity list and
+ *   replace entity name pointers with replacement names from the config.
+ *   This ensures ALL factories see the modified names.
  *
  *   For "NOTHING": entity name is replaced with "REF:NOTHING" which no
  *   factory matches, so the entity is silently skipped.
- *   For replacements (e.g. "8ball" → "BONK"): entity name is replaced
- *   with "BONK". CreateBadBall won't match it, but CreateLevelObjects
- *   will create a Bonk object at the original 8ball's position.
+ *   For replacements (e.g. "8ball" → "BONK"): entity name is replaced.
+ *   CreateBadBall won't match it, but CreateLevelObjects will create a
+ *   Bonk object at the original 8ball's position.
+ *
+ *   Difficulty override: On Pipsqueak (difficulty=0), the game skips
+ *   CreateBadBalls and CreateMouseTrap entirely. The mod temporarily
+ *   sets difficulty to 1 (Normal) so factories execute, then restores
+ *   the original value. The config's name replacements control which
+ *   entities actually spawn.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll difficulty_settings.c \
@@ -49,24 +65,27 @@
 
 #define APP_DIFFICULTY_OFFSET 0x23C
 
-/* Scene_CreateEntities — dispatch function that calls ALL entity factories.
- * __fastcall, ECX=board/scene, plain RET.
+/* Board_Setup — dispatch function that calls ALL entity factories.
+ * __fastcall, ECX=board, plain RET.
  * Calls: CreateBadBall, CreateMouseTrap, CreateSecretObjects,
  *        Scene_CreateFlags, Scene_CreateSigns, Scene_CreateDynamicObjects
  * (which calls CreateLevelObjects / CreateExpertLevelObjects via vtable). */
-#define SCENE_CREATE_ENTITIES_ADDR 0x0041C5B0
+#define BOARD_SETUP_ADDR 0x0041C5B0
 
-/* Board/Scene layout */
-#define BOARD_MESHWORLD_OFFSET  0x8AC   /* board+0x8AC → MeshWorld ptr */
+/* Board/Scene layout — verified from Board_Setup decompilation:
+ *   param_1 is int*, so param_1[0x22b] = *(int*)(board + 0x22b*4) = *(int*)(board + 0x8AC)
+ *   This is a pointer to a Level/Scene object, and +0x480 is the entity_list struct. */
+#define BOARD_LEVEL_OFFSET    0x8AC   /* board+0x8AC → Level ptr */
+#define LEVEL_ENTITYLIST_OFFSET 0x480 /* Level+0x480 → entity_list struct */
 
-/* MeshWorld entity list */
-#define MW_ENTITYLIST_OFFSET 0x480      /* MW+0x480 → entity_list struct */
-
-/* Entity list struct layout */
+/* Entity list struct layout — verified from CreateBadBalls decompilation:
+ *   iVar4 = *(int *)(*(int *)(param_1 + 0x8ac) + 0x480);
+ *   count = *(int *)(iVar4 + 0x898);
+ *   data  = **(undefined4 **)(iVar4 + 0xca0);  // double dereference */
 #define ELIST_COUNT  0x898   /* entity_list+0x898 → count (int) */
 #define ELIST_DATA   0xCA0   /* entity_list+0xCA0 → *(ptr) → array of entity ptrs */
 
-/* Entity struct: [0]=name(char*), [1]=x, [2]=y, [3]=z, ... */
+/* Entity struct: [0]=name(char*), [1]=x(float), [2]=y(float), [3]=z(float), ... */
 #define ENTITY_NAME_IDX 0
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -94,6 +113,20 @@ static CRITICAL_SECTION g_configLock;
  * String helpers
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Case-insensitive prefix comparison — matches game's __strnicmp behavior.
+ * Compares exactly n characters. Returns 0 if they match. */
+static int ci_strnicmp(const char *a, const char *b, int n) {
+    for (int i = 0; i < n; i++) {
+        int ca = (*a >= 'a' && *a <= 'z') ? *a - 32 : *a;
+        int cb = (*b >= 'a' && *b <= 'z') ? *b - 32 : *b;
+        if (ca != cb) return ca - cb;
+        if (*a == '\0' || *b == '\0') break;
+        a++; b++;
+    }
+    return 0;
+}
+
+/* Case-insensitive full string comparison */
 static int ci_strcmp(const char *a, const char *b) {
     while (*a && *b) {
         int ca = (*a >= 'a' && *a <= 'z') ? *a - 32 : *a;
@@ -205,8 +238,8 @@ static void generate_default_config(const char *path) {
         ";   Judge, Bell\n"
         "; Entities (iterating): 8ball (BadBall), Mousetrap\n\n"
         "EASY\n"
-        "8ball = 8ball\n"
-        "Mousetrap = Mousetrap\n\n"
+        "8ball = NOTHING\n"
+        "Mousetrap = NOTHING\n\n"
         "NORMAL\n"
         "8ball = 8ball\n"
         "Mousetrap = Mousetrap\n\n"
@@ -231,6 +264,13 @@ static void init_config_path(void) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Replacement lookup
+ *
+ * FIX: Uses PREFIX matching (strnicmp) instead of full string comparison.
+ * Entity names in the MeshWorld contain MW parser tags like:
+ *   "BADBALL(CHASE=1)(HOME=0)(SIZE=35)"
+ * The game's factories use __strnicmp with fixed length to match just
+ * the prefix. We do the same: compare the first N characters where
+ * N = strlen(config_entry), then verify the next char is '(' or '\0'.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int get_difficulty(void) {
@@ -245,25 +285,33 @@ static int get_difficulty(void) {
 
 /*
  * Look up entity name in current difficulty table.
+ * Uses PREFIX matching: compares first N chars where N = strlen(config_entry).
+ * Then checks that the next char in the entity name is '(' or '\0'
+ * to avoid partial matches (e.g. "BAD" matching "BADBALL").
+ *
  * Returns: -1=NOTHING(skip), 1=replacement(name in outBuf), 0=no match
  */
 static int lookup_replacement(const char *entityName, char *outBuf, int bufSize) {
-    char normalized[MAX_NAME_LEN];
-    strncpy(normalized, entityName, MAX_NAME_LEN - 1);
-    normalized[MAX_NAME_LEN - 1] = '\0';
-    normalize_name(normalized);
-
     int diff = get_difficulty();
     DifficultyTable *tbl = &g_tables[diff];
 
     for (int i = 0; i < tbl->count; i++) {
-        if (ci_strcmp(normalized, tbl->entries[i].original) == 0) {
-            if (ci_strcmp(tbl->entries[i].replacement, "NOTHING") == 0) {
-                return -1;
+        int nameLen = strlen(tbl->entries[i].original);
+        if (nameLen == 0) continue;
+
+        /* Prefix match: compare first nameLen chars */
+        if (ci_strnicmp(entityName, tbl->entries[i].original, nameLen) == 0) {
+            /* Boundary check: next char must be '(' or '\0'
+             * This prevents "BAD" from matching "BADBALL" */
+            char nextChar = entityName[nameLen];
+            if (nextChar == '\0' || nextChar == '(') {
+                if (ci_strcmp(tbl->entries[i].replacement, "NOTHING") == 0) {
+                    return -1;
+                }
+                strncpy(outBuf, tbl->entries[i].replacement, bufSize - 1);
+                outBuf[bufSize - 1] = '\0';
+                return 1;
             }
-            strncpy(outBuf, tbl->entries[i].replacement, bufSize - 1);
-            outBuf[bufSize - 1] = '\0';
-            return 1;
         }
     }
     return 0;
@@ -276,11 +324,15 @@ static int lookup_replacement(const char *entityName, char *outBuf, int bufSize)
  * based on the config. This ensures ALL factories see the modified names.
  *
  * Entity list access (verified from CreateBadBall decompilation at 0x40BCA0):
- *   board+0x8AC → MeshWorld
- *   MeshWorld+0x480 → entity_list struct
+ *   board+0x8AC → Level ptr
+ *   Level+0x480 → entity_list struct
  *   entity_list+0x898 → count (int)
  *   *(entity_list+0xCA0) → data_array (DWORD* array of entity pointers)
  *   entity[0] → name (char*)
+ *
+ * FIX: Removed g_lastBoard dedup. The entity list is rebuilt fresh each
+ * level, so always modifying is safe. The old dedup could skip modification
+ * if the same board memory address was reused for a different level.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Stable replacement name buffers (entity[0] will point to these) */
@@ -288,22 +340,17 @@ static int lookup_replacement(const char *entityName, char *outBuf, int bufSize)
 static char g_nameSlots[MAX_NAME_SLOTS][MAX_NAME_LEN];
 static int g_nameSlotCount = 0;
 
-/* Track which board we've already modified (avoids re-modifying) */
-static DWORD g_lastBoard = 0;
-
 static void modify_entity_names(DWORD board) {
-    if (!board || board == g_lastBoard) return;
-    g_lastBoard = board;
     g_nameSlotCount = 0;  /* reset for new board */
 
-    /* board → MeshWorld */
-    if (IsBadReadPtr((void*)(board + BOARD_MESHWORLD_OFFSET), 4)) return;
-    DWORD meshWorld = *(DWORD*)(board + BOARD_MESHWORLD_OFFSET);
-    if (!meshWorld || meshWorld < 0x10000) return;
+    /* board → Level */
+    if (IsBadReadPtr((void*)(board + BOARD_LEVEL_OFFSET), 4)) return;
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL_OFFSET);
+    if (!level || level < 0x10000) return;
 
-    /* MeshWorld → entity_list */
-    if (IsBadReadPtr((void*)(meshWorld + MW_ENTITYLIST_OFFSET), 4)) return;
-    DWORD elist = *(DWORD*)(meshWorld + MW_ENTITYLIST_OFFSET);
+    /* Level → entity_list */
+    if (IsBadReadPtr((void*)(level + LEVEL_ENTITYLIST_OFFSET), 4)) return;
+    DWORD elist = *(DWORD*)(level + LEVEL_ENTITYLIST_OFFSET);
     if (!elist || elist < 0x10000) return;
 
     /* entity_list → count */
@@ -311,7 +358,7 @@ static void modify_entity_names(DWORD board) {
     int count = *(int*)(elist + ELIST_COUNT);
     if (count <= 0 || count > 10000) return;
 
-    /* entity_list → data array pointer */
+    /* entity_list → data array pointer (double dereference) */
     if (IsBadReadPtr((void*)(elist + ELIST_DATA), 4)) return;
     DWORD dataArr = *(DWORD*)(elist + ELIST_DATA);
     if (!dataArr || dataArr < 0x10000) return;
@@ -352,7 +399,7 @@ static void modify_entity_names(DWORD board) {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Detour hook
  *
- * Target: Scene_CreateEntities (0x0041C5B0)
+ * Target: Board_Setup (0x0041C5B0)
  * Calling convention: __fastcall, ECX=board, plain RET
  * Prologue: PUSH -1 (2 bytes) + PUSH handler_addr (5 bytes) = 7 bytes
  *
@@ -360,11 +407,11 @@ static void modify_entity_names(DWORD board) {
  * The trampoline executes the original 7 bytes then jumps to target+7.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-typedef void (__fastcall *SceneCreateEntities_t)(void *board);
-static SceneCreateEntities_t g_origFunc = NULL;
+typedef void (__fastcall *BoardSetup_t)(void *board);
+static BoardSetup_t g_origFunc = NULL;
 
 /* C wrapper — modifies entity names before calling original */
-void __fastcall hook_SceneCreateEntities(void *board) {
+void __fastcall hook_BoardSetup(void *board) {
     /* Modify entity names in the MeshWorld before any factory runs.
      * This reads the ORIGINAL difficulty (App+0x23C) to select the
      * correct replacement table. Must happen before we override it. */
@@ -373,11 +420,11 @@ void __fastcall hook_SceneCreateEntities(void *board) {
     LeaveCriticalSection(&g_configLock);
 
     /* ── Difficulty override ──────────────────────────────────────
-     * The game's entity factories (CreateBadBall, CreateMouseTrap,
-     * CreateLevelObjects, CreateExpertLevelObjects) all check
-     * App+0x23C != 0 before spawning entities. On Pipsqueak (0),
-     * factories are skipped entirely — so the mod's name replacements
-     * have no effect because the factories never run.
+     * The game's entity factories (CreateBadBalls, CreateMouseTrap,
+     * and vtable[33] handlers) all check App+0x23C != 0 before
+     * spawning entities. On Pipsqueak (0), factories are skipped
+     * entirely — so the mod's name replacements have no effect
+     * because the factories never run.
      *
      * Fix: temporarily set difficulty to 1 (Normal) so ALL factories
      * execute. The mod's name replacement logic then controls which
@@ -412,7 +459,7 @@ void __fastcall hook_SceneCreateEntities(void *board) {
 }
 
 static void install_hook(void) {
-    DWORD target = SCENE_CREATE_ENTITIES_ADDR;
+    DWORD target = BOARD_SETUP_ADDR;
     unsigned char *src = (unsigned char*)target;
 
     /* Allocate executable page for trampoline */
@@ -438,12 +485,12 @@ static void install_hook(void) {
     FlushInstructionCache(GetCurrentProcess(), src, 16);
 
     /* Set up function pointer to trampoline */
-    g_origFunc = (SceneCreateEntities_t)tramp;
+    g_origFunc = (BoardSetup_t)tramp;
 
     /* Install 5-byte JMP + 2 NOPs at target */
     VirtualProtect(src, 7, PAGE_EXECUTE_READWRITE, &old);
     src[0] = 0xE9;                        /* JMP rel32 */
-    DWORD hookAddr = (DWORD)hook_SceneCreateEntities;
+    DWORD hookAddr = (DWORD)hook_BoardSetup;
     DWORD offset = hookAddr - (target + 5);
     memcpy(src + 1, &offset, 4);
     src[5] = 0x90;                        /* NOP */
