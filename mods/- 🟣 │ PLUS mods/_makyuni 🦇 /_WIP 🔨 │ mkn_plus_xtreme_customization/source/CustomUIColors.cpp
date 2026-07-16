@@ -1,9 +1,9 @@
 /*
  * CustomUIColors.cpp — HB+ v2.0 Mod
  *
- * Reads custom_ui_colors.txt and patches menu UI colors in Hamsterball.
+ * Reads mkn_plus_xtreme_customization.txt and patches menu UI colors in Hamsterball.
  *
- * Config format (custom_ui_colors.txt):
+ * Config format (mkn_plus_xtreme_customization.txt):
  *   - LOADING SCREEN -
  *   "Click here" button - Off = #FFFFFF
  *   "Click here" button - On = #FFFFFF
@@ -204,9 +204,9 @@ static void init_config_path(void)
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char* p = strrchr(g_config_path, '\\');
     if (p) {
-        strcpy(p + 1, "custom_ui_colors.txt");
+        strcpy(p + 1, "mkn_plus_xtreme_customization.txt");
     } else {
-        strcpy(g_config_path, "custom_ui_colors.txt");
+        strcpy(g_config_path, "mkn_plus_xtreme_customization.txt");
     }
 }
 

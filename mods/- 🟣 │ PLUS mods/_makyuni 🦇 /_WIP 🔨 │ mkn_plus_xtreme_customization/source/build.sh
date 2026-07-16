@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 # Disable static_asserts in header (MinGW pack alignment differs)
 sed -i 's/^static_assert/\/\/ static_assert/' HamsterballAPI.h
 
-i686-w64-mingw32-g++ -shared -o custom_ui_colors.dll CustomUIColors_MinGW.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mkn_plus_xtreme_customization.dll CustomUIColors_MinGW.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \
@@ -25,4 +25,4 @@ i686-w64-mingw32-g++ -shared -o custom_ui_colors.dll CustomUIColors_MinGW.cpp no
   -Wl,--exclude-symbols,_strchr -Wl,--exclude-symbols,_strstr \
   -Wl,--exclude-symbols,_strrchr -Wl,--exclude-symbols,_memcmp
 
-echo "Build complete: custom_ui_colors.dll"
+echo "Build complete: mkn_plus_xtreme_customization.dll"
