@@ -1,6 +1,17 @@
-# LevelFeatures_Loader (v6)
+# LevelFeatures_Loader (v7)
 
 Universal cross-level object injection and vtable replacement for Hamsterball. Replaces all 15 per-level constructors **and** 4 vtable slots (Board_Update, RaceState, DispatchCollision, CreateDynamicObjects) with universal handlers, enabling config-driven level features without recompilation.
+
+## What's New in v7
+
+- **Per-level structural init**: All per-level constructor init logic is now config-driven via `LevelData.txt`:
+  - `AthenaLists` — AthenaList_Init offsets (Tower: 4 lists, Expert: 3, Dizzy: 2, Up: 1, Sky: 1, Master: 4)
+  - `EHVector` — eh_vector_constructor_iterator arrays (Beginner/Toob: 8 bumper slots, Master: 4)
+  - `ZeroFills` — State machine variable zeroing (Tower windmill, Dizzy swirl, Toob, Sky)
+  - `AssignTex` — Level_AssignTexturesAndScales for reused meshes (Master: 5 meshes)
+  - `SoundChannel` — Sound channel allocation (Dizzy waterwheel)
+  - `BridgeParam` — Bridge tilt state machine init (Intermediate, Master)
+- **Removed hardcoded per-level special cases**: Dizzy/Tower/Expert/Sky/Master/Impossible init is now fully data-driven from the LevelData table, no more `if (raceIndex == N)` blocks.
 
 ## What's New in v6
 
@@ -138,4 +149,5 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
 - Game version: V3.6.c
 - Load mechanism: bass.dll proxy
 - The mod patches 15 allocation sites, 15 board constructor calls, 1 scene constructor call, 1 collision handler, and 60 vtable slots (15 vtables × 4 slots). All patches verify original bytes before applying.
-- **Wine/llvmpipe crash test: PASSED** — game survived 35+ seconds with offset fixes applied.
+- **Wine/llvmpipe crash test: PASSED** — game survived 35+ seconds with structural init system.
+- Per-level code paths: **untested** on Wine (DINPUT8 blocks keyboard nav). User must test on real Windows.

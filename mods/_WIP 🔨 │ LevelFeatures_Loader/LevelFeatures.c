@@ -55,6 +55,50 @@ void DebugLog(const char *msg);
 #define RVA_AthenaList_Append         0x00053810
 #define RVA_AthenaList_GetSize        0x000536A0
 #define RVA_AthenaList_GetIterator    0x000532B0
+#define RVA_eh_vector_ctor            0x000BAF59
+#define RVA_FUN_0040a870              0x0000A870
+#define RVA_Vec3List_Free             0x0000A820
+#define RVA_Level_AssignTexScales     0x00011BA0
+
+/* CreateDynamicObjects ctor RVAs */
+#define RVA_Tipper_ctor              0x00037960
+#define RVA_TipperVisual_ctor        0x000661a0
+#define RVA_Gluebie_ctor             0x00037cb0
+#define RVA_Catapult_ctor            0x00037e10
+#define RVA_Mace_ctor                0x00038750
+#define RVA_Glass_Level_ctor         0x000384a0
+#define RVA_Trapdoor_ctor            0x00038290
+#define RVA_Stands_ctor              0x00062850
+#define RVA_Bonk_ctor                0x00038850
+#define RVA_Fan_ctor                 0x00038c20
+#define RVA_SawBlade_ctor            0x00034660
+#define RVA_SawBlade_SetVariant      0x00034ab0
+#define RVA_Spinner_Level_ctor       0x000396f0
+#define RVA_Gear_Level_ctor          0x0003a150
+#define RVA_Bell_ctor                0x00034d70
+#define RVA_Odd_Lifter_ctor          0x00034e60
+#define RVA_Lifter_ctor              0x00036920
+#define RVA_SpeedCylinder_ctor       0x00036a20
+#define RVA_TimeButton_ctor          0x00036c10
+#define RVA_Rotator_ctor_Impossible  0x00035940
+#define RVA_Saw_ctor                 0x0003b780
+#define RVA_Saw2_ctor                0x0003be20
+#define RVA_Fallout_ctor             0x0003bbc0
+#define RVA_Blockdawg_ctor           0x0003c310
+#define RVA_GameLevel_ctor           0x000351f0
+#define RVA_Wavy_ctor                0x0003ad40
+#define RVA_Wavy_Configure           0x00035440
+#define RVA_NeonPlatform_ctor        0x0003e110
+#define RVA_ArenaStands_ctor         0x0003e450
+#define RVA_Popcylinder_ctor         0x000363f0
+#define RVA_PopCylinder_ctor         0x00036ee0
+#define RVA_Rotator_ctor             0x000366f0
+#define RVA_Looper_ctor              0x00035800
+#define RVA_Gear_ctor                0x00037590
+#define RVA_Pendulum_ctor            0x00037700
+#define RVA_BreakBridge_ctor         0x00036d70
+#define RVA_Level_FindObjectByName   0x00060530
+#define RVA_Sound_InitChannels       0x00034580
 
 /* Bumper physics constants */
 #define BUMPER_VEL_SCALE  4.0f
@@ -121,7 +165,6 @@ typedef enum {
     FEAT_BUMPER_DECAY  = 1 << 4,  /* Beginner/Toob/Master bumper lit decay */
     FEAT_NEON_CAM      = 1 << 5,  /* Neon ball-following camera */
     FEAT_SKY_POPCYL    = 1 << 6,  /* Sky popcylinder activator */
-    FEAT_MASTER_EXTRA  = 1 << 7,  /* Master vtable[0x90]+[0x94] calls */
 } UpdateFeature;
 
 static DWORD g_updateFeatures[16] = {0};
@@ -142,7 +185,7 @@ static const DWORD g_defaultFeatures[16] = {
     /* 11=Wobbly */      0,
     /* 12=Glass */       0,
     /* 13=Sky */         FEAT_SKY_POPCYL,
-    /* 14=Master */      FEAT_SWIRL | FEAT_BUMPER_DECAY | FEAT_BRIDGE_ANIM | FEAT_MASTER_EXTRA,
+    /* 14=Master */      FEAT_SWIRL | FEAT_BUMPER_DECAY | FEAT_BRIDGE_ANIM,
     /* 15=Impossible */  0,
 };
 
@@ -155,7 +198,6 @@ static const char *g_featureNames[] = {
     "BUMPER_DECAY",
     "NEON_CAM",
     "SKY_POPCYL",
-    "MASTER_EXTRA",
     NULL
 };
 
@@ -167,7 +209,6 @@ static DWORD g_featureBits[] = {
     FEAT_BUMPER_DECAY,
     FEAT_NEON_CAM,
     FEAT_SKY_POPCYL,
-    FEAT_MASTER_EXTRA,
 };
 
 #define NUM_FEATURES (sizeof(g_featureNames) / sizeof(g_featureNames[0]) - 1)
@@ -186,7 +227,7 @@ typedef int  (__thiscall *AthenaList_GetIterator_t)(void *list);
 typedef int  (__thiscall *AthenaList_GetSize_t)(void *list);
 typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
 typedef void *__cdecl  (*operator_new_t)(unsigned int size);
-typedef void (__fastcall *Sound_Play3D_Fn_t)(void *soundChannel, float x, float y, float z);
+typedef void (__thiscall *Sound_Play3D_Fn_t)(void *soundChannel, float x, float y, float z);
 typedef void *__fastcall (*FUN_0044fa90_t)(void *out, int app, int tarList);
 typedef void *__fastcall (*FUN_0044fb50_t)(void *out, int app, float x, int y, float z);
 typedef void (__fastcall *FUN_00405190_t)(int ball);
@@ -371,44 +412,68 @@ typedef struct {
     char meshPath[MAX_STR_LEN];
     /* Extra meshes: offset:path pairs. Path prefixes:
        bare = Level_MeshWorldCtor, RENDER = Level_RenderCtor(prev),
-       MESH: = MeshNode_ctor, SPRITE: = Sprite_ctor */
+       MESH: = MeshNode_ctor, SPRITE: = Sprite_ctor, TIPPER: = RENDER+TipperVisual_Attach */
     char meshes[MAX_MESHES_PER_LEVEL][MAX_STR_LEN];
     int meshCount;
     DWORD unlockFlagOffset;  /* 0 = none */
+    /* Per-level structural init data */
+    DWORD athenaListOffsets[8];  /* Board offsets for AthenaList_Init, terminated by 0 */
+    DWORD ehVectorOffset;         /* Board offset for eh_vector array (bumper slots), 0=none */
+    int ehVectorCount;            /* Number of eh_vector elements */
+    DWORD ehVectorStride;         /* Stride per element (0x418) */
+    DWORD zeroFillOffsets[8];     /* Board offsets to zero-fill (DWORD), terminated by 0 */
+    DWORD assignTexOffsets[8];    /* Board offsets of meshes to call Level_AssignTexturesAndScales on, 0=none */
+    DWORD soundChannelOffset;     /* Board offset for sound channel (Dizzy: 0x4BDC), 0=none */
+    DWORD bridgeParamOffset;      /* Board offset for bridge params (angle,state,counter), 0=none */
 } LevelData;
 
 static LevelData g_levelData[16] = {
     {{0}}, /* index 0 unused */
     /* 1=WarmUp */
-    {"WarmUp",0x004D04A8,"Board (Warm-Up)","WARM-UP RACE","BEGINNERRACE","Hamster Nation",{1.0f,0.0f,1.0f},"levels\\level1",{},0,0},
+    {"WarmUp",0x004D04A8,"Board (Warm-Up)","WARM-UP RACE","BEGINNERRACE","Hamster Nation",{1.0f,0.0f,1.0f},"levels\\level1",{},0,0,
+     {0},{0},0,0,{0},{0},0,0},
     /* 2=Beginner */
-    {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0},
+    {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0,
+     {0},0x436C,8,0x418,{0},{0},0,0},
     /* 3=Intermediate */
-    {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0},
+    {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0,
+     {0},{0},0,0,{0},{0},0,0x4380},
     /* 4=Dizzy */
-    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x436C:Levels\\Level3-Tipper","0x4370:RENDER","0x4BA8:Levels\\Level3-WaterWheel","0x4BAC:RENDER","0x4BC4:Levels\\Level3-Swirl","0x4BC8:RENDER","0x4374:Levels\\Level3-Gluebie"},7,0x851},
+    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x436C:Levels\\Level3-Tipper","0x4370:RENDER","0x4BA8:Levels\\Level3-WaterWheel","0x4BAC:RENDER","0x4BC4:Levels\\Level3-Swirl","0x4BC8:RENDER","0x4374:Levels\\Level3-Gluebie"},7,0x851,
+     {0x4378,0x4790,0},{0},0,0,{0x4BC0,0x4BD8,0},{0},0x4BDC,0},
     /* 5=Tower */
-    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x436C:Levels\\Level4-Catapult","0x4370:Levels\\Level4-Drawbridge","0x4374:MESH:Meshes\\YellowLink","0x4378:Levels\\Level4-Mace","0x437C:Levels\\Level4-Windmill","0x4390:MESH:Meshes\\Chomper","0x43B4:Levels\\Level4-Turret"},7,0},
+    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x436C:Levels\\Level4-Catapult","0x4370:Levels\\Level4-Drawbridge","0x4374:MESH:Meshes\\YellowLink","0x4378:Levels\\Level4-Mace","0x437C:Levels\\Level4-Windmill","0x4390:MESH:Meshes\\Chomper","0x43B4:Levels\\Level4-Turret"},7,0,
+     {0x43B8,0x47D0,0x4BE8,0x5000,0},{0},0,0,{0x43A0,0x43A4,0x43A8,0},{0},0,0},
     /* 6=Up */
-    {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x4784:levels\\levelup-lifter","0x4788:levels\\levelup-speedcylinder","0x478C:levels\\levelup-button"},3,0x853},
+    {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x4784:levels\\levelup-lifter","0x4788:levels\\levelup-speedcylinder","0x478C:levels\\levelup-button"},3,0x853,
+     {0x436C,0},{0},0,0,{0},{0},0,0},
     /* 7=Neon */
-    {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x4374:Levels\\LevelDark-NeonPlatform","0x4378:Levels\\LevelDark-DFloor1","0x437C:Levels\\LevelDark-DFloor2","0x4380:Levels\\LevelDark-DFloor3","0x4384:Levels\\LevelDark-DFloor4","0x4388:Levels\\LevelDark-Trode"},6,0},
+    {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x4374:Levels\\LevelDark-NeonPlatform","0x4378:Levels\\LevelDark-DFloor1","0x437C:Levels\\LevelDark-DFloor2","0x4380:Levels\\LevelDark-DFloor3","0x4384:Levels\\LevelDark-DFloor4","0x4388:Levels\\LevelDark-Trode"},6,0,
+     {0},{0},0,0,{0},{0},0,0},
     /* 8=Expert */
-    {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x4378:Levels\\Level5-Bridge","0x437C:RENDER","0x4BB0:MESH:meshes\\hammyjudge","0x4BB4:MESH:meshes\\hammyjudge","0x4BB8:MESH:meshes\\hammyjudge"},5,0x854},
+    {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x4378:Levels\\Level5-Bridge","0x437C:RENDER","0x4BB0:MESH:meshes\\hammyjudge","0x4BB4:MESH:meshes\\hammyjudge","0x4BB8:MESH:meshes\\hammyjudge"},5,0x854,
+     {0x4380,0x4798,0x4BBC,0},{0},0,0,{0},{0},0,0},
     /* 9=Odd */
-    {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855},
+    {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855,
+     {0},{0},0,0,{0},{0},0,0},
     /* 10=Toob */
-    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x436C:Levels\\Level8-Spinny","0x4370:Levels\\Level8-Saw","0x4374:Levels\\Level8-Fallout","0x4378:Levels\\Level8-Blockdawg1","0x437C:Levels\\Level8-Blockdawg2"},5,0x856},
+    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x436C:Levels\\Level8-Spinny","0x4370:Levels\\Level8-Saw","0x4374:Levels\\Level8-Fallout","0x4378:Levels\\Level8-Blockdawg1","0x437C:Levels\\Level8-Blockdawg2"},5,0x856,
+     {0},0x438C,8,0x418,{0x4380,0x4384,0x4388,0},{0},0,0},
     /* 11=Wobbly */
-    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x436C:Levels\\Level7-Wobbly1","0x4370:Levels\\Level7-Wobbly2","0x4374:Levels\\Level7-Wobbly3","0x4378:Levels\\Level7-Wobbly4","0x437C:Levels\\Level7-Wobbly5","0x4380:Levels\\Level7-Wobbly6","0x4384:Levels\\Level7-Wobbly7"},7,0x857},
+    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x436C:Levels\\Level7-Wobbly1","0x4370:Levels\\Level7-Wobbly2","0x4374:Levels\\Level7-Wobbly3","0x4378:Levels\\Level7-Wobbly4","0x437C:Levels\\Level7-Wobbly5","0x4380:Levels\\Level7-Wobbly6","0x4384:Levels\\Level7-Wobbly7"},7,0x857,
+     {0},{0},0,0,{0},{0},0,0},
     /* 12=Glass */
-    {"Glass",0x004D1F90,"Board (Glass)","GLASS RACE","GLASSRACE","Glass Theme",{1.0f,0.0f,1.0f},"levels\\levelglass",{},0,0},
+    {"Glass",0x004D1F90,"Board (Glass)","GLASS RACE","GLASSRACE","Glass Theme",{1.0f,0.0f,1.0f},"levels\\levelglass",{},0,0,
+     {0},{0},0,0,{0},{0},0,0},
     /* 13=Sky */
-    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x436C:MESH:meshes\\skypillar","0x4370:MESH:meshes\\magnifyingglass","0x4384:levels\\level9-popcylinder1","0x4388:levels\\level9-popcylinder2","0x438C:levels\\level9-trapdoor","0x4374:SPRITE:textures\\clouds.png"},6,0x858},
+    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x436C:MESH:meshes\\skypillar","0x4370:MESH:meshes\\magnifyingglass","0x4384:levels\\level9-popcylinder1","0x4388:levels\\level9-popcylinder2","0x438C:levels\\level9-trapdoor","0x4374:SPRITE:textures\\clouds.png"},6,0x858,
+     {0x4394,0},{0},0,0,{0x47AC,0x47F0,0x47F4,0},{0},0,0},
     /* 14=Master */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x436C:Levels\\Level2-Bridge","0x4370:TIPPER:","0x4374:Levels\\Level10-2PBridge","0x4378:RENDER","0x4394:Levels\\Level3-Tipper","0x4398:RENDER","0x5410:Levels\\Level10-Bridge1","0x5414:Levels\\Level10-Bridge2","0x5420:levels\\level9-popcylinder1","0x5424:levels\\level9-popcylinder2","0x5840:Levels\\Level8-Blockdawg1","0x5844:Levels\\Level8-Blockdawg2","0x5848:Levels\\Level4-Catapult","0x607C:Levels\\Level3-Gluebie"},14,0x859},
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x436C:Levels\\Level2-Bridge","0x4370:TIPPER:","0x4374:Levels\\Level10-2PBridge","0x4378:RENDER","0x4394:Levels\\Level3-Tipper","0x4398:RENDER","0x5410:Levels\\Level10-Bridge1","0x5414:Levels\\Level10-Bridge2","0x5420:levels\\level9-popcylinder1","0x5424:levels\\level9-popcylinder2","0x5840:Levels\\Level8-Blockdawg1","0x5844:Levels\\Level8-Blockdawg2","0x5848:Levels\\Level4-Catapult","0x607C:Levels\\Level3-Gluebie"},14,0x859,
+     {0x5428,0x584C,0x5C64,0x6080,0},0x439C,4,0x418,{0x4388,0x438C,0x4390,0},{0x436C,0x4394,0x5420,0x5424,0x5848,0},0,0x4388},
     /* 15=Impossible */
-    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x436C:Levels\\LevelImpossible-Looper","0x4370:Levels\\LevelImpossible-Gear","0x4374:Levels\\LevelImpossible-BigGear","0x4378:Levels\\LevelImpossible-Rotator","0x437C:Levels\\LevelImpossible-Pendulum"},5,0},
+    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x436C:Levels\\LevelImpossible-Looper","0x4370:Levels\\LevelImpossible-Gear","0x4374:Levels\\LevelImpossible-BigGear","0x4378:Levels\\LevelImpossible-Rotator","0x437C:Levels\\LevelImpossible-Pendulum"},5,0,
+     {0},{0},0,0,{0},{0},0,0},
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -454,6 +519,17 @@ static int my_strnicmp(const char *a, const char *b, int n) {
     return 0;
 }
 
+static int my_stricmp(const char *a, const char *b) {
+    while (*a && *b) {
+        char ca = *a, cb = *b;
+        if (ca >= 'a' && ca <= 'z') ca -= 32;
+        if (cb >= 'a' && cb <= 'z') cb -= 32;
+        if (ca != cb) return (unsigned char)ca - (unsigned char)cb;
+        a++; b++;
+    }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
 static void my_strncpy(char *dst, const char *src, int max) {
     int i;
     for (i = 0; i < max - 1 && src[i]; i++) dst[i] = src[i];
@@ -497,11 +573,11 @@ static int GetCurrentLevel(void *board) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void LoadConfig(void) {
-    memset(g_objectEnabled, 0, sizeof(g_objectEnabled));
-    memset(g_featuresParsed, 0, sizeof(g_featuresParsed));
     HANDLE hFile = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
+    memset(g_objectEnabled, 0, sizeof(g_objectEnabled));
+    memset(g_featuresParsed, 0, sizeof(g_featuresParsed));
     DWORD fileSize = GetFileSize(hFile, NULL);
     if (fileSize > 8192) fileSize = 8192;
     char buf[8192];
@@ -721,6 +797,68 @@ static void LoadLevelData(void) {
                     if (!sv) break;
                     tok = semi + 1;
                 }
+            } else if (my_strnicmp(key, "AthenaLists", 12) == 0) {
+                /* Parse semicolon-separated hex offsets */
+                int ai = 0;
+                char *tok = val;
+                while (*tok && ai < 8) {
+                    char *semi = tok;
+                    while (*semi && *semi != ';') semi++;
+                    char sv = *semi;
+                    *semi = '\0';
+                    trim_str(tok);
+                    if (*tok) {
+                        ld->athenaListOffsets[ai++] = (DWORD)strtoul(tok, NULL, 0);
+                    }
+                    *semi = sv;
+                    if (!sv) break;
+                    tok = semi + 1;
+                }
+            } else if (my_strnicmp(key, "EHVector", 8) == 0) {
+                /* Format: 0xOFFSET:COUNT:STRIDE */
+                ld->ehVectorOffset = (DWORD)strtoul(val, NULL, 0);
+                char *c1 = strchr(val, ':');
+                if (c1) {
+                    ld->ehVectorCount = atoi(c1 + 1);
+                    char *c2 = strchr(c1 + 1, ':');
+                    if (c2) ld->ehVectorStride = (DWORD)strtoul(c2 + 1, NULL, 0);
+                }
+            } else if (my_strnicmp(key, "ZeroFills", 9) == 0) {
+                int zi = 0;
+                char *tok = val;
+                while (*tok && zi < 8) {
+                    char *semi = tok;
+                    while (*semi && *semi != ';') semi++;
+                    char sv = *semi;
+                    *semi = '\0';
+                    trim_str(tok);
+                    if (*tok) {
+                        ld->zeroFillOffsets[zi++] = (DWORD)strtoul(tok, NULL, 0);
+                    }
+                    *semi = sv;
+                    if (!sv) break;
+                    tok = semi + 1;
+                }
+            } else if (my_strnicmp(key, "AssignTex", 9) == 0) {
+                int ti = 0;
+                char *tok = val;
+                while (*tok && ti < 8) {
+                    char *semi = tok;
+                    while (*semi && *semi != ';') semi++;
+                    char sv = *semi;
+                    *semi = '\0';
+                    trim_str(tok);
+                    if (*tok) {
+                        ld->assignTexOffsets[ti++] = (DWORD)strtoul(tok, NULL, 0);
+                    }
+                    *semi = sv;
+                    if (!sv) break;
+                    tok = semi + 1;
+                }
+            } else if (my_strnicmp(key, "SoundChannel", 12) == 0) {
+                ld->soundChannelOffset = (DWORD)strtoul(val, NULL, 0);
+            } else if (my_strnicmp(key, "BridgeParam", 11) == 0) {
+                ld->bridgeParamOffset = (DWORD)strtoul(val, NULL, 0);
             }
         }
     next_ld_line:
@@ -748,7 +886,15 @@ static void GenerateLevelData(void) {
         "# Meshes format: 0xOFFSET:PATH;0xOFFSET:PATH;...\n"
         "# Path types: bare=Level_MeshWorldCtor, RENDER=Level_RenderCtor(prev),\n"
         "#   TIPPER:=Level_RenderCtor(prev)+TipperVisual_Attach (bridge visual),\n"
-        "#   MESH:path=MeshNode_ctor, SPRITE:path=Sprite_ctor\n\n";
+        "#   MESH:path=MeshNode_ctor, SPRITE:path=Sprite_ctor\n"
+        "#\n"
+        "# Structural init fields (auto-generated, editable):\n"
+        "#   AthenaLists=0xOFF;0xOFF;...  — AthenaList_Init offsets\n"
+        "#   EHVector=0xOFF:COUNT:STRIDE  — eh_vector array (bumper slots)\n"
+        "#   ZeroFills=0xOFF;0xOFF;...   — State vars to zero\n"
+        "#   AssignTex=0xOFF;0xOFF;...    — Mesh offsets for Level_AssignTexturesAndScales\n"
+        "#   SoundChannel=0xOFF           — Sound channel allocation offset\n"
+        "#   BridgeParam=0xOFF            — Bridge tilt state machine offset\n\n";
     DWORD written;
     WriteFile(hFile, header, strlen(header), &written, NULL);
 
@@ -773,7 +919,47 @@ static void GenerateLevelData(void) {
         for (j = 0; j < ld->meshCount; j++) {
             pos += sprintf(line + pos, "%s%s", j > 0 ? ";" : "", ld->meshes[j]);
         }
-        pos += sprintf(line + pos, "\n\n");
+        pos += sprintf(line + pos, "\n");
+
+        /* Structural init fields */
+        if (ld->athenaListOffsets[0]) {
+            pos += sprintf(line + pos, "AthenaLists=");
+            int ai;
+            for (ai = 0; ai < 8 && ld->athenaListOffsets[ai]; ai++) {
+                pos += sprintf(line + pos, "%s0x%X", ai > 0 ? ";" : "",
+                               ld->athenaListOffsets[ai]);
+            }
+            pos += sprintf(line + pos, "\n");
+        }
+        if (ld->ehVectorOffset) {
+            pos += sprintf(line + pos, "EHVector=0x%X:%d:0x%X\n",
+                           ld->ehVectorOffset, ld->ehVectorCount, ld->ehVectorStride);
+        }
+        if (ld->zeroFillOffsets[0]) {
+            pos += sprintf(line + pos, "ZeroFills=");
+            int zi;
+            for (zi = 0; zi < 8 && ld->zeroFillOffsets[zi]; zi++) {
+                pos += sprintf(line + pos, "%s0x%X", zi > 0 ? ";" : "",
+                               ld->zeroFillOffsets[zi]);
+            }
+            pos += sprintf(line + pos, "\n");
+        }
+        if (ld->assignTexOffsets[0]) {
+            pos += sprintf(line + pos, "AssignTex=");
+            int ti;
+            for (ti = 0; ti < 8 && ld->assignTexOffsets[ti]; ti++) {
+                pos += sprintf(line + pos, "%s0x%X", ti > 0 ? ";" : "",
+                               ld->assignTexOffsets[ti]);
+            }
+            pos += sprintf(line + pos, "\n");
+        }
+        if (ld->soundChannelOffset) {
+            pos += sprintf(line + pos, "SoundChannel=0x%X\n", ld->soundChannelOffset);
+        }
+        if (ld->bridgeParamOffset) {
+            pos += sprintf(line + pos, "BridgeParam=0x%X\n", ld->bridgeParamOffset);
+        }
+        pos += sprintf(line + pos, "\n");
 
         WriteFile(hFile, line, pos, &written, NULL);
     }
@@ -920,6 +1106,27 @@ typedef void (__thiscall *Scene_RenderIfVisible_t)(int obj);
 typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
 typedef int (__thiscall *AthenaList_GetSize_t)(void *list);
 typedef int (__thiscall *AthenaList_GetIterator_t)(void *list);
+typedef void (__thiscall *eh_vector_ctor_t)(void *base, DWORD stride, int count, void *ctor_fn, void *dtor_fn);
+typedef void (__thiscall *Level_AssignTexScales_t)(void *board, void *meshWorld);
+
+/* CreateDynamicObjects ctor typedefs */
+typedef void *__thiscall (*Ctor3_t)(void *mem, int board, int meshPtr);  /* Tipper, Gluebie, Catapult, Mace, Glass_Level */
+typedef void *__thiscall (*Ctor2_t)(void *mem, int board);  /* Trapdoor */
+typedef void *__thiscall (*Ctor4f_t)(void *mem, int board, float x, float y, float z);  /* Bonk, Bell, Gear_Level */
+typedef void *__thiscall (*Ctor5f_t)(void *mem, int board, float x, float y, float z, float f);  /* Fan, Spinner_Level */
+typedef void *__thiscall (*Ctor3f_t)(void *mem, int board, float x, float y, float z, int meshPtr);  /* Rotator_Impossible, Fallout, NeonPlatform, ArenaStands, Looper, Pendulum, Lifter */
+typedef void *__thiscall (*Ctor6f_t)(void *mem, int board, float x, float y, float z, int meshPtr, int pathObj);  /* Saw, Saw2, Blockdawg */
+typedef void *__thiscall (*Ctor7f_t)(void *mem, int board, float x, float y, float z, int x2, int y2, int z2, int meshPtr);  /* Gear */
+typedef void *__thiscall (*Ctor_Str_t)(void *mem, int board, float x, float y, float z, const char *path);  /* Wavy */
+typedef void *__thiscall (*Ctor_Lifter_t)(void *mem, int board, float x, float y, float z, int meshPtr, long num);  /* Lifter (Up) */
+typedef void *__thiscall (*Ctor_SpeedCyl_t)(void *mem, int board, float x, float y, float z, int num, int meshPtr);  /* SpeedCylinder */
+typedef void *__thiscall (*Ctor_Rotator_t)(void *mem, int board, float x, float y, float z, float f, int meshPtr);  /* Rotator (Sky trapdoor) */
+typedef void *__thiscall (*Stands_ctor_t)(void *mem, int meshPtr);  /* Stands */
+typedef void *__thiscall (*TipperVisual_ctor_t)(void *mem, int renderObj);  /* TipperVisual */
+typedef int  (__thiscall *Level_FindObjectByName_t)(int meshWorld, const char *name);
+typedef void (__thiscall *SawBlade_SetVariant_t)(void *obj, int variant);
+typedef void (__thiscall *Wavy_Configure_t)(void *obj, int a, int b, int c, int d);
+typedef void (__thiscall *Sound_InitChannels_t)(void *obj, int flag);
 
 static operator_new_t g_operatorNew = NULL;
 static Level_MeshWorldCtor_t g_LevelMeshWorldCtor = NULL;
@@ -940,6 +1147,50 @@ static Scene_RenderIfVisible_t g_SceneRenderIfVisible = NULL;
 static AthenaList_Append_t g_AthenaListAppend = NULL;
 static AthenaList_GetSize_t g_AthenaListGetSize = NULL;
 static AthenaList_GetIterator_t g_AthenaListGetIterator = NULL;
+static eh_vector_ctor_t g_ehVectorCtor = NULL;
+static Level_AssignTexScales_t g_LevelAssignTexScales = NULL;
+static void *g_ehVectorCtorFn = NULL;
+static void *g_Vec3ListFree = NULL;
+
+/* CreateDynamicObjects ctor pointers */
+static Ctor3_t g_TipperCtor = NULL;
+static TipperVisual_ctor_t g_TipperVisualCtor = NULL;
+static Ctor3_t g_GluebieCtor = NULL;
+static Ctor3_t g_CatapultCtor = NULL;
+static Ctor3_t g_MaceCtor = NULL;
+static Ctor3_t g_GlassLevelCtor = NULL;
+static Ctor2_t g_TrapdoorCtor = NULL;
+static Stands_ctor_t g_StandsCtor = NULL;
+static Ctor4f_t g_BonkCtor = NULL;
+static Ctor5f_t g_FanCtor = NULL;
+static Ctor4f_t g_SawBladeCtor = NULL;
+static SawBlade_SetVariant_t g_SawBladeSetVariant = NULL;
+static Ctor5f_t g_SpinnerLevelCtor = NULL;
+static Ctor4f_t g_GearLevelCtor = NULL;
+static Ctor4f_t g_BellCtor = NULL;
+static Ctor4f_t g_OddLifterCtor = NULL;
+static Ctor_Lifter_t g_LifterCtor = NULL;
+static Ctor_SpeedCyl_t g_SpeedCylinderCtor = NULL;
+static Ctor3f_t g_TimeButtonCtor = NULL;
+static Ctor3f_t g_RotatorImpossibleCtor = NULL;
+static Ctor6f_t g_SawCtor = NULL;
+static Ctor6f_t g_Saw2Ctor = NULL;
+static Ctor3f_t g_FalloutCtor = NULL;
+static Ctor6f_t g_BlockdawgCtor = NULL;
+static Ctor3f_t g_GameLevelCtor = NULL;
+static Ctor_Str_t g_WavyCtor = NULL;
+static Wavy_Configure_t g_WavyConfigure = NULL;
+static Ctor3f_t g_NeonPlatformCtor = NULL;
+static Ctor3f_t g_ArenaStandsCtor = NULL;
+static Ctor3f_t g_PopcylinderCtor = NULL;
+static Ctor3f_t g_PopCylinderCtor = NULL;
+static Ctor_Rotator_t g_RotatorCtor = NULL;
+static Ctor3f_t g_LooperCtor = NULL;
+static Ctor7f_t g_GearCtor = NULL;
+static Ctor3f_t g_PendulumCtor = NULL;
+static Ctor3f_t g_BreakBridgeCtor = NULL;
+static Level_FindObjectByName_t g_LevelFindObjectByName = NULL;
+static Sound_InitChannels_t g_SoundInitChannels = NULL;
 
 /* Forward declaration */
 static void UniversalPostSetup(void *board);
@@ -1115,37 +1366,72 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         }
     }
 
-    /* Special: Impossible sets board+0x4348=1 */
-    if (raceIndex == 15) {
-        *(char *)((char *)mem + 0x4348) = 1;
-    }
+    /* Step 9: Per-level structural init (AthenaLists, eh_vector arrays, zero-fills) */
 
-    /* Special: Master sets board+0x29C0=0x449C4000 */
-    if (raceIndex == 14) {
-        *(DWORD *)((char *)mem + 0x29C0) = 0x449C4000;
-    }
-
-    /* Special: Dizzy (4) — AthenaList_Init, sound channel, swirl state */
-    if (raceIndex == 4) {
-        /* AthenaList_Init at board+0x4378 and board+0x4790 */
-        if (g_AthenaListInit) {
-            g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
-            g_AthenaListInit((void *)((char *)mem + 0x4790), 0);
+    /* 9a: AthenaList_Init for each listed offset */
+    if (g_AthenaListInit) {
+        int ai;
+        for (ai = 0; ai < 8 && ld->athenaListOffsets[ai]; ai++) {
+            g_AthenaListInit((void *)((char *)mem + ld->athenaListOffsets[ai]), 0);
         }
-        /* Sound channel for waterwheel */
+    }
+
+    /* 9b: eh_vector_constructor_iterator for bumper slot arrays */
+    if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&
+        ld->ehVectorOffset && ld->ehVectorCount > 0) {
+        g_ehVectorCtor((void *)((char *)mem + ld->ehVectorOffset),
+                       ld->ehVectorStride, ld->ehVectorCount,
+                       g_ehVectorCtorFn, g_Vec3ListFree);
+    }
+
+    /* 9c: Zero-fill state machine variables */
+    {
+        int zi;
+        for (zi = 0; zi < 8 && ld->zeroFillOffsets[zi]; zi++) {
+            *(DWORD *)((char *)mem + ld->zeroFillOffsets[zi]) = 0;
+        }
+    }
+
+    /* 9d: Level_AssignTexturesAndScales for reused meshes (Master) */
+    if (g_LevelAssignTexScales) {
+        int ti;
+        for (ti = 0; ti < 8 && ld->assignTexOffsets[ti]; ti++) {
+            DWORD meshPtr = *(DWORD *)((char *)mem + ld->assignTexOffsets[ti]);
+            if (meshPtr && !IsBadReadPtr((void *)meshPtr, 4)) {
+                g_LevelAssignTexScales(mem, (void *)meshPtr);
+            }
+        }
+    }
+
+    /* 9e: Sound channel allocation (Dizzy waterwheel) */
+    if (ld->soundChannelOffset && g_SoundGetNextChannel) {
         DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
-        if (appVal && !IsBadReadPtr((void *)appVal, 0x500) && g_SoundGetNextChannel) {
+        if (appVal && !IsBadReadPtr((void *)appVal, 0x500)) {
             DWORD soundDevice = *(DWORD *)(appVal + 0x490);
             if (soundDevice) {
                 int channel = g_SoundGetNextChannel((void *)soundDevice);
-                *(int *)((char *)mem + 0x4BDC) = channel;
+                *(int *)((char *)mem + ld->soundChannelOffset) = channel;
                 if (channel && g_SceneRenderIfVisible)
                     g_SceneRenderIfVisible(channel);
             }
         }
-        /* Swirl state init */
-        *(DWORD *)((char *)mem + 0x4BC0) = 0;
-        *(DWORD *)((char *)mem + 0x4BD8) = 0;
+    }
+
+    /* 9f: Bridge parameter init (Intermediate 45.0,0,50 / Master 45.0,0,50 at different offset) */
+    if (ld->bridgeParamOffset) {
+        *(DWORD *)((char *)mem + ld->bridgeParamOffset)     = 0x42340000;  /* 45.0f */
+        *(DWORD *)((char *)mem + ld->bridgeParamOffset + 4) = 0;           /* state=0 */
+        *(DWORD *)((char *)mem + ld->bridgeParamOffset + 8) = 0x32;        /* counter=50 */
+    }
+
+    /* 9g: Special per-level hardcoded values */
+    /* Impossible sets board+0x4348=1 */
+    if (raceIndex == 15) {
+        *(char *)((char *)mem + 0x4348) = 1;
+    }
+    /* Master sets board+0x29C0=0x449C4000 */
+    if (raceIndex == 14) {
+        *(DWORD *)((char *)mem + 0x29C0) = 0x449C4000;
     }
 }
 
@@ -1816,11 +2102,12 @@ static void Feature_BadBallSpawner(void *board, int level) {
     /* Set trajectory */
     g_BallSetTrajectory(badball, 0x41EF8A, spawnX, spawnY, spawnZ, 0.0f);
 
-    /* Set badball fields */
+    /* Set badball fields — store IEEE 754 bits, NOT int casts */
     int *bb = (int *)badball;
-    bb[0x5A] = (int)(spawnY + 24.0f);
-    bb[0x59] = (int)spawnX;
-    bb[0x5B] = (int)spawnZ;
+    float spawnYPlus24 = spawnY + 24.0f;
+    memcpy(&bb[0x5A], &spawnYPlus24, sizeof(int));
+    memcpy(&bb[0x59], &spawnX, sizeof(int));
+    memcpy(&bb[0x5B], &spawnZ, sizeof(int));
     bb[0x9E] = 0x3F000000;  /* 0.5f */
     bb[0x9F] = 0x3DCCCCCD;  /* 0.1f */
     bb[0xA1] = 0x41C00000;  /* 24.0f */
@@ -2134,21 +2421,672 @@ void __fastcall UniversalRaceState(void *board) {
  * level's objects are created exactly as the original game intended.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Original per-level CreateDynamicObjects function pointers (saved before patching) */
-typedef void (__thiscall *CreateDynamicObjects_t)(void *board, char *name, void *out1, void *out2, int *meshData);
-static CreateDynamicObjects_t g_origCreateDynamicObjects[16] = {NULL};
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal CreateDynamicObjects (Slot 33) — replaces all 15 per-level handlers
+ *
+ * Matches S1 object names and calls the appropriate ctor directly.
+ * This enables cross-level object injection — any object from any level
+ * can be used on any other level via LevelData.txt mesh configuration.
+ * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* The universal handler: look up the level and delegate to original handler */
-void __fastcall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *meshData) {
+void __fastcall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
+    if (!name || !out1 || !out2 || !s1data) return;
     int level = GetCurrentLevel(board);
-    if (level == 0 || level > 15) return;
+    if (level == 0 || level > 15) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
 
-    /* Delegate to the original per-level handler */
-    CreateDynamicObjects_t orig = g_origCreateDynamicObjects[level];
-    if (orig) {
-        /* Call as __thiscall: ECX=board, stack params */
-        orig(board, name, out1, out2, meshData);
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    int difficulty = (app && !IsBadReadPtr((void*)app, 0x500)) ? *(int *)(app + APP_DIFFICULTY) : 0;
+    int meshWorld = *(int *)((char *)board + BOARD_MESHWORLD);
+
+    /* Extract position from S1 data: +4=X, +8=Y, +0xC=Z, +0x10=X2, +0x14=Y2, +0x18=Z2 */
+    float x = *(float *)(s1data + 1);
+    float y = *(float *)(s1data + 2);
+    float z = *(float *)(s1data + 3);
+    float x2 = *(float *)(s1data + 4);
+    float y2 = *(float *)(s1data + 5);
+    float z2 = *(float *)(s1data + 6);
+    float fparam = *(float *)(s1data + 5);  /* same as y2 for some ctors */
+
+    void *obj = NULL;
+    int renderOut = 0;
+
+    /* ── TIPPER (Dizzy, Master) ── */
+    if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
+        int meshOff = (level == 14) ? 0x4394 : 0x436C;
+        int renderOff = (level == 14) ? 0x4398 : 0x4370;
+        void *mem = g_operatorNew(0x1104);
+        if (mem) {
+            obj = g_TipperCtor(mem, (int)board, *(int*)((char*)board + meshOff));
+            DWORD *o = (DWORD *)obj;
+            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            o[0x439] = *(DWORD*)&x2; o[0x43A] = *(DWORD*)&y2; o[0x43B] = *(DWORD*)&z2;
+            void *vmem = g_operatorNew(0x10D0);
+            if (vmem) {
+                void *vis = g_TipperVisualCtor(vmem, *(int*)((char*)board + renderOff));
+                o[0x435] = (DWORD)vis;
+                g_TipperVisualAttach(vis, (int)obj);
+            }
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = (int)renderOut;
+        return;
     }
+
+    /* ── WATERWHEEL (Dizzy) ── */
+    if (my_strnicmp(name, "WATERWHEEL", 10) == 0) {
+        obj = *(void **)((char *)board + 0x4BA8);
+        renderOut = *(int *)((char *)board + 0x4BAC);
+        *(float *)((char *)board + 0x4BB0) = x;
+        *(float *)((char *)board + 0x4BB4) = y;
+        *(float *)((char *)board + 0x4BB8) = z;
+        *(DWORD *)((char *)board + 0x4BBC) = 0;
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SWIRL (Dizzy) ── */
+    if (my_strnicmp(name, "SWIRL", 5) == 0) {
+        obj = *(void **)((char *)board + 0x4BC4);
+        renderOut = *(int *)((char *)board + 0x4BC8);
+        *(float *)((char *)board + 0x4BCC) = x;
+        *(float *)((char *)board + 0x4BD0) = y;
+        *(float *)((char *)board + 0x4BD4) = z;
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── GLUEBIE (Dizzy, Master) ── */
+    if (my_strnicmp(name, "GLUEBIE", 7) == 0) {
+        if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        int meshOff = (level == 14) ? 0x607C : 0x4374;
+        void *mem = g_operatorNew(0x110C);
+        if (mem) {
+            obj = g_GluebieCtor(mem, (int)board, *(int*)((char*)board + meshOff));
+            DWORD *o = (DWORD *)obj;
+            o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
+            int listOff = (level == 14) ? 0x6080 : 0x4378;
+            g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── CATAPULT (Tower, Master) ── */
+    if (my_strnicmp(name, "CATAPULT", 8) == 0) {
+        int meshOff = (level == 14) ? 0x5848 : 0x436C;
+        void *mem = g_operatorNew(0x1108);
+        if (mem) {
+            obj = g_CatapultCtor(mem, (int)board, *(int*)((char*)board + meshOff));
+            DWORD *o = (DWORD *)obj;
+            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            if (level == 14) o[0x440] = 1;
+            int listOff = (level == 14) ? 0x584C : 0x43B8;
+            g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = o[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── MACE (Tower) ── */
+    if (my_strnicmp(name, "MACE", 4) == 0 && difficulty != 0) {
+        void *mem = g_operatorNew(0x110C);
+        if (mem) {
+            obj = g_MaceCtor(mem, (int)board, *(int*)((char*)board + 0x4378));
+            DWORD *o = (DWORD *)obj;
+            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            g_AthenaListAppend((void*)((char*)board + 0x5000), (int)obj);
+            if (g_AthenaListGetSize((void*)((char*)board + 0x5000)) == 1) {
+                o[0x43A] = 0x42A00000; o[0x43D] = 1; o[0x43E] = 0x32;
+            }
+            renderOut = o[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── DRAWBRIDGE (Tower) ── */
+    if (my_strnicmp(name, "DRAWBRIDGE", 10) == 0) {
+        void *mem = g_operatorNew(0x113C);
+        if (mem) {
+            obj = g_GlassLevelCtor(mem, (int)board, *(int*)((char*)board + 0x4370));
+            DWORD *o = (DWORD *)obj;
+            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            g_AthenaListAppend((void*)((char*)board + 0x4BE8), (int)obj);
+            renderOut = o[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── WINDMILL (Tower) ── */
+    if (my_strnicmp(name, "WINDMILL", 8) == 0) {
+        int mesh = *(int *)((char *)board + 0x437C);
+        void *mem = g_operatorNew(0x10D0);
+        if (mem) {
+            void *render = g_LevelRenderCtor(mem, (void*)mesh);
+            g_TipperVisualAttach(render, (void*)mesh);
+            renderOut = (int)render;
+        }
+        *(float *)((char *)board + 0x4380) = x;
+        *(float *)((char *)board + 0x4384) = y;
+        *(float *)((char *)board + 0x4388) = z;
+        if (g_RNG) *(float *)((char *)board + 0x438C) = (float)g_RNG((void*)0x4F7360, 0x168, 0);
+        *(int*)out1 = mesh; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── TRAPDOOR (Tower) ── */
+    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && level != 13) {
+        void *mem = g_operatorNew(0x10F8);
+        if (mem) {
+            obj = g_TrapdoorCtor(mem, (int)board);
+            DWORD *o = (DWORD *)obj;
+            o[0x438] = *(DWORD*)&x; o[0x439] = *(DWORD*)&y; o[0x43A] = *(DWORD*)&z;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            g_AthenaListAppend((void*)((char*)board + 0x47D0), (int)obj);
+            renderOut = o[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0xCD4), o[0x436]);
+            g_AthenaListAppend((void*)((char*)board + 0x10EC), o[0x437]);
+            if (meshWorld) {
+                int mw = *(int *)(meshWorld + 0x480);
+                if (mw) g_AthenaListAppend((void*)(mw + 0x1C), o[0x436]);
+                int ro = *(int *)((char *)board + 0x8B0);
+                if (ro) g_AthenaListAppend((void*)(ro + 0x18), o[0x437]);
+            }
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── CHOMPER (Tower) ── */
+    if (my_strnicmp(name, "CHOMPER", 7) == 0) {
+        *(float *)((char *)board + 0x4394) = x;
+        *(float *)((char *)board + 0x4398) = y;
+        *(float *)((char *)board + 0x439C) = z;
+        float adj = *(float *)(g_moduleBase + 0xCF370);
+        *(float *)((char *)board + 0x4398) -= adj;
+        *(int*)out1 = 0; *(int*)out2 = 0;
+        return;
+    }
+
+    /* ── TURRET (Tower) ── */
+    if (my_strnicmp(name, "TURRET", 6) == 0) {
+        void *mem = g_operatorNew(0x10D0);
+        if (mem) {
+            int stands = (int)g_StandsCtor(mem, *(void **)((char *)board + 0x43B4));
+            char timerBuf[68];
+            g_TimerInit(timerBuf);
+            DWORD *vtbl = *(DWORD **)stands;
+            if (vtbl) {
+                void (__fastcall *fn8)(int, float, float, float) = (void (__fastcall *)(int, float, float, float))vtbl[2];
+                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                if (fn8) fn8(stands, x, y, z);
+                if (fn54) fn54(timerBuf);
+            }
+            void *rmem = g_operatorNew(0x10D0);
+            if (rmem) {
+                void *render = g_LevelRenderCtor(rmem, (void*)stands);
+                g_TipperVisualAttach(render, (void*)stands);
+                obj = (void*)stands;
+                renderOut = (int)render;
+            }
+            g_TimerCleanup(timerBuf);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BONK (Expert, Master) ── */
+    if (my_strnicmp(name, "BONK", 4) == 0 && difficulty != 0) {
+        void *mem = g_operatorNew(0x1200);
+        if (mem) {
+            obj = g_BonkCtor(mem, (int)board, x, y, z);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            DWORD *o = (DWORD *)obj;
+            renderOut = o[0x43E];
+            int storeOff = (level == 14) ? 0x540C : 0x436C;
+            *(void **)((char *)board + storeOff) = obj;
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── FAN (Expert) ── */
+    if (my_strnicmp(name, "FAN", 3) == 0 && difficulty != 0) {
+        void *mem = g_operatorNew(0x1188);
+        if (mem) {
+            obj = g_FanCtor(mem, (int)board, x, y, z, fparam);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            if (strstr(name, "SLOW")) ((DWORD*)obj)[0x43B] = 1;
+            if (strstr(name, "SUPER")) *(char*)((char*)obj + 0x10ED) = 1;
+            if (strstr(name, "UP") && g_SoundInitChannels) g_SoundInitChannels(obj, 1);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SAWBLADE (Expert) ── */
+    if (my_strnicmp(name, "SAWBLADE", 8) == 0 && difficulty != 0) {
+        void *mem = g_operatorNew(0x111C);
+        if (mem) {
+            obj = g_SawBladeCtor(mem, (int)board, x, y, z);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            if (strstr(name, "1")) { g_SawBladeSetVariant(obj, 1); *(void **)((char *)board + 0x4370) = obj; }
+            if (strstr(name, "2")) { g_SawBladeSetVariant(obj, 2); *(void **)((char *)board + 0x4374) = obj; }
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BRIDGE (Expert, Intermediate, Master) ── */
+    if (my_strnicmp(name, "BRIDGE", 6) == 0) {
+        if (level == 8) {
+            /* Expert: Spinner_Level_ctor */
+            void *mem = g_operatorNew(0x10FC);
+            if (mem) {
+                obj = g_SpinnerLevelCtor(mem, (int)board, x, y, z, fparam);
+                DWORD *o = (DWORD *)obj;
+                renderOut = o[0x43D];
+                if (strstr(name, "1")) g_AthenaListAppend((void*)((char*)board + 0x4380), (int)obj);
+                if (strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + 0x4798), (int)obj);
+                if (strstr(name, "NEG")) o[0x43E] = 0xBF800000;
+            }
+        } else {
+            /* Intermediate/Master: position only */
+            obj = *(void **)((char *)board + 0x436C);
+            if ((void*)((char*)board + 0x437C) != (void*)(s1data + 1)) {
+                *(float *)((char *)board + 0x437C) = x;
+                *(float *)((char *)board + 0x4380) = y;
+                *(float *)((char *)board + 0x4384) = z;
+            }
+            if (!strstr(name, "(NOCOLLIDE)"))
+                renderOut = *(int *)((char *)board + 0x4370);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── JUDGE (Expert) ── */
+    if (my_strnicmp(name, "JUDGE", 5) == 0) {
+        void *mem = g_operatorNew(0x1100);
+        if (mem) {
+            obj = g_GearLevelCtor(mem, (int)board, x, y, z);
+            g_AthenaListAppend((void*)((char*)board + 0x4BBC), (int)obj);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BELL (Expert) ── */
+    if (my_strnicmp(name, "BELL", 4) == 0) {
+        void *mem = g_operatorNew(0x10E8);
+        if (mem) {
+            obj = g_BellCtor(mem, (int)board, x, y, z);
+            *(void **)((char *)board + 0x4FD4) = obj;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── LIFTER (Odd, Up) ── */
+    if (my_strnicmp(name, "LIFTER", 6) == 0) {
+        if (level == 9) {
+            /* Odd: Odd_Lifter_ctor */
+            void *mem = g_operatorNew(0x10FC);
+            if (mem) {
+                obj = g_OddLifterCtor(mem, (int)board, x, y, z);
+                g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+                *(void **)((char *)board + 0x436C) = obj;
+                renderOut = ((DWORD*)obj)[0x435];
+            }
+        } else {
+            /* Up: Lifter_ctor with number from name */
+            long num = atol(name + 6);
+            void *mem = g_operatorNew(0x10F4);
+            if (mem) {
+                obj = g_LifterCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4784), num);
+                g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+                renderOut = ((DWORD*)obj)[0x438];
+            }
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SPINNY (Toob) ── */
+    if (my_strnicmp(name, "SPINNY", 6) == 0) {
+        void *mem = g_operatorNew(0x1508);
+        if (mem) {
+            obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x436C));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SAW (Toob) ── */
+    if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
+        int pathObj = g_LevelFindObjectByName(meshWorld, "SAWPATH");
+        void *mem = g_operatorNew(0x1110);
+        if (mem) {
+            obj = g_SawCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4370), pathObj);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(void **)((char *)board + 0x4380) = obj;
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SAW2 (Toob) ── */
+    if (my_stricmp(name, "SAW2") == 0 && difficulty != 0) {
+        int pathObj = g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH");
+        void *mem = g_operatorNew(0x1118);
+        if (mem) {
+            obj = g_Saw2Ctor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4370), pathObj);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(void **)((char *)board + 0x4384) = obj;
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── FALLOUT1 (Toob) ── */
+    if (my_strnicmp(name, "FALLOUT1", 8) == 0) {
+        void *mem = g_operatorNew(0x10E8);
+        if (mem) {
+            obj = g_FalloutCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4374));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(void **)((char *)board + 0x4388) = obj;
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BLOCKDAWG1/2/3 (Toob, Master) ── */
+    if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
+        int dawgNum = name[9] - '0';
+        int meshOff = (level == 14) ? (0x5840 + (dawgNum-1)*4) : (0x4378 + (dawgNum-1)*4);
+        char pathName[] = "DAWGPATH0";
+        pathName[8] = '0' + dawgNum;
+        int pathObj = g_LevelFindObjectByName(meshWorld, pathName);
+        void *mem = g_operatorNew(0x1154);
+        if (mem) {
+            obj = g_BlockdawgCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff), pathObj);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+            if (dawgNum == 3) *(char*)((char*)obj + 0x1152) = 1;
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── WOBBLY1-7 (Wobbly) ── */
+    if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
+        int wNum = name[6] - '0';
+        int meshOff = 0x436C + (wNum-1) * 4;
+        void *mem = g_operatorNew(0x1524);
+        if (mem) {
+            obj = g_GameLevelCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+            DWORD *o = (DWORD *)obj;
+            renderOut = o[0x435];
+            /* Per-wobbly constants */
+            static const DWORD w43a[] = {0,0,0x41000000,0,0x41700000,0x41700000,0x41200000,0x41A00000};
+            static const DWORD w43b[] = {0,0,0,0x41C80000,0,0,0x41200000,0};
+            static const DWORD w440[] = {0,0,0x42C80000,0x43160000,0x432F0000,0x431B0000,0x43160000,0x42C80000};
+            static const int w1105[] = {0,0,1,0,1,1,0,1};
+            o[0x43A] = w43a[wNum]; o[0x43B] = w43b[wNum]; o[0x440] = w440[wNum];
+            if (w1105[wNum]) *(char*)((char*)obj + 0x1105) = 1;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── WAVY1 (Wobbly) ── */
+    if (my_strnicmp(name, "WAVY1", 5) == 0) {
+        int gfx = *(int *)(app + 0x174);
+        if (gfx) *(char *)(gfx + 2000) = 1;
+        void *mem = g_operatorNew(0x1AE7C);
+        if (mem) {
+            obj = g_WavyCtor(mem, (int)board, x, y, z, "Levels\\Level7-Wavy1");
+            g_WavyConfigure(obj, 0x1C, 0x41A00000, 0x40000000, 0xC0400000);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        if (gfx) *(char *)(gfx + 2000) = 0;
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── NEONPLATFORM (Neon) ── */
+    if (my_strnicmp(name, "NEONPLATFORM", 12) == 0) {
+        void *mem = g_operatorNew(0x10EC);
+        if (mem) {
+            obj = g_NeonPlatformCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4374));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── DFLOOR1-4 (Neon) ── */
+    if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
+        int dNum = name[6] - '0';
+        int meshOff = 0x4378 + (dNum-1) * 4;
+        void *mem = g_operatorNew(0x1104);
+        if (mem) {
+            obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+            DWORD *o = (DWORD *)obj;
+            renderOut = o[0x43A];
+            if (dNum == 4) {
+                *(void **)((char *)board + 0x438C) = obj;
+                o[0x437] = 2;
+                *(DWORD *)(*(int *)((char *)board + 0x438C) + 0x10E0) = 0;
+            } else {
+                g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            }
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── TRODE (Neon) ── */
+    if (my_strnicmp(name, "TRODE", 5) == 0) {
+        void *mem = g_operatorNew(0x1104);
+        if (mem) {
+            obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4388));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x43A];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── POPCYLINDER (Sky, Master) ── */
+    if (my_strnicmp(name, "POPCYLINDER", 11) == 0) {
+        if (level == 14) {
+            /* Master */
+            void *mem = g_operatorNew(0x10E8);
+            if (mem) {
+                obj = g_PopCylinderCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x5420));
+                g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+                g_AthenaListAppend((void*)((char*)board + 0x5428), (int)obj);
+                renderOut = ((DWORD*)obj)[0x438];
+            }
+        } else if (difficulty != 0) {
+            /* Sky */
+            long idx = atol(name + 11) - 1;
+            if (idx >= 0 && idx < 16) {
+                int meshIdx = idx & 1;
+                int meshOff = 0x4384 + meshIdx * 4;
+                void *mem = g_operatorNew(0x10F4);
+                if (mem) {
+                    obj = g_PopcylinderCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+                    *(void **)((char *)board + 0x47B0 + idx * 4) = obj;
+                    g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+                    renderOut = ((DWORD*)obj)[0x438];
+                }
+            }
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── TRAPDOOR (Sky) ── */
+    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && level == 13) {
+        float dat = *(float *)(g_moduleBase + 0xCF44C);
+        void *mem = g_operatorNew(0x10F4);
+        if (mem) {
+            obj = g_RotatorCtor(mem, (int)board, x, y, z, dat - fparam, *(int*)((char*)board + 0x438C));
+            *(void **)((char *)board + 0x4390) = obj;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x43C];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SPEEDCYLINDER (Up) ── */
+    if (my_strnicmp(name, "SPEEDCYLINDER", 13) == 0) {
+        void *mem = g_operatorNew(0x150C);
+        if (mem) {
+            /* numArg from __ftol2 — use 0 as fallback */
+            obj = g_SpeedCylinderCtor(mem, (int)board, x, y, z, 0, *(int*)((char*)board + 0x4788));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x438];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── TIMEBUTTON (Up) ── */
+    if (my_strnicmp(name, "TIMEBUTTON", 10) == 0) {
+        void *mem = g_operatorNew(0x10E8);
+        if (mem) {
+            obj = g_TimeButtonCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x478C));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x438];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── LOOPER (Impossible) ── */
+    if (my_strnicmp(name, "LOOPER", 6) == 0) {
+        void *mem = g_operatorNew(0x1500);
+        if (mem) {
+            obj = g_LooperCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x436C));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── GEAR (Impossible) ── */
+    if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
+        void *mem = g_operatorNew(0x1514);
+        if (mem) {
+            obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, *(int*)((char*)board + 0x4370));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BIGGEAR (Impossible) ── */
+    if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
+        void *mem = g_operatorNew(0x1514);
+        if (mem) {
+            obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, *(int*)((char*)board + 0x4374));
+            DWORD *o = (DWORD *)obj;
+            o[0x43D] = 0x3F000000;
+            if (strstr(name, "TOUCH")) *(char*)((char*)obj + 0x544) = 1;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = o[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── ROTATOR (Impossible) ── */
+    if (my_strnicmp(name, "ROTATOR", 7) == 0) {
+        void *mem = g_operatorNew(0x1508);
+        if (mem) {
+            obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x4378));
+            DWORD *o = (DWORD *)obj;
+            o[0x43A] = 0x3F800000;
+            if (g_RNG && g_RNG((void*)0x4F7360, 2, 0) == 0)
+                o[0x43A] = 0xBF800000;
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = o[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── PENDULUM (Impossible) ── */
+    if (my_strnicmp(name, "PENDULUM", 8) == 0) {
+        void *mem = g_operatorNew(0x1504);
+        if (mem) {
+            obj = g_PendulumCtor(mem, (int)board, x, y, z, *(int*)((char*)board + 0x437C));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BBRIDGE1/2 (Master) ── */
+    if (my_strnicmp(name, "BBRIDGE", 7) == 0) {
+        int bNum = name[7] - '0';
+        int meshOff = (bNum == 1) ? 0x5410 : 0x5414;
+        int storeOff = (bNum == 1) ? 0x5418 : 0x541C;
+        void *mem = g_operatorNew(0x1100);
+        if (mem) {
+            obj = g_BreakBridgeCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(void **)((char *)board + storeOff) = obj;
+            renderOut = ((DWORD*)obj)[0x438];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── SMASHER1/2 (Glass) ── */
+    if (my_strnicmp(name, "SMASHER1", 8) == 0) {
+        *(float *)((char *)board + 0x436C) = x;
+        *(float *)((char *)board + 0x4370) = y;
+        *(float *)((char *)board + 0x4374) = z;
+        *(DWORD *)((char *)board + 0x4384) = 0;
+        *(char *)((char *)board + 0x438C) = 0;
+        *(int*)out1 = 0; *(int*)out2 = 0;
+        return;
+    }
+    if (my_strnicmp(name, "SMASHER2", 8) == 0) {
+        *(float *)((char *)board + 0x4378) = x;
+        *(float *)((char *)board + 0x437C) = y;
+        *(float *)((char *)board + 0x4380) = z;
+        *(DWORD *)((char *)board + 0x4388) = 0xC2B40000;
+        *(char *)((char *)board + 0x438D) = 0;
+        *(int*)out1 = 0; *(int*)out2 = 0;
+        return;
+    }
+
+    /* Unknown object — no-op */
+    *(int*)out1 = 0; *(int*)out2 = 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2498,8 +3436,7 @@ void DebugLog(const char *msg) {
     CloseHandle(hFile);
 }
 
-/* Forward declaration for auto-test */
-static void InstallAutoTestHook(void);
+/* Forward declaration for auto-test (unused, kept for future testing) */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Vtable patching — replace slots 1, 19, 29, 33 in all 15 level vtables
@@ -2525,10 +3462,10 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 19 (offset +0x4C): RaceState → UniversalRaceState
-         * Save original pointer for base handler delegation */
+         * No need to save original — UniversalRaceState calls the shared
+         * g_BoardUpdateRaceState directly (same function for all levels). */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x4C);
-            g_origDispatchCollision[i] = NULL; /* init */
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             /* We don't save slot 19 — UniversalRaceState calls g_BoardUpdateRaceState directly */
             *slot = (DWORD)&UniversalRaceState;
@@ -2548,10 +3485,9 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 33 (offset +0x84): CreateDynamicObjects → UniversalCreateDynamicObjects
-         * Save original pointer for delegation */
+         * No delegation — universal handler recognizes all object names */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x84);
-            g_origCreateDynamicObjects[i] = (CreateDynamicObjects_t)*slot;
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             *slot = (DWORD)&UniversalCreateDynamicObjects;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
@@ -2588,6 +3524,50 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_AthenaListAppend = (AthenaList_Append_t)(g_moduleBase + RVA_AthenaList_Append);
     g_AthenaListGetSize = (AthenaList_GetSize_t)(g_moduleBase + RVA_AthenaList_GetSize);
     g_AthenaListGetIterator = (AthenaList_GetIterator_t)(g_moduleBase + RVA_AthenaList_GetIterator);
+    g_ehVectorCtor = (eh_vector_ctor_t)(g_moduleBase + RVA_eh_vector_ctor);
+    g_ehVectorCtorFn = (void *)(g_moduleBase + RVA_FUN_0040a870);
+    g_Vec3ListFree = (void *)(g_moduleBase + RVA_Vec3List_Free);
+    g_LevelAssignTexScales = (Level_AssignTexScales_t)(g_moduleBase + RVA_Level_AssignTexScales);
+
+    /* Resolve CreateDynamicObjects ctors */
+    g_TipperCtor = (Ctor3_t)(g_moduleBase + RVA_Tipper_ctor);
+    g_TipperVisualCtor = (TipperVisual_ctor_t)(g_moduleBase + RVA_TipperVisual_ctor);
+    g_GluebieCtor = (Ctor3_t)(g_moduleBase + RVA_Gluebie_ctor);
+    g_CatapultCtor = (Ctor3_t)(g_moduleBase + RVA_Catapult_ctor);
+    g_MaceCtor = (Ctor3_t)(g_moduleBase + RVA_Mace_ctor);
+    g_GlassLevelCtor = (Ctor3_t)(g_moduleBase + RVA_Glass_Level_ctor);
+    g_TrapdoorCtor = (Ctor2_t)(g_moduleBase + RVA_Trapdoor_ctor);
+    g_StandsCtor = (Stands_ctor_t)(g_moduleBase + RVA_Stands_ctor);
+    g_BonkCtor = (Ctor4f_t)(g_moduleBase + RVA_Bonk_ctor);
+    g_FanCtor = (Ctor5f_t)(g_moduleBase + RVA_Fan_ctor);
+    g_SawBladeCtor = (Ctor4f_t)(g_moduleBase + RVA_SawBlade_ctor);
+    g_SawBladeSetVariant = (SawBlade_SetVariant_t)(g_moduleBase + RVA_SawBlade_SetVariant);
+    g_SpinnerLevelCtor = (Ctor5f_t)(g_moduleBase + RVA_Spinner_Level_ctor);
+    g_GearLevelCtor = (Ctor4f_t)(g_moduleBase + RVA_Gear_Level_ctor);
+    g_BellCtor = (Ctor4f_t)(g_moduleBase + RVA_Bell_ctor);
+    g_OddLifterCtor = (Ctor4f_t)(g_moduleBase + RVA_Odd_Lifter_ctor);
+    g_LifterCtor = (Ctor_Lifter_t)(g_moduleBase + RVA_Lifter_ctor);
+    g_SpeedCylinderCtor = (Ctor_SpeedCyl_t)(g_moduleBase + RVA_SpeedCylinder_ctor);
+    g_TimeButtonCtor = (Ctor3f_t)(g_moduleBase + RVA_TimeButton_ctor);
+    g_RotatorImpossibleCtor = (Ctor3f_t)(g_moduleBase + RVA_Rotator_ctor_Impossible);
+    g_SawCtor = (Ctor6f_t)(g_moduleBase + RVA_Saw_ctor);
+    g_Saw2Ctor = (Ctor6f_t)(g_moduleBase + RVA_Saw2_ctor);
+    g_FalloutCtor = (Ctor3f_t)(g_moduleBase + RVA_Fallout_ctor);
+    g_BlockdawgCtor = (Ctor6f_t)(g_moduleBase + RVA_Blockdawg_ctor);
+    g_GameLevelCtor = (Ctor3f_t)(g_moduleBase + RVA_GameLevel_ctor);
+    g_WavyCtor = (Ctor_Str_t)(g_moduleBase + RVA_Wavy_ctor);
+    g_WavyConfigure = (Wavy_Configure_t)(g_moduleBase + RVA_Wavy_Configure);
+    g_NeonPlatformCtor = (Ctor3f_t)(g_moduleBase + RVA_NeonPlatform_ctor);
+    g_ArenaStandsCtor = (Ctor3f_t)(g_moduleBase + RVA_ArenaStands_ctor);
+    g_PopcylinderCtor = (Ctor3f_t)(g_moduleBase + RVA_Popcylinder_ctor);
+    g_PopCylinderCtor = (Ctor3f_t)(g_moduleBase + RVA_PopCylinder_ctor);
+    g_RotatorCtor = (Ctor_Rotator_t)(g_moduleBase + RVA_Rotator_ctor);
+    g_LooperCtor = (Ctor3f_t)(g_moduleBase + RVA_Looper_ctor);
+    g_GearCtor = (Ctor7f_t)(g_moduleBase + RVA_Gear_ctor);
+    g_PendulumCtor = (Ctor3f_t)(g_moduleBase + RVA_Pendulum_ctor);
+    g_BreakBridgeCtor = (Ctor3f_t)(g_moduleBase + RVA_BreakBridge_ctor);
+    g_LevelFindObjectByName = (Level_FindObjectByName_t)(g_moduleBase + RVA_Level_FindObjectByName);
+    g_SoundInitChannels = (Sound_InitChannels_t)(g_moduleBase + RVA_Sound_InitChannels);
 
     /* Resolve Board_Update function pointers */
     g_SceneUpdate = (Scene_Update_t)(g_moduleBase + RVA_Scene_Update);
@@ -2639,147 +3619,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     InstallVtablePatches();
     InstallHook();
     DebugLog("=== PatchThread complete ===\n");
-
-    /* Auto-test: hook App_ResetFrame to run on main thread.
-     * This bypasses the DirectInput keyboard issue on Wine/Xvfb. */
-    if (GetEnvironmentVariableA("LF_AUTOTEST", NULL, 0) > 0) {
-        DebugLog("LF_AUTOTEST detected, installing main-thread hook");
-        InstallAutoTestHook();
-    }
     return 0;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Auto-test: hooks App_ResetFrame to call App_StartPracticeRace from the
- * main thread (D3D8 requires main-thread calls). Cycles through all 15
- * levels with 15-second intervals.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-#define RVA_App_StartPracticeRace 0x00028C50
-#define RVA_App_ResetFrame        0x0006C200
-
-typedef void (__thiscall *App_StartPracticeRace_t)(void *app, int raceIndex);
-typedef void (__fastcall *App_ResetFrame_t)(void *app);
-
-static App_StartPracticeRace_t g_startPractice = NULL;
-static App_ResetFrame_t g_origResetFrame = NULL;
-static int g_autoTestLevel = 0;
-static int g_autoTestState = 0;  /* 0=waiting, 1=call function, 2=wait for load */
-static int g_autoTestFrameCount = 0;
-
-/* Called from the hook on the main thread */
-void AutoTestTick(void *app) {
-    if (g_autoTestState == 0) {
-        /* Wait 300 frames (~5 seconds at 60fps) for game to init */
-        g_autoTestFrameCount++;
-        if (g_autoTestFrameCount == 1) {
-            DebugLog("AutoTest: first tick received, counting frames...");
-        }
-        if (g_autoTestFrameCount > 300) {
-            DebugLog("AutoTest: 300 frames counted, starting level tests");
-            g_autoTestState = 1;
-        }
-        return;
-    }
-
-    if (g_autoTestState == 1 && g_autoTestLevel < 15) {
-        char buf[256];
-        wsprintfA(buf, "AutoTest: starting level %d (index %d)...", g_autoTestLevel + 1, g_autoTestLevel);
-        DebugLog(buf);
-
-        g_startPractice(app, g_autoTestLevel);
-        DebugLog("AutoTest: App_StartPracticeRace returned");
-
-        g_autoTestState = 2;
-        g_autoTestFrameCount = 0;
-        return;
-    }
-
-    if (g_autoTestState == 2) {
-        g_autoTestFrameCount++;
-        /* Wait 900 frames (~15 seconds at 60fps) for level to load and run */
-        if (g_autoTestFrameCount > 900) {
-            /* Level survived 15 seconds */
-            char buf[256];
-            wsprintfA(buf, "AutoTest: Level %d PASSED", g_autoTestLevel + 1);
-            DebugLog(buf);
-
-            g_autoTestLevel++;
-            g_autoTestState = 1;  /* Start next level */
-            g_autoTestFrameCount = 0;
-        }
-        return;
-    }
-
-    if (g_autoTestLevel >= 15 && g_autoTestState != 3) {
-        DebugLog("AutoTest: ALL 15 LEVELS PASSED!");
-        g_autoTestState = 3;  /* Done */
-    }
-}
-
-/* Trampoline for App_ResetFrame hook */
-void AutoTestTick(void *app);
-unsigned char *g_resetFrameTrampoline = NULL;
-
-__attribute__((naked)) static void Hook_AppResetFrame(void) {
-    /* At hook point: ECX=gfx, ESI=App. Pass ESI as the app pointer. */
-    __asm__ __volatile__(
-        "pushl %%ecx\n\t"           /* save ECX (gfx) */
-        "pushl %%edx\n\t"           /* save EDX */
-        "pushl %%esi\n\t"           /* arg: app (ESI = App) */
-        "call  _AutoTestTick\n\t"   /* call our tick function */
-        "addl  $4, %%esp\n\t"       /* clean up arg */
-        "popl  %%edx\n\t"           /* restore EDX */
-        "popl  %%ecx\n\t"           /* restore ECX */
-        "jmpl  *_g_resetFrameTrampoline\n\t"  /* jump to original */
-        :: : "eax", "memory"
-    );
-}
-
-static void InstallAutoTestHook(void) {
-    g_startPractice = (App_StartPracticeRace_t)(g_moduleBase + RVA_App_StartPracticeRace);
-
-    /* Hook App_ResetFrame at offset 0x14 inside the function (0x46C214).
-     * At this point ECX = gfx (from MOV ECX,[ESI+0x174] earlier in the function),
-     * and ESI = App. This runs every frame including the title screen.
-     * First instruction at hook point: MOV EAX,[ECX+0x738] (6 bytes). */
-    DWORD hookAddr = g_moduleBase + RVA_App_ResetFrame + 0x14;
-    unsigned char *orig = (unsigned char *)hookAddr;
-
-    if (IsBadReadPtr(orig, 12)) {
-        DebugLog("AutoTest: can't read App_ResetFrame+0x14");
-        return;
-    }
-
-    /* Log first bytes for verification */
-    char buf[128];
-    wsprintfA(buf, "AutoTest: App_ResetFrame+0x14 bytes: %02X %02X %02X %02X %02X %02X",
-             orig[0], orig[1], orig[2], orig[3], orig[4], orig[5]);
-    DebugLog(buf);
-
-    /* First instruction: MOV EAX,[ECX+0x738] = 8B 81 38 07 00 00 (6 bytes)
-     * Copy 6 bytes to trampoline, then JMP back to original+6 */
-    g_resetFrameTrampoline = VirtualAlloc(NULL, 16,
-                              MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!g_resetFrameTrampoline) {
-        DebugLog("AutoTest: VirtualAlloc failed");
-        return;
-    }
-
-    memcpy(g_resetFrameTrampoline, orig, 6);
-    g_resetFrameTrampoline[6] = 0xE9;  /* JMP */
-    *(DWORD *)(g_resetFrameTrampoline + 7) = (hookAddr + 6) - ((DWORD)g_resetFrameTrampoline + 11);
-
-    /* Patch original: JMP to our hook (5 bytes) + 1 NOP to fill 6 bytes */
-    DWORD oldProtect;
-    VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
-    orig[0] = 0xE9;
-    *(DWORD *)(orig + 1) = (DWORD)&Hook_AppResetFrame - (hookAddr + 5);
-    orig[5] = 0x90;
-    VirtualProtect(orig, 6, oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), orig, 6);
-
-    DebugLog("AutoTest: App_ResetFrame hook installed");
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
