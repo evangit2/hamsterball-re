@@ -19,7 +19,7 @@ Universal cross-level object injection and vtable replacement for Hamsterball. R
 - **Universal RaceState (Slot 19)**: Replaces all 15 per-level `RaceState` handlers. Calls `Board_UpdateRaceState` then runs feature blocks (bumper decay, neon camera, sky popcylinder activator).
 - **Universal DispatchCollision (Slot 29)**: Replaces all 15 per-level `DispatchCollision` handlers. Delegates to original per-level handlers (preserved for correct collision logic).
 - **Universal CreateDynamicObjects (Slot 33)**: Replaces all 15 per-level object factories. Delegates to original per-level handlers (preserved for correct object creation).
-- **Feature flag system**: 8 bitflags (`FEAT_BRIDGE_ANIM`, `FEAT_SWIRL`, `FEAT_WINDMILL`, `FEAT_BADBALL`, `FEAT_BUMPER_DECAY`, `FEAT_NEON_CAM`, `FEAT_SKY_POPCYL`, `FEAT_MASTER_EXTRA`) with default assignments matching original game behavior.
+- **Feature flag system**: 7 bitflags (`FEAT_BRIDGE_ANIM`, `FEAT_SWIRL`, `FEAT_WINDMILL`, `FEAT_BADBALL`, `FEAT_BUMPER_DECAY`, `FEAT_NEON_CAM`, `FEAT_SKY_POPCYL`) with default assignments matching original game behavior.
 
 ## How It Works
 
@@ -41,8 +41,8 @@ After construction, `InstallVtablePatches` overwrites 4 vtable slots in all 15 l
 |------|--------|----------|-------------------|----------|
 | 1 | +0x04 | Per-level Board_Update | `UniversalBoardUpdate` | Feature blocks (bridge, swirl, windmill, badball) |
 | 19 | +0x4C | Per-level RaceState | `UniversalRaceState` | Base `Board_UpdateRaceState` + feature blocks (bumper decay, neon cam, sky popcyl) |
-| 29 | +0x74 | Per-level DispatchCollision | `UniversalDispatchCollision` | Delegates to saved original pointer |
-| 33 | +0x84 | Per-level CreateDynamicObjects | `UniversalCreateDynamicObjects` | Delegates to saved original pointer |
+| 29 | +0x74 | Per-level DispatchCollision | `UniversalDispatchCollision` | Reimplements all 62 collision events inline, then calls global `DispatchCollisionEvents` |
+| 33 | +0x84 | Per-level CreateDynamicObjects | `UniversalCreateDynamicObjects` | Reimplements all 30+ object ctors inline (no delegation to originals) |
 
 ### Feature Blocks
 
@@ -109,10 +109,10 @@ List level numbers after `=` to enable objects for those levels. Empty `()` mean
 # Levels not listed use built-in defaults.
 # Use () to clear all features for a level.
 2 = SWIRL BUMPER_DECAY   # Add swirl to Beginner!
-14 = SWIRL BUMPER_DECAY BRIDGE_ANIM MASTER_EXTRA
+14 = SWIRL BUMPER_DECAY BRIDGE_ANIM
 ```
 
-Available features: `BRIDGE_ANIM`, `SWIRL`, `WINDMILL`, `BADBALL`, `BUMPER_DECAY`, `NEON_CAM`, `SKY_POPCYL`, `MASTER_EXTRA`.
+Available features: `BRIDGE_ANIM`, `SWIRL`, `WINDMILL`, `BADBALL`, `BUMPER_DECAY`, `NEON_CAM`, `SKY_POPCYL`.
 
 Config is re-read on every level load.
 
