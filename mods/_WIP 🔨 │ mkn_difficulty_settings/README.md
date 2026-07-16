@@ -1,86 +1,66 @@
-# Difficulty Settings Mod (v2)
+# Difficulty Settings Mod (v3)
 
-Difficulty-based entity replacement for Hamsterball. Reads a `difficulty_settings.txt` config file next to `bass.dll` that maps entity names to replacements depending on tournament difficulty (Pipsqueak / Normal / Frenzied!).
-
-## What's New in v2
-
-- **Prefix matching**: Entity names in the MeshWorld contain MW parser tags like `BADBALL(CHASE=1)(SIZE=35)`. v1 used full string comparison which never matched. v2 uses prefix matching (`strnicmp`) with boundary check, exactly like the game's own factory functions.
-- **Removed stale board dedup**: v1 skipped modification if the same board address was reused for a different level. v2 always modifies since the entity list is fresh per level.
-- **Default config matches game behavior**: EASY (Pipsqueak) now defaults to `NOTHING` for enemies, matching the vanilla game's behavior of no enemies on Pipsqueak.
+Difficulty-based **level file redirect** for Hamsterball. Instead of modifying entity names, this mod redirects which MESHWORLD file gets loaded based on tournament difficulty.
 
 ## How It Works
 
-The mod hooks `Board_Setup` (0x0041C5B0) — the dispatch function that runs **before** all entity factories (CreateBadBall, CreateMouseTrap, CreateLevelObjects, CreateExpertLevelObjects). Before the original function runs, the mod:
+### Level File Redirect
 
-1. **Reads the original difficulty** (`App+0x23C`, 0=Pipsqueak, 1=Normal, 2=Frenzied!) to select the correct replacement table.
+The mod hooks `LoadMeshWorld` (0x0045DE30) — the function that takes a level name like `levels\level1` and loads `levels\level1.meshworld`. Before loading, the mod checks:
 
-2. **Iterates the MeshWorld entity list** and replaces entity name pointers based on the config:
-   - **NOTHING**: Entity name is replaced with `"REF:NOTHING"` — no factory matches it, so the entity is silently skipped.
-   - **Replacement name** (e.g. `BONK`): Entity name is replaced — the original factory won't match, but the replacement's factory will create an object at the same position.
+1. **Are we in Tournament mode?** — Detected by checking `profile+0x10` (party flag) and `profile+0x11` (practice flag). If both are 0, we're in Tournament mode.
 
-3. **Temporarily overrides `App+0x23C` to 1 (Normal)** before calling the original function. This is necessary because the game's factory functions independently check `App+0x23C != 0` before spawning entities. On Pipsqueak, these gates would skip all factory calls entirely, making the mod's name replacements useless. The mod restores the original difficulty value immediately after entity creation completes.
+2. **What difficulty?** — Reads `App+0x23C` (0=Pipsqueak, 1=Normal, 2=Frenzied).
 
-## Config Format
+3. **Redirect based on difficulty:**
 
-```ini
-; difficulty_settings.txt
-; NOTHING = skip spawning entirely.
-; Entity names are case-insensitive. "8ball" = BadBall.
-;
-; Difficulty: EASY=Pipsqueak, NORMAL=Normal, HARD=Frenzied!
+| Difficulty | Suffix | Example |
+|---|---|---|
+| 🟢 Pipsqueak | `-easy` | `levels\level1` → `levels\level1-easy` |
+| 🟡 Normal | `-normal` | `levels\level1` → `levels\level1-normal` |
+| 🔴 Frenzied! | *(none)* | `levels\level1` (default file) |
 
-EASY
-8ball = NOTHING
-Mousetrap = NOTHING
+4. **Fallback**: If the `-easy` or `-normal` variant doesn't exist, the mod falls back to the default file (no suffix).
 
-NORMAL
-8ball = 8ball
-Mousetrap = Mousetrap
+**Non-tournament modes** (Practice/Time Trial, Party/2P) always use the default file (no suffix). This matches the vanilla game behavior.
 
-HARD
-8ball = Bonk
-Mousetrap = Mousetrap
+### Entity Spawn Fix
+
+The mod also NOPs the difficulty gates in `Board_Setup` that skip `CreateBadBalls` and `CreateMouseTrap` on Pipsqueak difficulty. This ensures entities appear on all difficulties — they're defined in the level file, just gated out by the game code.
+
+- `0x0041C9E4`: `74 07` → `90 90` (CreateBadBalls gate)
+- `0x0041CA05`: `74 07` → `90 90` (CreateMouseTrap gate)
+
+## Creating Difficulty Variants
+
+Create alternate versions of level files with the appropriate suffix:
+
+```
+levels\
+  Level1.MESHWORLD          ← default (Frenzied!, Practice, Party)
+  Level1-easy.MESHWORLD     ← Pipsqueak Tournament
+  Level1-normal.MESHWORLD   ← Normal Tournament
+  Level2.MESHWORLD
+  Level2-easy.MESHWORLD
+  Level2-normal.MESHWORLD
+  ...
 ```
 
-### Supported Entities
-
-| Config Name | Internal Name | Factory | Notes |
-|---|---|---|---|
-| `8ball` | `BADBALL` | CreateBadBall | Iterating factory |
-| `Mousetrap` | `MOUSETRAP` | CreateMouseTrap | Iterating factory |
-| `Bonk` | `BONK` | CreateLevelObjects / Expert | Per-entity |
-| `Tipper` | `TIPPER` | CreateLevelObjects | Per-entity |
-| `Bridge` | `BRIDGE` | CreateLevelObjects / Expert | Per-entity |
-| `Fan` | `FAN` | CreateExpertLevelObjects | Per-entity |
-| `Sawblade` | `SAWBLADE` | CreateExpertLevelObjects | Per-entity |
-| `Judge` | `JUDGE` | CreateExpertLevelObjects | Per-entity |
-| `Bell` | `BELL` | CreateExpertLevelObjects | Per-entity |
-| `Bbridge1` | `BBRIDGE1` | CreateLevelObjects | Per-entity |
-| `Bbridge2` | `BBRIDGE2` | CreateLevelObjects | Per-entity |
-| `PopCylinder` | `POPCYLINDER` | CreateLevelObjects | Per-entity |
-| `Blockdawg1` | `BLOCKDAWG1` | CreateLevelObjects | Per-entity |
-| `Blockdawg2` | `BLOCKDAWG2` | CreateLevelObjects | Per-entity |
-| `Catapult` | `CATAPULT` | CreateLevelObjects | Per-entity |
-| `Gluebie` | `GLUEBIE` | CreateLevelObjects | Per-entity |
+If a variant file doesn't exist, the mod falls back to the default file automatically.
 
 ## Installation
 
 1. Rename the original `bass.dll` to `bass_real.dll`
 2. Copy `bass.dll` from this mod into the game folder
-3. Edit `difficulty_settings.txt` to customize entity spawns per difficulty
-4. The mod auto-generates a default config on first launch
-
-## Config Hot-Reload
-
-The mod re-reads `difficulty_settings.txt` every 2 seconds, so you can edit the file while the game is running and changes take effect on the next race.
+3. Create `-easy` and/or `-normal` variants of level files as needed
 
 ## Technical Details
 
-- **Hook target**: `Board_Setup` at 0x0041C5B0 (`__fastcall`, ECX=board)
-- **Trampoline**: Copies original 7-byte prologue (PUSH -1 + PUSH handler), JMP back to target+7
-- **Entity list access**: `board+0x8AC → Level → +0x480 → entity_list → +0x898 (count) → +0xCA0 → *(data_array)`
+- **Hook target**: `LoadMeshWorld` at 0x0045DE30 (`__thiscall`, ECX=this, stack=levelName)
+- **Trampoline**: Copies original 8-byte prologue (MOV EAX,FS:[0] + PUSH -1), JMP back to target+8
+- **Tournament detection**: `profile+0x10==0 && profile+0x11==0` (profile at `App+0x220`)
 - **Difficulty**: `App+0x23C` (0=Pipsqueak, 1=Normal, 2=Frenzied)
-- **Name matching**: Prefix match (`strnicmp`) with boundary check — entity names contain MW parser tags like `BADBALL(CHASE=1)(SIZE=35)`, so full string comparison never matches
+- **Entity gates**: NOP JZ at 0x0041C9E4 and 0x0041CA05
 
 ## Build
 
