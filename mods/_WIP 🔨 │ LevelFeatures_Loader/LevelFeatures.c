@@ -34,7 +34,7 @@ void DebugLog(const char *msg);
  * Game addresses (RVAs)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define RVA_DispatchCollisionEvents  0x000CC5D0
+#define RVA_DispatchCollisionEvents  0x0000C5D0
 #define RVA_Sound_Play3D             0x00059860
 #define RVA_Scene_CollectByNameFilter 0x000602F0
 #define RVA_AthenaList_Init          0x00053210
