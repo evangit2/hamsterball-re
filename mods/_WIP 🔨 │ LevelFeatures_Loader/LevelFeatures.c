@@ -651,11 +651,11 @@ static LevelData g_levelData[16] = {
     /* 13=Sky */
     {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x6214:MESH:meshes\\skypillar","0x6350:MESH:meshes\\magnifyingglass","0x6308:levels\\level9-popcylinder1","0x630C:levels\\level9-popcylinder2","0x6338:levels\\level9-trapdoor","0x6218:SPRITE:textures\\clouds.png"},6,0x858,
      {UNI_MESH_9,0},{0},0,0,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
-    /* 14=Master — stripped down: only bridge (Intermediate-style).
+    /* 14=Master — stripped down: only bridge + breaking bridge pieces.
      * Master's unique objects (Tipper, PopCylinder, BlockDawg, Catapult, Gluebie)
      * are handled by their standard level implementations, not Master special cases.
-     * Only the breaking bridge pieces are Master-specific. */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x62B4:Levels\\Level2-Bridge","0x62F8:RENDER"},2,0x859,
+     * BBRIDGE1/2 are the Master-specific breaking bridge pieces. */
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x62B4:Levels\\Level2-Bridge","0x62F8:RENDER","0x6214:Levels\\Level10-Bridge1","0x6218:Levels\\Level10-Bridge2"},4,0x859,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,4,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
     {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x62B4:Levels\\LevelImpossible-Looper","0x62F8:Levels\\LevelImpossible-Gear","0x62FC:Levels\\LevelImpossible-BigGear","0x620C:Levels\\LevelImpossible-Rotator","0x6210:Levels\\LevelImpossible-Pendulum"},5,0,
@@ -2916,7 +2916,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── BRIDGE (Expert, Intermediate, Master) ── */
+    /* ── BRIDGE (Expert, Intermediate, Master) ──
+     * Expert: rotating spinner bridge
+     * Intermediate/Master: position-only bridge (breaking behavior via BBRIDGE S1 objects) */
     if (my_strnicmp(name, "BRIDGE", 6) == 0) {
         if (level == 8) {
             /* Expert: Spinner_Level_ctor */

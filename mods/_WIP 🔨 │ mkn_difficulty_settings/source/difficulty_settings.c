@@ -1,5 +1,5 @@
 /*
- * difficulty_settings.c — Difficulty-based level file redirect mod (v3)
+ * difficulty_settings.c — Difficulty-based level file redirect mod (v3.1)
  *
  * COMPLETE REWRITE. Instead of modifying entity names, this mod redirects
  * which MESHWORLD file gets loaded based on tournament difficulty.
@@ -12,11 +12,12 @@
  *        - What difficulty? (App+0x23C: 0=Pipsqueak, 1=Normal, 2=Frenzied)
  *      If in Tournament mode:
  *        - Pipsqueak (0): redirect "levels\level1" → "levels\level1-easy"
- *        - Normal (1): redirect "levels\level1" → "levels\level1-normal"
- *        - Frenzied (2): no redirect (use default file)
- *      If NOT in Tournament mode (Practice/Party): no redirect.
+ *        - Normal (1):    no redirect (use default file)
+ *        - Frenzied (2):  redirect "levels\level1" → "levels\level1-hard"
+ *      If NOT in Tournament mode (Practice/Party):
+ *        - Try "levels\level1-hard", fallback to default if missing.
  *
- *      If the -easy or -normal variant doesn't exist, falls back to default.
+ *      If the -easy or -hard variant doesn't exist, falls back to default.
  *
  *   2. NOPs the difficulty gates in Board_Setup so entities always spawn
  *      regardless of difficulty. This ensures 8-balls/Mousetraps appear on
@@ -96,22 +97,30 @@ static int get_difficulty(void) {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Level name redirect
  *
- * Takes the original level name (e.g. "levels\level1") and appends
- * "-easy" or "-normal" suffix based on tournament difficulty.
- * Returns a modified name in outBuf, or returns 0 if no redirect needed.
+ * Rules:
+ *   Tournament Pipsqueak (diff=0): append "-easy"
+ *   Tournament Normal (diff=1):    no suffix (default file)
+ *   Tournament Frenzied (diff=2):  append "-hard"
+ *   Practice/Party:                append "-hard", fallback to default if missing
+ *
+ * Returns: 1=redirected (name in outBuf), 0=no redirect needed
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int redirect_level_name(const char *original, char *outBuf, int bufSize) {
-    if (!is_tournament_mode()) return 0;
-
     int diff = get_difficulty();
+    int tournament = is_tournament_mode();
     const char *suffix = NULL;
 
-    switch (diff) {
-        case 0:  suffix = "-easy";    break;  /* Pipsqueak */
-        case 1:  suffix = "-normal"; break;  /* Normal */
-        case 2:  suffix = NULL;     break;  /* Frenzied — no suffix */
-        default: suffix = NULL;     break;
+    if (tournament) {
+        switch (diff) {
+            case 0:  suffix = "-easy"; break;  /* Pipsqueak */
+            case 1:  suffix = NULL;   break;  /* Normal — default file */
+            case 2:  suffix = "-hard"; break;  /* Frenzied */
+            default: suffix = NULL;   break;
+        }
+    } else {
+        /* Practice/Party: try -hard suffix, fallback to default */
+        suffix = "-hard";
     }
 
     if (!suffix) return 0;
@@ -123,6 +132,7 @@ static int redirect_level_name(const char *original, char *outBuf, int bufSize) 
 
     /* Check if the name already has a suffix (avoid double-suffixing) */
     if (origLen >= 5 && _strnicmp(original + origLen - 5, "-easy", 5) == 0) return 0;
+    if (origLen >= 5 && _strnicmp(original + origLen - 5, "-hard", 5) == 0) return 0;
     if (origLen >= 7 && _strnicmp(original + origLen - 7, "-normal", 7) == 0) return 0;
 
     /* Also skip arena/stands/spawnplatform files (not race levels) */
