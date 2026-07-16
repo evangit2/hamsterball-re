@@ -1,10 +1,16 @@
-# Difficulty Settings Mod
+# Difficulty Settings Mod (v2)
 
 Difficulty-based entity replacement for Hamsterball. Reads a `difficulty_settings.txt` config file next to `bass.dll` that maps entity names to replacements depending on tournament difficulty (Pipsqueak / Normal / Frenzied!).
 
+## What's New in v2
+
+- **Prefix matching**: Entity names in the MeshWorld contain MW parser tags like `BADBALL(CHASE=1)(SIZE=35)`. v1 used full string comparison which never matched. v2 uses prefix matching (`strnicmp`) with boundary check, exactly like the game's own factory functions.
+- **Removed stale board dedup**: v1 skipped modification if the same board address was reused for a different level. v2 always modifies since the entity list is fresh per level.
+- **Default config matches game behavior**: EASY (Pipsqueak) now defaults to `NOTHING` for enemies, matching the vanilla game's behavior of no enemies on Pipsqueak.
+
 ## How It Works
 
-The mod hooks `Scene_CreateEntities` (0x0041C5B0) — the dispatch function that runs **before** all entity factories (CreateBadBall, CreateMouseTrap, CreateLevelObjects, CreateExpertLevelObjects). Before the original function runs, the mod:
+The mod hooks `Board_Setup` (0x0041C5B0) — the dispatch function that runs **before** all entity factories (CreateBadBall, CreateMouseTrap, CreateLevelObjects, CreateExpertLevelObjects). Before the original function runs, the mod:
 
 1. **Reads the original difficulty** (`App+0x23C`, 0=Pipsqueak, 1=Normal, 2=Frenzied!) to select the correct replacement table.
 
@@ -70,10 +76,11 @@ The mod re-reads `difficulty_settings.txt` every 2 seconds, so you can edit the 
 
 ## Technical Details
 
-- **Hook target**: `Scene_CreateEntities` at 0x0041C5B0 (__fastcall, ECX=board)
+- **Hook target**: `Board_Setup` at 0x0041C5B0 (`__fastcall`, ECX=board)
 - **Trampoline**: Copies original 7-byte prologue (PUSH -1 + PUSH handler), JMP back to target+7
-- **Entity list access**: `board+0x8AC → MeshWorld → +0x480 → entity_list → +0x898 (count) → +0xCA0 → *(data_array)`
+- **Entity list access**: `board+0x8AC → Level → +0x480 → entity_list → +0x898 (count) → +0xCA0 → *(data_array)`
 - **Difficulty**: `App+0x23C` (0=Pipsqueak, 1=Normal, 2=Frenzied)
+- **Name matching**: Prefix match (`strnicmp`) with boundary check — entity names contain MW parser tags like `BADBALL(CHASE=1)(SIZE=35)`, so full string comparison never matches
 
 ## Build
 
