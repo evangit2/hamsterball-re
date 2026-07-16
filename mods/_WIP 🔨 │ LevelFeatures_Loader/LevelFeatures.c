@@ -622,40 +622,43 @@ static LevelData g_levelData[16] = {
     {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0,
      {0},{0},0,0,{0},{0},0,UNI_BRIDGE_ANGLE},
     /* 4=Dizzy */
-    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x6200:Levels\\Level3-Tipper","0x6204:RENDER","0x6218:Levels\\Level3-WaterWheel","0x621C:RENDER","0x622C:Levels\\Level3-Swirl","0x6230:RENDER","0x6208:Levels\\Level3-Gluebie"},7,0x851,
+    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x62B4:Levels\\Level3-Tipper","0x62F8:RENDER","0x6218:Levels\\Level3-WaterWheel","0x621C:RENDER","0x7448:Levels\\Level3-Swirl","0x6238:RENDER","0x62FC:Levels\\Level3-Gluebie"},7,0x851,
      {UNI_LIST_0,UNI_LIST_1,0},{0},0,0,{0,0,0},{0},0,0},
     /* 5=Tower */
-    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x6200:Levels\\Level4-Catapult","0x6204:Levels\\Level4-Drawbridge","0x6208:MESH:Meshes\\YellowLink","0x620C:Levels\\Level4-Mace","0x6210:Levels\\Level4-Windmill","0x6220:MESH:Meshes\\Chomper","0x623C:Levels\\Level4-Turret"},7,0,
+    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x62B4:Levels\\Level4-Catapult","0x62F8:Levels\\Level4-Drawbridge","0x6214:MESH:Meshes\\YellowLink","0x620C:Levels\\Level4-Mace","0x6210:Levels\\Level4-Windmill","0x6220:MESH:Meshes\\Chomper","0x623C:Levels\\Level4-Turret"},7,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},{0},0,0,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},
     /* 6=Up */
     {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x620C:levels\\levelup-lifter","0x6210:levels\\levelup-speedcylinder","0x6214:levels\\levelup-button"},3,0x853,
      {UNI_MESH_0,0},{0},0,0,{0},{0},0,0},
     /* 7=Neon */
-    {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x6208:Levels\\LevelDark-NeonPlatform","0x620C:Levels\\LevelDark-DFloor1","0x6210:Levels\\LevelDark-DFloor2","0x6214:Levels\\LevelDark-DFloor3","0x6218:Levels\\LevelDark-DFloor4","0x621C:Levels\\LevelDark-Trode"},6,0,
+    {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x62FC:Levels\\LevelDark-NeonPlatform","0x620C:Levels\\LevelDark-DFloor1","0x6210:Levels\\LevelDark-DFloor2","0x6214:Levels\\LevelDark-DFloor3","0x6218:Levels\\LevelDark-DFloor4","0x630C:Levels\\LevelDark-Trode"},6,0,
      {0},{0},0,0,{0},{0},0,0},
     /* 8=Expert */
-    {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x620C:Levels\\Level5-Bridge","0x6210:RENDER","0x6218:MESH:meshes\\hammyjudge","0x621C:MESH:meshes\\hammyjudge","0x6220:MESH:meshes\\hammyjudge"},5,0x854,
+    {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x62B4:Levels\\Level5-Bridge","0x62F8:RENDER","0x6218:MESH:meshes\\hammyjudge","0x621C:MESH:meshes\\hammyjudge","0x6220:MESH:meshes\\hammyjudge"},5,0x854,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_4,0},{0},0,0,{0},{0},0,0},
     /* 9=Odd */
     {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855,
      {0},{0},0,0,{0},{0},0,0},
     /* 10=Toob */
-    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x6200:Levels\\Level8-Spinny","0x6204:Levels\\Level8-Saw","0x6208:Levels\\Level8-Fallout","0x620C:Levels\\Level8-Blockdawg1","0x6210:Levels\\Level8-Blockdawg2"},5,0x856,
+    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x62B4:Levels\\Level8-Spinny","0x62F8:Levels\\Level8-Saw","0x62FC:Levels\\Level8-Fallout","0x620C:Levels\\Level8-Blockdawg1","0x6210:Levels\\Level8-Blockdawg2"},5,0x856,
      {0},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
-    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x6200:Levels\\Level7-Wobbly1","0x6204:Levels\\Level7-Wobbly2","0x6208:Levels\\Level7-Wobbly3","0x620C:Levels\\Level7-Wobbly4","0x6210:Levels\\Level7-Wobbly5","0x6214:Levels\\Level7-Wobbly6","0x6218:Levels\\Level7-Wobbly7"},7,0x857,
+    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x62B4:Levels\\Level7-Wobbly1","0x62B8:Levels\\Level7-Wobbly2","0x62BC:Levels\\Level7-Wobbly3","0x62C0:Levels\\Level7-Wobbly4","0x62C4:Levels\\Level7-Wobbly5","0x62C8:Levels\\Level7-Wobbly6","0x62CC:Levels\\Level7-Wobbly7"},7,0x857,
      {0},{0},0,0,{0},{0},0,0},
     /* 12=Glass */
     {"Glass",0x004D1F90,"Board (Glass)","GLASS RACE","GLASSRACE","Glass Theme",{1.0f,0.0f,1.0f},"levels\\levelglass",{},0,0,
      {0},{0},0,0,{0},{0},0,0},
     /* 13=Sky */
-    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x6200:MESH:meshes\\skypillar","0x6204:MESH:meshes\\magnifyingglass","0x6214:levels\\level9-popcylinder1","0x6218:levels\\level9-popcylinder2","0x621C:levels\\level9-trapdoor","0x6208:SPRITE:textures\\clouds.png"},6,0x858,
+    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x6214:MESH:meshes\\skypillar","0x6350:MESH:meshes\\magnifyingglass","0x6308:levels\\level9-popcylinder1","0x630C:levels\\level9-popcylinder2","0x6338:levels\\level9-trapdoor","0x6218:SPRITE:textures\\clouds.png"},6,0x858,
      {UNI_MESH_9,0},{0},0,0,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
-    /* 14=Master */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x6200:Levels\\Level2-Bridge","0x6204:TIPPER:","0x6208:Levels\\Level10-2PBridge","0x620C:RENDER","0x6224:Levels\\Level3-Tipper","0x6228:RENDER","0x6214:Levels\\Level10-Bridge1","0x6218:Levels\\Level10-Bridge2","0x621C:levels\\level9-popcylinder1","0x6220:levels\\level9-popcylinder2","0x6234:Levels\\Level8-Blockdawg1","0x6238:Levels\\Level8-Blockdawg2","0x622C:Levels\\Level4-Catapult","0x623C:Levels\\Level3-Gluebie"},14,0x859,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,4,0x418,{UNI_BRIDGE_COUNTER,UNI_NEON_DARK_COUNT,UNI_NEON_TRAPDOOR,0},{UNI_MESH_0,UNI_MESH_9,UNI_MESH_12,UNI_MESH_13,UNI_MESH_14,0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
+    /* 14=Master — stripped down: only bridge (Intermediate-style).
+     * Master's unique objects (Tipper, PopCylinder, BlockDawg, Catapult, Gluebie)
+     * are handled by their standard level implementations, not Master special cases.
+     * Only the breaking bridge pieces are Master-specific. */
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x62B4:Levels\\Level2-Bridge","0x62F8:RENDER"},2,0x859,
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,4,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
-    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x6200:Levels\\LevelImpossible-Looper","0x6204:Levels\\LevelImpossible-Gear","0x6208:Levels\\LevelImpossible-BigGear","0x620C:Levels\\LevelImpossible-Rotator","0x6210:Levels\\LevelImpossible-Pendulum"},5,0,
+    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x62B4:Levels\\LevelImpossible-Looper","0x62F8:Levels\\LevelImpossible-Gear","0x62FC:Levels\\LevelImpossible-BigGear","0x620C:Levels\\LevelImpossible-Rotator","0x6210:Levels\\LevelImpossible-Pendulum"},5,0,
      {0},{0},0,0,{0},{0},0,0,0x4348,1,0,0},
 };
 
@@ -2681,10 +2684,10 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     void *obj = NULL;
     int renderOut = 0;
 
-    /* ── TIPPER (Dizzy, Master) ── */
+    /* ── TIPPER (Dizzy) ── */
     if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
-        int meshOff = (level == 14) ? 0x6224 : UNI_BONK_STORE;
-        int renderOff = (level == 14) ? 0x6228 : UNI_SAW1_OBJ;
+        int meshOff = UNI_BONK_STORE;
+        int renderOff = UNI_SAW1_OBJ;
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             obj = g_TipperCtor(mem, (int)board, *(int*)((char*)board + meshOff));
@@ -2726,16 +2729,16 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── GLUEBIE (Dizzy, Master) ── */
+    /* ── GLUEBIE (Dizzy) ── */
     if (my_strnicmp(name, "GLUEBIE", 7) == 0) {
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
-        int meshOff = (level == 14) ? 0x6230 : UNI_SAW2_OBJ;
+        int meshOff = UNI_SAW2_OBJ;
         void *mem = g_operatorNew(0x110C);
         if (mem) {
             obj = g_GluebieCtor(mem, (int)board, *(int*)((char*)board + meshOff));
             DWORD *o = (DWORD *)obj;
             o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
-            int listOff = (level == 14) ? UNI_LIST_6 : 0x620C;
+            int listOff = 0x620C;
             g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
@@ -2743,16 +2746,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── CATAPULT (Tower, Master) ── */
+    /* ── CATAPULT (Tower) ── */
     if (my_strnicmp(name, "CATAPULT", 8) == 0) {
-        int meshOff = (level == 14) ? 0x622C : UNI_BONK_STORE;
+        int meshOff = UNI_BONK_STORE;
         void *mem = g_operatorNew(0x1108);
         if (mem) {
             obj = g_CatapultCtor(mem, (int)board, *(int*)((char*)board + meshOff));
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
-            if (level == 14) o[0x440] = 1;
-            int listOff = (level == 14) ? UNI_LIST_1 : UNI_CATAPULT_LIST;
+            int listOff = UNI_CATAPULT_LIST;
             g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = o[0x435];
@@ -2872,7 +2874,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── BONK (Expert, Master) ── */
+    /* ── BONK (Expert) ── */
     if (my_strnicmp(name, "BONK", 4) == 0 && difficulty != 0) {
         void *mem = g_operatorNew(0x1200);
         if (mem) {
@@ -2880,7 +2882,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
-            int storeOff = (level == 14) ? UNI_MACE_DATA : UNI_BONK_STORE;
+            int storeOff = UNI_BONK_STORE;
             *(void **)((char *)board + storeOff) = obj;
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -3043,10 +3045,10 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── BLOCKDAWG1/2/3 (Toob, Master) ── */
+    /* ── BLOCKDAWG1/2/3 (Toob) ── */
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
-        int meshOff = (level == 14) ? (0x6228 + (dawgNum-1)*4) : (0x620C + (dawgNum-1)*4);
+        int meshOff = 0x620C + (dawgNum-1) * 4;
         char pathName[] = "DAWGPATH0";
         pathName[8] = '0' + dawgNum;
         int pathObj = g_LevelFindObjectByName(meshWorld, pathName);
@@ -3144,18 +3146,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── POPCYLINDER (Sky, Master) ── */
+    /* ── POPCYLINDER (Sky) ── */
     if (my_strnicmp(name, "POPCYLINDER", 11) == 0) {
-        if (level == 14) {
-            /* Master */
-            void *mem = g_operatorNew(0x10E8);
-            if (mem) {
-                obj = g_PopCylinderCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_MESH_9));
-                g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-                g_AthenaListAppend((void*)((char*)board + UNI_LIST_0), (int)obj);
-                renderOut = ((DWORD*)obj)[0x438];
-            }
-        } else if (difficulty != 0) {
+        if (difficulty != 0) {
             /* Sky */
             long idx = atol(name + 11) - 1;
             if (idx >= 0 && idx < 16) {
@@ -4094,7 +4087,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                     if (my_stricmp((char *)tag[2], "Z") == 0 && g_BallSetFlatGravity)
                         g_BallSetFlatGravity((int)ball);
                 }
-                ((void (__thiscall *)(DWORD))tag[0])(1);
+                /* Original game: (**(code **)*puVar4)(1) — double dereference.
+                 * tag[0] is a pointer to a vtable; vtable[0] is the destructor. */
+                (*(void (__thiscall **)(DWORD))(*(DWORD*)tag[0]))(1);
             }
             g_StreamReaderDtor(strObj);
         }
