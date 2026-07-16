@@ -254,6 +254,7 @@ static bool g_configLoaded = false;
 static char g_configPath[MAX_PATH] = "";
 static bool g_pathReady = false;
 static void* g_storedApi = NULL;
+static bool g_cachePatchInitDone = false; /* one-shot guard for onGameUpdate */
 
 /* ── Config path: find THIS DLL's folder ─────────────────────────────── */
 
@@ -690,8 +691,10 @@ static void applyAllPatches(void) {
     if (!hExe) hExe = GetModuleHandleA(NULL);
     DWORD base = (DWORD)hExe;
 
-    /* Patch cache system first */
-    patchCacheSystem(base);
+    /* Cache system patches are NOT applied here.
+     * They are controlled by the toggle button via onGameUpdate one-shot
+     * and onButtonToggle. This ensures the config file's ignore_cache
+     * setting and the toggle button state are respected. */
 
     /* Patch level MESHWORLD paths */
     for (int i = 0; i < 15; i++) {
@@ -747,9 +750,11 @@ static void __thiscall init_impl(void* thisptr, void* modApi) {
     /* Apply all patches */
     applyAllPatches();
 
-    /* Create toggle button for cache */
+    /* Create toggle button for cache.
+     * Use g_ignoreCache (from config) as the default toggle state,
+     * so the toggle matches the config file setting on first launch. */
     CustomButton btn("xtreme_org_ignore_cache", "Ignore Cache Files");
-    btn.defaultState = true;
+    btn.defaultState = g_ignoreCache;
     btn.submenuID = "XTREME_ORG";
     HBPlusAPI hb = { modApi };
     hb.CreateToggleButton(btn, thisptr);
@@ -763,8 +768,42 @@ static void __thiscall ball_update_impl(void* thisptr, void* ball) {
     /* No per-frame logic needed — patches are applied once at init */
 }
 
-static void __thiscall game_update_impl(void*) {
-    /* Could re-apply patches here if needed, but for now patches are persistent */
+static void __thiscall game_update_impl(void* thisptr) {
+    /* One-shot guard: sync cache patches with saved toggle state.
+     * onButtonToggle only fires when the user ACTIVELY CLICKS the toggle,
+     * NOT on mod load with saved state. So on the first onGameUpdate tick,
+     * read the actual saved toggle state and apply/restore cache patches.
+     * This ensures the config file's ignore_cache setting is respected
+     * even if the user previously toggled it in-game. */
+    if (!g_cachePatchInitDone && g_storedApi) {
+        g_cachePatchInitDone = true;
+        HBPlusAPI hb = { g_storedApi };
+        bool toggleState = hb.GetButtonState("xtreme_org_ignore_cache");
+        g_ignoreCache = toggleState;
+
+        HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+        if (!hExe) hExe = GetModuleHandleA(NULL);
+        if (hExe) {
+            DWORD base = (DWORD)hExe;
+            if (toggleState) {
+                /* Enable cache skipping — patch all 6 sites */
+                writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
+                writeBytes(base + 0x5de77, LOAD_MW_CACHE_PATCH, 1);
+                writeBytes(base + 0x717db, LOAD_MESH_CACHE_PATCH, 1);
+                writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
+                writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
+                writeBytes(base + 0x6f695, CACHE_WRITE3_PATCH, 6);
+            } else {
+                /* Disable cache skipping — restore original bytes */
+                writeBytes(base + 0x6f439, CACHE_READ_ORIG, 1);
+                writeBytes(base + 0x5de77, LOAD_MW_CACHE_ORIG, 1);
+                writeBytes(base + 0x717db, LOAD_MESH_CACHE_ORIG, 1);
+                writeBytes(base + 0x6f67d, CACHE_WRITE1_ORIG, 6);
+                writeBytes(base + 0x6f686, CACHE_WRITE2_ORIG, 6);
+                writeBytes(base + 0x6f695, CACHE_WRITE3_ORIG, 6);
+            }
+        }
+    }
 }
 
 static void __thiscall button_toggle_impl(void* thisptr, const char* id, bool state) {
@@ -833,31 +872,17 @@ extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
     return (HamsterballAPI*)obj;
 }
 
-/* ── DllMain: apply cache patches immediately on DLL load ────────────── */
-/* The mod is loaded as bass.dll proxy. DllMain runs BEFORE HB+ calls
- * Initialize(). We apply cache patches here so they're active before any
- * level loads. This mirrors the standalone CE ignore_cache mod which uses
- * a Sleep(2000) thread. VirtualProtect is safe from DllMain. */
+/* ── DllMain ────────────────────────────────────────────────────────── */
+/* This is an HB+ mod loaded via CreateModInstance, NOT a bass.dll proxy.
+ * DllMain should NOT apply any game patches — all patching is done in
+ * init_impl (after config is loaded) and onGameUpdate (after toggle
+ * state is synced). Previously, DllMain unconditionally applied cache
+ * patches, which made the ignore_cache config field and toggle button
+ * completely ineffective. */
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-
-        /* Apply cache patches immediately — don't wait for HB+ Initialize() */
-        HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
-        if (!hExe) hExe = GetModuleHandleA(NULL);
-        if (hExe) {
-            DWORD base = (DWORD)hExe;
-            /* Only apply cache patches — file path patches need config which
-             * isn't loaded yet. Cache patches are safe to apply early since
-             * they just NOP out conditional jumps. */
-            writeBytes(base + 0x6f439, CACHE_READ_PATCH, 1);
-            writeBytes(base + 0x5de77, LOAD_MW_CACHE_PATCH, 1);
-            writeBytes(base + 0x717db, LOAD_MESH_CACHE_PATCH, 1);
-            writeBytes(base + 0x6f67d, CACHE_WRITE1_PATCH, 6);
-            writeBytes(base + 0x6f686, CACHE_WRITE2_PATCH, 6);
-            writeBytes(base + 0x6f695, CACHE_WRITE3_PATCH, 6);
-        }
     }
     return TRUE;
 }

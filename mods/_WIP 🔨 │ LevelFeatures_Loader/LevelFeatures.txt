@@ -48,6 +48,79 @@ BRIDGE = 3
 # 2 = SWIRL BUMPER_DECAY
 
 # ─────────────────────────────────────────────
+# [COLLISION] — Per-level collision event toggles
+# ─────────────────────────────────────────────
+# Format: EVENT_NAME = level numbers (1-15)
+# Global events (N:GOAL, N:TARPIT, E:JUMP, etc.) are always active.
+# Only level-specific events need to be listed here.
+# Edit to enable cross-level collision events (e.g. put N:BUMPER on level 7)
+#
+# Note: E:ALERTSAW3 is Toob's version of E:ALERTSAW2 (renamed to avoid conflict)
+
+[COLLISION]
+N:BUMPER = 2 10 14
+N:BRIDGE = 3
+N:WATERWHEEL = 4
+N:WHEELEMBED = 4
+N:SWIRL = 4
+E:CATAPULTBOTTOM = 5 14
+E:OPENSESAME = 5
+N:TRAPDOOR = 5
+E:BITE = 5
+E:MACETRIGGER = 5
+N:MACE = 5
+E:HELPINERTIA = 6 15
+E:UNHELPINERTIA = 6 15
+E:VACPOPOUT = 6
+N:SPEEDCYLINDER = 6
+N:EXTRATIME = 6
+N:NEONPLATFORM = 7
+E:ZOOP = 7
+E:LIGHTSOFF = 7
+E:LIGHTSON = 7
+E:CALLHAMMER = 8 14
+E:HAMMERCHASE = 8 14
+E:ALERTSAW1 = 8
+E:ALERTSAW2 = 8
+E:ALERTSAW3 = 10
+E:ACTIVATESAW1 = 8
+E:ACTIVATESAW2 = 8
+E:ALERTJUDGES = 8
+E:SCORE = 8
+E:BELL = 8
+E:GRAVITY = 9
+N:JUMPFIRST = 9
+N:JUMPSECOND = 9
+E:SHRINK = 9
+E:GROWSOUND = 9
+E:GROW = 9
+E:DROPLIFT = 9
+E:PIPERANDOM = 9
+E:LIMITX = 9
+E:LIMITZ = 9
+E:LIMITPIPE1 = 9
+E:SWALLOW = 9
+E:LIMITPIPE2 = 9
+E:BRANCH = 10
+N:SPINNY = 10
+N:SAWTEETH = 10
+N:SPINNER = 14
+E:LAUNCH = 14
+N:SQUAREWOBBLY = 11
+N:WAVY = 11
+N:GLASS = 12
+N:TENBONUS1 = 12
+N:TENBONUS2 = 12
+E:PEGS = 13
+E:TRAPPOP = 13
+E:NOPEGS = 13
+E:HEATON = 13
+E:HEATOFF = 13
+N:BOUNCE = 15
+N:ONROTATOR = 15
+N:ONGEAR = 15
+
+# ─────────────────────────────────────────────
 # LevelData.txt (auto-generated on first run)
 # ─────────────────────────────────────────────
 # Controls per-level structural init. Editable fields:
