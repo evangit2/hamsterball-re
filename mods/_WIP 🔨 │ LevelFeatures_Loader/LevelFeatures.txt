@@ -18,7 +18,6 @@
 #     BUMPER_DECAY  — Bumper lit decay (Beginner, Toob, Master)
 #     NEON_CAM      — Ball-following camera (Neon)
 #     SKY_POPCYL    — Popcylinder activator (Sky)
-#     MASTER_EXTRA  — Master vtable[0x90]+[0x94] calls
 #   Levels NOT listed here use built-in defaults.
 #   Use () to clear all features for a level.
 #   Example: 2 = SWIRL BUMPER_DECAY  (adds swirl to Beginner while keeping bumper decay)
@@ -42,8 +41,19 @@ BRIDGE = 3
 # 11 = ()
 # 12 = ()
 # 13 = SKY_POPCYL
-# 14 = SWIRL BUMPER_DECAY BRIDGE_ANIM MASTER_EXTRA
+# 14 = SWIRL BUMPER_DECAY BRIDGE_ANIM
 # 15 = ()
 
 # Example: Add swirl to Beginner!
 # 2 = SWIRL BUMPER_DECAY
+
+# ─────────────────────────────────────────────
+# LevelData.txt (auto-generated on first run)
+# ─────────────────────────────────────────────
+# Controls per-level structural init. Editable fields:
+#   AthenaLists  — Semicolon-separated hex offsets for AthenaList_Init
+#   EHVector     — Format: 0xOFFSET:COUNT:STRIDE (bumper slot arrays)
+#   ZeroFills    — Semicolon-separated hex offsets to zero-fill
+#   AssignTex    — Mesh offsets for Level_AssignTexturesAndScales
+#   SoundChannel — Offset for sound channel allocation
+#   BridgeParam  — Offset for bridge tilt state machine init
