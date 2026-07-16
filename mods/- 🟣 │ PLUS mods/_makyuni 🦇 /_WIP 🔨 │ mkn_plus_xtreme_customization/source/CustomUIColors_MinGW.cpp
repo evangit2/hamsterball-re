@@ -126,12 +126,12 @@ static void init_config_path(void)
             *(last + 1) = '\0';
             nc_strncpy(g_config_path, exePath, MAX_PATH - 1);
             nc_strncpy(g_config_path + nc_strlen(g_config_path),
-                       "custom_ui_colors.txt", MAX_PATH - nc_strlen(g_config_path) - 1);
+                       "mkn_plus_xtreme_customization.txt", MAX_PATH - nc_strlen(g_config_path) - 1);
             g_config_path[MAX_PATH - 1] = '\0';
             return;
         }
     }
-    nc_strncpy(g_config_path, "custom_ui_colors.txt", MAX_PATH - 1);
+    nc_strncpy(g_config_path, "mkn_plus_xtreme_customization.txt", MAX_PATH - 1);
 }
 
 static const char* DEFAULT_CONFIG =
