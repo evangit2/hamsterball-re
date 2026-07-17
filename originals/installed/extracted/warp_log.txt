@@ -551,3 +551,22 @@ bass_real.dll handle: 0x76CD0000
 [InstallHooks] Graphics_PresentOrEnd hook installed
 [warp mod v6c] All hooks installed. Ready for E:WARP events.
 [warp mod v6c] All hooks installed. Ready for E:WARP events.
+=== LEVEL WARP MOD v6c LOADED ===
+v6c fixes: BeginScene/EndScene wrap, jiggle init flag, stream source save/restore
+=== LEVEL WARP MOD v6c LOADED ===
+v6c fixes: BeginScene/EndScene wrap, jiggle init flag, stream source save/restore
+bass_real.dll handle: 0x76CD0000
+bass_real.dll handle: 0x76CD0000
+[InstallHooks] DispatchCollisionEvents signature OK
+[InstallHooks] DispatchCollisionEvents signature OK
+[InstallHooks] Collision hook installed
+[InstallHooks] Collision hook installed
+[InstallHooks] FrameUpdate epilogue signature OK
+[InstallHooks] FrameUpdate epilogue hook installed
+[FATAL] FrameUpdate epilogue signature mismatch!
+[InstallHooks] Graphics_PresentOrEnd signature OK
+[InstallHooks] Graphics_PresentOrEnd signature OK
+[InstallHooks] Graphics_PresentOrEnd hook installed
+[InstallHooks] Graphics_PresentOrEnd hook installed
+[warp mod v6c] All hooks installed. Ready for E:WARP events.
+[warp mod v6c] All hooks installed. Ready for E:WARP events.

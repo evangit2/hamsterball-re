@@ -3,8 +3,8 @@
     // color        = 	#FFFFFFFF (RGBA tint)
     // posX  	    = 	0.0 	  (Horizontal position of the graphic)
     // posY  	    = 	0.0 	  (Vertical position of the graphic)
-    // scaleX 	    = 	0.0 	  (Horizontal position of the graphic)
-    // scaleY 	    = 	0.0 	  (Vertical position of the graphic)
+    // scaleX 	    = 	0.0 	  (Horizontal scale of the graphic)
+    // scaleY 	    = 	0.0 	  (Vertical scale of the graphic)
     // string 	    = 	""  	  (text string)
     // path	    	    =	""	      (path and filename)
     // link	    	    = 	"" 	  (hyperlink)
@@ -20,12 +20,12 @@
 
     // ========================= LOADING SCREEN =========================
     {
-        "LoadingScreen - Click Here- Button":               { "color": ["#FFFFFFFF", "#FFFFFFFF"], "posX":    0.0, "posY":    0.0,                                   "string": "CLICK HERE TO PLAY!"                                                },
-        "LoadingScreen - Hamsterball Logo":                 { "color": ["#FFFFFFFF", "#FFFFFFFF"], "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":  ["Textures/TitleText-Left", "Textures/TitleText-Right"]               },
-        "LoadingScreen - Hamster Loader _no_ ball":         { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/Loader(Grey)"                                              },
-        "LoadingScreen - Hamster Loader with ball":         { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/Loader"                                                    },
-        "LoadingScreen - Rotating Swirl":                   { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/LoadingSwirl"                                              },
-        "LoadingScreen - Raptisoft Logo":                   { "color":  "#9f00ffFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/RaptisoftLogo", "link": "https://www.raptisoft.com"        },
+        "LoadingScreen - Click Here- Button":               { "color": ["#FFFFFFFF", "#FFFFFFFF"], "posX":  400.0, "posY":  560.0,                                   "string": "CLICK HERE TO PLAY!"                                                },
+        "LoadingScreen - Hamsterball Logo":                 { "color": ["#FFFFFFFF", "#FFFFFFFF"], "posX":  130.0, "posY":   40.0, "scaleX": 256.0, "scaleY": 256.0, "path":  ["Textures/TitleText-Left", "Textures/TitleText-Right"]               },
+        "LoadingScreen - Hamster Loader _no_ ball":         { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/Loader(Grey)"                                              },
+        "LoadingScreen - Hamster Loader with ball":         { "color":  "#FFFFFFFF",               "posX":  400.0, "posY":  450.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/Loader"                                                    },
+        "LoadingScreen - Rotating Swirl":                   { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  514.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/LoadingSwirl"                                              },
+        "LoadingScreen - Raptisoft Logo":                   { "color":  "#FFFFFFFF",               "posX":  672.0, "posY":  472.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/RaptisoftLogo", "link": "https://www.raptisoft.com"        },
    
     }
     // ==================================================================
