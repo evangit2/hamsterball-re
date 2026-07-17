@@ -2,9 +2,11 @@
 
 Spawns testcube meshes at S1 ref point positions marked with `(GRIDxx)` in the level's MESHWORLD file.
 
-## v17 New: `<MESH>` tag for 8-ball mesh selection
+## v17: `<MESH>` and `<SPEEDMULT>` tags for 8-ball customization
 
-Added a new `<MESH>` argument tag (similar to `<CHASE>`, `<HOME>`, `<SIZE>`) that lets you pick which mesh model an 8-ball (BADBALL) uses:
+Added two new argument tags (similar to `<CHASE>`, `<HOME>`, `<SIZE>`) that let you customize BADBALL 8-balls from the MESHWORLD file:
+
+### `<MESH>` — pick 8-ball mesh model
 
 ```
 BADBALL<CHASE>100</CHASE><HOME>400</HOME><MESH>funball</MESH>
@@ -13,7 +15,19 @@ BADBALL<CHASE>100</CHASE><HOME>400</HOME><MESH>funball</MESH>
 - If the `<MESH>` value contains `"funball"`, the ball uses the **FunBall** mesh + texture (mesh index 10)
 - If no `<MESH>` tag is present, or the value doesn't contain "funball", the ball uses the default **8Ball** mesh (Sphere + 8ball texture, mesh index 9)
 
-The mod processes `<MESH>` tags after the game's native `CreateBadBall` has spawned the 8-balls during level load. It matches BADBALL objects to spawned balls by their home position (which `CreateBadBall` copies directly from the MESHWORLD object's X/Y/Z).
+### `<SPEEDMULT>` — multiply 8-ball speed
+
+```
+BADBALL<CHASE>100</CHASE><HOME>400</HOME><SPEEDMULT>2.0</SPEEDMULT>
+```
+
+- Multiplies the ball's `max_speed` (ball+0x188, default 6.0) by the given float value
+- `<SPEEDMULT>2.0</SPEEDMULT>` → max_speed = 6.0 × 2.0 = 12.0 (twice as fast)
+- `<SPEEDMULT>0.5</SPEEDMULT>` → max_speed = 6.0 × 0.5 = 3.0 (half speed)
+- Clamped to range 0.01–100.0; values outside this range are ignored
+- Tags can be combined: `BADBALL<CHASE>100</CHASE><HOME>400</HOME><MESH>funball</MESH><SPEEDMULT>1.5</SPEEDMULT>`
+
+The mod processes these tags after the game's native `CreateBadBall` has spawned the 8-balls during level load. It matches BADBALL objects to spawned balls by their home position (which `CreateBadBall` copies directly from the MESHWORLD object's X/Y/Z).
 
 ## v9 Fix: MeshWorld Pointer Location
 

@@ -86,20 +86,25 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define SPATIALTREE_SIZE        68
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * <MESH> tag support — pick 8ball mesh model from MESHWORLD name tags
+ * <MESH> and <SPEEDMULT> tag support — custom BADBALL arguments
  *
  * The game's CreateBadBall (0x40BCA0) parses <CHASE>, <HOME>, <SIZE>,
  * <SPINDISTANCE> tags from BADBALL object names in MESHWORLD section 3.
- * We add a new <MESH> tag that controls ball+0x754 (mesh index):
- *   <MESH>funball</MESH>  → mesh index 10 (FunBall mesh + texture)
- *   no tag / other value  → mesh index 9  (8Ball: Sphere mesh + 8ball texture)
+ * We add two new tags:
+ *
+ *   <MESH>funball</MESH>       → mesh index 10 (FunBall mesh + texture)
+ *   no MESH / other value       → mesh index 9  (8Ball: Sphere + 8ball texture)
+ *
+ *   <SPEEDMULT>2.0</SPEEDMULT> → multiplies ball+0x188 (max_speed) by value
+ *   no SPEEDMULT tag            → max_speed stays at default (6.0)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Ball struct offsets for mesh tag processing */
+/* Ball struct offsets for tag processing */
 #define BALL_HOME_POS_X       0xC60   /* float — spawn/return position X (set by CreateBadBall from obj.x) */
 #define BALL_HOME_POS_Y       0xC64   /* float — spawn/return position Y (set by CreateBadBall from obj.y) */
 #define BALL_HOME_POS_Z       0xC68   /* float — spawn/return position Z (set by CreateBadBall from obj.z) */
 #define BALL_MESH_INDEX_FIELD 0x754   /* int — mesh index into board mesh array (0=Sphere, 9=8Ball, 10=FunBall) */
+#define BALL_MAX_SPEED        0x188   /* float — max_speed (default 6.0, set by Ball_InitPhysicsDefaults) */
 
 /* Mesh indices in board mesh array (board+0x244 + index*4) */
 #define MESH_IDX_8BALL        9       /* Sphere mesh with 8ball texture (default) */
@@ -254,21 +259,20 @@ static int ci_strstr(const char* haystack, const char* needle) {
     return 0;
 }
 
-/* Extract the value between <MESH> and </MESH> tags in a name string.
- * Returns 1 if found and copies value to out_buf, 0 otherwise. */
-static int extract_mesh_tag(const char* name, char* out_buf, int out_size) {
-    /* Find <MESH> (case-insensitive) */
+/* Extract the value between <TAGNAME> and </TAGNAME> in a name string.
+ * Case-insensitive tag name matching. Returns 1 if found, 0 otherwise. */
+static int extract_tag(const char* name, const char* tag_name, char* out_buf, int out_size) {
+    int tag_len = (int)strlen(tag_name);
     const char* p = name;
     while (*p) {
-        if (tolower(p[0]) == 'm' && tolower(p[1]) == 'e' &&
-            tolower(p[2]) == 's' && tolower(p[3]) == 'h' && p[4] == '>') {
-            const char* val_start = p + 5;
-            /* Find </MESH> (case-insensitive) */
+        /* Check for <TAGNAME> (case-insensitive) */
+        if (p[0] == '<' && _strnicmp(p + 1, tag_name, tag_len) == 0 && p[1 + tag_len] == '>') {
+            const char* val_start = p + 1 + tag_len + 1;
+            /* Find </TAGNAME> (case-insensitive) */
             const char* q = val_start;
             while (*q) {
                 if (q[0] == '<' && q[1] == '/' &&
-                    tolower(q[2]) == 'm' && tolower(q[3]) == 'e' &&
-                    tolower(q[4]) == 's' && tolower(q[5]) == 'h' && q[6] == '>') {
+                    _strnicmp(q + 2, tag_name, tag_len) == 0 && q[2 + tag_len] == '>') {
                     int len = (int)(q - val_start);
                     if (len > 0 && len < out_size) {
                         memcpy(out_buf, val_start, len);
@@ -279,16 +283,16 @@ static int extract_mesh_tag(const char* name, char* out_buf, int out_size) {
                 }
                 q++;
             }
-            return 0; /* <MESH> found but no closing tag */
+            return 0; /* opening tag found but no closing tag */
         }
         p++;
     }
-    return 0; /* no <MESH> tag */
+    return 0; /* no tag found */
 }
 
-/* Process <MESH> tags: scan MESHWORLD section 3 for BADBALL objects with
- * <MESH> tags, match to spawned balls by home position, set mesh index. */
-static void process_mesh_tags(DWORD board, FILE* logf) {
+/* Process <MESH> and <SPEEDMULT> tags: scan MESHWORLD section 3 for BADBALL
+ * objects with custom tags, match to spawned balls by home position, apply. */
+static void process_custom_tags(DWORD board, FILE* logf) {
     if (!board) return;
 
     /* Get the bad balls list (AthenaList at board+0x29D4) */
@@ -304,7 +308,7 @@ static void process_mesh_tags(DWORD board, FILE* logf) {
     /* Get the sceneobj to access section 3 objects */
     DWORD sceneobj = get_sceneobj(board);
     if (!sceneobj) {
-        if (logf) fprintf(logf, "  MESH: sceneobj=NULL, skipping mesh tags\n");
+        if (logf) fprintf(logf, "  TAGS: sceneobj=NULL, skipping tag processing\n");
         return;
     }
 
@@ -318,6 +322,7 @@ static void process_mesh_tags(DWORD board, FILE* logf) {
     if (!obj_array_ptr || IsBadReadPtr(obj_array_ptr, obj_count * 4)) return;
 
     int mesh_changes = 0;
+    int speed_changes = 0;
     int i, j;
 
     /* For each section 3 object */
@@ -335,15 +340,25 @@ static void process_mesh_tags(DWORD board, FILE* logf) {
 
         /* Check for <MESH> tag */
         char mesh_value[64] = {0};
-        if (!extract_mesh_tag(name, mesh_value, sizeof(mesh_value))) continue;
+        int has_mesh = extract_tag(name, "MESH", mesh_value, sizeof(mesh_value));
+
+        /* Check for <SPEEDMULT> tag */
+        char speed_value[64] = {0};
+        int has_speed = extract_tag(name, "SPEEDMULT", speed_value, sizeof(speed_value));
+
+        if (!has_mesh && !has_speed) continue;
 
         /* Read object position (x, y, z at obj+0x04, +0x08, +0x0C) */
         float obj_x = *(float*)(obj_ptr + 0x04);
         float obj_y = *(float*)(obj_ptr + 0x08);
         float obj_z = *(float*)(obj_ptr + 0x0C);
 
-        if (logf) fprintf(logf, "  MESH: BADBALL obj[%d] has <MESH>%s</MESH> at (%.1f, %.1f, %.1f)\n",
-                i, mesh_value, obj_x, obj_y, obj_z);
+        if (logf) {
+            fprintf(logf, "  TAGS: BADBALL obj[%d] at (%.1f, %.1f, %.1f)", i, obj_x, obj_y, obj_z);
+            if (has_mesh) fprintf(logf, " <MESH>%s</MESH>", mesh_value);
+            if (has_speed) fprintf(logf, " <SPEEDMULT>%s</SPEEDMULT>", speed_value);
+            fprintf(logf, "\n");
+        }
 
         /* Match to a spawned ball by home position */
         for (j = 0; j < ball_count; j++) {
@@ -357,24 +372,39 @@ static void process_mesh_tags(DWORD board, FILE* logf) {
 
             /* Match by position (exact float comparison — CreateBadBall copies obj.xyz directly) */
             if (ball_home_x == obj_x && ball_home_y == obj_y && ball_home_z == obj_z) {
-                /* Determine mesh index from tag value */
-                int mesh_idx = MESH_IDX_8BALL;  /* default */
-                if (ci_strstr(mesh_value, "funball")) {
-                    mesh_idx = MESH_IDX_FUNBALL;
+                /* Apply <MESH> tag */
+                if (has_mesh) {
+                    int mesh_idx = MESH_IDX_8BALL;  /* default */
+                    if (ci_strstr(mesh_value, "funball")) {
+                        mesh_idx = MESH_IDX_FUNBALL;
+                    }
+                    *(int*)(ball + BALL_MESH_INDEX_FIELD) = mesh_idx;
+                    if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh %d (%s)\n",
+                            ball, mesh_idx, mesh_idx == MESH_IDX_FUNBALL ? "FunBall" : "8Ball");
+                    mesh_changes++;
                 }
 
-                *(int*)(ball + BALL_MESH_INDEX_FIELD) = mesh_idx;
-
-                if (logf) fprintf(logf, "  MESH: matched ball 0x%08X → mesh index %d (%s)\n",
-                        ball, mesh_idx, mesh_idx == MESH_IDX_FUNBALL ? "FunBall" : "8Ball");
-                mesh_changes++;
+                /* Apply <SPEEDMULT> tag — multiply current max_speed by value */
+                if (has_speed) {
+                    float mult = (float)atof(speed_value);
+                    if (mult > 0.0f && mult <= 100.0f) {
+                        float cur_speed = *(float*)(ball + BALL_MAX_SPEED);
+                        *(float*)(ball + BALL_MAX_SPEED) = cur_speed * mult;
+                        if (logf) fprintf(logf, "  TAGS: ball 0x%08X → max_speed %.1f × %.1f = %.1f\n",
+                                ball, cur_speed, mult, cur_speed * mult);
+                        speed_changes++;
+                    } else if (logf) {
+                        fprintf(logf, "  TAGS: ball 0x%08X → SPEEDMULT %.1f ignored (out of range 0.01-100.0)\n",
+                                ball, mult);
+                    }
+                }
                 break;
             }
         }
     }
 
-    if (logf && mesh_changes > 0) {
-        fprintf(logf, "  MESH: applied %d mesh tag(s)\n", mesh_changes);
+    if (logf && (mesh_changes > 0 || speed_changes > 0)) {
+        fprintf(logf, "  TAGS: applied %d mesh tag(s), %d speedmult tag(s)\n", mesh_changes, speed_changes);
         fflush(logf);
     }
 }
@@ -667,8 +697,8 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
         }
 
-        /* Process <MESH> tags on spawned 8-balls (after CreateBadBall has run) */
-        process_mesh_tags(board, logf);
+        /* Process <MESH> and <SPEEDMULT> tags on spawned 8-balls (after CreateBadBall has run) */
+        process_custom_tags(board, logf);
 
         /* Find GRID reference points */
         float grid_x[32], grid_y[32], grid_z[32];
