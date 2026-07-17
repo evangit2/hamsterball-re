@@ -183,31 +183,15 @@ typedef enum {
     REND_SKY_CAM      = 1 << 3,  /* Sky camera + cloud sprite + object list */
 } RenderFeature;
 
+/* Render features are NOT hardcoded per level.
+ * They are determined dynamically at render time based on what objects/events
+ * are actually enabled for the current level:
+ *   REND_BUMPER:   active when N:BUMPER collision event is enabled
+ *   REND_WINDMILL: active when a windmill render object exists at UNI_MESH_4
+ *   REND_GLASS:    active when N:GLASS collision event is enabled
+ *   REND_SKY_CAM:  active when a cloud sprite exists at UNI_MESH_11
+ * Computed in UniversalRender, not set from defaults. */
 static DWORD g_renderFeatures[16] = {0};
-
-/* Default render feature assignments per level.
- * Bumper: levels where N:BUMPER is active (2=Beginner, 10=Toob, 14=Master)
- * Windmill: level 5 (Tower, where windmill ref exists)
- * Glass: level 12 (where N:GLASH is present)
- * Sky Cam: level 13 (inherent to Sky Race) */
-static const DWORD g_defaultRenderFeatures[16] = {
-    0,
-    /* 1=WarmUp */       0,
-    /* 2=Beginner */     REND_BUMPER,
-    /* 3=Intermediate */ 0,
-    /* 4=Dizzy */        0,
-    /* 5=Tower */        REND_WINDMILL,
-    /* 6=Up */           0,
-    /* 7=Neon */         0,
-    /* 8=Expert */       0,
-    /* 9=Odd */          0,
-    /* 10=Toob */        REND_BUMPER,
-    /* 11=Wobbly */      0,
-    /* 12=Glass */       REND_GLASS,
-    /* 13=Sky */         REND_SKY_CAM,
-    /* 14=Master */      REND_BUMPER,
-    /* 15=Impossible */  0,
-};
 
 static DWORD g_updateFeatures[16] = {0};
 
@@ -813,8 +797,9 @@ static int GetCurrentLevel(void *board) {
  * Object name = level numbers (1-15). Empty () = disabled.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Forward declaration — LoadCollisionConfig is defined later */
+/* Forward declarations — defined later but used by UniversalRender */
 static void LoadCollisionConfig(char *buf, DWORD bufSize);
+static int IsCollisionEventEnabled(const char *eventName, int level);
 
 static void LoadConfig(void) {
     HANDLE hFile = CreateFileA(g_configPath, GENERIC_READ, FILE_SHARE_READ,
@@ -2684,10 +2669,35 @@ void __fastcall UniversalRender(void *board) {
     int level = GetCurrentLevel(board);
     if (level == 0) return;
 
-    DWORD features = g_renderFeatures[level];
-    if (!features) return;
-
     DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+
+    /* Compute render features dynamically based on what's actually enabled.
+     * No hardcoded per-level defaults — any render feature can be used on any
+     * level as long as the required objects/events are present. */
+    DWORD features = 0;
+
+    /* REND_BUMPER: active when N:BUMPER collision event is enabled for this level */
+    if (IsCollisionEventEnabled("N:BUMPER", level))
+        features |= REND_BUMPER;
+
+    /* REND_WINDMILL: active when a windmill render object exists at UNI_MESH_4.
+     * The windmill mesh is loaded via LevelData mesh config (e.g. "0x85F0:Levels\\Level4-Windmill")
+     * and the render obj is created by the WINDMILL handler in CreateDynamicObjects. */
+    if (*(DWORD *)((char *)board + UNI_MESH_4) != 0)
+        features |= REND_WINDMILL;
+
+    /* REND_GLASS: active when N:GLASS collision event is enabled for this level */
+    if (IsCollisionEventEnabled("N:GLASS", level))
+        features |= REND_GLASS;
+
+    /* REND_SKY_CAM: active when a cloud sprite exists at UNI_MESH_11.
+     * The sprite is loaded via LevelData mesh config (e.g. "0x860C:SPRITE:textures\\clouds.png").
+     * This is an inherent Sky Race feature — if you put a cloud sprite on any level,
+     * it gets the sky camera rendering. */
+    if (*(DWORD *)((char *)board + UNI_MESH_11) != 0)
+        features |= REND_SKY_CAM;
+
+    if (!features) return;
 
     /* ── Bumper Reflective Render (Beginner, Toob, Master) ──
      * Iterates ehVector slots, renders bumpers with reflective material
@@ -5644,7 +5654,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
 
     /* Initialize feature flags from defaults */
     memcpy(g_updateFeatures, g_defaultFeatures, sizeof(g_updateFeatures));
-    memcpy(g_renderFeatures, g_defaultRenderFeatures, sizeof(g_renderFeatures));
+    /* Render features are NOT set from defaults — they are computed dynamically
+     * in UniversalRender based on what objects/events are enabled. */
 
     /* Initialize collision event defaults */
     InitCollisionDefaults();
