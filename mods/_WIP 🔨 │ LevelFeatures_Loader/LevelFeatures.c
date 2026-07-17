@@ -1558,6 +1558,18 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     g_BoardCtor(mem, app);
     DebugLog("Board_ctor done");
 
+    /* Step 1b: Zero-fill old per-level data offsets (0x4300-0x6500).
+     * The mod moved ehVector, bumper lit, and render data to the unified
+     * zone (0x6500+). But per-level RENDER functions (vtable slot 24)
+     * still read from the OLD per-level offsets (e.g. Beginner reads
+     * board+0x436C for ehVector, board+0x642C for bumper lit).
+     * operator_new uses malloc (no zeroing), so these offsets contain
+     * garbage. Zeroing them ensures:
+     *   - Bumper lit floats = 0.0 → render function skips (no reflective material)
+     *   - Mesh slot pointers = NULL → render function does nothing
+     * This prevents crashes from garbage pointers being dereferenced. */
+    memset((char *)mem + 0x4300, 0, 0x6500 - 0x4300);
+
     /* Step 2: Set vtable */
     *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
