@@ -617,7 +617,7 @@ static LevelData g_levelData[16] = {
      {0},{0},0,0,{0},{0},0,0},
     /* 2=Beginner */
     {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {0},0x436C,8,0x418,{0},{0},0,0},
     /* 3=Intermediate */
     {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0,
      {0},{0},0,0,{0},{0},0,UNI_BRIDGE_ANGLE},
@@ -641,7 +641,7 @@ static LevelData g_levelData[16] = {
      {0},{0},0,0,{0},{0},0,0},
     /* 10=Toob */
     {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x62B4:Levels\\Level8-Spinny","0x62F8:Levels\\Level8-Saw","0x62FC:Levels\\Level8-Fallout","0x620C:Levels\\Level8-Blockdawg1","0x6210:Levels\\Level8-Blockdawg2"},5,0x856,
-     {0},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
+     {0},0x438C,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
     {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x62B4:Levels\\Level7-Wobbly1","0x62B8:Levels\\Level7-Wobbly2","0x62BC:Levels\\Level7-Wobbly3","0x62C0:Levels\\Level7-Wobbly4","0x62C4:Levels\\Level7-Wobbly5","0x62C8:Levels\\Level7-Wobbly6","0x62CC:Levels\\Level7-Wobbly7"},7,0x857,
      {0},{0},0,0,{0},{0},0,0},
@@ -656,7 +656,7 @@ static LevelData g_levelData[16] = {
      * are handled by their standard level implementations, not Master special cases.
      * BBRIDGE1/2 are the Master-specific breaking bridge pieces. */
     {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x62B4:Levels\\Level2-Bridge","0x62F8:RENDER","0x6214:Levels\\Level10-Bridge1","0x6218:Levels\\Level10-Bridge2"},4,0x859,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,4,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},0x439C,4,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
     {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x62B4:Levels\\LevelImpossible-Looper","0x62F8:Levels\\LevelImpossible-Gear","0x62FC:Levels\\LevelImpossible-BigGear","0x620C:Levels\\LevelImpossible-Rotator","0x6210:Levels\\LevelImpossible-Pendulum"},5,0,
      {0},{0},0,0,{0},{0},0,0,0x4348,1,0,0},
@@ -1461,9 +1461,19 @@ static const char *g_meshPaths[16] = {
 
 static void LoadExtraMeshes(void *board, LevelData *ld) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
-    if (!app || IsBadReadPtr((void *)app, 0x200)) return;
+    if (!app || IsBadReadPtr((void *)app, 0x200)) {
+        DebugLog("LoadExtraMeshes: app pointer invalid, aborting");
+        return;
+    }
     void *gfx = *(void **)((char *)app + 0x174);
-    if (!gfx) return;
+    if (!gfx) {
+        DebugLog("LoadExtraMeshes: gfx pointer NULL, aborting");
+        return;
+    }
+
+    char dbg[256];
+    wsprintfA(dbg, "LoadExtraMeshes: board=%p gfx=%p meshCount=%d", board, gfx, ld->meshCount);
+    DebugLog(dbg);
 
     void *prevMesh = NULL;
     int i;
@@ -1512,6 +1522,11 @@ static void LoadExtraMeshes(void *board, LevelData *ld) {
 
         if (offset > 0 && offset < UNION_SIZE) {
             *(void **)((char *)board + offset) = result;
+            wsprintfA(dbg, "LoadExtraMeshes: [%d] stored mesh %p at board+0x%X (path=%s)", i, result, offset, path);
+            DebugLog(dbg);
+        } else {
+            wsprintfA(dbg, "LoadExtraMeshes: [%d] offset 0x%X out of range, NOT stored", i, offset);
+            DebugLog(dbg);
         }
     }
 }
@@ -2688,6 +2703,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
         int meshOff = UNI_BONK_STORE;
         int renderOff = UNI_SAW1_OBJ;
+        int meshVal = *(int*)((char*)board + meshOff);
+        {
+            char dbg[256];
+            wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d",
+                      meshOff, meshVal, renderOff, *(int*)((char*)board + renderOff), level);
+            DebugLog(dbg);
+        }
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             obj = g_TipperCtor(mem, (int)board, *(int*)((char*)board + meshOff));
