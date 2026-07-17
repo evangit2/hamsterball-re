@@ -25,7 +25,7 @@
         "LoadingScreen - Hamster Loader _no_ ball":         { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/Loader(Grey)"                                              },
         "LoadingScreen - Hamster Loader with ball":         { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/Loader"                                                    },
         "LoadingScreen - Rotating Swirl":                   { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/LoadingSwirl"                                              },
-        "LoadingScreen - Raptisoft Logo":                   { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/RaptisoftLogo", "link": "https://www.raptisoft.com"        },
+        "LoadingScreen - Raptisoft Logo":                   { "color":  "#9f00ffFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/RaptisoftLogo", "link": "https://www.raptisoft.com"        },
    
     }
     // ==================================================================
