@@ -2,7 +2,7 @@
  * LevelFeatures_Loader v6 — Universal Level Handler + Universal Vtable
  *
  * 1. ALLOCATION PATCH: Patches all 15 level allocation sites in
- *    Tournament_AdvanceRace (0x00427080) to use the union size 0xA2F8.
+ *    Tournament_AdvanceRace (0x00427080) to use the union size 0xAB00.
  *
  * 2. BOARD CONSTRUCTOR HOOK: Patches all 15 CALL LevelBoard_*_ctor
  *    instructions to call a single UniversalBoardCtor driven by
@@ -579,13 +579,15 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
  *   Sky render list uses UNI_LIST_7 (already allocated, 0x410 bytes at 0xA470)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Glass render data — written by SMASHER1/SMASHER2 handlers, read by REND_GLASS */
-#define REND_GLASS_S1_X     0xA880
-#define REND_GLASS_S1_Y     0xA884
-#define REND_GLASS_S1_Z     0xA888
-#define REND_GLASS_S2_X     0xA88C
-#define REND_GLASS_S2_Y     0xA890
-#define REND_GLASS_S2_Z     0xA894
+/* Glass render data — written by SMASHER1/SMASHER2 handlers, read by REND_GLASS.
+ * Original game stores 3 position floats (X, Y, Z) and passes them to
+ * Timer vtable[0x08] — there is NO mesh pointer, just position data. */
+#define REND_GLASS_S1_X     0xA880  /* smasher 1 position X (float) */
+#define REND_GLASS_S1_Y     0xA884  /* smasher 1 position Y (float) */
+#define REND_GLASS_S1_Z     0xA888  /* smasher 1 position Z (float) */
+#define REND_GLASS_S2_X     0xA88C  /* smasher 2 position X (float) */
+#define REND_GLASS_S2_Y     0xA890  /* smasher 2 position Y (float) */
+#define REND_GLASS_S2_Z     0xA894  /* smasher 2 position Z (float) */
 #define REND_GLASS_TRANSP1  0xA898
 #define REND_GLASS_TRANSP2  0xA89C
 #define REND_GLASS_FLAG1    0xA8A0  /* byte */
@@ -2884,15 +2886,19 @@ void __fastcall UniversalRender(void *board) {
         if (g_TimerInit && g_TimerCleanup) {
             g_TimerInit(timerBuf);
 
-            /* Smasher 1: Gfx_ScaleX(transparency), render mesh */
+            /* Smasher 1: Gfx_ScaleX(transparency), then call Timer vtable[0x08]
+             * with position floats (X, Y, Z) — NOT a mesh pointer.
+             * Original: vtable[0x08](timerObj, posX, posY, posZ) */
             float transp1 = *(float *)((char *)board + REND_GLASS_TRANSP1);
             if (g_GfxScaleX) g_GfxScaleX(gfx, transp1);
             DWORD *timerVtbl = *(DWORD **)timerBuf;
             if (timerVtbl) {
-                void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))timerVtbl[2];
+                void (__thiscall *fn8)(DWORD, float, float, float) = (void (__thiscall *)(DWORD, float, float, float))timerVtbl[2];
                 if (fn8) {
-                    DWORD mesh1 = *(DWORD *)((char *)board + REND_GLASS_S1_X);
-                    fn8(mesh1);
+                    fn8((DWORD)timerBuf,
+                        *(float *)((char *)board + REND_GLASS_S1_X),
+                        *(float *)((char *)board + REND_GLASS_S1_Y),
+                        *(float *)((char *)board + REND_GLASS_S1_Z));
                 }
             }
 
@@ -2919,10 +2925,12 @@ void __fastcall UniversalRender(void *board) {
             if (g_GfxScaleX) g_GfxScaleX(gfx, transp2);
             DWORD *timerVtbl2 = *(DWORD **)timerBuf2;
             if (timerVtbl2) {
-                void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))timerVtbl2[2];
+                void (__thiscall *fn8)(DWORD, float, float, float) = (void (__thiscall *)(DWORD, float, float, float))timerVtbl2[2];
                 if (fn8) {
-                    DWORD mesh2 = *(DWORD *)((char *)board + REND_GLASS_S2_X);
-                    fn8(mesh2);
+                    fn8((DWORD)timerBuf2,
+                        *(float *)((char *)board + REND_GLASS_S2_X),
+                        *(float *)((char *)board + REND_GLASS_S2_Y),
+                        *(float *)((char *)board + REND_GLASS_S2_Z));
                 }
             }
 
@@ -3854,8 +3862,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     }
 
     /* ── SMASHER1/2 (Glass) ──
-     * Writes to dedicated REND_GLASS_* offsets, NOT shared UNI_ slots,
-     * so Glass smashers can coexist with saws, bridges, etc. on the same level. */
+     * Writes position floats to dedicated REND_GLASS_* offsets.
+     * Original game stores 3 floats (X,Y,Z) at board+0x436C/0x4370/0x4374.
+     * Render block passes them to Timer vtable[0x08](timer, X, Y, Z). */
     if (my_strnicmp(name, "SMASHER1", 8) == 0) {
         *(float *)((char *)board + REND_GLASS_S1_X) = x;
         *(float *)((char *)board + REND_GLASS_S1_Y) = y;
@@ -5063,11 +5072,11 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         int phys = ball[0x69];
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
             float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
-            if (speed >= 2.0f && *(char *)((char *)board + UNI_NEON_DARK_COUNT) == 0) {
-                *(BYTE *)((char *)board + UNI_NEON_DARK_COUNT) = 1;
+            if (speed >= 2.0f && *(char *)((char *)board + REND_GLASS_FLAG1) == 0) {
+                *(BYTE *)((char *)board + REND_GLASS_FLAG1) = 1;
                 if (g_SoundPlay3D && app) {
                     DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)board+UNI_BONK_STORE), *(float*)((char*)board+UNI_SAW1_OBJ), *(float*)((char*)board+UNI_SAW2_OBJ));
+                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)board+REND_GLASS_S1_X), *(float*)((char*)board+REND_GLASS_S1_Y), *(float*)((char*)board+REND_GLASS_S1_Z));
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
