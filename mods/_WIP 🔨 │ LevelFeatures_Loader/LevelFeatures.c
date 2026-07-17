@@ -615,52 +615,52 @@ static LevelData g_levelData[16] = {
     {{0}}, /* index 0 unused */
     /* 1=WarmUp */
     {"WarmUp",0x004D04A8,"Board (Warm-Up)","WARM-UP RACE","BEGINNERRACE","Hamster Nation",{1.0f,0.0f,1.0f},"levels\\level1",{},0,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 2=Beginner */
     {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 3=Intermediate */
     {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE},
     /* 4=Dizzy */
     {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x8620:Levels\\Level3-Tipper","0x8628:RENDER","0x85F8:Levels\\Level3-WaterWheel","0x85FC:RENDER","0x9848:Levels\\Level3-Swirl","0x8618:RENDER","0x862C:Levels\\Level3-Gluebie"},7,0x851,
-     {UNI_LIST_0,UNI_LIST_1,0},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0,0},
     /* 5=Tower */
     {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x8620:Levels\\Level4-Catapult","0x8628:Levels\\Level4-Drawbridge","0x85F4:MESH:Meshes\\YellowLink","0x85EC:Levels\\Level4-Mace","0x85F0:Levels\\Level4-Windmill","0x8600:MESH:Meshes\\Chomper","0x861C:Levels\\Level4-Turret"},7,0,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,8,0x418,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},
     /* 6=Up */
     {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x85EC:levels\\levelup-lifter","0x85F0:levels\\levelup-speedcylinder","0x85F4:levels\\levelup-button"},3,0x853,
-     {UNI_MESH_0,0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 7=Neon */
     {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x862C:Levels\\LevelDark-NeonPlatform","0x85EC:Levels\\LevelDark-DFloor1","0x85F0:Levels\\LevelDark-DFloor2","0x85F4:Levels\\LevelDark-DFloor3","0x85F8:Levels\\LevelDark-DFloor4","0x863C:Levels\\LevelDark-Trode"},6,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 8=Expert */
     {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x8620:Levels\\Level5-Bridge","0x8628:RENDER","0x85F8:MESH:meshes\\hammyjudge","0x85FC:MESH:meshes\\hammyjudge","0x8600:MESH:meshes\\hammyjudge"},5,0x854,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_4,0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 9=Odd */
     {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 10=Toob */
     {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x8620:Levels\\Level8-Spinny","0x8628:Levels\\Level8-Saw","0x862C:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-Blockdawg1","0x85F0:Levels\\Level8-Blockdawg2"},5,0x856,
-     {0},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
     {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x8620:Levels\\Level7-Wobbly1","0x8624:Levels\\Level7-Wobbly2","0x8628:Levels\\Level7-Wobbly3","0x862C:Levels\\Level7-Wobbly4","0x8630:Levels\\Level7-Wobbly5","0x8634:Levels\\Level7-Wobbly6","0x8638:Levels\\Level7-Wobbly7"},7,0x857,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 12=Glass */
     {"Glass",0x004D1F90,"Board (Glass)","GLASS RACE","GLASSRACE","Glass Theme",{1.0f,0.0f,1.0f},"levels\\levelglass",{},0,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 13=Sky */
     {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x85F4:MESH:meshes\\skypillar","0x8680:MESH:meshes\\magnifyingglass","0x8638:levels\\level9-popcylinder1","0x863C:levels\\level9-popcylinder2","0x8668:levels\\level9-trapdoor","0x85F8:SPRITE:textures\\clouds.png"},6,0x858,
-     {UNI_MESH_9,0},UNI_EHVECTOR,8,0x418,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
     /* 14=Master — stripped down: only bridge + breaking bridge pieces.
      * Master's unique objects (Tipper, PopCylinder, BlockDawg, Catapult, Gluebie)
      * are handled by their standard level implementations, not Master special cases.
      * BBRIDGE1/2 are the Master-specific breaking bridge pieces. */
     {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x8620:Levels\\Level2-Bridge","0x8628:RENDER","0x85F4:Levels\\Level10-Bridge1","0x85F8:Levels\\Level10-Bridge2"},4,0x859,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
     {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x8620:Levels\\LevelImpossible-Looper","0x8628:Levels\\LevelImpossible-Gear","0x862C:Levels\\LevelImpossible-BigGear","0x85EC:Levels\\LevelImpossible-Rotator","0x85F0:Levels\\LevelImpossible-Pendulum"},5,0,
-     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0,0x4348,1,0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0,0x4348,1,0,0},
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1523,8 +1523,13 @@ static void LoadExtraMeshes(void *board, LevelData *ld) {
 
         if (offset > 0 && offset < UNION_SIZE) {
             *(void **)((char *)board + offset) = result;
-            wsprintfA(dbg, "LoadExtraMeshes: [%d] stored mesh %p at board+0x%X (path=%s)", i, result, offset, path);
-            DebugLog(dbg);
+            if (!result) {
+                wsprintfA(dbg, "LoadExtraMeshes: [%d] WARNING NULL mesh stored at board+0x%X (path=%s)", i, offset, path);
+                DebugLog(dbg);
+            } else {
+                wsprintfA(dbg, "LoadExtraMeshes: [%d] stored mesh %p at board+0x%X (path=%s)", i, result, offset, path);
+                DebugLog(dbg);
+            }
         } else {
             wsprintfA(dbg, "LoadExtraMeshes: [%d] offset 0x%X out of range, NOT stored", i, offset);
             DebugLog(dbg);
@@ -2705,6 +2710,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         int meshOff = UNI_BONK_STORE;
         int renderOff = UNI_SAW1_OBJ;
         int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("TIPPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         {
             char dbg[256];
             wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d",
@@ -2713,7 +2719,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         }
         void *mem = g_operatorNew(0x1104);
         if (mem) {
-            obj = g_TipperCtor(mem, (int)board, *(int*)((char*)board + meshOff));
+            obj = g_TipperCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             o[0x439] = *(DWORD*)&x2; o[0x43A] = *(DWORD*)&y2; o[0x43B] = *(DWORD*)&z2;
@@ -2756,9 +2762,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "GLUEBIE", 7) == 0) {
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         int meshOff = UNI_SAW2_OBJ;
+        int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("GLUEBIE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
-            obj = g_GluebieCtor(mem, (int)board, *(int*)((char*)board + meshOff));
+            obj = g_GluebieCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
             int listOff = UNI_MESH_3;
@@ -2772,9 +2780,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── CATAPULT (Tower) ── */
     if (my_strnicmp(name, "CATAPULT", 8) == 0) {
         int meshOff = UNI_BONK_STORE;
+        int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("CATAPULT: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1108);
         if (mem) {
-            obj = g_CatapultCtor(mem, (int)board, *(int*)((char*)board + meshOff));
+            obj = g_CatapultCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             int listOff = UNI_CATAPULT_LIST;
@@ -2788,9 +2798,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── MACE (Tower) ── */
     if (my_strnicmp(name, "MACE", 4) == 0 && difficulty != 0) {
+        int meshVal = *(int*)((char*)board + UNI_MESH_3);
+        if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
-            obj = g_MaceCtor(mem, (int)board, *(int*)((char*)board + UNI_MESH_3));
+            obj = g_MaceCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
@@ -2806,9 +2818,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── DRAWBRIDGE (Tower) ── */
     if (my_strnicmp(name, "DRAWBRIDGE", 10) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        if (!meshVal) { DebugLog("DRAWBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x113C);
         if (mem) {
-            obj = g_GlassLevelCtor(mem, (int)board, *(int*)((char*)board + UNI_SAW1_OBJ));
+            obj = g_GlassLevelCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
@@ -2822,6 +2836,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── WINDMILL (Tower) ── */
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
         int mesh = *(int *)((char *)board + UNI_MESH_4);
+        if (!mesh) { DebugLog("WINDMILL: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
         if (mem) {
             void *render = g_LevelRenderCtor(mem, (void*)mesh);
@@ -2872,9 +2887,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TURRET (Tower) ── */
     if (my_strnicmp(name, "TURRET", 6) == 0) {
+        void *meshPtr = *(void **)((char *)board + UNI_MESH_15);
+        if (!meshPtr) { DebugLog("TURRET: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
         if (mem) {
-            int stands = (int)g_StandsCtor(mem, *(void **)((char *)board + UNI_MESH_15));
+            int stands = (int)g_StandsCtor(mem, meshPtr);
             char timerBuf[68];
             g_TimerInit(timerBuf);
             DWORD *vtbl = *(DWORD **)stands;
@@ -3006,9 +3023,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         } else {
             /* Up: Lifter_ctor with number from name */
             long num = atol(name + 6);
+            int meshVal = *(int*)((char*)board + UNI_MESH_3);
+            if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
             void *mem = g_operatorNew(0x10F4);
             if (mem) {
-                obj = g_LifterCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_MESH_3), num);
+                obj = g_LifterCtor(mem, (int)board, x, y, z, meshVal, num);
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
                 renderOut = ((DWORD*)obj)[0x438];
             }
@@ -3019,9 +3038,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPINNY (Toob) ── */
     if (my_strnicmp(name, "SPINNY", 6) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_BONK_STORE);
+        if (!meshVal) { DebugLog("SPINNY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
         if (mem) {
-            obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_BONK_STORE));
+            obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -3032,9 +3053,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW (Toob) ── */
     if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SAWPATH");
+        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        if (!meshVal) { DebugLog("SAW: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1110);
         if (mem) {
-            obj = g_SawCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_SAW1_OBJ), pathObj);
+            obj = g_SawCtor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             *(void **)((char *)board + UNI_BRIDGE_ANGLE) = obj;
             renderOut = ((DWORD*)obj)[0x435];
@@ -3046,9 +3069,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW2 (Toob) ── */
     if (my_stricmp(name, "SAW2") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH");
+        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        if (!meshVal) { DebugLog("SAW2: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1118);
         if (mem) {
-            obj = g_Saw2Ctor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_SAW1_OBJ), pathObj);
+            obj = g_Saw2Ctor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             *(void **)((char *)board + UNI_BRIDGE_STATE) = obj;
             renderOut = ((DWORD*)obj)[0x435];
@@ -3059,9 +3084,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── FALLOUT1 (Toob) ── */
     if (my_strnicmp(name, "FALLOUT1", 8) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_SAW2_OBJ);
+        if (!meshVal) { DebugLog("FALLOUT1: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
         if (mem) {
-            obj = g_FalloutCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_SAW2_OBJ));
+            obj = g_FalloutCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             *(void **)((char *)board + UNI_BRIDGE_COUNTER) = obj;
             renderOut = ((DWORD*)obj)[0x435];
@@ -3074,12 +3101,14 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
         int meshOff = UNI_MESH_3 + (dawgNum-1) * 4;
+        int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         char pathName[] = "DAWGPATH0";
         pathName[8] = '0' + dawgNum;
         int pathObj = g_LevelFindObjectByName(meshWorld, pathName);
         void *mem = g_operatorNew(0x1154);
         if (mem) {
-            obj = g_BlockdawgCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff), pathObj);
+            obj = g_BlockdawgCtor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
             if (dawgNum == 3) *(char*)((char*)obj + 0x1152) = 1;
@@ -3092,9 +3121,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
         int wNum = name[6] - '0';
         int meshOff = UNI_BONK_STORE + (wNum-1) * 4;
+        int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("WOBBLY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1524);
         if (mem) {
-            obj = g_GameLevelCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+            obj = g_GameLevelCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x435];
             /* Per-wobbly constants */
@@ -3128,9 +3159,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── NEONPLATFORM (Neon) ── */
     if (my_strnicmp(name, "NEONPLATFORM", 12) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_SAW2_OBJ);
+        if (!meshVal) { DebugLog("NEONPLATFORM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10EC);
         if (mem) {
-            obj = g_NeonPlatformCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_SAW2_OBJ));
+            obj = g_NeonPlatformCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -3142,9 +3175,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
         int dNum = name[6] - '0';
         int meshOff = UNI_MESH_3 + (dNum-1) * 4;
+        int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("DFLOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1104);
         if (mem) {
-            obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+            obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43A];
             if (dNum == 4) {
@@ -3161,9 +3196,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TRODE (Neon) ── */
     if (my_strnicmp(name, "TRODE", 5) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_BRIDGE_COUNTER);
+        if (!meshVal) { DebugLog("TRODE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1104);
         if (mem) {
-            obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_BRIDGE_COUNTER));
+            obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x43A];
         }
@@ -3179,9 +3216,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (idx >= 0 && idx < 16) {
                 int meshIdx = idx & 1;
                 int meshOff = UNI_BRIDGE_STATE + meshIdx * 4;
+                int meshVal = *(int*)((char*)board + meshOff);
+                if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
                 void *mem = g_operatorNew(0x10F4);
                 if (mem) {
-                    obj = g_PopcylinderCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+                    obj = g_PopcylinderCtor(mem, (int)board, x, y, z, meshVal);
                     *(void **)((char *)board + UNI_SKY_POPCYL_BASE + idx * 4) = obj;
                     g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
                     renderOut = ((DWORD*)obj)[0x438];
@@ -3195,9 +3234,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── TRAPDOOR (Sky) ── */
     if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && level == 13) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
+        int meshVal = *(int*)((char*)board + UNI_NEON_DARK_COUNT);
+        if (!meshVal) { DebugLog("TRAPDOOR/Sky: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10F4);
         if (mem) {
-            obj = g_RotatorCtor(mem, (int)board, x, y, z, dat - fparam, *(int*)((char*)board + UNI_NEON_DARK_COUNT));
+            obj = g_RotatorCtor(mem, (int)board, x, y, z, dat - fparam, meshVal);
             *(void **)((char *)board + UNI_NEON_TRAPDOOR) = obj;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x43C];
@@ -3208,10 +3249,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPEEDCYLINDER (Up) ── */
     if (my_strnicmp(name, "SPEEDCYLINDER", 13) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_MESH_4);
+        if (!meshVal) { DebugLog("SPEEDCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x150C);
         if (mem) {
             /* numArg from __ftol2 — use 0 as fallback */
-            obj = g_SpeedCylinderCtor(mem, (int)board, x, y, z, 0, *(int*)((char*)board + UNI_MESH_4));
+            obj = g_SpeedCylinderCtor(mem, (int)board, x, y, z, 0, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x438];
         }
@@ -3221,9 +3264,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TIMEBUTTON (Up) ── */
     if (my_strnicmp(name, "TIMEBUTTON", 10) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_MESH_5);
+        if (!meshVal) { DebugLog("TIMEBUTTON: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
         if (mem) {
-            obj = g_TimeButtonCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_MESH_5));
+            obj = g_TimeButtonCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x438];
         }
@@ -3233,9 +3278,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── LOOPER (Impossible) ── */
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_BONK_STORE);
+        if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1500);
         if (mem) {
-            obj = g_LooperCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_BONK_STORE));
+            obj = g_LooperCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -3245,9 +3292,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── GEAR (Impossible) ── */
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
+        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
-            obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, *(int*)((char*)board + UNI_SAW1_OBJ));
+            obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -3257,9 +3306,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── BIGGEAR (Impossible) ── */
     if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_SAW2_OBJ);
+        if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
-            obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, *(int*)((char*)board + UNI_SAW2_OBJ));
+            obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x43D] = 0x3F000000;
             if (strstr(name, "TOUCH")) *(char*)((char*)obj + 0x544) = 1;
@@ -3272,9 +3323,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── ROTATOR (Impossible) ── */
     if (my_strnicmp(name, "ROTATOR", 7) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_MESH_3);
+        if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
         if (mem) {
-            obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_MESH_3));
+            obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x43A] = 0x3F800000;
             if (g_RNG && g_RNG((void*)0x4F7360, 2, 0) == 0)
@@ -3288,9 +3341,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── PENDULUM (Impossible) ── */
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
+        int meshVal = *(int*)((char*)board + UNI_MESH_4);
+        if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1504);
         if (mem) {
-            obj = g_PendulumCtor(mem, (int)board, x, y, z, *(int*)((char*)board + UNI_MESH_4));
+            obj = g_PendulumCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -3303,9 +3358,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_MESH_5 : UNI_MESH_6;
         int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8;
+        int meshVal = *(int*)((char*)board + meshOff);
+        if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1100);
         if (mem) {
-            obj = g_BreakBridgeCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
+            obj = g_BreakBridgeCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             *(void **)((char *)board + storeOff) = obj;
             renderOut = ((DWORD*)obj)[0x438];
