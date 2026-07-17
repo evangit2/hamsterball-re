@@ -1653,6 +1653,11 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      *   - Mesh slot pointers = NULL → render function does nothing
      * This prevents crashes from garbage pointers being dereferenced. */
     memset((char *)mem + 0x4300, 0, 0x6500 - 0x4300);
+    {
+        char dbg2[128];
+        wsprintfA(dbg2, "memset board+0x4300..0x6500 done (board=0x%08X)", (DWORD)mem);
+        DebugLog(dbg2);
+    }
 
     /* Step 2: Set vtable */
     *(DWORD *)mem = g_levelVtables[raceIndex];
@@ -3075,6 +3080,14 @@ void __fastcall UniversalRender(void *board) {
 void __fastcall UniversalBoardUpdate(void *board) {
     if (!g_SceneUpdate || !board) return;
 
+    static int s_updateCount = 0;
+    s_updateCount++;
+    if (s_updateCount <= 3) {
+        char dbg[128];
+        wsprintfA(dbg, "UniversalBoardUpdate #%d (board=0x%08X)", s_updateCount, (DWORD)board);
+        DebugLog(dbg);
+    }
+
     /* Call base Scene_Update */
     g_SceneUpdate(board);
 
@@ -3168,6 +3181,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (!name || !out1 || !out2 || !s1data) return;
     int level = GetCurrentLevel(board);
     if (level == 0 || level > 15) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
+
+    {
+        char dbg[256];
+        wsprintfA(dbg, "CreateDynamicObjects: level=%d name='%s' board=0x%08X s1data=0x%08X", level, name, (DWORD)board, (DWORD)s1data);
+        DebugLog(dbg);
+    }
 
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     int difficulty = (app && !IsBadReadPtr((void*)app, 0x500)) ? *(int *)(app + APP_DIFFICULTY) : 0;
@@ -5300,12 +5319,17 @@ static void UniversalConstructor(void *board, int raceIndex) {
      * pointers. If we load them after Board_Setup, vtable[33] sees NULL
      * pointers and the dynamic objects get no mesh. */
     UniversalPostSetup(board);
+    DebugLog("UniversalPostSetup done");
 
     /* Step 5: Board_Setup via vtable[0x80] */
     DWORD vtable = *(DWORD *)board;
     if (vtable && !IsBadReadPtr((void *)vtable, 0x84)) {
         void (__thiscall *boardSetup)(void *) = *(void (__thiscall **)(void *))((char *)vtable + 0x80);
-        if (boardSetup) boardSetup(board);
+        if (boardSetup) {
+            DebugLog("Calling Board_Setup (vtable+0x80)...");
+            boardSetup(board);
+            DebugLog("Board_Setup done");
+        }
     }
 
     /* Step 6: Per-level post-Board_Setup extras.
@@ -5584,18 +5608,18 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 24 (offset +0x60): Per-level render → UniversalRender
-         * Replaces 5 unique per-level render functions + 10 shared stubs.
-         * UniversalRender calls Level_RenderDynamicObjects first (the shared base),
-         * then dispatches to render feature blocks (bumper, windmill, glass, sky). */
-        {
+         * DISABLED for debugging — crash at 0x452783 on all races.
+         * Keep original per-level render function to isolate the cause.
+         * Re-enable by uncommenting the patch block below. */
+        /* {
             DWORD *slot = (DWORD *)(vtableAddr + 0x60);
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             *slot = (DWORD)&UniversalRender;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
-        }
+        } */
     }
-    DebugLog("Vtable slots [1,19,24,29,33] patched for all 15 levels");
+    DebugLog("Vtable slots [1,19,29,33] patched for all 15 levels (slot 24 DISABLED for debugging)");
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
