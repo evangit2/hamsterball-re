@@ -1,6 +1,19 @@
-# Custom Entities Mod v9
+# Custom Entities Mod v17
 
 Spawns testcube meshes at S1 ref point positions marked with `(GRIDxx)` in the level's MESHWORLD file.
+
+## v17 New: `<MESH>` tag for 8-ball mesh selection
+
+Added a new `<MESH>` argument tag (similar to `<CHASE>`, `<HOME>`, `<SIZE>`) that lets you pick which mesh model an 8-ball (BADBALL) uses:
+
+```
+BADBALL<CHASE>100</CHASE><HOME>400</HOME><MESH>funball</MESH>
+```
+
+- If the `<MESH>` value contains `"funball"`, the ball uses the **FunBall** mesh + texture (mesh index 10)
+- If no `<MESH>` tag is present, or the value doesn't contain "funball", the ball uses the default **8Ball** mesh (Sphere + 8ball texture, mesh index 9)
+
+The mod processes `<MESH>` tags after the game's native `CreateBadBall` has spawned the 8-balls during level load. It matches BADBALL objects to spawned balls by their home position (which `CreateBadBall` copies directly from the MESHWORLD object's X/Y/Z).
 
 ## v9 Fix: MeshWorld Pointer Location
 
