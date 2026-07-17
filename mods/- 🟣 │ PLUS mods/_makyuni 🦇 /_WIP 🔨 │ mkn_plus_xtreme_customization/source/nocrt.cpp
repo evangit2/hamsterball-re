@@ -57,6 +57,18 @@ int nc_stricmp(const char* a, const char* b) {
     return (unsigned char)*a - (unsigned char)*b;
 }
 
+int nc_strnicmp(const char* a, const char* b, size_t n) {
+    while (n > 0 && *a && *b) {
+        char ca = *a, cb = *b;
+        if (ca >= 'a' && ca <= 'z') ca -= 32;
+        if (cb >= 'a' && cb <= 'z') cb -= 32;
+        if (ca != cb) return (unsigned char)ca - (unsigned char)cb;
+        a++; b++; n--;
+    }
+    if (n == 0) return 0;
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
 char* nc_strncpy(char* dst, const char* src, size_t n) {
     size_t i = 0;
     for (; i < n && src[i]; i++) dst[i] = src[i];

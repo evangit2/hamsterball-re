@@ -555,6 +555,31 @@ static LinkElementMap g_link_element_map[] = {
 #define NUM_LINK_MAPS (sizeof(g_link_element_map) / sizeof(g_link_element_map[0]))
 
 // -- Patch a string in the .data section ------------------------------------
+// Normalize a config path value to match game .data string format.
+// The game stores bare filenames like "Loader.png" at these addresses and
+// prepends "Textures\" at load time. Config paths like "Textures/Loader"
+// must be stripped of the directory prefix and have .png added if missing.
+static void normalize_path(const char* input, char* output, int maxOut)
+{
+    const char* src = input;
+
+    // Strip leading "Textures/", "textures/", "Textures\\", "textures\\"
+    if (nc_strnicmp(src, "Textures/", 9) == 0)      src += 9;
+    else if (nc_strnicmp(src, "Textures\\", 9) == 0) src += 9;
+
+    // Copy the remaining filename
+    int len = (int)nc_strlen(src);
+    if (len > maxOut - 5) len = maxOut - 5; // Leave room for .png + null
+    nc_memcpy(output, src, len);
+    output[len] = '\0';
+
+    // Append ".png" if no extension present
+    if (len < 4 ||
+        nc_stricmp(output + len - 4, ".png") != 0) {
+        nc_memcpy(output + len, ".png", 5); // includes null
+    }
+}
+
 static void apply_string_patch(DWORD address, const char* text, int maxLen)
 {
     DWORD old_protect;
@@ -671,12 +696,14 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                 if (tk.type == JTK_STRING) {
                     // Copy the path string
                     char pathBuf[128];
+                    char normBuf[128];
                     copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
                     // Find matching path element and patch it
                     for (int i = 0; i < (int)NUM_PATH_MAPS; i++) {
                         if (json_key_matches(elemName, elemNameLen, g_path_element_map[i].jsonName)) {
+                            normalize_path(pathBuf, normBuf, g_path_element_map[i].maxLength + 1);
                             apply_string_patch(g_path_element_map[i].address,
-                                             pathBuf, g_path_element_map[i].maxLength);
+                                             normBuf, g_path_element_map[i].maxLength);
                             break;
                         }
                     }
@@ -692,11 +719,13 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
             } else if (tk.type == JTK_STRING) {
                 // Single path
                 char pathBuf[128];
+                char normBuf[128];
                 copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
                 for (int i = 0; i < (int)NUM_PATH_MAPS; i++) {
                     if (json_key_matches(elemName, elemNameLen, g_path_element_map[i].jsonName)) {
+                        normalize_path(pathBuf, normBuf, g_path_element_map[i].maxLength + 1);
                         apply_string_patch(g_path_element_map[i].address,
-                                         pathBuf, g_path_element_map[i].maxLength);
+                                         normBuf, g_path_element_map[i].maxLength);
                         break;
                     }
                 }
