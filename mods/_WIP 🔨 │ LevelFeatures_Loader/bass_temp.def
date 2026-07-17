@@ -1,0 +1,13 @@
+EXPORTS
+    @UniversalBoardUpdate@4 @1
+    @UniversalRaceState@4 @2
+    BumperCollisionLogic @3
+    DebugLog @4
+    UniversalBoardCtorEntry @5
+    UniversalBoardCtorLogic @6
+    UniversalConstructorLogic @7
+    UniversalCreateDynamicObjects @8
+    UniversalDispatchCollision @9
+    g_OriginalDispatch @10 DATA
+    g_ctorTrampoline @11 DATA
+    g_pendingRaceIndex @12 DATA

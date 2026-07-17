@@ -24,6 +24,7 @@ void* nc_memset(void* dst, int val, size_t count);
 size_t nc_strlen(const char* s);
 int nc_strcmp(const char* a, const char* b);
 int nc_stricmp(const char* a, const char* b);
+int nc_strnicmp(const char* a, const char* b, size_t n);
 char* nc_strncpy(char* dst, const char* src, size_t n);
 char* nc_strcpy(char* dst, const char* src);
 char* nc_strcat(char* dst, const char* src);
