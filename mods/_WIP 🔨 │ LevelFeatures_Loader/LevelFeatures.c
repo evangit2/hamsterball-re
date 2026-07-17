@@ -140,7 +140,7 @@ void DebugLog(const char *msg);
 #define BRIDGE_PARAM2      UNI_BRIDGE_STATE  /* 0 */
 #define BRIDGE_PARAM3      UNI_BRIDGE_COUNTER  /* 0x32 = 50 */
 
-#define UNION_SIZE  0xA2F8
+#define UNION_SIZE  0xAB00
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Object type system — extensible per-level feature toggles
@@ -422,48 +422,37 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * UNIVERSAL BOARD OFFSETS — same offsets for ALL levels
- * All per-level object data uses these unified offsets instead of
- * level-specific offsets. This eliminates the need for level-conditional
- * offset selection in collision handlers.
- * Zone: 0x6200-0x63B8 (440 bytes, no conflicts with existing engine data)
+ * ALL levels read and write from the SAME offsets. No per-level variation.
+ * Layout: EHVector first (largest: 8×0x418=0x20C0), then mesh/working data,
+ * then AthenaLists. All above max per-level board data (0x6498).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* EHVector — bumper slot array (8 × 0x418 = 0x20C0 bytes) — FIRST, largest block */
+#define UNI_EHVECTOR  0x6500
+
+/* Bumper lit flags (8 × 4 bytes) — right after ehVector */
+#define UNI_BUMPER_LIT 0x85C0
+
 /* Mesh object slots (16 × 4 bytes) */
-#define UNI_MESH_0    0x6200
-#define UNI_MESH_1    0x6204
-#define UNI_MESH_2    0x6208
-#define UNI_MESH_3    0x620C
-#define UNI_MESH_4    0x6210
-#define UNI_MESH_5    0x6214
-#define UNI_MESH_6    0x6218
-#define UNI_MESH_7    0x621C
-#define UNI_MESH_8    0x6220
-#define UNI_MESH_9    0x6224
-#define UNI_MESH_10   0x6228
-#define UNI_MESH_11   0x622C
-#define UNI_MESH_12   0x6230
-#define UNI_MESH_13   0x6234
-#define UNI_MESH_14   0x6238
-#define UNI_MESH_15   0x623C
+#define UNI_MESH_0    0x85E0
+#define UNI_MESH_1    0x85E4
+#define UNI_MESH_2    0x85E8
+#define UNI_MESH_3    0x85EC
+#define UNI_MESH_4    0x85F0
+#define UNI_MESH_5    0x85F4
+#define UNI_MESH_6    0x85F8
+#define UNI_MESH_7    0x85FC
+#define UNI_MESH_8    0x8600
+#define UNI_MESH_9    0x8604
+#define UNI_MESH_10   0x8608
+#define UNI_MESH_11   0x860C
+#define UNI_MESH_12   0x8610
+#define UNI_MESH_13   0x8614
+#define UNI_MESH_14   0x8618
+#define UNI_MESH_15   0x861C
 
-/* AthenaList slots (8 × 4 bytes) */
-#define UNI_LIST_0    0x6400
-#define UNI_LIST_1    0x6810
-#define UNI_LIST_2    0x6C20
-#define UNI_LIST_3    0x7030
-#define UNI_LIST_4    0x7440
-#define UNI_LIST_5    0x7850
-#define UNI_LIST_6    0x7C60
-#define UNI_LIST_7    0x8070
-
-/* EHVector slot */
-#define UNI_EHVECTOR  0x6260
-
-/* Bumper lit flags (20 × 4 bytes, indexed by bumperNum*4) */
-#define UNI_BUMPER_LIT 0x6264
-
-/* Working data (64 × 4 bytes) */
-#define UNI_BONK_STORE       0x62B4
+/* Working data / misc pointers (0x8620+) */
+#define UNI_BONK_STORE       0x8620
 #define UNI_CATAPULT_LIST    UNI_LIST_0
 #define UNI_CATAPULT_COUNT   (UNI_LIST_0 + 0x04)
 #define UNI_CATAPULT_DATA    (UNI_LIST_0 + 0x40C)
@@ -479,66 +468,78 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_JUDGE_LIST       UNI_LIST_4
 #define UNI_JUDGE_COUNT      (UNI_LIST_4 + 0x04)
 #define UNI_JUDGE_DATA       (UNI_LIST_4 + 0x40C)
-#define UNI_BELL_OBJ         0x62F4
-#define UNI_SAW1_OBJ         0x62F8
-#define UNI_SAW2_OBJ         0x62FC
-#define UNI_SAW2_ALERT_OBJ   0x6300
-#define UNI_BRIDGE_ANGLE     0x6304
-#define UNI_BRIDGE_STATE     0x6308
-#define UNI_BRIDGE_COUNTER   0x630C
-#define UNI_WINDMILL_X       0x6310
-#define UNI_WINDMILL_Y       0x6314
-#define UNI_WINDMILL_Z       0x6318
-#define UNI_WINDMILL_ANGLE   0x631C
-#define UNI_WINDMILL_SPEED   0x6320
-#define UNI_WINDMILL_STATE   0x6324
-#define UNI_WINDMILL_COUNTER 0x6328
-#define UNI_WINDMILL_DECAY   0x632C
-#define UNI_BITE_STATE       0x6330
-#define UNI_BITE_SPEED       0x6334
-#define UNI_NEON_DARK_COUNT  0x6338
-#define UNI_NEON_TRAPDOOR    0x633C
-#define UNI_GLASS_SMASHER1   0x6340
-#define UNI_GLASS_SMASHER2   0x6344
-#define UNI_SKY_TRAPDOOR     0x6348
-#define UNI_PEG_COUNT        0x634C
-#define UNI_MAGNIFYING_GLASS 0x6350
-#define UNI_POPCYL_ARRAY     0x6354
-#define UNI_POPCYL_COUNTER   0x6358
-#define UNI_BLOCKDAWG1       0x635C
-#define UNI_BLOCKDAWG2       0x6360
-#define UNI_MASTERCAT_MESH   0x6364
+#define UNI_BELL_OBJ         0x8624
+#define UNI_SAW1_OBJ         0x8628
+#define UNI_SAW2_OBJ         0x862C
+#define UNI_SAW2_ALERT_OBJ   0x8630
+#define UNI_BRIDGE_ANGLE     0x8634
+#define UNI_BRIDGE_STATE     0x8638
+#define UNI_BRIDGE_COUNTER   0x863C
+#define UNI_WINDMILL_X       0x8640
+#define UNI_WINDMILL_Y       0x8644
+#define UNI_WINDMILL_Z       0x8648
+#define UNI_WINDMILL_ANGLE   0x864C
+#define UNI_WINDMILL_SPEED   0x8650
+#define UNI_WINDMILL_STATE   0x8654
+#define UNI_WINDMILL_COUNTER 0x8658
+#define UNI_WINDMILL_DECAY   0x865C
+#define UNI_BITE_STATE       0x8660
+#define UNI_BITE_SPEED       0x8664
+#define UNI_NEON_DARK_COUNT  0x8668
+#define UNI_NEON_TRAPDOOR    0x866C
+#define UNI_GLASS_SMASHER1   0x8670
+#define UNI_GLASS_SMASHER2   0x8674
+#define UNI_SKY_TRAPDOOR     0x8678
+#define UNI_PEG_COUNT        0x867C
+#define UNI_MAGNIFYING_GLASS 0x8680
+#define UNI_POPCYL_ARRAY     0x8684
+#define UNI_POPCYL_COUNTER   0x8688
+#define UNI_BLOCKDAWG1       0x868C
+#define UNI_BLOCKDAWG2       0x8690
+#define UNI_MASTERCAT_MESH   0x8694
 #define UNI_MASTERCAT_LIST   UNI_LIST_5
 #define UNI_MASTERCAT_COUNT  (UNI_LIST_5 + 0x04)
 #define UNI_MASTERCAT_DATA   (UNI_LIST_5 + 0x40C)
-#define UNI_POPCYL1_STORE    0x6374
-#define UNI_POPCYL2_STORE    0x6378
+#define UNI_POPCYL1_STORE    0x8698
+#define UNI_POPCYL2_STORE    0x869C
 #define UNI_SWIRL_LIST       UNI_LIST_6
-#define UNI_BBOARD_STORE1    0x6380
-#define UNI_BBOARD_STORE2    0x6384
-#define UNI_WHEELEMBED_X     0x6388
-#define UNI_WHEELEMBED_Y     0x638C
-#define UNI_WHEELEMBED_Z     0x6390
-#define UNI_WHEELEMBED_VX    0x6394
-#define UNI_WHEELEMBED_VY    0x6398
-#define UNI_WHEELEMBED_VZ    0x639C
+#define UNI_BBOARD_STORE1    0x86A0
+#define UNI_BBOARD_STORE2    0x86A4
+#define UNI_WHEELEMBED_X     0x86A8
+#define UNI_WHEELEMBED_Y     0x86AC
+#define UNI_WHEELEMBED_Z     0x86B0
+#define UNI_WHEELEMBED_VX    0x86B4
+#define UNI_WHEELEMBED_VY    0x86B8
+#define UNI_WHEELEMBED_VZ    0x86BC
+
+/* Sky popcyl array (16 × 4 = 64 bytes) */
+#define UNI_SKY_POPCYL_BASE 0x8700
+#define UNI_SKY_TIMER        0x8740
+
+/* AthenaList slots (8 × 0x410 = 0x2080 bytes) */
+#define UNI_LIST_0    0x8800
+#define UNI_LIST_1    0x8C10
+#define UNI_LIST_2    0x9020
+#define UNI_LIST_3    0x9430
+#define UNI_LIST_4    0x9840
+#define UNI_LIST_5    0x9C50
+#define UNI_LIST_6    0xA060
+#define UNI_LIST_7    0xA470
 
 /* Board structure offsets — shared across all levels (from Board_ctor base layout) */
-#define UNI_BOARD_NAME      0x868   /* Board name string pointer */
-#define UNI_BOARD_APPVAL    0x870   /* Value copied from app+0x1DC */
-#define UNI_SCORE_LIST      0x8B8   /* Score object AthenaList */
-#define UNI_TARBUBBLE_LIST  0x11E4  /* TarBubble AthenaList (Dizzy) */
-#define UNI_OBJ_LIST        0x2578  /* Main game object AthenaList */
-#define UNI_RACE_TITLE      0x29B4  /* Race title string pointer */
-#define UNI_BALL_LIST       0x29D4  /* Ball AthenaList */
-#define UNI_BALL_COUNT      0x29D8  /* Ball count */
-#define UNI_BALL_ITER       0x29DC  /* Ball iterator slot base */
-#define UNI_BALL_ARRAY      0x2DE0  /* Ball array data pointer */
-#define UNI_RACE_BALL_LIST  0x362C  /* Race ball AthenaList */
-#define UNI_PARTICLE_LIST   0x3B00  /* Particle AthenaList */
-#define UNI_MUSIC_NAME      0x4344  /* Music name string pointer */
-#define UNI_SKY_POPCYL_BASE 0x63A0  /* Sky popcylinder array (16 slots × 4 bytes) */  /* Sky popcylinder array (16 slots × 4 bytes) */
-#define UNI_SKY_TIMER       0x63E0  /* Sky popcylinder activation timer */  /* Sky popcylinder activation timer */
+#define UNI_BOARD_NAME      0x868
+#define UNI_BOARD_APPVAL    0x870
+#define UNI_SCORE_LIST      0x8B8
+#define UNI_TARBUBBLE_LIST  0x11E4
+#define UNI_OBJ_LIST        0x2578
+#define UNI_RACE_TITLE      0x29B4
+#define UNI_BALL_LIST       0x29D4
+#define UNI_BALL_COUNT      0x29D8
+#define UNI_BALL_ITER       0x29DC
+#define UNI_BALL_ARRAY      0x2DE0
+#define UNI_RACE_BALL_LIST  0x362C
+#define UNI_PARTICLE_LIST   0x3B00
+#define UNI_MUSIC_NAME      0x4344
 
 /* Trapdoor sub-lists (base Board_ctor layout, used by Tower TRAPDOOR) */
 #define UNI_TRAPDOOR_MESH_LIST  0xCD4   /* Trapdoor collision mesh sub-list */
@@ -614,52 +615,52 @@ static LevelData g_levelData[16] = {
     {{0}}, /* index 0 unused */
     /* 1=WarmUp */
     {"WarmUp",0x004D04A8,"Board (Warm-Up)","WARM-UP RACE","BEGINNERRACE","Hamster Nation",{1.0f,0.0f,1.0f},"levels\\level1",{},0,0,
-     {0},{0},0,0,{0},{0},0,0},
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 2=Beginner */
     {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0,
-     {0},0x436C,8,0x418,{0},{0},0,0},
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 3=Intermediate */
     {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0,
-     {0},{0},0,0,{0},{0},0,UNI_BRIDGE_ANGLE},
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE},
     /* 4=Dizzy */
-    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x62B4:Levels\\Level3-Tipper","0x62F8:RENDER","0x6218:Levels\\Level3-WaterWheel","0x621C:RENDER","0x7448:Levels\\Level3-Swirl","0x6238:RENDER","0x62FC:Levels\\Level3-Gluebie"},7,0x851,
-     {UNI_LIST_0,UNI_LIST_1,0},{0},0,0,{0,0,0},{0},0,0},
+    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x8620:Levels\\Level3-Tipper","0x8628:RENDER","0x85F8:Levels\\Level3-WaterWheel","0x85FC:RENDER","0x9848:Levels\\Level3-Swirl","0x8618:RENDER","0x862C:Levels\\Level3-Gluebie"},7,0x851,
+     {UNI_LIST_0,UNI_LIST_1,0},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0,0},
     /* 5=Tower */
-    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x62B4:Levels\\Level4-Catapult","0x62F8:Levels\\Level4-Drawbridge","0x6214:MESH:Meshes\\YellowLink","0x620C:Levels\\Level4-Mace","0x6210:Levels\\Level4-Windmill","0x6220:MESH:Meshes\\Chomper","0x623C:Levels\\Level4-Turret"},7,0,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},{0},0,0,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},
+    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x8620:Levels\\Level4-Catapult","0x8628:Levels\\Level4-Drawbridge","0x85F4:MESH:Meshes\\YellowLink","0x85EC:Levels\\Level4-Mace","0x85F0:Levels\\Level4-Windmill","0x8600:MESH:Meshes\\Chomper","0x861C:Levels\\Level4-Turret"},7,0,
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,8,0x418,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},
     /* 6=Up */
-    {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x620C:levels\\levelup-lifter","0x6210:levels\\levelup-speedcylinder","0x6214:levels\\levelup-button"},3,0x853,
-     {UNI_MESH_0,0},{0},0,0,{0},{0},0,0},
+    {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x85EC:levels\\levelup-lifter","0x85F0:levels\\levelup-speedcylinder","0x85F4:levels\\levelup-button"},3,0x853,
+     {UNI_MESH_0,0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 7=Neon */
-    {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x62FC:Levels\\LevelDark-NeonPlatform","0x620C:Levels\\LevelDark-DFloor1","0x6210:Levels\\LevelDark-DFloor2","0x6214:Levels\\LevelDark-DFloor3","0x6218:Levels\\LevelDark-DFloor4","0x630C:Levels\\LevelDark-Trode"},6,0,
-     {0},{0},0,0,{0},{0},0,0},
+    {"Neon",0x004D1DF0,"Board (Dark)","NEON RACE","NEONRACE","Neon Theme",{1.0f,1.0f,0.0f},"levels\\leveldark",{"0x862C:Levels\\LevelDark-NeonPlatform","0x85EC:Levels\\LevelDark-DFloor1","0x85F0:Levels\\LevelDark-DFloor2","0x85F4:Levels\\LevelDark-DFloor3","0x85F8:Levels\\LevelDark-DFloor4","0x863C:Levels\\LevelDark-Trode"},6,0,
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 8=Expert */
-    {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x62B4:Levels\\Level5-Bridge","0x62F8:RENDER","0x6218:MESH:meshes\\hammyjudge","0x621C:MESH:meshes\\hammyjudge","0x6220:MESH:meshes\\hammyjudge"},5,0x854,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_4,0},{0},0,0,{0},{0},0,0},
+    {"Expert",0x004D0B00,"Board (Expert)","EXPERT RACE","EXPERTRACE","Fight!",{1.0f,0.0f,0.0f},"levels\\level5",{"0x8620:Levels\\Level5-Bridge","0x8628:RENDER","0x85F8:MESH:meshes\\hammyjudge","0x85FC:MESH:meshes\\hammyjudge","0x8600:MESH:meshes\\hammyjudge"},5,0x854,
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_4,0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 9=Odd */
     {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855,
-     {0},{0},0,0,{0},{0},0,0},
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 10=Toob */
-    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x62B4:Levels\\Level8-Spinny","0x62F8:Levels\\Level8-Saw","0x62FC:Levels\\Level8-Fallout","0x620C:Levels\\Level8-Blockdawg1","0x6210:Levels\\Level8-Blockdawg2"},5,0x856,
-     {0},0x438C,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
+    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x8620:Levels\\Level8-Spinny","0x8628:Levels\\Level8-Saw","0x862C:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-Blockdawg1","0x85F0:Levels\\Level8-Blockdawg2"},5,0x856,
+     {0},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
-    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x62B4:Levels\\Level7-Wobbly1","0x62B8:Levels\\Level7-Wobbly2","0x62BC:Levels\\Level7-Wobbly3","0x62C0:Levels\\Level7-Wobbly4","0x62C4:Levels\\Level7-Wobbly5","0x62C8:Levels\\Level7-Wobbly6","0x62CC:Levels\\Level7-Wobbly7"},7,0x857,
-     {0},{0},0,0,{0},{0},0,0},
+    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x8620:Levels\\Level7-Wobbly1","0x8624:Levels\\Level7-Wobbly2","0x8628:Levels\\Level7-Wobbly3","0x862C:Levels\\Level7-Wobbly4","0x8630:Levels\\Level7-Wobbly5","0x8634:Levels\\Level7-Wobbly6","0x8638:Levels\\Level7-Wobbly7"},7,0x857,
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 12=Glass */
     {"Glass",0x004D1F90,"Board (Glass)","GLASS RACE","GLASSRACE","Glass Theme",{1.0f,0.0f,1.0f},"levels\\levelglass",{},0,0,
-     {0},{0},0,0,{0},{0},0,0},
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 13=Sky */
-    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x6214:MESH:meshes\\skypillar","0x6350:MESH:meshes\\magnifyingglass","0x6308:levels\\level9-popcylinder1","0x630C:levels\\level9-popcylinder2","0x6338:levels\\level9-trapdoor","0x6218:SPRITE:textures\\clouds.png"},6,0x858,
-     {UNI_MESH_9,0},{0},0,0,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
+    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0x85F4:MESH:meshes\\skypillar","0x8680:MESH:meshes\\magnifyingglass","0x8638:levels\\level9-popcylinder1","0x863C:levels\\level9-popcylinder2","0x8668:levels\\level9-trapdoor","0x85F8:SPRITE:textures\\clouds.png"},6,0x858,
+     {UNI_MESH_9,0},UNI_EHVECTOR,8,0x418,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
     /* 14=Master — stripped down: only bridge + breaking bridge pieces.
      * Master's unique objects (Tipper, PopCylinder, BlockDawg, Catapult, Gluebie)
      * are handled by their standard level implementations, not Master special cases.
      * BBRIDGE1/2 are the Master-specific breaking bridge pieces. */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x62B4:Levels\\Level2-Bridge","0x62F8:RENDER","0x6214:Levels\\Level10-Bridge1","0x6218:Levels\\Level10-Bridge2"},4,0x859,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},0x439C,4,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x8620:Levels\\Level2-Bridge","0x8628:RENDER","0x85F4:Levels\\Level10-Bridge1","0x85F8:Levels\\Level10-Bridge2"},4,0x859,
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_6,0},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
-    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x62B4:Levels\\LevelImpossible-Looper","0x62F8:Levels\\LevelImpossible-Gear","0x62FC:Levels\\LevelImpossible-BigGear","0x620C:Levels\\LevelImpossible-Rotator","0x6210:Levels\\LevelImpossible-Pendulum"},5,0,
-     {0},{0},0,0,{0},{0},0,0,0x4348,1,0,0},
+    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x8620:Levels\\LevelImpossible-Looper","0x8628:Levels\\LevelImpossible-Gear","0x862C:Levels\\LevelImpossible-BigGear","0x85EC:Levels\\LevelImpossible-Rotator","0x85F0:Levels\\LevelImpossible-Pendulum"},5,0,
+     {0},UNI_EHVECTOR,8,0x418,{0},{0},0,0,0x4348,1,0,0},
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2760,7 +2761,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             obj = g_GluebieCtor(mem, (int)board, *(int*)((char*)board + meshOff));
             DWORD *o = (DWORD *)obj;
             o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
-            int listOff = 0x620C;
+            int listOff = UNI_MESH_3;
             g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
@@ -3072,7 +3073,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── BLOCKDAWG1/2/3 (Toob) ── */
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
-        int meshOff = 0x620C + (dawgNum-1) * 4;
+        int meshOff = UNI_MESH_3 + (dawgNum-1) * 4;
         char pathName[] = "DAWGPATH0";
         pathName[8] = '0' + dawgNum;
         int pathObj = g_LevelFindObjectByName(meshWorld, pathName);
@@ -3140,7 +3141,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── DFLOOR1-4 (Neon) ── */
     if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
         int dNum = name[6] - '0';
-        int meshOff = 0x620C + (dNum-1) * 4;
+        int meshOff = UNI_MESH_3 + (dNum-1) * 4;
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
@@ -3300,8 +3301,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── BBRIDGE1/2 (Master) ── */
     if (my_strnicmp(name, "BBRIDGE", 7) == 0) {
         int bNum = name[7] - '0';
-        int meshOff = (bNum == 1) ? 0x6214 : 0x6218;
-        int storeOff = (bNum == 1) ? 0x621C : 0x6220;
+        int meshOff = (bNum == 1) ? UNI_MESH_5 : UNI_MESH_6;
+        int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8;
         void *mem = g_operatorNew(0x1100);
         if (mem) {
             obj = g_BreakBridgeCtor(mem, (int)board, x, y, z, *(int*)((char*)board + meshOff));
