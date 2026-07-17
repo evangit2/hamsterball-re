@@ -1712,6 +1712,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             }
         }
     }
+    DebugLog("Step 9 (unlock flags) done");
 
     /* Step 9: Per-level structural init (AthenaLists, eh_vector arrays, zero-fills) */
 
@@ -1722,6 +1723,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             g_AthenaListInit((void *)((char *)mem + ld->athenaListOffsets[ai]), 0);
         }
     }
+    DebugLog("Step 9a (AthenaList_Init) done");
 
     /* 9b: eh_vector_constructor_iterator for bumper slot arrays */
     if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&
@@ -1730,6 +1732,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
                        ld->ehVectorStride, ld->ehVectorCount,
                        g_ehVectorCtorFn, g_Vec3ListFree);
     }
+    DebugLog("Step 9b (ehVector) done");
 
     /* 9c: Zero-fill state machine variables */
     {
@@ -1738,6 +1741,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             *(DWORD *)((char *)mem + ld->zeroFillOffsets[zi]) = 0;
         }
     }
+    DebugLog("Step 9c (zero-fills) done");
 
     /* 9d: Level_AssignTexturesAndScales for reused meshes (Master) */
     if (g_LevelAssignTexScales) {
@@ -1749,6 +1753,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             }
         }
     }
+    DebugLog("Step 9d (textures) done");
 
     /* 9e: Sound channel allocation (Dizzy waterwheel) */
     if (ld->soundChannelOffset && g_SoundGetNextChannel) {
@@ -1763,6 +1768,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             }
         }
     }
+    DebugLog("Step 9e (sound) done");
 
     /* 9f: Bridge parameter init (Intermediate 45.0,0,50 / Master 45.0,0,50 at different offset) */
     if (ld->bridgeParamOffset) {
@@ -1770,6 +1776,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         *(DWORD *)((char *)mem + ld->bridgeParamOffset + 4) = 0;           /* state=0 */
         *(DWORD *)((char *)mem + ld->bridgeParamOffset + 8) = 0x32;        /* counter=50 */
     }
+    DebugLog("Step 9f (bridge params) done");
 
     /* 9g: Per-level special init values (data-driven via LevelData.txt) */
     if (ld->specialByteOffset) {
@@ -1778,6 +1785,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     if (ld->specialDwordOffset) {
         *(DWORD *)((char *)mem + ld->specialDwordOffset) = ld->specialDwordValue;
     }
+    DebugLog("Step 9g (special init) done — UniversalBoardCtorLogic complete");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
