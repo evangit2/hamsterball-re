@@ -3107,7 +3107,9 @@ void __fastcall UniversalBoardUpdate(void *board) {
     }
 
     /* Call base Scene_Update */
+    DebugLog("  [update] calling Scene_Update...");
     g_SceneUpdate(board);
+    DebugLog("  [update] Scene_Update done");
 
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);
@@ -3117,20 +3119,32 @@ void __fastcall UniversalBoardUpdate(void *board) {
     if (!features) return;
 
     /* Bridge animation (Intermediate + Master bridge) */
-    if (features & FEAT_BRIDGE_ANIM)
+    if (features & FEAT_BRIDGE_ANIM) {
+        DebugLog("  [update] Feature_BridgeAnimation...");
         Feature_BridgeAnimation(board, level);
+        DebugLog("  [update] Feature_BridgeAnimation done");
+    }
 
     /* Swirl zones (Dizzy + Master) */
-    if (features & FEAT_SWIRL)
+    if (features & FEAT_SWIRL) {
+        DebugLog("  [update] Feature_SwirlZones...");
         Feature_SwirlZones(board, level);
+        DebugLog("  [update] Feature_SwirlZones done");
+    }
 
     /* Windmill (Tower) */
-    if (features & FEAT_WINDMILL)
+    if (features & FEAT_WINDMILL) {
+        DebugLog("  [update] Feature_Windmill...");
         Feature_Windmill(board, level);
+        DebugLog("  [update] Feature_Windmill done");
+    }
 
     /* BadBall spawner (Odd) */
-    if (features & FEAT_BADBALL)
+    if (features & FEAT_BADBALL) {
+        DebugLog("  [update] Feature_BadBallSpawner...");
         Feature_BadBallSpawner(board, level);
+        DebugLog("  [update] Feature_BadBallSpawner done");
+    }
 
     /* Note: Bumper decay, neon camera, and sky popcylinder are handled in
        UniversalRaceState (slot 19), NOT here. In the original game, these
@@ -3152,8 +3166,20 @@ void __fastcall UniversalBoardUpdate(void *board) {
 void __fastcall UniversalRaceState(void *board) {
     if (!g_BoardUpdateRaceState || !board) return;
 
+    static int s_rsCount = 0;
+    s_rsCount++;
+    if (s_rsCount <= 3) {
+        char dbg[128];
+        wsprintfA(dbg, "  [raceState] #%d calling Board_UpdateRaceState...", s_rsCount);
+        DebugLog(dbg);
+    }
+
     /* Call base Board_UpdateRaceState */
     g_BoardUpdateRaceState(board);
+
+    if (s_rsCount <= 3) {
+        DebugLog("  [raceState] Board_UpdateRaceState done");
+    }
 
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);
