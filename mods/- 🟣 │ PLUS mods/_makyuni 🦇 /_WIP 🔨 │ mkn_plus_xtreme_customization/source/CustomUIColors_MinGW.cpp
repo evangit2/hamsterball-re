@@ -567,16 +567,22 @@ static void normalize_path(const char* input, char* output, int maxOut)
     if (nc_strnicmp(src, "Textures/", 9) == 0)      src += 9;
     else if (nc_strnicmp(src, "Textures\\", 9) == 0) src += 9;
 
-    // Copy the remaining filename
+    // Copy the remaining filename, leave room for null
     int len = (int)nc_strlen(src);
-    if (len > maxOut - 5) len = maxOut - 5; // Leave room for .png + null
+    if (len > maxOut - 1) len = maxOut - 1;
     nc_memcpy(output, src, len);
     output[len] = '\0';
 
-    // Append ".png" if no extension present
+    // Append ".png" if no extension present AND there's room
     if (len < 4 ||
         nc_stricmp(output + len - 4, ".png") != 0) {
-        nc_memcpy(output + len, ".png", 5); // includes null
+        if (len + 5 <= maxOut) {
+            output[len]   = '.';
+            output[len+1] = 'p';
+            output[len+2] = 'n';
+            output[len+3] = 'g';
+            output[len+4] = '\0';
+        }
     }
 }
 
