@@ -1980,8 +1980,11 @@ static void Feature_SwirlZones(void *board, int level) {
     int ballCount = *(int *)((char *)board + UNI_BALL_COUNT);
     int ballIdx = 0;
     if (ballCount > 0) {
-        ballIdx = *(int *)(*(int *)((char *)board + UNI_BALL_ARRAY));
-        *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 1;
+        DWORD ballArrayPtr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
+        if (ballArrayPtr && !IsBadReadPtr((void *)ballArrayPtr, 4)) {
+            ballIdx = *(int *)ballArrayPtr;
+            *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 1;
+        }
     }
 
     while (ballIdx) {
@@ -1994,8 +1997,11 @@ static void Feature_SwirlZones(void *board, int level) {
             int zoneCount = *(int *)((char *)board + swirlListOfs + 4);
             int zoneIdx = 0;
             if (zoneCount > 0) {
-                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x40C));
-                *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4) = 1;
+                DWORD zoneArrayPtr = *(DWORD *)((char *)board + swirlListOfs + 0x40C);
+                if (zoneArrayPtr && !IsBadReadPtr((void *)zoneArrayPtr, 4)) {
+                    zoneIdx = *(int *)zoneArrayPtr;
+                    *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4) = 1;
+                }
             }
 
             while (zoneIdx) {
@@ -2068,7 +2074,9 @@ static void Feature_SwirlZones(void *board, int level) {
                 }
                 int next = *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4);
                 if (*(int *)((char *)board + swirlListOfs + 4) <= next) break;
-                zoneIdx = *(int *)(*(int *)((char *)board + swirlListOfs + 0x40C) + next * 4);
+                DWORD zoneArr = *(DWORD *)((char *)board + swirlListOfs + 0x40C);
+                if (!zoneArr || IsBadReadPtr((void *)zoneArr, (next + 1) * 4)) break;
+                zoneIdx = *(int *)(zoneArr + next * 4);
                 *(int *)((char *)board + swirlListOfs + 8 + zoneIter * 4) = next + 1;
             }
         } else {
@@ -2104,7 +2112,9 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         int nextBall = *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4);
         if (*(int *)((char *)board + UNI_BALL_COUNT) <= nextBall) break;
-        ballIdx = *(int *)(*(int *)((char *)board + UNI_BALL_ARRAY) + nextBall * 4);
+        DWORD ballArr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
+        if (!ballArr || IsBadReadPtr((void *)ballArr, (nextBall + 1) * 4)) break;
+        ballIdx = *(int *)(ballArr + nextBall * 4);
         *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = nextBall + 1;
     }
 
@@ -2382,18 +2392,19 @@ static void Feature_BadBallSpawner(void *board, int level) {
     dirX = (dirX / len) * 2.5f;
     dirZ = (dirZ / len) * 2.5f;
 
-    /* Set velocity via Ball_SetVec3AtOffset */
-    float velVec[3] = { dirX, 12.0f, dirZ };
-    if (g_BallSetVec3AtOffset) {
-        g_BallSetVec3AtOffset((void *)bb[0x69], velVec);
-        /* Call vtable[0x10] on the physics object */
-        DWORD physObj = bb[0x69];
-        if (physObj) {
-            DWORD *vtbl = *(DWORD **)physObj;
-            if (vtbl) {
-                void (__fastcall *fn10)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x4];
-                if (fn10) fn10((DWORD)physObj);
-            }
+    /* Set velocity via Ball_SetVec3AtOffset.
+     * CRITICAL: check bb[0x69] (physics pointer) for NULL BEFORE calling
+     * g_BallSetVec3AtOffset — __thiscall dereferences `this` (ECX) to read
+     * the vtable, so a NULL pointer crashes immediately. */
+    DWORD physObj = bb[0x69];
+    if (physObj && g_BallSetVec3AtOffset) {
+        float velVec[3] = { dirX, 12.0f, dirZ };
+        g_BallSetVec3AtOffset((void *)physObj, velVec);
+        /* Call vtable[0x4] on the physics object */
+        DWORD *vtbl = *(DWORD **)physObj;
+        if (vtbl) {
+            void (__fastcall *fn10)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x4];
+            if (fn10) fn10((DWORD)physObj);
         }
     }
 
@@ -3185,7 +3196,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (dNum == 4) {
                 *(void **)((char *)board + UNI_NEON_DARK_COUNT) = obj;
                 o[0x437] = 2;
-                *(DWORD *)(*(int *)((char *)board + UNI_NEON_DARK_COUNT) + 0x10E0) = 0;
+                if (obj) {
+                    *(DWORD *)((char *)obj + 0x10E0) = 0;
+                }
             } else {
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             }
