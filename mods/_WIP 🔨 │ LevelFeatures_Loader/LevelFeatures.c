@@ -1416,7 +1416,7 @@ typedef void (__thiscall *Scene_RenderIfVisible_t)(int obj);
 typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
 typedef int (__thiscall *AthenaList_GetSize_t)(void *list);
 typedef int (__thiscall *AthenaList_GetIterator_t)(void *list);
-typedef void (__thiscall *eh_vector_ctor_t)(void *base, DWORD stride, int count, void *ctor_fn, void *dtor_fn);
+typedef void (__stdcall *eh_vector_ctor_t)(void *base, DWORD stride, int count, void *ctor_fn, void *dtor_fn);
 typedef void (__thiscall *Level_AssignTexScales_t)(void *board, void *meshWorld);
 
 /* CreateDynamicObjects ctor typedefs */
