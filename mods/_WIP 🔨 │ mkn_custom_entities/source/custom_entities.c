@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v16b
+ * custom_entities.c — Hamsterball Custom Entities Mod v17
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -84,6 +84,33 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define MESHWORLD_SIZE          0x10D0
 #define POPCYLINDER_SIZE        0x10D0
 #define SPATIALTREE_SIZE        68
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * <MESH> tag support — pick 8ball mesh model from MESHWORLD name tags
+ *
+ * The game's CreateBadBall (0x40BCA0) parses <CHASE>, <HOME>, <SIZE>,
+ * <SPINDISTANCE> tags from BADBALL object names in MESHWORLD section 3.
+ * We add a new <MESH> tag that controls ball+0x754 (mesh index):
+ *   <MESH>funball</MESH>  → mesh index 10 (FunBall mesh + texture)
+ *   no tag / other value  → mesh index 9  (8Ball: Sphere mesh + 8ball texture)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Ball struct offsets for mesh tag processing */
+#define BALL_HOME_POS_X       0xC60   /* float — spawn/return position X (set by CreateBadBall from obj.x) */
+#define BALL_HOME_POS_Y       0xC64   /* float — spawn/return position Y (set by CreateBadBall from obj.y) */
+#define BALL_HOME_POS_Z       0xC68   /* float — spawn/return position Z (set by CreateBadBall from obj.z) */
+#define BALL_MESH_INDEX_FIELD 0x754   /* int — mesh index into board mesh array (0=Sphere, 9=8Ball, 10=FunBall) */
+
+/* Mesh indices in board mesh array (board+0x244 + index*4) */
+#define MESH_IDX_8BALL        9       /* Sphere mesh with 8ball texture (default) */
+#define MESH_IDX_FUNBALL      10      /* FunBall mesh + texture */
+
+/* Section 3 object array (accessed via sceneobj) */
+#define SCENEOBJ_OBJ_COUNT    0x898   /* int — total section 3 objects */
+#define SCENEOBJ_OBJ_ARRAY    0xCA0   /* DWORD* — pointer to object pointer array */
+
+/* Bad balls list (AthenaList at board+0x29D4) */
+#define BOARD_BAD_BALLS_LIST  0x29D4
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * State
@@ -201,6 +228,155 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
     }
 
     return found;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * <MESH> tag processing — apply mesh selection to spawned 8-balls
+ *
+ * After CreateBadBall runs during level load, we scan the MESHWORLD
+ * section 3 objects for BADBALL entries with <MESH> tags, then match
+ * them to spawned balls by home position (ball+0xC60/0xC64/0xC68 =
+ * obj.x/obj.y/obj.z from the MESHWORLD file).
+ *
+ * If <MESH>funball</MESH> is found, ball+0x754 is set to 10 (FunBall).
+ * Otherwise it stays at the default 9 (8Ball: Sphere + 8ball texture).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Simple case-insensitive substring search */
+static int ci_strstr(const char* haystack, const char* needle) {
+    while (*haystack) {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*h && *n && tolower(*h) == tolower(*n)) { h++; n++; }
+        if (*n == 0) return 1;
+        haystack++;
+    }
+    return 0;
+}
+
+/* Extract the value between <MESH> and </MESH> tags in a name string.
+ * Returns 1 if found and copies value to out_buf, 0 otherwise. */
+static int extract_mesh_tag(const char* name, char* out_buf, int out_size) {
+    /* Find <MESH> (case-insensitive) */
+    const char* p = name;
+    while (*p) {
+        if (tolower(p[0]) == 'm' && tolower(p[1]) == 'e' &&
+            tolower(p[2]) == 's' && tolower(p[3]) == 'h' && p[4] == '>') {
+            const char* val_start = p + 5;
+            /* Find </MESH> (case-insensitive) */
+            const char* q = val_start;
+            while (*q) {
+                if (q[0] == '<' && q[1] == '/' &&
+                    tolower(q[2]) == 'm' && tolower(q[3]) == 'e' &&
+                    tolower(q[4]) == 's' && tolower(q[5]) == 'h' && q[6] == '>') {
+                    int len = (int)(q - val_start);
+                    if (len > 0 && len < out_size) {
+                        memcpy(out_buf, val_start, len);
+                        out_buf[len] = '\0';
+                        return 1;
+                    }
+                    return 0;
+                }
+                q++;
+            }
+            return 0; /* <MESH> found but no closing tag */
+        }
+        p++;
+    }
+    return 0; /* no <MESH> tag */
+}
+
+/* Process <MESH> tags: scan MESHWORLD section 3 for BADBALL objects with
+ * <MESH> tags, match to spawned balls by home position, set mesh index. */
+static void process_mesh_tags(DWORD board, FILE* logf) {
+    if (!board) return;
+
+    /* Get the bad balls list (AthenaList at board+0x29D4) */
+    DWORD* bad_balls_list = (DWORD*)(board + BOARD_BAD_BALLS_LIST);
+    if (IsBadReadPtr(bad_balls_list, 8)) return;
+    int ball_count = *(int*)(bad_balls_list + 1);  /* count at +0x04 */
+    if (ball_count <= 0 || ball_count > 100) return;
+
+    /* Get ball pointers from the AthenaList items array */
+    DWORD* ball_items = *(DWORD**)((BYTE*)bad_balls_list + 0x08);
+    if (!ball_items || IsBadReadPtr(ball_items, ball_count * 4)) return;
+
+    /* Get the sceneobj to access section 3 objects */
+    DWORD sceneobj = get_sceneobj(board);
+    if (!sceneobj) {
+        if (logf) fprintf(logf, "  MESH: sceneobj=NULL, skipping mesh tags\n");
+        return;
+    }
+
+    /* Read section 3 object count and array */
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) return;
+    int obj_count = *(int*)(sceneobj + SCENEOBJ_OBJ_COUNT);
+    if (obj_count <= 0 || obj_count > 1000) return;
+
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_ARRAY), 4)) return;
+    DWORD* obj_array_ptr = *(DWORD**)(sceneobj + SCENEOBJ_OBJ_ARRAY);
+    if (!obj_array_ptr || IsBadReadPtr(obj_array_ptr, obj_count * 4)) return;
+
+    int mesh_changes = 0;
+    int i, j;
+
+    /* For each section 3 object */
+    for (i = 0; i < obj_count; i++) {
+        DWORD obj_ptr = obj_array_ptr[i];
+        if (!obj_ptr || obj_ptr < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj_ptr, 20)) continue;
+
+        /* Read object name pointer */
+        char* name = *(char**)(obj_ptr);
+        if (!name || IsBadReadPtr(name, 8)) continue;
+
+        /* Check if this is a BADBALL object */
+        if (_strnicmp(name, "BADBALL", 7) != 0) continue;
+
+        /* Check for <MESH> tag */
+        char mesh_value[64] = {0};
+        if (!extract_mesh_tag(name, mesh_value, sizeof(mesh_value))) continue;
+
+        /* Read object position (x, y, z at obj+0x04, +0x08, +0x0C) */
+        float obj_x = *(float*)(obj_ptr + 0x04);
+        float obj_y = *(float*)(obj_ptr + 0x08);
+        float obj_z = *(float*)(obj_ptr + 0x0C);
+
+        if (logf) fprintf(logf, "  MESH: BADBALL obj[%d] has <MESH>%s</MESH> at (%.1f, %.1f, %.1f)\n",
+                i, mesh_value, obj_x, obj_y, obj_z);
+
+        /* Match to a spawned ball by home position */
+        for (j = 0; j < ball_count; j++) {
+            DWORD ball = ball_items[j];
+            if (!ball || ball < 0x10000) continue;
+            if (IsBadReadPtr((void*)ball, 0xC70)) continue;
+
+            float ball_home_x = *(float*)(ball + BALL_HOME_POS_X);
+            float ball_home_y = *(float*)(ball + BALL_HOME_POS_Y);
+            float ball_home_z = *(float*)(ball + BALL_HOME_POS_Z);
+
+            /* Match by position (exact float comparison — CreateBadBall copies obj.xyz directly) */
+            if (ball_home_x == obj_x && ball_home_y == obj_y && ball_home_z == obj_z) {
+                /* Determine mesh index from tag value */
+                int mesh_idx = MESH_IDX_8BALL;  /* default */
+                if (ci_strstr(mesh_value, "funball")) {
+                    mesh_idx = MESH_IDX_FUNBALL;
+                }
+
+                *(int*)(ball + BALL_MESH_INDEX_FIELD) = mesh_idx;
+
+                if (logf) fprintf(logf, "  MESH: matched ball 0x%08X → mesh index %d (%s)\n",
+                        ball, mesh_idx, mesh_idx == MESH_IDX_FUNBALL ? "FunBall" : "8Ball");
+                mesh_changes++;
+                break;
+            }
+        }
+    }
+
+    if (logf && mesh_changes > 0) {
+        fprintf(logf, "  MESH: applied %d mesh tag(s)\n", mesh_changes);
+        fflush(logf);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -455,7 +631,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v16b Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v17 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -490,6 +666,9 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         if (logf) {
             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
         }
+
+        /* Process <MESH> tags on spawned 8-balls (after CreateBadBall has run) */
+        process_mesh_tags(board, logf);
 
         /* Find GRID reference points */
         float grid_x[32], grid_y[32], grid_z[32];
