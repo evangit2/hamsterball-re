@@ -651,23 +651,40 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
 
 // -- Config file path and default config -----------------------------------
 
+// Find the DLL's own folder using VirtualQuery on a function pointer.
+// GetModuleFileNameA(NULL) returns the game EXE path, not the DLL path.
+// The .jsonc config must live next to the DLL in the Mods folder.
 static void init_config_path(void)
 {
-    char exePath[MAX_PATH];
-    DWORD len = GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    if (len > 0) {
-        char* last = NULL;
-        char* p = exePath;
-        while (*p) { if (*p == '\\' || *p == '/') last = p; p++; }
-        if (last) {
-            *(last + 1) = '\0';
-            nc_strncpy(g_config_path, exePath, MAX_PATH - 1);
-            nc_strncpy(g_config_path + nc_strlen(g_config_path),
-                       "mkn_plus_xtreme_customization.jsonc", MAX_PATH - nc_strlen(g_config_path) - 1);
-            g_config_path[MAX_PATH - 1] = '\0';
-            return;
+    HMODULE hSelf = NULL;
+
+    // Get the module handle for this DLL by querying a function pointer
+    // that lives inside our DLL's code section.
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((void*)&init_config_path, &mbi, sizeof(mbi))) {
+        hSelf = (HMODULE)mbi.AllocationBase;
+    }
+
+    if (hSelf) {
+        char dllPath[MAX_PATH];
+        DWORD len = GetModuleFileNameA(hSelf, dllPath, MAX_PATH);
+        if (len > 0) {
+            char* last = NULL;
+            char* p = dllPath;
+            while (*p) { if (*p == '\\' || *p == '/') last = p; p++; }
+            if (last) {
+                *(last + 1) = '\0';
+                nc_strncpy(g_config_path, dllPath, MAX_PATH - 1);
+                nc_strncpy(g_config_path + nc_strlen(g_config_path),
+                           "mkn_plus_xtreme_customization.jsonc",
+                           MAX_PATH - nc_strlen(g_config_path) - 1);
+                g_config_path[MAX_PATH - 1] = '\0';
+                return;
+            }
         }
     }
+
+    // Fallback: use current directory
     nc_strncpy(g_config_path, "mkn_plus_xtreme_customization.jsonc", MAX_PATH - 1);
 }
 
