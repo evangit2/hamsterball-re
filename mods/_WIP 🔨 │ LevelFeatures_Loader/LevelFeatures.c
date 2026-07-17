@@ -1642,7 +1642,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     g_BoardCtor(mem, app);
     DebugLog("Board_ctor done");
 
-    /* Step 1b: Zero-fill old per-level data offsets (0x4300-0x6500).
+    /* Step 1b: Zero-fill old per-level data offsets (0x436C-0x6500).
      * The mod moved ehVector, bumper lit, and render data to the unified
      * zone (0x6500+). But per-level RENDER functions (vtable slot 24)
      * still read from the OLD per-level offsets (e.g. Beginner reads
@@ -1651,11 +1651,21 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * garbage. Zeroing them ensures:
      *   - Bumper lit floats = 0.0 → render function skips (no reflective material)
      *   - Mesh slot pointers = NULL → render function does nothing
-     * This prevents crashes from garbage pointers being dereferenced. */
-    memset((char *)mem + 0x4300, 0, 0x6500 - 0x4300);
+     * This prevents crashes from garbage pointers being dereferenced.
+     *
+     * IMPORTANT: Start at 0x436C, NOT 0x4300. Board_ctor writes critical
+     * data in 0x4300-0x436B that must be preserved:
+     *   0x4340 = 1.0f (scale factor)
+     *   0x434C = NULL pointer check
+     *   0x4350 = -150.0f (camera offset)
+     *   0x4358 = demo timer flag
+     *   0x435C = demo timer count (0x9c4 = 2500)
+     *   0x4368 = 0 (byte flag)
+     * Zeroing these causes crashes in Scene_Update's vtable sub-functions. */
+    memset((char *)mem + 0x436C, 0, 0x6500 - 0x436C);
     {
         char dbg2[128];
-        wsprintfA(dbg2, "memset board+0x4300..0x6500 done (board=0x%08X)", (DWORD)mem);
+        wsprintfA(dbg2, "memset board+0x436C..0x6500 done (board=0x%08X)", (DWORD)mem);
         DebugLog(dbg2);
     }
 
