@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v17
+ * custom_entities.c — Hamsterball Custom Entities Mod v18
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -103,12 +103,28 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define BALL_HOME_POS_X       0xC60   /* float — spawn/return position X (set by CreateBadBall from obj.x) */
 #define BALL_HOME_POS_Y       0xC64   /* float — spawn/return position Y (set by CreateBadBall from obj.y) */
 #define BALL_HOME_POS_Z       0xC68   /* float — spawn/return position Z (set by CreateBadBall from obj.z) */
-#define BALL_MESH_INDEX_FIELD 0x754   /* int — mesh index into board mesh array (0=Sphere, 9=8Ball, 10=FunBall) */
+#define BALL_MESH_INDEX_FIELD 0x754   /* int — player/slot index into App mesh array at App+0x244 */
+                                     /* Ball_Render only renders meshes for indices 0,1,2 (< 3 check) */
+                                     /* 0 = Sphere (default player ball) */
+                                     /* 1 = SphereBreak1 (we repurpose for 8Ball) */
+                                     /* 2 = SphereBreak2 (we repurpose for FunBall) */
 #define BALL_MAX_SPEED        0x188   /* float — max_speed (default 6.0, set by Ball_InitPhysicsDefaults) */
 
-/* Mesh indices in board mesh array (board+0x244 + index*4) */
-#define MESH_IDX_8BALL        9       /* Sphere mesh with 8ball texture (default) */
-#define MESH_IDX_FUNBALL      10      /* FunBall mesh + texture */
+/* App mesh array layout (loaded in TimerDisplay at 0x004298c0):
+ *   App+0x244 = "Meshes\Sphere"     [index 0] — default player ball
+ *   App+0x248 = "Meshes\SphereBreak1" [index 1] — we copy 8Ball mesh ptr here
+ *   App+0x24C = "Meshes\SphereBreak2" [index 2] — we copy FunBall mesh ptr here
+ *   App+0x268 = "Meshes\8Ball"      [index 9] — source 8Ball mesh
+ *   App+0x26C = "Meshes\FunBall"    [index 10] — source FunBall mesh
+ *
+ * Ball_Render (0x00403db8) renders mesh at App+0x244[ball+0x754*4] only if
+ * ball+0x754 < 3. Setting ball+0x754=9 or 10 makes ball invisible (check fails).
+ * Fix: copy 8Ball/FunBall mesh ptrs into slots 1/2, use those indices. */
+#define APP_MESH_ARRAY         0x244   /* App offset — start of mesh pointer array */
+#define APP_MESH_8BALL         0x268   /* App offset — 8Ball mesh pointer (index 9) */
+#define APP_MESH_FUNBALL       0x26C   /* App offset — FunBall mesh pointer (index 10) */
+#define MESH_SLOT_8BALL        1       /* We use slot 1 (SphereBreak1) for 8Ball */
+#define MESH_SLOT_FUNBALL      2       /* We use slot 2 (SphereBreak2) for FunBall */
 
 /* Section 3 object array (accessed via sceneobj) */
 #define SCENEOBJ_OBJ_COUNT    0x898   /* int — total section 3 objects */
@@ -260,7 +276,9 @@ static int ci_strstr(const char* haystack, const char* needle) {
 }
 
 /* Extract the value between <TAGNAME> and </TAGNAME> in a name string.
- * Case-insensitive tag name matching. Returns 1 if found, 0 otherwise. */
+ * Case-insensitive tag name matching. Returns 1 if found, 0 otherwise.
+ * Also handles unclosed tags: if <TAGNAME> is found but </TAGNAME> is not,
+ * extracts everything up to the next '<' or end of string. */
 static int extract_tag(const char* name, const char* tag_name, char* out_buf, int out_size) {
     int tag_len = (int)strlen(tag_name);
     const char* p = name;
@@ -282,6 +300,18 @@ static int extract_tag(const char* name, const char* tag_name, char* out_buf, in
                     return 0;
                 }
                 q++;
+            }
+            /* No closing tag found — extract up to next '<' or end of string.
+             * This handles malformed MESHWORLD entries like <SPEEDMULT>4 (missing </SPEEDMULT>). */
+            {
+                const char* end = val_start;
+                while (*end && *end != '<') end++;
+                int len = (int)(end - val_start);
+                if (len > 0 && len < out_size) {
+                    memcpy(out_buf, val_start, len);
+                    out_buf[len] = '\0';
+                    return 1;
+                }
             }
             return 0; /* opening tag found but no closing tag */
         }
@@ -377,14 +407,37 @@ static void process_custom_tags(DWORD board, FILE* logf) {
             if (ball_home_x == obj_x && ball_home_y == obj_y && ball_home_z == obj_z) {
                 /* Apply <MESH> tag */
                 if (has_mesh) {
-                    int mesh_idx = MESH_IDX_8BALL;  /* default */
-                    if (ci_strstr(mesh_value, "funball")) {
-                        mesh_idx = MESH_IDX_FUNBALL;
+                    /* Get App pointer from ball+0x10 (set in Ball_ctor) */
+                    DWORD app = *(DWORD*)(ball + 0x10);
+                    if (app && !IsBadReadPtr((void*)app, 0x280)) {
+                        int target_slot = MESH_SLOT_8BALL;  /* default */
+                        DWORD src_mesh = 0;
+
+                        if (ci_strstr(mesh_value, "funball")) {
+                            target_slot = MESH_SLOT_FUNBALL;
+                            src_mesh = *(DWORD*)(app + APP_MESH_FUNBALL);
+                        } else {
+                            /* Default: 8Ball */
+                            src_mesh = *(DWORD*)(app + APP_MESH_8BALL);
+                        }
+
+                        if (src_mesh && !IsBadReadPtr((void*)src_mesh, 4)) {
+                            /* Copy the 8Ball/FunBall mesh pointer into the target slot
+                             * (overwriting SphereBreak1/2, which badballs never use).
+                             * Ball_Render checks ball+0x754 < 3, so only slots 0-2 work. */
+                            *(DWORD*)(app + APP_MESH_ARRAY + target_slot * 4) = src_mesh;
+                            *(int*)(ball + BALL_MESH_INDEX_FIELD) = target_slot;
+                            if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh slot %d (mesh=0x%08X from App+0x%X)\n",
+                                    ball, target_slot, src_mesh,
+                                    ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL);
+                            mesh_changes++;
+                        } else if (logf) {
+                            fprintf(logf, "  TAGS: ball 0x%08X → mesh src invalid (App+0x%X=0x%08X)\n",
+                                    ball, ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
+                        }
+                    } else if (logf) {
+                        fprintf(logf, "  TAGS: ball 0x%08X → App ptr invalid (0x%08X)\n", ball, app);
                     }
-                    *(int*)(ball + BALL_MESH_INDEX_FIELD) = mesh_idx;
-                    if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh %d (%s)\n",
-                            ball, mesh_idx, mesh_idx == MESH_IDX_FUNBALL ? "FunBall" : "8Ball");
-                    mesh_changes++;
                 }
 
                 /* Apply <SPEEDMULT> tag — multiply current max_speed by value */
@@ -664,7 +717,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v17 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v18 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
