@@ -523,6 +523,56 @@ static StringElementMap g_string_element_map[] = {
 
 #define NUM_STRING_ELEMENT_MAPS (sizeof(g_string_element_map) / sizeof(g_string_element_map[0]))
 
+// -- Path element mapping: JSON element name -> string address + max length --
+// These are the texture filename strings in the .data section.
+// Patching them changes which texture file gets loaded.
+struct PathElementMap {
+    const char* jsonName;
+    DWORD address;
+    int maxLength;
+};
+
+static PathElementMap g_path_element_map[] = {
+    {"loader _no_ ball",         0x004d3c3c, 19},  // Loader(Grey).png
+    {"loader with ball",         0x004d3c50, 11},   // Loader.png
+    {"rotating swirl",           0x004d3c28, 19},  // Loadingswirl.png
+    {"raptisoft logo",           0x004d3bfc, 27},  // textures\raptisoftlogo.png
+};
+
+#define NUM_PATH_MAPS (sizeof(g_path_element_map) / sizeof(g_path_element_map[0]))
+
+// -- Link element mapping: JSON element name -> URL string address + max length --
+struct LinkElementMap {
+    const char* jsonName;
+    DWORD address;
+    int maxLength;
+};
+
+static LinkElementMap g_link_element_map[] = {
+    {"raptisoft logo",           0x004d2638, 30},  // http://www.raptisoft.com
+};
+
+#define NUM_LINK_MAPS (sizeof(g_link_element_map) / sizeof(g_link_element_map[0]))
+
+// -- Patch a string in the .data section ------------------------------------
+static void apply_string_patch(DWORD address, const char* text, int maxLen)
+{
+    DWORD old_protect;
+    int textLen = (int)nc_strlen(text);
+    if (textLen > maxLen) textLen = maxLen;
+
+    if (!VirtualProtect((void*)address, maxLen + 1,
+                        PAGE_READWRITE, &old_protect))
+        return;
+    nc_memcpy((void*)address, text, textLen);
+    *((char*)address + textLen) = '\0';
+    // Zero remaining bytes
+    for (int i = textLen + 1; i <= maxLen; i++)
+        *((char*)address + i) = '\0';
+    VirtualProtect((void*)address, maxLen + 1, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), (void*)address, maxLen + 1);
+}
+
 // -- Parse a single element's value object ---------------------------------
 
 static void parse_element_values(JsonParser* p, const char* elemName, int elemNameLen)
@@ -616,6 +666,22 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
         }
         else if (nc_stricmp(keyBuf, "path") == 0) {
             if (tk.type == JTK_LBRACK) {
+                // Array of paths — take first element for now
+                tk = next_token(p);
+                if (tk.type == JTK_STRING) {
+                    // Copy the path string
+                    char pathBuf[128];
+                    copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
+                    // Find matching path element and patch it
+                    for (int i = 0; i < (int)NUM_PATH_MAPS; i++) {
+                        if (json_key_matches(elemName, elemNameLen, g_path_element_map[i].jsonName)) {
+                            apply_string_patch(g_path_element_map[i].address,
+                                             pathBuf, g_path_element_map[i].maxLength);
+                            break;
+                        }
+                    }
+                }
+                // Skip rest of array
                 int depth = 1;
                 while (depth > 0) {
                     tk = next_token(p);
@@ -624,14 +690,31 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                     else if (tk.type == JTK_END) break;
                 }
             } else if (tk.type == JTK_STRING) {
-                // Single path -- TODO: apply when path system ready
+                // Single path
+                char pathBuf[128];
+                copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
+                for (int i = 0; i < (int)NUM_PATH_MAPS; i++) {
+                    if (json_key_matches(elemName, elemNameLen, g_path_element_map[i].jsonName)) {
+                        apply_string_patch(g_path_element_map[i].address,
+                                         pathBuf, g_path_element_map[i].maxLength);
+                        break;
+                    }
+                }
             } else {
                 skip_value(p);
             }
         }
         else if (nc_stricmp(keyBuf, "link") == 0) {
             if (tk.type == JTK_STRING) {
-                // TODO: apply hyperlink when system ready
+                char linkBuf[128];
+                copy_json_string(tk.start, tk.length, linkBuf, sizeof(linkBuf));
+                for (int i = 0; i < (int)NUM_LINK_MAPS; i++) {
+                    if (json_key_matches(elemName, elemNameLen, g_link_element_map[i].jsonName)) {
+                        apply_string_patch(g_link_element_map[i].address,
+                                         linkBuf, g_link_element_map[i].maxLength);
+                        break;
+                    }
+                }
             } else {
                 skip_value(p);
             }
