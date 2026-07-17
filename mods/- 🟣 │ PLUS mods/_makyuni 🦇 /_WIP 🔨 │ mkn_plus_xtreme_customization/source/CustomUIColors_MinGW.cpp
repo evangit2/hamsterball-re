@@ -523,42 +523,35 @@ static StringElementMap g_string_element_map[] = {
 
 #define NUM_STRING_ELEMENT_MAPS (sizeof(g_string_element_map) / sizeof(g_string_element_map[0]))
 
-// -- Path element mapping: JSON element name -> string address + max length --
-// These are the texture filename strings in the .data section.
-// Patching them changes which texture file gets loaded.
-struct PathElementMap {
-    const char* jsonName;
-    DWORD address;
-    int maxLength;
+// -- Path system: PUSH instruction redirection ------------------------------
+// Instead of overwriting packed .data strings (which have 11-27 byte limits
+// and adjacent strings that get corrupted), we patch the PUSH imm32
+// instructions in .text to point to our own 64-byte allocated buffers.
+// This gives up to 63-char texture paths with no overflow risk.
+//
+// Each texture is loaded via: PUSH <string_addr> ; CALL Sprite_ctor
+// We change the PUSH immediate to point to our VirtualAlloc'd buffer.
+
+#define PATH_BUF_SIZE 64
+
+struct PathSlot {
+    const char* jsonName;   // JSON key to match in config
+    DWORD pushAddr;          // Address of PUSH imm32 in .text
+    const char* defaultPath; // Original default filename
 };
 
-static PathElementMap g_path_element_map[] = {
-    {"loader _no_ ball",         0x004d3c3c, 19},  // Loader(Grey).png
-    {"loader with ball",         0x004d3c50, 11},   // Loader.png
-    {"rotating swirl",           0x004d3c28, 19},  // Loadingswirl.png
-    {"raptisoft logo",           0x004d3bfc, 27},  // textures\raptisoftlogo.png
+static PathSlot g_path_slots[] = {
+    {"loader with ball",   0x0042C9FD, "Loader.png"},
+    {"loader _no_ ball",   0x0042CA3F, "Loader(Grey).png"},
+    {"rotating swirl",     0x0042CA81, "Loadingswirl.png"},
+    {"raptisoft logo",     0x0042CB4E, "textures\\raptisoftlogo.png"},
 };
 
-#define NUM_PATH_MAPS (sizeof(g_path_element_map) / sizeof(g_path_element_map[0]))
+#define NUM_PATH_SLOTS (sizeof(g_path_slots) / sizeof(g_path_slots[0]))
 
-// -- Link element mapping: JSON element name -> URL string address + max length --
-struct LinkElementMap {
-    const char* jsonName;
-    DWORD address;
-    int maxLength;
-};
+static char* g_path_buffers = NULL;  // VirtualAlloc'd block: NUM_PATH_SLOTS × PATH_BUF_SIZE
 
-static LinkElementMap g_link_element_map[] = {
-    {"raptisoft logo",           0x004d2638, 30},  // http://www.raptisoft.com
-};
-
-#define NUM_LINK_MAPS (sizeof(g_link_element_map) / sizeof(g_link_element_map[0]))
-
-// -- Patch a string in the .data section ------------------------------------
-// Normalize a config path value to match game .data string format.
-// The game stores bare filenames like "Loader.png" at these addresses and
-// prepends "Textures\" at load time. Config paths like "Textures/Loader"
-// must be stripped of the directory prefix and have .png added if missing.
+// Normalize a config path: strip Textures/ prefix, add .png if missing
 static void normalize_path(const char* input, char* output, int maxOut)
 {
     const char* src = input;
@@ -567,13 +560,11 @@ static void normalize_path(const char* input, char* output, int maxOut)
     if (nc_strnicmp(src, "Textures/", 9) == 0)      src += 9;
     else if (nc_strnicmp(src, "Textures\\", 9) == 0) src += 9;
 
-    // Copy the remaining filename, leave room for null
     int len = (int)nc_strlen(src);
     if (len > maxOut - 1) len = maxOut - 1;
     nc_memcpy(output, src, len);
     output[len] = '\0';
 
-    // Append ".png" if no extension present AND there's room
     if (len < 4 ||
         nc_stricmp(output + len - 4, ".png") != 0) {
         if (len + 5 <= maxOut) {
@@ -586,6 +577,66 @@ static void normalize_path(const char* input, char* output, int maxOut)
     }
 }
 
+// Write a path string into our allocated buffer (no .data overflow risk)
+static void apply_path_to_slot(int slot_idx, const char* text)
+{
+    if (!g_path_buffers) return;
+    char* buf = g_path_buffers + slot_idx * PATH_BUF_SIZE;
+    normalize_path(text, buf, PATH_BUF_SIZE);
+}
+
+// Patch a PUSH imm32 instruction to point to our buffer
+static void patch_push_target(DWORD pushAddr, DWORD newTarget)
+{
+    DWORD old_protect;
+    if (!VirtualProtect((void*)pushAddr, 5,
+                        PAGE_EXECUTE_READWRITE, &old_protect))
+        return;
+    *(unsigned char*)pushAddr = 0x68;  // PUSH imm32 (in case it was changed)
+    *(DWORD*)(pushAddr + 1) = newTarget;
+    VirtualProtect((void*)pushAddr, 5, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), (void*)pushAddr, 5);
+}
+
+// Initialize path buffers with defaults and patch PUSH instructions
+static void init_path_buffers(void)
+{
+    g_path_buffers = (char*)VirtualAlloc(NULL,
+        NUM_PATH_SLOTS * PATH_BUF_SIZE,
+        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!g_path_buffers) return;
+
+    // Copy defaults into buffers
+    for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
+        char* buf = g_path_buffers + i * PATH_BUF_SIZE;
+        int len = (int)nc_strlen(g_path_slots[i].defaultPath);
+        if (len > PATH_BUF_SIZE - 1) len = PATH_BUF_SIZE - 1;
+        nc_memcpy(buf, g_path_slots[i].defaultPath, len);
+        buf[len] = '\0';
+    }
+
+    // Patch each PUSH instruction to point to our buffer
+    for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
+        DWORD bufAddr = (DWORD)(g_path_buffers + i * PATH_BUF_SIZE);
+        patch_push_target(g_path_slots[i].pushAddr, bufAddr);
+    }
+}
+
+// -- Link element mapping: JSON element name -> URL string address + max length --
+// Links still use .data patching (they're URL strings, not texture filenames)
+struct LinkElementMap {
+    const char* jsonName;
+    DWORD address;
+    int maxLength;
+};
+
+static LinkElementMap g_link_element_map[] = {
+    {"raptisoft logo",           0x004d2638, 30},  // http://www.raptisoft.com
+};
+
+#define NUM_LINK_MAPS (sizeof(g_link_element_map) / sizeof(g_link_element_map[0]))
+
+// -- Patch a string in the .data section (for links) ------------------------
 static void apply_string_patch(DWORD address, const char* text, int maxLen)
 {
     DWORD old_protect;
@@ -597,7 +648,6 @@ static void apply_string_patch(DWORD address, const char* text, int maxLen)
         return;
     nc_memcpy((void*)address, text, textLen);
     *((char*)address + textLen) = '\0';
-    // Zero remaining bytes
     for (int i = textLen + 1; i <= maxLen; i++)
         *((char*)address + i) = '\0';
     VirtualProtect((void*)address, maxLen + 1, old_protect, &old_protect);
@@ -700,16 +750,11 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                 // Array of paths — take first element for now
                 tk = next_token(p);
                 if (tk.type == JTK_STRING) {
-                    // Copy the path string
                     char pathBuf[128];
-                    char normBuf[128];
                     copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
-                    // Find matching path element and patch it
-                    for (int i = 0; i < (int)NUM_PATH_MAPS; i++) {
-                        if (json_key_matches(elemName, elemNameLen, g_path_element_map[i].jsonName)) {
-                            normalize_path(pathBuf, normBuf, g_path_element_map[i].maxLength + 1);
-                            apply_string_patch(g_path_element_map[i].address,
-                                             normBuf, g_path_element_map[i].maxLength);
+                    for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
+                        if (json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
+                            apply_path_to_slot(i, pathBuf);
                             break;
                         }
                     }
@@ -725,13 +770,10 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
             } else if (tk.type == JTK_STRING) {
                 // Single path
                 char pathBuf[128];
-                char normBuf[128];
                 copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
-                for (int i = 0; i < (int)NUM_PATH_MAPS; i++) {
-                    if (json_key_matches(elemName, elemNameLen, g_path_element_map[i].jsonName)) {
-                        normalize_path(pathBuf, normBuf, g_path_element_map[i].maxLength + 1);
-                        apply_string_patch(g_path_element_map[i].address,
-                                         normBuf, g_path_element_map[i].maxLength);
+                for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
+                    if (json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
+                        apply_path_to_slot(i, pathBuf);
                         break;
                     }
                 }
@@ -1065,6 +1107,7 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
 
     init_config_path();
     create_default_config();
+    init_path_buffers();  // Must be before read_config so paths can be written
     read_config();
     install_patches();
 }
