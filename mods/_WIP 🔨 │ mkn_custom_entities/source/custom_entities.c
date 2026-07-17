@@ -301,8 +301,11 @@ static void process_custom_tags(DWORD board, FILE* logf) {
     int ball_count = *(int*)(bad_balls_list + 1);  /* count at +0x04 */
     if (ball_count <= 0 || ball_count > 100) return;
 
-    /* Get ball pointers from the AthenaList items array */
-    DWORD* ball_items = *(DWORD**)((BYTE*)bad_balls_list + 0x08);
+    /* Get ball pointers from the AthenaList items array.
+     * AthenaList stores the heap-allocated items pointer at +0x40C
+     * (verified via AthenaList_GetAt at 0x0040a020 and AthenaList_Append
+     * at 0x00453780 — both use *(this+0x40C) + index*4). */
+    DWORD* ball_items = *(DWORD**)((BYTE*)bad_balls_list + 0x40C);
     if (!ball_items || IsBadReadPtr(ball_items, ball_count * 4)) return;
 
     /* Get the sceneobj to access section 3 objects */
