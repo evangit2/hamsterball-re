@@ -173,6 +173,42 @@ typedef enum {
     FEAT_SKY_POPCYL    = 1 << 6,  /* Sky popcylinder activator */
 } UpdateFeature;
 
+/* Render feature flags — separate from update features.
+ * Controls which per-level render blocks run in UniversalRender (vtable slot 24). */
+typedef enum {
+    REND_NONE         = 0,
+    REND_BUMPER       = 1 << 0,  /* Bumper reflective material (Beginner, Toob, Master) */
+    REND_WINDMILL     = 1 << 1,  /* Tower windmill + chomper render */
+    REND_GLASS        = 1 << 2,  /* Glass transparent smasher render */
+    REND_SKY_CAM      = 1 << 3,  /* Sky camera + cloud sprite + object list */
+} RenderFeature;
+
+static DWORD g_renderFeatures[16] = {0};
+
+/* Default render feature assignments per level.
+ * Bumper: levels where N:BUMPER is active (2=Beginner, 10=Toob, 14=Master)
+ * Windmill: level 5 (Tower, where windmill ref exists)
+ * Glass: level 12 (where N:GLASH is present)
+ * Sky Cam: level 13 (inherent to Sky Race) */
+static const DWORD g_defaultRenderFeatures[16] = {
+    0,
+    /* 1=WarmUp */       0,
+    /* 2=Beginner */     REND_BUMPER,
+    /* 3=Intermediate */ 0,
+    /* 4=Dizzy */        0,
+    /* 5=Tower */        REND_WINDMILL,
+    /* 6=Up */           0,
+    /* 7=Neon */         0,
+    /* 8=Expert */       0,
+    /* 9=Odd */          0,
+    /* 10=Toob */        REND_BUMPER,
+    /* 11=Wobbly */      0,
+    /* 12=Glass */       REND_GLASS,
+    /* 13=Sky */         REND_SKY_CAM,
+    /* 14=Master */      REND_BUMPER,
+    /* 15=Impossible */  0,
+};
+
 static DWORD g_updateFeatures[16] = {0};
 
 /* Default feature assignments per level (matching original game behavior) */
@@ -222,6 +258,12 @@ static DWORD g_featureBits[] = {
 static int g_featuresParsed[16] = {0}; /* 1 if [FEATURES] section overrode defaults for this level */
 typedef void (__fastcall *Scene_Update_t)(void *board);
 typedef void (__fastcall *Board_UpdateRaceState_t)(void *board);
+typedef void (__fastcall *Level_RenderDynamicObjects_t)(void *board);
+typedef void (__thiscall *Graphics_SetProjection_t)(void *board, float near_plane, float far_plane);
+typedef void (__thiscall *Graphics_SetCullMode2_t)(void *gfx, int mode);
+typedef void (__thiscall *Sprite_RenderQuad_t)(void *sprite, float a, float b, float c, float d, int e);
+typedef void (__thiscall *RenderContext_Init_t)(void *out);
+typedef void (__cdecl *Matrix4_Identity_t)(void *out);
 typedef void (__thiscall *Gfx_ScaleFn_t)(void *gfx, float val);
 typedef void (__thiscall *Gfx_SetPosition_t)(void *gfx, float x, float y, float z);
 typedef void (__fastcall *Timer_Init_t)(void *out);
@@ -245,6 +287,12 @@ typedef void (__thiscall *Scene_AddObject_t)(void *scene, void *obj);
 
 static Scene_Update_t             g_SceneUpdate = NULL;
 static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
+static Level_RenderDynamicObjects_t g_RenderDynamicObjects = NULL;
+static Graphics_SetProjection_t  g_GraphicsSetProjection = NULL;
+static Graphics_SetCullMode2_t    g_GraphicsSetCullMode2 = NULL;
+static Sprite_RenderQuad_t         g_SpriteRenderQuad = NULL;
+static RenderContext_Init_t       g_RenderContextInit = NULL;
+static Matrix4_Identity_t         g_Matrix4Identity = NULL;
 static Gfx_ScaleFn_t              g_GfxScaleZ = NULL;
 static Gfx_ScaleFn_t              g_GfxScaleY = NULL;
 static Gfx_ScaleFn_t              g_GfxScaleX = NULL;
@@ -271,6 +319,12 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 /* RVA constants for Board_Update functions */
 #define RVA_Scene_Update              0x00019C00
 #define RVA_Board_UpdateRaceState     0x0001B130
+#define RVA_Level_RenderDynamicObjects 0x0000B420
+#define RVA_Graphics_SetProjection     0x00054AB0
+#define RVA_Graphics_SetCullMode2      0x00053970
+#define RVA_Sprite_RenderQuad          0x0005D660
+#define RVA_RenderContext_Init         0x00057FA0
+#define RVA_Matrix4_Identity           0x00057FD0
 #define RVA_Gfx_ScaleZ                0x00057CC0
 #define RVA_Gfx_ScaleY                0x00057C90
 #define RVA_Gfx_ScaleX                0x00057C60
@@ -2605,6 +2659,358 @@ static void Feature_SkyPopcylinder(void *board, int level) {
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + 48 + idx * 4));
         break;
     }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Render (Slot 24) — replaces all 15 per-level render functions
+ *
+ * Calls Level_RenderDynamicObjects first (the shared base render), then
+ * dispatches to per-level render feature blocks based on g_renderFeatures[].
+ *
+ * Render blocks:
+ *   REND_BUMPER:   Bumper reflective material (Beginner, Toob, Master)
+ *   REND_WINDMILL: Tower windmill + chomper render with projection adjust
+ *   REND_GLASS:    Glass transparent smasher render with render-state toggles
+ *   REND_SKY_CAM:  Sky camera setup + cloud sprite + transparent objects
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void __fastcall UniversalRender(void *board) {
+    if (!board || !g_RenderDynamicObjects) return;
+
+    /* Call shared base render (Level_RenderDynamicObjects) */
+    g_RenderDynamicObjects(board);
+
+    int level = GetCurrentLevel(board);
+    if (level == 0) return;
+
+    DWORD features = g_renderFeatures[level];
+    if (!features) return;
+
+    DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+
+    /* ── Bumper Reflective Render (Beginner, Toob, Master) ──
+     * Iterates ehVector slots, renders bumpers with reflective material
+     * when their lit value is non-zero. Reads from unified offsets. */
+    if (features & REND_BUMPER) {
+        int bumperCount = (level == 14) ? 4 : 8;
+        float *litPtr = (float *)((char *)board + UNI_BUMPER_LIT);
+        char *slotPtr = (char *)board + UNI_EHVECTOR;
+        int i;
+        for (i = 0; i < bumperCount; i++) {
+            if (litPtr[i] != 0.0f) {
+                /* Set up render context with lit value as material multiplier */
+                char renderCtx[64];
+                if (g_RenderContextInit) g_RenderContextInit(renderCtx);
+                *(float *)(renderCtx + 0x10) = litPtr[i];  /* lit float */
+                *(float *)(renderCtx + 0x14) = litPtr[i];  /* duplicate */
+                /* Set all material components to 1.0 */
+                *(DWORD *)(renderCtx + 0x04) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x08) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x0C) = 0x3F800000;
+                *(char *)(renderCtx + 0x20) = (litPtr[i] != 1.0f) ? 1 : 0;
+                *(DWORD *)(renderCtx + 0x24) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x28) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x2C) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x30) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x34) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x38) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x3C) = 0x3F800000;
+                /* Store render context pointer on board */
+                *(void **)((char *)board + 0x7C0) = renderCtx;
+                /* Call meshWorld->vtable[0x14](slotPtr) to render bumper */
+                if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x54)) {
+                    DWORD *vtbl = *(DWORD **)meshWorld;
+                    if (vtbl) {
+                        void (__thiscall *fn)(DWORD) = (void (__thiscall *)(DWORD))vtbl[0x14];
+                        if (fn) fn((DWORD)slotPtr);
+                    }
+                }
+                /* Reset render context */
+                if (g_Matrix4Identity) g_Matrix4Identity(renderCtx);
+            }
+        }
+        /* Clear render context pointer */
+        *(void **)((char *)board + 0x7C0) = NULL;
+    }
+
+    /* ── Tower Windmill Render ──
+     * Renders windmill + chomper with custom projection and rotation.
+     * Reads windmill render obj from UNI_MESH_4, rotation from UNI_WINDMILL_ANGLE. */
+    if (features & REND_WINDMILL) {
+        DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+        if (!app || IsBadReadPtr((void *)app, 0x200)) return;
+        void *gfx = *(void **)((char *)app + 0x174);
+        if (!gfx) return;
+
+        char timerBuf[68];
+        if (g_TimerInit && g_TimerCleanup) {
+            g_TimerInit(timerBuf);
+
+            /* Scale matrix (1.15, 1.15, 1.15) */
+            DWORD *timerVtbl = *(DWORD **)timerBuf;
+            if (timerVtbl) {
+                void (__thiscall *scaleFn)(DWORD, float, float, float) =
+                    (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
+                if (scaleFn) scaleFn((DWORD)timerBuf, 0x3f933333, 0x3f933333, 0x3f933333);
+            }
+
+            /* Gfx_ScaleZ(-rotation) */
+            float rotation = *(float *)((char *)board + UNI_WINDMILL_ANGLE);
+            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -rotation);
+
+            /* Render windmill render obj via vtable[0x08] */
+            DWORD windmillRender = *(DWORD *)((char *)board + UNI_MESH_4);
+            if (windmillRender && !IsBadReadPtr((void *)windmillRender, 4)) {
+                DWORD *vtbl = *(DWORD **)windmillRender;
+                if (vtbl) {
+                    void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))vtbl[2];
+                    if (fn8) fn8(windmillRender);
+                }
+            }
+
+            /* Gfx_SetPosition(0, 0, 0) — Y position was always 0 in original */
+            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, 0.0f, 0.0f);
+
+            /* Render Chomper mesh via meshWorld->vtable[0x1C] */
+            if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x1C)) {
+                DWORD *vtbl = *(DWORD **)meshWorld;
+                if (vtbl) {
+                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
+                    if (fn1C) {
+                        DWORD chomperMesh = *(DWORD *)((char *)board + UNI_MESH_8);
+                        if (chomperMesh) fn1C(chomperMesh);
+                    }
+                }
+            }
+
+            /* Reset: scale matrix again + Gfx_ScaleZ(-rotation) + Gfx_ScaleX(180) */
+            if (timerVtbl) {
+                void (__thiscall *scaleFn)(DWORD, float, float, float) =
+                    (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
+                if (scaleFn) scaleFn((DWORD)timerBuf, 0x3f933333, 0x3f933333, 0x3f933333);
+            }
+            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -rotation);
+            if (g_GfxScaleX) g_GfxScaleX(gfx, 180.0f);
+            if (g_GfxSetPosition) g_GfxSetPosition(gfx, -10.0f, 0.0f, 0.0f);
+
+            /* Render second mesh (Turret render obj from CreateDynamicObjects) */
+            /* Turret render obj was stored via Scene_CreateDynamicObjects return.
+             * In the original it reads board+0x4394/0x4398/0x439C.
+             * In the mod, TURRET handler stores render obj at UNI_MESH_15.
+             * The position (x,y,z) comes from S1 data but isn't stored on the board
+             * in the mod. Since wave angle was always 0 and Y was always 0 in
+             * original, we render at origin with no oscillation. */
+            DWORD turretRender = *(DWORD *)((char *)board + UNI_MESH_15);
+            if (turretRender && !IsBadReadPtr((void *)turretRender, 4)) {
+                DWORD *vtbl = *(DWORD **)turretRender;
+                if (vtbl) {
+                    void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))vtbl[2];
+                    if (fn8) fn8(turretRender);
+                }
+            }
+
+            /* Reset position + render Chomper again */
+            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, 0.0f, 0.0f);
+            if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x1C)) {
+                DWORD *vtbl = *(DWORD **)meshWorld;
+                if (vtbl) {
+                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
+                    if (fn1C) {
+                        DWORD chomperMesh = *(DWORD *)((char *)board + UNI_MESH_8);
+                        if (chomperMesh) fn1C(chomperMesh);
+                    }
+                }
+            }
+
+            g_TimerCleanup(timerBuf);
+        }
+    }
+
+    /* ── Glass Transparent Render ──
+     * Renders two transparent glass smasher meshes with render-state toggles.
+     * Reads smasher positions from UNI_BONK_STORE/UNI_SAW1_OBJ/UNI_SAW2_OBJ (smasher 1)
+     * and UNI_MESH_3/UNI_MESH_4/UNI_BRIDGE_ANGLE (smasher 2). */
+    if (features & REND_GLASS) {
+        DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+        if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+        void *gfx = *(void **)((char *)app + 0x174);
+        if (!gfx) return;
+
+        char timerBuf[68];
+        if (g_TimerInit && g_TimerCleanup) {
+            g_TimerInit(timerBuf);
+
+            /* Smasher 1: Gfx_ScaleX(transparency), render mesh */
+            float transp1 = *(float *)((char *)board + UNI_BRIDGE_STATE);
+            if (g_GfxScaleX) g_GfxScaleX(gfx, transp1);
+            DWORD *timerVtbl = *(DWORD **)timerBuf;
+            if (timerVtbl) {
+                void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))timerVtbl[2];
+                if (fn8) {
+                    /* Render smasher 1 mesh: pos at UNI_BONK_STORE/SAW1_OBJ/SAW2_OBJ */
+                    DWORD mesh1 = *(DWORD *)((char *)board + UNI_BONK_STORE);
+                    DWORD data1a = *(DWORD *)((char *)board + UNI_SAW1_OBJ);
+                    DWORD data1b = *(DWORD *)((char *)board + UNI_SAW2_OBJ);
+                    fn8(mesh1);
+                }
+            }
+
+            /* Select render device based on flag */
+            BYTE flag1 = *(BYTE *)((char *)board + UNI_NEON_DARK_COUNT);
+            DWORD renderDev;
+            if (flag1 == 0) {
+                renderDev = *(DWORD *)(app + 0x584);
+            } else {
+                renderDev = *(DWORD *)(app + 0x588);
+            }
+            if (renderDev && !IsBadReadPtr((void *)renderDev, 0x1C)) {
+                DWORD *vtbl = *(DWORD **)renderDev;
+                if (vtbl) {
+                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
+                    if (fn1C) fn1C(renderDev);
+                }
+            }
+
+            /* Smasher 2: Gfx_ScaleX(transparency2), render mesh */
+            char timerBuf2[68];
+            g_TimerInit(timerBuf2);
+            float transp2 = *(float *)((char *)board + UNI_BRIDGE_COUNTER);
+            if (g_GfxScaleX) g_GfxScaleX(gfx, transp2);
+            DWORD *timerVtbl2 = *(DWORD **)timerBuf2;
+            if (timerVtbl2) {
+                void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))timerVtbl2[2];
+                if (fn8) {
+                    DWORD mesh2 = *(DWORD *)((char *)board + UNI_MESH_3);
+                    fn8(mesh2);
+                }
+            }
+
+            BYTE flag2 = *(BYTE *)((char *)board + UNI_GLASS_SMASHER2);
+            if (flag2 == 0) {
+                renderDev = *(DWORD *)(app + 0x584);
+            } else {
+                renderDev = *(DWORD *)(app + 0x588);
+            }
+            if (renderDev && !IsBadReadPtr((void *)renderDev, 0x1C)) {
+                DWORD *vtbl = *(DWORD **)renderDev;
+                if (vtbl) {
+                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
+                    if (fn1C) fn1C(renderDev);
+                }
+            }
+
+            g_TimerCleanup(timerBuf2);
+            g_TimerCleanup(timerBuf);
+        }
+    }
+
+    /* ── Sky Camera Render ──
+     * Sets up far-clip projection, renders cloud sprite, then renders
+     * transparent scene objects from the Sky render AthenaList. */
+    if (features & REND_SKY_CAM) {
+        DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+        if (!app || IsBadReadPtr((void *)app, 0x200)) return;
+        void *gfx = *(void **)((char *)app + 0x174);
+        if (!gfx) return;
+
+        /* Set far-clip projection: near=20.0, far=50000.0 */
+        if (g_GraphicsSetProjection)
+            g_GraphicsSetProjection(gfx, 20.0f, 50000.0f);
+
+        /* Toggle render state (gfx+0x70C) — D3D state management */
+        if (*(char *)((char *)gfx + 0x70C) != 0) {
+            DWORD *gfxVtbl = *(DWORD **)gfx;
+            if (gfxVtbl) {
+                void (__thiscall *fnC8)(DWORD, int, int) =
+                    (void (__thiscall *)(DWORD, int, int))gfxVtbl[0x32];
+                if (fnC8) fnC8((DWORD)gfx, 0xe, 0);
+            }
+            *(char *)((char *)gfx + 0x70C) = 0;
+            (*(int *)((char *)gfx + 0x7C8))++;
+        }
+
+        /* Disable culling for cloud sprite */
+        if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 0);
+
+        /* Render cloud sprite quad */
+        if (g_SpriteRenderQuad) {
+            DWORD sprite = *(DWORD *)((char *)board + UNI_MESH_11);
+            float sp1 = *(float *)((char *)board + UNI_MESH_12);
+            float sp2 = *(float *)((char *)board + UNI_MESH_13);
+            float sp3 = *(float *)((char *)board + UNI_MESH_14);
+            if (sprite) g_SpriteRenderQuad((void *)sprite, sp1, sp2, sp3, 23.0f, 0);
+        }
+
+        /* Re-enable culling */
+        if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 1);
+
+        /* Toggle render state back */
+        if (*(char *)((char *)gfx + 0x70C) != 1) {
+            DWORD *gfxVtbl = *(DWORD **)gfx;
+            if (gfxVtbl) {
+                void (__thiscall *fnC8)(DWORD, int, int) =
+                    (void (__thiscall *)(DWORD, int, int))gfxVtbl[0x32];
+                if (fnC8) fnC8((DWORD)gfx, 0xe, 1);
+            }
+            *(char *)((char *)gfx + 0x70C) = 1;
+            (*(int *)((char *)gfx + 0x7C8))++;
+        }
+
+        /* Adjust projection based on gfx field, then render objects */
+        float fovAdjust = *(float *)((char *)gfx + 0x188);
+        fovAdjust = (fovAdjust + fovAdjust) * 0.0009765625f + 0.00048828125f;
+        if (g_GraphicsSetProjection)
+            g_GraphicsSetProjection(gfx, 20.0f, fovAdjust + fovAdjust);
+
+        /* Level_RenderDynamicObjects was already called above.
+         * Now iterate the Sky render object AthenaList and render transparent objects. */
+        if (g_AthenaListGetIterator && g_AthenaListGetSize && meshWorld) {
+            int iter = g_AthenaListGetIterator((void *)((char *)board + UNI_LIST_6));
+            *(int *)((char *)board + UNI_LIST_6 + 8 + iter * 4) = 0;
+            int count = *(int *)((char *)board + UNI_LIST_6 + 4);
+            int item = 0;
+            if (count > 0) {
+                DWORD arr = *(DWORD *)((char *)board + UNI_LIST_6 + 0x40C);
+                if (arr && !IsBadReadPtr((void *)arr, 4)) {
+                    item = *(int *)arr;
+                    *(int *)((char *)board + UNI_LIST_6 + 8 + iter * 4) = 1;
+                }
+            }
+            while (item) {
+                char timerBuf[68];
+                if (g_TimerInit) g_TimerInit(timerBuf);
+                DWORD *tVtbl = *(DWORD **)timerBuf;
+                if (tVtbl) {
+                    void (__thiscall *fn8)(DWORD, DWORD, DWORD, DWORD) =
+                        (void (__thiscall *)(DWORD, DWORD, DWORD, DWORD))tVtbl[2];
+                    if (fn8) {
+                        fn8((DWORD)timerBuf,
+                            *(DWORD *)(item + 4),
+                            *(DWORD *)(item + 8),
+                            *(DWORD *)(item + 0xC));
+                    }
+                }
+                /* Render via meshWorld->vtable[0x1C] */
+                DWORD mesh = *(DWORD *)((char *)board + UNI_EHVECTOR);
+                if (mesh && !IsBadReadPtr((void *)mesh, 0x1C)) {
+                    DWORD *mVtbl = *(DWORD **)mesh;
+                    if (mVtbl) {
+                        void (__thiscall *fn1C)(DWORD, int) =
+                            (void (__thiscall *)(DWORD, int))mVtbl[7];
+                        if (fn1C) fn1C(mesh, 0);
+                    }
+                }
+                if (g_TimerCleanup) g_TimerCleanup(timerBuf);
+
+                int next = *(int *)((char *)board + UNI_LIST_6 + 8 + iter * 4);
+                if (count <= next) break;
+                DWORD arr2 = *(DWORD *)((char *)board + UNI_LIST_6 + 0x40C);
+                if (!arr2 || IsBadReadPtr((void *)arr2, (next + 1) * 4)) break;
+                item = *(int *)(arr2 + next * 4);
+                *(int *)((char *)board + UNI_LIST_6 + 8 + iter * 4) = next + 1;
+            }
+        }
     }
 }
 
@@ -5114,8 +5520,20 @@ static void InstallVtablePatches(void) {
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
+
+        /* Slot 24 (offset +0x60): Per-level render → UniversalRender
+         * Replaces 5 unique per-level render functions + 10 shared stubs.
+         * UniversalRender calls Level_RenderDynamicObjects first (the shared base),
+         * then dispatches to render feature blocks (bumper, windmill, glass, sky). */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x60);
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalRender;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
     }
-    DebugLog("Vtable slots [1,19,29,33] patched for all 15 levels");
+    DebugLog("Vtable slots [1,19,24,29,33] patched for all 15 levels");
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
@@ -5193,6 +5611,12 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     /* Resolve Board_Update function pointers */
     g_SceneUpdate = (Scene_Update_t)(g_moduleBase + RVA_Scene_Update);
     g_BoardUpdateRaceState = (Board_UpdateRaceState_t)(g_moduleBase + RVA_Board_UpdateRaceState);
+    g_RenderDynamicObjects = (Level_RenderDynamicObjects_t)(g_moduleBase + RVA_Level_RenderDynamicObjects);
+    g_GraphicsSetProjection = (Graphics_SetProjection_t)(g_moduleBase + RVA_Graphics_SetProjection);
+    g_GraphicsSetCullMode2 = (Graphics_SetCullMode2_t)(g_moduleBase + RVA_Graphics_SetCullMode2);
+    g_SpriteRenderQuad = (Sprite_RenderQuad_t)(g_moduleBase + RVA_Sprite_RenderQuad);
+    g_RenderContextInit = (RenderContext_Init_t)(g_moduleBase + RVA_RenderContext_Init);
+    g_Matrix4Identity = (Matrix4_Identity_t)(g_moduleBase + RVA_Matrix4_Identity);
     g_GfxScaleZ = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleZ);
     g_GfxScaleY = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleY);
     g_GfxScaleX = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleX);
@@ -5220,6 +5644,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
 
     /* Initialize feature flags from defaults */
     memcpy(g_updateFeatures, g_defaultFeatures, sizeof(g_updateFeatures));
+    memcpy(g_renderFeatures, g_defaultRenderFeatures, sizeof(g_renderFeatures));
 
     /* Initialize collision event defaults */
     InitCollisionDefaults();
