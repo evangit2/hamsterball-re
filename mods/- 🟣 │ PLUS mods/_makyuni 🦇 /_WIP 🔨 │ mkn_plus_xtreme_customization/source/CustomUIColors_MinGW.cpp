@@ -538,13 +538,17 @@ struct PathSlot {
     const char* jsonName;   // JSON key to match in config
     DWORD pushAddr;          // Address of PUSH imm32 in .text
     const char* defaultPath; // Original default filename
+    int arrayIndex;          // For multi-texture: which array element (0=first/only)
 };
 
 static PathSlot g_path_slots[] = {
-    {"loader with ball",   0x0042C9FD, "Loader.png"},
-    {"loader _no_ ball",   0x0042CA3F, "Loader(Grey).png"},
-    {"rotating swirl",     0x0042CA81, "Loadingswirl.png"},
-    {"raptisoft logo",     0x0042CB4E, "textures\\raptisoftlogo.png"},
+    {"loader with ball",   0x0042C9FD, "Loader.png",                 0},
+    {"loader _no_ ball",   0x0042CA3F, "Loader(Grey).png",           0},
+    {"rotating swirl",     0x0042CA81, "Loadingswirl.png",           0},
+    {"raptisoft logo",     0x0042CB4E, "textures\\raptisoftlogo.png", 0},
+    {"background",         0x0042CAC3, "loaderbkg.png",              0},
+    {"hamsterball logo",   0x00429905, "titletext-left.png",         0},
+    {"hamsterball logo",   0x0042993A, "titletext-right.png",        1},
 };
 
 #define NUM_PATH_SLOTS (sizeof(g_path_slots) / sizeof(g_path_slots[0]))
@@ -747,32 +751,33 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
         }
         else if (nc_stricmp(keyBuf, "path") == 0) {
             if (tk.type == JTK_LBRACK) {
-                // Array of paths — take first element for now
+                // Array of paths — assign each to matching slot by arrayIndex
+                int arr_idx = 0;
                 tk = next_token(p);
-                if (tk.type == JTK_STRING) {
-                    char pathBuf[128];
-                    copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
-                    for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
-                        if (json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
-                            apply_path_to_slot(i, pathBuf);
-                            break;
+                while (tk.type != JTK_RBRACK && tk.type != JTK_END) {
+                    if (tk.type == JTK_STRING) {
+                        char pathBuf[128];
+                        copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
+                        // Find matching slot with same element name AND array index
+                        for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
+                            if (g_path_slots[i].arrayIndex == arr_idx &&
+                                json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
+                                apply_path_to_slot(i, pathBuf);
+                                break;
+                            }
                         }
+                        arr_idx++;
                     }
-                }
-                // Skip rest of array
-                int depth = 1;
-                while (depth > 0) {
                     tk = next_token(p);
-                    if (tk.type == JTK_LBRACK) depth++;
-                    else if (tk.type == JTK_RBRACK) depth--;
-                    else if (tk.type == JTK_END) break;
+                    if (tk.type == JTK_COMMA) tk = next_token(p);
                 }
             } else if (tk.type == JTK_STRING) {
-                // Single path
+                // Single path — assign to first matching slot (arrayIndex=0)
                 char pathBuf[128];
                 copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
                 for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
-                    if (json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
+                    if (g_path_slots[i].arrayIndex == 0 &&
+                        json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
                         apply_path_to_slot(i, pathBuf);
                         break;
                     }
@@ -857,6 +862,7 @@ static const char* DEFAULT_CONFIG =
 "    \"LoadingScreen - Hamster Loader with ball\":         { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/Loader\"                                                    },\n"
 "    \"LoadingScreen - Rotating Swirl\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/LoadingSwirl\"                                              },\n"
 "    \"LoadingScreen - Raptisoft Logo\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/RaptisoftLogo\", \"link\": \"https://www.raptisoft.com\"        },\n"
+"    \"LoadingScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/LoaderBkg\"                                                },\n"
 "  }\n"
 "]\n";
 
