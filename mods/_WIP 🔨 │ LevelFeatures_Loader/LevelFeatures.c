@@ -418,7 +418,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 
 /* Swirl (Dizzy) */
 #define BRD_SWIRL_LIST       UNI_SWIRL_LIST      /* AthenaList of swirl zones */
-#define BRD_TARBUBBLE_LIST   UNI_LIST_1          /* AthenaList of TarBubble objects */
+#define BRD_TARBUBBLE_LIST   UNI_LIST_3          /* AthenaList of TarBubble objects */
 #define BRD_SWIRL_MESH1      UNI_MESH_6          /* primary swirl mesh (WaterWheel) */
 #define BRD_SWIRL_MESH2      UNI_MESH_11         /* secondary swirl mesh */
 #define BRD_SWIRL1_POS_X     UNI_MESH_8
@@ -433,7 +433,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 
 /* Swirl (Master) — same unified offsets now */
 #define BRD_SWIRL_LIST_M     UNI_SWIRL_LIST
-#define BRD_TARBUBBLE_LIST_M UNI_LIST_1
+#define BRD_TARBUBBLE_LIST_M UNI_LIST_3
 
 /* Bumper decay offsets — unified */
 #define BRD_BUMPER_DECAY_BEG  UNI_BUMPER_LIT
@@ -613,7 +613,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BOARD_NAME      0x868
 #define UNI_BOARD_APPVAL    0x870
 #define UNI_SCORE_LIST      0x8B8
-#define UNI_TARBUBBLE_LIST  0x11E4
+#define UNI_TARBUBBLE_LIST  UNI_LIST_3
 #define UNI_OBJ_LIST        0x2578
 #define UNI_RACE_TITLE      0x29B4
 #define UNI_BALL_LIST       0x29D4
