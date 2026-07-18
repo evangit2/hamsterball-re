@@ -2258,12 +2258,16 @@ static void Feature_SwirlZones(void *board, int level) {
         float angle1 = *(float *)((char *)board + BRD_SWIRL1_ANGLE) - 0.5f;
         *(float *)((char *)board + BRD_SWIRL1_SPEED) = 0.5f;
         *(float *)((char *)board + BRD_SWIRL1_ANGLE) = angle1;
+        DebugLog("  [swirl] step3a: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
+        DebugLog("  [swirl] step3a: calling GfxScaleY");
         g_GfxScaleY(gfx, angle1);
+        DebugLog("  [swirl] step3a: calling GfxSetPosition");
         g_GfxSetPosition(gfx,
             *(float *)((char *)board + BRD_SWIRL1_POS_X),
             *(float *)((char *)board + BRD_SWIRL1_POS_Y),
             *(float *)((char *)board + BRD_SWIRL1_POS_Z));
+        DebugLog("  [swirl] step3a: Gfx calls done, checking mesh1");
         /* Call mesh vtable[0x58]+[0x54] — guard against NULL +0x434 sub-object */
         DWORD mesh1 = *(DWORD *)((char *)board + BRD_SWIRL_MESH1);
         if (mesh1 && !IsBadReadPtr((void*)mesh1, 0x438)) {
