@@ -5848,7 +5848,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     InstallUniversalConstructorHook();
     InstallVtablePatches();
     InstallHook();
-    DebugLog("=== PatchThread complete ===\n");
+    DebugLog("=== PatchThread complete (v2 swirlfix) ===\n");
     return 0;
 }
 
