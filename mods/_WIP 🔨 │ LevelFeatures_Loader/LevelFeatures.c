@@ -3148,11 +3148,11 @@ void __fastcall UniversalBoardUpdate(void *board) {
         DebugLog("  [update] Feature_BridgeAnimation done");
     }
 
-    /* Swirl zones (Dizzy + Master) */
+    /* Swirl zones (Dizzy + Master) — TEMPORARILY DISABLED for crash isolation */
     if (features & FEAT_SWIRL) {
-        DebugLog("  [update] Feature_SwirlZones...");
-        Feature_SwirlZones(board, level);
-        DebugLog("  [update] Feature_SwirlZones done");
+        DebugLog("  [update] Feature_SwirlZones... SKIPPED (crash isolation)");
+        /* Feature_SwirlZones(board, level); */
+        DebugLog("  [update] Feature_SwirlZones done (skipped)");
     }
 
     /* Windmill (Tower) */
