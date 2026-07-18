@@ -2105,16 +2105,22 @@ static void Feature_SwirlZones(void *board, int level) {
     /* Swirl zone processing: iterate ball list, check proximity to swirl zones
      * Ball list at board+0x29D4 (AthenaList), array at board+0x2DE0 */
     DebugLog("  [swirl] step2: ball list iteration");
+    DebugLog("  [swirl] step2a: get ball iterator");
     int ballIter = g_AthenaListGetIterator((void *)((char *)board + UNI_BALL_LIST));
+    DebugLog("  [swirl] step2a done");
     *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 0;
+    DebugLog("  [swirl] step2b: read ball count");
     int ballCount = *(int *)((char *)board + UNI_BALL_COUNT);
+    DebugLog("  [swirl] step2b done");
     int ballIdx = 0;
     if (ballCount > 0) {
+        DebugLog("  [swirl] step2c: read ball array");
         DWORD ballArrayPtr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
         if (ballArrayPtr && !IsBadReadPtr((void *)ballArrayPtr, 4)) {
             ballIdx = *(int *)ballArrayPtr;
             *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 1;
         }
+        DebugLog("  [swirl] step2c done");
     }
 
     while (ballIdx) {
