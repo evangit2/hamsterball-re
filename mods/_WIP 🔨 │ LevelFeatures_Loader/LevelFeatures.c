@@ -3329,6 +3329,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         int meshOff = UNI_SAW2_OBJ;
         int meshVal = *(int*)((char*)board + meshOff);
+        {
+            char dbg[256];
+            wsprintfA(dbg, "GLUEBIE: reading mesh from board+0x%X = 0x%08X (board=0x%08X)", meshOff, meshVal, (DWORD)board);
+            DebugLog(dbg);
+        }
         if (!meshVal) { DebugLog("GLUEBIE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
@@ -5387,6 +5392,15 @@ static void UniversalConstructor(void *board, int raceIndex) {
      * pointers and the dynamic objects get no mesh. */
     UniversalPostSetup(board);
     DebugLog("UniversalPostSetup done");
+
+    /* Diagnostic: verify mesh pointers survived post-setup */
+    {
+        DWORD tipperMesh = *(DWORD *)((char *)board + UNI_BONK_STORE);
+        DWORD gluebieMesh = *(DWORD *)((char *)board + UNI_SAW2_OBJ);
+        char dbg[256];
+        wsprintfA(dbg, "Pre-Board_Setup mesh check: Tipper(0x8620)=0x%08X Gluebie(0x862C)=0x%08X", tipperMesh, gluebieMesh);
+        DebugLog(dbg);
+    }
 
     /* Step 5: Board_Setup via vtable[0x80] */
     DWORD vtable = *(DWORD *)board;
