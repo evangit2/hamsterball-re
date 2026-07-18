@@ -2084,7 +2084,15 @@ static void Feature_SwirlZones(void *board, int level) {
     /* TarBubble particle creation (every 10 frames via RNG==10 check) */
     DebugLog("  [swirl] step1: tarbubble check");
     if (g_CreateTarBubble && g_AthenaListAppend) {
-        if (g_RNG && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
+        /* Guard: only create tarbubble if the list has entries.
+         * FUN_0044fa90 picks a random entry from the list — if count==0,
+         * it dereferences NULL+4 and crashes. */
+        int tarCount = 0;
+        DWORD *tarList = (DWORD *)((char *)board + tarListOfs);
+        if (!IsBadReadPtr(tarList, 0x410)) {
+            tarCount = *(int *)(tarList + 1);  /* count at +0x04 */
+        }
+        if (tarCount > 0 && g_RNG && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
             void *tar = g_operatorNew(0x1C);
             if (tar) {
                 g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
