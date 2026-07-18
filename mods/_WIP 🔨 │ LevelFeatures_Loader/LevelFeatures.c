@@ -3148,11 +3148,11 @@ void __fastcall UniversalBoardUpdate(void *board) {
         DebugLog("  [update] Feature_BridgeAnimation done");
     }
 
-    /* Swirl zones (Dizzy + Master) — TEMPORARILY DISABLED for crash isolation */
+    /* Swirl zones (Dizzy + Master) */
     if (features & FEAT_SWIRL) {
-        DebugLog("  [update] Feature_SwirlZones... SKIPPED (crash isolation)");
-        /* Feature_SwirlZones(board, level); */
-        DebugLog("  [update] Feature_SwirlZones done (skipped)");
+        DebugLog("  [update] Feature_SwirlZones...");
+        Feature_SwirlZones(board, level);
+        DebugLog("  [update] Feature_SwirlZones done");
     }
 
     /* Windmill (Tower) */
@@ -3286,6 +3286,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             obj = g_TipperCtor(mem, (int)board, meshVal);
+            /* Tipper_ctor clears the mesh pointer at meshOff — restore it
+             * so subsequent Tippers can read it. */
+            *(int*)((char*)board + meshOff) = meshVal;
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             o[0x439] = *(DWORD*)&x2; o[0x43A] = *(DWORD*)&y2; o[0x43B] = *(DWORD*)&z2;
@@ -3329,15 +3332,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         int meshOff = UNI_SAW2_OBJ;
         int meshVal = *(int*)((char*)board + meshOff);
-        {
-            char dbg[256];
-            wsprintfA(dbg, "GLUEBIE: reading mesh from board+0x%X = 0x%08X (board=0x%08X)", meshOff, meshVal, (DWORD)board);
-            DebugLog(dbg);
-        }
         if (!meshVal) { DebugLog("GLUEBIE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
             obj = g_GluebieCtor(mem, (int)board, meshVal);
+            /* Gluebie_ctor clears the mesh pointer at meshOff — restore it
+             * so subsequent Gluebies can read it. */
+            *(int*)((char*)board + meshOff) = meshVal;
             DWORD *o = (DWORD *)obj;
             o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
             int listOff = UNI_MESH_3;
