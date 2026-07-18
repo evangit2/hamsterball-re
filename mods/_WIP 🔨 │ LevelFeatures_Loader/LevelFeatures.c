@@ -3293,9 +3293,6 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             obj = g_TipperCtor(mem, (int)board, meshVal);
-            /* Tipper_ctor clears the mesh pointer at meshOff — restore it
-             * so subsequent Tippers can read it. */
-            *(int*)((char*)board + meshOff) = meshVal;
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             o[0x439] = *(DWORD*)&x2; o[0x43A] = *(DWORD*)&y2; o[0x43B] = *(DWORD*)&z2;
@@ -3343,19 +3340,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         void *mem = g_operatorNew(0x110C);
         if (mem) {
             obj = g_GluebieCtor(mem, (int)board, meshVal);
-            /* Gluebie_ctor clears the mesh pointer at meshOff — restore it
-             * so subsequent Gluebies can read it. */
-            *(volatile int*)((char*)board + meshOff) = meshVal;
-            {
-                int verify = *(int*)((char*)board + meshOff);
-                char dbg[128];
-                wsprintfA(dbg, "GLUEBIE: ctor done, restored mesh=0x%08X, verify=0x%08X", meshVal, verify);
-                DebugLog(dbg);
-            }
             DWORD *o = (DWORD *)obj;
             o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
-            int listOff = UNI_MESH_3;
-            g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
+            /* Original appends to board+0x4378 (Gluebie list) + board+0x2578 (obj list).
+             * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
+             * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
