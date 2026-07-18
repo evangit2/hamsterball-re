@@ -2082,6 +2082,7 @@ static void Feature_SwirlZones(void *board, int level) {
     int tarListOfs = (level == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
 
     /* TarBubble particle creation (every 10 frames via RNG==10 check) */
+    DebugLog("  [swirl] step1: tarbubble check");
     if (g_CreateTarBubble && g_AthenaListAppend) {
         if (g_RNG && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
             void *tar = g_operatorNew(0x1C);
@@ -2091,9 +2092,11 @@ static void Feature_SwirlZones(void *board, int level) {
             }
         }
     }
+    DebugLog("  [swirl] step1 done");
 
     /* Swirl zone processing: iterate ball list, check proximity to swirl zones
      * Ball list at board+0x29D4 (AthenaList), array at board+0x2DE0 */
+    DebugLog("  [swirl] step2: ball list iteration");
     int ballIter = g_AthenaListGetIterator((void *)((char *)board + UNI_BALL_LIST));
     *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 0;
     int ballCount = *(int *)((char *)board + UNI_BALL_COUNT);
@@ -2236,8 +2239,10 @@ static void Feature_SwirlZones(void *board, int level) {
         ballIdx = *(int *)(ballArr + nextBall * 4);
         *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = nextBall + 1;
     }
+    DebugLog("  [swirl] step2 done");
 
     /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) */
+    DebugLog("  [swirl] step3: mesh rotation");
     if (level != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
@@ -2246,6 +2251,7 @@ static void Feature_SwirlZones(void *board, int level) {
         g_TimerInit(timerBuf);
 
         /* Primary swirl mesh rotation (Gfx_ScaleY) */
+        DebugLog("  [swirl] step3a: primary mesh rotation");
         float angle1 = *(float *)((char *)board + BRD_SWIRL1_ANGLE) - 0.5f;
         *(float *)((char *)board + BRD_SWIRL1_SPEED) = 0.5f;
         *(float *)((char *)board + BRD_SWIRL1_ANGLE) = angle1;
@@ -2269,6 +2275,7 @@ static void Feature_SwirlZones(void *board, int level) {
 
         g_TimerCleanup(timerBuf);
         }
+        DebugLog("  [swirl] step3a done");
     }
 
     /* Dizzy: secondary swirl mesh rotation (Gfx_ScaleX) */
@@ -2301,7 +2308,9 @@ static void Feature_SwirlZones(void *board, int level) {
 
         g_TimerCleanup(timerBuf);
         }
+        DebugLog("  [swirl] step3b done");
     }
+    DebugLog("  [swirl] Feature_SwirlZones complete");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v19
+ * custom_entities.c — Hamsterball Custom Entities Mod v20
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -380,9 +380,10 @@ static void process_custom_tags(DWORD board, FILE* logf) {
         /* Check if this is a BADBALL object */
         if (_strnicmp(name, "BADBALL", 7) != 0) continue;
 
-        /* Check for <MESH> tag */
+        /* Check for <MESH> tag — DISABLED v20 (will re-enable later) */
         char mesh_value[64] = {0};
-        int has_mesh = extract_tag(name, "MESH", mesh_value, sizeof(mesh_value));
+        /* int has_mesh = extract_tag(name, "MESH", mesh_value, sizeof(mesh_value)); */
+        int has_mesh = 0;  /* MESH tag inactive */
 
         /* Check for <SPEEDMULT> tag */
         char speed_value[64] = {0};
@@ -397,7 +398,7 @@ static void process_custom_tags(DWORD board, FILE* logf) {
 
         if (logf) {
             fprintf(logf, "  TAGS: BADBALL obj[%d] at (%.1f, %.1f, %.1f)", i, obj_x, obj_y, obj_z);
-            if (has_mesh) fprintf(logf, " <MESH>%s</MESH>", mesh_value);
+            if (has_mesh) fprintf(logf, " <MESH>(inactive)");
             if (has_speed) fprintf(logf, " <SPEEDMULT>%s</SPEEDMULT>", speed_value);
             fprintf(logf, "\n");
         }
@@ -414,8 +415,8 @@ static void process_custom_tags(DWORD board, FILE* logf) {
 
             /* Match by position (exact float comparison — CreateBadBall copies obj.xyz directly) */
             if (ball_home_x == obj_x && ball_home_y == obj_y && ball_home_z == obj_z) {
-                /* Apply <MESH> tag */
-                if (has_mesh) {
+                /* Apply <MESH> tag — DISABLED v20 */
+                if (0 && has_mesh) {
                     /* Use g_App (0x5341E0) directly — ball+0x10 may not be
                      * initialized yet when process_custom_tags runs.
                      * Ball_Render reads ball+0x10 as App, but it's set by
@@ -729,7 +730,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v19 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v20 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -853,6 +854,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
+        load_real_bass();
         g_thread = CreateThread(NULL, 0, entity_thread, NULL, 0, NULL);
     } else if (reason == DLL_PROCESS_DETACH) {
         g_running = 0;
