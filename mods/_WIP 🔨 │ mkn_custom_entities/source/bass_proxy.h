@@ -240,7 +240,9 @@ static DWORD get_board(void) {
     if (!board || board < 0x10000) return 0;
     if (IsBadReadPtr((void*)board, 4)) return 0;
     DWORD vtable = *(DWORD*)board;
-    if (vtable < 0x4D0000 || vtable > 0x4D2000) return 0;
+    /* Vtable range covers base Scene (0x4D0260) through Impossible (0x4D21C0).
+     * All 15 LevelBoard subclass vtables verified via Ghidra decompilation. */
+    if (vtable < 0x4D0000 || vtable > 0x4D2200) return 0;
     return board;
 }
 
