@@ -2092,12 +2092,19 @@ static void Feature_SwirlZones(void *board, int level) {
         if (!IsBadReadPtr(tarList, 0x410)) {
             tarCount = *(int *)(tarList + 1);  /* count at +0x04 */
         }
+        {
+            char dbg[128];
+            wsprintfA(dbg, "  [swirl] step1: tarCount=%d tarListOfs=0x%X", tarCount, tarListOfs);
+            DebugLog(dbg);
+        }
         if (tarCount > 0 && g_RNG && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
+            DebugLog("  [swirl] step1: calling CreateTarBubble");
             void *tar = g_operatorNew(0x1C);
             if (tar) {
                 g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
                 g_AthenaListAppend((void *)((char *)board + UNI_PARTICLE_LIST), (int)tar);
             }
+            DebugLog("  [swirl] step1: CreateTarBubble done");
         }
     }
     DebugLog("  [swirl] step1 done");
