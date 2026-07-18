@@ -2261,9 +2261,9 @@ static void Feature_SwirlZones(void *board, int level) {
             DWORD *vtbl = *(DWORD **)mesh1;
             if (vtbl) {
                 void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
-                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
                 if (fn58) fn58((DWORD)mesh1);
-                if (fn54) fn54(timerBuf);
+                if (fn54) fn54((DWORD)mesh1, timerBuf);
             }
         }
 
@@ -2293,9 +2293,9 @@ static void Feature_SwirlZones(void *board, int level) {
             DWORD *vtbl = *(DWORD **)mesh2;
             if (vtbl) {
                 void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
-                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
                 if (fn58) fn58((DWORD)mesh2);
-                if (fn54) fn54(timerBuf);
+                if (fn54) fn54((DWORD)mesh2, timerBuf);
             }
         }
 
