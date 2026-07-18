@@ -2081,32 +2081,12 @@ static void Feature_SwirlZones(void *board, int level) {
     int swirlListOfs = (level == 14) ? BRD_SWIRL_LIST_M : BRD_SWIRL_LIST;
     int tarListOfs = (level == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
 
-    /* TarBubble particle creation (every 10 frames via RNG==10 check) */
-    DebugLog("  [swirl] step1: tarbubble check");
-    if (g_CreateTarBubble && g_AthenaListAppend) {
-        /* Guard: only create tarbubble if the list has entries.
-         * FUN_0044fa90 picks a random entry from the list — if count==0,
-         * it dereferences NULL+4 and crashes. */
-        int tarCount = 0;
-        DWORD *tarList = (DWORD *)((char *)board + tarListOfs);
-        if (!IsBadReadPtr(tarList, 0x410)) {
-            tarCount = *(int *)(tarList + 1);  /* count at +0x04 */
-        }
-        {
-            char dbg[128];
-            wsprintfA(dbg, "  [swirl] step1: tarCount=%d tarListOfs=0x%X", tarCount, tarListOfs);
-            DebugLog(dbg);
-        }
-        if (tarCount > 0 && g_RNG && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
-            DebugLog("  [swirl] step1: calling CreateTarBubble");
-            void *tar = g_operatorNew(0x1C);
-            if (tar) {
-                g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
-                g_AthenaListAppend((void *)((char *)board + UNI_PARTICLE_LIST), (int)tar);
-            }
-            DebugLog("  [swirl] step1: CreateTarBubble done");
-        }
-    }
+    /* TarBubble particle creation — DISABLED.
+     * The Step 6 scan adds S1 ref points (not real TarBubble objects) to the
+     * list. CreateTarBubble reads their fields as if they were TarBubble objects,
+     * gets garbage, and crashes at 0x45CD8C.
+     * TODO: create proper TarBubble objects in CreateDynamicObjects instead. */
+    DebugLog("  [swirl] step1: tarbubble check (skipped — needs proper TarBubble objects)");
     DebugLog("  [swirl] step1 done");
 
     /* Swirl zone processing: iterate ball list, check proximity to swirl zones
