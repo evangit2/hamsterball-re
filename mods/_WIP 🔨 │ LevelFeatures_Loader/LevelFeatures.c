@@ -2053,9 +2053,9 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 DWORD *renderVtbl = *(DWORD **)renderObj;
                 if (renderVtbl) {
                     void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
-                    void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))renderVtbl[0x15];
+                    void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))renderVtbl[0x15];
                     if (fn58) fn58((DWORD)renderObj);
-                    if (fn54) fn54(timerBuf);
+                    if (fn54) fn54((DWORD)renderObj, timerBuf);
                 }
                 g_TimerCleanup(timerBuf);
                 }
@@ -2356,9 +2356,9 @@ static void Feature_Windmill(void *board, int level) {
             DWORD *vtbl = *(DWORD **)renderObj;
             if (vtbl) {
                 void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
-                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
                 if (fn58) fn58((DWORD)renderObj);
-                if (fn54) fn54(timerBuf);
+                if (fn54) fn54((DWORD)renderObj, timerBuf);
             }
         }
         g_TimerCleanup(timerBuf);
@@ -3446,9 +3446,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             DWORD *vtbl = *(DWORD **)stands;
             if (vtbl) {
                 void (__thiscall *fn8)(int, float, float, float) = (void (__thiscall *)(int, float, float, float))vtbl[2];
-                void (__fastcall *fn54)(char *) = (void (__fastcall *)(char *))vtbl[0x15];
+                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
                 if (fn8) fn8(stands, x, y, z);
-                if (fn54) fn54(timerBuf);
+                if (fn54) fn54((DWORD)stands, timerBuf);
             }
             void *rmem = g_operatorNew(0x10D0);
             if (rmem) {
