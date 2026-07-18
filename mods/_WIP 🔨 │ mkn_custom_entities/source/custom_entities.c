@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v20
+ * custom_entities.c — Hamsterball Custom Entities Mod v21
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -83,7 +83,44 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 /* Object size constants */
 #define MESHWORLD_SIZE          0x10D0
 #define POPCYLINDER_SIZE        0x10D0
+#define ROTATER_SIZE            0x1508  /* Rotator_ctor_Impossible alloc size */
 #define SPATIALTREE_SIZE        68
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * REF:Rotater — custom spawning system
+ *
+ * Scans MESHWORLD section 3 for objects named "REF:Rotater" and spawns
+ * a Dizzy Race SWIRL (Rotator_ctor_Impossible) at each position.
+ *
+ * The game's Rotator_ctor_Impossible (0x435940) signature:
+ *   __thiscall(this, board, posX, posY, posZ, mesh)
+ *
+ * Mesh path "levels\Level3-Swirl" is at 0x004CFFE0 (game .data).
+ * MeshWorld_ctor (0x461510) loads the SWIRL mesh from disk.
+ *
+ * Object layout (from Ghidra decompilation):
+ *   this+0x10D0 = board ptr
+ *   this+0x10D4 = render object (Level_RenderCtor result)
+ *   this+0x10D8/DC/E0 = position X/Y/Z
+ *   this+0x10E8 = rotation angle (init 0)
+ *   this+0x10EC = rotation direction (init 1.0)
+ *   this+0x10F0 = AthenaList (initialized)
+ *   vtable = 0x4D5518 (Impossible Rotator)
+ *   vtable[11] (offset 0x2C) = RemoveAndFree
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
+typedef void* (__thiscall *Rotator_ctor_t)(void* this_, void* board, float posX, float posY, float posZ, void* mesh);
+static Rotator_ctor_t pfn_Rotator_ctor = (Rotator_ctor_t)0x00435940;
+
+/* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
+static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
+
+/* Rotater spawned objects tracking */
+#define MAX_ROTATERS 16
+static DWORD g_rotaters[MAX_ROTATERS];
+static int   g_rotater_count = 0;
+static DWORD g_rotater_board = 0;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * <MESH> and <SPEEDMULT> tag support — custom BADBALL arguments
@@ -657,6 +694,161 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * REF:Rotater — Spawn Dizzy SWIRL at REF:Rotater positions in MESHWORLD
+ *
+ * Based on XRow's SpawnSpinSwirl CEA: loads Level3-Swirl mesh via
+ * MeshWorld_ctor, creates Rotator_ctor_Impossible, registers in board lists.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void spawn_rotater_at(DWORD board, float px, float py, float pz, FILE* logf) {
+    if (!board) return;
+
+    /* 1. Get gfx_device from App */
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+    if (!app || IsBadReadPtr((void*)app, 4)) return;
+    DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
+    if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
+
+    /* 2. Load SWIRL mesh via MeshWorld_ctor using game's Level3-Swirl path */
+    void* mesh = pfn_operator_new(MESHWORLD_SIZE);
+    if (!mesh) {
+        if (logf) fprintf(logf, "  ROTATER: failed to alloc mesh\n");
+        return;
+    }
+    memset(mesh, 0, MESHWORLD_SIZE);
+
+    void* loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, g_swirl_mesh_path);
+    if (!loaded_mesh) {
+        if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s'\n", g_swirl_mesh_path);
+        return;
+    }
+
+    /* 3. Allocate Rotater object (0x1508 bytes) */
+    void* obj = pfn_operator_new(ROTATER_SIZE);
+    if (!obj) {
+        if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
+        return;
+    }
+    memset(obj, 0, ROTATER_SIZE);
+
+    /* 4. Call Rotator_ctor_Impossible(this, board, X, Y, Z, mesh) */
+    void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
+    if (!result) {
+        if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
+        return;
+    }
+
+    /* 5. Add to board+0x2578 (update list) */
+    pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+
+    /* 6. Add to board+0xCD4 (render list) */
+    pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
+
+    /* 7. Add collision object (obj+0x10D4) to board+0x10EC */
+    DWORD col_obj = *(DWORD*)((char*)obj + 0x10D4);
+    if (col_obj) {
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
+
+        /* Also add to board+0x8B0+0x18 (scene collision) */
+        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+        if (scene_col) {
+            pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)col_obj);
+        }
+    }
+
+    /* 8. Add to scene spatial tree (board+0x8AC+0x480+0x1C) */
+    DWORD level = get_level(board);
+    if (level) {
+        DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+        if (sceneobj) {
+            pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), obj);
+        }
+    }
+
+    if (logf) {
+        fprintf(logf, "  ROTATER: spawned SWIRL at (%.1f,%.1f,%.1f) obj=0x%08X\n", px, py, pz, (DWORD)obj);
+        fflush(logf);
+    }
+
+    /* Track for despawn */
+    if (g_rotater_count < MAX_ROTATERS) {
+        g_rotaters[g_rotater_count] = (DWORD)obj;
+        g_rotater_count++;
+    }
+}
+
+/* Despawn all rotater objects — calls vtable[11] (RemoveAndFree) on each */
+static void despawn_all_rotaters(DWORD board, FILE* logf) {
+    int i;
+    for (i = 0; i < g_rotater_count; i++) {
+        DWORD obj = g_rotaters[i];
+        if (!obj || obj < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj, 0x10D0)) continue;
+
+        /* Call vtable[11] (offset 0x2C) = RemoveAndFree */
+        DWORD vtable = *(DWORD*)obj;
+        if (vtable && !IsBadReadPtr((void*)vtable, 0x30)) {
+            DWORD remove_fn = *(DWORD*)(vtable + 0x2C);
+            if (remove_fn && remove_fn > 0x400000) {
+                typedef void (__thiscall *remove_t)(void* this_);
+                ((remove_t)remove_fn)((void*)obj);
+                if (logf) fprintf(logf, "  ROTATER: removed obj=0x%08X\n", obj);
+            }
+        }
+    }
+    g_rotater_count = 0;
+}
+
+/* Scan section 3 for REF:Rotater entries and spawn SWIRL at each position */
+static void process_rotaters(DWORD board, FILE* logf) {
+    if (!board) return;
+
+    DWORD sceneobj = get_sceneobj(board);
+    if (!sceneobj) {
+        if (logf) fprintf(logf, "  ROTATER: sceneobj=NULL\n");
+        return;
+    }
+
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) return;
+    int obj_count = *(int*)(sceneobj + SCENEOBJ_OBJ_COUNT);
+    if (obj_count <= 0 || obj_count > 1000) return;
+
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_ARRAY), 4)) return;
+    DWORD* obj_array_ptr = *(DWORD**)(sceneobj + SCENEOBJ_OBJ_ARRAY);
+    if (!obj_array_ptr || IsBadReadPtr(obj_array_ptr, obj_count * 4)) return;
+
+    int found = 0;
+    int i;
+    for (i = 0; i < obj_count; i++) {
+        DWORD obj_ptr = obj_array_ptr[i];
+        if (!obj_ptr || obj_ptr < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj_ptr, 20)) continue;
+
+        /* Read object name pointer */
+        char* name = *(char**)(obj_ptr);
+        if (!name || IsBadReadPtr(name, 8)) continue;
+
+        /* Check for REF:Rotater (case-insensitive) */
+        if (_strnicmp(name, "REF:Rotater", 11) != 0) continue;
+
+        /* Read position (x, y, z at obj+0x04, +0x08, +0x0C) */
+        float px = *(float*)(obj_ptr + 0x04);
+        float py = *(float*)(obj_ptr + 0x08);
+        float pz = *(float*)(obj_ptr + 0x0C);
+
+        if (logf) fprintf(logf, "  ROTATER: found REF:Rotater at (%.1f, %.1f, %.1f)\n", px, py, pz);
+
+        spawn_rotater_at(board, px, py, pz, logf);
+        found++;
+    }
+
+    if (logf && found > 0) {
+        fprintf(logf, "  ROTATER: spawned %d SWIRL object(s)\n", found);
+        fflush(logf);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Init: copy testcube.MESHWORLD to levels\ directory
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -730,7 +922,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v20 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v21 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -768,6 +960,9 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
         /* Process <MESH> and <SPEEDMULT> tags on spawned 8-balls (after CreateBadBall has run) */
         process_custom_tags(board, logf);
+
+        /* Process REF:Rotater entries — spawn SWIRL at each position */
+        process_rotaters(board, logf);
 
         /* Find GRID reference points */
         float grid_x[32], grid_y[32], grid_z[32];
@@ -832,9 +1027,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 }
                 g_spawned_count--;
             }
+
+            /* Despawn all rotater objects on level exit */
+            despawn_all_rotaters(board, logf);
         } else {
             /* No GRID points — still mark board as processed */
             g_spawned_board = board;
+            /* Still process rotaters even without GRID points */
+            despawn_all_rotaters(board, logf);
             if (logf) fprintf(logf, "  No GRID points found\n");
         }
 
