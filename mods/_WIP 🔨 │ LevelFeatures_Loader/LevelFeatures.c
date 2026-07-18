@@ -2267,21 +2267,13 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)((char *)board + BRD_SWIRL1_POS_X),
             *(float *)((char *)board + BRD_SWIRL1_POS_Y),
             *(float *)((char *)board + BRD_SWIRL1_POS_Z));
-        DebugLog("  [swirl] step3a: Gfx calls done, checking mesh1");
-        /* Call mesh vtable[0x58]+[0x54] — guard against NULL +0x434 sub-object */
-        DWORD mesh1 = *(DWORD *)((char *)board + BRD_SWIRL_MESH1);
-        if (mesh1 && !IsBadReadPtr((void*)mesh1, 0x438)) {
-            DWORD *vtbl = *(DWORD **)mesh1;
-            DWORD subObj = *(DWORD *)((char*)mesh1 + 0x434);
-            if (vtbl && subObj && !IsBadReadPtr((void*)subObj, 4)) {
-                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
-                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
-                if (fn58) fn58((DWORD)mesh1);
-                if (fn54) fn54((DWORD)mesh1, timerBuf);
-            } else {
-                DebugLog("  [swirl] step3a: mesh1 sub-object NULL, skipping render");
-            }
-        }
+        DebugLog("  [swirl] step3a: Gfx calls done, mesh render skipped (mesh not scene-registered)");
+        /* Vtable[0x58]/[0x54] calls SKIPPED — the mesh was created by
+         * LoadExtraMeshes but not registered with the scene's render system.
+         * Its +0x434 sub-object exists but has corrupt spatial tree data.
+         * Calling SceneObject_CallRender crashes in FUN_00498BF0 (spatial
+         * tree builder). The transform (Gfx_ScaleY + Gfx_SetPosition) is
+         * applied but the mesh won't rotate until properly initialized. */
 
         g_TimerCleanup(timerBuf);
         }
@@ -2305,19 +2297,8 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)((char *)board + BRD_SWIRL2_POS_X),
             *(float *)((char *)board + BRD_SWIRL2_POS_Y),
             *(float *)((char *)board + BRD_SWIRL2_POS_Z));
-        DWORD mesh2 = *(DWORD *)((char *)board + BRD_SWIRL_MESH2);
-        if (mesh2 && !IsBadReadPtr((void*)mesh2, 0x438)) {
-            DWORD *vtbl = *(DWORD **)mesh2;
-            DWORD subObj = *(DWORD *)((char*)mesh2 + 0x434);
-            if (vtbl && subObj && !IsBadReadPtr((void*)subObj, 4)) {
-                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
-                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
-                if (fn58) fn58((DWORD)mesh2);
-                if (fn54) fn54((DWORD)mesh2, timerBuf);
-            } else {
-                DebugLog("  [swirl] step3b: mesh2 sub-object NULL, skipping render");
-            }
-        }
+        DebugLog("  [swirl] step3b: Gfx calls done, mesh render skipped (not scene-registered)");
+        /* Vtable calls SKIPPED for secondary mesh — same issue as primary */
 
         g_TimerCleanup(timerBuf);
         }
