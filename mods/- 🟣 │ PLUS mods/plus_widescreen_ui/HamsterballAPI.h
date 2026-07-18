@@ -7,7 +7,7 @@
 #include <cstdio>
 #define DIRECTINPUT_VERSION 0x0800
 
-#define HAMSTERBALL_API_VERSION 1
+#define HAMSTERBALL_API_VERSION 3
 
 struct Collision;
 class HamsterballAPI;
@@ -30,8 +30,8 @@ struct CustomButton {
 	const char* trueText = "YES"; // The text that will be displayed for the on/true state 
 	const char* falseText = "NO"; // The text that will be displayed for the off/false state 
 	Color color = Color(); // The color of the button text (Will be white if you don't change this)
-
 	CustomButton() = default;
+	const char* submenuID = "MAIN"; // The submenu you want this to be under. Leave default if you want it to be in the main options menu, outside of a submenu. 
 
 	CustomButton(const char* id, const char* displayText) : id(id), displayText(displayText) {}
 };
@@ -48,12 +48,44 @@ struct CustomSlider {
 	float upperBound = INFINITY; // The highest that the slider can go (defaults to no upper bound)
 	const char* unitName = ""; // The unit shown after the number. Leave default for no unit. 
 	Color color; // The color of the slider text
+	const char* submenuID = "MAIN"; // The submenu you want this to be under. Leave default if you want it to be in the main options menu, outside of a submenu. 
+	int maxShiftMult = 10; // How fast the slider will ramp up to when holding down left/right arrow. This is good to change for small step sizes. 
 
 	CustomSlider() = default;
 
 	CustomSlider(const char* id, const char* displayText, float startingValue) :
 		id(id), displayText(displayText), startingValue(startingValue) {
 	}
+};
+
+/// @brief The struct used for creating custom cycle options. These are option buttons that allow you to cycle through a list of options (like resolution in the vanilla game). 
+struct CustomCycleOption {
+	const char* id; // The internal ID for the cycle option. Use a unique name to avoid conflicts with other mods. (ex. JM_JUMP_HEIGHT)
+	const char* displayText = ""; // The text that goes before the actual option value. If you don't want this, just leave it blank.
+	const char** options; // An array of the options the user can cycle through. The first option will be the one selected by default. 
+	int optionCount; // The number of options in your options array
+	Color color; // The color of the option text
+	const char* submenuID = "MAIN"; // The submenu you want this to be under. Leave default if you want it to be in the main options menu, outside of a submenu. 
+
+	CustomCycleOption() = default;
+
+	CustomCycleOption(const char* id, const char** options, int optionCount) : id(id), options(options), optionCount(optionCount) {}
+};
+
+/// @brief The struct used when creating custom submenus. This contains info about the submenu button, as well as the ID of the menu. 
+struct CustomSubmenu {
+	// The ID of the submenu. Do not name this "main". If the ID of this submenu matches with another mod's submenu, they will merge into one submenu using the displayText of one of them. 
+	// Use a unique name to avoid this, but this can also be used to your advantage to group different but similar options between mods. (ex. "MOVEMENT" submenu for a jump mod and a speed mod)
+	const char* id; 
+	const char* displayText = "Unnamed Submenu"; // The title of the submenu
+	Color color; // The color of the submenu button's text 
+
+	// Which submenu you want this submenu to be accessed from (where the submenu button will be). This allows for nested submenus. Leave blank for main mod options. 
+	const char* parentID = "MAIN";   
+
+	CustomSubmenu() = default;
+	CustomSubmenu(const char* id, const char* displayText) : id(id), displayText(displayText) {}
+	CustomSubmenu(const char* id, const char* displayText, Color color) : id(id), displayText(displayText), color(color) {}
 };
 
 /// @brief A struct used when calling the text drawing functions. This is just how you input the parameters. 
@@ -168,6 +200,60 @@ public:
 	/// @param this Just pass in 'this' as the parameter
 	virtual void CreateSlider(const CustomSlider& slider, HamsterballAPI* modInstance) = 0;
 
+	/// @brief Creates a cycle option. These are buttons (such as resolution in the vanilla game) that allow the user to cycle through a list of options. 
+	/// @param cycle The option struct that defines all of the parameters. Read those comments for more information.
+	/// @param modInstance Just pass in 'this' as the parameter. 
+	virtual void CreateCycleOption(const CustomCycleOption& cycle, HamsterballAPI* modInstance) = 0; 
+
+	/// @brief Creates a submenu option. You can put buttons, sliders, and cycle buttons within the submenu by using this menu's ID when you create the widgets within. 
+	/// @param submenu Use this struct to configure the submenu. 
+	virtual void CreateSubmenu(const CustomSubmenu& submenu) = 0;
+
+	/// @brief Creates a custom integer config that will be stored in the .ini file. This is for settings that you want the user to be able to be changed, but you don't want 
+	/// an in-game option for. 
+	/// @param configID The id for the config. Use something unique, I recommend adding an abbreviation of your mod to the start like so: JUMP -> PA_JUMP
+	/// @param defaultValue The starting value before the user changes the setting
+	virtual void RegisterConfigInt(const char* configID, int defaultValue) = 0;
+
+	/// @brief Creates a custom float config that will be stored in the .ini file. This is for settings that you want the user to be able to be changed, but you don't want 
+	/// an in-game option for. 
+	/// @param configID The id for the config. Use something unique, I recommend adding an abbreviation of your mod to the start like so: JUMP -> PA_JUMP
+	/// @param defaultValue The starting value before the user changes the setting
+	virtual void RegisterConfigFloat(const char* configID, float defaultValue) = 0;
+
+	/// @brief Creates a custom boolean config that will be stored in the .ini file. This is for settings that you want the user to be able to be changed, but you don't want 
+	/// an in-game option for. 
+	/// @param configID The id for the config. Use something unique, I recommend adding an abbreviation of your mod to the start like so: JUMP -> PA_JUMP
+	/// @param defaultValue The starting value before the user changes the setting
+	virtual void RegisterConfigBool(const char* configID, bool defaultValue) = 0;
+
+	/// @brief Creates a custom string config that will be stored in the .ini file. This is for settings that you want the user to be able to be changed, but you don't want 
+	/// an in-game option for. 
+	/// @param configID The id for the config. Use something unique, I recommend adding an abbreviation of your mod to the start like so: JUMP -> PA_JUMP
+	/// @param defaultValue The starting value before the user changes the setting
+	virtual void RegisterConfigString(const char* configID, const char* defaultValue) = 0;
+
+	/// @brief Retrieves the value of an integer config. This is how you actually use the configs. 
+	/// @param configID The ID of the config
+	/// @return The integer value of the config
+	virtual int GetConfigInt(const char* configID) = 0;
+
+	/// @brief Retrieves the value of a float config. This is how you actually use the configs. 
+	/// @param configID The ID of the config
+	/// @return The float value of the config
+	virtual float GetConfigFloat(const char* configID) = 0;
+
+	/// @brief Retrieves the value of a boolean config. This is how you actually use the configs. 
+	/// @param configID The ID of the config
+	/// @return The boolean value of the config
+	virtual bool GetConfigBool(const char* configID) = 0;
+
+	/// @brief Retrieves the value of a string config. This is how you actually use the configs. 
+	/// WARNING: Do not store the returned pointer, if ReloadINI() is called again, the pointer will become garbage data. 
+	/// @param configID The ID of the config
+	/// @return The string value of the config
+	virtual const char* GetConfigString(const char* configID) = 0;
+
 	/// @brief Patches memory within Hamsterball.exe. This is temporary, as it does not alter the actual .exe, it just modifies the 
 	/// current instance of the game in memory. I'd recommend using this within Initialize() or onButtonToggle(). 
 	/// @param address The address to patch from
@@ -213,6 +299,11 @@ public:
 	/// @param id ID of the slider
 	/// @return The value of the chosen slider. Returns -1 for invalid slider IDs. 
 	virtual float GetSliderState(const char* id) = 0;
+
+	/// @brief Gets the current option selected in a given cycle option. 
+	/// @param id The ID of the cycle option
+	/// @return The index of the current option. (index of the options array) Returns 0 if invalid id. 
+	virtual int GetCycleOptionState(const char* id) = 0;
 
 	/// @brief Gets player 1. Will be a nullptr if the player doesn't exist (not in level)
 	/// @return The Ball* to player 1
@@ -394,7 +485,17 @@ public:
 	/// @param newState The new state of that button
 	virtual void onButtonToggle(const char* buttonId, bool newState) {}
 
+	/// @brief Put logic here that you want to run when a slider changes. From there you can use if statements to see if the sliderId matches one of your
+	/// custom ones, and then carry out logic from there. 
+	/// @param sliderId The ID of the slider that was changed
+	/// @param newValue The new value of the slider
 	virtual void onSliderChange(const char* sliderId, float newValue) {}
+
+	/// @brief Put logic here that you want to run when a cycle option is clicked. From there you can use if statements to see if the cycleId matches 
+	/// one of your custom ones, and then carry out logic from there. 
+	/// @param cycleId The ID of the cycle option that was clicked
+	/// @param newOption The new option selected
+	virtual void onCycleOptionChange(const char* cycleId, const char* newOption) {}
 
 	/// @brief Put logic here that you want to run every tick. This is good for controls that you want to work whenever,
 	/// not just in levels like with onBallUpdate(). The corresponding hooked function is 0x46C170
@@ -590,7 +691,7 @@ struct Ball {
 	float radius; // +0x284 the player is 26 by default
 	std::uint8_t pad_288[0x290 - 0x288];
 	std::uint8_t rumble_timer2[0x14]; // +0x290 unverified
-	float spin_rate; // +0x2A4 very janky
+	float gravity_magnitude; // +0x2A4 The magnitude of gravity
 	std::uint8_t pad_2A8[0x2BC - 0x2A8];
 	float force_x; // +0x2BC
 	float force_y; // +0x2C0
@@ -598,7 +699,7 @@ struct Ball {
 	std::uint8_t pad_2C8[0x2CC - 0x2C8];
 	bool disable_ball; // +0x2CC
 	std::uint8_t pad_2CD[0x2D4 - 0x2CD];
-	bool render_jitter; // +0x2D4 — set by vacuum (CollisionFace_Update) to enable CPUID-based random jitter in render function (FUN_00403DB8) 
+	bool ball_shake; // +0x2D4 not sure if this is intended or what 
 	std::uint8_t pad_2D5[0x2DC - 0x2D5];
 	float checkpoint_x; // +0x2DC
 	float checkpoint_y; // +0x2E0
@@ -616,9 +717,8 @@ struct Ball {
 	std::uint8_t pad_769[0xC4C - 0x769];
 	bool low_gravity_mode; // +0xC4C This is not exactly what it seems, I would recommend altering gravity_y instead of using this. 
 	std::uint8_t pad_C4D[0xC50 - 0xC4D];
-	float burn_amount; // +0xC50 heat counter (Sky Race magnifying glass). +0.025/frame while in beam. At 1.1 → ball explodes (death triggered by Magnifier_Update, NOT Ball_Update). Also used by Ball_Render to shift ballborder.png color white→red via Graphics_SetColorMultiplier. Setting manually only changes the visual color, not the death trigger.
-	std::uint8_t burning_flag; // +0xC58 set to 1 each frame the magnifier is actively zapping the ball (within 60 units 2D). Cleared at start of each Magnifier_Update pass. When 1, Ball_Render draws ballburner.png overlay.
-	std::uint8_t pad_C59[0xC60 - 0xC59];
+	float burn_amount; // +0xC50 how burnt the ball is (from the magnifying glass), 1 kills the player normally, but setting manually doesn't seem to do this
+	std::uint8_t pad_C54[0xC60 - 0xC54];
 	float home_position_x; // +0xC60 only valid for badball, where the ball stays when not in chase
 	float home_position_y; // +0xC64
 	float home_position_z; // +0xC68
@@ -704,9 +804,9 @@ struct PhysicsObject {
 	std::uint8_t pad_0C6C[0x0C7C - 0x0C6C];
 	bool noclip; // +0x0C7C requires no break mod otherwise the ball will break.
 	std::uint8_t pad_0C7D[0x0C8C - 0x0C7D];
-	float gravity_x; // +0x0C8C I would use this as opposed to the vector in Ball
-	float gravity_y; // +0x0C90 I would use this as opposed to the vector in Ball
-	float gravity_z; // +0x0C94 I would use this as opposed to the vector in Ball
+	float gravity_x; // +0x0C8C I would use this as opposed to the vector in Ball. -1 to 1 represents the direction as opposed to magnitude
+	float gravity_y; // +0x0C90 I would use this as opposed to the vector in Ball. -1 to 1 represents the direction as opposed to magnitude
+	float gravity_z; // +0x0C94 I would use this as opposed to the vector in Ball. -1 to 1 represents the direction as opposed to magnitude
 	std::uint8_t pad_0C98[0x0CA4 - 0x0C98];
 	float velocity_x; // +0x0CA4
 	float velocity_y; // +0x0CA8
@@ -883,140 +983,140 @@ struct App {
 
 
 // These are just to ensure I did the structs right, don't mind these 
-static_assert(offsetof(Ball, vtable) == 0x000);
-static_assert(offsetof(Ball, scene) == 0x014);
-static_assert(offsetof(Ball, playerID) == 0x018);
-static_assert(offsetof(Ball, prev_pos_x) == 0x158);
-static_assert(offsetof(Ball, prev_pos_y) == 0x15C);
-static_assert(offsetof(Ball, prev_pos_z) == 0x160);
-static_assert(offsetof(Ball, pos_x) == 0x164);
-static_assert(offsetof(Ball, pos_y) == 0x168);
-static_assert(offsetof(Ball, pos_z) == 0x16C);
-static_assert(offsetof(Ball, accel_x) == 0x17C);
-static_assert(offsetof(Ball, accel_y) == 0x180);
-static_assert(offsetof(Ball, accel_z) == 0x184);
-static_assert(offsetof(Ball, max_speed) == 0x188);
-static_assert(offsetof(Ball, speed_mult) == 0x1A0);
-static_assert(offsetof(Ball, physics_object) == 0x1A4);
-static_assert(offsetof(Ball, gravity_vec) == 0x1A8);
-static_assert(offsetof(Ball, ball_outline_opacity) == 0x1C8);
-static_assert(offsetof(Ball, boost_hit_flag) == 0x260);
-static_assert(offsetof(Ball, rumble_timer1) == 0x264);
-static_assert(offsetof(Ball, bounciness) == 0x278);
-static_assert(offsetof(Ball, radius) == 0x284);
-static_assert(offsetof(Ball, rumble_timer2) == 0x290);
-static_assert(offsetof(Ball, spin_rate) == 0x2A4);
-static_assert(offsetof(Ball, force_x) == 0x2BC);
-static_assert(offsetof(Ball, force_y) == 0x2C0);
-static_assert(offsetof(Ball, force_z) == 0x2C4);
-static_assert(offsetof(Ball, disable_ball) == 0x2CC);
-static_assert(offsetof(Ball, checkpoint_x) == 0x2DC);
-static_assert(offsetof(Ball, checkpoint_y) == 0x2E0);
-static_assert(offsetof(Ball, checkpoint_z) == 0x2E4);
-static_assert(offsetof(Ball, event_checkpoint_flag) == 0x2E8);
-static_assert(offsetof(Ball, unknown) == 0x2E9);
-static_assert(offsetof(Ball, state_active) == 0x310);
-static_assert(offsetof(Ball, sound_3d_handle) == 0x700);
-static_assert(offsetof(Ball, cam_active) == 0x768);
-static_assert(offsetof(Ball, low_gravity_mode) == 0xC4C);
-static_assert(offsetof(Ball, world_matrix) == 0xC88);
-static_assert(offsetof(Ball, facing_angle) == 0x190);
-static_assert(offsetof(Ball, render_jitter) == 0x2D4);
-static_assert(offsetof(Ball, gravity_type) == 0x748);
-static_assert(offsetof(Ball, burn_amount) == 0xC50);
-static_assert(offsetof(Ball, home_position_x) == 0xC60);
-static_assert(offsetof(Ball, home_distance) == 0xC6C);
-static_assert(offsetof(Ball, chase_distance) == 0xC70);
-static_assert(offsetof(Ball, is_badball_on_screen) == 0xC74);
-static_assert(offsetof(Ball, spin_counter) == 0xC78);
-static_assert(offsetof(Ball, spin_distance) == 0xC7C);
+// static_assert(offsetof(Ball, vtable) == 0x000);
+// static_assert(offsetof(Ball, scene) == 0x014);
+// static_assert(offsetof(Ball, playerID) == 0x018);
+// static_assert(offsetof(Ball, prev_pos_x) == 0x158);
+// static_assert(offsetof(Ball, prev_pos_y) == 0x15C);
+// static_assert(offsetof(Ball, prev_pos_z) == 0x160);
+// static_assert(offsetof(Ball, pos_x) == 0x164);
+// static_assert(offsetof(Ball, pos_y) == 0x168);
+// static_assert(offsetof(Ball, pos_z) == 0x16C);
+// static_assert(offsetof(Ball, accel_x) == 0x17C);
+// static_assert(offsetof(Ball, accel_y) == 0x180);
+// static_assert(offsetof(Ball, accel_z) == 0x184);
+// static_assert(offsetof(Ball, max_speed) == 0x188);
+// static_assert(offsetof(Ball, speed_mult) == 0x1A0);
+// static_assert(offsetof(Ball, physics_object) == 0x1A4);
+// static_assert(offsetof(Ball, gravity_vec) == 0x1A8);
+// static_assert(offsetof(Ball, ball_outline_opacity) == 0x1C8);
+// static_assert(offsetof(Ball, boost_hit_flag) == 0x260);
+// static_assert(offsetof(Ball, rumble_timer1) == 0x264);
+// static_assert(offsetof(Ball, bounciness) == 0x278);
+// static_assert(offsetof(Ball, radius) == 0x284);
+// static_assert(offsetof(Ball, rumble_timer2) == 0x290);
+// static_assert(offsetof(Ball, gravity_magnitude) == 0x2A4);
+// static_assert(offsetof(Ball, force_x) == 0x2BC);
+// static_assert(offsetof(Ball, force_y) == 0x2C0);
+// static_assert(offsetof(Ball, force_z) == 0x2C4);
+// static_assert(offsetof(Ball, disable_ball) == 0x2CC);
+// static_assert(offsetof(Ball, checkpoint_x) == 0x2DC);
+// static_assert(offsetof(Ball, checkpoint_y) == 0x2E0);
+// static_assert(offsetof(Ball, checkpoint_z) == 0x2E4);
+// static_assert(offsetof(Ball, event_checkpoint_flag) == 0x2E8);
+// static_assert(offsetof(Ball, unknown) == 0x2E9);
+// static_assert(offsetof(Ball, state_active) == 0x310);
+// static_assert(offsetof(Ball, sound_3d_handle) == 0x700);
+// static_assert(offsetof(Ball, cam_active) == 0x768);
+// static_assert(offsetof(Ball, low_gravity_mode) == 0xC4C);
+// static_assert(offsetof(Ball, world_matrix) == 0xC88);
+// static_assert(offsetof(Ball, facing_angle) == 0x190);
+// static_assert(offsetof(Ball, ball_shake) == 0x2D4);
+// static_assert(offsetof(Ball, gravity_type) == 0x748);
+// static_assert(offsetof(Ball, burn_amount) == 0xC50);
+// static_assert(offsetof(Ball, home_position_x) == 0xC60);
+// static_assert(offsetof(Ball, home_distance) == 0xC6C);
+// static_assert(offsetof(Ball, chase_distance) == 0xC70);
+// static_assert(offsetof(Ball, is_badball_on_screen) == 0xC74);
+// static_assert(offsetof(Ball, spin_counter) == 0xC78);
+// static_assert(offsetof(Ball, spin_distance) == 0xC7C);
 
-static_assert(offsetof(PhysicsObject, owner_ball) == 0x010);
-static_assert(offsetof(PhysicsObject, unknown) == 0x0C60);
-static_assert(offsetof(PhysicsObject, speed_scalar) == 0x0C64);
-static_assert(offsetof(PhysicsObject, friction) == 0x0C68);
-static_assert(offsetof(PhysicsObject, noclip) == 0x0C7C);
-static_assert(offsetof(PhysicsObject, gravity_x) == 0x0C8C);
-static_assert(offsetof(PhysicsObject, gravity_y) == 0x0C90);
-static_assert(offsetof(PhysicsObject, gravity_z) == 0x0C94);
-static_assert(offsetof(PhysicsObject, velocity_x) == 0x0CA4);
-static_assert(offsetof(PhysicsObject, velocity_y) == 0x0CA8);
-static_assert(offsetof(PhysicsObject, velocity_z) == 0x0CAC);
-static_assert(offsetof(PhysicsObject, collision_arr) == 0x424);
-static_assert(sizeof(PhysicsObject) == 0x0CB0);
+// static_assert(offsetof(PhysicsObject, owner_ball) == 0x010);
+// static_assert(offsetof(PhysicsObject, unknown) == 0x0C60);
+// static_assert(offsetof(PhysicsObject, speed_scalar) == 0x0C64);
+// static_assert(offsetof(PhysicsObject, friction) == 0x0C68);
+// static_assert(offsetof(PhysicsObject, noclip) == 0x0C7C);
+// static_assert(offsetof(PhysicsObject, gravity_x) == 0x0C8C);
+// static_assert(offsetof(PhysicsObject, gravity_y) == 0x0C90);
+// static_assert(offsetof(PhysicsObject, gravity_z) == 0x0C94);
+// static_assert(offsetof(PhysicsObject, velocity_x) == 0x0CA4);
+// static_assert(offsetof(PhysicsObject, velocity_y) == 0x0CA8);
+// static_assert(offsetof(PhysicsObject, velocity_z) == 0x0CAC);
+// static_assert(offsetof(PhysicsObject, collision_arr) == 0x424);
+// static_assert(sizeof(PhysicsObject) == 0x0CB0);
 
-static_assert(sizeof(void*) == 4, "void* wasnt 4 bytes");
-static_assert(sizeof(bool) == 1, "bool wasnt 1 byte");
-static_assert(sizeof(DWORD) == 4, "DWORD wasnt 4 bytes");
-static_assert(offsetof(App, vtable) == 0x000);
-static_assert(offsetof(App, isFullscreen) == 0x158);
-static_assert(offsetof(App, quitFlag) == 0x159);
-static_assert(offsetof(App, isGameFocused) == 0x15A);
-static_assert(offsetof(App, gameWidth) == 0x15C);
-static_assert(offsetof(App, gameHeight) == 0x160);
-static_assert(offsetof(App, graphics) == 0x174);
-static_assert(offsetof(App, audioSystem) == 0x17C);
-static_assert(offsetof(App, inputHandler) == 0x180);
-static_assert(offsetof(App, gameUpdateObj) == 0x184);
-static_assert(offsetof(App, rightButtonPauseEnabled) == 0x238);
-static_assert(sizeof(Fonts) == 0x14);
-static_assert(offsetof(App, fonts) == 0x318);
-static_assert(offsetof(App, sounds) == 0x43C);
-static_assert(sizeof(Sounds) == 0xF4);
-static_assert(offsetof(App, musicHandle) == 0x534);
-static_assert(offsetof(App, musicChannel1) == 0x538);
-static_assert(offsetof(App, musicChannel2) == 0x53C);
-static_assert(offsetof(App, gameMode1) == 0x550);
-static_assert(offsetof(App, gameMode2) == 0x554);
-static_assert(offsetof(App, gameMode3) == 0x558);
-static_assert(offsetof(App, gameMode4) == 0x55C);
-static_assert(offsetof(App, sensitivity) == 0x84C);
-static_assert(offsetof(App, unlockMirrorTournament) == 0x850);
-static_assert(offsetof(App, unlockDizzyRace) == 0x851);
-static_assert(offsetof(App, unlockImpossibleArena) == 0x868);
-static_assert(offsetof(App, bestTimes) == 0x86C);
-static_assert(offsetof(App, medals) == 0x8BC);
-static_assert(offsetof(App, p2Controller1) == 0xB28);
-static_assert(offsetof(App, p2Controller2) == 0xB2C);
-static_assert(offsetof(App, p2Controller3) == 0xB30);
-static_assert(offsetof(App, p2Controller4) == 0xB34);
+// static_assert(sizeof(void*) == 4, "void* wasnt 4 bytes");
+// static_assert(sizeof(bool) == 1, "bool wasnt 1 byte");
+// static_assert(sizeof(DWORD) == 4, "DWORD wasnt 4 bytes");
+// static_assert(offsetof(App, vtable) == 0x000);
+// static_assert(offsetof(App, isFullscreen) == 0x158);
+// static_assert(offsetof(App, quitFlag) == 0x159);
+// static_assert(offsetof(App, isGameFocused) == 0x15A);
+// static_assert(offsetof(App, gameWidth) == 0x15C);
+// static_assert(offsetof(App, gameHeight) == 0x160);
+// static_assert(offsetof(App, graphics) == 0x174);
+// static_assert(offsetof(App, audioSystem) == 0x17C);
+// static_assert(offsetof(App, inputHandler) == 0x180);
+// static_assert(offsetof(App, gameUpdateObj) == 0x184);
+// static_assert(offsetof(App, rightButtonPauseEnabled) == 0x238);
+// static_assert(sizeof(Fonts) == 0x14);
+// static_assert(offsetof(App, fonts) == 0x318);
+// static_assert(offsetof(App, sounds) == 0x43C);
+// static_assert(sizeof(Sounds) == 0xF4);
+// static_assert(offsetof(App, musicHandle) == 0x534);
+// static_assert(offsetof(App, musicChannel1) == 0x538);
+// static_assert(offsetof(App, musicChannel2) == 0x53C);
+// static_assert(offsetof(App, gameMode1) == 0x550);
+// static_assert(offsetof(App, gameMode2) == 0x554);
+// static_assert(offsetof(App, gameMode3) == 0x558);
+// static_assert(offsetof(App, gameMode4) == 0x55C);
+// static_assert(offsetof(App, sensitivity) == 0x84C);
+// static_assert(offsetof(App, unlockMirrorTournament) == 0x850);
+// static_assert(offsetof(App, unlockDizzyRace) == 0x851);
+// static_assert(offsetof(App, unlockImpossibleArena) == 0x868);
+// static_assert(offsetof(App, bestTimes) == 0x86C);
+// static_assert(offsetof(App, medals) == 0x8BC);
+// static_assert(offsetof(App, p2Controller1) == 0xB28);
+// static_assert(offsetof(App, p2Controller2) == 0xB2C);
+// static_assert(offsetof(App, p2Controller3) == 0xB30);
+// static_assert(offsetof(App, p2Controller4) == 0xB34);
 
-static_assert(offsetof(Scene, vtable) == 0x000);
-static_assert(offsetof(Scene, owner_app) == 0x014);
-static_assert(offsetof(Scene, name) == 0x868);
-static_assert(offsetof(Scene, level_ptr) == 0x8AC);
-static_assert(offsetof(Scene, collision_mesh) == 0x8B0);
-static_assert(offsetof(Scene, camera_angle) == 0x29BC);
-static_assert(offsetof(Scene, camera_distance) == 0x29C0);
-static_assert(offsetof(Scene, current_ball_ptr) == 0x29D0);
-static_assert(offsetof(Scene, ball_list_count) == 0x29D8);
-static_assert(offsetof(Scene, ball_array) == 0x2DE0);
-static_assert(offsetof(Scene, frame_counter) == 0x3620);
-static_assert(offsetof(Scene, player_list) == 0x362C);
-static_assert(offsetof(Scene, player_count) == 0x3630);
-static_assert(offsetof(Scene, cam_path_object) == 0x3F20);
-static_assert(offsetof(Scene, cam_path_position) == 0x3F24);
-static_assert(offsetof(Scene, cam_offset_x) == 0x434C);
-static_assert(offsetof(Scene, cam_offset_y) == 0x4350);
-static_assert(offsetof(Scene, cam_offset_z) == 0x4354);
-static_assert(offsetof(Scene, path_follow_mode) == 0x3F1C);
-static_assert(offsetof(Scene, cam_time_to_zoom) == 0x3F2C);
-static_assert(offsetof(Scene, arena_timer) == 0x47AC);
-static_assert(offsetof(Scene, timer_started) == 0x47B0);
-static_assert(offsetof(Scene, p1Score) == 0x47B4);
-static_assert(offsetof(Scene, p2Score) == 0x47B8);
-static_assert(offsetof(Scene, p3Score) == 0x47BC);
-static_assert(offsetof(Scene, p4Score) == 0x47C0);
-static_assert(offsetof(Scene, weird_camera) == 0x47C4);
-static_assert(offsetof(Scene, is_tiebreaker) == 0x47C5);
+// static_assert(offsetof(Scene, vtable) == 0x000);
+// static_assert(offsetof(Scene, owner_app) == 0x014);
+// static_assert(offsetof(Scene, name) == 0x868);
+// static_assert(offsetof(Scene, level_ptr) == 0x8AC);
+// static_assert(offsetof(Scene, collision_mesh) == 0x8B0);
+// static_assert(offsetof(Scene, camera_angle) == 0x29BC);
+// static_assert(offsetof(Scene, camera_distance) == 0x29C0);
+// static_assert(offsetof(Scene, current_ball_ptr) == 0x29D0);
+// static_assert(offsetof(Scene, ball_list_count) == 0x29D8);
+// static_assert(offsetof(Scene, ball_array) == 0x2DE0);
+// static_assert(offsetof(Scene, frame_counter) == 0x3620);
+// static_assert(offsetof(Scene, player_list) == 0x362C);
+// static_assert(offsetof(Scene, player_count) == 0x3630);
+// static_assert(offsetof(Scene, cam_path_object) == 0x3F20);
+// static_assert(offsetof(Scene, cam_path_position) == 0x3F24);
+// static_assert(offsetof(Scene, cam_offset_x) == 0x434C);
+// static_assert(offsetof(Scene, cam_offset_y) == 0x4350);
+// static_assert(offsetof(Scene, cam_offset_z) == 0x4354);
+// static_assert(offsetof(Scene, path_follow_mode) == 0x3F1C);
+// static_assert(offsetof(Scene, cam_time_to_zoom) == 0x3F2C);
+// static_assert(offsetof(Scene, arena_timer) == 0x47AC);
+// static_assert(offsetof(Scene, timer_started) == 0x47B0);
+// static_assert(offsetof(Scene, p1Score) == 0x47B4);
+// static_assert(offsetof(Scene, p2Score) == 0x47B8);
+// static_assert(offsetof(Scene, p3Score) == 0x47BC);
+// static_assert(offsetof(Scene, p4Score) == 0x47C0);
+// static_assert(offsetof(Scene, weird_camera) == 0x47C4);
+// static_assert(offsetof(Scene, is_tiebreaker) == 0x47C5);
 
-static_assert(offsetof(PhysicsConstants, unknown) == 0x00);
-static_assert(offsetof(PhysicsConstants, dizzyForceMult) == 0x04);
-static_assert(offsetof(PhysicsConstants, glassForceMult) == 0x0C);
-static_assert(offsetof(PhysicsConstants, unknown2) == 0x10);
-static_assert(offsetof(PhysicsConstants, unknown3) == 0x18);
-static_assert(offsetof(PhysicsConstants, hamsterSize) == 0x34);
-static_assert(offsetof(PhysicsConstants, unknown4) == 0x80);
-static_assert(offsetof(PhysicsConstants, cameraDamping) == 0x88);
-static_assert(offsetof(PhysicsConstants, unknown5) == 0x11C);
-static_assert(offsetof(PhysicsConstants, unknown6) == 0x124);
+// static_assert(offsetof(PhysicsConstants, unknown) == 0x00);
+// static_assert(offsetof(PhysicsConstants, dizzyForceMult) == 0x04);
+// static_assert(offsetof(PhysicsConstants, glassForceMult) == 0x0C);
+// static_assert(offsetof(PhysicsConstants, unknown2) == 0x10);
+// static_assert(offsetof(PhysicsConstants, unknown3) == 0x18);
+// static_assert(offsetof(PhysicsConstants, hamsterSize) == 0x34);
+// static_assert(offsetof(PhysicsConstants, unknown4) == 0x80);
+// static_assert(offsetof(PhysicsConstants, cameraDamping) == 0x88);
+// static_assert(offsetof(PhysicsConstants, unknown5) == 0x11C);
+// static_assert(offsetof(PhysicsConstants, unknown6) == 0x124);

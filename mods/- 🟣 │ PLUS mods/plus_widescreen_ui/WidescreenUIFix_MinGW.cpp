@@ -1,5 +1,6 @@
 // WidescreenUIFix_MinGW.cpp — MinGW build with manual vtable + nocrt
 // Hooks Gfx_TransformX to fix UI stretching in widescreen modes.
+// Updated for HB+ v2.1 (17-entry vtable, API_VERSION 3).
 
 #include "nocrt.h"
 #include "HamsterballAPI.h"
@@ -80,7 +81,8 @@ static void __fastcall hook_DrawScreenRect(void* gfx, void* edx, int x, int y, i
     VirtualProtect(pScaleX, 4, oldProtect, &oldProtect);
 }
 
-// ── Manual vtable (16 entries, MSVC layout) ────────────────────────
+// ── Manual vtable (17 entries, HB+ v2.0/v2.1 MSVC layout) ──────────
+// Slot 10 = onCycleOptionChange (added in v2.0, unchanged in v2.1)
 static void* __thiscall sc_dtor(void* thisptr, int flags) {
     if (flags & 1) operator delete(thisptr);
     return thisptr;
@@ -88,7 +90,7 @@ static void* __thiscall sc_dtor(void* thisptr, int flags) {
 static const char* __thiscall get_mod_name(void*) { return "Widescreen UI Fix"; }
 static const char* __thiscall get_author(void*) { return "BookwormKevin"; }
 static int __thiscall get_version(void*) { return HAMSTERBALL_API_VERSION; }
-static const char* __thiscall get_contributors(void*) { return ""; }
+static const char* __thiscall get_contributors(void*) { return "rsks"; }
 
 static IModAPI* g_api = NULL;
 static void* g_modObj = NULL;
@@ -113,6 +115,7 @@ static void __thiscall button_toggle(void*, const char* id, bool state) {
     if (nc_strcmp(id, "ws_ui_fix") == 0) g_enabled = state;
 }
 static void __thiscall slider_change(void*, const char*, float) {}
+static void __thiscall cycle_option_change(void*, const char*, const char*) {}  // v2.0+ slot 10
 static void __thiscall game_update(void*) {}
 static void __thiscall event_collide(void*, void*, const char*) {}
 static void __thiscall text_render(void*) {}
@@ -120,23 +123,29 @@ static void __thiscall ball_bump(void*, void*, void*) {}
 static void __thiscall scene_end(void*) {}
 static void __thiscall level_start(void*) {}
 
-static void* g_vtable[16] = {
-    (void*)sc_dtor,
-    (void*)get_mod_name,
-    (void*)get_author,
-    (void*)get_version,
-    (void*)get_contributors,
-    (void*)init_impl,
-    (void*)ball_update,
-    (void*)render_apply,
-    (void*)button_toggle,
-    (void*)slider_change,
-    (void*)game_update,
-    (void*)event_collide,
-    (void*)text_render,
-    (void*)ball_bump,
-    (void*)scene_end,
-    (void*)level_start,
+// 17-entry vtable (HB+ v2.0/v2.1)
+// Slots 0-9: dtor, GetModName, GetAuthorName, GetApiVersion, GetContributors,
+//            Initialize, onBallUpdate, onRenderApply, onButtonToggle, onSliderChange
+// Slot 10:   onCycleOptionChange (NEW in v2.0)
+// Slots 11-16: onGameUpdate, onEventPlaneCollide, onTextRenderLoop, onBallBump, onSceneEnd, onLevelStart
+static void* g_vtable[17] = {
+    (void*)sc_dtor,              // [0]  ~HamsterballAPI
+    (void*)get_mod_name,         // [1]  GetModName
+    (void*)get_author,           // [2]  GetAuthorName
+    (void*)get_version,          // [3]  GetApiVersion
+    (void*)get_contributors,     // [4]  GetContributors
+    (void*)init_impl,            // [5]  Initialize
+    (void*)ball_update,          // [6]  onBallUpdate
+    (void*)render_apply,         // [7]  onRenderApply
+    (void*)button_toggle,        // [8]  onButtonToggle
+    (void*)slider_change,        // [9]  onSliderChange
+    (void*)cycle_option_change,  // [10] onCycleOptionChange (v2.0+)
+    (void*)game_update,          // [11] onGameUpdate
+    (void*)event_collide,        // [12] onEventPlaneCollide
+    (void*)text_render,          // [13] onTextRenderLoop
+    (void*)ball_bump,            // [14] onBallBump
+    (void*)scene_end,            // [15] onSceneEnd
+    (void*)level_start,          // [16] onLevelStart
 };
 
 extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
