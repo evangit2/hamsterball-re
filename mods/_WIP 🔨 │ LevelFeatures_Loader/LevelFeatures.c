@@ -3345,7 +3345,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             obj = g_GluebieCtor(mem, (int)board, meshVal);
             /* Gluebie_ctor clears the mesh pointer at meshOff — restore it
              * so subsequent Gluebies can read it. */
-            *(int*)((char*)board + meshOff) = meshVal;
+            *(volatile int*)((char*)board + meshOff) = meshVal;
+            {
+                int verify = *(int*)((char*)board + meshOff);
+                char dbg[128];
+                wsprintfA(dbg, "GLUEBIE: ctor done, restored mesh=0x%08X, verify=0x%08X", meshVal, verify);
+                DebugLog(dbg);
+            }
             DWORD *o = (DWORD *)obj;
             o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
             int listOff = UNI_MESH_3;
