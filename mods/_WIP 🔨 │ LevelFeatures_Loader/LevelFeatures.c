@@ -416,20 +416,22 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define BRD_BB_LAST_IDX      UNI_BITE_SPEED      /* int: last spawn position index (avoid repeats) */
 #define BRD_BB_POS_TABLE     UNI_MESH_4   /* 3×3 float table (36 bytes) */
 
-/* Swirl (Dizzy) */
+/* Swirl (Dizzy) — offset mapping aligned with original game.
+ * Original: primary=board+0x4BA8 (WaterWheel), secondary=board+0x4BC4 (Swirl).
+ * Primary pos comes from WATERWHEEL handler, secondary pos from SWIRL handler. */
 #define BRD_SWIRL_LIST       UNI_SWIRL_LIST      /* AthenaList of swirl zones */
 #define BRD_TARBUBBLE_LIST   UNI_LIST_3          /* AthenaList of TarBubble objects */
-#define BRD_SWIRL_MESH1      UNI_MESH_6          /* primary swirl mesh (WaterWheel) */
-#define BRD_SWIRL_MESH2      UNI_MESH_11         /* secondary swirl mesh */
-#define BRD_SWIRL1_POS_X     UNI_MESH_8
-#define BRD_SWIRL1_POS_Y     UNI_MESH_9
-#define BRD_SWIRL1_POS_Z     UNI_MESH_10
-#define BRD_SWIRL1_ANGLE     UNI_MESH_11
-#define BRD_SWIRL1_SPEED     UNI_MESH_12
-#define BRD_SWIRL2_POS_X     UNI_MESH_15
-#define BRD_SWIRL2_POS_Y     UNI_WHEELEMBED_VX
-#define BRD_SWIRL2_POS_Z     UNI_WHEELEMBED_VY
-#define BRD_SWIRL2_ANGLE     UNI_WHEELEMBED_VZ
+#define BRD_SWIRL_MESH1      UNI_MESH_0          /* primary mesh = WaterWheel (0x85E0) */
+#define BRD_SWIRL_MESH2      UNI_MESH_6          /* secondary mesh = Swirl (0x85F8) */
+#define BRD_SWIRL1_POS_X     UNI_WHEELEMBED_X    /* set by WATERWHEEL handler */
+#define BRD_SWIRL1_POS_Y     UNI_WHEELEMBED_Y
+#define BRD_SWIRL1_POS_Z     UNI_WHEELEMBED_Z
+#define BRD_SWIRL1_ANGLE     UNI_MESH_2          /* dedicated float (0x85E8) */
+#define BRD_SWIRL1_SPEED     UNI_MESH_4          /* dedicated float (0x85F0) */
+#define BRD_SWIRL2_POS_X     UNI_MESH_15         /* set by SWIRL handler (0x861C) */
+#define BRD_SWIRL2_POS_Y     UNI_MESH_12         /* (0x8610) */
+#define BRD_SWIRL2_POS_Z     UNI_MESH_13         /* (0x8614) */
+#define BRD_SWIRL2_ANGLE     UNI_MESH_5          /* dedicated float (0x85F4) */
 
 /* Swirl (Master) — same unified offsets now */
 #define BRD_SWIRL_LIST_M     UNI_SWIRL_LIST
