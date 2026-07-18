@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v18
+ * custom_entities.c — Hamsterball Custom Entities Mod v19
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -325,10 +325,19 @@ static int extract_tag(const char* name, const char* tag_name, char* out_buf, in
 static void process_custom_tags(DWORD board, FILE* logf) {
     if (!board) return;
 
+    if (logf) {
+        fprintf(logf, "  TAGS: process_custom_tags called (board=0x%08X)\n", board);
+        fflush(logf);
+    }
+
     /* Get the bad balls list (AthenaList at board+0x29D4) */
     DWORD* bad_balls_list = (DWORD*)(board + BOARD_BAD_BALLS_LIST);
-    if (IsBadReadPtr(bad_balls_list, 8)) return;
+    if (IsBadReadPtr(bad_balls_list, 8)) {
+        if (logf) fprintf(logf, "  TAGS: bad_balls_list at 0x%08X is bad read\n", (DWORD)bad_balls_list);
+        return;
+    }
     int ball_count = *(int*)(bad_balls_list + 1);  /* count at +0x04 */
+    if (logf) fprintf(logf, "  TAGS: ball_count=%d\n", ball_count);
     if (ball_count <= 0 || ball_count > 100) return;
 
     /* Get ball pointers from the AthenaList items array.
@@ -407,8 +416,11 @@ static void process_custom_tags(DWORD board, FILE* logf) {
             if (ball_home_x == obj_x && ball_home_y == obj_y && ball_home_z == obj_z) {
                 /* Apply <MESH> tag */
                 if (has_mesh) {
-                    /* Get App pointer from ball+0x10 (set in Ball_ctor) */
-                    DWORD app = *(DWORD*)(ball + 0x10);
+                    /* Use g_App (0x5341E0) directly — ball+0x10 may not be
+                     * initialized yet when process_custom_tags runs.
+                     * Ball_Render reads ball+0x10 as App, but it's set by
+                     * the game's per-frame loop, not during CreateBadBalls. */
+                    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
                     if (app && !IsBadReadPtr((void*)app, 0x280)) {
                         int target_slot = MESH_SLOT_8BALL;  /* default */
                         DWORD src_mesh = 0;
@@ -717,7 +729,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v18 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v19 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
