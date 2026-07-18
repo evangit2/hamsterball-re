@@ -1176,7 +1176,7 @@ static void GenerateLevelData(void) {
     if (hFile == INVALID_HANDLE_VALUE) return;
 
     const char *header =
-        "# LevelData.txt — Per-level configuration for LevelFeatures_Loader\n"
+        "# LevelData_v3 — Per-level configuration for LevelFeatures_Loader\n"
         "# Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower\n"
         "#   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky\n"
         "#   14=Master 15=Impossible\n"
@@ -3303,8 +3303,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── WATERWHEEL (Dizzy) ── */
     if (my_strnicmp(name, "WATERWHEEL", 10) == 0) {
-        obj = *(void **)((char *)board + UNI_MESH_6);
-        renderOut = *(int *)((char *)board + UNI_MESH_7);
+        obj = *(void **)((char *)board + UNI_MESH_0);
+        renderOut = *(int *)((char *)board + UNI_MESH_1);
         *(float *)((char *)board + UNI_WHEELEMBED_X) = x;
         *(float *)((char *)board + UNI_WHEELEMBED_Y) = y;
         *(float *)((char *)board + UNI_WHEELEMBED_Z) = z;
@@ -5861,7 +5861,23 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     GetConfigPath();
     LoadConfig();
 
-    if (GetFileAttributesA(g_levelDataPath) == INVALID_FILE_ATTRIBUTES) {
+    /* Version-check LevelData.txt — if version mismatch, regenerate */
+    const char *EXPECTED_VERSION = "LevelData_v3";
+    /* Check if file exists and has correct version */
+    HANDLE hVerFile = CreateFileA(g_levelDataPath, GENERIC_READ, FILE_SHARE_READ,
+                                   NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    BOOL needRegen = FALSE;
+    if (hVerFile == INVALID_HANDLE_VALUE) {
+        needRegen = TRUE;
+    } else {
+        char verBuf[256];
+        DWORD vr = 0;
+        ReadFile(hVerFile, verBuf, sizeof(verBuf)-1, &vr, NULL);
+        CloseHandle(hVerFile);
+        verBuf[vr] = '\0';
+        if (!strstr(verBuf, EXPECTED_VERSION)) needRegen = TRUE;
+    }
+    if (needRegen) {
         GenerateLevelData();
     }
     LoadLevelData();
