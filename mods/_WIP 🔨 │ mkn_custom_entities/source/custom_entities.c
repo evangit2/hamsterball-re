@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v37
+ * custom_entities.c — Hamsterball Custom Entities Mod v38
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -116,6 +116,16 @@ static Rotator_ctor_t pfn_Rotator_ctor = (Rotator_ctor_t)0x00435940;
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
+
+/* AI mesh path table — game .data string addresses for AI 1-5 */
+static const char* g_ai_mesh_paths[] = {
+    NULL,                              /* AI 0: static (use MESH property) */
+    (const char*)0x004D20FC,           /* AI 1: Levels\LevelImpossible-Rotator */
+    (const char*)0x004D20DC,           /* AI 2: Levels\LevelImpossible-Pendulum */
+    (const char*)0x004D2158,           /* AI 3: Levels\LevelImpossible-Looper */
+    (const char*)0x004D213C,           /* AI 4: Levels\LevelImpossible-Gear */
+    (const char*)0x004D211C,           /* AI 5: Levels\LevelImpossible-BigGear */
+};
 
 /* Rotater spawned objects tracking */
 #define MAX_ROTATERS 999
@@ -780,6 +790,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                               const char* mesh_path,
                               float rot_x, float rot_y, float rot_z,
                               float ros_x, float ros_y, float ros_z,
+                              int ai_type,
                               FILE* logf) {
     if (!board) return;
 
@@ -789,8 +800,18 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
     if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
 
-    /* 2. Determine mesh path — use custom path if provided, else default SWIRL */
-    const char* path = (mesh_path && mesh_path[0]) ? mesh_path : g_swirl_mesh_path;
+    /* 2. Determine mesh path based on AI type */
+    const char* path = NULL;
+    if (ai_type >= 1 && ai_type <= 5) {
+        /* AI 1-5: use game's built-in mesh path */
+        path = g_ai_mesh_paths[ai_type];
+    } else if (mesh_path && mesh_path[0]) {
+        /* AI 0 or 6: use custom MESH property */
+        path = mesh_path;
+    } else {
+        /* Default: SWIRL mesh */
+        path = g_swirl_mesh_path;
+    }
 
     /* Allocate a mutable copy of the path for MeshWorld_ctor */
     char path_buf[256];
@@ -811,19 +832,34 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         return;
     }
 
-    /* 3. Allocate Rotater object (0x1508 bytes) */
-    void* obj = pfn_operator_new(ROTATER_SIZE);
-    if (!obj) {
-        if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
-        return;
-    }
-    memset(obj, 0, ROTATER_SIZE);
-
-    /* 4. Call Rotator_ctor_Impossible(this, board, X, Y, Z, mesh) */
-    void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
-    if (!result) {
-        if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
-        return;
+    /* 4. Allocate object and call constructor based on AI type */
+    void* obj = NULL;
+    if (ai_type == 6) {
+        /* AI 6: Rotator_ctor_Impossible (SWIRL with rotation) */
+        obj = pfn_operator_new(ROTATER_SIZE);
+        if (!obj) {
+            if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
+            return;
+        }
+        memset(obj, 0, ROTATER_SIZE);
+        void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
+        if (!result) {
+            if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
+            return;
+        }
+    } else {
+        /* AI 0-5: PopCylinder_ctor (static or game-defined behavior) */
+        obj = pfn_operator_new(POPCYLINDER_SIZE);
+        if (!obj) {
+            if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
+            return;
+        }
+        memset(obj, 0, POPCYLINDER_SIZE);
+        void* result = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
+        if (!result) {
+            if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n");
+            return;
+        }
     }
 
     /* 5. Add to board+0x2578 (update list) */
@@ -832,8 +868,8 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     /* 6. Add to board+0xCD4 (render list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
-    /* 7. Add collision object (obj+0x10D4) to board+0x10EC */
-    DWORD col_obj = *(DWORD*)((char*)obj + 0x10D4);
+    /* 7. Add collision object to board+0x10EC */
+    DWORD col_obj = *(DWORD*)((char*)obj + (ai_type == 6 ? 0x10D4 : 0x10E0));
     if (col_obj) {
         pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
 
@@ -1171,6 +1207,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
         char ros_x_str[32] = {0};
         char ros_y_str[32] = {0};
         char ros_z_str[32] = {0};
+        char ai_str[32] = {0};
 
         extract_dat_prop(name, "MESH", mesh_path, sizeof(mesh_path));
 
@@ -1201,6 +1238,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
         extract_dat_prop(name, "ROS_X", ros_x_str, sizeof(ros_x_str));
         extract_dat_prop(name, "ROS_Y", ros_y_str, sizeof(ros_y_str));
         extract_dat_prop(name, "ROS_Z", ros_z_str, sizeof(ros_z_str));
+        extract_dat_prop(name, "AI", ai_str, sizeof(ai_str));
 
         /* Parse rotation speeds — default to native SWIRL if not specified.
          * ROT_Y is a SPEED MULTIPLIER: 1.0 = native speed (0.004 rad/frame),
@@ -1216,16 +1254,22 @@ static void process_rotaters(DWORD board, FILE* logf) {
         float ros_y = ros_y_str[0] ? (float)fabs(atof(ros_y_str)) : 2.0f;
         float ros_z = ros_z_str[0] ? (float)fabs(atof(ros_z_str)) : 2.0f;
 
+        /* Parse AI type — default 6 (SWIRL) if not specified */
+        int ai_type = ai_str[0] ? atoi(ai_str) : 6;
+        if (ai_type < 0) ai_type = 0;
+        if (ai_type > 6) ai_type = 6;
+
         if (logf) {
             fprintf(logf, "  ROTATER: found '%s' at (%.1f, %.1f, %.1f)\n", name, px, py, pz);
-            fprintf(logf, "    <MESH>='%s' ROT_X=%.4f ROT_Y=%.4f ROT_Z=%.4f OC=(%.1f, %.1f, %.1f)\n",
-                    mesh_path[0] ? mesh_path : "(default)", rot_x, rot_y, rot_z,
+            fprintf(logf, "    MESH='%s' AI=%d ROT_X=%.4f ROT_Y=%.4f ROT_Z=%.4f ROS=(%.1f, %.1f, %.1f)\n",
+                    mesh_path[0] ? mesh_path : "(default)", ai_type, rot_x, rot_y, rot_z,
                     ros_x, ros_y, ros_z);
         }
 
         spawn_rotater_at(board, px, py, pz, mesh_path,
                          rot_x, rot_y, rot_z,
                          ros_x, ros_y, ros_z,
+                         ai_type,
                          logf);
         found++;
     }
@@ -1310,7 +1354,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v37 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v38 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
