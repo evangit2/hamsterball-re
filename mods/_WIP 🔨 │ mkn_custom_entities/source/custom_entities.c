@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v32
+ * custom_entities.c — Hamsterball Custom Entities Mod v33
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1018,6 +1018,63 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
     }
 }
 
+/* Hide original meshbuffers that match C_entity names.
+ * The level loader creates meshbuffers for ALL section-3 entries, including
+ * C_entity_001. These render as part of the level geometry. We need to hide
+ * them so only our custom-spawned Rotator (with the MESH property) is visible.
+ *
+ * MeshBuffer struct: name at +0x864, vertex count at +0x08 (or strip data).
+ * We hide by setting the render context scale to 0 via the MeshWorld's
+ * render context array (MeshWorld+0x28 + index * 0x50).
+ * Actually simpler: zero the MeshBuffer's strip count at +0x860. */
+static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
+    if (!board) return;
+    DWORD level = get_level(board);
+    if (!level) return;
+    if (IsBadReadPtr((void*)(level + 0x08), 4)) return;
+    DWORD meshworld = *(DWORD*)(level + 0x08);
+    if (!meshworld || IsBadReadPtr((void*)meshworld, 0x30)) return;
+
+    /* MeshBuffer AthenaList at MeshWorld+0x2C */
+    DWORD* mb_list = (DWORD*)(meshworld + 0x2C);
+    if (IsBadReadPtr(mb_list, 8)) return;
+    int mb_count = *(int*)(mb_list + 1);  /* count at +0x04 */
+    if (mb_count <= 0 || mb_count > 10000) return;
+    if (IsBadReadPtr((void*)((BYTE*)mb_list + 0x40C), 4)) return;
+    DWORD* mb_data = *(DWORD**)((BYTE*)mb_list + 0x40C);
+    if (!mb_data || IsBadReadPtr(mb_data, mb_count * 4)) return;
+
+    int hidden = 0;
+    int i;
+    for (i = 0; i < mb_count; i++) {
+        DWORD mb = mb_data[i];
+        if (!mb || mb < 0x10000) continue;
+        if (IsBadReadPtr((void*)mb, 0x870)) continue;
+
+        /* Read MeshBuffer name at +0x864 */
+        char* name = *(char**)(mb + 0x864);
+        if (!name || IsBadReadPtr(name, 8)) continue;
+
+        /* Check if name starts with "C_entity" (case-insensitive) */
+        if (_strnicmp(name, "C_entity", 8) != 0) continue;
+
+        /* Hide this meshbuffer by zeroing its strip count.
+         * MeshBuffer strip count is at +0x860 (or +0x08 depending on struct).
+         * Try +0x860 first — this is the strip array count. */
+        int* strip_count = (int*)(mb + 0x860);
+        if (*strip_count > 0) {
+            *strip_count = 0;
+            hidden++;
+            if (logf) fprintf(logf, "  HIDE: meshbuffer '%s' (0x%08X) strip_count set to 0\n", name, mb);
+        }
+    }
+
+    if (logf && hidden > 0) {
+        fprintf(logf, "  HIDE: hidden %d original meshbuffer(s)\n", hidden);
+        fflush(logf);
+    }
+}
+
 /* Scan section 3 for REF:Rotater entries and spawn SWIRL at each position.
  * NOTE: Do NOT scan S1 ref points — the game's native vtable[33] handler
  * already spawns Rotators from S1 entries named "Rotater". Scanning S1 would
@@ -1212,7 +1269,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v32 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v33 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -1251,8 +1308,11 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         /* Process <MESH> and <SPEEDMULT> tags on spawned 8-balls (after CreateBadBall has run) */
         process_custom_tags(board, logf);
 
-        /* Process REF:Rotater entries — spawn SWIRL at each position */
+        /* Process C_entity entries — spawn custom objects at each position */
         process_rotaters(board, logf);
+
+        /* Hide original meshbuffers for C_entity entries */
+        hide_entity_meshbuffers(board, logf);
 
         /* Apply custom rotation directions to spawned rotaters */
         apply_rotater_directions();
