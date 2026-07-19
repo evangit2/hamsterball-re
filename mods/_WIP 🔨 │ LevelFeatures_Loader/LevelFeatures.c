@@ -2100,13 +2100,24 @@ static void Feature_SwirlZones(void *board, int level) {
             wsprintfA(dbg, "  [swirl] step1: tarCount=%d tarListOfs=0x%X", tarCount, tarListOfs);
             DebugLog(dbg);
         }
-        if (tarCount > 0 && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
-            void *tar = g_operatorNew(0x1C);
-            if (tar) {
-                DebugLog("  [swirl] step1: calling CreateTarBubble");
-                g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
-                g_AthenaListAppend((void *)((char *)board + UNI_PARTICLE_LIST), (int)tar);
-                DebugLog("  [swirl] step1: CreateTarBubble done");
+        if (tarCount > 0) {
+            int rngResult = -1;
+            if (g_RNG) {
+                rngResult = g_RNG((void *)0x4F7360, 0x14, 0);
+                {
+                    char dbg2[128];
+                    wsprintfA(dbg2, "  [swirl] step1: rngResult=%d (need 10)", rngResult);
+                    DebugLog(dbg2);
+                }
+                if (rngResult == 10) {
+                    void *tar = g_operatorNew(0x1C);
+                    if (tar) {
+                        DebugLog("  [swirl] step1: calling CreateTarBubble");
+                        g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
+                        g_AthenaListAppend((void *)((char *)board + UNI_PARTICLE_LIST), (int)tar);
+                        DebugLog("  [swirl] step1: CreateTarBubble done");
+                    }
+                }
             }
         }
     }
