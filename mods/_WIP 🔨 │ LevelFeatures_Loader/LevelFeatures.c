@@ -3335,8 +3335,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SWIRL (Dizzy) ── */
     if (my_strnicmp(name, "SWIRL", 5) == 0) {
-        obj = *(void **)((char *)board + UNI_JUDGE_LIST + 8);
-        renderOut = *(int *)((char *)board + UNI_MESH_14);
+        /* Original: obj = board+0x4BC4 (Swirl mesh), renderOut = board+0x4BC8 (render obj)
+         * Mod: Swirl mesh at UNI_MESH_6 (0x85F8), render at UNI_MESH_7 (0x85FC) */
+        obj = *(void **)((char *)board + UNI_MESH_6);
+        renderOut = *(int *)((char *)board + UNI_MESH_7);
+        /* Store swirl position for step3b mesh rotation */
         *(float *)((char *)board + UNI_MESH_15) = x;
         *(float *)((char *)board + UNI_MESH_12) = y;
         *(float *)((char *)board + UNI_MESH_13) = z;
