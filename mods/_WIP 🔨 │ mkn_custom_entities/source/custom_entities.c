@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v29
+ * custom_entities.c — Hamsterball Custom Entities Mod v30
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -17,6 +17,7 @@
 
 #include "bass_proxy.h"
 #include <shlwapi.h>
+#include <math.h>
 #include <ctype.h>
 #include <stdio.h>
 
@@ -123,12 +124,15 @@ static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
 typedef struct {
     DWORD obj;              /* spawned object pointer */
     char  mesh_path[128];   /* custom mesh path (empty = default Level3-Swirl) */
-    float rotX;             /* X-axis rotation speed (radians/frame) */
-    float rotY;             /* Y-axis rotation speed (radians/frame) */
-    float rotZ;             /* Z-axis rotation speed (radians/frame) */
-    float angleX;           /* accumulated X angle */
-    float angleY;           /* accumulated Y angle */
-    float angleZ;           /* accumulated Z angle */
+    float rot_x;            /* X-axis rotation speed (radians/frame) */
+    float rot_y;            /* Y-axis rotation speed (radians/frame) */
+    float rot_z;            /* Z-axis rotation speed (radians/frame) */
+    float rot_x_oc;         /* X-axis oscillation range (radians, default 2.0) */
+    float rot_y_oc;         /* Y-axis oscillation range (radians, default 2.0) */
+    float rot_z_oc;         /* Z-axis oscillation range (radians, default 2.0) */
+    float angle_x;          /* accumulated X angle */
+    float angle_y;          /* accumulated Y angle */
+    float angle_z;          /* accumulated Z angle */
 } RotaterConfig;
 
 static RotaterConfig g_rotater_cfg[MAX_ROTATERS];
@@ -714,7 +718,9 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void spawn_rotater_at(DWORD board, float px, float py, float pz,
-                              const char* mesh_path, float rotX, float rotY, float rotZ,
+                              const char* mesh_path,
+                              float rot_x, float rot_y, float rot_z,
+                              float rot_x_oc, float rot_y_oc, float rot_z_oc,
                               FILE* logf) {
     if (!board) return;
 
@@ -789,20 +795,24 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     }
 
     if (logf) {
-        fprintf(logf, "  ROTATER: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f, %.4f, %.4f)\n",
-                px, py, pz, (DWORD)obj, path_buf, rotX, rotY, rotZ);
+        fprintf(logf, "  ROTATER: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
+                px, py, pz, (DWORD)obj, path_buf, rot_x, rot_y, rot_z,
+                rot_x_oc, rot_y_oc, rot_z_oc);
         fflush(logf);
     }
 
     /* Track for despawn + per-frame rotation updates */
     if (g_rotater_count < MAX_ROTATERS) {
         g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
-        g_rotater_cfg[g_rotater_count].rotX = rotX;
-        g_rotater_cfg[g_rotater_count].rotY = rotY;
-        g_rotater_cfg[g_rotater_count].rotZ = rotZ;
-        g_rotater_cfg[g_rotater_count].angleX = 0.0f;
-        g_rotater_cfg[g_rotater_count].angleY = 0.0f;
-        g_rotater_cfg[g_rotater_count].angleZ = 0.0f;
+        g_rotater_cfg[g_rotater_count].rot_x = rot_x;
+        g_rotater_cfg[g_rotater_count].rot_y = rot_y;
+        g_rotater_cfg[g_rotater_count].rot_z = rot_z;
+        g_rotater_cfg[g_rotater_count].rot_x_oc = rot_x_oc;
+        g_rotater_cfg[g_rotater_count].rot_y_oc = rot_y_oc;
+        g_rotater_cfg[g_rotater_count].rot_z_oc = rot_z_oc;
+        g_rotater_cfg[g_rotater_count].angle_x = 0.0f;
+        g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
+        g_rotater_cfg[g_rotater_count].angle_z = 0.0f;
         if (mesh_path && mesh_path[0]) {
             strncpy(g_rotater_cfg[g_rotater_count].mesh_path, mesh_path, 127);
             g_rotater_cfg[g_rotater_count].mesh_path[127] = 0;
@@ -835,8 +845,8 @@ static void despawn_all_rotaters(DWORD board, FILE* logf) {
     g_rotater_count = 0;
 }
 
-/* Update rotation direction for all spawned rotaters — called once per spawn.
- * Writes rotY to obj+0x10EC (direction field, DWORD index 0x43B).
+/* Apply rotation direction and oscillation limits to spawned custom_obj objects.
+ * Called once at spawn time. Writes ROT_Y to obj+0x10EC (direction field).
  *
  * The native render function (vtable[11] at 0x0043B330) does:
  *   new_angle = direction * 0.004 + angle
@@ -844,13 +854,11 @@ static void despawn_all_rotaters(DWORD board, FILE* logf) {
  *   if new_angle > 2.0:  direction = -1.0  (reverse)
  *   if new_angle < -2.0: direction = +1.0  (reverse)
  *
- * So writing to +0x10E8 (angle) is a race condition — native render overwrites it.
- * Instead, write rotY to +0x10EC (direction). The native render then computes:
- *   new_angle = rotY * 0.004 + angle
- * which gives smooth rotation at rotY multiples of native speed.
- * rotY=1.0 → native speed, rotY=4.0 → 4x speed, rotY=-1.0 → reverse.
- *
- * X and Z rotations are stored in the config for future render hook support. */
+ * ROT_Y is written to the direction field as a speed multiplier.
+ * ROT_Y_OC (oscillation range) is stored in config — the native render
+ * uses hardcoded ±2.0, so per-object OC requires a per-frame hook to
+ * override the direction flip when the custom OC limit is reached.
+ * For now, ROT_Y_OC is stored but the native ±2.0 limit applies. */
 static void apply_rotater_directions(void) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
@@ -858,14 +866,14 @@ static void apply_rotater_directions(void) {
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
 
-        /* Write rotY to the direction field — native render uses it as multiplier */
-        *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rotY;
+        /* Write ROT_Y to the direction field — native render uses it as multiplier */
+        *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
     }
 }
 
 /* Scan S1 ref points for Rotater entries with custom rot tags.
  * For each found, search the board's update list for the natively-spawned
- * Rotator object at the matching position, and apply rotY to its direction
+ * Rotator object at the matching position, and apply ROT_Y to its direction
  * field (+0x10EC). This does NOT spawn — native game already spawned from S1. */
 static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
     if (!board) return;
@@ -901,15 +909,15 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
 
         char* name = *(char**)(entry);
         if (!name || IsBadReadPtr(name, 8)) continue;
-        if (_strnicmp(name, "Rotater", 7) != 0 &&
-            _strnicmp(name, "REF:Rotater", 11) != 0) continue;
+        if (_strnicmp(name, "custom_obj", 10) != 0 &&
+            _strnicmp(name, "REF:custom_obj", 15) != 0) continue;
 
         /* Parse rotation tags */
-        char rotY_str[32] = {0};
-        extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
-        if (!rotY_str[0]) continue;  /* skip if no rotY tag */
+        char rot_y_str[32] = {0};
+        extract_tag(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
+        if (!rot_y_str[0]) continue;  /* skip if no ROT_Y tag */
 
-        float rotY = (float)atof(rotY_str);
+        float rot_y = (float)atof(rot_y_str);
 
         /* Get S1 ref point position */
         float px = *(float*)(entry + 0x04);
@@ -938,11 +946,11 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
             float dy = oy - py; if (dy < 0) dy = -dy;
             float dz = oz - pz; if (dz < 0) dz = -dz;
             if (dx < 2.0f && dy < 2.0f && dz < 2.0f) {
-                /* Found it! Write rotY to direction field */
-                *(float*)(obj + 0x10EC) = rotY;
+                /* Found it! Write ROT_Y to direction field */
+                *(float*)(obj + 0x10EC) = rot_y;
                 if (logf) {
-                    fprintf(logf, "  ROTATER(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) rotY=%.4f applied\n",
-                            obj, px, py, pz, rotY);
+                    fprintf(logf, "  ROTATER(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f applied\n",
+                            obj, px, py, pz, rot_y);
                     fflush(logf);
                 }
                 break;
@@ -985,9 +993,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
         if (!name || IsBadReadPtr(name, 8)) continue;
 
         /* Check for Rotater (case-insensitive, prefix match — name may include tags) */
-        if (_strnicmp(name, "REF:Rotater", 11) == 0) {
+        if (_strnicmp(name, "REF:custom_obj", 15) == 0) {
             /* Full match "REF:Rotater" — tags start at name+11 */
-        } else if (_strnicmp(name, "Rotater", 7) == 0) {
+        } else if (_strnicmp(name, "custom_obj", 10) == 0) {
             /* Plain "Rotater" — tags start at name+7 */
         } else {
             continue;
@@ -1000,9 +1008,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
 
         /* Parse tags from the object name */
         char mesh_path[128] = {0};
-        char rotX_str[32] = {0};
-        char rotY_str[32] = {0};
-        char rotZ_str[32] = {0};
+        char rot_x_str[32] = {0};
+        char rot_y_str[32] = {0};
+        char rot_z_str[32] = {0};
+        char rot_x_oc_str[32] = {0};
+        char rot_y_oc_str[32] = {0};
+        char rot_z_oc_str[32] = {0};
 
         extract_tag(name, "MESH", mesh_path, sizeof(mesh_path));
 
@@ -1027,24 +1038,37 @@ static void process_rotaters(DWORD board, FILE* logf) {
                 mesh_path[127] = 0;
             }
         }
-        extract_tag(name, "rotX", rotX_str, sizeof(rotX_str));
-        extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
-        extract_tag(name, "rotZ", rotZ_str, sizeof(rotZ_str));
+        extract_tag(name, "ROT_X", rot_x_str, sizeof(rot_x_str));
+        extract_tag(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
+        extract_tag(name, "ROT_Z", rot_z_str, sizeof(rot_z_str));
+        extract_tag(name, "ROT_X_OC", rot_x_oc_str, sizeof(rot_x_oc_str));
+        extract_tag(name, "ROT_Y_OC", rot_y_oc_str, sizeof(rot_y_oc_str));
+        extract_tag(name, "ROT_Z_OC", rot_z_oc_str, sizeof(rot_z_oc_str));
 
         /* Parse rotation speeds — default to native SWIRL if not specified.
-         * rotY is a SPEED MULTIPLIER: 1.0 = native speed (0.004 rad/frame),
+         * ROT_Y is a SPEED MULTIPLIER: 1.0 = native speed (0.004 rad/frame),
          * 4.0 = 4x speed, 0.5 = half speed, -1.0 = reverse. */
-        float rotX = rotX_str[0] ? (float)atof(rotX_str) : 0.0f;
-        float rotY = rotY_str[0] ? (float)atof(rotY_str) : 1.0f;  /* native SWIRL default */
-        float rotZ = rotZ_str[0] ? (float)atof(rotZ_str) : 0.0f;
+        float rot_x = rot_x_str[0] ? (float)atof(rot_x_str) : 0.0f;
+        float rot_y = rot_y_str[0] ? (float)atof(rot_y_str) : 1.0f;  /* native SWIRL default */
+        float rot_z = rot_z_str[0] ? (float)atof(rot_z_str) : 0.0f;
+
+        /* Parse oscillation ranges — default 2.0 radians (native SWIRL behavior).
+         * Uses absolute value so negative inputs are treated as positive. */
+        float rot_x_oc = rot_x_oc_str[0] ? (float)fabs(atof(rot_x_oc_str)) : 2.0f;
+        float rot_y_oc = rot_y_oc_str[0] ? (float)fabs(atof(rot_y_oc_str)) : 2.0f;
+        float rot_z_oc = rot_z_oc_str[0] ? (float)fabs(atof(rot_z_oc_str)) : 2.0f;
 
         if (logf) {
             fprintf(logf, "  ROTATER: found '%s' at (%.1f, %.1f, %.1f)\n", name, px, py, pz);
-            fprintf(logf, "    <MESH>='%s' <rotX>=%.4f <rotY>=%.4f <rotZ>=%.4f\n",
-                    mesh_path[0] ? mesh_path : "(default)", rotX, rotY, rotZ);
+            fprintf(logf, "    <MESH>='%s' ROT_X=%.4f ROT_Y=%.4f ROT_Z=%.4f OC=(%.1f, %.1f, %.1f)\n",
+                    mesh_path[0] ? mesh_path : "(default)", rot_x, rot_y, rot_z,
+                    rot_x_oc, rot_y_oc, rot_z_oc);
         }
 
-        spawn_rotater_at(board, px, py, pz, mesh_path, rotX, rotY, rotZ, logf);
+        spawn_rotater_at(board, px, py, pz, mesh_path,
+                         rot_x, rot_y, rot_z,
+                         rot_x_oc, rot_y_oc, rot_z_oc,
+                         logf);
         found++;
     }
 
@@ -1128,7 +1152,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v29 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v30 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
