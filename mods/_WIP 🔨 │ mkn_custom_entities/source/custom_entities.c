@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v30
+ * custom_entities.c — Hamsterball Custom Entities Mod v31
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -118,7 +118,7 @@ static Rotator_ctor_t pfn_Rotator_ctor = (Rotator_ctor_t)0x00435940;
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
 
 /* Rotater spawned objects tracking */
-#define MAX_ROTATERS 16
+#define MAX_ROTATERS 999
 
 /* Per-rotater config: mesh path and rotation speeds */
 typedef struct {
@@ -127,9 +127,9 @@ typedef struct {
     float rot_x;            /* X-axis rotation speed (radians/frame) */
     float rot_y;            /* Y-axis rotation speed (radians/frame) */
     float rot_z;            /* Z-axis rotation speed (radians/frame) */
-    float rot_x_oc;         /* X-axis oscillation range (radians, default 2.0) */
-    float rot_y_oc;         /* Y-axis oscillation range (radians, default 2.0) */
-    float rot_z_oc;         /* Z-axis oscillation range (radians, default 2.0) */
+    float ros_x;         /* X-axis oscillation range (radians, default 2.0) */
+    float ros_y;         /* Y-axis oscillation range (radians, default 2.0) */
+    float ros_z;         /* Z-axis oscillation range (radians, default 2.0) */
     float angle_x;          /* accumulated X angle */
     float angle_y;          /* accumulated Y angle */
     float angle_z;          /* accumulated Z angle */
@@ -329,10 +329,69 @@ static int ci_strstr(const char* haystack, const char* needle) {
     return 0;
 }
 
-/* Extract the value between <TAGNAME> and </TAGNAME> in a name string.
- * Case-insensitive tag name matching. Returns 1 if found, 0 otherwise.
- * Also handles unclosed tags: if <TAGNAME> is found but </TAGNAME> is not,
- * extracts everything up to the next '<' or end of string. */
+/* Extract a property value from a <DAT> block.
+ * Format: <DAT> KEY="value", KEY=number, ... </DAT>
+ * or: <DAT> KEY="value", KEY=number </DAT> (no closing tag, end of string)
+ * 
+ * Searches for KEY= in the DAT block and copies the value (quoted or unquoted)
+ * until the next comma or end of block.
+ * Returns 1 if found, 0 otherwise. */
+static int extract_dat_prop(const char* name, const char* key, char* out_buf, int out_size) {
+    /* Find <DAT> in the name string (case-insensitive) */
+    const char* p = name;
+    while (*p) {
+        if (p[0] == '<' && _strnicmp(p + 1, "DAT", 3) == 0 && p[4] == '>') {
+            const char* dat_start = p + 5;
+            /* Find end of DAT block: </DAT> or end of string */
+            const char* dat_end = dat_start;
+            while (*dat_end) {
+                if (dat_end[0] == '<' && dat_end[1] == '/' &&
+                    _strnicmp(dat_end + 2, "DAT", 3) == 0 && dat_end[5] == '>') {
+                    break;
+                }
+                dat_end++;
+            }
+            
+            /* Search for KEY= within the DAT block */
+            int key_len = (int)strlen(key);
+            const char* q = dat_start;
+            while (q < dat_end) {
+                /* Skip whitespace */
+                while (q < dat_end && (*q == ' ' || *q == '\t')) q++;
+                if (q + key_len >= dat_end) break;
+                
+                /* Check for KEY= (case-insensitive) */
+                if (_strnicmp(q, key, key_len) == 0 && q[key_len] == '=') {
+                    const char* val_start = q + key_len + 1;
+                    /* Skip leading quotes */
+                    if (*val_start == '"') val_start++;
+                    
+                    /* Find end of value: comma, closing quote, or end of block */
+                    const char* val_end = val_start;
+                    while (val_end < dat_end && *val_end != ',' && *val_end != '"') val_end++;
+                    
+                    int len = (int)(val_end - val_start);
+                    if (len > 0 && len < out_size) {
+                        memcpy(out_buf, val_start, len);
+                        out_buf[len] = '\0';
+                        /* Trim trailing whitespace */
+                        while (len > 0 && (out_buf[len-1] == ' ' || out_buf[len-1] == '\t')) {
+                            out_buf[--len] = '\0';
+                        }
+                        return 1;
+                    }
+                    return 0;
+                }
+                /* Skip to next comma */
+                while (q < dat_end && *q != ',') q++;
+                if (q < dat_end) q++; /* skip comma */
+            }
+            return 0;
+        }
+        p++;
+    }
+    return 0;
+}
 static int extract_tag(const char* name, const char* tag_name, char* out_buf, int out_size) {
     int tag_len = (int)strlen(tag_name);
     const char* p = name;
@@ -720,7 +779,7 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
 static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                               const char* mesh_path,
                               float rot_x, float rot_y, float rot_z,
-                              float rot_x_oc, float rot_y_oc, float rot_z_oc,
+                              float ros_x, float ros_y, float ros_z,
                               FILE* logf) {
     if (!board) return;
 
@@ -797,7 +856,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     if (logf) {
         fprintf(logf, "  ROTATER: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
                 px, py, pz, (DWORD)obj, path_buf, rot_x, rot_y, rot_z,
-                rot_x_oc, rot_y_oc, rot_z_oc);
+                ros_x, ros_y, ros_z);
         fflush(logf);
     }
 
@@ -807,9 +866,9 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         g_rotater_cfg[g_rotater_count].rot_x = rot_x;
         g_rotater_cfg[g_rotater_count].rot_y = rot_y;
         g_rotater_cfg[g_rotater_count].rot_z = rot_z;
-        g_rotater_cfg[g_rotater_count].rot_x_oc = rot_x_oc;
-        g_rotater_cfg[g_rotater_count].rot_y_oc = rot_y_oc;
-        g_rotater_cfg[g_rotater_count].rot_z_oc = rot_z_oc;
+        g_rotater_cfg[g_rotater_count].ros_x = ros_x;
+        g_rotater_cfg[g_rotater_count].ros_y = ros_y;
+        g_rotater_cfg[g_rotater_count].ros_z = ros_z;
         g_rotater_cfg[g_rotater_count].angle_x = 0.0f;
         g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
         g_rotater_cfg[g_rotater_count].angle_z = 0.0f;
@@ -855,10 +914,10 @@ static void despawn_all_rotaters(DWORD board, FILE* logf) {
  *   if new_angle < -2.0: direction = +1.0  (reverse)
  *
  * ROT_Y is written to the direction field as a speed multiplier.
- * ROT_Y_OC (oscillation range) is stored in config — the native render
+ * ROS_Y (oscillation range) is stored in config — the native render
  * uses hardcoded ±2.0, so per-object OC requires a per-frame hook to
  * override the direction flip when the custom OC limit is reached.
- * For now, ROT_Y_OC is stored but the native ±2.0 limit applies. */
+ * For now, ROS_Y is stored but the native ±2.0 limit applies. */
 static void apply_rotater_directions(void) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
@@ -912,9 +971,9 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
         if (_strnicmp(name, "custom_obj", 10) != 0 &&
             _strnicmp(name, "REF:custom_obj", 15) != 0) continue;
 
-        /* Parse rotation tags */
+        /* Parse rotation tags from <DAT> block */
         char rot_y_str[32] = {0};
-        extract_tag(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
+        extract_dat_prop(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
         if (!rot_y_str[0]) continue;  /* skip if no ROT_Y tag */
 
         float rot_y = (float)atof(rot_y_str);
@@ -993,9 +1052,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
         if (!name || IsBadReadPtr(name, 8)) continue;
 
         /* Check for Rotater (case-insensitive, prefix match — name may include tags) */
-        if (_strnicmp(name, "REF:custom_obj", 15) == 0) {
+        if (_strnicmp(name, "REF:custom_obj", 15) == 0  /* REF:custom_obj or REF:custom_obj_NNN */) {
             /* Full match "REF:Rotater" — tags start at name+11 */
-        } else if (_strnicmp(name, "custom_obj", 10) == 0) {
+        } else if (_strnicmp(name, "custom_obj", 10) == 0  /* custom_obj or custom_obj_NNN */) {
             /* Plain "Rotater" — tags start at name+7 */
         } else {
             continue;
@@ -1011,11 +1070,11 @@ static void process_rotaters(DWORD board, FILE* logf) {
         char rot_x_str[32] = {0};
         char rot_y_str[32] = {0};
         char rot_z_str[32] = {0};
-        char rot_x_oc_str[32] = {0};
-        char rot_y_oc_str[32] = {0};
-        char rot_z_oc_str[32] = {0};
+        char ros_x_str[32] = {0};
+        char ros_y_str[32] = {0};
+        char ros_z_str[32] = {0};
 
-        extract_tag(name, "MESH", mesh_path, sizeof(mesh_path));
+        extract_dat_prop(name, "MESH", mesh_path, sizeof(mesh_path));
 
         /* Normalize mesh path: strip quotes, replace forward slashes with backslashes */
         if (mesh_path[0]) {
@@ -1038,12 +1097,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
                 mesh_path[127] = 0;
             }
         }
-        extract_tag(name, "ROT_X", rot_x_str, sizeof(rot_x_str));
-        extract_tag(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
-        extract_tag(name, "ROT_Z", rot_z_str, sizeof(rot_z_str));
-        extract_tag(name, "ROT_X_OC", rot_x_oc_str, sizeof(rot_x_oc_str));
-        extract_tag(name, "ROT_Y_OC", rot_y_oc_str, sizeof(rot_y_oc_str));
-        extract_tag(name, "ROT_Z_OC", rot_z_oc_str, sizeof(rot_z_oc_str));
+        extract_dat_prop(name, "ROT_X", rot_x_str, sizeof(rot_x_str));
+        extract_dat_prop(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
+        extract_dat_prop(name, "ROT_Z", rot_z_str, sizeof(rot_z_str));
+        extract_dat_prop(name, "ROS_X", ros_x_str, sizeof(ros_x_str));
+        extract_dat_prop(name, "ROS_Y", ros_y_str, sizeof(ros_y_str));
+        extract_dat_prop(name, "ROS_Z", ros_z_str, sizeof(ros_z_str));
 
         /* Parse rotation speeds — default to native SWIRL if not specified.
          * ROT_Y is a SPEED MULTIPLIER: 1.0 = native speed (0.004 rad/frame),
@@ -1053,21 +1112,22 @@ static void process_rotaters(DWORD board, FILE* logf) {
         float rot_z = rot_z_str[0] ? (float)atof(rot_z_str) : 0.0f;
 
         /* Parse oscillation ranges — default 2.0 radians (native SWIRL behavior).
-         * Uses absolute value so negative inputs are treated as positive. */
-        float rot_x_oc = rot_x_oc_str[0] ? (float)fabs(atof(rot_x_oc_str)) : 2.0f;
-        float rot_y_oc = rot_y_oc_str[0] ? (float)fabs(atof(rot_y_oc_str)) : 2.0f;
-        float rot_z_oc = rot_z_oc_str[0] ? (float)fabs(atof(rot_z_oc_str)) : 2.0f;
+         * Uses absolute value so negative inputs are treated as positive.
+         * ROS_Y=0.0 means constant rotation (no oscillation limit). */
+        float ros_x = ros_x_str[0] ? (float)fabs(atof(ros_x_str)) : 2.0f;
+        float ros_y = ros_y_str[0] ? (float)fabs(atof(ros_y_str)) : 2.0f;
+        float ros_z = ros_z_str[0] ? (float)fabs(atof(ros_z_str)) : 2.0f;
 
         if (logf) {
             fprintf(logf, "  ROTATER: found '%s' at (%.1f, %.1f, %.1f)\n", name, px, py, pz);
             fprintf(logf, "    <MESH>='%s' ROT_X=%.4f ROT_Y=%.4f ROT_Z=%.4f OC=(%.1f, %.1f, %.1f)\n",
                     mesh_path[0] ? mesh_path : "(default)", rot_x, rot_y, rot_z,
-                    rot_x_oc, rot_y_oc, rot_z_oc);
+                    ros_x, ros_y, ros_z);
         }
 
         spawn_rotater_at(board, px, py, pz, mesh_path,
                          rot_x, rot_y, rot_z,
-                         rot_x_oc, rot_y_oc, rot_z_oc,
+                         ros_x, ros_y, ros_z,
                          logf);
         found++;
     }
@@ -1152,7 +1212,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v30 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v31 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
