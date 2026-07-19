@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v23
+ * custom_entities.c — Hamsterball Custom Entities Mod v24
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -884,11 +884,11 @@ static void process_rotaters(DWORD board, FILE* logf) {
         char* name = *(char**)(obj_ptr);
         if (!name || IsBadReadPtr(name, 8)) continue;
 
-        /* Check for Rotater (case-insensitive, with or without REF: prefix) */
+        /* Check for Rotater (case-insensitive, prefix match — name may include tags) */
         if (_strnicmp(name, "REF:Rotater", 11) == 0) {
-            /* Full match "REF:Rotater" */
-        } else if (_stricmp(name, "Rotater") == 0) {
-            /* Plain "Rotater" without REF: prefix */
+            /* Full match "REF:Rotater" — tags start at name+11 */
+        } else if (_strnicmp(name, "Rotater", 7) == 0) {
+            /* Plain "Rotater" — tags start at name+7 */
         } else {
             continue;
         }
@@ -1004,7 +1004,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v23 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v24 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
