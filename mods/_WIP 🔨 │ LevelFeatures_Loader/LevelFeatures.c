@@ -260,6 +260,7 @@ typedef void *__thiscall (*FUN_0044fb50_t)(void *out, int app, float x, int y, f
 typedef void (__fastcall *FUN_00405190_t)(int ball);
 /* CPUID_CheckProcessorFeature (RNG) is __thiscall: ECX=this, stack=[range, flag].
  * __fastcall puts range in EDX instead of on stack, so we need inline asm. */
+static DWORD g_RNG_raw = 0;  /* raw function address — declared early for RNG_call */
 static int __cdecl RNG_call(void *this_ptr, int range, char flag) {
     int result;
     __asm__ __volatile__(
@@ -306,7 +307,7 @@ static FUN_0044fa90_t             g_CreateTarBubble = NULL;
 static FUN_0044fb50_t             g_CreateSplashParticle = NULL;
 static FUN_00405190_t             g_RemoveBall = NULL;
 static CPUID_RNG_t                g_RNG = NULL;
-static DWORD                      g_RNG_raw = 0;  /* raw function address for inline asm */
+/* g_RNG_raw declared earlier (before RNG_call) */
 static BadBall_ctor_t             g_BadBallCtor = NULL;
 static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
 static Ball_SetVec3AtOffset_t     g_BallSetVec3AtOffset = NULL;
