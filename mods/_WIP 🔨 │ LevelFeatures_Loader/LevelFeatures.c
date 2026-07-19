@@ -1717,6 +1717,30 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("Extra meshes loaded");
     }
 
+    /* Step 8b: For Dizzy, also write mesh pointers to ORIGINAL offsets.
+     * The original LevelBoard_Dizzy_ctor stores meshes at board+0x436C..0x4374
+     * and board+0x4BA8..0x4BD8. The mod's memset cleared these, and
+     * LoadExtraMeshes stored them at unified offsets (0x85E0+). 
+     * Writing to both ensures the collision system and any code reading
+     * original offsets can find the meshes. */
+    if (raceIndex == 4) {
+        /* Tipper mesh+render */
+        *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)mem + UNI_MESH_8);
+        *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)mem + UNI_MESH_9);
+        /* WaterWheel mesh+render */
+        *(DWORD *)((char *)mem + 0x4BA8) = *(DWORD *)((char *)mem + UNI_MESH_0);
+        *(DWORD *)((char *)mem + 0x4BAC) = *(DWORD *)((char *)mem + UNI_MESH_1);
+        /* Swirl mesh+render */
+        *(DWORD *)((char *)mem + 0x4BC4) = *(DWORD *)((char *)mem + UNI_MESH_6);
+        *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)mem + UNI_MESH_7);
+        /* Gluebie mesh */
+        *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)mem + UNI_MESH_10);
+        /* Init angle/scale fields (original offsets) */
+        *(DWORD *)((char *)mem + 0x4BC0) = 0;  /* WaterWheel scale */
+        *(DWORD *)((char *)mem + 0x4BD8) = 0;  /* Swirl angle */
+        DebugLog("Step 8b: Dizzy mesh pointers dual-written to original offsets");
+    }
+
     /* Step 9: Set unlock flags */
     if (ld->unlockFlagOffset) {
         DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
@@ -2307,12 +2331,21 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)((char *)board + BRD_SWIRL1_POS_X),
             *(float *)((char *)board + BRD_SWIRL1_POS_Y),
             *(float *)((char *)board + BRD_SWIRL1_POS_Z));
-        DebugLog("  [swirl] step3a: Gfx calls done, mesh render skipped (mesh not scene-registered)");
-        /* Vtable[0x58]/[0x54] calls SKIPPED — the mesh was created by
-         * LoadExtraMeshes but not registered with the scene's render system.
-         * Its +0x434 sub-object exists but has corrupt spatial tree data.
-         * Calling SceneObject_CallRender crashes in FUN_00498BF0 (spatial
-         * tree builder). The transform (Gfx_ScaleY + Gfx_SetPosition) is
+        DebugLog("  [swirl] step3a: Gfx calls done, calling vtable render");
+        /* Call vtable[0x58] (render) and [0x54] (update) on primary mesh */
+        {
+            DWORD mesh1 = *(DWORD *)((char *)board + BRD_SWIRL_MESH1);
+            if (mesh1 && !IsBadReadPtr((void*)mesh1, 0x438)) {
+                DWORD *vtbl = *(DWORD **)mesh1;
+                if (vtbl && !IsBadReadPtr(vtbl, 0x5C)) {
+                    void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))vtbl[0x16];
+                    void (__thiscall *fn54)(DWORD) = (void (__thiscall *)(DWORD))vtbl[0x15];
+                    if (fn58) fn58(mesh1);
+                    if (fn54) fn54(mesh1);
+                }
+            }
+        }
+        DebugLog("  [swirl] step3a done");
          * applied but the mesh won't rotate until properly initialized. */
 
         g_TimerCleanup(timerBuf);
@@ -2337,8 +2370,21 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)((char *)board + BRD_SWIRL2_POS_X),
             *(float *)((char *)board + BRD_SWIRL2_POS_Y),
             *(float *)((char *)board + BRD_SWIRL2_POS_Z));
-        DebugLog("  [swirl] step3b: Gfx calls done, mesh render skipped (not scene-registered)");
-        /* Vtable calls SKIPPED for secondary mesh — same issue as primary */
+        DebugLog("  [swirl] step3b: Gfx calls done, calling vtable render");
+        /* Call vtable[0x58] (render) and [0x54] (update) on secondary mesh */
+        {
+            DWORD mesh2 = *(DWORD *)((char *)board + BRD_SWIRL_MESH2);
+            if (mesh2 && !IsBadReadPtr((void*)mesh2, 0x438)) {
+                DWORD *vtbl2 = *(DWORD **)mesh2;
+                if (vtbl2 && !IsBadReadPtr(vtbl2, 0x5C)) {
+                    void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))vtbl2[0x16];
+                    void (__thiscall *fn54)(DWORD) = (void (__thiscall *)(DWORD))vtbl2[0x15];
+                    if (fn58) fn58(mesh2);
+                    if (fn54) fn54(mesh2);
+                }
+            }
+        }
+        DebugLog("  [swirl] step3b done");
 
         g_TimerCleanup(timerBuf);
         }
