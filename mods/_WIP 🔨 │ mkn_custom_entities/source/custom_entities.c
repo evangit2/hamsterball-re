@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v33
+ * custom_entities.c — Hamsterball Custom Entities Mod v34
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1023,10 +1023,11 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
  * C_entity_001. These render as part of the level geometry. We need to hide
  * them so only our custom-spawned Rotator (with the MESH property) is visible.
  *
- * MeshBuffer struct: name at +0x864, vertex count at +0x08 (or strip data).
- * We hide by setting the render context scale to 0 via the MeshWorld's
- * render context array (MeshWorld+0x28 + index * 0x50).
- * Actually simpler: zero the MeshBuffer's strip count at +0x860. */
+ * Approach: Zero the render context for matching meshbuffers.
+ * The render context array is at MeshWorld+0x28, each entry is 0x50 bytes.
+ * The meshbuffer list is at MeshWorld+0x2C (AthenaList).
+ * We match by name (at MeshBuffer+0x864) and zero the corresponding
+ * render context to make it invisible. */
 static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
     if (!board) return;
     DWORD level = get_level(board);
@@ -1044,6 +1045,14 @@ static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
     DWORD* mb_data = *(DWORD**)((BYTE*)mb_list + 0x40C);
     if (!mb_data || IsBadReadPtr(mb_data, mb_count * 4)) return;
 
+    /* Render context array at MeshWorld+0x28 */
+    DWORD rc_array = *(DWORD*)(meshworld + 0x28);
+    if (!rc_array || IsBadReadPtr((void*)rc_array, mb_count * 0x50)) {
+        /* rc_array might be inline, not a pointer */
+        rc_array = meshworld + 0x28;
+        if (IsBadReadPtr((void*)rc_array, mb_count * 0x50)) return;
+    }
+
     int hidden = 0;
     int i;
     for (i = 0; i < mb_count; i++) {
@@ -1058,14 +1067,12 @@ static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
         /* Check if name starts with "C_entity" (case-insensitive) */
         if (_strnicmp(name, "C_entity", 8) != 0) continue;
 
-        /* Hide this meshbuffer by zeroing its strip count.
-         * MeshBuffer strip count is at +0x860 (or +0x08 depending on struct).
-         * Try +0x860 first — this is the strip array count. */
-        int* strip_count = (int*)(mb + 0x860);
-        if (*strip_count > 0) {
-            *strip_count = 0;
+        /* Zero the render context for this meshbuffer (0x50 bytes) */
+        DWORD rc_addr = rc_array + i * 0x50;
+        if (!IsBadReadPtr((void*)rc_addr, 0x50)) {
+            memset((void*)rc_addr, 0, 0x50);
             hidden++;
-            if (logf) fprintf(logf, "  HIDE: meshbuffer '%s' (0x%08X) strip_count set to 0\n", name, mb);
+            if (logf) fprintf(logf, "  HIDE: meshbuffer '%s' (idx=%d, mb=0x%08X) render context zeroed\n", name, i, mb);
         }
     }
 
@@ -1269,7 +1276,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v33 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v34 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
