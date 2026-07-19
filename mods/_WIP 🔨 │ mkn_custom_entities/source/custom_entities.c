@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v43
+ * custom_entities.c — Hamsterball Custom Entities Mod v44
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -806,14 +806,14 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
     if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
 
-    /* 2. Determine mesh path based on AI type */
+    /* 2. Determine mesh path — MESH property takes priority over AI default */
     const char* path = NULL;
-    if (ai_type >= 1 && ai_type <= 5) {
-        /* AI 1-5: use game's built-in mesh path */
-        path = g_ai_mesh_paths[ai_type];
-    } else if (mesh_path && mesh_path[0]) {
-        /* AI 0 or 6: use custom MESH property */
+    if (mesh_path && mesh_path[0]) {
+        /* MESH property specified — use it regardless of AI type */
         path = mesh_path;
+    } else if (ai_type >= 1 && ai_type <= 5) {
+        /* AI 1-5 with no MESH property: use game's built-in mesh path */
+        path = g_ai_mesh_paths[ai_type];
     } else {
         /* Default: SWIRL mesh */
         path = g_swirl_mesh_path;
@@ -1375,7 +1375,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v43 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v44 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
