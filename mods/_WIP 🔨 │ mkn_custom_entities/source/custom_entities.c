@@ -1015,7 +1015,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     Sleep(3000);
 
     while (g_running) {
-        Sleep(100);
+        /* Update rotater angles every iteration (smooth rotation) */
+        if (g_rotater_count > 0) {
+            update_rotater_angles();
+            Sleep(16);  /* ~60fps for smooth rotation */
+        } else {
+            Sleep(100);
+        }
 
         DWORD board = get_board();
         if (!board) continue;
