@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v39
+ * custom_entities.c — Hamsterball Custom Entities Mod v40
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -860,12 +860,11 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n");
             return;
         }
-        /* For AI 1-5: override vtable to Impossible object vtable (0x004D21C0)
-         * This gives the object the game's native Impossible-race behavior
-         * (rotation, pendulum swing, etc.) based on the loaded mesh. */
-        if (ai_type >= 1 && ai_type <= 5) {
-            *(DWORD*)obj = 0x004D21C0;
-        }
+        /* Note: Do NOT override vtable. PopCylinder's default vtable works
+         * with the Impossible race meshes. The mesh contains the animation
+         * data (rotation, pendulum swing, etc.). The Impossible object
+         * vtable (0x004D21C0) expects a 0x1508 byte object, but PopCylinder
+         * is only 0x10D0 — overriding causes crash at 0x00416F5C. */
     }
 
     /* 5. Add to board+0x2578 (update list) */
@@ -1360,7 +1359,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v39 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v40 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
