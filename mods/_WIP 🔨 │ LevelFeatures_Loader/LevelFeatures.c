@@ -265,13 +265,13 @@ static DWORD g_RNG_raw = 0;  /* forward declaration — full assignment in InitP
 static int __fastcall RNG_call(void *this_ptr, int dummy_edx, int range, char flag) {
     return ((int (__thiscall *)(void*, int, char))g_RNG_raw)(this_ptr, range, flag);
 }
-typedef int (__cdecl *CPUID_RNG_t)(void *ptr, int range, char flag);
+typedef int (__thiscall *CPUID_RNG_t)(void *ptr, int range, char flag);
 typedef void *__thiscall (*BadBall_ctor_t)(void *mem, int board);
 typedef void (__thiscall *Ball_SetTrajectory_t)(void *ball, int unk, float x, float y, float f1, float f2);
 typedef void (__thiscall *Ball_SetVec3AtOffset_t)(void *ball, float *vec);
 typedef void (__thiscall *Vec3_NormalizeAndScale_t)(float *vec, float scale);
 typedef void (__thiscall *Vec3_Copy_t)(float *dst, float *src);
-typedef int  (__cdecl *Sound_CalcDistAtten_t)(int soundDevice, float x, float y, float z);
+typedef float (__thiscall *Sound_CalcDistAtten_t)(int soundDevice, float x, float y, float z);
 typedef void (__thiscall *Sound_Play3DAtPos_t)(int channel);
 typedef void (__thiscall *Scene_SetRaceActive_t)(int obj);
 typedef void (__thiscall *Scene_AddObject_t)(void *scene, void *obj);
@@ -1415,7 +1415,7 @@ typedef void (__thiscall *Scene_CollectByNameFilter_t)(void *meshWorld, char *na
 typedef void *(__thiscall *AthenaList_Init_t)(void *this, int capacity);
 typedef void *(__thiscall *Board_ctor_t)(void *this, int app);
 typedef void (__thiscall *LoadRaceData_t)(void *board, const char *raceName);
-typedef int (__cdecl *Vec3_Init_t)(void *out, float x, float y, float z);
+typedef int (__thiscall *Vec3_Init_t)(void *out, float x, float y, float z);
 typedef void (__cdecl *Matrix_Identity_t)(void *out);
 typedef void *(__thiscall *MeshNode_ctor_t)(void *mem, void *gfx, const char *path);
 typedef void *(__thiscall *Sprite_ctor_t)(void *mem, void *gfx, const char *path);
@@ -4229,7 +4229,7 @@ typedef void (__thiscall *Spinner_Activate_t)(void *obj, int ball);
 typedef void (__thiscall *Gear_AddBall_t)(void *obj, int ball);
 typedef void (__fastcall *NormalGravityReset_t)(int ball);
 typedef void (__fastcall *DropLift_Activate_t)(int obj);
-typedef int (__cdecl *CPUID_RNG_Fn_t)(void *ptr, int range, int flag);
+typedef int (__thiscall *CPUID_RNG_Fn_t)(void *ptr, int range, int flag);
 
 /* Collision handler function pointers */
 static Sound_PlayChannel_t          g_SoundPlayChannel = NULL;
@@ -4862,7 +4862,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         /* Random pipe selection */
         if (g_CPUIDRNG && g_AthenaHashTableLookup) {
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
-            int rng = g_CPUIDRNG((void *)0x4F7360, 2, 0);
+            int rng = RNG_call((void *)0x4F7360, 0, 2, 0);
             float pos[3] = {0,0,0};
             if (rng == 0) {
                 /* PIPERANDOM1: set byte 4 flag (checked by E:LIMITPIPE1) */
@@ -4980,7 +4980,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 /* Pick a random entry and compute direction */
                 int count = g_AthenaListGetSize(listBuf);
                 if (count > 0) {
-                    int rngIdx = g_CPUIDRNG((void *)0x4F7360, count, 0);
+                    int rngIdx = RNG_call((void *)0x4F7360, 0, count, 0);
                     if (rngIdx < 0) rngIdx = 0;
                     if (rngIdx >= count) rngIdx = 0;
 
@@ -5147,7 +5147,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 *(float *)(particle + 5) = sinV * 0.1f;
                 *(DWORD *)(particle + 6) = 0;
                 *(float *)(particle + 7) = cosV * 0.1f;
-                int speedDiv = g_CPUIDRNG((void *)0x4F7360, 0x14, 0) + 0x14;
+                int speedDiv = RNG_call((void *)0x4F7360, 0, 0x14, 0) + 0x14;
                 float scale = 0.00390625f / (float)speedDiv;
                 *(float *)(particle + 5) *= scale;
                 *(float *)(particle + 6) *= scale;
