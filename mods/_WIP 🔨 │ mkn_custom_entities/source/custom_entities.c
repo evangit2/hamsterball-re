@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v24
+ * custom_entities.c — Hamsterball Custom Entities Mod v25
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -905,6 +905,21 @@ static void process_rotaters(DWORD board, FILE* logf) {
         char rotZ_str[32] = {0};
 
         extract_tag(name, "MESH", mesh_path, sizeof(mesh_path));
+
+        /* Normalize mesh path: strip quotes, replace forward slashes with backslashes */
+        if (mesh_path[0]) {
+            /* Strip leading/trailing double-quotes */
+            char* p = mesh_path;
+            while (*p == '"') p++;
+            size_t len = strlen(p);
+            while (len > 0 && p[len-1] == '"') { p[--len] = 0; }
+            /* Move stripped path to front if needed */
+            if (p != mesh_path) memmove(mesh_path, p, len + 1);
+            /* Replace forward slashes with backslashes */
+            for (p = mesh_path; *p; p++) {
+                if (*p == '/') *p = '\\';
+            }
+        }
         extract_tag(name, "rotX", rotX_str, sizeof(rotX_str));
         extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
         extract_tag(name, "rotZ", rotZ_str, sizeof(rotZ_str));
@@ -1004,7 +1019,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v24 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v25 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
