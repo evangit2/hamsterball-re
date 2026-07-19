@@ -1,63 +1,75 @@
-# Custom Entities Mod v17
+# Custom Entities Mod v23
 
-Spawns testcube meshes at S1 ref point positions marked with `(GRIDxx)` in the level's MESHWORLD file.
+A bass.dll proxy mod for Hamsterball that spawns custom meshes and entities from MESHWORLD level files.
 
-## v17: `<MESH>` and `<SPEEDMULT>` tags for 8-ball customization
+## Features
 
-Added two new argument tags (similar to `<CHASE>`, `<HOME>`, `<SIZE>`) that let you customize BADBALL 8-balls from the MESHWORLD file:
+### 1. Testcube Mesh Spawning (GRID)
 
-### `<MESH>` — pick 8-ball mesh model
+Spawns testcube meshes at S1 ref point positions marked with `(GRIDxx)` in the level's MESHWORLD file. Each GRID gets a different diffuse color (Red, Orange, Yellow, Green, Blue).
+
+### 2. 8-Ball Customization (`<MESH>` / `<SPEEDMULT>`)
+
+Customize BADBALL 8-balls from the MESHWORLD file using tags:
+
+#### `<MESH>` — pick 8-ball mesh model
 
 ```
 BADBALL<CHASE>100</CHASE><HOME>400</HOME><MESH>funball</MESH>
 ```
 
-- If the `<MESH>` value contains `"funball"`, the ball uses the **FunBall** mesh + texture (mesh index 10)
-- If no `<MESH>` tag is present, or the value doesn't contain "funball", the ball uses the default **8Ball** mesh (Sphere + 8ball texture, mesh index 9)
+- If the value contains `"funball"`, the ball uses the **FunBall** mesh + texture (mesh index 10)
+- Otherwise, the ball uses the default **8Ball** mesh (mesh index 9)
 
-### `<SPEEDMULT>` — multiply 8-ball speed
+> **Note:** The `<MESH>` tag for 8-balls is currently **disabled** (has no effect). It will be re-enabled in a future version.
+
+#### `<SPEEDMULT>` — multiply 8-ball speed
 
 ```
 BADBALL<CHASE>100</CHASE><HOME>400</HOME><SPEEDMULT>2.0</SPEEDMULT>
 ```
 
 - Multiplies the ball's `max_speed` (ball+0x188, default 6.0) by the given float value
-- `<SPEEDMULT>2.0</SPEEDMULT>` → max_speed = 6.0 × 2.0 = 12.0 (twice as fast)
-- `<SPEEDMULT>0.5</SPEEDMULT>` → max_speed = 6.0 × 0.5 = 3.0 (half speed)
-- Clamped to range 0.01–100.0; values outside this range are ignored
-- Tags can be combined: `BADBALL<CHASE>100</CHASE><HOME>400</HOME><MESH>funball</MESH><SPEEDMULT>1.5</SPEEDMULT>`
+- `<SPEEDMULT>2.0</SPEEDMULT>` → max_speed = 12.0 (twice as fast)
+- `<SPEEDMULT>0.5</SPEEDMULT>` → max_speed = 3.0 (half speed)
+- Clamped to range 0.01–100.0
 
-The mod processes these tags after the game's native `CreateBadBall` has spawned the 8-balls during level load. It matches BADBALL objects to spawned balls by their home position (which `CreateBadBall` copies directly from the MESHWORLD object's X/Y/Z).
+### 3. Rotater Entity Spawning (REF:Rotater)
 
-## v9 Fix: MeshWorld Pointer Location
+Spawns rotating platform objects (like the Dizzy Race SWIRL) at positions specified in the MESHWORLD file. The mod scans section-3 objects for entries named `Rotater` or `REF:Rotater` and spawns a `Rotator_ctor_Impossible` object at each position.
 
-**Bug:** v8 looked for the MeshWorld pointer at `sceneobj+0x08` — wrong! The log showed `sceneobj+0x08=NULL, scanning for MeshWorld...` and then `no meshworld found`.
+#### Rotater Arguments
 
-**Root cause:** Verified via Ghidra decompilation of `Scene_LoadMeshWorld` (0x461890):
-```c
-// "this" is the LEVEL object (stored at board+0x8AC)
-*(undefined4 **)((int)this + 8) = puVar2;  // MeshWorld ptr at LEVEL+0x08
+Parse custom tags from the object name to control the spawned Rotater:
+
+| Tag | Type | Description | Default |
+|---|---|---|---|
+| `<MESH>path</MESH>` | String | Custom mesh file path (relative to game dir) | `levels\Level3-Swirl` |
+| `<rotX>0.0</rotX>` | Float | X-axis rotation speed (radians/frame) | `0.0` |
+| `<rotY>0.004</rotY>` | Float | Y-axis rotation speed (radians/frame) | `0.004` (native SWIRL) |
+| `<rotZ>0.0</rotZ>` | Float | Z-axis rotation speed (radians/frame) | `0.0` |
+
+#### Example MESHWORLD Entry
+
+```
+Rotater<MESH>levels\Level3-Swirl</MESH><rotY>0.004</rotY>
 ```
 
-And `Level_MeshWorldCtor` (0x461510):
-```c
-// this+0x480 = SceneObject (separate allocation)
-// LoadMeshWorld(this, param_2) — called with "this" = Level, NOT sceneobj
-```
+#### How Rotation Works
 
-The MeshWorld pointer is at **level+0x08**, not sceneobj+0x08. The SceneObject (at level+0x480) contains the S1 ref point list at +0x894, but NOT the MeshWorld.
+- **`<rotY>`** — overrides the Y-axis rotation speed. The angle is written to `obj+0x10E8` each frame (~60fps) by the mod's entity thread.
+- **`<rotX>` / `<rotZ>`** — stored in the config struct for future render hook support. Currently only Y-axis rotation is applied by the native render function.
+- The native SWIRL rotates at `0.004` radians/frame (~5.73°/sec at 25fps, ~62.8s per full rotation).
+- Rotation axis is **Y** (vertical/up-down axis).
 
-**Fix:** `get_meshworld()` now reads from `level+0x08` instead of `sceneobj+0x08`.
+#### SWIRL Rotation Technical Details (via Ghidra)
 
-## How It Works
-
-1. On level load, the mod reads S1 ref points from `sceneobj+0x894` (AthenaList)
-2. For each S1 entry whose name contains `(GRIDxx)`, it reads the position (X, Y, Z)
-3. It spawns a testcube mesh at that position by:
-   - Allocating a MeshBuffer (0x874 bytes) via `CreateMeshBuffer`
-   - Appending it to the MeshWorld's MeshBuffer list (MeshWorld+0x2C)
-   - Writing position into the RenderContext array (MeshWorld+0x28 + index × 0x50)
-   - Setting diffuse color based on GRID number (Red, Orange, Yellow, Green, Blue)
+- **Angle field:** `obj+0x10E8` (float, init `0.0` practice / `-0.2` non-practice)
+- **Direction field:** `obj+0x10EC` (float, init `1.0` practice / `0.0` non-practice)
+- **Speed constant:** `0x004D5C88` = `0.004` (radians per frame)
+- **Render function:** vtable[0] at `0x0043B310` — increments angle each frame: `angle += 0.004`
+- **Vertex deformation:** vtable[1] `Rotator_Update` at `0x004606D0` — copies mesh vertices into a dynamic buffer and re-uploads
+- **Constructor:** `Rotator_ctor_Impossible` at `0x00435940` — allocates 0x1508 bytes, stores position at `+0x10D8/D8/DC`
 
 ## Installation
 
@@ -79,7 +91,7 @@ grid_speed = 10.0
 ```bash
 cd source/
 i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c bass.def \
-  -lwinmm -Wl,--enable-stdcall-fixup -O2 -static-libgcc \
+  -lwinmm -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
   -Wl,--add-stdcall-alias -msse2 -mfpmath=sse -lshlwapi
 ```
 
@@ -88,10 +100,25 @@ i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c bass.def \
 | Offset | Description |
 |--------|-------------|
 | board+0x8AC | Level pointer |
-| level+0x08 | **MeshWorld pointer** (v9 fix — was sceneobj+0x08) |
+| level+0x08 | MeshWorld pointer |
 | level+0x480 | SceneObject pointer |
 | sceneobj+0x894 | S1 ref point AthenaList |
+| sceneobj+0xCA0 | Section-3 object array |
+| sceneobj+0x898 | Section-3 object count |
 | MeshWorld+0x24 | MeshBuffer count |
 | MeshWorld+0x28 | RenderContext array |
 | MeshWorld+0x2C | MeshBuffer AthenaList |
 | MeshBuffer+0x864 | Name string pointer |
+| obj+0x10E8 | Rotater Y rotation angle (float) |
+| obj+0x10EC | Rotater rotation direction (float) |
+| ball+0x188 | Ball max_speed (default 6.0) |
+| ball+0x754 | Ball mesh index (9=8Ball, 10=FunBall) |
+
+## Changelog
+
+- **v23** — Added `<MESH>`, `<rotX>`, `<rotY>`, `<rotZ>` tag parsing for REF:Rotater entries. Per-frame Y rotation updates (~60fps). Custom mesh path support.
+- **v22** — Fixed Rotater name matching: accept plain `Rotater` without `REF:` prefix.
+- **v21** — Added REF:Rotater entity spawning (Dizzy SWIRL platform).
+- **v20** — Fixed startup crash: added `load_real_bass()` to DllMain.
+- **v19** — Added `<MESH>` and `<SPEEDMULT>` tags for 8-ball customization.
+- **v17** — Initial testcube mesh spawning at GRID reference points.
