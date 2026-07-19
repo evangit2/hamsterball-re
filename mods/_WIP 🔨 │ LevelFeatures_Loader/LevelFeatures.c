@@ -261,6 +261,7 @@ typedef void (__fastcall *FUN_00405190_t)(int ball);
 /* CPUID_CheckProcessorFeature (RNG) is __thiscall: ECX=this, stack=[range, flag].
  * Use __fastcall with a dummy EDX param: ECX=this, EDX=dummy, stack=[range, flag].
  * The callee reads [ebp+8]=range and [ebp+12]=flag — matches __thiscall. */
+static DWORD g_RNG_raw = 0;  /* forward declaration — full assignment in InitPointers */
 static int __fastcall RNG_call(void *this_ptr, int dummy_edx, int range, char flag) {
     return ((int (__thiscall *)(void*, int, char))g_RNG_raw)(this_ptr, range, flag);
 }
@@ -296,8 +297,7 @@ static FUN_0044fa90_t             g_CreateTarBubble = NULL;
 static FUN_0044fb50_t             g_CreateSplashParticle = NULL;
 static FUN_00405190_t             g_RemoveBall = NULL;
 static CPUID_RNG_t                g_RNG = NULL;
-/* g_RNG_raw used by RNG_call above — declared after g_RNG assignment */
-static DWORD g_RNG_raw = 0;
+/* g_RNG_raw declared earlier (before RNG_call) */
 static BadBall_ctor_t             g_BadBallCtor = NULL;
 static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
 static Ball_SetVec3AtOffset_t     g_BallSetVec3AtOffset = NULL;
@@ -3435,7 +3435,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)board + UNI_WINDMILL_X) = x;
         *(float *)((char *)board + UNI_WINDMILL_Y) = y;
         *(float *)((char *)board + UNI_WINDMILL_Z) = z;
-        if (g_RNG) *(float *)((char *)board + UNI_WINDMILL_ANGLE) = (float)RNG_call((void*)0x4F7360, 0x168, 0);
+        if (g_RNG) *(float *)((char *)board + UNI_WINDMILL_ANGLE) = (float)RNG_call((void*)0x4F7360, 0, 0x168, 0);
         *(int*)out1 = mesh; *(int*)out2 = renderOut;
         return;
     }
@@ -3927,7 +3927,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             o[0x43A] = 0x3F800000;
-            if (g_RNG && RNG_call((void*)0x4F7360, 2, 0) == 0)
+            if (g_RNG && RNG_call((void*)0x4F7360, 0, 2, 0) == 0)
                 o[0x43A] = 0xBF800000;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = o[0x435];
