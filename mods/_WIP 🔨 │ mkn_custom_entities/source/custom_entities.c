@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v27
+ * custom_entities.c — Hamsterball Custom Entities Mod v28
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -855,7 +855,10 @@ static void update_rotater_angles(void) {
     }
 }
 
-/* Scan section 3 for REF:Rotater entries and spawn SWIRL at each position */
+/* Scan section 3 for REF:Rotater entries and spawn SWIRL at each position.
+ * NOTE: Do NOT scan S1 ref points — the game's native vtable[33] handler
+ * already spawns Rotators from S1 entries named "Rotater". Scanning S1 would
+ * create duplicate objects (double SWIRL). Only section-3 entries are ours. */
 static void process_rotaters(DWORD board, FILE* logf) {
     if (!board) return;
 
@@ -863,73 +866,6 @@ static void process_rotaters(DWORD board, FILE* logf) {
     if (!sceneobj) {
         if (logf) fprintf(logf, "  ROTATER: sceneobj=NULL\n");
         return;
-    }
-
-    /* === Scan S1 ref points (sceneobj+0x894) for Rotater entries === */
-    {
-        DWORD s1_list = sceneobj + 0x894;
-        if (!IsBadReadPtr((void*)(s1_list + 0x04), 4)) {
-            int s1_count = *(int*)(s1_list + 0x04);
-            if (s1_count > 0 && s1_count <= 1000 && !IsBadReadPtr((void*)(s1_list + 0x40C), 4)) {
-                DWORD* s1_data = *(DWORD**)(s1_list + 0x40C);
-                if (s1_data && !IsBadReadPtr(s1_data, s1_count * 4)) {
-                    int i;
-                    for (i = 0; i < s1_count; i++) {
-                        DWORD entry = s1_data[i];
-                        if (!entry || entry < 0x10000) continue;
-                        if (IsBadReadPtr((void*)entry, 16)) continue;
-
-                        char* name = *(char**)(entry);
-                        if (!name || IsBadReadPtr(name, 8)) continue;
-
-                        if (_strnicmp(name, "Rotater", 7) != 0 &&
-                            _strnicmp(name, "REF:Rotater", 11) != 0) continue;
-
-                        float px = *(float*)(entry + 0x04);
-                        float py = *(float*)(entry + 0x08);
-                        float pz = *(float*)(entry + 0x0C);
-
-                        /* Parse tags */
-                        char mesh_path[128] = {0};
-                        char rotX_str[32] = {0};
-                        char rotY_str[32] = {0};
-                        char rotZ_str[32] = {0};
-                        extract_tag(name, "MESH", mesh_path, sizeof(mesh_path));
-                        extract_tag(name, "rotX", rotX_str, sizeof(rotX_str));
-                        extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
-                        extract_tag(name, "rotZ", rotZ_str, sizeof(rotZ_str));
-
-                        /* Normalize mesh path */
-                        if (mesh_path[0]) {
-                            char* p = mesh_path;
-                            while (*p == '"') p++;
-                            size_t len = strlen(p);
-                            while (len > 0 && p[len-1] == '"') { p[--len] = 0; }
-                            if (p != mesh_path) memmove(mesh_path, p, len + 1);
-                            for (p = mesh_path; *p; p++) { if (*p == '/') *p = '\\'; }
-                            if (!strchr(mesh_path, '\\') && !strchr(mesh_path, ':')) {
-                                char tmp[128];
-                                snprintf(tmp, sizeof(tmp), "levels\\%s", mesh_path);
-                                strncpy(mesh_path, tmp, 127);
-                                mesh_path[127] = 0;
-                            }
-                        }
-
-                        float rotX = rotX_str[0] ? (float)atof(rotX_str) : 0.0f;
-                        float rotY = rotY_str[0] ? (float)atof(rotY_str) : 0.004f;
-                        float rotZ = rotZ_str[0] ? (float)atof(rotZ_str) : 0.0f;
-
-                        if (logf) {
-                            fprintf(logf, "  ROTATER(S1): '%s' at (%.1f, %.1f, %.1f)\n", name, px, py, pz);
-                            fprintf(logf, "    MESH='%s' rotX=%.4f rotY=%.4f rotZ=%.4f\n",
-                                    mesh_path[0] ? mesh_path : "(default)", rotX, rotY, rotZ);
-                        }
-
-                        spawn_rotater_at(board, px, py, pz, mesh_path, rotX, rotY, rotZ, logf);
-                    }
-                }
-            }
-        }
     }
 
     /* === Scan section 3 objects (sceneobj+0xCA0) for Rotater entries === */
@@ -1094,7 +1030,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v27 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v28 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
