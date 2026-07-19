@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v40
+ * custom_entities.c — Hamsterball Custom Entities Mod v41
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -848,23 +848,29 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             return;
         }
     } else {
-        /* AI 0-5: PopCylinder_ctor (static or game-defined behavior) */
-        obj = pfn_operator_new(POPCYLINDER_SIZE);
+        /* AI 0-5: PopCylinder_ctor with Impossible vtable for AI 1-5.
+         * Allocate ROTATER_SIZE (0x1508) instead of POPCYLINDER_SIZE (0x10D0)
+         * so the Impossible vtable's render function doesn't read out of bounds.
+         * The extra bytes are zeroed, which is safe. */
+        DWORD alloc_size = (ai_type >= 1 && ai_type <= 5) ? ROTATER_SIZE : POPCYLINDER_SIZE;
+        obj = pfn_operator_new(alloc_size);
         if (!obj) {
             if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
             return;
         }
-        memset(obj, 0, POPCYLINDER_SIZE);
+        memset(obj, 0, alloc_size);
         void* result = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
         if (!result) {
             if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n");
             return;
         }
-        /* Note: Do NOT override vtable. PopCylinder's default vtable works
-         * with the Impossible race meshes. The mesh contains the animation
-         * data (rotation, pendulum swing, etc.). The Impossible object
-         * vtable (0x004D21C0) expects a 0x1508 byte object, but PopCylinder
-         * is only 0x10D0 — overriding causes crash at 0x00416F5C. */
+        /* For AI 1-5: override vtable to Impossible object vtable (0x004D21C0).
+         * This gives the object native Impossible-race behavior (pendulum swing,
+         * rotation, etc.). The mesh determines which visual object appears.
+         * The vtable provides the update/render behavior. */
+        if (ai_type >= 1 && ai_type <= 5) {
+            *(DWORD*)obj = 0x004D21C0;
+        }
     }
 
     /* 5. Add to board+0x2578 (update list) */
@@ -874,7 +880,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
     /* 7. Add collision object to board+0x10EC */
-    DWORD col_obj = *(DWORD*)((char*)obj + (ai_type == 6 ? 0x10D4 : 0x10E0));
+    DWORD col_obj = *(DWORD*)((char*)obj + (ai_type >= 1 ? 0x10D4 : 0x10E0));
     if (col_obj) {
         pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
 
@@ -1359,7 +1365,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v40 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v41 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
