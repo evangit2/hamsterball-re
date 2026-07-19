@@ -2357,14 +2357,18 @@ static void Feature_SwirlZones(void *board, int level) {
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
+        DebugLog("  [swirl] step3b: secondary mesh rotation");
         char timerBuf[68];
         g_TimerInit(timerBuf);
 
         float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
         *(float *)((char *)board + BRD_SWIRL2_ANGLE) =
             *(float *)((char *)board + BRD_SWIRL2_ANGLE) + swirlSpeed;
+        DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
+        DebugLog("  [swirl] step3b: calling GfxScaleX");
         g_GfxScaleX(gfx, *(float *)((char *)board + BRD_SWIRL2_ANGLE));
+        DebugLog("  [swirl] step3b: calling GfxSetPosition");
         g_GfxSetPosition(gfx,
             *(float *)((char *)board + BRD_SWIRL2_POS_X),
             *(float *)((char *)board + BRD_SWIRL2_POS_Y),
