@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v22
+ * custom_entities.c — Hamsterball Custom Entities Mod v23
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1004,7 +1004,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v22 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v23 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -1077,6 +1077,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 while (waited < wait_ms) {
                     Sleep(100);
                     waited += 100;
+                    update_rotater_angles();  /* keep rotation smooth during grid wait */
                     if (!g_running || board != get_board()) break;
                 }
                 if (!g_running || board != get_board()) break;

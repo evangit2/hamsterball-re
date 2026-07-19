@@ -259,21 +259,10 @@ typedef void *__thiscall (*FUN_0044fa90_t)(void *out, int app, int tarList);
 typedef void *__thiscall (*FUN_0044fb50_t)(void *out, int app, float x, int y, float z);
 typedef void (__fastcall *FUN_00405190_t)(int ball);
 /* CPUID_CheckProcessorFeature (RNG) is __thiscall: ECX=this, stack=[range, flag].
- * __fastcall puts range in EDX instead of on stack, so we need inline asm. */
-static DWORD g_RNG_raw = 0;  /* raw function address — declared early for RNG_call */
-static int __cdecl RNG_call(void *this_ptr, int range, char flag) {
-    int result;
-    __asm__ __volatile__(
-        "push %3\n"
-        "push %2\n"
-        "mov ecx, %1\n"
-        "call %4\n"
-        "mov %0, eax\n"
-        : "=r"(result)
-        : "r"(this_ptr), "r"(range), "r"(flag), "r"(g_RNG_raw)
-        : "ecx", "eax", "memory"
-    );
-    return result;
+ * Use __fastcall with a dummy EDX param: ECX=this, EDX=dummy, stack=[range, flag].
+ * The callee reads [ebp+8]=range and [ebp+12]=flag — matches __thiscall. */
+static int __fastcall RNG_call(void *this_ptr, int dummy_edx, int range, char flag) {
+    return ((int (__thiscall *)(void*, int, char))g_RNG_raw)(this_ptr, range, flag);
 }
 typedef int (__cdecl *CPUID_RNG_t)(void *ptr, int range, char flag);
 typedef void *__thiscall (*BadBall_ctor_t)(void *mem, int board);
@@ -307,7 +296,8 @@ static FUN_0044fa90_t             g_CreateTarBubble = NULL;
 static FUN_0044fb50_t             g_CreateSplashParticle = NULL;
 static FUN_00405190_t             g_RemoveBall = NULL;
 static CPUID_RNG_t                g_RNG = NULL;
-/* g_RNG_raw declared earlier (before RNG_call) */
+/* g_RNG_raw used by RNG_call above — declared after g_RNG assignment */
+static DWORD g_RNG_raw = 0;
 static BadBall_ctor_t             g_BadBallCtor = NULL;
 static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
 static Ball_SetVec3AtOffset_t     g_BallSetVec3AtOffset = NULL;
@@ -2121,7 +2111,7 @@ static void Feature_SwirlZones(void *board, int level) {
         if (tarCount > 0) {
             int rngResult = -1;
             if (g_RNG) {
-                rngResult = RNG_call((void *)0x4F7360, 0x14, 0);
+                rngResult = RNG_call((void *)0x4F7360, 0, 0x14, 0);
                 {
                     char dbg2[128];
                     wsprintfA(dbg2, "  [swirl] step1: rngResult=%d (need 10)", rngResult);
@@ -2225,9 +2215,9 @@ static void Feature_SwirlZones(void *board, int level) {
                                     if (part) {
                                         /* Random direction (normalized) */
                                         if (g_RNG) {
-                                            part[0] = (float)RNG_call((void *)0x4F7360, 100, 1);
-                                            part[1] = (float)RNG_call((void *)0x4F7360, 100, 1);
-                                            part[2] = (float)RNG_call((void *)0x4F7360, 100, 1);
+                                            part[0] = (float)RNG_call((void *)0x4F7360, 0, 100, 1);
+                                            part[1] = (float)RNG_call((void *)0x4F7360, 0, 100, 1);
+                                            part[2] = (float)RNG_call((void *)0x4F7360, 0, 100, 1);
                                             float lenSq = part[0]*part[0] + part[1]*part[1] + part[2]*part[2];
                                             if (lenSq > 0.0f) {
                                                 float len = sqrtf(lenSq);
@@ -2259,10 +2249,10 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)(ballIdx + BALL_POS_Y_OFS) -= 0.25f;
             /* Splash particle */
             if (g_CreateSplashParticle && g_AthenaListAppend && g_RNG) {
-                int rng1 = RNG_call((void *)0x4F7360, 0xF, 0);
+                int rng1 = RNG_call((void *)0x4F7360, 0, 0xF, 0);
                 if (rng1 == 1) {
-                    float rx = (float)RNG_call((void *)0x4F7360, 100, 1);
-                    float rz = (float)RNG_call((void *)0x4F7360, 100, 1);
+                    float rx = (float)RNG_call((void *)0x4F7360, 0, 100, 1);
+                    float rz = (float)RNG_call((void *)0x4F7360, 0, 100, 1);
                     float lenSq = rx*rx + rz*rz;
                     float len = (lenSq > 0.0f) ? sqrtf(lenSq) : 0.0f;
                     float scale = (len > 0.0f) ?
@@ -2460,10 +2450,10 @@ static void Feature_Windmill(void *board, int level) {
             if (speed < 1.0f) {
                 *(float *)((char *)board + BRD_WM_SPEED) = 0.0f;
                 if (g_RNG) {
-                    int rng = RNG_call((void *)0x4F7360, 2, 0);
+                    int rng = RNG_call((void *)0x4F7360, 0, 2, 0);
                     if (rng != 0) {
                         *(int *)((char *)board + BRD_WM_STATE) = 3;
-                        int rng2 = RNG_call((void *)0x4F7360, 100, 0);
+                        int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0);
                         *(int *)((char *)board + BRD_WM_COUNTER) = rng2 + 100;
                     } else {
                         *(int *)((char *)board + BRD_WM_STATE) = 0;
@@ -2508,13 +2498,13 @@ static void Feature_BadBallSpawner(void *board, int level) {
     if (ballCount >= 10 || totalSpawned >= 100) return;
 
     /* Set next spawn timer */
-    int nextDelay = RNG_call((void *)0x4F7360, 0x19, 0);
+    int nextDelay = RNG_call((void *)0x4F7360, 0, 0x19, 0);
     *(int *)((char *)board + BRD_BB_COUNTER) = nextDelay + 0x19;
 
     /* Pick random spawn position (3-slot table) */
     int posIdx;
     do {
-        posIdx = RNG_call((void *)0x4F7360, 3, 0);
+        posIdx = RNG_call((void *)0x4F7360, 0, 3, 0);
     } while (posIdx == *(int *)((char *)board + BRD_BB_LAST_IDX));
     *(int *)((char *)board + BRD_BB_LAST_IDX) = posIdx;
 
@@ -2554,8 +2544,8 @@ static void Feature_BadBallSpawner(void *board, int level) {
     /* Random direction */
     float dirX, dirZ, lenSq;
     do {
-        dirX = (float)RNG_call((void *)0x4F7360, 0x19, 1);
-        dirZ = (float)RNG_call((void *)0x4F7360, 0x32, 1);
+        dirX = (float)RNG_call((void *)0x4F7360, 0, 0x19, 1);
+        dirZ = (float)RNG_call((void *)0x4F7360, 0, 0x32, 1);
         lenSq = dirX * dirX + dirZ * dirZ;
     } while (lenSq <= 0.0f || sqrtf(lenSq) == 0.0f);
 
@@ -2698,7 +2688,7 @@ static void Feature_SkyPopcylinder(void *board, int level) {
 
     /* Reset counter and activate random popcylinders */
     *(int *)((char *)board + UNI_SKY_TIMER) = 0x4B; /* 75 */
-    int rngCase = RNG_call((void *)0x4F7360, 6, 0);
+    int rngCase = RNG_call((void *)0x4F7360, 0, 6, 0);
 
     /* Play sound at rotator position */
     DWORD rotator = *(DWORD *)((char *)board + UNI_TRAPDOOR_LIST);
@@ -2721,10 +2711,10 @@ static void Feature_SkyPopcylinder(void *board, int level) {
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_TRAPDOOR_LIST + 8));
         break;
     case 1: {
-        int n = RNG_call((void *)0x4F7360, 5, 0);
+        int n = RNG_call((void *)0x4F7360, 0, 5, 0);
         int i;
         for (i = 0; i < n + 3; i++) {
-            int idx = RNG_call((void *)0x4F7360, 0x10, 0);
+            int idx = RNG_call((void *)0x4F7360, 0, 0x10, 0);
             g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + idx * 4));
         }
         break;
@@ -2750,7 +2740,7 @@ static void Feature_SkyPopcylinder(void *board, int level) {
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + 60));
         break;
     case 4: {
-        int idx = RNG_call((void *)0x4F7360, 4, 0);
+        int idx = RNG_call((void *)0x4F7360, 0, 4, 0);
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + idx * 0x10));
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + 4 + idx * 0x10));
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + 8 + idx * 0x10));
@@ -2758,7 +2748,7 @@ static void Feature_SkyPopcylinder(void *board, int level) {
         break;
     }
     case 5: {
-        int idx = RNG_call((void *)0x4F7360, 4, 0);
+        int idx = RNG_call((void *)0x4F7360, 0, 4, 0);
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + idx * 4));
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_SKY_POPCYL_BASE + 16 + idx * 4));
         g_SceneSetRaceActive(*(int *)((char *)board + UNI_TRAPDOOR_LIST + idx * 4));
