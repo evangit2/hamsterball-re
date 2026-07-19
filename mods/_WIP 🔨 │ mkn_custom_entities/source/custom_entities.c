@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v28
+ * custom_entities.c — Hamsterball Custom Entities Mod v29
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -835,23 +835,119 @@ static void despawn_all_rotaters(DWORD board, FILE* logf) {
     g_rotater_count = 0;
 }
 
-/* Update rotation angles for all spawned rotaters — called each iteration of the main loop.
- * Writes Y rotation to obj+0x10E8 (the native field the render function reads).
+/* Update rotation direction for all spawned rotaters — called once per spawn.
+ * Writes rotY to obj+0x10EC (direction field, DWORD index 0x43B).
+ *
+ * The native render function (vtable[11] at 0x0043B330) does:
+ *   new_angle = direction * 0.004 + angle
+ *   obj[0x10E8] = new_angle   (stores back!)
+ *   if new_angle > 2.0:  direction = -1.0  (reverse)
+ *   if new_angle < -2.0: direction = +1.0  (reverse)
+ *
+ * So writing to +0x10E8 (angle) is a race condition — native render overwrites it.
+ * Instead, write rotY to +0x10EC (direction). The native render then computes:
+ *   new_angle = rotY * 0.004 + angle
+ * which gives smooth rotation at rotY multiples of native speed.
+ * rotY=1.0 → native speed, rotY=4.0 → 4x speed, rotY=-1.0 → reverse.
+ *
  * X and Z rotations are stored in the config for future render hook support. */
-static void update_rotater_angles(void) {
+static void apply_rotater_directions(void) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
         DWORD obj = g_rotater_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
 
-        /* Accumulate angles */
-        g_rotater_cfg[i].angleY += g_rotater_cfg[i].rotY;
-        g_rotater_cfg[i].angleX += g_rotater_cfg[i].rotX;
-        g_rotater_cfg[i].angleZ += g_rotater_cfg[i].rotZ;
+        /* Write rotY to the direction field — native render uses it as multiplier */
+        *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rotY;
+    }
+}
 
-        /* Write Y angle to the native field the render function reads */
-        *(float*)(obj + 0x10E8) = g_rotater_cfg[i].angleY;
+/* Scan S1 ref points for Rotater entries with custom rot tags.
+ * For each found, search the board's update list for the natively-spawned
+ * Rotator object at the matching position, and apply rotY to its direction
+ * field (+0x10EC). This does NOT spawn — native game already spawned from S1. */
+static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
+    if (!board) return;
+    DWORD sceneobj = get_sceneobj(board);
+    if (!sceneobj) return;
+
+    /* Read S1 ref points */
+    DWORD s1_list = sceneobj + 0x894;
+    if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) return;
+    int s1_count = *(int*)(s1_list + 0x04);
+    if (s1_count <= 0 || s1_count > 1000) return;
+    if (IsBadReadPtr((void*)(s1_list + 0x40C), 4)) return;
+    DWORD* s1_data = *(DWORD**)(s1_list + 0x40C);
+    if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) return;
+
+    /* Read board update list (AthenaList at board+0x2578) */
+    DWORD update_list = board + 0x2578;
+    if (IsBadReadPtr((void*)(update_list + 0x04), 4)) return;
+    int update_count = *(int*)(update_list + 0x04);
+    if (update_count <= 0 || update_count > 10000) return;
+    if (IsBadReadPtr((void*)(update_list + 0x40C), 4)) return;
+    DWORD* update_data = *(DWORD**)(update_list + 0x40C);
+    if (!update_data || IsBadReadPtr(update_data, update_count * 4)) return;
+
+    /* Known Rotator vtable addresses */
+    const DWORD rotator_vtables[] = { 0x004D5518, 0x004D5708, 0 };
+
+    int i, j;
+    for (i = 0; i < s1_count; i++) {
+        DWORD entry = s1_data[i];
+        if (!entry || entry < 0x10000) continue;
+        if (IsBadReadPtr((void*)entry, 16)) continue;
+
+        char* name = *(char**)(entry);
+        if (!name || IsBadReadPtr(name, 8)) continue;
+        if (_strnicmp(name, "Rotater", 7) != 0 &&
+            _strnicmp(name, "REF:Rotater", 11) != 0) continue;
+
+        /* Parse rotation tags */
+        char rotY_str[32] = {0};
+        extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
+        if (!rotY_str[0]) continue;  /* skip if no rotY tag */
+
+        float rotY = (float)atof(rotY_str);
+
+        /* Get S1 ref point position */
+        float px = *(float*)(entry + 0x04);
+        float py = *(float*)(entry + 0x08);
+        float pz = *(float*)(entry + 0x0C);
+
+        /* Search update list for a Rotator at this position */
+        for (j = 0; j < update_count; j++) {
+            DWORD obj = update_data[j];
+            if (!obj || obj < 0x10000) continue;
+            if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
+
+            DWORD vtable = *(DWORD*)obj;
+            int is_rotator = 0;
+            int k;
+            for (k = 0; rotator_vtables[k]; k++) {
+                if (vtable == rotator_vtables[k]) { is_rotator = 1; break; }
+            }
+            if (!is_rotator) continue;
+
+            /* Check position match (within 2.0 units) */
+            float ox = *(float*)(obj + 0x10D4);
+            float oy = *(float*)(obj + 0x10D8);
+            float oz = *(float*)(obj + 0x10DC);
+            float dx = ox - px; if (dx < 0) dx = -dx;
+            float dy = oy - py; if (dy < 0) dy = -dy;
+            float dz = oz - pz; if (dz < 0) dz = -dz;
+            if (dx < 2.0f && dy < 2.0f && dz < 2.0f) {
+                /* Found it! Write rotY to direction field */
+                *(float*)(obj + 0x10EC) = rotY;
+                if (logf) {
+                    fprintf(logf, "  ROTATER(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) rotY=%.4f applied\n",
+                            obj, px, py, pz, rotY);
+                    fflush(logf);
+                }
+                break;
+            }
+        }
     }
 }
 
@@ -935,9 +1031,11 @@ static void process_rotaters(DWORD board, FILE* logf) {
         extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
         extract_tag(name, "rotZ", rotZ_str, sizeof(rotZ_str));
 
-        /* Parse rotation speeds — default to native SWIRL if not specified */
+        /* Parse rotation speeds — default to native SWIRL if not specified.
+         * rotY is a SPEED MULTIPLIER: 1.0 = native speed (0.004 rad/frame),
+         * 4.0 = 4x speed, 0.5 = half speed, -1.0 = reverse. */
         float rotX = rotX_str[0] ? (float)atof(rotX_str) : 0.0f;
-        float rotY = rotY_str[0] ? (float)atof(rotY_str) : 0.004f;  /* native SWIRL default */
+        float rotY = rotY_str[0] ? (float)atof(rotY_str) : 1.0f;  /* native SWIRL default */
         float rotZ = rotZ_str[0] ? (float)atof(rotZ_str) : 0.0f;
 
         if (logf) {
@@ -1030,7 +1128,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v28 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v29 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -1041,13 +1139,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     Sleep(3000);
 
     while (g_running) {
-        /* Update rotater angles every iteration (smooth rotation) */
-        if (g_rotater_count > 0) {
-            update_rotater_angles();
-            Sleep(16);  /* ~60fps for smooth rotation */
-        } else {
-            Sleep(100);
-        }
+        /* Rotater directions are set once at spawn time, no per-frame update needed */
 
         DWORD board = get_board();
         if (!board) continue;
@@ -1078,6 +1170,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         /* Process REF:Rotater entries — spawn SWIRL at each position */
         process_rotaters(board, logf);
 
+        /* Apply custom rotation directions to spawned rotaters */
+        apply_rotater_directions();
+
+        /* Apply S1 rot tags to natively-spawned Rotators */
+        apply_s1_rotater_tags(board, logf);
+
         /* Find GRID reference points */
         float grid_x[32], grid_y[32], grid_z[32];
         int grid_count = find_grid_points(board, grid_x, grid_y, grid_z, 32, logf);
@@ -1103,7 +1201,6 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 while (waited < wait_ms) {
                     Sleep(100);
                     waited += 100;
-                    update_rotater_angles();  /* keep rotation smooth during grid wait */
                     if (!g_running || board != get_board()) break;
                 }
                 if (!g_running || board != get_board()) break;
