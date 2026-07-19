@@ -2331,20 +2331,11 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)((char *)board + BRD_SWIRL1_POS_X),
             *(float *)((char *)board + BRD_SWIRL1_POS_Y),
             *(float *)((char *)board + BRD_SWIRL1_POS_Z));
-        DebugLog("  [swirl] step3a: Gfx calls done, calling vtable render");
-        /* Call vtable[0x58] (render) and [0x54] (update) on primary mesh */
-        {
-            DWORD mesh1 = *(DWORD *)((char *)board + BRD_SWIRL_MESH1);
-            if (mesh1 && !IsBadReadPtr((void*)mesh1, 0x438)) {
-                DWORD *vtbl = *(DWORD **)mesh1;
-                if (vtbl && !IsBadReadPtr(vtbl, 0x5C)) {
-                    void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))vtbl[0x16];
-                    void (__thiscall *fn54)(DWORD) = (void (__thiscall *)(DWORD))vtbl[0x15];
-                    if (fn58) fn58(mesh1);
-                    if (fn54) fn54(mesh1);
-                }
-            }
-        }
+        DebugLog("  [swirl] step3a: Gfx calls done, vtable render skipped (intermittent crash 0x498D9D)");
+        /* Vtable calls SKIPPED — the mesh's spatial tree data is intermittently
+         * corrupt, causing crash at 0x498D9D (FUN_00498BF0 spatial tree builder).
+         * Sometimes works, sometimes crashes. Need proper mesh registration
+         * via Scene_ResetObjectSlots before re-enabling. */
         DebugLog("  [swirl] step3a done");
 
         g_TimerCleanup(timerBuf);
