@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v44
+ * custom_entities.c — Hamsterball Custom Entities Mod v45
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1177,6 +1177,18 @@ static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
  * NOTE: Do NOT scan S1 ref points — the game's native vtable[33] handler
  * already spawns Rotators from S1 entries named "Rotater". Scanning S1 would
  * create duplicate objects (double SWIRL). Only section-3 entries are ours. */
+/* Case-insensitive substring search (MinGW doesn't have _stristr) */
+static char* my_stristr(const char* haystack, const char* needle) {
+    if (!haystack || !needle) return NULL;
+    size_t nlen = strlen(needle);
+    if (nlen == 0) return (char*)haystack;
+    for (; *haystack; haystack++) {
+        if (_strnicmp(haystack, needle, nlen) == 0)
+            return (char*)haystack;
+    }
+    return NULL;
+}
+
 static void process_rotaters(DWORD board, FILE* logf) {
     if (!board) return;
 
@@ -1220,76 +1232,92 @@ static void process_rotaters(DWORD board, FILE* logf) {
         float py = *(float*)(obj_ptr + 0x08);
         float pz = *(float*)(obj_ptr + 0x0C);
 
-        /* Parse tags from the object name */
-        char mesh_path[128] = {0};
-        char rot_x_str[32] = {0};
-        char rot_y_str[32] = {0};
-        char rot_z_str[32] = {0};
-        char ros_x_str[32] = {0};
-        char ros_y_str[32] = {0};
-        char ros_z_str[32] = {0};
-        char ai_str[32] = {0};
-
-        extract_dat_prop(name, "MESH", mesh_path, sizeof(mesh_path));
-
-        /* Normalize mesh path: strip quotes, replace forward slashes with backslashes */
-        if (mesh_path[0]) {
-            /* Strip leading/trailing double-quotes */
-            char* p = mesh_path;
-            while (*p == '"') p++;
-            size_t len = strlen(p);
-            while (len > 0 && p[len-1] == '"') { p[--len] = 0; }
-            /* Move stripped path to front if needed */
-            if (p != mesh_path) memmove(mesh_path, p, len + 1);
-            /* Replace forward slashes with backslashes */
-            for (p = mesh_path; *p; p++) {
-                if (*p == '/') *p = '\\';
-            }
-            /* If path has no directory separator, prepend "levels\" */
-            if (!strchr(mesh_path, '\\') && !strchr(mesh_path, ':')) {
-                char tmp[128];
-                snprintf(tmp, sizeof(tmp), "levels\\%s", mesh_path);
-                strncpy(mesh_path, tmp, 127);
-                mesh_path[127] = 0;
+        /* Parse <ENTITY> name </ENTITY> from the object name */
+        char entity_name[64] = {0};
+        {
+            char* ent_start = my_stristr(name, "<ENTITY>");
+            if (ent_start) {
+                ent_start += 7;  /* skip "<ENTITY>" */
+                /* skip whitespace */
+                while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
+                char* ent_end = my_stristr(ent_start, "</ENTITY>");
+                if (!ent_end) ent_end = ent_start + strlen(ent_start);  /* no closing tag */
+                size_t ent_len = ent_end - ent_start;
+                if (ent_len > 0 && ent_len < 64) {
+                    strncpy(entity_name, ent_start, ent_len);
+                    entity_name[ent_len] = 0;
+                    /* trim trailing whitespace */
+                    while (ent_len > 0 && (entity_name[ent_len-1] == ' ' || entity_name[ent_len-1] == '\t'))
+                        entity_name[--ent_len] = 0;
+                }
             }
         }
-        extract_dat_prop(name, "ROT_X", rot_x_str, sizeof(rot_x_str));
-        extract_dat_prop(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
-        extract_dat_prop(name, "ROT_Z", rot_z_str, sizeof(rot_z_str));
-        extract_dat_prop(name, "ROS_X", ros_x_str, sizeof(ros_x_str));
-        extract_dat_prop(name, "ROS_Y", ros_y_str, sizeof(ros_y_str));
-        extract_dat_prop(name, "ROS_Z", ros_z_str, sizeof(ros_z_str));
-        extract_dat_prop(name, "AI", ai_str, sizeof(ai_str));
 
-        /* Parse rotation speeds — default to native SWIRL if not specified.
-         * ROT_Y is a SPEED MULTIPLIER: 1.0 = native speed (0.004 rad/frame),
-         * 4.0 = 4x speed, 0.5 = half speed, -1.0 = reverse. */
-        float rot_x = rot_x_str[0] ? (float)atof(rot_x_str) : 0.0f;
-        float rot_y = rot_y_str[0] ? (float)atof(rot_y_str) : 1.0f;  /* native SWIRL default */
-        float rot_z = rot_z_str[0] ? (float)atof(rot_z_str) : 0.0f;
+        if (!entity_name[0]) continue;  /* skip if no <ENTITY> tag */
 
-        /* Parse oscillation ranges — default 2.0 radians (native SWIRL behavior).
-         * Uses absolute value so negative inputs are treated as positive.
-         * ROS_Y=0.0 means constant rotation (no oscillation limit). */
-        float ros_x = ros_x_str[0] ? (float)fabs(atof(ros_x_str)) : 2.0f;
-        float ros_y = ros_y_str[0] ? (float)fabs(atof(ros_y_str)) : 2.0f;
-        float ros_z = ros_z_str[0] ? (float)fabs(atof(ros_z_str)) : 2.0f;
+        /* Load entity definition from Centities/<name>.txt */
+        char txt_path[256];
+        snprintf(txt_path, sizeof(txt_path), "%s\\Centities\\%s.txt", g_game_dir, entity_name);
 
-        /* Parse AI type — default 6 (SWIRL) if not specified */
-        int ai_type = ai_str[0] ? atoi(ai_str) : 6;
-        if (ai_type < 0) ai_type = 0;
-        if (ai_type > 6) ai_type = 6;
+        /* Defaults */
+        int ai_type = 6;
+        char mesh_path[128] = {0};
+        float rot_y = 1.0f;
+        float ros_y = 2.0f;
+
+        /* Parse the .txt file */
+        {
+            FILE* ef = NULL;
+            fopen_s(&ef, txt_path, "r");
+            if (ef) {
+                char line[256];
+                while (fgets(line, sizeof(line), ef)) {
+                    /* Skip comments and blank lines */
+                    char* p = line;
+                    while (*p == ' ' || *p == '\t') p++;
+                    if (*p == '#' || *p == '\n' || *p == '\r' || *p == 0) continue;
+
+                    /* Parse KEY VALUE */
+                    char key[32] = {0};
+                    char val[128] = {0};
+                    if (sscanf(p, "%31s %127s", key, val) >= 2) {
+                        if (_stricmp(key, "CTOR_TYPE") == 0) {
+                            ai_type = atoi(val);
+                            if (ai_type < 0) ai_type = 0;
+                            if (ai_type > 6) ai_type = 6;
+                        } else if (_stricmp(key, "MESH") == 0) {
+                            strncpy(mesh_path, val, 127);
+                        } else if (_stricmp(key, "ROT_Y") == 0) {
+                            rot_y = (float)atof(val);
+                        } else if (_stricmp(key, "ROS_Y") == 0) {
+                            ros_y = (float)fabs(atof(val));
+                        }
+                    }
+                }
+                fclose(ef);
+            } else {
+                if (logf) fprintf(logf, "  ENTITY: %s.txt not found at %s\n", entity_name, txt_path);
+                continue;  /* skip if .txt not found */
+            }
+        }
+
+        /* Build full mesh path: Centities\<mesh_file> */
+        char full_mesh_path[256];
+        if (mesh_path[0]) {
+            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s", mesh_path);
+        } else {
+            /* Default: use entity name */
+            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s.MESHWORLD", entity_name);
+        }
 
         if (logf) {
-            fprintf(logf, "  ROTATER: found '%s' at (%.1f, %.1f, %.1f)\n", name, px, py, pz);
-            fprintf(logf, "    MESH='%s' AI=%d ROT_X=%.4f ROT_Y=%.4f ROT_Z=%.4f ROS=(%.1f, %.1f, %.1f)\n",
-                    mesh_path[0] ? mesh_path : "(default)", ai_type, rot_x, rot_y, rot_z,
-                    ros_x, ros_y, ros_z);
+            fprintf(logf, "  ENTITY: '%s' at (%.1f, %.1f, %.1f) → CTOR=%d MESH='%s' ROT_Y=%.4f ROS_Y=%.1f\n",
+                    entity_name, px, py, pz, ai_type, full_mesh_path, rot_y, ros_y);
         }
 
-        spawn_rotater_at(board, px, py, pz, mesh_path,
-                         rot_x, rot_y, rot_z,
-                         ros_x, ros_y, ros_z,
+        spawn_rotater_at(board, px, py, pz, full_mesh_path,
+                         0.0f, rot_y, 0.0f,
+                         2.0f, ros_y, 2.0f,
                          ai_type,
                          logf);
         found++;
@@ -1375,7 +1403,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v44 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v45 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
