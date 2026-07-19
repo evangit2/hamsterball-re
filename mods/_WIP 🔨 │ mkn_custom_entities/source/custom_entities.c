@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v41
+ * custom_entities.c — Hamsterball Custom Entities Mod v42
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -848,28 +848,36 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             return;
         }
     } else {
-        /* AI 0-5: PopCylinder_ctor with Impossible vtable for AI 1-5.
-         * Allocate ROTATER_SIZE (0x1508) instead of POPCYLINDER_SIZE (0x10D0)
-         * so the Impossible vtable's render function doesn't read out of bounds.
-         * The extra bytes are zeroed, which is safe. */
-        DWORD alloc_size = (ai_type >= 1 && ai_type <= 5) ? ROTATER_SIZE : POPCYLINDER_SIZE;
-        obj = pfn_operator_new(alloc_size);
-        if (!obj) {
-            if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
-            return;
-        }
-        memset(obj, 0, alloc_size);
-        void* result = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
-        if (!result) {
-            if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n");
-            return;
-        }
-        /* For AI 1-5: override vtable to Impossible object vtable (0x004D21C0).
-         * This gives the object native Impossible-race behavior (pendulum swing,
-         * rotation, etc.). The mesh determines which visual object appears.
-         * The vtable provides the update/render behavior. */
+        /* AI 0-5: Use Rotator_ctor_Impossible for AI 1-5 (proper initialization).
+         * PopCylinder_ctor doesn't initialize fields the Impossible vtable
+         * expects → crash at 0x0046333F during Update.
+         * Rotator_ctor_Impossible creates a properly initialized 0x1508 byte
+         * object with vtable 0x004D5518. The mesh determines visual appearance. */
         if (ai_type >= 1 && ai_type <= 5) {
-            *(DWORD*)obj = 0x004D21C0;
+            obj = pfn_operator_new(ROTATER_SIZE);
+            if (!obj) {
+                if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
+                return;
+            }
+            memset(obj, 0, ROTATER_SIZE);
+            void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
+            if (!result) {
+                if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed for AI %d\n", ai_type);
+                return;
+            }
+        } else {
+            /* AI 0: static PopCylinder (no rotation) */
+            obj = pfn_operator_new(POPCYLINDER_SIZE);
+            if (!obj) {
+                if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
+                return;
+            }
+            memset(obj, 0, POPCYLINDER_SIZE);
+            void* result = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
+            if (!result) {
+                if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n");
+                return;
+            }
         }
     }
 
@@ -1365,7 +1373,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v41 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v42 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
