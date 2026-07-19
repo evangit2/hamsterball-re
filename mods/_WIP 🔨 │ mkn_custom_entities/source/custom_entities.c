@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v31
+ * custom_entities.c — Hamsterball Custom Entities Mod v32
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -968,8 +968,8 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
 
         char* name = *(char**)(entry);
         if (!name || IsBadReadPtr(name, 8)) continue;
-        if (_strnicmp(name, "custom_obj", 10) != 0 &&
-            _strnicmp(name, "REF:custom_obj", 15) != 0) continue;
+        if (_strnicmp(name, "C_entity", 8) != 0 &&
+            _strnicmp(name, "REF:C_entity", 13) != 0) continue;
 
         /* Parse rotation tags from <DAT> block */
         char rot_y_str[32] = {0};
@@ -1052,9 +1052,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
         if (!name || IsBadReadPtr(name, 8)) continue;
 
         /* Check for Rotater (case-insensitive, prefix match — name may include tags) */
-        if (_strnicmp(name, "REF:custom_obj", 15) == 0  /* REF:custom_obj or REF:custom_obj_NNN */) {
+        if (_strnicmp(name, "REF:C_entity", 13) == 0  /* REF:custom_obj or REF:custom_obj_NNN */) {
             /* Full match "REF:Rotater" — tags start at name+11 */
-        } else if (_strnicmp(name, "custom_obj", 10) == 0  /* custom_obj or custom_obj_NNN */) {
+        } else if (_strnicmp(name, "C_entity", 8) == 0  /* custom_obj or custom_obj_NNN */) {
             /* Plain "Rotater" — tags start at name+7 */
         } else {
             continue;
@@ -1212,7 +1212,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v31 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v32 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
