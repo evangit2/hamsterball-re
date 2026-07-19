@@ -2346,11 +2346,10 @@ static void Feature_SwirlZones(void *board, int level) {
             }
         }
         DebugLog("  [swirl] step3a done");
-         * applied but the mesh won't rotate until properly initialized. */
 
         g_TimerCleanup(timerBuf);
         }
-        DebugLog("  [swirl] step3a done");
+        DebugLog("  [swirl] step3a done (full)");
     }
 
     /* Dizzy: secondary swirl mesh rotation (Gfx_ScaleX) */
