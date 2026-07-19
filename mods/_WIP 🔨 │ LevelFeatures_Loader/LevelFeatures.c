@@ -2083,12 +2083,33 @@ static void Feature_SwirlZones(void *board, int level) {
     int swirlListOfs = (level == 14) ? BRD_SWIRL_LIST_M : BRD_SWIRL_LIST;
     int tarListOfs = (level == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
 
-    /* TarBubble particle creation — DISABLED.
-     * The Step 6 scan adds S1 ref points (not real TarBubble objects) to the
-     * list. CreateTarBubble reads their fields as if they were TarBubble objects,
-     * gets garbage, and crashes at 0x45CD8C.
-     * TODO: create proper TarBubble objects in CreateDynamicObjects instead. */
-    DebugLog("  [swirl] step1: tarbubble check (skipped — needs proper TarBubble objects)");
+    /* TarBubble particle creation — replicates original DizzyBoard_Update.
+     * RNG returns 10 (1 in 20 chance per frame) → create a tarbubble particle.
+     * FUN_0044fa90 picks a random entry from the tarbubble list and reads
+     * entry+0x04/0x08/0x0C as X/Y/Z floats. S1 ref points have this layout.
+     * The particle is appended to UNI_PARTICLE_LIST for rendering. */
+    DebugLog("  [swirl] step1: tarbubble check");
+    if (g_CreateTarBubble && g_AthenaListAppend && g_operatorNew && g_RNG) {
+        DWORD *tarList = (DWORD *)((char *)board + tarListOfs);
+        int tarCount = 0;
+        if (!IsBadReadPtr(tarList, 0x410)) {
+            tarCount = *(int *)(tarList + 1);  /* count at +0x04 */
+        }
+        {
+            char dbg[128];
+            wsprintfA(dbg, "  [swirl] step1: tarCount=%d tarListOfs=0x%X", tarCount, tarListOfs);
+            DebugLog(dbg);
+        }
+        if (tarCount > 0 && g_RNG((void *)0x4F7360, 0x14, 0) == 10) {
+            void *tar = g_operatorNew(0x1C);
+            if (tar) {
+                DebugLog("  [swirl] step1: calling CreateTarBubble");
+                g_CreateTarBubble(tar, app, (int)((char *)board + tarListOfs));
+                g_AthenaListAppend((void *)((char *)board + UNI_PARTICLE_LIST), (int)tar);
+                DebugLog("  [swirl] step1: CreateTarBubble done");
+            }
+        }
+    }
     DebugLog("  [swirl] step1 done");
 
     /* Swirl zone processing: iterate ball list, check proximity to swirl zones
