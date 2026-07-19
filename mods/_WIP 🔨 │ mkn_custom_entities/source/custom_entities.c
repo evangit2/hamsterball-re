@@ -118,7 +118,20 @@ static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
 
 /* Rotater spawned objects tracking */
 #define MAX_ROTATERS 16
-static DWORD g_rotaters[MAX_ROTATERS];
+
+/* Per-rotater config: mesh path and rotation speeds */
+typedef struct {
+    DWORD obj;              /* spawned object pointer */
+    char  mesh_path[128];   /* custom mesh path (empty = default Level3-Swirl) */
+    float rotX;             /* X-axis rotation speed (radians/frame) */
+    float rotY;             /* Y-axis rotation speed (radians/frame) */
+    float rotZ;             /* Z-axis rotation speed (radians/frame) */
+    float angleX;           /* accumulated X angle */
+    float angleY;           /* accumulated Y angle */
+    float angleZ;           /* accumulated Z angle */
+} RotaterConfig;
+
+static RotaterConfig g_rotater_cfg[MAX_ROTATERS];
 static int   g_rotater_count = 0;
 static DWORD g_rotater_board = 0;
 
@@ -700,7 +713,9 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
  * MeshWorld_ctor, creates Rotator_ctor_Impossible, registers in board lists.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void spawn_rotater_at(DWORD board, float px, float py, float pz, FILE* logf) {
+static void spawn_rotater_at(DWORD board, float px, float py, float pz,
+                              const char* mesh_path, float rotX, float rotY, float rotZ,
+                              FILE* logf) {
     if (!board) return;
 
     /* 1. Get gfx_device from App */
@@ -709,7 +724,15 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz, FILE* lo
     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
     if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
 
-    /* 2. Load SWIRL mesh via MeshWorld_ctor using game's Level3-Swirl path */
+    /* 2. Determine mesh path — use custom path if provided, else default SWIRL */
+    const char* path = (mesh_path && mesh_path[0]) ? mesh_path : g_swirl_mesh_path;
+
+    /* Allocate a mutable copy of the path for MeshWorld_ctor */
+    char path_buf[256];
+    strncpy(path_buf, path, 255);
+    path_buf[255] = 0;
+
+    /* 3. Load mesh via MeshWorld_ctor */
     void* mesh = pfn_operator_new(MESHWORLD_SIZE);
     if (!mesh) {
         if (logf) fprintf(logf, "  ROTATER: failed to alloc mesh\n");
@@ -717,9 +740,9 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz, FILE* lo
     }
     memset(mesh, 0, MESHWORLD_SIZE);
 
-    void* loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, g_swirl_mesh_path);
+    void* loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, path_buf);
     if (!loaded_mesh) {
-        if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s'\n", g_swirl_mesh_path);
+        if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s'\n", path_buf);
         return;
     }
 
@@ -766,13 +789,26 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz, FILE* lo
     }
 
     if (logf) {
-        fprintf(logf, "  ROTATER: spawned SWIRL at (%.1f,%.1f,%.1f) obj=0x%08X\n", px, py, pz, (DWORD)obj);
+        fprintf(logf, "  ROTATER: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f, %.4f, %.4f)\n",
+                px, py, pz, (DWORD)obj, path_buf, rotX, rotY, rotZ);
         fflush(logf);
     }
 
-    /* Track for despawn */
+    /* Track for despawn + per-frame rotation updates */
     if (g_rotater_count < MAX_ROTATERS) {
-        g_rotaters[g_rotater_count] = (DWORD)obj;
+        g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
+        g_rotater_cfg[g_rotater_count].rotX = rotX;
+        g_rotater_cfg[g_rotater_count].rotY = rotY;
+        g_rotater_cfg[g_rotater_count].rotZ = rotZ;
+        g_rotater_cfg[g_rotater_count].angleX = 0.0f;
+        g_rotater_cfg[g_rotater_count].angleY = 0.0f;
+        g_rotater_cfg[g_rotater_count].angleZ = 0.0f;
+        if (mesh_path && mesh_path[0]) {
+            strncpy(g_rotater_cfg[g_rotater_count].mesh_path, mesh_path, 127);
+            g_rotater_cfg[g_rotater_count].mesh_path[127] = 0;
+        } else {
+            g_rotater_cfg[g_rotater_count].mesh_path[0] = 0;
+        }
         g_rotater_count++;
     }
 }
@@ -781,7 +817,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz, FILE* lo
 static void despawn_all_rotaters(DWORD board, FILE* logf) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
-        DWORD obj = g_rotaters[i];
+        DWORD obj = g_rotater_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10D0)) continue;
 
@@ -797,6 +833,26 @@ static void despawn_all_rotaters(DWORD board, FILE* logf) {
         }
     }
     g_rotater_count = 0;
+}
+
+/* Update rotation angles for all spawned rotaters — called each iteration of the main loop.
+ * Writes Y rotation to obj+0x10E8 (the native field the render function reads).
+ * X and Z rotations are stored in the config for future render hook support. */
+static void update_rotater_angles(void) {
+    int i;
+    for (i = 0; i < g_rotater_count; i++) {
+        DWORD obj = g_rotater_cfg[i].obj;
+        if (!obj || obj < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
+
+        /* Accumulate angles */
+        g_rotater_cfg[i].angleY += g_rotater_cfg[i].rotY;
+        g_rotater_cfg[i].angleX += g_rotater_cfg[i].rotX;
+        g_rotater_cfg[i].angleZ += g_rotater_cfg[i].rotZ;
+
+        /* Write Y angle to the native field the render function reads */
+        *(float*)(obj + 0x10E8) = g_rotater_cfg[i].angleY;
+    }
 }
 
 /* Scan section 3 for REF:Rotater entries and spawn SWIRL at each position */
@@ -842,9 +898,29 @@ static void process_rotaters(DWORD board, FILE* logf) {
         float py = *(float*)(obj_ptr + 0x08);
         float pz = *(float*)(obj_ptr + 0x0C);
 
-        if (logf) fprintf(logf, "  ROTATER: found REF:Rotater at (%.1f, %.1f, %.1f)\n", px, py, pz);
+        /* Parse tags from the object name */
+        char mesh_path[128] = {0};
+        char rotX_str[32] = {0};
+        char rotY_str[32] = {0};
+        char rotZ_str[32] = {0};
 
-        spawn_rotater_at(board, px, py, pz, logf);
+        extract_tag(name, "MESH", mesh_path, sizeof(mesh_path));
+        extract_tag(name, "rotX", rotX_str, sizeof(rotX_str));
+        extract_tag(name, "rotY", rotY_str, sizeof(rotY_str));
+        extract_tag(name, "rotZ", rotZ_str, sizeof(rotZ_str));
+
+        /* Parse rotation speeds — default to native SWIRL if not specified */
+        float rotX = rotX_str[0] ? (float)atof(rotX_str) : 0.0f;
+        float rotY = rotY_str[0] ? (float)atof(rotY_str) : 0.004f;  /* native SWIRL default */
+        float rotZ = rotZ_str[0] ? (float)atof(rotZ_str) : 0.0f;
+
+        if (logf) {
+            fprintf(logf, "  ROTATER: found '%s' at (%.1f, %.1f, %.1f)\n", name, px, py, pz);
+            fprintf(logf, "    <MESH>='%s' <rotX>=%.4f <rotY>=%.4f <rotZ>=%.4f\n",
+                    mesh_path[0] ? mesh_path : "(default)", rotX, rotY, rotZ);
+        }
+
+        spawn_rotater_at(board, px, py, pz, mesh_path, rotX, rotY, rotZ, logf);
         found++;
     }
 
