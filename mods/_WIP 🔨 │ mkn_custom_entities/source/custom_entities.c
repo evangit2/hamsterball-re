@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v42
+ * custom_entities.c — Hamsterball Custom Entities Mod v43
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -85,6 +85,9 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define MESHWORLD_SIZE          0x10D0
 #define POPCYLINDER_SIZE        0x10D0
 #define ROTATER_SIZE            0x1508  /* Rotator_ctor_Impossible alloc size */
+#define PENDULUM_SIZE           0x1504
+#define LOOPER_SIZE             0x1500
+#define GEAR_SIZE               0x1514
 #define SPATIALTREE_SIZE        68
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -113,6 +116,9 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 /* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
 typedef void* (__thiscall *Rotator_ctor_t)(void* this_, void* board, float posX, float posY, float posZ, void* mesh);
 static Rotator_ctor_t pfn_Rotator_ctor = (Rotator_ctor_t)0x00435940;
+static Rotator_ctor_t pfn_Pendulum_ctor = (Rotator_ctor_t)0x437700;
+static Rotator_ctor_t pfn_Looper_ctor = (Rotator_ctor_t)0x437460;
+static Rotator_ctor_t pfn_Gear_ctor = (Rotator_ctor_t)0x437690;
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -848,38 +854,34 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             return;
         }
     } else {
-        /* AI 0-5: Use Rotator_ctor_Impossible for AI 1-5 (proper initialization).
-         * PopCylinder_ctor doesn't initialize fields the Impossible vtable
-         * expects → crash at 0x0046333F during Update.
-         * Rotator_ctor_Impossible creates a properly initialized 0x1508 byte
-         * object with vtable 0x004D5518. The mesh determines visual appearance. */
-        if (ai_type >= 1 && ai_type <= 5) {
-            obj = pfn_operator_new(ROTATER_SIZE);
-            if (!obj) {
-                if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
-                return;
-            }
-            memset(obj, 0, ROTATER_SIZE);
-            void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
-            if (!result) {
-                if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed for AI %d\n", ai_type);
-                return;
-            }
-        } else {
-            /* AI 0: static PopCylinder (no rotation) */
-            obj = pfn_operator_new(POPCYLINDER_SIZE);
-            if (!obj) {
-                if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
-                return;
-            }
-            memset(obj, 0, POPCYLINDER_SIZE);
-            void* result = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
-            if (!result) {
-                if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n");
-                return;
-            }
+        /* AI 0-5: Use the correct constructor per AI type.
+         * Each constructor initializes the object with the correct vtable
+         * and rotation axis (Pendulum=X, Rotator=Y, Looper=Z, etc.). */
+        Rotator_ctor_t ctor_fn = NULL;
+        DWORD alloc_sz = 0;
+        
+        switch (ai_type) {
+            case 1:  ctor_fn = pfn_Rotator_ctor;  alloc_sz = ROTATER_SIZE;   break; /* Rotator (Y-axis) */
+            case 2:  ctor_fn = pfn_Pendulum_ctor; alloc_sz = PENDULUM_SIZE;  break; /* Pendulum (X-axis) */
+            case 3:  ctor_fn = pfn_Looper_ctor;   alloc_sz = LOOPER_SIZE;    break; /* Looper (Z-axis) */
+            case 4:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Small */
+            case 5:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Big */
+            default: /* AI 0: static PopCylinder */
+                obj = pfn_operator_new(POPCYLINDER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc\n"); return; }
+                memset(obj, 0, POPCYLINDER_SIZE);
+                void* result0 = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
+                if (!result0) { if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n"); return; }
+                goto spawn_done;
         }
+        
+        obj = pfn_operator_new(alloc_sz);
+        if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc (%d bytes)\n", alloc_sz); return; }
+        memset(obj, 0, alloc_sz);
+        void* result = ctor_fn(obj, (void*)board, px, py, pz, mesh);
+        if (!result) { if (logf) fprintf(logf, "  ROTATER: ctor failed for AI %d\n", ai_type); return; }
     }
+    spawn_done:;
 
     /* 5. Add to board+0x2578 (update list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
@@ -1373,7 +1375,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v42 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v43 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
