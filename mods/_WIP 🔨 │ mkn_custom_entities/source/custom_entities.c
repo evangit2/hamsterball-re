@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v35
+ * custom_entities.c — Hamsterball Custom Entities Mod v36
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -930,6 +930,21 @@ static void apply_rotater_directions(void) {
     }
 }
 
+/* Per-frame override for objects with ROS_Y=0 (constant rotation).
+ * The native render flips direction at ±2.0 radians. For ROS_Y=0,
+ * we rewrite ROT_Y to the direction field every frame to prevent
+ * the oscillation reversal, keeping rotation constant. */
+static void update_constant_rotations(void) {
+    int i;
+    for (i = 0; i < g_rotater_count; i++) {
+        if (g_rotater_cfg[i].ros_y != 0.0f) continue;  /* only for ROS_Y=0 */
+        DWORD obj = g_rotater_cfg[i].obj;
+        if (!obj || obj < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
+        *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
+    }
+}
+
 /* Scan S1 ref points for Rotater entries with custom rot tags.
  * For each found, search the board's update list for the natively-spawned
  * Rotator object at the matching position, and apply ROT_Y to its direction
@@ -973,10 +988,13 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
 
         /* Parse rotation tags from <DAT> block */
         char rot_y_str[32] = {0};
+        char ros_y_str[32] = {0};
         extract_dat_prop(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
+        extract_dat_prop(name, "ROS_Y", ros_y_str, sizeof(ros_y_str));
         if (!rot_y_str[0]) continue;  /* skip if no ROT_Y tag */
 
         float rot_y = (float)atof(rot_y_str);
+        float ros_y = ros_y_str[0] ? (float)fabs(atof(ros_y_str)) : 2.0f;
 
         /* Get S1 ref point position */
         float px = *(float*)(entry + 0x04);
@@ -1007,9 +1025,22 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
             if (dx < 2.0f && dy < 2.0f && dz < 2.0f) {
                 /* Found it! Write ROT_Y to direction field */
                 *(float*)(obj + 0x10EC) = rot_y;
+
+                /* If ROS_Y=0, store for per-frame direction override
+                 * (native render flips direction at ±2.0, we need to
+                 * continuously rewrite it to prevent oscillation) */
+                if (ros_y == 0.0f && g_rotater_count < MAX_ROTATERS) {
+                    g_rotater_cfg[g_rotater_count].obj = obj;
+                    g_rotater_cfg[g_rotater_count].rot_y = rot_y;
+                    g_rotater_cfg[g_rotater_count].ros_y = 0.0f;
+                    g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
+                    g_rotater_cfg[g_rotater_count].mesh_path[0] = 0;
+                    g_rotater_count++;
+                }
+
                 if (logf) {
-                    fprintf(logf, "  ROTATER(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f applied\n",
-                            obj, px, py, pz, rot_y);
+                    fprintf(logf, "  ROTATER(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f ROS_Y=%.1f applied\n",
+                            obj, px, py, pz, rot_y, ros_y);
                     fflush(logf);
                 }
                 break;
@@ -1276,7 +1307,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v35 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v36 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -1287,7 +1318,11 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     Sleep(3000);
 
     while (g_running) {
-        /* Rotater directions are set once at spawn time, no per-frame update needed */
+        /* Per-frame: override direction for ROS_Y=0 objects to prevent oscillation */
+        update_constant_rotations();
+
+        /* Small sleep to avoid hogging CPU */
+        Sleep(16);  /* ~60fps */
 
         DWORD board = get_board();
         if (!board) continue;
