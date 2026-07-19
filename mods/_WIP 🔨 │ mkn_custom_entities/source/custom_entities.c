@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v36
+ * custom_entities.c — Hamsterball Custom Entities Mod v37
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -984,7 +984,9 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
         char* name = *(char**)(entry);
         if (!name || IsBadReadPtr(name, 8)) continue;
         if (_strnicmp(name, "cEnt", 4) != 0 &&
-            _strnicmp(name, "REF:cEnt", 8) != 0) continue;
+            _strnicmp(name, "REF:cEnt", 8) != 0 &&
+            _strnicmp(name, "C_entity", 8) != 0 &&
+            _strnicmp(name, "REF:C_entity", 13) != 0) continue;
 
         /* Parse rotation tags from <DAT> block */
         char rot_y_str[32] = {0};
@@ -1096,7 +1098,8 @@ static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
         if (!name || IsBadReadPtr(name, 8)) continue;
 
         /* Check if name starts with "cEnt" or "REF:cEnt" (case-insensitive) */
-        if (_strnicmp(name, "cEnt", 4) != 0) continue;
+        if (_strnicmp(name, "cEnt", 4) != 0 &&
+            _strnicmp(name, "C_entity", 8) != 0) continue;
 
         /* Zero the render context for this meshbuffer (0x50 bytes) */
         DWORD rc_addr = rc_array + i * 0x50;
@@ -1307,7 +1310,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v36 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v37 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
