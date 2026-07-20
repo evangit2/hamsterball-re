@@ -5448,12 +5448,15 @@ static void UniversalConstructor(void *board, int raceIndex) {
     UniversalPostSetup(board);
     DebugLog("UniversalPostSetup done");
 
-    /* Diagnostic: verify mesh pointers survived post-setup */
+    /* Diagnostic: verify mesh pointers survived post-setup.
+     * UNI_BONK_STORE (0x8620) and UNI_SAW2_OBJ (0x862C) are generic mesh
+     * slots — they hold different objects per level (Tipper for Dizzy,
+     * Bridge for Intermediate/Expert, Spinny for Toob, etc.) */
     {
-        DWORD tipperMesh = *(DWORD *)((char *)board + UNI_BONK_STORE);
-        DWORD gluebieMesh = *(DWORD *)((char *)board + UNI_SAW2_OBJ);
+        DWORD mesh0x8620 = *(DWORD *)((char *)board + UNI_BONK_STORE);
+        DWORD mesh0x862C = *(DWORD *)((char *)board + UNI_SAW2_OBJ);
         char dbg[256];
-        wsprintfA(dbg, "Pre-Board_Setup mesh check: Tipper(0x8620)=0x%08X Gluebie(0x862C)=0x%08X", tipperMesh, gluebieMesh);
+        wsprintfA(dbg, "Pre-Board_Setup mesh check: [0x8620]=0x%08X [0x862C]=0x%08X", mesh0x8620, mesh0x862C);
         DebugLog(dbg);
     }
 
