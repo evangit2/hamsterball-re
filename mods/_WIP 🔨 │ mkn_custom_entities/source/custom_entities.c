@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v48
+ * custom_entities.c — Hamsterball Custom Entities Mod v49
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1560,12 +1560,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
 
                         entity_def_t def;
                         if (!load_entity_def(txt_path, &def, logf)) continue;
-
+                        /* Build full mesh path: Levels\<mesh_file> */
                         char full_mesh_path[256];
                         if (def.mesh_file[0]) {
-                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s", def.mesh_file);
+                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s", def.mesh_file);
                         } else {
-                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s.MESHWORLD", entity_name);
+                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s.MESHWORLD", entity_name);
                         }
 
                         if (logf) {
@@ -1670,20 +1670,19 @@ static void process_rotaters(DWORD board, FILE* logf) {
 
         if (!entity_name[0]) continue;  /* skip if no <ENTITY> tag */
 
-        /* Load entity definition from Centities/<name>.txt */
+        /* Load entity definition from Levels\<name>.txt */
         char txt_path[256];
-        snprintf(txt_path, sizeof(txt_path), "%s\\Centities\\%s.txt", g_game_dir, entity_name);
+        snprintf(txt_path, sizeof(txt_path), "%s\\Levels\\%s.txt", g_game_dir, entity_name);
 
         entity_def_t def;
         if (!load_entity_def(txt_path, &def, logf)) continue;
 
-        /* Build full mesh path: Centities\<mesh_file> */
+        /* Build full mesh path: Levels\<mesh_file> */
         char full_mesh_path[256];
         if (def.mesh_file[0]) {
-            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s", def.mesh_file);
+            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s", def.mesh_file);
         } else {
-            /* v46: Default mesh is _default.MESHWORLD (not entity_name.MESHWORLD) */
-            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\_default.MESHWORLD");
+            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s.MESHWORLD", entity_name);
         }
 
         if (logf) {
@@ -1819,7 +1818,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v48 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v49 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
