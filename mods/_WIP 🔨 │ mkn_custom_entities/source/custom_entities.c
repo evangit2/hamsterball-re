@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v45
+ * custom_entities.c — Hamsterball Custom Entities Mod v46
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -123,6 +123,15 @@ static Rotator_ctor_t pfn_Gear_ctor = (Rotator_ctor_t)0x437690;
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
 
+/* Gfx_Scale function pointers — used by ROT_M axis selection.
+ * Native render (0x0043B330) calls Gfx_ScaleX(angle) to build the
+ * rotation-to-render matrix. ROT_M lets the .txt config choose which
+ * axis function to call instead. */
+typedef void (__cdecl *Gfx_Scale_t)(float);
+static Gfx_Scale_t pfn_Gfx_ScaleX = (Gfx_Scale_t)0x00457C60;
+static Gfx_Scale_t pfn_Gfx_ScaleY = (Gfx_Scale_t)0x00457C90;
+static Gfx_Scale_t pfn_Gfx_ScaleZ = (Gfx_Scale_t)0x00457CC0;
+
 /* AI mesh path table — game .data string addresses for AI 1-5 */
 static const char* g_ai_mesh_paths[] = {
     NULL,                              /* AI 0: static (use MESH property) */
@@ -149,6 +158,14 @@ typedef struct {
     float angle_x;          /* accumulated X angle */
     float angle_y;          /* accumulated Y angle */
     float angle_z;          /* accumulated Z angle */
+    /* v46 config fields — per-entity customization */
+    int   rng_seed;         /* RNG seed (unused for now, reserved for future) */
+    float rot_a;            /* initial angle (obj+0x10E8, default 0.0) */
+    float rot_d;            /* initial direction (obj+0x10EC, default 0.0) */
+    float rot_max;          /* max oscillation angle (native 2.0, default 0.0) */
+    float rot_min;          /* min oscillation angle (native -2.0, default 0.0) */
+    int   rot_m;             /* axis for Gfx_Scale: 0=X, 1=Y, 2=Z (default 0=X) */
+    int   has_custom_limits; /* 1 if rot_max/rot_min are non-zero (need per-frame override) */
 } RotaterConfig;
 
 static RotaterConfig g_rotater_cfg[MAX_ROTATERS];
@@ -1189,6 +1206,298 @@ static char* my_stristr(const char* haystack, const char* needle) {
     return NULL;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Entity Definition System
+ * Each entity has an onCreate script (runs at spawn) and an onUpdate script
+ * (runs every frame). Scripts are loaded from Centities/<name>.txt
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define MAX_ENTITY_CMDS 32
+#define MAX_CMD_ARGS 8
+
+typedef struct {
+    char cmd[32];
+    char args[MAX_CMD_ARGS][64];
+    int arg_count;
+} entity_cmd_t;
+
+typedef struct {
+    char mesh_file[128];
+    int obj_size;
+    /* v46 config variables — parsed from .txt header */
+    int   rng_seed;         /* RNG = false/true (unused for now, reserved) */
+    float rot_a;            /* ROT_A = initial angle (obj+0x10E8, default 0.0) */
+    float rot_d;            /* ROT_D = initial direction (obj+0x10EC, default 0.0) */
+    float rot_max;          /* ROT_MAX = max oscillation angle (native 2.0, default 0.0) */
+    float rot_min;          /* ROT_MIN = min oscillation angle (native -2.0, default 0.0) */
+    int   rot_m;            /* ROT_M = axis: 0=X, 1=Y, 2=Z (default 0=X) */
+    entity_cmd_t create_cmds[MAX_ENTITY_CMDS];
+    int create_cmd_count;
+    entity_cmd_t update_cmds[MAX_ENTITY_CMDS];
+    int update_cmd_count;
+} entity_def_t;
+
+/* Parse a .txt entity definition file into an entity_def_t */
+static int load_entity_def(const char* txt_path, entity_def_t* def, FILE* logf) {
+    memset(def, 0, sizeof(entity_def_t));
+    def->obj_size = 0x1508;  /* default */
+
+    FILE* ef = NULL;
+    fopen_s(&ef, txt_path, "r");
+    if (!ef) {
+        if (logf) fprintf(logf, "  ENTITY: %s not found\n", txt_path);
+        return 0;
+    }
+
+    char line[256];
+    int section = 0;  /* 0=header, 1=onCreate, 2=onUpdate */
+
+    while (fgets(line, sizeof(line), ef)) {
+        /* Strip comments */
+        char* hash = strchr(line, '#');
+        if (hash) *hash = 0;
+
+        /* Strip whitespace */
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        size_t len = strlen(p);
+        while (len > 0 && (p[len-1] == '\n' || p[len-1] == '\r' || p[len-1] == ' ' || p[len-1] == '\t'))
+            p[--len] = 0;
+        if (len == 0) continue;
+
+        /* Check for section headers */
+        if (_stricmp(p, "[onCreate]") == 0) { section = 1; continue; }
+        if (_stricmp(p, "[onUpdate]") == 0) { section = 2; continue; }
+
+        /* Parse command + args */
+        entity_cmd_t* cmd = NULL;
+        if (section == 1 && def->create_cmd_count < MAX_ENTITY_CMDS) {
+            cmd = &def->create_cmds[def->create_cmd_count++];
+        } else if (section == 2 && def->update_cmd_count < MAX_ENTITY_CMDS) {
+            cmd = &def->update_cmds[def->update_cmd_count++];
+        }
+        if (!cmd) {
+            /* Header section — parse KEY VALUE */
+            char key[32] = {0}, val[128] = {0};
+            if (sscanf(p, "%31s %127s", key, val) >= 2) {
+                if (_stricmp(key, "MESH") == 0) {
+                    strncpy(def->mesh_file, val, 127);
+                    def->mesh_file[127] = 0;
+                }
+                else if (_stricmp(key, "SIZE") == 0) {
+                    def->obj_size = (int)strtol(val, NULL, 0);
+                }
+                else if (_stricmp(key, "RNG") == 0) {
+                    /* RNG = false/true (reserved for future use) */
+                    if (_stricmp(val, "true") == 0 || _stricmp(val, "1") == 0)
+                        def->rng_seed = 1;
+                    else
+                        def->rng_seed = 0;
+                }
+                else if (_stricmp(key, "ROT_A") == 0) {
+                    def->rot_a = (float)atof(val);
+                }
+                else if (_stricmp(key, "ROT_D") == 0) {
+                    def->rot_d = (float)atof(val);
+                }
+                else if (_stricmp(key, "ROT_MAX") == 0) {
+                    def->rot_max = (float)atof(val);
+                }
+                else if (_stricmp(key, "ROT_MIN") == 0) {
+                    def->rot_min = (float)atof(val);
+                }
+                else if (_stricmp(key, "ROT_M") == 0) {
+                    if (val[0] == 'X' || val[0] == 'x') def->rot_m = 0;
+                    else if (val[0] == 'Y' || val[0] == 'y') def->rot_m = 1;
+                    else if (val[0] == 'Z' || val[0] == 'z') def->rot_m = 2;
+                    else def->rot_m = 0;  /* default X */
+                }
+            }
+            continue;
+        }
+
+        /* Tokenize the command line */
+        char* tok = strtok(p, " \t");
+        if (!tok) continue;
+        strncpy(cmd->cmd, tok, 31);
+        cmd->cmd[31] = 0;
+        cmd->arg_count = 0;
+        while ((tok = strtok(NULL, " \t")) && cmd->arg_count < MAX_CMD_ARGS) {
+            strncpy(cmd->args[cmd->arg_count], tok, 63);
+            cmd->args[cmd->arg_count][63] = 0;
+            cmd->arg_count++;
+        }
+    }
+    fclose(ef);
+    return 1;
+}
+
+/* Execute an onCreate command on an object */
+static void exec_create_cmd(DWORD obj, DWORD board, float px, float py, float pz,
+                            void* mesh, entity_cmd_t* cmd, FILE* logf) {
+    if (_stricmp(cmd->cmd, "SET_VTABLE") == 0 && cmd->arg_count >= 1) {
+        DWORD vt = (DWORD)strtol(cmd->args[0], NULL, 0);
+        *(DWORD*)obj = vt;
+    }
+    else if (_stricmp(cmd->cmd, "STORE_BOARD") == 0 && cmd->arg_count >= 1) {
+        int off = (int)strtol(cmd->args[0], NULL, 0);
+        *(DWORD*)(obj + off) = board;
+    }
+    else if (_stricmp(cmd->cmd, "STORE_POS") == 0 && cmd->arg_count >= 3) {
+        int ox = (int)strtol(cmd->args[0], NULL, 0);
+        int oy = (int)strtol(cmd->args[1], NULL, 0);
+        int oz = (int)strtol(cmd->args[2], NULL, 0);
+        *(float*)(obj + ox) = px;
+        *(float*)(obj + oy) = py;
+        *(float*)(obj + oz) = pz;
+    }
+    else if (_stricmp(cmd->cmd, "INIT_LIST") == 0 && cmd->arg_count >= 1) {
+        int off = (int)strtol(cmd->args[0], NULL, 0);
+        /* AthenaList_Init — simplified: zero the list */
+        memset((void*)(obj + off), 0, 0x410);
+    }
+    else if (_stricmp(cmd->cmd, "CREATE_RENDER_CONTEXT") == 0 && cmd->arg_count >= 1) {
+        int off = (int)strtol(cmd->args[0], NULL, 0);
+        /* Allocate render context via operator_new + Level_RenderCtor */
+        void* rc = pfn_operator_new(0x10D0);
+        if (rc) {
+            typedef void* (__thiscall *Level_RenderCtor_t)(void*, int);
+            Level_RenderCtor_t pfn = (Level_RenderCtor_t)0x00465080;
+            rc = pfn(rc, (int)obj);
+        }
+        *(void**)(obj + off) = rc;
+    }
+    else if (_stricmp(cmd->cmd, "SET_FLOAT") == 0 && cmd->arg_count >= 2) {
+        int off = (int)strtol(cmd->args[0], NULL, 0);
+        float val = (float)atof(cmd->args[1]);
+        *(float*)(obj + off) = val;
+    }
+    else if (_stricmp(cmd->cmd, "IF_NOT_PRACTICE") == 0) {
+        /* Check practice flag: board+0x878 → App, App+0x237 */
+        /* This is a block marker — actual handling is in exec_create_cmds */
+    }
+    else if (_stricmp(cmd->cmd, "ENDIF") == 0) {
+        /* Block end marker */
+    }
+}
+
+/* Execute all onCreate commands */
+static void exec_create_cmds(DWORD obj, DWORD board, float px, float py, float pz,
+                             void* mesh, entity_def_t* def, FILE* logf) {
+    int i;
+    int in_not_practice = 0;
+    int is_practice = 0;
+
+    /* Check practice mode: board+0x878 → App, App+0x237 */
+    DWORD app = *(DWORD*)(board + 0x878);
+    if (app && !IsBadReadPtr((void*)(app + 0x237), 1)) {
+        is_practice = (*(char*)(app + 0x237) != 0);
+    }
+
+    for (i = 0; i < def->create_cmd_count; i++) {
+        entity_cmd_t* cmd = &def->create_cmds[i];
+
+        if (_stricmp(cmd->cmd, "IF_NOT_PRACTICE") == 0) {
+            in_not_practice = 1;
+            continue;
+        }
+        if (_stricmp(cmd->cmd, "ENDIF") == 0) {
+            in_not_practice = 0;
+            continue;
+        }
+        if (in_not_practice && is_practice) continue;
+
+        exec_create_cmd(obj, board, px, py, pz, mesh, cmd, logf);
+    }
+
+    /* v46: Apply ROT_A (initial angle) and ROT_D (initial direction) after onCreate.
+     * These write to the same fields the native render function reads:
+     *   obj+0x10E8 = angle (param_1[0x43a] in decompiled render at 0x0043B330)
+     *   obj+0x10EC = direction (param_1[0x43b])
+     * Default is 0.0 for both — the native render will then compute:
+     *   new_angle = direction * 0.004 + angle
+     * If ROT_D is 0.0 and no onUpdate ROTATE command runs, the object stays still. */
+    if (def->rot_a != 0.0f) {
+        *(float*)(obj + 0x10E8) = def->rot_a;
+    }
+    if (def->rot_d != 0.0f) {
+        *(float*)(obj + 0x10EC) = def->rot_d;
+    }
+}
+
+/* Execute all onUpdate commands for a tracked entity */
+static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
+    int i;
+    for (i = 0; i < def->update_cmd_count; i++) {
+        entity_cmd_t* cmd = &def->update_cmds[i];
+
+        if (_stricmp(cmd->cmd, "ROTATE_Y") == 0 && cmd->arg_count >= 1) {
+            float speed = (float)atof(cmd->args[0]);
+            float angle = *(float*)(obj + 0x10E8);
+            float dir = *(float*)(obj + 0x10EC);
+            angle = dir * speed + angle;
+            *(float*)(obj + 0x10E8) = angle;
+        }
+        else if (_stricmp(cmd->cmd, "OSCILLATE") == 0 && cmd->arg_count >= 1) {
+            float limit = (float)atof(cmd->args[0]);
+            float angle = *(float*)(obj + 0x10E8);
+            float dir = *(float*)(obj + 0x10EC);
+            if (angle > limit)  dir = -1.0f;
+            if (angle < -limit) dir = 1.0f;
+            *(float*)(obj + 0x10EC) = dir;
+        }
+    }
+
+    /* v46: Per-frame ROT_MAX/ROT_MIN oscillation override.
+     * The native render function (0x0043B330) uses hardcoded ±2.0 limits:
+     *   if angle > 2.0:  direction = -1.0
+     *   if angle < -2.0: direction = +1.0
+     * When ROT_MAX/ROT_MIN are non-zero, we override the direction field
+     * every frame so the oscillation uses the custom limits instead.
+     *
+     * Also: ROT_M selects which Gfx_Scale function to call for the
+     * "rotation to render matrix" at the end of the update section.
+     * Native render calls Gfx_ScaleX(angle). We call the axis-selected
+     * function with the current angle (obj+0x10E4 = param_1[0x439]). */
+    {
+        float rot_max = def->rot_max;
+        float rot_min = def->rot_min;
+        float angle = *(float*)(obj + 0x10E8);
+        float dir = *(float*)(obj + 0x10EC);
+
+        /* Override oscillation limits if configured */
+        if (rot_max != 0.0f && angle > rot_max) {
+            *(float*)(obj + 0x10EC) = -1.0f;
+        }
+        if (rot_min != 0.0f && angle < rot_min) {
+            *(float*)(obj + 0x10EC) = 1.0f;
+        }
+
+        /* ROT_M: call the axis-appropriate Gfx_Scale function with the
+         * accumulated angle from obj+0x10E4 (the render matrix angle field).
+         * Native render at 0x0043B330 does: Gfx_ScaleX(param_1[0x439])
+         * where param_1[0x439] = obj+0x10E4 (byte offset).
+         * We replicate this but with the selected axis function. */
+        {
+            float render_angle = *(float*)(obj + 0x10E4);
+            Gfx_Scale_t scale_fn = pfn_Gfx_ScaleX;  /* default: X */
+            if (def->rot_m == 1) scale_fn = pfn_Gfx_ScaleY;
+            else if (def->rot_m == 2) scale_fn = pfn_Gfx_ScaleZ;
+            scale_fn(render_angle);
+        }
+    }
+}
+
+/* Tracked entity for per-frame updates */
+typedef struct {
+    DWORD obj;
+    entity_def_t def;
+    int active;
+} tracked_entity_t;
+
+static tracked_entity_t g_tracked[MAX_ROTATERS];
+static int g_tracked_count = 0;
+
 static void process_rotaters(DWORD board, FILE* logf) {
     if (!board) return;
 
@@ -1259,67 +1568,68 @@ static void process_rotaters(DWORD board, FILE* logf) {
         char txt_path[256];
         snprintf(txt_path, sizeof(txt_path), "%s\\Centities\\%s.txt", g_game_dir, entity_name);
 
-        /* Defaults */
-        int ai_type = 6;
-        char mesh_path[128] = {0};
-        float rot_y = 1.0f;
-        float ros_y = 2.0f;
-
-        /* Parse the .txt file */
-        {
-            FILE* ef = NULL;
-            fopen_s(&ef, txt_path, "r");
-            if (ef) {
-                char line[256];
-                while (fgets(line, sizeof(line), ef)) {
-                    /* Skip comments and blank lines */
-                    char* p = line;
-                    while (*p == ' ' || *p == '\t') p++;
-                    if (*p == '#' || *p == '\n' || *p == '\r' || *p == 0) continue;
-
-                    /* Parse KEY VALUE */
-                    char key[32] = {0};
-                    char val[128] = {0};
-                    if (sscanf(p, "%31s %127s", key, val) >= 2) {
-                        if (_stricmp(key, "CTOR_TYPE") == 0) {
-                            ai_type = atoi(val);
-                            if (ai_type < 0) ai_type = 0;
-                            if (ai_type > 6) ai_type = 6;
-                        } else if (_stricmp(key, "MESH") == 0) {
-                            strncpy(mesh_path, val, 127);
-                        } else if (_stricmp(key, "ROT_Y") == 0) {
-                            rot_y = (float)atof(val);
-                        } else if (_stricmp(key, "ROS_Y") == 0) {
-                            ros_y = (float)fabs(atof(val));
-                        }
-                    }
-                }
-                fclose(ef);
-            } else {
-                if (logf) fprintf(logf, "  ENTITY: %s.txt not found at %s\n", entity_name, txt_path);
-                continue;  /* skip if .txt not found */
-            }
-        }
+        entity_def_t def;
+        if (!load_entity_def(txt_path, &def, logf)) continue;
 
         /* Build full mesh path: Centities\<mesh_file> */
         char full_mesh_path[256];
-        if (mesh_path[0]) {
-            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s", mesh_path);
+        if (def.mesh_file[0]) {
+            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s", def.mesh_file);
         } else {
-            /* Default: use entity name */
-            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s.MESHWORLD", entity_name);
+            /* v46: Default mesh is _default.MESHWORLD (not entity_name.MESHWORLD) */
+            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\_default.MESHWORLD");
         }
 
         if (logf) {
-            fprintf(logf, "  ENTITY: '%s' at (%.1f, %.1f, %.1f) → CTOR=%d MESH='%s' ROT_Y=%.4f ROS_Y=%.1f\n",
-                    entity_name, px, py, pz, ai_type, full_mesh_path, rot_y, ros_y);
+            fprintf(logf, "  ENTITY: '%s' at (%.1f, %.1f, %.1f) MESH='%s' SIZE=0x%X create=%d update=%d\n",
+                    entity_name, px, py, pz, full_mesh_path, def.obj_size,
+                    def.create_cmd_count, def.update_cmd_count);
+            fprintf(logf, "    ROT_A=%.4f ROT_D=%.4f ROT_MAX=%.4f ROT_MIN=%.4f ROT_M=%c RNG=%d\n",
+                    def.rot_a, def.rot_d, def.rot_max, def.rot_min,
+                    def.rot_m == 0 ? 'X' : def.rot_m == 1 ? 'Y' : 'Z',
+                    def.rng_seed);
         }
 
-        spawn_rotater_at(board, px, py, pz, full_mesh_path,
-                         0.0f, rot_y, 0.0f,
-                         2.0f, ros_y, 2.0f,
-                         ai_type,
-                         logf);
+        /* Allocate object */
+        void* obj = pfn_operator_new(def.obj_size);
+        if (!obj) { if (logf) fprintf(logf, "  ENTITY: alloc failed\n"); continue; }
+        memset(obj, 0, def.obj_size);
+
+        /* Create mesh via MeshWorld_ctor */
+        DWORD app = *(DWORD*)(board + BOARD_APP);
+        if (!app || IsBadReadPtr((void*)app, 4)) continue;
+        DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
+        if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) continue;
+
+        void* mesh = pfn_operator_new(MESHWORLD_SIZE);
+        if (!mesh) continue;
+        void* mesh_result = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, full_mesh_path);
+        if (!mesh_result) {
+            if (logf) fprintf(logf, "  ENTITY: MeshWorld_ctor failed for '%s'\n", full_mesh_path);
+            continue;
+        }
+
+        /* Call Stands_ctor (base class) */
+        typedef void (__thiscall *Stands_ctor_t)(void*, int);
+        Stands_ctor_t pfn_Stands_ctor = (Stands_ctor_t)0x00461510;
+        pfn_Stands_ctor(obj, (int)mesh);
+
+        /* Execute onCreate commands */
+        exec_create_cmds((DWORD)obj, board, px, py, pz, mesh, &def, logf);
+
+        /* Register object in board lists */
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
+
+        /* Track for per-frame updates */
+        if (g_tracked_count < MAX_ROTATERS) {
+            g_tracked[g_tracked_count].obj = (DWORD)obj;
+            g_tracked[g_tracked_count].def = def;
+            g_tracked[g_tracked_count].active = 1;
+            g_tracked_count++;
+        }
+
+        if (logf) fprintf(logf, "  ENTITY: spawned obj=0x%08X\n", (DWORD)obj);
         found++;
     }
 
@@ -1403,7 +1713,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v45 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v46 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -1414,8 +1724,17 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     Sleep(3000);
 
     while (g_running) {
-        /* Per-frame: override direction for ROS_Y=0 objects to prevent oscillation */
-        update_constant_rotations();
+        /* Per-frame: execute onUpdate scripts for tracked entities */
+        {
+            int i;
+            for (i = 0; i < g_tracked_count; i++) {
+                if (!g_tracked[i].active) continue;
+                DWORD obj = g_tracked[i].obj;
+                if (!obj || obj < 0x10000) { g_tracked[i].active = 0; continue; }
+                if (IsBadReadPtr((void*)obj, 0x10F0)) { g_tracked[i].active = 0; continue; }
+                exec_update_cmds(obj, &g_tracked[i].def, logf);
+            }
+        }
 
         /* Small sleep to avoid hogging CPU */
         Sleep(16);  /* ~60fps */
