@@ -1531,83 +1531,19 @@ static void process_rotaters(DWORD board, FILE* logf) {
                         if (_strnicmp(s1_name, "cEnt", 4) != 0 &&
                             _strnicmp(s1_name, "REF:cEnt", 8) != 0) continue;
 
-                        /* Parse <ENTITY> name </ENTITY> */
-                        char entity_name[64] = {0};
-                        char* ent_start = my_stristr(s1_name, "<ENTITY>");
-                        if (ent_start) {
-                            ent_start += 7;
-                            while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
-                            char* ent_end = my_stristr(ent_start, "</ENTITY>");
-                            if (!ent_end) ent_end = ent_start + strlen(ent_start);
-                            size_t ent_len = ent_end - ent_start;
-                            if (ent_len > 0 && ent_len < 64) {
-                                strncpy(entity_name, ent_start, ent_len);
-                                entity_name[ent_len] = 0;
-                                while (ent_len > 0 && (entity_name[ent_len-1] == ' ' || entity_name[ent_len-1] == '\t'))
-                                    entity_name[--ent_len] = 0;
-                            }
-                        }
-                        if (!entity_name[0]) continue;
-
                         /* Get position from S1 entry */
                         float px = *(float*)(entry + 0x04);
                         float py = *(float*)(entry + 0x08);
                         float pz = *(float*)(entry + 0x0C);
 
-                        /* Load entity definition */
-                        char txt_path[256];
-                        snprintf(txt_path, sizeof(txt_path), "%s\\Levels\\%s.txt", g_game_dir, entity_name);
+                        if (logf) fprintf(logf, "  cEnt(S1): found at (%.1f, %.1f, %.1f) — spawning Rotator_ctor_Impossible with Level3-Swirl\n", px, py, pz);
 
-                        entity_def_t def;
-                        if (!load_entity_def(txt_path, &def, logf)) continue;
-                        /* Build full mesh path: Levels\<mesh_file> */
-                        char full_mesh_path[256];
-                        if (def.mesh_file[0]) {
-                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s", def.mesh_file);
-                        } else {
-                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s.MESHWORLD", entity_name);
-                        }
-
-                        if (logf) {
-                            fprintf(logf, "  ENTITY(S1): '%s' at (%.1f, %.1f, %.1f) MESH='%s' SIZE=0x%X\n",
-                                    entity_name, px, py, pz, full_mesh_path, def.obj_size);
-                        }
-
-                        /* Allocate and spawn */
-                        void* obj = pfn_operator_new(def.obj_size);
-                        if (!obj) { if (logf) fprintf(logf, "  ENTITY: alloc failed\n"); continue; }
-                        memset(obj, 0, def.obj_size);
-
-                        DWORD app = *(DWORD*)(board + BOARD_APP);
-                        if (!app || IsBadReadPtr((void*)app, 4)) continue;
-                        DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
-                        if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) continue;
-
-                        void* mesh = pfn_operator_new(MESHWORLD_SIZE);
-                        if (!mesh) continue;
-                        void* mesh_result = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, full_mesh_path);
-                        if (!mesh_result) {
-                            if (logf) fprintf(logf, "  ENTITY: MeshWorld_ctor failed for '%s'\n", full_mesh_path);
-                            continue;
-                        }
-
-                        typedef void (__thiscall *Stands_ctor_t)(void*, int);
-                        Stands_ctor_t pfn_Stands_ctor = (Stands_ctor_t)0x00462850;
-                        pfn_Stands_ctor(obj, (int)mesh);
-
-                        exec_create_cmds((DWORD)obj, board, px, py, pz, mesh, &def, logf);
-
-                        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
-                        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
-
-                        if (g_tracked_count < MAX_ROTATERS) {
-                            g_tracked[g_tracked_count].obj = (DWORD)obj;
-                            g_tracked[g_tracked_count].def = def;
-                            g_tracked[g_tracked_count].active = 1;
-                            g_tracked_count++;
-                        }
-
-                        if (logf) fprintf(logf, "  ENTITY(S1): spawned obj=0x%08X\n", (DWORD)obj);
+                        /* Direct spawn: use Rotator_ctor_Impossible with native Level3-Swirl mesh */
+                        spawn_rotater_at(board, px, py, pz, "levels\\Level3-Swirl",
+                                         0.0f, 1.0f, 0.0f,
+                                         2.0f, 2.0f, 2.0f,
+                                         6,  /* AI 6 = Rotator_ctor_Impossible */
+                                         logf);
                         found++;
                     }
                 }
