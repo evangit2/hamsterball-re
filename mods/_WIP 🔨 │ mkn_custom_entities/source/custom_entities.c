@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v47
+ * custom_entities.c — Hamsterball Custom Entities Mod v48
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1507,7 +1507,115 @@ static void process_rotaters(DWORD board, FILE* logf) {
         return;
     }
 
-    /* === Scan section 3 objects (sceneobj+0xCA0) for Rotater entries === */
+    int found = 0;
+    int i;
+    
+    /* === Scan S1 ref points (sceneobj+0x894) for cEnt entries with <ENTITY> tags === */
+    /* S1 ref points have: name ptr at +0x00, X at +0x04, Y at +0x08, Z at +0x0C */
+    {
+        DWORD s1_list = sceneobj + 0x894;
+        if (!IsBadReadPtr((void*)(s1_list + 0x04), 4)) {
+            int s1_count = *(int*)(s1_list + 0x04);
+            if (s1_count > 0 && s1_count < 1000 && !IsBadReadPtr((void*)(s1_list + 0x40C), 4)) {
+                DWORD* s1_data = *(DWORD**)(s1_list + 0x40C);
+                if (s1_data && !IsBadReadPtr(s1_data, s1_count * 4)) {
+                    for (i = 0; i < s1_count; i++) {
+                        DWORD entry = s1_data[i];
+                        if (!entry || entry < 0x10000) continue;
+                        if (IsBadReadPtr((void*)entry, 16)) continue;
+
+                        char* s1_name = *(char**)(entry);
+                        if (!s1_name || IsBadReadPtr(s1_name, 8)) continue;
+
+                        /* Check for cEnt prefix (case-insensitive) */
+                        if (_strnicmp(s1_name, "cEnt", 4) != 0 &&
+                            _strnicmp(s1_name, "REF:cEnt", 8) != 0) continue;
+
+                        /* Parse <ENTITY> name </ENTITY> */
+                        char entity_name[64] = {0};
+                        char* ent_start = my_stristr(s1_name, "<ENTITY>");
+                        if (ent_start) {
+                            ent_start += 7;
+                            while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
+                            char* ent_end = my_stristr(ent_start, "</ENTITY>");
+                            if (!ent_end) ent_end = ent_start + strlen(ent_start);
+                            size_t ent_len = ent_end - ent_start;
+                            if (ent_len > 0 && ent_len < 64) {
+                                strncpy(entity_name, ent_start, ent_len);
+                                entity_name[ent_len] = 0;
+                                while (ent_len > 0 && (entity_name[ent_len-1] == ' ' || entity_name[ent_len-1] == '\t'))
+                                    entity_name[--ent_len] = 0;
+                            }
+                        }
+                        if (!entity_name[0]) continue;
+
+                        /* Get position from S1 entry */
+                        float px = *(float*)(entry + 0x04);
+                        float py = *(float*)(entry + 0x08);
+                        float pz = *(float*)(entry + 0x0C);
+
+                        /* Load entity definition */
+                        char txt_path[256];
+                        snprintf(txt_path, sizeof(txt_path), "%s\\Centities\\%s.txt", g_game_dir, entity_name);
+
+                        entity_def_t def;
+                        if (!load_entity_def(txt_path, &def, logf)) continue;
+
+                        char full_mesh_path[256];
+                        if (def.mesh_file[0]) {
+                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s", def.mesh_file);
+                        } else {
+                            snprintf(full_mesh_path, sizeof(full_mesh_path), "Centities\\%s.MESHWORLD", entity_name);
+                        }
+
+                        if (logf) {
+                            fprintf(logf, "  ENTITY(S1): '%s' at (%.1f, %.1f, %.1f) MESH='%s' SIZE=0x%X\n",
+                                    entity_name, px, py, pz, full_mesh_path, def.obj_size);
+                        }
+
+                        /* Allocate and spawn */
+                        void* obj = pfn_operator_new(def.obj_size);
+                        if (!obj) { if (logf) fprintf(logf, "  ENTITY: alloc failed\n"); continue; }
+                        memset(obj, 0, def.obj_size);
+
+                        DWORD app = *(DWORD*)(board + BOARD_APP);
+                        if (!app || IsBadReadPtr((void*)app, 4)) continue;
+                        DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
+                        if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) continue;
+
+                        void* mesh = pfn_operator_new(MESHWORLD_SIZE);
+                        if (!mesh) continue;
+                        void* mesh_result = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, full_mesh_path);
+                        if (!mesh_result) {
+                            if (logf) fprintf(logf, "  ENTITY: MeshWorld_ctor failed for '%s'\n", full_mesh_path);
+                            continue;
+                        }
+
+                        typedef void (__thiscall *Stands_ctor_t)(void*, int);
+                        Stands_ctor_t pfn_Stands_ctor = (Stands_ctor_t)0x00462850;
+                        pfn_Stands_ctor(obj, (int)mesh);
+
+                        exec_create_cmds((DWORD)obj, board, px, py, pz, mesh, &def, logf);
+
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
+
+                        if (g_tracked_count < MAX_ROTATERS) {
+                            g_tracked[g_tracked_count].obj = (DWORD)obj;
+                            g_tracked[g_tracked_count].def = def;
+                            g_tracked[g_tracked_count].active = 1;
+                            g_tracked_count++;
+                        }
+
+                        if (logf) fprintf(logf, "  ENTITY(S1): spawned obj=0x%08X\n", (DWORD)obj);
+                        found++;
+                    }
+                }
+            }
+        }
+    }
+
+    /* === Scan section 3 objects (sceneobj+0xCA0) for cEnt entries === */
     if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) return;
     int obj_count = *(int*)(sceneobj + SCENEOBJ_OBJ_COUNT);
     if (obj_count <= 0 || obj_count > 1000) return;
@@ -1516,8 +1624,6 @@ static void process_rotaters(DWORD board, FILE* logf) {
     DWORD* obj_array_ptr = *(DWORD**)(sceneobj + SCENEOBJ_OBJ_ARRAY);
     if (!obj_array_ptr || IsBadReadPtr(obj_array_ptr, obj_count * 4)) return;
 
-    int found = 0;
-    int i;
     for (i = 0; i < obj_count; i++) {
         DWORD obj_ptr = obj_array_ptr[i];
         if (!obj_ptr || obj_ptr < 0x10000) continue;
@@ -1713,7 +1819,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v47 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v48 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
