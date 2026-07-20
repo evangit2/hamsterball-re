@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v49
+ * custom_entities.c — Hamsterball Custom Entities Mod v50
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1531,18 +1531,56 @@ static void process_rotaters(DWORD board, FILE* logf) {
                         if (_strnicmp(s1_name, "cEnt", 4) != 0 &&
                             _strnicmp(s1_name, "REF:cEnt", 8) != 0) continue;
 
+                        /* Parse <ENTITY> name </ENTITY> */
+                        char entity_name[64] = {0};
+                        {
+                            char* ent_start = my_stristr(s1_name, "<ENTITY>");
+                            if (ent_start) {
+                                ent_start += 7;
+                                while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
+                                char* ent_end = my_stristr(ent_start, "</ENTITY>");
+                                if (!ent_end) ent_end = ent_start + strlen(ent_start);
+                                size_t ent_len = ent_end - ent_start;
+                                if (ent_len > 0 && ent_len < 64) {
+                                    strncpy(entity_name, ent_start, ent_len);
+                                    entity_name[ent_len] = 0;
+                                    while (ent_len > 0 && (entity_name[ent_len-1] == ' ' || entity_name[ent_len-1] == '\t'))
+                                        entity_name[--ent_len] = 0;
+                                }
+                            }
+                        }
+                        /* If no <ENTITY> tag, don't spawn */
+                        if (!entity_name[0]) continue;
+
                         /* Get position from S1 entry */
                         float px = *(float*)(entry + 0x04);
                         float py = *(float*)(entry + 0x08);
                         float pz = *(float*)(entry + 0x0C);
 
-                        if (logf) fprintf(logf, "  cEnt(S1): found at (%.1f, %.1f, %.1f) — spawning Rotator_ctor_Impossible with Level3-Swirl\n", px, py, pz);
+                        /* Match entity name to AI list */
+                        int ai_type = -1;
+                        const char* ai_mesh = NULL;
 
-                        /* Direct spawn: use Rotator_ctor_Impossible with native Level3-Swirl mesh */
-                        spawn_rotater_at(board, px, py, pz, "levels\\Level3-Swirl",
+                        if (_stricmp(entity_name, "Swirl") == 0) {
+                            ai_type = 6;
+                            ai_mesh = "levels\\Level3-Swirl";
+                        } else if (_stricmp(entity_name, "Pendulum") == 0) {
+                            ai_type = 2;
+                            ai_mesh = "levels\\LevelImpossible-Pendulum";
+                        }
+
+                        if (ai_type < 0) {
+                            if (logf) fprintf(logf, "  cEnt(S1): '%s' — no matching AI, skipping\n", entity_name);
+                            continue;
+                        }
+
+                        if (logf) fprintf(logf, "  cEnt(S1): '%s' at (%.1f, %.1f, %.1f) → AI=%d MESH='%s'\n",
+                                entity_name, px, py, pz, ai_type, ai_mesh);
+
+                        spawn_rotater_at(board, px, py, pz, ai_mesh,
                                          0.0f, 1.0f, 0.0f,
                                          2.0f, 2.0f, 2.0f,
-                                         6,  /* AI 6 = Rotator_ctor_Impossible */
+                                         ai_type,
                                          logf);
                         found++;
                     }
@@ -1754,7 +1792,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v49 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v50 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
