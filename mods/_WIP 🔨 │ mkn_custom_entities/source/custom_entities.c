@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v46
+ * custom_entities.c — Hamsterball Custom Entities Mod v47
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1609,9 +1609,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
             continue;
         }
 
-        /* Call Stands_ctor (base class) */
+        /* Call Stands_ctor (base class) — initializes mesh, collision, render context */
         typedef void (__thiscall *Stands_ctor_t)(void*, int);
-        Stands_ctor_t pfn_Stands_ctor = (Stands_ctor_t)0x00461510;
+        Stands_ctor_t pfn_Stands_ctor = (Stands_ctor_t)0x00462850;
         pfn_Stands_ctor(obj, (int)mesh);
 
         /* Execute onCreate commands */
@@ -1713,7 +1713,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v46 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v47 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
