@@ -1,0 +1,33 @@
+# SWIRLO entity definition — v46 config variables
+# Place in Centities/ folder next to bass.dll
+
+# Mesh file (in Centities/ folder). Default: _default.MESHWORLD
+MESH _default.MESHWORLD
+
+# RNG seed (reserved for future use, set to false or true)
+RNG false
+
+# Initial angle (obj+0x10E8). Default 0.0
+ROT_A 0.0
+
+# Initial direction (obj+0x10EC). Default 0.0
+# Native SWIRL uses 1.0 — set non-zero to start spinning immediately
+ROT_D 0.0
+
+# Max oscillation angle. Native SWIRL uses 2.0. Default 0.0 (no limit)
+ROT_MAX 2.0
+
+# Min oscillation angle. Native SWIRL uses -2.0. Default 0.0 (no limit)
+ROT_MIN -2.0
+
+# Rotation matrix axis: X, Y, or Z
+# X = Gfx_ScaleX (native SWIRL default)
+# Y = Gfx_ScaleY
+# Z = Gfx_ScaleZ
+ROT_M X
+
+[onCreate]
+# onCreate commands go here
+
+[onUpdate]
+# onUpdate commands go here
