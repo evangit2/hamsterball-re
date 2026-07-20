@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v50
+ * custom_entities.c — Hamsterball Custom Entities Mod v51
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1587,16 +1587,67 @@ static void process_rotaters(DWORD board, FILE* logf) {
         float py = *(float*)(obj_ptr + 0x08);
         float pz = *(float*)(obj_ptr + 0x0C);
 
-        /* Match entity name to AI list */
+        /* Match entity name to AI list (alphabetically sorted) */
         int ai_type = -1;
         const char* ai_mesh = NULL;
 
-        if (_stricmp(entity_name, "Swirl") == 0) {
-            ai_type = 6;
-            ai_mesh = "levels\\Level3-Swirl";
-        } else if (_stricmp(entity_name, "Pendulum") == 0) {
-            ai_type = 2;
-            ai_mesh = "levels\\LevelImpossible-Pendulum";
+        /* AI List — sorted alphabetically by entity name */
+        typedef struct { const char* name; int ctor_type; const char* mesh; } ai_entry_t;
+        static const ai_entry_t ai_list[] = {
+            /* name */            /* ctor_type (0=PopCyl, 1=Rotator, 2=Pendulum, 3=Looper, 4=Gear, 5=BigGear, 6=Swirl) */  /* mesh path */
+            { "8ball",            0, NULL },                        /* BadBall_ctor 0x0040AFE0 */
+            { "BBridge",          0, NULL },                        /* BreakBridge_ctor 0x00436D70 */
+            { "Bell",             0, NULL },                        /* Bell_ctor 0x00434D70 */
+            { "Blockdawg",        0, "levels\\Level8-Blockdawg1" }, /* Blockdawg_ctor 0x0043C310 */
+            { "Bonk",             0, NULL },                        /* Bonk_ctor 0x00438850 */
+            { "Bridge",           0, "levels\\Level2-Bridge" },     /* PopCylinder_ctor */
+            { "Bumper",           0, NULL },                        /* PopCylinder_ctor */
+            { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor 0x00437E10 */
+            { "Chomper",          0, "levels\\Level4-Windmill" },   /* PopCylinder_ctor */
+            { "Chrome",           0, NULL },                        /* PopCylinder_ctor */
+            { "Drawbridge",       0, "levels\\Level4-Drawbridge" }, /* PopCylinder_ctor */
+            { "Fan",              0, NULL },                        /* Fan_ctor 0x00438C20 */
+            { "Flag",             0, NULL },                        /* FlagWaver_Ctor 0x0046AF30 */
+            { "Flickfloor1",      0, "levels\\LevelDark-DFloor1" }, /* PopCylinder_ctor */
+            { "Flickfloor2",      0, "levels\\LevelDark-DFloor4" }, /* PopCylinder_ctor */
+            { "Flickring",        0, "levels\\LevelDark-Flickring" }, /* PopCylinder_ctor */
+            { "Funball",          0, NULL },                        /* PopCylinder_ctor */
+            { "Gear",             4, "levels\\LevelImpossible-Gear" }, /* Gear_ctor 0x00437590 */
+            { "Glassbreaker",     0, NULL },                        /* PopCylinder_ctor */
+            { "Gluebie",          0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor 0x00437CB0 */
+            { "Judge",            0, NULL },                        /* PopCylinder_ctor */
+            { "Lifter",           0, "levels\\Level6-Lifter" },      /* Lifter_ctor 0x00436920 */
+            { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor 0x00435800 */
+            { "Mace",             0, "levels\\Level4-Mace" },       /* Mace_ctor 0x00438750 */
+            { "Mag",              0, NULL },                        /* Magnifier_ctor 0x00436250 */
+            { "Mousetrap",        0, NULL },                        /* MouseTrap_ctor 0x00437880 */
+            { "Neonplatform",     0, "levels\\LevelDark-NeonPlatform" }, /* NeonPlatform_ctor 0x0043E110 */
+            { "Pendulum",         2, "levels\\LevelImpossible-Pendulum" }, /* Pendulum_ctor 0x00437700 */
+            { "Popcylinder",      0, NULL },                        /* PopCylinder_ctor 0x00436EE0 */
+            { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor 0x004366F0 */
+            { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor 0x0043B780 */
+            { "Sawblade",         0, NULL },                        /* SawBlade_ctor 0x00434660 */
+            { "Speedcylinder",    0, NULL },                        /* SpeedCylinder_ctor 0x00436A20 */
+            { "Spinner",          0, NULL },                        /* Spinner_Level_ctor 0x004396F0 */
+            { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible 0x00435940 */
+            { "Tarbubble",        0, NULL },                        /* PopCylinder_ctor */
+            { "Tarpit",           0, NULL },                        /* PopCylinder_ctor */
+            { "Timebutton",       0, NULL },                        /* TimeButton_ctor 0x00436C10 */
+            { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor 0x00437960 */
+            { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor 0x00438290 */
+            { "Trode",            0, "levels\\LevelDark-Trode" },  /* PopCylinder_ctor */
+            { "Waterwheel",       0, "levels\\Level3-WaterWheel" }, /* PopCylinder_ctor */
+            { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor 0x0043AD40 */
+            { "Wobbly",           0, "levels\\Level7-Wobbly1" },    /* PopCylinder_ctor */
+        };
+        static const int ai_list_count = sizeof(ai_list) / sizeof(ai_list[0]);
+
+        for (int j = 0; j < ai_list_count; j++) {
+            if (_stricmp(entity_name, ai_list[j].name) == 0) {
+                ai_type = ai_list[j].ctor_type;
+                ai_mesh = ai_list[j].mesh;
+                break;
+            }
         }
 
         if (ai_type < 0) {
@@ -1697,7 +1748,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v50 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v51 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
