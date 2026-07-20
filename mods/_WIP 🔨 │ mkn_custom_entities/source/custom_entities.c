@@ -1514,18 +1514,37 @@ static void process_rotaters(DWORD board, FILE* logf) {
     /* S1 ref points have: name ptr at +0x00, X at +0x04, Y at +0x08, Z at +0x0C */
     {
         DWORD s1_list = sceneobj + 0x894;
-        if (!IsBadReadPtr((void*)(s1_list + 0x04), 4)) {
+        if (IsBadReadPtr((void*)(s1_list + 0x04), 4)) {
+            if (logf) fprintf(logf, "  S1: sceneobj+0x894+4 is bad read ptr\n");
+        } else {
             int s1_count = *(int*)(s1_list + 0x04);
+            if (logf) fprintf(logf, "  S1: s1_count=%d\n", s1_count);
             if (s1_count > 0 && s1_count < 1000 && !IsBadReadPtr((void*)(s1_list + 0x40C), 4)) {
                 DWORD* s1_data = *(DWORD**)(s1_list + 0x40C);
+                if (logf) fprintf(logf, "  S1: data at 0x%08X\n", (DWORD)s1_data);
                 if (s1_data && !IsBadReadPtr(s1_data, s1_count * 4)) {
                     for (i = 0; i < s1_count; i++) {
                         DWORD entry = s1_data[i];
-                        if (!entry || entry < 0x10000) continue;
-                        if (IsBadReadPtr((void*)entry, 16)) continue;
+                        if (!entry || entry < 0x10000) {
+                            if (logf) fprintf(logf, "    S1[%d] skip: ptr=0x%08X\n", i, entry);
+                            continue;
+                        }
+                        if (IsBadReadPtr((void*)entry, 16)) {
+                            if (logf) fprintf(logf, "    S1[%d] skip: bad read 0x%08X\n", i, entry);
+                            continue;
+                        }
 
                         char* s1_name = *(char**)(entry);
-                        if (!s1_name || IsBadReadPtr(s1_name, 8)) continue;
+                        if (!s1_name || IsBadReadPtr(s1_name, 4)) {
+                            if (logf) fprintf(logf, "    S1[%d] skip: name ptr bad\n", i);
+                            continue;
+                        }
+
+                        /* Log every S1 entry */
+                        char debug_name[81] = {0};
+                        strncpy(debug_name, s1_name, 80);
+                        debug_name[80] = 0;
+                        if (logf) fprintf(logf, "    S1[%d] name='%s'\n", i, debug_name);
 
                         /* Check for cEnt prefix (case-insensitive) */
                         if (_strnicmp(s1_name, "cEnt", 4) != 0 &&
@@ -1590,22 +1609,50 @@ static void process_rotaters(DWORD board, FILE* logf) {
     }
 
     /* === Scan section 3 objects (sceneobj+0xCA0) for cEnt entries === */
-    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) return;
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) {
+        if (logf) fprintf(logf, "  S3: sceneobj+0x898 is bad read ptr\n");
+        return;
+    }
     int obj_count = *(int*)(sceneobj + SCENEOBJ_OBJ_COUNT);
+    if (logf) fprintf(logf, "  S3: obj_count=%d (sceneobj=0x%08X)\n", obj_count, sceneobj);
     if (obj_count <= 0 || obj_count > 1000) return;
 
-    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_ARRAY), 4)) return;
+    if (IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_ARRAY), 4)) {
+        if (logf) fprintf(logf, "  S3: sceneobj+0xCA0 is bad read ptr\n");
+        return;
+    }
     DWORD* obj_array_ptr = *(DWORD**)(sceneobj + SCENEOBJ_OBJ_ARRAY);
-    if (!obj_array_ptr || IsBadReadPtr(obj_array_ptr, obj_count * 4)) return;
+    if (!obj_array_ptr || IsBadReadPtr(obj_array_ptr, obj_count * 4)) {
+        if (logf) fprintf(logf, "  S3: obj_array_ptr bad (0x%08X)\n", (DWORD)obj_array_ptr);
+        return;
+    }
+    if (logf) fprintf(logf, "  S3: array at 0x%08X, scanning %d entries...\n", (DWORD)obj_array_ptr, obj_count);
 
     for (i = 0; i < obj_count; i++) {
         DWORD obj_ptr = obj_array_ptr[i];
-        if (!obj_ptr || obj_ptr < 0x10000) continue;
-        if (IsBadReadPtr((void*)obj_ptr, 20)) continue;
+        if (!obj_ptr || obj_ptr < 0x10000) {
+            if (logf) fprintf(logf, "    [%d] skip: ptr=0x%08X\n", i, obj_ptr);
+            continue;
+        }
+        if (IsBadReadPtr((void*)obj_ptr, 20)) {
+            if (logf) fprintf(logf, "    [%d] skip: bad read ptr 0x%08X\n", i, obj_ptr);
+            continue;
+        }
 
         /* Read object name pointer */
         char* name = *(char**)(obj_ptr);
-        if (!name || IsBadReadPtr(name, 8)) continue;
+        if (!name || IsBadReadPtr(name, 4)) {
+            if (logf) fprintf(logf, "    [%d] skip: name ptr bad (0x%08X)\n", i, (DWORD)name);
+            continue;
+        }
+
+        /* Log every entry name (first 80 chars) */
+        char debug_name[81] = {0};
+        strncpy(debug_name, name, 80);
+        debug_name[80] = 0;
+        if (logf) fprintf(logf, "    [%d] name='%s' ptr=0x%08X pos=(%.1f, %.1f, %.1f)\n",
+                i, debug_name, obj_ptr,
+                *(float*)(obj_ptr + 0x04), *(float*)(obj_ptr + 0x08), *(float*)(obj_ptr + 0x0C));
 
         /* Check for cEnt prefix (case-insensitive) */
         if (_strnicmp(name, "cEnt", 4) != 0 &&
@@ -1773,7 +1820,33 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         Sleep(16);  /* ~60fps */
 
         DWORD board = get_board();
-        if (!board) continue;
+        if (!board) {
+            /* Debug: log why get_board failed */
+            static int debug_count = 0;
+            if (debug_count < 3) {
+                debug_count++;
+                FILE* df = NULL;
+                fopen_s(&df, log_path, "a");
+                if (df) {
+                    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+                    fprintf(df, "  DEBUG[%d]: get_board()=0 (app=0x%08X)\n", debug_count, app);
+                    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x220), 4)) {
+                        DWORD profile = *(DWORD*)(app + 0x220);
+                        fprintf(df, "    profile=0x%08X\n", profile);
+                        if (profile && profile > 0x10000 && !IsBadReadPtr((void*)(profile + 0x0C), 4)) {
+                            DWORD b = *(DWORD*)(profile + 0x0C);
+                            fprintf(df, "    board=0x%08X\n", b);
+                            if (b && b > 0x10000 && !IsBadReadPtr((void*)b, 4)) {
+                                DWORD vt = *(DWORD*)b;
+                                fprintf(df, "    vtable=0x%08X (range 0x4D0000-0x4D2200)\n", vt);
+                            }
+                        }
+                    }
+                    fclose(df);
+                }
+            }
+            continue;
+        }
 
         /* Check if board changed (new level loaded) */
         if (board == g_spawned_board) continue;

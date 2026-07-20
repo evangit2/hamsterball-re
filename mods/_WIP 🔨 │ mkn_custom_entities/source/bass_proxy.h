@@ -214,6 +214,7 @@ static void install_jmp_hook_nop(DWORD patchAddr, DWORD caveAddr, int totalPatch
 /* Game addresses */
 #define GAME_BASE 0x00400000
 #define GLOBAL_APP_PTR 0x005341E0
+#define GLOBAL_SCENE_PTR 0x005341E4
 #define BALL_UPDATE_HOOK 0x00405E22  /* mov eax, [esi+0x0C5C] — ESI = ball */
 #define GRAPHICS_PRESENT_HOOK 0x00453330  /* Graphics_PresentOrEnd */
 
@@ -227,8 +228,19 @@ static AthenaList_Append_t AthenaList_Append = (AthenaList_Append_t)0x00453780;
 typedef void (__thiscall *AthenaList_Init_t)(DWORD* list);
 static AthenaList_Init_t AthenaList_Init = (AthenaList_Init_t)0x00453210;
 
-/* Safe pointer chain: App → PlayerProfile → Board */
+/* Safe pointer chain: Try g_Scene first, fall back to App → PlayerProfile → Board */
 static DWORD get_board(void) {
+    /* Method 1: g_Scene (0x005341E4) holds the board/scene pointer directly.
+     * This works in all modes (Time Trial, Tournament, Practice). */
+    if (!IsBadReadPtr((void*)GLOBAL_SCENE_PTR, 4)) {
+        DWORD board = *(DWORD*)GLOBAL_SCENE_PTR;
+        if (board && board > 0x10000 && !IsBadReadPtr((void*)board, 4)) {
+            DWORD vtable = *(DWORD*)board;
+            if (vtable >= 0x4D0000 && vtable <= 0x4D2200)
+                return board;
+        }
+    }
+    /* Method 2: App → profile → board (fallback for older paths) */
     if (IsBadReadPtr((void*)GLOBAL_APP_PTR, 4)) return 0;
     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
     if (!app || app < 0x10000) return 0;
@@ -240,8 +252,6 @@ static DWORD get_board(void) {
     if (!board || board < 0x10000) return 0;
     if (IsBadReadPtr((void*)board, 4)) return 0;
     DWORD vtable = *(DWORD*)board;
-    /* Vtable range covers base Scene (0x4D0260) through Impossible (0x4D21C0).
-     * All 15 LevelBoard subclass vtables verified via Ghidra decompilation. */
     if (vtable < 0x4D0000 || vtable > 0x4D2200) return 0;
     return board;
 }
