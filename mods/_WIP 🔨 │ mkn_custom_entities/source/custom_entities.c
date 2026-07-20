@@ -1555,7 +1555,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
                         {
                             char* ent_start = my_stristr(s1_name, "<ENTITY>");
                             if (ent_start) {
-                                ent_start += 7;
+                                ent_start += 8;  /* skip "<ENTITY>" (8 chars including '>') */
                                 while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
                                 char* ent_end = my_stristr(ent_start, "</ENTITY>");
                                 if (!ent_end) ent_end = ent_start + strlen(ent_start);
@@ -1663,7 +1663,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
         {
             char* ent_start = my_stristr(name, "<ENTITY>");
             if (ent_start) {
-                ent_start += 7;
+                ent_start += 8;  /* skip "<ENTITY>" (8 chars including '>') */
                 while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
                 char* ent_end = my_stristr(ent_start, "</ENTITY>");
                 if (!ent_end) ent_end = ent_start + strlen(ent_start);
@@ -1821,26 +1821,19 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
         DWORD board = get_board();
         if (!board) {
-            /* Debug: log why get_board failed */
+            /* Debug: log why get_board failed (limited output) */
             static int debug_count = 0;
-            if (debug_count < 3) {
+            if (debug_count < 5) {
                 debug_count++;
                 FILE* df = NULL;
                 fopen_s(&df, log_path, "a");
                 if (df) {
+                    DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
                     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
-                    fprintf(df, "  DEBUG[%d]: get_board()=0 (app=0x%08X)\n", debug_count, app);
+                    fprintf(df, "  DEBUG[%d]: get_board()=0 (g_Scene=0x%08X, app=0x%08X)\n", debug_count, scene, app);
                     if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x220), 4)) {
                         DWORD profile = *(DWORD*)(app + 0x220);
                         fprintf(df, "    profile=0x%08X\n", profile);
-                        if (profile && profile > 0x10000 && !IsBadReadPtr((void*)(profile + 0x0C), 4)) {
-                            DWORD b = *(DWORD*)(profile + 0x0C);
-                            fprintf(df, "    board=0x%08X\n", b);
-                            if (b && b > 0x10000 && !IsBadReadPtr((void*)b, 4)) {
-                                DWORD vt = *(DWORD*)b;
-                                fprintf(df, "    vtable=0x%08X (range 0x4D0000-0x4D2200)\n", vt);
-                            }
-                        }
                     }
                     fclose(df);
                 }
