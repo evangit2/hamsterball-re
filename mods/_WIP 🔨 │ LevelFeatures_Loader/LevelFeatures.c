@@ -896,12 +896,15 @@ static void LoadConfig(void) {
             inFeaturesSection = (my_strnicmp(p, "[FEATURES", 9) == 0);
             if (my_strnicmp(p, "[COLLISION", 10) == 0) {
                 /* Restore EOL so LoadCollisionConfig can scan the full buffer
-                 * without hitting the '\0' we placed at this line's end.
-                 * Without this, LoadCollisionConfig gets stuck in an infinite
-                 * loop at the [COLLISION] header (EOL already nulled). */
+                 * without hitting the '\0' we placed at this line's end. */
                 *eol = saved;
+                DebugLog("  LoadConfig: calling LoadCollisionConfig");
                 LoadCollisionConfig(buf, bytesRead);
-                *eol = '\0';
+                DebugLog("  LoadConfig: LoadCollisionConfig done");
+                /* LoadCollisionConfig nulls '=' chars in the buffer and doesn't
+                 * restore them, which corrupts the main loop's EOL tracking.
+                 * Since [COLLISION] is always the last section, break out. */
+                break;
             }
             goto next_line;
         }
@@ -998,6 +1001,7 @@ static void LoadConfig(void) {
         if (*eol == '\n') eol++;
         line = eol;
     }
+    DebugLog("LoadConfig: main loop done");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -5660,14 +5664,18 @@ static void InstallHook(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void DebugLog(const char *msg) {
-    if (!g_configPath[0]) return;
-    /* Write next to the DLL — C:\ is not writable under UAC */
+    /* Write next to the DLL, or fall back to game directory */
     char logPath[MAX_PATH];
-    strcpy(logPath, g_configPath);
-    char *p = strrchr(logPath, '\\');
-    if (p) {
-        strcpy(p + 1, "lfdebug.log");
+    if (g_configPath[0]) {
+        strcpy(logPath, g_configPath);
+        char *p = strrchr(logPath, '\\');
+        if (p) {
+            strcpy(p + 1, "lfdebug.log");
+        } else {
+            strcpy(logPath, "lfdebug.log");
+        }
     } else {
+        /* GetConfigPath failed (common under Wine/BoxedWine) — use game dir */
         strcpy(logPath, "lfdebug.log");
     }
     HANDLE hFile = CreateFileA(logPath, GENERIC_WRITE,
@@ -5924,7 +5932,13 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("Function pointers resolved");
 
     GetConfigPath();
+    {
+        char dbg_cp[256];
+        wsprintfA(dbg_cp, "GetConfigPath done: path='%s'", g_configPath[0] ? g_configPath : "(empty)");
+        DebugLog(dbg_cp);
+    }
     LoadConfig();
+    DebugLog("LoadConfig done");
 
     /* Version-check LevelData.txt — if version mismatch, regenerate */
     const char *EXPECTED_VERSION = "LevelData_v3";
@@ -5943,15 +5957,23 @@ static DWORD WINAPI PatchThread(LPVOID param) {
         if (!strstr(verBuf, EXPECTED_VERSION)) needRegen = TRUE;
     }
     if (needRegen) {
+        DebugLog("Generating LevelData...");
         GenerateLevelData();
+        DebugLog("GenerateLevelData done");
     }
     LoadLevelData();
+    DebugLog("LoadLevelData done");
 
     PatchAllocSizes();
+    DebugLog("PatchAllocSizes done");
     InstallBoardCtorHooks();
+    DebugLog("InstallBoardCtorHooks done");
     InstallUniversalConstructorHook();
+    DebugLog("InstallUniversalConstructorHook done");
     InstallVtablePatches();
+    DebugLog("InstallVtablePatches done");
     InstallHook();
+    DebugLog("InstallHook done");
     DebugLog("=== PatchThread complete (v2 swirlfix) ===\n");
     return 0;
 }
