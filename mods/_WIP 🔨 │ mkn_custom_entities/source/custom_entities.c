@@ -1607,110 +1607,64 @@ static void process_rotaters(DWORD board, FILE* logf) {
         char* name = *(char**)(obj_ptr);
         if (!name || IsBadReadPtr(name, 8)) continue;
 
-        /* Check for Rotater (case-insensitive, prefix match — name may include tags) */
-        if (_strnicmp(name, "REF:cEnt", 8) == 0  /* REF:custom_obj or REF:custom_obj_NNN */) {
-            /* Full match "REF:Rotater" — tags start at name+11 */
-        } else if (_strnicmp(name, "cEnt", 4) == 0  /* custom_obj or custom_obj_NNN */) {
-            /* Plain "Rotater" — tags start at name+7 */
-        } else {
-            continue;
-        }
+        /* Check for cEnt prefix (case-insensitive) */
+        if (_strnicmp(name, "cEnt", 4) != 0 &&
+            _strnicmp(name, "REF:cEnt", 8) != 0) continue;
 
-        /* Read position (x, y, z at obj+0x04, +0x08, +0x0C) */
-        float px = *(float*)(obj_ptr + 0x04);
-        float py = *(float*)(obj_ptr + 0x08);
-        float pz = *(float*)(obj_ptr + 0x0C);
-
-        /* Parse <ENTITY> name </ENTITY> from the object name */
+        /* Parse <ENTITY> name </ENTITY> */
         char entity_name[64] = {0};
         {
             char* ent_start = my_stristr(name, "<ENTITY>");
             if (ent_start) {
-                ent_start += 7;  /* skip "<ENTITY>" */
-                /* skip whitespace */
+                ent_start += 7;
                 while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
                 char* ent_end = my_stristr(ent_start, "</ENTITY>");
-                if (!ent_end) ent_end = ent_start + strlen(ent_start);  /* no closing tag */
+                if (!ent_end) ent_end = ent_start + strlen(ent_start);
                 size_t ent_len = ent_end - ent_start;
                 if (ent_len > 0 && ent_len < 64) {
                     strncpy(entity_name, ent_start, ent_len);
                     entity_name[ent_len] = 0;
-                    /* trim trailing whitespace */
                     while (ent_len > 0 && (entity_name[ent_len-1] == ' ' || entity_name[ent_len-1] == '\t'))
                         entity_name[--ent_len] = 0;
                 }
             }
         }
+        if (!entity_name[0]) continue;
 
-        if (!entity_name[0]) continue;  /* skip if no <ENTITY> tag */
+        /* Read position */
+        float px = *(float*)(obj_ptr + 0x04);
+        float py = *(float*)(obj_ptr + 0x08);
+        float pz = *(float*)(obj_ptr + 0x0C);
 
-        /* Load entity definition from Levels\<name>.txt */
-        char txt_path[256];
-        snprintf(txt_path, sizeof(txt_path), "%s\\Levels\\%s.txt", g_game_dir, entity_name);
+        /* Match entity name to AI list */
+        int ai_type = -1;
+        const char* ai_mesh = NULL;
 
-        entity_def_t def;
-        if (!load_entity_def(txt_path, &def, logf)) continue;
-
-        /* Build full mesh path: Levels\<mesh_file> */
-        char full_mesh_path[256];
-        if (def.mesh_file[0]) {
-            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s", def.mesh_file);
-        } else {
-            snprintf(full_mesh_path, sizeof(full_mesh_path), "Levels\\%s.MESHWORLD", entity_name);
+        if (_stricmp(entity_name, "Swirl") == 0) {
+            ai_type = 6;
+            ai_mesh = "levels\\Level3-Swirl";
+        } else if (_stricmp(entity_name, "Pendulum") == 0) {
+            ai_type = 2;
+            ai_mesh = "levels\\LevelImpossible-Pendulum";
         }
 
-        if (logf) {
-            fprintf(logf, "  ENTITY: '%s' at (%.1f, %.1f, %.1f) MESH='%s' SIZE=0x%X create=%d update=%d\n",
-                    entity_name, px, py, pz, full_mesh_path, def.obj_size,
-                    def.create_cmd_count, def.update_cmd_count);
-            fprintf(logf, "    ROT_A=%.4f ROT_D=%.4f ROT_MAX=%.4f ROT_MIN=%.4f ROT_M=%c RNG=%d\n",
-                    def.rot_a, def.rot_d, def.rot_max, def.rot_min,
-                    def.rot_m == 0 ? 'X' : def.rot_m == 1 ? 'Y' : 'Z',
-                    def.rng_seed);
-        }
-
-        /* Allocate object */
-        void* obj = pfn_operator_new(def.obj_size);
-        if (!obj) { if (logf) fprintf(logf, "  ENTITY: alloc failed\n"); continue; }
-        memset(obj, 0, def.obj_size);
-
-        /* Create mesh via MeshWorld_ctor */
-        DWORD app = *(DWORD*)(board + BOARD_APP);
-        if (!app || IsBadReadPtr((void*)app, 4)) continue;
-        DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
-        if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) continue;
-
-        void* mesh = pfn_operator_new(MESHWORLD_SIZE);
-        if (!mesh) continue;
-        void* mesh_result = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, full_mesh_path);
-        if (!mesh_result) {
-            if (logf) fprintf(logf, "  ENTITY: MeshWorld_ctor failed for '%s'\n", full_mesh_path);
+        if (ai_type < 0) {
+            if (logf) fprintf(logf, "  cEnt(S3): '%s' — no matching AI, skipping\n", entity_name);
             continue;
         }
 
-        /* Call Stands_ctor (base class) — initializes mesh, collision, render context */
-        typedef void (__thiscall *Stands_ctor_t)(void*, int);
-        Stands_ctor_t pfn_Stands_ctor = (Stands_ctor_t)0x00462850;
-        pfn_Stands_ctor(obj, (int)mesh);
+        if (logf) fprintf(logf, "  cEnt(S3): '%s' at (%.1f, %.1f, %.1f) → AI=%d MESH='%s'\n",
+                entity_name, px, py, pz, ai_type, ai_mesh);
 
-        /* Execute onCreate commands */
-        exec_create_cmds((DWORD)obj, board, px, py, pz, mesh, &def, logf);
-
-        /* Register object in board lists */
-        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
-        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
-
-        /* Track for per-frame updates */
-        if (g_tracked_count < MAX_ROTATERS) {
-            g_tracked[g_tracked_count].obj = (DWORD)obj;
-            g_tracked[g_tracked_count].def = def;
-            g_tracked[g_tracked_count].active = 1;
-            g_tracked_count++;
-        }
-
-        if (logf) fprintf(logf, "  ENTITY: spawned obj=0x%08X\n", (DWORD)obj);
+        spawn_rotater_at(board, px, py, pz, ai_mesh,
+                         0.0f, 1.0f, 0.0f,
+                         2.0f, 2.0f, 2.0f,
+                         ai_type,
+                         logf);
         found++;
     }
+
+    if (found > 0 && logf) fprintf(logf, "  Processed %d cEnt entries\n", found);
 
     if (logf && found > 0) {
         fprintf(logf, "  ROTATER: spawned %d SWIRL object(s)\n", found);
