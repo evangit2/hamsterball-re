@@ -713,7 +713,8 @@ static LevelData g_levelData[16] = {
     {"Beginner",0x004D1098,"Board (Beginner)","BEGINNER RACE","CASCADERACE","Cascade Race",{1.0f,0.75f,0.25f},"levels\\levelcascade",{},0,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 3=Intermediate */
-    {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",{},0,0,
+    {"Intermediate",0x004D05A0,"Board (Intermediate)","INTERMEDIATE RACE","INTERMEDIATERACE","Gerbil Groove",{0.0f,0.0f,1.0f},"levels\\level2",
+     {"0x8620:Levels\\Level2-Bridge","0x8628:TIPPER:"},2,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE},
     /* 4=Dizzy */
     {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x85E0:Levels\\Level3-WaterWheel","0x85E4:RENDER","0x85F8:Levels\\Level3-Swirl","0x860C:RENDER","0x8620:Levels\\Level3-Tipper","0x8628:RENDER","0x862C:Levels\\Level3-Gluebie"},7,0x851,
