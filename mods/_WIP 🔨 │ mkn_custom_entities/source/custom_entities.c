@@ -1556,7 +1556,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
 
                         /* Load entity definition */
                         char txt_path[256];
-                        snprintf(txt_path, sizeof(txt_path), "%s\\Centities\\%s.txt", g_game_dir, entity_name);
+                        snprintf(txt_path, sizeof(txt_path), "%s\\Levels\\%s.txt", g_game_dir, entity_name);
 
                         entity_def_t def;
                         if (!load_entity_def(txt_path, &def, logf)) continue;
