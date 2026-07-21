@@ -560,6 +560,27 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_WHEELEMBED_VY    0x86B8
 #define UNI_WHEELEMBED_VZ    0x86BC
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Dedicated per-object-type mesh slots (0x86C0-0x86FF)
+ *
+ * Each object type gets its own mesh pointer slot so that multiple object
+ * types can coexist on the same level without overwriting each other's
+ * mesh pointers. Previously Bridge/Tipper/Spinny/Looper all shared
+ * UNI_BONK_STORE (0x8620), making cross-level injection impossible.
+ *
+ * Bridge keeps 0x8620/0x8628 (it's the most common shared object).
+ * All other conflicting types move here.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+#define UNI_TIPPER_MESH      0x86C0  /* Tipper meshWorld (Dizzy) */
+#define UNI_TIPPER_RENDER    0x86C4  /* Tipper renderObj (Dizzy) */
+#define UNI_SPINNY_MESH      0x86C8  /* Spinny mesh (Toob) */
+#define UNI_SAW_MESH         0x86CC  /* Saw mesh (Toob) */
+#define UNI_FALLOUT_MESH     0x86D0  /* Fallout mesh (Toob) */
+#define UNI_GLUEBIE_MESH     0x86D4  /* Gluebie mesh (Dizzy) */
+#define UNI_LOOPER_MESH      0x86D8  /* Looper mesh (Impossible) */
+#define UNI_GEAR_MESH        0x86DC  /* Gear mesh (Impossible) */
+#define UNI_BIGGEAR_MESH     0x86E0  /* BigGear mesh (Impossible) */
+
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
 #define UNI_SKY_TIMER        0x8740
@@ -717,7 +738,7 @@ static LevelData g_levelData[16] = {
      {"0x8620:Levels\\Level2-Bridge","0x8628:TIPPER:"},2,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE},
     /* 4=Dizzy */
-    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x85E0:Levels\\Level3-WaterWheel","0x85E4:RENDER","0x85F8:Levels\\Level3-Swirl","0x860C:RENDER","0x8620:Levels\\Level3-Tipper","0x8628:RENDER","0x862C:Levels\\Level3-Gluebie"},7,0x851,
+    {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x85E0:Levels\\Level3-WaterWheel","0x85E4:RENDER","0x85F8:Levels\\Level3-Swirl","0x860C:RENDER","0x86C0:Levels\\Level3-Tipper","0x86C4:RENDER","0x86D4:Levels\\Level3-Gluebie"},7,0x851,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0,0},
     /* 5=Tower */
     {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x8620:Levels\\Level4-Catapult","0x8628:Levels\\Level4-Drawbridge","0x85F4:MESH:Meshes\\YellowLink","0x85EC:Levels\\Level4-Mace","0x85F0:Levels\\Level4-Windmill","0x8600:MESH:Meshes\\Chomper","0x861C:Levels\\Level4-Turret"},7,0,
@@ -735,7 +756,7 @@ static LevelData g_levelData[16] = {
     {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 10=Toob */
-    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x8620:Levels\\Level8-Spinny","0x8628:Levels\\Level8-Saw","0x862C:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-Blockdawg1","0x85F0:Levels\\Level8-Blockdawg2"},5,0x856,
+    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x86C8:Levels\\Level8-Spinny","0x86CC:Levels\\Level8-Saw","0x86D0:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-Blockdawg1","0x85F0:Levels\\Level8-Blockdawg2"},5,0x856,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
     {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x8620:Levels\\Level7-Wobbly1","0x8624:Levels\\Level7-Wobbly2","0x8628:Levels\\Level7-Wobbly3","0x862C:Levels\\Level7-Wobbly4","0x8630:Levels\\Level7-Wobbly5","0x8634:Levels\\Level7-Wobbly6","0x8638:Levels\\Level7-Wobbly7"},7,0x857,
@@ -753,7 +774,7 @@ static LevelData g_levelData[16] = {
     {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x8620:Levels\\Level2-Bridge","0x8628:RENDER","0x85F4:Levels\\Level10-Bridge1","0x85F8:Levels\\Level10-Bridge2"},4,0x859,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
-    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x8620:Levels\\LevelImpossible-Looper","0x8628:Levels\\LevelImpossible-Gear","0x862C:Levels\\LevelImpossible-BigGear","0x85EC:Levels\\LevelImpossible-Rotator","0x85F0:Levels\\LevelImpossible-Pendulum"},5,0,
+    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x86D8:Levels\\LevelImpossible-Looper","0x86DC:Levels\\LevelImpossible-Gear","0x86E0:Levels\\LevelImpossible-BigGear","0x85EC:Levels\\LevelImpossible-Rotator","0x85F0:Levels\\LevelImpossible-Pendulum"},5,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0,0x4348,1,0,0},
 };
 
@@ -1952,8 +1973,8 @@ static void InitBridge(void *board) {
         !g_TipperVisualAttach) return;
 
     /* Don't create a second bridge if one is already loaded.
-     * Master (14) has bridge in its mesh list — InitBridge would double-allocate. */
-    if (*(void **)((char *)board + BRIDGE_MESHWORLD) != NULL) {
+     * LoadExtraMeshes may have already loaded the bridge to UNI_BONK_STORE. */
+    if (*(void **)((char *)board + UNI_BONK_STORE) != NULL) {
         DebugLog("InitBridge: bridge already exists, skipping");
         return;
     }
@@ -1963,19 +1984,20 @@ static void InitBridge(void *board) {
     void *gfx = *(void **)((char *)app + 0x174);
     if (!gfx) return;
 
-    /* Step 1: MeshWorld */
+    /* Step 1: MeshWorld — store at UNI_BONK_STORE (0x8620) where the
+     * BRIDGE handler in CreateDynamicObjects reads from. */
     void *meshMem = g_operatorNew(0x10D0);
     if (!meshMem) return;
-    void *meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, "Levels\\Level2-Bridge");
-    *(void **)((char *)board + BRIDGE_MESHWORLD) = meshWorld;
+    void *meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, "Levels\\\\Level2-Bridge");
+    *(void **)((char *)board + UNI_BONK_STORE) = meshWorld;
 
-    /* Step 2: RenderObj */
+    /* Step 2: RenderObj — store at UNI_SAW1_OBJ (0x8628) */
     void *renderMem = g_operatorNew(0x10D0);
     void *renderObj = NULL;
     if (renderMem) {
         renderObj = g_LevelRenderCtor(renderMem, meshWorld);
     }
-    *(void **)((char *)board + BRIDGE_RENDEROBJ) = renderObj;
+    *(void **)((char *)board + UNI_SAW1_OBJ) = renderObj;
 
     /* Step 3: TipperVisual_Attach */
     if (renderObj && meshWorld) {
@@ -3329,8 +3351,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TIPPER (Dizzy) ── */
     if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
-        int meshOff = UNI_BONK_STORE;
-        int renderOff = UNI_SAW1_OBJ;
+        int meshOff = UNI_TIPPER_MESH;
+        int renderOff = UNI_TIPPER_RENDER;
         int meshVal = *(int*)((char*)board + meshOff);
         if (!meshVal) { DebugLog("TIPPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         {
@@ -3386,7 +3408,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── GLUEBIE (Dizzy) ── */
     if (my_strnicmp(name, "GLUEBIE", 7) == 0) {
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
-        int meshOff = UNI_SAW2_OBJ;
+        int meshOff = UNI_GLUEBIE_MESH;
         int meshVal = *(int*)((char*)board + meshOff);
         if (!meshVal) { DebugLog("GLUEBIE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
@@ -3672,7 +3694,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPINNY (Toob) ── */
     if (my_strnicmp(name, "SPINNY", 6) == 0) {
-        int meshVal = *(int*)((char*)board + UNI_BONK_STORE);
+        int meshVal = *(int*)((char*)board + UNI_SPINNY_MESH);
         if (!meshVal) { DebugLog("SPINNY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
         if (mem) {
@@ -3687,7 +3709,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW (Toob) ── */
     if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SAWPATH");
-        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        int meshVal = *(int*)((char*)board + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1110);
         if (mem) {
@@ -3703,7 +3725,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW2 (Toob) ── */
     if (my_stricmp(name, "SAW2") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH");
-        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        int meshVal = *(int*)((char*)board + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW2: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1118);
         if (mem) {
@@ -3718,7 +3740,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── FALLOUT1 (Toob) ── */
     if (my_strnicmp(name, "FALLOUT1", 8) == 0) {
-        int meshVal = *(int*)((char*)board + UNI_SAW2_OBJ);
+        int meshVal = *(int*)((char*)board + UNI_FALLOUT_MESH);
         if (!meshVal) { DebugLog("FALLOUT1: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
         if (mem) {
@@ -3914,7 +3936,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── LOOPER (Impossible) ── */
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
-        int meshVal = *(int*)((char*)board + UNI_BONK_STORE);
+        int meshVal = *(int*)((char*)board + UNI_LOOPER_MESH);
         if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1500);
         if (mem) {
@@ -3928,7 +3950,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── GEAR (Impossible) ── */
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
-        int meshVal = *(int*)((char*)board + UNI_SAW1_OBJ);
+        int meshVal = *(int*)((char*)board + UNI_GEAR_MESH);
         if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
@@ -3942,7 +3964,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── BIGGEAR (Impossible) ── */
     if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
-        int meshVal = *(int*)((char*)board + UNI_SAW2_OBJ);
+        int meshVal = *(int*)((char*)board + UNI_BIGGEAR_MESH);
         if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
