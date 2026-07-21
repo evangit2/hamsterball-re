@@ -1,6 +1,21 @@
-# Custom Entities Mod v51
+# Custom Entities Mod v52
 
 A bass.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
+
+## v52 Changes
+
+- Fixed 20+ wrong/NULL mesh paths that caused Swirl fallback for many entities
+- Added new AIs: **Sign**, **Windmill**, **Droplifter**
+- **Lifter** now uses Up Race model (`levels\LevelUp-Lifter`)
+- **Droplifter** (new) uses Odd Race model (`levels\Level6-Lifter`)
+- **Rotator** now uses constant rotation (ROS_Y=0) instead of oscillation
+- **Gear** and **Looper** AI types changed to PopCylinder (0) to prevent crashes
+  - Gear crashed at 0x478EDD (MeshArchive_ctor)
+  - Looper crashed at 0x468E91
+- Fixed Swirl duplication on Dizzy Race and Arena levels
+  - Swirl entities are now skipped on levels that natively have SWIRL
+- .MESH file entities (8ball, Bell, Chomper, Fan, etc.) now try loading via
+  MeshWorld_ctor with `meshes\` path, falling back to Swirl if unsupported
 
 ## How It Works
 
@@ -19,73 +34,69 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 - Entity names are case-insensitive
 - If `<ENTITY>` is empty, missing, or doesn't match any AI in the list, the object will not spawn
 
-## AI List
+## AI List (v52)
 
-The AI list is hardcoded in the DLL, sorted alphabetically. Each AI maps an entity string to a native game constructor:
-
-| Entity String | Constructor | Address | Mesh Path |
+| Entity String | AI Type | Mesh Path | Notes |
 |---|---|---|---|
-| 8ball | BadBall_ctor | 0x0040AFE0 | — |
-| BBridge | BreakBridge_ctor | 0x00436D70 | — |
-| Bell | Bell_ctor | 0x00434D70 | — |
-| Blockdawg | Blockdawg_ctor | 0x0043C310 | levels\Level8-Blockdawg1 |
-| Bonk | Bonk_ctor | 0x00438850 | — |
-| Bridge | PopCylinder_ctor | 0x00436EE0 | levels\Level2-Bridge |
-| Bumper | PopCylinder_ctor | 0x00436EE0 | — |
-| Catapult | Catapult_ctor | 0x00437E10 | levels\Level4-Catapult |
-| Chomper | PopCylinder_ctor | 0x00436EE0 | levels\Level4-Windmill |
-| Chrome | PopCylinder_ctor | 0x00436EE0 | — |
-| Drawbridge | PopCylinder_ctor | 0x00436EE0 | levels\Level4-Drawbridge |
-| Fan | Fan_ctor | 0x00438C20 | — |
-| Flag | FlagWaver_Ctor | 0x0046AF30 | — |
-| Flickfloor1 | PopCylinder_ctor | 0x00436EE0 | levels\LevelDark-DFloor1 |
-| Flickfloor2 | PopCylinder_ctor | 0x00436EE0 | levels\LevelDark-DFloor4 |
-| Flickring | PopCylinder_ctor | 0x00436EE0 | levels\LevelDark-Flickring |
-| Funball | PopCylinder_ctor | 0x00436EE0 | — |
-| Gear | Gear_ctor | 0x00437590 | levels\LevelImpossible-Gear |
-| Glassbreaker | PopCylinder_ctor | 0x00436EE0 | — |
-| Gluebie | Gluebie_ctor | 0x00437CB0 | levels\Level3-Gluebie |
-| Judge | PopCylinder_ctor | 0x00436EE0 | — |
-| Lifter | Lifter_ctor | 0x00436920 | levels\Level6-Lifter |
-| Looper | Looper_ctor | 0x00435800 | levels\LevelImpossible-Looper |
-| Mace | Mace_ctor | 0x00438750 | levels\Level4-Mace |
-| Mag | Magnifier_ctor | 0x00436250 | — |
-| Mousetrap | MouseTrap_ctor | 0x00437880 | — |
-| Neonplatform | NeonPlatform_ctor | 0x0043E110 | levels\LevelDark-NeonPlatform |
-| Pendulum | Pendulum_ctor | 0x00437700 | levels\LevelImpossible-Pendulum |
-| Popcylinder | PopCylinder_ctor | 0x00436EE0 | — |
-| Rotator | Rotator_ctor | 0x004366F0 | levels\LevelImpossible-Rotator |
-| Saw | Saw_ctor | 0x0043B780 | levels\Level8-Saw |
-| Sawblade | SawBlade_ctor | 0x00434660 | — |
-| Speedcylinder | SpeedCylinder_ctor | 0x00436A20 | — |
-| Spinner | Spinner_Level_ctor | 0x004396F0 | — |
-| Swirl | Rotator_ctor_Impossible | 0x00435940 | levels\Level3-Swirl |
-| Tarbubble | PopCylinder_ctor | 0x00436EE0 | — |
-| Tarpit | PopCylinder_ctor | 0x00436EE0 | — |
-| Timebutton | TimeButton_ctor | 0x00436C10 | — |
-| Tipper | Tipper_ctor | 0x00437960 | levels\Level3-Tipper |
-| Trapdoor | Trapdoor_ctor | 0x00438290 | levels\Level4-Trapdoor1 |
-| Trode | PopCylinder_ctor | 0x00436EE0 | levels\LevelDark-Trode |
-| Waterwheel | PopCylinder_ctor | 0x00436EE0 | levels\Level3-WaterWheel |
-| Wavy | Wavy_ctor | 0x0043AD40 | levels\Level7-Wavy1 |
-| Wobbly | PopCylinder_ctor | 0x00436EE0 | levels\Level7-Wobbly1 |
+| 8ball | PopCylinder | meshes\8ball | .MESH file (Swirl fallback) |
+| BBridge | PopCylinder | levels\Level10-Bridge1 | Fixed (was NULL) |
+| Bell | PopCylinder | meshes\bell | .MESH file (Swirl fallback) |
+| Blockdawg | PopCylinder | levels\Level8-BlockDawg1 | Correct |
+| Bonk | PopCylinder | levels\Level5-Bonk | Fixed (was NULL) |
+| Bridge | PopCylinder | levels\Level2-Bridge | Correct |
+| Bumper | PopCylinder | levels\Level9-PopCylinder1 | Fixed (was NULL, no _default) |
+| Catapult | PopCylinder | levels\Level4-Catapult | Correct |
+| Chomper | PopCylinder | meshes\chomper | Fixed (was Windmill, now .MESH) |
+| Chrome | PopCylinder | levels\Level9-PopCylinder1 | Fixed (was NULL) |
+| Drawbridge | PopCylinder | levels\Level4-Drawbridge | Correct |
+| Droplifter | PopCylinder | levels\Level6-Lifter | **NEW** — Odd Race model |
+| Fan | PopCylinder | meshes\fanbody | Fixed (was NULL, now .MESH) |
+| Flag | PopCylinder | levels\Level9-PopCylinder1 | Fixed (was NULL) |
+| Flickfloor1 | PopCylinder | levels\LevelDark-DFloor1 | Correct |
+| Flickfloor2 | PopCylinder | levels\LevelDark-DFloor4 | Correct |
+| Flickring | PopCylinder | levels\LevelDark-FlickRing | Fixed (case) |
+| Funball | PopCylinder | meshes\funball | Fixed (was NULL, now .MESH) |
+| Gear | PopCylinder | levels\LevelImpossible-Gear | **Fixed crash** (was AI 4) |
+| Glassbreaker | PopCylinder | levels\LevelGlass | Fixed (was NULL) |
+| Gluebie | PopCylinder | levels\Level3-Gluebie | Correct |
+| Judge | PopCylinder | meshes\hammyjudge | Fixed (was NULL, now .MESH) |
+| Lifter | PopCylinder | levels\LevelUp-Lifter | **Fixed** (was Level6=Odd, now Up) |
+| Looper | PopCylinder | levels\LevelImpossible-Looper | **Fixed crash** (was AI 3) |
+| Mace | PopCylinder | levels\Level4-Mace | Correct |
+| Mag | PopCylinder | meshes\magnifyingglass | Fixed (was NULL, now .MESH) |
+| Mousetrap | PopCylinder | levels\MouseTrap | Fixed (was NULL) |
+| Neonplatform | PopCylinder | levels\LevelDark-NeonPlatform | Correct |
+| Pendulum | Pendulum_ctor | levels\LevelImpossible-Pendulum | Correct |
+| Popcylinder | PopCylinder | levels\Level9-PopCylinder1 | Fixed (was NULL) |
+| Rotator | Rotator_ctor | levels\LevelImpossible-Rotator | **Fixed** (constant rotation) |
+| Saw | PopCylinder | levels\Level8-Saw | Correct |
+| Sawblade | PopCylinder | meshes\sawblade | Fixed (was NULL, now .MESH) |
+| Sign | PopCylinder | levels\PopupSign | **NEW** |
+| Speedcylinder | PopCylinder | levels\LevelUp-SpeedCylinder | Fixed (was NULL) |
+| Spinner | PopCylinder | levels\Level8-Spinny | Fixed (was NULL) |
+| Swirl | Rotator_ctor_Impossible | levels\Level3-Swirl | Correct, no duplicate on Dizzy/Arena |
+| Tarbubble | PopCylinder | meshes\tarbubble | Fixed (was NULL, now .MESH) |
+| Tarpit | PopCylinder | levels\Level9-PopCylinder1 | Fixed (was NULL, no _default) |
+| Timebutton | PopCylinder | levels\LevelUp-Button | Fixed (was NULL) |
+| Tipper | PopCylinder | levels\Level3-Tipper | Correct |
+| Trapdoor | PopCylinder | levels\Level4-Trapdoor1 | Correct |
+| Trode | PopCylinder | levels\LevelDark-Trode | Correct |
+| Waterwheel | PopCylinder | levels\Level3-WaterWheel | Correct |
+| Wavy | PopCylinder | levels\Level7-Wavy1 | Correct |
+| Windmill | PopCylinder | levels\Level4-Windmill | **NEW** |
+| Wobbly | PopCylinder | levels\Level7-Wobbly1 | Correct |
 
-## Usage Examples
+## Known Limitations
 
-### Spawn a SWIRL platform
-```
-cEnt_001 <ENTITY>Swirl</ENTITY>
-```
-
-### Spawn a Pendulum
-```
-cEnt_002 <ENTITY>Pendulum</ENTITY>
-```
-
-### Spawn a Mace
-```
-cEnt_003 <ENTITY>Mace</ENTITY>
-```
+- **.MESH file entities** (8ball, Bell, Chomper, Fan, Funball, Judge, Mag, Sawblade, Tarbubble):
+  These use a different mesh format (.MESH) that `MeshWorld_ctor` cannot load. The mod tries
+  loading them anyway, but if it fails, it falls back to the Swirl mesh. To get the correct
+  model, a future version needs to use `MeshNode_ctor` (0x471C20) for .MESH files.
+- **Static objects**: Many entities (Tipper, Bridge, Gluebie, etc.) spawn with correct model
+  but no animation/behavior. Adding native game behaviors requires calling the correct
+  per-level update functions, which is future work.
+- **Swirl on Dizzy/Arena**: Swirl entities are skipped on Dizzy Race, Master Race, and all
+  Arena levels to prevent duplication with natively-spawned SWIRL objects.
 
 ## Installation
 

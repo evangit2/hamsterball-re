@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v51
+ * custom_entities.c — Hamsterball Custom Entities Mod v52
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -836,6 +836,12 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         path = g_swirl_mesh_path;
     }
 
+    /* v52: For .MESH files (path starts with "meshes\\"), MeshWorld_ctor
+     * can't load them — it only handles .MESHWORLD format.
+     * Try loading anyway — if it fails, fall back to Swirl mesh so the
+     * object at least renders (visible but wrong model). */
+    int is_mesh_file = (path && _strnicmp(path, "meshes\\", 6) == 0);
+
     /* Allocate a mutable copy of the path for MeshWorld_ctor */
     char path_buf[256];
     strncpy(path_buf, path, 255);
@@ -851,8 +857,17 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
 
     void* loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, path_buf);
     if (!loaded_mesh) {
-        if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s'\n", path_buf);
-        return;
+        /* v52: If this is a .MESH file path, try falling back to Swirl */
+        if (is_mesh_file) {
+            if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s' (.MESH not supported, using Swirl fallback)\n", path_buf);
+            strncpy(path_buf, g_swirl_mesh_path, 255);
+            path_buf[255] = 0;
+            loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, path_buf);
+        }
+        if (!loaded_mesh) {
+            if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s'\n", path_buf);
+            return;
+        }
     }
 
     /* 4. Allocate object and call constructor based on AI type */
@@ -1591,53 +1606,74 @@ static void process_rotaters(DWORD board, FILE* logf) {
         int ai_type = -1;
         const char* ai_mesh = NULL;
 
-        /* AI List — sorted alphabetically by entity name */
+        /* AI List — sorted alphabetically by entity name
+         *
+         * ctor_type: 0=PopCylinder, 1=Rotator, 2=Pendulum, 3=Looper, 4=Gear, 5=BigGear, 6=Swirl
+         *
+         * Mesh paths use "levels\\..." for .MESHWORLD files (loaded via MeshWorld_ctor).
+         * .MESH-only entities (8ball, Bell, Chomper, etc.) can't be loaded via
+         * MeshWorld_ctor — they need MeshNode_ctor (0x471C20, 0x18 byte struct).
+         * For those, mesh=NULL and we try loading the .MESH file path directly.
+         * MeshWorld_ctor will fail gracefully (returns NULL → spawn skipped).
+         *
+         * v52 changes:
+         *   - Fixed 20+ wrong/NULL mesh paths that caused Swirl fallback
+         *   - Added Sign, Windmill, Droplifter AIs
+         *   - Lifter now uses Up Race model (LevelUp-Lifter)
+         *   - Droplifter uses Odd Race model (Level6-Lifter)
+         *   - Rotator uses constant rotation (ROS_Y=0)
+         *   - Gear/Looper: AI type changed to 0 (PopCylinder) to prevent crash
+         *   - .MESH entities: try loading via MeshWorld_ctor with meshes\\ path
+         */
         typedef struct { const char* name; int ctor_type; const char* mesh; } ai_entry_t;
         static const ai_entry_t ai_list[] = {
-            /* name */            /* ctor_type (0=PopCyl, 1=Rotator, 2=Pendulum, 3=Looper, 4=Gear, 5=BigGear, 6=Swirl) */  /* mesh path */
-            { "8ball",            0, NULL },                        /* BadBall_ctor 0x0040AFE0 */
-            { "BBridge",          0, NULL },                        /* BreakBridge_ctor 0x00436D70 */
-            { "Bell",             0, NULL },                        /* Bell_ctor 0x00434D70 */
-            { "Blockdawg",        0, "levels\\Level8-Blockdawg1" }, /* Blockdawg_ctor 0x0043C310 */
-            { "Bonk",             0, NULL },                        /* Bonk_ctor 0x00438850 */
+            /* name */            /* ctor */  /* mesh path */
+            { "8ball",            0, "meshes\\8ball" },             /* .MESH — BadBall_ctor */
+            { "BBridge",          0, "levels\\Level10-Bridge1" },   /* BreakBridge_ctor */
+            { "Bell",             0, "meshes\\bell" },              /* .MESH — Bell_ctor */
+            { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
+            { "Bonk",             0, "levels\\Level5-Bonk" },       /* Bonk_ctor */
             { "Bridge",           0, "levels\\Level2-Bridge" },     /* PopCylinder_ctor */
-            { "Bumper",           0, NULL },                        /* PopCylinder_ctor */
-            { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor 0x00437E10 */
-            { "Chomper",          0, "levels\\Level4-Windmill" },   /* PopCylinder_ctor */
-            { "Chrome",           0, NULL },                        /* PopCylinder_ctor */
+            { "Bumper",           0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor (no _default.MESHWORLD) */
+            { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor */
+            { "Chomper",          0, "meshes\\chomper" },           /* .MESH — PopCylinder_ctor */
+            { "Chrome",           0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor */
             { "Drawbridge",       0, "levels\\Level4-Drawbridge" }, /* PopCylinder_ctor */
-            { "Fan",              0, NULL },                        /* Fan_ctor 0x00438C20 */
-            { "Flag",             0, NULL },                        /* FlagWaver_Ctor 0x0046AF30 */
+            { "Droplifter",       0, "levels\\Level6-Lifter" },     /* New AI — Odd Race model */
+            { "Fan",              0, "meshes\\fanbody" },           /* .MESH — Fan_ctor */
+            { "Flag",             0, "levels\\Level9-PopCylinder1" }, /* FlagWaver (fallback) */
             { "Flickfloor1",      0, "levels\\LevelDark-DFloor1" }, /* PopCylinder_ctor */
             { "Flickfloor2",      0, "levels\\LevelDark-DFloor4" }, /* PopCylinder_ctor */
-            { "Flickring",        0, "levels\\LevelDark-Flickring" }, /* PopCylinder_ctor */
-            { "Funball",          0, NULL },                        /* PopCylinder_ctor */
-            { "Gear",             4, "levels\\LevelImpossible-Gear" }, /* Gear_ctor 0x00437590 */
-            { "Glassbreaker",     0, NULL },                        /* PopCylinder_ctor */
-            { "Gluebie",          0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor 0x00437CB0 */
-            { "Judge",            0, NULL },                        /* PopCylinder_ctor */
-            { "Lifter",           0, "levels\\Level6-Lifter" },      /* Lifter_ctor 0x00436920 */
-            { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor 0x00435800 */
-            { "Mace",             0, "levels\\Level4-Mace" },       /* Mace_ctor 0x00438750 */
-            { "Mag",              0, NULL },                        /* Magnifier_ctor 0x00436250 */
-            { "Mousetrap",        0, NULL },                        /* MouseTrap_ctor 0x00437880 */
-            { "Neonplatform",     0, "levels\\LevelDark-NeonPlatform" }, /* NeonPlatform_ctor 0x0043E110 */
-            { "Pendulum",         2, "levels\\LevelImpossible-Pendulum" }, /* Pendulum_ctor 0x00437700 */
-            { "Popcylinder",      0, NULL },                        /* PopCylinder_ctor 0x00436EE0 */
-            { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor 0x004366F0 */
-            { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor 0x0043B780 */
-            { "Sawblade",         0, NULL },                        /* SawBlade_ctor 0x00434660 */
-            { "Speedcylinder",    0, NULL },                        /* SpeedCylinder_ctor 0x00436A20 */
-            { "Spinner",          0, NULL },                        /* Spinner_Level_ctor 0x004396F0 */
-            { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible 0x00435940 */
-            { "Tarbubble",        0, NULL },                        /* PopCylinder_ctor */
-            { "Tarpit",           0, NULL },                        /* PopCylinder_ctor */
-            { "Timebutton",       0, NULL },                        /* TimeButton_ctor 0x00436C10 */
-            { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor 0x00437960 */
-            { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor 0x00438290 */
+            { "Flickring",        0, "levels\\LevelDark-FlickRing" }, /* PopCylinder_ctor */
+            { "Funball",          0, "meshes\\funball" },           /* .MESH — PopCylinder_ctor */
+            { "Gear",             0, "levels\\LevelImpossible-Gear" }, /* PopCylinder (was 4=Gear_ctor, crashed) */
+            { "Glassbreaker",     0, "levels\\LevelGlass" },        /* No glassbonus.MESHWORLD, fallback */
+            { "Gluebie",          0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
+            { "Judge",            0, "meshes\\hammyjudge" },        /* .MESH — PopCylinder_ctor */
+            { "Lifter",           0, "levels\\LevelUp-Lifter" },    /* Up Race model (was Level6=Odd) */
+            { "Looper",           0, "levels\\LevelImpossible-Looper" }, /* PopCylinder (was 3=Looper_ctor, crashed) */
+            { "Mace",             0, "levels\\Level4-Mace" },       /* Mace_ctor */
+            { "Mag",              0, "meshes\\magnifyingglass" },   /* .MESH — Magnifier_ctor */
+            { "Mousetrap",        0, "levels\\MouseTrap" },        /* MouseTrap_ctor */
+            { "Neonplatform",     0, "levels\\LevelDark-NeonPlatform" }, /* NeonPlatform_ctor */
+            { "Pendulum",         2, "levels\\LevelImpossible-Pendulum" }, /* Pendulum_ctor */
+            { "Popcylinder",      0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor */
+            { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor (constant rotation) */
+            { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor */
+            { "Sawblade",         0, "meshes\\sawblade" },         /* .MESH — SawBlade_ctor */
+            { "Sign",             0, "levels\\PopupSign" },         /* New AI — Sign */
+            { "Speedcylinder",    0, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor */
+            { "Spinner",          0, "levels\\Level8-Spinny" },     /* PopCylinder_ctor */
+            { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
+            { "Tarbubble",        0, "meshes\\tarbubble" },         /* .MESH — PopCylinder_ctor */
+            { "Tarpit",           0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor (no _default) */
+            { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
+            { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor */
+            { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor */
             { "Trode",            0, "levels\\LevelDark-Trode" },  /* PopCylinder_ctor */
             { "Waterwheel",       0, "levels\\Level3-WaterWheel" }, /* PopCylinder_ctor */
-            { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor 0x0043AD40 */
+            { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
+            { "Windmill",         0, "levels\\Level4-Windmill" },   /* New AI — Windmill */
             { "Wobbly",           0, "levels\\Level7-Wobbly1" },    /* PopCylinder_ctor */
         };
         static const int ai_list_count = sizeof(ai_list) / sizeof(ai_list[0]);
@@ -1655,12 +1691,44 @@ static void process_rotaters(DWORD board, FILE* logf) {
             continue;
         }
 
-        if (logf) fprintf(logf, "  cEnt(S3): '%s' at (%.1f, %.1f, %.1f) → AI=%d MESH='%s'\n",
-                entity_name, px, py, pz, ai_type, ai_mesh);
+        /* v52: Skip Swirl entity spawning on levels that natively have SWIRL
+         * objects. Dizzy Race, Master Race, and all Arena levels already spawn
+         * SWIRL via the game's own vtable[33] handler. Spawning additional
+         * Swirls from cEnt entries causes duplicate SWIRL objects.
+         * Also skip "Rotater" entries on Dizzy/Master/Arena — native game
+         * already spawns Rotators from S1 entries named "Rotater". */
+        if (ai_type == 6) {
+            /* Swirl entity — check if level natively has SWIRL */
+            DWORD app = *(DWORD*)(board + BOARD_APP);
+            if (app && !IsBadReadPtr((void*)(app + 0x23C), 4)) {
+                /* Check level name from board */
+                char* level_name = NULL;
+                if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
+                    level_name = *(char**)(board + 0x10);
+                }
+                if (level_name && !IsBadReadPtr(level_name, 5)) {
+                    if (_strnicmp(level_name, "Dizzy", 5) == 0 ||
+                        _strnicmp(level_name, "Master", 6) == 0 ||
+                        _strnicmp(level_name, "Board (Arena", 12) == 0 ||
+                        _strnicmp(level_name, "Arena", 5) == 0) {
+                        if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on %s)\n",
+                                entity_name, level_name);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        /* v52: Rotator (AI 1) uses constant rotation (ROS_Y=0).
+         * The native render function oscillates at ±2.0 by default.
+         * With ROS_Y=0, update_constant_rotations() rewrites the direction
+         * field every frame to prevent oscillation reversal. */
+        float spawn_ros_y = 2.0f;
+        if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
 
         spawn_rotater_at(board, px, py, pz, ai_mesh,
                          0.0f, 1.0f, 0.0f,
-                         2.0f, 2.0f, 2.0f,
+                         2.0f, spawn_ros_y, 2.0f,
                          ai_type,
                          logf);
         found++;
@@ -1748,7 +1816,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v51 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v52 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
