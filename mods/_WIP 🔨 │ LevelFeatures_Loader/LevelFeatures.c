@@ -3544,29 +3544,29 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      *   1. operator_new(0x10D0) → Stands_ctor(mem, meshPtr)
      *   2. Timer_Init(stack local) — creates a Timer object
      *   3. Copy position (x,y,z) from S1 data to stack local struct
-     *   4. Call TIMER vtable[2] (SetPosition) with (x,y,z) — NOT stands vtable!
-     *      Stands vtable[2] is SceneObject_BuildStrips, which will infinite-loop.
+     *   4. Call TIMER vtable[2] (Gfx_SetPosition) with (x,y,z) as 3 float args
+     *      Stands vtable[2] is SceneObject_BuildStrips — calling it hangs!
      *   5. Call STANDS vtable[0x15] (slot 21) with pointer to position struct
      *   6. Level_RenderCtor + TipperVisual_Attach
      *   7. Timer_Cleanup */
     if (my_strnicmp(name, "TURRET", 6) == 0) {
         void *meshPtr = *(void **)((char *)board + UNI_MESH_15);
-        if (!meshPtr) { DebugLog("TURRET: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshPtr) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
         if (mem) {
             int stands = (int)g_StandsCtor(mem, meshPtr);
             char timerBuf[68];
             g_TimerInit(timerBuf);
-            /* Build position struct on stack (x, y, z from S1 data) */
+            /* Copy position from S1 data to stack struct (matching original) */
             float pos[3];
             pos[0] = x; pos[1] = y; pos[2] = z;
-            /* Call TIMER vtable[2] (SetPosition) — NOT stands vtable! */
+            /* Call TIMER vtable[2] (Gfx_SetPosition) with 3 floats by value */
             DWORD *timerVtbl = *(DWORD **)timerBuf;
             if (timerVtbl) {
-                void (__fastcall *timerSetPos)(float *) = (void (__fastcall *)(float *))timerVtbl[2];
-                if (timerSetPos) timerSetPos(pos);
+                void (__fastcall *timerSetPos)(float, float, float) = (void (__fastcall *)(float, float, float))timerVtbl[2];
+                if (timerSetPos) timerSetPos(pos[0], pos[1], pos[2]);
             }
-            /* Call STANDS vtable[0x15] (slot 21) with position struct pointer */
+            /* Call STANDS vtable[0x15] (slot 21) with pointer to position struct */
             DWORD *standsVtbl = *(DWORD **)stands;
             if (standsVtbl) {
                 void (__fastcall *fn54)(DWORD, float *) = (void (__fastcall *)(DWORD, float *))standsVtbl[0x15];
