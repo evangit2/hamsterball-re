@@ -1,6 +1,24 @@
-# LevelFeatures_Loader (v7)
+# LevelFeatures_Loader (v8)
 
 Universal cross-level object injection and vtable replacement for Hamsterball. Replaces all 15 per-level constructors **and** 4 vtable slots (Board_Update, RaceState, DispatchCollision, CreateDynamicObjects) with universal handlers, enabling config-driven level features without recompilation.
+
+## What's New in v8
+
+- **TURRET handler fix**: Was calling `Stands vtable[2]` (SceneObject_BuildStrips) for SetPosition, causing infinite loop on TURRET09. Fixed to call `Timer vtable[2]` (Gfx_SetPosition) with 3 floats by value, then `Stands vtable[0x15]` with position struct pointer — matching original `Tower_CreateDynamicObjects` at `0x0040d7c0`.
+- **Dedicated mesh slots**: 9 new dedicated mesh offsets at `0x86C0`–`0x86E0` for Tipper, Spinny, Saw, Fallout, Gluebie, Looper, Gear, BigGear. Bridge stays at `0x8620`/`0x8628`. Eliminates mesh slot conflicts when multiple object types share a level.
+- **InitBridge fix**: Writes to `UNI_BONK_STORE`/`UNI_SAW1_OBJ` instead of `BRIDGE_MESHWORLD`/`BRIDGE_RENDEROBJ` to avoid double-allocation.
+- **DebugLog fallback**: Uses current directory when `GetConfigPath` fails under Wine/BoxedWine.
+- **LoadConfig infinite loop fix**: Breaks after `LoadCollisionConfig` since `[COLLISION]` is the last section.
+
+## Verified Levels
+
+| Level | Status | Notes |
+|-------|--------|-------|
+| Warm-Up | ✅ Passes | No objects, loads clean |
+| Beginner | ✅ Passes | Bumpers work, `Board_Setup done` |
+| Intermediate | ✅ Passes | Bridge mesh at `0x8620` valid, `Board_Setup done` |
+| Dizzy | ✅ Passes | All 7 meshes loaded, Tipper at `0x86C0`, Gluebie at `0x86D4`, Swirl running, `Board_Setup done` |
+| Tower | ⚠️ Wine blocker | TURRET handler fixed (Timer vtable[2]). Hangs in `Board_Setup` D3D8 calls on Wine/llvmpipe. Needs Windows testing. |
 
 ## What's New in v7
 
@@ -149,5 +167,7 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
 - Game version: V3.6.c
 - Load mechanism: bass.dll proxy
 - The mod patches 15 allocation sites, 15 board constructor calls, 1 scene constructor call, 1 collision handler, and 60 vtable slots (15 vtables × 4 slots). All patches verify original bytes before applying.
-- **Wine/llvmpipe crash test: PASSED** — game survived 35+ seconds with structural init system.
-- Per-level code paths: **untested** on Wine (DINPUT8 blocks keyboard nav). User must test on real Windows.
+- **Wine/llvmpipe**: Game starts, PatchThread completes, levels load. Dizzy and Intermediate verified crash-free with debug logs showing `Board_Setup done`. Tower hangs in D3D8 `Gfx_SetPosition` / `D3DX_ShaderDispatch_4b` — a Wine rendering limitation, not a code bug.
+- **Wine navigation**: Use `xdotool key --delay 200` for menu navigation. Race selection requires precise key timing.
+- **File-swap testing**: To test locked levels (Dizzy, Tower), swap `g_levelData[1]` (Warm-Up) with the target level's entry. Warm-Up is always unlocked in Time Trials.
+- Per-level code paths: Dizzy and Intermediate verified on Wine. Tower needs Windows testing (D3D8 hang). Other levels untested.
