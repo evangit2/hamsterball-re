@@ -1,6 +1,15 @@
-# Custom Entities Mod v53b
+# Custom Entities Mod v53c
 
 A bass.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
+
+## v53c Changes
+
+- Isolated and cloned behaviors: Chomper, Chrome, Funball, Tarbubble, Waterwheel
+- Fixed Gear_ctor (9 params, was using 6-param Rotator typedef — would crash!)
+- Fixed Looper size (0x1500, was 0x1508)
+- Added Spinner_Level_ctor (Expert Race "BRIDGE")
+- Added Cloudscape entity (Sky Race clouds, Sprite_ctor)
+- Named _ctor wrappers for all Neon Race objects (DFloor1-4, FlickRing, Trode)
 
 ## v53b Changes
 
@@ -84,6 +93,14 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | 14   | WavyFlag2 (Wavy_ctor) | 0x43AD40 | 0x1AE7C | (this, board, x, y, z, path_str)        |
 | 15   | BadBall_ctor          | 0x40AFE0 | 0xC70   | (this, board) — no mesh, no position    |
 | 16   | Bridgeslam            | Custom  | 0x10D0  | Isolated Intermediate bridge state machine |
+| 22   | Chomper_ctor          | 0x471C20| 0x18    | MeshNode_ctor — Tower Chomper mesh |
+| 23   | Chrome_ctor            | N/A     | N/A     | No _ctor, board-level behavior, PopCylinder fallback |
+| 24   | Funball_ctor           | N/A     | N/A     | No _ctor, board-level behavior, PopCylinder fallback |
+| 25   | Tarbubble_ctor         | N/A     | N/A     | No _ctor, board-level behavior, PopCylinder fallback |
+| 26   | Waterwheel_ctor        | N/A     | N/A     | No _ctor, position-only storage, PopCylinder fallback |
+| 27   | Spinner_Level_ctor    | 0x4396F0| 0x10FC  | Expert Race "BRIDGE" (6 params: this,board,x,y,z,mesh,float) |
+| 28   | Cloudscape             | 0x45D0C0| 0xD4    | Sprite_ctor — Sky Race clouds, _default fallback |
+| 29   | Gear_ctor              | 0x437690| 0x1514  | 9 params: (this,board,x,y,z,x2,y2,z2,mesh) |
 
 ### Entity Table
 
@@ -98,8 +115,9 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Bridgeslam    | 16   | levels\Level2-Bridge            | Alias for Bridge                                       |
 | Bumper        | 0    | levels\_default                 | N:BUMPER tag, _default mesh                           |
 | Catapult      | 0    | levels\Level4-Catapult          | Catapult_ctor                                         |
-| Chomper       | 0    | meshes\chomper                  | Tower: no _ctor                                       |
-| Chrome        | 0    | levels\_default                 | Odd: no _ctor, _default mesh                          |
+| Chomper       | 22   | meshes\chomper                  | Chomper_ctor (MeshNode_ctor, 0x471C20)                |
+| Chrome        | 23   | levels\_default                 | Chrome_ctor: no _ctor, PopCylinder fallback           |
+| Cloudscape    | 28   | levels\Cloudscape              | Sprite_ctor (0x45D0C0), _default fallback            |
 | Drawbridge    | 9    | levels\Level4-Drawbridge        | Glass_Level_ctor                                      |
 | Droplifter    | 0    | levels\Level6-Lifter            | Odd Race model                                        |
 | Fan           | 0    | meshes\fanbody                  | .MESH, Fan_ctor                                       |
@@ -108,13 +126,13 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Flickfloor1   | 7    | levels\LevelDark-DFloor1        | DFloor1_ctor (ArenaStands_ctor)                       |
 | Flickfloor2   | 19   | levels\LevelDark-DFloor4        | DFloor4_ctor (ArenaStands + post-config)              |
 | Flickring     | 20   | levels\LevelDark-Flickring      | FlickRing_ctor (ArenaStands_ctor)                     |
-| Funball       | 0    | meshes\funball                  | Sky: no _ctor                                         |
-| Gear          | 0    | levels\LevelImpossible-Gear     | PopCylinder (ctor crashed)                            |
+| Funball       | 24   | meshes\funball                  | Funball_ctor: no _ctor, PopCylinder fallback          |
+| Gear          | 29   | levels\LevelImpossible-Gear     | Gear_ctor (0x437690, 9 params!)                       |
 | Glassbreaker  | 11   | meshes\GlassBonus               | Secret_ctor                                           |
 | Gluebie       | 0    | levels\Level3-Gluebie           | Gluebie_ctor                                          |
 | Judge         | 10   | meshes\hammyjudge               | Gear_Level_ctor, no mesh param                        |
 | Lifter        | 0    | levels\LevelUp-Lifter           | Up Race model                                         |
-| Looper        | 0    | levels\LevelImpossible-Looper   | PopCylinder (ctor crashed)                            |
+| Looper        | 3    | levels\LevelImpossible-Looper   | Looper_ctor (0x437460, 0x1500)                       |
 | Mace          | 0    | levels\Level4-Mace              | Mace_ctor                                             |
 | Mag           | 0    | meshes\magnifyingglass          | .MESH, Magnifier_ctor                                 |
 | Mousetrap     | 0    | levels\MouseTrap                | MouseTrap_ctor                                        |
@@ -126,15 +144,15 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Sawblade      | 0    | meshes\sawblade                 | .MESH, SawBlade_ctor                                  |
 | Sign          | 13   | levels\PopupSign                | Sign_ctor, complex signature                          |
 | Speedcylinder | 0    | levels\LevelUp-SpeedCylinder    | SpeedCylinder_ctor                                    |
-| Spinner       | 0    | levels\Level8-Spinny            | PopCylinder_ctor                                      |
+| Spinner       | 27   | levels\Level8-Spinny            | Spinner_Level_ctor (0x4396F0, 0x10FC)                |
 | Swirl         | 6    | levels\Level3-Swirl             | Rotator_ctor_Impossible                               |
-| Tarbubble     | 0    | meshes\tarbubble                | Dizzy: no _ctor                                       |
+| Tarbubble     | 25   | meshes\tarbubble                | Tarbubble_ctor: no _ctor, PopCylinder fallback        |
 | Tarpit        | 0    | levels\_default                 | N:TARPIT tag, _default mesh                           |
 | Timebutton    | 0    | levels\LevelUp-Button           | TimeButton_ctor                                       |
 | Tipper        | 0    | levels\Level3-Tipper            | Tipper_ctor                                           |
 | Trapdoor      | 0    | levels\Level4-Trapdoor1         | Trapdoor_ctor                                         |
 | Trode         | 21   | levels\LevelDark-Trode          | Trode_ctor (ArenaStands_ctor)                         |
-| Waterwheel    | 0    | levels\Level3-WaterWheel        | Dizzy: no _ctor                                       |
+| Waterwheel    | 26   | levels\Level3-WaterWheel        | Waterwheel_ctor: no _ctor, PopCylinder fallback       |
 | Wavy          | 0    | levels\Level7-Wavy1             | Wavy_ctor                                             |
 | Windmill      | 0    | levels\Level4-Windmill          | Tower: Level_RenderCtor + TipperVisual_Attach         |
 | Wobbly        | 8    | levels\Level7-Wobbly1           | GameLevel_ctor                                        |
