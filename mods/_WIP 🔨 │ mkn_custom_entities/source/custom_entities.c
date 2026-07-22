@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53c
+ * custom_entities.c — Hamsterball Custom Entities Mod v53d
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -160,6 +160,10 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
  *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
  *   29 = Gear_ctor (0x437690, 0x1514) — 9 params: (this, board, x, y, z, x2, y2, z2, mesh)
+ *   30 = Bell_ctor (0x434D70, 0x10E8) — 5 params: (this, board, x, y, z) — Level_ctor, no mesh
+ *   31 = Fan_ctor (0x438C20, 0x1188) — 6 params: (this, board, x, y, z, float) — Level_ctor, no mesh
+ *   32 = SawBlade_ctor (0x434660, 0x111C) — 5 params: (this, board, x, y, z) — Level_ctor, no mesh
+ *   33 = Bonk_ctor (0x438850, 0x1200) — 5 params: (this, board, x, y, z) — self-loads level5-bonk
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
@@ -211,6 +215,26 @@ static Sprite_ctor_t pfn_Sprite_ctor = (Sprite_ctor_t)0x0045D0C0;
 /* Gear_ctor — Impossible Race Gear (9 params!) */
 typedef void* (__thiscall *Gear_ctor_t)(void* this_, void* board, float x1, float y1, float z1, float x2, float y2, float z2, void* mesh);
 static Gear_ctor_t pfn_Gear_ctor_real = (Gear_ctor_t)0x00437690;
+
+/* Bell_ctor — Expert Race Bell (5 params: this, board, x, y, z — no mesh!)
+ * Calls Level_ctor internally (no mesh file). Mesh loaded by vtable[1] call. */
+typedef void* (__thiscall *Bell_ctor_t)(void* this_, void* board, float x, float y, float z);
+static Bell_ctor_t pfn_Bell_ctor = (Bell_ctor_t)0x00434D70;
+
+/* Fan_ctor — Expert Race Fan (6 params: this, board, x, y, z, float — no mesh!)
+ * Calls Level_ctor internally. Mesh loaded by vtable[1] call. */
+typedef void* (__thiscall *Fan_ctor_t)(void* this_, void* board, float x, float y, float z, float param);
+static Fan_ctor_t pfn_Fan_ctor = (Fan_ctor_t)0x00438C20;
+
+/* SawBlade_ctor — Expert Race SawBlade (5 params: this, board, x, y, z — no mesh!)
+ * Calls Level_ctor internally. Mesh loaded by vtable[1] call. */
+typedef void* (__thiscall *SawBlade_ctor_t)(void* this_, void* board, float x, float y, float z);
+static SawBlade_ctor_t pfn_SawBlade_ctor = (SawBlade_ctor_t)0x00434660;
+
+/* Bonk_ctor — Warm-Up Race Bonk (5 params: this, board, x, y, z)
+ * Calls Level_MeshWorldCtor("levels\\level5-bonk") — self-loads MESHWORLD! */
+typedef void* (__thiscall *Bonk_ctor_t)(void* this_, void* board, float x, float y, float z);
+static Bonk_ctor_t pfn_Bonk_ctor = (Bonk_ctor_t)0x00438850;
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -405,12 +429,16 @@ static void bridgeslam_update(BridgeslamState* bs) {
 #define FLAGWAVER_SIZE        0x8C
 #define SIGN_SIZE             0x10FC
 #define WAVY_SIZE             0x1AE7C
-#define BADBALL_SIZE          0xC70
+#define BADBALL_SIZE          0xC98  /* CreateBadBalls allocates 0xC98, not 0xC70 */
 #define BRIDGESLAM_SIZE       0x10D0  /* same as Level/MeshWorld size */
 #define SPINNER_LEVEL_SIZE    0x10FC
 #define SPRITE_SIZE           0xD4
 #define MESHNODE_SIZE         0x18
 #define GEAR_REAL_SIZE        0x1514  /* Gear_ctor 9-param variant */
+#define BELL_SIZE             0x10E8
+#define FAN_SIZE              0x1188
+#define SAWBLADE_SIZE         0x111C
+#define BONK_SIZE             0x1200
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -1247,6 +1275,11 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         /* Cloudscape: Sprite_ctor takes a string path, not a mesh pointer.
          * Path is determined inside the case block. */
         path = NULL;
+    } else if (ai_type >= 30 && ai_type <= 33) {
+        /* Bell/Fan/SawBlade/Bonk: constructors don't take a mesh parameter.
+         * Bell/Fan/SawBlade call Level_ctor (no mesh).
+         * Bonk calls Level_MeshWorldCtor (self-loads level5-bonk). */
+        path = NULL;
     } else {
         path = g_swirl_mesh_path;
     }
@@ -1387,7 +1420,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
-    } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 21) || (ai_type >= 22 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 29)) {
+    } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 33)) {
         /* New constructor types (7-13) — each with specific signature */
         switch (ai_type) {
             case 7:  /* DFloor1_ctor — Neon DFLOOR1 */
@@ -1473,6 +1506,34 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, GEAR_REAL_SIZE);
                 pfn_Gear_ctor_real(obj, (void*)board, px, py, pz, px, py, pz, mesh);
                 break;
+            case 30: /* Bell_ctor — Expert Race Bell (5 params: this, board, x, y, z)
+                      * Calls Level_ctor (no mesh file). Mesh loaded by vtable[1] call. */
+                obj = pfn_operator_new(BELL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bell\n"); return; }
+                memset(obj, 0, BELL_SIZE);
+                pfn_Bell_ctor(obj, (void*)board, px, py, pz);
+                break;
+            case 31: /* Fan_ctor — Expert Race Fan (6 params: this, board, x, y, z, float)
+                      * Calls Level_ctor (no mesh file). Mesh loaded by vtable[1] call. */
+                obj = pfn_operator_new(FAN_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Fan\n"); return; }
+                memset(obj, 0, FAN_SIZE);
+                pfn_Fan_ctor(obj, (void*)board, px, py, pz, 0.0f);
+                break;
+            case 32: /* SawBlade_ctor — Expert Race SawBlade (5 params: this, board, x, y, z)
+                      * Calls Level_ctor (no mesh file). Mesh loaded by vtable[1] call. */
+                obj = pfn_operator_new(SAWBLADE_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc SawBlade\n"); return; }
+                memset(obj, 0, SAWBLADE_SIZE);
+                pfn_SawBlade_ctor(obj, (void*)board, px, py, pz);
+                break;
+            case 33: /* Bonk_ctor — Warm-Up Race Bonk (5 params: this, board, x, y, z)
+                      * Self-loads "levels\\level5-bonk" MESHWORLD via Level_MeshWorldCtor. */
+                obj = pfn_operator_new(BONK_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bonk\n"); return; }
+                memset(obj, 0, BONK_SIZE);
+                pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
+                break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc GameLevel\n"); return; }
@@ -1547,11 +1608,20 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                 break;
             case 15: /* BadBall_ctor — 8ball/BadBall (2 params: this, board)
                       * Position is set after construction at ball+0xC60/0xC64/0xC68
-                      * (home position). Mesh is handled internally by BadBall system. */
+                      * (home position). Mesh is loaded by calling vtable[1] after ctor,
+                      * same as CreateBadBalls does. */
                 obj = pfn_operator_new(BADBALL_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BadBall\n"); return; }
                 memset(obj, 0, BADBALL_SIZE);
                 pfn_BadBall_ctor(obj, (void*)board);
+                /* Call vtable[1] — this loads the 8ball mesh (same as CreateBadBalls) */
+                {
+                    DWORD* vtable = *(DWORD**)obj;
+                    if (vtable && vtable[1]) {
+                        typedef void (__thiscall *vtable1_t)(void* this_);
+                        ((vtable1_t)vtable[1])(obj);
+                    }
+                }
                 /* Set home position (ball+0xC60/C64/C68) */
                 *(float*)((char*)obj + BALL_HOME_POS_X) = px;
                 *(float*)((char*)obj + BALL_HOME_POS_Y) = py;
@@ -1680,6 +1750,10 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 27) col_off = 0x10D4; /* Spinner — same as Rotator family */
         else if (ai_type == 28) col_off = 0;      /* Cloudscape — background sprite, no collision */
         else if (ai_type == 29) col_off = 0x10D4; /* Gear — same as Rotator family */
+        else if (ai_type == 30) col_off = 0x10D4; /* Bell — Level family */
+        else if (ai_type == 31) col_off = 0x10D4; /* Fan — Level family */
+        else if (ai_type == 32) col_off = 0x10D4; /* SawBlade — Level family */
+        else if (ai_type == 33) col_off = 0x10D4; /* Bonk — Level family */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2389,9 +2463,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
             /* name */            /* ctor */  /* mesh path */
             { "8ball",            15, "meshes\\8ball" },             /* BadBall_ctor (0x40AFE0, 0xC70 bytes) — 2 params: this, board */
             { "BBridge",          0, "levels\\Level10-Bridge1" },   /* BreakBridge_ctor */
-            { "Bell",             0, "meshes\\bell" },              /* .MESH — Bell_ctor */
+            { "Bell",             30, NULL },                        /* Bell_ctor (0x434D70, 0x10E8) — Level_ctor, no mesh param */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
-            { "Bonk",             0, "levels\\Level5-Bonk" },       /* Bonk_ctor */
+            { "Bonk",             33, "levels\\Level5-Bonk" },       /* Bonk_ctor (0x438850, 0x1200) — self-loads level5-bonk MESHWORLD */
             { "Bridge",           16, "levels\\Level2-Bridge" },     /* Bridgeslam: isolated Intermediate bridge state machine */
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
@@ -2401,7 +2475,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Cloudscape",       28, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
             { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
             { "Droplifter",       0, "levels\\Level6-Lifter" },     /* Odd Race model */
-            { "Fan",              0, "meshes\\fanbody" },           /* .MESH — Fan_ctor */
+            { "Fan",              31, NULL },                        /* Fan_ctor (0x438C20, 0x1188) — Level_ctor, no mesh param */
             { "Flag",             12, NULL },                        /* FlagWaver_Ctor (0x46AF30, 0x8C bytes) — code-generated mesh */
             { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
             { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
@@ -2422,7 +2496,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Popcylinder",      0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor */
             { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor (constant rotation) */
             { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor */
-            { "Sawblade",         0, "meshes\\sawblade" },         /* .MESH — SawBlade_ctor */
+            { "Sawblade",         32, NULL },                        /* SawBlade_ctor (0x434660, 0x111C) — Level_ctor, no mesh param */
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
             { "Speedcylinder",    0, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor */
             { "Spinner",          27, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
@@ -2578,7 +2652,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53c Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53d Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

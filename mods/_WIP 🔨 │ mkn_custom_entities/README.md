@@ -1,6 +1,15 @@
-# Custom Entities Mod v53c
+# Custom Entities Mod v53d
 
 A bass.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
+
+## v53d Changes
+
+- Fixed 8ball/BadBall: was using Swirl fallback — now calls vtable[1] to load 8ball mesh (same as CreateBadBalls)
+- Fixed BadBall alloc size: 0xC98 (was 0xC70)
+- Added Bell_ctor (type 30, 0x434D70, 0x10E8) — Expert Race Bell
+- Added Fan_ctor (type 31, 0x438C20, 0x1188) — Expert Race Fan
+- Added SawBlade_ctor (type 32, 0x434660, 0x111C) — Expert Race SawBlade
+- Added Bonk_ctor (type 33, 0x438850, 0x1200) — Warm-Up Bonk, self-loads level5-bonk
 
 ## v53c Changes
 
@@ -101,6 +110,10 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | 27   | Spinner_Level_ctor    | 0x4396F0| 0x10FC  | Expert Race "BRIDGE" (6 params: this,board,x,y,z,mesh,float) |
 | 28   | Cloudscape             | 0x45D0C0| 0xD4    | Sprite_ctor — Sky Race clouds, _default fallback |
 | 29   | Gear_ctor              | 0x437690| 0x1514  | 9 params: (this,board,x,y,z,x2,y2,z2,mesh) |
+| 30   | Bell_ctor              | 0x434D70| 0x10E8  | (this, board, x, y, z) — Level_ctor, no mesh |
+| 31   | Fan_ctor               | 0x438C20| 0x1188  | (this, board, x, y, z, float) — Level_ctor, no mesh |
+| 32   | SawBlade_ctor          | 0x434660| 0x111C  | (this, board, x, y, z) — Level_ctor, no mesh |
+| 33   | Bonk_ctor              | 0x438850| 0x1200  | (this, board, x, y, z) — self-loads level5-bonk |
 
 ### Entity Table
 
@@ -108,9 +121,9 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | ------------- | ---- | ------------------------------- | ----------------------------------------------------- |
 | 8ball         | 15   | meshes\8ball                    | BadBall_ctor, 2 params: this+board                    |
 | BBridge       | 0    | levels\Level10-Bridge1          | BreakBridge                                           |
-| Bell          | 0    | meshes\bell                     | .MESH, Bell_ctor                                      |
+| Bell          | 30   | NULL                            | Bell_ctor (0x434D70, 0x10E8) — Level_ctor             |
 | Blockdawg     | 0    | levels\Level8-BlockDawg1        | Blockdawg_ctor                                        |
-| Bonk          | 0    | levels\Level5-Bonk              | Bonk_ctor                                             |
+| Bonk          | 33   | levels\Level5-Bonk              | Bonk_ctor (0x438850) — self-loads level5-bonk         |
 | Bridge        | 16   | levels\Level2-Bridge            | Bridgeslam: isolated Intermediate bridge state machine |
 | Bridgeslam    | 16   | levels\Level2-Bridge            | Alias for Bridge                                       |
 | Bumper        | 0    | levels\_default                 | N:BUMPER tag, _default mesh                           |
@@ -120,7 +133,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Cloudscape    | 28   | levels\Cloudscape              | Sprite_ctor (0x45D0C0), _default fallback            |
 | Drawbridge    | 9    | levels\Level4-Drawbridge        | Glass_Level_ctor                                      |
 | Droplifter    | 0    | levels\Level6-Lifter            | Odd Race model                                        |
-| Fan           | 0    | meshes\fanbody                  | .MESH, Fan_ctor                                       |
+| Fan           | 31   | NULL                            | Fan_ctor (0x438C20, 0x1188) — Level_ctor              |
 | Flag          | 12   | NULL                            | FlagWaver_Ctor, code-gen mesh                         |
 | Flag2         | 14   | levels\Flag                     | WavyFlag2: Wavy_ctor copy, Flag.MESHWORLD or _default |
 | Flickfloor1   | 7    | levels\LevelDark-DFloor1        | DFloor1_ctor (ArenaStands_ctor)                       |
@@ -141,7 +154,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Popcylinder   | 0    | levels\Level9-PopCylinder1      | PopCylinder_ctor                                      |
 | Rotator       | 1    | levels\LevelImpossible-Rotator  | Rotator_ctor, constant rotation                       |
 | Saw           | 0    | levels\Level8-Saw               | Saw_ctor                                              |
-| Sawblade      | 0    | meshes\sawblade                 | .MESH, SawBlade_ctor                                  |
+| Sawblade      | 32   | NULL                            | SawBlade_ctor (0x434660, 0x111C) — Level_ctor         |
 | Sign          | 13   | levels\PopupSign                | Sign_ctor, complex signature                          |
 | Speedcylinder | 0    | levels\LevelUp-SpeedCylinder    | SpeedCylinder_ctor                                    |
 | Spinner       | 27   | levels\Level8-Spinny            | Spinner_Level_ctor (0x4396F0, 0x10FC)                |
