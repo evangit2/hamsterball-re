@@ -83,7 +83,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 
 | Entity        | Type | Mesh Path                       | Notes                                                 |
 | ------------- | ---- | ------------------------------- | ----------------------------------------------------- |
-| 8ball         | 15   | meshes\\8ball                    | BadBall_ctor, 2 params: this+board                    |
+| 8ball         | 15   | meshes\8ball                    | BadBall_ctor, 2 params: this+board                    |
 | BBridge       | 0    | levels\Level10-Bridge1          | BreakBridge                                           |
 | Bell          | 0    | meshes\bell                     | .MESH, Bell_ctor                                      |
 | Blockdawg     | 0    | levels\Level8-BlockDawg1        | Blockdawg_ctor                                        |
