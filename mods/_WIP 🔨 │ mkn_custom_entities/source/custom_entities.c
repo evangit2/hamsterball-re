@@ -145,6 +145,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   12 = FlagWaver_Ctor (0x46AF30, size 0x8C) — Flag (2 params: this,gfx_device)
  *   13 = Sign_ctor (0x443B90, size 0x10FC) — Popup Sign (complex signature)
  *   14 = WavyFlag2 (Wavy_ctor copy, size 0x1AE7C) — Flag2: uses Flag.MESHWORLD or _default fallback
+ *   15 = BadBall_ctor (0x40AFE0, size 0xC70) — 8ball/BadBall (2 params: this, board)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
@@ -197,6 +198,10 @@ static Wavy_ctor_t pfn_Wavy_ctor = (Wavy_ctor_t)0x0043AD40;
 typedef void (__thiscall *Wavy_Configure_t)(void* this_, int a, float b, float c, float d);
 static Wavy_Configure_t pfn_Wavy_Configure = (Wavy_Configure_t)0x00435440;
 
+/* BadBall_ctor — 8ball/BadBall (2 params: this, board — position set by CreateBadBalls) */
+typedef void* (__thiscall *BadBall_ctor_t)(void* this_, void* board);
+static BadBall_ctor_t pfn_BadBall_ctor = (BadBall_ctor_t)0x0040AFE0;
+
 /* Object sizes for new ctor types */
 #define ARENASTANDS_SIZE      0x1104
 #define GAMELEVEL_SIZE        0x1524
@@ -206,6 +211,7 @@ static Wavy_Configure_t pfn_Wavy_Configure = (Wavy_Configure_t)0x00435440;
 #define FLAGWAVER_SIZE        0x8C
 #define SIGN_SIZE             0x10FC
 #define WAVY_SIZE             0x1AE7C
+#define BADBALL_SIZE          0xC70
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -1027,6 +1033,10 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         /* WavyFlag2: Wavy_ctor loads mesh from string path internally.
          * Skip mesh loading here — the path string is passed directly to Wavy_ctor. */
         path = NULL;
+    } else if (ai_type == 15) {
+        /* BadBall: BadBall_ctor doesn't take a mesh param.
+         * Mesh is handled by the BadBall system (App mesh array). */
+        path = NULL;
     } else {
         path = g_swirl_mesh_path;
     }
@@ -1248,6 +1258,18 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                     pfn_Wavy_Configure(obj, 0x1c, 20.0f, 2.0f, -3.0f);
                 }
                 break;
+            case 15: /* BadBall_ctor — 8ball/BadBall (2 params: this, board)
+                      * Position is set after construction at ball+0xC60/0xC64/0xC68
+                      * (home position). Mesh is handled internally by BadBall system. */
+                obj = pfn_operator_new(BADBALL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BadBall\n"); return; }
+                memset(obj, 0, BADBALL_SIZE);
+                pfn_BadBall_ctor(obj, (void*)board);
+                /* Set home position (ball+0xC60/C64/C68) */
+                *(float*)((char*)obj + BALL_HOME_POS_X) = px;
+                *(float*)((char*)obj + BALL_HOME_POS_Y) = py;
+                *(float*)((char*)obj + BALL_HOME_POS_Z) = pz;
+                break;
         }
     } else {
         /* AI 0-5: Use the correct constructor per AI type.
@@ -1282,6 +1304,11 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     /* 5. Add to board+0x2578 (update list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
 
+    /* 5b. BadBall also goes into the bad balls list (board+0x29D4) */
+    if (ai_type == 15) {
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_BAD_BALLS_LIST), obj);
+    }
+
     /* 6. Add to board+0xCD4 (render list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
@@ -1297,6 +1324,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 12) col_off = 0;      /* FlagWaver — no collision obj */
         else if (ai_type == 13) col_off = 0x10EC; /* Sign — collision at 0x43B*4=0x10EC */
         else if (ai_type == 14) col_off = 0x10D4; /* WavyFlag2 — same as GameLevel */
+        else if (ai_type == 15) col_off = 0;      /* BadBall — no collision obj (uses board+0x29D4 list) */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2004,7 +2032,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
         typedef struct { const char* name; int ctor_type; const char* mesh; } ai_entry_t;
         static const ai_entry_t ai_list[] = {
             /* name */            /* ctor */  /* mesh path */
-            { "8ball",            0, "meshes\\8ball" },             /* .MESH — no _ctor, PopCylinder fallback */
+            { "8ball",            15, "meshes\\8ball" },             /* BadBall_ctor (0x40AFE0, 0xC70 bytes) — 2 params: this, board */
             { "BBridge",          0, "levels\\Level10-Bridge1" },   /* BreakBridge_ctor */
             { "Bell",             0, "meshes\\bell" },              /* .MESH — Bell_ctor */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
