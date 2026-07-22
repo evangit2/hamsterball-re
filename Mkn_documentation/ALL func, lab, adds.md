@@ -1688,14 +1688,41 @@ Example: `0001:00052783` = 0x00452783 (NOT section-relative).
 
 ### MESHWORLD File Format Summary
 
-- **S1 (Ref Points):** Axis order (x,z,y) — 3DS Max Z-up swap. Bare names (MOUSETRAP, BADBALL, START1-1).
-- **S2 (Splines):** Axis order (x,z,y). Path splines.
-- **S3 (Lights):** Axis order (x,z,y). Type=0 reads 36 bytes, type≠0 reads nothing.
-- **S5 (Vertices):** Axis order (x,y,z) — NO swap. Raw memory dump.
-- **S6 (MeshBuffer Names):** Prefixed (E:, N:, S:, T:, O:). Independent from S1.
-- **Strips:** D3D triangle strips (D3DPT_TRIANGLESTRIP). N triangles use N+2 consecutive vertices.
-- **Material:** 72 bytes (64 color + 4 shine + 4 has_reflection) + 4 bytes has_texture (separate read).
-- **Texture loading:** Game strips extension, tries .bmp/.png/.tga. Prepends 'textures\\'.
+The file is binary, little-endian, with 6 sections read sequentially. There are **no delimiters** between sections — each section is self-sizing via a `uint32` count field at the start. The parser reads a count, reads that many items, then immediately moves to the next section.
+
+| Section | Name | Starts With | Item Size | Description |
+|---------|------|-------------|-----------|-------------|
+| **S1** | Ref Points | `uint32 point_count` | Variable | Object spawn locations (START, SAFESPOT, MOUSETRAP, BADBALL, etc.). Axis order (x,z,y) — 3DS Max Z-up swap. Bare names. |
+| **S2** | Splines | `uint32 spline_count` | Variable | Path splines. Axis order (x,z,y). |
+| **S3** | Lights | `uint32 light_count` | 36 bytes (type=0) | Lights. Axis order (x,z,y). Type=0 reads 36 bytes, type≠0 reads nothing. |
+| **S4** | Global Info | *(no count — fixed 24 bytes)* | 24 bytes (6 floats) | Background color + ambient light. See below. |
+| **S5** | Vertices | `uint32 vertex_count` | 32 bytes each | Global vertex buffer. Axis order (x,y,z) — NO swap. Raw memory dump. Max 65,534 per MeshBuffer (INDEX16 limit). |
+| **S6** | Octree (Materials+Strips) | Recursive tree | Variable | Materials, texture assignments, strip data, collision flags (E:/N:/S:/T:/O:). |
+
+#### S4 — Global Info (In-Depth)
+
+S4 is exactly **24 bytes (6 floats)** with no count field — the parser always reads exactly 24 bytes. Loaded by `Scene_LoadMeshWorld` (0x00461890) via `__read(file, MW+0x45C, 0x18)`.
+
+| Byte Offset | Struct Offset | Float | Purpose |
+|-------------|--------------|-------|---------|
+| 0–3 | MW+0x45C | 1 | Background color R (D3D clear color / sky tint) |
+| 4–7 | MW+0x460 | 2 | Background color G |
+| 8–11 | MW+0x464 | 3 | Background color B |
+| 12–15 | MW+0x468 | 4 | Ambient light R (D3DRS_AMBIENT, scene-wide minimum illumination) |
+| 16–19 | MW+0x46C | 5 | Ambient light G |
+| 20–23 | MW+0x470 | 6 | Ambient light B |
+
+**Background color** is the D3D8 clear color — what you see as the "sky" or void behind geometry. Different per level (Warm-Up=pinkish, Expert=dark red, Master=black).
+
+**Ambient light** is the minimum illumination for all lit surfaces, set via `D3DRS_AMBIENT` render state. Ensures no surface is ever completely black.
+
+S4 does NOT control: board timer oval color (hardcoded in EXE at board+0x1508), checker texture colors (in S6 materials), race selection menu text color (hardcoded in PracticeMenu_ctor), or bounding box (separate data).
+
+#### S6 Details
+
+- **Strips:** D3D triangle strips (D3DPT_TRIANGLESTRIP). N triangles use N+2 consecutive vertices (NOT N×3). Strips are globally consecutive across all geoms.
+- **Material:** 72 bytes (64 color + 4 shine + 4 has_reflection) + 4 bytes has_texture (separate read). Total 76 bytes when has_texture=0, 80+ when has_texture=1.
+- **Texture loading:** Game strips extension, tries .bmp/.png/.tga. Prepends 'textures\\'. Case-insensitive lookup.
 
 ### Supported Display Modes
 
