@@ -1772,8 +1772,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
      * For types that used board Level as construction mesh, now replace
      * obj+0x08 (MeshWorld*) with the desired visual mesh's MeshWorld*.
      * This makes the object render with the correct visual appearance
-     * while keeping the collision and vtable from the board Level. */
-    if (use_board_level_as_mesh && visual_mesh && obj) {
+     * while keeping the collision and vtable from the board Level.
+     *
+     * EXCEPTION: Type 8 (GameLevel/Wobbly) must NOT be swapped.
+     * Rotator_Update deforms vertices by reading MeshBuffers from obj+0x08
+     * and vertex data from SceneObject+0x440. Swapping obj+0x08 breaks
+     * the vertex-to-MeshBuffer mapping, killing the wobble animation. */
+    if (use_board_level_as_mesh && visual_mesh && obj && ai_type != 8) {
         if (!IsBadReadPtr(obj, 0x10)) {
             /* visual_mesh is either a Level (0x10D0) or MeshNode (0x18) */
             DWORD visual_mw = 0;
