@@ -1,0 +1,205 @@
+// ═══════════════════════════════════════════════════════════════
+// StandsColorMod.CEA — Runtime STANDS color override for Arena modes
+// ═══════════════════════════════════════════════════════════════
+//
+// HOW IT WORKS:
+//   Hooks App_ResetFrame (0x0046C200), called every frame.
+//   Pointer chain (all Ghidra-verified):
+//     [0x005341E0]           → App           (App_Ctor: DAT_005341E0 = param_1)
+//     [App + 0x178]          → board/scene   (App_StartRace: Scene_UpdateChildren(*[param_1+0x178]))
+//     [board + 0x4390]       → stands Level   (CameraLookAt: param_1[0x10e4] = standsLevel)
+//     [standsLevel + 0x08]   → MeshWorld      (Level_MeshWorldCtor: *(this+8) = mw)
+//     [MeshWorld + 0x24]     → material count (Scene_LoadMeshWorld)
+//     [MeshWorld + 0x28]     → material array (each entry 0x50 bytes)
+//
+// MATERIAL STRUCTURE (0x50 bytes, D3DMATERIAL8 at offset +0x04):
+//   Verified from Graphics_ApplyMaterialAndDraw (0x00455110):
+//   calls vtable+0xA8(device, material+0x04) = SetMaterial(&D3DMATERIAL8)
+//     +0x04: Diffuse   R,G,B,A (4 floats = 16 bytes)
+//     +0x14: Ambient    R,G,B,A (4 floats = 16 bytes)
+//     +0x24: Specular   R,G,B,A (4 floats = 16 bytes)
+//     +0x34: Emissive   R,G,B,A (4 floats = 16 bytes)
+//     +0x44: Power      (float)
+//     +0x48: texture pointer (NULL = no texture, solid color)
+//     +0x4C: has_material flag (bool)
+//     +0x4D: has_texture flag (bool)
+//
+// STANDS LIFETIME:
+//   CameraLookAt (called from every ArenaLevel_*_Init) creates a NEW
+//   stands Level each match via Level_MeshWorldCtor("levels\arena-stands").
+//   Stands are destroyed when the board is destroyed between matches.
+//   This script re-patches every frame — survives reloads automatically.
+//
+// TEXTURE NOTE:
+//   If stands have a checker texture (material+0x48 != NULL), diffuse
+//   color MODULATES the texture (D3DTOP_MODULATE). So writing diffuse=red
+//   makes a red-tinted checker. For solid color, uncomment the texture
+//   clear line in the loop.
+//
+// CONFIGURATION:
+//   Edit newDiffuse/newAmbient float values below.
+//   IEEE 754 hex: 3F800000=1.0, 00000000=0.0, 3F000000=0.5
+//   Quick ref: 1.0=3F800000, 0.5=3F000000, 0.25=3E800000, 0.1=3DCCCCCD
+//
+// ═══════════════════════════════════════════════════════════════
+
+[ENABLE]
+
+alloc(standsColorCode, 512)
+alloc(newDiffuse, 16)
+alloc(newAmbient, 16)
+
+registersymbol(standsColorCode)
+registersymbol(newDiffuse)
+registersymbol(newAmbient)
+
+// ── Color values (edit these) ────────────────────────────────
+// Format: R, G, B, A as IEEE 754 hex floats
+//
+// Default: Red stands
+newDiffuse:
+  dd 3F800000  // R = 1.0
+  dd 00000000  // G = 0.0
+  dd 00000000  // B = 0.0
+  dd 3F800000  // A = 1.0
+
+// Default: same red for ambient
+newAmbient:
+  dd 3F800000  // R = 1.0
+  dd 00000000  // G = 0.0
+  dd 00000000  // B = 0.0
+  dd 3F800000  // A = 1.0
+
+// ── Code cave ────────────────────────────────────────────────
+// Hook: App_ResetFrame @ 0x0046C200
+// Original 9 bytes: 56 8B F1 8B 8E 74 01 00 00
+//   push esi          (56)
+//   mov esi,ecx       (8B F1)
+//   mov ecx,[esi+174] (8B 8E 74 01 00 00)
+// Replace with: JMP standsColorCode + 4 NOPs
+// Cave re-executes original instructions, patches stands, JMPs back to 0x0046C209.
+standsColorCode:
+  // ── Original instructions (preserved) ──
+  push esi
+  mov esi,ecx          // esi = App
+
+  // ── STANDS color patch ──
+  pushad
+
+  // [0x005341E0] → App
+  mov eax,[005341E0]
+  test eax,eax
+  jz standsColor_skip
+
+  // [App + 0x178] → board
+  mov eax,[eax+00000178]
+  test eax,eax
+  jz standsColor_skip
+
+  // [board + 0x4390] → stands Level
+  mov eax,[eax+00004390]
+  test eax,eax
+  jz standsColor_skip
+
+  // [standsLevel + 0x08] → MeshWorld
+  mov eax,[eax+08]
+  test eax,eax
+  jz standsColor_skip
+
+  // [MeshWorld + 0x24] → material count
+  mov ecx,[eax+24]
+  cmp ecx,01
+  jl standsColor_skip
+  // Cap at 32 to prevent runaway
+  cmp ecx,20
+  jle standsColor_count_ok
+  mov ecx,20
+standsColor_count_ok:
+
+  // [MeshWorld + 0x28] → material array
+  mov edx,[eax+28]
+  test edx,edx
+  jz standsColor_skip
+
+  // ── Loop: patch each material ──
+  xor ebx,ebx             // index = 0
+  // edx = current material, ecx = count
+
+standsColor_loop:
+  test edx,edx
+  jz standsColor_next
+
+  // Write Diffuse (material+0x04, 16 bytes)
+  mov esi,newDiffuse
+  mov eax,[esi]           // R
+  mov [edx+04],eax
+  mov eax,[esi+04]        // G
+  mov [edx+08],eax
+  mov eax,[esi+08]        // B
+  mov [edx+0C],eax
+  mov eax,[esi+0C]        // A
+  mov [edx+10],eax
+
+  // Write Ambient (material+0x14, 16 bytes)
+  mov esi,newAmbient
+  mov eax,[esi]           // R
+  mov [edx+14],eax
+  mov eax,[esi+04]        // G
+  mov [edx+18],eax
+  mov eax,[esi+08]        // B
+  mov [edx+1C],eax
+  mov eax,[esi+0C]        // A
+  mov [edx+20],eax
+
+  // ── Optional: also write Specular (material+0x24) ──
+  // Uncomment to enable:
+  // mov esi,newDiffuse
+  // mov eax,[esi]
+  // mov [edx+24],eax
+  // mov eax,[esi+04]
+  // mov [edx+28],eax
+  // mov eax,[esi+08]
+  // mov [edx+2C],eax
+  // mov eax,[esi+0C]
+  // mov [edx+30],eax
+
+  // ── Optional: clear texture for solid color (no checker) ──
+  // Uncomment to make stands solid-colored:
+  // mov dword ptr [edx+48],00000000
+  // mov byte ptr [edx+4D],00
+
+standsColor_next:
+  add edx,50             // next material (0x50 bytes)
+  inc ebx
+  cmp ebx,ecx
+  jl standsColor_loop
+
+standsColor_skip:
+  popad
+
+  // ── Original third instruction (preserved) ──
+  mov ecx,[esi+00000174]
+
+  // ── Return to original code ──
+  jmp 0046C209
+
+// ── Install hook ─────────────────────────────────────────────
+0046C200:
+  jmp standsColorCode
+  nop
+  nop
+  nop
+  nop
+
+[DISABLE]
+
+// Restore original 9 bytes
+0046C200:
+  db 56 8B F1 8B 8E 74 01 00 00
+
+dealloc(standsColorCode)
+dealloc(newDiffuse)
+dealloc(newAmbient)
+unregistersymbol(standsColorCode)
+unregistersymbol(newDiffuse)
+unregistersymbol(newAmbient)

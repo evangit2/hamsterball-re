@@ -278,6 +278,14 @@ typedef void (__thiscall *Scene_AddObject_t)(void *scene, void *obj);
 
 static Scene_Update_t             g_SceneUpdate = NULL;
 static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
+
+/* Saved original vtable[19] (RaceState) for each level (1-15).
+ * Several levels have custom RaceState handlers that iterate per-level
+ * data at board+0x436C (Up: lifter AthenaList, Neon: render objects,
+ * Beginner: float timers).  We must call the original after our shared
+ * Board_UpdateRaceState so those per-level systems keep running. */
+typedef void (__fastcall *RaceState_t)(void *board);
+static RaceState_t g_origRaceState[16] = { NULL }; /* index 1-15 */
 static Level_RenderDynamicObjects_t g_RenderDynamicObjects = NULL;
 static Graphics_SetProjection_t  g_GraphicsSetProjection = NULL;
 static Graphics_SetCullMode2_t    g_GraphicsSetCullMode2 = NULL;
@@ -397,11 +405,14 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
  * (Previous versions used Ghidra DWORD array indices, which are offset/4.
  * All values below have been corrected to actual byte offsets.) */
 
-/* Bridge animation (Intermediate) — render obj + pivot point + state machine */
-#define BRD_BRIDGE_RENDER   UNI_MESH_0   /* render object ptr */
-#define BRD_BRIDGE_PIVOT_X  UNI_MESH_2   /* float: bridge pivot X */
-#define BRD_BRIDGE_PIVOT_Y  UNI_MESH_3   /* float: bridge pivot Y */
-#define BRD_BRIDGE_PIVOT_Z  UNI_MESH_4   /* float: bridge pivot Z */
+/* Bridge animation (Intermediate) — render obj + pivot point + state machine
+ * meshWorld is stored at UNI_BONK_STORE (0x8620) by LoadExtraMeshes/InitBridge.
+ * The original game calls meshWorld->vtable[0x16] and [0x15] for rendering,
+ * NOT the renderObj. Pivot reuses windmill position offsets (never coexist). */
+#define BRD_BRIDGE_RENDER   UNI_BONK_STORE  /* meshWorld ptr (0x8620) */
+#define BRD_BRIDGE_PIVOT_X  UNI_WINDMILL_X  /* float: bridge pivot X (0x8640) */
+#define BRD_BRIDGE_PIVOT_Y  UNI_WINDMILL_Y  /* float: bridge pivot Y (0x8644) */
+#define BRD_BRIDGE_PIVOT_Z  UNI_WINDMILL_Z  /* float: bridge pivot Z (0x8648) */
 #define BRD_BRIDGE_ANGLE    UNI_BRIDGE_ANGLE   /* float: current tilt angle (starts 45.0) */
 #define BRD_BRIDGE_STATE    UNI_BRIDGE_STATE   /* int: 0=wait, 1=tilt down, 2=wait, 3=tilt back */
 #define BRD_BRIDGE_COUNTER  UNI_BRIDGE_COUNTER /* int: frame counter for current state */
@@ -1795,6 +1806,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
     DebugLog("Step 9a (AthenaList_Init) done");
 
+    /* 9a-extra: Up race (level 6) needs a legacy AthenaList at board+0x436C.
+     * The original Up RaceState (0x00420660) iterates this list and calls
+     * each Lifter's Update() every frame.  Without it, vacuum tubes never
+     * animate and E:HELPINERTIA/E:VACPOPOUT events never fire. */
+    if (raceIndex == 6 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x436C), 0);
+        DebugLog("Step 9a-extra: legacy AthenaList at board+0x436C for Up");
+    }
+
     /* 9b: eh_vector_constructor_iterator for bumper slot arrays */
     if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&
         ld->ehVectorOffset && ld->ehVectorCount > 0) {
@@ -2830,8 +2850,9 @@ static void Feature_SkyPopcylinder(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* UniversalRender implementation — does the actual rendering work.
- * Called by the naked thunk below which handles RET 4. */
-static void UniversalRenderImpl(void *board) {
+ * Called by the naked thunk below which handles RET 4.
+ * Must be non-static for asm reference from the naked thunk. */
+void UniversalRenderImpl(void *board) {
     if (!board || !g_RenderDynamicObjects) return;
 
     /* Call shared base render (Level_RenderDynamicObjects) */
@@ -3362,10 +3383,18 @@ void __fastcall UniversalRaceState(void *board) {
     int level = GetCurrentLevel(board);
     if (level == 0) return;
 
+    /* Call the ORIGINAL per-level RaceState handler.  Several levels have
+     * custom RaceState code that iterates per-level data at board+0x436C:
+     *   Up  (lvl 6):  iterates lifter AthenaList, calls each Lifter_Update
+     *   Neon(lvl 7):  calls vtable[1] on render objects at board+0x436C/0x4370
+     *   Beginner(2):  decays 8 float timers at board+0x642C-0x6448
+     * Without this call, lifters don't animate, vacuum events never fire, etc. */
+    if (level >= 1 && level <= 15 && g_origRaceState[level]) {
+        g_origRaceState[level](board);
+    }
+
     DWORD features = g_updateFeatures[level];
     if (!features) return;
-
-    /* Bumper lit decay (Beginner + Toob + Master) */
     if (features & FEAT_BUMPER_DECAY)
         Feature_BumperDecay(board, level);
 
@@ -3715,18 +3744,24 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
                 obj = g_SpinnerLevelCtor(mem, (int)board, x, y, z, fparam);
                 DWORD *o = (DWORD *)obj;
                 renderOut = o[0x43D];
-                if (strstr(name, "1")) g_AthenaListAppend((void*)((char*)board + UNI_BRIDGE_ANGLE), (int)obj);
-                if (strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + UNI_MESH_4), (int)obj);
+                /* Store spinner objects in UNI_LIST_1 (initialized AthenaList),
+                 * NOT UNI_BRIDGE_ANGLE (a float field, not an AthenaList).
+                 * Previously: g_AthenaListAppend on UNI_BRIDGE_ANGLE would
+                 * corrupt bridge state machine fields. */
+                if (strstr(name, "1")) g_AthenaListAppend((void*)((char*)board + UNI_LIST_1), (int)obj);
+                if (strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + UNI_LIST_2), (int)obj);
                 if (strstr(name, "NEG")) o[0x43E] = 0xBF800000;
             }
         } else {
-            /* Intermediate/Master: position only */
+            /* Intermediate/Master: position only.
+             * Store pivot position at BRD_BRIDGE_PIVOT_* offsets.
+             * DO NOT write to UNI_BRIDGE_ANGLE/STATE — those hold the
+             * 45.0/0/50 state machine values initialized in the board ctor.
+             * The old code wrote position into angle/state, corrupting them. */
             obj = *(void **)((char *)board + UNI_BONK_STORE);
-            if ((void*)((char*)board + UNI_MESH_4) != (void*)(s1data + 1)) {
-                *(float *)((char *)board + UNI_MESH_4) = x;
-                *(float *)((char *)board + UNI_BRIDGE_ANGLE) = y;
-                *(float *)((char *)board + UNI_BRIDGE_STATE) = z;
-            }
+            *(float *)((char *)board + BRD_BRIDGE_PIVOT_X) = x;
+            *(float *)((char *)board + BRD_BRIDGE_PIVOT_Y) = y;
+            *(float *)((char *)board + BRD_BRIDGE_PIVOT_Z) = z;
             if (!strstr(name, "(NOCOLLIDE)"))
                 renderOut = *(int *)((char *)board + UNI_SAW1_OBJ);
         }
@@ -3777,6 +3812,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (mem) {
                 obj = g_LifterCtor(mem, (int)board, x, y, z, meshVal, num);
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+                /* Dual-append to legacy board+0x436C for Up's RaceState handler.
+                 * The original Up RaceState iterates this list to call each
+                 * Lifter's Update() — without it, vacuum tubes are inert. */
+                if (level == 6) {
+                    g_AthenaListAppend((void*)((char*)board + 0x436C), (int)obj);
+                }
                 renderOut = ((DWORD*)obj)[0x438];
             }
         }
@@ -5833,12 +5874,15 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 19 (offset +0x4C): RaceState → UniversalRaceState
-         * No need to save original — UniversalRaceState calls the shared
-         * g_BoardUpdateRaceState directly (same function for all levels). */
+         * Save original per-level handler — levels 2,6,7 have custom RaceState
+         * that iterates per-level data (lifter list, render objs, timers). */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x4C);
+            /* Save original before overwriting (index by level 1-15) */
+            if (i >= 1 && i <= 15) {
+                g_origRaceState[i] = (RaceState_t)*slot;
+            }
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
-            /* We don't save slot 19 — UniversalRaceState calls g_BoardUpdateRaceState directly */
             *slot = (DWORD)&UniversalRaceState;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);

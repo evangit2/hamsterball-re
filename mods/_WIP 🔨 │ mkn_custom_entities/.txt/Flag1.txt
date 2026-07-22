@@ -1,0 +1,11 @@
+segment_count = 10
+width = 100.0
+height = 75.0
+amp_scale = 20.0
+wave_freq = 1.5
+phase = (runtime, RNG)
+phase_advance = 5.0
+sweep = 360.0
+normal_scale = 0.5
+y_offset = 8.0
+pennant_flag = 0

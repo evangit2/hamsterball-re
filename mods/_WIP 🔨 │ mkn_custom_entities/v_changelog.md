@@ -1,5 +1,21 @@
 # Version Changelog
 
+## v53f
+
+- **CRITICAL FIX: Crash root cause found and fixed**
+  - Constructors like ArenaStands_ctor, Rotator_ctor, Looper_ctor, etc. internally call
+    Stands_ctor/Level_RenderCtor which dereference SceneObject+0x440 (vertex data)
+  - Separately-loaded .MESHWORLD meshes had NULL vertex data at this offset
+  - Fix: pass the board's own Level (board+0x8AC) as the mesh parameter
+  - Board's Level has fully-loaded vertex data - no more NULL dereference crashes
+- **Visual mesh swap after construction**
+  - After constructing with board Level, swap obj+0x08 (MeshWorld*) to desired visual mesh
+  - This gives correct appearance while keeping valid collision/vtable from board Level
+- **Rotator oscillation fixed**
+  - Native render checks "if angle > 2.0" and "if angle < -2.0" to reverse direction
+  - Fix: clamp angle to [-1.99, 1.99] every frame to prevent reversal
+  - Constant rotation now works correctly
+
 ## v53e
 
 - All mod functions renamed with `cEnt_` prefix to separate from game's originals
