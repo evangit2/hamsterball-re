@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v52
+ * custom_entities.c — Hamsterball Custom Entities Mod v53
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -35,6 +35,42 @@ static operator_new_t pfn_operator_new = (operator_new_t)0x004BA57B;
  * Returns the mesh object pointer (same as this) */
 typedef void* (__thiscall *MeshWorld_ctor_t)(void* this_, void* gfx_device, const char* mesh_path);
 static MeshWorld_ctor_t pfn_MeshWorld_ctor = (MeshWorld_ctor_t)0x00461510;
+
+/* MeshNode_ctor — loads a .MESH file into a 0x18-byte MeshNode wrapper
+ * __thiscall(this, gfx_device, mesh_path)
+ * Internally: alloc 0x488-byte MeshWorld, format "%s.mesh", _check_file_access,
+ *   if found: mesh->vtable[1](path) to load binary, vtable[2]() to finalize
+ *   else: MeshWorld_Parse(path, 1) for ASE text format
+ * MeshNode layout: +0x00 vtable, +0x04 gfx_device, +0x08 MeshWorld*, +0x0C loaded flag, +0x0D has_mesh flag, +0x0E flag, +0x10 unused
+ * MeshWorld* is at MeshNode+0x08 */
+typedef void* (__thiscall *MeshNode_ctor_t)(void* this_, void* gfx_device, const char* mesh_path);
+static MeshNode_ctor_t pfn_MeshNode_ctor = (MeshNode_ctor_t)0x00471C20;
+
+/* _check_file_access — checks if file exists (GetFileAttributesA)
+ * __cdecl(path, mode) — returns 0 if exists, 0xFFFFFFFF if not */
+typedef int (__cdecl *check_file_access_t)(const char* path, unsigned char mode);
+static check_file_access_t pfn_check_file_access = (check_file_access_t)0x004C8FF7;
+
+/* MeshWorld_ctor (simple) — 0x004706E0 — initializes a 0x488-byte MeshWorld
+ * __thiscall(this, gfx_device) — no file loading, just struct init */
+typedef void* (__thiscall *MeshWorld_ctor_simple_t)(void* this_, void* gfx_device);
+static MeshWorld_ctor_simple_t pfn_MeshWorld_ctor_simple = (MeshWorld_ctor_simple_t)0x004706E0;
+
+/* MeshNode size constants */
+#define MESHNODE_SIZE           0x18
+#define MESHWORLD_INNER_SIZE    0x488
+
+/* Level_RenderCtor — creates a collision Level from a source Level/MeshWorld
+ * __thiscall(this, parent_level)
+ * Calls Level_ctor (init AthenaLists, Timer, SceneObject) then Level_LoadMeshes
+ * (copies MeshBuffers and collision geometry from parent).
+ * Parent must have: +0x04 gfx_device, +0x08 MeshWorld*, +0x430 flag,
+ * +0x434 Timer*, +0x47C self-ref, +0x480 SceneObject* */
+typedef void* (__thiscall *Level_RenderCtor_t)(void* this_, void* parent_level);
+static Level_RenderCtor_t pfn_Level_RenderCtor = (Level_RenderCtor_t)0x00465080;
+
+/* Level struct size (same as MESHWORLD_SIZE: 0x10D0) */
+#define LEVEL_SIZE             0x10D0
 
 /* PopCylinder_ctor — creates a PopCylinder (bumper) object
  * __thiscall(this, board, posX, posY, posZ, mesh)
@@ -803,6 +839,106 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * load_mesh_file — loads a .MESH or .MESHWORLD file
+ *
+ * For .MESHWORLD files: uses Level_MeshWorldCtor (0x461510).
+ * For .MESH files: uses MeshNode_ctor (0x471C20) to load the .MESH binary.
+ *
+ * Returns a Level pointer (0x10D0 bytes, .MESHWORLD) or MeshNode pointer
+ * (0x18 bytes, .MESH). Caller must check is_mesh_file to know which.
+ * Returns NULL on failure (file not found, parse error, etc).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void* load_mesh_file(DWORD gfx_device, const char* path, int* out_is_mesh_node, FILE* logf) {
+    if (!path || !path[0] || !gfx_device) return NULL;
+    *out_is_mesh_node = 0;
+
+    /* Check if this is a .MESH file (path starts with "meshes\") */
+    int is_mesh_file = (_strnicmp(path, "meshes\\", 6) == 0);
+
+    if (is_mesh_file) {
+        /* Check if path.mesh exists */
+        char check_path[256];
+        snprintf(check_path, 255, "%s.mesh", path);
+        check_path[255] = 0;
+
+        if (pfn_check_file_access(check_path, 0) != 0) {
+            /* .mesh not found — try .meshworld fallback */
+            snprintf(check_path, 255, "%s.meshworld", path);
+            check_path[255] = 0;
+            if (pfn_check_file_access(check_path, 0) != 0) {
+                if (logf) fprintf(logf, "  LOAD_MESH: neither .mesh nor .meshworld for '%s'\n", path);
+                return NULL;
+            }
+            is_mesh_file = 0; /* Fall through to .MESHWORLD loading */
+        }
+    } else {
+        /* .MESHWORLD: check if file exists */
+        char check_path[256];
+        snprintf(check_path, 255, "%s.meshworld", path);
+        check_path[255] = 0;
+        if (pfn_check_file_access(check_path, 0) != 0) {
+            if (logf) fprintf(logf, "  LOAD_MESH: '%s' not found\n", check_path);
+            return NULL;
+        }
+    }
+
+    if (is_mesh_file) {
+        /* ═══ .MESH file loading via MeshNode_ctor (0x471C20) ═══ */
+        void* mesh_node = pfn_operator_new(MESHNODE_SIZE);
+        if (!mesh_node) {
+            if (logf) fprintf(logf, "  LOAD_MESH: failed to alloc MeshNode\n");
+            return NULL;
+        }
+        memset(mesh_node, 0, MESHNODE_SIZE);
+
+        void* result = pfn_MeshNode_ctor(mesh_node, (void*)gfx_device, path);
+        if (!result) {
+            if (logf) fprintf(logf, "  LOAD_MESH: MeshNode_ctor failed for '%s'\n", path);
+            return NULL;
+        }
+
+        /* Check has_mesh flag at MeshNode+0x0D */
+        BYTE has_mesh = *(BYTE*)((char*)mesh_node + 0x0D);
+        if (!has_mesh) {
+            if (logf) fprintf(logf, "  LOAD_MESH: MeshNode loaded but has_mesh=0 for '%s'\n", path);
+            return NULL;
+        }
+
+        /* Verify MeshWorld* at MeshNode+0x08 */
+        void* mesh_world = *(void**)((char*)mesh_node + 0x08);
+        if (!mesh_world || IsBadReadPtr(mesh_world, 0x100)) {
+            if (logf) fprintf(logf, "  LOAD_MESH: MeshWorld* invalid for '%s'\n", path);
+            return NULL;
+        }
+
+        *out_is_mesh_node = 1;
+        if (logf) fprintf(logf, "  LOAD_MESH: .MESH OK: MeshNode=0x%08X MeshWorld=0x%08X '%s'\n",
+                (DWORD)mesh_node, (DWORD)mesh_world, path);
+        return mesh_node;
+    } else {
+        /* ═══ .MESHWORLD file loading via Level_MeshWorldCtor (0x461510) ═══ */
+        void* mesh = pfn_operator_new(MESHWORLD_SIZE);
+        if (!mesh) {
+            if (logf) fprintf(logf, "  LOAD_MESH: failed to alloc mesh\n");
+            return NULL;
+        }
+        memset(mesh, 0, MESHWORLD_SIZE);
+
+        char path_buf[256];
+        strncpy(path_buf, path, 255);
+        path_buf[255] = 0;
+
+        void* loaded = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, path_buf);
+        if (!loaded) {
+            if (logf) fprintf(logf, "  LOAD_MESH: Level_MeshWorldCtor failed for '%s'\n", path_buf);
+            return NULL;
+        }
+
+        return mesh;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * REF:Rotater — Spawn Dizzy SWIRL at REF:Rotater positions in MESHWORLD
  *
  * Based on XRow's SpawnSpinSwirl CEA: loads Level3-Swirl mesh via
@@ -826,48 +962,67 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     /* 2. Determine mesh path — MESH property takes priority over AI default */
     const char* path = NULL;
     if (mesh_path && mesh_path[0]) {
-        /* MESH property specified — use it regardless of AI type */
         path = mesh_path;
     } else if (ai_type >= 1 && ai_type <= 5) {
-        /* AI 1-5 with no MESH property: use game's built-in mesh path */
         path = g_ai_mesh_paths[ai_type];
     } else {
-        /* Default: SWIRL mesh */
         path = g_swirl_mesh_path;
     }
 
-    /* v52: For .MESH files (path starts with "meshes\\"), MeshWorld_ctor
-     * can't load them — it only handles .MESHWORLD format.
-     * Try loading anyway — if it fails, fall back to Swirl mesh so the
-     * object at least renders (visible but wrong model). */
-    int is_mesh_file = (path && _strnicmp(path, "meshes\\", 6) == 0);
-
-    /* Allocate a mutable copy of the path for MeshWorld_ctor */
-    char path_buf[256];
-    strncpy(path_buf, path, 255);
-    path_buf[255] = 0;
-
-    /* 3. Load mesh via MeshWorld_ctor */
-    void* mesh = pfn_operator_new(MESHWORLD_SIZE);
+    /* 3. Load mesh file — handles both .MESHWORLD and .MESH formats */
+    int is_mesh_node = 0;
+    void* mesh = load_mesh_file(gfx_device, path, &is_mesh_node, logf);
     if (!mesh) {
-        if (logf) fprintf(logf, "  ROTATER: failed to alloc mesh\n");
-        return;
-    }
-    memset(mesh, 0, MESHWORLD_SIZE);
-
-    void* loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, path_buf);
-    if (!loaded_mesh) {
-        /* v52: If this is a .MESH file path, try falling back to Swirl */
-        if (is_mesh_file) {
-            if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s' (.MESH not supported, using Swirl fallback)\n", path_buf);
-            strncpy(path_buf, g_swirl_mesh_path, 255);
-            path_buf[255] = 0;
-            loaded_mesh = pfn_MeshWorld_ctor(mesh, (void*)gfx_device, path_buf);
-        }
-        if (!loaded_mesh) {
-            if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for '%s'\n", path_buf);
+        /* Fallback: try Swirl mesh */
+        if (logf) fprintf(logf, "  ROTATER: load_mesh_file failed for '%s', trying Swirl fallback\n", path);
+        is_mesh_node = 0;
+        mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+        if (!mesh) {
+            if (logf) fprintf(logf, "  ROTATER: Swirl fallback also failed\n");
             return;
         }
+    }
+
+    /* For .MESH files (MeshNode, 0x18 bytes), we can't use PopCylinder_ctor
+     * because it calls Stands_ctor which reads Level offsets (+0x18 AthenaList,
+     * +0x430 flags, +0x480 SceneObject) that don't exist on a MeshNode.
+     *
+     * Instead, register the MeshNode as a visual-only render object (no collision).
+     * The MeshNode's vtable has render methods that the game's render loop will call. */
+    if (is_mesh_node) {
+        /* Set position on the inner MeshWorld via vtable[2] (Gfx_SetPosition) */
+        /* MeshNode+0x08 = MeshWorld*, MeshWorld vtable[0x0C/4=3] = SetPosition? */
+        /* Actually, MeshNode has its own vtable with render methods. */
+        /* For now, just add to render list. The game's render loop calls vtable[0x48] (render). */
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), mesh);
+
+        if (logf) {
+            fprintf(logf, "  ROTATER: spawned (.MESH visual-only) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s'\n",
+                    px, py, pz, (DWORD)mesh, path);
+            fflush(logf);
+        }
+
+        /* Track for despawn (but no rotation updates — MeshNode has no rotation fields) */
+        if (g_rotater_count < MAX_ROTATERS) {
+            g_rotater_cfg[g_rotater_count].obj = (DWORD)mesh;
+            g_rotater_cfg[g_rotater_count].rot_x = 0.0f;
+            g_rotater_cfg[g_rotater_count].rot_y = 0.0f;
+            g_rotater_cfg[g_rotater_count].rot_z = 0.0f;
+            g_rotater_cfg[g_rotater_count].ros_x = 0.0f;
+            g_rotater_cfg[g_rotater_count].ros_y = 0.0f;
+            g_rotater_cfg[g_rotater_count].ros_z = 0.0f;
+            g_rotater_cfg[g_rotater_count].angle_x = 0.0f;
+            g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
+            g_rotater_cfg[g_rotater_count].angle_z = 0.0f;
+            if (mesh_path && mesh_path[0]) {
+                strncpy(g_rotater_cfg[g_rotater_count].mesh_path, mesh_path, 127);
+                g_rotater_cfg[g_rotater_count].mesh_path[127] = 0;
+            } else {
+                g_rotater_cfg[g_rotater_count].mesh_path[0] = 0;
+            }
+            g_rotater_count++;
+        }
+        return;
     }
 
     /* 4. Allocate object and call constructor based on AI type */
@@ -944,7 +1099,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
 
     if (logf) {
         fprintf(logf, "  ROTATER: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
-                px, py, pz, (DWORD)obj, path_buf, rot_x, rot_y, rot_z,
+                px, py, pz, (DWORD)obj, path, rot_x, rot_y, rot_z,
                 ros_x, ros_y, ros_z);
         fflush(logf);
     }
@@ -1816,7 +1971,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v52 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
