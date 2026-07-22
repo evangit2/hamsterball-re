@@ -137,7 +137,12 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   4  = Gear_ctor (0x437690, size 0x1514) — multi-axis
  *   5  = BigGear_ctor (same as 4)
  *   6  = Swirl (Rotator_ctor, constant rotation)
- *   7  = ArenaStands_ctor (0x43E450, size 0x1104) — Neon DFLOOR/TRODE/FLICKRING
+ *   7  = DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) — Neon DFLOOR1
+ *   17 = DFloor2_ctor (ArenaStands_ctor) — Neon DFLOOR2
+ *   18 = DFloor3_ctor (ArenaStands_ctor) — Neon DFLOOR3
+ *   19 = DFloor4_ctor (ArenaStands_ctor + post-config) — Neon DFLOOR4 (obj+0x10DC=2, obj+0x10E0=0)
+ *   20 = FlickRing_ctor (ArenaStands_ctor) — Neon Arena FLICKRING
+ *   21 = Trode_ctor (ArenaStands_ctor) — Neon TRODE
  *   8  = GameLevel_ctor (0x4351F0, size 0x1524) — Wobbly platforms
  *   9  = Glass_Level_ctor (0x4384A0, size 0x113C) — Drawbridge (3 params: this,board,mesh)
  *   10 = Gear_Level_ctor (0x43A150, size 0x1100) — Judge (5 params: this,board,x,y,z — no mesh)
@@ -156,9 +161,36 @@ static Rotator_ctor_t pfn_Pendulum_ctor = (Rotator_ctor_t)0x437700;
 static Rotator_ctor_t pfn_Looper_ctor = (Rotator_ctor_t)0x437460;
 static Rotator_ctor_t pfn_Gear_ctor = (Rotator_ctor_t)0x437690;
 
-/* ArenaStands_ctor — Neon Race DFLOOR, FLICKRING, TRODE */
+/* ArenaStands_ctor — Neon Race DFLOOR, FLICKRING, TRODE (all use the same _ctor) */
 typedef void* (__thiscall *ArenaStands_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static ArenaStands_ctor_t pfn_ArenaStands_ctor = (ArenaStands_ctor_t)0x0043E450;
+
+/* Named _ctor wrappers — all call ArenaStands_ctor internally.
+ * DFloor4 has extra post-construction config from Neon_CreateDynamicObjects. */
+static void* DFloor1_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+    return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
+}
+static void* DFloor2_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+    return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
+}
+static void* DFloor3_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+    return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
+}
+static void* DFloor4_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+    void* result = pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
+    /* Post-construction config from Neon_CreateDynamicObjects (DFLOOR4 case):
+     *   obj+0x10DC = 2  (sets collision flag)
+     *   obj+0x10E0 = 0  (clears collision object) */
+    *(DWORD*)((char*)obj + 0x10DC) = 2;
+    *(DWORD*)((char*)obj + 0x10E0) = 0;
+    return result;
+}
+static void* FlickRing_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+    return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
+}
+static void* Trode_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+    return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
+}
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -1324,14 +1356,44 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
-    } else if (ai_type >= 7 && ai_type <= 13) {
+    } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 21)) {
         /* New constructor types (7-13) — each with specific signature */
         switch (ai_type) {
-            case 7:  /* ArenaStands_ctor — DFLOOR, FLICKRING, TRODE */
+            case 7:  /* DFloor1_ctor — Neon DFLOOR1 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc ArenaStands\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor1\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                pfn_ArenaStands_ctor(obj, (void*)board, px, py, pz, mesh);
+                DFloor1_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 17: /* DFloor2_ctor — Neon DFLOOR2 */
+                obj = pfn_operator_new(ARENASTANDS_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor2\n"); return; }
+                memset(obj, 0, ARENASTANDS_SIZE);
+                DFloor2_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 18: /* DFloor3_ctor — Neon DFLOOR3 */
+                obj = pfn_operator_new(ARENASTANDS_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor3\n"); return; }
+                memset(obj, 0, ARENASTANDS_SIZE);
+                DFloor3_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 19: /* DFloor4_ctor — Neon DFLOOR4 (with post-construction config) */
+                obj = pfn_operator_new(ARENASTANDS_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor4\n"); return; }
+                memset(obj, 0, ARENASTANDS_SIZE);
+                DFloor4_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 20: /* FlickRing_ctor — Neon Arena FLICKRING */
+                obj = pfn_operator_new(ARENASTANDS_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc FlickRing\n"); return; }
+                memset(obj, 0, ARENASTANDS_SIZE);
+                FlickRing_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 21: /* Trode_ctor — Neon TRODE */
+                obj = pfn_operator_new(ARENASTANDS_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trode\n"); return; }
+                memset(obj, 0, ARENASTANDS_SIZE);
+                Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
@@ -1526,7 +1588,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     {
         DWORD col_off = 0x10E0;  /* default for PopCylinder */
         if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family */
-        else if (ai_type == 7) col_off = 0x10E0;  /* ArenaStands (same as PopCylinder) */
+        else if (ai_type == 7 || (ai_type >= 17 && ai_type <= 21)) col_off = 0x10E0;  /* ArenaStands family */
         else if (ai_type == 8) col_off = 0x10D4;  /* GameLevel (Wobbly) */
         else if (ai_type == 9) col_off = 0x10D4;  /* Glass_Level (Drawbridge) */
         else if (ai_type == 10) col_off = 0x10D4; /* Gear_Level (Judge) */
@@ -2259,9 +2321,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Fan",              0, "meshes\\fanbody" },           /* .MESH — Fan_ctor */
             { "Flag",             12, NULL },                        /* FlagWaver_Ctor (0x46AF30, 0x8C bytes) — code-generated mesh */
             { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
-            { "Flickfloor1",      7, "levels\\LevelDark-DFloor1" }, /* ArenaStands_ctor (0x43E450, 0x1104 bytes) */
-            { "Flickfloor2",      7, "levels\\LevelDark-DFloor4" }, /* ArenaStands_ctor (same as DFLOOR4) */
-            { "Flickring",        7, "levels\\LevelDark-Flickring" }, /* ArenaStands_ctor */
+            { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
+            { "Flickfloor2",     19, "levels\\LevelDark-DFloor4" },  /* DFloor4_ctor (ArenaStands + post-config: obj+0x10DC=2, obj+0x10E0=0) */
+            { "Flickring",       20, "levels\\LevelDark-Flickring" }, /* FlickRing_ctor (ArenaStands_ctor) */
             { "Funball",          0, "meshes\\funball" },           /* Sky Race: no _ctor, PopCylinder fallback */
             { "Gear",             0, "levels\\LevelImpossible-Gear" }, /* PopCylinder (was 4=Gear_ctor, crashed) */
             { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
@@ -2287,7 +2349,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor */
             { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor */
-            { "Trode",            7, "levels\\LevelDark-Trode" },  /* ArenaStands_ctor (same as DFLOOR) */
+            { "Trode",            21, "levels\\LevelDark-Trode" },   /* Trode_ctor (ArenaStands_ctor) */
             { "Waterwheel",       0, "levels\\Level3-WaterWheel" }, /* Dizzy: no _ctor, PopCylinder fallback */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
             { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
