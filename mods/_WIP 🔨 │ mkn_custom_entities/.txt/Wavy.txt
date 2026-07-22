@@ -1,0 +1,10 @@
+segment_count = 28
+vertex_count = 20
+y_offset = -3.0
+base_angle = (runtime, accumulates)
+angle_speed = (runtime)
+amplitude = (runtime)
+total_sweep = (runtime, ×360)
+seg_angle_step = 20
+lateral_wobble_scale = 2.0
+segment_step = -25

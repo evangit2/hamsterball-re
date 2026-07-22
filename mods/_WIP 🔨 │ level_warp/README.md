@@ -4,9 +4,9 @@ Warp between levels by touching WARP(levelname) nodes placed in the MESHWORLD.
 
 ## v8.5 Changes (current)
 
-- **Electric blue ball color during RUMBLE.** Ball color multiplier (ball+0x2AC/0x2B0/0x2B4) is lerped from original to #03fff2 (electric blue) over the 2-second RUMBLE phase. These are the same fields the magnifying glass heat system uses — Ball_Render reads them every frame and passes to Graphics_SetColorMultiplier (0x00401160). Color is restored to original in PHASE_LOAD.
+- **Heliotrope purple ball color during RUMBLE.** Ball color multiplier (ball+0x2AC/0x2B0/0x2B4) is lerped from original to #db03fc (heliotrope purple) over the 2-second RUMBLE phase. These are the same fields the magnifying glass heat system uses — Ball_Render reads them every frame and passes to Graphics_SetColorMultiplier (0x00401160). Color is restored to original in PHASE_LOAD.
 - **Physics freeze on ball disappear.** When the ball vanishes at peak white flash (PHASE_FLASH), `ball+0x2CC` (`in_tar` flag) is set to 1 — freezing ball physics. Cleared back to 0 in PHASE_LOAD alongside other ball state restores.
-- **Tournament timeout abort.** If the tournament timer expires during RUMBLE or early FLASH (before `g_freezeTimer` is set), the warp is aborted. Checks `App+0x5D6` (obj+0x0A "finished" flag, set by Board_UpdateRaceState when timer < 0). On abort: restores physics state (jitter, in_tar, impact freeze), music, timer, pause — but **keeps the blue color and partial alpha** so the ball remains electric blue and faded during the game's natural timeout popup (RaceResultPopup + "Game Over" music).
+- **Tournament timeout abort.** If the tournament timer expires during RUMBLE or early FLASH (before `g_freezeTimer` is set), the warp is aborted. Checks `App+0x5D6` (obj+0x0A "finished" flag, set by Board_UpdateRaceState when timer < 0). On abort: restores physics state (jitter, in_tar, impact freeze), music, timer, pause — but **keeps the purple color and partial alpha** so the ball remains heliotrope purple and faded during the game's natural timeout popup (RaceResultPopup + "Game Over" music).
 
 ## v8 Changes
 
@@ -18,10 +18,10 @@ Warp between levels by touching WARP(levelname) nodes placed in the MESHWORLD.
 
 1. Level designers place a node named `WARP(levelname)` in the MESHWORLD Section 1 (e.g. `WARP(3)` or `WARP(neon)`)
 2. When the player ball gets within 30 units (XZ) and 50 units (Y) of the node, the warp sequence triggers
-3. Effect sequence: RUMBLE (2s) → FLASH (0.25s) → HOLD (1s) → FADE (2s) → LOAD → REVEAL (1s)
-4. During RUMBLE, ball color lerps to electric blue (#03fff2) and alpha fades from 1.0 to 0.5
+3. Effect sequence: RUMBLE (2s) → FLASH (0.15s) → HOLD (1s) → FADE (2s) → LOAD → REVEAL (1s)
+4. During RUMBLE, ball color lerps to heliotrope purple (#db03fc) and alpha fades from 1.0 to 0.5
 5. At peak FLASH, ball goes invisible (alpha=0), physics freezes (`in_tar=1`), and timer freezes
-6. If tournament timer expires mid-warp (before timer freeze), the warp aborts — ball stays blue/faded, game's timeout popup plays out normally
+6. If tournament timer expires mid-warp (before timer freeze), the warp aborts — ball stays purple/faded, game's timeout popup plays out normally
 7. The race timer is frozen during the warp via code caves (no N:GOAL side effects)
 8. After loading the new level, all ball state is restored (color, alpha, in_tar, jitter, impact freeze) and timer is unfrozen
 

@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53e
+ * custom_entities.c — Hamsterball Custom Entities Mod v53f
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1251,34 +1251,20 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     } else if (ai_type >= 1 && ai_type <= 5) {
         path = g_ai_mesh_paths[ai_type];
     } else if (ai_type == 12) {
-        /* FlagWaver: code-generated mesh, no file needed */
         path = NULL;
     } else if (ai_type == 13) {
-        /* Sign_ctor: loads its own mesh internally */
         path = NULL;
     } else if (ai_type == 14) {
-        /* WavyFlag2: Wavy_ctor loads mesh from string path internally.
-         * Skip mesh loading here — the path string is passed directly to Wavy_ctor. */
         path = NULL;
     } else if (ai_type == 15) {
-        /* BadBall: BadBall_ctor doesn't take a mesh param.
-         * Mesh is handled by the BadBall system (App mesh array). */
         path = NULL;
     } else if (ai_type == 16) {
-        /* Bridgeslam: loads its own mesh inside the case block.
-         * Skip external mesh load to avoid double-loading. */
         path = NULL;
     } else if (ai_type == 22) {
-        /* Chomper: MeshNode_ctor loads mesh from string path internally */
         path = NULL;
     } else if (ai_type == 28) {
-        /* Cloudscape: Sprite_ctor takes a string path, not a mesh pointer.
-         * Path is determined inside the case block. */
         path = NULL;
     } else if (ai_type >= 30 && ai_type <= 33) {
-        /* Bell/Fan/SawBlade/Bonk: constructors don't take a mesh parameter.
-         * Bell/Fan/SawBlade call Level_ctor (no mesh).
-         * Bonk calls Level_MeshWorldCtor (self-loads level5-bonk). */
         path = NULL;
     } else {
         path = g_swirl_mesh_path;
@@ -1293,13 +1279,53 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     }
 
     /* 3. Load mesh file — handles both .MESHWORLD and .MESH formats.
-     * NULL path is valid for entities with no mesh file (FlagWaver, Sign). */
+     * NULL path is valid for entities with no mesh file (FlagWaver, Sign).
+     *
+     * CRITICAL FIX v53f: For constructors that call Stands_ctor/Level_RenderCtor
+     * internally (Rotator, ArenaStands, Looper, Gear, Spinner, GameLevel, etc.),
+     * the mesh parameter MUST be a fully-initialized Level with vertex data at
+     * SceneObject+0x440. Separately-loaded meshes from .MESHWORLD files may have
+     * NULL vertex data, causing crashes in Level_LoadMeshes.
+     *
+     * Solution: Use the board's own Level (board+0x8AC) as the mesh parameter.
+     * The board's Level has all vertex data properly loaded. Then after
+     * construction, swap obj+0x08 (MeshWorld*) to the desired visual mesh. */
     int is_mesh_node = 0;
     void* mesh = NULL;
-    if (path) {
+    void* visual_mesh = NULL;  /* The mesh we WANT to display (may differ from construction mesh) */
+    int use_board_level_as_mesh = 0;  /* Set for types that need Stands_ctor */
+
+    /* Types that call Stands_ctor/Level_RenderCtor internally need board Level */
+    if ((ai_type >= 1 && ai_type <= 6) ||  /* Rotator, Pendulum, Looper, Gear, Swirl */
+        (ai_type >= 7 && ai_type <= 11) ||  /* ArenaStands, GameLevel, Glass_Level, Gear_Level, Secret */
+        (ai_type >= 17 && ai_type <= 21) || /* DFloor2-4, FlickRing, Trode */
+        (ai_type == 27) ||                  /* Spinner_Level_ctor */
+        (ai_type == 29)) {                  /* Gear_ctor_real */
+        use_board_level_as_mesh = 1;
+    }
+
+    if (use_board_level_as_mesh) {
+        /* Use the board's Level as the mesh parameter for construction.
+         * This has valid vertex data at SceneObject+0x440. */
+        DWORD board_level = cEnt_get_level(board);
+        if (board_level && !IsBadReadPtr((void*)board_level, 0x500)) {
+            mesh = (void*)board_level;
+        } else {
+            if (logf) fprintf(logf, "  ROTATER: board Level invalid, trying Swirl fallback\n");
+            mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+            if (!mesh) return;
+        }
+        /* Load the visual mesh separately (for swapping after construction) */
+        if (path) {
+            visual_mesh = cEnt_load_mesh_file(gfx_device, path, &is_mesh_node, logf);
+            if (!visual_mesh) {
+                if (logf) fprintf(logf, "  ROTATER: visual mesh '%s' failed, trying Swirl fallback\n", path);
+                visual_mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+            }
+        }
+    } else if (path) {
         mesh = cEnt_load_mesh_file(gfx_device, path, &is_mesh_node, logf);
         if (!mesh) {
-            /* Fallback: try Swirl mesh */
             if (logf) fprintf(logf, "  ROTATER: cEnt_load_mesh_file failed for '%s', trying Swirl fallback\n", path);
             is_mesh_node = 0;
             mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
@@ -1737,6 +1763,29 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     }
     spawn_done:;
 
+    /* v53f: Swap visual mesh after construction.
+     * For types that used board Level as construction mesh, now replace
+     * obj+0x08 (MeshWorld*) with the desired visual mesh's MeshWorld*.
+     * This makes the object render with the correct visual appearance
+     * while keeping the collision and vtable from the board Level. */
+    if (use_board_level_as_mesh && visual_mesh && obj) {
+        if (!IsBadReadPtr(obj, 0x10)) {
+            /* visual_mesh is either a Level (0x10D0) or MeshNode (0x18) */
+            DWORD visual_mw = 0;
+            if (is_mesh_node) {
+                /* MeshNode: MeshWorld* is at +0x08 */
+                visual_mw = *(DWORD*)((char*)visual_mesh + 0x08);
+            } else {
+                /* Level/MeshWorld: MeshWorld* is at +0x08 */
+                visual_mw = *(DWORD*)((char*)visual_mesh + 0x08);
+            }
+            if (visual_mw && !IsBadReadPtr((void*)visual_mw, 0x100)) {
+                *(DWORD*)((char*)obj + 0x08) = visual_mw;
+                if (logf) fprintf(logf, "  ROTATER: visual mesh swapped (MW=0x%08X) for AI %d\n", visual_mw, ai_type);
+            }
+        }
+    }
+
     /* 5. Add to board+0x2578 (update list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
 
@@ -1879,7 +1928,14 @@ static void cEnt_update_constant_rotations(void) {
         DWORD obj = g_rotater_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
+        /* Rewrite direction field to prevent native oscillation reversal */
         *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
+        /* Clamp angle to prevent the native "if angle > 2.0" / "if angle < -2.0" checks
+         * from triggering. By keeping angle within [-1.99, 1.99], the native code
+         * never reverses direction, giving constant rotation. */
+        float angle = *(float*)(obj + 0x10E8);
+        if (angle > 1.99f) *(float*)(obj + 0x10E8) = -1.99f;
+        else if (angle < -1.99f) *(float*)(obj + 0x10E8) = 1.99f;
     }
 }
 
@@ -2668,7 +2724,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53e Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53f Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

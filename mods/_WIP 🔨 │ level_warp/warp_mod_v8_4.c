@@ -41,7 +41,7 @@
  *
  * Phase timeline (real-time, not frame-based):
  *   RUMBLE: 2.0 sec — Ball frozen + CPUID jitter + sound + music fade start
- *   FLASH:  0.25 sec — Ball invisible + quick white flash
+ *   FLASH:  0.15 sec — Ball invisible + instant white flash, fades out over 150ms
  *   HOLD:   1.0 sec — Pause, screen clear, ball stays invisible
  *   FADE:   2.0 sec — Screen fades to solid white
  *   LOAD:   instant — Load target level while screen stays white
@@ -627,13 +627,13 @@ static float g_musicOrigVolumes[MAX_MUSIC_CHANNELS];
 static int g_musicChannelCount = 0;
 
 #define RUMBLE_DURATION_MS    2000
-#define FLASH_DURATION_MS      250
+#define FLASH_DURATION_MS      150
 #define HOLD_DURATION_MS      1000
 #define FADE_DURATION_MS      2000
 #define REVEAL_DURATION_MS    1000
 #define MUSIC_FADE_MS         3000
 
-#define FLASH_PEAK_MS         125
+/* FLASH_PEAK_MS removed — flash is now instant white, then 200ms fade out */
 
 static volatile float g_whiteAlpha = 0.0f;
 
@@ -646,11 +646,11 @@ static volatile int g_rumbleInit = 0;
 static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
 static int g_colorSaved = 0;
 
-/* Target electric blue (#03fff2) for the RUMBLE phase color transition.
- * Hex #03fff2 → R=0x03/255=0.0118, G=0xFF/255=1.0, B=0xF2/255=0.9490 */
-#define TARGET_BLUE_R  (3.0f / 255.0f)    /* 0.0118 */
-#define TARGET_BLUE_G  (255.0f / 255.0f)  /* 1.0    */
-#define TARGET_BLUE_B  (242.0f / 255.0f)  /* 0.9490 */
+/* Target heliotrope purple (#db03fc) for the RUMBLE phase color transition.
+ * Hex #db03fc → R=0xDB/255=0.8588, G=0x03/255=0.0118, B=0xFC/255=0.9882 */
+#define TARGET_BLUE_R  (219.0f / 255.0f)  /* 0.8588 */
+#define TARGET_BLUE_G  (3.0f / 255.0f)    /* 0.0118 */
+#define TARGET_BLUE_B  (252.0f / 255.0f)  /* 0.9882 */
 
 /* Board offset: scene+0x874 = paused flag */
 #define BOARD_PAUSED_FLAG      0x874
@@ -1086,7 +1086,7 @@ static void updateWarpStateMachine(void) {
             diag_logf("[warp] PHASE_RUMBLE start: steering disabled (ball+0x808=1000), jitter on");
         }
 
-        /* Fade ball color multiplier from original to electric blue (#03fff2)
+        /* Fade ball color multiplier from original to heliotrope purple (#db03fc)
          * over RUMBLE phase. Writes to ball+0x2AC/0x2B0/0x2B4 — the exact
          * fields Ball_Render reads and passes to Graphics_SetColorMultiplier
          * every frame. This is the same mechanism the magnifying glass heat
@@ -1125,13 +1125,9 @@ static void updateWarpStateMachine(void) {
     case PHASE_FLASH: {
         elapsed = now - g_phaseStartTime;
 
-        if (elapsed < FLASH_PEAK_MS) {
-            g_whiteAlpha = (float)elapsed / (float)FLASH_PEAK_MS;
-        } else {
-            DWORD remaining = FLASH_DURATION_MS - elapsed;
-            g_whiteAlpha = (float)remaining / (float)(FLASH_DURATION_MS - FLASH_PEAK_MS);
-            if (g_whiteAlpha < 0.0f) g_whiteAlpha = 0.0f;
-        }
+        /* Instant full white, then linear fade out over 200ms */
+        g_whiteAlpha = 1.0f - (float)elapsed / (float)FLASH_DURATION_MS;
+        if (g_whiteAlpha < 0.0f) g_whiteAlpha = 0.0f;
 
         if (g_whiteAlpha >= 0.99f && ball) {
             int respawning = *((unsigned char *)((char *)ball + 0x2F9));
@@ -1540,7 +1536,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved) {
         }
 
         diag_log("=== LEVEL WARP MOD v8.4 LOADED ===");
-        diag_log("v8.4: Fixed ball color change — now writes to ball+0x2AC/0x2B0/0x2B4 (runtime color multiplier read by Ball_Render), not ball+0x20C/0x210/0x214 (material diffuse, not read by color path). Target color: electric blue #03fff2.");
+        diag_log("v8.4: Fixed ball color change — now writes to ball+0x2AC/0x2B0/0x2B4 (runtime color multiplier read by Ball_Render), not ball+0x20C/0x210/0x214 (material diffuse, not read by color path). Target color: heliotrope purple #db03fc.");
 
         load_real_bass();
         diag_logf("bass_real.dll handle: 0x%08X", (unsigned)g_hRealBass);
