@@ -23,42 +23,42 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 
 ## Constructor Types
 
-| Type | cEnt_ Constructor         | Game _ctor           | Address  | Size    | Signature                                             |
-| ---- | ------------------------- | -------------------- | -------- | ------- | ----------------------------------------------------- |
-| 0    | cEnt_PopCylinder_ctor     | PopCylinder_ctor     | 0x436EE0 | 0x10D0  | (this, board, x, y, z, mesh)                          |
-| 1    | cEnt_Rotator_ctor         | Rotator_ctor         | 0x435940 | 0x1508  | (this, board, x, y, z, mesh)                          |
-| 2    | cEnt_Pendulum_ctor        | Pendulum_ctor        | 0x437700 | 0x1504  | (this, board, x, y, z, mesh)                          |
-| 3    | cEnt_Looper_ctor          | Looper_ctor          | 0x437460 | 0x1500  | (this, board, x, y, z, mesh)                          |
-| 4    | cEnt_Gear_ctor            | Gear_ctor            | 0x437690 | 0x1514  | (this, board, x, y, z, mesh)                          |
-| 5    | cEnt_BigGear_ctor         | BigGear_ctor         | 0x437690 | 0x1514  | (same as type 4)                                      |
-| 6    | cEnt_Swirl                | Rotator_ctor         | 0x435940 | 0x1508  | (Rotator, constant rotation)                          |
-| 7    | cEnt_DFloor1_ctor         | ArenaStands_ctor    | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon DFLOOR1           |
-| 8    | cEnt_GameLevel_ctor       | GameLevel_ctor       | 0x4351F0 | 0x1524  | (this, board, x, y, z, mesh)                          |
-| 9    | cEnt_Glass_Level_ctor     | Glass_Level_ctor     | 0x4384A0 | 0x113C  | (this, board, mesh) — no position!                    |
-| 10   | cEnt_Gear_Level_ctor      | Gear_Level_ctor      | 0x43A150 | 0x1100  | (this, board, x, y, z) — no mesh!                     |
-| 11   | cEnt_Secret_ctor          | Secret_ctor          | 0x43DFB0 | 0x10EC  | (this, board, x, y, z, mesh)                          |
-| 12   | cEnt_FlagWaver_Ctor       | FlagWaver_Ctor       | 0x46AF30 | 0x8C    | (this, gfx_device) — code-gen mesh                    |
-| 13   | cEnt_Sign_ctor            | Sign_ctor            | 0x443B90 | 0x10FC  | (this, board, gfx1, gfx2, x, y, z, ...)              |
-| 14   | cEnt_WavyFlag2            | Wavy_ctor            | 0x43AD40 | 0x1AE7C | (this, board, x, y, z, path_str)                     |
-| 15   | cEnt_BadBall_ctor         | BadBall_ctor         | 0x40AFE0 | 0xC98   | (this, board) — no mesh, no position                  |
-| 16   | cEnt_Bridgeslam           | Custom               | N/A      | 0x10D0  | Isolated Intermediate bridge state machine            |
-| 17   | cEnt_DFloor2_ctor         | ArenaStands_ctor    | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon DFLOOR2           |
-| 18   | cEnt_DFloor3_ctor         | ArenaStands_ctor    | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon DFLOOR3           |
-| 19   | cEnt_DFloor4_ctor         | ArenaStands_ctor    | 0x43E450 | 0x1104  | ArenaStands + post-config (obj+0x10DC=2, +0x10E0=0)   |
-| 20   | cEnt_FlickRing_ctor       | ArenaStands_ctor    | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon Arena FLICKRING   |
-| 21   | cEnt_Trode_ctor           | ArenaStands_ctor    | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon TRODE             |
-| 22   | cEnt_Chomper_ctor         | MeshNode_ctor        | 0x471C20 | 0x18    | MeshNode_ctor — Tower Chomper mesh                    |
-| 23   | cEnt_Chrome_ctor          | N/A                  | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback |
-| 24   | cEnt_Funball_ctor         | N/A                  | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback |
-| 25   | cEnt_Tarbubble_ctor       | N/A                  | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback |
-| 26   | cEnt_Waterwheel_ctor      | N/A                  | N/A      | N/A     | No _ctor, position-only storage, PopCylinder fallback|
-| 27   | cEnt_Spinner_Level_ctor   | Spinner_Level_ctor   | 0x4396F0 | 0x10FC  | Expert Race "BRIDGE" (6 params)                       |
-| 28   | cEnt_Cloudscape           | Sprite_ctor          | 0x45D0C0 | 0xD4    | Sprite_ctor — Sky Race clouds, _default fallback      |
-| 29   | cEnt_Gear_ctor_real       | Gear_ctor            | 0x437690 | 0x1514  | 9 params: (this,board,x,y,z,x2,y2,z2,mesh)            |
-| 30   | cEnt_Bell_ctor            | Bell_ctor            | 0x434D70 | 0x10E8  | (this, board, x, y, z) — Level_ctor, no mesh          |
-| 31   | cEnt_Fan_ctor             | Fan_ctor             | 0x438C20 | 0x1188  | (this, board, x, y, z, float) — Level_ctor, no mesh   |
-| 32   | cEnt_SawBlade_ctor        | SawBlade_ctor        | 0x434660 | 0x111C  | (this, board, x, y, z) — Level_ctor, no mesh           |
-| 33   | cEnt_Bonk_ctor            | Bonk_ctor            | 0x438850 | 0x1200  | (this, board, x, y, z) — self-loads level5-bonk       |
+| Type | cEnt_ Constructor       | Game _ctor         | Address  | Size    | Signature                                             |
+| ---- | ----------------------- | ------------------ | -------- | ------- | ----------------------------------------------------- |
+| 0    | cEnt_PopCylinder_ctor   | PopCylinder_ctor   | 0x436EE0 | 0x10D0  | (this, board, x, y, z, mesh)                          |
+| 1    | cEnt_Rotator_ctor       | Rotator_ctor       | 0x435940 | 0x1508  | (this, board, x, y, z, mesh)                          |
+| 2    | cEnt_Pendulum_ctor      | Pendulum_ctor      | 0x437700 | 0x1504  | (this, board, x, y, z, mesh)                          |
+| 3    | cEnt_Looper_ctor        | Looper_ctor        | 0x437460 | 0x1500  | (this, board, x, y, z, mesh)                          |
+| 4    | cEnt_Gear_ctor          | Gear_ctor          | 0x437690 | 0x1514  | (this, board, x, y, z, mesh)                          |
+| 5    | cEnt_BigGear_ctor       | BigGear_ctor       | 0x437690 | 0x1514  | (same as type 4)                                      |
+| 6    | cEnt_Swirl              | Rotator_ctor       | 0x435940 | 0x1508  | (Rotator, constant rotation)                          |
+| 7    | cEnt_DFloor1_ctor       | ArenaStands_ctor   | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) - Neon DFLOOR1           |
+| 8    | cEnt_GameLevel_ctor     | GameLevel_ctor     | 0x4351F0 | 0x1524  | (this, board, x, y, z, mesh)                          |
+| 9    | cEnt_Glass_Level_ctor   | Glass_Level_ctor   | 0x4384A0 | 0x113C  | (this, board, mesh) - no position!                    |
+| 10   | cEnt_Gear_Level_ctor    | Gear_Level_ctor    | 0x43A150 | 0x1100  | (this, board, x, y, z) - no mesh!                     |
+| 11   | cEnt_Secret_ctor        | Secret_ctor        | 0x43DFB0 | 0x10EC  | (this, board, x, y, z, mesh)                          |
+| 12   | cEnt_FlagWaver_Ctor     | FlagWaver_Ctor     | 0x46AF30 | 0x8C    | (this, gfx_device) - code-gen mesh                    |
+| 13   | cEnt_Sign_ctor          | Sign_ctor          | 0x443B90 | 0x10FC  | (this, board, gfx1, gfx2, x, y, z, ...)               |
+| 14   | cEnt_WavyFlag2          | Wavy_ctor          | 0x43AD40 | 0x1AE7C | (this, board, x, y, z, path_str)                      |
+| 15   | cEnt_BadBall_ctor       | BadBall_ctor       | 0x40AFE0 | 0xC98   | (this, board) - no mesh, no position                  |
+| 16   | cEnt_Bridgeslam         | Custom             | N/A      | 0x10D0  | Isolated Intermediate bridge state machine            |
+| 17   | cEnt_DFloor2_ctor       | ArenaStands_ctor   | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) - Neon DFLOOR2           |
+| 18   | cEnt_DFloor3_ctor       | ArenaStands_ctor   | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) - Neon DFLOOR3           |
+| 19   | cEnt_DFloor4_ctor       | ArenaStands_ctor   | 0x43E450 | 0x1104  | ArenaStands + post-config (obj+0x10DC=2, +0x10E0=0)   |
+| 20   | cEnt_FlickRing_ctor     | ArenaStands_ctor   | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) - Neon Arena FLICKRING   |
+| 21   | cEnt_Trode_ctor         | ArenaStands_ctor   | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) - Neon TRODE             |
+| 22   | cEnt_Chomper_ctor       | MeshNode_ctor      | 0x471C20 | 0x18    | MeshNode_ctor - Tower Chomper mesh                    |
+| 23   | cEnt_Chrome_ctor        | N/A                | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback  |
+| 24   | cEnt_Funball_ctor       | N/A                | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback  |
+| 25   | cEnt_Tarbubble_ctor     | N/A                | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback  |
+| 26   | cEnt_Waterwheel_ctor    | N/A                | N/A      | N/A     | No _ctor, position-only storage, PopCylinder fallback |
+| 27   | cEnt_Spinner_Level_ctor | Spinner_Level_ctor | 0x4396F0 | 0x10FC  | Expert Race "BRIDGE" (6 params)                       |
+| 28   | cEnt_Cloudscape         | Sprite_ctor        | 0x45D0C0 | 0xD4    | Sprite_ctor - Sky Race clouds, _default fallback      |
+| 29   | cEnt_Gear_ctor_real     | Gear_ctor          | 0x437690 | 0x1514  | 9 params: (this,board,x,y,z,x2,y2,z2,mesh)            |
+| 30   | cEnt_Bell_ctor          | Bell_ctor          | 0x434D70 | 0x10E8  | (this, board, x, y, z) - Level_ctor, no mesh          |
+| 31   | cEnt_Fan_ctor           | Fan_ctor           | 0x438C20 | 0x1188  | (this, board, x, y, z, float) - Level_ctor, no mesh   |
+| 32   | cEnt_SawBlade_ctor      | SawBlade_ctor      | 0x434660 | 0x111C  | (this, board, x, y, z) - Level_ctor, no mesh          |
+| 33   | cEnt_Bonk_ctor          | Bonk_ctor          | 0x438850 | 0x1200  | (this, board, x, y, z) - self-loads level5-bonk       |
 
 ## Entity Table
 
@@ -66,19 +66,19 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | ------------- | ---- | ------------------------------- | ----------------------------------------------------------- |
 | 8ball         | 15   | meshes\8ball                    | cEnt_BadBall_ctor, 2 params: this+board                     |
 | BBridge       | 0    | levels\Level10-Bridge1          | BreakBridge                                                 |
-| Bell          | 0    | meshes\bell                     | PopCylinder — cEnt_Bell_ctor crashes (Level_ctor, no mesh) |
+| Bell          | 0    | meshes\bell                     | PopCylinder - cEnt_Bell_ctor crashes (Level_ctor, no mesh)  |
 | Blockdawg     | 0    | levels\Level8-BlockDawg1        | cEnt_Blockdawg_ctor                                         |
-| Bonk          | 33   | levels\Level5-Bonk              | cEnt_Bonk_ctor (0x438850) — self-loads level5-bonk           |
-| Bridge        | 16   | levels\Level2-Bridge            | cEnt_Bridgeslam: isolated Intermediate bridge state machine|
+| Bonk          | 33   | levels\Level5-Bonk              | cEnt_Bonk_ctor (0x438850) - self-loads level5-bonk          |
+| Bridge        | 16   | levels\Level2-Bridge            | cEnt_Bridgeslam: isolated Intermediate bridge state machine |
 | Bridgeslam    | 16   | levels\Level2-Bridge            | Alias for Bridge                                            |
 | Bumper        | 0    | levels\_default                 | N:BUMPER tag, _default mesh                                 |
-| Catapult      | 0    | levels\Level4-Catapult           | cEnt_Catapult_ctor                                          |
+| Catapult      | 0    | levels\Level4-Catapult          | cEnt_Catapult_ctor                                          |
 | Chomper       | 22   | meshes\chomper                  | cEnt_Chomper_ctor (cEnt_MeshNode_ctor, 0x471C20)            |
 | Chrome        | 23   | levels\_default                 | cEnt_Chrome_ctor: no _ctor, PopCylinder fallback            |
 | Cloudscape    | 28   | levels\Cloudscape               | cEnt_Cloudscape (cEnt_Sprite_ctor, 0x45D0C0)                |
 | Drawbridge    | 9    | levels\Level4-Drawbridge        | cEnt_Glass_Level_ctor                                       |
 | Droplifter    | 0    | levels\Level6-Lifter            | Odd Race model                                              |
-| Fan           | 0    | meshes\fanbody                  | PopCylinder — cEnt_Fan_ctor crashes (Level_ctor, no mesh)   |
+| Fan           | 0    | meshes\fanbody                  | PopCylinder - cEnt_Fan_ctor crashes (Level_ctor, no mesh)   |
 | Flag          | 12   | NULL                            | cEnt_FlagWaver_Ctor, code-gen mesh                          |
 | Flag2         | 14   | levels\Flag                     | cEnt_WavyFlag2: Wavy_ctor copy, Flag.MESHWORLD or _default  |
 | Flickfloor1   | 7    | levels\LevelDark-DFloor1        | cEnt_DFloor1_ctor (ArenaStands_ctor)                        |
@@ -95,16 +95,16 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Mag           | 0    | meshes\magnifyingglass          | .MESH, cEnt_Magnifier_ctor                                  |
 | Mousetrap     | 0    | levels\MouseTrap                | cEnt_MouseTrap_ctor                                         |
 | Neonplatform  | 0    | levels\LevelDark-NeonPlatform   | cEnt_NeonPlatform_ctor                                      |
-| Pendulum      | 2    | levels\LevelImpossible-Pendulum  | cEnt_Pendulum_ctor                                          |
+| Pendulum      | 2    | levels\LevelImpossible-Pendulum | cEnt_Pendulum_ctor                                          |
 | Popcylinder   | 0    | levels\Level9-PopCylinder1      | cEnt_PopCylinder_ctor                                       |
 | Rotator       | 1    | levels\LevelImpossible-Rotator  | cEnt_Rotator_ctor, constant rotation                        |
 | Saw           | 0    | levels\Level8-Saw               | cEnt_Saw_ctor                                               |
-| Sawblade      | 0    | meshes\sawblade                 | PopCylinder — cEnt_SawBlade_ctor crashes (Level_ctor)       |
+| Sawblade      | 0    | meshes\sawblade                 | PopCylinder - cEnt_SawBlade_ctor crashes (Level_ctor)       |
 | Sign          | 13   | levels\PopupSign                | cEnt_Sign_ctor, complex signature                           |
 | Speedcylinder | 0    | levels\LevelUp-SpeedCylinder    | cEnt_SpeedCylinder_ctor                                     |
 | Spinner       | 27   | levels\Level8-Spinny            | cEnt_Spinner_Level_ctor (0x4396F0, 0x10FC)                  |
 | Swirl         | 6    | levels\Level3-Swirl             | cEnt_Rotator_ctor_Impossible                                |
-| Tarbubble     | 25   | meshes\tarbubble                | cEnt_Tarbubble_ctor: no _ctor, PopCylinder fallback          |
+| Tarbubble     | 25   | meshes\tarbubble                | cEnt_Tarbubble_ctor: no _ctor, PopCylinder fallback         |
 | Tarpit        | 0    | levels\_default                 | N:TARPIT tag, _default mesh                                 |
 | Timebutton    | 0    | levels\LevelUp-Button           | cEnt_TimeButton_ctor                                        |
 | Tipper        | 0    | levels\Level3-Tipper            | cEnt_Tipper_ctor                                            |
@@ -112,41 +112,41 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Trode         | 21   | levels\LevelDark-Trode          | cEnt_Trode_ctor (ArenaStands_ctor)                          |
 | Waterwheel    | 26   | levels\Level3-WaterWheel        | cEnt_Waterwheel_ctor: no _ctor, PopCylinder fallback        |
 | Wavy          | 0    | levels\Level7-Wavy1             | cEnt_Wavy_ctor                                              |
-| Windmill      | 0    | levels\Level4-Windmill          | Tower: Level_RenderCtor + TipperVisual_Attach              |
+| Windmill      | 0    | levels\Level4-Windmill          | Tower: Level_RenderCtor + TipperVisual_Attach               |
 | Wobbly        | 8    | levels\Level7-Wobbly1           | cEnt_GameLevel_ctor                                         |
 
 ## Mod Functions (cEnt_ prefix)
 
 All mod-side functions use the `cEnt_` prefix to distinguish them from game originals:
 
-| Function                    | Purpose                                              |
-| --------------------------- | ---------------------------------------------------- |
-| cEnt_spawn_rotater_at       | Main spawn function — dispatches to correct ctor     |
-| cEnt_load_mesh_file         | Loads .MESH or .MESHWORLD files                     |
-| cEnt_despawn_object         | Removes object from all board lists                 |
-| cEnt_despawn_all_rotaters   | Despawn all tracked objects                          |
-| cEnt_process_custom_tags    | Parses `<MESH>` and `<SPEEDMULT>` tags              |
-| cEnt_apply_s1_rotater_tags  | Applies ROT_Y/ROS_Y from S1 ref points              |
-| cEnt_bridgeslam_update      | Per-frame state machine for Bridge entities         |
-| cEnt_find_grid_points       | Scans S1 list for GRID reference points             |
-| cEnt_get_level              | Gets Level pointer from board                       |
-| cEnt_get_sceneobj           | Gets SceneObject pointer from board                 |
-| cEnt_DFloor1_ctor           | Wrapper: calls ArenaStands_ctor for Neon DFLOOR1    |
-| cEnt_DFloor2_ctor           | Wrapper: calls ArenaStands_ctor for Neon DFLOOR2    |
-| cEnt_DFloor3_ctor           | Wrapper: calls ArenaStands_ctor for Neon DFLOOR3    |
-| cEnt_DFloor4_ctor           | Wrapper: ArenaStands_ctor + post-config for DFLOOR4 |
-| cEnt_FlickRing_ctor         | Wrapper: calls ArenaStands_ctor for FLICKRING       |
-| cEnt_Trode_ctor             | Wrapper: calls ArenaStands_ctor for TRODE           |
+| Function                   | Purpose                                             |
+| -------------------------- | --------------------------------------------------- |
+| cEnt_spawn_rotater_at      | Main spawn function - dispatches to correct ctor    |
+| cEnt_load_mesh_file        | Loads .MESH or .MESHWORLD files                     |
+| cEnt_despawn_object        | Removes object from all board lists                 |
+| cEnt_despawn_all_rotaters  | Despawn all tracked objects                         |
+| cEnt_process_custom_tags   | Parses `<MESH>` and `<SPEEDMULT>` tags              |
+| cEnt_apply_s1_rotater_tags | Applies ROT_Y/ROS_Y from S1 ref points              |
+| cEnt_bridgeslam_update     | Per-frame state machine for Bridge entities         |
+| cEnt_find_grid_points      | Scans S1 list for GRID reference points             |
+| cEnt_get_level             | Gets Level pointer from board                       |
+| cEnt_get_sceneobj          | Gets SceneObject pointer from board                 |
+| cEnt_DFloor1_ctor          | Wrapper: calls ArenaStands_ctor for Neon DFLOOR1    |
+| cEnt_DFloor2_ctor          | Wrapper: calls ArenaStands_ctor for Neon DFLOOR2    |
+| cEnt_DFloor3_ctor          | Wrapper: calls ArenaStands_ctor for Neon DFLOOR3    |
+| cEnt_DFloor4_ctor          | Wrapper: ArenaStands_ctor + post-config for DFLOOR4 |
+| cEnt_FlickRing_ctor        | Wrapper: calls ArenaStands_ctor for FLICKRING       |
+| cEnt_Trode_ctor            | Wrapper: calls ArenaStands_ctor for TRODE           |
 
 ## Entities with no _ctor (PopCylinder is correct fallback)
 
-- **Bridge** — Intermediate: returns pre-loaded mesh, no _ctor called
-- **Chomper** — Tower: stores position at board+0x4394, no _ctor
-- **Chrome** — Odd: CHROMESHADOW hash table lookup, no _ctor
-- **Funball** — Sky: created by board update function, no _ctor
-- **Tarbubble** — Dizzy: collected into board+0x11E4 list, no _ctor
-- **Waterwheel** — Dizzy: stores position at board+0x4BB0, no _ctor
-- **Windmill** — Tower: Level_RenderCtor + TipperVisual_Attach (Fan_ctor is NOT used)
+- **Bridge** - Intermediate: returns pre-loaded mesh, no _ctor called
+- **Chomper** - Tower: stores position at board+0x4394, no _ctor
+- **Chrome** - Odd: CHROMESHADOW hash table lookup, no _ctor
+- **Funball** - Sky: created by board update function, no _ctor
+- **Tarbubble** - Dizzy: collected into board+0x11E4 list, no _ctor
+- **Waterwheel** - Dizzy: stores position at board+0x4BB0, no _ctor
+- **Windmill** - Tower: Level_RenderCtor + TipperVisual_Attach (Fan_ctor is NOT used)
 
 ## Collision tag entities (S6 tags, not spawned objects)
 
