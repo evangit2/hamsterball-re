@@ -76,14 +76,14 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | 11   | Secret_ctor           | 0x43DFB0 | 0x10EC  | (this, board, x, y, z, mesh)            |
 | 12   | FlagWaver_Ctor        | 0x46AF30 | 0x8C    | (this, gfx_device) — code-gen mesh      |
 | 13   | Sign_ctor             | 0x443B90 | 0x10FC  | (this, board, gfx1, gfx2, x, y, z, ...) |
-| 14 | WavyFlag2 (Wavy_ctor) | 0x43AD40 | 0x1AE7C | (this, board, x, y, z, path_str) |
-| 15 | BadBall_ctor | 0x40AFE0 | 0xC70 | (this, board) — no mesh, no position |
+| 14   | WavyFlag2 (Wavy_ctor) | 0x43AD40 | 0x1AE7C | (this, board, x, y, z, path_str)        |
+| 15   | BadBall_ctor          | 0x40AFE0 | 0xC70   | (this, board) — no mesh, no position    |
 
 ### Entity Table
 
 | Entity        | Type | Mesh Path                       | Notes                                                 |
 | ------------- | ---- | ------------------------------- | ----------------------------------------------------- |
-| 8ball | 15 | meshes\8ball | BadBall_ctor, 2 params: this+board |
+| 8ball         | 15   | meshes\\8ball                    | BadBall_ctor, 2 params: this+board                    |
 | BBridge       | 0    | levels\Level10-Bridge1          | BreakBridge                                           |
 | Bell          | 0    | meshes\bell                     | .MESH, Bell_ctor                                      |
 | Blockdawg     | 0    | levels\Level8-BlockDawg1        | Blockdawg_ctor                                        |
