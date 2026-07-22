@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53
+ * custom_entities.c — Hamsterball Custom Entities Mod v53b
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -987,24 +987,77 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
      * because it calls Stands_ctor which reads Level offsets (+0x18 AthenaList,
      * +0x430 flags, +0x480 SceneObject) that don't exist on a MeshNode.
      *
-     * Instead, register the MeshNode as a visual-only render object (no collision).
-     * The MeshNode's vtable has render methods that the game's render loop will call. */
+     * Instead: load a .MESHWORLD placeholder (Swirl) for PopCylinder_ctor,
+     * then swap obj+0x08 (MeshWorld*) to the .MESH MeshWorld after construction.
+     * This gives the object a proper vtable, position, and collision (from Swirl),
+     * but renders the correct .MESH model. */
     if (is_mesh_node) {
-        /* Set position on the inner MeshWorld via vtable[2] (Gfx_SetPosition) */
-        /* MeshNode+0x08 = MeshWorld*, MeshWorld vtable[0x0C/4=3] = SetPosition? */
-        /* Actually, MeshNode has its own vtable with render methods. */
-        /* For now, just add to render list. The game's render loop calls vtable[0x48] (render). */
-        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), mesh);
+        /* Extract MeshWorld* from MeshNode+0x08 */
+        DWORD mesh_world_from_node = *(DWORD*)((char*)mesh + 0x08);
+        if (!mesh_world_from_node || IsBadReadPtr((void*)mesh_world_from_node, 0x100)) {
+            if (logf) fprintf(logf, "  ROTATER: .MESH MeshWorld* invalid, skipping\n");
+            return;
+        }
+
+        /* Load Swirl as placeholder for PopCylinder_ctor */
+        int swirl_is_node = 0;
+        void* swirl_mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &swirl_is_node, logf);
+        if (!swirl_mesh || swirl_is_node) {
+            if (logf) fprintf(logf, "  ROTATER: Swirl placeholder failed, skipping .MESH entity\n");
+            return;
+        }
+
+        /* Create PopCylinder with Swirl mesh (proper vtable + position + collision) */
+        void* obj = pfn_operator_new(POPCYLINDER_SIZE);
+        if (!obj) {
+            if (logf) fprintf(logf, "  ROTATER: failed to alloc PopCylinder for .MESH\n");
+            return;
+        }
+        memset(obj, 0, POPCYLINDER_SIZE);
+        void* result0 = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, swirl_mesh);
+        if (!result0) {
+            if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed for .MESH entity\n");
+            return;
+        }
+
+        /* SWAP: Replace obj+0x08 (MeshWorld*) with the .MESH MeshWorld*
+         * PopCylinder stores the visual MeshWorld at +0x08 (copied from mesh param
+         * by Stands_ctor). The render function reads MeshBuffers from this pointer.
+         * Collision data is in obj+0x10E0 (Level_RenderCtor copy) — unchanged. */
+        *(DWORD*)((char*)obj + 0x08) = mesh_world_from_node;
 
         if (logf) {
-            fprintf(logf, "  ROTATER: spawned (.MESH visual-only) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s'\n",
-                    px, py, pz, (DWORD)mesh, path);
+            fprintf(logf, "  ROTATER: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
+                    px, py, pz, (DWORD)obj, path, mesh_world_from_node);
             fflush(logf);
         }
 
-        /* Track for despawn (but no rotation updates — MeshNode has no rotation fields) */
+        /* Register on board lists */
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
+
+        /* Add collision object */
+        DWORD col_obj = *(DWORD*)((char*)obj + 0x10E0);
+        if (col_obj) {
+            pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
+            DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+            if (scene_col) {
+                pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)col_obj);
+            }
+        }
+
+        /* Add to scene spatial tree */
+        DWORD level = get_level(board);
+        if (level) {
+            DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+            if (sceneobj) {
+                pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), obj);
+            }
+        }
+
+        /* Track for despawn (no rotation — static .MESH visual) */
         if (g_rotater_count < MAX_ROTATERS) {
-            g_rotater_cfg[g_rotater_count].obj = (DWORD)mesh;
+            g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
             g_rotater_cfg[g_rotater_count].rot_x = 0.0f;
             g_rotater_cfg[g_rotater_count].rot_y = 0.0f;
             g_rotater_cfg[g_rotater_count].rot_z = 0.0f;
@@ -1971,7 +2024,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53b Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
