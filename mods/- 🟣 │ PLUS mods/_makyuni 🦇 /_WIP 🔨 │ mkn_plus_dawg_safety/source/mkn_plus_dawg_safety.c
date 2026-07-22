@@ -1,5 +1,5 @@
 /*
- * mkn_dawg_safety — Force sleeping mode on pathless Blockdawgs.
+ * mkn_plus_dawg_safety — Force sleeping mode on pathless Blockdawgs.
  *
  * Bass.dll proxy mod. When a Blockdawg entity has no DAWGPATH to follow
  * (path pointer at +0x10F0 is NULL), ArenaObject_Update (0x43C4E0) would
@@ -7,7 +7,7 @@
  * +0x1150 = 1 (sleeping state) before the crash can happen.
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_dawg_safety.c \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_plus_dawg_safety.c \
  *     bass.def -O2 -static -static-libgcc \
  *     -Wl,--enable-stdcall-fixup -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *

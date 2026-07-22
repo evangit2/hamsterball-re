@@ -1,4 +1,4 @@
-# mkn_dawg_safety
+# mkn_plus_dawg_safety
 
 Force sleeping mode on pathless Blockdawgs to prevent crashes.
 
@@ -32,7 +32,7 @@ When a Blockdawg entity has no DAWGPATH to follow (path pointer at +0x10F0 is NU
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll mkn_dawg_safety.c \
+i686-w64-mingw32-gcc -shared -o bass.dll mkn_plus_dawg_safety.c \
   bass.def -O2 -static -static-libgcc \
   -Wl,--enable-stdcall-fixup -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
 ```

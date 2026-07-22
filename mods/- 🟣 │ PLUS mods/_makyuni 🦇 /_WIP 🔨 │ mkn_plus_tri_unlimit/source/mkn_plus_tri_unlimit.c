@@ -1,5 +1,5 @@
 /*
- * mkn_tri_unlimit — Remove D3D8 triangle/vertex rendering limits in Hamsterball.
+ * mkn_plus_tri_unlimit — Remove D3D8 triangle/vertex rendering limits in Hamsterball.
  *
  * Bass.dll proxy mod. Patches two rendering bottlenecks:
  *
@@ -13,7 +13,7 @@
  *    - When total vertices > 65534, forces DrawPrimitiveUP fallback path
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_tri_unlimit.c \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_plus_tri_unlimit.c \
  *     bass.def -O2 -static -static-libgcc \
  *     -Wl,--enable-stdcall-fixup -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
