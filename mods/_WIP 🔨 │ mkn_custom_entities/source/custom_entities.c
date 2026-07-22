@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53d
+ * custom_entities.c — Hamsterball Custom Entities Mod v53e
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -137,12 +137,12 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   4  = Gear_ctor (0x437690, size 0x1514) — multi-axis
  *   5  = BigGear_ctor (same as 4)
  *   6  = Swirl (Rotator_ctor, constant rotation)
- *   7  = DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) — Neon DFLOOR1
- *   17 = DFloor2_ctor (ArenaStands_ctor) — Neon DFLOOR2
- *   18 = DFloor3_ctor (ArenaStands_ctor) — Neon DFLOOR3
- *   19 = DFloor4_ctor (ArenaStands_ctor + post-config) — Neon DFLOOR4 (obj+0x10DC=2, obj+0x10E0=0)
- *   20 = FlickRing_ctor (ArenaStands_ctor) — Neon Arena FLICKRING
- *   21 = Trode_ctor (ArenaStands_ctor) — Neon TRODE
+ *   7  = cEnt_DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) — Neon DFLOOR1
+ *   17 = cEnt_DFloor2_ctor (ArenaStands_ctor) — Neon DFLOOR2
+ *   18 = cEnt_DFloor3_ctor (ArenaStands_ctor) — Neon DFLOOR3
+ *   19 = cEnt_DFloor4_ctor (ArenaStands_ctor + post-config) — Neon DFLOOR4 (obj+0x10DC=2, obj+0x10E0=0)
+ *   20 = cEnt_FlickRing_ctor (ArenaStands_ctor) — Neon Arena FLICKRING
+ *   21 = cEnt_Trode_ctor (ArenaStands_ctor) — Neon TRODE
  *   8  = GameLevel_ctor (0x4351F0, size 0x1524) — Wobbly platforms
  *   9  = Glass_Level_ctor (0x4384A0, size 0x113C) — Drawbridge (3 params: this,board,mesh)
  *   10 = Gear_Level_ctor (0x43A150, size 0x1100) — Judge (5 params: this,board,x,y,z — no mesh)
@@ -179,16 +179,16 @@ static ArenaStands_ctor_t pfn_ArenaStands_ctor = (ArenaStands_ctor_t)0x0043E450;
 
 /* Named _ctor wrappers — all call ArenaStands_ctor internally.
  * DFloor4 has extra post-construction config from Neon_CreateDynamicObjects. */
-static void* DFloor1_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+static void* cEnt_DFloor1_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
 }
-static void* DFloor2_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+static void* cEnt_DFloor2_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
 }
-static void* DFloor3_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+static void* cEnt_DFloor3_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
 }
-static void* DFloor4_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+static void* cEnt_DFloor4_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     void* result = pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
     /* Post-construction config from Neon_CreateDynamicObjects (DFLOOR4 case):
      *   obj+0x10DC = 2  (sets collision flag)
@@ -197,10 +197,10 @@ static void* DFloor4_ctor(void* obj, void* board, float x, float y, float z, voi
     *(DWORD*)((char*)obj + 0x10E0) = 0;
     return result;
 }
-static void* FlickRing_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+static void* cEnt_FlickRing_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
 }
-static void* Trode_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
+static void* cEnt_Trode_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
 }
 
@@ -345,7 +345,7 @@ static BridgeslamState g_bridgeslams[MAX_BRIDGESLAMS];
 static int g_bridgeslam_count = 0;
 
 /* Per-frame update for a single bridgeslam object */
-static void bridgeslam_update(BridgeslamState* bs) {
+static void cEnt_bridgeslam_update(BridgeslamState* bs) {
     if (!bs || !bs->active) return;
     if (!bs->render_obj) return;
 
@@ -567,23 +567,23 @@ static char g_mesh_path[] = "levels\\testcube";
 
 /* get_board is declared in bass_proxy.h */
 
-static DWORD get_level(DWORD board) {
+static DWORD cEnt_get_level(DWORD board) {
     if (!board) return 0;
     if (IsBadReadPtr((void*)(board + BOARD_LEVEL), 4)) return 0;
     return *(DWORD*)(board + BOARD_LEVEL);
 }
 
 /* Get the SceneObject from the level */
-static DWORD get_sceneobj(DWORD board) {
-    DWORD level = get_level(board);
+static DWORD cEnt_get_sceneobj(DWORD board) {
+    DWORD level = cEnt_get_level(board);
     if (!level) return 0;
     if (IsBadReadPtr((void*)(level + LEVEL_SCENEOBJECT), 4)) return 0;
     return *(DWORD*)(level + LEVEL_SCENEOBJECT);
 }
 
 /* Find S1 reference points by scanning the sceneobj's S1 list */
-static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_z, int max_points, FILE* logf) {
-    DWORD sceneobj = get_sceneobj(board);
+static int cEnt_find_grid_points(DWORD board, float* out_x, float* out_y, float* out_z, int max_points, FILE* logf) {
+    DWORD sceneobj = cEnt_get_sceneobj(board);
     if (!sceneobj) {
         if (logf) fprintf(logf, "  GRID: sceneobj=NULL\n");
         return 0;
@@ -671,7 +671,7 @@ static int find_grid_points(DWORD board, float* out_x, float* out_y, float* out_
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Simple case-insensitive substring search */
-static int ci_strstr(const char* haystack, const char* needle) {
+static int cEnt_ci_strstr(const char* haystack, const char* needle) {
     while (*haystack) {
         const char* h = haystack;
         const char* n = needle;
@@ -689,7 +689,7 @@ static int ci_strstr(const char* haystack, const char* needle) {
  * Searches for KEY= in the DAT block and copies the value (quoted or unquoted)
  * until the next comma or end of block.
  * Returns 1 if found, 0 otherwise. */
-static int extract_dat_prop(const char* name, const char* key, char* out_buf, int out_size) {
+static int cEnt_extract_dat_prop(const char* name, const char* key, char* out_buf, int out_size) {
     /* Find <DAT> in the name string (case-insensitive) */
     const char* p = name;
     while (*p) {
@@ -745,7 +745,7 @@ static int extract_dat_prop(const char* name, const char* key, char* out_buf, in
     }
     return 0;
 }
-static int extract_tag(const char* name, const char* tag_name, char* out_buf, int out_size) {
+static int cEnt_extract_tag(const char* name, const char* tag_name, char* out_buf, int out_size) {
     int tag_len = (int)strlen(tag_name);
     const char* p = name;
     while (*p) {
@@ -788,11 +788,11 @@ static int extract_tag(const char* name, const char* tag_name, char* out_buf, in
 
 /* Process <MESH> and <SPEEDMULT> tags: scan MESHWORLD section 3 for BADBALL
  * objects with custom tags, match to spawned balls by home position, apply. */
-static void process_custom_tags(DWORD board, FILE* logf) {
+static void cEnt_process_custom_tags(DWORD board, FILE* logf) {
     if (!board) return;
 
     if (logf) {
-        fprintf(logf, "  TAGS: process_custom_tags called (board=0x%08X)\n", board);
+        fprintf(logf, "  TAGS: cEnt_process_custom_tags called (board=0x%08X)\n", board);
         fflush(logf);
     }
 
@@ -814,7 +814,7 @@ static void process_custom_tags(DWORD board, FILE* logf) {
     if (!ball_items || IsBadReadPtr(ball_items, ball_count * 4)) return;
 
     /* Get the sceneobj to access section 3 objects */
-    DWORD sceneobj = get_sceneobj(board);
+    DWORD sceneobj = cEnt_get_sceneobj(board);
     if (!sceneobj) {
         if (logf) fprintf(logf, "  TAGS: sceneobj=NULL, skipping tag processing\n");
         return;
@@ -848,12 +848,12 @@ static void process_custom_tags(DWORD board, FILE* logf) {
 
         /* Check for <MESH> tag — DISABLED v20 (will re-enable later) */
         char mesh_value[64] = {0};
-        /* int has_mesh = extract_tag(name, "MESH", mesh_value, sizeof(mesh_value)); */
+        /* int has_mesh = cEnt_extract_tag(name, "MESH", mesh_value, sizeof(mesh_value)); */
         int has_mesh = 0;  /* MESH tag inactive */
 
         /* Check for <SPEEDMULT> tag */
         char speed_value[64] = {0};
-        int has_speed = extract_tag(name, "SPEEDMULT", speed_value, sizeof(speed_value));
+        int has_speed = cEnt_extract_tag(name, "SPEEDMULT", speed_value, sizeof(speed_value));
 
         if (!has_mesh && !has_speed) continue;
 
@@ -884,7 +884,7 @@ static void process_custom_tags(DWORD board, FILE* logf) {
                 /* Apply <MESH> tag — DISABLED v20 */
                 if (0 && has_mesh) {
                     /* Use g_App (0x5341E0) directly — ball+0x10 may not be
-                     * initialized yet when process_custom_tags runs.
+                     * initialized yet when cEnt_process_custom_tags runs.
                      * Ball_Render reads ball+0x10 as App, but it's set by
                      * the game's per-frame loop, not during CreateBadBalls. */
                     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
@@ -892,7 +892,7 @@ static void process_custom_tags(DWORD board, FILE* logf) {
                         int target_slot = MESH_SLOT_8BALL;  /* default */
                         DWORD src_mesh = 0;
 
-                        if (ci_strstr(mesh_value, "funball")) {
+                        if (cEnt_ci_strstr(mesh_value, "funball")) {
                             target_slot = MESH_SLOT_FUNBALL;
                             src_mesh = *(DWORD*)(app + APP_MESH_FUNBALL);
                         } else {
@@ -908,11 +908,11 @@ static void process_custom_tags(DWORD board, FILE* logf) {
                             *(int*)(ball + BALL_MESH_INDEX_FIELD) = target_slot;
                             if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh slot %d (mesh=0x%08X from App+0x%X)\n",
                                     ball, target_slot, src_mesh,
-                                    ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL);
+                                    cEnt_ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL);
                             mesh_changes++;
                         } else if (logf) {
                             fprintf(logf, "  TAGS: ball 0x%08X → mesh src invalid (App+0x%X=0x%08X)\n",
-                                    ball, ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
+                                    ball, cEnt_ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
                         }
                     } else if (logf) {
                         fprintf(logf, "  TAGS: ball 0x%08X → App ptr invalid (0x%08X)\n", ball, app);
@@ -949,7 +949,7 @@ static void process_custom_tags(DWORD board, FILE* logf) {
  * Based on XRow's "Press S to spawn red bridge GLOBALLY" CEA script
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void spawn_testcube_at(DWORD board, float px, float py, float pz, int grid_num, FILE* logf) {
+static void cEnt_spawn_testcube_at(DWORD board, float px, float py, float pz, int grid_num, FILE* logf) {
     if (!board) return;
 
     /* 1. Get gfx_device from App */
@@ -1012,7 +1012,7 @@ static void spawn_testcube_at(DWORD board, float px, float py, float pz, int gri
     }
 
     /* 8. Add to scene spatial tree (board+0x8AC+0x480+0x1C) */
-    DWORD level = get_level(board);
+    DWORD level = cEnt_get_level(board);
     if (level) {
         DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
         if (sceneobj) {
@@ -1044,7 +1044,7 @@ static void spawn_testcube_at(DWORD board, float px, float py, float pz, int gri
  *   5. Set flags to prevent double-free
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void despawn_object(DWORD board, DWORD obj, FILE* logf) {
+static void cEnt_despawn_object(DWORD board, DWORD obj, FILE* logf) {
     if (!board || !obj) return;
     if (IsBadReadPtr((void*)obj, 0x10D0)) return;
 
@@ -1088,7 +1088,7 @@ static void despawn_object(DWORD board, DWORD obj, FILE* logf) {
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_RENDER_LIST), (int)obj);
 
     /* 5. Remove obj from sceneobj+0x1C (scene tree) */
-    DWORD level = get_level(board);
+    DWORD level = cEnt_get_level(board);
     if (level) {
         DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
         if (sceneobj) {
@@ -1102,13 +1102,13 @@ static void despawn_object(DWORD board, DWORD obj, FILE* logf) {
     }
 }
 
-static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
+static void cEnt_despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
     int i;
     for (i = 0; i < g_spawned_count; i++) {
         if (strstr(g_spawned_names[i], target_name) != NULL) {
             if (logf) fprintf(logf, "  DESPAWN: found '%s' at index %d, obj=0x%08X\n",
                     g_spawned_names[i], i, g_spawned_objs[i]);
-            despawn_object(board, g_spawned_objs[i], logf);
+            cEnt_despawn_object(board, g_spawned_objs[i], logf);
             /* Shift array down */
             int j;
             for (j = i; j < g_spawned_count - 1; j++) {
@@ -1123,7 +1123,7 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * load_mesh_file — loads a .MESH or .MESHWORLD file
+ * cEnt_load_mesh_file — loads a .MESH or .MESHWORLD file
  *
  * For .MESHWORLD files: uses Level_MeshWorldCtor (0x461510).
  * For .MESH files: uses MeshNode_ctor (0x471C20) to load the .MESH binary.
@@ -1132,7 +1132,7 @@ static void despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
  * (0x18 bytes, .MESH). Caller must check is_mesh_file to know which.
  * Returns NULL on failure (file not found, parse error, etc).
  * ═══════════════════════════════════════════════════════════════════════════ */
-static void* load_mesh_file(DWORD gfx_device, const char* path, int* out_is_mesh_node, FILE* logf) {
+static void* cEnt_load_mesh_file(DWORD gfx_device, const char* path, int* out_is_mesh_node, FILE* logf) {
     if (!path || !path[0] || !gfx_device) return NULL;
     *out_is_mesh_node = 0;
 
@@ -1229,7 +1229,7 @@ static void* load_mesh_file(DWORD gfx_device, const char* path, int* out_is_mesh
  * MeshWorld_ctor, creates Rotator_ctor_Impossible, registers in board lists.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void spawn_rotater_at(DWORD board, float px, float py, float pz,
+static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                               const char* mesh_path,
                               float rot_x, float rot_y, float rot_z,
                               float ros_x, float ros_y, float ros_z,
@@ -1297,12 +1297,12 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     int is_mesh_node = 0;
     void* mesh = NULL;
     if (path) {
-        mesh = load_mesh_file(gfx_device, path, &is_mesh_node, logf);
+        mesh = cEnt_load_mesh_file(gfx_device, path, &is_mesh_node, logf);
         if (!mesh) {
             /* Fallback: try Swirl mesh */
-            if (logf) fprintf(logf, "  ROTATER: load_mesh_file failed for '%s', trying Swirl fallback\n", path);
+            if (logf) fprintf(logf, "  ROTATER: cEnt_load_mesh_file failed for '%s', trying Swirl fallback\n", path);
             is_mesh_node = 0;
-            mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+            mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
             if (!mesh) {
                 if (logf) fprintf(logf, "  ROTATER: Swirl fallback also failed\n");
                 return;
@@ -1328,7 +1328,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
 
         /* Load Swirl as placeholder for PopCylinder_ctor */
         int swirl_is_node = 0;
-        void* swirl_mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &swirl_is_node, logf);
+        void* swirl_mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &swirl_is_node, logf);
         if (!swirl_mesh || swirl_is_node) {
             if (logf) fprintf(logf, "  ROTATER: Swirl placeholder failed, skipping .MESH entity\n");
             return;
@@ -1374,7 +1374,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         }
 
         /* Add to scene spatial tree */
-        DWORD level = get_level(board);
+        DWORD level = cEnt_get_level(board);
         if (level) {
             DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
             if (sceneobj) {
@@ -1423,41 +1423,41 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 33)) {
         /* New constructor types (7-13) — each with specific signature */
         switch (ai_type) {
-            case 7:  /* DFloor1_ctor — Neon DFLOOR1 */
+            case 7:  /* cEnt_DFloor1_ctor — Neon DFLOOR1 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor1\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                DFloor1_ctor(obj, (void*)board, px, py, pz, mesh);
+                cEnt_DFloor1_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 17: /* DFloor2_ctor — Neon DFLOOR2 */
+            case 17: /* cEnt_DFloor2_ctor — Neon DFLOOR2 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor2\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                DFloor2_ctor(obj, (void*)board, px, py, pz, mesh);
+                cEnt_DFloor2_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 18: /* DFloor3_ctor — Neon DFLOOR3 */
+            case 18: /* cEnt_DFloor3_ctor — Neon DFLOOR3 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor3\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                DFloor3_ctor(obj, (void*)board, px, py, pz, mesh);
+                cEnt_DFloor3_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 19: /* DFloor4_ctor — Neon DFLOOR4 (with post-construction config) */
+            case 19: /* cEnt_DFloor4_ctor — Neon DFLOOR4 (with post-construction config) */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor4\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                DFloor4_ctor(obj, (void*)board, px, py, pz, mesh);
+                cEnt_DFloor4_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 20: /* FlickRing_ctor — Neon Arena FLICKRING */
+            case 20: /* cEnt_FlickRing_ctor — Neon Arena FLICKRING */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc FlickRing\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                FlickRing_ctor(obj, (void*)board, px, py, pz, mesh);
+                cEnt_FlickRing_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 21: /* Trode_ctor — Neon TRODE */
+            case 21: /* cEnt_Trode_ctor — Neon TRODE */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trode\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
-                Trode_ctor(obj, (void*)board, px, py, pz, mesh);
+                cEnt_Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 22: /* Chomper_ctor — Tower Race Chomper (MeshNode_ctor, 0x18 bytes)
                       * Loads "Meshes\\Chomper" as a small mesh node. */
@@ -1649,7 +1649,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                       *   2. Create render object via Level_RenderCtor
                       *   3. TipperVisual_Attach links them
                       *   4. Init state: angle=45.0, state=0, counter=50
-                      * Per-frame update runs from bridgeslam_update() in the thread. */
+                      * Per-frame update runs from cEnt_bridgeslam_update() in the thread. */
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     if (!app || IsBadReadPtr((void*)app, 4)) { if (logf) fprintf(logf, "  ROTATER: no app for Bridgeslam\n"); return; }
@@ -1658,10 +1658,10 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
 
                     /* Load bridge mesh */
                     const char* bridge_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Level2-Bridge";
-                    void* mesh = load_mesh_file(gfx_device, bridge_path, &is_mesh_node, logf);
+                    void* mesh = cEnt_load_mesh_file(gfx_device, bridge_path, &is_mesh_node, logf);
                     if (!mesh) {
                         if (logf) fprintf(logf, "  ROTATER: Bridgeslam mesh load failed, trying Swirl fallback\n");
-                        mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+                        mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
                         if (!mesh) { if (logf) fprintf(logf, "  ROTATER: Bridgeslam Swirl fallback failed\n"); return; }
                     }
 
@@ -1783,7 +1783,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     }
 
     /* 8. Add to scene spatial tree (board+0x8AC+0x480+0x1C) */
-    DWORD level = get_level(board);
+    DWORD level = cEnt_get_level(board);
     if (level) {
         DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
         if (sceneobj) {
@@ -1821,7 +1821,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
 }
 
 /* Despawn all rotater objects — calls vtable[11] (RemoveAndFree) on each */
-static void despawn_all_rotaters(DWORD board, FILE* logf) {
+static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
         DWORD obj = g_rotater_cfg[i].obj;
@@ -1856,7 +1856,7 @@ static void despawn_all_rotaters(DWORD board, FILE* logf) {
  * uses hardcoded ±2.0, so per-object OC requires a per-frame hook to
  * override the direction flip when the custom OC limit is reached.
  * For now, ROS_Y is stored but the native ±2.0 limit applies. */
-static void apply_rotater_directions(void) {
+static void cEnt_apply_rotater_directions(void) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
         DWORD obj = g_rotater_cfg[i].obj;
@@ -1872,7 +1872,7 @@ static void apply_rotater_directions(void) {
  * The native render flips direction at ±2.0 radians. For ROS_Y=0,
  * we rewrite ROT_Y to the direction field every frame to prevent
  * the oscillation reversal, keeping rotation constant. */
-static void update_constant_rotations(void) {
+static void cEnt_update_constant_rotations(void) {
     int i;
     for (i = 0; i < g_rotater_count; i++) {
         if (g_rotater_cfg[i].ros_y != 0.0f) continue;  /* only for ROS_Y=0 */
@@ -1887,9 +1887,9 @@ static void update_constant_rotations(void) {
  * For each found, search the board's update list for the natively-spawned
  * Rotator object at the matching position, and apply ROT_Y to its direction
  * field (+0x10EC). This does NOT spawn — native game already spawned from S1. */
-static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
+static void cEnt_apply_s1_rotater_tags(DWORD board, FILE* logf) {
     if (!board) return;
-    DWORD sceneobj = get_sceneobj(board);
+    DWORD sceneobj = cEnt_get_sceneobj(board);
     if (!sceneobj) return;
 
     /* Read S1 ref points */
@@ -1929,8 +1929,8 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
         /* Parse rotation tags from <DAT> block */
         char rot_y_str[32] = {0};
         char ros_y_str[32] = {0};
-        extract_dat_prop(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
-        extract_dat_prop(name, "ROS_Y", ros_y_str, sizeof(ros_y_str));
+        cEnt_extract_dat_prop(name, "ROT_Y", rot_y_str, sizeof(rot_y_str));
+        cEnt_extract_dat_prop(name, "ROS_Y", ros_y_str, sizeof(ros_y_str));
         if (!rot_y_str[0]) continue;  /* skip if no ROT_Y tag */
 
         float rot_y = (float)atof(rot_y_str);
@@ -2001,7 +2001,7 @@ static void apply_s1_rotater_tags(DWORD board, FILE* logf) {
  * render context to make it invisible. */
 static void hide_entity_meshbuffers(DWORD board, FILE* logf) {
     if (!board) return;
-    DWORD level = get_level(board);
+    DWORD level = cEnt_get_level(board);
     if (!level) return;
     if (IsBadReadPtr((void*)(level + 0x08), 4)) return;
     DWORD meshworld = *(DWORD*)(level + 0x08);
@@ -2365,7 +2365,7 @@ static int g_tracked_count = 0;
 static void process_rotaters(DWORD board, FILE* logf) {
     if (!board) return;
 
-    DWORD sceneobj = get_sceneobj(board);
+    DWORD sceneobj = cEnt_get_sceneobj(board);
     if (!sceneobj) {
         if (logf) fprintf(logf, "  ROTATER: sceneobj=NULL\n");
         return;
@@ -2494,9 +2494,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Fan",              0, "meshes\\fanbody" },           /* PopCylinder — Fan_ctor crashes (Level_ctor has no mesh) */
             { "Flag",             12, NULL },                        /* FlagWaver_Ctor (0x46AF30, 0x8C bytes) — code-generated mesh */
             { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
-            { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
-            { "Flickfloor2",     19, "levels\\LevelDark-DFloor4" },  /* DFloor4_ctor (ArenaStands + post-config: obj+0x10DC=2, obj+0x10E0=0) */
-            { "Flickring",       20, "levels\\LevelDark-Flickring" }, /* FlickRing_ctor (ArenaStands_ctor) */
+            { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* cEnt_DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
+            { "Flickfloor2",     19, "levels\\LevelDark-DFloor4" },  /* cEnt_DFloor4_ctor (ArenaStands + post-config: obj+0x10DC=2, obj+0x10E0=0) */
+            { "Flickring",       20, "levels\\LevelDark-Flickring" }, /* cEnt_FlickRing_ctor (ArenaStands_ctor) */
             { "Funball",          24, "meshes\\funball" },           /* Funball_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Gear",             29, "levels\\LevelImpossible-Gear" }, /* Gear_ctor (0x437690, 0x1514, 9 params!) */
             { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
@@ -2522,7 +2522,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor */
             { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor */
-            { "Trode",            21, "levels\\LevelDark-Trode" },   /* Trode_ctor (ArenaStands_ctor) */
+            { "Trode",            21, "levels\\LevelDark-Trode" },   /* cEnt_Trode_ctor (ArenaStands_ctor) */
             { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* Waterwheel_ctor: no _ctor, position-only storage, PopCylinder fallback */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
             { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
@@ -2573,12 +2573,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
 
         /* v52: Rotator (AI 1) uses constant rotation (ROS_Y=0).
          * The native render function oscillates at ±2.0 by default.
-         * With ROS_Y=0, update_constant_rotations() rewrites the direction
+         * With ROS_Y=0, cEnt_update_constant_rotations() rewrites the direction
          * field every frame to prevent oscillation reversal. */
         float spawn_ros_y = 2.0f;
         if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
 
-        spawn_rotater_at(board, px, py, pz, ai_mesh,
+        cEnt_spawn_rotater_at(board, px, py, pz, ai_mesh,
                          0.0f, 1.0f, 0.0f,
                          2.0f, spawn_ros_y, 2.0f,
                          ai_type,
@@ -2668,7 +2668,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53d Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53e Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -2696,7 +2696,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             int i;
             for (i = 0; i < g_bridgeslam_count; i++) {
                 if (g_bridgeslams[i].active) {
-                    bridgeslam_update(&g_bridgeslams[i]);
+                    cEnt_bridgeslam_update(&g_bridgeslams[i]);
                 }
             }
         }
@@ -2746,7 +2746,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         if (!board) continue;
 
         /* Verify level is loaded */
-        DWORD level = get_level(board);
+        DWORD level = cEnt_get_level(board);
         if (!level) continue;
 
         logf = NULL;
@@ -2756,7 +2756,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         }
 
         /* Process <MESH> and <SPEEDMULT> tags on spawned 8-balls (after CreateBadBall has run) */
-        process_custom_tags(board, logf);
+        cEnt_process_custom_tags(board, logf);
 
         /* Process C_entity entries — spawn custom objects at each position */
         process_rotaters(board, logf);
@@ -2765,14 +2765,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         hide_entity_meshbuffers(board, logf);
 
         /* Apply custom rotation directions to spawned rotaters */
-        apply_rotater_directions();
+        cEnt_apply_rotater_directions();
 
         /* Apply S1 rot tags to natively-spawned Rotators */
-        apply_s1_rotater_tags(board, logf);
+        cEnt_apply_s1_rotater_tags(board, logf);
 
         /* Find GRID reference points */
         float grid_x[32], grid_y[32], grid_z[32];
-        int grid_count = find_grid_points(board, grid_x, grid_y, grid_z, 32, logf);
+        int grid_count = cEnt_find_grid_points(board, grid_x, grid_y, grid_z, 32, logf);
 
         if (grid_count > 0) {
             g_spawned_board = board;
@@ -2780,7 +2780,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
             /* Start with GRID01 visible */
             int current_grid = 1;
-            spawn_testcube_at(board, grid_x[0], grid_y[0], grid_z[0], 1, logf);
+            cEnt_spawn_testcube_at(board, grid_x[0], grid_y[0], grid_z[0], 1, logf);
             if (logf) {
                 fprintf(logf, "  Cycle: GRID01 spawned\n");
                 fflush(logf);
@@ -2805,7 +2805,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
                 /* Despawn all spawned objects */
                 while (g_spawned_count > 0) {
-                    despawn_object(board, g_spawned_objs[0], logf);
+                    cEnt_despawn_object(board, g_spawned_objs[0], logf);
                     int j;
                     for (j = 0; j < g_spawned_count - 1; j++) {
                         g_spawned_objs[j] = g_spawned_objs[j + 1];
@@ -2816,7 +2816,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
                 /* Spawn the current GRID */
                 int idx = current_grid - 1;
-                spawn_testcube_at(board, grid_x[idx], grid_y[idx], grid_z[idx], current_grid, logf);
+                cEnt_spawn_testcube_at(board, grid_x[idx], grid_y[idx], grid_z[idx], current_grid, logf);
                 if (logf) {
                     fprintf(logf, "  Cycle: GRID%02d spawned\n", current_grid);
                     fflush(logf);
@@ -2825,7 +2825,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
             /* Clean up any remaining spawned objects on level exit */
             while (g_spawned_count > 0) {
-                despawn_object(board, g_spawned_objs[0], logf);
+                cEnt_despawn_object(board, g_spawned_objs[0], logf);
                 int j;
                 for (j = 0; j < g_spawned_count - 1; j++) {
                     g_spawned_objs[j] = g_spawned_objs[j + 1];
@@ -2835,12 +2835,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             }
 
             /* Despawn all rotater objects on level exit */
-            despawn_all_rotaters(board, logf);
+            cEnt_despawn_all_rotaters(board, logf);
         } else {
             /* No GRID points — still mark board as processed */
             g_spawned_board = board;
             /* Still process rotaters even without GRID points */
-            despawn_all_rotaters(board, logf);
+            cEnt_despawn_all_rotaters(board, logf);
             if (logf) fprintf(logf, "  No GRID points found\n");
         }
 
