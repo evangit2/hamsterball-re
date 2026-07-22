@@ -1,0 +1,23 @@
+#ifndef NOCRT_H
+#define NOCRT_H
+#include <windows.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+void* nc_malloc(size_t size);
+void nc_free(void* ptr);
+void* nc_memcpy(void* dst, const void* src, size_t count);
+void* nc_memset(void* dst, int val, size_t count);
+size_t nc_strlen(const char* s);
+int nc_strcmp(const char* a, const char* b);
+char* nc_strncpy(char* dst, const char* src, size_t n);
+int nc_snprintf(char* buf, size_t size, const char* fmt, ...);
+#ifdef __cplusplus
+}
+#endif
+
+void* __cdecl operator new(unsigned int size);
+void __cdecl operator delete(void* ptr);
+void __cdecl operator delete(void* ptr, unsigned int);
+#endif
