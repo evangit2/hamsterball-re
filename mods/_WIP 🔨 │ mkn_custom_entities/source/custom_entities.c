@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53b
+ * custom_entities.c — Hamsterball Custom Entities Mod v53c
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -152,6 +152,14 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   14 = WavyFlag2 (Wavy_ctor copy, size 0x1AE7C) — Flag2: uses Flag.MESHWORLD or _default fallback
  *   15 = BadBall_ctor (0x40AFE0, size 0xC70) — 8ball/BadBall (2 params: this, board)
  *   16 = Bridgeslam — isolated Intermediate bridge state machine (no _ctor, custom init)
+ *   22 = Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18) — Tower Chomper mesh
+ *   23 = Chrome_ctor (no _ctor, board-level behavior, PopCylinder fallback)
+ *   24 = Funball_ctor (no _ctor, board-level behavior, PopCylinder fallback)
+ *   25 = Tarbubble_ctor (no _ctor, board-level behavior, PopCylinder fallback)
+ *   26 = Waterwheel_ctor (no _ctor, position-only storage, PopCylinder fallback)
+ *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
+ *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
+ *   29 = Gear_ctor (0x437690, 0x1514) — 9 params: (this, board, x, y, z, x2, y2, z2, mesh)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
@@ -191,6 +199,18 @@ static void* FlickRing_ctor(void* obj, void* board, float x, float y, float z, v
 static void* Trode_ctor(void* obj, void* board, float x, float y, float z, void* mesh) {
     return pfn_ArenaStands_ctor(obj, board, x, y, z, mesh);
 }
+
+/* Spinner_Level_ctor — Expert Race "BRIDGE" (falling bridge piece) */
+typedef void* (__thiscall *Spinner_Level_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh, float param);
+static Spinner_Level_ctor_t pfn_Spinner_Level_ctor = (Spinner_Level_ctor_t)0x004396F0;
+
+/* Sprite_ctor — Sky Race cloudscape */
+typedef void* (__thiscall *Sprite_ctor_t)(void* this_, void* gfx_device, const char* texture_path);
+static Sprite_ctor_t pfn_Sprite_ctor = (Sprite_ctor_t)0x0045D0C0;
+
+/* Gear_ctor — Impossible Race Gear (9 params!) */
+typedef void* (__thiscall *Gear_ctor_t)(void* this_, void* board, float x1, float y1, float z1, float x2, float y2, float z2, void* mesh);
+static Gear_ctor_t pfn_Gear_ctor_real = (Gear_ctor_t)0x00437690;
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -387,6 +407,10 @@ static void bridgeslam_update(BridgeslamState* bs) {
 #define WAVY_SIZE             0x1AE7C
 #define BADBALL_SIZE          0xC70
 #define BRIDGESLAM_SIZE       0x10D0  /* same as Level/MeshWorld size */
+#define SPINNER_LEVEL_SIZE    0x10FC
+#define SPRITE_SIZE           0xD4
+#define MESHNODE_SIZE         0x18
+#define GEAR_REAL_SIZE        0x1514  /* Gear_ctor 9-param variant */
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -1216,6 +1240,13 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         /* Bridgeslam: loads its own mesh inside the case block.
          * Skip external mesh load to avoid double-loading. */
         path = NULL;
+    } else if (ai_type == 22) {
+        /* Chomper: MeshNode_ctor loads mesh from string path internally */
+        path = NULL;
+    } else if (ai_type == 28) {
+        /* Cloudscape: Sprite_ctor takes a string path, not a mesh pointer.
+         * Path is determined inside the case block. */
+        path = NULL;
     } else {
         path = g_swirl_mesh_path;
     }
@@ -1356,7 +1387,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
-    } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 21)) {
+    } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 21) || (ai_type >= 22 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 29)) {
         /* New constructor types (7-13) — each with specific signature */
         switch (ai_type) {
             case 7:  /* DFloor1_ctor — Neon DFLOOR1 */
@@ -1394,6 +1425,53 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trode\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 Trode_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 22: /* Chomper_ctor — Tower Race Chomper (MeshNode_ctor, 0x18 bytes)
+                      * Loads "Meshes\\Chomper" as a small mesh node. */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
+                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Chomper\n"); return; }
+                    obj = pfn_operator_new(MESHNODE_SIZE);
+                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper\n"); return; }
+                    memset(obj, 0, MESHNODE_SIZE);
+                    pfn_MeshNode_ctor(obj, (void*)gfx_device, "Meshes\\Chomper");
+                }
+                break;
+            case 27: /* Spinner_Level_ctor — Expert Race "BRIDGE" (falling bridge piece)
+                      * 6 params: (this, board, x, y, z, mesh, float_param) */
+                obj = pfn_operator_new(SPINNER_LEVEL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Spinner\n"); return; }
+                memset(obj, 0, SPINNER_LEVEL_SIZE);
+                pfn_Spinner_Level_ctor(obj, (void*)board, px, py, pz, mesh, 0.0f);
+                break;
+            case 28: /* Cloudscape — Sky Race clouds (Sprite_ctor, 0xD4 bytes)
+                      * Loads "levels\\Cloudscape" texture, falls back to "levels\\_default" */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
+                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Cloudscape\n"); return; }
+                    obj = pfn_operator_new(SPRITE_SIZE);
+                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Cloudscape\n"); return; }
+                    memset(obj, 0, SPRITE_SIZE);
+                    const char* cloud_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Cloudscape";
+                    /* Check if Cloudscape.MESHWORLD exists, else use _default */
+                    char check_path[256];
+                    snprintf(check_path, 255, "%s.meshworld", cloud_path);
+                    if (pfn_check_file_access(check_path, 0) != 0) {
+                        cloud_path = "levels\\_default";
+                        if (logf) fprintf(logf, "  ROTATER: Cloudscape.MESHWORLD not found, using _default\n");
+                    }
+                    pfn_Sprite_ctor(obj, (void*)gfx_device, cloud_path);
+                }
+                break;
+            case 29: /* Gear_ctor — Impossible Race Gear (9 params!)
+                      * (this, board, x1, y1, z1, x2, y2, z2, mesh)
+                      * x2/y2/z2 are a second position point — use same as x1/y1/z1 */
+                obj = pfn_operator_new(GEAR_REAL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Gear\n"); return; }
+                memset(obj, 0, GEAR_REAL_SIZE);
+                pfn_Gear_ctor_real(obj, (void*)board, px, py, pz, px, py, pz, mesh);
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
@@ -1544,9 +1622,9 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                 break;
         }
     } else {
-        /* AI 0-5: Use the correct constructor per AI type.
-         * Each constructor initializes the object with the correct vtable
-         * and rotation axis (Pendulum=X, Rotator=Y, Looper=Z, etc.). */
+        /* AI 0-5, 23-26: Use the correct constructor per AI type.
+         * Types 23-26 (Chrome, Funball, Tarbubble, Waterwheel) have no _ctor
+         * — they use PopCylinder fallback (board-level behavior only). */
         Rotator_ctor_t ctor_fn = NULL;
         DWORD alloc_sz = 0;
         
@@ -1598,6 +1676,10 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 14) col_off = 0x10D4; /* WavyFlag2 — same as GameLevel */
         else if (ai_type == 15) col_off = 0;      /* BadBall — no collision obj (uses board+0x29D4 list) */
         else if (ai_type == 16) col_off = 0;     /* Bridgeslam — no collision obj (visual only) */
+        else if (ai_type == 22) col_off = 0;     /* Chomper — tiny MeshNode, no collision */
+        else if (ai_type == 27) col_off = 0x10D4; /* Spinner — same as Rotator family */
+        else if (ai_type == 28) col_off = 0;      /* Cloudscape — background sprite, no collision */
+        else if (ai_type == 29) col_off = 0x10D4; /* Gear — same as Rotator family */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2314,8 +2396,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
             { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor */
-            { "Chomper",          0, "meshes\\chomper" },           /* Tower: no _ctor, PopCylinder fallback */
-            { "Chrome",           0, "levels\\_default" },          /* Odd Race: no _ctor, _default mesh */
+            { "Chomper",          22, "meshes\\chomper" },           /* Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18 bytes) */
+            { "Chrome",           23, "levels\\_default" },          /* Chrome_ctor: no _ctor, board-level behavior, PopCylinder fallback */
+            { "Cloudscape",       28, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
             { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
             { "Droplifter",       0, "levels\\Level6-Lifter" },     /* Odd Race model */
             { "Fan",              0, "meshes\\fanbody" },           /* .MESH — Fan_ctor */
@@ -2324,13 +2407,13 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
             { "Flickfloor2",     19, "levels\\LevelDark-DFloor4" },  /* DFloor4_ctor (ArenaStands + post-config: obj+0x10DC=2, obj+0x10E0=0) */
             { "Flickring",       20, "levels\\LevelDark-Flickring" }, /* FlickRing_ctor (ArenaStands_ctor) */
-            { "Funball",          0, "meshes\\funball" },           /* Sky Race: no _ctor, PopCylinder fallback */
-            { "Gear",             0, "levels\\LevelImpossible-Gear" }, /* PopCylinder (was 4=Gear_ctor, crashed) */
+            { "Funball",          24, "meshes\\funball" },           /* Funball_ctor: no _ctor, board-level behavior, PopCylinder fallback */
+            { "Gear",             29, "levels\\LevelImpossible-Gear" }, /* Gear_ctor (0x437690, 0x1514, 9 params!) */
             { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
             { "Gluebie",          0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
             { "Judge",            10, "meshes\\hammyjudge" },       /* Gear_Level_ctor (0x43A150, 0x1100 bytes, no mesh param) */
             { "Lifter",           0, "levels\\LevelUp-Lifter" },    /* Up Race model */
-            { "Looper",           0, "levels\\LevelImpossible-Looper" }, /* PopCylinder (was 3=Looper_ctor, crashed) */
+            { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x437460, 0x1500, 6 params) */
             { "Mace",             0, "levels\\Level4-Mace" },       /* Mace_ctor */
             { "Mag",              0, "meshes\\magnifyingglass" },   /* .MESH — Magnifier_ctor */
             { "Mousetrap",        0, "levels\\MouseTrap" },        /* MouseTrap_ctor */
@@ -2342,15 +2425,15 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Sawblade",         0, "meshes\\sawblade" },         /* .MESH — SawBlade_ctor */
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
             { "Speedcylinder",    0, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor */
-            { "Spinner",          0, "levels\\Level8-Spinny" },     /* PopCylinder_ctor */
+            { "Spinner",          27, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
-            { "Tarbubble",        0, "meshes\\tarbubble" },         /* Dizzy: no _ctor, PopCylinder fallback */
+            { "Tarbubble",        25, "meshes\\tarbubble" },         /* Tarbubble_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Tarpit",           0, "levels\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor */
             { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor */
             { "Trode",            21, "levels\\LevelDark-Trode" },   /* Trode_ctor (ArenaStands_ctor) */
-            { "Waterwheel",       0, "levels\\Level3-WaterWheel" }, /* Dizzy: no _ctor, PopCylinder fallback */
+            { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* Waterwheel_ctor: no _ctor, position-only storage, PopCylinder fallback */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
             { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
             { "Wobbly",           8, "levels\\Level7-Wobbly1" },    /* GameLevel_ctor (0x4351F0, 0x1524 bytes) */
@@ -2495,7 +2578,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53b Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53c Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
