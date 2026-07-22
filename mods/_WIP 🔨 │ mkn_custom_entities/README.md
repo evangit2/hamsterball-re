@@ -78,6 +78,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | 13   | Sign_ctor             | 0x443B90 | 0x10FC  | (this, board, gfx1, gfx2, x, y, z, ...) |
 | 14   | WavyFlag2 (Wavy_ctor) | 0x43AD40 | 0x1AE7C | (this, board, x, y, z, path_str)        |
 | 15   | BadBall_ctor          | 0x40AFE0 | 0xC70   | (this, board) — no mesh, no position    |
+| 16   | Bridgeslam            | Custom  | 0x10D0  | Isolated Intermediate bridge state machine |
 
 ### Entity Table
 
@@ -88,7 +89,8 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Bell          | 0    | meshes\bell                     | .MESH, Bell_ctor                                      |
 | Blockdawg     | 0    | levels\Level8-BlockDawg1        | Blockdawg_ctor                                        |
 | Bonk          | 0    | levels\Level5-Bonk              | Bonk_ctor                                             |
-| Bridge        | 0    | levels\Level2-Bridge            | Intermediate: no _ctor                                |
+| Bridge        | 16   | levels\Level2-Bridge            | Bridgeslam: isolated Intermediate bridge state machine |
+| Bridgeslam    | 16   | levels\Level2-Bridge            | Alias for Bridge                                       |
 | Bumper        | 0    | levels\_default                 | N:BUMPER tag, _default mesh                           |
 | Catapult      | 0    | levels\Level4-Catapult          | Catapult_ctor                                         |
 | Chomper       | 0    | meshes\chomper                  | Tower: no _ctor                                       |
