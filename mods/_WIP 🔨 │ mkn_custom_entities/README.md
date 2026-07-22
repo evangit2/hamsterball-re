@@ -69,7 +69,12 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | 4    | Gear_ctor             | 0x437690 | 0x1514  | (this, board, x, y, z, mesh)            |
 | 5    | BigGear_ctor          | 0x437690 | 0x1514  | (same as 4)                             |
 | 6    | Swirl                 | 0x435940 | 0x1508  | (Rotator, constant rotation)            |
-| 7    | ArenaStands_ctor      | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh)            |
+| 7    | DFloor1_ctor           | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon DFLOOR1 |
+| 17   | DFloor2_ctor           | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon DFLOOR2 |
+| 18   | DFloor3_ctor           | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon DFLOOR3 |
+| 19   | DFloor4_ctor           | 0x43E450 | 0x1104  | ArenaStands + post-config (obj+0x10DC=2, obj+0x10E0=0) |
+| 20   | FlickRing_ctor         | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon Arena FLICKRING |
+| 21   | Trode_ctor             | 0x43E450 | 0x1104  | (this, board, x, y, z, mesh) — Neon TRODE |
 | 8    | GameLevel_ctor        | 0x4351F0 | 0x1524  | (this, board, x, y, z, mesh)            |
 | 9    | Glass_Level_ctor      | 0x4384A0 | 0x113C  | (this, board, mesh) — no position!      |
 | 10   | Gear_Level_ctor       | 0x43A150 | 0x1100  | (this, board, x, y, z) — no mesh!       |
@@ -100,9 +105,9 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Fan           | 0    | meshes\fanbody                  | .MESH, Fan_ctor                                       |
 | Flag          | 12   | NULL                            | FlagWaver_Ctor, code-gen mesh                         |
 | Flag2         | 14   | levels\Flag                     | WavyFlag2: Wavy_ctor copy, Flag.MESHWORLD or _default |
-| Flickfloor1   | 7    | levels\LevelDark-DFloor1        | ArenaStands_ctor                                      |
-| Flickfloor2   | 7    | levels\LevelDark-DFloor4        | ArenaStands_ctor                                      |
-| Flickring     | 7    | levels\LevelDark-Flickring      | ArenaStands_ctor                                      |
+| Flickfloor1   | 7    | levels\LevelDark-DFloor1        | DFloor1_ctor (ArenaStands_ctor)                       |
+| Flickfloor2   | 19   | levels\LevelDark-DFloor4        | DFloor4_ctor (ArenaStands + post-config)              |
+| Flickring     | 20   | levels\LevelDark-Flickring      | FlickRing_ctor (ArenaStands_ctor)                     |
 | Funball       | 0    | meshes\funball                  | Sky: no _ctor                                         |
 | Gear          | 0    | levels\LevelImpossible-Gear     | PopCylinder (ctor crashed)                            |
 | Glassbreaker  | 11   | meshes\GlassBonus               | Secret_ctor                                           |
@@ -128,7 +133,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Timebutton    | 0    | levels\LevelUp-Button           | TimeButton_ctor                                       |
 | Tipper        | 0    | levels\Level3-Tipper            | Tipper_ctor                                           |
 | Trapdoor      | 0    | levels\Level4-Trapdoor1         | Trapdoor_ctor                                         |
-| Trode         | 7    | levels\LevelDark-Trode          | ArenaStands_ctor                                      |
+| Trode         | 21   | levels\LevelDark-Trode          | Trode_ctor (ArenaStands_ctor)                         |
 | Waterwheel    | 0    | levels\Level3-WaterWheel        | Dizzy: no _ctor                                       |
 | Wavy          | 0    | levels\Level7-Wavy1             | Wavy_ctor                                             |
 | Windmill      | 0    | levels\Level4-Windmill          | Tower: Level_RenderCtor + TipperVisual_Attach         |
