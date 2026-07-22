@@ -1295,9 +1295,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     void* visual_mesh = NULL;  /* The mesh we WANT to display (may differ from construction mesh) */
     int use_board_level_as_mesh = 0;  /* Set for types that need Stands_ctor */
 
-    /* Types that call Stands_ctor/Level_RenderCtor internally need board Level */
+    /* Types that call Stands_ctor/Level_RenderCtor internally need board Level.
+     * EXCLUDE type 8 (GameLevel) — its vtable[1] is Rotator_Update which modifies
+     * the SceneObject's vertex buffers. If we pass the board's Level, it shares
+     * the board's SceneObject, and Rotator_Update corrupts it → crash after a few ms.
+     * Type 8 must load its own MESHWORLD file (which has its own SceneObject). */
     if ((ai_type >= 1 && ai_type <= 6) ||  /* Rotator, Pendulum, Looper, Gear, Swirl */
-        (ai_type >= 7 && ai_type <= 11) ||  /* ArenaStands, GameLevel, Glass_Level, Gear_Level, Secret */
+        (ai_type >= 7 && ai_type <= 7) ||  /* ArenaStands only (NOT 8=GameLevel) */
+        (ai_type >= 9 && ai_type <= 11) || /* Glass_Level, Gear_Level, Secret */
         (ai_type >= 17 && ai_type <= 21) || /* DFloor2-4, FlickRing, Trode */
         (ai_type == 27) ||                  /* Spinner_Level_ctor */
         (ai_type == 29)) {                  /* Gear_ctor_real */
