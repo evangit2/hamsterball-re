@@ -1609,17 +1609,33 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             case 15: /* BadBall_ctor — 8ball/BadBall (2 params: this, board)
                       * Position is set after construction at ball+0xC60/0xC64/0xC68
                       * (home position). Mesh is loaded by calling vtable[1] after ctor,
-                      * same as CreateBadBalls does. */
+                      * same as CreateBadBalls does. vtable[1] = Ball_SetupCollisionRender
+                      * which sets up collision and trajectory (NOT mesh loading).
+                      * The 8ball mesh is loaded globally by the App's mesh system.
+                      * We load it via MeshNode_ctor and store it at ball+0x10 (render mesh). */
                 obj = pfn_operator_new(BADBALL_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BadBall\n"); return; }
                 memset(obj, 0, BADBALL_SIZE);
                 pfn_BadBall_ctor(obj, (void*)board);
-                /* Call vtable[1] — this loads the 8ball mesh (same as CreateBadBalls) */
+                /* Call vtable[1] — Ball_SetupCollisionRender + Ball_SetTrajectory */
                 {
                     DWORD* vtable = *(DWORD**)obj;
                     if (vtable && vtable[1]) {
                         typedef void (__thiscall *vtable1_t)(void* this_);
                         ((vtable1_t)vtable[1])(obj);
+                    }
+                }
+                /* Load 8ball.MESH via MeshNode_ctor and store at ball+0x10 */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
+                    if (gfx_device) {
+                        void* mesh = pfn_MeshNode_ctor(pfn_operator_new(MESHNODE_SIZE),
+                                                        (void*)gfx_device, "meshes\\8ball");
+                        if (mesh) {
+                            *(DWORD*)((char*)obj + 0x10) = (DWORD)mesh;
+                            if (logf) fprintf(logf, "  ROTATER: 8ball mesh loaded via MeshNode_ctor\n");
+                        }
                     }
                 }
                 /* Set home position (ball+0xC60/C64/C68) */
@@ -2463,7 +2479,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             /* name */            /* ctor */  /* mesh path */
             { "8ball",            15, "meshes\\8ball" },             /* BadBall_ctor (0x40AFE0, 0xC70 bytes) — 2 params: this, board */
             { "BBridge",          0, "levels\\Level10-Bridge1" },   /* BreakBridge_ctor */
-            { "Bell",             30, NULL },                        /* Bell_ctor (0x434D70, 0x10E8) — Level_ctor, no mesh param */
+            { "Bell",             0, "meshes\\bell" },              /* PopCylinder — Bell_ctor crashes (Level_ctor has no mesh, vtable update calls LoadMesh) */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
             { "Bonk",             33, "levels\\Level5-Bonk" },       /* Bonk_ctor (0x438850, 0x1200) — self-loads level5-bonk MESHWORLD */
             { "Bridge",           16, "levels\\Level2-Bridge" },     /* Bridgeslam: isolated Intermediate bridge state machine */
@@ -2475,7 +2491,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Cloudscape",       28, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
             { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
             { "Droplifter",       0, "levels\\Level6-Lifter" },     /* Odd Race model */
-            { "Fan",              31, NULL },                        /* Fan_ctor (0x438C20, 0x1188) — Level_ctor, no mesh param */
+            { "Fan",              0, "meshes\\fanbody" },           /* PopCylinder — Fan_ctor crashes (Level_ctor has no mesh) */
             { "Flag",             12, NULL },                        /* FlagWaver_Ctor (0x46AF30, 0x8C bytes) — code-generated mesh */
             { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
             { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
@@ -2496,7 +2512,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Popcylinder",      0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor */
             { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor (constant rotation) */
             { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor */
-            { "Sawblade",         32, NULL },                        /* SawBlade_ctor (0x434660, 0x111C) — Level_ctor, no mesh param */
+            { "Sawblade",         0, "meshes\\sawblade" },         /* PopCylinder — SawBlade_ctor crashes (Level_ctor has no mesh) */
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
             { "Speedcylinder",    0, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor */
             { "Spinner",          27, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
