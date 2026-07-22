@@ -146,6 +146,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   13 = Sign_ctor (0x443B90, size 0x10FC) — Popup Sign (complex signature)
  *   14 = WavyFlag2 (Wavy_ctor copy, size 0x1AE7C) — Flag2: uses Flag.MESHWORLD or _default fallback
  *   15 = BadBall_ctor (0x40AFE0, size 0xC70) — 8ball/BadBall (2 params: this, board)
+ *   16 = Bridgeslam — isolated Intermediate bridge state machine (no _ctor, custom init)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
@@ -202,6 +203,147 @@ static Wavy_Configure_t pfn_Wavy_Configure = (Wavy_Configure_t)0x00435440;
 typedef void* (__thiscall *BadBall_ctor_t)(void* this_, void* board);
 static BadBall_ctor_t pfn_BadBall_ctor = (BadBall_ctor_t)0x0040AFE0;
 
+/* ── Bridgeslam game function pointers ── */
+/* Level_RenderCtor is already declared above — reuse it */
+
+/* TipperVisual_ctor — creates visual object from parent mesh */
+typedef void* (__thiscall *TipperVisual_ctor_t)(void* this_, int parent_mesh);
+static TipperVisual_ctor_t pfn_TipperVisual_ctor2 = (TipperVisual_ctor_t)0x004661A0;
+
+/* Sound_Play3D — plays a 3D positioned sound */
+typedef void (__thiscall *Sound_Play3D_t)(void* soundChannel, float x, float y, float z);
+static Sound_Play3D_t pfn_Sound_Play3D = (Sound_Play3D_t)0x00459860;
+
+/* Gfx_ScaleZ — apply Z-axis rotation to gfx device (thiscall with gfx ptr) */
+typedef void (__thiscall *Gfx_ScaleFn_t)(void* gfx, float val);
+static Gfx_ScaleFn_t pfn_Gfx_ScaleZ_Bridge = (Gfx_ScaleFn_t)0x00457CC0;
+
+/* Gfx_SetPosition — set gfx device position */
+typedef void (__thiscall *Gfx_SetPosition_t)(void* gfx, float x, float y, float z);
+static Gfx_SetPosition_t pfn_Gfx_SetPosition_Bridge = (Gfx_SetPosition_t)0x00457B50;
+
+/* Timer_Init / Timer_Cleanup — timer context for render transforms */
+typedef void (__fastcall *Timer_Init_t)(void* out);
+static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457AD0;
+typedef void (__fastcall *Timer_Cleanup_t)(void* out);
+static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A40;
+
+/* Vec3_Copy — copy 3 floats */
+typedef void (__thiscall *Vec3_Copy_t)(float* dst, float* src);
+static Vec3_Copy_t pfn_Vec3_Copy_Bridge = (Vec3_Copy_t)0x00402BF0;
+
+/* Scene_ForEachBall_SetVelocity — apply velocity to all balls near a point */
+typedef void (__thiscall *Scene_ForEachBall_SetVel_t)(void* board, float x, float y, float z);
+static Scene_ForEachBall_SetVel_t pfn_Scene_ForEachBall_SetVel = (Scene_ForEachBall_SetVel_t)0x00419B70;
+
+/* App offsets for sound */
+#define APP_SOUNDFX_BRIDGESLAM  0x47C   /* bridgeslam sound channel */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Bridgeslam — isolated Intermediate Race bridge behavior
+ *
+ * Replicates the 4-state machine from Intermediate Board_Update (FUN_0041CC90):
+ *   State 0: Countdown (50 frames) → State 1
+ *   State 1: Tilt down (45°→0° at 3°/frame) → slam! → State 2
+ *   State 2: Wait (125 frames) → State 3
+ *   State 3: Tilt back up (0°→45° at 0.5°/frame) → State 0
+ *
+ * State is stored per-object in a BridgeslamState struct, NOT on the board.
+ * The per-frame update runs from the mod's background thread (~60fps).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    DWORD obj;               /* spawned object pointer (for board lists) */
+    DWORD render_obj;        /* Level_RenderCtor result (visual) */
+    DWORD mesh_world;        /* MeshWorld (Level_MeshWorldCtor result) */
+    DWORD board;             /* board pointer (for ball list access) */
+    float pivot_x, pivot_y, pivot_z;  /* bridge pivot position */
+    float angle;             /* current tilt angle (starts 45.0) */
+    int   state;             /* 0=count, 1=tilt down, 2=wait, 3=tilt back */
+    int   counter;           /* frame counter for current state */
+    int   active;            /* 1 = active (being updated) */
+} BridgeslamState;
+
+#define MAX_BRIDGESLAMS 16
+static BridgeslamState g_bridgeslams[MAX_BRIDGESLAMS];
+static int g_bridgeslam_count = 0;
+
+/* Per-frame update for a single bridgeslam object */
+static void bridgeslam_update(BridgeslamState* bs) {
+    if (!bs || !bs->active) return;
+    if (!bs->render_obj) return;
+
+    DWORD board = bs->board;
+    DWORD app = 0;
+    if (board) {
+        app = *(DWORD*)(board + BOARD_APP);
+        if (!app || IsBadReadPtr((void*)app, 0x800)) app = 0;
+    }
+
+    switch (bs->state) {
+    case 0: /* Countdown */
+        bs->counter--;
+        if (bs->counter < 1) bs->state = 1;
+        break;
+
+    case 1: /* Tilt down */
+        bs->angle -= 3.0f;
+        if (bs->angle < 0.0f) {
+            bs->angle = 0.0f;
+            bs->counter = 125; /* 0x7D */
+            bs->state = 2;
+            /* Play bridgeslam sound */
+            if (app && pfn_Sound_Play3D) {
+                DWORD snd = *(DWORD*)(app + APP_SOUNDFX_BRIDGESLAM);
+                if (snd) {
+                    pfn_Sound_Play3D((void*)snd, bs->pivot_x, bs->pivot_y, bs->pivot_z);
+                }
+            }
+            /* Apply velocity to balls near pivot */
+            if (board && pfn_Scene_ForEachBall_SetVel) {
+                pfn_Scene_ForEachBall_SetVel((void*)board,
+                    bs->pivot_y, bs->pivot_z, 0.5f);
+            }
+        }
+        break;
+
+    case 2: /* Wait */
+        bs->counter--;
+        if (bs->counter < 1) bs->state = 3;
+        break;
+
+    case 3: /* Tilt back up */
+        bs->angle += 0.5f;
+        if (bs->angle >= 45.0f) {
+            bs->angle = 45.0f;
+            bs->counter = 75; /* 0x4B */
+            bs->state = 0;
+        }
+        /* Apply render transform: Gfx_ScaleZ + Gfx_SetPosition + vtable calls */
+        if (app) {
+            DWORD gfx = *(DWORD*)(app + APP_GFX_DEVICE);
+            if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
+                pfn_Timer_Init && pfn_Timer_Cleanup) {
+                char timerBuf[68];
+                pfn_Timer_Init(timerBuf);
+                pfn_Gfx_ScaleZ_Bridge((void*)gfx, -bs->angle);
+                pfn_Gfx_SetPosition_Bridge((void*)gfx,
+                    bs->pivot_x, bs->pivot_y, bs->pivot_z);
+                /* Call render object vtable[0x16] and [0x15] */
+                DWORD* renderVtbl = *(DWORD**)bs->render_obj;
+                if (renderVtbl && !IsBadReadPtr(renderVtbl, 0x60)) {
+                    void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
+                    void (__fastcall *fn54)(DWORD, char*) = (void (__fastcall *)(DWORD, char*))renderVtbl[0x15];
+                    if (fn58) fn58((DWORD)bs->render_obj);
+                    if (fn54) fn54((DWORD)bs->render_obj, timerBuf);
+                }
+                pfn_Timer_Cleanup(timerBuf);
+            }
+        }
+        break;
+    }
+}
+
 /* Object sizes for new ctor types */
 #define ARENASTANDS_SIZE      0x1104
 #define GAMELEVEL_SIZE        0x1524
@@ -212,6 +354,7 @@ static BadBall_ctor_t pfn_BadBall_ctor = (BadBall_ctor_t)0x0040AFE0;
 #define SIGN_SIZE             0x10FC
 #define WAVY_SIZE             0x1AE7C
 #define BADBALL_SIZE          0xC70
+#define BRIDGESLAM_SIZE       0x10D0  /* same as Level/MeshWorld size */
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -1037,6 +1180,10 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         /* BadBall: BadBall_ctor doesn't take a mesh param.
          * Mesh is handled by the BadBall system (App mesh array). */
         path = NULL;
+    } else if (ai_type == 16) {
+        /* Bridgeslam: loads its own mesh inside the case block.
+         * Skip external mesh load to avoid double-loading. */
+        path = NULL;
     } else {
         path = g_swirl_mesh_path;
     }
@@ -1270,6 +1417,69 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + BALL_HOME_POS_Y) = py;
                 *(float*)((char*)obj + BALL_HOME_POS_Z) = pz;
                 break;
+            case 16: /* Bridgeslam — isolated Intermediate bridge state machine.
+                      * No game _ctor. Does its own init:
+                      *   1. Load Level2-Bridge mesh via MeshWorld_ctor
+                      *   2. Create render object via Level_RenderCtor
+                      *   3. TipperVisual_Attach links them
+                      *   4. Init state: angle=45.0, state=0, counter=50
+                      * Per-frame update runs from bridgeslam_update() in the thread. */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    if (!app || IsBadReadPtr((void*)app, 4)) { if (logf) fprintf(logf, "  ROTATER: no app for Bridgeslam\n"); return; }
+                    DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
+                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Bridgeslam\n"); return; }
+
+                    /* Load bridge mesh */
+                    const char* bridge_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Level2-Bridge";
+                    void* mesh = load_mesh_file(gfx_device, bridge_path, &is_mesh_node, logf);
+                    if (!mesh) {
+                        if (logf) fprintf(logf, "  ROTATER: Bridgeslam mesh load failed, trying Swirl fallback\n");
+                        mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+                        if (!mesh) { if (logf) fprintf(logf, "  ROTATER: Bridgeslam Swirl fallback failed\n"); return; }
+                    }
+
+                    /* Create render object from mesh */
+                    void* render_obj = pfn_operator_new(BRIDGESLAM_SIZE);
+                    if (render_obj) {
+                        memset(render_obj, 0, BRIDGESLAM_SIZE);
+                        render_obj = pfn_Level_RenderCtor(render_obj, mesh);
+                    }
+
+                    /* TipperVisual_Attach links render to mesh */
+                    if (render_obj) {
+                        pfn_TipperVisual_Attach(render_obj, (int)mesh);
+                    }
+
+                    /* Allocate a dummy object for board list registration */
+                    obj = pfn_operator_new(BRIDGESLAM_SIZE);
+                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bridgeslam obj\n"); return; }
+                    memset(obj, 0, BRIDGESLAM_SIZE);
+
+                    /* Register on board lists */
+                    pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+                    pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), render_obj);
+
+                    /* Track in bridgeslam state array */
+                    if (g_bridgeslam_count < MAX_BRIDGESLAMS) {
+                        BridgeslamState* bs = &g_bridgeslams[g_bridgeslam_count];
+                        bs->obj = (DWORD)obj;
+                        bs->render_obj = (DWORD)render_obj;
+                        bs->mesh_world = (DWORD)mesh;
+                        bs->board = board;
+                        bs->pivot_x = px;
+                        bs->pivot_y = py;
+                        bs->pivot_z = pz;
+                        bs->angle = 45.0f;
+                        bs->state = 0;
+                        bs->counter = 50;  /* 0x32 */
+                        bs->active = 1;
+                        g_bridgeslam_count++;
+                        if (logf) fprintf(logf, "  ROTATER: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
+                                px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
+                    }
+                }
+                break;
         }
     } else {
         /* AI 0-5: Use the correct constructor per AI type.
@@ -1325,6 +1535,7 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 13) col_off = 0x10EC; /* Sign — collision at 0x43B*4=0x10EC */
         else if (ai_type == 14) col_off = 0x10D4; /* WavyFlag2 — same as GameLevel */
         else if (ai_type == 15) col_off = 0;      /* BadBall — no collision obj (uses board+0x29D4 list) */
+        else if (ai_type == 16) col_off = 0;     /* Bridgeslam — no collision obj (visual only) */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2037,7 +2248,8 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bell",             0, "meshes\\bell" },              /* .MESH — Bell_ctor */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
             { "Bonk",             0, "levels\\Level5-Bonk" },       /* Bonk_ctor */
-            { "Bridge",           0, "levels\\Level2-Bridge" },     /* Intermediate: no _ctor, PopCylinder fallback */
+            { "Bridge",           16, "levels\\Level2-Bridge" },     /* Bridgeslam: isolated Intermediate bridge state machine */
+            { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
             { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor */
             { "Chomper",          0, "meshes\\chomper" },           /* Tower: no _ctor, PopCylinder fallback */
@@ -2244,6 +2456,16 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             }
         }
 
+        /* Per-frame: update all active bridgeslams */
+        {
+            int i;
+            for (i = 0; i < g_bridgeslam_count; i++) {
+                if (g_bridgeslams[i].active) {
+                    bridgeslam_update(&g_bridgeslams[i]);
+                }
+            }
+        }
+
         /* Small sleep to avoid hogging CPU */
         Sleep(16);  /* ~60fps */
 
@@ -2271,6 +2493,15 @@ static DWORD WINAPI entity_thread(LPVOID param) {
 
         /* Check if board changed (new level loaded) */
         if (board == g_spawned_board) continue;
+
+        /* New level — reset bridgeslams */
+        {
+            int i;
+            for (i = 0; i < g_bridgeslam_count; i++) {
+                g_bridgeslams[i].active = 0;
+            }
+            g_bridgeslam_count = 0;
+        }
 
         /* New board — wait for level to finish loading */
         Sleep(500);
