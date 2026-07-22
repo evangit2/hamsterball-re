@@ -127,26 +127,24 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define SPATIALTREE_SIZE        68
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * REF:Rotater — custom spawning system
+ * Entity constructors — all verified via Ghidra decompilation
  *
- * Scans MESHWORLD section 3 for objects named "REF:Rotater" and spawns
- * a Dizzy Race SWIRL (Rotator_ctor_Impossible) at each position.
- *
- * The game's Rotator_ctor_Impossible (0x435940) signature:
- *   __thiscall(this, board, posX, posY, posZ, mesh)
- *
- * Mesh path "levels\Level3-Swirl" is at 0x004CFFE0 (game .data).
- * MeshWorld_ctor (0x461510) loads the SWIRL mesh from disk.
- *
- * Object layout (from Ghidra decompilation):
- *   this+0x10D0 = board ptr
- *   this+0x10D4 = render object (Level_RenderCtor result)
- *   this+0x10D8/DC/E0 = position X/Y/Z
- *   this+0x10E8 = rotation angle (init 0)
- *   this+0x10EC = rotation direction (init 1.0)
- *   this+0x10F0 = AthenaList (initialized)
- *   vtable = 0x4D5518 (Impossible Rotator)
- *   vtable[11] (offset 0x2C) = RemoveAndFree
+ * ctor_type values:
+ *   0  = PopCylinder_ctor (0x436EE0, size 0x10D0) — fallback for entities with no _ctor
+ *   1  = Rotator_ctor (0x435940, size 0x1508) — Y-axis rotation
+ *   2  = Pendulum_ctor (0x437700, size 0x1504) — X-axis oscillation
+ *   3  = Looper_ctor (0x437460, size 0x1500) — Z-axis rotation
+ *   4  = Gear_ctor (0x437690, size 0x1514) — multi-axis
+ *   5  = BigGear_ctor (same as 4)
+ *   6  = Swirl (Rotator_ctor, constant rotation)
+ *   7  = ArenaStands_ctor (0x43E450, size 0x1104) — Neon DFLOOR/TRODE/FLICKRING
+ *   8  = GameLevel_ctor (0x4351F0, size 0x1524) — Wobbly platforms
+ *   9  = Glass_Level_ctor (0x4384A0, size 0x113C) — Drawbridge (3 params: this,board,mesh)
+ *   10 = Gear_Level_ctor (0x43A150, size 0x1100) — Judge (5 params: this,board,x,y,z — no mesh)
+ *   11 = Secret_ctor (0x43DFB0, size 0x10EC) — GlassBonus/TENBONUS (6 params: this,board,x,y,z,mesh)
+ *   12 = FlagWaver_Ctor (0x46AF30, size 0x8C) — Flag (2 params: this,gfx_device)
+ *   13 = Sign_ctor (0x443B90, size 0x10FC) — Popup Sign (complex signature)
+ *   14 = WavyFlag2 (Wavy_ctor copy, size 0x1AE7C) — Flag2: uses Flag.MESHWORLD or _default fallback
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Rotator_ctor_Impossible — creates the spinning SWIRL platform */
@@ -155,6 +153,59 @@ static Rotator_ctor_t pfn_Rotator_ctor = (Rotator_ctor_t)0x00435940;
 static Rotator_ctor_t pfn_Pendulum_ctor = (Rotator_ctor_t)0x437700;
 static Rotator_ctor_t pfn_Looper_ctor = (Rotator_ctor_t)0x437460;
 static Rotator_ctor_t pfn_Gear_ctor = (Rotator_ctor_t)0x437690;
+
+/* ArenaStands_ctor — Neon Race DFLOOR, FLICKRING, TRODE */
+typedef void* (__thiscall *ArenaStands_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+static ArenaStands_ctor_t pfn_ArenaStands_ctor = (ArenaStands_ctor_t)0x0043E450;
+
+/* GameLevel_ctor — Wobbly Race platforms */
+typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+static GameLevel_ctor_t pfn_GameLevel_ctor = (GameLevel_ctor_t)0x004351F0;
+
+/* Glass_Level_ctor — Tower Race Drawbridge (3 params: this, board, mesh — no position!) */
+typedef void* (__thiscall *Glass_Level_ctor_t)(void* this_, void* board, void* mesh);
+static Glass_Level_ctor_t pfn_Glass_Level_ctor = (Glass_Level_ctor_t)0x004384A0;
+
+/* Gear_Level_ctor — Expert Race Judge (5 params: this, board, x, y, z — no mesh!) */
+typedef void* (__thiscall *Gear_Level_ctor_t)(void* this_, void* board, float x, float y, float z);
+static Gear_Level_ctor_t pfn_Gear_Level_ctor = (Gear_Level_ctor_t)0x0043A150;
+
+/* Secret_ctor — Glass Race TENBONUS (6 params: this, board, x, y, z, mesh) */
+typedef void* (__thiscall *Secret_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+static Secret_ctor_t pfn_Secret_ctor = (Secret_ctor_t)0x0043DFB0;
+
+/* FlagWaver_Ctor — Flag (2 params: this, gfx_device) — code-generated mesh */
+typedef void* (__thiscall *FlagWaver_Ctor_t)(void* this_, void* gfx_device);
+static FlagWaver_Ctor_t pfn_FlagWaver_Ctor = (FlagWaver_Ctor_t)0x0046AF30;
+
+/* TipperVisual_Attach — links visual object to behavior object */
+typedef void (__cdecl *TipperVisual_Attach_t)(void* visual, int behavior);
+static TipperVisual_Attach_t pfn_TipperVisual_Attach = (TipperVisual_Attach_t)0x00465200;
+
+/* Sign_ctor — Popup Sign (complex signature, handled specially) */
+typedef void* (__thiscall *Sign_ctor_t)(void* this_, void* board, int gfx1, int gfx2,
+    int x, int y, int z, int str1, int str2, int str3);
+static Sign_ctor_t pfn_Sign_ctor = (Sign_ctor_t)0x00443B90;
+
+/* Wavy_ctor — Wavy platforms (takes string path, not mesh pointer!)
+ * Signature: __thiscall(this, board, x, y, z, mesh_path_string)
+ * Alloc size: 0x1AE7C (110,204 bytes — huge!)
+ * Wavy_Configure is called after construction to set wave parameters */
+typedef void* (__thiscall *Wavy_ctor_t)(void* this_, void* board, float x, float y, float z, const char* mesh_path);
+static Wavy_ctor_t pfn_Wavy_ctor = (Wavy_ctor_t)0x0043AD40;
+
+typedef void (__thiscall *Wavy_Configure_t)(void* this_, int a, float b, float c, float d);
+static Wavy_Configure_t pfn_Wavy_Configure = (Wavy_Configure_t)0x00435440;
+
+/* Object sizes for new ctor types */
+#define ARENASTANDS_SIZE      0x1104
+#define GAMELEVEL_SIZE        0x1524
+#define GLASS_LEVEL_SIZE      0x113C
+#define GEAR_LEVEL_SIZE       0x1100
+#define SECRET_SIZE           0x10EC
+#define FLAGWAVER_SIZE        0x8C
+#define SIGN_SIZE             0x10FC
+#define WAVY_SIZE             0x1AE7C
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -959,27 +1010,50 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
     if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
 
-    /* 2. Determine mesh path — MESH property takes priority over AI default */
+    /* 2. Determine mesh path — MESH property takes priority over AI default.
+     * NULL mesh paths (e.g. FlagWaver with code-generated mesh) are valid. */
     const char* path = NULL;
     if (mesh_path && mesh_path[0]) {
         path = mesh_path;
     } else if (ai_type >= 1 && ai_type <= 5) {
         path = g_ai_mesh_paths[ai_type];
+    } else if (ai_type == 12) {
+        /* FlagWaver: code-generated mesh, no file needed */
+        path = NULL;
+    } else if (ai_type == 13) {
+        /* Sign_ctor: loads its own mesh internally */
+        path = NULL;
+    } else if (ai_type == 14) {
+        /* WavyFlag2: Wavy_ctor loads mesh from string path internally.
+         * Skip mesh loading here — the path string is passed directly to Wavy_ctor. */
+        path = NULL;
     } else {
         path = g_swirl_mesh_path;
     }
+    
+    /* If mesh path is "levels\\_default", use _default.MESHWORLD as placeholder.
+     * This file is provided by the user and serves as a null mesh fallback
+     * for entities that don't have a real mesh file (Bumper, Tarpit, Chrome). */
+    if (path && _stricmp(path, "levels\\_default") == 0) {
+        /* _default.MESHWORLD is the user-provided placeholder */
+        /* Keep the path as-is — the game's MeshWorld_ctor will try to load it */
+    }
 
-    /* 3. Load mesh file — handles both .MESHWORLD and .MESH formats */
+    /* 3. Load mesh file — handles both .MESHWORLD and .MESH formats.
+     * NULL path is valid for entities with no mesh file (FlagWaver, Sign). */
     int is_mesh_node = 0;
-    void* mesh = load_mesh_file(gfx_device, path, &is_mesh_node, logf);
-    if (!mesh) {
-        /* Fallback: try Swirl mesh */
-        if (logf) fprintf(logf, "  ROTATER: load_mesh_file failed for '%s', trying Swirl fallback\n", path);
-        is_mesh_node = 0;
-        mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+    void* mesh = NULL;
+    if (path) {
+        mesh = load_mesh_file(gfx_device, path, &is_mesh_node, logf);
         if (!mesh) {
-            if (logf) fprintf(logf, "  ROTATER: Swirl fallback also failed\n");
-            return;
+            /* Fallback: try Swirl mesh */
+            if (logf) fprintf(logf, "  ROTATER: load_mesh_file failed for '%s', trying Swirl fallback\n", path);
+            is_mesh_node = 0;
+            mesh = load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
+            if (!mesh) {
+                if (logf) fprintf(logf, "  ROTATER: Swirl fallback also failed\n");
+                return;
+            }
         }
     }
 
@@ -1093,6 +1167,88 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
+    } else if (ai_type >= 7 && ai_type <= 13) {
+        /* New constructor types (7-13) — each with specific signature */
+        switch (ai_type) {
+            case 7:  /* ArenaStands_ctor — DFLOOR, FLICKRING, TRODE */
+                obj = pfn_operator_new(ARENASTANDS_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc ArenaStands\n"); return; }
+                memset(obj, 0, ARENASTANDS_SIZE);
+                pfn_ArenaStands_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 8:  /* GameLevel_ctor — Wobbly */
+                obj = pfn_operator_new(GAMELEVEL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc GameLevel\n"); return; }
+                memset(obj, 0, GAMELEVEL_SIZE);
+                pfn_GameLevel_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 9:  /* Glass_Level_ctor — Drawbridge (3 params: this, board, mesh) */
+                obj = pfn_operator_new(GLASS_LEVEL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Glass_Level\n"); return; }
+                memset(obj, 0, GLASS_LEVEL_SIZE);
+                pfn_Glass_Level_ctor(obj, (void*)board, mesh);
+                /* Position written after construction */
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 10: /* Gear_Level_ctor — Judge (5 params: this, board, x, y, z — no mesh!) */
+                obj = pfn_operator_new(GEAR_LEVEL_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Gear_Level\n"); return; }
+                memset(obj, 0, GEAR_LEVEL_SIZE);
+                pfn_Gear_Level_ctor(obj, (void*)board, px, py, pz);
+                break;
+            case 11: /* Secret_ctor — GlassBonus (6 params: this, board, x, y, z, mesh) */
+                obj = pfn_operator_new(SECRET_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Secret\n"); return; }
+                memset(obj, 0, SECRET_SIZE);
+                pfn_Secret_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            case 12: /* FlagWaver_Ctor — Flag (2 params: this, gfx_device — code-generated mesh) */
+                obj = pfn_operator_new(FLAGWAVER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc FlagWaver\n"); return; }
+                memset(obj, 0, FLAGWAVER_SIZE);
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
+                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for FlagWaver\n"); return; }
+                    pfn_FlagWaver_Ctor(obj, (void*)gfx_device);
+                }
+                break;
+            case 13: /* Sign_ctor — Popup Sign (complex signature) */
+                obj = pfn_operator_new(SIGN_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Sign\n"); return; }
+                memset(obj, 0, SIGN_SIZE);
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    int gfx1 = app ? *(int*)(app + 0x58C) : 0;
+                    int gfx2 = app ? *(int*)(app + 0x590) : 0;
+                    pfn_Sign_ctor(obj, (void*)board, gfx1, gfx2,
+                        *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
+                }
+                break;
+            case 14: /* WavyFlag2 — Wavy_ctor copy with custom mesh path.
+                      * Wavy_ctor takes a string path (not mesh pointer!) and loads
+                      * the mesh internally. Try "levels\Flag", fall back to _default. */
+                obj = pfn_operator_new(WAVY_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc WavyFlag2\n"); return; }
+                memset(obj, 0, WAVY_SIZE);
+                {
+                    /* Check if Flag.MESHWORLD exists, else use _default */
+                    const char* wavy_path = "levels\\Flag";
+                    char check_path[256];
+                    snprintf(check_path, 255, "%s.meshworld", wavy_path);
+                    if (pfn_check_file_access(check_path, 0) != 0) {
+                        /* Flag.MESHWORLD not found — try _default */
+                        wavy_path = "levels\\_default";
+                        if (logf) fprintf(logf, "  ROTATER: Flag.MESHWORLD not found, using _default\n");
+                    }
+                    pfn_Wavy_ctor(obj, (void*)board, px, py, pz, wavy_path);
+                    /* Configure wave parameters (same as native Wavy1) */
+                    pfn_Wavy_Configure(obj, 0x1c, 20.0f, 2.0f, -3.0f);
+                }
+                break;
+        }
     } else {
         /* AI 0-5: Use the correct constructor per AI type.
          * Each constructor initializes the object with the correct vtable
@@ -1130,14 +1286,26 @@ static void spawn_rotater_at(DWORD board, float px, float py, float pz,
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
     /* 7. Add collision object to board+0x10EC */
-    DWORD col_obj = *(DWORD*)((char*)obj + (ai_type >= 1 ? 0x10D4 : 0x10E0));
-    if (col_obj) {
-        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
+    {
+        DWORD col_off = 0x10E0;  /* default for PopCylinder */
+        if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family */
+        else if (ai_type == 7) col_off = 0x10E0;  /* ArenaStands (same as PopCylinder) */
+        else if (ai_type == 8) col_off = 0x10D4;  /* GameLevel (Wobbly) */
+        else if (ai_type == 9) col_off = 0x10D4;  /* Glass_Level (Drawbridge) */
+        else if (ai_type == 10) col_off = 0x10D4; /* Gear_Level (Judge) */
+        else if (ai_type == 11) col_off = 0x10E0; /* Secret (GlassBonus) */
+        else if (ai_type == 12) col_off = 0;      /* FlagWaver — no collision obj */
+        else if (ai_type == 13) col_off = 0x10EC; /* Sign — collision at 0x43B*4=0x10EC */
+        else if (ai_type == 14) col_off = 0x10D4; /* WavyFlag2 — same as GameLevel */
+        DWORD col_obj = *(DWORD*)((char*)obj + col_off);
+        if (col_obj && col_off > 0) {
+            pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
 
-        /* Also add to board+0x8B0+0x18 (scene collision) */
-        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
-        if (scene_col) {
-            pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)col_obj);
+            /* Also add to board+0x8B0+0x18 (scene collision) */
+            DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+            if (scene_col) {
+                pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)col_obj);
+            }
         }
     }
 
@@ -1836,29 +2004,30 @@ static void process_rotaters(DWORD board, FILE* logf) {
         typedef struct { const char* name; int ctor_type; const char* mesh; } ai_entry_t;
         static const ai_entry_t ai_list[] = {
             /* name */            /* ctor */  /* mesh path */
-            { "8ball",            0, "meshes\\8ball" },             /* .MESH — BadBall_ctor */
+            { "8ball",            0, "meshes\\8ball" },             /* .MESH — no _ctor, PopCylinder fallback */
             { "BBridge",          0, "levels\\Level10-Bridge1" },   /* BreakBridge_ctor */
             { "Bell",             0, "meshes\\bell" },              /* .MESH — Bell_ctor */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
             { "Bonk",             0, "levels\\Level5-Bonk" },       /* Bonk_ctor */
-            { "Bridge",           0, "levels\\Level2-Bridge" },     /* PopCylinder_ctor */
-            { "Bumper",           0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor (no _default.MESHWORLD) */
+            { "Bridge",           0, "levels\\Level2-Bridge" },     /* Intermediate: no _ctor, PopCylinder fallback */
+            { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
             { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor */
-            { "Chomper",          0, "meshes\\chomper" },           /* .MESH — PopCylinder_ctor */
-            { "Chrome",           0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor */
-            { "Drawbridge",       0, "levels\\Level4-Drawbridge" }, /* PopCylinder_ctor */
-            { "Droplifter",       0, "levels\\Level6-Lifter" },     /* New AI — Odd Race model */
+            { "Chomper",          0, "meshes\\chomper" },           /* Tower: no _ctor, PopCylinder fallback */
+            { "Chrome",           0, "levels\\_default" },          /* Odd Race: no _ctor, _default mesh */
+            { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
+            { "Droplifter",       0, "levels\\Level6-Lifter" },     /* Odd Race model */
             { "Fan",              0, "meshes\\fanbody" },           /* .MESH — Fan_ctor */
-            { "Flag",             0, "levels\\Level9-PopCylinder1" }, /* FlagWaver (fallback) */
-            { "Flickfloor1",      0, "levels\\LevelDark-DFloor1" }, /* PopCylinder_ctor */
-            { "Flickfloor2",      0, "levels\\LevelDark-DFloor4" }, /* PopCylinder_ctor */
-            { "Flickring",        0, "levels\\LevelDark-FlickRing" }, /* PopCylinder_ctor */
-            { "Funball",          0, "meshes\\funball" },           /* .MESH — PopCylinder_ctor */
+            { "Flag",             12, NULL },                        /* FlagWaver_Ctor (0x46AF30, 0x8C bytes) — code-generated mesh */
+            { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
+            { "Flickfloor1",      7, "levels\\LevelDark-DFloor1" }, /* ArenaStands_ctor (0x43E450, 0x1104 bytes) */
+            { "Flickfloor2",      7, "levels\\LevelDark-DFloor4" }, /* ArenaStands_ctor (same as DFLOOR4) */
+            { "Flickring",        7, "levels\\LevelDark-Flickring" }, /* ArenaStands_ctor */
+            { "Funball",          0, "meshes\\funball" },           /* Sky Race: no _ctor, PopCylinder fallback */
             { "Gear",             0, "levels\\LevelImpossible-Gear" }, /* PopCylinder (was 4=Gear_ctor, crashed) */
-            { "Glassbreaker",     0, "levels\\LevelGlass" },        /* No glassbonus.MESHWORLD, fallback */
+            { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
             { "Gluebie",          0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
-            { "Judge",            0, "meshes\\hammyjudge" },        /* .MESH — PopCylinder_ctor */
-            { "Lifter",           0, "levels\\LevelUp-Lifter" },    /* Up Race model (was Level6=Odd) */
+            { "Judge",            10, "meshes\\hammyjudge" },       /* Gear_Level_ctor (0x43A150, 0x1100 bytes, no mesh param) */
+            { "Lifter",           0, "levels\\LevelUp-Lifter" },    /* Up Race model */
             { "Looper",           0, "levels\\LevelImpossible-Looper" }, /* PopCylinder (was 3=Looper_ctor, crashed) */
             { "Mace",             0, "levels\\Level4-Mace" },       /* Mace_ctor */
             { "Mag",              0, "meshes\\magnifyingglass" },   /* .MESH — Magnifier_ctor */
@@ -1869,20 +2038,20 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor (constant rotation) */
             { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor */
             { "Sawblade",         0, "meshes\\sawblade" },         /* .MESH — SawBlade_ctor */
-            { "Sign",             0, "levels\\PopupSign" },         /* New AI — Sign */
+            { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
             { "Speedcylinder",    0, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor */
             { "Spinner",          0, "levels\\Level8-Spinny" },     /* PopCylinder_ctor */
             { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
-            { "Tarbubble",        0, "meshes\\tarbubble" },         /* .MESH — PopCylinder_ctor */
-            { "Tarpit",           0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor (no _default) */
+            { "Tarbubble",        0, "meshes\\tarbubble" },         /* Dizzy: no _ctor, PopCylinder fallback */
+            { "Tarpit",           0, "levels\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor */
             { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor */
-            { "Trode",            0, "levels\\LevelDark-Trode" },  /* PopCylinder_ctor */
-            { "Waterwheel",       0, "levels\\Level3-WaterWheel" }, /* PopCylinder_ctor */
+            { "Trode",            7, "levels\\LevelDark-Trode" },  /* ArenaStands_ctor (same as DFLOOR) */
+            { "Waterwheel",       0, "levels\\Level3-WaterWheel" }, /* Dizzy: no _ctor, PopCylinder fallback */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
-            { "Windmill",         0, "levels\\Level4-Windmill" },   /* New AI — Windmill */
-            { "Wobbly",           0, "levels\\Level7-Wobbly1" },    /* PopCylinder_ctor */
+            { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
+            { "Wobbly",           8, "levels\\Level7-Wobbly1" },    /* GameLevel_ctor (0x4351F0, 0x1524 bytes) */
         };
         static const int ai_list_count = sizeof(ai_list) / sizeof(ai_list[0]);
 
