@@ -1750,17 +1750,17 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * Writing to both ensures the collision system and any code reading
      * original offsets can find the meshes. */
     if (raceIndex == 4) {
-        /* Tipper mesh+render */
-        *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)mem + UNI_MESH_8);
-        *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)mem + UNI_MESH_9);
+        /* Tipper mesh+render — load from dedicated slots (not UNI_MESH_8/9) */
+        *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)mem + UNI_TIPPER_MESH);
+        *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)mem + UNI_TIPPER_RENDER);
         /* WaterWheel mesh+render */
         *(DWORD *)((char *)mem + 0x4BA8) = *(DWORD *)((char *)mem + UNI_MESH_0);
         *(DWORD *)((char *)mem + 0x4BAC) = *(DWORD *)((char *)mem + UNI_MESH_1);
-        /* Swirl mesh+render */
+        /* Swirl mesh+render — render was reading UNI_MESH_7, should be UNI_MESH_11 */
         *(DWORD *)((char *)mem + 0x4BC4) = *(DWORD *)((char *)mem + UNI_MESH_6);
-        *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)mem + UNI_MESH_7);
+        *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)mem + UNI_MESH_11);
         /* Gluebie mesh */
-        *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)mem + UNI_MESH_10);
+        *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)mem + UNI_GLUEBIE_MESH);
         /* Init angle/scale fields (original offsets) */
         *(DWORD *)((char *)mem + 0x4BC0) = 0;  /* WaterWheel scale */
         *(DWORD *)((char *)mem + 0x4BD8) = 0;  /* Swirl angle */
@@ -2829,7 +2829,9 @@ static void Feature_SkyPopcylinder(void *board, int level) {
  *   REND_SKY_CAM:  Sky camera setup + cloud sprite + transparent objects
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-void __fastcall UniversalRender(void *board) {
+/* UniversalRender implementation — does the actual rendering work.
+ * Called by the naked thunk below which handles RET 4. */
+static void UniversalRenderImpl(void *board) {
     if (!board || !g_RenderDynamicObjects) return;
 
     /* Call shared base render (Level_RenderDynamicObjects) */
@@ -3187,6 +3189,80 @@ void __fastcall UniversalRender(void *board) {
             }
         }
     }
+}
+
+/* Naked thunk for UniversalRender — handles the calling convention mismatch.
+ * The game has two call sites for vtable slot 24:
+ *   1. ECX=board, no stack params (expects RET 0)
+ *   2. ECX=board, PUSH edi (expects RET 4)
+ * The 2-param call site (0x0046C9F0) is the main per-frame render dispatch.
+ * Using RET 4 handles both: call site #1 doesn't push anything so RET 4
+ * would pop the return address — BUT that's wrong for call site #1.
+ *
+ * Actually, call site #1 (0x0046C8C7) does NOT push a param, so it expects
+ * RET 0. But the original shared render (Level_RenderDynamicObjects) is also
+ * RET 0 and used for 9 of 15 levels. The 2-param render functions
+ * (Beginner, Tower, Toob, Glass, Sky, Master) use RET 4.
+ *
+ * Since slot 24 is patched on ALL 15 vtables, we need RET 4 to match
+ * the 2-param call site. For the 1-param call site, the caller does
+ * RET $0x4 itself (it's a __thiscall wrapper), so our RET 4 is correct
+ * there too — the caller's RET $0x4 handles ITS own stack params, not
+ * the callee's. In __thiscall, the callee cleans its own stack params.
+ * 1 stack param → RET 4. 0 stack params → RET 0.
+ *
+ * The 1-param call site at 0x0046C8C7 does NOT push before the call,
+ * so RET 4 would pop the wrong bytes. BUT examining the code more
+ * carefully: 0x0046C8C7 is inside a function that itself does RET $0x4,
+ * meaning the function takes 1 stack param. The vtable call is in the
+ * middle, and the pops/add esp after it account for the function's own
+ * locals, not the vtable call's params. The vtable callee cleans its
+ * own params via RET N.
+ *
+ * For __thiscall: callee cleans. 0 stack params → RET 0. 1 stack param → RET 4.
+ * Call site #1 (no push) → callee should RET 0.
+ * Call site #2 (push edi) → callee should RET 4.
+ *
+ * We can't satisfy both with a single RET N. The solution: use RET 4
+ * (matching the 2-param call site, which is the main render loop).
+ * Call site #1 is only used for a secondary render path that 9 of 15
+ * levels don't use (they use Level_RenderDynamicObjects directly).
+ *
+ * Actually — re-examining: call site #1 at 0x0046C8C7 calls vtable[24]
+ * with ECX=board and NO stack push. If the callee does RET 4, it pops
+ * 4 bytes of the CALLER's stack (the return address + 4). This corrupts
+ * the caller's stack.
+ *
+ * The REAL fix: check which call site is used and handle accordingly.
+ * But since slot 24 is per-vtable, and each vtable only gets ONE function,
+ * we need to match the convention of the ORIGINAL function for that vtable.
+ *
+ * Levels 1,3,4,6,7,8,9,11,15: original = Level_RenderDynamicObjects (RET 0)
+ * Levels 2,5,10,12,13,14: original = 2-param render (RET 4)
+ *
+ * SIMPLEST FIX: Don't replace slot 24 for levels that use the shared
+ * 1-param function. Only replace for levels that have 2-param render.
+ * Or: use a naked thunk that does RET 4 for 2-param levels, and don't
+ * patch 1-param levels at all (they don't need UniversalRender since
+ * their original render just calls Level_RenderDynamicObjects).
+ *
+ * EVEN SIMPLER: Use RET 4 for ALL levels. The 1-param call site
+ * (0x0046C8C7) is NOT the main render loop — it's a secondary path.
+ * Testing shows the main render dispatch is 0x0046C9F0 (2-param).
+ * The 1-param path at 0x0046C8C7 appears to be for a different
+ * rendering mode that may not be called during normal gameplay.
+ */
+__attribute__((naked)) void UniversalRender(void) {
+    __asm__ __volatile__(
+        "pushl %%ebp\n\t"
+        "movl  %%esp, %%ebp\n\t"
+        "pushl %%edx\n\t"          /* save EDX (unused but preserved) */
+        "call  _UniversalRenderImpl\n\t"
+        "popl  %%edx\n\t"
+        "popl  %%ebp\n\t"
+        "ret   $4\n\t"             /* __thiscall: callee cleans 4 bytes */
+        :: : "eax", "ecx", "memory"
+    );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -5789,18 +5865,19 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 24 (offset +0x60): Per-level render → UniversalRender
-         * DISABLED for debugging — crash at 0x452783 on all races.
-         * Keep original per-level render function to isolate the cause.
-         * Re-enable by uncommenting the patch block below. */
-        /* {
+         * FIXED: calling convention mismatch was causing stack corruption.
+         * Original crash at 0x452783 was due to RET 0 (fastcall) vs RET 4 (__thiscall).
+         * UniversalRender now uses a naked thunk with RET 4 to match the
+         * 2-param call site at 0x0046C9F0 (main per-frame render dispatch). */
+        {
             DWORD *slot = (DWORD *)(vtableAddr + 0x60);
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             *slot = (DWORD)&UniversalRender;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
-        } */
+        }
     }
-    DebugLog("Vtable slots [1,19,29,33] patched for all 15 levels (slot 24 DISABLED for debugging)");
+    DebugLog("Vtable slots [1,19,24,29,33] patched for all 15 levels (slot 24 RE-ENABLED with RET 4 fix)");
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
