@@ -5908,11 +5908,14 @@ static void InstallVtablePatches(void) {
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
 
-        /* Slot 24 (offset +0x60): Per-level render → UniversalRender
-         * FIXED: calling convention mismatch was causing stack corruption.
-         * Original crash at 0x452783 was due to RET 0 (fastcall) vs RET 4 (__thiscall).
-         * UniversalRender now uses a naked thunk with RET 4 to match the
-         * 2-param call site at 0x0046C9F0 (main per-frame render dispatch). */
+        /* Slot 24 (offset +0x60): Per-level render — DISABLED.
+         * Two call sites exist: 0x0046C8C7 (1-param, RET 0) and 0x0046C9F0
+         * (2-param, RET 4). A single replacement can't satisfy both.
+         * 9 of 15 levels use the shared Level_RenderDynamicObjects (RET 0).
+         * Patching all 15 with RET 4 crashes the 1-param levels.
+         * Fix: only patch the 6 levels that use 2-param render (2,5,10,12,13,14).
+         * For now, disabled entirely until per-level render features are needed. */
+#if 0
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x60);
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
@@ -5920,8 +5923,9 @@ static void InstallVtablePatches(void) {
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
+#endif
     }
-    DebugLog("Vtable slots [1,19,24,29,33] patched for all 15 levels (slot 24 RE-ENABLED with RET 4 fix)");
+    DebugLog("Vtable slots [1,19,29,33] patched for all 15 levels (slot 24 disabled)");
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
