@@ -58,6 +58,24 @@ var BendTool = (function() {
         if (S.cb && S.cb.refreshFn) {
             try { S.cb.refreshFn(S.item); } catch(e) {}
         }
+        // Re-apply bent normals after refreshFn (which may call computeVertexNormals
+        // and overwrite our correctly-transformed normals with averaged smooth normals).
+        // The game uses normals as-is from the file — no recomputation — so the
+        // bent normals from bendVertices() are the correct ones to use.
+        if (S.hbMesh && S.item) {
+            var mesh = S.item.mesh || S.item.threeMesh || S.item.object;
+            if (mesh && mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.normal) {
+                var na = mesh.geometry.attributes.normal.array;
+                var v = S.hbMesh.vertices;
+                var n = v.length / 8;
+                for (var i = 0; i < n; i++) {
+                    na[i*3]   = v[i*8+3];
+                    na[i*3+1] = v[i*8+4];
+                    na[i*3+2] = v[i*8+5];
+                }
+                mesh.geometry.attributes.normal.needsUpdate = true;
+            }
+        }
     }
 
     function applyBend() {
