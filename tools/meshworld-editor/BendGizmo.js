@@ -367,6 +367,24 @@ class BendGizmo {
             refreshSingleObject(this.item);
         }
 
+        // Re-apply bent normals after refreshSingleObject (which may call
+        // computeVertexNormals and overwrite our correctly-transformed normals).
+        // The game uses normals as-is from the file — no recomputation.
+        if (this.hbMesh && this.item) {
+            var mesh = this.item.mesh || this.item.threeMesh || this.item.object;
+            if (mesh && mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.normal) {
+                var na = mesh.geometry.attributes.normal.array;
+                var v = this.hbMesh.vertices;
+                var n = v.length / 8;
+                for (var i = 0; i < n; i++) {
+                    na[i*3]   = v[i*8+3];
+                    na[i*3+1] = v[i*8+4];
+                    na[i*3+2] = v[i*8+5];
+                }
+                mesh.geometry.attributes.normal.needsUpdate = true;
+            }
+        }
+
         // Update gizmo arc
         this._rebuildGizmo();
     }
