@@ -1,0 +1,6 @@
+# Magnet Mod Config
+# S1 points: MAGNET(P)=attract, MAGNET(N)=repel
+
+range = 300.0
+strength = 0.5
+max_force = 3.0
