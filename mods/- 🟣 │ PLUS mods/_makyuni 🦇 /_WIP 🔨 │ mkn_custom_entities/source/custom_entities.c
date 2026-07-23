@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53f
+ * custom_entities.c — Hamsterball Custom Entities Mod v53g
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -515,6 +515,144 @@ typedef struct {
 static RotaterConfig g_rotater_cfg[MAX_ROTATERS];
 static int   g_rotater_count = 0;
 static DWORD g_rotater_board = 0;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Bonk collision event hook
+ *
+ * E:CALLHAMMER and E:HAMMERCHASE are only natively handled by
+ * ExpertCollisionEvents and HandleArenaCollisionEvents (Master).
+ * On other levels, these events fall through to DispatchCollisionEvents
+ * which doesn't check for them. We detour DispatchCollisionEvents,
+ * let the original run, then check for hammer events ourselves.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Tracked Bonk objects */
+#define MAX_BONKS 8
+static DWORD g_bonk_objs[MAX_BONKS];
+static int g_bonk_count = 0;
+
+/* Game function pointers for Bonk events */
+typedef void (__fastcall *CreateBonkPopup_t)(int bonk_obj);
+static CreateBonkPopup_t pfn_CreateBonkPopup = (CreateBonkPopup_t)0x00438B30;
+
+typedef void (__fastcall *Hammer_ChaseStart_t)(int bonk_obj);
+static Hammer_ChaseStart_t pfn_Hammer_ChaseStart = (Hammer_ChaseStart_t)0x00438BB0;
+
+/* Original DispatchCollisionEvents function — we build a trampoline */
+typedef void (__thiscall *DispatchCollisionEvents_t)(void* this_, int* ball, int* collision_data);
+static DWORD g_dispatch_collision_addr = 0x0040C5D0;
+static unsigned char g_dispatch_orig_bytes[8];  /* first 8 bytes = PUSH 0xFF + MOV EAX,FS:[0] */
+static int g_dispatch_hooked = 0;
+
+/* Trampoline buffer: 8 bytes original code + 5 byte JMP back = 13 bytes */
+static unsigned char g_trampoline[13];
+static DispatchCollisionEvents_t pfn_DispatchCollisionEvents_trampoline = NULL;
+
+/* Check if current level is Expert (7) or Master (13) — they have native handlers */
+static int is_expert_or_master_level(DWORD board) {
+    if (!board || IsBadReadPtr((void*)board, 0x900)) return 0;
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+    if (!app || IsBadReadPtr((void*)app, 0x600)) return 0;
+    /* App+0x5FC = current level/race index (0-14) */
+    int race_idx = *(int*)(app + 0x5FC);
+    return (race_idx == 7 || race_idx == 13);
+}
+
+/* Our detour: calls original via trampoline, then checks for hammer events */
+static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int* collision_data) {
+    /* Call original first via trampoline */
+    pfn_DispatchCollisionEvents_trampoline(this_, ball, collision_data);
+
+    /* Skip on Expert/Master — they have native handlers */
+    if (is_expert_or_master_level((DWORD)this_)) return;
+
+    /* Check if we have any tracked Bonk objects */
+    if (g_bonk_count <= 0) return;
+
+    /* Get event name from collision_data[1]+0x864 */
+    if (!collision_data || IsBadReadPtr((void*)collision_data, 8)) return;
+    int meshbuf = collision_data[1];
+    if (!meshbuf || IsBadReadPtr((void*)meshbuf, 0x868)) return;
+    char* event_name = *(char**)(meshbuf + 0x864);
+    if (!event_name || IsBadReadPtr(event_name, 1)) return;
+
+    /* Check for E:CALLHAMMER */
+    if (_stricmp(event_name, "E:CALLHAMMER") == 0) {
+        /* Check difficulty flag: App+0x23C != 0 (same check native code uses) */
+        DWORD app = *(DWORD*)((DWORD)this_ + BOARD_APP);
+        if (app && !IsBadReadPtr((void*)(app + 0x23C), 4)) {
+            if (*(int*)(app + 0x23C) != 0) {
+                int i;
+                for (i = 0; i < g_bonk_count; i++) {
+                    if (g_bonk_objs[i] && !IsBadReadPtr((void*)g_bonk_objs[i], 0x1100)) {
+                        pfn_CreateBonkPopup((int)g_bonk_objs[i]);
+                    }
+                }
+            }
+        }
+    }
+    /* Check for E:HAMMERCHASE */
+    else if (_stricmp(event_name, "E:HAMMERCHASE") == 0) {
+        DWORD app = *(DWORD*)((DWORD)this_ + BOARD_APP);
+        if (app && !IsBadReadPtr((void*)(app + 0x23C), 4)) {
+            if (*(int*)(app + 0x23C) != 0) {
+                int i;
+                for (i = 0; i < g_bonk_count; i++) {
+                    if (g_bonk_objs[i] && !IsBadReadPtr((void*)g_bonk_objs[i], 0x1100)) {
+                        pfn_Hammer_ChaseStart((int)g_bonk_objs[i]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Install the DispatchCollisionEvents detour with proper trampoline */
+static void install_bonk_collision_hook(void) {
+    if (g_dispatch_hooked) return;
+
+    /* Save original 8 bytes (PUSH 0xFF + MOV EAX,FS:[0]) */
+    memcpy(g_dispatch_orig_bytes, (void*)g_dispatch_collision_addr, 8);
+
+    /* Build trampoline: 8 bytes original code + JMP back to original+8 */
+    memcpy(g_trampoline, g_dispatch_orig_bytes, 8);
+    DWORD jmp_back = (g_dispatch_collision_addr + 8) - (DWORD)(g_trampoline + 8 + 5);
+    g_trampoline[8] = 0xE9;
+    *(DWORD*)(g_trampoline + 9) = jmp_back;
+
+    /* Make trampoline executable */
+    DWORD old_protect = 0;
+    if (!VirtualProtect(g_trampoline, 13, PAGE_EXECUTE_READWRITE, &old_protect))
+        return;
+    pfn_DispatchCollisionEvents_trampoline = (DispatchCollisionEvents_t)g_trampoline;
+
+    /* Patch original function: JMP to our hook (5 bytes, overwrites first 8 bytes) */
+    if (!VirtualProtect((void*)g_dispatch_collision_addr, 8, PAGE_EXECUTE_READWRITE, &old_protect))
+        return;
+
+    DWORD rel_addr = (DWORD)hook_DispatchCollisionEvents - g_dispatch_collision_addr - 5;
+    unsigned char jmp_patch[8];
+    jmp_patch[0] = 0xE9; /* JMP rel32 */
+    *(DWORD*)(jmp_patch + 1) = rel_addr;
+    jmp_patch[5] = 0x90; /* NOP — pad to cover 6th byte */
+    jmp_patch[6] = 0x90; /* NOP */
+    jmp_patch[7] = 0x90; /* NOP */
+    memcpy((void*)g_dispatch_collision_addr, jmp_patch, 8);
+
+    VirtualProtect((void*)g_dispatch_collision_addr, 8, old_protect, &old_protect);
+    g_dispatch_hooked = 1;
+}
+
+/* Uninstall the detour (called on level unload) */
+static void uninstall_bonk_collision_hook(void) {
+    if (!g_dispatch_hooked) return;
+    DWORD old_protect = 0;
+    if (VirtualProtect((void*)g_dispatch_collision_addr, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+        memcpy((void*)g_dispatch_collision_addr, g_dispatch_orig_bytes, 5);
+        VirtualProtect((void*)g_dispatch_collision_addr, 5, old_protect, &old_protect);
+    }
+    g_dispatch_hooked = 0;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * <MESH> and <SPEEDMULT> tag support — custom BADBALL arguments
@@ -1557,6 +1695,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bonk\n"); return; }
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
+                /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE) */
+                if (g_bonk_count < MAX_BONKS) {
+                    g_bonk_objs[g_bonk_count] = (DWORD)obj;
+                    g_bonk_count++;
+                }
+                /* Install collision dispatch hook if not already installed */
+                install_bonk_collision_hook();
                 break;
             case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
                       * Uses Pendulum vtable with Rotator_Update for tilt animation. */
@@ -1793,7 +1938,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         pfn_AthenaList_Append((DWORD*)(board + BOARD_BAD_BALLS_LIST), obj);
     }
 
-    /* 6. Add to board+0xCD4 (render list) */
+    /* 6. Add to board+0xCD4 (render list). */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
     /* 7. Add collision object to board+0x10EC */
@@ -1814,10 +1959,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 27) col_off = 0x10D4; /* Spinner — same as Rotator family */
         else if (ai_type == 28) col_off = 0;      /* Cloudscape — background sprite, no collision */
         else if (ai_type == 29) col_off = 0x10D4; /* Gear — same as Rotator family */
-        else if (ai_type == 30) col_off = 0x10D4; /* Bell — Level family */
-        else if (ai_type == 31) col_off = 0x10D4; /* Fan — Level family */
-        else if (ai_type == 32) col_off = 0x10D4; /* SawBlade — Level family */
-        else if (ai_type == 33) col_off = 0x10D4; /* Bonk — Level family */
+        /* Level-family entities use Level_ctor internally.
+         * Bell(30), Fan(31), SawBlade(32) have NO collision object.
+         * Bonk(33) stores Level_RenderCtor result at +0x10F8 — that IS
+         * the collision/render Level. The native game returns it as the
+         * collision object (this_01[0x43E] = DWORD index 0x43E = byte 0x10F8).
+         * Using +0x10D4 reads a position FLOAT as a pointer → crash. */
+        else if (ai_type == 30) col_off = 0;      /* Bell — no collision obj */
+        else if (ai_type == 31) col_off = 0;      /* Fan — no collision obj */
+        else if (ai_type == 32) col_off = 0;      /* SawBlade — no collision obj */
+        else if (ai_type == 33) col_off = 0x10F8; /* Bonk — Level_RenderCtor result */
         else if (ai_type == 34) col_off = 0x10E0; /* BreakBridge — Pendulum family, render Level at +0x10E0 */
         else if (ai_type >= 35 && ai_type <= 42) col_off = 0x10E0; /* Stands_ctor family */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
@@ -1833,11 +1984,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     }
 
     /* 8. Add to scene spatial tree (board+0x8AC+0x480+0x1C) */
-    DWORD level = cEnt_get_level(board);
-    if (level) {
-        DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-        if (sceneobj) {
-            pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), obj);
+    {
+        DWORD level = cEnt_get_level(board);
+        if (level) {
+            DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+            if (sceneobj) {
+                pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), obj);
+            }
         }
     }
 
@@ -1848,7 +2001,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         fflush(logf);
     }
 
-    /* Track for despawn + per-frame rotation updates */
+    /* Track for despawn + per-frame rotation updates.
+     * Skip Level-family entities (30-33: Bell, Fan, SawBlade, Bonk) —
+     * they manage their own lifecycle and should NOT be despawned here. */
+    if (ai_type >= 30 && ai_type <= 33) return;
     if (g_rotater_count < MAX_ROTATERS) {
         g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
         g_rotater_cfg[g_rotater_count].rot_x = rot_x;
@@ -1890,6 +2046,10 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
         }
     }
     g_rotater_count = 0;
+
+    /* Clear Bonk tracking and uninstall collision hook */
+    g_bonk_count = 0;
+    uninstall_bonk_collision_hook();
 }
 
 /* Apply rotation direction and oscillation limits to spawned custom_obj objects.
