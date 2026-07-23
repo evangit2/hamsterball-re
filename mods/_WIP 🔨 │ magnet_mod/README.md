@@ -16,16 +16,15 @@ Attracts or repels the ball using S1 ref points in MESHWORLD level files.
 |------------|---------|------------------------------------|
 | range      | 300.0   | How far magnets reach (world units)|
 | strength   | 0.5     | Force magnitude per magnet         |
-| max_force  | 3.0     | Cap on total force per frame       |
 
 ## How It Works
 
 - Scans S1 ref points on level load for `MAGNET(P)` and `MAGNET(N)` names
-- Each frame, computes distance from ball to each magnet
-- Applies linear falloff: full force at distance 0, zero at `range`
-- Positive magnets pull ball toward them, negative push away
-- Force applied by modifying ball position directly (Ball_Update is not called for the player in race mode)
-- Also writes to PhysicsObject velocity fields for momentum continuity
+- Each frame, the Present hook computes total magnet force (safe C context)
+- Force is applied via FPU writes to ball+0x170/0x174/0x178 (force accumulators)
+  at the Phase 15 convergence point (0x407BB4) — same technique as the jump mod
+- The game's physics engine then consumes these accumulators with proper
+  collision response, friction, and momentum — no jitter
 
 ## MESHWORLD Example
 
