@@ -1,5 +1,5 @@
 /*
- * mkn_split_fall.c — Ball splits into 2 balls when falling instead of shattering
+ * split_fall.c — Ball splits into 2 balls when falling instead of shattering
  *
  * When the ball falls off the edge, instead of shattering:
  * - Original ball is teleported back to its last safe position (survives)
@@ -13,7 +13,7 @@
  * Safe for GameHub/Winlator: no IAT hooks, no GetTickCount.
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_split_fall.c \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll split_fall.c \
  *     -lwinmm -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
  */
