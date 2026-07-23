@@ -1,5 +1,26 @@
 # Version Changelog
 
+## v53g
+
+- **REVERTED v53f crash regression**: use_board_level_as_mesh and visual mesh swap
+  caused 11 entities to crash (Rotator, Pendulum, Looper, Gear, Swirl, Flickfloor1/2,
+  Flickring, Spinner, Trode, Bonk). All entities now load their own MESHWORLD files
+  directly (back to v53e behavior).
+- **Fixed leftover 0x95E0**: Per-frame monitoring code had a leftover board+0x95E0
+  reference that corrupted the game's update list, causing crashes at 0x452376.
+- **Fixed Flag/Flag2 crashes**: FlagWaver_Ctor creates a global renderer, not a
+  per-entity object. Changed Flag from type 12 (FlagWaver) to type 14 (Wavy_ctor)
+  with Flag.MESHWORLD path, same as Flag2.
+- **Wobbly wobble**: Added type 8 (GameLevel) to board+0x8B8 (Scene_Update list)
+  so Rotator_Update (vtable[1]) is called per-frame for vertex deformation.
+- **Bridge tilt animation**: Changed Bridge from type 16 (custom PopCylinder) to
+  type 34 (BreakBridge_ctor, 0x436D70) with Pendulum vtable and Rotator_Update.
+  Added to board+0x8B8 for per-frame vertex deformation.
+- **_default.MESHWORLD placeholder**: Entities with no real mesh (Bumper, Tarpit,
+  Chrome) use levels\_default as placeholder.
+- Known issues: .MESH entities (8ball, Bell, Fan, Funball) show as static Swirl
+  due to MeshWorld structure mismatch. Needs further investigation.
+
 ## v53f
 
 - **CRITICAL FIX: Crash root cause found and fixed**
