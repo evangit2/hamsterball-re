@@ -236,6 +236,10 @@ static SawBlade_ctor_t pfn_SawBlade_ctor = (SawBlade_ctor_t)0x00434660;
 typedef void* (__thiscall *Bonk_ctor_t)(void* this_, void* board, float x, float y, float z);
 static Bonk_ctor_t pfn_Bonk_ctor = (Bonk_ctor_t)0x00438850;
 
+/* BreakBridge_ctor — Intermediate Race bridge (Pendulum family) */
+typedef void* (__thiscall *BreakBridge_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+static BreakBridge_ctor_t pfn_BreakBridge_ctor = (BreakBridge_ctor_t)0x00436D70;
+
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static GameLevel_ctor_t pfn_GameLevel_ctor = (GameLevel_ctor_t)0x004351F0;
@@ -1534,6 +1538,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
                 break;
+            case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
+                      * Uses Pendulum vtable with Rotator_Update for tilt animation. */
+                obj = pfn_operator_new(POPCYLINDER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BreakBridge\n"); return; }
+                memset(obj, 0, POPCYLINDER_SIZE);
+                pfn_BreakBridge_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc GameLevel\n"); return; }
@@ -1745,7 +1756,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
      * which performs vertex deformation = the wobble animation.
      * Only type 8 is safe here because it loads its own MESHWORLD with
      * valid vertex data. Other types would crash in Rotator_Update. */
-    if (ai_type == 8) {
+    if (ai_type == 8 || ai_type == 34) {
         pfn_AthenaList_Append((DWORD*)(board + 0x8B8), obj);
     }
 
@@ -1779,6 +1790,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 31) col_off = 0x10D4; /* Fan — Level family */
         else if (ai_type == 32) col_off = 0x10D4; /* SawBlade — Level family */
         else if (ai_type == 33) col_off = 0x10D4; /* Bonk — Level family */
+        else if (ai_type == 34) col_off = 0x10E0; /* BreakBridge — Pendulum family, render Level at +0x10E0 */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2498,7 +2510,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bell",             0, "meshes\\bell" },              /* PopCylinder — Bell_ctor crashes (Level_ctor has no mesh, vtable update calls LoadMesh) */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
             { "Bonk",             33, "levels\\Level5-Bonk" },       /* Bonk_ctor (0x438850, 0x1200) — self-loads level5-bonk MESHWORLD */
-            { "Bridge",           16, "levels\\Level2-Bridge" },     /* Bridgeslam: isolated Intermediate bridge state machine */
+            { "Bridge",           34, "levels\\Level2-Bridge" },     /* BreakBridge_ctor: Pendulum vtable with tilt animation */
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
             { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor */
