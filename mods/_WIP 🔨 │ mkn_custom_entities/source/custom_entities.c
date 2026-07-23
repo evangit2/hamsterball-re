@@ -1968,7 +1968,7 @@ static void cEnt_apply_s1_rotater_tags(DWORD board, FILE* logf) {
     if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) return;
 
     /* Read board update list (AthenaList at board+0x2578) */
-    DWORD update_list = board + 0x95E0;
+    DWORD update_list = board + 0x2578;
     if (IsBadReadPtr((void*)(update_list + 0x04), 4)) return;
     int update_count = *(int*)(update_list + 0x04);
     if (update_count <= 0 || update_count > 10000) return;
