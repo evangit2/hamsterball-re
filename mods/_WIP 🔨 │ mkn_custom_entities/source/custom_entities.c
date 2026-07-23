@@ -101,6 +101,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define BOARD_RENDER_LIST       0xCD4
 #define BOARD_COLLISION_LIST   0x10EC
 #define BOARD_SCENE_OBJ         0x8B0
+#define BOARD_SCENE_UPDATE_LIST 0x8B8  /* Scene_Update iterates this, calls vtable[1] */
 
 /* App layout */
 #define APP_GFX_DEVICE          0x174
@@ -1087,8 +1088,8 @@ static void cEnt_despawn_object(DWORD board, DWORD obj, FILE* logf) {
 
     /* 3. Remove obj from board+0x2578 (update list) */
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_UPDATE_LIST), (int)obj);
-    /* 3a. Also remove from board+0x8B8 (Scene_Update list, type 8 only) */
-    pfn_AthenaList_Remove((DWORD*)(board + 0x8B8), (int)obj);
+    /* 3a. Also remove from board+0x8B8 (Scene_Update list, type 8/34 only) */
+    pfn_AthenaList_Remove((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), (int)obj);
 
     /* 4. Remove obj from board+0xCD4 (render list) */
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_RENDER_LIST), (int)obj);
@@ -1757,7 +1758,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
      * Only type 8 is safe here because it loads its own MESHWORLD with
      * valid vertex data. Other types would crash in Rotator_Update. */
     if (ai_type == 8 || ai_type == 34) {
-        pfn_AthenaList_Append((DWORD*)(board + 0x8B8), obj);
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), obj);
     }
 
     /* 5b. BadBall also goes into the bad balls list (board+0x29D4) */
@@ -2520,7 +2521,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
             { "Droplifter",       0, "levels\\Level6-Lifter" },     /* Odd Race model */
             { "Fan",              0, "meshes\\fanbody" },           /* PopCylinder — Fan_ctor crashes (Level_ctor has no mesh) */
-            { "Flag",             12, NULL },                        /* FlagWaver_Ctor (0x46AF30, 0x8C bytes) — code-generated mesh */
+            { "Flag",             14, "levels\\\\Flag" },             /* Wavy_ctor: same as Flag2, loads Flag.MESHWORLD or _default */
             { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
             { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* cEnt_DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
             { "Flickfloor2",     19, "levels\\LevelDark-DFloor4" },  /* cEnt_DFloor4_ctor (ArenaStands + post-config: obj+0x10DC=2, obj+0x10E0=0) */
