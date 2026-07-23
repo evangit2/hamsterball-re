@@ -244,93 +244,12 @@ static bool PatchMeshBufferAllocate(void) {
     return true;
 }
 
-/* ─── Detour: MeshWorld_BuildVertexBuffer ──────────────────────────────── */
-
-static const BYTE EXPECTED_PROLOGUE[5] = { 0x83, 0xEC, 0x10, 0x53, 0x55 };
-static unsigned char* g_trampoline = NULL;
-static bool g_hookInstalled = false;
-
-typedef void (__fastcall *BuildVB_t)(DWORD* meshworld, void* edx);
-static BuildVB_t g_orig_BuildVB = NULL;
-
-static int CountTotalVertices(DWORD meshworld) {
-    if (IsBadReadPtr((void*)meshworld, 0x460)) return 0;
-    int mbCount = *(int*)((BYTE*)meshworld + MW_MB_LIST_COUNT);
-    if (mbCount <= 0) return 0;
-    DWORD* mbArray = *(DWORD**)((BYTE*)meshworld + MW_MB_ARRAY_PTR);
-    if (!mbArray || IsBadReadPtr(mbArray, mbCount * 4)) return 0;
-    int total = 0;
-    for (int i = 0; i < mbCount; i++) {
-        DWORD mb = mbArray[i];
-        if (!mb || mb < 0x10000) continue;
-        if (IsBadReadPtr((void*)mb, 0x860)) continue;
-        if (*(BYTE*)((BYTE*)mb + MB_OPTIMIZED_FLAG) == 0) continue;
-        int smCount = *(int*)((BYTE*)mb + MB_SUBMESH_COUNT);
-        if (smCount <= 0) continue;
-        DWORD* smArray = *(DWORD**)((BYTE*)mb + MB_SUBMESH_ARRAY);
-        if (!smArray || IsBadReadPtr(smArray, smCount * 4)) continue;
-        for (int j = 0; j < smCount; j++) {
-            DWORD sm = smArray[j];
-            if (!sm || sm < 0x10000) continue;
-            if (IsBadReadPtr((void*)sm, 0x14)) continue;
-            int smVerts = *(int*)((BYTE*)sm + SM_VERTEX_COUNT);
-            if (smVerts > 0) total += smVerts + 2;
-        }
-    }
-    return total;
-}
-
-static void __fastcall Hooked_BuildVB(DWORD* meshworld, void* edx) {
-    if (!meshworld || IsBadReadPtr(meshworld, 0x460)) {
-        if (g_orig_BuildVB) g_orig_BuildVB(meshworld, edx);
-        return;
-    }
-    int totalVerts = CountTotalVertices((DWORD)meshworld);
-    if (totalVerts <= VERTEX_LIMIT) {
-        if (g_orig_BuildVB) g_orig_BuildVB(meshworld, edx);
-        return;
-    }
-    /* Exceeds 65K — force fallback (DrawPrimitiveUP) */
-    *(BYTE*)((BYTE*)meshworld + MW_OPTIMIZED_FLAG) = 0;
-    *(void**)((BYTE*)meshworld + MW_CPU_BUFFER) = NULL;
-    *(void**)((BYTE*)meshworld + MW_COMBINED_VB) = NULL;
-}
-
-static bool InstallDetour(DWORD targetAddr, void* hookFunc, int copyBytes,
-                          unsigned char** outTramp) {
-    if (IsBadReadPtr((void*)targetAddr, copyBytes)) return false;
-    if (memcmp((void*)targetAddr, EXPECTED_PROLOGUE, copyBytes) != 0) return false;
-
-    unsigned char* tramp = (unsigned char*)VirtualAlloc(NULL, 16,
-        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!tramp) return false;
-
-    memcpy(tramp, (void*)targetAddr, copyBytes);
-    tramp[copyBytes] = 0xE9;
-    *(DWORD*)(tramp + copyBytes + 1) =
-        (targetAddr + copyBytes) - ((DWORD)tramp + copyBytes + 5);
-
-    DWORD oldProt;
-    VirtualProtect((void*)targetAddr, copyBytes, PAGE_EXECUTE_READWRITE, &oldProt);
-    *(BYTE*)targetAddr = 0xE9;
-    *(DWORD*)(targetAddr + 1) = (DWORD)hookFunc - (targetAddr + 5);
-    VirtualProtect((void*)targetAddr, copyBytes, oldProt, &oldProt);
-    FlushInstructionCache(GetCurrentProcess(), (void*)targetAddr, copyBytes);
-
-    *outTramp = tramp;
-    return true;
-}
-
-static void RemoveDetour(DWORD targetAddr, int copyBytes, unsigned char** tramp) {
-    if (!*tramp) return;
-    DWORD oldProt;
-    VirtualProtect((void*)targetAddr, copyBytes, PAGE_EXECUTE_READWRITE, &oldProt);
-    memcpy((void*)targetAddr, *tramp, copyBytes);
-    VirtualProtect((void*)targetAddr, copyBytes, oldProt, &oldProt);
-    FlushInstructionCache(GetCurrentProcess(), (void*)targetAddr, copyBytes);
-    VirtualFree(*tramp, 0, MEM_RELEASE);
-    *tramp = NULL;
-}
+/* ─── MeshWorld_BuildVertexBuffer detour: REMOVED ──────────────────────────
+ * The original detour set vertex buffers to NULL when total > 65534,
+ * causing Font_RenderToTextureComplex to crash reading from NULL.
+ * The original BuildVertexBuffer handles large counts fine with INDEX32.
+ * Patches 1-3 (NOP checks + INDEX32 code cave) are sufficient.
+ */
 
 /* ─── Background thread: install all patches ────────────────────────────── */
 
@@ -341,11 +260,9 @@ static DWORD WINAPI patch_thread(LPVOID lpParam) {
     /* Patch 1: MeshBuffer_Allocate byte patches + code cave */
     PatchMeshBufferAllocate();
 
-    /* Patch 2: MeshWorld_BuildVertexBuffer detour */
-    if (InstallDetour(ADDR_BuildVB, (void*)Hooked_BuildVB, 5, &g_trampoline)) {
-        g_orig_BuildVB = (BuildVB_t)g_trampoline;
-        g_hookInstalled = true;
-    }
+    /* Patch 2 (removed): MeshWorld_BuildVertexBuffer detour
+     * Was causing crashes by NULLing vertex buffers when total > 65534.
+     * Original BuildVertexBuffer handles large counts fine with INDEX32. */
 
     return 0;
 }
@@ -361,10 +278,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        if (g_hookInstalled) {
-            RemoveDetour(ADDR_BuildVB, 5, &g_trampoline);
-            g_hookInstalled = false;
-        }
         if (g_hRealBass) { FreeLibrary(g_hRealBass); g_hRealBass = NULL; }
         break;
     }

@@ -62,6 +62,8 @@ typedef DWORD HFX;
 #define SNAP_DWORDS            10
 #define SNAP_BYTES             40
 #define NO_TIME                9999999
+#define BTT_RACE_TIME          0x420
+#define MAX_SEGMENTS           32
 
 /* Ball constants */
 #define BALL_SIZE              0xC60
@@ -549,6 +551,31 @@ static DWORD (*g_ghost2Capture)[SNAP_DWORDS] = NULL;
 static int   g_ghost2CaptureCount = 0;
 static BOOL  g_ghost2Pending = FALSE;
 
+/* ================================================================
+ * Multi-Segment Ghost System — Time Warp levels
+ * ================================================================ */
+
+typedef struct {
+    int  currentSegment;   /* which (N) file is playing (1-based) */
+    int  playbackIdx;       /* saved playback index for current segment */
+    int  totalSegments;     /* how many (N) files exist on disk */
+    DWORD btt;              /* current BTT at App+0x910 (0 if none) */
+    char raceName[128];     /* base race name for file lookup */
+    BOOL active;            /* is Ghost 1 chaining active? */
+} Ghost1State;
+
+static Ghost1State g_ghost1 = {0, 0, 0, 0, "", FALSE};
+
+/* Segment tracking */
+static int  g_segmentCounter = 0;     /* current attempt segment count */
+static int  g_segmentTimes[MAX_SEGMENTS]; /* times for each segment in current attempt */
+static int  g_segmentCount = 0;       /* number of entries used in g_segmentTimes */
+
+/* Forward declaration — defined in ghost saver section */
+static int is_time_trial_active(void);
+static char g_twRaceName[128] = "";   /* race name for Time Warp level files */
+static BOOL g_isTimeWarpLevel = FALSE; /* set true when first same-level warp fires */
+
 /* Create Ghost 2 from captured snapshot data.
  * Allocates a Ball (0xC60) + BTT (0x528), adds ball to AthenaList. */
 static void ghost2_create(DWORD board, DWORD *snaps, int count) {
@@ -737,6 +764,521 @@ static void ghost2_capture(void) {
     g_ghost2Pending = TRUE;
 
     diag_logf("[ghost2] Captured %d snapshots from BTT at 0x%X", valid, btt);
+}
+
+/* ================================================================
+ * Multi-Segment Ghost File Operations
+ * ================================================================ */
+
+/* Build base filename from race name for Time Warp segment files.
+ * Strips " RACE" suffix, TitleCases the rest, sanitizes. */
+static void tw_race_name_to_filename(const char *raceName, char *out, int outLen) {
+    char base[128];
+    strncpy(base, raceName, sizeof(base) - 1);
+    base[sizeof(base) - 1] = '\0';
+
+    int len = strlen(base);
+    if (len >= 5 && _stricmp(base + len - 5, " RACE") == 0) {
+        base[len - 5] = '\0';
+    }
+
+    int newWord = 1;
+    for (int i = 0; base[i]; i++) {
+        char c = base[i];
+        if (c == ' ' || c == '-' || c == '_')
+            newWord = 1;
+        else if (newWord) {
+            if (c >= 'a' && c <= 'z') base[i] = c - 32;
+            newWord = 0;
+        } else {
+            if (c >= 'A' && c <= 'Z') base[i] = c + 32;
+        }
+    }
+
+    for (int i = 0; base[i]; i++) {
+        char c = base[i];
+        if (c == '\\' || c == '/' || c == ':' || c == '*' ||
+            c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+            base[i] = '_';
+    }
+
+    snprintf(out, outLen, "%s", base);
+}
+
+/* Save ghost segment to LevelName[N].ghost or LevelName(N).ghost */
+static void save_segment_ghost(const char *raceName, int segment, int time,
+                              DWORD (*snaps)[SNAP_DWORDS], int count,
+                              char bracket) {
+    if (segment < 1 || segment > MAX_SEGMENTS) return;
+    char base[128];
+    tw_race_name_to_filename(raceName, base, sizeof(base));
+
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s%s%c%d%c.ghost", g_ghostDir, base,
+             bracket, segment, (bracket == '[') ? ']' : ')');
+
+    char tmpPath[MAX_PATH];
+    snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", path);
+
+    HANDLE h = CreateFileA(tmpPath, GENERIC_WRITE, 0, NULL,
+                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        diag_logf("[seg] ERROR: cannot create %s", tmpPath);
+        return;
+    }
+    DWORD written;
+    int ok = 1;
+    DWORD magic = GHOST_MAGIC;
+    DWORD version = GHOST_VERSION;
+    DWORD frameCount = (DWORD)count;
+
+    if (!WriteFile(h, &magic, 4, &written, NULL) || written != 4) ok = 0;
+    if (ok && (!WriteFile(h, &version, 4, &written, NULL) || written != 4)) ok = 0;
+    if (ok && (!WriteFile(h, (DWORD*)&time, 4, &written, NULL) || written != 4)) ok = 0;
+    if (ok && (!WriteFile(h, &frameCount, 4, &written, NULL) || written != 4)) ok = 0;
+
+    if (ok && count > 0) {
+        DWORD totalBytes = (DWORD)count * SNAP_BYTES;
+        if (!WriteFile(h, snaps, totalBytes, &written, NULL) || written != totalBytes)
+            ok = 0;
+    }
+
+    if (ok) FlushFileBuffers(h);
+    CloseHandle(h);
+
+    if (ok) {
+        if (MoveFileExA(tmpPath, path, MOVEFILE_REPLACE_EXISTING)) {
+            diag_logf("[seg] Saved %s (%d frames, time=%d)", path, count, time);
+        } else {
+            diag_logf("[seg] ERROR: MoveFileEx failed (err=%d)", GetLastError());
+            DeleteFileA(tmpPath);
+        }
+    } else {
+        diag_logf("[seg] ERROR: write failed for %s", tmpPath);
+        DeleteFileA(tmpPath);
+    }
+}
+
+/* Load a segment ghost file. Returns malloc'd snapshots or NULL. */
+static DWORD* load_segment_ghost(const char *raceName, int segment,
+                                 int *outCount, int *outTime,
+                                 char bracket) {
+    if (segment < 1 || segment > MAX_SEGMENTS) return NULL;
+    char base[128];
+    tw_race_name_to_filename(raceName, base, sizeof(base));
+
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s%s%c%d%c.ghost", g_ghostDir, base,
+             bracket, segment, (bracket == '[') ? ']' : ')');
+
+    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) return NULL;
+
+    DWORD magic, version, time, frameCount, br;
+    DWORD *snaps = NULL;
+
+    if (ReadFile(hf, &magic, 4, &br, NULL) && magic == GHOST_MAGIC &&
+        ReadFile(hf, &version, 4, &br, NULL) && version == GHOST_VERSION &&
+        ReadFile(hf, &time, 4, &br, NULL) &&
+        ReadFile(hf, &frameCount, 4, &br, NULL) &&
+        frameCount > 0 && frameCount < 200000) {
+
+        DWORD totalBytes = frameCount * SNAP_BYTES;
+        snaps = (DWORD*)malloc(totalBytes);
+        if (snaps) {
+            DWORD bytesRead = 0;
+            if (ReadFile(hf, snaps, totalBytes, &bytesRead, NULL) &&
+                bytesRead == totalBytes) {
+                *outCount = (int)frameCount;
+                *outTime = (int)time;
+            } else {
+                free(snaps);
+                snaps = NULL;
+            }
+        }
+    }
+    CloseHandle(hf);
+    return snaps;
+}
+
+/* Count how many (N).ghost files exist for a race name */
+static int count_confirmed_segments(const char *raceName) {
+    int count = 0;
+    for (int i = 1; i <= MAX_SEGMENTS; i++) {
+        char base[128];
+        tw_race_name_to_filename(raceName, base, sizeof(base));
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s%s(%d).ghost", g_ghostDir, base, i);
+        DWORD attr = GetFileAttributesA(path);
+        if (attr != INVALID_FILE_ATTRIBUTES) count++;
+        else break;
+    }
+    return count;
+}
+
+/* Get total time from confirmed (N) ghost files */
+static int get_confirmed_total_time(const char *raceName) {
+    int total = 0;
+    int found = 0;
+    for (int i = 1; i <= MAX_SEGMENTS; i++) {
+        char base[128];
+        tw_race_name_to_filename(raceName, base, sizeof(base));
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s%s(%d).ghost", g_ghostDir, base, i);
+        HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hf == INVALID_HANDLE_VALUE) break;
+        DWORD magic, version, time, br;
+        if (ReadFile(hf, &magic, 4, &br, NULL) && magic == GHOST_MAGIC &&
+            ReadFile(hf, &version, 4, &br, NULL) && version == GHOST_VERSION &&
+            ReadFile(hf, &time, 4, &br, NULL)) {
+            total += (int)time;
+            found++;
+        }
+        CloseHandle(hf);
+    }
+    return found > 0 ? total : NO_TIME;
+}
+
+/* Rename all [N].ghost to (N).ghost */
+static void rename_temp_to_confirmed(const char *raceName, int maxSeg) {
+    char base[128];
+    tw_race_name_to_filename(raceName, base, sizeof(base));
+    for (int i = 1; i <= maxSeg; i++) {
+        char src[MAX_PATH], dst[MAX_PATH];
+        snprintf(src, sizeof(src), "%s%s[%d].ghost", g_ghostDir, base, i);
+        snprintf(dst, sizeof(dst), "%s%s(%d).ghost", g_ghostDir, base, i);
+        if (MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING)) {
+            diag_logf("[seg] Renamed %s -> %s", src, dst);
+        }
+    }
+}
+
+/* Delete all [N].ghost files */
+static void delete_temp_segments(const char *raceName, int maxSeg) {
+    char base[128];
+    tw_race_name_to_filename(raceName, base, sizeof(base));
+    for (int i = 1; i <= maxSeg; i++) {
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s%s[%d].ghost", g_ghostDir, base, i);
+        if (DeleteFileA(path)) {
+            diag_logf("[seg] Deleted temp segment %s", path);
+        }
+    }
+}
+
+/* Delete all (N).ghost files */
+static void delete_confirmed_segments(const char *raceName, int maxSeg) {
+    char base[128];
+    tw_race_name_to_filename(raceName, base, sizeof(base));
+    for (int i = 1; i <= maxSeg; i++) {
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s%s(%d).ghost", g_ghostDir, base, i);
+        if (DeleteFileA(path)) {
+            diag_logf("[seg] Deleted confirmed segment %s", path);
+        }
+    }
+}
+
+/* Inject a ghost segment into App+0x910 (Ghost 1 playback slot).
+ * Creates a new BTT and writes it to the slot. */
+static void ghost1_load_segment(const char *raceName, int segment,
+                                int playbackIdx, char bracket) {
+    DWORD app = get_app();
+    if (!app) return;
+
+    int segTime = NO_TIME;
+    int segCount = 0;
+    DWORD *snaps = load_segment_ghost(raceName, segment, &segCount, &segTime, bracket);
+    if (!snaps || segCount == 0) {
+        if (snaps) free(snaps);
+        return;
+    }
+
+    /* Destroy old playback BTT if we own it */
+    if (g_ghost1.btt && g_ghost1.btt > 0x10000) {
+        if (!IsBadReadPtr((void*)g_ghost1.btt, 4)) {
+            DWORD vt = *(DWORD*)g_ghost1.btt;
+            if (vt == BTT_VTABLE_ADDR)
+                call_btt_dtor((void*)g_ghost1.btt);
+            else
+                game_free((void*)g_ghost1.btt);
+        }
+        g_ghost1.btt = 0;
+    }
+
+    /* Also check and clean up any existing playback BTT in App+0x910 */
+    if (!IsBadReadPtr((void*)(app + APP_BTT_PLAYBACK), 4)) {
+        DWORD existing = *(DWORD*)(app + APP_BTT_PLAYBACK);
+        if (existing && existing > 0x10000 && existing != g_ghost1.btt) {
+            if (!IsBadReadPtr((void*)existing, 4)) {
+                DWORD vt = *(DWORD*)existing;
+                if (vt == BTT_VTABLE_ADDR)
+                    call_btt_dtor((void*)existing);
+                else
+                    game_free((void*)existing);
+            }
+        }
+    }
+
+    /* Create new BTT */
+    void *btt = game_operator_new(BTT_SIZE);
+    if (!btt) { free(snaps); return; }
+    call_btt_ctor(btt);
+    DWORD vtable = *(DWORD*)btt;
+    if (vtable != BTT_VTABLE_ADDR) {
+        diag_logf("[ghost1] BTT ctor vtable=0x%X (expected 0x%X)", vtable, BTT_VTABLE_ADDR);
+        game_free(btt);
+        free(snaps);
+        return;
+    }
+
+    *(DWORD*)((char*)btt + BTT_BEST_TIME) = (DWORD)segTime;
+
+    /* Append snapshots */
+    DWORD *alist = (DWORD*)((char*)btt + 0x04);
+    for (int i = 0; i < segCount; i++) {
+        DWORD *snap = (DWORD*)game_operator_new(SNAP_SIZE);
+        if (!snap) continue;
+        memcpy(snap, snaps + i * SNAP_DWORDS, SNAP_BYTES);
+        call_alist_append(alist, snap);
+    }
+
+    free(snaps);
+
+    /* Set playback index */
+    if (playbackIdx < 0) playbackIdx = 0;
+    if (playbackIdx >= segCount) playbackIdx = 0;
+    *(DWORD*)((char*)btt + BTT_PLAYBACK_IDX) = (DWORD)playbackIdx;
+
+    /* Write to App+0x910 */
+    *(DWORD*)(app + APP_BTT_PLAYBACK) = (DWORD)btt;
+    g_ghost1.btt = (DWORD)btt;
+    g_ghost1.currentSegment = segment;
+    g_ghost1.playbackIdx = playbackIdx;
+
+    diag_logf("[ghost1] Loaded segment %d (%c): %d frames, time=%d, playIdx=%d",
+              segment, bracket, segCount, segTime, playbackIdx);
+}
+
+/* Save Ghost 1's playback index before warp destroys App+0x910 */
+static void ghost1_save_state(void) {
+    DWORD app = get_app();
+    if (!app) return;
+
+    if (!IsBadReadPtr((void*)(app + APP_BTT_PLAYBACK), 4)) {
+        DWORD btt = *(DWORD*)(app + APP_BTT_PLAYBACK);
+        if (btt && btt > 0x10000 && !IsBadReadPtr((void*)(btt + BTT_PLAYBACK_IDX), 4)) {
+            g_ghost1.playbackIdx = *(DWORD*)((char*)btt + BTT_PLAYBACK_IDX);
+            g_ghost1.btt = btt;
+            diag_logf("[ghost1] Saved state: segment=%d, playIdx=%d, btt=0x%X",
+                      g_ghost1.currentSegment, g_ghost1.playbackIdx, btt);
+        }
+    }
+}
+
+/* After level reloads, load the appropriate segment into Ghost 1 */
+static void ghost1_restore_after_warp(void) {
+    if (!g_ghost1.active || !g_twRaceName[0]) return;
+    int seg = g_ghost1.currentSegment;
+    if (seg < 1) seg = 1;
+
+    /* Try to load from confirmed (N) files first */
+    int segTime = 0, segCount = 0;
+    DWORD *snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '(');
+    if (snaps) {
+        free(snaps);
+        ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, '(');
+    } else {
+        /* Fall back to temp [N] files (current attempt) */
+        snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '[');
+        if (snaps) {
+            free(snaps);
+            ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, '[');
+        } else {
+            diag_logf("[ghost1] No segment %d found to restore", seg);
+        }
+    }
+}
+
+/* Check if Ghost 1 reached end of current segment and advance */
+static void ghost1_check_advance(void) {
+    if (!g_ghost1.active || !g_ghost1.btt || !g_twRaceName[0]) return;
+
+    DWORD btt = g_ghost1.btt;
+    if (IsBadReadPtr((void*)btt, 0x600)) return;
+
+    DWORD playIdx = *(DWORD*)((char*)btt + BTT_PLAYBACK_IDX);
+    DWORD count = *(DWORD*)((char*)btt + BTT_AL_COUNT);
+
+    if (count == 0 || playIdx < count - 1) return;
+
+    /* Reached end of segment — advance to next */
+    int nextSeg = g_ghost1.currentSegment + 1;
+    if (nextSeg > g_ghost1.totalSegments) {
+        /* Loop back to segment 1 */
+        nextSeg = 1;
+    }
+
+    diag_logf("[ghost1] Segment %d ended, advancing to %d",
+              g_ghost1.currentSegment, nextSeg);
+
+    /* Check if next segment exists */
+    int segTime = 0, segCount = 0;
+    DWORD *snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '(');
+    if (!snaps) {
+        snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '[');
+    }
+    if (snaps) {
+        free(snaps);
+        ghost1_load_segment(g_twRaceName, nextSeg, 0,
+                           (g_ghost1.currentSegment < nextSeg) ? '(' : '(');
+    }
+}
+
+/* Initialize Ghost 1 state for a Time Warp level */
+static void ghost1_init_for_tw(const char *raceName) {
+    strncpy(g_ghost1.raceName, raceName, sizeof(g_ghost1.raceName) - 1);
+    g_ghost1.raceName[sizeof(g_ghost1.raceName) - 1] = '\0';
+
+    g_ghost1.totalSegments = count_confirmed_segments(raceName);
+    if (g_ghost1.totalSegments > 0) {
+        g_ghost1.currentSegment = 1;
+        g_ghost1.playbackIdx = 0;
+        g_ghost1.active = TRUE;
+        diag_logf("[ghost1] Initialized for TW: %d confirmed segments", g_ghost1.totalSegments);
+    } else {
+        /* No confirmed segments yet — will chain from temp files as they're created */
+        g_ghost1.currentSegment = 1;
+        g_ghost1.playbackIdx = 0;
+        g_ghost1.active = FALSE;
+        diag_logf("[ghost1] No confirmed segments for TW level yet");
+    }
+}
+
+/* Capture segment from BTT recording and save as temp segment file.
+ * Also stores the segment time. */
+static void save_warp_segment(void) {
+    DWORD app = get_app();
+    if (!app || !g_twRaceName[0]) return;
+
+    DWORD btt = 0;
+    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
+        btt = *(DWORD*)(app + APP_BTT_RECORDING);
+
+    if (!btt || btt < 0x10000 || IsBadReadPtr((void*)btt, 0x600)) {
+        diag_log("[seg] No BTT recording to save as segment");
+        return;
+    }
+
+    /* Read segment time */
+    int segTime = NO_TIME;
+    if (!IsBadReadPtr((void*)(btt + BTT_RACE_TIME), 4))
+        segTime = *(int*)((char*)btt + BTT_RACE_TIME);
+    if (segTime == NO_TIME || segTime <= 0) {
+        /* Fall back to best_time field */
+        if (!IsBadReadPtr((void*)(btt + BTT_BEST_TIME), 4))
+            segTime = *(int*)((char*)btt + BTT_BEST_TIME);
+    }
+
+    /* Read snapshot count and data */
+    if (IsBadReadPtr((void*)(btt + BTT_AL_COUNT), 4)) return;
+    DWORD count = *(DWORD*)(btt + BTT_AL_COUNT);
+    if (count == 0 || count >= 200000) {
+        diag_logf("[seg] Invalid snapshot count %d", count);
+        return;
+    }
+
+    if (IsBadReadPtr((void*)(btt + BTT_LIST_ARRAY), 4)) return;
+    DWORD *data = *(DWORD**)(btt + BTT_LIST_ARRAY);
+    if (!data || (DWORD)data < 0x10000 || IsBadReadPtr(data, count * 4)) {
+        diag_log("[seg] Invalid BTT data array");
+        return;
+    }
+
+    /* Allocate snapshot buffer */
+    DWORD (*snaps)[SNAP_DWORDS] = (DWORD(*)[SNAP_DWORDS])malloc(count * SNAP_BYTES);
+    if (!snaps) {
+        diag_log("[seg] malloc failed for segment save");
+        return;
+    }
+
+    int valid = 0;
+    for (DWORD i = 0; i < count; i++) {
+        DWORD *snap = (DWORD*)data[i];
+        if (snap && (DWORD)snap > 0x10000 && !IsBadReadPtr(snap, SNAP_BYTES)) {
+            memcpy(snaps[valid], snap, SNAP_BYTES);
+            valid++;
+        }
+    }
+
+    if (valid > 0) {
+        g_segmentCounter++;
+        if (g_segmentCounter <= MAX_SEGMENTS) {
+            save_segment_ghost(g_twRaceName, g_segmentCounter, segTime, snaps, valid, '[');
+            if (g_segmentCount < MAX_SEGMENTS) {
+                g_segmentTimes[g_segmentCount] = segTime;
+                g_segmentCount++;
+            }
+            g_isTimeWarpLevel = TRUE;
+        }
+    }
+
+    free(snaps);
+}
+
+/* On goal touch: save final segment, compare total, rename/discard */
+static void handle_tw_goal_touch(void) {
+    if (!g_isTimeWarpLevel || !g_twRaceName[0]) return;
+
+    DWORD app = get_app();
+    if (!app) return;
+
+    /* Save the final segment */
+    save_warp_segment();
+
+    /* Compute total time */
+    int totalTime = 0;
+    for (int i = 0; i < g_segmentCount && i < MAX_SEGMENTS; i++) {
+        totalTime += g_segmentTimes[i];
+    }
+
+    /* In TT mode, App+0x5E8 counts up — use that as the authoritative total */
+    int tt = is_time_trial_active();
+    if (tt) {
+        if (!IsBadReadPtr((void*)(app + APP_5E8_TIMER), 4)) {
+            int timerVal = *(int*)((char*)app + APP_5E8_TIMER);
+            if (timerVal > 0 && timerVal < NO_TIME)
+                totalTime = timerVal;
+        }
+    }
+
+    diag_logf("[seg] Goal touch: segments=%d, totalTime=%d", g_segmentCount, totalTime);
+
+    /* Compare with previous best */
+    int prevBest = get_confirmed_total_time(g_twRaceName);
+    int prevSegCount = count_confirmed_segments(g_twRaceName);
+
+    if (prevSegCount == 0) {
+        /* No previous best — rename all [N] to (N) */
+        rename_temp_to_confirmed(g_twRaceName, g_segmentCounter);
+        diag_logf("[seg] First best: renamed %d segments", g_segmentCounter);
+    } else if (totalTime < prevBest) {
+        /* New best — delete old (N), rename [N] to (N) */
+        delete_confirmed_segments(g_twRaceName, prevSegCount);
+        rename_temp_to_confirmed(g_twRaceName, g_segmentCounter);
+        diag_logf("[seg] New best! totalTime=%d < prevBest=%d", totalTime, prevBest);
+    } else {
+        /* Not better — discard */
+        delete_temp_segments(g_twRaceName, g_segmentCounter);
+        diag_logf("[seg] Not best: discarded (totalTime=%d >= prevBest=%d)", totalTime, prevBest);
+    }
+
+    /* Reset segment tracking */
+    g_segmentCounter = 0;
+    g_segmentCount = 0;
+    memset(g_segmentTimes, 0, sizeof(g_segmentTimes));
 }
 
 /* Ghost 2 per-frame playback: read next snapshot, write to ball */
@@ -1181,6 +1723,13 @@ static void check_race_state(void) {
             if (goalFlag && !g_prevGoalFlag) {
                 g_raceFinished = 1;
 
+                /* Time Warp level goal touch handling */
+                if (g_isTimeWarpLevel && g_segmentCounter > 0) {
+                    EnterCriticalSection(&g_cs);
+                    handle_tw_goal_touch();
+                    LeaveCriticalSection(&g_cs);
+                }
+
                 int finishTime = NO_TIME;
                 DWORD btt = 0;
                 if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4)) {
@@ -1191,6 +1740,8 @@ static void check_race_state(void) {
                 diag_logf("[ghost_saver] GOAL! finishTime=%d", finishTime);
 
                 if (finishTime != NO_TIME && btt && g_currentRaceName[0]) {
+                    /* Skip normal ghost save for Time Warp levels (handled by TW system) */
+                    if (!g_isTimeWarpLevel) {
                     if (!IsBadReadPtr((void*)(btt + BTT_AL_COUNT), 4)) {
                         DWORD count = *(DWORD*)(btt + BTT_AL_COUNT);
                         if (!IsBadReadPtr((void*)(btt + BTT_LIST_ARRAY), 4)) {
@@ -1221,6 +1772,7 @@ static void check_race_state(void) {
                     } else {
                         g_raceFinished = 0;
                     }
+                    } /* end if (!g_isTimeWarpLevel) */
                 }
             }
             g_prevGoalFlag = goalFlag;
@@ -2638,8 +3190,26 @@ static void updateWarpStateMachine(void) {
                     }
                 }
 
-                /* Ghost 2 capture: before loading, read BTT from App+0x90C */
+                /* Ghost 2 capture + segment save: before loading */
                 if (isSameLevel) {
+                    /* Set up TW race name if not already set */
+                    if (!g_twRaceName[0]) {
+                        char raceName[128];
+                        if (get_race_name(raceName, sizeof(raceName))) {
+                            strncpy(g_twRaceName, raceName, sizeof(g_twRaceName) - 1);
+                            g_twRaceName[sizeof(g_twRaceName) - 1] = '\0';
+                            diag_logf("[seg] TW race name set to '%s'", g_twRaceName);
+                        }
+                    }
+
+                    /* Save Ghost 1 playback state before App_StartPracticeRace destroys it */
+                    ghost1_save_state();
+
+                    /* Save the current run segment to [N].ghost */
+                    if (g_twRaceName[0]) {
+                        save_warp_segment();
+                    }
+
                     /* Check party mode — Ghost 2 only works in TT and Tournament */
                     BYTE partyMode = 0;
                     if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
@@ -2684,6 +3254,34 @@ static void updateWarpStateMachine(void) {
             );
 
             *(BYTE*)((char*)app + 0x23C) = savedDifficulty;
+
+            /* Ghost 1: Initialize for TW level or restore after same-level warp */
+            if (isSameLevel && g_twRaceName[0]) {
+                /* First time entering this TW level: init Ghost 1 if confirmed segments exist */
+                if (!g_ghost1.active && g_segmentCounter == 1) {
+                    /* This was the first segment — check if confirmed ghosts exist */
+                    int confirmed = count_confirmed_segments(g_twRaceName);
+                    if (confirmed > 0) {
+                        ghost1_init_for_tw(g_twRaceName);
+                    }
+                }
+                /* Restore Ghost 1 playback into the new App+0x910 slot */
+                if (g_ghost1.active) {
+                    ghost1_restore_after_warp();
+                }
+            } else if (!isSameLevel && g_twRaceName[0]) {
+                /* Different level warp: reset TW state */
+                g_ghost1.active = FALSE;
+                g_ghost1.btt = 0;
+                g_ghost1.currentSegment = 0;
+                g_ghost1.playbackIdx = 0;
+                g_ghost1.totalSegments = 0;
+                g_twRaceName[0] = '\0';
+                g_segmentCounter = 0;
+                g_segmentCount = 0;
+                memset(g_segmentTimes, 0, sizeof(g_segmentTimes));
+                g_isTimeWarpLevel = FALSE;
+            }
 
             if (wasInTournament) {
                 /* Clear BTT recording + playback, then create new BTT for Tournament recording */
@@ -2830,6 +3428,9 @@ void __cdecl frame_epilogue_handler(void) {
     /* 3. Ghost 2: board change detection + playback */
     ghost2_check_board_change(board);
     ghost2_playback();
+
+    /* 3b. Ghost 1: multi-segment chaining — advance to next segment if current ended */
+    ghost1_check_advance();
 
     /* 4. Ghost triggers: check both ghosts against triggers */
     if (board && board != g_triggerBoard) {
