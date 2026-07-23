@@ -1110,21 +1110,14 @@ static void ghost1_restore_after_warp(void) {
     int seg = g_ghost1.currentSegment;
     if (seg < 1) seg = 1;
 
-    /* Try to load from confirmed (N) files first */
+    /* Load from confirmed (N) files only — Ghost 1 never uses temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '(');
     if (snaps) {
         free(snaps);
         ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, '(');
     } else {
-        /* Fall back to temp [N] files (current attempt) */
-        snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '[');
-        if (snaps) {
-            free(snaps);
-            ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, '[');
-        } else {
-            diag_logf("[ghost1] No segment %d found to restore", seg);
-        }
+        diag_logf("[ghost1] No confirmed segment %d found to restore", seg);
     }
 }
 
@@ -1150,17 +1143,14 @@ static void ghost1_check_advance(void) {
     diag_logf("[ghost1] Segment %d ended, advancing to %d",
               g_ghost1.currentSegment, nextSeg);
 
-    /* Check if next segment exists — try confirmed (N) first, then temp [N] */
+    /* Check if next confirmed (N) segment exists — Ghost 1 never uses temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '(');
-    char useBracket = '(';
-    if (!snaps) {
-        snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '[');
-        useBracket = '[';
-    }
     if (snaps) {
         free(snaps);
-        ghost1_load_segment(g_twRaceName, nextSeg, 0, useBracket);
+        ghost1_load_segment(g_twRaceName, nextSeg, 0, '(');
+    } else {
+        diag_logf("[ghost1] No confirmed segment %d to advance to", nextSeg);
     }
 }
 
