@@ -59,7 +59,7 @@ public:
         PhysicsObject* phys = ball->physics_object;
         float velX = 0, velY = 0, velZ = 0;
         float currentSpeed = 0;
-        if (phys && !IsBadReadPtr(phys, 0x20)) {
+        if (phys && !IsBadReadPtr(phys, 0xCB0)) {
             velX = phys->velocity_x;
             velY = phys->velocity_y;
             velZ = phys->velocity_z;
@@ -70,13 +70,13 @@ public:
         // Game writes the flag as a BYTE (undefined1), matching OddBoard_CollisionHandler
         *(BYTE*)((char*)ball + 0xC3C) = 1;       // teleport flag
         *(float*)((char*)ball + 0xC40) = destX;  // dest X
-        // Add ball radius to Y so the ball doesn't spawn inside the floor.
-        // ToobBoard handler does: param_2[0x311] += ball+0x284 (radius) + epsilon
-        *(float*)((char*)ball + 0xC44) = destY + ball->radius;  // dest Y
+        // Add ball radius + 1.0 to Y so the ball doesn't spawn inside the floor.
+        // ToobBoard E:BRANCH handler does: destY + ball_radius + 1.0 (DAT_004cf310 = 1.0)
+        *(float*)((char*)ball + 0xC44) = destY + ball->radius + 1.0f;  // dest Y
         *(float*)((char*)ball + 0xC48) = destZ;  // dest Z
 
         // Set exit velocity
-        if (phys && !IsBadReadPtr(phys, 0x20)) {
+        if (phys && !IsBadReadPtr(phys, 0xCB0)) {
             if (hasVec) {
                 // Direction = PORTALVEC - PORTALPOS, normalized
                 float dx = vecX - destX;
@@ -119,10 +119,12 @@ private:
         if (count <= 0 || count > 10000) return false;
 
         if (IsBadReadPtr((void*)(sceneobj + 0xCA0), 4)) return false;
-        DWORD arrayPtr = *(DWORD*)(sceneobj + 0xCA0);
-        if (!arrayPtr || arrayPtr < 0x10000) return false;
+        DWORD arrayBase = *(DWORD*)(sceneobj + 0xCA0);
+        if (!arrayBase || arrayBase < 0x10000) return false;
 
-        DWORD* entries = *(DWORD**)arrayPtr;
+        // arrayBase points to an array of entry pointers.
+        // Each entry: [0]=name ptr, [1]=x(float), [2]=y(float), [3]=z(float)
+        DWORD* entries = (DWORD*)arrayBase;
         if (!entries || IsBadReadPtr(entries, count * 4)) return false;
 
         for (int i = 0; i < count; i++) {
