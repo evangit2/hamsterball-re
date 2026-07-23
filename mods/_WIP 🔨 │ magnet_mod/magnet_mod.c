@@ -50,9 +50,10 @@ static MagnetPoint g_magnets[MAX_MAGNETS];
 static int   g_magnet_count = 0;
 static DWORD g_last_board   = 0;
 
-/* Config */
-static float g_range     = 300.0f;
-static float g_strength   = 0.5f;
+/* Physics constants — hardcoded per spec */
+#define MAGNET_MAX_DIST   200.0f   /* no force beyond this distance */
+#define MAGNET_BALL_RADIUS 25.0f   /* ball touching magnet at this distance */
+#define MAGNET_MAX_FORCE   0.115f  /* force per frame at touching distance */
 
 /* Computed force (written by Present hook, read by Phase 15 cave) */
 static volatile float g_force_x = 0.0f;
@@ -135,55 +136,6 @@ static void scan_magnets(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Config Reader
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static void read_config(void) {
-    char path[MAX_PATH];
-    HMODULE hSelf = NULL;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                          | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                        (LPCSTR)&read_config, &hSelf);
-    GetModuleFileNameA(hSelf, path, MAX_PATH);
-    char *p = strrchr(path, '\\');
-    if (p) strcpy(p + 1, "magnet_config.txt");
-    else   strcat(path, "\\magnet_config.txt");
-
-    FILE *f = fopen(path, "r");
-    if (!f) {
-        f = fopen(path, "w");
-        if (f) {
-            fprintf(f, "# Magnet Mod Config\n");
-            fprintf(f, "# S1 points: MAGNET(P)=attract, MAGNET(N)=repel\n\n");
-            fprintf(f, "range = 300.0\n");
-            fprintf(f, "strength = 0.5\n");
-            fclose(f);
-        }
-        return;
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        char *s = line;
-        while (*s == ' ' || *s == '\t') s++;
-        if (*s == '#' || *s == '\n' || *s == '\r' || *s == '\0') continue;
-
-        char key[64];
-        float val;
-        if (sscanf(s, "%63[^=] = %f", key, &val) == 2) {
-            char *k = key;
-            while (*k == ' ') k++;
-            char *end = k + strlen(k) - 1;
-            while (end > k && (*end == ' ' || *end == '\t')) *end-- = '\0';
-
-            if (_stricmp(k, "range")     == 0) g_range     = val;
-            else if (_stricmp(k, "strength") == 0) g_strength   = val;
-        }
-    }
-    fclose(f);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
  * Present hook C helper — compute magnet force in safe C context
  *
  * Called from the Present hook cave (function-entry, safe for C calls).
@@ -207,12 +159,6 @@ static void __cdecl magnet_compute_force(void) {
     BYTE active = *(BYTE*)(ball + 0x769);
     if (!active) return;
 
-    /* Skip if in tube/fall/respawn */
-    if (IsBadReadPtr((void*)(ball + 0x324), 1)) return;
-    if (*(BYTE*)(ball + 0x324)) return;  /* in tube */
-    if (IsBadReadPtr((void*)(ball + 0xC4C), 4)) return;
-    if (*(DWORD*)(ball + 0xC4C) != 0) return;  /* fall mode */
-
     if (IsBadReadPtr((void*)(ball + 0x164), 12)) return;
     float bx = *(float*)(ball + 0x164);
     float by = *(float*)(ball + 0x168);
@@ -231,16 +177,21 @@ static void __cdecl magnet_compute_force(void) {
         float dz = m->z - bz;
         float dist_sq = dx * dx + dy * dy + dz * dz;
 
-        if (dist_sq > g_range * g_range) continue;
-        if (dist_sq < 1.0f) continue;
+        /* No force beyond 200 units */
+        if (dist_sq > MAGNET_MAX_DIST * MAGNET_MAX_DIST) continue;
 
         float dist = sqrtf(dist_sq);
 
-        /* Linear falloff: full force at dist=0, zero at dist=range */
-        float falloff = 1.0f - (dist / g_range);
-        if (falloff <= 0.0f) continue;
+        /* Clamp to ball radius to avoid div-by-zero */
+        if (dist < MAGNET_BALL_RADIUS) dist = MAGNET_BALL_RADIUS;
 
-        float force = g_strength * falloff;
+        /* Linear ramp: force=0.115 at dist=25, force=0 at dist=200 */
+        float force = MAGNET_MAX_FORCE *
+            (1.0f - (dist - MAGNET_BALL_RADIUS) /
+             (MAGNET_MAX_DIST - MAGNET_BALL_RADIUS));
+
+        if (force <= 0.0f) continue;
+
         float inv_dist = 1.0f / dist;
 
         if (m->is_positive) {
@@ -447,8 +398,6 @@ static DWORD WINAPI MagnetScanThread(LPVOID param) {
     }
     if (!(*(DWORD *)ADDR_App)) return 0;
     Sleep(1000);
-
-    read_config();
 
     while (1) {
         Sleep(200);  /* check every 200ms for board changes */
