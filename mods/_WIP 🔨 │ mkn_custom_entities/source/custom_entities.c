@@ -1083,6 +1083,8 @@ static void cEnt_despawn_object(DWORD board, DWORD obj, FILE* logf) {
 
     /* 3. Remove obj from board+0x2578 (update list) */
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_UPDATE_LIST), (int)obj);
+    /* 3a. Also remove from board+0x8B8 (Scene_Update list, type 8 only) */
+    pfn_AthenaList_Remove((DWORD*)(board + 0x8B8), (int)obj);
 
     /* 4. Remove obj from board+0xCD4 (render list) */
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_RENDER_LIST), (int)obj);
@@ -1292,43 +1294,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
      * construction, swap obj+0x08 (MeshWorld*) to the desired visual mesh. */
     int is_mesh_node = 0;
     void* mesh = NULL;
-    void* visual_mesh = NULL;  /* The mesh we WANT to display (may differ from construction mesh) */
-    int use_board_level_as_mesh = 0;  /* Set for types that need Stands_ctor */
 
-    /* Types that call Stands_ctor/Level_RenderCtor internally need board Level.
-     * EXCLUDE type 8 (GameLevel) — its vtable[1] is Rotator_Update which modifies
-     * the SceneObject's vertex buffers. If we pass the board's Level, it shares
-     * the board's SceneObject, and Rotator_Update corrupts it → crash after a few ms.
-     * Type 8 must load its own MESHWORLD file (which has its own SceneObject). */
-    if ((ai_type >= 1 && ai_type <= 6) ||  /* Rotator, Pendulum, Looper, Gear, Swirl */
-        (ai_type >= 7 && ai_type <= 7) ||  /* ArenaStands only (NOT 8=GameLevel) */
-        (ai_type >= 9 && ai_type <= 11) || /* Glass_Level, Gear_Level, Secret */
-        (ai_type >= 17 && ai_type <= 21) || /* DFloor2-4, FlickRing, Trode */
-        (ai_type == 27) ||                  /* Spinner_Level_ctor */
-        (ai_type == 29)) {                  /* Gear_ctor_real */
-        use_board_level_as_mesh = 1;
-    }
-
-    if (use_board_level_as_mesh) {
-        /* Use the board's Level as the mesh parameter for construction.
-         * This has valid vertex data at SceneObject+0x440. */
-        DWORD board_level = cEnt_get_level(board);
-        if (board_level && !IsBadReadPtr((void*)board_level, 0x500)) {
-            mesh = (void*)board_level;
-        } else {
-            if (logf) fprintf(logf, "  ROTATER: board Level invalid, trying Swirl fallback\n");
-            mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
-            if (!mesh) return;
-        }
-        /* Load the visual mesh separately (for swapping after construction) */
-        if (path) {
-            visual_mesh = cEnt_load_mesh_file(gfx_device, path, &is_mesh_node, logf);
-            if (!visual_mesh) {
-                if (logf) fprintf(logf, "  ROTATER: visual mesh '%s' failed, trying Swirl fallback\n", path);
-                visual_mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
-            }
-        }
-    } else if (path) {
+    /* Load mesh file — handles both .MESHWORLD and .MESH formats.
+     * NULL path is valid for entities with no mesh file (FlagWaver, Sign). */
+    if (path) {
         mesh = cEnt_load_mesh_file(gfx_device, path, &is_mesh_node, logf);
         if (!mesh) {
             if (logf) fprintf(logf, "  ROTATER: cEnt_load_mesh_file failed for '%s', trying Swirl fallback\n", path);
@@ -1768,36 +1737,17 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     }
     spawn_done:;
 
-    /* v53f: Swap visual mesh after construction.
-     * For types that used board Level as construction mesh, now replace
-     * obj+0x08 (MeshWorld*) with the desired visual mesh's MeshWorld*.
-     * This makes the object render with the correct visual appearance
-     * while keeping the collision and vtable from the board Level.
-     *
-     * EXCEPTION: Type 8 (GameLevel/Wobbly) must NOT be swapped.
-     * Rotator_Update deforms vertices by reading MeshBuffers from obj+0x08
-     * and vertex data from SceneObject+0x440. Swapping obj+0x08 breaks
-     * the vertex-to-MeshBuffer mapping, killing the wobble animation. */
-    if (use_board_level_as_mesh && visual_mesh && obj && ai_type != 8) {
-        if (!IsBadReadPtr(obj, 0x10)) {
-            /* visual_mesh is either a Level (0x10D0) or MeshNode (0x18) */
-            DWORD visual_mw = 0;
-            if (is_mesh_node) {
-                /* MeshNode: MeshWorld* is at +0x08 */
-                visual_mw = *(DWORD*)((char*)visual_mesh + 0x08);
-            } else {
-                /* Level/MeshWorld: MeshWorld* is at +0x08 */
-                visual_mw = *(DWORD*)((char*)visual_mesh + 0x08);
-            }
-            if (visual_mw && !IsBadReadPtr((void*)visual_mw, 0x100)) {
-                *(DWORD*)((char*)obj + 0x08) = visual_mw;
-                if (logf) fprintf(logf, "  ROTATER: visual mesh swapped (MW=0x%08X) for AI %d\n", visual_mw, ai_type);
-            }
-        }
-    }
-
     /* 5. Add to board+0x2578 (update list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+
+    /* 5a. Type 8 (GameLevel/Wobbly): also add to Scene_Update list (board+0x8B8).
+     * Scene_Update iterates this list and calls vtable[1] (Rotator_Update)
+     * which performs vertex deformation = the wobble animation.
+     * Only type 8 is safe here because it loads its own MESHWORLD with
+     * valid vertex data. Other types would crash in Rotator_Update. */
+    if (ai_type == 8) {
+        pfn_AthenaList_Append((DWORD*)(board + 0x8B8), obj);
+    }
 
     /* 5b. BadBall also goes into the bad balls list (board+0x29D4) */
     if (ai_type == 15) {
