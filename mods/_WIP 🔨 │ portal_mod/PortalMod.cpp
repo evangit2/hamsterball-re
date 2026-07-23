@@ -99,6 +99,12 @@ public:
             }
         }
 
+        // Play zip sound at destination
+        App* app = api->GetApp();
+        if (app) {
+            api->Play3dSoundEffect(app->sounds.zip, Vec3(destX, destY, destZ), 1.0f);
+        }
+
         cooldowns[ball->playerID] = 30;
     }
 
