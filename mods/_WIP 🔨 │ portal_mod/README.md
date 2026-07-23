@@ -40,8 +40,8 @@ The ball's incoming speed is preserved through the teleport. The exit direction 
 
 - **Platform**: Hamsterball Plus API v2.1 (API version 3)
 - **Hook**: `onEventPlaneCollide` callback
-- **Portal Discovery**: Scans S1 ref points on level start for `PORTALPOS(N)` entries, then looks up matching `PORTALVEC(N)` for each
-- **Teleport**: Sets ball position (`pos_x/y/z` + `prev_pos_x/y/z`), sets velocity via PhysicsObject (`+0xCA4/0xCA8/0xCAC`)
+- **Portal Discovery**: Looks up S1 ref points on demand when a portal triggers (no pre-scanning or caching)
+- **Teleport**: Uses the game's native teleport flag system (`ball+0xC3C=1` + `ball+0xC40/C44/C48` for destination XYZ), sets exit velocity via PhysicsObject (`+0xCA4/0xCA8/0xCAC`). Ball radius is added to the Y destination so the ball doesn't spawn inside the floor.
 - **Cooldown**: 30-frame per-player cooldown to prevent re-trigger loops
 - **Safety**: All pointer dereferences guarded with `IsBadReadPtr`
 
