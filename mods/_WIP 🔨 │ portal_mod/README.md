@@ -1,43 +1,52 @@
 # Portal Mod
 
-Custom event plane `E:PORTAL` that teleports the ball between linked portals, preserving velocity.
+Teleports the ball between linked portals using the game's native teleport system (same as Toob Race's E:BRANCH and Odd Race's N:JUMPFIRST).
 
 ## How It Works
 
-Place mesh objects in a custom MESHWORLD level file named with the `E:PORTAL(set.portal)` format:
+Place three types of objects in a custom MESHWORLD level:
 
-- `E:PORTAL(1.1)` and `E:PORTAL(1.2)` — linked pair (set 1)
-- `E:PORTAL(2.1)` and `E:PORTAL(2.2)` — linked pair (set 2)
-- `E:PORTAL(3.1)` and `E:PORTAL(3.2)` — linked pair (set 3)
-- etc.
+1. **`E:PORTAL(N)`** — An event plane meshbuffer. When the ball touches it, the ball teleports.
+2. **`PORTALPOS(N)`** — An S1 ref point. The destination position.
+3. **`PORTALVEC(N)`** — An S1 ref point (optional). Defines the exit direction. Direction = PORTALVEC - PORTALPOS.
 
-When the ball touches an `E:PORTAL` collision plane, it instantly teleports to the matching portal in the same set (the other portal with the same first number but different second number). The ball's velocity is preserved through the teleport.
+When the ball touches `E:PORTAL(1)`, it teleports to `PORTALPOS(1)` and exits in the direction of `PORTALVEC(1)` - `PORTALPOS(1)`, preserving the ball's incoming speed.
 
-## Portal Naming Convention
+If `PORTALVEC(N)` is not placed, the ball keeps its current velocity direction unchanged.
+
+## Naming Convention
 
 ```
-E:PORTAL(setNumber.portalNumber)
+E:PORTAL(number)       — event plane (trigger)
+PORTALPOS(number)       — S1 ref point (destination position)
+PORTALVEC(number)       — S1 ref point (exit direction, optional)
 ```
 
-- **setNumber** (first number): Links portals together. Two portals with the same set number are linked.
-- **portalNumber** (second number): Identifies which portal in the set. Must be different for the two linked portals.
+Numbers can be multiple digits (1, 10, 100, etc.). The event plane and ref points are linked by matching numbers.
 
 Examples:
-- `E:PORTAL(1.1)` ↔ `E:PORTAL(1.2)` — set 1, portals 1 and 2
-- `E:PORTAL(2.1)` ↔ `E:PORTAL(2.2)` — set 2, portals 1 and 2
-- `E:PORTAL(10.1)` ↔ `E:PORTAL(10.2)` — set 10
+- `E:PORTAL(1)` + `PORTALPOS(1)` + `PORTALVEC(1)` — portal 1 with custom exit direction
+- `E:PORTAL(2)` + `PORTALPOS(2)` — portal 2, velocity direction preserved
+- `E:PORTAL(10)` + `PORTALPOS(10)` + `PORTALVEC(10)` — portal 10
+
+## Velocity
+
+The ball's incoming speed is preserved through the teleport. The exit direction is determined by:
+
+1. If `PORTALVEC(N)` exists: direction = normalize(PORTALVEC - PORTALPOS), scaled to incoming speed
+2. If `PORTALVEC(N)` does not exist: velocity is untouched (ball keeps current direction and speed)
 
 ## Technical Details
 
-- **Platform**: Hamsterball Plus API (DLL mod loaded via `Mods/` folder)
-- **Hook**: `onEventPlaneCollide` callback — intercepts all collision events, filters for `E:PORTAL` prefix
-- **Portal Discovery**: Scans the level's SpatialTree named objects list on level start to find all `E:PORTAL` objects and caches their positions
-- **Teleport**: Writes ball position (`pos_x/y/z`) and previous position (`prev_pos_x/y/z`) to the target portal's position. Velocity in `PhysicsObject` is untouched — the ball maintains whatever speed it had when entering
-- **Cooldown**: 30-frame per-player cooldown after teleporting to prevent instant re-trigger at the destination portal
-- **Safety**: All pointer dereferences guarded with `IsBadReadPtr`; only player balls (playerID 0-3) are affected
+- **Platform**: Hamsterball Plus API v2.1 (API version 3)
+- **Hook**: `onEventPlaneCollide` callback
+- **Portal Discovery**: Scans S1 ref points on level start for `PORTALPOS(N)` entries, then looks up matching `PORTALVEC(N)` for each
+- **Teleport**: Sets ball position (`pos_x/y/z` + `prev_pos_x/y/z`), sets velocity via PhysicsObject (`+0xCA4/0xCA8/0xCAC`)
+- **Cooldown**: 30-frame per-player cooldown to prevent re-trigger loops
+- **Safety**: All pointer dereferences guarded with `IsBadReadPtr`
 
 ## Installation
 
 1. Place `PortalMod.dll` in the game's `Mods/` folder
 2. Launch the game
-3. Play a custom level with `E:PORTAL(x.y)` named objects
+3. Play a custom level with `E:PORTAL(N)` event planes and `PORTALPOS(N)` ref points
