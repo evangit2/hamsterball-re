@@ -5930,7 +5930,7 @@ static void InstallVtablePatches(void) {
 
 static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("=== PatchThread started ===");
-    Sleep(5000);
+    Sleep(2000);
     DebugLog("Sleep done, resolving module base");
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
     if (!g_moduleBase) g_moduleBase = 0x00400000;
