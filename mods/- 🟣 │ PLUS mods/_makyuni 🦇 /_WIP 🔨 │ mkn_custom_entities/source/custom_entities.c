@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53g
+ * custom_entities.c — Hamsterball Custom Entities Mod v53g-2
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1700,8 +1700,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_bonk_objs[g_bonk_count] = (DWORD)obj;
                     g_bonk_count++;
                 }
-                /* Install collision dispatch hook if not already installed */
-                install_bonk_collision_hook();
+                /* Collision dispatch hook disabled in v53g-2 — trampoline caused
+                 * stack corruption. Will re-add in future version with proper
+                 * detour library (MinHook/etc). */
+                /* install_bonk_collision_hook(); */
                 break;
             case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
                       * Uses Pendulum vtable with Rotator_Update for tilt animation. */
@@ -1941,36 +1943,18 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     /* 6. Add to board+0xCD4 (render list). */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
-    /* 7. Add collision object to board+0x10EC */
+    /* 7. Add collision object to board+0x10EC.
+     * ONLY PopCylinder(0) and Rotator(1-6) have real collision objects at +0x10D4.
+     * ArenaStands family stores position FLOATS at +0x10D4/+0x10E0 — reading them
+     * as pointers corrupts collision lists → crash in SpatialTree_ctor (0x46333F).
+     * Stands_ctor family (35-42) stores position floats at +0x10E0 — same crash.
+     * WavyFlag(14) stores position float at +0x10D4 — same crash.
+     * Level-family (8,9,10,27,29) also don't have collision objects at these offsets.
+     * Fix: col_off=0 for everything except PopCylinder and Rotator. */
     {
-        DWORD col_off = 0x10E0;  /* default for PopCylinder */
-        if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family */
-        else if (ai_type == 7 || (ai_type >= 17 && ai_type <= 21)) col_off = 0x10E0;  /* ArenaStands family */
-        else if (ai_type == 8) col_off = 0x10D4;  /* GameLevel (Wobbly) */
-        else if (ai_type == 9) col_off = 0x10D4;  /* Glass_Level (Drawbridge) */
-        else if (ai_type == 10) col_off = 0x10D4; /* Gear_Level (Judge) */
-        else if (ai_type == 11) col_off = 0x10E0; /* Secret (GlassBonus) */
-        else if (ai_type == 12) col_off = 0;      /* FlagWaver — no collision obj */
-        else if (ai_type == 13) col_off = 0x10EC; /* Sign — collision at 0x43B*4=0x10EC */
-        else if (ai_type == 14) col_off = 0x10D4; /* WavyFlag2 — same as GameLevel */
-        else if (ai_type == 15) col_off = 0;      /* BadBall — no collision obj (uses board+0x29D4 list) */
-        else if (ai_type == 16) col_off = 0;     /* Bridgeslam — no collision obj (visual only) */
-        else if (ai_type == 22) col_off = 0;     /* Chomper — tiny MeshNode, no collision */
-        else if (ai_type == 27) col_off = 0x10D4; /* Spinner — same as Rotator family */
-        else if (ai_type == 28) col_off = 0;      /* Cloudscape — background sprite, no collision */
-        else if (ai_type == 29) col_off = 0x10D4; /* Gear — same as Rotator family */
-        /* Level-family entities use Level_ctor internally.
-         * Bell(30), Fan(31), SawBlade(32) have NO collision object.
-         * Bonk(33) stores Level_RenderCtor result at +0x10F8 — that IS
-         * the collision/render Level. The native game returns it as the
-         * collision object (this_01[0x43E] = DWORD index 0x43E = byte 0x10F8).
-         * Using +0x10D4 reads a position FLOAT as a pointer → crash. */
-        else if (ai_type == 30) col_off = 0;      /* Bell — no collision obj */
-        else if (ai_type == 31) col_off = 0;      /* Fan — no collision obj */
-        else if (ai_type == 32) col_off = 0;      /* SawBlade — no collision obj */
-        else if (ai_type == 33) col_off = 0x10F8; /* Bonk — Level_RenderCtor result */
-        else if (ai_type == 34) col_off = 0x10E0; /* BreakBridge — Pendulum family, render Level at +0x10E0 */
-        else if (ai_type >= 35 && ai_type <= 42) col_off = 0x10E0; /* Stands_ctor family */
+        DWORD col_off = 0;  /* default: no collision object */
+        if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family only */
+        /* All other types: col_off = 0 (no collision object added) */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2701,7 +2685,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bonk",             33, "levels\\Level5-Bonk" },       /* Bonk_ctor (0x438850, 0x1200) — self-loads level5-bonk MESHWORLD */
             { "Bridge",           34, "levels\\Level2-Bridge" },     /* BreakBridge_ctor: Pendulum vtable with tilt animation */
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
-            { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
+            { "Bumper",           0, "levels\\Bumper01" },          /* N:BUMPER tag — no _ctor, _default mesh */
                         { "Catapult",         35, "levels\\Level4-Catapult" },   /* Catapult_ctor (0x437E10, 0x1108) */
             { "Chomper",          22, "meshes\\chomper" },           /* Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18 bytes) */
             { "Chrome",           23, "levels\\_default" },          /* Chrome_ctor: no _ctor, board-level behavior, PopCylinder fallback */
@@ -2761,27 +2745,33 @@ static void process_rotaters(DWORD board, FILE* logf) {
         }
 
         /* v52: Skip Swirl entity spawning on levels that natively have SWIRL
-         * objects. Dizzy Race, Master Race, and all Arena levels already spawn
-         * SWIRL via the game's own vtable[33] handler. Spawning additional
-         * Swirls from cEnt entries causes duplicate SWIRL objects.
+         * objects. Dizzy Race (index 2), Master Race (index 13), and all Arena
+         * levels already spawn SWIRL via the game's own vtable[33] handler.
+         * Spawning additional Swirls from cEnt entries causes duplicate SWIRL.
          * Also skip "Rotater" entries on Dizzy/Master/Arena — native game
          * already spawns Rotators from S1 entries named "Rotater". */
         if (ai_type == 6) {
-            /* Swirl entity — check if level natively has SWIRL */
+            /* Swirl entity — check if level natively has SWIRL via race index */
             DWORD app = *(DWORD*)(board + BOARD_APP);
-            if (app && !IsBadReadPtr((void*)(app + 0x23C), 4)) {
-                /* Check level name from board */
+            if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
+                int race_idx = *(int*)(app + 0x5FC);
+                /* Dizzy=2, Master=13, Arena-Beginner=14, Arena-WarmUp=0(special) */
+                /* Actually Arena levels are detected differently — check level name too */
+                if (race_idx == 2 || race_idx == 13) {
+                    if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL, race=%d)\\n",
+                            entity_name, race_idx);
+                    continue;
+                }
+                /* Also check Arena levels via board name */
                 char* level_name = NULL;
                 if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
                     level_name = *(char**)(board + 0x10);
                 }
-                if (level_name && !IsBadReadPtr(level_name, 5)) {
-                    if (_strnicmp(level_name, "Dizzy", 5) == 0 ||
-                        _strnicmp(level_name, "Master", 6) == 0 ||
-                        _strnicmp(level_name, "Board (Arena", 12) == 0 ||
+                if (level_name && !IsBadReadPtr(level_name, 12)) {
+                    if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
                         _strnicmp(level_name, "Arena", 5) == 0) {
-                        if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on %s)\n",
-                                entity_name, level_name);
+                        if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on Arena)\\n",
+                                entity_name);
                         continue;
                     }
                 }
@@ -2885,7 +2875,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53f Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53g-2 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
