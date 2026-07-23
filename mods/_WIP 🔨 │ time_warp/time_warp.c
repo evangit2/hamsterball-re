@@ -40,12 +40,14 @@ typedef DWORD HFX;
 
 /* Function addresses */
 #define APP_START_PRACTICE_RACE     0x00428C50
+#define APP_START_TOURNAMENT_RACE   0x004288B0
 #define DISPATCH_COLLISION_EVENTS  0x0040C5D0
 #define APP_FRAME_UPDATE_EPILOGUE  0x0046C1F1
 #define BALL_CTOR                  0x004039E0
 #define BTT_CTOR_ADDR              0x00427660
 #define BTT_DTOR_ADDR              0x004278C0
 #define ALIST_APPEND_ADDR          0x00453780
+#define ALIST_REMOVE_ADDR          0x004534D0
 #define OPERATOR_NEW_ADDR          0x004BA57B
 #define OPERATOR_DELETE_ADDR       0x004BA74D
 #define BALL_DELETING_DTOR         0x00402A50
@@ -491,6 +493,17 @@ static void call_alist_append(DWORD *list, void *item) {
     );
 }
 
+static void call_alist_remove(DWORD *list, void *item) {
+    DWORD removeAddr = ALIST_REMOVE_ADDR;
+    __asm__ volatile(
+        "push %1\n\t"
+        "movl %0, %%ecx\n\t"
+        "call *%2\n\t"
+        : : "r"(list), "r"(item), "r"(removeAddr)
+        : "eax", "ecx", "edx", "memory"
+    );
+}
+
 static void *game_operator_new(size_t size) {
     typedef void* (__cdecl *operator_new_t)(size_t);
     operator_new_t op_new = (operator_new_t)OPERATOR_NEW_ADDR;
@@ -675,6 +688,19 @@ static void ghost2_destroy(void) {
     if (g_ghost2.ball) {
         DWORD ball = g_ghost2.ball;
         if (!IsBadReadPtr((void*)ball, 0x100)) {
+            /* Remove from ball AthenaList first to prevent use-after-free */
+            DWORD app = get_app();
+            if (app) {
+                DWORD profile = *(DWORD*)((char*)app + APP_PROFILE_PTR);
+                if (profile && !IsBadReadPtr((void*)profile, 0x100)) {
+                    DWORD board = *(DWORD*)((char*)profile + PROFILE_BOARD_PTR);
+                    if (board && !IsBadReadPtr((void*)board, 0x4000)) {
+                        DWORD *ballList = (DWORD*)((char*)board + BOARD_BALL_LIST);
+                        call_alist_remove(ballList, (void*)ball);
+                        diag_logf("[ghost2] Ball removed from AthenaList at 0x%X", ball);
+                    }
+                }
+            }
             DWORD vt = *(DWORD*)ball;
             if (vt && !IsBadReadPtr((void*)vt, 4)) {
                 call_ball_dtor(ball);
@@ -1124,16 +1150,17 @@ static void ghost1_check_advance(void) {
     diag_logf("[ghost1] Segment %d ended, advancing to %d",
               g_ghost1.currentSegment, nextSeg);
 
-    /* Check if next segment exists */
+    /* Check if next segment exists — try confirmed (N) first, then temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '(');
+    char useBracket = '(';
     if (!snaps) {
         snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '[');
+        useBracket = '[';
     }
     if (snaps) {
         free(snaps);
-        ghost1_load_segment(g_twRaceName, nextSeg, 0,
-                           (g_ghost1.currentSegment < nextSeg) ? '(' : '(');
+        ghost1_load_segment(g_twRaceName, nextSeg, 0, useBracket);
     }
 }
 
@@ -1954,6 +1981,104 @@ static void install_practice_hook(void) {
     FlushInstructionCache(GetCurrentProcess(), target, HOOK_BYTES);
     g_hookInstalled = 1;
     diag_log("[ghost_saver] App_StartPracticeRace hook installed");
+}
+
+/* ================================================================
+ * App_StartTournamentRace hook — creates BTT for recording
+ * The game doesn't create a BTT in Tournament mode. We hook the
+ * function and create one at App+0x90C after it returns, so
+ * BestTimeTracker_RecordSnapshot has a valid target.
+ * ================================================================ */
+
+#define TOURNAMENT_HOOK_BYTES    7
+#define TOURNAMENT_TRAMPOLINE_SIZE 16
+
+static unsigned char *g_tournamentTrampoline = NULL;
+static unsigned char g_tournamentOrigBytes[TOURNAMENT_HOOK_BYTES];
+static int g_tournamentHookInstalled = 0;
+
+void tournament_hook_impl(DWORD app) {
+    /* Call original App_StartTournamentRace via trampoline */
+    __asm__ volatile(
+        "movl %0, %%ecx\n"
+        "call *%1\n"
+        : : "r"(app), "r"((void*)g_tournamentTrampoline)
+        : "eax", "ecx", "edx", "memory"
+    );
+
+    /* After App_StartTournamentRace: App+0x90C is NULL (game destroyed it).
+     * Create a fresh BTT for recording. */
+    DWORD bttRec = 0;
+    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
+        bttRec = *(DWORD*)(app + APP_BTT_RECORDING);
+
+    if (!bttRec) {
+        void *newBTT = game_operator_new(BTT_SIZE);
+        if (newBTT) {
+            call_btt_ctor(newBTT);
+            DWORD vt = *(DWORD*)newBTT;
+            if (vt == BTT_VTABLE_ADDR) {
+                *(DWORD*)((char*)newBTT + BTT_BEST_TIME) = NO_TIME;
+                *(DWORD*)(app + APP_BTT_RECORDING) = (DWORD)newBTT;
+                diag_logf("[tournament_hook] Created recording BTT at 0x%X", (DWORD)newBTT);
+            } else {
+                game_free(newBTT);
+                diag_logf("[tournament_hook] BTT ctor failed vtable=0x%X", vt);
+            }
+        }
+    }
+}
+
+__attribute__((naked, used)) static void hook_App_StartTournamentRace(void) {
+    __asm__ volatile(
+        "pushl %%eax\n"
+        "pushl %%ecx\n"
+        "pushl %%edx\n"
+        "movl 16(%%esp), %%eax\n"  /* get app (original ECX) from stack */
+        "pushl %%eax\n"
+        "call _tournament_hook_impl\n"
+        "addl $4, %%esp\n"
+        "popl %%edx\n"
+        "popl %%ecx\n"
+        "popl %%eax\n"
+        "ret\n"  /* __thiscall: callee cleans, no args on stack */
+        : : : "memory"
+    );
+}
+
+static void install_tournament_hook(void) {
+    unsigned char *target = (unsigned char*)APP_START_TOURNAMENT_RACE;
+
+    /* Verify function signature: 6A FF 68 (PUSH -1; PUSH imm32) */
+    if (target[0] != 0x6A || target[1] != 0xFF || target[2] != 0x68) {
+        diag_logf("[FATAL] App_StartTournamentRace signature mismatch at 0x%X!", APP_START_TOURNAMENT_RACE);
+        return;
+    }
+
+    memcpy(g_tournamentOrigBytes, target, TOURNAMENT_HOOK_BYTES);
+
+    g_tournamentTrampoline = (unsigned char*)VirtualAlloc(NULL, TOURNAMENT_TRAMPOLINE_SIZE,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_tournamentTrampoline) return;
+
+    memcpy(g_tournamentTrampoline, g_tournamentOrigBytes, TOURNAMENT_HOOK_BYTES);
+    DWORD jmp_src = (DWORD)(g_tournamentTrampoline + TOURNAMENT_HOOK_BYTES + 5);
+    DWORD jmp_dst = APP_START_TOURNAMENT_RACE + TOURNAMENT_HOOK_BYTES;
+    g_tournamentTrampoline[TOURNAMENT_HOOK_BYTES + 0] = 0xE9;
+    *(DWORD*)(g_tournamentTrampoline + TOURNAMENT_HOOK_BYTES + 1) = jmp_dst - jmp_src;
+
+    DWORD oldProtect;
+    if (!VirtualProtect(target, TOURNAMENT_HOOK_BYTES, PAGE_EXECUTE_READWRITE, &oldProtect)) return;
+
+    DWORD hookAddr = (DWORD)&hook_App_StartTournamentRace;
+    target[0] = 0xE9;
+    *(DWORD*)(target + 1) = hookAddr - (DWORD)target - 5;
+    target[5] = 0x90;
+    target[6] = 0x90;
+    VirtualProtect(target, TOURNAMENT_HOOK_BYTES, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), target, TOURNAMENT_HOOK_BYTES);
+    g_tournamentHookInstalled = 1;
+    diag_log("[tournament_hook] App_StartTournamentRace hook installed");
 }
 
 /* ================================================================
@@ -3284,17 +3409,31 @@ static void updateWarpStateMachine(void) {
             }
 
             if (wasInTournament) {
-                /* Clear BTT recording + playback, then create new BTT for Tournament recording */
+                /* Destroy game-created BTTs properly before zeroing */
                 {
                     DWORD bttRec = *(DWORD*)((char*)app + APP_BTT_RECORDING);
                     DWORD bttPlay = *(DWORD*)((char*)app + APP_BTT_PLAYBACK);
                     if (bttRec) {
+                        if (!IsBadReadPtr((void*)bttRec, 4)) {
+                            DWORD vt = *(DWORD*)bttRec;
+                            if (vt == BTT_VTABLE_ADDR)
+                                call_btt_dtor((void*)bttRec);
+                            else
+                                game_free((void*)bttRec);
+                        }
                         *(DWORD*)((char*)app + APP_BTT_RECORDING) = 0;
-                        diag_log("[warp] Cleared BTT recording (tournament)");
+                        diag_log("[warp] Destroyed BTT recording (tournament)");
                     }
                     if (bttPlay) {
+                        if (!IsBadReadPtr((void*)bttPlay, 4)) {
+                            DWORD vt = *(DWORD*)bttPlay;
+                            if (vt == BTT_VTABLE_ADDR)
+                                call_btt_dtor((void*)bttPlay);
+                            else
+                                game_free((void*)bttPlay);
+                        }
                         *(DWORD*)((char*)app + APP_BTT_PLAYBACK) = 0;
-                        diag_log("[warp] Cleared BTT playback (tournament)");
+                        diag_log("[warp] Destroyed BTT playback (tournament)");
                     }
                 }
 
@@ -3500,8 +3639,8 @@ static DWORD WINAPI init_thread(LPVOID param) {
 
     diag_log("=== TIME WARP MOD INIT ===");
 
-    /* Install Level_UpdateAndRender patches (enables ghost rendering in any mode) */
-    patch_level_update_and_render();
+    /* Install App_StartTournamentRace hook (creates BTT for Tournament recording) */
+    install_tournament_hook();
 
     /* Install DCE hook (E:GHOST collision events) */
     install_dce_hook();
@@ -3524,12 +3663,12 @@ static DWORD WINAPI init_thread(LPVOID param) {
     diag_log("=== TIME WARP MOD INITIALIZED ===");
     diag_log("  - Frame epilogue hook at 0x46C1F1");
     diag_log("  - App_StartPracticeRace hook at 0x428C50");
+    diag_log("  - App_StartTournamentRace hook at 0x4288B0");
     diag_log("  - DCE hook at 0x40C5D0");
     diag_log("  - Timer caves at 0x41B3E5 + 0x41B50C");
     diag_log("  - TT recording NOP at 0x41B690");
-    diag_log("  - Level_UpdateAndRender NOPs at 0x40B7F5 + 0x40B7FF");
     diag_log("  - Ghost saver thread started");
-    diag_log("  - Ghost 2 subsystem ready (same-level warp)");
+    diag_log("  - Ghost 2 subsystem ready (same-level warp, TT+Tournament only)");
     diag_log("  - Ghost triggers scanning S1 for GT: entries");
 
     return 0;
@@ -3575,6 +3714,19 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         restore_timer_caves();
         restore_tt_recording_nop();
         unblock_pause();
+
+        /* Restore tournament hook */
+        if (g_tournamentHookInstalled) {
+            DWORD oldProt;
+            if (VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
+                PAGE_EXECUTE_READWRITE, &oldProt)) {
+                memcpy((void*)APP_START_TOURNAMENT_RACE, g_tournamentOrigBytes,
+                       TOURNAMENT_HOOK_BYTES);
+                VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
+                    oldProt, &oldProt);
+            }
+            g_tournamentHookInstalled = 0;
+        }
 
         /* Clean up Ghost 2 */
         ghost2_destroy();
