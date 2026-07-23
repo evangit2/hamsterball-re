@@ -241,6 +241,17 @@ static Bonk_ctor_t pfn_Bonk_ctor = (Bonk_ctor_t)0x00438850;
 typedef void* (__thiscall *BreakBridge_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static BreakBridge_ctor_t pfn_BreakBridge_ctor = (BreakBridge_ctor_t)0x00436D70;
 
+/* Stands_ctor family — entities with their own native _ctor */
+typedef void* (__thiscall *StandsCtor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+static StandsCtor_t pfn_Catapult_ctor     = (StandsCtor_t)0x00437E10;
+static StandsCtor_t pfn_Mace_ctor         = (StandsCtor_t)0x00438750;
+static StandsCtor_t pfn_Tipper_ctor       = (StandsCtor_t)0x00437960;
+static StandsCtor_t pfn_Lifter_ctor       = (StandsCtor_t)0x00436920;
+static StandsCtor_t pfn_SpeedCylinder_ctor = (StandsCtor_t)0x00436A20;
+static StandsCtor_t pfn_NeonPlatform_ctor  = (StandsCtor_t)0x0043E110;
+static StandsCtor_t pfn_Trapdoor_ctor     = (StandsCtor_t)0x00438290;
+static StandsCtor_t pfn_Odd_Lifter_ctor   = (StandsCtor_t)0x00434E60;
+
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static GameLevel_ctor_t pfn_GameLevel_ctor = (GameLevel_ctor_t)0x004351F0;
@@ -444,6 +455,14 @@ static void cEnt_bridgeslam_update(BridgeslamState* bs) {
 #define FAN_SIZE              0x1188
 #define SAWBLADE_SIZE         0x111C
 #define BONK_SIZE             0x1200
+#define CATAPULT_SIZE         0x1108
+#define MACE_SIZE             0x110C
+#define TIPPER_SIZE           0x1104
+#define LIFTER_SIZE           0x10F4
+#define SPEEDCYLINDER_SIZE    0x150C
+#define NEONPLATFORM_SIZE     0x1104
+#define TRAPDOOR_SIZE         0x10F8
+#define ODD_LIFTER_SIZE       0x10F4
 
 /* Level3-Swirl mesh path (game .data at 0x004CFFE0) */
 static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
@@ -1732,6 +1751,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             case 3:  ctor_fn = pfn_Looper_ctor;   alloc_sz = LOOPER_SIZE;    break; /* Looper (Z-axis) */
             case 4:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Small */
             case 5:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Big */
+            case 35: ctor_fn = (Rotator_ctor_t)pfn_Catapult_ctor;      alloc_sz = CATAPULT_SIZE;      break;
+            case 36: ctor_fn = (Rotator_ctor_t)pfn_Mace_ctor;          alloc_sz = MACE_SIZE;          break;
+            case 37: ctor_fn = (Rotator_ctor_t)pfn_Tipper_ctor;        alloc_sz = TIPPER_SIZE;        break;
+            case 38: ctor_fn = (Rotator_ctor_t)pfn_Lifter_ctor;       alloc_sz = LIFTER_SIZE;        break;
+            case 39: ctor_fn = (Rotator_ctor_t)pfn_SpeedCylinder_ctor; alloc_sz = SPEEDCYLINDER_SIZE; break;
+            case 40: ctor_fn = (Rotator_ctor_t)pfn_NeonPlatform_ctor;  alloc_sz = NEONPLATFORM_SIZE;  break;
+            case 41: ctor_fn = (Rotator_ctor_t)pfn_Trapdoor_ctor;     alloc_sz = TRAPDOOR_SIZE;      break;
+            case 42: ctor_fn = (Rotator_ctor_t)pfn_Odd_Lifter_ctor;   alloc_sz = ODD_LIFTER_SIZE;    break;
             default: /* AI 0: static PopCylinder */
                 obj = pfn_operator_new(POPCYLINDER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc\n"); return; }
@@ -1792,6 +1819,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         else if (ai_type == 32) col_off = 0x10D4; /* SawBlade — Level family */
         else if (ai_type == 33) col_off = 0x10D4; /* Bonk — Level family */
         else if (ai_type == 34) col_off = 0x10E0; /* BreakBridge — Pendulum family, render Level at +0x10E0 */
+        else if (ai_type >= 35 && ai_type <= 42) col_off = 0x10E0; /* Stands_ctor family */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
             pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
@@ -2514,12 +2542,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bridge",           34, "levels\\Level2-Bridge" },     /* BreakBridge_ctor: Pendulum vtable with tilt animation */
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\_default" },          /* N:BUMPER tag — no _ctor, _default mesh */
-            { "Catapult",         0, "levels\\Level4-Catapult" },   /* Catapult_ctor */
+                        { "Catapult",         35, "levels\\Level4-Catapult" },   /* Catapult_ctor (0x437E10, 0x1108) */
             { "Chomper",          22, "meshes\\chomper" },           /* Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18 bytes) */
             { "Chrome",           23, "levels\\_default" },          /* Chrome_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Cloudscape",       28, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
             { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
-            { "Droplifter",       0, "levels\\Level6-Lifter" },     /* Odd Race model */
+            { "Droplifter",       42, "levels\\Level6-Lifter" },     /* Odd_Lifter_ctor (0x434E60, 0x10F4) */
             { "Fan",              0, "meshes\\fanbody" },           /* PopCylinder — Fan_ctor crashes (Level_ctor has no mesh) */
             { "Flag",             14, "levels\\\\Flag" },             /* Wavy_ctor: same as Flag2, loads Flag.MESHWORLD or _default */
             { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
@@ -2529,28 +2557,28 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Funball",          24, "meshes\\funball" },           /* Funball_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Gear",             29, "levels\\LevelImpossible-Gear" }, /* Gear_ctor (0x437690, 0x1514, 9 params!) */
             { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
-            { "Gluebie",          0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
+                                    { "Gluebie",           0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
             { "Judge",            10, "meshes\\hammyjudge" },       /* Gear_Level_ctor (0x43A150, 0x1100 bytes, no mesh param) */
-            { "Lifter",           0, "levels\\LevelUp-Lifter" },    /* Up Race model */
+            { "Lifter",           38, "levels\\LevelUp-Lifter" },    /* Lifter_ctor (0x436920, 0x10F4) */
             { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x437460, 0x1500, 6 params) */
-            { "Mace",             0, "levels\\Level4-Mace" },       /* Mace_ctor */
+            { "Mace",              36, "levels\\Level4-Mace" },       /* Mace_ctor (0x438750, 0x110C) */
             { "Mag",              0, "meshes\\magnifyingglass" },   /* .MESH — Magnifier_ctor */
             { "Mousetrap",        0, "levels\\MouseTrap" },        /* MouseTrap_ctor */
-            { "Neonplatform",     0, "levels\\LevelDark-NeonPlatform" }, /* NeonPlatform_ctor */
+            { "Neonplatform",     40, "levels\\LevelDark-NeonPlatform" }, /* NeonPlatform_ctor (0x43E110, 0x1104) */
             { "Pendulum",         2, "levels\\LevelImpossible-Pendulum" }, /* Pendulum_ctor */
             { "Popcylinder",      0, "levels\\Level9-PopCylinder1" }, /* PopCylinder_ctor */
             { "Rotator",          1, "levels\\LevelImpossible-Rotator" }, /* Rotator_ctor (constant rotation) */
             { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor */
             { "Sawblade",         0, "meshes\\sawblade" },         /* PopCylinder — SawBlade_ctor crashes (Level_ctor has no mesh) */
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
-            { "Speedcylinder",    0, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor */
+            { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
             { "Spinner",          27, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
             { "Tarbubble",        25, "meshes\\tarbubble" },         /* Tarbubble_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Tarpit",           0, "levels\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
-            { "Tipper",           0, "levels\\Level3-Tipper" },     /* Tipper_ctor */
-            { "Trapdoor",         0, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor */
+            { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
+            { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
             { "Trode",            21, "levels\\LevelDark-Trode" },   /* cEnt_Trode_ctor (ArenaStands_ctor) */
             { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* Waterwheel_ctor: no _ctor, position-only storage, PopCylinder fallback */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
