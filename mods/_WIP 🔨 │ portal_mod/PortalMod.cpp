@@ -67,9 +67,12 @@ public:
         }
 
         // Use native teleport flag system
-        *(DWORD*)((char*)ball + 0xC3C) = 1;      // teleport flag
+        // Game writes the flag as a BYTE (undefined1), matching OddBoard_CollisionHandler
+        *(BYTE*)((char*)ball + 0xC3C) = 1;       // teleport flag
         *(float*)((char*)ball + 0xC40) = destX;  // dest X
-        *(float*)((char*)ball + 0xC44) = destY;  // dest Y
+        // Add ball radius to Y so the ball doesn't spawn inside the floor.
+        // ToobBoard handler does: param_2[0x311] += ball+0x284 (radius) + epsilon
+        *(float*)((char*)ball + 0xC44) = destY + ball->radius;  // dest Y
         *(float*)((char*)ball + 0xC48) = destZ;  // dest Z
 
         // Set exit velocity
