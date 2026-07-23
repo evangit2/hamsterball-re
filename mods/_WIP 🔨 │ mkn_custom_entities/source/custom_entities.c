@@ -99,6 +99,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define BOARD_LEVEL             0x8AC
 #define BOARD_UPDATE_LIST       0x2578
 #define BOARD_RENDER_LIST       0xCD4
+#define BOARD_SCENE_UPDATE_LIST 0x8B8  /* Scene_Update iterates this list, calls vtable[1] */
 #define BOARD_COLLISION_LIST   0x10EC
 #define BOARD_SCENE_OBJ         0x8B0
 
@@ -995,6 +996,8 @@ static void cEnt_spawn_testcube_at(DWORD board, float px, float py, float pz, in
 
     /* 5. Add to board+0x2578 (update list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+    /* 5a. Also add to board+0x8B8 (Scene_Update list) for vtable[1] calls */
+    pfn_AthenaList_Append((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), obj);
 
     /* 6. Add to board+0xCD4 (render list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
@@ -1083,6 +1086,7 @@ static void cEnt_despawn_object(DWORD board, DWORD obj, FILE* logf) {
 
     /* 3. Remove obj from board+0x2578 (update list) */
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_UPDATE_LIST), (int)obj);
+    pfn_AthenaList_Remove((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), (int)obj);
 
     /* 4. Remove obj from board+0xCD4 (render list) */
     pfn_AthenaList_Remove((DWORD*)(board + BOARD_RENDER_LIST), (int)obj);
@@ -1392,6 +1396,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
         /* Register on board lists */
         pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+        pfn_AthenaList_Append((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), obj);
         pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
         /* Add collision object */
@@ -1715,6 +1720,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
                     /* Register on board lists */
                     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+                    pfn_AthenaList_Append((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), obj);
                     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), render_obj);
 
                     /* Track in bridgeslam state array */
@@ -1798,6 +1804,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
     /* 5. Add to board+0x2578 (update list) */
     pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), obj);
+    /* 5a. Also add to board+0x8B8 (Scene_Update list) for vtable[1] calls */
+    pfn_AthenaList_Append((DWORD*)(board + BOARD_SCENE_UPDATE_LIST), obj);
 
     /* 5b. BadBall also goes into the bad balls list (board+0x29D4) */
     if (ai_type == 15) {
