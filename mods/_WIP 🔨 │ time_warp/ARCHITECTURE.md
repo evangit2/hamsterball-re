@@ -357,15 +357,41 @@ Both ghosts start at **frame 0** when the level loads after the warp.
 Both ghosts are mutually independent — Ghost 1's presence/absence does
 not affect Ghost 2, and vice versa.
 
-### Ghost saving on same-level warp
-When the warp targets the same level:
-1. Read the game's current BTT recording from `App+0x90C`
-2. Store snapshots in an in-memory buffer (not disk)
-3. After the level reloads, construct Ghost 2 from that data
-4. The ghost represents the exact route the player took from level start
-   to the warp trigger
+### Multi-Segment Ghost System (Time Warp Levels)
 
-In Party mode: the warp still fires but no ghost is saved or loaded.
+A Time Warp level consists of multiple runs (warp → reload → warp → goal).
+Each run segment must be saved separately for proper ghost playback.
+
+**File naming convention:**
+- `LevelName[N].ghost` — temporary (brackets) — current attempt in progress
+- `LevelName(N).ghost` — confirmed best (parentheses) — from a completed best attempt
+
+**During an attempt:**
+- Run 1 (first load) → warp → save `LevelName[1].ghost`
+- Run 2 (Ghost 2 active) → warp → save `LevelName[2].ghost`
+- Run 3 (Ghost 2 active) → touches goal → save `LevelName[3].ghost`
+
+**On goal touch — compare total clock time:**
+- If no previous best exists: rename all `[N]` → `(N)` — this IS the first best
+- If new total time < previous best: delete old `(N)` files, rename `[N]` → `(N)`
+- If new total time >= previous best: delete all `[N]` files — discard attempt
+
+**Ghost 1 (normal colored) — seamless chaining:**
+- Plays segment `(1)`, then `(2)`, then `(3)`, etc. sequentially
+- On warp to same level: Ghost 1 must resume from the exact frame it was at
+  (not restart from 0). Save playback index before warp, restore after.
+- When Ghost 1 reaches end of segment N, load segment (N+1) and continue
+  from frame 0
+- If only one segment exists, Ghost 1 replays it normally
+
+**Ghost 2 (heliotrope purple):**
+- Always the most recent run segment (the one that led to the current warp)
+- Resets to frame 0 on each warp (it's the fresh replay of your previous route)
+
+**Total clock time calculation:**
+- Sum of all segment times across the full attempt
+- Compare against previous best total time (stored in a separate metadata file
+  or inferred from the `(N)` ghost file headers)
 
 ### Recording in Tournament mode
 The game's recording code in `Scene_UpdateBallsAndState` (0x41B540) is gated
