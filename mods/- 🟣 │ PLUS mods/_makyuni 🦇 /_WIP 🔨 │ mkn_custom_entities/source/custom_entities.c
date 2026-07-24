@@ -1452,6 +1452,17 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         path = g_swirl_mesh_path;
     }
     
+    /* v54: Override path=NULL for entity types that handle their own mesh
+     * loading internally. The if/else-if chain above sets path=mesh_path
+     * when mesh_path is non-NULL, which prevents these overrides from
+     * triggering in the else-if branches. This override runs AFTER. */
+    if (ai_type == 12 || ai_type == 13 || ai_type == 14 ||
+        ai_type == 15 || ai_type == 16 || ai_type == 22 ||
+        ai_type == 28 || (ai_type >= 30 && ai_type <= 33) ||
+        ai_type == 41 || ai_type == 42) {
+        path = NULL;
+    }
+    
     /* If mesh path is "levels\\_default", use _default.MESHWORLD as placeholder.
      * This file is provided by the user and serves as a null mesh fallback
      * for entities that don't have a real mesh file (Bumper, Tarpit, Chrome). */

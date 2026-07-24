@@ -2,14 +2,22 @@
 
 ## v54 — MESH File Hotfix
 
+- **CRITICAL FIX: if/else-if chain bug caused ALL path=NULL overrides to be skipped!**
+  - The path determination code uses `if (mesh_path) { path = mesh_path; } else if (ai_type == 15) { path = NULL; }`
+  - When mesh_path is non-NULL (which it always is for 8ball, Bell, Fan, etc.),
+    the first branch sets `path = mesh_path` and ALL else-if branches are SKIPPED.
+  - The `ai_type == 15 → path = NULL` override NEVER RAN!
+  - Fix: Added a separate override AFTER the if/else-if chain that forces
+    `path = NULL` for all entity types that handle their own mesh loading
+    (types 12-16, 22, 28, 30-33, 41, 42).
 - **8Ball (type 15): Fixed Static Swirl issue!**
-  - Root cause: Ball_Render reads mesh from `App+0x244[ball+0x754 * 4]`,
-    NOT from `ball+0x10`. The old code stored MeshNode at `ball+0x10` (wrong offset
-    — that's the App/parent pointer). `ball+0x754` is the mesh index (must be < 3
-    for rendering). Default 0 = Sphere mesh, not 8Ball.
-  - Fix: Copy 8Ball mesh pointer from `App+0x268` to `App+0x248` (mesh slot 1),
-    then set `ball+0x754 = 1`. Same pattern as `cEnt_process_custom_tags`.
-  - Removed useless MeshNode_ctor call that was storing to the wrong offset.
+  - Root cause 1: if/else-if bug (above) — path was never set to NULL, so
+    the .MESH swap code created a PopCylinder with Swirl mesh instead of
+    running case 15 (BadBall_ctor).
+  - Root cause 2: Ball_Render reads mesh from `App+0x244[ball+0x754 * 4]`,
+    NOT from `ball+0x10`. The old code stored MeshNode at the wrong offset.
+  - Fix: Copy 8Ball mesh pointer from `App+0x268` to `App+0x248` (slot 1),
+    set `ball+0x754 = 1`. Same pattern as `cEnt_process_custom_tags`.
 - **Bell (type 30): Fixed!**
   - Bell_ctor calls `Level_ctor` (no mesh). vtable[1] = Rotator_Update needs vertex data.
   - v54 uses PopCylinder_ctor with `meshes\Bell` .MESH swap + vtable override to 0x004D5330.
