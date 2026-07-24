@@ -259,6 +259,7 @@ typedef void* (__thiscall *OddLifterCtor_t)(void* this_, void* board, float x, f
 static StandsCtor_t pfn_Catapult_ctor     = (StandsCtor_t)0x00437E10;
 static StandsCtor_t pfn_Mace_ctor         = (StandsCtor_t)0x00438750;
 static StandsCtor_t pfn_Tipper_ctor       = (StandsCtor_t)0x00437960;
+static StandsCtor_t pfn_Gluebie_ctor      = (StandsCtor_t)0x00437CB0;
 static LifterCtor_t pfn_Lifter_ctor       = (LifterCtor_t)0x00436920;
 static SpeedCylCtor_t pfn_SpeedCylinder_ctor = (SpeedCylCtor_t)0x00436A20;
 static Rotator_ctor_t pfn_NeonPlatform_ctor  = (Rotator_ctor_t)0x0043E110;
@@ -473,6 +474,7 @@ static void cEnt_bridgeslam_update(BridgeslamState* bs) {
 #define CATAPULT_SIZE         0x1108
 #define MACE_SIZE             0x110C
 #define TIPPER_SIZE           0x1104
+#define GLUEBIE_SIZE          0x110C
 #define LIFTER_SIZE           0x10F4
 #define SPEEDCYLINDER_SIZE    0x150C
 #define NEONPLATFORM_SIZE     0x1104
@@ -1617,7 +1619,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
-    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 42)) {
+    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 43)) {
         /* New constructor types — each with specific signature.
          * Range 7-14: ArenaStands + Wavy family (Flag/Flag2)
          * Range 17-22: ArenaStands variants + Chomper
@@ -1954,6 +1956,36 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Droplifter\n"); return; }
                 memset(obj, 0, ODD_LIFTER_SIZE);
                 pfn_Odd_Lifter_ctor(obj, (void*)board, px, py, pz);
+                break;
+            case 43: /* Gluebie_ctor — 3 params (this, board, mesh)
+                     * v55c: Native Gluebie from Dizzy_CreateDynamicObjects.
+                     * Gluebie_ctor calls Stands_ctor (clones spatial trees from mesh).
+                     * vtable[11] (0x43ECC0) handles rendering + animation.
+                     * Proximity behavior (ball slowdown) is in DizzyBoard_Update
+                     * which iterates board+0x4378 (Gluebie list, Dizzy-only).
+                     * Position stored at obj+0x10D4/10D8/10DC (DWORD indices 0x435/436/437). */
+                obj = pfn_operator_new(GLUEBIE_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Gluebie\n"); return; }
+                memset(obj, 0, GLUEBIE_SIZE);
+                pfn_Gluebie_ctor(obj, (void*)board, mesh);
+                /* Position at obj+0x10D4/10D8/10DC (matching native puVar4[0x435/436/437]) */
+                *(float*)((char*)obj + 0x10D4) = px;
+                *(float*)((char*)obj + 0x10D8) = py;
+                *(float*)((char*)obj + 0x10DC) = pz;
+                /* Add to board+0x4378 (Gluebie list) for DizzyBoard_Update proximity check.
+                 * Only safe on Dizzy (where it's an AthenaList). On other levels,
+                 * board+0x4378 may be a Level pointer (Tower/Expert/Toob) — skip to avoid crash.
+                 * Check: Dizzy board name is "Board (Dizzy)" at board+0x868. */
+                {
+                    char* board_name = *(char**)((char*)board + 0x868);
+                    if (board_name && !IsBadReadPtr(board_name, 12) &&
+                        _strnicmp(board_name, "Board (Dizzy)", 13) == 0) {
+                        pfn_AthenaList_Append((DWORD*)(board + 0x4378), obj);
+                        if (logf) fprintf(logf, "  ROTATER: Gluebie added to Dizzy board+0x4378 (proximity list)\n");
+                    } else {
+                        if (logf) fprintf(logf, "  ROTATER: Gluebie on non-Dizzy level, proximity behavior not available\n");
+                    }
+                }
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
@@ -2942,7 +2974,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Funball",          24, "meshes\\funball" },           /* Funball_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Gear",              0, "levels\\LevelImpossible-Gear" }, /* Gear_ctor (0x437690, 0x1514, 9 params!) */
             { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
-                                    { "Gluebie",           0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
+                                    { "Gluebie",          43, "levels\\Level3-Gluebie" },    /* Gluebie_ctor (0x437CB0, 0x110C) */
             { "Judge",            10, "meshes\\hammyjudge" },       /* Gear_Level_ctor (0x43A150, 0x1100 bytes, no mesh param) */
             { "Lifter",           38, "levels\\LevelUp-Lifter" },    /* Lifter_ctor (0x436920, 0x10F4) */
             { "Looper",            0, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x435800, 0x1500, 6 params) */
