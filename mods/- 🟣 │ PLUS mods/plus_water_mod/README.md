@@ -1,3 +1,5 @@
+> **⚠️ Status: Untested** — This is an HB+ API port that has not yet been crash-tested or verified in-game.
+
 # Water Mod (HB+ v2.1)
 
 Water physics mod for Hamsterball — HB+ API version of the bass.dll proxy water_mod v7.

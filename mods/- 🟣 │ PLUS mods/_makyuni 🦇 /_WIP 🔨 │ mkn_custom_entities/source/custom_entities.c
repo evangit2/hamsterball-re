@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53g-3
+ * custom_entities.c — Hamsterball Custom Entities Mod v53g-5
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1438,10 +1438,15 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     } else if (ai_type == 16) {
         path = NULL;
     } else if (ai_type == 22) {
-        path = NULL;
+        path = NULL;  /* Chomper: MeshNode_ctor loads own mesh */
     } else if (ai_type == 28) {
-        path = NULL;
+        path = NULL;  /* Cloudscape: Sprite_ctor loads own texture */
     } else if (ai_type >= 30 && ai_type <= 33) {
+        path = NULL;  /* Level-family: self-loads MESHWORLD or uses board mesh */
+    } else if (ai_type == 41 || ai_type == 42) {
+        /* v53g-5: Trapdoor and Odd_Lifter read mesh from board+0x878+0x594/0x5C8
+         * (App mesh table). They ignore the mesh parameter. Setting path=NULL
+         * avoids loading a mesh file that would be leaked. */
         path = NULL;
     } else {
         path = g_swirl_mesh_path;
@@ -1777,7 +1782,22 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, NEONPLATFORM_SIZE);
                 pfn_NeonPlatform_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 41: /* Trapdoor_ctor — 2 params (this, board) — no mesh or position params */
+            case 41: /* Trapdoor_ctor — 2 params (this, board) — no mesh or position params
+                      * Reads mesh from board+0x878+0x594 (App mesh table).
+                      * v53g-5: Guard against NULL App mesh table entry on non-native levels. */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD mesh_table = app ? *(DWORD*)(app + 0x878) : 0;
+                    if (!mesh_table || IsBadReadPtr((void*)mesh_table, 0x5A4)) {
+                        if (logf) fprintf(logf, "  ROTATER: Trapdoor — App mesh table NULL, skipping\n");
+                        return;
+                    }
+                    DWORD trapdoor_mesh = *(DWORD*)(mesh_table + 0x594);
+                    if (!trapdoor_mesh) {
+                        if (logf) fprintf(logf, "  ROTATER: Trapdoor — mesh at App+0x878+0x594 is NULL, skipping\n");
+                        return;
+                    }
+                }
                 obj = pfn_operator_new(TRAPDOOR_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trapdoor\n"); return; }
                 memset(obj, 0, TRAPDOOR_SIZE);
@@ -1787,7 +1807,22 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10DC) = py;
                 *(float*)((char*)obj + 0x10E0) = pz;
                 break;
-            case 42: /* Odd_Lifter_ctor (Droplifter) — 5 params (this, board, x, y, z) — no mesh */
+            case 42: /* Odd_Lifter_ctor (Droplifter) — 5 params (this, board, x, y, z) — no mesh
+                      * Reads mesh from board+0x878+0x5C8 (App mesh table).
+                      * v53g-5: Guard against NULL App mesh table entry on non-native levels. */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD mesh_table = app ? *(DWORD*)(app + 0x878) : 0;
+                    if (!mesh_table || IsBadReadPtr((void*)mesh_table, 0x5CC)) {
+                        if (logf) fprintf(logf, "  ROTATER: Droplifter — App mesh table NULL, skipping\n");
+                        return;
+                    }
+                    DWORD lifter_mesh = *(DWORD*)(mesh_table + 0x5C8);
+                    if (!lifter_mesh) {
+                        if (logf) fprintf(logf, "  ROTATER: Droplifter — mesh at App+0x878+0x5C8 is NULL, skipping\n");
+                        return;
+                    }
+                }
                 obj = pfn_operator_new(ODD_LIFTER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Droplifter\n"); return; }
                 memset(obj, 0, ODD_LIFTER_SIZE);
@@ -2948,7 +2983,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53g-3 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53g-5 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -3117,10 +3152,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             /* Despawn all rotater objects on level exit */
             cEnt_despawn_all_rotaters(board, logf);
         } else {
-            /* No GRID points — still mark board as processed */
+            /* No GRID points — still mark board as processed.
+             * v53g-5 FIX: Do NOT call cEnt_despawn_all_rotaters() here!
+             * It destroys all custom entities that were just spawned by
+             * process_rotaters(). The despawn was intended for stale objects
+             * from a PREVIOUS level, but g_spawned_board hasn't been set yet,
+             * so it hits the CURRENT level's objects. Remove this call entirely. */
             g_spawned_board = board;
-            /* Still process rotaters even without GRID points */
-            cEnt_despawn_all_rotaters(board, logf);
             if (logf) fprintf(logf, "  No GRID points found\n");
         }
 

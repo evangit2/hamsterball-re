@@ -1,3 +1,5 @@
+> **⚠️ Status: Untested** — This is an HB+ API port that has not yet been crash-tested or verified in-game.
+
 # Portal Mod
 
 Teleports the ball between linked portals using the game's native teleport system (same as Toob Race's E:BRANCH and Odd Race's N:JUMPFIRST).

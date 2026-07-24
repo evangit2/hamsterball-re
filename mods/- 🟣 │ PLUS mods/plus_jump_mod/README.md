@@ -1,3 +1,5 @@
+> **⚠️ Status: Untested** — This is an HB+ API port that has not yet been crash-tested or verified in-game.
+
 # Jump Mod (HB+ v2.1)
 
 Press SPACE to jump (Player 1 only, raycast ground detection).
