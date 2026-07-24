@@ -2861,7 +2861,7 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
 static void cEnt_gluebie_proximity_check(DWORD board) {
     if (!board) return;
 
-    /* Get ball AthenaList at board+0x29D4 */
+    /* Get ball AthenaList at board+0x29D4 (contains player + AI balls) */
     DWORD ball_list = board + 0x29D4;
     if (IsBadReadPtr((void*)(ball_list + 0x04), 4)) return;
     int ball_count = *(int*)(ball_list + 0x04);
@@ -2876,10 +2876,15 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         if (!gluebie || gluebie < 0x10000) continue;
         if (IsBadReadPtr((void*)gluebie, 0x1110)) continue;
 
-        /* Read Gluebie proximity position (set by vtable[11] via Matrix_TransformVec3) */
-        float gz = *(float*)(gluebie + 0x10E0);
-        float gx = *(float*)(gluebie + 0x10E4);
-        float gy = *(float*)(gluebie + 0x10E8);
+        /* v55c fix: Use VISUAL position (obj+0x10D4/10D8/10DC) instead of
+         * proximity position (obj+0x10E0/10E4/10E8).
+         * The proximity position is set by vtable[11] via Matrix_TransformVec3,
+         * but the matrix transform uses a global graphics matrix that may not
+         * be in the right state when read from the mod's background thread.
+         * The visual position is set directly by the mod and is always valid. */
+        float gx = *(float*)(gluebie + 0x10D4);
+        float gy = *(float*)(gluebie + 0x10D8);
+        float gz = *(float*)(gluebie + 0x10DC);
 
         /* Read detection radius */
         float radius = *(float*)(gluebie + 0x1100) * 60.0f;
@@ -2901,10 +2906,10 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             float by = *(float*)(ball + 0x168);
             float bz = *(float*)(ball + 0x16C);
 
-            /* 3D distance (matching native axis mapping) */
-            float dz = gy - bz;  /* gluebie+0x10E8 - ball+0x16C */
-            float dy = gx - by;  /* gluebie+0x10E4 - ball+0x168 */
-            float dx = gz - bx;  /* gluebie+0x10E0 - ball+0x164 */
+            /* 3D distance (standard, no axis swap needed since visual pos = world pos) */
+            float dx = gx - bx;
+            float dy = gy - by;
+            float dz = gz - bz;
             float dist_sq = dx*dx + dy*dy + dz*dz;
 
             if (dist_sq < radius * radius) {
@@ -2916,20 +2921,10 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 float vy = *(float*)(col_mesh + 0xCA8);
                 float vz = *(float*)(col_mesh + 0xCAC);
 
-                /* Compute velocity magnitude */
-                float vel_sq = vx*vx + vy*vy + vz*vz;
-                float vel_len = 0.0f;
-                if (vel_sq > 0.0f) vel_len = sqrtf(vel_sq);
-
-                /* Scale by 0.95 (slowdown factor) */
-                if (vel_len > 0.0f) {
-                    float scale = 0.95f;
-                    /* Native: if vel_len > 0, scale = (vel_len * 0.95) / vel_len */
-                    /* This is equivalent to multiplying by 0.95 */
-                    *(float*)(col_mesh + 0xCA4) = vx * scale;
-                    *(float*)(col_mesh + 0xCA8) = vy * scale;
-                    *(float*)(col_mesh + 0xCAC) = vz * scale;
-                }
+                /* Scale by 0.95 (slowdown factor — ball keeps 95% of velocity) */
+                *(float*)(col_mesh + 0xCA4) = vx * 0.95f;
+                *(float*)(col_mesh + 0xCA8) = vy * 0.95f;
+                *(float*)(col_mesh + 0xCAC) = vz * 0.95f;
 
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
