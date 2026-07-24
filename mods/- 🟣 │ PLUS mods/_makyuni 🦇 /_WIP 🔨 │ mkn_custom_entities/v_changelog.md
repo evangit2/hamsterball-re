@@ -1,6 +1,33 @@
 # Version Changelog
 
-## v53g
+## v53g-5
+
+- **CRITICAL FIX: Entities despawned immediately on levels without GRID points**
+  - The "No GRID points found" branch called `cEnt_despawn_all_rotaters()` which
+    calls `vtable[11]` (RemoveAndFree) on ALL custom entities that were just
+    spawned by `process_rotaters()`. This destroyed every custom entity on
+    levels that have no GRID reference points.
+  - Fix: Removed the `cEnt_despawn_all_rotaters()` call from the No-GRID branch.
+    Entities are still properly cleaned up on level exit via the normal path.
+- **FIX: Trapdoor/Odd_Lifter mesh leak and NULL mesh guard**
+  - Trapdoor_ctor (0x438290) and Odd_Lifter_ctor (0x434E60) read mesh from
+    `board+0x878+0x594/0x5C8` (App mesh table), NOT from the mesh parameter.
+    The spawn function was loading a mesh file that was never used (memory leak).
+  - Fix: Set `path=NULL` for types 41 and 42 so no mesh file is loaded.
+  - Added safety guard: checks if App mesh table entry is valid before calling
+    the constructor. If NULL, the entity is skipped (logged) instead of crashing.
+- **Verified via Ghidra decompilation**:
+  - All 34 constructor addresses confirmed correct
+  - All 24 alloc size constants confirmed correct
+  - All 8 Stands_ctor family calling conventions confirmed (v53g-4 fixes hold)
+  - Stands_ctor (0x462850) internally calls SpriteAnim_Ctor, AthenaList_Init,
+    Timer_Init, and SpatialTree_CloneToLevel — all verified safe
+  - Collision offset logic (col_off=0 for all except Rotator 1-6) confirmed
+  - Board list additions (0x2578, 0xCD4, 0x8B8, scene+0x1C) verified correct
+  - Despawn logic (skip types 30-33) verified correct
+- Crash test: 39.7s, no crash
+
+## v53g-4
 
 - **REVERTED v53f crash regression**: use_board_level_as_mesh and visual mesh swap
   caused 11 entities to crash (Rotator, Pendulum, Looper, Gear, Swirl, Flickfloor1/2,
