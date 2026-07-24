@@ -75,9 +75,6 @@
 /* D3D light slot to use (0-7; Neon Race uses 0 for P1, 1 for P2) */
 #define LIGHT_SLOT           2
 
-/* Dark ambient color (very dark blue-gray, same as GlobalNeon) */
-#define DARK_AMBIENT         0x000C0C14
-
 /* ═══════════════════════════════════════════════════════════════════════════
  * D3DLIGHT8 Structure (104 bytes)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -116,7 +113,6 @@ typedef struct {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static float    g_charge = CHARGE_MAX;
-static DWORD    g_saved_gfx = 0;
 static BYTE     g_orig_bytes[6];
 
 /* Saved original ball color for restoration */
@@ -155,17 +151,11 @@ static D3DLIGHT8 g_light = {
 static void update_light(DWORD gfx) {
     if (!gfx || IsBadReadPtr((void*)gfx, 0x860)) return;
     
-    /* Save gfx pointer for ambient override */
-    g_saved_gfx = gfx;
-    
     /* Get D3D device */
     DWORD device = *(DWORD*)(gfx + GFX_D3D_DEVICE);
     if (!device || IsBadReadPtr((void*)device, 4)) return;
     DWORD vtable = *(DWORD*)device;
     if (!vtable || IsBadReadPtr((void*)vtable, 0x100)) return;
-    
-    /* Override ambient to dark */
-    *(DWORD*)(gfx + GFX_AMBIENT) = DARK_AMBIENT;
     
     /* Enable D3D lighting */
     /* device->SetRenderState(D3DRS_LIGHTING, TRUE) */
