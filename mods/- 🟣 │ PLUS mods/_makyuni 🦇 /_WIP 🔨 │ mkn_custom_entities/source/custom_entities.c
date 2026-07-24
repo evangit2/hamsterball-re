@@ -2960,9 +2960,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
                 level_name = *(char**)(board + 0x10);
             }
             if (level_name && !IsBadReadPtr(level_name, 12)) {
+                /* v54d: Check for Dizzy in level name (covers both
+                 * "Board (Dizzy)" for Dizzy Race and
+                 * "RumbleBoard (Dizzy Arena)" for Dizzy Arena) */
                 if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
                     _strnicmp(level_name, "Arena", 5) == 0 ||
-                    _strnicmp(level_name, "Board (Dizzy", 12) == 0) {
+                    my_stristr(level_name, "Dizzy") != NULL) {
                     if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on %s)\\n",
                             entity_name, level_name);
                     continue;
