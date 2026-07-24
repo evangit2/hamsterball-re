@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v54d
+ * custom_entities.c — Hamsterball Custom Entities Mod v55
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1452,13 +1452,17 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         path = g_swirl_mesh_path;
     }
     
-    /* v54: Override path=NULL for entity types that handle their own mesh
+    /* v54d: Override path=NULL for entity types that handle their own mesh
      * loading internally. The if/else-if chain above sets path=mesh_path
      * when mesh_path is non-NULL, which prevents these overrides from
-     * triggering in the else-if branches. This override runs AFTER. */
+     * triggering in the else-if branches. This override runs AFTER.
+     * 
+     * v55: REMOVED ai_types 10, 11, 15, 22 from this list — they have .MESH
+     * files and should go through the .MESH swap code (PopCylinder + mesh swap).
+     * Keeping them here sent them to native constructors that call Level_ctor → crash. */
     if (ai_type == 12 || ai_type == 13 || ai_type == 14 ||
-        ai_type == 15 || ai_type == 16 || ai_type == 22 ||
-        ai_type == 28 || (ai_type >= 30 && ai_type <= 33) ||
+        ai_type == 16 || ai_type == 28 ||
+        (ai_type >= 30 && ai_type <= 33) ||
         ai_type == 41 || ai_type == 42) {
         path = NULL;
     }
@@ -2874,28 +2878,28 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bell",             0, "meshes\\bell" },              /* PopCylinder — Bell_ctor crashes (Level_ctor has no mesh, vtable update calls LoadMesh) */
             { "Blockdawg",        0, "levels\\Level8-BlockDawg1" }, /* Blockdawg_ctor */
             { "Bonk",             33, "levels\\Level5-Bonk" },       /* Bonk_ctor (0x438850, 0x1200) — self-loads level5-bonk MESHWORLD */
-            { "Bridge",           34, "levels\\Level2-Bridge" },     /* BreakBridge_ctor: Pendulum vtable with tilt animation */
+            { "Bridge",            0, "levels\\Level2-Bridge" },     /* BreakBridge_ctor: Pendulum vtable with tilt animation */
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\Bumper01" },          /* N:BUMPER tag — no _ctor, _default mesh */
                         { "Catapult",         35, "levels\\Level4-Catapult" },   /* Catapult_ctor (0x437E10, 0x1108) */
             { "Chomper",          22, "meshes\\chomper" },           /* Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18 bytes) */
-            { "Chrome",           23, "levels\\_default" },          /* Chrome_ctor: no _ctor, board-level behavior, PopCylinder fallback */
-            { "Cloudscape",       28, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
-            { "Drawbridge",       9, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
+            { "Chrome",           23, "meshes\\Sphere" },          /* v55: was _default, now Sphere.MESH for Chrome ball */
+            { "Cloudscape",        0, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
+            { "Drawbridge",        0, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
             { "Droplifter",       42, "levels\\Level6-Lifter" },     /* Odd_Lifter_ctor (0x434E60, 0x10F4) */
             { "Fan",              0, "meshes\\fanbody" },           /* PopCylinder — Fan_ctor crashes (Level_ctor has no mesh) */
-            { "Flag",             14, "levels\\\\Flag" },             /* Wavy_ctor: same as Flag2, loads Flag.MESHWORLD or _default */
-            { "Flag2",            14, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
+            { "Flag",              0, "levels\\\\Flag" },             /* Wavy_ctor: same as Flag2, loads Flag.MESHWORLD or _default */
+            { "Flag2",             0, "levels\\Flag" },               /* WavyFlag2: Wavy_ctor copy, uses Flag.MESHWORLD or _default fallback */
             { "Flickfloor1",      7,  "levels\\LevelDark-DFloor1" },  /* cEnt_DFloor1_ctor (ArenaStands_ctor, 0x43E450, 0x1104) */
             { "Flickfloor2",     19, "levels\\LevelDark-DFloor4" },  /* cEnt_DFloor4_ctor (ArenaStands + post-config: obj+0x10DC=2, obj+0x10E0=0) */
             { "Flickring",       20, "levels\\LevelDark-Flickring" }, /* cEnt_FlickRing_ctor (ArenaStands_ctor) */
             { "Funball",          24, "meshes\\funball" },           /* Funball_ctor: no _ctor, board-level behavior, PopCylinder fallback */
-            { "Gear",             29, "levels\\LevelImpossible-Gear" }, /* Gear_ctor (0x437690, 0x1514, 9 params!) */
+            { "Gear",              0, "levels\\LevelImpossible-Gear" }, /* Gear_ctor (0x437690, 0x1514, 9 params!) */
             { "Glassbreaker",     11, "meshes\\GlassBonus" },       /* Secret_ctor (0x43DFB0, 0x10EC bytes) */
                                     { "Gluebie",           0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
             { "Judge",            10, "meshes\\hammyjudge" },       /* Gear_Level_ctor (0x43A150, 0x1100 bytes, no mesh param) */
             { "Lifter",           38, "levels\\LevelUp-Lifter" },    /* Lifter_ctor (0x436920, 0x10F4) */
-            { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x435800, 0x1500, 6 params) */
+            { "Looper",            0, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x435800, 0x1500, 6 params) */
             { "Mace",              36, "levels\\Level4-Mace" },       /* Mace_ctor (0x438750, 0x110C) */
             { "Mag",              0, "meshes\\magnifyingglass" },   /* .MESH — Magnifier_ctor */
             { "Mousetrap",        0, "levels\\MouseTrap" },        /* MouseTrap_ctor */
@@ -2907,7 +2911,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Sawblade",         0, "meshes\\sawblade" },         /* PopCylinder — SawBlade_ctor crashes (Level_ctor has no mesh) */
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
             { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
-            { "Spinner",          27, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
+            { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
             { "Tarbubble",        25, "meshes\\tarbubble" },         /* Tarbubble_ctor: no _ctor, board-level behavior, PopCylinder fallback */
             { "Tarpit",           0, "levels\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
@@ -2918,7 +2922,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* Waterwheel_ctor: no _ctor, position-only storage, PopCylinder fallback */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
             { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
-            { "Wobbly",           8, "levels\\Level7-Wobbly1" },    /* GameLevel_ctor (0x4351F0, 0x1524 bytes) */
+            { "Wobbly",            0, "levels\\Level7-Wobbly1" },    /* GameLevel_ctor (0x4351F0, 0x1524 bytes) */
         };
         static const int ai_list_count = sizeof(ai_list) / sizeof(ai_list[0]);
 
@@ -3070,7 +3074,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v54d Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
