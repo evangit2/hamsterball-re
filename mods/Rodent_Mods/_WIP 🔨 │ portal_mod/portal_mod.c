@@ -62,6 +62,18 @@ typedef DWORD HFX;
 
 /* ---- App offsets (for sound) ---- */
 #define APP_SOUNDS_PTR           0x178  /* App+0x178 = Graphics/Sounds ptr */
+#define APP_ZIP_SOUND_CHANNEL    0x4CC  /* App+0x4CC = zip SoundChannel* (loaded in TimerDisplay) */
+#define SOUND_PLAY_3D            0x00459860  /* __thiscall(ECX=soundChannel, float x, float y, float z), RET 0x10 */
+
+/* Sound_Play3D wrapper — implemented in portal_sound.asm to avoid GCC
+ * inline asm register constraints issues. */
+extern void __cdecl portal_play_zip(DWORD soundChannel, float x, float y, float z);
+
+static void call_sound_play3d(DWORD soundChannel, float x, float y, float z) {
+    if (!soundChannel) return;
+    if (IsBadReadPtr((void*)soundChannel, 0x20)) return;
+    portal_play_zip(soundChannel, x, y, z);
+}
 
 /* ================================================================ */
 /* BASS PROXY (v3 lazy loader)                                       */
@@ -382,6 +394,15 @@ void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
     }
 
     g_cooldowns[playerID] = 30;
+
+    /* Play zip sound at destination */
+    DWORD app = *(DWORD*)APP_PTR;
+    if (app && !IsBadReadPtr((void*)app, 0x600)) {
+        DWORD zipChannel = *(DWORD*)(app + APP_ZIP_SOUND_CHANNEL);
+        if (zipChannel && !IsBadReadPtr((void*)zipChannel, 0x20)) {
+            call_sound_play3d(zipChannel, destX, destY, destZ);
+        }
+    }
 }
 
 /* ================================================================ */
