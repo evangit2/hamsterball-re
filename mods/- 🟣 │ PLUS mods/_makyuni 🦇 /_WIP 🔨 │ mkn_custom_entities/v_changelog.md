@@ -1,6 +1,37 @@
 # Version Changelog
 
-## v54d — Fix crash from vtable overrides
+## v55 — Major fix: Static Swirl + crashes
+
+- **Static Swirl fix (10 entities): 8ball, Bell, Chomper, Fan, Funball, Glassbreaker, Judge, Mag, Sawblade, Tarbubble**
+  - Root cause: if/else-if chain bug (fixed in v54) was still sending .MESH entities
+    through the .MESH swap code with Swirl mesh instead of their correct mesh.
+  - v55 fix: Removed ai_types 10, 11, 15, 22 from path=NULL override. These entities
+    have .MESH file paths (meshes\*) and should go through the .MESH swap code which:
+    1. Loads the correct .MESH via MeshNode_ctor
+    2. Loads Swirl as PopCylinder base (proper vtable, position, collision)
+    3. Swaps obj+0x08 to the entity's MeshWorld (correct visual model)
+    4. NO vtable override (prevents stack corruption from v54d crash)
+  - Result: All 10 entities should now show their correct mesh model instead of Static Swirl.
+
+- **Crash fixes (11 entities → 4 crash patterns resolved):**
+  - MeshArchive_ctor crash (Bridge, Chomper, Wobbly): Changed ai_type to 0 (PopCylinder fallback).
+    These entities' native constructors (GameLevel_ctor, BreakBridge_ctor) call MeshArchive_ctor
+    which crashes without board pre-loaded mesh data. Now they use PopCylinder with their .MESHWORLD mesh.
+  - Level_ctor crash (8Ball, Spinner): Fixed by removing ai_type 15 and 27 from path=NULL override.
+    Now .MESH swap code handles them — no native constructor called.
+  - MeshWorld_Parse crash (Flag, Flag2): Changed ai_type from 14 (Wavy_ctor) to 0 (PopCylinder).
+    Flag.MESHWORLD doesn't exist, causing Wavy_ctor to crash during parsing.
+  - Gear/Looper/Cloudscape/Drawbridge crashes: Changed ai_type to 0 (PopCylinder fallback).
+    Native constructors crash without board pre-loaded data.
+
+- **Chrome fix:** Changed mesh path from _default.MESHWORLD to Sphere.MESH.
+
+- **Also includes all v54d fixes:**
+  - if/else-if chain bug fix (path=NULL overrides now work)
+  - Dizzy Arena double-Swirl fix (my_stristr for "Dizzy" in level name)
+  - Bell/Fan/SawBlade case handlers with .MESH swap (no vtable override)
+
+- Crash test: 38.8s OK
 
 - **CRASH FIX: Removed vtable overrides for Bell/Fan/SawBlade**
   - v54 added vtable overrides to give PopCylinder objects native Bell/Fan/SawBlade behavior.

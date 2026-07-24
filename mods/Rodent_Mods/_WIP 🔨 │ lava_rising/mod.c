@@ -1,18 +1,17 @@
 /*
- * custom_lifter — Modified Up Race lifter state machine
+ * lava_rising — Rising/falling lava with heat zone system
  *
- * Replaces the Rotator vtable[0x0B] render function (0x0043D420) with a
- * custom state machine:
- *   State 0 (bottom pause): 300 frames, then → state 1, timer=1500
- *   State 1 (rising):       3 sub-steps/frame × +0.1 Y, no ball carry, no sound
- *                           1500 frames, then → state 2, timer=300
- *   State 2 (top pause):    300 frames, then → state 3, timer=1500
- *   State 3 (falling):      3 sub-steps/frame × -0.2 Y, no ball carry, no sound
- *                           1500 frames, then → state 0, timer=400, NO arrival sound
+ * Built on the custom lifter state machine. The lifter represents lava
+ * that rises and falls on a timing cycle. When the ball is within the
+ * lifter's X/Z footprint, the vertical gap (ball.y - lava.y) determines
+ * the heat level:
+ *   - Close to lava → ball turns red, speed increases
+ *   - Far from lava  → ball cools, returns to normal
+ *   - Touching lava  → ball dies (shatter)
+ *   - Near ice/cold  → ball turns blue, speed decreases (future)
  *
- * The dirty flag (mesh repositioning) is handled by calling the original
- * function with a temporary no-op state (0, timer=99999), then restoring
- * our real state/timer/pos_y and running the custom state machine.
+ * Heat is calculated via Option 2: X/Z bounds check + Y gap.
+ * Ball tint via ball+0x2AC (R) / 0x2B0 (G) / 0x2B4 (B) color multipliers.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -184,6 +183,25 @@ static RenderFn_t g_OriginalRender = NULL;
 #define BALL_Y      0x168
 #define BALL_Z      0x16C
 
+/* Ball color multiplier offsets (read by Ball_Render every frame) */
+#define BALL_COLOR_R  0x2AC
+#define BALL_COLOR_G  0x2B0
+#define BALL_COLOR_B  0x2B4
+
+/* Ball max_speed (used for speed scaling) */
+#define BALL_MAX_SPEED  0x188
+
+/* Ball death function (shatter) */
+#define BALL_SHATTER_ADDR  0x00408D70
+
+/* Heat zone parameters */
+#define HEAT_CUTOFF       200.0f   /* beyond this distance, no heat effect */
+#define HEAT_DEATH_DIST   26.0f    /* ball radius — touching lava = death */
+#define HEAT_FULL_DIST    30.0f   /* distance at which heat is max (1.0) */
+
+/* Normal ball values (for restoration) */
+#define NORMAL_MAX_SPEED  1000.0f
+
 /* Board struct offsets for ball list (AthenaList) */
 #define BOARD_BALL_LIST   0x29D4
 #define BOARD_BALL_COUNT  0x29D8
@@ -194,6 +212,85 @@ static RenderFn_t g_OriginalRender = NULL;
 
 /* Function pointer type for AthenaList lock */
 typedef int (__cdecl *AthenaListLock_t)(int list_ptr);
+
+/*
+ * Heat zone system: check if ball is within the lava's X/Z footprint
+ * and apply heat effects based on vertical distance.
+ *
+ * Option 2: X/Z bounds check + Y gap.
+ *   - Ball within X/Z footprint of lava → compute vertical gap
+ *   - Gap < HEAT_DEATH_DIST → ball dies (shatter)
+ *   - Gap < HEAT_FULL_DIST → full heat (max red tint, max speed boost)
+ *   - Gap < HEAT_CUTOFF → partial heat (lerp)
+ *   - Gap > HEAT_CUTOFF → no effect, restore normal
+ */
+static void apply_heat_zone(BYTE *lifter)
+{
+    int board = *(int *)(lifter + OFF_BOARD);
+    if (!board) return;
+
+    int ball_count = *(int *)(board + BOARD_BALL_COUNT);
+    if (ball_count < 1) return;
+
+    int *ball_array = *(int **)(board + BOARD_BALL_ARRAY);
+    if (!ball_array) return;
+
+    float lava_x = *(float *)(lifter + OFF_POS_X);
+    float lava_y = *(float *)(lifter + OFF_POS_Y);
+    float lava_z = *(float *)(lifter + OFF_POS_Z);
+
+    for (int i = 0; i < ball_count; i++) {
+        int ball = ball_array[i];
+        if (!ball) continue;
+        if (IsBadReadPtr((void *)ball, 0x2B8)) continue;
+
+        float bx = *(float *)(ball + BALL_X);
+        float by = *(float *)(ball + BALL_Y);
+        float bz = *(float *)(ball + BALL_Z);
+
+        /* Check if ball is within the lava's X/Z footprint */
+        if (bx < lava_x - BALL_XZ_RANGE || bx > lava_x + BALL_XZ_RANGE) continue;
+        if (bz < lava_z - BALL_XZ_RANGE || bz > lava_z + BALL_XZ_RANGE) continue;
+
+        /* Ball is over the lava — compute vertical gap */
+        float gap = by - lava_y;
+        if (gap < 0) gap = -gap;
+
+        /* Touching lava = death */
+        if (gap <= HEAT_DEATH_DIST) {
+            /* Call Ball_Shatter(this) to kill the ball */
+            typedef void (__thiscall *ShatterFn_t)(void *);
+            ShatterFn_t shatter = (ShatterFn_t)BALL_SHATTER_ADDR;
+            shatter((void *)ball);
+            continue;
+        }
+
+        /* Compute heat level (0.0 = no heat, 1.0 = max heat) */
+        float heat = 0.0f;
+        if (gap < HEAT_FULL_DIST) {
+            heat = 1.0f;
+        } else if (gap < HEAT_CUTOFF) {
+            heat = (HEAT_CUTOFF - gap) / (HEAT_CUTOFF - HEAT_FULL_DIST);
+        }
+
+        if (heat > 0.0f) {
+            /* Tint ball red: increase R, decrease G and B */
+            /* Normal color multiplier is 1.0 for all channels */
+            *(float *)(ball + BALL_COLOR_R) = 1.0f;
+            *(float *)(ball + BALL_COLOR_G) = 1.0f - heat * 0.8f;  /* 1.0 → 0.2 */
+            *(float *)(ball + BALL_COLOR_B) = 1.0f - heat * 0.8f;  /* 1.0 → 0.2 */
+
+            /* Speed boost: scale max_speed from normal to 1.5x based on heat */
+            *(float *)(ball + BALL_MAX_SPEED) = NORMAL_MAX_SPEED * (1.0f + heat * 0.5f);
+        } else {
+            /* Restore normal values when far from lava */
+            *(float *)(ball + BALL_COLOR_R) = 1.0f;
+            *(float *)(ball + BALL_COLOR_G) = 1.0f;
+            *(float *)(ball + BALL_COLOR_B) = 1.0f;
+            *(float *)(ball + BALL_MAX_SPEED) = NORMAL_MAX_SPEED;
+        }
+    }
+}
 
 /*
  * Carry balls on the lifter by the same delta as the lifter movement.
@@ -332,6 +429,9 @@ int __thiscall CustomLifter_Render(void *thisptr)
         }
         break;
     }
+
+    /* ── Apply heat zone effects ──────────────────────────────────── */
+    apply_heat_zone(bytes);
 
     return 1;
 }
