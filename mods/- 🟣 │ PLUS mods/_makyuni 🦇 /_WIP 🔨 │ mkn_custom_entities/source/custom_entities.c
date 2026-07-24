@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v54
+ * custom_entities.c — Hamsterball Custom Entities Mod v54d
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -1701,10 +1701,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 pfn_Gear_ctor_real(obj, (void*)board, px, py, pz, px, py, pz, mesh);
                 break;
             case 30: /* Bell_ctor — Expert Race Bell (5 params: this, board, x, y, z)
-                      * v54: Bell_ctor calls Level_ctor (no mesh file). Its vtable[1] is
+                      * v54d: Bell_ctor calls Level_ctor (no mesh). Its vtable[1] is
                       * Rotator_Update which needs vertex data. We use the .MESH swap
                       * pattern: PopCylinder with Swirl mesh, then swap obj+0x08 to
-                      * the Bell .MESH MeshWorld, then override vtable to Bell's. */
+                      * the Bell .MESH MeshWorld.
+                      * v54d FIX: Removed vtable override — causes stack corruption
+                      * because Bell's vtable functions have different calling
+                      * conventions than PopCylinder's. The mesh swap alone gives
+                      * the correct visual appearance (static Bell model). */
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
@@ -1730,16 +1734,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, bell_swirl);
                     /* Swap MeshWorld to Bell mesh */
                     if (bell_mw) *(DWORD*)((char*)obj + 0x08) = bell_mw;
-                    /* Override vtable to Bell's native vtable */
-                    *(DWORD*)obj = 0x004D5330;
-                    /* Set board pointer at +0x10D0 */
-                    *(DWORD*)((char*)obj + 0x10D0) = board;
-                    /* Position already set by PopCylinder_ctor at +0x10D4/D8/DC */
+                    /* v54d: NO vtable override — PopCylinder vtable is correct */
                 }
                 break;
             case 31: /* Fan_ctor — Expert Race Fan (6 params: this, board, x, y, z, float)
-                      * v54: Same Level_ctor issue as Bell. Uses .MESH swap pattern.
-                      * Fan mesh is "meshes\\fanbody". */
+                      * v54d: Same Level_ctor issue as Bell. Uses .MESH swap pattern.
+                      * Fan mesh is "meshes\\fanbody". No vtable override (stack safe). */
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
@@ -1762,13 +1762,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     memset(obj, 0, FAN_SIZE);
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, fan_swirl);
                     if (fan_mw) *(DWORD*)((char*)obj + 0x08) = fan_mw;
-                    /* Override vtable to Fan's native vtable */
-                    *(DWORD*)obj = 0x004D5180;
-                    *(DWORD*)((char*)obj + 0x10D0) = board;
+                    /* v54d: NO vtable override — PopCylinder vtable is correct */
                 }
                 break;
             case 32: /* SawBlade_ctor — Expert Race SawBlade (5 params: this, board, x, y, z)
-                      * v54: Same Level_ctor issue. Uses Level8-Saw.MESHWORLD (not .MESH). */
+                      * v54d: Same Level_ctor issue. Uses Level8-Saw.MESHWORLD.
+                      * No vtable override (stack safe). */
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
@@ -1785,9 +1784,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     memset(obj, 0, SAWBLADE_SIZE);
                     /* Use PopCylinder_ctor to set up the Level properly */
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, saw_mesh);
-                    /* Override vtable to SawBlade's native vtable */
-                    *(DWORD*)obj = 0x004D5240;
-                    *(DWORD*)((char*)obj + 0x10D0) = board;
+                    /* v54d: NO vtable override — PopCylinder vtable is correct */
                 }
                 break;
             case 33: /* Bonk_ctor — Warm-Up Race Bonk (5 params: this, board, x, y, z)
@@ -3069,7 +3066,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v54 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v54d Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

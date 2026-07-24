@@ -1,5 +1,26 @@
 # Version Changelog
 
+## v54d — Fix crash from vtable overrides
+
+- **CRASH FIX: Removed vtable overrides for Bell/Fan/SawBlade**
+  - v54 added vtable overrides to give PopCylinder objects native Bell/Fan/SawBlade behavior.
+  - Crash at 0x0046186E (inside Level_ctor) — mid-instruction EIP = stack corruption.
+  - Root cause: Bell/Fan/SawBlade vtable functions have different calling conventions
+    (different RET N) than PopCylinder's vtable functions. When the game calls these
+    overridden vtable functions on a PopCylinder object, the stack gets corrupted.
+  - Same pattern as v53f: "NEVER override a vtable on an object allocated with a
+    different size/constructor than the vtable's expected struct."
+  - Fix: Removed all vtable overrides. Bell/Fan/SawBlade now use PopCylinder's
+    native vtable (static mesh, no native animation/behavior). The mesh swap at
+    obj+0x08 gives the correct visual appearance.
+- **Also includes all v54 fixes:**
+  - if/else-if chain bug fix (path=NULL overrides now work)
+  - 8Ball mesh fix (App+0x268 → App+0x248, ball+0x754=1)
+  - Bell: PopCylinder + .MESH swap (meshes\Bell)
+  - Fan: PopCylinder + .MESH swap (meshes\fanbody)
+  - SawBlade: PopCylinder + Level8-Saw.MESHWORLD
+- Crash test: 38.6s OK
+
 ## v54 — MESH File Hotfix
 
 - **CRITICAL FIX: if/else-if chain bug caused ALL path=NULL overrides to be skipped!**
