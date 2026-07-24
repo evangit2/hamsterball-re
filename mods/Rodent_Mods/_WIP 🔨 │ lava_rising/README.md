@@ -16,14 +16,14 @@ Replaces the Up Race lifter state machine with a lava-themed system:
 
 ## How Heat Detection Works
 
-Uses **Option 2**: X/Z bounds check + vertical Y gap.
+Uses **raycasting** against N:LAVA-named meshes:
 
-1. Check if ball X/Z is within the lifter's footprint (±75 units, same as carry logic)
-2. If yes, compute vertical gap between ball Y and lava Y
-3. Map gap to heat level (0.0 to 1.0)
-4. Apply effects: color tint, speed scaling, death check
+1. Scans the MeshWorld's MeshBuffer list for names starting with `"N:LAVA"`
+2. Casts a ray straight down from the ball against each matching mesh
+3. Uses the closest hit distance as the heat value
+4. Maps distance to effects: death (touching), red tint + speed boost (close), normal (far)
 
-This avoids expensive raycasting — just simple float comparisons per frame.
+This works for **both rising lava** (on lifters) and **static lava** meshes — any mesh named `N:LAVA` is automatically included. The raycast uses the game's native `Mesh_FindClosestCollision` (0x465D90) which builds an octree per mesh for fast intersection.
 
 ## Installation
 

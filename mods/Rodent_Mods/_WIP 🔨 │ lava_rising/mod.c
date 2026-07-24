@@ -214,18 +214,46 @@ static RenderFn_t g_OriginalRender = NULL;
 typedef int (__cdecl *AthenaListLock_t)(int list_ptr);
 
 /*
- * Heat zone system: check if ball is within the lava's X/Z footprint
- * and apply heat effects based on vertical distance.
+ * Heat zone system: raycast downward from the ball against all N:LAVA meshes.
  *
- * Option 2: X/Z bounds check + Y gap.
- *   - Ball within X/Z footprint of lava → compute vertical gap
- *   - Gap < HEAT_DEATH_DIST → ball dies (shatter)
- *   - Gap < HEAT_FULL_DIST → full heat (max red tint, max speed boost)
- *   - Gap < HEAT_CUTOFF → partial heat (lerp)
- *   - Gap > HEAT_CUTOFF → no effect, restore normal
+ * Scans the MeshWorld's MeshBuffer list for names starting with "N:LAVA",
+ * then calls Mesh_FindClosestCollision (0x465D90) on each, casting a ray
+ * straight down from the ball. Uses the closest hit distance for heat.
+ *
+ * Works for both rising lava (on lifters) and static lava meshes.
  */
+
+/* Mesh_FindClosestCollision: __thiscall(ECX=mesh, RET 0x20)
+ *   Stack params: float *outHit, float origin[3], float dir[3], float tolerance
+ *   Returns outHit (3 floats = hit position XYZ)
+ */
+typedef void * (__thiscall *MeshRaycast_t)(void *mesh, float *outHit, float *origin, float *dir, float tolerance);
+#define FUNC_MeshRaycast  ((MeshRaycast_t)0x00465D90)
+
+/* Scene/MeshWorld/MeshBuffer struct offsets */
+#define G_SCENE_PTR       0x005341E4
+#define SCENE_MESHWORLD   0x8AC
+#define MW_MESHBUFFER_LIST 0x2C    /* AthenaList embedded in MeshWorld */
+#define MW_MB_COUNT        0x04    /* count in AthenaList */
+#define MW_MB_ARRAY        0x40C   /* items pointer in AthenaList */
+#define MB_NAME            0x864   /* MeshBuffer name (char*) */
+
 static void apply_heat_zone(BYTE *lifter)
 {
+    /* Get the scene → meshworld → meshbuffer list */
+    int scene = *(int *)G_SCENE_PTR;
+    if (!scene || IsBadReadPtr((void *)scene, 0x8B0)) return;
+
+    int level = *(int *)(scene + SCENE_MESHWORLD);
+    if (!level || IsBadReadPtr((void *)level, 0x500)) return;
+
+    /* MeshWorld's AthenaList of MeshBuffers is at level+0x2C */
+    int *athenaList = (int *)((char *)level + MW_MESHBUFFER_LIST);
+    int mb_count = *(int *)((char *)athenaList + MW_MB_COUNT);
+    int *mb_array = *(int **)((char *)athenaList + MW_MB_ARRAY);
+    if (!mb_array || mb_count < 1) return;
+
+    /* Get the board's ball list */
     int board = *(int *)(lifter + OFF_BOARD);
     if (!board) return;
 
@@ -235,10 +263,7 @@ static void apply_heat_zone(BYTE *lifter)
     int *ball_array = *(int **)(board + BOARD_BALL_ARRAY);
     if (!ball_array) return;
 
-    float lava_x = *(float *)(lifter + OFF_POS_X);
-    float lava_y = *(float *)(lifter + OFF_POS_Y);
-    float lava_z = *(float *)(lifter + OFF_POS_Z);
-
+    /* For each ball, raycast downward against all N:LAVA meshes */
     for (int i = 0; i < ball_count; i++) {
         int ball = ball_array[i];
         if (!ball) continue;
@@ -248,17 +273,52 @@ static void apply_heat_zone(BYTE *lifter)
         float by = *(float *)(ball + BALL_Y);
         float bz = *(float *)(ball + BALL_Z);
 
-        /* Check if ball is within the lava's X/Z footprint */
-        if (bx < lava_x - BALL_XZ_RANGE || bx > lava_x + BALL_XZ_RANGE) continue;
-        if (bz < lava_z - BALL_XZ_RANGE || bz > lava_z + BALL_XZ_RANGE) continue;
+        /* Raycast straight down from the ball */
+        float origin[3] = { bx, by, bz };
+        float dir[3]    = { 0.0f, -1.0f, 0.0f };  /* straight down */
+        float hitPos[3]  = { 0, 0, 0 };
 
-        /* Ball is over the lava — compute vertical gap */
-        float gap = by - lava_y;
-        if (gap < 0) gap = -gap;
+        float closestDist = HEAT_CUTOFF + 1.0f;  /* beyond cutoff = no heat */
+        int foundHit = 0;
+
+        /* Scan all meshbuffers for N:LAVA prefix */
+        for (int j = 0; j < mb_count; j++) {
+            int mb = mb_array[j];
+            if (!mb) continue;
+            if (IsBadReadPtr((void *)mb, 0x870)) continue;
+
+            char *name = *(char **)(mb + MB_NAME);
+            if (!name) continue;
+            if (IsBadReadPtr(name, 8)) continue;
+
+            /* Check if name starts with "N:LAVA" (case-insensitive) */
+            if (_strnicmp(name, "N:LAVA", 6) != 0) continue;
+
+            /* Raycast against this mesh buffer */
+            float hit[3] = { 0, 0, 0 };
+            void *result = FUNC_MeshRaycast((void *)mb, hit, origin, dir, 0.01f);
+            if (result) {
+                /* hit is the intersection point; distance = |hit.y - ball.y| */
+                float dist = by - hit[1];
+                if (dist < 0) dist = -dist;
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    foundHit = 1;
+                }
+            }
+        }
+
+        if (!foundHit) {
+            /* No lava below — restore normal */
+            *(float *)(ball + BALL_COLOR_R) = 1.0f;
+            *(float *)(ball + BALL_COLOR_G) = 1.0f;
+            *(float *)(ball + BALL_COLOR_B) = 1.0f;
+            *(float *)(ball + BALL_MAX_SPEED) = NORMAL_MAX_SPEED;
+            continue;
+        }
 
         /* Touching lava = death */
-        if (gap <= HEAT_DEATH_DIST) {
-            /* Call Ball_Shatter(this) to kill the ball */
+        if (closestDist <= HEAT_DEATH_DIST) {
             typedef void (__thiscall *ShatterFn_t)(void *);
             ShatterFn_t shatter = (ShatterFn_t)BALL_SHATTER_ADDR;
             shatter((void *)ball);
@@ -267,18 +327,17 @@ static void apply_heat_zone(BYTE *lifter)
 
         /* Compute heat level (0.0 = no heat, 1.0 = max heat) */
         float heat = 0.0f;
-        if (gap < HEAT_FULL_DIST) {
+        if (closestDist < HEAT_FULL_DIST) {
             heat = 1.0f;
-        } else if (gap < HEAT_CUTOFF) {
-            heat = (HEAT_CUTOFF - gap) / (HEAT_CUTOFF - HEAT_FULL_DIST);
+        } else if (closestDist < HEAT_CUTOFF) {
+            heat = (HEAT_CUTOFF - closestDist) / (HEAT_CUTOFF - HEAT_FULL_DIST);
         }
 
         if (heat > 0.0f) {
             /* Tint ball red: increase R, decrease G and B */
-            /* Normal color multiplier is 1.0 for all channels */
             *(float *)(ball + BALL_COLOR_R) = 1.0f;
-            *(float *)(ball + BALL_COLOR_G) = 1.0f - heat * 0.8f;  /* 1.0 → 0.2 */
-            *(float *)(ball + BALL_COLOR_B) = 1.0f - heat * 0.8f;  /* 1.0 → 0.2 */
+            *(float *)(ball + BALL_COLOR_G) = 1.0f - heat * 0.8f;
+            *(float *)(ball + BALL_COLOR_B) = 1.0f - heat * 0.8f;
 
             /* Speed boost: scale max_speed from normal to 1.5x based on heat */
             *(float *)(ball + BALL_MAX_SPEED) = NORMAL_MAX_SPEED * (1.0f + heat * 0.5f);

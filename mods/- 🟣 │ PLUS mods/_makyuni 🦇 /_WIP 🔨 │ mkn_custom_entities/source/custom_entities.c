@@ -2944,13 +2944,15 @@ static void process_rotaters(DWORD board, FILE* logf) {
          * and Dizzy Arena have native SWIRL ref points. Spawning additional
          * Swirls from cEnt entries causes duplicates.
          * Only skip Swirl — other cEnt types (8ball, Bell, etc.) still spawn. */
-        if (ai_type == 6) {
+        if (ai_type == 6 || cEnt_ci_strstr(entity_name, "Swirl")) {
             int skip_swirl = 0;
             DWORD app = *(DWORD*)(board + BOARD_APP);
             if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
                 int race_idx = *(int*)(app + 0x5FC);
                 if (race_idx == 2 || race_idx == 13) {
                     skip_swirl = 1;
+                    if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (Swirl on Dizzy/Master race_idx=%d)\\n",
+                            entity_name, race_idx);
                 }
             }
             if (!skip_swirl) {
@@ -2962,12 +2964,12 @@ static void process_rotaters(DWORD board, FILE* logf) {
                     if (my_stristr(level_name, "Dizzy") != NULL ||
                         my_stristr(level_name, "Arena") != NULL) {
                         skip_swirl = 1;
+                        if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (Swirl on level '%s')\\n",
+                                entity_name, level_name);
                     }
                 }
             }
             if (skip_swirl) {
-                if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native Swirl on Dizzy/Arena)\\n",
-                        entity_name);
                 continue;
             }
         }
