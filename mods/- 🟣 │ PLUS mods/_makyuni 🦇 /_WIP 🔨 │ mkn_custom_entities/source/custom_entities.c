@@ -1836,14 +1836,58 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10DC) = py;
                 *(float*)((char*)obj + 0x10E0) = pz;
                 break;
-            case 37: /* Tipper_ctor */
-                obj = pfn_operator_new(TIPPER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Tipper\n"); return; }
-                memset(obj, 0, TIPPER_SIZE);
-                pfn_Tipper_ctor(obj, (void*)board, mesh);
-                *(float*)((char*)obj + 0x10D8) = px;
-                *(float*)((char*)obj + 0x10DC) = py;
-                *(float*)((char*)obj + 0x10E0) = pz;
+            case 37: /* Tipper_ctor — 3 params (this, board, mesh)
+                     * v55b: Create TipperVisual + attach, matching native Dizzy_CreateDynamicObjects.
+                     * Without TipperVisual, obj+0x10D4=0 (NULL) → vtable[11] state machine
+                     * tries AthenaList_Append(board+0x8B0+0x18, NULL) → no collision.
+                     * TipperVisual is the object that gets added/removed from the collision
+                     * list as the tipper raises/lowers. */
+                {
+                    obj = pfn_operator_new(TIPPER_SIZE);
+                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Tipper\n"); return; }
+                    memset(obj, 0, TIPPER_SIZE);
+                    pfn_Tipper_ctor(obj, (void*)board, mesh);
+                    *(float*)((char*)obj + 0x10D8) = px;
+                    *(float*)((char*)obj + 0x10DC) = py;
+                    *(float*)((char*)obj + 0x10E0) = pz;
+
+                    /* Create TipperVisual from the mesh (same as native:
+                     * TipperVisual_ctor(alloc, board+0x4370) where board+0x4370 is
+                     * Level_RenderCtor result from Level3-Tipper mesh).
+                     * We use the already-loaded 'mesh' (Level_MeshWorldCtor result)
+                     * as the parent for Level_RenderCtor, then TipperVisual_ctor. */
+                    if (mesh && !IsBadReadPtr(mesh, 0x100)) {
+                        /* Create render Level from the Tipper mesh */
+                        void* render_level = pfn_operator_new(LEVEL_SIZE);
+                        if (render_level) {
+                            memset(render_level, 0, LEVEL_SIZE);
+                            render_level = pfn_Level_RenderCtor(render_level, mesh);
+                            if (render_level) {
+                                /* Create TipperVisual from the render Level */
+                                void* visual = pfn_operator_new(LEVEL_SIZE);
+                                if (visual) {
+                                    memset(visual, 0, LEVEL_SIZE);
+                                    visual = pfn_TipperVisual_ctor2(visual, (int)render_level);
+                                    if (visual) {
+                                        /* Store TipperVisual at obj+0x10D4 (DWORD index 0x435)
+                                         * Native: puVar4[0x435] = this (TipperVisual) */
+                                        *(DWORD*)((char*)obj + 0x10D4) = (DWORD)visual;
+                                        /* Attach visual to Tipper behavior object */
+                                        pfn_TipperVisual_Attach(visual, (int)obj);
+                                        if (logf) fprintf(logf, "  ROTATER: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
+                                                (DWORD)visual, (DWORD)obj);
+                                    } else {
+                                        if (logf) fprintf(logf, "  ROTATER: TipperVisual_ctor failed\n");
+                                    }
+                                }
+                            } else {
+                                if (logf) fprintf(logf, "  ROTATER: Level_RenderCtor failed for Tipper visual\n");
+                            }
+                        }
+                    } else {
+                        if (logf) fprintf(logf, "  ROTATER: Tipper mesh invalid, skipping TipperVisual creation\n");
+                    }
+                }
                 break;
             case 38: /* Lifter_ctor — 7 params (this, board, x, y, z, mesh, lifter_id) */
                 obj = pfn_operator_new(LIFTER_SIZE);

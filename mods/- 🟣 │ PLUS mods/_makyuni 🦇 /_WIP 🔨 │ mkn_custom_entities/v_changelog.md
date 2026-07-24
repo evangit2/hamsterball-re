@@ -1,5 +1,31 @@
 # Version Changelog
 
+## v55b — Tipper collision fix
+
+- **Tipper (ai_type 37): Fixed missing collision.**
+  - Root cause: Tipper_ctor creates the behavior object but sets obj+0x10D4 = 0.
+    The Tipper's vtable[11] (0x437A40) is a 4-state machine that adds/removes
+    obj+0x10D4 (the TipperVisual) from the scene collision list (board+0x8B0+0x18)
+    as the tipper raises/lowers. Without TipperVisual, obj+0x10D4=0 (NULL) →
+    AthenaList_Append(board+0x8B0+0x18, NULL) → no collision ever registered.
+  - Fix: After Tipper_ctor, create TipperVisual (matching native Dizzy_CreateDynamicObjects):
+    1. Create render Level via Level_RenderCtor from the Level3-Tipper mesh
+    2. Create TipperVisual via TipperVisual_ctor from the render Level
+    3. Store TipperVisual at obj+0x10D4 (DWORD index 0x435)
+    4. Call TipperVisual_Attach to link visual to behavior object
+  - Native game flow (Dizzy_CreateDynamicObjects):
+    - board+0x436C = Level_MeshWorldCtor("Levels\\Level3-Tipper")
+    - board+0x4370 = Level_RenderCtor(board+0x436C)
+    - Tipper_ctor(obj, board, board+0x436C)
+    - TipperVisual_ctor(alloc, board+0x4370) → visual
+    - obj[0x435] = visual (stored at obj+0x10D4)
+    - TipperVisual_Attach(visual, obj)
+  - vtable[11] state machine:
+    - State 0: Countdown → AthenaList_Append(collision_list, obj+0x10D4) → state 1
+    - State 1: Raise animation (scale × 1.05/frame) → state 2
+    - State 2: Wait (100 frames) → state 3
+    - State 3: Lower animation (scale × 0.85/frame) → AthenaList_Remove(collision_list, obj+0x10D4) → state 0
+
 ## v55 — Major fix: Static Swirl + crashes
 
 - **Static Swirl fix (10 entities): 8ball, Bell, Chomper, Fan, Funball, Glassbreaker, Judge, Mag, Sawblade, Tarbubble**
