@@ -1,5 +1,27 @@
 # Version Changelog
 
+## v54 — MESH File Hotfix
+
+- **Bell, Fan, SawBlade: Now spawnable on any level!**
+  - These 3 entities previously crashed because their native constructors call
+    `Level_ctor` (creates empty Level with no mesh), and their vtable[1]
+    (Rotator_Update) needs vertex data from a loaded mesh.
+  - **v54 approach:** Use PopCylinder_ctor to create a properly initialized
+    Level with mesh data, then override the vtable to the entity's native
+    vtable. This gives the object both valid mesh data AND native behavior.
+  - **Bell (type 30):** Loads `meshes\\Bell` (.MESH) via MeshNode_ctor,
+    swaps into obj+0x08, sets vtable=0x004D5330.
+  - **Fan (type 31):** Loads `meshes\\fanbody` (.MESH) via MeshNode_ctor,
+    swaps into obj+0x08, sets vtable=0x004D5180.
+  - **SawBlade (type 32):** Loads `levels\\Level8-Saw` (.MESHWORLD) directly
+    via PopCylinder_ctor, sets vtable=0x004D5240. Uses .MESHWORLD (not .MESH)
+    because it has proper vertex data for Rotator_Update.
+- **Also includes all v53g-5 fixes:**
+  - Fixed critical despawn bug (entities destroyed on No-GRID levels)
+  - Fixed Trapdoor/Odd_Lifter mesh leak + NULL guard
+  - All 34 constructor addresses verified via Ghidra
+- Crash test: 38.6s OK
+
 ## v53g-5
 
 - **CRITICAL FIX: Entities despawned immediately on levels without GRID points**
