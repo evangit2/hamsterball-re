@@ -2272,6 +2272,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     if (ai_type == 43 && g_gluebie_count < MAX_GLUEBIES) {
         g_gluebie_objs[g_gluebie_count] = (DWORD)obj;
         g_gluebie_count++;
+        if (logf) fprintf(logf, "  GLUEBIE: registered obj=%p in g_gluebie_objs[%d] (count=%d)\n",
+            (void*)obj, g_gluebie_count-1, g_gluebie_count);
     }
 
     if (g_rotater_count < MAX_ROTATERS) {
@@ -2858,6 +2860,8 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
  *         Set gluebie+0x1104 = 1 (active flag)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static int g_gluebie_debug_count = 0;  /* limit debug output */
+
 static void cEnt_gluebie_proximity_check(DWORD board) {
     if (!board) return;
 
@@ -2876,18 +2880,14 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         if (!gluebie || gluebie < 0x10000) continue;
         if (IsBadReadPtr((void*)gluebie, 0x1110)) continue;
 
-        /* v55c fix: Use VISUAL position (obj+0x10D4/10D8/10DC) instead of
-         * proximity position (obj+0x10E0/10E4/10E8).
-         * The proximity position is set by vtable[11] via Matrix_TransformVec3,
-         * but the matrix transform uses a global graphics matrix that may not
-         * be in the right state when read from the mod's background thread.
-         * The visual position is set directly by the mod and is always valid. */
+        /* Use visual position (obj+0x10D4/10D8/10DC) — always valid */
         float gx = *(float*)(gluebie + 0x10D4);
         float gy = *(float*)(gluebie + 0x10D8);
         float gz = *(float*)(gluebie + 0x10DC);
 
         /* Read detection radius */
-        float radius = *(float*)(gluebie + 0x1100) * 60.0f;
+        float radius_raw = *(float*)(gluebie + 0x1100);
+        float radius = radius_raw * 60.0f;
         if (radius <= 0.0f) continue;
 
         /* Reset active flag (will be set if any ball is in range) */
@@ -2901,16 +2901,36 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             /* Check ball is active: ball+0x18 >= 0 (signed) */
             if (*(int*)(ball + 0x18) < 0) continue;
 
+            /* Native also checks ball+0x2CC == 0 */
+            if (*(char*)(ball + 0x2CC) != 0) continue;
+
             /* Read ball position */
             float bx = *(float*)(ball + 0x164);
             float by = *(float*)(ball + 0x168);
             float bz = *(float*)(ball + 0x16C);
 
-            /* 3D distance (standard, no axis swap needed since visual pos = world pos) */
+            /* 3D distance */
             float dx = gx - bx;
             float dy = gy - by;
             float dz = gz - bz;
             float dist_sq = dx*dx + dy*dy + dz*dz;
+
+            /* Debug: log first few proximity checks */
+            if (g_gluebie_debug_count < 60) {
+                g_gluebie_debug_count++;
+                FILE* df = fopen("custom_entities_debug.log", "a");
+                if (df) {
+                    fprintf(df, "GLUEBIE: gluebie=%p pos=(%.1f,%.1f,%.1f) radius=%.1f ball[%d]=%p bpos=(%.1f,%.1f,%.1f) dist_sq=%.1f in_range=%d\n",
+                        (void*)gluebie, gx, gy, gz, radius, i, (void*)ball, bx, by, bz, dist_sq, dist_sq < radius*radius);
+                    DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
+                    fprintf(df, "  ball+0x1A4=%p col_mesh+0xCA4=%f col_mesh+0xCA8=%f col_mesh+0xCAC=%f\n",
+                        (void*)col_mesh,
+                        col_mesh ? *(float*)(col_mesh + 0xCA4) : 0.0f,
+                        col_mesh ? *(float*)(col_mesh + 0xCA8) : 0.0f,
+                        col_mesh ? *(float*)(col_mesh + 0xCAC) : 0.0f);
+                    fclose(df);
+                }
+            }
 
             if (dist_sq < radius * radius) {
                 /* Ball is in range — scale velocity */
