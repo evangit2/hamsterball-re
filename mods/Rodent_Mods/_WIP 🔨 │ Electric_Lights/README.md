@@ -6,28 +6,27 @@ A light/dark level mod for Hamsterball Physicus. The ball is a D3D point light s
 
 ### What it does
 
-- Creates a D3D point light (SceneObject) that follows the ball every frame
-- Light range scales with charge level (full charge = 400.0 range, zero charge = dark)
+- Hijacks the native Neon Race D3D light system (same technique as XRow's GlobalNeon CEA)
+- Writes a D3D point light at slot 2 every frame via `SetLight` + `LightEnable`
+- Light position follows the ball (read from gfx+0x854/858/85C)
+- Light range scales with charge level (full charge = 400.0, zero charge = 0.0)
+- Overrides ambient to dark (gfx+0x730)
 - Ball color multiplier scales with charge for visual glow feedback
-- Charge drains continuously at a configurable rate
 
 ### How it works
 
-Uses the native Neon Race SceneObject light system:
-1. At level start: allocates a 0xD4-byte SceneObject via `operator_new` + `SceneObject_ctor`
-2. Registers it via `Scene_RegisterObject` to get a D3D light slot (index 2)
-3. Every frame in Ball_Update hook: calls `SetPosition(ball.x, ball.y+30, ball.z)` to follow the ball
-4. Scales `obj+0xCC` (light range) based on charge: `charge * 400.0`
-5. Writes ball color multiplier (`ball+0x2AC/0x2B0/0x2B4`) scaled by charge
+Hooks `Graphics_RenderScene` entry (0x454BC0) — same hook point as GlobalNeon CEA:
+- ECX = gfx struct pointer at entry
+- gfx+0x154 = IDirect3DDevice8*
+- gfx+0x854/858/85C = ball position (set by Scene_Render each frame)
 
-### Native Neon Light System (Ghidra-verified)
-
-The neon light follow mechanism is in Neon board vtable[19] (0x00424790):
-- Called per-frame from Board_Update
-- Reads ball position from App+0x5DC
-- Calls SceneObject_SetPosition with ball.x+20, ball.y+30, ball.z-20
-
-Graphics_RenderScene (0x00454BC0) iterates 8 light slots at gfx+0x710 and calls vtable[3] (RefreshLight) on each, which calls D3D SetLight + LightEnable.
+Each frame:
+1. Override ambient to dark
+2. Enable D3D lighting
+3. Read ball position from gfx struct
+4. Update D3DLIGHT8 position + range (scaled by charge)
+5. Call SetLight(slot, &light) + LightEnable(slot, TRUE)
+6. Scale ball color multiplier by charge
 
 ### Configuration
 
@@ -40,6 +39,7 @@ Edit `electric_lights.c` and recompile:
 | `LIGHT_Y_OFFSET` | 30.0 | Light height above ball |
 | `GLOW_R/G/B` | 0.8/0.95/1.0 | Ball glow color (white-cyan) |
 | `LIGHT_SLOT` | 2 | D3D light slot (0-7; Neon uses 0-1) |
+| `DARK_AMBIENT` | 0x000C0C14 | Dark ambient color (0x00RRGGBB) |
 
 ### Build
 
