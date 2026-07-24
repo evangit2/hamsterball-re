@@ -2,20 +2,21 @@
 
 ## v54 — MESH File Hotfix
 
-- **Bell, Fan, SawBlade: Now spawnable on any level!**
-  - These 3 entities previously crashed because their native constructors call
-    `Level_ctor` (creates empty Level with no mesh), and their vtable[1]
-    (Rotator_Update) needs vertex data from a loaded mesh.
-  - **v54 approach:** Use PopCylinder_ctor to create a properly initialized
-    Level with mesh data, then override the vtable to the entity's native
-    vtable. This gives the object both valid mesh data AND native behavior.
-  - **Bell (type 30):** Loads `meshes\\Bell` (.MESH) via MeshNode_ctor,
-    swaps into obj+0x08, sets vtable=0x004D5330.
-  - **Fan (type 31):** Loads `meshes\\fanbody` (.MESH) via MeshNode_ctor,
-    swaps into obj+0x08, sets vtable=0x004D5180.
-  - **SawBlade (type 32):** Loads `levels\\Level8-Saw` (.MESHWORLD) directly
-    via PopCylinder_ctor, sets vtable=0x004D5240. Uses .MESHWORLD (not .MESH)
-    because it has proper vertex data for Rotator_Update.
+- **8Ball (type 15): Fixed Static Swirl issue!**
+  - Root cause: Ball_Render reads mesh from `App+0x244[ball+0x754 * 4]`,
+    NOT from `ball+0x10`. The old code stored MeshNode at `ball+0x10` (wrong offset
+    — that's the App/parent pointer). `ball+0x754` is the mesh index (must be < 3
+    for rendering). Default 0 = Sphere mesh, not 8Ball.
+  - Fix: Copy 8Ball mesh pointer from `App+0x268` to `App+0x248` (mesh slot 1),
+    then set `ball+0x754 = 1`. Same pattern as `cEnt_process_custom_tags`.
+  - Removed useless MeshNode_ctor call that was storing to the wrong offset.
+- **Bell (type 30): Fixed!**
+  - Bell_ctor calls `Level_ctor` (no mesh). vtable[1] = Rotator_Update needs vertex data.
+  - v54 uses PopCylinder_ctor with `meshes\Bell` .MESH swap + vtable override to 0x004D5330.
+- **Fan (type 31): Fixed!**
+  - Same Level_ctor issue. Uses `meshes\fanbody` .MESH swap + vtable override to 0x004D5180.
+- **SawBlade (type 32): Fixed!**
+  - Same Level_ctor issue. Uses `levels\Level8-Saw` .MESHWORLD + vtable override to 0x004D5240.
 - **Also includes all v53g-5 fixes:**
   - Fixed critical despawn bug (entities destroyed on No-GRID levels)
   - Fixed Trapdoor/Odd_Lifter mesh leak + NULL guard
