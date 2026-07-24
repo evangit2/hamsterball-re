@@ -285,8 +285,10 @@ static Secret_ctor_t pfn_Secret_ctor = (Secret_ctor_t)0x0043DFB0;
 typedef void* (__thiscall *FlagWaver_Ctor_t)(void* this_, void* gfx_device);
 static FlagWaver_Ctor_t pfn_FlagWaver_Ctor = (FlagWaver_Ctor_t)0x0046AF30;
 
-/* TipperVisual_Attach — links visual object to behavior object */
-typedef void (__cdecl *TipperVisual_Attach_t)(void* visual, int behavior);
+/* TipperVisual_Attach — links visual object to behavior object
+ * v55b: Changed from __cdecl to __thiscall (ECX=visual/this, stack=behavior).
+ * The function starts with MOV ESI,ECX and RET 0x4 — classic __thiscall. */
+typedef void (__thiscall *TipperVisual_Attach_t)(void* this_, int behavior);
 static TipperVisual_Attach_t pfn_TipperVisual_Attach = (TipperVisual_Attach_t)0x00465200;
 
 /* Sign_ctor — Popup Sign (complex signature, handled specially) */
