@@ -3158,6 +3158,37 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
         }
 
+        /* v55: Skip ALL mod processing on Dizzy Race/Arena to test if mod causes double-Swirl.
+         * If double-Swirl disappears, mod is the cause. If it persists, it's native. */
+        {
+            int skip_all = 0;
+            DWORD app = *(DWORD*)(board + BOARD_APP);
+            if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
+                int race_idx = *(int*)(app + 0x5FC);
+                if (race_idx == 2 || race_idx == 13) {
+                    skip_all = 1;
+                }
+            }
+            if (!skip_all) {
+                char* level_name = NULL;
+                if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
+                    level_name = *(char**)(board + 0x10);
+                }
+                if (level_name && !IsBadReadPtr(level_name, 5)) {
+                    if (my_stristr(level_name, "Dizzy") != NULL ||
+                        my_stristr(level_name, "Arena") != NULL) {
+                        skip_all = 1;
+                    }
+                }
+            }
+            if (skip_all) {
+                if (logf) fprintf(logf, "  SKIP: All mod processing skipped on Dizzy/Arena\\n");
+                g_spawned_board = board;
+                if (logf) { fflush(logf); fclose(logf); }
+                continue;
+            }
+        }
+
         /* Process <MESH> and <SPEEDMULT> tags on spawned 8-balls (after CreateBadBall has run) */
         cEnt_process_custom_tags(board, logf);
 
