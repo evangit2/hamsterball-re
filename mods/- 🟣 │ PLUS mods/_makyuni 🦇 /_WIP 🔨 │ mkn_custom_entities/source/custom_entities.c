@@ -1971,11 +1971,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 break;
             case 15: /* BadBall_ctor — 8ball/BadBall (2 params: this, board)
                       * Position is set after construction at ball+0xC60/0xC64/0xC68
-                      * (home position). Mesh is loaded by calling vtable[1] after ctor,
-                      * same as CreateBadBalls does. vtable[1] = Ball_SetupCollisionRender
-                      * which sets up collision and trajectory (NOT mesh loading).
-                      * The 8ball mesh is loaded globally by the App's mesh system.
-                      * We load it via MeshNode_ctor and store it at ball+0x10 (render mesh). */
+                      * (home position). Mesh is rendered by Ball_Render which reads
+                      * from App+0x244[ball+0x754 * 4] — NOT from ball+0x10.
+                      * ball+0x10 is the App/parent pointer, not a mesh pointer!
+                      *
+                      * v54 FIX: Copy 8Ball mesh ptr from App+0x268 to App+0x248
+                      * (mesh slot 1), then set ball+0x754=1 so Ball_Render renders
+                      * the 8Ball mesh instead of the default Sphere mesh.
+                      * This is the same pattern as cEnt_process_custom_tags. */
                 obj = pfn_operator_new(BADBALL_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BadBall\n"); return; }
                 memset(obj, 0, BADBALL_SIZE);
@@ -1988,16 +1991,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         ((vtable1_t)vtable[1])(obj);
                     }
                 }
-                /* Load 8ball.MESH via MeshNode_ctor and store at ball+0x10 */
+                /* v54: Set mesh index to 8Ball.
+                 * Copy 8Ball mesh pointer from App+0x268 to App+0x248 (slot 1).
+                 * Set ball+0x754 = 1 so Ball_Render renders the 8Ball mesh. */
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
-                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
-                    if (gfx_device) {
-                        void* mesh = pfn_MeshNode_ctor(pfn_operator_new(MESHNODE_SIZE),
-                                                        (void*)gfx_device, "meshes\\8ball");
-                        if (mesh) {
-                            *(DWORD*)((char*)obj + 0x10) = (DWORD)mesh;
-                            if (logf) fprintf(logf, "  ROTATER: 8ball mesh loaded via MeshNode_ctor\n");
+                    if (app && !IsBadReadPtr((void*)(app + 0x268), 4)) {
+                        DWORD mesh_8ball = *(DWORD*)(app + APP_MESH_8BALL);
+                        if (mesh_8ball) {
+                            /* Copy to slot 1 (SphereBreak1 position) */
+                            *(DWORD*)(app + APP_MESH_ARRAY + 4) = mesh_8ball;
+                            /* Set ball mesh index to 1 */
+                            *(DWORD*)((char*)obj + BALL_MESH_INDEX_FIELD) = MESH_SLOT_8BALL;
+                            if (logf) fprintf(logf, "  ROTATER: 8ball mesh set (App+0x248=0x%08X, ball+0x754=1)\n", mesh_8ball);
                         }
                     }
                 }
