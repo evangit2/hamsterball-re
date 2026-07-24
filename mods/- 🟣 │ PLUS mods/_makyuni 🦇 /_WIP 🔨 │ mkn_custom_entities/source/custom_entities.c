@@ -2953,18 +2953,19 @@ static void process_rotaters(DWORD board, FILE* logf) {
                             entity_name, race_idx);
                     continue;
                 }
-                /* Also check Arena levels via board name */
-                char* level_name = NULL;
-                if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
-                    level_name = *(char**)(board + 0x10);
-                }
-                if (level_name && !IsBadReadPtr(level_name, 12)) {
-                    if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
-                        _strnicmp(level_name, "Arena", 5) == 0) {
-                        if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on Arena)\\n",
-                                entity_name);
-                        continue;
-                    }
+            }
+            /* Also check Arena levels via board name */
+            char* level_name = NULL;
+            if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
+                level_name = *(char**)(board + 0x10);
+            }
+            if (level_name && !IsBadReadPtr(level_name, 12)) {
+                if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
+                    _strnicmp(level_name, "Arena", 5) == 0 ||
+                    _strnicmp(level_name, "Board (Dizzy", 12) == 0) {
+                    if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on %s)\\n",
+                            entity_name, level_name);
+                    continue;
                 }
             }
         }
