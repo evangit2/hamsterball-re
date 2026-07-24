@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v53g-2
+ * custom_entities.c — Hamsterball Custom Entities Mod v53g-3
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -134,7 +134,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   0  = PopCylinder_ctor (0x436EE0, size 0x10D0) — fallback for entities with no _ctor
  *   1  = Rotator_ctor (0x435940, size 0x1508) — Y-axis rotation
  *   2  = Pendulum_ctor (0x437700, size 0x1504) — X-axis oscillation
- *   3  = Looper_ctor (0x437460, size 0x1500) — Z-axis rotation
+ *   3  = Looper_ctor (0x435800, size 0x1500) — Z-axis rotation
  *   4  = Gear_ctor (0x437690, size 0x1514) — multi-axis
  *   5  = BigGear_ctor (same as 4)
  *   6  = Swirl (Rotator_ctor, constant rotation)
@@ -171,7 +171,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 typedef void* (__thiscall *Rotator_ctor_t)(void* this_, void* board, float posX, float posY, float posZ, void* mesh);
 static Rotator_ctor_t pfn_Rotator_ctor = (Rotator_ctor_t)0x00435940;
 static Rotator_ctor_t pfn_Pendulum_ctor = (Rotator_ctor_t)0x437700;
-static Rotator_ctor_t pfn_Looper_ctor = (Rotator_ctor_t)0x437460;
+static Rotator_ctor_t pfn_Looper_ctor = (Rotator_ctor_t)0x435800;
 static Rotator_ctor_t pfn_Gear_ctor = (Rotator_ctor_t)0x437690;
 
 /* ArenaStands_ctor — Neon Race DFLOOR, FLICKRING, TRODE (all use the same _ctor) */
@@ -241,8 +241,10 @@ static Bonk_ctor_t pfn_Bonk_ctor = (Bonk_ctor_t)0x00438850;
 typedef void* (__thiscall *BreakBridge_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static BreakBridge_ctor_t pfn_BreakBridge_ctor = (BreakBridge_ctor_t)0x00436D70;
 
-/* Stands_ctor family — entities with their own native _ctor */
-typedef void* (__thiscall *StandsCtor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+/* Stands_ctor family — entities with their own native _ctor
+ * NOTE: These take (this, board, mesh) = 3 params, NOT 6!
+ * Do NOT cast to Rotator_ctor_t — that causes stack imbalance. */
+typedef void* (__thiscall *StandsCtor_t)(void* this_, void* board, void* mesh);
 static StandsCtor_t pfn_Catapult_ctor     = (StandsCtor_t)0x00437E10;
 static StandsCtor_t pfn_Mace_ctor         = (StandsCtor_t)0x00438750;
 static StandsCtor_t pfn_Tipper_ctor       = (StandsCtor_t)0x00437960;
@@ -1582,8 +1584,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
-    } else if ((ai_type >= 7 && ai_type <= 13) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 33)) {
-        /* New constructor types (7-13) — each with specific signature */
+    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 42)) {
+        /* New constructor types — each with specific signature.
+         * Range 7-14: ArenaStands + Wavy family (Flag/Flag2)
+         * Range 17-22: ArenaStands variants + Chomper
+         * Range 27-42: Level-family + Stands_ctor family */
         switch (ai_type) {
             case 7:  /* cEnt_DFloor1_ctor — Neon DFLOOR1 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
@@ -1711,6 +1716,82 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BreakBridge\n"); return; }
                 memset(obj, 0, POPCYLINDER_SIZE);
                 pfn_BreakBridge_ctor(obj, (void*)board, px, py, pz, mesh);
+                break;
+            /* Stands_ctor family (35-42) — all take (this, board, mesh) = 3 params.
+             * Position is NOT passed to constructor — set after construction.
+             * These are NOT Rotator_ctor_t (6 params) — using wrong signature
+             * causes stack imbalance → crash at Level_ctor during Draw. */
+            case 35: /* Catapult_ctor */
+                obj = pfn_operator_new(CATAPULT_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Catapult\n"); return; }
+                memset(obj, 0, CATAPULT_SIZE);
+                pfn_Catapult_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 36: /* Mace_ctor */
+                obj = pfn_operator_new(MACE_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Mace\n"); return; }
+                memset(obj, 0, MACE_SIZE);
+                pfn_Mace_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 37: /* Tipper_ctor */
+                obj = pfn_operator_new(TIPPER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Tipper\n"); return; }
+                memset(obj, 0, TIPPER_SIZE);
+                pfn_Tipper_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 38: /* Lifter_ctor */
+                obj = pfn_operator_new(LIFTER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Lifter\n"); return; }
+                memset(obj, 0, LIFTER_SIZE);
+                pfn_Lifter_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 39: /* SpeedCylinder_ctor */
+                obj = pfn_operator_new(SPEEDCYLINDER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc SpeedCylinder\n"); return; }
+                memset(obj, 0, SPEEDCYLINDER_SIZE);
+                pfn_SpeedCylinder_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 40: /* NeonPlatform_ctor */
+                obj = pfn_operator_new(NEONPLATFORM_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc NeonPlatform\n"); return; }
+                memset(obj, 0, NEONPLATFORM_SIZE);
+                pfn_NeonPlatform_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 41: /* Trapdoor_ctor */
+                obj = pfn_operator_new(TRAPDOOR_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trapdoor\n"); return; }
+                memset(obj, 0, TRAPDOOR_SIZE);
+                pfn_Trapdoor_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
+                break;
+            case 42: /* Odd_Lifter_ctor (Droplifter) */
+                obj = pfn_operator_new(ODD_LIFTER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Droplifter\n"); return; }
+                memset(obj, 0, ODD_LIFTER_SIZE);
+                pfn_Odd_Lifter_ctor(obj, (void*)board, mesh);
+                *(float*)((char*)obj + 0x10D8) = px;
+                *(float*)((char*)obj + 0x10DC) = py;
+                *(float*)((char*)obj + 0x10E0) = pz;
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
@@ -1898,14 +1979,6 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             case 3:  ctor_fn = pfn_Looper_ctor;   alloc_sz = LOOPER_SIZE;    break; /* Looper (Z-axis) */
             case 4:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Small */
             case 5:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Big */
-            case 35: ctor_fn = (Rotator_ctor_t)pfn_Catapult_ctor;      alloc_sz = CATAPULT_SIZE;      break;
-            case 36: ctor_fn = (Rotator_ctor_t)pfn_Mace_ctor;          alloc_sz = MACE_SIZE;          break;
-            case 37: ctor_fn = (Rotator_ctor_t)pfn_Tipper_ctor;        alloc_sz = TIPPER_SIZE;        break;
-            case 38: ctor_fn = (Rotator_ctor_t)pfn_Lifter_ctor;       alloc_sz = LIFTER_SIZE;        break;
-            case 39: ctor_fn = (Rotator_ctor_t)pfn_SpeedCylinder_ctor; alloc_sz = SPEEDCYLINDER_SIZE; break;
-            case 40: ctor_fn = (Rotator_ctor_t)pfn_NeonPlatform_ctor;  alloc_sz = NEONPLATFORM_SIZE;  break;
-            case 41: ctor_fn = (Rotator_ctor_t)pfn_Trapdoor_ctor;     alloc_sz = TRAPDOOR_SIZE;      break;
-            case 42: ctor_fn = (Rotator_ctor_t)pfn_Odd_Lifter_ctor;   alloc_sz = ODD_LIFTER_SIZE;    break;
             default: /* AI 0: static PopCylinder */
                 obj = pfn_operator_new(POPCYLINDER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc\n"); return; }
@@ -2704,7 +2777,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
                                     { "Gluebie",           0, "levels\\Level3-Gluebie" },    /* Gluebie_ctor */
             { "Judge",            10, "meshes\\hammyjudge" },       /* Gear_Level_ctor (0x43A150, 0x1100 bytes, no mesh param) */
             { "Lifter",           38, "levels\\LevelUp-Lifter" },    /* Lifter_ctor (0x436920, 0x10F4) */
-            { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x437460, 0x1500, 6 params) */
+            { "Looper",           3, "levels\\LevelImpossible-Looper" }, /* Looper_ctor (0x435800, 0x1500, 6 params) */
             { "Mace",              36, "levels\\Level4-Mace" },       /* Mace_ctor (0x438750, 0x110C) */
             { "Mag",              0, "meshes\\magnifyingglass" },   /* .MESH — Magnifier_ctor */
             { "Mousetrap",        0, "levels\\MouseTrap" },        /* MouseTrap_ctor */
@@ -2875,7 +2948,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v53g-2 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v53g-3 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
