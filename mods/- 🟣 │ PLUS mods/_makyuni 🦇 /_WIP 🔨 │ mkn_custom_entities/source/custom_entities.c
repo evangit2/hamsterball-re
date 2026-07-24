@@ -376,6 +376,11 @@ typedef struct {
 static BridgeslamState g_bridgeslams[MAX_BRIDGESLAMS];
 static int g_bridgeslam_count = 0;
 
+/* v55c: Gluebie tracking for cross-level proximity behavior */
+#define MAX_GLUEBIES 64
+static DWORD g_gluebie_objs[MAX_GLUEBIES];
+static int   g_gluebie_count = 0;
+
 /* Per-frame update for a single bridgeslam object */
 static void cEnt_bridgeslam_update(BridgeslamState* bs) {
     if (!bs || !bs->active) return;
@@ -2262,6 +2267,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
      * Skip Level-family entities (30-33: Bell, Fan, SawBlade, Bonk) —
      * they manage their own lifecycle and should NOT be despawned here. */
     if (ai_type >= 30 && ai_type <= 33) return;
+
+    /* v55c: Register Gluebies for cross-level proximity behavior */
+    if (ai_type == 43 && g_gluebie_count < MAX_GLUEBIES) {
+        g_gluebie_objs[g_gluebie_count] = (DWORD)obj;
+        g_gluebie_count++;
+    }
+
     if (g_rotater_count < MAX_ROTATERS) {
         g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
         g_rotater_cfg[g_rotater_count].rot_x = rot_x;
@@ -2303,6 +2315,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
         }
     }
     g_rotater_count = 0;
+    g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
 
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
@@ -2826,6 +2839,105 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
     }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Gluebie proximity behavior — cross-level support
+ *
+ * Native DizzyBoard_Update iterates board+0x4378 (Gluebie AthenaList, Dizzy-only)
+ * and checks ball proximity. We replicate this in the mod's per-frame update so
+ * it works on ALL levels.
+ *
+ * Logic (from decompiled DizzyBoard_Update):
+ *   For each ball in board+0x29D4 (ball AthenaList):
+ *     For each Gluebie:
+ *       dist = 3D distance(gluebie+0x10E0/10E4/10E8, ball+0x164/168/16C)
+ *       if dist < gluebie+0x1100 * 60.0:
+ *         Read ball velocity from collisionMesh+0xCA4/CA8/CAC
+ *           (ball+0x1A4 = collision mesh pointer, set by Ball_ctor)
+ *         Scale velocity by 0.95 (slowdown factor)
+ *         Write back to collisionMesh+0xCA4/CA8/CAC
+ *         Set gluebie+0x1104 = 1 (active flag)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void cEnt_gluebie_proximity_check(DWORD board) {
+    if (!board) return;
+
+    /* Get ball AthenaList at board+0x29D4 */
+    DWORD ball_list = board + 0x29D4;
+    if (IsBadReadPtr((void*)(ball_list + 0x04), 4)) return;
+    int ball_count = *(int*)(ball_list + 0x04);
+    if (ball_count <= 0 || ball_count > 20) return;
+    if (IsBadReadPtr((void*)(ball_list + 0x40C), 4)) return;
+    DWORD* ball_data = *(DWORD**)(ball_list + 0x40C);
+    if (!ball_data || IsBadReadPtr(ball_data, ball_count * 4)) return;
+
+    int i, j;
+    for (j = 0; j < g_gluebie_count; j++) {
+        DWORD gluebie = g_gluebie_objs[j];
+        if (!gluebie || gluebie < 0x10000) continue;
+        if (IsBadReadPtr((void*)gluebie, 0x1110)) continue;
+
+        /* Read Gluebie proximity position (set by vtable[11] via Matrix_TransformVec3) */
+        float gz = *(float*)(gluebie + 0x10E0);
+        float gx = *(float*)(gluebie + 0x10E4);
+        float gy = *(float*)(gluebie + 0x10E8);
+
+        /* Read detection radius */
+        float radius = *(float*)(gluebie + 0x1100) * 60.0f;
+        if (radius <= 0.0f) continue;
+
+        /* Reset active flag (will be set if any ball is in range) */
+        *(BYTE*)(gluebie + 0x1104) = 0;
+
+        for (i = 0; i < ball_count; i++) {
+            DWORD ball = ball_data[i];
+            if (!ball || ball < 0x10000) continue;
+            if (IsBadReadPtr((void*)ball, 0x1B0)) continue;
+
+            /* Check ball is active: ball+0x18 >= 0 (signed) */
+            if (*(int*)(ball + 0x18) < 0) continue;
+
+            /* Read ball position */
+            float bx = *(float*)(ball + 0x164);
+            float by = *(float*)(ball + 0x168);
+            float bz = *(float*)(ball + 0x16C);
+
+            /* 3D distance (matching native axis mapping) */
+            float dz = gy - bz;  /* gluebie+0x10E8 - ball+0x16C */
+            float dy = gx - by;  /* gluebie+0x10E4 - ball+0x168 */
+            float dx = gz - bx;  /* gluebie+0x10E0 - ball+0x164 */
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+
+            if (dist_sq < radius * radius) {
+                /* Ball is in range — scale velocity */
+                DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
+                if (!col_mesh || IsBadReadPtr((void*)(col_mesh + 0xCB0), 4)) continue;
+
+                float vx = *(float*)(col_mesh + 0xCA4);
+                float vy = *(float*)(col_mesh + 0xCA8);
+                float vz = *(float*)(col_mesh + 0xCAC);
+
+                /* Compute velocity magnitude */
+                float vel_sq = vx*vx + vy*vy + vz*vz;
+                float vel_len = 0.0f;
+                if (vel_sq > 0.0f) vel_len = sqrtf(vel_sq);
+
+                /* Scale by 0.95 (slowdown factor) */
+                if (vel_len > 0.0f) {
+                    float scale = 0.95f;
+                    /* Native: if vel_len > 0, scale = (vel_len * 0.95) / vel_len */
+                    /* This is equivalent to multiplying by 0.95 */
+                    *(float*)(col_mesh + 0xCA4) = vx * scale;
+                    *(float*)(col_mesh + 0xCA8) = vy * scale;
+                    *(float*)(col_mesh + 0xCAC) = vz * scale;
+                }
+
+                /* Set Gluebie active flag */
+                *(BYTE*)(gluebie + 0x1104) = 1;
+            }
+        }
+    }
+}
+
 /* Tracked entity for per-frame updates */
 typedef struct {
     DWORD obj;
@@ -3179,6 +3291,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 if (g_bridgeslams[i].active) {
                     cEnt_bridgeslam_update(&g_bridgeslams[i]);
                 }
+            }
+        }
+
+        /* v55c: Per-frame Gluebie proximity check (cross-level behavior) */
+        {
+            DWORD board = get_board();
+            if (board && g_gluebie_count > 0) {
+                cEnt_gluebie_proximity_check(board);
             }
         }
 

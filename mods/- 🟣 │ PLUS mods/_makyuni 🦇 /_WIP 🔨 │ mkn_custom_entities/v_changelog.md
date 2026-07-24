@@ -2,25 +2,29 @@
 
 ## v55c — Gluebie collision + behavior fix
 
-- **Gluebie (ai_type 43): Fixed missing collision + behavior.**
-  - Root cause: Gluebie was ai_type=0 (PopCylinder fallback). No Gluebie_ctor
+- **Gluebie (ai_type 43): Fixed missing collision + behavior + cross-level proximity.**
+  - **Root cause:** Gluebie was ai_type=0 (PopCylinder fallback). No Gluebie_ctor
     was called, so it had no Gluebie vtable (0x4D4F38), no vtable[11] update
     function (0x43ECC0), and no proximity behavior.
-  - Fix: Added ai_type 43 with Gluebie_ctor (0x437CB0, 0x110C bytes).
+  - **Fix 1 (ctor):** Added ai_type 43 with Gluebie_ctor (0x437CB0, 0x110C bytes).
     - Gluebie_ctor calls Stands_ctor (clones spatial trees from Level3-Gluebie mesh)
     - vtable[11] (0x43ECC0) handles rendering + animation (scale, position, particles)
     - Position stored at obj+0x10D4/10D8/10DC (matching native Dizzy_CreateDynamicObjects)
-    - Added to board+0x4378 (Gluebie proximity list) when on Dizzy level only
-      (board+0x4378 is used as a Level pointer on Tower/Expert/Toob — not safe to
-      initialize as AthenaList on non-Dizzy levels)
-  - Native Gluebie behavior (DizzyBoard_Update):
+  - **Fix 2 (cross-level proximity):** Native Gluebie behavior is in DizzyBoard_Update
+    which iterates board+0x4378 (Dizzy-only AthenaList — Tower/Expert/Toob use 0x4378
+    as a Level pointer, so it can't be safely initialized on other levels).
+    Added mod-side proximity check (cEnt_gluebie_proximity_check) that runs every
+    frame from the mod's background thread:
+    - Iterates board+0x29D4 (ball AthenaList) and mod's g_gluebie_objs array
+    - Checks 3D distance: sqrt((gluebie+0x10E0 - ball+0x164)^2 + ...) < gluebie+0x1100 * 60.0
+    - If in range: scales ball velocity (collisionMesh+0xCA4/CA8/CAC) by 0.95
+    - Sets gluebie+0x1104 = 1 (active flag)
+    - ball+0x1A4 = collision mesh pointer (set by Ball_ctor via CollisionMesh_ctor)
+  - **Native Gluebie behavior** (DizzyBoard_Update, decompiled):
     - Iterates board+0x4378 (Gluebie list)
-    - Checks ball proximity: distance(gluebie_pos, ball_pos) < gluebie+0x1100 * constant
-    - If ball in range: scales ball velocity (ball+0xCA4/CA8/CAC) by slowdown factor
-    - Plays sound, creates 3 particle effects, sets gluebie+0x1104=1 (active flag)
-  - Cross-level limitation: Proximity behavior only works on Dizzy (native code in
-    DizzyBoard_Update). On other levels, Gluebie renders and animates but doesn't
-    slow down the ball.
+    - Checks ball proximity: distance(gluebie_pos, ball_pos) < gluebie+0x1100 * 60.0
+    - If ball in range: scales ball velocity by 0.95, plays sound, creates 3 particles
+    - Sets gluebie+0x1104=1 (active flag)
 
 ## v55b — Tipper collision fix
 
