@@ -2939,41 +2939,38 @@ static void process_rotaters(DWORD board, FILE* logf) {
             continue;
         }
 
-        /* v52: Skip Swirl entity spawning on levels that natively have SWIRL
+        /* v55: Skip ALL cEnt entity spawning on levels that natively have SWIRL
          * objects. Dizzy Race (index 2), Master Race (index 13), and all Arena
-         * levels already spawn SWIRL via the game's own vtable[33] handler.
-         * Spawning additional Swirls from cEnt entries causes duplicate SWIRL.
-         * Also skip "Rotater" entries on Dizzy/Master/Arena — native game
-         * already spawns Rotators from S1 entries named "Rotater". */
-        if (ai_type == 6) {
-            /* Swirl entity — check if level natively has SWIRL via race index */
+         * levels already spawn their objects via the game's own vtable[33] handler.
+         * Spawning additional objects from cEnt entries causes duplicates.
+         * Previously only ai_type==6 (Swirl) was skipped — now ALL types are skipped. */
+        {
+            int skip_dizzy = 0;
             DWORD app = *(DWORD*)(board + BOARD_APP);
             if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
                 int race_idx = *(int*)(app + 0x5FC);
-                /* Dizzy=2, Master=13, Arena-Beginner=14, Arena-WarmUp=0(special) */
-                /* Actually Arena levels are detected differently — check level name too */
                 if (race_idx == 2 || race_idx == 13) {
-                    if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL, race=%d)\\n",
-                            entity_name, race_idx);
-                    continue;
+                    skip_dizzy = 1;
                 }
             }
-            /* Also check Arena levels via board name */
-            char* level_name = NULL;
-            if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
-                level_name = *(char**)(board + 0x10);
-            }
-            if (level_name && !IsBadReadPtr(level_name, 12)) {
-                /* v54d: Check for Dizzy in level name (covers both
-                 * "Board (Dizzy)" for Dizzy Race and
-                 * "RumbleBoard (Dizzy Arena)" for Dizzy Arena) */
-                if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
-                    _strnicmp(level_name, "Arena", 5) == 0 ||
-                    my_stristr(level_name, "Dizzy") != NULL) {
-                    if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native SWIRL on %s)\\n",
-                            entity_name, level_name);
-                    continue;
+            if (!skip_dizzy) {
+                char* level_name = NULL;
+                if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
+                    level_name = *(char**)(board + 0x10);
                 }
+                if (level_name && !IsBadReadPtr(level_name, 5)) {
+                    if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
+                        _strnicmp(level_name, "Arena", 5) == 0 ||
+                        _strnicmp(level_name, "RumbleBoard", 11) == 0 ||
+                        my_stristr(level_name, "Dizzy") != NULL) {
+                        skip_dizzy = 1;
+                    }
+                }
+            }
+            if (skip_dizzy) {
+                if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native objects on Dizzy/Arena)\\n",
+                        entity_name);
+                continue;
             }
         }
 
