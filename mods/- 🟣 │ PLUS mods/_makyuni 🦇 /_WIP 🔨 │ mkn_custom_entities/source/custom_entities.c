@@ -245,14 +245,25 @@ static BreakBridge_ctor_t pfn_BreakBridge_ctor = (BreakBridge_ctor_t)0x00436D70;
  * NOTE: These take (this, board, mesh) = 3 params, NOT 6!
  * Do NOT cast to Rotator_ctor_t — that causes stack imbalance. */
 typedef void* (__thiscall *StandsCtor_t)(void* this_, void* board, void* mesh);
+
+/* Stands_ctor family variants — different param counts per entity */
+/* Lifter_ctor: 7 params (this, board, x, y, z, mesh, lifter_id) */
+typedef void* (__thiscall *LifterCtor_t)(void* this_, void* board, float x, float y, float z, void* mesh, int lifter_id);
+/* SpeedCylinder_ctor: 7 params (this, board, x, y, z, int_param, mesh) */
+typedef void* (__thiscall *SpeedCylCtor_t)(void* this_, void* board, float x, float y, float z, int param, void* mesh);
+/* NeonPlatform_ctor: 6 params (this, board, x, y, z, mesh) — same as Rotator_ctor_t */
+/* Trapdoor_ctor: 2 params (this, board) */
+typedef void* (__thiscall *TrapdoorCtor_t)(void* this_, void* board);
+/* Odd_Lifter_ctor: 5 params (this, board, x, y, z) */
+typedef void* (__thiscall *OddLifterCtor_t)(void* this_, void* board, float x, float y, float z);
 static StandsCtor_t pfn_Catapult_ctor     = (StandsCtor_t)0x00437E10;
 static StandsCtor_t pfn_Mace_ctor         = (StandsCtor_t)0x00438750;
 static StandsCtor_t pfn_Tipper_ctor       = (StandsCtor_t)0x00437960;
-static StandsCtor_t pfn_Lifter_ctor       = (StandsCtor_t)0x00436920;
-static StandsCtor_t pfn_SpeedCylinder_ctor = (StandsCtor_t)0x00436A20;
-static StandsCtor_t pfn_NeonPlatform_ctor  = (StandsCtor_t)0x0043E110;
-static StandsCtor_t pfn_Trapdoor_ctor     = (StandsCtor_t)0x00438290;
-static StandsCtor_t pfn_Odd_Lifter_ctor   = (StandsCtor_t)0x00434E60;
+static LifterCtor_t pfn_Lifter_ctor       = (LifterCtor_t)0x00436920;
+static SpeedCylCtor_t pfn_SpeedCylinder_ctor = (SpeedCylCtor_t)0x00436A20;
+static Rotator_ctor_t pfn_NeonPlatform_ctor  = (Rotator_ctor_t)0x0043E110;
+static TrapdoorCtor_t pfn_Trapdoor_ctor     = (TrapdoorCtor_t)0x00438290;
+static OddLifterCtor_t pfn_Odd_Lifter_ctor   = (OddLifterCtor_t)0x00434E60;
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -1748,50 +1759,39 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10DC) = py;
                 *(float*)((char*)obj + 0x10E0) = pz;
                 break;
-            case 38: /* Lifter_ctor */
+            case 38: /* Lifter_ctor — 7 params (this, board, x, y, z, mesh, lifter_id) */
                 obj = pfn_operator_new(LIFTER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Lifter\n"); return; }
                 memset(obj, 0, LIFTER_SIZE);
-                pfn_Lifter_ctor(obj, (void*)board, mesh);
-                *(float*)((char*)obj + 0x10D8) = px;
-                *(float*)((char*)obj + 0x10DC) = py;
-                *(float*)((char*)obj + 0x10E0) = pz;
+                pfn_Lifter_ctor(obj, (void*)board, px, py, pz, mesh, 0);
                 break;
-            case 39: /* SpeedCylinder_ctor */
+            case 39: /* SpeedCylinder_ctor — 7 params (this, board, x, y, z, int_param, mesh) */
                 obj = pfn_operator_new(SPEEDCYLINDER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc SpeedCylinder\n"); return; }
                 memset(obj, 0, SPEEDCYLINDER_SIZE);
-                pfn_SpeedCylinder_ctor(obj, (void*)board, mesh);
-                *(float*)((char*)obj + 0x10D8) = px;
-                *(float*)((char*)obj + 0x10DC) = py;
-                *(float*)((char*)obj + 0x10E0) = pz;
+                pfn_SpeedCylinder_ctor(obj, (void*)board, px, py, pz, 0, mesh);
                 break;
-            case 40: /* NeonPlatform_ctor */
+            case 40: /* NeonPlatform_ctor — 6 params (this, board, x, y, z, mesh) — Rotator_ctor_t */
                 obj = pfn_operator_new(NEONPLATFORM_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc NeonPlatform\n"); return; }
                 memset(obj, 0, NEONPLATFORM_SIZE);
-                pfn_NeonPlatform_ctor(obj, (void*)board, mesh);
-                *(float*)((char*)obj + 0x10D8) = px;
-                *(float*)((char*)obj + 0x10DC) = py;
-                *(float*)((char*)obj + 0x10E0) = pz;
+                pfn_NeonPlatform_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 41: /* Trapdoor_ctor */
+            case 41: /* Trapdoor_ctor — 2 params (this, board) — no mesh or position params */
                 obj = pfn_operator_new(TRAPDOOR_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trapdoor\n"); return; }
                 memset(obj, 0, TRAPDOOR_SIZE);
-                pfn_Trapdoor_ctor(obj, (void*)board, mesh);
+                pfn_Trapdoor_ctor(obj, (void*)board);
+                /* Position set after construction at +0x10D8/DC/E0 */
                 *(float*)((char*)obj + 0x10D8) = px;
                 *(float*)((char*)obj + 0x10DC) = py;
                 *(float*)((char*)obj + 0x10E0) = pz;
                 break;
-            case 42: /* Odd_Lifter_ctor (Droplifter) */
+            case 42: /* Odd_Lifter_ctor (Droplifter) — 5 params (this, board, x, y, z) — no mesh */
                 obj = pfn_operator_new(ODD_LIFTER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Droplifter\n"); return; }
                 memset(obj, 0, ODD_LIFTER_SIZE);
-                pfn_Odd_Lifter_ctor(obj, (void*)board, mesh);
-                *(float*)((char*)obj + 0x10D8) = px;
-                *(float*)((char*)obj + 0x10DC) = py;
-                *(float*)((char*)obj + 0x10E0) = pz;
+                pfn_Odd_Lifter_ctor(obj, (void*)board, px, py, pz);
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
