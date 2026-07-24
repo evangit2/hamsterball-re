@@ -47,10 +47,11 @@
 #define D3DRS_LIGHTING       0x89
 #define D3DRS_AMBIENT        0x8B
 
-/* Ball field offsets (for color multiplier) */
+/* Ball field offsets (for color multiplier + alpha) */
 #define BALL_COLOR_R         0x2AC
 #define BALL_COLOR_G         0x2B0
 #define BALL_COLOR_B         0x2B4
+#define BALL_ALPHA           0x2FC   /* float: 0.0=invisible, 1.0=opaque */
 
 /* App pointer for getting ball */
 #define GLOBAL_APP_PTR       0x005341E0
@@ -60,17 +61,17 @@
  * Configuration
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define CHARGE_DRAIN_RATE    0.0008f   /* charge lost per frame (~0.05/sec at 60fps) */
+#define CHARGE_DRAIN_RATE    0.001667f  /* charge lost per frame (~10sec to deplete at 60fps) */
 #define CHARGE_MAX           1.0f
 #define CHARGE_MIN           0.0f
 
 #define LIGHT_FULL_RANGE     400.0f    /* max light range (same as Neon Race) */
 #define LIGHT_Y_OFFSET       30.0f     /* light hovers above ball */
 
-/* Glow color when fully charged (white-cyan, like Neon Race) */
-#define GLOW_R               0.8f
-#define GLOW_G               0.95f
-#define GLOW_B               1.0f
+/* Electric blue (#03fff2) — same color as the warp mod */
+#define GLOW_R               (3.0f / 255.0f)    /* 0.0118 */
+#define GLOW_G               (255.0f / 255.0f)   /* 1.0 */
+#define GLOW_B               (242.0f / 255.0f)   /* 0.9490 */
 
 /* D3D light slot to use (0-7; Neon Race uses 0 for P1, 1 for P2) */
 #define LIGHT_SLOT           2
@@ -122,26 +123,27 @@ static float    g_orig_color_b = 1.0f;
 static int      g_color_saved = 0;
 
 /* D3D light struct (pre-filled, position+range updated per frame) */
+/* Diffuse color = electric blue #03fff2 */
 static D3DLIGHT8 g_light = {
-    1,          /* Type = D3DLIGHT_POINT */
-    0.8f,       /* DiffuseR */
-    0.95f,      /* DiffuseG */
-    1.0f,       /* DiffuseB */
-    0.0f,       /* DiffuseA */
-    0.3f,       /* SpecularR */
-    0.4f,       /* SpecularG */
-    0.5f,       /* SpecularB */
-    0.0f,       /* SpecularA */
-    0.0f, 0.0f, 0.0f, 0.0f,  /* Ambient (none) */
-    0.0f, 0.0f, 0.0f,        /* Position (updated per frame) */
-    0.0f, 0.0f, 0.0f,        /* Direction (unused for point light) */
-    400.0f,     /* Range */
-    0.0f,       /* Falloff */
-    0.0f,       /* Attenuation0 (no constant) */
-    0.04f,      /* Attenuation1 (linear falloff, same as Neon Race) */
-    0.0f,       /* Attenuation2 */
-    0.0f,       /* Theta (spot only) */
-    0.0f        /* Phi (spot only) */
+    1,                          /* Type = D3DLIGHT_POINT */
+    3.0f / 255.0f,             /* DiffuseR = 0.0118 */
+    255.0f / 255.0f,           /* DiffuseG = 1.0 */
+    242.0f / 255.0f,           /* DiffuseB = 0.9490 */
+    0.0f,                       /* DiffuseA */
+    3.0f / 255.0f,             /* SpecularR */
+    255.0f / 255.0f,           /* SpecularG */
+    242.0f / 255.0f,           /* SpecularB */
+    0.0f,                       /* SpecularA */
+    0.0f, 0.0f, 0.0f, 0.0f,    /* Ambient (none) */
+    0.0f, 0.0f, 0.0f,          /* Position (updated per frame) */
+    0.0f, 0.0f, 0.0f,          /* Direction (unused for point light) */
+    400.0f,                     /* Range */
+    0.0f,                       /* Falloff */
+    0.0f,                       /* Attenuation0 (no constant) */
+    0.04f,                      /* Attenuation1 (linear falloff, same as Neon Race) */
+    0.0f,                       /* Attenuation2 */
+    0.0f,                       /* Theta (spot only) */
+    0.0f                        /* Phi (spot only) */
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -216,11 +218,11 @@ static void update_light(DWORD gfx) {
         );
     }
     
-    /* Update ball color multiplier for glow effect */
+    /* Update ball color multiplier + alpha for glow effect */
     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
     if (app && !IsBadReadPtr((void*)(app + APP_BALL_P1), 4)) {
         DWORD ball = *(DWORD*)(app + APP_BALL_P1);
-        if (ball && !IsBadReadPtr((void*)(ball + BALL_COLOR_R), 12)) {
+        if (ball && !IsBadReadPtr((void*)(ball + BALL_COLOR_R), 16)) {
             if (!g_color_saved) {
                 g_orig_color_r = *(float*)(ball + BALL_COLOR_R);
                 g_orig_color_g = *(float*)(ball + BALL_COLOR_G);
@@ -230,6 +232,7 @@ static void update_light(DWORD gfx) {
             *(float*)(ball + BALL_COLOR_R) = GLOW_R * g_charge;
             *(float*)(ball + BALL_COLOR_G) = GLOW_G * g_charge;
             *(float*)(ball + BALL_COLOR_B) = GLOW_B * g_charge;
+            *(float*)(ball + BALL_ALPHA) = g_charge;  /* invisible at 0 charge */
         }
     }
     
