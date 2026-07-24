@@ -2939,36 +2939,34 @@ static void process_rotaters(DWORD board, FILE* logf) {
             continue;
         }
 
-        /* v55: Skip ALL cEnt entity spawning on levels that natively have SWIRL
-         * objects. Dizzy Race (index 2), Master Race (index 13), and all Arena
-         * levels already spawn their objects via the game's own vtable[33] handler.
-         * Spawning additional objects from cEnt entries causes duplicates.
-         * Previously only ai_type==6 (Swirl) was skipped — now ALL types are skipped. */
-        {
-            int skip_dizzy = 0;
+        /* v55: Skip cEnt Swirl (ai_type==6) spawning on levels that natively
+         * have SWIRL objects. Dizzy Race (index 2), Master Race (index 13),
+         * and Dizzy Arena have native SWIRL ref points. Spawning additional
+         * Swirls from cEnt entries causes duplicates.
+         * Only skip Swirl — other cEnt types (8ball, Bell, etc.) still spawn. */
+        if (ai_type == 6) {
+            int skip_swirl = 0;
             DWORD app = *(DWORD*)(board + BOARD_APP);
             if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
                 int race_idx = *(int*)(app + 0x5FC);
                 if (race_idx == 2 || race_idx == 13) {
-                    skip_dizzy = 1;
+                    skip_swirl = 1;
                 }
             }
-            if (!skip_dizzy) {
+            if (!skip_swirl) {
                 char* level_name = NULL;
                 if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
                     level_name = *(char**)(board + 0x10);
                 }
                 if (level_name && !IsBadReadPtr(level_name, 5)) {
-                    if (_strnicmp(level_name, "Board (Arena", 12) == 0 ||
-                        _strnicmp(level_name, "Arena", 5) == 0 ||
-                        _strnicmp(level_name, "RumbleBoard", 11) == 0 ||
-                        my_stristr(level_name, "Dizzy") != NULL) {
-                        skip_dizzy = 1;
+                    if (my_stristr(level_name, "Dizzy") != NULL ||
+                        my_stristr(level_name, "Arena") != NULL) {
+                        skip_swirl = 1;
                     }
                 }
             }
-            if (skip_dizzy) {
-                if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native objects on Dizzy/Arena)\\n",
+            if (skip_swirl) {
+                if (logf) fprintf(logf, "  cEnt(S3): '%s' — SKIPPED (native Swirl on Dizzy/Arena)\\n",
                         entity_name);
                 continue;
             }
