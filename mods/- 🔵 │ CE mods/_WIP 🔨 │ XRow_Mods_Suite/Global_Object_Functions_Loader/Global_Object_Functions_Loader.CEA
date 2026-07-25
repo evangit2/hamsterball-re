@@ -2,8 +2,8 @@
 
 [ENABLE]
 
-alloc(BumperCave1, 1024)
-alloc(BumperCave2, 1024)
+alloc(BumperCave1, 512)
+alloc(BumperCave2, 512)
 alloc(saved_collObj, 4)
 alloc(str_bumper, 16)
 alloc(float_12, 4)
@@ -64,17 +64,7 @@ BumperCave1:
   fstp dword [ebx+0xCAC]
   fldz
   fstp dword [ebx+0xCA8]
-
-cave1_sound_flash:
-  mov edx, [saved_collObj]
-  mov eax, [edx+4]
-  mov eax, [eax+0x864]
-  add eax, 8
-  push eax
-  call 004BAE3E
-  add esp, 4
-  mov ecx, [esi+0x14]
-  mov [ecx+eax*4+00006448], 3F800000
+  fstp st(0)
   jmp cave1_done
 
 cave1_bumper_zero:
@@ -137,17 +127,7 @@ BumperCave2:
   fstp dword [ebx+0xCAC]
   fldz
   fstp dword [ebx+0xCA8]
-
-cave2_sound_flash:
-  mov edx, [saved_collObj]
-  mov eax, [edx+4]
-  mov eax, [eax+0x864]
-  add eax, 8
-  push eax
-  call 004BAE3E
-  add esp, 4
-  mov ecx, [esi+0x14]
-  mov [ecx+eax*4+00006448], 3F800000
+  fstp st(0)
   jmp cave2_done
 
 cave2_bumper_zero:
