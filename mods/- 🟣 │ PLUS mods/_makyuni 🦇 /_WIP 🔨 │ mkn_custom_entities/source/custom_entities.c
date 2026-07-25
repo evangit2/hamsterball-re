@@ -161,7 +161,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   22 = Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18) — Tower Chomper mesh
  *   23 = Chrome_ctor (no _ctor, board-level behavior, PopCylinder fallback)
  *   24 = Funball_ctor (no _ctor, board-level behavior, PopCylinder fallback)
- *   25 = Tarbubble_ctor (no _ctor, board-level behavior, PopCylinder fallback)
+ *   25 = Tarbubble (no _ctor, no entity spawned — position-only marker, mod handles tar sinking)
  *   26 = Waterwheel_ctor (no _ctor, position-only storage, PopCylinder fallback)
  *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
  *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
@@ -388,6 +388,18 @@ static int g_bridgeslam_count = 0;
 #define MAX_GLUEBIES 64
 static DWORD g_gluebie_objs[MAX_GLUEBIES];
 static int   g_gluebie_count = 0;
+
+/* v55e: TarBubble tracking — no entity spawned, just position markers.
+ * Native game stores TarBubble S1 ref points in board+0x4790 AthenaList,
+ * then DizzyBoard_Update creates a collision traversal object (0x44FA90)
+ * that sinks the ball 0.25/frame when inside the tar radius.
+ * We replicate this without spawning any entity. */
+#define MAX_TARBUBBLES 64
+typedef struct {
+    float x, y, z;  /* position from S1 ref point */
+} TarBubblePos;
+static TarBubblePos g_tarbubble_pos[MAX_TARBUBBLES];
+static int g_tarbubble_count = 0;
 
 /* Per-frame update for a single bridgeslam object */
 static void cEnt_bridgeslam_update(BridgeslamState* bs) {
@@ -1431,6 +1443,21 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                               FILE* logf) {
     if (!board) return;
 
+    /* v55e: TarBubble (ai_type 25) — no entity spawned.
+     * Native game just stores the S1 ref point position in board+0x4790 AthenaList.
+     * We store it in g_tarbubble_pos[] and handle proximity in the per-frame check. */
+    if (ai_type == 25) {
+        if (g_tarbubble_count < MAX_TARBUBBLES) {
+            g_tarbubble_pos[g_tarbubble_count].x = px;
+            g_tarbubble_pos[g_tarbubble_count].y = py;
+            g_tarbubble_pos[g_tarbubble_count].z = pz;
+            g_tarbubble_count++;
+            if (logf) fprintf(logf, "  TARBUBBLE: stored position (%.1f,%.1f,%.1f) [%d] (no entity spawned)\n",
+                    px, py, pz, g_tarbubble_count - 1);
+        }
+        return;
+    }
+
     /* 1. Get gfx_device from App */
     DWORD app = *(DWORD*)(board + BOARD_APP);
     if (!app || IsBadReadPtr((void*)app, 4)) return;
@@ -2334,6 +2361,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     }
     g_rotater_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
+    g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
 
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
@@ -3048,6 +3076,73 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
     }
 }
 
+/* v55e: TarBubble proximity check — replicates native DizzyBoard_Update tar behavior.
+ * Native flow: TarBubble S1 ref points stored in board+0x4790 AthenaList.
+ * DizzyBoard_Update (0x41D512) creates a collision traversal object (0x44FA90)
+ * that iterates balls and sinks any inside the tar radius.
+ *
+ * Sinking: ball+0x168 (Y position) -= 0.25/frame (constant at 0x4CF380).
+ * When ball+0x2CC (in_tar) is set, Ball_Update uses ball's own position for
+ * distance calc (can't be pushed), spin decays 0.85x/frame.
+ * Ball dies when sunk past radius * 2.5 (depth check in Board_Setup).
+ *
+ * We replicate this without any spawned entity — just position markers. */
+static void cEnt_tarbubble_proximity_check(DWORD board) {
+    if (!board || g_tarbubble_count <= 0) return;
+
+    /* Get ball AthenaList at board+0x29D4 */
+    DWORD ball_list = board + 0x29D4;
+    if (IsBadReadPtr((void*)(ball_list + 0x04), 4)) return;
+    int ball_count = *(int*)(ball_list + 0x04);
+    if (ball_count <= 0 || ball_count > 20) return;
+    if (IsBadReadPtr((void*)(ball_list + 0x40C), 4)) return;
+    DWORD* ball_data = *(DWORD**)(ball_list + 0x40C);
+    if (!ball_data || IsBadReadPtr(ball_data, ball_count * 4)) return;
+
+    int i, j;
+    for (j = 0; j < g_tarbubble_count; j++) {
+        float tx = g_tarbubble_pos[j].x;
+        float ty = g_tarbubble_pos[j].y;
+        float tz = g_tarbubble_pos[j].z;
+
+        for (i = 0; i < ball_count; i++) {
+            DWORD ball = ball_data[i];
+            if (!ball || ball < 0x10000) continue;
+            if (IsBadReadPtr((void*)ball, 0x2D0)) continue;
+
+            /* Skip ball if already in tar (native checks ball+0x2CC) */
+            if (*(char*)(ball + 0x2CC) != 0) continue;
+
+            /* Ball position */
+            float bx = *(float*)(ball + 0x164);
+            float by = *(float*)(ball + 0x168);
+            float bz = *(float*)(ball + 0x16C);
+
+            /* 3D distance to tarbubble center */
+            float dx = tx - bx;
+            float dy = ty - by;
+            float dz = tz - bz;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+
+            /* Native tar radius: ball sinks when close to tarbubble center.
+             * The native collision traversal object uses the mesh bounds,
+             * but for a position-only marker we use a fixed radius.
+             * Native Ball_Update uses 3.0 units for tar surface contact. */
+            float radius = 3.0f;
+            if (dist_sq < radius * radius) {
+                /* Sink ball: ball+0x168 (Y) -= 0.25/frame (native constant 0x4CF380) */
+                *(float*)(ball + 0x168) = by - 0.25f;
+
+                /* Set in_tar flag — disables ball control, decays spin 0.85x */
+                *(BYTE*)(ball + 0x2CC) = 1;
+
+                /* Mark ball tar flag for render (draws tar splotch mesh) */
+                *(BYTE*)(ball + 0x2BC) = 1;
+            }
+        }
+    }
+}
+
 /* Tracked entity for per-frame updates */
 typedef struct {
     DWORD obj;
@@ -3212,9 +3307,9 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
             { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
             { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
-            { "Swirl",            6, "levels\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
-            { "Tarbubble",        25, "meshes\\tarbubble" },         /* Tarbubble_ctor: no _ctor, board-level behavior, PopCylinder fallback */
-            { "Tarpit",           0, "levels\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
+            { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
+            { "Tarbubble",        25, NULL },                      /* v55e: no entity, position-only marker for tar sinking */
+            { "Tarpit",           0, "levels\\\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
             { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
@@ -3409,6 +3504,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             DWORD board = get_board();
             if (board && g_gluebie_count > 0) {
                 cEnt_gluebie_proximity_check(board);
+            }
+        }
+
+        /* v55e: Per-frame TarBubble proximity check (cross-level behavior) */
+        {
+            DWORD board = get_board();
+            if (board && g_tarbubble_count > 0) {
+                cEnt_tarbubble_proximity_check(board);
             }
         }
 
