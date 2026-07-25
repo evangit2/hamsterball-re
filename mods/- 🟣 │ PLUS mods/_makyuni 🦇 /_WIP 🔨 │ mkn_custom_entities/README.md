@@ -72,7 +72,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Bridge        | 16   | levels\Level2-Bridge            | cEnt_Bridgeslam: isolated Intermediate bridge state machine |
 | Bridgeslam    | 16   | levels\Level2-Bridge            | Alias for Bridge                                            |
 | Bumper        | 0    | levels\_default                 | N:BUMPER tag, _default mesh                                 |
-| Catapult      | 0    | levels\Level4-Catapult          | cEnt_Catapult_ctor                                          |
+| Catapult      | 35   | levels\Level4-Catapult          | cEnt_Catapult_ctor: Stands_ctor + Level_RenderCtor + per-frame vtable[11] + proximity trigger |
 | Chomper       | 22   | meshes\chomper                  | cEnt_Chomper_ctor (cEnt_MeshNode_ctor, 0x471C20)            |
 | Chrome        | 23   | levels\_default                 | cEnt_Chrome_ctor: no _ctor, PopCylinder fallback            |
 | Cloudscape    | 28   | levels\Cloudscape               | cEnt_Cloudscape (cEnt_Sprite_ctor, 0x45D0C0)                |

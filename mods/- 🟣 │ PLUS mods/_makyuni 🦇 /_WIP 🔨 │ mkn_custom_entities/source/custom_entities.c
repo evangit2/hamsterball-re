@@ -271,6 +271,27 @@ static Rotator_ctor_t pfn_NeonPlatform_ctor  = (Rotator_ctor_t)0x0043E110;
 static TrapdoorCtor_t pfn_Trapdoor_ctor     = (TrapdoorCtor_t)0x00438290;
 static OddLifterCtor_t pfn_Odd_Lifter_ctor   = (OddLifterCtor_t)0x00434E60;
 
+/* Catapult system functions — Ghidra-verified */
+/* Catapult_Launch — trigger: sets launching flag + countdown */
+typedef void (__fastcall *Catapult_Launch_t)(void* this_);
+static Catapult_Launch_t pfn_Catapult_Launch = (Catapult_Launch_t)0x00434290;
+/* Catapult_vtable11 — per-frame state machine (wind-up + release) */
+typedef void (__fastcall *Catapult_vtable11_t)(void* this_);
+static Catapult_vtable11_t pfn_Catapult_vtable11 = (Catapult_vtable11_t)0x00437F10;
+/* Catapult_Update — vtable[61]: forward swing animation + velocity */
+typedef void (__fastcall *Catapult_Update_t)(void* this_);
+static Catapult_Update_t pfn_Catapult_Update = (Catapult_Update_t)0x0043F080;
+
+/* Catapult tracking for per-frame updates */
+#define MAX_CATAPULTS 16
+typedef struct {
+    DWORD obj;       /* Catapult object pointer */
+    DWORD board;     /* board pointer */
+    float x, y, z;   /* position */
+} CatapultState;
+static CatapultState g_catapults[MAX_CATAPULTS];
+static int g_catapult_count = 0;
+
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static GameLevel_ctor_t pfn_GameLevel_ctor = (GameLevel_ctor_t)0x004351F0;
@@ -1945,7 +1966,15 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
              * Position is NOT passed to constructor — set after construction.
              * These are NOT Rotator_ctor_t (6 params) — using wrong signature
              * causes stack imbalance → crash at Level_ctor during Draw. */
-            case 35: /* Catapult_ctor */
+            case 35: /* Catapult_ctor — Stands_ctor family (this, board, mesh)
+                     * v55d: Port full Catapult system:
+                     *   1. Catapult_ctor calls Stands_ctor → clones spatial trees into obj+0x18
+                     *   2. Create collision/render Level via Level_RenderCtor (same as TipperVisual)
+                     *      and store at obj+0x10D4 — this is the collision object
+                     *   3. Add collision object to board+0x10EC (collision list)
+                     *   4. Track in g_catapults[] for per-frame vtable[11] calls
+                     *   5. E:CATAPULTBOTTOM collision event triggers Catapult_Launch (0x434290)
+                     * Position: obj+0x10D8/0x10DC/0x10E0 (matches Tipper pattern) */
                 obj = pfn_operator_new(CATAPULT_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Catapult\n"); return; }
                 memset(obj, 0, CATAPULT_SIZE);
@@ -1953,6 +1982,37 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10D8) = px;
                 *(float*)((char*)obj + 0x10DC) = py;
                 *(float*)((char*)obj + 0x10E0) = pz;
+                /* Create collision/render Level via Level_RenderCtor, same as TipperVisual.
+                 * Stands_ctor creates the behavior object but the collision/render Level
+                 * must be created separately and stored at obj+0x10D4.
+                 * This is the object that gets added to the collision list (board+0x10EC). */
+                if (mesh && !IsBadReadPtr(mesh, 0x100)) {
+                    void* render_level = pfn_operator_new(LEVEL_SIZE);
+                    if (render_level) {
+                        memset(render_level, 0, LEVEL_SIZE);
+                        render_level = pfn_Level_RenderCtor(render_level, mesh);
+                        if (render_level) {
+                            /* Store collision/render Level at obj+0x10D4 */
+                            *(DWORD*)((char*)obj + 0x10D4) = (DWORD)render_level;
+                            if (logf) fprintf(logf, "  ROTATER: Catapult collision Level created at 0x%08X\n", (DWORD)render_level);
+                        } else {
+                            if (logf) fprintf(logf, "  ROTATER: Level_RenderCtor failed for Catapult\n");
+                        }
+                    }
+                } else {
+                    if (logf) fprintf(logf, "  ROTATER: Catapult mesh invalid, no collision Level created\n");
+                }
+                /* Track for per-frame Catapult_vtable11 calls */
+                if (g_catapult_count < MAX_CATAPULTS) {
+                    g_catapults[g_catapult_count].obj = (DWORD)obj;
+                    g_catapults[g_catapult_count].board = (DWORD)board;
+                    g_catapults[g_catapult_count].x = px;
+                    g_catapults[g_catapult_count].y = py;
+                    g_catapults[g_catapult_count].z = pz;
+                    g_catapult_count++;
+                    if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
+                        g_catapult_count - 1, g_catapult_count);
+                }
                 break;
             case 36: /* Mace_ctor */
                 obj = pfn_operator_new(MACE_SIZE);
@@ -2348,16 +2408,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
     pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), obj);
 
     /* 7. Add collision object to board+0x10EC.
-     * ONLY PopCylinder(0) and Rotator(1-6) have real collision objects at +0x10D4.
+     * PopCylinder(0) and Rotator(1-6) have collision objects at +0x10D4.
+     * Catapult(35) also has a collision/render Level at +0x10D4 (created via
+     *   Level_RenderCtor in the spawn code, same pattern as TipperVisual).
      * ArenaStands family stores position FLOATS at +0x10D4/+0x10E0 — reading them
-     * as pointers corrupts collision lists → crash in SpatialTree_ctor (0x46333F).
+     *   as pointers corrupts collision lists → crash in SpatialTree_ctor (0x46333F).
      * Stands_ctor family (35-42) stores position floats at +0x10E0 — same crash.
      * WavyFlag(14) stores position float at +0x10D4 — same crash.
      * Level-family (8,9,10,27,29) also don't have collision objects at these offsets.
-     * Fix: col_off=0 for everything except PopCylinder and Rotator. */
+     * Fix: col_off=0x10D4 for PopCylinder, Rotator, and Catapult only. */
     {
         DWORD col_off = 0;  /* default: no collision object */
-        if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family only */
+        if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family */
+        if (ai_type == 35) col_off = 0x10D4;  /* Catapult — collision Level at +0x10D4 */
         /* All other types: col_off = 0 (no collision object added) */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
@@ -2446,6 +2509,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
     g_waterwheel_count = 0;  /* v55f: reset WaterWheel tracking on level unload */
+    g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
 
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
@@ -3411,7 +3475,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bridge",            0, "levels\\Level2-Bridge" },     /* BreakBridge_ctor: Pendulum vtable with tilt animation */
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\Bumper01" },          /* N:BUMPER tag — no _ctor, _default mesh */
-                        { "Catapult",         35, "levels\\Level4-Catapult" },   /* Catapult_ctor (0x437E10, 0x1108) */
+            { "Catapult",         35, "levels\\Level4-Catapult" },   /* Catapult_ctor (0x437E10, 0x1108) */
             { "Chomper",          22, "meshes\\chomper" },           /* Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18 bytes) */
             { "Chrome",           23, "meshes\\Sphere" },          /* v55: was _default, now Sphere.MESH for Chrome ball */
             { "Cloudscape",        0, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
@@ -3655,6 +3719,76 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             DWORD board = get_board();
             if (board && g_waterwheel_count > 0) {
                 cEnt_waterwheel_update(board);
+            }
+        }
+
+        /* v55d: Per-frame Catapult state machine update.
+         * Catapult_vtable11 (0x437F10) is the per-frame state machine
+         * (wind-up + release). Native game calls this via Scene_Update
+         * (board vtable[1] iterating board+0x8B8), but Catapult is NOT
+         * in that list. We call it manually here for each tracked Catapult. */
+        {
+            int i;
+            for (i = 0; i < g_catapult_count; i++) {
+                DWORD obj = g_catapults[i].obj;
+                if (!obj || obj < 0x10000) {
+                    /* Stale entry — clear it */
+                    g_catapults[i].obj = 0;
+                    continue;
+                }
+                if (IsBadReadPtr((void*)obj, 0x1108)) {
+                    g_catapults[i].obj = 0;
+                    continue;
+                }
+                /* Call Catapult's vtable[11] (state machine) directly */
+                pfn_Catapult_vtable11((void*)obj);
+            }
+        }
+
+        /* v55d: Per-frame Catapult trigger check.
+         * E:CATAPULTBOTTOM collision event fires when ball touches the
+         * catapult's bottom plate. Native game only checks this on Tower
+         * Race (race 4). We use per-frame proximity check instead of
+         * hooking DispatchCollisionEvents (SEH trampoline crash risk).
+         *
+         * Catapult_Launch (0x434290) sets launching flag + 50-tick countdown.
+         * Called when ball is within trigger radius of catapult base.
+         * The bottom plate is below the catapult pivot — check at Y offset -10. */
+        {
+            DWORD board = get_board();
+            if (board && g_catapult_count > 0) {
+                /* Get ball position from board+0x361C (ball pointer) */
+                DWORD ball_ptr = *(DWORD*)(board + 0x361C);
+                if (ball_ptr && ball_ptr > 0x10000 &&
+                    !IsBadReadPtr((void*)ball_ptr, 0x200)) {
+                    float ball_x = *(float*)(ball_ptr + 0x164);
+                    float ball_y = *(float*)(ball_ptr + 0x168);
+                    float ball_z = *(float*)(ball_ptr + 0x16C);
+                    int i;
+                    for (i = 0; i < g_catapult_count; i++) {
+                        DWORD obj = g_catapults[i].obj;
+                        if (!obj || obj < 0x10000) continue;
+                        if (IsBadReadPtr((void*)obj, 0x1108)) continue;
+                        /* Check if ball is near catapult base (bottom plate area).
+                         * Catapult base is at obj+0x10D8/0x10DC/0x10E0.
+                         * Bottom plate is ~10 units below pivot. */
+                        float cx = *(float*)((char*)obj + 0x10D8);
+                        float cy = *(float*)((char*)obj + 0x10DC);
+                        float cz = *(float*)((char*)obj + 0x10E0);
+                        float dx = ball_x - cx;
+                        float dy = ball_y - (cy - 10.0f);
+                        float dz = ball_z - cz;
+                        float dist_sq = dx*dx + dy*dy + dz*dz;
+                        /* Trigger radius ~40 units (covers the bottom plate area).
+                         * Only trigger if not already launched (check launching flag
+                         * at obj+0x10F0 — set to 1 by Catapult_Launch). */
+                        DWORD launching = *(DWORD*)((char*)obj + 0x10F0);
+                        if (dist_sq < 1600.0f && !launching) {
+                            /* Ball is on the bottom plate — launch the catapult! */
+                            pfn_Catapult_Launch((void*)obj);
+                        }
+                    }
+                }
             }
         }
 

@@ -1,5 +1,42 @@
 # Version Changelog
 
+## v55g — Catapult: full system port (solid + launch + state machine)
+
+- **Catapult (ai_type 35) now has full native behavior ported.**
+  - **Problem:** Catapult was spawning but non-solid and static — no collision,
+    no wind-up, no launch, no per-frame state machine.
+  - **Root cause:** Catapult_ctor calls Stands_ctor which clones spatial trees
+    into obj+0x18 (making it solid), but the collision/render Level was never
+    created. Without it, the collision object at obj+0x10D4 was NULL, so the
+    collision list (board+0x10EC) was empty — ball passed through.
+  - **Fix — 5 components ported from native (Ghidra-verified):**
+    1. **Collision/render Level:** Create via `Level_RenderCtor(mesh)` and store
+       at obj+0x10D4 (same pattern as TipperVisual). Added to collision list
+       (board+0x10EC) and scene collision (sceneobj+0x18).
+    2. **Per-frame state machine:** `Catapult_vtable11` (0x437F10, vtable[11])
+       handles wind-up + release. Native game calls this via Board_UpdateRaceState,
+       but Catapult is NOT in the Scene_Update list (board+0x8B8). Added manual
+       per-frame call in `entity_thread` for each tracked Catapult.
+    3. **E:CATAPULTBOTTOM trigger:** Native game only checks this on Tower Race
+       (race 4). Instead of hooking DispatchCollisionEvents (SEH trampoline crash
+       risk — confirmed in v53g-2), use per-frame proximity check: when ball is
+       within 40 units of catapult base (Y offset -10 for bottom plate), call
+       `Catapult_Launch` (0x434290) which sets launching flag + 50-tick countdown.
+    4. **Tracking:** Catapult objects tracked in `g_catapults[]` array (max 16)
+       for per-frame updates. Reset on level unload.
+    5. **Collision list fix:** Updated col_off logic to include type 35
+       (Catapult) alongside PopCylinder(0) and Rotator(1-6) for collision
+       object at +0x10D4.
+  - **Functions ported (all Ghidra-verified):**
+    - `Catapult_ctor` (0x437E10, 3 params: this, board, mesh) — already called
+    - `Catapult_Launch` (0x434290, __fastcall, 1 param: this) — trigger
+    - `Catapult_vtable11` (0x437F10, __fastcall, 1 param: this) — state machine
+    - `Catapult_Update` (0x43F080, __fastcall, 1 param: this) — vtable[61], animation
+      (called by render loop via board+0xCD4 render list, no manual call needed)
+  - **Note:** `logf` not used in per-frame Catapult code (dangling pointer after
+    initial fclose in entity_thread — pre-existing issue).
+  - **AI list entry updated:** type changed from 0 to 35 (Catapult).
+
 ## v55f — WaterWheel: mesh loaded + rotated per-frame (no entity)
 
 - **WaterWheel (ai_type 26) now loads its mesh and rotates it each frame.**
