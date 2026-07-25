@@ -3173,20 +3173,22 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* Play tar sound — with cooldown (native plays once per entry). */
+                /* Play tar sound — with short cooldown (native replays periodically). */
                 {
                     static int g_gluebie_sound_cooldown = 0;
                     if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
-                    if (g_gluebie_sound_cooldown == 0 && !g_gluebie_sound_pending) {
+                    if (g_gluebie_sound_cooldown == 0) {
                         g_gluebie_sound_pending = 1;
                         g_gluebie_snd_x = bx;
                         g_gluebie_snd_y = by;
                         g_gluebie_snd_z = bz;
-                        g_gluebie_sound_cooldown = 180; /* ~3 sec at 60fps */
+                        g_gluebie_sound_cooldown = 60; /* ~1 sec at 60fps */
                     }
                 }
 
-                /* Tar splotch visual effect — fires in outer zone (same as v55c). */
+                /* Tar splotch visual effect — fires every frame in outer zone.
+                 * Cap at 30 particles total. When particles expire (count drops
+                 * below 30), new ones are added again. */
                 {
                     DWORD part_list = ball + 0x810;
                     if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
