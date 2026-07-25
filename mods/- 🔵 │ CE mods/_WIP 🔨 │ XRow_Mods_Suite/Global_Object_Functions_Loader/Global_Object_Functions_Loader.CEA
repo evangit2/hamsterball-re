@@ -90,7 +90,10 @@ cave1_check_speedcyl:
   jnz cave1_done
 
   mov edx, [saved_collObj]
-  mov ecx, [edx+0x47C]
+  mov eax, [edx]
+  test eax, eax
+  jz cave1_done
+  mov ecx, [eax+0x47C]
   test ecx, ecx
   jz cave1_done
 
@@ -177,7 +180,10 @@ cave2_check_speedcyl:
   jnz cave2_done
 
   mov edx, [saved_collObj]
-  mov ecx, [edx+0x47C]
+  mov eax, [edx]
+  test eax, eax
+  jz cave2_done
+  mov ecx, [eax+0x47C]
   test ecx, ecx
   jz cave2_done
 
