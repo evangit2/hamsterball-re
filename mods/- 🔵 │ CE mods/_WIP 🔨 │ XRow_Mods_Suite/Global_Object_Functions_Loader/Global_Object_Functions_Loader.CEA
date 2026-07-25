@@ -88,7 +88,6 @@ cave1_speedcyl:
   push dword [esi+0x168]
   push dword [esi+0x164]
   call 00459860
-  add esp, 10
 
 cave1_scyl_boost:
   fld dword [ebx+0xCA4]
@@ -137,7 +136,6 @@ cave1_bumper:
   push dword [esi+0x168]
   push dword [esi+0x164]
   call 00459860
-  add esp, 10
 
 cave1_bump_vel:
   mov eax, [saved_meshname]
@@ -249,7 +247,6 @@ cave2_speedcyl:
   push dword [esi+0x168]
   push dword [esi+0x164]
   call 00459860
-  add esp, 10
 
 cave2_scyl_boost:
   fld dword [ebx+0xCA4]
@@ -298,7 +295,6 @@ cave2_bumper:
   push dword [esi+0x168]
   push dword [esi+0x164]
   call 00459860
-  add esp, 10
 
 cave2_bump_vel:
   mov eax, [saved_meshname]
