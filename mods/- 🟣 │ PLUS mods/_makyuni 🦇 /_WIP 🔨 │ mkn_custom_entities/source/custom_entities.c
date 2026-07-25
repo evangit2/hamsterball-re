@@ -323,8 +323,11 @@ static BadBall_ctor_t pfn_BadBall_ctor = (BadBall_ctor_t)0x0040AFE0;
 typedef void* (__thiscall *TipperVisual_ctor_t)(void* this_, int parent_mesh);
 static TipperVisual_ctor_t pfn_TipperVisual_ctor2 = (TipperVisual_ctor_t)0x004661A0;
 
-/* Sound_Play3D — plays a 3D positioned sound */
-typedef void (__thiscall *Sound_Play3D_t)(void* soundChannel, float x, float y, float z);
+/* Sound_Play3D — plays a 3D positioned sound
+ * __thiscall: ECX = soundChannel (this), 4 stack params (RET 0x10 = 16 bytes)
+ * Native call site (0x41D9C2): push 1.0, push z, push y, push x, ECX=[App+0x484]
+ * The 4th param (scale) defaults to 1.0 — controls volume/distance scaling. */
+typedef void (__thiscall *Sound_Play3D_t)(void* soundChannel, float x, float y, float z, float scale);
 static Sound_Play3D_t pfn_Sound_Play3D = (Sound_Play3D_t)0x00459860;
 
 /* Gfx_ScaleZ — apply Z-axis rotation to gfx device (thiscall with gfx ptr) */
@@ -410,11 +413,11 @@ static void cEnt_bridgeslam_update(BridgeslamState* bs) {
             bs->angle = 0.0f;
             bs->counter = 125; /* 0x7D */
             bs->state = 2;
-            /* Play bridgeslam sound */
+            /* Play bridgeslam sound (4th param = 1.0 scale, required by RET 0x10) */
             if (app && pfn_Sound_Play3D) {
                 DWORD snd = *(DWORD*)(app + APP_SOUNDFX_BRIDGESLAM);
-                if (snd) {
-                    pfn_Sound_Play3D((void*)snd, bs->pivot_x, bs->pivot_y, bs->pivot_z);
+                if (snd && snd > 0x10000 && !IsBadReadPtr((void*)snd, 0x20)) {
+                    pfn_Sound_Play3D((void*)snd, bs->pivot_x, bs->pivot_y, bs->pivot_z, 1.0f);
                 }
             }
             /* Apply velocity to balls near pivot */
@@ -2875,6 +2878,18 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
 
 static int g_gluebie_debug_count = 0;  /* limit debug output */
 static int g_gluebie_debug_frame = 0; /* frame counter for sampling */
+
+/* v55d: Tar sound queue — set when ball enters Gluebie range, played once per entry.
+ * Native plays sound from DizzyBoard_Update (main thread). We play from the mod's
+ * background thread — safe because Sound_Play3D just calls Sound_CalcDistAtten +
+ * BASS_ChannelPlay, no DirectSound locking issues. */
+static int g_gluebie_sound_pending = 0;  /* 1 = need to play tar sound */
+static float g_gluebie_snd_x = 0.0f;
+static float g_gluebie_snd_y = 0.0f;
+static float g_gluebie_snd_z = 0.0f;
+
+/* App+0x484 = tar sound channel (used by native DizzyBoard_Update at 0x41D9BC) */
+#define APP_SOUNDFX_TAR  0x484
 
 static void cEnt_gluebie_proximity_check(DWORD board) {
     if (!board) return;
