@@ -5,11 +5,17 @@
  * Instead of the timer driving platform visibility, an external flag controls it.
  * When merged with Electric Lights, the flag = "ball lights are on" (charge > 0).
  *
- * NeonPlatform update (vtable[11] = 0x0043E260):
- *   obj+0x10E5 = direction (0=appearing, 1=disappearing)
- *   obj+0x439  = active flag (1=updating, 0=idle)
- *   obj+0x437  = Y position (float)
- *   obj+0x43A  = tick counter (0..300, 4 per tick)
+ * NeonPlatform update (vtable[11] = 0x0043E260, __thiscall):
+ *   obj+0x10E4 = active flag (byte: 1=updating, 0=idle) — CHECKED FIRST
+ *   obj+0x10E5 = direction  (byte: 0=appearing, 1=disappearing)
+ *   obj+0x10DC = Y position  (float, moved ±4.0/frame)
+ *   obj+0x10E8 = tick counter (int, +4 appearing / -4 disappearing, resets at 300/0)
+ *   obj+0x10D8 = X position  (float, ball proximity check)
+ *   obj+0x10E0 = Z position  (float, ball proximity check)
+ *   obj+0x10D0 = board pointer
+ *   Ball proximity radius = 22.0 units (double at 0x4D5D18)
+ *   When disappearing + ball within 22 units X+Z: ball+0x168 (Y vel) -= 4.0
+ *   When tick resets: Y += 100.0, direction flips, tick += 100
  *
  * NeonPlatform vtable = 0x004D5A10
  * NeonPlatform objects stored in board+0x2578 AthenaList
@@ -40,9 +46,9 @@
 #define ATHENALIST_COUNT     0x04     /* count at +0x04 (inline) */
 #define ATHENALIST_ITEMS     0x40C    /* items array at +0x40C */
 
-/* NeonPlatform offsets */
+/* NeonPlatform offsets — VERIFIED via disassembly of 0x0043E260 */
+#define NP_ACTIVE             0x10E4   /* byte: 1=updating, 0=idle (checked first) */
 #define NP_DIRECTION          0x10E5   /* byte: 0=appearing, 1=disappearing */
-#define NP_ACTIVE             0x0439   /* byte: 1=updating, 0=idle */
 
 /* Scene pointer for getting board */
 #define SCENE_PTR             0x005341E4

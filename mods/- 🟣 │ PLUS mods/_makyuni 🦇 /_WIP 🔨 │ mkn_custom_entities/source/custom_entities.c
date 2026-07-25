@@ -2920,9 +2920,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         float gz = *(float*)(gluebie + 0x10DC);
 
         /* Read detection radius.
-         * Native: obj+0x1100 * 60.0 (gives 45-198 depending on RNG). */
-        float radius_raw = *(float*)(gluebie + 0x1100);
-        float radius = radius_raw * 60.0f;
+         * Native has TWO proximity checks:
+         *   1. DizzyBoard_Update: obj+0x1100 * 60.0 = 45-60 units (center-to-center, velocity slowdown)
+         *   2. Ball_Update: 3.0 units (distance to tar SURFACE, sets tar flag)
+         * The 45-60 value is too large for non-Dizzy levels (smaller Gluebies).
+         * Using 3.0 as requested by user — matches the native inner zone. */
+        float radius = 3.0f;
         if (radius <= 0.0f) continue;
 
         /* Reset active flag (will be set if any ball is in range) */
@@ -2987,12 +2990,18 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* v55c: Play tar sound effect (once when ball enters range).
-                 * Native: Sound_Play3D(App+0x484, ball_x, ball_y, ball_z)
-                 * DISABLED: Calling Sound_Play3D from the background thread crashes
-                 * because DirectSound is not thread-safe (crash at offset 0x55F2).
-                 * The sound needs to be played from the main thread.
-                 * TODO: Queue sound requests and play them from the update callback. */
+                /* v55d: Play tar sound — queue once when ball enters range.
+                 * Native: ECX = [App+0x484] (tar sound channel), params = (x, y, z, 1.0)
+                 * Sound_Play3D at 0x459860 has RET 0x10 (4 params = 16 bytes).
+                 * The 4th param (scale=1.0) was missing in v55c — caused stack
+                 * corruption → crash at 0x4065F2 inside Ball_ctor.
+                 * Native call site at 0x41D9C2: push 1.0; push z; push y; push x; ECX=snd */
+                if (!g_gluebie_sound_pending) {
+                    g_gluebie_sound_pending = 1;
+                    g_gluebie_snd_x = bx;
+                    g_gluebie_snd_y = by;
+                    g_gluebie_snd_z = bz;
+                }
 
                 /* v55c: Tar splotch visual effect.
                  * Native creates 3 random-direction particles (5 floats each = 0x14 bytes)
@@ -3401,6 +3410,25 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             if (board && g_gluebie_count > 0) {
                 cEnt_gluebie_proximity_check(board);
             }
+        }
+
+        /* v55d: Play queued tar sound (deferred from proximity check).
+         * Sound_Play3D: __thiscall ECX=[App+0x484], 4 stack params (x, y, z, scale=1.0)
+         * App accessed via board+0x878 (same as native DizzyBoard_Update at 0x41D9B3).
+         * The v55c crash was NOT from thread-safety — it was a missing 4th param
+         * (Sound_Play3D has RET 0x10 = 4 params, old typedef only passed 3). */
+        if (g_gluebie_sound_pending) {
+            DWORD board = get_board();
+            if (board && !IsBadReadPtr((void*)(board + 0x878), 4)) {
+                DWORD app = *(DWORD*)(board + 0x878);
+                if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + APP_SOUNDFX_TAR), 4)) {
+                    DWORD snd = *(DWORD*)(app + APP_SOUNDFX_TAR);
+                    if (snd && snd > 0x10000 && !IsBadReadPtr((void*)snd, 0x20)) {
+                        pfn_Sound_Play3D((void*)snd, g_gluebie_snd_x, g_gluebie_snd_y, g_gluebie_snd_z, 1.0f);
+                    }
+                }
+            }
+            g_gluebie_sound_pending = 0;  /* consumed */
         }
 
         /* Small sleep to avoid hogging CPU */
