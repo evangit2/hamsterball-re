@@ -1,5 +1,22 @@
 # Version Changelog
 
+## v55e — TarBubble: no entity, position-only marker
+
+- **TarBubble no longer spawns a PopCylinder entity.**
+  - Native game has NO TarBubble constructor — S1 ref points named "TarBubble"
+    are stored in `board+0x4790` AthenaList as position markers.
+  - DizzyBoard_Update (0x41D512) creates a collision traversal object (0x44FA90)
+    that sinks the ball 0.25/frame when inside the tar radius.
+  - Old behavior: spawned PopCylinder with `meshes\tarbubble` mesh (wrong).
+  - New behavior: stores position in `g_tarbubble_pos[]` array, no entity spawned.
+- **Added `cEnt_tarbubble_proximity_check()` — replicates native tar sinking.**
+  - Per-frame check: iterates balls, computes 3D distance to each TarBubble position.
+  - When ball is within 3.0 units: sinks ball Y by 0.25/frame (native constant 0x4CF380),
+    sets `ball+0x2CC` (in_tar flag — disables control, decays spin 0.85x/frame),
+    sets `ball+0x2BC` (tar render flag).
+  - Radius 3.0 matches native Ball_Update tar surface contact distance.
+- **AI list entry changed:** `Tarbubble` mesh path → `NULL` (no mesh file needed).
+
 ## v55d — Gluebie tar sound + proximity fix
 
 - **Gluebie tar sound: Fixed crash + implemented sound playback.**
