@@ -57,6 +57,10 @@
 #define GLOBAL_APP_PTR       0x005341E0
 #define APP_BALL_P1          0x5DC   /* player 1 ball pointer */
 
+/* Collision dispatch hook */
+#define DISPATCH_COLLISION_EVENTS 0x0040C5D0
+#define MESHBUFFER_NAME     0x864   /* char* pointer to event name */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Configuration
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -281,6 +285,99 @@ static void install_hooks(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Collision Event Hook — N:CHARGE recharge pads
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* DispatchCollisionEvents is __thiscall(board, ball, collEntry), RET 0x8
+   collEntry is a pair of DWORDs: [0]=self, [1]=meshbuffer
+   MeshBuffer+0x864 = char* event name
+   We hook with a trampoline: call original first, then check for N:CHARGE */
+
+static BYTE g_dce_original[8];
+static void *g_dce_trampoline = NULL;
+static BYTE *g_dce_stub = NULL;
+
+static void build_dce_trampoline(void) {
+    BYTE *code = (BYTE*)alloc_executable(16);
+    memcpy(code, g_dce_original, 8);
+    code[8] = 0xE9;
+    *(DWORD*)(code + 9) = (DWORD)(DISPATCH_COLLISION_EVENTS + 8) - (DWORD)(code + 13);
+    g_dce_trampoline = code;
+}
+
+/* Called after original DispatchCollisionEvents runs.
+   Checks if the collision was with an N:CHARGE mesh — if so, reset charge. */
+void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
+    if (!collEntry) return;
+
+    DWORD *pair = (DWORD*)collEntry;
+    if (IsBadReadPtr(pair, 8)) return;
+    if (!pair[1]) return;
+    if (IsBadReadPtr((void*)pair[1], 0x868)) return;
+
+    /* Get event name from MeshBuffer+0x864 */
+    DWORD namePtr = *(DWORD*)((BYTE*)pair[1] + MESHBUFFER_NAME);
+    if (!namePtr || IsBadReadPtr((void*)namePtr, 8)) return;
+    const char *eventName = (const char*)namePtr;
+    if (!eventName[0]) return;
+
+    /* Check for N:CHARGE */
+    if (_strnicmp(eventName, "N:CHARGE", 8) != 0) return;
+
+    /* Reset charge to max */
+    g_charge = CHARGE_MAX;
+}
+
+static void build_dce_stub(void) {
+    /* At entry: ECX=board, [ESP+4]=ball, [ESP+8]=collEntry, RET 0x8
+       pushad (32) + pushfd (4) = 36 bytes on stack
+         [ESP+36] = return addr
+         [ESP+40] = ball
+         [ESP+44] = collEntry */
+    BYTE *code = (BYTE*)alloc_executable(64);
+    int i = 0;
+    code[i++] = 0x60;  /* pushad */
+    code[i++] = 0x9C;  /* pushfd */
+    /* push [esp+0x2C] (collEntry at offset 44=0x2C) */
+    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;
+    /* push [esp+0x2C] (ball was at 40=0x28, now shifted by 4 to 0x2C) */
+    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;
+    /* push ecx (board) */
+    code[i++] = 0x51;
+    /* call dce_handler (relative) */
+    code[i++] = 0xE8;
+    *(DWORD*)(code + i) = (DWORD)&dce_handler - (DWORD)(code + i + 4);
+    i += 4;
+    /* add esp, 12 (cleanup 3 pushed params) */
+    code[i++] = 0x83; code[i++] = 0xC4; code[i++] = 0x0C;
+    /* popfd */
+    code[i++] = 0x9D;
+    /* popad */
+    code[i++] = 0x61;
+    /* jmp to trampoline: mov eax, addr; jmp eax */
+    code[i++] = 0xB8;
+    *(DWORD*)(code + i) = (DWORD)g_dce_trampoline;
+    i += 4;
+    code[i++] = 0xFF; code[i++] = 0xE0;
+
+    g_dce_stub = code;
+}
+
+static void install_dce_hook(void) {
+    memcpy(g_dce_original, (void*)DISPATCH_COLLISION_EVENTS, 8);
+    build_dce_trampoline();
+    build_dce_stub();
+
+    BYTE patch[8];
+    patch[0] = 0xE9;
+    *(DWORD*)(patch + 1) = (DWORD)g_dce_stub - DISPATCH_COLLISION_EVENTS - 5;
+    patch[5] = 0x90;
+    patch[6] = 0x90;
+    patch[7] = 0x90;
+    patch_bytes(DISPATCH_COLLISION_EVENTS, patch, 8);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * DLL Entry Point
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -289,6 +386,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         DisableThreadLibraryCalls(hModule);
         load_real_bass();
         install_hooks();
+        install_dce_hook();
     }
     return TRUE;
 }
