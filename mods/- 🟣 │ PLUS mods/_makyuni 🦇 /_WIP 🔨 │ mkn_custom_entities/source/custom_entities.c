@@ -3159,13 +3159,19 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             if (in_outer) {
                 /* Ball is in outer zone — scale velocity (native Gluebie behavior).
                  * DizzyBoard_Update scales col_mesh velocity by 0.95 each frame.
-                 * This is NOT in_tar (ball+0x2CC) — that's tarpit which freezes the ball. */
+                 * Clamp: don't scale below 0.5 so ball can still escape the zone. */
                 DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
                 if (!col_mesh || IsBadReadPtr((void*)(col_mesh + 0xCB0), 4)) continue;
 
-                *(float*)(col_mesh + 0xCA4) *= 0.95f;
-                *(float*)(col_mesh + 0xCA8) *= 0.95f;
-                *(float*)(col_mesh + 0xCAC) *= 0.95f;
+                float vx = *(float*)(col_mesh + 0xCA4);
+                float vy = *(float*)(col_mesh + 0xCA8);
+                float vz = *(float*)(col_mesh + 0xCAC);
+                float speed = sqrtf(vx*vx + vy*vy + vz*vz);
+                if (speed > 0.5f) {
+                    *(float*)(col_mesh + 0xCA4) = vx * 0.95f;
+                    *(float*)(col_mesh + 0xCA8) = vy * 0.95f;
+                    *(float*)(col_mesh + 0xCAC) = vz * 0.95f;
+                }
 
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
