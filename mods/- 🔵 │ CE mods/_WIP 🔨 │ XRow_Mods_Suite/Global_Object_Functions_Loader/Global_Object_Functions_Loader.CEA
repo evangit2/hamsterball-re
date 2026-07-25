@@ -2,14 +2,15 @@
 
 [ENABLE]
 
-alloc(BumperCave1, 1024)
-alloc(BumperCave2, 1024)
+alloc(BumperCave1, 2048)
+alloc(BumperCave2, 2048)
 alloc(saved_collObj, 4)
 alloc(saved_meshname, 4)
 alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
 alloc(float_12, 4)
-alloc(float_15, 4)
+alloc(float_65, 4)
+alloc(float_1, 4)
 
 str_bumper:
   db 'N:BUMPER',0
@@ -20,8 +21,11 @@ str_speedcyl:
 float_12:
   dd 41400000
 
-float_15:
-  dd 3FC00000
+float_65:
+  dd 42820000
+
+float_1:
+  dd 3F800000
 
 BumperCave1:
   mov [saved_collObj], edx
@@ -66,22 +70,27 @@ cave1_speedcyl:
   jz cave1_done
 
   mov [ebx+0x808], 0A
+  mov byte [ebx+0x31D], 01
+  mov byte [ebx+0x31E], 01
 
-  fld dword [ebx+0xCA4]
-  fmul dword [float_15]
-  fstp dword [ebx+0xCA4]
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave1_scyl_boost
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave1_scyl_boost
+  mov ecx, [edi+0x508]
+  test ecx, ecx
+  jz cave1_scyl_boost
 
-  fld dword [ebx+0xCAC]
-  fmul dword [float_15]
-  fstp dword [ebx+0xCAC]
+  push float_1
+  push dword [esi+0x16C]
+  push dword [esi+0x168]
+  push dword [esi+0x164]
+  call 00459860
+  add esp, 10
 
-  jmp cave1_done
-
-cave1_bumper:
-  mov ebx, [esi+0x1A4]
-  test ebx, ebx
-  jz cave1_done
-
+cave1_scyl_boost:
   fld dword [ebx+0xCA4]
   fmul st(0), st(0)
   fld dword [ebx+0xCAC]
@@ -91,7 +100,72 @@ cave1_bumper:
 
   fldz
   fcomip st(0), st(1)
-  je cave1_bumper_zero
+  je cave1_scyl_zero
+
+  fdivr dword [float_65]
+  fld st(0)
+  fmul dword [ebx+0xCA4]
+  fstp dword [ebx+0xCA4]
+  fmul dword [ebx+0xCAC]
+  fstp dword [ebx+0xCAC]
+  fldz
+  fstp dword [ebx+0xCA8]
+  fstp st(0)
+  jmp cave1_done
+
+cave1_scyl_zero:
+  fstp st(0)
+  jmp cave1_done
+
+cave1_bumper:
+  mov ebx, [esi+0x1A4]
+  test ebx, ebx
+  jz cave1_done
+
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave1_bump_vel
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave1_bump_vel
+  mov ecx, [edi+0x448]
+  test ecx, ecx
+  jz cave1_bump_vel
+
+  push float_1
+  push dword [esi+0x16C]
+  push dword [esi+0x168]
+  push dword [esi+0x164]
+  call 00459860
+  add esp, 10
+
+cave1_bump_vel:
+  mov eax, [saved_meshname]
+  add eax, 8
+  push eax
+  call 004BAE3E
+  add esp, 4
+
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave1_bump_norm
+  test eax, eax
+  js cave1_bump_norm
+  cmp eax, 0C
+  jg cave1_bump_norm
+  mov dword [edi+eax*4+0x6448], 3F800000
+
+cave1_bump_norm:
+  fld dword [ebx+0xCA4]
+  fmul st(0), st(0)
+  fld dword [ebx+0xCAC]
+  fmul st(0), st(0)
+  faddp
+  fsqrt
+
+  fldz
+  fcomip st(0), st(1)
+  je cave1_bump_zero
 
   fdivr dword [float_12]
   fld st(0)
@@ -104,7 +178,7 @@ cave1_bumper:
   fstp st(0)
   jmp cave1_done
 
-cave1_bumper_zero:
+cave1_bump_zero:
   fstp st(0)
 
 cave1_done:
@@ -157,22 +231,27 @@ cave2_speedcyl:
   jz cave2_done
 
   mov [ebx+0x808], 0A
+  mov byte [ebx+0x31D], 01
+  mov byte [ebx+0x31E], 01
 
-  fld dword [ebx+0xCA4]
-  fmul dword [float_15]
-  fstp dword [ebx+0xCA4]
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave2_scyl_boost
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave2_scyl_boost
+  mov ecx, [edi+0x508]
+  test ecx, ecx
+  jz cave2_scyl_boost
 
-  fld dword [ebx+0xCAC]
-  fmul dword [float_15]
-  fstp dword [ebx+0xCAC]
+  push float_1
+  push dword [esi+0x16C]
+  push dword [esi+0x168]
+  push dword [esi+0x164]
+  call 00459860
+  add esp, 10
 
-  jmp cave2_done
-
-cave2_bumper:
-  mov ebx, [esi+0x1A4]
-  test ebx, ebx
-  jz cave2_done
-
+cave2_scyl_boost:
   fld dword [ebx+0xCA4]
   fmul st(0), st(0)
   fld dword [ebx+0xCAC]
@@ -182,7 +261,72 @@ cave2_bumper:
 
   fldz
   fcomip st(0), st(1)
-  je cave2_bumper_zero
+  je cave2_scyl_zero
+
+  fdivr dword [float_65]
+  fld st(0)
+  fmul dword [ebx+0xCA4]
+  fstp dword [ebx+0xCA4]
+  fmul dword [ebx+0xCAC]
+  fstp dword [ebx+0xCAC]
+  fldz
+  fstp dword [ebx+0xCA8]
+  fstp st(0)
+  jmp cave2_done
+
+cave2_scyl_zero:
+  fstp st(0)
+  jmp cave2_done
+
+cave2_bumper:
+  mov ebx, [esi+0x1A4]
+  test ebx, ebx
+  jz cave2_done
+
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave2_bump_vel
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave2_bump_vel
+  mov ecx, [edi+0x448]
+  test ecx, ecx
+  jz cave2_bump_vel
+
+  push float_1
+  push dword [esi+0x16C]
+  push dword [esi+0x168]
+  push dword [esi+0x164]
+  call 00459860
+  add esp, 10
+
+cave2_bump_vel:
+  mov eax, [saved_meshname]
+  add eax, 8
+  push eax
+  call 004BAE3E
+  add esp, 4
+
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave2_bump_norm
+  test eax, eax
+  js cave2_bump_norm
+  cmp eax, 0C
+  jg cave2_bump_norm
+  mov dword [edi+eax*4+0x6448], 3F800000
+
+cave2_bump_norm:
+  fld dword [ebx+0xCA4]
+  fmul st(0), st(0)
+  fld dword [ebx+0xCAC]
+  fmul st(0), st(0)
+  faddp
+  fsqrt
+
+  fldz
+  fcomip st(0), st(1)
+  je cave2_bump_zero
 
   fdivr dword [float_12]
   fld st(0)
@@ -195,7 +339,7 @@ cave2_bumper:
   fstp st(0)
   jmp cave2_done
 
-cave2_bumper_zero:
+cave2_bump_zero:
   fstp st(0)
 
 cave2_done:
@@ -220,4 +364,5 @@ dealloc(saved_meshname)
 dealloc(str_bumper)
 dealloc(str_speedcyl)
 dealloc(float_12)
-dealloc(float_15)
+dealloc(float_65)
+dealloc(float_1)
