@@ -2979,17 +2979,10 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
 
                 /* v55c: Play tar sound effect (once when ball enters range).
                  * Native: Sound_Play3D(App+0x484, ball_x, ball_y, ball_z)
-                 * Only play when ball+0x2BC was 0 (not already in tar) */
-                if (*(BYTE*)(ball + 0x2BC) == 0) {
-                    DWORD app = *(DWORD*)(board + BOARD_APP);
-                    if (app && !IsBadReadPtr((void*)(app + 0x484), 4)) {
-                        DWORD snd = *(DWORD*)(app + 0x484);
-                        if (snd && !IsBadReadPtr((void*)snd, 8)) {
-                            /* Sound_Play3D(this=snd, x=bx, y=by, z=bz) — __thiscall */
-                            pfn_Sound_Play3D((void*)snd, bx, by, bz);
-                        }
-                    }
-                }
+                 * DISABLED: Calling Sound_Play3D from the background thread crashes
+                 * because DirectSound is not thread-safe (crash at offset 0x55F2).
+                 * The sound needs to be played from the main thread.
+                 * TODO: Queue sound requests and play them from the update callback. */
 
                 /* v55c: Tar splotch visual effect.
                  * Native creates 3 random-direction particles (5 floats each = 0x14 bytes)
