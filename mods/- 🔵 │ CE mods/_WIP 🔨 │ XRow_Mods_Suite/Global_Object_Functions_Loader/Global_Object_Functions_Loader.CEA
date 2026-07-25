@@ -1,15 +1,19 @@
-{Global Object Functions Loader - bumper function globally}
+{Global Object Functions Loader - bumper + speedcylinder globally}
 
 [ENABLE]
 
-alloc(BumperCave1, 512)
-alloc(BumperCave2, 512)
+alloc(BumperCave1, 1024)
+alloc(BumperCave2, 1024)
 alloc(saved_collObj, 4)
 alloc(str_bumper, 16)
+alloc(str_speedcyl, 32)
 alloc(float_12, 4)
 
 str_bumper:
   db 'N:BUMPER',0
+
+str_speedcyl:
+  db 'N:SPEEDCYLINDER',0
 
 float_12:
   dd 41400000
@@ -39,7 +43,7 @@ BumperCave1:
   call 004C7677
   add esp, 0C
   test eax, eax
-  jnz cave1_done
+  jnz cave1_check_speedcyl
 
   mov ebx, [esi+0x1A4]
   test ebx, ebx
@@ -69,6 +73,30 @@ BumperCave1:
 
 cave1_bumper_zero:
   fstp st(0)
+  jmp cave1_done
+
+cave1_check_speedcyl:
+  mov edx, [saved_collObj]
+  mov eax, [edx+4]
+  mov eax, [eax+0x864]
+  test eax, eax
+  jz cave1_done
+
+  push str_speedcyl
+  push eax
+  call 004C760E
+  add esp, 8
+  test eax, eax
+  jnz cave1_done
+
+  mov edx, [saved_collObj]
+  mov ecx, [edx+0x47C]
+  test ecx, ecx
+  jz cave1_done
+
+  push esi
+  call 00436B70
+  jmp cave1_done
 
 cave1_done:
   popad
@@ -102,7 +130,7 @@ BumperCave2:
   call 004C7677
   add esp, 0C
   test eax, eax
-  jnz cave2_done
+  jnz cave2_check_speedcyl
 
   mov ebx, [esi+0x1A4]
   test ebx, ebx
@@ -132,6 +160,30 @@ BumperCave2:
 
 cave2_bumper_zero:
   fstp st(0)
+  jmp cave2_done
+
+cave2_check_speedcyl:
+  mov edx, [saved_collObj]
+  mov eax, [edx+4]
+  mov eax, [eax+0x864]
+  test eax, eax
+  jz cave2_done
+
+  push str_speedcyl
+  push eax
+  call 004C760E
+  add esp, 8
+  test eax, eax
+  jnz cave2_done
+
+  mov edx, [saved_collObj]
+  mov ecx, [edx+0x47C]
+  test ecx, ecx
+  jz cave2_done
+
+  push esi
+  call 00436B70
+  jmp cave2_done
 
 cave2_done:
   popad
@@ -152,4 +204,5 @@ dealloc(BumperCave1)
 dealloc(BumperCave2)
 dealloc(saved_collObj)
 dealloc(str_bumper)
+dealloc(str_speedcyl)
 dealloc(float_12)
