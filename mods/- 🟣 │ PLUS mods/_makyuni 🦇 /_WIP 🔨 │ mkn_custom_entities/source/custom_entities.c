@@ -2905,14 +2905,9 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         float gz = *(float*)(gluebie + 0x10DC);
 
         /* Read detection radius.
-         * Native: obj+0x1100 * 60.0 (gives 45-198 depending on RNG).
-         * But the Gluebie's physical collision mesh is often larger than this
-         * radius, so the ball can touch the Gluebie without entering the
-         * proximity zone. Use a minimum radius of 120 to ensure the proximity
-         * behavior triggers before physical contact. */
+         * Native: obj+0x1100 * 60.0 (gives 45-198 depending on RNG). */
         float radius_raw = *(float*)(gluebie + 0x1100);
         float radius = radius_raw * 60.0f;
-        if (radius < 120.0f) radius = 120.0f;
         if (radius <= 0.0f) continue;
 
         /* Reset active flag (will be set if any ball is in range) */
