@@ -1,0 +1,238 @@
+{
+Global Object Functions Loader
+=============================
+
+This script makes level-specific object functions work GLOBALLY on ALL levels.
+
+How it works:
+1. Hooks the collision dispatch call (vtable[29]) at both call sites:
+   - Ball_Update (0x40728F)
+   - Ball_FallUpdate (0x408B85)
+2. Calls the ORIGINAL collision handler first (preserves all native events)
+3. After the original returns, checks the mesh name for known event prefixes
+4. If matched (e.g. N:BUMPER), runs that object's physics globally
+
+The bumper kick is idempotent: normalizing velocity to 12.0 twice gives the
+same result, so levels that natively handle bumpers are unaffected.
+
+Format: each object function is a small code block. Add more by copying
+the Bumper block pattern.
+
+Disable before exiting a level to avoid stale pointer crashes.
+}
+
+[ENABLE]
+
+alloc(BumperCave1, 1024)
+alloc(BumperCave2, 1024)
+alloc(saved_collObj, 4)
+alloc(str_bumper, 16)
+alloc(float_12, 4)
+alloc(float_0, 4)
+
+registersymbol(saved_collObj)
+
+str_bumper:
+  db 'N:BUMPER',0
+
+float_12:
+  dd 41400000
+
+float_0:
+  dd 00000000
+
+// ============================================
+// Call site 1: Ball_Update (0x40728F)
+// Original: 52 56 FF 50 74 (PUSH EDX; PUSH ESI; CALL [EAX+0x74])
+// ============================================
+BumperCave1:
+  // Save collObj for post-call check
+  mov [saved_collObj], edx
+
+  // Execute original collision dispatch
+  push edx
+  push esi
+  call dword [eax+0x74]
+
+  // After original handler: check mesh name
+  pushad
+
+  mov edx, [saved_collObj]
+  test edx, edx
+  jz cave1_done
+  mov eax, [edx+4]
+  test eax, eax
+  jz cave1_done
+  mov eax, [eax+0x864]
+  test eax, eax
+  jz cave1_done
+
+  // ============================================
+  // Load Bumper function globally
+  // ============================================
+  push 8
+  push str_bumper
+  push eax
+  call 004C7677            // _strnicmp
+  add esp, 0C
+  test eax, eax
+  jnz cave1_not_bumper
+
+  // Bumper kick: normalize ball velocity to 12.0 (horizontal only)
+  // physMesh = [ball+0x1A4], velocity at +0xCA4(X)/0xCA8(Y)/0xCAC(Z)
+  mov ebx, [esi+0x1A4]
+  test ebx, ebx
+  jz cave1_done
+
+  // Compute speed = sqrt(velX^2 + velZ^2)
+  fld dword [ebx+0xCA4]          // velX
+  fmul st(0), st(0)             // velX^2
+  fld dword [ebx+0xCAC]          // velZ
+  fmul st(0), st(0)             // velZ^2
+  faddp                         // velX^2 + velZ^2
+  fsqrt                         // speed
+
+  // If speed == 0, skip (stationary ball)
+  fldz
+  fcomip st(0), st(1)           // compare 0 with speed, pop 0
+  je cave1_bumper_zero          // speed == 0
+
+  // scale = 12.0 / speed
+  fdivr dword [float_12]        // ST(0) = 12.0 / speed = scale
+
+  // Duplicate scale for both X and Z computation
+  fld st(0)                     // ST(0) = scale_copy, ST(1) = scale
+
+  // resultX = velX * scale
+  fmul dword [ebx+0xCA4]        // ST(0) = scale * velX = resultX
+  fstp dword [ebx+0xCA4]        // store resultX, pop → ST(0) = scale
+
+  // resultZ = velZ * scale
+  fmul dword [ebx+0xCAC]        // ST(0) = scale * velZ = resultZ
+  fstp dword [ebx+0xCAC]        // store resultZ, pop → stack empty
+
+  // velY = 0
+  fldz
+  fstp dword [ebx+0xCA8]
+  jmp cave1_done
+
+cave1_bumper_zero:
+  fstp st(0)                    // pop speed
+  jmp cave1_done
+
+  // ----------------- End Bumper -----------------
+
+cave1_not_bumper:
+  // Add more object functions here:
+  //
+  // // Load SpeedCylinder function globally
+  // push N
+  // push str_speedcyl
+  // push eax
+  // call 004C7677
+  // add esp, 0C
+  // test eax, eax
+  // jnz not_speedcyl
+  //   ... speedcylinder physics ...
+  //   jmp cave1_done
+  // not_speedcyl:
+  // // ----------------- End SpeedCylinder -----------------
+
+cave1_done:
+  popad
+  jmp 00407294                  // return to Ball_Update
+
+0040728F:
+  jmp BumperCave1
+  nop
+
+// ============================================
+// Call site 2: Ball_FallUpdate (0x408B85)
+// Same logic, different return address
+// ============================================
+BumperCave2:
+  mov [saved_collObj], edx
+
+  push edx
+  push esi
+  call dword [eax+0x74]
+
+  pushad
+
+  mov edx, [saved_collObj]
+  test edx, edx
+  jz cave2_done
+  mov eax, [edx+4]
+  test eax, eax
+  jz cave2_done
+  mov eax, [eax+0x864]
+  test eax, eax
+  jz cave2_done
+
+  // ============================================
+  // Load Bumper function globally
+  // ============================================
+  push 8
+  push str_bumper
+  push eax
+  call 004C7677
+  add esp, 0C
+  test eax, eax
+  jnz cave2_not_bumper
+
+  mov ebx, [esi+0x1A4]
+  test ebx, ebx
+  jz cave2_done
+
+  fld dword [ebx+0xCA4]
+  fmul st(0), st(0)
+  fld dword [ebx+0xCAC]
+  fmul st(0), st(0)
+  faddp
+  fsqrt
+
+  fldz
+  fcomip st(0), st(1)
+  je cave2_bumper_zero
+
+  fdivr dword [float_12]
+  fld st(0)                     // dup scale
+  fmul dword [ebx+0xCA4]
+  fstp dword [ebx+0xCA4]        // resultX, pop → ST(0) = scale
+  fmul dword [ebx+0xCAC]
+  fstp dword [ebx+0xCAC]        // resultZ, pop → empty
+  fldz
+  fstp dword [ebx+0xCA8]
+  jmp cave2_done
+
+cave2_bumper_zero:
+  fstp st(0)
+  jmp cave2_done
+
+  // ----------------- End Bumper -----------------
+
+cave2_not_bumper:
+
+cave2_done:
+  popad
+  jmp 00408B8A                  // return to Ball_FallUpdate
+
+00408B85:
+  jmp BumperCave2
+  nop
+
+[DISABLE]
+
+0040728F:
+  db 52 56 FF 50 74
+
+00408B85:
+  db 52 56 FF 50 74
+
+dealloc(BumperCave1)
+dealloc(BumperCave2)
+dealloc(saved_collObj)
+dealloc(str_bumper)
+dealloc(float_12)
+dealloc(float_0)
+unregistersymbol(saved_collObj)
