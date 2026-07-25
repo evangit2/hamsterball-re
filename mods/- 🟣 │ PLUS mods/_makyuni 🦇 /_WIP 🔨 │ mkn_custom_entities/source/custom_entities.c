@@ -3157,23 +3157,20 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             }
 
             if (in_outer) {
-                /* Ball is in outer zone — scale velocity (slowdown) */
-                DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
-                if (!col_mesh || IsBadReadPtr((void*)(col_mesh + 0xCB0), 4)) continue;
-
-                float vx = *(float*)(col_mesh + 0xCA4);
-                float vy = *(float*)(col_mesh + 0xCA8);
-                float vz = *(float*)(col_mesh + 0xCAC);
-
-                /* Scale by 0.95 (slowdown factor — ball keeps 95% of velocity) */
-                *(float*)(col_mesh + 0xCA4) = vx * 0.95f;
-                *(float*)(col_mesh + 0xCA8) = vy * 0.95f;
-                *(float*)(col_mesh + 0xCAC) = vz * 0.95f;
+                /* Ball is in outer zone — set in_tar flag.
+                 * Native DizzyBoard_Update does NOT scale velocity directly.
+                 * Instead it sets ball+0x2CC (in_tar) which causes Ball_Update to:
+                 * - Decay spin 0.85x/frame (control slowdown)
+                 * - Use ball's own position for distance (can't be pushed)
+                 * - Ball sinks 0.25/frame (Y decreases)
+                 * The velocity scaling we had before (0.95x/frame) compounded
+                 * and made the ball stop completely — that was wrong. */
+                *(BYTE*)(ball + 0x2CC) = 1;
 
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* Play tar sound — with short cooldown (native replays periodically). */
+                /* Play tar sound — with short cooldown. */
                 {
                     static int g_gluebie_sound_cooldown = 0;
                     if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
@@ -3182,18 +3179,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                         g_gluebie_snd_x = bx;
                         g_gluebie_snd_y = by;
                         g_gluebie_snd_z = bz;
-                        g_gluebie_sound_cooldown = 60; /* ~1 sec at 60fps */
+                        g_gluebie_sound_cooldown = 60; /* ~1 sec */
                     }
                 }
 
-                /* Tar splotch visual effect — fires every ~15 frames in outer zone.
-                 * Native adds 3 particles per check, but not every frame.
-                 * Cooldown lets old particles expire so new ones can be added. */
+                /* Tar splotch visual effect — fires every frame, cap at 30. */
                 {
-                    static int g_gluebie_splotch_cooldown = 0;
-                    if (g_gluebie_splotch_cooldown > 0) g_gluebie_splotch_cooldown--;
-                    if (g_gluebie_splotch_cooldown == 0) {
-                        g_gluebie_splotch_cooldown = 15; /* ~0.25 sec at 60fps */
                     DWORD part_list = ball + 0x810;
                     if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
                         int part_count = *(int*)(part_list + 0x04);
@@ -3220,14 +3211,14 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                             }
                         }
                     }
-                    } /* end splotch cooldown */
                 }
 
                 /* Mark ball as in tar */
                 *(BYTE*)(ball + 0x2BC) = 1;
             } else {
-                /* Ball NOT in range — clear tar flag */
+                /* Ball NOT in range — clear tar flags */
                 *(BYTE*)(ball + 0x2BC) = 0;
+                *(BYTE*)(ball + 0x2CC) = 0;
             }
         }
     }
