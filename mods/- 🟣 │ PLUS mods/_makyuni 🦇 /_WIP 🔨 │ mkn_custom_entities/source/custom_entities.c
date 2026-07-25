@@ -3095,14 +3095,16 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         float gy = *(float*)(gluebie + 0x10D8);
         float gz = *(float*)(gluebie + 0x10DC);
 
-        /* Read detection radius.
+        /* Read detection radius — use native outer zone for slowdown.
          * Native has TWO proximity checks:
          *   1. DizzyBoard_Update: obj+0x1100 * 60.0 = 45-60 units (center-to-center, velocity slowdown)
          *   2. Ball_Update: 3.0 units (distance to tar SURFACE, sets tar flag)
-         * The 45-60 value is too large for non-Dizzy levels (smaller Gluebies).
-         * Using 3.0 as requested by user — matches the native inner zone. */
-        float radius = 3.0f;
-        if (radius <= 0.0f) continue;
+         * We use the outer zone (obj+0x1100 * 60.0) for velocity slowdown,
+         * and the inner zone (3.0) for tar splotch + tar flag. */
+        float outer_radius = *(float*)(gluebie + 0x1100) * 60.0f;
+        if (outer_radius <= 0.0f) outer_radius = 45.0f;  /* fallback */
+        float inner_radius = 3.0f;  /* tar surface contact */
+        if (outer_radius <= 0.0f && inner_radius <= 0.0f) continue;
 
         /* Reset active flag (will be set if any ball is in range) */
         *(BYTE*)(gluebie + 0x1104) = 0;
@@ -3128,17 +3130,18 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             float dy = gy - by;
             float dz = gz - bz;
             float dist_sq = dx*dx + dy*dy + dz*dz;
-            int in_range = (dist_sq < radius * radius);
+            int in_outer = (dist_sq < outer_radius * outer_radius);
+            int in_inner = (dist_sq < inner_radius * inner_radius);
 
-            /* Debug: log once per second OR when in range */
-            if (do_log || (in_range && g_gluebie_debug_count < 200)) {
+            /* Debug: log once per second OR when in outer range */
+            if (do_log || (in_outer && g_gluebie_debug_count < 200)) {
                 g_gluebie_debug_count++;
                 FILE* df = fopen("custom_entities_debug.log", "a");
                 if (df) {
                     float dist = 0.0f;
                     if (dist_sq > 0.0f) dist = sqrtf(dist_sq);
-                    fprintf(df, "GLUEBIE f=%d: gpos=(%.1f,%.1f,%.1f) radius=%.1f ball[%d]=%p bpos=(%.1f,%.1f,%.1f) dist=%.1f in_range=%d\n",
-                        g_gluebie_debug_frame, gx, gy, gz, radius, i, (void*)ball, bx, by, bz, dist, in_range);
+                    fprintf(df, "GLUEBIE f=%d: gpos=(%.1f,%.1f,%.1f) outer=%.1f inner=%.1f ball[%d]=%p bpos=(%.1f,%.1f,%.1f) dist=%.1f in_outer=%d in_inner=%d\n",
+                        g_gluebie_debug_frame, gx, gy, gz, outer_radius, inner_radius, i, (void*)ball, bx, by, bz, dist, in_outer, in_inner);
                     DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
                     fprintf(df, "  col_mesh=%p vel=(%.3f,%.3f,%.3f)\n",
                         (void*)col_mesh,
@@ -3149,8 +3152,8 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 }
             }
 
-            if (in_range) {
-                /* Ball is in range — scale velocity */
+            if (in_outer) {
+                /* Ball is in outer zone — scale velocity (slowdown) */
                 DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
                 if (!col_mesh || IsBadReadPtr((void*)(col_mesh + 0xCB0), 4)) continue;
 
@@ -3166,12 +3169,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* v55d: Play tar sound — queue once when ball enters range.
-                 * Native: ECX = [App+0x484] (tar sound channel), params = (x, y, z, 1.0)
-                 * Sound_Play3D at 0x459860 has RET 0x10 (4 params = 16 bytes).
-                 * The 4th param (scale=1.0) was missing in v55c — caused stack
-                 * corruption → crash at 0x4065F2 inside Ball_ctor.
-                 * Native call site at 0x41D9C2: push 1.0; push z; push y; push x; ECX=snd */
+                /* v55d: Play tar sound — queue once when ball enters outer range. */
                 if (!g_gluebie_sound_pending) {
                     g_gluebie_sound_pending = 1;
                     g_gluebie_snd_x = bx;
@@ -3179,43 +3177,49 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     g_gluebie_snd_z = bz;
                 }
 
-                /* v55c: Tar splotch visual effect.
-                 * Native creates 3 random-direction particles (5 floats each = 0x14 bytes)
-                 * and adds them to ball+0x810 (AthenaList, max 30 particles).
-                 * Each particle: [0-2]=direction (normalized), [3]=0, [4]=0.
-                 * The ball's render function reads these and draws tar splotches. */
-                {
-                    DWORD part_list = ball + 0x810;
-                    if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
-                        int part_count = *(int*)(part_list + 0x04);
-                        if (part_count < 30) {
-                            int k;
-                            for (k = 0; k < 3; k++) {
-                                float* particle = (float*)pfn_operator_new(0x14);
-                                if (!particle) continue;
-                                particle[0] = (float)(rand() % 201 - 100);  /* -100..100 */
-                                particle[1] = (float)(rand() % 201 - 100);
-                                particle[2] = (float)(rand() % 201 - 100);
-                                particle[3] = 0.0f;
-                                particle[4] = 0.0f;
-                                /* Normalize direction to length 1.0 */
-                                float len_sq = particle[0]*particle[0] +
-                                               particle[1]*particle[1] +
-                                               particle[2]*particle[2];
-                                if (len_sq > 0.0f) {
-                                    float inv_len = 1.0f / sqrtf(len_sq);
-                                    particle[0] *= inv_len;
-                                    particle[1] *= inv_len;
-                                    particle[2] *= inv_len;
+                /* Tar splotch visual effect — only when in INNER zone (tar surface). */
+                if (in_inner) {
+                    /* v55c: Tar splotch visual effect.
+                     * Native creates 3 random-direction particles (5 floats each = 0x14 bytes)
+                     * and adds them to ball+0x810 (AthenaList, max 30 particles).
+                     * Each particle: [0-2]=direction (normalized), [3]=0, [4]=0.
+                     * The ball's render function reads these and draws tar splotches. */
+                    {
+                        DWORD part_list = ball + 0x810;
+                        if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
+                            int part_count = *(int*)(part_list + 0x04);
+                            if (part_count < 30) {
+                                int k;
+                                for (k = 0; k < 3; k++) {
+                                    float* particle = (float*)pfn_operator_new(0x14);
+                                    if (!particle) continue;
+                                    particle[0] = (float)(rand() % 201 - 100);  /* -100..100 */
+                                    particle[1] = (float)(rand() % 201 - 100);
+                                    particle[2] = (float)(rand() % 201 - 100);
+                                    particle[3] = 0.0f;
+                                    particle[4] = 0.0f;
+                                    /* Normalize direction to length 1.0 */
+                                    float len_sq = particle[0]*particle[0] +
+                                                   particle[1]*particle[1] +
+                                                   particle[2]*particle[2];
+                                    if (len_sq > 0.0f) {
+                                        float inv_len = 1.0f / sqrtf(len_sq);
+                                        particle[0] *= inv_len;
+                                        particle[1] *= inv_len;
+                                        particle[2] *= inv_len;
+                                    }
+                                    pfn_AthenaList_Append((DWORD*)part_list, (void*)particle);
                                 }
-                                pfn_AthenaList_Append((DWORD*)part_list, (void*)particle);
                             }
                         }
                     }
-                }
 
-                /* Mark ball as in tar */
-                *(BYTE*)(ball + 0x2BC) = 1;
+                    /* Mark ball as in tar */
+                    *(BYTE*)(ball + 0x2BC) = 1;
+                } else {
+                    /* Ball in outer zone but not inner — clear tar splotch flag */
+                    *(BYTE*)(ball + 0x2BC) = 0;
+                }
             } else {
                 /* Ball NOT in range — clear tar flag */
                 *(BYTE*)(ball + 0x2BC) = 0;
