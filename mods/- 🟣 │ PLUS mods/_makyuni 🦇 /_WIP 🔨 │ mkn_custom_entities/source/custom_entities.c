@@ -2861,6 +2861,7 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static int g_gluebie_debug_count = 0;  /* limit debug output */
+static int g_gluebie_debug_frame = 0; /* frame counter for sampling */
 
 static void cEnt_gluebie_proximity_check(DWORD board) {
     if (!board) return;
@@ -2873,6 +2874,11 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
     if (IsBadReadPtr((void*)(ball_list + 0x40C), 4)) return;
     DWORD* ball_data = *(DWORD**)(ball_list + 0x40C);
     if (!ball_data || IsBadReadPtr(ball_data, ball_count * 4)) return;
+
+    g_gluebie_debug_frame++;
+    /* Log every 60th frame (~once per second) OR when in range */
+    int do_log = (g_gluebie_debug_count < 120) && 
+                 ((g_gluebie_debug_frame % 60) == 0);
 
     int i, j;
     for (j = 0; j < g_gluebie_count; j++) {
@@ -2896,7 +2902,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         for (i = 0; i < ball_count; i++) {
             DWORD ball = ball_data[i];
             if (!ball || ball < 0x10000) continue;
-            if (IsBadReadPtr((void*)ball, 0x1B0)) continue;
+            if (IsBadReadPtr((void*)ball, 0x2D0)) continue;
 
             /* Check ball is active: ball+0x18 >= 0 (signed) */
             if (*(int*)(ball + 0x18) < 0) continue;
@@ -2914,16 +2920,19 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             float dy = gy - by;
             float dz = gz - bz;
             float dist_sq = dx*dx + dy*dy + dz*dz;
+            int in_range = (dist_sq < radius * radius);
 
-            /* Debug: log first few proximity checks */
-            if (g_gluebie_debug_count < 60) {
+            /* Debug: log once per second OR when in range */
+            if (do_log || (in_range && g_gluebie_debug_count < 200)) {
                 g_gluebie_debug_count++;
                 FILE* df = fopen("custom_entities_debug.log", "a");
                 if (df) {
-                    fprintf(df, "GLUEBIE: gluebie=%p pos=(%.1f,%.1f,%.1f) radius=%.1f ball[%d]=%p bpos=(%.1f,%.1f,%.1f) dist_sq=%.1f in_range=%d\n",
-                        (void*)gluebie, gx, gy, gz, radius, i, (void*)ball, bx, by, bz, dist_sq, dist_sq < radius*radius);
+                    float dist = 0.0f;
+                    if (dist_sq > 0.0f) dist = sqrtf(dist_sq);
+                    fprintf(df, "GLUEBIE f=%d: gpos=(%.1f,%.1f,%.1f) radius=%.1f ball[%d]=%p bpos=(%.1f,%.1f,%.1f) dist=%.1f in_range=%d\n",
+                        g_gluebie_debug_frame, gx, gy, gz, radius, i, (void*)ball, bx, by, bz, dist, in_range);
                     DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
-                    fprintf(df, "  ball+0x1A4=%p col_mesh+0xCA4=%f col_mesh+0xCA8=%f col_mesh+0xCAC=%f\n",
+                    fprintf(df, "  col_mesh=%p vel=(%.3f,%.3f,%.3f)\n",
                         (void*)col_mesh,
                         col_mesh ? *(float*)(col_mesh + 0xCA4) : 0.0f,
                         col_mesh ? *(float*)(col_mesh + 0xCA8) : 0.0f,
@@ -2932,7 +2941,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 }
             }
 
-            if (dist_sq < radius * radius) {
+            if (in_range) {
                 /* Ball is in range — scale velocity */
                 DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
                 if (!col_mesh || IsBadReadPtr((void*)(col_mesh + 0xCB0), 4)) continue;
