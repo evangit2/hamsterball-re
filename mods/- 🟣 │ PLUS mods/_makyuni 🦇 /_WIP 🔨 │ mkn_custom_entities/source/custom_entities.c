@@ -3186,10 +3186,14 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     }
                 }
 
-                /* Tar splotch visual effect — fires every frame in outer zone.
-                 * Cap at 30 particles total. When particles expire (count drops
-                 * below 30), new ones are added again. */
+                /* Tar splotch visual effect — fires every ~15 frames in outer zone.
+                 * Native adds 3 particles per check, but not every frame.
+                 * Cooldown lets old particles expire so new ones can be added. */
                 {
+                    static int g_gluebie_splotch_cooldown = 0;
+                    if (g_gluebie_splotch_cooldown > 0) g_gluebie_splotch_cooldown--;
+                    if (g_gluebie_splotch_cooldown == 0) {
+                        g_gluebie_splotch_cooldown = 15; /* ~0.25 sec at 60fps */
                     DWORD part_list = ball + 0x810;
                     if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
                         int part_count = *(int*)(part_list + 0x04);
@@ -3216,6 +3220,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                             }
                         }
                     }
+                    } /* end splotch cooldown */
                 }
 
                 /* Mark ball as in tar */
