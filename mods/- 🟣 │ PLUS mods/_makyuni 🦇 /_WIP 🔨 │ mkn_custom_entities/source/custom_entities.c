@@ -2158,14 +2158,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10D4) = px;
                 *(float*)((char*)obj + 0x10D8) = py;
                 *(float*)((char*)obj + 0x10DC) = pz;
-                /* v55c: Clear Gluebie's SpatialTrees (obj+0x18 AthenaList) to make it
-                 * non-solid. On Dizzy, the Gluebie is a "tar" entity — the ball passes
-                 * through it with velocity slowdown, not solid collision. The slowdown
-                 * is handled by our mod-side proximity check (cEnt_gluebie_proximity_check).
-                 * Without this clear, Stands_ctor clones collision trees from the mesh
-                 * which makes the Gluebie solid — the ball bounces off and gets stuck. */
-                pfn_AthenaList_Clear((DWORD*)(obj + 0x18));
-                if (logf) fprintf(logf, "  ROTATER: Gluebie collision trees cleared (non-solid, tar mode)\n");
+                /* v55j_7: Keep Gluebie SOLID (don't clear collision trees).
+                 * Native Dizzy Gluebie is solid — ball rolls on its surface.
+                 * The 0.95x velocity scaling gently slows the ball as it crosses.
+                 * Clearing collision trees (previous approach) made the ball fall
+                 * through and get trapped in the velocity zone → stuck + crash. */
                 /* Add to board+0x4378 (Gluebie list) for DizzyBoard_Update proximity check.
                  * Only safe on Dizzy (where it's an AthenaList). On other levels,
                  * board+0x4378 may be a Level pointer (Tower/Expert/Toob) — skip to avoid crash.
@@ -3159,19 +3156,13 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             if (in_outer) {
                 /* Ball is in outer zone — scale velocity (native Gluebie behavior).
                  * DizzyBoard_Update scales col_mesh velocity by 0.95 each frame.
-                 * Clamp: don't scale below 0.5 so ball can still escape the zone. */
+                 * Ball stays on solid surface, just rolls slower. */
                 DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
                 if (!col_mesh || IsBadReadPtr((void*)(col_mesh + 0xCB0), 4)) continue;
 
-                float vx = *(float*)(col_mesh + 0xCA4);
-                float vy = *(float*)(col_mesh + 0xCA8);
-                float vz = *(float*)(col_mesh + 0xCAC);
-                float speed = sqrtf(vx*vx + vy*vy + vz*vz);
-                if (speed > 0.5f) {
-                    *(float*)(col_mesh + 0xCA4) = vx * 0.95f;
-                    *(float*)(col_mesh + 0xCA8) = vy * 0.95f;
-                    *(float*)(col_mesh + 0xCAC) = vz * 0.95f;
-                }
+                *(float*)(col_mesh + 0xCA4) *= 0.95f;
+                *(float*)(col_mesh + 0xCA8) *= 0.95f;
+                *(float*)(col_mesh + 0xCAC) *= 0.95f;
 
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
