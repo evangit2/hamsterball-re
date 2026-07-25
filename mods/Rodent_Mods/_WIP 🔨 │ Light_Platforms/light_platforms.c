@@ -1,27 +1,35 @@
 /*
  * light_platforms.c — Light Platforms mod for Hamsterball
  *
- * Hijacks Neon Race's NeonPlatform appear/disappear system.
- * Instead of the timer driving platform visibility, an external flag controls it.
- * When merged with Electric Lights, the flag = "ball lights are on" (charge > 0).
+ * Replaces ArenaStands (DFLOOR1-4) blink timer with the Neon light state.
+ * When the Neon Race light is ON, platforms stay visible.
+ * When the light is OFF, platforms stay invisible.
  *
- * NeonPlatform update (vtable[11] = 0x0043E260, __thiscall):
- *   obj+0x10E4 = active flag (byte: 1=updating, 0=idle) — CHECKED FIRST
- *   obj+0x10E5 = direction  (byte: 0=appearing, 1=disappearing)
- *   obj+0x10DC = Y position  (float, moved ±4.0/frame)
- *   obj+0x10E8 = tick counter (int, +4 appearing / -4 disappearing, resets at 300/0)
- *   obj+0x10D8 = X position  (float, ball proximity check)
- *   obj+0x10E0 = Z position  (float, ball proximity check)
- *   obj+0x10D0 = board pointer
- *   Ball proximity radius = 22.0 units (double at 0x4D5D18)
- *   When disappearing + ball within 22 units X+Z: ball+0x168 (Y vel) -= 4.0
- *   When tick resets: Y += 100.0, direction flips, tick += 100
+ * ArenaStands (DFLOOR) — vtable 0x4D5A70, ctor 0x43E450, size 0x1104
+ *   +0x10DC = state (0-3: 0,1=visible / 2,3=invisible)
+ *   +0x10E0 = timer (75 frames per state, 0x4B)
+ *   +0x10E4 = board pointer
+ *   +0x10E8 = render object (Level_RenderCtor result)
+ *   +0x1100 = needs_readd flag (1=should be added back to render list)
  *
- * NeonPlatform vtable = 0x004D5A10
- * NeonPlatform objects stored in board+0x2578 AthenaList
+ * Native state machine (vtable[11] = 0x4373E0):
+ *   State 0 (visible): timer-- → 0: state=1, ADD to render list, sound
+ *   State 1 (visible): timer-- → 0: state=2, REMOVE from render list
+ *   State 2 (invisible): timer-- → 0: state=3, ADD to render list, sound
+ *   State 3 (invisible): timer-- → 0: state=0
  *
- * Hook: Graphics_RenderScene entry (0x454BC0) — same as Electric Lights.
- *   Runs before board update, so direction flag is set before platforms update.
+ * Mod approach: override state+timer every frame so the timer never reaches 0.
+ *   Light ON  → state=0, timer=75 (visible, never transitions)
+ *   Light OFF → state=2, timer=75 (invisible, never transitions)
+ *
+ * Light object at board+0x436C (SceneObject, 0xD4 bytes)
+ *   +0x88 = visible flag (1=on, 0=off)
+ *   Set by E:LIGHTSON (→1) / E:LIGHTSOFF (→0) collision events
+ *
+ * Hook: Graphics_RenderScene entry (0x454BC0)
+ *   Runs AFTER Board_UpdateRaceState (which calls vtable[11]).
+ *   So we override state AFTER the native timer tick — next frame
+ *   vtable[11] decrements from 75 to 74, never reaches 0, no transition.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll light_platforms.c \
@@ -35,52 +43,34 @@
  * Game Addresses
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#define RENDER_SCENE_HOOK    0x00454BC0
-#define RENDER_SCENE_ORIG    0x00454BC6
+#define RENDER_SCENE_HOOK      0x00454BC0
+#define RENDER_SCENE_ORIG      0x00454BC6
 #define RENDER_SCENE_ORIG_BYTES 6
 
-#define NEONPLATFORM_VTABLE   0x004D5A10
+#define ARENASTANDS_VTABLE     0x004D5A70
 
 /* Board offsets */
-#define BOARD_DYNOBJ_LIST    0x2578   /* AthenaList of dynamic objects */
-#define ATHENALIST_COUNT     0x04     /* count at +0x04 (inline) */
-#define ATHENALIST_ITEMS     0x40C    /* items array at +0x40C */
+#define BOARD_DYNOBJ_LIST      0x2578   /* AthenaList of dynamic objects */
+#define BOARD_LIGHT_P0         0x436C   /* Light SceneObject pointer (player 0) */
+#define ATHENALIST_COUNT       0x04
+#define ATHENALIST_ITEMS       0x40C
 
-/* NeonPlatform offsets — VERIFIED via disassembly of 0x0043E260 */
-#define NP_ACTIVE             0x10E4   /* byte: 1=updating, 0=idle (checked first) */
-#define NP_DIRECTION          0x10E5   /* byte: 0=appearing, 1=disappearing */
+/* ArenaStands struct offsets */
+#define AS_STATE               0x10DC   /* int: 0-3 */
+#define AS_TIMER               0x10E0   /* int: countdown (75=0x4B per state) */
+#define AS_BOARD               0x10E4   /* DWORD: board pointer */
+#define AS_RENDER_OBJ          0x10E8   /* DWORD: Level_RenderCtor result */
+#define AS_NEEDS_READD         0x1100   /* byte: 1=should be re-added to render list */
 
-/* Scene pointer for getting board */
-#define SCENE_PTR             0x005341E4
-#define SCENE_LEVEL_PTR       0x8AC    /* scene+0x8AC = level ptr */
-#define LEVEL_BOARD_PTR       0x08     /* level+0x08 = board ptr... actually */
+/* Light SceneObject offsets */
+#define LIGHT_VISIBLE          0x88     /* byte: 1=on, 0=off */
 
-/* Actually: scene+0x8AC = level, but we need board.
-   Board = scene itself for race levels. Or use App.
-   Let me use App: App+0x178 = board */
-#define APP_PTR               0x005341E0
-#define APP_BOARD             0x178
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Configuration
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* Toggle period for testing (in frames at 60fps) */
-#define TOGGLE_PERIOD_FRAMES  600   /* 10 seconds on, 10 seconds off */
+/* Scene/board access */
+#define APP_PTR                 0x005341E0
+#define APP_BOARD               0x178
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Mod State
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static BYTE  g_orig_bytes[6];
-static int   g_frame_count = 0;
-
-/* External flag: 1=platforms visible, 0=platforms hidden
-   When merged with Electric Lights, this = (charge > 0) */
-static int   g_platforms_visible = 1;
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Update NeonPlatform Objects
+ * Per-Frame Update
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void update_platforms(void) {
@@ -88,39 +78,43 @@ static void update_platforms(void) {
     DWORD app = *(DWORD*)APP_PTR;
     if (!app || IsBadReadPtr((void*)app, 0x200)) return;
     DWORD board = *(DWORD*)(app + APP_BOARD);
-    if (!board || IsBadReadPtr((void*)board, 0x2600)) return;
+    if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
 
-    /* Get dynamic objects AthenaList at board+0x2578 */
+    /* Read light state: board+0x436C → SceneObject+0x88 */
+    DWORD light = *(DWORD*)(board + BOARD_LIGHT_P0);
+    if (!light || IsBadReadPtr((void*)light, 0xD4)) return;
+    BYTE light_on = *(BYTE*)(light + LIGHT_VISIBLE);
+
+    /* Iterate dynamic objects AthenaList at board+0x2578 */
     DWORD listBase = board + BOARD_DYNOBJ_LIST;
     if (IsBadReadPtr((void*)listBase, 0x410)) return;
 
-    /* AthenaList: count at +0x04, items at +0x40C */
     int count = *(int*)(listBase + ATHENALIST_COUNT);
     if (count < 1 || count > 500) return;
 
     DWORD items = *(DWORD*)(listBase + ATHENALIST_ITEMS);
     if (!items || IsBadReadPtr((void*)items, count * 4)) return;
 
-    /* Iterate all dynamic objects, find NeonPlatforms */
     for (int i = 0; i < count; i++) {
         DWORD obj = *(DWORD*)(items + i * 4);
         if (!obj || IsBadReadPtr((void*)obj, 4)) continue;
 
         DWORD vtable = *(DWORD*)obj;
-        if (vtable != NEONPLATFORM_VTABLE) continue;
+        if (vtable != ARENASTANDS_VTABLE) continue;
 
-        /* Found a NeonPlatform — set direction based on flag */
-        if (IsBadReadPtr((void*)(obj + NP_DIRECTION), 1)) continue;
+        /* Found an ArenaStands object — override state machine */
+        if (IsBadReadPtr((void*)(obj + AS_STATE), 4)) continue;
 
-        if (g_platforms_visible) {
-            /* Make platform appear: direction=0 (appearing) */
-            *(BYTE*)(obj + NP_DIRECTION) = 0;
-            /* Ensure active flag is set so update runs */
-            *(BYTE*)(obj + NP_ACTIVE) = 1;
+        if (light_on) {
+            /* Light is ON → keep platform visible
+             * State 0 = visible (in render list), timer=75 prevents transition */
+            *(int*)(obj + AS_STATE) = 0;
+            *(int*)(obj + AS_TIMER) = 0x4B;  /* 75 */
         } else {
-            /* Make platform disappear: direction=1 (disappearing) */
-            *(BYTE*)(obj + NP_DIRECTION) = 1;
-            *(BYTE*)(obj + NP_ACTIVE) = 1;
+            /* Light is OFF → keep platform invisible
+             * State 2 = invisible (removed from render list), timer=75 prevents transition */
+            *(int*)(obj + AS_STATE) = 2;
+            *(int*)(obj + AS_TIMER) = 0x4B;  /* 75 */
         }
     }
 }
@@ -146,14 +140,6 @@ __asm__(
 );
 
 void on_render_scene(void) {
-    /* Toggle flag for testing */
-    g_frame_count++;
-    if ((g_frame_count / TOGGLE_PERIOD_FRAMES) % 2 == 0) {
-        g_platforms_visible = 1;
-    } else {
-        g_platforms_visible = 0;
-    }
-
     update_platforms();
 }
 
@@ -162,7 +148,6 @@ void on_render_scene(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void install_hooks(void) {
-    memcpy(g_orig_bytes, (void*)RENDER_SCENE_HOOK, RENDER_SCENE_ORIG_BYTES);
     install_jmp_hook_nop(RENDER_SCENE_HOOK, (DWORD)hook_cave_asm, RENDER_SCENE_ORIG_BYTES);
 }
 

@@ -1,0 +1,4 @@
+enabled
+# No Fall Damage mod
+# Set to 'enabled' or 'disabled'
+# F8 toggles on/off at runtime

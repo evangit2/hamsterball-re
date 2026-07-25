@@ -1,5 +1,23 @@
 # Version Changelog
 
+## v55f — WaterWheel: mesh loaded + rotated per-frame (no entity)
+
+- **WaterWheel (ai_type 26) now loads its mesh and rotates it each frame.**
+  - Native game (DizzyBoard_ctor at 0x41D067) creates a mesh via `MeshWorld_ctor("Levels\\Level3-WaterWheel")`
+    stored at `board+0x4BA8`, position at `board+0x4BB0`, angle at `board+0x4BBC`.
+  - DizzyBoard_Update (0x41D512) rotates: `angle -= 0.5/frame` (constant at 0x4CF3F0),
+    then applies via `Gfx_RotateY(stack_matrix, angle)` (0x457C90) + mesh vtable[22] (SetTransform)
+    + mesh vtable[21] (SetPosition).
+  - **Old behavior:** spawned PopCylinder with the mesh path (wrong — non-solid, static).
+  - **New behavior:** creates mesh via `MeshWorld_ctor`, stores in `g_waterwheels[]` array,
+    rotates per-frame via `cEnt_waterwheel_update()` which calls `Gfx_RotateY` + mesh vtable[22]+[21].
+  - Mesh is added to board render list (`board+0xCD4`) and scene spatial tree (`sceneobj+0x1C`)
+    for visibility and collision.
+- **Added `cEnt_waterwheel_update()` — per-frame rotation.**
+  - Calls `Gfx_RotateY(rot_matrix, angle)` to build Y-rotation matrix.
+  - Calls `mesh->vtable[22]()` (SetTransform, no params) then `mesh->vtable[21](&rot_matrix)` (SetPosition, 1 param).
+- **AI list entry updated:** mesh path stays `levels\\Level3-WaterWheel` (used by `MeshWorld_ctor`).
+
 ## v55e — TarBubble: no entity, position-only marker
 
 - **TarBubble no longer spawns a PopCylinder entity.**

@@ -162,7 +162,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   23 = Chrome_ctor (no _ctor, board-level behavior, PopCylinder fallback)
  *   24 = Funball_ctor (no _ctor, board-level behavior, PopCylinder fallback)
  *   25 = Tarbubble (no _ctor, no entity spawned — position-only marker, mod handles tar sinking)
- *   26 = Waterwheel_ctor (no _ctor, position-only storage, PopCylinder fallback)
+ *   26 = Waterwheel (no _ctor, mod loads mesh + rotates per-frame via Gfx_RotateY + mesh vtable)
  *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
  *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
  *   29 = Gear_ctor (0x437690, 0x1514) — 9 params: (this, board, x, y, z, x2, y2, z2, mesh)
@@ -338,6 +338,12 @@ static Gfx_ScaleFn_t pfn_Gfx_ScaleZ_Bridge = (Gfx_ScaleFn_t)0x00457CC0;
 typedef void (__thiscall *Gfx_SetPosition_t)(void* gfx, float x, float y, float z);
 static Gfx_SetPosition_t pfn_Gfx_SetPosition_Bridge = (Gfx_SetPosition_t)0x00457B50;
 
+/* v55f: Gfx_RotateY — build Y-rotation matrix (deg→rad internally)
+ * __thiscall(ECX=matrix_buf, [ESP+4]=angle_degrees)
+ * Writes 4x4 matrix to ECX+0x04. RET 4. */
+typedef void (__thiscall *Gfx_RotateY_t)(void* matrix_buf, float angle_degrees);
+static Gfx_RotateY_t pfn_Gfx_RotateY = (Gfx_RotateY_t)0x00457C90;
+
 /* Timer_Init / Timer_Cleanup — timer context for render transforms */
 typedef void (__fastcall *Timer_Init_t)(void* out);
 static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457AD0;
@@ -400,6 +406,21 @@ typedef struct {
 } TarBubblePos;
 static TarBubblePos g_tarbubble_pos[MAX_TARBUBBLES];
 static int g_tarbubble_count = 0;
+
+/* v55f: WaterWheel tracking — mesh object + position + rotation.
+ * Native game stores waterwheel mesh at board+0x4BA8, position at board+0x4BB0,
+ * angle at board+0x4BBC. DizzyBoard_Update rotates angle -= 0.5/frame and
+ * applies transform via mesh vtable[22]+[21]. N:WHEELEMBED collision embeds ball.
+ * We replicate by creating the mesh via MeshWorld_ctor and rotating each frame. */
+#define MAX_WATERWHEELS 8
+typedef struct {
+    DWORD mesh_obj;    /* Level/MeshWorld object (0x10D0 bytes) */
+    float x, y, z;     /* position from S1 ref point */
+    float angle;       /* current rotation angle (degrees, decremented 0.5/frame) */
+    int active;
+} WaterWheelState;
+static WaterWheelState g_waterwheels[MAX_WATERWHEELS];
+static int g_waterwheel_count = 0;
 
 /* Per-frame update for a single bridgeslam object */
 static void cEnt_bridgeslam_update(BridgeslamState* bs) {
@@ -1458,6 +1479,68 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         return;
     }
 
+    /* v55f: WaterWheel (ai_type 26) — load mesh + store position, no entity.
+     * Native: DizzyBoard_ctor creates mesh via MeshWorld_ctor('Levels\\Level3-WaterWheel'),
+     * stores at board+0x4BA8. DizzyBoard_Update rotates angle -= 0.5/frame,
+     * applies via mesh vtable[22] (SetTransform) + vtable[21] (SetPosition).
+     * We create the mesh and handle rotation in the per-frame update. */
+    if (ai_type == 26) {
+        DWORD app = *(DWORD*)(board + BOARD_APP);
+        if (!app || IsBadReadPtr((void*)app, 4)) return;
+        DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
+        if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
+
+        if (g_waterwheel_count < MAX_WATERWHEELS) {
+            WaterWheelState* ww = &g_waterwheels[g_waterwheel_count];
+            const char* ww_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Level3-WaterWheel";
+
+            /* Create mesh object via MeshWorld_ctor */
+            DWORD mesh = (DWORD)pfn_operator_new(MESHWORLD_SIZE);
+            if (!mesh) {
+                if (logf) fprintf(logf, "  WATERWHEEL: failed to alloc mesh\n");
+                return;
+            }
+            memset((void*)mesh, 0, MESHWORLD_SIZE);
+            void* result = pfn_MeshWorld_ctor((void*)mesh, (void*)gfx_device, ww_path);
+            if (!result) {
+                if (logf) fprintf(logf, "  WATERWHEEL: MeshWorld_ctor failed for '%s'\n", ww_path);
+                return;  /* minor leak on error path, acceptable */
+            }
+
+            /* Initialize Level_LoadMeshes (calls Level_RenderCtor internally) */
+            /* The mesh needs Level_LoadMeshes to set up SceneObject+collision.
+             * Native calls 0x465080 (Level_RenderCtor) with board's Level as parent.
+             * But we can't easily get the board's Level cross-level.
+             * Instead, just add the mesh to render list so it's visible. */
+
+            ww->mesh_obj = mesh;
+            ww->x = px;
+            ww->y = py;
+            ww->z = pz;
+            ww->angle = 0.0f;
+            ww->active = 1;
+            g_waterwheel_count++;
+
+            /* Add mesh to board render list (board+0xCD4) so it's visible */
+            pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), (void*)mesh);
+
+            /* Add mesh to scene spatial tree (for collision) */
+            {
+                DWORD level = cEnt_get_level(board);
+                if (level) {
+                    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+                    if (sceneobj) {
+                        pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), (void*)mesh);
+                    }
+                }
+            }
+
+            if (logf) fprintf(logf, "  WATERWHEEL: spawned mesh=0x%08X at (%.1f,%.1f,%.1f) path='%s'\n",
+                    mesh, px, py, pz, ww_path);
+        }
+        return;
+    }
+
     /* 1. Get gfx_device from App */
     DWORD app = *(DWORD*)(board + BOARD_APP);
     if (!app || IsBadReadPtr((void*)app, 4)) return;
@@ -2362,6 +2445,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_rotater_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
+    g_waterwheel_count = 0;  /* v55f: reset WaterWheel tracking on level unload */
 
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
@@ -3143,6 +3227,57 @@ static void cEnt_tarbubble_proximity_check(DWORD board) {
     }
 }
 
+/* v55f: WaterWheel per-frame update — rotates the mesh each frame.
+ * Native DizzyBoard_Update (0x41D512) does:
+ *   angle = board+0x4BBC; angle -= 0.5; board+0x4BBC = angle;
+ *   Gfx_RotateY(stack_matrix, angle);          // 0x457C90
+ *   Gfx_SetPosition(stack_matrix2, x, y, z);    // 0x457B50  
+ *   mesh->vtable[22]();                          // apply transform
+ *   mesh->vtable[21](&stack_matrix);             // set rotation
+ *
+ * We replicate this by calling Gfx_RotateY into a local matrix buffer,
+ * then calling the mesh's vtable[22] and vtable[21]. */
+static void cEnt_waterwheel_update(DWORD board) {
+    if (!board || g_waterwheel_count <= 0) return;
+
+    int i;
+    for (i = 0; i < g_waterwheel_count; i++) {
+        WaterWheelState* ww = &g_waterwheels[i];
+        if (!ww->active || !ww->mesh_obj) continue;
+        if (IsBadReadPtr((void*)ww->mesh_obj, 0x440)) continue;
+
+        /* Decrement angle by 0.5 degrees per frame (native constant at 0x4CF3F0) */
+        ww->angle -= 0.5f;
+
+        /* Build rotation matrix on stack (4x4 = 64 bytes, but Gfx_RotateY writes to buf+4) */
+        float rot_matrix[16];   /* 4x4 float matrix */
+        memset(rot_matrix, 0, sizeof(rot_matrix));
+
+        /* Gfx_RotateY(matrix_buf, angle_degrees) — writes rotation to buf+0x04 */
+        pfn_Gfx_RotateY(rot_matrix, ww->angle);
+
+        /* Get mesh vtable */
+        DWORD vtable = *(DWORD*)ww->mesh_obj;
+        if (IsBadReadPtr((void*)vtable, 0x60)) continue;
+
+        /* vtable[22] (offset 0x58) = SetTransform — no params, __thiscall 0 params
+         * This calls mesh->sceneobj->vtable[1] (update vertex buffer from rotation) */
+        typedef void (__thiscall *MeshSetTransform_t)(DWORD this_);
+        MeshSetTransform_t pfn_setTransform = *(MeshSetTransform_t*)(vtable + 0x58);
+        if (pfn_setTransform) {
+            pfn_setTransform(ww->mesh_obj);
+        }
+
+        /* vtable[21] (offset 0x54) = SetPosition — 1 param (&matrix), __thiscall RET 4
+         * This calls mesh->sceneobj->vtable[3] with &rotation_matrix */
+        typedef void (__thiscall *MeshSetPosition_t)(DWORD this_, float* matrix);
+        MeshSetPosition_t pfn_setPosition = *(MeshSetPosition_t*)(vtable + 0x54);
+        if (pfn_setPosition) {
+            pfn_setPosition(ww->mesh_obj, rot_matrix);
+        }
+    }
+}
+
 /* Tracked entity for per-frame updates */
 typedef struct {
     DWORD obj;
@@ -3314,7 +3449,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
             { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
             { "Trode",            21, "levels\\LevelDark-Trode" },   /* cEnt_Trode_ctor (ArenaStands_ctor) */
-            { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* Waterwheel_ctor: no _ctor, position-only storage, PopCylinder fallback */
+            { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* v55f: mesh loaded + rotated by mod, no entity spawned */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
             { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
             { "Wobbly",            0, "levels\\Level7-Wobbly1" },    /* GameLevel_ctor (0x4351F0, 0x1524 bytes) */
@@ -3512,6 +3647,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             DWORD board = get_board();
             if (board && g_tarbubble_count > 0) {
                 cEnt_tarbubble_proximity_check(board);
+            }
+        }
+
+        /* v55f: Per-frame WaterWheel rotation update */
+        {
+            DWORD board = get_board();
+            if (board && g_waterwheel_count > 0) {
+                cEnt_waterwheel_update(board);
             }
         }
 
