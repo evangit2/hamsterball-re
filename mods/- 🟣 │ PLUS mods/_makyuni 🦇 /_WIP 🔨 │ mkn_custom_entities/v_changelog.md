@@ -1,5 +1,25 @@
 # Version Changelog
 
+## v55d — Gluebie tar sound + proximity fix
+
+- **Gluebie tar sound: Fixed crash + implemented sound playback.**
+  - Root cause: `Sound_Play3D` typedef was missing the 4th parameter (float scale=1.0).
+    Native function has `RET 0x10` (4 params = 16 bytes). Old typedef only passed 3
+    params → stack corruption → crash at 0x4065F2 inside Ball_ctor.
+  - Sound is now queued via `g_gluebie_sound_pending` flag when ball enters Gluebie
+    range, then played from the background thread loop with proper 4-param call:
+    `Sound_Play3D([App+0x484], x, y, z, 1.0f)`.
+  - App accessed via `board+0x878` (same as native DizzyBoard_Update at 0x41D9B3).
+  - Added `IsBadReadPtr` safety checks on sound channel pointer.
+- **Gluebie proximity radius: Changed from 45-60 to 3.0 (user request).**
+  - Native has TWO proximity checks:
+    1. `DizzyBoard_Update`: `obj+0x1100 * 60.0` = 45-60 units (center-to-center, velocity slowdown)
+    2. `Ball_Update`: `3.0` units (distance to tar surface, sets tar flag)
+  - The 45-60 value was too large for non-Dizzy levels (smaller Gluebies).
+  - Using 3.0 as requested — matches the native inner zone.
+- **Bridgeslam sound: Also fixed to pass 4th param (1.0f) + IsBadReadPtr check.**
+  - Same `Sound_Play3D` signature bug affected bridgeslam sound (latent crash).
+
 ## v55c — Gluebie collision + behavior fix
 
 - **Gluebie (ai_type 43): Fixed missing collision + behavior + cross-level proximity.**
