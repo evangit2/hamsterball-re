@@ -5,6 +5,7 @@
 alloc(BumperCave1, 1024)
 alloc(BumperCave2, 1024)
 alloc(saved_collObj, 4)
+alloc(saved_meshname, 4)
 alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
 alloc(float_12, 4)
@@ -40,6 +41,7 @@ BumperCave1:
   mov eax, [eax+0x864]
   test eax, eax
   jz cave1_done
+  mov [saved_meshname], eax
 
   push 8
   push str_bumper
@@ -49,6 +51,7 @@ BumperCave1:
   test eax, eax
   jz cave1_bumper
 
+  mov eax, [saved_meshname]
   push 0E
   push str_speedcyl
   push eax
@@ -129,6 +132,7 @@ BumperCave2:
   mov eax, [eax+0x864]
   test eax, eax
   jz cave2_done
+  mov [saved_meshname], eax
 
   push 8
   push str_bumper
@@ -138,6 +142,7 @@ BumperCave2:
   test eax, eax
   jz cave2_bumper
 
+  mov eax, [saved_meshname]
   push 0E
   push str_speedcyl
   push eax
@@ -211,6 +216,7 @@ cave2_done:
 dealloc(BumperCave1)
 dealloc(BumperCave2)
 dealloc(saved_collObj)
+dealloc(saved_meshname)
 dealloc(str_bumper)
 dealloc(str_speedcyl)
 dealloc(float_12)
