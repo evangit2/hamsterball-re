@@ -3173,57 +3173,51 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* v55d: Play tar sound — queue once when ball enters outer range. */
-                if (!g_gluebie_sound_pending) {
-                    g_gluebie_sound_pending = 1;
-                    g_gluebie_snd_x = bx;
-                    g_gluebie_snd_y = by;
-                    g_gluebie_snd_z = bz;
+                /* Play tar sound — with cooldown (native plays once per entry). */
+                {
+                    static int g_gluebie_sound_cooldown = 0;
+                    if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
+                    if (g_gluebie_sound_cooldown == 0 && !g_gluebie_sound_pending) {
+                        g_gluebie_sound_pending = 1;
+                        g_gluebie_snd_x = bx;
+                        g_gluebie_snd_y = by;
+                        g_gluebie_snd_z = bz;
+                        g_gluebie_sound_cooldown = 180; /* ~3 sec at 60fps */
+                    }
                 }
 
-                /* Tar splotch visual effect — only when in INNER zone (tar surface). */
-                if (in_inner) {
-                    /* v55c: Tar splotch visual effect.
-                     * Native creates 3 random-direction particles (5 floats each = 0x14 bytes)
-                     * and adds them to ball+0x810 (AthenaList, max 30 particles).
-                     * Each particle: [0-2]=direction (normalized), [3]=0, [4]=0.
-                     * The ball's render function reads these and draws tar splotches. */
-                    {
-                        DWORD part_list = ball + 0x810;
-                        if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
-                            int part_count = *(int*)(part_list + 0x04);
-                            if (part_count < 30) {
-                                int k;
-                                for (k = 0; k < 3; k++) {
-                                    float* particle = (float*)pfn_operator_new(0x14);
-                                    if (!particle) continue;
-                                    particle[0] = (float)(rand() % 201 - 100);  /* -100..100 */
-                                    particle[1] = (float)(rand() % 201 - 100);
-                                    particle[2] = (float)(rand() % 201 - 100);
-                                    particle[3] = 0.0f;
-                                    particle[4] = 0.0f;
-                                    /* Normalize direction to length 1.0 */
-                                    float len_sq = particle[0]*particle[0] +
-                                                   particle[1]*particle[1] +
-                                                   particle[2]*particle[2];
-                                    if (len_sq > 0.0f) {
-                                        float inv_len = 1.0f / sqrtf(len_sq);
-                                        particle[0] *= inv_len;
-                                        particle[1] *= inv_len;
-                                        particle[2] *= inv_len;
-                                    }
-                                    pfn_AthenaList_Append((DWORD*)part_list, (void*)particle);
+                /* Tar splotch visual effect — fires in outer zone (same as v55c). */
+                {
+                    DWORD part_list = ball + 0x810;
+                    if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
+                        int part_count = *(int*)(part_list + 0x04);
+                        if (part_count < 30) {
+                            int k;
+                            for (k = 0; k < 3; k++) {
+                                float* particle = (float*)pfn_operator_new(0x14);
+                                if (!particle) continue;
+                                particle[0] = (float)(rand() % 201 - 100);
+                                particle[1] = (float)(rand() % 201 - 100);
+                                particle[2] = (float)(rand() % 201 - 100);
+                                particle[3] = 0.0f;
+                                particle[4] = 0.0f;
+                                float len_sq = particle[0]*particle[0] +
+                                               particle[1]*particle[1] +
+                                               particle[2]*particle[2];
+                                if (len_sq > 0.0f) {
+                                    float inv_len = 1.0f / sqrtf(len_sq);
+                                    particle[0] *= inv_len;
+                                    particle[1] *= inv_len;
+                                    particle[2] *= inv_len;
                                 }
+                                pfn_AthenaList_Append((DWORD*)part_list, (void*)particle);
                             }
                         }
                     }
-
-                    /* Mark ball as in tar */
-                    *(BYTE*)(ball + 0x2BC) = 1;
-                } else {
-                    /* Ball in outer zone but not inner — clear tar splotch flag */
-                    *(BYTE*)(ball + 0x2BC) = 0;
                 }
+
+                /* Mark ball as in tar */
+                *(BYTE*)(ball + 0x2BC) = 1;
             } else {
                 /* Ball NOT in range — clear tar flag */
                 *(BYTE*)(ball + 0x2BC) = 0;
