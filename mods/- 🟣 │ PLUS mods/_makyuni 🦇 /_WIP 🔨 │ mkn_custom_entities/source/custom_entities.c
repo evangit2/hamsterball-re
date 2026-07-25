@@ -1485,26 +1485,25 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                               FILE* logf) {
     if (!board) return;
 
-    /* v55e: TarBubble (ai_type 25) — no entity spawned.
-     * Native game just stores the S1 ref point position in board+0x4790 AthenaList.
-     * We store it in g_tarbubble_pos[] and handle proximity in the per-frame check. */
+    /* v55i: TarBubble (ai_type 25) — spawn PopCylinder with tarbubble mesh
+     * for visibility, AND store position for proximity tar sinking. */
     if (ai_type == 25) {
         if (g_tarbubble_count < MAX_TARBUBBLES) {
             g_tarbubble_pos[g_tarbubble_count].x = px;
             g_tarbubble_pos[g_tarbubble_count].y = py;
             g_tarbubble_pos[g_tarbubble_count].z = pz;
             g_tarbubble_count++;
-            if (logf) fprintf(logf, "  TARBUBBLE: stored position (%.1f,%.1f,%.1f) [%d] (no entity spawned)\n",
+            if (logf) fprintf(logf, "  TARBUBBLE: stored position (%.1f,%.1f,%.1f) [%d]\n",
                     px, py, pz, g_tarbubble_count - 1);
         }
-        return;
+        /* Fall through to spawn PopCylinder with tarbubble mesh.
+         * The mesh path is already set to meshes\tarbubble. */
+        /* Don't return — let the normal spawn path handle it. */
     }
 
-    /* v55f: WaterWheel (ai_type 26) — load mesh + store position, no entity.
-     * Native: DizzyBoard_ctor creates mesh via MeshWorld_ctor('Levels\\Level3-WaterWheel'),
-     * stores at board+0x4BA8. DizzyBoard_Update rotates angle -= 0.5/frame,
-     * applies via mesh vtable[22] (SetTransform) + vtable[21] (SetPosition).
-     * We create the mesh and handle rotation in the per-frame update. */
+    /* v55i: WaterWheel (ai_type 26) — spawn PopCylinder for visibility,
+     * AND store mesh for per-frame rotation. The PopCylinder provides the
+     * render vtable; we rotate the mesh via vtable[22]+[21] each frame. */
     if (ai_type == 26) {
         DWORD app = *(DWORD*)(board + BOARD_APP);
         if (!app || IsBadReadPtr((void*)app, 4)) return;
@@ -1525,14 +1524,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             void* result = pfn_MeshWorld_ctor((void*)mesh, (void*)gfx_device, ww_path);
             if (!result) {
                 if (logf) fprintf(logf, "  WATERWHEEL: MeshWorld_ctor failed for '%s'\n", ww_path);
-                return;  /* minor leak on error path, acceptable */
+                return;
             }
-
-            /* Initialize Level_LoadMeshes (calls Level_RenderCtor internally) */
-            /* The mesh needs Level_LoadMeshes to set up SceneObject+collision.
-             * Native calls 0x465080 (Level_RenderCtor) with board's Level as parent.
-             * But we can't easily get the board's Level cross-level.
-             * Instead, just add the mesh to render list so it's visible. */
 
             ww->mesh_obj = mesh;
             ww->x = px;
@@ -1542,17 +1535,27 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             ww->active = 1;
             g_waterwheel_count++;
 
-            /* Add mesh to board render list (board+0xCD4) so it's visible */
-            pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), (void*)mesh);
-
-            /* Add mesh to scene spatial tree (for collision) */
-            {
+            /* Spawn PopCylinder with the waterwheel mesh for proper rendering */
+            void* pc_obj = pfn_operator_new(POPCYLINDER_SIZE);
+            if (pc_obj) {
+                memset(pc_obj, 0, POPCYLINDER_SIZE);
+                pfn_PopCylinder_ctor(pc_obj, (void*)board, px, py, pz, (void*)mesh);
+                /* Add to board lists */
+                pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), pc_obj);
+                pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), pc_obj);
+                /* Add to scene spatial tree */
                 DWORD level = cEnt_get_level(board);
                 if (level) {
                     DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
                     if (sceneobj) {
-                        pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), (void*)mesh);
+                        pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), pc_obj);
                     }
+                }
+                /* Track for despawn */
+                if (g_rotater_count < MAX_ROTATERS) {
+                    g_rotater_cfg[g_rotater_count].obj = (DWORD)pc_obj;
+                    g_rotater_cfg[g_rotater_count].rot_y = 0.0f;
+                    g_rotater_count++;
                 }
             }
 
@@ -2409,18 +2412,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
     /* 7. Add collision object to board+0x10EC.
      * PopCylinder(0) and Rotator(1-6) have collision objects at +0x10D4.
-     * Catapult(35) also has a collision/render Level at +0x10D4 (created via
-     *   Level_RenderCtor in the spawn code, same pattern as TipperVisual).
+     * Catapult(35): collision is via spatial trees at obj+0x18 (cloned by
+     *   Stands_ctor). The render Level at +0x10D4 is for rendering only —
+     *   do NOT add it to the collision list (it doesn't have spatial trees).
      * ArenaStands family stores position FLOATS at +0x10D4/+0x10E0 — reading them
      *   as pointers corrupts collision lists → crash in SpatialTree_ctor (0x46333F).
      * Stands_ctor family (35-42) stores position floats at +0x10E0 — same crash.
      * WavyFlag(14) stores position float at +0x10D4 — same crash.
      * Level-family (8,9,10,27,29) also don't have collision objects at these offsets.
-     * Fix: col_off=0x10D4 for PopCylinder, Rotator, and Catapult only. */
+     * Fix: col_off=0x10D4 for PopCylinder and Rotator only. */
     {
         DWORD col_off = 0;  /* default: no collision object */
         if (ai_type >= 1 && ai_type <= 6) col_off = 0x10D4;  /* Rotator family */
-        if (ai_type == 35) col_off = 0x10D4;  /* Catapult — collision Level at +0x10D4 */
+        /* Catapult(35): collision via obj+0x18 spatial trees, NOT collision list */
         /* All other types: col_off = 0 (no collision object added) */
         DWORD col_obj = *(DWORD*)((char*)obj + col_off);
         if (col_obj && col_off > 0) {
@@ -3511,7 +3515,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
             { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
-            { "Tarbubble",        25, NULL },                      /* v55e: no entity, position-only marker for tar sinking */
+            { "Tarbubble",        25, "meshes\\tarbubble" },         /* v55i: PopCylinder + tar proximity */
             { "Tarpit",           0, "levels\\\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
