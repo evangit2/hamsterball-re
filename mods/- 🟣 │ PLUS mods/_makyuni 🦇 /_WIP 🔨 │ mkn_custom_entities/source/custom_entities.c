@@ -88,6 +88,10 @@ static AthenaList_Append_t pfn_AthenaList_Append = (AthenaList_Append_t)0x004538
 typedef void (__thiscall *AthenaList_Remove_t)(DWORD* list, int item);
 static AthenaList_Remove_t pfn_AthenaList_Remove = (AthenaList_Remove_t)0x004534D0;
 
+/* AthenaList_Clear — clears all entries from an AthenaList (0x453280) */
+typedef void (__fastcall *AthenaList_Clear_t)(DWORD* list);
+static AthenaList_Clear_t pfn_AthenaList_Clear = (AthenaList_Clear_t)0x00453280;
+
 /* SpatialTree_CloneToLevel / SpatialTree_Cleanup */
 typedef void (__thiscall *SpatialTree_CloneToLevel_t)(void* this_);
 static SpatialTree_CloneToLevel_t pfn_SpatialTree_CloneToLevel = (SpatialTree_CloneToLevel_t)0x00457AD0;
@@ -1977,6 +1981,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10D4) = px;
                 *(float*)((char*)obj + 0x10D8) = py;
                 *(float*)((char*)obj + 0x10DC) = pz;
+                /* v55c: Clear Gluebie's SpatialTrees (obj+0x18 AthenaList) to make it
+                 * non-solid. On Dizzy, the Gluebie is a "tar" entity — the ball passes
+                 * through it with velocity slowdown, not solid collision. The slowdown
+                 * is handled by our mod-side proximity check (cEnt_gluebie_proximity_check).
+                 * Without this clear, Stands_ctor clones collision trees from the mesh
+                 * which makes the Gluebie solid — the ball bounces off and gets stuck. */
+                pfn_AthenaList_Clear((DWORD*)(obj + 0x18));
+                if (logf) fprintf(logf, "  ROTATER: Gluebie collision trees cleared (non-solid, tar mode)\n");
                 /* Add to board+0x4378 (Gluebie list) for DizzyBoard_Update proximity check.
                  * Only safe on Dizzy (where it's an AthenaList). On other levels,
                  * board+0x4378 may be a Level pointer (Tower/Expert/Toob) — skip to avoid crash.
