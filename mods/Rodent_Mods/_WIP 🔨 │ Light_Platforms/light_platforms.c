@@ -48,13 +48,13 @@
  *   Light OFF + state 2: pin timer=75 (stay invisible, no transition)
  *   Light OFF + state 1: let it run (flicker in progress)
  *
- * Mod approach (INVERTED — DFLOOR3 only):
- *   Light OFF + state 2: set state=3, timer=75 (start flicker → reappear)
+ * Mod approach (INVERTED — DFLOOR3 only, NO flicker):
+ *   Light OFF + state 2: set state=3, timer=1, TT.visible=1 (instant reappear)
  *   Light OFF + state 0: pin timer=75 (stay visible, no transition)
- *   Light OFF + state 3: let it run (flicker in progress)
- *   Light ON  + state 0: set state=1, timer=75 (start flicker → disappear)
+ *   Light OFF + state 3: force TT.visible=1 (no flicker, fast transition)
+ *   Light ON  + state 0: set state=1, timer=1, TT.visible=1 (instant disappear)
  *   Light ON  + state 2: pin timer=75 (stay invisible, no transition)
- *   Light ON  + state 1: let it run (flicker in progress)
+ *   Light ON  + state 1: force TT.visible=1 (no flicker, fast transition)
  *
  * DFLOOR3 identified by mesh pointer match: board+0x4380 holds DFLOOR3's
  * mesh Level. Stands_ctor copies *(mesh+0x08) (MeshWorld ptr) to obj+0x08.
@@ -179,17 +179,29 @@ static void update_platforms(void) {
         /* For inverted platforms, flip the light state */
         BYTE want_visible = is_inverted ? !light_on : light_on;
 
+        /* DFLOOR3 (inverted): skip flicker entirely.
+         * Use timer=1 so the flicker state lasts only 1 frame, and force
+         * ToggleTimer.visible=1 during that frame so the render function
+         * draws the object normally — no visible flicker at all.
+         * The native state machine still handles render list add/remove. */
+        int flicker_timer = is_inverted ? 1 : TIMER_FULL;
+
         if (want_visible) {
             /* Want platform visible (normal: light on, inverted: light off) */
             switch (state) {
             case STATE_INVISIBLE:
                 /* Currently invisible — start flicker to reappear */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_UP;  /* state 3 */
-                *(int*)(obj + AS_TIMER) = TIMER_FULL;        /* 75 frames */
+                *(int*)(obj + AS_TIMER) = flicker_timer;
+                if (is_inverted)
+                    *(BYTE*)(obj + AS_TT_VISIBLE) = 1;  /* no visual flicker */
                 break;
             case STATE_FLICKER_UP:
-                /* Flicker in progress — let native state machine run */
-                /* Don't touch timer, let it count down naturally */
+                /* Flicker in progress — for inverted, force visible + let it
+                 * transition quickly. For normal, let it run naturally. */
+                if (is_inverted) {
+                    *(BYTE*)(obj + AS_TT_VISIBLE) = 1;
+                }
                 break;
             case STATE_SOLID:
             default:
@@ -203,10 +215,16 @@ static void update_platforms(void) {
             case STATE_SOLID:
                 /* Currently visible — start flicker to disappear */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_DOWN;  /* state 1 */
-                *(int*)(obj + AS_TIMER) = TIMER_FULL;           /* 75 frames */
+                *(int*)(obj + AS_TIMER) = flicker_timer;
+                if (is_inverted)
+                    *(BYTE*)(obj + AS_TT_VISIBLE) = 1;  /* no visual flicker */
                 break;
             case STATE_FLICKER_DOWN:
-                /* Flicker in progress — let native state machine run */
+                /* Flicker in progress — for inverted, force visible + let it
+                 * transition quickly. For normal, let it run naturally. */
+                if (is_inverted) {
+                    *(BYTE*)(obj + AS_TT_VISIBLE) = 1;
+                }
                 break;
             case STATE_INVISIBLE:
             default:
