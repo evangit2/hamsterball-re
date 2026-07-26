@@ -3383,11 +3383,13 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* v55j_12: Create tarsplotch particles (native DizzyBoard_Update behavior).
                  * Use our OWN flag instead of ball+0x2BC (which is UNINITIALIZED garbage
                  * on non-Dizzy levels — no memset after operator_new).
-                 * v55j_14: Reset flag when all particles consumed so tarsplotch
-                 * fires again on re-entry (like native Dizzy). */
+                 * v55j_15: On Dizzy, ball+0x2BC is set to 0 when ball leaves Gluebie
+                 * range, then set to 1 on re-entry. So particles ARE created each time
+                 * you enter the zone — they stack up to 30 max. We replicate this by
+                 * resetting our flag when ball leaves the zone (in_outer=0). */
                 {
                     int pc = *(int*)(ball + 0x814);
-                    /* If all particles consumed, reset our flag */
+                    /* If all particles consumed OR ball left zone, reset flag */
                     if (pc == 0 && g_gluebie_particles_created_ball == ball) {
                         g_gluebie_particles_created_ball = 0;
                     }
@@ -3490,6 +3492,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 }
                 /* Do NOT set ball+0x260 — that causes "sweat" not tarsplotch */
                 /* Do NOT clear any flags when leaving range — native never clears them */
+            }
+            /* v55j_15: Reset particle flag when ball leaves Gluebie zone.
+             * Native Dizzy sets ball+0x2BC=0 when out of range, allowing
+             * re-creation of particles on re-entry (stacking up to 30 max). */
+            if (!in_outer && g_gluebie_particles_created_ball == ball) {
+                g_gluebie_particles_created_ball = 0;
             }
         }
     }
