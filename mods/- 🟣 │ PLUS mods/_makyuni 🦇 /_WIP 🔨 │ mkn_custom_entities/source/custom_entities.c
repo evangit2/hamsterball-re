@@ -3180,41 +3180,18 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     }
                 }
 
-                /* Tar splotch — every frame, cap at 30 (native behavior). */
-                {
-                    DWORD part_list = ball + 0x810;
-                    if (!IsBadReadPtr((void*)(part_list + 0x04), 4)) {
-                        int part_count = *(int*)(part_list + 0x04);
-                        if (part_count < 30) {
-                            int k;
-                            for (k = 0; k < 3; k++) {
-                                float* particle = (float*)pfn_operator_new(0x14);
-                                if (!particle) continue;
-                                particle[0] = (float)(rand() % 201 - 100);
-                                particle[1] = (float)(rand() % 201 - 100);
-                                particle[2] = (float)(rand() % 201 - 100);
-                                particle[3] = 0.0f;
-                                particle[4] = 0.0f;
-                                float len_sq = particle[0]*particle[0] +
-                                               particle[1]*particle[1] +
-                                               particle[2]*particle[2];
-                                if (len_sq > 0.0f) {
-                                    float inv_len = 1.0f / sqrtf(len_sq);
-                                    particle[0] *= inv_len;
-                                    particle[1] *= inv_len;
-                                    particle[2] *= inv_len;
-                                }
-                                pfn_AthenaList_Append((DWORD*)part_list, (void*)particle);
-                            }
-                        }
-                    }
-                }
-
-                /* Mark ball as in tar */
-                *(BYTE*)(ball + 0x2BC) = 1;
+                /* v55j_8: Set tar render flag (ball+0x260).
+                 * Native DizzyBoard_Update sets ball+0x260 which makes Ball_Render
+                 * draw the tar splotch mesh (App+0x264) on the ball automatically.
+                 * Previous code allocated custom particles via operator_new +
+                 * AthenaList_Append to ball+0x810 — this corrupted the heap
+                 * (wrong struct size, never freed, wrong list) → crash at
+                 * AthenaList_Append (0x4537F1) and Ball_Update (0x4062DC).
+                 * Also used wrong offset 0x2BC instead of 0x260. */
+                *(BYTE*)(ball + 0x260) = 1;
             } else {
-                /* Ball NOT in range — clear tar flag */
-                *(BYTE*)(ball + 0x2BC) = 0;
+                /* Ball NOT in range — clear tar render flag */
+                *(BYTE*)(ball + 0x260) = 0;
             }
         }
     }
