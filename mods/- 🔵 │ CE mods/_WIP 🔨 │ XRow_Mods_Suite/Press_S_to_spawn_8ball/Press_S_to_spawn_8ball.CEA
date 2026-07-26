@@ -6,14 +6,22 @@ alloc(playerY, 4)
 alloc(playerZ, 4)
 alloc(ballCount, 4)
 alloc(spawnNow, 4)
-alloc(meshPath, 64)
-alloc(popCylPtr, 4)
+alloc(meshName, 64)
+alloc(meshNodePtr, 4)
+alloc(appPtr, 4)
+alloc(meshSlotSaved, 4)
 registersymbol(spawnBad)
 
-meshPath:
-  db 4C 65 76 65 6C 73 5C 43 75 73 74 6F 6D 38 42 61 6C 6C 00
+meshName:
+  db 4D 65 73 68 65 73 5C 53 70 68 65 72 65 00
 
-popCylPtr:
+meshNodePtr:
+  dd 00000000
+
+appPtr:
+  dd 00000000
+
+meshSlotSaved:
   dd 00000000
 
 newmem:
@@ -26,24 +34,10 @@ newmem:
   mov eax, [esi+0x16C]
   mov [playerZ], eax
 @@:
-
-  cmp dword ptr [esi+0x18], -1
-  jne check_spawn
-  cmp dword ptr [popCylPtr], 0
-  je check_spawn
-  mov edi, [popCylPtr]
-  mov eax, [esi+0x164]
-  mov [edi+0x10D4], eax
-  mov eax, [esi+0x168]
-  mov [edi+0x10D8], eax
-  mov eax, [esi+0x16C]
-  mov [edi+0x10DC], eax
-
-check_spawn:
   cmp dword ptr [spawnBad], 0
-  je original
+  je check_mesh
   cmp dword ptr [esi+0x18], 0
-  jne original
+  jne check_mesh
 
   mov dword ptr [spawnBad], 0
   mov dword ptr [spawnNow], 1
@@ -53,6 +47,42 @@ check_spawn:
   push ebx
   push edi
 
+  push 18
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz skip_mesh
+  mov [meshNodePtr], eax
+  mov edi, eax
+
+  mov dword ptr [edi], 004D9C48
+  mov dword ptr [edi+04], 0
+  mov dword ptr [edi+08], 0
+  mov dword ptr [edi+0C], 0
+  mov dword ptr [edi+10], 0
+
+  push meshName
+  push 0
+  push meshName
+  mov ecx, edi
+  call 00471750
+
+  mov edi, [meshNodePtr]
+  mov eax, [edi+08]
+  test eax, eax
+  jz skip_mesh
+
+  mov edx, [005341E0]
+  test edx, edx
+  jz skip_mesh
+  mov [appPtr], edx
+
+  mov ecx, [edx+248]
+  mov [meshSlotSaved], ecx
+  mov ecx, [edi+08]
+  mov [edx+248], ecx
+
+skip_mesh:
   mov ecx, [esi+0x14]
   mov edx, [ecx+0x29d8]
   mov [ballCount], edx
@@ -85,28 +115,12 @@ check_spawn:
   mov dword ptr [ebx+0x174], 0
   mov dword ptr [ebx+0x178], 0
 
-  mov dword ptr [ebx+0x754], 9
+  mov dword ptr [ebx+0x754], 1
   mov dword ptr [ebx+0x2FC], 0
 
   mov dword ptr [ebx+0xC6C], 0x49742400
   mov dword ptr [ebx+0xC70], 0x49742400
   mov dword ptr [ebx+0xC7C], 0
-
-  push 10D0
-  call 004BA57B
-  add esp, 4
-  test eax, eax
-  jz no_new
-  mov [popCylPtr], eax
-  mov edi, eax
-
-  push meshPath
-  push dword [playerZ]
-  push dword [playerY]
-  push dword [playerX]
-  push dword [esi+0x14]
-  mov ecx, edi
-  call 00436EE0
 
 no_new:
   mov dword ptr [spawnNow], 0
@@ -114,6 +128,20 @@ no_new:
   pop ebx
   pop edx
   pop ecx
+
+check_mesh:
+  cmp dword ptr [meshNodePtr], 0
+  je original
+
+  mov edx, [005341E0]
+  test edx, edx
+  je original
+
+  mov edx, [edx+248]
+  test edx, edx
+  je original
+
+  mov dword ptr [meshNodePtr], 0
 
 original:
   mov eax, [esi+0x0c5c]
@@ -154,6 +182,16 @@ normal_check:
   db 8B 86 5C 0C 00 00
 0040BD27:
   db 0F 85 D1 01 00 00
+
+  cmp dword ptr [meshSlotSaved], 0
+  je @f
+  mov edx, [005341E0]
+  test edx, edx
+  je @f
+  mov ecx, [meshSlotSaved]
+  mov [edx+248], ecx
+@@:
+
 unregistersymbol(spawnBad)
 dealloc(newmem)
 dealloc(spawnHook)
@@ -163,5 +201,7 @@ dealloc(playerY)
 dealloc(playerZ)
 dealloc(ballCount)
 dealloc(spawnNow)
-dealloc(meshPath)
-dealloc(popCylPtr)
+dealloc(meshName)
+dealloc(meshNodePtr)
+dealloc(appPtr)
+dealloc(meshSlotSaved)
