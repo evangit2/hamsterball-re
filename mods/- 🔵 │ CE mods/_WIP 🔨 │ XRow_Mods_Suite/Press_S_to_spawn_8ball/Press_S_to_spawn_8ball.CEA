@@ -1,12 +1,20 @@
 [ENABLE]
-alloc(newmem, 1000)
+alloc(newmem, 1024)
 alloc(spawnBad, 4)
 alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
 alloc(ballCount, 4)
 alloc(spawnNow, 4)
+alloc(meshPath, 64)
+alloc(popCylPtr, 4)
 registersymbol(spawnBad)
+
+meshPath:
+  db 4C 65 76 65 6C 73 5C 43 75 73 74 6F 6D 38 42 61 6C 6C 00
+
+popCylPtr:
+  dd 00000000
 
 newmem:
   cmp dword ptr [esi+0x18], 0
@@ -18,6 +26,20 @@ newmem:
   mov eax, [esi+0x16C]
   mov [playerZ], eax
 @@:
+
+  cmp dword ptr [esi+0x18], -1
+  jne check_spawn
+  cmp dword ptr [popCylPtr], 0
+  je check_spawn
+  mov edi, [popCylPtr]
+  mov eax, [esi+0x164]
+  mov [edi+0x10D4], eax
+  mov eax, [esi+0x168]
+  mov [edi+0x10D8], eax
+  mov eax, [esi+0x16C]
+  mov [edi+0x10DC], eax
+
+check_spawn:
   cmp dword ptr [spawnBad], 0
   je original
   cmp dword ptr [esi+0x18], 0
@@ -29,6 +51,7 @@ newmem:
   push ecx
   push edx
   push ebx
+  push edi
 
   mov ecx, [esi+0x14]
   mov edx, [ecx+0x29d8]
@@ -62,13 +85,32 @@ newmem:
   mov dword ptr [ebx+0x174], 0
   mov dword ptr [ebx+0x178], 0
 
-  // Force chase behavior
-  mov dword ptr [ebx+0xC6C], 0x49742400  // CHASE = 1000000
-  mov dword ptr [ebx+0xC70], 0x49742400  // HOME = 1000000
-  mov dword ptr [ebx+0xC7C], 0           // SPINDISTANCE = 0
+  mov dword ptr [ebx+0x754], 9
+  mov dword ptr [ebx+0x2FC], 0
+
+  mov dword ptr [ebx+0xC6C], 0x49742400
+  mov dword ptr [ebx+0xC70], 0x49742400
+  mov dword ptr [ebx+0xC7C], 0
+
+  push 10D0
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz no_new
+  mov [popCylPtr], eax
+  mov edi, eax
+
+  push meshPath
+  push dword [playerZ]
+  push dword [playerY]
+  push dword [playerX]
+  push dword [esi+0x14]
+  mov ecx, edi
+  call 00436EE0
 
 no_new:
   mov dword ptr [spawnNow], 0
+  pop edi
   pop ebx
   pop edx
   pop ecx
@@ -121,3 +163,5 @@ dealloc(playerY)
 dealloc(playerZ)
 dealloc(ballCount)
 dealloc(spawnNow)
+dealloc(meshPath)
+dealloc(popCylPtr)
