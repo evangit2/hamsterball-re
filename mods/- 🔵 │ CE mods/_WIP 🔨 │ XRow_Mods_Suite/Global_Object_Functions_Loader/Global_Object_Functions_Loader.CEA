@@ -2,15 +2,14 @@
 
 [ENABLE]
 
-alloc(BumperCave1, 2048)
-alloc(BumperCave2, 2048)
+alloc(BumperCave1, 1024)
+alloc(BumperCave2, 1024)
 alloc(saved_collObj, 4)
 alloc(saved_meshname, 4)
 alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
 alloc(float_12, 4)
 alloc(float_65, 4)
-alloc(float_1, 4)
 
 str_bumper:
   db 'N:BUMPER',0
@@ -23,9 +22,6 @@ float_12:
 
 float_65:
   dd 42820000
-
-float_1:
-  dd 3F800000
 
 BumperCave1:
   mov [saved_collObj], edx
@@ -73,24 +69,6 @@ cave1_speedcyl:
   mov byte [ebx+0x31D], 01
   mov byte [ebx+0x31E], 01
 
-  mov edi, [esi+0x14]
-  test edi, edi
-  jz cave1_scyl_boost
-  mov edi, [edi+0x878]
-  test edi, edi
-  jz cave1_scyl_boost
-  mov ecx, [edi+0x508]
-  test ecx, ecx
-  jz cave1_scyl_boost
-
-  fninit
-  push float_1
-  push dword [esi+0x16C]
-  push dword [esi+0x168]
-  push dword [esi+0x164]
-  call 00459860
-
-cave1_scyl_boost:
   fld dword [ebx+0xCA4]
   fmul st(0), st(0)
   fld dword [ebx+0xCAC]
@@ -122,24 +100,6 @@ cave1_bumper:
   test ebx, ebx
   jz cave1_done
 
-  mov edi, [esi+0x14]
-  test edi, edi
-  jz cave1_bump_vel
-  mov edi, [edi+0x878]
-  test edi, edi
-  jz cave1_bump_vel
-  mov ecx, [edi+0x448]
-  test ecx, ecx
-  jz cave1_bump_vel
-
-  fninit
-  push float_1
-  push dword [esi+0x16C]
-  push dword [esi+0x168]
-  push dword [esi+0x164]
-  call 00459860
-
-cave1_bump_vel:
   mov eax, [saved_meshname]
   add eax, 8
   push eax
@@ -237,24 +197,6 @@ cave2_speedcyl:
   mov byte [ebx+0x31D], 01
   mov byte [ebx+0x31E], 01
 
-  mov edi, [esi+0x14]
-  test edi, edi
-  jz cave2_scyl_boost
-  mov edi, [edi+0x878]
-  test edi, edi
-  jz cave2_scyl_boost
-  mov ecx, [edi+0x508]
-  test ecx, ecx
-  jz cave2_scyl_boost
-
-  fninit
-  push float_1
-  push dword [esi+0x16C]
-  push dword [esi+0x168]
-  push dword [esi+0x164]
-  call 00459860
-
-cave2_scyl_boost:
   fld dword [ebx+0xCA4]
   fmul st(0), st(0)
   fld dword [ebx+0xCAC]
@@ -286,24 +228,6 @@ cave2_bumper:
   test ebx, ebx
   jz cave2_done
 
-  mov edi, [esi+0x14]
-  test edi, edi
-  jz cave2_bump_vel
-  mov edi, [edi+0x878]
-  test edi, edi
-  jz cave2_bump_vel
-  mov ecx, [edi+0x448]
-  test ecx, ecx
-  jz cave2_bump_vel
-
-  fninit
-  push float_1
-  push dword [esi+0x16C]
-  push dword [esi+0x168]
-  push dword [esi+0x164]
-  call 00459860
-
-cave2_bump_vel:
   mov eax, [saved_meshname]
   add eax, 8
   push eax
@@ -371,4 +295,3 @@ dealloc(str_bumper)
 dealloc(str_speedcyl)
 dealloc(float_12)
 dealloc(float_65)
-dealloc(float_1)
