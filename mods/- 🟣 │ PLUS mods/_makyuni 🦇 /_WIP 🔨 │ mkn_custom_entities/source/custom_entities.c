@@ -2179,23 +2179,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                  * The 0.95x velocity scaling gently slows the ball as it crosses.
                  * Clearing collision trees (previous approach) made the ball fall
                  * through and get trapped in the velocity zone → stuck + crash. */
-                /* v55j_12: Add to board+0x6080 (generic Gluebie AthenaList) for ALL levels.
-                 * FUN_00420da0 (generic Board_Update) iterates this list on every level.
-                 * It handles proximity check, velocity scaling, particle creation,
-                 * sound, and ball+0x2BC flag — everything. We just need to add the
-                 * Gluebie object to this list and the native code does the rest.
-                 * Also add to board+0x4378 on Dizzy (for DizzyBoard_Update). */
+                /* v55j_12: Add to Dizzy-specific list if on Dizzy.
+                 * Do NOT add to board+0x6080 (generic list) — its +0x414
+                 * sorted flag is non-zero, causing AthenaList_SortedInsert crash.
+                 * The real fix for Gluebie on non-Dizzy levels is using our own
+                 * g_gluebie_particles_created_ball flag instead of ball+0x2BC. */
                 {
-                    /* Add to generic Gluebie list (board+0x6080) — works on ALL levels */
-                    pfn_AthenaList_Append((DWORD*)(board + 0x6080), obj);
-                    if (logf) fprintf(logf, "  ROTATER: Gluebie added to board+0x6080 (generic proximity list)\n");
-
-                    /* Also add to Dizzy-specific list if on Dizzy */
                     char* board_name = *(char**)((char*)board + 0x868);
                     if (board_name && !IsBadReadPtr(board_name, 12) &&
                         _strnicmp(board_name, "Board (Dizzy)", 13) == 0) {
                         pfn_AthenaList_Append((DWORD*)(board + 0x4378), obj);
                         if (logf) fprintf(logf, "  ROTATER: Gluebie added to Dizzy board+0x4378 (proximity list)\n");
+                    } else {
+                        if (logf) fprintf(logf, "  ROTATER: Gluebie on non-Dizzy level, using mod proximity check\n");
                     }
                 }
                 break;
