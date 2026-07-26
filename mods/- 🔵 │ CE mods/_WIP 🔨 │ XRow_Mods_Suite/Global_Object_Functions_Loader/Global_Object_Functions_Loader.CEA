@@ -8,24 +8,15 @@ alloc(saved_collObj, 4)
 alloc(saved_meshname, 4)
 alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
-alloc(str_bumper_snd, 32)
-alloc(str_scyl_snd, 32)
 alloc(float_12, 4)
 alloc(float_65, 4)
 alloc(float_1, 4)
-alloc(sound_loaded, 4)
 
 str_bumper:
   db 'N:BUMPER',0
 
 str_speedcyl:
   db 'N:SPEEDCYLINDER',0
-
-str_bumper_snd:
-  db 'sounds\bumper',0
-
-str_scyl_snd:
-  db 'sounds\speedcylinder',0
 
 float_12:
   dd 41400000
@@ -36,49 +27,6 @@ float_65:
 float_1:
   dd 3F800000
 
-sound_loaded:
-  dd 00000000
-
-load_sounds:
-  push ebp
-  mov ebp, [esi+0x14]
-  test ebp, ebp
-  jz load_sounds_ret
-  mov ebp, [ebp+0x878]
-  test ebp, ebp
-  jz load_sounds_ret
-
-  cmp dword [sound_loaded], 0
-  jne load_sounds_ret
-
-  mov ecx, [ebp+0x22C]
-  test ecx, ecx
-  jz load_sounds_ret
-  mov eax, [ecx]
-  test eax, eax
-  jz load_sounds_ret
-
-  push 0A
-  push str_bumper_snd
-  lea edx, [ebp+0x448]
-  push edx
-  mov ecx, [ebp+0x22C]
-  call dword [eax+0x60]
-
-  push 2
-  push str_scyl_snd
-  lea edx, [ebp+0x508]
-  push edx
-  mov ecx, [ebp+0x22C]
-  mov eax, [ecx]
-  call dword [eax+0x60]
-
-  mov dword [sound_loaded], 1
-
-load_sounds_ret:
-  pop ebp
-  ret
-
 BumperCave1:
   mov [saved_collObj], edx
 
@@ -87,8 +35,6 @@ BumperCave1:
   call dword [eax+0x74]
 
   pushad
-
-  call load_sounds
 
   mov edx, [saved_collObj]
   test edx, edx
@@ -206,7 +152,7 @@ cave1_bump_vel:
   cmp eax, 0C
   jg cave1_bump_norm
   imul eax, eax, 4
-  add edi, 0x6448
+  add edi, 6448
   add edi, eax
   mov dword [edi], 3F800000
 
@@ -251,8 +197,6 @@ BumperCave2:
   call dword [eax+0x74]
 
   pushad
-
-  call load_sounds
 
   mov edx, [saved_collObj]
   test edx, edx
@@ -370,7 +314,7 @@ cave2_bump_vel:
   cmp eax, 0C
   jg cave2_bump_norm
   imul eax, eax, 4
-  add edi, 0x6448
+  add edi, 6448
   add edi, eax
   mov dword [edi], 3F800000
 
@@ -421,9 +365,6 @@ dealloc(saved_collObj)
 dealloc(saved_meshname)
 dealloc(str_bumper)
 dealloc(str_speedcyl)
-dealloc(str_bumper_snd)
-dealloc(str_scyl_snd)
 dealloc(float_12)
 dealloc(float_65)
 dealloc(float_1)
-dealloc(sound_loaded)
