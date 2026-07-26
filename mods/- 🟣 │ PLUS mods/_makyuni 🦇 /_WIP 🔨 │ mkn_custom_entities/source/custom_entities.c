@@ -3382,7 +3382,16 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
 
                 /* v55j_12: Create tarsplotch particles (native DizzyBoard_Update behavior).
                  * Use our OWN flag instead of ball+0x2BC (which is UNINITIALIZED garbage
-                 * on non-Dizzy levels — no memset after operator_new). */
+                 * on non-Dizzy levels — no memset after operator_new).
+                 * v55j_14: Reset flag when all particles consumed so tarsplotch
+                 * fires again on re-entry (like native Dizzy). */
+                {
+                    int pc = *(int*)(ball + 0x814);
+                    /* If all particles consumed, reset our flag */
+                    if (pc == 0 && g_gluebie_particles_created_ball == ball) {
+                        g_gluebie_particles_created_ball = 0;
+                    }
+                }
                 {
                     BYTE bc_flag = *(BYTE*)(ball + 0x2BC);
                     int pc = *(int*)(ball + 0x814);
