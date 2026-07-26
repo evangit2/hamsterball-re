@@ -83,6 +83,7 @@ cave1_speedcyl:
   test ecx, ecx
   jz cave1_scyl_boost
 
+  fninit
   push float_1
   push dword [esi+0x16C]
   push dword [esi+0x168]
@@ -131,6 +132,7 @@ cave1_bumper:
   test ecx, ecx
   jz cave1_bump_vel
 
+  fninit
   push float_1
   push dword [esi+0x16C]
   push dword [esi+0x168]
@@ -245,6 +247,7 @@ cave2_speedcyl:
   test ecx, ecx
   jz cave2_scyl_boost
 
+  fninit
   push float_1
   push dword [esi+0x16C]
   push dword [esi+0x168]
@@ -293,6 +296,7 @@ cave2_bumper:
   test ecx, ecx
   jz cave2_bump_vel
 
+  fninit
   push float_1
   push dword [esi+0x16C]
   push dword [esi+0x168]
