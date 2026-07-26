@@ -425,6 +425,9 @@ static int g_bridgeslam_count = 0;
 #define MAX_GLUEBIES 64
 static DWORD g_gluebie_objs[MAX_GLUEBIES];
 static int   g_gluebie_count = 0;
+/* v55j_9: Track which ball is in a Gluebie zone for post-physics visual fix.
+ * Set in App_ResetFrame hook, read in Ball_Render hook. */
+static DWORD g_gluebie_ball_in_zone = 0;
 
 /* v55e: TarBubble tracking — no entity spawned, just position markers.
  * Native game stores TarBubble S1 ref points in board+0x4790 AthenaList,
@@ -3095,11 +3098,36 @@ static int gluebie_is_dizzy(DWORD board) {
 static void cEnt_gluebie_proximity_check(DWORD board);
 
 static void __cdecl gluebie_present_helper(void) {
+    g_gluebie_ball_in_zone = 0;  /* reset before check */
     DWORD board = get_board();
     if (board && g_gluebie_count > 0 && !gluebie_is_dizzy(board)) {
         cEnt_gluebie_proximity_check(board);
     }
 }
+
+/* v55j_9: Ball_Render entry hook — runs AFTER Ball_Update.
+ * Ball_Update clears ball+0x260 at 0x407AF4, so the tar splotch visual
+ * disappears even though our App_ResetFrame hook set it. This hook
+ * re-sets ball+0x260=1 if the ball was in a Gluebie zone this frame.
+ * Ball_Render (0x403DB8) prologue: PUSH EBP; MOV EBP,ESP; PUSH ESI; ... 
+ * Bytes: 55 8B EC 56 ... (need 5 for JMP) */
+#define BALL_RENDER_HOOK_ADDR  0x00403DB8
+#define BALL_RENDER_ORIG_BYTES 7
+static BYTE *g_ballrender_cave = NULL;
+static int   g_ballrender_hook_installed = 0;
+static DWORD g_ballrender_ball_ptr = 0;  /* ESI at Ball_Render entry = ball */
+
+static void __cdecl ballrender_helper(void) {
+    /* ESI at Ball_Render entry is the ball pointer.
+     * But we can't get ESI from C — the cave stores it in g_ballrender_ball_ptr. */
+    DWORD ball = g_ballrender_ball_ptr;
+    if (ball && ball == g_gluebie_ball_in_zone) {
+        *(BYTE*)(ball + 0x260) = 1;
+    }
+}
+
+/* Function pointer for cave indirection */
+static void (__cdecl *g_ballrender_fn_ptr)(void) = NULL;
 
 /* Function pointer for the cave to call (indirection needed since the
  * C helper address isn't known at assembly time). */
@@ -3150,6 +3178,68 @@ static void install_present_hook(void) {
     VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENT_ORIG_BYTES);
     g_present_hook_installed = 1;
+}
+
+/* v55j_9: Ball_Render entry hook (8 NOPs at 0x403DB8).
+ * Runs AFTER Ball_Update (which clears ball+0x260 at 0x407AF4).
+ * Re-sets ball+0x260=1 if this ball was in a Gluebie zone this frame.
+ * ECX = ball at entry (Ball_Render is __thiscall). */
+static void install_ballrender_hook(void) {
+    if (g_ballrender_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)BALL_RENDER_HOOK_ADDR;
+    /* Verify 8 NOPs at hook site */
+    BYTE expected[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+    if (memcmp(hook_addr, expected, 8) != 0) return;
+
+    g_ballrender_cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
+                                             PAGE_EXECUTE_READWRITE);
+    if (!g_ballrender_cave) return;
+
+    g_ballrender_fn_ptr = ballrender_helper;
+
+    int p = 0;
+    /* MOV [g_ballrender_ball_ptr], ECX  (6 bytes: 89 0D <addr32>) */
+    g_ballrender_cave[p++] = 0x89;
+    g_ballrender_cave[p++] = 0x0D;
+    *(DWORD*)(g_ballrender_cave + p) = (DWORD)&g_ballrender_ball_ptr; p += 4;
+    /* PUSHAD + PUSHFD */
+    g_ballrender_cave[p++] = 0x60;
+    g_ballrender_cave[p++] = 0x9C;
+    /* CALL [g_ballrender_fn_ptr] */
+    g_ballrender_cave[p++] = 0xFF; g_ballrender_cave[p++] = 0x15;
+    *(DWORD*)(g_ballrender_cave + p) = (DWORD)&g_ballrender_fn_ptr; p += 4;
+    /* POPFD + POPAD */
+    g_ballrender_cave[p++] = 0x9D;
+    g_ballrender_cave[p++] = 0x61;
+    /* JMP back to 0x403DC0 (hook_addr + 8) */
+    g_ballrender_cave[p++] = 0xE9;
+    *(DWORD*)(g_ballrender_cave + p) = (DWORD)(hook_addr + BALL_RENDER_ORIG_BYTES)
+                                     - (DWORD)(g_ballrender_cave + p + 4);
+    p += 4;
+
+    DWORD old_protect;
+    VirtualProtect(hook_addr, BALL_RENDER_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
+    DWORD jmp_offset = (DWORD)(g_ballrender_cave - hook_addr - 5);
+    hook_addr[0] = 0xE9;
+    *(DWORD*)(hook_addr + 1) = jmp_offset;
+    /* NOP remaining 3 bytes (8 total - 5 for JMP = 3 NOPs) */
+    hook_addr[5] = 0x90; hook_addr[6] = 0x90; hook_addr[7] = 0x90;
+    VirtualProtect(hook_addr, BALL_RENDER_ORIG_BYTES, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, BALL_RENDER_ORIG_BYTES);
+    g_ballrender_hook_installed = 1;
+}
+
+static void uninstall_ballrender_hook(void) {
+    if (!g_ballrender_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)BALL_RENDER_HOOK_ADDR;
+    DWORD old_protect;
+    if (VirtualProtect(hook_addr, BALL_RENDER_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect)) {
+        /* Restore 8 NOPs */
+        memset(hook_addr, 0x90, BALL_RENDER_ORIG_BYTES);
+        VirtualProtect(hook_addr, BALL_RENDER_ORIG_BYTES, old_protect, &old_protect);
+        FlushInstructionCache(GetCurrentProcess(), hook_addr, BALL_RENDER_ORIG_BYTES);
+    }
+    g_ballrender_hook_installed = 0;
 }
 
 static void uninstall_present_hook(void) {
@@ -3206,10 +3296,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         if (!gluebie || gluebie < 0x10000) continue;
         if (IsBadReadPtr((void*)gluebie, 0x1110)) continue;
 
-        /* Use visual position (obj+0x10D4/10D8/10DC) — always valid */
-        float gx = *(float*)(gluebie + 0x10D4);
-        float gy = *(float*)(gluebie + 0x10D8);
-        float gz = *(float*)(gluebie + 0x10DC);
+        /* v55j_9: Use native position offsets +0x10E0/10E4/10E8 (NOT +0x10D4).
+         * Native DizzyBoard_Update reads Gluebie position from these offsets.
+         * +0x10D4 stores spawn position; +0x10E0 stores current physics position. */
+        float gx = *(float*)(gluebie + 0x10E0);
+        float gy = *(float*)(gluebie + 0x10E4);
+        float gz = *(float*)(gluebie + 0x10E8);
 
         /* v55j_8: Use native outer radius formula: obj+0x1100 * 60.0.
          * Gluebie_ctor initializes +0x1100 to (RNG(25)+75)*0.01 = 0.75-1.0,
@@ -3278,6 +3370,15 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
 
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
+
+                /* v55j_9: Force ball+0x260=1 (tar splotch visual).
+                 * Native Ball_Update sets this when ball touches tar collision surface,
+                 * but on non-Dizzy levels the Gluebie mesh's collision faces may not
+                 * trigger the tar detection (friction threshold check at 0x407A2D).
+                 * By setting it here (before Ball_Update), Ball_Update may clear it
+                 * at 0x407AF4, but we also set it post-physics via g_gluebie_ball_in_zone. */
+                *(BYTE*)(ball + 0x260) = 1;
+                g_gluebie_ball_in_zone = ball;
 
                 /* v55j_8: Native Gluebie uses ball+0x2BC (sound/particle cooldown flag),
                  * NOT ball+0x260 (tar render flag). ball+0x260 is set by Ball_Update
@@ -3764,6 +3865,9 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
+    /* v55j_9: Install Ball_Render hook for tar splotch visual.
+     * Runs AFTER Ball_Update (which clears ball+0x260), re-sets it if in zone. */
+    install_ballrender_hook();
 
     while (g_running) {
         /* Per-frame: execute onUpdate scripts for tracked entities */
@@ -4098,6 +4202,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     } else if (reason == DLL_PROCESS_DETACH) {
         g_running = 0;
         uninstall_present_hook();
+        uninstall_ballrender_hook();
     }
     return TRUE;
 }
