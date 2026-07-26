@@ -808,6 +808,7 @@ static void uninstall_bonk_collision_hook(void) {
 
 static HANDLE g_thread = NULL;
 static volatile int g_running = 1;
+static volatile int g_shutting_down = 0;  /* v55j_15: prevent hook crash on exit */
 static char g_game_dir[MAX_PATH] = {0};
 
 /* Track spawned objects so we can despawn them individually */
@@ -3103,6 +3104,7 @@ static int gluebie_is_dizzy(DWORD board) {
 static void cEnt_gluebie_proximity_check(DWORD board);
 
 static void __cdecl gluebie_present_helper(void) {
+    if (g_shutting_down) return;  /* v55j_15: skip during shutdown */
     g_gluebie_ball_in_zone = 0;  /* reset before check */
     DWORD board = get_board();
     if (board && g_gluebie_count > 0 && !gluebie_is_dizzy(board)) {
@@ -3123,6 +3125,7 @@ static int   g_ballrender_hook_installed = 0;
 static DWORD g_ballrender_ball_ptr = 0;  /* ESI at Ball_Render entry = ball */
 
 static void __cdecl ballrender_helper(void) {
+    if (g_shutting_down) return;  /* v55j_15: skip during shutdown */
     /* v55j_9: No longer needed — we create particles in ball+0x810 instead
      * of setting ball+0x260. Particles persist in the AthenaList and are
      * rendered by Ball_Render's existing particle loop. */
@@ -4291,6 +4294,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         load_real_bass();
         g_thread = CreateThread(NULL, 0, entity_thread, NULL, 0, NULL);
     } else if (reason == DLL_PROCESS_DETACH) {
+        g_shutting_down = 1;  /* v55j_15: hooks check this before accessing game memory */
         g_running = 0;
         uninstall_present_hook();
         uninstall_ballrender_hook();
