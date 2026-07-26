@@ -3753,6 +3753,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     /* Wait for game to fully load */
     Sleep(3000);
 
+    /* v55j_8: Install Present hook for main-thread Gluebie proximity check.
+     * This MUST be called after the game has loaded (Sleep(3000) ensures
+     * the game's code section is mapped). Without this, gluebie_present_helper
+     * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
+    install_present_hook();
+
     while (g_running) {
         /* Per-frame: execute onUpdate scripts for tracked entities */
         {
@@ -4085,6 +4091,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         g_thread = CreateThread(NULL, 0, entity_thread, NULL, 0, NULL);
     } else if (reason == DLL_PROCESS_DETACH) {
         g_running = 0;
+        uninstall_present_hook();
     }
     return TRUE;
 }
