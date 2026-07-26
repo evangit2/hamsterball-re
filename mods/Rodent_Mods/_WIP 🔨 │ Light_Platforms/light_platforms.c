@@ -128,8 +128,92 @@
 #define BOARD_DFLOOR3_MESH     0x4380   /* board+0x4380 = DFLOOR3 mesh Level ptr */
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * N:DISCHARGE — Energy Gate
+ * ═══════════════════════════════════════════════════════════════════════════
+ * When the ball touches an N:DISCHARGE mesh AND charge > 0 (light is on):
+ *   1. Zero the charge (turn off neon light)
+ *   2. Set g_discharged flag
+ *   3. Force ALL DFloors to instant transition (no flicker)
+ *      Light DFloors (1,2,4) → invisible (state 2)
+ *      Dark DFloor (3) → visible (state 0)
+ * If charge == 0 (light already off): does nothing.
+ *
+ * MeshBuffer name scanning: MeshWorld+0x2C → AthenaList → each MB+0x864 = name.
+ * Ball proximity check against MB position (+0x868/86C/870).
+ */
+
+/* Ball access */
+#define APP_BALL               0x5DC    /* App+0x5DC = player 1 ball pointer */
+#define BALL_POS_X             0x164
+#define BALL_POS_Y             0x168
+#define BALL_POS_Z             0x16C
+
+/* MeshWorld access */
+#define BOARD_LEVEL            0x8AC    /* board+0x8AC = Level ptr */
+#define LEVEL_MESHWORLD        0x08     /* Level+0x08 = MeshWorld ptr */
+#define MW_MESHBUFFER_LIST     0x2C     /* MeshWorld+0x2C = AthenaList of MBs */
+#define MB_NAME                0x864    /* MeshBuffer+0x864 = char* name */
+#define MB_POS_X               0x868
+#define MB_POS_Y               0x86C
+#define MB_POS_Z               0x870
+
+#define DISCHARGE_PROXIMITY    80.0f    /* ball radius 26, 80 = generous touch */
+
+/* Discharge state */
+static int g_discharged = 0;             /* 1 = discharge has fired */
+static int g_discharge_cooldown = 0;     /* frames until ball leaves mesh */
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Per-Frame Update
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Check if ball is touching any N:DISCHARGE mesh.
+ * Returns 1 if touching, 0 if not. */
+static int check_discharge_collision(DWORD board, DWORD app) {
+    DWORD ball = *(DWORD*)(app + APP_BALL);
+    if (!ball || IsBadReadPtr((void*)ball, 0x200)) return 0;
+
+    float bx = *(float*)(ball + BALL_POS_X);
+    float by = *(float*)(ball + BALL_POS_Y);
+    float bz = *(float*)(ball + BALL_POS_Z);
+
+    /* Get MeshWorld: board+0x8AC → Level → Level+0x08 = MeshWorld */
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL);
+    if (!level || IsBadReadPtr((void*)level, 0x10)) return 0;
+    DWORD mw = *(DWORD*)(level + LEVEL_MESHWORLD);
+    if (!mw || IsBadReadPtr((void*)mw, 0x40)) return 0;
+
+    /* Get MeshBuffer AthenaList at MeshWorld+0x2C */
+    DWORD mbList = mw + MW_MESHBUFFER_LIST;
+    if (IsBadReadPtr((void*)mbList, 0x410)) return 0;
+    int mbCount = *(int*)(mbList + ATHENALIST_COUNT);
+    if (mbCount < 1 || mbCount > 500) return 0;
+    DWORD mbItems = *(DWORD*)(mbList + ATHENALIST_ITEMS);
+    if (!mbItems || IsBadReadPtr((void*)mbItems, mbCount * 4)) return 0;
+
+    for (int i = 0; i < mbCount; i++) {
+        DWORD mb = *(DWORD*)(mbItems + i * 4);
+        if (!mb || IsBadReadPtr((void*)mb, 0x874)) continue;
+
+        char *name = *(char**)(mb + MB_NAME);
+        if (!name || IsBadReadPtr(name, 12)) continue;
+
+        /* Check for N:DISCHARGE prefix */
+        if (_strnicmp(name, "N:DISCHARGE", 12) != 0) continue;
+
+        /* Found a discharge mesh — check ball proximity */
+        float mx = *(float*)(mb + MB_POS_X);
+        float my = *(float*)(mb + MB_POS_Y);
+        float mz = *(float*)(mb + MB_POS_Z);
+        float dx = bx - mx, dy = by - my, dz = bz - mz;
+        float dist2 = dx*dx + dy*dy + dz*dz;
+
+        if (dist2 < DISCHARGE_PROXIMITY * DISCHARGE_PROXIMITY)
+            return 1;
+    }
+
+    return 0;
+}
 
 static void update_platforms(void) {
     /* Get board from App */
@@ -179,12 +263,16 @@ static void update_platforms(void) {
         /* For inverted platforms, flip the light state */
         BYTE want_visible = is_inverted ? !light_on : light_on;
 
+        /* If discharge just fired, force ALL DFloors to instant transition
+         * (no flicker) — same as DFLOOR3's no-flicker approach. */
+        int force_instant = g_discharged;
+
         /* DFLOOR3 (inverted): skip flicker entirely.
          * Use timer=1 so the flicker state lasts only 1 frame, and force
          * ToggleTimer.visible=1 during that frame so the render function
          * draws the object normally — no visible flicker at all.
          * The native state machine still handles render list add/remove. */
-        int flicker_timer = is_inverted ? 1 : TIMER_FULL;
+        int flicker_timer = (is_inverted || force_instant) ? 1 : TIMER_FULL;
 
         if (want_visible) {
             /* Want platform visible (normal: light on, inverted: light off) */
@@ -193,13 +281,13 @@ static void update_platforms(void) {
                 /* Currently invisible — start flicker to reappear */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_UP;  /* state 3 */
                 *(int*)(obj + AS_TIMER) = flicker_timer;
-                if (is_inverted)
+                if (is_inverted || force_instant)
                     *(BYTE*)(obj + AS_TT_VISIBLE) = 1;  /* no visual flicker */
                 break;
             case STATE_FLICKER_UP:
-                /* Flicker in progress — for inverted, force visible + let it
+                /* Flicker in progress — for inverted/instant, force visible + let it
                  * transition quickly. For normal, let it run naturally. */
-                if (is_inverted) {
+                if (is_inverted || force_instant) {
                     *(BYTE*)(obj + AS_TT_VISIBLE) = 1;
                 }
                 break;
@@ -216,13 +304,13 @@ static void update_platforms(void) {
                 /* Currently visible — start flicker to disappear */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_DOWN;  /* state 1 */
                 *(int*)(obj + AS_TIMER) = flicker_timer;
-                if (is_inverted)
+                if (is_inverted || force_instant)
                     *(BYTE*)(obj + AS_TT_VISIBLE) = 1;  /* no visual flicker */
                 break;
             case STATE_FLICKER_DOWN:
-                /* Flicker in progress — for inverted, force visible + let it
+                /* Flicker in progress — for inverted/instant, force visible + let it
                  * transition quickly. For normal, let it run naturally. */
-                if (is_inverted) {
+                if (is_inverted || force_instant) {
                     *(BYTE*)(obj + AS_TT_VISIBLE) = 1;
                 }
                 break;
@@ -257,6 +345,44 @@ __asm__(
 );
 
 void on_render_scene(void) {
+    /* Check N:DISCHARGE collision */
+    DWORD app = *(DWORD*)APP_PTR;
+    if (app && !IsBadReadPtr((void*)app, 0x200)) {
+        DWORD board = *(DWORD*)(app + APP_BOARD);
+        if (board && !IsBadReadPtr((void*)board, 0x4400)) {
+            int touching = check_discharge_collision(board, app);
+
+            if (touching && g_discharge_cooldown > 0)
+                g_discharge_cooldown--;
+
+            if (touching && g_discharge_cooldown == 0) {
+                /* Ball is touching a discharge mesh */
+                DWORD light = *(DWORD*)(board + BOARD_LIGHT_P0);
+                if (light && !IsBadReadPtr((void*)light, 0xD4)) {
+                    BYTE light_on = *(BYTE*)(light + LIGHT_VISIBLE);
+                    if (light_on) {
+                        /* Charge > 0 — DISCHARGE! */
+                        *(BYTE*)(light + LIGHT_VISIBLE) = 0;  /* turn off light */
+                        g_discharged = 1;
+                        g_discharge_cooldown = 300;  /* 5s cooldown */
+                    }
+                }
+            }
+
+            /* Reset discharge flag once all platforms have settled */
+            /* (g_discharged stays 1 until ball leaves mesh, then clears) */
+            if (!touching && g_discharge_cooldown > 0)
+                g_discharge_cooldown--;
+            if (!touching && g_discharge_cooldown == 0 && g_discharged) {
+                /* Ball left the discharge zone — keep flag set so platforms
+                 * stay in their discharged state until light turns back on */
+                /* g_discharged stays 1 — it's only cleared by external
+                 * charge restoration (Phase 2 recharge pads, or future
+                 * Electric Lights integration). For now, it's permanent. */
+            }
+        }
+    }
+
     update_platforms();
 }
 
