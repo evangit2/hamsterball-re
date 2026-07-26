@@ -40,13 +40,25 @@
  *   - state == 2 (fully invisible)
  *   - state == 1 or 3 AND ToggleTimer.visible == 0 (flicker)
  *
- * Mod approach:
+ * Mod approach (normal — DFLOOR1, 2, 4):
  *   Light ON  + state 2: set state=3, timer=75 (start flicker → reappear)
  *   Light ON  + state 0: pin timer=75 (stay visible, no transition)
  *   Light ON  + state 3: let it run (flicker in progress)
  *   Light OFF + state 0: set state=1, timer=75 (start flicker → disappear)
  *   Light OFF + state 2: pin timer=75 (stay invisible, no transition)
  *   Light OFF + state 1: let it run (flicker in progress)
+ *
+ * Mod approach (INVERTED — DFLOOR3 only):
+ *   Light OFF + state 2: set state=3, timer=75 (start flicker → reappear)
+ *   Light OFF + state 0: pin timer=75 (stay visible, no transition)
+ *   Light OFF + state 3: let it run (flicker in progress)
+ *   Light ON  + state 0: set state=1, timer=75 (start flicker → disappear)
+ *   Light ON  + state 2: pin timer=75 (stay invisible, no transition)
+ *   Light ON  + state 1: let it run (flicker in progress)
+ *
+ * DFLOOR3 identified by mesh pointer match: board+0x4380 holds DFLOOR3's
+ * mesh Level. Stands_ctor copies *(mesh+0x08) (MeshWorld ptr) to obj+0x08.
+ * We compare obj+0x08 against *(*(board+0x4380)+0x08) to detect DFLOOR3.
  *
  * Light object at board+0x436C (SceneObject, 0xD4 bytes)
  *   +0x88 = visible flag (1=on, 0=off)
@@ -106,6 +118,15 @@
 #define STATE_FLICKER_UP        3   /* flicker after reappearing */
 #define TIMER_FULL              0x4B /* 75 frames */
 
+/* DFLOOR3 identified by matching its mesh against board+0x4380 (DFLOOR3 mesh slot).
+ * Each DFLOOR uses a different mesh Level stored at board+0x4378+N.
+ * ArenaStands_ctor passes the mesh to Stands_ctor, which copies
+ * *(mesh+0x08) (MeshWorld ptr) to obj+0x08. We compare obj+0x08
+ * against *(*(board+0x4380)+0x08) to identify DFLOOR3. */
+
+/* Board mesh slots — each DFLOOR's mesh Level object */
+#define BOARD_DFLOOR3_MESH     0x4380   /* board+0x4380 = DFLOOR3 mesh Level ptr */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Per-Frame Update
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -144,8 +165,22 @@ static void update_platforms(void) {
 
         int state = *(int*)(obj + AS_STATE);
 
-        if (light_on) {
-            /* Light is ON — want platform visible */
+        /* Check if this is DFLOOR3 (inverted logic — solid in dark) */
+        /* DFLOOR3's mesh is at board+0x4380. Stands_ctor copies *(mesh+0x08)
+         * to obj+0x08. Compare to identify DFLOOR3. */
+        DWORD dfloor3_mesh = *(DWORD*)(board + BOARD_DFLOOR3_MESH);
+        DWORD dfloor3_mw = 0;
+        if (dfloor3_mesh && !IsBadReadPtr((void*)dfloor3_mesh, 0x10))
+            dfloor3_mw = *(DWORD*)(dfloor3_mesh + 0x08);
+
+        DWORD obj_mw = *(DWORD*)(obj + 0x08);
+        int is_inverted = (dfloor3_mw && obj_mw == dfloor3_mw);
+
+        /* For inverted platforms, flip the light state */
+        BYTE want_visible = is_inverted ? !light_on : light_on;
+
+        if (want_visible) {
+            /* Want platform visible (normal: light on, inverted: light off) */
             switch (state) {
             case STATE_INVISIBLE:
                 /* Currently invisible — start flicker to reappear */
@@ -163,7 +198,7 @@ static void update_platforms(void) {
                 break;
             }
         } else {
-            /* Light is OFF — want platform invisible */
+            /* Want platform invisible (normal: light off, inverted: light on) */
             switch (state) {
             case STATE_SOLID:
                 /* Currently visible — start flicker to disappear */
