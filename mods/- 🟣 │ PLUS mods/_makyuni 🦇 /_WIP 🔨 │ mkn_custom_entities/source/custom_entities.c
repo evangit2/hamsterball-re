@@ -3379,6 +3379,19 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                  * On first contact (ball+0x2BC == 0), create 3 particles with random
                  * direction, normalized to unit length, appended to ball+0x810 AthenaList.
                  * Max 30 particles. Also play tar sound. */
+                {
+                    BYTE bc_flag = *(BYTE*)(ball + 0x2BC);
+                    int pc = *(int*)(ball + 0x814);
+                    /* Debug: log the flags */
+                    if (g_gluebie_debug_count < 120) {
+                        FILE* df2 = fopen("custom_entities_debug.log", "a");
+                        if (df2) {
+                            fprintf(df2, "  >> bc=%d pc=%d list_items=%p\n",
+                                bc_flag, pc, (void*)*(DWORD*)(ball + 0xC1C));
+                            fclose(df2);
+                        }
+                    }
+                }
                 if (*(BYTE*)(ball + 0x2BC) == 0) {
                     /* Check particle list capacity */
                     int part_count = *(int*)(ball + 0x814);  /* AthenaList count at +0x04 */
@@ -3449,6 +3462,15 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     }
                     /* Set first-contact flag so particles+sound only fire once */
                     *(BYTE*)(ball + 0x2BC) = 1;
+                    /* Debug: log particle creation result */
+                    {
+                        FILE* df3 = fopen("custom_entities_debug.log", "a");
+                        if (df3) {
+                            fprintf(df3, "  >> PARTICLES CREATED: part_count after=%d\n",
+                                *(int*)(ball + 0x814));
+                            fclose(df3);
+                        }
+                    }
                 }
                 /* Do NOT set ball+0x260 — that causes "sweat" not tarsplotch */
                 /* Do NOT clear any flags when leaving range — native never clears them */
