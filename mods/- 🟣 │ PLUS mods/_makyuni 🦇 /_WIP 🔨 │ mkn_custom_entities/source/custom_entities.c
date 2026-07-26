@@ -3118,12 +3118,9 @@ static int   g_ballrender_hook_installed = 0;
 static DWORD g_ballrender_ball_ptr = 0;  /* ESI at Ball_Render entry = ball */
 
 static void __cdecl ballrender_helper(void) {
-    /* ESI at Ball_Render entry is the ball pointer.
-     * But we can't get ESI from C — the cave stores it in g_ballrender_ball_ptr. */
-    DWORD ball = g_ballrender_ball_ptr;
-    if (ball && ball == g_gluebie_ball_in_zone) {
-        *(BYTE*)(ball + 0x260) = 1;
-    }
+    /* v55j_9: No longer needed — we create particles in ball+0x810 instead
+     * of setting ball+0x260. Particles persist in the AthenaList and are
+     * rendered by Ball_Render's existing particle loop. */
 }
 
 /* Function pointer for cave indirection */
@@ -3371,23 +3368,59 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* v55j_9: Force ball+0x260=1 (tar splotch visual).
-                 * Native Ball_Update sets this when ball touches tar collision surface,
-                 * but on non-Dizzy levels the Gluebie mesh's collision faces may not
-                 * trigger the tar detection (friction threshold check at 0x407A2D).
-                 * By setting it here (before Ball_Update), Ball_Update may clear it
-                 * at 0x407AF4, but we also set it post-physics via g_gluebie_ball_in_zone. */
-                *(BYTE*)(ball + 0x260) = 1;
+                /* v55j_9: Track ball in zone for Ball_Render hook.
+                 * Do NOT set ball+0x260 — that causes the "sweat" sprite overlay,
+                 * NOT the real tarsplotch. The real tarsplotch is particles in
+                 * ball+0x810 AthenaList, created on first contact. */
                 g_gluebie_ball_in_zone = ball;
 
-                /* v55j_8: Native Gluebie uses ball+0x2BC (sound/particle cooldown flag),
-                 * NOT ball+0x260 (tar render flag). ball+0x260 is set by Ball_Update
-                 * when ball physically touches the tar SURFACE (3.0 units), not by
-                 * Gluebie at 45-60 units. The mod was incorrectly setting ball+0x260
-                 * which showed tar splotch way too early and cleared it when leaving
-                 * range. Native NEVER clears ball+0x2BC — it stays until ball dies. */
+                /* v55j_9: Create tarsplotch particles (native DizzyBoard_Update behavior).
+                 * On first contact (ball+0x2BC == 0), create 3 particles with random
+                 * direction, normalized to unit length, appended to ball+0x810 AthenaList.
+                 * Max 30 particles. Also play tar sound. */
                 if (*(BYTE*)(ball + 0x2BC) == 0) {
-                    /* First entry into Gluebie range — play tar sound */
+                    /* Check particle list capacity */
+                    int part_count = *(int*)(ball + 0x814);  /* AthenaList count at +0x04 */
+                    if (part_count < 30) {
+                        int k;
+                        for (k = 0; k < 3; k++) {
+                            /* Allocate 20 bytes: float[5] = {x, y, z, type=6, padding=0} */
+                            float* particle = (float*)malloc(20);
+                            if (!particle) break;
+                            /* Random direction */
+                            particle[0] = (float)((rand() % 2000) - 1000) / 1000.0f;
+                            particle[1] = (float)((rand() % 2000) - 1000) / 1000.0f;
+                            particle[2] = (float)((rand() % 2000) - 1000) / 1000.0f;
+                            particle[3] = 0.0f;  /* type=6 as int (0x00000006 as float ≈ 8.4e-45) */
+                            *(int*)&particle[3] = 6;
+                            particle[4] = 0.0f;  /* padding */
+                            /* Normalize to unit length */
+                            float len_sq = particle[0]*particle[0] + particle[1]*particle[1] + particle[2]*particle[2];
+                            if (len_sq > 0.0f) {
+                                float inv_len = 1.0f / sqrtf(len_sq);
+                                particle[0] *= inv_len;
+                                particle[1] *= inv_len;
+                                particle[2] *= inv_len;
+                            }
+                            /* Append to ball+0x810 AthenaList via game function.
+                             * AthenaList_Append (0x453780) is __thiscall:
+                             * ECX = ball+0x810 (list), param = particle on stack, RET 4 */
+                            {
+                                DWORD list_ptr = ball + 0x810;
+                                DWORD item_ptr = (DWORD)particle;
+                                DWORD fn_addr = 0x453780;
+                                __asm__ __volatile__(
+                                    "pushl %0\n"
+                                    "movl %1, %%ecx\n"
+                                    "call *%2\n"
+                                    :
+                                    : "r"(item_ptr), "r"(list_ptr), "r"(fn_addr)
+                                    : "ecx", "eax", "edx", "memory"
+                                );
+                            }
+                        }
+                    }
+                    /* Play tar sound */
                     {
                         static int g_gluebie_sound_cooldown = 0;
                         if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
@@ -3399,10 +3432,10 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                             g_gluebie_sound_cooldown = 60;
                         }
                     }
-                    /* Set cooldown flag so sound only plays once per entry */
+                    /* Set first-contact flag so particles+sound only fire once */
                     *(BYTE*)(ball + 0x2BC) = 1;
                 }
-                /* Do NOT set ball+0x260 — that's Ball_Update's job (tar surface contact) */
+                /* Do NOT set ball+0x260 — that causes "sweat" not tarsplotch */
                 /* Do NOT clear any flags when leaving range — native never clears them */
             }
         }
