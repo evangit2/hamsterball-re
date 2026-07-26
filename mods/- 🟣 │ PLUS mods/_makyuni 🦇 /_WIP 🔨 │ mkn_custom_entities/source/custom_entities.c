@@ -428,6 +428,9 @@ static int   g_gluebie_count = 0;
 /* v55j_9: Track which ball is in a Gluebie zone for post-physics visual fix.
  * Set in App_ResetFrame hook, read in Ball_Render hook. */
 static DWORD g_gluebie_ball_in_zone = 0;
+/* v55j_12: Track whether we've already created tarsplotch particles for this ball.
+ * ball+0x2BC is UNINITIALIZED (no memset after operator_new), so we can't rely on it. */
+static DWORD g_gluebie_particles_created_ball = 0;  /* ball ptr that already has particles */
 
 /* v55e: TarBubble tracking — no entity spawned, just position markers.
  * Native game stores TarBubble S1 ref points in board+0x4790 AthenaList,
@@ -2176,18 +2179,23 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                  * The 0.95x velocity scaling gently slows the ball as it crosses.
                  * Clearing collision trees (previous approach) made the ball fall
                  * through and get trapped in the velocity zone → stuck + crash. */
-                /* Add to board+0x4378 (Gluebie list) for DizzyBoard_Update proximity check.
-                 * Only safe on Dizzy (where it's an AthenaList). On other levels,
-                 * board+0x4378 may be a Level pointer (Tower/Expert/Toob) — skip to avoid crash.
-                 * Check: Dizzy board name is "Board (Dizzy)" at board+0x868. */
+                /* v55j_12: Add to board+0x6080 (generic Gluebie AthenaList) for ALL levels.
+                 * FUN_00420da0 (generic Board_Update) iterates this list on every level.
+                 * It handles proximity check, velocity scaling, particle creation,
+                 * sound, and ball+0x2BC flag — everything. We just need to add the
+                 * Gluebie object to this list and the native code does the rest.
+                 * Also add to board+0x4378 on Dizzy (for DizzyBoard_Update). */
                 {
+                    /* Add to generic Gluebie list (board+0x6080) — works on ALL levels */
+                    pfn_AthenaList_Append((DWORD*)(board + 0x6080), obj);
+                    if (logf) fprintf(logf, "  ROTATER: Gluebie added to board+0x6080 (generic proximity list)\n");
+
+                    /* Also add to Dizzy-specific list if on Dizzy */
                     char* board_name = *(char**)((char*)board + 0x868);
                     if (board_name && !IsBadReadPtr(board_name, 12) &&
                         _strnicmp(board_name, "Board (Dizzy)", 13) == 0) {
                         pfn_AthenaList_Append((DWORD*)(board + 0x4378), obj);
                         if (logf) fprintf(logf, "  ROTATER: Gluebie added to Dizzy board+0x4378 (proximity list)\n");
-                    } else {
-                        if (logf) fprintf(logf, "  ROTATER: Gluebie on non-Dizzy level, proximity behavior not available\n");
                     }
                 }
                 break;
@@ -2521,6 +2529,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     }
     g_rotater_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
+    g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
     g_waterwheel_count = 0;  /* v55f: reset WaterWheel tracking on level unload */
     g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
@@ -3375,10 +3384,9 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                  * ball+0x810 AthenaList, created on first contact. */
                 g_gluebie_ball_in_zone = ball;
 
-                /* v55j_9: Create tarsplotch particles (native DizzyBoard_Update behavior).
-                 * On first contact (ball+0x2BC == 0), create 3 particles with random
-                 * direction, normalized to unit length, appended to ball+0x810 AthenaList.
-                 * Max 30 particles. Also play tar sound. */
+                /* v55j_12: Create tarsplotch particles (native DizzyBoard_Update behavior).
+                 * Use our OWN flag instead of ball+0x2BC (which is UNINITIALIZED garbage
+                 * on non-Dizzy levels — no memset after operator_new). */
                 {
                     BYTE bc_flag = *(BYTE*)(ball + 0x2BC);
                     int pc = *(int*)(ball + 0x814);
@@ -3386,13 +3394,14 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     if (g_gluebie_debug_count < 120) {
                         FILE* df2 = fopen("custom_entities_debug.log", "a");
                         if (df2) {
-                            fprintf(df2, "  >> bc=%d pc=%d list_items=%p\n",
-                                bc_flag, pc, (void*)*(DWORD*)(ball + 0xC1C));
+                            fprintf(df2, "  >> bc=%d pc=%d list_items=%p ours=%d\n",
+                                bc_flag, pc, (void*)*(DWORD*)(ball + 0xC1C),
+                                (g_gluebie_particles_created_ball == ball) ? 1 : 0);
                             fclose(df2);
                         }
                     }
                 }
-                if (*(BYTE*)(ball + 0x2BC) == 0) {
+                if (g_gluebie_particles_created_ball != ball) {
                     /* Check particle list capacity */
                     int part_count = *(int*)(ball + 0x814);  /* AthenaList count at +0x04 */
                     if (part_count < 30) {
@@ -3461,7 +3470,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                         }
                     }
                     /* Set first-contact flag so particles+sound only fire once */
-                    *(BYTE*)(ball + 0x2BC) = 1;
+                    g_gluebie_particles_created_ball = ball;
                     /* Debug: log particle creation result */
                     {
                         FILE* df3 = fopen("custom_entities_debug.log", "a");
