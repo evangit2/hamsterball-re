@@ -3436,10 +3436,11 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                                 DWORD *items_ptr = (DWORD*)(list + 0x40C);
                                 
                                 if (*count_ptr == 0) {
-                                    /* First item: operator_new(4), store, set count=1 */
+                                    /* First item: operator_new(120) for 30 particle ptrs (max).
+                                     * No realloc needed — pre-allocate max capacity. */
                                     typedef void* (__cdecl *operator_new_t)(unsigned int);
                                     operator_new_t pfn_op_new2 = (operator_new_t)0x4BA57B;
-                                    *items_ptr = (DWORD)pfn_op_new2(4);
+                                    *items_ptr = (DWORD)pfn_op_new2(120);
                                     if (*items_ptr) {
                                         *(DWORD*)*items_ptr = (DWORD)particle;
                                         *count_ptr = 1;
@@ -3447,14 +3448,9 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                                         memset((void*)(list + 0x08), 0, 0x400);
                                     }
                                 } else {
-                                    /* Subsequent: realloc, append, count++ */
-                                    int new_count = *count_ptr + 1;
-                                    DWORD new_items = (DWORD)realloc((void*)*items_ptr, new_count * 4);
-                                    if (new_items) {
-                                        *items_ptr = new_items;
-                                        ((DWORD*)new_items)[*count_ptr] = (DWORD)particle;
-                                        *count_ptr = new_count;
-                                    }
+                                    /* Subsequent: just write to pre-allocated array */
+                                    ((DWORD*)*items_ptr)[*count_ptr] = (DWORD)particle;
+                                    (*count_ptr)++;
                                 }
                             }
                         }
