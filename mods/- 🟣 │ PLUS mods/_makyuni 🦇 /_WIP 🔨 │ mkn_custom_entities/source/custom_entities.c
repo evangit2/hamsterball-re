@@ -111,7 +111,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 /* App layout */
 #define APP_GFX_DEVICE          0x174
 
-/* v55j_9: Present hook for main-thread Gluebie proximity check.
+/* v55j_8: Present hook for main-thread Gluebie proximity check.
  * Graphics_PresentOrEnd (0x455A90) runs at end of each frame on the main thread.
  * Original 7 bytes: 8A 44 24 04 83 EC 20 (MOV AL,[ESP+4]; SUB ESP,0x20)
  * Same pattern as magnet_mod — PUSHAD/CALL C fn/POPAD + original bytes + JMP back. */
@@ -3068,10 +3068,32 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
 static BYTE *g_present_cave = NULL;
 static int g_present_hook_installed = 0;
 
-/* C helper called from the Present hook cave (main thread, safe for C calls). */
+/* C helper called from the Present hook cave (main thread, safe for C calls).
+ * v55j_8: Skip on Dizzy — native DizzyBoard_Update already handles Gluebie
+ * proximity there. Running our check too would double-scale velocity. */
+static int gluebie_is_dizzy(DWORD board) {
+    if (!board) return 0;
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+    if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
+        int race_idx = *(int*)(app + 0x5FC);
+        if (race_idx == 2 || race_idx == 13) return 1;
+    }
+    char* level_name = NULL;
+    if (!IsBadReadPtr((void*)(board + 0x10), 4)) {
+        level_name = *(char**)(board + 0x10);
+    }
+    if (level_name && !IsBadReadPtr(level_name, 5)) {
+        if (my_stristr(level_name, "Dizzy") != NULL) return 1;
+    }
+    return 0;
+}
+
+/* Forward declaration — defined below */
+static void cEnt_gluebie_proximity_check(DWORD board);
+
 static void __cdecl gluebie_present_helper(void) {
     DWORD board = get_board();
-    if (board && g_gluebie_count > 0) {
+    if (board && g_gluebie_count > 0 && !gluebie_is_dizzy(board)) {
         cEnt_gluebie_proximity_check(board);
     }
 }
@@ -3183,18 +3205,13 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
         float gy = *(float*)(gluebie + 0x10D8);
         float gz = *(float*)(gluebie + 0x10DC);
 
-        /* Read detection radius — use native outer zone for slowdown.
-         * Native has TWO proximity checks:
-         *   1. DizzyBoard_Update: obj+0x1100 * 60.0 = 45-60 units (center-to-center, velocity slowdown)
-         *   2. Ball_Update: 3.0 units (distance to tar SURFACE, sets tar flag)
-         * We use the outer zone (obj+0x1100 * 60.0) for velocity slowdown,
-         * and the inner zone (3.0) for tar splotch + tar flag. */
-        /* v55j_9: Use hardcoded outer radius 60.0 (native Gluebie default).
-         * obj+0x1100 reads 0.0 on cross-level spawn (ctor doesn't init it),
-         * which triggers the fallback. Use 60.0 directly for consistent
-         * detection radius matching native Dizzy behavior. */
-        float outer_radius = 60.0f;
-        float inner_radius = 3.0f;  /* tar surface contact */
+        /* v55j_8: Use native outer radius formula: obj+0x1100 * 60.0.
+         * Gluebie_ctor initializes +0x1100 to (RNG(25)+75)*0.01 = 0.75-1.0,
+         * so native radius is 45-60 units. Fall back to 60.0 if +0x1100 is 0
+         * (shouldn't happen since ctor inits it, but safety first). */
+        float radius_mult = *(float*)(gluebie + 0x1100);
+        float outer_radius = (radius_mult > 0.0f) ? (radius_mult * 60.0f) : 60.0f;
+        float inner_radius = 3.0f;  /* tar surface contact (unused by Gluebie — Ball_Update handles it) */
 
         /* Reset active flag (will be set if any ball is in range) */
         *(BYTE*)(gluebie + 0x1104) = 0;
@@ -3256,37 +3273,30 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* Set Gluebie active flag */
                 *(BYTE*)(gluebie + 0x1104) = 1;
 
-                /* Play tar sound — 1 sec cooldown. */
-                {
-                    static int g_gluebie_sound_cooldown = 0;
-                    if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
-                    if (g_gluebie_sound_cooldown == 0) {
-                        g_gluebie_sound_pending = 1;
-                        g_gluebie_snd_x = bx;
-                        g_gluebie_snd_y = by;
-                        g_gluebie_snd_z = bz;
-                        g_gluebie_sound_cooldown = 60;
-                    }
-                }
-
-                /* v55j_8: Set tar render flag (ball+0x260).
-                 * Native DizzyBoard_Update sets ball+0x260 which makes Ball_Render
-                 * draw the tar splotch mesh (App+0x264) on the ball automatically.
-                 * Only set if App+0x264 (tar mesh) is loaded — on non-Dizzy levels
-                 * it may be NULL, which would cause Ball_Render to skip drawing. */
-                {
-                    DWORD app = *(DWORD*)(board + BOARD_APP);
-                    if (app && app > 0x10000 &&
-                        !IsBadReadPtr((void*)(app + 0x264), 4)) {
-                        DWORD tar_mesh = *(DWORD*)(app + 0x264);
-                        if (tar_mesh && tar_mesh > 0x10000) {
-                            *(BYTE*)(ball + 0x260) = 1;
+                /* v55j_8: Native Gluebie uses ball+0x2BC (sound/particle cooldown flag),
+                 * NOT ball+0x260 (tar render flag). ball+0x260 is set by Ball_Update
+                 * when ball physically touches the tar SURFACE (3.0 units), not by
+                 * Gluebie at 45-60 units. The mod was incorrectly setting ball+0x260
+                 * which showed tar splotch way too early and cleared it when leaving
+                 * range. Native NEVER clears ball+0x2BC — it stays until ball dies. */
+                if (*(BYTE*)(ball + 0x2BC) == 0) {
+                    /* First entry into Gluebie range — play tar sound */
+                    {
+                        static int g_gluebie_sound_cooldown = 0;
+                        if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
+                        if (g_gluebie_sound_cooldown == 0) {
+                            g_gluebie_sound_pending = 1;
+                            g_gluebie_snd_x = bx;
+                            g_gluebie_snd_y = by;
+                            g_gluebie_snd_z = bz;
+                            g_gluebie_sound_cooldown = 60;
                         }
                     }
+                    /* Set cooldown flag so sound only plays once per entry */
+                    *(BYTE*)(ball + 0x2BC) = 1;
                 }
-            } else {
-                /* Ball NOT in range — clear tar render flag */
-                *(BYTE*)(ball + 0x260) = 0;
+                /* Do NOT set ball+0x260 — that's Ball_Update's job (tar surface contact) */
+                /* Do NOT clear any flags when leaving range — native never clears them */
             }
         }
     }

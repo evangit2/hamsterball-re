@@ -1,5 +1,44 @@
 # Version Changelog
 
+## v55j_8 — Gluebie: match native Dizzy behavior (Ghidra-verified)
+
+- **Gluebie proximity behavior fixed to match native DizzyBoard_Update exactly.**
+  Deep Ghidra decompilation of DizzyBoard_Update (0x41D512), Gluebie_ctor
+  (0x437CB0), Gluebie vtable[11] (0x43ECC0), and Dizzy_CreateDynamicObjects
+  (0x40A5F0) revealed 5 behavioral differences:
+  - **BUG 1 (wrong flag):** Mod set ball+0x260 (tar render flag) — native
+    Gluebie does NOT touch ball+0x260. That flag is set by Ball_Update when
+    the ball physically touches the tar SURFACE (3.0 units). Mod was showing
+    tar splotch at 45-60 units distance (way too early) and hiding it when
+    leaving range. Native sets ball+0x2BC (sound/particle cooldown) instead.
+  - **BUG 2 (wrong clear):** Mod cleared ball+0x260=0 when ball left range.
+    Native NEVER clears ball+0x2BC — it stays 1 until ball dies/respawns.
+  - **BUG 3 (wrong radius):** Mod used hardcoded 60.0. Native uses
+    obj+0x1100 * 60.0, where Gluebie_ctor inits +0x1100 to
+    (RNG(25)+75)*0.01 = 0.75-1.0, giving radius 45-60.
+    Mod comment said "ctor doesn't init +0x1100" — WRONG, it does.
+  - **BUG 4 (double processing):** Present hook ran Gluebie check on Dizzy
+    Race, where native DizzyBoard_Update ALREADY handles it → double
+    velocity scaling. Added gluebie_is_dizzy() check to skip on Dizzy.
+  - **BUG 5 (missing cooldown flag):** Mod used internal static cooldown
+    counter instead of ball+0x2BC. Native checks ball+0x2BC==0 before
+    playing sound, then sets ball+0x2BC=1 (once per entry, no counter).
+- **Velocity scaling confirmed correct:** Native does normalize velocity,
+  multiply by (speed * 0.95) / speed = 0.95, which IS just *= 0.95 with
+  zero-velocity guard. Mod's simple *= 0.95 is functionally equivalent.
+- **Constants verified (Ghidra memory reads):**
+  - _DAT_004d0930 = 60.0 (outer radius multiplier)
+  - _DAT_004d092c = 0.95 (velocity scale factor)
+  - _DAT_004cf368 = 0.0 (epsilon)
+  - _DAT_004cf380 = 0.25 (tar sink rate)
+  - _DAT_004cf480 = 75.0 (radius RNG offset)
+  - _DAT_004cf524 = 0.01 (radius RNG scale)
+- **Not yet implemented (native has, mod doesn't):**
+  - Tar splotch particles (3x operator_new(0x14), random direction,
+    appended to ball+0x810 AthenaList, max 30). Visual only, no gameplay
+    impact. Will add if user reports missing particles.
+- **Crash test:** PASS (12.1s, no crash, DLL restored).
+
 ## v55g — Catapult: full system port (solid + launch + state machine)
 
 - **Catapult (ai_type 35) now has full native behavior ported.**
