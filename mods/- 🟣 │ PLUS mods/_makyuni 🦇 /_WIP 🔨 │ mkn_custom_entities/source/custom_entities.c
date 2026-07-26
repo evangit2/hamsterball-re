@@ -3345,11 +3345,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     fprintf(df, "GLUEBIE f=%d: gpos=(%.1f,%.1f,%.1f) outer=%.1f inner=%.1f ball[%d]=%p bpos=(%.1f,%.1f,%.1f) dist=%.1f in_outer=%d in_inner=%d\n",
                         g_gluebie_debug_frame, gx, gy, gz, outer_radius, inner_radius, i, (void*)ball, bx, by, bz, dist, in_outer, in_inner);
                     DWORD col_mesh = *(DWORD*)(ball + 0x1A4);
-                    fprintf(df, "  col_mesh=%p vel=(%.3f,%.3f,%.3f)\n",
+                    fprintf(df, "  col_mesh=%p vel=(%.3f,%.3f,%.3f) part_count=%d\n",
                         (void*)col_mesh,
                         col_mesh ? *(float*)(col_mesh + 0xCA4) : 0.0f,
                         col_mesh ? *(float*)(col_mesh + 0xCA8) : 0.0f,
-                        col_mesh ? *(float*)(col_mesh + 0xCAC) : 0.0f);
+                        col_mesh ? *(float*)(col_mesh + 0xCAC) : 0.0f,
+                        *(int*)(ball + 0x814));
                     fclose(df);
                 }
             }
@@ -3402,21 +3403,35 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                                 particle[1] *= inv_len;
                                 particle[2] *= inv_len;
                             }
-                            /* Append to ball+0x810 AthenaList via game function.
-                             * AthenaList_Append (0x453780) is __thiscall:
-                             * ECX = ball+0x810 (list), param = particle on stack, RET 4 */
+                            /* Append to ball+0x810 AthenaList manually.
+                             * AthenaList layout: +0x04=count, +0x08..+0x408=iterators,
+                             * +0x40C=items ptr, +0x414=sorted flag.
+                             * We replicate AthenaList_Append (0x453780) in pure C
+                             * to avoid __thiscall inline asm issues. */
                             {
-                                DWORD list_ptr = ball + 0x810;
-                                DWORD item_ptr = (DWORD)particle;
-                                DWORD fn_addr = 0x453780;
-                                __asm__ __volatile__(
-                                    "pushl %0\n"
-                                    "movl %1, %%ecx\n"
-                                    "call *%2\n"
-                                    :
-                                    : "r"(item_ptr), "r"(list_ptr), "r"(fn_addr)
-                                    : "ecx", "eax", "edx", "memory"
-                                );
+                                DWORD list = ball + 0x810;
+                                int *count_ptr = (int*)(list + 0x04);
+                                DWORD *items_ptr = (DWORD*)(list + 0x40C);
+                                
+                                if (*count_ptr == 0) {
+                                    /* First item: malloc(4), store, set count=1 */
+                                    *items_ptr = (DWORD)malloc(4);
+                                    if (*items_ptr) {
+                                        *(DWORD*)*items_ptr = (DWORD)particle;
+                                        *count_ptr = 1;
+                                        /* Zero iterator array (+0x08, 0x400 bytes) */
+                                        memset((void*)(list + 0x08), 0, 0x400);
+                                    }
+                                } else {
+                                    /* Subsequent: realloc, append, count++ */
+                                    int new_count = *count_ptr + 1;
+                                    DWORD new_items = (DWORD)realloc((void*)*items_ptr, new_count * 4);
+                                    if (new_items) {
+                                        *items_ptr = new_items;
+                                        ((DWORD*)new_items)[*count_ptr] = (DWORD)particle;
+                                        *count_ptr = new_count;
+                                    }
+                                }
                             }
                         }
                     }
