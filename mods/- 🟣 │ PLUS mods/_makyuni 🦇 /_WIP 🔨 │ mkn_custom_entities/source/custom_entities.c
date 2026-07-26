@@ -111,12 +111,15 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 /* App layout */
 #define APP_GFX_DEVICE          0x174
 
-/* v55j_8: Present hook for main-thread Gluebie proximity check.
- * Graphics_PresentOrEnd (0x455A90) runs at end of each frame on the main thread.
- * Original 7 bytes: 8A 44 24 04 83 EC 20 (MOV AL,[ESP+4]; SUB ESP,0x20)
- * Same pattern as magnet_mod — PUSHAD/CALL C fn/POPAD + original bytes + JMP back. */
-#define PRESENT_HOOK_ADDR       0x00455A90
-#define PRESENT_ORIG_BYTES      7
+/* v55j_8: Frame hook for main-thread Gluebie proximity check.
+ * App_ResetFrame (0x46C200) runs at START of each frame, BEFORE Ball_Update.
+ * This matches native timing — DizzyBoard_Update (board vtable[1]) also runs
+ * before Ball_Update. Velocity scaling takes effect on the SAME frame's physics step.
+ * Original 9 bytes: 56 8B F1 8B 8E 74 01 00 00
+ *   (PUSH ESI; MOV ESI,ECX; MOV ECX,[ESI+0x174])
+ * Same PUSHAD/CALL C fn/POPAD + original bytes + JMP back pattern. */
+#define PRESENT_HOOK_ADDR       0x0046C200
+#define PRESENT_ORIG_BYTES      9
 
 /* Level/SceneObject layout */
 #define LEVEL_SCENEOBJECT       0x480
@@ -3105,8 +3108,9 @@ static void (__cdecl *g_gluebie_fn_ptr)(void) = NULL;
 static void install_present_hook(void) {
     if (g_present_hook_installed) return;
     BYTE *hook_addr = (BYTE*)PRESENT_HOOK_ADDR;
-    BYTE expected[] = { 0x8A, 0x44, 0x24, 0x04, 0x83, 0xEC, 0x20 };
-    if (memcmp(hook_addr, expected, 7) != 0) return;
+    /* App_ResetFrame prologue: PUSH ESI; MOV ESI,ECX; MOV ECX,[ESI+0x174] */
+    BYTE expected[] = { 0x56, 0x8B, 0xF1, 0x8B, 0x8E, 0x74, 0x01, 0x00, 0x00 };
+    if (memcmp(hook_addr, expected, 9) != 0) return;
 
     g_present_cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
                                           PAGE_EXECUTE_READWRITE);
@@ -3124,12 +3128,12 @@ static void install_present_hook(void) {
     /* POPFD + POPAD */
     g_present_cave[p++] = 0x9D;
     g_present_cave[p++] = 0x61;
-    /* Original 7 bytes */
-    g_present_cave[p++] = 0x8A; g_present_cave[p++] = 0x44;
-    g_present_cave[p++] = 0x24; g_present_cave[p++] = 0x04;
-    g_present_cave[p++] = 0x83; g_present_cave[p++] = 0xEC;
-    g_present_cave[p++] = 0x20;
-    /* JMP back to hook_addr + 7 */
+    /* Original 9 bytes: PUSH ESI; MOV ESI,ECX; MOV ECX,[ESI+0x174] */
+    g_present_cave[p++] = 0x56;          /* PUSH ESI */
+    g_present_cave[p++] = 0x8B; g_present_cave[p++] = 0xF1;  /* MOV ESI,ECX */
+    g_present_cave[p++] = 0x8B; g_present_cave[p++] = 0x8E;  /* MOV ECX,[ESI+0x174] */
+    *(DWORD*)(g_present_cave + p) = 0x00000174; p += 4;
+    /* JMP back to hook_addr + 9 */
     g_present_cave[p++] = 0xE9;
     *(DWORD*)(g_present_cave + p) = (DWORD)(hook_addr + PRESENT_ORIG_BYTES)
                                      - (DWORD)(g_present_cave + p + 4);
@@ -3140,8 +3144,9 @@ static void install_present_hook(void) {
     DWORD jmp_offset = (DWORD)(g_present_cave - hook_addr - 5);
     hook_addr[0] = 0xE9;
     *(DWORD*)(hook_addr + 1) = jmp_offset;
-    hook_addr[5] = 0x90;
-    hook_addr[6] = 0x90;
+    /* NOP remaining 4 bytes (9 total - 5 for JMP = 4 NOPs) */
+    hook_addr[5] = 0x90; hook_addr[6] = 0x90;
+    hook_addr[7] = 0x90; hook_addr[8] = 0x90;
     VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENT_ORIG_BYTES);
     g_present_hook_installed = 1;
@@ -3152,10 +3157,11 @@ static void uninstall_present_hook(void) {
     BYTE *hook_addr = (BYTE*)PRESENT_HOOK_ADDR;
     DWORD old_protect;
     if (VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect)) {
-        hook_addr[0] = 0x8A; hook_addr[1] = 0x44;
-        hook_addr[2] = 0x24; hook_addr[3] = 0x04;
-        hook_addr[4] = 0x83; hook_addr[5] = 0xEC;
-        hook_addr[6] = 0x20;
+        /* Restore: PUSH ESI; MOV ESI,ECX; MOV ECX,[ESI+0x174] */
+        hook_addr[0] = 0x56;          /* PUSH ESI */
+        hook_addr[1] = 0x8B; hook_addr[2] = 0xF1;  /* MOV ESI,ECX */
+        hook_addr[3] = 0x8B; hook_addr[4] = 0x8E;  /* MOV ECX,[ESI+0x174] */
+        *(DWORD*)(hook_addr + 5) = 0x00000174;
         VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, old_protect, &old_protect);
         FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENT_ORIG_BYTES);
     }
