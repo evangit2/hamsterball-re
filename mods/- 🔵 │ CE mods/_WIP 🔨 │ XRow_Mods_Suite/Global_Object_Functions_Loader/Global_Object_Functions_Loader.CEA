@@ -39,6 +39,46 @@ float_1:
 sound_loaded:
   dd 00000000
 
+load_sounds:
+  push ebp
+  mov ebp, [esi+0x14]
+  test ebp, ebp
+  jz load_sounds_ret
+  mov ebp, [ebp+0x878]
+  test ebp, ebp
+  jz load_sounds_ret
+
+  cmp dword [sound_loaded], 0
+  jne load_sounds_ret
+
+  mov ecx, [ebp+0x22C]
+  test ecx, ecx
+  jz load_sounds_ret
+  mov eax, [ecx]
+  test eax, eax
+  jz load_sounds_ret
+
+  push 0A
+  push str_bumper_snd
+  lea edx, [ebp+0x448]
+  push edx
+  mov ecx, [ebp+0x22C]
+  call dword [eax+0x60]
+
+  push 2
+  push str_scyl_snd
+  lea edx, [ebp+0x508]
+  push edx
+  mov ecx, [ebp+0x22C]
+  mov eax, [ecx]
+  call dword [eax+0x60]
+
+  mov dword [sound_loaded], 1
+
+load_sounds_ret:
+  pop ebp
+  ret
+
 BumperCave1:
   mov [saved_collObj], edx
 
@@ -47,6 +87,8 @@ BumperCave1:
   call dword [eax+0x74]
 
   pushad
+
+  call load_sounds
 
   mov edx, [saved_collObj]
   test edx, edx
@@ -85,8 +127,23 @@ cave1_speedcyl:
   mov byte [ebx+0x31D], 01
   mov byte [ebx+0x31E], 01
 
-  call cave1_play_scyl_sound
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave1_scyl_boost
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave1_scyl_boost
+  mov ecx, [edi+0x508]
+  test ecx, ecx
+  jz cave1_scyl_boost
 
+  push float_1
+  push dword [esi+0x16C]
+  push dword [esi+0x168]
+  push dword [esi+0x164]
+  call 00459860
+
+cave1_scyl_boost:
   fld dword [ebx+0xCA4]
   fmul st(0), st(0)
   fld dword [ebx+0xCAC]
@@ -113,45 +170,20 @@ cave1_scyl_zero:
   fstp st(0)
   jmp cave1_done
 
-cave1_play_scyl_sound:
-  push ebp
-  mov ebp, [esi+0x14]
-  test ebp, ebp
-  jz cave1_pss_ret
-  mov ebp, [ebp+0x878]
-  test ebp, ebp
-  jz cave1_pss_ret
+cave1_bumper:
+  mov ebx, [esi+0x1A4]
+  test ebx, ebx
+  jz cave1_done
 
-  cmp dword [sound_loaded], 0
-  jne cave1_pss_loaded
-
-  mov ecx, [ebp+0x22C]
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave1_bump_vel
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave1_bump_vel
+  mov ecx, [edi+0x448]
   test ecx, ecx
-  jz cave1_pss_loaded
-  mov eax, [ecx]
-  test eax, eax
-  jz cave1_pss_loaded
-
-  lea edx, [ebp+0x448]
-  push edx
-  push 0A
-  push str_bumper_snd
-  call dword [eax+0x60]
-
-  lea edx, [ebp+0x508]
-  push edx
-  push 2
-  push str_scyl_snd
-  mov ecx, [ebp+0x22C]
-  mov eax, [ecx]
-  call dword [eax+0x60]
-
-  mov dword [sound_loaded], 1
-
-cave1_pss_loaded:
-  mov ecx, [ebp+0x508]
-  test ecx, ecx
-  jz cave1_pss_ret
+  jz cave1_bump_vel
 
   push float_1
   push dword [esi+0x16C]
@@ -159,17 +191,7 @@ cave1_pss_loaded:
   push dword [esi+0x164]
   call 00459860
 
-cave1_pss_ret:
-  pop ebp
-  ret
-
-cave1_bumper:
-  mov ebx, [esi+0x1A4]
-  test ebx, ebx
-  jz cave1_done
-
-  call cave1_play_bumper_sound
-
+cave1_bump_vel:
   mov eax, [saved_meshname]
   add eax, 8
   push eax
@@ -183,7 +205,10 @@ cave1_bumper:
   js cave1_bump_norm
   cmp eax, 0C
   jg cave1_bump_norm
-  mov dword [edi+eax*4+0x6448], 3F800000
+  imul eax, eax, 4
+  add edi, 0x6448
+  add edi, eax
+  mov dword [edi], 3F800000
 
 cave1_bump_norm:
   fld dword [ebx+0xCA4]
@@ -218,56 +243,6 @@ cave1_done:
 0040728F:
   jmp BumperCave1
 
-cave1_play_bumper_sound:
-  push ebp
-  mov ebp, [esi+0x14]
-  test ebp, ebp
-  jz cave1_pbs_ret
-  mov ebp, [ebp+0x878]
-  test ebp, ebp
-  jz cave1_pbs_ret
-
-  cmp dword [sound_loaded], 0
-  jne cave1_pbs_loaded
-
-  mov ecx, [ebp+0x22C]
-  test ecx, ecx
-  jz cave1_pbs_loaded
-  mov eax, [ecx]
-  test eax, eax
-  jz cave1_pbs_loaded
-
-  lea edx, [ebp+0x448]
-  push edx
-  push 0A
-  push str_bumper_snd
-  call dword [eax+0x60]
-
-  lea edx, [ebp+0x508]
-  push edx
-  push 2
-  push str_scyl_snd
-  mov ecx, [ebp+0x22C]
-  mov eax, [ecx]
-  call dword [eax+0x60]
-
-  mov dword [sound_loaded], 1
-
-cave1_pbs_loaded:
-  mov ecx, [ebp+0x448]
-  test ecx, ecx
-  jz cave1_pbs_ret
-
-  push float_1
-  push dword [esi+0x16C]
-  push dword [esi+0x168]
-  push dword [esi+0x164]
-  call 00459860
-
-cave1_pbs_ret:
-  pop ebp
-  ret
-
 BumperCave2:
   mov [saved_collObj], edx
 
@@ -276,6 +251,8 @@ BumperCave2:
   call dword [eax+0x74]
 
   pushad
+
+  call load_sounds
 
   mov edx, [saved_collObj]
   test edx, edx
@@ -314,8 +291,23 @@ cave2_speedcyl:
   mov byte [ebx+0x31D], 01
   mov byte [ebx+0x31E], 01
 
-  call cave2_play_scyl_sound
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave2_scyl_boost
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave2_scyl_boost
+  mov ecx, [edi+0x508]
+  test ecx, ecx
+  jz cave2_scyl_boost
 
+  push float_1
+  push dword [esi+0x16C]
+  push dword [esi+0x168]
+  push dword [esi+0x164]
+  call 00459860
+
+cave2_scyl_boost:
   fld dword [ebx+0xCA4]
   fmul st(0), st(0)
   fld dword [ebx+0xCAC]
@@ -342,45 +334,20 @@ cave2_scyl_zero:
   fstp st(0)
   jmp cave2_done
 
-cave2_play_scyl_sound:
-  push ebp
-  mov ebp, [esi+0x14]
-  test ebp, ebp
-  jz cave2_pss_ret
-  mov ebp, [ebp+0x878]
-  test ebp, ebp
-  jz cave2_pss_ret
+cave2_bumper:
+  mov ebx, [esi+0x1A4]
+  test ebx, ebx
+  jz cave2_done
 
-  cmp dword [sound_loaded], 0
-  jne cave2_pss_loaded
-
-  mov ecx, [ebp+0x22C]
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave2_bump_vel
+  mov edi, [edi+0x878]
+  test edi, edi
+  jz cave2_bump_vel
+  mov ecx, [edi+0x448]
   test ecx, ecx
-  jz cave2_pss_loaded
-  mov eax, [ecx]
-  test eax, eax
-  jz cave2_pss_loaded
-
-  lea edx, [ebp+0x448]
-  push edx
-  push 0A
-  push str_bumper_snd
-  call dword [eax+0x60]
-
-  lea edx, [ebp+0x508]
-  push edx
-  push 2
-  push str_scyl_snd
-  mov ecx, [ebp+0x22C]
-  mov eax, [ecx]
-  call dword [eax+0x60]
-
-  mov dword [sound_loaded], 1
-
-cave2_pss_loaded:
-  mov ecx, [ebp+0x508]
-  test ecx, ecx
-  jz cave2_pss_ret
+  jz cave2_bump_vel
 
   push float_1
   push dword [esi+0x16C]
@@ -388,17 +355,7 @@ cave2_pss_loaded:
   push dword [esi+0x164]
   call 00459860
 
-cave2_pss_ret:
-  pop ebp
-  ret
-
-cave2_bumper:
-  mov ebx, [esi+0x1A4]
-  test ebx, ebx
-  jz cave2_done
-
-  call cave2_play_bumper_sound
-
+cave2_bump_vel:
   mov eax, [saved_meshname]
   add eax, 8
   push eax
@@ -412,7 +369,10 @@ cave2_bumper:
   js cave2_bump_norm
   cmp eax, 0C
   jg cave2_bump_norm
-  mov dword [edi+eax*4+0x6448], 3F800000
+  imul eax, eax, 4
+  add edi, 0x6448
+  add edi, eax
+  mov dword [edi], 3F800000
 
 cave2_bump_norm:
   fld dword [ebx+0xCA4]
