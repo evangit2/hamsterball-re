@@ -111,6 +111,13 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 /* App layout */
 #define APP_GFX_DEVICE          0x174
 
+/* v55j_9: Present hook for main-thread Gluebie proximity check.
+ * Graphics_PresentOrEnd (0x455A90) runs at end of each frame on the main thread.
+ * Original 7 bytes: 8A 44 24 04 83 EC 20 (MOV AL,[ESP+4]; SUB ESP,0x20)
+ * Same pattern as magnet_mod — PUSHAD/CALL C fn/POPAD + original bytes + JMP back. */
+#define PRESENT_HOOK_ADDR       0x00455A90
+#define PRESENT_ORIG_BYTES      7
+
 /* Level/SceneObject layout */
 #define LEVEL_SCENEOBJECT       0x480
 
@@ -3053,6 +3060,86 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
  *         Set gluebie+0x1104 = 1 (active flag)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* v55j_9: Present hook infrastructure — runs Gluebie check on main thread.
+ * The background thread (entity_thread) is NOT synchronized with the physics
+ * loop, so velocity scaling races with the physics engine. The Present hook
+ * runs at the end of each frame on the main thread, after physics but before
+ * next frame's physics step — correct timing for velocity scaling. */
+static BYTE *g_present_cave = NULL;
+static int g_present_hook_installed = 0;
+
+/* C helper called from the Present hook cave (main thread, safe for C calls). */
+static void __cdecl gluebie_present_helper(void) {
+    DWORD board = get_board();
+    if (board && g_gluebie_count > 0) {
+        cEnt_gluebie_proximity_check(board);
+    }
+}
+
+/* Function pointer for the cave to call (indirection needed since the
+ * C helper address isn't known at assembly time). */
+static void (__cdecl *g_gluebie_fn_ptr)(void) = NULL;
+
+static void install_present_hook(void) {
+    if (g_present_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)PRESENT_HOOK_ADDR;
+    BYTE expected[] = { 0x8A, 0x44, 0x24, 0x04, 0x83, 0xEC, 0x20 };
+    if (memcmp(hook_addr, expected, 7) != 0) return;
+
+    g_present_cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
+                                          PAGE_EXECUTE_READWRITE);
+    if (!g_present_cave) return;
+
+    g_gluebie_fn_ptr = gluebie_present_helper;
+
+    int p = 0;
+    /* PUSHAD + PUSHFD */
+    g_present_cave[p++] = 0x60;
+    g_present_cave[p++] = 0x9C;
+    /* CALL [g_gluebie_fn_ptr] */
+    g_present_cave[p++] = 0xFF; g_present_cave[p++] = 0x15;
+    *(DWORD*)(g_present_cave + p) = (DWORD)&g_gluebie_fn_ptr; p += 4;
+    /* POPFD + POPAD */
+    g_present_cave[p++] = 0x9D;
+    g_present_cave[p++] = 0x61;
+    /* Original 7 bytes */
+    g_present_cave[p++] = 0x8A; g_present_cave[p++] = 0x44;
+    g_present_cave[p++] = 0x24; g_present_cave[p++] = 0x04;
+    g_present_cave[p++] = 0x83; g_present_cave[p++] = 0xEC;
+    g_present_cave[p++] = 0x20;
+    /* JMP back to hook_addr + 7 */
+    g_present_cave[p++] = 0xE9;
+    *(DWORD*)(g_present_cave + p) = (DWORD)(hook_addr + PRESENT_ORIG_BYTES)
+                                     - (DWORD)(g_present_cave + p + 4);
+    p += 4;
+
+    DWORD old_protect;
+    VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
+    DWORD jmp_offset = (DWORD)(g_present_cave - hook_addr - 5);
+    hook_addr[0] = 0xE9;
+    *(DWORD*)(hook_addr + 1) = jmp_offset;
+    hook_addr[5] = 0x90;
+    hook_addr[6] = 0x90;
+    VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENT_ORIG_BYTES);
+    g_present_hook_installed = 1;
+}
+
+static void uninstall_present_hook(void) {
+    if (!g_present_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)PRESENT_HOOK_ADDR;
+    DWORD old_protect;
+    if (VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect)) {
+        hook_addr[0] = 0x8A; hook_addr[1] = 0x44;
+        hook_addr[2] = 0x24; hook_addr[3] = 0x04;
+        hook_addr[4] = 0x83; hook_addr[5] = 0xEC;
+        hook_addr[6] = 0x20;
+        VirtualProtect(hook_addr, PRESENT_ORIG_BYTES, old_protect, &old_protect);
+        FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENT_ORIG_BYTES);
+    }
+    g_present_hook_installed = 0;
+}
+
 static int g_gluebie_debug_count = 0;  /* limit debug output */
 static int g_gluebie_debug_frame = 0; /* frame counter for sampling */
 
@@ -3102,10 +3189,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
          *   2. Ball_Update: 3.0 units (distance to tar SURFACE, sets tar flag)
          * We use the outer zone (obj+0x1100 * 60.0) for velocity slowdown,
          * and the inner zone (3.0) for tar splotch + tar flag. */
-        float outer_radius = *(float*)(gluebie + 0x1100) * 60.0f;
-        if (outer_radius <= 0.0f) outer_radius = 45.0f;  /* fallback */
+        /* v55j_9: Use hardcoded outer radius 60.0 (native Gluebie default).
+         * obj+0x1100 reads 0.0 on cross-level spawn (ctor doesn't init it),
+         * which triggers the fallback. Use 60.0 directly for consistent
+         * detection radius matching native Dizzy behavior. */
+        float outer_radius = 60.0f;
         float inner_radius = 3.0f;  /* tar surface contact */
-        if (outer_radius <= 0.0f && inner_radius <= 0.0f) continue;
 
         /* Reset active flag (will be set if any ball is in range) */
         *(BYTE*)(gluebie + 0x1104) = 0;
@@ -3183,12 +3272,18 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                 /* v55j_8: Set tar render flag (ball+0x260).
                  * Native DizzyBoard_Update sets ball+0x260 which makes Ball_Render
                  * draw the tar splotch mesh (App+0x264) on the ball automatically.
-                 * Previous code allocated custom particles via operator_new +
-                 * AthenaList_Append to ball+0x810 — this corrupted the heap
-                 * (wrong struct size, never freed, wrong list) → crash at
-                 * AthenaList_Append (0x4537F1) and Ball_Update (0x4062DC).
-                 * Also used wrong offset 0x2BC instead of 0x260. */
-                *(BYTE*)(ball + 0x260) = 1;
+                 * Only set if App+0x264 (tar mesh) is loaded — on non-Dizzy levels
+                 * it may be NULL, which would cause Ball_Render to skip drawing. */
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    if (app && app > 0x10000 &&
+                        !IsBadReadPtr((void*)(app + 0x264), 4)) {
+                        DWORD tar_mesh = *(DWORD*)(app + 0x264);
+                        if (tar_mesh && tar_mesh > 0x10000) {
+                            *(BYTE*)(ball + 0x260) = 1;
+                        }
+                    }
+                }
             } else {
                 /* Ball NOT in range — clear tar render flag */
                 *(BYTE*)(ball + 0x260) = 0;
@@ -3671,13 +3766,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             }
         }
 
-        /* v55c: Per-frame Gluebie proximity check (cross-level behavior) */
-        {
-            DWORD board = get_board();
-            if (board && g_gluebie_count > 0) {
-                cEnt_gluebie_proximity_check(board);
-            }
-        }
+        /* v55j_9: Gluebie check now runs from Present hook (main thread).
+         * Background thread was racing with physics engine — velocity scaling
+         * was overwritten before Ball_Update could use it. Present hook runs
+         * synchronously on main thread at end of each frame.
+         * Sound still played here (background thread) to avoid reentrancy
+         * issues with Sound_Play3D inside the Present hook. */
 
         /* v55e: Per-frame TarBubble proximity check (cross-level behavior) */
         {
