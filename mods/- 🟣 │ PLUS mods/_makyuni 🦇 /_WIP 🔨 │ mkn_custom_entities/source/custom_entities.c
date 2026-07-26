@@ -3403,8 +3403,12 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     if (part_count < 30) {
                         int k;
                         for (k = 0; k < 3; k++) {
-                            /* Allocate 20 bytes: float[5] = {x, y, z, type=6, padding=0} */
-                            float* particle = (float*)malloc(20);
+                            /* Allocate 20 bytes via game's operator_new (not malloc!)
+                             * Game's memory system tracks these and Ball_Respawn
+                             * will free them via operator_delete. */
+                            typedef void* (__cdecl *operator_new_t)(unsigned int);
+                            operator_new_t pfn_op_new = (operator_new_t)0x4BA57B;
+                            float* particle = (float*)pfn_op_new(0x14);
                             if (!particle) break;
                             /* Random direction */
                             particle[0] = (float)((rand() % 2000) - 1000) / 1000.0f;
@@ -3432,8 +3436,10 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                                 DWORD *items_ptr = (DWORD*)(list + 0x40C);
                                 
                                 if (*count_ptr == 0) {
-                                    /* First item: malloc(4), store, set count=1 */
-                                    *items_ptr = (DWORD)malloc(4);
+                                    /* First item: operator_new(4), store, set count=1 */
+                                    typedef void* (__cdecl *operator_new_t)(unsigned int);
+                                    operator_new_t pfn_op_new2 = (operator_new_t)0x4BA57B;
+                                    *items_ptr = (DWORD)pfn_op_new2(4);
                                     if (*items_ptr) {
                                         *(DWORD*)*items_ptr = (DWORD)particle;
                                         *count_ptr = 1;
