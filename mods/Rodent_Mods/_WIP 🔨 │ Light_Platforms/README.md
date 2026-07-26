@@ -1,30 +1,46 @@
 # Light Platforms Mod
 
-Hijacks Neon Race's NeonPlatform appear/disappear system. Instead of the native timer driving platform visibility, an external flag controls whether platforms are appearing (visible) or disappearing (hidden).
+Controls ArenaStands (DFLOOR1-4) platform visibility based on the Neon Race
+light state. When the Neon light is ON, platforms stay visible. When OFF,
+platforms disappear — with a native flicker effect during transitions.
 
 ## How it works
 
-NeonPlatform objects (vtable 0x004D5A10) are spawned by the Neon Race board and stored in the dynamic objects list (board+0x2578). Each frame, their update function (vtable[11] = 0x0043E260) moves the platform up (appearing) or down (disappearing) based on:
+ArenaStands objects have a 4-state visibility cycle:
 
-- `obj+0x10E5` = direction flag (0=appearing, 1=disappearing)
-- `obj+0x0439` = active flag (1=updating, 0=idle)
+| State | Description | In render list? | Renders? |
+|-------|-------------|-----------------|----------|
+| 0 | Solid visible (stable) | Yes | Yes |
+| 1 | Flicker before disappearing | Yes | Flicker* |
+| 2 | Invisible (stable) | No | No |
+| 3 | Flicker after reappearing | Yes | Flicker* |
 
-This mod scans the dynamic objects list for NeonPlatform objects and writes the direction flag based on an external `g_platforms_visible` flag.
+*During flicker states, a ToggleTimer (obj+0x10EC) toggles a visible flag
+every 100 frames. The render function (vtable slot 18 = 0x437560) skips
+rendering when the flag is 0, causing the visual flicker. The object stays
+in the render list during flicker, so **collision remains active** —
+platforms are physically tangible while flickering.
 
-When merged with Electric Lights: `g_platforms_visible = (charge > 0)`.
+## Mod behavior
 
-## Current behavior (standalone testing)
+- Light ON + platform invisible: set state=3 (flicker → reappear)
+- Light ON + platform solid: pin timer=75 (stay visible)
+- Light OFF + platform solid: set state=1 (flicker → disappear)
+- Light OFF + platform invisible: pin timer=75 (stay invisible)
+- During flicker states: let native state machine run naturally
 
-Toggles every 10 seconds (600 frames at 60fps) for testing. When merged with Electric Lights, this will be driven by charge level instead.
+The light state is read from the Neon Race SceneObject at board+0x436C,
+field +0x88 (visible flag, set by E:LIGHTSON/E:LIGHTSOFF collision events).
 
 ## Hook
 
-Hooks `Graphics_RenderScene` entry (0x454BC0) — runs before board update so the direction flag is set before platforms update.
+Hooks Graphics_RenderScene entry (0x454BC0) — runs after Board_UpdateRaceState
+so the native state machine ticks first, then we override.
 
 ## Build
 
 ```bash
 i686-w64-mingw32-gcc -shared -o bass.dll light_platforms.c \
-  -I"../_WIP 🔨 │ shared" -lwinmm -Wl,--enable-stdcall-fixup -O2 \
+  -I"../../_WIP 🔨 │ shared" -lwinmm -Wl,--enable-stdcall-fixup -O2 \
   -static -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
 ```
