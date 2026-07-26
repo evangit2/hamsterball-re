@@ -3466,17 +3466,14 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                             }
                         }
                     }
-                    /* Play tar sound */
+                    /* Play tar sound — every time particles are created (no cooldown).
+                     * Native DizzyBoard_Update plays Sound_Play3D inside the
+                     * if(ball+0x2BC==0) block with no cooldown. */
                     {
-                        static int g_gluebie_sound_cooldown = 0;
-                        if (g_gluebie_sound_cooldown > 0) g_gluebie_sound_cooldown--;
-                        if (g_gluebie_sound_cooldown == 0) {
-                            g_gluebie_sound_pending = 1;
-                            g_gluebie_snd_x = bx;
-                            g_gluebie_snd_y = by;
-                            g_gluebie_snd_z = bz;
-                            g_gluebie_sound_cooldown = 60;
-                        }
+                        g_gluebie_sound_pending = 1;
+                        g_gluebie_snd_x = bx;
+                        g_gluebie_snd_y = by;
+                        g_gluebie_snd_z = bz;
                     }
                     /* Set first-contact flag so particles+sound only fire once */
                     g_gluebie_particles_created_ball = ball;
