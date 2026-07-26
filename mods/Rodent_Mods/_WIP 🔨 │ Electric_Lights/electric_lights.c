@@ -309,17 +309,18 @@ static void update_platforms(void) {
             /* Charge is high enough — want platforms visible */
             switch (state) {
             case STATE_INVISIBLE:
-                /* Currently invisible — start flicker to reappear.
-                 * This fires when N:CHARGE restores charge. */
+            case STATE_FLICKER_DOWN:
+                /* Was invisible or flickering towards invisible —
+                 * start flicker up. This fires when N:CHARGE restores charge. */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_UP;
                 *(int*)(obj + AS_TIMER) = TIMER_FULL;
                 break;
             case STATE_FLICKER_UP:
-                /* Flicker in progress — let native state machine run */
+                /* Already flickering up — don't restart countdown */
                 break;
             case STATE_SOLID:
             default:
-                /* Stable visible — pin timer to prevent transition */
+                /* Already solid — don't restart, pin timer to stay visible */
                 *(int*)(obj + AS_TIMER) = TIMER_FULL;
                 break;
             }
