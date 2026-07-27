@@ -1664,7 +1664,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
      * files and should go through the .MESH swap code (PopCylinder + mesh swap).
      * Keeping them here sent them to native constructors that call Level_ctor → crash. */
     if (ai_type == 12 || ai_type == 13 || ai_type == 14 ||
-        ai_type == 16 || ai_type == 28 ||
+        ai_type == 16 || ai_type == 22 || ai_type == 28 ||
         (ai_type >= 30 && ai_type <= 33) ||
         ai_type == 41 || ai_type == 42) {
         path = NULL;
