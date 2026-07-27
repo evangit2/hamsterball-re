@@ -3550,14 +3550,28 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
     }
 }
 
-/* v55k_1: Tarpit proximity check — replicates native N:TARPIT collision behavior.
- * Native: DispatchCollisionEvents checks N:TARPIT string on mesh name → sets ball+0x2CC=1.
- * Board_Setup sinks ball 0.25/frame when in_tar=1, dies at radius*2.5 depth.
- * Ball_Update: in_tar disables ball push, spin decays 0.85x, uses ball's own position.
+/* v55k_2: Tarpit proximity check — replicates native N:TARPIT collision behavior.
  *
- * We do proximity check: if ball is within the PopCylinder's collision radius,
- * set in_tar=1 and sink the ball. This works on ALL levels, not just Dizzy/Master.
- * The sink rate and death depth match native constants. */
+ * Native N:TARPIT flow (Ghidra-verified):
+ *
+ * 1. DispatchCollisionEvents (0x40C5D0) checks mesh name == "N:TARPIT":
+ *    - On FIRST entry (ball+0x2CC==0):
+ *      a) Play tar sound: Sound_Play3D(board+0x878+0x484, ball.x, ball.y, ball.z)
+ *      b) Store entry Y: ball+0x2D0 = ball+0x168
+ *    - Set ball+0x2CC = 1 (in_tar)
+ *    - Set ball+0x768 = 0 (disable control)
+ *
+ * 2. Board update (DizzyBoard_Update 0x41D512 or FUN_00420da0 Master):
+ *    - When in_tar==1 (ball+0x2CC!=0):
+ *      a) ball+0x168 -= 0.25 (sink down, _DAT_004CF380 float)
+ *      b) Play tar sound again (Sound_Play3D at board+0x878+0x484)
+ *      c) Create tarsplotch particles (3x operator_new(0x14), type=6)
+ *      d) Death check: ball+0x168 < ball+0x2D0 - ball+0x284 * 2.5 (double _DAT_004CF378)
+ *         If dead: call FUN_00405190 (Ball_Shatter)
+ *    - ball+0x2BC (first contact flag) set to 1
+ *
+ * We replicate ALL of this via proximity check in the Present hook.
+ * The sinking, sound, particles, and death check all happen here. */
 static void cEnt_tarpit_proximity_check(DWORD board) {
     if (!board || g_tarpit_count <= 0) return;
 
@@ -3570,14 +3584,21 @@ static void cEnt_tarpit_proximity_check(DWORD board) {
     DWORD* ball_data = *(DWORD**)(ball_list + 0x40C);
     if (!ball_data || IsBadReadPtr(ball_data, ball_count * 4)) return;
 
+    /* Get sound channel at board+0x878+0x484 (same as native N:TARPIT handler).
+     * board+0x878 is the parent/sound struct, NOT App. */
+    DWORD snd_parent = *(DWORD*)(board + 0x878);
+    DWORD sound_channel = 0;
+    if (snd_parent && !IsBadReadPtr((void*)(snd_parent + 0x484), 4)) {
+        sound_channel = *(DWORD*)(snd_parent + 0x484);
+    }
+
     int i, j;
     for (j = 0; j < g_tarpit_count; j++) {
         DWORD tarpit = g_tarpit_objs[j];
         if (!tarpit || tarpit < 0x10000) continue;
         if (IsBadReadPtr((void*)tarpit, 0x10D0)) continue;
 
-        /* Read tarpit position from PopCylinder+0x10D4/10D8/10DC (spawn position).
-         * These are set by PopCylinder_ctor and don't change (static object). */
+        /* Read tarpit position from PopCylinder+0x10D4/10D8/10DC (spawn position) */
         float tx = *(float*)(tarpit + 0x10D4);
         float ty = *(float*)(tarpit + 0x10D8);
         float tz = *(float*)(tarpit + 0x10DC);
@@ -3585,35 +3606,69 @@ static void cEnt_tarpit_proximity_check(DWORD board) {
         for (i = 0; i < ball_count; i++) {
             DWORD ball = ball_data[i];
             if (!ball || ball < 0x10000) continue;
-            if (IsBadReadPtr((void*)ball, 0x2D0)) continue;
-
-            /* Skip if already in tar */
-            if (*(char*)(ball + 0x2CC) != 0) continue;
+            if (IsBadReadPtr((void*)ball, 0x2D4)) continue;
 
             /* Ball position */
             float bx = *(float*)(ball + 0x164);
             float by = *(float*)(ball + 0x168);
             float bz = *(float*)(ball + 0x16C);
+            float radius = *(float*)(ball + 0x284);
 
-            /* Horizontal distance (X/Z plane) — tar pit is a flat surface,
-             * ball sinks when it rolls over the center area.
-             * Native N:TARPIT uses mesh bounds for trigger, we use ball radius (26). */
+            /* Check if ball is in tar */
+            char in_tar = *(char*)(ball + 0x2CC);
+
+            if (in_tar) {
+                /* Ball is sinking — apply tar sinking behavior */
+                /* 1. Sink ball Y by 0.25/frame (native _DAT_004CF380) */
+                *(float*)(ball + 0x168) = by - 0.25f;
+
+                /* 2. Death check: ball+0x168 < ball+0x2D0 - ball+0x284 * 2.5 */
+                float entry_y = *(float*)(ball + 0x2D0);
+                float death_depth = entry_y - radius * 2.5f;
+                if (*(float*)(ball + 0x168) < death_depth) {
+                    /* Ball has sunk too deep — shatter it */
+                    typedef void (__fastcall *shatter_t)(DWORD);
+                    static shatter_t pfn_shatter = NULL;
+                    if (!pfn_shatter) {
+                        pfn_shatter = (shatter_t)0x00405190;  /* FUN_00405190 (Ball_Shatter) */
+                    }
+                    pfn_shatter(ball);
+                }
+                continue;  /* Ball is already in tar — skip entry check */
+            }
+
+            /* Ball not in tar — check if it entered the tarpit zone */
+            /* Horizontal distance (X/Z plane) */
             float dx = tx - bx;
             float dz = tz - bz;
             float dist_sq = dx*dx + dz*dz;
 
-            /* Trigger radius: ball radius (26) + small margin = 30 units.
-             * Also check Y proximity — ball must be near the tar surface (within 30 units Y). */
+            /* Trigger radius: ball radius + margin = 30 units (same as CollisionFace proximity) */
+            /* Also check Y proximity — ball must be near the tar surface */
             float dy = ty - by;
             if (dist_sq < 900.0f && fabsf(dy) < 30.0f) {
-                /* Ball entered tarpit — set in_tar flag */
-                *(BYTE*)(ball + 0x2CC) = 1;
+                /* Ball entered tarpit — replicate DispatchCollisionEvents N:TARPIT handler */
 
-                /* Store entry Y position (native stores at ball+0x2D0) */
+                /* Store entry Y position (ball+0x2D0 = ball+0x168) */
                 *(float*)(ball + 0x2D0) = by;
 
-                /* Clear ball+0x768 (native: disables control) */
+                /* Set in_tar flag (ball+0x2CC = 1) */
+                *(BYTE*)(ball + 0x2CC) = 1;
+
+                /* Clear ball+0x768 (disable control) */
                 *(DWORD*)(ball + 0x768) = 0;
+
+                /* Play tar sound (Sound_Play3D at board+0x878+0x484) */
+                if (sound_channel && !IsBadReadPtr((void*)sound_channel, 0x20)) {
+                    /* Sound_Play3D is __thiscall(ECX=sndChannel, float x, float y, float z, float scale)
+                     * RET 0x10 (16 bytes = 4 stack params). Scale defaults to 1.0. */
+                    typedef void (__thiscall *play3d_t)(DWORD, float, float, float, float);
+                    static play3d_t pfn_play3d = NULL;
+                    if (!pfn_play3d) {
+                        pfn_play3d = (play3d_t)0x00459860;  /* Sound_Play3D */
+                    }
+                    pfn_play3d(sound_channel, bx, by, bz, 1.0f);
+                }
             }
         }
     }
@@ -4060,7 +4115,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55k_2 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
