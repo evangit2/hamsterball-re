@@ -432,6 +432,13 @@ static DWORD g_gluebie_ball_in_zone = 0;
  * ball+0x2BC is UNINITIALIZED (no memset after operator_new), so we can't rely on it. */
 static DWORD g_gluebie_particles_created_ball = 0;  /* ball ptr that already has particles */
 
+/* v55k_1: Tarpit tracking — spawned PopCylinder objects that need tar-sinking behavior.
+ * Native N:TARPIT collision event only works on Dizzy/Master levels.
+ * We replicate the behavior on ALL levels via proximity check in the Present hook. */
+#define MAX_TARPITS 32
+static DWORD g_tarpit_objs[MAX_TARPITS];
+static int   g_tarpit_count = 0;
+
 /* v55e: TarBubble tracking — no entity spawned, just position markers.
  * Native game stores TarBubble S1 ref points in board+0x4790 AthenaList,
  * then DizzyBoard_Update creates a collision traversal object (0x44FA90)
@@ -1795,7 +1802,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
-    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 43)) {
+    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 44)) {
         /* New constructor types — each with specific signature.
          * Range 7-14: ArenaStands + Wavy family (Flag/Flag2)
          * Range 17-22: ArenaStands variants + Chomper
@@ -2174,7 +2181,6 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 break;
             case 43: /* Gluebie_ctor — 3 params (this, board, mesh)
                      * v55c: Native Gluebie from Dizzy_CreateDynamicObjects.
-                     * Gluebie_ctor calls Stands_ctor (clones spatial trees from mesh).
                      * vtable[11] (0x43ECC0) handles rendering + animation.
                      * Proximity behavior (ball slowdown) is in DizzyBoard_Update
                      * which iterates board+0x4378 (Gluebie list, Dizzy-only).
@@ -2206,6 +2212,21 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     } else {
                         if (logf) fprintf(logf, "  ROTATER: Gluebie on non-Dizzy level, using mod proximity check\n");
                     }
+                }
+                break;
+            case 44: /* v55k_1: Tarpit — PopCylinder with _default mesh for visibility.
+                     * Tar sinking behavior handled by cEnt_tarpit_proximity_check
+                     * in the Present hook (main thread, every frame). */
+                obj = pfn_operator_new(POPCYLINDER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Tarpit\n"); return; }
+                memset(obj, 0, POPCYLINDER_SIZE);
+                {
+                    /* Load _default mesh for visibility */
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
+                    if (!gfx_device || !mesh) { if (logf) fprintf(logf, "  ROTATER: no gfx/mesh for Tarpit\n"); return; }
+                    void* result44 = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
+                    if (!result44) { if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed for Tarpit\n"); return; }
                 }
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
@@ -2496,6 +2517,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             (void*)obj, g_gluebie_count-1, g_gluebie_count);
     }
 
+    /* v55k_1: Register Tarpits for cross-level tar-sinking behavior */
+    if (ai_type == 44 && g_tarpit_count < MAX_TARPITS) {
+        g_tarpit_objs[g_tarpit_count] = (DWORD)obj;
+        g_tarpit_count++;
+        if (logf) fprintf(logf, "  TARPIT: registered obj=%p in g_tarpit_objs[%d] (count=%d)\n",
+            (void*)obj, g_tarpit_count-1, g_tarpit_count);
+    }
+
     if (g_rotater_count < MAX_ROTATERS) {
         g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
         g_rotater_cfg[g_rotater_count].rot_x = rot_x;
@@ -2538,6 +2567,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     }
     g_rotater_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
+    g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
     g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
     g_waterwheel_count = 0;  /* v55f: reset WaterWheel tracking on level unload */
@@ -3114,6 +3144,7 @@ static int gluebie_is_dizzy(DWORD board) {
 
 /* Forward declaration — defined below */
 static void cEnt_gluebie_proximity_check(DWORD board);
+static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 
 static void __cdecl gluebie_present_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
@@ -3121,6 +3152,10 @@ static void __cdecl gluebie_present_helper(void) {
     DWORD board = get_board();
     if (board && g_gluebie_count > 0 && !gluebie_is_dizzy(board)) {
         cEnt_gluebie_proximity_check(board);
+    }
+    /* v55k_1: Tarpit proximity check — runs on ALL levels (not just non-Dizzy) */
+    if (board && g_tarpit_count > 0) {
+        cEnt_tarpit_proximity_check(board);
     }
 }
 
@@ -3515,6 +3550,75 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
     }
 }
 
+/* v55k_1: Tarpit proximity check — replicates native N:TARPIT collision behavior.
+ * Native: DispatchCollisionEvents checks N:TARPIT string on mesh name → sets ball+0x2CC=1.
+ * Board_Setup sinks ball 0.25/frame when in_tar=1, dies at radius*2.5 depth.
+ * Ball_Update: in_tar disables ball push, spin decays 0.85x, uses ball's own position.
+ *
+ * We do proximity check: if ball is within the PopCylinder's collision radius,
+ * set in_tar=1 and sink the ball. This works on ALL levels, not just Dizzy/Master.
+ * The sink rate and death depth match native constants. */
+static void cEnt_tarpit_proximity_check(DWORD board) {
+    if (!board || g_tarpit_count <= 0) return;
+
+    /* Get ball AthenaList at board+0x29D4 */
+    DWORD ball_list = board + 0x29D4;
+    if (IsBadReadPtr((void*)(ball_list + 0x04), 4)) return;
+    int ball_count = *(int*)(ball_list + 0x04);
+    if (ball_count <= 0 || ball_count > 20) return;
+    if (IsBadReadPtr((void*)(ball_list + 0x40C), 4)) return;
+    DWORD* ball_data = *(DWORD**)(ball_list + 0x40C);
+    if (!ball_data || IsBadReadPtr(ball_data, ball_count * 4)) return;
+
+    int i, j;
+    for (j = 0; j < g_tarpit_count; j++) {
+        DWORD tarpit = g_tarpit_objs[j];
+        if (!tarpit || tarpit < 0x10000) continue;
+        if (IsBadReadPtr((void*)tarpit, 0x10D0)) continue;
+
+        /* Read tarpit position from PopCylinder+0x10D4/10D8/10DC (spawn position).
+         * These are set by PopCylinder_ctor and don't change (static object). */
+        float tx = *(float*)(tarpit + 0x10D4);
+        float ty = *(float*)(tarpit + 0x10D8);
+        float tz = *(float*)(tarpit + 0x10DC);
+
+        for (i = 0; i < ball_count; i++) {
+            DWORD ball = ball_data[i];
+            if (!ball || ball < 0x10000) continue;
+            if (IsBadReadPtr((void*)ball, 0x2D0)) continue;
+
+            /* Skip if already in tar */
+            if (*(char*)(ball + 0x2CC) != 0) continue;
+
+            /* Ball position */
+            float bx = *(float*)(ball + 0x164);
+            float by = *(float*)(ball + 0x168);
+            float bz = *(float*)(ball + 0x16C);
+
+            /* Horizontal distance (X/Z plane) — tar pit is a flat surface,
+             * ball sinks when it rolls over the center area.
+             * Native N:TARPIT uses mesh bounds for trigger, we use ball radius (26). */
+            float dx = tx - bx;
+            float dz = tz - bz;
+            float dist_sq = dx*dx + dz*dz;
+
+            /* Trigger radius: ball radius (26) + small margin = 30 units.
+             * Also check Y proximity — ball must be near the tar surface (within 30 units Y). */
+            float dy = ty - by;
+            if (dist_sq < 900.0f && fabsf(dy) < 30.0f) {
+                /* Ball entered tarpit — set in_tar flag */
+                *(BYTE*)(ball + 0x2CC) = 1;
+
+                /* Store entry Y position (native stores at ball+0x2D0) */
+                *(float*)(ball + 0x2D0) = by;
+
+                /* Clear ball+0x768 (native: disables control) */
+                *(DWORD*)(ball + 0x768) = 0;
+            }
+        }
+    }
+}
+
 /* v55e: TarBubble proximity check — replicates native DizzyBoard_Update tar behavior.
  * Native flow: TarBubble S1 ref points stored in board+0x4790 AthenaList.
  * DizzyBoard_Update (0x41D512) creates a collision traversal object (0x44FA90)
@@ -3799,7 +3903,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
             { "Tarbubble",        25, "meshes\\tarbubble" },         /* v55i: PopCylinder + tar proximity */
-            { "Tarpit",           0, "levels\\\\_default" },          /* N:TARPIT tag — no _ctor, _default mesh */
+            { "Tarpit",           44, "levels\\_default" },          /* v55k_1: N:TARPIT behavior via proximity, PopCylinder spawn + tar sinking */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
             { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
