@@ -2021,26 +2021,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 *(float*)((char*)obj + 0x10D8) = px;
                 *(float*)((char*)obj + 0x10DC) = py;
                 *(float*)((char*)obj + 0x10E0) = pz;
-                /* Create collision/render Level via Level_RenderCtor, same as TipperVisual.
-                 * Stands_ctor creates the behavior object but the collision/render Level
-                 * must be created separately and stored at obj+0x10D4.
-                 * This is the object that gets added to the collision list (board+0x10EC). */
-                if (mesh && !IsBadReadPtr(mesh, 0x100)) {
-                    void* render_level = pfn_operator_new(LEVEL_SIZE);
-                    if (render_level) {
-                        memset(render_level, 0, LEVEL_SIZE);
-                        render_level = pfn_Level_RenderCtor(render_level, mesh);
-                        if (render_level) {
-                            /* Store collision/render Level at obj+0x10D4 */
-                            *(DWORD*)((char*)obj + 0x10D4) = (DWORD)render_level;
-                            if (logf) fprintf(logf, "  ROTATER: Catapult collision Level created at 0x%08X\n", (DWORD)render_level);
-                        } else {
-                            if (logf) fprintf(logf, "  ROTATER: Level_RenderCtor failed for Catapult\n");
-                        }
+                /* v55m_1: Catapult_ctor already creates Level_RenderCtor at obj+0x10D4 internally.
+                 * Do NOT create a duplicate — the old code overwrote the ctor's Level,
+                 * breaking the TowerCollisionEvents mesh pointer match. */
+                /* Add the ctor's collision Level (obj+0x10D4) to collision list + scene tree.
+                 * TowerCollisionEvents checks catapult+0x10D4 == collision_mesh_ptr to match. */
+                DWORD cat_col_obj = *(DWORD*)((char*)obj + 0x10D4);
+                if (cat_col_obj && !IsBadReadPtr((void*)cat_col_obj, 0x20)) {
+                    pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)cat_col_obj);
+                    DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                    if (scene_col) {
+                        pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)cat_col_obj);
                     }
-                } else {
-                    if (logf) fprintf(logf, "  ROTATER: Catapult mesh invalid, no collision Level created\n");
+                    if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
+                /* v55m_1: Add to board+0x43B8 (Catapult AthenaList) — TowerCollisionEvents
+                 * iterates this list to find which catapult was triggered by E:CATAPULTBOTTOM. */
+                pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
+                if (logf) fprintf(logf, "  ROTATER: Catapult added to board+0x43B8 (catapult list)\n");
                 /* Track for per-frame Catapult_vtable11 calls */
                 if (g_catapult_count < MAX_CATAPULTS) {
                     g_catapults[g_catapult_count].obj = (DWORD)obj;
@@ -3764,6 +3762,17 @@ static void cEnt_tarbubble_proximity_check(DWORD board) {
 static void cEnt_waterwheel_update(DWORD board) {
     if (!board || g_waterwheel_count <= 0) return;
 
+    /* Get ball for force application */
+    DWORD ball = *(DWORD*)(board + 0x361C);
+    float bx = 0, by = 0, bz = 0;
+    int ball_valid = 0;
+    if (ball && ball > 0x10000 && !IsBadReadPtr((void*)ball, 0x200)) {
+        bx = *(float*)(ball + 0x164);
+        by = *(float*)(ball + 0x168);
+        bz = *(float*)(ball + 0x16C);
+        ball_valid = 1;
+    }
+
     int i;
     for (i = 0; i < g_waterwheel_count; i++) {
         WaterWheelState* ww = &g_waterwheels[i];
@@ -3798,6 +3807,49 @@ static void cEnt_waterwheel_update(DWORD board) {
         MeshSetPosition_t pfn_setPosition = *(MeshSetPosition_t*)(vtable + 0x54);
         if (pfn_setPosition) {
             pfn_setPosition(ww->mesh_obj, rot_matrix);
+        }
+
+        /* v55m_1: Apply force to ball when near waterwheel (native DizzyBoard_Update behavior).
+         * Native: Ball_ApplyForceV2(ball, dirX, dirY, dirZ, 0.1)
+         * Force direction = ball position - waterwheel position (outward push)
+         * Guards: ball+0x2F9==0, ball+0x2CC==0, ball+0x808==0, ball+0x2F0<0x51 */
+        if (ball_valid) {
+            float dx = bx - ww->x;
+            float dy = by - ww->y;
+            float dz = bz - ww->z;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+
+            /* Check proximity (within 500.0 units — same as Ball_CheckProximity constant) */
+            if (dist_sq < 250000.0f) {
+                /* v55m_1: Set waterwheel embed mode when ball is very close (< 60 units).
+                 * Native: N:WHEELEMBED sets ball+0x808=50 (0x32) which makes the ball
+                 * stick to the waterwheel and spin with it. */
+                if (dist_sq < 3600.0f) {  /* 60^2 = 3600 */
+                    *(DWORD*)(ball + 0x808) = 50;  /* waterwheel embed mode */
+                    *(BYTE*)(ball + 0xC3C) = 1;     /* on waterwheel flag */
+                }
+                /* Check guards */
+                BYTE drowning = *(BYTE*)(ball + 0x2F9);
+                BYTE in_tar = *(BYTE*)(ball + 0x2CC);
+                DWORD water_mode = *(DWORD*)(ball + 0x808);
+                DWORD dizzy_timer = *(DWORD*)(ball + 0x2F0);
+                if (!drowning && !in_tar && dizzy_timer < 0x51) {
+                    /* Normalize direction and apply force 0.1 magnitude.
+                     * When in embed mode (ball+0x808=50), force is applied differently —
+                     * the ball orbits the waterwheel center. */
+                    float dist = sqrtf(dist_sq);
+                    if (dist > 0.001f) {
+                        float force_mag = 0.1f;
+                        float fx = (dx / dist) * force_mag;
+                        float fy = (dy / dist) * force_mag;
+                        float fz = (dz / dist) * force_mag;
+                        /* Accumulate force into ball velocity (ball+0xCA4/CA8/CAC) */
+                        *(float*)(ball + 0xCA4) += fx;
+                        *(float*)(ball + 0xCA8) += fy;
+                        *(float*)(ball + 0xCAC) += fz;
+                    }
+                }
+            }
         }
     }
 }
@@ -4125,7 +4177,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55l_3 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_1 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
