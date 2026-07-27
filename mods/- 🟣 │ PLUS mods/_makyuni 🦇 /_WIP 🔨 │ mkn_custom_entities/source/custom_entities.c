@@ -302,6 +302,22 @@ typedef struct {
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
 
+/* v55m_2: Chomper tracking — Tower Race chomper entity.
+ * Native: position-only S1 ref point, mesh loaded via MeshNode_ctor,
+ * animation is a 4-state machine in TowerBoard_Update. */
+#define MAX_CHOMPERS 16
+typedef struct {
+    DWORD mesh_node;    /* MeshNode* (0x18 bytes, loaded from Chomper.MESH) */
+    float x, y, z;       /* Chomper position (Y -= 20.0 from S1 ref point) */
+    float jaw_angle;     /* board+0x43A0 equivalent (init 0.25) */
+    float phase;         /* board+0x43A4 equivalent (+= 3.0/frame for Wave_Sin) */
+    int   state;         /* board+0x43A8 equivalent (0=opening, 1=bite, 2=closing, 3=idle) */
+    int   countdown;     /* board+0x43AC equivalent */
+    float anim_val;      /* board+0x43B0 equivalent */
+} ChomperState;
+static ChomperState g_chompers[MAX_CHOMPERS];
+static int g_chomper_count = 0;
+
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static GameLevel_ctor_t pfn_GameLevel_ctor = (GameLevel_ctor_t)0x004351F0;
@@ -1844,18 +1860,47 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 22: /* Chomper_ctor — Tower Race Chomper (MeshNode_ctor, 0x18 bytes)
-                      * Loads "Meshes\\Chomper" as a small mesh node. */
+            case 22: /* Chomper — Tower Race chomper (position-only S1 ref point).
+                     * v55m_2: Native game loads MeshNode at board+0x4390, stores position
+                     * at board+0x4394/4398/439C (Y -= 20.0). Animation is a 4-state
+                     * machine in TowerBoard_Update: jaw opens (×1.2/frame) until 25.0,
+                     * snaps shut (BITE!), pauses, closes (×0.5/frame), idles, repeats.
+                     * Rendering is in Scene_RenderWithCamera (two jaw halves via
+                     * Wave_Sin oscillation). We replicate this via mod-side tracking. */
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
                     if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Chomper\n"); return; }
-                    obj = pfn_operator_new(MESHNODE_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper\n"); return; }
-                    memset(obj, 0, MESHNODE_SIZE);
-                    pfn_MeshNode_ctor(obj, (void*)gfx_device, "Meshes\\Chomper");
+                    /* Load Chomper.MESH via MeshNode_ctor */
+                    void* mesh_node = pfn_operator_new(MESHNODE_SIZE);
+                    if (!mesh_node) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper MeshNode\n"); return; }
+                    memset(mesh_node, 0, MESHNODE_SIZE);
+                    pfn_MeshNode_ctor(mesh_node, (void*)gfx_device, "Meshes\\Chomper");
+                    /* Check has_mesh flag */
+                    BYTE has_mesh = *(BYTE*)((char*)mesh_node + 0x0D);
+                    if (!has_mesh) {
+                        if (logf) fprintf(logf, "  ROTATER: Chomper MeshNode has_mesh=0\n");
+                    }
+                    /* Track in mod-side chomper array for per-frame animation */
+                    if (g_chomper_count < MAX_CHOMPERS) {
+                        ChomperState* cs = &g_chompers[g_chomper_count];
+                        cs->mesh_node = (DWORD)mesh_node;
+                        cs->x = px;
+                        cs->y = py - 20.0f;  /* Native: Y -= 20.0 (_DAT_004CF370) */
+                        cs->z = pz;
+                        cs->jaw_angle = 0.25f;   /* Init 0x3E800000 */
+                        cs->phase = 0.0f;         /* += 3.0/frame */
+                        cs->state = 0;             /* Start in opening state */
+                        cs->countdown = 0;
+                        cs->anim_val = 0.0f;      /* board+0x43B0 equivalent */
+                        g_chomper_count++;
+                        if (logf) fprintf(logf, "  ROTATER: Chomper spawned at (%.1f,%.1f,%.1f) mesh_node=0x%08X\n",
+                                px, py - 20.0f, pz, (DWORD)mesh_node);
+                    }
+                    /* Don't add MeshNode to board lists — it's 0x18 bytes, too small
+                     * for vtable calls. Rendering is handled by cEnt_chomper_update (v55m_3). */
+                    return;  /* Skip spawn_done entirely */
                 }
-                break;
             case 27: /* Spinner_Level_ctor — Expert Race "BRIDGE" (falling bridge piece)
                       * 6 params: (this, board, x, y, z, mesh, float_param) */
                 obj = pfn_operator_new(SPINNER_LEVEL_SIZE);
@@ -2570,6 +2615,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
     g_waterwheel_count = 0;  /* v55f: reset WaterWheel tracking on level unload */
     g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
+    g_chomper_count = 0;  /* v55m_3: reset Chomper tracking on level unload */
 
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
@@ -3854,7 +3900,164 @@ static void cEnt_waterwheel_update(DWORD board) {
     }
 }
 
-/* Tracked entity for per-frame updates */
+/* v55m_3: Chomper per-frame update — replicates TowerBoard_Update chomper state machine.
+ * Ghidra-verified native state machine (Tower_Update 0x41E760):
+ * State 0 (IDLE/GROWING): jaw *= 1.2/frame (64-bit double!). When > 25.0: jaw=25.0, state→1, timer=25, anim_val=50.0
+ * State 1 (BITING/HOLDING): timer--. When < 1: state→2, play "sounds\chomp"
+ * State 2 (CLOSING): jaw *= 0.5/frame. When ≤ 1.0: jaw=0, RNG → state 3 (timer=RNG+100) or back to 0
+ * State 3 (OPENING/RECOVERING): anim_val -= 2.0/frame. timer-- → when < 1: state→0
+ * Also: phase += 3.0/frame (for Wave_Sin rendering oscillation)
+ * E:BITE: when ball touches E:BITE plane → state=0, jaw=25.0 (force restart from full open)
+ * Rendering (Scene_RenderWithCamera 0x40DFA0): mesh rendered TWICE (normal + mirrored X scale 180.0, offset -35.0),
+ *   jaw oscillates via Wave_Sin(phase) * 10.0, scale 1.15 all axes, Z scale = -jaw_angle */
+static void cEnt_chomper_update(DWORD board) {
+    if (!board || g_chomper_count <= 0) return;
+
+    DWORD ball = *(DWORD*)(board + 0x361C);
+    float bx = 0, by = 0, bz = 0;
+    int ball_valid = 0;
+    if (ball && ball > 0x10000 && !IsBadReadPtr((void*)ball, 0x200)) {
+        bx = *(float*)(ball + 0x164);
+        by = *(float*)(ball + 0x168);
+        bz = *(float*)(ball + 0x16C);
+        ball_valid = 1;
+    }
+
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+
+    int i;
+    for (i = 0; i < g_chomper_count; i++) {
+        ChomperState* cs = &g_chompers[i];
+        if (!cs->mesh_node) continue;
+        if (IsBadReadPtr((void*)cs->mesh_node, 0x18)) continue;
+
+        /* Update phase (for Wave_Sin oscillation in rendering) */
+        cs->phase += 3.0f;
+
+        /* E:BITE proximity check — when ball is very close, force bite restart.
+         * Native: E:BITE collision sets board+0x43A8=0 (state=IDLE), board+0x43A0=25.0 (max scale).
+         * This forces the chomper to restart its bite cycle from full open. */
+        if (ball_valid) {
+            float dx = bx - cs->x;
+            float dy = by - cs->y;
+            float dz = bz - cs->z;
+            float dist_sq = dx*dx + dy*dy + dz*dz;
+            if (dist_sq < 1600.0f) {  /* 40^2 = 1600 — bite range */
+                cs->state = 0;
+                cs->jaw_angle = 25.0f;  /* Force to max (fully open) */
+            }
+        }
+
+        /* State machine — exact replica of TowerBoard_Update */
+        switch (cs->state) {
+            case 0: /* IDLE/GROWING: jaw *= 1.2 until > 25.0 */
+                if (cs->jaw_angle == 0.0f) cs->jaw_angle = 0.25f;
+                cs->jaw_angle *= 1.2f;
+                if (cs->jaw_angle > 25.0f) {
+                    cs->jaw_angle = 25.0f;  /* Clamp to max (NOT 0.25!) */
+                    cs->state = 1;
+                    cs->countdown = 25;     /* timer = 25 frames */
+                    cs->anim_val = 50.0f;   /* jaw_opening = 50.0 */
+                }
+                break;
+            case 1: /* BITING/HOLDING: countdown then play sound + close */
+                cs->countdown--;
+                if (cs->countdown < 1) {
+                    cs->state = 2;
+                    /* Play "sounds\chomp" at chomper position */
+                    if (app && pfn_Sound_Play3D) {
+                        DWORD snd = *(DWORD*)(app + 0x4A8);
+                        if (snd && snd > 0x10000 && !IsBadReadPtr((void*)snd, 0x20)) {
+                            pfn_Sound_Play3D((void*)snd, cs->x, cs->y, cs->z, 1.0f);
+                        }
+                    }
+                }
+                break;
+            case 2: /* CLOSING: jaw *= 0.5 until <= 1.0 */
+                cs->jaw_angle *= 0.5f;
+                if (cs->jaw_angle <= 1.0f) {
+                    cs->jaw_angle = 0.0f;
+                    /* RNG check: 1 in 90 chance to play sound (native uses CPUID_CheckProcessorFeature) */
+                    if ((rand() % 90) == 0) {
+                        if (app && pfn_Sound_Play3D) {
+                            DWORD snd = *(DWORD*)(app + 0x4A8);
+                            if (snd && snd > 0x10000 && !IsBadReadPtr((void*)snd, 0x20)) {
+                                pfn_Sound_Play3D((void*)snd, cs->x, cs->y, cs->z, 1.0f);
+                            }
+                        }
+                    }
+                    cs->countdown = (rand() % 100) + 100;  /* RNG(100) + 100 */
+                    cs->state = 3;
+                }
+                break;
+            case 3: /* OPENING/RECOVERING: anim_val -= 2.0, countdown → state 0 */
+                cs->anim_val -= 2.0f;
+                if (cs->anim_val < 0.0f) cs->anim_val = 0.0f;
+                cs->countdown--;
+                if (cs->countdown < 1) {
+                    cs->state = 0;
+                }
+                break;
+        }
+
+        /* === RENDERING ===
+         * Replicates Scene_RenderWithCamera (0x40DFA0) chomper rendering:
+         * 1. Timer_Init (stack matrix setup)
+         * 2. Scale 1.15 all axes
+         * 3. Gfx_ScaleZ(-jaw_angle) — jaw size controls Z scale
+         * 4. Gfx_SetPosition(x, y, z) — chomper position
+         * 5. Gfx_SetPosition(anim_val, 0, 0) — jaw offset
+         * 6. Wave_Sin(phase) * 10.0 — jaw oscillation
+         * 7. Render mesh via MeshNode vtable[7] (offset +0x1C)
+         * 8. Second pass mirrored: Gfx_ScaleX(180.0), Gfx_SetPosition(-35.0, 0, 0)
+         * 9. Timer_Cleanup */
+        if (app) {
+            DWORD gfx = *(DWORD*)(app + APP_GFX_DEVICE);
+            if (gfx && pfn_Timer_Init && pfn_Timer_Cleanup &&
+                pfn_Gfx_ScaleZ && pfn_Gfx_SetPosition_Bridge) {
+
+                char timerBuf[68];
+                pfn_Timer_Init(timerBuf);
+
+                /* Pass 1: normal render */
+                pfn_Gfx_ScaleX(1.15f);
+                pfn_Gfx_ScaleY(1.15f);
+                pfn_Gfx_ScaleZ(-cs->jaw_angle);
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->anim_val, 0.0f, 0.0f);
+
+                /* Wave_Sin for jaw oscillation — use sinf as approximation */
+                float wave = sinf(cs->phase * 0.1f) * 10.0f;
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, 0.0f, wave, 0.0f);
+
+                /* Render mesh via MeshNode vtable[7] (offset 0x1C) */
+                DWORD* meshVtbl = *(DWORD**)cs->mesh_node;
+                if (meshVtbl && !IsBadReadPtr(meshVtbl, 0x20)) {
+                    void (__fastcall *fnRender)(DWORD) = (void (__fastcall *)(DWORD))meshVtbl[7];
+                    if (fnRender) fnRender((DWORD)cs->mesh_node);
+                }
+
+                /* Pass 2: mirrored render (X scale 180.0, X offset -35.0) */
+                pfn_Gfx_ScaleX(1.15f);
+                pfn_Gfx_ScaleY(1.15f);
+                pfn_Gfx_ScaleZ(-cs->jaw_angle);
+                pfn_Gfx_ScaleX(180.0f);  /* Mirror X */
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, -35.0f, 0.0f, 0.0f);
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->anim_val, 0.0f, 0.0f);
+                wave = sinf(cs->phase * 0.1f) * 10.0f;
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, 0.0f, wave, 0.0f);
+
+                if (meshVtbl && !IsBadReadPtr(meshVtbl, 0x20)) {
+                    void (__fastcall *fnRender2)(DWORD) = (void (__fastcall *)(DWORD))meshVtbl[7];
+                    if (fnRender2) fnRender2((DWORD)cs->mesh_node);
+                }
+
+                pfn_Timer_Cleanup(timerBuf);
+            }
+        }
+    }
+}
 typedef struct {
     DWORD obj;
     entity_def_t def;
@@ -4240,6 +4443,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             DWORD board = get_board();
             if (board && g_waterwheel_count > 0) {
                 cEnt_waterwheel_update(board);
+            }
+        }
+
+        /* v55m_3: Per-frame Chomper state machine + rendering */
+        {
+            DWORD board = get_board();
+            if (board && g_chomper_count > 0) {
+                cEnt_chomper_update(board);
             }
         }
 
