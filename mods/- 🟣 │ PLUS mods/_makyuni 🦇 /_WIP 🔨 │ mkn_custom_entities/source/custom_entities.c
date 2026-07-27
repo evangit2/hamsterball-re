@@ -3622,17 +3622,27 @@ static void cEnt_tarpit_proximity_check(DWORD board) {
                 /* 1. Sink ball Y by 0.25/frame (native _DAT_004CF380) */
                 *(float*)(ball + 0x168) = by - 0.25f;
 
-                /* 2. Death check: ball+0x168 < ball+0x2D0 - ball+0x284 * 2.5 */
+                /* 2. Clear ball+0x2E9 (penetration death flag) — prevents
+                 * Ball_Update from seeing the ball "penetrating" the tar mesh
+                 * and triggering the dizzy/shatter death. The actual death
+                 * happens via our FUN_00405190 call below, not via penetration. */
+                *(BYTE*)(ball + 0x2E9) = 0;
+
+                /* 3. Death check: ball+0x168 < ball+0x2D0 - ball+0x284 * 2.5 */
                 float entry_y = *(float*)(ball + 0x2D0);
                 float death_depth = entry_y - radius * 2.5f;
                 if (*(float*)(ball + 0x168) < death_depth) {
-                    /* Ball has sunk too deep — shatter it */
-                    typedef void (__fastcall *shatter_t)(DWORD);
-                    static shatter_t pfn_shatter = NULL;
-                    if (!pfn_shatter) {
-                        pfn_shatter = (shatter_t)0x00405190;  /* FUN_00405190 (Ball_Shatter) */
+                    /* Ball has sunk too deep — call native Ball_Respawn (FUN_00405190).
+                     * This is __fastcall(ECX=ball), RET 0.
+                     * It: sets ball+0x2F8=1 (death flag), clears velocity,
+                     *     clears in_tar (ball+0x2CC=0), finds nearest SAFESPOT,
+                     *     teleports ball there. No shatter/dizzy — just respawn. */
+                    typedef void (__fastcall *respawn_t)(DWORD);
+                    static respawn_t pfn_respawn = NULL;
+                    if (!pfn_respawn) {
+                        pfn_respawn = (respawn_t)0x00405190;  /* Ball_Respawn */
                     }
-                    pfn_shatter(ball);
+                    pfn_respawn(ball);
                 }
                 continue;  /* Ball is already in tar — skip entry check */
             }
@@ -4115,7 +4125,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55k_2 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55k_3 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
