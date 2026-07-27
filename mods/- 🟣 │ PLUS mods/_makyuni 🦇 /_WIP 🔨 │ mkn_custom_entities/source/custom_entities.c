@@ -474,10 +474,11 @@ static int g_tarbubble_count = 0;
  * We replicate by creating the mesh via MeshWorld_ctor and rotating each frame. */
 #define MAX_WATERWHEELS 8
 typedef struct {
-    DWORD mesh_obj;    /* Level/MeshWorld object (0x10D0 bytes) */
-    float x, y, z;     /* position from S1 ref point */
-    float angle;       /* current rotation angle (degrees, decremented 0.5/frame) */
-    int active;
+    DWORD mesh_obj;   /* MeshWorld* (for collision data) */
+    DWORD pc_obj;     /* PopCylinder* (the visible object we rotate) */
+    float x, y, z;
+    float angle;
+    int  active;
 } WaterWheelState;
 static WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
@@ -1580,6 +1581,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             }
 
             ww->mesh_obj = mesh;
+            ww->pc_obj = 0;  /* set below if PopCylinder created */
             ww->x = px;
             ww->y = py;
             ww->z = pz;
@@ -1592,6 +1594,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (pc_obj) {
                 memset(pc_obj, 0, POPCYLINDER_SIZE);
                 pfn_PopCylinder_ctor(pc_obj, (void*)board, px, py, pz, (void*)mesh);
+                ww->pc_obj = (DWORD)pc_obj;  /* Store for per-frame rotation */
                 /* Add to board lists */
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), pc_obj);
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), pc_obj);
@@ -3833,8 +3836,8 @@ static void cEnt_waterwheel_update(DWORD board) {
     int i;
     for (i = 0; i < g_waterwheel_count; i++) {
         WaterWheelState* ww = &g_waterwheels[i];
-        if (!ww->active || !ww->mesh_obj) continue;
-        if (IsBadReadPtr((void*)ww->mesh_obj, 0x440)) continue;
+        if (!ww->active || !ww->pc_obj) continue;
+        if (IsBadReadPtr((void*)ww->pc_obj, 0x440)) continue;
 
         /* Decrement angle by 0.5 degrees per frame (native constant at 0x4CF3F0) */
         ww->angle -= 0.5f;
@@ -3846,8 +3849,10 @@ static void cEnt_waterwheel_update(DWORD board) {
         /* Gfx_RotateY(matrix_buf, angle_degrees) — writes rotation to buf+0x04 */
         pfn_Gfx_RotateY(rot_matrix, ww->angle);
 
-        /* Get mesh vtable */
-        DWORD vtable = *(DWORD*)ww->mesh_obj;
+        /* Apply rotation to the PopCylinder object (the visible object).
+         * PopCylinder vtable[22] (offset 0x58) = SetTransform — updates vertex buffer.
+         * PopCylinder vtable[21] (offset 0x54) = SetPosition — applies rotation matrix. */
+        DWORD vtable = *(DWORD*)ww->pc_obj;
         if (IsBadReadPtr((void*)vtable, 0x60)) continue;
 
         /* vtable[22] (offset 0x58) = SetTransform — no params, __thiscall 0 params
@@ -3855,7 +3860,7 @@ static void cEnt_waterwheel_update(DWORD board) {
         typedef void (__thiscall *MeshSetTransform_t)(DWORD this_);
         MeshSetTransform_t pfn_setTransform = *(MeshSetTransform_t*)(vtable + 0x58);
         if (pfn_setTransform) {
-            pfn_setTransform(ww->mesh_obj);
+            pfn_setTransform(ww->pc_obj);
         }
 
         /* vtable[21] (offset 0x54) = SetPosition — 1 param (&matrix), __thiscall RET 4
@@ -3863,7 +3868,7 @@ static void cEnt_waterwheel_update(DWORD board) {
         typedef void (__thiscall *MeshSetPosition_t)(DWORD this_, float* matrix);
         MeshSetPosition_t pfn_setPosition = *(MeshSetPosition_t*)(vtable + 0x54);
         if (pfn_setPosition) {
-            pfn_setPosition(ww->mesh_obj, rot_matrix);
+            pfn_setPosition(ww->pc_obj, rot_matrix);
         }
 
         /* v55m_1: Apply force to ball when near waterwheel (native DizzyBoard_Update behavior).
