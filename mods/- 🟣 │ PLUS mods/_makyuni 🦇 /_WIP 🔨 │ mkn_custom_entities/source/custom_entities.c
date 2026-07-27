@@ -1537,8 +1537,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                               FILE* logf) {
     if (!board) return;
 
-    /* v55i: TarBubble (ai_type 25) — spawn PopCylinder with tarbubble mesh
-     * for visibility, AND store position for proximity tar sinking. */
+    /* v55m_5: TarBubble (ai_type 25) — board-level entity like Chomper.
+     * Native game loads TarBubble.MESH via MeshNode_ctor, stores at board+0x4790.
+     * TarBubble is an S1 ref point, NOT a mesh entity. We load the .MESH and
+     * track in mod-side array for proximity tar sinking. No PopCylinder needed. */
     if (ai_type == 25) {
         if (g_tarbubble_count < MAX_TARBUBBLES) {
             g_tarbubble_pos[g_tarbubble_count].x = px;
@@ -1548,9 +1550,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  TARBUBBLE: stored position (%.1f,%.1f,%.1f) [%d]\n",
                     px, py, pz, g_tarbubble_count - 1);
         }
-        /* Fall through to spawn PopCylinder with tarbubble mesh.
-         * The mesh path is already set to meshes\tarbubble. */
-        /* Don't return — let the normal spawn path handle it. */
+        return;  /* No entity spawned — position-only marker for proximity check */
     }
 
     /* v55i: WaterWheel (ai_type 26) — spawn PopCylinder for visibility,
@@ -1595,6 +1595,17 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* Add to board lists */
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), pc_obj);
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), pc_obj);
+                /* v55m_5: Add collision — PopCylinder creates collision obj at +0x10D4 */
+                {
+                    DWORD col_obj = *(DWORD*)((char*)pc_obj + 0x10D4);
+                    if (col_obj && !IsBadReadPtr((void*)col_obj, 0x20)) {
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
+                        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                        if (scene_col && !IsBadReadPtr((void*)scene_col, 0x20)) {
+                            pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)col_obj);
+                        }
+                    }
+                }
                 /* Add to scene spatial tree */
                 DWORD level = cEnt_get_level(board);
                 if (level) {
