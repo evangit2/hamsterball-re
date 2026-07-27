@@ -809,6 +809,18 @@ static void uninstall_bonk_collision_hook(void) {
 static HANDLE g_thread = NULL;
 static volatile int g_running = 1;
 static volatile int g_shutting_down = 0;  /* v55j_15: prevent hook crash on exit */
+
+/* v55j_16: Check game's quit flag (App+0x159) — set BEFORE any memory is freed.
+ * DLL_PROCESS_DETACH fires too late (after game frees board/ball memory).
+ * This catches shutdown early enough to prevent use-after-free in hooks. */
+static int game_is_quitting(void) {
+    if (g_shutting_down) return 1;
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x159), 1)) {
+        if (*(BYTE*)(app + 0x159) != 0) return 1;
+    }
+    return 0;
+}
 static char g_game_dir[MAX_PATH] = {0};
 
 /* Track spawned objects so we can despawn them individually */
@@ -3104,7 +3116,7 @@ static int gluebie_is_dizzy(DWORD board) {
 static void cEnt_gluebie_proximity_check(DWORD board);
 
 static void __cdecl gluebie_present_helper(void) {
-    if (g_shutting_down) return;  /* v55j_15: skip during shutdown */
+    if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
     g_gluebie_ball_in_zone = 0;  /* reset before check */
     DWORD board = get_board();
     if (board && g_gluebie_count > 0 && !gluebie_is_dizzy(board)) {
@@ -3125,7 +3137,7 @@ static int   g_ballrender_hook_installed = 0;
 static DWORD g_ballrender_ball_ptr = 0;  /* ESI at Ball_Render entry = ball */
 
 static void __cdecl ballrender_helper(void) {
-    if (g_shutting_down) return;  /* v55j_15: skip during shutdown */
+    if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
     /* v55j_9: No longer needed — we create particles in ball+0x810 instead
      * of setting ball+0x260. Particles persist in the AthenaList and are
      * rendered by Ball_Render's existing particle loop. */
@@ -3964,6 +3976,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     install_ballrender_hook();
 
     while (g_running) {
+        if (game_is_quitting()) break;  /* v55j_16: stop early when game is exiting */
         /* Per-frame: execute onUpdate scripts for tracked entities */
         {
             int i;
