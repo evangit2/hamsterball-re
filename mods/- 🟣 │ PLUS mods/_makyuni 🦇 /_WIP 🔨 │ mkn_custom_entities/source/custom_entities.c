@@ -3967,7 +3967,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
             { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
-            { "Tarbubble",        25, "meshes\\TarBubble" },        /* v55l_2: load actual TarBubble.MESH via .MESH swap pattern */
+            { "Tarbubble",        25, "levels\\_default" },         /* v55l_3: TarBubble.MESH is a texture, not a 3D mesh. Native game loads it as 2D sprite via TimerDisplay vtable[19], never as a mesh entity. Use _default MESHWORLD for visibility. */
             { "Tarpit",           44, "levels\\_default" },          /* v55k_1: N:TARPIT behavior via proximity, PopCylinder spawn + tar sinking */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
@@ -4125,7 +4125,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55l_2 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55l_3 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
