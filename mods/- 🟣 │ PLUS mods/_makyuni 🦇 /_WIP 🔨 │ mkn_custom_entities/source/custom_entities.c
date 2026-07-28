@@ -1875,15 +1875,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 cEnt_Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 22: /* Chomper — Tower Race chomper.
-                     * Uses the standard .MESH swap pattern: PopCylinder with
-                     * Swirl placeholder, then swap obj+0x08 to Chomper mesh.
-                     * The game's render pipeline renders via vtable[2] (BuildStrips)
-                     * on PopCylinder — safe because PopCylinder has proper vtable.
+                     * Uses standard PopCylinder pattern: create PopCylinder with
+                     * the Chomper mesh loaded by cEnt_load_mesh_file above.
+                     * The game's render pipeline renders via vtable[2] (BuildStrips).
                      * Sound state machine tracked via mesh_path match in spawn_done. */
-                /* This falls through to the .MESH swap code above (is_mesh_node path).
-                 * If the Chomper.MESHWORLD loaded as a Level (not MeshNode),
-                 * it goes through the normal constructor path below.
-                 * Either way, spawn_done registers it for sound. */
+                obj = pfn_operator_new(POPCYLINDER_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper PopCylinder\n"); return; }
+                memset(obj, 0, POPCYLINDER_SIZE);
+                pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 27: /* Spinner_Level_ctor — Expert Race "BRIDGE" (falling bridge piece)
                       * 6 params: (this, board, x, y, z, mesh, float_param) */
