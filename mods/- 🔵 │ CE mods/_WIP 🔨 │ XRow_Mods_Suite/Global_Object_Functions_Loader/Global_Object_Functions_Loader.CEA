@@ -10,6 +10,7 @@ alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
 alloc(float_12, 4)
 alloc(float_65, 4)
+alloc(float_neg90, 4)
 
 str_bumper:
   db 'N:BUMPER',0
@@ -22,6 +23,9 @@ float_12:
 
 float_65:
   dd 42820000
+
+float_neg90:
+  dd C2460000
 
 BumperCave1:
   mov [saved_collObj], edx
@@ -106,10 +110,10 @@ cave1_sound_done:
 cave1_speedcyl:
   mov eax, [edi+0x878]
   test eax, eax
-  jz cave1_scyl_vel
+  jz cave1_scyl_spin
   mov ecx, [eax+0x508]
   test ecx, ecx
-  jz cave1_scyl_vel
+  jz cave1_scyl_spin
 
   fninit
   push 3F800000
@@ -118,10 +122,18 @@ cave1_speedcyl:
   push [esi+0x164]
   call 00459860
 
+cave1_scyl_spin:
+  mov byte [esi+0x31D], 01
+  mov byte [esi+0x31E], 01
+  fninit
+  fld dword [float_neg90]
+  fstp dword [esi+0x314]
+  mov dword [esi+0x320], 64
+
 cave1_scyl_vel:
   mov ebx, [esi+0x1A4]
   test ebx, ebx
-  jz cave1_done
+  jz cave1_scyl_done
 
   fninit
   fld dword [ebx+0xCA4]
@@ -146,6 +158,7 @@ cave1_scyl_zero:
   fstp st(0)
 
 cave1_scyl_done:
+  mov byte [esi+0x31E], 00
   mov dword [esi+0x808], 0A
   jmp cave1_done
 
@@ -283,10 +296,10 @@ cave2_sound_done:
 cave2_speedcyl:
   mov eax, [edi+0x878]
   test eax, eax
-  jz cave2_scyl_vel
+  jz cave2_scyl_spin
   mov ecx, [eax+0x508]
   test ecx, ecx
-  jz cave2_scyl_vel
+  jz cave2_scyl_spin
 
   fninit
   push 3F800000
@@ -295,10 +308,18 @@ cave2_speedcyl:
   push [esi+0x164]
   call 00459860
 
+cave2_scyl_spin:
+  mov byte [esi+0x31D], 01
+  mov byte [esi+0x31E], 01
+  fninit
+  fld dword [float_neg90]
+  fstp dword [esi+0x314]
+  mov dword [esi+0x320], 64
+
 cave2_scyl_vel:
   mov ebx, [esi+0x1A4]
   test ebx, ebx
-  jz cave2_done
+  jz cave2_scyl_done
 
   fninit
   fld dword [ebx+0xCA4]
@@ -323,6 +344,7 @@ cave2_scyl_zero:
   fstp st(0)
 
 cave2_scyl_done:
+  mov byte [esi+0x31E], 00
   mov dword [esi+0x808], 0A
   jmp cave2_done
 
@@ -393,3 +415,4 @@ dealloc(str_bumper)
 dealloc(str_speedcyl)
 dealloc(float_12)
 dealloc(float_65)
+dealloc(float_neg90)
