@@ -2612,15 +2612,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
-        /* Save original vtable[2] and replace with custom function */
-        DWORD* vtable_ptr = *(DWORD**)obj;
-        if (vtable_ptr && !IsBadReadPtr(vtable_ptr, 0x20)) {
-            cs->orig_vtable2 = vtable_ptr[2];  /* save original BuildStrips */
-            /* Make vtable writable (it's in .rdata) */
-            DWORD old_protect;
-            if (VirtualProtect(vtable_ptr, 0x20, PAGE_READWRITE, &old_protect)) {
-                vtable_ptr[2] = (DWORD)cEnt_chomper_buildstrips;
-                VirtualProtect(vtable_ptr, 0x20, old_protect, &old_protect);
+        /* v55m_19: Create a PRIVATE vtable copy for this PopCylinder.
+         * The original vtable at 0x4D58F0 is in .rdata (read-only).
+         * VirtualProtect on .rdata is unreliable. Instead, allocate
+         * a private vtable buffer, copy the original entries, and
+         * replace vtable[2] with our custom BuildStrips. */
+        DWORD* orig_vtable = *(DWORD**)obj;
+        if (orig_vtable && !IsBadReadPtr(orig_vtable, 0x20)) {
+            DWORD* priv_vtable = (DWORD*)pfn_operator_new(0x20);
+            if (priv_vtable) {
+                /* Copy 8 vtable entries (32 bytes) */
+                int vi;
+                for (vi = 0; vi < 8; vi++) priv_vtable[vi] = orig_vtable[vi];
+                /* Save original vtable[2] */
+                cs->orig_vtable2 = orig_vtable[2];
+                /* Replace vtable[2] with custom function */
+                priv_vtable[2] = (DWORD)cEnt_chomper_buildstrips;
+                /* Set object's vtable pointer to private copy */
+                *(DWORD**)obj = priv_vtable;
             }
         }
         g_chomper_count++;
@@ -4400,7 +4409,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_18 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_19 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
