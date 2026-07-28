@@ -1,13 +1,13 @@
 /*
  * electric_lights.c — Electric Lights + Light Platforms merged mod
- * v3: Fixed SEH trampoline crash, shutdown guard, color restoration, charge gating
- * v4: Fixed ArenaStands render-list re-add bug (state 2→3 skip), added N:DISCHARGE
+ * v5: Replaced proximity scanning with real collision dispatch hooks
  *
  * Phase 1+2: Charge system + ball glow + D3D light + platform flicker
  *
  * CHARGE SYSTEM:
  *   Ball starts with full charge (1.0). Charge drains over time.
- *   Ball proximity to N:CHARGE meshes restores charge to full.
+ *   Ball collision with N:CHARGE mesh restores charge to full.
+ *   Ball collision with N:DISCHARGE mesh zeros charge instantly.
  *   D3D point light follows the ball, range scales with charge.
  *   Ball color multiplier scales with charge for visual glow.
  *
@@ -27,28 +27,33 @@
  *   State 2: invisible (stable, removed from render list)
  *   State 3: flicker after reappearing (-> 0 after 75 frames)
  *
+ * COLLISION DETECTION (v5):
+ *   Hooks the two call sites where Ball_Update calls vtable[29]
+ *   (DispatchCollision) — at 0x40728F and 0x408B85.
+ *   Original bytes at both sites: 52 56 FF 50 74
+ *     (PUSH EDX=collObj; PUSH ESI=ball; CALL [EAX+0x74])
+ *   The cave saves registers, calls C handler with (ball, collObj),
+ *   restores, re-executes the original 5 bytes, jumps back.
+ *   No SEH, no trampoline — we hook the CALLER, not the callee.
+ *
  * Hook: Graphics_RenderScene entry (0x454BC0)
  *   ECX = gfx struct pointer at entry
  *   gfx+0x154 = IDirect3DDevice8*
  *   gfx+0x854/858/85C = ball position (set by Scene_Render)
- *
- * v3 CHANGES:
- *   - Replaced DispatchCollisionEvents trampoline hook (SEH crash) with
- *     proximity-based N:CHARGE mesh scan from RenderScene hook
- *   - Added shutdown guard (App+0x159 quit flag) to prevent use-after-free
- *   - Ball color now properly tracked: resets when ball pointer changes
- *   - Charge only drains during active gameplay (board valid + not quitting)
- *   - Charge resets to full on new race (board pointer change detection)
- *   - Removed dead g_flicker_down_triggered code
  *
  * v4 CHANGES:
  *   - Fixed ArenaStands render-list re-add: setting state=3 directly from
  *     state=2 skipped the native 2→3 transition that ADDS the object back
  *     to the render+collision list. Now sets timer=1 in state 2 so the
  *     native state machine does the ADD itself.
- *   - Added N:DISCHARGE proximity detection (ported from light_platforms.c):
- *     when ball touches N:DISCHARGE mesh and charge > 0, zeros charge and
- *     forces instant platform transitions (no flicker).
+ *
+ * v5 CHANGES:
+ *   - Replaced proximity-based N:CHARGE/N:DISCHARGE scanning with real
+ *     collision dispatch hooks at 0x40728F + 0x408B85.
+ *   - N:CHARGE and N:DISCHARGE now fire as actual collision events,
+ *     not distance checks.
+ *   - Removed scan_charge_pads(), check_discharge_collision(), and
+ *     all proximity constants.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll electric_lights.c \
@@ -65,6 +70,17 @@
 #define RENDER_SCENE_HOOK    0x00454BC0
 #define RENDER_SCENE_ORIG    0x00454BC6
 #define RENDER_SCENE_ORIG_BYTES 6
+
+/* Collision dispatch call sites in Ball_Update.
+ * Both are identical: 52 56 FF 50 74
+ *   PUSH EDX (collObj); PUSH ESI (ball); CALL [EAX+0x74] (vtable[29])
+ * At hook entry: ESI=ball, EDX=collObj, EAX=board vtable ptr.
+ * Mesh name is at: [collObj+4] -> sceneobj+0x864 */
+#define COLLISION_HOOK_1     0x0040728F
+#define COLLISION_RETURN_1   0x00407294
+#define COLLISION_HOOK_2     0x00408B85
+#define COLLISION_RETURN_2   0x00408B8A
+#define COLLISION_ORIG_BYTES 5
 
 /* gfx struct offsets */
 #define GFX_D3D_DEVICE       0x154
@@ -96,19 +112,14 @@
 
 /* Board offsets */
 #define BOARD_DYNOBJ_LIST    0x2578
-#define BOARD_LEVEL_PTR      0x8AC
+
+/* AthenaList offsets */
 #define ATHENALIST_COUNT      0x04
 #define ATHENALIST_ITEMS      0x40C
 
-/* Level/MeshWorld offsets */
-#define LEVEL_MESHWORLD_PTR  0x08
-#define MW_MESHBUFFER_LIST   0x2C
-
-/* MeshBuffer offsets */
-#define MESHBUFFER_NAME      0x864
-#define MESHBUFFER_POS_X     0x868
-#define MESHBUFFER_POS_Y     0x86C
-#define MESHBUFFER_POS_Z     0x870
+/* collObj layout: [0]=MeshBuffer, [4]=sceneobj (has name at +0x864) */
+#define COLLOBJ_SCENEOBJ     0x04
+#define SCENEOBJ_NAME        0x864
 
 /* ArenaStands struct offsets */
 #define ARENASTANDS_VTABLE   0x004D5A70
@@ -147,15 +158,6 @@
 
 #define LIGHT_SLOT           2
 
-/* Charge pad proximity threshold (ball radius 26 + tolerance) */
-#define CHARGE_PAD_RADIUS    50.0f
-#define CHARGE_PAD_RADIUS_SQ (CHARGE_PAD_RADIUS * CHARGE_PAD_RADIUS)
-
-/* N:DISCHARGE proximity threshold (ball radius 26, 80 = generous touch) */
-#define DISCHARGE_RADIUS     80.0f
-#define DISCHARGE_RADIUS_SQ  (DISCHARGE_RADIUS * DISCHARGE_RADIUS)
-#define DISCHARGE_COOLDOWN   300   /* frames (5s at 60fps) */
-
 /* ═══════════════════════════════════════════════════════════════════════════
  * D3DLIGHT8 Structure (104 bytes)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -192,7 +194,6 @@ static DWORD    g_last_board = 0;
 
 /* N:DISCHARGE state */
 static int      g_discharged = 0;          /* 1 = discharge has fired */
-static int      g_discharge_cooldown = 0;   /* frames until ball leaves mesh */
 
 /* D3D light struct (pre-filled, position+range updated per frame) */
 static D3DLIGHT8 g_light = {
@@ -229,63 +230,40 @@ static int game_is_quitting(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Charge Pad Proximity Scan (replaces DCE trampoline hook)
+ * Collision Dispatch Handler
  *
- * DispatchCollisionEvents (0x40C5D0) uses SEH in its prologue. Building a
- * manual trampoline on it corrupts the exception chain and crashes. Instead,
- * we scan the MeshWorld for N:CHARGE meshes and check ball proximity from
- * the RenderScene hook. This is safe — no SEH, no trampoline.
+ * Called from both Ball_Update collision dispatch call sites.
+ * At hook entry: ESI=ball, EDX=collObj.
+ *   collObj+0 = MeshBuffer (collision mesh data)
+ *   collObj+4 = sceneobj (sceneobj+0x864 = mesh name string)
  *
- * Chain: App -> board+0x178 -> level+0x8AC -> meshworld+0x08 -> MW+0x2C
- * AthenaList: count at +0x04, items at +0x40C
- * MeshBuffer: name at +0x864, position at +0x868/86C/870
+ * We read the mesh name and fire N:CHARGE / N:DISCHARGE events.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void scan_charge_pads(float bx, float by, float bz) {
-    if (bx == 0.0f && by == 0.0f && bz == 0.0f) return;
+/* Non-static: called from inline assembly via _on_collision_dispatch symbol */
+void on_collision_dispatch(DWORD ball, DWORD collObj) {
+    if (game_is_quitting()) return;
+    if (!ball || !collObj) return;
+    if (IsBadReadPtr((void*)collObj, 8)) return;
 
-    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
-    if (!app || IsBadReadPtr((void*)app, 0x200)) return;
-    DWORD board = *(DWORD*)(app + APP_BOARD);
-    if (!board || IsBadReadPtr((void*)board, 0x8B0)) return;
+    /* sceneobj = collObj+4, mesh name at sceneobj+0x864 */
+    DWORD sceneobj = *(DWORD*)(collObj + COLLOBJ_SCENEOBJ);
+    if (!sceneobj || IsBadReadPtr((void*)(sceneobj + SCENEOBJ_NAME), 4)) return;
 
-    DWORD level = *(DWORD*)(board + BOARD_LEVEL_PTR);
-    if (!level || IsBadReadPtr((void*)level, 0x10)) return;
-    DWORD meshworld = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
-    if (!meshworld || IsBadReadPtr((void*)meshworld, 0x420)) return;
+    DWORD namePtr = *(DWORD*)(sceneobj + SCENEOBJ_NAME);
+    if (!namePtr || IsBadReadPtr((void*)namePtr, 13)) return;
 
-    /* AthenaList embedded at MeshWorld+0x2C */
-    DWORD listBase = meshworld + MW_MESHBUFFER_LIST;
-    int count = *(int*)(listBase + ATHENALIST_COUNT);
-    if (count < 1 || count > 5000) return;
-    DWORD items = *(DWORD*)(listBase + ATHENALIST_ITEMS);
-    if (!items || IsBadReadPtr((void*)items, count * 4)) return;
+    const char *name = (const char*)namePtr;
+    if (!name[0]) return;
 
-    for (int i = 0; i < count; i++) {
-        DWORD mb = *(DWORD*)(items + i * 4);
-        if (!mb || IsBadReadPtr((void*)mb, 0x874)) continue;
-
-        DWORD namePtr = *(DWORD*)(mb + MESHBUFFER_NAME);
-        if (!namePtr || IsBadReadPtr((void*)namePtr, 9)) continue;
-
-        const char *name = (const char*)namePtr;
-        if (!name[0]) continue;
-
-        if (_strnicmp(name, "N:CHARGE", 8) != 0) continue;
-
-        /* Found a charge pad — check ball proximity */
-        float mx = *(float*)(mb + MESHBUFFER_POS_X);
-        float my = *(float*)(mb + MESHBUFFER_POS_Y);
-        float mz = *(float*)(mb + MESHBUFFER_POS_Z);
-
-        float dx = bx - mx;
-        float dy = by - my;
-        float dz = bz - mz;
-        float dist_sq = dx*dx + dy*dy + dz*dz;
-
-        if (dist_sq < CHARGE_PAD_RADIUS_SQ) {
-            g_charge = CHARGE_MAX;
-            return; /* Recharged — no need to check more pads */
+    if (_strnicmp(name, "N:CHARGE", 8) == 0) {
+        /* Recharge to full */
+        g_charge = CHARGE_MAX;
+    } else if (_strnicmp(name, "N:DISCHARGE", 12) == 0) {
+        /* Zero charge + force instant platform transitions */
+        if (g_charge > 0.0f) {
+            g_charge = 0.0f;
+            g_discharged = 1;
         }
     }
 }
@@ -382,9 +360,6 @@ static void update_light(DWORD gfx) {
         }
     }
 
-    /* Scan for N:CHARGE proximity pads (replaces DCE hook) */
-    scan_charge_pads(bx, by, bz);
-
     /* Drain charge — only when board is valid (active gameplay) */
     if (app && !IsBadReadPtr((void*)(app + APP_BOARD), 4)) {
         DWORD board = *(DWORD*)(app + APP_BOARD);
@@ -393,64 +368,6 @@ static void update_light(DWORD gfx) {
             if (g_charge < CHARGE_MIN) g_charge = CHARGE_MIN;
         }
     }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * N:DISCHARGE — Energy Gate
- *
- * When the ball touches an N:DISCHARGE mesh AND charge > 0:
- *   1. Zero the charge (turns off light + platforms)
- *   2. Set g_discharged flag (forces instant platform transitions, no flicker)
- *   3. Cooldown prevents repeat triggers while ball stays on mesh
- *
- * Uses same MeshBuffer name scanning as charge pads.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static int check_discharge_collision(float bx, float by, float bz) {
-    if (bx == 0.0f && by == 0.0f && bz == 0.0f) return 0;
-
-    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
-    if (!app || IsBadReadPtr((void*)app, 0x200)) return 0;
-    DWORD board = *(DWORD*)(app + APP_BOARD);
-    if (!board || IsBadReadPtr((void*)board, 0x8B0)) return 0;
-
-    DWORD level = *(DWORD*)(board + BOARD_LEVEL_PTR);
-    if (!level || IsBadReadPtr((void*)level, 0x10)) return 0;
-    DWORD meshworld = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
-    if (!meshworld || IsBadReadPtr((void*)meshworld, 0x420)) return 0;
-
-    DWORD listBase = meshworld + MW_MESHBUFFER_LIST;
-    int count = *(int*)(listBase + ATHENALIST_COUNT);
-    if (count < 1 || count > 5000) return 0;
-    DWORD items = *(DWORD*)(listBase + ATHENALIST_ITEMS);
-    if (!items || IsBadReadPtr((void*)items, count * 4)) return 0;
-
-    for (int i = 0; i < count; i++) {
-        DWORD mb = *(DWORD*)(items + i * 4);
-        if (!mb || IsBadReadPtr((void*)mb, 0x874)) continue;
-
-        DWORD namePtr = *(DWORD*)(mb + MESHBUFFER_NAME);
-        if (!namePtr || IsBadReadPtr((void*)namePtr, 13)) continue;
-
-        const char *name = (const char*)namePtr;
-        if (!name[0]) continue;
-
-        if (_strnicmp(name, "N:DISCHARGE", 12) != 0) continue;
-
-        float mx = *(float*)(mb + MESHBUFFER_POS_X);
-        float my = *(float*)(mb + MESHBUFFER_POS_Y);
-        float mz = *(float*)(mb + MESHBUFFER_POS_Z);
-
-        float dx = bx - mx;
-        float dy = by - my;
-        float dz = bz - mz;
-        float dist_sq = dx*dx + dy*dy + dz*dz;
-
-        if (dist_sq < DISCHARGE_RADIUS_SQ)
-            return 1;
-    }
-
-    return 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -480,7 +397,6 @@ static void update_platforms(void) {
         g_last_ball = 0;
         /* Reset discharge state for new race */
         g_discharged = 0;
-        g_discharge_cooldown = 0;
     }
 
     /* Iterate dynamic objects AthenaList at board+0x2578 */
@@ -508,7 +424,7 @@ static void update_platforms(void) {
             /* Charge is high enough — want platforms visible */
             switch (state) {
             case STATE_INVISIBLE:
-                /* Was invisible — let native 2→3 transition fire so the
+                /* Was invisible — let native 2->3 transition fire so the
                  * object gets ADDED back to the render+collision list.
                  * Set timer=1 for fast transition. Do NOT set state=3
                  * directly — that skips the native ADD. */
@@ -516,9 +432,9 @@ static void update_platforms(void) {
                 break;
             case STATE_FLICKER_DOWN:
                 /* Was flickering towards invisible — reverse course.
-                 * Let native 1→2→3 path run by accelerating timer.
-                 * The 1→2 transition does REMOVE (already done), then
-                 * 2→3 transition does ADD. Set timer=1 to speed it up. */
+                 * Let native 1->2->3 path run by accelerating timer.
+                 * The 1->2 transition does REMOVE (already done), then
+                 * 2->3 transition does ADD. Set timer=1 to speed it up. */
                 *(int*)(obj + AS_TIMER) = 1;
                 break;
             case STATE_FLICKER_UP:
@@ -581,24 +497,7 @@ void on_render_scene(DWORD gfx) {
 
     update_light(gfx);
 
-    /* Check N:DISCHARGE collision using ball position from gfx */
-    float bx = *(float*)(gfx + GFX_BALL_X);
-    float by = *(float*)(gfx + GFX_BALL_Y);
-    float bz = *(float*)(gfx + GFX_BALL_Z);
-
-    int touching = check_discharge_collision(bx, by, bz);
-
-    if (touching && g_discharge_cooldown == 0 && g_charge > 0.0f) {
-        /* Discharge! Zero the charge and set flag for instant transitions */
-        g_charge = 0.0f;
-        g_discharged = 1;
-        g_discharge_cooldown = DISCHARGE_COOLDOWN;
-    }
-
-    if (g_discharge_cooldown > 0)
-        g_discharge_cooldown--;
-
-    /* Clear discharge flag when charge is restored (touching N:CHARGE pad) */
+    /* Clear discharge flag when charge is restored (N:CHARGE collision) */
     if (g_discharged && g_charge >= CHARGE_MAX)
         g_discharged = 0;
 
@@ -606,14 +505,67 @@ void on_render_scene(DWORD gfx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Collision Dispatch Hook Caves
+ *
+ * Both call sites are: 52 56 FF 50 74
+ *   PUSH EDX (collObj); PUSH ESI (ball); CALL [EAX+0x74]
+ * The cave saves all registers, calls C handler, restores, re-executes
+ * the original 5 bytes, then jumps back.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+extern void collision_cave_1(void);
+extern void collision_cave_2(void);
+
+/* Call site 1: 0x40728F */
+__asm__(
+    ".global _collision_cave_1\n"
+    "_collision_cave_1:\n"
+    "    pushal\n"
+    "    pushfl\n"
+    "    pushl %edx\n"            /* collObj (2nd param) */
+    "    pushl %esi\n"            /* ball (1st param) */
+    "    call _on_collision_dispatch\n"
+    "    addl $8, %esp\n"        /* clean up 2 params */
+    "    popfl\n"
+    "    popal\n"
+    "    pushl %edx\n"            /* original: PUSH EDX (52) */
+    "    pushl %esi\n"            /* original: PUSH ESI (56) */
+    "    call *0x74(%eax)\n"      /* original: CALL [EAX+0x74] (FF 50 74) */
+    "    jmp 0x00407294\n"        /* return to original+5 */
+);
+
+/* Call site 2: 0x408B85 */
+__asm__(
+    ".global _collision_cave_2\n"
+    "_collision_cave_2:\n"
+    "    pushal\n"
+    "    pushfl\n"
+    "    pushl %edx\n"            /* collObj (2nd param) */
+    "    pushl %esi\n"            /* ball (1st param) */
+    "    call _on_collision_dispatch\n"
+    "    addl $8, %esp\n"        /* clean up 2 params */
+    "    popfl\n"
+    "    popal\n"
+    "    pushl %edx\n"            /* original: PUSH EDX (52) */
+    "    pushl %esi\n"            /* original: PUSH ESI (56) */
+    "    call *0x74(%eax)\n"      /* original: CALL [EAX+0x74] (FF 50 74) */
+    "    jmp 0x00408B8A\n"        /* return to original+5 */
+);
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Hook Installation
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void install_hooks(void) {
+    /* RenderScene hook (6-byte instruction -> JMP + NOP) */
     memcpy(g_orig_bytes, (void*)RENDER_SCENE_HOOK, RENDER_SCENE_ORIG_BYTES);
     install_jmp_hook_nop(RENDER_SCENE_HOOK, (DWORD)hook_cave_asm, RENDER_SCENE_ORIG_BYTES);
-    /* DCE trampoline hook REMOVED — was crashing due to SEH prologue.
-     * N:CHARGE detection now uses proximity scan in update_light. */
+
+    /* Collision dispatch call site 1 (5 bytes -> JMP, exact fit) */
+    install_jmp_hook(COLLISION_HOOK_1, (DWORD)collision_cave_1);
+
+    /* Collision dispatch call site 2 (5 bytes -> JMP, exact fit) */
+    install_jmp_hook(COLLISION_HOOK_2, (DWORD)collision_cave_2);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
