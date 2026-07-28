@@ -9,7 +9,7 @@ alloc(saved_meshname, 4)
 alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
 alloc(float_12, 4)
-alloc(float_15, 4)
+alloc(float_65, 4)
 
 str_bumper:
   db 'N:BUMPER',0
@@ -20,8 +20,8 @@ str_speedcyl:
 float_12:
   dd 41400000
 
-float_15:
-  dd 3FC00000
+float_65:
+  dd 42820000
 
 BumperCave1:
   mov [saved_collObj], edx
@@ -134,7 +134,7 @@ cave1_scyl_vel:
   fcomip st(0), st(1)
   je cave1_scyl_zero
 
-  fdivr dword [float_15]
+  fdivr dword [float_65]
   fld st(0)
   fmul dword [ebx+0xCA4]
   fstp dword [ebx+0xCA4]
@@ -311,7 +311,7 @@ cave2_scyl_vel:
   fcomip st(0), st(1)
   je cave2_scyl_zero
 
-  fdivr dword [float_15]
+  fdivr dword [float_65]
   fld st(0)
   fmul dword [ebx+0xCA4]
   fstp dword [ebx+0xCA4]
@@ -392,4 +392,4 @@ dealloc(saved_meshname)
 dealloc(str_bumper)
 dealloc(str_speedcyl)
 dealloc(float_12)
-dealloc(float_15)
+dealloc(float_65)
