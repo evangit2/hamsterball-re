@@ -1,4 +1,12 @@
-{Global Object Functions Loader - bumper + speedcylinder globally}
+{Global Object Functions Loader - bumper + speedcylinder globally
+ Loads sounds on first collision per level, then:
+ - Bumpers: plays bumper sound + normalizes velocity to 12.0
+ - Speedcylinders: calls native Speedcylinder_Effect (sound, tracking, cooldown)
+ Works with the spawn script: spawned SpeedCylinder entities (vtable 0x4D57D0)
+ are detected via [[collObj+0]+0x47C] and passed to Speedcylinder_Effect.
+ Speedcylinder_Effect has internal ball tracking (AthenaList at entity+0x10F0)
+ so it won't double-play sound if native handler already processed it.
+}
 
 [ENABLE]
 
@@ -9,7 +17,6 @@ alloc(saved_meshname, 4)
 alloc(str_bumper, 16)
 alloc(str_speedcyl, 32)
 alloc(float_12, 4)
-alloc(float_65, 4)
 
 str_bumper:
   db 'N:BUMPER',0
@@ -20,8 +27,8 @@ str_speedcyl:
 float_12:
   dd 41400000
 
-float_65:
-  dd 42820000
+// ===== Cave 1: hooks collision dispatch at 0x40728F =====
+// Original bytes: 52 56 FF 50 74 (PUSH EDX; PUSH ESI; CALL [EAX+0x74])
 
 BumperCave1:
   mov [saved_collObj], edx
@@ -32,6 +39,52 @@ BumperCave1:
 
   pushad
 
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave1_done
+
+  // --- Sound loading (once per level, checks NULL before loading) ---
+  mov eax, [edi+0x878]
+  test eax, eax
+  jz cave1_sound_done
+  mov ecx, [eax+0x22C]
+  test ecx, ecx
+  jz cave1_sound_done
+
+  // Check bumper sound at parent+0x448
+  mov edx, [eax+0x448]
+  test edx, edx
+  jnz cave1_check_speedcyl_sound
+
+  push 0A
+  push 004D2F44
+  lea edx, [eax+0x448]
+  push edx
+  mov edx, [ecx]
+  call dword [edx+0x60]
+
+  mov eax, [edi+0x878]
+  test eax, eax
+  jz cave1_sound_done
+  mov ecx, [eax+0x22C]
+  test ecx, ecx
+  jz cave1_sound_done
+
+cave1_check_speedcyl_sound:
+  mov edx, [eax+0x508]
+  test edx, edx
+  jnz cave1_sound_done
+
+  push 2
+  push 004D2C00
+  lea edx, [eax+0x508]
+  push edx
+  mov edx, [ecx]
+  call dword [edx+0x60]
+
+cave1_sound_done:
+
+  // --- Get mesh name ---
   mov edx, [saved_collObj]
   test edx, edx
   jz cave1_done
@@ -43,6 +96,7 @@ BumperCave1:
   jz cave1_done
   mov [saved_meshname], eax
 
+  // --- Check N:BUMPER ---
   push 8
   push str_bumper
   push eax
@@ -51,6 +105,7 @@ BumperCave1:
   test eax, eax
   jz cave1_bumper
 
+  // --- Check N:SPEEDCYLINDER ---
   mov eax, [saved_meshname]
   push 0E
   push str_speedcyl
@@ -60,42 +115,50 @@ BumperCave1:
   test eax, eax
   jnz cave1_done
 
-cave1_speedcyl:
-  mov ebx, [esi+0x1A4]
-  test ebx, ebx
+  // --- Speedcylinder: call native Speedcylinder_Effect ---
+  // Entity chain: [[collObj+0]+0x47C] = entity
+  mov edx, [saved_collObj]
+  test edx, edx
+  jz cave1_done
+  mov eax, [edx]
+  test eax, eax
+  jz cave1_done
+  mov eax, [eax+0x47C]
+  test eax, eax
   jz cave1_done
 
-  mov [ebx+0x808], 0A
-  mov byte [ebx+0x31D], 01
-  mov byte [ebx+0x31E], 01
+  // Check vtable == SpeedCylinder (0x4D57D0)
+  // PopCylinder (0x4D58F0) is too small (0x10D0 vs 0x150C) -> OOB crash
+  mov ecx, [eax]
+  cmp ecx, 004D57D0
+  jne cave1_done
 
-  fld dword [ebx+0xCA4]
-  fmul st(0), st(0)
-  fld dword [ebx+0xCAC]
-  fmul st(0), st(0)
-  faddp
-  fsqrt
-
-  fldz
-  fcomip st(0), st(1)
-  je cave1_scyl_zero
-
-  fdivr dword [float_65]
-  fld st(0)
-  fmul dword [ebx+0xCA4]
-  fstp dword [ebx+0xCA4]
-  fmul dword [ebx+0xCAC]
-  fstp dword [ebx+0xCAC]
-  fldz
-  fstp dword [ebx+0xCA8]
-  fstp st(0)
-  jmp cave1_done
-
-cave1_scyl_zero:
-  fstp st(0)
+  // Speedcylinder_Effect(0x436B70): __thiscall, ECX=entity, 1 stack param=ball, RET 4
+  // Plays sound via [board+0x878]+0x508, adds ball to tracking, sets cooldown ball+0x808=10
+  // Internal AthenaList check prevents double-play if native handler already called it
+  push esi
+  mov ecx, eax
+  call 00436B70
   jmp cave1_done
 
 cave1_bumper:
+  // --- Play bumper sound at ball position ---
+  mov eax, [edi+0x878]
+  test eax, eax
+  jz cave1_bump_vel
+  mov ecx, [eax+0x448]
+  test ecx, ecx
+  jz cave1_bump_vel
+
+  fninit
+  push 3F800000
+  push [esi+0x16C]
+  push [esi+0x168]
+  push [esi+0x164]
+  call 00459860
+
+cave1_bump_vel:
+  // --- Normalize velocity to 12.0 ---
   mov ebx, [esi+0x1A4]
   test ebx, ebx
   jz cave1_done
@@ -151,6 +214,9 @@ cave1_done:
 0040728F:
   jmp BumperCave1
 
+// ===== Cave 2: hooks collision dispatch at 0x408B85 =====
+// Original bytes: 52 56 FF 50 74 (PUSH EDX; PUSH ESI; CALL [EAX+0x74])
+
 BumperCave2:
   mov [saved_collObj], edx
 
@@ -160,6 +226,51 @@ BumperCave2:
 
   pushad
 
+  mov edi, [esi+0x14]
+  test edi, edi
+  jz cave2_done
+
+  // --- Sound loading ---
+  mov eax, [edi+0x878]
+  test eax, eax
+  jz cave2_sound_done
+  mov ecx, [eax+0x22C]
+  test ecx, ecx
+  jz cave2_sound_done
+
+  mov edx, [eax+0x448]
+  test edx, edx
+  jnz cave2_check_speedcyl_sound
+
+  push 0A
+  push 004D2F44
+  lea edx, [eax+0x448]
+  push edx
+  mov edx, [ecx]
+  call dword [edx+0x60]
+
+  mov eax, [edi+0x878]
+  test eax, eax
+  jz cave2_sound_done
+  mov ecx, [eax+0x22C]
+  test ecx, ecx
+  jz cave2_sound_done
+
+cave2_check_speedcyl_sound:
+  mov edx, [eax+0x508]
+  test edx, edx
+  jnz cave2_sound_done
+
+  push 2
+  push 004D2C00
+  lea edx, [eax+0x508]
+  push edx
+  mov edx, [ecx]
+  call dword [edx+0x60]
+
+cave2_sound_done:
+
+  // --- Get mesh name ---
   mov edx, [saved_collObj]
   test edx, edx
   jz cave2_done
@@ -171,6 +282,7 @@ BumperCave2:
   jz cave2_done
   mov [saved_meshname], eax
 
+  // --- Check N:BUMPER ---
   push 8
   push str_bumper
   push eax
@@ -179,6 +291,7 @@ BumperCave2:
   test eax, eax
   jz cave2_bumper
 
+  // --- Check N:SPEEDCYLINDER ---
   mov eax, [saved_meshname]
   push 0E
   push str_speedcyl
@@ -188,42 +301,44 @@ BumperCave2:
   test eax, eax
   jnz cave2_done
 
-cave2_speedcyl:
-  mov ebx, [esi+0x1A4]
-  test ebx, ebx
+  // --- Speedcylinder: call native Speedcylinder_Effect ---
+  mov edx, [saved_collObj]
+  test edx, edx
+  jz cave2_done
+  mov eax, [edx]
+  test eax, eax
+  jz cave2_done
+  mov eax, [eax+0x47C]
+  test eax, eax
   jz cave2_done
 
-  mov [ebx+0x808], 0A
-  mov byte [ebx+0x31D], 01
-  mov byte [ebx+0x31E], 01
+  mov ecx, [eax]
+  cmp ecx, 004D57D0
+  jne cave2_done
 
-  fld dword [ebx+0xCA4]
-  fmul st(0), st(0)
-  fld dword [ebx+0xCAC]
-  fmul st(0), st(0)
-  faddp
-  fsqrt
-
-  fldz
-  fcomip st(0), st(1)
-  je cave2_scyl_zero
-
-  fdivr dword [float_65]
-  fld st(0)
-  fmul dword [ebx+0xCA4]
-  fstp dword [ebx+0xCA4]
-  fmul dword [ebx+0xCAC]
-  fstp dword [ebx+0xCAC]
-  fldz
-  fstp dword [ebx+0xCA8]
-  fstp st(0)
-  jmp cave2_done
-
-cave2_scyl_zero:
-  fstp st(0)
+  push esi
+  mov ecx, eax
+  call 00436B70
   jmp cave2_done
 
 cave2_bumper:
+  // --- Play bumper sound at ball position ---
+  mov eax, [edi+0x878]
+  test eax, eax
+  jz cave2_bump_vel
+  mov ecx, [eax+0x448]
+  test ecx, ecx
+  jz cave2_bump_vel
+
+  fninit
+  push 3F800000
+  push [esi+0x16C]
+  push [esi+0x168]
+  push [esi+0x164]
+  call 00459860
+
+cave2_bump_vel:
+  // --- Normalize velocity to 12.0 ---
   mov ebx, [esi+0x1A4]
   test ebx, ebx
   jz cave2_done
@@ -294,4 +409,3 @@ dealloc(saved_meshname)
 dealloc(str_bumper)
 dealloc(str_speedcyl)
 dealloc(float_12)
-dealloc(float_65)
