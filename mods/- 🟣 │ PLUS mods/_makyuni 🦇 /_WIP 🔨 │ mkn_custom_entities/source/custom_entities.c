@@ -3204,6 +3204,9 @@ static int gluebie_is_dizzy(DWORD board) {
 static void cEnt_gluebie_proximity_check(DWORD board);
 static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 
+/* Forward decl — defined below */
+static void cEnt_chomper_update(DWORD board);
+
 static void __cdecl gluebie_present_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
     g_gluebie_ball_in_zone = 0;  /* reset before check */
@@ -3214,6 +3217,13 @@ static void __cdecl gluebie_present_helper(void) {
     /* v55k_1: Tarpit proximity check — runs on ALL levels (not just non-Dizzy) */
     if (board && g_tarpit_count > 0) {
         cEnt_tarpit_proximity_check(board);
+    }
+    /* v55m_7: Chomper state machine + rendering MUST run on main thread.
+     * It calls D3D/Gfx functions (Timer_Init, Gfx_Scale, mesh vtable[7])
+     * that need the D3D render context. Running from the background thread
+     * causes a crash at 0x499D9D (D3DX SSE2 matrix multiply with NULL param). */
+    if (board && g_chomper_count > 0) {
+        cEnt_chomper_update(board);
     }
 }
 
@@ -4396,7 +4406,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_1 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_7 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4462,13 +4472,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             }
         }
 
-        /* v55m_3: Per-frame Chomper state machine + rendering */
-        {
-            DWORD board = get_board();
-            if (board && g_chomper_count > 0) {
-                cEnt_chomper_update(board);
-            }
-        }
+        /* v55m_3: Chomper state machine + rendering — MOVED to Present hook
+         * (gluebie_present_helper) in v55m_7. Running D3D/Gfx functions from
+         * the background thread crashes at 0x499D9D (D3DX matrix multiply
+         * with NULL param — D3D device state not set up for wrong thread). */
 
         /* v55d: Per-frame Catapult state machine update.
          * Catapult_vtable11 (0x437F10) is the per-frame state machine
