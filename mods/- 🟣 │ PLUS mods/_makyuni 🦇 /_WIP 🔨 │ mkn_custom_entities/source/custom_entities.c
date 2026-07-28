@@ -1875,24 +1875,26 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 cEnt_Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 22: /* Chomper — Tower Race chomper (.MESH file, not .MESHWORLD).
-                     * v55m_9: Use .MESH swap pattern (same as Bell/Fan/SawBlade).
-                     * MeshWorld_ctor formats as '%s.meshworld' — but Chomper is a
-                     * .MESH file, so MeshWorld_ctor fails with a popup. Instead:
-                     * load via cEnt_load_mesh_file (MeshNode_ctor, formats '%s.mesh'),
-                     * then PopCylinder + swap obj+0x08 to the .MESH MeshWorld*. */
+                     * v55m_10: Use PopCylinder with Swirl mesh — NO obj+0x08 swap.
+                     *
+                     * The .MESH swap pattern (swap obj+0x08 to .MESH MeshWorld*)
+                     * crashes for Chomper because SceneObject_BuildStrips (vtable[2])
+                     * reads obj+0x08 at offsets > 0x488 (MeshWorld inner size).
+                     * The Swirl MeshWorld is 0x10D0 bytes, but .MESH MeshWorld is
+                     * only 0x488. Reading beyond 0x488 → out of bounds → crash
+                     * at 0x45F111 (D3DXSkinMesh_CopyStripData).
+                     *
+                     * Bell/Fan/SawBlade happen to work because their .MESH data
+                     * at those high offsets doesn't trigger a crash. Chomper does.
+                     *
+                     * Fix: Spawn PopCylinder with Swirl mesh only (no swap).
+                     * The Chomper appears as a Swirl visually but won't crash.
+                     * The state machine (sound playback) still works. */
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
                     if (!gfx2) { if (logf) fprintf(logf, "  ROTATER: no gfx for Chomper\n"); return; }
-                    /* Load Chomper.MESH via MeshNode_ctor */
-                    void* chomper_meshnode = cEnt_load_mesh_file(gfx2, "meshes\\Chomper", &is_mesh_node, logf);
-                    if (!chomper_meshnode || !is_mesh_node) {
-                        if (logf) fprintf(logf, "  ROTATER: Chomper.MESH load failed, trying Swirl\n");
-                        chomper_meshnode = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &is_mesh_node, logf);
-                        if (!chomper_meshnode) return;
-                    }
-                    DWORD chomper_mw = *(DWORD*)((char*)chomper_meshnode + 0x08);
-                    /* Load Swirl as PopCylinder base */
+                    /* Load Swirl as PopCylinder base (no .MESH swap) */
                     int chomper_isnode = 0;
                     void* chomper_swirl = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &chomper_isnode, logf);
                     if (!chomper_swirl || chomper_isnode) {
@@ -1903,9 +1905,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper\n"); return; }
                     memset(obj, 0, POPCYLINDER_SIZE);
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py - 20.0f, pz, chomper_swirl);
-                    /* Swap MeshWorld to Chomper mesh */
-                    if (chomper_mw) *(DWORD*)((char*)obj + 0x08) = chomper_mw;
-                    /* Track for chomper state machine (sound only, no rendering) */
+                    /* NO mesh swap — keep Swirl MeshWorld for safe rendering */
+                    /* Track for chomper state machine (sound only) */
                     if (g_chomper_count < MAX_CHOMPERS) {
                         ChomperState* cs = &g_chompers[g_chomper_count];
                         cs->coll_level = (DWORD)obj;
@@ -1918,7 +1919,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         cs->countdown = 0;
                         cs->anim_val = 0.0f;
                         g_chomper_count++;
-                        if (logf) fprintf(logf, "  ROTATER: Chomper spawned at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                        if (logf) fprintf(logf, "  ROTATER: Chomper spawned at (%.1f,%.1f,%.1f) obj=0x%08X (Swirl visual)\n",
                                 px, py - 20.0f, pz, (DWORD)obj);
                     }
                 }
@@ -4362,7 +4363,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_9 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_10 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
