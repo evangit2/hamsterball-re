@@ -1,34 +1,44 @@
 /*
  * electric_lights.c — Electric Lights + Light Platforms merged mod
+ * v3: Fixed SEH trampoline crash, shutdown guard, color restoration, charge gating
  *
  * Phase 1+2: Charge system + ball glow + D3D light + platform flicker
  *
  * CHARGE SYSTEM:
  *   Ball starts with full charge (1.0). Charge drains over time.
- *   Touching N:CHARGE collision planes restores charge to full.
+ *   Ball proximity to N:CHARGE meshes restores charge to full.
  *   D3D point light follows the ball, range scales with charge.
  *   Ball color multiplier scales with charge for visual glow.
  *
  * PLATFORM FLICKER:
  *   ArenaStands (DFLOOR) platforms flicker based on charge level:
- *   - Charge drops below FLICKER_OUT_THRESHOLD → start flicker DOWN
+ *   - Charge drops below FLICKER_OUT_THRESHOLD -> start flicker DOWN
  *     (flicker for 75 frames, then platform becomes invisible)
  *     Threshold is set so flicker completes before charge hits 0.
- *   - Ball touches N:CHARGE (charge restored) → start flicker UP
+ *   - Ball touches N:CHARGE (charge restored) -> start flicker UP
  *     (flicker for 75 frames, then platform becomes solid)
  *   - During flicker: native ToggleTimer controls visual on/off.
- *     Object stays in render list → collision active during flicker.
+ *     Object stays in render list -> collision active during flicker.
  *
  * ARENASTANDS STATE MACHINE:
  *   State 0: solid visible (stable)
- *   State 1: flicker before disappearing (→ 2 after 75 frames)
+ *   State 1: flicker before disappearing (-> 2 after 75 frames)
  *   State 2: invisible (stable, removed from render list)
- *   State 3: flicker after reappearing (→ 0 after 75 frames)
+ *   State 3: flicker after reappearing (-> 0 after 75 frames)
  *
  * Hook: Graphics_RenderScene entry (0x454BC0)
  *   ECX = gfx struct pointer at entry
  *   gfx+0x154 = IDirect3DDevice8*
  *   gfx+0x854/858/85C = ball position (set by Scene_Render)
+ *
+ * v3 CHANGES:
+ *   - Replaced DispatchCollisionEvents trampoline hook (SEH crash) with
+ *     proximity-based N:CHARGE mesh scan from RenderScene hook
+ *   - Added shutdown guard (App+0x159 quit flag) to prevent use-after-free
+ *   - Ball color now properly tracked: resets when ball pointer changes
+ *   - Charge only drains during active gameplay (board valid + not quitting)
+ *   - Charge resets to full on new race (board pointer change detection)
+ *   - Removed dead g_flicker_down_triggered code
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll electric_lights.c \
@@ -72,21 +82,29 @@
 #define GLOBAL_APP_PTR       0x005341E0
 #define APP_BALL_P1          0x5DC
 #define APP_BOARD            0x178
+#define APP_QUIT_FLAG        0x159
 
 /* Board offsets */
 #define BOARD_DYNOBJ_LIST    0x2578
+#define BOARD_LEVEL_PTR      0x8AC
 #define ATHENALIST_COUNT      0x04
 #define ATHENALIST_ITEMS      0x40C
+
+/* Level/MeshWorld offsets */
+#define LEVEL_MESHWORLD_PTR  0x08
+#define MW_MESHBUFFER_LIST   0x2C
+
+/* MeshBuffer offsets */
+#define MESHBUFFER_NAME      0x864
+#define MESHBUFFER_POS_X     0x868
+#define MESHBUFFER_POS_Y     0x86C
+#define MESHBUFFER_POS_Z     0x870
 
 /* ArenaStands struct offsets */
 #define ARENASTANDS_VTABLE   0x004D5A70
 #define AS_STATE             0x10DC
 #define AS_TIMER             0x10E0
 #define AS_NEEDS_READD       0x1100
-
-/* Collision dispatch hook */
-#define DISPATCH_COLLISION_EVENTS 0x0040C5D0
-#define MESHBUFFER_NAME      0x864
 
 /* State machine constants */
 #define STATE_SOLID          0
@@ -119,6 +137,10 @@
 
 #define LIGHT_SLOT           2
 
+/* Charge pad proximity threshold (ball radius 26 + tolerance) */
+#define CHARGE_PAD_RADIUS    50.0f
+#define CHARGE_PAD_RADIUS_SQ (CHARGE_PAD_RADIUS * CHARGE_PAD_RADIUS)
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * D3DLIGHT8 Structure (104 bytes)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -147,8 +169,11 @@ static float    g_orig_color_g = 1.0f;
 static float    g_orig_color_b = 1.0f;
 static int      g_color_saved = 0;
 
-/* Track whether we've triggered the flicker-down so we don't retrigger */
-static int      g_flicker_down_triggered = 0;
+/* Track ball pointer — reset color state when ball changes (new level) */
+static DWORD    g_last_ball = 0;
+
+/* Track board pointer — reset charge when board changes (new race) */
+static DWORD    g_last_board = 0;
 
 /* D3D light struct (pre-filled, position+range updated per frame) */
 static D3DLIGHT8 g_light = {
@@ -173,6 +198,80 @@ static D3DLIGHT8 g_light = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Shutdown Guard
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int game_is_quitting(void) {
+    if (IsBadReadPtr((void*)GLOBAL_APP_PTR, 4)) return 1;
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (!app || app < 0x10000) return 1;
+    if (IsBadReadPtr((void*)(app + APP_QUIT_FLAG), 1)) return 1;
+    return *(BYTE*)(app + APP_QUIT_FLAG) != 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Charge Pad Proximity Scan (replaces DCE trampoline hook)
+ *
+ * DispatchCollisionEvents (0x40C5D0) uses SEH in its prologue. Building a
+ * manual trampoline on it corrupts the exception chain and crashes. Instead,
+ * we scan the MeshWorld for N:CHARGE meshes and check ball proximity from
+ * the RenderScene hook. This is safe — no SEH, no trampoline.
+ *
+ * Chain: App -> board+0x178 -> level+0x8AC -> meshworld+0x08 -> MW+0x2C
+ * AthenaList: count at +0x04, items at +0x40C
+ * MeshBuffer: name at +0x864, position at +0x868/86C/870
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void scan_charge_pads(float bx, float by, float bz) {
+    if (bx == 0.0f && by == 0.0f && bz == 0.0f) return;
+
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (!app || IsBadReadPtr((void*)app, 0x200)) return;
+    DWORD board = *(DWORD*)(app + APP_BOARD);
+    if (!board || IsBadReadPtr((void*)board, 0x8B0)) return;
+
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL_PTR);
+    if (!level || IsBadReadPtr((void*)level, 0x10)) return;
+    DWORD meshworld = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
+    if (!meshworld || IsBadReadPtr((void*)meshworld, 0x420)) return;
+
+    /* AthenaList embedded at MeshWorld+0x2C */
+    DWORD listBase = meshworld + MW_MESHBUFFER_LIST;
+    int count = *(int*)(listBase + ATHENALIST_COUNT);
+    if (count < 1 || count > 5000) return;
+    DWORD items = *(DWORD*)(listBase + ATHENALIST_ITEMS);
+    if (!items || IsBadReadPtr((void*)items, count * 4)) return;
+
+    for (int i = 0; i < count; i++) {
+        DWORD mb = *(DWORD*)(items + i * 4);
+        if (!mb || IsBadReadPtr((void*)mb, 0x874)) continue;
+
+        DWORD namePtr = *(DWORD*)(mb + MESHBUFFER_NAME);
+        if (!namePtr || IsBadReadPtr((void*)namePtr, 9)) continue;
+
+        const char *name = (const char*)namePtr;
+        if (!name[0]) continue;
+
+        if (_strnicmp(name, "N:CHARGE", 8) != 0) continue;
+
+        /* Found a charge pad — check ball proximity */
+        float mx = *(float*)(mb + MESHBUFFER_POS_X);
+        float my = *(float*)(mb + MESHBUFFER_POS_Y);
+        float mz = *(float*)(mb + MESHBUFFER_POS_Z);
+
+        float dx = bx - mx;
+        float dy = by - my;
+        float dz = bz - mz;
+        float dist_sq = dx*dx + dy*dy + dz*dz;
+
+        if (dist_sq < CHARGE_PAD_RADIUS_SQ) {
+            g_charge = CHARGE_MAX;
+            return; /* Recharged — no need to check more pads */
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * D3D Light Update
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -183,6 +282,13 @@ static void update_light(DWORD gfx) {
     if (!device || IsBadReadPtr((void*)device, 4)) return;
     DWORD vtable = *(DWORD*)device;
     if (!vtable || IsBadReadPtr((void*)vtable, 0x100)) return;
+
+    /* Read ball position from gfx+0x854/858/85C */
+    float bx = *(float*)(gfx + GFX_BALL_X);
+    float by = *(float*)(gfx + GFX_BALL_Y);
+    float bz = *(float*)(gfx + GFX_BALL_Z);
+
+    if (bx == 0.0f && by == 0.0f && bz == 0.0f) return;
 
     /* Enable D3D lighting */
     {
@@ -197,13 +303,6 @@ static void update_light(DWORD gfx) {
             : "eax", "edx", "ecx", "memory"
         );
     }
-
-    /* Read ball position from gfx+0x854/858/85C */
-    float bx = *(float*)(gfx + GFX_BALL_X);
-    float by = *(float*)(gfx + GFX_BALL_Y);
-    float bz = *(float*)(gfx + GFX_BALL_Z);
-
-    if (bx == 0.0f && by == 0.0f && bz == 0.0f) return;
 
     /* Update light position to follow ball */
     g_light.PositionX = bx;
@@ -246,12 +345,17 @@ static void update_light(DWORD gfx) {
     if (app && !IsBadReadPtr((void*)(app + APP_BALL_P1), 4)) {
         DWORD ball = *(DWORD*)(app + APP_BALL_P1);
         if (ball && !IsBadReadPtr((void*)(ball + BALL_COLOR_R), 16)) {
-            if (!g_color_saved) {
+            /* Detect ball pointer change (new level/race).
+             * When the ball object is recreated, save its original colors
+             * so we don't write stale saved values from a freed ball. */
+            if (ball != g_last_ball) {
                 g_orig_color_r = *(float*)(ball + BALL_COLOR_R);
                 g_orig_color_g = *(float*)(ball + BALL_COLOR_G);
                 g_orig_color_b = *(float*)(ball + BALL_COLOR_B);
                 g_color_saved = 1;
+                g_last_ball = ball;
             }
+
             *(float*)(ball + BALL_COLOR_R) = GLOW_R * g_charge;
             *(float*)(ball + BALL_COLOR_G) = GLOW_G * g_charge;
             *(float*)(ball + BALL_COLOR_B) = GLOW_B * g_charge;
@@ -259,9 +363,17 @@ static void update_light(DWORD gfx) {
         }
     }
 
-    /* Drain charge */
-    g_charge -= CHARGE_DRAIN_RATE;
-    if (g_charge < CHARGE_MIN) g_charge = CHARGE_MIN;
+    /* Scan for N:CHARGE proximity pads (replaces DCE hook) */
+    scan_charge_pads(bx, by, bz);
+
+    /* Drain charge — only when board is valid (active gameplay) */
+    if (app && !IsBadReadPtr((void*)(app + APP_BOARD), 4)) {
+        DWORD board = *(DWORD*)(app + APP_BOARD);
+        if (board && !IsBadReadPtr((void*)board, 0x100)) {
+            g_charge -= CHARGE_DRAIN_RATE;
+            if (g_charge < CHARGE_MIN) g_charge = CHARGE_MIN;
+        }
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -270,19 +382,22 @@ static void update_light(DWORD gfx) {
 
 static void update_platforms(void) {
     /* Determine desired platform state from charge */
-    /* "want_visible" = charge is high enough to keep platforms solid */
     int want_visible = (g_charge >= FLICKER_OUT_THRESHOLD);
-
-    /* Reset flicker-down trigger when charge is restored */
-    if (g_charge > FLICKER_OUT_THRESHOLD) {
-        g_flicker_down_triggered = 0;
-    }
 
     /* Get board from App */
     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
     if (!app || IsBadReadPtr((void*)app, 0x200)) return;
     DWORD board = *(DWORD*)(app + APP_BOARD);
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+
+    /* Detect board change -> reset charge for new race */
+    if (board != g_last_board) {
+        g_charge = CHARGE_MAX;
+        g_last_board = board;
+        /* Ball will change too — reset color tracking */
+        g_color_saved = 0;
+        g_last_ball = 0;
+    }
 
     /* Iterate dynamic objects AthenaList at board+0x2578 */
     DWORD listBase = board + BOARD_DYNOBJ_LIST;
@@ -320,7 +435,7 @@ static void update_platforms(void) {
                 break;
             case STATE_SOLID:
             default:
-                /* Already solid — don't restart, pin timer to stay visible */
+                /* Already solid — pin timer to stay visible */
                 *(int*)(obj + AS_TIMER) = TIMER_FULL;
                 break;
             }
@@ -329,8 +444,7 @@ static void update_platforms(void) {
              * Start flicker-down early so it finishes before charge hits 0. */
             switch (state) {
             case STATE_SOLID:
-                /* Currently visible — start flicker to disappear.
-                 * Only trigger once per charge depletion cycle. */
+                /* Currently visible — start flicker to disappear. */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_DOWN;
                 *(int*)(obj + AS_TIMER) = TIMER_FULL;
                 break;
@@ -370,81 +484,12 @@ __asm__(
 );
 
 void on_render_scene(DWORD gfx) {
+    /* Shutdown guard — game frees board/ball before DLL_PROCESS_DETACH.
+     * Without this, the hook accesses freed memory on exit -> crash. */
+    if (game_is_quitting()) return;
+
     update_light(gfx);
     update_platforms();
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Collision Event Hook — N:CHARGE recharge pads
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-static BYTE g_dce_original[8];
-static void *g_dce_trampoline = NULL;
-static BYTE *g_dce_stub = NULL;
-
-static void build_dce_trampoline(void) {
-    BYTE *code = (BYTE*)alloc_executable(16);
-    memcpy(code, g_dce_original, 8);
-    code[8] = 0xE9;
-    *(DWORD*)(code + 9) = (DWORD)(DISPATCH_COLLISION_EVENTS + 8) - (DWORD)(code + 13);
-    g_dce_trampoline = code;
-}
-
-void __cdecl dce_handler(DWORD board, DWORD ball, DWORD collEntry) {
-    if (!collEntry) return;
-
-    DWORD *pair = (DWORD*)collEntry;
-    if (IsBadReadPtr(pair, 8)) return;
-    if (!pair[1]) return;
-    if (IsBadReadPtr((void*)pair[1], 0x868)) return;
-
-    DWORD namePtr = *(DWORD*)((BYTE*)pair[1] + MESHBUFFER_NAME);
-    if (!namePtr || IsBadReadPtr((void*)namePtr, 8)) return;
-    const char *eventName = (const char*)namePtr;
-    if (!eventName[0]) return;
-
-    /* Check for N:CHARGE */
-    if (_strnicmp(eventName, "N:CHARGE", 8) != 0) return;
-
-    /* Reset charge to max — this triggers platform flicker-up */
-    g_charge = CHARGE_MAX;
-    g_flicker_down_triggered = 0;
-}
-
-static void build_dce_stub(void) {
-    BYTE *code = (BYTE*)alloc_executable(64);
-    int i = 0;
-    code[i++] = 0x60;  /* pushad */
-    code[i++] = 0x9C;  /* pushfd */
-    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C; /* push [esp+0x2C] (collEntry) */
-    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C; /* push [esp+0x2C] (ball) */
-    code[i++] = 0x51;  /* push ecx (board) */
-    code[i++] = 0xE8;  /* call dce_handler */
-    *(DWORD*)(code + i) = (DWORD)&dce_handler - (DWORD)(code + i + 4);
-    i += 4;
-    code[i++] = 0x83; code[i++] = 0xC4; code[i++] = 0x0C; /* add esp, 12 */
-    code[i++] = 0x9D;  /* popfd */
-    code[i++] = 0x61;  /* popad */
-    code[i++] = 0xB8;  /* mov eax, addr */
-    *(DWORD*)(code + i) = (DWORD)g_dce_trampoline;
-    i += 4;
-    code[i++] = 0xFF; code[i++] = 0xE0; /* jmp eax */
-
-    g_dce_stub = code;
-}
-
-static void install_dce_hook(void) {
-    memcpy(g_dce_original, (void*)DISPATCH_COLLISION_EVENTS, 8);
-    build_dce_trampoline();
-    build_dce_stub();
-
-    BYTE patch[8];
-    patch[0] = 0xE9;
-    *(DWORD*)(patch + 1) = (DWORD)g_dce_stub - DISPATCH_COLLISION_EVENTS - 5;
-    patch[5] = 0x90;
-    patch[6] = 0x90;
-    patch[7] = 0x90;
-    patch_bytes(DISPATCH_COLLISION_EVENTS, patch, 8);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -454,7 +499,8 @@ static void install_dce_hook(void) {
 static void install_hooks(void) {
     memcpy(g_orig_bytes, (void*)RENDER_SCENE_HOOK, RENDER_SCENE_ORIG_BYTES);
     install_jmp_hook_nop(RENDER_SCENE_HOOK, (DWORD)hook_cave_asm, RENDER_SCENE_ORIG_BYTES);
-    install_dce_hook();
+    /* DCE trampoline hook REMOVED — was crashing due to SEH prologue.
+     * N:CHARGE detection now uses proximity scan in update_light. */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
