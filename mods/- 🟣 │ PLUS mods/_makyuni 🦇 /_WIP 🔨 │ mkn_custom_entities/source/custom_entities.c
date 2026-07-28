@@ -320,66 +320,9 @@ typedef struct {
 static ChomperState g_chompers[MAX_CHOMPERS];
 static int g_chomper_count = 0;
 
-/* Custom vtable[2] for Chomper — applies jaw rotation before rendering.
- * __thiscall(this) — same signature as SceneObject_BuildStrips (0x472770).
- * Finds the ChomperState by matching the object pointer, applies
- * Gfx_ScaleZ(-jaw_angle) + Gfx_SetPosition(x,y,z), then calls the
- * original BuildStrips. Transform is saved/restored via Timer_Init/Cleanup. */
-static void __fastcall cEnt_chomper_buildstrips(DWORD this_) {
-    /* Find matching ChomperState */
-    ChomperState* cs = NULL;
-    int i;
-    for (i = 0; i < g_chomper_count; i++) {
-        if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
-    }
-
-    if (!cs || !cs->orig_vtable2) {
-        /* No matching Chomper or no saved vtable — call original directly */
-        typedef void (__fastcall *buildstrips_t)(DWORD);
-        ((buildstrips_t)0x00472770)(this_);
-        return;
-    }
-
-    /* Apply jaw rotation with proper transform save/restore */
-    DWORD board = 0;
-    /* Get board from g_Scene */
-    DWORD scene = *(DWORD*)0x005341E4;
-    if (scene && !IsBadReadPtr((void*)scene, 0x10)) {
-        DWORD app = *(DWORD*)0x005341E0;
-        if (app && !IsBadReadPtr((void*)app, 0x800)) {
-            board = *(DWORD*)(app + 0x178);
-        }
-    }
-
-    if (board && !IsBadReadPtr((void*)board, 0x10)) {
-        DWORD app2 = *(DWORD*)(board + BOARD_APP);
-        if (app2 && !IsBadReadPtr((void*)app2, 0x800)) {
-            DWORD gfx = *(DWORD*)(app2 + APP_GFX_DEVICE);
-            if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
-                pfn_Timer_Init && pfn_Timer_Cleanup) {
-                char timerBuf[68];
-                pfn_Timer_Init(timerBuf);
-
-                /* Apply jaw rotation (Z-axis) */
-                pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->jaw_angle);
-
-                /* Set position */
-                pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
-
-                /* Call original BuildStrips */
-                typedef void (__fastcall *buildstrips_t)(DWORD);
-                ((buildstrips_t)cs->orig_vtable2)(this_);
-
-                pfn_Timer_Cleanup(timerBuf);
-                return;
-            }
-        }
-    }
-
-    /* Fallback: call original without transform */
-    typedef void (__fastcall *buildstrips_t)(DWORD);
-    ((buildstrips_t)cs->orig_vtable2)(this_);
-}
+/* Custom vtable[2] for Chomper — forward declaration.
+ * Implementation after pfn declarations. */
+static void __fastcall cEnt_chomper_buildstrips(DWORD this_);
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -459,6 +402,46 @@ typedef void (__fastcall *Timer_Init_t)(void* out);
 static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457AD0;
 typedef void (__fastcall *Timer_Cleanup_t)(void* out);
 static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A40;
+
+/* Custom vtable[2] for Chomper — applies jaw rotation before rendering.
+ * Same pattern as native Scene_RenderWithCamera (0x40DFA0):
+ * Timer_Init → Gfx_ScaleZ(-jaw_angle) → Gfx_SetPosition(x,y,z) →
+ * original BuildStrips → Timer_Cleanup. */
+static void __fastcall cEnt_chomper_buildstrips(DWORD this_) {
+    ChomperState* cs = NULL;
+    int i;
+    for (i = 0; i < g_chomper_count; i++) {
+        if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
+    }
+    if (!cs || !cs->orig_vtable2) {
+        typedef void (__fastcall *bs_t)(DWORD);
+        ((bs_t)0x00472770)(this_);
+        return;
+    }
+    DWORD app = *(DWORD*)0x005341E0;
+    if (app && !IsBadReadPtr((void*)app, 0x800)) {
+        DWORD board = *(DWORD*)(app + 0x178);
+        if (board && !IsBadReadPtr((void*)board, 0x10)) {
+            DWORD app2 = *(DWORD*)(board + BOARD_APP);
+            if (app2 && !IsBadReadPtr((void*)app2, 0x800)) {
+                DWORD gfx = *(DWORD*)(app2 + APP_GFX_DEVICE);
+                if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
+                    pfn_Timer_Init && pfn_Timer_Cleanup) {
+                    char timerBuf[68];
+                    pfn_Timer_Init(timerBuf);
+                    pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->jaw_angle);
+                    pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
+                    typedef void (__fastcall *bs_t)(DWORD);
+                    ((bs_t)cs->orig_vtable2)(this_);
+                    pfn_Timer_Cleanup(timerBuf);
+                    return;
+                }
+            }
+        }
+    }
+    typedef void (__fastcall *bs_t)(DWORD);
+    ((bs_t)cs->orig_vtable2)(this_);
+}
 
 /* Vec3_Copy — copy 3 floats */
 typedef void (__thiscall *Vec3_Copy_t)(float* dst, float* src);
