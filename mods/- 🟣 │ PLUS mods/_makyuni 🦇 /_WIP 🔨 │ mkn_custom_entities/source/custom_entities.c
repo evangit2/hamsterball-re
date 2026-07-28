@@ -4074,13 +4074,58 @@ static void cEnt_chomper_update(DWORD board) {
                 break;
         }
 
-        /* v55m_8: NO manual rendering — the game's render pipeline renders
-         * the CollisionLevel from board+0xCD4 via vtable[2]. The previous
-         * approach (Timer_Init + Gfx_Scale + mesh vtable[7]) crashed at
-         * 0x499D9D because the D3D render context was not properly set up
-         * for manual mesh rendering. The native approach (MeshWorld +
-         * CollisionLevel in board render list) lets the game handle
-         * all D3D state management. */
+        /* v55m_13: Jaw animation rendering — replicates native Tower Chomper
+         * render (Scene_RenderWithCamera 0x40DFA0). Uses the same proven
+         * pattern as Bridgeslam: Timer_Init → Gfx_ScaleZ → Gfx_SetPosition →
+         * vtable[0x16]+[0x15] → Timer_Cleanup.
+         *
+         * Native sequence:
+         *   Timer_Init(&timer)
+         *   timer.vtable[6](1.15, 1.15, 1.15)  // scale all axes 1.15x
+         *   Gfx_ScaleZ(-jaw_angle)             // jaw rotation (D3DXMatrixRotationZ)
+         *   Gfx_SetPosition(0, anim_val, 0)    // jaw offset
+         *   Gfx_SetPosition(0, Wave_Sin(table,phase)*10.0, 0)  // oscillation
+         *   mesh->vtable[7]()                  // render
+         *   // Second mirrored pass (Gfx_ScaleX(180) + offset -35) ...
+         *   Timer_Cleanup(&timer)
+         *
+         * Gfx_ScaleZ/X are __stdcall(float) — RET 4.
+         * Gfx_SetPosition is __stdcall(float,float,float) — RET 12.
+         * We declare them __thiscall(void* gfx, float...) — gfx in ECX is
+         * ignored by the functions, stack params match. Same as Bridgeslam. */
+        {
+            DWORD app2 = *(DWORD*)(board + BOARD_APP);
+            if (app2 && !IsBadReadPtr((void*)app2, 0x800)) {
+                DWORD gfx = *(DWORD*)(app2 + APP_GFX_DEVICE);
+                if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
+                    pfn_Timer_Init && pfn_Timer_Cleanup) {
+                    char timerBuf[68];
+                    pfn_Timer_Init(timerBuf);
+
+                    /* Apply jaw rotation: Gfx_ScaleZ(-jaw_angle)
+                     * When jaw_angle=0: no rotation (jaw closed)
+                     * When jaw_angle=25: rotates -25 degrees (jaw wide open) */
+                    pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->jaw_angle);
+
+                    /* Position the chomper in the world */
+                    pfn_Gfx_SetPosition_Bridge((void*)gfx,
+                        cs->x, cs->y, cs->z);
+
+                    /* Call render object vtable[0x16] (SetTransform) + [0x15] (Render) */
+                    DWORD* renderVtbl = *(DWORD**)cs->coll_level;
+                    if (renderVtbl && !IsBadReadPtr(renderVtbl, 0x60)) {
+                        void (__fastcall *fn58)(DWORD) =
+                            (void (__fastcall *)(DWORD))renderVtbl[0x16];
+                        void (__fastcall *fn54)(DWORD, char*) =
+                            (void (__fastcall *)(DWORD, char*))renderVtbl[0x15];
+                        if (fn58) fn58((DWORD)cs->coll_level);
+                        if (fn54) fn54((DWORD)cs->coll_level, timerBuf);
+                    }
+
+                    pfn_Timer_Cleanup(timerBuf);
+                }
+            }
+        }
     }
 }
 typedef struct {
@@ -4405,7 +4450,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_12 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_13 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
