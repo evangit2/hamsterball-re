@@ -2613,6 +2613,26 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             (void*)obj, g_tarpit_count-1, g_tarpit_count);
     }
 
+    /* v55m_11: Register Chompers for sound state machine.
+     * Entity name matched by the caller — check if this is a Chomper
+     * by looking at the mesh_path (levels\Chomper). */
+    if (mesh_path && _stricmp(mesh_path, "levels\\Chomper") == 0 &&
+        g_chomper_count < MAX_CHOMPERS) {
+        ChomperState* cs = &g_chompers[g_chomper_count];
+        cs->coll_level = (DWORD)obj;
+        cs->x = px;
+        cs->y = py - 20.0f;
+        cs->z = pz;
+        cs->jaw_angle = 0.25f;
+        cs->phase = 0.0f;
+        cs->state = 0;
+        cs->countdown = 0;
+        cs->anim_val = 0.0f;
+        g_chomper_count++;
+        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                px, py - 20.0f, pz, (DWORD)obj);
+    }
+
     if (g_rotater_count < MAX_ROTATERS) {
         g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
         g_rotater_cfg[g_rotater_count].rot_x = rot_x;
@@ -4196,7 +4216,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Bridgeslam",       16, "levels\\Level2-Bridge" },     /* Alias for Bridge */
             { "Bumper",           0, "levels\\Bumper01" },          /* N:BUMPER tag — no _ctor, _default mesh */
             { "Catapult",         35, "levels\\Level4-Catapult" },   /* Catapult_ctor (0x437E10, 0x1108) */
-            { "Chomper",          22, "meshes\\chomper" },           /* Chomper_ctor (MeshNode_ctor, 0x471C20, 0x18 bytes) */
+            { "Chomper",           0, "levels\\Chomper" },          /* v55m_11: PopCylinder with Chomper.MESHWORLD (user-provided) */
             { "Chrome",           23, "meshes\\Sphere" },          /* v55: was _default, now Sphere.MESH for Chrome ball */
             { "Cloudscape",        0, "levels\\Cloudscape" },       /* Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds */
             { "Drawbridge",        0, "levels\\Level4-Drawbridge" }, /* Glass_Level_ctor (0x4384A0, 0x113C bytes) */
@@ -4385,7 +4405,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_11 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_12 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
