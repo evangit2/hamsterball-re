@@ -1,6 +1,7 @@
 /*
  * electric_lights.c — Electric Lights + Light Platforms merged mod
  * v3: Fixed SEH trampoline crash, shutdown guard, color restoration, charge gating
+ * v4: Fixed ArenaStands render-list re-add bug (state 2→3 skip), added N:DISCHARGE
  *
  * Phase 1+2: Charge system + ball glow + D3D light + platform flicker
  *
@@ -39,6 +40,15 @@
  *   - Charge only drains during active gameplay (board valid + not quitting)
  *   - Charge resets to full on new race (board pointer change detection)
  *   - Removed dead g_flicker_down_triggered code
+ *
+ * v4 CHANGES:
+ *   - Fixed ArenaStands render-list re-add: setting state=3 directly from
+ *     state=2 skipped the native 2→3 transition that ADDS the object back
+ *     to the render+collision list. Now sets timer=1 in state 2 so the
+ *     native state machine does the ADD itself.
+ *   - Added N:DISCHARGE proximity detection (ported from light_platforms.c):
+ *     when ball touches N:DISCHARGE mesh and charge > 0, zeros charge and
+ *     forces instant platform transitions (no flicker).
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll electric_lights.c \
@@ -141,6 +151,11 @@
 #define CHARGE_PAD_RADIUS    50.0f
 #define CHARGE_PAD_RADIUS_SQ (CHARGE_PAD_RADIUS * CHARGE_PAD_RADIUS)
 
+/* N:DISCHARGE proximity threshold (ball radius 26, 80 = generous touch) */
+#define DISCHARGE_RADIUS     80.0f
+#define DISCHARGE_RADIUS_SQ  (DISCHARGE_RADIUS * DISCHARGE_RADIUS)
+#define DISCHARGE_COOLDOWN   300   /* frames (5s at 60fps) */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * D3DLIGHT8 Structure (104 bytes)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -174,6 +189,10 @@ static DWORD    g_last_ball = 0;
 
 /* Track board pointer — reset charge when board changes (new race) */
 static DWORD    g_last_board = 0;
+
+/* N:DISCHARGE state */
+static int      g_discharged = 0;          /* 1 = discharge has fired */
+static int      g_discharge_cooldown = 0;   /* frames until ball leaves mesh */
 
 /* D3D light struct (pre-filled, position+range updated per frame) */
 static D3DLIGHT8 g_light = {
@@ -377,12 +396,74 @@ static void update_light(DWORD gfx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * N:DISCHARGE — Energy Gate
+ *
+ * When the ball touches an N:DISCHARGE mesh AND charge > 0:
+ *   1. Zero the charge (turns off light + platforms)
+ *   2. Set g_discharged flag (forces instant platform transitions, no flicker)
+ *   3. Cooldown prevents repeat triggers while ball stays on mesh
+ *
+ * Uses same MeshBuffer name scanning as charge pads.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static int check_discharge_collision(float bx, float by, float bz) {
+    if (bx == 0.0f && by == 0.0f && bz == 0.0f) return 0;
+
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (!app || IsBadReadPtr((void*)app, 0x200)) return 0;
+    DWORD board = *(DWORD*)(app + APP_BOARD);
+    if (!board || IsBadReadPtr((void*)board, 0x8B0)) return 0;
+
+    DWORD level = *(DWORD*)(board + BOARD_LEVEL_PTR);
+    if (!level || IsBadReadPtr((void*)level, 0x10)) return 0;
+    DWORD meshworld = *(DWORD*)(level + LEVEL_MESHWORLD_PTR);
+    if (!meshworld || IsBadReadPtr((void*)meshworld, 0x420)) return 0;
+
+    DWORD listBase = meshworld + MW_MESHBUFFER_LIST;
+    int count = *(int*)(listBase + ATHENALIST_COUNT);
+    if (count < 1 || count > 5000) return 0;
+    DWORD items = *(DWORD*)(listBase + ATHENALIST_ITEMS);
+    if (!items || IsBadReadPtr((void*)items, count * 4)) return 0;
+
+    for (int i = 0; i < count; i++) {
+        DWORD mb = *(DWORD*)(items + i * 4);
+        if (!mb || IsBadReadPtr((void*)mb, 0x874)) continue;
+
+        DWORD namePtr = *(DWORD*)(mb + MESHBUFFER_NAME);
+        if (!namePtr || IsBadReadPtr((void*)namePtr, 13)) continue;
+
+        const char *name = (const char*)namePtr;
+        if (!name[0]) continue;
+
+        if (_strnicmp(name, "N:DISCHARGE", 12) != 0) continue;
+
+        float mx = *(float*)(mb + MESHBUFFER_POS_X);
+        float my = *(float*)(mb + MESHBUFFER_POS_Y);
+        float mz = *(float*)(mb + MESHBUFFER_POS_Z);
+
+        float dx = bx - mx;
+        float dy = by - my;
+        float dz = bz - mz;
+        float dist_sq = dx*dx + dy*dy + dz*dz;
+
+        if (dist_sq < DISCHARGE_RADIUS_SQ)
+            return 1;
+    }
+
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Platform Flicker Update
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void update_platforms(void) {
     /* Determine desired platform state from charge */
     int want_visible = (g_charge >= FLICKER_OUT_THRESHOLD);
+
+    /* If discharge fired, force all platforms to transition instantly */
+    int force_instant = g_discharged;
+    int flicker_timer = force_instant ? 1 : TIMER_FULL;
 
     /* Get board from App */
     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
@@ -397,6 +478,9 @@ static void update_platforms(void) {
         /* Ball will change too — reset color tracking */
         g_color_saved = 0;
         g_last_ball = 0;
+        /* Reset discharge state for new race */
+        g_discharged = 0;
+        g_discharge_cooldown = 0;
     }
 
     /* Iterate dynamic objects AthenaList at board+0x2578 */
@@ -424,11 +508,18 @@ static void update_platforms(void) {
             /* Charge is high enough — want platforms visible */
             switch (state) {
             case STATE_INVISIBLE:
+                /* Was invisible — let native 2→3 transition fire so the
+                 * object gets ADDED back to the render+collision list.
+                 * Set timer=1 for fast transition. Do NOT set state=3
+                 * directly — that skips the native ADD. */
+                *(int*)(obj + AS_TIMER) = 1;
+                break;
             case STATE_FLICKER_DOWN:
-                /* Was invisible or flickering towards invisible —
-                 * start flicker up. This fires when N:CHARGE restores charge. */
-                *(int*)(obj + AS_STATE) = STATE_FLICKER_UP;
-                *(int*)(obj + AS_TIMER) = TIMER_FULL;
+                /* Was flickering towards invisible — reverse course.
+                 * Let native 1→2→3 path run by accelerating timer.
+                 * The 1→2 transition does REMOVE (already done), then
+                 * 2→3 transition does ADD. Set timer=1 to speed it up. */
+                *(int*)(obj + AS_TIMER) = 1;
                 break;
             case STATE_FLICKER_UP:
                 /* Already flickering up — don't restart countdown */
@@ -446,7 +537,7 @@ static void update_platforms(void) {
             case STATE_SOLID:
                 /* Currently visible — start flicker to disappear. */
                 *(int*)(obj + AS_STATE) = STATE_FLICKER_DOWN;
-                *(int*)(obj + AS_TIMER) = TIMER_FULL;
+                *(int*)(obj + AS_TIMER) = flicker_timer;
                 break;
             case STATE_FLICKER_DOWN:
                 /* Flicker in progress — let native state machine run */
@@ -489,6 +580,28 @@ void on_render_scene(DWORD gfx) {
     if (game_is_quitting()) return;
 
     update_light(gfx);
+
+    /* Check N:DISCHARGE collision using ball position from gfx */
+    float bx = *(float*)(gfx + GFX_BALL_X);
+    float by = *(float*)(gfx + GFX_BALL_Y);
+    float bz = *(float*)(gfx + GFX_BALL_Z);
+
+    int touching = check_discharge_collision(bx, by, bz);
+
+    if (touching && g_discharge_cooldown == 0 && g_charge > 0.0f) {
+        /* Discharge! Zero the charge and set flag for instant transitions */
+        g_charge = 0.0f;
+        g_discharged = 1;
+        g_discharge_cooldown = DISCHARGE_COOLDOWN;
+    }
+
+    if (g_discharge_cooldown > 0)
+        g_discharge_cooldown--;
+
+    /* Clear discharge flag when charge is restored (touching N:CHARGE pad) */
+    if (g_discharged && g_charge >= CHARGE_MAX)
+        g_discharged = 0;
+
     update_platforms();
 }
 
