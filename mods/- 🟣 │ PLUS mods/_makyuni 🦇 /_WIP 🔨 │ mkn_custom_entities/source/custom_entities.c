@@ -303,11 +303,13 @@ static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
 
 /* v55m_2: Chomper tracking — Tower Race chomper entity.
- * v55m_8: Replaced MeshNode approach with MeshWorld + CollisionLevel (native pattern).
- * The game's render pipeline renders the CollisionLevel from board+0xCD4. */
+ * v55m_18: Custom vtable[2] for jaw animation (same pattern as native
+ * Scene_RenderWithCamera: Timer_Init → Gfx_ScaleZ → Gfx_SetPosition →
+ * original BuildStrips → Timer_Cleanup). */
 #define MAX_CHOMPERS 16
 typedef struct {
-    DWORD coll_level;   /* CollisionLevel* (0x10D0 bytes, added to board render list) */
+    DWORD obj;          /* PopCylinder* (in game render list) */
+    DWORD orig_vtable2; /* saved original vtable[2] (BuildStrips) */
     float x, y, z;       /* Chomper position (Y -= 20.0 from S1 ref point) */
     float jaw_angle;     /* board+0x43A0 equivalent (init 0.25) */
     float phase;         /* board+0x43A4 equivalent (+= 3.0/frame for Wave_Sin) */
@@ -317,6 +319,67 @@ typedef struct {
 } ChomperState;
 static ChomperState g_chompers[MAX_CHOMPERS];
 static int g_chomper_count = 0;
+
+/* Custom vtable[2] for Chomper — applies jaw rotation before rendering.
+ * __thiscall(this) — same signature as SceneObject_BuildStrips (0x472770).
+ * Finds the ChomperState by matching the object pointer, applies
+ * Gfx_ScaleZ(-jaw_angle) + Gfx_SetPosition(x,y,z), then calls the
+ * original BuildStrips. Transform is saved/restored via Timer_Init/Cleanup. */
+static void __fastcall cEnt_chomper_buildstrips(DWORD this_) {
+    /* Find matching ChomperState */
+    ChomperState* cs = NULL;
+    int i;
+    for (i = 0; i < g_chomper_count; i++) {
+        if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
+    }
+
+    if (!cs || !cs->orig_vtable2) {
+        /* No matching Chomper or no saved vtable — call original directly */
+        typedef void (__fastcall *buildstrips_t)(DWORD);
+        ((buildstrips_t)0x00472770)(this_);
+        return;
+    }
+
+    /* Apply jaw rotation with proper transform save/restore */
+    DWORD board = 0;
+    /* Get board from g_Scene */
+    DWORD scene = *(DWORD*)0x005341E4;
+    if (scene && !IsBadReadPtr((void*)scene, 0x10)) {
+        DWORD app = *(DWORD*)0x005341E0;
+        if (app && !IsBadReadPtr((void*)app, 0x800)) {
+            board = *(DWORD*)(app + 0x178);
+        }
+    }
+
+    if (board && !IsBadReadPtr((void*)board, 0x10)) {
+        DWORD app2 = *(DWORD*)(board + BOARD_APP);
+        if (app2 && !IsBadReadPtr((void*)app2, 0x800)) {
+            DWORD gfx = *(DWORD*)(app2 + APP_GFX_DEVICE);
+            if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
+                pfn_Timer_Init && pfn_Timer_Cleanup) {
+                char timerBuf[68];
+                pfn_Timer_Init(timerBuf);
+
+                /* Apply jaw rotation (Z-axis) */
+                pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->jaw_angle);
+
+                /* Set position */
+                pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
+
+                /* Call original BuildStrips */
+                typedef void (__fastcall *buildstrips_t)(DWORD);
+                ((buildstrips_t)cs->orig_vtable2)(this_);
+
+                pfn_Timer_Cleanup(timerBuf);
+                return;
+            }
+        }
+    }
+
+    /* Fallback: call original without transform */
+    typedef void (__fastcall *buildstrips_t)(DWORD);
+    ((buildstrips_t)cs->orig_vtable2)(this_);
+}
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -2551,13 +2614,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             (void*)obj, g_tarpit_count-1, g_tarpit_count);
     }
 
-    /* v55m_11: Register Chompers for sound state machine.
-     * Entity name matched by the caller — check if this is a Chomper
-     * by looking at the mesh_path (levels\Chomper). */
+    /* v55m_11: Register Chompers for sound state machine + jaw animation.
+     * v55m_18: Override vtable[2] (BuildStrips) with cEnt_chomper_buildstrips
+     * to apply jaw rotation during the game's render pass. */
     if (mesh_path && _stricmp(mesh_path, "levels\\Chomper") == 0 &&
         g_chomper_count < MAX_CHOMPERS) {
         ChomperState* cs = &g_chompers[g_chomper_count];
-        cs->coll_level = (DWORD)obj;
+        cs->obj = (DWORD)obj;
         cs->x = px;
         cs->y = py - 20.0f;
         cs->z = pz;
@@ -2566,9 +2629,20 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
+        /* Save original vtable[2] and replace with custom function */
+        DWORD* vtable_ptr = *(DWORD**)obj;
+        if (vtable_ptr && !IsBadReadPtr(vtable_ptr, 0x20)) {
+            cs->orig_vtable2 = vtable_ptr[2];  /* save original BuildStrips */
+            /* Make vtable writable (it's in .rdata) */
+            DWORD old_protect;
+            if (VirtualProtect(vtable_ptr, 0x20, PAGE_READWRITE, &old_protect)) {
+                vtable_ptr[2] = (DWORD)cEnt_chomper_buildstrips;
+                VirtualProtect(vtable_ptr, 0x20, old_protect, &old_protect);
+            }
+        }
         g_chomper_count++;
-        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound at (%.1f,%.1f,%.1f) obj=0x%08X\n",
-                px, py - 20.0f, pz, (DWORD)obj);
+        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound+anim at (%.1f,%.1f,%.1f) obj=0x%08X vtable2=0x%08X\n",
+                px, py - 20.0f, pz, (DWORD)obj, cs->orig_vtable2);
     }
 
     if (g_rotater_count < MAX_ROTATERS) {
@@ -3943,8 +4017,8 @@ static void cEnt_chomper_update(DWORD board) {
     int i;
     for (i = 0; i < g_chomper_count; i++) {
         ChomperState* cs = &g_chompers[i];
-        if (!cs->coll_level) continue;
-        if (IsBadReadPtr((void*)cs->coll_level, 0x100)) continue;
+        if (!cs->obj) continue;
+        if (IsBadReadPtr((void*)cs->obj, 0x100)) continue;
 
         /* Update phase (for future jaw animation) */
         cs->phase += 3.0f;
