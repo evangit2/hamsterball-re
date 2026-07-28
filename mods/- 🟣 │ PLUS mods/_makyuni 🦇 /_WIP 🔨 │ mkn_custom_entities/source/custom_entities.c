@@ -1913,22 +1913,15 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     *(float*)((char*)coll + 0x10DC) = cy;
                     *(float*)((char*)coll + 0x10E0) = pz;
 
-                    /* 4. Add to board lists — game render pipeline handles rendering */
-                    pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), coll);
-                    pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), coll);
-
-                    /* 5. Add to scene spatial tree */
-                    {
-                        DWORD level = cEnt_get_level(board);
-                        if (level) {
-                            DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-                            if (sceneobj) {
-                                pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), coll);
-                            }
-                        }
-                    }
-
-                    /* 6. Track in mod-side array for state machine (sound only) */
+                    /* 4. Track in mod-side array for state machine (sound + render).
+                     * Do NOT add coll to board+0xCD4 (render list) or sceneobj+0x1C
+                     * (spatial tree). The game's Draw calls vtable[2]
+                     * (SceneObject_BuildStrips) on render list items, which calls
+                     * Font_RenderToTextureComplex. With an empty MeshWorld (no
+                     * vertices copied from parent), this creates a 0×0 D3D texture
+                     * → NULL → crash at 0x00000010.
+                     * The Present hook (cEnt_chomper_update) handles all rendering
+                     * via vtable[0x16]+[0x15] with Timer_Init/Gfx_ScaleZ. */
                     if (g_chomper_count < MAX_CHOMPERS) {
                         ChomperState* cs = &g_chompers[g_chomper_count];
                         cs->coll_level = (DWORD)coll;

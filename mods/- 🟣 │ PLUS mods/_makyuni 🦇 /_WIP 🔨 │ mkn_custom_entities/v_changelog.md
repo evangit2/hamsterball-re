@@ -1,5 +1,31 @@
 # Version Changelog
 
+## v55m_14 — Chomper crash fix (0000:00000010 during Draw)
+
+- **Root cause:** Chomper added `coll` (Level_RenderCtor result) to
+  board+0xCD4 (render list) and sceneobj+0x1C (spatial tree).
+  The game's Draw iterates the render list and calls vtable[2]
+  (SceneObject_BuildStrips) on each item. BuildStrips calls
+  Font_RenderToTextureComplex with the MeshWorld's vertex count.
+  The Chomper's `coll` has an EMPTY MeshWorld (Level_LoadMeshes
+  creates a new MeshWorld via MeshWorld_ctor_simple but the parent
+  mesh_world+0x08 is NULL because vtable[14] loads .MESHWORLD binary
+  data without setting +0x08). With 0 vertices, Font_RenderToTextureComplex
+  creates a 0x0 D3D texture -> NULL -> reads NULL+0x10 -> crash at
+  0x00000010.
+- **Fix:** Removed coll from board+0xCD4 (render list), board+0x8B8
+  (update list), and sceneobj+0x1C (spatial tree). The Present hook
+  (cEnt_chomper_update) already handles all rendering via vtable[0x16]
+  (SceneObject_CallUpdate) + vtable[0x15] (SceneObject_CallRender) with
+  Timer_Init/Gfx_ScaleZ. No game render pipeline involvement needed.
+- **Ghidra analysis:** LoadMeshWorld (0x45DE30) has two paths:
+  (1) File exists: calls vtable[14] (0x4629E0, binary file loader) +
+  vtable[15] (0x460DA0, Scene_RenderFrame). vtable[14] sets this+0x47C
+  = self, this+0x431=1, this+0x434=Timer, but does NOT set this+0x08
+  (MeshWorld*). (2) File not found: creates MeshWorld at +0x08 via
+  operator_new(0x488)+MeshWorld_ctor+MeshWorld_Parse. Level_LoadMeshes
+  reads parent+0x08 to copy mesh data -> NULL -> empty child MeshWorld.
+
 ## v55j_8 — Gluebie: match native Dizzy behavior (Ghidra-verified)
 
 - **Gluebie proximity behavior fixed to match native DizzyBoard_Update exactly.**
