@@ -1874,66 +1874,43 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
-            case 22: /* Chomper — Tower Race chomper.
-                     * v55m_8: Use native MeshWorld + CollisionLevel pattern
-                     * (same as global-chomper CEA). The game's render pipeline
-                     * renders the CollisionLevel from board+0xCD4 — no manual
-                     * Gfx/Timer/mesh vtable calls needed (those crashed at
-                     * 0x499D9D in a D3DX SSE2 function). */
+            case 22: /* Chomper — Tower Race chomper (.MESH file, not .MESHWORLD).
+                     * v55m_9: Use .MESH swap pattern (same as Bell/Fan/SawBlade).
+                     * MeshWorld_ctor formats as '%s.meshworld' — but Chomper is a
+                     * .MESH file, so MeshWorld_ctor fails with a popup. Instead:
+                     * load via cEnt_load_mesh_file (MeshNode_ctor, formats '%s.mesh'),
+                     * then PopCylinder + swap obj+0x08 to the .MESH MeshWorld*. */
                 {
-                    DWORD app = *(DWORD*)(board + BOARD_APP);
-                    DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
-                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Chomper\n"); return; }
-
-                    /* 1. Create MeshWorld via MeshWorld_ctor */
-                    void* mesh_world = pfn_operator_new(MESHWORLD_SIZE);
-                    if (!mesh_world) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper MeshWorld\n"); return; }
-                    memset(mesh_world, 0, MESHWORLD_SIZE);
-                    void* mw_result = pfn_MeshWorld_ctor(mesh_world, (void*)gfx_device, "Meshes\\Chomper");
-                    if (!mw_result) {
-                        if (logf) fprintf(logf, "  ROTATER: MeshWorld_ctor failed for Chomper\n");
+                    DWORD app2 = *(DWORD*)(board + BOARD_APP);
+                    DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
+                    if (!gfx2) { if (logf) fprintf(logf, "  ROTATER: no gfx for Chomper\n"); return; }
+                    /* Load Chomper.MESH via MeshNode_ctor */
+                    void* chomper_meshnode = cEnt_load_mesh_file(gfx2, "meshes\\Chomper", &is_mesh_node, logf);
+                    if (!chomper_meshnode || !is_mesh_node) {
+                        if (logf) fprintf(logf, "  ROTATER: Chomper.MESH load failed, trying Swirl\n");
+                        chomper_meshnode = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &is_mesh_node, logf);
+                        if (!chomper_meshnode) return;
+                    }
+                    DWORD chomper_mw = *(DWORD*)((char*)chomper_meshnode + 0x08);
+                    /* Load Swirl as PopCylinder base */
+                    int chomper_isnode = 0;
+                    void* chomper_swirl = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &chomper_isnode, logf);
+                    if (!chomper_swirl || chomper_isnode) {
+                        if (logf) fprintf(logf, "  ROTATER: Chomper Swirl base failed\n");
                         return;
                     }
-                    /* Set mesh+0x878 = App (needed by render pipeline) */
-                    *(DWORD*)((char*)mesh_world + 0x878) = app;
-
-                    /* 2. Create CollisionLevel via Level_RenderCtor */
-                    void* coll = pfn_operator_new(LEVEL_SIZE);
-                    if (!coll) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper CollisionLevel\n"); return; }
-                    memset(coll, 0, LEVEL_SIZE);
-                    void* coll_result = pfn_Level_RenderCtor(coll, mesh_world);
-                    if (!coll_result) {
-                        if (logf) fprintf(logf, "  ROTATER: Level_RenderCtor failed for Chomper\n");
-                        return;
-                    }
-
-                    /* 3. Set position at CollisionLevel+0x10D8/+10DC/+10E0 */
-                    float cy = py - 20.0f;  /* Native: Y -= 20.0 */
-                    *(float*)((char*)coll + 0x10D8) = px;
-                    *(float*)((char*)coll + 0x10DC) = cy;
-                    *(float*)((char*)coll + 0x10E0) = pz;
-
-                    /* 4. Add to board lists — game render pipeline handles rendering */
-                    pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), coll);
-                    pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), coll);
-
-                    /* 5. Add to scene spatial tree */
-                    {
-                        DWORD level = cEnt_get_level(board);
-                        if (level) {
-                            DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-                            if (sceneobj) {
-                                pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), coll);
-                            }
-                        }
-                    }
-
-                    /* 6. Track in mod-side array for state machine (no rendering) */
+                    obj = pfn_operator_new(POPCYLINDER_SIZE);
+                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper\n"); return; }
+                    memset(obj, 0, POPCYLINDER_SIZE);
+                    pfn_PopCylinder_ctor(obj, (void*)board, px, py - 20.0f, pz, chomper_swirl);
+                    /* Swap MeshWorld to Chomper mesh */
+                    if (chomper_mw) *(DWORD*)((char*)obj + 0x08) = chomper_mw;
+                    /* Track for chomper state machine (sound only, no rendering) */
                     if (g_chomper_count < MAX_CHOMPERS) {
                         ChomperState* cs = &g_chompers[g_chomper_count];
-                        cs->coll_level = (DWORD)coll;
+                        cs->coll_level = (DWORD)obj;
                         cs->x = px;
-                        cs->y = cy;
+                        cs->y = py - 20.0f;
                         cs->z = pz;
                         cs->jaw_angle = 0.25f;
                         cs->phase = 0.0f;
@@ -1941,11 +1918,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         cs->countdown = 0;
                         cs->anim_val = 0.0f;
                         g_chomper_count++;
-                        if (logf) fprintf(logf, "  ROTATER: Chomper spawned at (%.1f,%.1f,%.1f) coll=0x%08X\n",
-                                px, cy, pz, (DWORD)coll);
+                        if (logf) fprintf(logf, "  ROTATER: Chomper spawned at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                                px, py - 20.0f, pz, (DWORD)obj);
                     }
-                    return;  /* Skip spawn_done — game renders from board+0xCD4 */
                 }
+                break;
             case 27: /* Spinner_Level_ctor — Expert Race "BRIDGE" (falling bridge piece)
                       * 6 params: (this, board, x, y, z, mesh, float_param) */
                 obj = pfn_operator_new(SPINNER_LEVEL_SIZE);
@@ -4385,7 +4362,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_8 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_9 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
