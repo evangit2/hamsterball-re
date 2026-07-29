@@ -321,8 +321,8 @@ static ChomperState g_chompers[MAX_CHOMPERS];
 static int g_chomper_count = 0;
 
 /* Custom vtable[18] for Chomper — forward declaration.
- * Implementation after pfn declarations. */
-static void __fastcall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
+ * Uses __thiscall to match game's vtable calling convention. */
+static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -403,47 +403,44 @@ static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457AD0;
 typedef void (__fastcall *Timer_Cleanup_t)(void* out);
 static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A40;
 
-/* Custom vtable[18] for Chomper — applies jaw rotation before rendering.
+/* v55m_24: Custom vtable[18] for Chomper — applies jaw rotation before rendering.
  * vtable[18] = D3DXSkinMesh_CopyStripData (0x45E0E0) — the ACTUAL render function.
- * vtable[2] (BuildStrips) only builds vertex data, doesn't draw.
- * Same pattern as native Scene_RenderWithCamera (0x40DFA0):
- * Timer_Init → Gfx_ScaleZ(-jaw_angle) → Gfx_SetPosition(x,y,z) →
- * original vtable[18] → Timer_Cleanup.
- * __thiscall(this, char param_1, int param_2) — same signature as original. */
-static void __fastcall cEnt_chomper_render(DWORD this_, char param_1, int param_2) {
+ * Uses __thiscall (NOT __fastcall) to match the game's vtable calling convention.
+ * __fastcall corrupts param_1 (goes to EDX instead of stack) for 2+ param funcs.
+ *
+ * Native Scene_RenderWithCamera (0x40DFA0) pattern:
+ *   Timer_Init → Gfx_ScaleZ(-jaw_angle) → original vtable[18] → Timer_Cleanup
+ *
+ * We do NOT call Gfx_SetPosition — the PopCylinder already has its position set
+ * during creation. Adding Gfx_SetPosition here would offset the mesh.
+ * We only apply the jaw rotation (Gfx_ScaleZ) which is the bite animation. */
+static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2) {
     ChomperState* cs = NULL;
     int i;
     for (i = 0; i < g_chomper_count; i++) {
         if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
     }
     if (!cs || !cs->orig_vtable2) {
-        typedef void (__fastcall *render_t)(DWORD, char, int);
+        /* Not a tracked chomper — call original directly */
+        typedef void (__thiscall *render_t)(DWORD, char, int);
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
-    DWORD app = *(DWORD*)0x005341E0;
-    if (app && !IsBadReadPtr((void*)app, 0x800)) {
-        DWORD board = *(DWORD*)(app + 0x178);
-        if (board && !IsBadReadPtr((void*)board, 0x10)) {
-            DWORD app2 = *(DWORD*)(board + BOARD_APP);
-            if (app2 && !IsBadReadPtr((void*)app2, 0x800)) {
-                DWORD gfx = *(DWORD*)(app2 + APP_GFX_DEVICE);
-                if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
-                    pfn_Timer_Init && pfn_Timer_Cleanup) {
-                    char timerBuf[68];
-                    pfn_Timer_Init(timerBuf);
-                    pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->jaw_angle);
-                    pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
-                    typedef void (__fastcall *render_t)(DWORD, char, int);
-                    ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
-                    pfn_Timer_Cleanup(timerBuf);
-                    return;
-                }
-            }
-        }
+    /* Apply jaw rotation via Gfx_ScaleZ, wrapped in Timer save/restore.
+     * pfn_Gfx_ScaleZ_Bridge is declared as __thiscall(gfx, float) but the actual
+     * function is __cdecl(float) — the ECX=gfx param is harmlessly ignored. */
+    if (pfn_Gfx_ScaleZ_Bridge && pfn_Timer_Init && pfn_Timer_Cleanup) {
+        char timerBuf[68];
+        pfn_Timer_Init(timerBuf);
+        pfn_Gfx_ScaleZ_Bridge(NULL, -cs->jaw_angle);
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
+        pfn_Timer_Cleanup(timerBuf);
+    } else {
+        /* Fallback — no transform, just render */
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
     }
-    typedef void (__fastcall *render_t)(DWORD, char, int);
-    ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
 }
 
 /* Vec3_Copy — copy 3 floats */
@@ -2600,9 +2597,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             (void*)obj, g_tarpit_count-1, g_tarpit_count);
     }
 
-    /* v55m_11: Register Chompers for sound state machine + jaw animation.
-     * v55m_18: Override vtable[2] (BuildStrips) with cEnt_chomper_buildstrips
-     * to apply jaw rotation during the game's render pass. */
+    /* v55m_24: Register Chompers for sound state machine + jaw animation.
+     * Re-enabled vtable[18] hook — the v55m_23 matrix write approach was broken
+     * (wrote past PopCylinder allocation at obj+0x10E0, 0x10D0 is the alloc size).
+     *
+     * Creates a PRIVATE vtable copy (256 bytes / 64 entries) for each Chomper
+     * PopCylinder, saves original vtable[18] in cs->orig_vtable2, then overrides
+     * vtable[18] with cEnt_chomper_render.
+     *
+     * The game accesses vtable[21]+[22] on PopCylinder objects, so the copy
+     * MUST be at least 256 bytes (64 entries × 4 bytes) to avoid OOB reads. */
     if (mesh_path && _stricmp(mesh_path, "levels\\Chomper") == 0 &&
         g_chomper_count < MAX_CHOMPERS) {
         ChomperState* cs = &g_chompers[g_chomper_count];
@@ -2615,11 +2619,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
-        /* v55m_23: No vtable hook needed. Jaw animation is done by
-         * writing the rotation matrix directly to the render Level's
-         * transform (renderLevel+0x04) in the Present hook. */
+
+        /* Create private vtable copy (256 bytes = 64 entries) */
+        DWORD orig_vtable = *(DWORD*)obj;
+        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
+            DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
+            if (new_vtable) {
+                memcpy(new_vtable, (void*)orig_vtable, 256);
+                /* Save original vtable[18] (offset 0x48) */
+                cs->orig_vtable2 = new_vtable[18];
+                /* Override vtable[18] with our hook */
+                new_vtable[18] = (DWORD)&cEnt_chomper_render;
+                /* Replace object's vtable pointer */
+                *(DWORD*)obj = (DWORD)new_vtable;
+            }
+        }
+
         g_chomper_count++;
-        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound+anim at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+        if (logf) fprintf(logf, "  ROTATER: Chomper registered with vtable[18] hook at (%.1f,%.1f,%.1f) obj=0x%08X\n",
                 px, py - 20.0f, pz, (DWORD)obj);
     }
 
@@ -4064,33 +4081,12 @@ static void cEnt_chomper_update(DWORD board) {
                 break;
         }
 
-        /* v55m_23: Write Z-rotation matrix directly to render Level transform.
-         * Instead of hooking vtable functions, write the rotation+translation
-         * matrix directly to the render Level at obj+0x10E0+0x04.
-         * The render Level's transform matrix (64 bytes, 16 floats) is read
-         * by the game's render pipeline during Draw.
-         * Matrix layout (row-major 4x4):
-         *   [cos -sin 0  tx]
-         *   [sin  cos 0  ty]
-         *   [0    0   1  tz]
-         *   [0    0   0  1] */
-        DWORD render_level = *(DWORD*)((char*)cs->obj + 0x10E0);
-        if (render_level && !IsBadReadPtr((void*)render_level, 0x50)) {
-            float* mtx = (float*)((char*)render_level + 0x04);
-            float rad = cs->jaw_angle * 3.14159265f / 180.0f;
-            float cos_a = cosf(rad);
-            float sin_a = sinf(rad);
-            /* Row 0 */
-            mtx[0] = cos_a;  mtx[1] = -sin_a;  mtx[2] = 0.0f;  mtx[3] = cs->x;
-            /* Row 1 */
-            mtx[4] = sin_a;  mtx[5] = cos_a;   mtx[6] = 0.0f;  mtx[7] = cs->y;
-            /* Row 2 */
-            mtx[8] = 0.0f;   mtx[9] = 0.0f;    mtx[10] = 1.0f; mtx[11] = cs->z;
-            /* Row 3 */
-            mtx[12] = 0.0f;  mtx[13] = 0.0f;   mtx[14] = 0.0f; mtx[15] = 1.0f;
-            /* Set flag to indicate transform has changed */
-            *(char*)((char*)render_level + 0x4C) = 1;
-        }
+        /* v55m_24: Jaw animation is now applied via vtable[18] hook
+         * (cEnt_chomper_render). The vtable hook calls Gfx_ScaleZ(-jaw_angle)
+         * during the render pass, which is the correct approach matching
+         * the native Scene_RenderWithCamera pattern.
+         * The old v55m_23 matrix write to obj+0x10E0 was removed because
+         * it wrote past the PopCylinder allocation (0x10D0 bytes). */
     }
 }
 typedef struct {
