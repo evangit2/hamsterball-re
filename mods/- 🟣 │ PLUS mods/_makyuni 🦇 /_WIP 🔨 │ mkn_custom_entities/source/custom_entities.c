@@ -2615,30 +2615,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
-    /* v55m_22: Create a PRIVATE vtable copy for the render Level (obj+0x10E0).
-         * The game renders through the render Level's vtable[18], NOT through
-         * the PopCylinder's vtable. The render Level is created by
-         * Level_RenderCtor (inside PopCylinder_ctor) and stored at obj+0x10E0.
-         * When the game calls vtable[18] on the render root, it recursively
-         * renders all children — including the PopCylinder's render Level.
-         * We need to hook THAT Level's vtable[18], not the PopCylinder's. */
-        DWORD render_level = *(DWORD*)((char*)obj + 0x10E0);
-        if (render_level && !IsBadReadPtr((void*)render_level, 0x100)) {
-            DWORD* orig_vtable = *(DWORD**)render_level;
-            if (orig_vtable && !IsBadReadPtr(orig_vtable, 0x100)) {
-                DWORD* priv_vtable = (DWORD*)pfn_operator_new(0x100);
-                if (priv_vtable) {
-                    int vi;
-                    for (vi = 0; vi < 64; vi++) priv_vtable[vi] = orig_vtable[vi];
-                    cs->orig_vtable2 = orig_vtable[18];
-                    priv_vtable[18] = (DWORD)cEnt_chomper_render;
-                    *(DWORD**)render_level = priv_vtable;
-                }
-            }
-        }
+        /* v55m_23: No vtable hook needed. Jaw animation is done by
+         * writing the rotation matrix directly to the render Level's
+         * transform (renderLevel+0x04) in the Present hook. */
         g_chomper_count++;
-        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound+anim at (%.1f,%.1f,%.1f) obj=0x%08X vtable18=0x%08X\n",
-                px, py - 20.0f, pz, (DWORD)obj, cs->orig_vtable2);
+        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound+anim at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                px, py - 20.0f, pz, (DWORD)obj);
     }
 
     if (g_rotater_count < MAX_ROTATERS) {
@@ -4082,13 +4064,33 @@ static void cEnt_chomper_update(DWORD board) {
                 break;
         }
 
-        /* v55m_16: Jaw animation rendering DISABLED.
-         * The Present hook's Gfx_ScaleZ + Gfx_SetPosition modify the global
-         * D3D transform state, which persists into the next frame and corrupts
-         * level rendering (flicker every few seconds).
-         * The PopCylinder is already rendered by the game's Draw via vtable[2].
-         * Jaw animation will need a different approach: either hook the game's
-         * Draw BEFORE it renders the Chomper, or modify mesh vertices directly. */
+        /* v55m_23: Write Z-rotation matrix directly to render Level transform.
+         * Instead of hooking vtable functions, write the rotation+translation
+         * matrix directly to the render Level at obj+0x10E0+0x04.
+         * The render Level's transform matrix (64 bytes, 16 floats) is read
+         * by the game's render pipeline during Draw.
+         * Matrix layout (row-major 4x4):
+         *   [cos -sin 0  tx]
+         *   [sin  cos 0  ty]
+         *   [0    0   1  tz]
+         *   [0    0   0  1] */
+        DWORD render_level = *(DWORD*)((char*)cs->obj + 0x10E0);
+        if (render_level && !IsBadReadPtr((void*)render_level, 0x50)) {
+            float* mtx = (float*)((char*)render_level + 0x04);
+            float rad = cs->jaw_angle * 3.14159265f / 180.0f;
+            float cos_a = cosf(rad);
+            float sin_a = sinf(rad);
+            /* Row 0 */
+            mtx[0] = cos_a;  mtx[1] = -sin_a;  mtx[2] = 0.0f;  mtx[3] = cs->x;
+            /* Row 1 */
+            mtx[4] = sin_a;  mtx[5] = cos_a;   mtx[6] = 0.0f;  mtx[7] = cs->y;
+            /* Row 2 */
+            mtx[8] = 0.0f;   mtx[9] = 0.0f;    mtx[10] = 1.0f; mtx[11] = cs->z;
+            /* Row 3 */
+            mtx[12] = 0.0f;  mtx[13] = 0.0f;   mtx[14] = 0.0f; mtx[15] = 1.0f;
+            /* Set flag to indicate transform has changed */
+            *(char*)((char*)render_level + 0x4C) = 1;
+        }
     }
 }
 typedef struct {
@@ -4413,7 +4415,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_22 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_23 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
