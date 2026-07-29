@@ -2615,26 +2615,25 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
-        /* v55m_19: Create a PRIVATE vtable copy for this PopCylinder.
-         * The original vtable at 0x4D58F0 is in .rdata (read-only).
-         * VirtualProtect on .rdata is unreliable. Instead, allocate
-         * a private vtable buffer, copy the original entries, and
-         * replace vtable[2] with our custom BuildStrips.
-         * v55m_20: Buffer must be large enough for all 24+ vtable slots
-         * (game accesses up to vtable[0x16]=index 22). Using 256 bytes. */
-        DWORD* orig_vtable = *(DWORD**)obj;
-        if (orig_vtable && !IsBadReadPtr(orig_vtable, 0x100)) {
-            DWORD* priv_vtable = (DWORD*)pfn_operator_new(0x100);
-            if (priv_vtable) {
-                /* Copy 64 vtable entries (256 bytes) to cover all slots */
-                int vi;
-                for (vi = 0; vi < 64; vi++) priv_vtable[vi] = orig_vtable[vi];
-                /* Save original vtable[18] */
-                cs->orig_vtable2 = orig_vtable[18];
-                /* Replace vtable[18] with custom render function */
-                priv_vtable[18] = (DWORD)cEnt_chomper_render;
-                /* Set object's vtable pointer to private copy */
-                *(DWORD**)obj = priv_vtable;
+    /* v55m_22: Create a PRIVATE vtable copy for the render Level (obj+0x10E0).
+         * The game renders through the render Level's vtable[18], NOT through
+         * the PopCylinder's vtable. The render Level is created by
+         * Level_RenderCtor (inside PopCylinder_ctor) and stored at obj+0x10E0.
+         * When the game calls vtable[18] on the render root, it recursively
+         * renders all children — including the PopCylinder's render Level.
+         * We need to hook THAT Level's vtable[18], not the PopCylinder's. */
+        DWORD render_level = *(DWORD*)((char*)obj + 0x10E0);
+        if (render_level && !IsBadReadPtr((void*)render_level, 0x100)) {
+            DWORD* orig_vtable = *(DWORD**)render_level;
+            if (orig_vtable && !IsBadReadPtr(orig_vtable, 0x100)) {
+                DWORD* priv_vtable = (DWORD*)pfn_operator_new(0x100);
+                if (priv_vtable) {
+                    int vi;
+                    for (vi = 0; vi < 64; vi++) priv_vtable[vi] = orig_vtable[vi];
+                    cs->orig_vtable2 = orig_vtable[18];
+                    priv_vtable[18] = (DWORD)cEnt_chomper_render;
+                    *(DWORD**)render_level = priv_vtable;
+                }
             }
         }
         g_chomper_count++;
@@ -4414,7 +4413,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_21 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_22 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
