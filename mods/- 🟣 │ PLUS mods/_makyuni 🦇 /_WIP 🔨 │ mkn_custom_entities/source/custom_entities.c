@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_27k
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_27l
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3403,9 +3403,10 @@ static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 static void cEnt_chomper_update(DWORD board);
 static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
 
-/* v55m_27k: Get the first ball pointer from board+0x29D4 (ball AthenaList).
- * v55m_27i/j used g_Scene+0x29D4, but the ball list lives on the BOARD,
- * not the scene. Gluebie/Tarpit already read board+0x29D4 correctly. */
+/* v55m_27l: Get Player 1 ball pointer from board+0x2DEC (all-balls AthenaList).
+ * v55m_27k used board+0x29D4, but that is the bad-balls/enemy list — the object
+ * at index 0 there does not move with the player. The real player ball list is
+ * at board+0x2DEC; we iterate it and select ball+0x18 == 0 (player index 0). */
 static DWORD get_ball_ptr(void) {
     DWORD board = get_board();
     FILE* df = fopen("custom_entities_catapult.log", "a");
@@ -3413,10 +3414,12 @@ static DWORD get_ball_ptr(void) {
         fprintf(df, "GETBALL: board=0x%08X\n", board);
         fclose(df);
     }
-    if (!board || board < 0x10000 || IsBadReadPtr((void*)board, 0x2A00)) {
+    if (!board || board < 0x10000 || IsBadReadPtr((void*)board, 0x2E00)) {
+        df = fopen("custom_entities_catapult.log", "a");
+        if (df) { fprintf(df, "GETBALL: bad board\n"); fclose(df); }
         return 0;
     }
-    DWORD ball_list = board + 0x29D4;  /* AthenaList embedded in Board */
+    DWORD ball_list = board + 0x2DEC;  /* AthenaList: all balls */
     if (IsBadReadPtr((void*)ball_list, 0x410)) {
         df = fopen("custom_entities_catapult.log", "a");
         if (df) { fprintf(df, "GETBALL: bad ball_list 0x%08X\n", ball_list); fclose(df); }
@@ -3429,20 +3432,38 @@ static DWORD get_ball_ptr(void) {
     DWORD items = *(DWORD*)(ball_list + 0x40C);
     df = fopen("custom_entities_catapult.log", "a");
     if (df) { fprintf(df, "GETBALL: items=0x%08X\n", items); fclose(df); }
-    if (!items || items < 0x10000 || IsBadReadPtr((void*)items, 4)) {
+    if (!items || items < 0x10000 || IsBadReadPtr((void*)items, count * 4)) {
         df = fopen("custom_entities_catapult.log", "a");
         if (df) { fprintf(df, "GETBALL: bad items\n"); fclose(df); }
         return 0;
     }
-    DWORD ball = *(DWORD*)items;
-    df = fopen("custom_entities_catapult.log", "a");
-    if (df) { fprintf(df, "GETBALL: ball=0x%08X\n", ball); fclose(df); }
-    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
+
+    /* Find Player 1 ball (player_idx at ball+0x18 == 0) */
+    DWORD i;
+    DWORD player_ball = 0;
+    for (i = 0; i < count; i++) {
+        DWORD ball = ((DWORD*)items)[i];
+        if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) continue;
+        DWORD player_idx = *(DWORD*)(ball + 0x18);
         df = fopen("custom_entities_catapult.log", "a");
-        if (df) { fprintf(df, "GETBALL: bad ball\n"); fclose(df); }
-        return 0;
+        if (df) {
+            float x = *(float*)(ball + 0x164);
+            float y = *(float*)(ball + 0x168);
+            float z = *(float*)(ball + 0x16C);
+            fprintf(df, "GETBALL: [%u] ball=0x%08X player_idx=%d pos=(%.1f,%.1f,%.1f)\n",
+                i, ball, player_idx, x, y, z);
+            fclose(df);
+        }
+        if (player_idx == 0 && player_ball == 0) {
+            player_ball = ball;
+        }
     }
-    return ball;
+    df = fopen("custom_entities_catapult.log", "a");
+    if (df) {
+        fprintf(df, "GETBALL: player_ball=0x%08X\n", player_ball);
+        fclose(df);
+    }
+    return player_ball;
 }
 
 /* v55m_27i: Ball position and force-accumulator offsets.
@@ -4737,7 +4758,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27k Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27l Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
