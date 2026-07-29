@@ -2616,14 +2616,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
          * The original vtable at 0x4D58F0 is in .rdata (read-only).
          * VirtualProtect on .rdata is unreliable. Instead, allocate
          * a private vtable buffer, copy the original entries, and
-         * replace vtable[2] with our custom BuildStrips. */
+         * replace vtable[2] with our custom BuildStrips.
+         * v55m_20: Buffer must be large enough for all 24+ vtable slots
+         * (game accesses up to vtable[0x16]=index 22). Using 256 bytes. */
         DWORD* orig_vtable = *(DWORD**)obj;
-        if (orig_vtable && !IsBadReadPtr(orig_vtable, 0x20)) {
-            DWORD* priv_vtable = (DWORD*)pfn_operator_new(0x20);
+        if (orig_vtable && !IsBadReadPtr(orig_vtable, 0x100)) {
+            DWORD* priv_vtable = (DWORD*)pfn_operator_new(0x100);
             if (priv_vtable) {
-                /* Copy 8 vtable entries (32 bytes) */
+                /* Copy 64 vtable entries (256 bytes) to cover all slots */
                 int vi;
-                for (vi = 0; vi < 8; vi++) priv_vtable[vi] = orig_vtable[vi];
+                for (vi = 0; vi < 64; vi++) priv_vtable[vi] = orig_vtable[vi];
                 /* Save original vtable[2] */
                 cs->orig_vtable2 = orig_vtable[2];
                 /* Replace vtable[2] with custom function */
@@ -4409,7 +4411,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_19 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_20 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
