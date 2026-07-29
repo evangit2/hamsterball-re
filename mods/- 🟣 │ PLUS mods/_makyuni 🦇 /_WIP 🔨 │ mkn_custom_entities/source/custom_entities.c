@@ -4557,7 +4557,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27c Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27d Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4660,7 +4660,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                  * When Catapult_Launch sets obj+0x10F0=1, apply velocity
                  * to the ball and clear the flag. */
                 {
-                    DWORD launch_flag = *(DWORD*)((char*)obj + 0x10F0);
+                    DWORD launch_flag = *(unsigned char*)((char*)obj + 0x10F0);
                     if (launch_flag == 1) {
                         /* Catapult is launching — apply velocity to ball */
                         DWORD ball = *(DWORD*)(g_catapults[i].board + 0x361C);
@@ -4683,8 +4683,8 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                             *(DWORD*)((char*)ball + 0x320) = 100;
                             *(DWORD*)((char*)ball + 0x31E) = 0;
                         }
-                        /* Clear launch flag */
-                        *(DWORD*)((char*)obj + 0x10F0) = 0;
+                        /* Clear launch flag (byte, not dword) */
+                        *(unsigned char*)((char*)obj + 0x10F0) = 0;
                     }
                 }
             }
@@ -4727,7 +4727,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                         /* Trigger radius ~40 units (covers the bottom plate area).
                          * Only trigger if not already launched (check launching flag
                          * at obj+0x10F0 — set to 1 by Catapult_Launch). */
-                        DWORD launching = *(DWORD*)((char*)obj + 0x10F0);
+                        DWORD launching = *(unsigned char*)((char*)obj + 0x10F0);
                         if (dist_sq < 1600.0f && !launching) {
                             /* Ball is on the bottom plate — launch the catapult! */
                             pfn_Catapult_Launch((void*)obj);
