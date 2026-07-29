@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_27i
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_27j
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3433,6 +3433,10 @@ static DWORD get_ball_ptr(void) {
 #define BALL_FORCE_Y  0x174
 #define BALL_FORCE_Z  0x178
 
+/* v55m_27j: diagnostic heartbeat + per-frame catapult debug */
+static int g_catapult_heartbeat = 0;
+static int g_catapult_debug_count = 0;
+
 /* v55m_27i: Catapult launch detection + force application.
  * Moved from background thread to Present hook (main thread) for reliable
  * per-frame timing and to avoid racing with Ball_Update. */
@@ -3440,6 +3444,19 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
     int i;
     FILE* df = NULL;
     DWORD ball = get_ball_ptr();
+
+    /* v55m_27j: log heartbeat + ball pointer to separate file */
+    g_catapult_heartbeat++;
+    if (g_catapult_heartbeat <= 300 || (g_catapult_heartbeat % 60) == 0) {
+        df = fopen("custom_entities_catapult.log", "a");
+        if (df) {
+            fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d\n",
+                g_catapult_heartbeat, ball, g_catapult_count);
+            fclose(df);
+            df = NULL;
+        }
+    }
+
     if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) return;
 
     float ball_x = *(float*)(ball + BALL_POS_X);
@@ -3461,6 +3478,19 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dy = ball_y - cs->y;
         float dz = ball_z - cs->z;
         float dist_sq = dx*dx + dy*dy + dz*dz;
+
+        /* v55m_27j: log distance for first 300 frames and while close */
+        if (g_catapult_debug_count < 300 || dist_sq < 20000.0f) {
+            g_catapult_debug_count++;
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: debug[%d] ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f cooldown=%d launching=%d\n",
+                    g_catapult_debug_count, ball_x, ball_y, ball_z, cs->x, cs->y, cs->z,
+                    sqrtf(dist_sq), cs->cooldown, cs->launching);
+                fclose(df);
+                df = NULL;
+            }
+        }
 
         /* v55m_27i: increased radius to 90 units. The old 40-unit radius was
          * too small when the ball sits on the catapult arm away from the pivot. */
@@ -4683,7 +4713,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27i Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27j Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
