@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28b
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3402,11 +3402,9 @@ static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 /* Forward decls — defined below */
 static void cEnt_chomper_update(DWORD board);
 static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
-
-/* v55m_27l: Get Player 1 ball pointer from board+0x2DEC (all-balls AthenaList).
- * v55m_27k used board+0x29D4, but that is the bad-balls/enemy list — the object
- * at index 0 there does not move with the player. The real player ball list is
- * at board+0x2DEC; we iterate it and select ball+0x18 == 0 (player index 0). */
+/* v55m_28b: Get Player 1 ball pointer from board+0x29D4 (ball AthenaList).
+ * v55m_27l tried board+0x2DEC, but that list is empty. The real player ball
+ * list is board+0x29D4; we iterate it and select ball+0x18 == 0. */
 static DWORD get_ball_ptr(void) {
     DWORD board = get_board();
     FILE* df = fopen("custom_entities_catapult.log", "a");
@@ -3419,7 +3417,7 @@ static DWORD get_ball_ptr(void) {
         if (df) { fprintf(df, "GETBALL: bad board\n"); fclose(df); }
         return 0;
     }
-    DWORD ball_list = board + 0x2DEC;  /* AthenaList: all balls */
+    DWORD ball_list = board + 0x29D4;  /* AthenaList: balls */
     if (IsBadReadPtr((void*)ball_list, 0x410)) {
         df = fopen("custom_entities_catapult.log", "a");
         if (df) { fprintf(df, "GETBALL: bad ball_list 0x%08X\n", ball_list); fclose(df); }
