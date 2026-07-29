@@ -3914,33 +3914,21 @@ static void cEnt_waterwheel_update(DWORD board) {
         /* Decrement angle by 0.5 degrees per frame (native constant at 0x4CF3F0) */
         ww->angle -= 0.5f;
 
-        /* Build rotation matrix on stack (4x4 = 64 bytes, but Gfx_RotateY writes to buf+4) */
-        float rot_matrix[16];   /* 4x4 float matrix */
-        memset(rot_matrix, 0, sizeof(rot_matrix));
-
-        /* Gfx_RotateY(matrix_buf, angle_degrees) — writes rotation to buf+0x04 */
-        pfn_Gfx_RotateY(rot_matrix, ww->angle);
-
-        /* Apply rotation to the PopCylinder object (the visible object).
-         * PopCylinder vtable[22] (offset 0x58) = SetTransform — updates vertex buffer.
-         * PopCylinder vtable[21] (offset 0x54) = SetPosition — applies rotation matrix. */
-        DWORD vtable = *(DWORD*)ww->pc_obj;
-        if (IsBadReadPtr((void*)vtable, 0x60)) continue;
-
-        /* vtable[22] (offset 0x58) = SetTransform — no params, __thiscall 0 params
-         * This calls mesh->sceneobj->vtable[1] (update vertex buffer from rotation) */
-        typedef void (__thiscall *MeshSetTransform_t)(DWORD this_);
-        MeshSetTransform_t pfn_setTransform = *(MeshSetTransform_t*)(vtable + 0x58);
-        if (pfn_setTransform) {
-            pfn_setTransform(ww->pc_obj);
-        }
-
-        /* vtable[21] (offset 0x54) = SetPosition — 1 param (&matrix), __thiscall RET 4
-         * This calls mesh->sceneobj->vtable[3] with &rotation_matrix */
-        typedef void (__thiscall *MeshSetPosition_t)(DWORD this_, float* matrix);
-        MeshSetPosition_t pfn_setPosition = *(MeshSetPosition_t*)(vtable + 0x54);
-        if (pfn_setPosition) {
-            pfn_setPosition(ww->pc_obj, rot_matrix);
+        /* v55m_25b: Use EntityTransform (same as Chomper + rotator.c).
+         * Previous code called vtable[22]+[21] which corrupted the vertex
+         * buffer, making the mesh invisible after 1 frame.
+         *
+         * Write rotation angle to EntityTransform.rotY at:
+         *   MeshWorld(pc_obj+0x08)+0x28+0x08 (rotY, index 2)
+         * The game's render pipeline reads this during Draw. */
+        DWORD meshworld = *(DWORD*)((char*)ww->pc_obj + 0x08);
+        if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
+            float* transform = (float*)((char*)meshworld + 0x28);
+            if (!IsBadReadPtr(transform, 0x24)) {
+                transform[2] = ww->angle;   /* rotY at +0x08 (index 2) */
+                transform[4] = 1.0f;         /* rotScale at +0x10 (index 4) */
+                transform[8] = 1.0f;         /* posScale at +0x20 (index 8) */
+            }
         }
 
         /* v55m_1: Apply force to ball when near waterwheel (native DizzyBoard_Update behavior).
