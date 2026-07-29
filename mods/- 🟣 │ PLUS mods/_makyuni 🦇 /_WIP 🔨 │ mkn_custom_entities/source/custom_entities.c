@@ -298,6 +298,8 @@ typedef struct {
     DWORD obj;       /* Catapult object pointer */
     DWORD board;     /* board pointer */
     float x, y, z;   /* position */
+    int  launching;  /* v55m_27e: our own launch flag (not native obj+0x10F0) */
+    int  cooldown;   /* v55m_27e: frames to wait before re-launching */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4557,7 +4559,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27d Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27e Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4653,38 +4655,46 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                  * Proximity check calls Catapult_Launch (sets flag), and the
                  * launch logic below handles the velocity directly. */
                 /* pfn_Catapult_vtable11((void*)obj); -- REMOVED */
-                /* v55m_27b: REMOVED pfn_Catapult_Update (vtable[61]) — causes
-                 * crash at 0x453383 during Draw because vtable[61] corrupts
-                 * vertex data that the render thread reads next frame.
-                 * Instead, replicate the launch logic directly:
-                 * When Catapult_Launch sets obj+0x10F0=1, apply velocity
-                 * to the ball and clear the flag. */
+
+                /* v55m_27e: Launch detection using OUR OWN state (not native obj+0x10F0).
+                 * The native Catapult_Launch writes to obj+0x10F0 but our spawned
+                 * PopCylinder doesn't initialize that field properly. */
                 {
-                    DWORD launch_flag = *(unsigned char*)((char*)obj + 0x10F0);
-                    if (launch_flag == 1) {
+                    CatapultState* cs = &g_catapults[i];
+                    /* Handle cooldown */
+                    if (cs->cooldown > 0) {
+                        cs->cooldown--;
+                        if (cs->cooldown == 0) {
+                            cs->launching = 0;
+                        }
+                    }
+                    if (cs->launching) {
                         /* Catapult is launching — apply velocity to ball */
-                        DWORD ball = *(DWORD*)(g_catapults[i].board + 0x361C);
-                        if (ball && !IsBadReadPtr((void*)ball, 0x200)) {
-                            /* Launch velocity: 65.0 on dominant axis (native behavior) */
-                            /* Check catapult angle to determine launch direction */
-                            float angle = *(float*)((char*)obj + 0x10E8);
-                            int angle_int = (int)(angle * 180.0f / 3.14159265f);
-                            float vx = 0.0f, vz = 0.0f;
-                            if (angle_int % 360 == 0) {
-                                vz = 65.0f;
+                        DWORD ball = *(DWORD*)(cs->board + 0x361C);
+                        if (ball && ball > 0x10000 && !IsBadReadPtr((void*)ball, 0x200)) {
+                            /* Launch velocity: 65.0 upward + forward */
+                            float ball_x = *(float*)((char*)ball + 0x164);
+                            float ball_z = *(float*)((char*)ball + 0x16C);
+                            /* Direction: from catapult toward ball (outward) */
+                            float dx = ball_x - cs->x;
+                            float dz = ball_z - cs->z;
+                            float len = sqrtf(dx*dx + dz*dz);
+                            if (len > 0.1f) {
+                                dx /= len; dz /= len;
                             } else {
-                                vx = 65.0f;
+                                dx = 0.0f; dz = 1.0f;
                             }
-                            /* Apply velocity via force accumulators (not position) */
-                            *(float*)((char*)ball + 0x170) += vx;
-                            *(float*)((char*)ball + 0x174) += 0.0f;
-                            *(float*)((char*)ball + 0x178) += vz;
+                            /* Apply launch force: 65 horizontal + 40 vertical */
+                            *(float*)((char*)ball + 0x170) += dx * 65.0f;
+                            *(float*)((char*)ball + 0x174) += 40.0f;  /* upward */
+                            *(float*)((char*)ball + 0x178) += dz * 65.0f;
                             /* Set star trail effect (native: ball+0x320=100) */
                             *(DWORD*)((char*)ball + 0x320) = 100;
                             *(DWORD*)((char*)ball + 0x31E) = 0;
                         }
-                        /* Clear launch flag (byte, not dword) */
-                        *(unsigned char*)((char*)obj + 0x10F0) = 0;
+                        /* Reset for next launch */
+                        cs->launching = 0;
+                        cs->cooldown = 60; /* 2 seconds at 30fps */
                     }
                 }
             }
@@ -4714,23 +4724,22 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                         DWORD obj = g_catapults[i].obj;
                         if (!obj || obj < 0x10000) continue;
                         if (IsBadReadPtr((void*)obj, 0x1108)) continue;
-                        /* Check if ball is near catapult base (bottom plate area).
-                         * Catapult base is at obj+0x10D8/0x10DC/0x10E0.
-                         * Bottom plate is ~10 units below pivot. */
-                        float cx = *(float*)((char*)obj + 0x10D8);
-                        float cy = *(float*)((char*)obj + 0x10DC);
-                        float cz = *(float*)((char*)obj + 0x10E0);
+                        /* v55m_27e: Use our own g_catapults[] state for position + launch flag.
+                         * Native obj+0x10D8 etc. aren't initialized on spawned PopCylinder. */
+                        float cx = g_catapults[i].x;
+                        float cy = g_catapults[i].y;
+                        float cz = g_catapults[i].z;
                         float dx = ball_x - cx;
-                        float dy = ball_y - (cy - 10.0f);
+                        float dy = ball_y - cy;
                         float dz = ball_z - cz;
                         float dist_sq = dx*dx + dy*dy + dz*dz;
                         /* Trigger radius ~40 units (covers the bottom plate area).
-                         * Only trigger if not already launched (check launching flag
-                         * at obj+0x10F0 — set to 1 by Catapult_Launch). */
-                        DWORD launching = *(unsigned char*)((char*)obj + 0x10F0);
-                        if (dist_sq < 1600.0f && !launching) {
-                            /* Ball is on the bottom plate — launch the catapult! */
-                            pfn_Catapult_Launch((void*)obj);
+                         * Only trigger if not already launching and cooldown is 0. */
+                        if (dist_sq < 1600.0f && !g_catapults[i].launching && g_catapults[i].cooldown == 0) {
+                            /* Ball is on the catapult — launch! */
+                            g_catapults[i].launching = 1;
+                            if (logf) fprintf(logf, "  CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f\n",
+                                ball_x, ball_y, ball_z, cx, cy, cz, sqrtf(dist_sq));
                         }
                     }
                 }
