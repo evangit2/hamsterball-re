@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_27l
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3537,13 +3537,16 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_27i: increased radius to 90 units. The old 40-unit radius was
-         * too small when the ball sits on the catapult arm away from the pivot. */
-        if (dist_sq < 8100.0f && !cs->launching && cs->cooldown == 0) {
+        /* v55m_28: catapult trigger zone is a horizontal disc around the pivot.
+         * The arm extends ~250 units from the pivot, so use 250 radius.
+         * Also require the ball to be near the arm level (within +/- 80 units Y). */
+        float dy_abs = dy < 0.0f ? -dy : dy;
+        int in_trigger_zone = (dist_sq < 62500.0f && dy_abs < 80.0f);
+        if (in_trigger_zone && !cs->launching && cs->cooldown == 0) {
             cs->launching = 1;
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
-                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f\n",
+                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f zone=1\n",
                     ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, sqrtf(dist_sq));
                 fclose(df);
                 df = NULL;
