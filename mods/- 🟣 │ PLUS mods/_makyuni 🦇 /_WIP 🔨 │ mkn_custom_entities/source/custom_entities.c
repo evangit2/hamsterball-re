@@ -397,11 +397,18 @@ static Gfx_SetPosition_t pfn_Gfx_SetPosition_Bridge = (Gfx_SetPosition_t)0x00457
 typedef void (__thiscall *Gfx_RotateY_t)(void* matrix_buf, float angle_degrees);
 static Gfx_RotateY_t pfn_Gfx_RotateY = (Gfx_RotateY_t)0x00457C90;
 
-/* Timer_Init / Timer_Cleanup — timer context for render transforms */
-typedef void (__fastcall *Timer_Init_t)(void* out);
-static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457AD0;
-typedef void (__fastcall *Timer_Cleanup_t)(void* out);
-static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A40;
+/* Timer_Init / Timer_Cleanup — timer context for render transforms.
+ * v55m_26: FIXED SWAPPED POINTERS! Was: Init=0x457AD0, Cleanup=0x457A40
+ * Timer_Init at 0x457A40: sets vtable ptr, RET 0, __thiscall(ECX=timer_buf)
+ * Timer_Cleanup at 0x457A50: restores transform, RET 4, __thiscall(ECX=timer_buf) */
+typedef void (__thiscall *Timer_Init_t)(void* timer_buf);
+static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457A40;
+typedef void (__thiscall *Timer_Cleanup_t)(void* timer_buf);
+static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A50;
+
+/* Gfx_Scale — set base scale on all 3 axes. __thiscall(ECX=timer_buf, x, y, z) RET 0xC */
+typedef void (__thiscall *Gfx_Scale_t)(void* timer_buf, float x, float y, float z);
+static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
 
 /* v55m_24: Custom vtable[18] for Chomper — applies jaw rotation before rendering.
  * vtable[18] = D3DXSkinMesh_CopyStripData (0x45E0E0) — the ACTUAL render function.
@@ -426,15 +433,29 @@ static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
-    /* Apply jaw rotation via Gfx_ScaleZ, wrapped in Timer save/restore.
-     * pfn_Gfx_ScaleZ_Bridge is declared as __thiscall(gfx, float) but the actual
-     * function is __cdecl(float) — the ECX=gfx param is harmlessly ignored. */
-    if (pfn_Gfx_ScaleZ_Bridge && pfn_Timer_Init && pfn_Timer_Cleanup) {
+    /* v55m_26: Apply jaw rotation via Timer + Gfx_Scale + Gfx_ScaleZ.
+     * Matches native Scene_RenderWithCamera pattern exactly:
+     *   Timer_Init(&timer)           — save current D3D transform
+     *   Gfx_Scale(1.0, 1.0, 1.0)     — reset base scale to identity
+     *   Gfx_ScaleZ(-jaw_angle)       — apply jaw rotation on Z axis
+     *   original vtable[18](this)    — render with modified transform
+     *   Timer_Cleanup(&timer)        — restore D3D transform
+     *
+     * v55m_24 crashed because:
+     * 1. Timer pointers were SWAPPED (Init↔Cleanup)
+     * 2. Gfx_ScaleZ called with ECX=NULL (needs timer object)
+     * 3. Missing Gfx_Scale call (Z-scale was multiplied by stale value) */
+    if (pfn_Timer_Init && pfn_Timer_Cleanup && pfn_Gfx_Scale && pfn_Gfx_ScaleZ_Bridge) {
         char timerBuf[68];
         pfn_Timer_Init(timerBuf);
-        pfn_Gfx_ScaleZ_Bridge(NULL, -cs->jaw_angle);
+        /* Reset scale to 1.0 on all axes, then apply jaw on Z */
+        pfn_Gfx_Scale(timerBuf, 1.0f, 1.0f, 1.0f);
+        /* Gfx_ScaleZ needs ECX=timer object (not NULL!) */
+        pfn_Gfx_ScaleZ_Bridge(timerBuf, -cs->jaw_angle);
+        /* Call original render */
         typedef void (__thiscall *render_t)(DWORD, char, int);
         ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
+        /* Restore transform */
         pfn_Timer_Cleanup(timerBuf);
     } else {
         /* Fallback — no transform, just render */
@@ -641,10 +662,10 @@ static const char* g_swirl_mesh_path = (const char*)0x004CFFE0;
  * Native render (0x0043B330) calls Gfx_ScaleX(angle) to build the
  * rotation-to-render matrix. ROT_M lets the .txt config choose which
  * axis function to call instead. */
-typedef void (__cdecl *Gfx_Scale_t)(float);
-static Gfx_Scale_t pfn_Gfx_ScaleX = (Gfx_Scale_t)0x00457C60;
-static Gfx_Scale_t pfn_Gfx_ScaleY = (Gfx_Scale_t)0x00457C90;
-static Gfx_Scale_t pfn_Gfx_ScaleZ = (Gfx_Scale_t)0x00457CC0;
+typedef void (__cdecl *Gfx_ScaleAxis_t)(float);
+static Gfx_ScaleAxis_t pfn_Gfx_ScaleX = (Gfx_ScaleAxis_t)0x00457C60;
+static Gfx_ScaleAxis_t pfn_Gfx_ScaleY = (Gfx_ScaleAxis_t)0x00457C90;
+static Gfx_ScaleAxis_t pfn_Gfx_ScaleZ = (Gfx_ScaleAxis_t)0x00457CC0;
 
 /* AI mesh path table — game .data string addresses for AI 1-5 */
 static const char* g_ai_mesh_paths[] = {
@@ -2597,14 +2618,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             (void*)obj, g_tarpit_count-1, g_tarpit_count);
     }
 
-    /* v55m_25: Register Chompers for jaw animation via EntityTransform.
-     * Uses the SAME approach as rotator.c — writes rotation angle directly
-     * to MeshWorld+0x28 (EntityTransform.rotZ) which the game's render
-     * pipeline reads during Draw. No Gfx/Timer calls needed — avoids
-     * the D3DX SSE2 crash at 0x499D9D caused by stale Gfx_ScaleZ state.
-     *
-     * No vtable hook needed. The game's own D3DXSkinMesh_CopyStripData
-     * reads EntityTransform and applies it as a D3D world matrix. */
+    /* v55m_26: Register Chompers for jaw animation via vtable[18] hook.
+     * Re-enabled with FIXED Timer pointers + Gfx_Scale call.
+     * The v55m_25 EntityTransform approach didn't work because PopCylinder's
+     * vtable[18] (D3DXSkinMesh_CopyStripData) doesn't read EntityTransform.
+     * It reads the D3D world matrix set by Gfx_Scale/Gfx_ScaleZ. */
     if (mesh_path && _stricmp(mesh_path, "levels\\Chomper") == 0 &&
         g_chomper_count < MAX_CHOMPERS) {
         ChomperState* cs = &g_chompers[g_chomper_count];
@@ -2617,7 +2635,21 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
-        cs->orig_vtable2 = 0;  /* No vtable hook — using EntityTransform instead */
+
+        /* Create private vtable copy (256 bytes = 64 entries) */
+        DWORD orig_vtable = *(DWORD*)obj;
+        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
+            DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
+            if (new_vtable) {
+                memcpy(new_vtable, (void*)orig_vtable, 256);
+                /* Save original vtable[18] (offset 0x48) */
+                cs->orig_vtable2 = new_vtable[18];
+                /* Override vtable[18] with our hook */
+                new_vtable[18] = (DWORD)&cEnt_chomper_render;
+                /* Replace object's vtable pointer */
+                *(DWORD*)obj = (DWORD)new_vtable;
+            }
+        }
 
         /* v55m_25b: Detailed registration logging */
         DWORD meshworld = *(DWORD*)((char*)obj + 0x08);
@@ -2626,20 +2658,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 g_chomper_count, (DWORD)obj, cs->x, cs->y, cs->z);
         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable=0x%08X meshworld=0x%08X (obj+0x08)\n",
                 g_chomper_count, obj_vtable, meshworld);
-        if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
-            if (logf) fprintf(logf, "  CHOMPER[%d]: meshworld+0x28 (EntityTransform) = 0x%08X, readable=%d\n",
-                    g_chomper_count, meshworld + 0x28,
-                    !IsBadReadPtr((void*)(meshworld + 0x28), 0x24));
-            /* Dump current EntityTransform values before we write */
-            float* t = (float*)((char*)meshworld + 0x28);
-            if (!IsBadReadPtr(t, 0x24)) {
-                if (logf) fprintf(logf, "  CHOMPER[%d]: EntityTransform BEFORE: rotX=%.3f rotY=%.3f rotZ=%.3f rotScale=%.3f posX=%.1f posY=%.1f posZ=%.1f posScale=%.3f\n",
-                        g_chomper_count, t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8]);
-            }
-        } else {
-            if (logf) fprintf(logf, "  CHOMPER[%d]: WARNING meshworld=0x%08X is NULL or bad read!\n",
-                    g_chomper_count, meshworld);
-        }
+        if (logf) fprintf(logf, "  CHOMPER[%d]: vtable[18] hooked: orig=0x%08X new=0x%08X\n",
+                g_chomper_count, cs->orig_vtable2, (DWORD)&cEnt_chomper_render);
 
         g_chomper_count++;
     }
@@ -3914,22 +3934,13 @@ static void cEnt_waterwheel_update(DWORD board) {
         /* Decrement angle by 0.5 degrees per frame (native constant at 0x4CF3F0) */
         ww->angle -= 0.5f;
 
-        /* v55m_25b: Use EntityTransform (same as Chomper + rotator.c).
-         * Previous code called vtable[22]+[21] which corrupted the vertex
-         * buffer, making the mesh invisible after 1 frame.
-         *
-         * Write rotation angle to EntityTransform.rotY at:
-         *   MeshWorld(pc_obj+0x08)+0x28+0x08 (rotY, index 2)
-         * The game's render pipeline reads this during Draw. */
-        DWORD meshworld = *(DWORD*)((char*)ww->pc_obj + 0x08);
-        if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
-            float* transform = (float*)((char*)meshworld + 0x28);
-            if (!IsBadReadPtr(transform, 0x24)) {
-                transform[2] = ww->angle;   /* rotY at +0x08 (index 2) */
-                transform[4] = 1.0f;         /* rotScale at +0x10 (index 4) */
-                transform[8] = 1.0f;         /* posScale at +0x20 (index 8) */
-            }
-        }
+        /* v55m_26: Waterwheel rotation via vtable[18] hook (same as Chomper).
+         * EntityTransform didn't work for PopCylinder.
+         * The vtable[18] hook calls Timer + Gfx_Scale + Gfx_ScaleZ.
+         * For now, store angle in a global that the hook can read.
+         * TODO: implement vtable[18] hook for Waterwheel too.
+         * For now, just update the angle — the hook will be added next. */
+        /* No EntityTransform writes — doesn't work for PopCylinder */
 
         /* v55m_1: Apply force to ball when near waterwheel (native DizzyBoard_Update behavior).
          * Native: Ball_ApplyForceV2(ball, dirX, dirY, dirZ, 0.1)
@@ -4094,7 +4105,7 @@ static void cEnt_chomper_update(DWORD board) {
                 break;
         }
 
-        /* v55m_25b: Log state machine transitions and EntityTransform writes */
+        /* v55m_25b: Log state machine transitions */
         if (chomp_log) {
             const char* state_names[] = {"GROWING", "HOLDING", "CLOSING", "RECOVERING"};
             fprintf(chomp_log, "  CHOMPER[%d]: obj=0x%08X state=%d(%s)->%d(%s) jaw=%.3f phase=%.1f countdown=%d anim=%.1f bite=%d\n",
@@ -4104,39 +4115,11 @@ static void cEnt_chomper_update(DWORD board) {
                     cs->jaw_angle, cs->phase, cs->countdown, cs->anim_val, bite_triggered);
         }
 
-        /* v55m_25: Write jaw rotation to EntityTransform.rotZ.
-         * Same approach as rotator.c — the game's render pipeline
-         * (D3DXSkinMesh_CopyStripData) reads EntityTransform at
-         * MeshWorld+0x28 and applies it as a D3D world matrix.
-         *
-         * MeshWorld pointer is at obj+0x08.
-         * EntityTransform is at MeshWorld+0x28 (first render context).
-         *
-         * The native game uses Gfx_ScaleZ(-jaw_angle). We write
-         * -jaw_angle to rotZ for the same visual effect. */
-        DWORD meshworld = *(DWORD*)((char*)cs->obj + 0x08);
-        if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
-            float* transform = (float*)((char*)meshworld + 0x28);
-            if (!IsBadReadPtr(transform, 0x24)) {
-                transform[3] = -cs->jaw_angle;  /* rotZ at +0x0C (index 3) */
-                transform[4] = 1.0f;            /* rotScale at +0x10 (index 4) */
-                transform[8] = 1.0f;            /* posScale at +0x20 (index 8) */
-
-                if (chomp_log) {
-                    fprintf(chomp_log, "  CHOMPER[%d]: WROTE EntityTransform at 0x%08X: rotZ=%.3f rotScale=1.0 posScale=1.0\n",
-                            i, (DWORD)transform, -cs->jaw_angle);
-                    fprintf(chomp_log, "  CHOMPER[%d]: VERIFY after write: rotX=%.3f rotY=%.3f rotZ=%.3f rotScale=%.3f posX=%.1f posY=%.1f posZ=%.1f posScale=%.3f\n",
-                            i, transform[1], transform[2], transform[3], transform[4],
-                            transform[5], transform[6], transform[7], transform[8]);
-                }
-            } else {
-                if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: FAIL transform at 0x%08X is bad read ptr (meshworld=0x%08X)\n",
-                        i, (DWORD)transform, meshworld);
-            }
-        } else {
-            if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: FAIL meshworld=0x%08X is NULL or bad read (obj=0x%08X+0x08)\n",
-                    i, meshworld, cs->obj);
-        }
+        /* v55m_26: Jaw rotation is applied via vtable[18] hook
+         * (cEnt_chomper_render) during the render pass.
+         * The hook calls Timer_Init + Gfx_Scale(1,1,1) + Gfx_ScaleZ(-jaw)
+         * + original render + Timer_Cleanup.
+         * No EntityTransform writes needed. */
     }
 
     if (chomp_log) {
