@@ -4557,6 +4557,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 }
                 /* Call Catapult's vtable[11] (state machine) directly */
                 pfn_Catapult_vtable11((void*)obj);
+                /* v55m_25d: Also call vtable[61] (Catapult_Update 0x43F080) —
+                 * THIS is the function that builds tension and actually launches
+                 * the ball (Scene_ForEachBall_SetVelocity at tension=90.0).
+                 * Without this, Catapult_Launch sets the flag but nothing
+                 * processes it. The Catapult is not in the game's update list
+                 * (board+0x8B8), so the game never calls vtable[61] on it. */
+                pfn_Catapult_Update((void*)obj);
             }
         }
 
