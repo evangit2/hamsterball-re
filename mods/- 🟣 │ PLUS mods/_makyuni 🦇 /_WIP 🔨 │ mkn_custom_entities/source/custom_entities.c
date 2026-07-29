@@ -2240,8 +2240,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 }
                 /* v55m_1: Add to board+0x43B8 (Catapult AthenaList) — TowerCollisionEvents
                  * iterates this list to find which catapult was triggered by E:CATAPULTBOTTOM. */
-                pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
-                if (logf) fprintf(logf, "  ROTATER: Catapult added to board+0x43B8 (catapult list)\n");
+                /* v55m_27f: REMOVED — adding PopCylinder to native catapult list causes
+                 * crash at 0x453376 when the game's background thread iterates the list
+                 * and dereferences catapult-specific fields that PopCylinder doesn't have.
+                 * We handle launch detection ourselves via proximity check. */
+                /* pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj); -- REMOVED */
                 /* v55m_27: Do NOT add to board+0x8B8 — causes MeshArchive_ctor crash
                  * (0x478EDD) because the game's update loop expects native catapult objects. */
                 /* Track for per-frame Catapult_vtable11 calls */
@@ -4559,7 +4562,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27e Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27f Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4637,10 +4640,14 @@ static DWORD WINAPI entity_thread(LPVOID param) {
          * in that list. We call it manually here for each tracked Catapult. */
         {
             int i;
+            DWORD cur_board = get_board();
+            /* v55m_27f: Skip if board changed during level transition */
+            if (!cur_board) continue;
             for (i = 0; i < g_catapult_count; i++) {
                 DWORD obj = g_catapults[i].obj;
-                if (!obj || obj < 0x10000) {
-                    /* Stale entry — clear it */
+                /* v55m_27f: Also verify the board pointer in g_catapults matches current board */
+                if (!obj || obj < 0x10000 || g_catapults[i].board != cur_board) {
+                    /* Stale entry or board changed — clear it */
                     g_catapults[i].obj = 0;
                     continue;
                 }
@@ -4712,7 +4719,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         {
             DWORD board = get_board();
             if (board && g_catapult_count > 0) {
-                /* Get ball position from board+0x361C (ball pointer) */
+                /* v55m_27f: Also verify board matches our catapults' board */
                 DWORD ball_ptr = *(DWORD*)(board + 0x361C);
                 if (ball_ptr && ball_ptr > 0x10000 &&
                     !IsBadReadPtr((void*)ball_ptr, 0x200)) {
@@ -4723,6 +4730,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                     for (i = 0; i < g_catapult_count; i++) {
                         DWORD obj = g_catapults[i].obj;
                         if (!obj || obj < 0x10000) continue;
+                        if (g_catapults[i].board != board) continue; /* v55m_27f: board mismatch */
                         if (IsBadReadPtr((void*)obj, 0x1108)) continue;
                         /* v55m_27e: Use our own g_catapults[] state for position + launch flag.
                          * Native obj+0x10D8 etc. aren't initialized on spawned PopCylinder. */
