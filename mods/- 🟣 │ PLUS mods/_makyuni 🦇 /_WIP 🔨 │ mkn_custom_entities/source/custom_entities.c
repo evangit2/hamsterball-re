@@ -4557,7 +4557,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27b Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27c Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4646,8 +4646,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                     g_catapults[i].obj = 0;
                     continue;
                 }
-                /* Call Catapult's vtable[11] (state machine) directly */
-                pfn_Catapult_vtable11((void*)obj);
+                /* v55m_27c: REMOVED pfn_Catapult_vtable11 call — crashes at
+                 * 0x453376 in background thread because vtable[11] iterates
+                 * AthenaLists that the main thread modifies simultaneously.
+                 * The Catapult doesn't need a per-frame state machine from us.
+                 * Proximity check calls Catapult_Launch (sets flag), and the
+                 * launch logic below handles the velocity directly. */
+                /* pfn_Catapult_vtable11((void*)obj); -- REMOVED */
                 /* v55m_27b: REMOVED pfn_Catapult_Update (vtable[61]) — causes
                  * crash at 0x453383 during Draw because vtable[61] corrupts
                  * vertex data that the render thread reads next frame.
