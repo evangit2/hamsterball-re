@@ -320,9 +320,9 @@ typedef struct {
 static ChomperState g_chompers[MAX_CHOMPERS];
 static int g_chomper_count = 0;
 
-/* Custom vtable[2] for Chomper — forward declaration.
+/* Custom vtable[18] for Chomper — forward declaration.
  * Implementation after pfn declarations. */
-static void __fastcall cEnt_chomper_buildstrips(DWORD this_);
+static void __fastcall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -403,19 +403,22 @@ static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457AD0;
 typedef void (__fastcall *Timer_Cleanup_t)(void* out);
 static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A40;
 
-/* Custom vtable[2] for Chomper — applies jaw rotation before rendering.
+/* Custom vtable[18] for Chomper — applies jaw rotation before rendering.
+ * vtable[18] = D3DXSkinMesh_CopyStripData (0x45E0E0) — the ACTUAL render function.
+ * vtable[2] (BuildStrips) only builds vertex data, doesn't draw.
  * Same pattern as native Scene_RenderWithCamera (0x40DFA0):
  * Timer_Init → Gfx_ScaleZ(-jaw_angle) → Gfx_SetPosition(x,y,z) →
- * original BuildStrips → Timer_Cleanup. */
-static void __fastcall cEnt_chomper_buildstrips(DWORD this_) {
+ * original vtable[18] → Timer_Cleanup.
+ * __thiscall(this, char param_1, int param_2) — same signature as original. */
+static void __fastcall cEnt_chomper_render(DWORD this_, char param_1, int param_2) {
     ChomperState* cs = NULL;
     int i;
     for (i = 0; i < g_chomper_count; i++) {
         if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
     }
     if (!cs || !cs->orig_vtable2) {
-        typedef void (__fastcall *bs_t)(DWORD);
-        ((bs_t)0x00472770)(this_);
+        typedef void (__fastcall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
     DWORD app = *(DWORD*)0x005341E0;
@@ -431,16 +434,16 @@ static void __fastcall cEnt_chomper_buildstrips(DWORD this_) {
                     pfn_Timer_Init(timerBuf);
                     pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->jaw_angle);
                     pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
-                    typedef void (__fastcall *bs_t)(DWORD);
-                    ((bs_t)cs->orig_vtable2)(this_);
+                    typedef void (__fastcall *render_t)(DWORD, char, int);
+                    ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
                     pfn_Timer_Cleanup(timerBuf);
                     return;
                 }
             }
         }
     }
-    typedef void (__fastcall *bs_t)(DWORD);
-    ((bs_t)cs->orig_vtable2)(this_);
+    typedef void (__fastcall *render_t)(DWORD, char, int);
+    ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
 }
 
 /* Vec3_Copy — copy 3 floats */
@@ -2626,16 +2629,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* Copy 64 vtable entries (256 bytes) to cover all slots */
                 int vi;
                 for (vi = 0; vi < 64; vi++) priv_vtable[vi] = orig_vtable[vi];
-                /* Save original vtable[2] */
-                cs->orig_vtable2 = orig_vtable[2];
-                /* Replace vtable[2] with custom function */
-                priv_vtable[2] = (DWORD)cEnt_chomper_buildstrips;
+                /* Save original vtable[18] */
+                cs->orig_vtable2 = orig_vtable[18];
+                /* Replace vtable[18] with custom render function */
+                priv_vtable[18] = (DWORD)cEnt_chomper_render;
                 /* Set object's vtable pointer to private copy */
                 *(DWORD**)obj = priv_vtable;
             }
         }
         g_chomper_count++;
-        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound+anim at (%.1f,%.1f,%.1f) obj=0x%08X vtable2=0x%08X\n",
+        if (logf) fprintf(logf, "  ROTATER: Chomper registered for sound+anim at (%.1f,%.1f,%.1f) obj=0x%08X vtable18=0x%08X\n",
                 px, py - 20.0f, pz, (DWORD)obj, cs->orig_vtable2);
     }
 
@@ -4411,7 +4414,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_20 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_21 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
