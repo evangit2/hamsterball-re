@@ -4557,7 +4557,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27b Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4648,12 +4648,40 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 }
                 /* Call Catapult's vtable[11] (state machine) directly */
                 pfn_Catapult_vtable11((void*)obj);
-                /* v55m_27: Call vtable[61] (Catapult_Update 0x43F080) from Present hook.
-                 * This is safe because Present runs AFTER the game's update+render.
-                 * The previous crash at 0x45337E was from v55m_25d which had
-                 * different code. v55m_26 removed this call entirely (catapult
-                 * didn't work). Now restoring it with the crash fix. */
-                pfn_Catapult_Update((void*)obj);
+                /* v55m_27b: REMOVED pfn_Catapult_Update (vtable[61]) — causes
+                 * crash at 0x453383 during Draw because vtable[61] corrupts
+                 * vertex data that the render thread reads next frame.
+                 * Instead, replicate the launch logic directly:
+                 * When Catapult_Launch sets obj+0x10F0=1, apply velocity
+                 * to the ball and clear the flag. */
+                {
+                    DWORD launch_flag = *(DWORD*)((char*)obj + 0x10F0);
+                    if (launch_flag == 1) {
+                        /* Catapult is launching — apply velocity to ball */
+                        DWORD ball = *(DWORD*)(g_catapults[i].board + 0x361C);
+                        if (ball && !IsBadReadPtr((void*)ball, 0x200)) {
+                            /* Launch velocity: 65.0 on dominant axis (native behavior) */
+                            /* Check catapult angle to determine launch direction */
+                            float angle = *(float*)((char*)obj + 0x10E8);
+                            int angle_int = (int)(angle * 180.0f / 3.14159265f);
+                            float vx = 0.0f, vz = 0.0f;
+                            if (angle_int % 360 == 0) {
+                                vz = 65.0f;
+                            } else {
+                                vx = 65.0f;
+                            }
+                            /* Apply velocity via force accumulators (not position) */
+                            *(float*)((char*)ball + 0x170) += vx;
+                            *(float*)((char*)ball + 0x174) += 0.0f;
+                            *(float*)((char*)ball + 0x178) += vz;
+                            /* Set star trail effect (native: ball+0x320=100) */
+                            *(DWORD*)((char*)ball + 0x320) = 100;
+                            *(DWORD*)((char*)ball + 0x31E) = 0;
+                        }
+                        /* Clear launch flag */
+                        *(DWORD*)((char*)obj + 0x10F0) = 0;
+                    }
+                }
             }
         }
 
