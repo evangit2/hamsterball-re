@@ -1,6 +1,6 @@
 /*
  * electric_lights.c — Electric Lights + Light Platforms merged mod
- * v5: Replaced proximity scanning with real collision dispatch hooks
+ * v6: Fixed DFLOOR4 handling + ball color restoration on level change/unload
  *
  * Phase 1+2: Charge system + ball glow + D3D light + platform flicker
  *
@@ -54,6 +54,16 @@
  *     not distance checks.
  *   - Removed scan_charge_pads(), check_discharge_collision(), and
  *     all proximity constants.
+ *
+ * v6 CHANGES:
+ *   - FIXED: DFLOOR4 was missing from platform flicker. Unlike DFLOOR1-3+TRODE
+ *     which are in board+0x2578 AthenaList, DFLOOR4 is stored separately at
+ *     board+0x438C. Added dedicated handling for it.
+ *   - FIXED: Ball color was not restored on level change or DLL unload.
+ *     Added restore_ball_color() — called on board change (new race) and
+ *     DLL_PROCESS_DETACH. Restores original color multiplier + alpha=1.0.
+ *   - NOTE: Ball becoming invisible at charge=0 is INTENTIONAL (feature,
+ *     not bug). The ball alpha is tied to charge level by design.
  *
  * Build:
  *   i686-w64-mingw32-gcc -shared -o bass.dll electric_lights.c \
@@ -112,6 +122,7 @@
 
 /* Board offsets */
 #define BOARD_DYNOBJ_LIST    0x2578
+#define BOARD_DFOOR4_PTR     0x438C  /* DFLOOR4 stored separately, not in AthenaList */
 
 /* AthenaList offsets */
 #define ATHENALIST_COUNT      0x04
@@ -191,6 +202,34 @@ static DWORD    g_last_ball = 0;
 
 /* Track board pointer — reset charge when board changes (new race) */
 static DWORD    g_last_board = 0;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Ball Color Restoration
+ *
+ * Called on level change (board change) and DLL unload to restore the
+ * ball's original color multiplier and alpha values. Without this, the
+ * ball keeps the mod's glow colors after the level changes or the DLL
+ * is unloaded, which could make it permanently invisible (alpha=0)
+ * or wrong-colored.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void restore_ball_color(void) {
+    if (!g_color_saved) return;
+
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (!app || IsBadReadPtr((void*)app, 0x200)) return;
+
+    DWORD ball = *(DWORD*)(app + APP_BALL_P1);
+    if (!ball || IsBadReadPtr((void*)(ball + BALL_COLOR_R), 16)) return;
+
+    *(float*)(ball + BALL_COLOR_R) = g_orig_color_r;
+    *(float*)(ball + BALL_COLOR_G) = g_orig_color_g;
+    *(float*)(ball + BALL_COLOR_B) = g_orig_color_b;
+    *(float*)(ball + BALL_ALPHA)   = 1.0f;  /* fully visible */
+
+    g_color_saved = 0;
+    g_last_ball = 0;
+}
 
 /* N:DISCHARGE state */
 static int      g_discharged = 0;          /* 1 = discharge has fired */
@@ -390,6 +429,8 @@ static void update_platforms(void) {
 
     /* Detect board change -> reset charge for new race */
     if (board != g_last_board) {
+        /* Restore ball color from the OLD ball before switching */
+        restore_ball_color();
         g_charge = CHARGE_MAX;
         g_last_board = board;
         /* Ball will change too — reset color tracking */
@@ -463,6 +504,49 @@ static void update_platforms(void) {
                 /* Stable invisible — pin timer to prevent transition */
                 *(int*)(obj + AS_TIMER) = TIMER_FULL;
                 break;
+            }
+        }
+    }
+
+    /* DFLOOR4 is NOT in the board+0x2578 AthenaList — it's stored separately
+     * at board+0x438C. Neon_CreateDynamicObjects sets it to state=2 (invisible)
+     * at spawn. We must handle it independently. */
+    if (!IsBadReadPtr((void*)(board + BOARD_DFOOR4_PTR), 4)) {
+        DWORD dfloor4 = *(DWORD*)(board + BOARD_DFOOR4_PTR);
+        if (dfloor4 && !IsBadReadPtr((void*)dfloor4, 4) &&
+            *(DWORD*)dfloor4 == ARENASTANDS_VTABLE &&
+            !IsBadReadPtr((void*)(dfloor4 + AS_STATE), 4)) {
+
+            int state = *(int*)(dfloor4 + AS_STATE);
+
+            if (want_visible) {
+                switch (state) {
+                case STATE_INVISIBLE:
+                    *(int*)(dfloor4 + AS_TIMER) = 1;
+                    break;
+                case STATE_FLICKER_DOWN:
+                    *(int*)(dfloor4 + AS_TIMER) = 1;
+                    break;
+                case STATE_FLICKER_UP:
+                    break;
+                case STATE_SOLID:
+                default:
+                    *(int*)(dfloor4 + AS_TIMER) = TIMER_FULL;
+                    break;
+                }
+            } else {
+                switch (state) {
+                case STATE_SOLID:
+                    *(int*)(dfloor4 + AS_STATE) = STATE_FLICKER_DOWN;
+                    *(int*)(dfloor4 + AS_TIMER) = flicker_timer;
+                    break;
+                case STATE_FLICKER_DOWN:
+                    break;
+                case STATE_INVISIBLE:
+                default:
+                    *(int*)(dfloor4 + AS_TIMER) = TIMER_FULL;
+                    break;
+                }
             }
         }
     }
@@ -577,6 +661,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         DisableThreadLibraryCalls(hModule);
         load_real_bass();
         install_hooks();
+    } else if (reason == DLL_PROCESS_DETACH) {
+        /* Restore ball color before the DLL is unloaded.
+         * Without this, the ball keeps mod colors (possibly alpha=0
+         * = invisible) after the mod is removed. */
+        restore_ball_color();
     }
     return TRUE;
 }
