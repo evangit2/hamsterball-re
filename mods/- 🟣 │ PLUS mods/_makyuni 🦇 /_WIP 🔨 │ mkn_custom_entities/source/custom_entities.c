@@ -2597,16 +2597,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             (void*)obj, g_tarpit_count-1, g_tarpit_count);
     }
 
-    /* v55m_24: Register Chompers for sound state machine + jaw animation.
-     * Re-enabled vtable[18] hook — the v55m_23 matrix write approach was broken
-     * (wrote past PopCylinder allocation at obj+0x10E0, 0x10D0 is the alloc size).
+    /* v55m_25: Register Chompers for jaw animation via EntityTransform.
+     * Uses the SAME approach as rotator.c — writes rotation angle directly
+     * to MeshWorld+0x28 (EntityTransform.rotZ) which the game's render
+     * pipeline reads during Draw. No Gfx/Timer calls needed — avoids
+     * the D3DX SSE2 crash at 0x499D9D caused by stale Gfx_ScaleZ state.
      *
-     * Creates a PRIVATE vtable copy (256 bytes / 64 entries) for each Chomper
-     * PopCylinder, saves original vtable[18] in cs->orig_vtable2, then overrides
-     * vtable[18] with cEnt_chomper_render.
-     *
-     * The game accesses vtable[21]+[22] on PopCylinder objects, so the copy
-     * MUST be at least 256 bytes (64 entries × 4 bytes) to avoid OOB reads. */
+     * No vtable hook needed. The game's own D3DXSkinMesh_CopyStripData
+     * reads EntityTransform and applies it as a D3D world matrix. */
     if (mesh_path && _stricmp(mesh_path, "levels\\Chomper") == 0 &&
         g_chomper_count < MAX_CHOMPERS) {
         ChomperState* cs = &g_chompers[g_chomper_count];
@@ -2619,24 +2617,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->state = 0;
         cs->countdown = 0;
         cs->anim_val = 0.0f;
-
-        /* Create private vtable copy (256 bytes = 64 entries) */
-        DWORD orig_vtable = *(DWORD*)obj;
-        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
-            DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
-            if (new_vtable) {
-                memcpy(new_vtable, (void*)orig_vtable, 256);
-                /* Save original vtable[18] (offset 0x48) */
-                cs->orig_vtable2 = new_vtable[18];
-                /* Override vtable[18] with our hook */
-                new_vtable[18] = (DWORD)&cEnt_chomper_render;
-                /* Replace object's vtable pointer */
-                *(DWORD*)obj = (DWORD)new_vtable;
-            }
-        }
-
+        cs->orig_vtable2 = 0;  /* No vtable hook — using EntityTransform instead */
         g_chomper_count++;
-        if (logf) fprintf(logf, "  ROTATER: Chomper registered with vtable[18] hook at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+        if (logf) fprintf(logf, "  ROTATER: Chomper registered with EntityTransform at (%.1f,%.1f,%.1f) obj=0x%08X\n",
                 px, py - 20.0f, pz, (DWORD)obj);
     }
 
@@ -4081,12 +4064,37 @@ static void cEnt_chomper_update(DWORD board) {
                 break;
         }
 
-        /* v55m_24: Jaw animation is now applied via vtable[18] hook
-         * (cEnt_chomper_render). The vtable hook calls Gfx_ScaleZ(-jaw_angle)
-         * during the render pass, which is the correct approach matching
-         * the native Scene_RenderWithCamera pattern.
-         * The old v55m_23 matrix write to obj+0x10E0 was removed because
-         * it wrote past the PopCylinder allocation (0x10D0 bytes). */
+        /* v55m_25: Write jaw rotation to EntityTransform.rotZ.
+         * Same approach as rotator.c — the game's render pipeline
+         * (D3DXSkinMesh_CopyStripData) reads EntityTransform at
+         * MeshWorld+0x28 and applies it as a D3D world matrix.
+         *
+         * EntityTransform layout (from rotator.c):
+         *   +0x00: vtable
+         *   +0x04: rotX (float)
+         *   +0x08: rotY (float)
+         *   +0x0C: rotZ (float)  ← jaw rotation goes here
+         *   +0x10: rotScale (float) = 1.0
+         *   +0x14: posX (float)
+         *   +0x18: posY (float)
+         *   +0x1C: posZ (float)
+         *   +0x20: posScale (float) = 1.0
+         *
+         * MeshWorld pointer is at obj+0x08.
+         * EntityTransform is at MeshWorld+0x28 (first render context).
+         *
+         * The native game uses Gfx_ScaleZ(-jaw_angle) which is a Z-axis
+         * scale/rotation. We write -jaw_angle to rotZ for the same effect.
+         * Negative because the native code negates: Gfx_ScaleZ(-jaw). */
+        DWORD meshworld = *(DWORD*)((char*)cs->obj + 0x08);
+        if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
+            float* transform = (float*)((char*)meshworld + 0x28);
+            if (!IsBadReadPtr(transform, 0x24)) {
+                transform[3] = -cs->jaw_angle;  /* rotZ at +0x0C (index 3) */
+                transform[4] = 1.0f;            /* rotScale at +0x10 (index 4) */
+                transform[8] = 1.0f;            /* posScale at +0x20 (index 8) */
+            }
+        }
     }
 }
 typedef struct {
