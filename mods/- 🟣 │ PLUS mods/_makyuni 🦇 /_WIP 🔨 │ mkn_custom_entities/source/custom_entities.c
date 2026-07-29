@@ -2134,6 +2134,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                  * iterates this list to find which catapult was triggered by E:CATAPULTBOTTOM. */
                 pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
                 if (logf) fprintf(logf, "  ROTATER: Catapult added to board+0x43B8 (catapult list)\n");
+                /* v55m_26: Also add to board+0x8B8 (game's dynamic update list).
+                 * The game iterates this list and calls vtable[61] (Catapult_Update)
+                 * on each item during the normal update loop. This is how the
+                 * native game processes catapult tension + launch. */
+                pfn_AthenaList_Append((DWORD*)(board + 0x8B8), obj);
+                if (logf) fprintf(logf, "  ROTATER: Catapult added to board+0x8B8 (update list)\n");
                 /* Track for per-frame Catapult_vtable11 calls */
                 if (g_catapult_count < MAX_CATAPULTS) {
                     g_catapults[g_catapult_count].obj = (DWORD)obj;
@@ -3227,7 +3233,7 @@ static void exec_update_cmds(DWORD obj, entity_def_t* def, FILE* logf) {
          * We replicate this but with the selected axis function. */
         {
             float render_angle = *(float*)(obj + 0x10E4);
-            Gfx_Scale_t scale_fn = pfn_Gfx_ScaleX;  /* default: X */
+            Gfx_ScaleAxis_t scale_fn = pfn_Gfx_ScaleX;  /* default: X */
             if (def->rot_m == 1) scale_fn = pfn_Gfx_ScaleY;
             else if (def->rot_m == 2) scale_fn = pfn_Gfx_ScaleZ;
             scale_fn(render_angle);
@@ -4449,7 +4455,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_23 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_26 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4540,13 +4546,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 }
                 /* Call Catapult's vtable[11] (state machine) directly */
                 pfn_Catapult_vtable11((void*)obj);
-                /* v55m_25d: Also call vtable[61] (Catapult_Update 0x43F080) —
-                 * THIS is the function that builds tension and actually launches
-                 * the ball (Scene_ForEachBall_SetVelocity at tension=90.0).
-                 * Without this, Catapult_Launch sets the flag but nothing
-                 * processes it. The Catapult is not in the game's update list
-                 * (board+0x8B8), so the game never calls vtable[61] on it. */
-                pfn_Catapult_Update((void*)obj);
+                /* v55m_26: REMOVED pfn_Catapult_Update call — caused crash at
+                 * 0x45337E (AthenaList NULL deref) because calling vtable[61]
+                 * from the Present hook conflicts with the render thread's
+                 * AthenaList access. Instead, the Catapult is added to
+                 * board+0x8B8 (game's update list) during spawn, so the
+                 * game calls vtable[61] itself during its normal update. */
             }
         }
 
