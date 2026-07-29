@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_27j
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_27k
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3403,21 +3403,45 @@ static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 static void cEnt_chomper_update(DWORD board);
 static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
 
-/* v55m_27i: Get the first ball pointer from g_Scene+0x29D4 (ball AthenaList).
- * Correct AthenaList layout: +0x00 = vtable, +0x04 = count, +0x40C = items pointer.
- * The previous implementation read ball_list[0] (vtable) and ball_list[2] (+0x08),
- * which returned garbage and caused get_ball_ptr() to fail silently. */
+/* v55m_27k: Get the first ball pointer from board+0x29D4 (ball AthenaList).
+ * v55m_27i/j used g_Scene+0x29D4, but the ball list lives on the BOARD,
+ * not the scene. Gluebie/Tarpit already read board+0x29D4 correctly. */
 static DWORD get_ball_ptr(void) {
-    DWORD scene = *(DWORD*)0x005341E4;  /* g_Scene */
-    if (!scene || IsBadReadPtr((void*)scene, 0x2A00)) return 0;
-    DWORD ball_list = scene + 0x29D4;  /* AthenaList embedded in Scene */
-    if (IsBadReadPtr((void*)ball_list, 0x410)) return 0;
+    DWORD board = get_board();
+    FILE* df = fopen("custom_entities_catapult.log", "a");
+    if (df) {
+        fprintf(df, "GETBALL: board=0x%08X\n", board);
+        fclose(df);
+    }
+    if (!board || board < 0x10000 || IsBadReadPtr((void*)board, 0x2A00)) {
+        return 0;
+    }
+    DWORD ball_list = board + 0x29D4;  /* AthenaList embedded in Board */
+    if (IsBadReadPtr((void*)ball_list, 0x410)) {
+        df = fopen("custom_entities_catapult.log", "a");
+        if (df) { fprintf(df, "GETBALL: bad ball_list 0x%08X\n", ball_list); fclose(df); }
+        return 0;
+    }
     DWORD count = *(DWORD*)(ball_list + 0x04);
+    df = fopen("custom_entities_catapult.log", "a");
+    if (df) { fprintf(df, "GETBALL: count=%u\n", count); fclose(df); }
     if (count == 0) return 0;
     DWORD items = *(DWORD*)(ball_list + 0x40C);
-    if (!items || items < 0x10000 || IsBadReadPtr((void*)items, 4)) return 0;
+    df = fopen("custom_entities_catapult.log", "a");
+    if (df) { fprintf(df, "GETBALL: items=0x%08X\n", items); fclose(df); }
+    if (!items || items < 0x10000 || IsBadReadPtr((void*)items, 4)) {
+        df = fopen("custom_entities_catapult.log", "a");
+        if (df) { fprintf(df, "GETBALL: bad items\n"); fclose(df); }
+        return 0;
+    }
     DWORD ball = *(DWORD*)items;
-    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) return 0;
+    df = fopen("custom_entities_catapult.log", "a");
+    if (df) { fprintf(df, "GETBALL: ball=0x%08X\n", ball); fclose(df); }
+    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
+        df = fopen("custom_entities_catapult.log", "a");
+        if (df) { fprintf(df, "GETBALL: bad ball\n"); fclose(df); }
+        return 0;
+    }
     return ball;
 }
 
@@ -4713,7 +4737,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27j Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27k Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
