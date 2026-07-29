@@ -3402,6 +3402,34 @@ static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 /* Forward decl — defined below */
 static void cEnt_chomper_update(DWORD board);
 
+/* v55m_27g: Get the first ball pointer from g_Scene+0x29D4 (ball AthenaList).
+ * board+0x361C was always NULL — it's only set during specific game modes.
+ * The ball_list AthenaList at g_Scene+0x29D4 has the array pointer at +0x0C,
+ * count at +0x08. First ball = array[0]. */
+static DWORD get_ball_ptr(void) {
+    DWORD scene = *(DWORD*)0x005341E4;  /* g_Scene */
+    if (!scene || IsBadReadPtr((void*)scene, 0x2A00)) return 0;
+    DWORD* ball_list = (DWORD*)(scene + 0x29D4);  /* AthenaList */
+    /* AthenaList layout: +0x00 = head_ptr, +0x04 = tail_ptr, +0x08 = count, +0x0C = array_ptr */
+    /* Actually, AthenaList is: +0x00 = first_node, +0x04 = last_node, +0x08 = count
+     * Each node: +0x00 = data_ptr, +0x04 = next_ptr */
+    DWORD count = ball_list[2];  /* +0x08 */
+    if (count == 0) return 0;
+    DWORD first_node = ball_list[0];  /* +0x00 */
+    if (!first_node || IsBadReadPtr((void*)first_node, 8)) return 0;
+    DWORD ball = *(DWORD*)first_node;  /* node->data */
+    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) return 0;
+    return ball;
+}
+
+/* v55m_27g: Ball position/velocity offsets from hbtestd struct layout */
+#define BALL_POS_X  0x14
+#define BALL_POS_Y  0x18
+#define BALL_POS_Z  0x1C
+#define BALL_VEL_X  0x20
+#define BALL_VEL_Y  0x24
+#define BALL_VEL_Z  0x28
+
 static void __cdecl gluebie_present_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
     g_gluebie_ball_in_zone = 0;  /* reset before check */
@@ -4562,7 +4590,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27f Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27g Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4678,10 +4706,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                     if (cs->launching) {
                         /* Catapult is launching — apply velocity to ball */
                         DWORD ball = *(DWORD*)(cs->board + 0x361C);
+                        /* v55m_27g: Use get_ball_ptr() instead */
+                        ball = get_ball_ptr();
                         if (ball && ball > 0x10000 && !IsBadReadPtr((void*)ball, 0x200)) {
                             /* Launch velocity: 65.0 upward + forward */
-                            float ball_x = *(float*)((char*)ball + 0x164);
-                            float ball_z = *(float*)((char*)ball + 0x16C);
+                            float ball_x = *(float*)((char*)ball + BALL_POS_X);
+                            float ball_z = *(float*)((char*)ball + BALL_POS_Z);
                             /* Direction: from catapult toward ball (outward) */
                             float dx = ball_x - cs->x;
                             float dz = ball_z - cs->z;
@@ -4692,9 +4722,9 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                                 dx = 0.0f; dz = 1.0f;
                             }
                             /* Apply launch force: 65 horizontal + 40 vertical */
-                            *(float*)((char*)ball + 0x170) += dx * 65.0f;
-                            *(float*)((char*)ball + 0x174) += 40.0f;  /* upward */
-                            *(float*)((char*)ball + 0x178) += dz * 65.0f;
+                            *(float*)((char*)ball + BALL_VEL_X) += dx * 65.0f;
+                            *(float*)((char*)ball + BALL_VEL_Y) += 40.0f;  /* upward */
+                            *(float*)((char*)ball + BALL_VEL_Z) += dz * 65.0f;
                             /* Set star trail effect (native: ball+0x320=100) */
                             *(DWORD*)((char*)ball + 0x320) = 100;
                             *(DWORD*)((char*)ball + 0x31E) = 0;
@@ -4719,13 +4749,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         {
             DWORD board = get_board();
             if (board && g_catapult_count > 0) {
-                /* v55m_27f: Also verify board matches our catapults' board */
-                DWORD ball_ptr = *(DWORD*)(board + 0x361C);
+                /* v55m_27g: Use get_ball_ptr() (g_Scene+0x29D4) instead of board+0x361C */
+                DWORD ball_ptr = get_ball_ptr();
                 if (ball_ptr && ball_ptr > 0x10000 &&
                     !IsBadReadPtr((void*)ball_ptr, 0x200)) {
-                    float ball_x = *(float*)(ball_ptr + 0x164);
-                    float ball_y = *(float*)(ball_ptr + 0x168);
-                    float ball_z = *(float*)(ball_ptr + 0x16C);
+                    float ball_x = *(float*)(ball_ptr + BALL_POS_X);
+                    float ball_y = *(float*)(ball_ptr + BALL_POS_Y);
+                    float ball_z = *(float*)(ball_ptr + BALL_POS_Z);
                     int i;
                     for (i = 0; i < g_catapult_count; i++) {
                         DWORD obj = g_catapults[i].obj;
