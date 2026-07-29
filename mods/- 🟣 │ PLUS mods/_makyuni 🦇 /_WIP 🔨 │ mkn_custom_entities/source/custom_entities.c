@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_27i
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3399,34 +3399,123 @@ static int gluebie_is_dizzy(DWORD board) {
 static void cEnt_gluebie_proximity_check(DWORD board);
 static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 
-/* Forward decl — defined below */
+/* Forward decls — defined below */
 static void cEnt_chomper_update(DWORD board);
+static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
 
-/* v55m_27g: Get the first ball pointer from g_Scene+0x29D4 (ball AthenaList).
- * board+0x361C was always NULL — it's only set during specific game modes.
- * The ball_list AthenaList at g_Scene+0x29D4 has the array pointer at +0x0C,
- * count at +0x08. First ball = array[0]. */
+/* v55m_27i: Get the first ball pointer from g_Scene+0x29D4 (ball AthenaList).
+ * Correct AthenaList layout: +0x00 = vtable, +0x04 = count, +0x40C = items pointer.
+ * The previous implementation read ball_list[0] (vtable) and ball_list[2] (+0x08),
+ * which returned garbage and caused get_ball_ptr() to fail silently. */
 static DWORD get_ball_ptr(void) {
     DWORD scene = *(DWORD*)0x005341E4;  /* g_Scene */
     if (!scene || IsBadReadPtr((void*)scene, 0x2A00)) return 0;
-    DWORD* ball_list = (DWORD*)(scene + 0x29D4);  /* AthenaList */
-    /* AthenaList: +0x00 = first_node, +0x04 = last_node, +0x08 = count */
-    DWORD count = ball_list[2];  /* +0x08 */
+    DWORD ball_list = scene + 0x29D4;  /* AthenaList embedded in Scene */
+    if (IsBadReadPtr((void*)ball_list, 0x410)) return 0;
+    DWORD count = *(DWORD*)(ball_list + 0x04);
     if (count == 0) return 0;
-    DWORD first_node = ball_list[0];  /* +0x00 */
-    if (!first_node || IsBadReadPtr((void*)first_node, 8)) return 0;
-    DWORD ball = *(DWORD*)first_node;  /* node->data */
+    DWORD items = *(DWORD*)(ball_list + 0x40C);
+    if (!items || items < 0x10000 || IsBadReadPtr((void*)items, 4)) return 0;
+    DWORD ball = *(DWORD*)items;
     if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) return 0;
     return ball;
 }
 
-/* v55m_27g: Ball position/velocity offsets from hbtestd struct layout */
-#define BALL_POS_X  0x14
-#define BALL_POS_Y  0x18
-#define BALL_POS_Z  0x1C
-#define BALL_VEL_X  0x20
-#define BALL_VEL_Y  0x24
-#define BALL_VEL_Z  0x28
+/* v55m_27i: Ball position and force-accumulator offsets.
+ * Position is at ball+0x164 (used by jump_mod, magnet_mod, ghost mods).
+ * Physics force accumulators are at ball+0x170/0x174/0x178 — the engine
+ * consumes these in Ball_Update with proper collision/friction response.
+ * Writing to ball+0x20 (direct velocity) is ignored by physics. */
+#define BALL_POS_X    0x164
+#define BALL_POS_Y    0x168
+#define BALL_POS_Z    0x16C
+#define BALL_FORCE_X  0x170
+#define BALL_FORCE_Y  0x174
+#define BALL_FORCE_Z  0x178
+
+/* v55m_27i: Catapult launch detection + force application.
+ * Moved from background thread to Present hook (main thread) for reliable
+ * per-frame timing and to avoid racing with Ball_Update. */
+static void __cdecl cEnt_catapult_present_check(DWORD board) {
+    int i;
+    FILE* df = NULL;
+    DWORD ball = get_ball_ptr();
+    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) return;
+
+    float ball_x = *(float*)(ball + BALL_POS_X);
+    float ball_y = *(float*)(ball + BALL_POS_Y);
+    float ball_z = *(float*)(ball + BALL_POS_Z);
+
+    for (i = 0; i < g_catapult_count; i++) {
+        CatapultState* cs = &g_catapults[i];
+        if (!cs->obj || cs->obj < 0x10000) continue;
+        if (cs->board != board) continue;
+        if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
+
+        if (cs->cooldown > 0) {
+            cs->cooldown--;
+            if (cs->cooldown == 0) cs->launching = 0;
+        }
+
+        float dx = ball_x - cs->x;
+        float dy = ball_y - cs->y;
+        float dz = ball_z - cs->z;
+        float dist_sq = dx*dx + dy*dy + dz*dz;
+
+        /* v55m_27i: increased radius to 90 units. The old 40-unit radius was
+         * too small when the ball sits on the catapult arm away from the pivot. */
+        if (dist_sq < 8100.0f && !cs->launching && cs->cooldown == 0) {
+            cs->launching = 1;
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, sqrtf(dist_sq));
+                fclose(df);
+                df = NULL;
+            }
+        }
+
+        if (cs->launching) {
+            /* Direction: from catapult toward ball (outward) */
+            float dxz = ball_x - cs->x;
+            float dzz = ball_z - cs->z;
+            float len = sqrtf(dxz*dxz + dzz*dzz);
+            if (len > 0.1f) { dxz /= len; dzz /= len; }
+            else { dxz = 0.0f; dzz = 1.0f; }
+
+            /* Apply launch force to physics accumulators */
+            *(float*)(ball + BALL_FORCE_X) += dxz * 65.0f;
+            *(float*)(ball + BALL_FORCE_Y) += 40.0f;
+            *(float*)(ball + BALL_FORCE_Z) += dzz * 65.0f;
+
+            /* Star trail effect (native: ball+0x320=100) */
+            *(DWORD*)((char*)ball + 0x320) = 100;
+            *(DWORD*)((char*)ball + 0x31E) = 0;
+
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dir=(%.2f,%.2f)\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, dxz, dzz);
+                fclose(df);
+                df = NULL;
+            }
+
+            /* Play DROPIN sound (same channel as Tower Race catapult) */
+            {
+                DWORD app = *(DWORD*)0x005341E0;
+                if (app && app > 0x10000 && !IsBadReadPtr((void*)app, 0x8FC)) {
+                    DWORD snd = *(DWORD*)((char*)app + 0x878);
+                    if (snd && snd > 0x10000 && pfn_Sound_Play3D) {
+                        pfn_Sound_Play3D((void*)snd, cs->x, cs->y, cs->z, 1.0f);
+                    }
+                }
+            }
+
+            cs->launching = 0;
+            cs->cooldown = 60; /* 2 seconds at 30fps */
+        }
+    }
+}
 
 static void __cdecl gluebie_present_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
@@ -3445,6 +3534,12 @@ static void __cdecl gluebie_present_helper(void) {
      * causes a crash at 0x499D9D (D3DX SSE2 matrix multiply with NULL param). */
     if (board && g_chomper_count > 0) {
         cEnt_chomper_update(board);
+    }
+    /* v55m_27i: Catapult trigger + launch force on main thread via Present hook.
+     * Background-thread proximity check had wrong ball-list layout and wrong
+     * ball offsets, so it never fired. */
+    if (board && g_catapult_count > 0) {
+        cEnt_catapult_present_check(board);
     }
 }
 
@@ -4588,7 +4683,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27h Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27i Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4659,138 +4754,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
          * the background thread crashes at 0x499D9D (D3DX matrix multiply
          * with NULL param — D3D device state not set up for wrong thread). */
 
-        /* v55d: Per-frame Catapult state machine update.
-         * Catapult_vtable11 (0x437F10) is the per-frame state machine
-         * (wind-up + release). Native game calls this via Scene_Update
-         * (board vtable[1] iterating board+0x8B8), but Catapult is NOT
-         * in that list. We call it manually here for each tracked Catapult. */
-        {
-            int i;
-            DWORD cur_board = get_board();
-            /* v55m_27f: Skip if board changed during level transition */
-            if (!cur_board) continue;
-            for (i = 0; i < g_catapult_count; i++) {
-                DWORD obj = g_catapults[i].obj;
-                /* v55m_27f: Also verify the board pointer in g_catapults matches current board */
-                if (!obj || obj < 0x10000 || g_catapults[i].board != cur_board) {
-                    /* Stale entry or board changed — clear it */
-                    g_catapults[i].obj = 0;
-                    continue;
-                }
-                if (IsBadReadPtr((void*)obj, 0x1108)) {
-                    g_catapults[i].obj = 0;
-                    continue;
-                }
-                /* v55m_27c: REMOVED pfn_Catapult_vtable11 call — crashes at
-                 * 0x453376 in background thread because vtable[11] iterates
-                 * AthenaLists that the main thread modifies simultaneously.
-                 * The Catapult doesn't need a per-frame state machine from us.
-                 * Proximity check calls Catapult_Launch (sets flag), and the
-                 * launch logic below handles the velocity directly. */
-                /* pfn_Catapult_vtable11((void*)obj); -- REMOVED */
-
-                /* v55m_27e: Launch detection using OUR OWN state (not native obj+0x10F0).
-                 * The native Catapult_Launch writes to obj+0x10F0 but our spawned
-                 * PopCylinder doesn't initialize that field properly. */
-                {
-                    CatapultState* cs = &g_catapults[i];
-                    /* Handle cooldown */
-                    if (cs->cooldown > 0) {
-                        cs->cooldown--;
-                        if (cs->cooldown == 0) {
-                            cs->launching = 0;
-                        }
-                    }
-                    if (cs->launching) {
-                        /* Catapult is launching — apply velocity to ball */
-                        DWORD ball = *(DWORD*)(cs->board + 0x361C);
-                        /* v55m_27g: Use get_ball_ptr() instead */
-                        ball = get_ball_ptr();
-                        if (ball && ball > 0x10000 && !IsBadReadPtr((void*)ball, 0x200)) {
-                            /* Launch velocity: 65.0 upward + forward */
-                            float ball_x = *(float*)((char*)ball + BALL_POS_X);
-                            float ball_z = *(float*)((char*)ball + BALL_POS_Z);
-                            /* Direction: from catapult toward ball (outward) */
-                            float dx = ball_x - cs->x;
-                            float dz = ball_z - cs->z;
-                            float len = sqrtf(dx*dx + dz*dz);
-                            if (len > 0.1f) {
-                                dx /= len; dz /= len;
-                            } else {
-                                dx = 0.0f; dz = 1.0f;
-                            }
-                            /* Apply launch force: 65 horizontal + 40 vertical */
-                            *(float*)((char*)ball + BALL_VEL_X) += dx * 65.0f;
-                            *(float*)((char*)ball + BALL_VEL_Y) += 40.0f;  /* upward */
-                            *(float*)((char*)ball + BALL_VEL_Z) += dz * 65.0f;
-                            /* Set star trail effect (native: ball+0x320=100) */
-                            *(DWORD*)((char*)ball + 0x320) = 100;
-                            *(DWORD*)((char*)ball + 0x31E) = 0;
-                        }
-                        /* Reset for next launch */
-                        cs->launching = 0;
-                        cs->cooldown = 60; /* 2 seconds at 30fps */
-                    }
-                }
-            }
-        }
-
-        /* v55d: Per-frame Catapult trigger check.
-         * E:CATAPULTBOTTOM collision event fires when ball touches the
-         * catapult's bottom plate. Native game only checks this on Tower
-         * Race (race 4). We use per-frame proximity check instead of
-         * hooking DispatchCollisionEvents (SEH trampoline crash risk).
-         *
-         * Catapult_Launch (0x434290) sets launching flag + 50-tick countdown.
-         * Called when ball is within trigger radius of catapult base.
-         * The bottom plate is below the catapult pivot — check at Y offset -10. */
-        {
-            DWORD board = get_board();
-            if (board && g_catapult_count > 0) {
-                /* v55m_27g: Use get_ball_ptr() (g_Scene+0x29D4) instead of board+0x361C */
-                DWORD ball_ptr = get_ball_ptr();
-                if (ball_ptr && ball_ptr > 0x10000 &&
-                    !IsBadReadPtr((void*)ball_ptr, 0x200)) {
-                    float ball_x = *(float*)(ball_ptr + BALL_POS_X);
-                    float ball_y = *(float*)(ball_ptr + BALL_POS_Y);
-                    float ball_z = *(float*)(ball_ptr + BALL_POS_Z);
-                    int i;
-                    for (i = 0; i < g_catapult_count; i++) {
-                        DWORD obj = g_catapults[i].obj;
-                        if (!obj || obj < 0x10000) continue;
-                        if (g_catapults[i].board != board) continue; /* v55m_27f: board mismatch */
-                        if (IsBadReadPtr((void*)obj, 0x1108)) continue;
-                        /* v55m_27e: Use our own g_catapults[] state for position + launch flag.
-                         * Native obj+0x10D8 etc. aren't initialized on spawned PopCylinder. */
-                        float cx = g_catapults[i].x;
-                        float cy = g_catapults[i].y;
-                        float cz = g_catapults[i].z;
-                        float dx = ball_x - cx;
-                        float dy = ball_y - cy;
-                        float dz = ball_z - cz;
-                        float dist_sq = dx*dx + dy*dy + dz*dz;
-                        /* Trigger radius ~40 units (covers the bottom plate area).
-                         * Only trigger if not already launching and cooldown is 0. */
-                        if (dist_sq < 1600.0f && !g_catapults[i].launching && g_catapults[i].cooldown == 0) {
-                            /* Ball is on the catapult — launch! */
-                            g_catapults[i].launching = 1;
-                            /* v55m_27h: Play DROPIN sound (same as Tower Race catapult) */
-                            {
-                                DWORD app = *(DWORD*)0x005341E0;
-                                if (app) {
-                                    DWORD snd = *(DWORD*)((char*)app + 0x878);
-                                    if (snd && pfn_Sound_Play3D) {
-                                        pfn_Sound_Play3D((void*)snd, cx, cy, cz, 1.0f);
-                                    }
-                                }
-                            }
-                            if (logf) fprintf(logf, "  CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f\n",
-                                ball_x, ball_y, ball_z, cx, cy, cz, sqrtf(dist_sq));
-                        }
-                    }
-                }
-            }
-        }
+        /* v55m_27i: Catapult trigger + launch force MOVED to Present hook
+         * (cEnt_catapult_present_check / gluebie_present_helper). The old
+         * background-thread code used the wrong AthenaList layout for the
+         * ball list and wrong ball offsets, so detection never fired. */
 
         /* v55d: Play queued tar sound (deferred from proximity check).
          * Sound_Play3D: __thiscall ECX=[App+0x484], 4 stack params (x, y, z, scale=1.0)
