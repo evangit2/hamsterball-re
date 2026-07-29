@@ -2618,9 +2618,30 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->countdown = 0;
         cs->anim_val = 0.0f;
         cs->orig_vtable2 = 0;  /* No vtable hook — using EntityTransform instead */
+
+        /* v55m_25b: Detailed registration logging */
+        DWORD meshworld = *(DWORD*)((char*)obj + 0x08);
+        DWORD obj_vtable = *(DWORD*)obj;
+        if (logf) fprintf(logf, "  CHOMPER[%d]: registered obj=0x%08X pos=(%.1f,%.1f,%.1f) jaw=0.25\n",
+                g_chomper_count, (DWORD)obj, cs->x, cs->y, cs->z);
+        if (logf) fprintf(logf, "  CHOMPER[%d]: vtable=0x%08X meshworld=0x%08X (obj+0x08)\n",
+                g_chomper_count, obj_vtable, meshworld);
+        if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
+            if (logf) fprintf(logf, "  CHOMPER[%d]: meshworld+0x28 (EntityTransform) = 0x%08X, readable=%d\n",
+                    g_chomper_count, meshworld + 0x28,
+                    !IsBadReadPtr((void*)(meshworld + 0x28), 0x24));
+            /* Dump current EntityTransform values before we write */
+            float* t = (float*)((char*)meshworld + 0x28);
+            if (!IsBadReadPtr(t, 0x24)) {
+                if (logf) fprintf(logf, "  CHOMPER[%d]: EntityTransform BEFORE: rotX=%.3f rotY=%.3f rotZ=%.3f rotScale=%.3f posX=%.1f posY=%.1f posZ=%.1f posScale=%.3f\n",
+                        g_chomper_count, t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8]);
+            }
+        } else {
+            if (logf) fprintf(logf, "  CHOMPER[%d]: WARNING meshworld=0x%08X is NULL or bad read!\n",
+                    g_chomper_count, meshworld);
+        }
+
         g_chomper_count++;
-        if (logf) fprintf(logf, "  ROTATER: Chomper registered with EntityTransform at (%.1f,%.1f,%.1f) obj=0x%08X\n",
-                px, py - 20.0f, pz, (DWORD)obj);
     }
 
     if (g_rotater_count < MAX_ROTATERS) {
@@ -3992,16 +4013,34 @@ static void cEnt_chomper_update(DWORD board) {
 
     DWORD app = *(DWORD*)(board + BOARD_APP);
 
+    /* v55m_25b: Open debug log for per-frame Chomper state logging */
+    static int chomper_frame_count = 0;
+    chomper_frame_count++;
+    /* Log every 30 frames (twice per second at 60fps) */
+    int do_log = (chomper_frame_count % 30 == 0);
+    FILE* chomp_log = NULL;
+    if (do_log) {
+        chomp_log = fopen("chomper_debug.log", "a");
+        if (chomp_log) {
+            fprintf(chomp_log, "=== Frame %d (ball_valid=%d, ball_pos=%.1f,%.1f,%.1f) ===\n",
+                    chomper_frame_count, ball_valid, bx, by, bz);
+        }
+    }
+
     int i;
     for (i = 0; i < g_chomper_count; i++) {
         ChomperState* cs = &g_chompers[i];
         if (!cs->obj) continue;
-        if (IsBadReadPtr((void*)cs->obj, 0x100)) continue;
+        if (IsBadReadPtr((void*)cs->obj, 0x100)) {
+            if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: SKIP obj=0x%08X is bad read ptr\n", i, cs->obj);
+            continue;
+        }
 
         /* Update phase (for future jaw animation) */
         cs->phase += 3.0f;
 
         /* E:BITE proximity check — when ball is very close, force bite restart. */
+        int bite_triggered = 0;
         if (ball_valid) {
             float dx = bx - cs->x;
             float dy = by - cs->y;
@@ -4010,8 +4049,11 @@ static void cEnt_chomper_update(DWORD board) {
             if (dist_sq < 1600.0f) {  /* 40^2 = 1600 — bite range */
                 cs->state = 0;
                 cs->jaw_angle = 25.0f;
+                bite_triggered = 1;
             }
         }
+
+        int prev_state = cs->state;
 
         /* State machine — runs on main thread (Present hook).
          * Sound is safe to play here. No Gfx/Timer/D3D calls. */
@@ -4064,28 +4106,26 @@ static void cEnt_chomper_update(DWORD board) {
                 break;
         }
 
+        /* v55m_25b: Log state machine transitions and EntityTransform writes */
+        if (chomp_log) {
+            const char* state_names[] = {"GROWING", "HOLDING", "CLOSING", "RECOVERING"};
+            fprintf(chomp_log, "  CHOMPER[%d]: obj=0x%08X state=%d(%s)->%d(%s) jaw=%.3f phase=%.1f countdown=%d anim=%.1f bite=%d\n",
+                    i, cs->obj,
+                    prev_state, (prev_state >= 0 && prev_state <= 3) ? state_names[prev_state] : "?",
+                    cs->state, (cs->state >= 0 && cs->state <= 3) ? state_names[cs->state] : "?",
+                    cs->jaw_angle, cs->phase, cs->countdown, cs->anim_val, bite_triggered);
+        }
+
         /* v55m_25: Write jaw rotation to EntityTransform.rotZ.
          * Same approach as rotator.c — the game's render pipeline
          * (D3DXSkinMesh_CopyStripData) reads EntityTransform at
          * MeshWorld+0x28 and applies it as a D3D world matrix.
          *
-         * EntityTransform layout (from rotator.c):
-         *   +0x00: vtable
-         *   +0x04: rotX (float)
-         *   +0x08: rotY (float)
-         *   +0x0C: rotZ (float)  ← jaw rotation goes here
-         *   +0x10: rotScale (float) = 1.0
-         *   +0x14: posX (float)
-         *   +0x18: posY (float)
-         *   +0x1C: posZ (float)
-         *   +0x20: posScale (float) = 1.0
-         *
          * MeshWorld pointer is at obj+0x08.
          * EntityTransform is at MeshWorld+0x28 (first render context).
          *
-         * The native game uses Gfx_ScaleZ(-jaw_angle) which is a Z-axis
-         * scale/rotation. We write -jaw_angle to rotZ for the same effect.
-         * Negative because the native code negates: Gfx_ScaleZ(-jaw). */
+         * The native game uses Gfx_ScaleZ(-jaw_angle). We write
+         * -jaw_angle to rotZ for the same visual effect. */
         DWORD meshworld = *(DWORD*)((char*)cs->obj + 0x08);
         if (meshworld && !IsBadReadPtr((void*)meshworld, 0x50)) {
             float* transform = (float*)((char*)meshworld + 0x28);
@@ -4093,8 +4133,27 @@ static void cEnt_chomper_update(DWORD board) {
                 transform[3] = -cs->jaw_angle;  /* rotZ at +0x0C (index 3) */
                 transform[4] = 1.0f;            /* rotScale at +0x10 (index 4) */
                 transform[8] = 1.0f;            /* posScale at +0x20 (index 8) */
+
+                if (chomp_log) {
+                    fprintf(chomp_log, "  CHOMPER[%d]: WROTE EntityTransform at 0x%08X: rotZ=%.3f rotScale=1.0 posScale=1.0\n",
+                            i, (DWORD)transform, -cs->jaw_angle);
+                    fprintf(chomp_log, "  CHOMPER[%d]: VERIFY after write: rotX=%.3f rotY=%.3f rotZ=%.3f rotScale=%.3f posX=%.1f posY=%.1f posZ=%.1f posScale=%.3f\n",
+                            i, transform[1], transform[2], transform[3], transform[4],
+                            transform[5], transform[6], transform[7], transform[8]);
+                }
+            } else {
+                if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: FAIL transform at 0x%08X is bad read ptr (meshworld=0x%08X)\n",
+                        i, (DWORD)transform, meshworld);
             }
+        } else {
+            if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: FAIL meshworld=0x%08X is NULL or bad read (obj=0x%08X+0x08)\n",
+                    i, meshworld, cs->obj);
         }
+    }
+
+    if (chomp_log) {
+        fprintf(chomp_log, "\n");
+        fclose(chomp_log);
     }
 }
 typedef struct {
