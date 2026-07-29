@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28b
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28c
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -3522,8 +3522,8 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dz = ball_z - cs->z;
         float dist_sq = dx*dx + dy*dy + dz*dz;
 
-        /* v55m_27j: log distance for first 300 frames and while close */
-        if (g_catapult_debug_count < 300 || dist_sq < 20000.0f) {
+        /* v55m_28c: limit debug logging to first 10 triggers to avoid lag. */
+        if (g_catapult_debug_count < 10 && dist_sq < 20000.0f) {
             g_catapult_debug_count++;
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
@@ -3535,11 +3535,12 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_28: catapult trigger zone is a horizontal disc around the pivot.
-         * The arm extends ~250 units from the pivot, so use 250 radius.
-         * Also require the ball to be near the arm level (within +/- 80 units Y). */
+        /* v55m_28c: catapult trigger zone is a horizontal disc around the pivot.
+         * The arm extends ~150 units from the pivot, so use 150 radius.
+         * Also require the ball to be near the arm level (within +/- 60 units Y).
+         * Remove per-frame debug logging to avoid lag. */
         float dy_abs = dy < 0.0f ? -dy : dy;
-        int in_trigger_zone = (dist_sq < 62500.0f && dy_abs < 80.0f);
+        int in_trigger_zone = (dist_sq < 22500.0f && dy_abs < 60.0f);
         if (in_trigger_zone && !cs->launching && cs->cooldown == 0) {
             cs->launching = 1;
             df = fopen("custom_entities_catapult.log", "a");
@@ -3559,10 +3560,10 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (len > 0.1f) { dxz /= len; dzz /= len; }
             else { dxz = 0.0f; dzz = 1.0f; }
 
-            /* Apply launch force to physics accumulators */
-            *(float*)(ball + BALL_FORCE_X) += dxz * 65.0f;
+            /* Apply launch force to physics accumulators (v55m_28c: reduced from 65 to 55) */
+            *(float*)(ball + BALL_FORCE_X) += dxz * 55.0f;
             *(float*)(ball + BALL_FORCE_Y) += 40.0f;
-            *(float*)(ball + BALL_FORCE_Z) += dzz * 65.0f;
+            *(float*)(ball + BALL_FORCE_Z) += dzz * 55.0f;
 
             /* Star trail effect (native: ball+0x320=100) */
             *(DWORD*)((char*)ball + 0x320) = 100;
@@ -4759,7 +4760,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27l Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28c Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
