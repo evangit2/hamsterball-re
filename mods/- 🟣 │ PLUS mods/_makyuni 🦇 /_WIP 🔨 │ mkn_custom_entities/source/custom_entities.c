@@ -3410,9 +3410,7 @@ static DWORD get_ball_ptr(void) {
     DWORD scene = *(DWORD*)0x005341E4;  /* g_Scene */
     if (!scene || IsBadReadPtr((void*)scene, 0x2A00)) return 0;
     DWORD* ball_list = (DWORD*)(scene + 0x29D4);  /* AthenaList */
-    /* AthenaList layout: +0x00 = head_ptr, +0x04 = tail_ptr, +0x08 = count, +0x0C = array_ptr */
-    /* Actually, AthenaList is: +0x00 = first_node, +0x04 = last_node, +0x08 = count
-     * Each node: +0x00 = data_ptr, +0x04 = next_ptr */
+    /* AthenaList: +0x00 = first_node, +0x04 = last_node, +0x08 = count */
     DWORD count = ball_list[2];  /* +0x08 */
     if (count == 0) return 0;
     DWORD first_node = ball_list[0];  /* +0x00 */
@@ -4590,7 +4588,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_27g Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27h Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4776,6 +4774,16 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                         if (dist_sq < 1600.0f && !g_catapults[i].launching && g_catapults[i].cooldown == 0) {
                             /* Ball is on the catapult — launch! */
                             g_catapults[i].launching = 1;
+                            /* v55m_27h: Play DROPIN sound (same as Tower Race catapult) */
+                            {
+                                DWORD app = *(DWORD*)0x005341E0;
+                                if (app) {
+                                    DWORD snd = *(DWORD*)((char*)app + 0x878);
+                                    if (snd && pfn_Sound_Play3D) {
+                                        pfn_Sound_Play3D((void*)snd, cx, cy, cz, 1.0f);
+                                    }
+                                }
+                            }
                             if (logf) fprintf(logf, "  CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f\n",
                                 ball_x, ball_y, ball_z, cx, cy, cz, sqrtf(dist_sq));
                         }
