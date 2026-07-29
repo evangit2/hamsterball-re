@@ -413,55 +413,91 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
 /* v55m_24: Custom vtable[18] for Chomper — applies jaw rotation before rendering.
  * vtable[18] = D3DXSkinMesh_CopyStripData (0x45E0E0) — the ACTUAL render function.
  * Uses __thiscall (NOT __fastcall) to match the game's vtable calling convention.
- * __fastcall corrupts param_1 (goes to EDX instead of stack) for 2+ param funcs.
- *
- * Native Scene_RenderWithCamera (0x40DFA0) pattern:
- *   Timer_Init → Gfx_ScaleZ(-jaw_angle) → original vtable[18] → Timer_Cleanup
- *
- * We do NOT call Gfx_SetPosition — the PopCylinder already has its position set
- * during creation. Adding Gfx_SetPosition here would offset the mesh.
- * We only apply the jaw rotation (Gfx_ScaleZ) which is the bite animation. */
-static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2) {
-    ChomperState* cs = NULL;
-    int i;
-    for (i = 0; i < g_chomper_count; i++) {
-        if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
-    }
-    if (!cs || !cs->orig_vtable2) {
-        /* Not a tracked chomper — call original directly */
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)0x0045E0E0)(this_, param_1, param_2);
-        return;
-    }
-    /* v55m_26: Apply jaw rotation via Timer + Gfx_Scale + Gfx_ScaleZ.
-     * Matches native Scene_RenderWithCamera pattern exactly:
-     *   Timer_Init(&timer)           — save current D3D transform
-     *   Gfx_Scale(1.0, 1.0, 1.0)     — reset base scale to identity
-     *   Gfx_ScaleZ(-jaw_angle)       — apply jaw rotation on Z axis
-     *   original vtable[18](this)    — render with modified transform
-     *   Timer_Cleanup(&timer)        — restore D3D transform
-     *
-     * v55m_24 crashed because:
-     * 1. Timer pointers were SWAPPED (Init↔Cleanup)
-     * 2. Gfx_ScaleZ called with ECX=NULL (needs timer object)
-     * 3. Missing Gfx_Scale call (Z-scale was multiplied by stale value) */
-    if (pfn_Timer_Init && pfn_Timer_Cleanup && pfn_Gfx_Scale && pfn_Gfx_ScaleZ_Bridge) {
-        char timerBuf[68];
-        pfn_Timer_Init(timerBuf);
-        /* Reset scale to 1.0 on all axes, then apply jaw on Z */
-        pfn_Gfx_Scale(timerBuf, 1.0f, 1.0f, 1.0f);
-        /* Gfx_ScaleZ needs ECX=timer object (not NULL!) */
-        pfn_Gfx_ScaleZ_Bridge(timerBuf, -cs->jaw_angle);
-        /* Call original render */
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
-        /* Restore transform */
-        pfn_Timer_Cleanup(timerBuf);
-    } else {
-        /* Fallback — no transform, just render */
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
-    }
+ /* v55m_27: Custom vtable[18] for Chomper — applies jaw rotation via direct D3D SetTransform.
+  * Previous approaches (Gfx_ScaleZ, EntityTransform) all crashed or didn't work.
+  * This approach: save world matrix → set Z-rotation → render → restore.
+  * D3DTS_WORLD = 256, device vtable[36]=GetTransform(0x90), [37]=SetTransform(0x94). */
+ static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2) {
+     ChomperState* cs = NULL;
+     int i;
+     for (i = 0; i < g_chomper_count; i++) {
+         if (g_chompers[i].obj == this_) { cs = &g_chompers[i]; break; }
+     }
+     if (!cs || !cs->orig_vtable2) {
+         /* Not a tracked chomper — call original directly */
+         typedef void (__thiscall *render_t)(DWORD, char, int);
+         ((render_t)0x0045E0E0)(this_, param_1, param_2);
+         return;
+     }
+     /* v55m_27: Direct D3D SetTransform approach.
+      * Build a Z-rotation matrix from jaw_angle and set it as the world matrix.
+      * Save/restore the original world matrix around the render call. */
+     {
+         DWORD app = *(DWORD*)0x005341E0;
+         if (app) {
+             DWORD gfx = *(DWORD*)((char*)app + 0x174);
+             if (gfx) {
+                 DWORD device = *(DWORD*)((char*)gfx + 0x154);
+                 if (device && !IsBadReadPtr((void*)device, 4)) {
+                     DWORD* dev_vtable = *(DWORD**)device;
+                     if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
+                         /* GetTransform = vtable[36] (offset 0x90) */
+                         typedef void (__stdcall *GetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                         /* SetTransform = vtable[37] (offset 0x94) */
+                         typedef void (__stdcall *SetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                         GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
+                         SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
+
+                         /* Save current world matrix */
+                         float saveMatrix[16];
+                         pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
+
+                         /* Build Z-rotation matrix:
+                          * cos(θ)  sin(θ)  0  0
+                          * -sin(θ) cos(θ)  0  0
+                          * 0       0       1  0
+                          * 0       0       0  1
+                          * (D3D uses row-major, transposed from math convention) */
+                         float angle = -cs->jaw_angle * 3.14159265f / 180.0f; /* deg→rad */
+                         float c = cosf(angle);
+                         float s = sinf(angle);
+                         float rotMatrix[16] = {
+                             c,  s,  0, 0,
+                             -s, c,  0, 0,
+                             0,  0,  1, 0,
+                             0,  0,  0, 1
+                         };
+
+                         /* Set rotation as world matrix */
+                         pfn_SetTransform(device, 256, rotMatrix);
+
+                         /* Call original render */
+                         typedef void (__thiscall *render_t)(DWORD, char, int);
+                         ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
+
+                         /* Restore original world matrix */
+                         pfn_SetTransform(device, 256, saveMatrix);
+                         return;
+                     }
+                 }
+             }
+         }
+     }
+     /* Fallback — no transform, just render */
+     {
+         typedef void (__thiscall *render_t)(DWORD, char, int);
+         ((render_t)cs->orig_vtable2)(this_, param_1, param_2);
+     }
+ }
+
+/* Forward declaration — full definition below */
+struct WaterWheelState;
+
+/* v55m_27: Waterwheel vtable[18] hook — stub that calls the real impl
+ * (defined after WaterWheelState struct). */
+static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2);
+static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int param_2) {
+    cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
 /* Vec3_Copy — copy 3 floats */
@@ -540,15 +576,72 @@ static int g_tarbubble_count = 0;
  * applies transform via mesh vtable[22]+[21]. N:WHEELEMBED collision embeds ball.
  * We replicate by creating the mesh via MeshWorld_ctor and rotating each frame. */
 #define MAX_WATERWHEELS 8
-typedef struct {
+struct WaterWheelState {
     DWORD mesh_obj;   /* MeshWorld* (for collision data) */
     DWORD pc_obj;     /* PopCylinder* (the visible object we rotate) */
     float x, y, z;
     float angle;
     int  active;
-} WaterWheelState;
-static WaterWheelState g_waterwheels[MAX_WATERWHEELS];
+    DWORD orig_vtable18; /* v55m_27: saved original vtable[18] for render hook */
+};
+static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
+
+/* v55m_27: REAL Waterwheel render hook — defined AFTER struct+globals.
+ * Called from vtable[18] via the stub above. Applies Y-rotation via D3D SetTransform. */
+static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2) {
+    struct WaterWheelState* ww = NULL;
+    int i;
+    for (i = 0; i < g_waterwheel_count; i++) {
+        if (g_waterwheels[i].pc_obj == this_) { ww = &g_waterwheels[i]; break; }
+    }
+    if (!ww || !ww->orig_vtable18) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+    {
+        DWORD app = *(DWORD*)0x005341E0;
+        if (app) {
+            DWORD gfx = *(DWORD*)((char*)app + 0x174);
+            if (gfx) {
+                DWORD device = *(DWORD*)((char*)gfx + 0x154);
+                if (device && !IsBadReadPtr((void*)device, 4)) {
+                    DWORD* dev_vtable = *(DWORD**)device;
+                    if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
+                        typedef void (__stdcall *GetTransform_t)(DWORD, DWORD, void*);
+                        typedef void (__stdcall *SetTransform_t)(DWORD, DWORD, void*);
+                        GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
+                        SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
+
+                        float saveMatrix[16];
+                        pfn_GetTransform(device, 256, saveMatrix);
+
+                        float angle = ww->angle * 3.14159265f / 180.0f;
+                        float c = cosf(angle);
+                        float s = sinf(angle);
+                        float rotMatrix[16] = {
+                            c,  0, -s, 0,
+                            0,  1,  0,  0,
+                            s,  0,  c, 0,
+                            0,  0,  0,  1
+                        };
+
+                        pfn_SetTransform(device, 256, rotMatrix);
+                        typedef void (__thiscall *render_t)(DWORD, char, int);
+                        ((render_t)ww->orig_vtable18)(this_, param_1, param_2);
+                        pfn_SetTransform(device, 256, saveMatrix);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)ww->orig_vtable18)(this_, param_1, param_2);
+    }
+}
 
 /* Per-frame update for a single bridgeslam object */
 static void cEnt_bridgeslam_update(BridgeslamState* bs) {
@@ -1631,7 +1724,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) return;
 
         if (g_waterwheel_count < MAX_WATERWHEELS) {
-            WaterWheelState* ww = &g_waterwheels[g_waterwheel_count];
+            struct WaterWheelState* ww = &g_waterwheels[g_waterwheel_count];
             const char* ww_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Level3-WaterWheel";
 
             /* Create mesh object via MeshWorld_ctor */
@@ -1662,6 +1755,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(pc_obj, 0, POPCYLINDER_SIZE);
                 pfn_PopCylinder_ctor(pc_obj, (void*)board, px, py, pz, (void*)mesh);
                 ww->pc_obj = (DWORD)pc_obj;  /* Store for per-frame rotation */
+                /* v55m_27: Hook vtable[18] for Y-rotation during render */
+                {
+                    DWORD orig_vtable = *(DWORD*)pc_obj;
+                    if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
+                        DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
+                        if (new_vtable) {
+                            memcpy(new_vtable, (void*)orig_vtable, 256);
+                            ww->orig_vtable18 = new_vtable[18];
+                            new_vtable[18] = (DWORD)&cEnt_waterwheel_render;
+                            *(DWORD*)pc_obj = (DWORD)new_vtable;
+                        }
+                    }
+                }
                 /* Add to board lists */
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), pc_obj);
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), pc_obj);
@@ -2134,12 +2240,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                  * iterates this list to find which catapult was triggered by E:CATAPULTBOTTOM. */
                 pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
                 if (logf) fprintf(logf, "  ROTATER: Catapult added to board+0x43B8 (catapult list)\n");
-                /* v55m_26: Also add to board+0x8B8 (game's dynamic update list).
-                 * The game iterates this list and calls vtable[61] (Catapult_Update)
-                 * on each item during the normal update loop. This is how the
-                 * native game processes catapult tension + launch. */
-                pfn_AthenaList_Append((DWORD*)(board + 0x8B8), obj);
-                if (logf) fprintf(logf, "  ROTATER: Catapult added to board+0x8B8 (update list)\n");
+                /* v55m_27: Do NOT add to board+0x8B8 — causes MeshArchive_ctor crash
+                 * (0x478EDD) because the game's update loop expects native catapult objects. */
                 /* Track for per-frame Catapult_vtable11 calls */
                 if (g_catapult_count < MAX_CATAPULTS) {
                     g_catapults[g_catapult_count].obj = (DWORD)obj;
@@ -3933,7 +4035,7 @@ static void cEnt_waterwheel_update(DWORD board) {
 
     int i;
     for (i = 0; i < g_waterwheel_count; i++) {
-        WaterWheelState* ww = &g_waterwheels[i];
+        struct WaterWheelState* ww = &g_waterwheels[i];
         if (!ww->active || !ww->pc_obj) continue;
         if (IsBadReadPtr((void*)ww->pc_obj, 0x440)) continue;
 
@@ -4455,7 +4557,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_26 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_27 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -4546,12 +4648,12 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 }
                 /* Call Catapult's vtable[11] (state machine) directly */
                 pfn_Catapult_vtable11((void*)obj);
-                /* v55m_26: REMOVED pfn_Catapult_Update call — caused crash at
-                 * 0x45337E (AthenaList NULL deref) because calling vtable[61]
-                 * from the Present hook conflicts with the render thread's
-                 * AthenaList access. Instead, the Catapult is added to
-                 * board+0x8B8 (game's update list) during spawn, so the
-                 * game calls vtable[61] itself during its normal update. */
+                /* v55m_27: Call vtable[61] (Catapult_Update 0x43F080) from Present hook.
+                 * This is safe because Present runs AFTER the game's update+render.
+                 * The previous crash at 0x45337E was from v55m_25d which had
+                 * different code. v55m_26 removed this call entirely (catapult
+                 * didn't work). Now restoring it with the crash fix. */
+                pfn_Catapult_Update((void*)obj);
             }
         }
 
