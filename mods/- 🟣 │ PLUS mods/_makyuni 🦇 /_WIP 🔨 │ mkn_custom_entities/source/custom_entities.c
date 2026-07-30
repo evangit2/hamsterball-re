@@ -522,12 +522,6 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
          ((render_t)0x0045E0E0)(this_, param_1, param_2);
          return;
      }
-     /* v55m_42l: skip transform when arm is at rest */
-     if (cs->arm_angle == 0.0f) {
-         typedef void (__thiscall *render_t)(DWORD, char, int);
-         ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-         return;
-     }
      {
          DWORD app = *(DWORD*)0x005341E0;
          if (app) {
@@ -556,17 +550,15 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
                              0,  0,  0, 1
                          };
                          float finalMatrix[16];
-                         /* v55m_42l: local rotation — rotMatrix * saveMatrix so the arm
-                          * rotates around the catapult's own position instead of orbiting
-                          * the world origin. */
+                         /* final = saveMatrix * rotMatrix (row-major) */
                          int row, col;
                          for (row = 0; row < 4; row++) {
                              for (col = 0; col < 4; col++) {
                                  finalMatrix[row*4+col] =
-                                     rotMatrix[row*4+0]*saveMatrix[0*4+col] +
-                                     rotMatrix[row*4+1]*saveMatrix[1*4+col] +
-                                     rotMatrix[row*4+2]*saveMatrix[2*4+col] +
-                                     rotMatrix[row*4+3]*saveMatrix[3*4+col];
+                                     saveMatrix[row*4+0]*rotMatrix[0*4+col] +
+                                     saveMatrix[row*4+1]*rotMatrix[1*4+col] +
+                                     saveMatrix[row*4+2]*rotMatrix[2*4+col] +
+                                     saveMatrix[row*4+3]*rotMatrix[3*4+col];
                              }
                          }
 
