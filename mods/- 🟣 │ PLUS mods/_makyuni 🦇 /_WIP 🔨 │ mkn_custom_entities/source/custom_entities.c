@@ -2303,9 +2303,22 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* v55m_29: Add to board+0x43B8 (Catapult AthenaList) so the native
                  * Catapult_vtable11 (slot 11) wind-up and Catapult_Update (slot 61)
                  * launch run automatically every frame. The object we spawn is a
-                 * real Catapult_ctor result, so the list iteration is safe. */
-                pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
-                if (logf) fprintf(logf, "  ROTATER: Catapult added to native list board+0x43B8\n");
+                 * real Catapult_ctor result, so the list iteration is safe.
+                 *
+                 * CRITICAL: on levels with no native catapults (Warm-Up, etc.),
+                 * board+0x43B8 is NOT initialized by the game. AthenaList_Append on
+                 * an uninitialized list reads garbage from +0x410 and crashes at
+                 * 0x453376. Initialize the list first. */
+                {
+                    DWORD catapult_list = board + 0x43B8;
+                    DWORD* list_vtable = (DWORD*)catapult_list;
+                    if (!list_vtable || IsBadReadPtr(list_vtable, 4) || *list_vtable != 0x004D875C) {
+                        pfn_AthenaList_Init((void*)catapult_list);
+                        if (logf) fprintf(logf, "  ROTATER: Initialized board+0x43B8 AthenaList for catapult\n");
+                    }
+                    pfn_AthenaList_Append((DWORD*)catapult_list, obj);
+                    if (logf) fprintf(logf, "  ROTATER: Catapult added to native list board+0x43B8\n");
+                }
 
                 /* v55m_27: Do NOT add to board+0x8B8 — causes MeshArchive_ctor crash
                  * (0x478EDD) because the game's update loop expects native catapult objects. */

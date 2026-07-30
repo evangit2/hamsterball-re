@@ -226,7 +226,7 @@ typedef void (__thiscall *AthenaList_Append_t)(DWORD* list, void* item);
 static AthenaList_Append_t AthenaList_Append = (AthenaList_Append_t)0x00453780;
 
 typedef void (__thiscall *AthenaList_Init_t)(DWORD* list);
-static AthenaList_Init_t AthenaList_Init = (AthenaList_Init_t)0x00453210;
+static AthenaList_Init_t pfn_AthenaList_Init = (AthenaList_Init_t)0x00453210;
 
 /* Safe pointer chain: Try g_Scene first, fall back to App → PlayerProfile → Board */
 static DWORD get_board(void) {
