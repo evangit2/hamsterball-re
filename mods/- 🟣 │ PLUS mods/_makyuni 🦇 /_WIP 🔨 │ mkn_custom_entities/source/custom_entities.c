@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42o
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42p
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -301,6 +301,8 @@ typedef struct {
     DWORD col_obj;   /* v55m_28g: collision Level pointer for E:CATAPULTBOTTOM matching */
     int   collided;  /* v55m_28g: set by DispatchCollisionEvents hook when ball hits bottom mesh */
     int   countdown; /* v55m_42j: 50-frame windup before launch */
+    float arm_angle; /* v55m_42p: arm rotation during windup (degrees) */
+    DWORD orig_vtable18; /* v55m_42p: saved original vtable[18] for render hook */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -329,6 +331,9 @@ static int g_chomper_count = 0;
 /* Custom vtable[18] for Chomper — forward declaration.
  * Uses __thiscall to match game's vtable calling convention. */
 static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
+
+/* v55m_42p: Catapult vtable[18] render hook — arm rotation via Timer+Gfx */
+static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2);
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -511,6 +516,45 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
 static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2);
 static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int param_2) {
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
+}
+
+/* v55m_42p: Catapult arm rotation render hook.
+ * Native Catapult_Update uses Timer_Init + Gfx_ScaleZ + Gfx_SetPosition +
+ * vtable[0x16]/[0x15] calls + Timer_Cleanup. We replicate the same transform
+ * sequence and call the original vtable[18] render. */
+static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
+    CatapultState* cs = NULL;
+    int i;
+    for (i = 0; i < g_catapult_count; i++) {
+        if (g_catapults[i].obj == this_) { cs = &g_catapults[i]; break; }
+    }
+    if (!cs || !cs->orig_vtable18) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+
+    DWORD app = *(DWORD*)0x005341E0;
+    if (app && cs->arm_angle != 0.0f) {
+        DWORD gfx = *(DWORD*)((char*)app + APP_GFX_DEVICE);
+        if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
+            pfn_Timer_Init && pfn_Timer_Cleanup) {
+            char timerBuf[68];
+            pfn_Timer_Init(timerBuf);
+            /* Native Catapult_Update uses Gfx_ScaleZ(0.0f - current_angle).
+             * We use negative Z-angle so the arm tilts back during windup. */
+            pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->arm_angle);
+            pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
+            typedef void (__thiscall *render_t)(DWORD, char, int);
+            ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
+            pfn_Timer_Cleanup(timerBuf);
+            return;
+        }
+    }
+
+    /* No transform or no gfx — render normally */
+    typedef void (__thiscall *render_t)(DWORD, char, int);
+    ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
 }
 
 /* Vec3_Copy — copy 3 floats */
@@ -2331,6 +2375,23 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->col_obj = cat_col_obj;
                     cs->collided = 0;
                     cs->countdown = 0;
+                    cs->arm_angle = 0.0f;
+                    cs->orig_vtable18 = 0;
+
+                    /* v55m_42p: hook vtable[18] for arm rotation */
+                    DWORD orig_vtable = *(DWORD*)obj;
+                    if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
+                        DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
+                        if (new_vtable) {
+                            memcpy(new_vtable, (void*)orig_vtable, 256);
+                            cs->orig_vtable18 = new_vtable[18];
+                            new_vtable[18] = (DWORD)&cEnt_catapult_render;
+                            *(DWORD*)obj = (DWORD)new_vtable;
+                            if (logf) fprintf(logf, "  CATAPULT[%d]: vtable[18] hooked orig=0x%08X new=0x%08X\n",
+                                g_catapult_count, cs->orig_vtable18, (DWORD)&cEnt_catapult_render);
+                        }
+                    }
+
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
@@ -3799,8 +3860,11 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
         if (cs->launching) {
             cs->countdown--;
+            /* v55m_42p: arm rotates back from 0 to -45 degrees over 50 frames */
+            if (cs->countdown > 0 && cs->countdown <= 50) {
+                cs->arm_angle = -45.0f * (50 - cs->countdown) / 50.0f;
+            }
             if (cs->countdown > 0) {
-                /* v55m_42j: windup phase — could rotate arm here in future */
                 continue;
             }
 
@@ -3824,6 +3888,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
             cs->launching = 0;
             cs->cooldown = 60;
+            cs->arm_angle = 0.0f;  /* v55m_42p: snap arm back after launch */
 
             /* v55m_42j: play Catapult launch sound at same frame as launch */
             cEnt_play_catapult_sound(df);
@@ -4997,7 +5062,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42f Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42p Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

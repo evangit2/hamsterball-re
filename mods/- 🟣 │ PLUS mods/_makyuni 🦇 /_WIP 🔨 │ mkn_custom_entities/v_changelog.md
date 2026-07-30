@@ -1,3 +1,11 @@
+## v55m_42p — Catapult arm rotation via Timer+Gfx
+
+- Added `arm_angle` and `orig_vtable18` to `CatapultState`.
+- Hooked catapult vtable[18] to apply Z rotation during render.
+- Arm rotates from 0 to -45 degrees over the 50-frame windup.
+- Uses the native Timer_Init/Gfx_ScaleZ/Gfx_SetPosition/Timer_Cleanup pattern (same as working Bridgeslam/Chomper hooks).
+- Avoids direct D3D SetTransform, which crashed in v55m_42k/l.
+
 ## v55m_42f — Tighten catapult trigger + halve launch force again
 
 - Native Catapult_Update has no separate 'enter force'; the only force is 90.0 direct-velocity launch after 50 ticks.
