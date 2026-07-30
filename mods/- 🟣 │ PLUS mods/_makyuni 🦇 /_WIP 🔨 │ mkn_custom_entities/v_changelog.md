@@ -1,5 +1,16 @@
 # Version Changelog
 
+## v55m_28m — Catapult trigger diagnostics + wider zone
+
+- **Problem:** v55m_28l catapult tracked and heartbeat logged, but no TRIGGER/LAUNCH lines. User entered the catapult and nothing happened.
+- **Diagnosis:** `custom_entities_catapult.log` showed heartbeat every 60 frames for 780+ frames with no trigger. Either the ball was outside the radius 80 / dy [-100,+40] window, or `get_ball_ptr` returned a non-player ball.
+- **Fix:**
+  - Widened trigger zone to radius 120, dy [-120,+80].
+  - Widened reset zone to radius 250, dy [-180,+120] (must be larger than trigger).
+  - Added per-frame proximity logging: ball position, catapult position, horizontal distance, dy, trigger/reset flags, cooldown, `was_in_zone`.
+  - Logging now happens every 30 frames and also whenever the ball is inside the reset zone, so the user can see exactly why the trigger does or does not fire.
+- **Crash test:** pending.
+
 ## v55m_14 — Chomper crash fix (0000:00000010 during Draw)
 
 - **Root cause:** Chomper added `coll` (Level_RenderCtor result) to
