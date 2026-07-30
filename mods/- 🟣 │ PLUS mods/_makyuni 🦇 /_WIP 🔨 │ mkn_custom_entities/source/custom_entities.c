@@ -271,7 +271,8 @@ typedef void* (__thiscall *SpeedCylCtor_t)(void* this_, void* board, float x, fl
 typedef void* (__thiscall *TrapdoorCtor_t)(void* this_, void* board);
 /* Odd_Lifter_ctor: 5 params (this, board, x, y, z) */
 typedef void* (__thiscall *OddLifterCtor_t)(void* this_, void* board, float x, float y, float z);
-static StandsCtor_t pfn_Catapult_ctor     = (StandsCtor_t)0x00437E10;
+typedef void* (__thiscall *Catapult_ctor_t)(void* this_, void* board, void* mesh);
+static Catapult_ctor_t pfn_Catapult_ctor     = (Catapult_ctor_t)0x00437E10;
 static StandsCtor_t pfn_Mace_ctor         = (StandsCtor_t)0x00438750;
 static StandsCtor_t pfn_Tipper_ctor       = (StandsCtor_t)0x00437960;
 static StandsCtor_t pfn_Gluebie_ctor      = (StandsCtor_t)0x00437CB0;
@@ -297,11 +298,13 @@ static Catapult_Update_t pfn_Catapult_Update = (Catapult_Update_t)0x0043F080;
 typedef struct {
     DWORD obj;
     DWORD board;
-    float x, y, z;   /* position */
+    float x, y, z;
     float yaw;       /* v55m_28e: fixed launch yaw from ROT_Y */
-    int  launching;  /* v55m_27e: our own launch flag (not native obj+0x10F0) */
-    int  cooldown;   /* v55m_27e: frames to wait before re-launching */
-    int  was_in_zone; /* v55m_28d: require leaving zone before retrigger */
+    int   launching; /* v55m_27e: set to 1 to apply launch force */
+    int   cooldown;  /* v55m_27e: frames to wait before re-launching */
+    int   was_in_zone; /* v55m_28d: require leaving zone before retrigger */
+    DWORD col_obj;   /* v55m_28g: collision Level pointer for E:CATAPULTBOTTOM matching */
+    int   collided;  /* v55m_28g: set by DispatchCollisionEvents hook when ball hits bottom mesh */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -891,6 +894,35 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                     }
                 }
             }
+        }
+    }
+
+    /* Check for E:CATAPULTBOTTOM — set collided flag on matching tracked catapult */
+    if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
+        int i;
+        DWORD hit_obj = (DWORD)collision_data[1];
+        int matched = 0;
+        for (i = 0; i < g_catapult_count; i++) {
+            if (g_catapults[i].col_obj && (g_catapults[i].col_obj == hit_obj)) {
+                g_catapults[i].collided = 1;
+                matched = 1;
+            }
+        }
+        /* Fallback: if pointer didn't match, set collided on the closest catapult */
+        if (!matched && g_catapult_count > 0 && ball && !IsBadReadPtr((void*)ball, 0x200)) {
+            float bx = *(float*)((DWORD)ball + 0x164);
+            float by = *(float*)((DWORD)ball + 0x168);
+            float bz = *(float*)((DWORD)ball + 0x16C);
+            int best = -1;
+            float best_dist = 999999.0f;
+            for (i = 0; i < g_catapult_count; i++) {
+                float dx = bx - g_catapults[i].x;
+                float dy = by - g_catapults[i].y;
+                float dz = bz - g_catapults[i].z;
+                float d = dx*dx + dy*dy + dz*dz;
+                if (d < best_dist) { best_dist = d; best = i; }
+            }
+            if (best >= 0 && best_dist < 250000.0f) g_catapults[best].collided = 1;
         }
     }
 }
@@ -2196,8 +2228,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 }
                 /* Collision dispatch hook disabled in v53g-2 — trampoline caused
                  * stack corruption. Will re-add in future version with proper
-                 * detour library (MinHook/etc). */
-                /* install_bonk_collision_hook(); */
+                 * detour library (MinHook/etc).
+                 * v55m_28g: re-enabled for catapult E:CATAPULTBOTTOM collision events. */
+                install_bonk_collision_hook();
                 break;
             case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
                       * Uses Pendulum vtable with Rotator_Update for tilt animation. */
@@ -2260,6 +2293,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_catapults[g_catapult_count].launching = 0;
                     g_catapults[g_catapult_count].cooldown = 0;
                     g_catapults[g_catapult_count].was_in_zone = 0;
+                    g_catapults[g_catapult_count].col_obj = cat_col_obj;
+                    g_catapults[g_catapult_count].collided = 0;
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
@@ -3466,9 +3501,10 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
     FILE* df = NULL;
     DWORD ball = get_ball_ptr();
 
-    /* v55m_27j: log heartbeat + ball pointer to separate file */
+    /* v55m_28f: log heartbeat + ball pointer + distances to diagnose trigger zone */
     g_catapult_heartbeat++;
-    if (g_catapult_heartbeat <= 300 || (g_catapult_heartbeat % 60) == 0) {
+    int log_now = (g_catapult_heartbeat <= 300 || (g_catapult_heartbeat % 60) == 0);
+    if (log_now) {
         df = fopen("custom_entities_catapult.log", "a");
         if (df) {
             fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d\n",
@@ -3495,39 +3531,25 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (cs->cooldown == 0) cs->launching = 0;
         }
 
-        float dx = ball_x - cs->x;
-        float dy = ball_y - cs->y;
-        float dz = ball_z - cs->z;
-        float dist_sq = dx*dx + dy*dy + dz*dz;
-
-        /* v55m_28e: remove per-frame debug logging to avoid lag */
-        (void)dist_sq;
-
-        /* v55m_28e: catapult trigger is a small capsule around the arm.
-         * Tower Race native trigger is the E:CATAPULTBOTTOM collision mesh.
-         * Use radius=35 and Y +/-20 to match the arm volume. */
-        float dy_abs = dy < 0.0f ? -dy : dy;
-        int in_trigger_zone = (dist_sq < 1225.0f && dy_abs < 20.0f);
-        if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
+        /* v55m_28g: trigger on actual E:CATAPULTBOTTOM collision event.
+         * Proximity fallback disabled — collision mesh is the correct trigger. */
+        if (cs->collided && !cs->launching && cs->cooldown == 0) {
             cs->launching = 1;
             cs->was_in_zone = 1;
+            cs->collided = 0;
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
-                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f zone=1\n",
-                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, sqrtf(dist_sq));
+                fprintf(df, "CATAPULT: COLLISION_TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f)\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z);
                 fclose(df);
                 df = NULL;
             }
         }
-        if (!in_trigger_zone) {
-            cs->was_in_zone = 0;
-        }
-
         if (cs->launching) {
-            /* v55m_28e: fixed launch direction from entity ROT_Y yaw */
+            /* v55m_28g: launch opposite to the mesh-forward vector to push the ball away from the catapult */
             float yaw = cs->yaw;
-            float dxz = (float)sin(yaw);
-            float dzz = (float)cos(yaw);
+            float dxz = -(float)sin(yaw);
+            float dzz = -(float)cos(yaw);
 
             /* Apply launch force to physics accumulators */
             *(float*)(ball + BALL_FORCE_X) += dxz * 55.0f;
@@ -4729,7 +4751,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28e Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28g Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
