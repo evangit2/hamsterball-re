@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42fb
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42o
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -301,8 +301,6 @@ typedef struct {
     DWORD col_obj;   /* v55m_28g: collision Level pointer for E:CATAPULTBOTTOM matching */
     int   collided;  /* v55m_28g: set by DispatchCollisionEvents hook when ball hits bottom mesh */
     int   countdown; /* v55m_42j: 50-frame windup before launch */
-    float arm_angle; /* v55m_42k: current arm rotation in degrees */
-    DWORD orig_vtable18; /* v55m_42k: saved original vtable[18] for render hook */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -331,10 +329,6 @@ static int g_chomper_count = 0;
 /* Custom vtable[18] for Chomper — forward declaration.
  * Uses __thiscall to match game's vtable calling convention. */
 static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
-
-/* Custom vtable[18] for Catapult — forward declaration.
- * Uses __thiscall to match game's vtable calling convention. */
-static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2);
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -509,85 +503,8 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
      }
      }
 
-     /* v55m_42k: Custom vtable[18] for Catapult — applies arm rotation during windup.
-     * Same D3D SetTransform approach as Chomper. Arm rotates around X axis. */
-     static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
-     CatapultState* cs = NULL;
-     int i;
-     for (i = 0; i < g_catapult_count; i++) {
-         if (g_catapults[i].obj == this_) { cs = &g_catapults[i]; break; }
-     }
-     if (!cs || !cs->orig_vtable18) {
-         typedef void (__thiscall *render_t)(DWORD, char, int);
-         ((render_t)0x0045E0E0)(this_, param_1, param_2);
-         return;
-     }
-     /* v55m_42l: skip transform when arm is at rest */
-     if (cs->arm_angle == 0.0f) {
-         typedef void (__thiscall *render_t)(DWORD, char, int);
-         ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-         return;
-     }
-     {
-         DWORD app = *(DWORD*)0x005341E0;
-         if (app) {
-             DWORD gfx = *(DWORD*)((char*)app + 0x174);
-             if (gfx) {
-                 DWORD device = *(DWORD*)((char*)gfx + 0x154);
-                 if (device && !IsBadReadPtr((void*)device, 4)) {
-                     DWORD* dev_vtable = *(DWORD**)device;
-                     if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
-                         typedef void (__stdcall *GetTransform_t)(DWORD, DWORD, void*);
-                         typedef void (__stdcall *SetTransform_t)(DWORD, DWORD, void*);
-                         GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
-                         SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
-
-                         float saveMatrix[16];
-                         pfn_GetTransform(device, 256, saveMatrix);
-
-                         float angle = cs->arm_angle * 3.14159265f / 180.0f;
-                         float c = cosf(angle);
-                         float s = sinf(angle);
-                         /* X-axis rotation matrix, multiplied with current world */
-                         float rotMatrix[16] = {
-                             1,  0,  0, 0,
-                             0,  c,  s, 0,
-                             0, -s,  c, 0,
-                             0,  0,  0, 1
-                         };
-                         float finalMatrix[16];
-                         /* v55m_42l: local rotation — rotMatrix * saveMatrix so the arm
-                          * rotates around the catapult's own position instead of orbiting
-                          * the world origin. */
-                         int row, col;
-                         for (row = 0; row < 4; row++) {
-                             for (col = 0; col < 4; col++) {
-                                 finalMatrix[row*4+col] =
-                                     rotMatrix[row*4+0]*saveMatrix[0*4+col] +
-                                     rotMatrix[row*4+1]*saveMatrix[1*4+col] +
-                                     rotMatrix[row*4+2]*saveMatrix[2*4+col] +
-                                     rotMatrix[row*4+3]*saveMatrix[3*4+col];
-                             }
-                         }
-
-                         pfn_SetTransform(device, 256, finalMatrix);
-                         typedef void (__thiscall *render_t)(DWORD, char, int);
-                         ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-                         pfn_SetTransform(device, 256, saveMatrix);
-                         return;
-                     }
-                 }
-             }
-         }
-     }
-     {
-         typedef void (__thiscall *render_t)(DWORD, char, int);
-         ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-     }
-     }
-
-/* Forward declaration — full definition below */
-struct WaterWheelState;
+     /* Forward declaration — full definition below */
+     struct WaterWheelState;
 
 /* v55m_27: Waterwheel vtable[18] hook — stub that calls the real impl
  * (defined after WaterWheelState struct). */
@@ -2414,22 +2331,6 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->col_obj = cat_col_obj;
                     cs->collided = 0;
                     cs->countdown = 0;
-                    cs->arm_angle = 0.0f;
-                    cs->orig_vtable18 = 0;
-
-                    /* v55m_42k: create private vtable copy and hook vtable[18]
-                     * to rotate the arm during windup. */
-                    DWORD orig_vtable = *(DWORD*)obj;
-                    if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
-                        DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
-                        if (new_vtable) {
-                            memcpy(new_vtable, (void*)orig_vtable, 256);
-                            cs->orig_vtable18 = new_vtable[18];
-                            new_vtable[18] = (DWORD)&cEnt_catapult_render;
-                            *(DWORD*)obj = (DWORD)new_vtable;
-                        }
-                    }
-
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
@@ -3899,9 +3800,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->launching) {
             cs->countdown--;
             if (cs->countdown > 0) {
-                /* v55m_42k: cock arm back during windup. Native arm tension increases
-                 * as the timer counts down. We go from 0° to -45° over 50 frames. */
-                cs->arm_angle = -45.0f * (50 - cs->countdown) / 50.0f;
+                /* v55m_42j: windup phase — could rotate arm here in future */
                 continue;
             }
 
