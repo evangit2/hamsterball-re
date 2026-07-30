@@ -1,3 +1,7 @@
+## v55m_41 — Diagnostic build: catapult sound disabled
+
+- Used to confirm if the ntdll crash is caused by sound load/play.
+
 ## v55m_40 — Fix sound crash: use correct board+0x464 slot for dropin
 
 - Native catapult sound loading uses board+0x464 for 'sounds\dropin'.
