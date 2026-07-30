@@ -857,9 +857,6 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     /* Skip on Expert/Master — they have native handlers */
     if (is_expert_or_master_level((DWORD)this_)) return;
 
-    /* Check if we have any tracked Bonk objects */
-    if (g_bonk_count <= 0) return;
-
     /* Get event name from collision_data[1]+0x864 */
     if (!collision_data || IsBadReadPtr((void*)collision_data, 8)) return;
     int meshbuf = collision_data[1];
@@ -867,7 +864,9 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     char* event_name = *(char**)(meshbuf + 0x864);
     if (!event_name || IsBadReadPtr(event_name, 1)) return;
 
-    /* Check for E:CALLHAMMER */
+    /* Check if we have any tracked Bonk objects */
+    if (g_bonk_count > 0) {
+        /* Check for E:CALLHAMMER */
     if (_stricmp(event_name, "E:CALLHAMMER") == 0) {
         /* Check difficulty flag: App+0x23C != 0 (same check native code uses) */
         DWORD app = *(DWORD*)((DWORD)this_ + BOARD_APP);
@@ -894,6 +893,17 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                     }
                 }
             }
+        }
+    }
+    }
+
+    /* Diagnostic: log any collision event name that looks like a catapult event */
+    if (event_name && (_strnicmp(event_name, "E:CAT", 5) == 0 || _strnicmp(event_name, "CATAPULT", 8) == 0)) {
+        FILE* cdf = fopen("custom_entities_catapult.log", "a");
+        if (cdf) {
+            fprintf(cdf, "COLLISION_EVENT: name='%s' data0=0x%08X data1=0x%08X\n",
+                event_name, collision_data ? collision_data[0] : 0, collision_data ? collision_data[1] : 0);
+            fclose(cdf);
         }
     }
 
@@ -3531,30 +3541,42 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (cs->cooldown == 0) cs->launching = 0;
         }
 
-        /* v55m_28g: trigger on actual E:CATAPULTBOTTOM collision event.
-         * Proximity fallback disabled — collision mesh is the correct trigger. */
-        if (cs->collided && !cs->launching && cs->cooldown == 0) {
+        /* v55m_28h: trigger when ball is inside the catapult volume (drops in).
+         * Also honor E:CATAPULTBOTTOM collision event if the hook ever catches it.
+         * Radius 100 / Y tolerance 100 matches the approximate catapult size. */
+        float dx = ball_x - cs->x;
+        float dy = ball_y - cs->y;
+        float dz = ball_z - cs->z;
+        float dist_sq = dx*dx + dy*dy + dz*dz;
+        float dy_abs = dy < 0.0f ? -dy : dy;
+        int in_trigger_zone = (dist_sq < 10000.0f && dy_abs < 100.0f);
+
+        if ((cs->collided || in_trigger_zone) && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
             cs->was_in_zone = 1;
             cs->collided = 0;
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
-                fprintf(df, "CATAPULT: COLLISION_TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f)\n",
-                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z);
+                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f collided=%d\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, sqrtf(dist_sq), cs->collided);
                 fclose(df);
                 df = NULL;
             }
         }
+        if (!in_trigger_zone && !cs->collided) {
+            cs->was_in_zone = 0;
+        }
+
         if (cs->launching) {
-            /* v55m_28g: launch opposite to the mesh-forward vector to push the ball away from the catapult */
+            /* v55m_28h: launch away from the catapult along its yaw */
             float yaw = cs->yaw;
             float dxz = -(float)sin(yaw);
             float dzz = -(float)cos(yaw);
 
-            /* Apply launch force to physics accumulators */
-            *(float*)(ball + BALL_FORCE_X) += dxz * 55.0f;
-            *(float*)(ball + BALL_FORCE_Y) += 40.0f;
-            *(float*)(ball + BALL_FORCE_Z) += dzz * 55.0f;
+            /* Softer force so it feels like Tower Race rather than an invisible wall */
+            *(float*)(ball + BALL_FORCE_X) += dxz * 45.0f;
+            *(float*)(ball + BALL_FORCE_Y) += 35.0f;
+            *(float*)(ball + BALL_FORCE_Z) += dzz * 45.0f;
 
             /* Star trail effect (native: ball+0x320=100) */
             *(DWORD*)((char*)ball + 0x320) = 100;
@@ -4751,7 +4773,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28g Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28h Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
