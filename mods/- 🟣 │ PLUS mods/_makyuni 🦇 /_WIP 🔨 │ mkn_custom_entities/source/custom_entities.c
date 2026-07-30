@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28c
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28d
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -295,11 +295,12 @@ static Catapult_Update_t pfn_Catapult_Update = (Catapult_Update_t)0x0043F080;
 /* Catapult tracking for per-frame updates */
 #define MAX_CATAPULTS 16
 typedef struct {
-    DWORD obj;       /* Catapult object pointer */
-    DWORD board;     /* board pointer */
+    DWORD obj;
+    DWORD board;
     float x, y, z;   /* position */
     int  launching;  /* v55m_27e: our own launch flag (not native obj+0x10F0) */
     int  cooldown;   /* v55m_27e: frames to wait before re-launching */
+    int  was_in_zone; /* v55m_28d: require leaving zone before retrigger */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -2254,6 +2255,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_catapults[g_catapult_count].x = px;
                     g_catapults[g_catapult_count].y = py;
                     g_catapults[g_catapult_count].z = pz;
+                    g_catapults[g_catapult_count].launching = 0;
+                    g_catapults[g_catapult_count].cooldown = 0;
+                    g_catapults[g_catapult_count].was_in_zone = 0;
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
@@ -3402,37 +3406,23 @@ static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 /* Forward decls — defined below */
 static void cEnt_chomper_update(DWORD board);
 static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
-/* v55m_28b: Get Player 1 ball pointer from board+0x29D4 (ball AthenaList).
+/* v55m_28d: Get Player 1 ball pointer from board+0x29D4 (ball AthenaList).
  * v55m_27l tried board+0x2DEC, but that list is empty. The real player ball
- * list is board+0x29D4; we iterate it and select ball+0x18 == 0. */
+ * list is board+0x29D4; we iterate it and select ball+0x18 == 0.
+ * Per-frame logging removed to fix lag spikes. */
 static DWORD get_ball_ptr(void) {
     DWORD board = get_board();
-    FILE* df = fopen("custom_entities_catapult.log", "a");
-    if (df) {
-        fprintf(df, "GETBALL: board=0x%08X\n", board);
-        fclose(df);
-    }
     if (!board || board < 0x10000 || IsBadReadPtr((void*)board, 0x2E00)) {
-        df = fopen("custom_entities_catapult.log", "a");
-        if (df) { fprintf(df, "GETBALL: bad board\n"); fclose(df); }
         return 0;
     }
     DWORD ball_list = board + 0x29D4;  /* AthenaList: balls */
     if (IsBadReadPtr((void*)ball_list, 0x410)) {
-        df = fopen("custom_entities_catapult.log", "a");
-        if (df) { fprintf(df, "GETBALL: bad ball_list 0x%08X\n", ball_list); fclose(df); }
         return 0;
     }
     DWORD count = *(DWORD*)(ball_list + 0x04);
-    df = fopen("custom_entities_catapult.log", "a");
-    if (df) { fprintf(df, "GETBALL: count=%u\n", count); fclose(df); }
     if (count == 0) return 0;
     DWORD items = *(DWORD*)(ball_list + 0x40C);
-    df = fopen("custom_entities_catapult.log", "a");
-    if (df) { fprintf(df, "GETBALL: items=0x%08X\n", items); fclose(df); }
     if (!items || items < 0x10000 || IsBadReadPtr((void*)items, count * 4)) {
-        df = fopen("custom_entities_catapult.log", "a");
-        if (df) { fprintf(df, "GETBALL: bad items\n"); fclose(df); }
         return 0;
     }
 
@@ -3443,23 +3433,9 @@ static DWORD get_ball_ptr(void) {
         DWORD ball = ((DWORD*)items)[i];
         if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) continue;
         DWORD player_idx = *(DWORD*)(ball + 0x18);
-        df = fopen("custom_entities_catapult.log", "a");
-        if (df) {
-            float x = *(float*)(ball + 0x164);
-            float y = *(float*)(ball + 0x168);
-            float z = *(float*)(ball + 0x16C);
-            fprintf(df, "GETBALL: [%u] ball=0x%08X player_idx=%d pos=(%.1f,%.1f,%.1f)\n",
-                i, ball, player_idx, x, y, z);
-            fclose(df);
-        }
         if (player_idx == 0 && player_ball == 0) {
             player_ball = ball;
         }
-    }
-    df = fopen("custom_entities_catapult.log", "a");
-    if (df) {
-        fprintf(df, "GETBALL: player_ball=0x%08X\n", player_ball);
-        fclose(df);
     }
     return player_ball;
 }
@@ -3535,14 +3511,15 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_28c: catapult trigger zone is a horizontal disc around the pivot.
+        /* v55m_28d: catapult trigger zone is a horizontal disc around the pivot.
          * The arm extends ~150 units from the pivot, so use 150 radius.
          * Also require the ball to be near the arm level (within +/- 60 units Y).
-         * Remove per-frame debug logging to avoid lag. */
+         * One launch per approach: require ball to leave zone before retrigger. */
         float dy_abs = dy < 0.0f ? -dy : dy;
         int in_trigger_zone = (dist_sq < 22500.0f && dy_abs < 60.0f);
-        if (in_trigger_zone && !cs->launching && cs->cooldown == 0) {
+        if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
+            cs->was_in_zone = 1;
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f zone=1\n",
@@ -3550,6 +3527,9 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
                 fclose(df);
                 df = NULL;
             }
+        }
+        if (!in_trigger_zone) {
+            cs->was_in_zone = 0;
         }
 
         if (cs->launching) {
@@ -4760,7 +4740,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28c Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28d Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
