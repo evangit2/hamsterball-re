@@ -1,5 +1,15 @@
 # Version Changelog
 
+## v55m_29 — Catapult uses native E:CATAPULTBOTTOM collision event
+
+- **Problem:** v55m_28m catapult fired via radius trigger, but the zone was too wide and did not match the native Tower behavior.
+- **Fix:**
+  - Removed the manual radius trigger + force push in `cEnt_catapult_present_check`.
+  - Re-enabled adding the spawned `Catapult_ctor` object to the native catapult update list at `board+0x43B8`, so the original wind-up/launch state machine (`Catapult_vtable11` / `Catapult_Update`) runs.
+  - In the `DispatchCollisionEvents` detour, `E:CATAPULTBOTTOM` now directly calls `Catapult_Launch(obj)` on the matching tracked catapult instead of just setting a `collided` flag.
+  - Falls back to launching the closest tracked catapult if the collision pointer does not match exactly.
+- **Behavior:** Entering the `E:CATAPULTBOTTOM` collision mesh plays the native 50-frame wind-up animation, then launches the ball with the original Tower force/direction.
+
 ## v55m_28m — Catapult trigger diagnostics + wider zone
 
 - **Problem:** v55m_28l catapult tracked and heartbeat logged, but no TRIGGER/LAUNCH lines. User entered the catapult and nothing happened.
