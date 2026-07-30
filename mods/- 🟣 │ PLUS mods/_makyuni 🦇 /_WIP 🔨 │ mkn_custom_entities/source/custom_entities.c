@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28m
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_29
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -901,19 +901,34 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
         }
     }
 
-    /* Check for E:CATAPULTBOTTOM — set collided flag on matching tracked catapult */
+    /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
+     * v55m_29: switched from radius trigger to native collision event.
+     * The native Catapult_vtable11 wind-up + Catapult_Update launch then run automatically
+     * because the spawned object is in board+0x43B8 (native catapult update list). */
     if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
         int i;
         DWORD hit_obj = (DWORD)collision_data[1];
         int matched = 0;
         for (i = 0; i < g_catapult_count; i++) {
-            if (g_catapults[i].col_obj && (g_catapults[i].col_obj == hit_obj)) {
-                g_catapults[i].collided = 1;
-                matched = 1;
+            if (g_catapults[i].obj && !IsBadReadPtr((void*)g_catapults[i].obj, 4)) {
+                /* Native match: catapult+0x10D4 == collision mesh ptr */
+                DWORD cat_col_obj = *(DWORD*)((char*)g_catapults[i].obj + 0x10D4);
+                if (cat_col_obj && cat_col_obj == hit_obj) {
+                    if (pfn_Catapult_Launch) {
+                        pfn_Catapult_Launch((void*)g_catapults[i].obj);
+                        matched = 1;
+                        FILE* cdf = fopen("custom_entities_catapult.log", "a");
+                        if (cdf) {
+                            fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM matched catapult obj=0x%08X -> Catapult_Launch\n",
+                                g_catapults[i].obj);
+                            fclose(cdf);
+                        }
+                    }
+                }
             }
         }
-        /* Fallback: if pointer didn't match, set collided on the closest catapult */
-        if (!matched && g_catapult_count > 0 && ball && !IsBadReadPtr((void*)ball, 0x200)) {
+        /* Fallback: if pointer didn't match, launch the closest catapult */
+        if (!matched && g_catapult_count > 0 && ball && !IsBadReadPtr((void*)ball, 0x200) && pfn_Catapult_Launch) {
             float bx = *(float*)((DWORD)ball + 0x164);
             float by = *(float*)((DWORD)ball + 0x168);
             float bz = *(float*)((DWORD)ball + 0x16C);
@@ -926,7 +941,15 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                 float d = dx*dx + dy*dy + dz*dz;
                 if (d < best_dist) { best_dist = d; best = i; }
             }
-            if (best >= 0 && best_dist < 250000.0f) g_catapults[best].collided = 1;
+            if (best >= 0 && best_dist < 250000.0f) {
+                pfn_Catapult_Launch((void*)g_catapults[best].obj);
+                FILE* cdf = fopen("custom_entities_catapult.log", "a");
+                if (cdf) {
+                    fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM fallback closest catapult obj=0x%08X -> Catapult_Launch\n",
+                        g_catapults[best].obj);
+                    fclose(cdf);
+                }
+            }
         }
     }
 }
@@ -2277,13 +2300,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                     if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
-                /* v55m_1: Add to board+0x43B8 (Catapult AthenaList) — TowerCollisionEvents
-                 * iterates this list to find which catapult was triggered by E:CATAPULTBOTTOM. */
-                /* v55m_27f: REMOVED — adding PopCylinder to native catapult list causes
-                 * crash at 0x453376 when the game's background thread iterates the list
-                 * and dereferences catapult-specific fields that PopCylinder doesn't have.
-                 * We handle launch detection ourselves via proximity check. */
-                /* pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj); -- REMOVED */
+                /* v55m_29: Add to board+0x43B8 (Catapult AthenaList) so the native
+                 * Catapult_vtable11 (slot 11) wind-up and Catapult_Update (slot 61)
+                 * launch run automatically every frame. The object we spawn is a
+                 * real Catapult_ctor result, so the list iteration is safe. */
+                pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
+                if (logf) fprintf(logf, "  ROTATER: Catapult added to native list board+0x43B8\n");
+
                 /* v55m_27: Do NOT add to board+0x8B8 — causes MeshArchive_ctor crash
                  * (0x478EDD) because the game's update loop expects native catapult objects. */
                 /* Track for per-frame Catapult_vtable11 calls */
@@ -3497,129 +3520,16 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_28m: Catapult launch detection + force application.
- * Moved from background thread to Present hook (main thread) for reliable
- * per-frame timing and to avoid racing with Ball_Update.
- * v55m_28m: widened trigger + added per-frame distance debug to diagnose
- * why the catapult does not fire when the user enters it. */
+/* v55m_29: Catapult is now driven entirely by the native E:CATAPULTBOTTOM
+ * collision event. The mod only has to:
+ *   1. Add the spawned Catapult object to board+0x43B8 (native update list).
+ *   2. In the DispatchCollisionEvents hook, call Catapult_Launch(obj) when
+ *      the ball hits any tracked catapult's E:CATAPULTBOTTOM mesh.
+ * The native Catapult_vtable11 (slot 11) wind-up + Catapult_Update (slot 61)
+ * handle the animation, timing, and launch force. */
 static void __cdecl cEnt_catapult_present_check(DWORD board) {
-    int i;
-    FILE* df = NULL;
-    DWORD ball = get_ball_ptr();
-
-    /* v55m_28m: log every 30 frames + always log when we are close to any catapult */
-    g_catapult_heartbeat++;
-    int log_now = ((g_catapult_heartbeat % 30) == 0);
-
-    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
-        if (log_now) {
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d (no ball)\n",
-                    g_catapult_heartbeat, ball, g_catapult_count);
-                fclose(df);
-            }
-        }
-        return;
-    }
-
-    float ball_x = *(float*)(ball + BALL_POS_X);
-    float ball_y = *(float*)(ball + BALL_POS_Y);
-    float ball_z = *(float*)(ball + BALL_POS_Z);
-
-    for (i = 0; i < g_catapult_count; i++) {
-        CatapultState* cs = &g_catapults[i];
-        if (!cs->obj || cs->obj < 0x10000) continue;
-        if (cs->board != board) continue;
-        if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
-
-        if (cs->cooldown > 0) {
-            cs->cooldown--;
-            if (cs->cooldown == 0) cs->launching = 0;
-        }
-
-        /* v55m_28m: trigger when ball is inside a generous catapult zone.
-         * v55m_28l used radius 80 and dy [-100,+40] and still did not fire.
-         * Expand to radius 120 and dy [-120,+80] to cover the actual model.
-         * Reset zone must be larger than trigger zone to require leaving. */
-        float dx = ball_x - cs->x;
-        float dy = ball_y - cs->y;
-        float dz = ball_z - cs->z;
-        float horiz_sq = dx*dx + dz*dz;
-        float horiz = (float)sqrt(horiz_sq);
-        int in_trigger_zone = (horiz_sq < 14400.0f && dy > -120.0f && dy < 80.0f);
-        int in_reset_zone   = (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f); /* 250^2 */
-
-        /* Always log proximity details for the first catapult, throttled */
-        if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                fprintf(df, "CATAPULT: dist ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f "
-                    "trigger=%d reset=%d launch=%d cd=%d was=%d\n",
-                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy,
-                    in_trigger_zone, in_reset_zone, cs->launching, cs->cooldown, cs->was_in_zone);
-                fclose(df);
-                df = NULL;
-            }
-        }
-
-        if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
-            cs->launching = 1;
-            cs->was_in_zone = 1;
-            /* store launch direction: fixed yaw-based away vector */
-            float yaw = cs->yaw;
-            cs->launch_dx = -(float)sin(yaw);
-            cs->launch_dy = 0.0f;
-            cs->launch_dz = -(float)cos(yaw);
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f\n",
-                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy);
-                fclose(df);
-                df = NULL;
-            }
-        }
-        if (!in_reset_zone) {
-            cs->was_in_zone = 0;
-        }
-
-        if (cs->launching) {
-            /* v55m_28k: launch away from the catapult along its fixed yaw */
-            float dxz = cs->launch_dx;
-            float dzz = cs->launch_dz;
-
-            /* Softer force so it launches, not repels */
-            *(float*)(ball + BALL_FORCE_X) += dxz * 35.0f;
-            *(float*)(ball + BALL_FORCE_Y) += 25.0f;
-            *(float*)(ball + BALL_FORCE_Z) += dzz * 35.0f;
-
-            /* Star trail effect (native: ball+0x320=100) */
-            *(DWORD*)((char*)ball + 0x320) = 100;
-            *(DWORD*)((char*)ball + 0x31E) = 0;
-
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                fprintf(df, "CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dir=(%.2f,%.2f)\n",
-                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, dxz, dzz);
-                fclose(df);
-                df = NULL;
-            }
-
-            cs->launching = 0;
-            cs->cooldown = 60; /* 2 seconds at 30fps */
-
-            /* v55m_28l: play Dropin sound once per launch using App+0x460 */
-            {
-                void** sound_list = (void**)(0x004FD680 + 0x460);
-                if (sound_list && *sound_list) {
-                    if (!g_dropin_sound) g_dropin_sound = *sound_list;
-                    if (g_dropin_sound && pfn_Sound_PlayChannel) {
-                        pfn_Sound_PlayChannel(g_dropin_sound);
-                    }
-                }
-            }
-        }
-    }
+    (void)board;
+    /* No manual radius trigger needed — native event + state machine do all work. */
 }
 
 static void __cdecl gluebie_present_helper(void) {
@@ -4788,7 +4698,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28m Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_29 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
