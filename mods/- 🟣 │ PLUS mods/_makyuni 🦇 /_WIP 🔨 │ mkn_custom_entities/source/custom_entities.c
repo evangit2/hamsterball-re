@@ -1,18 +1,7 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28l
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28m
  *
- * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
- *
- * v13 REWRITE: Uses the proven CEA spawning pattern instead of direct
- * MeshBuffer injection. Loads testcube.MESHWORLD via the game's own
- * MeshWorld_ctor, then creates PopCylinder objects that reference it.
- * This is the same pattern used by XRow's "Press S to spawn red bridge"
- * CEA script — load mesh + create object + register in board lists.
- *
- * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll custom_entities.c \
- *     -I../shared -lwinmm -Wl,--enable-stdcall-fixup -O2 -static \
- *     -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse -lshlwapi
+ * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
 
 #include "bass_proxy.h"
@@ -3508,28 +3497,31 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_27i: Catapult launch detection + force application.
+/* v55m_28m: Catapult launch detection + force application.
  * Moved from background thread to Present hook (main thread) for reliable
- * per-frame timing and to avoid racing with Ball_Update. */
+ * per-frame timing and to avoid racing with Ball_Update.
+ * v55m_28m: widened trigger + added per-frame distance debug to diagnose
+ * why the catapult does not fire when the user enters it. */
 static void __cdecl cEnt_catapult_present_check(DWORD board) {
     int i;
     FILE* df = NULL;
     DWORD ball = get_ball_ptr();
 
-    /* v55m_28i: log only every 60 frames to avoid disk spam */
+    /* v55m_28m: log every 30 frames + always log when we are close to any catapult */
     g_catapult_heartbeat++;
-    int log_now = ((g_catapult_heartbeat % 60) == 0);
-    if (log_now) {
-        df = fopen("custom_entities_catapult.log", "a");
-        if (df) {
-            fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d\n",
-                g_catapult_heartbeat, ball, g_catapult_count);
-            fclose(df);
-            df = NULL;
-        }
-    }
+    int log_now = ((g_catapult_heartbeat % 30) == 0);
 
-    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) return;
+    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
+        if (log_now) {
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d (no ball)\n",
+                    g_catapult_heartbeat, ball, g_catapult_count);
+                fclose(df);
+            }
+        }
+        return;
+    }
 
     float ball_x = *(float*)(ball + BALL_POS_X);
     float ball_y = *(float*)(ball + BALL_POS_Y);
@@ -3546,17 +3538,30 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (cs->cooldown == 0) cs->launching = 0;
         }
 
-        /* v55m_28l: trigger when ball is inside catapult footprint.
-         * v55m_28k used radius 50 and dy [-80,+20]; user fell inside but didn't
-         * trigger, so expand to radius 80 and dy [-100,+40]. Reset zone also
-         * enlarged so one launch doesn't immediately re-arm. */
+        /* v55m_28m: trigger when ball is inside a generous catapult zone.
+         * v55m_28l used radius 80 and dy [-100,+40] and still did not fire.
+         * Expand to radius 120 and dy [-120,+80] to cover the actual model.
+         * Reset zone must be larger than trigger zone to require leaving. */
         float dx = ball_x - cs->x;
         float dy = ball_y - cs->y;
         float dz = ball_z - cs->z;
         float horiz_sq = dx*dx + dz*dz;
         float horiz = (float)sqrt(horiz_sq);
-        int in_trigger_zone = (horiz_sq < 6400.0f && dy > -100.0f && dy < 40.0f);
-        int in_reset_zone   = (horiz_sq < 40000.0f || (dy > -150.0f && dy < 90.0f)); /* 200^2 */
+        int in_trigger_zone = (horiz_sq < 14400.0f && dy > -120.0f && dy < 80.0f);
+        int in_reset_zone   = (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f); /* 250^2 */
+
+        /* Always log proximity details for the first catapult, throttled */
+        if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: dist ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f "
+                    "trigger=%d reset=%d launch=%d cd=%d was=%d\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy,
+                    in_trigger_zone, in_reset_zone, cs->launching, cs->cooldown, cs->was_in_zone);
+                fclose(df);
+                df = NULL;
+            }
+        }
 
         if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
@@ -4783,7 +4788,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28l Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28m Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
