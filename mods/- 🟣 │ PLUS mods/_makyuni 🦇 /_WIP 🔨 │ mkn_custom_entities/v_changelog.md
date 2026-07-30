@@ -1,3 +1,9 @@
+## v55m_35 — Restore v55m_28m radius catapult trigger, remove SEH hook
+
+- Removed `board+0x43B8` append (caused heap corruption on non-Tower levels).
+- Removed `install_bonk_collision_hook()` (SEH trampoline at `DispatchCollisionEvents` caused Draw crashes at 0x452376).
+- Restored Present-hook radius trigger from v55m_28m.
+
 ## v55m_34 — Remove unsafe catapult MeshWorld scan
 
 - v55m_33 scanning the catapult collision Level's MeshWorld caused crash at 0x45237E.
