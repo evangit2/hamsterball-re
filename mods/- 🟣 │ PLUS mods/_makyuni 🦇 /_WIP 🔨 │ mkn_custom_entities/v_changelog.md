@@ -1,3 +1,8 @@
+## v55m_34 — Remove unsafe catapult MeshWorld scan
+
+- v55m_33 scanning the catapult collision Level's MeshWorld caused crash at 0x45237E.
+- Replaced with simple `cat_col_obj` pointer log.
+
 ## v55m_33 — Add catapult diagnostic logs
 
 - Log whether `E:CATAPULTBOTTOM` mesh exists in the spawned catapult collision level.

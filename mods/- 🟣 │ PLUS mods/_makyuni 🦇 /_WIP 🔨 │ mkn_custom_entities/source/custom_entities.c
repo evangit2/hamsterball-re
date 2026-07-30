@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_33
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_34
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -902,7 +902,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     }
 
     /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
-     * v55m_33: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
+     * v55m_34: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
      * collision_data[1] is the MeshBuffer (used only for the event name). */
     if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
         int i;
@@ -2312,29 +2312,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
                 if (logf) fprintf(logf, "  ROTATER: Catapult added to native list board+0x43B8\n");
 
-                /* v55m_33: diagnostic — confirm E:CATAPULTBOTTOM mesh exists in the catapult collision level. */
+                /* v55m_34: diagnostic — confirm catapult collision object was created.
+                 * v55m_34 scanned the collision Level's MeshWorld and crashed; keep it simple. */
                 if (cat_col_obj && logf) {
-                    DWORD lvl_mw = *(DWORD*)((char*)cat_col_obj + 0x08);
-                    if (lvl_mw && !IsBadReadPtr((void*)lvl_mw, 0x30)) {
-                        int mw_count = *(int*)((char*)lvl_mw + 0x24);
-                        DWORD* mw_array = *(DWORD**)((char*)lvl_mw + 0x28);
-                        int found_cat = 0;
-                        int k;
-                        for (k = 0; k < mw_count && mw_array && !IsBadReadPtr(mw_array, mw_count * 4); k++) {
-                            DWORD mb = mw_array[k];
-                            if (mb && !IsBadReadPtr((void*)mb, 0x868)) {
-                                char* mb_name = *(char**)((char*)mb + 0x864);
-                                if (mb_name && !IsBadReadPtr(mb_name, 16) && _stricmp(mb_name, "E:CATAPULTBOTTOM") == 0) {
-                                    found_cat = 1;
-                                    break;
-                                }
-                            }
-                        }
-                        fprintf(logf, "  E:CATAPULT is spawned in the level (cat_col=0x%08X, E:CATAPULTBOTTOM=%s)\n",
-                            cat_col_obj, found_cat ? "FOUND" : "NOT FOUND");
-                    } else {
-                        fprintf(logf, "  E:CATAPULT is spawned in the level (cat_col=0x%08X, no MeshWorld)\n", cat_col_obj);
-                    }
+                    fprintf(logf, "  E:CATAPULT is spawned in the level (cat_col=0x%08X)\n", cat_col_obj);
                 }
 
                 /* Track for per-frame Catapult_vtable11 calls */
@@ -3548,7 +3529,7 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_33: Catapult is now driven entirely by the native E:CATAPULTBOTTOM
+/* v55m_34: Catapult is now driven entirely by the native E:CATAPULTBOTTOM
  * collision event. The mod only has to:
  *   1. Add the spawned Catapult object to board+0x43B8 (native update list).
  *   2. In the DispatchCollisionEvents hook, call Catapult_Launch(obj) when
@@ -4726,7 +4707,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_33 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_34 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
