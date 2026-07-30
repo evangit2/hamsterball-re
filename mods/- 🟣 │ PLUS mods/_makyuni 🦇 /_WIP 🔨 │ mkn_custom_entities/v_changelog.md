@@ -1,3 +1,9 @@
+## v55m_42f — Tighten catapult trigger + halve launch force again
+
+- Native Catapult_Update has no separate 'enter force'; the only force is 90.0 direct-velocity launch after 50 ticks.
+- Trigger zone tightened to horiz<60 and dy -10..+15 so launch only fires inside the bowl.
+- Launch force halved again: horizontal 37.5 -> 18.75, vertical 22.5 -> 11.25.
+
 ## v55m_42e — Halve catapult launch force to match native feel
 
 - Native Catapult_Update fires at 90.0 total velocity via Scene_ForEachBall_SetVelocity (direct velocity set).
