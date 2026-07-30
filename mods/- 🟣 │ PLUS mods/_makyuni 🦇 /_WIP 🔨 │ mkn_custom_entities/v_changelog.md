@@ -1,3 +1,9 @@
+## v55m_36 — Disable catapult sound + star trail to isolate crash
+
+- Catapult trigger now fires correctly.
+- Removed sound play and star trail writes (caused 0x00000000 crash after launch).
+- Keep launch force only for stability test.
+
 ## v55m_35 — Restore v55m_28m radius catapult trigger, remove SEH hook
 
 - Removed `board+0x43B8` append (caused heap corruption on non-Tower levels).
