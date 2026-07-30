@@ -1,3 +1,8 @@
+## v55m_39 — Use native sound manager virtual call for dropin sound
+
+- Replaced manual Sound_LoadOggOrWav with board+0x22C sound manager vtable[24].
+- Native pattern loads 'sounds\dropin' into board+0x460 slot, then Sound_Play3D.
+
 ## v55m_38 — Fix catapult sound crash: use App+0x460 as SoundList
 
 - v55m_37 passed App* (board+0x878) to Sound_LoadOggOrWav; now uses App+0x460.
