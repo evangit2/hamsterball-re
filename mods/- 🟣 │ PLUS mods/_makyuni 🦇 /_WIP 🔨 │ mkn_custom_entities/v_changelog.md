@@ -1,3 +1,8 @@
+## v55m_38 — Fix catapult sound crash: use App+0x460 as SoundList
+
+- v55m_37 passed App* (board+0x878) to Sound_LoadOggOrWav; now uses App+0x460.
+- Added diagnostic logs for sound_list and loaded channel.
+
 ## v55m_37 — Stronger catapult launch + safe dropin sound
 
 - Increased launch force from 35/25 to 75/45 (closer to native 90 velocity).
