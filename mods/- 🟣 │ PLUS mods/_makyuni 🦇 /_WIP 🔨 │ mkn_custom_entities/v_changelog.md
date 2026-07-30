@@ -1,3 +1,8 @@
+## v55m_40 — Fix sound crash: use correct board+0x464 slot for dropin
+
+- Native catapult sound loading uses board+0x464 for 'sounds\dropin'.
+- v55m_39 wrote to board+0x460, corrupting another sound slot.
+
 ## v55m_39 — Use native sound manager virtual call for dropin sound
 
 - Replaced manual Sound_LoadOggOrWav with board+0x22C sound manager vtable[24].
