@@ -1,24 +1,9 @@
+## v55m_31 — Revert collision-site hooks to v55m_29 baseline
+
+- Reverted v55m_30/v55m_30a collision-site hook rewrite; it caused heap corruption (crash 0x45FB03).
+- Restored native E:CATAPULTBOTTOM DispatchCollisionEvents approach from v55m_29.
+
 # Version Changelog
-
-## v55m_30a — Fix double stack cleanup in collision hook
-
-- **Problem:** v55m_30's `cEnt_catapult_collision_helper` was declared `__stdcall` (callee cleans 12 bytes), but the assembly cave also executed `ADD ESP, 12`. This double-cleaned the stack, popping saved registers before `POPAD` and corrupting the caller's frame → same crash at `0x45FB03`.
-- **Fix:** Changed helper to `__cdecl` so only the cave cleans the 3 arguments. The cave still uses `PUSH EDX; PUSH ESI; PUSH ECX; CALL helper; ADD ESP, 12; POPFD; POPAD`.
-- **Crash test:** Wine/Xvfb startup + race navigation passed (40s+47s).
-
-## v55m_30 — Safer E:CATAPULTBOTTOM collision hook
-
-- **Problem:** v55m_29 used a `DispatchCollisionEvents` detour at `0x40C5D0`. That function has an SEH prologue (`PUSH 0xFF; MOV EAX,FS:[0]`). Copying it into a static trampoline corrupted the exception chain and caused crashes inside `Draw` at `0x45FB03` (`VertexDecl_WriteBlendWeights`).
-- **Fix:**
-  - Removed the `DispatchCollisionEvents` detour entirely (including Bonk event support).
-  - Added two 5-byte JMP hooks at the per-level vtable[29] call sites inside `Ball_Update`:
-    - `0x0040728F`: `PUSH EDX; PUSH ESI; CALL [EAX+0x74]`
-    - `0x00408B85`: `PUSH EDX; PUSH ESI; CALL [EAX+0x74]`
-  - Each cave runs `cEnt_catapult_collision_helper(board=ECX, ball=ESI, collObj=EDX)` before the original handler, preserving all registers with `PUSHAD`/`POPAD`.
-  - The helper only acts on `E:CATAPULTBOTTOM` and skips Tower (`race_idx == 4`), where `TowerCollisionEvents` already handles it natively.
-  - Matching uses the native pointer comparison: `catapult+0x10D4 == collObj[0]`, with a closest-catapult fallback.
-- **Behavior:** The catapult still uses the native collision event, but the hook is installed inside `Ball_Update` instead of `DispatchCollisionEvents`, avoiding SEH corruption. Native Tower catapults continue to work.
-- **Crash test:** 40s Wine/Xvfb startup + 47s menu→race navigation — no crash, no crashlog.
 
 ## v55m_29 — Catapult uses native E:CATAPULTBOTTOM collision event
 
@@ -39,7 +24,7 @@
   - Widened reset zone to radius 250, dy [-180,+120] (must be larger than trigger).
   - Added per-frame proximity logging: ball position, catapult position, horizontal distance, dy, trigger/reset flags, cooldown, `was_in_zone`.
   - Logging now happens every 30 frames and also whenever the ball is inside the reset zone, so the user can see exactly why the trigger does or does not fire.
-- **Crash test:** Wine/Xvfb startup + race navigation passed (40s+47s).
+- **Crash test:** pending.
 
 ## v55m_14 — Chomper crash fix (0000:00000010 during Draw)
 
