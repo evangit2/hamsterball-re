@@ -3545,29 +3545,29 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (cs->cooldown == 0) cs->launching = 0;
         }
 
-        /* v55m_28j: trigger when ball is inside the catapult (radius 110).
-         * Require ball to leave a much larger zone (radius 250) before re-arming.
-         * This stops the "approach -> pushed away -> retrigger" loop. */
+        /* v55m_28k: only fire when the ball has actually fallen into the catapult.
+         * Use horizontal footprint (50 units) plus a vertical window around the pivot.
+         * Reset when ball leaves a larger horizontal zone so it doesn't pulse. */
         float dx = ball_x - cs->x;
         float dy = ball_y - cs->y;
         float dz = ball_z - cs->z;
-        float dist_sq = dx*dx + dy*dy + dz*dz;
-        int in_trigger_zone = (dist_sq < 12100.0f); /* 110^2 */
-        int in_reset_zone   = (dist_sq < 62500.0f); /* 250^2 */
+        float horiz_sq = dx*dx + dz*dz;
+        float horiz = (float)sqrt(horiz_sq);
+        int in_trigger_zone = (horiz_sq < 2500.0f && dy > -80.0f && dy < 20.0f);
+        int in_reset_zone   = (horiz_sq < 14400.0f || (dy > -120.0f && dy < 60.0f)); /* 120^2 */
 
         if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
             cs->was_in_zone = 1;
-            /* store away direction for this launch so it stays constant */
-            float len = (float)sqrt(dx*dx + dy*dy + dz*dz);
-            if (len < 1.0f) len = 1.0f;
-            cs->launch_dx = dx / len;
-            cs->launch_dy = dy / len;
-            cs->launch_dz = dz / len;
+            /* store launch direction: fixed yaw-based away vector */
+            float yaw = cs->yaw;
+            cs->launch_dx = -(float)sin(yaw);
+            cs->launch_dy = 0.0f;
+            cs->launch_dz = -(float)cos(yaw);
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
-                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f\n",
-                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, sqrtf(dist_sq));
+                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy);
                 fclose(df);
                 df = NULL;
             }
@@ -3577,14 +3577,14 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         }
 
         if (cs->launching) {
-            /* v55m_28i: launch directly away from the catapult */
+            /* v55m_28k: launch away from the catapult along its fixed yaw */
             float dxz = cs->launch_dx;
             float dzz = cs->launch_dz;
 
             /* Softer force so it launches, not repels */
-            *(float*)(ball + BALL_FORCE_X) += dxz * 40.0f;
-            *(float*)(ball + BALL_FORCE_Y) += 30.0f;
-            *(float*)(ball + BALL_FORCE_Z) += dzz * 40.0f;
+            *(float*)(ball + BALL_FORCE_X) += dxz * 35.0f;
+            *(float*)(ball + BALL_FORCE_Y) += 25.0f;
+            *(float*)(ball + BALL_FORCE_Z) += dzz * 35.0f;
 
             /* Star trail effect (native: ball+0x320=100) */
             *(DWORD*)((char*)ball + 0x320) = 100;
@@ -3596,17 +3596,6 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
                     ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, dxz, dzz);
                 fclose(df);
                 df = NULL;
-            }
-
-            /* Play Dropin sound once per launch (App+0x460 = sounds\dropin) */
-            {
-                DWORD app = *(DWORD*)0x005341E0;
-                if (app && app > 0x10000 && !IsBadReadPtr((void*)app, 0x464) && pfn_Sound_PlayChannel) {
-                    DWORD snd = *(DWORD*)((char*)app + 0x460);
-                    if (snd && snd > 0x10000 && !IsBadReadPtr((void*)snd, 0x20)) {
-                        pfn_Sound_PlayChannel((void*)snd);
-                    }
-                }
             }
 
             cs->launching = 0;
@@ -4781,7 +4770,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28j Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28k Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
