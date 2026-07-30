@@ -1,3 +1,9 @@
+## v55m_42d — Switch catapult sound to older BASS_SamplePlay + tighten trigger zone
+
+- Added BASS_SamplePlay and BASS_StreamPlay/CreateFile function loading.
+- cEnt_play_dropin_sound now tries BASS_SamplePlay first, then SampleGetChannel+ChannelPlay, then StreamCreateFile+StreamPlay.
+- Reduced catapult trigger radius from 120 to 90 and tightened vertical window (dy -30..+50) so it only fires when on the bowl.
+
 ## v55m_42c — Load BASS function pointers with stdcall decorated fallback
 
 - Added decorated-name fallback (_Name@N) for BASS_SampleGetChannel, BASS_ChannelPlay, etc.
