@@ -1,3 +1,9 @@
+## v55m_42e — Halve catapult launch force to match native feel
+
+- Native Catapult_Update fires at 90.0 total velocity via Scene_ForEachBall_SetVelocity (direct velocity set).
+- Our custom catapult uses physics force accumulators (ball+0x170/174/178), so same numbers feel much stronger.
+- Halved launch force: horizontal 75.0 -> 37.5, vertical 45.0 -> 22.5.
+
 ## v55m_42d — Switch catapult sound to older BASS_SamplePlay + tighten trigger zone
 
 - Added BASS_SamplePlay and BASS_StreamPlay/CreateFile function loading.
