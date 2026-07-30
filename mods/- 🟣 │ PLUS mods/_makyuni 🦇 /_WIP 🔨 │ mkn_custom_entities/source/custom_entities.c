@@ -299,6 +299,7 @@ typedef struct {
     int   was_in_zone; /* v55m_28d: require leaving zone before retrigger */
     DWORD col_obj;   /* v55m_28g: collision Level pointer for E:CATAPULTBOTTOM matching */
     int   collided;  /* v55m_28g: set by DispatchCollisionEvents hook when ball hits bottom mesh */
+    int   second_sound_timer; /* v55m_42h: play second dropin after this many frames */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -3665,6 +3666,12 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->cooldown--;
             if (cs->cooldown == 0) cs->launching = 0;
         }
+        if (cs->second_sound_timer > 0) {
+            cs->second_sound_timer--;
+            if (cs->second_sound_timer == 0) {
+                cEnt_play_dropin_sound(df);
+            }
+        }
 
         float dx = ball_x - cs->x;
         float dy = ball_y - cs->y;
@@ -3714,7 +3721,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
              * so the same numbers feel like an "enter force". Halved again per user
              * instruction since no separate native enter-force value exists. */
             const float launch_horiz = 18.75f;
-            const float launch_vert  = 11.25f;
+            const float launch_vert  = -11.25f;  /* v55m_42h: push downward */
             *(float*)(ball + BALL_FORCE_X) += dxz * launch_horiz;
             *(float*)(ball + BALL_FORCE_Y) += launch_vert;
             *(float*)(ball + BALL_FORCE_Z) += dzz * launch_horiz;
@@ -3733,6 +3740,9 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             /* v55m_42f: play dropin sound via BASS directly. This bypasses the game's
              * sound manager, which crashes when we try to load the channel on-the-fly. */
             cEnt_play_dropin_sound(df);
+
+            /* v55m_42h: schedule a second dropin sound after 2 seconds (120 frames) */
+            cs->second_sound_timer = 120;
         }
     }
 }
