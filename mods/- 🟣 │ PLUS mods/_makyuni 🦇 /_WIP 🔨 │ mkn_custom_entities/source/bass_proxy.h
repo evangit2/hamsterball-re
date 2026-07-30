@@ -142,6 +142,20 @@ __declspec(dllexport) BOOL __stdcall BASS_SampleFree(DWORD a) {
     return TRUE;
 }
 
+typedef DWORD (__stdcall *BASS_SamplePlay_t)(DWORD sample);
+static BASS_SamplePlay_t real_BASS_SamplePlay = NULL;
+__declspec(dllexport) DWORD __stdcall BASS_SamplePlay(DWORD a) {
+    if (real_BASS_SamplePlay) return real_BASS_SamplePlay(a);
+    return 0;
+}
+
+typedef DWORD (__stdcall *BASS_StreamPlay_t)(DWORD handle, BOOL flush, DWORD flags);
+static BASS_StreamPlay_t real_BASS_StreamPlay = NULL;
+__declspec(dllexport) DWORD __stdcall BASS_StreamPlay(DWORD a, BOOL b, DWORD c) {
+    if (real_BASS_StreamPlay) return real_BASS_StreamPlay(a, b, c);
+    return 0;
+}
+
 typedef DWORD (__stdcall *BASS_StreamCreateFile_t)(BOOL mem, const void *file, DWORD offset, DWORD length, DWORD flags);
 static BASS_StreamCreateFile_t real_BASS_StreamCreateFile = NULL;
 __declspec(dllexport) DWORD __stdcall BASS_StreamCreateFile(BOOL a, const void *b, DWORD c, DWORD d, DWORD e) {
@@ -180,7 +194,9 @@ static void load_real_bass(void)
         LOAD(BASS_SampleGetChannel);
         LOAD(BASS_ChannelPlay);
         LOAD(BASS_SampleFree);
+        LOAD(BASS_SamplePlay);
         LOAD(BASS_StreamCreateFile);
+        LOAD(BASS_StreamPlay);
         /* Fallback: some BASS dlls export stdcall functions with decorated names
          * (_Name@N) instead of plain names. Try decorated if plain load failed. */
         if (!real_BASS_SampleLoad)
@@ -191,8 +207,12 @@ static void load_real_bass(void)
             real_BASS_ChannelPlay = (BASS_ChannelPlay_t)GetProcAddress(g_hRealBass, "_BASS_ChannelPlay@8");
         if (!real_BASS_SampleFree)
             real_BASS_SampleFree = (BASS_SampleFree_t)GetProcAddress(g_hRealBass, "_BASS_SampleFree@4");
+        if (!real_BASS_SamplePlay)
+            real_BASS_SamplePlay = (BASS_SamplePlay_t)GetProcAddress(g_hRealBass, "_BASS_SamplePlay@4");
         if (!real_BASS_StreamCreateFile)
             real_BASS_StreamCreateFile = (BASS_StreamCreateFile_t)GetProcAddress(g_hRealBass, "_BASS_StreamCreateFile@20");
+        if (!real_BASS_StreamPlay)
+            real_BASS_StreamPlay = (BASS_StreamPlay_t)GetProcAddress(g_hRealBass, "_BASS_StreamPlay@12");
         #undef LOAD
     }
 }
