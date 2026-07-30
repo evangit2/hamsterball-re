@@ -1,3 +1,9 @@
+## v55m_33 — Add catapult diagnostic logs
+
+- Log whether `E:CATAPULTBOTTOM` mesh exists in the spawned catapult collision level.
+- Log when the player ball collides with `E:CATAPULTBOTTOM`.
+- Log when `E:CATAPULTBOTTOM` triggers `Catapult_Launch`.
+
 ## v55m_32 — Fix catapult E:CATAPULTBOTTOM trigger
 
 - Install DispatchCollisionEvents hook when a Catapult is spawned (not just Bonk).
