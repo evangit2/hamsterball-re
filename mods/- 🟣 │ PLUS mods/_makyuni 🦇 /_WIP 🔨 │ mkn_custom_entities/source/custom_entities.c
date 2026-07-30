@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_34
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_35
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -380,6 +380,10 @@ static TipperVisual_ctor_t pfn_TipperVisual_ctor2 = (TipperVisual_ctor_t)0x00466
  * The 4th param (scale) defaults to 1.0 — controls volume/distance scaling. */
 typedef void (__thiscall *Sound_Play3D_t)(void* soundChannel, float x, float y, float z, float scale);
 static Sound_Play3D_t pfn_Sound_Play3D = (Sound_Play3D_t)0x00459860;
+/* Sound_LoadOggOrWav — load a sound channel (ECX=soundList, path no ext) */
+typedef void* (__thiscall *Sound_LoadOggOrWav_t)(DWORD soundList, const char* path);
+static Sound_LoadOggOrWav_t pfn_Sound_LoadOggOrWav = (Sound_LoadOggOrWav_t)0x00459660;
+
 /* Sound_PlayChannel — play a non-3D sound channel (App+0x460 = sounds\dropin) */
 typedef void (__fastcall *Sound_PlayChannel_t)(void* soundChannel);
 static Sound_PlayChannel_t pfn_Sound_PlayChannel = (Sound_PlayChannel_t)0x004597B0;
@@ -902,7 +906,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     }
 
     /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
-     * v55m_34: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
+     * v55m_35: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
      * collision_data[1] is the MeshBuffer (used only for the event name). */
     if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
         int i;
@@ -2253,16 +2257,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bonk\n"); return; }
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
-                /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE) */
+                /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE)
+                 * v55m_35: hook disabled — manual SEH trampoline at DispatchCollisionEvents
+                 * causes Draw crashes (0x452376) on non-native levels. */
                 if (g_bonk_count < MAX_BONKS) {
                     g_bonk_objs[g_bonk_count] = (DWORD)obj;
                     g_bonk_count++;
                 }
-                /* Collision dispatch hook disabled in v53g-2 — trampoline caused
-                 * stack corruption. Will re-add in future version with proper
-                 * detour library (MinHook/etc).
-                 * v55m_28g: re-enabled for catapult E:CATAPULTBOTTOM collision events. */
-                install_bonk_collision_hook();
                 break;
             case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
                       * Uses Pendulum vtable with Rotator_Update for tilt animation. */
@@ -2305,19 +2306,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                     if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
-                /* v55m_31: Add to board+0x43B8 (Catapult AthenaList) so the native
-                 * Catapult_vtable11 (slot 11) wind-up and Catapult_Update (slot 61)
-                 * launch run automatically every frame. The object we spawn is a
-                 * real Catapult_ctor result, so the list iteration is safe. */
-                pfn_AthenaList_Append((DWORD*)(board + 0x43B8), obj);
-                if (logf) fprintf(logf, "  ROTATER: Catapult added to native list board+0x43B8\n");
-
-                /* v55m_34: diagnostic — confirm catapult collision object was created.
-                 * v55m_34 scanned the collision Level's MeshWorld and crashed; keep it simple. */
-                if (cat_col_obj && logf) {
-                    fprintf(logf, "  E:CATAPULT is spawned in the level (cat_col=0x%08X)\n", cat_col_obj);
-                }
-
+                /* v55m_35: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
+                 * Do NOT use DispatchCollisionEvents SEH trampoline hook — causes Draw crashes.
+                 * Use Present-hook radius trigger instead (restored from v55m_28m). */
                 /* Track for per-frame Catapult_vtable11 calls */
                 if (g_catapult_count < MAX_CATAPULTS) {
                     g_catapults[g_catapult_count].obj = (DWORD)obj;
@@ -3529,16 +3520,117 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_34: Catapult is now driven entirely by the native E:CATAPULTBOTTOM
- * collision event. The mod only has to:
- *   1. Add the spawned Catapult object to board+0x43B8 (native update list).
- *   2. In the DispatchCollisionEvents hook, call Catapult_Launch(obj) when
- *      the ball hits any tracked catapult's E:CATAPULTBOTTOM mesh.
- * The native Catapult_vtable11 (slot 11) wind-up + Catapult_Update (slot 61)
- * handle the animation, timing, and launch force. */
+/* v55m_35: Catapult trigger via Present-hook radius check (restored from v55m_28m).
+ * The native E:CATAPULTBOTTOM event only works on Tower (race 4) because only
+ * Tower's collision handler checks for it. On custom levels we must detect
+ * proximity ourselves and apply launch force directly. */
 static void __cdecl cEnt_catapult_present_check(DWORD board) {
-    (void)board;
-    /* No manual radius trigger needed — native event + state machine do all work. */
+    int i;
+    FILE* df = NULL;
+    DWORD ball = get_ball_ptr();
+
+    g_catapult_heartbeat++;
+    int log_now = ((g_catapult_heartbeat % 30) == 0);
+
+    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
+        if (log_now) {
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d (no ball)\n",
+                    g_catapult_heartbeat, ball, g_catapult_count);
+                fclose(df);
+            }
+        }
+        return;
+    }
+
+    float ball_x = *(float*)(ball + BALL_POS_X);
+    float ball_y = *(float*)(ball + BALL_POS_Y);
+    float ball_z = *(float*)(ball + BALL_POS_Z);
+
+    for (i = 0; i < g_catapult_count; i++) {
+        CatapultState* cs = &g_catapults[i];
+        if (!cs->obj || cs->obj < 0x10000) continue;
+        if (cs->board != board) continue;
+        if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
+
+        if (cs->cooldown > 0) {
+            cs->cooldown--;
+            if (cs->cooldown == 0) cs->launching = 0;
+        }
+
+        float dx = ball_x - cs->x;
+        float dy = ball_y - cs->y;
+        float dz = ball_z - cs->z;
+        float horiz_sq = dx*dx + dz*dz;
+        float horiz = (float)sqrt(horiz_sq);
+        int in_trigger_zone = (horiz_sq < 14400.0f && dy > -120.0f && dy < 80.0f);
+        int in_reset_zone   = (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f);
+
+        if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: dist ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f "
+                    "trigger=%d reset=%d launch=%d cd=%d was=%d\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy,
+                    in_trigger_zone, in_reset_zone, cs->launching, cs->cooldown, cs->was_in_zone);
+                fclose(df);
+                df = NULL;
+            }
+        }
+
+        if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
+            cs->launching = 1;
+            cs->was_in_zone = 1;
+            float yaw = cs->yaw;
+            cs->launch_dx = -(float)sin(yaw);
+            cs->launch_dz = -(float)cos(yaw);
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy);
+                fclose(df);
+                df = NULL;
+            }
+        }
+        if (!in_reset_zone) {
+            cs->was_in_zone = 0;
+        }
+
+        if (cs->launching) {
+            float dxz = cs->launch_dx;
+            float dzz = cs->launch_dz;
+
+            *(float*)(ball + BALL_FORCE_X) += dxz * 35.0f;
+            *(float*)(ball + BALL_FORCE_Y) += 25.0f;
+            *(float*)(ball + BALL_FORCE_Z) += dzz * 35.0f;
+
+            *(DWORD*)((char*)ball + 0x320) = 100;
+            *(DWORD*)((char*)ball + 0x31E) = 0;
+
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                fprintf(df, "CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dir=(%.2f,%.2f)\n",
+                    ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, dxz, dzz);
+                fclose(df);
+                df = NULL;
+            }
+
+            cs->launching = 0;
+            cs->cooldown = 60;
+
+            /* v55m_28m: play cached dropin sound from App+0x460 sound list */
+            {
+                void** sound_list = (void**)(0x004FD680 + 0x460);
+                if (sound_list && *sound_list) {
+                    if (!g_dropin_sound) g_dropin_sound = *sound_list;
+                    if (g_dropin_sound && pfn_Sound_PlayChannel) {
+                        pfn_Sound_PlayChannel(g_dropin_sound);
+                    }
+                }
+            }
+        }
+    }
 }
 
 static void __cdecl gluebie_present_helper(void) {
@@ -4707,7 +4799,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_34 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_35 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
