@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42eb
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42fb
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Forward declarations for v55m_42e BASS sound helpers */
+/* Forward declarations for v55m_42f BASS sound helpers */
 static void cEnt_load_dropin_sample(FILE* logfile);
 static void cEnt_play_dropin_sound(FILE* logfile);
 
@@ -302,7 +302,7 @@ typedef struct {
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
-static DWORD g_dropin_sample = 0;  /* v55m_42e: BASS sample for catapult dropin sound */
+static DWORD g_dropin_sample = 0;  /* v55m_42f: BASS sample for catapult dropin sound */
 static void* g_dropin_sound = NULL; /* v55m_28l cached sounds\\dropin channel */
 
 /* v55m_2: Chomper tracking — Tower Race chomper entity.
@@ -911,7 +911,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     }
 
     /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
-     * v55m_42e: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
+     * v55m_42f: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
      * collision_data[1] is the MeshBuffer (used only for the event name). */
     if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
         int i;
@@ -2263,7 +2263,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
                 /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE)
-                 * v55m_42e: hook disabled — manual SEH trampoline at DispatchCollisionEvents
+                 * v55m_42f: hook disabled — manual SEH trampoline at DispatchCollisionEvents
                  * causes Draw crashes (0x452376) on non-native levels. */
                 if (g_bonk_count < MAX_BONKS) {
                     g_bonk_objs[g_bonk_count] = (DWORD)obj;
@@ -2311,7 +2311,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                     if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
-                /* v55m_42e: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
+                /* v55m_42f: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
                  * Do NOT use DispatchCollisionEvents SEH trampoline hook — causes Draw crashes.
                  * Use Present-hook radius trigger instead (restored from v55m_28m). */
                 /* Track for per-frame Catapult_vtable11 calls */
@@ -2331,7 +2331,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
 
-                    /* v55m_42e: load dropin sound via BASS for this catapult */
+                    /* v55m_42f: load dropin sound via BASS for this catapult */
                     cEnt_load_dropin_sample(logf);
                 }
                 break;
@@ -2902,7 +2902,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
     g_chomper_count = 0;  /* v55m_3: reset Chomper tracking on level unload */
 
-    /* v55m_42e: free BASS dropin sample on level unload to avoid leak */
+    /* v55m_42f: free BASS dropin sample on level unload to avoid leak */
     if (g_dropin_sample && real_BASS_SampleFree) {
         real_BASS_SampleFree(g_dropin_sample);
         g_dropin_sample = 0;
@@ -2913,7 +2913,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     uninstall_bonk_collision_hook();
 }
 
-/* v55m_42eb: load dropin sound via BASS directly. Called once per level when a
+/* v55m_42fb: load dropin sound via BASS directly. Called once per level when a
  * Catapult is spawned. Tries .ogg, .wav, .mp3 extensions. Logs BASS error codes. */
 static void cEnt_load_dropin_sample(FILE* logfile) {
     if (g_dropin_sample) return;
@@ -2942,7 +2942,7 @@ static void cEnt_load_dropin_sample(FILE* logfile) {
     if (lf != logfile) fclose(lf);
 }
 
-/* v55m_42e: play the loaded dropin sound via BASS directly.
+/* v55m_42f: play the loaded dropin sound via BASS directly.
  * Uses older one-shot BASS_SamplePlay if available, else SampleGetChannel+ChannelPlay,
  * else StreamCreateFile+StreamPlay. */
 static void cEnt_play_dropin_sound(FILE* logfile) {
@@ -3627,7 +3627,7 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_42e: Catapult trigger via Present-hook radius check (restored from v55m_28m).
+/* v55m_42f: Catapult trigger via Present-hook radius check (restored from v55m_28m).
  * The native E:CATAPULTBOTTOM event only works on Tower (race 4) because only
  * Tower's collision handler checks for it. On custom levels we must detect
  * proximity ourselves and apply launch force directly. */
@@ -3671,7 +3671,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dz = ball_z - cs->z;
         float horiz_sq = dx*dx + dz*dz;
         float horiz = (float)sqrt(horiz_sq);
-        int in_trigger_zone = (horiz_sq < 8100.0f && dy > -30.0f && dy < 50.0f);  /* v55m_42e: tighter bowl zone */
+        int in_trigger_zone = (horiz_sq < 3600.0f && dy > -10.0f && dy < 15.0f);  /* v55m_42f: only bowl */
         int in_reset_zone   = (horiz_sq < 22500.0f && dy > -60.0f && dy < 70.0f);
 
         if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
@@ -3708,12 +3708,13 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             float dxz = cs->launch_dx;
             float dzz = cs->launch_dz;
 
-            /* v55m_42e: native Catapult_Update launches at 90.0 total speed via
-             * Scene_ForEachBall_SetVelocity. Our custom catapult uses physics force
-             * accumulators, so the same numeric value feels much stronger. Halve it
-             * to match the native bounce/launch feel. */
-            const float launch_horiz = 37.5f;
-            const float launch_vert  = 22.5f;
+            /* v55m_42f: native Catapult_Update launches at 90.0 total velocity via
+             * Scene_ForEachBall_SetVelocity (direct velocity). Our custom catapult
+             * uses physics force accumulators and triggers before the ball settles,
+             * so the same numbers feel like an "enter force". Halved again per user
+             * instruction since no separate native enter-force value exists. */
+            const float launch_horiz = 18.75f;
+            const float launch_vert  = 11.25f;
             *(float*)(ball + BALL_FORCE_X) += dxz * launch_horiz;
             *(float*)(ball + BALL_FORCE_Y) += launch_vert;
             *(float*)(ball + BALL_FORCE_Z) += dzz * launch_horiz;
@@ -3729,7 +3730,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launching = 0;
             cs->cooldown = 60;
 
-            /* v55m_42e: play dropin sound via BASS directly. This bypasses the game's
+            /* v55m_42f: play dropin sound via BASS directly. This bypasses the game's
              * sound manager, which crashes when we try to load the channel on-the-fly. */
             cEnt_play_dropin_sound(df);
         }
@@ -4902,7 +4903,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42e Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42f Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
