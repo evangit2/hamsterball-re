@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28e
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28l
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -299,7 +299,7 @@ typedef struct {
     DWORD obj;
     DWORD board;
     float x, y, z;
-    float yaw;       /* v55m_28e: fixed launch yaw from ROT_Y */
+    float yaw;       /* v55m_28l: fixed launch yaw from ROT_Y */
     float launch_dx, launch_dy, launch_dz; /* v55m_28i: away direction per trigger */
     int   launching; /* v55m_27e: set to 1 to apply launch force */
     int   cooldown;  /* v55m_27e: frames to wait before re-launching */
@@ -309,6 +309,7 @@ typedef struct {
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
+static void* g_dropin_sound = NULL; /* v55m_28l cached sounds\\dropin channel */
 
 /* v55m_2: Chomper tracking — Tower Race chomper entity.
  * v55m_18: Custom vtable[2] for jaw animation (same pattern as native
@@ -3545,16 +3546,17 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (cs->cooldown == 0) cs->launching = 0;
         }
 
-        /* v55m_28k: only fire when the ball has actually fallen into the catapult.
-         * Use horizontal footprint (50 units) plus a vertical window around the pivot.
-         * Reset when ball leaves a larger horizontal zone so it doesn't pulse. */
+        /* v55m_28l: trigger when ball is inside catapult footprint.
+         * v55m_28k used radius 50 and dy [-80,+20]; user fell inside but didn't
+         * trigger, so expand to radius 80 and dy [-100,+40]. Reset zone also
+         * enlarged so one launch doesn't immediately re-arm. */
         float dx = ball_x - cs->x;
         float dy = ball_y - cs->y;
         float dz = ball_z - cs->z;
         float horiz_sq = dx*dx + dz*dz;
         float horiz = (float)sqrt(horiz_sq);
-        int in_trigger_zone = (horiz_sq < 2500.0f && dy > -80.0f && dy < 20.0f);
-        int in_reset_zone   = (horiz_sq < 14400.0f || (dy > -120.0f && dy < 60.0f)); /* 120^2 */
+        int in_trigger_zone = (horiz_sq < 6400.0f && dy > -100.0f && dy < 40.0f);
+        int in_reset_zone   = (horiz_sq < 40000.0f || (dy > -150.0f && dy < 90.0f)); /* 200^2 */
 
         if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
@@ -3600,6 +3602,17 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
             cs->launching = 0;
             cs->cooldown = 60; /* 2 seconds at 30fps */
+
+            /* v55m_28l: play Dropin sound once per launch using App+0x460 */
+            {
+                void** sound_list = (void**)(0x004FD680 + 0x460);
+                if (sound_list && *sound_list) {
+                    if (!g_dropin_sound) g_dropin_sound = *sound_list;
+                    if (g_dropin_sound && pfn_Sound_PlayChannel) {
+                        pfn_Sound_PlayChannel(g_dropin_sound);
+                    }
+                }
+            }
         }
     }
 }
@@ -4770,7 +4783,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28k Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28l Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
