@@ -3671,7 +3671,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dz = ball_z - cs->z;
         float horiz_sq = dx*dx + dz*dz;
         float horiz = (float)sqrt(horiz_sq);
-        int in_trigger_zone = (horiz_sq < 3600.0f && dy > -10.0f && dy < 15.0f);  /* v55m_42f: only bowl */
+        int in_trigger_zone = (horiz_sq < 14400.0f && dy > -10.0f && dy < 15.0f);  /* v55m_42g: bowl, radius 120 */
         int in_reset_zone   = (horiz_sq < 22500.0f && dy > -60.0f && dy < 70.0f);
 
         if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
