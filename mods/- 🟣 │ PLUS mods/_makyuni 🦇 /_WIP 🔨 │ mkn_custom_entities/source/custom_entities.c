@@ -300,7 +300,7 @@ typedef struct {
     int   was_in_zone; /* v55m_28d: require leaving zone before retrigger */
     DWORD col_obj;   /* v55m_28g: collision Level pointer for E:CATAPULTBOTTOM matching */
     int   collided;  /* v55m_28g: set by DispatchCollisionEvents hook when ball hits bottom mesh */
-    int   second_sound_timer; /* v55m_42h: play second dropin after this many frames */
+    int   countdown; /* v55m_42j: 50-frame windup before launch */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -3755,12 +3755,6 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->cooldown--;
             if (cs->cooldown == 0) cs->launching = 0;
         }
-        if (cs->second_sound_timer > 0) {
-            cs->second_sound_timer--;
-            if (cs->second_sound_timer == 0) {
-                cEnt_play_catapult_sound(df);  /* v55m_42i: native Tower plays Catapult sound at frame 50 */
-            }
-        }
 
         float dx = ball_x - cs->x;
         float dy = ball_y - cs->y;
@@ -3782,15 +3776,17 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
+        if (in_trigger_zone && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
+            cs->countdown = 50;  /* v55m_42j: native Tower windup */
             cs->was_in_zone = 1;
             float yaw = cs->yaw;
             cs->launch_dx = -(float)sin(yaw);
             cs->launch_dz = -(float)cos(yaw);
+            cEnt_play_dropin_sound(df);  /* v55m_42j: play dropin at windup start */
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
-                fprintf(df, "CATAPULT: TRIGGER ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f\n",
+                fprintf(df, "CATAPULT: WINDUP ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f\n",
                     ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy);
                 fclose(df);
                 df = NULL;
@@ -3801,16 +3797,18 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         }
 
         if (cs->launching) {
+            cs->countdown--;
+            if (cs->countdown > 0) {
+                /* v55m_42j: windup phase — could rotate arm here in future */
+                continue;
+            }
+
             float dxz = cs->launch_dx;
             float dzz = cs->launch_dz;
 
-            /* v55m_42f: native Catapult_Update launches at 90.0 total velocity via
-             * Scene_ForEachBall_SetVelocity (direct velocity). Our custom catapult
-             * uses physics force accumulators and triggers before the ball settles,
-             * so the same numbers feel like an "enter force". Halved again per user
-             * instruction since no separate native enter-force value exists. */
+            /* v55m_42j: launch at frame 50, matching native Tower */
             const float launch_horiz = 18.75f;
-            const float launch_vert  = -11.25f;  /* v55m_42h: push downward */
+            const float launch_vert  = -11.25f;
             *(float*)(ball + BALL_FORCE_X) += dxz * launch_horiz;
             *(float*)(ball + BALL_FORCE_Y) += launch_vert;
             *(float*)(ball + BALL_FORCE_Z) += dzz * launch_horiz;
@@ -3826,12 +3824,8 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launching = 0;
             cs->cooldown = 60;
 
-            /* v55m_42f: play dropin sound via BASS directly. This bypasses the game's
-             * sound manager, which crashes when we try to load the channel on-the-fly. */
-            cEnt_play_dropin_sound(df);
-
-            /* v55m_42h: schedule a second dropin sound after 2 seconds (120 frames) */
-            cs->second_sound_timer = 50;  /* v55m_42i: native Tower uses 50 frames */
+            /* v55m_42j: play Catapult launch sound at same frame as launch */
+            cEnt_play_catapult_sound(df);
         }
     }
 }
