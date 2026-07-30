@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_31
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_32
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -902,7 +902,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     }
 
     /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
-     * v55m_31: switched from radius trigger to native collision event.
+     * v55m_32: switched from radius trigger to native collision event.
      * The native Catapult_vtable11 wind-up + Catapult_Update launch then run automatically
      * because the spawned object is in board+0x43B8 (native catapult update list). */
     if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
@@ -2300,7 +2300,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                     if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
-                /* v55m_31: Add to board+0x43B8 (Catapult AthenaList) so the native
+                /* v55m_32: Add to board+0x43B8 (Catapult AthenaList) so the native
                  * Catapult_vtable11 (slot 11) wind-up and Catapult_Update (slot 61)
                  * launch run automatically every frame. The object we spawn is a
                  * real Catapult_ctor result, so the list iteration is safe. */
@@ -3520,7 +3520,7 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_31: Catapult is now driven entirely by the native E:CATAPULTBOTTOM
+/* v55m_32: Catapult is now driven entirely by the native E:CATAPULTBOTTOM
  * collision event. The mod only has to:
  *   1. Add the spawned Catapult object to board+0x43B8 (native update list).
  *   2. In the DispatchCollisionEvents hook, call Catapult_Launch(obj) when
@@ -4698,7 +4698,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_31 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_32 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
