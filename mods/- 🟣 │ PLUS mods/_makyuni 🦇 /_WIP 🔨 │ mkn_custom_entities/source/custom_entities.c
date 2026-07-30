@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_28d
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_28e
  *
  * bass.dll proxy mod. Spawns testcube meshes at S1 GRID reference points.
  *
@@ -298,6 +298,7 @@ typedef struct {
     DWORD obj;
     DWORD board;
     float x, y, z;   /* position */
+    float yaw;       /* v55m_28e: fixed launch yaw from ROT_Y */
     int  launching;  /* v55m_27e: our own launch flag (not native obj+0x10F0) */
     int  cooldown;   /* v55m_27e: frames to wait before re-launching */
     int  was_in_zone; /* v55m_28d: require leaving zone before retrigger */
@@ -2255,6 +2256,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_catapults[g_catapult_count].x = px;
                     g_catapults[g_catapult_count].y = py;
                     g_catapults[g_catapult_count].z = pz;
+                    g_catapults[g_catapult_count].yaw = rot_y;
                     g_catapults[g_catapult_count].launching = 0;
                     g_catapults[g_catapult_count].cooldown = 0;
                     g_catapults[g_catapult_count].was_in_zone = 0;
@@ -3498,25 +3500,14 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dz = ball_z - cs->z;
         float dist_sq = dx*dx + dy*dy + dz*dz;
 
-        /* v55m_28c: limit debug logging to first 10 triggers to avoid lag. */
-        if (g_catapult_debug_count < 10 && dist_sq < 20000.0f) {
-            g_catapult_debug_count++;
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                fprintf(df, "CATAPULT: debug[%d] ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dist=%.1f cooldown=%d launching=%d\n",
-                    g_catapult_debug_count, ball_x, ball_y, ball_z, cs->x, cs->y, cs->z,
-                    sqrtf(dist_sq), cs->cooldown, cs->launching);
-                fclose(df);
-                df = NULL;
-            }
-        }
+        /* v55m_28e: remove per-frame debug logging to avoid lag */
+        (void)dist_sq;
 
-        /* v55m_28d: catapult trigger zone is a horizontal disc around the pivot.
-         * The arm extends ~150 units from the pivot, so use 150 radius.
-         * Also require the ball to be near the arm level (within +/- 60 units Y).
-         * One launch per approach: require ball to leave zone before retrigger. */
+        /* v55m_28e: catapult trigger is a small capsule around the arm.
+         * Tower Race native trigger is the E:CATAPULTBOTTOM collision mesh.
+         * Use radius=35 and Y +/-20 to match the arm volume. */
         float dy_abs = dy < 0.0f ? -dy : dy;
-        int in_trigger_zone = (dist_sq < 22500.0f && dy_abs < 60.0f);
+        int in_trigger_zone = (dist_sq < 1225.0f && dy_abs < 20.0f);
         if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
             cs->was_in_zone = 1;
@@ -3533,14 +3524,12 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         }
 
         if (cs->launching) {
-            /* Direction: from catapult toward ball (outward) */
-            float dxz = ball_x - cs->x;
-            float dzz = ball_z - cs->z;
-            float len = sqrtf(dxz*dxz + dzz*dzz);
-            if (len > 0.1f) { dxz /= len; dzz /= len; }
-            else { dxz = 0.0f; dzz = 1.0f; }
+            /* v55m_28e: fixed launch direction from entity ROT_Y yaw */
+            float yaw = cs->yaw;
+            float dxz = (float)sin(yaw);
+            float dzz = (float)cos(yaw);
 
-            /* Apply launch force to physics accumulators (v55m_28c: reduced from 65 to 55) */
+            /* Apply launch force to physics accumulators */
             *(float*)(ball + BALL_FORCE_X) += dxz * 55.0f;
             *(float*)(ball + BALL_FORCE_Y) += 40.0f;
             *(float*)(ball + BALL_FORCE_Z) += dzz * 55.0f;
@@ -4740,7 +4729,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28d Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28e Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
