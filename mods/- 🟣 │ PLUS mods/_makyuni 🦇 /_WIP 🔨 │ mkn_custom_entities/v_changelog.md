@@ -1,3 +1,8 @@
+## v55m_42c — Load BASS function pointers with stdcall decorated fallback
+
+- Added decorated-name fallback (_Name@N) for BASS_SampleGetChannel, BASS_ChannelPlay, etc.
+- Loaded BASS_StreamCreateFile as additional fallback.
+
 ## v55m_42b — Add BASS error logging to catapult sound
 
 - Log BASS error codes after SampleLoad/SampleGetChannel/ChannelPlay.
