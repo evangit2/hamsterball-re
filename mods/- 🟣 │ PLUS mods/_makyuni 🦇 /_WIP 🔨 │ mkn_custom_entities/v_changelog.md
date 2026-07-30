@@ -1,5 +1,19 @@
 # Version Changelog
 
+## v55m_30 — Safer E:CATAPULTBOTTOM collision hook
+
+- **Problem:** v55m_29 used a `DispatchCollisionEvents` detour at `0x40C5D0`. That function has an SEH prologue (`PUSH 0xFF; MOV EAX,FS:[0]`). Copying it into a static trampoline corrupted the exception chain and caused crashes inside `Draw` at `0x45FB03` (`VertexDecl_WriteBlendWeights`).
+- **Fix:**
+  - Removed the `DispatchCollisionEvents` detour entirely (including Bonk event support).
+  - Added two 5-byte JMP hooks at the per-level vtable[29] call sites inside `Ball_Update`:
+    - `0x0040728F`: `PUSH EDX; PUSH ESI; CALL [EAX+0x74]`
+    - `0x00408B85`: `PUSH EDX; PUSH ESI; CALL [EAX+0x74]`
+  - Each cave runs `cEnt_catapult_collision_helper(board=ECX, ball=ESI, collObj=EDX)` before the original handler, preserving all registers with `PUSHAD`/`POPAD`.
+  - The helper only acts on `E:CATAPULTBOTTOM` and skips Tower (`race_idx == 4`), where `TowerCollisionEvents` already handles it natively.
+  - Matching uses the native pointer comparison: `catapult+0x10D4 == collObj[0]`, with a closest-catapult fallback.
+- **Behavior:** The catapult still uses the native collision event, but the hook is installed inside `Ball_Update` instead of `DispatchCollisionEvents`, avoiding SEH corruption. Native Tower catapults continue to work.
+- **Crash test:** 40s Wine/Xvfb startup + 47s menu→race navigation — no crash, no crashlog.
+
 ## v55m_29 — Catapult uses native E:CATAPULTBOTTOM collision event
 
 - **Problem:** v55m_28m catapult fired via radius trigger, but the zone was too wide and did not match the native Tower behavior.
