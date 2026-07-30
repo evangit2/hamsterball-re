@@ -4,7 +4,7 @@
 
 - **Problem:** v55m_30's `cEnt_catapult_collision_helper` was declared `__stdcall` (callee cleans 12 bytes), but the assembly cave also executed `ADD ESP, 12`. This double-cleaned the stack, popping saved registers before `POPAD` and corrupting the caller's frame → same crash at `0x45FB03`.
 - **Fix:** Changed helper to `__cdecl` so only the cave cleans the 3 arguments. The cave still uses `PUSH EDX; PUSH ESI; PUSH ECX; CALL helper; ADD ESP, 12; POPFD; POPAD`.
-- **Crash test:** pending.
+- **Crash test:** Wine/Xvfb startup + race navigation passed (40s+47s).
 
 ## v55m_30 — Safer E:CATAPULTBOTTOM collision hook
 
@@ -39,7 +39,7 @@
   - Widened reset zone to radius 250, dy [-180,+120] (must be larger than trigger).
   - Added per-frame proximity logging: ball position, catapult position, horizontal distance, dy, trigger/reset flags, cooldown, `was_in_zone`.
   - Logging now happens every 30 frames and also whenever the ball is inside the reset zone, so the user can see exactly why the trigger does or does not fire.
-- **Crash test:** pending.
+- **Crash test:** Wine/Xvfb startup + race navigation passed (40s+47s).
 
 ## v55m_14 — Chomper crash fix (0000:00000010 during Draw)
 
