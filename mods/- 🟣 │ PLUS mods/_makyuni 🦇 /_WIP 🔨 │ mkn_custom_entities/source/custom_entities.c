@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_41
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -10,6 +10,10 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Forward declarations for v55m_42 BASS sound helpers */
+static void cEnt_load_dropin_sample(FILE* logfile);
+static void cEnt_play_dropin_sound(FILE* logfile);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game function pointers
@@ -298,6 +302,7 @@ typedef struct {
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
+static DWORD g_dropin_sample = 0;  /* v55m_42: BASS sample for catapult dropin sound */
 static void* g_dropin_sound = NULL; /* v55m_28l cached sounds\\dropin channel */
 
 /* v55m_2: Chomper tracking — Tower Race chomper entity.
@@ -906,7 +911,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
     }
 
     /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
-     * v55m_41: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
+     * v55m_42: collision_data[0] is the entity/collision object pointer (matches catapult+0x10D4).
      * collision_data[1] is the MeshBuffer (used only for the event name). */
     if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
         int i;
@@ -2258,7 +2263,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
                 /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE)
-                 * v55m_41: hook disabled — manual SEH trampoline at DispatchCollisionEvents
+                 * v55m_42: hook disabled — manual SEH trampoline at DispatchCollisionEvents
                  * causes Draw crashes (0x452376) on non-native levels. */
                 if (g_bonk_count < MAX_BONKS) {
                     g_bonk_objs[g_bonk_count] = (DWORD)obj;
@@ -2306,7 +2311,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                     if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
-                /* v55m_41: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
+                /* v55m_42: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
                  * Do NOT use DispatchCollisionEvents SEH trampoline hook — causes Draw crashes.
                  * Use Present-hook radius trigger instead (restored from v55m_28m). */
                 /* Track for per-frame Catapult_vtable11 calls */
@@ -2325,6 +2330,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
+
+                    /* v55m_42: load dropin sound via BASS for this catapult */
+                    cEnt_load_dropin_sample(logf);
                 }
                 break;
             case 36: /* Mace_ctor */
@@ -2894,11 +2902,60 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
     g_chomper_count = 0;  /* v55m_3: reset Chomper tracking on level unload */
 
+    /* v55m_42: free BASS dropin sample on level unload to avoid leak */
+    if (g_dropin_sample && real_BASS_SampleFree) {
+        real_BASS_SampleFree(g_dropin_sample);
+        g_dropin_sample = 0;
+    }
+
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
     uninstall_bonk_collision_hook();
 }
 
+/* v55m_42: load dropin sound via BASS directly. Called once per level when a
+ * Catapult is spawned. Tries .ogg, .wav, .mp3 extensions. */
+static void cEnt_load_dropin_sample(FILE* logfile) {
+    if (g_dropin_sample) return;
+    if (!real_BASS_SampleLoad) {
+        if (logfile) fprintf(logfile, "CATAPULT: BASS_SampleLoad not available\n");
+        return;
+    }
+    const char* exts[] = { ".ogg", ".wav", ".mp3" };
+    char path[MAX_PATH];
+    for (int i = 0; i < 3; i++) {
+        snprintf(path, MAX_PATH, "%s\\sounds\\dropin%s", g_game_dir, exts[i]);
+        g_dropin_sample = real_BASS_SampleLoad(FALSE, path, 0, 0, 3, 0);
+        if (g_dropin_sample) {
+            if (logfile) fprintf(logfile, "CATAPULT: loaded dropin sample from %s (handle=0x%08lX)\n", path, g_dropin_sample);
+            return;
+        }
+    }
+    if (logfile) fprintf(logfile, "CATAPULT: failed to load dropin sample from %s\\sounds\\dropin\n", g_game_dir);
+}
+
+/* v55m_42: play the loaded dropin sound via BASS directly. */
+static void cEnt_play_dropin_sound(FILE* logfile) {
+    FILE* lf = logfile;
+    if (!lf) lf = fopen("custom_entities_catapult.log", "a");
+    if (!g_dropin_sample) {
+        if (lf) fprintf(lf, "CATAPULT: no dropin sample loaded\n");
+        if (lf != logfile) fclose(lf);
+        return;
+    }
+    if (!real_BASS_SampleGetChannel || !real_BASS_ChannelPlay) {
+        if (lf) fprintf(lf, "CATAPULT: BASS channel functions not available\n");
+        if (lf != logfile) fclose(lf);
+        return;
+    }
+    DWORD ch = real_BASS_SampleGetChannel(g_dropin_sample, FALSE);
+    if (lf) fprintf(lf, "CATAPULT: got sample channel 0x%08lX\n", ch);
+    if (ch) {
+        real_BASS_ChannelPlay(ch, FALSE);
+        if (lf) fprintf(lf, "CATAPULT: played dropin sound via BASS\n");
+    }
+    if (lf != logfile) fclose(lf);
+}
 /* Apply rotation direction and oscillation limits to spawned custom_obj objects.
  * Called once at spawn time. Writes ROT_Y to obj+0x10EC (direction field).
  *
@@ -3520,7 +3577,7 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
-/* v55m_41: Catapult trigger via Present-hook radius check (restored from v55m_28m).
+/* v55m_42: Catapult trigger via Present-hook radius check (restored from v55m_28m).
  * The native E:CATAPULTBOTTOM event only works on Tower (race 4) because only
  * Tower's collision handler checks for it. On custom levels we must detect
  * proximity ourselves and apply launch force directly. */
@@ -3601,7 +3658,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             float dxz = cs->launch_dx;
             float dzz = cs->launch_dz;
 
-            /* v55m_41: stronger catapult launch (native Catapult_Launch uses 90.0 velocity) */
+            /* v55m_42: stronger catapult launch (native Catapult_Launch uses 90.0 velocity) */
             const float launch_horiz = 75.0f;
             const float launch_vert  = 45.0f;
             *(float*)(ball + BALL_FORCE_X) += dxz * launch_horiz;
@@ -3619,33 +3676,9 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launching = 0;
             cs->cooldown = 60;
 
-            /* v55m_41 (DIAGNOSTIC): sound disabled to confirm whether the ntdll crash
-             * is caused by the sound load/play path. If this build does not crash,
-             * the sound system is the culprit. */
-#if 0
-            {
-                DWORD board = get_board();
-                if (board && !IsBadReadPtr((void*)(board + 0x22C), 4)) {
-                    void* sound_mgr = *(void**)(board + 0x22C);
-                    if (sound_mgr && !IsBadReadPtr(sound_mgr, 4)) {
-                        void** vtable = *(void***)sound_mgr;
-                        if (vtable && !IsBadReadPtr(vtable + 24, 4)) {
-                            typedef void (__thiscall *LoadSoundSlot_t)(void* this_, int a, const char* path, void** out);
-                            LoadSoundSlot_t load_fn = (LoadSoundSlot_t)vtable[24];
-                            if (load_fn) {
-                                load_fn(sound_mgr, 2, "sounds\\dropin", (void**)(board + 0x464));
-                            }
-                        }
-                    }
-                    void* sound_channel = *(void**)(board + 0x464);
-                    if (logf) fprintf(logf, "CATAPULT: sound_channel=0x%08lX\n", (DWORD)sound_channel);
-                    if (sound_channel && pfn_Sound_Play3D) {
-                        pfn_Sound_Play3D(sound_channel, cs->x, cs->y, cs->z, 1.0f);
-                        if (logf) fprintf(logf, "CATAPULT: played dropin sound via Sound_Play3D\n");
-                    }
-                }
-            }
-#endif
+            /* v55m_42: play dropin sound via BASS directly. This bypasses the game's
+             * sound manager, which crashes when we try to load the channel on-the-fly. */
+            cEnt_play_dropin_sound(df);
         }
     }
 }
@@ -4816,7 +4849,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_41 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

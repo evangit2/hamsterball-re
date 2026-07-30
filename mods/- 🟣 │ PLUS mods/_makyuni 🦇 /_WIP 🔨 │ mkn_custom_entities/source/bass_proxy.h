@@ -114,23 +114,33 @@ __declspec(dllexport) int __stdcall BASS_GetDevice(void) { return 0; }
 __declspec(dllexport) int __stdcall BASS_SetDevice(DWORD a) { return 1; }
 __declspec(dllexport) void __stdcall BASS_GetInfo(void *a) {}
 __declspec(dllexport) int __stdcall BASS_Update(DWORD a) { return 0; }
-__declspec(dllexport) DWORD __stdcall BASS_StreamCreateFile(void *a, void *b, DWORD c, DWORD d, DWORD e) { return 0; }
-__declspec(dllexport) DWORD __stdcall BASS_SampleLoad(int a, void *b, DWORD c, DWORD d, DWORD e) { return 0; }
-__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) { return 1; }
-__declspec(dllexport) int __stdcall BASS_ChannelGetAttribute(DWORD a, DWORD b, float *c) { return 1; }
-__declspec(dllexport) DWORD __stdcall BASS_ChannelGetData(DWORD a, void *b, DWORD c) { return 0; }
-__declspec(dllexport) DWORD __stdcall BASS_ChannelGetLevel(DWORD a) { return 0; }
-__declspec(dllexport) int __stdcall BASS_ChannelSetPosition(DWORD a, void *b, DWORD c) { return 1; }
-__declspec(dllexport) DWORD __stdcall BASS_ChannelGetPosition(DWORD a, DWORD b) { return 0; }
-__declspec(dllexport) int __stdcall BASS_ChannelIsActive(DWORD a) { return 0; }
-__declspec(dllexport) int __stdcall BASS_ChannelRemoveSync(DWORD a, DWORD b) { return 1; }
-__declspec(dllexport) DWORD __stdcall BASS_ChannelSetSync(DWORD a, DWORD b, DWORD c, void *d, void *e) { return 0; }
-__declspec(dllexport) DWORD __stdcall BASS_SampleCreate(DWORD a, DWORD b, DWORD c, DWORD d, DWORD e) { return 0; }
-__declspec(dllexport) DWORD __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) { return 0; }
+typedef DWORD (__stdcall *BASS_SampleLoad_t)(BOOL mem, const void *file, DWORD offset, DWORD length, DWORD max, DWORD flags);
+static BASS_SampleLoad_t real_BASS_SampleLoad = NULL;
+__declspec(dllexport) DWORD __stdcall BASS_SampleLoad(BOOL a, const void *b, DWORD c, DWORD d, DWORD e, DWORD f) {
+    if (real_BASS_SampleLoad) return real_BASS_SampleLoad(a, b, c, d, e, f);
+    return 0;
+}
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Common utilities
- * ═══════════════════════════════════════════════════════════════════════════ */
+typedef DWORD (__stdcall *BASS_SampleGetChannel_t)(DWORD sample, BOOL onlynew);
+static BASS_SampleGetChannel_t real_BASS_SampleGetChannel = NULL;
+__declspec(dllexport) DWORD __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) {
+    if (real_BASS_SampleGetChannel) return real_BASS_SampleGetChannel(a, b);
+    return 0;
+}
+
+typedef int (__stdcall *BASS_ChannelPlay_t)(DWORD handle, BOOL restart);
+static BASS_ChannelPlay_t real_BASS_ChannelPlay = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) {
+    if (real_BASS_ChannelPlay) return real_BASS_ChannelPlay(a, b);
+    return 1;
+}
+
+typedef BOOL (__stdcall *BASS_SampleFree_t)(DWORD sample);
+static BASS_SampleFree_t real_BASS_SampleFree = NULL;
+__declspec(dllexport) BOOL __stdcall BASS_SampleFree(DWORD a) {
+    if (real_BASS_SampleFree) return real_BASS_SampleFree(a);
+    return TRUE;
+}
 
 static void load_real_bass(void)
 {
@@ -159,7 +169,10 @@ static void load_real_bass(void)
         LOAD(BASS_Stop);
         LOAD(BASS_ErrorGetCode);
         LOAD(BASS_MusicLoad);
-        LOAD(BASS_ChannelStop);
+        LOAD(BASS_SampleLoad);
+        LOAD(BASS_SampleGetChannel);
+        LOAD(BASS_ChannelPlay);
+        LOAD(BASS_SampleFree);
         #undef LOAD
     }
 }

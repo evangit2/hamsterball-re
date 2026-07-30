@@ -1,3 +1,10 @@
+## v55m_42 — Play dropin sound via BASS directly
+
+- Load real BASS function pointers: BASS_SampleLoad, BASS_SampleGetChannel, BASS_ChannelPlay, BASS_SampleFree.
+- Load 'sounds\dropin' sample once per level at catapult spawn.
+- Play it on launch via BASS_SampleGetChannel + BASS_ChannelPlay.
+- Free sample on level unload to avoid leak.
+
 ## v55m_41 — Diagnostic build: catapult sound disabled
 
 - Used to confirm if the ntdll crash is caused by sound load/play.
