@@ -1,7 +1,7 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_30
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_30a
  *
- * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
+ * bass.dll proxy mod. Spawns custom entities from MESHWORLD level files.
  */
 
 #include "bass_proxy.h"
@@ -835,8 +835,8 @@ static unsigned char g_collision_site2_orig[5];
 static unsigned char g_collision_site1_cave[256];
 static unsigned char g_collision_site2_cave[256];
 
-/* C helper called from the collision-site caves */
-static void __stdcall cEnt_catapult_collision_helper(DWORD board, DWORD ball, DWORD collObj) {
+/* C helper called from the collision-site caves (cdecl — caller cleans stack) */
+static void cEnt_catapult_collision_helper(DWORD board, DWORD ball, DWORD collObj) {
     if (!board || !ball || !collObj) return;
     if (IsBadReadPtr((void*)collObj, 8)) return;
 
@@ -2311,10 +2311,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
                 /* v55m_27: Do NOT add to board+0x8B8 — causes MeshArchive_ctor crash
                  * (0x478EDD) because the game's update loop expects native catapult objects. */
-                /* v55m_30: Install safe collision-site hooks for E:CATAPULTBOTTOM.
-                 * These hooks live inside Ball_Update (no SEH), unlike the old
-                 * DispatchCollisionEvents detour which corrupted the exception chain. */
-                install_collision_site_hooks();
+                /* v55m_30: hooks moved to level_load for testing */
 
                 /* Track for per-frame Catapult_vtable11 calls */
                 if (g_catapult_count < MAX_CATAPULTS) {
@@ -4704,7 +4701,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_30 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_30a Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

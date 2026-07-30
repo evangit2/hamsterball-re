@@ -1,5 +1,11 @@
 # Version Changelog
 
+## v55m_30a — Fix double stack cleanup in collision hook
+
+- **Problem:** v55m_30's `cEnt_catapult_collision_helper` was declared `__stdcall` (callee cleans 12 bytes), but the assembly cave also executed `ADD ESP, 12`. This double-cleaned the stack, popping saved registers before `POPAD` and corrupting the caller's frame → same crash at `0x45FB03`.
+- **Fix:** Changed helper to `__cdecl` so only the cave cleans the 3 arguments. The cave still uses `PUSH EDX; PUSH ESI; PUSH ECX; CALL helper; ADD ESP, 12; POPFD; POPAD`.
+- **Crash test:** pending.
+
 ## v55m_30 — Safer E:CATAPULTBOTTOM collision hook
 
 - **Problem:** v55m_29 used a `DispatchCollisionEvents` detour at `0x40C5D0`. That function has an SEH prologue (`PUSH 0xFF; MOV EAX,FS:[0]`). Copying it into a static trampoline corrupted the exception chain and caused crashes inside `Draw` at `0x45FB03` (`VertexDecl_WriteBlendWeights`).
