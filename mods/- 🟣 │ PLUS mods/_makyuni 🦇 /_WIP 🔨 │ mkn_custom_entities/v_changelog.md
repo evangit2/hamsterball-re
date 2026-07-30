@@ -1,3 +1,8 @@
+## v55m_42b — Add BASS error logging to catapult sound
+
+- Log BASS error codes after SampleLoad/SampleGetChannel/ChannelPlay.
+- Helps diagnose why loaded sample produces no audio.
+
 ## v55m_42 — Play dropin sound via BASS directly
 
 - Load real BASS function pointers: BASS_SampleLoad, BASS_SampleGetChannel, BASS_ChannelPlay, BASS_SampleFree.
