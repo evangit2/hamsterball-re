@@ -1,3 +1,9 @@
+## v55m_37 — Stronger catapult launch + safe dropin sound
+
+- Increased launch force from 35/25 to 75/45 (closer to native 90 velocity).
+- Load dropin sound via Sound_LoadOggOrWav(board+0x878) instead of cached App+0x460 pointer.
+- Play via Sound_Play3D to avoid Sound_PlayChannel crash.
+
 ## v55m_36 — Disable catapult sound + star trail to isolate crash
 
 - Catapult trigger now fires correctly.
