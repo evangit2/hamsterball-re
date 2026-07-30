@@ -41,6 +41,7 @@
 #define APP_DIFFICULTY          0x23C
 #define APP_SCORE               0x5E4
 #define APP_TIME_REMAINING      0x5E8
+#define APP_TIMER_FINISHED      0x5D6
 
 /* ---- Profile / Board offsets ---- */
 #define PROFILE_RACE_INDEX      0x08
@@ -75,6 +76,7 @@
 #define BALL_IMPACT_FREEZE      0x808
 #define BALL_RENDER_JITTER      0x2D4
 #define BALL_DEATH_PENDING      0x2E9
+#define BALL_IN_TAR             0x2CC
 
 /* ---- Music offsets ---- */
 #define MUSIC_DEV_CHANNEL_LIST  0x418
@@ -153,7 +155,7 @@ static void diag_logf(const char *fmt, ...) {
 #endif
 
 /* ---- BASS function pointer for music fade ---- */
-typedef int (__stdcall *BASS_ChannelSetAttributes_t)(DWORD handle, int freq, float volume, int pan);
+typedef int (__stdcall *BASS_ChannelSetAttributes_t)(DWORD handle, float freq, int volume, int pan);
 static BASS_ChannelSetAttributes_t g_realBASS_ChannelSetAttributes = NULL;
 
 static void load_bass_function(void) {
@@ -426,6 +428,7 @@ static int g_musicChannelCount = 0;
 static volatile float g_whiteAlpha = 0.0f;
 static volatile DWORD g_warpBall = 0;
 static volatile int g_rumbleInit = 0;
+static DWORD g_gameBase = 0x00400000;
 static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
 static int g_colorSaved = 0;
 
@@ -490,7 +493,7 @@ static void updateMusicFade(DWORD app) {
                 if (g_realBASS_ChannelSetAttributes) {
                     DWORD bassChan = *(DWORD*)(chan + MUSIC_CHAN_BASS_CHANNEL);
                     if (bassChan) {
-                        g_realBASS_ChannelSetAttributes(bassChan, -1, vol * 100.0f, -1);
+                        g_realBASS_ChannelSetAttributes(bassChan, -1.0f, (int)(vol * 100.0f), -1);
                     }
                 }
             }
@@ -519,7 +522,7 @@ static void restoreMusicFade(DWORD app) {
                 if (g_realBASS_ChannelSetAttributes) {
                     DWORD bassChan = *(DWORD*)(chan + MUSIC_CHAN_BASS_CHANNEL);
                     if (bassChan) {
-                        g_realBASS_ChannelSetAttributes(bassChan, -1, g_musicOrigVolumes[i] * 100.0f, -1);
+                        g_realBASS_ChannelSetAttributes(bassChan, -1.0f, (int)(g_musicOrigVolumes[i] * 100.0f), -1);
                     }
                 }
             }
@@ -565,6 +568,8 @@ static void scanWarpNodes(DWORD board) {
     if (g_phase != PHASE_IDLE) return;
     if (getGameTime() < g_cooldownUntil) return;
 
+    if (*(BYTE*)(board + BOARD_GOAL_REACHED) != 0) return;
+
     DWORD meshWorld = *(DWORD*)(board + BOARD_MESHWORLD_PTR);
     if (!meshWorld || IsBadReadPtr((void*)meshWorld, 0x1000)) return;
 
@@ -589,7 +594,7 @@ static void scanWarpNodes(DWORD board) {
             }
         }
     }
-    if (!ball || IsBadReadPtr((void*)ball, 0x200)) return;
+    if (!ball || IsBadReadPtr((void*)ball, 0xC60)) return;
     if (*(BYTE*)(ball + BALL_DEATH_PENDING) != 0) return;
 
     float bx = *(float*)(ball + BALL_POS_X);
@@ -655,6 +660,15 @@ static void call_app_start_practice_race(DWORD app, int idx) {
 static void updateWarpStateMachine(DWORD app, DWORD board) {
     if (g_phase == PHASE_IDLE) return;
 
+    if (!app || IsBadReadPtr((void*)app, 0x1000)) {
+        LOGS("[warp] App null during warp, aborting");
+        g_freezeTimer = 0;
+        unblock_pause(g_gameBase);
+        g_phase = PHASE_IDLE;
+        g_warpBall = 0;
+        return;
+    }
+
     DWORD now = getGameTime();
     DWORD ball = g_warpBall;
     DWORD elapsed;
@@ -665,13 +679,40 @@ static void updateWarpStateMachine(DWORD app, DWORD board) {
         }
     }
 
+    /* Abort if tournament timer expires during RUMBLE or early FLASH.
+     * App+0x5D6 (obj+0x0A finished flag) is set on timeout or goal.
+     * Let the game's natural timeout sequence play out. */
+    if (g_phase == PHASE_RUMBLE || (g_phase == PHASE_FLASH && g_whiteAlpha < 0.99f)) {
+        if (!IsBadReadPtr((void*)(app + APP_TIMER_FINISHED), 1)) {
+            char finished = *(char*)(app + APP_TIMER_FINISHED);
+            if (finished) {
+                LOG("[warp] ABORT: tournament timer expired during %s", g_phase == PHASE_RUMBLE ? "RUMBLE" : "FLASH");
+                if (ball) {
+                    *(int*)(ball + BALL_IMPACT_FREEZE) = 0;
+                    *(BYTE*)(ball + BALL_RENDER_JITTER) = 0;
+                    *(BYTE*)(ball + BALL_IN_TAR) = 0;
+                }
+                restoreMusicFade(app);
+                g_freezeTimer = 0;
+                unblock_pause(g_gameBase);
+                if (board) *(float*)(board + BOARD_SCENE_FADE_ALPHA) = 0.0f;
+                g_whiteAlpha = 0.0f;
+                g_phase = PHASE_IDLE;
+                g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
+                g_warpBall = 0;
+                LOGS("[warp] Warp aborted — returning to IDLE with game timeout intact");
+                return;
+            }
+        }
+    }
+
     switch (g_phase) {
     case PHASE_RUMBLE: {
         elapsed = now - g_phaseStartTime;
 
         if (!g_rumbleInit && ball) {
             g_rumbleInit = 1;
-            block_pause(app ? app + 0x400000 - app : 0x00400000);
+            block_pause(g_gameBase);
             *(int*)(ball + BALL_IMPACT_FREEZE) = 1000;
             *(BYTE*)(ball + BALL_RENDER_JITTER) = 1;
             startMusicFade(app);
@@ -720,7 +761,11 @@ static void updateWarpStateMachine(DWORD app, DWORD board) {
             BYTE respawning = *(BYTE*)(ball + 0x2F9);
             if (!respawning) {
                 *(float*)(ball + BALL_ALPHA) = 0.0f;
-                g_freezeTimer = 1;
+                *(BYTE*)(ball + BALL_IN_TAR) = 1;
+                if (!g_freezeTimer) {
+                    g_freezeTimer = 1;
+                    LOGS("[warp] Ball vanished — timer frozen + in_tar set");
+                }
             }
         }
 
@@ -784,6 +829,7 @@ static void updateWarpStateMachine(DWORD app, DWORD board) {
             *(int*)(ball + BALL_IMPACT_FREEZE) = 0;
             *(BYTE*)(ball + BALL_RENDER_JITTER) = 0;
             *(float*)(ball + BALL_ALPHA) = 1.0f;
+            *(BYTE*)(ball + BALL_IN_TAR) = 0;
             if (g_colorSaved && !IsBadWritePtr((void*)(ball + BALL_COLOR_R), 12)) {
                 *(float*)(ball + BALL_COLOR_R) = g_origBallR;
                 *(float*)(ball + BALL_COLOR_G) = g_origBallG;
@@ -903,14 +949,14 @@ static void updateWarpStateMachine(DWORD app, DWORD board) {
             g_whiteAlpha = 0.0f;
             g_phase = PHASE_IDLE;
             g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
-            unblock_pause(app ? app + 0x400000 - app : 0x00400000);
+            unblock_pause(g_gameBase);
         }
         break;
     }
 
     default:
         g_freezeTimer = 0;
-        unblock_pause(app ? app + 0x400000 - app : 0x00400000);
+        unblock_pause(g_gameBase);
         g_phase = PHASE_IDLE;
         break;
     }
@@ -931,8 +977,8 @@ public:
 
     void Initialize(IModAPI* modApi) override {
         api = modApi;
-        if (api) g_base = api->GetGameBaseAddress();
-        else g_base = 0x00400000;
+        if (api) { g_base = api->GetGameBaseAddress(); g_gameBase = g_base; }
+        else { g_base = 0x00400000; g_gameBase = 0x00400000; }
 
 #ifdef ENABLE_LOGGING
         HMODULE hSelf = NULL;
@@ -953,12 +999,6 @@ public:
         load_bass_function();
         install_timer_caves(g_base);
 
-        /* Patch Level_UpdateAndRender TT/party checks so white fade renders */
-        if (api) {
-            api->PatchMemory(g_base + 0xB7F5, "\x90\x90", 2);
-            api->PatchMemory(g_base + 0xB7FF, "\x90\x90", 2);
-        }
-
         LOGS("=== Level Warp (HB+) loaded ===");
     }
 
@@ -967,7 +1007,7 @@ public:
         if (!app || IsBadReadPtr((void*)app, 0x1000)) {
             if (g_phase != PHASE_IDLE) {
                 g_freezeTimer = 0;
-                unblock_pause(g_base);
+                unblock_pause(g_gameBase);
                 g_phase = PHASE_IDLE;
             }
             return;
@@ -987,7 +1027,7 @@ public:
         g_freezeTimer = 0;
         g_warpBall = 0;
         g_musicFadeStarted = 0;
-        unblock_pause(g_base);
+        unblock_pause(g_gameBase);
         if (api) {
             DWORD app = (DWORD)api->GetApp();
             if (app) restoreMusicFade(app);
