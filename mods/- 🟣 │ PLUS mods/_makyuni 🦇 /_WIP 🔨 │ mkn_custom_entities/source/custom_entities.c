@@ -3545,15 +3545,15 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (cs->cooldown == 0) cs->launching = 0;
         }
 
-        /* v55m_28i: trigger only when ball is well inside the catapult (radius 70).
-         * Require ball to leave a much larger zone (radius 180) before re-arming.
+        /* v55m_28j: trigger when ball is inside the catapult (radius 110).
+         * Require ball to leave a much larger zone (radius 250) before re-arming.
          * This stops the "approach -> pushed away -> retrigger" loop. */
         float dx = ball_x - cs->x;
         float dy = ball_y - cs->y;
         float dz = ball_z - cs->z;
         float dist_sq = dx*dx + dy*dy + dz*dz;
-        int in_trigger_zone = (dist_sq < 4900.0f); /* 70^2 */
-        int in_reset_zone   = (dist_sq < 32400.0f); /* 180^2 */
+        int in_trigger_zone = (dist_sq < 12100.0f); /* 110^2 */
+        int in_reset_zone   = (dist_sq < 62500.0f); /* 250^2 */
 
         if (in_trigger_zone && !cs->launching && cs->cooldown == 0 && !cs->was_in_zone) {
             cs->launching = 1;
@@ -4781,7 +4781,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_28i Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_28j Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
