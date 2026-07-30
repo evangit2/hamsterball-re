@@ -1,3 +1,8 @@
+## v55m_32 — Fix catapult E:CATAPULTBOTTOM trigger
+
+- Install DispatchCollisionEvents hook when a Catapult is spawned (not just Bonk).
+- Match `collision_data[0]` (entity pointer) against `catapult+0x10D4`, not `collision_data[1]`.
+
 ## v55m_31 — Revert collision-site hooks to v55m_29 baseline
 
 - Reverted v55m_30/v55m_30a collision-site hook rewrite; it caused heap corruption (crash 0x45FB03).
