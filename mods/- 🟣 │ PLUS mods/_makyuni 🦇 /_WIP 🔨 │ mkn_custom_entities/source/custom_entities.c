@@ -14,6 +14,7 @@
 /* Forward declarations for v55m_42f BASS sound helpers */
 static void cEnt_load_dropin_sample(FILE* logfile);
 static void cEnt_play_dropin_sound(FILE* logfile);
+static void cEnt_play_catapult_sound(FILE* logfile);  /* v55m_42i */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game function pointers
@@ -304,6 +305,7 @@ typedef struct {
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
 static DWORD g_dropin_sample = 0;  /* v55m_42f: BASS sample for catapult dropin sound */
+static DWORD g_catapult_sample = 0;  /* v55m_42i: BASS sample for catapult launch sound */
 static void* g_dropin_sound = NULL; /* v55m_28l cached sounds\\dropin channel */
 
 /* v55m_2: Chomper tracking — Tower Race chomper entity.
@@ -2908,6 +2910,11 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
         real_BASS_SampleFree(g_dropin_sample);
         g_dropin_sample = 0;
     }
+    /* v55m_42i: free BASS catapult sample on level unload */
+    if (g_catapult_sample && real_BASS_SampleFree) {
+        real_BASS_SampleFree(g_catapult_sample);
+        g_catapult_sample = 0;
+    }
 
     /* Clear Bonk tracking and uninstall collision hook */
     g_bonk_count = 0;
@@ -2915,9 +2922,9 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
 }
 
 /* v55m_42fb: load dropin sound via BASS directly. Called once per level when a
- * Catapult is spawned. Tries .ogg, .wav, .mp3 extensions. Logs BASS error codes. */
+ * Catapult is spawned. Tries .ogg, .wav, .mp3 extensions. Logs BASS error codes.
+ * v55m_42i: also loads sounds\\Catapult.ogg for the 50-frame launch sound. */
 static void cEnt_load_dropin_sample(FILE* logfile) {
-    if (g_dropin_sample) return;
     FILE* lf = logfile;
     if (!lf) lf = fopen("custom_entities_catapult.log", "a");
     if (!real_BASS_SampleLoad) {
@@ -2927,19 +2934,37 @@ static void cEnt_load_dropin_sample(FILE* logfile) {
     }
     const char* exts[] = { ".ogg", ".wav", ".mp3" };
     char path[MAX_PATH];
-    for (int i = 0; i < 3; i++) {
-        snprintf(path, MAX_PATH, "%s\\sounds\\dropin%s", g_game_dir, exts[i]);
-        g_dropin_sample = real_BASS_SampleLoad(FALSE, path, 0, 0, 3, 0);
-        int err = 0;
-        if (real_BASS_ErrorGetCode) err = real_BASS_ErrorGetCode();
-        if (lf) fprintf(lf, "CATAPULT: BASS_SampleLoad('%s') handle=0x%08lX err=%d\n", path, g_dropin_sample, err);
-        if (g_dropin_sample) {
-            if (lf) fprintf(lf, "CATAPULT: loaded dropin sample from %s\n", path);
-            if (lf != logfile) fclose(lf);
-            return;
+
+    if (!g_dropin_sample) {
+        for (int i = 0; i < 3; i++) {
+            snprintf(path, MAX_PATH, "%s\\sounds\\dropin%s", g_game_dir, exts[i]);
+            g_dropin_sample = real_BASS_SampleLoad(FALSE, path, 0, 0, 3, 0);
+            int err = 0;
+            if (real_BASS_ErrorGetCode) err = real_BASS_ErrorGetCode();
+            if (lf) fprintf(lf, "CATAPULT: BASS_SampleLoad('%s') handle=0x%08lX err=%d\n", path, g_dropin_sample, err);
+            if (g_dropin_sample) {
+                if (lf) fprintf(lf, "CATAPULT: loaded dropin sample from %s\n", path);
+                break;
+            }
         }
     }
-    if (lf) fprintf(lf, "CATAPULT: failed to load dropin sample from %s\\sounds\\dropin\n", g_game_dir);
+    if (!g_dropin_sample && lf) fprintf(lf, "CATAPULT: failed to load dropin sample from %s\\sounds\\dropin\n", g_game_dir);
+
+    if (!g_catapult_sample) {
+        for (int i = 0; i < 3; i++) {
+            snprintf(path, MAX_PATH, "%s\\sounds\\Catapult%s", g_game_dir, exts[i]);
+            g_catapult_sample = real_BASS_SampleLoad(FALSE, path, 0, 0, 3, 0);
+            int err = 0;
+            if (real_BASS_ErrorGetCode) err = real_BASS_ErrorGetCode();
+            if (lf) fprintf(lf, "CATAPULT: BASS_SampleLoad('%s') handle=0x%08lX err=%d\n", path, g_catapult_sample, err);
+            if (g_catapult_sample) {
+                if (lf) fprintf(lf, "CATAPULT: loaded catapult sample from %s\n", path);
+                break;
+            }
+        }
+    }
+    if (!g_catapult_sample && lf) fprintf(lf, "CATAPULT: failed to load catapult sample from %s\\sounds\\Catapult\n", g_game_dir);
+
     if (lf != logfile) fclose(lf);
 }
 
@@ -3005,6 +3030,70 @@ static void cEnt_play_dropin_sound(FILE* logfile) {
     }
 
     if (lf) fprintf(lf, "CATAPULT: all BASS play methods failed\n");
+    if (lf != logfile) fclose(lf);
+}
+
+/* v55m_42i: play the loaded catapult launch sound via BASS directly.
+ * Same fallbacks as cEnt_play_dropin_sound. */
+static void cEnt_play_catapult_sound(FILE* logfile) {
+    FILE* lf = logfile;
+    if (!lf) lf = fopen("custom_entities_catapult.log", "a");
+    if (!g_catapult_sample) {
+        if (lf) fprintf(lf, "CATAPULT: no catapult sample loaded\n");
+        if (lf != logfile) fclose(lf);
+        return;
+    }
+
+    /* Primary: old one-shot BASS_SamplePlay */
+    if (real_BASS_SamplePlay) {
+        DWORD ch = real_BASS_SamplePlay(g_catapult_sample);
+        int err = real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1;
+        if (lf) fprintf(lf, "CATAPULT: BASS_SamplePlay(catapult 0x%08lX) ch=0x%08lX err=%d\n", g_catapult_sample, ch, err);
+        if (ch) {
+            if (lf != logfile) fclose(lf);
+            return;
+        }
+    }
+
+    /* Secondary: SampleGetChannel + ChannelPlay */
+    if (real_BASS_SampleGetChannel && real_BASS_ChannelPlay) {
+        DWORD ch = real_BASS_SampleGetChannel(g_catapult_sample, FALSE);
+        int err1 = real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1;
+        if (lf) fprintf(lf, "CATAPULT: BASS_SampleGetChannel(catapult 0x%08lX, FALSE) ch=0x%08lX err=%d\n",
+            g_catapult_sample, ch, err1);
+        if (ch) {
+            int ret = real_BASS_ChannelPlay(ch, FALSE);
+            int err2 = real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1;
+            if (lf) fprintf(lf, "CATAPULT: BASS_ChannelPlay(0x%08lX) ret=%d err=%d\n", ch, ret, err2);
+            if (ret) {
+                if (lf != logfile) fclose(lf);
+                return;
+            }
+        }
+    }
+
+    /* Tertiary: create a stream from file and play it directly */
+    if (real_BASS_StreamCreateFile && real_BASS_StreamPlay) {
+        const char* exts[] = { ".ogg", ".wav", ".mp3" };
+        char path[MAX_PATH];
+        for (int i = 0; i < 3; i++) {
+            snprintf(path, MAX_PATH, "%s\\sounds\\Catapult%s", g_game_dir, exts[i]);
+            DWORD stream = real_BASS_StreamCreateFile(FALSE, path, 0, 0, 0);
+            int err = real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1;
+            if (lf) fprintf(lf, "CATAPULT: BASS_StreamCreateFile('%s') stream=0x%08lX err=%d\n", path, stream, err);
+            if (stream) {
+                DWORD ch = real_BASS_StreamPlay(stream, FALSE, 0);
+                int err2 = real_BASS_ErrorGetCode ? real_BASS_ErrorGetCode() : -1;
+                if (lf) fprintf(lf, "CATAPULT: BASS_StreamPlay(0x%08lX) ch=0x%08lX err=%d\n", stream, ch, err2);
+                if (ch) {
+                    if (lf != logfile) fclose(lf);
+                    return;
+                }
+            }
+        }
+    }
+
+    if (lf) fprintf(lf, "CATAPULT: all BASS catapult play methods failed\n");
     if (lf != logfile) fclose(lf);
 }
 /* Apply rotation direction and oscillation limits to spawned custom_obj objects.
@@ -3669,7 +3758,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->second_sound_timer > 0) {
             cs->second_sound_timer--;
             if (cs->second_sound_timer == 0) {
-                cEnt_play_dropin_sound(df);
+                cEnt_play_catapult_sound(df);  /* v55m_42i: native Tower plays Catapult sound at frame 50 */
             }
         }
 
@@ -3742,7 +3831,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cEnt_play_dropin_sound(df);
 
             /* v55m_42h: schedule a second dropin sound after 2 seconds (120 frames) */
-            cs->second_sound_timer = 120;
+            cs->second_sound_timer = 50;  /* v55m_42i: native Tower uses 50 frames */
         }
     }
 }
