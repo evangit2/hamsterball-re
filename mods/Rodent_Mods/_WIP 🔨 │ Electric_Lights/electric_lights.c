@@ -99,7 +99,7 @@
 #define GFX_BALL_Y           0x858
 #define GFX_BALL_Z           0x85C
 
-/* D3D8 device vtable offsets */
+/* D3D8 device vtable offsets (COM __stdcall) */
 #define D3D_SetLight         0xB0    /* vtable[44] */
 #define D3D_LightEnable      0xB8    /* vtable[46] */
 #define D3D_SetRenderState   0xC8    /* vtable[50] */
@@ -149,6 +149,8 @@
  * Configuration
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* CHARGE_DRAIN_RATE: tuned so charge hits FLICKER_OUT_THRESHOLD ~ when
+ * platforms should begin flickering down, and drains to 0 shortly after. */
 #define CHARGE_DRAIN_RATE    0.001667f  /* ~10sec to deplete at 60fps */
 #define CHARGE_MAX           1.0f
 #define CHARGE_MIN           0.0f
@@ -326,13 +328,13 @@ static void update_light(DWORD gfx) {
 
     if (bx == 0.0f && by == 0.0f && bz == 0.0f) return;
 
-    /* Enable D3D lighting */
+    /* Enable D3D lighting (COM __stdcall: this is first stack arg) */
     {
         DWORD fn = *(DWORD*)(vtable + D3D_SetRenderState);
         __asm__ __volatile__(
             "pushl $1\n"
             "pushl $0x89\n"
-            "movl %0, %%ecx\n"
+            "pushl %0\n"
             "call *%1\n"
             :
             : "r"(device), "r"(fn)
@@ -348,27 +350,28 @@ static void update_light(DWORD gfx) {
     /* Scale light range based on charge */
     g_light.Range = g_charge * LIGHT_FULL_RANGE;
 
-    /* device->SetLight(LIGHT_SLOT, &g_light) */
+    /* device->SetLight(LIGHT_SLOT, &g_light) (__stdcall) */
     {
         DWORD fn = *(DWORD*)(vtable + D3D_SetLight);
         __asm__ __volatile__(
-            "pushl %0\n"
+            "leal %0, %%eax\n"
+            "pushl %%eax\n"
             "pushl %1\n"
-            "movl %2, %%ecx\n"
+            "pushl %2\n"
             "call *%3\n"
             :
-            : "r"(&g_light), "r"((DWORD)LIGHT_SLOT), "r"(device), "r"(fn)
+            : "m"(g_light), "r"((DWORD)LIGHT_SLOT), "r"(device), "r"(fn)
             : "eax", "edx", "ecx", "memory"
         );
     }
 
-    /* device->LightEnable(LIGHT_SLOT, TRUE) */
+    /* device->LightEnable(LIGHT_SLOT, TRUE) (__stdcall) */
     {
         DWORD fn = *(DWORD*)(vtable + D3D_LightEnable);
         __asm__ __volatile__(
             "pushl $1\n"
             "pushl %0\n"
-            "movl %1, %%ecx\n"
+            "pushl %1\n"
             "call *%2\n"
             :
             : "r"((DWORD)LIGHT_SLOT), "r"(device), "r"(fn)
@@ -399,7 +402,8 @@ static void update_light(DWORD gfx) {
         }
     }
 
-    /* Drain charge — only when board is valid (active gameplay) */
+    /* Drain charge — only when board is valid (active gameplay) and
+     * only on levels where this mod is active (DFLOOR present). */
     if (app && !IsBadReadPtr((void*)(app + APP_BOARD), 4)) {
         DWORD board = *(DWORD*)(app + APP_BOARD);
         if (board && !IsBadReadPtr((void*)board, 0x100)) {
@@ -417,8 +421,10 @@ static void update_platforms(void) {
     /* Determine desired platform state from charge */
     int want_visible = (g_charge >= FLICKER_OUT_THRESHOLD);
 
-    /* If discharge fired, force all platforms to transition instantly */
+    /* If discharge fired, force all platforms to transition instantly.
+     * We consume the flag so it only applies for one update cycle. */
     int force_instant = g_discharged;
+    if (force_instant) g_discharged = 0;
     int flicker_timer = force_instant ? 1 : TIMER_FULL;
 
     /* Get board from App */
@@ -438,6 +444,25 @@ static void update_platforms(void) {
         g_last_ball = 0;
         /* Reset discharge state for new race */
         g_discharged = 0;
+    }
+
+    /* Only Arena levels load ArenaStands (DFLOOR) objects. On race
+     * levels board+0x2578 still exists but contains other dynamic objects.
+     * We detect presence by checking board+0x438C for the DFLOOR4 pointer,
+     * which is only set by Neon_CreateDynamicObjects. */
+    int has_dfloor = 0;
+    if (!IsBadReadPtr((void*)(board + BOARD_DFOOR4_PTR), 4)) {
+        DWORD dfloor4 = *(DWORD*)(board + BOARD_DFOOR4_PTR);
+        if (dfloor4 && !IsBadReadPtr((void*)dfloor4, 4) &&
+            *(DWORD*)dfloor4 == ARENASTANDS_VTABLE) {
+            has_dfloor = 1;
+        }
+    }
+
+    if (!has_dfloor) {
+        /* No DFLOOR objects on this level — nothing to flicker */
+        g_discharged = 0;
+        return;
     }
 
     /* Iterate dynamic objects AthenaList at board+0x2578 */

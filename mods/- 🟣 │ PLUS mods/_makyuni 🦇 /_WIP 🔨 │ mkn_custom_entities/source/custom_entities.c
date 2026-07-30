@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_29
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_30
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -802,203 +802,198 @@ static int   g_rotater_count = 0;
 static DWORD g_rotater_board = 0;
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Bonk collision event hook
+ * Safe E:CATAPULTBOTTOM collision hook
  *
- * E:CALLHAMMER and E:HAMMERCHASE are only natively handled by
- * ExpertCollisionEvents and HandleArenaCollisionEvents (Master).
- * On other levels, these events fall through to DispatchCollisionEvents
- * which doesn't check for them. We detour DispatchCollisionEvents,
- * let the original run, then check for hammer events ourselves.
+ * The old DispatchCollisionEvents detour at 0x40C5D0 used an SEH prologue
+ * (PUSH 0xFF; MOV EAX,FS:[0]). Copying that into a static trampoline corrupts
+ * the exception chain and causes later crashes inside Draw (0x45FB03).
+ *
+ * v55m_30 FIX: hook the per-level vtable[29] call sites inside Ball_Update
+ * instead. These sites are 5-byte instruction sequences with no SEH:
+ *   0x0040728F: PUSH EDX; PUSH ESI; CALL [EAX+0x74]
+ *   0x00408B85: PUSH EDX; PUSH ESI; CALL [EAX+0x74]
+ *
+ * At both sites:
+ *   ECX = board, EAX = board vtable, ESI = ball, EDX = collObj
+ *
+ * The cave calls a C helper BEFORE the original handler. The helper checks for
+ * E:CATAPULTBOTTOM on non-Tower levels and calls Catapult_Launch on the
+ * matching tracked catapult. The original handler then runs normally, so native
+ * Tower catapults keep working without double-firing.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Tracked Bonk objects */
-#define MAX_BONKS 8
-static DWORD g_bonk_objs[MAX_BONKS];
-static int g_bonk_count = 0;
+#define COLLISION_SITE1_ADDR  0x0040728F
+#define COLLISION_SITE2_ADDR  0x00408B85
+#define COLLISION_ORIG_BYTES  5
 
-/* Game function pointers for Bonk events */
-typedef void (__fastcall *CreateBonkPopup_t)(int bonk_obj);
-static CreateBonkPopup_t pfn_CreateBonkPopup = (CreateBonkPopup_t)0x00438B30;
+static int g_collision_site1_hooked = 0;
+static int g_collision_site2_hooked = 0;
+static unsigned char g_collision_site1_orig[5];
+static unsigned char g_collision_site2_orig[5];
 
-typedef void (__fastcall *Hammer_ChaseStart_t)(int bonk_obj);
-static Hammer_ChaseStart_t pfn_Hammer_ChaseStart = (Hammer_ChaseStart_t)0x00438BB0;
+/* 256-byte executable caves — plenty of room for PUSHAD/CALL/POPAD/original/JMP */
+static unsigned char g_collision_site1_cave[256];
+static unsigned char g_collision_site2_cave[256];
 
-/* Original DispatchCollisionEvents function — we build a trampoline */
-typedef void (__thiscall *DispatchCollisionEvents_t)(void* this_, int* ball, int* collision_data);
-static DWORD g_dispatch_collision_addr = 0x0040C5D0;
-static unsigned char g_dispatch_orig_bytes[8];  /* first 8 bytes = PUSH 0xFF + MOV EAX,FS:[0] */
-static int g_dispatch_hooked = 0;
+/* C helper called from the collision-site caves */
+static void __stdcall cEnt_catapult_collision_helper(DWORD board, DWORD ball, DWORD collObj) {
+    if (!board || !ball || !collObj) return;
+    if (IsBadReadPtr((void*)collObj, 8)) return;
 
-/* Trampoline buffer: 8 bytes original code + 5 byte JMP back = 13 bytes */
-static unsigned char g_trampoline[13];
-static DispatchCollisionEvents_t pfn_DispatchCollisionEvents_trampoline = NULL;
-
-/* Check if current level is Expert (7) or Master (13) — they have native handlers */
-static int is_expert_or_master_level(DWORD board) {
-    if (!board || IsBadReadPtr((void*)board, 0x900)) return 0;
-    DWORD app = *(DWORD*)(board + BOARD_APP);
-    if (!app || IsBadReadPtr((void*)app, 0x600)) return 0;
-    /* App+0x5FC = current level/race index (0-14) */
-    int race_idx = *(int*)(app + 0x5FC);
-    return (race_idx == 7 || race_idx == 13);
-}
-
-/* Our detour: calls original via trampoline, then checks for hammer events */
-static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int* collision_data) {
-    /* Call original first via trampoline */
-    pfn_DispatchCollisionEvents_trampoline(this_, ball, collision_data);
-
-    /* Skip on Expert/Master — they have native handlers */
-    if (is_expert_or_master_level((DWORD)this_)) return;
-
-    /* Get event name from collision_data[1]+0x864 */
-    if (!collision_data || IsBadReadPtr((void*)collision_data, 8)) return;
-    int meshbuf = collision_data[1];
+    /* collObj[0] = entity/collision Level pointer; collObj[1] = MeshBuffer */
+    DWORD meshbuf = *(DWORD*)(collObj + 4);
     if (!meshbuf || IsBadReadPtr((void*)meshbuf, 0x868)) return;
     char* event_name = *(char**)(meshbuf + 0x864);
-    if (!event_name || IsBadReadPtr(event_name, 1)) return;
+    if (!event_name || IsBadReadPtr(event_name, 16)) return;
 
-    /* Check if we have any tracked Bonk objects */
-    if (g_bonk_count > 0) {
-        /* Check for E:CALLHAMMER */
-    if (_stricmp(event_name, "E:CALLHAMMER") == 0) {
-        /* Check difficulty flag: App+0x23C != 0 (same check native code uses) */
-        DWORD app = *(DWORD*)((DWORD)this_ + BOARD_APP);
-        if (app && !IsBadReadPtr((void*)(app + 0x23C), 4)) {
-            if (*(int*)(app + 0x23C) != 0) {
-                int i;
-                for (i = 0; i < g_bonk_count; i++) {
-                    if (g_bonk_objs[i] && !IsBadReadPtr((void*)g_bonk_objs[i], 0x1100)) {
-                        pfn_CreateBonkPopup((int)g_bonk_objs[i]);
-                    }
-                }
+    /* Only handle E:CATAPULTBOTTOM */
+    if (_stricmp(event_name, "E:CATAPULTBOTTOM") != 0) return;
+
+    /* Skip on Tower (race index 4) — native TowerCollisionEvents handles it */
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+    if (app && !IsBadReadPtr((void*)(app + 0x5FC), 4)) {
+        int race_idx = *(int*)(app + 0x5FC);
+        if (race_idx == 4) return;
+    }
+
+    DWORD hit_obj = *(DWORD*)collObj;  /* native match compares catapult+0x10D4 == collObj[0] */
+    int i;
+    int matched = 0;
+    for (i = 0; i < g_catapult_count; i++) {
+        if (!g_catapults[i].obj || IsBadReadPtr((void*)g_catapults[i].obj, 0x1100)) continue;
+        DWORD cat_col_obj = *(DWORD*)(g_catapults[i].obj + 0x10D4);
+        if (cat_col_obj && cat_col_obj == hit_obj) {
+            pfn_Catapult_Launch((void*)g_catapults[i].obj);
+            matched = 1;
+            FILE* cdf = fopen("custom_entities_catapult.log", "a");
+            if (cdf) {
+                fprintf(cdf, "COLLISION_SITE: E:CATAPULTBOTTOM matched catapult obj=0x%08X -> Catapult_Launch\n",
+                    g_catapults[i].obj);
+                fclose(cdf);
             }
-        }
-    }
-    /* Check for E:HAMMERCHASE */
-    else if (_stricmp(event_name, "E:HAMMERCHASE") == 0) {
-        DWORD app = *(DWORD*)((DWORD)this_ + BOARD_APP);
-        if (app && !IsBadReadPtr((void*)(app + 0x23C), 4)) {
-            if (*(int*)(app + 0x23C) != 0) {
-                int i;
-                for (i = 0; i < g_bonk_count; i++) {
-                    if (g_bonk_objs[i] && !IsBadReadPtr((void*)g_bonk_objs[i], 0x1100)) {
-                        pfn_Hammer_ChaseStart((int)g_bonk_objs[i]);
-                    }
-                }
-            }
-        }
-    }
-    }
-
-    /* Diagnostic: log any collision event name that looks like a catapult event */
-    if (event_name && (_strnicmp(event_name, "E:CAT", 5) == 0 || _strnicmp(event_name, "CATAPULT", 8) == 0)) {
-        FILE* cdf = fopen("custom_entities_catapult.log", "a");
-        if (cdf) {
-            fprintf(cdf, "COLLISION_EVENT: name='%s' data0=0x%08X data1=0x%08X\n",
-                event_name, collision_data ? collision_data[0] : 0, collision_data ? collision_data[1] : 0);
-            fclose(cdf);
+            break;
         }
     }
 
-    /* Check for E:CATAPULTBOTTOM — call Catapult_Launch on the matching tracked catapult.
-     * v55m_29: switched from radius trigger to native collision event.
-     * The native Catapult_vtable11 wind-up + Catapult_Update launch then run automatically
-     * because the spawned object is in board+0x43B8 (native catapult update list). */
-    if (_stricmp(event_name, "E:CATAPULTBOTTOM") == 0) {
-        int i;
-        DWORD hit_obj = (DWORD)collision_data[1];
-        int matched = 0;
+    /* Fallback: launch closest catapult within 500 units */
+    if (!matched && g_catapult_count > 0 && !IsBadReadPtr((void*)ball, 0x200)) {
+        float bx = *(float*)(ball + 0x164);
+        float by = *(float*)(ball + 0x168);
+        float bz = *(float*)(ball + 0x16C);
+        int best = -1;
+        float best_dist = 999999.0f;
         for (i = 0; i < g_catapult_count; i++) {
-            if (g_catapults[i].obj && !IsBadReadPtr((void*)g_catapults[i].obj, 4)) {
-                /* Native match: catapult+0x10D4 == collision mesh ptr */
-                DWORD cat_col_obj = *(DWORD*)((char*)g_catapults[i].obj + 0x10D4);
-                if (cat_col_obj && cat_col_obj == hit_obj) {
-                    if (pfn_Catapult_Launch) {
-                        pfn_Catapult_Launch((void*)g_catapults[i].obj);
-                        matched = 1;
-                        FILE* cdf = fopen("custom_entities_catapult.log", "a");
-                        if (cdf) {
-                            fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM matched catapult obj=0x%08X -> Catapult_Launch\n",
-                                g_catapults[i].obj);
-                            fclose(cdf);
-                        }
-                    }
-                }
-            }
+            float dx = bx - g_catapults[i].x;
+            float dy = by - g_catapults[i].y;
+            float dz = bz - g_catapults[i].z;
+            float d = dx*dx + dy*dy + dz*dz;
+            if (d < best_dist) { best_dist = d; best = i; }
         }
-        /* Fallback: if pointer didn't match, launch the closest catapult */
-        if (!matched && g_catapult_count > 0 && ball && !IsBadReadPtr((void*)ball, 0x200) && pfn_Catapult_Launch) {
-            float bx = *(float*)((DWORD)ball + 0x164);
-            float by = *(float*)((DWORD)ball + 0x168);
-            float bz = *(float*)((DWORD)ball + 0x16C);
-            int best = -1;
-            float best_dist = 999999.0f;
-            for (i = 0; i < g_catapult_count; i++) {
-                float dx = bx - g_catapults[i].x;
-                float dy = by - g_catapults[i].y;
-                float dz = bz - g_catapults[i].z;
-                float d = dx*dx + dy*dy + dz*dz;
-                if (d < best_dist) { best_dist = d; best = i; }
-            }
-            if (best >= 0 && best_dist < 250000.0f) {
-                pfn_Catapult_Launch((void*)g_catapults[best].obj);
-                FILE* cdf = fopen("custom_entities_catapult.log", "a");
-                if (cdf) {
-                    fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM fallback closest catapult obj=0x%08X -> Catapult_Launch\n",
-                        g_catapults[best].obj);
-                    fclose(cdf);
-                }
+        if (best >= 0 && best_dist < 250000.0f) {
+            pfn_Catapult_Launch((void*)g_catapults[best].obj);
+            FILE* cdf = fopen("custom_entities_catapult.log", "a");
+            if (cdf) {
+                fprintf(cdf, "COLLISION_SITE: E:CATAPULTBOTTOM fallback closest catapult obj=0x%08X -> Catapult_Launch\n",
+                    g_catapults[best].obj);
+                fclose(cdf);
             }
         }
     }
 }
 
-/* Install the DispatchCollisionEvents detour with proper trampoline */
-static void install_bonk_collision_hook(void) {
-    if (g_dispatch_hooked) return;
-
-    /* Save original 8 bytes (PUSH 0xFF + MOV EAX,FS:[0]) */
-    memcpy(g_dispatch_orig_bytes, (void*)g_dispatch_collision_addr, 8);
-
-    /* Build trampoline: 8 bytes original code + JMP back to original+8 */
-    memcpy(g_trampoline, g_dispatch_orig_bytes, 8);
-    DWORD jmp_back = (g_dispatch_collision_addr + 8) - (DWORD)(g_trampoline + 8 + 5);
-    g_trampoline[8] = 0xE9;
-    *(DWORD*)(g_trampoline + 9) = jmp_back;
-
-    /* Make trampoline executable */
-    DWORD old_protect = 0;
-    if (!VirtualProtect(g_trampoline, 13, PAGE_EXECUTE_READWRITE, &old_protect))
-        return;
-    pfn_DispatchCollisionEvents_trampoline = (DispatchCollisionEvents_t)g_trampoline;
-
-    /* Patch original function: JMP to our hook (5 bytes, overwrites first 8 bytes) */
-    if (!VirtualProtect((void*)g_dispatch_collision_addr, 8, PAGE_EXECUTE_READWRITE, &old_protect))
-        return;
-
-    DWORD rel_addr = (DWORD)hook_DispatchCollisionEvents - g_dispatch_collision_addr - 5;
-    unsigned char jmp_patch[8];
-    jmp_patch[0] = 0xE9; /* JMP rel32 */
-    *(DWORD*)(jmp_patch + 1) = rel_addr;
-    jmp_patch[5] = 0x90; /* NOP — pad to cover 6th byte */
-    jmp_patch[6] = 0x90; /* NOP */
-    jmp_patch[7] = 0x90; /* NOP */
-    memcpy((void*)g_dispatch_collision_addr, jmp_patch, 8);
-
-    VirtualProtect((void*)g_dispatch_collision_addr, 8, old_protect, &old_protect);
-    g_dispatch_hooked = 1;
+/* Build a 5-byte JMP rel32 patch */
+static void make_jmp_patch(unsigned char* patch, DWORD from, DWORD to) {
+    patch[0] = 0xE9;
+    *(DWORD*)(patch + 1) = to - from - 5;
 }
 
-/* Uninstall the detour (called on level unload) */
-static void uninstall_bonk_collision_hook(void) {
-    if (!g_dispatch_hooked) return;
-    DWORD old_protect = 0;
-    if (VirtualProtect((void*)g_dispatch_collision_addr, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
-        memcpy((void*)g_dispatch_collision_addr, g_dispatch_orig_bytes, 5);
-        VirtualProtect((void*)g_dispatch_collision_addr, 5, old_protect, &old_protect);
+/* Build cave bytes for a collision site hook.
+ * The cave: PUSHAD; PUSHFD; PUSH EDX; PUSH ESI; PUSH ECX; CALL helper; ADD ESP,12; POPFD; POPAD;
+ *           PUSH EDX; PUSH ESI; CALL [EAX+0x74]; JMP back
+ *
+ * All helper args are passed on the stack (stdcall). Registers are preserved
+ * so the original 5-byte sequence runs with the same machine state.
+ */
+static int build_collision_site_cave(unsigned char* cave, DWORD cave_addr, DWORD back_addr) {
+    int p = 0;
+    cave[p++] = 0x60;              /* PUSHAD */
+    cave[p++] = 0x9C;              /* PUSHFD */
+    cave[p++] = 0x52;              /* PUSH EDX   (collObj, arg3) */
+    cave[p++] = 0x56;              /* PUSH ESI   (ball, arg2) */
+    cave[p++] = 0x51;              /* PUSH ECX   (board, arg1) */
+    /* CALL helper — rel32 */
+    cave[p++] = 0xE8;
+    *(DWORD*)(cave + p) = (DWORD)cEnt_catapult_collision_helper - (cave_addr + p + 4);
+    p += 4;
+    cave[p++] = 0x83; cave[p++] = 0xC4; cave[p++] = 0x0C;  /* ADD ESP, 12 */
+    cave[p++] = 0x9D;              /* POPFD */
+    cave[p++] = 0x61;              /* POPAD */
+    /* Original 5 bytes: PUSH EDX; PUSH ESI; CALL [EAX+0x74] */
+    cave[p++] = 0x52;              /* PUSH EDX */
+    cave[p++] = 0x56;              /* PUSH ESI */
+    cave[p++] = 0xFF; cave[p++] = 0x50; cave[p++] = 0x74;  /* CALL [EAX+0x74] */
+    /* JMP back */
+    cave[p++] = 0xE9;
+    *(DWORD*)(cave + p) = back_addr - (cave_addr + p + 4);
+    p += 4;
+    return p;
+}
+
+static void install_collision_site_hooks(void) {
+    DWORD old_protect;
+
+    if (!g_collision_site1_hooked) {
+        /* Save original bytes */
+        memcpy(g_collision_site1_orig, (void*)COLLISION_SITE1_ADDR, 5);
+        /* Make cave executable */
+        if (VirtualProtect(g_collision_site1_cave, sizeof(g_collision_site1_cave), PAGE_EXECUTE_READWRITE, &old_protect)) {
+            build_collision_site_cave(g_collision_site1_cave, (DWORD)g_collision_site1_cave, COLLISION_SITE1_ADDR + 5);
+            /* Patch game code */
+            if (VirtualProtect((void*)COLLISION_SITE1_ADDR, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+                unsigned char patch[5];
+                make_jmp_patch(patch, COLLISION_SITE1_ADDR, (DWORD)g_collision_site1_cave);
+                memcpy((void*)COLLISION_SITE1_ADDR, patch, 5);
+                VirtualProtect((void*)COLLISION_SITE1_ADDR, 5, old_protect, &old_protect);
+                FlushInstructionCache(GetCurrentProcess(), (void*)COLLISION_SITE1_ADDR, 5);
+                g_collision_site1_hooked = 1;
+            }
+        }
     }
-    g_dispatch_hooked = 0;
+
+    if (!g_collision_site2_hooked) {
+        memcpy(g_collision_site2_orig, (void*)COLLISION_SITE2_ADDR, 5);
+        if (VirtualProtect(g_collision_site2_cave, sizeof(g_collision_site2_cave), PAGE_EXECUTE_READWRITE, &old_protect)) {
+            build_collision_site_cave(g_collision_site2_cave, (DWORD)g_collision_site2_cave, COLLISION_SITE2_ADDR + 5);
+            if (VirtualProtect((void*)COLLISION_SITE2_ADDR, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+                unsigned char patch[5];
+                make_jmp_patch(patch, COLLISION_SITE2_ADDR, (DWORD)g_collision_site2_cave);
+                memcpy((void*)COLLISION_SITE2_ADDR, patch, 5);
+                VirtualProtect((void*)COLLISION_SITE2_ADDR, 5, old_protect, &old_protect);
+                FlushInstructionCache(GetCurrentProcess(), (void*)COLLISION_SITE2_ADDR, 5);
+                g_collision_site2_hooked = 1;
+            }
+        }
+    }
+}
+
+static void uninstall_collision_site_hooks(void) {
+    DWORD old_protect;
+    if (g_collision_site1_hooked) {
+        if (VirtualProtect((void*)COLLISION_SITE1_ADDR, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+            memcpy((void*)COLLISION_SITE1_ADDR, g_collision_site1_orig, 5);
+            VirtualProtect((void*)COLLISION_SITE1_ADDR, 5, old_protect, &old_protect);
+            FlushInstructionCache(GetCurrentProcess(), (void*)COLLISION_SITE1_ADDR, 5);
+        }
+        g_collision_site1_hooked = 0;
+    }
+    if (g_collision_site2_hooked) {
+        if (VirtualProtect((void*)COLLISION_SITE2_ADDR, 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+            memcpy((void*)COLLISION_SITE2_ADDR, g_collision_site2_orig, 5);
+            VirtualProtect((void*)COLLISION_SITE2_ADDR, 5, old_protect, &old_protect);
+            FlushInstructionCache(GetCurrentProcess(), (void*)COLLISION_SITE2_ADDR, 5);
+        }
+        g_collision_site2_hooked = 0;
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2248,16 +2243,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bonk\n"); return; }
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
-                /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE) */
-                if (g_bonk_count < MAX_BONKS) {
-                    g_bonk_objs[g_bonk_count] = (DWORD)obj;
-                    g_bonk_count++;
-                }
-                /* Collision dispatch hook disabled in v53g-2 — trampoline caused
-                 * stack corruption. Will re-add in future version with proper
-                 * detour library (MinHook/etc).
-                 * v55m_28g: re-enabled for catapult E:CATAPULTBOTTOM collision events. */
-                install_bonk_collision_hook();
+                /* v55m_30: removed DispatchCollisionEvents detour.
+                 * Bonk events (E:CALLHAMMER/E:HAMMERCHASE) are not supported
+                 * in this version. Re-add later with safe per-level vtable[29]
+                 * hook pattern if needed. */
                 break;
             case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
                       * Uses Pendulum vtable with Rotator_Update for tilt animation. */
@@ -2322,6 +2311,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
                 /* v55m_27: Do NOT add to board+0x8B8 — causes MeshArchive_ctor crash
                  * (0x478EDD) because the game's update loop expects native catapult objects. */
+                /* v55m_30: Install safe collision-site hooks for E:CATAPULTBOTTOM.
+                 * These hooks live inside Ball_Update (no SEH), unlike the old
+                 * DispatchCollisionEvents detour which corrupted the exception chain. */
+                install_collision_site_hooks();
+
                 /* Track for per-frame Catapult_vtable11 calls */
                 if (g_catapult_count < MAX_CATAPULTS) {
                     g_catapults[g_catapult_count].obj = (DWORD)obj;
@@ -2907,9 +2901,8 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
     g_chomper_count = 0;  /* v55m_3: reset Chomper tracking on level unload */
 
-    /* Clear Bonk tracking and uninstall collision hook */
-    g_bonk_count = 0;
-    uninstall_bonk_collision_hook();
+    /* v55m_30: uninstall collision-site hooks on level unload */
+    uninstall_collision_site_hooks();
 }
 
 /* Apply rotation direction and oscillation limits to spawned custom_obj objects.
@@ -4711,7 +4704,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_29 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_30 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
