@@ -337,9 +337,8 @@ static int g_chomper_count = 0;
  * Uses __thiscall to match game's vtable calling convention. */
 static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
 
-/* v55m_42q: Catapult arm vtable[18] render hook — separate arm object
- * Rotates around Y-axis using direct D3D SetTransform (Chomper-style). */
-static void __thiscall cEnt_catapult_arm_render(DWORD this_, char param_1, int param_2);
+/* v55m_42v: REMOVED — arm render hook was unused. Main catapult vtable[18] is hooked directly.
+ * Kept as forward declaration only for compatibility. */
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -2462,19 +2461,15 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_42u: Hook MAIN catapult vtable[18] for Y-axis rotation.
-                     * The catapult uses Stands_ctor internally, which creates a clone
-                     * of the stand's vtable. We copy it, save slot 18, and insert our hook. */
+                    /* v55m_42v: Hook MAIN catapult vtable[18] for Y-axis rotation.
+                     * The catapult uses Stands_ctor internally, which already creates
+                     * a unique vtable clone per object. We modify it in-place —
+                     * no copy needed, avoids heap corruption from oversized alloc. */
                     {
-                        DWORD main_orig_vtable = *(DWORD*)obj;
-                        if (main_orig_vtable && !IsBadReadPtr((void*)main_orig_vtable, 256)) {
-                            DWORD* main_new_vtable = (DWORD*)pfn_operator_new(256);
-                            if (main_new_vtable) {
-                                memcpy(main_new_vtable, (void*)main_orig_vtable, 256);
-                                cs->orig_vtable18 = main_new_vtable[18];
-                                main_new_vtable[18] = (DWORD)&cEnt_catapult_render;
-                                *(DWORD*)obj = (DWORD)main_new_vtable;
-                            }
+                        DWORD* main_vtable = *(DWORD**)obj;
+                        if (main_vtable) {
+                            cs->orig_vtable18 = main_vtable[18];
+                            main_vtable[18] = (DWORD)&cEnt_catapult_render;
                         }
                     }
 
