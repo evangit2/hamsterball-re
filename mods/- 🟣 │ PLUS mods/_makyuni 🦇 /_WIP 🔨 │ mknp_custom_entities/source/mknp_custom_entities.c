@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42u
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42v
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -521,8 +521,8 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
-/* v55m_42q: REMOVED — rotation now happens on the separate arm object.
- * This stub simply forwards to the original vtable[18]. */
+/* v55m_42u: cEnt Catapult render — rotate the MAIN catapult object itself.
+ * Uses direct D3D SetTransform Y-rotation (same pattern as Waterwheel). */
 static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
     CatapultState* cs = NULL;
     int i;
@@ -533,6 +533,42 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
         typedef void (__thiscall *render_t)(DWORD, char, int);
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
+    }
+
+    DWORD app = *(DWORD*)0x005341E0;
+    if (app) {
+        DWORD gfx = *(DWORD*)((char*)app + 0x174);
+        if (gfx) {
+            DWORD device = *(DWORD*)((char*)gfx + 0x154);
+            if (device && !IsBadReadPtr((void*)device, 4)) {
+                DWORD* dev_vtable = *(DWORD**)device;
+                if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
+                    typedef void (__stdcall *GetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                    typedef void (__stdcall *SetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                    GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
+                    SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
+
+                    float saveMatrix[16];
+                    pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
+
+                    float angle = cs->arm_angle * 3.14159265f / 180.0f;
+                    float c = cosf(angle);
+                    float s = sinf(angle);
+                    float rotMatrix[16] = {
+                        c,  0, -s, 0,
+                        0,  1,  0, 0,
+                        s,  0,  c, 0,
+                        0,  0,  0, 1
+                    };
+
+                    pfn_SetTransform(device, 256, rotMatrix);
+                    typedef void (__thiscall *render_t)(DWORD, char, int);
+                    ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
+                    pfn_SetTransform(device, 256, saveMatrix);
+                    return;
+                }
+            }
+        }
     }
     typedef void (__thiscall *render_t)(DWORD, char, int);
     ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
@@ -2426,41 +2462,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_42q: spawn separate arm object from Level4-Catapult.MESHWORLD.
-                     * The arm uses the same Catapult mesh but is a distinct PopCylinder
-                     * that we rotate around the Y-axis via direct D3D SetTransform.
-                     * Reuse the already-loaded 'mesh' pointer (loaded with correct Gfx). */
+                    /* v55m_42u: Hook MAIN catapult vtable[18] for Y-axis rotation.
+                     * The catapult uses Stands_ctor internally, which creates a clone
+                     * of the stand's vtable. We copy it, save slot 18, and insert our hook. */
                     {
-                        void* arm_obj = pfn_operator_new(POPCYLINDER_SIZE);
-                        if (arm_obj) {
-                            memset(arm_obj, 0, POPCYLINDER_SIZE);
-                            void* arm_result = pfn_PopCylinder_ctor(arm_obj, (void*)board, px, py, pz, mesh);
-                            if (arm_result) {
-                                /* Hook arm vtable[18] for Y-axis rotation */
-                                DWORD arm_orig_vtable = *(DWORD*)arm_obj;
-                                if (arm_orig_vtable && !IsBadReadPtr((void*)arm_orig_vtable, 256)) {
-                                    DWORD* arm_new_vtable = (DWORD*)pfn_operator_new(256);
-                                    if (arm_new_vtable) {
-                                        memcpy(arm_new_vtable, (void*)arm_orig_vtable, 256);
-                                        cs->arm_orig_vtable18 = arm_new_vtable[18];
-                                        arm_new_vtable[18] = (DWORD)&cEnt_catapult_arm_render;
-                                        *(DWORD*)arm_obj = (DWORD)arm_new_vtable;
-                                    }
-                                }
-                                /* Register arm on board lists (visual only).
-                                 * v55m_42s: only render list; update/scene tree may
-                                 * conflict with base catapult state. */
-                                pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), arm_obj);
-                                cs->arm_obj = (DWORD)arm_obj;
-                                cs->arm_mesh = (DWORD)mesh;
-                                cs->arm_active = 1;
-                                if (logf) fprintf(logf, "  CATAPULT[%d]: arm spawned obj=0x%08X mesh=0x%08X\n",
-                                    g_catapult_count, (DWORD)arm_obj, (DWORD)mesh);
-                            } else {
-                                if (logf) fprintf(logf, "  CATAPULT[%d]: PopCylinder_ctor for arm failed\n", g_catapult_count);
+                        DWORD main_orig_vtable = *(DWORD*)obj;
+                        if (main_orig_vtable && !IsBadReadPtr((void*)main_orig_vtable, 256)) {
+                            DWORD* main_new_vtable = (DWORD*)pfn_operator_new(256);
+                            if (main_new_vtable) {
+                                memcpy(main_new_vtable, (void*)main_orig_vtable, 256);
+                                cs->orig_vtable18 = main_new_vtable[18];
+                                main_new_vtable[18] = (DWORD)&cEnt_catapult_render;
+                                *(DWORD*)obj = (DWORD)main_new_vtable;
                             }
-                        } else {
-                            if (logf) fprintf(logf, "  CATAPULT[%d]: failed to alloc arm PopCylinder\n", g_catapult_count);
                         }
                     }
 
@@ -5143,7 +5157,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42u Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42v Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
