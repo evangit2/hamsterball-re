@@ -1,3 +1,7 @@
+## v55m_42t — Arm render-list only
+
+- Removed arm from `BOARD_UPDATE_LIST` and scene tree to isolate whether the crash is list-related or render-hook related.
+
 ## v55m_42s — Remove arm from collision lists
 
 - PopCylinder collision object offset is `+0x10D4`, not `+0x10E0`.
