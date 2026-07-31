@@ -184,9 +184,8 @@ typedef DWORD HFX;
 #define GHOST_MAGIC             0x47485347  /* "GHSG" */
 #define GHOST_VERSION           1
 
-/* Proximity thresholds */
-#define WARP_XZ_DIST_SQ         900.0f
-#define WARP_Y_DIST             50.0f
+/* Proximity thresholds (matching HB+ plus_level_warp) */
+#define WARP_TRIGGER_DIST_SQ    625.0f  /* 25.0 squared */
 #define WARP_COOLDOWN_MS        2000
 #define DEFAULT_RADIUS          50.0f
 #define TRIGGER_COOLDOWN_FRAMES 60
@@ -2928,10 +2927,9 @@ static void scanWarpNodes(void) {
             float dx = ballX - nodeX;
             float dy = ballY - nodeY;
             float dz = ballZ - nodeZ;
-            float xzDistSq = dx * dx + dz * dz;
-            float absDy = (dy < 0.0f) ? -dy : dy;
+            float distSq = dx * dx + dy * dy + dz * dz;
 
-            if (xzDistSq < WARP_XZ_DIST_SQ && absDy < WARP_Y_DIST) {
+            if (distSq < WARP_TRIGGER_DIST_SQ) {
                 char levelName[128];
                 if (parseWarpLevel(name, levelName, sizeof(levelName))) {
                     int raceIndex = findRaceIndex(levelName);
