@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42v
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42w
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -340,6 +340,80 @@ static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_
 /* v55m_42v: REMOVED — arm render hook was unused. Main catapult vtable[18] is hooked directly.
  * Kept as forward declaration only for compatibility. */
 
+/* v55m_42w: Draw-phase guard flag. Stands vtable[18] is called during Update AND Draw.
+ * D3D transforms only work during Draw. Set=1 in Graphics_RenderScene hook, 0 in Present hook. */
+static int g_in_draw_phase = 0;
+
+/* v55m_42w: Forward declaration */
+static void __cdecl renderscene_helper(void);
+
+/* v55m_42w: RenderScene hook variables */
+static BYTE *g_renderscene_cave = NULL;
+static int g_renderscene_hook_installed = 0;
+
+/* v55m_42w: Function pointer for the RenderScene cave */
+static void (__cdecl *g_renderscene_fn_ptr)(void) = NULL;
+
+/* v55m_42w: Graphics_RenderScene hook — code cave at 0x454BC0.
+ * Prologue: SUB ESP,0xC0 (6 bytes). Cave sets g_in_draw_phase=1, then runs original.
+ * This is called DURING Draw phase, after all normal rendering is set up.
+ * Stands vtable[18] is called during Update AND Draw — we use this flag to
+ * skip D3D transforms during Update. */
+static void install_renderscene_hook(void) {
+    if (g_renderscene_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)0x00454BC0;
+    BYTE expected[] = { 0x81, 0xEC, 0xC0, 0x00, 0x00, 0x00 };
+    if (memcmp(hook_addr, expected, 6) != 0) return;
+
+    g_renderscene_cave = (BYTE*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE,
+                                              PAGE_EXECUTE_READWRITE);
+    if (!g_renderscene_cave) return;
+
+    g_renderscene_fn_ptr = renderscene_helper;
+
+    int p = 0;
+    /* PUSHAD + PUSHFD */
+    g_renderscene_cave[p++] = 0x60;
+    g_renderscene_cave[p++] = 0x9C;
+    /* CALL [g_renderscene_fn_ptr] */
+    g_renderscene_cave[p++] = 0xFF; g_renderscene_cave[p++] = 0x15;
+    *(DWORD*)(g_renderscene_cave + p) = (DWORD)&g_renderscene_fn_ptr; p += 4;
+    /* POPFD + POPAD */
+    g_renderscene_cave[p++] = 0x9D;
+    g_renderscene_cave[p++] = 0x61;
+    /* Original first instruction: SUB ESP, 0xC0 */
+    g_renderscene_cave[p++] = 0x81; g_renderscene_cave[p++] = 0xEC;
+    g_renderscene_cave[p++] = 0xC0; g_renderscene_cave[p++] = 0x00;
+    g_renderscene_cave[p++] = 0x00; g_renderscene_cave[p++] = 0x00;
+    /* JMP back to hook_addr + 6 */
+    g_renderscene_cave[p++] = 0xE9;
+    *(DWORD*)(g_renderscene_cave + p) = (DWORD)(hook_addr + 6) - (DWORD)(g_renderscene_cave + p + 4);
+    p += 4;
+
+    DWORD old_protect;
+    VirtualProtect(hook_addr, 6, PAGE_EXECUTE_READWRITE, &old_protect);
+    hook_addr[0] = 0xE9;
+    *(DWORD*)(hook_addr + 1) = (DWORD)(g_renderscene_cave - hook_addr - 5);
+    hook_addr[5] = 0x90;
+    VirtualProtect(hook_addr, 6, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, 6);
+    g_renderscene_hook_installed = 1;
+}
+
+static void uninstall_renderscene_hook(void) {
+    if (!g_renderscene_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)0x00454BC0;
+    DWORD old_protect;
+    if (VirtualProtect(hook_addr, 6, PAGE_EXECUTE_READWRITE, &old_protect)) {
+        hook_addr[0] = 0x81; hook_addr[1] = 0xEC;
+        hook_addr[2] = 0xC0; hook_addr[3] = 0x00;
+        hook_addr[4] = 0x00; hook_addr[5] = 0x00;
+        VirtualProtect(hook_addr, 6, old_protect, &old_protect);
+        FlushInstructionCache(GetCurrentProcess(), hook_addr, 6);
+    }
+    g_renderscene_hook_installed = 0;
+}
+
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
 static GameLevel_ctor_t pfn_GameLevel_ctor = (GameLevel_ctor_t)0x004351F0;
@@ -521,8 +595,18 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
 }
 
 /* v55m_42u: cEnt Catapult render — rotate the MAIN catapult object itself.
- * Uses direct D3D SetTransform Y-rotation (same pattern as Waterwheel). */
+ * v55m_42w: Added g_in_draw_phase guard — Stands vtable[18] is called during
+ * Update AND Draw. D3D transforms only work during Draw. */
 static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
+    /* v55m_42w: Skip D3D transforms during Update phase — only apply during Draw.
+     * During Update, the D3D device isn't in a render state and calling
+     * GetTransform/SetTransform crashes at MeshArchive_ctor (0x478EDD). */
+    if (!g_in_draw_phase) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+
     CatapultState* cs = NULL;
     int i;
     for (i = 0; i < g_catapult_count; i++) {
@@ -2461,18 +2545,20 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_42v: Hook MAIN catapult vtable[18] for Y-axis rotation.
-                     * Stands vtable is SHARED — must copy per-object, not modify in-place.
-                     * Size 0x50 (20 entries) covers slot 18 at offset 0x48. */
+                    /* v55m_42w: Hook Stands vtable[18] with g_in_draw_phase guard.
+                     * Stands vtable is SHARED — must copy per-object (0x50 bytes, 20 entries).
+                     * Render hook checks g_in_draw_phase before doing D3D transforms. */
                     {
-                        DWORD orig_vtable = *(DWORD*)obj;
-                        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 0x50)) {
-                            DWORD* new_vtable = (DWORD*)pfn_operator_new(0x50);
-                            if (new_vtable) {
-                                memcpy(new_vtable, (void*)orig_vtable, 0x50);
-                                cs->orig_vtable18 = new_vtable[18];
-                                new_vtable[18] = (DWORD)&cEnt_catapult_render;
-                                *(DWORD*)obj = (DWORD)new_vtable;
+                        DWORD* orig_vt = *(DWORD**)obj;
+                        if (orig_vt && !IsBadReadPtr(orig_vt, 0x50)) {
+                            DWORD* new_vt = (DWORD*)pfn_operator_new(0x50);
+                            if (new_vt) {
+                                memcpy(new_vt, orig_vt, 0x50);
+                                cs->orig_vtable18 = new_vt[18];
+                                new_vt[18] = (DWORD)cEnt_catapult_render;
+                                *(DWORD**)obj = new_vt;
+                                if (logf) fprintf(logf, "  ROTATER: Catapult vtable[18] hook installed (0x%08X -> 0x%08X)\n",
+                                    cs->orig_vtable18, new_vt[18]);
                             }
                         }
                     }
@@ -3990,6 +4076,12 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
     }
 }
 
+/* v55m_42w: renderscene_helper — called from Graphics_RenderScene hook.
+ * Sets g_in_draw_phase=1 so Stands vtable[18] hooks can do D3D transforms. */
+static void __cdecl renderscene_helper(void) {
+    g_in_draw_phase = 1;
+}
+
 static void __cdecl gluebie_present_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
     g_gluebie_ball_in_zone = 0;  /* reset before check */
@@ -4001,6 +4093,10 @@ static void __cdecl gluebie_present_helper(void) {
     if (board && g_tarpit_count > 0) {
         cEnt_tarpit_proximity_check(board);
     }
+    /* v55m_42w: Clear draw-phase guard at start of each frame.
+     * Graphics_RenderScene sets it to 1 during Draw phase. */
+    g_in_draw_phase = 0;
+
     /* v55m_7: Chomper state machine + rendering MUST run on main thread.
      * It calls D3D/Gfx functions (Timer_Init, Gfx_Scale, mesh vtable[7])
      * that need the D3D render context. Running from the background thread
@@ -5156,7 +5252,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42v Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42w Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -5171,6 +5267,11 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
+    /* v55m_42w: Install RenderScene hook for draw-phase guard.
+     * Graphics_RenderScene (0x454BC0) sets g_in_draw_phase=1 during Draw.
+     * Stands vtable[18] is called during Update AND Draw — we use this to
+     * skip D3D transforms during Update. */
+    install_renderscene_hook();
     /* v55j_9: Install Ball_Render hook for tar splotch visual.
      * Runs AFTER Ball_Update (which clears ball+0x260), re-sets it if in zone. */
     install_ballrender_hook();
