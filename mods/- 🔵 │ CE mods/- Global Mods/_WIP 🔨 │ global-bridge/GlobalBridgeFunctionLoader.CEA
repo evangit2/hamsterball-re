@@ -1,0 +1,281 @@
+[ENABLE]
+
+// =============================================================
+// Global Bridge Function Loader v1.1
+// Activates breakable bridge behavior on PopCylinder-spawned
+// Level2-Bridge meshes (from your custom mesh spawner script).
+//
+// Hook: Ball_Update at 0x00405E22
+// Detection: scans board+0x2578 for PopCylinder objects (vtable=0x4D58F0)
+// Trigger: player ball within 80 units
+// Action: spawns real BreakBridge entity at same position, hides old PopCylinder
+//
+// Addresses traced from Hamsterball.exe via Ghidra:
+//   PopCylinder_ctor     = 0x436EE0
+//   BreakBridge_ctor     = 0x436D70  (__thiscall, RET 0x14)
+//   operator_new         = 0x4BA57B
+//   AthenaList_Append    = 0x453810
+//   PopCylinder vtable   = 0x4D58F0
+//   BreakBridge vtable   = 0x4D5890
+//
+// Object offsets:
+//   +0x000 vtable
+//   +0x10D0 board
+//   +0x10D4 X
+//   +0x10D8 Y
+//   +0x10DC Z
+//   +0x10E0 collision/render subobject
+//   +0x10E4 visible flag
+//   +0x10E5 conversion marker (unused by game)
+//   +0x10F0 breaker active flag
+// =============================================================
+
+alloc(BridgeCode, 8192)
+alloc(saved_board, 4)
+alloc(last_board, 4)
+alloc(playerX, 4)
+alloc(playerY, 4)
+alloc(playerZ, 4)
+alloc(prox_radius_sq, 4)
+alloc(temp_obj, 4)
+alloc(temp_x, 4)
+alloc(temp_y, 4)
+alloc(temp_z, 4)
+
+saved_board:
+  dd 0
+
+last_board:
+  dd 0
+
+playerX:
+  dd 0
+
+playerY:
+  dd 0
+
+playerZ:
+  dd 0
+
+prox_radius_sq:
+  dd 45C80000      // 80.0 * 80.0 = 6400.0
+
+temp_obj:
+  dd 0
+
+temp_x:
+  dd 0
+
+temp_y:
+  dd 0
+
+temp_z:
+  dd 0
+
+label(original_code)
+label(check_board)
+label(no_clear)
+label(scan_start)
+label(scan_loop)
+label(scan_next)
+label(scan_done)
+label(do_convert)
+label(convert_done)
+label(skip_col)
+
+BridgeCode:
+  // Only run for player ball
+  cmp dword [esi+0x18], 0
+  jne original_code
+
+  mov eax, [esi+0x14]
+  test eax, eax
+  jz original_code
+  mov [saved_board], eax
+
+  // Clear conversion markers when board changes
+  cmp eax, [last_board]
+  je no_clear
+  mov [last_board], eax
+
+no_clear:
+  // Save player position
+  mov eax, [esi+0x164]
+  mov [playerX], eax
+  mov eax, [esi+0x168]
+  mov [playerY], eax
+  mov eax, [esi+0x16C]
+  mov [playerZ], eax
+
+  // Scan board+0x2578 active objects for unconverted PopCylinder bridges
+  pushad
+
+scan_start:
+  mov edx, [saved_board]
+  add edx, 0x2578
+  mov ecx, [edx+0x04]
+  test ecx, ecx
+  jle scan_done
+  mov ebp, [edx+0x40C]
+  test ebp, ebp
+  jz scan_done
+  xor ebx, ebx
+
+scan_loop:
+  cmp ebx, ecx
+  jge scan_done
+  mov edi, [ebp+ebx*4]
+  test edi, edi
+  jz scan_next
+
+  // Skip if already converted
+  cmp byte [edi+0x10E5], 0
+  jne scan_next
+
+  // Check vtable = PopCylinder
+  mov eax, [edi]
+  cmp eax, 0x004D58F0
+  jne scan_next
+
+  // Proximity check: dist^2 < 6400
+  // FPU stack: st0=dx^2+dz^2, then add dy^2, compare with radius^2
+  fld dword [edi+0x10D4]
+  fsub dword [playerX]
+  fmul st(0), st(0)
+  fld dword [edi+0x10DC]
+  fsub dword [playerZ]
+  fmul st(0), st(0)
+  faddp
+  fld dword [edi+0x10D8]
+  fsub dword [playerY]
+  fmul st(0), st(0)
+  faddp
+  fld dword [prox_radius_sq]
+  fcomip st(1)
+  fstp st(0)
+  jb scan_next
+
+  // Found bridge within range - convert it
+  jmp do_convert
+
+scan_next:
+  inc ebx
+  jmp scan_loop
+
+scan_done:
+  popad
+  jmp original_code
+
+do_convert:
+  // Save position
+  mov eax, [edi+0x10D4]
+  mov [temp_x], eax
+  mov eax, [edi+0x10D8]
+  mov [temp_y], eax
+  mov eax, [edi+0x10DC]
+  mov [temp_z], eax
+
+  // Allocate BreakBridge object (0x1100 bytes)
+  push 0x1100
+  call 004BA57B
+  add esp, 4
+  test eax, eax
+  jz convert_done
+  mov [temp_obj], eax
+
+  // BreakBridge_ctor(this, board, x, y, z, mesh_source)
+  // mesh_source = old PopCylinder object (Stands_ctor clones spatial tree from it)
+  push edi
+  push dword [temp_z]
+  push dword [temp_y]
+  push dword [temp_x]
+  push dword [saved_board]
+  mov ecx, [temp_obj]
+  call 00436D70
+  test eax, eax
+  jz convert_done
+  mov [temp_obj], eax
+
+  // Activate breaker state machine
+  mov eax, [temp_obj]
+  mov byte [eax+0x10F0], 1
+
+  // Mark original PopCylinder as converted and hide it
+  mov byte [edi+0x10E5], 1
+  mov byte [edi+0x10E4], 0
+
+  // Register BreakBridge in active objects list
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x2578
+  call 00453810
+
+  // Register BreakBridge in render list
+  mov eax, [temp_obj]
+  push eax
+  mov ecx, [saved_board]
+  add ecx, 0x0CD4
+  call 00453810
+
+  // Register BreakBridge collision object at +0x10E0
+  mov eax, [temp_obj]
+  mov edx, [eax+0x10E0]
+  test edx, edx
+  jz skip_col
+  push edx
+  mov ecx, [saved_board]
+  add ecx, 0x10EC
+  call 00453810
+
+  mov edx, [saved_board]
+  mov edx, [edx+0x8B0]
+  test edx, edx
+  jz skip_col
+  mov eax, [temp_obj]
+  mov eax, [eax+0x10E0]
+  push eax
+  lea ecx, [edx+0x18]
+  call 00453810
+
+skip_col:
+  // Register in scene render tree
+  mov edx, [saved_board]
+  mov edx, [edx+0x8AC]
+  test edx, edx
+  jz convert_done
+  mov edx, [edx+0x480]
+  test edx, edx
+  jz convert_done
+  mov eax, [temp_obj]
+  push eax
+  lea ecx, [edx+0x1C]
+  call 00453810
+
+convert_done:
+  popad
+  jmp original_code
+
+original_code:
+  mov eax, [esi+0x0C5C]
+  jmp 00405E28
+
+00405E22:
+  jmp BridgeCode
+  nop
+
+[DISABLE]
+
+00405E22:
+  db 8B 86 5C 0C 00 00
+
+dealloc(BridgeCode)
+dealloc(saved_board)
+dealloc(last_board)
+dealloc(playerX)
+dealloc(playerY)
+dealloc(playerZ)
+dealloc(prox_radius_sq)
+dealloc(temp_obj)
+dealloc(temp_x)
+dealloc(temp_y)
+dealloc(temp_z)
