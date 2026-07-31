@@ -552,6 +552,15 @@ static void __thiscall cEnt_catapult_arm_render(DWORD this_, char param_1, int p
         return;
     }
 
+    /* v55m_42t: diagnostic log — confirm hook fires and current angle */
+    if (cs->arm_angle != 0.0f) {
+        FILE* df = fopen("custom_entities_catapult.log", "a");
+        if (df) {
+            fprintf(df, "ARM_RENDER: obj=0x%08X angle=%.2f\n", this_, cs->arm_angle);
+            fclose(df);
+        }
+    }
+
     DWORD app = *(DWORD*)0x005341E0;
     if (app) {
         DWORD gfx = *(DWORD*)((char*)app + 0x174);
@@ -568,32 +577,18 @@ static void __thiscall cEnt_catapult_arm_render(DWORD this_, char param_1, int p
                     float saveMatrix[16];
                     pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
 
-                    /* Y-axis rotation matrix (row-major D3D convention) */
+                    /* v55m_42t: use exact same Y-rotation matrix as working Waterwheel hook */
                     float angle = cs->arm_angle * 3.14159265f / 180.0f;
                     float c = cosf(angle);
                     float s = sinf(angle);
                     float rotMatrix[16] = {
-                        c,   0,  s, 0,
-                        0,   1,  0, 0,
-                        -s,  0,  c, 0,
-                        0,   0,  0, 1
-                    };
-                    /* Translate to pivot, rotate, translate back:
-                     * pivot is the catapult position (cs->x,y,z) */
-                    float tx = cs->x;
-                    float ty = cs->y;
-                    float tz = cs->z;
-                    float finalMatrix[16] = {
-                        rotMatrix[0],  rotMatrix[1],  rotMatrix[2],  rotMatrix[3],
-                        rotMatrix[4],  rotMatrix[5],  rotMatrix[6],  rotMatrix[7],
-                        rotMatrix[8],  rotMatrix[9],  rotMatrix[10], rotMatrix[11],
-                        tx - (rotMatrix[0]*tx + rotMatrix[1]*ty + rotMatrix[2]*tz),
-                        ty - (rotMatrix[4]*tx + rotMatrix[5]*ty + rotMatrix[6]*tz),
-                        tz - (rotMatrix[8]*tx + rotMatrix[9]*ty + rotMatrix[10]*tz),
-                        rotMatrix[15]
+                        c,  0, -s, 0,
+                        0,  1,  0, 0,
+                        s,  0,  c, 0,
+                        0,  0,  0, 1
                     };
 
-                    pfn_SetTransform(device, 256, finalMatrix);
+                    pfn_SetTransform(device, 256, rotMatrix);
                     typedef void (__thiscall *render_t)(DWORD, char, int);
                     ((render_t)cs->arm_orig_vtable18)(this_, param_1, param_2);
                     pfn_SetTransform(device, 256, saveMatrix);
