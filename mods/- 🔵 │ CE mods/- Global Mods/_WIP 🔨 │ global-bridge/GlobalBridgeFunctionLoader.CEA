@@ -292,7 +292,7 @@ state_0:
   test eax, eax
   jg state_0_wait
 
-  // Proximity check: dist^2 < 6400
+  // Proximity check: dist^2 <= radius^2
   fld dword [edi+0x10D4]
   fsub dword [playerX]
   fmul st(0), st(0)
@@ -304,10 +304,12 @@ state_0:
   fsub dword [playerY]
   fmul st(0), st(0)
   faddp
-  fld dword [prox_radius_sq]
-  fcomip st(1)
-  fstp st(0)
-  jb state_done
+  fld dword [prox_radius_sq]  // st0=radius_sq, st1=dist^2
+  fcompp                      // compare and pop both, FPU empty
+  fnstsw ax
+  test ah, 0x41
+  jp state_done               // radius >= dist -> continue (trigger)
+                              // dist > radius -> skip
 
   // Ball is close - trigger fall
   mov dword [bridge_table+ebp+20], 1
