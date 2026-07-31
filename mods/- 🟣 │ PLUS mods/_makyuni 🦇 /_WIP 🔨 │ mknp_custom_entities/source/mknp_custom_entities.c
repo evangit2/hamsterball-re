@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43b
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43c
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -594,9 +594,72 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
-/* v55m_43b: REMOVED cEnt_catapult_render and cEnt_catapult_arm_render.
- * Vtable[18] hook caused stack corruption in entity_thread (crash 0002:00009E75).
- * Catapult rotation is no longer applied via vtable hook. */
+/* v55m_43c: cEnt Catapult render — rotate the catapult object around Y.
+ * v55m_42w: Added g_in_draw_phase guard — Stands vtable[18] is called during
+ * Update AND Draw. D3D transforms only work during Draw.
+ * v55m_43c: Uses the SAME pattern as the working Chomper/Waterwheel hooks:
+ * 256-byte vtable copy (64 entries), IsBadReadPtr(orig, 256).
+ * The previous 0x50-byte (20-entry) copy was too small — the game read
+ * vtable slots beyond entry 20, hitting garbage and corrupting the stack. */
+static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
+    /* v55m_43a: During Update phase, DO NOTHING — just return.
+     * The original Stands vtable[18] function (0x0045E0E0 = D3DXSkinMesh_CopyStripData)
+     * is NOT safe to call during Update. It corrupts mesh data structures and causes
+     * crashes at 0x00478EDD (MeshArchive_ctor REP MOVSD) or stack corruption in our DLL.
+     * The Update call is redundant for a static mesh — vertex data doesn't change. */
+    if (!g_in_draw_phase) {
+        return;
+    }
+
+    CatapultState* cs = NULL;
+    int i;
+    for (i = 0; i < g_catapult_count; i++) {
+        if (g_catapults[i].obj == this_) { cs = &g_catapults[i]; break; }
+    }
+    if (!cs || !cs->orig_vtable18) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+
+    DWORD app = *(DWORD*)0x005341E0;
+    if (app) {
+        DWORD gfx = *(DWORD*)((char*)app + 0x174);
+        if (gfx) {
+            DWORD device = *(DWORD*)((char*)gfx + 0x154);
+            if (device && !IsBadReadPtr((void*)device, 4)) {
+                DWORD* dev_vtable = *(DWORD**)device;
+                if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
+                    typedef void (__stdcall *GetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                    typedef void (__stdcall *SetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                    GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
+                    SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
+
+                    float saveMatrix[16];
+                    pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
+
+                    float angle = cs->arm_angle * 3.14159265f / 180.0f;
+                    float c = cosf(angle);
+                    float s = sinf(angle);
+                    float rotMatrix[16] = {
+                        c,  0, -s, 0,
+                        0,  1,  0, 0,
+                        s,  0,  c, 0,
+                        0,  0,  0, 1
+                    };
+
+                    pfn_SetTransform(device, 256, rotMatrix);
+                    typedef void (__thiscall *render_t)(DWORD, char, int);
+                    ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
+                    pfn_SetTransform(device, 256, saveMatrix);
+                    return;
+                }
+            }
+        }
+    }
+    typedef void (__thiscall *render_t)(DWORD, char, int);
+    ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
+}
 
 /* Vec3_Copy — copy 3 floats */
 typedef void (__thiscall *Vec3_Copy_t)(float* dst, float* src);
@@ -2388,21 +2451,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* v55m_1: Catapult_ctor already creates Level_RenderCtor at obj+0x10D4 internally.
                  * Do NOT create a duplicate — the old code overwrote the ctor's Level,
                  * breaking the TowerCollisionEvents mesh pointer match. */
-                /* v55m_42w: REMOVED — collision list append causes crash at 0x478EDD
-                 * during Update. The Catapult_ctor creates a Tower-specific Level
-                 * at obj+0x10D4 that references non-existent assets on non-Tower levels.
-                 * Disabled for now. */
-                /*
-                DWORD cat_col_obj = *(DWORD*)((char*)obj + 0x10D4);
-                if (cat_col_obj && !IsBadReadPtr((void*)cat_col_obj, 0x20)) {
-                    pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)cat_col_obj);
-                    DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
-                    if (scene_col) {
-                        pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)cat_col_obj);
+                /* v55m_43c: RE-ENABLED collision list append.
+                 * v55m_42w disabled it because it crashed at 0x478EDD — but that
+                 * crash was actually caused by the vtable[18] hook calling 0x45E0E0
+                 * during Update, corrupting the mesh buffers that the collision
+                 * Level at obj+0x10D4 references. With the g_in_draw_phase guard,
+                 * 0x45E0E0 is never called during Update, so the collision Level's
+                 * mesh data stays intact. Adding it now makes the catapult solid. */
+                {
+                    DWORD cat_col_obj = *(DWORD*)((char*)obj + 0x10D4);
+                    if (cat_col_obj && !IsBadReadPtr((void*)cat_col_obj, 0x20)) {
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)cat_col_obj);
+                        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                        if (scene_col) {
+                            pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)cat_col_obj);
+                        }
+                        if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                     }
-                    if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
-                */
                 /* v55m_42f: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
                  * Do NOT use DispatchCollisionEvents SEH trampoline hook — causes Draw crashes.
                  * Use Present-hook radius trigger instead (restored from v55m_28m). */
@@ -2427,12 +2493,29 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_43b: REMOVED vtable[18] hook entirely. Copying the vtable
-                     * and replacing slot 18 with cEnt_catapult_render caused stack
-                     * corruption in entity_thread (crash 0002:00009E75). The catapult
-                     * uses the original Stands vtable normally. Y-rotation is attempted
-                     * by writing angle to obj+0x10E4 (SWIRL render-angle field) from
-                     * the Present hook. */
+                    /* v55m_43c: Hook Stands vtable[18] for Y-rotation render.
+                     * FIXED: The Catapult vtable (0x4D4F98) is a MULTI-BLOCK vtable
+                     * with 200+ entries (each Stands object block is ~24 entries,
+                     * laid out sequentially). The previous 0x50-byte (20-entry) copy
+                     * in v55m_42x/43a was too small — the game calls vtable[24],
+                     * [35], [61], [68], etc. (Catapult_Update at [61]=0x0043F080),
+                     * reading garbage past our copy → stack corruption (0002:00009E75).
+                     * v55m_43c: copy the FULL vtable (0x400 bytes = 256 entries).
+                     * g_in_draw_phase guard prevents D3D calls during Update. */
+                    {
+                        DWORD* orig_vt = *(DWORD**)obj;
+                        if (orig_vt && !IsBadReadPtr(orig_vt, 0x400)) {
+                            DWORD* new_vt = (DWORD*)pfn_operator_new(0x400);
+                            if (new_vt) {
+                                memcpy(new_vt, orig_vt, 0x400);
+                                cs->orig_vtable18 = new_vt[18];
+                                new_vt[18] = (DWORD)cEnt_catapult_render;
+                                *(DWORD**)obj = new_vt;
+                                if (logf) fprintf(logf, "  ROTATER: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
+                                    cs->orig_vtable18, new_vt[18]);
+                            }
+                        }
+                    }
 
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
@@ -5123,7 +5206,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43b Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43c Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -5138,9 +5221,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
-    /* v55m_43b: REMOVED install_renderscene_hook() — the RenderScene hook
-     * was only needed for the vtable[18] draw-phase guard (g_in_draw_phase).
-     * Without the catapult vtable hook, this code cave at 0x454BC0 is unnecessary. */
+    /* v55m_43c: Restore RenderScene hook — sets g_in_draw_phase=1 during Draw.
+     * The catapult vtable[18] hook needs this to skip D3D transforms during
+     * Update (calling 0x45E0E0 during Update corrupts mesh data → 0x478EDD). */
+    install_renderscene_hook();
     /* v55j_9: Install Ball_Render hook for tar splotch visual.
      * Runs AFTER Ball_Update (which clears ball+0x260), re-sets it if in zone. */
     install_ballrender_hook();
