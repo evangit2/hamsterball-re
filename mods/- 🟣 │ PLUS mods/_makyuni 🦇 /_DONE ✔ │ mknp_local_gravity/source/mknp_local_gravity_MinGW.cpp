@@ -1,5 +1,5 @@
 /*
- * LocalGravity_MinGW.cpp — Per-level gravity override (HB+ v2.0, MinGW)
+ * mknp_local_gravity_MinGW.cpp — Per-level gravity override (HB+ v2.0, MinGW)
  *
  * Reads 30 gravity values from mknp_plus_local_gravity.txt:
  *   Lines 1-15:  Race levels (Warm-Up through Impossible)

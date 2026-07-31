@@ -1,5 +1,5 @@
 /*
- * icon_and_windowname.c — Custom icon & window title mod for Hamsterball
+ * mknp_icon_and_windowname.c — Custom icon & window title mod for Hamsterball
  *
  * Features:
  *   1. Custom window title — replaces "Hamsterball" window name
@@ -7,10 +7,10 @@
  *      If found: replaces both .exe icon and runtime window icon
  *      If not found: game uses original icon
  *
- * Config file: icon_and_windowname.txt (auto-generated next to bass.dll)
+ * Config file: mknp_icon_and_windowname.txt (auto-generated next to bass.dll)
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll icon_and_windowname.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_icon_and_windowname.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  */
@@ -243,7 +243,7 @@ static void init_paths(void)
     }
 
     /* Config file next to bass.dll (same directory as exe) */
-    snprintf(g_config_path, MAX_PATH, "%sicon_and_windowname.txt", g_game_dir);
+    snprintf(g_config_path, MAX_PATH, "%smknp_icon_and_windowname.txt", g_game_dir);
 
     /* State file */
     snprintf(g_state_path, MAX_PATH, "%s.icon_state.txt", g_game_dir);

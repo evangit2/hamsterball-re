@@ -2,7 +2,7 @@
  * custom_credits — Editable Credits Screen Text
  * ==============================================
  *
- * Reads "custom_credits.txt" from the game directory and replaces the
+ * Reads "mknp_custom_credits.txt" from the game directory and replaces the
  * hard-coded credits strings that are PUSHed onto the stack before
  * AthenaList_Append calls in CreditsScreen_ctor (0x4254e0).
  *
@@ -10,7 +10,7 @@
  * Each line is a PUSH imm32 instruction (0x68 + 4-byte string pointer).
  * We overwrite the 4-byte immediate to point to our own string buffer.
  *
- * Config format (custom_credits.txt):
+ * Config format (mknp_custom_credits.txt):
  *   N=text     — Line N (1-44) gets the text after =
  *   #comment   — Comment line, ignored
  *   N=         — Empty text = blank separator line
@@ -18,7 +18,7 @@
  * If the config file is missing, it is auto-generated with defaults.
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll mod.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_custom_credits.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  */
@@ -347,15 +347,15 @@ static void apply_custom_credits(void) {
             char *last_slash = strrchr(exe_path, '\\');
             if (last_slash) {
                 *(last_slash + 1) = '\0';
-                snprintf(config_path, MAX_PATH, "%scustom_credits.txt", exe_path);
+                snprintf(config_path, MAX_PATH, "%smknp_custom_credits.txt", exe_path);
             } else {
-                strcpy_s(config_path, MAX_PATH, "custom_credits.txt");
+                strcpy_s(config_path, MAX_PATH, "mknp_custom_credits.txt");
             }
         } else {
-            strcpy_s(config_path, MAX_PATH, "custom_credits.txt");
+            strcpy_s(config_path, MAX_PATH, "mknp_custom_credits.txt");
         }
     } else {
-        strcpy_s(config_path, MAX_PATH, "custom_credits.txt");
+        strcpy_s(config_path, MAX_PATH, "mknp_custom_credits.txt");
     }
 
     mod_log("[custom_credits] Config path: %s", config_path);

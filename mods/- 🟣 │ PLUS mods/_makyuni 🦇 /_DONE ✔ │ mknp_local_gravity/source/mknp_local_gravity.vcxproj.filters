@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="LocalGravity.cpp">
+    <ClCompile Include="mknp_local_gravity.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

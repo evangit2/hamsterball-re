@@ -1,5 +1,5 @@
 /*
- * custom_sfx.c — Custom Sound Effects Replacement Mod for Hamsterball
+ * mknp_custom_sfx.c — Custom Sound Effects Replacement Mod for Hamsterball
  *
  * Hooks Sound_LoadOggOrWav (0x459660) to redirect sound file loading.
  * Generates custom_sfx.txt with all 61 sounds, their properties, and
@@ -7,7 +7,7 @@
  * load any .ogg or .wav file from the sounds\ folder.
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll custom_sfx.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_custom_sfx.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  */

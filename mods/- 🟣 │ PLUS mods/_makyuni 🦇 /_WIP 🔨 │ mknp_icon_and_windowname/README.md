@@ -12,15 +12,15 @@ Custom icon and window title mod for Hamsterball.
 
 ## Installation
 
-1. Rename your original `bass.dll` to `bass_real.dll`
-2. Copy the modded `bass.dll` into the game folder
-3. Run the game once — it will auto-generate `icon_and_windowname.txt`
+1. Rename your original `mknp_icon_and_windowname.dll` to `bass_real.dll`
+2. Copy the modded `mknp_icon_and_windowname.dll` into the game folder
+3. Run the game once — it will auto-generate `mknp_icon_and_windowname.txt`
 4. To change the icon: place a file named `icon.ico` in the game folder (next to `Hamsterball.exe`)
-5. To change the window title: edit `icon_and_windowname.txt`
+5. To change the window title: edit `mknp_icon_and_windowname.txt`
 
 ## Configuration
 
-Edit `icon_and_windowname.txt`:
+Edit `mknp_icon_and_windowname.txt`:
 
 ```ini
 # Custom window title (shown in title bar)
@@ -46,9 +46,9 @@ The state file `.icon_state.txt` tracks whether the .exe was already updated, so
 
 ## Files
 
-- `bass.dll` — compiled mod proxy
-- `icon_and_windowname.c` — source code
-- `icon_and_windowname.txt` — auto-generated config file
+- `mknp_icon_and_windowname.dll` — compiled mod proxy
+- `mknp_icon_and_windowname.c` — source code
+- `mknp_icon_and_windowname.txt` — auto-generated config file
 
 ## Crash Test
 

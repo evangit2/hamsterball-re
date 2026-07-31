@@ -1,5 +1,5 @@
 /*
- * LocalGravity.cpp — Per-Level Gravity Override (HB+ API v2.0)
+ * mknp_local_gravity.cpp — Per-Level Gravity Override (HB+ API v2.0)
  *
  * Reads gravity values from mknp_plus_local_gravity.txt (30 lines):
  *   Lines 1-15:  Race levels (Warm-Up through Impossible)
@@ -13,7 +13,7 @@
  * directory first, then the current working directory as fallback.
  *
  * Build (Visual Studio): compile as 32-bit DLL, place in Mods\ folder.
- * Build (MinGW): see LocalGravity_MinGW.cpp + nocrt.cpp
+ * Build (MinGW): see mknp_local_gravity_MinGW.cpp + nocrt.cpp
  */
 #define _CRT_SECURE_NO_WARNINGS
 #include "HamsterballAPI.h"

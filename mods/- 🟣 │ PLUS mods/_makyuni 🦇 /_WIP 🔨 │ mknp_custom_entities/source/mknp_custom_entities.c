@@ -1,6 +1,6 @@
 /*
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42t
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42t
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5098,10 +5098,10 @@ static void init_game_dir(void) {
     }
 }
 
-/* Load config from custom_entities.txt */
+/* Load config from mknp_custom_entities.txt */
 static void load_config(void) {
     char config_path[MAX_PATH];
-    snprintf(config_path, MAX_PATH, "%s\\custom_entities.txt", g_game_dir);
+    snprintf(config_path, MAX_PATH, "%s\\mknp_custom_entities.txt", g_game_dir);
     FILE* f = NULL;
     fopen_s(&f, config_path, "r");
     if (!f) return;

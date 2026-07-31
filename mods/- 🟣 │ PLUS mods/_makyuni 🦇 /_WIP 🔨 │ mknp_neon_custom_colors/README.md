@@ -5,9 +5,9 @@ Change the player ball outline and emitter glow to any color — for both P1 and
 
 ## How it works
 
-A detour hook on `Scene_SetupLevelDark` (0x00416270) intercepts the Neon level setup. After the original function writes the default yellow colors to the phys/emitter structs, the hook overwrites the R/G/B values with values read from `neon_colors.txt`. This approach bypasses the 2-byte `PUSH imm8` limitation that prevents patching the B channel via static byte patches.
+A detour hook on `Scene_SetupLevelDark` (0x00416270) intercepts the Neon level setup. After the original function writes the default yellow colors to the phys/emitter structs, the hook overwrites the R/G/B values with values read from `mknp_neon_custom_colors.txt`. This approach bypasses the 2-byte `PUSH imm8` limitation that prevents patching the B channel via static byte patches.
 
-## Config file (`neon_colors.txt`)
+## Config file (`mknp_neon_custom_colors.txt`)
 
 ```
 NEON PLAYER1 OUTLINE:
@@ -34,7 +34,7 @@ NEON PLAYER2 GLOW:
 - **OUTLINE** = material colors (applied to Diffuse, Ambient, and Emissive)
 - **GLOW** = emitter light Diffuse color
 - Values are **floats** (e.g. `1.0`, `0.0`, `10.0`, `0.5`, `2.0`)
-- If `neon_colors.txt` is missing, a default one is **auto-generated** with original yellow values
+- If `mknp_neon_custom_colors.txt` is missing, a default one is **auto-generated** with original yellow values
 - Config is re-read every time the Neon level loads (edit and replay to see changes!)
 
 ### Color examples
@@ -53,10 +53,10 @@ For glow, use higher values (10.0 = default brightness, 20.0 = brighter, 5.0 = d
 
 ## Installation
 
-1. Rename your original `bass.dll` to `bass_real.dll`
-2. Copy the modded `bass.dll` and `neon_colors.txt` into the game folder
+1. Rename your original `mknp_neon_custom_colors.dll` to `bass_real.dll`
+2. Copy the modded `mknp_neon_custom_colors.dll` and `mknp_neon_custom_colors.txt` into the game folder
 3. Launch Hamsterball — the mod auto-generates a config file if missing
-4. Edit `neon_colors.txt` to set your desired colors, then restart the level
+4. Edit `mknp_neon_custom_colors.txt` to set your desired colors, then restart the level
 
 ## Technical details
 

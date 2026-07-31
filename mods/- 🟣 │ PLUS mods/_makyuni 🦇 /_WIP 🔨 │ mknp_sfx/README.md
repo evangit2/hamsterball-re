@@ -106,7 +106,7 @@ On level start (`onLevelStart`), the mod detects the current level via HB+ API `
 |------|-------------|
 | `mkn_plus_sfx.dll` | Compiled HB+ mod DLL |
 | `custom_sfx.txt` | Auto-generated config (individual sound replacements) |
-| `source/CustomSFX_MinGW.cpp` | Source code (MinGW) |
+| `source/mknp_sfx_MinGW.cpp` | Source code (MinGW) |
 | `source/nocrt.h` | Minimal CRT replacement header |
 | `source/nocrt.cpp` | CRT implementation (no msvcrt) |
 | `source/hbplus_api.h` | HB+ IModAPI vtable wrapper |

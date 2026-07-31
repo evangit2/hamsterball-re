@@ -25,8 +25,8 @@ Removes D3D8 triangle/vertex rendering limits in Hamsterball. Bass.dll proxy mod
 
 ## Installation
 
-1. Rename original `bass.dll` to `bass_real.dll`
-2. Copy `mkn_plus_tri_unlimit.dll` as `bass.dll` into the game folder
+1. Rename original `mknp_tri_unlimit.dll` to `bass_real.dll`
+2. Copy `mkn_plus_tri_unlimit.dll` as `mknp_tri_unlimit.dll` into the game folder
 
 ## Build
 

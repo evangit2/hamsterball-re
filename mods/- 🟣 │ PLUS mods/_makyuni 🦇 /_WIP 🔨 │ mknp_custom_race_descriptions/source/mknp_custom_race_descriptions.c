@@ -1,12 +1,12 @@
 /*
- * custom_race_descriptions.c — BASS.dll proxy mod
+ * mknp_custom_race_descriptions.c — BASS.dll proxy mod
  *
  * Allows customizing the 15 tournament race description texts shown on the
  * Tourney Menu screen. The original game stores these as a hardcoded pointer
  * table at 0x4F7148 (15 char* entries, one per race). This mod overwrites
  * those pointers at runtime to point to strings loaded from a .txt file.
  *
- * Config file: race_descriptions.txt (next to bass.dll)
+ * Config file: mknp_custom_race_descriptions.txt (next to bass.dll)
  *
  * The file format is:
  *
@@ -28,7 +28,7 @@
  * to a 375-pixel width (0x177). Long descriptions will wrap automatically.
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll custom_race_descriptions.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_custom_race_descriptions.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
  */
@@ -237,9 +237,9 @@ static void get_config_path(void)
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char *p = strrchr(g_config_path, '\\');
     if (p) {
-        strcpy(p + 1, "race_descriptions.txt");
+        strcpy(p + 1, "mknp_custom_race_descriptions.txt");
     } else {
-        strcpy(g_config_path, "race_descriptions.txt");
+        strcpy(g_config_path, "mknp_custom_race_descriptions.txt");
     }
 }
 

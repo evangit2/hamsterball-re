@@ -12,7 +12,7 @@
  * we check if the texture pointer is in our tracked set (built by scanning
  * the texture cache for filenames containing "checker" or "brick").
  *
- * Config: sharp_textures.txt (next to bass.dll)
+ * Config: mknp_sharp_textures.txt (next to bass.dll)
  *   MAGFILTER = 2          (default for all textures)
  *   MINFILTER = 2
  *   MIPFILTER = 2
@@ -121,9 +121,9 @@ static void get_config_path(char* out, DWORD len) {
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCSTR)&DllMain, &hSelf) && hSelf) {
         GetModuleFileNameA(hSelf, dll_path, MAX_PATH);
         char* slash = strrchr(dll_path, '\\');
-        if (slash) { slash[1] = '\0'; _snprintf(out, len, "%ssharp_textures.txt", dll_path); return; }
+        if (slash) { slash[1] = '\0'; _snprintf(out, len, "%smknp_sharp_textures.txt", dll_path); return; }
     }
-    _snprintf(out, len, "sharp_textures.txt");
+    _snprintf(out, len, "mknp_sharp_textures.txt");
 }
 
 static void generate_default_config(const char* path) {

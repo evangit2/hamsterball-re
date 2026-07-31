@@ -10,9 +10,9 @@ This mod overwrites those pointers at runtime to point to strings loaded from a 
 
 ## Installation
 
-1. Rename your original `bass.dll` to `bass_real.dll`
-2. Copy the modded `bass.dll` into your Hamsterball game folder
-3. On first launch, `race_descriptions.txt` will be auto-generated next to `bass.dll` with the original descriptions as a template
+1. Rename your original `mknp_custom_race_descriptions.dll` to `bass_real.dll`
+2. Copy the modded `mknp_custom_race_descriptions.dll` into your Hamsterball game folder
+3. On first launch, `mknp_custom_race_descriptions.txt` will be auto-generated next to `mknp_custom_race_descriptions.dll` with the original descriptions as a template
 4. Edit the `.txt` file and restart the game to see your custom descriptions
 
 ## Config File Format
@@ -59,12 +59,12 @@ Now let's try something a little more interesting...
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll custom_race_descriptions.c -lwinmm \
+i686-w64-mingw32-gcc -shared -o mknp_custom_race_descriptions.dll mknp_custom_race_descriptions.c -lwinmm \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc -Wl,--add-stdcall-alias
 ```
 
 ## Files
 
-- `custom_race_descriptions.c` — Source code
-- `bass.dll` — Compiled mod DLL
-- `race_descriptions.txt` — Default config file with original descriptions
+- `mknp_custom_race_descriptions.c` — Source code
+- `mknp_custom_race_descriptions.dll` — Compiled mod DLL
+- `mknp_custom_race_descriptions.txt` — Default config file with original descriptions

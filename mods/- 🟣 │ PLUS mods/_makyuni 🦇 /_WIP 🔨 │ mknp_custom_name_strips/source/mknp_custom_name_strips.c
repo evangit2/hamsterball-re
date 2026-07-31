@@ -1,5 +1,5 @@
 /*
- * custom_name_strips.c — BASS.dll proxy mod
+ * mknp_custom_name_strips.c — BASS.dll proxy mod
  *
  * Custom per-level RGBA colors for the horizontal strip behind the
  * Race/Arena name shown at the beginning of each race.
@@ -14,10 +14,10 @@
  * reads the level name from board+0x29B4 and patches the cave's
  * float operands with per-level custom values from a config file.
  *
- * Config file: name_strips.txt (next to bass.dll)
+ * Config file: mknp_custom_name_strips.txt (next to bass.dll)
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll custom_name_strips.c -lwinmm \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_custom_name_strips.c -lwinmm \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
  */
@@ -661,9 +661,9 @@ static void init_mod(void) {
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char *p = strrchr(g_config_path, '\\');
     if (p) {
-        strcpy(p + 1, "name_strips.txt");
+        strcpy(p + 1, "mknp_custom_name_strips.txt");
     } else {
-        strcpy(g_config_path, "name_strips.txt");
+        strcpy(g_config_path, "mknp_custom_name_strips.txt");
     }
 
     /* Create default config if it doesn't exist */

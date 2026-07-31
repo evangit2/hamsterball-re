@@ -15,7 +15,7 @@
  *      the combined vertex buffer pointers at +0x448 and +0x44C.
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_plus_tri_unlimit.c \
+ *   i686-w64-mingw32-gcc -shared -o mknp_tri_unlimit.dll mkn_plus_tri_unlimit.c \
  *     bass.def -O2 -static -static-libgcc \
  *     -Wl,--enable-stdcall-fixup -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
