@@ -1,43 +1,55 @@
-# mkn_plus_icon_and_windowname
+# icon_and_windowname
 
-**Author:** MAKYUNI  
-**Type:** Hamsterball Plus (HB+) mod  
-**Ported from:** bass.dll proxy mod `icon_and_windowname`
+Custom icon and window title mod for Hamsterball.
 
-## Description
+## Features
 
-Customizes the Hamsterball window title and icon:
-
-1. **Custom window title** — replaces the "Hamsterball" window name with text from config
-2. **Custom icon** — searches for `icon.ico` in the game root folder; if found, replaces the runtime window icon via WM_SETICON
-
-The original bass.dll proxy mod used a background thread to poll for the window handle. In the HB+ port, this polling is done via `onGameUpdate()` callbacks instead.
+- **Custom window title**: Set any text as the window title bar name via config.
+- **Custom icon**: Place `icon.ico` in the game root folder. The mod automatically:
+  - Applies it at runtime via `WM_SETICON` (immediate effect)
+  - Permanently updates `Hamsterball.exe`'s RT_ICON resources (takes effect on next restart)
+- **No icon.ico?**: Game uses the original Hamsterball icon. Nothing changes.
 
 ## Installation
 
-1. Place `mkn_plus_icon_and_windowname.dll` in the Hamsterball `Mods\` folder
-2. On first launch, the mod auto-generates `mkn_plus_icon_and_windowname.txt` in the same folder
-3. Edit the text file to change the window title
-4. To change the game icon, place a file named `icon.ico` in the game root folder (next to `Hamsterball.exe`)
+1. Rename your original `bass.dll` to `bass_real.dll`
+2. Copy the modded `bass.dll` into the game folder
+3. Run the game once — it will auto-generate `icon_and_windowname.txt`
+4. To change the icon: place a file named `icon.ico` in the game folder (next to `Hamsterball.exe`)
+5. To change the window title: edit `icon_and_windowname.txt`
 
-## Config Format
+## Configuration
 
-```
-# Icon & Window Name Mod Configuration
-# Lines starting with # are comments
+Edit `icon_and_windowname.txt`:
 
+```ini
 # Custom window title (shown in title bar)
-# Leave as Hamsterball for default
 window_name = Hamsterball
 
 # To change the game icon, place a file named
 # icon.ico in the game root folder (next to Hamsterball.exe)
 ```
 
-## Build
+**window_name**: Any text string. Default: `Hamsterball`
 
-```bash
-cd source && bash build.sh
-```
+**Icon**: No config option — just drop `icon.ico` next to `Hamsterball.exe`. If the file exists, it replaces both the runtime window icon and the permanent .exe icon. If it doesn't exist, the original icon is used.
 
-Requires `i686-w64-mingw32-g++` (MinGW cross-compiler).
+### Permanent .exe icon update
+
+The .exe is locked while the game runs, so the mod:
+1. Copies `Hamsterball.exe` → `Hamsterball.exe.tmp`
+2. Updates RT_ICON resources on the temp copy via `UpdateResourceA`
+3. Schedules replacement via `MoveFileExA(MOVEFILE_DELAY_UNTIL_REBOOT)` (Windows replaces on next restart)
+4. If no admin: writes `update_icon.bat` — double-click after closing the game
+
+The state file `.icon_state.txt` tracks whether the .exe was already updated, so it only runs once.
+
+## Files
+
+- `bass.dll` — compiled mod proxy
+- `icon_and_windowname.c` — source code
+- `icon_and_windowname.txt` — auto-generated config file
+
+## Crash Test
+
+Passed: 38.9s, no crash (Wine/Xvfb, hbtestd).

@@ -1,0 +1,49 @@
+# ============================================================
+# MESHWORLD LEVEL SYSTEM — Custom Function Definitions
+# ============================================================
+# Define custom functions in a simple scripting language.
+# These can be referenced by name in mknp_level_system.txt:
+#   VTABLE 1 36 MyCustomFunc
+#
+# Syntax:
+#   FUNCTION Name
+#     CALL GameFuncName           ; Call a game function (ECX=board)
+#     SET board+0x1A4 = 5.0       ; Write float to board+offset
+#     SET 0x004D04B0 = 0.0        ; Write float to absolute address
+#     SET $var = 1.0              ; Set local variable
+#     READ board+0x3624 -> $var   ; Read board+offset into variable
+#     IF board+0x14C == 0         ; Conditional block
+#       CALL Scene_Update
+#     ENDIF
+#     LOG "message"               ; Write to log file
+#     NOP                         ; Do nothing
+#   ENDFUNC
+#
+# Variables: $name (float, local to function call)
+# Memory: board+0xOFFSET or 0xHEXADDR (absolute)
+# Expressions: float literals, $vars (arithmetic: +, -, *, /)
+# Comparisons: ==, !=, <, >, <=, >=
+# ============================================================
+
+# Example 1: Simple per-frame function that fades the screen
+FUNCTION FadeScreen
+  READ board+0x3624 -> $alpha
+  SET board+0x3624 = $alpha + 0.025
+ENDFUNC
+
+# Example 2: Only call when ball is not finished
+FUNCTION SafeUpdate
+  IF board+0x14C == 0
+    CALL Scene_Update
+  ENDIF
+ENDFUNC
+
+# Example 3: Log board state (for debugging)
+FUNCTION DebugBoard
+  LOG "Board update tick"
+ENDFUNC
+
+# Example 4: Do nothing (placeholder)
+FUNCTION Empty
+  NOP
+ENDFUNC

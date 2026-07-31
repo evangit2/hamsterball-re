@@ -1,5 +1,5 @@
 /*
- * mkn_plus_levels_namecolor.c — BASS.dll proxy mod
+ * mknp_plus_levels_namecolor.c — BASS.dll proxy mod
  *
  * Per-level and per-arena name + color customization.
  *
@@ -11,12 +11,12 @@
  *   5. ARENA menu colors (arena selection text) — patching PUSH floats in ArenaMenu_ctor
  *   6. ARENA names (arena selection text string) — patching PUSH string pointers
  *
- * Config file: mkn_plus_levels_namecolor.txt (next to bass.dll)
+ * Config file: mknp_plus_levels_namecolor.txt (next to bass.dll)
  * Sections: [LEVELS] and [ARENAS]
  * Prefixes: name: (string), board: (timer only), menu: (menu only), none (both)
  *
  * Build:
- *   i686-w64-mingw32-gcc -shared -o bass.dll mkn_plus_levels_namecolor.c \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_plus_levels_namecolor.c \
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias
  */
@@ -828,8 +828,8 @@ static void init_config_path(void) {
                       (LPCSTR)&init_config_path, &hSelf);
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char *p = strrchr(g_config_path, '\\');
-    if (p) strcpy(p + 1, "mkn_plus_levels_namecolor.txt");
-    else   strcpy(g_config_path, "mkn_plus_levels_namecolor.txt");
+    if (p) strcpy(p + 1, "mknp_plus_levels_namecolor.txt");
+    else   strcpy(g_config_path, "mknp_plus_levels_namecolor.txt");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

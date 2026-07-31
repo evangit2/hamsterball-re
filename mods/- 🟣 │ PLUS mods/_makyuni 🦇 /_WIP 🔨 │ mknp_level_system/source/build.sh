@@ -1,15 +1,9 @@
 #!/bin/bash
-set -e
+# Build: mkn_level_system bass.dll proxy
+# Reads mkn_level_system.txt config to swap/insert per-level setup functions
 cd "$(dirname "$0")"
-cp HamsterballAPI.h HamsterballAPI.h.bak
-sed -i 's/static_assert(/\/\/ static_assert(/g' HamsterballAPI.h
-i686-w64-mingw32-g++ -shared -o mkn_plus_level_system.dll LevelSystem_MinGW.cpp \
-  -I. -O2 -msse2 -mfpmath=sse -mwindows \
-  -fno-exceptions -fno-rtti -fno-threadsafe-statics \
-  -lkernel32 -luser32 \
-  -Wl,-e,_DllMain@12 -Wl,--enable-stdcall-fixup \
-  -Wl,--image-base,0x10000000 -Wl,--gc-sections \
-  -ffunction-sections -fdata-sections \
-  -fpermissive
-mv HamsterballAPI.h.bak HamsterballAPI.h
-echo "Build complete: mkn_plus_level_system.dll"
+i686-w64-mingw32-gcc -shared -o bass.dll mkn_level_system.c \
+  -I../shared -lwinmm \
+  -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
+  -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+echo "Built bass.dll for mkn_level_system"
