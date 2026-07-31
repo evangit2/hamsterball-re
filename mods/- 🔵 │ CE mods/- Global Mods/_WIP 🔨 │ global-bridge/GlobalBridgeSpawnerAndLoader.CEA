@@ -1,12 +1,12 @@
 [ENABLE]
 
 // =============================================================
-// Global Bridge Spawner + Function Loader v1
-// Combined script: spawns Level2-Bridge meshes and runs the
-// Intermediate-style falling bridge state machine on them.
+// Global Bridge Spawner + Function Loader v1.1
+// Combined script: spawns Level2-Bridge meshes and runs a simple
+// falling/rising bridge state machine on them.
 //
-// Hotkey: set [SpawnBridge] = 1 to spawn a bridge at player X,Z-300
-// State machine: wait 75f -> fall (Y down 200 units) -> wait 125f -> rise
+// Hotkey: set [SpawnBridge] = 1 to spawn a bridge in front of player
+// Behavior: wait 75f -> fall 200 units -> wait 125f -> rise back up
 //
 // Hook: Ball_Update at 0x00405E22
 //   ESI = ball pointer
@@ -14,25 +14,22 @@
 //   [esi+0x164/168/16C] = ball X/Y/Z
 //
 // PopCylinder_ctor: 0x00436EE0 (__thiscall, RET 0x14)
-//   ECX = new obj, stack: board, X, Y, Z, mesh_source
 // Level_MeshWorldCtor: 0x00461510 (__thiscall)
-//   ECX = new obj, stack: app_obj, mesh_path
 // operator_new: 0x004BA57B
 // AthenaList_Append: 0x00453810
 // PopCylinder vtable: 0x004D58F0
 // =============================================================
 
-alloc(SpawnCode, 16384)
+alloc(SpawnCode, 12288)
 alloc(SpawnBridge, 4)
 alloc(saved_board, 4)
 alloc(last_board, 4)
 alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
-alloc(float_300_sub, 4)
+alloc(spawnZ, 4)
 alloc(temp_mesh, 4)
 alloc(bridge_array, 36)
-alloc(bridge_count, 4)
 alloc(prox_radius_sq, 4)
 
 // Up to 8 bridges. Each entry: 24 bytes
@@ -65,20 +62,17 @@ playerY:
 playerZ:
   dd 0
 
-float_300_sub:
+spawnZ:
   dd C3960000  // -300.0
 
 temp_mesh:
   dd 0
 
 bridge_array:
-  dd 0 0 0 0 0 0 0 0  // +0 count, +4.. pointers
-
-bridge_count:
-  dd 0
+  dd 0 0 0 0 0 0 0 0  // +0 count, +4..+31 pointers
 
 prox_radius_sq:
-  dd 45C80000  // 80.0^2 = 6400.0
+  dd 45C80000  // 6400.0 (80.0^2)
 
 bridge_state:
   dd 0 0 0 0 0 0 0
@@ -91,18 +85,15 @@ bridge_state:
   dd 0 0 0 0 0 0 0
 
 BridgeStr:
-  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 32 2D 42 72 69 64 67 65 00  // "Levels\Level2-Bridge"
+  db 4C 65 76 65 6C 73 5C 4C 65 76 65 6C 32 2D 42 72 69 64 67 65 00
 
 label(original_code)
 label(no_clear)
 label(clear_loop)
 label(clear_done)
-label(save_pos)
 label(check_spawn)
 label(spawn_bridge)
 label(done_spawn)
-label(skip_col)
-label(skip_render)
 label(process_bridges)
 label(process_loop)
 label(process_done)
@@ -126,7 +117,7 @@ SpawnCode:
   jz original_code
   mov [saved_board], eax
 
-  // Reset bridge state table when board changes
+  // Reset bridge state when board changes
   cmp eax, [last_board]
   je no_clear
   mov [last_board], eax
@@ -145,7 +136,7 @@ clear_done:
   popad
 
 no_clear:
-  // Always save player position
+  // Save player position
   mov eax, [esi+0x164]
   mov [playerX], eax
   mov eax, [esi+0x168]
@@ -156,12 +147,12 @@ no_clear:
   // Spawn request?
   cmp dword [SpawnBridge], 0
   je process_bridges
+  mov dword [SpawnBridge], 0
 
-  // Only player ball can spawn
+  // Only player ball spawns
   cmp dword [esi+0x18], 0
   jne original_code
 
-  mov dword [SpawnBridge], 0
   pushad
 
 spawn_bridge:
@@ -174,6 +165,11 @@ spawn_bridge:
   mov edx, [edx+0x174]
   test edx, edx
   jz done_spawn
+
+  // Compute spawn Z = playerZ - 300
+  fld dword [playerZ]
+  fadd dword [spawnZ]
+  fstp dword [temp_mesh]
 
   // Allocate MeshWorld: Level_MeshWorldCtor(this, app_obj, "Levels\Level2-Bridge")
   push 0x10D4
@@ -191,7 +187,7 @@ spawn_bridge:
   call 00461510
   test eax, eax
   jz done_spawn
-  mov [temp_mesh], eax
+  mov [temp_mesh+4], eax
 
   // Allocate PopCylinder
   push 0x10D0
@@ -201,9 +197,9 @@ spawn_bridge:
   jz done_spawn
 
   mov edi, eax
-  mov edx, [temp_mesh]
+  mov edx, [temp_mesh+4]
   push edx
-  push dword [playerZ]
+  push dword [temp_mesh]
   push dword [playerY]
   push dword [playerX]
   mov edx, [saved_board]
@@ -214,47 +210,12 @@ spawn_bridge:
   jz done_spawn
   mov edi, eax
 
-  // Add to board lists
+  // Add to board+0x2578 only (matches original spawner)
   push edi
   mov ecx, [saved_board]
   add ecx, 0x2578
   call 00453810
 
-  push edi
-  mov ecx, [saved_board]
-  add ecx, 0x0CD4
-  call 00453810
-
-  mov eax, [edi+0x10E0]
-  test eax, eax
-  jz skip_col
-  push eax
-  mov ecx, [saved_board]
-  add ecx, 0x10EC
-  call 00453810
-
-  mov edx, [saved_board]
-  mov edx, [edx+0x8B0]
-  test edx, edx
-  jz skip_col
-  mov eax, [edi+0x10E0]
-  push eax
-  lea ecx, [edx+0x18]
-  call 00453810
-
-skip_col:
-  mov edx, [saved_board]
-  mov edx, [edx+0x8AC]
-  test edx, edx
-  jz skip_render
-  mov edx, [edx+0x480]
-  test edx, edx
-  jz skip_render
-  push edi
-  lea ecx, [edx+0x1C]
-  call 00453810
-
-skip_render:
   // Add to bridge_array if space
   mov eax, [bridge_array]
   cmp eax, 8
@@ -278,6 +239,7 @@ skip_render:
 
 done_spawn:
   mov dword [temp_mesh], 0
+  mov dword [temp_mesh+4], 0
   popad
 
 process_bridges:
@@ -338,7 +300,7 @@ state_0:
   test eax, eax
   jg state_0_wait
 
-  // Proximity check: dist^2 <= radius^2
+  // Proximity check: dist^2 <= 6400
   fld dword [edi+0x10D4]
   fsub dword [playerX]
   fmul st(0), st(0)
@@ -356,7 +318,6 @@ state_0:
   test ah, 0x41
   jp state_done
 
-  // Ball close - trigger fall
   mov dword [bridge_state+ebp+20], 1
   jmp state_done
 
@@ -376,14 +337,12 @@ state_1:
   test ah, 0x41
   jp state_done
 
-  // Reached drop >= 200
   mov dword [bridge_state+ebp+16], 0x43480000  // 200.0
   mov dword [bridge_state+ebp+20], 2
   mov dword [bridge_state+ebp+24], 0x7D        // 125
   jmp state_done
 
 state_2:
-  // Wait timer
   mov eax, [bridge_state+ebp+24]
   dec eax
   mov [bridge_state+ebp+24], eax
@@ -402,7 +361,6 @@ state_3:
   test ah, 0x41
   jpe state_done
 
-  // Reached drop <= 0
   mov dword [bridge_state+ebp+16], 0
   mov dword [bridge_state+ebp+20], 0
   mov dword [bridge_state+ebp+24], 0x4B  // 75
@@ -444,9 +402,8 @@ dealloc(last_board)
 dealloc(playerX)
 dealloc(playerY)
 dealloc(playerZ)
-dealloc(float_300_sub)
+dealloc(spawnZ)
 dealloc(temp_mesh)
 dealloc(bridge_array)
-dealloc(bridge_count)
 dealloc(prox_radius_sq)
 dealloc(bridge_state)
