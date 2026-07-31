@@ -1,3 +1,13 @@
+## v55m_42q — Separate arm object with Chomper-style direct D3D rotation
+
+- v55m_42p rotated the catapult base itself; this caused visual issues because the base includes the bowl/collision geometry.
+- Now spawns a **second** PopCylinder object using `levels\\Level4-Catapult` mesh as the **arm**.
+- The base catapult keeps its original render unchanged.
+- The arm object's `vtable[18]` is hooked and applies a **Y-axis rotation** via direct `D3D SetTransform` (same working pattern as Chomper/Waterwheel).
+- Pivot is the catapult position `(cs->x, cs->y, cs->z)`.
+- Arm angle is still driven by the existing 50-frame windup countdown (0 to -45 degrees), snaps back to 0 after launch.
+- Arm object is registered on board lists and despawned with the rotater cleanup on level unload.
+
 ## v55m_42p — Catapult arm rotation via Timer+Gfx
 
 - Added `arm_angle` and `orig_vtable18` to `CatapultState`.

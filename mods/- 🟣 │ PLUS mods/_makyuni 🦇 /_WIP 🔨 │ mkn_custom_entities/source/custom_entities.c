@@ -1,5 +1,5 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42p
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42q
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -303,6 +303,10 @@ typedef struct {
     int   countdown; /* v55m_42j: 50-frame windup before launch */
     float arm_angle; /* v55m_42p: arm rotation during windup (degrees) */
     DWORD orig_vtable18; /* v55m_42p: saved original vtable[18] for render hook */
+    DWORD arm_obj;       /* v55m_42q: separate arm PopCylinder object */
+    DWORD arm_orig_vtable18; /* v55m_42q: saved original vtable[18] for arm render hook */
+    DWORD arm_mesh;      /* v55m_42q: MeshWorld* for arm (loaded from Level4-Catapult) */
+    int   arm_active;    /* v55m_42q: arm object spawned successfully */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -332,8 +336,9 @@ static int g_chomper_count = 0;
  * Uses __thiscall to match game's vtable calling convention. */
 static void __thiscall cEnt_chomper_render(DWORD this_, char param_1, int param_2);
 
-/* v55m_42p: Catapult vtable[18] render hook — arm rotation via Timer+Gfx */
-static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2);
+/* v55m_42q: Catapult arm vtable[18] render hook — separate arm object
+ * Rotates around Y-axis using direct D3D SetTransform (Chomper-style). */
+static void __thiscall cEnt_catapult_arm_render(DWORD this_, char param_1, int param_2);
 
 /* GameLevel_ctor — Wobbly Race platforms */
 typedef void* (__thiscall *GameLevel_ctor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
@@ -508,9 +513,6 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
      }
      }
 
-     /* Forward declaration — full definition below */
-     struct WaterWheelState;
-
 /* v55m_27: Waterwheel vtable[18] hook — stub that calls the real impl
  * (defined after WaterWheelState struct). */
 static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2);
@@ -518,10 +520,8 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
-/* v55m_42p: Catapult arm rotation render hook.
- * Native Catapult_Update uses Timer_Init + Gfx_ScaleZ + Gfx_SetPosition +
- * vtable[0x16]/[0x15] calls + Timer_Cleanup. We replicate the same transform
- * sequence and call the original vtable[18] render. */
+/* v55m_42q: REMOVED — rotation now happens on the separate arm object.
+ * This stub simply forwards to the original vtable[18]. */
 static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
     CatapultState* cs = NULL;
     int i;
@@ -533,28 +533,76 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
-
-    DWORD app = *(DWORD*)0x005341E0;
-    if (app && cs->arm_angle != 0.0f) {
-        DWORD gfx = *(DWORD*)((char*)app + APP_GFX_DEVICE);
-        if (gfx && pfn_Gfx_ScaleZ_Bridge && pfn_Gfx_SetPosition_Bridge &&
-            pfn_Timer_Init && pfn_Timer_Cleanup) {
-            char timerBuf[68];
-            pfn_Timer_Init(timerBuf);
-            /* Native Catapult_Update uses Gfx_ScaleZ(0.0f - current_angle).
-             * We use negative Z-angle so the arm tilts back during windup. */
-            pfn_Gfx_ScaleZ_Bridge((void*)gfx, -cs->arm_angle);
-            pfn_Gfx_SetPosition_Bridge((void*)gfx, cs->x, cs->y, cs->z);
-            typedef void (__thiscall *render_t)(DWORD, char, int);
-            ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-            pfn_Timer_Cleanup(timerBuf);
-            return;
-        }
-    }
-
-    /* No transform or no gfx — render normally */
     typedef void (__thiscall *render_t)(DWORD, char, int);
     ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
+}
+
+/* v55m_42q: Catapult arm render hook — separate arm object.
+ * Rotates around Y-axis using direct D3D SetTransform (Chomper-style). */
+static void __thiscall cEnt_catapult_arm_render(DWORD this_, char param_1, int param_2) {
+    CatapultState* cs = NULL;
+    int i;
+    for (i = 0; i < g_catapult_count; i++) {
+        if (g_catapults[i].arm_obj == this_) { cs = &g_catapults[i]; break; }
+    }
+    if (!cs || !cs->arm_orig_vtable18) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+
+    DWORD app = *(DWORD*)0x005341E0;
+    if (app) {
+        DWORD gfx = *(DWORD*)((char*)app + 0x174);
+        if (gfx) {
+            DWORD device = *(DWORD*)((char*)gfx + 0x154);
+            if (device && !IsBadReadPtr((void*)device, 4)) {
+                DWORD* dev_vtable = *(DWORD**)device;
+                if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
+                    typedef void (__stdcall *GetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                    typedef void (__stdcall *SetTransform_t)(DWORD device, DWORD state, void* pMatrix);
+                    GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
+                    SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
+
+                    float saveMatrix[16];
+                    pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
+
+                    /* Y-axis rotation matrix (row-major D3D convention) */
+                    float angle = cs->arm_angle * 3.14159265f / 180.0f;
+                    float c = cosf(angle);
+                    float s = sinf(angle);
+                    float rotMatrix[16] = {
+                        c,   0,  s, 0,
+                        0,   1,  0, 0,
+                        -s,  0,  c, 0,
+                        0,   0,  0, 1
+                    };
+                    /* Translate to pivot, rotate, translate back:
+                     * pivot is the catapult position (cs->x,y,z) */
+                    float tx = cs->x;
+                    float ty = cs->y;
+                    float tz = cs->z;
+                    float finalMatrix[16] = {
+                        rotMatrix[0],  rotMatrix[1],  rotMatrix[2],  rotMatrix[3],
+                        rotMatrix[4],  rotMatrix[5],  rotMatrix[6],  rotMatrix[7],
+                        rotMatrix[8],  rotMatrix[9],  rotMatrix[10], rotMatrix[11],
+                        tx - (rotMatrix[0]*tx + rotMatrix[1]*ty + rotMatrix[2]*tz),
+                        ty - (rotMatrix[4]*tx + rotMatrix[5]*ty + rotMatrix[6]*tz),
+                        tz - (rotMatrix[8]*tx + rotMatrix[9]*ty + rotMatrix[10]*tz),
+                        rotMatrix[15]
+                    };
+
+                    pfn_SetTransform(device, 256, finalMatrix);
+                    typedef void (__thiscall *render_t)(DWORD, char, int);
+                    ((render_t)cs->arm_orig_vtable18)(this_, param_1, param_2);
+                    pfn_SetTransform(device, 256, saveMatrix);
+                    return;
+                }
+            }
+        }
+    }
+    typedef void (__thiscall *render_t)(DWORD, char, int);
+    ((render_t)cs->arm_orig_vtable18)(this_, param_1, param_2);
 }
 
 /* Vec3_Copy — copy 3 floats */
@@ -2377,18 +2425,69 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->countdown = 0;
                     cs->arm_angle = 0.0f;
                     cs->orig_vtable18 = 0;
+                    cs->arm_obj = 0;
+                    cs->arm_orig_vtable18 = 0;
+                    cs->arm_mesh = 0;
+                    cs->arm_active = 0;
 
-                    /* v55m_42p: hook vtable[18] for arm rotation */
-                    DWORD orig_vtable = *(DWORD*)obj;
-                    if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
-                        DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
-                        if (new_vtable) {
-                            memcpy(new_vtable, (void*)orig_vtable, 256);
-                            cs->orig_vtable18 = new_vtable[18];
-                            new_vtable[18] = (DWORD)&cEnt_catapult_render;
-                            *(DWORD*)obj = (DWORD)new_vtable;
-                            if (logf) fprintf(logf, "  CATAPULT[%d]: vtable[18] hooked orig=0x%08X new=0x%08X\n",
-                                g_catapult_count, cs->orig_vtable18, (DWORD)&cEnt_catapult_render);
+                    /* v55m_42q: spawn separate arm object from Level4-Catapult.MESHWORLD.
+                     * The arm uses the same Catapult mesh but is a distinct PopCylinder
+                     * that we rotate around the Y-axis via direct D3D SetTransform. */
+                    {
+                        DWORD app2 = *(DWORD*)(board + BOARD_APP);
+                        DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
+                        if (gfx2) {
+                            int arm_is_node = 0;
+                            void* arm_mesh = cEnt_load_mesh_file(gfx2, "levels\\Level4-Catapult", &arm_is_node, logf);
+                            if (arm_mesh) {
+                                void* arm_obj = pfn_operator_new(POPCYLINDER_SIZE);
+                                if (arm_obj) {
+                                    memset(arm_obj, 0, POPCYLINDER_SIZE);
+                                    void* arm_result = pfn_PopCylinder_ctor(arm_obj, (void*)board, px, py, pz, arm_mesh);
+                                    if (arm_result) {
+                                        /* Hook arm vtable[18] for Y-axis rotation */
+                                        DWORD arm_orig_vtable = *(DWORD*)arm_obj;
+                                        if (arm_orig_vtable && !IsBadReadPtr((void*)arm_orig_vtable, 256)) {
+                                            DWORD* arm_new_vtable = (DWORD*)pfn_operator_new(256);
+                                            if (arm_new_vtable) {
+                                                memcpy(arm_new_vtable, (void*)arm_orig_vtable, 256);
+                                                cs->arm_orig_vtable18 = arm_new_vtable[18];
+                                                arm_new_vtable[18] = (DWORD)&cEnt_catapult_arm_render;
+                                                *(DWORD*)arm_obj = (DWORD)arm_new_vtable;
+                                            }
+                                        }
+                                        /* Register arm on board lists */
+                                        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), arm_obj);
+                                        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), arm_obj);
+                                        DWORD arm_col_obj = *(DWORD*)((char*)arm_obj + PC_COLLISION_OBJ);
+                                        if (arm_col_obj && !IsBadReadPtr((void*)arm_col_obj, 0x20)) {
+                                            pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)arm_col_obj);
+                                            DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                                            if (scene_col) {
+                                                pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)arm_col_obj);
+                                            }
+                                        }
+                                        DWORD level = cEnt_get_level(board);
+                                        if (level) {
+                                            DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+                                            if (sceneobj) {
+                                                pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), arm_obj);
+                                            }
+                                        }
+                                        cs->arm_obj = (DWORD)arm_obj;
+                                        cs->arm_mesh = (DWORD)arm_mesh;
+                                        cs->arm_active = 1;
+                                        if (logf) fprintf(logf, "  CATAPULT[%d]: arm spawned obj=0x%08X mesh=0x%08X\n",
+                                            g_catapult_count, (DWORD)arm_obj, (DWORD)arm_mesh);
+                                    } else {
+                                        if (logf) fprintf(logf, "  CATAPULT[%d]: PopCylinder_ctor for arm failed\n", g_catapult_count);
+                                    }
+                                } else {
+                                    if (logf) fprintf(logf, "  CATAPULT[%d]: failed to alloc arm PopCylinder\n", g_catapult_count);
+                                }
+                            } else {
+                                if (logf) fprintf(logf, "  CATAPULT[%d]: failed to load arm mesh 'levels\\Level4-Catapult'\n", g_catapult_count);
+                            }
                         }
                     }
 
@@ -2966,6 +3065,11 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_waterwheel_count = 0;  /* v55f: reset WaterWheel tracking on level unload */
     g_catapult_count = 0;  /* v55d: reset Catapult tracking on level unload */
     g_chomper_count = 0;  /* v55m_3: reset Chomper tracking on level unload */
+
+    /* v55m_42q: Arm objects are separate PopCylinder objects. They are
+     * registered in the rotater_cfg list via the spawn_done path, so the
+     * main rotater loop above will call RemoveAndFree on them automatically.
+     * The CatapultState array is zeroed by g_catapult_count=0. */
 
     /* v55m_42f: free BASS dropin sample on level unload to avoid leak */
     if (g_dropin_sample && real_BASS_SampleFree) {
@@ -5062,7 +5166,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42p Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42q Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
