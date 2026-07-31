@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42y
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42z
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -598,19 +598,26 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
  * v55m_42w: Added g_in_draw_phase guard — Stands vtable[18] is called during
  * Update AND Draw. D3D transforms only work during Draw. */
 static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
-    /* v55m_42w: Skip D3D transforms during Update phase — only apply during Draw.
-     * During Update, the D3D device isn't in a render state and calling
-     * GetTransform/SetTransform crashes at MeshArchive_ctor (0x478EDD). */
-    if (!g_in_draw_phase) {
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)0x0045E0E0)(this_, param_1, param_2);
-        return;
-    }
-
     CatapultState* cs = NULL;
     int i;
     for (i = 0; i < g_catapult_count; i++) {
         if (g_catapults[i].obj == this_) { cs = &g_catapults[i]; break; }
+    }
+
+    /* v55m_42z: FIXED BUG — During Update phase, call the ORIGINAL Stands vtable[18]
+     * (cs->orig_vtable18), NOT hardcoded 0x0045E0E0. The original Stands vtable[18] is
+     * NOT D3DXSkinMesh_CopyStripData — it's a different function safe to call during
+     * Update. Calling 0x0045E0E0 during Update corrupts mesh data structures → crash
+     * at 0x00478EDD (MeshArchive_ctor REP MOVSD with corrupted size). */
+    if (!g_in_draw_phase) {
+        if (cs && cs->orig_vtable18) {
+            typedef void (__thiscall *render_t)(DWORD, char, int);
+            ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
+        } else {
+            typedef void (__thiscall *render_t)(DWORD, char, int);
+            ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        }
+        return;
     }
     if (!cs || !cs->orig_vtable18) {
         typedef void (__thiscall *render_t)(DWORD, char, int);
@@ -5256,7 +5263,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42y Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42z Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

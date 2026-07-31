@@ -671,15 +671,29 @@ static void ghost2_create(DWORD board, DWORD *snaps, int count) {
     DWORD *ballList = (DWORD*)((char*)board + BOARD_BALL_LIST);
     call_alist_append(ballList, (void*)ballAddr);
 
-    /* Store in Ghost2 struct */
+    /* Store in Ghost2 struct — copy snapshots so capture buffer can be freed */
+    g_ghost2.snapshots = (DWORD*)malloc(count * SNAP_BYTES);
+    if (g_ghost2.snapshots) {
+        memcpy(g_ghost2.snapshots, snaps, count * SNAP_BYTES);
+        g_ghost2.frameCount = count;
+    } else {
+        g_ghost2.frameCount = 0;
+        g_ghost2.active = FALSE;
+    }
     g_ghost2.ball = ballAddr;
     g_ghost2.btt = (DWORD)btt;
-    g_ghost2.snapshots = (DWORD*)snaps;
-    g_ghost2.frameCount = count;
     g_ghost2.playbackIdx = 0;
     g_ghost2.active = TRUE;
 
     diag_logf("[ghost2] Created: ball=0x%X btt=0x%X frames=%d", ballAddr, (DWORD)btt, count);
+
+    /* Clear pending flag: creation is fully complete */
+    g_ghost2Pending = FALSE;
+    if (g_ghost2Capture) {
+        free(g_ghost2Capture);
+        g_ghost2Capture = NULL;
+    }
+    g_ghost2CaptureCount = 0;
 }
 
 /* Destroy Ghost 2: remove from AthenaList, destroy ball + BTT */
@@ -1354,8 +1368,8 @@ static void ghost2_check_board_change(DWORD board) {
                         free(g_ghost2Capture);
                         g_ghost2Capture = NULL;
                     }
+                    g_ghost2Pending = FALSE;
                 }
-                g_ghost2Pending = FALSE;
             }
         }
         return;
@@ -3517,6 +3531,8 @@ static void updateWarpStateMachine(void) {
  * Shared frame epilogue hook — dispatches to all subsystems
  * ================================================================ */
 
+static int g_wasInRace = 0;  /* tracks active board for level-transition cleanup */
+
 void __cdecl frame_epilogue_handler(void) {
     DWORD app = get_app();
     DWORD board = 0;
@@ -3535,6 +3551,36 @@ void __cdecl frame_epilogue_handler(void) {
         }
         updateGameClock(board);
     }
+
+    /* Level-transition cleanup: board went from valid → NULL.
+     * Restore patches, destroy Ghost 2, clean up ghost event resources.
+     * NOTE: Do NOT clear g_ghost2Pending/g_ghost2Capture/g_ghost2CaptureCount
+     * here — those are set by the warp capture BEFORE the level reloads,
+     * and consumed by ghost2_check_board_change() AFTER the new board appears.
+     * Clearing them here would break Ghost 2 creation across warps. */
+    if (g_wasInRace && !board) {
+        diag_log("[scene_end] Level transition detected — cleaning up");
+        g_freezeTimer = 0;
+        restore_timer_caves();
+        restore_tt_recording_nop();
+        unblock_pause();
+        g_phase = PHASE_IDLE;
+        g_warpBall = 0;
+        g_musicFadeStarted = 0;
+        g_triggerBoard = 0;
+        g_triggerCount = 0;
+        g_recording = 0;
+        g_raceFinished = 0;
+        g_prevGoalFlag = 0;
+        g_currentRaceName[0] = '\0';
+        g_hookRaceName[0] = '\0';
+        g_dummyRecording = 0;
+        g_prevRecording = 0;
+        ghost2_destroy();
+        snaps_reset();
+        g_wasInRace = 0;
+    }
+    g_wasInRace = (board != 0);
 
     /* 1. Ghost saver: check goal flag, save ghost on finish */
     check_race_state();
