@@ -2432,62 +2432,53 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
                     /* v55m_42q: spawn separate arm object from Level4-Catapult.MESHWORLD.
                      * The arm uses the same Catapult mesh but is a distinct PopCylinder
-                     * that we rotate around the Y-axis via direct D3D SetTransform. */
+                     * that we rotate around the Y-axis via direct D3D SetTransform.
+                     * Reuse the already-loaded 'mesh' pointer (loaded with correct Gfx). */
                     {
-                        DWORD app2 = *(DWORD*)(board + BOARD_APP);
-                        DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
-                        if (gfx2) {
-                            int arm_is_node = 0;
-                            void* arm_mesh = cEnt_load_mesh_file(gfx2, "levels\\Level4-Catapult", &arm_is_node, logf);
-                            if (arm_mesh) {
-                                void* arm_obj = pfn_operator_new(POPCYLINDER_SIZE);
-                                if (arm_obj) {
-                                    memset(arm_obj, 0, POPCYLINDER_SIZE);
-                                    void* arm_result = pfn_PopCylinder_ctor(arm_obj, (void*)board, px, py, pz, arm_mesh);
-                                    if (arm_result) {
-                                        /* Hook arm vtable[18] for Y-axis rotation */
-                                        DWORD arm_orig_vtable = *(DWORD*)arm_obj;
-                                        if (arm_orig_vtable && !IsBadReadPtr((void*)arm_orig_vtable, 256)) {
-                                            DWORD* arm_new_vtable = (DWORD*)pfn_operator_new(256);
-                                            if (arm_new_vtable) {
-                                                memcpy(arm_new_vtable, (void*)arm_orig_vtable, 256);
-                                                cs->arm_orig_vtable18 = arm_new_vtable[18];
-                                                arm_new_vtable[18] = (DWORD)&cEnt_catapult_arm_render;
-                                                *(DWORD*)arm_obj = (DWORD)arm_new_vtable;
-                                            }
-                                        }
-                                        /* Register arm on board lists */
-                                        pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), arm_obj);
-                                        pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), arm_obj);
-                                        DWORD arm_col_obj = *(DWORD*)((char*)arm_obj + PC_COLLISION_OBJ);
-                                        if (arm_col_obj && !IsBadReadPtr((void*)arm_col_obj, 0x20)) {
-                                            pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)arm_col_obj);
-                                            DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
-                                            if (scene_col) {
-                                                pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)arm_col_obj);
-                                            }
-                                        }
-                                        DWORD level = cEnt_get_level(board);
-                                        if (level) {
-                                            DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-                                            if (sceneobj) {
-                                                pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), arm_obj);
-                                            }
-                                        }
-                                        cs->arm_obj = (DWORD)arm_obj;
-                                        cs->arm_mesh = (DWORD)arm_mesh;
-                                        cs->arm_active = 1;
-                                        if (logf) fprintf(logf, "  CATAPULT[%d]: arm spawned obj=0x%08X mesh=0x%08X\n",
-                                            g_catapult_count, (DWORD)arm_obj, (DWORD)arm_mesh);
-                                    } else {
-                                        if (logf) fprintf(logf, "  CATAPULT[%d]: PopCylinder_ctor for arm failed\n", g_catapult_count);
+                        void* arm_obj = pfn_operator_new(POPCYLINDER_SIZE);
+                        if (arm_obj) {
+                            memset(arm_obj, 0, POPCYLINDER_SIZE);
+                            void* arm_result = pfn_PopCylinder_ctor(arm_obj, (void*)board, px, py, pz, mesh);
+                            if (arm_result) {
+                                /* Hook arm vtable[18] for Y-axis rotation */
+                                DWORD arm_orig_vtable = *(DWORD*)arm_obj;
+                                if (arm_orig_vtable && !IsBadReadPtr((void*)arm_orig_vtable, 256)) {
+                                    DWORD* arm_new_vtable = (DWORD*)pfn_operator_new(256);
+                                    if (arm_new_vtable) {
+                                        memcpy(arm_new_vtable, (void*)arm_orig_vtable, 256);
+                                        cs->arm_orig_vtable18 = arm_new_vtable[18];
+                                        arm_new_vtable[18] = (DWORD)&cEnt_catapult_arm_render;
+                                        *(DWORD*)arm_obj = (DWORD)arm_new_vtable;
                                     }
-                                } else {
-                                    if (logf) fprintf(logf, "  CATAPULT[%d]: failed to alloc arm PopCylinder\n", g_catapult_count);
                                 }
+                                /* Register arm on board lists */
+                                pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), arm_obj);
+                                pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), arm_obj);
+                                DWORD arm_col_obj = *(DWORD*)((char*)arm_obj + PC_COLLISION_OBJ);
+                                if (arm_col_obj && !IsBadReadPtr((void*)arm_col_obj, 0x20)) {
+                                    pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)arm_col_obj);
+                                    DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                                    if (scene_col) {
+                                        pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)arm_col_obj);
+                                    }
+                                }
+                                DWORD level = cEnt_get_level(board);
+                                if (level) {
+                                    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+                                    if (sceneobj) {
+                                        pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), arm_obj);
+                                    }
+                                }
+                                cs->arm_obj = (DWORD)arm_obj;
+                                cs->arm_mesh = (DWORD)mesh;
+                                cs->arm_active = 1;
+                                if (logf) fprintf(logf, "  CATAPULT[%d]: arm spawned obj=0x%08X mesh=0x%08X\n",
+                                    g_catapult_count, (DWORD)arm_obj, (DWORD)mesh);
                             } else {
-                                if (logf) fprintf(logf, "  CATAPULT[%d]: failed to load arm mesh 'levels\\Level4-Catapult'\n", g_catapult_count);
+                                if (logf) fprintf(logf, "  CATAPULT[%d]: PopCylinder_ctor for arm failed\n", g_catapult_count);
                             }
+                        } else {
+                            if (logf) fprintf(logf, "  CATAPULT[%d]: failed to alloc arm PopCylinder\n", g_catapult_count);
                         }
                     }
 
