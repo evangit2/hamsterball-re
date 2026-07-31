@@ -121,7 +121,7 @@
 #define MUSIC_CHAN_FADE_RATE          0x52C
 #define MUSIC_CHAN_FADE_OUT           0x530
 #define MUSIC_CHAN_FADE_IN            0x531
-#define MAX_MUSIC_CHANNELS            8
+#define MAX_MUSIC_CHANNELS            32
 
 /* ---- Timer patch RVAs ---- */
 #define TIMER_DEC_PATCH_RVA           0x1B3E5
@@ -1949,6 +1949,11 @@ static void ghost2_playback(void) {
     *(float*)(ball + 0x750) = *(float*)(snap + 8);
     *(float*)(ball + BALL_RADIUS) = *(float*)(snap + 9);
 
+    /* Zero velocity/force accumulators so physics doesn't fight position writes */
+    *(float*)(ball + 0x170) = 0.0f;
+    *(float*)(ball + 0x174) = 0.0f;
+    *(float*)(ball + 0x178) = 0.0f;
+
     *(float*)(ball + BALL_COLOR_R) = TARGET_PURPLE_R;
     *(float*)(ball + BALL_COLOR_G) = TARGET_PURPLE_G;
     *(float*)(ball + BALL_COLOR_B) = TARGET_PURPLE_B;
@@ -2856,6 +2861,7 @@ public:
 
     void onSceneEnd() override {
         restore_tt_recording_nop();
+        restore_timer_caves(g_gameBase);
         g_phase = PHASE_IDLE;
         g_freezeTimer = 0;
         g_warpBall = 0;

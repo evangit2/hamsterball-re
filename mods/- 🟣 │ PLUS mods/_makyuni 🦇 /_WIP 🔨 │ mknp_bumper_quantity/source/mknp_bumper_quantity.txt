@@ -1,0 +1,6 @@
+# mkn_plus_bumper_quantity.txt — Bumper Quantity Config
+# Set the number of bumpers you want for all levels.
+# Default: 16 (original limits: 4-8 per level)
+# Range: 1-127
+# Lines starting with # are comments.
+16
