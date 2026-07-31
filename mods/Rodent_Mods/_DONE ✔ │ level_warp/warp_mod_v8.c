@@ -303,9 +303,8 @@ static int g_pauseBlocked = 0;
 /* MusicDevice offsets */
 #define MUSIC_DEV_CHANNEL_LIST  0x418
 
-/* Proximity thresholds (matching vacuum system) */
-#define WARP_XZ_DIST_SQ         900.0f  /* 30.0 squared */
-#define WARP_Y_DIST             50.0f
+/* Proximity thresholds (matching HB+ plus_level_warp) */
+#define WARP_TRIGGER_DIST_SQ    625.0f  /* 25.0 squared */
 
 /* Cooldown after warp completes */
 #define WARP_COOLDOWN_MS        2000
@@ -966,15 +965,14 @@ static void scanWarpNodes(void) {
             float dx = ballX - nodeX;
             float dy = ballY - nodeY;
             float dz = ballZ - nodeZ;
-            float xzDistSq = dx * dx + dz * dz;
-            float absDy = (dy < 0.0f) ? -dy : dy;
+            float distSq = dx * dx + dy * dy + dz * dz;
 
-            if (xzDistSq < WARP_XZ_DIST_SQ && absDy < WARP_Y_DIST) {
+            if (distSq < WARP_TRIGGER_DIST_SQ) {
                 char levelName[128];
                 if (parseWarpLevel(name, levelName, sizeof(levelName))) {
                     int raceIndex = findRaceIndex(levelName);
-                    diag_logf("[WARP] Node \"%s\" at (%.1f, %.1f, %.1f) — ball at (%.1f, %.1f, %.1f), xzDistSq=%.1f",
-                              name, nodeX, nodeY, nodeZ, ballX, ballY, ballZ, xzDistSq);
+                    diag_logf("[WARP] Node \"%s\" at (%.1f, %.1f, %.1f) — ball at (%.1f, %.1f, %.1f), distSq=%.1f",
+                              name, nodeX, nodeY, nodeZ, ballX, ballY, ballZ, distSq);
                     if (raceIndex > 0) {
                         g_warpLevelIndex = raceIndex - 1;
                         g_phase = PHASE_RUMBLE;
