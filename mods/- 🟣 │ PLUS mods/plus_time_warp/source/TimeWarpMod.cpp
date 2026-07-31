@@ -958,6 +958,70 @@ static DWORD g_dummyRecording = 0;
 typedef void (__fastcall *AppStartPracticeRace_t)(void* app, void* edx, DWORD race_index);
 static AppStartPracticeRace_t orig_AppStartPracticeRace = nullptr;
 
+typedef void (__fastcall *AppStartTournamentRace_t)(void* app, void* edx, DWORD race_index);
+static AppStartTournamentRace_t orig_AppStartTournamentRace = nullptr;
+
+/* TT recording gate patch */
+#define TT_RECORDING_NOP_ADDR   0x0041B690
+#define TT_RECORDING_NOP_SIZE   7
+static BYTE g_ttRecOrigBytes[TT_RECORDING_NOP_SIZE];
+static int g_ttRecPatched = 0;
+
+static void install_tt_recording_nop(void) {
+    if (g_ttRecPatched) return;
+    DWORD addr = TT_RECORDING_NOP_ADDR;
+    DWORD oldProt;
+    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        memcpy(g_ttRecOrigBytes, (void*)addr, TT_RECORDING_NOP_SIZE);
+        memset((void*)addr, 0x90, TT_RECORDING_NOP_SIZE);
+        VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, oldProt, &oldProt);
+        g_ttRecPatched = 1;
+        LOGS("TT recording NOP patch installed at 0x41B690");
+    }
+}
+
+static void restore_tt_recording_nop(void) {
+    if (!g_ttRecPatched) return;
+    DWORD addr = TT_RECORDING_NOP_ADDR;
+    DWORD oldProt;
+    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        memcpy((void*)addr, g_ttRecOrigBytes, TT_RECORDING_NOP_SIZE);
+        VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, oldProt, &oldProt);
+    }
+    g_ttRecPatched = 0;
+    LOGS("TT recording NOP patch restored");
+}
+
+static void create_tournament_recording_btt(DWORD app) {
+    if (!app) return;
+    DWORD bttRec = 0;
+    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
+        bttRec = *(DWORD*)(app + APP_BTT_RECORDING);
+    if (bttRec) return;
+
+    void* newBTT = Call<void*>(RVA_OPERATOR_NEW, (SIZE_T)BTT_SIZE);
+    if (!newBTT) return;
+    CallMethod<void>(RVA_BTT_CTOR, newBTT);
+    DWORD vt = *(DWORD*)newBTT;
+    if (vt == BTT_VTABLE_ADDR) {
+        *(DWORD*)((char*)newBTT + BTT_BEST_TIME) = NO_TIME;
+        *(DWORD*)(app + APP_BTT_RECORDING) = (DWORD)newBTT;
+        LOG("Created Tournament recording BTT at 0x%X", (DWORD)newBTT);
+    } else {
+        LOG("Tournament BTT ctor failed vtable=0x%X", vt);
+        Call<void>(RVA_GAME_FREE, newBTT);
+    }
+}
+
+static void __fastcall hook_AppStartTournamentRace(void* app_ptr, void* edx, DWORD race_index) {
+    (void)edx;
+    DWORD app = (DWORD)app_ptr;
+    LOG("HOOK: App_StartTournamentRace(race_index=%d)", race_index);
+    if (orig_AppStartTournamentRace)
+        orig_AppStartTournamentRace(app_ptr, edx, race_index);
+    create_tournament_recording_btt(app);
+}
+
 static int is_time_trial_active(void) {
     DWORD app = get_app();
     if (!app) return 0;
@@ -2624,8 +2688,13 @@ public:
             (void*)hook_AppStartPracticeRace,
             (void**)&orig_AppStartPracticeRace);
 
+        api->RegisterCustomHook(g_gameBase + RVA_APP_START_TOURNAMENT_RACE,
+            (void*)hook_AppStartTournamentRace,
+            (void**)&orig_AppStartTournamentRace);
+
         api->PatchMemory(0x40B7F5, "\x90\x90", 2);
         api->PatchMemory(0x40B7FF, "\x90\x90", 2);
+        install_tt_recording_nop();
 
         init_ghost_dir();
         LOGS("=== Time Warp (HB+) loaded ===");
@@ -2692,6 +2761,7 @@ public:
     }
 
     void onSceneEnd() override {
+        restore_tt_recording_nop();
         g_phase = PHASE_IDLE;
         g_freezeTimer = 0;
         g_warpBall = 0;
