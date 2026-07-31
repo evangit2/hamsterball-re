@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43c
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43d
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -594,23 +594,29 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
-/* v55m_43c: cEnt Catapult render — rotate the catapult object around Y.
+/* v55m_43d: cEnt Catapult render — rotate the catapult object around Y.
  * v55m_42w: Added g_in_draw_phase guard — Stands vtable[18] is called during
  * Update AND Draw. D3D transforms only work during Draw.
- * v55m_43c: Uses the SAME pattern as the working Chomper/Waterwheel hooks:
+ * v55m_43d: Uses the SAME pattern as the working Chomper/Waterwheel hooks:
  * 256-byte vtable copy (64 entries), IsBadReadPtr(orig, 256).
  * The previous 0x50-byte (20-entry) copy was too small — the game read
  * vtable slots beyond entry 20, hitting garbage and corrupting the stack. */
 static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
-    /* v55m_43a: During Update phase, DO NOTHING — just return.
-     * The original Stands vtable[18] function (0x0045E0E0 = D3DXSkinMesh_CopyStripData)
-     * is NOT safe to call during Update. It corrupts mesh data structures and causes
-     * crashes at 0x00478EDD (MeshArchive_ctor REP MOVSD) or stack corruption in our DLL.
-     * The Update call is redundant for a static mesh — vertex data doesn't change. */
-    if (!g_in_draw_phase) {
-        return;
-    }
-
+    /* v55m_43d: FIXED invisibility + rotation.
+     * 1. ALWAYS call the original render function (0x45E0E0), both during
+     *    Update and Draw. The v55m_42w early-return skipped the original
+     *    during Update, which prevented render-prep work and broke visibility.
+     *    The old 0x478EDD crash was from the TRUNCATED vtable (garbage slot
+     *    addresses), NOT from calling 0x45E0E0 during Update — the game itself
+     *    calls it from Catapult_Update (0x43F300). With the full 0x400B vtable
+     *    copy this is safe.
+     * 2. Rotation: post-multiply the Y-rotation INTO the saved D3DTS_WORLD
+     *    matrix instead of REPLACING it. The game positions the catapult via
+     *    the Gfx state (Gfx_SetPosition 0x457B50) which builds a world matrix
+     *    containing the translation (750,-135,-522). Replacing that matrix
+     *    with a rotation-only matrix dropped the position → catapult rendered
+     *    at world origin → invisible. finalMatrix = saveMatrix × rotMatrix
+     *    preserves position/scale while rotating around the object's own Y. */
     CatapultState* cs = NULL;
     int i;
     for (i = 0; i < g_catapult_count; i++) {
@@ -623,7 +629,7 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
     }
 
     DWORD app = *(DWORD*)0x005341E0;
-    if (app) {
+    if (app && g_in_draw_phase) {
         DWORD gfx = *(DWORD*)((char*)app + 0x174);
         if (gfx) {
             DWORD device = *(DWORD*)((char*)gfx + 0x154);
@@ -638,6 +644,7 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
                     float saveMatrix[16];
                     pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
 
+                    /* Build Y-rotation matrix */
                     float angle = cs->arm_angle * 3.14159265f / 180.0f;
                     float c = cosf(angle);
                     float s = sinf(angle);
@@ -647,8 +654,25 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
                         s,  0,  c, 0,
                         0,  0,  0, 1
                     };
+                    /* finalMatrix = rotMatrix × saveMatrix (row-vector convention:
+                     * v' = v × M. If saveMatrix = T (game's position translation),
+                     * then R × T gives (v × R) + P — the mesh rotates around its
+                     * OWN local origin and stays at position P. The opposite order
+                     * (T × R) would make the mesh ORBIT the world origin. */
+                    float finalMatrix[16];
+                    int row, col;
+                    for (row = 0; row < 4; row++) {
+                        for (col = 0; col < 4; col++) {
+                            /* rotMatrix × saveMatrix */
+                            finalMatrix[row*4+col] =
+                                rotMatrix[row*4+0]*saveMatrix[0*4+col] +
+                                rotMatrix[row*4+1]*saveMatrix[1*4+col] +
+                                rotMatrix[row*4+2]*saveMatrix[2*4+col] +
+                                rotMatrix[row*4+3]*saveMatrix[3*4+col];
+                        }
+                    }
 
-                    pfn_SetTransform(device, 256, rotMatrix);
+                    pfn_SetTransform(device, 256, finalMatrix);
                     typedef void (__thiscall *render_t)(DWORD, char, int);
                     ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
                     pfn_SetTransform(device, 256, saveMatrix);
@@ -657,6 +681,8 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
             }
         }
     }
+    /* Update phase (or D3D access failed): call original WITHOUT rotation.
+     * Always call it — the game needs it every frame for strip data. */
     typedef void (__thiscall *render_t)(DWORD, char, int);
     ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
 }
@@ -2451,7 +2477,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* v55m_1: Catapult_ctor already creates Level_RenderCtor at obj+0x10D4 internally.
                  * Do NOT create a duplicate — the old code overwrote the ctor's Level,
                  * breaking the TowerCollisionEvents mesh pointer match. */
-                /* v55m_43c: RE-ENABLED collision list append.
+                /* v55m_43d: RE-ENABLED collision list append.
                  * v55m_42w disabled it because it crashed at 0x478EDD — but that
                  * crash was actually caused by the vtable[18] hook calling 0x45E0E0
                  * during Update, corrupting the mesh buffers that the collision
@@ -2493,14 +2519,14 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_43c: Hook Stands vtable[18] for Y-rotation render.
+                    /* v55m_43d: Hook Stands vtable[18] for Y-rotation render.
                      * FIXED: The Catapult vtable (0x4D4F98) is a MULTI-BLOCK vtable
                      * with 200+ entries (each Stands object block is ~24 entries,
                      * laid out sequentially). The previous 0x50-byte (20-entry) copy
                      * in v55m_42x/43a was too small — the game calls vtable[24],
                      * [35], [61], [68], etc. (Catapult_Update at [61]=0x0043F080),
                      * reading garbage past our copy → stack corruption (0002:00009E75).
-                     * v55m_43c: copy the FULL vtable (0x400 bytes = 256 entries).
+                     * v55m_43d: copy the FULL vtable (0x400 bytes = 256 entries).
                      * g_in_draw_phase guard prevents D3D calls during Update. */
                     {
                         DWORD* orig_vt = *(DWORD**)obj;
@@ -5206,7 +5232,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43c Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43d Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -5221,7 +5247,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
-    /* v55m_43c: Restore RenderScene hook — sets g_in_draw_phase=1 during Draw.
+    /* v55m_43d: Restore RenderScene hook — sets g_in_draw_phase=1 during Draw.
      * The catapult vtable[18] hook needs this to skip D3D transforms during
      * Update (calling 0x45E0E0 during Update corrupts mesh data → 0x478EDD). */
     install_renderscene_hook();
