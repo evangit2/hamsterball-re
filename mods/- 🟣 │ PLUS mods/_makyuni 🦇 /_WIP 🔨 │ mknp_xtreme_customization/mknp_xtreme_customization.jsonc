@@ -1,0 +1,200 @@
+//
+// SETTINGS FORMAT :
+    // color        = 	#FFFFFFFF (RGBA tint)
+    // posX  	    = 	0.0 	  (Horizontal position of the graphic)
+    // posY  	    = 	0.0 	  (Vertical position of the graphic)
+    // scaleX 	    = 	0.0 	  (Horizontal scale of the graphic)
+    // scaleY 	    = 	0.0 	  (Vertical scale of the graphic)
+    // string 	    = 	""  	  (text string)
+    // path	    	    =	""	      (path and filename)
+    // link	    	    = 	"" 	  (hyperlink)
+//
+
+
+
+[
+
+
+// MKN_PLUS_XTREME_CUSTOMIZATION
+
+
+    // ========================= LOADING SCREEN =========================
+    {
+        "LoadingScreen - Click Here- Button":               { "color": ["#FFFFFFFF", "#FFFFFFFF"], "posX":  400.0, "posY":  560.0,                                   "string": "CLICK HERE TO PLAY!"                                                },
+        "LoadingScreen - Hamsterball Logo":                 { "color": ["#FFFFFFFF", "#FFFFFFFF"], "posX":  130.0, "posY":   40.0, "scaleX": 256.0, "scaleY": 256.0, "path":  ["Textures/TitleText-Left", "Textures/TitleText-Right"]               },
+        "LoadingScreen - Hamster Loader _no_ ball":         { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/Loader(Grey)"                                              },
+        "LoadingScreen - Hamster Loader with ball":         { "color":  "#FFFFFFFF",               "posX":  400.0, "posY":  450.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/Loader"                                                    },
+        "LoadingScreen - Rotating Swirl":                   { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  514.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/LoadingSwirl"                                              },
+        "LoadingScreen - Raptisoft Logo":                   { "color":  "#FFFFFFFF",               "posX":  672.0, "posY":  472.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/RaptisoftLogo", "link": "https://www.raptisoft.com"        },
+		"LoadingScreen - Background":                   	{ "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX":   0.0, "scaleY":   0.0, "path":   "Textures/LoaderBkg"													}
+   
+    }
+    // ==================================================================
+  
+]
+
+
+
+
+
+
+
+
+
+
+/*
+
+#
+# SETTINGS FORMAT :
+; string 	    = 	""  	  (text string)
+; path	    	=	""	      (path and filename)
+; color_(specification) = 	#FFFFFFFF (RGBA tint)
+; posX  	    = 	0.0 	  (Horizontal position of the graphic)
+; posY  	    = 	0.0 	  (Vertical position of the graphic)
+; scaleX 	    = 	0.0 	  (Horizontal position of the graphic)
+; scaleY 	    = 	0.0 	  (Vertical position of the graphic)
+; link	    	= 	"" 	  (hyperlink)
+
+
+
+# ========================= LOADING SCREEN ========================= #
+
+	- LoadingScreen 'Click Here' Button		  	 	= 	string = "CLICK HERE TO PLAY!", 	color_on = #FFFFFFFF, color_off = #FFFFFFFF,  posX   = 0.0, posY   = 0.0
+	- LoadingScreen Hamsterball Logo		 		=	path = "Textures/TitleText-", 		color = #FFFFFFFF, posX = 0.0, posY = 0.0, scaleX = 0.0, scaleY = 0.0
+
+[!]	-> LoadingScreen Hamsterball Logo 	- Colors   =		#FFFFFFFF
+[!]	-> LoadingScreen Hamsterball Logo 	- pos X    = 	 	?
+[!]	-> LoadingScreen Hamsterball Logo 	- pos Y    = 	 	?
+[!]	-> LoadingScreen Hamsterball Logo 	- scale X  = 	 	?
+[!]	-> LoadingScreen Hamsterball Logo 	- scale Y  = 	 	?
+[!]	-> LoadingScreen Hamsterball Logo 	- Colors   =		#FFFFFFFF
+
+[!]	-> MainMenu Hamsterball Version 	- String   = 	 	"V3.6.C"
+
+	-> LoadingScreen Hamster - only =  			#FFFFFFFF
+	-> LoadingScreen Hamster + ball =  			#FFFFFFFF
+
+	-> LoadingScreen Loader Swirl 	=	 			#FFFFFFFF
+
+	-> LoadingScreen Background 	=				#FFFFFFFF
+
+	-> LoadingScreen Raptisoft Logo =    			#FFFFFFFF
+[!]	-> LoadingScreen Raptisoft Link =    			"https://www.raptisoft.com"
+
+# ==================================================================== #
+
+
+# ============================ MAIN MENU ============================ #
+
+[!]	-> MainMenu Hamsterball Version 	- String   = 	 	"V3.6.C"
+[!]	-> MainMenu Hamsterball Version 	- pos X    = 	 	?
+[!]	-> MainMenu Hamsterball Version 	- pos Y    = 	 	?
+	-> MainMenu Hamsterball Version 	- Colors   = 	 	#FFFFFFFF
+	-> MainMenu Hamsterball Version 	- Shadow   = 		#500080FF
+
+[!]	-> MainMenu Background Texture	 	 - File	   = 	 	"Title"
+[!]	-> MainMenu Background Texture	 	 - pos X    = 	 	?
+[!]	-> MainMenu Background Texture	 	 - pos Y    = 	 	?
+[!]	-> MainMenu Background Texture	 	 - scale X  = 	 	?
+[!]	-> MainMenu Background Texture	 	 - scale Y  = 	 	?
+[!]	-> MainMenu Background Texture	 	 - Colors   = 	 	#FFFFFFFF
+
+	-> MainMenu Button #1 - Let's Play! 	- String   = 		"LET'S PLAY!"
+	-> MainMenu Button #1 - Let's Play! 	- Colors   = 		#FFFFFFFF
+[!]	-> MainMenu Button #2 - High Scores 	- String   =    	"HIGH SCORES"
+	-> MainMenu Button #2 - High Scores 	- Colors   =    	#FFFFFFFF
+	-> MainMenu Button #3 - Options 	- String   =	  	"OPTIONS"
+	-> MainMenu Button #3 - Options 	- Colors   =	  	#FFFFFFFF
+	-> MainMenu Button #4 - Credits 	- String   =	   	"CREDITS"	
+	-> MainMenu Button #4 - Credits 	- Colors   =	   	#FFFFFFFF
+	-> MainMenu Button #5 - Exit to Desktop - String   =  		"DEXIT TO DESKTOP"
+	-> MainMenu Button #5 - Exit to Desktop - Colors   =  		#FFFFFFFF
+
+	-> MainMenu Colors - LP Button #1  - Tournament    =  		#FFFFFFFF
+	-> MainMenu Colors - LP Button #2  - TimeTrials    =    	#FFFFFFFF
+	-> MainMenu Colors - LP Button #2b - Locked 	   =	   	#FFFFFFFF
+	-> MainMenu Colors - LP Button #3  - MirrorTourney =  		#FFFFFFFF
+	-> MainMenu Colors - LP Button #4  - PartyGames    =  		#FFFFFFFF
+	-> MainMenu Colors - LP Button #5  - Previous 	   =    	#FFFFFFFF
+
+
+
+# ========= MAIN MENU (strings) ========= #
+
+	-> MainMenu String - Choose a Game! 	= 			"CHOOSE A GAME!"
+	-> MainMenu String - Tournament 	= 			"TOURNAMENT"
+	-> MainMenu String - Time Trials 	= 			"TIME TRIALS"
+	-> MainMenu String - Locked 	    = 			"LOCKED"
+	-> MainMenu String - Mirror Tournament  =   			"MIRROR TOURNAMENT"
+	-> MainMenu String - Party Games 	= 			"PARTY GAMES"
+	-> MainMenu String - Previous 		= 			"PREVIOUS"
+
+# ==================================================================== #
+
+
+
+
+# ======================= TOURNAMENT (colors) ======================= #
+
+	N/A
+
+# ==================================================================== #
+
+
+
+
+# ===================== MIRROR TOURNEY (colors) ====================== #
+
+	N/A
+
+# ==================================================================== #
+
+
+
+
+# ======================= TIME TRIALS (colors) ======================= #
+
+	-> TimeTrials Pause - Button #1 - Resume 	= 		#FFFFFFFF
+	-> TimeTrials Pause - Button #2 - Restart Race 	=		#FFFFFFFF
+	-> TimeTrials Pause - Button #3 - Options 	= 		#FFFFFFFF
+	-> TimeTrials Pause - Button #4 - Quit Race 	= 		#FFFFFFFF
+
+	-> TimeTrials String - Choose a Time Trial Race =		"CHOOSE A TIME TRIAL RACE!"
+	-> TimeTrials String - Pause - Previous Menu 	=		"PREVIOUS MENU"
+	-> TimeTrials String - Pause - Resume 		=		"RESUME"
+	-> TimeTrials String - Pause - Restart Race 	=		"RESTART RACE"
+	-> TimeTrials String - Pause - Quit this Race 	=		"QUIT THIS RACE"
+
+# ==================================================================== #
+
+
+
+
+# ========================= 2P GAME (colors) ========================= #
+
+	-> 2Pmenu - Side Strip 		 	= 				#FFFFFFFF
+	-> 2Pgame - Win  Strip 		 	= 				#FFFFFFFF
+
+# ==================================================================== #
+
+
+
+
+# ========================= 4P GAME (colors) ========================= #
+
+	N/A
+
+# ==================================================================== #
+
+
+
+
+# =============================== OTHER =============================== #
+
+	N/A
+
+# ==================================================================== #
+
+#
+
+*/

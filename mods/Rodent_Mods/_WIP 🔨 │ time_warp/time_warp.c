@@ -75,6 +75,9 @@ typedef DWORD HFX;
 #define BALL_POS_X             0x164
 #define BALL_POS_Y             0x168
 #define BALL_POS_Z             0x16C
+#define BALL_VEL_X             0x170
+#define BALL_VEL_Y             0x174
+#define BALL_VEL_Z             0x178
 #define BALL_FACING_X          0x190
 #define BALL_FACING_Z          0x194
 #define BALL_ROLL_ANGLE        0x150
@@ -201,7 +204,7 @@ typedef DWORD HFX;
 #define TARGET_G                (3.0f / 255.0f)
 #define TARGET_B                (252.0f / 255.0f)
 
-#define MAX_MUSIC_CHANNELS      8
+#define MAX_MUSIC_CHANNELS      32
 
 /* ================================================================
  * Diagnostic logging — time_warp_log.txt
@@ -390,8 +393,6 @@ static void load_real_bass(void) {
         real_BASS_ErrorGetCode    = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
         real_BASS_ChannelStop     = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
         real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
-        if (!real_BASS_ChannelSetAttributes)
-            real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttribute");
         real_BASS_ChannelGetData  = (BASS_ChannelGetData_t)GetProcAddress(g_hRealBass, "BASS_ChannelGetData");
         real_BASS_ChannelSetFX    = (BASS_ChannelSetFX_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetFX");
     }
@@ -1330,6 +1331,13 @@ static void ghost2_playback(void) {
     *(float*)(ball + BALL_SURFACE_A) = *(float*)(snap + 7);
     *(float*)(ball + BALL_SURFACE_B) = *(float*)(snap + 8);
     *(float*)(ball + BALL_RADIUS) = *(float*)(snap + 9);
+
+    /* Zero velocity/force accumulators so physics doesn't fight position writes.
+     * The ghost ball is purely kinematic — the game's physics engine will
+     * push it away if we leave non-zero velocities. */
+    *(float*)(ball + BALL_VEL_X) = 0.0f;
+    *(float*)(ball + BALL_VEL_Y) = 0.0f;
+    *(float*)(ball + BALL_VEL_Z) = 0.0f;
 
     /* Maintain heliotrope purple color every frame */
     *(float*)(ball + BALL_COLOR_R) = TARGET_R;
@@ -2541,52 +2549,71 @@ static void ghost_event_frame(void) {
 }
 
 /* DCE hook stub */
+/* DCE hook — 0x40C5D0 has SEH prologue (6A FF 64 A1 00... 21 bytes).
+ * Hook at 0x40C5E5 where the function body starts: 83 EC 30 53 55 (5 bytes).
+ * Trampoline replicates those 5 bytes and jumps to 0x40C5EA. */
+#define DCE_HOOK_ADDR             0x0040C5E5
+#define DCE_HOOK_BYTES            5
+#define DCE_HOOK_RETURN           0x0040C5EA
+
 static BYTE *g_dce_stub = NULL;
-static BYTE g_dce_original[8];
+static BYTE g_dce_original[DCE_HOOK_BYTES];
 static void *g_dce_trampoline = NULL;
 
 static void build_dce_trampoline(void) {
     BYTE *code = (BYTE*)alloc_executable(16);
-    memcpy(code, g_dce_original, 8);
-    code[8] = 0xE9;
-    *(DWORD*)(code + 9) = (DWORD)(DISPATCH_COLLISION_EVENTS + 8) - (DWORD)(code + 13);
+    /* Replicate 5 trampoline bytes: sub esp,0x30; push ebx; push ebp */
+    code[0] = 0x83; code[1] = 0xEC; code[2] = 0x30;  /* sub esp, 0x30 */
+    code[3] = 0x53;                                     /* push ebx */
+    code[4] = 0x55;                                     /* push ebp */
+    code[5] = 0xE9;
+    *(DWORD*)(code + 6) = DCE_HOOK_RETURN - (DWORD)(code + 10);
     g_dce_trampoline = code;
 }
 
 static void build_dce_stub(void) {
-    BYTE *code = (BYTE*)alloc_executable(64);
+    BYTE *code = (BYTE*)alloc_executable(96);
     int i = 0;
-    code[i++] = 0x60;  /* pushad */
-    code[i++] = 0x9C;  /* pushfd */
-    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;  /* push [esp+0x2C] (collEntry) */
-    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;  /* push [esp+0x2C] (ball) */
-    code[i++] = 0x51;  /* push ecx (board) */
+    /* Grab params from stack BEFORE pushad: [esp+8]=ball, [esp+12]=collEntry.
+     * ECX is board (set before hook point by the caller). */
+    code[i++] = 0x8B; code[i++] = 0x5C; code[i++] = 0x24; code[i++] = 0x08; /* mov ebx, [esp+8]  (ball) */
+    code[i++] = 0x8B; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x0C; /* mov esi, [esp+12] (collEntry) */
+    code[i++] = 0x60;                 /* pushad */
+    code[i++] = 0x9C;                 /* pushfd */
+    code[i++] = 0x51;                 /* push ecx (board) */
+    code[i++] = 0x53;                 /* push ebx (ball) */
+    code[i++] = 0x56;                 /* push esi (collEntry) */
     code[i++] = 0xE8;
     *(DWORD*)(code + i) = (DWORD)&dce_handler - (DWORD)(code + i + 4);
     i += 4;
-    code[i++] = 0x83; code[i++] = 0xC4; code[i++] = 0x0C;  /* add esp, 12 */
-    code[i++] = 0x9D;  /* popfd */
-    code[i++] = 0x61;  /* popad */
+    code[i++] = 0x83; code[i++] = 0xC4; code[i++] = 0x0C; /* add esp, 12 */
+    code[i++] = 0x9D;               /* popfd */
+    code[i++] = 0x61;               /* popad */
     code[i++] = 0xB8;
     *(DWORD*)(code + i) = (DWORD)g_dce_trampoline;
     i += 4;
-    code[i++] = 0xFF; code[i++] = 0xE0;
+    code[i++] = 0xFF; code[i++] = 0xE0; /* jmp eax */
     g_dce_stub = code;
 }
 
 static void install_dce_hook(void) {
-    memcpy(g_dce_original, (void*)DISPATCH_COLLISION_EVENTS, 8);
+    memcpy(g_dce_original, (void*)DCE_HOOK_ADDR, DCE_HOOK_BYTES);
     build_dce_trampoline();
     build_dce_stub();
 
-    BYTE patch[8];
+    BYTE patch[DCE_HOOK_BYTES];
     patch[0] = 0xE9;
-    *(DWORD*)(patch + 1) = (DWORD)g_dce_stub - DISPATCH_COLLISION_EVENTS - 5;
-    patch[5] = 0x90;
-    patch[6] = 0x90;
-    patch[7] = 0x90;
-    patch_bytes((void*)DISPATCH_COLLISION_EVENTS, patch, 8);
-    diag_log("[ghost_event] DCE hook installed");
+    *(DWORD*)(patch + 1) = (DWORD)g_dce_stub - DCE_HOOK_ADDR - 5;
+    patch_bytes((void*)DCE_HOOK_ADDR, patch, DCE_HOOK_BYTES);
+    diag_log("[ghost_event] DCE hook installed at 0x40C5E5 (post-SEH prologue)");
+}
+
+static void restore_dce_hook(void) {
+    if (!g_dce_stub) return;
+    patch_bytes((void*)DCE_HOOK_ADDR, g_dce_original, DCE_HOOK_BYTES);
+    g_dce_stub = NULL;
+    g_dce_trampoline = NULL;
+    diag_log("[ghost_event] DCE hook restored");
 }
 
 
@@ -3872,15 +3899,6 @@ static void restore_frame_hook(void) {
         patch_bytes((void*)APP_FRAME_UPDATE_EPILOGUE, g_frame_original, 5);
         g_frame_stub = NULL;
         diag_log("[time_warp] Frame epilogue hook restored");
-    }
-}
-
-static void restore_dce_hook(void) {
-    if (g_dce_stub) {
-        patch_bytes((void*)DISPATCH_COLLISION_EVENTS, g_dce_original, 8);
-        g_dce_stub = NULL;
-        g_dce_trampoline = NULL;
-        diag_log("[ghost_event] DCE hook restored");
     }
 }
 
