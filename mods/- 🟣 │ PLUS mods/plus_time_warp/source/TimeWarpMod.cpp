@@ -1934,6 +1934,11 @@ static void ghost2_create(DWORD board, DWORD* snaps, int count) {
         g_ghost2.frameCount = 0;
         g_ghost2.active = FALSE;
     }
+
+    /* Clear pending flag: creation is fully complete */
+    g_ghost2Pending = FALSE;
+    if (g_ghost2Capture) { free(g_ghost2Capture); g_ghost2Capture = NULL; }
+    g_ghost2CaptureCount = 0;
 }
 
 static void ghost2_playback(void) {
@@ -1983,8 +1988,8 @@ static void ghost2_check_board_change(DWORD board) {
                 } else {
                     LOG("Party mode — skipping Ghost2 creation");
                     if (g_ghost2Capture) { free(g_ghost2Capture); g_ghost2Capture = NULL; }
+                    g_ghost2Pending = FALSE;
                 }
-                g_ghost2Pending = FALSE;
             }
         }
         return;
