@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 cp HamsterballAPI.h HamsterballAPI.h.bak
 sed -i 's/static_assert(/\/\/ static_assert(/g' HamsterballAPI.h
 
-i686-w64-mingw32-g++ -shared -o mkn_plus_sfx.dll CustomSFX_MinGW.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mkn_plus_sfx.dll mknp_sfx_MinGW.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \

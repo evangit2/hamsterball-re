@@ -34,7 +34,7 @@ of what the game sets during rendering.
 
 ## Config File
 
-`sharp_textures.txt` (next to `bass.dll`), auto-generated on first run:
+`mknp_sharp_textures.txt` (next to `mknp_sharp_textures.dll`), auto-generated on first run:
 
 ```ini
 # Sharp Textures config
@@ -62,9 +62,9 @@ CHECKER_MIPFILTER = 1
 
 ## Installation
 
-1. Rename the original `bass.dll` to `bass_real.dll`
-2. Copy this mod's `bass.dll` into the game folder
-3. On Android/Wine: set DLL override to `native` for `bass.dll`
+1. Rename the original `mknp_sharp_textures.dll` to `bass_real.dll`
+2. Copy this mod's `mknp_sharp_textures.dll` into the game folder
+3. On Android/Wine: set DLL override to `native` for `mknp_sharp_textures.dll`
 
 ## Technical Details
 

@@ -4,8 +4,8 @@ Replace any sound effect in Hamsterball with custom audio files.
 
 ## Installation
 
-1. Rename original `bass.dll` to `bass_real.dll`
-2. Copy this `bass.dll` to the game folder
+1. Rename original `mknp_custom_sfx.dll` to `bass_real.dll`
+2. Copy this `mknp_custom_sfx.dll` to the game folder
 3. Launch the game — `custom_sfx.txt` will be auto-generated
 
 ## Usage
@@ -59,8 +59,8 @@ The hook is installed at DLL load time (before the game initializes), so all 61 
 
 | File | Description |
 |------|-------------|
-| `custom_sfx.c` | Source code |
-| `bass.dll` | Compiled mod DLL |
+| `mknp_custom_sfx.c` | Source code |
+| `mknp_custom_sfx.dll` | Compiled mod DLL |
 | `custom_sfx.txt` | Auto-generated config (created on first run) |
 
 ## All 61 Sounds

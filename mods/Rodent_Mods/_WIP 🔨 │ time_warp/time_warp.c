@@ -1355,7 +1355,11 @@ static void ghost2_playback(void) {
 static void ghost2_check_board_change(DWORD board) {
     if (!g_ghost2.active) {
         /* If we have a pending capture and a new board, create Ghost 2 */
-        if (g_ghost2Pending && board && !IsBadReadPtr((void*)board, 0x4000)) {
+        EnterCriticalSection(&g_cs);
+        int pending = g_ghost2Pending;
+        if (pending && board && !IsBadReadPtr((void*)board, 0x4000)) {
+            DWORD *capture = (DWORD*)g_ghost2Capture;
+            int captureCount = g_ghost2CaptureCount;
             DWORD app = get_app();
             if (app) {
                 /* Check party mode — Ghost 2 doesn't work in Party */
@@ -1363,7 +1367,10 @@ static void ghost2_check_board_change(DWORD board) {
                 if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
                     partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
                 if (partyMode == 0) {
-                    ghost2_create(board, (DWORD*)g_ghost2Capture, g_ghost2CaptureCount);
+                    g_ghost2Pending = FALSE;
+                    LeaveCriticalSection(&g_cs);
+                    ghost2_create(board, capture, captureCount);
+                    return;
                 } else {
                     diag_log("[ghost2] Party mode — skipping Ghost 2 creation");
                     if (g_ghost2Capture) {
@@ -1374,6 +1381,7 @@ static void ghost2_check_board_change(DWORD board) {
                 g_ghost2Pending = FALSE;
             }
         }
+        LeaveCriticalSection(&g_cs);
         return;
     }
 
@@ -1413,6 +1421,26 @@ static int is_time_trial_active(void) {
     if (*(BYTE*)(profile + PROFILE_IS_PRACTICE) == 0) return 0;
     if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return 0;
     if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return 0;
+    return 1;
+}
+
+/* Returns 1 if currently in a Tournament race (not practice, not party, race active). */
+static int is_tournament_active(void) {
+    DWORD app = get_app();
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + APP_PROFILE_PTR), 4)) return 0;
+    DWORD profile = *(DWORD*)(app + APP_PROFILE_PTR);
+    if (!profile || profile < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(profile + PROFILE_IS_PRACTICE), 1)) return 0;
+    /* Tournament = NOT practice (profile+0x11 == 0) */
+    if (*(BYTE*)(profile + PROFILE_IS_PRACTICE) != 0) return 0;
+    /* NOT party mode */
+    if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return 0;
+    if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return 0;
+    /* Must have a board (race is running) */
+    if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_PTR), 4)) return 0;
+    DWORD board = *(DWORD*)((char*)profile + PROFILE_BOARD_PTR);
+    if (!board || board < 0x10000) return 0;
     return 1;
 }
 
@@ -1684,7 +1712,10 @@ static void check_race_state(void) {
     EnterCriticalSection(&g_cs);
 
     int tt = is_time_trial_active();
-    if (!tt) {
+    int tourney = is_tournament_active();
+    int inRace = tt || tourney;
+
+    if (!inRace) {
         if (g_recording) {
             diag_logf("[ghost_saver] Left TT mode (was recording %d frames)", g_rawCount);
             g_recording = 0;
@@ -1719,49 +1750,18 @@ static void check_race_state(void) {
         return;
     }
 
-    DWORD currRecording = 0;
-    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
-        currRecording = *(DWORD*)(app + APP_BTT_RECORDING);
+    /* Goal flag monitoring for Time Warp — works in both TT and Tournament */
+    if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
+        BYTE goalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
+        if (goalFlag && !g_prevGoalFlag) {
+            g_raceFinished = 1;
+            /* Time Warp level goal touch handling */
+            if (g_isTimeWarpLevel && g_segmentCounter > 0) {
+                handle_tw_goal_touch();
+            }
 
-    if (currRecording != g_prevRecording && currRecording && currRecording > 0x10000) {
-        g_prevRecording = currRecording;
-
-        char raceName[128];
-        if (g_hookRaceName[0]) {
-            strncpy(raceName, g_hookRaceName, sizeof(raceName) - 1);
-            raceName[sizeof(raceName) - 1] = '\0';
-        } else {
-            get_race_name(raceName, sizeof(raceName));
-        }
-        if (raceName[0]) {
-            strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
-            g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
-            snaps_reset();
-            g_recording = 1;
-            g_raceFinished = 0;
-            if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1))
-                g_prevGoalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
-            else
-                g_prevGoalFlag = 0;
-            diag_logf("[ghost_saver] RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
-        } else {
-            g_prevRecording = 0;
-        }
-    }
-
-    if (g_recording && !g_raceFinished) {
-        if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
-            BYTE goalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
-            if (goalFlag && !g_prevGoalFlag) {
-                g_raceFinished = 1;
-
-                /* Time Warp level goal touch handling */
-                if (g_isTimeWarpLevel && g_segmentCounter > 0) {
-                    EnterCriticalSection(&g_cs);
-                    handle_tw_goal_touch();
-                    LeaveCriticalSection(&g_cs);
-                }
-
+            /* Only TT mode saves normal ghost files */
+            if (tt) {
                 int finishTime = NO_TIME;
                 DWORD btt = 0;
                 if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4)) {
@@ -1774,54 +1774,87 @@ static void check_race_state(void) {
                 if (finishTime != NO_TIME && btt && g_currentRaceName[0]) {
                     /* Skip normal ghost save for Time Warp levels (handled by TW system) */
                     if (!g_isTimeWarpLevel) {
-                    if (!IsBadReadPtr((void*)(btt + BTT_AL_COUNT), 4)) {
-                        DWORD count = *(DWORD*)(btt + BTT_AL_COUNT);
-                        if (!IsBadReadPtr((void*)(btt + BTT_LIST_ARRAY), 4)) {
-                            DWORD *data = *(DWORD**)(btt + BTT_LIST_ARRAY);
-                            if (count > 0 && count < 200000 && data &&
-                                (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
-                                if (snaps_reserve((int)count)) {
-                                    g_rawCount = 0;
-                                    for (DWORD i = 0; i < count; i++) {
-                                        DWORD *snap = (DWORD*)data[i];
-                                        if (snap && (DWORD)snap > 0x10000 &&
-                                            !IsBadReadPtr(snap, SNAP_BYTES)) {
-                                            memcpy(g_rawSnaps[g_rawCount], snap, SNAP_BYTES);
-                                            g_rawCount++;
+                        if (!IsBadReadPtr((void*)(btt + BTT_AL_COUNT), 4)) {
+                            DWORD count = *(DWORD*)(btt + BTT_AL_COUNT);
+                            if (!IsBadReadPtr((void*)(btt + BTT_LIST_ARRAY), 4)) {
+                                DWORD *data = *(DWORD**)(btt + BTT_LIST_ARRAY);
+                                if (count > 0 && count < 200000 && data &&
+                                    (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
+                                    if (snaps_reserve((int)count)) {
+                                        g_rawCount = 0;
+                                        for (DWORD i = 0; i < count; i++) {
+                                            DWORD *snap = (DWORD*)data[i];
+                                            if (snap && (DWORD)snap > 0x10000 &&
+                                                !IsBadReadPtr(snap, SNAP_BYTES)) {
+                                                memcpy(g_rawSnaps[g_rawCount], snap, SNAP_BYTES);
+                                                g_rawCount++;
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    if (g_rawCount > 0) {
-                        save_ghost_for_race("Previous_Run", finishTime, g_rawSnaps, g_rawCount);
-                        int existingTime = get_saved_time(g_currentRaceName);
-                        if (existingTime == NO_TIME || finishTime < existingTime) {
-                            save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
+                        if (g_rawCount > 0) {
+                            save_ghost_for_race("Previous_Run", finishTime, g_rawSnaps, g_rawCount);
+                            int existingTime = get_saved_time(g_currentRaceName);
+                            if (existingTime == NO_TIME || finishTime < existingTime) {
+                                save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
+                            }
+                        } else {
+                            g_raceFinished = 0;
                         }
-                    } else {
-                        g_raceFinished = 0;
                     }
-                    } /* end if (!g_isTimeWarpLevel) */
                 }
             }
-            g_prevGoalFlag = goalFlag;
+        }
+        g_prevGoalFlag = goalFlag;
+    }
+
+    /* Only TT mode monitors BTT recording changes */
+    if (tt) {
+        DWORD currRecording = 0;
+        if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
+            currRecording = *(DWORD*)(app + APP_BTT_RECORDING);
+
+        if (currRecording != g_prevRecording && currRecording && currRecording > 0x10000) {
+            g_prevRecording = currRecording;
+
+            char raceName[128];
+            if (g_hookRaceName[0]) {
+                strncpy(raceName, g_hookRaceName, sizeof(raceName) - 1);
+                raceName[sizeof(raceName) - 1] = '\0';
+            } else {
+                get_race_name(raceName, sizeof(raceName));
+            }
+            if (raceName[0]) {
+                strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
+                g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
+                snaps_reset();
+                g_recording = 1;
+                g_raceFinished = 0;
+                g_prevGoalFlag = 0;
+                diag_logf("[ghost_saver] RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
+            } else {
+                g_prevRecording = 0;
+            }
         }
     }
 
     LeaveCriticalSection(&g_cs);
 }
 
+static volatile BOOL g_shuttingDown = FALSE;
+
 static DWORD WINAPI ghost_saver_thread(LPVOID param) {
     (void)param;
     Sleep(3000);
     diag_log("[ghost_saver] Thread started");
-    while (1) {
+    while (!g_shuttingDown) {
         Sleep(16);
         check_race_state();
     }
+    diag_log("[ghost_saver] Thread exiting");
     return 0;
 }
 
@@ -2511,9 +2544,9 @@ static void ghost_event_frame(void) {
         g_ghostActive = TRUE;
         g_ghostFromEvent = TRUE;
 
-        DWORD partyMode = 0;
-        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 4))
-            partyMode = *(DWORD*)(app + APP_234_PARTY_MODE);
+        BYTE partyMode = 0;
+        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
+            partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
         g_needManualAdvance = (partyMode != 0);
 
         free(snapshots);
@@ -2576,8 +2609,10 @@ static void build_dce_stub(void) {
     int i = 0;
     /* Grab params from stack BEFORE pushad: [esp+8]=ball, [esp+12]=collEntry.
      * ECX is board (set before hook point by the caller). */
-    code[i++] = 0x8B; code[i++] = 0x5C; code[i++] = 0x24; code[i++] = 0x08; /* mov ebx, [esp+8]  (ball) */
-    code[i++] = 0x8B; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x0C; /* mov esi, [esp+12] (collEntry) */
+    /* At 0x40C5E5, after SEH prologue (PUSH -1 + MOV EAX,FS:[0] + PUSH EAX + MOV FS:[0],ESP = 4 pushes),
+     * stack has: [ESP]=oldSEH, [ESP+4]=handler, [ESP+8]=-1, [ESP+12]=retAddr, [ESP+16]=ball, [ESP+20]=collEntry */
+    code[i++] = 0x8B; code[i++] = 0x5C; code[i++] = 0x24; code[i++] = 0x10; /* mov ebx, [esp+16] (ball) */
+    code[i++] = 0x8B; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x14; /* mov esi, [esp+20] (collEntry) */
     code[i++] = 0x60;                 /* pushad */
     code[i++] = 0x9C;                 /* pushfd */
     code[i++] = 0x51;                 /* push ecx (board) */
@@ -2611,8 +2646,12 @@ static void install_dce_hook(void) {
 static void restore_dce_hook(void) {
     if (!g_dce_stub) return;
     patch_bytes((void*)DCE_HOOK_ADDR, g_dce_original, DCE_HOOK_BYTES);
+    if (g_dce_trampoline) {
+        VirtualFree(g_dce_trampoline, 0, MEM_RELEASE);
+        g_dce_trampoline = NULL;
+    }
+    VirtualFree(g_dce_stub, 0, MEM_RELEASE);
     g_dce_stub = NULL;
-    g_dce_trampoline = NULL;
     diag_log("[ghost_event] DCE hook restored");
 }
 
@@ -2926,6 +2965,14 @@ static void scanWarpNodes(void) {
 
     ballDataArray = *(DWORD*)((char*)board + BOARD_BALL_LIST_DATA);
     if (!is_valid_ptr(ballDataArray)) return;
+
+    /* Check ball count — if more than 1 ball (multiplayer), skip warp proximity to avoid
+     * triggering for the wrong player. */
+    DWORD ballCount = 0;
+    if (!IsBadReadPtr((void*)((char*)board + BOARD_BALL_LIST + 4), 4))
+        ballCount = *(DWORD*)((char*)board + BOARD_BALL_LIST + 4);
+    if (ballCount > 1) return;
+
     ball = *(DWORD*)((char*)ballDataArray);
     if (!is_valid_ball(ball)) return;
 
@@ -3285,6 +3332,28 @@ static void updateWarpStateMachine(void) {
         }
     }
 
+    /* Abort warp if timer expired during RUMBLE or FLASH */
+    if ((g_phase == PHASE_RUMBLE || g_phase == PHASE_FLASH) && ball) {
+        if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
+            BYTE finished = *(BYTE*)((char*)app + APP_5D6_GOAL_FLAG);
+            if (finished) {
+                diag_log("[warp] ABORT: timer expired during warp");
+                *(DWORD*)(ball + BALL_IMPACT_FREEZE) = 0;
+                *(BYTE*)(ball + BALL_RENDER_JITTER) = 0;
+                *(BYTE*)(ball + BALL_IN_TAR) = 0;
+                restoreMusicFade();
+                g_freezeTimer = 0;
+                unblock_pause();
+                if (board) *(float*)(board + SCENE_FADE_ALPHA) = 0.0f;
+                g_whiteAlpha = 0.0f;
+                g_phase = PHASE_IDLE;
+                g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
+                g_warpBall = 0;
+                return;
+            }
+        }
+    }
+
     switch (g_phase) {
     case PHASE_RUMBLE: {
         elapsed = now - g_phaseStartTime;
@@ -3341,9 +3410,10 @@ static void updateWarpStateMachine(void) {
             BYTE respawning = *(BYTE*)(ball + 0x2F9);
             if (!respawning && !IsBadWritePtr((void*)(ball + BALL_ALPHA), 4)) {
                 *(float*)(ball + BALL_ALPHA) = 0.0f;
+                *(BYTE*)(ball + BALL_IN_TAR) = 1;  /* prevent ball death during warp */
                 if (!g_freezeTimer) {
                     g_freezeTimer = 1;
-                    diag_log("[warp] Timer frozen (g_freezeTimer=1)");
+                    diag_log("[warp] Timer frozen + in_tar set (g_freezeTimer=1)");
                 }
             }
         }
@@ -3408,6 +3478,7 @@ static void updateWarpStateMachine(void) {
         if (ball) {
             *(DWORD*)(ball + BALL_IMPACT_FREEZE) = 0;
             *(BYTE*)(ball + BALL_RENDER_JITTER) = 0;
+            *(BYTE*)(ball + BALL_IN_TAR) = 0;
             if (!IsBadWritePtr((void*)(ball + BALL_ALPHA), 4))
                 *(float*)(ball + BALL_ALPHA) = 1.0f;
 
@@ -3474,12 +3545,14 @@ static void updateWarpStateMachine(void) {
                     if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
                         partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
                     if (partyMode == 0) {
+                        EnterCriticalSection(&g_cs);
                         /* Destroy old Ghost 2 before capturing so the capture buffer is the only copy */
                         if (g_ghost2.active || g_ghost2.ball || g_ghost2.btt) {
                             ghost2_destroy();
                         }
                         g_ghost2Pending = FALSE;
                         ghost2_capture();
+                        LeaveCriticalSection(&g_cs);
                     }
                 }
 
@@ -3502,13 +3575,6 @@ static void updateWarpStateMachine(void) {
                 } else if (isSameLevel) {
                     savedTimeRemaining = *(int*)((char*)app + APP_5E8_TIMER);
                 }
-            }
-
-            /* Use Tournament start for tournament-to-same-level warps, Practice otherwise */
-            if (wasInTournament && isSameLevel) {
-                func = (void *)APP_START_TOURNAMENT_RACE;
-            } else {
-                func = (void *)APP_START_PRACTICE_RACE;
             }
 
             /* Use Tournament start for tournament-to-same-level warps, Practice otherwise */
@@ -3937,7 +4003,9 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        /* Restore all patches */
+        /* Signal background thread to exit */
+        g_shuttingDown = TRUE;
+        Sleep(50);  /* Give thread time to notice */
         g_freezeTimer = 0;
         restore_timer_caves();
         restore_tt_recording_nop();

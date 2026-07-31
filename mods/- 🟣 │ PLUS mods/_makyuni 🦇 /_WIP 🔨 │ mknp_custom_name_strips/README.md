@@ -4,13 +4,13 @@ Custom per-level RGBA colors for the horizontal strip displayed behind the Race/
 
 ## Installation
 
-1. Rename original `bass.dll` → `bass_real.dll` in the Hamsterball game folder
-2. Copy the mod `bass.dll` and `name_strips.txt` into the game folder
-3. Launch Hamsterball — the mod auto-creates `name_strips.txt` on first run if missing
+1. Rename original `mknp_custom_name_strips.dll` → `bass_real.dll` in the Hamsterball game folder
+2. Copy the mod `mknp_custom_name_strips.dll` and `mknp_custom_name_strips.txt` into the game folder
+3. Launch Hamsterball — the mod auto-creates `mknp_custom_name_strips.txt` on first run if missing
 
 ## Config File
 
-The mod reads `name_strips.txt` next to `bass.dll`. Edit it at runtime — changes apply within 2 seconds.
+The mod reads `mknp_custom_name_strips.txt` next to `mknp_custom_name_strips.dll`. Edit it at runtime — changes apply within 2 seconds.
 
 ### Format
 
@@ -106,7 +106,7 @@ Arena vs Race is determined by checking if "ARENA" appears in the name string.
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll custom_name_strips.c -lwinmm \
+i686-w64-mingw32-gcc -shared -o mknp_custom_name_strips.dll mknp_custom_name_strips.c -lwinmm \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
   -Wl,--add-stdcall-alias
 ```

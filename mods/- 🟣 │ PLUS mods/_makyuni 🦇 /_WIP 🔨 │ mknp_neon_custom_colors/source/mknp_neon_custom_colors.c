@@ -1,7 +1,7 @@
 /*
  * neon_custom_colors — Customizable Neon Race glow colors from .txt file.
  *
- * Reads neon_colors.txt from the game directory and applies custom RGB
+ * Reads mknp_neon_custom_colors.txt from the game directory and applies custom RGB
  * values to both the player outline (material colors) and emitter glow
  * (light source) for P1 and P2, plus all neon platform/border mesh nodes.
  *
@@ -9,7 +9,7 @@
  * to the phys/emitter structs after the original function sets them up.
  * This bypasses the 2-byte PUSH imm8 limitation for B channels.
  *
- * Config file: neon_colors.txt (next to bass.dll)
+ * Config file: mknp_neon_custom_colors.txt (next to bass.dll)
  * Format (float values, NOT hex):
  *   NEON PLAYER1 OUTLINE:
  *   * R = 1.0
@@ -22,7 +22,7 @@
  *   * B = 0.0
  *   (same for PLAYER2 OUTLINE and GLOW)
  *
- * If neon_colors.txt is missing, a default one is generated automatically.
+ * If mknp_neon_custom_colors.txt is missing, a default one is generated automatically.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -148,12 +148,12 @@ static void get_config_path(char* out, DWORD len) {
         char* slash = strrchr(dll_path, '\\');
         if (slash) {
             slash[1] = '\0';
-            _snprintf(out, len, "%sneon_colors.txt", dll_path);
+            _snprintf(out, len, "%smknp_neon_custom_colors.txt", dll_path);
             return;
         }
     }
     /* Fallback: try current directory */
-    _snprintf(out, len, "neon_colors.txt");
+    _snprintf(out, len, "mknp_neon_custom_colors.txt");
 }
 
 /* ── Generate default config file ──────────────────────────────────── */

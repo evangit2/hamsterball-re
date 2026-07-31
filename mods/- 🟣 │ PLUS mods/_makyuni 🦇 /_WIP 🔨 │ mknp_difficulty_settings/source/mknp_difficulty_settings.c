@@ -1,5 +1,5 @@
 /*
- * difficulty_settings.c — Difficulty-based level file redirect mod (v3.1)
+ * mknp_difficulty_settings.c — Difficulty-based level file redirect mod (v3.1)
  *
  * COMPLETE REWRITE. Instead of modifying entity names, this mod redirects
  * which MESHWORLD file gets loaded based on tournament difficulty.
@@ -32,7 +32,7 @@
  *   So: is_tournament = (profile+0x10==0 && profile+0x11==0)
  *
  * BUILD:
- *   i686-w64-mingw32-gcc -shared -o bass.dll difficulty_settings.c \
+ *   i686-w64-mingw32-gcc -shared -o bass.dll mknp_difficulty_settings.c \
  *     -I../shared -lwinmm -Wl,--enable-stdcall-fixup -O2 -static \
  *     -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  */

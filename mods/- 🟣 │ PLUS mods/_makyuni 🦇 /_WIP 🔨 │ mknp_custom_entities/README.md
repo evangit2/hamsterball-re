@@ -1,6 +1,6 @@
 # Custom Entities Mod v55m_42t
 
-A bass.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
+A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
 For version history, see [v_changelog.md](v_changelog.md).
 
@@ -168,9 +168,9 @@ All mod-side functions use the `cEnt_` prefix to distinguish them from game orig
 
 ## Installation
 
-1. Backup your original `bass.dll`
-2. Copy `bass.dll` from this mod to the game folder
-3. Rename the original `bass.dll` to `bass_real.dll`
+1. Backup your original `mknp_custom_entities.dll`
+2. Copy `mknp_custom_entities.dll` from this mod to the game folder
+3. Rename the original `mknp_custom_entities.dll` to `bass_real.dll`
 4. Place `_default.MESHWORLD` in the `levels\` directory
 
 ## Log File

@@ -20,11 +20,11 @@ This mod forces that flag to stay `0` for the entire session.
 
 ## Files
 
-- `bass.dll` — the compiled mod
-- `source/ignore_cache.c` — source code
-- `source/bass_proxy.h` — shared bass.dll proxy boilerplate
+- `mknp_ignore_cache.dll` — the compiled mod
+- `source/mknp_ignore_cache.c` — source code
+- `source/bass_proxy.h` — shared mknp_ignore_cache.dll proxy boilerplate
 - `README.md` — this file
 
 ## Install
 
-Place `bass.dll` next to `Hamsterball.exe`. Rename the original `bass.dll` to `bass_real.dll` first.
+Place `mknp_ignore_cache.dll` next to `Hamsterball.exe`. Rename the original `mknp_ignore_cache.dll` to `bass_real.dll` first.

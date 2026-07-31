@@ -4,15 +4,15 @@ Editable Credits Screen Text mod for Hamsterball.
 
 ## What It Does
 
-Replaces the hard-coded credits strings in the CREDITS screen with user-editable text from `custom_credits.txt`. The credits screen has 44 lines (30 text + 14 blank separators) that scroll vertically — all of them can be customized.
+Replaces the hard-coded credits strings in the CREDITS screen with user-editable text from `mknp_custom_credits.txt`. The credits screen has 44 lines (30 text + 14 blank separators) that scroll vertically — all of them can be customized.
 
 ## Installation
 
-1. Rename the original `bass.dll` to `bass_real.dll`
-2. Copy this mod's `bass.dll` into the game folder
-3. Edit `custom_credits.txt` to change any of the 44 lines
+1. Rename the original `mknp_custom_credits.dll` to `bass_real.dll`
+2. Copy this mod's `mknp_custom_credits.dll` into the game folder
+3. Edit `mknp_custom_credits.txt` to change any of the 44 lines
 
-The mod auto-generates `custom_credits.txt` with default values on first launch if the file is missing.
+The mod auto-generates `mknp_custom_credits.txt` with default values on first launch if the file is missing.
 
 ## Config Format
 

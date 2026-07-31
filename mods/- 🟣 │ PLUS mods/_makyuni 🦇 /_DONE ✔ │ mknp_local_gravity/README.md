@@ -3,7 +3,7 @@
 **Author:** BookwormKevin  
 **Contributors:** Hamsterbot  
 **API:** Hamsterball Plus v1  
-**Files:** `LocalGravity.cpp` (VS), `LocalGravity_MinGW.cpp` (MinGW)
+**Files:** `mknp_local_gravity.cpp` (VS), `mknp_local_gravity_MinGW.cpp` (MinGW)
 
 ## What It Does
 
@@ -93,13 +93,13 @@ Scene names matched (case-sensitive):
 
 ### Visual Studio (primary)
 1. Open Visual Studio with the Hamsterball Plus mod template
-2. Replace `MainModFile.cpp` with `LocalGravity.cpp`
+2. Replace `MainModFile.cpp` with `mknp_local_gravity.cpp`
 3. Build as 32-bit DLL (output name doesn't matter, the API loads by export)
 4. Place the compiled `.dll` in the `Mods\` folder
 
 ### MinGW cross-compile (alternative)
 ```bash
-i686-w64-mingw32-g++ -shared -o mknp_plus_local_gravity.dll LocalGravity_MinGW.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mknp_plus_local_gravity.dll mknp_local_gravity_MinGW.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \

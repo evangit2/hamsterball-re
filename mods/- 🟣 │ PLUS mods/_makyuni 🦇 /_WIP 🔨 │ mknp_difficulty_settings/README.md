@@ -49,8 +49,8 @@ If a variant file doesn't exist, the mod falls back to the default file automati
 
 ## Installation
 
-1. Rename the original `bass.dll` to `bass_real.dll`
-2. Copy `bass.dll` from this mod into the game folder
+1. Rename the original `mknp_difficulty_settings.dll` to `bass_real.dll`
+2. Copy `mknp_difficulty_settings.dll` from this mod into the game folder
 3. Create `-easy` and/or `-hard` variants of level files as needed
 
 ## Technical Details
@@ -64,7 +64,7 @@ If a variant file doesn't exist, the mod falls back to the default file automati
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll difficulty_settings.c \
+i686-w64-mingw32-gcc -shared -o mknp_difficulty_settings.dll mknp_difficulty_settings.c \
   -I../shared -lwinmm -Wl,--enable-stdcall-fixup -O2 -static \
   -static-libgcc -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
 ```
