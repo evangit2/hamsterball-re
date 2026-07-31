@@ -1,7 +1,7 @@
 /*
  * LocalGravity_MinGW.cpp — Per-level gravity override (HB+ v2.0, MinGW)
  *
- * Reads 30 gravity values from mkn_plus_local_gravity.txt:
+ * Reads 30 gravity values from mknp_plus_local_gravity.txt:
  *   Lines 1-15:  Race levels (Warm-Up through Impossible)
  *   Lines 16-30: Arena levels (Warm-Up through Impossible)
  *
@@ -87,7 +87,7 @@ static void buildConfigPath(void) {
                 *(last + 1) = '\0';
                 nc_strncpy(g_configPath, dllPath, MAX_PATH - 1);
                 nc_strncpy(g_configPath + nc_strlen(g_configPath),
-                           "mkn_plus_local_gravity.txt",
+                           "mknp_plus_local_gravity.txt",
                            MAX_PATH - nc_strlen(g_configPath) - 1);
                 g_configPath[MAX_PATH - 1] = '\0';
                 g_pathReady = true;
@@ -95,7 +95,7 @@ static void buildConfigPath(void) {
             }
         }
     }
-    nc_strncpy(g_configPath, "mkn_plus_local_gravity.txt", MAX_PATH - 1);
+    nc_strncpy(g_configPath, "mknp_plus_local_gravity.txt", MAX_PATH - 1);
     g_configPath[MAX_PATH - 1] = '\0';
     g_pathReady = true;
 }

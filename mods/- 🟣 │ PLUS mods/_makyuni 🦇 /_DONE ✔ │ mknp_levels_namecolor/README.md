@@ -1,8 +1,8 @@
-# mkn_plus_levels_namecolor
+# mknp_plus_levels_namecolor
 
 **Author:** MAKYUNI 🦇  
 **Type:** bass.dll proxy mod (MinGW)  
-**Config file:** `mkn_plus_levels_namecolor.txt` (auto-generated next to DLL)
+**Config file:** `mknp_plus_levels_namecolor.txt` (auto-generated next to DLL)
 
 ## Features
 
@@ -23,8 +23,8 @@ Customizes per-level and per-arena **names** and **colors** in Hamsterball:
 ## Installation
 
 1. Rename original `bass.dll` → `bass_real.dll` in the Hamsterball game folder
-2. Copy `mkn_plus_levels_namecolor.dll` as `bass.dll` into the game folder
-3. Copy `mkn_plus_levels_namecolor.txt` next to `bass.dll`
+2. Copy `mknp_plus_levels_namecolor.dll` as `bass.dll` into the game folder
+3. Copy `mknp_plus_levels_namecolor.txt` next to `bass.dll`
 4. Launch Hamsterball — the mod auto-creates the config if missing
 
 ## Config Format
@@ -69,7 +69,7 @@ WarmUp=             #FF00FF
 ## Build
 
 ```bash
-i686-w64-mingw32-gcc -shared -o bass.dll mkn_plus_levels_namecolor.c \
+i686-w64-mingw32-gcc -shared -o bass.dll mknp_plus_levels_namecolor.c \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
   -Wl,--add-stdcall-alias
 ```
