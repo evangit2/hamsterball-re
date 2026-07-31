@@ -2626,6 +2626,12 @@ static int g_colorSaved = 0;
 
 static volatile BYTE g_freezeTimer = 0;
 
+/* Ghost mode code cave — allows E:GHOST ghosts in all modes */
+/* but restricts normal ghosts to Time Trial only */
+static volatile BOOL g_ghostModePatched = 0;
+static unsigned char *g_ghostModeCave = NULL;
+static unsigned char g_ghostModeOrigBytes[17];
+
 static unsigned char g_decOrigBytes[TIMER_DEC_PATCH_SIZE];
 static unsigned char g_incOrigBytes[TIMER_INC_PATCH_SIZE];
 static int g_decPatched = 0;
@@ -3066,6 +3072,124 @@ static void restore_timer_caves(void) {
         }
         g_incPatched = 0;
     }
+}
+
+/* Ghost mode code cave — allows E:GHOST ghosts in all modes,
+ * but keeps normal ghosts restricted to Time Trial only.
+ *
+ * Patches 0x0040B7F0 (17 bytes) which normally has:
+ *   MOV DL, [ECX+0x11]   ; profile->practice
+ *   TEST DL, DL
+ *   JZ skip               ; skip if NOT TT
+ *   MOV CL, [EAX+0x234]  ; app->party_mode
+ *   TEST CL, CL
+ *   JNZ skip              ; skip if party
+ *
+ * Cave replaces this with g_ghostFromEvent-aware logic:
+ *   if (g_ghostFromEvent) goto allow;
+ *   else { original checks; }
+ *   allow: -> continue at 0x40B802 (ghost update)
+ *   skip:  -> jump to 0x40B834 (skip ghost)
+ */
+#define GHOST_MODE_PATCH_ADDR  0x0040B7F0
+#define GHOST_MODE_PATCH_SIZE  17
+#define GHOST_MODE_CONTINUE    0x0040B802
+#define GHOST_MODE_SKIP        0x0040B834
+
+static void install_ghost_mode_cave(void) {
+    if (g_ghostModePatched) return;
+    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
+    DWORD continueAddr = GHOST_MODE_CONTINUE;
+    DWORD skipAddr = GHOST_MODE_SKIP;
+    DWORD ghostFromEventAddr = (DWORD)&g_ghostFromEvent;
+
+    g_ghostModeCave = (unsigned char *)VirtualAlloc(NULL, 64, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    if (!g_ghostModeCave) return;
+
+    unsigned char *p = g_ghostModeCave;
+
+    /* CMP byte [g_ghostFromEvent], 0  (7 bytes) */
+    p[0] = 0x80; p[1] = 0x3D;
+    *(DWORD*)(p + 2) = ghostFromEventAddr;
+    p[6] = 0x00;
+    p += 7;
+
+    /* JNE allow (JNZ rel8, 2 bytes) */
+    /* Calculate offset: (allow is after the 5-byte JMP) */
+    /* allow label is at: p + 2 + 3 + 2 + 2 + 6 + 2 + 2 + 5 (end of JMP allow) */
+    /* But easier: we'll write this as a placeholder and fix it up */
+    /* Actually, let me just compute: after the JNE, we have 3+2+2+6+2+2+5+5 = 27 bytes of code */
+    /* JNE offset = 27 (skip past original checks + both JMPs) */
+    /* Wait, let me recalculate: */
+    /* JNE is at bytes 7-8 of cave. The 'allow' JMP is 9 bytes after the original checks. */
+    /* Original checks: 3+2+2+6+2+2 = 17 bytes */
+    /* Then JMP allow (5 bytes) = 22 bytes from JNE end */
+    /* Then JMP skip (5 bytes) = 27 bytes from JNE end */
+    /* So JNE rel8 = 27 (0x1B) */
+    p[0] = 0x75; p[1] = 0x1B;  /* JNE +27 (skip to 'allow' JMP) */
+    p += 2;
+
+    /* Original: MOV DL, [ECX+0x11] (3 bytes) */
+    p[0] = 0x8A; p[1] = 0x51; p[2] = 0x11;
+    p += 3;
+
+    /* Original: TEST DL, DL (2 bytes) */
+    p[0] = 0x84; p[1] = 0xD2;
+    p += 2;
+
+    /* Original: JZ skip (2 bytes) */
+    /* skip is at: p + 2 + 6 + 2 + 2 + 5 + 5 */
+    /* = 22 bytes from here */
+    p[0] = 0x74; p[1] = 22;  /* JZ +22 */
+    p += 2;
+
+    /* Original: MOV CL, [EAX+0x234] (6 bytes) */
+    p[0] = 0x8A; p[1] = 0x88;
+    p[2] = 0x34; p[3] = 0x02; p[4] = 0x00; p[5] = 0x00;
+    p += 6;
+
+    /* Original: TEST CL, CL (2 bytes) */
+    p[0] = 0x84; p[1] = 0xC9;
+    p += 2;
+
+    /* Original: JNZ skip (2 bytes) */
+    /* skip is at: p + 2 + 5 + 5 = 12 bytes from here */
+    p[0] = 0x75; p[1] = 12;  /* JNZ +12 */
+    p += 2;
+
+    /* allow: JMP continueAddr (5 bytes) */
+    write_jmp(p, continueAddr);
+    p += 5;
+
+    /* skip: JMP skipAddr (5 bytes) */
+    write_jmp(p, skipAddr);
+
+    /* Save original bytes and patch */
+    DWORD oldProt;
+    if (VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        memcpy(g_ghostModeOrigBytes, (void*)patchAddr, GHOST_MODE_PATCH_SIZE);
+        write_jmp((unsigned char*)patchAddr, (DWORD)g_ghostModeCave);
+        memset((unsigned char*)patchAddr + 5, 0x90, GHOST_MODE_PATCH_SIZE - 5);
+        VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
+        g_ghostModePatched = 1;
+        diag_log("[ghost] Ghost mode code cave installed at 0x40B7F0");
+    }
+}
+
+static void restore_ghost_mode_cave(void) {
+    if (!g_ghostModePatched) return;
+    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
+    DWORD oldProt;
+    if (VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        memcpy((void*)patchAddr, g_ghostModeOrigBytes, GHOST_MODE_PATCH_SIZE);
+        VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
+    }
+    if (g_ghostModeCave) {
+        VirtualFree(g_ghostModeCave, 0, MEM_RELEASE);
+        g_ghostModeCave = NULL;
+    }
+    g_ghostModePatched = 0;
+    diag_log("[ghost] Ghost mode code cave restored");
 }
 
 /* TT recording NOP patch — enables recording in Tournament mode */
@@ -3688,6 +3812,9 @@ static DWORD WINAPI init_thread(LPVOID param) {
     /* Install shared frame epilogue hook */
     install_frame_hook();
 
+    /* Install ghost mode code cave (E:GHOST works in all modes, normal ghosts restricted to TT) */
+    install_ghost_mode_cave();
+
     /* Start ghost saver background thread */
     CreateThread(NULL, 0, ghost_saver_thread, NULL, 0, NULL);
 
@@ -3801,6 +3928,7 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         restore_tournament_hook();
         restore_dce_hook();
         restore_frame_hook();
+        restore_ghost_mode_cave();
 
         /* Clean up Ghost 2 */
         ghost2_destroy();

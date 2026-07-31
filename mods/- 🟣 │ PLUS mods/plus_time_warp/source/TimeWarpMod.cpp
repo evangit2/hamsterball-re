@@ -415,6 +415,101 @@ static void unblock_pause(DWORD base) {
     LOGS("Pause unblocked");
 }
 
+/* Ghost mode code cave — allows E:GHOST ghosts in all modes,
+ * but keeps normal ghosts restricted to Time Trial only.
+ *
+ * Patches 0x0040B7F0 (17 bytes) which normally has:
+ *   MOV DL, [ECX+0x11]   ; profile->practice
+ *   TEST DL, DL
+ *   JZ skip               ; skip if NOT TT
+ *   MOV CL, [EAX+0x234]  ; app->party_mode
+ *   TEST CL, CL
+ *   JNZ skip              ; skip if party
+ */
+extern BOOL g_ghostFromEvent;
+#define GHOST_MODE_PATCH_ADDR  0x0040B7F0
+#define GHOST_MODE_PATCH_SIZE  17
+#define GHOST_MODE_CONTINUE    0x0040B802
+#define GHOST_MODE_SKIP        0x0040B834
+
+static unsigned char* g_ghostModeCave = NULL;
+static unsigned char g_ghostModeOrigBytes[17];
+
+static void install_ghost_mode_cave(DWORD base) {
+    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
+    DWORD continueAddr = GHOST_MODE_CONTINUE;
+    DWORD skipAddr = GHOST_MODE_SKIP;
+    DWORD ghostFromEventAddr = (DWORD)&g_ghostFromEvent;
+
+    g_ghostModeCave = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_ghostModeCave) { LOGS("GhostMode: VirtualAlloc failed"); return; }
+
+    unsigned char* p = g_ghostModeCave;
+
+    /* CMP byte [g_ghostFromEvent], 0  (7 bytes) */
+    p[0] = 0x80; p[1] = 0x3D;
+    *(DWORD*)(p + 2) = ghostFromEventAddr;
+    p[6] = 0x00;
+    p += 7;
+
+    /* JNE +27 (skip original checks -> 'allow' JMP) */
+    p[0] = 0x75; p[1] = 0x1B;
+    p += 2;
+
+    /* Original: MOV DL, [ECX+0x11] (3 bytes) */
+    p[0] = 0x8A; p[1] = 0x51; p[2] = 0x11;
+    p += 3;
+
+    /* Original: TEST DL, DL (2 bytes) */
+    p[0] = 0x84; p[1] = 0xD2;
+    p += 2;
+
+    /* Original: JZ +22 (2 bytes) */
+    p[0] = 0x74; p[1] = 22;
+    p += 2;
+
+    /* Original: MOV CL, [EAX+0x234] (6 bytes) */
+    p[0] = 0x8A; p[1] = 0x88;
+    *(DWORD*)(p + 2) = 0x234;
+    p += 6;
+
+    /* Original: TEST CL, CL (2 bytes) */
+    p[0] = 0x84; p[1] = 0xC9;
+    p += 2;
+
+    /* Original: JNZ +12 (2 bytes) */
+    p[0] = 0x75; p[1] = 12;
+    p += 2;
+
+    /* allow: JMP continueAddr (5 bytes) */
+    write_jmp(p, continueAddr);
+    p += 5;
+
+    /* skip: JMP skipAddr (5 bytes) */
+    write_jmp(p, skipAddr);
+
+    DWORD oldProt;
+    memcpy(g_ghostModeOrigBytes, (void*)patchAddr, GHOST_MODE_PATCH_SIZE);
+    VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt);
+    write_jmp((unsigned char*)patchAddr, (DWORD)g_ghostModeCave);
+    memset((unsigned char*)patchAddr + 5, 0x90, GHOST_MODE_PATCH_SIZE - 5);
+    VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
+    LOGS("Ghost mode code cave installed at 0x40B7F0");
+}
+
+static void restore_ghost_mode_cave(DWORD base) {
+    (void)base;
+    if (!g_ghostModeCave) return;
+    DWORD oldProt;
+    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
+    VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt);
+    memcpy((void*)patchAddr, g_ghostModeOrigBytes, GHOST_MODE_PATCH_SIZE);
+    VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
+    VirtualFree(g_ghostModeCave, 0, MEM_RELEASE);
+    g_ghostModeCave = NULL;
+    LOGS("Ghost mode code cave restored");
+}
+
 /* ---- Level name mapping ---- */
 typedef struct {
     const char* meshName;
@@ -2692,8 +2787,7 @@ public:
             (void*)hook_AppStartTournamentRace,
             (void**)&orig_AppStartTournamentRace);
 
-        api->PatchMemory(0x40B7F5, "\x90\x90", 2);
-        api->PatchMemory(0x40B7FF, "\x90\x90", 2);
+        install_ghost_mode_cave(g_gameBase);
         install_tt_recording_nop();
 
         init_ghost_dir();
