@@ -307,7 +307,8 @@ typedef struct {
     DWORD arm_obj;       /* v55m_42q: separate arm PopCylinder object */
     DWORD arm_orig_vtable18; /* v55m_42q: saved original vtable[18] for arm render hook */
     DWORD arm_mesh;      /* v55m_42q: MeshWorld* for arm (loaded from Level4-Catapult) */
-    int   arm_active;    /* v55m_42q: arm object spawned successfully */
+    DWORD arm_active;    /* v55m_42q: arm rotation active */
+    int verts_rotating;  /* v55m_43h: 1 = vertex rotation works (matrix hook must be skipped) */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -647,13 +648,76 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
             }
         }
     }
-    /* v55m_43h: Vertex rotation replaces the matrix rotation.
-     * The vertex array at the collision Level's SceneObject+0x440 is rotated
-     * every frame in cEnt_catapult_present_check — BOTH the render and the
-     * spatial-tree collision read the same array, so both rotate together.
-     * The world matrix at renderLevel+0x4 is left UNTOUCHED (identity), so
-     * the render draws the (rotated) absolute verts with no extra transform.
-     * This avoids the double-rotation the matrix hook caused. */
+    /* v55m_43h: Restore the render matrix rotation (it worked in v55m_43g
+     * — user confirmed the visual). The vertex-array rotation is a SECOND
+     * mechanism for collision; if it fails to find the array (VERT ROTATION
+     * FAILED), the matrix still gives the visual. When vertex rotation
+     * WORKS (verts_rotating), skip the matrix — the rotated verts alone
+     * rotate the render (no double-rotation). */
+    if (cs->verts_rotating) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        DWORD orig_fn = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
+                      ? cs->arm_orig_vtable18 : cs->orig_vtable18;
+        ((render_t)orig_fn)(this_, param_1, param_2);
+        return;
+    }
+    {
+        /* Save the current world matrix (renderLevel+0x4). */
+        float saveMatrix[16];
+        memcpy(saveMatrix, (float*)(renderLevel + 0x4), sizeof(saveMatrix));
+
+        /* Rotate AROUND THE OBJECT'S OWN CENTER (cs->x,y,z). */
+        float angle = cs->arm_angle * 3.14159265f / 180.0f;
+        float c = cosf(angle);
+        float s = sinf(angle);
+        float m1[16] = {
+            1,0,0,0,  0,1,0,0,  0,0,1,0,
+            -cs->x, -cs->y, -cs->z, 1
+        };
+        float m2[16] = {
+            c,0,-s,0,  0,1,0,0,  s,0,c,0,  0,0,0,1
+        };
+        float m3[16] = {
+            1,0,0,0,  0,1,0,0,  0,0,1,0,
+            cs->x, cs->y, cs->z, 1
+        };
+        float finalMatrix[16];
+        int row, col, k;
+        float tmp1[16], tmp2[16];
+        for (row = 0; row < 4; row++) {
+            for (col = 0; col < 4; col++) {
+                tmp1[row*4+col] = 0;
+                for (k = 0; k < 4; k++) {
+                    tmp1[row*4+col] += saveMatrix[row*4+k] * m1[k*4+col];
+                }
+            }
+        }
+        for (row = 0; row < 4; row++) {
+            for (col = 0; col < 4; col++) {
+                tmp2[row*4+col] = 0;
+                for (k = 0; k < 4; k++) {
+                    tmp2[row*4+col] += tmp1[row*4+k] * m2[k*4+col];
+                }
+            }
+        }
+        for (row = 0; row < 4; row++) {
+            for (col = 0; col < 4; col++) {
+                finalMatrix[row*4+col] = 0;
+                for (k = 0; k < 4; k++) {
+                    finalMatrix[row*4+col] += tmp2[row*4+k] * m3[k*4+col];
+                }
+            }
+        }
+
+        memcpy((float*)(renderLevel + 0x4), finalMatrix, sizeof(finalMatrix));
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        DWORD orig_fn = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
+                      ? cs->arm_orig_vtable18 : cs->orig_vtable18;
+        ((render_t)orig_fn)(this_, param_1, param_2);
+        memcpy((float*)(renderLevel + 0x4), saveMatrix, sizeof(saveMatrix));
+        return;
+    }
+    /* Unreachable fallback (kept for structure): call original directly. */
     typedef void (__thiscall *render_t)(DWORD, char, int);
     DWORD orig_fn = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
                   ? cs->arm_orig_vtable18 : cs->orig_vtable18;
@@ -2538,6 +2602,33 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                     cs->arm_obj = cat_level;
                                     if (logf) fprintf(logf, "  ROTATER: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
                                         cs->arm_orig_vtable18, new_level_vt[18]);
+                                    /* v55m_43h: DUMP the collision Level's mesh structure so we can
+                                     * find where the vertex array lives. */
+                                    {
+                                        DWORD lvl_mw = *(DWORD*)((char*)cat_level + 0x08);
+                                        DWORD lvl_so = *(DWORD*)((char*)cat_level + 0x480);
+                                        DWORD so_v440 = lvl_so ? *(DWORD*)((char*)lvl_so + 0x440) : 0;
+                                        DWORD so_v43c = lvl_so ? *(DWORD*)((char*)lvl_so + 0x43C) : 0;
+                                        if (logf) fprintf(logf, "  ROTATER: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+                                            cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
+                                        if (lvl_mw && !IsBadReadPtr((void*)lvl_mw, 0x40)) {
+                                            DWORD* mwlist = (DWORD*)(lvl_mw + 0x2C);
+                                            int mwcount = mwlist ? *(int*)(mwlist + 0x1) : -1;
+                                            DWORD* mwitems = mwlist ? *(DWORD**)(mwlist + 0x103) : NULL;
+                                            if (logf) fprintf(logf, "  ROTATER: DUMP mw+2C count=%d items=0x%08X\n", mwcount, (DWORD)mwitems);
+                                            if (mwcount > 0 && mwcount < 64 && mwitems) {
+                                                DWORD mb = mwitems[0];
+                                                if (mb && !IsBadReadPtr((void*)mb, 0x50)) {
+                                                    DWORD mb_v438 = *(DWORD*)((char*)mb + 0x438);
+                                                    DWORD mb_v43c = *(DWORD*)((char*)mb + 0x43C);
+                                                    DWORD mb_v4 = *(DWORD*)((char*)mb + 0x4);
+                                                    DWORD mb_vc = *(DWORD*)((char*)mb + 0xC);
+                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0]=0x%08X +438=0x%08X +43C=%d +4=%d +C=%d\n",
+                                                        mb, mb_v438, mb_v43c, mb_v4, mb_vc);
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3947,14 +4038,12 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD colLevel = *(DWORD*)((char*)cs->obj + 0x10D4);
     if (!colLevel || colLevel < 0x10000) return 0;
     if (IsBadReadPtr((void*)colLevel, 0x490)) return 0;
-    DWORD sceneObj = *(DWORD*)((char*)colLevel + 0x480);
-    if (!sceneObj || sceneObj < 0x10000) return 0;
-    if (IsBadReadPtr((void*)sceneObj, 0x450)) return 0;
-    float* verts = *(float**)(sceneObj + 0x440);
-    if (!verts || verts < (float*)0x10000) return 0;
 
-    /* Total vertex count = MeshWorld+0x08 -> MeshWorld+0x2C AthenaList:
-     * count at +0x4, items at +0x40C; each MeshBuffer has count at +0x4. */
+    /* v55m_43h: The vertex array is in the collision Level's MeshWorld
+     * MeshBuffers (NOT SceneObject+0x440 — that's zeroed in Level_ctor).
+     * MeshWorld at colLevel+0x08; MeshBuffer list at MeshWorld+0x2C
+     * (count +0x4, items +0x40C); each MeshBuffer: +0x438 = vertex
+     * array (32-byte stride), +0x43C = vertex count. */
     DWORD mw = *(DWORD*)((char*)colLevel + 0x08);
     if (!mw || mw < 0x10000) return 0;
     if (IsBadReadPtr((void*)mw, 0x40)) return 0;
@@ -3965,71 +4054,32 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
     if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
 
+    /* v55m_43h: Rotate EACH MeshBuffer's vertex array. Apply the ANGLE
+     * DELTA since the last frame (the matrix hook applies the FULL angle;
+     * if the vertex rotation applied the full angle too, it would
+     * double-rotate). If the matrix hook is disabled, full-angle is
+     * correct — so track a per-catapult last-applied angle and rotate by
+     * the difference. */
+    float ang = cs->arm_angle * 3.14159265f / 180.0f;
+    float c = cosf(ang), s = sinf(ang);
     int total = 0;
     int b;
     for (b = 0; b < list_count; b++) {
         DWORD mb = items[b];
         if (!mb || IsBadReadPtr((void*)mb, 0x20)) continue;
-        int cnt = *(int*)(mb + 0x4);
-        if (cnt < 0) continue;
-        total += cnt;
-    }
-    if (total <= 0 || total > 100000) return 0;
-    if (IsBadReadPtr((void*)verts, total * 32)) return 0;
-
-    float ang = cs->arm_angle * 3.14159265f / 180.0f;
-    float c = cosf(ang), s = sinf(ang);
-    int v;
-    for (v = 0; v < total; v++) {
-        float* p = verts + v * 8;  /* 32-byte stride = 8 floats */
-        float x = p[0] - cs->x;
-        float z = p[2] - cs->z;
-        p[0] = x*c + z*s + cs->x;
-        p[2] = -x*s + z*c + cs->z;
-    }
-    /* v55m_43h: ALSO rotate the render Level's vertex array (obj+0x434),
-     * which 0x45E0E0 (the catapult's own vtable[18]) draws. Both draw paths
-     * must see rotated verts — the collision Level (scene tree) and the
-     * catapult's own render (if the game calls it). */
-    DWORD renderLevel = *(DWORD*)((char*)cs->obj + 0x434);
-    if (renderLevel && renderLevel >= 0x10000 &&
-        !IsBadReadPtr((void*)renderLevel, 0x490)) {
-        DWORD rso = *(DWORD*)((char*)renderLevel + 0x480);
-        if (rso && rso >= 0x10000 && !IsBadReadPtr((void*)rso, 0x450)) {
-            float* rverts = *(float**)(rso + 0x440);
-            DWORD rmw = *(DWORD*)((char*)renderLevel + 0x08);
-            if (rverts && rverts >= (float*)0x10000 && rmw && rmw >= 0x10000 &&
-                !IsBadReadPtr((void*)rmw, 0x40)) {
-                DWORD* rlist = (DWORD*)(rmw + 0x2C);
-                if (!IsBadReadPtr((void*)rlist, 0x20)) {
-                    int rlc = *(int*)(rlist + 0x1);
-                    if (rlc > 0 && rlc <= 64) {
-                        DWORD* ritems = *(DWORD**)(rlist + 0x103);
-                        if (ritems && !IsBadReadPtr((void*)ritems, rlc * 4)) {
-                            int rtotal = 0;
-                            int rb;
-                            for (rb = 0; rb < rlc; rb++) {
-                                DWORD rmb = ritems[rb];
-                                if (!rmb || IsBadReadPtr((void*)rmb, 0x20)) continue;
-                                int rcnt = *(int*)(rmb + 0x4);
-                                if (rcnt < 0) continue;
-                                rtotal += rcnt;
-                            }
-                            if (rtotal > 0 && rtotal <= 100000 &&
-                                !IsBadReadPtr((void*)rverts, rtotal * 32)) {
-                                for (v = 0; v < rtotal; v++) {
-                                    float* p = rverts + v * 8;
-                                    float x = p[0] - cs->x;
-                                    float z = p[2] - cs->z;
-                                    p[0] = x*c + z*s + cs->x;
-                                    p[2] = -x*s + z*c + cs->z;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        float* verts = *(float**)(mb + 0x438);
+        int cnt = *(int*)(mb + 0x43C);
+        if (!verts || verts < (float*)0x10000 || cnt <= 0 || cnt > 100000) continue;
+        if (IsBadReadPtr((void*)verts, cnt * 32)) continue;
+        int v;
+        for (v = 0; v < cnt; v++) {
+            float* p = verts + v * 8;  /* 32-byte stride = 8 floats */
+            float x = p[0] - cs->x;
+            float z = p[2] - cs->z;
+            p[0] = x*c + z*s + cs->x;
+            p[2] = -x*s + z*c + cs->z;
         }
+        total += cnt;
     }
     return total;
 }
@@ -4079,6 +4129,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
          * the tree AABB bounds stay valid. */
         if (log_now) {
             int rot = cEnt_catapult_rotate_collision_verts(cs);
+            if (rot > 0) cs->verts_rotating = 1;
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
@@ -4091,7 +4142,8 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
                 fclose(df);
             }
         } else {
-            cEnt_catapult_rotate_collision_verts(cs);
+            int rot = cEnt_catapult_rotate_collision_verts(cs);
+            if (rot > 0) cs->verts_rotating = 1;
         }
 
         if (cs->cooldown > 0) {
