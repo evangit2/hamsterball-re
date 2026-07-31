@@ -2462,14 +2462,18 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_active = 0;
 
                     /* v55m_42v: Hook MAIN catapult vtable[18] for Y-axis rotation.
-                     * The catapult uses Stands_ctor internally, which already creates
-                     * a unique vtable clone per object. We modify it in-place —
-                     * no copy needed, avoids heap corruption from oversized alloc. */
+                     * Stands vtable is SHARED — must copy per-object, not modify in-place.
+                     * Size 0x50 (20 entries) covers slot 18 at offset 0x48. */
                     {
-                        DWORD* main_vtable = *(DWORD**)obj;
-                        if (main_vtable) {
-                            cs->orig_vtable18 = main_vtable[18];
-                            main_vtable[18] = (DWORD)&cEnt_catapult_render;
+                        DWORD orig_vtable = *(DWORD*)obj;
+                        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 0x50)) {
+                            DWORD* new_vtable = (DWORD*)pfn_operator_new(0x50);
+                            if (new_vtable) {
+                                memcpy(new_vtable, (void*)orig_vtable, 0x50);
+                                cs->orig_vtable18 = new_vtable[18];
+                                new_vtable[18] = (DWORD)&cEnt_catapult_render;
+                                *(DWORD*)obj = (DWORD)new_vtable;
+                            }
                         }
                     }
 
