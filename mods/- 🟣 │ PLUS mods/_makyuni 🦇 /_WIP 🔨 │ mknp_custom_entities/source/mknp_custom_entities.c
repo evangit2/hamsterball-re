@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42w
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42y
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -2510,8 +2510,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* v55m_1: Catapult_ctor already creates Level_RenderCtor at obj+0x10D4 internally.
                  * Do NOT create a duplicate — the old code overwrote the ctor's Level,
                  * breaking the TowerCollisionEvents mesh pointer match. */
-                /* Add the ctor's collision Level (obj+0x10D4) to collision list + scene tree.
-                 * TowerCollisionEvents checks catapult+0x10D4 == collision_mesh_ptr to match. */
+                /* v55m_42w: REMOVED — collision list append causes crash at 0x478EDD
+                 * during Update. The Catapult_ctor creates a Tower-specific Level
+                 * at obj+0x10D4 that references non-existent assets on non-Tower levels.
+                 * Disabled for now. */
+                /*
                 DWORD cat_col_obj = *(DWORD*)((char*)obj + 0x10D4);
                 if (cat_col_obj && !IsBadReadPtr((void*)cat_col_obj, 0x20)) {
                     pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)cat_col_obj);
@@ -2521,6 +2524,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                     if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                 }
+                */
                 /* v55m_42f: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
                  * Do NOT use DispatchCollisionEvents SEH trampoline hook — causes Draw crashes.
                  * Use Present-hook radius trigger instead (restored from v55m_28m). */
@@ -2535,7 +2539,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->launching = 0;
                     cs->cooldown = 0;
                     cs->was_in_zone = 0;
-                    cs->col_obj = cat_col_obj;
+                    cs->col_obj = 0;
                     cs->collided = 0;
                     cs->countdown = 0;
                     cs->arm_angle = 0.0f;
@@ -2545,9 +2549,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_42w: Hook Stands vtable[18] with g_in_draw_phase guard.
-                     * Stands vtable is SHARED — must copy per-object (0x50 bytes, 20 entries).
-                     * Render hook checks g_in_draw_phase before doing D3D transforms. */
+                    /* v55m_42x: Hook Stands vtable[18] for Y-rotation render.
+                     * Collision list append is disabled (crash at 0x478EDD).
+                     * g_in_draw_phase guard prevents D3D calls during Update. */
                     {
                         DWORD* orig_vt = *(DWORD**)obj;
                         if (orig_vt && !IsBadReadPtr(orig_vt, 0x50)) {
@@ -5252,7 +5256,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42w Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42y Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

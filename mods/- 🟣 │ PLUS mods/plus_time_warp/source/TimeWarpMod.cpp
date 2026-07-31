@@ -1732,7 +1732,14 @@ static void ghost1_check_advance(void) {
     if (!snaps) snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '[');
     if (snaps) {
         free(snaps);
-        char bracket = (g_ghost1.currentSegment > 0 && g_ghost1.currentSegment <= g_ghost1.totalSegments) ? '(' : '[';
+        char bracket = '(';
+        /* Re-probe to determine which bracket actually succeeded. */
+        {
+            int pt = 0, pc = 0;
+            DWORD* p = load_segment_ghost(g_twRaceName, nextSeg, &pc, &pt, '(');
+            if (p) { free(p); bracket = '('; }
+            else { bracket = '['; }
+        }
         ghost1_load_segment(g_twRaceName, nextSeg, 0, bracket);
     } else {
         LOG("No segment %d to advance to", nextSeg);
