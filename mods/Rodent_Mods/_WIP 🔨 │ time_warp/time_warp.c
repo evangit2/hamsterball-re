@@ -75,9 +75,6 @@ typedef DWORD HFX;
 #define BALL_POS_X             0x164
 #define BALL_POS_Y             0x168
 #define BALL_POS_Z             0x16C
-#define BALL_VEL_X             0x170
-#define BALL_VEL_Y             0x174
-#define BALL_VEL_Z             0x178
 #define BALL_FACING_X          0x190
 #define BALL_FACING_Z          0x194
 #define BALL_ROLL_ANGLE        0x150
@@ -179,6 +176,10 @@ typedef DWORD HFX;
 #define TT_RECORDING_NOP_ADDR   0x0041B690
 #define TT_RECORDING_NOP_SIZE   7
 
+/* Level_UpdateAndRender NOP patches */
+#define LEVEL_UPDATE_NOP1       0x0040B7F5
+#define LEVEL_UPDATE_NOP2       0x0040B7FF
+
 /* Ghost file format */
 #define GHOST_MAGIC             0x47485347  /* "GHSG" */
 #define GHOST_VERSION           1
@@ -204,7 +205,7 @@ typedef DWORD HFX;
 #define TARGET_G                (3.0f / 255.0f)
 #define TARGET_B                (252.0f / 255.0f)
 
-#define MAX_MUSIC_CHANNELS      32
+#define MAX_MUSIC_CHANNELS      8
 
 /* ================================================================
  * Diagnostic logging — time_warp_log.txt
@@ -393,6 +394,8 @@ static void load_real_bass(void) {
         real_BASS_ErrorGetCode    = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
         real_BASS_ChannelStop     = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
         real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
+        if (!real_BASS_ChannelSetAttributes)
+            real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttribute");
         real_BASS_ChannelGetData  = (BASS_ChannelGetData_t)GetProcAddress(g_hRealBass, "BASS_ChannelGetData");
         real_BASS_ChannelSetFX    = (BASS_ChannelSetFX_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetFX");
     }
@@ -1106,19 +1109,14 @@ static void ghost1_restore_after_warp(void) {
     int seg = g_ghost1.currentSegment;
     if (seg < 1) seg = 1;
 
-    /* Try confirmed (N) first, then temp [N] */
+    /* Load from confirmed (N) files only — Ghost 1 never uses temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '(');
-    char bracket = '(';
-    if (!snaps) {
-        snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '[');
-        bracket = '[';
-    }
     if (snaps) {
         free(snaps);
-        ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, bracket);
+        ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, '(');
     } else {
-        diag_logf("[ghost1] No segment %d found to restore", seg);
+        diag_logf("[ghost1] No confirmed segment %d found to restore", seg);
     }
 }
 
@@ -1144,21 +1142,14 @@ static void ghost1_check_advance(void) {
     diag_logf("[ghost1] Segment %d ended, advancing to %d",
               g_ghost1.currentSegment, nextSeg);
 
-    /* Check if next confirmed (N) segment exists — fallback to temp [N] */
+    /* Check if next confirmed (N) segment exists — Ghost 1 never uses temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '(');
-    if (!snaps) {
-        snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '[');
-        if (snaps) {
-            diag_logf("[ghost1] Advancing to temp segment %d", nextSeg);
-        }
-    }
     if (snaps) {
         free(snaps);
-        char bracket = (g_ghost1.currentSegment > 0 && g_ghost1.currentSegment <= g_ghost1.totalSegments) ? '(' : '[';
-        ghost1_load_segment(g_twRaceName, nextSeg, 0, bracket);
+        ghost1_load_segment(g_twRaceName, nextSeg, 0, '(');
     } else {
-        diag_logf("[ghost1] No segment %d to advance to", nextSeg);
+        diag_logf("[ghost1] No confirmed segment %d to advance to", nextSeg);
     }
 }
 
@@ -1177,8 +1168,8 @@ static void ghost1_init_for_tw(const char *raceName) {
         /* No confirmed segments yet — will chain from temp files as they're created */
         g_ghost1.currentSegment = 1;
         g_ghost1.playbackIdx = 0;
-        g_ghost1.active = TRUE;
-        diag_log("[ghost1] No confirmed segments for TW level yet; chaining from temp files");
+        g_ghost1.active = FALSE;
+        diag_logf("[ghost1] No confirmed segments for TW level yet");
     }
 }
 
@@ -1332,13 +1323,6 @@ static void ghost2_playback(void) {
     *(float*)(ball + BALL_SURFACE_B) = *(float*)(snap + 8);
     *(float*)(ball + BALL_RADIUS) = *(float*)(snap + 9);
 
-    /* Zero velocity/force accumulators so physics doesn't fight position writes.
-     * The ghost ball is purely kinematic — the game's physics engine will
-     * push it away if we leave non-zero velocities. */
-    *(float*)(ball + BALL_VEL_X) = 0.0f;
-    *(float*)(ball + BALL_VEL_Y) = 0.0f;
-    *(float*)(ball + BALL_VEL_Z) = 0.0f;
-
     /* Maintain heliotrope purple color every frame */
     *(float*)(ball + BALL_COLOR_R) = TARGET_R;
     *(float*)(ball + BALL_COLOR_G) = TARGET_G;
@@ -1355,11 +1339,7 @@ static void ghost2_playback(void) {
 static void ghost2_check_board_change(DWORD board) {
     if (!g_ghost2.active) {
         /* If we have a pending capture and a new board, create Ghost 2 */
-        EnterCriticalSection(&g_cs);
-        int pending = g_ghost2Pending;
-        if (pending && board && !IsBadReadPtr((void*)board, 0x4000)) {
-            DWORD *capture = (DWORD*)g_ghost2Capture;
-            int captureCount = g_ghost2CaptureCount;
+        if (g_ghost2Pending && board && !IsBadReadPtr((void*)board, 0x4000)) {
             DWORD app = get_app();
             if (app) {
                 /* Check party mode — Ghost 2 doesn't work in Party */
@@ -1367,10 +1347,7 @@ static void ghost2_check_board_change(DWORD board) {
                 if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
                     partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
                 if (partyMode == 0) {
-                    g_ghost2Pending = FALSE;
-                    LeaveCriticalSection(&g_cs);
-                    ghost2_create(board, capture, captureCount);
-                    return;
+                    ghost2_create(board, (DWORD*)g_ghost2Capture, g_ghost2CaptureCount);
                 } else {
                     diag_log("[ghost2] Party mode — skipping Ghost 2 creation");
                     if (g_ghost2Capture) {
@@ -1381,7 +1358,6 @@ static void ghost2_check_board_change(DWORD board) {
                 g_ghost2Pending = FALSE;
             }
         }
-        LeaveCriticalSection(&g_cs);
         return;
     }
 
@@ -1421,26 +1397,6 @@ static int is_time_trial_active(void) {
     if (*(BYTE*)(profile + PROFILE_IS_PRACTICE) == 0) return 0;
     if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return 0;
     if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return 0;
-    return 1;
-}
-
-/* Returns 1 if currently in a Tournament race (not practice, not party, race active). */
-static int is_tournament_active(void) {
-    DWORD app = get_app();
-    if (!app) return 0;
-    if (IsBadReadPtr((void*)(app + APP_PROFILE_PTR), 4)) return 0;
-    DWORD profile = *(DWORD*)(app + APP_PROFILE_PTR);
-    if (!profile || profile < 0x10000) return 0;
-    if (IsBadReadPtr((void*)(profile + PROFILE_IS_PRACTICE), 1)) return 0;
-    /* Tournament = NOT practice (profile+0x11 == 0) */
-    if (*(BYTE*)(profile + PROFILE_IS_PRACTICE) != 0) return 0;
-    /* NOT party mode */
-    if (IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1)) return 0;
-    if (*(BYTE*)(app + APP_234_PARTY_MODE) != 0) return 0;
-    /* Must have a board (race is running) */
-    if (IsBadReadPtr((void*)(profile + PROFILE_BOARD_PTR), 4)) return 0;
-    DWORD board = *(DWORD*)((char*)profile + PROFILE_BOARD_PTR);
-    if (!board || board < 0x10000) return 0;
     return 1;
 }
 
@@ -1712,10 +1668,7 @@ static void check_race_state(void) {
     EnterCriticalSection(&g_cs);
 
     int tt = is_time_trial_active();
-    int tourney = is_tournament_active();
-    int inRace = tt || tourney;
-
-    if (!inRace) {
+    if (!tt) {
         if (g_recording) {
             diag_logf("[ghost_saver] Left TT mode (was recording %d frames)", g_rawCount);
             g_recording = 0;
@@ -1750,18 +1703,49 @@ static void check_race_state(void) {
         return;
     }
 
-    /* Goal flag monitoring for Time Warp — works in both TT and Tournament */
-    if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
-        BYTE goalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
-        if (goalFlag && !g_prevGoalFlag) {
-            g_raceFinished = 1;
-            /* Time Warp level goal touch handling */
-            if (g_isTimeWarpLevel && g_segmentCounter > 0) {
-                handle_tw_goal_touch();
-            }
+    DWORD currRecording = 0;
+    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
+        currRecording = *(DWORD*)(app + APP_BTT_RECORDING);
 
-            /* Only TT mode saves normal ghost files */
-            if (tt) {
+    if (currRecording != g_prevRecording && currRecording && currRecording > 0x10000) {
+        g_prevRecording = currRecording;
+
+        char raceName[128];
+        if (g_hookRaceName[0]) {
+            strncpy(raceName, g_hookRaceName, sizeof(raceName) - 1);
+            raceName[sizeof(raceName) - 1] = '\0';
+        } else {
+            get_race_name(raceName, sizeof(raceName));
+        }
+        if (raceName[0]) {
+            strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
+            g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
+            snaps_reset();
+            g_recording = 1;
+            g_raceFinished = 0;
+            if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1))
+                g_prevGoalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
+            else
+                g_prevGoalFlag = 0;
+            diag_logf("[ghost_saver] RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
+        } else {
+            g_prevRecording = 0;
+        }
+    }
+
+    if (g_recording && !g_raceFinished) {
+        if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
+            BYTE goalFlag = *(BYTE*)(app + APP_5D6_GOAL_FLAG);
+            if (goalFlag && !g_prevGoalFlag) {
+                g_raceFinished = 1;
+
+                /* Time Warp level goal touch handling */
+                if (g_isTimeWarpLevel && g_segmentCounter > 0) {
+                    EnterCriticalSection(&g_cs);
+                    handle_tw_goal_touch();
+                    LeaveCriticalSection(&g_cs);
+                }
+
                 int finishTime = NO_TIME;
                 DWORD btt = 0;
                 if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4)) {
@@ -1774,88 +1758,44 @@ static void check_race_state(void) {
                 if (finishTime != NO_TIME && btt && g_currentRaceName[0]) {
                     /* Skip normal ghost save for Time Warp levels (handled by TW system) */
                     if (!g_isTimeWarpLevel) {
-                        if (!IsBadReadPtr((void*)(btt + BTT_AL_COUNT), 4)) {
-                            DWORD count = *(DWORD*)(btt + BTT_AL_COUNT);
-                            if (!IsBadReadPtr((void*)(btt + BTT_LIST_ARRAY), 4)) {
-                                DWORD *data = *(DWORD**)(btt + BTT_LIST_ARRAY);
-                                if (count > 0 && count < 200000 && data &&
-                                    (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
-                                    if (snaps_reserve((int)count)) {
-                                        g_rawCount = 0;
-                                        for (DWORD i = 0; i < count; i++) {
-                                            DWORD *snap = (DWORD*)data[i];
-                                            if (snap && (DWORD)snap > 0x10000 &&
-                                                !IsBadReadPtr(snap, SNAP_BYTES)) {
-                                                memcpy(g_rawSnaps[g_rawCount], snap, SNAP_BYTES);
-                                                g_rawCount++;
-                                            }
+                    if (!IsBadReadPtr((void*)(btt + BTT_AL_COUNT), 4)) {
+                        DWORD count = *(DWORD*)(btt + BTT_AL_COUNT);
+                        if (!IsBadReadPtr((void*)(btt + BTT_LIST_ARRAY), 4)) {
+                            DWORD *data = *(DWORD**)(btt + BTT_LIST_ARRAY);
+                            if (count > 0 && count < 200000 && data &&
+                                (DWORD)data > 0x10000 && !IsBadReadPtr(data, count * 4)) {
+                                if (snaps_reserve((int)count)) {
+                                    g_rawCount = 0;
+                                    for (DWORD i = 0; i < count; i++) {
+                                        DWORD *snap = (DWORD*)data[i];
+                                        if (snap && (DWORD)snap > 0x10000 &&
+                                            !IsBadReadPtr(snap, SNAP_BYTES)) {
+                                            memcpy(g_rawSnaps[g_rawCount], snap, SNAP_BYTES);
+                                            g_rawCount++;
                                         }
                                     }
                                 }
                             }
                         }
-
-                        if (g_rawCount > 0) {
-                            save_ghost_for_race("Previous_Run", finishTime, g_rawSnaps, g_rawCount);
-                            int existingTime = get_saved_time(g_currentRaceName);
-                            if (existingTime == NO_TIME || finishTime < existingTime) {
-                                save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
-                            }
-                        } else {
-                            g_raceFinished = 0;
-                        }
                     }
+
+                    if (g_rawCount > 0) {
+                        save_ghost_for_race("Previous_Run", finishTime, g_rawSnaps, g_rawCount);
+                        int existingTime = get_saved_time(g_currentRaceName);
+                        if (existingTime == NO_TIME || finishTime < existingTime) {
+                            save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
+                        }
+                    } else {
+                        g_raceFinished = 0;
+                    }
+                    } /* end if (!g_isTimeWarpLevel) */
                 }
             }
-        }
-        g_prevGoalFlag = goalFlag;
-    }
-
-    /* Only TT mode monitors BTT recording changes */
-    if (tt) {
-        DWORD currRecording = 0;
-        if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
-            currRecording = *(DWORD*)(app + APP_BTT_RECORDING);
-
-        if (currRecording != g_prevRecording && currRecording && currRecording > 0x10000) {
-            g_prevRecording = currRecording;
-
-            char raceName[128];
-            if (g_hookRaceName[0]) {
-                strncpy(raceName, g_hookRaceName, sizeof(raceName) - 1);
-                raceName[sizeof(raceName) - 1] = '\0';
-            } else {
-                get_race_name(raceName, sizeof(raceName));
-            }
-            if (raceName[0]) {
-                strncpy(g_currentRaceName, raceName, sizeof(g_currentRaceName) - 1);
-                g_currentRaceName[sizeof(g_currentRaceName) - 1] = '\0';
-                snaps_reset();
-                g_recording = 1;
-                g_raceFinished = 0;
-                g_prevGoalFlag = 0;
-                diag_logf("[ghost_saver] RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
-            } else {
-                g_prevRecording = 0;
-            }
+            g_prevGoalFlag = goalFlag;
         }
     }
 
     LeaveCriticalSection(&g_cs);
-}
-
-static volatile BOOL g_shuttingDown = FALSE;
-
-static DWORD WINAPI ghost_saver_thread(LPVOID param) {
-    (void)param;
-    Sleep(3000);
-    diag_log("[ghost_saver] Thread started");
-    while (!g_shuttingDown) {
-        Sleep(16);
-        check_race_state();
-    }
-    diag_log("[ghost_saver] Thread exiting");
-    return 0;
 }
 
 /* App_StartPracticeRace detour hook */
@@ -2072,13 +2012,14 @@ __attribute__((naked, used)) static void hook_App_StartTournamentRace(void) {
         "pushl %%eax\n"
         "pushl %%ecx\n"
         "pushl %%edx\n"
-        "pushl %%ecx\n"         /* pass original ECX (app) as argument */
+        "movl 16(%%esp), %%eax\n"  /* get app (original ECX) from stack */
+        "pushl %%eax\n"
         "call _tournament_hook_impl\n"
         "addl $4, %%esp\n"
         "popl %%edx\n"
         "popl %%ecx\n"
         "popl %%eax\n"
-        "ret\n"                /* __thiscall: no stack args */
+        "ret\n"  /* __thiscall: callee cleans, no args on stack */
         : : : "memory"
     );
 }
@@ -2544,9 +2485,9 @@ static void ghost_event_frame(void) {
         g_ghostActive = TRUE;
         g_ghostFromEvent = TRUE;
 
-        BYTE partyMode = 0;
-        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
-            partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
+        DWORD partyMode = 0;
+        if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 4))
+            partyMode = *(DWORD*)(app + APP_234_PARTY_MODE);
         g_needManualAdvance = (partyMode != 0);
 
         free(snapshots);
@@ -2582,79 +2523,66 @@ static void ghost_event_frame(void) {
 }
 
 /* DCE hook stub */
-/* DCE hook — 0x40C5D0 has SEH prologue (6A FF 64 A1 00... 21 bytes).
- * Hook at 0x40C5E5 where the function body starts: 83 EC 30 53 55 (5 bytes).
- * Trampoline replicates those 5 bytes and jumps to 0x40C5EA. */
-#define DCE_HOOK_ADDR             0x0040C5E5
-#define DCE_HOOK_BYTES            5
-#define DCE_HOOK_RETURN           0x0040C5EA
-
 static BYTE *g_dce_stub = NULL;
-static BYTE g_dce_original[DCE_HOOK_BYTES];
+static BYTE g_dce_original[8];
 static void *g_dce_trampoline = NULL;
 
 static void build_dce_trampoline(void) {
     BYTE *code = (BYTE*)alloc_executable(16);
-    /* Replicate 5 trampoline bytes: sub esp,0x30; push ebx; push ebp */
-    code[0] = 0x83; code[1] = 0xEC; code[2] = 0x30;  /* sub esp, 0x30 */
-    code[3] = 0x53;                                     /* push ebx */
-    code[4] = 0x55;                                     /* push ebp */
-    code[5] = 0xE9;
-    *(DWORD*)(code + 6) = DCE_HOOK_RETURN - (DWORD)(code + 10);
+    memcpy(code, g_dce_original, 8);
+    code[8] = 0xE9;
+    *(DWORD*)(code + 9) = (DWORD)(DISPATCH_COLLISION_EVENTS + 8) - (DWORD)(code + 13);
     g_dce_trampoline = code;
 }
 
 static void build_dce_stub(void) {
-    BYTE *code = (BYTE*)alloc_executable(96);
+    BYTE *code = (BYTE*)alloc_executable(64);
     int i = 0;
-    /* Grab params from stack BEFORE pushad: [esp+8]=ball, [esp+12]=collEntry.
-     * ECX is board (set before hook point by the caller). */
-    /* At 0x40C5E5, after SEH prologue (PUSH -1 + MOV EAX,FS:[0] + PUSH EAX + MOV FS:[0],ESP = 4 pushes),
-     * stack has: [ESP]=oldSEH, [ESP+4]=handler, [ESP+8]=-1, [ESP+12]=retAddr, [ESP+16]=ball, [ESP+20]=collEntry */
-    code[i++] = 0x8B; code[i++] = 0x5C; code[i++] = 0x24; code[i++] = 0x10; /* mov ebx, [esp+16] (ball) */
-    code[i++] = 0x8B; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x14; /* mov esi, [esp+20] (collEntry) */
-    code[i++] = 0x60;                 /* pushad */
-    code[i++] = 0x9C;                 /* pushfd */
-    code[i++] = 0x51;                 /* push ecx (board) */
-    code[i++] = 0x53;                 /* push ebx (ball) */
-    code[i++] = 0x56;                 /* push esi (collEntry) */
+    code[i++] = 0x60;  /* pushad */
+    code[i++] = 0x9C;  /* pushfd */
+    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;  /* push [esp+0x2C] (collEntry) */
+    code[i++] = 0xFF; code[i++] = 0x74; code[i++] = 0x24; code[i++] = 0x2C;  /* push [esp+0x2C] (ball) */
+    code[i++] = 0x51;  /* push ecx (board) */
     code[i++] = 0xE8;
     *(DWORD*)(code + i) = (DWORD)&dce_handler - (DWORD)(code + i + 4);
     i += 4;
-    code[i++] = 0x83; code[i++] = 0xC4; code[i++] = 0x0C; /* add esp, 12 */
-    code[i++] = 0x9D;               /* popfd */
-    code[i++] = 0x61;               /* popad */
+    code[i++] = 0x83; code[i++] = 0xC4; code[i++] = 0x0C;  /* add esp, 12 */
+    code[i++] = 0x9D;  /* popfd */
+    code[i++] = 0x61;  /* popad */
     code[i++] = 0xB8;
     *(DWORD*)(code + i) = (DWORD)g_dce_trampoline;
     i += 4;
-    code[i++] = 0xFF; code[i++] = 0xE0; /* jmp eax */
+    code[i++] = 0xFF; code[i++] = 0xE0;
     g_dce_stub = code;
 }
 
 static void install_dce_hook(void) {
-    memcpy(g_dce_original, (void*)DCE_HOOK_ADDR, DCE_HOOK_BYTES);
+    memcpy(g_dce_original, (void*)DISPATCH_COLLISION_EVENTS, 8);
     build_dce_trampoline();
     build_dce_stub();
 
-    BYTE patch[DCE_HOOK_BYTES];
+    BYTE patch[8];
     patch[0] = 0xE9;
-    *(DWORD*)(patch + 1) = (DWORD)g_dce_stub - DCE_HOOK_ADDR - 5;
-    patch_bytes((void*)DCE_HOOK_ADDR, patch, DCE_HOOK_BYTES);
-    diag_log("[ghost_event] DCE hook installed at 0x40C5E5 (post-SEH prologue)");
+    *(DWORD*)(patch + 1) = (DWORD)g_dce_stub - DISPATCH_COLLISION_EVENTS - 5;
+    patch[5] = 0x90;
+    patch[6] = 0x90;
+    patch[7] = 0x90;
+    patch_bytes((void*)DISPATCH_COLLISION_EVENTS, patch, 8);
+    diag_log("[ghost_event] DCE hook installed");
 }
 
-static void restore_dce_hook(void) {
-    if (!g_dce_stub) return;
-    patch_bytes((void*)DCE_HOOK_ADDR, g_dce_original, DCE_HOOK_BYTES);
-    if (g_dce_trampoline) {
-        VirtualFree(g_dce_trampoline, 0, MEM_RELEASE);
-        g_dce_trampoline = NULL;
-    }
-    VirtualFree(g_dce_stub, 0, MEM_RELEASE);
-    g_dce_stub = NULL;
-    diag_log("[ghost_event] DCE hook restored");
-}
+/* Level_UpdateAndRender patches — NOP TT and party mode checks */
+static void patch_level_update_and_render(void) {
+    BYTE *jz_addr = (BYTE*)(EXE_BASE + 0x000B7F5);
+    patch_byte(jz_addr,     0x90);
+    patch_byte(jz_addr + 1, 0x90);
 
+    BYTE *jnz_addr = (BYTE*)(EXE_BASE + 0x000B7FF);
+    patch_byte(jnz_addr,     0x90);
+    patch_byte(jnz_addr + 1, 0x90);
+
+    diag_log("[ghost_event] Level_UpdateAndRender patched (TT + party checks NOPed)");
+}
 
 /* ================================================================
  * Warp subsystem — state machine, timer caves, color lerp, flash
@@ -2691,12 +2619,6 @@ static float g_origBallR = 1.0f, g_origBallG = 1.0f, g_origBallB = 1.0f;
 static int g_colorSaved = 0;
 
 static volatile BYTE g_freezeTimer = 0;
-
-/* Ghost mode code cave — allows E:GHOST ghosts in all modes */
-/* but restricts normal ghosts to Time Trial only */
-static volatile BOOL g_ghostModePatched = 0;
-static unsigned char *g_ghostModeCave = NULL;
-static unsigned char g_ghostModeOrigBytes[17];
 
 static unsigned char g_decOrigBytes[TIMER_DEC_PATCH_SIZE];
 static unsigned char g_incOrigBytes[TIMER_INC_PATCH_SIZE];
@@ -2781,7 +2703,7 @@ static void block_pause(void) {
     int i;
     for (i = 0; i < 3; i++) {
         DWORD addr = EXE_BASE + addrs[i];
-        if (VirtualProtect((void*)addr, 1, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, 1, PAGE_READWRITE, &oldProt)) {
             g_pauseOrigBytes[i] = *((BYTE*)addr);
             *((BYTE*)addr) = 0xEB;
             VirtualProtect((void*)addr, 1, oldProt, &oldProt);
@@ -2798,7 +2720,7 @@ static void unblock_pause(void) {
     int i;
     for (i = 0; i < 3; i++) {
         DWORD addr = EXE_BASE + addrs[i];
-        if (VirtualProtect((void*)addr, 1, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, 1, PAGE_READWRITE, &oldProt)) {
             *((BYTE*)addr) = g_pauseOrigBytes[i];
             VirtualProtect((void*)addr, 1, oldProt, &oldProt);
         }
@@ -2965,14 +2887,6 @@ static void scanWarpNodes(void) {
 
     ballDataArray = *(DWORD*)((char*)board + BOARD_BALL_LIST_DATA);
     if (!is_valid_ptr(ballDataArray)) return;
-
-    /* Check ball count — if more than 1 ball (multiplayer), skip warp proximity to avoid
-     * triggering for the wrong player. */
-    DWORD ballCount = 0;
-    if (!IsBadReadPtr((void*)((char*)board + BOARD_BALL_LIST + 4), 4))
-        ballCount = *(DWORD*)((char*)board + BOARD_BALL_LIST + 4);
-    if (ballCount > 1) return;
-
     ball = *(DWORD*)((char*)ballDataArray);
     if (!is_valid_ball(ball)) return;
 
@@ -3071,7 +2985,7 @@ static void install_timer_caves(void) {
         /* skip_target: JMP skip */
         write_jmp(p, skipAddr);
 
-        if (VirtualProtect((void*)patchAddr, TIMER_DEC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)patchAddr, TIMER_DEC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
             memcpy(g_decOrigBytes, (void*)patchAddr, TIMER_DEC_PATCH_SIZE);
             write_jmp((unsigned char*)patchAddr, (DWORD)g_decCave);
             memset((unsigned char*)patchAddr + 5, 0x90, 4);
@@ -3115,7 +3029,7 @@ static void install_timer_caves(void) {
         /* skip_inc: JMP return */
         write_jmp(p, returnAddr);
 
-        if (VirtualProtect((void*)patchAddr, TIMER_INC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)patchAddr, TIMER_INC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
             memcpy(g_incOrigBytes, (void*)patchAddr, TIMER_INC_PATCH_SIZE);
             write_jmp((unsigned char*)patchAddr, (DWORD)g_incCave);
             VirtualProtect((void*)patchAddr, TIMER_INC_PATCH_SIZE, oldProt, &oldProt);
@@ -3131,7 +3045,7 @@ static void restore_timer_caves(void) {
 
     if (g_decPatched) {
         DWORD addr = base + TIMER_DEC_PATCH_RVA;
-        if (VirtualProtect((void*)addr, TIMER_DEC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, TIMER_DEC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
             memcpy((void*)addr, g_decOrigBytes, TIMER_DEC_PATCH_SIZE);
             VirtualProtect((void*)addr, TIMER_DEC_PATCH_SIZE, oldProt, &oldProt);
         }
@@ -3140,130 +3054,12 @@ static void restore_timer_caves(void) {
 
     if (g_incPatched) {
         DWORD addr = base + TIMER_INC_PATCH_RVA;
-        if (VirtualProtect((void*)addr, TIMER_INC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, TIMER_INC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
             memcpy((void*)addr, g_incOrigBytes, TIMER_INC_PATCH_SIZE);
             VirtualProtect((void*)addr, TIMER_INC_PATCH_SIZE, oldProt, &oldProt);
         }
         g_incPatched = 0;
     }
-}
-
-/* Ghost mode code cave — allows E:GHOST ghosts in all modes,
- * but keeps normal ghosts restricted to Time Trial only.
- *
- * Patches 0x0040B7F0 (17 bytes) which normally has:
- *   MOV DL, [ECX+0x11]   ; profile->practice
- *   TEST DL, DL
- *   JZ skip               ; skip if NOT TT
- *   MOV CL, [EAX+0x234]  ; app->party_mode
- *   TEST CL, CL
- *   JNZ skip              ; skip if party
- *
- * Cave replaces this with g_ghostFromEvent-aware logic:
- *   if (g_ghostFromEvent) goto allow;
- *   else { original checks; }
- *   allow: -> continue at 0x40B802 (ghost update)
- *   skip:  -> jump to 0x40B834 (skip ghost)
- */
-#define GHOST_MODE_PATCH_ADDR  0x0040B7F0
-#define GHOST_MODE_PATCH_SIZE  17
-#define GHOST_MODE_CONTINUE    0x0040B802
-#define GHOST_MODE_SKIP        0x0040B834
-
-static void install_ghost_mode_cave(void) {
-    if (g_ghostModePatched) return;
-    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
-    DWORD continueAddr = GHOST_MODE_CONTINUE;
-    DWORD skipAddr = GHOST_MODE_SKIP;
-    DWORD ghostFromEventAddr = (DWORD)&g_ghostFromEvent;
-
-    g_ghostModeCave = (unsigned char *)VirtualAlloc(NULL, 64, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    if (!g_ghostModeCave) return;
-
-    unsigned char *p = g_ghostModeCave;
-
-    /* CMP byte [g_ghostFromEvent], 0  (7 bytes) */
-    p[0] = 0x80; p[1] = 0x3D;
-    *(DWORD*)(p + 2) = ghostFromEventAddr;
-    p[6] = 0x00;
-    p += 7;
-
-    /* JNE allow (JNZ rel8, 2 bytes) */
-    /* Calculate offset: (allow is after the 5-byte JMP) */
-    /* allow label is at: p + 2 + 3 + 2 + 2 + 6 + 2 + 2 + 5 (end of JMP allow) */
-    /* But easier: we'll write this as a placeholder and fix it up */
-    /* Actually, let me just compute: after the JNE, we have 3+2+2+6+2+2+5+5 = 27 bytes of code */
-    /* JNE offset = 27 (skip past original checks + both JMPs) */
-    /* Wait, let me recalculate: */
-    /* JNE is at bytes 7-8 of cave. The 'allow' JMP is 9 bytes after the original checks. */
-    /* Original checks: 3+2+2+6+2+2 = 17 bytes */
-    /* Then JMP allow (5 bytes) = 22 bytes from JNE end */
-    /* Then JMP skip (5 bytes) = 27 bytes from JNE end */
-    /* So JNE rel8 = 27 (0x1B) */
-    p[0] = 0x75; p[1] = 0x1B;  /* JNE +27 (skip to 'allow' JMP) */
-    p += 2;
-
-    /* Original: MOV DL, [ECX+0x11] (3 bytes) */
-    p[0] = 0x8A; p[1] = 0x51; p[2] = 0x11;
-    p += 3;
-
-    /* Original: TEST DL, DL (2 bytes) */
-    p[0] = 0x84; p[1] = 0xD2;
-    p += 2;
-
-    /* Original: JZ skip (2 bytes) */
-    /* skip is at: p + 2 + 6 + 2 + 2 + 5 + 5 */
-    /* = 22 bytes from here */
-    p[0] = 0x74; p[1] = 22;  /* JZ +22 */
-    p += 2;
-
-    /* Original: MOV CL, [EAX+0x234] (6 bytes) */
-    p[0] = 0x8A; p[1] = 0x88;
-    p[2] = 0x34; p[3] = 0x02; p[4] = 0x00; p[5] = 0x00;
-    p += 6;
-
-    /* Original: TEST CL, CL (2 bytes) */
-    p[0] = 0x84; p[1] = 0xC9;
-    p += 2;
-
-    /* Original: JNZ skip (2 bytes) */
-    /* skip is at: p + 2 + 5 + 5 = 12 bytes from here */
-    p[0] = 0x75; p[1] = 12;  /* JNZ +12 */
-    p += 2;
-
-    /* allow: JMP continueAddr (5 bytes) */
-    write_jmp(p, continueAddr);
-    p += 5;
-
-    /* skip: JMP skipAddr (5 bytes) */
-    write_jmp(p, skipAddr);
-
-    /* Save original bytes and patch */
-    DWORD oldProt;
-    if (VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
-        memcpy(g_ghostModeOrigBytes, (void*)patchAddr, GHOST_MODE_PATCH_SIZE);
-        write_jmp((unsigned char*)patchAddr, (DWORD)g_ghostModeCave);
-        memset((unsigned char*)patchAddr + 5, 0x90, GHOST_MODE_PATCH_SIZE - 5);
-        VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
-        g_ghostModePatched = 1;
-        diag_log("[ghost] Ghost mode code cave installed at 0x40B7F0");
-    }
-}
-
-static void restore_ghost_mode_cave(void) {
-    if (!g_ghostModePatched) return;
-    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
-    DWORD oldProt;
-    if (VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
-        memcpy((void*)patchAddr, g_ghostModeOrigBytes, GHOST_MODE_PATCH_SIZE);
-        VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
-    }
-    if (g_ghostModeCave) {
-        VirtualFree(g_ghostModeCave, 0, MEM_RELEASE);
-        g_ghostModeCave = NULL;
-    }
-    g_ghostModePatched = 0;
-    diag_log("[ghost] Ghost mode code cave restored");
 }
 
 /* TT recording NOP patch — enables recording in Tournament mode */
@@ -3272,7 +3068,7 @@ static void install_tt_recording_nop(void) {
 
     DWORD addr = TT_RECORDING_NOP_ADDR;
     DWORD oldProt;
-    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_READWRITE, &oldProt)) {
         memcpy(g_ttRecOrigBytes, (void*)addr, TT_RECORDING_NOP_SIZE);
         /* NOP 7 bytes: 8A 4A 11 84 C9 74 71 → 90 90 90 90 90 90 90 */
         memset((void*)addr, 0x90, TT_RECORDING_NOP_SIZE);
@@ -3286,7 +3082,7 @@ static void restore_tt_recording_nop(void) {
     if (!g_ttRecPatched) return;
     DWORD addr = TT_RECORDING_NOP_ADDR;
     DWORD oldProt;
-    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
+    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_READWRITE, &oldProt)) {
         memcpy((void*)addr, g_ttRecOrigBytes, TT_RECORDING_NOP_SIZE);
         VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, oldProt, &oldProt);
     }
@@ -3329,28 +3125,6 @@ static void updateWarpStateMachine(void) {
         if (g_phase == PHASE_FLASH || g_phase == PHASE_FADE || g_phase == PHASE_REVEAL) {
             if (!IsBadWritePtr((void*)(board + SCENE_FADE_ALPHA), 4))
                 *(float*)(board + SCENE_FADE_ALPHA) = g_whiteAlpha;
-        }
-    }
-
-    /* Abort warp if timer expired during RUMBLE or FLASH */
-    if ((g_phase == PHASE_RUMBLE || g_phase == PHASE_FLASH) && ball) {
-        if (!IsBadReadPtr((void*)(app + APP_5D6_GOAL_FLAG), 1)) {
-            BYTE finished = *(BYTE*)((char*)app + APP_5D6_GOAL_FLAG);
-            if (finished) {
-                diag_log("[warp] ABORT: timer expired during warp");
-                *(DWORD*)(ball + BALL_IMPACT_FREEZE) = 0;
-                *(BYTE*)(ball + BALL_RENDER_JITTER) = 0;
-                *(BYTE*)(ball + BALL_IN_TAR) = 0;
-                restoreMusicFade();
-                g_freezeTimer = 0;
-                unblock_pause();
-                if (board) *(float*)(board + SCENE_FADE_ALPHA) = 0.0f;
-                g_whiteAlpha = 0.0f;
-                g_phase = PHASE_IDLE;
-                g_cooldownUntil = getGameTime() + WARP_COOLDOWN_MS;
-                g_warpBall = 0;
-                return;
-            }
         }
     }
 
@@ -3410,10 +3184,9 @@ static void updateWarpStateMachine(void) {
             BYTE respawning = *(BYTE*)(ball + 0x2F9);
             if (!respawning && !IsBadWritePtr((void*)(ball + BALL_ALPHA), 4)) {
                 *(float*)(ball + BALL_ALPHA) = 0.0f;
-                *(BYTE*)(ball + BALL_IN_TAR) = 1;  /* prevent ball death during warp */
                 if (!g_freezeTimer) {
                     g_freezeTimer = 1;
-                    diag_log("[warp] Timer frozen + in_tar set (g_freezeTimer=1)");
+                    diag_log("[warp] Timer frozen (g_freezeTimer=1)");
                 }
             }
         }
@@ -3478,7 +3251,6 @@ static void updateWarpStateMachine(void) {
         if (ball) {
             *(DWORD*)(ball + BALL_IMPACT_FREEZE) = 0;
             *(BYTE*)(ball + BALL_RENDER_JITTER) = 0;
-            *(BYTE*)(ball + BALL_IN_TAR) = 0;
             if (!IsBadWritePtr((void*)(ball + BALL_ALPHA), 4))
                 *(float*)(ball + BALL_ALPHA) = 1.0f;
 
@@ -3493,7 +3265,7 @@ static void updateWarpStateMachine(void) {
         g_freezeTimer = 0;
 
         if (levelIdx >= 0 && levelIdx <= 14) {
-            void *func;
+            void *func = (void *)APP_START_PRACTICE_RACE;
             DWORD appVal = app;
             int idx = levelIdx;
             char savedDifficulty = *(BYTE*)((char*)app + 0x23C);
@@ -3545,14 +3317,7 @@ static void updateWarpStateMachine(void) {
                     if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
                         partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
                     if (partyMode == 0) {
-                        EnterCriticalSection(&g_cs);
-                        /* Destroy old Ghost 2 before capturing so the capture buffer is the only copy */
-                        if (g_ghost2.active || g_ghost2.ball || g_ghost2.btt) {
-                            ghost2_destroy();
-                        }
-                        g_ghost2Pending = FALSE;
                         ghost2_capture();
-                        LeaveCriticalSection(&g_cs);
                     }
                 }
 
@@ -3577,13 +3342,6 @@ static void updateWarpStateMachine(void) {
                 }
             }
 
-            /* Use Tournament start for tournament-to-same-level warps, Practice otherwise */
-            if (wasInTournament && isSameLevel) {
-                func = (void *)APP_START_TOURNAMENT_RACE;
-            } else {
-                func = (void *)APP_START_PRACTICE_RACE;
-            }
-
             __asm__ volatile(
                 "push %[idx]\n\t"
                 "movl %[appVal], %%ecx\n\t"
@@ -3601,9 +3359,13 @@ static void updateWarpStateMachine(void) {
 
             /* Ghost 1: Initialize for TW level or restore after same-level warp */
             if (isSameLevel && g_twRaceName[0]) {
-                /* First time entering this TW level: init Ghost 1 if not active */
-                if (!g_ghost1.active) {
-                    ghost1_init_for_tw(g_twRaceName);
+                /* First time entering this TW level: init Ghost 1 if confirmed segments exist */
+                if (!g_ghost1.active && g_segmentCounter == 1) {
+                    /* This was the first segment — check if confirmed ghosts exist */
+                    int confirmed = count_confirmed_segments(g_twRaceName);
+                    if (confirmed > 0) {
+                        ghost1_init_for_tw(g_twRaceName);
+                    }
                 }
                 /* Restore Ghost 1 playback into the new App+0x910 slot */
                 if (g_ghost1.active) {
@@ -3623,41 +3385,8 @@ static void updateWarpStateMachine(void) {
                 g_isTimeWarpLevel = FALSE;
             }
 
-            if (wasInTournament && func == (void*)APP_START_TOURNAMENT_RACE) {
-                /* Same-level tournament warp: App_StartTournamentRace already created BTT via hook */
-                DWORD newProfile = *(DWORD*)((char*)app + APP_PROFILE_PTR);
-                if (newProfile) {
-                    *(BYTE*)((char*)newProfile + PROFILE_IS_PRACTICE) = 0;
-                    if (hasTournamentData) {
-                        memcpy((void*)((char*)newProfile + PROFILE_SCORE_ARRAY), savedScores, sizeof(savedScores));
-                        memcpy((void*)((char*)newProfile + PROFILE_TIME_ARRAY), savedTimes, sizeof(savedTimes));
-                    }
-
-                    {
-                        DWORD newProfile2 = *(DWORD*)((char*)app + APP_PROFILE_PTR);
-                        DWORD newBoard2 = 0;
-                        int levelBaseTime = 0;
-                        int difficultyBonus = 0;
-                        int finalTimer = savedTimeRemaining;
-
-                        if (newProfile2)
-                            newBoard2 = *(DWORD*)((char*)newProfile2 + PROFILE_BOARD_PTR);
-                        if (newBoard2 && !IsBadReadPtr((void*)(newBoard2 + 0x2998), 4))
-                            levelBaseTime = *(int*)((char*)newBoard2 + 0x2998);
-
-                        {
-                            int diff = (int)*(BYTE*)((char*)app + 0x23C);
-                            if (diff == 0) difficultyBonus = 1000;
-                            else if (diff == 1) difficultyBonus = 500;
-                        }
-
-                        finalTimer = savedTimeRemaining + levelBaseTime + difficultyBonus;
-                        *(int*)((char*)app + APP_5E8_TIMER) = finalTimer;
-                    }
-                    *(float*)((char*)app + APP_5E4_SCORE) = savedPlayerScore;
-                }
-            } else if (wasInTournament) {
-                /* Different-level tournament warp: game created BTTs via App_StartPracticeRace */
+            if (wasInTournament) {
+                /* Destroy game-created BTTs properly before zeroing */
                 {
                     DWORD bttRec = *(DWORD*)((char*)app + APP_BTT_RECORDING);
                     DWORD bttPlay = *(DWORD*)((char*)app + APP_BTT_PLAYBACK);
@@ -3807,7 +3536,8 @@ void __cdecl frame_epilogue_handler(void) {
         updateGameClock(board);
     }
 
-    /* 1. Ghost saver: check goal flag, save ghost on finish (handled by background thread) */
+    /* 1. Ghost saver: check goal flag, save ghost on finish */
+    check_race_state();
 
     /* 2. Ghost event: check pending ghost loads, advance playback, cleanup */
     ghost_event_frame();
@@ -3905,13 +3635,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     /* Install shared frame epilogue hook */
     install_frame_hook();
 
-    /* Install ghost mode code cave (E:GHOST works in all modes, normal ghosts restricted to TT) */
-    install_ghost_mode_cave();
-
-    /* Start ghost saver background thread */
-    CreateThread(NULL, 0, ghost_saver_thread, NULL, 0, NULL);
-
-    diag_log("=== TIME WARP MOD INITIALIZED ===");
+    diag_log("=== TIME WARP MOD INITIALIZED ===\n  - Ghost saver runs on main thread (no background thread)");
     diag_log("  - Frame epilogue hook at 0x46C1F1");
     diag_log("  - App_StartPracticeRace hook at 0x428C50");
     diag_log("  - App_StartTournamentRace hook at 0x4288B0");
@@ -3923,49 +3647,6 @@ static DWORD WINAPI init_thread(LPVOID param) {
     diag_log("  - Ghost triggers scanning S1 for GT: entries");
 
     return 0;
-}
-
-
-/* ================================================================
- * Hook cleanup functions
- * ================================================================ */
-
-static void restore_practice_hook(void) {
-    if (g_hookInstalled && g_trampoline) {
-        unsigned char *target = (unsigned char*)ADDR_APP_START_PRACTICE;
-        DWORD oldProtect;
-        if (VirtualProtect(target, HOOK_BYTES, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-            memcpy(target, g_origBytes, HOOK_BYTES);
-            VirtualProtect(target, HOOK_BYTES, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), target, HOOK_BYTES);
-        }
-        g_hookInstalled = 0;
-        diag_log("[ghost_saver] App_StartPracticeRace hook restored");
-    }
-}
-
-static void restore_tournament_hook(void) {
-    if (g_tournamentHookInstalled) {
-        DWORD oldProt;
-        if (VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
-            PAGE_EXECUTE_READWRITE, &oldProt)) {
-            memcpy((void*)APP_START_TOURNAMENT_RACE, g_tournamentOrigBytes,
-                   TOURNAMENT_HOOK_BYTES);
-            VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
-                oldProt, &oldProt);
-            FlushInstructionCache(GetCurrentProcess(), (void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES);
-        }
-        g_tournamentHookInstalled = 0;
-        diag_log("[tournament_hook] App_StartTournamentRace hook restored");
-    }
-}
-
-static void restore_frame_hook(void) {
-    if (g_frame_stub) {
-        patch_bytes((void*)APP_FRAME_UPDATE_EPILOGUE, g_frame_original, 5);
-        g_frame_stub = NULL;
-        diag_log("[time_warp] Frame epilogue hook restored");
-    }
 }
 
 /* ================================================================
@@ -4003,18 +3684,24 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         break;
 
     case DLL_PROCESS_DETACH:
-        /* Signal background thread to exit */
-        g_shuttingDown = TRUE;
-        Sleep(50);  /* Give thread time to notice */
+        /* Restore all patches */
         g_freezeTimer = 0;
         restore_timer_caves();
         restore_tt_recording_nop();
         unblock_pause();
-        restore_practice_hook();
-        restore_tournament_hook();
-        restore_dce_hook();
-        restore_frame_hook();
-        restore_ghost_mode_cave();
+
+        /* Restore tournament hook */
+        if (g_tournamentHookInstalled) {
+            DWORD oldProt;
+            if (VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
+                PAGE_EXECUTE_READWRITE, &oldProt)) {
+                memcpy((void*)APP_START_TOURNAMENT_RACE, g_tournamentOrigBytes,
+                       TOURNAMENT_HOOK_BYTES);
+                VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
+                    oldProt, &oldProt);
+            }
+            g_tournamentHookInstalled = 0;
+        }
 
         /* Clean up Ghost 2 */
         ghost2_destroy();
