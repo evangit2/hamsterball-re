@@ -1,5 +1,6 @@
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42q
+/*
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42r
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5157,7 +5158,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42q Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42r Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

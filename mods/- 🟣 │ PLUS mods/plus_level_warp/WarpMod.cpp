@@ -103,8 +103,7 @@
 #define PAUSE_PATCH_PATH3       0x0B405
 
 /* ---- Warp params ---- */
-#define WARP_XZ_DIST_SQ         900.0f  /* 30^2 */
-#define WARP_Y_DIST             50.0f
+#define WARP_TRIGGER_DIST_SQ    625.0f  /* 25^2: ball radius distance from S1 point */
 #define WARP_COOLDOWN_MS        2000
 
 #define RUMBLE_DURATION_MS      2000
@@ -615,10 +614,9 @@ static void scanWarpNodes(DWORD board) {
         float dx = bx - nx;
         float dy = by - ny;
         float dz = bz - nz;
-        float xzDistSq = dx * dx + dz * dz;
-        float absDy = (dy < 0.0f) ? -dy : dy;
+        float distSq = dx * dx + dy * dy + dz * dz;
 
-        if (xzDistSq < WARP_XZ_DIST_SQ && absDy < WARP_Y_DIST) {
+        if (distSq < WARP_TRIGGER_DIST_SQ) {
             char levelName[128];
             if (parseWarpLevel(name, levelName, sizeof(levelName))) {
                 int raceIndex = findRaceIndex(levelName);

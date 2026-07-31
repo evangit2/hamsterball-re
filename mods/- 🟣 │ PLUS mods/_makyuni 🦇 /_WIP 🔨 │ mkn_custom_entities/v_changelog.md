@@ -1,3 +1,10 @@
+## v55m_42r — Fix arm mesh loading crash
+
+- v55m_42q loaded the arm mesh using `board+0x878` as an `App*` pointer, but `board+0x878` is actually `SoundList*`.
+- This caused the arm's `PopCylinder_ctor` to receive a corrupted Gfx/MeshWorld pointer.
+- v55m_42r reuses the already-loaded base catapult MeshWorld pointer (loaded with the correct global `App` Gfx device).
+- Arm now shares the same mesh data as the base; it is still a separate object with its own Y-axis rotation.
+
 ## v55m_42q — Separate arm object with Chomper-style direct D3D rotation
 
 - v55m_42p rotated the catapult base itself; this caused visual issues because the base includes the bowl/collision geometry.
