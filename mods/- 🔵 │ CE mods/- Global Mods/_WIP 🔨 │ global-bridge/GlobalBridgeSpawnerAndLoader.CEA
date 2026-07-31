@@ -28,7 +28,7 @@ alloc(playerX, 4)
 alloc(playerY, 4)
 alloc(playerZ, 4)
 alloc(spawnZ, 4)
-alloc(temp_mesh, 4)
+alloc(temp_mesh, 8)
 alloc(bridge_array, 36)
 alloc(prox_radius_sq, 4)
 
