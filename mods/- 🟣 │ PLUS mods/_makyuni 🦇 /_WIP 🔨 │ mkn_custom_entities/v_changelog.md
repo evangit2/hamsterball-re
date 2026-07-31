@@ -1,3 +1,9 @@
+## v55m_42s — Remove arm from collision lists
+
+- PopCylinder collision object offset is `+0x10D4`, not `+0x10E0`.
+- v55m_42r added the arm's `obj+0x10E0` to collision lists, which read a bad pointer/position float and corrupted the scene tree → crash in Draw.
+- v55m_42s leaves the arm visual-only: update list + render list + scene tree. The base catapult still handles collision.
+
 ## v55m_42r — Fix arm mesh loading crash
 
 - v55m_42q loaded the arm mesh using `board+0x878` as an `App*` pointer, but `board+0x878` is actually `SoundList*`.

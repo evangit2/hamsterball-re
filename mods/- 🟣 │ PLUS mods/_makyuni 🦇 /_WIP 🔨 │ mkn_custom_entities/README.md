@@ -1,4 +1,4 @@
-# Custom Entities Mod v55m_42r
+# Custom Entities Mod v55m_42s
 
 A bass.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 

@@ -1,6 +1,6 @@
 /*
 /*
- * custom_entities.c — Hamsterball Custom Entities Mod v55m_42r
+ * custom_entities.c — Hamsterball Custom Entities Mod v55m_42s
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -2452,17 +2452,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                         *(DWORD*)arm_obj = (DWORD)arm_new_vtable;
                                     }
                                 }
-                                /* Register arm on board lists */
+                                /* Register arm on board lists (visual only) */
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), arm_obj);
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), arm_obj);
-                                DWORD arm_col_obj = *(DWORD*)((char*)arm_obj + PC_COLLISION_OBJ);
-                                if (arm_col_obj && !IsBadReadPtr((void*)arm_col_obj, 0x20)) {
-                                    pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)arm_col_obj);
-                                    DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
-                                    if (scene_col) {
-                                        pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)arm_col_obj);
-                                    }
-                                }
+                                /* v55m_42s: Do NOT add arm to collision lists. PopCylinder collision
+                                 * object offset is +0x10D4, not PC_COLLISION_OBJ (0x10E0). The base
+                                 * catapult already provides collision; the arm is visual-only. */
                                 DWORD level = cEnt_get_level(board);
                                 if (level) {
                                     DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
@@ -5158,7 +5153,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42r Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42s Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
