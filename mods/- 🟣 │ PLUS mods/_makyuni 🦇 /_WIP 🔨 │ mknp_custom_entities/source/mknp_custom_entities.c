@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43g
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43h
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -594,14 +594,14 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
-/* v55m_43g: cEnt Catapult render — rotate the catapult object around Y.
+/* v55m_43h: cEnt Catapult render — rotate the catapult object around Y.
  * v55m_42w: Added g_in_draw_phase guard — Stands vtable[18] is called during
  * Update AND Draw. D3D transforms only work during Draw.
- * v55m_43g: Uses the SAME pattern as the working Chomper/Waterwheel hooks:
+ * v55m_43h: Uses the SAME pattern as the working Chomper/Waterwheel hooks:
  * 256-byte vtable copy (64 entries), IsBadReadPtr(orig, 256).
  * The previous 0x50-byte (20-entry) copy was too small — the game read
  * vtable slots beyond entry 20, hitting garbage and corrupting the stack.
- * v55m_43g: FIXED matrix write location. The catapult's world matrix is NOT
+ * v55m_43h: FIXED matrix write location. The catapult's world matrix is NOT
  * at gfx+0x74C! Both 0x45E0E0 (catapult vtable[18]) and 0x465650 (collision
  * Level vtable[18]) call Graphics_BeginFrame(0x453B50) with the render Level
  * as the matrix param: mov [this+0x434],eax; push eax; call 0x453B50.
@@ -623,7 +623,7 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
         return;
     }
 
-    /* v55m_43g: The render Level is at this_+0x434 (for BOTH the catapult
+    /* v55m_43h: The render Level is at this_+0x434 (for BOTH the catapult
      * obj and the collision Level — Catapult_ctor copies obj+0x434 into
      * the collision Level's +0x434). The world matrix is at renderLevel+0x4. */
     DWORD renderLevel = 0;
@@ -633,7 +633,7 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
     DWORD app = *(DWORD*)0x005341E0;
     if (renderLevel && app &&
         !IsBadReadPtr((void*)(renderLevel + 0x4), 64)) {
-        /* v55m_43g: log render hook firing (once per ~60 frames) to prove
+        /* v55m_43h: log render hook firing (once per ~60 frames) to prove
          * the hook runs during the catapult's render. */
         {
             static int rlog = 0;
@@ -646,78 +646,19 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
                 }
             }
         }
-        /* Save the current world matrix (renderLevel+0x4). */
-        float saveMatrix[16];
-        memcpy(saveMatrix, (float*)(renderLevel + 0x4), sizeof(saveMatrix));
-
-        /* v55m_43g: Rotate AROUND THE OBJECT'S OWN CENTER (cs->x,y,z).
-         * The catapult mesh verts are at ABSOLUTE MESHWORLD coordinates
-         * (750,-135,-522) with an identity/translation world matrix — so a
-         * pure RY rotation would swing it around the WORLD origin. Compose:
-         *   finalMatrix = saveMatrix × T(-c) × RY(angle) × T(c)
-         * which rotates around the object's own position. */
-        float angle = cs->arm_angle * 3.14159265f / 180.0f;
-        float c = cosf(angle);
-        float s = sinf(angle);
-        /* T(-c) — translate to origin */
-        float m1[16] = {
-            1,0,0,0,  0,1,0,0,  0,0,1,0,
-            -cs->x, -cs->y, -cs->z, 1
-        };
-        /* RY(angle) */
-        float m2[16] = {
-            c,0,-s,0,  0,1,0,0,  s,0,c,0,  0,0,0,1
-        };
-        /* T(c) — translate back */
-        float m3[16] = {
-            1,0,0,0,  0,1,0,0,  0,0,1,0,
-            cs->x, cs->y, cs->z, 1
-        };
-        /* finalMatrix = saveMatrix × m1 × m2 × m3 (row-vector v' = v×M) */
-        float finalMatrix[16];
-        int row, col, k;
-        float tmp1[16], tmp2[16];
-        for (row = 0; row < 4; row++) {
-            for (col = 0; col < 4; col++) {
-                tmp1[row*4+col] = 0;
-                for (k = 0; k < 4; k++) {
-                    tmp1[row*4+col] += saveMatrix[row*4+k] * m1[k*4+col];
-                }
-            }
-        }
-        for (row = 0; row < 4; row++) {
-            for (col = 0; col < 4; col++) {
-                tmp2[row*4+col] = 0;
-                for (k = 0; k < 4; k++) {
-                    tmp2[row*4+col] += tmp1[row*4+k] * m2[k*4+col];
-                }
-            }
-        }
-        for (row = 0; row < 4; row++) {
-            for (col = 0; col < 4; col++) {
-                finalMatrix[row*4+col] = 0;
-                for (k = 0; k < 4; k++) {
-                    finalMatrix[row*4+col] += tmp2[row*4+k] * m3[k*4+col];
-                }
-            }
-        }
-
-        memcpy((float*)(renderLevel + 0x4), finalMatrix, sizeof(finalMatrix));
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        /* Call the correct original: if this_ is the Level (arm_obj),
-         * use arm_orig_vtable18; otherwise use orig_vtable18. */
-        DWORD orig_fn = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
-                      ? cs->arm_orig_vtable18 : cs->orig_vtable18;
-        ((render_t)orig_fn)(this_, param_1, param_2);
-        memcpy((float*)(renderLevel + 0x4), saveMatrix, sizeof(saveMatrix));
-        return;
     }
-    /* Update phase (or D3D access failed): call original WITHOUT rotation.
-     * Always call it — the game needs it every frame for strip data. */
+    /* v55m_43h: Vertex rotation replaces the matrix rotation.
+     * The vertex array at the collision Level's SceneObject+0x440 is rotated
+     * every frame in cEnt_catapult_present_check — BOTH the render and the
+     * spatial-tree collision read the same array, so both rotate together.
+     * The world matrix at renderLevel+0x4 is left UNTOUCHED (identity), so
+     * the render draws the (rotated) absolute verts with no extra transform.
+     * This avoids the double-rotation the matrix hook caused. */
     typedef void (__thiscall *render_t)(DWORD, char, int);
-    DWORD orig_fn2 = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
-                   ? cs->arm_orig_vtable18 : cs->orig_vtable18;
-    ((render_t)orig_fn2)(this_, param_1, param_2);
+    DWORD orig_fn = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
+                  ? cs->arm_orig_vtable18 : cs->orig_vtable18;
+    ((render_t)orig_fn)(this_, param_1, param_2);
+    return;
 }
 
 /* Vec3_Copy — copy 3 floats */
@@ -2510,7 +2451,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* v55m_1: Catapult_ctor already creates Level_RenderCtor at obj+0x10D4 internally.
                  * Do NOT create a duplicate — the old code overwrote the ctor's Level,
                  * breaking the TowerCollisionEvents mesh pointer match. */
-                /* v55m_43g: RE-ENABLED collision list append.
+                /* v55m_43h: RE-ENABLED collision list append.
                  * v55m_42w disabled it because it crashed at 0x478EDD — but that
                  * crash was actually caused by the vtable[18] hook calling 0x45E0E0
                  * during Update, corrupting the mesh buffers that the collision
@@ -2552,7 +2493,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_43g: Hook BOTH vtable[18]s for Y-rotation render.
+                    /* v55m_43h: Hook BOTH vtable[18]s for Y-rotation render.
                      * CRITICAL: The catapult's OWN vtable[18] is NOT called
                      * during rendering! The catapult (Stands family) renders
                      * through the collision/render Level at obj+0x10D4, which
@@ -2580,7 +2521,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                     cs->orig_vtable18, new_vt[18]);
                             }
                         }
-                        /* v55m_43g: ALSO hook the collision Level's vtable[18].
+                        /* v55m_43h: ALSO hook the collision Level's vtable[18].
                          * This is the object that actually gets rendered by the
                          * scene spatial tree. The Level is at obj+0x10D4 (created
                          * by Catapult_ctor internally). Its vtable[18] is 0x45E0E0. */
@@ -3994,6 +3935,105 @@ static DWORD get_ball_ptr(void) {
 static int g_catapult_heartbeat = 0;
 static int g_catapult_debug_count = 0;
 
+/* v55m_43h: Rotate the catapult's collision vertex data around its center.
+ * The collision Level at obj+0x10D4 has a SceneObject at +0x480 whose vertex
+ * array (+0x440, 32-byte stride) feeds BOTH the render AND the spatial-tree
+ * collision check. Rotating it in place around the object center keeps the
+ * object inside its original AABB (tree bounds stay valid) while the
+ * per-triangle collision follows the new vertex positions.
+ * Returns total vertex count rotated, or 0 on failure. */
+static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
+    if (!cs || !cs->obj) return 0;
+    DWORD colLevel = *(DWORD*)((char*)cs->obj + 0x10D4);
+    if (!colLevel || colLevel < 0x10000) return 0;
+    if (IsBadReadPtr((void*)colLevel, 0x490)) return 0;
+    DWORD sceneObj = *(DWORD*)((char*)colLevel + 0x480);
+    if (!sceneObj || sceneObj < 0x10000) return 0;
+    if (IsBadReadPtr((void*)sceneObj, 0x450)) return 0;
+    float* verts = *(float**)(sceneObj + 0x440);
+    if (!verts || verts < (float*)0x10000) return 0;
+
+    /* Total vertex count = MeshWorld+0x08 -> MeshWorld+0x2C AthenaList:
+     * count at +0x4, items at +0x40C; each MeshBuffer has count at +0x4. */
+    DWORD mw = *(DWORD*)((char*)colLevel + 0x08);
+    if (!mw || mw < 0x10000) return 0;
+    if (IsBadReadPtr((void*)mw, 0x40)) return 0;
+    DWORD* list = (DWORD*)(mw + 0x2C);
+    if (IsBadReadPtr((void*)list, 0x20)) return 0;
+    int list_count = *(int*)(list + 0x1);  /* +0x4 */
+    if (list_count <= 0 || list_count > 64) return 0;
+    DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
+    if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
+
+    int total = 0;
+    int b;
+    for (b = 0; b < list_count; b++) {
+        DWORD mb = items[b];
+        if (!mb || IsBadReadPtr((void*)mb, 0x20)) continue;
+        int cnt = *(int*)(mb + 0x4);
+        if (cnt < 0) continue;
+        total += cnt;
+    }
+    if (total <= 0 || total > 100000) return 0;
+    if (IsBadReadPtr((void*)verts, total * 32)) return 0;
+
+    float ang = cs->arm_angle * 3.14159265f / 180.0f;
+    float c = cosf(ang), s = sinf(ang);
+    int v;
+    for (v = 0; v < total; v++) {
+        float* p = verts + v * 8;  /* 32-byte stride = 8 floats */
+        float x = p[0] - cs->x;
+        float z = p[2] - cs->z;
+        p[0] = x*c + z*s + cs->x;
+        p[2] = -x*s + z*c + cs->z;
+    }
+    /* v55m_43h: ALSO rotate the render Level's vertex array (obj+0x434),
+     * which 0x45E0E0 (the catapult's own vtable[18]) draws. Both draw paths
+     * must see rotated verts — the collision Level (scene tree) and the
+     * catapult's own render (if the game calls it). */
+    DWORD renderLevel = *(DWORD*)((char*)cs->obj + 0x434);
+    if (renderLevel && renderLevel >= 0x10000 &&
+        !IsBadReadPtr((void*)renderLevel, 0x490)) {
+        DWORD rso = *(DWORD*)((char*)renderLevel + 0x480);
+        if (rso && rso >= 0x10000 && !IsBadReadPtr((void*)rso, 0x450)) {
+            float* rverts = *(float**)(rso + 0x440);
+            DWORD rmw = *(DWORD*)((char*)renderLevel + 0x08);
+            if (rverts && rverts >= (float*)0x10000 && rmw && rmw >= 0x10000 &&
+                !IsBadReadPtr((void*)rmw, 0x40)) {
+                DWORD* rlist = (DWORD*)(rmw + 0x2C);
+                if (!IsBadReadPtr((void*)rlist, 0x20)) {
+                    int rlc = *(int*)(rlist + 0x1);
+                    if (rlc > 0 && rlc <= 64) {
+                        DWORD* ritems = *(DWORD**)(rlist + 0x103);
+                        if (ritems && !IsBadReadPtr((void*)ritems, rlc * 4)) {
+                            int rtotal = 0;
+                            int rb;
+                            for (rb = 0; rb < rlc; rb++) {
+                                DWORD rmb = ritems[rb];
+                                if (!rmb || IsBadReadPtr((void*)rmb, 0x20)) continue;
+                                int rcnt = *(int*)(rmb + 0x4);
+                                if (rcnt < 0) continue;
+                                rtotal += rcnt;
+                            }
+                            if (rtotal > 0 && rtotal <= 100000 &&
+                                !IsBadReadPtr((void*)rverts, rtotal * 32)) {
+                                for (v = 0; v < rtotal; v++) {
+                                    float* p = rverts + v * 8;
+                                    float x = p[0] - cs->x;
+                                    float z = p[2] - cs->z;
+                                    p[0] = x*c + z*s + cs->x;
+                                    p[2] = -x*s + z*c + cs->z;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return total;
+}
+
 /* v55m_42f: Catapult trigger via Present-hook radius check (restored from v55m_28m).
  * The native E:CATAPULTBOTTOM event only works on Tower (race 4) because only
  * Tower's collision handler checks for it. On custom levels we must detect
@@ -4031,6 +4071,28 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         /* v55m_42u: TEST — constant arm rotation at SWIRL speed (0.004 rad/frame ≈ 0.229°/frame) */
         cs->arm_angle += 0.229f;
         if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
+
+        /* v55m_43h: Rotate the collision vertex data to match the render.
+         * The render matrix already rotates the visual (user confirmed); this
+         * rotates the actual vertex array so the spatial-tree collision
+         * follows. Runs every frame; rotation is in-place around center so
+         * the tree AABB bounds stay valid. */
+        if (log_now) {
+            int rot = cEnt_catapult_rotate_collision_verts(cs);
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                if (rot > 0) {
+                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f)\n",
+                        rot, cs->arm_angle);
+                } else {
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f)\n",
+                        cs->arm_angle);
+                }
+                fclose(df);
+            }
+        } else {
+            cEnt_catapult_rotate_collision_verts(cs);
+        }
 
         if (cs->cooldown > 0) {
             cs->cooldown--;
@@ -4079,7 +4141,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
         if (cs->launching) {
             cs->countdown--;
-            /* v55m_43g: REMOVED windup arm_angle override — arm_angle is now
+            /* v55m_43h: REMOVED windup arm_angle override — arm_angle is now
              * the CONTINUOUS Y-spin (SWIRL-style), incremented at line 4004.
              * The windup tilt was overriding it every frame, preventing the
              * continuous rotation the user requested. */
@@ -4107,7 +4169,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
             cs->launching = 0;
             cs->cooldown = 60;
-            /* v55m_43g: removed arm_angle=0 snap — angle stays continuous */
+            /* v55m_43h: removed arm_angle=0 snap — angle stays continuous */
 
             /* v55m_42j: play Catapult launch sound at same frame as launch */
             cEnt_play_catapult_sound(df);
@@ -5291,7 +5353,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43g Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43h Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -5306,7 +5368,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
-    /* v55m_43g: Restore RenderScene hook — sets g_in_draw_phase=1 during Draw.
+    /* v55m_43h: Restore RenderScene hook — sets g_in_draw_phase=1 during Draw.
      * The catapult vtable[18] hook needs this to skip D3D transforms during
      * Update (calling 0x45E0E0 during Update corrupts mesh data → 0x478EDD). */
     install_renderscene_hook();
