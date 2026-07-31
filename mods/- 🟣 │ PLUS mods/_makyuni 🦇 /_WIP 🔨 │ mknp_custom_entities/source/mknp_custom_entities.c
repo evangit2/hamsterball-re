@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42t
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_42u
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -3890,6 +3890,10 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->board != board) continue;
         if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
 
+        /* v55m_42u: TEST — constant arm rotation at SWIRL speed (0.004 rad/frame ≈ 0.229°/frame) */
+        cs->arm_angle += 0.229f;
+        if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
+
         if (cs->cooldown > 0) {
             cs->cooldown--;
             if (cs->cooldown == 0) cs->launching = 0;
@@ -5139,7 +5143,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_42t Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_42u Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
