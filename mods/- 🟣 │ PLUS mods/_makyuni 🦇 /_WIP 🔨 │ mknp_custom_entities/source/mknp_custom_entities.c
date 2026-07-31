@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43a
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43b
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -594,131 +594,9 @@ static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int par
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
 
-/* v55m_42u: cEnt Catapult render — rotate the MAIN catapult object itself.
- * v55m_42w: Added g_in_draw_phase guard — Stands vtable[18] is called during
- * Update AND Draw. D3D transforms only work during Draw. */
-static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param_2) {
-    /* v55m_43a: During Update phase, DO NOTHING — just return.
-     * The original Stands vtable[18] function (0x0045E0E0 = D3DXSkinMesh_CopyStripData)
-     * is NOT safe to call during Update. It corrupts mesh data structures and causes
-     * crashes at 0x00478EDD (MeshArchive_ctor REP MOVSD) or stack corruption in our DLL.
-     * The Update call is redundant for a static mesh — vertex data doesn't change. */
-    if (!g_in_draw_phase) {
-        return;
-    }
-
-    CatapultState* cs = NULL;
-    int i;
-    for (i = 0; i < g_catapult_count; i++) {
-        if (g_catapults[i].obj == this_) { cs = &g_catapults[i]; break; }
-    }
-    if (!cs || !cs->orig_vtable18) {
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)0x0045E0E0)(this_, param_1, param_2);
-        return;
-    }
-
-    DWORD app = *(DWORD*)0x005341E0;
-    if (app) {
-        DWORD gfx = *(DWORD*)((char*)app + 0x174);
-        if (gfx) {
-            DWORD device = *(DWORD*)((char*)gfx + 0x154);
-            if (device && !IsBadReadPtr((void*)device, 4)) {
-                DWORD* dev_vtable = *(DWORD**)device;
-                if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
-                    typedef void (__stdcall *GetTransform_t)(DWORD device, DWORD state, void* pMatrix);
-                    typedef void (__stdcall *SetTransform_t)(DWORD device, DWORD state, void* pMatrix);
-                    GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
-                    SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
-
-                    float saveMatrix[16];
-                    pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
-
-                    float angle = cs->arm_angle * 3.14159265f / 180.0f;
-                    float c = cosf(angle);
-                    float s = sinf(angle);
-                    float rotMatrix[16] = {
-                        c,  0, -s, 0,
-                        0,  1,  0, 0,
-                        s,  0,  c, 0,
-                        0,  0,  0, 1
-                    };
-
-                    pfn_SetTransform(device, 256, rotMatrix);
-                    typedef void (__thiscall *render_t)(DWORD, char, int);
-                    ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-                    pfn_SetTransform(device, 256, saveMatrix);
-                    return;
-                }
-            }
-        }
-    }
-    typedef void (__thiscall *render_t)(DWORD, char, int);
-    ((render_t)cs->orig_vtable18)(this_, param_1, param_2);
-}
-
-/* v55m_42q: Catapult arm render hook — separate arm object.
- * Rotates around Y-axis using direct D3D SetTransform (Chomper-style). */
-static void __thiscall cEnt_catapult_arm_render(DWORD this_, char param_1, int param_2) {
-    CatapultState* cs = NULL;
-    int i;
-    for (i = 0; i < g_catapult_count; i++) {
-        if (g_catapults[i].arm_obj == this_) { cs = &g_catapults[i]; break; }
-    }
-    if (!cs || !cs->arm_orig_vtable18) {
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)0x0045E0E0)(this_, param_1, param_2);
-        return;
-    }
-
-    /* v55m_42t: diagnostic log — confirm hook fires and current angle */
-    if (cs->arm_angle != 0.0f) {
-        FILE* df = fopen("custom_entities_catapult.log", "a");
-        if (df) {
-            fprintf(df, "ARM_RENDER: obj=0x%08X angle=%.2f\n", this_, cs->arm_angle);
-            fclose(df);
-        }
-    }
-
-    DWORD app = *(DWORD*)0x005341E0;
-    if (app) {
-        DWORD gfx = *(DWORD*)((char*)app + 0x174);
-        if (gfx) {
-            DWORD device = *(DWORD*)((char*)gfx + 0x154);
-            if (device && !IsBadReadPtr((void*)device, 4)) {
-                DWORD* dev_vtable = *(DWORD**)device;
-                if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
-                    typedef void (__stdcall *GetTransform_t)(DWORD device, DWORD state, void* pMatrix);
-                    typedef void (__stdcall *SetTransform_t)(DWORD device, DWORD state, void* pMatrix);
-                    GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
-                    SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
-
-                    float saveMatrix[16];
-                    pfn_GetTransform(device, 256 /* D3DTS_WORLD */, saveMatrix);
-
-                    /* v55m_42t: use exact same Y-rotation matrix as working Waterwheel hook */
-                    float angle = cs->arm_angle * 3.14159265f / 180.0f;
-                    float c = cosf(angle);
-                    float s = sinf(angle);
-                    float rotMatrix[16] = {
-                        c,  0, -s, 0,
-                        0,  1,  0, 0,
-                        s,  0,  c, 0,
-                        0,  0,  0, 1
-                    };
-
-                    pfn_SetTransform(device, 256, rotMatrix);
-                    typedef void (__thiscall *render_t)(DWORD, char, int);
-                    ((render_t)cs->arm_orig_vtable18)(this_, param_1, param_2);
-                    pfn_SetTransform(device, 256, saveMatrix);
-                    return;
-                }
-            }
-        }
-    }
-    typedef void (__thiscall *render_t)(DWORD, char, int);
-    ((render_t)cs->arm_orig_vtable18)(this_, param_1, param_2);
-}
+/* v55m_43b: REMOVED cEnt_catapult_render and cEnt_catapult_arm_render.
+ * Vtable[18] hook caused stack corruption in entity_thread (crash 0002:00009E75).
+ * Catapult rotation is no longer applied via vtable hook. */
 
 /* Vec3_Copy — copy 3 floats */
 typedef void (__thiscall *Vec3_Copy_t)(float* dst, float* src);
@@ -2549,23 +2427,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     cs->arm_mesh = 0;
                     cs->arm_active = 0;
 
-                    /* v55m_42x: Hook Stands vtable[18] for Y-rotation render.
-                     * Collision list append is disabled (crash at 0x478EDD).
-                     * g_in_draw_phase guard prevents D3D calls during Update. */
-                    {
-                        DWORD* orig_vt = *(DWORD**)obj;
-                        if (orig_vt && !IsBadReadPtr(orig_vt, 0x50)) {
-                            DWORD* new_vt = (DWORD*)pfn_operator_new(0x50);
-                            if (new_vt) {
-                                memcpy(new_vt, orig_vt, 0x50);
-                                cs->orig_vtable18 = new_vt[18];
-                                new_vt[18] = (DWORD)cEnt_catapult_render;
-                                *(DWORD**)obj = new_vt;
-                                if (logf) fprintf(logf, "  ROTATER: Catapult vtable[18] hook installed (0x%08X -> 0x%08X)\n",
-                                    cs->orig_vtable18, new_vt[18]);
-                            }
-                        }
-                    }
+                    /* v55m_43b: REMOVED vtable[18] hook entirely. Copying the vtable
+                     * and replacing slot 18 with cEnt_catapult_render caused stack
+                     * corruption in entity_thread (crash 0002:00009E75). The catapult
+                     * uses the original Stands vtable normally. Y-rotation is attempted
+                     * by writing angle to obj+0x10E4 (SWIRL render-angle field) from
+                     * the Present hook. */
 
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
@@ -5256,7 +5123,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43a Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43b Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -5271,11 +5138,9 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
-    /* v55m_42w: Install RenderScene hook for draw-phase guard.
-     * Graphics_RenderScene (0x454BC0) sets g_in_draw_phase=1 during Draw.
-     * Stands vtable[18] is called during Update AND Draw — we use this to
-     * skip D3D transforms during Update. */
-    install_renderscene_hook();
+    /* v55m_43b: REMOVED install_renderscene_hook() — the RenderScene hook
+     * was only needed for the vtable[18] draw-phase guard (g_in_draw_phase).
+     * Without the catapult vtable hook, this code cave at 0x454BC0 is unnecessary. */
     /* v55j_9: Install Ball_Render hook for tar splotch visual.
      * Runs AFTER Ball_Update (which clears ball+0x260), re-sets it if in zone. */
     install_ballrender_hook();
