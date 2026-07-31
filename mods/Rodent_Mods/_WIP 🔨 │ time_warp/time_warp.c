@@ -176,10 +176,6 @@ typedef DWORD HFX;
 #define TT_RECORDING_NOP_ADDR   0x0041B690
 #define TT_RECORDING_NOP_SIZE   7
 
-/* Level_UpdateAndRender NOP patches */
-#define LEVEL_UPDATE_NOP1       0x0040B7F5
-#define LEVEL_UPDATE_NOP2       0x0040B7FF
-
 /* Ghost file format */
 #define GHOST_MAGIC             0x47485347  /* "GHSG" */
 #define GHOST_VERSION           1
@@ -1109,14 +1105,19 @@ static void ghost1_restore_after_warp(void) {
     int seg = g_ghost1.currentSegment;
     if (seg < 1) seg = 1;
 
-    /* Load from confirmed (N) files only — Ghost 1 never uses temp [N] */
+    /* Try confirmed (N) first, then temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '(');
+    char bracket = '(';
+    if (!snaps) {
+        snaps = load_segment_ghost(g_twRaceName, seg, &segCount, &segTime, '[');
+        bracket = '[';
+    }
     if (snaps) {
         free(snaps);
-        ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, '(');
+        ghost1_load_segment(g_twRaceName, seg, g_ghost1.playbackIdx, bracket);
     } else {
-        diag_logf("[ghost1] No confirmed segment %d found to restore", seg);
+        diag_logf("[ghost1] No segment %d found to restore", seg);
     }
 }
 
@@ -1142,14 +1143,21 @@ static void ghost1_check_advance(void) {
     diag_logf("[ghost1] Segment %d ended, advancing to %d",
               g_ghost1.currentSegment, nextSeg);
 
-    /* Check if next confirmed (N) segment exists — Ghost 1 never uses temp [N] */
+    /* Check if next confirmed (N) segment exists — fallback to temp [N] */
     int segTime = 0, segCount = 0;
     DWORD *snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '(');
+    if (!snaps) {
+        snaps = load_segment_ghost(g_twRaceName, nextSeg, &segCount, &segTime, '[');
+        if (snaps) {
+            diag_logf("[ghost1] Advancing to temp segment %d", nextSeg);
+        }
+    }
     if (snaps) {
         free(snaps);
-        ghost1_load_segment(g_twRaceName, nextSeg, 0, '(');
+        char bracket = (g_ghost1.currentSegment > 0 && g_ghost1.currentSegment <= g_ghost1.totalSegments) ? '(' : '[';
+        ghost1_load_segment(g_twRaceName, nextSeg, 0, bracket);
     } else {
-        diag_logf("[ghost1] No confirmed segment %d to advance to", nextSeg);
+        diag_logf("[ghost1] No segment %d to advance to", nextSeg);
     }
 }
 
@@ -1168,8 +1176,8 @@ static void ghost1_init_for_tw(const char *raceName) {
         /* No confirmed segments yet — will chain from temp files as they're created */
         g_ghost1.currentSegment = 1;
         g_ghost1.playbackIdx = 0;
-        g_ghost1.active = FALSE;
-        diag_logf("[ghost1] No confirmed segments for TW level yet");
+        g_ghost1.active = TRUE;
+        diag_log("[ghost1] No confirmed segments for TW level yet; chaining from temp files");
     }
 }
 
@@ -2023,14 +2031,13 @@ __attribute__((naked, used)) static void hook_App_StartTournamentRace(void) {
         "pushl %%eax\n"
         "pushl %%ecx\n"
         "pushl %%edx\n"
-        "movl 16(%%esp), %%eax\n"  /* get app (original ECX) from stack */
-        "pushl %%eax\n"
+        "pushl %%ecx\n"         /* pass original ECX (app) as argument */
         "call _tournament_hook_impl\n"
         "addl $4, %%esp\n"
         "popl %%edx\n"
         "popl %%ecx\n"
         "popl %%eax\n"
-        "ret\n"  /* __thiscall: callee cleans, no args on stack */
+        "ret\n"                /* __thiscall: no stack args */
         : : : "memory"
     );
 }
@@ -2582,18 +2589,6 @@ static void install_dce_hook(void) {
     diag_log("[ghost_event] DCE hook installed");
 }
 
-/* Level_UpdateAndRender patches — NOP TT and party mode checks */
-static void patch_level_update_and_render(void) {
-    BYTE *jz_addr = (BYTE*)(EXE_BASE + 0x000B7F5);
-    patch_byte(jz_addr,     0x90);
-    patch_byte(jz_addr + 1, 0x90);
-
-    BYTE *jnz_addr = (BYTE*)(EXE_BASE + 0x000B7FF);
-    patch_byte(jnz_addr,     0x90);
-    patch_byte(jnz_addr + 1, 0x90);
-
-    diag_log("[ghost_event] Level_UpdateAndRender patched (TT + party checks NOPed)");
-}
 
 /* ================================================================
  * Warp subsystem — state machine, timer caves, color lerp, flash
@@ -2714,7 +2709,7 @@ static void block_pause(void) {
     int i;
     for (i = 0; i < 3; i++) {
         DWORD addr = EXE_BASE + addrs[i];
-        if (VirtualProtect((void*)addr, 1, PAGE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, 1, PAGE_EXECUTE_READWRITE, &oldProt)) {
             g_pauseOrigBytes[i] = *((BYTE*)addr);
             *((BYTE*)addr) = 0xEB;
             VirtualProtect((void*)addr, 1, oldProt, &oldProt);
@@ -2731,7 +2726,7 @@ static void unblock_pause(void) {
     int i;
     for (i = 0; i < 3; i++) {
         DWORD addr = EXE_BASE + addrs[i];
-        if (VirtualProtect((void*)addr, 1, PAGE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, 1, PAGE_EXECUTE_READWRITE, &oldProt)) {
             *((BYTE*)addr) = g_pauseOrigBytes[i];
             VirtualProtect((void*)addr, 1, oldProt, &oldProt);
         }
@@ -2996,7 +2991,7 @@ static void install_timer_caves(void) {
         /* skip_target: JMP skip */
         write_jmp(p, skipAddr);
 
-        if (VirtualProtect((void*)patchAddr, TIMER_DEC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)patchAddr, TIMER_DEC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
             memcpy(g_decOrigBytes, (void*)patchAddr, TIMER_DEC_PATCH_SIZE);
             write_jmp((unsigned char*)patchAddr, (DWORD)g_decCave);
             memset((unsigned char*)patchAddr + 5, 0x90, 4);
@@ -3040,7 +3035,7 @@ static void install_timer_caves(void) {
         /* skip_inc: JMP return */
         write_jmp(p, returnAddr);
 
-        if (VirtualProtect((void*)patchAddr, TIMER_INC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)patchAddr, TIMER_INC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
             memcpy(g_incOrigBytes, (void*)patchAddr, TIMER_INC_PATCH_SIZE);
             write_jmp((unsigned char*)patchAddr, (DWORD)g_incCave);
             VirtualProtect((void*)patchAddr, TIMER_INC_PATCH_SIZE, oldProt, &oldProt);
@@ -3056,7 +3051,7 @@ static void restore_timer_caves(void) {
 
     if (g_decPatched) {
         DWORD addr = base + TIMER_DEC_PATCH_RVA;
-        if (VirtualProtect((void*)addr, TIMER_DEC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, TIMER_DEC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
             memcpy((void*)addr, g_decOrigBytes, TIMER_DEC_PATCH_SIZE);
             VirtualProtect((void*)addr, TIMER_DEC_PATCH_SIZE, oldProt, &oldProt);
         }
@@ -3065,7 +3060,7 @@ static void restore_timer_caves(void) {
 
     if (g_incPatched) {
         DWORD addr = base + TIMER_INC_PATCH_RVA;
-        if (VirtualProtect((void*)addr, TIMER_INC_PATCH_SIZE, PAGE_READWRITE, &oldProt)) {
+        if (VirtualProtect((void*)addr, TIMER_INC_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
             memcpy((void*)addr, g_incOrigBytes, TIMER_INC_PATCH_SIZE);
             VirtualProtect((void*)addr, TIMER_INC_PATCH_SIZE, oldProt, &oldProt);
         }
@@ -3079,7 +3074,7 @@ static void install_tt_recording_nop(void) {
 
     DWORD addr = TT_RECORDING_NOP_ADDR;
     DWORD oldProt;
-    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_READWRITE, &oldProt)) {
+    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
         memcpy(g_ttRecOrigBytes, (void*)addr, TT_RECORDING_NOP_SIZE);
         /* NOP 7 bytes: 8A 4A 11 84 C9 74 71 → 90 90 90 90 90 90 90 */
         memset((void*)addr, 0x90, TT_RECORDING_NOP_SIZE);
@@ -3093,7 +3088,7 @@ static void restore_tt_recording_nop(void) {
     if (!g_ttRecPatched) return;
     DWORD addr = TT_RECORDING_NOP_ADDR;
     DWORD oldProt;
-    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_READWRITE, &oldProt)) {
+    if (VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, PAGE_EXECUTE_READWRITE, &oldProt)) {
         memcpy((void*)addr, g_ttRecOrigBytes, TT_RECORDING_NOP_SIZE);
         VirtualProtect((void*)addr, TT_RECORDING_NOP_SIZE, oldProt, &oldProt);
     }
@@ -3276,7 +3271,7 @@ static void updateWarpStateMachine(void) {
         g_freezeTimer = 0;
 
         if (levelIdx >= 0 && levelIdx <= 14) {
-            void *func = (void *)APP_START_PRACTICE_RACE;
+            void *func;
             DWORD appVal = app;
             int idx = levelIdx;
             char savedDifficulty = *(BYTE*)((char*)app + 0x23C);
@@ -3328,6 +3323,11 @@ static void updateWarpStateMachine(void) {
                     if (!IsBadReadPtr((void*)(app + APP_234_PARTY_MODE), 1))
                         partyMode = *(BYTE*)(app + APP_234_PARTY_MODE);
                     if (partyMode == 0) {
+                        /* Destroy old Ghost 2 before capturing so the capture buffer is the only copy */
+                        if (g_ghost2.active || g_ghost2.ball || g_ghost2.btt) {
+                            ghost2_destroy();
+                        }
+                        g_ghost2Pending = FALSE;
                         ghost2_capture();
                     }
                 }
@@ -3353,6 +3353,20 @@ static void updateWarpStateMachine(void) {
                 }
             }
 
+            /* Use Tournament start for tournament-to-same-level warps, Practice otherwise */
+            if (wasInTournament && isSameLevel) {
+                func = (void *)APP_START_TOURNAMENT_RACE;
+            } else {
+                func = (void *)APP_START_PRACTICE_RACE;
+            }
+
+            /* Use Tournament start for tournament-to-same-level warps, Practice otherwise */
+            if (wasInTournament && isSameLevel) {
+                func = (void *)APP_START_TOURNAMENT_RACE;
+            } else {
+                func = (void *)APP_START_PRACTICE_RACE;
+            }
+
             __asm__ volatile(
                 "push %[idx]\n\t"
                 "movl %[appVal], %%ecx\n\t"
@@ -3370,13 +3384,9 @@ static void updateWarpStateMachine(void) {
 
             /* Ghost 1: Initialize for TW level or restore after same-level warp */
             if (isSameLevel && g_twRaceName[0]) {
-                /* First time entering this TW level: init Ghost 1 if confirmed segments exist */
-                if (!g_ghost1.active && g_segmentCounter == 1) {
-                    /* This was the first segment — check if confirmed ghosts exist */
-                    int confirmed = count_confirmed_segments(g_twRaceName);
-                    if (confirmed > 0) {
-                        ghost1_init_for_tw(g_twRaceName);
-                    }
+                /* First time entering this TW level: init Ghost 1 if not active */
+                if (!g_ghost1.active) {
+                    ghost1_init_for_tw(g_twRaceName);
                 }
                 /* Restore Ghost 1 playback into the new App+0x910 slot */
                 if (g_ghost1.active) {
@@ -3396,8 +3406,41 @@ static void updateWarpStateMachine(void) {
                 g_isTimeWarpLevel = FALSE;
             }
 
-            if (wasInTournament) {
-                /* Destroy game-created BTTs properly before zeroing */
+            if (wasInTournament && func == (void*)APP_START_TOURNAMENT_RACE) {
+                /* Same-level tournament warp: App_StartTournamentRace already created BTT via hook */
+                DWORD newProfile = *(DWORD*)((char*)app + APP_PROFILE_PTR);
+                if (newProfile) {
+                    *(BYTE*)((char*)newProfile + PROFILE_IS_PRACTICE) = 0;
+                    if (hasTournamentData) {
+                        memcpy((void*)((char*)newProfile + PROFILE_SCORE_ARRAY), savedScores, sizeof(savedScores));
+                        memcpy((void*)((char*)newProfile + PROFILE_TIME_ARRAY), savedTimes, sizeof(savedTimes));
+                    }
+
+                    {
+                        DWORD newProfile2 = *(DWORD*)((char*)app + APP_PROFILE_PTR);
+                        DWORD newBoard2 = 0;
+                        int levelBaseTime = 0;
+                        int difficultyBonus = 0;
+                        int finalTimer = savedTimeRemaining;
+
+                        if (newProfile2)
+                            newBoard2 = *(DWORD*)((char*)newProfile2 + PROFILE_BOARD_PTR);
+                        if (newBoard2 && !IsBadReadPtr((void*)(newBoard2 + 0x2998), 4))
+                            levelBaseTime = *(int*)((char*)newBoard2 + 0x2998);
+
+                        {
+                            int diff = (int)*(BYTE*)((char*)app + 0x23C);
+                            if (diff == 0) difficultyBonus = 1000;
+                            else if (diff == 1) difficultyBonus = 500;
+                        }
+
+                        finalTimer = savedTimeRemaining + levelBaseTime + difficultyBonus;
+                        *(int*)((char*)app + APP_5E8_TIMER) = finalTimer;
+                    }
+                    *(float*)((char*)app + APP_5E4_SCORE) = savedPlayerScore;
+                }
+            } else if (wasInTournament) {
+                /* Different-level tournament warp: game created BTTs via App_StartPracticeRace */
                 {
                     DWORD bttRec = *(DWORD*)((char*)app + APP_BTT_RECORDING);
                     DWORD bttPlay = *(DWORD*)((char*)app + APP_BTT_PLAYBACK);
@@ -3662,6 +3705,58 @@ static DWORD WINAPI init_thread(LPVOID param) {
     return 0;
 }
 
+
+/* ================================================================
+ * Hook cleanup functions
+ * ================================================================ */
+
+static void restore_practice_hook(void) {
+    if (g_hookInstalled && g_trampoline) {
+        unsigned char *target = (unsigned char*)ADDR_APP_START_PRACTICE;
+        DWORD oldProtect;
+        if (VirtualProtect(target, HOOK_BYTES, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            memcpy(target, g_origBytes, HOOK_BYTES);
+            VirtualProtect(target, HOOK_BYTES, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), target, HOOK_BYTES);
+        }
+        g_hookInstalled = 0;
+        diag_log("[ghost_saver] App_StartPracticeRace hook restored");
+    }
+}
+
+static void restore_tournament_hook(void) {
+    if (g_tournamentHookInstalled) {
+        DWORD oldProt;
+        if (VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
+            PAGE_EXECUTE_READWRITE, &oldProt)) {
+            memcpy((void*)APP_START_TOURNAMENT_RACE, g_tournamentOrigBytes,
+                   TOURNAMENT_HOOK_BYTES);
+            VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
+                oldProt, &oldProt);
+            FlushInstructionCache(GetCurrentProcess(), (void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES);
+        }
+        g_tournamentHookInstalled = 0;
+        diag_log("[tournament_hook] App_StartTournamentRace hook restored");
+    }
+}
+
+static void restore_frame_hook(void) {
+    if (g_frame_stub) {
+        patch_bytes((void*)APP_FRAME_UPDATE_EPILOGUE, g_frame_original, 5);
+        g_frame_stub = NULL;
+        diag_log("[time_warp] Frame epilogue hook restored");
+    }
+}
+
+static void restore_dce_hook(void) {
+    if (g_dce_stub) {
+        patch_bytes((void*)DISPATCH_COLLISION_EVENTS, g_dce_original, 8);
+        g_dce_stub = NULL;
+        g_dce_trampoline = NULL;
+        diag_log("[ghost_event] DCE hook restored");
+    }
+}
+
 /* ================================================================
  * DllMain
  * ================================================================ */
@@ -3702,19 +3797,10 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved) {
         restore_timer_caves();
         restore_tt_recording_nop();
         unblock_pause();
-
-        /* Restore tournament hook */
-        if (g_tournamentHookInstalled) {
-            DWORD oldProt;
-            if (VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
-                PAGE_EXECUTE_READWRITE, &oldProt)) {
-                memcpy((void*)APP_START_TOURNAMENT_RACE, g_tournamentOrigBytes,
-                       TOURNAMENT_HOOK_BYTES);
-                VirtualProtect((void*)APP_START_TOURNAMENT_RACE, TOURNAMENT_HOOK_BYTES,
-                    oldProt, &oldProt);
-            }
-            g_tournamentHookInstalled = 0;
-        }
+        restore_practice_hook();
+        restore_tournament_hook();
+        restore_dce_hook();
+        restore_frame_hook();
 
         /* Clean up Ghost 2 */
         ghost2_destroy();
