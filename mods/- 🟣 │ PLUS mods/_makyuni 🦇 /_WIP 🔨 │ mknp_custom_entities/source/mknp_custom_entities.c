@@ -4293,18 +4293,26 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->board != board) continue;
         if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
 
-        /* v55m_43h rev13 (PAUSE FIX): The pause flag is scene+0x874
+        /* v55m_43h rev14 (PAUSE FIX v2): The pause flag is sceneobj+0x874
          * (set to 1 by Scene_CreateGameOverMenu 0x40a920; checked by
          * GameUpdate 0x469cf0 which skips Scene_Update when set).
-         * REV6 WRONGLY checked App+0x158 — that's the FULLSCREEN flag
-         * (confirmed by raptisoft_live_log: APP_FULLSCREEN 0x158).
-         * That's why the catapult kept rotating when paused.
-         * The scene is at g_Scene (0x5341E4). When paused, scene+0x874
-         * == 1 → skip the rotation. */
+         * REV13 WRONGLY read 0x5341E4 as the scene pointer — that global
+         * is a GetTickCount timer (the log shows g_Scene=0x1053CA1F, a
+         * tick value), NOT the scene object. The REAL scene object comes
+         * from cEnt_get_sceneobj(board): board+BOARD_LEVEL → level+
+         * LEVEL_SCENEOBJECT (log shows sceneobj=0x0B47EA48).
+         * When paused, sceneobj+0x874 == 1 → skip the rotation. */
         {
-            DWORD scene = *(DWORD*)0x005341E4;
-            if (scene && scene > 0x10000 && !IsBadReadPtr((void*)(scene + 0x878), 0x20)) {
-                if (*(BYTE*)(scene + 0x874) != 0) continue;  /* paused → skip */
+            DWORD sceneobj2 = cEnt_get_sceneobj(board);
+            if (sceneobj2 && sceneobj2 > 0x10000 &&
+                !IsBadReadPtr((void*)(sceneobj2 + 0x878), 0x20)) {
+                if (*(BYTE*)(sceneobj2 + 0x874) != 0) continue;  /* paused → skip */
+            } else if (log_now) {
+                df = fopen("custom_entities_catapult.log", "a");
+                if (df) {
+                    fprintf(df, "CATAPULT: PAUSEGATE sceneobj=0x%08X (bad read — gate disabled)\n", sceneobj2);
+                    fclose(df);
+                }
             }
         }
 
