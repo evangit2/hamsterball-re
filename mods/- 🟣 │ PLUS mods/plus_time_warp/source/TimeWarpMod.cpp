@@ -425,33 +425,32 @@ static void unblock_pause(DWORD base) {
  *   MOV CL, [EAX+0x234]  ; app->party_mode
  *   TEST CL, CL
  *   JNZ +0x33             ; skip (to 0x40B834) if party
- *   ; continue (0x40B801): XOR ECX,[EBX+0x910]
+ *   ; continue (0x40B801): ghost render code
  *
  * Cave flow:
- *   if (g_ghostFromEvent) -> allow render (JMP 0x40B800)
+ *   if (g_ghostFromEvent) -> allow render (JMP 0x40B801)
  *   else run original checks, jumping to skip (0x40B834) or
- *        continuing at 0x40B800 like normal.
+ *        continuing at 0x40B801 like normal.
  */
 extern BOOL g_ghostFromEvent;
 #define GHOST_MODE_PATCH_RVA   0x0B7F0
 #define GHOST_MODE_PATCH_SIZE  17
-#define GHOST_MODE_CONTINUE    0x0040B801
-#define GHOST_MODE_SKIP        0x0040B834
+#define GHOST_MODE_CONTINUE    0x0B801
+#define GHOST_MODE_SKIP        0x0B834
 
 static unsigned char* g_ghostModeCave = NULL;
 static unsigned char g_ghostModeOrigBytes[17];
 
 static void install_ghost_mode_cave(DWORD base) {
-    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
-    DWORD continueAddr = GHOST_MODE_CONTINUE;
-    DWORD skipAddr = GHOST_MODE_SKIP;
+    DWORD patchAddr = base + GHOST_MODE_PATCH_RVA;
+    DWORD continueAddr = base + GHOST_MODE_CONTINUE;
+    DWORD skipAddr = base + GHOST_MODE_SKIP;
     DWORD ghostFromEventAddr = (DWORD)&g_ghostFromEvent;
 
     g_ghostModeCave = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!g_ghostModeCave) { LOGS("GhostMode: VirtualAlloc failed"); return; }
 
     unsigned char* p = g_ghostModeCave;
-    unsigned char* start = p;
 
     /* CMP byte [g_ghostFromEvent], 0  (7 bytes) */
     p[0] = 0x80; p[1] = 0x3D;
@@ -523,7 +522,7 @@ static void restore_ghost_mode_cave(DWORD base) {
     (void)base;
     if (!g_ghostModeCave) return;
     DWORD oldProt;
-    DWORD patchAddr = GHOST_MODE_PATCH_ADDR;
+    DWORD patchAddr = base + GHOST_MODE_PATCH_RVA;
     VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, PAGE_EXECUTE_READWRITE, &oldProt);
     memcpy((void*)patchAddr, g_ghostModeOrigBytes, GHOST_MODE_PATCH_SIZE);
     VirtualProtect((void*)patchAddr, GHOST_MODE_PATCH_SIZE, oldProt, &oldProt);
@@ -2233,9 +2232,9 @@ static void ghost_event_frame(DWORD app, DWORD board) {
         g_ghostActive = TRUE;
         g_ghostFromEvent = TRUE;
 
-        DWORD partyMode = 0;
-        if (!IsBadReadPtr((void*)(app + APP_PARTY_FLAG), 4))
-            partyMode = *(DWORD*)(app + APP_PARTY_FLAG);
+        BYTE partyMode = 0;
+        if (!IsBadReadPtr((void*)(app + APP_PARTY_FLAG), 1))
+            partyMode = *(BYTE*)(app + APP_PARTY_FLAG);
         g_needManualAdvance = (partyMode != 0);
         LOG("Ghost playback started: BTT=0x%08X, ball=0x%08X, manualAdvance=%d",
             newBTT, ghostBall, g_needManualAdvance);
