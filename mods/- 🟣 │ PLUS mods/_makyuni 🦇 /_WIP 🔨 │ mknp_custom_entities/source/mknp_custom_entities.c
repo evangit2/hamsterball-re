@@ -309,6 +309,8 @@ typedef struct {
     DWORD arm_mesh;      /* v55m_42q: MeshWorld* for arm (loaded from Level4-Catapult) */
     DWORD arm_active;    /* v55m_42q: arm rotation active */
     int verts_rotating;  /* v55m_43h: 1 = vertex rotation works (matrix hook must be skipped) */
+    DWORD orig_verts;    /* v55m_43h: saved copy of original vertex array (MeshWorld+0x448) */
+    int orig_vert_count; /* v55m_43h: vertex count */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -648,19 +650,14 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
             }
         }
     }
-    /* v55m_43h: Restore the render matrix rotation (it worked in v55m_43g
-     * — user confirmed the visual). The vertex-array rotation is a SECOND
-     * mechanism for collision; if it fails to find the array (VERT ROTATION
-     * FAILED), the matrix still gives the visual. When vertex rotation
-     * WORKS (verts_rotating), skip the matrix — the rotated verts alone
-     * rotate the render (no double-rotation). */
-    if (cs->verts_rotating) {
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        DWORD orig_fn = (this_ == cs->arm_obj && cs->arm_orig_vtable18)
-                      ? cs->arm_orig_vtable18 : cs->orig_vtable18;
-        ((render_t)orig_fn)(this_, param_1, param_2);
-        return;
-    }
+    /* v55m_43h: The matrix rotation (visual, user-confirmed in v55m_43g)
+     * and the vertex-array rotation (collision) are INDEPENDENT:
+     * - The catapult's vtable[18] hook applies the matrix → VISIBLE rotation.
+     * - cEnt_catapult_rotate_collision_verts rotates the collision Level's
+     *   OWN MeshWorld+0x448 vertex array in place → the collision tree
+     *   (which references vertex INDICES) follows the rotated verts.
+     * No double-rotation: the matrix drives the visual, the array drives
+     * the collision. The matrix hook ALWAYS runs. */
     {
         /* Save the current world matrix (renderLevel+0x4). */
         float saveMatrix[16];
@@ -2623,8 +2620,27 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                                     DWORD mb_v43c = *(DWORD*)((char*)mb + 0x43C);
                                                     DWORD mb_v4 = *(DWORD*)((char*)mb + 0x4);
                                                     DWORD mb_vc = *(DWORD*)((char*)mb + 0xC);
-                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0]=0x%08X +438=0x%08X +43C=%d +4=%d +C=%d\n",
-                                                        mb, mb_v438, mb_v43c, mb_v4, mb_vc);
+                                                    DWORD mb_vt = *(DWORD*)((char*)mb + 0x0);
+                                                    DWORD mb_v14 = *(DWORD*)((char*)mb + 0x14);
+                                                    DWORD mb_v418 = *(DWORD*)((char*)mb + 0x418);
+                                                    DWORD mb_v85d = *(DWORD*)((char*)mb + 0x85D);
+                                                    DWORD mb_v8 = *(DWORD*)((char*)mb + 0x8);
+                                                    DWORD mb_v10 = *(DWORD*)((char*)mb + 0x10);
+                                                    DWORD mb_v860 = *(DWORD*)((char*)mb + 0x860);
+                                                    DWORD mb_v864 = *(DWORD*)((char*)mb + 0x864);
+                                                    DWORD mb_v868 = *(DWORD*)((char*)mb + 0x868);
+                                                    DWORD mw_448 = *(DWORD*)((char*)lvl_mw + 0x448);
+                                                    DWORD mw_44c = *(DWORD*)((char*)lvl_mw + 0x44C);
+                                                    DWORD mw_434 = *(DWORD*)((char*)lvl_mw + 0x434);
+                                                    DWORD mw_45c = *(DWORD*)((char*)lvl_mw + 0x45C);
+                                                    DWORD mb2 = mwcount > 1 ? mwitems[1] : 0;
+                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+                                                        mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+                                                        mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
+                                                        mw_448, mw_44c, mw_434, mw_45c);
+                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[1]=0x%08X\n", mb2);
                                                 }
                                             }
                                         }
@@ -4039,14 +4055,19 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     if (!colLevel || colLevel < 0x10000) return 0;
     if (IsBadReadPtr((void*)colLevel, 0x490)) return 0;
 
-    /* v55m_43h: The vertex array is in the collision Level's MeshWorld
-     * MeshBuffers (NOT SceneObject+0x440 — that's zeroed in Level_ctor).
+    /* v55m_43h: The vertex array location depends on the SceneObject flag:
+     * - SceneObject+0x434 == 0 → vertex array at MeshWorld+0x448
+     * - SceneObject+0x434 != 0 → vertex array at parent SceneObject+0x440
+     * (verified in Rotator_Update 0x4608b0-0x4608dd). The collision Level's
+     * SceneObject+0x434 is 0 (Level_ctor zeroes it), so we use MeshWorld+0x448.
+     * Per-MeshBuffer count at MeshBuffer+0x4, index at MeshBuffer+0xC.
      * MeshWorld at colLevel+0x08; MeshBuffer list at MeshWorld+0x2C
-     * (count +0x4, items +0x40C); each MeshBuffer: +0x438 = vertex
-     * array (32-byte stride), +0x43C = vertex count. */
+     * (count +0x4, items +0x40C). */
     DWORD mw = *(DWORD*)((char*)colLevel + 0x08);
     if (!mw || mw < 0x10000) return 0;
-    if (IsBadReadPtr((void*)mw, 0x40)) return 0;
+    if (IsBadReadPtr((void*)mw, 0x460)) return 0;
+    float* verts = *(float**)((char*)mw + 0x448);
+    if (!verts || verts < (float*)0x10000) return 0;
     DWORD* list = (DWORD*)(mw + 0x2C);
     if (IsBadReadPtr((void*)list, 0x20)) return 0;
     int list_count = *(int*)(list + 0x1);  /* +0x4 */
@@ -4054,32 +4075,57 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
     if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
 
-    /* v55m_43h: Rotate EACH MeshBuffer's vertex array. Apply the ANGLE
-     * DELTA since the last frame (the matrix hook applies the FULL angle;
-     * if the vertex rotation applied the full angle too, it would
-     * double-rotate). If the matrix hook is disabled, full-angle is
-     * correct — so track a per-catapult last-applied angle and rotate by
-     * the difference. */
-    float ang = cs->arm_angle * 3.14159265f / 180.0f;
-    float c = cosf(ang), s = sinf(ang);
+    /* Total vertex count = sum of MeshBuffer+0x4 across all buffers. */
     int total = 0;
     int b;
     for (b = 0; b < list_count; b++) {
         DWORD mb = items[b];
         if (!mb || IsBadReadPtr((void*)mb, 0x20)) continue;
-        float* verts = *(float**)(mb + 0x438);
-        int cnt = *(int*)(mb + 0x43C);
-        if (!verts || verts < (float*)0x10000 || cnt <= 0 || cnt > 100000) continue;
-        if (IsBadReadPtr((void*)verts, cnt * 32)) continue;
-        int v;
-        for (v = 0; v < cnt; v++) {
-            float* p = verts + v * 8;  /* 32-byte stride = 8 floats */
-            float x = p[0] - cs->x;
-            float z = p[2] - cs->z;
-            p[0] = x*c + z*s + cs->x;
-            p[2] = -x*s + z*c + cs->z;
-        }
+        int cnt = *(int*)(mb + 0x4);
+        if (cnt < 0 || cnt > 100000) continue;
         total += cnt;
+    }
+    if (total <= 0 || total > 100000) return 0;
+    if (IsBadReadPtr((void*)verts, total * 32)) return 0;
+
+    /* v55m_43h: FIRST call — save a copy of the ORIGINAL vertices so we can
+     * always rotate from the original (in-place rotation of the live array
+     * would accumulate error and over-rotate). */
+    if (!cs->orig_verts) {
+        DWORD* save = (DWORD*)malloc(total * 32);
+        if (!save) return 0;
+        memcpy(save, verts, total * 32);
+        cs->orig_verts = (DWORD)save;
+        cs->orig_vert_count = total;
+    }
+    if (cs->orig_vert_count != total) {
+        /* vertex count changed — refresh the original copy */
+        free((void*)cs->orig_verts);
+        DWORD* save = (DWORD*)malloc(total * 32);
+        if (!save) return 0;
+        memcpy(save, verts, total * 32);
+        cs->orig_verts = (DWORD)save;
+        cs->orig_vert_count = total;
+    }
+
+    /* v55m_43h: Rotate the FULL packed vertex array (all MeshBuffers share
+     * it) IN PLACE, from the saved original. The collision tree references
+     * vertex indices, so in-place rotation moves the triangles with the
+     * array — no tree rebuild needed. The collision Level's render
+     * (vtable[18] 0x465650) draws from ITS OWN MeshWorld (+0x8 → +0x2C),
+     * so this same array drives its render too. */
+    float ang = cs->arm_angle * 3.14159265f / 180.0f;
+    float c = cosf(ang), s = sinf(ang);
+    float* orig = (float*)cs->orig_verts;
+    int v;
+    for (v = 0; v < total; v++) {
+        float* p = verts + v * 8;  /* 32-byte stride = 8 floats */
+        float* o = orig + v * 8;
+        float x = o[0] - cs->x;
+        float z = o[2] - cs->z;
+        p[0] = x*c + z*s + cs->x;
+        p[1] = o[1];
+        p[2] = -x*s + z*c + cs->z;
     }
     return total;
 }
