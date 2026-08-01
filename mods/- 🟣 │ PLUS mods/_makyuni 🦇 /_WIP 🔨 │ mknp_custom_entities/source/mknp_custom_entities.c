@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43v
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43w
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -328,6 +328,7 @@ typedef struct {
     int tree_count_mw;   /* item count at mw+0x18 */
     int tree_ok_mw;      /* rotation succeeded for mw+0x18 */
     int rot_dump_ctr;    /* v55m_43s: counter for strip0 position dumps */
+    float spin_speed;    /* v55m_43w: rotation speed in rad/frame (Tower-style exponential ramp) */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4400,14 +4401,17 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_43v: Rotation now starts when the LAUNCH is triggered.
-         * The arm stays at its initial angle until the ball enters the
-         * trigger zone (cs->launching becomes 1); then it rotates at
-         * SWIRL speed (0.004 rad/frame ≈ 0.229°/frame) during the windup
-         * and launch. When the launch completes (cooldown ends, launching
-         * clears), the rotation stops again. */
+        /* v55m_43w: Tower-style exponential rotation ramp, adapted to our
+         * X-axis system. Native Tower catapult (Catapult_Update 0x4342C0):
+         *   - on trigger: timer = 50 frames, speed starts 0.25 rad/frame
+         *   - each frame: speed *= 1.25, clamped at 80.0 rad/frame
+         *   - angle += speed each frame (render 0x433f43)
+         * We replicate that exactly: arm_angle (degrees) += speed*57.2958.
+         * spin_speed starts at 0.25 on trigger and ramps exponentially. */
         if (cs->launching) {
-            cs->arm_angle += 0.229f;
+            cs->spin_speed *= 1.25f;
+            if (cs->spin_speed > 80.0f) cs->spin_speed = 80.0f;
+            cs->arm_angle += cs->spin_speed * 57.29578f;
             if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
         }
 
@@ -4424,13 +4428,13 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
                 df = fopen("custom_entities_catapult.log", "a");
                 if (df) {
                     if (rot > 0) {
-                        fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
-                            rot, cs->arm_angle, cs->orig_vert_count,
+                        fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) spin=%.3f mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                            rot, cs->arm_angle, cs->spin_speed, cs->orig_vert_count,
                             cs->tree_count_mw, cs->tree_ok_mw,
                             cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                     } else {
-                        fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
-                            cs->arm_angle, cs->orig_vert_count,
+                        fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) spin=%.3f mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                            cs->arm_angle, cs->spin_speed, cs->orig_vert_count,
                             cs->tree_count_mw, cs->tree_ok_mw,
                             cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                     }
@@ -4471,6 +4475,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launching = 1;
             cs->countdown = 50;  /* v55m_42j: native Tower windup */
             cs->was_in_zone = 1;
+            cs->spin_speed = 0.25f;  /* v55m_43w: Tower-style ramp start */
             float yaw = cs->yaw;
             cs->launch_dx = -(float)sin(yaw);
             cs->launch_dz = -(float)cos(yaw);
@@ -5701,7 +5706,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43v Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43w Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
