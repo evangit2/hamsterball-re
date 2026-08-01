@@ -4165,22 +4165,17 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
      * The spatial tree references the SUB-MESH source arrays (built at
      * load). MeshWorld+0x448 is 0 until the first render (lazy build).
      * So we rotate EACH sub-mesh's +0x448 array (the tree source). */
-    /* v55m_43h rev9 (FINAL COLLISION FIX): The collision query
-     * (Mesh_FindClosestCollision 0x465d90) iterates:
-     *   MeshWorld+0x2C  → MeshBuffer list (count +0x4, items +0x40C)
-     *   MeshBuffer+0xC  → strip list (EMBEDDED AthenaList: count at +0x10,
-     *                     items at +0x418)  [verified: dump shows mb[0]+10=32
-     *                     strips, +418=0x0C629FF0 = items array]
-     *   each strip      → 3 CONSECUTIVE vertices, 32 bytes each (8 floats),
-     *                     (X,Y,Z) floats at +0/+4/+8
-     * The broad-phase AABB test (0x4580d0) checks the ball against each
-     * vertex position, and passing vertices are appended to the query
-     * result (0x453780) for the exact triangle test.
-     * So the collision body IS these strip vertices. Rotating them in
-     * place each frame to match arm_angle makes the collision track the
-     * visual arm. This is the function the user asked for: it maintains
-     * the catapult collision at the exact mesh angle every frame,
-     * overriding whatever static data the game has.
+    /* v55m_43h rev11: CRITICAL CORRECTION — the strip vertices are in
+     * MESH-LOCAL space (dump: v0=(6.2,-20.3,108.1) — tiny offsets near
+     * the mesh origin), NOT world space. Rev9 rotated them around
+     * cs->x,y,z (world 750,-135,-522) which CORRUPTED them (ball flew
+     * through — no collision at all). The native collision query reads
+     * strip verts RAW (no matrix), so the strips must stay in their
+     * ORIGINAL local positions. The correct rotation pivot is the mesh's
+     * OWN origin — rotate around (0,0,0) local, and the visual arm
+     * rotation already happens via the render matrix. So: rotate each
+     * vertex around the MESH origin (cs->x,y,z is WRONG — use 0,0,0 in
+     * local space, which is the mesh's own origin).
      * We rotate from saved originals (per-strip-array copies). */
     float ang = cs->arm_angle * 3.14159265f / 180.0f;
     float c = cosf(ang), s = sinf(ang);
@@ -4248,11 +4243,12 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                 float ox = o[v * 8 + 0];
                 float oy = o[v * 8 + 1];
                 float oz = o[v * 8 + 2];
-                float x = ox - cs->x;
-                float z = oz - cs->z;
-                p[v * 8 + 0] = x*c + z*s + cs->x;
+                /* v55m_43h rev11: rotate around MESH ORIGIN (0,0,0) —
+                 * the strips are in LOCAL space. Do NOT subtract
+                 * cs->x/y/z (world pivot) — that corrupted them. */
+                p[v * 8 + 0] = ox * c + oz * s;
                 p[v * 8 + 1] = oy;
-                p[v * 8 + 2] = -x*s + z*c + cs->z;
+                p[v * 8 + 2] = -ox * s + oz * c;
             }
             total += 3;
         }
