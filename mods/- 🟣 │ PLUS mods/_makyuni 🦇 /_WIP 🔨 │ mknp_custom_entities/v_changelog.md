@@ -1,3 +1,10 @@
+## v55m_44e — Fix level-start crash (truncated vtable copy)
+
+- **FIXED:** Crash at level start (`0001:000587E7` = VA `0x40587E7`, mid-instruction EIP) during `FinishLoad` background op on Warm-Up.
+- **Root cause:** Waterwheel + Chomper each created a **private vtable copy of only 256 bytes (64 entries)**, but the PopCylinder vtable (`0x4D58F0`) is **168 entries = 672 bytes**. During level load (FinishLoad), the game calls vtable slots beyond 64 → reads garbage past the truncated copy → EIP corruption → crash.
+- **Fix:** enlarged both private vtable copies from 256 → `0x400` (1024 bytes), matching the proven catapult pattern (v55m_43h). Now covers the full 168-entry vtable + headroom.
+- This is the same class of bug as the catapult vtable-size truncation pitfall (documented in entity-constructor-discovery skill).
+
 ## v55m_44d — Waterwheel stops when paused
 
 - **FIXED:** Waterwheel kept rotating (and playing WheelCreak) while the game was paused.
