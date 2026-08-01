@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43m
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43n
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -322,6 +322,7 @@ typedef struct {
     DWORD tree_orig848;  /* saved originals for colLevel+0x848 items */
     int tree_count848;   /* item count at colLevel+0x848 */
     int tree_ok848;      /* rotation succeeded for +0x848 */
+    int arm_mb_strips;   /* v55m_43n: strip count of the ARM MeshBuffer (mb[0]) */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4189,12 +4190,24 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     float ang = cs->arm_angle * 3.14159265f / 180.0f;
     float c = cosf(ang), s = sinf(ang);
 
+    /* v55m_43n: ROTATE ONLY THE ARM's MeshBuffer (the FIRST one, mb[0]).
+     * The catapult has TWO parts: mb[0] (32 strips) = the Mace ARM (rotates,
+     * collision must follow it), mb[1] (238 strips) = the BOWL (STATIC —
+     * rotating it breaks the bowl collision, which the user confirmed).
+     * The bowl's strips must stay at their original positions. Only mb[0]
+     * is rotated; mb[1] is left untouched. */
+
     /* Save originals once: per-MeshBuffer copies of the strip vertex
-     * array. Register as (mb, orig_copy) pairs. */
+     * array. Register as (mb, orig_copy) pairs. Only the ARM (FIRST
+     * MeshBuffer with strips, mb[0]) is registered for rotation — the
+     * bowl (mb[1]) stays static. */
     int total = 0;
     if (!cs->orig_verts) {
         int bi;
         for (bi = 0; bi < list_count; bi++) {
+            /* v55m_43n: ONLY take the FIRST MeshBuffer (the arm).
+             * Skip the bowl (all subsequent MeshBuffers). */
+            if (cs->orig_vert_count >= 1) break;
             DWORD mb = items[bi];
             if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
             int strip_count = *(int*)((char*)mb + 0x10);
@@ -4212,13 +4225,10 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                 memcpy((void*)(save + (DWORD)si * 96), (void*)strip, 96);
             }
             if (!total_ok) { free((void*)save); continue; }
-            if (cs->orig_vert_count < 32) {
-                cs->orig_registry[cs->orig_vert_count * 2] = mb;
-                cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
-                cs->orig_vert_count++;
-            } else {
-                free((void*)save);
-            }
+            cs->orig_registry[0] = mb;
+            cs->orig_registry[1] = save;
+            cs->orig_vert_count = 1;
+            cs->arm_mb_strips = strip_count;  /* record arm strip count */
         }
         cs->orig_verts = 1;
     }
@@ -4328,12 +4338,12 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) mbufs=%d tree18=%d/%d tree848=%d/%d\n",
-                        rot, cs->arm_angle, cs->orig_vert_count,
+                    fprintf(df, "CATAPULT: rotated %d ARM verts (angle=%.2f) mbufs=%d arm_strips=%d tree18=%d/%d tree848=%d/%d\n",
+                        rot, cs->arm_angle, cs->orig_vert_count, cs->arm_mb_strips,
                         cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                 } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d tree18=%d/%d tree848=%d/%d\n",
-                        cs->arm_angle, cs->orig_vert_count,
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d arm_strips=%d tree18=%d/%d tree848=%d/%d\n",
+                        cs->arm_angle, cs->orig_vert_count, cs->arm_mb_strips,
                         cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                 }
                 fclose(df);
@@ -5602,7 +5612,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43m Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43n Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
