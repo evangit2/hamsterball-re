@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43o
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43p
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4190,21 +4190,19 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     float ang = cs->arm_angle * 3.14159265f / 180.0f;
     float c = cosf(ang), s = sinf(ang);
 
-    /* v55m_43o: ROTATE THE ARM's MeshBuffer = the LAST one (mb[1]).
-     * v55m_43n rotated mb[0] (32 strips) but the user confirmed the whole
-     * collision is now STATIC — meaning mb[0] is a BOWL piece, NOT the
-     * arm. In v43m (both rotated) the Mace Arm collision worked — the arm
-     * is the buffer whose strips are the majority (mb[1], 238 strips).
-     * So: register the LAST MeshBuffer (mb[list_count-1]) as the arm and
-     * rotate it; leave the bowl buffers static. */
+    /* v55m_43p: ROTATE ALL MeshBuffers (bowl + arm) — the user confirmed
+     * mb[1] (238 strips) is the arm, and now explicitly wants the BOWL
+     * to rotate too: the ENTIRE catapult collision rotates as one unit,
+     * matching the visual (SWIRL mode rotates the whole mesh).
+     * Both MeshBuffers are registered and rotated around the mesh origin
+     * (0,0,0), which is the catapult's pivot. */
 
-    /* Save originals once: only the LAST MeshBuffer (the arm) is
-     * registered for rotation; all others (bowl) stay static. */
+    /* Save originals once: ALL MeshBuffers' strip vertex arrays are
+     * registered for rotation (bowl + arm together). */
     int total = 0;
     if (!cs->orig_verts) {
         int bi;
-        for (bi = list_count - 1; bi >= 0; bi--) {
-            /* v55m_43o: take the LAST MeshBuffer (the arm). */
+        for (bi = 0; bi < list_count; bi++) {
             DWORD mb = items[bi];
             if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
             int strip_count = *(int*)((char*)mb + 0x10);
@@ -4222,11 +4220,14 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                 memcpy((void*)(save + (DWORD)si * 96), (void*)strip, 96);
             }
             if (!total_ok) { free((void*)save); continue; }
-            cs->orig_registry[0] = mb;
-            cs->orig_registry[1] = save;
-            cs->orig_vert_count = 1;
-            cs->arm_mb_strips = strip_count;  /* record arm strip count */
-            break;  /* only the last one */
+            if (cs->orig_vert_count < 32) {
+                cs->orig_registry[cs->orig_vert_count * 2] = mb;
+                cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
+                cs->orig_vert_count++;
+                cs->arm_mb_strips = strip_count;  /* last one recorded */
+            } else {
+                free((void*)save);
+            }
         }
         cs->orig_verts = 1;
     }
@@ -5610,7 +5611,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43o Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43p Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
