@@ -1,3 +1,14 @@
+## v55m_44a — Waterwheel X-axis rotation (native Dizzy replication)
+
+- **FIXED:** cEnt Waterwheel now rotates around the **X axis** (previously Y-axis), matching the native Dizzy Race waterwheel exactly.
+- Verified against native binary:
+  - `angle -= 0.5` degrees per frame (constant `0x4CF3F0`)
+  - Native rotation builder at `0x45AE27` builds m[5]=cos, m[6]=sin, m[9]=−sin, m[10]=cos → rotation about **X**
+  - Reached via `0x457C90` (angle × deg→rad `0x4D8E58` → X-axis builder via thunk `0x4F7208`)
+- **FIXED:** The old hook used direct `D3D SetTransform` with a rotation-only matrix, which **discarded the object's position and scale** from the world matrix.
+- Now uses the proven catapult pattern (v55m_43h): composes the rotation with the object's own world matrix at `renderLevel+0x4`, pivoting around the object's center `(ww->x, ww->y, ww->z)`.
+- The render Level is read from `this_+0x434` (same as catapult — confirmed PopCylinder stores it there at `0x436F67`).
+
 ## v55m_42t — Arm render-list only
 
 - Removed arm from `BOARD_UPDATE_LIST` and scene tree to isolate whether the crash is list-related or render-hook related.
