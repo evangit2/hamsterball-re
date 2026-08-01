@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43y
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43z
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4402,22 +4402,19 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_43y: Rotation now starts at LAUNCH (when the catapult sound
-         * plays), NOT at windup. The user wants the spin to begin exactly
-         * when the sound fires. The windup (countdown) happens first with
-         * the arm still; at LAUNCH we set rotating=1 + spin_speed=50.0
-         * (native trigger speed), then the Tower-style ramp runs:
-         *   - ramp while countdown>0: speed = min(speed*1.25, 80.0)
-         *   - every frame: angle += speed*57.2958; speed -= 2.0
-         *   - stop when speed burns out */
+        /* v55m_43z: Rotation now scaled ×0.1 per user request — the Tower
+         * ramp was too strong. The spin numbers (angle increment) are
+         * multiplied by 0.1: the arm does a gentler spin. The speed ramp
+         * and decay still run at native values so the duration is the
+         * same, only the resulting angle is 1/10th. */
         if (cs->rotating) {
             /* update: ramp while countdown active */
             if (cs->countdown > 0) {
                 cs->spin_speed *= 1.25f;
                 if (cs->spin_speed > 80.0f) cs->spin_speed = 80.0f;
             }
-            /* render: angle += speed; speed -= 2.0 */
-            cs->arm_angle += cs->spin_speed * 57.29578f;
+            /* render: angle += speed*0.1; speed -= 2.0 */
+            cs->arm_angle += cs->spin_speed * 57.29578f * 0.1f;
             if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
             cs->spin_speed -= 2.0f;
             if (cs->spin_speed <= 0.0f) {
@@ -5721,7 +5718,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43y Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43z Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
