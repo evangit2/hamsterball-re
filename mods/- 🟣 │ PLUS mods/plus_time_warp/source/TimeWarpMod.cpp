@@ -1121,6 +1121,9 @@ static void restore_tt_recording_nop(void) {
     LOGS("TT recording NOP patch restored");
 }
 
+// Forward declaration — get_race_name_by_index is defined later in the file.
+static int get_race_name_by_index(DWORD race_index, char* out, int outLen);
+
 static void create_tournament_recording_btt(DWORD app) {
     if (!app) return;
     DWORD bttRec = 0;
@@ -1134,6 +1137,20 @@ static void create_tournament_recording_btt(DWORD app) {
     DWORD vt = *(DWORD*)newBTT;
     if (vt == BTT_VTABLE_ADDR) {
         *(DWORD*)((char*)newBTT + BTT_BEST_TIME) = NO_TIME;
+        // Name the tournament BTT so get_race_name() resolves a valid
+        // race name — segment saving depends on g_twRaceName being set.
+        DWORD profile = 0;
+        if (!IsBadReadPtr((void*)(app + APP_PROFILE_PTR), 4))
+            profile = *(DWORD*)(app + APP_PROFILE_PTR);
+        DWORD raceIdx = 0;
+        if (profile && !IsBadReadPtr((void*)(profile + PROFILE_RACE_INDEX), 4))
+            raceIdx = *(DWORD*)(profile + PROFILE_RACE_INDEX);
+        char raceName[128] = "";
+        if (get_race_name_by_index(raceIdx, raceName, sizeof(raceName)) && raceName[0]) {
+            strncpy((char*)newBTT + BTT_RACE_NAME, raceName, 64);
+            *((char*)newBTT + BTT_RACE_NAME + 63) = '\0';
+            LOG("Tournament recording BTT named '%s'", raceName);
+        }
         *(DWORD*)(app + APP_BTT_RECORDING) = (DWORD)newBTT;
         LOG("Created Tournament recording BTT at 0x%X", (DWORD)newBTT);
     } else {
@@ -2691,6 +2708,17 @@ static void updateWarpStateMachine(DWORD app, DWORD board) {
                     DWORD vt = *(DWORD*)newBTT;
                     if (vt == BTT_VTABLE_ADDR) {
                         *(DWORD*)((char*)newBTT + BTT_BEST_TIME) = NO_TIME;
+                        // Name the warp-created tournament BTT so
+                        // get_race_name() resolves a valid race name.
+                        DWORD prof2 = *(DWORD*)(app + APP_PROFILE_PTR);
+                        DWORD ridx = 0;
+                        if (prof2 && !IsBadReadPtr((void*)(prof2 + PROFILE_RACE_INDEX), 4))
+                            ridx = *(DWORD*)(prof2 + PROFILE_RACE_INDEX);
+                        char rn[128] = "";
+                        if (get_race_name_by_index(ridx, rn, sizeof(rn)) && rn[0]) {
+                            strncpy((char*)newBTT + BTT_RACE_NAME, rn, 64);
+                            *((char*)newBTT + BTT_RACE_NAME + 63) = '\0';
+                        }
                         *(DWORD*)(app + APP_BTT_RECORDING) = (DWORD)newBTT;
                     } else {
                         Call<void>(RVA_GAME_FREE, newBTT);
