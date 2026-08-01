@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43u
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43v
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4400,36 +4400,46 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_42u: TEST — constant arm rotation at SWIRL speed (0.004 rad/frame ≈ 0.229°/frame) */
-        cs->arm_angle += 0.229f;
-        if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
+        /* v55m_43v: Rotation now starts when the LAUNCH is triggered.
+         * The arm stays at its initial angle until the ball enters the
+         * trigger zone (cs->launching becomes 1); then it rotates at
+         * SWIRL speed (0.004 rad/frame ≈ 0.229°/frame) during the windup
+         * and launch. When the launch completes (cooldown ends, launching
+         * clears), the rotation stops again. */
+        if (cs->launching) {
+            cs->arm_angle += 0.229f;
+            if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
+        }
 
         /* v55m_43h: Rotate the collision vertex data to match the render.
          * The render matrix already rotates the visual (user confirmed); this
          * rotates the actual vertex array so the spatial-tree collision
          * follows. Runs every frame; rotation is in-place around center so
-         * the tree AABB bounds stay valid. */
-        if (log_now) {
-            int rot = cEnt_catapult_rotate_collision_verts(cs);
-            if (rot > 0) cs->verts_rotating = 1;
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
-                        rot, cs->arm_angle, cs->orig_vert_count,
-                        cs->tree_count_mw, cs->tree_ok_mw,
-                        cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
-                } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
-                        cs->arm_angle, cs->orig_vert_count,
-                        cs->tree_count_mw, cs->tree_ok_mw,
-                        cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
+         * the tree AABB bounds stay valid. Only when launching (rotation
+         * active). */
+        if (cs->launching) {
+            if (log_now) {
+                int rot = cEnt_catapult_rotate_collision_verts(cs);
+                if (rot > 0) cs->verts_rotating = 1;
+                df = fopen("custom_entities_catapult.log", "a");
+                if (df) {
+                    if (rot > 0) {
+                        fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                            rot, cs->arm_angle, cs->orig_vert_count,
+                            cs->tree_count_mw, cs->tree_ok_mw,
+                            cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
+                    } else {
+                        fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                            cs->arm_angle, cs->orig_vert_count,
+                            cs->tree_count_mw, cs->tree_ok_mw,
+                            cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
+                    }
+                    fclose(df);
                 }
-                fclose(df);
+            } else {
+                int rot = cEnt_catapult_rotate_collision_verts(cs);
+                if (rot > 0) cs->verts_rotating = 1;
             }
-        } else {
-            int rot = cEnt_catapult_rotate_collision_verts(cs);
-            if (rot > 0) cs->verts_rotating = 1;
         }
 
         if (cs->cooldown > 0) {
@@ -5691,7 +5701,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43u Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43v Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
