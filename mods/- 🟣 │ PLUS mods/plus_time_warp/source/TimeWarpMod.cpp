@@ -2967,6 +2967,11 @@ public:
         // game's race-start function directly, which tears down the scene;
         // restoring the caves mid-warp would break the timer freeze and the
         // TT-recording NOP for the remainder of the session).
+        // The scene deconstructor fires DURING a warp's PHASE_LOAD (the
+        // race-start call tears down the old scene). In that case ghost1
+        // state was already saved by ghost1_save_state() and must survive
+        // until ghost1_restore_after_warp() runs — so do NOT clear it.
+        int midWarp = (g_phase == PHASE_LOAD);
         g_phase = PHASE_IDLE;
         g_freezeTimer = 0;
         g_warpBall = 0;
@@ -2981,6 +2986,21 @@ public:
         g_hookRaceName[0] = '\0';
         g_dummyRecording = 0;
         g_prevRecording = 0;
+        // Ghost 1 cleanup on REAL scene end (player left the level, not a
+        // warp reload): the scene is gone, so any BTT we injected into
+        // App+0x910 is gone with it. Zero the whole state so a stale
+        // pointer is never dereferenced in a later race. Also reset the
+        // Time Warp level flags — on a real scene end (not a warp) the
+        // PHASE_LOAD !isSameLevel branch never runs, so without this a
+        // later non-warp race would wrongly run handle_tw_goal_touch().
+        if (!midWarp) {
+            memset(&g_ghost1, 0, sizeof(g_ghost1));
+            g_twRaceName[0] = '\0';
+            g_segmentCounter = 0;
+            g_segmentCount = 0;
+            memset(g_segmentTimes, 0, sizeof(g_segmentTimes));
+            g_isTimeWarpLevel = FALSE;
+        }
         if (api) {
             DWORD app = (DWORD)api->GetApp();
             if (app) {
