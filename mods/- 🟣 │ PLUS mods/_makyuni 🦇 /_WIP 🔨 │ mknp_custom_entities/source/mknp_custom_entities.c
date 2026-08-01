@@ -4295,11 +4295,22 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->board != board) continue;
         if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
 
+        /* v55m_43h rev8: Catapult present_check log */
+        if ((g_catapult_heartbeat % 30) == 0) {
+            df = fopen("custom_entities_catapult.log", "a");
+            if (df) {
+                DWORD app = *(DWORD*)0x005341E0;
+                BYTE paused = 0;
+                if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x160), 0x20))
+                    paused = *(BYTE*)(app + 0x158);
+                fprintf(df, "CATAPULT: frame=%d ball=0x%08X paused=%d angle=%.2f tree_orig=0x%08X\n",
+                    g_catapult_heartbeat, ball, paused, cs->arm_angle, cs->tree_orig);
+                fclose(df);
+            }
+        }
+
         /* v55m_43h rev6: Pause gate — App+0x158 is the paused flag
-         * (verified in App_UpdateAndRender 0x46bf6b: mov al,[esi+0x158];
-         * test; jne → skip update). When paused, the game freezes all
-         * updates; our Present-hook rotation must freeze too, otherwise
-         * the catapult keeps spinning during the ESC menu. */
+         * (verified in App_UpdateAndRender 0x46bf6b). */
         {
             DWORD app = *(DWORD*)0x005341E0;
             if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x160), 0x20)) {
