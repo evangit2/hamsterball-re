@@ -315,6 +315,7 @@ typedef struct {
     DWORD tree_orig;     /* v55m_43h rev5: saved copy of spatial-tree item positions */
     int tree_orig_count; /* v55m_43h rev5: tree item count */
     int tree_rotated;    /* v55m_43h rev7: whether the tree rotation ran this frame */
+    int tree_orig_offset; /* v55m_43h rev12: which tree list (+0x18 or +0x848) was saved */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4251,6 +4252,92 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                 p[v * 8 + 2] = -ox * s + oz * c;
             }
             total += 3;
+        }
+    }
+
+    /* v55m_43h rev12: The user confirmed the collision EXISTS but is STATIC
+     * (ball lands on it, shadows cast, but it doesn't rotate). The strips
+     * above are the render/shadow geometry. The COLLISION query (0x4564c0,
+     * SpatialTree_Query) iterates TWO lists on the query object:
+     *   this+0x18  (count +0x4, items +0x40C)
+     *   this+0x848 (count +0x4, items +0x40C)
+     * and reads each item's +0/+4/+8 as a position. These items are the
+     * WORLD-SPACE baked collision candidates — the tree was built at load
+     * with baked positions. If the tree lists live on colLevel (the Level),
+     * rotating their items around cs->x,y,z (WORLD pivot) moves the actual
+     * collision. We dump both lists every 30 frames and rotate whichever
+     * has items. This is the 'update collision to match mesh angle,
+     * overriding other setters' function. */
+    {
+        static int dump_ctr = 0;
+        dump_ctr++;
+        int log_tree = (dump_ctr % 30) == 1;
+        /* Try both candidate tree lists on the collision Level. */
+        DWORD tree_candidates[2];
+        tree_candidates[0] = colLevel + 0x18;
+        tree_candidates[1] = colLevel + 0x848;
+        int tc;
+        for (tc = 0; tc < 2; tc++) {
+            DWORD treelist = tree_candidates[tc];
+            if (IsBadReadPtr((void*)treelist, 0x20)) continue;
+            int tcount = *(int*)(treelist + 0x4);
+            if (tcount <= 0 || tcount > 4096) continue;
+            DWORD* titems = *(DWORD**)(treelist + 0x40C);
+            if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) continue;
+            /* Save originals lazily (12 bytes/item). */
+            if (!cs->tree_orig) {
+                cs->tree_orig = (DWORD)malloc(tcount * 12);
+                if (cs->tree_orig) {
+                    float* dst = (float*)cs->tree_orig;
+                    int t;
+                    for (t = 0; t < tcount; t++) {
+                        DWORD item = titems[t];
+                        if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                        float* src = (float*)item;
+                        dst[t * 3 + 0] = src[0];
+                        dst[t * 3 + 1] = src[1];
+                        dst[t * 3 + 2] = src[2];
+                    }
+                    cs->tree_orig_count = tcount;
+                    cs->tree_orig_offset = tc;  /* which list had the items */
+                }
+            }
+            if (cs->tree_orig && cs->tree_orig_count == tcount &&
+                cs->tree_orig_offset == tc) {
+                float* tsrc = (float*)cs->tree_orig;
+                int t;
+                for (t = 0; t < tcount; t++) {
+                    DWORD item = titems[t];
+                    if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                    float* o = tsrc + t * 3;
+                    float* p = (float*)item;
+                    /* WORLD pivot (cs->x,y,z) — the tree items are world-space. */
+                    float x = o[0] - cs->x;
+                    float z = o[2] - cs->z;
+                    p[0] = x*c + z*s + cs->x;
+                    p[1] = o[1];
+                    p[2] = -x*s + z*c + cs->z;
+                }
+                if (log_tree) {
+                    FILE* lf = fopen("custom_entities_catapult.log", "a");
+                    if (lf) {
+                        float* p0 = (float*)titems[0];
+                        fprintf(lf, "CATAPULT: TREE list@+0x%X count=%d item0=(%.1f,%.1f,%.1f) rotated\n",
+                            tc == 0 ? 0x18 : 0x848, tcount,
+                            p0 ? p0[0] : 0, p0 ? p0[1] : 0, p0 ? p0[2] : 0);
+                        fclose(lf);
+                    }
+                }
+                cs->tree_rotated = 1;
+            } else if (log_tree) {
+                FILE* lf = fopen("custom_entities_catapult.log", "a");
+                if (lf) {
+                    fprintf(lf, "CATAPULT: TREE list@+0x%X count=%d (not rotated, orig=%d off=%d)\n",
+                        tc == 0 ? 0x18 : 0x848, tcount,
+                        cs->tree_orig_count, cs->tree_orig_offset);
+                    fclose(lf);
+                }
+            }
         }
     }
 
