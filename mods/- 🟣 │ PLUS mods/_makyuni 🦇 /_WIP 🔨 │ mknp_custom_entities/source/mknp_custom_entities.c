@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44c
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44d
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5261,6 +5261,15 @@ static void cEnt_tarbubble_proximity_check(DWORD board) {
 static void cEnt_waterwheel_update(DWORD board) {
     if (!board || g_waterwheel_count <= 0) return;
 
+    /* v55m_44d: Pause gate — stop rotation AND sound while the game is
+     * paused. Native Dizzy's waterwheel update lives inside
+     * DizzyBoard_Update (0x41D512), which does not run while paused
+     * (Scene_Update reads board+0x874; Scene_CreateGameOverMenu sets it).
+     * Same flag the catapult uses at line ~4473. */
+    if (!IsBadReadPtr((void*)(board + 0x874), 1) && *(BYTE*)(board + 0x874) != 0) {
+        return;  /* paused → wheel freezes, no creak */
+    }
+
     /* Get ball for force application */
     DWORD ball = *(DWORD*)(board + 0x361C);
     float bx = 0, by = 0, bz = 0;
@@ -5807,7 +5816,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44c Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44d Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
