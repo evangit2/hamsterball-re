@@ -2670,11 +2670,74 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                             }
                                         }
                                     }
+                                    /* v55m_43h rev10: COLLISION VISUALIZATION.
+                                     * Color the collision Level's MeshWorld materials
+                                     * bright green (semi-transparent) so the collision
+                                     * body is VISIBLE in-game. Material array at
+                                     * MeshWorld+0x28 (count at +0x24, each 0x50 bytes,
+                                     * diffuse at +0x04). Also dump the strip arrays:
+                                     * mb+0x10 = strip count, mb+0x418 = strip items,
+                                     * each strip = 3 verts x 32B (X,Y,Z at +0/+4/+8).
+                                     * This lets us SEE whether the collision spawns
+                                     * and whether it rotates. */
+                                    {
+                                        DWORD lvl_mw2 = *(DWORD*)((char*)cat_level + 0x08);
+                                        if (lvl_mw2 && !IsBadReadPtr((void*)lvl_mw2, 0x40)) {
+                                            DWORD mat_count = *(DWORD*)((char*)lvl_mw2 + 0x24);
+                                            DWORD mat_array = *(DWORD*)((char*)lvl_mw2 + 0x28);
+                                            if (logf) fprintf(logf, "  ROTATER: VIS colLevel mw=0x%08X materials=%d @0x%08X\n",
+                                                lvl_mw2, mat_count, mat_array);
+                                            if (mat_count > 0 && mat_count < 128 && mat_array &&
+                                                !IsBadReadPtr((void*)mat_array, mat_count * 0x50)) {
+                                                int mi;
+                                                for (mi = 0; mi < mat_count; mi++) {
+                                                    float* diffuse = (float*)(mat_array + mi * 0x50 + 0x04);
+                                                    /* Bright green, opaque — visible against any bg */
+                                                    diffuse[0] = 0.0f;
+                                                    diffuse[1] = 1.0f;
+                                                    diffuse[2] = 0.0f;
+                                                    diffuse[3] = 1.0f;
+                                                    /* ambient too */
+                                                    float* ambient = (float*)(mat_array + mi * 0x50 + 0x14);
+                                                    ambient[0] = 0.0f;
+                                                    ambient[1] = 1.0f;
+                                                    ambient[2] = 0.0f;
+                                                    ambient[3] = 1.0f;
+                                                }
+                                                if (logf) fprintf(logf, "  ROTATER: VIS collision materials colored GREEN (%d)\n", mat_count);
+                                            }
+                                            /* Dump strip arrays for both MeshBuffers */
+                                            DWORD* mwlist2 = (DWORD*)(lvl_mw2 + 0x2C);
+                                            int mwcount2 = mwlist2 ? *(int*)(mwlist2 + 0x1) : -1;
+                                            DWORD* mwitems2 = mwlist2 ? *(DWORD**)(mwlist2 + 0x103) : NULL;
+                                            if (mwcount2 > 0 && mwcount2 < 64 && mwitems2) {
+                                                int bi;
+                                                for (bi = 0; bi < mwcount2; bi++) {
+                                                    DWORD mbx = mwitems2[bi];
+                                                    if (!mbx || IsBadReadPtr((void*)mbx, 0x40)) continue;
+                                                    int strip_count = *(int*)((char*)mbx + 0x10);
+                                                    DWORD strip_items = *(DWORD*)((char*)mbx + 0x418);
+                                                    if (logf) fprintf(logf, "  ROTATER: VIS mb[%d]=0x%08X strips=%d items=0x%08X\n",
+                                                        bi, mbx, strip_count, strip_items);
+                                                    if (strip_count > 0 && strip_count < 4096 && strip_items &&
+                                                        !IsBadReadPtr((void*)strip_items, strip_count * 4)) {
+                                                        /* Log first strip's first vertex position */
+                                                        DWORD* sitems = (DWORD*)strip_items;
+                                                        DWORD s0 = sitems[0];
+                                                        if (s0 && !IsBadReadPtr((void*)s0, 0x60)) {
+                                                            float* v0 = (float*)s0;
+                                                            if (logf) fprintf(logf, "  ROTATER: VIS strip[0] v0=(%.1f,%.1f,%.1f)\n",
+                                                                v0[0], v0[1], v0[2]);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
