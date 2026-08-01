@@ -314,6 +314,7 @@ typedef struct {
     DWORD orig_registry[64]; /* v55m_43h rev4: (sub_ptr, orig_copy) pairs, up to 32 sub-meshes */
     DWORD tree_orig;     /* v55m_43h rev5: saved copy of spatial-tree item positions */
     int tree_orig_count; /* v55m_43h rev5: tree item count */
+    int tree_rotated;    /* v55m_43h rev7: whether the tree rotation ran this frame */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4107,6 +4108,64 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
     if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
 
+    /* v55m_43h rev7: ROTATE THE SPATIAL TREE ITEMS FIRST, unconditionally.
+     * The collision query (0x4564c0, SpatialTree_Query, vtable 0x4D8E14)
+     * iterates the tree item list at colLevel+0x18 and does the sphere-vs-
+     * distance math per item (0x456596: flds (%edx); compare; 0x4565c9+:
+     * distance/radius check against edi+0xc70). Those tree items ARE the
+     * collision geometry. The sub-mesh vertex arrays below are a SECONDARY
+     * effect (render/rebuild source) and MUST NOT gate the tree rotation —
+     * rev6's early return (sub-mesh count == 0 → return 0) meant the tree
+     * rotation NEVER ran, which is why the ball passed through the catapult. */
+    float ang = cs->arm_angle * 3.14159265f / 180.0f;
+    float c = cosf(ang), s = sinf(ang);
+    {
+        DWORD treelist = colLevel + 0x18;
+        int tree_ok = 0;
+        if (!IsBadReadPtr((void*)treelist, 0x20)) {
+            int tcount = *(int*)(treelist + 0x4);
+            if (tcount > 0 && tcount < 4096) {
+                DWORD* titems = *(DWORD**)(treelist + 0x40C);
+                if (titems && !IsBadReadPtr((void*)titems, tcount * 4)) {
+                    /* Save per-item originals (3 floats each) on first call. */
+                    if (!cs->tree_orig) {
+                        cs->tree_orig = (DWORD)malloc(tcount * 12);
+                        if (cs->tree_orig) {
+                            float* dst = (float*)cs->tree_orig;
+                            int t;
+                            for (t = 0; t < tcount; t++) {
+                                DWORD item = titems[t];
+                                if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                                float* src = (float*)item;
+                                dst[t * 3 + 0] = src[0];
+                                dst[t * 3 + 1] = src[1];
+                                dst[t * 3 + 2] = src[2];
+                            }
+                            cs->tree_orig_count = tcount;
+                        }
+                    }
+                    if (cs->tree_orig && cs->tree_orig_count == tcount) {
+                        float* tsrc = (float*)cs->tree_orig;
+                        int t;
+                        for (t = 0; t < tcount; t++) {
+                            DWORD item = titems[t];
+                            if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                            float* o = tsrc + t * 3;
+                            float* p = (float*)item;
+                            float x = o[0] - cs->x;
+                            float z = o[2] - cs->z;
+                            p[0] = x*c + z*s + cs->x;
+                            p[1] = o[1];
+                            p[2] = -x*s + z*c + cs->z;
+                        }
+                        tree_ok = 1;
+                    }
+                }
+            }
+        }
+        cs->tree_rotated = tree_ok;
+    }
+
     /* Count total verts across all sub-meshes.
      * v55m_43h rev6: mb+0x424 is an EMBEDDED AthenaList (like MeshWorld
      * +0x2C): vtable at +0x424, count at +0x428, items array pointer at
@@ -4170,8 +4229,6 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     }
 
     /* Now rotate each sub-mesh's array from its saved original. */
-    float ang = cs->arm_angle * 3.14159265f / 180.0f;
-    float c = cosf(ang), s = sinf(ang);
     int r;
     for (r = 0; r < cs->orig_vert_count; r++) {
         DWORD sub = cs->orig_registry[r * 2];
@@ -4191,61 +4248,6 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
             p[0] = x*c + z*s + cs->x;
             p[1] = o[1];
             p[2] = -x*s + z*c + cs->z;
-        }
-    }
-
-    /* v55m_43h (rev 5): ROTATE THE SPATIAL TREE ITEMS — THIS is what the
-     * collision query actually reads. The collision query (0x4564c0)
-     * iterates the tree item list at colLevel+0x18 (AthenaList: count
-     * +0x4, items +0x40C) and reads each item's +0/+4/+8 as a position
-     * (0x456596: flds (%edx); 0x4565a5: flds 0x4(%edx) — compared against
-     * the 0x4cf368 sentinel, then passed to the triangle test 0x401aa0).
-     * The tree was built at load with baked positions; the mesh matrix
-     * rotation doesn't move them. We rotate them in place around the
-     * catapult center — BUT the tree items may ALSO store triangle vertex
-     * indices/pointers, so rotating the positions alone may not be
-     * sufficient. We save originals lazily (same registry, appended). */
-    {
-        DWORD treelist = colLevel + 0x18;
-        if (!IsBadReadPtr((void*)treelist, 0x20)) {
-            int tcount = *(int*)(treelist + 0x4);
-            if (tcount > 0 && tcount < 4096) {
-                DWORD* titems = *(DWORD**)(treelist + 0x40C);
-                if (titems && !IsBadReadPtr((void*)titems, tcount * 4)) {
-                    /* Save per-item originals (3 floats each) on first call. */
-                    if (!cs->tree_orig) {
-                        cs->tree_orig = (DWORD)malloc(tcount * 12);
-                        if (cs->tree_orig) {
-                            float* dst = (float*)cs->tree_orig;
-                            int t;
-                            for (t = 0; t < tcount; t++) {
-                                DWORD item = titems[t];
-                                if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                                float* src = (float*)item;
-                                dst[t * 3 + 0] = src[0];
-                                dst[t * 3 + 1] = src[1];
-                                dst[t * 3 + 2] = src[2];
-                            }
-                            cs->tree_orig_count = tcount;
-                        }
-                    }
-                    if (cs->tree_orig && cs->tree_orig_count == tcount) {
-                        float* tsrc = (float*)cs->tree_orig;
-                        int t;
-                        for (t = 0; t < tcount; t++) {
-                            DWORD item = titems[t];
-                            if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                            float* o = tsrc + t * 3;
-                            float* p = (float*)item;
-                            float x = o[0] - cs->x;
-                            float z = o[2] - cs->z;
-                            p[0] = x*c + z*s + cs->x;
-                            p[1] = o[1];
-                            p[2] = -x*s + z*c + cs->z;
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -4320,11 +4322,11 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) tree=%d subm=%d\n",
-                        rot, cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
+                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) tree=%d tree_ok=%d subm=%d\n",
+                        rot, cs->arm_angle, cs->tree_orig_count, cs->tree_rotated, cs->orig_vert_count);
                 } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) tree=%d subm=%d\n",
-                        cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) tree=%d tree_ok=%d subm=%d\n",
+                        cs->arm_angle, cs->tree_orig_count, cs->tree_rotated, cs->orig_vert_count);
                 }
                 fclose(df);
             }
@@ -4343,7 +4345,11 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dz = ball_z - cs->z;
         float horiz_sq = dx*dx + dz*dz;
         float horiz = (float)sqrt(horiz_sq);
-        int in_trigger_zone = (horiz_sq < 14400.0f && dy > -10.0f && dy < 15.0f);  /* v55m_42g: bowl, radius 120 */
+        /* v55m_43h rev7: restore v55m_28l calibration — the catapult bowl
+         * sits BELOW the object origin (the arm is above the bowl). Ball
+         * measured at dy=-21.4 in testcube. Window: horizontal footprint
+         * radius ~50, vertical -80..+20. */
+        int in_trigger_zone = (horiz_sq < 2500.0f && dy > -80.0f && dy < 20.0f);
         int in_reset_zone   = (horiz_sq < 22500.0f && dy > -60.0f && dy < 70.0f);
 
         if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
