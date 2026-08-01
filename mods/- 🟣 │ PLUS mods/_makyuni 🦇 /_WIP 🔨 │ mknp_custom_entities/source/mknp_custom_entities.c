@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43x
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43y
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -329,6 +329,7 @@ typedef struct {
     int tree_ok_mw;      /* rotation succeeded for mw+0x18 */
     int rot_dump_ctr;    /* v55m_43s: counter for strip0 position dumps */
     float spin_speed;    /* v55m_43w: rotation speed in rad/frame (Tower-style exponential ramp) */
+    int rotating;        /* v55m_43y: rotation active flag — starts at LAUNCH (when sound plays) */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4401,17 +4402,15 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_43x: CORRECTED Tower-style rotation. The native catapult
-         * (render 0x433f3d + update 0x4342c0):
-         *   - trigger: timer=50, speed=50.0 rad/frame, angle=0
-         *   - update while timer>0: speed = min(speed*1.25, 80.0), timer--
-         *   - render every frame: angle += speed; speed -= 2.0
-         *   - stop when speed burns out (angle clamp at 0 clears active)
-         * The angle has NO upper limit — the limit is the timer + speed
-         * decay. We replicate: spin_speed ramps while countdown>0, decays
-         * 2.0/frame, stops when <= 0. arm_angle accumulates in degrees.
-         * Spin is bounded by countdown (50) + decay time (~39 more). */
-        if (cs->launching) {
+        /* v55m_43y: Rotation now starts at LAUNCH (when the catapult sound
+         * plays), NOT at windup. The user wants the spin to begin exactly
+         * when the sound fires. The windup (countdown) happens first with
+         * the arm still; at LAUNCH we set rotating=1 + spin_speed=50.0
+         * (native trigger speed), then the Tower-style ramp runs:
+         *   - ramp while countdown>0: speed = min(speed*1.25, 80.0)
+         *   - every frame: angle += speed*57.2958; speed -= 2.0
+         *   - stop when speed burns out */
+        if (cs->rotating) {
             /* update: ramp while countdown active */
             if (cs->countdown > 0) {
                 cs->spin_speed *= 1.25f;
@@ -4423,7 +4422,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->spin_speed -= 2.0f;
             if (cs->spin_speed <= 0.0f) {
                 cs->spin_speed = 0.0f;
-                cs->launching = 0;  /* rotation done — stop */
+                cs->rotating = 0;  /* rotation done — stop */
             }
         }
 
@@ -4431,22 +4430,22 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
          * The render matrix already rotates the visual (user confirmed); this
          * rotates the actual vertex array so the spatial-tree collision
          * follows. Runs every frame; rotation is in-place around center so
-         * the tree AABB bounds stay valid. Only when launching (rotation
+         * the tree AABB bounds stay valid. Only when rotating (rotation
          * active). */
-        if (cs->launching) {
+        if (cs->rotating) {
             if (log_now) {
                 int rot = cEnt_catapult_rotate_collision_verts(cs);
                 if (rot > 0) cs->verts_rotating = 1;
                 df = fopen("custom_entities_catapult.log", "a");
                 if (df) {
                     if (rot > 0) {
-                        fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) spin=%.3f mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
-                            rot, cs->arm_angle, cs->spin_speed, cs->orig_vert_count,
+                        fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) spin=%.3f rot=%d mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                            rot, cs->arm_angle, cs->spin_speed, cs->rotating, cs->orig_vert_count,
                             cs->tree_count_mw, cs->tree_ok_mw,
                             cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                     } else {
-                        fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) spin=%.3f mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
-                            cs->arm_angle, cs->spin_speed, cs->orig_vert_count,
+                        fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) spin=%.3f rot=%d mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                            cs->arm_angle, cs->spin_speed, cs->rotating, cs->orig_vert_count,
                             cs->tree_count_mw, cs->tree_ok_mw,
                             cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                     }
@@ -4487,7 +4486,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launching = 1;
             cs->countdown = 50;  /* v55m_42j: native Tower windup */
             cs->was_in_zone = 1;
-            cs->spin_speed = 50.0f;  /* v55m_43x: native Tower trigger speed (0x434056) */
+            cs->rotating = 0;  /* v55m_43y: rotation starts at LAUNCH, not windup */
             float yaw = cs->yaw;
             cs->launch_dx = -(float)sin(yaw);
             cs->launch_dz = -(float)cos(yaw);
@@ -4534,6 +4533,10 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
             cs->launching = 0;
             cs->cooldown = 60;
+            /* v55m_43y: rotation starts NOW — exactly when the catapult
+             * sound plays (the user's request). */
+            cs->rotating = 1;
+            cs->spin_speed = 50.0f;  /* native Tower trigger speed (0x434056) */
             /* v55m_43h: removed arm_angle=0 snap — angle stays continuous */
 
             /* v55m_42j: play Catapult launch sound at same frame as launch */
@@ -5718,7 +5721,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43x Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43y Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
