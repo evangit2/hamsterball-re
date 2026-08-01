@@ -531,35 +531,41 @@ static void restore_ghost_mode_cave(DWORD base) {
     LOGS("Ghost mode code cave restored");
 }
 
-/* ---- Level name mapping ---- */
+/* ---- Level name mapping ----
+ * The mod contract: WARP(...) takes ONLY a race NUMBER or race NAME.
+ * Filenames (level1..level10, cascade, up, dark, glass, impossible) are
+ * NOT valid inputs — file numbering does not match race numbering
+ * (e.g. levels\level4 is Tower = race 5). */
 typedef struct {
     const char* meshName;
     int raceIndex;
 } LevelMapping;
 
 static const LevelMapping levelMap[] = {
-    {"level1", 1}, {"warmup", 1}, {"warm-up", 1},
-    {"level2", 2}, {"beginner", 2}, {"cascade", 2},
-    {"level3", 3}, {"intermediate", 3},
-    {"level4", 4}, {"dizzy", 4},
-    {"level5", 5}, {"tower", 5},
-    {"level6", 6}, {"up", 6},
-    {"level7", 7}, {"neon", 7},
-    {"level8", 8}, {"expert", 8},
-    {"level9", 9}, {"odd", 9},
-    {"level10", 10}, {"toob", 10},
-    {"level11", 11}, {"wobbly", 11},
-    {"level12", 12}, {"glass", 12},
-    {"level13", 13}, {"sky", 13},
-    {"level14", 14}, {"master", 14},
-    {"level15", 15}, {"impossible", 15},
+    {"1", 1}, {"warmup", 1}, {"warm-up", 1},
+    {"2", 2}, {"beginner", 2}, {"cascade", 2},
+    {"3", 3}, {"intermediate", 3},
+    {"4", 4}, {"dizzy", 4},
+    {"5", 5}, {"tower", 5},
+    {"6", 6}, {"up", 6},
+    {"7", 7}, {"neon", 7}, {"dark", 7},
+    {"8", 8}, {"expert", 8},
+    {"9", 9}, {"odd", 9},
+    {"10", 10}, {"toob", 10},
+    {"11", 11}, {"wobbly", 11},
+    {"12", 12}, {"glass", 12},
+    {"13", 13}, {"sky", 13},
+    {"14", 14}, {"master", 14},
+    {"15", 15}, {"impossible", 15},
     {NULL, 0}
 };
 
 static int findRaceIndex(const char* levelName) {
+    /* Numeric input: race NUMBER (1..15). Handles 1- and 2-digit numbers. */
     if (levelName[0] >= '1' && levelName[0] <= '9') {
-        int num = atoi(levelName);
-        if (num >= 1 && num <= 15) return num;
+        char* end = NULL;
+        long num = strtol(levelName, &end, 10);
+        if (end && *end == '\0' && num >= 1 && num <= 15) return (int)num;
     }
     for (int j = 0; levelMap[j].meshName; j++) {
         if (_stricmp(levelName, levelMap[j].meshName) == 0)
