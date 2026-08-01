@@ -1166,6 +1166,15 @@ static void __fastcall hook_AppStartTournamentRace(void* app_ptr, void* edx, DWO
     if (orig_AppStartTournamentRace)
         orig_AppStartTournamentRace(app_ptr, edx, race_index);
     create_tournament_recording_btt(app);
+
+    // Set the race name for tournament mode so check_race_state can
+    // record segments (tournament = temporary [N] ghosts only).
+    char raceName[128] = "";
+    if (get_race_name_by_index(race_index, raceName, sizeof(raceName)) && raceName[0]) {
+        strncpy(g_hookRaceName, raceName, sizeof(g_hookRaceName) - 1);
+        g_hookRaceName[sizeof(g_hookRaceName) - 1] = '\0';
+        LOG("HOOK: tournament race name '%s'", g_hookRaceName);
+    }
 }
 
 static int is_time_trial_active(void) {
