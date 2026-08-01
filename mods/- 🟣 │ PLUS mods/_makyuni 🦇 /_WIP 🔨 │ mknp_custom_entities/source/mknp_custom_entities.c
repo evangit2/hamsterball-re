@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43q
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43r
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4249,19 +4249,20 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     float ang = cs->arm_angle * 3.14159265f / 180.0f;
     float c = cosf(ang), s = sinf(ang);
 
-    /* v55m_43p: ROTATE ALL MeshBuffers (bowl + arm) — the user confirmed
-     * mb[1] (238 strips) is the arm, and now explicitly wants the BOWL
-     * to rotate too: the ENTIRE catapult collision rotates as one unit,
-     * matching the visual (SWIRL mode rotates the whole mesh).
-     * Both MeshBuffers are registered and rotated around the mesh origin
-     * (0,0,0), which is the catapult's pivot. */
+    /* v55m_43r: ROTATE ONLY THE ARM (LAST MeshBuffer, mb[1]) — bowl stays
+     * STATIC. The user reported the bowl becomes non-solid sometimes when
+     * it rotates (v43p rotated both). The arm (mb[1], 238 strips) rotates
+     * reliably (confirmed v43o). Keeping the bowl static gives SOLID bowl
+     * collision while the arm still rotates and knocks the ball.
+     * mb[0] (bowl, 32 strips) is left at its original position. */
 
-    /* Save originals once: ALL MeshBuffers' strip vertex arrays are
-     * registered for rotation (bowl + arm together). */
+    /* Save originals once: only the LAST MeshBuffer (the arm) is
+     * registered for rotation; the bowl (all others) stays static. */
     int total = 0;
     if (!cs->orig_verts) {
         int bi;
-        for (bi = 0; bi < list_count; bi++) {
+        for (bi = list_count - 1; bi >= 0; bi--) {
+            /* v55m_43r: take the LAST MeshBuffer (the arm). */
             DWORD mb = items[bi];
             if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
             int strip_count = *(int*)((char*)mb + 0x10);
@@ -4279,14 +4280,11 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                 memcpy((void*)(save + (DWORD)si * 96), (void*)strip, 96);
             }
             if (!total_ok) { free((void*)save); continue; }
-            if (cs->orig_vert_count < 32) {
-                cs->orig_registry[cs->orig_vert_count * 2] = mb;
-                cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
-                cs->orig_vert_count++;
-                cs->arm_mb_strips = strip_count;  /* last one recorded */
-            } else {
-                free((void*)save);
-            }
+            cs->orig_registry[0] = mb;
+            cs->orig_registry[1] = save;
+            cs->orig_vert_count = 1;
+            cs->arm_mb_strips = strip_count;  /* record arm strip count */
+            break;  /* only the last one */
         }
         cs->orig_verts = 1;
     }
@@ -5672,7 +5670,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43q Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43r Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
