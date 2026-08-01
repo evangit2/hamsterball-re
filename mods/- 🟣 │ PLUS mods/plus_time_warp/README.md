@@ -24,8 +24,10 @@ A Hamsterball Plus mod combining four systems from the original `time_warp.c` ba
 
 ## Usage
 
-- **Time Warp level**: add a S1 ref point named `WARP(LevelName)` (e.g. `WARP(Beginner)`). Drive into it to warp.
+- **Time Warp level**: add a S1 ref point named `WARP(Race)` where `Race` is a **race number** (`WARP(5)`) or a **race name** (`WARP(Tower)`). Valid names: `WarmUp`/`Warm-Up`(1), `Beginner`(2), `Intermediate`(3), `Dizzy`(4), `Tower`(5), `Up`(6), `Neon`(7), `Expert`(8), `Odd`(9), `Toob`(10), `Wobbly`(11), `Glass`(12), `Sky`(13), `Master`(14), `Impossible`(15). Drive into it to warp.
+- **Input contract**: only race numbers and race names are valid inputs. Level **filenames** (`level1`, `levelcascade`, …) are NOT accepted — file numbering does not match race numbering (e.g. `levels\level4` is Tower = race 5).
 - **Warp to same level**: records your current segment, then spawns Ghost 2 in heliotrope purple showing your previous route.
+- **Tournament mode**: only ever creates **temporary `[N]` segment ghosts**. Segments are never promoted to confirmed `(N)` and never overwrite the Time Trial best records. Temp ghosts are discarded when you leave the level.
 - **Ghost Event**: create a MeshBuffer named `E:GHOST(MyRun)`. Collision loads `Ghosts\MyRun.ghost`.
 - **Ghost Trigger**: create S1 ref points named `GT:RESET`, `GT:STOP`, `GT:START` near ghost routes.
 
