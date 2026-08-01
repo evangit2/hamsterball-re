@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44e
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44f
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -168,6 +168,8 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   24 = Funball_ctor (no _ctor, board-level behavior, PopCylinder fallback)
  *   25 = Tarbubble (no _ctor, no entity spawned — position-only marker, mod handles tar sinking)
  *   26 = Waterwheel (no _ctor, mod loads mesh + rotates per-frame via Gfx_RotateY + mesh vtable)
+ *        Default mesh: levels\Waterwheel (user-provided Waterwheel.MESHWORLD),
+ *        falls back to levels\_default if missing.
  *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
  *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
  *   29 = Gear_ctor (0x437690, 0x1514) — 9 params: (this, board, x, y, z, x2, y2, z2, mesh)
@@ -2076,7 +2078,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
         if (g_waterwheel_count < MAX_WATERWHEELS) {
             struct WaterWheelState* ww = &g_waterwheels[g_waterwheel_count];
-            const char* ww_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Level3-WaterWheel";
+            /* v55m_44f: Default mesh = "levels\Waterwheel" (user provides
+             * Waterwheel.MESHWORLD). If that file doesn't exist, fall back
+             * to "levels\_default" (user's placeholder, same pattern as
+             * Cloudscape case 28). A MESH= tag override still wins. */
+            const char* ww_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\\\Waterwheel";
+            {
+                char ww_check[256];
+                snprintf(ww_check, 255, "%s.meshworld", ww_path);
+                if (pfn_check_file_access(ww_check, 0) != 0) {
+                    if (logf) fprintf(logf, "  WATERWHEEL: '%s' not found, falling back to levels\\_default\n", ww_path);
+                    ww_path = "levels\\\\_default";
+                }
+            }
 
             /* Create mesh object via MeshWorld_ctor */
             DWORD mesh = (DWORD)pfn_operator_new(MESHWORLD_SIZE);
@@ -5822,7 +5836,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44e Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44f Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
