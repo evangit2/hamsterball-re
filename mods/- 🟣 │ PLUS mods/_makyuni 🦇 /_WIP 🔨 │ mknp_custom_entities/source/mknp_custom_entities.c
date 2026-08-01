@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43j
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43k
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4107,155 +4107,89 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
     if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
 
-    /* Count total verts across all sub-meshes.
-     * v55m_43h rev6: mb+0x424 is an EMBEDDED AthenaList (like MeshWorld
-     * +0x2C): vtable at +0x424, count at +0x428, items array pointer at
-     * +0x830 (= 0x424+0x40C). The old code treated +0x424 as a POINTER to
-     * an external list — wrong, read garbage (dump showed 0x65656565). */
-    int total = 0;
-    int b;
-    for (b = 0; b < list_count; b++) {
-        DWORD mb = items[b];
-        if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
-        DWORD sublist = mb + 0x424;  /* embedded list */
-        int subcount = *(int*)(sublist + 0x4);
-        if (subcount <= 0 || subcount > 64) continue;
-        DWORD* subitems = *(DWORD**)(sublist + 0x40C);
-        if (!subitems || IsBadReadPtr((void*)subitems, subcount * 4)) continue;
-        int s;
-        for (s = 0; s < subcount; s++) {
-            DWORD sub = subitems[s];
-            if (!sub || IsBadReadPtr((void*)sub, 0x20)) continue;
-            int cnt = *(int*)((char*)sub + 0x4);
-            if (cnt < 0 || cnt > 100000) continue;
-            total += cnt;
-        }
-    }
-    if (total <= 0 || total > 100000) return 0;
-
-    /* Save the original sub-mesh vertex data once (per-sub-mesh copies,
-     * registered as (sub_ptr, orig_copy) pairs in orig_registry). */
-    if (!cs->orig_verts) {
-        for (b = 0; b < list_count; b++) {
-            DWORD mb = items[b];
-            if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
-            DWORD sublist = mb + 0x424;
-            int subcount = *(int*)(sublist + 0x4);
-            if (subcount <= 0 || subcount > 64) continue;
-            DWORD* subitems = *(DWORD**)(sublist + 0x40C);
-            if (!subitems || IsBadReadPtr((void*)subitems, subcount * 4)) continue;
-            int s;
-            for (s = 0; s < subcount; s++) {
-                DWORD sub = subitems[s];
-                if (!sub || IsBadReadPtr((void*)sub, 0x20)) continue;
-                int cnt = *(int*)((char*)sub + 0x4);
-                if (cnt <= 0 || cnt > 100000) continue;
-                float* subverts = *(float**)((char*)sub + 0x448);
-                if (!subverts || subverts < (float*)0x10000) continue;
-                if (IsBadReadPtr((void*)subverts, cnt * 32)) continue;
-                /* Save the original for this sub-mesh. */
-                DWORD save = (DWORD)malloc(cnt * 32);
-                if (!save) continue;
-                memcpy((void*)save, subverts, cnt * 32);
-                /* Register (sub_ptr, orig_copy) in the fixed registry. */
-                if (cs->orig_vert_count < 32) {
-                    cs->orig_registry[cs->orig_vert_count * 2] = sub;
-                    cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
-                    cs->orig_vert_count++;
-                } else {
-                    free((void*)save);
-                }
-            }
-        }
-    }
-
-    /* Now rotate each sub-mesh's array from its saved original. */
+    /* v55m_43k: ROTATE THE COLLISION STRIPS — this is what the collision
+     * query (Mesh_FindClosestCollision 0x465d90) actually reads. The query
+     * iterates:
+     *   MeshWorld+0x2C  → MeshBuffer list (count +0x4, items +0x40C)
+     *   MeshBuffer+0xC  → strip list (EMBEDDED AthenaList: count at +0x10,
+     *                     items at +0x418)  [dump: mb[0]+10=32 strips,
+     *                     +418=items array]
+     *   each strip      → 3 CONSECUTIVE vertices, 32 bytes each (8 floats),
+     *                     (X,Y,Z) floats at +0/+4/+8
+     * The broad-phase AABB test (0x4580d0) checks the ball against these
+     * vertex positions; passing verts go to the exact triangle test.
+     * The strips are in MESH-LOCAL space (dump v0=(6.2,-20.3,108.1)) —
+     * rotate around the mesh origin (0,0,0), matching the arm's visual
+     * Y-rotation. Rotate from saved originals (per-MeshBuffer copies). */
     float ang = cs->arm_angle * 3.14159265f / 180.0f;
     float c = cosf(ang), s = sinf(ang);
-    int r;
-    for (r = 0; r < cs->orig_vert_count; r++) {
-        DWORD sub = cs->orig_registry[r * 2];
-        DWORD orig = cs->orig_registry[r * 2 + 1];
-        if (!sub || !orig || IsBadReadPtr((void*)sub, 0x20)) continue;
-        int cnt = *(int*)((char*)sub + 0x4);
-        if (cnt <= 0 || cnt > 100000) continue;
-        float* subverts = *(float**)((char*)sub + 0x448);
-        if (!subverts || subverts < (float*)0x10000) continue;
-        if (IsBadReadPtr((void*)subverts, cnt * 32)) continue;
-        int v;
-        for (v = 0; v < cnt; v++) {
-            float* p = subverts + v * 8;  /* 32-byte stride = 8 floats */
-            float* o = (float*)orig + v * 8;
-            float x = o[0] - cs->x;
-            float z = o[2] - cs->z;
-            p[0] = x*c + z*s + cs->x;
-            p[1] = o[1];
-            p[2] = -x*s + z*c + cs->z;
+
+    /* Save originals once: per-MeshBuffer copies of the strip vertex
+     * array. Register as (mb, orig_copy) pairs. */
+    int total = 0;
+    if (!cs->orig_verts) {
+        int bi;
+        for (bi = 0; bi < list_count; bi++) {
+            DWORD mb = items[bi];
+            if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
+            int strip_count = *(int*)((char*)mb + 0x10);
+            if (strip_count <= 0 || strip_count > 4096) continue;
+            DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
+            if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
+            /* Each strip = 3 verts × 32 bytes = 96 bytes. */
+            DWORD save = (DWORD)malloc(strip_count * 96);
+            if (!save) continue;
+            int si;
+            int total_ok = 1;
+            for (si = 0; si < strip_count; si++) {
+                DWORD strip = strip_items[si];
+                if (!strip || IsBadReadPtr((void*)strip, 0x60)) { total_ok = 0; break; }
+                memcpy((void*)(save + (DWORD)si * 96), (void*)strip, 96);
+            }
+            if (!total_ok) { free((void*)save); continue; }
+            if (cs->orig_vert_count < 32) {
+                cs->orig_registry[cs->orig_vert_count * 2] = mb;
+                cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
+                cs->orig_vert_count++;
+            } else {
+                free((void*)save);
+            }
         }
+        cs->orig_verts = 1;
     }
 
-    /* v55m_43h (rev 5): ROTATE THE SPATIAL TREE ITEMS — THIS is what the
-     * collision query actually reads. The collision query (0x4564c0)
-     * iterates the tree item list at colLevel+0x18 (AthenaList: count
-     * +0x4, items +0x40C) and reads each item's +0/+4/+8 as a position
-     * (0x456596: flds (%edx); 0x4565a5: flds 0x4(%edx) — compared against
-     * the 0x4cf368 sentinel, then passed to the triangle test 0x401aa0).
-     * The tree was built at load with baked positions; the mesh matrix
-     * rotation doesn't move them. We rotate them in place around the
-     * catapult center — BUT the tree items may ALSO store triangle vertex
-     * indices/pointers, so rotating the positions alone may not be
-     * sufficient. We save originals lazily (same registry, appended). */
+    /* Rotate each MeshBuffer's strip vertices from its saved original. */
     {
-        DWORD treelist = colLevel + 0x18;
-        if (!IsBadReadPtr((void*)treelist, 0x20)) {
-            int tcount = *(int*)(treelist + 0x4);
-            if (tcount > 0 && tcount < 4096) {
-                DWORD* titems = *(DWORD**)(treelist + 0x40C);
-                if (titems && !IsBadReadPtr((void*)titems, tcount * 4)) {
-                    /* Save per-item originals (3 floats each) on first call. */
-                    if (!cs->tree_orig) {
-                        cs->tree_orig = (DWORD)malloc(tcount * 12);
-                        if (cs->tree_orig) {
-                            float* dst = (float*)cs->tree_orig;
-                            int t;
-                            for (t = 0; t < tcount; t++) {
-                                DWORD item = titems[t];
-                                if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                                float* src = (float*)item;
-                                dst[t * 3 + 0] = src[0];
-                                dst[t * 3 + 1] = src[1];
-                                dst[t * 3 + 2] = src[2];
-                            }
-                            cs->tree_orig_count = tcount;
-                        }
-                    }
-                    if (cs->tree_orig && cs->tree_orig_count == tcount) {
-                        float* tsrc = (float*)cs->tree_orig;
-                        int t;
-                        for (t = 0; t < tcount; t++) {
-                            DWORD item = titems[t];
-                            if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                            float* o = tsrc + t * 3;
-                            float* p = (float*)item;
-                            float x = o[0] - cs->x;
-                            float z = o[2] - cs->z;
-                            p[0] = x*c + z*s + cs->x;
-                            p[1] = o[1];
-                            p[2] = -x*s + z*c + cs->z;
-                        }
-                    }
+        int ri;
+        for (ri = 0; ri < cs->orig_vert_count; ri++) {
+            DWORD mb = cs->orig_registry[ri * 2];
+            DWORD orig = cs->orig_registry[ri * 2 + 1];
+            if (!mb || !orig || IsBadReadPtr((void*)mb, 0x840)) continue;
+            int strip_count = *(int*)((char*)mb + 0x10);
+            if (strip_count <= 0 || strip_count > 4096) continue;
+            DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
+            if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
+            int si;
+            for (si = 0; si < strip_count; si++) {
+                DWORD strip = strip_items[si];
+                if (!strip || IsBadReadPtr((void*)strip, 0x60)) continue;
+                float* o = (float*)(orig + (DWORD)si * 96);
+                float* p = (float*)strip;
+                int v;
+                for (v = 0; v < 3; v++) {  /* 3 verts per strip */
+                    float ox = o[v * 8 + 0];
+                    float oy = o[v * 8 + 1];
+                    float oz = o[v * 8 + 2];
+                    /* Rotate around MESH ORIGIN (0,0,0) — local space. */
+                    p[v * 8 + 0] = ox * c + oz * s;
+                    p[v * 8 + 1] = oy;
+                    p[v * 8 + 2] = -ox * s + oz * c;
                 }
+                total += 3;
             }
         }
     }
 
-    /* Also rotate the packed MeshWorld+0x448 buffer if it's been built
-     * (non-zero). It's the same vertex data, packed — rotate it too so a
-     * subsequent BuildVertexBuffer doesn't overwrite our rotation. We
-     * rotate it FROM the same originals (first sub-mesh's original is
-     * enough only if packed == concatenation of sub-meshes; skip this
-     * for now — the tree reads the sub-mesh arrays, and the render uses
-     * the D3D buffer which we don't touch). */
     return total;
 }
 
@@ -4329,11 +4263,11 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) tree=%d subm=%d\n",
-                        rot, cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
+                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) mbufs=%d strips_ok=1\n",
+                        rot, cs->arm_angle, cs->orig_vert_count);
                 } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) tree=%d subm=%d\n",
-                        cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d\n",
+                        cs->arm_angle, cs->orig_vert_count);
                 }
                 fclose(df);
             }
@@ -5601,7 +5535,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43j Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43k Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
