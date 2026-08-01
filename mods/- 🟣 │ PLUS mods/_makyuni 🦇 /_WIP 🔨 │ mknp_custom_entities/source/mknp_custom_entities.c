@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44a
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44b
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -2114,9 +2114,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* Add to board lists */
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), pc_obj);
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), pc_obj);
-                /* v55m_5: Add collision — PopCylinder creates collision obj at +0x10D4 */
+                /* v55m_44b: Add collision — PopCylinder creates the collision
+                 * Level at +0x10E0 (call 0x465080 → CollisionLevel, vtable
+                 * 0x4D9068). +0x10D4 is the position X float — reading it as
+                 * a pointer makes IsBadReadPtr reject it and skips collision
+                 * registration → non-solid wheel. Matches Rotator pattern. */
                 {
-                    DWORD col_obj = *(DWORD*)((char*)pc_obj + 0x10D4);
+                    DWORD col_obj = *(DWORD*)((char*)pc_obj + 0x10E0);
                     if (col_obj && !IsBadReadPtr((void*)col_obj, 0x20)) {
                         pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
                         DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
@@ -5753,7 +5757,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44a Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44b Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
