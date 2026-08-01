@@ -2636,12 +2636,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                                     DWORD mw_44c = *(DWORD*)((char*)lvl_mw + 0x44C);
                                                     DWORD mw_434 = *(DWORD*)((char*)lvl_mw + 0x434);
                                                     DWORD mw_45c = *(DWORD*)((char*)lvl_mw + 0x45C);
-                                                    DWORD mb_v424 = *(DWORD*)((char*)mb + 0x424);
-                                                    int mb_subcount = -1;
+                                                    DWORD mb_v424 = mb + 0x424;  /* embedded list */
+                                                    int mb_subcount = 0;
                                                     DWORD* mb_subitems = NULL;
-                                                    if (mb_v424 && !IsBadReadPtr((void*)mb_v424, 0x20)) {
+                                                    if (mb && !IsBadReadPtr((void*)(mb + 0x10), 0x840)) {
                                                         mb_subcount = *(int*)(mb_v424 + 0x4);
-                                                        mb_subitems = *(DWORD**)(mb_v424 + 0x103);
+                                                        mb_subitems = *(DWORD**)(mb_v424 + 0x40C);
                                                     }
                                                     DWORD sub0 = 0;
                                                     DWORD sub0_448 = 0;
@@ -4107,17 +4107,20 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
     if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
 
-    /* Count total verts across all sub-meshes. */
+    /* Count total verts across all sub-meshes.
+     * v55m_43h rev6: mb+0x424 is an EMBEDDED AthenaList (like MeshWorld
+     * +0x2C): vtable at +0x424, count at +0x428, items array pointer at
+     * +0x830 (= 0x424+0x40C). The old code treated +0x424 as a POINTER to
+     * an external list — wrong, read garbage (dump showed 0x65656565). */
     int total = 0;
     int b;
     for (b = 0; b < list_count; b++) {
         DWORD mb = items[b];
-        if (!mb || IsBadReadPtr((void*)mb, 0x30)) continue;
-        DWORD sublist = *(DWORD*)((char*)mb + 0x424);
-        if (!sublist || IsBadReadPtr((void*)sublist, 0x20)) continue;
+        if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
+        DWORD sublist = mb + 0x424;  /* embedded list */
         int subcount = *(int*)(sublist + 0x4);
         if (subcount <= 0 || subcount > 64) continue;
-        DWORD* subitems = *(DWORD**)(sublist + 0x103);
+        DWORD* subitems = *(DWORD**)(sublist + 0x40C);
         if (!subitems || IsBadReadPtr((void*)subitems, subcount * 4)) continue;
         int s;
         for (s = 0; s < subcount; s++) {
@@ -4135,12 +4138,11 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     if (!cs->orig_verts) {
         for (b = 0; b < list_count; b++) {
             DWORD mb = items[b];
-            if (!mb || IsBadReadPtr((void*)mb, 0x30)) continue;
-            DWORD sublist = *(DWORD*)((char*)mb + 0x424);
-            if (!sublist || IsBadReadPtr((void*)sublist, 0x20)) continue;
+            if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
+            DWORD sublist = mb + 0x424;
             int subcount = *(int*)(sublist + 0x4);
             if (subcount <= 0 || subcount > 64) continue;
-            DWORD* subitems = *(DWORD**)(sublist + 0x103);
+            DWORD* subitems = *(DWORD**)(sublist + 0x40C);
             if (!subitems || IsBadReadPtr((void*)subitems, subcount * 4)) continue;
             int s;
             for (s = 0; s < subcount; s++) {
@@ -4291,6 +4293,18 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->board != board) continue;
         if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
 
+        /* v55m_43h rev6: Pause gate — App+0x158 is the paused flag
+         * (verified in App_UpdateAndRender 0x46bf6b: mov al,[esi+0x158];
+         * test; jne → skip update). When paused, the game freezes all
+         * updates; our Present-hook rotation must freeze too, otherwise
+         * the catapult keeps spinning during the ESC menu. */
+        {
+            DWORD app = *(DWORD*)0x005341E0;
+            if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x160), 0x20)) {
+                if (*(BYTE*)(app + 0x158) != 0) continue;  /* paused → skip */
+            }
+        }
+
         /* v55m_42u: TEST — constant arm rotation at SWIRL speed (0.004 rad/frame ≈ 0.229°/frame) */
         cs->arm_angle += 0.229f;
         if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
@@ -4306,11 +4320,11 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) tree=%d\n",
-                        rot, cs->arm_angle, cs->tree_orig_count);
+                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) tree=%d subm=%d\n",
+                        rot, cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
                 } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f)\n",
-                        cs->arm_angle);
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) tree=%d subm=%d\n",
+                        cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
                 }
                 fclose(df);
             }
