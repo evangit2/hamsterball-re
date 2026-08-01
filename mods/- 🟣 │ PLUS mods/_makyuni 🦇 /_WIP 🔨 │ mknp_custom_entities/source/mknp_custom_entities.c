@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44b
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44c
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -497,6 +497,13 @@ static Sound_Play3D_t pfn_Sound_Play3D = (Sound_Play3D_t)0x00459860;
 /* Sound_LoadOggOrWav — load a sound channel (ECX=soundList, path no ext) */
 typedef void* (__thiscall *Sound_LoadOggOrWav_t)(DWORD soundList, const char* path);
 static Sound_LoadOggOrWav_t pfn_Sound_LoadOggOrWav = (Sound_LoadOggOrWav_t)0x00459660;
+/* v55m_44c: Sound_GetChannel (0x459810) — round-robin channel allocator.
+ * ECX = sound slot (e.g. [soundList]+0x490 = wheelcreak). Returns a playable
+ * channel in EAX, or 0 if the slot/count is invalid. Native Dizzy calls it at
+ * 0x41D34C: MOV ECX,[board+0x878]+0x490; CALL 0x459810; result stored at
+ * board+0x4BDC, played per-frame via Sound_Play3D. */
+typedef void* (__thiscall *Sound_GetChannel_t)(DWORD soundSlot);
+static Sound_GetChannel_t pfn_Sound_GetChannel = (Sound_GetChannel_t)0x00459810;
 
 /* Sound_PlayChannel — play a non-3D sound channel (App+0x460 = sounds\dropin) */
 typedef void (__fastcall *Sound_PlayChannel_t)(void* soundChannel);
@@ -824,6 +831,7 @@ struct WaterWheelState {
     float angle;
     int  active;
     DWORD orig_vtable18; /* v55m_27: saved original vtable[18] for render hook */
+    DWORD creak_channel; /* v55m_44c: WheelCreak sound channel (loaded at spawn) */
 };
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
@@ -2098,6 +2106,37 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(pc_obj, 0, POPCYLINDER_SIZE);
                 pfn_PopCylinder_ctor(pc_obj, (void*)board, px, py, pz, (void*)mesh);
                 ww->pc_obj = (DWORD)pc_obj;  /* Store for per-frame rotation */
+
+                /* v55m_44c: Load WheelCreak sound channel (crash-safe).
+                 * Native Dizzy (0x41D34C) does:
+                 *   MOV ECX,[board+0x878]+0x490  (wheelcreak sound slot)
+                 *   CALL 0x459810               (channel allocator)
+                 *   board+0x4BDC = EAX          (cached playable channel)
+                 * then per-frame plays it via Sound_Play3D with distance
+                 * attenuation. We replicate: grab the game's own loaded
+                 * wheelcreak slot if present (non-NULL), else leave 0 and
+                 * skip sound — never crash. */
+                ww->creak_channel = 0;
+                {
+                    DWORD app = *(DWORD*)(board + BOARD_APP);
+                    if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x490), 4)) {
+                        DWORD slot = *(DWORD*)(app + 0x490);
+                        if (slot && slot > 0x10000 && !IsBadReadPtr((void*)slot, 0x20)) {
+                            if (pfn_Sound_GetChannel) {
+                                DWORD ch = (DWORD)pfn_Sound_GetChannel(slot);
+                                if (ch && ch > 0x10000 && !IsBadReadPtr((void*)ch, 0x20)) {
+                                    ww->creak_channel = ch;
+                                }
+                            }
+                        }
+                    }
+                    if (logf) {
+                        fprintf(logf, "  WATERWHEEL: creak channel=0x%08X (app=0x%08X)\n",
+                                ww->creak_channel, app);
+                        fflush(logf);
+                    }
+                }
+
                 /* v55m_27: Hook vtable[18] for Y-rotation during render */
                 {
                     DWORD orig_vtable = *(DWORD*)pc_obj;
@@ -5239,8 +5278,19 @@ static void cEnt_waterwheel_update(DWORD board) {
         if (!ww->active || !ww->pc_obj) continue;
         if (IsBadReadPtr((void*)ww->pc_obj, 0x440)) continue;
 
-        /* Decrement angle by 0.5 degrees per frame (native constant at 0x4CF3F0) */
-        ww->angle -= 0.5f;
+        /* v55m_44c: Rotation direction REVERSED per user request.
+         * Native Dizzy decrements (angle -= 0.5/frame, constant 0x4CF3F0),
+         * user wants the opposite direction → increment instead. */
+        ww->angle += 0.5f;
+
+        /* v55m_44c: Play WheelCreak per frame (like native Dizzy at 0x41DC22).
+         * Sound_Play3D(channel, x, y, z, scale=1.0) — __thiscall, RET 0x10.
+         * Only if a channel was successfully cached at spawn; NULL → silent.
+         * Runs on the background thread (same as tar sound — proven safe). */
+        if (ww->creak_channel && ww->creak_channel > 0x10000 &&
+            !IsBadReadPtr((void*)ww->creak_channel, 0x20) && pfn_Sound_Play3D) {
+            pfn_Sound_Play3D((void*)ww->creak_channel, ww->x, ww->y, ww->z, 1.0f);
+        }
 
         /* v55m_26: Waterwheel rotation via vtable[18] hook (same as Chomper).
          * EntityTransform didn't work for PopCylinder.
@@ -5757,7 +5807,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44b Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44c Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
