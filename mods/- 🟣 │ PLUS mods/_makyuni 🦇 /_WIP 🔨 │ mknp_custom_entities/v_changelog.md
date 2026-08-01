@@ -1,3 +1,10 @@
+## v55m_44d — Waterwheel stops when paused
+
+- **FIXED:** Waterwheel kept rotating (and playing WheelCreak) while the game was paused.
+- Native Dizzy's waterwheel update lives inside `DizzyBoard_Update` (0x41D512), which does **not** run while paused (Scene_Update reads `board+0x874`; Scene_CreateGameOverMenu sets it).
+- The mod's background thread called `cEnt_waterwheel_update` unconditionally → wheel kept spinning + creaking during pause.
+- Added the same pause gate the catapult already uses (`board+0x874 != 0 → return`) at the top of `cEnt_waterwheel_update`, so rotation AND sound both freeze while paused and resume on unpause.
+
 ## v55m_44c — Waterwheel reverse rotation + WheelCreak sound
 
 - **CHANGED:** Waterwheel now rotates in the **opposite direction**. Native Dizzy decrements (`angle -= 0.5`/frame), user requested the reverse → now `angle += 0.5`/frame.
