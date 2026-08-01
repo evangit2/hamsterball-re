@@ -1,3 +1,9 @@
+## v55m_44f — Waterwheel default mesh + fallback
+
+- Waterwheel (ai_type 26) now defaults to `levels\Waterwheel` (user provides `Waterwheel.MESHWORLD`) instead of `levels\Level3-WaterWheel`.
+- If `Waterwheel.MESHWORLD` is missing, falls back to `levels\_default` (same pattern as Cloudscape case 28).
+- A MESH= tag override still wins over the default.
+
 ## v55m_44e — Fix level-start crash (truncated vtable copy)
 
 - **FIXED:** Crash at level start (`0001:000587E7` = VA `0x40587E7`, mid-instruction EIP) during `FinishLoad` background op on Warm-Up.
