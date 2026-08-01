@@ -1050,6 +1050,13 @@ static DWORD g_prevRecording = 0;
 static DWORD g_savedOldPlayback = 0;
 static DWORD g_dummyRecording = 0;
 
+/* Time Warp multi-segment state (shared with check_race_state) */
+static char g_twRaceName[128] = "";
+static int g_segmentCounter = 0;
+static int g_segmentCount = 0;
+static int g_segmentTimes[MAX_SEGMENTS];
+static BOOL g_isTimeWarpLevel = FALSE;
+
 typedef void (__fastcall *AppStartPracticeRace_t)(void* app, void* edx, DWORD race_index);
 static AppStartPracticeRace_t orig_AppStartPracticeRace = nullptr;
 
@@ -1293,80 +1300,37 @@ static void __fastcall hook_AppStartPracticeRace(void* app_ptr, void* edx, DWORD
     DWORD app = (DWORD)app_ptr;
     LOG("HOOK: App_StartPracticeRace(race_index=%d)", race_index);
 
-    if (g_dummyRecording && g_dummyRecording > 0x10000) {
-        DWORD curr90C = 0;
-        if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
-            curr90C = *(DWORD*)(app + APP_BTT_RECORDING);
-        if (curr90C == g_dummyRecording) {
-            if (!IsBadReadPtr((void*)g_dummyRecording, 4)) {
-                DWORD vt = *(DWORD*)g_dummyRecording;
-                if (vt == BTT_VTABLE_ADDR)
-                    CallMethod<void>(RVA_BTT_DTOR, (void*)g_dummyRecording, (DWORD)1);
-                else
-                    Call<void>(RVA_GAME_FREE, (void*)g_dummyRecording);
-            }
-            *(DWORD*)(app + APP_BTT_RECORDING) = 0;
-        }
-        g_dummyRecording = 0;
-    }
+    // 1. Let the game do its full setup FIRST. App_StartPracticeRace
+    //    (0x428C50) destroys any stale playback at App+0x910 on the
+    //    fresh-start path (0x428CDB: unconditional vtable[0] call when
+    //    App+0x90C was NULL at entry), compares best times, name-checks
+    //    the playback against the new race, and creates a fresh recording
+    //    BTT at App+0x90C. Injecting BEFORE it runs means the game's own
+    //    cleanup destroys our ghost.
+    orig_AppStartPracticeRace(app_ptr, edx, race_index);
 
     g_savedOldPlayback = 0;
 
+    // 2. Inject our saved ghost AFTER the original returns. The game has
+    //    finished all of its App+0x910 management, so nothing will destroy
+    //    the injected ghost before the race starts.
     if (is_time_trial_precheck()) {
         char raceName[128] = "";
         if (get_race_name_by_index(race_index, raceName, sizeof(raceName)) && raceName[0]) {
-            LOG("HOOK: pre-inject for race '%s'", raceName);
+            LOG("HOOK: post-inject for race '%s'", raceName);
             strncpy(g_hookRaceName, raceName, sizeof(g_hookRaceName) - 1);
             g_hookRaceName[sizeof(g_hookRaceName) - 1] = '\0';
 
             int savedTime = get_saved_time(raceName);
             if (savedTime != NO_TIME) {
+                // Save whatever the game left at App+0x910 (a kept
+                // matching-name ghost from a previous race) so we can free
+                // it after overwriting — it becomes orphaned.
                 if (!IsBadReadPtr((void*)(app + APP_BTT_PLAYBACK), 4)) {
                     DWORD existing = *(DWORD*)(app + APP_BTT_PLAYBACK);
                     if (existing && existing > 0x10000) g_savedOldPlayback = existing;
-                    inject_saved_ghost(raceName);
-
-                    DWORD newPlayback = 0;
-                    if (!IsBadReadPtr((void*)(app + APP_BTT_PLAYBACK), 4))
-                        newPlayback = *(DWORD*)(app + APP_BTT_PLAYBACK);
-
-                    int injectFailed = 0;
-                    if (g_savedOldPlayback && newPlayback == g_savedOldPlayback) {
-                        LOG("inject failed — leaving App+0x910 unchanged");
-                        g_savedOldPlayback = 0;
-                        injectFailed = 1;
-                    }
-
-                    if (!injectFailed && newPlayback && newPlayback > 0x10000 &&
-                        !IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4)) {
-                        DWORD recording = *(DWORD*)(app + APP_BTT_RECORDING);
-                        if (recording && recording > 0x10000 &&
-                            !IsBadReadPtr((void*)(recording + BTT_BEST_TIME), 4)) {
-                            int oldTime = *(int*)((char*)recording + BTT_BEST_TIME);
-                            if (oldTime != NO_TIME) {
-                                LOG("Neutralizing old recording time %d -> NO_TIME", oldTime);
-                                *(int*)((char*)recording + BTT_BEST_TIME) = NO_TIME;
-                            }
-                        }
-                        if (!recording || recording < 0x10000) {
-                            LOG("Pre-creating dummy recording BTT");
-                            void* dummyRec = Call<void*>(RVA_OPERATOR_NEW, (SIZE_T)BTT_SIZE);
-                            if (dummyRec) {
-                                CallMethod<void>(RVA_BTT_CTOR, dummyRec);
-                                DWORD vt = *(DWORD*)dummyRec;
-                                if (vt == BTT_VTABLE_ADDR) {
-                                    *(DWORD*)((char*)dummyRec + BTT_BEST_TIME) = NO_TIME;
-                                    *(DWORD*)(app + APP_BTT_RECORDING) = (DWORD)dummyRec;
-                                    g_dummyRecording = (DWORD)dummyRec;
-                                    LOG("Dummy recording BTT at 0x%X", (DWORD)dummyRec);
-                                } else {
-                                    LOG("ERROR: dummy BTT ctor vtable=0x%X", vt);
-                                    Call<void>(RVA_GAME_FREE, dummyRec);
-                                }
-                            }
-                        }
-                    }
                 }
+                inject_saved_ghost(raceName);
             } else {
                 LOG("No saved ghost for '%s', clearing playback", raceName);
                 if (!IsBadReadPtr((void*)(app + APP_BTT_PLAYBACK), 4)) {
@@ -1378,19 +1342,30 @@ static void __fastcall hook_AppStartPracticeRace(void* app_ptr, void* edx, DWORD
         }
     }
 
-    orig_AppStartPracticeRace(app_ptr, edx, race_index);
-
+    // 3. If the game left a playback BTT behind that we replaced (or
+    //    cleared), it is now orphaned — free it. If the game had already
+    //    destroyed it (or our injection failed and left it in place), the
+    //    pointer comparison keeps it alive.
     if (g_savedOldPlayback && g_savedOldPlayback > 0x10000) {
-        if (!IsBadReadPtr((void*)g_savedOldPlayback, 4)) {
-            DWORD vt = *(DWORD*)g_savedOldPlayback;
-            if (vt == BTT_VTABLE_ADDR) {
-                LOG("Destroying old playback BTT at 0x%X", g_savedOldPlayback);
-                CallMethod<void>(RVA_BTT_DTOR, (void*)g_savedOldPlayback, (DWORD)1);
+        DWORD currPlay = 0;
+        if (!IsBadReadPtr((void*)(app + APP_BTT_PLAYBACK), 4))
+            currPlay = *(DWORD*)(app + APP_BTT_PLAYBACK);
+        if (currPlay != g_savedOldPlayback) {
+            if (!IsBadReadPtr((void*)g_savedOldPlayback, 4)) {
+                DWORD vt = *(DWORD*)g_savedOldPlayback;
+                if (vt == BTT_VTABLE_ADDR) {
+                    LOG("Destroying orphaned playback BTT at 0x%X", g_savedOldPlayback);
+                    CallMethod<void>(RVA_BTT_DTOR, (void*)g_savedOldPlayback, (DWORD)1);
+                }
             }
         }
         g_savedOldPlayback = 0;
     }
 }
+
+// Forward declaration: handle_tw_goal_touch is defined after
+// check_race_state in this file (Time Warp multi-segment section).
+static void handle_tw_goal_touch(void);
 
 static void check_race_state(void) {
     DWORD app = get_app();
@@ -1452,6 +1427,12 @@ static void check_race_state(void) {
             }
             LOG("GOAL! finishTime=%d", finishTime);
 
+            // Time Warp multi-segment handling: save this segment and compare
+            // against the confirmed best. Must run BEFORE the generic
+            // save_ghost_for_race below so segment bookkeeping is current.
+            if (g_isTimeWarpLevel && g_twRaceName[0])
+                handle_tw_goal_touch();
+
             if (finishTime != NO_TIME && btt && g_currentRaceName[0]) {
                 DWORD count = *(DWORD*)(btt + BTT_ALIST_COUNT);
                 DWORD* data = *(DWORD**)(btt + BTT_LIST_ARRAY);
@@ -1496,12 +1477,10 @@ static void check_race_state(void) {
 
 /* ================================================================
  * Time Warp multi-segment state
+ * (globals g_twRaceName/g_segmentCounter/g_segmentCount/
+ *  g_segmentTimes/g_isTimeWarpLevel are declared near the top of
+ *  the ghost-saver section, shared with check_race_state)
  * ================================================================ */
-static char g_twRaceName[128] = "";
-static int g_segmentCounter = 0;
-static int g_segmentCount = 0;
-static int g_segmentTimes[MAX_SEGMENTS];
-static BOOL g_isTimeWarpLevel = FALSE;
 
 static void save_warp_segment(void) {
     DWORD app = get_app();
@@ -2872,8 +2851,12 @@ public:
     }
 
     void onSceneEnd() override {
-        restore_tt_recording_nop();
-        restore_timer_caves(g_gameBase);
+        // NOTE: Do NOT restore the one-time session caves here. They are
+        // installed once in Initialize() and must stay live for the whole
+        // session — including across warps (the warp's PHASE_LOAD calls the
+        // game's race-start function directly, which tears down the scene;
+        // restoring the caves mid-warp would break the timer freeze and the
+        // TT-recording NOP for the remainder of the session).
         g_phase = PHASE_IDLE;
         g_freezeTimer = 0;
         g_warpBall = 0;
@@ -2896,9 +2879,10 @@ public:
             }
         }
         ghost2_destroy();
-        if (g_ghost2Capture) { free(g_ghost2Capture); g_ghost2Capture = NULL; }
-        g_ghost2CaptureCount = 0;
-        g_ghost2Pending = FALSE;
+        // CRITICAL: Do NOT free g_ghost2Capture / clear g_ghost2Pending here.
+        // The warp capture (ghost2_capture) runs BEFORE the level reload and
+        // is consumed by ghost2_check_board_change AFTER the new board loads.
+        // Clearing them here breaks Ghost 2 creation across warps.
         snaps_reset();
     }
 };
