@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44d
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44e
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -2137,17 +2137,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                 }
 
-                /* v55m_27: Hook vtable[18] for Y-rotation during render */
-                {
-                    DWORD orig_vtable = *(DWORD*)pc_obj;
-                    if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
-                        DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
-                        if (new_vtable) {
-                            memcpy(new_vtable, (void*)orig_vtable, 256);
-                            ww->orig_vtable18 = new_vtable[18];
-                            new_vtable[18] = (DWORD)&cEnt_waterwheel_render;
-                            *(DWORD*)pc_obj = (DWORD)new_vtable;
-                        }
+                /* v55m_44e: Private vtable copy must cover the FULL PopCylinder
+                 * vtable (168 entries = 672 bytes, vtable 0x4D58F0). The old
+                 * 256-byte copy truncated at 64 entries → the game reached
+                 * slots beyond 64 during level load (FinishLoad) → garbage
+                 * EIP → crash 0x40587E7. Same fix as catapult (0x400B). */
+                DWORD orig_vtable = *(DWORD*)pc_obj;
+                if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 0x400)) {
+                    DWORD* new_vtable = (DWORD*)pfn_operator_new(0x400);
+                    if (new_vtable) {
+                        memcpy(new_vtable, (void*)orig_vtable, 0x400);
+                        ww->orig_vtable18 = new_vtable[18];
+                        new_vtable[18] = (DWORD)&cEnt_waterwheel_render;
+                        *(DWORD*)pc_obj = (DWORD)new_vtable;
                     }
                 }
                 /* Add to board lists */
@@ -3266,12 +3268,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         cs->countdown = 0;
         cs->anim_val = 0.0f;
 
-        /* Create private vtable copy (256 bytes = 64 entries) */
+        /* Create private vtable copy — v55m_44e: must cover the FULL
+         * PopCylinder vtable (168 entries = 672 bytes, vtable 0x4D58F0).
+         * Old 256-byte copy truncated at 64 entries → game reached slots
+         * beyond 64 during level load → garbage EIP → crash 0x40587E7.
+         * Same fix as catapult (0x400B). */
         DWORD orig_vtable = *(DWORD*)obj;
-        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 256)) {
-            DWORD* new_vtable = (DWORD*)pfn_operator_new(256);
+        if (orig_vtable && !IsBadReadPtr((void*)orig_vtable, 0x400)) {
+            DWORD* new_vtable = (DWORD*)pfn_operator_new(0x400);
             if (new_vtable) {
-                memcpy(new_vtable, (void*)orig_vtable, 256);
+                memcpy(new_vtable, (void*)orig_vtable, 0x400);
                 /* Save original vtable[18] (offset 0x48) */
                 cs->orig_vtable2 = new_vtable[18];
                 /* Override vtable[18] with our hook */
@@ -5816,7 +5822,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44d Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44e Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

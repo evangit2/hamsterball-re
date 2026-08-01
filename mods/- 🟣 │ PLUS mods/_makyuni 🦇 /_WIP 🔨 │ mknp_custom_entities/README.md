@@ -1,4 +1,4 @@
-# Custom Entities Mod v55m_44d
+# Custom Entities Mod v55m_44e
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
