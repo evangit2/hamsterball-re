@@ -1,3 +1,12 @@
+## v55m_44b — Waterwheel collision fix (non-solid → solid)
+
+- **FIXED:** Waterwheel was non-solid because the spawn code read the collision object from `pc_obj + 0x10D4` — but for PopCylinder that offset holds the **position X float**, so `IsBadReadPtr` rejected it and collision registration was skipped.
+- Verified in native binary (`PopCylinder_ctor` 0x436EE0):
+  - `+0x10D4` = position floats (written at 0x436F2D–0x436F3E)
+  - `+0x10E0` = the real collision Level, created by `call 0x465080` (CollisionLevel, vtable 0x4D9068) at 0x436F5E
+- Fixed to read `+0x10E0`, matching the working Rotator pattern (line ~2295).
+- Native PopCylinder also self-registers collision (`0x436FC0` appends `+0x10E0` to scene tree `board+0x8B0+0x18` and board collision list `board+0x10EC`), so the wheel is now solid.
+
 ## v55m_44a — Waterwheel X-axis rotation (native Dizzy replication)
 
 - **FIXED:** cEnt Waterwheel now rotates around the **X axis** (previously Y-axis), matching the native Dizzy Race waterwheel exactly.
