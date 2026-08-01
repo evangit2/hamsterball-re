@@ -418,18 +418,24 @@ static void unblock_pause(DWORD base) {
 /* Ghost mode code cave — allows E:GHOST ghosts in all modes,
  * but keeps normal ghosts restricted to Time Trial only.
  *
- * Patches 0x0040B7F0 (17 bytes) which normally has:
+ * Patches 0x40B7F0 (17 bytes) which normally has:
  *   MOV DL, [ECX+0x11]   ; profile->practice
  *   TEST DL, DL
- *   JZ skip               ; skip if NOT TT
+ *   JZ +0x3D              ; skip (to 0x40B834) if NOT TT
  *   MOV CL, [EAX+0x234]  ; app->party_mode
  *   TEST CL, CL
- *   JNZ skip              ; skip if party
+ *   JNZ +0x33             ; skip (to 0x40B834) if party
+ *   ; continue (0x40B801): XOR ECX,[EBX+0x910]
+ *
+ * Cave flow:
+ *   if (g_ghostFromEvent) -> allow render (JMP 0x40B800)
+ *   else run original checks, jumping to skip (0x40B834) or
+ *        continuing at 0x40B800 like normal.
  */
 extern BOOL g_ghostFromEvent;
-#define GHOST_MODE_PATCH_ADDR  0x0040B7F0
+#define GHOST_MODE_PATCH_RVA   0x0B7F0
 #define GHOST_MODE_PATCH_SIZE  17
-#define GHOST_MODE_CONTINUE    0x0040B802
+#define GHOST_MODE_CONTINUE    0x0040B801
 #define GHOST_MODE_SKIP        0x0040B834
 
 static unsigned char* g_ghostModeCave = NULL;
@@ -445,6 +451,7 @@ static void install_ghost_mode_cave(DWORD base) {
     if (!g_ghostModeCave) { LOGS("GhostMode: VirtualAlloc failed"); return; }
 
     unsigned char* p = g_ghostModeCave;
+    unsigned char* start = p;
 
     /* CMP byte [g_ghostFromEvent], 0  (7 bytes) */
     p[0] = 0x80; p[1] = 0x3D;
@@ -452,41 +459,56 @@ static void install_ghost_mode_cave(DWORD base) {
     p[6] = 0x00;
     p += 7;
 
-    /* JNE +27 (skip original checks -> 'allow' JMP) */
-    p[0] = 0x75; p[1] = 0x1B;
+    /* JNE rel8 to ALLOW path (skip gate checks if ghostFromEvent is set) */
+    /* Target: the ALLOW JMP below */
+    p[0] = 0x75;
+    p[1] = 0; /* placeholder */
+    unsigned char* jnePatcher = p;
     p += 2;
 
-    /* Original: MOV DL, [ECX+0x11] (3 bytes) */
+    /* Gate check 1: MOV DL, [ECX+0x11] (3 bytes) */
     p[0] = 0x8A; p[1] = 0x51; p[2] = 0x11;
     p += 3;
 
-    /* Original: TEST DL, DL (2 bytes) */
+    /* Gate check 1: TEST DL, DL (2 bytes) */
     p[0] = 0x84; p[1] = 0xD2;
     p += 2;
 
-    /* Original: JZ +22 (2 bytes) */
-    p[0] = 0x74; p[1] = 22;
+    /* JZ rel8 to SKIP JMP (if NOT TT, skip ghost) */
+    p[0] = 0x74;
+    p[1] = 0; /* placeholder */
+    unsigned char* jzPatcher = p;
     p += 2;
 
-    /* Original: MOV CL, [EAX+0x234] (6 bytes) */
+    /* Gate check 2: MOV CL, [EAX+0x234] (6 bytes) */
     p[0] = 0x8A; p[1] = 0x88;
     *(DWORD*)(p + 2) = 0x234;
     p += 6;
 
-    /* Original: TEST CL, CL (2 bytes) */
+    /* Gate check 2: TEST CL, CL (2 bytes) */
     p[0] = 0x84; p[1] = 0xC9;
     p += 2;
 
-    /* Original: JNZ +12 (2 bytes) */
-    p[0] = 0x75; p[1] = 12;
+    /* JNZ rel8 to SKIP JMP (if party, skip ghost) */
+    p[0] = 0x75;
+    p[1] = 0; /* placeholder */
+    unsigned char* jnzPatcher = p;
     p += 2;
 
-    /* allow: JMP continueAddr (5 bytes) */
+    /* ALLOW: JMP to ghost render code (5 bytes) */
     write_jmp(p, continueAddr);
+    unsigned char* allowJmp = p;
     p += 5;
 
-    /* skip: JMP skipAddr (5 bytes) */
+    /* SKIP: JMP over ghost render code (5 bytes) */
     write_jmp(p, skipAddr);
+    unsigned char* skipJmp = p;
+
+    /* Now patch the forward jump displacements (all targets are ahead, so
+     * rel8 = target - (patch_address + 2) where patch is 2 bytes) */
+    jnePatcher[1] = (unsigned char)(allowJmp - (jnePatcher + 2)); /* skip to ALLOW */
+    jzPatcher[1]  = (unsigned char)(skipJmp  - (jzPatcher  + 2)); /* skip ghost */
+    jnzPatcher[1] = (unsigned char)(skipJmp  - (jnzPatcher + 2)); /* skip ghost */
 
     DWORD oldProt;
     memcpy(g_ghostModeOrigBytes, (void*)patchAddr, GHOST_MODE_PATCH_SIZE);
