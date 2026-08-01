@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43p
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43q
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -323,6 +323,10 @@ typedef struct {
     int tree_count848;   /* item count at colLevel+0x848 */
     int tree_ok848;      /* rotation succeeded for +0x848 */
     int arm_mb_strips;   /* v55m_43n: strip count of the ARM MeshBuffer (mb[0]) */
+    /* v55m_43q: MeshWorld tree list state (mw+0x18) */
+    DWORD tree_orig_mw;  /* saved originals for mw+0x18 items */
+    int tree_count_mw;   /* item count at mw+0x18 */
+    int tree_ok_mw;      /* rotation succeeded for mw+0x18 */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4157,6 +4161,61 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
      if (!mw || mw < 0x10000) return 0;
      if (IsBadReadPtr((void*)mw, 0x460)) return 0;
 
+     /* v55m_43q: ROTATE THE MESHWORLD TREE ITEMS — the actual collision
+      * data. The collision query (0x465ef0) iterates the MeshWorld's
+      * collision tree at mw+0x18 (embedded AthenaList: count +0x4, items
+      * +0x40C) — NOT colLevel+0x18 (those were empty, tree18=0). Each
+      * item's +0/+4/+8 is a WORLD-space position. Rotate them around the
+      * WORLD pivot (cs->x,y,z). This is what the broad-phase box test and
+      * the exact triangle test read. */
+     {
+         float tang = cs->arm_angle * 3.14159265f / 180.0f;
+         float tc = cosf(tang), ts = sinf(tang);
+         DWORD mwlist = mw + 0x18;
+         if (!IsBadReadPtr((void*)mwlist, 0x20)) {
+             int tcount = *(int*)(mwlist + 0x4);
+             if (tcount > 0 && tcount < 65536) {
+                 DWORD* titems = *(DWORD**)(mwlist + 0x40C);
+                 if (titems && !IsBadReadPtr((void*)titems, tcount * 4)) {
+                     /* Save originals lazily (12 bytes/item). */
+                     if (!cs->tree_orig_mw) {
+                         cs->tree_orig_mw = (DWORD)malloc(tcount * 12);
+                         if (cs->tree_orig_mw) {
+                             float* dst = (float*)cs->tree_orig_mw;
+                             int ti;
+                             for (ti = 0; ti < tcount; ti++) {
+                                 DWORD item = titems[ti];
+                                 if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                                 float* src = (float*)item;
+                                 dst[ti * 3 + 0] = src[0];
+                                 dst[ti * 3 + 1] = src[1];
+                                 dst[ti * 3 + 2] = src[2];
+                             }
+                             cs->tree_count_mw = tcount;
+                         }
+                     }
+                     if (cs->tree_orig_mw && cs->tree_count_mw == tcount) {
+                         float* tsrc = (float*)cs->tree_orig_mw;
+                         int ti;
+                         for (ti = 0; ti < tcount; ti++) {
+                             DWORD item = titems[ti];
+                             if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                             float* o = tsrc + ti * 3;
+                             float* p = (float*)item;
+                             /* WORLD pivot — tree items are world-space. */
+                             float x = o[0] - cs->x;
+                             float z = o[2] - cs->z;
+                             p[0] = x * tc + z * ts + cs->x;
+                             p[1] = o[1];
+                             p[2] = -x * ts + z * tc + cs->z;
+                         }
+                         cs->tree_ok_mw = 1;
+                     }
+                 }
+             }
+         }
+     }
+
     /* v55m_43h (rev 4): The vertex source is the SUB-MESH arrays.
      * MeshWorld_BuildVertexBuffer (0x46f8d0) flow:
      *   - iterates MeshWorld+0x2C (MeshBuffers)
@@ -4337,12 +4396,14 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d ARM verts (angle=%.2f) mbufs=%d arm_strips=%d tree18=%d/%d tree848=%d/%d\n",
-                        rot, cs->arm_angle, cs->orig_vert_count, cs->arm_mb_strips,
+                    fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                        rot, cs->arm_angle, cs->orig_vert_count,
+                        cs->tree_count_mw, cs->tree_ok_mw,
                         cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                 } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d arm_strips=%d tree18=%d/%d tree848=%d/%d\n",
-                        cs->arm_angle, cs->orig_vert_count, cs->arm_mb_strips,
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
+                        cs->arm_angle, cs->orig_vert_count,
+                        cs->tree_count_mw, cs->tree_ok_mw,
                         cs->tree_count18, cs->tree_ok18, cs->tree_count848, cs->tree_ok848);
                 }
                 fclose(df);
@@ -5611,7 +5672,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43p Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43q Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
