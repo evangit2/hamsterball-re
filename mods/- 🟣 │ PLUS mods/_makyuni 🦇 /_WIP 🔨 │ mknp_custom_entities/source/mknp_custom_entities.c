@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43z
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44a
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -828,8 +828,17 @@ struct WaterWheelState {
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
 
-/* v55m_27: REAL Waterwheel render hook — defined AFTER struct+globals.
- * Called from vtable[18] via the stub above. Applies Y-rotation via D3D SetTransform. */
+/* v55m_44: Waterwheel render hook — X-axis rotation replicating native Dizzy
+ * waterwheel (verified via Ghidra/objdump):
+ *   - angle -= 0.5 degrees per frame (constant 0x4CF3F0 = 0.5)
+ *   - rotation matrix is X-axis: native 0x45AE27 builds m[5]=cos, m[6]=sin,
+ *     m[9]=-sin, m[10]=cos (rotation about X), reached via 0x457C90 which
+ *     multiplies angle by deg→rad (0x4D8E58 = 0.017453) and calls the
+ *     X-axis builder (thunk 0x4F7208 → 0x45AE05).
+ *   - composed with the object's own world matrix (renderLevel+0x4) and
+ *     translated around the object's center, same as the proven catapult
+ *     pattern (v55m_43h). Fixes the old Y-axis matrix which also discarded
+ *     the position/scale from the world matrix. */
 static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2) {
     struct WaterWheelState* ww = NULL;
     int i;
@@ -841,46 +850,72 @@ static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2) 
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
+    /* v55m_44: catapult-style matrix compose. The render Level is at
+     * this_+0x434 (PopCylinder stores it there too — confirmed at 0x436F67
+     * `mov 0x434(%esi),%edx`). The world matrix is at renderLevel+0x4
+     * (Graphics_BeginFrame 0x453B50 uses it via SetTransform(D3DTS_WORLD)). */
+    DWORD renderLevel = 0;
+    if (!IsBadReadPtr((void*)(this_ + 0x434), 4)) {
+        renderLevel = *(DWORD*)(this_ + 0x434);
+    }
+    if (!renderLevel || IsBadReadPtr((void*)(renderLevel + 0x4), 64)) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)ww->orig_vtable18)(this_, param_1, param_2);
+        return;
+    }
     {
-        DWORD app = *(DWORD*)0x005341E0;
-        if (app) {
-            DWORD gfx = *(DWORD*)((char*)app + 0x174);
-            if (gfx) {
-                DWORD device = *(DWORD*)((char*)gfx + 0x154);
-                if (device && !IsBadReadPtr((void*)device, 4)) {
-                    DWORD* dev_vtable = *(DWORD**)device;
-                    if (dev_vtable && !IsBadReadPtr(dev_vtable, 0x98)) {
-                        typedef void (__stdcall *GetTransform_t)(DWORD, DWORD, void*);
-                        typedef void (__stdcall *SetTransform_t)(DWORD, DWORD, void*);
-                        GetTransform_t pfn_GetTransform = (GetTransform_t)dev_vtable[36];
-                        SetTransform_t pfn_SetTransform = (SetTransform_t)dev_vtable[37];
+        /* Save the current world matrix (renderLevel+0x4). */
+        float saveMatrix[16];
+        memcpy(saveMatrix, (float*)(renderLevel + 0x4), sizeof(saveMatrix));
 
-                        float saveMatrix[16];
-                        pfn_GetTransform(device, 256, saveMatrix);
-
-                        float angle = ww->angle * 3.14159265f / 180.0f;
-                        float c = cosf(angle);
-                        float s = sinf(angle);
-                        float rotMatrix[16] = {
-                            c,  0, -s, 0,
-                            0,  1,  0,  0,
-                            s,  0,  c, 0,
-                            0,  0,  0,  1
-                        };
-
-                        pfn_SetTransform(device, 256, rotMatrix);
-                        typedef void (__thiscall *render_t)(DWORD, char, int);
-                        ((render_t)ww->orig_vtable18)(this_, param_1, param_2);
-                        pfn_SetTransform(device, 256, saveMatrix);
-                        return;
-                    }
+        /* Native waterwheel: rotate around X by angle (degrees). */
+        float angle = ww->angle * 3.14159265f / 180.0f;
+        float c = cosf(angle);
+        float s = sinf(angle);
+        float m1[16] = {
+            1,0,0,0,  0,1,0,0,  0,0,1,0,
+            -ww->x, -ww->y, -ww->z, 1
+        };
+        float m2[16] = {
+            1,0,0,0,  0,c,-s,0,  0,s,c,0,  0,0,0,1
+        };
+        float m3[16] = {
+            1,0,0,0,  0,1,0,0,  0,0,1,0,
+            ww->x, ww->y, ww->z, 1
+        };
+        float finalMatrix[16];
+        int row, col, k;
+        float tmp1[16], tmp2[16];
+        for (row = 0; row < 4; row++) {
+            for (col = 0; col < 4; col++) {
+                tmp1[row*4+col] = 0;
+                for (k = 0; k < 4; k++) {
+                    tmp1[row*4+col] += saveMatrix[row*4+k] * m1[k*4+col];
                 }
             }
         }
-    }
-    {
+        for (row = 0; row < 4; row++) {
+            for (col = 0; col < 4; col++) {
+                tmp2[row*4+col] = 0;
+                for (k = 0; k < 4; k++) {
+                    tmp2[row*4+col] += tmp1[row*4+k] * m2[k*4+col];
+                }
+            }
+        }
+        for (row = 0; row < 4; row++) {
+            for (col = 0; col < 4; col++) {
+                finalMatrix[row*4+col] = 0;
+                for (k = 0; k < 4; k++) {
+                    finalMatrix[row*4+col] += tmp2[row*4+k] * m3[k*4+col];
+                }
+            }
+        }
+
+        memcpy((float*)(renderLevel + 0x4), finalMatrix, sizeof(finalMatrix));
         typedef void (__thiscall *render_t)(DWORD, char, int);
         ((render_t)ww->orig_vtable18)(this_, param_1, param_2);
+        memcpy((float*)(renderLevel + 0x4), saveMatrix, sizeof(saveMatrix));
+        return;
     }
 }
 
@@ -5718,7 +5753,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43z Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44a Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
