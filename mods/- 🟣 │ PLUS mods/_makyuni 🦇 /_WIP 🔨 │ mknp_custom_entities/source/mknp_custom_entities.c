@@ -314,8 +314,6 @@ typedef struct {
     DWORD orig_registry[64]; /* v55m_43h rev4: (sub_ptr, orig_copy) pairs, up to 32 sub-meshes */
     DWORD tree_orig;     /* v55m_43h rev5: saved copy of spatial-tree item positions */
     int tree_orig_count; /* v55m_43h rev5: tree item count */
-    int tree_rotated;    /* v55m_43h rev7: whether the tree rotation ran this frame */
-    int tree_orig_offset; /* v55m_43h rev12: which tree list (+0x18 or +0x848) was saved */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -2671,74 +2669,11 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                             }
                                         }
                                     }
-                                    /* v55m_43h rev10: COLLISION VISUALIZATION.
-                                     * Color the collision Level's MeshWorld materials
-                                     * bright green (semi-transparent) so the collision
-                                     * body is VISIBLE in-game. Material array at
-                                     * MeshWorld+0x28 (count at +0x24, each 0x50 bytes,
-                                     * diffuse at +0x04). Also dump the strip arrays:
-                                     * mb+0x10 = strip count, mb+0x418 = strip items,
-                                     * each strip = 3 verts x 32B (X,Y,Z at +0/+4/+8).
-                                     * This lets us SEE whether the collision spawns
-                                     * and whether it rotates. */
-                                    {
-                                        DWORD lvl_mw2 = *(DWORD*)((char*)cat_level + 0x08);
-                                        if (lvl_mw2 && !IsBadReadPtr((void*)lvl_mw2, 0x40)) {
-                                            DWORD mat_count = *(DWORD*)((char*)lvl_mw2 + 0x24);
-                                            DWORD mat_array = *(DWORD*)((char*)lvl_mw2 + 0x28);
-                                            if (logf) fprintf(logf, "  ROTATER: VIS colLevel mw=0x%08X materials=%d @0x%08X\n",
-                                                lvl_mw2, mat_count, mat_array);
-                                            if (mat_count > 0 && mat_count < 128 && mat_array &&
-                                                !IsBadReadPtr((void*)mat_array, mat_count * 0x50)) {
-                                                int mi;
-                                                for (mi = 0; mi < mat_count; mi++) {
-                                                    float* diffuse = (float*)(mat_array + mi * 0x50 + 0x04);
-                                                    /* Bright green, opaque — visible against any bg */
-                                                    diffuse[0] = 0.0f;
-                                                    diffuse[1] = 1.0f;
-                                                    diffuse[2] = 0.0f;
-                                                    diffuse[3] = 1.0f;
-                                                    /* ambient too */
-                                                    float* ambient = (float*)(mat_array + mi * 0x50 + 0x14);
-                                                    ambient[0] = 0.0f;
-                                                    ambient[1] = 1.0f;
-                                                    ambient[2] = 0.0f;
-                                                    ambient[3] = 1.0f;
-                                                }
-                                                if (logf) fprintf(logf, "  ROTATER: VIS collision materials colored GREEN (%d)\n", mat_count);
-                                            }
-                                            /* Dump strip arrays for both MeshBuffers */
-                                            DWORD* mwlist2 = (DWORD*)(lvl_mw2 + 0x2C);
-                                            int mwcount2 = mwlist2 ? *(int*)(mwlist2 + 0x1) : -1;
-                                            DWORD* mwitems2 = mwlist2 ? *(DWORD**)(mwlist2 + 0x103) : NULL;
-                                            if (mwcount2 > 0 && mwcount2 < 64 && mwitems2) {
-                                                int bi;
-                                                for (bi = 0; bi < mwcount2; bi++) {
-                                                    DWORD mbx = mwitems2[bi];
-                                                    if (!mbx || IsBadReadPtr((void*)mbx, 0x40)) continue;
-                                                    int strip_count = *(int*)((char*)mbx + 0x10);
-                                                    DWORD strip_items = *(DWORD*)((char*)mbx + 0x418);
-                                                    if (logf) fprintf(logf, "  ROTATER: VIS mb[%d]=0x%08X strips=%d items=0x%08X\n",
-                                                        bi, mbx, strip_count, strip_items);
-                                                    if (strip_count > 0 && strip_count < 4096 && strip_items &&
-                                                        !IsBadReadPtr((void*)strip_items, strip_count * 4)) {
-                                                        /* Log first strip's first vertex position */
-                                                        DWORD* sitems = (DWORD*)strip_items;
-                                                        DWORD s0 = sitems[0];
-                                                        if (s0 && !IsBadReadPtr((void*)s0, 0x60)) {
-                                                            float* v0 = (float*)s0;
-                                                            if (logf) fprintf(logf, "  ROTATER: VIS strip[0] v0=(%.1f,%.1f,%.1f)\n",
-                                                                v0[0], v0[1], v0[2]);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
                     }
+
                     g_catapult_count++;
                     if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
@@ -4139,7 +4074,6 @@ static int g_catapult_debug_count = 0;
  * per-triangle collision follows the new vertex positions.
  * Returns total vertex count rotated, or 0 on failure. */
 static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
-    int b, r;  /* v55m_43h rev9: loop vars for save/rotate passes */
     if (!cs || !cs->obj) return 0;
     DWORD colLevel = *(DWORD*)((char*)cs->obj + 0x10D4);
     if (!colLevel || colLevel < 0x10000) return 0;
@@ -4166,21 +4100,6 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
      * The spatial tree references the SUB-MESH source arrays (built at
      * load). MeshWorld+0x448 is 0 until the first render (lazy build).
      * So we rotate EACH sub-mesh's +0x448 array (the tree source). */
-    /* v55m_43h rev11: CRITICAL CORRECTION — the strip vertices are in
-     * MESH-LOCAL space (dump: v0=(6.2,-20.3,108.1) — tiny offsets near
-     * the mesh origin), NOT world space. Rev9 rotated them around
-     * cs->x,y,z (world 750,-135,-522) which CORRUPTED them (ball flew
-     * through — no collision at all). The native collision query reads
-     * strip verts RAW (no matrix), so the strips must stay in their
-     * ORIGINAL local positions. The correct rotation pivot is the mesh's
-     * OWN origin — rotate around (0,0,0) local, and the visual arm
-     * rotation already happens via the render matrix. So: rotate each
-     * vertex around the MESH origin (cs->x,y,z is WRONG — use 0,0,0 in
-     * local space, which is the mesh's own origin).
-     * We rotate from saved originals (per-strip-array copies). */
-    float ang = cs->arm_angle * 3.14159265f / 180.0f;
-    float c = cosf(ang), s = sinf(ang);
-
     DWORD* list = (DWORD*)(mw + 0x2C);
     if (IsBadReadPtr((void*)list, 0x20)) return 0;
     int list_count = *(int*)(list + 0x1);  /* +0x4 */
@@ -4188,159 +4107,155 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
     DWORD* items = *(DWORD**)(list + 0x103);  /* +0x40C */
     if (!items || IsBadReadPtr((void*)items, list_count * 4)) return 0;
 
-    /* Save originals once: per-MeshBuffer copies of the strip vertex
-     * array. Register as (mb_strip_items_ptr, orig_copy) pairs. */
+    /* Count total verts across all sub-meshes.
+     * v55m_43h rev6: mb+0x424 is an EMBEDDED AthenaList (like MeshWorld
+     * +0x2C): vtable at +0x424, count at +0x428, items array pointer at
+     * +0x830 (= 0x424+0x40C). The old code treated +0x424 as a POINTER to
+     * an external list — wrong, read garbage (dump showed 0x65656565). */
+    int total = 0;
+    int b;
+    for (b = 0; b < list_count; b++) {
+        DWORD mb = items[b];
+        if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
+        DWORD sublist = mb + 0x424;  /* embedded list */
+        int subcount = *(int*)(sublist + 0x4);
+        if (subcount <= 0 || subcount > 64) continue;
+        DWORD* subitems = *(DWORD**)(sublist + 0x40C);
+        if (!subitems || IsBadReadPtr((void*)subitems, subcount * 4)) continue;
+        int s;
+        for (s = 0; s < subcount; s++) {
+            DWORD sub = subitems[s];
+            if (!sub || IsBadReadPtr((void*)sub, 0x20)) continue;
+            int cnt = *(int*)((char*)sub + 0x4);
+            if (cnt < 0 || cnt > 100000) continue;
+            total += cnt;
+        }
+    }
+    if (total <= 0 || total > 100000) return 0;
+
+    /* Save the original sub-mesh vertex data once (per-sub-mesh copies,
+     * registered as (sub_ptr, orig_copy) pairs in orig_registry). */
     if (!cs->orig_verts) {
         for (b = 0; b < list_count; b++) {
             DWORD mb = items[b];
             if (!mb || IsBadReadPtr((void*)mb, 0x840)) continue;
-            /* Strip list at MeshBuffer+0xC (embedded): count at +0x10,
-             * items pointer at +0x418 (= +0xC + 0x40C). */
-            int strip_count = *(int*)((char*)mb + 0x10);
-            if (strip_count <= 0 || strip_count > 4096) continue;
-            DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
-            if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
-            /* Each strip = 3 verts × 32 bytes. Total vertex bytes =
-             * strip_count * 3 * 32 = strip_count * 96. */
-            DWORD save = (DWORD)malloc(strip_count * 96);
-            if (!save) continue;
+            DWORD sublist = mb + 0x424;
+            int subcount = *(int*)(sublist + 0x4);
+            if (subcount <= 0 || subcount > 64) continue;
+            DWORD* subitems = *(DWORD**)(sublist + 0x40C);
+            if (!subitems || IsBadReadPtr((void*)subitems, subcount * 4)) continue;
             int s;
-            int total_ok = 1;
-            for (s = 0; s < strip_count; s++) {
-                DWORD strip = strip_items[s];
-                if (!strip || IsBadReadPtr((void*)strip, 0x60)) { total_ok = 0; break; }
-                memcpy((void*)(save + (DWORD)s * 96), (void*)strip, 96);
-            }
-            if (!total_ok) { free((void*)save); continue; }
-            if (cs->orig_vert_count < 32) {
-                cs->orig_registry[cs->orig_vert_count * 2] = mb;
-                cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
-                cs->orig_vert_count++;
-            } else {
-                free((void*)save);
+            for (s = 0; s < subcount; s++) {
+                DWORD sub = subitems[s];
+                if (!sub || IsBadReadPtr((void*)sub, 0x20)) continue;
+                int cnt = *(int*)((char*)sub + 0x4);
+                if (cnt <= 0 || cnt > 100000) continue;
+                float* subverts = *(float**)((char*)sub + 0x448);
+                if (!subverts || subverts < (float*)0x10000) continue;
+                if (IsBadReadPtr((void*)subverts, cnt * 32)) continue;
+                /* Save the original for this sub-mesh. */
+                DWORD save = (DWORD)malloc(cnt * 32);
+                if (!save) continue;
+                memcpy((void*)save, subverts, cnt * 32);
+                /* Register (sub_ptr, orig_copy) in the fixed registry. */
+                if (cs->orig_vert_count < 32) {
+                    cs->orig_registry[cs->orig_vert_count * 2] = sub;
+                    cs->orig_registry[cs->orig_vert_count * 2 + 1] = save;
+                    cs->orig_vert_count++;
+                } else {
+                    free((void*)save);
+                }
             }
         }
-        cs->orig_verts = 1;  /* mark saved */
     }
 
-    /* Rotate each MeshBuffer's strip vertices from its saved original. */
-    int total = 0;
+    /* Now rotate each sub-mesh's array from its saved original. */
+    float ang = cs->arm_angle * 3.14159265f / 180.0f;
+    float c = cosf(ang), s = sinf(ang);
+    int r;
     for (r = 0; r < cs->orig_vert_count; r++) {
-        DWORD mb = cs->orig_registry[r * 2];
+        DWORD sub = cs->orig_registry[r * 2];
         DWORD orig = cs->orig_registry[r * 2 + 1];
-        if (!mb || !orig || IsBadReadPtr((void*)mb, 0x840)) continue;
-        int strip_count = *(int*)((char*)mb + 0x10);
-        if (strip_count <= 0 || strip_count > 4096) continue;
-        DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
-        if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
-        int s;
-        for (s = 0; s < strip_count; s++) {
-            DWORD strip = strip_items[s];
-            if (!strip || IsBadReadPtr((void*)strip, 0x60)) continue;
-            float* o = (float*)(orig + (DWORD)s * 96);  /* saved original */
-            float* p = (float*)strip;                    /* live verts */
-            int v;
-            for (v = 0; v < 3; v++) {  /* 3 verts per strip */
-                float ox = o[v * 8 + 0];
-                float oy = o[v * 8 + 1];
-                float oz = o[v * 8 + 2];
-                /* v55m_43h rev11: rotate around MESH ORIGIN (0,0,0) —
-                 * the strips are in LOCAL space. Do NOT subtract
-                 * cs->x/y/z (world pivot) — that corrupted them. */
-                p[v * 8 + 0] = ox * c + oz * s;
-                p[v * 8 + 1] = oy;
-                p[v * 8 + 2] = -ox * s + oz * c;
-            }
-            total += 3;
+        if (!sub || !orig || IsBadReadPtr((void*)sub, 0x20)) continue;
+        int cnt = *(int*)((char*)sub + 0x4);
+        if (cnt <= 0 || cnt > 100000) continue;
+        float* subverts = *(float**)((char*)sub + 0x448);
+        if (!subverts || subverts < (float*)0x10000) continue;
+        if (IsBadReadPtr((void*)subverts, cnt * 32)) continue;
+        int v;
+        for (v = 0; v < cnt; v++) {
+            float* p = subverts + v * 8;  /* 32-byte stride = 8 floats */
+            float* o = (float*)orig + v * 8;
+            float x = o[0] - cs->x;
+            float z = o[2] - cs->z;
+            p[0] = x*c + z*s + cs->x;
+            p[1] = o[1];
+            p[2] = -x*s + z*c + cs->z;
         }
     }
 
-    /* v55m_43h rev12: The user confirmed the collision EXISTS but is STATIC
-     * (ball lands on it, shadows cast, but it doesn't rotate). The strips
-     * above are the render/shadow geometry. The COLLISION query (0x4564c0,
-     * SpatialTree_Query) iterates TWO lists on the query object:
-     *   this+0x18  (count +0x4, items +0x40C)
-     *   this+0x848 (count +0x4, items +0x40C)
-     * and reads each item's +0/+4/+8 as a position. These items are the
-     * WORLD-SPACE baked collision candidates — the tree was built at load
-     * with baked positions. If the tree lists live on colLevel (the Level),
-     * rotating their items around cs->x,y,z (WORLD pivot) moves the actual
-     * collision. We dump both lists every 30 frames and rotate whichever
-     * has items. This is the 'update collision to match mesh angle,
-     * overriding other setters' function. */
+    /* v55m_43h (rev 5): ROTATE THE SPATIAL TREE ITEMS — THIS is what the
+     * collision query actually reads. The collision query (0x4564c0)
+     * iterates the tree item list at colLevel+0x18 (AthenaList: count
+     * +0x4, items +0x40C) and reads each item's +0/+4/+8 as a position
+     * (0x456596: flds (%edx); 0x4565a5: flds 0x4(%edx) — compared against
+     * the 0x4cf368 sentinel, then passed to the triangle test 0x401aa0).
+     * The tree was built at load with baked positions; the mesh matrix
+     * rotation doesn't move them. We rotate them in place around the
+     * catapult center — BUT the tree items may ALSO store triangle vertex
+     * indices/pointers, so rotating the positions alone may not be
+     * sufficient. We save originals lazily (same registry, appended). */
     {
-        static int dump_ctr = 0;
-        dump_ctr++;
-        int log_tree = (dump_ctr % 30) == 1;
-        /* Try both candidate tree lists on the collision Level. */
-        DWORD tree_candidates[2];
-        tree_candidates[0] = colLevel + 0x18;
-        tree_candidates[1] = colLevel + 0x848;
-        int tc;
-        for (tc = 0; tc < 2; tc++) {
-            DWORD treelist = tree_candidates[tc];
-            if (IsBadReadPtr((void*)treelist, 0x20)) continue;
+        DWORD treelist = colLevel + 0x18;
+        if (!IsBadReadPtr((void*)treelist, 0x20)) {
             int tcount = *(int*)(treelist + 0x4);
-            if (tcount <= 0 || tcount > 4096) continue;
-            DWORD* titems = *(DWORD**)(treelist + 0x40C);
-            if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) continue;
-            /* Save originals lazily (12 bytes/item). */
-            if (!cs->tree_orig) {
-                cs->tree_orig = (DWORD)malloc(tcount * 12);
-                if (cs->tree_orig) {
-                    float* dst = (float*)cs->tree_orig;
-                    int t;
-                    for (t = 0; t < tcount; t++) {
-                        DWORD item = titems[t];
-                        if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                        float* src = (float*)item;
-                        dst[t * 3 + 0] = src[0];
-                        dst[t * 3 + 1] = src[1];
-                        dst[t * 3 + 2] = src[2];
+            if (tcount > 0 && tcount < 4096) {
+                DWORD* titems = *(DWORD**)(treelist + 0x40C);
+                if (titems && !IsBadReadPtr((void*)titems, tcount * 4)) {
+                    /* Save per-item originals (3 floats each) on first call. */
+                    if (!cs->tree_orig) {
+                        cs->tree_orig = (DWORD)malloc(tcount * 12);
+                        if (cs->tree_orig) {
+                            float* dst = (float*)cs->tree_orig;
+                            int t;
+                            for (t = 0; t < tcount; t++) {
+                                DWORD item = titems[t];
+                                if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                                float* src = (float*)item;
+                                dst[t * 3 + 0] = src[0];
+                                dst[t * 3 + 1] = src[1];
+                                dst[t * 3 + 2] = src[2];
+                            }
+                            cs->tree_orig_count = tcount;
+                        }
                     }
-                    cs->tree_orig_count = tcount;
-                    cs->tree_orig_offset = tc;  /* which list had the items */
-                }
-            }
-            if (cs->tree_orig && cs->tree_orig_count == tcount &&
-                cs->tree_orig_offset == tc) {
-                float* tsrc = (float*)cs->tree_orig;
-                int t;
-                for (t = 0; t < tcount; t++) {
-                    DWORD item = titems[t];
-                    if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                    float* o = tsrc + t * 3;
-                    float* p = (float*)item;
-                    /* WORLD pivot (cs->x,y,z) — the tree items are world-space. */
-                    float x = o[0] - cs->x;
-                    float z = o[2] - cs->z;
-                    p[0] = x*c + z*s + cs->x;
-                    p[1] = o[1];
-                    p[2] = -x*s + z*c + cs->z;
-                }
-                if (log_tree) {
-                    FILE* lf = fopen("custom_entities_catapult.log", "a");
-                    if (lf) {
-                        float* p0 = (float*)titems[0];
-                        fprintf(lf, "CATAPULT: TREE list@+0x%X count=%d item0=(%.1f,%.1f,%.1f) rotated\n",
-                            tc == 0 ? 0x18 : 0x848, tcount,
-                            p0 ? p0[0] : 0, p0 ? p0[1] : 0, p0 ? p0[2] : 0);
-                        fclose(lf);
+                    if (cs->tree_orig && cs->tree_orig_count == tcount) {
+                        float* tsrc = (float*)cs->tree_orig;
+                        int t;
+                        for (t = 0; t < tcount; t++) {
+                            DWORD item = titems[t];
+                            if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
+                            float* o = tsrc + t * 3;
+                            float* p = (float*)item;
+                            float x = o[0] - cs->x;
+                            float z = o[2] - cs->z;
+                            p[0] = x*c + z*s + cs->x;
+                            p[1] = o[1];
+                            p[2] = -x*s + z*c + cs->z;
+                        }
                     }
-                }
-                cs->tree_rotated = 1;
-            } else if (log_tree) {
-                FILE* lf = fopen("custom_entities_catapult.log", "a");
-                if (lf) {
-                    fprintf(lf, "CATAPULT: TREE list@+0x%X count=%d (not rotated, orig=%d off=%d)\n",
-                        tc == 0 ? 0x18 : 0x848, tcount,
-                        cs->tree_orig_count, cs->tree_orig_offset);
-                    fclose(lf);
                 }
             }
         }
     }
 
+    /* Also rotate the packed MeshWorld+0x448 buffer if it's been built
+     * (non-zero). It's the same vertex data, packed — rotate it too so a
+     * subsequent BuildVertexBuffer doesn't overwrite our rotation. We
+     * rotate it FROM the same originals (first sub-mesh's original is
+     * enough only if packed == concatenation of sub-meshes; skip this
+     * for now — the tree reads the sub-mesh arrays, and the render uses
+     * the D3D buffer which we don't touch). */
     return total;
 }
 
@@ -4378,26 +4293,18 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->board != board) continue;
         if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
 
-        /* v55m_43h rev8: Catapult present_check log */
-        if ((g_catapult_heartbeat % 30) == 0) {
-            df = fopen("custom_entities_catapult.log", "a");
-            if (df) {
-                DWORD app = *(DWORD*)0x005341E0;
-                BYTE paused = 0;
-                if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x160), 0x20))
-                    paused = *(BYTE*)(app + 0x158);
-                fprintf(df, "CATAPULT: frame=%d ball=0x%08X paused=%d angle=%.2f mbufs=%d\n",
-                    g_catapult_heartbeat, ball, paused, cs->arm_angle, cs->orig_vert_count);
-                fclose(df);
-            }
-        }
-
-        /* v55m_43h rev6: Pause gate — App+0x158 is the paused flag
-         * (verified in App_UpdateAndRender 0x46bf6b). */
+        /* v55m_43h rev13 (PAUSE FIX): The pause flag is scene+0x874
+         * (set to 1 by Scene_CreateGameOverMenu 0x40a920; checked by
+         * GameUpdate 0x469cf0 which skips Scene_Update when set).
+         * REV6 WRONGLY checked App+0x158 — that's the FULLSCREEN flag
+         * (confirmed by raptisoft_live_log: APP_FULLSCREEN 0x158).
+         * That's why the catapult kept rotating when paused.
+         * The scene is at g_Scene (0x5341E4). When paused, scene+0x874
+         * == 1 → skip the rotation. */
         {
-            DWORD app = *(DWORD*)0x005341E0;
-            if (app && app > 0x10000 && !IsBadReadPtr((void*)(app + 0x160), 0x20)) {
-                if (*(BYTE*)(app + 0x158) != 0) continue;  /* paused → skip */
+            DWORD scene = *(DWORD*)0x005341E4;
+            if (scene && scene > 0x10000 && !IsBadReadPtr((void*)(scene + 0x878), 0x20)) {
+                if (*(BYTE*)(scene + 0x874) != 0) continue;  /* paused → skip */
             }
         }
 
@@ -4416,11 +4323,11 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             df = fopen("custom_entities_catapult.log", "a");
             if (df) {
                 if (rot > 0) {
-                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) mbufs=%d strips_ok=1\n",
-                        rot, cs->arm_angle, cs->orig_vert_count);
+                    fprintf(df, "CATAPULT: rotated %d collision verts (angle=%.2f) tree=%d subm=%d\n",
+                        rot, cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
                 } else {
-                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) mbufs=%d\n",
-                        cs->arm_angle, cs->orig_vert_count);
+                    fprintf(df, "CATAPULT: VERT ROTATION FAILED (0 verts, angle=%.2f) tree=%d subm=%d\n",
+                        cs->arm_angle, cs->tree_orig_count, cs->orig_vert_count);
                 }
                 fclose(df);
             }
@@ -4439,11 +4346,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         float dz = ball_z - cs->z;
         float horiz_sq = dx*dx + dz*dz;
         float horiz = (float)sqrt(horiz_sq);
-        /* v55m_43h rev7: restore v55m_28l calibration — the catapult bowl
-         * sits BELOW the object origin (the arm is above the bowl). Ball
-         * measured at dy=-21.4 in testcube. Window: horizontal footprint
-         * radius ~50, vertical -80..+20. */
-        int in_trigger_zone = (horiz_sq < 2500.0f && dy > -80.0f && dy < 20.0f);
+        int in_trigger_zone = (horiz_sq < 14400.0f && dy > -10.0f && dy < 15.0f);  /* v55m_42g: bowl, radius 120 */
         int in_reset_zone   = (horiz_sq < 22500.0f && dy > -60.0f && dy < 70.0f);
 
         if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
