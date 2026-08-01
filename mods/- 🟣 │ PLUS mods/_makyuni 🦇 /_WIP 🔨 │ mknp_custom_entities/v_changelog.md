@@ -1,3 +1,12 @@
+## v55m_44c — Waterwheel reverse rotation + WheelCreak sound
+
+- **CHANGED:** Waterwheel now rotates in the **opposite direction**. Native Dizzy decrements (`angle -= 0.5`/frame), user requested the reverse → now `angle += 0.5`/frame.
+- **ADDED:** WheelCreak sound — replicates the native Dizzy system exactly:
+  - Native Dizzy loads `sounds\wheelcreak` into audio slot `App+0x490` at startup (0x402A820), then at board setup grabs a playable channel: `MOV ECX,[board+0x878]+0x490; CALL 0x459810` → cached at `board+0x4BDC` (0x41D34C).
+  - Per-frame it plays that channel via `Sound_Play3D` (0x459860) with distance attenuation (0x41DC22).
+  - Mod mirrors this at waterwheel spawn: reads the game's own loaded wheelcreak slot `[App+0x490]`, calls `Sound_GetChannel` (0x459810) to get a playable channel, caches it in `ww->creak_channel`, and plays it per-frame from the update loop via `Sound_Play3D(channel, x, y, z, 1.0)`.
+- **SAFETY (no crash):** every pointer deref is NULL + `IsBadReadPtr` guarded; if the wheelcreak slot or channel is unavailable (non-Dizzy level / sound not loaded), the mod simply leaves `creak_channel = 0` and never calls `Sound_Play3D`. Runs on the background thread — the same proven-safe location as the tar sound.
+
 ## v55m_44b — Waterwheel collision fix (non-solid → solid)
 
 - **FIXED:** Waterwheel was non-solid because the spawn code read the collision object from `pc_obj + 0x10D4` — but for PopCylinder that offset holds the **position X float**, so `IsBadReadPtr` rejected it and collision registration was skipped.
