@@ -1190,6 +1190,29 @@ static int is_time_trial_active(void) {
     return 1;
 }
 
+/* Tournament mode: like time trial, but PROFILE_IS_PRACTICE is 0 and the
+ * game creates no recording BTT at App+0x90C. The mod creates and names
+ * the BTT via create_tournament_recording_btt, and the TT-recording NOP
+ * (0x41B690) lets the game record into it. Used to allow segment saving
+ * in tournament (temporary [N] ghosts only). */
+static int is_tournament_active(void) {
+    DWORD app = get_app();
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + APP_PARTY_FLAG), 1)) return 0;
+    if (*(BYTE*)(app + APP_PARTY_FLAG) != 0) return 0;
+    if (IsBadReadPtr((void*)(app + APP_PROFILE_PTR), 4)) return 0;
+    DWORD profile = *(DWORD*)(app + APP_PROFILE_PTR);
+    if (!profile || profile < 0x10000) return 0;
+    if (IsBadReadPtr((void*)(profile + PROFILE_IS_PRACTICE), 1)) return 0;
+    /* practice=0 and we created a recording BTT -> tournament */
+    if (*(BYTE*)(profile + PROFILE_IS_PRACTICE) != 0) return 0;
+    DWORD bttRec = 0;
+    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
+        bttRec = *(DWORD*)(app + APP_BTT_RECORDING);
+    if (!bttRec || bttRec < 0x10000) return 0;
+    return 1;
+}
+
 static int is_time_trial_precheck(void) {
     DWORD app = get_app();
     if (!app) return 0;
@@ -1425,9 +1448,11 @@ static void check_race_state(void) {
     if (!app) return;
 
     int tt = is_time_trial_active();
-    if (!tt) {
+    int tourney = is_tournament_active();
+    int recordingMode = tt || tourney;
+    if (!recordingMode) {
         if (g_recording) {
-            LOG("Left Time Trial mode (was recording %d frames)", g_rawCount);
+            LOG("Left Time Trial/Tournament mode (was recording %d frames)", g_rawCount);
             g_recording = 0;
             g_raceFinished = 0;
             snaps_reset();
@@ -1461,7 +1486,8 @@ static void check_race_state(void) {
             g_recording = 1;
             g_raceFinished = 0;
             g_prevGoalFlag = *(BYTE*)(app + APP_TIMER_FINISHED);
-            LOG("RACE START: '%s' (BTT=0x%X)", raceName, currRecording);
+            LOG("RACE START: '%s' (BTT=0x%X)%s", raceName, currRecording,
+                tourney ? " [TOURNAMENT]" : "");
         } else {
             g_prevRecording = 0;
         }
@@ -1507,16 +1533,24 @@ static void check_race_state(void) {
                 }
 
                 if (g_rawCount > 0) {
-                    save_ghost_for_race("Previous_Run", finishTime, g_rawSnaps, g_rawCount);
-                    int existingTime = get_saved_time(g_currentRaceName);
-                    if (existingTime == NO_TIME) {
-                        LOG("No existing ghost — saving");
-                        save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
-                    } else if (finishTime < existingTime) {
-                        LOG("New time %d < saved %d — overwriting", finishTime, existingTime);
-                        save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
+                    /* Tournament mode: only temporary [N] segment ghosts
+                     * are allowed (already saved via handle_tw_goal_touch).
+                     * Do NOT write full race ghosts here — that would
+                     * clobber the Time Trial confirmed records. */
+                    if (!is_tournament_active()) {
+                        save_ghost_for_race("Previous_Run", finishTime, g_rawSnaps, g_rawCount);
+                        int existingTime = get_saved_time(g_currentRaceName);
+                        if (existingTime == NO_TIME) {
+                            LOG("No existing ghost — saving");
+                            save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
+                        } else if (finishTime < existingTime) {
+                            LOG("New time %d < saved %d — overwriting", finishTime, existingTime);
+                            save_ghost_for_race(g_currentRaceName, finishTime, g_rawSnaps, g_rawCount);
+                        } else {
+                            LOG("New time %d >= saved %d — discarding", finishTime, existingTime);
+                        }
                     } else {
-                        LOG("New time %d >= saved %d — discarding", finishTime, existingTime);
+                        LOG("[tournament] Skipping full-race ghost save (temp segments only)");
                     }
                 } else {
                     LOG("0 snapshots — likely stale goal flag, resetting");
@@ -1612,6 +1646,18 @@ static void handle_tw_goal_touch(void) {
     }
 
     LOG("Goal touch: segments=%d, totalTime=%d", g_segmentCount, totalTime);
+
+    /* Tournament mode: temporary [N] ghosts ONLY. Never promote to
+     * confirmed (N), never delete confirmed records — a tournament run
+     * must not clobber the Time Trial best. Segments just accumulate
+     * for the duration of the tournament session. */
+    if (is_tournament_active()) {
+        LOG("[tournament] Keeping %d temporary segment(s), no promotion");
+        g_segmentCounter = 0;
+        g_segmentCount = 0;
+        memset(g_segmentTimes, 0, sizeof(g_segmentTimes));
+        return;
+    }
 
     int prevBest = get_confirmed_total_time(g_twRaceName);
     int prevSegCount = count_confirmed_segments(g_twRaceName);
