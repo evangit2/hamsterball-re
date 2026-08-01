@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43i
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43j
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4293,24 +4293,22 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         if (cs->board != board) continue;
         if (IsBadReadPtr((void*)cs->obj, 0x1108)) { cs->obj = 0; continue; }
 
-        /* v55m_43h rev14 (PAUSE FIX v2): The pause flag is sceneobj+0x874
-         * (set to 1 by Scene_CreateGameOverMenu 0x40a920; checked by
-         * GameUpdate 0x469cf0 which skips Scene_Update when set).
-         * REV13 WRONGLY read 0x5341E4 as the scene pointer — that global
-         * is a GetTickCount timer (the log shows g_Scene=0x1053CA1F, a
-         * tick value), NOT the scene object. The REAL scene object comes
-         * from cEnt_get_sceneobj(board): board+BOARD_LEVEL → level+
-         * LEVEL_SCENEOBJECT (log shows sceneobj=0x0B47EA48).
-         * When paused, sceneobj+0x874 == 1 → skip the rotation. */
+        /* v55m_43h rev15 (PAUSE FIX v3 — THE REAL ONE): The pause flag is
+         * board+0x874. Scene_Update (0x419c00, board vtable[1]) reads
+         * board+0x3620/+0x4358 — the BOARD is the 0x4400-byte "Scene".
+         * Scene_CreateGameOverMenu (0x40a920) sets board+0x874 = 1, and
+         * GameUpdate (0x469cf0) skips updates when it's 1.
+         * REV14 checked sceneobj+0x874 (the SceneObject from level+0x480)
+         * — WRONG object, that flag is never set. The pause flag is on
+         * the BOARD. When paused, board+0x874 == 1 → skip the rotation. */
         {
-            DWORD sceneobj2 = cEnt_get_sceneobj(board);
-            if (sceneobj2 && sceneobj2 > 0x10000 &&
-                !IsBadReadPtr((void*)(sceneobj2 + 0x878), 0x20)) {
-                if (*(BYTE*)(sceneobj2 + 0x874) != 0) continue;  /* paused → skip */
+            if (board && board > 0x10000 &&
+                !IsBadReadPtr((void*)(board + 0x878), 0x20)) {
+                if (*(BYTE*)(board + 0x874) != 0) continue;  /* paused → skip */
             } else if (log_now) {
                 df = fopen("custom_entities_catapult.log", "a");
                 if (df) {
-                    fprintf(df, "CATAPULT: PAUSEGATE sceneobj=0x%08X (bad read — gate disabled)\n", sceneobj2);
+                    fprintf(df, "CATAPULT: PAUSEGATE board=0x%08X (bad read — gate disabled)\n", board);
                     fclose(df);
                 }
             }
@@ -5603,7 +5601,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43i Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43j Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
