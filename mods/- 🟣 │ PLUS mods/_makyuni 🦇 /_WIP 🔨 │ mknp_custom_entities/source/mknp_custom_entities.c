@@ -4185,32 +4185,6 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                     p[v * 8 + 1] = oy;
                     p[v * 8 + 2] = -ox * s + oz * c;
                 }
-                /* v55m_43l: ALSO update the strip's AABB. The collision
-                 * query (0x465fd3-0x466008) calls 0x4580d0 = a BOX
-                 * containment test against ecx+0x0/+0x4/+0x8 (min) and
-                 * ecx+0xC/+0x10/+0x14 (max) BEFORE testing vertices.
-                 * The strip layout: +0..+0x14 = AABB (min=max=v0? no:
-                 * min at +0/+4/+8, max at +0xC/+0x10/+0x14), +0x20 = v1,
-                 * +0x40 = v2. If the AABB stays stale (unrotated), the
-                 * box test fails once the rotated verts leave the old
-                 * box → collision 'doesn't work all the time'.
-                 * Fix: recompute the AABB from the 3 rotated vertices
-                 * and write min to +0/+4/+8, max to +0xC/+0x10/+0x14. */
-                {
-                    float* v0 = p + 0;        /* +0 */
-                    float* v1 = p + 8;        /* +0x20 */
-                    float* v2 = p + 16;       /* +0x40 */
-                    float minx = v0[0], miny = v0[1], minz = v0[2];
-                    float maxx = v0[0], maxy = v0[1], maxz = v0[2];
-                    if (v1[0] < minx) minx = v1[0]; if (v1[0] > maxx) maxx = v1[0];
-                    if (v1[1] < miny) miny = v1[1]; if (v1[1] > maxy) maxy = v1[1];
-                    if (v1[2] < minz) minz = v1[2]; if (v1[2] > maxz) maxz = v1[2];
-                    if (v2[0] < minx) minx = v2[0]; if (v2[0] > maxx) maxx = v2[0];
-                    if (v2[1] < miny) miny = v2[1]; if (v2[1] > maxy) maxy = v2[1];
-                    if (v2[2] < minz) minz = v2[2]; if (v2[2] > maxz) maxz = v2[2];
-                    p[0] = minx; p[1] = miny; p[2] = minz;
-                    p[3] = maxx; p[4] = maxy; p[5] = maxz;  /* +0xC/+0x10/+0x14 */
-                }
                 total += 3;
             }
         }
