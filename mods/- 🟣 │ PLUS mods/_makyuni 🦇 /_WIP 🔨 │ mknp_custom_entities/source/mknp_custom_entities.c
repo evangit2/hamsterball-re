@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43r
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43s
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -327,6 +327,7 @@ typedef struct {
     DWORD tree_orig_mw;  /* saved originals for mw+0x18 items */
     int tree_count_mw;   /* item count at mw+0x18 */
     int tree_ok_mw;      /* rotation succeeded for mw+0x18 */
+    int rot_dump_ctr;    /* v55m_43s: counter for strip0 position dumps */
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
@@ -4300,6 +4301,21 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
             if (strip_count <= 0 || strip_count > 4096) continue;
             DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
             if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
+            /* v55m_43s: dump first strip vertex of the FIRST registered
+             * MeshBuffer (bowl if mb[0] registered, arm if mb[1]) so we
+             * can SEE whether the rotation is actually moving it. */
+            if (ri == 0 && (cs->rot_dump_ctr++ % 90) == 0) {
+                DWORD s0 = strip_items[0];
+                if (s0 && !IsBadReadPtr((void*)s0, 0x60)) {
+                    float* v0 = (float*)s0;
+                    FILE* lf = fopen("custom_entities_catapult.log", "a");
+                    if (lf) {
+                        fprintf(lf, "CATAPULT: mb[%d] strip0 v0=(%.1f,%.1f,%.1f) angle=%.1f strips=%d\n",
+                            ri, v0[0], v0[1], v0[2], cs->arm_angle, strip_count);
+                        fclose(lf);
+                    }
+                }
+            }
             int si;
             for (si = 0; si < strip_count; si++) {
                 DWORD strip = strip_items[si];
@@ -5670,7 +5686,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43r Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43s Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
