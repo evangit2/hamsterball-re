@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43s
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43t
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -689,7 +689,7 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
             -cs->x, -cs->y, -cs->z, 1
         };
         float m2[16] = {
-            c,0,-s,0,  0,1,0,0,  s,0,c,0,  0,0,0,1
+            c,-s,0,0,  s,c,0,0,  0,0,1,0,  0,0,0,1
         };
         float m3[16] = {
             1,0,0,0,  0,1,0,0,  0,0,1,0,
@@ -4327,10 +4327,15 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                     float ox = o[v * 8 + 0];
                     float oy = o[v * 8 + 1];
                     float oz = o[v * 8 + 2];
-                    /* Rotate around MESH ORIGIN (0,0,0) — local space. */
-                    p[v * 8 + 0] = ox * c + oz * s;
-                    p[v * 8 + 1] = oy;
-                    p[v * 8 + 2] = -ox * s + oz * c;
+                    /* v55m_43t: ROTATE AROUND Z AXIS (X/Y plane, Z stays
+                     * constant) per user request. Previously Y-axis
+                     * (x'=x*c+z*s, z'=-x*s+z*c). Z-axis:
+                     *   x' = x*cos - y*sin
+                     *   y' = x*sin + y*cos
+                     *   z' = z */
+                    p[v * 8 + 0] = ox * c - oy * s;
+                    p[v * 8 + 1] = ox * s + oy * c;
+                    p[v * 8 + 2] = oz;
                 }
                 total += 3;
             }
@@ -5686,7 +5691,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43s Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43t Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
