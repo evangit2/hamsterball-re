@@ -121,8 +121,6 @@ class Raster:
         def lerp(a):
             return (w0 * a[0] * iw[0] + w1 * a[1] * iw[1] + w2 * a[2] * iw[2]) / iw_pix
         # shade = per-vertex shaded color (gouraud)
-        shade = lerp(tri['R'] if False else tri['shade']) if False else None
-        # use per-vertex shaded RGB channels directly
         R = lerp(tri['R']); G = lerp(tri['G']); B = lerp(tri['B'])
         tex = tri['tex']
         if tex is None:
@@ -130,9 +128,14 @@ class Raster:
         else:
             TH, TW = tex.shape[0], tex.shape[1]
             U = lerp(tri['U']); V = lerp(tri['V'])
-            tu = np.clip(U * (TW - 1), 0, TW - 1).astype(np.int32)
-            tv = np.clip(V * (TH - 1), 0, TH - 1).astype(np.int32)
-            tr = tex[tv, tu]  # (H,W,4)
+            # bilinear filtering (fixes chunky nearest-neighbor on 2x2 checkers)
+            fu = np.clip(U * (TW - 1), 0, TW - 1)
+            fv = np.clip(V * (TH - 1), 0, TH - 1)
+            u0 = np.floor(fu).astype(np.int32); v0 = np.floor(fv).astype(np.int32)
+            u1 = np.minimum(u0 + 1, TW - 1); v1 = np.minimum(v0 + 1, TH - 1)
+            fx = (fu - u0)[..., None]; fy = (fv - v0)[..., None]
+            c00 = tex[v0, u0]; c10 = tex[v0, u1]; c01 = tex[v1, u0]; c11 = tex[v1, u1]
+            tr = (c00 * (1 - fx) + c10 * fx) * (1 - fy) + (c01 * (1 - fx) + c11 * fx) * fy
             alpha = tr[..., 3:4]
             rgb = tr[..., :3] * np.stack([R, G, B], axis=-1)
             # alpha blend against background
@@ -163,7 +166,8 @@ class Scene:
         cy, sy = math.cos(yaw), math.sin(yaw)
         cx, sx = math.cos(pitch), math.sin(pitch)
         Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], np.float64)
-        Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]], np.float64)
+        # positive pitch = camera above looking down (top-down iso)
+        Rx = np.array([[1, 0, 0], [0, cx, sx], [0, -sx, cx]], np.float64)
         M = Rx @ Ry
         q = (pts - self.center) @ M.T
         qz = q[:, 2] + self.D
@@ -180,7 +184,8 @@ class Scene:
         cy, sy = math.cos(yaw), math.sin(yaw)
         cx, sx = math.cos(pitch), math.sin(pitch)
         Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], np.float64)
-        Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]], np.float64)
+        # positive pitch = camera above looking down (top-down iso)
+        Rx = np.array([[1, 0, 0], [0, cx, sx], [0, -sx, cx]], np.float64)
         M = Rx @ Ry
         n = 0
         for tri in self._iter_tris(M, with_tex):
@@ -209,6 +214,10 @@ class Scene:
                     yield from walk(c)
                 return
             for geom in node['geoms']:
+                gname = geom['name']
+                # E: = invisible ball-trigger volume (no_render) — skip in vision
+                if gname.startswith('E:'):
+                    continue
                 mat = geom['material']
                 tex = None
                 if with_tex and mat:
