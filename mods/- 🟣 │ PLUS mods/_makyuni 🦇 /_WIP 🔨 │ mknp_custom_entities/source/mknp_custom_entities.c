@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43w
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_43x
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -4401,18 +4401,30 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             }
         }
 
-        /* v55m_43w: Tower-style exponential rotation ramp, adapted to our
-         * X-axis system. Native Tower catapult (Catapult_Update 0x4342C0):
-         *   - on trigger: timer = 50 frames, speed starts 0.25 rad/frame
-         *   - each frame: speed *= 1.25, clamped at 80.0 rad/frame
-         *   - angle += speed each frame (render 0x433f43)
-         * We replicate that exactly: arm_angle (degrees) += speed*57.2958.
-         * spin_speed starts at 0.25 on trigger and ramps exponentially. */
+        /* v55m_43x: CORRECTED Tower-style rotation. The native catapult
+         * (render 0x433f3d + update 0x4342c0):
+         *   - trigger: timer=50, speed=50.0 rad/frame, angle=0
+         *   - update while timer>0: speed = min(speed*1.25, 80.0), timer--
+         *   - render every frame: angle += speed; speed -= 2.0
+         *   - stop when speed burns out (angle clamp at 0 clears active)
+         * The angle has NO upper limit — the limit is the timer + speed
+         * decay. We replicate: spin_speed ramps while countdown>0, decays
+         * 2.0/frame, stops when <= 0. arm_angle accumulates in degrees.
+         * Spin is bounded by countdown (50) + decay time (~39 more). */
         if (cs->launching) {
-            cs->spin_speed *= 1.25f;
-            if (cs->spin_speed > 80.0f) cs->spin_speed = 80.0f;
+            /* update: ramp while countdown active */
+            if (cs->countdown > 0) {
+                cs->spin_speed *= 1.25f;
+                if (cs->spin_speed > 80.0f) cs->spin_speed = 80.0f;
+            }
+            /* render: angle += speed; speed -= 2.0 */
             cs->arm_angle += cs->spin_speed * 57.29578f;
             if (cs->arm_angle > 360.0f) cs->arm_angle -= 360.0f;
+            cs->spin_speed -= 2.0f;
+            if (cs->spin_speed <= 0.0f) {
+                cs->spin_speed = 0.0f;
+                cs->launching = 0;  /* rotation done — stop */
+            }
         }
 
         /* v55m_43h: Rotate the collision vertex data to match the render.
@@ -4475,7 +4487,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launching = 1;
             cs->countdown = 50;  /* v55m_42j: native Tower windup */
             cs->was_in_zone = 1;
-            cs->spin_speed = 0.25f;  /* v55m_43w: Tower-style ramp start */
+            cs->spin_speed = 50.0f;  /* v55m_43x: native Tower trigger speed (0x434056) */
             float yaw = cs->yaw;
             cs->launch_dx = -(float)sin(yaw);
             cs->launch_dz = -(float)cos(yaw);
@@ -5706,7 +5718,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_43w Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_43x Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
