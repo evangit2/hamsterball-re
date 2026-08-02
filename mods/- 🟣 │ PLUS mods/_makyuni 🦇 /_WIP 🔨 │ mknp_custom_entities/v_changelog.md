@@ -1,3 +1,12 @@
+## v55m_44n — FINAL waterwheel fix: remove PopCylinder entirely (native-style mesh render)
+
+MAKYUNI's question was the key: *"why can't you load the code that lastly worked with Level3-WaterWheel.MESHWORLD, but make it use my Waterwheel.MESHWORLD instead?"*
+
+- **Root cause of the whole 44i–44m saga:** the mod wrapped the waterwheel mesh in `PopCylinder_ctor` (0x436EE0), which internally creates a CollisionLevel (0x465080, vtable 0x4D9068). That CollisionLevel's render (vtable[18]=0x465650) walks its COMPONENT meshbuffers (0x7C bytes, NO strip arrays) → `+0x418` strip-array deref is OUT OF BOUNDS → AV at 0x465789/0x465777. Every "fix" (44i disable collision, 44j neutralize, 44k recursive, 44l Present-hook, 44m selective) was fighting a problem the mod itself created.
+- **The native game NEVER does this.** Dizzy loads `Level3-WaterWheel.MESHWORLD` via the SAME loader (0x461510 Level_MeshWorldCtor, 2nd param = `[board+0x878]+0x174`), stores the mesh at `board+0x4374`, and the board renders it directly. No PopCylinder, no CollisionLevel, no crash. The loader code is IDENTICAL for both files — verified: both `Level3-WaterWheel.MESHWORLD` and the user's `Waterwheel.MESHWORLD` parse perfectly (all meshbuffers have strips, both BRANCH octrees, valid S5 vertex refs).
+- **44n fix:** waterwheel = plain MeshWorld (vtable 0x4D8FB0, [18]=0x470150 SceneObject render which recurses into octree children). Hook [18] with the X-axis rotation matrix (same 0.5°/frame as native), register the MESH in `board+0xCD4` render list + `sceneobj+0x1C`. NO PopCylinder → NO CollisionLevel → crash path structurally gone. All neutralization code (44i-44m) removed. This is EXACTLY "the code that worked with Level3-WaterWheel, pointed at your Waterwheel.MESHWORLD" — same loader, same native-style wrapper.
+- **Verified:** build EXIT 0 (320,344 B, md5 f16091f9), banner `v55m_44n`, Wine smoke test survived 45s.
+
 ## v55m_44m — Fix 44l regression: SELECTIVE board-walk (don't kill level geometry)
 
 - **FIXED:** 44l's log shows the crash is GONE (`Present-hook re-neutralization active (15 nodes)` — the main-thread pass runs; level loads, no crash) — **but 44l's blanket board-walk neutralized the board's OWN CollisionLevel tree (11 nodes: 0x0C77AAE8→0x0C7A28F0 = the level's ground/walls geometry)**. Setting `+0x430=1` + zeroing component meshbuffer counts on those nodes killed the level's collision AND lighting → **infinite fall through the ground + pale waterwheel color**.
