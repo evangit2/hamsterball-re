@@ -1,3 +1,10 @@
+## v55m_44h — Fix waterwheel never spawning (44g validation too strict)
+
+- **FIXED:** The v55m_44g mesh-validation rejected `meshbuffer count=0` and fell back to `_default` — but the user's log showed BOTH `levels\Waterwheel` AND `levels\_default` load with `count=0`, and the wheel never spawned ("it's not appearing").
+- **Why count=0 is valid:** The PopCylinder render `0x45E0E0` handles an empty meshbuffer list natively — `cmp [eax+4],0; jg` skips the strip loop (`xor edi,edi`), then falls through to the SceneObject render `0x470150` which draws from the mesh's own vertex data. So count=0 meshes render fine; my 44g check wrongly killed them.
+- **Fix:** validation now only rejects negative counts, absurd counts (>10000), or genuinely unreadable items pointers. `count=0` is accepted and logged.
+- No crash — the 44f crash (`0001:00065789`) is gone; the wheel simply needs its spawn accepted.
+
 ## v55m_44g — Waterwheel mesh validation + _default fallback on invalid/corrupt file
 
 - **FIXED:** A malformed/corrupt custom `Waterwheel.MESHWORLD` could crash the level render at `0001:00065789` (VA `0x465789` — render reads strip array at `mb+0x418` of a meshbuffer, garbage data → crash).

@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44g
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44h
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -169,7 +169,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   25 = Tarbubble (no _ctor, no entity spawned — position-only marker, mod handles tar sinking)
  *   26 = Waterwheel (no _ctor, mod loads mesh + rotates per-frame via Gfx_RotateY + mesh vtable)
  *        Default mesh: levels\Waterwheel (user-provided Waterwheel.MESHWORLD),
- *        falls back to levels\_default if missing or invalid (v55m_44g).
+ *        falls back to levels\_default if missing or invalid (v55m_44h).
  *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
  *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
  *   29 = Gear_ctor (0x437690, 0x1514) — 9 params: (this, board, x, y, z, x2, y2, z2, mesh)
@@ -2092,7 +2092,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 }
             }
 
-            /* v55m_44g: Load the mesh; if it produces an invalid meshbuffer
+            /* v55m_44h: Load the mesh; if it produces an invalid meshbuffer
              * list (malformed/corrupt file), retry with levels\_default so a
              * bad custom Waterwheel.MESHWORLD cannot crash the level render
              * (crash 0x465789 = render reads strip array at mb+0x418 of a
@@ -2116,15 +2116,19 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         return;
                     }
                     /* Validate the meshbuffer list: MeshWorld+0x2C AthenaList,
-                     * count at +0x04, items at +0x40C. Each entry must be a
-                     * readable meshbuffer. If empty/garbage, the render would
-                     * read mb+0x418 (strips) out of bounds → crash. */
+                     * count at +0x04, items at +0x40C. NOTE (v55m_44h):
+                     * count=0 is VALID — the render (0x45E0E0) skips the empty
+                     * list (cmp [eax+4],0; jg → falls to SceneObject render
+                     * 0x470150) and draws from the mesh's own vertex data.
+                     * Rejecting count=0 made the wheel never spawn (44g bug).
+                     * Only reject unreadable memory or absurd counts. */
                     if (!IsBadReadPtr((void*)(mesh + 0x2C), 0x10)) {
                         DWORD* mb_list = (DWORD*)(mesh + 0x2C);
                         int mb_count = *(int*)(mb_list + 1);
-                        if (mb_count <= 0 || mb_count > 10000 ||
-                            IsBadReadPtr((void*)((BYTE*)mb_list + 0x40C), 4) ||
-                            IsBadReadPtr(*(void**)((BYTE*)mb_list + 0x40C), mb_count * 4)) {
+                        if (mb_count < 0 || mb_count > 10000 ||
+                            (mb_count > 0 &&
+                             (IsBadReadPtr((void*)((BYTE*)mb_list + 0x40C), 4) ||
+                              IsBadReadPtr(*(void**)((BYTE*)mb_list + 0x40C), mb_count * 4)))) {
                             if (logf) fprintf(logf, "  WATERWHEEL: '%s' loaded but meshbuffer list invalid (count=%d), falling back to levels\\_default\n",
                                               ww_path, mb_count);
                             mesh = 0;
@@ -5872,7 +5876,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44g Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44h Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
