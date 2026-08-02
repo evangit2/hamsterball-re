@@ -1,3 +1,13 @@
+## v55m_44l — FINAL level-start crash fix: main-thread re-neutralization (Present hook) + board CollisionLevel coverage
+
+- **FIXED:** The 44k crash log (user's second run) shows `v55m_44k` banner, **4 nodes render-neutralized** (root 0x0C7AF550 + 3 children), yet the crash **still occurred** at `0001:00065789` during `Background / FinishLoad(OK)` — the SAME CollisionLevel render walk (`0x465789`).
+- **Why 44k was still insufficient:** 44k's per-frame re-neutralization ran in the **mod's background thread** (16ms tick loop). The game's FinishLoad runs on the **game's own loading thread** and renders the collision level **between the background thread's ticks** — a newly registered/rebuilt CollisionLevel node with `+0x430=0` hits the renderer before the next mod-thread pass. The 4 neutralized nodes prove the spawn-time + background passes ran; the crashing node was created/registered **after** them.
+- **Fix (44l):**
+  1. **Main-thread re-neutralization via the Present hook** (`gluebie_present_helper`, installed at `App_ResetFrame 0x46C200`): every frame, on the main thread, **before any D3D render**, re-walks and re-neutralizes every active waterwheel's CollisionLevel tree. The Present hook runs synchronously with rendering — a node registered in the same frame is neutralized before the renderer reaches it. Closes the background-thread race for good.
+  2. **Board CollisionLevel coverage**: the neutralizer now also walks `board+0x8B0`'s CollisionLevel tree (the board's own collision render path, which recurses into sub-list children during FinishLoad). If the wheel's CollisionLevel (or a FinishLoad clone of it) is ever appended there, it's `+0x430=1` before the renderer walks its broken component meshbuffers.
+  3. **One-shot proof log**: `WATERWHEEL: Present-hook re-neutralization active (N nodes)` — written once when the Present pass first neutralizes nodes, so the user's next log proves the main-thread pass is running.
+- All writes remain byte-flag safe (`+0x430=1` only; `+0x434` pointer never touched). Idempotent + cheap (bounded tree walks over ≤8 wheels + 1 board tree per frame).
+
 ## v55m_44k — Fix level-start crash for real: RECURSIVE + per-frame CollisionLevel neutralization
 
 - **FIXED:** 44j still crashed at `0001:0006578C` — but the crash **moved from Draw (44i) to Background/FinishLoad (44j)**. The 44j log proved the root + 3 children were neutralized, yet the render still walked a broken node.
