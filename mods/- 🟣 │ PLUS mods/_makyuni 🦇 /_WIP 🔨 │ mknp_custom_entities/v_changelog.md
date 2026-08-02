@@ -1,3 +1,13 @@
+## v55m_44k — Fix level-start crash for real: RECURSIVE + per-frame CollisionLevel neutralization
+
+- **FIXED:** 44j still crashed at `0001:0006578C` — but the crash **moved from Draw (44i) to Background/FinishLoad (44j)**. The 44j log proved the root + 3 children were neutralized, yet the render still walked a broken node.
+- **Why 44j was insufficient:** the CollisionLevel tree is **deeper than 2 levels**. Post-init `0x465860` builds it recursively: `0x465903 mov 0x430(%edi),%al` — **each child copies `+0x430` from its PARENT at construction time**, so every node built under a `+0x430=0` parent has `+0x430=0`. The render at `0x4657fc` recurses through `+0x1C`/`+0x424` sub-lists calling `vtable[18]` on **every** child at **any** depth — a single grandchild/leaf with `+0x430=0` walks its broken 0x7C component meshbuffers → AV. 44j's shallow 2-level scan missed them.
+- **Fix (44k):**
+  1. **Recursive full-tree walk** (`cEnt_neutralize_collision_tree`): from each CollisionLevel root, walks the entire subtree (bounded 512-node stack, 64-node visited set, cycle-safe), sets `+0x430=1` and zeroes the component meshbuffer count (`[node+0x08]+0x30`) on **every** CollisionLevel node (vtable `0x4D9068`).
+  2. **Per-frame re-neutralization** in the polling thread: every 16ms, for every active waterwheel, re-walks and re-neutralizes. The game re-registers/re-builds CollisionLevel nodes during FinishLoad **after** the spawn-time patch — one-shot neutralization can never cover nodes that don't exist yet. Per-frame re-application catches them before the renderer reaches them. (Idempotent, cheap: bounded tree walk over ≤8 wheels, no logging with NULL logf.)
+- All writes are safe: `+0x430` is a byte FLAG (byte-sized accesses only, set to 1 at `0x462363` when a meshbuffer list has items); `+0x434` is a render Level POINTER — never touched.
+- New log lines: `WATERWHEEL: collision level 0x... render-neutralized (root)` + `collision node 0x... render-neutralized (total N)` per node (spawn-time pass only; per-frame passes log nothing).
+
 ## v55m_44j — Fix level-start crash for real: neutralize the CollisionLevel render
 
 - **FIXED:** Level-start crash `0001:00065789` (VA `0x465789`) still happened in 44i — the same CollisionLevel render walk, ~7s into Draw after `FinishLoad(OK)`.

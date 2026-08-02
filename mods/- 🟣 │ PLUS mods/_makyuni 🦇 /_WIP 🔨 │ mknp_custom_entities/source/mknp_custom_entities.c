@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44j
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44k
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -837,6 +837,92 @@ struct WaterWheelState {
 };
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
+
+/* v55m_44k: Recursively neutralize a CollisionLevel tree so its render
+ * (vtable[18] = 0x465650) skips the broken component-meshbuffer walk.
+ *
+ * The crash: the Waterwheel mesh loads via the component SceneObject loader
+ * (0x4706e0) producing 0x7C-byte meshbuffers with NO strip arrays. The
+ * CollisionLevel render walks each meshbuffer:
+ *   cmp [mb+0x10],0 ; mov 0x418(%esi),%edx ; mov (%edx),%ecx  (strip array)
+ * → +0x418 is OUT OF BOUNDS on a 0x7C meshbuffer → garbage strip pointer
+ * → AV at 0x465780/0x465789/0x46578C (SEH-resumed mid-instruction).
+ *
+ * The render guard at 0x46568f:
+ *   cmp [this+0x430],0 ; jne 0x4657fc   (skip meshbuffer walk)
+ * Setting +0x430 = 1 skips the walk. But post-init 0x465903 copies +0x430
+ * from the PARENT at construction, and the render recurses through the
+ * +0x18 sub-list (count +0x1C, items +0x424) calling vtable[18] on every
+ * child — so EVERY node in the tree must have +0x430=1, or the walk runs
+ * on that node's broken meshbuffers. This walks the whole tree (bounded,
+ * cycle-safe) from a given root/list head and neutralizes every
+ * CollisionLevel node (vtable 0x4D9068) found.
+ *
+ * Returns number of nodes neutralized. */
+static int cEnt_neutralize_collision_tree(DWORD root, FILE* logf) {
+    DWORD stack[512];
+    DWORD sp = 0;
+    DWORD visited[64];
+    DWORD vc = 0;
+    int count = 0;
+    if (!root || IsBadReadPtr((void*)root, 0x480)) return 0;
+    stack[sp++] = root;
+    while (sp > 0) {
+        DWORD node = stack[--sp];
+        DWORD vi;
+        int seen = 0;
+        for (vi = 0; vi < vc; vi++) if (visited[vi] == node) { seen = 1; break; }
+        if (seen) continue;
+        if (vc < 64) visited[vc++] = node;
+        if (!node || IsBadReadPtr((void*)node, 0x480)) continue;
+        if (*(DWORD*)node != 0x4D9068) continue;  /* only CollisionLevel nodes */
+        *(BYTE*)(node + 0x430) = 1;
+        DWORD ncomp = *(DWORD*)((char*)node + 0x08);
+        if (ncomp && !IsBadReadPtr((void*)(ncomp + 0x30), 4)) {
+            *(DWORD*)((char*)ncomp + 0x30) = 0;  /* zero meshbuffer count */
+        }
+        count++;
+        if (logf) fprintf(logf, "  WATERWHEEL: collision node 0x%08X render-neutralized (total %d)\n", node, count);
+        DWORD ncount = *(DWORD*)((char*)node + 0x1C);
+        DWORD nitems = *(DWORD*)((char*)node + 0x424);
+        if (ncount > 0 && ncount < 0x1000 && nitems &&
+            !IsBadReadPtr((void*)nitems, ncount * 4)) {
+            DWORD ci;
+            for (ci = ncount; ci > 0; ci--) {
+                DWORD gchild = *(DWORD*)((char*)nitems + (ci - 1) * 4);
+                if (gchild && sp < 512) stack[sp++] = gchild;
+            }
+        }
+    }
+    return count;
+}
+
+/* v55m_44k: Neutralize the CollisionLevel tree of a spawned waterwheel
+ * (pc_obj). Walks BOTH the pc_obj's +0x18 render sub-list and the
+ * CollisionLevel's own sub-list, then the whole tree from each. */
+static void cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
+    DWORD col = pc_obj ? *(DWORD*)((char*)pc_obj + 0x10E0) : 0;
+    if (col && !IsBadReadPtr((void*)col, 0x480) && *(DWORD*)col == 0x4D9068) {
+        if (logf) fprintf(logf, "  WATERWHEEL: collision level 0x%08X render-neutralized (root)\n", col);
+        cEnt_neutralize_collision_tree(col, logf);
+    }
+    /* Also walk the pc_obj's own +0x18 render sub-list in case the
+     * CollisionLevel was cloned there by Stands_ctor 0x462980-0x462989. */
+    if (pc_obj && !IsBadReadPtr((void*)(pc_obj + 0x1C), 4)) {
+        DWORD rcount = *(DWORD*)((char*)pc_obj + 0x1C);
+        DWORD ritems = *(DWORD*)((char*)pc_obj + 0x424);
+        if (rcount > 0 && rcount < 0x1000 && ritems &&
+            !IsBadReadPtr((void*)ritems, rcount * 4)) {
+            DWORD ci;
+            for (ci = 0; ci < rcount; ci++) {
+                DWORD child = *(DWORD*)((char*)ritems + ci * 4);
+                if (child && !IsBadReadPtr((void*)child, 0x480) && *(DWORD*)child == 0x4D9068) {
+                    cEnt_neutralize_collision_tree(child, logf);
+                }
+            }
+        }
+    }
+}
 
 /* v55m_44: Waterwheel render hook — X-axis rotation replicating native Dizzy
  * waterwheel (verified via Ghidra/objdump):
@@ -2246,60 +2332,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                  * the component meshbuffer count at [col+0x08]+0x30 so the
                  * walk can never run even if +0x430 is reset. */
                 {
-                    DWORD col = *(DWORD*)((char*)pc_obj + 0x10E0);
-                    if (col && !IsBadReadPtr((void*)col, 0x480)) {
-                        /* 0x46568f: cmp [this+0x430],0 ; jne 0x4657fc
-                         * Non-zero +0x430 → render skips the meshbuffer walk.
-                         * NOTE: +0x430 is a byte FLAG (copied from parent at
-                         * 0x465903: mov 0x430(%edi),%al) — safe to set.
-                         * Do NOT touch sceneobj+0x434 — that's a render
-                         * Level POINTER, corrupting it would crash elsewhere. */
-                        *(BYTE*)(col + 0x430) = 1;
-                        /* Belt-and-suspenders: zero the component meshbuffer
-                         * count at [col+0x08]+0x30 (list head +0x2C, count
-                         * +0x30) so the walk can never run even if +0x430 is
-                         * reset. 0x4656c4: cmp count,0 ; jg → skip list. */
-                        DWORD comp = *(DWORD*)((char*)col + 0x08);
-                        if (comp && !IsBadReadPtr((void*)(comp + 0x30), 4)) {
-                            *(DWORD*)((char*)comp + 0x30) = 0;
-                        }
-                        if (logf) fprintf(logf, "  WATERWHEEL: collision level 0x%08X render-neutralized (+0x430=1, mbcount=0)\n", col);
-                    }
-                    /* Also neutralize CollisionLevel children cloned into
-                     * the +0x18 render sub-list (count +0x1C, items +0x424)
-                     * of BOTH pc_obj (via Stands_ctor 0x462980-0x462989) and
-                     * the CollisionLevel itself (post-init 0x465947+ appends
-                     * recursive children into this+0x18). The render at
-                     * 0x4657fc iterates [col+0x1C]/[col+0x424] calling
-                     * vtable[18] — each child CollisionLevel must also skip
-                     * its meshbuffer walk or it crashes at the same site. */
-                    {
-                        DWORD scan;
-                        DWORD lists[2];
-                        lists[0] = pc_obj;
-                        lists[1] = col;
-                        for (scan = 0; scan < 2; scan++) {
-                            DWORD base = lists[scan];
-                            if (!base || IsBadReadPtr((void*)(base + 0x1C), 4)) continue;
-                            DWORD rcount = *(DWORD*)((char*)base + 0x1C);
-                            DWORD ritems = *(DWORD*)((char*)base + 0x424);
-                            if (rcount <= 0 || rcount >= 0x1000 || !ritems) continue;
-                            if (IsBadReadPtr((void*)ritems, rcount * 4)) continue;
-                            DWORD ci;
-                            for (ci = 0; ci < rcount; ci++) {
-                                DWORD child = *(DWORD*)((char*)ritems + ci * 4);
-                                if (!child || IsBadReadPtr((void*)child, 0x480)) continue;
-                                if (*(DWORD*)child == 0x4D9068) {
-                                    *(BYTE*)(child + 0x430) = 1;
-                                    DWORD ccomp = *(DWORD*)((char*)child + 0x08);
-                                    if (ccomp && !IsBadReadPtr((void*)(ccomp + 0x30), 4)) {
-                                        *(DWORD*)((char*)ccomp + 0x30) = 0;
-                                    }
-                                    if (logf) fprintf(logf, "  WATERWHEEL: collision child 0x%08X (list base 0x%08X) render-neutralized\n", child, base);
-                                }
-                            }
-                        }
-                    }
+                    /* v55m_44k: recursive full-tree neutralization (helper
+                     * defined above; walks root + all descendants). */
+                    cEnt_neutralize_waterwheel_collision((DWORD)pc_obj, logf);
                 }
                 /* v55m_44b code (DISABLED 44i):
                 {
@@ -5965,7 +6000,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44j Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44k Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -6090,7 +6125,38 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         }
 
         /* Check if board changed (new level loaded) */
-        if (board == g_spawned_board) continue;
+        if (board == g_spawned_board) {
+            /* v55m_44k: PER-FRAME re-neutralization. The game can re-register
+             * or re-build CollisionLevel nodes during FinishLoad (post-init
+             * 0x465860 recursively clones children; render sub-list traversal
+             * at 0x4657fc calls vtable[18] on every node). 44j's one-shot
+             * neutralization ran at spawn but the crash MOVED to
+             * Background/FinishLoad — nodes built AFTER the patch still have
+             * +0x430=0 and walk the broken component meshbuffers (0x7C, no
+             * strip arrays) → AV 0x465789/0x46578C. Re-apply every frame for
+             * every active waterwheel so any newly-registered node is
+             * neutralized before the renderer reaches it. Cheap: each pass is
+             * a bounded tree walk over ≤8 waterwheels. */
+            if (g_waterwheel_count > 0) {
+                int wi;
+                for (wi = 0; wi < g_waterwheel_count; wi++) {
+                    struct WaterWheelState* ww = &g_waterwheels[wi];
+                    if (ww->active && ww->pc_obj) {
+                        DWORD col = *(DWORD*)((char*)ww->pc_obj + 0x10E0);
+                        if (col && !IsBadReadPtr((void*)col, 0x480) &&
+                            *(DWORD*)col == 0x4D9068) {
+                            /* Re-neutralize every frame (idempotent, cheap:
+                             * bounded tree walk, no logging with NULL logf).
+                             * Covers nodes re-registered or re-built after
+                             * the spawn-time pass, and child flags reset
+                             * while the root flag stayed 1. */
+                            cEnt_neutralize_waterwheel_collision(ww->pc_obj, NULL);
+                        }
+                    }
+                }
+            }
+            continue;
+        }
 
         /* New level — reset bridgeslams */
         {
