@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44f
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44g
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -169,7 +169,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
  *   25 = Tarbubble (no _ctor, no entity spawned — position-only marker, mod handles tar sinking)
  *   26 = Waterwheel (no _ctor, mod loads mesh + rotates per-frame via Gfx_RotateY + mesh vtable)
  *        Default mesh: levels\Waterwheel (user-provided Waterwheel.MESHWORLD),
- *        falls back to levels\_default if missing.
+ *        falls back to levels\_default if missing or invalid (v55m_44g).
  *   27 = Spinner_Level_ctor (0x4396F0, 0x10FC) — Expert Race BRIDGE
  *   28 = Cloudscape (Sprite_ctor, 0x45D0C0, 0xD4) — Sky Race clouds
  *   29 = Gear_ctor (0x437690, 0x1514) — 9 params: (this, board, x, y, z, x2, y2, z2, mesh)
@@ -2078,9 +2078,9 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
 
         if (g_waterwheel_count < MAX_WATERWHEELS) {
             struct WaterWheelState* ww = &g_waterwheels[g_waterwheel_count];
-            /* v55m_44f: Default mesh = "levels\Waterwheel" (user provides
+            /* v55m_44f: Default mesh = "levels\\Waterwheel" (user provides
              * Waterwheel.MESHWORLD). If that file doesn't exist, fall back
-             * to "levels\_default" (user's placeholder, same pattern as
+             * to "levels\\_default" (user's placeholder, same pattern as
              * Cloudscape case 28). A MESH= tag override still wins. */
             const char* ww_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\\\Waterwheel";
             {
@@ -2092,17 +2092,53 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 }
             }
 
-            /* Create mesh object via MeshWorld_ctor */
-            DWORD mesh = (DWORD)pfn_operator_new(MESHWORLD_SIZE);
-            if (!mesh) {
-                if (logf) fprintf(logf, "  WATERWHEEL: failed to alloc mesh\n");
-                return;
-            }
-            memset((void*)mesh, 0, MESHWORLD_SIZE);
-            void* result = pfn_MeshWorld_ctor((void*)mesh, (void*)gfx_device, ww_path);
-            if (!result) {
-                if (logf) fprintf(logf, "  WATERWHEEL: MeshWorld_ctor failed for '%s'\n", ww_path);
-                return;
+            /* v55m_44g: Load the mesh; if it produces an invalid meshbuffer
+             * list (malformed/corrupt file), retry with levels\_default so a
+             * bad custom Waterwheel.MESHWORLD cannot crash the level render
+             * (crash 0x465789 = render reads strip array at mb+0x418 of a
+             * 0x7C component meshbuffer — out of bounds). */
+            DWORD mesh = 0;
+            {
+                int attempt;
+                for (attempt = 0; attempt < 2; attempt++) {
+                    /* Create mesh object via MeshWorld_ctor */
+                    mesh = (DWORD)pfn_operator_new(MESHWORLD_SIZE);
+                    if (!mesh) {
+                        if (logf) fprintf(logf, "  WATERWHEEL: failed to alloc mesh\n");
+                        return;
+                    }
+                    memset((void*)mesh, 0, MESHWORLD_SIZE);
+                    void* result = pfn_MeshWorld_ctor((void*)mesh, (void*)gfx_device, ww_path);
+                    if (!result) {
+                        if (logf) fprintf(logf, "  WATERWHEEL: MeshWorld_ctor failed for '%s'\n", ww_path);
+                        mesh = 0;
+                        if (attempt == 0) { ww_path = "levels\\\\_default"; continue; }
+                        return;
+                    }
+                    /* Validate the meshbuffer list: MeshWorld+0x2C AthenaList,
+                     * count at +0x04, items at +0x40C. Each entry must be a
+                     * readable meshbuffer. If empty/garbage, the render would
+                     * read mb+0x418 (strips) out of bounds → crash. */
+                    if (!IsBadReadPtr((void*)(mesh + 0x2C), 0x10)) {
+                        DWORD* mb_list = (DWORD*)(mesh + 0x2C);
+                        int mb_count = *(int*)(mb_list + 1);
+                        if (mb_count <= 0 || mb_count > 10000 ||
+                            IsBadReadPtr((void*)((BYTE*)mb_list + 0x40C), 4) ||
+                            IsBadReadPtr(*(void**)((BYTE*)mb_list + 0x40C), mb_count * 4)) {
+                            if (logf) fprintf(logf, "  WATERWHEEL: '%s' loaded but meshbuffer list invalid (count=%d), falling back to levels\\_default\n",
+                                              ww_path, mb_count);
+                            mesh = 0;
+                            if (attempt == 0) { ww_path = "levels\\\\_default"; continue; }
+                            return;
+                        }
+                        if (logf) fprintf(logf, "  WATERWHEEL: mesh '%s' meshbuffers=%d\n", ww_path, mb_count);
+                    }
+                    break;  /* valid mesh loaded */
+                }
+                if (!mesh) {
+                    if (logf) fprintf(logf, "  WATERWHEEL: no usable mesh (both '%s' and levels\\_default failed), skipping\n", ww_path);
+                    return;
+                }
             }
 
             ww->mesh_obj = mesh;
@@ -5684,7 +5720,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
             { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
             { "Trode",            21, "levels\\LevelDark-Trode" },   /* cEnt_Trode_ctor (ArenaStands_ctor) */
-            { "Waterwheel",       26, "levels\\Level3-WaterWheel" }, /* v55f: mesh loaded + rotated by mod, no entity spawned */
+            { "Waterwheel",       26, "levels\\\\Waterwheel" },      /* v55m_44f: user provides Waterwheel.MESHWORLD; falls back to levels\_default if missing */
             { "Wavy",             0, "levels\\Level7-Wavy1" },      /* Wavy_ctor */
             { "Windmill",         0, "levels\\Level4-Windmill" },   /* Tower: Level_RenderCtor + TipperVisual_Attach */
             { "Wobbly",            0, "levels\\Level7-Wobbly1" },    /* GameLevel_ctor (0x4351F0, 0x1524 bytes) */
@@ -5836,7 +5872,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44f Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44g Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

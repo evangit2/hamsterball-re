@@ -1,3 +1,11 @@
+## v55m_44g — Waterwheel mesh validation + _default fallback on invalid/corrupt file
+
+- **FIXED:** A malformed/corrupt custom `Waterwheel.MESHWORLD` could crash the level render at `0001:00065789` (VA `0x465789` — render reads strip array at `mb+0x418` of a meshbuffer, garbage data → crash).
+- **Root cause:** The mod renders the waterwheel mesh via `0x45E0E0` which expects full-level `0x874`-byte CreateMeshBuffers (strips at `+0x418`, name at `+0x864`). A custom mesh file that loads with an invalid/empty meshbuffer list makes the render read out of bounds.
+- **Fix:** After `MeshWorld_ctor`, the mod now **validates the loaded mesh's meshbuffer list** (count 1–10000, items pointer readable). If invalid → logs `meshbuffer list invalid` and **falls back to `levels\_default`** and retries. If both fail → logs and skips spawning (no crash).
+- **ALSO FIXED:** The entity table's `Waterwheel` entry now uses `levels\Waterwheel` (was `levels\Level3-WaterWheel`) — so the new default actually activates (v55m_44f's default was silently overridden by the table).
+- New diagnostics: `WATERWHEEL: mesh '<path>' meshbuffers=%d` and invalid/fallback messages.
+
 ## v55m_44f — Waterwheel default mesh + fallback
 
 - Waterwheel (ai_type 26) now defaults to `levels\Waterwheel` (user provides `Waterwheel.MESHWORLD`) instead of `levels\Level3-WaterWheel`.

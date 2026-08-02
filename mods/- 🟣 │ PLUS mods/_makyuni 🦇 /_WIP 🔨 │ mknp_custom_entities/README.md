@@ -1,4 +1,4 @@
-# Custom Entities Mod v55m_44f
+# Custom Entities Mod v55m_44g
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
@@ -110,7 +110,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Tipper        | 0    | levels\Level3-Tipper            | cEnt_Tipper_ctor                                            |
 | Trapdoor      | 0    | levels\Level4-Trapdoor1         | cEnt_Trapdoor_ctor                                          |
 | Trode         | 21   | levels\LevelDark-Trode          | cEnt_Trode_ctor (ArenaStands_ctor)                          |
-| Waterwheel    | 26   | levels\Level3-WaterWheel        | cEnt_Waterwheel_ctor: no _ctor, PopCylinder fallback        |
+| Waterwheel    | 26   | levels\Waterwheel (fallback levels\_default) | cEnt_Waterwheel_ctor: no _ctor, PopCylinder fallback        |
 | Wavy          | 0    | levels\Level7-Wavy1             | cEnt_Wavy_ctor                                              |
 | Windmill      | 0    | levels\Level4-Windmill          | Tower: Level_RenderCtor + TipperVisual_Attach               |
 | Wobbly        | 8    | levels\Level7-Wobbly1           | cEnt_GameLevel_ctor                                         |
