@@ -1,3 +1,14 @@
+## v55m_44m — Fix 44l regression: SELECTIVE board-walk (don't kill level geometry)
+
+- **FIXED:** 44l's log shows the crash is GONE (`Present-hook re-neutralization active (15 nodes)` — the main-thread pass runs; level loads, no crash) — **but 44l's blanket board-walk neutralized the board's OWN CollisionLevel tree (11 nodes: 0x0C77AAE8→0x0C7A28F0 = the level's ground/walls geometry)**. Setting `+0x430=1` + zeroing component meshbuffer counts on those nodes killed the level's collision AND lighting → **infinite fall through the ground + pale waterwheel color**.
+- **Why:** 44l's "board coverage" walked `board+0x8B0`'s tree and neutralized EVERY 0x4D9068 node it found — but that tree contains the level's legitimate collision geometry (which has VALID meshbuffers and must render), not just the wheel's broken CollisionLevel.
+- **Fix (44m): SELECTIVE board-walk.** The board-tree walk now only neutralizes a node if:
+  1. it's one of the **wheel's own recorded nodes** (addresses captured during the wheel-tree walk into `g_wheel_nodes[]`, cleared on level load), OR
+  2. it **probes broken**: component meshbuffer list has ≥1 meshbuffer with strip count > 0 whose `+0x418` strip pointer is unmapped (the exact OOB condition the render walk faults on).
+  Level-geometry nodes have valid `+0x418` strip pointers → left alone → ground/walls/lights intact.
+- Also: wheel-node address set resets on level load (stale addresses from previous board), and the Present-hook proof log re-arms per level.
+- Result: wheel's broken CollisionLevel still neutralized (crash stays fixed), level geometry untouched (no more infinite fall / pale wheel).
+
 ## v55m_44l — FINAL level-start crash fix: main-thread re-neutralization (Present hook) + board CollisionLevel coverage
 
 - **FIXED:** The 44k crash log (user's second run) shows `v55m_44k` banner, **4 nodes render-neutralized** (root 0x0C7AF550 + 3 children), yet the crash **still occurred** at `0001:00065789` during `Background / FinishLoad(OK)` — the SAME CollisionLevel render walk (`0x465789`).
