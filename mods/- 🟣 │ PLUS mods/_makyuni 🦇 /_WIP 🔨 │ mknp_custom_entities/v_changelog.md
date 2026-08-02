@@ -1,3 +1,18 @@
+## v55m_44j — Fix level-start crash for real: neutralize the CollisionLevel render
+
+- **FIXED:** Level-start crash `0001:00065789` (VA `0x465789`) still happened in 44i — the same CollisionLevel render walk, ~7s into Draw after `FinishLoad(OK)`.
+- **Why 44i was insufficient:** 44i only disabled the MOD's manual collision registration (`pc_obj+0x10E0` → `board+0x10EC` / `scene_col+0x18`). But **`PopCylinder_ctor` (0x436EE0) itself creates the CollisionLevel** (call `0x465080`, vtable `0x4D9068`) at `pc_obj+0x10E0`, and the **game's own registration fn `0x436FC0`** (which appends `+0x10E0` to `board+0x8B0+0x18` and `board+0x10EC` then zeroes `+0x10E0`) only runs on objects in `board+0x5428` — **the mod's wheel is NOT in that list**, so `pc_obj+0x10E0` stays valid and the CollisionLevel stays alive in memory, reachable from render sub-lists.
+- **The actual crash:** The CollisionLevel render (`vtable[18]=0x465650`) walks its component meshbuffers (0x7C bytes, NO strip arrays):
+  - `cmp [mb+0x10],0` → strip count happens nonzero
+  - `mov 0x418(%esi),%edx; mov (%edx),%ecx` → **`+0x418` OOB** → garbage strip pointer → AV at `0x465789`
+- **Fix (render-neutralization):** after `PopCylinder_ctor`, the mod now:
+  1. Sets **`CollisionLevel+0x430 = 1`** — the render guard at `0x46568f` (`cmp [this+0x430],0; jne 0x4657fc`) then **skips the broken meshbuffer walk** and jumps to the (empty) `+0x424` sub-list recursion.
+  2. Zeroes the component meshbuffer **count at `[col+0x08]+0x30`** — belt-and-suspenders so the walk can never run even if `+0x430` is reset.
+  3. Scans the `+0x18` render sub-lists (count `+0x1C`, items `+0x424`) of **both pc_obj and the CollisionLevel** and render-neutralizes any child CollisionLevels (vtable `0x4D9068`) the same way.
+- All writes are safe: `+0x430` is a byte FLAG (verified — all accesses are byte-sized `mov %al/imm8,0x430(%reg)`; set to 1 at `0x462363` when a meshbuffer list has items). `+0x434` is a render Level POINTER — deliberately NOT touched.
+- New log lines: `WATERWHEEL: collision level 0x... render-neutralized` + per-child lines.
+- The wheel still renders + rotates visually (vtable[18] hook unaffected); collision remains off (same as native Dizzy wheel — the level file's own `N:WATERWHEEL` geometry provides collision).
+
 ## v55m_44i — Fix level-start crash: disable waterwheel collision object
 
 - **FIXED:** Level-start crash (`0001:0006578C` = VA `0x46578C`) once the waterwheel spawns. The wheel appeared for a millisecond then the game crashed during `FinishLoad`.

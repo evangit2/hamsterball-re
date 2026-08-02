@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44i
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44j
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -2225,7 +2225,82 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                  * object — collision comes from the level file's own
                  * N:WATERWHEEL geometry. We replicate that: skip registering
                  * pc_obj+0x10E0 in the collision lists, so the crash path
-                 * never runs. The wheel still renders + rotates visually. */
+                 * never runs. The wheel still renders + rotates visually.
+                 *
+                 * v55m_44j: 44i's fix was INSUFFICIENT — PopCylinder_ctor
+                 * (0x436EE0) ITSELF creates a CollisionLevel (call 0x465080,
+                 * vtable 0x4D9068) at pc_obj+0x10E0. The game's separate
+                 * registration fn 0x436FC0 (appends +0x10E0 to
+                 * board+0x8B0+0x18 and board+0x10EC, then zeroes +0x10E0)
+                 * only runs on objects in board+0x5428 — the mod's wheel is
+                 * NOT in that list, so pc_obj+0x10E0 stays valid.
+                 * The CollisionLevel's render (vtable[18]=0x465650) walks
+                 * its component meshbuffers (0x7C, NO strip arrays):
+                 *   cmp [mb+0x10],0 ; mov 0x418(%esi),%edx ; mov (%edx),%ecx
+                 * → +0x418 OOB → garbage strip pointer → AV 0x465789.
+                 * The render guard at 0x46568f is:
+                 *   cmp [this+0x430],0 ; jne 0x4657fc (skip meshbuffer walk)
+                 * Setting CollisionLevel+0x430 = 1 makes the render skip the
+                 * broken meshbuffer walk (jumps to the +0x424 sub-list
+                 * recursion, which is empty). Belt-and-suspenders: also zero
+                 * the component meshbuffer count at [col+0x08]+0x30 so the
+                 * walk can never run even if +0x430 is reset. */
+                {
+                    DWORD col = *(DWORD*)((char*)pc_obj + 0x10E0);
+                    if (col && !IsBadReadPtr((void*)col, 0x480)) {
+                        /* 0x46568f: cmp [this+0x430],0 ; jne 0x4657fc
+                         * Non-zero +0x430 → render skips the meshbuffer walk.
+                         * NOTE: +0x430 is a byte FLAG (copied from parent at
+                         * 0x465903: mov 0x430(%edi),%al) — safe to set.
+                         * Do NOT touch sceneobj+0x434 — that's a render
+                         * Level POINTER, corrupting it would crash elsewhere. */
+                        *(BYTE*)(col + 0x430) = 1;
+                        /* Belt-and-suspenders: zero the component meshbuffer
+                         * count at [col+0x08]+0x30 (list head +0x2C, count
+                         * +0x30) so the walk can never run even if +0x430 is
+                         * reset. 0x4656c4: cmp count,0 ; jg → skip list. */
+                        DWORD comp = *(DWORD*)((char*)col + 0x08);
+                        if (comp && !IsBadReadPtr((void*)(comp + 0x30), 4)) {
+                            *(DWORD*)((char*)comp + 0x30) = 0;
+                        }
+                        if (logf) fprintf(logf, "  WATERWHEEL: collision level 0x%08X render-neutralized (+0x430=1, mbcount=0)\n", col);
+                    }
+                    /* Also neutralize CollisionLevel children cloned into
+                     * the +0x18 render sub-list (count +0x1C, items +0x424)
+                     * of BOTH pc_obj (via Stands_ctor 0x462980-0x462989) and
+                     * the CollisionLevel itself (post-init 0x465947+ appends
+                     * recursive children into this+0x18). The render at
+                     * 0x4657fc iterates [col+0x1C]/[col+0x424] calling
+                     * vtable[18] — each child CollisionLevel must also skip
+                     * its meshbuffer walk or it crashes at the same site. */
+                    {
+                        DWORD scan;
+                        DWORD lists[2];
+                        lists[0] = pc_obj;
+                        lists[1] = col;
+                        for (scan = 0; scan < 2; scan++) {
+                            DWORD base = lists[scan];
+                            if (!base || IsBadReadPtr((void*)(base + 0x1C), 4)) continue;
+                            DWORD rcount = *(DWORD*)((char*)base + 0x1C);
+                            DWORD ritems = *(DWORD*)((char*)base + 0x424);
+                            if (rcount <= 0 || rcount >= 0x1000 || !ritems) continue;
+                            if (IsBadReadPtr((void*)ritems, rcount * 4)) continue;
+                            DWORD ci;
+                            for (ci = 0; ci < rcount; ci++) {
+                                DWORD child = *(DWORD*)((char*)ritems + ci * 4);
+                                if (!child || IsBadReadPtr((void*)child, 0x480)) continue;
+                                if (*(DWORD*)child == 0x4D9068) {
+                                    *(BYTE*)(child + 0x430) = 1;
+                                    DWORD ccomp = *(DWORD*)((char*)child + 0x08);
+                                    if (ccomp && !IsBadReadPtr((void*)(ccomp + 0x30), 4)) {
+                                        *(DWORD*)((char*)ccomp + 0x30) = 0;
+                                    }
+                                    if (logf) fprintf(logf, "  WATERWHEEL: collision child 0x%08X (list base 0x%08X) render-neutralized\n", child, base);
+                                }
+                            }
+                        }
+                    }
+                }
                 /* v55m_44b code (DISABLED 44i):
                 {
                     DWORD col_obj = *(DWORD*)((char*)pc_obj + 0x10E0);
@@ -5890,7 +5965,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44i Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44j Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
