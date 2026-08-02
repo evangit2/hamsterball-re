@@ -1,11 +1,14 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44k
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44l
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
 
 #include "bass_proxy.h"
+#ifdef NOSTDIO_TEST
+#include "nostdio_test.h"   /* TEST-ONLY: no-op file streams for Wine repro */
+#endif
 #include <shlwapi.h>
 #include <math.h>
 #include <ctype.h>
@@ -837,6 +840,8 @@ struct WaterWheelState {
 };
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
+static int g_44l_present_logged = 0;  /* one-shot Present-hook proof log */
+static char g_log_path[MAX_PATH];     /* shared by thread + Present hook */
 
 /* v55m_44k: Recursively neutralize a CollisionLevel tree so its render
  * (vtable[18] = 0x465650) skips the broken component-meshbuffer walk.
@@ -900,11 +905,12 @@ static int cEnt_neutralize_collision_tree(DWORD root, FILE* logf) {
 /* v55m_44k: Neutralize the CollisionLevel tree of a spawned waterwheel
  * (pc_obj). Walks BOTH the pc_obj's +0x18 render sub-list and the
  * CollisionLevel's own sub-list, then the whole tree from each. */
-static void cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
+static int cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
+    int total = 0;
     DWORD col = pc_obj ? *(DWORD*)((char*)pc_obj + 0x10E0) : 0;
     if (col && !IsBadReadPtr((void*)col, 0x480) && *(DWORD*)col == 0x4D9068) {
         if (logf) fprintf(logf, "  WATERWHEEL: collision level 0x%08X render-neutralized (root)\n", col);
-        cEnt_neutralize_collision_tree(col, logf);
+        total += cEnt_neutralize_collision_tree(col, logf);
     }
     /* Also walk the pc_obj's own +0x18 render sub-list in case the
      * CollisionLevel was cloned there by Stands_ctor 0x462980-0x462989. */
@@ -917,11 +923,29 @@ static void cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
             for (ci = 0; ci < rcount; ci++) {
                 DWORD child = *(DWORD*)((char*)ritems + ci * 4);
                 if (child && !IsBadReadPtr((void*)child, 0x480) && *(DWORD*)child == 0x4D9068) {
-                    cEnt_neutralize_collision_tree(child, logf);
+                    total += cEnt_neutralize_collision_tree(child, logf);
                 }
             }
         }
     }
+    /* v55m_44l: Also neutralize any 0x4D9068 nodes reachable from the
+     * BOARD's CollisionLevel (board+0x8B0+0x18 sub-list). The game's
+     * registration path (0x436FC0) appends spawned CollisionLevels there;
+     * during FinishLoad the board's collision render recurses into them.
+     * If the wheel's CollisionLevel (or a FinishLoad clone of it) ever
+     * lands in that list, it must be +0x430=1 before the renderer walks
+     * its broken component meshbuffers. Bounded walk (count < 0x1000). */
+    {
+        DWORD board = get_board();
+        if (board && !IsBadReadPtr((void*)(board + 0x8B0), 4)) {
+            DWORD bcol = *(DWORD*)((char*)board + 0x8B0);
+            if (bcol && !IsBadReadPtr((void*)bcol, 0x480) &&
+                *(DWORD*)bcol == 0x4D9068) {
+                total += cEnt_neutralize_collision_tree(bcol, logf);
+            }
+        }
+    }
+    return total;
 }
 
 /* v55m_44: Waterwheel render hook — X-axis rotation replicating native Dizzy
@@ -4838,6 +4862,35 @@ static void __cdecl gluebie_present_helper(void) {
     if (board && g_catapult_count > 0) {
         cEnt_catapult_present_check(board);
     }
+    /* v55m_44l: Waterwheel CollisionLevel re-neutralization on MAIN THREAD.
+     * 44k ran the re-neutralization only in the background thread, gated on
+     * board==g_spawned_board. The 44k crash log (4 nodes neutralized, still
+     * crash at 0x465789 during Background/FinishLoad) proves the game can
+     * re-register/re-build CollisionLevel nodes between the background
+     * thread's 16ms ticks — the renderer reaches a +0x430=0 node first.
+     * The Present hook runs synchronously on the main thread EVERY frame
+     * before any D3D render, so re-neutralizing here guarantees no
+     * CollisionLevel node with broken component meshbuffers (0x7C, no
+     * strip arrays at +0x418) is ever rendered. Idempotent + cheap. */
+    if (board && g_waterwheel_count > 0) {
+        int wi;
+        for (wi = 0; wi < g_waterwheel_count; wi++) {
+            struct WaterWheelState* ww = &g_waterwheels[wi];
+            if (ww->active && ww->pc_obj) {
+                int n = cEnt_neutralize_waterwheel_collision(ww->pc_obj, NULL);
+                if (n > 0 && !g_44l_present_logged) {
+                    /* One-shot proof the Present-hook pass runs */
+                    FILE* lf = NULL;
+                    fopen_s(&lf, g_log_path, "a");
+                    if (lf) {
+                        fprintf(lf, "  WATERWHEEL: Present-hook re-neutralization active (%d nodes)\n", n);
+                        fclose(lf);
+                    }
+                    g_44l_present_logged = 1;
+                }
+            }
+        }
+    }
 }
 
 /* v55j_9: Ball_Render entry hook — runs AFTER Ball_Update.
@@ -5995,12 +6048,11 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     load_config();
 
     /* Open log file */
-    char log_path[MAX_PATH];
-    snprintf(log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
+    snprintf(g_log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
     FILE* logf = NULL;
-    fopen_s(&logf, log_path, "a");
+    fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44k Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44l Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -6109,7 +6161,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             if (debug_count < 5) {
                 debug_count++;
                 FILE* df = NULL;
-                fopen_s(&df, log_path, "a");
+                fopen_s(&df, g_log_path, "a");
                 if (df) {
                     DWORD scene = *(DWORD*)GLOBAL_SCENE_PTR;
                     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
@@ -6179,7 +6231,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         if (!level) continue;
 
         logf = NULL;
-        fopen_s(&logf, log_path, "a");
+        fopen_s(&logf, g_log_path, "a");
         if (logf) {
             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
         }
