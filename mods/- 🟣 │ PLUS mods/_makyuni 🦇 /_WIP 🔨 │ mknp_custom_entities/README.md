@@ -1,4 +1,4 @@
-# Custom Entities Mod v55m_44h
+# Custom Entities Mod v55m_44i
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
@@ -145,7 +145,7 @@ All mod-side functions use the `cEnt_` prefix to distinguish them from game orig
 - **Chrome** - Odd: CHROMESHADOW hash table lookup, no _ctor
 - **Funball** - Sky: created by board update function, no _ctor
 - **Tarbubble** - Dizzy: collected into board+0x11E4 list, no _ctor
-- **Waterwheel** - Dizzy: stores position at board+0x4BB0, no _ctor. v55m_44c: reverse rotation (+0.5°/frame) + WheelCreak sound via native channel (slot App+0x490 → Sound_GetChannel 0x459810 → Sound_Play3D per frame). v55m_44d: stops rotating + creaking while paused (board+0x874 gate)
+- **Waterwheel** - Dizzy: stores position at board+0x4BB0, no _ctor. v55m_44c: reverse rotation (+0.5°/frame) + WheelCreak sound via native channel (slot App+0x490 → Sound_GetChannel 0x459810 → Sound_Play3D per frame). v55m_44d: stops rotating + creaking while paused (board+0x874 gate). v55m_44i: collision object disabled (PopCylinder's CollisionLevel renders 0x7C component meshbuffers as if full-level → strip-array OOB crash at 0x46578C; native waterwheel collision comes from level geometry)
 - **Windmill** - Tower: Level_RenderCtor + TipperVisual_Attach (Fan_ctor is NOT used)
 
 ## Collision tag entities (S6 tags, not spawned objects)

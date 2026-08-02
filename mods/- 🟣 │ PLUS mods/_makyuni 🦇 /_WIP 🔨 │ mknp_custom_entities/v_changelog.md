@@ -1,3 +1,13 @@
+## v55m_44i — Fix level-start crash: disable waterwheel collision object
+
+- **FIXED:** Level-start crash (`0001:0006578C` = VA `0x46578C`) once the waterwheel spawns. The wheel appeared for a millisecond then the game crashed during `FinishLoad`.
+- **Root cause (traced end-to-end in the binary):** `PopCylinder_ctor` (`0x436EE0`) creates a **CollisionLevel** (`0x465080`, vtable `0x4D9068`) whose post-init (`0x465860`) loads the mesh via `0x4706e0` — the **component SceneObject loader** (vtable `0x4D9CDC`, **0x7C-byte meshbuffers, NO strip arrays**). The collision render (vtable[18] = `0x465650`) then walks each meshbuffer:
+  - `cmp [mb+0x10],0` (strip count — happens to be nonzero on a 0x7C component meshbuffer)
+  - `mov 0x418(%esi),%edx; mov (%edx),%ecx` (strip array — **`+0x418` is out of bounds on a 0x7C meshbuffer**)
+  - → reads a garbage strip pointer → AV at `0x465780`; crash EIP `0x46578C` = SEH-resumed mid-instruction (`74 35` = 2nd byte of `je`).
+- **Fix:** Stop registering the PopCylinder's collision object (`pc_obj+0x10E0`) in the board collision lists. The **native Dizzy waterwheel has NO spawned collision object** — collision comes from the level file's own `N:WATERWHEEL` geometry (`Level_MeshWorldCtor → board+0x4BA8`, verified in the dizzy-waterwheel-system reference). The mod replicates that: the wheel still renders + rotates visually, and the user's level geometry provides collision.
+- Collision registration code is commented out (v55m_44b block) with the full explanation.
+
 ## v55m_44h — Fix waterwheel never spawning (44g validation too strict)
 
 - **FIXED:** The v55m_44g mesh-validation rejected `meshbuffer count=0` and fell back to `_default` — but the user's log showed BOTH `levels\Waterwheel` AND `levels\_default` load with `count=0`, and the wheel never spawned ("it's not appearing").
