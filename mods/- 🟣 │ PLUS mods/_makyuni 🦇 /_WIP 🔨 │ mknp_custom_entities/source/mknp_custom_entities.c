@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44h
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44i
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -2209,11 +2209,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 /* Add to board lists */
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST), pc_obj);
                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), pc_obj);
-                /* v55m_44b: Add collision — PopCylinder creates the collision
-                 * Level at +0x10E0 (call 0x465080 → CollisionLevel, vtable
-                 * 0x4D9068). +0x10D4 is the position X float — reading it as
-                 * a pointer makes IsBadReadPtr reject it and skips collision
-                 * registration → non-solid wheel. Matches Rotator pattern. */
+                /* v55m_44i: COLLISION DISABLED for the waterwheel.
+                 * Root cause of the 44h level-start crash (0001:0006578C):
+                 * PopCylinder_ctor creates a CollisionLevel (call 0x465080,
+                 * vtable 0x4D9068) whose post-init (0x465860) loads the mesh
+                 * as a COMPONENT SceneObject via 0x4706e0 (vtable 0x4D9CDC,
+                 * 0x7C meshbuffers, NO strip arrays). The collision render
+                 * (vtable[18] = 0x465650) then walks each meshbuffer with
+                 *   cmp [mb+0x10],0  (strip count — present in 0x7C mb)
+                 *   mov 0x418(%esi),%edx ; mov (%edx),%ecx  (strip array —
+                 *     +0x418 is OUT OF BOUNDS on a 0x7C component meshbuffer)
+                 * → reads garbage strip pointer → AV at 0x465780 (crash EIP
+                 *   0x46578C = SEH-resumed mid-instruction).
+                 * The native waterwheel (Dizzy) has NO spawned collision
+                 * object — collision comes from the level file's own
+                 * N:WATERWHEEL geometry. We replicate that: skip registering
+                 * pc_obj+0x10E0 in the collision lists, so the crash path
+                 * never runs. The wheel still renders + rotates visually. */
+                /* v55m_44b code (DISABLED 44i):
                 {
                     DWORD col_obj = *(DWORD*)((char*)pc_obj + 0x10E0);
                     if (col_obj && !IsBadReadPtr((void*)col_obj, 0x20)) {
@@ -2224,6 +2237,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         }
                     }
                 }
+                */
                 /* Add to scene spatial tree */
                 DWORD level = cEnt_get_level(board);
                 if (level) {
@@ -5876,7 +5890,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44h Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44i Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
