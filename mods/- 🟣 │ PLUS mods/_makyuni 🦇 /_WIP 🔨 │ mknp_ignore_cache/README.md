@@ -16,7 +16,12 @@ This mod forces that flag to stay `0` for the entire session.
    ```
    The mod patches the immediate value from `1` to `0`, so the flag is never turned on.
 
-2. **Frame-by-frame enforcement**: A `Graphics_PresentOrEnd` hook also writes the flag to `0` every frame, overriding any other code path that might set it.
+2. **Constructor default**: The `Graphics` constructor at `0x454532` writes `0` to the same flag (`mov [esi+0x7D1], bl` where `ebx` is zeroed by `xor ebx,ebx` at `0x4542F0`). This means the flag starts at `0` and nothing in the game re-enables it after our patch.
+
+## Read sites (already correct with flag held at 0)
+
+- `0x46F546` — if flag is 0, skip loading existing `.cached` files
+- `0x46F691` — if flag is 0, skip writing new `.cached` files
 
 ## Files
 
