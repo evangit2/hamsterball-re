@@ -57,6 +57,8 @@ Sounds\Newsfx\Bumper.ogg
 
 If no `<SFX_PATH>` tag exists in a level's XML block, that level loads sounds normally from `Sounds\`.
 
+> **Root-level fallback**: You can also put `<SFX_PATH>` at the top of `RaceData.XML` (outside any level tag). It applies to **all** levels. A per-level `<SFX_PATH>` inside a specific level's tag overrides it for that level.
+
 ### Supported RaceData.XML Tags
 
 | Tag | Level | Scene Name |

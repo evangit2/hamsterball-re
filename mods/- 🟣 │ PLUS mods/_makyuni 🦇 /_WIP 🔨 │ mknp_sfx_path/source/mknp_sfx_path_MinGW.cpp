@@ -193,6 +193,10 @@ static char g_activeSfxPath[128] = "";
 /* Parsed SFX_PATH values from RaceData.XML (one per level, empty = none) */
 static char g_sfxPaths[NUM_RACES * 2][128]; /* 15 races + 15 arenas */
 
+/* Root-level <SFX_PATH> — applies to ALL levels (fallback when a level
+   has no per-level tag). Empty = use default sounds folder. */
+static char g_globalSfxPath[128] = "";
+
 /* Flag: hook installed */
 static bool g_hookInstalled = false;
 
@@ -438,6 +442,31 @@ static void parseRaceDataXML(void) {
 
         /* Check if this is a level tag */
         if (currentLevel < 0) {
+            /* Root-level <SFX_PATH> — applies to all levels */
+            if (nc_strcmp(tagName, "SFX_PATH") == 0) {
+                char value[128];
+                int vi = 0;
+                while (*p && *p != '<' && vi < 127) {
+                    if (*p != '\r' && *p != '\n' && *p != '\t' && *p != ' ') {
+                        value[vi++] = *p;
+                    } else if (*p == ' ' && vi > 0) {
+                        value[vi++] = *p;
+                    }
+                    p++;
+                }
+                value[vi] = '\0';
+                while (vi > 0 && value[vi-1] == ' ') value[--vi] = '\0';
+                nc_strncpy(g_globalSfxPath, value, 127);
+                g_globalSfxPath[127] = '\0';
+                /* Skip closing </SFX_PATH> */
+                if (*p == '<') {
+                    p++;
+                    if (*p == '/') p++;
+                    while (*p && *p != '>') p++;
+                    if (*p == '>') p++;
+                }
+                continue;
+            }
             for (int i = 0; i < NUM_RACES; i++) {
                 if (nc_strcmp(tagName, RACE_XML_TAGS[i]) == 0) {
                     currentLevel = i;
@@ -651,47 +680,40 @@ static void reloadAllSounds(void) {
     App* app = hb.GetApp();
     if (!app) return;
 
-    /* App+0x43C = Sounds struct (61 void* pointers to SoundList) */
+    /* App+0x43C = Sounds struct (61 void* pointers to SoundList), 4 bytes apart */
     DWORD appAddr = (DWORD)app;
-    DWORD gameBase = (DWORD)GetModuleHandleA(NULL);
 
     for (int i = 0; i < NUM_SOUNDS; i++) {
         /* Get SoundList* from App+0x43C + i*4 */
         DWORD soundListAddr = *(DWORD*)(appAddr + SOUNDS_OFFSET + i * 4);
         if (!soundListAddr) continue;
 
-        /* Clear old DSound buffers: call SoundList_DtorInner(soundList) */
-        /* __fastcall: ECX = soundList */
+        /* Clear + free old DSound buffers: SoundList_Clear (0x459700) __thiscall(ECX=this) */
+        /* NOTE: 0x459700 is an absolute VA (ASLR is OFF, EXE always at 0x400000).
+           Do NOT add gameBase — that would double the base and jump to a garbage
+           address (0x859700). */
         {
-            typedef void (__attribute__((fastcall)) *dtor_fn_t)(DWORD);
-            dtor_fn_t dtor_fn = (dtor_fn_t)(gameBase + SOUNDLIST_DTOR_INNER);
-            dtor_fn(soundListAddr);
+            typedef void (__attribute__((fastcall)) *clear_fn_t)(DWORD);
+            clear_fn_t clear_fn = (clear_fn_t)(DWORD)SOUNDLIST_DTOR_INNER;
+            clear_fn(soundListAddr);
         }
 
-        /* Build the sound path */
+        /* Build the PLAIN sound path (no SFX subfolder). The hook installed on
+           Sound_LoadOggOrWav (0x459660) rewrites the name to the active SFX_PATH
+           subfolder automatically. If we pre-built "sounds\Newsfx\ballbreak" here,
+           the hook would rewrite it AGAIN to "sounds\Newsfx\Newsfx\ballbreak"
+           (double prefix) → file not found → silent sound. */
         char pathBuf[256];
-        const char* soundName = g_sounds[i].name;
-
-        if (g_activeSfxPath[0] != '\0') {
-            nc_snprintf(pathBuf, sizeof(pathBuf), "sounds\\%s\\%s", g_activeSfxPath, soundName);
-        } else {
-            nc_snprintf(pathBuf, sizeof(pathBuf), "sounds\\%s", soundName);
-        }
+        nc_snprintf(pathBuf, sizeof(pathBuf), "sounds\\%s", g_sounds[i].name);
         pathBuf[sizeof(pathBuf) - 1] = '\0';
 
-        /* Call Sound_LoadOggOrWav(soundList, name, bufferCount) */
-        /* __thiscall: ECX = soundList, stack = [name, bufferCount], RET 8 */
+        /* Call Sound_LoadOggOrWav (0x459660) — absolute VA, no gameBase.
+           __thiscall: ECX = soundList, stack = [name, bufferCount], RET 8.
+           The call goes THROUGH the hook (entry patched to JMP cave), so the
+           plain path is rewritten to the SFX subfolder if one is active. */
         {
-            /* Use a raw function pointer with manual stack management.
-               Sound_LoadOggOrWav is __thiscall: ECX=this, 2 stack params, callee cleans (RET 8).
-               We declare it as __fastcall(ECX=param1, EDX=param2, stack=param3) with RET 8.
-               But GCC __fastcall puts 2 params in ECX/EDX and cleans remaining stack.
-               Actually, __thiscall = ECX this + stack params + RET N.
-               GCC doesn't have __thiscall, so we use a trick:
-               Push stack params, set ECX, CALL, and the callee will RET 8 (clean 2 stack params).
-               We use naked inline asm for this. */
             int bufCount = g_sounds[i].buffers;
-            DWORD funcAddr = gameBase + SOUND_LOAD_OGG_WAV_ADDR;
+            DWORD funcAddr = (DWORD)SOUND_LOAD_OGG_WAV_ADDR;
             DWORD sl = soundListAddr;
             const char* nm = pathBuf;
             int bc = bufCount;
@@ -753,6 +775,7 @@ static void __thiscall init_impl(void* thisptr, void* modApi) {
     for (int i = 0; i < NUM_RACES * 2; i++) {
         g_sfxPaths[i][0] = '\0';
     }
+    g_globalSfxPath[0] = '\0';
 
     /* Build config path and generate/read custom_sfx.txt */
     buildConfigPath();
@@ -788,6 +811,10 @@ static void __thiscall level_start_impl(void*) {
     if (sfxPath[0] != '\0') {
         /* Set active SFX path */
         nc_strncpy(g_activeSfxPath, sfxPath, 127);
+        g_activeSfxPath[127] = '\0';
+    } else if (g_globalSfxPath[0] != '\0') {
+        /* Fall back to root-level <SFX_PATH> */
+        nc_strncpy(g_activeSfxPath, g_globalSfxPath, 127);
         g_activeSfxPath[127] = '\0';
     } else {
         /* Clear active SFX path */
