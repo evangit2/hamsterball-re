@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44n
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44o
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -373,6 +373,7 @@ static int g_in_draw_phase = 0;
 
 /* v55m_42w: Forward declaration */
 static void __cdecl renderscene_helper(void);
+static int game_is_quitting(void);  /* v55m_44o: fwd decl (defined at 1587, used at 1128) */
 
 /* v55m_42w: RenderScene hook variables */
 static BYTE *g_renderscene_cave = NULL;
@@ -1028,7 +1029,7 @@ static int cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
     return total;
 }
 
-/* v55m_44n: Waterwheel render hook — MESH-based (no PopCylinder).
+/* v55m_44o: Waterwheel render hook — MESH-based (no PopCylinder).
  * The hook is installed on the MeshWorld's own vtable[18] (0x4D8FB0[18]
  * = 0x470150, SceneObject render). 0x470150 renders the root's own
  * meshbuffer list (+0x2C; empty for a BRANCH octree) AND recurses into
@@ -1107,11 +1108,71 @@ static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2) 
         }
 
         memcpy((float*)(this_ + 0x4), finalMatrix, sizeof(finalMatrix));
-        typedef void (__thiscall *render_t)(DWORD, char, int);
-        ((render_t)ww->orig_vtable18)(this_, param_1, param_2);
+        /* v55m_44o: dead path (mesh not in any list) — but if the game ever
+         * calls the hooked vtable[18], forward the ORIGINAL (1,1) args: the
+         * game's render-list walk pushes 1,1 before call *0x48. 0x470150
+         * reads arg1 as a pointer (mov [ebp+0x41c],esi) — arg1=1 would AV,
+         * so never forward 1 here. */
+        if (param_1 == 1) param_1 = 0;
+        {
+            typedef void (__thiscall *render_t)(DWORD, int);
+            ((render_t)ww->orig_vtable18)(this_, param_1);
+        }
         memcpy((float*)(this_ + 0x4), saveMatrix, sizeof(saveMatrix));
         return;
     }
+}
+
+/* v55m_44o: Manual per-frame waterwheel render — called from the Present
+ * hook. The mesh is NOT in any render/scene list (registering it made the
+ * game create a crashing CollisionLevel), so WE draw it every frame: apply
+ * the X-axis rotation to the mesh's own world matrix (mesh+0x4), call the
+ * original vtable[18] (0x470150 SceneObject render — draws the octree),
+ * restore. Mirrors the native design: the mesh lives in a bare slot and is
+ * rendered manually. */
+static void cEnt_waterwheel_present_render(struct WaterWheelState* ww) {
+    if (!ww || !ww->active || !ww->pc_obj) return;
+    DWORD mesh = ww->pc_obj;
+    if (!ww->orig_vtable18 || IsBadReadPtr((void*)(mesh + 0x4), 64)) return;
+    if (game_is_quitting()) return;
+
+    /* Save the mesh's world matrix, apply rotation around wheel center. */
+    float saveMatrix[16];
+    memcpy(saveMatrix, (float*)(mesh + 0x4), sizeof(saveMatrix));
+
+    float angle = ww->angle * 3.14159265f / 180.0f;
+    float c = cosf(angle);
+    float s = sinf(angle);
+    float m1[16] = { 1,0,0,0,  0,1,0,0,  0,0,1,0,  -ww->x, -ww->y, -ww->z, 1 };
+    float m2[16] = { 1,0,0,0,  0,c,-s,0,  0,s,c,0,  0,0,0,1 };
+    float m3[16] = { 1,0,0,0,  0,1,0,0,  0,0,1,0,  ww->x, ww->y, ww->z, 1 };
+    float finalMatrix[16], tmp1[16], tmp2[16];
+    int row, col, k;
+    for (row = 0; row < 4; row++)
+        for (col = 0; col < 4; col++) {
+            tmp1[row*4+col] = 0;
+            for (k = 0; k < 4; k++) tmp1[row*4+col] += saveMatrix[row*4+k] * m1[k*4+col];
+        }
+    for (row = 0; row < 4; row++)
+        for (col = 0; col < 4; col++) {
+            tmp2[row*4+col] = 0;
+            for (k = 0; k < 4; k++) tmp2[row*4+col] += tmp1[row*4+k] * m2[k*4+col];
+        }
+    for (row = 0; row < 4; row++)
+        for (col = 0; col < 4; col++) {
+            finalMatrix[row*4+col] = 0;
+            for (k = 0; k < 4; k++) finalMatrix[row*4+col] += tmp2[row*4+k] * m3[k*4+col];
+        }
+
+    memcpy((float*)(mesh + 0x4), finalMatrix, sizeof(finalMatrix));
+    {
+        /* 0x470150 is __thiscall(ECX=this, arg1) — RET $0x4 (cleans 1 arg).
+         * arg1 is used as a pointer ONLY when non-zero (cmp esi,ebp; je skips
+         * the [ebp+0x41c] write), so passing 0 is safe and standard. */
+        typedef void (__thiscall *render_t)(DWORD, int);
+        ((render_t)ww->orig_vtable18)(mesh, 0);
+    }
+    memcpy((float*)(mesh + 0x4), saveMatrix, sizeof(saveMatrix));
 }
 
 /* Per-frame update for a single bridgeslam object */
@@ -2331,7 +2392,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             }
 
             ww->mesh_obj = mesh;
-            ww->pc_obj = mesh;  /* v55m_44n: pc_obj = the MeshWorld itself.
+            ww->pc_obj = mesh;  /* v55m_44o: pc_obj = the MeshWorld itself.
                                  * NO PopCylinder → NO CollisionLevel → the
                                  * crash (0x465777/0x465789, CollisionLevel
                                  * render walking broken component meshbuffer
@@ -2343,7 +2404,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             ww->active = 1;
             ww->creak_channel = 0;  /* set below */
 
-            /* v55m_44n: The mesh's own vtable is 0x4D8FB0, whose [18] is
+            /* v55m_44o: The mesh's own vtable is 0x4D8FB0, whose [18] is
              * 0x470150 (SceneObject render). 0x470150 renders the ROOT's
              * meshbuffer list (+0x2C, empty for a BRANCH octree) AND
              * recurses into children via +0x424 (sub-level list) — so it
@@ -2367,21 +2428,22 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     }
                 }
             }
-            /* Register the MESH (not a PopCylinder) in the render list and
-             * scene tree so it is drawn every frame. No collision lists
-             * touched — the wheel is visual-only, exactly like the native
-             * Dizzy waterwheel whose collision comes from the level file's
-             * own N:WATERWHEEL geometry. */
-            pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST), (void*)mesh);
-            {
-                DWORD level = cEnt_get_level(board);
-                if (level) {
-                    DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-                    if (sceneobj) {
-                        pfn_AthenaList_Append((DWORD*)(sceneobj + 0x1C), (void*)mesh);
-                    }
-                }
-            }
+            /* v55m_44o: The mesh is NOT registered in any render/scene list.
+             * Registering a SceneObject (vtable 0x4D8FB0) in board+0xCD4 or
+             * sceneobj+0x1C makes the game's FinishLoad process it as level
+             * geometry and create a CollisionLevel (0x465080, vtable
+             * 0x4D9068) for its component meshbuffers — and those component
+             * meshbuffers (0x4D9CDC, 0x7C bytes, no strip arrays at +0x418)
+             * are exactly what the CollisionLevel render (vtable[18]=0x465650)
+             * faults on (0x465777/0x465789). The native game NEVER registers
+             * the waterwheel mesh: it stores the loaded mesh at board+0x4374
+             * (a bare slot, verified in the Dizzy setup 0x41D325) and renders
+             * it manually. We do the same: the mesh lives in ww->pc_obj and
+             * cEnt_waterwheel_present_render draws it every frame via its own
+             * vtable[18] (0x470150) with the rotation matrix. NO lists, NO
+             * scene tree → the game never sees the mesh → no CollisionLevel
+             * → no crash. */
+            (void)0;
             /* Load WheelCreak sound channel (native: [board+0x878]+0x490
              * holds the game's pre-loaded wheelcreak slot). Replicate the
              * v55m_44c pattern: grab the slot, get a channel, never crash. */
@@ -3567,7 +3629,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
     g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
-    /* v55m_44n: WaterWheel cleanup — the mesh is registered in the render
+    /* v55m_44o: WaterWheel cleanup — the mesh is registered in the render
      * list + scene tree and has a private vtable copy (hooked [18]).
      * Restore the original vtable, remove from lists. The mesh object
      * itself is freed by the engine's level teardown (it was operator_new'd
@@ -4919,19 +4981,18 @@ static void __cdecl gluebie_present_helper(void) {
      * before any D3D render, so re-neutralizing here guarantees no
      * CollisionLevel node with broken component meshbuffers (0x7C, no
      * strip arrays at +0x418) is ever rendered. Idempotent + cheap. */
-    /* v55m_44n: No re-neutralization needed — the waterwheel is now a
-     * plain MeshWorld (vtable 0x4D8FB0) with NO PopCylinder and NO
-     * CollisionLevel, so the crash path (0x465650 walking component
-     * meshbuffer strip arrays) structurally cannot exist. This Present
-     * pass is intentionally empty; it remains as a frame-tick hook for
-     * the waterwheel per-frame update (angle advance + creak sound). */
+    /* v55m_44o: Manual waterwheel render + rotation on the MAIN THREAD.
+     * The mesh is NOT registered in any game list (that triggered the
+     * FinishLoad CollisionLevel crash) — we draw it here every frame via
+     * the mesh's own vtable[18] (0x470150) with the rotation matrix.
+     * This runs synchronously in the Present hook, before D3D Present,
+     * so the wheel renders correctly every frame. */
     if (board && g_waterwheel_count > 0) {
         int wi;
         for (wi = 0; wi < g_waterwheel_count; wi++) {
             struct WaterWheelState* ww = &g_waterwheels[wi];
             if (ww->active && ww->pc_obj) {
-                /* angle advance happens in the background-thread update;
-                 * nothing to do here in 44n */
+                cEnt_waterwheel_present_render(ww);
             }
         }
     }
@@ -6096,7 +6157,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44n Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44o Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -6233,7 +6294,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
              * every active waterwheel so any newly-registered node is
              * neutralized before the renderer reaches it. Cheap: each pass is
              * a bounded tree walk over ≤8 waterwheels. */
-            /* v55m_44n: No neutralization — the waterwheel is a plain
+            /* v55m_44o: No neutralization — the waterwheel is a plain
              * MeshWorld now (no PopCylinder → no CollisionLevel at
              * +0x10E0). The old per-frame CollisionLevel re-neutralization
              * loop is gone with the crash path. */
