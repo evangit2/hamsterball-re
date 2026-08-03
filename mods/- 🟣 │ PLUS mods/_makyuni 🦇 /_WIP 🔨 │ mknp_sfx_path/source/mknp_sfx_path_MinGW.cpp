@@ -1,5 +1,5 @@
 /*
- * mknp_sfx_MinGW.cpp — Custom SFX + Per-Level SFX Path (HB+ v2.1, MinGW)
+ * mknp_sfx_path_MinGW.cpp — Custom SFX + Per-Level SFX Path (HB+ v2.1, MinGW)
  *
  * Features:
  *   1. Individual sound replacement via custom_sfx.txt config file.

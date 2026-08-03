@@ -4,8 +4,10 @@ Replace any sound effect in Hamsterball with custom audio files, and redirect al
 
 ## Installation
 
-1. Place `mkn_plus_sfx.dll` in the `Mods\` folder (HB+ mod loader directory)
+1. Place `mknp_sfx_path.dll` in the `Mods\` folder (HB+ mod loader directory)
 2. Launch the game — `custom_sfx.txt` will be auto-generated next to the DLL
+
+> ⚠️ **IMPORTANT**: This is an HB+ mod. Place it in the `Mods\` folder — **do NOT** rename it to `bass.dll` and put it in the game root. The game root `bass.dll` must stay as the HB+ proxy (which forwards BASS functions like `BASS_Stop`). If this DLL is loaded as `bass.dll`, the game fails at startup with "missing BASS_Stop" errors.
 
 ## Features
 
@@ -104,9 +106,9 @@ On level start (`onLevelStart`), the mod detects the current level via HB+ API `
 
 | File | Description |
 |------|-------------|
-| `mkn_plus_sfx.dll` | Compiled HB+ mod DLL |
+| `mknp_sfx_path.dll` | Compiled HB+ mod DLL |
 | `custom_sfx.txt` | Auto-generated config (individual sound replacements) |
-| `source/mknp_sfx_MinGW.cpp` | Source code (MinGW) |
+| `source/mknp_sfx_path_MinGW.cpp` | Source code (MinGW) |
 | `source/nocrt.h` | Minimal CRT replacement header |
 | `source/nocrt.cpp` | CRT implementation (no msvcrt) |
 | `source/hbplus_api.h` | HB+ IModAPI vtable wrapper |

@@ -1,5 +1,5 @@
 #!/bin/bash
-# build.sh — Cross-compile mkn_plus_sfx mod with MinGW
+# build.sh — Cross-compile mknp_sfx_path mod with MinGW
 set -e
 
 cd "$(dirname "$0")"
@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 cp HamsterballAPI.h HamsterballAPI.h.bak
 sed -i 's/static_assert(/\/\/ static_assert(/g' HamsterballAPI.h
 
-i686-w64-mingw32-g++ -shared -o mkn_plus_sfx.dll mknp_sfx_MinGW.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mknp_sfx_path.dll mknp_sfx_path_MinGW.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \
@@ -25,4 +25,4 @@ i686-w64-mingw32-g++ -shared -o mkn_plus_sfx.dll mknp_sfx_MinGW.cpp nocrt.cpp \
 # Restore original header
 mv HamsterballAPI.h.bak HamsterballAPI.h
 
-echo "Build complete: mkn_plus_sfx.dll"
+echo "Build complete: mknp_sfx_path.dll"
