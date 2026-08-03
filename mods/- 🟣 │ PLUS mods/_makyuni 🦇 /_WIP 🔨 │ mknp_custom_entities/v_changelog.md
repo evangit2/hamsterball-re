@@ -1,3 +1,11 @@
+## v55m_44o — waterwheel fix round 3 (STILL CRASHES — superseded, do not re-ship)
+
+**IMPORTANT — USER RETEST (msg 1533631877636816896): 44o STILL crashed at level start.** Same crash family as 44i–44n (0x465777 CollisionLevel render walk). The no-registration/manual-render approach did NOT fix it either. MAKYUNI paused work on Custom Entities after this.
+
+**Key diagnostic for the next attempt (never tested):** run the same build with `levels\Level3-WaterWheel` instead of `levels\Waterwheel` — this isolates file-vs-code in one test. 44a–44e (native file) had no crash reports; 44f+ (user's Waterwheel.MESHWORLD) crashed consistently at 0x465777. The user's file: 64,328 B, 20 meshbuffers (8 N:WATERWHEEL + 4 N:WHEELEMBED + 8 S:AXLE), 1832 verts, BRANCH root. Native file: 71,544 B, 20 meshbuffers, 2028 verts. Both parse valid; loader (0x461510) and 2nd param verified identical.
+
+**Structural facts confirmed:** 0x470150 (SceneObject render) = `__thiscall(ECX, 1 arg)` RET 4. Native waterwheel = mesh at bare slot board+0x4374, NEVER in any list; sound via 0x434770→Sound_Play3D(0x459860). Registering the mesh anywhere (render list / scene tree) lets FinishLoad build a CollisionLevel → 0x465650 walk faults. Even with NO registration (44o), crash persists → remaining suspects: (a) the file's octree/strip layout difference (8 leaves vs 3 leaves), (b) something else in the mod's spawn (creak sound, mesh vtable hook, matrix write) that still triggers it.
+
 ## v55m_44o — FINAL (for real): waterwheel fix round 3 — NO registration, manual Present-hook render
 
 44n still crashed at the same address (0x465777). The fix was incomplete: registering the MeshWorld in `board+0xCD4` + `sceneobj+0x1C` made the game's FinishLoad create a CollisionLevel for the mesh's component child anyway — same crash, different wrapper.
