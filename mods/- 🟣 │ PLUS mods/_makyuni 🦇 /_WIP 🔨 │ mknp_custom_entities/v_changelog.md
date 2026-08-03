@@ -1,3 +1,36 @@
+## v55m_44p — In-game text system (score-HUD style "hello world")
+
+**NEW FEATURE — the first milestone of the in-game text/HUD system.** This
+adds a text layer that draws notifications on screen (like the score text at
+the top-left), driven by a new dedicated hook. For now it just draws a fixed
+"hello world" string to prove the pipeline works; the next step is wiring it
+up to report actual mod events (spawns, collisions, AI state changes, etc.).
+
+**Implementation:**
+- **New hook: `Graphics_PresentOrEnd` (0x455A90).** The mod's existing
+  "present hook" at 0x46C200 is actually `App_ResetFrame` = the viewport
+  clear — text drawn there is erased. 0x455A90 runs AFTER the viewport clear
+  and BEFORE Present, so text drawn here is visible on top of everything,
+  exactly like the score HUD.
+- **Hook type:** 7-byte trampoline (MOV AL,[ESP+4]; SUB ESP,0x20) with the
+  same PUSHAD/PUSHFD → CALL C fn → POPFD/POPAD + original bytes + JMP-back
+  pattern as the existing frame hooks. Installed in DllMain, uninstalled in
+  DLL_PROCESS_DETACH.
+- **Text drawing:** `UI_DrawTextShadow_Wrapper` (0x409B90), `__thiscall`
+  RET 0x3C (15 params) — the score-HUD-style shadowed text. Font is read
+  live every frame from `App+0x318` (showcardgothic28) and null-checked;
+  the gate is font validity (not get_board(), which returns 0 on some Wine
+  setups where the profile is NULL).
+- **Draw call:** `hello world` at (20, 12), white text with black shadow,
+  shadow offset (3,3) — matching the score-text look.
+
+**Verification:** build EXIT 0 (322,094 B), hook confirmed installed at
+0x455A90 (JMP) via live memory read, crash test passed (game survives). Note:
+the game's logic loop does not advance into a level on this headless
+Wine/llvmpipe setup (input is blocked by the mod's stdio logging), so a
+visual screenshot in this environment is not possible — the hook and draw
+pipeline are verified via memory inspection. User tests on real Windows.
+
 ## v55m_44o — waterwheel fix round 3 (STILL CRASHES — superseded, do not re-ship)
 
 **IMPORTANT — USER RETEST (msg 1533631877636816896): 44o STILL crashed at level start.** Same crash family as 44i–44n (0x465777 CollisionLevel render walk). The no-registration/manual-render approach did NOT fix it either. MAKYUNI paused work on Custom Entities after this.

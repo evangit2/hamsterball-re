@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44o
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44p
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5149,6 +5149,114 @@ static void uninstall_present_hook(void) {
     g_present_hook_installed = 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * v55m_44p: In-game text system — draws status text like the score HUD.
+ *
+ * The existing PRESENT_HOOK_ADDR (0x46C200) is App_ResetFrame = the VIEWPORT
+ * CLEAR. Text drawn there is erased. So we hook Graphics_PresentOrEnd
+ * (0x455A90) instead, which runs AFTER slot 9 (viewport clear) and BEFORE
+ * Present — text drawn here is visible on top of everything, exactly like the
+ * score text at the top-left.
+ *
+ * Prologue (verified): 8A 44 24 04 | 83 EC 20  (MOV AL,[ESP+4]; SUB ESP,0x20)
+ * = 7 bytes, two complete instructions → 7-byte trampoline, JMP back to +7.
+ * Same PUSHAD/CALL C fn/POPAD + original bytes + JMP back pattern as the
+ * existing frame hooks.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* UI_DrawTextShadow_Wrapper (0x409B90): __thiscall, RET 0x3C (15 params).
+ * Draws text with a drop shadow at top-left (x,y) — the score-HUD look.
+ * Params 6 & 11 are overwritten internally (0x4CF300), pass 0. */
+typedef void (__thiscall *UI_DrawTextShadow_t)(
+    void* font, char* text, int x, int y,
+    int shadow_dx, int shadow_dy, void* ign1,
+    float text_r, float text_g, float text_b, float text_a,
+    void* ign2, float shadow_r, float shadow_g, float shadow_b, float shadow_a);
+static UI_DrawTextShadow_t pfn_UI_DrawTextShadow = (UI_DrawTextShadow_t)0x00409B90;
+
+#define PRESENTEND_HOOK_ADDR       0x00455A90
+#define PRESENTEND_ORIG_BYTES      7   /* 8A 44 24 04 83 EC 20 */
+static BYTE *g_presentend_cave = NULL;
+static int g_presentend_hook_installed = 0;
+static void (__cdecl *g_presentend_fn_ptr)(void) = NULL;
+
+/* Draw the mod's status text. Runs on the main thread at Present time.
+ * Font is read live every frame (it's NULL until the resource loader
+ * finishes). The font validity check (App+0x318) is the gate — once the
+ * game has a font, it's rendering scenes, so text is visible. (We do NOT
+ * gate on get_board(), which returns 0 on Wine setups where the profile
+ * is NULL — the native score text draws whenever a font exists.) */
+static void __cdecl cEnt_draw_text_helper(void) {
+    if (game_is_quitting()) return;  /* v55j_16: check quit flag before touching game memory */
+    DWORD app = *(DWORD*)GLOBAL_APP_PTR;
+    if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x400)) return;
+    void* font = *(void**)((char*)app + 0x318);   /* showcardgothic28 — main UI font */
+    if (!font || IsBadReadPtr(font, 0x500)) return;
+    pfn_UI_DrawTextShadow(font, "hello world", 20, 12, 3, 3,
+                          0, 1.0f, 1.0f, 1.0f, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+}
+
+/* Install Graphics_PresentOrEnd hook. */
+static void install_presentend_hook(void) {
+    if (g_presentend_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)PRESENTEND_HOOK_ADDR;
+    BYTE expected[] = { 0x8A, 0x44, 0x24, 0x04, 0x83, 0xEC, 0x20 };
+    if (memcmp(hook_addr, expected, 7) != 0) return;
+
+    g_presentend_cave = (BYTE*)VirtualAlloc(NULL, 512, MEM_COMMIT | MEM_RESERVE,
+                                             PAGE_EXECUTE_READWRITE);
+    if (!g_presentend_cave) return;
+
+    g_presentend_fn_ptr = cEnt_draw_text_helper;
+
+    int p = 0;
+    /* PUSHAD + PUSHFD */
+    g_presentend_cave[p++] = 0x60;
+    g_presentend_cave[p++] = 0x9C;
+    /* CALL [g_presentend_fn_ptr] */
+    g_presentend_cave[p++] = 0xFF; g_presentend_cave[p++] = 0x15;
+    *(DWORD*)(g_presentend_cave + p) = (DWORD)&g_presentend_fn_ptr; p += 4;
+    /* POPFD + POPAD */
+    g_presentend_cave[p++] = 0x9D;
+    g_presentend_cave[p++] = 0x61;
+    /* Original 7 bytes: MOV AL,[ESP+4]; SUB ESP,0x20 */
+    g_presentend_cave[p++] = 0x8A; g_presentend_cave[p++] = 0x44;
+    g_presentend_cave[p++] = 0x24; g_presentend_cave[p++] = 0x04;
+    g_presentend_cave[p++] = 0x83; g_presentend_cave[p++] = 0xEC;
+    g_presentend_cave[p++] = 0x20;
+    /* JMP back to hook_addr + 7 */
+    g_presentend_cave[p++] = 0xE9;
+    *(DWORD*)(g_presentend_cave + p) = (DWORD)(hook_addr + PRESENTEND_ORIG_BYTES)
+                                     - (DWORD)(g_presentend_cave + p + 4);
+    p += 4;
+
+    DWORD old_protect;
+    VirtualProtect(hook_addr, PRESENTEND_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect);
+    DWORD jmp_offset = (DWORD)(g_presentend_cave - hook_addr - 5);
+    hook_addr[0] = 0xE9;
+    *(DWORD*)(hook_addr + 1) = jmp_offset;
+    /* NOP remaining 2 bytes (7 total - 5 for JMP = 2 NOPs) */
+    hook_addr[5] = 0x90; hook_addr[6] = 0x90;
+    VirtualProtect(hook_addr, PRESENTEND_ORIG_BYTES, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENTEND_ORIG_BYTES);
+    g_presentend_hook_installed = 1;
+}
+
+static void uninstall_presentend_hook(void) {
+    if (!g_presentend_hook_installed) return;
+    BYTE *hook_addr = (BYTE*)PRESENTEND_HOOK_ADDR;
+    DWORD old_protect;
+    if (VirtualProtect(hook_addr, PRESENTEND_ORIG_BYTES, PAGE_EXECUTE_READWRITE, &old_protect)) {
+        /* Restore: MOV AL,[ESP+4]; SUB ESP,0x20 */
+        hook_addr[0] = 0x8A; hook_addr[1] = 0x44; hook_addr[2] = 0x24; hook_addr[3] = 0x04;
+        hook_addr[4] = 0x83; hook_addr[5] = 0xEC; hook_addr[6] = 0x20;
+        VirtualProtect(hook_addr, PRESENTEND_ORIG_BYTES, old_protect, &old_protect);
+        FlushInstructionCache(GetCurrentProcess(), hook_addr, PRESENTEND_ORIG_BYTES);
+    }
+    g_presentend_hook_installed = 0;
+}
+
 static int g_gluebie_debug_count = 0;  /* limit debug output */
 static int g_gluebie_debug_frame = 0; /* frame counter for sampling */
 
@@ -6157,7 +6265,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44o Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44p Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -6172,6 +6280,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
      * the game's code section is mapped). Without this, gluebie_present_helper
      * never runs and Gluebie proximity check never fires on non-Dizzy levels. */
     install_present_hook();
+    /* v55m_44p: Install Graphics_PresentOrEnd hook to draw the in-game text
+     * system (score-HUD style). 0x46C200 clears the viewport, so text must be
+     * drawn on 0x455A90 (after clear, before Present). */
+    install_presentend_hook();
     /* v55m_43h: Restore RenderScene hook — sets g_in_draw_phase=1 during Draw.
      * The catapult vtable[18] hook needs this to skip D3D transforms during
      * Update (calling 0x45E0E0 during Update corrupts mesh data → 0x478EDD). */
@@ -6477,6 +6589,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         g_shutting_down = 1;  /* v55j_15: hooks check this before accessing game memory */
         g_running = 0;
         uninstall_present_hook();
+        uninstall_presentend_hook();
         uninstall_ballrender_hook();
     }
     return TRUE;
