@@ -1,3 +1,13 @@
+## v55m_44o — FINAL (for real): waterwheel fix round 3 — NO registration, manual Present-hook render
+
+44n still crashed at the same address (0x465777). The fix was incomplete: registering the MeshWorld in `board+0xCD4` + `sceneobj+0x1C` made the game's FinishLoad create a CollisionLevel for the mesh's component child anyway — same crash, different wrapper.
+
+**44o: the mesh is NOT registered in ANY game list.** It lives in a bare slot (`ww->pc_obj`, mirroring the native `board+0x4374` bare slot). The Present hook renders it manually each frame via `cEnt_waterwheel_present_render` — which applies the X-axis rotation matrix to the mesh's world transform (`mesh+0x4`) and calls the mesh's own vtable[18] (0x470150 SceneObject render) directly. No game list, no FinishLoad processing, no CollisionLevel.
+
+Also fixed: the vtable[18] call signature was wrong in 44n — `0x470150` is `__thiscall(ECX=this, arg1)` with `RET $0x4` (cleans 1 arg), not 2 args. Passing 2 args would corrupt the stack.
+
+Now: same loader (0x461510), same mesh, same rotation — but **kept invisible to the game**, rendered manually. No registration → no CollisionLevel → no crash.
+
 ## v55m_44n — FINAL waterwheel fix: remove PopCylinder entirely (native-style mesh render)
 
 MAKYUNI's question was the key: *"why can't you load the code that lastly worked with Level3-WaterWheel.MESHWORLD, but make it use my Waterwheel.MESHWORLD instead?"*
