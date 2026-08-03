@@ -340,7 +340,7 @@ static void install_timer_caves(DWORD base) {
         p += 7;
 
         p[0] = 0x75;
-        p[1] = 0x02;
+        p[1] = 0x03;
         p += 2;
 
         p[0] = 0xFF; p[1] = 0x42; p[2] = 0x1C;
@@ -1075,7 +1075,6 @@ static int g_raceFinished = 0;
 static int g_prevGoalFlag = 0;
 static DWORD g_prevRecording = 0;
 static DWORD g_savedOldPlayback = 0;
-static DWORD g_dummyRecording = 0;
 
 /* Time Warp multi-segment state (shared with check_race_state) */
 static char g_twRaceName[128] = "";
@@ -1281,27 +1280,6 @@ static void snaps_reset(void) {
     g_rawCapacity = 0;
 }
 
-static void cleanup_dummy_btt(DWORD app) {
-    if (!g_dummyRecording || g_dummyRecording < 0x10000) return;
-    DWORD curr90C = 0;
-    if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
-        curr90C = *(DWORD*)(app + APP_BTT_RECORDING);
-    if (curr90C == g_dummyRecording) {
-        if (!IsBadReadPtr((void*)g_dummyRecording, 4)) {
-            DWORD vt = *(DWORD*)g_dummyRecording;
-            if (vt == BTT_VTABLE_ADDR) {
-                CallMethod<void>(RVA_BTT_DTOR, (void*)g_dummyRecording, (DWORD)1);
-                LOG("Cleaned up dummy BTT at 0x%X", g_dummyRecording);
-            } else {
-                Call<void>(RVA_GAME_FREE, (void*)g_dummyRecording);
-                LOG("Cleaned up dummy BTT via game_free (bad vtable)");
-            }
-        }
-        *(DWORD*)(app + APP_BTT_RECORDING) = 0;
-    }
-    g_dummyRecording = 0;
-}
-
 static void inject_saved_ghost(const char* raceName) {
     DWORD app = get_app();
     if (!app) return;
@@ -1460,7 +1438,6 @@ static void check_race_state(void) {
             g_currentRaceName[0] = '\0';
             g_hookRaceName[0] = '\0';
         }
-        cleanup_dummy_btt(app);
         if (!IsBadReadPtr((void*)(app + APP_BTT_RECORDING), 4))
             g_prevRecording = *(DWORD*)(app + APP_BTT_RECORDING);
         return;
@@ -1961,7 +1938,11 @@ static void ghost2_create(DWORD board, DWORD* snaps, int count) {
     }
 
     DWORD ballAddr = (DWORD)Call<void*>(RVA_OPERATOR_NEW, (SIZE_T)0xC60);
-    if (!ballAddr) { LOG("Ghost2: operator_new failed for ball"); return; }
+    if (!ballAddr) {
+        LOG("Ghost2: operator_new failed for ball");
+        CallMethod<void>(RVA_BTT_DTOR, btt, (DWORD)1);
+        return;
+    }
     CallMethod<void>(RVA_BALL_CTOR, (void*)ballAddr, board);
     DWORD ballVtable = *(DWORD*)ballAddr;
     if (!ballVtable || IsBadReadPtr((void*)ballVtable, 4)) {
@@ -2984,7 +2965,6 @@ public:
         g_prevGoalFlag = 0;
         g_currentRaceName[0] = '\0';
         g_hookRaceName[0] = '\0';
-        g_dummyRecording = 0;
         g_prevRecording = 0;
         // Ghost 1 cleanup on REAL scene end (player left the level, not a
         // warp reload): the scene is gone, so any BTT we injected into
