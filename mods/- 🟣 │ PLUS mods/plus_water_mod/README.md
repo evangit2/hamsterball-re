@@ -1,4 +1,4 @@
-> **⚠️ Status: Untested** — This is an HB+ API port that has not yet been crash-tested or verified in-game.
+> **Status: Buildable + shippable.** Both MSVC (class) and MinGW (`_MinGW` variant) build targets provided. The MinGW DLL is verified ship-safe (nocrt + manual 17-entry vtable + only KERNEL32 import). Full in-game gameplay verification still pending (see note below).
 
 # Water Mod (HB+ v2.1)
 
@@ -41,3 +41,14 @@ Place `E:WATER` collision objects in custom levels. The object needs at least on
 | BASS proxy | ~200 lines | Removed |
 
 Author: RodentRacer / Hamsterbot
+
+## Building
+
+- **MinGW (Linux):** `./build.sh` → produces `plus_water_mod.dll` from `WaterMod_MinGW.cpp` (nocrt + manual vtable + hbplus_api.h). Verified: 17-entry vtable, CreateModInstance exported, only KERNEL32 import, no msvcrt/.eh_frame.
+- **Visual Studio (Windows):** Create an HB+ project from `HBmodTemplate.zip`, replace `MainModFile.cpp` with `WaterMod.cpp` (class-based), build as x86 DLL.
+
+Either way, drop the resulting `.dll` in the game's `Mods\` folder.
+
+## Testing note
+
+The HB+ loading chain (scanning `Mods\`, calling `CreateModInstance`, firing `Initialize()`) cannot be verified under Wine/hbtestd — that test env uses a plain bass proxy, not the HB+ framework. Only real Windows with HB+ installed can confirm the full load + in-game behavior. The raw memory hooks (type-5 code cave at 0x407377, vtable[8] at 0x4CF3A0→0x409480) were byte-verified against Hamsterball.exe.
