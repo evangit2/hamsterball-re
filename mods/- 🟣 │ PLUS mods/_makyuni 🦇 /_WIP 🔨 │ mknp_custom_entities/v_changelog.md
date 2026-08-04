@@ -1,3 +1,16 @@
+## v55m_44x — Rotator debug view: operator_new memory size
+
+The sub-line under `1 - Constructors (object creation)` now shows the exact
+bytes reserved by `operator_new` for the Rotator:
+```
+rotator
+(empty line)
+1 - Constructors (object creation)
+  Operator_new (memory reserve): 5384 bytes
+```
+- The byte count is pulled from `ROTATER_SIZE` (0x1508 = 5384 bytes) at
+  runtime, so it stays accurate if the constant ever changes.
+
 ## v55m_44w — Rotator debug view: section title + sub-line
 
 In the `"Rotator"` debug state, the debug text now shows a hierarchical

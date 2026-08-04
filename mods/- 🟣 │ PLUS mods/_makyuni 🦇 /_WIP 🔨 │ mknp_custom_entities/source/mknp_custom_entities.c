@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44w
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44x
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5303,11 +5303,18 @@ static void __cdecl cEnt_draw_text_helper(void) {
                               12 + 2 * debugTextSpacing, 3, 3,
                               0, 1.0f, 1.0f, 1.0f, 1.0f,
                               0, 0.0f, 0.0f, 0.0f, 1.0f);
-        /* sub-line — indented 15px to the right, below the section title */
-        pfn_UI_DrawTextShadow(font, "subline", 20 + 15,
-                              12 + 3 * debugTextSpacing, 3, 3,
-                              0, 1.0f, 1.0f, 1.0f, 1.0f,
-                              0, 0.0f, 0.0f, 0.0f, 1.0f);
+        /* sub-line — indented 15px to the right, below the section title.
+         * Shows the memory reserved by operator_new for the Rotator
+         * (ROTATER_SIZE = 0x1508 = 5384 bytes). */
+        {
+            char subline[96];
+            snprintf(subline, sizeof(subline),
+                     "Operator_new (memory reserve): %d bytes", ROTATER_SIZE);
+            pfn_UI_DrawTextShadow(font, subline, 20 + 15,
+                                  12 + 3 * debugTextSpacing, 3, 3,
+                                  0, 1.0f, 1.0f, 1.0f, 1.0f,
+                                  0, 0.0f, 0.0f, 0.0f, 1.0f);
+        }
         return;
     }
 
@@ -6389,7 +6396,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44w Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44x Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
