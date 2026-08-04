@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44p
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44q
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5190,7 +5190,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag before touching game memory */
     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
     if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x400)) return;
-    void* font = *(void**)((char*)app + 0x318);   /* showcardgothic28 — main UI font */
+    void* font = *(void**)((char*)app + 0x320);   /* showcardgothic16 — score counter / info text font (same size as the score HUD) */
     if (!font || IsBadReadPtr(font, 0x500)) return;
     pfn_UI_DrawTextShadow(font, "hello world", 20, 12, 3, 3,
                           0, 1.0f, 1.0f, 1.0f, 1.0f,
@@ -6265,7 +6265,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44p Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44q Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
