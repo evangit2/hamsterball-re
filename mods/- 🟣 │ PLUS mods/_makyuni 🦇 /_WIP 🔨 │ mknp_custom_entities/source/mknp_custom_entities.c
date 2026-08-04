@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44r
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44s
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5181,7 +5181,7 @@ static int g_presentend_hook_installed = 0;
 static void (__cdecl *g_presentend_fn_ptr)(void) = NULL;
 
 /* Vertical spacing (pixels) between each debug text line. */
-static int debugTextSpacing = 10;
+static int debugTextSpacing = 20;
 
 /* Draw the mod's status text. Runs on the main thread at Present time.
  * Font is read live every frame (it's NULL until the resource loader
@@ -6274,7 +6274,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44r Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44s Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

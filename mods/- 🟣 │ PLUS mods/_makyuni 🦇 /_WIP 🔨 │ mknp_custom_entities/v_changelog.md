@@ -1,3 +1,8 @@
+## v55m_44s — debugTextSpacing changed to 20 pixels
+
+`debugTextSpacing` (the gap between the debug text lines) changed from
+**10** to **20 pixels**.
+
 ## v55m_44r — Debug text lines: "hampter" + "ballz" with debugTextSpacing
 
 Added two more debug text lines below "hello world": **"hampter"** and
