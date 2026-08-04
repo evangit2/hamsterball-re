@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44q
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44r
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5180,6 +5180,9 @@ static BYTE *g_presentend_cave = NULL;
 static int g_presentend_hook_installed = 0;
 static void (__cdecl *g_presentend_fn_ptr)(void) = NULL;
 
+/* Vertical spacing (pixels) between each debug text line. */
+static int debugTextSpacing = 10;
+
 /* Draw the mod's status text. Runs on the main thread at Present time.
  * Font is read live every frame (it's NULL until the resource loader
  * finishes). The font validity check (App+0x318) is the gate — once the
@@ -5193,6 +5196,12 @@ static void __cdecl cEnt_draw_text_helper(void) {
     void* font = *(void**)((char*)app + 0x320);   /* showcardgothic16 — score counter / info text font (same size as the score HUD) */
     if (!font || IsBadReadPtr(font, 0x500)) return;
     pfn_UI_DrawTextShadow(font, "hello world", 20, 12, 3, 3,
+                          0, 1.0f, 1.0f, 1.0f, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    pfn_UI_DrawTextShadow(font, "hampter", 20, 12 + debugTextSpacing, 3, 3,
+                          0, 1.0f, 1.0f, 1.0f, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    pfn_UI_DrawTextShadow(font, "ballz", 20, 12 + 2 * debugTextSpacing, 3, 3,
                           0, 1.0f, 1.0f, 1.0f, 1.0f,
                           0, 0.0f, 0.0f, 0.0f, 1.0f);
 }
@@ -6265,7 +6274,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44q Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44r Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

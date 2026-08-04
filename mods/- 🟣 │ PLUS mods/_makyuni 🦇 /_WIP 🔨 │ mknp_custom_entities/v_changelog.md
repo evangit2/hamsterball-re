@@ -1,3 +1,10 @@
+## v55m_44r — Debug text lines: "hampter" + "ballz" with debugTextSpacing
+
+Added two more debug text lines below "hello world": **"hampter"** and
+**"ballz"**. Lines are evenly spaced using a new internal variable
+`debugTextSpacing` (currently **10 pixels**), so each line is drawn 10px
+below the previous one.
+
 ## v55m_44q — In-game text uses the score-counter font (showcardgothic16)
 
 The in-game text ("hello world") was rendering too large because it used the
