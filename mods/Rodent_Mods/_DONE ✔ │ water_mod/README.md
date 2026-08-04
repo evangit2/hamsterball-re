@@ -1,4 +1,4 @@
-# Hamsterball Water Physics Mod v7
+# Hamsterball Water Physics Mod v7.1
 
 Custom water physics for Hamsterball via bass.dll proxy.
 
@@ -84,10 +84,10 @@ See `hamsterball_water.ini` for all options:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| EntryDamping | 0.70 | Velocity multiplier on first contact (0-1) |
-| Drag | 0.03 | Per-frame velocity drag on all axes (0-1) |
+| EntryDamping | 0.90 | Velocity multiplier on first contact (0-1) |
+| Drag | 0.02 | Per-frame velocity drag on all axes (0-1) |
 | HorizontalDrag | 0.04 | Extra drag on X/Z axes (0-1) |
-| BuoyancyStrength | 0.45 | Upward acceleration at full submersion |
+| BuoyancyStrength | 1.0 | Upward acceleration at full submersion |
 | Debug | 1 | Write log file (water_mod_log.txt) |
 
 ## Debug Log

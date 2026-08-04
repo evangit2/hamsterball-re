@@ -6,11 +6,12 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
- * v7: Add dizzy immunity while submerged.
+ * v7.1: Clear 0x2E9 on water entry + dizzy immunity while submerged.
  *     On water entry: clear bounce counter (ball+0x2EC) — same as E:NODIZZY.
  *     Every frame in water: clear bounce counter + set dizzy_immunity_timer
  *     (ball+0x2F4) to GRACE_PERIOD_FRAMES. Mirrors Ball_DizzyImmunity(0x402400):
  *     only increases the timer, never shortens existing immunity.
+ *     v7.1 normalizes submersion to 0-1 (was 0-2).
  *
  * v6: Clear ball+0x2E9 (falling flag) when ball enters water AND every frame
  *     while in water or during grace period. Extend Hook 3 to suppress type 5
@@ -1041,7 +1042,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v6 DLL attaching ===");
+        diag_log("=== Water mod v7.1 DLL attaching ===");
 
         load_real_bass();
         {
