@@ -1,3 +1,21 @@
+## v55m_44u — AI 1 Rotator constant rotation now actually works
+
+The `cEnt_update_constant_rotations()` function was dead code — it was
+defined but never called, so AI 1 (Rotator, ROS_Y=0) still oscillated like
+AI 6 instead of spinning continuously.
+
+**Fix:**
+- Now called **every frame from the present hook** (`gluebie_present_helper`,
+  slot 9, before the native object render at slot 10). It rewrites
+  `obj+0x10EC` (direction) to `rot_y` each frame before the native render's
+  ±2.0 flip check runs, so the native reversal never takes effect →
+  constant one-way rotation.
+- **Removed the angle clamp** from `cEnt_update_constant_rotations`. The old
+  clamp (`angle > 1.99 → angle = -1.99`) caused a visible snap (~114° jump).
+  Since the direction is rewritten every frame anyway, the native flip is
+  already neutralized — the angle grows unboundedly but `Gfx_Scale` uses
+  sin/cos, so large angles are fine.
+
 ## v55m_44t — Label/value lines with colors + empty line
 
 Debug text now shows:
