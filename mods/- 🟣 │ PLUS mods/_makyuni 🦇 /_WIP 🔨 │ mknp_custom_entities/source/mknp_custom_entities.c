@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44s
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44t
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5174,6 +5174,11 @@ typedef void (__thiscall *UI_DrawTextShadow_t)(
     void* ign2, float shadow_r, float shadow_g, float shadow_b, float shadow_a);
 static UI_DrawTextShadow_t pfn_UI_DrawTextShadow = (UI_DrawTextShadow_t)0x00409B90;
 
+/* Font_MeasureText (0x456E20): __thiscall, RET 0x04 (1 stack param).
+ * Returns the width of a text string in pixels (using the font's scale). */
+typedef int (__thiscall *Font_MeasureText_t)(void* font, char* text);
+static Font_MeasureText_t pfn_Font_MeasureText = (Font_MeasureText_t)0x00456E20;
+
 #define PRESENTEND_HOOK_ADDR       0x00455A90
 #define PRESENTEND_ORIG_BYTES      7   /* 8A 44 24 04 83 EC 20 */
 static BYTE *g_presentend_cave = NULL;
@@ -5182,6 +5187,21 @@ static void (__cdecl *g_presentend_fn_ptr)(void) = NULL;
 
 /* Vertical spacing (pixels) between each debug text line. */
 static int debugTextSpacing = 20;
+
+/* Draw "label" in white, then a colored "value" immediately to its right.
+ * Both use the score-HUD font/size and shadow. Returns the total line width. */
+static int cEnt_draw_label_value(void* font, const char* label, const char* value,
+                                 int x, int y,
+                                 float vr, float vg, float vb) {
+    int label_w = pfn_Font_MeasureText(font, (char*)label);
+    pfn_UI_DrawTextShadow(font, (char*)label, x, y, 3, 3,
+                          0, 1.0f, 1.0f, 1.0f, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    pfn_UI_DrawTextShadow(font, (char*)value, x + label_w, y, 3, 3,
+                          0, vr, vg, vb, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    return label_w + pfn_Font_MeasureText(font, (char*)value);
+}
 
 /* Draw the mod's status text. Runs on the main thread at Present time.
  * Font is read live every frame (it's NULL until the resource loader
@@ -5198,12 +5218,11 @@ static void __cdecl cEnt_draw_text_helper(void) {
     pfn_UI_DrawTextShadow(font, "hello world", 20, 12, 3, 3,
                           0, 1.0f, 1.0f, 1.0f, 1.0f,
                           0, 0.0f, 0.0f, 0.0f, 1.0f);
-    pfn_UI_DrawTextShadow(font, "hampter", 20, 12 + debugTextSpacing, 3, 3,
-                          0, 1.0f, 1.0f, 1.0f, 1.0f,
-                          0, 0.0f, 0.0f, 0.0f, 1.0f);
-    pfn_UI_DrawTextShadow(font, "ballz", 20, 12 + 2 * debugTextSpacing, 3, 3,
-                          0, 1.0f, 1.0f, 1.0f, 1.0f,
-                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    /* empty line between "hello world" and "hampter: yes" */
+    cEnt_draw_label_value(font, "hampter: ", "yes", 20, 12 + 2 * debugTextSpacing,
+                          0.0f, 1.0f, 0.0f);   /* green */
+    cEnt_draw_label_value(font, "ballz: ", "no", 20, 12 + 3 * debugTextSpacing,
+                          1.0f, 0.0f, 0.0f);   /* red */
 }
 
 /* Install Graphics_PresentOrEnd hook. */
@@ -6274,7 +6293,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44s Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44t Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
