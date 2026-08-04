@@ -1,3 +1,19 @@
+## v55m_44t — Label/value lines with colors + empty line
+
+Debug text now shows:
+```
+hello world
+(empty line)
+hampter: yes
+ballz: no
+```
+- Added an empty line between "hello world" and "hampter".
+- "hampter" → **"hampter: yes"** with "yes" in **green** (R=0, G=1.0, B=0).
+- "ballz" → **"ballz: no"** with "no" in **red** (R=1.0, G=0, B=0).
+- The label ("hampter: " / "ballz: ") stays white; the value is drawn
+  immediately after it, colored. Uses `Font_MeasureText` (0x456E20) to get
+  the label width so the value sits right next to it.
+
 ## v55m_44s — debugTextSpacing changed to 20 pixels
 
 `debugTextSpacing` (the gap between the debug text lines) changed from
