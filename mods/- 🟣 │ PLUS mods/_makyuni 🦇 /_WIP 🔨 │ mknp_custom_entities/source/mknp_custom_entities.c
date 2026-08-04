@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44u
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44v
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5203,6 +5203,56 @@ static void (__cdecl *g_presentend_fn_ptr)(void) = NULL;
 /* Vertical spacing (pixels) between each debug text line. */
 static int debugTextSpacing = 20;
 
+/* Runtime debug state, read from "mknp_custom_entities_debug.txt" next to the
+ * DLL. Values: "no" = don't draw debug texts; "yes"/"" = draw default texts;
+ * "Rotator" = draw texts but replace "hello world" with "rotator". */
+static char g_debug_state[32] = "yes";
+
+/* Read the debug config file at runtime. The file lives next to the DLL
+ * (g_game_dir). If it doesn't exist, create it with the default content
+ * `- debug: "yes"`. Called every frame so edits take effect immediately. */
+static void read_debug_config(void) {
+    char path[MAX_PATH];
+    snprintf(path, MAX_PATH, "%s\\mknp_custom_entities_debug.txt", g_game_dir);
+
+    FILE* f = fopen(path, "r");
+    if (!f) {
+        /* Create the default file if missing. */
+        f = fopen(path, "w");
+        if (f) {
+            fprintf(f, "- debug: \"yes\"\n");
+            fclose(f);
+        }
+        strcpy(g_debug_state, "yes");
+        return;
+    }
+
+    char line[256];
+    g_debug_state[0] = 0;
+    if (fgets(line, sizeof(line), f)) {
+        char* p = strstr(line, "debug:");
+        if (p) {
+            p += 6;  /* skip "debug:" */
+            /* skip whitespace, dashes, and the opening quote */
+            while (*p == ' ' || *p == '\t' || *p == '-' || *p == '"') p++;
+            char val[64] = {0};
+            int i = 0;
+            while (*p && *p != '"' && *p != '\r' && *p != '\n' && i < 31) {
+                val[i++] = *p++;
+            }
+            val[i] = 0;
+            /* trim trailing whitespace */
+            while (i > 0 && (val[i-1] == ' ' || val[i-1] == '\t')) val[--i] = 0;
+            strncpy(g_debug_state, val, 31);
+            g_debug_state[31] = 0;
+        }
+    }
+    fclose(f);
+
+    /* blank value = "yes" (default state) */
+    if (g_debug_state[0] == 0) strcpy(g_debug_state, "yes");
+}
+
 /* Draw "label" in white, then a colored "value" immediately to its right.
  * Both use the score-HUD font/size and shadow. Returns the total line width. */
 static int cEnt_draw_label_value(void* font, const char* label, const char* value,
@@ -5230,10 +5280,21 @@ static void __cdecl cEnt_draw_text_helper(void) {
     if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x400)) return;
     void* font = *(void**)((char*)app + 0x320);   /* showcardgothic16 — score counter / info text font (same size as the score HUD) */
     if (!font || IsBadReadPtr(font, 0x500)) return;
-    pfn_UI_DrawTextShadow(font, "hello world", 20, 12, 3, 3,
+
+    /* Read the debug config file at runtime (edits take effect immediately). */
+    read_debug_config();
+
+    /* "no" = don't draw debug texts at all. */
+    if (_stricmp(g_debug_state, "no") == 0) return;
+
+    /* Determine the first-line text: "Rotator" → "rotator", else "hello world". */
+    const char* first_line = "hello world";
+    if (_stricmp(g_debug_state, "Rotator") == 0) first_line = "rotator";
+
+    pfn_UI_DrawTextShadow(font, (char*)first_line, 20, 12, 3, 3,
                           0, 1.0f, 1.0f, 1.0f, 1.0f,
                           0, 0.0f, 0.0f, 0.0f, 1.0f);
-    /* empty line between "hello world" and "hampter: yes" */
+    /* empty line between the first line and "hampter: yes" */
     cEnt_draw_label_value(font, "hampter: ", "yes", 20, 12 + 2 * debugTextSpacing,
                           0.0f, 1.0f, 0.0f);   /* green */
     cEnt_draw_label_value(font, "ballz: ", "no", 20, 12 + 3 * debugTextSpacing,
@@ -6308,7 +6369,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44u Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44v Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

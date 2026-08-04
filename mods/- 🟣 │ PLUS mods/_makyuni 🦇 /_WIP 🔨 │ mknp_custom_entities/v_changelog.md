@@ -1,3 +1,19 @@
+## v55m_44v — Runtime debug config file (mknp_custom_entities_debug.txt)
+
+The game now reads a debug config file **next to the DLL**:
+`mknp_custom_entities_debug.txt`. If the file doesn't exist, the mod creates
+it with the default content `- debug: "yes"`.
+
+**The file is read at runtime every frame** — editing it takes effect
+immediately (no restart needed).
+
+Content format: `- debug: "<value>"` where `<value>` is one of:
+- **`"no"`** — don't draw the debug texts at all (they won't appear).
+- **`"yes"`** or **`""`** (blank) — draw the debug texts in their default
+  state (the `hello world` / `hampter: yes` / `ballz: no` lines).
+- **`"Rotator"`** — draw the debug texts, but replace the first line
+  (`hello world`) with `rotator`.
+
 ## v55m_44u — AI 1 Rotator constant rotation now actually works
 
 The `cEnt_update_constant_rotations()` function was dead code — it was
