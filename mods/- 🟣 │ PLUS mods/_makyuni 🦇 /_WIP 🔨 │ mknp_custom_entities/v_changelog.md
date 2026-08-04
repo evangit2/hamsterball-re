@@ -1,3 +1,10 @@
+## v55m_44q — In-game text uses the score-counter font (showcardgothic16)
+
+The in-game text ("hello world") was rendering too large because it used the
+main title font (showcardgothic28, `App+0x318`). Changed it to the same font
+the score counter uses — **showcardgothic16** (`App+0x320`), the info-text
+font. Same size as the score HUD at the top-left.
+
 ## v55m_44p — In-game text system (score-HUD style "hello world")
 
 **NEW FEATURE — the first milestone of the in-game text/HUD system.** This
