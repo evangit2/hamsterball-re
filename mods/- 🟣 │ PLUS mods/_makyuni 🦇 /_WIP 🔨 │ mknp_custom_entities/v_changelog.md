@@ -1,3 +1,17 @@
+## v55m_44w — Rotator debug view: section title + sub-line
+
+In the `"Rotator"` debug state, the debug text now shows a hierarchical
+breakdown instead of the default labels:
+```
+rotator
+(empty line)
+1 - Constructors (object creation)
+  subline            ← indented 15px to the right
+```
+- Line 2 is now `1 - Constructors (object creation)` (was `hampter: yes`).
+- A new sub-line `subline` is drawn below it, indented 15px to the right
+  (sub-lines are offset 15px from main lines).
+
 ## v55m_44v — Runtime debug config file (mknp_custom_entities_debug.txt)
 
 The game now reads a debug config file **next to the DLL**:

@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44v
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44w
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5291,6 +5291,26 @@ static void __cdecl cEnt_draw_text_helper(void) {
     const char* first_line = "hello world";
     if (_stricmp(g_debug_state, "Rotator") == 0) first_line = "rotator";
 
+    /* Rotator documentation view. In this mode the debug text shows a
+     * hierarchical breakdown of the Rotator. Line 2 is the section title and
+     * sub-lines are indented 15px to the right below it. */
+    if (_stricmp(g_debug_state, "Rotator") == 0) {
+        pfn_UI_DrawTextShadow(font, (char*)first_line, 20, 12, 3, 3,
+                              0, 1.0f, 1.0f, 1.0f, 1.0f,
+                              0, 0.0f, 0.0f, 0.0f, 1.0f);
+        /* second line — section title (was "hampter: yes") */
+        pfn_UI_DrawTextShadow(font, "1 - Constructors (object creation)", 20,
+                              12 + 2 * debugTextSpacing, 3, 3,
+                              0, 1.0f, 1.0f, 1.0f, 1.0f,
+                              0, 0.0f, 0.0f, 0.0f, 1.0f);
+        /* sub-line — indented 15px to the right, below the section title */
+        pfn_UI_DrawTextShadow(font, "subline", 20 + 15,
+                              12 + 3 * debugTextSpacing, 3, 3,
+                              0, 1.0f, 1.0f, 1.0f, 1.0f,
+                              0, 0.0f, 0.0f, 0.0f, 1.0f);
+        return;
+    }
+
     pfn_UI_DrawTextShadow(font, (char*)first_line, 20, 12, 3, 3,
                           0, 1.0f, 1.0f, 1.0f, 1.0f,
                           0, 0.0f, 0.0f, 0.0f, 1.0f);
@@ -6369,7 +6389,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44v Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44w Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
