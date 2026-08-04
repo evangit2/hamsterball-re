@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44t
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44u
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -3893,14 +3893,20 @@ static void cEnt_update_constant_rotations(void) {
         DWORD obj = g_rotater_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
-        /* Rewrite direction field to prevent native oscillation reversal */
+        /* Rewrite direction field to prevent native oscillation reversal.
+         * The native render (vtable[11] 0x0043B330) does:
+         *   angle += direction * 0.004
+         *   if angle > 2.0:  direction = -1.0
+         *   if angle < -2.0: direction = +1.0
+         * By rewriting direction = rot_y EVERY frame (before the native render
+         * runs, via the present hook = slot 9, before slot 10 object render),
+         * the flip checks never take effect — the native reversal is
+         * overwritten before it can be applied. The angle grows unboundedly,
+         * but Gfx_Scale uses sin/cos so large angles are fine.
+         * NOTE: NO angle clamp here. Clamping to ±1.99 caused a visual snap
+         * (angle jumps ~114 degrees when it wraps). direction-only rewrite
+         * gives smooth constant rotation. */
         *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
-        /* Clamp angle to prevent the native "if angle > 2.0" / "if angle < -2.0" checks
-         * from triggering. By keeping angle within [-1.99, 1.99], the native code
-         * never reverses direction, giving constant rotation. */
-        float angle = *(float*)(obj + 0x10E8);
-        if (angle > 1.99f) *(float*)(obj + 0x10E8) = -1.99f;
-        else if (angle < -1.99f) *(float*)(obj + 0x10E8) = 1.99f;
     }
 }
 
@@ -4958,6 +4964,15 @@ static void __cdecl gluebie_present_helper(void) {
      * Graphics_RenderScene sets it to 1 during Draw phase. */
     g_in_draw_phase = 0;
 
+    /* v55m_44u: AI 1 Rotator constant rotation — run BEFORE the native
+     * render (vtable[11] 0x0043B330) each frame. The present hook is slot 9
+     * (viewport clear), which runs before slot 10 (object render), so this
+     * clamps the angle to ±1.99 and rewrites direction to rot_y before the
+     * native render's ±2.0 flip check fires. This keeps ROS_Y=0 Rotators
+     * spinning in one direction instead of oscillating. */
+    if (board && g_rotater_count > 0) {
+        cEnt_update_constant_rotations();
+    }
     /* v55m_7: Chomper state machine + rendering MUST run on main thread.
      * It calls D3D/Gfx functions (Timer_Init, Gfx_Scale, mesh vtable[7])
      * that need the D3D render context. Running from the background thread
@@ -6293,7 +6308,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44t Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_44u Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
