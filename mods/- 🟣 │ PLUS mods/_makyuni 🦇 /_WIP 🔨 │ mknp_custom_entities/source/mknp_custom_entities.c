@@ -382,6 +382,11 @@ typedef struct {
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
 
+static void __thiscall cEnt_timebutton_update_noop(void* this_) {
+    (void)this_; /* v55n_3: TimeButton vtable[1] no-op — prevents Rotator_Update
+                    (0x4606D0) vertex-deform heap corruption on bare-loaded mesh. */
+}
+
 /* v55n_3: TimeButton tracking. Native Up race TimeButton (ctor 0x436C10, vtable 0x4D5830).
  * Tracked so the N:EXTRATIME collision handler in our DispatchCollisionEvents hook can
  * find the button entity and replicate Rotator_TriggerSound + timer reward. */
@@ -3422,6 +3427,29 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc TimeButton\n"); return; }
                 memset(obj, 0, TIMEBUTTON_SIZE);
                 pfn_TimeButton_ctor(obj, (void*)board, px, py, pz, mesh);
+                /* v55n_3 FIX (crash 0001:0004717E ntdll, ~1s after spawn):
+                 * board+0x2578 (update list) calls vtable[1] = Rotator_Update
+                 * (0x4606D0) EVERY FRAME on TimeButtons. Native survives because
+                 * its mesh (board+0x478C) has proper vertex data that feeds
+                 * Rotator_Update's vertex-deform buffer. The cEnt loads a bare
+                 * MeshWorld (Level_MeshWorldCtor 0x461510) whose SceneObject
+                 * +0x43C vertex count is 0 → Rotator_Update allocates a 0-size
+                 * buffer and writes mesh verts into it → heap corruption → ntdll
+                 * crash during Update. The button needs NO vertex deformation.
+                 * Replace vtable[1] with a no-op on a private vtable copy. */
+                {
+                    DWORD* tb_vt = *(DWORD**)obj;
+                    if (tb_vt && !IsBadReadPtr((void*)tb_vt, 0x400)) {
+                        DWORD* new_tb_vt = (DWORD*)pfn_operator_new(0x400);
+                        if (new_tb_vt) {
+                            memcpy(new_tb_vt, (void*)tb_vt, 0x400);
+                            new_tb_vt[1] = (DWORD)&cEnt_timebutton_update_noop;
+                            *(DWORD*)obj = (DWORD)new_tb_vt;
+                            if (logf) fprintf(logf, "  ROTATER: TimeButton vtable[1] -> noop (0x%08X -> 0x%08X)\n",
+                                              (DWORD)tb_vt, (DWORD)new_tb_vt);
+                        }
+                    }
+                }
                 *(float*)((char*)obj + 0x10D4) = px;
                 *(float*)((char*)obj + 0x10D8) = py;
                 *(float*)((char*)obj + 0x10DC) = pz;
