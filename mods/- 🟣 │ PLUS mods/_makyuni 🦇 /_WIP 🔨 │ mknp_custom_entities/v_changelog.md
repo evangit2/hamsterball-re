@@ -1,3 +1,35 @@
+## v55n_3 — cEnt TimeButton is now solid and pressable (native Up race logic)
+
+MAKYUNI asked how the Up race TimeButton works; Ghidra deep-dive of the native
+chain (TimeButton_ctor 0x436C10, UpRaceCollisionEvents 0x4119B0, press fn
+Rotator_TriggerSound 0x436CF0) showed the press is **pure collision**, no force
+threshold: the ball touching the N:EXTRATIME tagged mesh presses it, if the
+button's +0x10E4 latch is still 0.
+
+Native press (Rotator_TriggerSound):
+- +0x10E4 = 1 (one-shot latch)
+- +0x10E5 = 1 (render pressed pose)
+- +0x10D8 -= 20.0f (button sinks 20 units)
+- press sound on sound list channel +0x510
+
+Reward (single-player only, profile+0x10==0 && profile+0x11==0):
+- timer slot (player_idx*0xA0 + 0x5EC + App) SET to 500
+- "EXTRA TIME:" ScoreObject popup
+
+What the cEnt (ai_type 45) now does, mirroring the proven SpeedCylinder
+(v55n_2) native-parity fix:
+1. Spawns the real TimeButton_ctor (0x436C10, 0x10E8 bytes, vtable 0x4D5830)
+2. Registers the Level_RenderCtor collision Level at obj+0x10E0 into
+   board+0x10EC + scene collision tree (SOLID)
+3. Sets MeshBuffer+0x47C = entity on the collision mesh MeshBuffers so the
+   N:EXTRATIME handler finds the button entity (same link SpeedCylinder needed)
+4. Sets entity+0x47C self-ref
+5. Tracks buttons in g_timebuttons[]; the DispatchCollisionEvents hook now
+   replicates the native N:EXTRATIME press + timer reward on ANY level
+
+Note: the native handler writes the timer to a FIXED 500 (not +500). The cEnt
+replicates that exact behavior.
+
 ## v55n_2 — SpeedCylinder is now solid and has its native spin/launch behavior
 
 The cEnt SpeedCylinder (ai_type 39) was missing its behavior and was

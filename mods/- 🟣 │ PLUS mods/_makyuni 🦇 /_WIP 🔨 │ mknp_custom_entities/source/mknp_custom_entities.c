@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_2
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_3
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -286,6 +286,18 @@ static StandsCtor_t pfn_Tipper_ctor       = (StandsCtor_t)0x00437960;
 static StandsCtor_t pfn_Gluebie_ctor      = (StandsCtor_t)0x00437CB0;
 static LifterCtor_t pfn_Lifter_ctor       = (LifterCtor_t)0x00436920;
 static SpeedCylCtor_t pfn_SpeedCylinder_ctor = (SpeedCylCtor_t)0x00436A20;
+/* TimeButton_ctor: 5 params (this, board, x, y, z, mesh) — same shape as Rotator_ctor_t.
+ * Native Up race TimeButton (0x436C10, 0x10E8 bytes, vtable 0x4D5830):
+ *   Stands_ctor(this, mesh); then:
+ *     +0x10D0 = board, +0x10D4/8/C = pos
+ *     +0x10E0 = Level_RenderCtor collision/render Level
+ *     puVar1[0x10D] = obj+0x434 mesh ptr  (Level_RenderCtor child mesh ref)
+ *     +0x10E4 = 0 (not-yet-pressed latch), +0x10E5 = 1 (render-once pressed pose)
+ * Press logic: N:EXTRATIME collision -> Rotator_TriggerSound (0x436CF0):
+ *     if (+0x10E4 == 0) { +0x10E4=1; +0x10E5=1; +0x10D8 -= 20.0f (sink); Sound_Play3D(+0x510); }
+ * Reward (single-player): timer slot = 500 + "EXTRA TIME:" ScoreObject. */
+typedef void* (__thiscall *TimeButtonCtor_t)(void* this_, void* board, float x, float y, float z, void* mesh);
+static TimeButtonCtor_t pfn_TimeButton_ctor = (TimeButtonCtor_t)0x00436C10;
 static Rotator_ctor_t pfn_NeonPlatform_ctor  = (Rotator_ctor_t)0x0043E110;
 static TrapdoorCtor_t pfn_Trapdoor_ctor     = (TrapdoorCtor_t)0x00438290;
 static OddLifterCtor_t pfn_Odd_Lifter_ctor   = (OddLifterCtor_t)0x00434E60;
@@ -369,6 +381,20 @@ typedef struct {
 } SpeedCylState;
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
+
+/* v55n_3: TimeButton tracking. Native Up race TimeButton (ctor 0x436C10, vtable 0x4D5830).
+ * Tracked so the N:EXTRATIME collision handler in our DispatchCollisionEvents hook can
+ * find the button entity and replicate Rotator_TriggerSound + timer reward. */
+#define MAX_TIMEBUTTONS 16
+typedef struct {
+    DWORD obj;        /* TimeButton entity (0x10E8 bytes, vtable 0x4D5830) */
+    DWORD board;      /* owning board */
+    float x, y, z;    /* spawn position */
+    DWORD col_level;  /* collision/render Level at obj+0x10E0 */
+    int   pressed;    /* 1 = already pressed (latch mirror) */
+} TimeButtonState;
+static TimeButtonState g_timebuttons[MAX_TIMEBUTTONS];
+static int g_timebutton_count = 0;
 
 /* v55n_2: Native SpeedCylinder slot 11 = ImpossibleRotator_Update (0x43D8C0).
  * __fastcall(this) — spin-up + 175-frame hold + launch at 65.0 + star trail + render transform. */
@@ -1347,6 +1373,7 @@ static void cEnt_bridgeslam_update(BridgeslamState* bs) {
 #define GLUEBIE_SIZE          0x110C
 #define LIFTER_SIZE           0x10F4
 #define SPEEDCYLINDER_SIZE    0x150C
+#define TIMEBUTTON_SIZE       0x10E8
 #define NEONPLATFORM_SIZE     0x1104
 #define TRAPDOOR_SIZE         0x10F8
 #define ODD_LIFTER_SIZE       0x10F4
@@ -1563,6 +1590,104 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                         g_catapults[best].obj);
                     fclose(cdf);
                 }
+            }
+        }
+    }
+
+    /* v55n_3: N:EXTRATIME — TimeButton press (replicated from UpRaceCollisionEvents 0x4119B0
+     * + Rotator_TriggerSound 0x436CF0). Native: on N:EXTRATIME collision, if button+0x10E4==0:
+     *   press latch 0x10E4=1, render flag 0x10E5=1, sink +0x10D8 -= 20.0f, play press sound
+     *   (sound list +0x510). Then in single-player (profile+0x10==0 && profile+0x11==0):
+     *   set timer slot = 500 + spawn "EXTRA TIME:" ScoreObject.
+     * We replicate it for cEnt TimeButtons on ANY level. */
+    if (g_timebutton_count > 0 && event_name && _stricmp(event_name, "N:EXTRATIME") == 0) {
+        /* Native reads entity via [[MeshBuffer]+0x47C]. Try that first, else nearest tracked. */
+        DWORD tb_entity = 0;
+        DWORD meshbuf0 = collision_data[0];
+        if (meshbuf0 && !IsBadReadPtr((void*)meshbuf0, 0x4C0)) {
+            DWORD ent_link = *(DWORD*)((char*)meshbuf0 + 0x47C);
+            /* ent_link is the entity IF it looks like our TimeButton (vtable 0x4D5830) */
+            if (ent_link && !IsBadReadPtr((void*)ent_link, 0x10E8) &&
+                *(DWORD*)ent_link == 0x4D5830) {
+                tb_entity = ent_link;
+            }
+        }
+        if (!tb_entity) {
+            /* Fallback: nearest tracked TimeButton to ball */
+            if (ball && !IsBadReadPtr((void*)ball, 0x200)) {
+                float bx = *(float*)((DWORD)ball + 0x164);
+                float by = *(float*)((DWORD)ball + 0x168);
+                float bz = *(float*)((DWORD)ball + 0x16C);
+                int best = -1;
+                float best_dist = 999999.0f;
+                int i;
+                for (i = 0; i < g_timebutton_count; i++) {
+                    float dx = bx - g_timebuttons[i].x;
+                    float dy = by - g_timebuttons[i].y;
+                    float dz = bz - g_timebuttons[i].z;
+                    float d = dx*dx + dy*dy + dz*dz;
+                    if (d < best_dist) { best_dist = d; best = i; }
+                }
+                if (best >= 0 && best_dist < 250000.0f) tb_entity = g_timebuttons[best].obj;
+            }
+        }
+        if (tb_entity && !IsBadReadPtr((void*)tb_entity, 0x10E8)) {
+            if (*(char*)((char*)tb_entity + 0x10E4) == 0) {   /* not yet pressed */
+                /* Replicate Rotator_TriggerSound (0x436CF0) */
+                *(char*)((char*)tb_entity + 0x10E4) = 1;      /* latch pressed */
+                *(char*)((char*)tb_entity + 0x10E5) = 1;      /* render pressed pose */
+                *(float*)((char*)tb_entity + 0x10D8) -= 20.0f;/* sink 20 units */
+                /* Press sound: sound list [board+0x878] channel +0x510 */
+                DWORD board_tb = *(DWORD*)((char*)tb_entity + 0x10D0);
+                if (board_tb && !IsBadReadPtr((void*)(board_tb + 0x880), 0x20)) {
+                    DWORD snd_list = *(DWORD*)((char*)board_tb + 0x878);
+                    if (snd_list && !IsBadReadPtr((void*)(snd_list + 0x520), 0x10)) {
+                        DWORD ch = *(DWORD*)((char*)snd_list + 0x510);
+                        if (ch && pfn_Sound_Play3D) {
+                            pfn_Sound_Play3D((void*)ch,
+                                *(float*)((char*)tb_entity + 0x10D4),
+                                *(float*)((char*)tb_entity + 0x10D8),
+                                *(float*)((char*)tb_entity + 0x10DC), 1.0f);
+                        }
+                    }
+                }
+                /* Mark tracked state pressed */
+                {
+                    int i;
+                    for (i = 0; i < g_timebutton_count; i++) {
+                        if (g_timebuttons[i].obj == tb_entity) {
+                            g_timebuttons[i].pressed = 1;
+                            break;
+                        }
+                    }
+                }
+                /* Reward (single-player only): timer slot = 500 + "EXTRA TIME:" popup.
+                 * Native: checks profile+0x10==0 && profile+0x11==0, writes 500 to
+                 * ball->player_index * 0xA0 + 0x5EC + App offset... In the handler the
+                 * App ptr comes from board+0x878. We replicate:
+                 *   App = [board+0x878]; profile = [App+0x220];
+                 *   if (profile && profile+0x10==0 && profile+0x11==0) {
+                 *       DWORD timer_slot = ball+6 (player idx) * 0xA0 + 0x5EC + App;
+                 *       *(DWORD*)timer_slot = 500;
+                 *   } */
+                if (ball && !IsBadReadPtr((void*)ball, 0x200)) {
+                    DWORD board_tb2 = *(DWORD*)((char*)tb_entity + 0x10D0);
+                    DWORD snd_list2 = board_tb2 ? *(DWORD*)((char*)board_tb2 + 0x878) : 0;
+                    if (board_tb2 && snd_list2 && !IsBadReadPtr((void*)snd_list2, 0x240)) {
+                        DWORD app_tb = *(DWORD*)((char*)board_tb2 + 0x878);
+                        DWORD profile = app_tb ? *(DWORD*)((char*)app_tb + 0x220) : 0;
+                        if (app_tb && profile && !IsBadReadPtr((void*)profile, 0x20) &&
+                            *(char*)((char*)profile + 0x10) == 0 &&
+                            *(char*)((char*)profile + 0x11) == 0) {
+                            int player_idx = *(int*)((DWORD)ball + 0x18); /* ball+6 = player index */
+                            DWORD timer_slot = player_idx * 0xA0 + 0x5EC + app_tb;
+                            if (!IsBadReadPtr((void*)timer_slot, 4)) {
+                                *(DWORD*)timer_slot = 500;
+                            }
+                        }
+                    }
+                }
+                if (logf) fprintf(logf, "  ROTATER: TimeButton pressed (entity=0x%08X)\n", tb_entity);
             }
         }
     }
@@ -2765,7 +2890,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
          * Reset it to 0.0 by default so the rotater starts unrotated.
          * (The debug table's "Sets Angle" step now yields 0.0.) */
         *(float*)(obj + 0x10E8) = 0.0f;
-    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 44)) {
+    } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 44) || ai_type == 45) {
         /* New constructor types — each with specific signature.
          * Range 7-14: ArenaStands + Wavy family (Flag/Flag2)
          * Range 17-22: ArenaStands variants + Chomper
@@ -3279,6 +3404,71 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_speedcyl_count++;
                 }
                 break;
+            case 45: /* v55n_3: TimeButton_ctor — 5 params (this, board, x, y, z, mesh).
+                      * Native Up race TimeButton (0x436C10, 0x10E8 bytes, vtable 0x4D5830):
+                      *   Stands_ctor creates collision/render Level at obj+0x10E0 + tree clones
+                      *   at obj+0x18. +0x10E4 = not-yet-pressed latch, +0x10E5 = render-once.
+                      * To be SOLID and PRESSABLE we mirror the proven SpeedCylinder(v55n_2) fix:
+                      *   1. Register obj+0x10E0 into board+0x10EC + scene tree (solid)
+                      *   2. Set MeshBuffer+0x47C = entity on collision MeshBuffers so the
+                      *      N:EXTRATIME handler (our DispatchCollisionEvents hook, replicated
+                      *      from UpRaceCollisionEvents 0x4119B0) finds the entity
+                      *   3. Set entity+0x47C self-ref
+                      *   4. Track in g_timebuttons[] for collision dispatch.
+                      * The button presses N:EXTRATIME -><- Rotator_TriggerSound (0x436CF0):
+                      *   sets +0x10E4=1, +0x10E5=1, +0x10D8 -= 20.0f (sink 20 units), press sound
+                      *   channel+0x510. Reward (single-player): timer slot = 500 + "EXTRA TIME:". */
+                obj = pfn_operator_new(TIMEBUTTON_SIZE);
+                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc TimeButton\n"); return; }
+                memset(obj, 0, TIMEBUTTON_SIZE);
+                pfn_TimeButton_ctor(obj, (void*)board, px, py, pz, mesh);
+                *(float*)((char*)obj + 0x10D4) = px;
+                *(float*)((char*)obj + 0x10D8) = py;
+                *(float*)((char*)obj + 0x10DC) = pz;
+                {
+                    /* 1. Collision Level at obj+0x10E0 (mirror SpeedCylinder case 39) */
+                    DWORD tb_col = *(DWORD*)((char*)obj + 0x10E0);
+                    if (tb_col && !IsBadReadPtr((void*)tb_col, 0x20)) {
+                        /* 2. Set MeshBuffer+0x47C = entity on ALL MeshBuffers so the
+                         *    N:EXTRATIME handler finds the entity ([[MeshBuffer]+0x47C]).
+                         *    MeshBuffers: Level+0x08 -> MeshWorld, +0x2C AthenaList,
+                         *    count +0x04, items +0x40C. */
+                        DWORD tb_mw = *(DWORD*)((char*)tb_col + 0x08);
+                        if (tb_mw && !IsBadReadPtr((void*)(tb_mw + 0x2C), 0x410)) {
+                            DWORD mb_list = tb_mw + 0x2C;
+                            DWORD mb_count = *(DWORD*)(mb_list + 0x04);
+                            DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
+                            int mi;
+                            for (mi = 0; mi < (int)mb_count && mb_items && !IsBadReadPtr((void*)mb_items, mb_count*4); mi++) {
+                                DWORD mb = ((DWORD*)mb_items)[mi];
+                                if (mb && !IsBadReadPtr((void*)mb, 0x48C)) {
+                                    *(DWORD*)((char*)mb + 0x47C) = (DWORD)obj;
+                                }
+                            }
+                        }
+                        /* Register collision Level into board+0x10EC + scene tree */
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)tb_col);
+                        DWORD scene_col3 = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                        if (scene_col3) {
+                            pfn_AthenaList_Append((DWORD*)(scene_col3 + 0x18), (void*)tb_col);
+                        }
+                        if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X registered\n", tb_col);
+                    }
+                    /* 3. Entity self-ref +0x47C */
+                    *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
+                }
+                /* 4. Track for N:EXTRATIME collision dispatch */
+                if (g_timebutton_count < MAX_TIMEBUTTONS) {
+                    g_timebuttons[g_timebutton_count].obj = (DWORD)obj;
+                    g_timebuttons[g_timebutton_count].board = board;
+                    g_timebuttons[g_timebutton_count].x = px;
+                    g_timebuttons[g_timebutton_count].y = py;
+                    g_timebuttons[g_timebutton_count].z = pz;
+                    g_timebuttons[g_timebutton_count].col_level = *(DWORD*)((char*)obj + 0x10E0);
+                    g_timebuttons[g_timebutton_count].pressed = 0;
+                    g_timebutton_count++;
+                }
+                break;
             case 40: /* NeonPlatform_ctor — 6 params (this, board, x, y, z, mesh) — Rotator_ctor_t */
                 obj = pfn_operator_new(NEONPLATFORM_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc NeonPlatform\n"); return; }
@@ -3790,6 +3980,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
     g_speedcyl_count = 0; /* v55n_2: reset SpeedCylinder tracking on level unload */
+    g_timebutton_count = 0; /* v55n_3: reset TimeButton tracking on level unload */
     g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
     /* v55n: Free any live decorative TarBubble objects on level unload
      * (they self-free on pop, but must not leak across level changes). */
@@ -6001,7 +6192,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_2", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_3", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -7459,7 +7650,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
             { "Tarbubble",        25, "levels\\_default" },         /* v55n: DECORATIVE floating bubble (native ctor 0x44FB50, vtable 0x4D6E48). Does NOT slow/sink — Gluebie(43) slows, Tarpit(44) sinks. Self-driven on all boards. */
             { "Tarpit",           44, "levels\\_default" },          /* v55k_1: N:TARPIT behavior via proximity, PopCylinder spawn + tar sinking */
-            { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
+            { "Timebutton",       45, "levels\\LevelUp-Button" },    /* TimeButton_ctor (0x436C10, 0x10E8) */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
             { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
             { "Trode",            21, "levels\\LevelDark-Trode" },   /* cEnt_Trode_ctor (ArenaStands_ctor) */
@@ -7614,7 +7805,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_2 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_3 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
