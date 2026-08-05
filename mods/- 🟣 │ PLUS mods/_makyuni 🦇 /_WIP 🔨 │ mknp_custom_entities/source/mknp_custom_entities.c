@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_4
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_5
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -400,9 +400,57 @@ typedef struct {
     float x, y, z;    /* spawn position */
     DWORD col_level;  /* collision/render Level at obj+0x10E0 */
     int   pressed;    /* 1 = already pressed (latch mirror) */
+    DWORD orig_vtable18; /* v55n_5: saved original vtable[18] (0x45E0E0) for render hook */
 } TimeButtonState;
 static TimeButtonState g_timebuttons[MAX_TIMEBUTTONS];
 static int g_timebutton_count = 0;
+static DWORD g_timebuttons_pos_hook_orig = 0; /* v55n_5: orig vtable[18] of last hooked button (all share 0x45E0E0) */
+
+/* v55n_5: TimeButton render hook (vtable[18] replacement on the private copy).
+ * PROBLEM: NOP'ing vtable[11] (0x43DC40) removed the position-set that the
+ * native render-once did — Timer_Init + timer vtable[2] (Gfx_SetPosition
+ * 0x457B50) + the crashy 0x46DF80/0x46DF90 pair. Result: the button renders
+ * at 0,0,0 (its SceneObject world matrix is identity).
+ * FIX: Set the world matrix translation to (obj+0x10D4/8/C) BEFORE calling
+ * the original render 0x45E0E0 — same proven pattern as cEnt_catapult_render
+ * (save matrix -> write translation -> original render -> restore matrix).
+ * The world matrix lives at renderLevel+0x4 where renderLevel = obj+0x434
+ * (Stands layout: +0x434 = operator_new'd Timer object that acts as the
+ * render/view level, ACTUAL matrix at +0x438 = renderLevel+4). */
+static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int param_2) {
+    TimeButtonState* tb = NULL;
+    int i;
+    for (i = 0; i < g_timebutton_count; i++) {
+        if (g_timebuttons[i].obj == this_) { tb = &g_timebuttons[i]; break; }
+    }
+    if (!tb || !tb->orig_vtable18) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+    DWORD renderLevel = 0;
+    if (!IsBadReadPtr((void*)(this_ + 0x434), 4)) {
+        renderLevel = *(DWORD*)(this_ + 0x434);
+    }
+    if (renderLevel && !IsBadReadPtr((void*)(renderLevel + 0x4), 64)) {
+        float saveMatrix[16];
+        memcpy(saveMatrix, (float*)(renderLevel + 0x4), sizeof(saveMatrix));
+        /* Set translation to the spawn position. Only modify the 4th row
+         * (row-major D3D matrix: [12],[13],[14]) to keep scale/rotation. */
+        float* m = (float*)(renderLevel + 0x4);
+        m[12] = tb->x;
+        m[13] = tb->y;
+        m[14] = tb->z;
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)tb->orig_vtable18)(this_, param_1, param_2);
+        memcpy((float*)(renderLevel + 0x4), saveMatrix, sizeof(saveMatrix));
+        return;
+    }
+    typedef void (__thiscall *render_t)(DWORD, char, int);
+    ((render_t)(tb->orig_vtable18 ? tb->orig_vtable18 : 0x0045E0E0))(this_, param_1, param_2);
+    return;
+}
+
 
 /* v55n_2: Native SpeedCylinder slot 11 = ImpossibleRotator_Update (0x43D8C0).
  * __fastcall(this) — spin-up + 175-frame hold + launch at 65.0 + star trail + render transform. */
@@ -1614,10 +1662,18 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
         DWORD meshbuf0 = collision_data[0];
         if (meshbuf0 && !IsBadReadPtr((void*)meshbuf0, 0x4C0)) {
             DWORD ent_link = *(DWORD*)((char*)meshbuf0 + 0x47C);
-            /* ent_link is the entity IF it looks like our TimeButton (vtable 0x4D5830) */
-            if (ent_link && !IsBadReadPtr((void*)ent_link, 0x10E8) &&
-                *(DWORD*)ent_link == 0x4D5830) {
-                tb_entity = ent_link;
+            /* ent_link is the entity IF it looks like our TimeButton:
+             * vtable == 0x4D5830 (native) OR the private copy pointing to it
+             * (v55n_3+ swaps vtable to a private 0x400B copy). Both have slot
+             * 0 == 0x43DC20 (dtor) so check that instead of the vtable base. */
+            if (ent_link && !IsBadReadPtr((void*)ent_link, 0x10E8)) {
+                DWORD ent_vt = *(DWORD*)ent_link;
+                int is_tb = 0;
+                if (ent_vt == 0x4D5830) is_tb = 1;
+                else if (ent_vt && ent_vt > 0x400000 &&
+                         !IsBadReadPtr((void*)ent_vt, 0x100) &&
+                         *(DWORD*)ent_vt == 0x43DC20) is_tb = 1; /* private copy of 0x4D5830 */
+                if (is_tb) tb_entity = ent_link;
             }
         }
         if (!tb_entity) {
@@ -3456,15 +3512,25 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                             memcpy(new_tb_vt, (void*)tb_vt, 0x400);
                             new_tb_vt[1] = (DWORD)&cEnt_timebutton_update_noop;
                             new_tb_vt[11] = (DWORD)&cEnt_timebutton_update_noop;
+                            /* v55n_5: hook vtable[18] (render) so we can set the
+                             * world-matrix translation to the spawn position —
+                             * the NOP'd 0x43DC40 no longer positions it. */
+                            g_timebuttons_pos_hook_orig = new_tb_vt[18];
+                            new_tb_vt[18] = (DWORD)&cEnt_timebutton_render;
                             *(DWORD*)obj = (DWORD)new_tb_vt;
-                            if (logf) fprintf(logf, "  ROTATER: TimeButton vtable slots 1+11 -> noop (0x%08X -> 0x%08X)\n",
-                                              (DWORD)tb_vt, (DWORD)new_tb_vt);
+                            if (logf) fprintf(logf, "  ROTATER: TimeButton vtable slots 1+11 -> noop, 18 -> render hook (0x%08X -> 0x%08X) orig18=0x%08X\n",
+                                              (DWORD)tb_vt, (DWORD)new_tb_vt, g_timebuttons_pos_hook_orig);
                         }
                     }
                 }
-                /* Also clear the render-once flag so 0x43DC40's body can never
-                 * fire even through the ORIGINAL vtable. */
-                *(char*)((char*)obj + 0x10E5) = 0;
+                /* Do NOT clear +0x10E5. Rotator_RemoveAndFree (0x436FC0) uses
+                 * +0x10E5==0 as its "already cleaned up" guard — clearing it
+                 * here makes RemoveAndFree run its cleanup on a button whose
+                 * collision Level was never registered in the lists it removes
+                 * from, causing a double-free on teardown (quit crash,
+                 * ntdll 0001:00041106). Keep +0x10E5=1 (ctor default) so the
+                 * guard stays closed; the private vtable NOPs prevent 0x43DC40
+                 * from ever firing the render-once chain. */
                 *(float*)((char*)obj + 0x10D4) = px;
                 *(float*)((char*)obj + 0x10D8) = py;
                 *(float*)((char*)obj + 0x10DC) = pz;
@@ -3489,22 +3555,28 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                 }
                             }
                         }
-                        /* v55n_3 CRASH FIX (2nd): do NOT register the +0x10E0
-                         * collision Level into board+0x10EC / scene_col+0x18.
-                         * Native Up_CreateDynamicObjects registers TimeButton ONLY
-                         * in board+0x2578. The collision works because Stands_ctor
-                         * clones spatial trees into obj+0x18, which Ball_Update
-                         * reaches via the board collision level — WITHOUT the
-                         * explicit list registration. Adding the Level_RenderCtor
-                         * to board+0x10EC makes the collision system iterate it
-                         * as a CollisionLevel every Update while the render path
-                         * (vtable[18] 0x45E0E0) simultaneously reads its mesh
-                         * buffers -> double-use -> heap corruption -> ntdll
-                         * 0001:0004717E (same class of bug as the catapult
-                         * 0x478EDD crash, fixed in v55m_43h by removing the
-                         * registration). The button is rendered through the
-                         * board+0x2578 update path instead. */
-                        if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X via native obj+0x18\n", tb_col);
+                        /* v55n_5 FIX: Register the +0x10E0 collision Level into
+                         * board+0x10EC + scene_col+0x18 — EXACTLY like SpeedCylinder
+                         * (case 39). v55n_3/v55n_4 removed this registration to
+                         * stop the in-game crash, but that caused a DIFFERENT
+                         * problem: the TimeButton dtor (FUN_0043dc20 ->
+                         * Rotator_Cleanup) ALWAYS frees obj+0x10E0, and it removes
+                         * it from board+0x8B0+0x18 and board+0x10EC via
+                         * Rotator_RemoveAndFree (0x436FC0). With no registration,
+                         * RemoveAndFree frees a Level that the scene teardown ALSO
+                         * frees -> double-free -> ntdll 0001:00041106 crash on
+                         * quit (Pause Menu / Background). Registering matches
+                         * native: Rotator_RemoveAndFree cleanly unhooks it once,
+                         * so the later scene teardown has nothing left to free.
+                         * The in-game crash is separately prevented by the
+                         * vtable[11] NOP (0x43DC40 never fires), so adding the
+                         * collision registration back is SAFE. */
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)tb_col);
+                        DWORD tb_scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                        if (tb_scene_col) {
+                            pfn_AthenaList_Append((DWORD*)(tb_scene_col + 0x18), (void*)tb_col);
+                        }
+                        if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
                     }
                     /* 3. Entity self-ref +0x47C */
                     *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
@@ -3518,6 +3590,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_timebuttons[g_timebutton_count].z = pz;
                     g_timebuttons[g_timebutton_count].col_level = *(DWORD*)((char*)obj + 0x10E0);
                     g_timebuttons[g_timebutton_count].pressed = 0;
+                    g_timebuttons[g_timebutton_count].orig_vtable18 = g_timebuttons_pos_hook_orig;
                     g_timebutton_count++;
                 }
                 break;
@@ -6244,7 +6317,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_4", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_5", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -7857,7 +7930,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_4 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_5 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

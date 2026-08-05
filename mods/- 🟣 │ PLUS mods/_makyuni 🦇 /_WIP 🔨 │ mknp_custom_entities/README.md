@@ -1,4 +1,4 @@
-# Custom Entities Mod v55n_4
+# Custom Entities Mod v55n_5
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
@@ -106,7 +106,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Swirl         | 6    | levels\Level3-Swirl             | cEnt_Rotator_ctor_Impossible                                |
 | Tarbubble     | 25   | levels\_default                 | Decorative bubble (native 0x44FB50)                         |
 | Tarpit        | 0    | levels\_default                 | N:TARPIT tag, _default mesh                                 |
-| Timebutton    | 45   | levels\LevelUp-Button           | cEnt_TimeButton_ctor - solid + press (N:EXTRATIME, v55n_4)  |
+| Timebutton    | 45   | levels\LevelUp-Button           | TimeButton_ctor - solid + press (N:EXTRATIME, v55n_5)       |
 | Tipper        | 0    | levels\Level3-Tipper            | cEnt_Tipper_ctor                                            |
 | Trapdoor      | 0    | levels\Level4-Trapdoor1         | cEnt_Trapdoor_ctor                                          |
 | Trode         | 21   | levels\LevelDark-Trode          | cEnt_Trode_ctor (ArenaStands_ctor)                          |
