@@ -1,6 +1,26 @@
-# Hamsterball Water Physics Mod v7.1
+# Hamsterball Water Physics Mod v7.2
 
 Custom water physics for Hamsterball via bass.dll proxy.
+
+## What's New in v7.2
+
+**Surgical death-flag block (replaces the whole-block skip).**
+
+Previously, Hook 3 skipped the ENTIRE type-5 death block while the ball was in
+water or in the grace period — including the camera snap, viewport setup, and
+split-flag logic. Now it skips only the ONE instruction that matters:
+the `ball+0x2E9` (death/falling flag) write at `0x407391`.
+
+In practice: while submerged or within the 5-second grace period after leaving
+water, the game never marks the ball as "falling to its death" — so death
+checks #1/#2 can't fire and the ball won't shatter at the apex of a bounce-out.
+But the camera still snaps to follow the falling ball, the viewport still
+updates, and the split logic still runs — the fall *looks* and *feels* exactly
+as before, it just can't kill you.
+
+E:LIMIT (fell out of the level / kill plane) is a separate writer via
+DispatchCollisionEvents and is NOT blocked — falling out of the map still kills
+you, as intended.
 
 ## What's New in v7
 
@@ -45,7 +65,7 @@ Four hooks working together:
 |------|---------|------|---------|
 | 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — detect E:WATER, trigger (flag + damp + capture Y + clear bounce counter) |
 | 2 | 0x407BB4 | Code cave | Phase 15 — per-frame drag/buoyancy while in_water (with FPU save/restore, clear 0x2E9, dizzy immunity) |
-| 3 | 0x407377 | Code cave | Type 5 suppressor — skip 0x2E9 death block while submerged |
+| 3 | 0x407377 | Code cave | Type 5 suppressor — block ONLY the 0x2E9 death-flag write while submerged/in grace (camera snap + split logic intact) |
 | 4 | 0x4CF3C0+8 | Vtable swap | Ball_FallDeath — suppress death during in_water + grace period |
 
 ### Collision-Event-Driven Detection
@@ -56,7 +76,7 @@ No MeshWorld scanning, no background threads. The game's own collision system te
 
 2. **Hook 2** (Phase 15 code cave) runs every frame. If `in_water` is set, applies drag (all velocity axes), horizontal drag (extra on X/Z), and buoyancy (upward acceleration proportional to submersion depth). Also clears `ball+0x2E9`, clears `ball+0x2EC` (bounce counter), and sets `ball+0x2F4` (dizzy_immunity_timer) to `GRACE_PERIOD_FRAMES` every frame while submerged. Saves/restores full FPU state via FNSAVE/FRSTOR.
 
-3. **Hook 3** (Type 5 collision suppressor) prevents geometric mesh-penetration from setting ball+0x2E9 (falling flag) while submerged. E:LIMIT events still set 0x2E9 through DispatchCollisionEvents, so the ball can still die from level boundaries.
+3. **Hook 3** (Type 5 collision suppressor) prevents geometric mesh-penetration from writing the `ball+0x2E9` (falling/death flag) while submerged or within the grace period. It skips only the flag-write instruction, so the camera snap and viewport still follow the falling ball. E:LIMIT events still set 0x2E9 through DispatchCollisionEvents, so the ball can still die from level boundaries.
 
 4. **Hook 4** (vtable[8] Ball_FallDeath) suppresses death while in water or within the grace period (120 frames ~5s) after leaving water. Covers the bounce-out scenario.
 
