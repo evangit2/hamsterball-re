@@ -1,3 +1,22 @@
+## v55m_51 — Debug tables show the LIVE rotation accumulator
+
+The debug string tables showed mostly `1.00` for rotation values because they
+displayed `obj+0x10E8` (the per-frame angle delta, capped at exactly 1.0 by
+v55m_50) and `obj+0x10EC` (direction, rewritten to 1.0 every frame). But the
+value that **actually drives the visible spin** is `obj+0x10E4` — the
+accumulator in degrees — which wasn't being read.
+
+Now:
+
+- **Angle X** (properties table) shows the live accumulator `obj+0x10E4`
+  (degrees) — it climbs as the object spins.
+- **Rotation angle** (properties table) also shows the accumulator.
+- **Accumulated angle** (docs table, `3 - Updates`) now reads the accumulator
+  too (it was wrongly showing the delta before).
+- **Angle Y** keeps the per-frame delta, **Angle Z** keeps the direction
+  multiplier, and **Scale X/Y/Z** stays at the S1 ref-point scale (native
+  default 1.0 — it's genuinely constant unless the level sets a scale).
+
 ## v55m_50 — cEnt Rotator max speed cap raised 20 → 250
 
 The cEnt Rotator's per-frame render angle cap (`NATIVE_ROTATOR_MAX_SPEED`)

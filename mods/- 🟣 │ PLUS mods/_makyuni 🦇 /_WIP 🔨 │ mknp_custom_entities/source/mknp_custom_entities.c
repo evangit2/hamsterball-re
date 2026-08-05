@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_50
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_51
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -5334,8 +5334,13 @@ static DWORD g_last_props_toggle_tick = 0;
  * "nonzero" (drawn in faint blue) or zero (drawn gray, same as the old
  * "0.0" placeholder). */
 static int   g_dbg_entity_found = 0;      /* 1 = a spawned object matched */
-static float g_dbg_angle = 0.0f;          /* obj+0x10E8 */
+static float g_dbg_angle = 0.0f;          /* obj+0x10E8 (per-frame delta) */
 static float g_dbg_direction = 0.0f;      /* obj+0x10EC */
+/* v55m_51: obj+0x10E4 = the ACCUMULATOR (degrees) that actually drives the
+ * visible rotation (Gfx_ScaleX(accum)). The per-frame delta (obj+0x10E8) is
+ * capped at 1.0 by v55m_50, so showing only the delta makes every angle
+ * "pin" at 1.00. The accumulator is the real live spin value. */
+static float g_dbg_accum = 0.0f;          /* obj+0x10E4 (accumulator, deg) */
 static int   g_dbg_in_update_list = 0;    /* obj present in board+0x2578 */
 static int   g_dbg_in_render_list = 0;    /* obj present in board+0xCD4 */
 static int   g_dbg_in_collision_list = 0; /* obj present in board+0x10EC */
@@ -5393,6 +5398,7 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
     g_dbg_entity_found = 0;
     g_dbg_angle = 0.0f;
     g_dbg_direction = 0.0f;
+    g_dbg_accum = 0.0f;
     g_dbg_in_update_list = 0;
     g_dbg_in_render_list = 0;
     g_dbg_in_collision_list = 0;
@@ -5447,6 +5453,9 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
         g_dbg_entity_found = 1;
         g_dbg_angle = *(float*)(obj + 0x10E8);
         g_dbg_direction = *(float*)(obj + 0x10EC);
+        /* v55m_51: read the LIVE accumulator (obj+0x10E4, degrees) — the
+         * value that actually drives the visible rotation. */
+        g_dbg_accum = *(float*)(obj + 0x10E4);
         g_dbg_pos_x = ox; g_dbg_pos_y = oy; g_dbg_pos_z = oz;
 
         /* Surface the spawn-time config. */
@@ -5461,10 +5470,14 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
         g_dbg_rot_m = g_rotater_cfg[ci].rot_m;
         /* v55m_48d: per-axis angles — obj+0x10E8 drives the native Y-axis
          * render; direction + initial angle feed the other axes. Scale =
-         * the rot_x/y/z speeds that drive Gfx_Scale. */
-        g_dbg_ang_x = g_dbg_rot_a + g_dbg_direction * g_dbg_angle;
-        g_dbg_ang_y = g_dbg_angle;             /* live rotation angle */
-        g_dbg_ang_z = g_dbg_direction;         /* live direction */
+         * the rot_x/y/z speeds that drive Gfx_Scale.
+         * v55m_51: Angle X now shows the LIVE accumulator (obj+0x10E4,
+         * degrees — the value Gfx_ScaleX consumes for the visible spin).
+         * Angle Y keeps the per-frame delta (obj+0x10E8), Angle Z the
+         * direction multiplier (obj+0x10EC). */
+        g_dbg_ang_x = g_dbg_accum;        /* live accumulated angle (deg) */
+        g_dbg_ang_y = g_dbg_angle;        /* per-frame delta */
+        g_dbg_ang_z = g_dbg_direction;    /* direction multiplier */
         /* v55m_48d: Scale X/Y/Z come from the matched S1 ref-point entry
          * (+0x1C/+0x20/+0x24, default 1.0/1.0/1.0 — hardcoded by the game's
          * ref-point ctor). The spawned object itself has no stored scale
@@ -5556,8 +5569,10 @@ static const char* cEnt_debug_value(int s, int i, int k) {
                 snprintf(vb, sizeof(vb), "%.2f", g_dbg_angle);
                 return vb;
             }
-            if (i == 1 && k == 0) {       /* accumulated angle */
-                snprintf(vb, sizeof(vb), "%.2f", g_dbg_angle);
+            if (i == 1 && k == 0) {       /* accumulated angle (obj+0x10E4) */
+                /* v55m_51: show the LIVE accumulator — the per-frame delta
+                 * (obj+0x10E8) is capped at 1.0 and would pin at 1.00. */
+                snprintf(vb, sizeof(vb), "%.2f", g_dbg_accum);
                 return vb;
             }
             if (i == 2 && k == 0) {       /* direction multiplier */
@@ -5836,7 +5851,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55m_50", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55m_51", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -6125,13 +6140,15 @@ static void __cdecl cEnt_draw_text_helper(void) {
                               g_dbg_scl_z != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
         yy += debugTextSpacing;
 
-        /* More useful live values. */
+        /* More useful live values. v55m_51: \"Rotation angle\" now shows the
+         * LIVE accumulator (obj+0x10E4, degrees) — the per-frame delta
+         * (obj+0x10E8) is capped at 1.0 and would pin at 1.00 forever. */
         cEnt_draw_text_double(font, prop_labels[9], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
-        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_angle);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_accum);
         cEnt_draw_text_double(font, tmp, value_x, yy,
-                              g_dbg_angle != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
-                              g_dbg_angle != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
-                              g_dbg_angle != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+                              g_dbg_accum != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_accum != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_accum != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
         yy += debugTextSpacing;
         cEnt_draw_text_double(font, prop_labels[10], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
         snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_direction);
@@ -7422,7 +7439,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_50 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_51 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
