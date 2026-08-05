@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_1
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_2
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -346,7 +346,34 @@ typedef struct {
 } CatapultState;
 static CatapultState g_catapults[MAX_CATAPULTS];
 static int g_catapult_count = 0;
-static DWORD g_dropin_sample = 0;  /* v55m_42f: BASS sample for catapult dropin sound */
+static DWORD g_dropin_sample = 0;  /* v55n_2: BASS sample for catapult dropin sound */
+
+/* v55n_2: SpeedCylinder tracking + per-frame slot 11 driver.
+ * Native SpeedCylinder (Up race, ctor 0x436A20, vtable 0x4D57D0, 0x150C bytes):
+ *   - Stands_ctor(this, mesh) clones spatial trees into obj+0x18 (COLLISION)
+ *   - +0x10D0 = board, +0x10D4/8/C = pos, +0x10E0 = Level_RenderCtor (render/collision Level)
+ *   - +0x10E4 = speed param (0.0), +0x10E8 = 0, +0x10EC = 0.25 spin, +0x10F0 = AthenaList (tracked balls)
+ *   - +0x1508 = launch counter (>175 launches)
+ * The collision handler (UpRaceCollisionEvents 0x4119B0) reads [[MeshBuffer]+0x47C] to find
+ * the entity, then Pendulum_PlayCollisionSound (0x436B70) tracks the ball in +0x10F0.
+ * vtable slot 11 (0x43D8C0) = spin-up 0.25->20.0, 175-frame hold, launch at 65.0 + star trail.
+ * The mod's cEnt was missing: (a) MeshBuffer+0x47C->entity link, (b) obj+0x10E0 collision
+ * registration, (c) entity+0x47C self-ref, (d) per-frame slot 11 driver. All fixed in v55n_2. */
+#define MAX_SPEEDCYLINDERS 16
+typedef struct {
+    DWORD obj;     /* SpeedCylinder entity (0x150C bytes, vtable 0x4D57D0) */
+    DWORD board;   /* owning board */
+    float x, y, z; /* spawn position */
+    DWORD col_level; /* collision/render Level at obj+0x10E0 */
+    DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
+} SpeedCylState;
+static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
+static int g_speedcyl_count = 0;
+
+/* v55n_2: Native SpeedCylinder slot 11 = ImpossibleRotator_Update (0x43D8C0).
+ * __fastcall(this) — spin-up + 175-frame hold + launch at 65.0 + star trail + render transform. */
+typedef int (__fastcall *SpeedCyl_slot11_t)(void* this_);
+static SpeedCyl_slot11_t pfn_SpeedCyl_slot11 = (SpeedCyl_slot11_t)0x0043D8C0;
 static DWORD g_catapult_sample = 0;  /* v55m_42i: BASS sample for catapult launch sound */
 static void* g_dropin_sound = NULL; /* v55m_28l cached sounds\\dropin channel */
 
@@ -3191,11 +3218,66 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 memset(obj, 0, LIFTER_SIZE);
                 pfn_Lifter_ctor(obj, (void*)board, px, py, pz, mesh, 0);
                 break;
-            case 39: /* SpeedCylinder_ctor — 7 params (this, board, x, y, z, int_param, mesh) */
+            case 39: /* SpeedCylinder_ctor — 7 params (this, board, x, y, z, int_param, mesh)
+                      * v55n_2 FIX: Native-parity registration. The ctor creates a
+                      * collision/render Level at obj+0x10E0 (via Level_RenderCtor) and
+                      * Stands_ctor clones spatial trees into obj+0x18 (collision). To be
+                      * SOLID and have BEHAVIOR, we must:
+                      *   1. Register obj+0x10E0 collision Level into board+0x10EC + scene tree
+                      *   2. Set MeshBuffer+0x47C = entity on all collision mesh MeshBuffers so
+                      *      UpRaceCollisionEvents (0x4119B0) finds the entity via [[MeshBuffer]+0x47C]
+                      *   3. Set entity+0x47C = entity (self-ref, needed by vtable[1] Rotator_Update)
+                      *   4. Track in g_speedcyls[] for the per-frame slot 11 (0x43D8C0) driver */
                 obj = pfn_operator_new(SPEEDCYLINDER_SIZE);
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc SpeedCylinder\n"); return; }
                 memset(obj, 0, SPEEDCYLINDER_SIZE);
                 pfn_SpeedCylinder_ctor(obj, (void*)board, px, py, pz, 0, mesh);
+                *(float*)((char*)obj + 0x10D4) = px;
+                *(float*)((char*)obj + 0x10D8) = py;
+                *(float*)((char*)obj + 0x10DC) = pz;
+                {
+                    /* 1. Collision Level at obj+0x10E0 (like Catapult's +0x10D4) */
+                    DWORD sc_col = *(DWORD*)((char*)obj + 0x10E0);
+                    if (sc_col && !IsBadReadPtr((void*)sc_col, 0x20)) {
+                        /* 2. Set MeshBuffer+0x47C = entity on ALL MeshBuffers of the collision
+                         *    Level so the N:SPEEDCYLINDER handler finds the entity.
+                         *    MeshBuffers live in the Level's MeshWorld AthenaList (Level+0x08
+                         *    -> MeshWorld, +0x2C = MeshBuffer AthenaList, count+0x04, items+0x40C). */
+                        DWORD lvl_mw = *(DWORD*)((char*)sc_col + 0x08);
+                        if (lvl_mw && !IsBadReadPtr((void*)(lvl_mw + 0x2C), 0x410)) {
+                            DWORD mb_list = lvl_mw + 0x2C;
+                            DWORD mb_count = *(DWORD*)(mb_list + 0x04);
+                            DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
+                            int mi;
+                            for (mi = 0; mi < (int)mb_count && mb_items && !IsBadReadPtr((void*)mb_items, mb_count*4); mi++) {
+                                DWORD mb = ((DWORD*)mb_items)[mi];
+                                if (mb && !IsBadReadPtr((void*)mb, 0x48C)) {
+                                    *(DWORD*)((char*)mb + 0x47C) = (DWORD)obj;
+                                }
+                            }
+                        }
+                        /* Register collision Level into board+0x10EC + scene tree */
+                        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)sc_col);
+                        DWORD scene_col2 = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                        if (scene_col2) {
+                            pfn_AthenaList_Append((DWORD*)(scene_col2 + 0x18), (void*)sc_col);
+                        }
+                        if (logf) fprintf(logf, "  ROTATER: SpeedCyl collision Level 0x%08X registered\n", sc_col);
+                    }
+                    /* 3. Entity self-ref +0x47C (needed by vtable[1] Rotator_Update 0x4606D0) */
+                    *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
+                }
+                /* 4. Track for per-frame slot 11 driver */
+                if (g_speedcyl_count < MAX_SPEEDCYLINDERS) {
+                    g_speedcyls[g_speedcyl_count].obj = (DWORD)obj;
+                    g_speedcyls[g_speedcyl_count].board = board;
+                    g_speedcyls[g_speedcyl_count].x = px;
+                    g_speedcyls[g_speedcyl_count].y = py;
+                    g_speedcyls[g_speedcyl_count].z = pz;
+                    g_speedcyls[g_speedcyl_count].col_level = *(DWORD*)((char*)obj + 0x10E0);
+                    g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
+                    g_speedcyl_count++;
+                }
                 break;
             case 40: /* NeonPlatform_ctor — 6 params (this, board, x, y, z, mesh) — Rotator_ctor_t */
                 obj = pfn_operator_new(NEONPLATFORM_SIZE);
@@ -3707,6 +3789,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_rotater_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
+    g_speedcyl_count = 0; /* v55n_2: reset SpeedCylinder tracking on level unload */
     g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
     /* v55n: Free any live decorative TarBubble objects on level unload
      * (they self-free on pop, but must not leak across level changes). */
@@ -5112,6 +5195,20 @@ static void __cdecl gluebie_present_helper(void) {
     if (board && g_catapult_count > 0) {
         cEnt_catapult_present_check(board);
     }
+    /* v55n_2: SpeedCylinder per-frame slot 11 driver.
+     * Native SpeedCylinder spin/launch lives in vtable slot 11 (0x43D8C0).
+     * The mod's entities are only in board+0x2578 (update list) which calls
+     * vtable[1] (Rotator_Update vertex deformation), NOT slot 11. Drive slot 11
+     * here per-frame on the main thread, gated on board+0x874 (not paused). */
+    if (board && g_speedcyl_count > 0 && *(BYTE*)(board + 0x874) == 0) {
+        int si;
+        for (si = 0; si < g_speedcyl_count; si++) {
+            DWORD sc = g_speedcyls[si].obj;
+            if (sc && sc >= 0x10000 && !IsBadReadPtr((void*)sc, 0x60) && pfn_SpeedCyl_slot11) {
+                pfn_SpeedCyl_slot11((void*)sc);
+            }
+        }
+    }
     /* v55m_44l: Waterwheel CollisionLevel re-neutralization on MAIN THREAD.
      * 44k ran the re-neutralization only in the background thread, gated on
      * board==g_spawned_board. The 44k crash log (4 nodes neutralized, still
@@ -5904,7 +6001,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_1", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_2", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -7517,7 +7614,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_1 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_2 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
