@@ -1,3 +1,28 @@
+## v55n_5 — TimeButton spawn position + quit crash FIXED
+
+Two regressions from v55n_4, both traced to Ghidra:
+
+1. **Spawned at 0,0,0**: NOP'ing vtable[11] (0x43DC40) also removed the render
+   positioning it did via the timer vtable[2] (Gfx_SetPosition). Fix: hook
+   vtable[18] (render 0x45E0E0) on the private vtable copy and write the world
+   matrix translation (m[12]/13/14) from obj+0x10D4/8/C before calling the
+   original — same proven matrix pattern as cEnt_catapult_render.
+
+2. **Quit crash (ntdll 0001:00041106, Pause Menu/Background)**: v55n_3/v55n_4
+   removed the +0x10E0 collision-Level registration into board+0x10EC +
+   scene tree to stop the in-game crash. But the TimeButton dtor
+   (FUN_0043dc20 -> Rotator_Cleanup) ALWAYS frees obj+0x10E0, and
+   Rotator_RemoveAndFree (0x436FC0) removes that Level from board+0x8B0+0x18
+   and board+0x10EC. With no registration, the scene teardown double-freed the
+   Level. Fix: re-register obj+0x10E0 into board+0x10EC + board+0x8B0+0x18 —
+   EXACTLY like SpeedCylinder (case 39) — so RemoveAndFree cleanly unhooks it
+   once. The in-game crash stays fixed because the vtable[11] NOP prevents
+   0x43DC40 from ever firing (registration is safe to re-add).
+
+3. **N:EXTRATIME entity lookup**: the handler matched the button by
+   `*(DWORD*)ent == 0x4D5830`, but the private vtable copy breaks that
+   equality. Now also accepts a private copy whose slot 0 == 0x43DC20 (dtor).
+
 ## v55n_4 — TimeButton crash FIXED (real root cause: vtable[11] 0x43DC40)
 
 The board+0x2578 update loop (Board_UpdateRaceState 0x41B080) calls vtable[0x2C]
