@@ -1,3 +1,17 @@
+## v55m_50 — cEnt Rotator max speed cap raised 20 → 250
+
+The cEnt Rotator's per-frame render angle cap (`NATIVE_ROTATOR_MAX_SPEED`)
+was raised from **20.0 → 250.0**. Since the native render advances the angle
+by `direction × 0.004` per frame, the cap now allows:
+
+- `250 × 0.004 = 1.0 rad/frame` max (was `20 × 0.004 = 0.08` rad/frame)
+- **12.5× faster** constant spin for cEnt Rotators with `ROS_Y=0`
+  (constant-rotation mode) before the runaway-acceleration clamp kicks in.
+
+This only affects the cEnt **Rotator** (AI 1) constant rotation. Other
+entities, oscillation ranges (`ros_*`), and the native game's own Rotator
+(`obj+0x10EC` direction clamp at 20.0 in 0x0043D8C0) are untouched.
+
 ## v55m_49 — One Custom Entity table per cEnt (A/D switching)
 
 The debug view now creates **one Custom Entity table per cEnt** found in the

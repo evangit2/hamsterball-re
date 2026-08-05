@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_49
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_50
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -135,11 +135,14 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define MESHWORLD_SIZE          0x10D0
 #define POPCYLINDER_SIZE        0x10D0
 #define ROTATER_SIZE            0x1508  /* Rotator_ctor_Impossible alloc size */
-/* v55m_48d: Native impossible-race Rotator max rotation speed (Ghidra-verified:
- * update 0x0043D8C0 clamps the direction field to 20.0 — DAT_004cf370=0x41A00000).
- * The cEnt SWIRL-style rotator's accumulated render angle (obj+0x10E4) is capped
- * at this value to stop the runaway acceleration. */
-#define NATIVE_ROTATOR_MAX_SPEED 20.0f
+/* v55m_48d/v55m_50: cEnt Rotator max rotation speed cap.
+ * Native impossible-race Rotator update 0x0043D8C0 clamps the direction
+ * field to 20.0 — DAT_004cf370=0x41A00000. The cEnt SWIRL-style rotator's
+ * per-frame render angle (obj+0x10E8) is capped at NATIVE_ROTATOR_MAX_SPEED
+ * × 0.004 rad/frame to stop the runaway acceleration.
+ * v55m_50: raised 20.0 -> 250.0 so 250 × 0.004 = 1.0 rad/frame max
+ * (12.5× faster constant spin than the native 20 × 0.004 = 0.08). */
+#define NATIVE_ROTATOR_MAX_SPEED 250.0f
 #define PENDULUM_SIZE           0x1504
 #define LOOPER_SIZE             0x1500
 #define GEAR_SIZE               0x1514
@@ -3956,8 +3959,8 @@ static void cEnt_update_constant_rotations(void) {
          *      only consumed through sin/cos in the rotation matrix, so
          *      wrapping is visually seamless and stops the unbounded growth.
          *  (2) Cap the angle (obj+0x10E8, the per-frame accumulator increment)
-         *      at the native impossible-race Rotator max rate:
-         *      max_speed(20.0) * 0.004/frame = 0.08 rad/frame. */
+         *      at the cEnt Rotator max rate:
+         *      max_speed(250.0) * 0.004/frame = 1.0 rad/frame (v55m_50). */
         {
             float accum = *(float*)(obj + 0x10E4);
             /* Sequential wrap: correct only by full 360° turns so the
@@ -3968,7 +3971,8 @@ static void cEnt_update_constant_rotations(void) {
             *(float*)(obj + 0x10E4) = accum;
 
             float angle = *(float*)(obj + 0x10E8);
-            /* 0.08 = native max speed (20.0) × 0.004 rad/frame per unit */
+            /* 1.0 = cEnt max speed (250.0) × 0.004 rad/frame per unit
+             * (v55m_50: raised from 20.0 → 250.0, 0.08 → 1.0) */
             {
                 const float max_angle = NATIVE_ROTATOR_MAX_SPEED * 0.004f;
                 if (angle >  max_angle) angle =  max_angle;
@@ -5832,7 +5836,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55m_49", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55m_50", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -7418,7 +7422,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_49 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_50 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
