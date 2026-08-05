@@ -1,3 +1,29 @@
+## v55n_3 fix (crash) — TimeButton vtable[1] no-op (root cause: Rotator_Update heap corruption)
+
+MAKYUNI reported the cEnt TimeButton crashing ~1s after it appears:
+`MODULE: ntdll.dll, CRASH_ADDRESS: 0001:0004717E, CURRENTOPERATION: Update,
+CURRENTOBJECT: Board (Warm-Up), FinishLoad(OK)`.
+
+Root cause (Ghidra): the game's update list (`board+0x2578`) calls
+`vtable[1]` on every registered object each frame. For the TimeButton
+(vtable 0x4D5830) that slot is **Rotator_Update (0x4606D0)**, a vertex-deform
+function that allocates `SceneObject+0x43C * 0x60` bytes and writes mesh
+vertices into it. The native game survives because its TimeButton mesh
+(`board+0x478C`) carries proper vertex/count data. The cEnt loads the button
+mesh as a bare `Level_MeshWorldCtor` (0x461510) MeshWorld whose SceneObject
+has a 0 vertex count at +0x43C -> Rotator_Update allocates a 0-size buffer
+and writes into it -> heap corruption -> ntdll crash during Update.
+
+Fix: replace the TimeButton's `vtable[1]` with a no-op on a private vtable
+copy (same pattern as Chomper). The button needs no vertex deformation; its
+render (vtable[18] 0x45E0E0) is safe because it checks SceneObject+0x434==0
+and falls back to a normal static `SceneObject_RenderFull`. The press sink
+(+0x10D8 -= 20) and collision (spatial trees) are unaffected.
+
+Crash-tested on Wine/Xvfb: alive 51s+, clean load. (The Wine env can't reach
+the in-race button spawn, so the definitive proof must come from MAKYUNI's
+home test.)
+
 ## v55n_3 — cEnt TimeButton is now solid and pressable (native Up race logic)
 
 MAKYUNI asked how the Up race TimeButton works; Ghidra deep-dive of the native
