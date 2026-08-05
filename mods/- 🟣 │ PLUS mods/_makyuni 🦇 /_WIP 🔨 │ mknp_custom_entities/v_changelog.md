@@ -1,3 +1,19 @@
+## v55m_49 — One Custom Entity table per cEnt (A/D switching)
+
+The debug view now creates **one Custom Entity table per cEnt** found in the
+level's MESHWORLD section 3. Previously there were only two property tables
+(switched with P). Now:
+
+- Every `cEnt_XXX` entry on the level gets its **own** table — a level with
+  `cEnt_001` and `cEnt_002` has two tables, a level with `cEnt_001` and
+  `cEnt_025` also has exactly two tables. **The numbers don't need to be
+  continuous.**
+- **A key** = previous table, **D key** = next table (they wrap around).
+  Pressing is rate-limited to 0.2s.
+- The table title shows the position: `Custom Entity 001 - Swirl (1/2)`.
+- The **P key** still toggles between the two property views *inside* the
+  currently selected table (0 = hierarchical docs, 1 = live properties).
+
 ## v55m_44x — Rotator debug view: operator_new memory size
 
 The sub-line under `1 - Constructors (object creation)` now shows the exact
