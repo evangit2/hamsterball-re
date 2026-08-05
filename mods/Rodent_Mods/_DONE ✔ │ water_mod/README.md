@@ -1,6 +1,23 @@
-# Hamsterball Water Physics Mod v7.2
+# Hamsterball Water Physics Mod v7.3
 
 Custom water physics for Hamsterball via bass.dll proxy.
+
+## What's New in v7.3
+
+**Added `E:WATEREXIT` event plane.**
+
+Place a collision plane named `E:WATEREXIT` in a custom level. When the ball
+touches it, the water flag is turned OFF entirely — all water physics stop
+immediately. This is the same cleanup the game already does when the ball
+naturally rises above the water surface:
+
+- `in_water = 0` (stops drag / buoyancy instantly)
+- surface + submersion tracking reset
+- grace period starts (death suppression stays active briefly, so the
+  bounce-out arc stays safe)
+
+`E:WATEREXIT` is checked before the `E:WATER` prefix match in the collision
+hook, so a plane named `E:WATEREXIT` is never mistaken for `E:WATER`.
 
 ## What's New in v7.2
 
@@ -63,7 +80,7 @@ Four hooks working together:
 
 | Hook | Address | Type | Purpose |
 |------|---------|------|---------|
-| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — detect E:WATER, trigger (flag + damp + capture Y + clear bounce counter) |
+| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — detect E:WATER (trigger: flag + damp + capture Y + clear bounce counter) AND E:WATEREXIT (turn water flag OFF) |
 | 2 | 0x407BB4 | Code cave | Phase 15 — per-frame drag/buoyancy while in_water (with FPU save/restore, clear 0x2E9, dizzy immunity) |
 | 3 | 0x407377 | Code cave | Type 5 suppressor — block ONLY the 0x2E9 death-flag write while submerged/in grace (camera snap + split logic intact) |
 | 4 | 0x4CF3C0+8 | Vtable swap | Ball_FallDeath — suppress death during in_water + grace period |
@@ -72,7 +89,7 @@ Four hooks working together:
 
 No MeshWorld scanning, no background threads. The game's own collision system tells the mod when the ball touches water:
 
-1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires the trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`, clear `ball+0x2E9` (falling flag), and clear `ball+0x2EC` (bounce counter).
+1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires the trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`, clear `ball+0x2E9` (falling flag), and clear `ball+0x2EC` (bounce counter). When the name is `E:WATEREXIT`, it instead turns the water flag OFF entirely (same cleanup as the natural surface exit). `E:WATEREXIT` is matched before `E:WATER` so the prefix match never swallows it.
 
 2. **Hook 2** (Phase 15 code cave) runs every frame. If `in_water` is set, applies drag (all velocity axes), horizontal drag (extra on X/Z), and buoyancy (upward acceleration proportional to submersion depth). Also clears `ball+0x2E9`, clears `ball+0x2EC` (bounce counter), and sets `ball+0x2F4` (dizzy_immunity_timer) to `GRACE_PERIOD_FRAMES` every frame while submerged. Saves/restores full FPU state via FNSAVE/FRSTOR.
 
