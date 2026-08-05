@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_44x
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_49
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -135,6 +135,11 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 #define MESHWORLD_SIZE          0x10D0
 #define POPCYLINDER_SIZE        0x10D0
 #define ROTATER_SIZE            0x1508  /* Rotator_ctor_Impossible alloc size */
+/* v55m_48d: Native impossible-race Rotator max rotation speed (Ghidra-verified:
+ * update 0x0043D8C0 clamps the direction field to 20.0 — DAT_004cf370=0x41A00000).
+ * The cEnt SWIRL-style rotator's accumulated render angle (obj+0x10E4) is capped
+ * at this value to stop the runaway acceleration. */
+#define NATIVE_ROTATOR_MAX_SPEED 20.0f
 #define PENDULUM_SIZE           0x1504
 #define LOOPER_SIZE             0x1500
 #define GEAR_SIZE               0x1514
@@ -1330,6 +1335,13 @@ typedef struct {
 
 static RotaterConfig g_rotater_cfg[MAX_ROTATERS];
 static int   g_rotater_count = 0;
+/* v55m_48d: CONSTRUCTOR-time snapshot of the tracked entity's initial
+ * angle (obj+0x10E8) and direction (obj+0x10EC), captured once at spawn
+ * in cEnt_spawn_rotater_at. The per-frame native render mutates these
+ * fields, but the "Constructors" debug section must show the static
+ * initial values — so we freeze them here. */
+static float g_dbg_ctor_angle = 0.0f;
+static float g_dbg_ctor_direction = 0.0f;
 static DWORD g_rotater_board = 0;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2677,6 +2689,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
             if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
             return;
         }
+        /* v55m_48d: The native SWIRL ctor (0x00435940) sets the initial
+         * angle obj+0x10E8 = -0.20f (0xBE4CCCCD) when the board is in race
+         * mode (App+0x237 == 0) — which is always the case for cEnt spawns.
+         * Reset it to 0.0 by default so the rotater starts unrotated.
+         * (The debug table's "Sets Angle" step now yields 0.0.) */
+        *(float*)(obj + 0x10E8) = 0.0f;
     } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 44)) {
         /* New constructor types — each with specific signature.
          * Range 7-14: ArenaStands + Wavy family (Flag/Flag2)
@@ -3444,6 +3462,13 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         memset(obj, 0, alloc_sz);
         void* result = ctor_fn(obj, (void*)board, px, py, pz, mesh);
         if (!result) { if (logf) fprintf(logf, "  ROTATER: ctor failed for AI %d\n", ai_type); return; }
+        /* v55m_48d: Reset the initial rotation angle to 0.0 for the
+         * Rotator family (AI 1-5). The native SWIRL ctor writes -0.2 in
+         * race mode; these Rotator_ctor variants write 0/+1 but we keep
+         * the angle at 0.0 for a consistent, unrotated start. */
+        if (ai_type >= 1 && ai_type <= 6) {
+            *(float*)(obj + 0x10E8) = 0.0f;
+        }
     }
     spawn_done:;
 
@@ -3511,6 +3536,18 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 px, py, pz, (DWORD)obj, path, rot_x, rot_y, rot_z,
                 ros_x, ros_y, ros_z);
         fflush(logf);
+    }
+
+    /* v55m_48d: snapshot the CONSTRUCTOR-time values once. The constructor
+     * assigns a STATIC initial angle (obj+0x10E8) and direction
+     * (obj+0x10EC) at spawn. These are frozen here — the per-frame native
+     * render later mutates them, but the ctor section must show the static
+     * initial values, not the live ones. */
+    if (obj && obj >= 0x10000 && !IsBadReadPtr((void*)obj, 0x10F0)) {
+        g_dbg_ctor_angle = *(float*)(obj + 0x10E8);
+        g_dbg_ctor_direction = *(float*)(obj + 0x10EC);
+        if (logf) fprintf(logf, "  ROTATER: ctor snapshot angle=%.2f dir=%.2f\\n",
+                g_dbg_ctor_angle, g_dbg_ctor_direction);
     }
 
     /* Track for despawn + per-frame rotation updates.
@@ -3907,6 +3944,38 @@ static void cEnt_update_constant_rotations(void) {
          * (angle jumps ~114 degrees when it wraps). direction-only rewrite
          * gives smooth constant rotation. */
         *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
+        /* v55m_48d: Stop the runaway acceleration, cap at native max.
+         * Root cause (Ghidra-verified, render 0x0043B330 + Gfx_ScaleX 0x457C60):
+         *   obj+0x10E8 (angle) += direction * 0.004
+         *   obj+0x10E4 (accumulator, DEGREES) += old_angle   <-- quadratic!
+         *   Gfx_ScaleX(obj+0x10E4) -> matrix angle = accum * 0.01745 (pi/180)
+         * With ROS_Y=0 constant rotation the native ±2.0 flip never fires,
+         * so the accumulator grows quadratically and the object spins faster
+         * and faster. Fixes:
+         *  (1) Wrap the accumulator to [-360, 360] deg every frame — it is
+         *      only consumed through sin/cos in the rotation matrix, so
+         *      wrapping is visually seamless and stops the unbounded growth.
+         *  (2) Cap the angle (obj+0x10E8, the per-frame accumulator increment)
+         *      at the native impossible-race Rotator max rate:
+         *      max_speed(20.0) * 0.004/frame = 0.08 rad/frame. */
+        {
+            float accum = *(float*)(obj + 0x10E4);
+            /* Sequential wrap: correct only by full 360° turns so the
+             * per-frame delta stays continuous — a naive modulo would pop
+             * (full reverse spin in one frame when crossing 360°). */
+            while (accum >  360.0f) accum -= 720.0f;
+            while (accum < -360.0f) accum += 720.0f;
+            *(float*)(obj + 0x10E4) = accum;
+
+            float angle = *(float*)(obj + 0x10E8);
+            /* 0.08 = native max speed (20.0) × 0.004 rad/frame per unit */
+            {
+                const float max_angle = NATIVE_ROTATOR_MAX_SPEED * 0.004f;
+                if (angle >  max_angle) angle =  max_angle;
+                if (angle < -max_angle) angle = -max_angle;
+            }
+            *(float*)(obj + 0x10E8) = angle;
+        }
     }
 }
 
@@ -5201,56 +5270,335 @@ static int g_presentend_hook_installed = 0;
 static void (__cdecl *g_presentend_fn_ptr)(void) = NULL;
 
 /* Vertical spacing (pixels) between each debug text line. */
-static int debugTextSpacing = 20;
+static int debugTextSpacing = 24;
 
-/* Runtime debug state, read from "mknp_custom_entities_debug.txt" next to the
- * DLL. Values: "no" = don't draw debug texts; "yes"/"" = draw default texts;
- * "Rotator" = draw texts but replace "hello world" with "rotator". */
-static char g_debug_state[32] = "yes";
+/* Runtime debug state — which custom entity the debug table documents.
+ * Internal variable (no config file anymore, v55m_48d).
+ *
+ * v55m_49: Each cEnt found in the MESHWORLD section 3 gets its OWN
+ * Custom Entity table. The tables are enumerated at draw time into
+ * g_table_names[] (up to MAX_DEBUG_TABLES), and g_which_table indexes
+ * into it — so the count of tables equals the count of cEnt entries
+ * on the current level, and the numbers don't need to be continuous
+ * (cEnt_001 + cEnt_025 => two tables). The A key (VK_A = 0x41) moves
+ * to the PREVIOUS table, the D key (VK_D = 0x44) to the NEXT one. */
+#define MAX_DEBUG_TABLES 999
+static char  g_table_names[MAX_DEBUG_TABLES][64];
+static int   g_table_count  = 0;
+static char* g_debug_state  = g_table_names[0];  /* current table's cEnt name */
+static int   g_which_table  = 0;
 
-/* Read the debug config file at runtime. The file lives next to the DLL
- * (g_game_dir). If it doesn't exist, create it with the default content
- * `- debug: "yes"`. Called every frame so edits take effect immediately. */
-static void read_debug_config(void) {
-    char path[MAX_PATH];
-    snprintf(path, MAX_PATH, "%s\\mknp_custom_entities_debug.txt", g_game_dir);
+/* Whether to show the parenthetical detail text in debug sub-lines. Toggled
+ * with the "i" key (rate-limited to 0.5s). */
+static int g_show_paren_detail = 1;
+static DWORD g_last_paren_toggle_tick = 0;
 
-    FILE* f = fopen(path, "r");
-    if (!f) {
-        /* Create the default file if missing. */
-        f = fopen(path, "w");
-        if (f) {
-            fprintf(f, "- debug: \"yes\"\n");
-            fclose(f);
+/* v55m_47q: hex <-> decimal view toggle for the debug value column. When
+ * ON, DWORD values shown as "0x%08X" become decimal floats (0x1508 ->
+ * 5384.0). v55m_48d: converted to decimal VALUE instead of IEEE-754 bit
+ * reinterpretation. Toggled with the "H" key (rate-limited to 0.5s). */
+static int   g_hex_to_float = 0;
+static DWORD g_last_hex_toggle_tick = 0;
+
+/* v55m_48d: function_display view toggle for the debug body text.
+ * State 0 = show the function/subfunction NAME (simplified text).
+ * State 1 = show the ADDRESS where the respective function/subfunction
+ * is stored (e.g. "Sets Angle" <-> "obj+0x10E8", function addresses
+ * shown as hex, field offsets shown as obj+0xNNNN).
+ * Toggled with the "K" key (VK_K = 0x4B, rate-limited to 0.5s). */
+static int   g_function_display = 0;
+static DWORD g_last_func_toggle_tick = 0;
+
+/* v55m_48d: T-key counter — whole string table visibility.
+ * 0 = whole string table invisible, 1 = visible. Default 1 at game start. */
+static int   g_table_visible = 1;
+static DWORD g_last_table_toggle_tick = 0;
+
+/* v55m_49: A/D keys move between the per-cEnt Custom Entity tables
+ * (g_table_names[] / g_which_table). Rate-limited to 0.2s.
+ * The P key (VK_P = 0x50) still toggles between the TWO property views
+ * inside the currently selected Custom Entity table: 0 = the hierarchical
+ * docs table, 1 = the live properties table. */
+static DWORD g_last_table_prev_tick = 0;   /* A key (previous) */
+static DWORD g_last_table_next_tick = 0;   /* D key (next) */
+static int   g_which_props = 0;     /* 0 = docs table, 1 = properties table */
+static DWORD g_last_props_toggle_tick = 0;
+
+/* v55m_48d: Live values for the entity named by g_debug_state. Resolved on
+ * the main thread each Present so the debug table can display the actual
+ * runtime rotation fields (angle, direction, mesh path, etc.). A value is
+ * "nonzero" (drawn in faint blue) or zero (drawn gray, same as the old
+ * "0.0" placeholder). */
+static int   g_dbg_entity_found = 0;      /* 1 = a spawned object matched */
+static float g_dbg_angle = 0.0f;          /* obj+0x10E8 */
+static float g_dbg_direction = 0.0f;      /* obj+0x10EC */
+static int   g_dbg_in_update_list = 0;    /* obj present in board+0x2578 */
+static int   g_dbg_in_render_list = 0;    /* obj present in board+0xCD4 */
+static int   g_dbg_in_collision_list = 0; /* obj present in board+0x10EC */
+static float g_dbg_rot_x = 0.0f, g_dbg_rot_y = 0.0f, g_dbg_rot_z = 0.0f;
+static float g_dbg_ros_x = 0.0f, g_dbg_ros_y = 0.0f, g_dbg_ros_z = 0.0f;
+static float g_dbg_rot_a = 0.0f, g_dbg_rot_d = 0.0f;
+static int   g_dbg_rot_m = 0;
+static char  g_dbg_mesh_path[128] = "";
+/* v55m_48d: live properties for the 2nd properties table. Position comes
+ * straight from the object (obj+0x10D4/10D8/10DC); per-axis accumulated
+ * angles + rotation speeds come from the mod-side RotaterConfig. */
+static float g_dbg_pos_x = 0.0f, g_dbg_pos_y = 0.0f, g_dbg_pos_z = 0.0f;
+static float g_dbg_ang_x = 0.0f, g_dbg_ang_y = 0.0f, g_dbg_ang_z = 0.0f;
+static float g_dbg_scl_x = 0.0f, g_dbg_scl_y = 0.0f, g_dbg_scl_z = 0.0f;
+/* v55m_48d: pointer to the matched S1 ref-point entry (0x7C bytes).
+ * The S1 entry carries the per-axis SCALE at +0x1C/+0x20/+0x24 (default
+ * 1.0/1.0/1.0 — hardcoded by the game's ref-point ctor in FUN_004629e0:
+ * ppvVar5[7]=ppvVar5[8]=ppvVar5[9]=0x3f800000). The spawned object itself
+ * has no stored scale (size is baked into the mesh vertices), so the ref
+ * point is the only per-axis scale source. Captured at title-resolve time. */
+static DWORD g_dbg_s1_entry = 0;
+/* Faint blue used for live values that are != 0.0 (v55m_47z — user asked
+ * for "the TARGET blue"; simplified to a plain faint blue). */
+#define DEBUG_VALUE_BLUE_R  0.47f
+#define DEBUG_VALUE_BLUE_G  0.71f
+#define DEBUG_VALUE_BLUE_B  1.00f
+
+/* Debug table vertical scroll. W moves the table up (smaller Y), S moves it
+ * down (larger Y). W clamps at 0 = initial position (can't go above the top);
+ * S clamps at 300 (enough to bring the last section fully into view). */
+static int   g_debug_scroll_y = 0;
+static DWORD g_last_scroll_tick = 0;
+
+/* The last string of the Rotator table now sits at line 93 (4 sections with
+ * sub-sublines: title + 4 subs × (1+4) + ... + 3 blank separators + title at
+ * line 0 + sections start at line 2 → last drawn line 93). Baseline Y at
+ * scroll=0 is 12 + 36 + 93*24 = 2280. The S-key (up) limit keeps the last
+ * string at least 500px from the top of the screen, so the table can only be
+ * scrolled up to scroll_y = 500 - 2280 = -1780. */
+#define ROT_LAST_STRING_Y0  2280
+#define ROT_MAX_UP_SCROLL   (500 - ROT_LAST_STRING_Y0)   /* -1780 */
+
+/* =====================================================================
+ * v55m_48d: resolve live runtime values for the entity named by
+ * g_debug_state. Run from the main thread at Present time.
+ *
+ * The spawned entity is found via the mod's OWN g_rotater_cfg[] tracking
+ * array (v55m_48d — much more reliable than scanning board lists): each
+ * entry carries the exact spawned object pointer; we match the S3 entry
+ * position against the object's spawn position (constructor-dependent
+ * offsets, verified via Ghidra), then read live values straight off the
+ * object and verify its presence in the update/render/collision lists.
+ * ===================================================================== */
+static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, float want_z) {
+    g_dbg_entity_found = 0;
+    g_dbg_angle = 0.0f;
+    g_dbg_direction = 0.0f;
+    g_dbg_in_update_list = 0;
+    g_dbg_in_render_list = 0;
+    g_dbg_in_collision_list = 0;
+    g_dbg_rot_x = g_dbg_rot_y = g_dbg_rot_z = 0.0f;
+    g_dbg_ros_x = g_dbg_ros_y = g_dbg_ros_z = 0.0f;
+    g_dbg_rot_a = g_dbg_rot_d = 0.0f;
+    g_dbg_mesh_path[0] = 0;
+    g_dbg_pos_x = g_dbg_pos_y = g_dbg_pos_z = 0.0f;
+    g_dbg_ang_x = g_dbg_ang_y = g_dbg_ang_z = 0.0f;
+    g_dbg_scl_x = g_dbg_scl_y = g_dbg_scl_z = 0.0f;
+    if (!board) return;
+
+    /* v55m_48d: The mod tracks every spawned rotater in g_rotater_cfg[].
+     * Match the S3 entry position against each cfg entry's spawn position.
+     * The cfg's `obj` gives us the EXACT spawned object pointer — no fragile
+     * list-scan-by-position needed. We then read live values straight off
+     * the object and verify it's present in the update/render/collision lists. */
+    DWORD update_list = board + 0x2578;
+    DWORD render_list  = board + 0xCD4;
+    DWORD coll_list    = board + 0x10EC;
+
+    int ci;
+    for (ci = 0; ci < g_rotater_count && ci < MAX_ROTATERS; ci++) {
+        DWORD obj = g_rotater_cfg[ci].obj;
+        if (!obj || obj < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
+        DWORD vtable = *(DWORD*)obj;
+        if (vtable < 0x400000) continue;
+
+        /* Position offsets differ by constructor (verified via Ghidra):
+         *   PopCylinder (0x4D58F0) / Rotator (0x4D5708):  obj+0x10D4/10D8/10DC
+         *   SWIRL (0x4D5518):  obj+0x10D8/10DC/10E0  (0x10D4 is collision ptr)
+         * Read the object's spawn position accordingly. */
+        float ox, oy, oz;
+        if (vtable == 0x004D5518) {
+            ox = *(float*)(obj + 0x10D8);
+            oy = *(float*)(obj + 0x10DC);
+            oz = *(float*)(obj + 0x10E0);
+        } else {
+            ox = *(float*)(obj + 0x10D4);
+            oy = *(float*)(obj + 0x10D8);
+            oz = *(float*)(obj + 0x10DC);
         }
-        strcpy(g_debug_state, "yes");
-        return;
-    }
 
-    char line[256];
-    g_debug_state[0] = 0;
-    if (fgets(line, sizeof(line), f)) {
-        char* p = strstr(line, "debug:");
-        if (p) {
-            p += 6;  /* skip "debug:" */
-            /* skip whitespace, dashes, and the opening quote */
-            while (*p == ' ' || *p == '\t' || *p == '-' || *p == '"') p++;
-            char val[64] = {0};
-            int i = 0;
-            while (*p && *p != '"' && *p != '\r' && *p != '\n' && i < 31) {
-                val[i++] = *p++;
+        /* Match against the S3 entry position (within 2.0). */
+        float dx = ox - want_x; if (dx < 0) dx = -dx;
+        float dy = oy - want_y; if (dy < 0) dy = -dy;
+        float dz = oz - want_z; if (dz < 0) dz = -dz;
+        if (dx > 2.0f || dy > 2.0f || dz > 2.0f) continue;
+
+        /* Found it — this cfg entry is our tracked entity. */
+        g_dbg_entity_found = 1;
+        g_dbg_angle = *(float*)(obj + 0x10E8);
+        g_dbg_direction = *(float*)(obj + 0x10EC);
+        g_dbg_pos_x = ox; g_dbg_pos_y = oy; g_dbg_pos_z = oz;
+
+        /* Surface the spawn-time config. */
+        g_dbg_rot_x = g_rotater_cfg[ci].rot_x;
+        g_dbg_rot_y = g_rotater_cfg[ci].rot_y;
+        g_dbg_rot_z = g_rotater_cfg[ci].rot_z;
+        g_dbg_ros_x = g_rotater_cfg[ci].ros_x;
+        g_dbg_ros_y = g_rotater_cfg[ci].ros_y;
+        g_dbg_ros_z = g_rotater_cfg[ci].ros_z;
+        g_dbg_rot_a = g_rotater_cfg[ci].rot_a;
+        g_dbg_rot_d = g_rotater_cfg[ci].rot_d;
+        g_dbg_rot_m = g_rotater_cfg[ci].rot_m;
+        /* v55m_48d: per-axis angles — obj+0x10E8 drives the native Y-axis
+         * render; direction + initial angle feed the other axes. Scale =
+         * the rot_x/y/z speeds that drive Gfx_Scale. */
+        g_dbg_ang_x = g_dbg_rot_a + g_dbg_direction * g_dbg_angle;
+        g_dbg_ang_y = g_dbg_angle;             /* live rotation angle */
+        g_dbg_ang_z = g_dbg_direction;         /* live direction */
+        /* v55m_48d: Scale X/Y/Z come from the matched S1 ref-point entry
+         * (+0x1C/+0x20/+0x24, default 1.0/1.0/1.0 — hardcoded by the game's
+         * ref-point ctor). The spawned object itself has no stored scale
+         * (size is baked into the mesh vertices). Guard reads. */
+        if (g_dbg_s1_entry && !IsBadReadPtr((void*)g_dbg_s1_entry, 0x28)) {
+            g_dbg_scl_x = *(float*)(g_dbg_s1_entry + 0x1C);
+            g_dbg_scl_y = *(float*)(g_dbg_s1_entry + 0x20);
+            g_dbg_scl_z = *(float*)(g_dbg_s1_entry + 0x24);
+        }
+        strncpy(g_dbg_mesh_path, g_rotater_cfg[ci].mesh_path, 127);
+        g_dbg_mesh_path[127] = 0;
+
+        /* Verify presence in update / render / collision lists (board lists). */
+        {
+            DWORD lists[3]; int* flags[3];
+            lists[0] = update_list;  flags[0] = &g_dbg_in_update_list;
+            lists[1] = render_list;  flags[1] = &g_dbg_in_render_list;
+            lists[2] = coll_list;    flags[2] = &g_dbg_in_collision_list;
+            int li;
+            for (li = 0; li < 3; li++) {
+                DWORD lst = lists[li];
+                if (IsBadReadPtr((void*)(lst + 0x04), 4)) continue;
+                int lc = *(int*)(lst + 0x04);
+                if (lc <= 0 || lc > 10000) continue;
+                if (IsBadReadPtr((void*)(lst + 0x40C), 4)) continue;
+                DWORD* ld = *(DWORD**)(lst + 0x40C);
+                if (!ld || IsBadReadPtr(ld, lc * 4)) continue;
+                int j;
+                for (j = 0; j < lc; j++) {
+                    if (ld[j] == obj) { *flags[li] = 1; break; }
+                }
             }
-            val[i] = 0;
-            /* trim trailing whitespace */
-            while (i > 0 && (val[i-1] == ' ' || val[i-1] == '\t')) val[--i] = 0;
-            strncpy(g_debug_state, val, 31);
-            g_debug_state[31] = 0;
         }
+        return;  /* first match wins */
     }
-    fclose(f);
+}
 
-    /* blank value = "yes" (default state) */
-    if (g_debug_state[0] == 0) strcpy(g_debug_state, "yes");
+
+/* Format a DWORD as hex ("0x%08X") or, when the H-key float view is active,
+ * as its numeric value in decimal float form. v55m_48d: fixed to convert
+ * the hex VALUE to decimal (0x1508 -> 5384.0) instead of reinterpreting
+ * the bit pattern as an IEEE-754 float (which gave denormals like 8.6e-42). */
+static void cEnt_dbg_format_dword(DWORD v, char* out, int outsz) {
+    if (g_hex_to_float) {
+        snprintf(out, outsz, "%.1f", (double)v);
+    } else {
+        snprintf(out, outsz, "0x%08X", v);
+    }
+}
+
+/* Format the live runtime value for a specific debug-table line.
+ * (s,i,k) = (section index, sub index, sub-sub index). Returns a pointer
+ * to a static buffer, or NULL if that line has no live value (in which
+ * case the draw loop shows the gray "0.0" placeholder).
+ * v55m_48d: these are the "respective value of the respective function
+ * on their left". */
+static const char* cEnt_debug_value(int s, int i, int k) {
+    static char vb[160];
+    switch (s) {
+        case 0:  /* 1 - Constructors */
+            if (i == 0) {                 /* Operator_new */
+                if (k == 0) { cEnt_dbg_format_dword((DWORD)pfn_operator_new, vb, sizeof(vb)); return vb; }
+                if (k == 1) { cEnt_dbg_format_dword((DWORD)ROTATER_SIZE, vb, sizeof(vb)); return vb; }
+                if (k == 2) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "called" : "idle"); return vb; }
+                if (k == 3) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "installed" : "idle"); return vb; }
+            }
+            if (i == 1) {                 /* Rotator_ctor */
+                if (k == 1) { cEnt_dbg_format_dword(0x004D5518u, vb, sizeof(vb)); return vb; }
+                if (k == 2) { snprintf(vb, sizeof(vb), "%.2f", g_dbg_ctor_angle); return vb; }
+                if (k == 3) { snprintf(vb, sizeof(vb), "%.2f", g_dbg_ctor_direction); return vb; }
+            }
+            if (i == 2 && k == 0) {       /* cEnt_load_mesh_file */
+                snprintf(vb, sizeof(vb), g_dbg_mesh_path[0] ? "%s" : "(default)", g_dbg_mesh_path[0] ? g_dbg_mesh_path : "");
+                return vb;
+            }
+            if (i == 3) {                 /* Mesh fallback */
+                if (k == 1) { snprintf(vb, sizeof(vb), g_dbg_mesh_path[0] ? "primary" : "Swirl"); return vb; }
+                if (k == 2) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "used" : "idle"); return vb; }
+            }
+            return NULL;
+        case 1:  /* 2 - Registration */
+            if (i == 0 && k == 0) { snprintf(vb, sizeof(vb), g_dbg_in_update_list ? "yes" : "no"); return vb; }
+            if (i == 1 && k == 0) { snprintf(vb, sizeof(vb), g_dbg_in_render_list ? "yes" : "no"); return vb; }
+            if (i == 2 && k == 0) { snprintf(vb, sizeof(vb), g_dbg_in_collision_list ? "yes" : "no"); return vb; }
+            if (i == 3 && k == 0) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "yes" : "no"); return vb; }
+            return NULL;
+        case 2:  /* 3 - Updates */
+            if (i == 0 && k == 0) {       /* angle += direction * 0.004 */
+                snprintf(vb, sizeof(vb), "%.2f", g_dbg_angle);
+                return vb;
+            }
+            if (i == 1 && k == 0) {       /* accumulated angle */
+                snprintf(vb, sizeof(vb), "%.2f", g_dbg_angle);
+                return vb;
+            }
+            if (i == 2 && k == 0) {       /* direction multiplier */
+                snprintf(vb, sizeof(vb), "%.2f", g_dbg_direction);
+                return vb;
+            }
+            if (i == 4 && k == 0) {       /* constant spin (ROS_Y=0) */
+                snprintf(vb, sizeof(vb), g_dbg_ros_y == 0.0f ? "active" : "inactive");
+                return vb;
+            }
+            if (i == 5) {                 /* RotaterConfig struct */
+                if (k == 0) { snprintf(vb, sizeof(vb), g_dbg_mesh_path[0] ? "%s" : "(empty)", g_dbg_mesh_path[0] ? g_dbg_mesh_path : ""); return vb; }
+                if (k == 1) { snprintf(vb, sizeof(vb), "%.2f / %.2f / %.2f", g_dbg_rot_x, g_dbg_rot_y, g_dbg_rot_z); return vb; }
+                if (k == 2) { snprintf(vb, sizeof(vb), "%.2f / %.2f / %.2f", g_dbg_ros_x, g_dbg_ros_y, g_dbg_ros_z); return vb; }
+                if (k == 3) { snprintf(vb, sizeof(vb), "%.2f / %.2f / %d", g_dbg_rot_a, g_dbg_rot_d, g_dbg_rot_m); return vb; }
+            }
+            return NULL;
+        case 3:  /* 4 - Lifecycle */
+            if (i == 0 && k == 0) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "yes" : "no"); return vb; }
+            if (i == 0 && k == 1) { snprintf(vb, sizeof(vb), "%d", g_rotater_count); return vb; }
+            if (i == 1 && k == 2) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "active" : "idle"); return vb; }
+            return NULL;
+        default:
+            return NULL;
+    }
+}
+
+/* Draw text with a double shadow, scaled to `scale`. The font's scale
+ * (font+0x428) is temporarily set to `scale`, then restored. Shadows:
+ * primary bottom-right (2,2) and secondary top-left (-2,-2) — 0.8x the
+ * original (3,3)/(-2,-2) to match the scaled-down text. */
+static void cEnt_draw_text_double(void* font, const char* text, int x, int y,
+                                  float r, float g, float b, float scale) {
+    float* fp_scale = (float*)((char*)font + 0x428);
+    float orig_scale = *fp_scale;
+    *fp_scale = scale;
+    /* secondary shadow — top-left (0,-2) — horizontal offset 0 */
+    pfn_UI_DrawTextShadow(font, (char*)text, x, y, 0, -2,
+                          0, r, g, b, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    /* primary shadow — bottom-right (0,3) — horizontal offset 0 */
+    pfn_UI_DrawTextShadow(font, (char*)text, x, y, 0, 3,
+                          0, r, g, b, 1.0f,
+                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    *fp_scale = orig_scale;
 }
 
 /* Draw "label" in white, then a colored "value" immediately to its right.
@@ -5259,13 +5607,120 @@ static int cEnt_draw_label_value(void* font, const char* label, const char* valu
                                  int x, int y,
                                  float vr, float vg, float vb) {
     int label_w = pfn_Font_MeasureText(font, (char*)label);
-    pfn_UI_DrawTextShadow(font, (char*)label, x, y, 3, 3,
-                          0, 1.0f, 1.0f, 1.0f, 1.0f,
-                          0, 0.0f, 0.0f, 0.0f, 1.0f);
-    pfn_UI_DrawTextShadow(font, (char*)value, x + label_w, y, 3, 3,
-                          0, vr, vg, vb, 1.0f,
-                          0, 0.0f, 0.0f, 0.0f, 1.0f);
+    cEnt_draw_text_double(font, label, x, y, 1.0f, 1.0f, 1.0f, 0.9f);
+    cEnt_draw_text_double(font, value, x + label_w, y, vr, vg, vb, 0.9f);
     return label_w + pfn_Font_MeasureText(font, (char*)value);
+}
+
+/* Draw a debug line where any parenthetical detail is rendered in gray and
+ * preceded by 4 spaces before the opening parenthesis. E.g.
+ *   "Operator_new    (memory reserve)"
+ *                    ^^^^  gray, 4-space pad
+ * The base text (before the first '(') is drawn in white; the parenthetical
+ * part (from '(' to end) is drawn gray, 4 space-characters after the base.
+ * `font`, `x`, `y` are the draw position; `scale` is the font scale. If the
+ * parenthetical toggle is off, only the white base is drawn and the trailing
+ * spaces are trimmed. */
+static int cEnt_draw_paren_line(void* font, const char* text, int x, int y, float scale,
+                                int paren_x, const char* value) {
+    char base[128];
+    char paren[96];
+    int i = 0;
+    /* Extract base = text up to first '(' (trimmed of trailing spaces). */
+    while (text[i] && text[i] != '(' && i < 127) {
+        base[i] = text[i];
+        i++;
+    }
+    base[i] = 0;
+    /* Remember the position of the '(' (if any) BEFORE trimming. */
+    int paren_pos = i;
+    /* Trim trailing spaces from base. */
+    while (i > 0 && (base[i-1] == ' ' || base[i-1] == '\t')) base[--i] = 0;
+
+    /* Extract the parenthetical part including its '(' char, if any. */
+    paren[0] = 0;
+    if (paren_pos < 128 && text[paren_pos] == '(') {
+        int j = 0;
+        int k = paren_pos;
+        while (text[k] && j < 95) {
+            paren[j++] = text[k++];
+        }
+        paren[j] = 0;
+    }
+
+    /* Draw base in white. */
+    cEnt_draw_text_double(font, base, x, y, 1.0f, 1.0f, 1.0f, scale);
+
+    /* Two states toggled with the "i" key:
+     *   Status 1 (g_show_paren_detail) — the parenthetical gray text is
+     *     visible at the aligned column.
+     *   Status 0 (!g_show_paren_detail) — the parens are invisible; instead
+     *     draw the live runtime value at the same column. If no value is
+     *     supplied (NULL), draw the old gray "0.0" placeholder.
+     * All gray/blue texts are shifted 50px further right (v55m_48d).
+     * v55m_48d: live values != 0 draw in faint blue; "0.0" stays gray. */
+    if (paren_x > 0) {
+        if (g_show_paren_detail) {
+            if (paren[0]) {
+                cEnt_draw_text_double(font, paren, paren_x + 50, y,
+                                      0.6f, 0.6f, 0.6f, scale);  /* gray paren */
+            }
+        } else {
+            /* v55m_48d: lines with NO live value (value == NULL) show the
+             * gray "N/A" placeholder (same gray as the old "0.0"). Lines
+             * whose actual runtime value is 0.0 keep showing "0.0" (gray);
+             * nonzero values are drawn in faint blue. */
+            if (!value) {
+                cEnt_draw_text_double(font, "N/A", paren_x + 50, y,
+                                      0.6f, 0.6f, 0.6f, scale);  /* gray */
+            } else {
+                int nonzero = 0;
+                const char* p = value;
+                while (*p) {
+                    /* nonzero if any char is outside the zero-ish set
+                     * (digits 1-9, or letters for yes/no, active/idle,
+                     * mesh names, hex, etc.). */
+                    if ((*p >= '1' && *p <= '9') ||
+                        (*p >= 'a' && *p <= 'z') ||
+                        (*p >= 'A' && *p <= 'Z') ||
+                        *p == 'x' || *p == 'X') { nonzero = 1; break; }
+                    p++;
+                }
+                if (nonzero) {
+                    cEnt_draw_text_double(font, value, paren_x + 50, y,
+                                          DEBUG_VALUE_BLUE_R, DEBUG_VALUE_BLUE_G,
+                                          DEBUG_VALUE_BLUE_B, scale);  /* faint blue */
+                } else {
+                    cEnt_draw_text_double(font, value, paren_x + 50, y,
+                                          0.6f, 0.6f, 0.6f, scale);  /* gray */
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/* Measure the width (in pixels) of the base part of a "label (paren)" line,
+ * up to but not including the '(' — at the given font scale. Returns 0 if
+ * there is no '(' in the text. */
+static int cEnt_paren_line_base_width(void* font, const char* text, float scale) {
+    char base[128];
+    int i = 0;
+    while (text[i] && text[i] != '(' && i < 127) {
+        base[i] = text[i];
+        i++;
+    }
+    if (text[i] != '(') return 0;
+    base[i] = 0;
+    while (i > 0 && (base[i-1] == ' ' || base[i-1] == '\t')) base[--i] = 0;
+
+    /* Measure at the given scale (Font_MeasureText reads font+0x428). */
+    float* fp_scale = (float*)((char*)font + 0x428);
+    float orig_scale = *fp_scale;
+    *fp_scale = scale;
+    int w = pfn_Font_MeasureText(font, base);
+    *fp_scale = orig_scale;
+    return w;
 }
 
 /* Draw the mod's status text. Runs on the main thread at Present time.
@@ -5276,56 +5731,623 @@ static int cEnt_draw_label_value(void* font, const char* label, const char* valu
  * is NULL — the native score text draws whenever a font exists.) */
 static void __cdecl cEnt_draw_text_helper(void) {
     if (game_is_quitting()) return;  /* v55j_16: check quit flag before touching game memory */
+
     DWORD app = *(DWORD*)GLOBAL_APP_PTR;
     if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x400)) return;
     void* font = *(void**)((char*)app + 0x320);   /* showcardgothic16 — score counter / info text font (same size as the score HUD) */
     if (!font || IsBadReadPtr(font, 0x500)) return;
 
-    /* Read the debug config file at runtime (edits take effect immediately). */
-    read_debug_config();
+    /* Only process keybinds while the game window is focused. GetAsyncKeyState
+     * reads the GLOBAL keyboard state — without this gate the toggles/scroll
+     * fire even when the window is minimized or we alt-tabbed away. Check:
+     * (1) the calling thread has an active window, (2) it isn't minimized,
+     * (3) it is the foreground (user-facing) window. */
+    HWND hwnd_active = GetActiveWindow();
+    int window_focused =
+        (hwnd_active != NULL) &&
+        !IsIconic(hwnd_active) &&
+        (GetForegroundWindow() == hwnd_active);
 
-    /* "no" = don't draw debug texts at all. */
-    if (_stricmp(g_debug_state, "no") == 0) return;
+    /* Toggle parenthetical detail text with the "i" key, rate-limited to 0.5s.
+     * GetAsyncKeyState bit 0x0001 = key press edge. We gate on elapsed time so
+     * one hold = one toggle. */
+    if (window_focused) {
+        DWORD now = GetTickCount();
+        if ((GetAsyncKeyState(0x49) & 0x0001) && (now - g_last_paren_toggle_tick) >= 500) {  /* VK_I = 0x49 */
+            g_show_paren_detail = !g_show_paren_detail;
+            g_last_paren_toggle_tick = now;
+        }
+        /* Toggle hex <-> decimal view of the debug value column with the "H"
+         * key (VK_H = 0x48), same rate limit. */
+        if ((GetAsyncKeyState(0x48) & 0x0001) && (now - g_last_hex_toggle_tick) >= 500) {  /* VK_H = 0x48 */
+            g_hex_to_float = !g_hex_to_float;
+            g_last_hex_toggle_tick = now;
+        }
+        /* Toggle function_display (name <-> address) with the "K" key
+         * (VK_K = 0x4B), same rate limit. */
+        if ((GetAsyncKeyState(0x4B) & 0x0001) && (now - g_last_func_toggle_tick) >= 500) {  /* VK_K = 0x4B */
+            g_function_display = !g_function_display;
+            g_last_func_toggle_tick = now;
+        }
+        /* Toggle whole-table visibility with the "T" key (VK_T = 0x54).
+         * 0 = invisible, 1 = visible. Default 1 at game start. */
+        if ((GetAsyncKeyState(0x54) & 0x0001) && (now - g_last_table_toggle_tick) >= 500) {  /* VK_T = 0x54 */
+            g_table_visible = !g_table_visible;
+            g_last_table_toggle_tick = now;
+        }
+        /* v55m_49: Move between the per-cEnt Custom Entity tables.
+         * A key (VK_A = 0x41) = PREVIOUS table, D key (VK_D = 0x44) = NEXT
+         * table. The tables wrap around (after the last comes the first).
+         * g_table_count is refreshed every Present from the level's
+         * section 3 cEnt entries — a level with cEnt_001 + cEnt_025 has
+         * exactly two tables. */
+        if ((GetAsyncKeyState(0x41) & 0x0001) && (now - g_last_table_prev_tick) >= 200) {  /* VK_A = 0x41: previous */
+            if (g_table_count > 0) {
+                g_which_table = (g_which_table - 1 + g_table_count) % g_table_count;
+            }
+            g_last_table_prev_tick = now;
+        }
+        if ((GetAsyncKeyState(0x44) & 0x0001) && (now - g_last_table_next_tick) >= 200) {  /* VK_D = 0x44: next */
+            if (g_table_count > 0) {
+                g_which_table = (g_which_table + 1) % g_table_count;
+            }
+            g_last_table_next_tick = now;
+        }
+        /* Toggle the property view inside the current Custom Entity table
+         * with the P key (VK_P = 0x50): 0 = hierarchical docs table,
+         * 1 = live properties table. Default 0. */
+        if ((GetAsyncKeyState(0x50) & 0x0001) && (now - g_last_props_toggle_tick) >= 500) {  /* VK_P = 0x50 */
+            g_which_props = !g_which_props;
+            g_last_props_toggle_tick = now;
+        }
+    }
 
-    /* Determine the first-line text: "Rotator" → "rotator", else "hello world". */
-    const char* first_line = "hello world";
-    if (_stricmp(g_debug_state, "Rotator") == 0) first_line = "rotator";
+    /* Scroll the debug table with S (up) / W (down), rate-limited to 100ms.
+     * Uses the held-state bit (0x8000) so holding the key scrolls smoothly.
+     * W (down) is limited to the table's ORIGINAL position: pressing W while
+     * the table is already at Y=0 (its start position) does nothing — it can
+     * never be pushed below where it started. S (up) is unlimited. */
+    if (window_focused) {
+        DWORD now2 = GetTickCount();
+        if ((now2 - g_last_scroll_tick) >= 10) {
+            if (GetAsyncKeyState(0x57) & 0x8000) {          /* VK_W = 0x57: move down */
+                if (g_debug_scroll_y < 0) {   /* limit: cannot go below original (0) */
+                    g_debug_scroll_y += 12;   /* v55m_48d: 2x scroll speed */
+                    g_last_scroll_tick = now2;
+                }
+            } else if (GetAsyncKeyState(0x53) & 0x8000) {   /* VK_S = 0x53: move up — limited */
+                /* S limit: don't let the last string (line 22, baseline 576 at
+                 * scroll=0) come within 500px of the top of the screen. */
+                if (g_debug_scroll_y - 12 >= ROT_MAX_UP_SCROLL) {   /* last string still >= 500px from top */
+                    g_debug_scroll_y -= 12;   /* v55m_48d: 2x scroll speed */
+                    g_last_scroll_tick = now2;
+                }
+            }
+        }
+    }
 
-    /* Rotator documentation view. In this mode the debug text shows a
-     * hierarchical breakdown of the Rotator. Line 2 is the section title and
-     * sub-lines are indented 15px to the right below it. */
-    if (_stricmp(g_debug_state, "Rotator") == 0) {
-        pfn_UI_DrawTextShadow(font, (char*)first_line, 20, 12, 3, 3,
-                              0, 1.0f, 1.0f, 1.0f, 1.0f,
-                              0, 0.0f, 0.0f, 0.0f, 1.0f);
-        /* second line — section title (was "hampter: yes") */
-        pfn_UI_DrawTextShadow(font, "1 - Constructors (object creation)", 20,
-                              12 + 2 * debugTextSpacing, 3, 3,
-                              0, 1.0f, 1.0f, 1.0f, 1.0f,
-                              0, 0.0f, 0.0f, 0.0f, 1.0f);
-        /* sub-line — indented 15px to the right, below the section title.
-         * Shows the memory reserved by operator_new for the Rotator
-         * (ROTATER_SIZE = 0x1508 = 5384 bytes). */
-        {
-            char subline[96];
-            snprintf(subline, sizeof(subline),
-                     "Operator_new (memory reserve): %d bytes", ROTATER_SIZE);
-            pfn_UI_DrawTextShadow(font, subline, 20 + 15,
-                                  12 + 3 * debugTextSpacing, 3, 3,
-                                  0, 1.0f, 1.0f, 1.0f, 1.0f,
-                                  0, 0.0f, 0.0f, 0.0f, 1.0f);
+    /* On the loading / main menu screen (no active board/race), draw the
+     * mod's "Custom Events + version" status table. get_board() returns 0
+     * when there's no scene active — i.e. on the menu or during level load.
+     * Gated on g_table_visible (T key): 0 hides the whole table. */
+    if (!get_board()) {
+        if (g_table_visible) {
+            cEnt_draw_text_double(font, "Custom Entities Mod v55m_49", 20, 12,
+                                  1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
     }
 
-    pfn_UI_DrawTextShadow(font, (char*)first_line, 20, 12, 3, 3,
-                          0, 1.0f, 1.0f, 1.0f, 1.0f,
-                          0, 0.0f, 0.0f, 0.0f, 1.0f);
-    /* empty line between the first line and "hampter: yes" */
-    cEnt_draw_label_value(font, "hampter: ", "yes", 20, 12 + 2 * debugTextSpacing,
-                          0.0f, 1.0f, 0.0f);   /* green */
-    cEnt_draw_label_value(font, "ballz: ", "no", 20, 12 + 3 * debugTextSpacing,
-                          1.0f, 0.0f, 0.0f);   /* red */
+    /* Resolve the entity's display title: "Custom Entity XXX - (EntityName)".
+     * XXX = the number after "cEnt_" in the section 3 object name, EntityName
+     * = the string inside <ENTITY>...</ENTITY> in that same object's name.
+     * Falls back to "Custom Entity Debug" if the entity can't be resolved.
+     *
+     * v55m_49: Pass 1 ENUMERATES every section 3 cEnt entry into
+     * g_table_names[]/g_table_count — each cEnt gets its OWN Custom Entity
+     * table, so a level with cEnt_001 + cEnt_025 has exactly two tables
+     * (numbers need not be continuous). Pass 2 resolves the title / live
+     * values for the table selected by g_which_table (A/D keys). */
+    static char g_debug_title[96] = "";
+    static float g_dbg_want_x = 0.0f, g_dbg_want_y = 0.0f, g_dbg_want_z = 0.0f;
+    static int   g_dbg_want_set = 0;
+    {
+        DWORD board2 = get_board();
+        DWORD sceneobj = cEnt_get_sceneobj(board2);
+        int resolved = 0;
+        g_dbg_want_set = 0;
+
+        /* Pass 1 — enumerate all cEnt tables from section 3. */
+        g_table_count = 0;
+        if (sceneobj && !IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) {
+            int obj_count = *(int*)(sceneobj + SCENEOBJ_OBJ_COUNT);
+            if (obj_count > 0 && obj_count <= 1000 &&
+                !IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_ARRAY), 4)) {
+                DWORD* obj_array_ptr = *(DWORD**)(sceneobj + SCENEOBJ_OBJ_ARRAY);
+                if (obj_array_ptr && !IsBadReadPtr(obj_array_ptr, obj_count * 4)) {
+                    int i;
+                    for (i = 0; i < obj_count && g_table_count < MAX_DEBUG_TABLES; i++) {
+                        DWORD obj_ptr = obj_array_ptr[i];
+                        if (!obj_ptr || obj_ptr < 0x10000) continue;
+                        if (IsBadReadPtr((void*)obj_ptr, 20)) continue;
+                        char* name = *(char**)(obj_ptr);
+                        if (!name || IsBadReadPtr(name, 8)) continue;
+
+                        /* Match the cEnt prefix (e.g. "cEnt_001"), optionally
+                         * as "REF:cEnt_001". Extract the base name up to the
+                         * first separator (space/tab/'<'/NUL). */
+                        const char* nm = name;
+                        if (_strnicmp(nm, "REF:", 4) == 0) nm += 4;
+                        if (_strnicmp(nm, "cEnt", 4) != 0) continue;
+
+                        /* Copy the full "cEnt_XXX" base name into table slot. */
+                        size_t nlen = 0;
+                        while (nm[nlen] && nm[nlen] != ' ' && nm[nlen] != '\t' &&
+                               nm[nlen] != '<' && nlen < 63)
+                            nlen++;
+                        if (nlen < 5) continue;   /* at least "cEnt_X" */
+                        memcpy(g_table_names[g_table_count], nm, nlen);
+                        g_table_names[g_table_count][nlen] = 0;
+                        g_table_count++;
+                    }
+                }
+            }
+        }
+
+        /* Clamp the selected index to the (possibly changed) table count. */
+        if (g_table_count <= 0) {
+            g_which_table = 0;
+            g_debug_state = g_table_names[0];
+        } else {
+            if (g_which_table >= g_table_count) g_which_table = g_table_count - 1;
+            if (g_table_names[g_which_table][0] == 0) g_which_table = 0;
+            g_debug_state = g_table_names[g_which_table];
+        }
+
+        /* Pass 2 — resolve the currently selected table's entry. */
+        if (sceneobj && !IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_COUNT), 4)) {
+            int obj_count = *(int*)(sceneobj + SCENEOBJ_OBJ_COUNT);
+            if (obj_count > 0 && obj_count <= 1000 &&
+                !IsBadReadPtr((void*)(sceneobj + SCENEOBJ_OBJ_ARRAY), 4)) {
+                DWORD* obj_array_ptr = *(DWORD**)(sceneobj + SCENEOBJ_OBJ_ARRAY);
+                if (obj_array_ptr && !IsBadReadPtr(obj_array_ptr, obj_count * 4)) {
+                    int i;
+                    for (i = 0; i < obj_count; i++) {
+                        DWORD obj_ptr = obj_array_ptr[i];
+                        if (!obj_ptr || obj_ptr < 0x10000) continue;
+                        if (IsBadReadPtr((void*)obj_ptr, 20)) continue;
+                        char* name = *(char**)(obj_ptr);
+                        if (!name || IsBadReadPtr(name, 8)) continue;
+                        /* Match the cEnt name exactly (e.g. "cEnt_001"),
+                         * optionally as "REF:cEnt_001". The name may have
+                         * tags after it — require a separator right after. */
+                        int match = 0;
+                        const char* nm = name;
+                        if (_strnicmp(nm, "REF:", 4) == 0) nm += 4;
+                        if (_strnicmp(nm, "cEnt", 4) == 0) {
+                            int want_len = (int)strlen(g_debug_state);
+                            if (want_len >= 4 &&
+                                _strnicmp(nm, g_debug_state, want_len) == 0) {
+                                char after = nm[want_len];
+                                if (after == ' ' || after == '\t' ||
+                                    after == '<' || after == 0)
+                                    match = 1;
+                            }
+                        }
+                        if (!match) continue;
+
+                        /* v55m_48d: remember the S3 entry position so we can
+                         * find the spawned object in the update list. */
+                        g_dbg_want_x = *(float*)(obj_ptr + 0x04);
+                        g_dbg_want_y = *(float*)(obj_ptr + 0x08);
+                        g_dbg_want_z = *(float*)(obj_ptr + 0x0C);
+                        g_dbg_want_set = 1;
+                        /* v55m_48d: keep the matched S1 entry pointer — its
+                         * per-axis scale (+0x1C/+0x20/+0x24) is displayed in
+                         * the 2nd Properties table. */
+                        g_dbg_s1_entry = obj_ptr;
+
+                        /* Found it — extract <ENTITY> name */
+                        char ent_name[64] = {0};
+                        char* ent_start = my_stristr(name, "<ENTITY>");
+                        if (ent_start) {
+                            ent_start += 8;
+                            while (*ent_start == ' ' || *ent_start == '\t') ent_start++;
+                            char* ent_end = my_stristr(ent_start, "</ENTITY>");
+                            if (!ent_end) ent_end = ent_start + strlen(ent_start);
+                            size_t ent_len = ent_end - ent_start;
+                            if (ent_len > 0 && ent_len < 64) {
+                                strncpy(ent_name, ent_start, ent_len);
+                                ent_name[ent_len] = 0;
+                                while (ent_len > 0 && (ent_name[ent_len-1] == ' ' || ent_name[ent_len-1] == '\t'))
+                                    ent_name[--ent_len] = 0;
+                            }
+                        }
+
+                        /* Build "Custom Entity XXX - EntityName". v55m_49:
+                         * when the level has more than one cEnt, append the
+                         * selected table's position — "Custom Entity 001 -
+                         * Swirl (1/2)" — so A/D switching is visible. */
+                        if (g_table_count > 1) {
+                            snprintf(g_debug_title, sizeof(g_debug_title),
+                                     "Custom Entity %s - %s (%d/%d)",
+                                     g_debug_state + 4,
+                                     ent_name[0] ? ent_name : "Unknown",
+                                     g_which_table + 1, g_table_count);
+                        } else {
+                            snprintf(g_debug_title, sizeof(g_debug_title),
+                                     "Custom Entity %s - %s",
+                                     g_debug_state + 4,
+                                     ent_name[0] ? ent_name : "Unknown");
+                        }
+                        resolved = 1;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!resolved) strcpy(g_debug_title, "Custom Entity Debug");
+    }
+
+    /* v55m_48d: resolve live runtime values for the entity named by
+     * g_debug_state. Uses the S3 entry position (g_dbg_want_{x,y,z})
+     * to find the spawned object in the board's update list. */
+    if (g_dbg_want_set) {
+        cEnt_resolve_debug_values(get_board(), g_dbg_want_x, g_dbg_want_y, g_dbg_want_z);
+    } else {
+        g_dbg_entity_found = 0;
+    }
+
+    /* Rotator documentation view. It shows a hierarchical breakdown of the
+     * entity named by g_debug_state. Line 2 is the section title and
+     * sub-lines are indented 40px to the right below it.
+     *
+     * v55m_48d: g_table_visible (T key) hides the whole table when 0.
+     * v55m_49: g_which_props (P key) picks which property view of the
+     * SELECTED Custom Entity table is drawn:
+     *   0 = this Rotator docs table (the hierarchical docs view),
+     *   1 = the live \"properties\" table (runtime values). */
+    if (!g_table_visible) return;
+
+    if (g_which_props == 1) {
+        /* 2nd properties table — live runtime values of the tracked cEnt
+         * rotator. All values are re-resolved each Present (real time).
+         * v55m_48d: values are ALIGNED at a fixed X column — the SAME
+         * column used by the 1st (Rotator docs) table's paren column.
+         * Label spans [20, value_x); value spans [value_x, ...). Nonzero
+         * values paint faint blue, zeros stay gray. */
+        static const char* const prop_labels[] = {
+            "Position X", "Position Y", "Position Z",
+            "Angle X", "Angle Y", "Angle Z",
+            "Scale X", "Scale Y", "Scale Z",
+            "Rotation angle", "Direction",
+            "Mesh", "In update list", "In render list", "In collision list",
+        };
+        int n_props = sizeof(prop_labels) / sizeof(prop_labels[0]);
+
+        /* Compute the common value X = longest label + pad (measured at the
+         * same font/scale as the 1st table's paren column). */
+        int value_x = 20;
+        int p;
+        for (p = 0; p < n_props; p++) {
+            int w = pfn_Font_MeasureText(font, (char*)prop_labels[p]);
+            if (20 + w > value_x) value_x = 20 + w;
+        }
+        /* Pad so values never touch the longest label. */
+        {
+            float* fp_scale = (float*)((char*)font + 0x428);
+            float orig_scale = *fp_scale;
+            *fp_scale = 0.9f;
+            value_x += pfn_Font_MeasureText(font, "    ");
+            *fp_scale = orig_scale;
+        }
+
+        int y0 = 12 + 36 + g_debug_scroll_y;
+        int yy = y0;
+        char tmp[64];
+        cEnt_draw_text_double(font, g_debug_title, 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        yy += debugTextSpacing;
+
+        /* Position X / Y / Z (live from obj — SWIRL-aware). */
+        cEnt_draw_text_double(font, prop_labels[0], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_pos_x);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_pos_x != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_pos_x != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_pos_x != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[1], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_pos_y);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_pos_y != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_pos_y != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_pos_y != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[2], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_pos_z);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_pos_z != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_pos_z != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_pos_z != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+
+        /* Angle X / Y / Z (per-axis, live). */
+        cEnt_draw_text_double(font, prop_labels[3], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_ang_x);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_ang_x != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_ang_x != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_ang_x != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[4], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_ang_y);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_ang_y != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_ang_y != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_ang_y != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[5], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_ang_z);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_ang_z != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_ang_z != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_ang_z != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+
+        /* Scale X / Y / Z — v55m_48d: per-axis scale from the matched S1
+         * ref-point entry (+0x1C/+0x20/+0x24). Default 1.0/1.0/1.0 —
+         * hardcoded by the game's ref-point ctor (FUN_004629e0). The
+         * spawned object itself has NO stored scale (mesh size is baked
+         * into the vertices), so this is the object's scale source. */
+        cEnt_draw_text_double(font, prop_labels[6], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_scl_x);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_scl_x != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_scl_x != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_scl_x != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[7], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_scl_y);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_scl_y != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_scl_y != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_scl_y != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[8], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_scl_z);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_scl_z != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_scl_z != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_scl_z != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+
+        /* More useful live values. */
+        cEnt_draw_text_double(font, prop_labels[9], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_angle);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_angle != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_angle != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_angle != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[10], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        snprintf(tmp, sizeof(tmp), "%.2f", g_dbg_direction);
+        cEnt_draw_text_double(font, tmp, value_x, yy,
+                              g_dbg_direction != 0.0f ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_direction != 0.0f ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_direction != 0.0f ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[11], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        cEnt_draw_text_double(font, g_dbg_mesh_path[0] ? g_dbg_mesh_path : "(empty)",
+                              value_x, yy,
+                              g_dbg_mesh_path[0] ? DEBUG_VALUE_BLUE_R : 0.6f,
+                              g_dbg_mesh_path[0] ? DEBUG_VALUE_BLUE_G : 0.6f,
+                              g_dbg_mesh_path[0] ? DEBUG_VALUE_BLUE_B : 0.6f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[12], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        cEnt_draw_text_double(font, g_dbg_in_update_list ? "yes" : "no",
+                              value_x, yy, 0.0f, 1.0f, 0.0f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[13], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        cEnt_draw_text_double(font, g_dbg_in_render_list ? "yes" : "no",
+                              value_x, yy, 0.0f, 1.0f, 0.0f, 0.9f);
+        yy += debugTextSpacing;
+        cEnt_draw_text_double(font, prop_labels[14], 20, yy, 1.0f, 1.0f, 1.0f, 0.9f);
+        cEnt_draw_text_double(font, g_dbg_in_collision_list ? "yes" : "no",
+                              value_x, yy, 0.0f, 1.0f, 0.0f, 0.9f);
+        return;
+    }
+
+    {
+        cEnt_draw_text_double(font, g_debug_title, 20, 12 + 36 + g_debug_scroll_y,
+                              1.0f, 1.0f, 1.0f, 0.9f);
+        /* Sections: each main function is a numbered title ("# - Function
+         * Name (description)") with its sub-functions as sub-lines. The
+         * parenthetical parts get the gray + 4-space treatment, aligned to
+         * a common column (the furthest-right base text wins). */
+        /* v55m_48d: every line is a {name, addr} pair. `name` is the
+         * simplified function/subfunction label (state 0). `addr` is the
+         * address / offset where it's stored (state 1, shown when the "K"
+         * key toggles g_function_display = 1). Entries that are pure text
+         * have addr = "" (same text shown in both states). */
+        static const char* const rot_s1_subs[] = {
+            "Operator_new (memory reserve)",
+            "Rotator_ctor (game constructor)",
+            "cEnt_load_mesh_file (mesh loading)",
+            "Mesh fallback (tries Swirl if primary mesh fails)",
+        };
+        static const char* const rot_s1_subsub_names[][4] = {
+            { "operator_new", "size ROTATER_SIZE", "malloc wrapper", "PUSHAD/POPAD cave" },
+            { "Rotator_ctor_Impossible", "vtable (SWIRL, 384 bytes)", "Sets Angle", "Sets Direction" },
+            { "cEnt_load_mesh_file", "tries .MESHWORLD", "or .MESH via MeshNode", "gfx_device as ECX" },
+            { "Swirl fallback path", "levels\\Level3-Swirl", "only on primary fail", "cancels if _default missing" },
+        };
+        static const char* const rot_s1_subsub_addrs[][4] = {
+            { "0x004BA57B", "0x1508", "", "" },
+            { "0x00435940", "0x4D5518", "obj+0x10E8", "obj+0x10EC" },
+            { "cEnt_load_mesh_file", "", "", "" },
+            { "Swirl fallback", "levels\\Level3-Swirl", "", "" },
+        };
+        static const char* const rot_s2_subs[] = {
+            "Update list (board+0x2578)",
+            "Render list (board+0xCD4)",
+            "Collision list (board+0x10EC)",
+            "Spatial tree (sceneobj+0x1C)",
+        };
+        static const char* const rot_s2_subsub_names[][4] = {
+            { "AthenaList_Append", "vtable[1] update driver", "flags", "removed on despawn" },
+            { "AthenaList_Append", "vtable[18] draw path", "flags", "popcylinder render wrapper" },
+            { "AthenaList_Append", "collision object", "flags", "removed on despawn" },
+            { "AthenaList_Append", "sceneobject tree", "spatial partitioning", "removed on despawn" },
+        };
+        static const char* const rot_s2_subsub_addrs[][4] = {
+            { "0x00453780", "vtable[1]", "0x201", "" },
+            { "0x00453780", "vtable[18]", "0x202", "" },
+            { "0x00453780", "obj+0x10D4", "0x203", "" },
+            { "0x00453780", "sceneobj+0x1C", "", "" },
+        };
+        static const char* const rot_s3_subs[] = {
+            "Native render vtable[11] (0x0043B330)",
+            "obj+0x10E8 (angle field)",
+            "obj+0x10EC (direction field)",
+            "cEnt_apply_rotater_directions (write rot_y)",
+            "cEnt_update_constant_rotations (constant spin)",
+            "RotaterConfig struct (mod-side state)",
+        };
+        static const char* const rot_s3_subsub_names[][4] = {
+            { "angle += direction * 0.004", "oscillation upper flip", "oscillation lower flip", "before object render" },
+            { "accumulated angle (radians)", "read: render only", "reset on spawn (rot_a)", "default 0.0" },
+            { "direction multiplier (rot_y)", "default 0.0", "ROS_Y=0 rewritten", "native flip reversal guard" },
+            { "apply directions", "writes direction", "runs once at spawn", "cfg loop" },
+            { "only for ROS_Y=0", "rewrites direction", "prevents oscillation", "angle grows unbounded" },
+            { "obj + mesh_path[128]", "rot speeds", "rot ranges", "angle / dir / mode" },
+        };
+        static const char* const rot_s3_subsub_addrs[][4] = {
+            { "obj+0x10E8", "obj+0x10EC value 1.0", "obj+0x10EC value -1.0", "slot 9" },
+            { "obj+0x10E8", "obj+0x10E8", "rot_a", "0.0" },
+            { "obj+0x10EC", "0.0", "obj+0x10EC", "obj+0x10EC" },
+            { "cEnt_apply_rotater_directions", "obj+0x10EC", "spawn time", "g_rotater_cfg" },
+            { "ROS_Y=0", "obj+0x10EC", "obj+0x10EC", "obj+0x10E8" },
+            { "RotaterConfig", "rot_x/rot_y/rot_z", "ros_x/ros_y/ros_z", "rot_a/rot_d/rot_m" },
+        };
+        static const char* const rot_s4_subs[] = {
+            "process_rotaters -> cEnt_spawn_rotater_at",
+            "per-frame: vtable[11] native render",
+            "cEnt_despawn_all_rotaters (level end)",
+        };
+        static const char* const rot_s4_subsub_names[][4] = {
+            { "scans section 3 objects", "matches cEnt_XXX name", "parses <ENTITY> tag", "calls cEnt_spawn_rotater_at" },
+            { "present hook", "slot 9 (viewport clear)", "before slot 10 object render", "cEnt_update_constant_rotations" },
+            { "vtable[11] RemoveAndFree", "resets rotater count", "resets gluebie/tarpit/waterwheel", "level unload handler" },
+        };
+        static const char* const rot_s4_subsub_addrs[][4] = {
+            { "", "", "", "" },
+            { "0x00455A90", "slot 9", "slot 10", "" },
+            { "0x00436FC0", "", "", "" },
+        };
+        static const struct {
+            const char* title;
+            const char* const* subs;
+            int n_subs;
+            const char* const (*subsub_names)[4];
+            const char* const (*subsub_addrs)[4];
+            int n_subsubs_per_sub[8];
+        } rot_sections[] = {
+            { "1 - Constructors (object creation)",     rot_s1_subs, 4, rot_s1_subsub_names, rot_s1_subsub_addrs, {4,4,4,4} },
+            { "2 - Registration (board wiring)",        rot_s2_subs, 4, rot_s2_subsub_names, rot_s2_subsub_addrs, {4,4,4,4} },
+            { "3 - Updates (rotation & behavior)",      rot_s3_subs, 6, rot_s3_subsub_names, rot_s3_subsub_addrs, {4,4,4,4,4,4} },
+            { "4 - Lifecycle / Call chain",             rot_s4_subs, 3, rot_s4_subsub_names, rot_s4_subsub_addrs, {4,4,4} },
+        };
+        int n_sections = sizeof(rot_sections) / sizeof(rot_sections[0]);
+        void* sub_font = *(void**)((char*)app + 0x31C);  /* showcardgothic14 — smaller */
+        int has_sub_font = sub_font && !IsBadReadPtr(sub_font, 0x500);
+        int s, i;
+
+        /* Pass 1 — measure every line's paren column (x + base width) at its
+         * own scale and find the max. That becomes the common paren column. */
+        int max_paren_col = 0;
+        for (s = 0; s < n_sections; s++) {
+            int c_title = 20 + cEnt_paren_line_base_width(font, rot_sections[s].title, 0.9f);
+            if (c_title > max_paren_col) max_paren_col = c_title;
+            if (has_sub_font) {
+                for (i = 0; i < rot_sections[s].n_subs; i++) {
+                    char subline[128];
+                    snprintf(subline, sizeof(subline), "- %s", rot_sections[s].subs[i]);
+                    int c_sub = 40 + cEnt_paren_line_base_width(sub_font, subline, 0.81f);
+                    if (c_sub > max_paren_col) max_paren_col = c_sub;
+                    /* sub-sub lines at double X offset (80px) */
+                    int n_subsub = rot_sections[s].n_subsubs_per_sub[i];
+                    for (int k = 0; k < n_subsub; k++) {
+                        char subsubline[128];
+                        /* v55m_48d: K-key toggles function_display. State 0
+                         * shows the name, state 1 the address/offset. If the
+                         * addr entry is empty, fall back to the name. */
+                        const char* cell = g_function_display
+                            ? (rot_sections[s].subsub_addrs[i][k][0]
+                               ? rot_sections[s].subsub_addrs[i][k]
+                               : rot_sections[s].subsub_names[i][k])
+                            : rot_sections[s].subsub_names[i][k];
+                        snprintf(subsubline, sizeof(subsubline), "  %s", cell);
+                        int c_ss = 80 + cEnt_paren_line_base_width(sub_font, subsubline, 0.81f);
+                        if (c_ss > max_paren_col) max_paren_col = c_ss;
+                    }
+                }
+            }
+        }
+        /* Add a 4-space pad (measured at the title scale) so parens don't
+         * touch the longest base text. */
+        if (max_paren_col > 0) {
+            float* fp_scale = (float*)((char*)font + 0x428);
+            float orig_scale = *fp_scale;
+            *fp_scale = 0.9f;
+            max_paren_col += pfn_Font_MeasureText(font, "    ");
+            *fp_scale = orig_scale;
+        }
+
+        /* Pass 2 — draw everything, parens at the common column. */
+        int line = 2;  /* first_line is line 0, section 1 starts at line 2 */
+        for (s = 0; s < n_sections; s++) {
+            /* Leave an empty line above every numbered section title so the
+             * sections are visually separated. Section 1 already has the gap
+             * after the "rotator" header, so only skip a line for s > 0. */
+            if (s > 0) line++;
+            cEnt_draw_paren_line(font, rot_sections[s].title, 20,
+                                 12 + 36 + line * debugTextSpacing + g_debug_scroll_y,
+                                 0.9f, max_paren_col, NULL);
+            line++;
+            if (has_sub_font) {
+                for (i = 0; i < rot_sections[s].n_subs; i++) {
+                    char subline[128];
+                    snprintf(subline, sizeof(subline), "- %s", rot_sections[s].subs[i]);
+                    cEnt_draw_paren_line(sub_font, subline, 40,
+                                         12 + 36 + line * debugTextSpacing + g_debug_scroll_y,
+                                         0.81f, max_paren_col, NULL);
+                    line++;
+                    /* sub-sub lines at double X offset (80px), same font */
+                    int n_subsub = rot_sections[s].n_subsubs_per_sub[i];
+                    for (int k = 0; k < n_subsub; k++) {
+                        char subsubline[128];
+                        /* v55m_48d: same name/addr selection as pass 1. */
+                        const char* cell = g_function_display
+                            ? (rot_sections[s].subsub_addrs[i][k][0]
+                               ? rot_sections[s].subsub_addrs[i][k]
+                               : rot_sections[s].subsub_names[i][k])
+                            : rot_sections[s].subsub_names[i][k];
+                        snprintf(subsubline, sizeof(subsubline), "  %s", cell);
+                        cEnt_draw_paren_line(sub_font, subsubline, 80,
+                                             12 + 36 + line * debugTextSpacing + g_debug_scroll_y,
+                                             0.81f, max_paren_col,
+                                             cEnt_debug_value(s, i, k));
+                        line++;
+                    }
+                }
+            } else {
+                for (i = 0; i < rot_sections[s].n_subs; i++) {
+                    line += 1 + rot_sections[s].n_subsubs_per_sub[i];
+                }
+            }
+        }
+        return;
+    }
 }
 
 /* Install Graphics_PresentOrEnd hook. */
@@ -6396,7 +7418,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_44x Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55m_49 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
