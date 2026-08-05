@@ -1,3 +1,17 @@
+## v55n_4 — TimeButton crash FIXED (real root cause: vtable[11] 0x43DC40)
+
+The board+0x2578 update loop (Board_UpdateRaceState 0x41B080) calls vtable[0x2C]
+(= slot 11) on every object each frame. For TimeButton that is 0x43DC40 (render-once).
+Gated on +0x10E5 (set to 1 by the ctor), it fires once and calls a PATCHED slot-22
+thunk (0x46DF80: ADD ESP,0x24 + RET 8) that corrupts the caller's stack frame ->
+heap corruption -> ntdll.dll 0001:0004717E ~1s after the button spawns. The native
+Up button survives because its board+0x478C mesh is pre-loaded with a valid
+SceneObject; the cEnt bare MeshWorld is not.
+
+FIX: NOP'd vtable[1] AND vtable[11] (0x43DC40) on a private vtable copy, and cleared
++0x10E5 so the render-once chain can never fire. The no-op returns 1 (keep in list).
+Button still renders (vtable[18] static path) and collides (obj+0x18 trees).
+
 ## v55n_3 fix (crash) — TimeButton vtable[1] no-op (root cause: Rotator_Update heap corruption)
 
 MAKYUNI reported the cEnt TimeButton crashing ~1s after it appears:

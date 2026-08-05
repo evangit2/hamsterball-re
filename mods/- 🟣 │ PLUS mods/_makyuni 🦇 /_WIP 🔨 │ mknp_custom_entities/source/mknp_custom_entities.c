@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_3
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_4
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -382,9 +382,12 @@ typedef struct {
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
 
-static void __thiscall cEnt_timebutton_update_noop(void* this_) {
-    (void)this_; /* v55n_3: TimeButton vtable[1] no-op — prevents Rotator_Update
-                    (0x4606D0) vertex-deform heap corruption on bare-loaded mesh. */
+static int __thiscall cEnt_timebutton_update_noop(void* this_) {
+    (void)this_; /* v55n_3: TimeButton vtable[1]+[11] no-op. The board+0x2578
+                    update loop (Board_UpdateRaceState 0x41B080) calls
+                    vtable[0x2C] (slot 11) and removes objects when the call
+                    returns 0 — so the no-op MUST return 1 (keep in list). */
+    return 1;
 }
 
 /* v55n_3: TimeButton tracking. Native Up race TimeButton (ctor 0x436C10, vtable 0x4D5830).
@@ -3427,16 +3430,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc TimeButton\n"); return; }
                 memset(obj, 0, TIMEBUTTON_SIZE);
                 pfn_TimeButton_ctor(obj, (void*)board, px, py, pz, mesh);
-                /* v55n_3 FIX (crash 0001:0004717E ntdll, ~1s after spawn):
-                 * board+0x2578 (update list) calls vtable[1] = Rotator_Update
-                 * (0x4606D0) EVERY FRAME on TimeButtons. Native survives because
-                 * its mesh (board+0x478C) has proper vertex data that feeds
-                 * Rotator_Update's vertex-deform buffer. The cEnt loads a bare
-                 * MeshWorld (Level_MeshWorldCtor 0x461510) whose SceneObject
-                 * +0x43C vertex count is 0 → Rotator_Update allocates a 0-size
-                 * buffer and writes mesh verts into it → heap corruption → ntdll
-                 * crash during Update. The button needs NO vertex deformation.
-                 * Replace vtable[1] with a no-op on a private vtable copy. */
+                /* v55n_3 CRASH FIX (3rd — REAL ROOT CAUSE):
+                 * Board_UpdateRaceState (vtable[19], 0x41B080) iterates board+0x2578
+                 * EVERY FRAME calling vtable[0x2C] (= vtable slot 11) on each object.
+                 * For TimeButton, vtable[11] = 0x43DC40 — the render-once function.
+                 * It is gated on +0x10E5 != 0 and when it fires it calls:
+                 *   Timer_Init(stack) -> timer vtable[2] (set pos),
+                 *   vtable[0x58] (slot 22 = 0x46DF80, PATCHED ntdll-ish thunk with
+                 *     ADD ESP,0x24 + RET 8 that corrupts the caller's stack frame),
+                 *   vtable[0x54] (slot 21 = 0x46DF90) with &stack_xyz.
+                 * On the cEnt object this once-guarded chain corrupts the stack ->
+                 * heap corruption -> ntdll.dll 0001:0004717E ~1s after spawn
+                 * (the +0x10E5=1 flag from the ctor fires it on the FIRST Update).
+                 * The native Up button survives because its board+0x478C mesh is
+                 * pre-loaded with a valid SceneObject; the cEnt bare MeshWorld is not.
+                 * FIX: NOP vtable[11] (slot 11, 0x43DC40) on the private vtable copy
+                 * so the board+0x2578 update loop never runs the position-set/render
+                 * chain. The button still renders via the render list (vtable[18]
+                 * 0x45E0E0 static path) and collides via obj+0x18 trees. */
                 {
                     DWORD* tb_vt = *(DWORD**)obj;
                     if (tb_vt && !IsBadReadPtr((void*)tb_vt, 0x400)) {
@@ -3444,12 +3455,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         if (new_tb_vt) {
                             memcpy(new_tb_vt, (void*)tb_vt, 0x400);
                             new_tb_vt[1] = (DWORD)&cEnt_timebutton_update_noop;
+                            new_tb_vt[11] = (DWORD)&cEnt_timebutton_update_noop;
                             *(DWORD*)obj = (DWORD)new_tb_vt;
-                            if (logf) fprintf(logf, "  ROTATER: TimeButton vtable[1] -> noop (0x%08X -> 0x%08X)\n",
+                            if (logf) fprintf(logf, "  ROTATER: TimeButton vtable slots 1+11 -> noop (0x%08X -> 0x%08X)\n",
                                               (DWORD)tb_vt, (DWORD)new_tb_vt);
                         }
                     }
                 }
+                /* Also clear the render-once flag so 0x43DC40's body can never
+                 * fire even through the ORIGINAL vtable. */
+                *(char*)((char*)obj + 0x10E5) = 0;
                 *(float*)((char*)obj + 0x10D4) = px;
                 *(float*)((char*)obj + 0x10D8) = py;
                 *(float*)((char*)obj + 0x10DC) = pz;
@@ -3474,13 +3489,22 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                                 }
                             }
                         }
-                        /* Register collision Level into board+0x10EC + scene tree */
-                        pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST), (void*)tb_col);
-                        DWORD scene_col3 = *(DWORD*)(board + BOARD_SCENE_OBJ);
-                        if (scene_col3) {
-                            pfn_AthenaList_Append((DWORD*)(scene_col3 + 0x18), (void*)tb_col);
-                        }
-                        if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X registered\n", tb_col);
+                        /* v55n_3 CRASH FIX (2nd): do NOT register the +0x10E0
+                         * collision Level into board+0x10EC / scene_col+0x18.
+                         * Native Up_CreateDynamicObjects registers TimeButton ONLY
+                         * in board+0x2578. The collision works because Stands_ctor
+                         * clones spatial trees into obj+0x18, which Ball_Update
+                         * reaches via the board collision level — WITHOUT the
+                         * explicit list registration. Adding the Level_RenderCtor
+                         * to board+0x10EC makes the collision system iterate it
+                         * as a CollisionLevel every Update while the render path
+                         * (vtable[18] 0x45E0E0) simultaneously reads its mesh
+                         * buffers -> double-use -> heap corruption -> ntdll
+                         * 0001:0004717E (same class of bug as the catapult
+                         * 0x478EDD crash, fixed in v55m_43h by removing the
+                         * registration). The button is rendered through the
+                         * board+0x2578 update path instead. */
+                        if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X via native obj+0x18\n", tb_col);
                     }
                     /* 3. Entity self-ref +0x47C */
                     *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
@@ -6220,7 +6244,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_3", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_4", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -7833,7 +7857,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_3 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_4 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
