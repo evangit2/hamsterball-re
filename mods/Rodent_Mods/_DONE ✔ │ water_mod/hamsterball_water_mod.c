@@ -6,6 +6,18 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.2: Surgical type-5 block — block ONLY the 0x2E9 death-flag write
+ *     while submerged / in the grace period, instead of skipping the
+ *     whole type-5 death block. Hook 3's in-water path now JMPs to
+ *     0x407398 (right after the "MOV byte [ESI+0x2E9],1" at 0x407391)
+ *     instead of 0x40743D, so the camera snap (Scene_SetCamera),
+ *     viewport, and 0x2E8 split-flag logic still run normally. The
+ *     death flag is the ONLY thing suppressed — the ball can't be
+ *     killed by death checks #1/#2 while in water / grace, but falls
+ *     still behave naturally (camera follows, split logic intact).
+ *     E:LIMIT deaths still work (separate writer via
+ *     DispatchCollisionEvents).
+ *
  * v7.1: Clear 0x2E9 on water entry + dizzy immunity while submerged.
  *     On water entry: clear bounce counter (ball+0x2EC) — same as E:NODIZZY.
  *     Every frame in water: clear bounce counter + set dizzy_immunity_timer
@@ -250,6 +262,10 @@ static void diag_log(const char *msg)
  * E:LIMIT events to set it through DispatchCollisionEvents. */
 #define ADDR_TYPE5_JNZ          0x00407377  /* 6-byte JNZ at penetration check */
 #define TYPE5_SKIP_TARGET       0x0040743D  /* jump here to skip type 5 death block */
+#define TYPE5_AFTER_FLAG        0x00407398  /* jump here to skip ONLY the 0x2E9 flag write
+                                             * (MOV byte [ESI+0x2E9],1 = 7 bytes at 0x407391),
+                                             * keeping the camera snap + viewport + split flag.
+                                             * Next instr = CALL Scene_SetCamera at 0x407398. */
 #define TYPE5_NEXT_INSTR        0x0040737D  /* instruction after the JNZ */
 #define TYPE5_PATCH_SIZE        6           /* 5-byte JMP + 1 NOP */
 
@@ -772,9 +788,13 @@ static void install_phase15_hook(void)
  * past the mesh edge > 1.0 units. If so, it sets ball+0x2E9 (falling flag)
  * and switches the camera to falling mode.
  *
- * While the ball is in water, we skip the ENTIRE type 5 death block by
- * jumping to 0x40743D (the instruction after the block). This prevents
- * 0x2E9 from being set by geometric mesh penetration while submerged.
+ * While the ball is in water (or within the grace period after leaving),
+ * we suppress the death-flag WRITE (the MOV byte [ESI+0x2E9],1 at
+ * 0x407391) by jumping to 0x407398 — the instruction right after it.
+ * This is SURGICAL: the camera snap (CALL Scene_SetCamera), viewport
+ * setup, and 0x2E8 split-flag logic all still run. Only the "falling/
+ * dead" marker is never set, so death checks #1/#2 (0x406C0A, 0x40721F)
+ * can't fire while in water / grace.
  *
  * E:LIMIT events still set 0x2E9 through DispatchCollisionEvents, so the
  * ball can still die from level boundaries while in water.
@@ -795,8 +815,9 @@ static BYTE *g_type5_cave = NULL;
 
 /* Check if a ball pointer should be protected from type 5 death.
  * Returns 1 if ball is in water OR within the grace period after leaving water.
- * This prevents type 5 mesh-penetration from setting 0x2E9 both while submerged
- * AND during the bounce-out arc where the ball may clip through mesh. */
+ * This prevents the type 5 death-flag WRITE (0x2E9) both while submerged
+ * AND during the bounce-out arc where the ball may clip through mesh.
+ * Camera snap / viewport / 0x2E8 split logic still run (surgical block). */
 static int __cdecl is_ball_in_water(DWORD ball)
 {
     if (!ball || IsBadReadPtr((void*)ball, 0x300)) return 0;
@@ -888,16 +909,25 @@ static void install_type5_hook(void)
 
     /* --- In water cleanup path: --- */
     /* We reach here from the JNZ above. PUSHFD is still on stack.
-     * Clean it up, then jump to skip target. */
+     * Clean it up, then jump to TYPE5_AFTER_FLAG (0x407398).
+     *
+     * SURGICAL FIX (v7.2): instead of JMPing to TYPE5_SKIP_TARGET
+     * (0x40743D, past the ENTIRE block), we JMP to 0x407398 — the
+     * instruction right AFTER the "MOV byte [ESI+0x2E9],1" flag write.
+     * This blocks ONLY the death-flag set (the thing that makes death
+     * check #2 fire at the apex) while STILL letting the camera snap
+     * (CALL Scene_SetCamera), viewport setup, and the split-flag
+     * (0x2E8) run normally. So in water / within the grace period,
+     * the ball survives the fall but the camera still follows it. */
     int inwater_cleanup_addr = p;
     /* ADD ESP, 4 — remove the saved EFLAGS from stack */
     g_type5_cave[p++] = 0x83; g_type5_cave[p++] = 0xC4;
     g_type5_cave[p++] = 0x04;
-    /* JMP to TYPE5_SKIP_TARGET (0x40743D) — skip entire type 5 death block */
+    /* JMP to TYPE5_AFTER_FLAG (0x407398) — skip only the 0x2E9 flag write */
     g_type5_cave[p++] = 0xE9;
     {
         DWORD src = (DWORD)(g_type5_cave + p + 4);
-        DWORD dst = (DWORD)TYPE5_SKIP_TARGET;
+        DWORD dst = (DWORD)TYPE5_AFTER_FLAG;
         *(DWORD*)(g_type5_cave + p) = dst - src;
     }
     p += 4;
@@ -993,7 +1023,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.1 loaded (normalized submersion 0-1) ===");
+    diag_log("=== Water mod v7.2 loaded (surgical death-flag block) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1042,7 +1072,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.1 DLL attaching ===");
+        diag_log("=== Water mod v7.2 DLL attaching ===");
 
         load_real_bass();
         {
