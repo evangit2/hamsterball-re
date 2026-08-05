@@ -7,11 +7,11 @@
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
  * v7.3: Added E:WATEREXIT event plane. Touching an object named
- *     "E:WATEREXIT" turns OFF the water flag entirely (in_water = 0,
- *     surface/prev_submersion reset) and starts the same grace period
- *     as the natural surface exit — death suppression stays active
- *     briefly so the bounce-out arc remains safe. Checked BEFORE the
- *     E:WATER prefix match so it isn't swallowed by it.
+ *     "E:WATEREXIT" turns OFF the water flag entirely and immediately
+ *     (in_water = 0, surface/prev_submersion reset, NO grace period —
+ *     the exit is final). Repeated triggers are idempotent; re-entering
+ *     water via E:WATER right after re-activates the flag normally.
+ *     Checked BEFORE the E:WATER prefix match so it isn't swallowed by it.
  *
  * v7.2: Surgical type-5 block — block ONLY the 0x2E9 death-flag write
  *     while submerged / in the grace period, instead of skipping the
@@ -64,10 +64,11 @@
  *       2. Reduces ALL velocity axes by entry_damping (default 10% cut)
  *       3. Captures ball's Y as water_surface_y for this session
  *     When the name is "E:WATEREXIT", instead turns OFF the water flag
- *     entirely (in_water = 0), resets surface/prev_submersion, and starts
- *     the grace period — identical cleanup to the natural surface-exit
- *     in Hook 2. E:WATEREXIT is checked first so it isn't swallowed by
- *     the E:WATER prefix match.
+ *     entirely (in_water = 0, surface/prev_submersion reset, NO grace
+ *     period — the exit is final). Repeated triggers are idempotent;
+ *     re-entering water via E:WATER re-activates the flag normally.
+ *     E:WATEREXIT is checked first so it isn't swallowed by the E:WATER
+ *     prefix match.
  *     Then calls the original DispatchCollisionEvents so the game processes
  *     the collision normally. E:LIMIT events still set 0x2E9 normally.
  *
@@ -506,12 +507,13 @@ static void trigger_water_contact(void *ball_ptr)
 }
 
 /* Trigger function — called when the ball touches an E:WATEREXIT plane.
- * Turns OFF the water flag entirely, same cleanup as the natural
- * "ball rises above the surface" exit in apply_water_physics:
- *   - in_water = 0 (stops all water physics immediately)
+ * Turns OFF the water flag entirely and immediately:
+ *   - in_water = 0 (stops all water physics instantly)
  *   - water_surface_y / prev_submersion reset
- *   - grace_frames = GRACE_PERIOD_FRAMES (keeps death suppression alive
- *     briefly after exiting, so the bounce-out arc stays safe) */
+ *   - grace_frames = 0 (NO grace period — the exit is final; the user
+ *     explicitly wants it to just switch off and be done. Repeated
+ *     triggers are harmless (idempotent), and re-entering water via
+ *     E:WATER right after re-activates the flag normally.) */
 static void trigger_water_exit(void *ball_ptr)
 {
     DWORD ball = (DWORD)ball_ptr;
@@ -520,18 +522,19 @@ static void trigger_water_exit(void *ball_ptr)
     water_state_t *st = get_ball_state(ball);
     if (!st) return;
 
-    /* Idempotent: if already out of water, nothing to do */
+    /* Idempotent: if already out of water, nothing to do.
+     * Repeated E:WATEREXIT triggers are fine — they no-op here. */
     if (!st->in_water) return;
 
     st->in_water = 0;
     st->water_surface_y = 0.0f;
     st->prev_submersion = 0.0f;
-    st->grace_frames = GRACE_PERIOD_FRAMES;
+    st->grace_frames = 0;
 
     if (g_cfg.debug) {
         char buf[128];
-        snprintf(buf, sizeof(buf), "WATEREXIT TRIGGER: ball=%08X in_water cleared, grace=%d",
-                 ball, st->grace_frames);
+        snprintf(buf, sizeof(buf), "WATEREXIT TRIGGER: ball=%08X in_water cleared (no grace)",
+                 ball);
         diag_log(buf);
     }
 }
