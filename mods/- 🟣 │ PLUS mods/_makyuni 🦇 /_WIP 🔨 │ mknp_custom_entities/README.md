@@ -1,4 +1,4 @@
-# Custom Entities Mod v55m_51
+# Custom Entities Mod v55n_1
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
@@ -50,7 +50,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | 22   | cEnt_Chomper_ctor       | MeshNode_ctor      | 0x471C20 | 0x18    | MeshNode_ctor - Tower Chomper mesh                    |
 | 23   | cEnt_Chrome_ctor        | N/A                | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback  |
 | 24   | cEnt_Funball_ctor       | N/A                | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback  |
-| 25   | cEnt_Tarbubble_ctor     | N/A                | N/A      | N/A     | No _ctor, board-level behavior, PopCylinder fallback  |
+| 25   | cEnt_Tarbubble_ctor     | N/A                | N/A      | 0x1C    | Decorative floating bubble (native ctor 0x44FB50)     |
 | 26   | cEnt_Waterwheel_ctor    | N/A                | N/A      | N/A     | No _ctor, position-only storage, PopCylinder fallback |
 | 27   | cEnt_Spinner_Level_ctor | Spinner_Level_ctor | 0x4396F0 | 0x10FC  | Expert Race "BRIDGE" (6 params)                       |
 | 28   | cEnt_Cloudscape         | Sprite_ctor        | 0x45D0C0 | 0xD4    | Sprite_ctor - Sky Race clouds, _default fallback      |
@@ -104,7 +104,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Speedcylinder | 0    | levels\LevelUp-SpeedCylinder    | cEnt_SpeedCylinder_ctor                                     |
 | Spinner       | 27   | levels\Level8-Spinny            | cEnt_Spinner_Level_ctor (0x4396F0, 0x10FC)                  |
 | Swirl         | 6    | levels\Level3-Swirl             | cEnt_Rotator_ctor_Impossible                                |
-| Tarbubble     | 25   | meshes\tarbubble                | cEnt_Tarbubble_ctor: no _ctor, PopCylinder fallback         |
+| Tarbubble     | 25   | levels\_default                 | Decorative bubble (native 0x44FB50)                         |
 | Tarpit        | 0    | levels\_default                 | N:TARPIT tag, _default mesh                                 |
 | Timebutton    | 0    | levels\LevelUp-Button           | cEnt_TimeButton_ctor                                        |
 | Tipper        | 0    | levels\Level3-Tipper            | cEnt_Tipper_ctor                                            |
@@ -144,7 +144,7 @@ All mod-side functions use the `cEnt_` prefix to distinguish them from game orig
 - **Chomper** - Tower: stores position at board+0x4394, no _ctor
 - **Chrome** - Odd: CHROMESHADOW hash table lookup, no _ctor
 - **Funball** - Sky: created by board update function, no _ctor
-- **Tarbubble** - Dizzy: collected into board+0x11E4 list, no _ctor
+- **Tarbubble** - Dizzy: decorative floating bubble. Native ctor 0x44FB50, vtable 0x4D6E48, 0x1C bytes. No slowdown (Gluebie), no sinking (Tarpit).
 - **Waterwheel** - Dizzy: stores position at board+0x4BB0, no _ctor. v55m_44c: reverse rotation (+0.5°/frame) + WheelCreak sound via native channel (slot App+0x490 → Sound_GetChannel 0x459810 → Sound_Play3D per frame). v55m_44d: stops rotating + creaking while paused (board+0x874 gate). v55m_44i: collision object disabled (PopCylinder's CollisionLevel renders 0x7C component meshbuffers as if full-level → strip-array OOB crash at 0x46578C; native waterwheel collision comes from level geometry). v55m_44j: 44i was insufficient — PopCylinder_ctor itself creates the CollisionLevel and the game's 0x436FC0 registration never runs on the wheel, so the CollisionLevel stays alive; now render-neutralized (+0x430=1 skips the broken meshbuffer walk, component count zeroed, child CollisionLevels in +0x18 sub-lists neutralized) → crash 0x465789 gone. v55m_44k: 44j's shallow 2-level scan missed deeper tree nodes (each child copies +0x430 from its parent at build time) — now RECURSIVE full-tree walk + PER-FRAME re-neutralization in the polling thread (the game re-registers/re-builds nodes during FinishLoad after the spawn-time patch) → crash 0x46578C gone. v55m_44l: 44k's background-thread re-neutralization still lost the race — the 44k crash log shows 4 nodes neutralized yet the crash persisted at 0x465789 during Background/FinishLoad (nodes registered between the thread's 16ms ticks). Now ALSO re-neutralizes on the MAIN THREAD every frame via the Present hook (App_ResetFrame 0x46C200, before any render) AND covers board+0x8B0's CollisionLevel tree → the race is closed. v55m_44m: 44l's blanket board-walk neutralized the board's OWN level-geometry CollisionLevel tree (11 nodes → infinite fall + pale wheel) — now SELECTIVE: only neutralize board nodes that are the wheel's recorded nodes or probe-broken (component meshbuffer +0x418 strip pointer OOB); legit geometry left intact. **v55m_44n (FINAL): the whole PopCylinder approach was wrong — the native game NEVER wraps the waterwheel in a PopCylinder (it stores the loaded mesh at board+0x4374 and the board renders it directly). The crash was the mod's OWN PopCylinder→CollisionLevel. 44n removes PopCylinder entirely: the wheel is now a plain MeshWorld (vtable 0x4D8FB0, [18]=0x470150) hooked with the rotation matrix, registered in the render list + scene tree. NO CollisionLevel exists → the crash path (0x465650 walking component meshbuffer strip arrays) is structurally impossible. Exactly what MAKYUNI asked: "load the code that worked with Level3-WaterWheel, use my Waterwheel.MESHWORLD instead" — same loader (0x461510), same native-style wrapper, their file.**
 - **Windmill** - Tower: Level_RenderCtor + TipperVisual_Attach (Fan_ctor is NOT used)
 
@@ -155,7 +155,7 @@ All mod-side functions use the `cEnt_` prefix to distinguish them from game orig
 
 ## Known Limitations
 
-- **.MESH file entities** (8ball, Bell, Chomper, Fan, Funball, Judge, Mag, Sawblade, Tarbubble):
+- **.MESH file entities** (8ball, Bell, Chomper, Fan, Funball, Judge, Mag, Sawblade):
   These use a different mesh format. The mod tries loading via MeshWorld_ctor, falling back
   to Swirl if unsupported.
 - **Gear/Looper**: PopCylinder fallback used because their native _ctors crashed

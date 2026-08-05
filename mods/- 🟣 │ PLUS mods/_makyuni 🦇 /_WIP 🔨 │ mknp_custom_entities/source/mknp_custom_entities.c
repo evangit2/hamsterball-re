@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55m_51
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_1
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -546,6 +546,32 @@ static Timer_Init_t pfn_Timer_Init = (Timer_Init_t)0x00457A40;
 typedef void (__thiscall *Timer_Cleanup_t)(void* timer_buf);
 static Timer_Cleanup_t pfn_Timer_Cleanup = (Timer_Cleanup_t)0x00457A50;
 
+/* v55n: Native decorative TarBubble object (Ghidra-verified 2026-08-05).
+ * 0x1C-byte object, vtable 0x4D6E48 (SimpleList-family bubble).
+ *   +0x00 vtable, +0x04 app, +0x08/+0x0C/+0x10 pos x/y/z,
+ *   +0x14 scale (start 25.0), +0x18 lifetime (RNG+25, frames),
+ *   +0x1C scale2 (used by splotch render variant)
+ * ctor FUN_0044fb50: __thiscall(this=ECX, app, x, y, z) RET 0x14 — sets
+ *   vtable, app, pos, scale=25.0 (0x41C80000), lifetime=RNG(0x19)+0x19.
+ * update FUN_0044fbe0 (vtable[1]): __fastcall(this) — scale *= 0.95,
+ *   lifetime -= 1.0, plays bubble1 pop sound (app+0x488) when expired.
+ * render FUN_0044f910 (vtable[2]): __fastcall(this) — Timer_Init,
+ *   Gfx_SetPosition(x, y - scale*60, z), sprite vtable[0x1C](scale, 0),
+ *   Timer_Cleanup. (60.0 = 0x4D039C, scale*60 rises the bubble.) */
+typedef void* (__thiscall *TarBubble_ctor_t)(void* this_, DWORD app,
+                                              float x, float y, float z);
+static TarBubble_ctor_t pfn_TarBubble_ctor = (TarBubble_ctor_t)0x0044FB50;
+typedef void (__fastcall *TarBubble_update_t)(DWORD this_);
+static TarBubble_update_t pfn_TarBubble_update = (TarBubble_update_t)0x0044FBE0;
+typedef void (__fastcall *TarBubble_render_t)(DWORD this_);
+static TarBubble_render_t pfn_TarBubble_render = (TarBubble_render_t)0x0044F910;
+/* v55n: Bubble dtor (vtable[0] = SimpleList_dtor 0x44FD40): __thiscall
+ * (this, flags). flags&1 == free. The native update does NOT free the
+ * bubble — the list owner does. We must dtor(1) on expiry (pop), and
+ * dtor(1) any live bubbles on level unload, or we leak 0x1C blocks. */
+typedef void (__thiscall *TarBubble_dtor_t)(DWORD this_, BYTE flags);
+static TarBubble_dtor_t pfn_TarBubble_dtor = (TarBubble_dtor_t)0x0044FD40;
+
 /* Gfx_Scale — set base scale on all 3 axes. __thiscall(ECX=timer_buf, x, y, z) RET 0xC */
 typedef void (__thiscall *Gfx_Scale_t)(void* timer_buf, float x, float y, float z);
 static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
@@ -820,14 +846,24 @@ static DWORD g_gluebie_particles_created_ball = 0;  /* ball ptr that already has
 static DWORD g_tarpit_objs[MAX_TARPITS];
 static int   g_tarpit_count = 0;
 
-/* v55e: TarBubble tracking — no entity spawned, just position markers.
- * Native game stores TarBubble S1 ref points in board+0x4790 AthenaList,
- * then DizzyBoard_Update creates a collision traversal object (0x44FA90)
- * that sinks the ball 0.25/frame when inside the tar radius.
- * We replicate this without spawning any entity. */
+/* v55n: TarBubble tracking — DECORATIVE FLOATING BUBBLE (Ghidra-verified 2026-08-05).
+ * Native TarBubble = S1 ref point, purely decorative. DizzyBoard_Update/Master
+ * occasionally (RNG==10) spawns a 0x1C-byte bubble object (vtable 0x4D6E48):
+ *   - ctor FUN_0044fb50 (__thiscall: this, app, x, y, z): scale +0x14=25.0,
+ *     lifetime +0x18 = RNG(0x19)+0x19 (25..50 frames), pos at +0x08/+0x0C/+0x10
+ *   - update FUN_0044fbe0 (vtable[1]): scale *= 0.95 (0x4D092C), lifetime -=1,
+ *     pops (plays bubble1 sound via app+0x488) when lifetime <= 0
+ *   - render FUN_0044f910 (vtable[2]): Timer_Init → Gfx_SetPosition(x, y-scale*60, z)
+ *     → [app+0x5A4]+vtable[0x1C](scale,0) → Timer_Cleanup
+ * The bubble list (board+0x3B00) is driven ONLY by Dizzy/Master board updates,
+ * so the mod self-drives these bubbles from the Present hook for ALL boards.
+ * Gluebie (43) keeps the slowdown, Tarpit (44) keeps the sinking. */
 #define MAX_TARBUBBLES 64
+#define TARBUBBLE_SIZE 0x1C
 typedef struct {
-    float x, y, z;  /* position from S1 ref point */
+    float x, y, z;             /* spawn position from S1 ref point */
+    DWORD obj;                 /* live 0x1C bubble object (vtable 0x4D6E48) */
+    int   countdown;           /* frames until next bubble spawn (decorative) */
 } TarBubblePos;
 static TarBubblePos g_tarbubble_pos[MAX_TARBUBBLES];
 static int g_tarbubble_count = 0;
@@ -2312,20 +2348,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                               FILE* logf) {
     if (!board) return;
 
-    /* v55m_5: TarBubble (ai_type 25) — board-level entity like Chomper.
-     * Native game loads TarBubble.MESH via MeshNode_ctor, stores at board+0x4790.
-     * TarBubble is an S1 ref point, NOT a mesh entity. We load the .MESH and
-     * track in mod-side array for proximity tar sinking. No PopCylinder needed. */
+    /* v55n: TarBubble (ai_type 25) — DECORATIVE FLOATING BUBBLE.
+     * Native TarBubble is a purely decorative S1 ref point that occasionally
+     * spawns a floating bubble sprite (it does NOT trap/slow the ball — that's
+     * Gluebie 43 / Tarpit 44). We store the position and spawn a real native
+     * bubble object (0x1C-byte, vtable 0x4D6E48) via ctor FUN_0044fb50.
+     * The bubble is driven (update+render) from the Present hook for all boards. */
     if (ai_type == 25) {
         if (g_tarbubble_count < MAX_TARBUBBLES) {
             g_tarbubble_pos[g_tarbubble_count].x = px;
             g_tarbubble_pos[g_tarbubble_count].y = py;
             g_tarbubble_pos[g_tarbubble_count].z = pz;
+            g_tarbubble_pos[g_tarbubble_count].obj = 0;
+            g_tarbubble_pos[g_tarbubble_count].countdown = 0;
             g_tarbubble_count++;
-            if (logf) fprintf(logf, "  TARBUBBLE: stored position (%.1f,%.1f,%.1f) [%d]\n",
+            if (logf) fprintf(logf, "  TARBUBBLE: decorative bubble ref (%.1f,%.1f,%.1f) [%d]\n",
                     px, py, pz, g_tarbubble_count - 1);
         }
-        return;  /* No entity spawned — position-only marker for proximity check */
+        return;  /* decorative bubble — position stored, bubble spawned per-frame */
     }
 
     /* v55i: WaterWheel (ai_type 26) — spawn PopCylinder for visibility,
@@ -3668,6 +3708,19 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
     g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
+    /* v55n: Free any live decorative TarBubble objects on level unload
+     * (they self-free on pop, but must not leak across level changes). */
+    {
+        int ti;
+        for (ti = 0; ti < g_tarbubble_count; ti++) {
+            if (g_tarbubble_pos[ti].obj) {
+                if (pfn_TarBubble_dtor) {
+                    pfn_TarBubble_dtor(g_tarbubble_pos[ti].obj, 1);
+                }
+                g_tarbubble_pos[ti].obj = 0;
+            }
+        }
+    }
     g_tarbubble_count = 0;  /* v55e: reset TarBubble tracking on level unload */
     /* v55m_44o: WaterWheel cleanup — the mesh is registered in the render
      * list + scene tree and has a private vtable copy (hooked [18]).
@@ -5851,7 +5904,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55m_51", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_1", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -6805,69 +6858,94 @@ static void cEnt_tarpit_proximity_check(DWORD board) {
     }
 }
 
-/* v55e: TarBubble proximity check — replicates native DizzyBoard_Update tar behavior.
- * Native flow: TarBubble S1 ref points stored in board+0x4790 AthenaList.
- * DizzyBoard_Update (0x41D512) creates a collision traversal object (0x44FA90)
- * that iterates balls and sinks any inside the tar radius.
+/* v55n: TarBubble decorative bubble driver (was proximity-sink in v55m).
+ * The native TarBubble is PURELY DECORATIVE — it occasionally floats a
+ * bubble sprite up from the tar. It does NOT sink, slow, or trap the ball
+ * (that's Gluebie 43 = slowdown, Tarpit 44 = sinking).
  *
- * Sinking: ball+0x168 (Y position) -= 0.25/frame (constant at 0x4CF380).
- * When ball+0x2CC (in_tar) is set, Ball_Update uses ball's own position for
- * distance calc (can't be pushed), spin decays 0.85x/frame.
- * Ball dies when sunk past radius * 2.5 (depth check in Board_Setup).
+ * Native flow (DizzyBoard_Update 0x41D512 / Master FUN_00420da0):
+ *   every frame, RNG()==10 → operator_new(0x1C) + FUN_0044fb50(app, x, y, z)
+ *   + AthenaList_Append(board+0x3B00). The board update then drives each
+ *   bubble: vtable[1] (update: scale-=5%/frame, lifetime-=1) + vtable[2]
+ *   (render: rises scale*60/frame, pops with bubble1 sound when done).
  *
- * We replicate this without any spawned entity — just position markers. */
-static void cEnt_tarbubble_proximity_check(DWORD board) {
+ * Since board+0x3B00 is only driven by Dizzy/Master updates, we self-drive
+ * here on ALL boards from the Present hook: occasionally spawn, then
+ * update+render each live bubble. The bubble uses the native sprite
+ * (app+0x5A4 "Meshes\\tarbubble", loaded by TimerDisplay for every board). */
+static void cEnt_tarbubble_update_decoration(DWORD board) {
     if (!board || g_tarbubble_count <= 0) return;
+    if (game_is_quitting()) return;
 
-    /* Get ball AthenaList at board+0x29D4 */
-    DWORD ball_list = board + 0x29D4;
-    if (IsBadReadPtr((void*)(ball_list + 0x04), 4)) return;
-    int ball_count = *(int*)(ball_list + 0x04);
-    if (ball_count <= 0 || ball_count > 20) return;
-    if (IsBadReadPtr((void*)(ball_list + 0x40C), 4)) return;
-    DWORD* ball_data = *(DWORD**)(ball_list + 0x40C);
-    if (!ball_data || IsBadReadPtr(ball_data, ball_count * 4)) return;
+    /* v55m_44d: Pause gate — decorative bubbles must freeze during ESC pause. */
+    if (*(BYTE*)(board + 0x874) != 0) return;
 
-    int i, j;
+    DWORD app = *(DWORD*)(board + BOARD_APP);
+    if (!app || IsBadReadPtr((void*)app, 0x5B0)) return;
+
+    int j;
     for (j = 0; j < g_tarbubble_count; j++) {
-        float tx = g_tarbubble_pos[j].x;
-        float ty = g_tarbubble_pos[j].y;
-        float tz = g_tarbubble_pos[j].z;
+        TarBubblePos* bp = &g_tarbubble_pos[j];
 
-        for (i = 0; i < ball_count; i++) {
-            DWORD ball = ball_data[i];
-            if (!ball || ball < 0x10000) continue;
-            if (IsBadReadPtr((void*)ball, 0x2D0)) continue;
-
-            /* Skip ball if already in tar (native checks ball+0x2CC) */
-            if (*(char*)(ball + 0x2CC) != 0) continue;
-
-            /* Ball position */
-            float bx = *(float*)(ball + 0x164);
-            float by = *(float*)(ball + 0x168);
-            float bz = *(float*)(ball + 0x16C);
-
-            /* 3D distance to tarbubble center */
-            float dx = tx - bx;
-            float dy = ty - by;
-            float dz = tz - bz;
-            float dist_sq = dx*dx + dy*dy + dz*dz;
-
-            /* Native tar radius: ball sinks when close to tarbubble center.
-             * The native collision traversal object uses the mesh bounds,
-             * but for a position-only marker we use a fixed radius.
-             * Native Ball_Update uses 3.0 units for tar surface contact. */
-            float radius = 3.0f;
-            if (dist_sq < radius * radius) {
-                /* Sink ball: ball+0x168 (Y) -= 0.25/frame (native constant 0x4CF380) */
-                *(float*)(ball + 0x168) = by - 0.25f;
-
-                /* Set in_tar flag — disables ball control, decays spin 0.85x */
-                *(BYTE*)(ball + 0x2CC) = 1;
-
-                /* Mark ball tar flag for render (draws tar splotch mesh) */
-                *(BYTE*)(ball + 0x2BC) = 1;
+        /* Bubble expired → clean up (native pops + frees) */
+        if (bp->obj) {
+            if (IsBadReadPtr((void*)(bp->obj + TARBUBBLE_SIZE), 4) ||
+                *(DWORD*)bp->obj == 0) {
+                bp->obj = 0;
+                continue;
             }
+            /* Let the native update run: scale*=0.95, lifetime-=1, pop+free */
+            if (pfn_TarBubble_update) {
+                pfn_TarBubble_update(bp->obj);
+            }
+            /* After update the object is freed if lifetime hit 0. Detect by
+             * reading lifetime (and render only while alive). */
+            if (IsBadReadPtr((void*)(bp->obj + 0x18), 4)) {
+                bp->obj = 0;
+                continue;
+            }
+            float lifetime = *(float*)(bp->obj + 0x18);
+            if (lifetime <= 0.0f) {
+                /* Pop complete — free via native dtor (update only plays the
+                 * pop sound; the list owner normally frees). */
+                if (pfn_TarBubble_dtor) {
+                    pfn_TarBubble_dtor(bp->obj, 1);
+                }
+                bp->obj = 0;
+                continue;
+            }
+            /* Native render: rises scale*60/frame via Gfx_SetPosition */
+            if (pfn_TarBubble_render) {
+                pfn_TarBubble_render(bp->obj);
+            }
+            continue;
+        }
+
+        /* No live bubble → countdown to next spawn (native ~10%/frame,
+         * but we use a small fixed interval so it's visible but not spammy) */
+        if (bp->countdown > 0) {
+            bp->countdown--;
+            continue;
+        }
+
+        /* Spawn a new decorative bubble at the ref point */
+        if ((rand() % 100) < 12) {   /* ~12% per frame, native uses RNG==10 */
+            void* obj = pfn_operator_new(TARBUBBLE_SIZE);
+            if (obj) {
+                /* ctor copies pos + sets scale/lifetime; obj lifetime starts 25..50 */
+                void* made = pfn_TarBubble_ctor(obj, app, bp->x, bp->y, bp->z);
+                if (made) {
+                    bp->obj = (DWORD)made;
+                    if (logf) fprintf(logf, "  TARBUBBLE: spawned decorative bubble at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                            bp->x, bp->y, bp->z, bp->obj);
+                } else {
+                    /* ctor failed — don't leak, try again later */
+                    bp->obj = 0;
+                }
+            }
+            bp->countdown = 6 + (rand() % 20);  /* 6..25 frames between bubbles */
+        } else {
+            bp->countdown = 1;
         }
     }
 }
@@ -7282,7 +7360,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
             { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
-            { "Tarbubble",        25, "levels\\_default" },         /* v55l_3: TarBubble.MESH is a texture, not a 3D mesh. Native game loads it as 2D sprite via TimerDisplay vtable[19], never as a mesh entity. Use _default MESHWORLD for visibility. */
+            { "Tarbubble",        25, "levels\\_default" },         /* v55n: DECORATIVE floating bubble (native ctor 0x44FB50, vtable 0x4D6E48). Does NOT slow/sink — Gluebie(43) slows, Tarpit(44) sinks. Self-driven on all boards. */
             { "Tarpit",           44, "levels\\_default" },          /* v55k_1: N:TARPIT behavior via proximity, PopCylinder spawn + tar sinking */
             { "Timebutton",       0, "levels\\LevelUp-Button" },    /* TimeButton_ctor */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
@@ -7439,7 +7517,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55m_51 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_1 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
@@ -7497,11 +7575,13 @@ static DWORD WINAPI entity_thread(LPVOID param) {
          * Sound still played here (background thread) to avoid reentrancy
          * issues with Sound_Play3D inside the Present hook. */
 
-        /* v55e: Per-frame TarBubble proximity check (cross-level behavior) */
+        /* v55n: Per-frame TarBubble DECORATIVE bubble driver (cross-level).
+         * Spawns/updates/renders floating bubbles. No trap behavior —
+         * Gluebie (slowdown) and Tarpit (sink) are separate entities. */
         {
             DWORD board = get_board();
             if (board && g_tarbubble_count > 0) {
-                cEnt_tarbubble_proximity_check(board);
+                cEnt_tarbubble_update_decoration(board);
             }
         }
 

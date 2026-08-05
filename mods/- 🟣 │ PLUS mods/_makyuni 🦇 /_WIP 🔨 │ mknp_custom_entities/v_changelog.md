@@ -1,3 +1,26 @@
+## v55n_1 — Tarbubble is now a DECORATIVE floating bubble (Ghidra-verified)
+
+Native TarBubble was misunderstood: it is **not** a tar trap. Deep-dive of
+DizzyBoard_Update (0x41D512) + Master (0x420DA0) + the bubble object
+(vtable 0x4D6E48, ctor 0x44FB50) shows it is a purely **decorative** S1 ref
+point that occasionally spawns a 0x1C-byte bubble which shrinks, floats up,
+and pops. The slowdown is Gluebie (ai_type 43); the sinking is Tarpit
+(ai_type 44).
+
+Changes:
+
+- **ai_type 25 (Tarbubble)** no longer sinks/traps the ball. It now spawns
+  a real native bubble object (ctor 0x44FB50, vtable 0x4D6E48) at the ref
+  point, self-driven from the Present hook on ALL boards:
+  - ~12%/frame spawn chance, 6-25 frame cooldown between bubbles
+  - each bubble: scale ×0.95/frame, lifetime 25-50 frames, rises
+    scale×60/frame, pops (bubble1 sound via app+0x488) when done
+  - native dtor (0x44FD40) frees the object on pop AND on level unload
+    (no leaks)
+  - pause gate (board+0x874) freezes bubbles during ESC menu
+- **Gluebie (43)** unchanged — still slows the ball (velocity ×0.95)
+- **Tarpit (44)** unchanged — still sinks + in_tar death
+
 ## v55m_51 — Debug tables show the LIVE rotation accumulator
 
 The debug string tables showed mostly `1.00` for rotation values because they
