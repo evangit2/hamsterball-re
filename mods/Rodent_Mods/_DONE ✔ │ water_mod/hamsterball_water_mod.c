@@ -6,6 +6,13 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.3: Added E:WATEREXIT event plane. Touching an object named
+ *     "E:WATEREXIT" turns OFF the water flag entirely (in_water = 0,
+ *     surface/prev_submersion reset) and starts the same grace period
+ *     as the natural surface exit — death suppression stays active
+ *     briefly so the bounce-out arc remains safe. Checked BEFORE the
+ *     E:WATER prefix match so it isn't swallowed by it.
+ *
  * v7.2: Surgical type-5 block — block ONLY the 0x2E9 death-flag write
  *     while submerged / in the grace period, instead of skipping the
  *     whole type-5 death block. Hook 3's in-water path now JMPs to
@@ -44,9 +51,10 @@
  *   1. In the Hamsterball game folder rename original bass.dll -> bass_real.dll
  *   2. Copy this proxy bass.dll + hamsterball_water.ini into the game folder
  *   3. Place collision objects named "E:WATER" in custom levels
+ *      (optional: "E:WATEREXIT" planes turn the water flag OFF when touched)
  *   4. Run Hamsterball.exe normally
  *
- * HOW IT WORKS (v4):
+ * HOW IT WORKS (v7.3):
  *   Four hooks:
  *
  *   HOOK 1 — DispatchCollisionEvents (0x40C5D0) trampoline:
@@ -55,6 +63,11 @@
  *       1. Sets in_water flag (gates ongoing water physics)
  *       2. Reduces ALL velocity axes by entry_damping (default 10% cut)
  *       3. Captures ball's Y as water_surface_y for this session
+ *     When the name is "E:WATEREXIT", instead turns OFF the water flag
+ *     entirely (in_water = 0), resets surface/prev_submersion, and starts
+ *     the grace period — identical cleanup to the natural surface-exit
+ *     in Hook 2. E:WATEREXIT is checked first so it isn't swallowed by
+ *     the E:WATER prefix match.
  *     Then calls the original DispatchCollisionEvents so the game processes
  *     the collision normally. E:LIMIT events still set 0x2E9 normally.
  *
@@ -492,15 +505,51 @@ static void trigger_water_contact(void *ball_ptr)
     }
 }
 
+/* Trigger function — called when the ball touches an E:WATEREXIT plane.
+ * Turns OFF the water flag entirely, same cleanup as the natural
+ * "ball rises above the surface" exit in apply_water_physics:
+ *   - in_water = 0 (stops all water physics immediately)
+ *   - water_surface_y / prev_submersion reset
+ *   - grace_frames = GRACE_PERIOD_FRAMES (keeps death suppression alive
+ *     briefly after exiting, so the bounce-out arc stays safe) */
+static void trigger_water_exit(void *ball_ptr)
+{
+    DWORD ball = (DWORD)ball_ptr;
+    if (!ball || IsBadReadPtr((void*)ball, 0x300)) return;
+
+    water_state_t *st = get_ball_state(ball);
+    if (!st) return;
+
+    /* Idempotent: if already out of water, nothing to do */
+    if (!st->in_water) return;
+
+    st->in_water = 0;
+    st->water_surface_y = 0.0f;
+    st->prev_submersion = 0.0f;
+    st->grace_frames = GRACE_PERIOD_FRAMES;
+
+    if (g_cfg.debug) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "WATEREXIT TRIGGER: ball=%08X in_water cleared, grace=%d",
+                 ball, st->grace_frames);
+        diag_log(buf);
+    }
+}
+
 /* The hooked DispatchCollisionEvents */
 void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
                                               void *ball, void *collObj)
 {
     (void)edx_dummy;
 
-    /* Check if this is an E:WATER collision */
+    /* Check if this is an E:WATER / E:WATEREXIT collision.
+     * NOTE ORDER: E:WATEREXIT is checked FIRST because _strnicmp(name,
+     * "E:WATER", 7) would otherwise match E:WATEREXIT as E:WATER
+     * (E:WATEREXIT starts with "E:WATER"). */
     const char *name = get_collision_name(collObj);
-    if (name && _strnicmp(name, "E:WATER", 7) == 0) {
+    if (name && _strnicmp(name, "E:WATEREXIT", 11) == 0) {
+        trigger_water_exit(ball);
+    } else if (name && _strnicmp(name, "E:WATER", 7) == 0) {
         trigger_water_contact(ball);
     }
 
@@ -1023,7 +1072,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.2 loaded (surgical death-flag block) ===");
+    diag_log("=== Water mod v7.3 loaded (E:WATEREXIT + surgical death-flag block) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1072,7 +1121,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.2 DLL attaching ===");
+        diag_log("=== Water mod v7.3 DLL attaching ===");
 
         load_real_bass();
         {
