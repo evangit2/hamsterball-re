@@ -1,3 +1,37 @@
+## v55n_2 — SpeedCylinder is now solid and has its native spin/launch behavior
+
+The cEnt SpeedCylinder (ai_type 39) was missing its behavior and was
+non-solid. Compared against the native Up race (ctor 0x436A20, vtable
+0x4D57D0, 0x150C bytes). Native registers it ONLY in board+0x2578 (update
+list); collision comes from the spatial trees cloned into obj+0x18 by
+Stands_ctor; the launch behavior lives in vtable slot 11 (0x43D8C0).
+
+The mod's cEnt was missing three things vs native:
+
+1. **MeshBuffer+0x47C -> entity link was never set.** The collision handler
+   (UpRaceCollisionEvents 0x4119B0) resolves the entity via
+   `[[MeshBuffer]+0x47C]` then calls Pendulum_PlayCollisionSound (0x436B70).
+   The mod loads the mesh standalone, so this link was 0 -> handler got a
+   NULL entity -> no sound, no ball tracking.
+2. **Collision Level at obj+0x10E0 was never registered.** SpeedCylinder_ctor
+   creates a Level_RenderCtor at +0x10E0 (like Catapult's +0x10D4). The
+   common registration skipped it (col_off=0 for non-Rotator) -> non-solid.
+3. **No per-frame slot 11 driver.** The spin-up (0.25 -> 20.0), 175-frame
+   hold, and launch at 65.0 + star trail live in vtable slot 11 (0x43D8C0).
+   The mod's entities are only in the update list (vtable[1] deformation),
+   not slot 11 -> no behavior.
+
+Changes (mirrors the proven-working Catapult pattern):
+
+- **case 39** now registers obj+0x10E0 into board+0x10EC + scene collision
+  tree (makes it SOLID), sets MeshBuffer+0x47C = entity on all collision
+  MeshBuffers (makes the handler find the entity), sets entity+0x47C
+  self-ref, and tracks the entity in `g_speedcyls[]`.
+- **Present hook** now drives vtable slot 11 (0x43D8C0) per-frame on each
+  tracked SpeedCylinder, gated on board+0x874 (not paused) — the native
+  spin-up/launch/star-trail behavior.
+- `g_speedcyl_count` reset on level unload.
+
 ## v55n_1 — Tarbubble is now a DECORATIVE floating bubble (Ghidra-verified)
 
 Native TarBubble was misunderstood: it is **not** a tar trap. Deep-dive of
