@@ -1,3 +1,30 @@
+## v55n_13 — TimeButton SOLID — root fix: translate mesh SOURCE before ctor (native-matching, no tree writes)
+- MAKYUNI tested v55n_12: NO crash, but STILL NON-SOLID. Log had no "geom translated"
+  line (the Present-driver translate silently early-returned / never reached).
+- DECISIVE native decompile (TimeButton_ctor 0x436C10 + render-once 0x43DC40):
+  * Solidity comes from Stands_ctor (call at 0x436C32) cloning the mesh's spatial
+    trees into obj+0x18 AT THE TIME OF CONSTRUCTION, at the mesh's MODELED position.
+  * The native render-once (0x43DC40) only repositions via a Timer world-matrix; it
+    does NOT touch collision geometry at all.
+  * So a button is solid iff its MESH is modeled where it spawns. The cEnt
+    LevelUp-Button mesh is baked near-origin but spawned at (778.5,-230.4,-522.5),
+    so obj+0x18 collision trees conclude AT ORIGIN -> non-solid.
+- WHY earlier attempts failed:
+  * v55n_8/v55n_11 wrote COLLISION TREE ITEMS after the tree was built -> moved the
+    items far outside the octree's cached AABB bounds -> the query's broad-phase
+    pruning read them invalidly -> heap corruption crash 0001:0004717E. The catapult
+    survives only because it ROTATES in place (items stay near the original bounds).
+  * v55n_9/v55n_12 translated source AFTER ctor (too late — tree already built) OR
+    from a render/Present hook that never fired/silently failed.
+- FIX: NEW cEnt_translate_meshworld_verts() translates the loaded MeshWorld's vertex
+  source (sub-mesh +0x448 + strips) by (px,py,pz) BEFORE calling TimeButton_ctor.
+  Stands_ctor then clones obj+0x18 trees AT THE SPAWN POSITION -> SOLID, zero
+  game-owned tree writes, zero crash, no hook needed. Octree bounds are correct the
+  whole time. Each cEnt spawn allocates its own mesh, so this is instance-safe.
+- Added GRANULAR diagnostic logging ("TB translate meshworld enter / mb_count / geom
+  translated N verts") so if it still fails the next log reveals the exact offset.
+- Wine title-screen ALIVE 42s. User on real Windows must re-confirm solid.
+
 ## v55n_12 — TimeButton crash FIXED (0001:0004717E) — removed the game-owned collision TREE-item writes
 - MAKYUNI tested v55n_11: it CRASHED on level start (ntdll 0001:0004717E, Warm-Up,
   Update, FinishLoad OK). The v55n_11 log was the smoking gun: it translated 8 tree
