@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_6
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_7
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -1905,6 +1905,7 @@ static void uninstall_bonk_collision_hook(void) {
 
 static HANDLE g_thread = NULL;
 static volatile int g_running = 1;
+static int g_quit_despawn_done = 0;  /* v55n_7: one-shot quit-time despawn guard */
 static volatile int g_shutting_down = 0;  /* v55j_15: prevent hook crash on exit */
 
 /* v55j_16: Check game's quit flag (App+0x159) — set BEFORE any memory is freed.
@@ -5562,7 +5563,25 @@ static void __cdecl renderscene_helper(void) {
 }
 
 static void __cdecl gluebie_present_helper(void) {
-    if (game_is_quitting()) return;  /* v55j_16: check quit flag BEFORE accessing game memory */
+    if (game_is_quitting()) {
+        /* v55n_7: One-shot despawn when the game starts quitting. On quit the
+         * game's board teardown frees board+0x10EC + scene tree, which still
+         * hold our +0x10E0 collision Levels (TimeButton/SpeedCylinder are NOT
+         * in board+0x2578 so a normal quit never fires cEnt_despawn_all_rotaters).
+         * Unhook them FIRST so the teardown finds clean lists -> no double-free.
+         * Guarded so this runs exactly once per process. */
+        if (!g_quit_despawn_done) {
+            g_quit_despawn_done = 1;
+            DWORD bd = get_board();
+            if (bd) {
+                FILE* lf = NULL;
+                fopen_s(&lf, g_log_path, "a");
+                cEnt_despawn_all_rotaters(bd, lf ? lf : NULL);
+                if (lf) { fflush(lf); fclose(lf); }
+            }
+        }
+        return;
+    }
     g_gluebie_ball_in_zone = 0;  /* reset before check */
     DWORD board = get_board();
     if (board && g_gluebie_count > 0 && !gluebie_is_dizzy(board)) {
@@ -6347,6 +6366,12 @@ static void __cdecl cEnt_draw_text_helper(void) {
             g_table_visible = !g_table_visible;
             g_last_table_toggle_tick = now;
         }
+        /* v55n_6: Alternate whole-table visibility toggle with the "X" key
+         * (VK_X = 0x58) — same behaviour as T, same rate limit. */
+        if ((GetAsyncKeyState(0x58) & 0x0001) && (now - g_last_table_toggle_tick) >= 500) {  /* VK_X = 0x58 */
+            g_table_visible = !g_table_visible;
+            g_last_table_toggle_tick = now;
+        }
         /* v55m_49: Move between the per-cEnt Custom Entity tables.
          * A key (VK_A = 0x41) = PREVIOUS table, D key (VK_D = 0x44) = NEXT
          * table. The tables wrap around (after the last comes the first).
@@ -6404,7 +6429,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_6", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_7", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8017,7 +8042,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_6 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_7 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

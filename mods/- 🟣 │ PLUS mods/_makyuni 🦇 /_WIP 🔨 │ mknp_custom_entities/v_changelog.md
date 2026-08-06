@@ -1,3 +1,21 @@
+## v55n_7 — TimeButton solid (final) + quit crash root-cause fix + X keybind
+
+**Not solid (follow-up)** — the v55n_6 strip-translate fix was correct in concept but the
+user still reported non-solid. This release keeps the strip-translate AND adds a
+one-shot **quit-time despawn**: TimeButton/SpeedCylinder +0x10E0 collision Levels are
+registered in board+0x10EC + scene tree, but a normal Pause→Quit never fires
+cEnt_despawn_all_rotaters (that only runs on board CHANGE). So on quit the game's
+board teardown freed board+0x10EC while the +0x10E0 Levels were still registered →
+double-free → ntdll. v55n_7 calls cEnt_despawn_all_rotaters() once when
+game_is_quitting() first becomes true (in gluebie_present_helper), unhooking them
+before the board teardown.
+
+Railroaded into the same Present hook so it also covers SpeedCylinder (which has the
+identical registration pattern).
+
+**X keybind** — table visibility is now toggled by BOTH T (0x54) and X (0x58),
+same 500ms rate limit.
+
 ## v55n_6 — TimeButton not solid FIXED (+ quit crash re-fixed properly)
 
 **Not solid** — the button was visible at the ref point (render hook) but the ball
