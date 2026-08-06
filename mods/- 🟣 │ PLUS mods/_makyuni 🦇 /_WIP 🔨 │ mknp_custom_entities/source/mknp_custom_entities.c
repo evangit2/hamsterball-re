@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_5
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_6
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -449,6 +449,53 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
     typedef void (__thiscall *render_t)(DWORD, char, int);
     ((render_t)(tb->orig_vtable18 ? tb->orig_vtable18 : 0x0045E0E0))(this_, param_1, param_2);
     return;
+}
+
+/* v55n_5: Translate every strip vertex of a collision Level's MeshWorld by
+ * (dx,dy,dz). The ball's collision query (Mesh_FindClosestCollision 0x465D90)
+ * reads RAW strip vertex positions (MeshBuffer+0x418 strip list, 3 verts × 32B
+ * per strip, X/Y/Z at v[0]/v[1]/v[2] with 8-float stride) — the SAME arrays the
+ * catapult rotates. The TimeButton's +0x10E0 collision Level inherits the mesh's
+ * baked (near-origin) coords, so unless we offset them they collide at ~(0,0,0)
+ * while the render hook moves the visual to (x,y,z). Translating them in place
+ * makes collision agree with the render. Returns # vertices translated. */
+static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf) {
+    if (!coll_level || coll_level < 0x10000) return 0;
+    if (IsBadReadPtr((void*)coll_level, 0x100)) return 0;
+    /* Colon Level +0x08 -> MeshWorld, +0x2C = MeshBuffer AthenaList
+     * (count at +0x04, items at +0x40C). Same walk as case 39/45 registration. */
+    DWORD mw = *(DWORD*)((char*)coll_level + 0x08);
+    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)(mw + 0x2C), 0x20)) return 0;
+    DWORD mb_list = mw + 0x2C;
+    int mb_count = *(int*)(mb_list + 0x04);
+    if (mb_count <= 0 || mb_count > 64) return 0;
+    DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
+    if (!mb_items || IsBadReadPtr((void*)mb_items, mb_count * 4)) return 0;
+    int total = 0, bi;
+    for (bi = 0; bi < mb_count; bi++) {
+        DWORD mb = ((DWORD*)mb_items)[bi];
+        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x840)) continue;
+        int strip_count = *(int*)((char*)mb + 0x10);
+        if (strip_count <= 0 || strip_count > 4096) continue;
+        DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
+        if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
+        int si;
+        for (si = 0; si < strip_count; si++) {
+            DWORD strip = strip_items[si];
+            if (!strip || strip < 0x10000 || IsBadReadPtr((void*)strip, 0x60)) continue;
+            float* p = (float*)strip;
+            int v;
+            for (v = 0; v < 3; v++) {
+                p[v * 8 + 0] += dx;
+                p[v * 8 + 1] += dy;
+                p[v * 8 + 2] += dz;
+            }
+            total += 3;
+        }
+    }
+    if (logf) fprintf(logf, "  ROTATER: TimeButton coll Level 0x%08X strips translated (%.1f,%.1f,%.1f) %d verts\n",
+                      coll_level, dx, dy, dz, total);
+    return total;
 }
 
 
@@ -3523,14 +3570,16 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                         }
                     }
                 }
-                /* Do NOT clear +0x10E5. Rotator_RemoveAndFree (0x436FC0) uses
-                 * +0x10E5==0 as its "already cleaned up" guard — clearing it
-                 * here makes RemoveAndFree run its cleanup on a button whose
-                 * collision Level was never registered in the lists it removes
-                 * from, causing a double-free on teardown (quit crash,
-                 * ntdll 0001:00041106). Keep +0x10E5=1 (ctor default) so the
-                 * guard stays closed; the private vtable NOPs prevent 0x43DC40
-                 * from ever firing the render-once chain. */
+                /* v55n_5 FIX (reversed): CLEAR +0x10E5 so Rotator_RemoveAndFree
+                 * (0x436FC0) runs its cleanup at despawn/teardown. The guard is
+                 * `if (+0x10E5 == 0)` — cleanup ONLY runs when the flag is 0.
+                 * If we leave +0x10E5=1 (ctor default), RemoveAndFree no-ops and
+                 * the registered +0x10E0 Level is never unhooked -> leaked into
+                 * board+0x10EC + scene tree -> game teardown double-free on quit.
+                 * Native keeps working because 0x43DC40 sets +0x10E5=0 after the
+                 * first render; we replicate that by clearing it here (the private
+                 * vtable NOPs stop 0x43DC40 from crashing). */
+                *(char*)((char*)obj + 0x10E5) = 0;
                 *(float*)((char*)obj + 0x10D4) = px;
                 *(float*)((char*)obj + 0x10D8) = py;
                 *(float*)((char*)obj + 0x10DC) = pz;
@@ -3577,6 +3626,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                             pfn_AthenaList_Append((DWORD*)(tb_scene_col + 0x18), (void*)tb_col);
                         }
                         if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
+                        /* v55n_5: SOLID FIX — translate the collision strips so
+                         * collision matches the render. The render hook moves the
+                         * visual to (px,py,pz), but the collision query reads raw
+                         * strip coords (baked near origin), so the ball fell
+                         * through. Offset by (px,py,pz) to align collision. */
+                        cEnt_translate_collision_strips(tb_col, px, py, pz, logf);
                     }
                     /* 3. Entity self-ref +0x47C */
                     *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
@@ -4105,6 +4160,38 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
     g_speedcyl_count = 0; /* v55n_2: reset SpeedCylinder tracking on level unload */
+    /* v55n_5: TimeButton despawn. The TimeButton is mod-allocated and is NOT in
+     * board+0x2578 (unlike native), so the game's teardown never calls its
+     * RemoveAndFree/dtor. We own it. Clean it up exactly like native
+     * Rotator_RemoveAndFree (0x436FC0): with +0x10E5==0 (set at spawn) it
+     * removes +0x10E0 from board+0x8B0+0x18 + board+0x10EC and frees it, then
+     * we free obj via its dtor 0x43DC20. Without this the +0x10E0 Level stays
+     * registered in board+0x10EC + scene tree and the game's quit teardown
+     * double-frees it -> ntdll crash. */
+    if (g_timebutton_count > 0) {
+        int ti;
+        for (ti = 0; ti < g_timebutton_count; ti++) {
+            DWORD tobj = g_timebuttons[ti].obj;
+            if (!tobj || tobj < 0x10000) continue;
+            if (IsBadReadPtr((void*)tobj, 0x10E8)) continue;
+            DWORD tvt = *(DWORD*)tobj;
+            if (tvt && !IsBadReadPtr((void*)tvt, 0x10)) {
+                /* a) Rotator_RemoveAndFree (0x436FC0) — needs +0x10E5==0 */
+                DWORD raf = 0x00436FC0;
+                if (*(char*)((char*)tobj + 0x10E5) == 0) {
+                    typedef void (__thiscall *raf_t)(void* this_);
+                    ((raf_t)raf)((void*)tobj);
+                }
+                /* b) free obj via its dtor 0x43DC20 (vtable[0]) */
+                DWORD dtor = *(DWORD*)tvt;
+                if (dtor && dtor > 0x400000) {
+                    typedef void (__thiscall *dtor_t)(void* this_, int free_mem);
+                    ((dtor_t)dtor)((void*)tobj, 1);
+                }
+                if (logf) fprintf(logf, "  ROTATER: despawned TimeButton obj=0x%08X\\n", tobj);
+            }
+        }
+    }
     g_timebutton_count = 0; /* v55n_3: reset TimeButton tracking on level unload */
     g_gluebie_particles_created_ball = 0;  /* v55j_12: reset particle flag */
     /* v55n: Free any live decorative TarBubble objects on level unload
@@ -6317,7 +6404,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_5", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_6", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -7930,7 +8017,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_5 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_6 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
