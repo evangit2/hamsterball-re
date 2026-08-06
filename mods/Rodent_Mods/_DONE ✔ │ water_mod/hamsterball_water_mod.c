@@ -6,6 +6,10 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.7: E:WATERFLOW input tightened to ONLY the E:WATERFLOW(N) form
+ *     (parens required). Removed bare-digit and dash/colon separators
+ *     for a single, clean input convention.
+ *
  * v7.6: E:WATERFLOW now uses numbers 1-8 instead of N/S/E/W, enabling
  *     diagonals. Format: E:WATERFLOW(N). 1-8 = N,NE,E,SE,S,SW,W,NW
  *     clockwise from North. Diagonal directions split the force across
@@ -616,18 +620,14 @@ static int parse_flow_direction(const char *name)
     if (!name || !strstr(name, "FLOW")) return FLOW_NONE;
 
     /* The direction digit is right after the "E:WATERFLOW" prefix, in the
-     * form E:WATERFLOW(N) or E:WATERFLOWN. Start at the known offset. */
+     * form E:WATERFLOW(N). Require the '(' separator. */
     const char *d = name + WATERFLOW_PREFIX_LEN;
-    if (*d == '(' || *d == '-' || *d == ':') d++;
+    if (*d != '(') return FLOW_NONE;
+    d++;
 
-    if (*d >= '1' && *d <= '8') {
-        int n = *d - '0';
-        /* validate: must be a 1-digit token ("E:WATERFLOW(3)" or
-         * "E:WATERFLOW3"), so multi-digit garbage doesn't read as 1 */
-        char after = d[1];
-        if (after == ')' || after == '\0')
-            return n;
-    }
+    /* Must be a single digit 1-8, immediately followed by ')'. */
+    if (*d >= '1' && *d <= '8' && d[1] == ')')
+        return *d - '0';
     return FLOW_NONE;
 }
 
@@ -1198,7 +1198,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.6 loaded (E:WATERFLOW 1-8 directions) ===");
+    diag_log("=== Water mod v7.7 loaded (E:WATERFLOW(N) clean input) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1247,7 +1247,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.6 DLL attaching ===");
+        diag_log("=== Water mod v7.7 DLL attaching ===");
 
         load_real_bass();
         {
