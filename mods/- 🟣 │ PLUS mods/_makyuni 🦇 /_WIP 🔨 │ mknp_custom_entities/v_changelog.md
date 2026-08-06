@@ -1,4 +1,18 @@
-- Log file renamed: `mknp_custom_entities.log` (+ `mknp_custom_entities_catapult.log`, `mknp_custom_entities_debug.log`) per MAKYUNI request.
+## v55n_10 — TimeButton SOLID — port the catapult's proven collision translation (all 3 tree lists + submesh + strips)
+- MAKYUNI: "port all its functions to our cEnt Timebutton" — mirrored the PROVEN-solid
+  catapult collision translation (cEnt_catapult_rotate_collision_verts).
+- v55n_9 was STILL NOT SOLID because it only translated sub-mesh +0x448 arrays + strips,
+  but SKIPPED the collision tree items — the ACTUAL world-space triangle positions the
+  ball query (Mesh_FindClosestCollision 0x465D90) compares against.
+- v55n_10 translates ALL THREE tree lists the catapult rotates, at first-render timing
+  (safe — tree fully built, via geom_translated flag):
+    * coll_level+0x18 (embedded AthenaList, count +0x4, items +0x40C)
+    * coll_level+0x848 (same layout)
+    * mw+0x18 (MeshWorld's own collision tree, same layout)
+  each item's +0/+4/+8 is a world-space position -> all add (dx,dy,dz).
+- v55n_8 crashed because it wrote tree items at CTOR time (during FinishLoad, tree
+  partially built). render-time is the catapult's safe timing.
+- Log files renamed: `mknp_custom_entities.log` (+ _catapult, _debug) per MAKYUNI.
 
 ## v55n_9 — TimeButton solidity — REAL geometry translation (no more octree mutation)
 - v55n_8's spatial-tree ITEM translation was WRONG and CRASHED at start
