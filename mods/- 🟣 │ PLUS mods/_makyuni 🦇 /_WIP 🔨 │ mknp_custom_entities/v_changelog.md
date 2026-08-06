@@ -1,3 +1,23 @@
+## v55n_18 — TimeButton CRASH FIX: NATIVE PARITY (real root cause found via Ghidra)
+- MAKYUNI tested v55n_17: STILL crashed (ntdll 0001:0004717E, RUNTIME 00:00:08, Update,
+  FinishLoad(OK), board=0x0AFB0048). The translate now ran but still silently no-op'd
+  (mw+0x30 count=0 -> early return, no "geom translated" line). Same crash as v55n_16 =
+  the GEOMETRY PATTERN WAS NEVER THE CAUSE.
+- REAL ROOT CAUSE (Ghidra Up_CreateDynamicObjects 0x411911-0x41197D): native TimeButton
+  creation does ONLY AthenaList_Append(board+0x2578, OBJ). It NEVER registers obj+0x10E0
+  (a Level_RenderCtor output) into board+0x10EC or the scene tree. Native solidity comes
+  from the Stands_ctor-cloned obj+0x18 trees reached via the +0x2578 entry during Ball_Update.
+- FAIL: from v55n_5 on, the mod injected tb_col (+0x10E0) into board+0x10EC + scene tree.
+  Ball_Update iterates board+0x10EC during Update and treated this bare render-ctor
+  output as a collision object -> heap corruption -> ntdll 0001:0004717E every time, ~1s
+  after spawn (the button renders, then the ball reaches it and Update walks the bogus entry).
+  This is the EXACT documented "Level-family col_off=0" crime (render-ctor output != coll obj).
+- FIX (v55n_18): append the OBJ to board+0x2578 (native parity), drop the board+0x10EC +
+  scene-tree injections entirely. Keep vtable[11] NOP (0x43DC40 crashes on cEnt bare-mesh
+  object), keep %u+0x47C refs for reward dispatch.
+- APOLOGY: misdiagnosed as geometry for 5 versions; the log's constant ntdll 0001:0004717E
+  at Update with every geometry change was the tell I missed.
+- md5: `9f79c9726e53ba54453b62d009db950c`. Wine ALIVE 42s (title only — button un-reachable).
 ## v55n_17 — TimeButton solidity: GHIDRA-CONFIRMED vertex-source translate (PROVEN pattern)
 - MAKYUNI tested v55n_16: still crashed (ntdll 0001:0004717E, ~1s after spawn, Update,
   no "TimeButton pressed" in log). Log showed 26x "TBtx tree count=0 (bad)".
