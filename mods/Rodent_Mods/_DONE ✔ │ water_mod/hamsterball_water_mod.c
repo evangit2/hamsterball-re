@@ -6,6 +6,14 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.4: Added E:WATERFLOW-<dir> running-water current. Touching a plane
+ *     named E:WATERFLOW-N/S/E/W carries the ball in that compass direction
+ *     (N=-Z, S=+Z, E=+X, W=-X) at CurrentStrength speed. Capped-river
+ *     model: horizontal velocity eases toward the flow each frame, so the
+ *     ball is carried along and can be fought by inputting against it.
+ *     Touching plain E:WATER (calm) clears the current; E:WATEREXIT turns
+ *     water off entirely. Checked before the E:WATER prefix match.
+ *
  * v7.3: Added E:WATEREXIT event plane. Touching an object named
  *     "E:WATEREXIT" turns OFF the water flag entirely and immediately
  *     (in_water = 0, surface/prev_submersion reset, NO grace period —
@@ -67,8 +75,10 @@
  *     entirely (in_water = 0, surface/prev_submersion reset, NO grace
  *     period — the exit is final). Repeated triggers are idempotent;
  *     re-entering water via E:WATER re-activates the flag normally.
- *     E:WATEREXIT is checked first so it isn't swallowed by the E:WATER
- *     prefix match.
+ *     When the name is "E:WATERFLOW-<dir>", sets a running-water current
+ *     that carries the ball toward <dir> (N/S/E/W) while in water.
+ *     E:WATEREXIT and E:WATERFLOW are checked first so they aren't
+ *     swallowed by the E:WATER prefix match.
  *     Then calls the original DispatchCollisionEvents so the game processes
  *     the collision normally. E:LIMIT events still set 0x2E9 normally.
  *
@@ -306,6 +316,17 @@ static void diag_log(const char *msg)
 #define PHYS_VEL_Y              0xCA8
 #define PHYS_VEL_Z              0xCAC
 
+/* E:WATERFLOW direction suffix length (e.g. "E:WATERFLOW-N") */
+#define WATERFLOW_PREFIX        "E:WATERFLOW"
+#define WATERFLOW_PREFIX_LEN    13
+
+/* Compass direction → world axis mapping.
+ * North = -Z, South = +Z, East = +X, West = -X. */
+
+/* Default flow speed the ball is carried toward while in running water.
+ * Configurable via "CurrentStrength" in the INI. Units: world units/frame. */
+#define DEFAULT_CURRENT_STRENGTH 0.15f
+
 /* Collision entry struct: pair of pointers
  *   [0] = type/board ptr
  *   [1] = MeshBuffer pointer (name at +0x864) */
@@ -321,6 +342,7 @@ typedef struct {
     float drag;                /* per-frame velocity drag on all axes (0-1) */
     float horizontal_drag;     /* extra drag on X/Z axes (0-1) */
     float buoyancy_strength;   /* upward acceleration at full submersion */
+    float current_strength;    /* flow speed carried toward while in running water (world units/frame) */
     int   debug;               /* write log file */
 } water_cfg_t;
 
@@ -329,6 +351,7 @@ static water_cfg_t g_cfg = {
     0.02f,   /* drag (2% per frame) */
     0.04f,   /* horizontal_drag */
     1.0f,    /* buoyancy_strength (max upward accel at full submersion, 0-1 normalized) */
+    DEFAULT_CURRENT_STRENGTH, /* current_strength (flow speed in running water) */
     1        /* debug */
 };
 
@@ -357,6 +380,7 @@ static void load_config(const char *ini_path)
     g_cfg.drag              = read_ini_float(ini_path, "WaterPhysics", "Drag", 0.02f);
     g_cfg.horizontal_drag   = read_ini_float(ini_path, "WaterPhysics", "HorizontalDrag", 0.04f);
     g_cfg.buoyancy_strength = read_ini_float(ini_path, "WaterPhysics", "BuoyancyStrength", 1.0f);
+    g_cfg.current_strength = read_ini_float(ini_path, "WaterPhysics", "CurrentStrength", DEFAULT_CURRENT_STRENGTH);
     g_cfg.debug             = read_ini_int(ini_path, "WaterPhysics", "Debug", 1);
 
     if (g_cfg.entry_damping < 0.0f) g_cfg.entry_damping = 0.0f;
@@ -365,6 +389,7 @@ static void load_config(const char *ini_path)
     if (g_cfg.drag > 1.0f) g_cfg.drag = 1.0f;
     if (g_cfg.horizontal_drag < 0.0f) g_cfg.horizontal_drag = 0.0f;
     if (g_cfg.horizontal_drag > 1.0f) g_cfg.horizontal_drag = 1.0f;
+    if (g_cfg.current_strength < 0.0f) g_cfg.current_strength = 0.0f;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -379,6 +404,8 @@ typedef struct {
     float water_surface_y;   /* ball's Y at moment of contact */
     int   grace_frames;      /* frames remaining of death suppression after leaving water */
     float prev_submersion;   /* last frame's submersion (for surface crossing detection) */
+    float current_x;         /* running-water flow direction/speed on X (0 = none) */
+    float current_z;         /* running-water flow direction/speed on Z (0 = none) */
 } water_state_t;
 
 static water_state_t g_states[MAX_BALLS];
@@ -469,6 +496,9 @@ static void trigger_water_contact(void *ball_ptr)
 
     /* Step 1: Set in_water flag */
     st->in_water = 1;
+    /* Plain E:WATER is calm (no current) — clear any running-water flow */
+    st->current_x = 0.0f;
+    st->current_z = 0.0f;
 
     /* Step 1.5: Clear the falling flag (ball+0x2E9).
      * During a long fall, type 5 mesh-penetration sets 0x2E9=1 before
@@ -539,19 +569,83 @@ static void trigger_water_exit(void *ball_ptr)
     }
 }
 
+/* Parse the compass direction suffix from an E:WATERFLOW-<dir> name.
+ * Returns 1 on success and stores the flow direction (as velocity, i.e.
+ * signed magnitude along X and Z) in dx/dz. Returns 0 if the direction
+ * is unknown.
+ *   N = -Z, S = +Z, E = +X, W = -X */
+static int parse_flow_direction(const char *name, float *dx, float *dz)
+{
+    const char *d = name + WATERFLOW_PREFIX_LEN;
+    float strength = g_cfg.current_strength;
+
+    /* Skip any separator (allow "E:WATERFLOW-N" and "E:WATERFLOWN") */
+    if (*d == '-' || *d == ':') d++;
+
+    if (*d == 'N' || *d == 'n') { *dx = 0.0f;        *dz = -strength; return 1; }
+    if (*d == 'S' || *d == 's') { *dx = 0.0f;        *dz =  strength; return 1; }
+    if (*d == 'E' || *d == 'e') { *dx =  strength;   *dz = 0.0f;       return 1; }
+    if (*d == 'W' || *d == 'w') { *dx = -strength;   *dz = 0.0f;       return 1; }
+    return 0;
+}
+
+/* Trigger function — called when the ball touches an E:WATERFLOW-<dir>
+ * plane. Turns on the running-water current for this ball: gravity +
+ * buoyancy continue, but the ball is carried toward <dir> at the flow
+ * speed. Setting a new E:WATERFLOW replaces the previous direction.
+ * Touching plain E:WATER (calm) later clears the current. */
+static void trigger_water_flow(void *ball_ptr, const char *name)
+{
+    DWORD ball = (DWORD)ball_ptr;
+    if (!ball || IsBadReadPtr((void*)ball, 0x300)) return;
+
+    water_state_t *st = get_ball_state(ball);
+    if (!st) return;
+
+    float dx, dz;
+    if (!parse_flow_direction(name, &dx, &dz)) {
+        if (g_cfg.debug) {
+            char buf[160];
+            snprintf(buf, sizeof(buf), "WATERFLOW: ball=%08X unknown dir in \"%s\" (use -N/-S/-E/-W)",
+                     ball, name);
+            diag_log(buf);
+        }
+        return;
+    }
+
+    /* Running water implies the ball is in water */
+    st->current_x = dx;
+    st->current_z = dz;
+    st->in_water = 1;
+    /* Capture surface Y if not already in water (so buoyancy has a reference) */
+    if (st->water_surface_y == 0.0f) {
+        float ball_y = *(float*)(ball + BALL_POS_Y);
+        st->water_surface_y = ball_y;
+    }
+
+    if (g_cfg.debug) {
+        char buf[160];
+        snprintf(buf, sizeof(buf), "WATERFLOW TRIGGER: ball=%08X dir=\"%s\" current=(%.2f,%.2f)",
+                 ball, name, dx, dz);
+        diag_log(buf);
+    }
+}
+
 /* The hooked DispatchCollisionEvents */
 void __fastcall hook_DispatchCollisionEvents(void *this_, void *edx_dummy,
                                               void *ball, void *collObj)
 {
     (void)edx_dummy;
 
-    /* Check if this is an E:WATER / E:WATEREXIT collision.
-     * NOTE ORDER: E:WATEREXIT is checked FIRST because _strnicmp(name,
-     * "E:WATER", 7) would otherwise match E:WATEREXIT as E:WATER
-     * (E:WATEREXIT starts with "E:WATER"). */
+    /* Check E:WATER / E:WATEREXIT / E:WATERFLOW collisions.
+     * NOTE ORDER: all longer prefixed forms must be checked BEFORE the
+     * plain "E:WATER" prefix match, because _strnicmp(name,"E:WATER",7)
+     * matches E:WATEREXIT, E:WATERFLOW, etc. too (they start with E:WATER). */
     const char *name = get_collision_name(collObj);
     if (name && _strnicmp(name, "E:WATEREXIT", 11) == 0) {
         trigger_water_exit(ball);
+    } else if (name && _strnicmp(name, WATERFLOW_PREFIX, WATERFLOW_PREFIX_LEN) == 0) {
+        trigger_water_flow(ball, name);
     } else if (name && _strnicmp(name, "E:WATER", 7) == 0) {
         trigger_water_contact(ball);
     }
@@ -727,6 +821,20 @@ static void __cdecl apply_water_physics(DWORD ball)
      * submersion=0.5 (ball floats half-submerged at the surface). */
     float buoyancy = g_cfg.buoyancy_strength * submersion;
     *vel_y += buoyancy;
+
+    /* Running-water current (E:WATERFLOW).
+     * Capped-river model: ease the horizontal velocity toward the flow
+     * vector each frame. The ball is carried along at the flow speed
+     * (current_strength) and can be fought by inputting against it.
+     * current_x/current_z are the flow target (signed speed per axis),
+     * stored at trigger time as ±current_strength. */
+    if (st->current_x != 0.0f || st->current_z != 0.0f) {
+        /* Blend velocity toward the current target. 0.08/frame converges
+         * to the flow speed in ~1-2 seconds of riding the current. */
+        const float flow_blend = 0.08f;
+        *vel_x += (st->current_x - *vel_x) * flow_blend;
+        *vel_z += (st->current_z - *vel_z) * flow_blend;
+    }
 }
 
 /* Function pointer for code cave to call */
@@ -1075,7 +1183,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.3 loaded (E:WATEREXIT + surgical death-flag block) ===");
+    diag_log("=== Water mod v7.4 loaded (E:WATERFLOW currents) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1124,7 +1232,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.3 DLL attaching ===");
+        diag_log("=== Water mod v7.4 DLL attaching ===");
 
         load_real_bass();
         {
