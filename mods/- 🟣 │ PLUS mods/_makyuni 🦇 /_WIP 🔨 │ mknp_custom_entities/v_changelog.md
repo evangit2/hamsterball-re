@@ -1,3 +1,31 @@
+v55n_20 — TimeButton solidity: switch to catapult-proven saved-originals tree translate
+------------------------------------------------------------
+The v55n_19 revert was WRONG in the opposite direction. User log for v55n_19
+showed a NEW crash: `0001:000570A4` EXE, Draw, `fcomps 0x4(%edi)` — the v55n_15
+signature, from the PRE-CTOR cEnt_translate_meshworld_verts(mesh,...) writing
+the SOURCE mesh's +0x18 tree items IN PLACE. That corrupts a tree the board
+still walks during Draw. ("v55n_14 crash-free" was a false assumption — Wine
+never reaches level start, so it was never verified.)
+
+Root cause clarity (two crash states oscillated across versions):
+  - Write SOURCE mesh tree in place (pre-ctor)  -> 0001:000570A4 EXE Draw
+  - Write BUILT Level strips/buffers per-frame (Present-driver) -> ntdll 0001:0004717E Update
+  The PROVEN catapult avoids BOTH: it translates the BUILT collision Level's
+  mw+0x18 tree items from SAVED ORIGINALS (idempotent, non-cumulative, never
+  touches source mesh or strips). That's cEnt_timebutton_translate_tree.
+
+Fix:
+  - REMOVED pre-ctor cEnt_translate_meshworld_verts(mesh,...) (caused 0001:000570A4).
+  - RE-ENABLED the Present-driver, now calling cEnt_timebutton_translate_tree
+    (the catapult-proven mechanism) instead of cEnt_translate_collision_strips.
+    It translates the built collision Level's mw+0x18 tree items from saved
+    originals so the collider sits at the spawn pos. Retries until tree items exist.
+  - Kept private vtable (slots 1+11 noop), render hook, +0x10EC registration,
+    native +0x2578 append.
+
+Crash-test: title screen survived 42s. Godspeed — real Warm-Up button test
+still requires user's machine (Wine can't reach level start).
+
 v55n_19 — TimeButton crash FIXED (evidence-backed revert to crash-free baseline)
 ------------------------------------------------------------
 Root cause (git 91f4097e = crash-free baseline, user-confirmed):
