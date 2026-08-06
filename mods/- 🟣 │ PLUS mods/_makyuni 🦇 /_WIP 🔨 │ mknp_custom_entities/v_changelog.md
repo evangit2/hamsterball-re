@@ -1,3 +1,35 @@
+v55n_21 — TimeButton: TRUE root cause = board+0x2578 append (not geometry)
+------------------------------------------------------------
+Your v55n_20 log was the breakthrough. It showed:
+  `TimeButton OBJ 0x0C6A8FF0 appended to board+0x2578 (native parity)` firing
+  RIGHT BEFORE the crash, plus 22x `TBtx tree count=0 (bad)`.
+
+Two facts the log proved:
+1. The geometry translate is a NO-OP -- the built collision Level's mw+0x18
+   tree is EMPTY at spawn (`tree count=0`). It writes NOTHING, so it cannot be
+   the crash. Removing all translate work.
+2. The crash line is the board+0x2578 append. That was the "native parity"
+   idea from v55n_18 -- WRONG. My own block comment admits it:
+   "Board_UpdateRaceState (vtable[19], 0x41B080) iterates board+0x2578 EVERY
+   FRAME calling vtable slot 11 (0x43DC40) on each object." On the cEnt object
+   that once-guarded chain corrupts the stack -> heap -> ntdll 0001:0004717E.
+
+The proven crash-free sibling SpeedCylinder (case 39) does NONE of this:
+- Does NOT append to board+0x2578.
+- Does NOT use a private vtable / NOPs / render hook.
+- Uses its NATIVE vtable.
+- Solidity comes ENTIRELY from registering obj+0x10E0 into board+0x10EC +
+  scene tree + MeshBuffer+0x47C + self-ref. NO geometry translate.
+
+Fix (v55n_21):
+- Dropped the board+0x2578 append (the actual crash).
+- Dropped the private vtable copy + NOPs + render hook -- use native vtable.
+- Mirror SpeedCylinder exactly: register obj+0x10E0 into board+0x10EC +
+  scene tree, set MeshBuffer+0x47C + self-ref.
+- Disabled the no-op translate (log spam + SpeedCylinder does none).
+
+Crash-test: title screen survived 42s. Real Warm-Up test needs user machine.
+
 v55n_20 — TimeButton solidity: switch to catapult-proven saved-originals tree translate
 ------------------------------------------------------------
 The v55n_19 revert was WRONG in the opposite direction. User log for v55n_19
