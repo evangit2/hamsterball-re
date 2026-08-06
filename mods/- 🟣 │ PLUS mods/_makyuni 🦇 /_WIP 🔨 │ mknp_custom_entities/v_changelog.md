@@ -1,3 +1,17 @@
+## v55n_15 — TimeButton SOLID — translate the +0x18 COLLISION TREE (not the strips) pre-ctor
+- MAKYUNI tested v55n_14: STILL NON-SOLID. Log: `TBtx mb_count=0 (AthenaList@+0x2C count+0x4)` then silent return.
+- ROOT CAUSE (proven from native binary, NOT a guess): Stands_ctor (0x462850) at 0x462937 does
+  `add $0x18,%edi` then reads `[edi+0x4]` (count) and `[edi+0x40c]` (items) — i.e. **mesh+0x18 is
+  an EMBEDDED AthenaList (count +0x4, items +0x40C)** and Stands_ctor CLONES every item from it into
+  the built obj+0x18 tree. Those cloned items ARE the collision (broad-phase + exact test).
+- THE v55n_14 BUG: the translate fn checked the **+0x2C MeshBuffer/strip list FIRST**, found it EMPTY
+  at load, and `return 0`ed BEFORE ever reaching the +0x18 tree block. So the tree was never translated.
+- v55n_15 fix: reorder so **+0x18 collision tree translates FIRST and UNCONDITIONALLY** (count +0x4,
+  items +0x40C, each item +0/+4/+8 = world pos; add dx/dy/dz). +0x2C strip/submesh translate still
+  runs after as belt-and-suspenders but no longer gates correctness. +0x18 and +0x2C are DIFFERENT
+  structures — never gate one on the other.
+- md5: `d4c59e2925b5c1bd1319308b43485f15`. Wine ALIVE 42s (title only — button spawn not reachable).
+
 ## v55n_14 — TimeButton SOLID — found the offending offset via MAKYUNI's log; fixed +0x2C list + tree pre-ctor
 - MAKYUNI tested v55n_13: STILL NON-SOLID. Her log captured the EXACT failure:
   `TBtranslate meshworld enter mw=0x0C78EE50` → `TBtx mb_count=0` → silent return.
