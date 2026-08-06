@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_8
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_9
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -394,12 +394,21 @@ static int __thiscall cEnt_timebutton_update_noop(void* this_) {
  * Tracked so the N:EXTRATIME collision handler in our DispatchCollisionEvents hook can
  * find the button entity and replicate Rotator_TriggerSound + timer reward. */
 #define MAX_TIMEBUTTONS 16
+
+/* v55n_9: forward decl — translate collision geometry (defined after the render hook). */
+static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf);
+
+/* v55n_9: shared log path (line 1105 in v55n_8). Declared here so the early
+ * render hook can log. */
+static char g_log_path[MAX_PATH];
+
 typedef struct {
     DWORD obj;        /* TimeButton entity (0x10E8 bytes, vtable 0x4D5830) */
     DWORD board;      /* owning board */
     float x, y, z;    /* spawn position */
     DWORD col_level;  /* collision/render Level at obj+0x10E0 */
     int   pressed;    /* 1 = already pressed (latch mirror) */
+    int   geom_translated; /* v55n_9: 1 = collision geometry already translated to spawn pos */
     DWORD orig_vtable18; /* v55n_5: saved original vtable[18] (0x45E0E0) for render hook */
 } TimeButtonState;
 static TimeButtonState g_timebuttons[MAX_TIMEBUTTONS];
@@ -428,6 +437,21 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
+    /* v55n_9: first-render, one-shot geometry translation. At render time the
+     * mesh buffers ARE built (MeshWorld+0x448 packed array + sub-mesh +0x448
+     * tree-source arrays exist). Translate the collision geometry to the spawn
+     * position ONCE here (the catapult does the same in its render hook), so
+     * the ball collides where the render shows the button. */ 
+    if (!tb->geom_translated) {
+        tb->geom_translated = 1;
+        DWORD tb_col = *(DWORD*)((void*)((char*)this_ + 0x10E0));
+        if (tb_col) {
+            FILE* lf = NULL;
+            fopen_s(&lf, g_log_path, "a");
+            cEnt_translate_collision_strips(tb_col, tb->x, tb->y, tb->z, lf);
+            if (lf) fclose(lf);
+        }
+    }
     DWORD renderLevel = 0;
     if (!IsBadReadPtr((void*)(this_ + 0x434), 4)) {
         renderLevel = *(DWORD*)(this_ + 0x434);
@@ -451,79 +475,90 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
     return;
 }
 
-/* v55n_8: Translate a collision Level's spatial-tree ITEM positions AND strips
- * by (dx,dy,dz). This is the mechanism the catapult (confirmed SOLID) uses to
- * move collision: Mesh_FindClosestCollision / Ball_AdvancePositionOrCollision
- * read the WORLD-space tree-item positions at colLevel+0x18, colLevel+0x848 and
- * mw+0x18 (embedded AthenaList: count +0x4, items +0x40C, each item's +0/+4/+8
- * compared directly against the ball), plus the mesh-local strips. v55n_6 only
- * translated the strips — that alone did NOT make the button solid because the
- * query reads the tree items. Translating all three tree lists + strips moves
- * collision with the render hook's (x,y,z). Returns total items+verts moved. */
+/* v55n_9+: Translate a collision Level's collision geometry so the ball hits
+ * where the render shows it. Confirmed via Ghidra MeshWorld_BuildVertexBuffer
+ * (0x46F8D0) + the proven catapult rotation (cEnt_catapult_rotate_collision_verts):
+ *   MeshWorld+0x2C = MeshBuffer AthenaList (count +0x30, items +0x438)
+ *   MeshBuffer+0x424 = sub-mesh AthenaList (count +0x428, items +0x830)
+ *   sub-mesh+0x448 = source vertex array (8 floats/vertex) — THE TREE SOURCE
+ *   sub-mesh+0x4  = triangle count (vertex count = tri+2)
+ *   MeshBuffer+0x10 = strip count, MeshBuffer+0x418 = strip items (96B each,
+ *   3 verts x 32B, X/Y/Z at +0/+4/+8)
+ * Both the sub-mesh +0x448 arrays AND the strips feed the collision query. We
+ * translate BOTH at ctor time (before the first render builds the packed buffer).
+ * v55n_6/v55n_7 read wrong list offsets -> 0 verts; v55n_8 mutated octree node
+ * items -> crash. This is safe vertex-data translation. Returns verts translated. */
 static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf) {
-    if (!coll_level || coll_level < 0x10000) return 0;
-    if (IsBadReadPtr((void*)coll_level, 0x860)) return 0;
-    int total = 0;
-
-    /* Helper lambda-style macros via inner loops: translate a spatial-tree
-     * item list (embedded AthenaList count +0x4, items +0x40C). */
-    DWORD tree_lists[3];
-    int tl_count = 0;
-    if (!IsBadReadPtr((void*)(coll_level + 0x18), 0x20)) { tree_lists[tl_count++] = coll_level + 0x18; }
-    if (!IsBadReadPtr((void*)(coll_level + 0x848), 0x20)) { tree_lists[tl_count++] = coll_level + 0x848; }
+    if (!coll_level || coll_level < 0x10000 || IsBadReadPtr((void*)coll_level, 0x100)) return 0;
     DWORD mw = *(DWORD*)((char*)coll_level + 0x08);
-    if (mw && mw >= 0x10000 && !IsBadReadPtr((void*)(mw + 0x18), 0x20)) { tree_lists[tl_count++] = mw + 0x18; }
-    int ti2;
-    for (ti2 = 0; ti2 < tl_count; ti2++) {
-        DWORD tlist = tree_lists[ti2];
-        int tcount = *(int*)(tlist + 0x04);
-        if (tcount <= 0 || tcount > 65536) continue;
-        DWORD* titems = *(DWORD**)(tlist + 0x40C);
-        if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) continue;
-        int x2;
-        for (x2 = 0; x2 < tcount; x2++) {
-            DWORD item = titems[x2];
-            if (!item || item < 0x10000 || IsBadReadPtr((void*)item, 0x10)) continue;
-            float* p = (float*)item;
-            p[0] += dx; p[1] += dy; p[2] += dz;
-            total++;
-        }
-    }
-
-    /* Then translate the mesh strips (as before). */
-    if (mw && mw >= 0x10000 && !IsBadReadPtr((void*)(mw + 0x2C), 0x20)) {
-        DWORD mb_list = mw + 0x2C;
-        int mb_count = *(int*)(mb_list + 0x04);
-        if (mb_count > 0 && mb_count <= 64) {
-            DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
-            if (mb_items && !IsBadReadPtr((void*)mb_items, mb_count * 4)) {
-                int bi;
-                for (bi = 0; bi < mb_count; bi++) {
-                    DWORD mb = ((DWORD*)mb_items)[bi];
-                    if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x840)) continue;
-                    int strip_count = *(int*)((char*)mb + 0x10);
-                    if (strip_count <= 0 || strip_count > 4096) continue;
-                    DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
-                    if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
-                    int si;
-                    for (si = 0; si < strip_count; si++) {
-                        DWORD strip = strip_items[si];
-                        if (!strip || strip < 0x10000 || IsBadReadPtr((void*)strip, 0x60)) continue;
-                        float* p = (float*)strip;
-                        int v;
-                        for (v = 0; v < 3; v++) {
-                            p[v * 8 + 0] += dx;
-                            p[v * 8 + 1] += dy;
-                            p[v * 8 + 2] += dz;
+    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) return 0;
+    int total = 0;
+    int mb_count = *(int*)((char*)mw + 0x30);
+    if (mb_count <= 0 || mb_count > 64) return 0;
+    DWORD* mb_items = *(DWORD**)((char*)mw + 0x438);
+    if (!mb_items || IsBadReadPtr((void*)mb_items, mb_count * 4)) return 0;
+    int bi;
+    for (bi = 0; bi < mb_count; bi++) {
+        DWORD mb = mb_items[bi];
+        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x850)) continue;
+        /* 1. Sub-mesh +0x448 source arrays (the tree source). */
+        int scnt = *(int*)((char*)mb + 0x428);
+        if (scnt > 0 && scnt <= 4096) {
+            DWORD* sitems = *(DWORD**)((char*)mb + 0x830);
+            if (sitems && !IsBadReadPtr((void*)sitems, scnt * 4)) {
+                int si;
+                for (si = 0; si < scnt; si++) {
+                    DWORD sub = sitems[si];
+                    if (!sub || sub < 0x10000 || IsBadReadPtr((void*)sub, 0x20)) continue;
+                    DWORD tri = *(DWORD*)((char*)sub + 0x04);
+                    int vcnt = (int)tri + 2;
+                    if (vcnt <= 0 || vcnt > 65536) continue;
+                    float* verts = *(float**)((char*)sub + 0x448);
+                    if (verts && !IsBadReadPtr((void*)verts, vcnt * 32)) {
+                        int vi;
+                        for (vi = 0; vi < vcnt; vi++) {
+                            verts[vi * 8 + 0] += dx;
+                            verts[vi * 8 + 1] += dy;
+                            verts[vi * 8 + 2] += dz;
                         }
-                        total += 3;
+                        total += vcnt;
+                    }
+                    /* Also the transient +0x10 array if still present. */
+                    float* verts2 = *(float**)((char*)sub + 0x10);
+                    if (verts2 && verts2 != verts && !IsBadReadPtr((void*)verts2, vcnt * 32)) {
+                        int vi2;
+                        for (vi2 = 0; vi2 < vcnt; vi2++) {
+                            verts2[vi2 * 8 + 0] += dx;
+                            verts2[vi2 * 8 + 1] += dy;
+                            verts2[vi2 * 8 + 2] += dz;
+                        }
                     }
                 }
             }
         }
+        /* 2. Strip vertices (catapult-proven offsets). */
+        int strip_count = *(int*)((char*)mb + 0x10);
+        if (strip_count > 0 && strip_count <= 4096) {
+            DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
+            if (strip_items && !IsBadReadPtr((void*)strip_items, strip_count * 4)) {
+                int si2;
+                for (si2 = 0; si2 < strip_count; si2++) {
+                    DWORD strip = strip_items[si2];
+                    if (!strip || strip < 0x10000 || IsBadReadPtr((void*)strip, 0x60)) continue;
+                    float* p = (float*)strip;
+                    int v;
+                    for (v = 0; v < 3; v++) {
+                        p[v * 8 + 0] += dx;
+                        p[v * 8 + 1] += dy;
+                        p[v * 8 + 2] += dz;
+                    }
+                    total += 3;
+                }
+            }
+        }
     }
-    if (logf) fprintf(logf, "  ROTATER: TimeButton coll Level 0x%08X translated (%.1f,%.1f,%.1f) %d tree items + %d strips\n",
-                      coll_level, dx, dy, dz, total, 0);
+    if (logf) fprintf(logf, "  ROTATER: TimeButton coll Level 0x%08X geom translated (%.1f,%.1f,%.1f) %d verts\n",
+                      coll_level, dx, dy, dz, total);
     return total;
 }
 
@@ -1071,7 +1106,7 @@ struct WaterWheelState {
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
 static int g_44l_present_logged = 0;  /* one-shot Present-hook proof log */
-static char g_log_path[MAX_PATH];     /* shared by thread + Present hook */
+/* (g_log_path moved to top, v55n_9) */
 static DWORD g_wheel_nodes[64];       /* v55m_44m: addresses of waterwheel-tree nodes */
 static int g_wheel_node_count = 0;    /*   (recorded during wheel-tree walks) */
 
@@ -3619,16 +3654,17 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     if (tb_col && !IsBadReadPtr((void*)tb_col, 0x20)) {
                         /* 2. Set MeshBuffer+0x47C = entity on ALL MeshBuffers so the
                          *    N:EXTRATIME handler finds the entity ([[MeshBuffer]+0x47C]).
-                         *    MeshBuffers: Level+0x08 -> MeshWorld, +0x2C AthenaList,
-                         *    count +0x04, items +0x40C. */
+                         *    MeshBuffers: Level+0x08 -> MeshWorld, +0x2C MeshBuffer
+                         *    AthenaList (count +0x30, items +0x438 — verified via
+                         *    MeshWorld_BuildVertexBuffer). v55n_9: fixed from the
+                         *    wrong +0x04/+0x40C offsets that never matched. */
                         DWORD tb_mw = *(DWORD*)((char*)tb_col + 0x08);
-                        if (tb_mw && !IsBadReadPtr((void*)(tb_mw + 0x2C), 0x410)) {
-                            DWORD mb_list = tb_mw + 0x2C;
-                            DWORD mb_count = *(DWORD*)(mb_list + 0x04);
-                            DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
+                        if (tb_mw && !IsBadReadPtr((void*)tb_mw, 0x460)) {
+                            DWORD mb_count = *(DWORD*)((char*)tb_mw + 0x30);
+                            DWORD* mb_items = *(DWORD**)((char*)tb_mw + 0x438);
                             int mi;
                             for (mi = 0; mi < (int)mb_count && mb_items && !IsBadReadPtr((void*)mb_items, mb_count*4); mi++) {
-                                DWORD mb = ((DWORD*)mb_items)[mi];
+                                DWORD mb = mb_items[mi];
                                 if (mb && !IsBadReadPtr((void*)mb, 0x48C)) {
                                     *(DWORD*)((char*)mb + 0x47C) = (DWORD)obj;
                                 }
@@ -3656,12 +3692,12 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                             pfn_AthenaList_Append((DWORD*)(tb_scene_col + 0x18), (void*)tb_col);
                         }
                         if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
-                        /* v55n_5: SOLID FIX — translate the collision strips so
-                         * collision matches the render. The render hook moves the
-                         * visual to (px,py,pz), but the collision query reads raw
-                         * strip coords (baked near origin), so the ball fell
-                         * through. Offset by (px,py,pz) to align collision. */
-                        cEnt_translate_collision_strips(tb_col, px, py, pz, logf);
+                        /* v55n_9: geometry translation moved to the render hook
+                         * (cEnt_timebutton_render, first-render one-shot) — the
+                         * mesh buffers are NOT built at ctor time, so translating
+                         * here would either no-op (0 verts) or double-translate
+                         * with the render hook. The hook is the catapult-proven
+                         * timing (its rotation also runs at render). */
                     }
                     /* 3. Entity self-ref +0x47C */
                     *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
@@ -3675,6 +3711,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_timebuttons[g_timebutton_count].z = pz;
                     g_timebuttons[g_timebutton_count].col_level = *(DWORD*)((char*)obj + 0x10E0);
                     g_timebuttons[g_timebutton_count].pressed = 0;
+                    g_timebuttons[g_timebutton_count].geom_translated = 0;
                     g_timebuttons[g_timebutton_count].orig_vtable18 = g_timebuttons_pos_hook_orig;
                     g_timebutton_count++;
                 }
@@ -6458,7 +6495,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_8", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_9", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8071,7 +8108,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_8 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_9 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

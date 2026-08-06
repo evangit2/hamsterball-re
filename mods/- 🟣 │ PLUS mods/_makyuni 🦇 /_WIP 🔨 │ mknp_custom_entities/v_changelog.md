@@ -1,3 +1,19 @@
+## v55n_9 — TimeButton solidity — REAL geometry translation (no more octree mutation)
+- v55n_8's spatial-tree ITEM translation was WRONG and CRASHED at start
+  (0001:00043353, 00:00:06, Update) — it mutated octree node data in
+  colLevel+0x18/0x848/mw+0x18 which corrupted the collision tree.
+- Root cause of "STILL NOT SOLID" found via Ghidra MeshWorld_BuildVertexBuffer
+  (0x46F8D0): v55n_6/v55n_7 strip translation read the WRONG list offsets
+  (MeshWorld+0x2C count +0x04/items +0x40C are NOT the AthenaList fields).
+  Correct: count +0x30, items +0x438. The old code translated 0 verts every time.
+- v55n_9 translates the REAL collision geometry at first render (catapult-proven
+  timing): sub-mesh +0x448 source vertex arrays (the SpatialTree triangle source)
+  + transient +0x10 arrays + MeshBuffer strip vertices, all offset by the spawn
+  position. One-shot via geom_translated flag in the render hook.
+- ALSO fixed: the MeshBuffer+0x47C entity-write loop used the same wrong
+  +0x04/+0x40C offsets, so N:EXTRATIME never found the button entity.
+- Crash regression: v55n_9 passes 42s Wine title-screen (v55n_8 was 6s ntdll crash).
+
 ## v55n_8 — TimeButton SOLID via spatial-tree translate (real mechanism)
 
 **Still not solid → REAL cause found by decompiling the collision query.** v55n_6
