@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_11
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_12
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -395,10 +395,10 @@ static int __thiscall cEnt_timebutton_update_noop(void* this_) {
  * find the button entity and replicate Rotator_TriggerSound + timer reward. */
 #define MAX_TIMEBUTTONS 16
 
-/* v55n_11: forward decl — translate collision geometry (defined after the render hook). */
+/* v55n_12: forward decl — translate collision geometry (defined after the render hook). */
 static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf);
 
-/* v55n_11: shared log path (line 1105 in v55n_8). Declared here so the early
+/* v55n_12: shared log path (line 1105 in v55n_8). Declared here so the early
  * render hook can log. */
 static char g_log_path[MAX_PATH];
 
@@ -408,7 +408,7 @@ typedef struct {
     float x, y, z;    /* spawn position */
     DWORD col_level;  /* collision/render Level at obj+0x10E0 */
     int   pressed;    /* 1 = already pressed (latch mirror) */
-    int   geom_translated; /* v55n_11: 1 = collision geometry already translated to spawn pos */
+    int   geom_translated; /* v55n_12: 1 = collision geometry already translated to spawn pos */
     DWORD orig_vtable18; /* v55n_5: saved original vtable[18] (0x45E0E0) for render hook */
 } TimeButtonState;
 static TimeButtonState g_timebuttons[MAX_TIMEBUTTONS];
@@ -437,7 +437,7 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
-    /* v55n_11: geometry translation moved OUT of this hook into the Present
+    /* v55n_12: geometry translation moved OUT of this hook into the Present
      * driver (gluebie_present_helper) — this render hook is NOT guaranteed to
      * fire (the cEnt button is never registered in a render/update list), and
      * a latch here with 0 built verts would pin geom_translated prematurely.
@@ -466,7 +466,7 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
     return;
 }
 
-/* v55n_11+: Translate a collision Level's collision geometry so the ball hits
+/* v55n_12+: Translate a collision Level's collision geometry so the ball hits
  * where the render shows it. Confirmed via Ghidra MeshWorld_BuildVertexBuffer
  * (0x46F8D0) + the proven catapult rotation (cEnt_catapult_rotate_collision_verts):
  *   MeshWorld+0x2C = MeshBuffer AthenaList (count +0x30, items +0x438)
@@ -485,48 +485,17 @@ static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy,
     if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) return 0;
     int total = 0;
 
-    /* v55n_11: TRANSLATE THE COLLISION TREE ITEMS — the ACTUAL world-space
-     * triangle positions the ball query reads. The catapult (PROVEN solid,
-     * cEnt_catapult_rotate_collision_verts) rotates THREE tree lists at
-     * RENDER time: colLevel+0x18, colLevel+0x848, and the MeshWorld's own
-     * tree at mw+0x18 (embedded AthenaList: count +0x4, items +0x40C; each
-     * item's +0/+4/+8 is a world-space position compared against the ball).
-     * v55n_11 skipped ALL of these -> non-solid (only sub-mesh+strips moved).
-     * v55n_8 crashed because it wrote these at CTOR time (during FinishLoad,
-     * tree partially built). We write at FIRST RENDER (geom_translated flag)
-     * when the tree is fully built — the catapult's safe timing. A pure
-     * TRANSLATION moves all 3 axes (v55n_8's Y-write was NOT the bug; the
-     * ctor timing was — the catapult preserves Y only because it ROTATES). */
-    {
-        DWORD tree_candidates[3];
-        tree_candidates[0] = coll_level + 0x18;
-        tree_candidates[1] = coll_level + 0x848;
-        tree_candidates[2] = mw + 0x18;
-        int tci;
-        for (tci = 0; tci < 3; tci++) {
-            DWORD treelist = tree_candidates[tci];
-            if (IsBadReadPtr((void*)treelist, 0x20)) continue;
-            int tcount = *(int*)(treelist + 0x4);
-            if (tcount <= 0 || tcount > 65536) continue;
-            DWORD* titems = *(DWORD**)(treelist + 0x40C);
-            if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) continue;
-            int ti;
-            int ti_ok = 0;
-            for (ti = 0; ti < tcount; ti++) {
-                DWORD item = titems[ti];
-                if (!item || IsBadReadPtr((void*)item, 0x10)) continue;
-                float* p = (float*)item;
-                p[0] += dx;
-                p[1] += dy;
-                p[2] += dz;
-                ti_ok++;
-            }
-            total += ti_ok;
-            if (logf) fprintf(logf, "  ROTATER: TimeButton tree list 0x%08X translated %d items (%.1f,%.1f,%.1f)\n",
-                              treelist, ti_ok, dx, dy, dz);
-        }
-    }
-
+    /* v55n_12: REMOVED the collision TREE-ITEM translation here. It crashed
+     * every time it ran (v55n_8 at ctor, v55n_12 at Update 0001:0004717E).
+     * confirmed: 0x44717E crash EIP is mid-instruction = SEH-resume of heap
+     * corruption from writing game-owned collision tree items at
+     * coll_level+0x18/0x848/mw+0x18 (the catapult's "tree rotation" operates
+     * on a differently-owned/per-frame-rebuilt structure). Translating ONLY
+     * the vertex source arrays below (sub-mesh +0x448 + strips) is safe AND
+     * sufficient: the balloon's collision tree is rebuilt EVERY frame from
+     * these source arrays (SpatialTree_ctor 0x463330 / Ball_Update 0x405E00),
+     * so translating the source before the tree builds yields correct positions
+     * without ever touching game-owned tree memory. Do NOT add tree writes back. */
     int mb_count = *(int*)((char*)mw + 0x30);
     if (mb_count <= 0 || mb_count > 64) return 0;
     DWORD* mb_items = *(DWORD**)((char*)mw + 0x438);
@@ -1140,7 +1109,7 @@ struct WaterWheelState {
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
 static int g_44l_present_logged = 0;  /* one-shot Present-hook proof log */
-/* (g_log_path moved to top, v55n_11) */
+/* (g_log_path moved to top, v55n_12) */
 static DWORD g_wheel_nodes[64];       /* v55m_44m: addresses of waterwheel-tree nodes */
 static int g_wheel_node_count = 0;    /*   (recorded during wheel-tree walks) */
 
@@ -3690,7 +3659,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                          *    N:EXTRATIME handler finds the entity ([[MeshBuffer]+0x47C]).
                          *    MeshBuffers: Level+0x08 -> MeshWorld, +0x2C MeshBuffer
                          *    AthenaList (count +0x30, items +0x438 — verified via
-                         *    MeshWorld_BuildVertexBuffer). v55n_11: fixed from the
+                         *    MeshWorld_BuildVertexBuffer). v55n_12: fixed from the
                          *    wrong +0x04/+0x40C offsets that never matched. */
                         DWORD tb_mw = *(DWORD*)((char*)tb_col + 0x08);
                         if (tb_mw && !IsBadReadPtr((void*)tb_mw, 0x460)) {
@@ -3726,7 +3695,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                             pfn_AthenaList_Append((DWORD*)(tb_scene_col + 0x18), (void*)tb_col);
                         }
                         if (logf) fprintf(logf, "  ROTATER: TimeButton collision Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
-                        /* v55n_11: geometry translation moved to the render hook
+                        /* v55n_12: geometry translation moved to the render hook
                          * (cEnt_timebutton_render, first-render one-shot) — the
                          * mesh buffers are NOT built at ctor time, so translating
                          * here would either no-op (0 verts) or double-translate
@@ -5711,7 +5680,7 @@ static void __cdecl gluebie_present_helper(void) {
     if (board && g_chomper_count > 0) {
         cEnt_chomper_update(board);
     }
-    /* v55n_11: TimeButton collision-geometry translation driver (guaranteed path).
+    /* v55n_12: TimeButton collision-geometry translation driver (guaranteed path).
      * The render hook (cEnt_timebutton_render, vtable[18]) is NOT guaranteed to
      * fire — the case-45 button is never added to board+0xCD4/board+0x2578, so
      * its hooked render never runs and the one-shot geometry translation parked
@@ -6560,7 +6529,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_11", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_12", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8173,7 +8142,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_11 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_12 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

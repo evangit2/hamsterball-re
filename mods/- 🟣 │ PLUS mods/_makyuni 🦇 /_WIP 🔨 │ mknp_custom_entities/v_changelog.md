@@ -1,3 +1,21 @@
+## v55n_12 — TimeButton crash FIXED (0001:0004717E) — removed the game-owned collision TREE-item writes
+- MAKYUNI tested v55n_11: it CRASHED on level start (ntdll 0001:0004717E, Warm-Up,
+  Update, FinishLoad OK). The v55n_11 log was the smoking gun: it translated 8 tree
+  items, then immediately crashed.
+- Root cause confirmed via objdump: crash EIP 0x44717E is byte-3 of `c6 44 24 14 03`
+  (mid-instruction) = SEH-resume of HEAP corruption caused by my writes to the game's
+  collision TREE items (coll_level+0x18/0x848/mw+0x18). Writing those EVERY time it runs
+  corrupts the heap (v55n_8 crash + v55n_11 crash = same family). The catapult's "tree
+  rotation" works on a differently-owned / per-frame-rebuilt structure — copying its
+  write pattern to a one-shot translate was WRONG.
+- FIX: REMOVED ALL collision-tree writes. v55n_12 translates ONLY the SAFE vertex-source
+  arrays (sub-mesh +0x448 source verts + MeshBuffer strip verts) via the guaranteed
+  Present hook (gluebie_present_helper), gated board+0x874, retrying until verts>0. The
+  collision tree is rebuilt every frame from these source arrays (SpatialTree_ctor
+  0x463330 / Ball_Update 0x405E00), so correct source positions = correct tree, with
+  zero writes to game-owned tree memory.
+- Wine title-screen ALIVE 42s. User on real Windows must re-confirm solid vs non-solid.
+
 ## v55n_11 — TimeButton SOLID — root cause found via user's v55n_9 log: render hook never fires
 - MAKYUNI's v55n_9 test log was the smoking gun: the button spawns + registers its
   collision Level, but there is NO "tree translated"/"geom translated" line, and the log
