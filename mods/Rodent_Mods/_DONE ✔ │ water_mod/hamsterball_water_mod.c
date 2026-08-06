@@ -6,6 +6,12 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.8: Fix E:WATERFLOW(N) parser (PREFIX_LEN was 13, should be 11 —
+ *     the '(' was never found, so flow silently fell back to calm water).
+ *     Flow direction now also switches immediately when the ball touches
+ *     a different E:WATERFLOW(N) / plain E:WATER plane while already in
+ *     water (no re-damp / re-capture — same-body flow change).
+ *
  * v7.7: E:WATERFLOW input tightened to ONLY the E:WATERFLOW(N) form
  *     (parens required). Removed bare-digit and dash/colon separators
  *     for a single, clean input convention.
@@ -342,7 +348,7 @@ static void diag_log(const char *msg)
 
 /* E:WATERFLOW direction suffix (e.g. "E:WATERFLOW(3)") */
 #define WATERFLOW_PREFIX        "E:WATERFLOW"
-#define WATERFLOW_PREFIX_LEN    13
+#define WATERFLOW_PREFIX_LEN    11      /* strlen("E:WATERFLOW") — points at '(' */
 
 /* Flow direction (stored per-ball in water_state_t.flow_dir). 8-way
  * compass, clockwise from North; 0 = no current (calm water).
@@ -515,13 +521,23 @@ static void trigger_water_contact(void *ball_ptr, const char *name)
     water_state_t *st = get_ball_state(ball);
     if (!st) return;
 
-    /* Only trigger if not already in water */
+    /* If already in water, only the flow direction can change.
+     * Touching a different E:WATERFLOW(N) plane inside the same body of
+     * water switches the current direction immediately (no re-damp, no
+     * re-capture — the ball never left the water). Touching plain
+     * E:WATER (calm) here clears the flow (parse returns FLOW_NONE).
+     * E:WATEREXIT is handled separately and never reaches this function. */
     if (st->in_water) {
-        if (g_cfg.debug) {
-            char buf[256];
-            snprintf(buf, sizeof(buf), "WATER SKIP: ball=%08X already in_water=1 (vel=%.2f,%.2f,%.2f)",
-                     ball, *vel_x, *vel_y, *vel_z);
-            diag_log(buf);
+        int new_dir = parse_flow_direction(name);
+        if (new_dir != st->flow_dir) {
+            int old_dir = st->flow_dir;
+            st->flow_dir = new_dir;
+            if (g_cfg.debug) {
+                char buf[160];
+                snprintf(buf, sizeof(buf), "WATERFLOW SWITCH: ball=%08X dir %d -> %d (same body)",
+                         ball, old_dir, new_dir);
+                diag_log(buf);
+            }
         }
         return;
     }
@@ -1198,7 +1214,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.7 loaded (E:WATERFLOW(N) clean input) ===");
+    diag_log("=== Water mod v7.8 loaded (E:WATERFLOW(N) fixed + same-body flow switch) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1247,7 +1263,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.7 DLL attaching ===");
+        diag_log("=== Water mod v7.8 DLL attaching ===");
 
         load_real_bass();
         {

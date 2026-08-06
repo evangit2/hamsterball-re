@@ -1,6 +1,22 @@
-# Hamsterball Water Physics Mod v7.7
+# Hamsterball Water Physics Mod v7.8
 
 Custom water physics for Hamsterball via bass.dll proxy.
+
+## What's New in v7.8
+
+**Bug fix + flow-switching in the same body of water.**
+
+Fixed the `E:WATERFLOW(N)` parser: the prefix-length constant was 13 but
+`"E:WATERFLOW"` is only 11 characters, so `parse_flow_direction` looked for
+the `(` two characters too far right — the digit landed where the `(` should
+be, it always returned "calm water", and **no current ever flowed**. Now the
+offset is correct and `E:WATERFLOW(1)`–`E:WATERFLOW(8)` actually push the ball.
+
+Also: while already in water, touching a different `E:WATERFLOW(N)` plane
+**switches the current direction immediately** — you can have a river that
+turns corners in a single body of water. Touching plain `E:WATER` (calm)
+while in running water clears the flow (direction 0). No re-damping or
+re-capture happens on these switches — the ball never left the water.
 
 ## What's New in v7.7
 
@@ -110,7 +126,7 @@ Four hooks working together:
 
 | Hook | Address | Type | Purpose |
 |------|---------|------|---------|
-| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — E:WATER entry (flag + damp + capture Y); E:WATERFLOW(N) = same + flow_dir 1-8; E:WATEREXIT turns water OFF |
+| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — E:WATER entry (flag + damp + capture Y); E:WATERFLOW(N) = same + flow_dir 1-8 (switches direction if already in water); E:WATEREXIT turns water OFF |
 | 2 | 0x407BB4 | Code cave | Phase 15 — per-frame drag/buoyancy while in_water (with FPU save/restore, clear 0x2E9, dizzy immunity) |
 | 3 | 0x407377 | Code cave | Type 5 suppressor — block ONLY the 0x2E9 death-flag write while submerged/in grace (camera snap + split logic intact) |
 | 4 | 0x4CF3C0+8 | Vtable swap | Ball_FallDeath — suppress death during in_water + grace period |
@@ -119,7 +135,7 @@ Four hooks working together:
 
 No MeshWorld scanning, no background threads. The game's own collision system tells the mod when the ball touches water:
 
-1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires the trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`, clear `ball+0x2E9` (falling flag), and clear `ball+0x2EC` (bounce counter). `E:WATERFLOW(N)` is a subset: it does all of the above, then sets `flow_dir` (1-8) parsed from the number in the name. When the name is `E:WATEREXIT`, it instead turns the water flag OFF entirely and immediately, with no grace period. `E:WATEREXIT` is matched before `E:WATER` so the prefix match never swallows it.
+1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires the trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`, clear `ball+0x2E9` (falling flag), and clear `ball+0x2EC` (bounce counter). `E:WATERFLOW(N)` is a subset: it does all of the above, then sets `flow_dir` (1-8) parsed from the number in the name — and if the ball is already in water, it **switches** the flow direction immediately (no re-damp/re-capture). Touching plain `E:WATER` while in running water clears the flow. When the name is `E:WATEREXIT`, it instead turns the water flag OFF entirely and immediately, with no grace period. `E:WATEREXIT` is matched before `E:WATER` so the prefix match never swallows it.
 
 2. **Hook 2** (Phase 15 code cave) runs every frame. If `in_water` is set, applies drag (all velocity axes), horizontal drag (extra on X/Z), and buoyancy (upward acceleration proportional to submersion depth). Also clears `ball+0x2E9`, clears `ball+0x2EC` (bounce counter), and sets `ball+0x2F4` (dizzy_immunity_timer) to `GRACE_PERIOD_FRAMES` every frame while submerged. If `flow_dir` is non-zero, adds a constant force (`CurrentStrength`) to the force accumulators (`ball+0x170/174/178`) in that direction. Saves/restores full FPU state via FNSAVE/FRSTOR.
 
