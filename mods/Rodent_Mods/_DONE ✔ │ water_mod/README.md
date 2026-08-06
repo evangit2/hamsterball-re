@@ -1,16 +1,17 @@
-# Hamsterball Water Physics Mod v7.6
+# Hamsterball Water Physics Mod v7.7
 
 Custom water physics for Hamsterball via bass.dll proxy.
 
-## What's New in v7.6
+## What's New in v7.7
 
-**`E:WATERFLOW` now uses numbers 1-8 for direction (supports diagonals).**
+**`E:WATERFLOW` input tightened to the single `E:WATERFLOW(N)` form.**
 
-Place a collision plane named `E:WATERFLOW(3)` in a custom level (the number
-is the flow direction, 1-8, **clockwise from North**). It is handled as a
-**subset of `E:WATER`** — it does everything calm water does (set the flag,
-damp velocity on entry, capture the surface Y), then sets a per-ball flow
-direction:
+Place a collision plane named `E:WATERFLOW(3)` in a custom level — the number
+in parentheses is the flow direction, 1-8, **clockwise from North**. Only the
+parenthesized-digit form is accepted (no bare `E:WATERFLOW3` or
+`E:WATERFLOW-3`). It is handled as a **subset of `E:WATER`** — it does
+everything calm water does (set the flag, damp velocity on entry, capture the
+surface Y), then sets a per-ball flow direction:
 
 - **1** = N (−Z), **2** = NE (+X,−Z), **3** = E (+X), **4** = SE (+X,+Z)
 - **5** = S (+Z), **6** = SW (−X,+Z), **7** = W (−X), **8** = NW (−X,−Z)
@@ -28,7 +29,7 @@ drag-capped, and you can fight it by inputting against it.
 - Touching `E:WATERFLOW(N)` → does all the `E:WATER` entry, then sets direction 1-8
 - Touching `E:WATEREXIT` → water off entirely (no grace period)
 
-Old `E:WATERFLOW-N/S/E/W` names are **not** supported — use numbers.
+Only `E:WATERFLOW(N)` is supported — no other separators.
 
 ## What's New in v7.3
 
