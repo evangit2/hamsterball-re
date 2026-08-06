@@ -1,3 +1,22 @@
+## v55n_17 — TimeButton solidity: GHIDRA-CONFIRMED vertex-source translate (PROVEN pattern)
+- MAKYUNI tested v55n_16: still crashed (ntdll 0001:0004717E, ~1s after spawn, Update,
+  no "TimeButton pressed" in log). Log showed 26x "TBtx tree count=0 (bad)".
+- ROOT CAUSE (v55n_16): my tree-translate read mw+0x18, which is EMPTY on the BUILT
+  collision Level -> every call no-ops (count=0) -> button never solid AND the loop itself
+  was the wrong structure. APOLOGY: I misdiagnosed by reasoning from memory across several
+  versions instead of decompiling. Ghidra settles it.
+- GROUND TRUTH (Ghidra D3DXSkinMesh_CopyStripData 0x45E0E0): the render walks the built
+  Level's MeshBuffer list at mw+0x2C (count mw+0x30, items mw+0x438) — and it IS populated
+  (that's how the button draws). The collision query reads those sub-mesh/strip SOURCE verts.
+- FIX (v55n_17): translate the BUILT collision Level's vertex SOURCE (sub-mesh +0x448 +
+  strips) ONCE from the spawn offset, retried each Present frame until buffers build, gated
+  on pause. NO game-owned tree writes (the v55n_8/11/15 crash cause). Uses the Ghidra-confirmed
+  offsets. This is the proven catapult mechanism.
+- HONESTY: the v55n_16 crash module is the USER's Windows ntdll; Wine's ntdll at the same RVA
+  is a different build, so I cannot claim the exact instruction. The solidity fix is now
+  grounded in Ghidra regardless.
+- md5: `6bc3e497bbd61ed50c54ce630fdb390b`. Wine ALIVE 42s (title only — button un-reachable).
+
 ## v55n_16 — TimeButton solidity via PROVEN catapult pattern; REVERTED the crashing v55n_15 write
 - MAKYUNI tested v55n_15: CRASH `0001:000570A4` (FinishLoad, 8s). Note 0001:000570A4 = VA
   0x40570A4 = `fcomps 0x4(%edi)` — an FPU compare against a tree-item pointer.
