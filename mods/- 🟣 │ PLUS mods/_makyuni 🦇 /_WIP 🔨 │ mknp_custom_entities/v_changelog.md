@@ -1,3 +1,26 @@
+## v55n_6 — TimeButton not solid FIXED (+ quit crash re-fixed properly)
+
+**Not solid** — the button was visible at the ref point (render hook) but the ball
+flew through. Root cause: the render hook moves the VISUAL to (px,py,pz) via the
+world matrix, but the ball's collision query (Mesh_FindClosestCollision 0x465D90)
+reads the +0x10E0 collision Level's RAW strip vertex coords, which are baked at
+the mesh's local position (~near origin), NOT the ref point. So collision stayed
+at ~(0,0,0) while the visual was at the ref.
+
+FIX: added `cEnt_translate_collision_strips(dx,dy,dz)` — walks the +0x10E0 Level's
+MeshWorld meshbuffers and offsets every strip vertex X/Y/Z by (px,py,pz) (same
+proven strip-walk pattern as cEnt_catapult_rotate_collision_verts). Now collision
+agrees with the render. Called right after the collision Level registration.
+
+**Quit crash (proper fix)** — v55n_5 got the +0x10E5 guard backwards. Ghidra:
+`Rotator_RemoveAndFree (0x436FC0)` guard is `if (+0x10E5 == 0) { cleanup }` —
+cleanup ONLY runs when the flag is 0. v55n_5 left +0x10E5=1 (ctor default), so at
+despawn RemoveAndFree no-oped, the +0x10E0 Level stayed registered in
+board+0x10EC + scene tree, and the game's quit teardown double-freed it ->
+ntdll 0001:000410C3. v55n_6 CLEARS +0x10E5=0 at spawn (replicating the render-once
+transition) AND adds a proper TimeButton despawn to cEnt_despawn_all_rotaters that
+calls 0x436FC0 (RemoveAndFree, now active with +0x10E5==0) + the dtor 0x43DC20.
+
 ## v55n_5 — TimeButton spawn position + quit crash FIXED
 
 Two regressions from v55n_4, both traced to Ghidra:
