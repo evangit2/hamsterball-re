@@ -1,3 +1,19 @@
+## v55n_8 — TimeButton SOLID via spatial-tree translate (real mechanism)
+
+**Still not solid → REAL cause found by decompiling the collision query.** v55n_6
+translated the mesh STRIPS, but I verified via Ghidra that
+`Ball_AdvancePositionOrCollision` (0x4564C0) and `Mesh_FindClosestCollision`
+(0x465D90) read **WORLD-space spatial-TREE ITEM positions** (each item's +0/+4/+8
+compared directly against the ball) at `colLevel+0x18`, `colLevel+0x848` and
+`mw+0x18` (embedded AthenaList: count +0x4, items +0x40C) — NOT the strips.
+
+This is the SAME mechanism the catapult (confirmed SOLID) uses via
+`cEnt_catapult_rotate_collision_verts` — it rewrites those tree-item positions.
+
+Fix: `cEnt_translate_collision_strips` now ALSO translates the tree-item positions
+in all three tree lists by (px,py,pz), on top of the strips. Now collision follows
+the render hook's (px,py,pz), so the ball hits where the button looks.
+
 ## v55n_7 — TimeButton solid (final) + quit crash root-cause fix + X keybind
 
 **Not solid (follow-up)** — the v55n_6 strip-translate fix was correct in concept but the

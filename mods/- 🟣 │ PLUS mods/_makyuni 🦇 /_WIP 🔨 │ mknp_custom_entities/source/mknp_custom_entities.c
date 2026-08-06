@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_7
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_8
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -451,50 +451,79 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
     return;
 }
 
-/* v55n_5: Translate every strip vertex of a collision Level's MeshWorld by
- * (dx,dy,dz). The ball's collision query (Mesh_FindClosestCollision 0x465D90)
- * reads RAW strip vertex positions (MeshBuffer+0x418 strip list, 3 verts × 32B
- * per strip, X/Y/Z at v[0]/v[1]/v[2] with 8-float stride) — the SAME arrays the
- * catapult rotates. The TimeButton's +0x10E0 collision Level inherits the mesh's
- * baked (near-origin) coords, so unless we offset them they collide at ~(0,0,0)
- * while the render hook moves the visual to (x,y,z). Translating them in place
- * makes collision agree with the render. Returns # vertices translated. */
+/* v55n_8: Translate a collision Level's spatial-tree ITEM positions AND strips
+ * by (dx,dy,dz). This is the mechanism the catapult (confirmed SOLID) uses to
+ * move collision: Mesh_FindClosestCollision / Ball_AdvancePositionOrCollision
+ * read the WORLD-space tree-item positions at colLevel+0x18, colLevel+0x848 and
+ * mw+0x18 (embedded AthenaList: count +0x4, items +0x40C, each item's +0/+4/+8
+ * compared directly against the ball), plus the mesh-local strips. v55n_6 only
+ * translated the strips — that alone did NOT make the button solid because the
+ * query reads the tree items. Translating all three tree lists + strips moves
+ * collision with the render hook's (x,y,z). Returns total items+verts moved. */
 static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf) {
     if (!coll_level || coll_level < 0x10000) return 0;
-    if (IsBadReadPtr((void*)coll_level, 0x100)) return 0;
-    /* Colon Level +0x08 -> MeshWorld, +0x2C = MeshBuffer AthenaList
-     * (count at +0x04, items at +0x40C). Same walk as case 39/45 registration. */
+    if (IsBadReadPtr((void*)coll_level, 0x860)) return 0;
+    int total = 0;
+
+    /* Helper lambda-style macros via inner loops: translate a spatial-tree
+     * item list (embedded AthenaList count +0x4, items +0x40C). */
+    DWORD tree_lists[3];
+    int tl_count = 0;
+    if (!IsBadReadPtr((void*)(coll_level + 0x18), 0x20)) { tree_lists[tl_count++] = coll_level + 0x18; }
+    if (!IsBadReadPtr((void*)(coll_level + 0x848), 0x20)) { tree_lists[tl_count++] = coll_level + 0x848; }
     DWORD mw = *(DWORD*)((char*)coll_level + 0x08);
-    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)(mw + 0x2C), 0x20)) return 0;
-    DWORD mb_list = mw + 0x2C;
-    int mb_count = *(int*)(mb_list + 0x04);
-    if (mb_count <= 0 || mb_count > 64) return 0;
-    DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
-    if (!mb_items || IsBadReadPtr((void*)mb_items, mb_count * 4)) return 0;
-    int total = 0, bi;
-    for (bi = 0; bi < mb_count; bi++) {
-        DWORD mb = ((DWORD*)mb_items)[bi];
-        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x840)) continue;
-        int strip_count = *(int*)((char*)mb + 0x10);
-        if (strip_count <= 0 || strip_count > 4096) continue;
-        DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
-        if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
-        int si;
-        for (si = 0; si < strip_count; si++) {
-            DWORD strip = strip_items[si];
-            if (!strip || strip < 0x10000 || IsBadReadPtr((void*)strip, 0x60)) continue;
-            float* p = (float*)strip;
-            int v;
-            for (v = 0; v < 3; v++) {
-                p[v * 8 + 0] += dx;
-                p[v * 8 + 1] += dy;
-                p[v * 8 + 2] += dz;
-            }
-            total += 3;
+    if (mw && mw >= 0x10000 && !IsBadReadPtr((void*)(mw + 0x18), 0x20)) { tree_lists[tl_count++] = mw + 0x18; }
+    int ti2;
+    for (ti2 = 0; ti2 < tl_count; ti2++) {
+        DWORD tlist = tree_lists[ti2];
+        int tcount = *(int*)(tlist + 0x04);
+        if (tcount <= 0 || tcount > 65536) continue;
+        DWORD* titems = *(DWORD**)(tlist + 0x40C);
+        if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) continue;
+        int x2;
+        for (x2 = 0; x2 < tcount; x2++) {
+            DWORD item = titems[x2];
+            if (!item || item < 0x10000 || IsBadReadPtr((void*)item, 0x10)) continue;
+            float* p = (float*)item;
+            p[0] += dx; p[1] += dy; p[2] += dz;
+            total++;
         }
     }
-    if (logf) fprintf(logf, "  ROTATER: TimeButton coll Level 0x%08X strips translated (%.1f,%.1f,%.1f) %d verts\n",
-                      coll_level, dx, dy, dz, total);
+
+    /* Then translate the mesh strips (as before). */
+    if (mw && mw >= 0x10000 && !IsBadReadPtr((void*)(mw + 0x2C), 0x20)) {
+        DWORD mb_list = mw + 0x2C;
+        int mb_count = *(int*)(mb_list + 0x04);
+        if (mb_count > 0 && mb_count <= 64) {
+            DWORD mb_items = *(DWORD*)(mb_list + 0x40C);
+            if (mb_items && !IsBadReadPtr((void*)mb_items, mb_count * 4)) {
+                int bi;
+                for (bi = 0; bi < mb_count; bi++) {
+                    DWORD mb = ((DWORD*)mb_items)[bi];
+                    if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x840)) continue;
+                    int strip_count = *(int*)((char*)mb + 0x10);
+                    if (strip_count <= 0 || strip_count > 4096) continue;
+                    DWORD* strip_items = *(DWORD**)((char*)mb + 0x418);
+                    if (!strip_items || IsBadReadPtr((void*)strip_items, strip_count * 4)) continue;
+                    int si;
+                    for (si = 0; si < strip_count; si++) {
+                        DWORD strip = strip_items[si];
+                        if (!strip || strip < 0x10000 || IsBadReadPtr((void*)strip, 0x60)) continue;
+                        float* p = (float*)strip;
+                        int v;
+                        for (v = 0; v < 3; v++) {
+                            p[v * 8 + 0] += dx;
+                            p[v * 8 + 1] += dy;
+                            p[v * 8 + 2] += dz;
+                        }
+                        total += 3;
+                    }
+                }
+            }
+        }
+    }
+    if (logf) fprintf(logf, "  ROTATER: TimeButton coll Level 0x%08X translated (%.1f,%.1f,%.1f) %d tree items + %d strips\n",
+                      coll_level, dx, dy, dz, total, 0);
     return total;
 }
 
@@ -6429,7 +6458,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_7", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_8", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8042,7 +8071,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_7 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_8 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
