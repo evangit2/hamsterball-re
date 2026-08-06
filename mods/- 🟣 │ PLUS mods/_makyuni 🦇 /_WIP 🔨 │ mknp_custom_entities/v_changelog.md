@@ -1,3 +1,26 @@
+## v55n_11 — TimeButton SOLID — root cause found via user's v55n_9 log: render hook never fires
+- MAKYUNI's v55n_9 test log was the smoking gun: the button spawns + registers its
+  collision Level, but there is NO "tree translated"/"geom translated" line, and the log
+  ends at "No GRID points found." => the one-shot geometry translation, parked in the
+  vtable[18] render hook (cEnt_timebutton_render), NEVER RAN on a real game.
+- Root cause: the cEnt TimeButton (case 45) is never added to board+0xCD4 (render list)
+  or board+0x2578 (update list), so its hooked render is never invoked -> the collision
+  tree stays baked at origin -> non-solid at the ref point. My v55n_9/v55n_10 fixes were
+  in the wrong place (they only ran translation IF that hook fired).
+- FIX (v55n_11): drive the one-shot collision-geometry translation from the GUARANTEED
+  every-frame Present hook (gluebie_present_helper), gated on board+0x874 not-paused.
+  It translates all 3 collision tree lists (coll_level+0x18, coll_level+0x848, mw+0x18)
+  + sub-mesh +0x448 source arrays + strips via cEnt_translate_collision_strips, then
+  latches geom_translated=1 (retries on 0 built verts, so the render-hook latch can't
+  pin it prematurely). Verified SpatialTree_ctor (0x463330) + Ball_Update (0x405E00):
+  the collision tree is rebuilt every frame from board+0x8B0+0x18 appended objects'
+  +0x18 clones, so a one-shot translate of the Level's own tracks persists across
+  rebuilds (the source is already translated).
+- Removed the translation from the render hook (it could latch geom_translated with 0
+  built verts, blocking the Present driver); the hook keeps only the world-matrix
+  position for visuals.
+- Log files renamed: `mknp_custom_entities.log` (+ _catapult, _debug) per MAKYUNI.
+
 ## v55n_10 — TimeButton SOLID — port the catapult's proven collision translation (all 3 tree lists + submesh + strips)
 - MAKYUNI: "port all its functions to our cEnt Timebutton" — mirrored the PROVEN-solid
   catapult collision translation (cEnt_catapult_rotate_collision_verts).
