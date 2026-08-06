@@ -6,6 +6,11 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.6: E:WATERFLOW now uses numbers 1-8 instead of N/S/E/W, enabling
+ *     diagonals. Format: E:WATERFLOW(N). 1-8 = N,NE,E,SE,S,SW,W,NW
+ *     clockwise from North. Diagonal directions split the force across
+ *     both axes by 1/sqrt(2) so push magnitude is equal in all 8.
+ *
  * v7.5: Reworked running water. E:WATERFLOW-<dir> is now handled as a
  *     subset of E:WATER: it does everything plain E:WATER does (flag,
  *     damp, capture Y), then sets a per-ball flow direction flag
@@ -84,10 +89,10 @@
  *     entirely (in_water = 0, surface/prev_submersion reset, NO grace
  *     period — the exit is final). Repeated triggers are idempotent;
  *     re-entering water via E:WATER re-activates the flag normally.
- *     E:WATERFLOW-<dir> is handled as a SUBSET of E:WATER — it does all
+ *     E:WATERFLOW(N) is handled as a SUBSET of E:WATER — it does all
  *     the normal E:WATER entry, then sets a flow direction flag parsed
- *     from the name (1=N,2=S,3=E,4=W). E:WATEREXIT is checked first so
- *     it isn't swallowed by the E:WATER prefix match.
+ *     from the name (1=N,2=NE,3=E,4=SE,5=S,6=SW,7=W,8=NW). E:WATEREXIT is
+ *     checked first so it isn't swallowed by the E:WATER prefix match.
  *     Then calls the original DispatchCollisionEvents so the game processes
  *     the collision normally. E:LIMIT events still set 0x2E9 normally.
  *
@@ -331,19 +336,19 @@ static void diag_log(const char *msg)
 #define BALL_FORCE_Y            0x174
 #define BALL_FORCE_Z            0x178
 
-/* E:WATERFLOW direction suffix length (e.g. "E:WATERFLOW-N") */
+/* E:WATERFLOW direction suffix (e.g. "E:WATERFLOW(3)") */
 #define WATERFLOW_PREFIX        "E:WATERFLOW"
 #define WATERFLOW_PREFIX_LEN    13
 
-/* Flow direction flags (stored per-ball in water_state_t.flow_dir)
- *   0 = no current (calm water)
- *   1 = N (-Z), 2 = S (+Z), 3 = E (+X), 4 = W (-X)
- * Per-frame current force applied to the ball force accumulators. */
+/* Flow direction (stored per-ball in water_state_t.flow_dir). 8-way
+ * compass, clockwise from North; 0 = no current (calm water).
+ *   1=N(-Z) 2=NE(+X,-Z) 3=E(+X) 4=SE(+X,+Z)
+ *   5=S(+Z) 6=SW(-X,+Z) 7=W(-X) 8=NW(-X,-Z)
+ * Per-frame current force is applied to the ball force accumulators;
+ * diagonals (2,4,6,8) split the force across both axes by 1/sqrt(2)
+ * so the push magnitude is identical in every direction. */
 #define FLOW_NONE   0
-#define FLOW_N      1
-#define FLOW_S      2
-#define FLOW_E      3
-#define FLOW_W      4
+#define FLOW_FORCE_NORMALIZE 0.7071067811865476f /* 1/sqrt(2), for diagonals */
 #define DEFAULT_FLOW_FORCE 0.18f
 
 /* Collision entry struct: pair of pointers
@@ -423,7 +428,7 @@ typedef struct {
     float water_surface_y;   /* ball's Y at moment of contact */
     int   grace_frames;      /* frames remaining of death suppression after leaving water */
     float prev_submersion;   /* last frame's submersion (for surface crossing detection) */
-    int   flow_dir;          /* running-water direction flag: 0=none,1=N,2=S,3=E,4=W */
+    int   flow_dir;          /* running-water direction: 0=none, 1-8 = N,NE,E,SE,S,SW,W,NW */
 } water_state_t;
 
 static water_state_t g_states[MAX_BALLS];
@@ -485,8 +490,8 @@ static int parse_flow_direction(const char *name);
 
 /* Trigger function — called from the hooked DispatchCollisionEvents.
  * Does the E:WATER entry trigger: set flag, damp velocity, capture Y.
- * If the plane is E:WATERFLOW-<dir>, additionally sets the running-water
- * direction flag (flow_dir). Plain E:WATER has flow_dir = 0 (calm). */
+ * If the plane is E:WATERFLOW(N), additionally sets the running-water
+ * direction flag (flow_dir 1-8). Plain E:WATER has flow_dir = 0 (calm). */
 static void trigger_water_contact(void *ball_ptr, const char *name)
 {
     DWORD ball = (DWORD)ball_ptr;
@@ -598,27 +603,31 @@ static void trigger_water_exit(void *ball_ptr)
     }
 }
 
-/* Parse the compass direction suffix from an E:WATERFLOW-<dir> name.
- * Returns the flow direction flag (1=N,2=S,3=E,4=W), or FLOW_NONE (0)
+/* Parse the direction number from an E:WATERFLOW(N) name.
+ * Returns the flow direction flag (1-8), or FLOW_NONE (0)
  * if there is no flow / the direction is unknown. A plain E:WATER name
  * (no "FLOW" suffix) naturally returns FLOW_NONE = calm water.
- *   N = -Z, S = +Z, E = +X, W = -X */
+ *   format: E:WATERFLOW(N)  where N is 1-8
+ *   1=N(-Z) 2=NE(+X,-Z) 3=E(+X) 4=SE(+X,+Z)
+ *   5=S(+Z) 6=SW(-X,+Z) 7=W(-X) 8=NW(-X,-Z) */
 static int parse_flow_direction(const char *name)
 {
     /* Plain E:WATER has no "FLOW" suffix -> calm. */
     if (!name || !strstr(name, "FLOW")) return FLOW_NONE;
 
-    /* Direction char is right after the "E:WATERFLOW" prefix.
-     * Skip the prefix, then any '-' separator, then read the letter.
-     * Scanning the whole name could match unrelated chars (e.g. the
-     * leading 'E' of "E:WATERFLOW"), so start at the known offset. */
+    /* The direction digit is right after the "E:WATERFLOW" prefix, in the
+     * form E:WATERFLOW(N) or E:WATERFLOWN. Start at the known offset. */
     const char *d = name + WATERFLOW_PREFIX_LEN;
-    if (*d == '-' || *d == ':') d++;
+    if (*d == '(' || *d == '-' || *d == ':') d++;
 
-    if (*d == 'N' || *d == 'n') return FLOW_N;
-    if (*d == 'S' || *d == 's') return FLOW_S;
-    if (*d == 'E' || *d == 'e') return FLOW_E;
-    if (*d == 'W' || *d == 'w') return FLOW_W;
+    if (*d >= '1' && *d <= '8') {
+        int n = *d - '0';
+        /* validate: must be a 1-digit token ("E:WATERFLOW(3)" or
+         * "E:WATERFLOW3"), so multi-digit garbage doesn't read as 1 */
+        char after = d[1];
+        if (after == ')' || after == '\0')
+            return n;
+    }
     return FLOW_NONE;
 }
 
@@ -822,20 +831,24 @@ static void __cdecl apply_water_physics(DWORD ball)
      * engine consumes these accumulators with proper collision response,
      * so the current pushes/carries the ball without teleporting it, and
      * is naturally capped by drag/friction exactly like other forces.
-     * flow_dir: 1=N(-Z) 2=S(+Z) 3=E(+X) 4=W(-X); 0 = calm, no force. */
+     * flow_dir: 1=N 2=NE 3=E 4=SE 5=S 6=SW 7=W 8=NW; 0 = calm, no force. */
     if (st->flow_dir != FLOW_NONE) {
         float *fx = (float*)((DWORD)ball + BALL_FORCE_X);
-        float *fy = (float*)((DWORD)ball + BALL_FORCE_Y);
         float *fz = (float*)((DWORD)ball + BALL_FORCE_Z);
         float f = g_cfg.flow_force;
+        /* Diagonal components (2,4,6,8) scaled by 1/sqrt(2) so the
+         * resulting push magnitude equals f in every direction. */
         switch (st->flow_dir) {
-            case FLOW_N: *fz -= f; break;  /* push toward -Z */
-            case FLOW_S: *fz += f; break;  /* push toward +Z */
-            case FLOW_E: *fx += f; break;  /* push toward +X */
-            case FLOW_W: *fx -= f; break;  /* push toward -X */
-            default:     break;            /* shouldn't happen */
+            case 1:  *fz -= f;                                          break; /* N  */
+            case 2:  *fx += f * FLOW_FORCE_NORMALIZE; *fz -= f * FLOW_FORCE_NORMALIZE; break; /* NE */
+            case 3:  *fx += f;                                          break; /* E  */
+            case 4:  *fx += f * FLOW_FORCE_NORMALIZE; *fz += f * FLOW_FORCE_NORMALIZE; break; /* SE */
+            case 5:  *fz += f;                                          break; /* S  */
+            case 6:  *fx -= f * FLOW_FORCE_NORMALIZE; *fz += f * FLOW_FORCE_NORMALIZE; break; /* SW */
+            case 7:  *fx -= f;                                          break; /* W  */
+            case 8:  *fx -= f * FLOW_FORCE_NORMALIZE; *fz -= f * FLOW_FORCE_NORMALIZE; break; /* NW */
+            default: break; /* shouldn't happen */
         }
-        (void)fy; /* Y component unused (horizontal current) */
     }
 }
 
@@ -1185,7 +1198,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.5 loaded (E:WATERFLOW force currents) ===");
+    diag_log("=== Water mod v7.6 loaded (E:WATERFLOW 1-8 directions) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1234,7 +1247,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.5 DLL attaching ===");
+        diag_log("=== Water mod v7.6 DLL attaching ===");
 
         load_real_bass();
         {
