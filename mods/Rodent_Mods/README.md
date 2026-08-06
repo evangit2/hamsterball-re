@@ -17,6 +17,7 @@ The HB+ (`plus_*`) versions are maintained under `mods/- 🟣 │ PLUS mods/`.
 | level_warp              | `WARP(Name)` zones for level transitions    | plus_level_warp              |
 | no_pause                | Disable pause during races                  | plus_no_pause                |
 | water_mod               | Change water behavior                       | plus_water_mod               |
+| water_visuals           | Water bubbles + splash sound                | plus_water_visuals           |
 
 ## WIP Mods
 
