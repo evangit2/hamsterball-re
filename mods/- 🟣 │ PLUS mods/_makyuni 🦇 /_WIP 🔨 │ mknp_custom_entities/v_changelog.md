@@ -1,4 +1,24 @@
-## v55n_13 — TimeButton SOLID — root fix: translate mesh SOURCE before ctor (native-matching, no tree writes)
+## v55n_14 — TimeButton SOLID — found the offending offset via MAKYUNI's log; fixed +0x2C list + tree pre-ctor
+- MAKYUNI tested v55n_13: STILL NON-SOLID. Her log captured the EXACT failure:
+  `TBtranslate meshworld enter mw=0x0C78EE50` → `TBtx mb_count=0` → silent return.
+  The pre-ctor translate FIRED but read the WRONG MeshBuffer list offset.
+- ROOT CAUSE READ FROM LOG: I translated the mesh before the ctor (good — Stands_ctor
+  clones its trees at ctor), but read the MeshBuffer list at mw+0x30/mw+0x438 — which on a
+  standalone loaded MeshWorld reads a PACKED-buffer/PADDING field = 0. So `mb_count=0`,
+  no strips/tree translated, button stayed baked at origin -> non-solid.
+- FIX (v55n_14):
+  1. MeshBuffer list read as the EMBEDDED ATHENALIST at mw+0x2C (count +0x4, items +0x40C)
+     — the PROVEN catapult offsets (cEnt_catapult_rotate_collision_verts).
+  2. ALSO translate the mesh's +0x18 spatial TREE items — Stands_ctor (0x462850) CLONES
+     mesh+0x18 into obj+0x18 at 0x462937/0x462951 (call 0x4532b0); that clone is the
+     solidity source. Translating strips alone still leaves the cloned tree at origin.
+     (Tree items: embedded AthenaList count +0x4, items +0x40C, each +0/+4/+8 = pos.)
+  3. Pre-ctor only (kept) — translates BEFORE TimeButton_ctor so Stands_ctor builds the
+     tree at the spawn point. Safe: own freshly-loaded mesh, not yet in any game list.
+  4. Present-driver translate (#if 0 DISABLED) — now redundant; would double-translate.
+- Zero game-owned tree writes (no crash; v55n_8/v55n_11 cause avoided). Wine ALIVE 42s.
+- NOTE: v55n_13 shipped BEFORE this analysis was possible — its only functional change was
+  granular logging. v55n_14 is the real fix.
 - MAKYUNI tested v55n_12: NO crash, but STILL NON-SOLID. Log had no "geom translated"
   line (the Present-driver translate silently early-returned / never reached).
 - DECISIVE native decompile (TimeButton_ctor 0x436C10 + render-once 0x43DC40):
