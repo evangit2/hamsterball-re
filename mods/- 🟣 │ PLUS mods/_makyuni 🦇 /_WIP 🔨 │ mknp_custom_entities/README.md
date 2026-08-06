@@ -175,4 +175,4 @@ All mod-side functions use the `cEnt_` prefix to distinguish them from game orig
 
 ## Log File
 
-The mod writes to `custom_entities.log` in the game directory for debugging.
+The mod writes to `mknp_custom_entities.log` in the game directory for debugging.

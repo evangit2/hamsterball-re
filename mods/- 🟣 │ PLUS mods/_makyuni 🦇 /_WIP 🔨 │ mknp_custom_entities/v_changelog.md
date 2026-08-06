@@ -1,3 +1,5 @@
+- Log file renamed: `mknp_custom_entities.log` (+ `mknp_custom_entities_catapult.log`, `mknp_custom_entities_debug.log`) per MAKYUNI request.
+
 ## v55n_9 — TimeButton solidity — REAL geometry translation (no more octree mutation)
 - v55n_8's spatial-tree ITEM translation was WRONG and CRASHED at start
   (0001:00043353, 00:00:06, Update) — it mutated octree node data in
