@@ -927,7 +927,7 @@ static void __thiscall cEnt_catapult_render(DWORD this_, char param_1, int param
         {
             static int rlog = 0;
             if ((++rlog & 0x3F) == 1) {
-                FILE* df = fopen("custom_entities_catapult.log", "a");
+                FILE* df = fopen("mknp_custom_entities_catapult.log", "a");
                 if (df) {
                     fprintf(df, "CATAPULT RENDER: this=0x%08X renderLevel=0x%08X arm_angle=%.2f draw=%d\n",
                         this_, renderLevel, cs->arm_angle, g_in_draw_phase);
@@ -1696,7 +1696,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
 
     /* Diagnostic: log any collision event name that looks like a catapult event */
     if (event_name && (_strnicmp(event_name, "E:CAT", 5) == 0 || _strnicmp(event_name, "CATAPULT", 8) == 0)) {
-        FILE* cdf = fopen("custom_entities_catapult.log", "a");
+        FILE* cdf = fopen("mknp_custom_entities_catapult.log", "a");
         if (cdf) {
             fprintf(cdf, "COLLISION_EVENT: name='%s' data0=0x%08X data1=0x%08X\n",
                 event_name, collision_data ? collision_data[0] : 0, collision_data ? collision_data[1] : 0);
@@ -1711,7 +1711,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
         int i;
         DWORD hit_obj = (DWORD)collision_data[0];
         int matched = 0;
-        FILE* cdf = fopen("custom_entities_catapult.log", "a");
+        FILE* cdf = fopen("mknp_custom_entities_catapult.log", "a");
         if (cdf) {
             fprintf(cdf, "E:CATAPULT collides with player ball (ball=0x%08X, hit_obj=0x%08X, event='%s')\n",
                 (DWORD)ball, hit_obj, event_name);
@@ -1725,7 +1725,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                     if (pfn_Catapult_Launch) {
                         pfn_Catapult_Launch((void*)g_catapults[i].obj);
                         matched = 1;
-                        cdf = fopen("custom_entities_catapult.log", "a");
+                        cdf = fopen("mknp_custom_entities_catapult.log", "a");
                         if (cdf) {
                             fprintf(cdf, "E:CATAPULT is triggering its event (catapult=0x%08X) -> Catapult_Launch\n",
                                 g_catapults[i].obj);
@@ -1751,7 +1751,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
             }
             if (best >= 0 && best_dist < 250000.0f) {
                 pfn_Catapult_Launch((void*)g_catapults[best].obj);
-                FILE* cdf = fopen("custom_entities_catapult.log", "a");
+                FILE* cdf = fopen("mknp_custom_entities_catapult.log", "a");
                 if (cdf) {
                     fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM fallback closest catapult obj=0x%08X -> Catapult_Launch\n",
                         g_catapults[best].obj);
@@ -4332,7 +4332,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
  * v55m_42i: also loads sounds\\Catapult.ogg for the 50-frame launch sound. */
 static void cEnt_load_dropin_sample(FILE* logfile) {
     FILE* lf = logfile;
-    if (!lf) lf = fopen("custom_entities_catapult.log", "a");
+    if (!lf) lf = fopen("mknp_custom_entities_catapult.log", "a");
     if (!real_BASS_SampleLoad) {
         if (lf) fprintf(lf, "CATAPULT: BASS_SampleLoad not available\n");
         if (lf != logfile) fclose(lf);
@@ -4379,7 +4379,7 @@ static void cEnt_load_dropin_sample(FILE* logfile) {
  * else StreamCreateFile+StreamPlay. */
 static void cEnt_play_dropin_sound(FILE* logfile) {
     FILE* lf = logfile;
-    if (!lf) lf = fopen("custom_entities_catapult.log", "a");
+    if (!lf) lf = fopen("mknp_custom_entities_catapult.log", "a");
     if (!g_dropin_sample) {
         if (lf) fprintf(lf, "CATAPULT: no dropin sample loaded\n");
         if (lf != logfile) fclose(lf);
@@ -4443,7 +4443,7 @@ static void cEnt_play_dropin_sound(FILE* logfile) {
  * Same fallbacks as cEnt_play_dropin_sound. */
 static void cEnt_play_catapult_sound(FILE* logfile) {
     FILE* lf = logfile;
-    if (!lf) lf = fopen("custom_entities_catapult.log", "a");
+    if (!lf) lf = fopen("mknp_custom_entities_catapult.log", "a");
     if (!g_catapult_sample) {
         if (lf) fprintf(lf, "CATAPULT: no catapult sample loaded\n");
         if (lf != logfile) fclose(lf);
@@ -5390,7 +5390,7 @@ static int cEnt_catapult_rotate_collision_verts(CatapultState* cs) {
                 DWORD s0 = strip_items[0];
                 if (s0 && !IsBadReadPtr((void*)s0, 0x60)) {
                     float* v0 = (float*)s0;
-                    FILE* lf = fopen("custom_entities_catapult.log", "a");
+                    FILE* lf = fopen("mknp_custom_entities_catapult.log", "a");
                     if (lf) {
                         fprintf(lf, "CATAPULT: mb[%d] strip0 v0=(%.1f,%.1f,%.1f) angle=%.1f strips=%d\n",
                             ri, v0[0], v0[1], v0[2], cs->arm_angle, strip_count);
@@ -5441,7 +5441,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
 
     if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
         if (log_now) {
-            df = fopen("custom_entities_catapult.log", "a");
+            df = fopen("mknp_custom_entities_catapult.log", "a");
             if (df) {
                 fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d (no ball)\n",
                     g_catapult_heartbeat, ball, g_catapult_count);
@@ -5474,7 +5474,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
                 !IsBadReadPtr((void*)(board + 0x878), 0x20)) {
                 if (*(BYTE*)(board + 0x874) != 0) continue;  /* paused → skip */
             } else if (log_now) {
-                df = fopen("custom_entities_catapult.log", "a");
+                df = fopen("mknp_custom_entities_catapult.log", "a");
                 if (df) {
                     fprintf(df, "CATAPULT: PAUSEGATE board=0x%08X (bad read — gate disabled)\n", board);
                     fclose(df);
@@ -5513,7 +5513,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             if (log_now) {
                 int rot = cEnt_catapult_rotate_collision_verts(cs);
                 if (rot > 0) cs->verts_rotating = 1;
-                df = fopen("custom_entities_catapult.log", "a");
+                df = fopen("mknp_custom_entities_catapult.log", "a");
                 if (df) {
                     if (rot > 0) {
                         fprintf(df, "CATAPULT: rotated %d verts (angle=%.2f) spin=%.3f rot=%d mbufs=%d mw_tree=%d/%d tree18=%d/%d tree848=%d/%d\n",
@@ -5548,7 +5548,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
         int in_reset_zone   = (horiz_sq < 22500.0f && dy > -60.0f && dy < 70.0f);
 
         if (log_now || (horiz_sq < 62500.0f && dy > -180.0f && dy < 120.0f)) {
-            df = fopen("custom_entities_catapult.log", "a");
+            df = fopen("mknp_custom_entities_catapult.log", "a");
             if (df) {
                 fprintf(df, "CATAPULT: dist ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f "
                     "trigger=%d reset=%d launch=%d cd=%d was=%d\n",
@@ -5568,7 +5568,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             cs->launch_dx = -(float)sin(yaw);
             cs->launch_dz = -(float)cos(yaw);
             cEnt_play_dropin_sound(df);  /* v55m_42j: play dropin at windup start */
-            df = fopen("custom_entities_catapult.log", "a");
+            df = fopen("mknp_custom_entities_catapult.log", "a");
             if (df) {
                 fprintf(df, "CATAPULT: WINDUP ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f\n",
                     ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, horiz, dy);
@@ -5600,7 +5600,7 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
             *(float*)(ball + BALL_FORCE_Y) += launch_vert;
             *(float*)(ball + BALL_FORCE_Z) += dzz * launch_horiz;
 
-            df = fopen("custom_entities_catapult.log", "a");
+            df = fopen("mknp_custom_entities_catapult.log", "a");
             if (df) {
                 fprintf(df, "CATAPULT: LAUNCH! ball=(%.1f,%.1f,%.1f) cat=(%.1f,%.1f,%.1f) dir=(%.2f,%.2f)\n",
                     ball_x, ball_y, ball_z, cs->x, cs->y, cs->z, dxz, dzz);
@@ -7158,7 +7158,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
             /* Debug: log once per second OR when in outer range */
             if (do_log || (in_outer && g_gluebie_debug_count < 200)) {
                 g_gluebie_debug_count++;
-                FILE* df = fopen("custom_entities_debug.log", "a");
+                FILE* df = fopen("mknp_custom_entities_debug.log", "a");
                 if (df) {
                     float dist = 0.0f;
                     if (dist_sq > 0.0f) dist = sqrtf(dist_sq);
@@ -7214,7 +7214,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     int pc = *(int*)(ball + 0x814);
                     /* Debug: log the flags */
                     if (g_gluebie_debug_count < 120) {
-                        FILE* df2 = fopen("custom_entities_debug.log", "a");
+                        FILE* df2 = fopen("mknp_custom_entities_debug.log", "a");
                         if (df2) {
                             fprintf(df2, "  >> bc=%d pc=%d list_items=%p ours=%d\n",
                                 bc_flag, pc, (void*)*(DWORD*)(ball + 0xC1C),
@@ -7294,7 +7294,7 @@ static void cEnt_gluebie_proximity_check(DWORD board) {
                     g_gluebie_particles_created_ball = ball;
                     /* Debug: log particle creation result */
                     {
-                        FILE* df3 = fopen("custom_entities_debug.log", "a");
+                        FILE* df3 = fopen("mknp_custom_entities_debug.log", "a");
                         if (df3) {
                             fprintf(df3, "  >> PARTICLES CREATED: part_count after=%d\n",
                                 *(int*)(ball + 0x814));
@@ -8104,7 +8104,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     load_config();
 
     /* Open log file */
-    snprintf(g_log_path, MAX_PATH, "%s\\custom_entities.log", g_game_dir);
+    snprintf(g_log_path, MAX_PATH, "%s\\mknp_custom_entities.log", g_game_dir);
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
