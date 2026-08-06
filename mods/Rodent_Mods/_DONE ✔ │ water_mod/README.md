@@ -161,6 +161,32 @@ In the Raptisoft level editor, add a collision mesh object named `E:WATER`.
 The object needs at least one face (triangle). The Y coordinate of the ball
 at the moment of contact determines the water surface height.
 
+## Water Visuals (Separate Plane)
+
+Water **physics** and water **visuals** are two separate meshes. The `E:WATER`
+plane is invisible by design (`E:` sets `no_render`, `+0x863`), so the visible
+surface is a second plane placed at surface height:
+
+- **Physics plane:** `E:WATER` / `E:WATERFLOW(N)` / `E:WATEREXIT` — invisible
+  collider that drives all water physics.
+- **Visual plane:** `O:WATER(NOCOLLIDE)` — translucent, no collision, purely
+  cosmetic.
+
+Why `O:WATER(NOCOLLIDE)`:
+
+- `O:` prefix → `is_translucent` (`+0x862`): alpha blend ON, Z-write OFF —
+  the see-through water look, ball visible behind it.
+- `(NOCOLLIDE)` suffix: `Level_LoadMeshes` (0x465860) skips collision-mesh
+  creation for this geometry — the ball passes through, no event fires.
+- The water event match is `_strnicmp(name, "E:WATER", ...)` on the prefix,
+  so an `O:`-prefixed plane can never accidentally trigger water physics.
+
+Setup: set the visual plane's Y to the water surface you want to see, and keep
+the `E:WATER` plane at the same Y so the physics surface matches what the
+player sees. Give the material a diffuse alpha < 1.0 (e.g. 0.4–0.6) for the
+blend, plus a blue/teal texture or material color. Add `(WANTZ)` if it needs
+correct depth sorting against other translucent meshes.
+
 ## Configuration
 
 See `hamsterball_water.ini` for all options:
