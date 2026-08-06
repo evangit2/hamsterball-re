@@ -1,3 +1,18 @@
+## v55n_16 — TimeButton solidity via PROVEN catapult pattern; REVERTED the crashing v55n_15 write
+- MAKYUNI tested v55n_15: CRASH `0001:000570A4` (FinishLoad, 8s). Note 0001:000570A4 = VA
+  0x40570A4 = `fcomps 0x4(%edi)` — an FPU compare against a tree-item pointer.
+- ROOT CAUSE + REGRESSION: v55n_15 translated the freshly-loaded SOURCE mesh's +0x18 tree items
+  IN PLACE pre-ctor. That corrupts a tree the board still walks -> FinishLoad faults on the items.
+  v55n_14 (tree write never ran — gated behind mb_count=0) was NON-SOLID but had NO crash. The
+  in-place source-mesh tree write IS the crash, same class as v55n_8/v55n_11 HEAP CORRUPTION.
+- FIX: removed the pre-ctor source-mesh translate (case 45). Ported the PROVEN catapult pattern:
+  translate the BUILT collision Level's mw+0x18 tree items (mw = *(DWORD*)(collLevel+0x08))
+  NON-CUMULATIVELY from saved originals every frame (idempotent, crash-free). New fn
+  cEnt_timebutton_translate_tree(), driven from Present hook, gated on board+0x874 (pause).
+- This mirrors how the catapult (PROVEN solid, zero crashes) writes collision — it NEVER mutates
+  a mesh in place; it rewrites the built Level's tree from saved copies.
+- md5: `542510425fb77704bdd9df3e0136bdc9`. Wine ALIVE 42s (title only — button un-reachable).
+
 ## v55n_15 — TimeButton SOLID — translate the +0x18 COLLISION TREE (not the strips) pre-ctor
 - MAKYUNI tested v55n_14: STILL NON-SOLID. Log: `TBtx mb_count=0 (AthenaList@+0x2C count+0x4)` then silent return.
 - ROOT CAUSE (proven from native binary, NOT a guess): Stands_ctor (0x462850) at 0x462937 does
