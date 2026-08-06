@@ -1,29 +1,31 @@
-# Hamsterball Water Physics Mod v7.4
+# Hamsterball Water Physics Mod v7.5
 
 Custom water physics for Hamsterball via bass.dll proxy.
 
-## What's New in v7.4
+## What's New in v7.5
 
-**Running water currents (`E:WATERFLOW-<dir>`).**
+**Running water currents reworked as a subset of `E:WATER`.**
 
 Place a collision plane named `E:WATERFLOW-N`, `E:WATERFLOW-S`,
-`E:WATERFLOW-E`, or `E:WATERFLOW-W` in a custom level. Touching it carries the
-ball in that compass direction while it's in the water:
+`E:WATERFLOW-E`, or `E:WATERFLOW-W` in a custom level. It is handled as a
+**subset of `E:WATER`** — it does everything calm water does (set the flag,
+damp velocity on entry, capture the surface Y), then sets a per-ball flow
+direction flag:
 
 - **N** = −Z, **S** = +Z, **E** = +X, **W** = −X
-- The ball is carried along at `CurrentStrength` speed (default `0.15`,
-  configurable in the INI; higher = stronger flow)
-- **Capped-river model:** the ball accelerates up to the flow speed and is
-  carried along smoothly — it doesn't infinitely speed up, and you can fight
-  it by inputting against the current
+- Flow direction flags: 0 = none (calm), 1 = N, 2 = S, 3 = E, 4 = W
 
-Rules for combining water object types:
-- Touching `E:WATERFLOW-<dir>` sets the current (and implies you're in water)
-- Touching plain `E:WATER` (calm) clears any running-water current
-- Touching `E:WATEREXIT` turns water off entirely (with no grace period)
+While in running water, each frame the mod adds a **constant force**
+(`CurrentStrength`, default `0.18`) to the ball's **force accumulators**
+(`ball+0x170/174/178`) in the flow direction — the same accumulator
+mechanism the game uses for movement. The physics engine consumes these with
+proper collision response, so the current pushes/carries the ball smoothly
+and is naturally capped by drag, and you can fight it by inputting against
+it.
 
-`E:WATERFLOW` is matched before the plain `E:WATER` prefix so it's never
-mistaken for calm water.
+- Touching plain `E:WATER` (calm) → flow direction 0, no force
+- Touching `E:WATERFLOW-<dir>` → does all the `E:WATER` entry, then sets direction 1-4
+- Touching `E:WATEREXIT` → water off entirely (no grace period)
 
 ## What's New in v7.3
 
@@ -104,7 +106,7 @@ Four hooks working together:
 
 | Hook | Address | Type | Purpose |
 |------|---------|------|---------|
-| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — detect E:WATER (calm trigger), E:WATEREXIT (turn water flag OFF), E:WATERFLOW-<dir> (set running-water current) |
+| 1 | 0x40C5D0 | Trampoline (8B) | DispatchCollisionEvents — E:WATER entry (flag + damp + capture Y); E:WATERFLOW-<dir> = same + flow_dir flag 1-4; E:WATEREXIT turns water OFF |
 | 2 | 0x407BB4 | Code cave | Phase 15 — per-frame drag/buoyancy while in_water (with FPU save/restore, clear 0x2E9, dizzy immunity) |
 | 3 | 0x407377 | Code cave | Type 5 suppressor — block ONLY the 0x2E9 death-flag write while submerged/in grace (camera snap + split logic intact) |
 | 4 | 0x4CF3C0+8 | Vtable swap | Ball_FallDeath — suppress death during in_water + grace period |
@@ -113,9 +115,9 @@ Four hooks working together:
 
 No MeshWorld scanning, no background threads. The game's own collision system tells the mod when the ball touches water:
 
-1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires the trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`, clear `ball+0x2E9` (falling flag), and clear `ball+0x2EC` (bounce counter). When the name is `E:WATEREXIT`, it instead turns the water flag OFF entirely and immediately, with no grace period. When the name is `E:WATERFLOW-<dir>`, it sets a running-water current that carries the ball toward `<dir>`. `E:WATEREXIT` and `E:WATERFLOW` are matched before `E:WATER` so the prefix match never swallows them.
+1. **Hook 1** (DispatchCollisionEvents trampoline) intercepts all collision events. When the collision object's name starts with `E:WATER`, it fires the trigger: set `in_water` flag, reduce velocity by `entry_damping`, capture ball Y as `water_surface_y`, clear `ball+0x2E9` (falling flag), and clear `ball+0x2EC` (bounce counter). `E:WATERFLOW-<dir>` is a subset: it does all of the above, then sets `flow_dir` (1-4) parsed from the name. When the name is `E:WATEREXIT`, it instead turns the water flag OFF entirely and immediately, with no grace period. `E:WATEREXIT` is matched before `E:WATER` so the prefix match never swallows it.
 
-2. **Hook 2** (Phase 15 code cave) runs every frame. If `in_water` is set, applies drag (all velocity axes), horizontal drag (extra on X/Z), and buoyancy (upward acceleration proportional to submersion depth). Also clears `ball+0x2E9`, clears `ball+0x2EC` (bounce counter), and sets `ball+0x2F4` (dizzy_immunity_timer) to `GRACE_PERIOD_FRAMES` every frame while submerged. Saves/restores full FPU state via FNSAVE/FRSTOR.
+2. **Hook 2** (Phase 15 code cave) runs every frame. If `in_water` is set, applies drag (all velocity axes), horizontal drag (extra on X/Z), and buoyancy (upward acceleration proportional to submersion depth). Also clears `ball+0x2E9`, clears `ball+0x2EC` (bounce counter), and sets `ball+0x2F4` (dizzy_immunity_timer) to `GRACE_PERIOD_FRAMES` every frame while submerged. If `flow_dir` is non-zero, adds a constant force (`CurrentStrength`) to the force accumulators (`ball+0x170/174/178`) in that direction. Saves/restores full FPU state via FNSAVE/FRSTOR.
 
 3. **Hook 3** (Type 5 collision suppressor) prevents geometric mesh-penetration from writing the `ball+0x2E9` (falling/death flag) while submerged or within the grace period. It skips only the flag-write instruction, so the camera snap and viewport still follow the falling ball. E:LIMIT events still set 0x2E9 through DispatchCollisionEvents, so the ball can still die from level boundaries.
 
