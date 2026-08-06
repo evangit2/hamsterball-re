@@ -2,11 +2,13 @@
 
 # Water Mod (HB+ v2.1)
 
-Water physics mod for Hamsterball — HB+ API version of the bass.dll proxy water_mod v7.
+Water physics mod for Hamsterball — HB+ API version of the bass.dll proxy water_mod, now at **v7.8 parity**.
 
 ## Features
 
 - **E:WATER collision event** triggers water entry (velocity damping + surface Y capture)
+- **E:WATEREXIT** turns water OFF entirely with **no grace period** (checked before the E:WATER prefix so it's never swallowed)
+- **E:WATERFLOW(N)** = E:WATER subset + running-water current: constant per-frame force into the force accumulators (`ball+0x170/174/178`) in the flow direction. N is 1-8 **clockwise from North** (1=N −Z, 2=NE, 3=E +X, 4=SE, 5=S +Z, 6=SW, 7=W −X, 8=NW; diagonals split by 1/√2). Direction **switches immediately** when touching a different `E:WATERFLOW(N)` plane inside the same body of water; plain `E:WATER` clears the flow.
 - **Per-frame physics**: drag, horizontal drag, and buoyancy while submerged
 - **Dizzy immunity** while submerged (clears bounce counter + sets immunity timer)
 - **Fall death suppression** during water + 120-frame grace period after exit
@@ -22,6 +24,7 @@ All parameters adjustable in the Options menu:
 | Drag | 0.02 | 0.0-0.1 | Per-frame velocity drag on all axes |
 | Horizontal Drag | 0.04 | 0.0-0.1 | Extra drag on X/Z axes |
 | Buoyancy | 1.0 | 0.0-2.0 | Upward acceleration at full submersion |
+| Current Strength | 0.18 | 0.0-1.0 | Per-frame force of E:WATERFLOW running water (force accumulators) |
 
 Toggle on/off with the "Water Physics" button.
 
@@ -29,9 +32,12 @@ Toggle on/off with the "Water Physics" button.
 
 Place `E:WATER` collision objects in custom levels. The object needs at least one face (triangle). The Y coordinate of the ball at contact determines the water surface height.
 
+- `E:WATERFLOW(N)` — running water, N = flow direction 1-8 clockwise from North
+- `E:WATEREXIT` — turns water fully off, no grace period (checked before E:WATER)
+
 ## Differences from bass.dll proxy version
 
-| Component | bass.dll (v7) | HB+ (this) |
+| Component | bass.dll (v7.8) | HB+ (this) |
 |---|---|---|
 | E:WATER detection | DispatchCollisionEvents trampoline (asm) | `onEventPlaneCollide` callback |
 | Per-frame physics | Phase 15 code cave + FPU save/restore (asm) | `onBallUpdate` callback (no FPU issues!) |
