@@ -1,3 +1,25 @@
+v55n_19 — TimeButton crash FIXED (evidence-backed revert to crash-free baseline)
+------------------------------------------------------------
+Root cause (git 91f4097e = crash-free baseline, user-confirmed):
+  v55n_14 relied on PRE-CTOR cEnt_translate_meshworld_verts(mesh, px,py,pz) and
+  had the Present-driver translate #if 0'd  -> NO crash (only non-solid).
+  v55n_16/17/18 REMOVED the pre-ctor translate and ACTIVATED a Present-driver
+  loop that WRITES to the BUILT collision Level (obj+0x10E0) mesh/tree every
+  frame  -> reintroduced ntdll 0001:0004717E at Update (the persistent crash).
+  The private vtable copy + render hook + +0x10EC registration were IDENTICAL
+  in both and are NOT the cause.
+Fix:
+  - RESTORED pre-ctor cEnt_translate_meshworld_verts(mesh, px,py,pz) in case 45,
+    so Stands_ctor (0x462850) clones the collision trees at the spawn position.
+  - DISABLED the Present-driver cEnt_translate_collision_strips loop (#if 0) on
+    the built Level — matches v55n_14's proven crash-free state.
+  - Kept native-parity +0x2578 OBJ append + +0x10EC registration + render hook,
+    other entities untouched.
+Definitive evidence: SpeedCylinder (case 39), the crash-free sibling, uses the
+native vtable with no Present-driver write; v55n_14 had this loop off.
+Crash-test: title screen survived 48s (past audio-init window). Real Warm-Up
+button-spawn crash still requires user's machine (Wine can't reach level start).
+
 ## v55n_18 — TimeButton CRASH FIX: NATIVE PARITY (real root cause found via Ghidra)
 - MAKYUNI tested v55n_17: STILL crashed (ntdll 0001:0004717E, RUNTIME 00:00:08, Update,
   FinishLoad(OK), board=0x0AFB0048). The translate now ran but still silently no-op'd
