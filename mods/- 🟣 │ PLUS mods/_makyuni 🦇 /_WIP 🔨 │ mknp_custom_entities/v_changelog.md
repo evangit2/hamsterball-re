@@ -1,3 +1,33 @@
+v55n_22 — TimeButton ZERO-REGISTRATION isolation test (trial-and-error mode)
+------------------------------------------------------------
+MAJOR CORRECTION: 0001:0004717E is NOT ntdll.dll. Module 1 = the MAIN EXE,
+so VA = 0x44717E. Disasm shows 0x44717B = `movb $0x3,0x14(%esp)`, crash at
+byte 4 = MID-INSTRUCTION / EIP corruption. The function is ScoreDisplay_dtor
+(0x4470D0, vtable 0x4D67E8) = the "EXTRA TIME:" score popup teardown. It walks
+obj+0x1140/0x1124/0x1138/0x110C/0x10EC/0x10D0 calling free + BaseObject_Cleanup.
+It runs a frame AFTER spawn (log ends "No GRID points found"). So the game is
+destroying a ScoreDisplay at spawn and the return-address chain is corrupted.
+
+Trial-and-error premise: every one of v55n_16..21 had SOME mod registration
+active (MeshBuffer+0x47C write, board+0x10EC+scene append, self-ref). We have
+NEVER tested the native TimeButton_ctor + mesh + native vtable COMPLETELY ALONE
+with zero mod interference. SpeedCylinder registers and works, so registration
+alone is not the cause, but v55n_22 removes EVERYTHING:
+  - alloc + memset + pfn_TimeButton_ctor(obj,board,px,py,pz,mesh)
+  - write +0x10D4/8/C = spawn pos
+  - track in g_timebuttons[]
+  - NO MeshBuffer+0x47C write, NO board+0x10EC/scene-tree append, NO self-ref.
+
+Outcome oracle:
+  - STOPS crashing -> registration step is the trigger -> re-add one piece at
+    a time (MeshBuffer+0x47C next).
+  - STILL crashes  -> the native ctor+mesh+vtable path itself is broken here
+    -> abandon native TimeButton_ctor; use the crash-safe PopCylinder-visual +
+    mod-side-press pattern.
+Binaries: bass.dll md5 1c3189a6aabb0c3f6cff36dbcfeb838e (source only; Wine
+title-screen 44s ALIVE -- Wine cannot reach the level-start spawn path, so the
+real verdict is only readable on real Windows).
+
 v55n_21 — TimeButton: TRUE root cause = board+0x2578 append (not geometry)
 ------------------------------------------------------------
 Your v55n_20 log was the breakthrough. It showed:
