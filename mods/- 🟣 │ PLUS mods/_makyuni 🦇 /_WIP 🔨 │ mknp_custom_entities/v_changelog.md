@@ -1,3 +1,24 @@
+v55n_33 — TimeButton: press re-enabled, ALL shared-logf/tb.log I/O removed
+------------------------------------------------------------
+USER (v55n_32): dropped on button -> dizzy, NOTHING else, NO crash.
+   => The helper was NOT called at all and the button stayed fully solid.
+      The button + collider + ball-resting-on-it are EXONERATED (confirmed
+      twice: v55n_27 fell on it dizzy no crash; v55n_32 same).
+   => The crash is ENTIRELY inside the press-helper code path.
+
+v55n_31 (press enabled) crashed: the press branch wrote the SHARED main
+logf FILE* from the Present hook, while the background entity thread ALSO
+writes logf every frame with no lock. v55n_32 (helper off) had ZERO file
+I/O -> stable. v55n_33 removes ALL tb.log churn (df stays NULL) and logs
+the press to a dedicated thread-private mknp_custom_entities_press.log,
+NEVER touching the shared logf from the Present hook.
+
+  - If STABLE (press fires, no crash) -> racing FILE* writes were the bug.
+  - If still CRASHES -> the remaining press-time writes are just
+    tb->pressed=1 (mod-static) + one fopen/fprintf/fclose on press.log,
+    narrowing it further.
+
+bass.dll md5 81344e93dfec9340b669b3f081bbf4b4. Wine title 46s clean.
 v55n_32 — TimeButton A/B: press helper DISABLED (collider kept solid)
 ------------------------------------------------------------
 USER (v55n_31): no sound, still crashes 0001:0003F0D5 ntdll at 18s on press.
