@@ -1,3 +1,37 @@
+v55n_24 — TimeButton via PROVEN SpeedCylinder_ctor (decisive test + candidate fix)
+------------------------------------------------------------
+Your v55n_23 log was the pivot. Mesh swap CHANGED the crash:
+  LevelUp-Button      -> ntdll heap corruption 0001:0004717E (~8s)
+  LevelUp-SpeedCylinder -> exe crash 0001:000527F1 = VA 0x4527F1 (corrupt EIP,
+                           objdump: lands mid-data = EIP pointing at garbage)
+Both at Update ~8s, both with the NATIVE TimeButton_ctor (0x436C10).
+
+Decompiled both ctors side-by-side. They are nearly IDENTICAL:
+  TimeButton_ctor 0x436C10: Stands_ctor -> vtable 0x4D5830 -> pos ->
+                            Level_RenderCtor collision Level at +0x10E0 ->
+                            +0x10E4=0, +0x10E5=1. NEITHER appends a board list.
+  SpeedCylinder_ctor 0x436A20: same Stands_ctor + Level_RenderCtor at +0x10E0,
+                            +0x150C bytes.
+Only real differences: vtable + a few field inits.
+
+CONCLUSION: the native TimeButton_ctor path itself is broken when spawned on a
+NON-race board (Warm-Up / any level). The mesh only changes WHICH heap block
+breaks. Since SpeedCylinder_ctor is PROVEN crash-free + solid on ANY level
+(case 39 works on your machine), v55n_24 spawns the TimeButton using
+SpeedCylinder_ctor with FULL case-39 registration, feeds it the BUTTON mesh,
+and tracks it as a TimeButton (mod-side N:EXTRATIME press handler).
+
+Also fixed: an orphaned duplicate alloc (TIMEBUTTON_SIZE + SPEEDCYLINDER_SIZE)
+that a poor edit had left — would HAVE leaked heap; removed. (This bug was NOT
+in shipped v55n_22/23; it only appeared during this edit.)
+
+Outcome oracle:
+  - STABLE -> TimeButton_ctor was the culprit; keep this. Button solid+pressable
+              on any level.
+  - CRASHES -> the button MESH itself (LevelUp-Button geometry) is broken on
+              non-race levels -> swap TimeButton to a custom geometry.
+Binaries: bass.dll md5 b3bd13acfa07499ddf64c977d2bc589a. Wine title 42s ALIVE.
+
 v55n_23 — mesh isolation: TimeButton uses the WORKING SpeedCylinder mesh
 ------------------------------------------------------------
 Your v55n_22 log + crash header was the key correction:
