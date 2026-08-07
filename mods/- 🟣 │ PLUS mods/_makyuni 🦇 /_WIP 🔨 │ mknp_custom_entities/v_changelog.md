@@ -1,3 +1,25 @@
+v55n_28 — TimeButton press: widen vertical+radius (diag proved why)
+------------------------------------------------------------
+User tb log (v55n_27) is GOLD — it proved the press gate math, not the hook:
+  TB: 810 ball=(767.4,-114.4,-508.7) horiz=17.7  <- ball DEAD-CENTER over button
+  TB:   [0] vertical window miss (dy=115.9 need [-60,60])
+
+The ball was right on top of the button (17 units horizontally!) but failed
+the vertical window: ball center sat up to ~116 units above the button ref Y
+(-230.4) as it arced over. My [-60,+60] window was too tight to ever catch it.
+
+FIX: TIMEBUTTON_PRESS_RADIUS_SQ 900->1600 (40u), DY range [-60,+60]->[-160,+160].
+Frame 840 (dy=61.7, horiz=27.3) now presses. Trace shows the ball clearly
+passes through the gorilla-tape-sized envelope on its arc.
+
+Also: (r=0) in log is just %d printing the float constant 900.0f as int --
+real compare drove the log correctly (horiz actually vs 900 -> the failures
+were real distance too far, not int-truncation). Cosmetic only, harmless.
+
+bass.dll md5 c01af6572039cebfd14148a9cc18504e. Wine 55s clean.
+PRESS still via main-thread proximity, one-shot latch. Expect: roll over
+button -> PRESSED line + sink + EXTRA TIME reward on this build.
+
 v55n_26 — TimeButton press fixed via MAIN-THREAD PROXIMITY (no game detour)
 ------------------------------------------------------------
 STATE: button is SOLID, renders, does NOT rotate (v55n_25). Only press was dead.
