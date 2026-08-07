@@ -12,8 +12,10 @@
  *   + "dropinshort" sound. (Two distinct effects, switched by entrance speed.)
  * - Sparse while submerged: bubbles appear at a random 1.0-1.5s rate while the
  *   ball is in water AND moving (pauses when idle). "few and far between".
- * - Rise-to-equilibrium pop: each bubble floats up (constant size) to the water
- *   surface where the ball floats, freezes, then pops after a random 0.5-1.5s.
+ * - Rise-to-equilibrium pop: each bubble floats up (constant size, rendered at
+ *   1/4 native size) to the water surface where the ball floats, freezes, then
+ *   pops after a random 0.5-1.5s. Splash bubbles launch downward at the ball's
+ *   entry Y velocity, then buoy back up; sparse bubbles drift up gently.
  * - Self-drive on non-Dizzy/Master boards: the bubble list (board+0x3B00) is
  *   only iterated+rendered natively by DizzyBoard_Update (0x41D512) and
  *   Master FUN_00420da0 (0x420DA0). On those boards the game drives it; on
@@ -93,7 +95,10 @@
 /* ├─ Rise-to-surface animation state.
  * Since we bypass the native update (which shrinks size 0.95×/frame), we track
  * each bubble's float behavior in a side table keyed by object pointer. */
-#define BUBBLE_RISE_SPEED       2.0f    /* world units / second up */
+#define NATIVE_BUBBLE_SIZE      25.0f       /* native TarBubble scale */
+#define BUBBLE_SIZE_MULT        0.25f       /* render bubbles at 1/4 native size */
+#define BUBBLE_RISE_SPEED       2.0f        /* world units / second up (terminal) */
+#define BUBBLE_BUOYANCY         0.08f       /* per-frame pull of vy toward rise speed */
 #define FREEZE_MIN_MS           500
 #define FREEZE_MAX_MS           1500
 
@@ -102,6 +107,7 @@
 struct BubbleAnim {
     DWORD obj;              /* native bubble pointer (key) */
     float target_y;         /* equilibrium surface Y to float up to */
+    float vy;               /* upward/downward velocity (units/sec) */
     int   phase;            /* 0 = rising, 1 = frozen, 2 = popped */
     int   freeze_ms_left;   /* countdown before pop when frozen */
 };
@@ -206,8 +212,9 @@ static void anim_remove(DWORD obj) {
     for (int i = 0; i < MAX_BUBBLES; i++) if (g_anims[i].obj == obj) { g_anims[i].obj = 0; return; }
 }
 
-/* Spawn one native bubble at (x,y,z) rising toward `target_y`. */
-static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z, float target_y) {
+/* Spawn one native bubble at (x,y,z) rising toward `target_y`, with initial
+ * vertical velocity `vy0` (units/sec, negative = downward). */
+static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z, float target_y, float vy0) {
     if (!board || !app) return;
     if (IsBadReadPtr((void*)(board + BOARD_BUBBLE_LIST), 0x418)) return;
 
@@ -221,11 +228,14 @@ static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z, floa
     if (!obj) return;
 
     g_bubble_ctor(obj, (void*)app, x + jx, y + jy, z + jz);
+    /* Scale down to 1/4 native size so bubbles read small, not ball-sized. */
+    *(float*)((char*)obj + BUBBLE_SCALE) = NATIVE_BUBBLE_SIZE * BUBBLE_SIZE_MULT;
     g_athena_append((void*)(board + BOARD_BUBBLE_LIST), obj);
 
     BubbleAnim* an = anim_alloc((DWORD)obj);
     if (an) {
         an->target_y = target_y;   /* + 8 so the visible sprite sits at the surface */
+        an->vy = vy0;
         an->phase = 0;             /* rising */
     }
 }
@@ -279,10 +289,15 @@ static void drive_bubbles(DWORD board, bool paused) {
 
             if (an->phase == 0) {   /* rising */
                 float cy = *(float*)(an->obj + BUBBLE_POS_Y);
-                float rise = BUBBLE_RISE_SPEED / 60.0f;
-                cy += rise;
-                if (cy >= an->target_y) {
-                    cy = an->target_y;
+                float clampY = an->target_y - (NATIVE_BUBBLE_SIZE * BUBBLE_SIZE_MULT);
+                /* Terminal behavior: ease vy back toward +rise speed (buoyancy),
+                 * so a fast downward entry kick slows, stops, and floats up. */
+                float targetVy = BUBBLE_RISE_SPEED;
+                an->vy = targetVy + (an->vy - targetVy) * (1.0f - BUBBLE_BUOYANCY);
+                /* snapshot-ish frame dt ~1/60; integrate */
+                cy += an->vy / 60.0f;
+                if (cy >= clampY) {
+                    cy = clampY;
                     an->phase = 1;  /* freeze */
                     an->freeze_ms_left = FREEZE_MIN_MS +
                         (int)(rng_unit() * (float)(FREEZE_MAX_MS - FREEZE_MIN_MS));
@@ -402,11 +417,13 @@ static void entry_splash(DWORD ball) {
     WaterVisState* st = get_vis_state(ball);
     if (st && st->water_surface_y != 0.0f) eq_y = st->water_surface_y;
 
-    /* Entry splash spawns 25 units below the water surface. */
+    /* Entry splash spawns 25 units below the water surface. All burst bubbles
+     * start moving downward at the ball's entry Y velocity, then buoy up. */
     float base_y = eq_y - 25.0f;
+    float burst_vy = -(vy);   /* negative = downward */
 
     for (int i = 0; i < n && i < 40; i++)
-        spawn_bubble(board, app, px, base_y, pz, eq_y);
+        spawn_bubble(board, app, px, base_y, pz, eq_y, burst_vy);
 
     void* snd = *(void**)(app + (fast ? APP_SND_DROPIN : APP_SND_DROPINSHORT));
     if (snd && !IsBadReadPtr(snd, 4)) {
@@ -489,7 +506,8 @@ static void apply_visuals(DWORD ball) {
                      *(float*)(ball + BALL_POS_X),
                      *(float*)(ball + BALL_POS_Y),
                      *(float*)(ball + BALL_POS_Z),
-                     st->water_surface_y);
+                     st->water_surface_y,
+                     0.0f);   /* sparse bubbles start still, just buoy up */
     }
     st->sparse_timer = interval;
 }

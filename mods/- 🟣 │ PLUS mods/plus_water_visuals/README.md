@@ -9,6 +9,8 @@ Visual companion to the Water Mod (`plus_water_mod`) — handles the *look and s
   - fast entry → more bubbles + `dropin` sound
   - slow entry → fewer bubbles + `dropinshort` sound
 - **Float to equilibrium, freeze, random pop**: each bubble floats up at constant size to the water's equilibrium surface (where the ball floats), holds there, then pops after a random 0.5–1.5s. So bubbles rise to the surface line and burst on a slight delay — no instant vanish, no premature shrink.
+- **Burst velocity**: splash bubbles launch downward at the ball's entry Y velocity, then buoy back up to the surface (fast entries push bubbles deeper before they rise). Sparse bubbles just drift up gently.
+- **Small bubbles**: bubbles render at **1/4 the native TarBubble size** (native ~25 units → ~6.25), so they read as water bubbles rather than ball-sized spheres.
 - **Sparse bubbles while submerged AND moving**: after the splash, bubbles appear at a **random 1–1.5s rate** while the ball stays in water **and is moving** — if the ball goes idle, spawns pause until it moves again. ("Few and far between", organic timing.)
 - **Random splash count**: entry splash count varies by ±1 every entry.
 - **Native bubbles**: uses the game's own TarBubble object (vtable `0x4D6E48`), a round textured sprite — no custom sprites or mesh construction.
