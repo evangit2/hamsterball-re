@@ -1,3 +1,22 @@
+v55n_38 - TimeButton popup shows "+5" instead of "+0" (ScoreObject slot fix)
+------------------------------------------------------------
+BUG: The "EXTRA TIME:" popup showed "+0" even though the +500 bonus was granted
+(confirmed by press.log: REWARD +500, countdown 5313->5813).
+
+ROOT CAUSE (Ghidra, ScoreObject render 0x44C160):
+  ScoreObject's render reads *(param_2 + 0x20) as the displayed number, then
+  divides by 100. Native UpRaceCollisionEvents passes param_2 = App+PID*0xA0+0x5CC
+  (the TIMER BASE), so +0x20 lands on the +0x5EC bonus field = 500 -> "+5".
+  v55n_37 passed param_2 = App+PID*0xA0+0x5EC (the bonus field directly),
+  so +0x20 read +0x60C (garbage -> 0 -> "+0").
+
+FIX (v55n_38):
+  Pass base + 0x5CC (the timer base, same as native) to ScoreObject_ctor.
+  The popup now reads the correct +0x5EC bonus = 500/100 = "+5".
+  Added native Timer_Decrement parity (+0x10 = +0x1C-100, +0x2A=1) so the
+  popup auto-dies after 100 ticks instead of lingering.
+
+NOW: press the button -> popup shows "EXTRA TIME: +5", countdown jumps +500.
 v55n_37 - TimeButton EXTRA TIME is now VISIBLE: bump the real clock + ScoreObject popup
 ------------------------------------------------------------
 USER (v55n_35 logs): reward logged but no visible extra time. v55n_36 dropped the
