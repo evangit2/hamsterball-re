@@ -1,3 +1,31 @@
+v55n_23 — mesh isolation: TimeButton uses the WORKING SpeedCylinder mesh
+------------------------------------------------------------
+Your v55n_22 log + crash header was the key correction:
+  MODULE: C:\Windows\SYSTEM32\ntdll.dll
+  CRASH_ADDRESS: 0001:0004717E
+So 0001:0004717E IS ntdll.dll. My "it is EXE 0x44717E (ScoreDisplay dtor)"
+correction was WRONG — I took the 0x4717E offset and blindly added 0x400000,
+but module index 1 in the crash header = ntdll, not the exe. The original
+"ntdll at Update" reading was right. Sorry for the detour.
+
+What v55n_22 PROVED (ZERO registration, still crashed same addr ~8s):
+  - MeshBuffer+0x47C write       -> NOT the cause
+  - board+0x10EC + scene tree    -> NOT the cause
+  - self-ref +0x47C              -> NOT the cause
+  - translate / board+0x2578 / press path (already ruled out earlier)
+
+What is LEFT that differs from the WORKING SpeedCylinder (case 39):
+  - ctor fn      : TimeButton_ctor 0x436C10  vs SpeedCylinder_ctor 0x436A20
+  - mesh         : levels\LevelUp-Button vs levels\LevelUp-SpeedCylinder
+
+v55n_23 changes ONLY the mesh to LevelUp-SpeedCylinder (keeps TimeButton_ctor
++ native vtable + zero registration). Outcome:
+  - STOPS crashing -> LevelUp-Button geometry is the culprit
+  - STILL crashes  -> TimeButton_ctor/vtable path is the culprit
+
+Binaries: bass.dll md5 ba53204e0fb653751b3bec0965fc8057. Wine title-screen
+46s ALIVE (cannot reach level start; real verdict on real Windows).
+
 v55n_22 — TimeButton ZERO-REGISTRATION isolation test (trial-and-error mode)
 ------------------------------------------------------------
 MAJOR CORRECTION: 0001:0004717E is NOT ntdll.dll. Module 1 = the MAIN EXE,
