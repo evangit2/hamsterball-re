@@ -1,3 +1,36 @@
+v55n_29 — TimeButton press: FIX wrong sound channel (crash on press)
+------------------------------------------------------------
+User (v55n_28): press FIRED (heard the sound, latch set) but the game
+crashed the moment it happened:
+  ntdll.dll / CRASH_ADDRESS 0001:0003F0D5 / CURRENTOPERATION: Draw / ~22s
+
+ROOT CAUSE: the press sound used the WRONG channel resolution.
+  board+0x878 IS the App pointer (BOARD_APP = 0x878), NOT a sound list.
+  My press block did:
+     snd_list = *(DWORD*)(board + 0x878);   // this is APP
+     ch = *(DWORD*)(snd_list + 0x510);      // App+0x510 = garbage
+  and passed that garbage as the sound channel to Sound_Play3D(0x459860),
+  corrupting the heap -> ntdll crash during Draw.
+
+FIX: mirror the PROVEN catapult pattern (cEnt_catapult_present_check lines
+8093/8106, known-working):
+     app = *(DWORD*)(board + 0x878);        // BOARD_APP
+     ch  = *(DWORD*)(app + 0x4A8);
+     if (ch valid) Sound_Play3D(ch, ...)
+
+The reward block was already correct (app_tb = board+0x878). Only the sound
+channel was wrong. Same wrong-channel code also exists in the DEAD
+DispatchCollisionEvents N:EXTRATIME handler (line ~2020), but that hook is
+NEVER installed in this build (install_bonk_collision_hook orphaned), so it
+cannot fire and is harmless.
+
+So the ~30u-arc fix from v55n_28 CONFIRMED the trigger works and the press
+latched; this build makes the accompanying sound safe so it does not crash.
+
+bass.dll md5 afb779dfe7b255a4ce0c0804f89eaa13. Wine title 44s clean.
+EXPECT on Warm-Up: roll over button -> PRESSED, sound plays, NO crash,
+EXTRA TIME reward (single player).
+
 v55n_28 — TimeButton press: widen vertical+radius (diag proved why)
 ------------------------------------------------------------
 User tb log (v55n_27) is GOLD — it proved the press gate math, not the hook:
