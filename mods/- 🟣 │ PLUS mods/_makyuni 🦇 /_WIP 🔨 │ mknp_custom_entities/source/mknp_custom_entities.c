@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_29
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_30
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -395,10 +395,10 @@ static int __thiscall cEnt_timebutton_update_noop(void* this_) {
  * find the button entity and replicate Rotator_TriggerSound + timer reward. */
 #define MAX_TIMEBUTTONS 16
 
-/* v55n_29: forward decl — translate collision geometry (defined after the render hook). */
+/* v55n_30: forward decl — translate collision geometry (defined after the render hook). */
 static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf);
 
-/* v55n_29: shared log path (line 1105 in v55n_8). Declared here so the early
+/* v55n_30: shared log path (line 1105 in v55n_8). Declared here so the early
  * render hook can log. */
 static char g_log_path[MAX_PATH];
 
@@ -408,9 +408,9 @@ typedef struct {
     float x, y, z;    /* spawn position */
     DWORD col_level;  /* collision/render Level at obj+0x10E0 */
     int   pressed;    /* 1 = already pressed (latch mirror) */
-    int   geom_translated; /* v55n_29: 1 = collision tree translated to spawn pos */
+    int   geom_translated; /* v55n_30: 1 = collision tree translated to spawn pos */
     DWORD orig_vtable18; /* v55n_5: saved original vtable[18] (0x45E0E0) for render hook */
-    /* v55n_29: saved coll-Level mw+0x18 tree originals — the PROVEN catapult
+    /* v55n_30: saved coll-Level mw+0x18 tree originals — the PROVEN catapult
      * pattern. Non-cumulative translate from saved originals every frame. */
     DWORD tree_orig_mw;  /* saved originals for built-coll-Level mw+0x18 items */
     int tree_count_mw;   /* item count at mw+0x18 */
@@ -442,7 +442,7 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
         ((render_t)0x0045E0E0)(this_, param_1, param_2);
         return;
     }
-    /* v55n_29: geometry translation moved OUT of this hook into the Present
+    /* v55n_30: geometry translation moved OUT of this hook into the Present
      * driver (gluebie_present_helper) — this render hook is NOT guaranteed to
      * fire (the cEnt button is never registered in a render/update list), and
      * a latch here with 0 built verts would pin geom_translated prematurely.
@@ -471,7 +471,7 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
     return;
 }
 
-/* v55n_29+: Translate a collision Level's collision geometry so the ball hits
+/* v55n_30+: Translate a collision Level's collision geometry so the ball hits
  * where the render shows it. Confirmed via Ghidra MeshWorld_BuildVertexBuffer
  * (0x46F8D0) + the proven catapult rotation (cEnt_catapult_rotate_collision_verts):
  *   MeshWorld+0x2C = MeshBuffer AthenaList (count +0x30, items +0x438)
@@ -485,8 +485,8 @@ static void __thiscall cEnt_timebutton_render(DWORD this_, char param_1, int par
  * v55n_6/v55n_7 read wrong list offsets -> 0 verts; v55n_8 mutated octree node
  * items -> crash. This is safe vertex-data translation. Returns verts translated. */
 static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy, float dz, FILE* logf) {
-    /* v55n_29>: granular diagnostics — log EVERY early-return so a level-start
-     * test log reveals exactly which offset/check fails (v55n_29 showed no
+    /* v55n_30>: granular diagnostics — log EVERY early-return so a level-start
+     * test log reveals exactly which offset/check fails (v55n_30 showed no
      * "geom translated" line at all = silent early return). */
     if (logf) fprintf(logf, "  ROTATER: TBtranslate enter coll=0x%08X d=(%.1f,%.1f,%.1f)\n", coll_level, dx, dy, dz);
     if (!coll_level || coll_level < 0x10000 || IsBadReadPtr((void*)coll_level, 0x100)) { if(logf) fprintf(logf,"  ROTATER:   TBtx fail: bad coll_level\n"); return 0; }
@@ -495,8 +495,8 @@ static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy,
     if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) { if(logf) fprintf(logf,"  ROTATER:   TBtx fail: bad mw\n"); return 0; }
     int total = 0;
 
-    /* v55n_29: REMOVED the collision TREE-ITEM translation here. It crashed
-     * every time it ran (v55n_8 at ctor, v55n_29 at Update 0001:0004717E).
+    /* v55n_30: REMOVED the collision TREE-ITEM translation here. It crashed
+     * every time it ran (v55n_8 at ctor, v55n_30 at Update 0001:0004717E).
      * confirmed: 0x44717E crash EIP is mid-instruction = SEH-resume of heap
      * corruption from writing game-owned collision tree items at
      * coll_level+0x18/0x848/mw+0x18 (the catapult's "tree rotation" operates
@@ -575,11 +575,11 @@ static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy,
     return total;
 }
 
-/* v55n_29: TimeButton collision-tree translate — the PROVEN catapult pattern.
+/* v55n_30: TimeButton collision-tree translate — the PROVEN catapult pattern.
  * The catapult translates the BUILT collision Level's mw+0x18 tree items
  * (mw = *(DWORD*)(collLevel+0x08)) NON-CUMULATIVELY from saved originals every
  * frame. This is crash-free because it never mutates the source mesh in place
- * (v55n_29's mistake -> 0001:000570A4) — it writes the built Level's tree from
+ * (v55n_30's mistake -> 0001:000570A4) — it writes the built Level's tree from
  * saved copies, idempotently. For TimeButton we TRANSLATE (not rotate) by
  * (x,y,z) = spawn offset. Returns 1 if tree_ok. */
 static int cEnt_timebutton_translate_tree(TimeButtonState* tb, FILE* logf) {
@@ -631,7 +631,7 @@ static int cEnt_timebutton_translate_tree(TimeButtonState* tb, FILE* logf) {
     return tb->tree_ok_mw;
 }
 
-/* v55n_29: Translate a loaded MeshWorld's VERTEX SOURCE by (dx,dy,dz) BEFORE
+/* v55n_30: Translate a loaded MeshWorld's VERTEX SOURCE by (dx,dy,dz) BEFORE
  * any entity ctor clones spatial trees from it. This is THE clean native-matching
  * fix for solidity: TimeButton_ctor -> Stands_ctor builds obj+0x18 collision trees
  * from the mesh at the time of construction. If the mesh is modeled near-origin
@@ -648,16 +648,16 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
     if (logf) fprintf(logf, "  ROTATER: TBtranslate meshworld enter mw=0x%08X d=(%.1f,%.1f,%.1f)\n", mw, dx, dy, dz);
     if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) { if(logf) fprintf(logf,"  ROTATER:   TBtx fail: bad mw\n"); return 0; }
     int total = 0;
-    int translated_something = 0;  /* v55n_29: any tree OR strip translated */
+    int translated_something = 0;  /* v55n_30: any tree OR strip translated */
 
-    /* ═══ v55n_29: +0x18 collision TREE FIRST, UNCONDITIONALLY ═══
+    /* ═══ v55n_30: +0x18 collision TREE FIRST, UNCONDITIONALLY ═══
      * Stands_ctor (0x462850) at 0x462937 does `add $0x18,%edi` then iterates
      * [edi+0x4]/[edi+0x40C] — i.e. mesh+0x18 is an EMBEDDED AthenaList (count
      * +0x4, items +0x40C), and it CLONES every item into this+0x18 (build-obj
      * tree). Those cloned items ARE the collision (broad-phase + exact test).
      * THIS is what must be translated. It is INDEPENDENT of the +0x2C
      * MeshBuffer/strip list — which at load-time is empty (Level_MeshWorldCtor
-     * sets +0x18=15 count but the strips are lazy). v55n_29's bug: it checked
+     * sets +0x18=15 count but the strips are lazy). v55n_30's bug: it checked
      * +0x2C FIRST, got 0, and return 0ed BEFORE ever translating +0x18 -> button
      * still non-solid. Now +0x18 runs first and is NOT gated by +0x2C. */
     {
@@ -685,7 +685,7 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
         }
     }
 
-    /* ═══ v55n_29/15: +0x2C MeshBuffer/strip list (belt-and-suspenders) ═══
+    /* ═══ v55n_30/15: +0x2C MeshBuffer/strip list (belt-and-suspenders) ═══
      * The standalone loaded MeshWorld stores its MeshBuffer list as an EMBEDDED
      * AthenaList at mw+0x2C (count +0x4, items +0x40C) — the proven catapult
      * offsets. This is the strip/vertex data (Mesh_FindClosestCollision walks
@@ -1305,7 +1305,7 @@ struct WaterWheelState {
 static struct WaterWheelState g_waterwheels[MAX_WATERWHEELS];
 static int g_waterwheel_count = 0;
 static int g_44l_present_logged = 0;  /* one-shot Present-hook proof log */
-/* (g_log_path moved to top, v55n_29) */
+/* (g_log_path moved to top, v55n_30) */
 static DWORD g_wheel_nodes[64];       /* v55m_44m: addresses of waterwheel-tree nodes */
 static int g_wheel_node_count = 0;    /*   (recorded during wheel-tree walks) */
 
@@ -3793,24 +3793,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                       * The button presses N:EXTRATIME -><- Rotator_TriggerSound (0x436CF0):
                       *   sets +0x10E4=1, +0x10E5=1, +0x10D8 -= 20.0f (sink 20 units), press sound
                       *   channel+0x510. Reward (single-player): timer slot = 500 + "EXTRA TIME:". */
-                /* v55n_29: case 45 uses the PROVEN crash-safe SpeedCylinder_ctor
+                /* v55n_30: case 45 uses the PROVEN crash-safe SpeedCylinder_ctor
                  * (0x436A20). Single alloc, no orphaned TIMEBUTTON_SIZE block. */
-                /* v55n_29: REMOVED the pre-ctor cEnt_translate_meshworld_verts(mesh,...).
-                 * v55n_29 added it and it CRASHED at 0001:000570A4 (EXE, Draw, fcomps
+                /* v55n_30: REMOVED the pre-ctor cEnt_translate_meshworld_verts(mesh,...).
+                 * v55n_30 added it and it CRASHED at 0001:000570A4 (EXE, Draw, fcomps
                  * 0x4(%edi)) — the v55n_15 signature. It writes the SOURCE mesh's +0x18
                  * tree items IN PLACE, corrupting a tree the board still walks during
                  * Draw. This is the SAME tree-corruption class as v55n_8/v55n_15.
                  * Solidity is handled by the PROVEN catapult pattern: the Present-driver
                  * calls cEnt_timebutton_translate_tree, which writes the BUILT collision
                  * Level's mw+0x18 from SAVED ORIGINALS (idempotent, never touches source). */
-                /* v55n_29 DECISIVE TEST + candidate fix: use the PROVEN crash-safe
+                /* v55n_30 DECISIVE TEST + candidate fix: use the PROVEN crash-safe
                  * SpeedCylinder_ctor (0x436A20) instead of the broken native
                  * TimeButton_ctor (0x436C10). Evidence chain:
                  *   - Both ctors decompile nearly identical (Stands_ctor + Level_RenderCtor
                  *     collision Level at +0x10E0; NEITHER appends any board list).
                  *   - The ONLY differences: vtable (0x4D5830 vs 0x4D57D0) + few field inits.
                  *   - v55n_22 (ZERO registration, native TimeButton_ctor) crashed ntdll 0x4717E.
-                 *   - v55n_29 (swapped to SpeedCylinder MESH, still native TimeButton_ctor)
+                 *   - v55n_30 (swapped to SpeedCylinder MESH, still native TimeButton_ctor)
                  *     crash MOVED to exe 0x4527F1. -> mesh shifts WHICH block breaks, so the
                  *     culprit is the TimeButton_ctor path itself.
                  *   - SpeedCylinder_ctor is PROVEN crash-free + solid on ANY level (case 39).
@@ -3823,7 +3823,7 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                 if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc TimeButton(SpeedCyl shape)\n"); return; }
                 memset(obj, 0, SPEEDCYLINDER_SIZE);
                 pfn_SpeedCylinder_ctor(obj, (void*)board, px, py, pz, 0, mesh);
-                /* v55n_29: Override the vtable to the native TimeButton vtable (0x4D5830)
+                /* v55n_30: Override the vtable to the native TimeButton vtable (0x4D5830)
                  * so the per-frame Update uses TimeButton slots (RenderOnce 0x43DC40)
                  * instead of SpeedCylinder's continuous rotation (slot 11 = 0x43D8C0).
                  * Construction is still via the PROVEN Stable SpeedCylinder_ctor; only the
@@ -5278,7 +5278,7 @@ static void cEnt_tarpit_proximity_check(DWORD board);  /* v55k_1 */
 /* Forward decls — defined below */
 static void cEnt_chomper_update(DWORD board);
 static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
-/* v55n_29: Forward decl — TimeButton proximity-press helper (main-thread Present hook). */
+/* v55n_30: Forward decl — TimeButton proximity-press helper (main-thread Present hook). */
 static void cEnt_timebutton_present_press(DWORD board);
 /* v55m_28d: Get Player 1 ball pointer from board+0x29D4 (ball AthenaList).
  * v55m_27l tried board+0x2DEC, but that list is empty. The real player ball
@@ -5326,7 +5326,7 @@ static DWORD get_ball_ptr(void) {
 #define BALL_FORCE_Y  0x174
 #define BALL_FORCE_Z  0x178
 
-/* v55n_29: TimeButton proximity-press helper — runs on MAIN THREAD via the
+/* v55n_30: TimeButton proximity-press helper — runs on MAIN THREAD via the
  * Present hook (same safe pattern as catapult/speedcyl/waterwheel). The
  * N:EXTRATIME DispatchCollisionEvents hook (install_bonk_collision_hook) is
  * NEVER installed in the current build AND its manual trampoline on that SEH
@@ -5344,8 +5344,8 @@ static DWORD get_ball_ptr(void) {
  * catapult trigger calibration). Once pressed, the latch stays 1 forever
  * (native buttons are one-shot per level).
  */
-#define TIMEBUTTON_PRESS_RADIUS_SQ  1600.0f    /* 40 units horizontal (v55n_29) */
-#define TIMEBUTTON_PRESS_DY_MIN     -160.0f    /* v55n_29: ball arcs over the button (dy up to ~120) */
+#define TIMEBUTTON_PRESS_RADIUS_SQ  1600.0f    /* 40 units horizontal (v55n_30) */
+#define TIMEBUTTON_PRESS_DY_MIN     -160.0f    /* v55n_30: ball arcs over the button (dy up to ~120) */
 #define TIMEBUTTON_PRESS_DY_MAX      160.0f
 
 static void __cdecl cEnt_timebutton_present_press(DWORD board) {
@@ -5418,20 +5418,32 @@ static void __cdecl cEnt_timebutton_present_press(DWORD board) {
             continue;
         }
 
-        /* PRESS! */
-        *(char*)((char*)tb->obj + 0x10E4) = 1;      /* latch pressed */
-        *(char*)((char*)tb->obj + 0x10E5) = 1;      /* render pressed pose */
-        *(float*)((char*)tb->obj + 0x10D8) -= 20.0f;/* sink 20 units */
+        /* PRESS! — v55n_30 minimal-isolation: strip to functional core only.
+         * The identical crash (ntdll 0x3F0D5) across v55n_28 (button sound
+         * channel) and v55n_30 (chomper channel, App+0x4A8) proves the SOUND
+         * CHANNEL is innocent. The common press action was:
+         *   +0x10E4=1 latch, +0x10E5=1 pressed-pose flag, +0x10D8-=20 sink.
+         * The +0x10E5 flag flips the TimeButton vtable into pressed-pose
+         * render and the sink moves the collision geometry — either can hit
+         * SpeedCylinder-constructed internals the native TimeButton render
+         * expects, corrupting the heap. So this build does ONLY the latch +
+         * reward. No sound, no pressed-pose flag, no sink. If it stops
+         * crashing, we know those were the culprit and re-add carefully. */
+        *(char*)((char*)tb->obj + 0x10E4) = 1;      /* latch pressed (only) */
         tb->pressed = 1;
-        if (df) fprintf(df, "TB:   [%d] **** PRESSED (latched, sunk, pressed=1) ****\n", i);
+        /* ALWAYS log the press to the MAIN log (tb log is throttled and was
+         * NULL on this non-30-frame frame, so we missed the v55n_30 press). */
+        if (logf) fprintf(logf, "  ROTATER: TimeButton PRESSED (isolated latch, entity=0x%08X, count=%d)\n", tb->obj, g_timebutton_count);
+        else {
+            FILE* plf = fopen("mknp_custom_entities_tb.log", "a");
+            if (plf) { fprintf(plf, "TB: %d **** PRESSED (isolated: latch only, no sound/sink) **** entity=0x%08X\n", tb_heartbeat, tb->obj); fclose(plf); }
+        }
+        if (df) fprintf(df, "TB:   [%d] **** PRESSED (isolated: latch only, no sound/sink) ****\n", i);
 
-        /* Press sound — FIX v55n_29/29: use the PROVEN catapult pattern.
-         * board+0x878 IS the App pointer (BOARD_APP). The native press sound
-         * channel is at App+0x4A8 (confirmed by cEnt_catapult_present_check
-         * lines 8093/8106 which work). My earlier build wrongly treated
-         * board+0x878 as a sound list and read +0x510/+0x520 off the App
-         * pointer, feeding garbage to Sound_Play3D -> ntdll heap corruption
-         * during Draw. This block now mirrors catapult exactly. */
+        /* Press sound — DISABLED v55n_30 (isolation test). Same crash with two
+         * channels (v55n_28 +0x510, v55n_30 App+0x4A8) proves sound not guilty,
+         * but isolation removes it to be sure. Will re-enable once stable. */
+#if 0
         {
             DWORD app = *(DWORD*)((char*)board + 0x878);  /* BOARD_APP */
             if (app && app > 0x10000 && !IsBadReadPtr((void*)app, 0x4C0)) {
@@ -5444,6 +5456,7 @@ static void __cdecl cEnt_timebutton_present_press(DWORD board) {
                 }
             }
         }
+#endif
 
         /* Reward (single-player only): timer slot = 500 */
         {
@@ -5988,15 +6001,15 @@ static void __cdecl gluebie_present_helper(void) {
     if (board && g_chomper_count > 0) {
         cEnt_chomper_update(board);
     }
-    /* v55n_29: DISABLED timebutton translate -- it's a NO-OP.
-     * User log (v55n_29) showed 22x "TBtx tree count=0 (bad)" -- the built
+    /* v55n_30: DISABLED timebutton translate -- it's a NO-OP.
+     * User log (v55n_30) showed 22x "TBtx tree count=0 (bad)" -- the built
      * collision Level's mw+0x18 tree is EMPTY (or trees built natively at ctor
      * pos). The proven crash-free solid sibling SpeedCylinder (case 39) does NO
      * geometry translate at all -- its solidity comes entirely from registering
      * obj+0x10E0 into board+0x10EC + scene tree + MeshBuffer+0x47C. TimeButton
      * now mirrors that exactly. Leaving this no-op disabled avoids 22x/frame
      * log spam and matches SpeedCylinder. */
-#if 0  /* v55n_29: disabled -- no-op, mirrors SpeedCylinder */
+#if 0  /* v55n_30: disabled -- no-op, mirrors SpeedCylinder */
     if (board && g_timebutton_count > 0 && *(BYTE*)(board + 0x874) == 0) {
         int ui;
         for (ui = 0; ui < g_timebutton_count; ui++) {
@@ -6011,8 +6024,8 @@ static void __cdecl gluebie_present_helper(void) {
             /* n==0 -> tree items not built yet; leave latch 0 to retry next frame */
         }
     }
-#endif /* v55n_29 */
-#if 0  /* v55n_29: replaced by the vertex-source translate above (proven pattern) */
+#endif /* v55n_30 */
+#if 0  /* v55n_30: replaced by the vertex-source translate above (proven pattern) */
     if (board && g_timebutton_count > 0 && *(BYTE*)(board + 0x874) == 0) {
         int ui;
         for (ui = 0; ui < g_timebutton_count; ui++) {
@@ -6040,7 +6053,7 @@ static void __cdecl gluebie_present_helper(void) {
     if (board && g_catapult_count > 0) {
         cEnt_catapult_present_check(board);
     }
-    /* v55n_29: TimeButton proximity-press on the MAIN THREAD. The native
+    /* v55n_30: TimeButton proximity-press on the MAIN THREAD. The native
      * N:EXTRATIME DispatchCollisionEvents hook is never installed (and its
      * manual trampoline crashes), so press via proximity here — same safe
      * Present-hook pattern as catapult. Runs before Draw, gated on pause. */
@@ -6859,7 +6872,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_29", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_30", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8317,7 +8330,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
             { "Tarbubble",        25, "levels\\_default" },         /* v55n: DECORATIVE floating bubble (native ctor 0x44FB50, vtable 0x4D6E48). Does NOT slow/sink — Gluebie(43) slows, Tarpit(44) sinks. Self-driven on all boards. */
             { "Tarpit",           44, "levels\\_default" },          /* v55k_1: N:TARPIT behavior via proximity, PopCylinder spawn + tar sinking */
-            { "Timebutton",       45, "levels\\LevelUp-Button" },    /* v55n_29: restores the BUTTON mesh. Uses proven SpeedCylinder_ctor (0x436A20) so the mesh path matters: if stable -> TimeButton_ctor was the culprit; if crashes -> button mesh itself is broken on non-race levels. */
+            { "Timebutton",       45, "levels\\LevelUp-Button" },    /* v55n_30: restores the BUTTON mesh. Uses proven SpeedCylinder_ctor (0x436A20) so the mesh path matters: if stable -> TimeButton_ctor was the culprit; if crashes -> button mesh itself is broken on non-race levels. */
             { "Tipper",            37, "levels\\Level3-Tipper" },     /* Tipper_ctor (0x437960, 0x1104) */
             { "Trapdoor",         41, "levels\\Level4-Trapdoor1" },  /* Trapdoor_ctor (0x438290, 0x10F8) */
             { "Trode",            21, "levels\\LevelDark-Trode" },   /* cEnt_Trode_ctor (ArenaStands_ctor) */
@@ -8472,7 +8485,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_29 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_30 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
