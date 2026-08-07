@@ -1,3 +1,35 @@
+v55n_34 — TimeButton root cause: stray shared-logf write in press branch
+------------------------------------------------------------
+v55n_33 STILL crashed (PRESSED fired at heart=728, crash ~6s later, ntdll
+0001:0003F0D5, Draw, 18s). Root cause of the crash is now traced precisely:
+
+The press branch had TWO writes to the SHARED main logf FILE* running on
+the PRESENT (main) thread:
+  1. the fprintf(logf,...) I removed in v55n_33 (the first one, replaced by
+     press.log), AND
+  2. a SECOND stray fprintf(logf, "TimeButton pressed by proximity"...) at
+     the very end of the press branch (line ~5505) that I MISSED.
+
+The background (entity) thread ALSO writes logf every frame with NO lock.
+TWO threads writing the same msvcrt FILE* without synchronization races its
+internal buffer/offset pointers -> silent heap corruption that does not trip
+immediately; it corrupts an allocation and crashes LATER in ntdll during a
+subsequent Draw (the 0001:0003F0D5 ~6s after the press fired). The catapult
+helper (proven stable) never writes shared logf from Present; only TimeButton
+did.
+
+v55n_34 removes that final stray fprintf(logf,...). Now the PROXIMITY PRESS
+does NOT touch the shared logf at all; the only file write is the dedicated
+thread-private mknp_custom_entities_press.log (open/write/close in-branch).
+
+  - Expected: drop on button -> PRESSED fires (press.log) -> NO crash.
+  - If it STILL crashes, the remaining press-time writes are only
+    tb->pressed=1 (mod-static) + one self-contained press.log write, so it
+    would then be the proximity logic itself, but given catapult/other
+    helpers run the same proximity pattern crash-free, the shared-logf race
+    is the overwhelmingly likely root cause.
+
+bass.dll md5 5cefde22fc10d0079f1f638257be8d64. Wine title 49s clean.
 v55n_33 — TimeButton: press re-enabled, ALL shared-logf/tb.log I/O removed
 ------------------------------------------------------------
 USER (v55n_32): dropped on button -> dizzy, NOTHING else, NO crash.
