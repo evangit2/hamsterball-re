@@ -1,3 +1,32 @@
+v55n_26 — TimeButton press fixed via MAIN-THREAD PROXIMITY (no game detour)
+------------------------------------------------------------
+STATE: button is SOLID, renders, does NOT rotate (v55n_25). Only press was dead.
+
+ROOT CAUSE of dead press:
+  1. install_bonk_collision_hook() (which patches DispatchCollisionEvents
+     0x40C5D0 and contains the N:EXTRATIME press handler) is defined but
+     NEVER called anywhere in the code — only uninstall is. So the hook is
+     never installed and the press handler never runs.
+  2. EVEN IF installed: my v53g-2 notes prove a MANUAL trampoline on that SEH
+     function (PUSH 0xFF + MOV EAX,FS:[0] prologue, 8 bytes) crashes when the
+     hook fires. The proper fix needs MinHook, not a hand-built trampoline.
+
+FIX (v55n_26): replicate the press by PROXIMITY on the MAIN THREAD in the
+Present hook — the exact safe pattern catapult/speedcyl/waterwheel already
+use (gated on board+0x874 pause flag). When the ball is within ~30 units
+horizontal and a vertical window of the button (sink depth 20.0f -> 60-unit
+window), it presses:
+  +0x10E4 = 1 (latch), +0x10E5 = 1 (pressed pose),
+  +0x10D8 -= 20.0f (sink), press sound (sound list +0x510),
+  single-player reward: timer slot (player_idx*0xA0+0x5EC+App) = 500.
+One-shot (latch stays 1, matching native one-shot buttons).
+
+Expected on Warm-Up / any level:
+  - Roll over / near the button -> it sinks, presses
+  - "EXTRA TIME:" reward + timer +500 (single player)
+  - Still solid, still no rotation
+Binaries: bass.dll md5 cd6f8e19b71ec3e91f0fc5e905e53285. Wine title 49s ALIVE.
+
 v55n_25 — TimeButton (SpeedCyl shape) + native TimeButton vtable override
 ------------------------------------------------------------
 v55n_24 WORKS: your log showed the button spawns, is solid, level runs, NO
