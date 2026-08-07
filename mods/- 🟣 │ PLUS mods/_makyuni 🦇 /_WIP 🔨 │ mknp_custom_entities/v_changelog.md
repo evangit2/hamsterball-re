@@ -1,3 +1,30 @@
+v55n_31 — TimeButton press: DECISIVE isolation (press writes NOTHING but log)
+------------------------------------------------------------
+USER (v55n_30): no sound plays; STILL crashes 0001:0003F0D5 ntdll at ~17s.
+v55n_30 had latch + reward only (sound #if 0, no sink, no pose) -> crash
+persists identically. That exonerates sound, sink, and pressed-pose.
+
+IMPORTANT CORRECTION on the crash address: MODULE = ntdll.dll, so
+0001:0003F0D5 is an ntdll-only heap offset (corruption inside an alloc/free
+routine during Draw). It does NOT map to the exe (my earlier Catapult_Update
+0x43F080+0x55 read was WRONG - that only makes sense if the crash were
+module 1 = exe, but the header names ntdll.dll). So this is generic heap
+corruption surfacing in Draw, consistent with a write-behind-object.
+
+v55n_31 therefore does the CLEANEST possible test: on press it writes
+NOTHING to memory except the mod-side tb->pressed flag + a log line.
+NO +0x10E4 latch, NO reward write, NO sound, NO sink, NO pose.
+The entity stays completely untouched. If it STILL crashes on press ->
+the crash is NOT from any press-time memory write; it is from the ball
+CONTACTING the solid TimeButton mesh during Draw (collision/render path).
+If it does NOT crash -> the latch or the reward write (or a combo) was the
+culprit and we re-add ONE at a time.
+
+NOTE: press now logs unconditionally to the MAIN log so a fired press that
+crash-renders is still captured (subject to stdio buffer flush on crash).
+
+bass.dll md5 e8a458c1c697b02474403538e669073c. Wine title 44s clean.
+
 v55n_30 — TimeButton press: ISOLATION TEST (must find real crash cause)
 ------------------------------------------------------------
 User (v55n_29): press fires but crashes. ntdll 0001:0003F0D5, Draw, ~16s.
