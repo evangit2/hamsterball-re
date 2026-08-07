@@ -12,13 +12,15 @@
  *   + "dropinshort" sound. (Two distinct effects, switched by entrance speed.)
  * - Sparse while submerged: after the splash, ~1 bubble every N seconds while
  *   the ball stays in water — "few and far between".
+ * - Rise-to-equilibrium pop: each bubble floats up (constant size) to the water
+ *   surface where the ball floats, freezes, then pops after a random 0.5-1.5s.
  * - Self-drive on non-Dizzy/Master boards: the bubble list (board+0x3B00) is
  *   only iterated+rendered natively by DizzyBoard_Update (0x41D512) and
  *   Master FUN_00420da0 (0x420DA0). On those boards the game drives it; on
- *   every other board this mod calls update (vtable[1]=0x44FBE0) + render
- *   (vtable[2]=0x44F910) itself, gated on the pause flag (board+0x874).
- * - Lifecycle (critical): bubble update does NOT free the object. The mod
- *   calls dtor 0x44FD40(obj,1) when lifetime <= 0 and on level unload.
+ *   every other board this mod runs the animation (onGameUpdate) + render
+ *   (onRenderApply), gated on the pause flag (board+0x874).
+ * - Lifecycle (critical): native bubble update does NOT free the object. The mod
+ *   calls dtor 0x44FD40(obj,1) when a bubble pops and on level unload.
  *
  * Author: RodentRacer / Hamsterbot
  */
@@ -87,6 +89,22 @@
 #define BUBBLE_POS_Z            0x10
 #define BUBBLE_SCALE            0x14
 #define BUBBLE_LIFETIME         0x18
+
+/* ├─ Rise-to-surface animation state.
+ * Since we bypass the native update (which shrinks size 0.95×/frame), we track
+ * each bubble's float behavior in a side table keyed by object pointer. */
+#define BUBBLE_RISE_SPEED       2.0f    /* world units / second up */
+#define FREEZE_MIN_MS           500
+#define FREEZE_MAX_MS           1500
+
+#define MAX_BUBBLES             512
+
+struct BubbleAnim {
+    DWORD obj;              /* native bubble pointer (key) */
+    float target_y;         /* equilibrium surface Y to float up to */
+    int   phase;            /* 0 = rising, 1 = frozen, 2 = popped */
+    int   freeze_ms_left;   /* countdown before pop when frozen */
+};
 
 /* AthenaList embedded layout */
 #define ALIST_COUNT             0x04
@@ -168,13 +186,30 @@ static float rng_unit(void) {   /* [0, 1) */
 
 static operator_new_t  g_operator_new  = (operator_new_t)OPERATOR_NEW;
 static bubble_ctor_t   g_bubble_ctor   = (bubble_ctor_t)BUBBLE_CTOR;
-static bubble_update_t g_bubble_update = (bubble_update_t)0x0044FBE0;
 static bubble_render_t g_bubble_render = (bubble_render_t)0x0044F910;
 static bubble_dtor_t   g_bubble_dtor   = (bubble_dtor_t)BUBBLE_DTOR;
 static athena_append_t g_athena_append = (athena_append_t)ATHENALIST_APPEND;
 
-/* Spawn one native bubble at (x,y,z) with tiny random jitter, append to list. */
-static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z) {
+static BubbleAnim g_anims[MAX_BUBBLES];
+
+static BubbleAnim* anim_get(DWORD obj) {
+    for (int i = 0; i < MAX_BUBBLES; i++) if (g_anims[i].obj == obj) return &g_anims[i];
+    return NULL;
+}
+static BubbleAnim* anim_alloc(DWORD obj) {
+    for (int i = 0; i < MAX_BUBBLES; i++) if (g_anims[i].obj == 0) {
+        memset(&g_anims[i], 0, sizeof(BubbleAnim));
+        g_anims[i].obj = obj;
+        return &g_anims[i];
+    }
+    return NULL;
+}
+static void anim_remove(DWORD obj) {
+    for (int i = 0; i < MAX_BUBBLES; i++) if (g_anims[i].obj == obj) { g_anims[i].obj = 0; return; }
+}
+
+/* Spawn one native bubble at (x,y,z) rising toward `target_y`. */
+static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z, float target_y) {
     if (!board || !app) return;
     if (IsBadReadPtr((void*)(board + BOARD_BUBBLE_LIST), 0x418)) return;
 
@@ -188,6 +223,12 @@ static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z) {
 
     g_bubble_ctor(obj, (void*)app, x + jx, y + jy, z + jz);
     g_athena_append((void*)(board + BOARD_BUBBLE_LIST), obj);
+
+    BubbleAnim* an = anim_alloc((DWORD)obj);
+    if (an) {
+        an->target_y = target_y;   /* + 8 so the visible sprite sits at the surface */
+        an->phase = 0;             /* rising */
+    }
 }
 
 static int bubble_list_count(DWORD board) {
@@ -227,28 +268,69 @@ static void drive_bubbles(DWORD board, bool paused) {
 
     DWORD list = board + BOARD_BUBBLE_LIST;
     if (IsBadReadPtr((void*)list, 0x418)) return;
+
+    /* ── Animation & lifecycle (rise → freeze → random pop) ── */
+    if (g_api) {
+        App* app = HBAPI(g_api).GetApp();
+        int now_ms = app ? (int)GetTickCount() : 0;
+        for (int i = 0; i < MAX_BUBBLES; i++) {
+            BubbleAnim* an = &g_anims[i];
+            if (!an->obj) continue;
+            if (IsBadReadPtr((void*)an->obj, 0x1C)) { an->obj = 0; continue; }
+
+            if (an->phase == 0) {   /* rising */
+                float cy = *(float*)(an->obj + BUBBLE_POS_Y);
+                float rise = BUBBLE_RISE_SPEED / 60.0f;
+                cy += rise;
+                if (cy >= an->target_y) {
+                    cy = an->target_y;
+                    an->phase = 1;  /* freeze */
+                    an->freeze_ms_left = FREEZE_MIN_MS +
+                        (int)(rng_unit() * (float)(FREEZE_MAX_MS - FREEZE_MIN_MS));
+                }
+                *(float*)(an->obj + BUBBLE_POS_Y) = cy;
+            } else if (an->phase == 1) {  /* frozen: hold, then pop */
+                an->freeze_ms_left -= 16;
+                if (an->freeze_ms_left <= 0) {
+                    an->phase = 2;
+                    /* pop: free + remove */
+                    DWORD obj = an->obj;
+                    an->obj = 0;
+                    /* remove from list at this index */
+                    DWORD items = *(DWORD*)(list + ALIST_ITEMS);
+                    int n = *(int*)(list + ALIST_COUNT);
+                    for (int k = 0; k < n; k++) {
+                        if (*(DWORD*)(items + k * 4) == obj) {
+                            list_remove_at(board, k);
+                            break;
+                        }
+                    }
+                    g_bubble_dtor((void*)obj, 1);
+                }
+            }
+        }
+    }
+}
+
+/* Render every live bubble. Must be called from a render context
+ * (HB+ onRenderApply). */
+static void render_bubbles(void) {
+    if (!g_api) return;
+    Scene* scene = HBAPI(g_api).GetScene();
+    if (!scene) return;
+    DWORD board = (DWORD)scene;
+    if (IsBadReadPtr((void*)board, 0x4400)) return;
+
+    DWORD vtable = *(DWORD*)board;
+    if (!vtable || IsBadReadPtr((void*)vtable, 0x80)) return;
+    DWORD upd = *(DWORD*)(vtable + BOARD_VTABLE_UPDATE1);
+    if (upd == BOARD_UPDATE_DIZZY || upd == BOARD_UPDATE_MASTER) return; /* native renders */
+
+    DWORD list = board + BOARD_BUBBLE_LIST;
+    if (IsBadReadPtr((void*)list, 0x418)) return;
     int n = *(int*)(list + ALIST_COUNT);
     if (n < 1 || n > 512) return;
     DWORD items = *(DWORD*)(list + ALIST_ITEMS);
-    if (!items || IsBadReadPtr((void*)items, (size_t)n * 4)) return;
-
-    /* Pass 1: update, free + remove expired */
-    for (int i = 0; i < n; i++) {
-        DWORD obj = *(DWORD*)(items + i * 4);
-        if (!obj || IsBadReadPtr((void*)obj, 0x1C)) { list_remove_at(board, i); i--; n--; continue; }
-        g_bubble_update((void*)obj);
-        /* lifetime lives at +0x18 as a float; update decrements it */
-        float life = *(float*)(obj + BUBBLE_LIFETIME);
-        if (life <= 0.0f) {
-            g_bubble_dtor((void*)obj, 1);   /* free (update already played pop sound) */
-            list_remove_at(board, i); i--; n--;
-        }
-    }
-
-    /* Pass 2: render */
-    n = *(int*)(list + ALIST_COUNT);
-    if (n < 1 || n > 512) return;
-    items = *(DWORD*)(list + ALIST_ITEMS);
     if (!items) return;
     for (int i = 0; i < n; i++) {
         DWORD obj = *(DWORD*)(items + i * 4);
@@ -279,6 +361,7 @@ static void clean_bubbles(void) {
     }
     *(int*)(list + ALIST_COUNT) = 0;
     memset(g_states, 0, sizeof(g_states));
+    memset(g_anims, 0, sizeof(g_anims));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -314,8 +397,13 @@ static void entry_splash(DWORD ball) {
     int n = fast ? g_burst : (g_burst / 3);
     if (n < 2) n = 2;
 
+    /* Equilibrium = captured water surface Y for this ball */
+    float eq_y = px;   /* safe default */
+    WaterVisState* st = get_vis_state(ball);
+    if (st && st->water_surface_y != 0.0f) eq_y = st->water_surface_y;
+
     for (int i = 0; i < n && i < 40; i++)
-        spawn_bubble(board, app, px, py, pz);
+        spawn_bubble(board, app, px, py, pz, eq_y);
 
     void* snd = *(void**)(app + (fast ? APP_SND_DROPIN : APP_SND_DROPINSHORT));
     if (snd && !IsBadReadPtr(snd, 4)) {
@@ -386,7 +474,8 @@ static void apply_visuals(DWORD ball) {
         spawn_bubble(board, app,
                      *(float*)(ball + BALL_POS_X),
                      *(float*)(ball + BALL_POS_Y),
-                     *(float*)(ball + BALL_POS_Z));
+                     *(float*)(ball + BALL_POS_Z),
+                     st->water_surface_y);
     }
     st->sparse_timer = interval;
 }
@@ -461,7 +550,9 @@ static void __thiscall game_update(void*) {
 static void __thiscall scene_end(void*) { clean_bubbles(); }
 static void __thiscall level_start(void*) { clean_bubbles(); }
 
-static void __thiscall render_apply(void*, void*, float*) {}
+static void __thiscall render_apply(void*, void*, float*) {
+    if (g_enabled) render_bubbles();
+}
 static void __thiscall cycle_option_change(void*, const char*, const char*) {}
 static void __thiscall text_render(void*) {}
 static void __thiscall ball_bump(void*, void*, void*) {}
