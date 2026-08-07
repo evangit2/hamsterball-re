@@ -211,10 +211,11 @@ static void spawn_bubble(DWORD board, DWORD app, float x, float y, float z, floa
     if (!board || !app) return;
     if (IsBadReadPtr((void*)(board + BOARD_BUBBLE_LIST), 0x418)) return;
 
-    /* Small horizontal jitter + vertical spread so bursts look natural */
-    float jx = (rng_unit() - 0.5f) * 12.0f;
-    float jz = (rng_unit() - 0.5f) * 12.0f;
-    float jy = rng_unit() * 6.0f;
+    /* Spawn spread: X/Z ±25, Y 0 to -25 (below the anchor) so bubbles fan out
+     * around the launch point instead of stacking in a grid. */
+    float jx = (rng_unit() - 0.5f) * 50.0f;   /* ±25 */
+    float jz = (rng_unit() - 0.5f) * 50.0f;   /* ±25 */
+    float jy = -(rng_unit() * 25.0f);         /* 0 to -25 */
 
     void* obj = g_operator_new(0x1C);
     if (!obj) return;
@@ -401,8 +402,11 @@ static void entry_splash(DWORD ball) {
     WaterVisState* st = get_vis_state(ball);
     if (st && st->water_surface_y != 0.0f) eq_y = st->water_surface_y;
 
+    /* Entry splash spawns 25 units below the water surface. */
+    float base_y = eq_y - 25.0f;
+
     for (int i = 0; i < n && i < 40; i++)
-        spawn_bubble(board, app, px, py, pz, eq_y);
+        spawn_bubble(board, app, px, base_y, pz, eq_y);
 
     void* snd = *(void**)(app + (fast ? APP_SND_DROPIN : APP_SND_DROPINSHORT));
     if (snd && !IsBadReadPtr(snd, 4)) {
