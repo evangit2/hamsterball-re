@@ -1,3 +1,25 @@
+v55n_36 — TimeButton: tournament EXTRA TIME + reused-board respawn fix
+------------------------------------------------------------
+USER (v55n_35): everything works, no crash, but no EXTRA TIME in Tournament;
+and the button was missing during one tournament run (appeared on restart).
+
+ROOT CAUSES (from the press.log: 2 PRESSED lines, only 1 REWARD):
+  1. EXTRA TIME skipped in tournament: the reward write was gated on
+     profile+0x10==0 && profile+0x11==0 (native single-player gate). In
+     tournament one of those flags is set, so the +500 write silently
+     never ran (the 2nd PRESSED in the log got no REWARD line).
+     FIX: drop the single-player gate. Always grant +500 to the pressing
+     player (player_idx*0xA0 + 0x5EC + App), with player_idx range-guard
+     and a player-0 fallback if the slot is unreadable. The timer-slot
+     field is the same the game decrements in every mode.
+  2. Button missing on some tournament loads: the spawn gate keyed only on
+     board == g_spawned_board, but board pointers are REUSED across
+     tournament races, so a same-board new race looked already-spawned.
+     FIX: also track g_spawned_level and gate on BOTH (level is read fresh
+     before the gate). A new race with a reused board gets a new level
+     pointer -> re-spawns.
+
+bass.dll md5 5c7a55438cf3005678b3c7958e829a03. Wine title 56s clean.
 v55n_35 — TimeButton: FULL native press behavior re-enabled
 ------------------------------------------------------------
 USER (v55n_34): press log appeared, NO crash. Root cause confirmed:
