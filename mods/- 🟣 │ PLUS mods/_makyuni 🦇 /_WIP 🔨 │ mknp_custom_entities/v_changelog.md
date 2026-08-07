@@ -1,3 +1,28 @@
+v55n_37 - TimeButton EXTRA TIME is now VISIBLE: bump the real clock + ScoreObject popup
+------------------------------------------------------------
+USER (v55n_35 logs): reward logged but no visible extra time. v55n_36 dropped the
+single-player gate but still wrote the WRONG field.
+
+ROOT CAUSE (Ghidra, Board_UpdateRaceState 0x41B080):
+  The visible race clock / HUD countdown is NOT App+PID*0xA0+0x5EC.
+  board+0x362C holds per-player timer POINTERS (App+PID*0xA0+0x5CC). The game
+  DECREMENTS the field at ptr+0x1C = App+PID*0xA0+0x5E8 every frame, and THAT
+  (+0x5E8) is what the HUD displays. The +0x5EC field we were writing is only a
+  game-over GATE (checked <1), never shown on screen.
+  Native UpRaceCollisionEvents writes +0x5EC=500 AND pops a visible
+  EXTRA TIME ScoreObject (ScoreObject_ctor 0x44BE80, appended to board+0x8b8).
+  The popup is the ONLY visible feedback on press.
+
+FIX (v55n_37):
+  1) ADD 500 to the countdown slot App+PID*0xA0+0x5E8 (the real visible clock).
+  2) Write +0x5EC=500 too (native parity).
+  3) Spawn the native EXTRA TIME ScoreObject popup via ScoreObject_ctor
+     (0x44BE80) and append it to board+0x8b8 (the game reward/render list) so
+     the reward is actually SEEN.
+  No single-player gate: works in Warm-Up, Time Trial, AND Tournament.
+
+NOW: press the button -> the on-screen clock jumps +500 and a floating
+EXTRA TIME popup appears. Wine title 47s clean. bass.dll md5 5a7d55cb.
 v55n_36 — TimeButton: tournament EXTRA TIME + reused-board respawn fix
 ------------------------------------------------------------
 USER (v55n_35): everything works, no crash, but no EXTRA TIME in Tournament;
