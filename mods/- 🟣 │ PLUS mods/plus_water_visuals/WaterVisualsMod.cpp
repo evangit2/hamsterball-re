@@ -10,8 +10,8 @@
  * - Entry splash: on E:WATER contact, spawn a burst of bubbles. Speed-tiered:
  *   fast entry -> more bubbles + "dropin" sound; slow entry -> fewer bubbles
  *   + "dropinshort" sound. (Two distinct effects, switched by entrance speed.)
- * - Sparse while submerged: after the splash, ~1 bubble every N seconds while
- *   the ball stays in water — "few and far between".
+ * - Sparse while submerged: bubbles appear at a random 1.0-1.5s rate while the
+ *   ball is in water AND moving (pauses when idle). "few and far between".
  * - Rise-to-equilibrium pop: each bubble floats up (constant size) to the water
  *   surface where the ball floats, freezes, then pops after a random 0.5-1.5s.
  * - Self-drive on non-Dizzy/Master boards: the bubble list (board+0x3B00) is
@@ -113,7 +113,6 @@ struct BubbleAnim {
 /* Speed tier: entry is "fast" if speed > FAST_FRACTION * max_speed */
 #define FAST_FRACTION           0.35f
 #define DEFAULT_BURST           10
-#define DEFAULT_RATE            0.5f   /* bubbles/sec while submerged */
 #define MAX_BALLS               32
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -133,7 +132,6 @@ typedef void  (__thiscall *athena_append_t)(void* list, void* item);
 
 static bool  g_enabled  = true;
 static int   g_burst    = DEFAULT_BURST;   /* fast-entry splash bubble count */
-static float g_rate     = DEFAULT_RATE;    /* bubbles/sec while submerged */
 
 static IModAPI* g_api    = NULL;
 static void*    g_modObj = NULL;
@@ -393,8 +391,9 @@ static void entry_splash(DWORD ball) {
     if (max_speed <= 0.0f || max_speed > 1000.0f) max_speed = 5.0f;
     bool fast = (speed2 > (FAST_FRACTION * max_speed) * (FAST_FRACTION * max_speed));
 
-    /* Two distinct effects switched by entry speed */
+    /* Two distinct effects switched by entry speed; count random ±1 */
     int n = fast ? g_burst : (g_burst / 3);
+    n += (rng_unit() < 0.5f) ? 1 : -1;
     if (n < 2) n = 2;
 
     /* Equilibrium = captured water surface Y for this ball */
@@ -455,15 +454,26 @@ static void apply_visuals(DWORD ball) {
         return;
     }
 
-    /* Sparse bubbles: ~1 every (1/rate) seconds. Frame rate assumed 60fps for
-     * the timer; the physics mod is frame-based too, so this matches its feel.
-     * Default 0.5/s -> one bubble every 2 seconds. */
+    /* Sparse bubbles: random interval 1.0-1.5s (60-90 frames at 60fps). */
     if (st->sparse_timer > 0) {
         st->sparse_timer--;
         return;
     }
-    int interval = (g_rate > 0.01f) ? (int)(60.0f / g_rate) : 3600;
-    if (interval < 30) interval = 30;
+    int interval = 60 + (int)(rng_unit() * 30.0f);   /* 60-90 frames = 1.0-1.5s */
+
+    /* In-water bubbles only appear while the ball is moving. */
+    DWORD phys = *(DWORD*)(ball + BALL_PHYS_PTR);
+    float vx = 0, vy = 0, vz = 0;
+    if (phys && !IsBadReadPtr((void*)phys, 0xCB0)) {
+        vx = *(float*)(phys + PHYS_VEL_X);
+        vy = *(float*)(phys + PHYS_VEL_Y);
+        vz = *(float*)(phys + PHYS_VEL_Z);
+    }
+    float speed2 = vx * vx + vy * vy + vz * vz;
+    if (speed2 < 0.0001f) {
+        st->sparse_timer = 1;   /* re-check next frame; no bubble while idle */
+        return;
+    }
 
     if (!g_api) return;
     Scene* scene = HBAPI(g_api).GetScene();
@@ -505,10 +515,6 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     CustomSlider s1("WVIS_BURST", "Splash Bubbles", (float)DEFAULT_BURST);
     s1.lowerBound = 0.0f; s1.upperBound = 30.0f; s1.stepSize = 1.0f; s1.decimalPlaces = 0;
     HBAPI(api).CreateSlider(s1, thisptr);
-
-    CustomSlider s2("WVIS_RATE", "Submerged Bubbles/s", DEFAULT_RATE);
-    s2.lowerBound = 0.0f; s2.upperBound = 5.0f; s2.stepSize = 0.1f; s2.decimalPlaces = 1;
-    HBAPI(api).CreateSlider(s2, thisptr);
 }
 
 static void __thiscall button_toggle(void*, const char* id, bool state) {
@@ -516,8 +522,7 @@ static void __thiscall button_toggle(void*, const char* id, bool state) {
 }
 
 static void __thiscall slider_change(void*, const char* id, float value) {
-    if      (strcmp(id, "WVIS_BURST") == 0) g_burst = (int)value;
-    else if (strcmp(id, "WVIS_RATE") == 0)  g_rate = value;
+    if (strcmp(id, "WVIS_BURST") == 0) g_burst = (int)value;
 }
 
 static void __thiscall event_collide(void*, void* ball, const char* eventPlaneID) {
