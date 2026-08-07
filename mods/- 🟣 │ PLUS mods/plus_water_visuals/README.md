@@ -8,10 +8,11 @@ Visual companion to the Water Mod (`plus_water_mod`) — handles the *look and s
 - **Speed-tiered splash sound**: two distinct effects switched by entry speed —
   - fast entry → more bubbles + `dropin` sound
   - slow entry → fewer bubbles + `dropinshort` sound
+- **Float to equilibrium, freeze, random pop**: each bubble floats up at constant size to the water's equilibrium surface (where the ball floats), holds there, then pops after a random 0.5–1.5s. So bubbles rise to the surface line and burst on a slight delay — no instant vanish, no premature shrink.
 - **Sparse bubbles while submerged**: after the splash, ~1 bubble every few seconds while the ball stays in the water ("few and far between").
-- **Native bubbles**: uses the game's own TarBubble object (vtable `0x4D6E48`), a round textured sprite that floats upward — no custom sprites or mesh construction.
-- **Self-drive on any board**: the bubble list (`board+0x3B00`) is natively iterated+rendered only by Dizzy (`0x41D512`) and Master (`0x420DA0`) boards. On every other board this mod drives update (`0x44FBE0`) + render (`0x44F910`) itself, gated on the pause flag (`board+0x874`) so bubbles freeze in the ESC menu.
-- **Correct lifecycle**: native bubble update does **not** free the object — the mod frees expired bubbles (dtor `0x44FD40` with flag 1) and cleans up all bubbles on level unload.
+- **Native bubbles**: uses the game's own TarBubble object (vtable `0x4D6E48`), a round textured sprite — no custom sprites or mesh construction.
+- **Self-drive on any board**: the bubble list (`board+0x3B00`) is natively iterated+rendered only by Dizzy (`0x41D512`) and Master (`0x420DA0`) boards. On every other board this mod drives the rise/freeze/pop animation (in `onGameUpdate`) and renders (in `onRenderApply`), gated on the pause flag (`board+0x874`) so bubbles freeze in the ESC menu.
+- **Correct lifecycle**: frees popped bubbles (dtor `0x44FD40` with flag 1) and cleans up all bubbles + animation state on level unload.
 
 ## HB+ Options
 
