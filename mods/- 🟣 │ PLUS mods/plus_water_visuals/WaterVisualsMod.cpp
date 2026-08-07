@@ -391,9 +391,9 @@ static void entry_splash(DWORD ball) {
     if (max_speed <= 0.0f || max_speed > 1000.0f) max_speed = 5.0f;
     bool fast = (speed2 > (FAST_FRACTION * max_speed) * (FAST_FRACTION * max_speed));
 
-    /* Two distinct effects switched by entry speed; count random ±1 */
+    /* Two distinct effects switched by entry speed; count offset uniform over {-1,0,+1} */
     int n = fast ? g_burst : (g_burst / 3);
-    n += (rng_unit() < 0.5f) ? 1 : -1;
+    n += (int)(rng_unit() * 3.0f) - 1;   /* -1, 0, or +1 with equal probability */
     if (n < 2) n = 2;
 
     /* Equilibrium = captured water surface Y for this ball */
