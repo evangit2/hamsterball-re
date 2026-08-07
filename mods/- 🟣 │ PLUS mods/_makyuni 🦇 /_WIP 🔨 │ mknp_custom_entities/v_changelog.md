@@ -1,3 +1,27 @@
+v55n_30 — TimeButton press: ISOLATION TEST (must find real crash cause)
+------------------------------------------------------------
+User (v55n_29): press fires but crashes. ntdll 0001:0003F0D5, Draw, ~16s.
+KEY EVIDENCE: crash address is IDENTICAL across v55n_28 (press channel
++0x510) and v55n_29 (chomper channel App+0x4A8). Two DIFFERENT sound
+channels, SAME crash -> the sound channel is NOT the culprit. v55n_29 even
+played the chomper sound (App+0x4A8 = chomper channel) then crashed the
+same way. The common press action across both builds:
+  +0x10E4=1 (latch), +0x10E5=1 (pressed-pose flag), +0x10D8-=20 (sink).
+
+Also noted: v55n_29 tb log never showed a PRESSED line, yet the sound
+played -> the press fired on a NON-30-frame tick when the throttled tb log
+(df) was NULL, so the press line was missed. Press now ALWAYS logs to main
+log too.
+
+v55n_30 ISOLATES: press now does ONLY latch +0x10E4=1 + reward. NO sound,
+NO +0x10E5 pressed-pose flag, NO +0x10D8 sink. If it stops crashing -> the
+pressed-pose flag or sink (or a Sound_Play3D side-effect) was the cause;
+then re-add one at a time. If it STILL crashes -> the mere act of latching
+a SpeedCylinder-constructed object (or the reward write) is the cause.
+
+bass.dll md5 2565fef18e5ffa8adf35d305e15c33e3. Wine title 44s clean.
+tb/main log will now definitively show the press each time.
+
 v55n_29 — TimeButton press: FIX wrong sound channel (crash on press)
 ------------------------------------------------------------
 User (v55n_28): press FIRED (heard the sound, latch set) but the game
