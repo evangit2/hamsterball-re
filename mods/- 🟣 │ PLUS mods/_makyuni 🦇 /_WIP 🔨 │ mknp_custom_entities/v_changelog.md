@@ -1,3 +1,29 @@
+v55n_32 — TimeButton A/B: press helper DISABLED (collider kept solid)
+------------------------------------------------------------
+USER (v55n_31): no sound, still crashes 0001:0003F0D5 ntdll at 18s on press.
+The tb.log heartbeat stopped at frame 720 (~12s) then the game froze and
+crashed at 18s.
+
+Three hard facts:
+  1. v55n_31 press writes NOTHING to game memory (no latch, no reward, no
+     sound, no sink, no pose - only tb->pressed mod-struct + a log line).
+     Yet it still crashed. So the crash is NOT any press write.
+  2. N:EXTRATIME has only ONE xref in the exe -> UpRaceCollisionEvents.
+     Warm-Up never routes it, so the earlier rename idea would be a no-op
+     on Warm-Up and I removed it (also I cannot confirm press fired, because
+     the main-log PRESSED fprintf is buffered and lost on hard crash).
+  3. Your v55n_27 already proved ball resting ON the solid button is safe
+     (you fell on it, got dizzy, no crash).
+
+So the remaining question is PRESS-PATH vs COLLIDER. v55n_32 answers it:
+the button stays SOLID and registered exactly as v55n_24-31, but the
+proximity-press helper call is disabled entirely. 
+  - If STABLE  -> the press code path (even log-only/no-write) is the trigger.
+  - If CRASHES -> it is the ball interacting with the registered collider,
+                  and solidity must be rebuilt without the case-39 registration.
+
+bass.dll md5 864648dcddbe3e10f60b228fe6741bb3. Wine title 44s clean.
+
 v55n_31 — TimeButton press: DECISIVE isolation (press writes NOTHING but log)
 ------------------------------------------------------------
 USER (v55n_30): no sound plays; STILL crashes 0001:0003F0D5 ntdll at ~17s.
