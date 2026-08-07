@@ -1,3 +1,28 @@
+v55n_25 — TimeButton (SpeedCyl shape) + native TimeButton vtable override
+------------------------------------------------------------
+v55n_24 WORKS: your log showed the button spawns, is solid, level runs, NO
+crash. Only bug: it rotated slowly (SpeedCylinder idle spin). Root cause: v55n_24
+used SpeedCylinder_ctor, whose vtable (0x4D57D0) drives the continuous rotation
+(slot 11 = 0x43D8C0) — exactly what a speedcylinder does when idle.
+
+v55n_25 keeps the PROVEN stable SpeedCylinder_ctor construction (alloc 0x150C,
+Stands_ctor, Level_RenderCtor collision Level at +0x10E0, full case-39
+registration: board+0x10EC + scene tree + MeshBuffer+0x47C + self-ref) but
+overrides the vtable to the native TimeButton vtable (0x4D5830) so the
+per-frame Update uses TimeButton slots (RenderOnce 0x43DC40) instead of the
+SpeedCylinder spin. obj is 0x150C bytes >= TimeButton 0x10E8, so every
+TimeButton slot reads in-bounds. Also restored +0x10E5=1 (render-once flag)
+that SpeedCylinder_ctor overwrote, matching the native TimeButton_ctor state.
+
+Press still works: the mod-side N:EXTRATIME handler matches vtable 0x4D5830
+and the +0x10E4=0 unpressed latch byte (0 from the speed float write).
+
+Expected on Warm-Up / any level:
+  - Button appears, does NOT rotate
+  - Solid (press it, ball bounces off)
+  - Pressing triggers EXTRA TIME: popup + timer (500)
+Binaries: bass.dll md5 1ec117e78a809e6a2910a539332f9316. Wine title 42s ALIVE.
+
 v55n_24 — TimeButton via PROVEN SpeedCylinder_ctor (decisive test + candidate fix)
 ------------------------------------------------------------
 Your v55n_23 log was the pivot. Mesh swap CHANGED the crash:
