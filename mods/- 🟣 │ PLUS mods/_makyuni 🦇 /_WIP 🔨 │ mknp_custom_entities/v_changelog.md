@@ -1,3 +1,19 @@
+v55n_35 — TimeButton: FULL native press behavior re-enabled
+------------------------------------------------------------
+USER (v55n_34): press log appeared, NO crash. Root cause confirmed:
+the stray shared-logf write in the press branch (two-thread FILE* race)
+was the crash. v55n_34 = stable + press fires.
+
+v55n_35 re-enables the REAL TimeButton behavior (was #if 0 since v55n_33):
+  - +0x10E4 = 1 latch, +0x10E5 = 1 pressed pose, +0x10D8 -= 20.0 sink
+  - press sound on the NATIVE channel (App + 0x510, per Rotator_TriggerSound
+    0x436CF0; v55n_29 used the wrong +0x4A8 chomper channel)
+  - single-player reward: timer slot (player_idx*0xA0 + 0x5EC + App) = +500
+    EXTRA TIME
+All logging stays in the thread-private press.log (shared-logf race must
+not return). tb->pressed mod flag restored.
+
+bass.dll md5 7d287522349f6edd5de59030aca53537. Wine title 52s clean.
 v55n_34 — TimeButton root cause: stray shared-logf write in press branch
 ------------------------------------------------------------
 v55n_33 STILL crashed (PRESSED fired at heart=728, crash ~6s later, ntdll
