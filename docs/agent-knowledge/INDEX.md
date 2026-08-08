@@ -32,6 +32,7 @@ Start here and read the numbered sections in order. Each file is designed to be 
 | [../SWEAT_MODE.md](../SWEAT_MODE.md) | Sweat bubble physics assist: ball+0x260 flag, ArenaBoard toggle timer, min slope speed 0.25, flashing visual |
 | [../gameplay/MAGNIFIER_HEAT_SYSTEM.md](../gameplay/MAGNIFIER_HEAT_SYSTEM.md) | Sky Race magnifying glass: heat counter (ball+0xC50), burning flag (ball+0xC58), white→red color shift via Graphics_SetColorMultiplier (0x00401160, NOT a viewport clip) |
 | [TIME_TRIAL_GHOST_SYSTEM.md](TIME_TRIAL_GHOST_SYSTEM.md) | Time Trial ghost: per-frame BallSnapshot recording/playback, BestTimeTracker struct, ghost ball creation in Board_ctor, why ghost disappears on quit |
+| [race-previews-and-race-name-table.md](race-previews-and-race-name-table.md) | Race previews: practice-*.png sprites in PracticeMenu (0x42EA30, slots +0xCDC..+0xCFC), tourney-*.png icon strip preloaded to App+0x3B4..0x3EC and drawn 128x128 @ 155px spacing by TourneyMenu_Render (0x450AF0, loop 0x450C46); 16-entry race-name table @ 0x4F7080 (index 15 = "YOU FOUND A BUG RACE", reachable only via unbounded accessor 0x4264A0 from "NEXT UP:" banner 0x451430) |
 
 ## External Authorities
 
