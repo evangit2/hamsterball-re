@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_38
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_39
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -393,9 +393,12 @@ typedef struct {
     float x, y, z; /* spawn position */
     DWORD col_level; /* collision/render Level at obj+0x10E0 */
     DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
+    int   was_in_zone; /* v55n_39: edge-detect for collision->track handoff */
+    int   in_list;     /* v55n_39: 1 = ball already appended to +0x10F0 */
 } SpeedCylState;
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
+static int g_speedcyl_heartbeat = 0; /* v55n_39: throttled log counter */
 
 static int __thiscall cEnt_timebutton_update_noop(void* this_) {
     (void)this_; /* v55n_3: TimeButton vtable[1]+[11] no-op. The board+0x2578
@@ -781,6 +784,13 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
  * __fastcall(this) — spin-up + 175-frame hold + launch at 65.0 + star trail + render transform. */
 typedef int (__fastcall *SpeedCyl_slot11_t)(void* this_);
 static SpeedCyl_slot11_t pfn_SpeedCyl_slot11 = (SpeedCyl_slot11_t)0x0043D8C0;
+/* v55n_39: Native collision->track handoff = Pendulum_PlayCollisionSound (0x436B70).
+ * __thiscall(this=entity, ball). If the tracked list (entity+0x10F0) is empty it
+ * plays the spin-up sound (channel App+0x508) + resets the launch counter
+ * (+0x1508=0); then appends the ball to +0x10F0 if absent and sets ball+0x808=10.
+ * Replicated by cEnt_speedcyl_present_check on ANY level. */
+typedef void (__thiscall *Pendulum_PlayCollisionSound_t)(void* this_, DWORD ball);
+static Pendulum_PlayCollisionSound_t pfn_Pendulum_PlayCollisionSound = (Pendulum_PlayCollisionSound_t)0x00436B70;
 static DWORD g_catapult_sample = 0;  /* v55m_42i: BASS sample for catapult launch sound */
 static void* g_dropin_sound = NULL; /* v55m_28l cached sounds\\dropin channel */
 
@@ -2076,7 +2086,13 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                         }
                     }
                 }
-                if (logf) fprintf(logf, "  ROTATER: TimeButton pressed (entity=0x%08X)\n", tb_entity);
+                {
+                    FILE* plf = fopen("mknp_custom_entities_press.log", "a");
+                    if (plf) {
+                        fprintf(plf, "  ROTATER: TimeButton pressed (entity=0x%08X)\n", tb_entity);
+                        fclose(plf);
+                    }
+                }
             }
         }
     }
@@ -3792,6 +3808,8 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[g_speedcyl_count].z = pz;
                     g_speedcyls[g_speedcyl_count].col_level = *(DWORD*)((char*)obj + 0x10E0);
                     g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
+                    g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_39 */
+                    g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_39 */
                     g_speedcyl_count++;
                 }
                 break;
@@ -5296,6 +5314,8 @@ static void cEnt_chomper_update(DWORD board);
 static void cEnt_catapult_present_check(DWORD board);  /* v55m_27i */
 /* v55n_38: Forward decl — TimeButton proximity-press helper (main-thread Present hook). */
 static void cEnt_timebutton_present_press(DWORD board);
+/* v55n_39: Forward decl — SpeedCylinder collision->track handoff helper (main-thread Present hook). */
+static void cEnt_speedcyl_present_check(DWORD board);
 /* v55m_28d: Get Player 1 ball pointer from board+0x29D4 (ball AthenaList).
  * v55m_27l tried board+0x2DEC, but that list is empty. The real player ball
  * list is board+0x29D4; we iterate it and select ball+0x18 == 0.
@@ -5361,8 +5381,8 @@ static DWORD get_ball_ptr(void) {
  * (native buttons are one-shot per level).
  */
 #define TIMEBUTTON_PRESS_RADIUS_SQ  1600.0f    /* 40 units horizontal (v55n_38) */
-#define TIMEBUTTON_PRESS_DY_MIN     -160.0f    /* v55n_38: ball arcs over the button (dy up to ~120) */
-#define TIMEBUTTON_PRESS_DY_MAX      160.0f
+#define TIMEBUTTON_PRESS_DY_MIN     -80.0f     /* v55n_39: tightened from ±160 — ball must be near the button, not just over it */
+#define TIMEBUTTON_PRESS_DY_MAX      80.0f
 
 static void __cdecl cEnt_timebutton_present_press(DWORD board) {
     int i;
@@ -6044,6 +6064,90 @@ static void __cdecl cEnt_catapult_present_check(DWORD board) {
     }
 }
 
+/* v55n_39: SpeedCylinder collision->track handoff (main-thread Present hook).
+ * Native: N:SPEEDCYLINDER collision -> UpRaceCollisionEvents (0x4119B0) ->
+ * Pendulum_PlayCollisionSound (0x436B70). We cannot rely on the native
+ * N:SPEEDCYLINDER event firing on non-Up levels (the event meshbuffer only
+ * exists in the LevelUp-SpeedCylinder.MESHWORLD file, and the collision
+ * Level is registered in board+0x10EC so the game DOES dispatch it via
+ * DispatchCollisionEvents 0x40C5D0 — which has NO N:SPEEDCYLINDER case).
+ * So we replicate the handoff with a Present-hook proximity edge-detect
+ * (same proven pattern as catapult v55m_27i / TimeButton v55n_38):
+ *   on edge entry: call native Pendulum_PlayCollisionSound (0x436B70) —
+ *   plays spin-up sound (App+0x508 channel), resets +0x1508=0, appends the
+ *   ball to entity+0x10F0 (tracked list), sets ball+0x808=10.
+ * The per-frame slot 11 driver (already in the Present hook) then does the
+ * native hold (175 frames) + launch at 65.0 + star trail.
+ * Cylinder footprint from LevelUp-SpeedCylinder.MESHWORLD: radius ~30
+ * (X/Z -29.8..+29.8), height ~60 (Y -29.8..+29.8). Trigger zone = radius 40
+ * horizontal + full height window; edge-detect so it fires once per entry.
+ * The tracked list is checked via direct iteration (no native
+ * ContainsValue needed): if the ball is already in +0x10F0 we skip Append.
+ * Logs every 30 frames to mknp_custom_entities.log via the shared logf. */
+static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
+    int i;
+    DWORD ball = get_ball_ptr();
+
+    g_speedcyl_heartbeat++;
+    int log_now = ((g_speedcyl_heartbeat % 30) == 0);
+
+    if (!ball || ball < 0x10000 || IsBadReadPtr((void*)ball, 0x200)) {
+        return;
+    }
+
+    float ball_x = *(float*)(ball + BALL_POS_X);
+    float ball_y = *(float*)(ball + BALL_POS_Y);
+    float ball_z = *(float*)(ball + BALL_POS_Z);
+
+    for (i = 0; i < g_speedcyl_count; i++) {
+        SpeedCylState* sc = &g_speedcyls[i];
+        if (!sc->obj || sc->obj < 0x10000) continue;
+        if (sc->board != board) continue;
+        if (IsBadReadPtr((void*)sc->obj, 0x1510)) { sc->obj = 0; continue; }
+        if (IsBadReadPtr((void*)(sc->obj + 0x10F0), 0x410)) continue;
+
+        /* Pause gate — board+0x874 (same as catapult/TimeButton). */
+        if (board && board > 0x10000 &&
+            !IsBadReadPtr((void*)(board + 0x878), 0x20)) {
+            if (*(BYTE*)(board + 0x874) != 0) continue;  /* paused -> skip */
+        }
+
+        /* Cylinder footprint: radius ~30, height ~60 at spawn pos. */
+        float dx = ball_x - sc->x;
+        float dy = ball_y - sc->y;
+        float dz = ball_z - sc->z;
+        float horiz_sq = dx*dx + dz*dz;
+        int in_zone = (horiz_sq < 1600.0f && dy > -40.0f && dy < 40.0f); /* r=40, h=80 */
+
+        if (log_now) {
+            FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
+            if (slf) {
+                fprintf(slf, "  ROTATER: SC present ball=(%.1f,%.1f,%.1f) cyl=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f in_zone=%d was=%d in_list=%d\n",
+                    ball_x, ball_y, ball_z, sc->x, sc->y, sc->z, (float)sqrt(horiz_sq), dy,
+                    in_zone, sc->was_in_zone, sc->in_list);
+                fclose(slf);
+            }
+        }
+
+        if (in_zone && !sc->was_in_zone && !sc->in_list) {
+            /* Edge entry: replicate Pendulum_PlayCollisionSound (0x436B70). */
+            if (pfn_Pendulum_PlayCollisionSound) {
+                pfn_Pendulum_PlayCollisionSound((void*)sc->obj, ball);
+                sc->in_list = 1;
+                sc->was_in_zone = 1;
+                FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
+                if (slf) {
+                    fprintf(slf, "  ROTATER: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
+                    fclose(slf);
+                }
+            }
+        }
+        if (!in_zone) {
+            sc->was_in_zone = 0;
+        }
+    }
+}
+
 /* v55m_42w: renderscene_helper — called from Graphics_RenderScene hook.
  * Sets g_in_draw_phase=1 so Stands vtable[18] hooks can do D3D transforms. */
 static void __cdecl renderscene_helper(void) {
@@ -6161,6 +6265,12 @@ static void __cdecl gluebie_present_helper(void) {
      * to a dedicated thread-private press.log, never touching shared logf. */
     if (board && g_timebutton_count > 0) {
         cEnt_timebutton_present_press(board);
+    }
+    /* v55n_39: SpeedCylinder collision->track handoff FIRST, then slot 11.
+     * The slot-11 driver below needs the ball in +0x10F0 (appended by the
+     * handoff) to start the hold/launch — so run the handoff before it. */
+    if (board && g_speedcyl_count > 0 && *(BYTE*)(board + 0x874) == 0) {
+        cEnt_speedcyl_present_check(board);
     }
     /* v55n_2: SpeedCylinder per-frame slot 11 driver.
      * Native SpeedCylinder spin/launch lives in vtable slot 11 (0x43D8C0).
@@ -6974,7 +7084,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_38", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_39", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8006,8 +8116,12 @@ static void cEnt_tarbubble_update_decoration(DWORD board) {
                 void* made = pfn_TarBubble_ctor(obj, app, bp->x, bp->y, bp->z);
                 if (made) {
                     bp->obj = (DWORD)made;
-                    if (logf) fprintf(logf, "  TARBUBBLE: spawned decorative bubble at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+                    FILE* tlf = fopen("mknp_custom_entities_tarbubble.log", "a");
+                    if (tlf) {
+                        fprintf(tlf, "  TARBUBBLE: spawned decorative bubble at (%.1f,%.1f,%.1f) obj=0x%08X\n",
                             bp->x, bp->y, bp->z, bp->obj);
+                        fclose(tlf);
+                    }
                 } else {
                     /* ctor failed — don't leak, try again later */
                     bp->obj = 0;
@@ -8587,7 +8701,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_38 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_39 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
