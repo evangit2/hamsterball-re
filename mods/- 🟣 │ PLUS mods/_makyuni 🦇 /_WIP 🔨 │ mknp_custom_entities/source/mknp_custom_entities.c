@@ -395,6 +395,7 @@ typedef struct {
     DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
     int   was_in_zone; /* v55n_46: edge-detect for collision->track handoff */
     int   in_list;     /* v55n_46: 1 = ball already appended to +0x10F0 */
+    float center_x, center_y, center_z; /* v55n_46: CYLINDER CENTER world pos = spawn + (72.5,0,0) */
 } SpeedCylState;
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
@@ -3810,6 +3811,10 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
                     g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_46 */
                     g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_46 */
+                    /* v55n_46: zone center = cylinder center = spawn + half-length (145/2) along +X */
+                    g_speedcyls[g_speedcyl_count].center_x = px + 72.5f;
+                    g_speedcyls[g_speedcyl_count].center_y = py;
+                    g_speedcyls[g_speedcyl_count].center_z = pz;
                     g_speedcyl_count++;
                 }
                 break;
@@ -6113,17 +6118,17 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         }
 
         /* Cylinder footprint: radius ~30, height ~60 at spawn pos. */
-        float dx = ball_x - sc->x;
-        float dy = ball_y - sc->y;
-        float dz = ball_z - sc->z;
+        float dx = ball_x - sc->center_x;
+        float dy = ball_y - sc->center_y;
+        float dz = ball_z - sc->center_z;
         float horiz_sq = dx*dx + dz*dz;
-        int in_zone = (horiz_sq < 4909.8049f && dy > -45.045f && dy < 45.045f); /* r=70, h=90 — cylinder r=30 + ball r=26 = 56 contact, margin to 70 */
+        int in_zone = (horiz_sq < 1764.0f && dy > -27.0f && dy < 27.0f); /* v55n_46: r=42 (0.6x of 70), h=54 — centered on CYLINDER CENTER */
 
         if (log_now) {
             FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
             if (slf) {
-                fprintf(slf, "  ROTATER: SC present ball=(%.1f,%.1f,%.1f) cyl=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f in_zone=%d was=%d in_list=%d\n",
-                    ball_x, ball_y, ball_z, sc->x, sc->y, sc->z, (float)sqrt(horiz_sq), dy,
+                fprintf(slf, "  ROTATER: SC present ball=(%.1f,%.1f,%.1f) cyl_center=(%.1f,%.1f,%.1f) horiz=%.1f dy=%.1f in_zone=%d was=%d in_list=%d\n",
+                    ball_x, ball_y, ball_z, sc->center_x, sc->center_y, sc->center_z, (float)sqrt(horiz_sq), dy,
                     in_zone, sc->was_in_zone, sc->in_list);
                 fclose(slf);
             }
