@@ -1,3 +1,16 @@
+v55n_53 - SpeedCylinder proximity: switch to 4-point X/Z box detection
+------------------------------------------------------------
+USER REQUEST: replace the center+radius circle test with a rectangular/box
+detection delimited by 4 points (X/Z footprint).
+
+CHANGE (cEnt_speedcyl_present_check + SpeedCylState):
+  Replaced circle test (sqrt(dx^2+dz^2) < r) with axis-inclusion box:
+    box_x: [px, px+145]   (cylinder long axis = +X, measured mesh X 0..145)
+    box_z: [pz-30, pz+30] (footprint half-width ~30)
+    box_y: [py-23, py+20.25] (vertical window preserved from v55n_48)
+  Removed center_x/y/z fields; added box_x1/2, box_z1/2, box_y1/2.
+  Log line now prints the box bounds instead of center+horiz.
+
 v55n_52 - SpeedCylinder proximity horizontal radius 51->53
 ------------------------------------------------------------
 USER REQUEST (from real-game log): ball rolls the cylinder surface at horiz
