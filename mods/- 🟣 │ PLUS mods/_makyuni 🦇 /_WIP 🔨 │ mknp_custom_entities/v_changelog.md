@@ -1,3 +1,21 @@
+v55n_50 - SpeedCylinder proximity Y lower bound widened to -21.5
+------------------------------------------------------------
+USER REQUEST (from real-game log): ball rests at dy ~ -21.4, just under the
+-20.25 window. Widen Y lower bound to -21.5 so the resting ball is inside.
+
+CHANGE (cEnt_speedcyl_present_check):
+  Y window: dy > -20.25 -> dy > -21.5 (upper bound +20.25 unchanged).
+  Horizontal radius unchanged (r=42).
+
+v55n_49 - SpeedCylinder proximity Y zone scaled to 0.75x
+------------------------------------------------------------
+USER REQUEST: scale the cEnt SpeedCylinder proximity detection zone in the
+Y axis to 0.75 its original scale.
+
+CHANGE (source/mknp_custom_entities.c, cEnt_speedcyl_present_check):
+  in_zone Y window: dy +/-27.0 -> +/-20.25 (h 54 -> 40.5 = 0.75x).
+  Horizontal radius unchanged (r=42).
+
 v55n_49 - SpeedCylinder proximity Y zone scaled to 0.75x
 ------------------------------------------------------------
 USER REQUEST: scale the cEnt SpeedCylinder proximity detection zone in the
