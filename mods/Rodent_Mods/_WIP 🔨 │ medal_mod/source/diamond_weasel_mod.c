@@ -187,7 +187,7 @@ static void load_real_bass(void) {
 #define APP_MGR            0x22C
 
 #define ICON_LOAD_HOOK     0x42A304
-#define DISP_WEASEL_HOOK   0x44E12C
+#define GOLD_DRAW_HOOK     0x44EFD2   /* call 0x42c7c0 (gold draw) */
 #define SPRITE_DRAW        0x42C7C0
 
 /* ================================================================
@@ -337,7 +337,7 @@ __attribute__((used)) void diamond_check_award(DWORD app) {
     }
 }
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
-__attribute__((used)) int diamond_should_replace(DWORD app) {
+__attribute__((used)) int diamond_should_show(DWORD app) {
     int race; float cs, thr;
     if (!app || !g_configLoaded) return 0;
     if (!g_iconLoaded) diamond_load_icon_impl(app);   /* lazy-load; manager valid at results time */
@@ -422,43 +422,67 @@ static void install_icon_cave(void) {
     diag_log("[diamond] icon cave installed at 0x42A304");
 }
 
-/* Cave B: results-screen weasel draw at 0x44E12C (covers 6 bytes).
- *   original: mov ecx,[eax+0x37C]
- *   cave: pushad; push eax; call diamond_should_replace; add esp,4;
- *         test eax,eax; jz keep;
- *         mov dword [esp+4], g_diamondSprite; jmp done;
- *   keep: mov eax,[esp+0]; mov ecx,[eax+0x37C]; mov [esp+4],ecx;
- *   done: popad; jmp 0x44E132
- *   (After pushad, saved ECX is at [esp+4]; we write our chosen sprite there.)
+/* Cave B: results-screen DIAMOND draw after GOLD at 0x44EFD2 (covers 5 bytes).
+ *   original: call 0x42c7c0   (draws gold sprite; ecx=gold sprite, stack has x,y)
+ *   cave:     call 0x42c7c0            ; re-emit gold draw (existing stack args)
+ *             pushad
+ *             push [esi+0xc]           ; App (lazy-load icon + secret check)
+ *             call diamond_should_show ; returns 1 if secret earned
+ *             add esp,4
+ *             test eax,eax
+ *             jz skip
+ *             mov ecx,[g_diamondSprite]
+ *             push DIAMOND_Y
+ *             push DIAMOND_X
+ *             call 0x42c7c0            ; draw diamond
+ *             add esp,8
+ *           skip: popad
+ *             jmp 0x44EFD7
+ *   Diamond position: continuing the medal diagonal below-right of gold.
+ *   Gold is at (x=0x140, y=0x1B7). Use (x=0x160, y=0x1E0) for diamond.
  */
 static void install_disp_cave(void) {
-    DWORD patchAddr = EXE_BASE + (DISP_WEASEL_HOOK - EXE_BASE);
-    DWORD retAddr = patchAddr + 6;
-    g_dispCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+    DWORD patchAddr = EXE_BASE + (GOLD_DRAW_HOOK - EXE_BASE);
+    DWORD retAddr = patchAddr + 5;   /* 0x44EFD7 */
+    const DWORD DIAMOND_X = 0x160;
+    const DWORD DIAMOND_Y = 0x1E0;
+    g_dispCave = (unsigned char*)VirtualAlloc(NULL, 160, MEM_COMMIT|MEM_RESERVE,
                                               PAGE_EXECUTE_READWRITE);
     if (!g_dispCave) return;
     unsigned char *p = g_dispCave;
-    p[0]=0x60; p+=1;                                   /* pushad */
-    p[0]=0x50; p+=1;                                   /* push eax */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_should_replace-(DWORD)(p+5); p+=5; /* call */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;              /* add esp,4 */
-    p[0]=0x85; p[1]=0xC0; p+=2;                        /* test eax,eax */
-    p[0]=0x74; p[1]=0x0A; p+=2;                        /* jz keep (->24) */
-    p[0]=0xC7; p[1]=0x44; p[2]=0x24; p[3]=0x04;        /* mov dword [esp+4], imm32 */
-    *(DWORD*)(p+4)=(DWORD)g_diamondSprite; p+=8;
-    p[0]=0xEB; p[1]=0x0E; p+=2;                        /* jmp done (->38) */
-    /* keep: */
-    p[0]=0x8B; p[1]=0x44; p[2]=0x24; p[3]=0x00; p+=4;  /* mov eax,[esp+0] */
-    p[0]=0x8B; p[1]=0x88; p[2]=0x7C; p[3]=0x03; p[4]=0x00; p[5]=0x00; p+=6; /* mov ecx,[eax+0x37C] */
-    p[0]=0x89; p[1]=0x4C; p[2]=0x24; p[3]=0x04; p+=4;  /* mov [esp+4],ecx */
-    /* done: */
-    p[0]=0x61; p+=1;                                   /* popad */
+    /* call 0x42c7c0 (re-emit gold draw) — E8 rel32 */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+SPRITE_DRAW)-(DWORD)(p+5); p+=5;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push [esi+0xc] — FF 76 0C */
+    p[0]=0xFF; p[1]=0x76; p[2]=0x0C; p+=3;
+    /* call diamond_should_show */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_should_show-(DWORD)(p+5); p+=5;
+    /* add esp,4 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* test eax,eax */
+    p[0]=0x85; p[1]=0xC0; p+=2;
+    /* jz skip */
+    p[0]=0x74; p[1]=0x18; p+=2;
+    /* mov ecx,[g_diamondSprite] — 8B 0D <addr> */
+    p[0]=0x8B; p[1]=0x0D; *(DWORD*)(p+2)=(DWORD)&g_diamondSprite; p+=6;
+    /* push DIAMOND_Y */
+    p[0]=0x68; *(DWORD*)(p+1)=DIAMOND_Y; p+=5;
+    /* push DIAMOND_X */
+    p[0]=0x68; *(DWORD*)(p+1)=DIAMOND_X; p+=5;
+    /* call 0x42c7c0 */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+SPRITE_DRAW)-(DWORD)(p+5); p+=5;
+    /* add esp,8 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    /* skip: popad */
+    p[0]=0x61; p+=1;
+    /* jmp retAddr */
     write_jmp(p, retAddr); p+=5;
-    unsigned char patch[6];
-    memset(patch, 0x90, 6);
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
     write_jmp(patch, (DWORD)g_dispCave);
-    patch_bytes((void*)patchAddr, patch, 6);
-    diag_log("[diamond] results-screen cave installed at 0x44E12C");
+    patch_bytes((void*)patchAddr, patch, 5);
+    diag_log("[diamond] diamond-after-gold cave installed at 0x44EFD2");
 }
 
 /* ================================================================

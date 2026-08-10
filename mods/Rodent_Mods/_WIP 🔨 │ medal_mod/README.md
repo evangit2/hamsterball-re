@@ -6,10 +6,16 @@ Adds a **fifth, secret medal** per race to Hamsterball.
 
 When you finish a race faster than the secret threshold for that race:
 
-- **Results screen**: the **golden weasel** medal icon is **replaced** by a
-  **diamond weasel** icon at the exact same spot (top-right). The normal
-  weasel "burst of stars" still plays, because beating the secret implies
-  beating the golden weasel par.
+### After any race, the results screen lays out the medals like this:
+
+- **Golden weasel** (top-right) — fastest tier
+- **Bronze, Silver, Gold** — a diagonal row of the earned standard medals
+- **Diamond weasel** — the 5th secret medal, appearing **after gold** (continuing the diagonal) when you beat the secret time
+
+When you beat a race's secret time, the **golden weasel stays** and the
+**diamond weasel appears as a 5th medal after gold**. The normal weasel
+"burst of stars" still plays on the gold medal, and the diamond appears
+alongside it.
 - The unlock is **persisted** per race (so it shows up on later visits).
 
 ## Files
@@ -61,10 +67,10 @@ SECRET=45.0
 The mod is a BASS proxy DLL (forwards all `BASS_*` calls to `bass_real.dll`).
 It hooks two game functions:
 
-1. **Results-screen weasel draw (0x44E12C)** — when the player's time beats
-   the secret threshold for the current race, the drawn sprite is swapped
-   from `goldenweasel.png` to the diamond sprite, so the diamond appears over
-   the golden weasel at the same position (0x208, 0x63).
+1. **Results-screen gold draw (0x44EFD2)** — after the gold medal is drawn,
+   if the player's time beats the secret threshold for the current race, the
+   diamond sprite is drawn at a position continuing the medal diagonal
+   (below-right of gold).
 2. **Icon load** — loads `diamondweasel.png` via the game's own sprite loader
    (lazily, on first use), so no extra game systems are touched.
 
