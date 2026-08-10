@@ -1,4 +1,16 @@
-v55n_55 - SpeedCylinder: load custom Speedcylinder.MESHWORLD
+v55n_56 - SpeedCylinder: trigger box read from collision_Speedcylinder meshbuffer
+------------------------------------------------------------
+USER REQUEST: make the SpeedCylinder trigger box read the "collision_Speedcylinder"
+invisible box object INSIDE the Speedcylinder.MESHWORLD, so the trigger shape/size
+is established by the mesh (not hardcoded).
+- Added cEnt_speedcyl_read_collision_box(): scans the loaded mesh's MeshWorld
+  meshbuffer list (Level+0x08 -> MeshWorld; MW+0x2C embedded AthenaList count +0x30 /
+  items +0x438), matches MeshBuffer name "collision_Speedcylinder" (mb+0x864), reads
+  the sub-mesh tree-source vertex arrays (+0x428 count / +0x830 items / sub+0x448 verts,
+  8 floats/vert), computes AABB, adds the spawn offset (world = spawn + local).
+- In case 39: box_* now comes from the mesh when found; falls back to the v55n_54
+  hardcoded orbit box if the meshbuffer isn't found (logs which path was taken).
+- Verified mesh's collision_Speedcylinder box: local X[-78.4,78.4] Y[-4.7,4.7] Z[-50,50].
 ------------------------------------------------------------
 USER REQUEST: make the cEnt SpeedCylinder load "levels\Speedcylinder.MESHWORLD"
 instead of "levels\LevelUp-SpeedCylinder.MESHWORLD".
