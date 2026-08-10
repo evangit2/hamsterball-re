@@ -1,3 +1,13 @@
+v55n_51 - SpeedCylinder proximity: horizontal radius 42->51, Y lower bound -21.5->-23
+------------------------------------------------------------
+USER REQUEST (from real-game log): ball touching cylinder surface rests at
+horiz ~51-66, all beyond the r=42 radius; Y lower bound also still too tight.
+
+CHANGE (cEnt_speedcyl_present_check):
+  horiz: horiz_sq < 1764 (r=42) -> < 2601 (r=51).
+  Y window: dy > -21.5 -> dy > -23.0 (upper +20.25 unchanged).
+  Now catches the ball resting on the cylinder surface (~56 from center).
+
 v55n_50 - SpeedCylinder proximity Y lower bound widened to -21.5
 ------------------------------------------------------------
 USER REQUEST (from real-game log): ball rests at dy ~ -21.4, just under the
