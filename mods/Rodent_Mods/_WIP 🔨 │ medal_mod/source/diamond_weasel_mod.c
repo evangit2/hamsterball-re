@@ -324,12 +324,16 @@ static int get_race_index(void) {
     if (IsBadReadPtr((void*)(prof + PROFILE_RACE), 4)) return -1;
     return *(int*)(prof + PROFILE_RACE);
 }
-static float get_player_time_cs(DWORD app) {
-    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return 0.0f;
+/* board+0x1C is an INTEGER centisecond counter (native medal code compares
+ * it with CMP at 0x44d932 / 0x44d958), NOT a float. Reading it as float
+ * reinterprets e.g. 3000 (30s) as a denormal ~4e-42, which is always
+ * "beats the secret" -> silent unlock on every race. */
+static int get_player_time_cs(DWORD app) {
+    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return 0;
     DWORD board = *(DWORD*)(app + APP_BOARD);
-    if (!board) return 0.0f;
-    if (IsBadReadPtr((void*)(board + BOARD_TIME), 4)) return 0.0f;
-    return *(float*)(board + BOARD_TIME);
+    if (!board) return 0;
+    if (IsBadReadPtr((void*)(board + BOARD_TIME), 4)) return 0;
+    return *(int*)(board + BOARD_TIME);
 }
 
 /* ================================================================
@@ -380,16 +384,18 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     if (IsBadReadPtr((void*)(vt + 0x58), 4)) return;
     load = *(DWORD*)(vt + 0x58);
     if (!load) return;
-    /* __thiscall: ecx=mgr, push &slot, push <str>, call [vt+0x58]. */
-    __asm__ volatile(
-        "pushl %2\n\t"        /* &g_diamondSprite (slot) */
-        "pushl %3\n\t"        /* g_iconFile (str) */
-        "movl %0, %%ecx\n\t"  /* mgr */
-        "call *%1\n\t"        /* load */
-        "addl $8, %%esp\n\t"
-        : : "r"(mgr), "r"(load), "r"(&g_diamondSprite), "r"(g_iconFile)
-        : "eax", "ecx", "edx", "memory"
-    );
+    /* __thiscall: ecx=mgr, push <str> FIRST, then push &slot, call [vt+0x58].
+         * Native call site (0x42a2f8): push $0x4d31c0 (str); push %edx (&slot);
+         * call *0x58(%eax). The loader is __stdcall `ret $8` (cleans its own two
+         * args) — its caller does NOT `add esp,8` afterwards. */
+        __asm__ volatile(
+                    "pushl %3\n\t"        /* g_iconFile (str) — pushed FIRST */
+                    "pushl %2\n\t"        /* &g_diamondSprite (slot) */
+                    "movl %0, %%ecx\n\t"  /* mgr */
+                    "call *%1\n\t"        /* load — ret $8, no add esp */
+                    : : "r"(mgr), "r"(load), "r"(&g_diamondSprite), "r"(g_iconFile)
+                    : "eax", "ecx", "edx", "memory"
+                );
     g_iconLoaded = 1;
     diag_logf("[diamond] icon loaded: %s -> %08X", g_iconFile, g_diamondSprite);
 }
@@ -406,11 +412,10 @@ __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
     load = *(DWORD*)(vt + 0x58);
     if (!load) return;
     __asm__ volatile(
+        "pushl %3\n\t"        /* g_miniIconFile (str) — pushed FIRST */
         "pushl %2\n\t"        /* &g_diamondMiniSprite (slot) */
-        "pushl %3\n\t"        /* g_miniIconFile (str) */
         "movl %0, %%ecx\n\t"  /* mgr */
-        "call *%1\n\t"        /* load */
-        "addl $8, %%esp\n\t"
+        "call *%1\n\t"        /* load — ret $8, no add esp */
         : : "r"(mgr), "r"(load), "r"(&g_diamondMiniSprite), "r"(g_miniIconFile)
         : "eax", "ecx", "edx", "memory"
     );
@@ -420,13 +425,16 @@ __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
 
 /* TT-menu: append a diamond medal entry to the standings list.
  * Called from the TT cave. standings = the standings screen object (esi),
- * race = the race index (edi, 1-indexed in standings = race index).
+ * race = the loop counter edi, which is 1-INDEXED into race (edi=0 shows
+ * race 1 BEGINNER; edi=13 shows race 14 IMPOSSIBLE; edi=14 indexes the
+ * free App tail 0x8F8 = phantom all-zero flags, so it must be skipped).
  * 0x44abf0 is __stdcall(ecx=this, name, sprite) with ret 8.
  */
 __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
     static char namebuf[16];
-    if (race < 0 || race > 14) return;
-    if (!g_won[race]) return;
+    int r = race + 1;                 /* edi is 1-indexed into race */
+    if (r < 0 || r > 14) return;      /* guard: edi=14 -> r=15 (phantom tail) */
+    if (!g_won[r]) return;
     /* lazy-load mini icon (manager valid during TT menu) */
     if (!g_miniIconLoaded) {
         DWORD app = get_app();
@@ -435,7 +443,7 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
     if (!g_diamondMiniSprite) return;
     /* format a distinct name "%dD" for the diamond entry (must differ from
      * the weasel's "%d" so 0x44abf0 creates a NEW list entry) */
-    sprintf(namebuf, g_fmtDiamond, race);
+    sprintf(namebuf, g_fmtDiamond, r);
     /* 0x44abf0(ecx=standings, arg1=name, arg2=sprite) __stdcall ret 8 */
     __asm__ volatile(
         "pushl %1\n\t"        /* sprite (arg2) */
@@ -445,7 +453,7 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
         : : "r"(namebuf), "r"(g_diamondMiniSprite), "r"(standings), "r"(ABF0_APPEND)
         : "eax", "ecx", "edx", "memory"
     );
-    diag_logf("[diamond] TT diamond appended for race %d", race);
+    diag_logf("[diamond] TT diamond appended for race %d", r);
 }
 
 /* ================================================================
@@ -531,18 +539,17 @@ static void install_disp_cave(void) {
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
     /* test eax,eax */
     p[0]=0x85; p[1]=0xC0; p+=2;
-    /* jz skip */
-    p[0]=0x74; p[1]=0x18; p+=2;
+    /* jz skip — distance to `skip:` is now 0x15 (was 0x18 with the removed
+     * add esp,8): mov ecx(6)+push y(5)+push x(5)+call(5) = 21 = 0x15 */
+    p[0]=0x74; p[1]=0x15; p+=2;
     /* mov ecx,[g_diamondSprite] — 8B 0D <addr> */
     p[0]=0x8B; p[1]=0x0D; *(DWORD*)(p+2)=(DWORD)&g_diamondSprite; p+=6;
     /* push DIAMOND_Y */
     p[0]=0x68; *(DWORD*)(p+1)=DIAMOND_Y; p+=5;
     /* push DIAMOND_X */
     p[0]=0x68; *(DWORD*)(p+1)=DIAMOND_X; p+=5;
-    /* call 0x42c7c0 */
+    /* call 0x42c7c0 — this is `ret $8` (cleans y,x itself), so NO add esp,8 */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+SPRITE_DRAW)-(DWORD)(p+5); p+=5;
-    /* add esp,8 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
     /* skip: popad */
     p[0]=0x61; p+=1;
     /* jmp retAddr */
