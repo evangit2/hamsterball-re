@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_57
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_58
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -402,120 +402,92 @@ typedef struct {
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
 
-/* v55n_57: Read the "collision_Speedcylinder" MeshBuffer's vertex bounds from
- * the BUILT collision/render Level (obj+0x10E0) and use them as the trigger box.
- * The source mesh root is a BRANCH octree (mb_count=0), so its meshbuffers live
- * in child leaves — the flat collision Level already contains ALL meshbuffers
- * (same list the MeshBuffer+0x47C fix iterates). Reads the sub-mesh tree-source
- * vertex arrays (+0x448, 8 floats/vert), computes AABB, adds the spawn offset
- * (world = spawn + local). Returns 1 on success (box_* set) or 0 if the named
- * meshbuffer isn't found (caller keeps the hardcoded fallback). */
-static int cEnt_speedcyl_read_collision_box(DWORD coll_level, float px, float py, float pz,
-                                            SpeedCylState* sc, FILE* logf) {
-    if (!coll_level || coll_level < 0x10000 || IsBadReadPtr((void*)coll_level, 0x100)) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: bad coll level\n");
-        return 0;
-    }
-    DWORD mw = *(DWORD*)((char*)coll_level + 0x08);   /* Level->MeshWorld */
-    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: bad MeshWorld\n");
-        return 0;
-    }
-    int mb_count = *(int*)((char*)mw + 0x30);
-    if (mb_count <= 0 || mb_count > 64) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: mb_count=%d\n", mb_count);
-        return 0;
-    }
-    DWORD* mb_items = *(DWORD**)((char*)mw + 0x438);
-    if (!mb_items || IsBadReadPtr((void*)mb_items, mb_count * 4)) return 0;
+/* v55n_58: g_game_dir is declared later (line ~2337); forward-declare so the
+ * SpeedCylinder trigger-box reader (defined above) can build its file path. */
+extern char g_game_dir[];
 
-    float x1=0,x2=0,y1=0,y2=0,z1=0,z2=0;
-    int found = 0, first = 1;
-    int bi;
-    for (bi = 0; bi < mb_count; bi++) {
-        DWORD mb = mb_items[bi];
-        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x870)) continue;
-        DWORD nameptr = *(DWORD*)((char*)mb + 0x864);
-        if (!nameptr || IsBadReadPtr((void*)nameptr, 4)) continue;
-        const char* name = (const char*)nameptr;
-        if (_strnicmp(name, "collision_Speedcylinder", 23) != 0) continue;
-        found = 1;
-        /* Read the sub-mesh source vertex arrays (+0x448, 8 floats/vert) — the
-         * TREE SOURCE, populated at load. More reliable than mb+0x418 strips,
-         * which are built lazily at render. */
-        int scnt = *(int*)((char*)mb + 0x428);
-        if (scnt <= 0 || scnt > 4096) {
-            if (logf) fprintf(logf, "  ROTATER: SC box: collision mb sub_count=%d\n", scnt);
-            return 0;
-        }
-        DWORD* sitems = *(DWORD**)((char*)mb + 0x830);
-        if (!sitems || IsBadReadPtr((void*)sitems, scnt * 4)) return 0;
-        int si;
-        for (si = 0; si < scnt; si++) {
-            DWORD sub = sitems[si];
-            if (!sub || sub < 0x10000 || IsBadReadPtr((void*)sub, 0x20)) continue;
-            DWORD tri = *(DWORD*)((char*)sub + 0x04);
-            int vcnt = (int)tri + 2;
-            if (vcnt <= 0 || vcnt > 65536) continue;
-            float* verts = *(float**)((char*)sub + 0x448);
-            if (!verts || IsBadReadPtr((void*)verts, vcnt * 32)) continue;
-            int vi;
-            for (vi = 0; vi < vcnt; vi++) {
-                float vx = verts[vi*8+0], vy = verts[vi*8+1], vz = verts[vi*8+2];
-                if (first) { x1=x2=vx; y1=y2=vy; z1=z2=vz; first=0; }
-                else {
-                    if (vx<x1) x1=vx; if (vx>x2) x2=vx;
-                    if (vy<y1) y1=vy; if (vy>y2) y2=vy;
-                    if (vz<z1) z1=vz; if (vz>z2) z2=vz;
-                }
-            }
-        }
-        break;
-    }
-    if (!found || first) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: collision_Speedcylinder meshbuffer not found\n");
+/* v55n_58: Read the trigger box from the SEPARATE file "Speedcylinder_trigger"
+ * (user's new design: Speedcylinder.MESHWORLD = visible cylinder only, no
+ * collision_Speedcylinder geom; the trigger box lives in its own file).
+ * We parse the file's S5 global vertex buffer directly from disk and take the
+ * AABB of all vertices. This is robust regardless of the file's octree shape
+ * (S1/S2/S3 variable, S5 = <uint32 count> + count*32-byte Vertex structs), and
+ * needs no game object allocation / D3D / lifecycle management.
+ * world = spawn + local. Returns 1 on success (box_* set) or 0 if the file
+ * can't be read or has no valid vertex buffer (caller keeps hardcoded fallback). */
+static int cEnt_speedcyl_read_trigger_box(float px, float py, float pz,
+                                          SpeedCylState* sc, FILE* logf) {
+    char path[MAX_PATH];
+    snprintf(path, MAX_PATH, "%s\\levels\\Speedcylinder_trigger.MESHWORLD", g_game_dir);
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: cannot open '%s'\\n", path);
         return 0;
     }
-    /* v55n_57: Make the collision_Speedcylinder meshbuffer NON-SOLID but still
-     * a detectable interactive trigger. The geom is currently unnamed (built as
-     * solid geometry). Setting +0x863 (no_render_flag, E: behavior) hides it and
-     * +0x85D (interactive_flag, N:/E: behavior) makes it a trigger that fires
-     * collision events on ball contact — without a solid surface to roll on.
-     * We set these on the source meshbuffer (the collision Level's copy is the
-     * one the ball raycasts, reached via the same meshbuffer list). */
-    {
-        DWORD coll_mb = 0;
-        DWORD mw2 = *(DWORD*)((char*)coll_level + 0x08);
-        if (mw2 && mw2 >= 0x10000 && !IsBadReadPtr((void*)mw2, 0x460)) {
-            int mb_count2 = *(int*)((char*)mw2 + 0x30);
-            if (mb_count2 > 0 && mb_count2 <= 64) {
-                DWORD* mb_items2 = *(DWORD**)((char*)mw2 + 0x438);
-                if (mb_items2 && !IsBadReadPtr((void*)mb_items2, mb_count2 * 4)) {
-                    int bi2;
-                    for (bi2 = 0; bi2 < mb_count2; bi2++) {
-                        DWORD mb2 = mb_items2[bi2];
-                        if (!mb2 || mb2 < 0x10000 || IsBadReadPtr((void*)mb2, 0x870)) continue;
-                        DWORD np = *(DWORD*)((char*)mb2 + 0x864);
-                        if (!np || IsBadReadPtr((void*)np, 4)) continue;
-                        if (_strnicmp((const char*)np, "collision_Speedcylinder", 23) != 0) continue;
-                        coll_mb = mb2;
-                        break;
-                    }
-                }
+    /* Section 1: ref points (name + pos3 + rot3 + has_mat + optional material) */
+    unsigned int s1; size_t r;
+    r = fread(&s1, 4, 1, f); if (r != 1 || s1 > 4096) { fclose(f); return 0; }
+    unsigned int i;
+    for (i = 0; i < s1; i++) {
+        unsigned int nl; if (fread(&nl, 4, 1, f) != 1 || nl > 256) { fclose(f); return 0; }
+        if (fseek(f, (long)nl, SEEK_CUR) != 0) { fclose(f); return 0; }   /* name (incl NUL) */
+        if (fseek(f, 6 * 4, SEEK_CUR) != 0) { fclose(f); return 0; }      /* pos3 + rot3 */
+        unsigned int hm; if (fread(&hm, 4, 1, f) != 1) { fclose(f); return 0; }
+        if (hm & 0xFF) {                       /* byte check, like the game */
+            if (fseek(f, 16 * 4, SEEK_CUR) != 0) { fclose(f); return 0; } /* ambient/diffuse/spec/emissive */
+            if (fseek(f, 4, SEEK_CUR) != 0) { fclose(f); return 0; }      /* power */
+            unsigned int hrefl; if (fread(&hrefl, 4, 1, f) != 1) { fclose(f); return 0; }
+            unsigned int htex; if (fread(&htex, 4, 1, f) != 1) { fclose(f); return 0; }
+            if (htex) {
+                unsigned int tnl; if (fread(&tnl, 4, 1, f) != 1 || tnl > 256) { fclose(f); return 0; }
+                if (fseek(f, (long)tnl, SEEK_CUR) != 0) { fclose(f); return 0; }
             }
         }
-        if (coll_mb) {
-            *(BYTE*)((char*)coll_mb + 0x863) = 1;  /* no_render_flag (E:) — invisible */
-            *(BYTE*)((char*)coll_mb + 0x85D) = 1;  /* interactive_flag (N:/E:) — trigger, non-solid */
-            if (logf) fprintf(logf, "  ROTATER: SC collision_Speedcylinder meshbuffer 0x%08X set non-solid+invisible trigger\n", coll_mb);
+    }
+    /* Section 2: splines (name + count + count*3 floats) */
+    unsigned int s2; if (fread(&s2, 4, 1, f) != 1 || s2 > 4096) { fclose(f); return 0; }
+    for (i = 0; i < s2; i++) {
+        unsigned int nl; if (fread(&nl, 4, 1, f) != 1 || nl > 256) { fclose(f); return 0; }
+        if (fseek(f, (long)nl, SEEK_CUR) != 0) { fclose(f); return 0; }
+        unsigned int pc; if (fread(&pc, 4, 1, f) != 1 || pc > 65536) { fclose(f); return 0; }
+        if (fseek(f, (long)pc * 3 * 4, SEEK_CUR) != 0) { fclose(f); return 0; }
+    }
+    /* Section 3: lights (type; if type==0 read 9 floats) */
+    unsigned int s3; if (fread(&s3, 4, 1, f) != 1 || s3 > 4096) { fclose(f); return 0; }
+    for (i = 0; i < s3; i++) {
+        unsigned int lt; if (fread(&lt, 4, 1, f) != 1) { fclose(f); return 0; }
+        if (lt == 0) { if (fseek(f, 9 * 4, SEEK_CUR) != 0) { fclose(f); return 0; } }
+    }
+    /* Section 4: 6 floats (bg + ambient) */
+    if (fseek(f, 6 * 4, SEEK_CUR) != 0) { fclose(f); return 0; }
+    /* Section 5: uint32 vertex_count + count*32-byte Vertex structs. */
+    unsigned int vc; if (fread(&vc, 4, 1, f) != 1 || vc == 0 || vc > 65536) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: bad S5 vertex count (%u)\\n", vc);
+        fclose(f); return 0;
+    }
+    float x1=0,x2=0,y1=0,y2=0,z1=0,z2=0;
+    int first = 1, ok = 1;
+    for (i = 0; i < vc; i++) {
+        float vx, vy, vz;
+        if (fread(&vx, 4, 1, f) != 1 || fread(&vy, 4, 1, f) != 1 || fread(&vz, 4, 1, f) != 1) { ok = 0; break; }
+        if (fseek(f, (32 - 12), SEEK_CUR) != 0) { ok = 0; break; }  /* skip normal3 + uv2 = 20 bytes */
+        if (first) { x1=x2=vx; y1=y2=vy; z1=z2=vz; first=0; }
+        else {
+            if (vx<x1) x1=vx; if (vx>x2) x2=vx;
+            if (vy<y1) y1=vy; if (vy>y2) y2=vy;
+            if (vz<z1) z1=vz; if (vz>z2) z2=vz;
         }
     }
-    /* world = spawn + local */
+    fclose(f);
+    if (!ok || first) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: failed reading S5 vertices from '%s'\\n", path);
+        return 0;
+    }
     sc->box_x1 = px + x1; sc->box_x2 = px + x2;
     sc->box_y1 = py + y1; sc->box_y2 = py + y2;
     sc->box_z1 = pz + z1; sc->box_z2 = pz + z2;
-    if (logf) fprintf(logf, "  ROTATER: SC box from mesh: local(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f]) "
-                      "world(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f])\n",
+    if (logf) fprintf(logf, "  ROTATER: SC box from Speedcylinder_trigger: local(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f]) "
+                      "world(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f])\\n",
                       x1,x2,y1,y2,z1,z2, sc->box_x1,sc->box_x2,sc->box_y1,sc->box_y2,sc->box_z1,sc->box_z2);
     return 1;
 }
@@ -2334,7 +2306,7 @@ static int game_is_quitting(void) {
     }
     return 0;
 }
-static char g_game_dir[MAX_PATH] = {0};
+char g_game_dir[MAX_PATH] = {0};
 
 /* Track spawned objects so we can despawn them individually */
 #define MAX_SPAWNED 16
@@ -3931,15 +3903,15 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
                     g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_48 */
                     g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_48 */
-                    /* v55n_57: Read the trigger box + apply non-solid from the
-                     * "collision_Speedcylinder" meshbuffer in the BUILT collision
-                     * Level (sc_col). Falls back to the v55n_54 hardcoded orbit box
-                     * if the meshbuffer isn't found. */
+                    /* v55n_58: Read the trigger box from the separate
+                     * "Speedcylinder_trigger.MESHWORLD" file (S5 vertex AABB).
+                     * Speedcylinder.MESHWORLD is now the visible cylinder only.
+                     * Falls back to the hardcoded orbit box if the file/parse fails. */
                     {
                         DWORD sc_col2 = *(DWORD*)((char*)obj + 0x10E0);
                         g_speedcyls[g_speedcyl_count].col_level = sc_col2;
-                        if (!cEnt_speedcyl_read_collision_box(sc_col2, px, py, pz,
-                                                              &g_speedcyls[g_speedcyl_count], logf)) {
+                        if (!cEnt_speedcyl_read_trigger_box(px, py, pz,
+                                                             &g_speedcyls[g_speedcyl_count], logf)) {
                             if (logf) fprintf(logf, "  ROTATER: SC box: using hardcoded fallback (spawn %.1f,%.1f,%.1f)\n",
                                               px, py, pz);
                             g_speedcyls[g_speedcyl_count].box_x1 = px;
@@ -7228,7 +7200,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_57", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_58", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8845,7 +8817,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_57 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_58 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
