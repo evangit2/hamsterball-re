@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_54
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_55
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -7103,7 +7103,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_54", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_55", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8560,7 +8560,7 @@ static void process_rotaters(DWORD board, FILE* logf) {
             { "Saw",              0, "levels\\Level8-Saw" },        /* Saw_ctor */
             { "Sawblade",         0, "meshes\\sawblade" },         /* PopCylinder — SawBlade_ctor crashes (Level_ctor has no mesh) */
             { "Sign",             13, "levels\\PopupSign" },        /* Sign_ctor (0x443B90, 0x10FC bytes, complex signature) */
-            { "Speedcylinder",    39, "levels\\LevelUp-SpeedCylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) */
+            { "Speedcylinder",    39, "levels\\Speedcylinder" }, /* SpeedCylinder_ctor (0x436A20, 0x150C) — v55n_55: use user's custom Speedcylinder.MESHWORLD instead of LevelUp-SpeedCylinder */
             { "Spinner",           0, "levels\\Level8-Spinny" },     /* Spinner_Level_ctor (0x4396F0, 0x10FC) */
             { "Swirl",            6, "levels\\\\Level3-Swirl" },      /* Rotator_ctor_Impossible */
             { "Tarbubble",        25, "levels\\_default" },         /* v55n: DECORATIVE floating bubble (native ctor 0x44FB50, vtable 0x4D6E48). Does NOT slow/sink — Gluebie(43) slows, Tarpit(44) sinks. Self-driven on all boards. */
@@ -8720,7 +8720,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_54 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_55 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
