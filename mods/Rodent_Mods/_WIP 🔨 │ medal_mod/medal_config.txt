@@ -1,0 +1,100 @@
+; medal_config.txt — Medal Time Mod
+;
+; Overrides per-race medal thresholds (seconds).
+; Omit a section or field to keep the game's original value.
+; Lines starting with # or ; are ignored.
+;
+; Original RaceData.xml values are shown commented for reference.
+;
+; Medal award rule (Time Trial results):
+;   Golden Weasel awarded when finish time <= WEASEL
+;   Gold   awarded when finish time <= GOLD
+;   Silver awarded when finish time <= SILVER
+;   Bronze awarded when finish time <= BRONZE
+
+[WARMUP]
+; race 0 — no medal block in RaceData.xml, ignored
+
+[BEGINNER]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[INTERMEDIATE]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[DIZZY]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[TOWER]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[UP]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[NEON]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[EXPERT]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[ODD]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[TOOB]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[WOBBLY]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[GLASS]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[SKY]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[MASTER]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
+
+[IMPOSSIBLE]
+; WEASEL=6.6
+; GOLD=7.6
+; SILVER=10.3
+; BRONZE=15.0
