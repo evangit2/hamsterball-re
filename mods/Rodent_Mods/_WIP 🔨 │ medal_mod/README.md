@@ -14,6 +14,12 @@ When you finish a race faster than the secret threshold for that race:
 
 When you beat a race's secret time, the **golden weasel stays** and the
 **diamond weasel renders directly over it** at the same location.
+
+### Time-Trial menu (standings screen)
+
+Each race's earned medal mini-icons are shown there. When you've earned the
+diamond for a race, a **diamond mini-icon** appears **to the right of the
+golden weasel** mini-icon for that race.
 - The unlock is **persisted** per race (so it shows up on later visits).
 
 ## Files
@@ -23,19 +29,24 @@ When you beat a race's secret time, the **golden weasel stays** and the
 | `bass.dll` | The mod (drop into the game folder next to `Hamsterball.exe`) |
 | `diamond_weasel_config.txt` | Per-race secret times (edit freely) |
 | `diamondweasel.png` | **You provide this** — put it in the game's `Textures\` folder |
+| `diamondweasel-icon.png` | **You provide this** — the mini icon for the TT menu, in `Textures\` |
 
-## Required icon
+## Required icons
 
-The golden weasel uses `Textures\goldenweasel.png`. This mod loads
-**`Textures\diamondweasel.png`** (same name, "diamond" instead of "golden").
-Drop your provided PNG there. It should be the same size/style as the golden
-weasel icon (32×32).
+The golden weasel uses `Textures\goldenweasel.png` (results) and
+`Textures\goldenweasel-icon.png` (TT menu). This mod loads:
+
+- **`Textures\diamondweasel.png`** — results screen (same style as `goldenweasel.png`)
+- **`Textures\diamondweasel-icon.png`** — TT-menu mini icon (same style as `goldenweasel-icon.png`)
+
+Drop both (filename: same as the golden weasel ones, but "diamond" instead
+of "golden").
 
 ## Install
 
 1. Close Hamsterball.
 2. Copy `bass.dll` over the one in your game folder (back it up first).
-3. Copy `diamondweasel.png` into the game's `Textures\` folder.
+3. Copy `diamondweasel.png` and `diamondweasel-icon.png` into the game's `Textures\` folder.
 4. Edit `diamond_weasel_config.txt` to set each race's secret time.
 5. Launch Hamsterball.
 
@@ -48,6 +59,7 @@ load (it looks for `bass_real.dll` next to itself).
 
 ```
 ICON=diamondweasel.png
+MINIICON=diamondweasel-icon.png
 
 [BEGINNER]
 SECRET=30.0
@@ -58,7 +70,8 @@ SECRET=45.0
 ```
 
 - `SECRET=<seconds>` — beat this time to earn the diamond weasel for that race.
-- `ICON=<filename>` — optional override for the icon filename.
+- `ICON=<filename>` — optional override for the results-screen icon filename.
+- `MINIICON=<filename>` — optional override for the TT-menu mini icon filename.
 
 ## How it works (for the curious)
 
@@ -70,8 +83,11 @@ It hooks two game functions:
    diamond sprite is drawn at the golden weasel's location (0x208, 0x63),
    directly over it (the diamond is the 5th medal, layered on top of the
    golden weasel).
-2. **Icon load** — loads `diamondweasel.png` via the game's own sprite loader
-   (lazily, on first use), so no extra game systems are touched.
+2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
+   for a race, appends a diamond mini-icon entry to the standings medal list
+   right after the golden weasel, so it lays out to the right of it.
+3. **Icon load** — loads `diamondweasel.png` and `diamondweasel-icon.png` via
+   the game's own sprite loader (lazily, on first use).
 
 The unlock flag is persisted to `diamond_weasel_unlocks.dat` (15 bytes, one
 per race) next to the DLL.

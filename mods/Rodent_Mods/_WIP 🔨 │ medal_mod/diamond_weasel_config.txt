@@ -9,10 +9,14 @@
 ; To make the gold star-burst play, SECRET should be FASTER than the golden
 ; weasel par time for that race. Times are in seconds (e.g. 30.0 = 30s).
 ;
-; ICON=<filename>  Optional. Defaults to diamondweasel.png in Textures\.
-;                  Drop your provided PNG there (e.g. diamondweasel.png).
+; ICON=<filename>      Optional. Results-screen icon. Defaults to
+;                      diamondweasel.png in Textures\.
+; MINIICON=<filename>  Optional. Time-Trial-menu mini icon. Defaults to
+;                      diamondweasel-icon.png in Textures\.
+;                      Drop your provided PNGs there.
 
 ICON=diamondweasel.png
+MINIICON=diamondweasel-icon.png
 
 [BEGINNER]
 SECRET=30.0
