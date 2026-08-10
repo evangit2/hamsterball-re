@@ -1,6 +1,5 @@
 /*
-/*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_55
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_56
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -402,6 +401,91 @@ typedef struct {
 } SpeedCylState;
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
+
+/* v55n_56: Read the "collision_Speedcylinder" MeshBuffer's vertex bounds from
+ * the loaded Speedcylinder.MESHWORLD and use them as the trigger box. The mesh
+ * local coords map to world = spawn_pos + local. Scans the source MeshWorld's
+ * meshbuffer list (Level+0x08 -> MeshWorld; MW+0x2C embedded AthenaList: count
+ * +0x30, items +0x438), matches the MeshBuffer name (mb+0x864), reads strip
+ * vertices (mb+0x10 count, mb+0x418 items; each strip = 3 verts x 32B, pos at
+ * +0/+4/+8), computes AABB, adds the spawn offset. Returns 1 on success
+ * (box_* set) or 0 if the named meshbuffer isn't found (caller keeps the
+ * hardcoded fallback). */
+static int cEnt_speedcyl_read_collision_box(DWORD mesh_level, float px, float py, float pz,
+                                            SpeedCylState* sc, FILE* logf) {
+    if (!mesh_level || mesh_level < 0x10000 || IsBadReadPtr((void*)mesh_level, 0x100)) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: bad mesh level\n");
+        return 0;
+    }
+    DWORD mw = *(DWORD*)((char*)mesh_level + 0x08);   /* Level->MeshWorld */
+    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: bad MeshWorld\n");
+        return 0;
+    }
+    int mb_count = *(int*)((char*)mw + 0x30);
+    if (mb_count <= 0 || mb_count > 64) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: mb_count=%d\n", mb_count);
+        return 0;
+    }
+    DWORD* mb_items = *(DWORD**)((char*)mw + 0x438);
+    if (!mb_items || IsBadReadPtr((void*)mb_items, mb_count * 4)) return 0;
+
+    float x1=0,x2=0,y1=0,y2=0,z1=0,z2=0;
+    int found = 0, first = 1;
+    int bi;
+    for (bi = 0; bi < mb_count; bi++) {
+        DWORD mb = mb_items[bi];
+        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x870)) continue;
+        DWORD nameptr = *(DWORD*)((char*)mb + 0x864);
+        if (!nameptr || IsBadReadPtr((void*)nameptr, 4)) continue;
+        const char* name = (const char*)nameptr;
+        if (_strnicmp(name, "collision_Speedcylinder", 23) != 0) continue;
+        found = 1;
+        /* Read the sub-mesh source vertex arrays (+0x448, 8 floats/vert) — the
+         * TREE SOURCE, populated at load. More reliable than mb+0x418 strips,
+         * which are built lazily at render. */
+        int scnt = *(int*)((char*)mb + 0x428);
+        if (scnt <= 0 || scnt > 4096) {
+            if (logf) fprintf(logf, "  ROTATER: SC box: collision mb sub_count=%d\n", scnt);
+            return 0;
+        }
+        DWORD* sitems = *(DWORD**)((char*)mb + 0x830);
+        if (!sitems || IsBadReadPtr((void*)sitems, scnt * 4)) return 0;
+        int si;
+        for (si = 0; si < scnt; si++) {
+            DWORD sub = sitems[si];
+            if (!sub || sub < 0x10000 || IsBadReadPtr((void*)sub, 0x20)) continue;
+            DWORD tri = *(DWORD*)((char*)sub + 0x04);
+            int vcnt = (int)tri + 2;
+            if (vcnt <= 0 || vcnt > 65536) continue;
+            float* verts = *(float**)((char*)sub + 0x448);
+            if (!verts || IsBadReadPtr((void*)verts, vcnt * 32)) continue;
+            int vi;
+            for (vi = 0; vi < vcnt; vi++) {
+                float vx = verts[vi*8+0], vy = verts[vi*8+1], vz = verts[vi*8+2];
+                if (first) { x1=x2=vx; y1=y2=vy; z1=z2=vz; first=0; }
+                else {
+                    if (vx<x1) x1=vx; if (vx>x2) x2=vx;
+                    if (vy<y1) y1=vy; if (vy>y2) y2=vy;
+                    if (vz<z1) z1=vz; if (vz>z2) z2=vz;
+                }
+            }
+        }
+        break;
+    }
+    if (!found || first) {
+        if (logf) fprintf(logf, "  ROTATER: SC box: collision_Speedcylinder meshbuffer not found\n");
+        return 0;
+    }
+    /* world = spawn + local */
+    sc->box_x1 = px + x1; sc->box_x2 = px + x2;
+    sc->box_y1 = py + y1; sc->box_y2 = py + y2;
+    sc->box_z1 = pz + z1; sc->box_z2 = pz + z2;
+    if (logf) fprintf(logf, "  ROTATER: SC box from mesh: local(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f]) "
+                      "world(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f])\n",
+                      x1,x2,y1,y2,z1,z2, sc->box_x1,sc->box_x2,sc->box_y1,sc->box_y2,sc->box_z1,sc->box_z2);
+    return 1;
+}
 static int g_speedcyl_heartbeat = 0; /* v55n_48: throttled log counter */
 
 static int __thiscall cEnt_timebutton_update_noop(void* this_) {
@@ -3814,17 +3898,21 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
                     g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_48 */
                     g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_48 */
-                    /* v55n_54: 8-vertex 3D box (X × Y × Z ranges). Ball orbits the
-                     * horizontal cylinder's round cross-section (Y-Z plane), so Z and
-                     * Y must cover the full orbit, not just the mesh footprint. From
-                     * real-game log the ball orbits Z ~-430..-632 (r~100) rolling on
-                     * the floor at Y~-156.7. */
-                    g_speedcyls[g_speedcyl_count].box_x1 = px;
-                    g_speedcyls[g_speedcyl_count].box_x2 = px + 145.0f;
-                    g_speedcyls[g_speedcyl_count].box_z1 = pz - 110.0f;
-                    g_speedcyls[g_speedcyl_count].box_z2 = pz + 110.0f;
-                    g_speedcyls[g_speedcyl_count].box_y1 = py - 30.0f;
-                    g_speedcyls[g_speedcyl_count].box_y2 = py + 60.0f;
+                    /* v55n_56: Read the trigger box from the "collision_Speedcylinder"
+                     * meshbuffer INSIDE the loaded Speedcylinder.MESHWORLD, so the
+                     * trigger shape/size follows the mesh. Falls back to the v55n_54
+                     * hardcoded orbit box if the meshbuffer isn't found. */
+                    if (!cEnt_speedcyl_read_collision_box(mesh ? (DWORD)mesh : 0, px, py, pz,
+                                                          &g_speedcyls[g_speedcyl_count], logf)) {
+                        if (logf) fprintf(logf, "  ROTATER: SC box: using hardcoded fallback (spawn %.1f,%.1f,%.1f)\n",
+                                          px, py, pz);
+                        g_speedcyls[g_speedcyl_count].box_x1 = px;
+                        g_speedcyls[g_speedcyl_count].box_x2 = px + 145.0f;
+                        g_speedcyls[g_speedcyl_count].box_z1 = pz - 110.0f;
+                        g_speedcyls[g_speedcyl_count].box_z2 = pz + 110.0f;
+                        g_speedcyls[g_speedcyl_count].box_y1 = py - 30.0f;
+                        g_speedcyls[g_speedcyl_count].box_y2 = py + 60.0f;
+                    }
                     g_speedcyl_count++;
                 }
                 break;
@@ -7103,7 +7191,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_55", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_56", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8720,7 +8808,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_55 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_56 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
