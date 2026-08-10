@@ -1,106 +1,85 @@
-# Medal Time Mod (bass.dll proxy)
+# Diamond Weasel — 5th Secret Medal (bass.dll proxy mod)
 
-Overrides the per-race medal threshold times (WEASEL / GOLD / SILVER / BRONZE)
-that Hamsterball loads from `Data/RaceData.xml` at startup.
-
-This lets you make the secret **golden weasel** medal reachable (or any medal's
-par time harder/easier) per race, without editing the game's data file.
+Adds a **fifth, secret medal** per race to Hamsterball.
 
 ## What it does
 
-The game reads one medal-par block per race from `RaceData.xml` into memory
-(App+0x2990..0x29A8) when a race board is constructed. The Time-Trial results
-screen awards a medal when your finish time is **at or below** the threshold:
+When you finish a race faster than the secret threshold for that race:
 
-- **Golden Weasel** — `time <= WEASEL`
-- **Gold** — `time <= GOLD`
-- **Silver** — `time <= SILVER`
-- **Bronze** — `time <= BRONZE`
+- **Results screen**: the **golden weasel** medal icon is **replaced** by a
+  **diamond weasel** icon at the exact same spot (top-right). The normal
+  weasel "burst of stars" still plays, because beating the secret implies
+  beating the golden weasel par.
+- The unlock is **persisted** per race (so it shows up on later visits).
 
-This mod hooks the parser after it runs and overwrites the four thresholds for
-the current race with the values from `medal_config.txt`. Everything downstream
-(the award logic, the in-race target time, the medal icons) reads the same
-memory slots, so the overrides take effect automatically.
+## Files
 
-## Installation
+| File | Purpose |
+|------|---------|
+| `bass.dll` | The mod (drop into the game folder next to `Hamsterball.exe`) |
+| `diamond_weasel_config.txt` | Per-race secret times (edit freely) |
+| `diamondweasel.png` | **You provide this** — put it in the game's `Textures\` folder |
+
+## Required icon
+
+The golden weasel uses `Textures\goldenweasel.png`. This mod loads
+**`Textures\diamondweasel.png`** (same name, "diamond" instead of "golden").
+Drop your provided PNG there. It should be the same size/style as the golden
+weasel icon (32×32).
+
+## Install
 
 1. Close Hamsterball.
-2. Put `bass.dll` in the game folder (where `Hamsterball.exe` lives).
-3. Put `medal_config.txt` in the same folder.
-4. Launch the game.
+2. Copy `bass.dll` over the one in your game folder (back it up first).
+3. Copy `diamondweasel.png` into the game's `Textures\` folder.
+4. Edit `diamond_weasel_config.txt` to set each race's secret time.
+5. Launch Hamsterball.
 
-> The mod forwards all BASS audio calls to the game's real BASS. If you are
-> also running another bass.dll proxy mod, only one `bass.dll` can be active
-> at a time — keep a backup of the one you currently use.
+If you don't have a `bass_real.dll` in the game folder, the proxy will still
+load (it looks for `bass_real.dll` next to itself).
 
-## Configuration
+## Config
 
-Edit `medal_config.txt`. It has one section per race, in tournament order:
-
-```
-[WARMUP]       ; race 0  — has no medal block, ignored
-[BEGINNER]     ; race 1
-[INTERMEDIATE] ; race 2
-[DIZZY]        ; race 3
-[TOWER]        ; race 4
-[UP]           ; race 5
-[NEON]         ; race 6
-[EXPERT]       ; race 7
-[ODD]          ; race 8
-[TOOB]         ; race 9
-[WOBBLY]       ; race 10
-[GLASS]        ; race 11
-[SKY]          ; race 12
-[MASTER]       ; race 13
-[IMPOSSIBLE]   ; race 14
-```
-
-Within a section, set any of:
+`diamond_weasel_config.txt`:
 
 ```
-WEASEL=6.6
-GOLD=7.6
-SILVER=10.3
-BRONZE=15.0
-```
+ICON=diamondweasel.png
 
-Values are in **seconds**. A section you omit (or a field you leave out) keeps
-the game's original value for that race. Lines starting with `#` or `;` are
-ignored.
-
-### Example: make the Golden Weasel easy on every race
-
-```
-[WARMUP]
 [BEGINNER]
-WEASEL=60.0
+SECRET=30.0
+
 [INTERMEDIATE]
-WEASEL=60.0
+SECRET=45.0
 ...
 ```
 
-## Logging
+- `SECRET=<seconds>` — beat this time to earn the diamond weasel for that race.
+- `ICON=<filename>` — optional override for the icon filename.
 
-The mod writes `medal_mod_log.txt` next to `bass.dll`. It records:
+## How it works (for the curious)
 
-- whether the config loaded and the hooks installed, and
-- the race name captured when the parser runs, plus a confirmation that
-  overrides were applied.
+The mod is a BASS proxy DLL (forwards all `BASS_*` calls to `bass_real.dll`).
+It hooks two game functions:
 
-If you don't see `parser called for race: X` in the log after starting a race,
-the mediator parser wasn't reached (e.g. another bass.dll proxy is active).
+1. **Results-screen weasel draw (0x44E12C)** — when the player's time beats
+   the secret threshold for the current race, the drawn sprite is swapped
+   from `goldenweasel.png` to the diamond sprite, so the diamond appears over
+   the golden weasel at the same position (0x208, 0x63).
+2. **Icon load** — loads `diamondweasel.png` via the game's own sprite loader
+   (lazily, on first use), so no extra game systems are touched.
 
-## Build (for developers)
+The unlock flag is persisted to `diamond_weasel_unlocks.dat` (15 bytes, one
+per race) next to the DLL.
+
+## Build
 
 ```
-i686-w64-mingw32-gcc -shared -o bass.dll medal_mod.c -lwinmm \
+i686-w64-mingw32-gcc -shared -o bass.dll diamond_weasel_mod.c -lwinmm \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
   -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
 ```
 
-## Source layout
+## Credit
 
-- `medal_mod.c` — the mod (single file).
-- `bass.dll` — built proxy.
-- `medal_config.txt` — config template with the game's original values
-  commented out for reference.
+Built for RodentRacer. Reverse-engineered from `Hamsterball.exe` (medal
+award + results display + sprite loader).
