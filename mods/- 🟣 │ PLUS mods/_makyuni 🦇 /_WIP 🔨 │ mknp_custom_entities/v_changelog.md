@@ -1,3 +1,30 @@
+v55n_58 - SpeedCylinder: read trigger box from SEPARATE Speedcylinder_trigger file
+------------------------------------------------------------
+USER DESIGN CHANGE:
+ - Speedcylinder.MESHWORLD is now the VISIBLE CYLINDER ONLY (no collision_Speedcylinder geom).
+ - The trigger box lives in its OWN file: Speedcylinder_trigger.MESHWORLD (single box geom,
+   S5 AABB local X[-78.4,78.4] Y[-4.7,4.7] Z[-50,50], 24 verts).
+ - "Stop detecting the collision_Speedcylinder object, since it doesn't exist anymore."
+
+WHAT CHANGED:
+ - Replaced cEnt_speedcyl_read_collision_box (read collision_Speedcylinder from the built
+   collision Level) with cEnt_speedcyl_read_trigger_box: parses
+   g_game_dir\levels\Speedcylinder_trigger.MESHWORLD directly from disk, walks S1/S2/S3/S4,
+   reads the S5 global vertex buffer (uint32 count + count*32-byte Vertex structs) and takes
+   the AABB of all vertices. world = spawn + local. No game object allocation / D3D /
+   lifecycle management needed, and it is robust regardless of the file's octree shape.
+ - Removed the +0x863 no_render / +0x85D interactive flag writes (the old code tried to make
+   the collision_Speedcylinder meshbuffer non-solid+invisible; that geom no longer exists).
+ - g_game_dir is now a plain global (was static) so the helper (defined above it) can build
+   the file path; added a forward declaration.
+ - The SpeedCylinder still spawns the visible cylinder from Speedcylinder.MESHWORLD (case 39,
+   lookup table unchanged at "levels\\Speedcylinder").
+ - Hardcoded fallback box retained if the trigger file/parse fails (logs
+   "cannot open" / "bad S5 vertex count").
+
+LOG: "ROTATER: SC box from Speedcylinder_trigger: local(...) world(...)" on success;
+     "using hardcoded fallback" otherwise.
+
 v55n_57 - SpeedCylinder: read box from built collision Level; non-solid+static trigger
 ------------------------------------------------------------
 USER REQUEST (3 fixes):
