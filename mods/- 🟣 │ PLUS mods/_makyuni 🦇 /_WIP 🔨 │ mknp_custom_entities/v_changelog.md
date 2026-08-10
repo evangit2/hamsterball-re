@@ -1,4 +1,23 @@
-v55n_56 - SpeedCylinder: trigger box read from collision_Speedcylinder meshbuffer
+v55n_57 - SpeedCylinder: read box from built collision Level; non-solid+static trigger
+------------------------------------------------------------
+USER REQUEST (3 fixes):
+ 1. Trigger box should come from the collision_Speedcylinder object (was reading a
+    different, invisible box).
+ 2. collision_Speedcylinder should be static (not rotate with the cylinder).
+ 3. collision_Speedcylinder should be NON-SOLID but still collision-detectable.
+
+FIX 1 (root cause): cEnt_speedcyl_read_collision_box was scanning the SOURCE mesh's
+  root MeshWorld (mb_count=0 — the file is a BRANCH octree whose meshbuffers live in
+  child leaves), so it always fell back to the hardcoded box. Now it reads from the
+  BUILT collision/render Level (obj+0x10E0 -> sc_col), which already contains ALL
+  meshbuffers (same list the MeshBuffer+0x47C fix iterates). The box now matches the
+  collision_Speedcylinder AABB (local X[-78.4,78.4] Y[-4.7,4.7] Z[-50,50]) + spawn offset.
+FIX 2: The trigger box is computed ONCE at spawn as a static world AABB, so it does not
+  rotate with the cylinder. The meshbuffer itself is now hidden (no_render) so it isn't
+  seen to spin.
+FIX 3: collision_Speedcylinder geom is unnamed (built as SOLID geometry). Set +0x863
+  (no_render_flag, E:) to hide it AND +0x85D (interactive_flag, N:/E:) to make it a
+  non-solid interactive trigger that still fires collision events on ball contact.
 ------------------------------------------------------------
 USER REQUEST: make the SpeedCylinder trigger box read the "collision_Speedcylinder"
 invisible box object INSIDE the Speedcylinder.MESHWORLD, so the trigger shape/size
