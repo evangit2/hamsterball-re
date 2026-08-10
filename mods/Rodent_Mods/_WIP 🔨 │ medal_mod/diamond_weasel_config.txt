@@ -3,8 +3,8 @@
 ;
 ; The "Diamond Weasel" is a fifth, secret medal. On the results screen,
 ; when you finish a race faster than SECRET, a diamond weasel medal icon
-; appears as a 5th medal AFTER gold (continuing the medal diagonal).
-; The golden weasel medal stays.
+; renders directly over the golden weasel medal (same spot). It's the 5th
+; medal in the sequence (golden weasel, bronze, silver, gold, diamond).
 ;
 ; To make the gold star-burst play, SECRET should be FASTER than the golden
 ; weasel par time for that race. Times are in seconds (e.g. 30.0 = 30s).

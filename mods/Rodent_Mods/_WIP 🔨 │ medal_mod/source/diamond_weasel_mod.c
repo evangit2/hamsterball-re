@@ -438,14 +438,15 @@ static void install_icon_cave(void) {
  *             add esp,8
  *           skip: popad
  *             jmp 0x44EFD7
- *   Diamond position: continuing the medal diagonal below-right of gold.
- *   Gold is at (x=0x140, y=0x1B7). Use (x=0x160, y=0x1E0) for diamond.
+ *   Diamond position: over the GOLDEN WEASEL (0x208, 0x63). The diamond is
+ *   the 5th medal in the sequence (drawn after gold) but rendered at the
+ *   golden weasel's spot, directly over it.
  */
 static void install_disp_cave(void) {
     DWORD patchAddr = EXE_BASE + (GOLD_DRAW_HOOK - EXE_BASE);
     DWORD retAddr = patchAddr + 5;   /* 0x44EFD7 */
-    const DWORD DIAMOND_X = 0x160;
-    const DWORD DIAMOND_Y = 0x1E0;
+    const DWORD DIAMOND_X = 0x208;   /* golden weasel x */
+    const DWORD DIAMOND_Y = 0x63;    /* golden weasel y */
     g_dispCave = (unsigned char*)VirtualAlloc(NULL, 160, MEM_COMMIT|MEM_RESERVE,
                                               PAGE_EXECUTE_READWRITE);
     if (!g_dispCave) return;

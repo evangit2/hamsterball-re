@@ -10,12 +10,10 @@ When you finish a race faster than the secret threshold for that race:
 
 - **Golden weasel** (top-right) — fastest tier
 - **Bronze, Silver, Gold** — a diagonal row of the earned standard medals
-- **Diamond weasel** — the 5th secret medal, appearing **after gold** (continuing the diagonal) when you beat the secret time
+- **Diamond weasel** — the 5th secret medal, drawn **directly over the golden weasel** (same spot, top-right) when you beat the secret time
 
 When you beat a race's secret time, the **golden weasel stays** and the
-**diamond weasel appears as a 5th medal after gold**. The normal weasel
-"burst of stars" still plays on the gold medal, and the diamond appears
-alongside it.
+**diamond weasel renders directly over it** at the same location.
 - The unlock is **persisted** per race (so it shows up on later visits).
 
 ## Files
@@ -69,8 +67,9 @@ It hooks two game functions:
 
 1. **Results-screen gold draw (0x44EFD2)** — after the gold medal is drawn,
    if the player's time beats the secret threshold for the current race, the
-   diamond sprite is drawn at a position continuing the medal diagonal
-   (below-right of gold).
+   diamond sprite is drawn at the golden weasel's location (0x208, 0x63),
+   directly over it (the diamond is the 5th medal, layered on top of the
+   golden weasel).
 2. **Icon load** — loads `diamondweasel.png` via the game's own sprite loader
    (lazily, on first use), so no extra game systems are touched.
 
