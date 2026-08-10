@@ -1,3 +1,13 @@
+v55n_55 - SpeedCylinder: load custom Speedcylinder.MESHWORLD
+------------------------------------------------------------
+USER REQUEST: make the cEnt SpeedCylinder load "levels\Speedcylinder.MESHWORLD"
+instead of "levels\LevelUp-SpeedCylinder.MESHWORLD".
+
+CHANGE (cEnt lookup table):
+  { "Speedcylinder", 39, "levels\\LevelUp-SpeedCylinder" }
+    -> { "Speedcylinder", 39, "levels\\Speedcylinder" }
+  User's custom Speedcylinder.MESHWORLD ships alongside the mod.
+
 v55n_54 - SpeedCylinder: 8-vertex 3D box; widen Z/Y to cover ball orbit
 ------------------------------------------------------------
 USER REQUEST: add Y depth to the box (8 vertex points, not 4).
