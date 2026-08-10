@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_49
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_50
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -6122,7 +6122,7 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         float dy = ball_y - sc->center_y;
         float dz = ball_z - sc->center_z;
         float horiz_sq = dx*dx + dz*dz;
-        int in_zone = (horiz_sq < 1764.0f && dy > -20.25f && dy < 20.25f); /* v55n_49: Y zone scaled to 0.75x (h=40.5), r=42 unchanged */
+        int in_zone = (horiz_sq < 1764.0f && dy > -21.5f && dy < 20.25f); /* v55n_50: Y lower bound widened to -21.5 (ball rests at dy~-21.4), upper +20.25, r=42 unchanged */
 
         if (log_now) {
             FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
@@ -7090,7 +7090,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_49", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_50", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8707,7 +8707,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_49 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_50 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
