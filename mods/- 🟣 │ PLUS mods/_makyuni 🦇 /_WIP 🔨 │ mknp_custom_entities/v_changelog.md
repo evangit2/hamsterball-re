@@ -1,3 +1,12 @@
+v55n_49 - SpeedCylinder proximity Y zone scaled to 0.75x
+------------------------------------------------------------
+USER REQUEST: scale the cEnt SpeedCylinder proximity detection zone in the
+Y axis to 0.75 its original scale.
+
+CHANGE (source/mknp_custom_entities.c, cEnt_speedcyl_present_check):
+  in_zone Y window: dy +/-27.0 -> +/-20.25 (h 54 -> 40.5 = 0.75x).
+  Horizontal radius unchanged (r=42).
+
 v55n_38 - TimeButton popup shows "+5" instead of "+0" (ScoreObject slot fix)
 ------------------------------------------------------------
 BUG: The "EXTRA TIME:" popup showed "+0" even though the +500 bonus was granted
