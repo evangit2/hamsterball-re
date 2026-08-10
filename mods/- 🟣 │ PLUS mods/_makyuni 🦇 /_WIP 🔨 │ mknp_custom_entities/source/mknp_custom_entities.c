@@ -1,6 +1,6 @@
 /*
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_53
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_54
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -395,9 +395,9 @@ typedef struct {
     DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
     int   was_in_zone; /* v55n_48: edge-detect for collision->track handoff */
     int   in_list;     /* v55n_48: 1 = ball already appended to +0x10F0 */
-    /* v55n_53: 4-point X/Z box detection (replaces center+radius circle).
-     * Cylinder lies along +X (spawn .. spawn+145), footprint Y/Z ~±30.
-     * box_x1/x2 = X extent, box_z1/z2 = Z extent, box_y1/y2 = vertical window. */
+    /* v55n_54: 8-vertex 3D box (X × Y × Z ranges). Cylinder lies along +X
+     * (spawn .. spawn+145); ball orbits its round Y-Z cross-section, so Z/Y
+     * cover the full orbit. box_*1/2 = min/max on each axis. */
     float box_x1, box_x2, box_z1, box_z2, box_y1, box_y2;
 } SpeedCylState;
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
@@ -3814,15 +3814,17 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
                     g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_48 */
                     g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_48 */
-                    /* v55n_53: 4-point X/Z box zone. Cylinder lies along +X
-                     * (measured mesh: X 0..145, Y/Z ~±30). Box matches the
-                     * footprint; vertical window preserved from v55n_48. */
+                    /* v55n_54: 8-vertex 3D box (X × Y × Z ranges). Ball orbits the
+                     * horizontal cylinder's round cross-section (Y-Z plane), so Z and
+                     * Y must cover the full orbit, not just the mesh footprint. From
+                     * real-game log the ball orbits Z ~-430..-632 (r~100) rolling on
+                     * the floor at Y~-156.7. */
                     g_speedcyls[g_speedcyl_count].box_x1 = px;
                     g_speedcyls[g_speedcyl_count].box_x2 = px + 145.0f;
-                    g_speedcyls[g_speedcyl_count].box_z1 = pz - 30.0f;
-                    g_speedcyls[g_speedcyl_count].box_z2 = pz + 30.0f;
-                    g_speedcyls[g_speedcyl_count].box_y1 = py - 23.0f;
-                    g_speedcyls[g_speedcyl_count].box_y2 = py + 20.25f;
+                    g_speedcyls[g_speedcyl_count].box_z1 = pz - 110.0f;
+                    g_speedcyls[g_speedcyl_count].box_z2 = pz + 110.0f;
+                    g_speedcyls[g_speedcyl_count].box_y1 = py - 30.0f;
+                    g_speedcyls[g_speedcyl_count].box_y2 = py + 60.0f;
                     g_speedcyl_count++;
                 }
                 break;
@@ -7101,7 +7103,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_53", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_54", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8718,7 +8720,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_53 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_54 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

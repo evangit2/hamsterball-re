@@ -1,3 +1,15 @@
+v55n_54 - SpeedCylinder: 8-vertex 3D box; widen Z/Y to cover ball orbit
+------------------------------------------------------------
+USER REQUEST: add Y depth to the box (8 vertex points, not 4).
+The struct already stored X/Y/Z ranges; widened Z and Y to cover the ball's
+full orbit around the horizontal cylinder's round Y-Z cross-section.
+
+CHANGE (SpeedCylState spawn box):
+  box_x: [px, px+145]   (cylinder long axis = +X, unchanged)
+  box_z: [pz-110, pz+110]  (was ±30; ball orbits Z ~-430..-632, r~100)
+  box_y: [py-30, py+60]    (was [-23,+20.25]; ball rolls floor at Y~-156.7)
+  Detection test unchanged: all three axes inclusion.
+
 v55n_53 - SpeedCylinder proximity: switch to 4-point X/Z box detection
 ------------------------------------------------------------
 USER REQUEST: replace the center+radius circle test with a rectangular/box
