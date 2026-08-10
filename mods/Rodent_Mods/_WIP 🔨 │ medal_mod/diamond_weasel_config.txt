@@ -1,0 +1,59 @@
+; diamond_weasel_config.txt
+; Per-race secret medal times (in SECONDS).
+;
+; The "Diamond Weasel" is a fifth, secret medal. On the results screen,
+; when you finish a race faster than SECRET, the golden weasel medal icon
+; is REPLACED by the diamond weasel icon at the same spot.
+;
+; To make the star-burst play, SECRET should be FASTER than the golden
+; weasel par time for that race (beating it implies beating the weasel).
+; Times are in seconds (e.g. 30.0 = 30 seconds, 25.75 = 25.75 seconds).
+;
+; ICON=<filename>  Optional. Defaults to diamondweasel.png in Textures\.
+;                  Drop your provided PNG there (e.g. diamondweasel.png).
+
+ICON=diamondweasel.png
+
+[BEGINNER]
+SECRET=30.0
+
+[INTERMEDIATE]
+SECRET=45.0
+
+[DIZZY]
+SECRET=60.0
+
+[TOWER]
+SECRET=75.0
+
+[UP]
+SECRET=40.0
+
+[NEON]
+SECRET=55.0
+
+[EXPERT]
+SECRET=90.0
+
+[ODD]
+SECRET=70.0
+
+[TOOB]
+SECRET=50.0
+
+[WOBBLY]
+SECRET=80.0
+
+[GLASS]
+SECRET=65.0
+
+[SKY]
+SECRET=85.0
+
+[MASTER]
+SECRET=100.0
+
+[IMPOSSIBLE]
+SECRET=120.0
+
+; NOTE: [WARM-UP] has no medal block in the game, so no SECRET for it.
