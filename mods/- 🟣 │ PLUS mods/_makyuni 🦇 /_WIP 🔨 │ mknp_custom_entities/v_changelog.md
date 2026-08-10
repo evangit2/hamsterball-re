@@ -1,3 +1,12 @@
+v55n_52 - SpeedCylinder proximity horizontal radius 51->53
+------------------------------------------------------------
+USER REQUEST (from real-game log): ball rolls the cylinder surface at horiz
+51.3-53.6; r=51 missed by 0.3 (closest 51.3).
+
+CHANGE (cEnt_speedcyl_present_check):
+  horiz: 2601 (r=51) -> 2809 (r=53).
+  Y window unchanged ([-23, +20.25]).
+
 v55n_51 - SpeedCylinder proximity: horizontal radius 42->51, Y lower bound -21.5->-23
 ------------------------------------------------------------
 USER REQUEST (from real-game log): ball touching cylinder surface rests at
