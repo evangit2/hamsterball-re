@@ -188,18 +188,26 @@ static void load_real_bass(void) {
 
 #define ICON_LOAD_HOOK     0x42A304
 #define GOLD_DRAW_HOOK     0x44EFD2   /* call 0x42c7c0 (gold draw) */
+#define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SPRITE_DRAW        0x42C7C0
+#define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
+#define STR_FMT_D          0x4D03F8   /* "%d" */
+#define STR_BUF            0x4F7448   /* AthenaString buffer */
 
 /* ================================================================
  * Mod globals
  * ================================================================ */
 static DWORD g_diamondSprite = 0;
+static DWORD g_diamondMiniSprite = 0;
 static float g_secret[15]    = {0};
 static int   g_hasSecret[15] = {0};
 static BYTE  g_won[15]       = {0};
 static char  g_iconFile[64]  = "diamondweasel.png";
+static char  g_miniIconFile[64] = "diamondweasel-icon.png";
 static int   g_iconLoaded    = 0;
+static int   g_miniIconLoaded = 0;
 static int   g_configLoaded  = 0;
+static char  g_fmtDiamond[]  = "%dD";
 
 static char  g_logPath[MAX_PATH] = {0};
 static char  g_cfgPath[MAX_PATH] = {0};
@@ -208,6 +216,7 @@ static FILE *g_log = NULL;
 
 static unsigned char *g_iconCave = NULL;
 static unsigned char *g_dispCave = NULL;
+static unsigned char *g_ttCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -270,6 +279,12 @@ static void load_config(void) {
             char *nl = strchr(g_iconFile, '\n'); if (nl) *nl = 0;
             nl = strchr(g_iconFile, '\r'); if (nl) *nl = 0;
             diag_logf("[diamond] icon = %s", g_iconFile);
+        } else if (_strnicmp(p, "MINIICON=", 9) == 0) {
+            strncpy(g_miniIconFile, p + 9, sizeof(g_miniIconFile) - 1);
+            g_miniIconFile[sizeof(g_miniIconFile) - 1] = 0;
+            char *nl = strchr(g_miniIconFile, '\n'); if (nl) *nl = 0;
+            nl = strchr(g_miniIconFile, '\r'); if (nl) *nl = 0;
+            diag_logf("[diamond] mini icon = %s", g_miniIconFile);
         }
     }
     fclose(f);
@@ -365,8 +380,7 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     if (IsBadReadPtr((void*)(vt + 0x58), 4)) return;
     load = *(DWORD*)(vt + 0x58);
     if (!load) return;
-    /* __thiscall: ecx=mgr, push &slot, push <str>, call [vt+0x58].
-     * MinGW __thiscall fn pointers silently fail — use inline asm. */
+    /* __thiscall: ecx=mgr, push &slot, push <str>, call [vt+0x58]. */
     __asm__ volatile(
         "pushl %2\n\t"        /* &g_diamondSprite (slot) */
         "pushl %3\n\t"        /* g_iconFile (str) */
@@ -378,6 +392,60 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     );
     g_iconLoaded = 1;
     diag_logf("[diamond] icon loaded: %s -> %08X", g_iconFile, g_diamondSprite);
+}
+__attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
+    DWORD mgr, vt, load;
+    if (g_miniIconLoaded) return;
+    if (!app || !g_configLoaded) return;
+    mgr = *(DWORD*)(app + APP_MGR);
+    if (!mgr) return;
+    if (IsBadReadPtr((void*)mgr, 4)) return;
+    vt = *(DWORD*)mgr;
+    if (!vt) return;
+    if (IsBadReadPtr((void*)(vt + 0x58), 4)) return;
+    load = *(DWORD*)(vt + 0x58);
+    if (!load) return;
+    __asm__ volatile(
+        "pushl %2\n\t"        /* &g_diamondMiniSprite (slot) */
+        "pushl %3\n\t"        /* g_miniIconFile (str) */
+        "movl %0, %%ecx\n\t"  /* mgr */
+        "call *%1\n\t"        /* load */
+        "addl $8, %%esp\n\t"
+        : : "r"(mgr), "r"(load), "r"(&g_diamondMiniSprite), "r"(g_miniIconFile)
+        : "eax", "ecx", "edx", "memory"
+    );
+    g_miniIconLoaded = 1;
+    diag_logf("[diamond] mini icon loaded: %s -> %08X", g_miniIconFile, g_diamondMiniSprite);
+}
+
+/* TT-menu: append a diamond medal entry to the standings list.
+ * Called from the TT cave. standings = the standings screen object (esi),
+ * race = the race index (edi, 1-indexed in standings = race index).
+ * 0x44abf0 is __stdcall(ecx=this, name, sprite) with ret 8.
+ */
+__attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
+    static char namebuf[16];
+    if (race < 0 || race > 14) return;
+    if (!g_won[race]) return;
+    /* lazy-load mini icon (manager valid during TT menu) */
+    if (!g_miniIconLoaded) {
+        DWORD app = get_app();
+        if (app) diamond_load_mini_icon_impl(app);
+    }
+    if (!g_diamondMiniSprite) return;
+    /* format a distinct name "%dD" for the diamond entry (must differ from
+     * the weasel's "%d" so 0x44abf0 creates a NEW list entry) */
+    sprintf(namebuf, g_fmtDiamond, race);
+    /* 0x44abf0(ecx=standings, arg1=name, arg2=sprite) __stdcall ret 8 */
+    __asm__ volatile(
+        "pushl %1\n\t"        /* sprite (arg2) */
+        "pushl %0\n\t"        /* name (arg1) */
+        "movl %2, %%ecx\n\t"  /* standings */
+        "call *%3\n\t"
+        : : "r"(namebuf), "r"(g_diamondMiniSprite), "r"(standings), "r"(ABF0_APPEND)
+        : "eax", "ecx", "edx", "memory"
+    );
+    diag_logf("[diamond] TT diamond appended for race %d", race);
 }
 
 /* ================================================================
@@ -486,12 +554,57 @@ static void install_disp_cave(void) {
     diag_log("[diamond] diamond-after-gold cave installed at 0x44EFD2");
 }
 
+/* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
+ * Hook at 0x42F927 (call 0x44abf0, the golden-weasel append, 5 bytes).
+ *   cave:     mov ecx,esi          ; re-emit weasel append (stack has name+sprite)
+ *             call 0x44abf0
+ *             pushad
+ *             push esi             ; standings (diamond_tt_append arg1)
+ *             push edi             ; race (diamond_tt_append arg2)
+ *             call diamond_tt_append
+ *             add esp,8
+ *             popad
+ *             jmp 0x42F92C         ; inc edi (original next instruction)
+ */
+static void install_tt_cave(void) {
+    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
+    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
+    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                            PAGE_EXECUTE_READWRITE);
+    if (!g_ttCave) return;
+    unsigned char *p = g_ttCave;
+    /* mov ecx, esi */
+    p[0]=0x8B; p[1]=0xCE; p+=2;
+    /* call 0x44abf0 (re-emit weasel append) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+ABF0_APPEND)-(DWORD)(p+5); p+=5;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push esi */
+    p[0]=0x56; p+=1;
+    /* push edi */
+    p[0]=0x57; p+=1;
+    /* call diamond_tt_append */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
+    /* add esp,8 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    /* popad */
+    p[0]=0x61; p+=1;
+    /* jmp retAddr */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_ttCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    diag_log("[diamond] TT-menu cave installed at 0x42F927");
+}
+
 /* ================================================================
  * Install
  * ================================================================ */
 static void install_hooks(void) {
     install_icon_cave();
     install_disp_cave();
+    install_tt_cave();
     diag_log("[diamond] hooks installed");
 }
 
