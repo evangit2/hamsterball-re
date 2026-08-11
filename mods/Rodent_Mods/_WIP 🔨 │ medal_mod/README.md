@@ -59,6 +59,16 @@ data. The instant you beat a secret time, the mod decrypts them and writes
 both files into `Textures\`, then they're loaded by the game through its
 normal file path — exactly like the golden weasel.
 
+## The unlock is atomic (all-or-nothing)
+
+Unlocking a diamond requires writing **everything it needs** — the
+`DiamondMedals` registry value *and* the two PNG assets (plus any future
+effects/assets). If **any** of those writes fails, the mod treats the diamond
+as **never earned**: it does not draw, does not show on the TT menu, applies
+no effects, and does not persist. No partial unlock can ever exist — you can't
+end up with a saved flag but a missing image, or vice versa. If the environment
+becomes writable later, re-earning the diamond will then succeed normally.
+
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
 
