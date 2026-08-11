@@ -1,3 +1,17 @@
+v55n_62 - Rename ROTATER_SIZE -> cENTITY_SIZE
+------------------------------------------------------------
+USER REQUEST:
+ - Renamed the alloc-size macro ROTATER_SIZE -> cENTITY_SIZE (native
+   Rotator_ctor_Impossible object size, 0x1508). Cosmetic identifier
+   rename; no behavior change.
+
+WHAT CHANGED:
+ - 6x ROTATER_SIZE -> cENTITY_SIZE in mknp_custom_entities.c (#define,
+   operator_new at Swirl spawn, memset, case-1 ctor alloc, debug-dword
+   format, debug-table label).
+ - Rebuilt bass.dll (ROTATER_SIZE gone from strings, cENTITY_SIZE present).
+   No behavior change — pure identifier rename.
+
 v55n_61 - Rename log prefixes ROTATER: -> cENTITY:
 ------------------------------------------------------------
 USER REQUEST:
