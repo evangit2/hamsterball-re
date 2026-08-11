@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_69
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_70
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -394,6 +394,9 @@ typedef struct {
     DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
     int   was_in_zone; /* v55n_48: edge-detect for collision->track handoff */
     int   in_list;     /* v55n_48: 1 = ball already appended to +0x10F0 */
+    float yaw;         /* v55n_70: fixed world orientation (ROT_Y) from ref point.
+                        * Rotates the trigger zone + launch facing for this
+                        * cylinder independently of any other cylinder. */
     /* v55n_54: 8-vertex 3D box (X × Y × Z ranges). Cylinder lies along +X
      * (spawn .. spawn+145); ball orbits its round Y-Z cross-section, so Z/Y
      * cover the full orbit. box_*1/2 = min/max on each axis. */
@@ -3903,6 +3906,8 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
                     g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_48 */
                     g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_48 */
+                    /* v55n_70: per-cylinder fixed world orientation (ROT_Y). */
+                    g_speedcyls[g_speedcyl_count].yaw = rot_y;
                     /* v55n_58: Read the trigger box from the separate
                      * "Speedcylinder_trigger.MESHWORLD" file (S5 vertex AABB).
                      * Speedcylinder.MESHWORLD is now the visible cylinder only.
@@ -3943,7 +3948,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                             void* tr = pfn_PopCylinder_ctor(trig_obj, (void*)board,
                                                            px, py, pz, trig_mesh);
                             if (tr) {
-                                /* Visible, NON-solid registration (v55n_69):
+                                /* Visible, NON-solid registration (v55n_70):
                                  * update list (board+0x2578) + render list (board+0xCD4)
                                  * + scene tree (sceneobj+0x1C). NO collision obj — the
                                  * box must be pass-through. v68 made it solid by also
@@ -6270,10 +6275,20 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
 
         /* v55n_53: 4-point X/Z box detection (replaces center+radius circle).
          * Ball must be inside [box_x1,box_x2] x [box_z1,box_z2] footprint
-         * and within the vertical window [box_y1,box_y2]. */
+         * and within the vertical window [box_y1,box_y2].
+         * v55n_70: ROT_Y is a fixed yaw around the vertical (Y) axis that
+         * orients the cylinder + trigger zone. We rotate the ball into the
+         * cylinder's local frame first (-yaw) so the axis-aligned box test
+         * correctly matches the cylinder's rotated footprint. */
         float bx = ball_x;
         float bz = ball_z;
         float by = ball_y;
+        if (sc->yaw != 0.0f) {
+            float c = cosf(sc->yaw), s = sinf(sc->yaw);
+            float lx = bx - sc->x, lz = bz - sc->z;   /* to cylinder origin */
+            bx = sc->x + lx * c + lz * s;             /* rotate -yaw */
+            bz = sc->z - lx * s + lz * c;
+        }
         int in_zone = (bx >= sc->box_x1 && bx <= sc->box_x2 &&
                        bz >= sc->box_z1 && bz <= sc->box_z2 &&
                        by >= sc->box_y1 && by <= sc->box_y2);
@@ -6281,8 +6296,8 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         if (log_now) {
             FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
             if (slf) {
-                fprintf(slf, "  cENTITY: SC present ball=(%.1f,%.1f,%.1f) box_x=[%.1f,%.1f] box_z=[%.1f,%.1f] box_y=[%.1f,%.1f] in_zone=%d was=%d in_list=%d\n",
-                    ball_x, ball_y, ball_z, sc->box_x1, sc->box_x2, sc->box_z1, sc->box_z2,
+                fprintf(slf, "  cENTITY: SC present ball=(%.1f,%.1f,%.1f) yaw=%.3f box_x=[%.1f,%.1f] box_z=[%.1f,%.1f] box_y=[%.1f,%.1f] in_zone=%d was=%d in_list=%d\n",
+                    ball_x, ball_y, ball_z, sc->yaw, sc->box_x1, sc->box_x2, sc->box_z1, sc->box_z2,
                     sc->box_y1, sc->box_y2, in_zone, sc->was_in_zone, sc->in_list);
                 fclose(slf);
             }
@@ -7244,7 +7259,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_69", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_70", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8638,6 +8653,16 @@ static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
         float py = *(float*)(obj_ptr + 0x08);
         float pz = *(float*)(obj_ptr + 0x0C);
 
+        /* v55n_70: Per-entity fixed world orientation. Parse ROT_Y from the
+         * ref point's <DAT> block (same tag the S1-tag path uses for native
+         * Rotators). Default 0.0 = no yaw. */
+        float ent_rot_y = 0.0f;
+        {
+            char rot_y_buf[32] = {0};
+            cEnt_extract_dat_prop(name, "ROT_Y", rot_y_buf, sizeof(rot_y_buf));
+            if (rot_y_buf[0]) ent_rot_y = (float)atof(rot_y_buf);
+        }
+
         /* Match entity name to AI list (alphabetically sorted) */
         int ai_type = -1;
         const char* ai_mesh = NULL;
@@ -8773,7 +8798,9 @@ static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
         if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
 
         cEnt_Spawn_cEntity_at(board, px, py, pz, ai_mesh,
-                         0.0f, 1.0f, 0.0f,
+                         /* v55n_70: use the ref point's ROT_Y as the cylinder's
+                          * fixed world orientation (was hardcoded 0,1,0). */
+                         0.0f, ent_rot_y, 0.0f,
                          2.0f, spawn_ros_y, 2.0f,
                          ai_type,
                          logf);
@@ -8861,7 +8888,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_69 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_70 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

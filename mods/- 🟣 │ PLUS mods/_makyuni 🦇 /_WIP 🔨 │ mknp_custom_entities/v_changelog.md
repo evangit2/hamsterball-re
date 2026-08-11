@@ -1,3 +1,29 @@
+v55n_70 - Multiple SpeedCylinders: per-cylinder fixed world orientation (ROT_Y)
+------------------------------------------------------------
+USER REQUEST:
+ - "I want you to allow multiple entities of the same kind. In this case, two
+   Speedcylinders. Each speedcylinder should have its own rotation values (read
+   from the ref point of the level MESHWORLD), and such values should be applied
+   to the trigger too. Each Speedcylinder and trigger should work on their own,
+   as separate entities."
+ - "I want you to make each cylinder+trigger get a distinct fixed world orientation."
+
+WHAT CHANGED:
+ - SpeedCylState gains a per-cylinder `yaw` field = ROT_Y parsed from the ref
+   point's <DAT> block (default 0.0).
+ - The ref-point loop now reads ROT_Y via cEnt_extract_dat_prop and passes it
+   into cEnt_Spawn_cEntity_at (was hardcoded 0.0,1.0,0.0).
+ - present_check rotates the ball into the cylinder's LOCAL frame by -yaw
+   before the axis-aligned box test, so each cylinder only fires on its own
+   rotated trigger zone. Multiple cylinders are fully independent (g_speedcyls
+   already tracked 16; the per-frame driver already looped all).
+ - Box stays axis-aligned for now (test aid); visual-box/cylinder mesh rotation
+   is a separate follow-up (option B).
+
+VERIFICATION:
+ - Build clean, crash-test OK (11.53s, hbtestd).
+ - Log now prints `yaw=...` per cylinder so orientation is verifiable on Windows.
+
 v55n_69 - Trigger box visible now: make it NON-solid (pass-through)
 ------------------------------------------------------------
 USER REPORT:
