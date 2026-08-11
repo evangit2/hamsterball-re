@@ -199,7 +199,7 @@ static void load_real_bass(void) {
  * ================================================================ */
 static DWORD g_diamondSprite = 0;
 static DWORD g_diamondMiniSprite = 0;
-static float g_secret[15]    = {0};
+static int   g_secret_cs[15] = {0};   /* per-race SECRET threshold in CENTISECONDS (int) */
 static int   g_hasSecret[15] = {0};
 static BYTE  g_won[15]       = {0};
 static char  g_iconFile[64]  = "diamondweasel.png";
@@ -208,6 +208,9 @@ static int   g_iconLoaded    = 0;
 static int   g_miniIconLoaded = 0;
 static int   g_configLoaded  = 0;
 static char  g_fmtDiamond[]  = "%dD";
+static int   g_diamondDelay  = 165;  /* frames after the gold medal appears that the
+                                        diamond appears (3x the game's bronze->
+                                        silver (55) and silver->gold (55) gaps) */
 
 static char  g_logPath[MAX_PATH] = {0};
 static char  g_cfgPath[MAX_PATH] = {0};
@@ -268,23 +271,36 @@ static void load_config(void) {
             if (end) { *end = 0; cur = race_index_from_name(p + 1); }
             continue;
         }
-        if (cur < 0 || cur > 14) continue;
-        if (_strnicmp(p, "SECRET=", 7) == 0) {
-            g_secret[cur] = (float)atof(p + 7);
-            g_hasSecret[cur] = 1;
-            diag_logf("[diamond] race %d SECRET=%.2f", cur, g_secret[cur]);
-        } else if (_strnicmp(p, "ICON=", 5) == 0) {
+        /* Top-level keys (ICON / MINIICON / DIAMOND_DELAY) apply regardless
+         * of the current section. Per-race SECRET only applies inside a race
+         * section. */
+        if (_strnicmp(p, "ICON=", 5) == 0) {
             strncpy(g_iconFile, p + 5, sizeof(g_iconFile) - 1);
             g_iconFile[sizeof(g_iconFile) - 1] = 0;
             char *nl = strchr(g_iconFile, '\n'); if (nl) *nl = 0;
             nl = strchr(g_iconFile, '\r'); if (nl) *nl = 0;
             diag_logf("[diamond] icon = %s", g_iconFile);
-        } else if (_strnicmp(p, "MINIICON=", 9) == 0) {
+            continue;
+        }
+        if (_strnicmp(p, "MINIICON=", 9) == 0) {
             strncpy(g_miniIconFile, p + 9, sizeof(g_miniIconFile) - 1);
             g_miniIconFile[sizeof(g_miniIconFile) - 1] = 0;
             char *nl = strchr(g_miniIconFile, '\n'); if (nl) *nl = 0;
             nl = strchr(g_miniIconFile, '\r'); if (nl) *nl = 0;
             diag_logf("[diamond] mini icon = %s", g_miniIconFile);
+            continue;
+        }
+        if (_strnicmp(p, "DIAMOND_DELAY=", 14) == 0) {
+            g_diamondDelay = atoi(p + 14);
+            if (g_diamondDelay < 0) g_diamondDelay = 0;
+            diag_logf("[diamond] diamond delay = %d frames", g_diamondDelay);
+            continue;
+        }
+        if (cur < 0 || cur > 14) continue;
+        if (_strnicmp(p, "SECRET=", 7) == 0) {
+            g_secret_cs[cur] = (int)(atof(p + 7) * 100.0f);
+            g_hasSecret[cur] = 1;
+            diag_logf("[diamond] race %d SECRET=%.2f", cur, (double)atof(p + 7));
         }
     }
     fclose(f);
@@ -339,38 +355,52 @@ static int get_player_time_cs(DWORD app) {
 /* ================================================================
  * Core logic (called from caves)
  * ================================================================ */
-__attribute__((used)) void diamond_check_award(DWORD app) {
-    int race; float cs, thr;
+__attribute__((used)) void diamond_load_icon_impl(DWORD app);
+
+/* RESULT_OBJ offsets (results-screen object, vtable slot 0 = render 0x44DF70) */
+#define RESULT_FRAME   0x10   /* frame counter [esi+0x10] */
+#define RESULT_GATE_GOLD 0x74 /* gold medal draws when frame > [esi+0x74] */
+#define RESULT_APP     0x0C   /* App ptr [esi+0xc] */
+
+/* Genuine 5th-medal block: draws the diamond icon one "medal gap" AFTER gold.
+ * Mirrors the native gold block exactly (frame gate -> threshold check ->
+ * sprite draw), except the gate is (gold_gate + delay) and the threshold is
+ * the mod's per-race SECRET. Called from the code cave right after the gold
+ * draw re-emit. standalone -> no dependence on the current draw frame.
+ */
+__attribute__((used)) void diamond_render_after(DWORD results) {
+    int frame, gold_gate, race, cs, thr;
+    DWORD app;
+    if (!results) return;
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+    app = *(DWORD*)(results + RESULT_APP);
     if (!app || !g_configLoaded) return;
+    if (!g_iconLoaded) diamond_load_icon_impl(app);
+    if (!g_diamondSprite) return;
+    /* frame gate: only after gold + delay (mirrors native frame gate) */
+    if (IsBadReadPtr((void*)(results + RESULT_GATE_GOLD), 4)) return;
+    gold_gate = *(int*)(results + RESULT_GATE_GOLD);
+    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    frame = *(int*)(results + RESULT_FRAME);
+    if (frame <= gold_gate + g_diamondDelay) return;
+    /* threshold check */
     race = get_race_index();
     if (race < 0 || race > 14) return;
     if (!g_hasSecret[race]) return;
     cs = get_player_time_cs(app);
-    thr = g_secret[race] * 100.0f;
-    if (cs > 0.0f && cs <= thr) {
-        if (!g_won[race]) {
-            g_won[race] = 1;
-            diag_logf("[diamond] RACE %d SECRET EARNED (%.2f <= %.2f)", race, cs, thr);
-            save_unlocks();
-        }
-    }
-}
-__attribute__((used)) void diamond_load_icon_impl(DWORD app);
-__attribute__((used)) int diamond_should_show(DWORD app) {
-    int race; float cs, thr;
-    if (!app || !g_configLoaded) return 0;
-    if (!g_iconLoaded) diamond_load_icon_impl(app);   /* lazy-load; manager valid at results time */
-    race = get_race_index();
-    if (race < 0 || race > 14) return 0;
-    if (!g_hasSecret[race]) return 0;
-    if (!g_diamondSprite) return 0;
-    cs = get_player_time_cs(app);
-    thr = g_secret[race] * 100.0f;
-    if (cs > 0.0f && cs <= thr) {
-        if (!g_won[race]) { g_won[race] = 1; save_unlocks(); }
-        return 1;
-    }
-    return 0;
+    thr = g_secret_cs[race];
+    if (!(cs > 0 && cs <= thr)) return;
+    /* award (persist) */
+    if (!g_won[race]) { g_won[race] = 1; save_unlocks(); }
+    /* draw the diamond over the golden weasel spot (0x208, 0x63) */
+    __asm__ volatile(
+        "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
+        "pushl $0x63\n\t"             /* y */
+        "pushl $0x208\n\t"            /* x */
+        "call *%1\n\t"                /* 0x42C7C0(sprite,x,y) -- ret $8 */
+        : : "r"(0), "r"(SPRITE_DRAW), "r"(g_diamondSprite)
+        : "eax", "ecx", "edx", "memory"
+    );
 }
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
@@ -498,59 +528,37 @@ static void install_icon_cave(void) {
     diag_log("[diamond] icon cave installed at 0x42A304");
 }
 
-/* Cave B: results-screen DIAMOND draw after GOLD at 0x44EFD2 (covers 5 bytes).
- *   original: call 0x42c7c0   (draws gold sprite; ecx=gold sprite, stack has x,y)
+/* Cave B: results-screen DIAMOND draw as a genuine 5th medal block, one
+ * medal-gap AFTER gold. Hook at 0x44EFD2 (the gold `call 0x42c7c0`, 5 bytes).
  *   cave:     call 0x42c7c0            ; re-emit gold draw (existing stack args)
  *             pushad
- *             push [esi+0xc]           ; App (lazy-load icon + secret check)
- *             call diamond_should_show ; returns 1 if secret earned
+ *             push esi                 ; results object (diamond_render_after arg1)
+ *             call diamond_render_after ; full 5th-medal block (frame gate +
+ *                                       ;  secret check + draw, its own delay)
  *             add esp,4
- *             test eax,eax
- *             jz skip
- *             mov ecx,[g_diamondSprite]
- *             push DIAMOND_Y
- *             push DIAMOND_X
- *             call 0x42c7c0            ; draw diamond
- *             add esp,8
- *           skip: popad
+ *             popad
  *             jmp 0x44EFD7
- *   Diamond position: over the GOLDEN WEASEL (0x208, 0x63). The diamond is
- *   the 5th medal in the sequence (drawn after gold) but rendered at the
- *   golden weasel's spot, directly over it.
+ * The diamond appears (gold_gate + g_diamondDelay) frames after gold, i.e.
+ * one medal gap later, at the golden weasel's spot (0x208, 0x63).
  */
 static void install_disp_cave(void) {
     DWORD patchAddr = EXE_BASE + (GOLD_DRAW_HOOK - EXE_BASE);
     DWORD retAddr = patchAddr + 5;   /* 0x44EFD7 */
-    const DWORD DIAMOND_X = 0x208;   /* golden weasel x */
-    const DWORD DIAMOND_Y = 0x63;    /* golden weasel y */
     g_dispCave = (unsigned char*)VirtualAlloc(NULL, 160, MEM_COMMIT|MEM_RESERVE,
                                               PAGE_EXECUTE_READWRITE);
     if (!g_dispCave) return;
     unsigned char *p = g_dispCave;
     /* call 0x42c7c0 (re-emit gold draw) — E8 rel32 */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+SPRITE_DRAW)-(DWORD)(p+5); p+=5;
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
     /* pushad */
     p[0]=0x60; p+=1;
-    /* push [esi+0xc] — FF 76 0C */
-    p[0]=0xFF; p[1]=0x76; p[2]=0x0C; p+=3;
-    /* call diamond_should_show */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_should_show-(DWORD)(p+5); p+=5;
+    /* push esi (results object) — 56 */
+    p[0]=0x56; p+=1;
+    /* call diamond_render_after */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_render_after-(DWORD)(p+5); p+=5;
     /* add esp,4 */
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
-    /* test eax,eax */
-    p[0]=0x85; p[1]=0xC0; p+=2;
-    /* jz skip — distance to `skip:` is now 0x15 (was 0x18 with the removed
-     * add esp,8): mov ecx(6)+push y(5)+push x(5)+call(5) = 21 = 0x15 */
-    p[0]=0x74; p[1]=0x15; p+=2;
-    /* mov ecx,[g_diamondSprite] — 8B 0D <addr> */
-    p[0]=0x8B; p[1]=0x0D; *(DWORD*)(p+2)=(DWORD)&g_diamondSprite; p+=6;
-    /* push DIAMOND_Y */
-    p[0]=0x68; *(DWORD*)(p+1)=DIAMOND_Y; p+=5;
-    /* push DIAMOND_X */
-    p[0]=0x68; *(DWORD*)(p+1)=DIAMOND_X; p+=5;
-    /* call 0x42c7c0 — this is `ret $8` (cleans y,x itself), so NO add esp,8 */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+SPRITE_DRAW)-(DWORD)(p+5); p+=5;
-    /* skip: popad */
+    /* popad */
     p[0]=0x61; p+=1;
     /* jmp retAddr */
     write_jmp(p, retAddr); p+=5;
@@ -558,7 +566,7 @@ static void install_disp_cave(void) {
     memset(patch, 0x90, 5);
     write_jmp(patch, (DWORD)g_dispCave);
     patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] diamond-after-gold cave installed at 0x44EFD2");
+    diag_log("[diamond] diamond 5th-medal cave installed at 0x44EFD2");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
@@ -583,7 +591,7 @@ static void install_tt_cave(void) {
     /* mov ecx, esi */
     p[0]=0x8B; p[1]=0xCE; p+=2;
     /* call 0x44abf0 (re-emit weasel append) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(EXE_BASE+ABF0_APPEND)-(DWORD)(p+5); p+=5;
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
     /* pushad */
     p[0]=0x60; p+=1;
     /* push esi */

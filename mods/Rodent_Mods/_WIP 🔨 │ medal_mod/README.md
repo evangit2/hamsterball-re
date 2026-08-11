@@ -13,7 +13,10 @@ When you finish a race faster than the secret threshold for that race:
 - **Diamond weasel** — the 5th secret medal, drawn **directly over the golden weasel** (same spot, top-right) when you beat the secret time
 
 When you beat a race's secret time, the **golden weasel stays** and the
-**diamond weasel renders directly over it** at the same location.
+**diamond weasel** appears a moment later (3 medal-gaps after the **gold**
+medal — around 165 frames, ~5.5s, 3× the game's standard gap) **directly over
+the golden weasel** at the same location. You can tune this with
+`DIAMOND_DELAY`.
 
 ### Time-Trial menu (standings screen)
 
@@ -30,6 +33,7 @@ golden weasel** mini-icon for that race.
 | `diamond_weasel_config.txt` | Per-race secret times (edit freely) |
 | `diamondweasel.png` | **You provide this** — put it in the game's `Textures\` folder |
 | `diamondweasel-icon.png` | **You provide this** — the mini icon for the TT menu, in `Textures\` |
+| `diamond_weasel_unlocks.dat` | Created by the mod, per-race unlock flags (don't edit) |
 
 ## Required icons
 
@@ -45,13 +49,15 @@ of "golden").
 ## Install
 
 1. Close Hamsterball.
-2. Copy `bass.dll` over the one in your game folder (back it up first).
-3. Copy `diamondweasel.png` and `diamondweasel-icon.png` into the game's `Textures\` folder.
-4. Edit `diamond_weasel_config.txt` to set each race's secret time.
-5. Launch Hamsterball.
-
-If you don't have a `bass_real.dll` in the game folder, the proxy will still
-load (it looks for `bass_real.dll` next to itself).
+2. Make sure `bass_real.dll` is in the game folder — this is the original
+   BASS DLL the mod forwards to. Without it the game can't load music/sound
+   and will crash. (If you don't have one, install the latest BASS from
+   un4seen.com and drop the 32-bit `bass.dll` renamed to `bass_real.dll`.)
+3. Copy `bass.dll` (the mod) over the one in your game folder (back up the
+   original first).
+4. Copy `diamondweasel.png` and `diamondweasel-icon.png` into the game's `Textures\` folder.
+5. Edit `diamond_weasel_config.txt` to set each race's secret time.
+6. Launch Hamsterball.
 
 ## Config
 
@@ -72,17 +78,21 @@ SECRET=45.0
 - `SECRET=<seconds>` — beat this time to earn the diamond weasel for that race.
 - `ICON=<filename>` — optional override for the results-screen icon filename.
 - `MINIICON=<filename>` — optional override for the TT-menu mini icon filename.
+- `DIAMOND_DELAY=<frames>` — optional. How many frames after the **gold** medal
+  appears before the diamond appears (default `165`, 3× the game's ~55-frame
+  stagger between the other medals). Set `0` to draw it on the same frame as gold.
 
 ## How it works (for the curious)
 
 The mod is a BASS proxy DLL (forwards all `BASS_*` calls to `bass_real.dll`).
-It hooks two game functions:
+It hooks three things:
 
-1. **Results-screen gold draw (0x44EFD2)** — after the gold medal is drawn,
-   if the player's time beats the secret threshold for the current race, the
-   diamond sprite is drawn at the golden weasel's location (0x208, 0x63),
-   directly over it (the diamond is the 5th medal, layered on top of the
-   golden weasel).
+1. **Results-screen gold draw (0x44EFD2)** — this runs a genuine **5th medal
+   block**, mirroring exactly how the game draws each medal. After the gold
+   medal is drawn, it waits `DIAMOND_DELAY` frames (default 165 = 3× the
+   game's own bronze→silver→gold gap of 55), then if the player's time beats the secret
+   threshold for the current race, the diamond sprite is drawn at the golden
+   weasel's location (0x208, 0x63), directly over it.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.

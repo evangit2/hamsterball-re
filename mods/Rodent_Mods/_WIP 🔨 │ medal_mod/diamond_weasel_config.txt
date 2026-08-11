@@ -14,9 +14,16 @@
 ; MINIICON=<filename>  Optional. Time-Trial-menu mini icon. Defaults to
 ;                      diamondweasel-icon.png in Textures\.
 ;                      Drop your provided PNGs there.
+;
+; DIAMOND_DELAY=<frames>  Optional. How long after the GOLD medal appears
+;                      before the diamond appears on the results screen.
+;                      The game staggers medals 55 frames apart (bronze at
+;                      845, silver at 900, gold at 955). Default 165 (3x the
+;                      gold gap) = the diamond appears 3 medal-gaps after gold.
 
 ICON=diamondweasel.png
 MINIICON=diamondweasel-icon.png
+DIAMOND_DELAY=165
 
 [BEGINNER]
 SECRET=30.0
