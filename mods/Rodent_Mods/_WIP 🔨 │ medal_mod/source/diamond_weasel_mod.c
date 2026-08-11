@@ -187,6 +187,13 @@ static void load_real_bass(void) {
 #define BOARD_TIME         0x1C
 #define APP_MGR            0x22C
 
+/* Route 2: fully in-memory diamond art (embedded encrypted pixels + seeded
+ * texture cache). Includes the pixel header + the builder that decrypts,
+ * creates a D3D texture via the game's device, and seeds the cache so the
+ * file loader never runs. */
+#include "diamond_pixels.h"
+#include "diamond_memtex.h"
+
 #define ICON_LOAD_HOOK     0x42A304
 #define GOLD_DRAW_HOOK     0x44EFD2   /* call 0x42c7c0 (gold draw) */
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
@@ -447,9 +454,14 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
     );
 }
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
-    DWORD mgr, vt, load;
+    DWORD mgr, vt, load, gfx;
     if (g_iconLoaded) return;
     if (!app || !g_configLoaded) return;
+    /* Route 2: seed the texture cache with the in-memory diamond texture so
+     * the sprite loader resolves it from memory (file loader never runs).
+     * gfx = [App+0x174]. */
+    gfx = *(DWORD*)(app + APP_BOARD);
+    if (gfx) diamond_seed_cache((void*)gfx);
     mgr = *(DWORD*)(app + APP_MGR);
     if (!mgr) return;
     if (IsBadReadPtr((void*)mgr, 4)) return;
