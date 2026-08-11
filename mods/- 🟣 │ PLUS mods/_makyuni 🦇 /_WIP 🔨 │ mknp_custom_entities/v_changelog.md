@@ -1,3 +1,23 @@
+v55n_63 - Final ROTATER sweep: docs + comments cleaned
+------------------------------------------------------------
+USER REQUEST:
+ - Final sweep for any remaining 'rotater' references.
+
+WHAT CHANGED:
+ - README.md: updated 3 stale function names in the Mod Functions table
+   (cEnt_Spawn_cEntity_at, cEnt_Despawn_All_cEntities, cEnt_Apply_S1_cEntity_Tags).
+ - mknp_custom_entities.c: rewrote ~11 cosmetic comments that referenced old
+   'rotater' wording -> cEntity terminology (tracking/config/despawn/apply/
+   count comments).
+ - REMAINING (correctly kept): the 3 source mentions of literal `REF:Rotater`
+   and "Rotater" describe the NATIVE game behavior (the game's own vtable[33]
+   handler spawns Rotators from S1 ref points literally named "Rotater") —
+   these are the game's ref-point name, not mod identifiers, and are accurate.
+ - Historical v_changelog entries referring to 'process_rotaters'/'rotater'
+   are preserved verbatim — they document past versions and renaming them
+   would misrepresent history.
+ - Rebuilt bass.dll (no functional change; comments/docs only).
+
 v55n_62 - Rename ROTATER_SIZE -> cENTITY_SIZE
 ------------------------------------------------------------
 USER REQUEST:

@@ -121,12 +121,12 @@ All mod-side functions use the `cEnt_` prefix to distinguish them from game orig
 
 | Function                   | Purpose                                             |
 | -------------------------- | --------------------------------------------------- |
-| cEnt_spawn_rotater_at      | Main spawn function - dispatches to correct ctor    |
+| cEnt_Spawn_cEntity_at      | Main spawn function - dispatches to correct ctor    |
 | cEnt_load_mesh_file        | Loads .MESH or .MESHWORLD files                     |
 | cEnt_despawn_object        | Removes object from all board lists                 |
-| cEnt_despawn_all_rotaters  | Despawn all tracked objects                         |
+| cEnt_Despawn_All_cEntities | Despawn all tracked objects                         |
 | cEnt_process_custom_tags   | Parses `<MESH>` and `<SPEEDMULT>` tags              |
-| cEnt_apply_s1_rotater_tags | Applies ROT_Y/ROS_Y from S1 ref points              |
+| cEnt_Apply_S1_cEntity_Tags | Applies ROT_Y/ROS_Y from S1 ref points              |
 | cEnt_bridgeslam_update     | Per-frame state machine for Bridge entities         |
 | cEnt_find_grid_points      | Scans S1 list for GRID reference points             |
 | cEnt_get_level             | Gets Level pointer from board                       |

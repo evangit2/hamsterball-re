@@ -1884,10 +1884,10 @@ static const char* g_ai_mesh_paths[] = {
     (const char*)0x004D211C,           /* AI 5: Levels\LevelImpossible-BigGear */
 };
 
-/* Rotater spawned objects tracking */
+/* cEntity spawned objects tracking */
 #define MAX_cENTITIES 999
 
-/* Per-rotater config: mesh path and rotation speeds */
+/* Per-cEntity config: mesh path and rotation speeds */
 typedef struct {
     DWORD obj;              /* spawned object pointer */
     char  mesh_path[128];   /* custom mesh path (empty = default Level3-Swirl) */
@@ -3387,7 +3387,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         /* v55m_48d: The native SWIRL ctor (0x00435940) sets the initial
          * angle obj+0x10E8 = -0.20f (0xBE4CCCCD) when the board is in race
          * mode (App+0x237 == 0) — which is always the case for cEnt spawns.
-         * Reset it to 0.0 by default so the rotater starts unrotated.
+         * Reset it to 0.0 by default so the cEntity starts unrotated.
          * (The debug table's "Sets Angle" step now yields 0.0.) */
         *(float*)(obj + 0x10E8) = 0.0f;
     } else if ((ai_type >= 7 && ai_type <= 14) || (ai_type >= 17 && ai_type <= 22) || (ai_type >= 27 && ai_type <= 44) || ai_type == 45) {
@@ -4516,7 +4516,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
     }
 }
 
-/* Despawn all rotater objects — calls vtable[11] (RemoveAndFree) on each */
+/* Despawn all cEntity objects — calls vtable[11] (RemoveAndFree) on each */
 static void cEnt_Despawn_All_cEntities(DWORD board, FILE* logf) {
     int i;
     for (i = 0; i < g_cEntity_count; i++) {
@@ -4619,8 +4619,8 @@ static void cEnt_Despawn_All_cEntities(DWORD board, FILE* logf) {
     g_chomper_count = 0;  /* v55m_3: reset Chomper tracking on level unload */
 
     /* v55m_42q: Arm objects are separate PopCylinder objects. They are
-     * registered in the rotater_cfg list via the spawn_done path, so the
-     * main rotater loop above will call RemoveAndFree on them automatically.
+     * registered in the g_cEntity_cfg list via the spawn_done path, so the
+     * main cEntity loop above will call RemoveAndFree on them automatically.
      * The CatapultState array is zeroed by g_catapult_count=0. */
 
     /* v55m_42f: free BASS dropin sample on level unload to avoid leak */
@@ -4901,7 +4901,7 @@ static void cEnt_update_constant_rotations(void) {
     }
 }
 
-/* Scan S1 ref points for Rotater entries with custom rot tags.
+/* Scan S1 ref points for cEntity entries with custom rot tags.
  * For each found, search the board's update list for the natively-spawned
  * Rotator object at the matching position, and apply ROT_Y to its direction
  * field (+0x10EC). This does NOT spawn — native game already spawned from S1. */
@@ -6754,7 +6754,7 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
     g_dbg_scl_x = g_dbg_scl_y = g_dbg_scl_z = 0.0f;
     if (!board) return;
 
-    /* v55m_48d: The mod tracks every spawned rotater in g_cEntity_cfg[].
+    /* v55m_48d: The mod tracks every spawned cEntity in g_cEntity_cfg[].
      * Match the S3 entry position against each cfg entry's spawn position.
      * The cfg's `obj` gives us the EXACT spawned object pointer — no fragile
      * list-scan-by-position needed. We then read live values straight off
@@ -7607,7 +7607,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
         static const char* const rot_s4_subsub_names[][4] = {
             { "scans section 3 objects", "matches cEnt_XXX name", "parses <ENTITY> tag", "calls cEnt_Spawn_cEntity_at" },
             { "present hook", "slot 9 (viewport clear)", "before slot 10 object render", "cEnt_update_constant_rotations" },
-            { "vtable[11] RemoveAndFree", "resets rotater count", "resets gluebie/tarpit/waterwheel", "level unload handler" },
+            { "vtable[11] RemoveAndFree", "resets cEntity count", "resets gluebie/tarpit/waterwheel", "level unload handler" },
         };
         static const char* const rot_s4_subsub_addrs[][4] = {
             { "", "", "", "" },
@@ -9047,7 +9047,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         /* Hide original meshbuffers for C_entity entries */
         hide_entity_meshbuffers(board, logf);
 
-        /* Apply custom rotation directions to spawned rotaters */
+        /* Apply custom rotation directions to spawned cEntities */
         cEnt_Apply_cEntity_Direction();
 
         /* Apply S1 rot tags to natively-spawned Rotators */
@@ -9118,7 +9118,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
                 g_spawned_count--;
             }
 
-            /* Despawn all rotater objects on level exit */
+            /* Despawn all cEntity objects on level exit */
             cEnt_Despawn_All_cEntities(board, logf);
         } else {
             /* No GRID points — still mark board as processed.
