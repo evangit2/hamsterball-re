@@ -780,27 +780,40 @@ static float vortex_frand(void) {
  * arithmetic directly in C (verified from decompile):
  *   screenX = worldX * *(gfx+0x5C)->0x1F8 + *(int*)(gfx+0x798)
  *   screenY = worldY * *(gfx+0x5C)->0x1FC + *(int*)(gfx+0x79C)
+ * The golden-weasel draw passes the sprite's TOP-LEFT world corner (0x208,0x63).
+ * The sprite spans [sprite+0xC8] x [sprite+0xCC] (width/height, world units),
+ * so its true center is top-left + half dims. We transform that center to
+ * screen so the vortex converges on the middle of the trophy.
  * This avoids fragile inline-asm __thiscall + FPU-return calling. */
-static void vortex_compute_center(DWORD gfx) {
+static void vortex_compute_center(DWORD gfx, DWORD sprite) {
     DWORD scale = 0;
-    float sx = 0.0f, sy = 0.0f;
+    float cxw, cyw, sx = 0.0f, sy = 0.0f;
+    float w = 0.0f, h = 0.0f;
     if (!gfx) return;
+    if (sprite) {
+        if (!IsBadReadPtr((void*)(sprite + 0xC8), 8)) {
+            w = *(float*)(sprite + 0xC8);
+            h = *(float*)(sprite + 0xCC);
+        }
+    }
+    cxw = (float)VORTEX_WORLD_X + w * 0.5f;
+    cyw = (float)VORTEX_WORLD_Y + h * 0.5f;
     if (IsBadReadPtr((void*)(gfx + 0x5C), 4)) return;
     scale = *(DWORD*)(gfx + 0x5C);
     if (!scale || IsBadReadPtr((void*)(scale + 0x1FC + 4), 4)) return;
-    sx = (float)VORTEX_WORLD_X * *(float*)(scale + 0x1F8) + (float)(*(int*)(gfx + 0x798));
-    sy = (float)VORTEX_WORLD_Y * *(float*)(scale + 0x1FC) + (float)(*(int*)(gfx + 0x79C));
+    sx = cxw * *(float*)(scale + 0x1F8) + (float)(*(int*)(gfx + 0x798));
+    sy = cyw * *(float*)(scale + 0x1FC) + (float)(*(int*)(gfx + 0x79C));
     if (sx > -5000.0f && sx < 5000.0f && sy > -5000.0f && sy < 5000.0f) {
         g_vortexCx = sx; g_vortexCy = sy;
     }
 }
 
 /* Reset the vortex cycle. Called by the weasel cave at WEASEL_WHITE_START. */
-static void vortex_start_cycle(DWORD gfx) {
+static void vortex_start_cycle(DWORD gfx, DWORD sprite) {
     int i;
     if (!gfx) return;
     vortex_seed();
-    vortex_compute_center(gfx);
+    vortex_compute_center(gfx, sprite);
     g_vortexFrame = 0;
     g_vortexActive = 1;
     for (i = 0; i < VORTEX_MAX; i++) {
@@ -924,7 +937,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
             if (sprite && IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)==0)
                 gfx = *(DWORD*)(sprite + SPRITE_GFX);
             else gfx = 0;
-            vortex_start_cycle(gfx);
+            vortex_start_cycle(gfx, sprite);
         }
     } else {
         /* outside the window -> cycle ended */
@@ -944,7 +957,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
                 p->ay = 0.0f;                              /* no angular motion — straight inward pull */
                 /* start at a random radius on the outer ring */
                 p->r = 34.0f + vortex_frand()*40.0f;
-                p->vr = 0.6f + vortex_frand()*1.2f;        /* suck-in speed */
+                p->vr = 1.8f + vortex_frand()*2.4f;       /* suck-in speed (fast) */
                 p->alpha = 0;
             } else { continue; }
         } else {
