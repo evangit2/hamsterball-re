@@ -1,4 +1,4 @@
-# Custom Entities Mod v55n_68
+# Custom Entities Mod v55n_69
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
@@ -101,7 +101,7 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 | Saw           |    0 | levels\Level8-Saw                            | cEnt_Saw_ctor                                                                                                                                  |
 | Sawblade      |    0 | meshes\sawblade                              | PopCylinder - cEnt_SawBlade_ctor crashes (Level_ctor)                                                                                          |
 | Sign          |   13 | levels\PopupSign                             | cEnt_Sign_ctor, complex signature                                                                                                              |
-| Speedcylinder |   39 | levels\Speedcylinder                         | cEnt_SpeedCylinder_ctor - solid + spin/launch (v55n_2); trigger box from Speedcylinder_trigger.MESHWORLD (v55n_58), rendered visible (v55n_68) |
+| Speedcylinder |   39 | levels\Speedcylinder                         | cEnt_SpeedCylinder_ctor - solid + spin/launch (v55n_2); trigger box from Speedcylinder_trigger.MESHWORLD (v55n_58), rendered visible, non-solid (v55n_69) |
 | Spinner       |   27 | levels\Level8-Spinny                         | cEnt_Spinner_Level_ctor (0x4396F0, 0x10FC)                                                                                                     |
 | Swirl         |    6 | levels\Level3-Swirl                          | cEnt_Rotator_ctor_Impossible                                                                                                                   |
 | Tarbubble     |   25 | levels\_default                              | Decorative bubble (native 0x44FB50)                                                                                                            |
