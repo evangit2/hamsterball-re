@@ -7600,7 +7600,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
             { "cEntityConfig", "rot_x/rot_y/rot_z", "ros_x/ros_y/ros_z", "rot_a/rot_d/rot_m" },
         };
         static const char* const rot_s4_subs[] = {
-            "cENT_Treesearch__All -> cEnt_Spawn_cEntity_at",
+            "cEnt_Treesearch_cEntities -> cEnt_Spawn_cEntity_at",
             "per-frame: vtable[11] native render",
             "cEnt_Despawn_All_cEntities (level end)",
         };
@@ -8505,7 +8505,7 @@ typedef struct {
 static tracked_entity_t g_tracked[MAX_cENTITIES];
 static int g_tracked_count = 0;
 
-static void cENT_Treesearch__All(DWORD board, FILE* logf) {
+static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
     if (!board) return;
 
     DWORD sceneobj = cEnt_get_sceneobj(board);
@@ -9042,7 +9042,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         cEnt_process_custom_tags(board, logf);
 
         /* Process C_entity entries — spawn custom objects at each position */
-        cENT_Treesearch__All(board, logf);
+        cEnt_Treesearch_cEntities(board, logf);
 
         /* Hide original meshbuffers for C_entity entries */
         hide_entity_meshbuffers(board, logf);
@@ -9124,7 +9124,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             /* No GRID points — still mark board as processed.
              * v53g-5 FIX: Do NOT call cEnt_Despawn_All_cEntities() here!
              * It destroys all custom entities that were just spawned by
-             * cENT_Treesearch__All(). The despawn was intended for stale objects
+             * cEnt_Treesearch_cEntities(). The despawn was intended for stale objects
              * from a PREVIOUS level, but g_spawned_board hasn't been set yet,
              * so it hits the CURRENT level's objects. Remove this call entirely. */
             g_spawned_board = board;
