@@ -1885,7 +1885,7 @@ static const char* g_ai_mesh_paths[] = {
 };
 
 /* Rotater spawned objects tracking */
-#define MAX_ROTATERS 999
+#define MAX_cENTITIES 999
 
 /* Per-rotater config: mesh path and rotation speeds */
 typedef struct {
@@ -1908,18 +1908,18 @@ typedef struct {
     float rot_min;          /* min oscillation angle (native -2.0, default 0.0) */
     int   rot_m;             /* axis for Gfx_Scale: 0=X, 1=Y, 2=Z (default 0=X) */
     int   has_custom_limits; /* 1 if rot_max/rot_min are non-zero (need per-frame override) */
-} RotaterConfig;
+} cEntityConfig;
 
-static RotaterConfig g_rotater_cfg[MAX_ROTATERS];
-static int   g_rotater_count = 0;
+static cEntityConfig g_cEntity_cfg[MAX_cENTITIES];
+static int   g_cEntity_count = 0;
 /* v55m_48d: CONSTRUCTOR-time snapshot of the tracked entity's initial
  * angle (obj+0x10E8) and direction (obj+0x10EC), captured once at spawn
- * in cEnt_spawn_rotater_at. The per-frame native render mutates these
+ * in cEnt_Spawn_cEntity_at. The per-frame native render mutates these
  * fields, but the "Constructors" debug section must show the static
  * initial values — so we freeze them here. */
 static float g_dbg_ctor_angle = 0.0f;
 static float g_dbg_ctor_direction = 0.0f;
-static DWORD g_rotater_board = 0;
+static DWORD g_cEntity_board = 0;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Bonk collision event hook
@@ -2992,7 +2992,7 @@ static void* cEnt_load_mesh_file(DWORD gfx_device, const char* path, int* out_is
  * MeshWorld_ctor, creates Rotator_ctor_Impossible, registers in board lists.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
+static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                               const char* mesh_path,
                               float rot_x, float rot_y, float rot_z,
                               float ros_x, float ros_y, float ros_z,
@@ -3347,24 +3347,24 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         }
 
         /* Track for despawn (no rotation — static .MESH visual) */
-        if (g_rotater_count < MAX_ROTATERS) {
-            g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
-            g_rotater_cfg[g_rotater_count].rot_x = 0.0f;
-            g_rotater_cfg[g_rotater_count].rot_y = 0.0f;
-            g_rotater_cfg[g_rotater_count].rot_z = 0.0f;
-            g_rotater_cfg[g_rotater_count].ros_x = 0.0f;
-            g_rotater_cfg[g_rotater_count].ros_y = 0.0f;
-            g_rotater_cfg[g_rotater_count].ros_z = 0.0f;
-            g_rotater_cfg[g_rotater_count].angle_x = 0.0f;
-            g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
-            g_rotater_cfg[g_rotater_count].angle_z = 0.0f;
+        if (g_cEntity_count < MAX_cENTITIES) {
+            g_cEntity_cfg[g_cEntity_count].obj = (DWORD)obj;
+            g_cEntity_cfg[g_cEntity_count].rot_x = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].rot_y = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].rot_z = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].ros_x = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].ros_y = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].ros_z = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].angle_x = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].angle_y = 0.0f;
+            g_cEntity_cfg[g_cEntity_count].angle_z = 0.0f;
             if (mesh_path && mesh_path[0]) {
-                strncpy(g_rotater_cfg[g_rotater_count].mesh_path, mesh_path, 127);
-                g_rotater_cfg[g_rotater_count].mesh_path[127] = 0;
+                strncpy(g_cEntity_cfg[g_cEntity_count].mesh_path, mesh_path, 127);
+                g_cEntity_cfg[g_cEntity_count].mesh_path[127] = 0;
             } else {
-                g_rotater_cfg[g_rotater_count].mesh_path[0] = 0;
+                g_cEntity_cfg[g_cEntity_count].mesh_path[0] = 0;
             }
-            g_rotater_count++;
+            g_cEntity_count++;
         }
         return;
     }
@@ -4495,32 +4495,32 @@ static void cEnt_spawn_rotater_at(DWORD board, float px, float py, float pz,
         g_chomper_count++;
     }
 
-    if (g_rotater_count < MAX_ROTATERS) {
-        g_rotater_cfg[g_rotater_count].obj = (DWORD)obj;
-        g_rotater_cfg[g_rotater_count].rot_x = rot_x;
-        g_rotater_cfg[g_rotater_count].rot_y = rot_y;
-        g_rotater_cfg[g_rotater_count].rot_z = rot_z;
-        g_rotater_cfg[g_rotater_count].ros_x = ros_x;
-        g_rotater_cfg[g_rotater_count].ros_y = ros_y;
-        g_rotater_cfg[g_rotater_count].ros_z = ros_z;
-        g_rotater_cfg[g_rotater_count].angle_x = 0.0f;
-        g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
-        g_rotater_cfg[g_rotater_count].angle_z = 0.0f;
+    if (g_cEntity_count < MAX_cENTITIES) {
+        g_cEntity_cfg[g_cEntity_count].obj = (DWORD)obj;
+        g_cEntity_cfg[g_cEntity_count].rot_x = rot_x;
+        g_cEntity_cfg[g_cEntity_count].rot_y = rot_y;
+        g_cEntity_cfg[g_cEntity_count].rot_z = rot_z;
+        g_cEntity_cfg[g_cEntity_count].ros_x = ros_x;
+        g_cEntity_cfg[g_cEntity_count].ros_y = ros_y;
+        g_cEntity_cfg[g_cEntity_count].ros_z = ros_z;
+        g_cEntity_cfg[g_cEntity_count].angle_x = 0.0f;
+        g_cEntity_cfg[g_cEntity_count].angle_y = 0.0f;
+        g_cEntity_cfg[g_cEntity_count].angle_z = 0.0f;
         if (mesh_path && mesh_path[0]) {
-            strncpy(g_rotater_cfg[g_rotater_count].mesh_path, mesh_path, 127);
-            g_rotater_cfg[g_rotater_count].mesh_path[127] = 0;
+            strncpy(g_cEntity_cfg[g_cEntity_count].mesh_path, mesh_path, 127);
+            g_cEntity_cfg[g_cEntity_count].mesh_path[127] = 0;
         } else {
-            g_rotater_cfg[g_rotater_count].mesh_path[0] = 0;
+            g_cEntity_cfg[g_cEntity_count].mesh_path[0] = 0;
         }
-        g_rotater_count++;
+        g_cEntity_count++;
     }
 }
 
 /* Despawn all rotater objects — calls vtable[11] (RemoveAndFree) on each */
-static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
+static void cEnt_Despawn_All_cEntities(DWORD board, FILE* logf) {
     int i;
-    for (i = 0; i < g_rotater_count; i++) {
-        DWORD obj = g_rotater_cfg[i].obj;
+    for (i = 0; i < g_cEntity_count; i++) {
+        DWORD obj = g_cEntity_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10D0)) continue;
 
@@ -4535,7 +4535,7 @@ static void cEnt_despawn_all_rotaters(DWORD board, FILE* logf) {
             }
         }
     }
-    g_rotater_count = 0;
+    g_cEntity_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
     g_speedcyl_count = 0; /* v55n_2: reset SpeedCylinder tracking on level unload */
@@ -4828,15 +4828,15 @@ static void cEnt_play_catapult_sound(FILE* logfile) {
  * uses hardcoded ±2.0, so per-object OC requires a per-frame hook to
  * override the direction flip when the custom OC limit is reached.
  * For now, ROS_Y is stored but the native ±2.0 limit applies. */
-static void cEnt_apply_rotater_directions(void) {
+static void cEnt_Apply_cEntity_Direction(void) {
     int i;
-    for (i = 0; i < g_rotater_count; i++) {
-        DWORD obj = g_rotater_cfg[i].obj;
+    for (i = 0; i < g_cEntity_count; i++) {
+        DWORD obj = g_cEntity_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
 
         /* Write ROT_Y to the direction field — native render uses it as multiplier */
-        *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
+        *(float*)(obj + 0x10EC) = g_cEntity_cfg[i].rot_y;
     }
 }
 
@@ -4846,9 +4846,9 @@ static void cEnt_apply_rotater_directions(void) {
  * the oscillation reversal, keeping rotation constant. */
 static void cEnt_update_constant_rotations(void) {
     int i;
-    for (i = 0; i < g_rotater_count; i++) {
-        if (g_rotater_cfg[i].ros_y != 0.0f) continue;  /* only for ROS_Y=0 */
-        DWORD obj = g_rotater_cfg[i].obj;
+    for (i = 0; i < g_cEntity_count; i++) {
+        if (g_cEntity_cfg[i].ros_y != 0.0f) continue;  /* only for ROS_Y=0 */
+        DWORD obj = g_cEntity_cfg[i].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
         /* Rewrite direction field to prevent native oscillation reversal.
@@ -4864,7 +4864,7 @@ static void cEnt_update_constant_rotations(void) {
          * NOTE: NO angle clamp here. Clamping to ±1.99 caused a visual snap
          * (angle jumps ~114 degrees when it wraps). direction-only rewrite
          * gives smooth constant rotation. */
-        *(float*)(obj + 0x10EC) = g_rotater_cfg[i].rot_y;
+        *(float*)(obj + 0x10EC) = g_cEntity_cfg[i].rot_y;
         /* v55m_48d: Stop the runaway acceleration, cap at native max.
          * Root cause (Ghidra-verified, render 0x0043B330 + Gfx_ScaleX 0x457C60):
          *   obj+0x10E8 (angle) += direction * 0.004
@@ -4905,7 +4905,7 @@ static void cEnt_update_constant_rotations(void) {
  * For each found, search the board's update list for the natively-spawned
  * Rotator object at the matching position, and apply ROT_Y to its direction
  * field (+0x10EC). This does NOT spawn — native game already spawned from S1. */
-static void cEnt_apply_s1_rotater_tags(DWORD board, FILE* logf) {
+static void cEnt_Apply_S1_cEntity_Tags(DWORD board, FILE* logf) {
     if (!board) return;
     DWORD sceneobj = cEnt_get_sceneobj(board);
     if (!sceneobj) return;
@@ -4987,13 +4987,13 @@ static void cEnt_apply_s1_rotater_tags(DWORD board, FILE* logf) {
                 /* If ROS_Y=0, store for per-frame direction override
                  * (native render flips direction at ±2.0, we need to
                  * continuously rewrite it to prevent oscillation) */
-                if (ros_y == 0.0f && g_rotater_count < MAX_ROTATERS) {
-                    g_rotater_cfg[g_rotater_count].obj = obj;
-                    g_rotater_cfg[g_rotater_count].rot_y = rot_y;
-                    g_rotater_cfg[g_rotater_count].ros_y = 0.0f;
-                    g_rotater_cfg[g_rotater_count].angle_y = 0.0f;
-                    g_rotater_cfg[g_rotater_count].mesh_path[0] = 0;
-                    g_rotater_count++;
+                if (ros_y == 0.0f && g_cEntity_count < MAX_cENTITIES) {
+                    g_cEntity_cfg[g_cEntity_count].obj = obj;
+                    g_cEntity_cfg[g_cEntity_count].rot_y = rot_y;
+                    g_cEntity_cfg[g_cEntity_count].ros_y = 0.0f;
+                    g_cEntity_cfg[g_cEntity_count].angle_y = 0.0f;
+                    g_cEntity_cfg[g_cEntity_count].mesh_path[0] = 0;
+                    g_cEntity_count++;
                 }
 
                 if (logf) {
@@ -6275,7 +6275,7 @@ static void __cdecl gluebie_present_helper(void) {
         /* v55n_7: One-shot despawn when the game starts quitting. On quit the
          * game's board teardown frees board+0x10EC + scene tree, which still
          * hold our +0x10E0 collision Levels (TimeButton/SpeedCylinder are NOT
-         * in board+0x2578 so a normal quit never fires cEnt_despawn_all_rotaters).
+         * in board+0x2578 so a normal quit never fires cEnt_Despawn_All_cEntities).
          * Unhook them FIRST so the teardown finds clean lists -> no double-free.
          * Guarded so this runs exactly once per process. */
         if (!g_quit_despawn_done) {
@@ -6284,7 +6284,7 @@ static void __cdecl gluebie_present_helper(void) {
             if (bd) {
                 FILE* lf = NULL;
                 fopen_s(&lf, g_log_path, "a");
-                cEnt_despawn_all_rotaters(bd, lf ? lf : NULL);
+                cEnt_Despawn_All_cEntities(bd, lf ? lf : NULL);
                 if (lf) { fflush(lf); fclose(lf); }
             }
         }
@@ -6309,7 +6309,7 @@ static void __cdecl gluebie_present_helper(void) {
      * clamps the angle to ±1.99 and rewrites direction to rot_y before the
      * native render's ±2.0 flip check fires. This keeps ROS_Y=0 Rotators
      * spinning in one direction instead of oscillating. */
-    if (board && g_rotater_count > 0) {
+    if (board && g_cEntity_count > 0) {
         cEnt_update_constant_rotations();
     }
     /* v55m_7: Chomper state machine + rendering MUST run on main thread.
@@ -6694,7 +6694,7 @@ static int   g_dbg_rot_m = 0;
 static char  g_dbg_mesh_path[128] = "";
 /* v55m_48d: live properties for the 2nd properties table. Position comes
  * straight from the object (obj+0x10D4/10D8/10DC); per-axis accumulated
- * angles + rotation speeds come from the mod-side RotaterConfig. */
+ * angles + rotation speeds come from the mod-side cEntityConfig. */
 static float g_dbg_pos_x = 0.0f, g_dbg_pos_y = 0.0f, g_dbg_pos_z = 0.0f;
 static float g_dbg_ang_x = 0.0f, g_dbg_ang_y = 0.0f, g_dbg_ang_z = 0.0f;
 static float g_dbg_scl_x = 0.0f, g_dbg_scl_y = 0.0f, g_dbg_scl_z = 0.0f;
@@ -6730,7 +6730,7 @@ static DWORD g_last_scroll_tick = 0;
  * v55m_48d: resolve live runtime values for the entity named by
  * g_debug_state. Run from the main thread at Present time.
  *
- * The spawned entity is found via the mod's OWN g_rotater_cfg[] tracking
+ * The spawned entity is found via the mod's OWN g_cEntity_cfg[] tracking
  * array (v55m_48d — much more reliable than scanning board lists): each
  * entry carries the exact spawned object pointer; we match the S3 entry
  * position against the object's spawn position (constructor-dependent
@@ -6754,7 +6754,7 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
     g_dbg_scl_x = g_dbg_scl_y = g_dbg_scl_z = 0.0f;
     if (!board) return;
 
-    /* v55m_48d: The mod tracks every spawned rotater in g_rotater_cfg[].
+    /* v55m_48d: The mod tracks every spawned rotater in g_cEntity_cfg[].
      * Match the S3 entry position against each cfg entry's spawn position.
      * The cfg's `obj` gives us the EXACT spawned object pointer — no fragile
      * list-scan-by-position needed. We then read live values straight off
@@ -6764,8 +6764,8 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
     DWORD coll_list    = board + 0x10EC;
 
     int ci;
-    for (ci = 0; ci < g_rotater_count && ci < MAX_ROTATERS; ci++) {
-        DWORD obj = g_rotater_cfg[ci].obj;
+    for (ci = 0; ci < g_cEntity_count && ci < MAX_cENTITIES; ci++) {
+        DWORD obj = g_cEntity_cfg[ci].obj;
         if (!obj || obj < 0x10000) continue;
         if (IsBadReadPtr((void*)obj, 0x10F0)) continue;
         DWORD vtable = *(DWORD*)obj;
@@ -6802,15 +6802,15 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
         g_dbg_pos_x = ox; g_dbg_pos_y = oy; g_dbg_pos_z = oz;
 
         /* Surface the spawn-time config. */
-        g_dbg_rot_x = g_rotater_cfg[ci].rot_x;
-        g_dbg_rot_y = g_rotater_cfg[ci].rot_y;
-        g_dbg_rot_z = g_rotater_cfg[ci].rot_z;
-        g_dbg_ros_x = g_rotater_cfg[ci].ros_x;
-        g_dbg_ros_y = g_rotater_cfg[ci].ros_y;
-        g_dbg_ros_z = g_rotater_cfg[ci].ros_z;
-        g_dbg_rot_a = g_rotater_cfg[ci].rot_a;
-        g_dbg_rot_d = g_rotater_cfg[ci].rot_d;
-        g_dbg_rot_m = g_rotater_cfg[ci].rot_m;
+        g_dbg_rot_x = g_cEntity_cfg[ci].rot_x;
+        g_dbg_rot_y = g_cEntity_cfg[ci].rot_y;
+        g_dbg_rot_z = g_cEntity_cfg[ci].rot_z;
+        g_dbg_ros_x = g_cEntity_cfg[ci].ros_x;
+        g_dbg_ros_y = g_cEntity_cfg[ci].ros_y;
+        g_dbg_ros_z = g_cEntity_cfg[ci].ros_z;
+        g_dbg_rot_a = g_cEntity_cfg[ci].rot_a;
+        g_dbg_rot_d = g_cEntity_cfg[ci].rot_d;
+        g_dbg_rot_m = g_cEntity_cfg[ci].rot_m;
         /* v55m_48d: per-axis angles — obj+0x10E8 drives the native Y-axis
          * render; direction + initial angle feed the other axes. Scale =
          * the rot_x/y/z speeds that drive Gfx_Scale.
@@ -6830,7 +6830,7 @@ static void cEnt_resolve_debug_values(DWORD board, float want_x, float want_y, f
             g_dbg_scl_y = *(float*)(g_dbg_s1_entry + 0x20);
             g_dbg_scl_z = *(float*)(g_dbg_s1_entry + 0x24);
         }
-        strncpy(g_dbg_mesh_path, g_rotater_cfg[ci].mesh_path, 127);
+        strncpy(g_dbg_mesh_path, g_cEntity_cfg[ci].mesh_path, 127);
         g_dbg_mesh_path[127] = 0;
 
         /* Verify presence in update / render / collision lists (board lists). */
@@ -6926,7 +6926,7 @@ static const char* cEnt_debug_value(int s, int i, int k) {
                 snprintf(vb, sizeof(vb), g_dbg_ros_y == 0.0f ? "active" : "inactive");
                 return vb;
             }
-            if (i == 5) {                 /* RotaterConfig struct */
+            if (i == 5) {                 /* cEntityConfig struct */
                 if (k == 0) { snprintf(vb, sizeof(vb), g_dbg_mesh_path[0] ? "%s" : "(empty)", g_dbg_mesh_path[0] ? g_dbg_mesh_path : ""); return vb; }
                 if (k == 1) { snprintf(vb, sizeof(vb), "%.2f / %.2f / %.2f", g_dbg_rot_x, g_dbg_rot_y, g_dbg_rot_z); return vb; }
                 if (k == 2) { snprintf(vb, sizeof(vb), "%.2f / %.2f / %.2f", g_dbg_ros_x, g_dbg_ros_y, g_dbg_ros_z); return vb; }
@@ -6935,7 +6935,7 @@ static const char* cEnt_debug_value(int s, int i, int k) {
             return NULL;
         case 3:  /* 4 - Lifecycle */
             if (i == 0 && k == 0) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "yes" : "no"); return vb; }
-            if (i == 0 && k == 1) { snprintf(vb, sizeof(vb), "%d", g_rotater_count); return vb; }
+            if (i == 0 && k == 1) { snprintf(vb, sizeof(vb), "%d", g_cEntity_count); return vb; }
             if (i == 1 && k == 2) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "active" : "idle"); return vb; }
             return NULL;
         default:
@@ -7579,9 +7579,9 @@ static void __cdecl cEnt_draw_text_helper(void) {
             "Native render vtable[11] (0x0043B330)",
             "obj+0x10E8 (angle field)",
             "obj+0x10EC (direction field)",
-            "cEnt_apply_rotater_directions (write rot_y)",
+            "cEnt_Apply_cEntity_Direction (write rot_y)",
             "cEnt_update_constant_rotations (constant spin)",
-            "RotaterConfig struct (mod-side state)",
+            "cEntityConfig struct (mod-side state)",
         };
         static const char* const rot_s3_subsub_names[][4] = {
             { "angle += direction * 0.004", "oscillation upper flip", "oscillation lower flip", "before object render" },
@@ -7595,17 +7595,17 @@ static void __cdecl cEnt_draw_text_helper(void) {
             { "obj+0x10E8", "obj+0x10EC value 1.0", "obj+0x10EC value -1.0", "slot 9" },
             { "obj+0x10E8", "obj+0x10E8", "rot_a", "0.0" },
             { "obj+0x10EC", "0.0", "obj+0x10EC", "obj+0x10EC" },
-            { "cEnt_apply_rotater_directions", "obj+0x10EC", "spawn time", "g_rotater_cfg" },
+            { "cEnt_Apply_cEntity_Direction", "obj+0x10EC", "spawn time", "g_cEntity_cfg" },
             { "ROS_Y=0", "obj+0x10EC", "obj+0x10EC", "obj+0x10E8" },
-            { "RotaterConfig", "rot_x/rot_y/rot_z", "ros_x/ros_y/ros_z", "rot_a/rot_d/rot_m" },
+            { "cEntityConfig", "rot_x/rot_y/rot_z", "ros_x/ros_y/ros_z", "rot_a/rot_d/rot_m" },
         };
         static const char* const rot_s4_subs[] = {
-            "cENT_Treesearch__All -> cEnt_spawn_rotater_at",
+            "cENT_Treesearch__All -> cEnt_Spawn_cEntity_at",
             "per-frame: vtable[11] native render",
-            "cEnt_despawn_all_rotaters (level end)",
+            "cEnt_Despawn_All_cEntities (level end)",
         };
         static const char* const rot_s4_subsub_names[][4] = {
-            { "scans section 3 objects", "matches cEnt_XXX name", "parses <ENTITY> tag", "calls cEnt_spawn_rotater_at" },
+            { "scans section 3 objects", "matches cEnt_XXX name", "parses <ENTITY> tag", "calls cEnt_Spawn_cEntity_at" },
             { "present hook", "slot 9 (viewport clear)", "before slot 10 object render", "cEnt_update_constant_rotations" },
             { "vtable[11] RemoveAndFree", "resets rotater count", "resets gluebie/tarpit/waterwheel", "level unload handler" },
         };
@@ -8502,7 +8502,7 @@ typedef struct {
     int active;
 } tracked_entity_t;
 
-static tracked_entity_t g_tracked[MAX_ROTATERS];
+static tracked_entity_t g_tracked[MAX_cENTITIES];
 static int g_tracked_count = 0;
 
 static void cENT_Treesearch__All(DWORD board, FILE* logf) {
@@ -8728,7 +8728,7 @@ static void cENT_Treesearch__All(DWORD board, FILE* logf) {
         float spawn_ros_y = 2.0f;
         if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
 
-        cEnt_spawn_rotater_at(board, px, py, pz, ai_mesh,
+        cEnt_Spawn_cEntity_at(board, px, py, pz, ai_mesh,
                          0.0f, 1.0f, 0.0f,
                          2.0f, spawn_ros_y, 2.0f,
                          ai_type,
@@ -9048,10 +9048,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
         hide_entity_meshbuffers(board, logf);
 
         /* Apply custom rotation directions to spawned rotaters */
-        cEnt_apply_rotater_directions();
+        cEnt_Apply_cEntity_Direction();
 
         /* Apply S1 rot tags to natively-spawned Rotators */
-        cEnt_apply_s1_rotater_tags(board, logf);
+        cEnt_Apply_S1_cEntity_Tags(board, logf);
 
         /* Find GRID reference points */
         float grid_x[32], grid_y[32], grid_z[32];
@@ -9119,10 +9119,10 @@ static DWORD WINAPI entity_thread(LPVOID param) {
             }
 
             /* Despawn all rotater objects on level exit */
-            cEnt_despawn_all_rotaters(board, logf);
+            cEnt_Despawn_All_cEntities(board, logf);
         } else {
             /* No GRID points — still mark board as processed.
-             * v53g-5 FIX: Do NOT call cEnt_despawn_all_rotaters() here!
+             * v53g-5 FIX: Do NOT call cEnt_Despawn_All_cEntities() here!
              * It destroys all custom entities that were just spawned by
              * cENT_Treesearch__All(). The despawn was intended for stale objects
              * from a PREVIOUS level, but g_spawned_board hasn't been set yet,
