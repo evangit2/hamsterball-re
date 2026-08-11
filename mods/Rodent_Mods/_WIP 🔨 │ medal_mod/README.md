@@ -15,8 +15,7 @@ When you finish a race faster than the secret threshold for that race:
 When you beat a race's secret time, the **golden weasel stays** and the
 **diamond weasel** appears a moment later (3 medal-gaps after the **gold**
 medal — around 165 frames, ~5.5s, 3× the game's standard gap) **directly over
-the golden weasel** at the same location. You can tune this with
-`DIAMOND_DELAY`.
+the golden weasel** at the same location.
 
 ### Time-Trial menu (standings screen)
 
@@ -30,10 +29,12 @@ golden weasel** mini-icon for that race.
 | File | Purpose |
 |------|---------|
 | `bass.dll` | The mod (drop into the game folder next to `Hamsterball.exe`) |
-| `diamond_weasel_config.txt` | Optional per-race manual overrides (see below) |
 | `diamondweasel.png` | **You provide this** — put it in the game's `Textures\` folder |
 | `diamondweasel-icon.png` | **You provide this** — the mini icon for the TT menu, in `Textures\` |
 | `diamond_weasel_unlocks.dat` | Created by the mod, per-race unlock flags (don't edit) |
+
+There is **no config file** — the diamond times come from the game's own
+`racedata.xml` (see below), with DLL-baked fallbacks.
 
 ## Required icons
 
@@ -56,12 +57,11 @@ of "golden").
 3. Copy `bass.dll` (the mod) over the one in your game folder (back up the
    original first).
 4. Copy `diamondweasel.png` and `diamondweasel-icon.png` into the game's `Textures\` folder.
-5. (Optional) Edit `diamond_weasel_config.txt` to add per-race manual overrides.
-6. Launch Hamsterball.
+5. Launch Hamsterball.
 
 ## How the diamond time is chosen
 
-The diamond time for each race comes from **three sources, in priority order**:
+The diamond time for each race comes from **two sources, in priority order**:
 
 1. **`racedata.xml`** — the mod reads the *same* `racedata.xml` the game uses
    (in the game folder). If a race's existing block contains a `<DIAMOND>`
@@ -82,29 +82,11 @@ The diamond time for each race comes from **three sources, in priority order**:
    Tower **24.0**, Up **20.0**, Neon **28.0**, Expert **29.0**, Odd **12.0**,
    Toob **25.0**, Wobbly **23.0**, Glass **30.0**, Sky **32.0**, Master **40.0**,
    Impossible **26.0**.
-3. **Config `SECRET=`** — an explicit per-race override in
-   `diamond_weasel_config.txt` beats both of the above.
 
-## Config
-
-`diamond_weasel_config.txt`:
-
-```
-ICON=diamondweasel.png
-MINIICON=diamondweasel-icon.png
-
-[BEGINNER]
-;SECRET=12.3
-```
-
-- `SECRET=<seconds>` — optional manual override (highest priority). Leave it
-  commented out to use the `racedata.xml` `<DIAMOND>` value (or the DLL default
-  if there is none).
-- `ICON=<filename>` — optional override for the results-screen icon filename.
-- `MINIICON=<filename>` — optional override for the TT-menu mini icon filename.
-- `DIAMOND_DELAY=<frames>` — optional. How many frames after the **gold** medal
-  appears before the diamond appears (default `165`, 3× the game's ~55-frame
-  stagger between the other medals). Set `0` to draw it on the same frame as gold.
+(Note: the game's race *names* and the `racedata.xml` *block names* are offset
+by two slots — e.g. the "Warm-Up" race loads the `BEGINNERRACE` block, and the
+"Beginner" race loads `CASCADERACE`. The mod matches each race to the block the
+game actually uses.)
 
 ## How it works (for the curious)
 
@@ -113,10 +95,10 @@ It hooks three things:
 
 1. **Results-screen gold draw (0x44EFD2)** — this runs a genuine **5th medal
    block**, mirroring exactly how the game draws each medal. After the gold
-   medal is drawn, it waits `DIAMOND_DELAY` frames (default 165 = 3× the
-   game's own bronze→silver→gold gap of 55), then if the player's time beats the secret
-   threshold for the current race, the diamond sprite is drawn at the golden
-   weasel's location (0x208, 0x63), directly over it.
+   medal is drawn, it waits 165 frames (3× the game's own bronze→silver→gold
+   gap of 55), then if the player's time beats the secret threshold for the
+   current race, the diamond sprite is drawn at the golden weasel's location
+   (0x208, 0x63), directly over it.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.
