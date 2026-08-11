@@ -1,3 +1,27 @@
+v55n_60 - Rename remaining 'rotater' functions/identifiers -> cEntity naming
+------------------------------------------------------------
+USER REQUEST (explicit new names):
+ - Purged the remaining legacy 'rotater' identifiers. These are the
+   universal cEnt entity functions/data (all ~49 entity types route through
+   them, not just Rotators/Swirls).
+
+WHAT CHANGED (function renames):
+ - cEnt_spawn_rotater_at        -> cEnt_Spawn_cEntity_at
+ - cEnt_despawn_all_rotaters    -> cEnt_Despawn_All_cEntities
+ - cEnt_apply_rotater_directions-> cEnt_Apply_cEntity_Direction
+ - cEnt_apply_s1_rotater_tags   -> cEnt_Apply_S1_cEntity_Tags
+ - RotaterConfig                -> cEntityConfig
+ - g_rotater_cfg                -> g_cEntity_cfg
+ - g_rotater_count             -> g_cEntity_count
+ - g_rotater_board              -> g_cEntity_board
+ - MAX_ROTATERS                 -> MAX_cENTITIES
+
+ - Rebuilt bass.dll (new static symbols confirmed: _cEnt_Despawn_All_cEntities
+   .isra.0, _g_cEntity_count, _g_cEntity_cfg; other helpers inlined at -O2).
+   Old symbol names removed. No behavior change — pure rename.
+ - ROTATER_SIZE macro left as-is (native Rotator_ctor_Impossible alloc size,
+   distinct concept, not in user's rename list).
+
 v55n_59 - Rename process_rotaters -> cENT_Treesearch__All
 ------------------------------------------------------------
 USER REQUEST:
