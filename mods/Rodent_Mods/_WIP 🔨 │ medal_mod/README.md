@@ -69,6 +69,16 @@ no effects, and does not persist. No partial unlock can ever exist — you can't
 end up with a saved flag but a missing image, or vice versa. If the environment
 becomes writable later, re-earning the diamond will then succeed normally.
 
+## Medal-award effects (pop sound + star ring)
+
+When the diamond is first unlocked, the mod runs the **same award effects the
+game uses for its other medals** (verified in `FUN_0044df70`). On the first
+earn it (1) plays the medal **pop sound** through the game's own medal sound
+channel, and (2) spawns a **ring of star particles** — 18 `ArenaScoreParticle`
+objects arcing out from the diamond's spot, exactly like a medal reveal. These
+fire only on the genuine first-earn for a race (gated by the atomic unlock), so
+re-visiting an already-earned diamond playback does not repeat them.
+
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
 
