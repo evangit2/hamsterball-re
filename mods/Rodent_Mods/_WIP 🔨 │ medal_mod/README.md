@@ -29,23 +29,26 @@ golden weasel** mini-icon for that race.
 | File | Purpose |
 |------|---------|
 | `bass.dll` | The mod (drop into the game folder next to `Hamsterball.exe`) |
-| `diamondweasel.png` | **You provide this** — put it in the game's `Textures\` folder |
-| `diamondweasel-icon.png` | **You provide this** — the mini icon for the TT menu, in `Textures\` |
 | `diamond_weasel_unlocks.dat` | Created by the mod, per-race unlock flags (don't edit) |
 
 There is **no config file** — the diamond times come from the game's own
 `racedata.xml` (see below), with DLL-baked fallbacks.
 
+## The diamond art is fully in-memory (not on disk)
+
+The diamond weasel medal and mini-icon **do not exist as files anywhere** —
+not in the game folder, not even inside the DLL as a recognizable image. The
+pixels are embedded in the DLL as XOR-encrypted raw data and decrypted + built
+into a D3D texture entirely in memory at runtime, then seeded straight into
+the game's texture cache. The game's file loader never runs for them, and no
+temporary file is ever written. Nothing named `diamond` can be found on disk.
+
 ## Required icons
 
-The golden weasel uses `Textures\goldenweasel.png` (results) and
-`Textures\goldenweasel-icon.png` (TT menu). This mod loads:
-
-- **`Textures\diamondweasel.png`** — results screen (same style as `goldenweasel.png`)
-- **`Textures\diamondweasel-icon.png`** — TT-menu mini icon (same style as `goldenweasel-icon.png`)
-
-Drop both (filename: same as the golden weasel ones, but "diamond" instead
-of "golden").
+Only the game's own golden-weasel icons are used (`Textures\\goldenweasel.png`
+and `Textures\\goldenweasel-icon.png`) — the diamond versions are derived from
+the embedded in-memory art. **You do not need to provide any diamond icon
+files.**
 
 ## Install
 
@@ -56,8 +59,7 @@ of "golden").
    un4seen.com and drop the 32-bit `bass.dll` renamed to `bass_real.dll`.)
 3. Copy `bass.dll` (the mod) over the one in your game folder (back up the
    original first).
-4. Copy `diamondweasel.png` and `diamondweasel-icon.png` into the game's `Textures\` folder.
-5. Launch Hamsterball.
+4. Launch Hamsterball. No icon files needed.
 
 ## How the diamond time is chosen
 
@@ -102,8 +104,13 @@ It hooks three things:
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.
-3. **Icon load** — loads `diamondweasel.png` and `diamondweasel-icon.png` via
-   the game's own sprite loader (lazily, on first use).
+3. **Icon load (in-memory)** — the diamond art is embedded in the DLL as
+   XOR-encrypted raw pixels. On first use the mod decrypts the pixels in
+   memory, builds a D3D8 texture via the game's device (CreateTexture +
+   LockRect + copy + UnlockRect), constructs a texture-cache object in the
+   game's exact layout, and seeds it into the game's texture cache under the
+   request name — so the game's own sprite loader resolves it from memory and
+   the file loader never runs. No `diamond*.png` file exists anywhere.
 
 The unlock flag is persisted to `diamond_weasel_unlocks.dat` (15 bytes, one
 per race) next to the DLL.
