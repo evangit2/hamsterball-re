@@ -1,3 +1,20 @@
+v55n_67 - Fix trigger box not drawing: add scene-tree registration
+------------------------------------------------------------
+USER REPORT:
+ - "I don't see the trigger object" — the box spawned (log showed
+   "SC trigger VISIBLE ... obj=0x0C7B3970") but did not render.
+
+ROOT CAUSE:
+ - v55n_66 added the trigger PopCylinder to board+0xCD4 (render list)
+   ONLY. The game's renderer walks the SCENE SPATIAL TREE (sceneobj+0x1C)
+   to pick objects to draw — the render list alone does not make it appear.
+
+FIX:
+ - case 39 trigger block now ALSO appends the trigger PopCylinder to the
+   scene spatial tree sceneobj+0x1C (level->+0x480 sceneobj), matching the
+   PROVEN AI-0 static-object path. No update list, no collision list still
+   (purely visual).
+
 v55n_66 - SpeedCylinder: make trigger box VISIBLE for testing
 ------------------------------------------------------------
 USER REQUEST:

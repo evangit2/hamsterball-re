@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_66
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_67
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -3928,10 +3928,12 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                  * Speedcylinder_trigger.MESHWORLD as a render-only PopCylinder at
                  * the SAME spawn point (same origin the trigger AABB is offset
                  * from), so the debug box appears exactly where the launch zone is.
-                 * Render-list ONLY (no update list, no collision list): the box is
-                 * purely visual and must not add solid geometry or game behavior.
-                 * Uses the same proven cEnt_load_mesh_file + PopCylinder_ctor path
-                 * as the AI-0 static-object default. */
+                 * No update list, no collision list: purely visual, must not add
+                 * solid geometry or game behavior.
+                 * v55n_67: ADD the scene spatial tree (sceneobj+0x1C) registration —
+                 * board+0xCD4 (render list) ALONE does NOT make it draw. The renderer
+                 * walks the scene tree to pick objects. This mirrors the PROVEN AI-0
+                 * static-object path (lines ~4425-4434). */
                 {
                     int is_trig_node = 0;
                     void* trig_mesh = cEnt_load_mesh_file(gfx_device,
@@ -3943,8 +3945,17 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                             void* tr = pfn_PopCylinder_ctor(trig_obj, (void*)board,
                                                            px, py, pz, trig_mesh);
                             if (tr) {
+                                /* Render list + scene spatial tree (proven AI-0 path) */
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST),
                                                       trig_obj);
+                                DWORD lvl_trig = cEnt_get_level(board);
+                                if (lvl_trig) {
+                                    DWORD sceneobj_trig = *(DWORD*)(lvl_trig + LEVEL_SCENEOBJECT);
+                                    if (sceneobj_trig) {
+                                        pfn_AthenaList_Append((DWORD*)(sceneobj_trig + 0x1C),
+                                                              trig_obj);
+                                    }
+                                }
                                 if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
                                                   px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
                                                   is_trig_node ? " (.MESH node)" : "");
@@ -7228,7 +7239,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_66", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_67", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8845,7 +8856,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_66 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_67 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
