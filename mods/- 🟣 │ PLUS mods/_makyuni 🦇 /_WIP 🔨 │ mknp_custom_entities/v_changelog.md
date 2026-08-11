@@ -1,3 +1,22 @@
+v55n_66 - SpeedCylinder: make trigger box VISIBLE for testing
+------------------------------------------------------------
+USER REQUEST:
+ - "make the trigger mesh visible by default. We'll make it invisible later,
+    but now I need it visible for testing."
+
+WHAT CHANGED:
+ - case 39 now spawns Speedcylinder_trigger.MESHWORLD as a RENDER-ONLY
+   PopCylinder at the same (px,py,pz) spawn point the trigger AABB is offset
+   from, so the debug box appears exactly where the launch zone is.
+ - Render-list ONLY (board+0xCD4): no update list, no collision list — purely
+   visual, adds no solid geometry or game behavior (same proven
+   cEnt_load_mesh_file + PopCylinder_ctor path as the AI-0 static default).
+ - Added "cENTITY: SC trigger VISIBLE ..." log + "load FAILED" fallback log.
+
+NOTE: v55n_66 jumps from v55n_58 (last source-label bump) past the pure
+rename versions v55n_59..v55n_65 (already committed). This feature lands on
+top of the current worktree (which carries the renamed cEnt_Treesearch_cEntities).
+
 v55n_65 - Rename cENT_Treesearch__All -> cEnt_Treesearch_cEntities
 ------------------------------------------------------------
 USER REQUEST:

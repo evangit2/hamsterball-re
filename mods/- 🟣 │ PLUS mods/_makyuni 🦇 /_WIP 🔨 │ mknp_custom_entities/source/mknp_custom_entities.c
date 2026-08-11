@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_58
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_66
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -3924,6 +3924,34 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     }
                     g_speedcyl_count++;
                 }
+                /* v55n_66: Make the trigger box VISIBLE for testing. We spawn
+                 * Speedcylinder_trigger.MESHWORLD as a render-only PopCylinder at
+                 * the SAME spawn point (same origin the trigger AABB is offset
+                 * from), so the debug box appears exactly where the launch zone is.
+                 * Render-list ONLY (no update list, no collision list): the box is
+                 * purely visual and must not add solid geometry or game behavior.
+                 * Uses the same proven cEnt_load_mesh_file + PopCylinder_ctor path
+                 * as the AI-0 static-object default. */
+                {
+                    int is_trig_node = 0;
+                    void* trig_mesh = cEnt_load_mesh_file(gfx_device,
+                                        "levels\\Speedcylinder_trigger", &is_trig_node, logf);
+                    if (trig_mesh) {
+                        void* trig_obj = pfn_operator_new(POPCYLINDER_SIZE);
+                        if (trig_obj) {
+                            memset(trig_obj, 0, POPCYLINDER_SIZE);
+                            void* tr = pfn_PopCylinder_ctor(trig_obj, (void*)board,
+                                                           px, py, pz, trig_mesh);
+                            if (tr) {
+                                pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST),
+                                                      trig_obj);
+                                if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
+                                                  px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
+                                                  is_trig_node ? " (.MESH node)" : "");
+                            } else if (logf) fprintf(logf, "  cENTITY: SC trigger PopCylinder_ctor failed\n");
+                        }
+                    } else if (logf) fprintf(logf, "  cENTITY: SC trigger mesh 'levels\\Speedcylinder_trigger' load FAILED\n");
+                }
                 break;
             case 45: /* v55n_3: TimeButton_ctor — 5 params (this, board, x, y, z, mesh).
                       * Native Up race TimeButton (0x436C10, 0x10E8 bytes, vtable 0x4D5830):
@@ -7200,7 +7228,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_58", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_66", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8817,7 +8845,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_58 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_66 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
