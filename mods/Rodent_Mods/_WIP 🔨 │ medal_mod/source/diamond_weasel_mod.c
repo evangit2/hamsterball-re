@@ -197,11 +197,31 @@ static void load_real_bass(void) {
 
 #define ICON_LOAD_HOOK     0x42A304
 #define GOLD_DRAW_HOOK     0x44EFD2   /* call 0x42c7c0 (gold draw) */
+#define WEASEL_DRAW_HOOK   0x44E139   /* call 0x42c7c0 (golden weasel draw) */
+#define WEASEL_RET         0x44E13E   /* next instr after 0x44E139 */
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SPRITE_DRAW        0x42C7C0
 #define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
 #define STR_FMT_D          0x4D03F8   /* "%d" */
 #define STR_BUF            0x4F7448   /* AthenaString buffer */
+
+/* Golden-weasel white-fade (result-frame keyed). The results screen
+ * frame counter is at results+0x10 (incremented each frame by the update
+ * fn FUN_0044cb90). The user wants the golden weasel to start turning white
+ * ~55 frames into the results screen and be FULLY white by ~150 frames.
+ * We drive the game's native color-multiplier (Graphics_SetColorMultiplier,
+ * gfx+0x7A8 enable + gfx+0x7B0..0x7BC RGBA scale) up from 1.0 to a saturating
+ * value so the sprite blows out to white. Applied only around the weasel draw
+ * (cave at 0x44E139 sets it, re-emits the draw, then clears it). */
+#define WEASEL_WHITE_START   55
+#define WEASEL_WHITE_END     150
+#define WEASEL_WHITE_MULT    4.0f      /* saturating color multiplier for pure white */
+#define APP_GFX             0x174      /* App+0x174 = gfx ptr */
+#define SPRITE_GFX          0x04       /* sprite+4 = gfx ptr (Sprite_DrawRect uses) */
+#define SPRITE_WEAEL_APP    0x37C      /* App+0x37C = goldenweasel.png sprite */
+#define GFX_MULT_ENABLE     0x7A8      /* gfx+0x7A8 = color-mult enable byte */
+#define GFX_MULT_R          0x7B0      /* gfx+0x7B0..0x7BC = RGBA scale */
+
 
 /* Native medal-award effects (verified 0x44daf8-0x44dc10 in FUN_0044df70):
  * when a medal is FIRST earned the game (1) plays the medal pop sound via
@@ -291,6 +311,7 @@ static FILE *g_log = NULL;
 static unsigned char *g_iconCave = NULL;
 static unsigned char *g_dispCave = NULL;
 static unsigned char *g_ttCave = NULL;
+static unsigned char *g_weaselCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -614,12 +635,58 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
     diag_logf("[diamond] medal effects spawned (pop + %d star particles) for race", i);
 }
 
-
-
-/* RESULT_OBJ offsets (results-screen object, vtable slot 0 = render 0x44DF70) */
+/* RESULT_OBJ offsets used by the weasel white-fade + diamond 5th-medal. */
 #define RESULT_FRAME   0x10   /* frame counter [esi+0x10] */
 #define RESULT_GATE_GOLD 0x74 /* gold medal draws when frame > [esi+0x74] */
 #define RESULT_APP     0x0C   /* App ptr [esi+0xc] */
+
+/* Set the golden-weasel sprite's color-multiplier so it renders white,
+ * phased over result-frames [55,150]. Sets gfx+0x7A8=1 and the RGBA scale at
+ * gfx+0x7B0..0x7BC to (m,m,m,1). gfx comes from the weasel sprite (sprite+4).
+ */
+__attribute__((used)) void diamond_weasel_mult(DWORD results) {
+    int frame;
+    float m, *sc;
+    DWORD app, sprite, gfx;
+    if (!results) return;
+    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    frame = *(int*)(results + RESULT_FRAME);
+    if (frame <= WEASEL_WHITE_START) return;      /* not fading yet */
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
+    sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
+    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
+    gfx = *(DWORD*)(sprite + SPRITE_GFX);
+    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
+    if (frame >= WEASEL_WHITE_END) m = WEASEL_WHITE_MULT;
+    else m = 1.0f + (WEASEL_WHITE_MULT - 1.0f) *
+            ((float)(frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START));
+    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
+    sc = (float*)(gfx + GFX_MULT_R);
+    sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
+    diag_logf("[diamond] weasel white frame=%d mult=%.2f", frame, m);
+}
+
+/* Clear the weasel color-multiplier back to identity (all 1.0) so
+ * subsequent draws are unaffected. */
+__attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
+    DWORD app, sprite, gfx;
+    float *sc;
+    if (!results) return;
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
+    sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
+    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
+    gfx = *(DWORD*)(sprite + SPRITE_GFX);
+    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
+    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 0;
+    sc = (float*)(gfx + GFX_MULT_R);
+    sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
+}
+
+
 
 /* Genuine 5th-medal block: draws the diamond icon one "medal gap" AFTER gold.
  * Mirrors the native gold block exactly (frame gate -> threshold check ->
@@ -895,6 +962,55 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave installed at 0x42F927");
 }
 
+/* Cave D: golden-weasel white-fade. Hook at 0x44E139 (call 0x42c7c0, the
+ * golden-weasel draw, 5 bytes). Sequence per frame the weasel is drawn:
+ *   pushad; push esi (results); call diamond_weasel_mult  (set tint by frame)
+ *          add esp,4; popad
+ *   call 0x42c7c0                      ; re-emit weasel draw (with tint active)
+ *   pushad; push esi; call diamond_weasel_mult_clear (reset tint to 1.0)
+ *          add esp,4; popad
+ *   jmp 0x44E13E                       ; original next instruction
+ * The multiplier runs only while weasel is on screen; cleared immediately
+ * after so other draws are unaffected.
+ */
+static void install_weasel_cave(void) {
+    DWORD patchAddr = EXE_BASE + (WEASEL_DRAW_HOOK - EXE_BASE);
+    DWORD retAddr = EXE_BASE + (WEASEL_RET - EXE_BASE);
+    g_weaselCave = (unsigned char*)VirtualAlloc(NULL, 192, MEM_COMMIT|MEM_RESERVE,
+                                                PAGE_EXECUTE_READWRITE);
+    if (!g_weaselCave) return;
+    unsigned char *p = g_weaselCave;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push esi (results) */
+    p[0]=0x56; p+=1;
+    /* call diamond_weasel_mult */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult-(DWORD)(p+5); p+=5;
+    /* add esp,4 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* popad */
+    p[0]=0x61; p+=1;
+    /* call 0x42c7c0 (re-emit weasel draw; ecx=sprite + stack x,y intact) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push esi */
+    p[0]=0x56; p+=1;
+    /* call diamond_weasel_mult_clear */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult_clear-(DWORD)(p+5); p+=5;
+    /* add esp,4 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* popad */
+    p[0]=0x61; p+=1;
+    /* jmp retAddr */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_weaselCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    diag_log("[diamond] golden-weasel white-fade cave installed at 0x44E139");
+}
+
 /* ================================================================
  * Install
  * ================================================================ */
@@ -902,6 +1018,7 @@ static void install_hooks(void) {
     install_icon_cave();
     install_disp_cave();
     install_tt_cave();
+    install_weasel_cave();
     diag_log("[diamond] hooks installed");
 }
 
