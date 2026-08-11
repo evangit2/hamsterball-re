@@ -1,3 +1,17 @@
+v55n_65 - Rename cENT_Treesearch__All -> cEnt_Treesearch_cEntities
+------------------------------------------------------------
+USER REQUEST:
+ - Rename the S3 tree-search dispatcher to the cEnt_ prefix convention,
+   emphasizing it searches all cEntities. (Original requested
+   `cEnt_Treesearch_"cEnt..."` is invalid C syntax — quotes/ellipsis are not
+   legal in identifiers; user selected `cEnt_Treesearch_cEntities`.)
+
+WHAT CHANGED:
+ - 4x in mknp_custom_entities.c: function definition, S3 call site,
+   debug-table label, comment.
+ - Rebuilt bass.dll (symbol _cEnt_Treesearch_cEntities @ offset 0x9600,
+   2x string refs). Pure rename.
+
 v55n_64 - Rename cEnt_update_constant_rotations -> cEnt_Update_Constant_Rotation
 ------------------------------------------------------------
 USER REQUEST:
