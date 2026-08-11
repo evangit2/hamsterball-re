@@ -1,3 +1,19 @@
+v55n_59 - Rename process_rotaters -> cENT_Treesearch__All
+------------------------------------------------------------
+USER REQUEST:
+ - Renamed the S3 tree-search spawner function from `process_rotaters` to
+   `cENT_Treesearch__All`. The old name was legacy (predates when the mod
+   handled only Rotators); the function is actually the universal S3
+   dispatcher that spawns ALL ~49 cEnt entity types (Swirl, 8ball, Bell,
+   Chomper, Catapult, Gluebie, etc.), so the name now reflects that.
+
+WHAT CHANGED:
+ - All 4 occurrences of `process_rotaters` renamed to `cENT_Treesearch__All`
+   in mknp_custom_entities.c: function definition, S3 call site, debug-table
+   label, and one comment.
+ - Rebuilt bass.dll (local static symbol `_cENT_Treesearch__All`, offset
+   0x9600). No behavior change — pure rename.
+
 v55n_58 - SpeedCylinder: read trigger box from SEPARATE Speedcylinder_trigger file
 ------------------------------------------------------------
 USER DESIGN CHANGE:
