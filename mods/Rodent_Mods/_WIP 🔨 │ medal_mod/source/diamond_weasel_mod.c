@@ -351,6 +351,38 @@ static int diamond_materialize_pngs(void) {
 }
 
 /* ================================================================
+ * ATOMIC UNLOCK — all-or-nothing commit gate
+ * ================================================================
+ * Provisioning a diamond unlock performs SEVERAL writes (registry flag,
+ * PNG assets, and any future effects/assets). We only commit the unlock if
+ * EVERY one of them succeeds. If any write fails, we return 0 and the caller
+ * treats the diamond as if it was never earned this run — no draw, no
+ * persistence, no effects. This keeps the unlock atomic: a partial unlock
+ * (e.g. flag saved but PNG failed, or vice versa) can never happen.
+ *
+ * Add every new effect/asset write here so the whole unlock stays all-or-nothing.
+ */
+static int save_unlocks_reg(void);   /* defined below (registry save) */
+
+static int diamond_provision_unlock(int race) {
+    int ok_pngs, ok_reg;
+    /* Tentatively set the in-memory flag so the registry save captures it. */
+    g_won[race] = 1;
+    /* 1. Persist the flag to the registry (DiamondMedals). */
+    ok_reg = save_unlocks_reg();
+    /* 2. Materialize the PNG assets into Textures\ (write-on-first-unlock). */
+    ok_pngs = diamond_materialize_pngs();
+    if (!ok_reg || !ok_pngs) {
+        g_won[race] = 0;   /* roll back — unlock is all-or-nothing */
+        diag_logf("[diamond] provision FAILED for race %d (reg=%d pngs=%d) — unlock rolled back",
+                  race, ok_reg, ok_pngs);
+        return 0;
+    }
+    diag_logf("[diamond] provision OK for race %d", race);
+    return 1;
+}
+
+/* ================================================================
  * Config
  * ================================================================ */
 /* Read a <DIAMOND> time from racedata.xml the same way the game reads its
@@ -418,17 +450,22 @@ static void init_thresholds(void) {
 #define REG_VAL_MEDALS "DiamondMedals"
 #define DIAMOND_REGWIN  HKEY_CURRENT_USER
 
-static void save_unlocks_reg(void) {
+static int save_unlocks_reg(void) {
     HKEY hk;
     DWORD disp, len = 15;
     if (RegCreateKeyExA(DIAMOND_REGWIN, REG_KEY, 0, NULL, 0, KEY_WRITE,
                         NULL, &hk, &disp) != ERROR_SUCCESS) {
         diag_log("[diamond] reg create key failed");
-        return;
+        return 0;
     }
-    RegSetValueExA(hk, REG_VAL_MEDALS, 0, REG_BINARY, g_won, len);
+    if (RegSetValueExA(hk, REG_VAL_MEDALS, 0, REG_BINARY, g_won, len) != ERROR_SUCCESS) {
+        RegCloseKey(hk);
+        diag_log("[diamond] reg set value failed");
+        return 0;
+    }
     RegCloseKey(hk);
     diag_logf("[diamond] DiamondMedals registry value written (%u bytes)", (unsigned)len);
+    return 1;
 }
 static void load_unlocks(void) {
     HKEY hk;
@@ -445,9 +482,6 @@ static void load_unlocks(void) {
     }
     RegCloseKey(hk);
 }
-/* save_unlocks writes DiamondMedals to the registry ONLY when the mod is
- * materializing its assets (called alongside diamond_materialize_pngs). */
-#define save_unlocks()  save_unlocks_reg()
 
 /* ================================================================
  * Runtime helpers
@@ -502,8 +536,6 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
     if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
     app = *(DWORD*)(results + RESULT_APP);
     if (!app || !g_configLoaded) return;
-    if (!g_iconLoaded) diamond_load_icon_impl(app);
-    if (!g_diamondSprite) return;
     /* frame gate: only after gold + delay (mirrors native frame gate) */
     if (IsBadReadPtr((void*)(results + RESULT_GATE_GOLD), 4)) return;
     gold_gate = *(int*)(results + RESULT_GATE_GOLD);
@@ -517,15 +549,21 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
     if (!(cs > 0 && cs <= thr)) return;
-    /* award (persist) */
+    /* ATOMIC UNLOCK COMMIT: if this race hasn't been won yet, provision ALL
+     * required writes (registry flag + PNG assets + future effects). If ANY
+     * write fails, treat the diamond as never earned — no draw, no effects,
+     * no persistence — so no partial state can exist. */
     if (!g_won[race]) {
-        g_won[race] = 1;
-        save_unlocks();
-        /* First unlock: materialize the diamond PNGs into Textures\ so the
-         * game can load them through its normal file path. Files are only
-         * written now — before a real unlock, no diamond*.png exists. */
-        diamond_materialize_pngs();
+        if (!diamond_provision_unlock(race)) {
+            diag_logf("[diamond] unlock aborted for race %d (could not write everything)", race);
+            return;   /* as if the diamond time was not met at all */
+        }
+        /* g_won[race] committed (to 1) inside diamond_provision_unlock on success */
     }
+    /* Now that the diamond is genuinely unlocked (and its assets exist),
+     * load + draw it. Load lazily (retries if a provision path raced). */
+    if (!g_iconLoaded) diamond_load_icon_impl(app);
+    if (!g_diamondSprite) return;   /* not loadable -> nothing to draw */
     /* draw the diamond over the golden weasel spot (0x208, 0x63) */
     __asm__ volatile(
         "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
@@ -562,8 +600,13 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
                     : : "r"(mgr), "r"(load), "r"(&g_diamondSprite), "r"(g_iconFile)
                     : "eax", "ecx", "edx", "memory"
                 );
-    g_iconLoaded = 1;
-    diag_logf("[diamond] icon loaded: %s -> %08X", g_iconFile, g_diamondSprite);
+    /* Only mark the icon loaded if it actually resolved. If the PNG wasn't
+     * written yet (first unlock provisions it just before this load), leave
+     * g_iconLoaded=0 so a later frame retries. */
+    if (g_diamondSprite) {
+        g_iconLoaded = 1;
+        diag_logf("[diamond] icon loaded: %s -> %08X", g_iconFile, g_diamondSprite);
+    }
 }
 __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
@@ -585,8 +628,10 @@ __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
         : : "r"(mgr), "r"(load), "r"(&g_diamondMiniSprite), "r"(g_miniIconFile)
         : "eax", "ecx", "edx", "memory"
     );
-    g_miniIconLoaded = 1;
-    diag_logf("[diamond] mini icon loaded: %s -> %08X", g_miniIconFile, g_diamondMiniSprite);
+    if (g_diamondMiniSprite) {
+        g_miniIconLoaded = 1;
+        diag_logf("[diamond] mini icon loaded: %s -> %08X", g_miniIconFile, g_diamondMiniSprite);
+    }
 }
 
 /* TT-menu: append a diamond medal entry to the standings list.
