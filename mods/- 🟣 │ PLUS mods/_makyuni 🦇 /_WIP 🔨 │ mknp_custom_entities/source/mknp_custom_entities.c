@@ -148,7 +148,7 @@ static SpatialTree_Cleanup_t pfn_SpatialTree_Cleanup = (SpatialTree_Cleanup_t)0x
 /* Object size constants */
 #define MESHWORLD_SIZE          0x10D0
 #define POPCYLINDER_SIZE        0x10D0
-#define ROTATER_SIZE            0x1508  /* Rotator_ctor_Impossible alloc size */
+#define cENTITY_SIZE            0x1508  /* Rotator_ctor_Impossible alloc size */
 /* v55m_48d/v55m_50: cEnt Rotator max rotation speed cap.
  * Native impossible-race Rotator update 0x0043D8C0 clamps the direction
  * field to 20.0 — DAT_004cf370=0x41A00000. The cEnt SWIRL-style rotator's
@@ -3373,12 +3373,12 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
     void* obj = NULL;
     if (ai_type == 6) {
         /* AI 6: Rotator_ctor_Impossible (SWIRL with rotation) */
-        obj = pfn_operator_new(ROTATER_SIZE);
+        obj = pfn_operator_new(cENTITY_SIZE);
         if (!obj) {
             if (logf) fprintf(logf, "  cENTITY: failed to alloc object\n");
             return;
         }
-        memset(obj, 0, ROTATER_SIZE);
+        memset(obj, 0, cENTITY_SIZE);
         void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
         if (!result) {
             if (logf) fprintf(logf, "  cENTITY: Rotator_ctor failed\n");
@@ -4317,7 +4317,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         DWORD alloc_sz = 0;
         
         switch (ai_type) {
-            case 1:  ctor_fn = pfn_Rotator_ctor;  alloc_sz = ROTATER_SIZE;   break; /* Rotator (Y-axis) */
+            case 1:  ctor_fn = pfn_Rotator_ctor;  alloc_sz = cENTITY_SIZE;   break; /* Rotator (Y-axis) */
             case 2:  ctor_fn = pfn_Pendulum_ctor; alloc_sz = PENDULUM_SIZE;  break; /* Pendulum (X-axis) */
             case 3:  ctor_fn = pfn_Looper_ctor;   alloc_sz = LOOPER_SIZE;    break; /* Looper (Z-axis) */
             case 4:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Small */
@@ -6883,7 +6883,7 @@ static const char* cEnt_debug_value(int s, int i, int k) {
         case 0:  /* 1 - Constructors */
             if (i == 0) {                 /* Operator_new */
                 if (k == 0) { cEnt_dbg_format_dword((DWORD)pfn_operator_new, vb, sizeof(vb)); return vb; }
-                if (k == 1) { cEnt_dbg_format_dword((DWORD)ROTATER_SIZE, vb, sizeof(vb)); return vb; }
+                if (k == 1) { cEnt_dbg_format_dword((DWORD)cENTITY_SIZE, vb, sizeof(vb)); return vb; }
                 if (k == 2) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "called" : "idle"); return vb; }
                 if (k == 3) { snprintf(vb, sizeof(vb), g_dbg_entity_found ? "installed" : "idle"); return vb; }
             }
@@ -7546,7 +7546,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
             "Mesh fallback (tries Swirl if primary mesh fails)",
         };
         static const char* const rot_s1_subsub_names[][4] = {
-            { "operator_new", "size ROTATER_SIZE", "malloc wrapper", "PUSHAD/POPAD cave" },
+            { "operator_new", "size cENTITY_SIZE", "malloc wrapper", "PUSHAD/POPAD cave" },
             { "Rotator_ctor_Impossible", "vtable (SWIRL, 384 bytes)", "Sets Angle", "Sets Direction" },
             { "cEnt_load_mesh_file", "tries .MESHWORLD", "or .MESH via MeshNode", "gfx_device as ECX" },
             { "Swirl fallback path", "levels\\Level3-Swirl", "only on primary fail", "cancels if _default missing" },
