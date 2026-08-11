@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 /* ================================================================
  * BASS Proxy Layer (proven from time_warp)
@@ -199,7 +200,7 @@ static void load_real_bass(void) {
  * ================================================================ */
 static DWORD g_diamondSprite = 0;
 static DWORD g_diamondMiniSprite = 0;
-static int   g_secret_cs[15] = {0};   /* per-race SECRET threshold in CENTISECONDS (int) */
+static int   g_secret_cs[15] = {0};   /* per-race DIAMOND threshold in CENTISECONDS (int) */
 static int   g_hasSecret[15] = {0};
 static BYTE  g_won[15]       = {0};
 static char  g_iconFile[64]  = "diamondweasel.png";
@@ -211,6 +212,48 @@ static char  g_fmtDiamond[]  = "%dD";
 static int   g_diamondDelay  = 165;  /* frames after the gold medal appears that the
                                         diamond appears (3x the game's bronze->
                                         silver (55) and silver->gold (55) gaps) */
+
+/* Hardcoded DIAMOND fallback times (seconds), by tournament slot index 0-14.
+ * These are baked into the DLL and used ONLY when racedata.xml has no <DIAMOND>
+ * element for that race's block. Listed in the user's requested order. */
+static const float g_default_diamond_s[15] = {
+    3.5f,   /* WARM-UP     -> BEGINNERRACE   block */
+    12.3f,  /* BEGINNER    -> CASCADERACE    block */
+    14.0f,  /* INTERMEDIATE-> INTERMEDIATERACE block */
+    23.0f,  /* DIZZY       -> DIZZYRACE      block */
+    24.0f,  /* TOWER       -> TOWERRACE      block */
+    20.0f,  /* UP          -> UPRACE         block */
+    28.0f,  /* NEON        -> NEONRACE       block */
+    29.0f,  /* EXPERT      -> EXPERTRACE     block */
+    12.0f,  /* ODD         -> ODDRACE        block */
+    25.0f,  /* TOOB        -> TOOBRACE       block */
+    23.0f,  /* WOBBLY      -> WOBBLYRACE     block */
+    30.0f,  /* GLASS       -> GLASSRACE      block */
+    32.0f,  /* SKY         -> SKYRACE        block */
+    40.0f,  /* MASTER      -> MASTERRACE     block */
+    26.0f,  /* IMPOSSIBLE  -> IMPOSSIBLERACE block */
+};
+
+/* RaceData.xml block name that the game's board ctor loads for each
+ * tournament slot (verified against the binary: the jump table at 0x42761c
+ * maps slot -> board ctor -> parser call -> the *RACE block name). */
+static const char *g_xml_block[15] = {
+    "BEGINNERRACE",   /* slot 0  WARM-UP */
+    "CASCADERACE",    /* slot 1  BEGINNER */
+    "INTERMEDIATERACE",/* slot 2  INTERMEDIATE */
+    "DIZZYRACE",      /* slot 3  DIZZY */
+    "TOWERRACE",      /* slot 4  TOWER */
+    "UPRACE",         /* slot 5  UP */
+    "NEONRACE",       /* slot 6  NEON */
+    "EXPERTRACE",     /* slot 7  EXPERT */
+    "ODDRACE",        /* slot 8  ODD */
+    "TOOBRACE",       /* slot 9  TOOB */
+    "WOBBLYRACE",     /* slot 10 WOBBLY */
+    "GLASSRACE",      /* slot 11 GLASS */
+    "SKYRACE",        /* slot 12 SKY */
+    "MASTERRACE",     /* slot 13 MASTER */
+    "IMPOSSIBLERACE", /* slot 14 IMPOSSIBLE */
+};
 
 static char  g_logPath[MAX_PATH] = {0};
 static char  g_cfgPath[MAX_PATH] = {0};
@@ -258,10 +301,68 @@ static int race_index_from_name(const char *name) {
     for (i = 0; i < 15; i++) if (_stricmp(name, races[i]) == 0) return i;
     return -1;
 }
+
+/* Read a <DIAMOND> time from racedata.xml the same way the game reads its
+ * other medal times. The game opens exactly "racedata.xml" (relative to the
+ * working directory, string at 0x4cf5d0) and parser 0x40A120 matches each
+ * <*RACENAME> block by the block name its board ctor passes. We mirror that:
+ * for each tournament slot we look up the block name the game actually loads
+ * (g_xml_block[slot]) and, if that block contains a <DIAMOND> element, use it
+ * as the diamond threshold for that race. Blocks with no <DIAMOND> keep the
+ * hardcoded DLL default. */
+static void load_racedata_xml(void) {
+    FILE *f = fopen("racedata.xml", "r");
+    char line[512];
+    int cur = -1;   /* currently-open XML block index, or -1 none */
+    if (!f) { diag_log("[diamond] racedata.xml not found (using DLL defaults)"); return; }
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        if (*p == 0) continue;
+        /* Race-block opener: <BEGINNERRACE>, <CASCADERACE>, ... Only these switch
+         * the current block. Field tags inside a block (<DIAMOND>, <WEASEL>, ...)
+         * are NOT block openers and must not disturb `cur`. */
+        if (*p == '<' && p[1] != '/') {
+            char *end = strchr(p, '>');
+            if (end) {
+                int is_block = 0;
+                for (int i = 0; i < 15; i++) {
+                    if (_strnicmp(p + 1, g_xml_block[i], strlen(g_xml_block[i])) == 0) {
+                        cur = i; is_block = 1; break;
+                    }
+                }
+                if (is_block) continue;   /* switched block; skip to next line */
+            }
+        }
+        if (cur < 0 || cur > 14) continue;
+        /* <DIAMOND>4.2</DIAMOND>  (whole thing on one line, like every other field) */
+        if (_strnicmp(p, "<DIAMOND>", 9) == 0) {
+            char *val = p + 9;
+            char *end = strstr(val, "</DIAMOND>");
+            if (end) {
+                *end = 0;
+                double v = atof(val);
+                g_secret_cs[cur] = (int)(v * 100.0);
+                g_hasSecret[cur] = 1;
+                diag_logf("[diamond] racedata.xml race %d <DIAMOND>=%.2f", cur, v);
+            }
+        }
+    }
+    fclose(f);
+}
+
 static void load_config(void) {
     FILE *f; char line[256]; int cur = -1;
+    int i;
+    /* Seed per-race thresholds with the hardcoded DLL defaults, then let
+     * racedata.xml <DIAMOND> overrides apply, then the config SECRET override. */
+    for (i = 0; i < 15; i++) {
+        g_secret_cs[i] = (int)(g_default_diamond_s[i] * 100.0f);
+        g_hasSecret[i] = 1;
+    }
+    load_racedata_xml();
     f = fopen(g_cfgPath, "r");
-    if (!f) { diag_logf("[diamond] no config: %s", g_cfgPath); return; }
+    if (!f) { diag_logf("[diamond] no config: %s", g_cfgPath); g_configLoaded = 1; return; }
     while (fgets(line, sizeof(line), f)) {
         char *p = line;
         while (*p == ' ' || *p == '\t') p++;

@@ -1,13 +1,27 @@
 ; diamond_weasel_config.txt
-; Per-race secret medal times (in SECONDS).
+; Per-race DIAMOND medal times.
 ;
-; The "Diamond Weasel" is a fifth, secret medal. On the results screen,
-; when you finish a race faster than SECRET, a diamond weasel medal icon
-; renders directly over the golden weasel medal (same spot). It's the 5th
-; medal in the sequence (golden weasel, bronze, silver, gold, diamond).
+; The "Diamond Weasel" is a fifth, secret medal. On the results screen, when
+; you finish a race faster than the per-race diamond threshold, a diamond
+; weasel medal icon renders directly over the golden weasel medal (same spot).
+; It's the 5th medal in the sequence (golden weasel, bronze, silver, gold,
+; diamond), appearing ~165 frames (~3 medal gaps) after gold.
 ;
-; To make the gold star-burst play, SECRET should be FASTER than the golden
-; weasel par time for that race. Times are in seconds (e.g. 30.0 = 30s).
+; --- HOW THE DIAMOND TIME IS CHOSEN (priority order) ---
+; 1. racedata.xml  A <DIAMOND> element inside the race's existing block. The
+;                  mod reads the SAME racedata.xml the game uses (in the game
+;                  folder), matching each race the exact same way the game
+;                  matches its other medal blocks. If a race's block has a
+;                  <DIAMOND> tag, that value wins.
+; 2. DLL defaults  If racedata.xml has no <DIAMOND> for a race (or the file is
+;                  missing), the time baked into the DLL is used. Those are:
+;                    WARM-UP 3.5     BEGINNER 12.3   INTERMEDIATE 14.0
+;                    DIZZY 23.0      TOWER 24.0      UP 20.0
+;                    NEON 28.0       EXPERT 29.0     ODD 12.0
+;                    TOOB 25.0       WOBBLY 23.0     GLASS 30.0
+;                    SKY 32.0        MASTER 40.0     IMPOSSIBLE 26.0
+; 3. SECRET= below  These manual overrides (if present) take highest priority
+;                  and let you tune a race without touching racedata.xml.
 ;
 ; ICON=<filename>      Optional. Results-screen icon. Defaults to
 ;                      diamondweasel.png in Textures\.
@@ -25,46 +39,49 @@ ICON=diamondweasel.png
 MINIICON=diamondweasel-icon.png
 DIAMOND_DELAY=165
 
+; --- Optional per-race manual overrides. Delete any line to revert to the
+; --- racedata.xml <DIAMOND> value (or the DLL default if absent).
+[WARM-UP]
+;SECRET=3.5
+
 [BEGINNER]
-SECRET=30.0
+;SECRET=12.3
 
 [INTERMEDIATE]
-SECRET=45.0
+;SECRET=14.0
 
 [DIZZY]
-SECRET=60.0
+;SECRET=23.0
 
 [TOWER]
-SECRET=75.0
+;SECRET=24.0
 
 [UP]
-SECRET=40.0
+;SECRET=20.0
 
 [NEON]
-SECRET=55.0
+;SECRET=28.0
 
 [EXPERT]
-SECRET=90.0
+;SECRET=29.0
 
 [ODD]
-SECRET=70.0
+;SECRET=12.0
 
 [TOOB]
-SECRET=50.0
+;SECRET=25.0
 
 [WOBBLY]
-SECRET=80.0
+;SECRET=23.0
 
 [GLASS]
-SECRET=65.0
+;SECRET=30.0
 
 [SKY]
-SECRET=85.0
+;SECRET=32.0
 
 [MASTER]
-SECRET=100.0
+;SECRET=40.0
 
 [IMPOSSIBLE]
-SECRET=120.0
-
-; NOTE: [WARM-UP] has no medal block in the game, so no SECRET for it.
+;SECRET=26.0
