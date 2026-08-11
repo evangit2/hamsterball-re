@@ -187,12 +187,12 @@ static void load_real_bass(void) {
 #define BOARD_TIME         0x1C
 #define APP_MGR            0x22C
 
-/* Route 2: fully in-memory diamond art (embedded encrypted pixels + seeded
- * texture cache). Includes the pixel header + the builder that decrypts,
- * creates a D3D texture via the game's device, and seeds the cache so the
- * file loader never runs. */
-#include "diamond_pixels.h"
-#include "diamond_memtex.h"
+/* Route 3: write-on-first-unlock diamond art. The PNG bytes are embedded as
+ * XOR-encrypted data (so the image cannot be extracted from the DLL before a
+ * real unlock). On first unlock the mod decrypts + writes them to the game's
+ * Textures\ folder, then the game loads them through its NORMAL file path —
+ * no manual D3D texture building, no cache seeding. */
+#include "diamond_png_data.h"
 
 #define ICON_LOAD_HOOK     0x42A304
 #define GOLD_DRAW_HOOK     0x44EFD2   /* call 0x42c7c0 (gold draw) */
@@ -292,6 +292,63 @@ static void get_own_dir(char *out, DWORD cap) {
     GetModuleFileNameA(hm, out, cap);
     char *s = strrchr(out, '\\');
     if (s) *s = 0;
+}
+
+/* ================================================================
+ * Write-on-first-unlock art
+ * ================================================================ */
+/* Decrypt an embedded PNG byte buffer into a malloc'd buffer. */
+static unsigned char *diamond_decrypt_png(const unsigned char *enc, DWORD size,
+                                          DWORD key) {
+    unsigned char *out = (unsigned char*)malloc(size);
+    if (!out) return NULL;
+    for (DWORD i = 0; i < size; i++) out[i] = enc[i] ^ key;
+    return out;
+}
+
+/* Write a decrypted PNG to `Textures\name`. Returns 1 on success (or if the
+ * file already exists). The game dir is the DLL's own dir (bass.dll sits next
+ * to Hamsterball.exe); Textures\ is under that. */
+static int diamond_write_png(const char *name, const unsigned char *enc,
+                             DWORD size, DWORD key) {
+    char dir[MAX_PATH], path[MAX_PATH];
+    unsigned char *dec;
+    FILE *f;
+    get_own_dir(dir, sizeof(dir));
+    snprintf(path, sizeof(path), "%s\\Textures\\%s", dir, name);
+    dec = diamond_decrypt_png(enc, size, key);
+    if (!dec) return 0;
+    f = fopen(path, "wb");
+    if (!f) { free(dec); return 0; }
+    fwrite(dec, 1, size, f);
+    fclose(f);
+    free(dec);
+    diag_logf("[diamond] wrote %s (%u bytes)", path, size);
+    return 1;
+}
+
+/* Materialize both diamond PNGs into Textures\ if they don't already exist.
+ * Called when the first diamond is unlocked. Returns 1 if both are present
+ * afterward. */
+static int diamond_materialize_pngs(void) {
+    char dir[MAX_PATH], path[MAX_PATH];
+    DWORD attr;
+    int medal = 1, mini = 1;
+    get_own_dir(dir, sizeof(dir));
+    snprintf(path, sizeof(path), "%s\\Textures\\diamondweasel.png", dir);
+    attr = GetFileAttributesA(path);
+    if (attr == INVALID_FILE_ATTRIBUTES)
+        medal = diamond_write_png("diamondweasel.png",
+                                  diamondweasel_png_data, diamondweasel_png_SIZE,
+                                  diamondweasel_png_XORKEY);
+    snprintf(path, sizeof(path), "%s\\Textures\\diamondweasel-icon.png", dir);
+    attr = GetFileAttributesA(path);
+    if (attr == INVALID_FILE_ATTRIBUTES)
+        mini = diamond_write_png("diamondweasel-icon.png",
+                                 diamondweasel_icon_png_data,
+                                 diamondweasel_icon_png_SIZE,
+                                 diamondweasel_icon_png_XORKEY);
+    return (medal && mini) ? 1 : 0;
 }
 
 /* ================================================================
@@ -442,7 +499,14 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
     thr = g_secret_cs[race];
     if (!(cs > 0 && cs <= thr)) return;
     /* award (persist) */
-    if (!g_won[race]) { g_won[race] = 1; save_unlocks(); }
+    if (!g_won[race]) {
+        g_won[race] = 1;
+        save_unlocks();
+        /* First unlock: materialize the diamond PNGs into Textures\ so the
+         * game can load them through its normal file path. Files are only
+         * written now — before a real unlock, no diamond*.png exists. */
+        diamond_materialize_pngs();
+    }
     /* draw the diamond over the golden weasel spot (0x208, 0x63) */
     __asm__ volatile(
         "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
@@ -454,14 +518,11 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
     );
 }
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
-    DWORD mgr, vt, load, gfx;
+    DWORD mgr, vt, load;
     if (g_iconLoaded) return;
     if (!app || !g_configLoaded) return;
-    /* Route 2: seed the texture cache with the in-memory diamond texture so
-     * the sprite loader resolves it from memory (file loader never runs).
-     * gfx = [App+0x174]. */
-    gfx = *(DWORD*)(app + APP_BOARD);
-    if (gfx) diamond_seed_cache((void*)gfx);
+    /* The diamond PNG is loaded through the game's NORMAL file path (it was
+     * written to Textures\ on first unlock). No manual texture building. */
     mgr = *(DWORD*)(app + APP_MGR);
     if (!mgr) return;
     if (IsBadReadPtr((void*)mgr, 4)) return;
