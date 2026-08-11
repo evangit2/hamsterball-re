@@ -1,3 +1,23 @@
+v55n_68 - Trigger box still invisible: full GRID/testcube registration
+------------------------------------------------------------
+USER REPORT:
+ - "still invisible" after v55n_67 (which added the scene tree).
+
+ROOT CAUSE (confirmed): the trigger file IS renderable — it has a real
+ meshbuffer named "Speedcylinder_t" with a submesh, structurally identical
+ to the visible cylinder file. So the mesh is fine; the registration was
+ still incomplete for a loaded .MESHWORLD PopCylinder.
+
+FIX:
+ - case 39 trigger block now mirrors the FULL proven GRID/testcube
+   registration (lines ~2751-2782), which renders reliably on every level:
+     update list    board+0x2578  (drives vtable[11] render transform)
+     render list    board+0xCD4
+     collision obj  board+0x10EC + scene_col+0x18  (via obj+0x10E0)  [NEW]
+     scene tree     sceneobj+0x1C
+ - This makes the box solid too, which helps locate it for the visibility
+   test. We can strip collision after.
+
 v55n_67 - Fix trigger box not drawing: add scene-tree registration
 ------------------------------------------------------------
 USER REPORT:

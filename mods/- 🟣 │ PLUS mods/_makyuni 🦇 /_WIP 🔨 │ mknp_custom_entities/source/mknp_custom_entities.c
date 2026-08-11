@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_67
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_68
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -3928,12 +3928,10 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                  * Speedcylinder_trigger.MESHWORLD as a render-only PopCylinder at
                  * the SAME spawn point (same origin the trigger AABB is offset
                  * from), so the debug box appears exactly where the launch zone is.
-                 * No update list, no collision list: purely visual, must not add
-                 * solid geometry or game behavior.
-                 * v55n_67: ADD the scene spatial tree (sceneobj+0x1C) registration —
-                 * board+0xCD4 (render list) ALONE does NOT make it draw. The renderer
-                 * walks the scene tree to pick objects. This mirrors the PROVEN AI-0
-                 * static-object path (lines ~4425-4434). */
+                 * v55n_67/68: mirror the FULL visible registration of the proven
+                 * GRID/testcube path — update list (board+0x2578, drives vtable[11]
+                 * render transform) + render list (board+0xCD4) + scene spatial tree
+                 * (sceneobj+0x1C). NO collision registration: box stays non-solid. */
                 {
                     int is_trig_node = 0;
                     void* trig_mesh = cEnt_load_mesh_file(gfx_device,
@@ -3945,9 +3943,24 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                             void* tr = pfn_PopCylinder_ctor(trig_obj, (void*)board,
                                                            px, py, pz, trig_mesh);
                             if (tr) {
-                                /* Render list + scene spatial tree (proven AI-0 path) */
+                                /* Full GRID/testcube registration (PROVEN visible):
+                                 * update list (board+0x2578), render list (board+0xCD4),
+                                 * collision obj (board+0x10EC + scene_col+0x18), scene tree
+                                 * (sceneobj+0x1C). Exactly mirrors lines ~2751-2782. */
+                                pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST),
+                                                      trig_obj);
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST),
                                                       trig_obj);
+                                DWORD trig_col = *(DWORD*)((char*)trig_obj + PC_COLLISION_OBJ);
+                                if (trig_col && !IsBadReadPtr((void*)trig_col, 0x20)) {
+                                    pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST),
+                                                          (void*)trig_col);
+                                    DWORD scene_col_trig = *(DWORD*)(board + BOARD_SCENE_OBJ);
+                                    if (scene_col_trig) {
+                                        pfn_AthenaList_Append((DWORD*)(scene_col_trig + 0x18),
+                                                              (void*)trig_col);
+                                    }
+                                }
                                 DWORD lvl_trig = cEnt_get_level(board);
                                 if (lvl_trig) {
                                     DWORD sceneobj_trig = *(DWORD*)(lvl_trig + LEVEL_SCENEOBJECT);
@@ -7239,7 +7252,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_67", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_68", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8856,7 +8869,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_67 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_68 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
