@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* ================================================================
  * BASS Proxy Layer (proven from time_warp)
@@ -201,6 +202,28 @@ static void load_real_bass(void) {
 #define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
 #define STR_FMT_D          0x4D03F8   /* "%d" */
 #define STR_BUF            0x4F7448   /* AthenaString buffer */
+
+/* Native medal-award effects (verified 0x44daf8-0x44dc10 in FUN_0044df70):
+ * when a medal is FIRST earned the game (1) plays the medal pop sound via
+ * Sound_PlayChannel(0x4597b0) on the channel at App+0x50C, and (2) spawns a
+ * ring of ArenaScoreParticle objects (ctor 0x44ad50, alloc 0x28) appended to
+ * the results-screen particle list ([results+0x94]). The ring is 18 particles
+ * spaced 20deg (=0x14) around center (429,317) at radius 30, positions =
+ * fcos(angle*PI)*30+429 / fsin(angle*PI)*30+317. */
+#define Sound_PlayChannel  0x4597B0
+#define SND_CHANNEL_MEDAL  0x50C      /* App+0x50C = medal pop channel */
+#define RESULT_PARTICLES   0x94       /* results+0x94 = particle AthenaList */
+#define PARTICLE_CTOR      0x44AD50
+#define PARTICLE_SIZE      0x28
+#define ARENA_SCORE_LIST   0x4F7188   /* wave-const struct (+4 = PI), arg to Wave_Cos/Sin */
+#define WAVE_COS           0x457DC0   /* Wave_Cos(0x4F7188, angle) */
+#define WAVE_SIN           0x457DA0   /* Wave_Sin(0x4F7188, angle) */
+#define PART_ANGLE_MULT    0x4CF528   /* *30.0f radius */
+#define PART_CENTER_X      0x4D6D84   /* +429.0f */
+#define PART_CENTER_Y      0x4D6D80   /* +317.0f */
+#define PART_ANGLE_INC     0x14       /* +20 degrees per particle */
+#define PART_ANGLES_END    0x168      /* 360 degrees total -> 18 particles */
+#define operator_new_      0x4BA57B
 
 /* ================================================================
  * Mod globals
@@ -517,6 +540,81 @@ static int get_player_time_cs(DWORD app) {
  * Core logic (called from caves)
  * ================================================================ */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
+__attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
+
+/* Spawn the native medal-award effects (pop sound + star ring) for the
+ * diamond, mirroring FUN_0044df70's first-earn block (0x44daf8-0x44dc10).
+ * Called once, on the frame the diamond is first unlocked+shown for a race.
+ *   results = results-screen object (particle list at +0x94)
+ *   app     = App ptr (medal pop channel at +0x50C)
+ */
+__attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app) {
+    int angle, i;
+    DWORD channel, plist, part;
+    if (!results || !app) return;
+    if (IsBadReadPtr((void*)(results + RESULT_PARTICLES), 4)) return;
+    plist = results + RESULT_PARTICLES;
+    /* (1) Play the medal pop on the medal channel (App+0x50C). */
+    if (IsBadReadPtr((void*)(app + SND_CHANNEL_MEDAL), 4)) return;
+    channel = *(DWORD*)(app + SND_CHANNEL_MEDAL);
+    if (channel) {
+        /* Sound_PlayChannel is __fastcall(param_1=ecx) — the single real arg.
+         * (Native also pushes a stray 1.0, but the callee only reads ecx; we
+         * omit it to keep our own stack perfectly balanced.) */
+        __asm__ volatile(
+            "movl %1, %%ecx\n\t"     /* channel (ecx = this) */
+            "call *%0\n\t"           /* Sound_PlayChannel(channel) */
+            : : "r"((void*)Sound_PlayChannel), "r"(channel)
+            : "eax", "ecx", "edx", "memory");
+    }
+    /* (2) Spawn the ring of 18 ArenaScoreParticle objects (one per 20deg). */
+    for (angle = 0, i = 0; angle < PART_ANGLES_END; angle += PART_ANGLE_INC, i++) {
+        /* operator_new(PARTICLE_SIZE) */
+        __asm__ volatile(
+            "pushl %1\n\t"
+            "call *%2\n\t"
+            "addl $4, %%esp\n\t"
+            : "=a"(part)
+            : "r"(PARTICLE_SIZE), "r"((void*)operator_new_)
+            : "ecx", "edx", "memory");
+        if (!part) continue;
+        /* ArenaScoreParticle_ctor(part, app): __thiscall(ecx=part, stack arg app),
+         * ret $4 — callee pops the stack arg, so NO addl esp after. */
+        __asm__ volatile(
+            "movl %2, %%ecx\n\t"
+            "pushl %1\n\t"
+            "call *%0\n\t"
+            : : "r"((void*)PARTICLE_CTOR), "r"(app), "r"(part)
+            : "eax", "ecx", "edx", "memory");
+        /* Native layout (verified): part+0x08..0x10 = POSITION vec3,
+         * part+0x14..0x1C = VELOCITY/trajectory vec3 (radial dir, no center
+         * offset), part+0x20 = 1.0 scale (set by ctor).
+         *   pos.x = cos(a)*r + 429   pos.y = sin(a)*r + 317
+         *   vel.x = cos(a)*r         vel.y = sin(a)*r        */
+        {
+            float rad = (float)angle * 3.14159265f / 180.0f;
+            float c = cosf(rad), s = sinf(rad);
+            float cx = 429.0f, cy = 317.0f, r = 30.0f;
+            *(float*)(part + 0x08) = c * r + cx;
+            *(float*)(part + 0x0C) = s * r + cy;
+            *(float*)(part + 0x10) = 0.0f;
+            *(float*)(part + 0x14) = c * r;
+            *(float*)(part + 0x18) = s * r;
+            *(float*)(part + 0x1C) = 0.0f;
+        }
+        /* AthenaList_Append(&results.particles, part): __thiscall(ecx=list,
+         * arg on stack), ret $4 — callee pops the arg, so NO addl esp after. */
+        __asm__ volatile(
+            "movl %2, %%ecx\n\t"
+            "pushl %1\n\t"
+            "call *%0\n\t"
+            : : "r"((void*)0x453810), "r"(part), "r"(plist)
+            : "eax", "ecx", "edx", "memory");
+    }
+    diag_logf("[diamond] medal effects spawned (pop + %d star particles) for race", i);
+}
+
+
 
 /* RESULT_OBJ offsets (results-screen object, vtable slot 0 = render 0x44DF70) */
 #define RESULT_FRAME   0x10   /* frame counter [esi+0x10] */
@@ -558,7 +656,10 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
             diag_logf("[diamond] unlock aborted for race %d (could not write everything)", race);
             return;   /* as if the diamond time was not met at all */
         }
-        /* g_won[race] committed (to 1) inside diamond_provision_unlock on success */
+        /* g_won[race] committed (to 1) inside diamond_provision_unlock on success.
+         * First earn: play the native medal pop + spawn the star ring, exactly
+         * like the game does for the other medals on their first award. */
+        diamond_spawn_medal_effects(results, app);
     }
     /* Now that the diamond is genuinely unlocked (and its assets exist),
      * load + draw it. Load lazily (retries if a provision path raced). */
